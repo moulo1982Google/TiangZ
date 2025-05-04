@@ -119,37 +119,38 @@ impl ClientConnection {
 
         let receiver = self.msg_receiver.clone();
         rt.spawn(async move {
-            //这个buff再重复使用，所以不存在内存反复分配释放问题
-            let mut buf = BytesMut::with_capacity(4096);
-            let mut start = Instant::now();
+            //这个buff再重复使用，所以不存在内存反复分配释放问题，初始大小也不是那么重要了
+            let mut buf = BytesMut::with_capacity(8192);
             loop {
+                let mut time_out = false;
                 let mut receiver_guard = receiver.lock().await;
-                tokio::select! {
-                    result = receiver_guard.recv() => {
-                        match result {
-                            Some(NetworkMessage::Response { data, .. }) => {
-                                let mut buf_temp = BytesMut::with_capacity(128);
-                                data.to_bytes(&mut buf_temp);
-                                buf.put_u16(buf_temp.len() as u16);
-                                buf.unsplit(buf_temp);
-                            }
-                            _ => {
-                                trace!("通道已关闭，退出");
-                                break; // 连接关闭
-                            }
-                        }
-                    }
+                match tokio::time::timeout(Duration::from_millis(20), receiver_guard.recv()).await {
+                    Ok(Some(NetworkMessage::Response { data, .. })) => { 
 
-                    _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+                        let initial_len = buf.len(); // 记录当前长度
+                        // 1. 预留 2 字节长度字段（稍后回填）
+                        buf.put_u16(0);
+                        let data_start = buf.len();//填充前位置
+                        data.to_bytes(&mut buf);
+                        let data_end = buf.len();//填充后位置
+
+                        let data_len = data_end - data_start;//实际填充长度
+                        buf[initial_len..initial_len + 2].copy_from_slice(&(data_len as u16).to_be_bytes());
+                    },
+                    Ok(_) => {  
+                        trace!("通道已关闭，退出");
+                        break; // 连接关闭 
+                    },
+                    Err(_) => {time_out = true; }
                 }
 
-                if buf.len() >= 1024 || start.elapsed().as_millis() >= 10 {
+                //累计2KB以上，或者20ms以上，就批量发送
+                if buf.len() >= 2048 || time_out {
                     if let Err(e) = socket_writer.lock().await.write_all(&buf).await {
                         error!("write_all clientid:{}, 出错:{}", client_id, e);
                         break;
                     }
                     buf.clear();
-                    start = Instant::now();
                 }
             }
 
