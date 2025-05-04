@@ -1,4 +1,4 @@
-#![allow(unused_variables, unused_imports, non_snake_case, dead_code)]
+#![allow(unused_imports, non_snake_case)]
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Arc, atomic::{AtomicUsize, Ordering}};
@@ -83,7 +83,7 @@ pub trait Server {
 
 struct ClientConnection {
     client_id: usize,
-    addr: std::net::SocketAddr,
+    //addr: std::net::SocketAddr,
     writer: std::sync::Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>,
     msg_sender: mpsc::Sender<NetworkMessage>,
     msg_receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<NetworkMessage>>>,
@@ -98,11 +98,11 @@ lazy_static::lazy_static! {
 
 impl ClientConnection {
 
-    pub fn new(client_id: usize, addr: std::net::SocketAddr, writer: std::sync::Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>) -> Self {
+    pub fn new(client_id: usize, _addr: std::net::SocketAddr, writer: std::sync::Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>) -> Self {
         let (sender, receiver) = mpsc::channel(1000);
         ClientConnection {
             client_id: client_id,
-            addr: addr,
+            //addr: addr,
             writer: writer,
             msg_sender: sender,
             msg_receiver: Arc::new(tokio::sync::Mutex::new(receiver)),
@@ -127,16 +127,11 @@ impl ClientConnection {
                 tokio::select! {
                     result = receiver_guard.recv() => {
                         match result {
-                            Some(NetworkMessage::Response { client_id, data }) => {
-
-                                data.to_bytes(&mut buf);
-
-
-                                // if let Err(e) = socket_writer.lock().await.write_all(data.to_bytes().as_ref()).await {
-                                //     error!("write_all clientid:{}, 出错:{}", client_id, e);
-                                //     clients.remove(&client_id);
-                                //     break;
-                                // }
+                            Some(NetworkMessage::Response { data, .. }) => {
+                                let mut buf_temp = BytesMut::with_capacity(128);
+                                data.to_bytes(&mut buf_temp);
+                                buf.put_u16(buf_temp.len() as u16);
+                                buf.unsplit(buf_temp);
                             }
                             _ => {
                                 trace!("通道已关闭，退出");
@@ -145,20 +140,17 @@ impl ClientConnection {
                         }
                     }
 
-                    result = tokio::time::sleep(Duration::from_millis(10)) => {}
+                    _ = tokio::time::sleep(Duration::from_millis(10)) => {}
                 }
 
                 if buf.len() >= 1024 || start.elapsed().as_millis() >= 10 {
                     if let Err(e) = socket_writer.lock().await.write_all(&buf).await {
                         error!("write_all clientid:{}, 出错:{}", client_id, e);
-                        clients.remove(&client_id);
                         break;
                     }
                     buf.clear();
                     start = Instant::now();
                 }
-
-
             }
 
             clients.remove(&client_id);
@@ -184,53 +176,7 @@ impl Server for TCPServer {
 
         let rt = start_runtime(work_thead_num);
 
-        let channels: Vec<(mpsc::Sender<NetworkMessage>, mpsc::Receiver<NetworkMessage>)> = (0..work_thead_num)
-        .map(|_| mpsc::channel(queue_len))
-        .collect();
-
-
-        //let senders: Vec<_> = channels.iter().map(|(tx, _)| tx.clone()).collect();
-        //let receivers: Vec<_> = channels.into_iter().map(|(_, rx)| rx).collect();
-
         let (request_sender, mut request_receiver) = mpsc::channel(queue_len * work_thead_num);
-
-        //做工线程，从
-        // let _: Vec<_> = receivers.into_iter().enumerate().map(|(_, mut rx)| {
-        //     let mut s_receiver = shutdown_sender.subscribe();
-        //     let clients = self.clients.clone();
-        //     rt.spawn(async move {
-        //         loop {
-        //             tokio::select! {
-        //                 result = rx.recv() => {
-        //                     match result {
-        //                         Some(NetworkMessage::Response { client_id, data }) => {
-        //                             if let Some(client_connection) = clients.get(&client_id) {
-        //                                 if let Err(e) = client_connection.writer.lock().await.write_all(data.to_bytes().as_ref()).await {
-        //                                     error!("write_all clientid:{}, 出错:{}", client_id, e);
-        //                                     clients.remove(&client_id);
-        //                                     break;
-        //                                 }
-        //                             } else {
-        //                                 trace!("client_id:{} 不在clients中, 丢弃data:{}, 不写入socket中", client_id, data.to_json_string());
-        //                             }
-        //                         }
-        //                         _ => {
-        //                             trace!("通道已关闭，退出");
-        //                             break; // 连接关闭
-        //                         }
-        //                     }
-        //                 }
-        //                 _ = s_receiver.recv() => {
-        //                     trace!("client_connection.writer 收到退出消息，退出");
-        //                     break; // 退出循环
-        //                 }
-        //             }
-        //         }
-        //     });
-        
-        // }).collect();
-        
-        
         let clients = self.clients.clone();
         let client_id = self.client_id.clone();
 
@@ -250,6 +196,7 @@ impl Server for TCPServer {
                             
                             let mut client_connection = ClientConnection::new(client_id, addr, 
                                 Arc::new(tokio::sync::Mutex::new(writer)));
+
                             client_connection.run(rt1.clone(), clients.clone());
                             clients.insert(client_id, client_connection);
     
@@ -671,109 +618,14 @@ mod tests {
     use tracing::{trace, error, info, warn, debug};
 
     #[tokio::test]
-    async fn test_kcp() -> std::io::Result<()> {   
+    async fn test_kcp() { 
+        use crate::C2M_PingResponse;
+        use crate::IMessage;
 
-        let filter = EnvFilter::try_from_default_env()  // 先尝试从 RUST_LOG 读取
-        .or_else(|_| EnvFilter::try_new("info")) // 失败则用命令行参数
-        .unwrap();
-
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_ansi(true) // false没有颜色，适合生产环境
-            .with_timer(LocalTime::rfc_3339()) // 自动读取 RUST_LOG
-            .init();
-
-        let config = tokio_kcp::KcpConfig {
-                mtu: 470,
-                nodelay: tokio_kcp::KcpNoDelayConfig{
-                    nodelay: true,
-                    interval: 10,
-                    resend: 2,
-                    nc: false,
-                },
-
-                wnd_size: (32, 32),
-                session_expire: std::time::Duration::from_secs(90),
-                flush_write: true,
-                flush_acks_input: false,
-                stream: false,
-                allow_recv_empty_packet: false,
-        };
-
-
-        let server_addr = "127.0.0.1:3100".parse::<std::net::SocketAddr>().unwrap();
-        let mut listener = tokio_kcp::KcpListener::bind(config, server_addr).await.unwrap();
-
-        info!("kcp read server start {}", server_addr);
-
-        tokio::spawn(async move{
-            loop {
-                let (mut read_stream, peer_addr) = match listener.accept().await {
-                    Ok(s) => s,
-                    Err(err) => {
-                        error!("accept failed, error: {}", err);
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        continue;
-                    }
-                };
-    
-                println!("accepted {} in {}", peer_addr, server_addr);
-
-                tokio::spawn(async move {
-                    let mut buffer = vec![0; 128];
-                    while let Ok(n) = read_stream.read(&mut buffer).await {
-                        println!("recv {:?}, len:{}", &buffer[..n], n);
-                        if n == 0 {
-                            break;
-                        }
-                    }
-                    debug!("client {} closed", peer_addr);
-                });
-            }
-        });
-
-
-        let server_addr2 = "127.0.0.1:3101".parse::<std::net::SocketAddr>().unwrap();
-        let mut listener2 = tokio_kcp::KcpListener::bind(config, server_addr2).await.unwrap();
-
-        info!("kcp write server start {}", server_addr2);
-
-        tokio::spawn(async move{
-            loop {
-                let (mut write_stream, peer_addr2) = match listener2.accept().await {
-                    Ok(s) => s,
-                    Err(err) => {
-                        error!("accept failed, error: {}", err);
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        continue;
-                    }
-                };
-
-
-                println!("accepted {} in {}", peer_addr2, server_addr2);
-
-                let mut buffer = vec![0; 128];
-                write_stream.read(&mut buffer).await.unwrap();
-                
-                let mut ping_msg = Vec::new();
-                crate::C2M_PingRequest::default()
-                    .serialize(&mut rmp_serde::Serializer::new(&mut ping_msg).with_struct_map()).unwrap();
-
-                let mut buf = BytesMut::with_capacity(2 + ping_msg.len());
-                buf.put_u16(ping_msg.len() as u16);
-                buf.put_slice(&ping_msg);
-
-                for _ in 0..10 {
-                    write_stream.write_all(&buf).await.unwrap();
-                    write_stream.flush().await.unwrap();
-                    println!("write {:?}, len:{}", buf, buf.len());
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                }
-            }
-        });
-
-
-        tokio::time::sleep(tokio::time::Duration::from_secs(600)).await;
-        Ok(())
+        let mut ping_res_msg =  BytesMut::with_capacity(64);
+        ping_res_msg.put_u16(30);
+        println!("{:?}", ping_res_msg);
+        C2M_PingResponse::default().to_bytes(&mut ping_res_msg);
+        println!("{:?}", ping_res_msg);
     }
 }

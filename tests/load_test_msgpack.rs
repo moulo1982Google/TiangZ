@@ -50,8 +50,17 @@ async fn load_test_msgpack() {
             let reader1 = reader.clone();
 
             let handle = tokio::spawn(async move {
-                let mut response = Vec::with_capacity((ping_res_msg.len()) * TOTAL_REQUESTS/CONCURRENT_REQUESTS);
-                let _ = reader1.lock().await.read_exact(&mut response).await.unwrap();
+                let mut response = vec![0u8; (ping_res_msg.len() + 2) * TOTAL_REQUESTS/CONCURRENT_REQUESTS];
+
+                match reader1.lock().await.read_exact(&mut response).await {
+                    Ok(_) => { /* 成功 */ },
+                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                        eprintln!("连接被对方关闭，数据不完整！");
+                    },
+                    Err(e) => {
+                        eprintln!("读取错误: {}", e);
+                    }
+                }
             });
             
             let _ = tokio::join!(handle);
