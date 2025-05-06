@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::collections::HashMap;
 use std::sync::{LazyLock, Arc, atomic::{AtomicUsize, Ordering}};
 use std::io;

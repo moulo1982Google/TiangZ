@@ -31,6 +31,7 @@ mod event;
 mod my_future;
 mod protocol_parser;
 mod kcp_wrapper;
+mod tcp_service;
 
 use crate::errors::my_errors::RetResult;
 use crate::errors::my_errors::MyError;
@@ -187,6 +188,17 @@ impl Server for TCPServer {
         let (shutdown_sender, _) = broadcast::channel(1);
 
         let rt = start_runtime(work_thead_num);
+
+
+        crate::tcp_service::NetService::instance()
+            .add_service(Box::new(crate::tcp_service::TcpService::new("0.0.0.0:8080".to_string(), rt.clone()).await.unwrap()));
+
+
+
+
+
+
+
 
         let (request_sender, mut request_receiver) = mpsc::channel(queue_len * work_thead_num);
         let clients = self.clients.clone();
