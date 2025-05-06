@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, broadcast};
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::signal;
 use bytes::{BytesMut, BufMut, Buf};
 use dashmap::DashMap;
@@ -74,6 +75,16 @@ pub enum NetworkMessage {
         data: Arc::<Box<dyn IMessage>>,
     },
     //Shutdown,
+}
+
+impl Clone for NetworkMessage {
+    fn clone(&self) -> Self {
+        match self {
+            NetworkMessage::Request { client_id, data } => NetworkMessage::Request { client_id: client_id.clone(), data: data.clone() },
+            NetworkMessage::Response { client_id, data } => NetworkMessage::Response { client_id: client_id.clone(), data: data.clone() },
+            NetworkMessage::Message { data } => NetworkMessage::Message { data: data.clone() },
+        }
+    }
 }
 
 #[async_trait]
@@ -286,7 +297,7 @@ impl Server for TCPServer {
 
         shutdown_sender.send(()).unwrap();
 
-        sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(1)).await;
 
         //终止创建的运行时
         match Arc::try_unwrap(rt) {
@@ -294,16 +305,7 @@ impl Server for TCPServer {
             Err(_) => eprintln!("Failed to shutdown: Runtime is still shared"),
         }
 
-        // loop {
-        //     let rt = rt.clone();
-        //     match Arc::try_unwrap(rt) {
-        //         Ok(rt) => {rt.shutdown_background(); break;}
-        //         Err(_) => continue,
-        //     }
-        // }
-
         Ok(())
-        //ETTask::complete().await; 
     }
 
 }
@@ -594,13 +596,25 @@ async fn process_frame_message(
         }
     };
     
-    // 发送消息到处理队列
-    if let Err(e) = request_sender.send(NetworkMessage::Request {
+    let request = NetworkMessage::Request {
         client_id,
         data: Arc::new(message_obj),
-    }).await {
-        error!("request_sender.send Request 发送消息失败, {}", e);
-        return Err(MyError::SendRequestFailed().into());
+    };
+
+    match request_sender.try_send(request) {
+        Ok(()) => {},
+        Err(TrySendError::Full(request)) => {
+            trace!("通道已满，改用异步发送");
+            if let Err(e) = request_sender.send(request).await {
+                error!("request_sender.send Request 发送消息失败, 通道已关闭, {}", e);
+                return Err(MyError::SendRequestFailed().into());
+            }
+        }
+
+        Err(TrySendError::Closed(_)) => {
+            error!("request_sender.send Request 发送消息失败, 通道已关闭");
+            return Err(MyError::SendRequestFailed().into());
+        },
     }
     
     Ok(())

@@ -1,4 +1,4 @@
-// #![allow(dead_code)]
+#![allow(dead_code)]
 
 // use std::fmt::Debug;
 // use std::time::Duration;
@@ -7,6 +7,118 @@
 // use tokio::time::Instant;
 // use tokio_util::time::{delay_queue, DelayQueue};
 // use futures::StreamExt;
+
+
+// 1：对于定时器来说，回调只有一种数据，就是T
+
+use std::any::{Any, TypeId};
+use async_trait::async_trait;
+use dashmap::DashMap;
+use crate::event::{EventSystem, IEventParam};
+
+pub trait ITimerEventParam: Any + Send + Sync + Clone {}
+impl<T: Any + Send + Sync + Clone> ITimerEventParam for T {}
+
+#[async_trait]
+pub trait ITimerEventHandler<P: ITimerEventParam>: Send + Sync {
+    async fn handle(&self, param: &P);
+}
+
+#[derive(Clone)]
+pub struct OnMonsterMoveTimerParam{}
+
+pub struct OnMonsterMoveTimerHandler {
+    
+}
+
+impl OnMonsterMoveTimerHandler {
+    pub fn register_fn(p : &TimerSystem)
+    {
+        p.register_call_back(std::any::TypeId::of::<OnMonsterMoveTimerParam>(), Box::new(CallBackPack{handler: Box::new(OnMonsterMoveTimerHandler{})}));
+    }
+}
+
+#[async_trait]
+impl ITimerEventHandler<OnMonsterMoveTimerParam>  for OnMonsterMoveTimerHandler {
+    async fn handle(&self, _param: &OnMonsterMoveTimerParam) {
+        println!("OnMonsterMoveTimerHandler::run");
+    }
+}
+
+pub struct TimerSystem {
+    all_callback:DashMap<std::any::TypeId, Vec<std::boxed::Box<dyn Any + Send + Sync>>>,
+}
+
+impl TimerSystem {
+
+    fn new() -> Self {
+        Self {
+            all_callback: DashMap::new(),
+        }
+    }
+    
+    fn init(&mut self) {
+        for call_back in inventory::iter::<CallBackHandlerFactory> {
+            (call_back.register_fn)(&self);
+         }
+    }
+    pub fn instance() -> &'static Self {
+        static INSTANCE: std::sync::OnceLock<TimerSystem> = std::sync::OnceLock::new();
+        INSTANCE.get_or_init(|| {
+            let mut instance = TimerSystem::new();
+            instance.init();
+            instance
+        })
+    }
+    
+    pub fn register_call_back(&self, type_id : std::any::TypeId, call_back: std::boxed::Box<dyn Any + Send + Sync>) {
+        self.all_callback.entry(type_id).or_insert_with(|| {
+            vec![call_back]
+        });
+    }
+    
+    pub async fn publish_async<P: Any + Send + Sync + Clone>(&self, param: &P) {
+        if let Some(call_backs) = self.all_callback.get(&std::any::TypeId::of::<P>()) {
+            for call_back in call_backs.iter() {
+                if let Some(call_back_pack) = call_back.downcast_ref::<CallBackPack<P>>() {
+                    call_back_pack.handler.handle(param).await;
+                }
+            }
+        }
+    }
+}
+
+struct CallBackPack<P: ITimerEventParam> {
+    handler: Box<dyn ITimerEventHandler<P>>,
+}
+
+pub struct CallBackHandlerFactory {
+    pub register_fn: fn(&TimerSystem),
+}
+
+inventory::collect!(CallBackHandlerFactory);
+
+inventory::submit! { 
+    CallBackHandlerFactory {
+        register_fn: OnMonsterMoveTimerHandler::register_fn,
+    }
+}
+
+#[cfg(test)]
+mod timer_tests {
+    use super::*;
+    use dashmap::DashMap;
+    #[tokio::test]
+    async fn it_works() {
+        TimerSystem::instance().publish_async::<OnMonsterMoveTimerParam>(&OnMonsterMoveTimerParam{}).await;
+    }
+}
+
+
+
+
+
+
 
 
 

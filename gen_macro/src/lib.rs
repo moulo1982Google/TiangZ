@@ -1003,13 +1003,26 @@ pub fn IActorLocationRpcHandler(input: TokenStream) -> TokenStream {
                 sender: std::option::Option<mpsc::Sender<NetworkMessage>>)  {
                 let v = message.as_ref().as_any().downcast_ref::<#request_type>().unwrap();
                 let mut response = #response_type::default();
+
                 self.handler(v, &mut response).await;
+
                 if let Some(sender) = sender {
-                    if let Err(e) = sender.send(NetworkMessage::Response { 
-                        client_id, data: std::sync::Arc::new(std::boxed::Box::new(response))})
-                .await {
-                        error!("IMActorHandler handle_message 发送消息失败, {}", e);
-                    };
+                    let response_message = NetworkMessage::Response { 
+                        client_id, data: std::sync::Arc::new(std::boxed::Box::new(response))};
+
+                    match sender.try_send(response_message) {
+                        Ok(()) => {},
+                        Err(TrySendError::Full(response_message)) => {
+                            trace!("通道已满，改用异步发送");
+                            if let Err(e) = sender.send(response_message).await {
+                                error!("IMActorHandler send handle_message 发送消息失败, 通道已关闭, {}", e);
+                            }
+                        }
+                
+                        Err(TrySendError::Closed(_)) => {
+                            error!("IMActorHandler try_send handle_message 发送消息失败, 通道已关闭");
+                        },
+                    }
                 }
             }
         }
