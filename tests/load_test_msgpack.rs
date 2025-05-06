@@ -15,7 +15,7 @@ const CONCURRENT_REQUESTS: usize = 1;
 const TOTAL_REQUESTS: usize = 10;
 
 #[cfg(not(debug_assertions))]
-const CONCURRENT_REQUESTS: usize = 64;
+const CONCURRENT_REQUESTS: usize = 256;
 #[cfg(not(debug_assertions))]
 const TOTAL_REQUESTS: usize = 2560000;
 
