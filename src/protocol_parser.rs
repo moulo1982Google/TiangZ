@@ -87,26 +87,41 @@ impl ProtocolParser {
     pub async fn read_frame<R: AsyncReadExt + Unpin>(
         &mut self,
         reader: &mut R,
-    ) -> io::Result<Option<&[u8]>> {
-        self.consume_pending(); // 先消费之前的数据
+    ) -> io::Result<Option<Vec<u8>>> {
 
-        loop {
-            match self.parse_frame_length()? {
-                Some(len) => {
-                    // 获取帧数据引用
-                    let frame = &self.buffer[2..2 + len];
-                    // 记录待消费的字节数（2字节头 + 数据长度）
-                    self.pending_consume = 2 + len;
-                    return Ok(Some(frame));
-                }
-                None => {
-                    // 需要更多数据
-                    if reader.read_buf(&mut self.buffer).await? == 0 {
-                        return Ok(None);
-                    }
-                }
+
+        let mut head = vec![0u8; 2];
+        if let Ok(_) = reader.read_exact(&mut head).await {
+            let msg_len = i16::from_be_bytes([head[0], head[1]]) as usize;
+            let mut body = vec![0u8; msg_len];
+            if let Ok(_) = reader.read_exact(&mut body).await {
+                return Ok(Some(body));
+            } else {
+                return Ok(None);
             }
+        } else {
+            return Ok(None);
         }
+
+        // self.consume_pending(); // 先消费之前的数据
+
+        // loop {
+        //     match self.parse_frame_length()? {
+        //         Some(len) => {
+        //             // 获取帧数据引用
+        //             let frame = &self.buffer[2..2 + len];
+        //             // 记录待消费的字节数（2字节头 + 数据长度）
+        //             self.pending_consume = 2 + len;
+        //             return Ok(Some(frame));
+        //         }
+        //         None => {
+        //             // 需要更多数据
+        //             if reader.read_buf(&mut self.buffer).await? == 0 {
+        //                 return Ok(None);
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     // pub async fn read_frame_from_kcp<R: AsyncReadExt + Unpin>(
