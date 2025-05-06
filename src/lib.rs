@@ -31,7 +31,9 @@ mod event;
 mod my_future;
 mod protocol_parser;
 mod kcp_wrapper;
-mod tcp_service;
+mod net_service;
+mod utils;
+mod entity;
 
 use crate::errors::my_errors::RetResult;
 use crate::errors::my_errors::MyError;
@@ -190,8 +192,8 @@ impl Server for TCPServer {
         let rt = start_runtime(work_thead_num);
 
 
-        crate::tcp_service::NetService::instance()
-            .add_service(Box::new(crate::tcp_service::TcpService::new("0.0.0.0:8080".to_string(), rt.clone()).await.unwrap()));
+        crate::net_service::NetService::instance()
+            .add_service(Box::new(crate::net_service::TcpService::new("0.0.0.0:8080".to_string(), rt.clone()).await.unwrap()));
 
 
 

@@ -48,7 +48,7 @@ macro_rules! create_entity {
             pub children:
                 dashmap::DashMap::<
                     i64, 
-                    std::borrow::Cow<'static, crate::entity::ChildBase>
+                    std::borrow::Cow<'static, crate::entity::ChildType>
                 >,
             pub components: 
                 dashmap::DashMap::<

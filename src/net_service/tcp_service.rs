@@ -1,4 +1,3 @@
-use gen_macro::Component;
 use tokio::net::{TcpStream, TcpListener};
 use tokio::runtime::Runtime;
 use tokio::io;
@@ -92,9 +91,19 @@ impl NetService {
     }
 }
 
+use crate::create_entity;
+use gen_macro::Component;
+use crate::entity::Awake;
 create_entity! {
     #[derive(Component, Default)]
+    #[awake]
     pub struct NetInnerComponent {
+    }
+}
+
+impl Awake for NetInnerComponent {
+    fn awake(&mut self) {
+        trace!("NetInnerComponent awake called");
     }
 }
 
