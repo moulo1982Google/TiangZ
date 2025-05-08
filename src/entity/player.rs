@@ -14,8 +14,8 @@ create_entity! {
     }
 }
 
-impl Awake for Player {
-    fn awake(&mut self) {
+impl Awake for std::sync::Arc<tokio::sync::Mutex<Player>> {
+    fn awake(&self) {
         trace!("Player awake called");
     }
 }

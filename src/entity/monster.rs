@@ -13,8 +13,8 @@ create_entity! {
     }
 }
 
-impl Awake for Monster {
-    fn awake(self: &mut Monster) {
+impl Awake for std::sync::Arc<tokio::sync::Mutex<Monster>> {
+    fn awake(&self) {
         trace!("Monster awake called");
     }
 }

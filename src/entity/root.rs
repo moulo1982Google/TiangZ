@@ -11,15 +11,13 @@ use crate::entity::server_scene_manager::ServerSceneManagerComponent;
 
 use super::scene::SceneFactory;
 
-//use crate::entity::ComponentType;
-
+struct ComponentWrapper(std::sync::Arc<dyn std::any::Any + Send + Sync>);
 
 pub struct Root {
-    scene: Scene,
-
+    scene: std::sync::Arc<tokio::sync::Mutex<Scene>>,
     components: dashmap::DashMap::<
         std::any::TypeId, 
-        std::sync::Arc<std::sync::RwLock<crate::entity::ComponentType>>
+        ComponentWrapper
     >,
 }
 
@@ -33,33 +31,24 @@ impl Root {
     }
 
 
-    fn add_component<T: crate::entity::ComponentTrait + crate::entity::Builder + 'static  + Send + Sync>(&self) {
-        self.components.insert(std::any::TypeId::of::<T>(), 
-        std::sync::Arc::new(std::sync::RwLock::new(T::new())));
+    fn add_component<T>(&self) 
+    where 
+        T: crate::entity::ComponentTrait + crate::entity::Builder + 'static  + Send + Sync
+    {
+        self.components.insert(std::any::TypeId::of::<T>(), ComponentWrapper(T::new()));
     }
 
-    fn get_component<T: crate::entity::ComponentTrait + crate::entity::Builder + 'static  + Send + Sync>(&self) -> Option<std::sync::Arc<std::sync::RwLock<T>>> {
-        let type_id = std::any::TypeId::of::<T>();
-        self.components.get(&type_id).and_then(|value_ref| {
-            let arc = value_ref.clone();
-            
-            // 首先检查类型是否匹配
-            let is_match = {
-                let borrowed = arc.read().unwrap();
-                borrowed.as_any().downcast_ref::<T>().is_some()
-            };
-            
-            if is_match {
-                // 使用类型转换处理
-                unsafe {
-                    let raw_ptr = std::sync::Arc::into_raw(arc);
-                    let typed_ptr = raw_ptr as *const std::sync::RwLock<T>;
-                    Some(std::sync::Arc::from_raw(typed_ptr))
-                }
-            } else {
-                None
-            }
-        })
+    async fn get_component<T>(
+        &self
+    ) -> Option<std::sync::Arc<tokio::sync::Mutex<T>>> 
+    where 
+        T: crate::entity::ComponentTrait + crate::entity::Builder + 'static  + Send + Sync
+    {
+        self.components.get(&std::any::TypeId::of::<T>())
+            .and_then(|entry| {
+                let wrapper = entry.value().0.clone();
+                wrapper.downcast::<tokio::sync::Mutex<T>>().ok()
+            })
     }
 
     pub fn new() -> Self {

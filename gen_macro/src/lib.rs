@@ -94,26 +94,30 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
 
     if contain_awake_attr(&input_copy) {
         new_with_param.extend( quote! {
-            pub fn new_origin_with_param( #(#fields_data),* ) -> Self {
+            pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
                 let mut ret = Self {
                     #(#fields_value,)*
                     id: crate::utils::generate_id(),
                     children: dashmap::DashMap::new(),
                     components: dashmap::DashMap::new(),
                 };
+
+                let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
     
                 ret.awake();
     
                 ret
             }
 
-            pub fn new_origin() -> Self {
+            pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
                 let mut ret = Self {
                     #(#fields_value_default,)*
                     id: crate::utils::generate_id(),
                     children: dashmap::DashMap::new(),
                     components: dashmap::DashMap::new(),
                 };
+
+                let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
 
                 ret.awake();
 
@@ -122,29 +126,31 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
         } );
     } else {
         new_with_param.extend( quote! {
-            pub fn new_origin_with_param( #(#fields_data),* ) -> Self {
-                Self {
+            pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                let ret = Self {
                     #(#fields_value,)*
                     id: crate::utils::generate_id(),
                     children: dashmap::DashMap::new(),
                     components: dashmap::DashMap::new(),
-                }
+                };
+                std::sync::Arc::new(tokio::sync::Mutex::new(ret))
             }
 
-            pub fn new_origin() -> Self {
-                Self {
+            pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                let ret = Self {
                     #(#fields_value_default,)*
                     id: crate::utils::generate_id(),
                     children: dashmap::DashMap::new(),
                     components: dashmap::DashMap::new(),
-                }
+                };
+                std::sync::Arc::new(tokio::sync::Mutex::new(ret))
             }
         } );
     }
 
     let builder_impl = quote! {
         impl crate::entity::Builder for #entity_struct_name {
-            fn new() -> Self {
+            fn new() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
                 #entity_struct_name::new_origin()
             }
         }
@@ -170,7 +176,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     let mut awake_trait_impl = quote!{};
     if contain_awake_attr(&input_copy) {
         awake_trait_impl.extend(quote!{
-            impl #awake_struct_name for #entity_struct_name where Self: crate::entity::Awake {
+            impl #awake_struct_name for std::sync::Arc<tokio::sync::Mutex<#entity_struct_name>> where Self: crate::entity::Awake {
                 fn #awake_func_name(&mut self) {
                     self.awake();
                 }

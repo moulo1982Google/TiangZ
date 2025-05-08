@@ -13,8 +13,8 @@ create_entity! {
 }
 
 //Npc结构体，没有加[awake]标记，所以就算实现了Awake，也不会被调用
-impl Awake for Npc {
-    fn awake(self: &mut Npc) {
+impl Awake for std::sync::Arc<tokio::sync::Mutex<Npc>> {
+    fn awake(&self) {
         trace!("NpcEntity awake called");
     }
 }

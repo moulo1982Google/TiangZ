@@ -35,7 +35,7 @@ pub trait ComponentTrait: EntityTrait {
 }
 
 pub trait Awake {
-    fn awake(&mut self);
+    fn awake(&self);
 }
 
 pub trait Destroy {
@@ -43,7 +43,7 @@ pub trait Destroy {
 }
 
 pub trait Builder: 'static {
-    fn new()  -> Self where Self: Sized;
+    fn new()  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
 }
 
 pub trait StaticBuilder: 'static {

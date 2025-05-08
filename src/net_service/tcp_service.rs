@@ -91,19 +91,22 @@ impl NetService {
     }
 }
 
-use crate::create_entity;
-use gen_macro::Component;
-use crate::entity::Awake;
-create_entity! {
-    #[derive(Component, Default)]
-    #[awake]
-    pub struct NetInnerComponent {
-    }
-}
+#[cfg(test)]
+mod net_test {
+    use super::*;
 
-impl Awake for NetInnerComponent {
-    fn awake(&mut self) {
-        trace!("NetInnerComponent awake called");
+    #[tokio::test]
+    async fn test_net_service() {
+
+        let rt = Arc::new(tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap());
+
+        let service_id = NetService::instance().add_service(
+            Box::new(TcpService::new("0.0.0.0:8080".to_string(), rt)
+            .await.unwrap()));
     }
 }
 

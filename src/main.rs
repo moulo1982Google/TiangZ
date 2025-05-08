@@ -14,8 +14,7 @@ mod struct_macro;
 mod event;
 mod entity;
 mod utils;
-mod net;
-
+mod net_service;
 mod my_future;
 
 use entity::root::Root;

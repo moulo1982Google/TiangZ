@@ -27,8 +27,8 @@ create_entity! {
     }
 }
 
-impl Awake for Scene {
-    fn awake(&mut self) {
+impl Awake for std::sync::Arc<tokio::sync::Mutex<Scene>> {
+    fn awake(&self) {
         trace!("Scene awake called");
     }
 }
@@ -44,7 +44,7 @@ pub struct SceneFactory {
 }
 
 impl SceneFactory {
-    pub fn create_scene(scene_type: SceneType, parent: StdParentOption) -> Scene {
+    pub fn create_scene(scene_type: SceneType, parent: StdParentOption) -> std::sync::Arc<tokio::sync::Mutex<Scene>> {
         Scene::new_origin_with_param(scene_type, parent)
     }
 }

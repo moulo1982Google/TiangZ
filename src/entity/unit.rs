@@ -13,8 +13,8 @@ create_entity! {
     }
 }
 
-impl Awake for Unit {
-    fn awake(self: &mut Unit) {
+impl Awake for std::sync::Arc<tokio::sync::Mutex<Unit>> {
+    fn awake(&self) {
         trace!("Unit awake called");
     }
 }
@@ -27,8 +27,8 @@ create_entity! {
     }
 }
 
-impl Awake for UnitComponent {
-    fn awake(self: &mut UnitComponent) {
+impl Awake for std::sync::Arc<tokio::sync::Mutex<UnitComponent>> {
+    fn awake(&self) {
         trace!("UnitComponent awake called");
     }
 }
