@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use tokio::net::{TcpStream, TcpListener};
 use tokio::runtime::Runtime;
 use tokio::io;
@@ -6,6 +8,14 @@ use std::sync::atomic::AtomicUsize;
 use tracing::{trace, error, info, warn, debug};
 use std::sync::atomic::Ordering;
 use dashmap::DashMap;
+
+static NET_RT: once_cell::sync::Lazy<tokio::runtime::Runtime> = once_cell::sync::Lazy::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(8)  // 明确线程数
+        .enable_all()
+        .build()
+        .unwrap()
+});
 
 pub enum NetworkProtocol
 {
@@ -31,7 +41,7 @@ impl AService for TcpService {
 }
 
 impl TcpService {
-    pub async fn new(addr: String, rt: Arc<Runtime>) -> io::Result<Self> {
+    pub async fn new(addr: String) -> io::Result<Self> {
 
         let listener: TcpListener = TcpListener::bind(&addr).await?;
         let mut tcp = TcpService {
@@ -39,13 +49,13 @@ impl TcpService {
             addr,
             listener: Arc::new(listener),
         };
-        tcp.start_accept(rt);
+        tcp.start_accept();
         Ok(tcp)
     }
 
-    fn start_accept(&mut self, rt: Arc<Runtime>) {
+    fn start_accept(&mut self) {
         let listener = self.listener.clone();
-        rt.spawn(async move {
+        NET_RT.spawn(async move {
             loop {
                 match listener.accept().await {
                     Ok((socket, remote_addr)) => {
@@ -105,7 +115,7 @@ mod net_test {
         .unwrap());
 
         let service_id = NetService::instance().add_service(
-            Box::new(TcpService::new("0.0.0.0:8080".to_string(), rt)
+            Box::new(TcpService::new("0.0.0.0:8080".to_string())
             .await.unwrap()));
     }
 }

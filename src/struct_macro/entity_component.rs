@@ -24,7 +24,7 @@ macro_rules! create_entity {
             pub components: 
                 dashmap::DashMap::<
                     std::any::TypeId, 
-                    std::sync::Arc<std::sync::RwLock<crate::entity::ComponentType>>
+                    std::sync::Arc<tokio::sync::Mutex<crate::entity::ComponentType>>
                 >,
         }
     };
@@ -53,7 +53,7 @@ macro_rules! create_entity {
             pub components: 
                 dashmap::DashMap::<
                     std::any::TypeId, 
-                    std::sync::Arc<std::sync::RwLock<crate::entity::ComponentType>>
+                    std::sync::Arc<tokio::sync::Mutex<crate::entity::ComponentType>>
                 >,
         }
     };

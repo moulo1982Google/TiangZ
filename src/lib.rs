@@ -193,7 +193,7 @@ impl Server for TCPServer {
 
 
         crate::net_service::NetService::instance()
-            .add_service(Box::new(crate::net_service::TcpService::new("0.0.0.0:8080".to_string(), rt.clone()).await.unwrap()));
+            .add_service(Box::new(crate::net_service::TcpService::new("0.0.0.0:8080".to_string()).await.unwrap()));
 
 
 
