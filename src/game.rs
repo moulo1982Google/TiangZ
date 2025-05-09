@@ -1,14 +1,14 @@
 use std::time::{Duration, Instant};
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 use lazy_static::lazy_static;
 use tracing::{trace, warn};
 
-const TARGET_FPS: u32 = 60;
+const TARGET_FPS: u32 = 30;
 const FRAME_DURATION: Duration = Duration::from_nanos(1_000_000_000 / TARGET_FPS as u64);
 
 lazy_static! {
-    pub static ref GAME_STATE: std::sync::Arc<tokio::sync::RwLock<GameState>> = 
-        std::sync::Arc::new(tokio::sync::RwLock::new(GameState::new()));
+    pub static ref GAME_STATE: std::sync::Arc<parking_lot::RwLock<GameState>> = 
+        std::sync::Arc::new(parking_lot::RwLock::new(GameState::new()));
 }
 
 #[derive(Clone, Copy)]  // 允许复制时间数据
@@ -49,16 +49,20 @@ impl GameState {
 }
 
 pub async fn game_loop() {
+
+    #[cfg(windows)] 
+    enable_high_res_timer();
+
     loop {
         let frame_start = Instant::now();
 
         {
-            let mut state = GAME_STATE.write().await;
+            let mut state = GAME_STATE.write();
             state.update_timing(frame_start);
         }
         
         // 更新游戏状态
-        GAME_STATE.read().await.update().await;
+        GAME_STATE.read().update().await;
         
         // 帧率控制：计算当前帧实际耗时，并 sleep 剩余时间
         let elapsed = frame_start.elapsed();
@@ -72,4 +76,21 @@ pub async fn game_loop() {
             );
         }
     }
+
+    #[allow(unreachable_code)]
+    #[cfg(windows)] 
+    disable_high_res_timer();
+}
+
+#[cfg(windows)]
+fn enable_high_res_timer() {
+    use winapi::um::timeapi::timeBeginPeriod;
+    unsafe { timeBeginPeriod(1); } // 设置为 1ms 精度
+}
+
+// 应用退出时恢复（重要！）
+#[cfg(windows)]
+fn disable_high_res_timer() {
+    use winapi::um::timeapi::timeEndPeriod;
+    unsafe { timeEndPeriod(1); }
 }
