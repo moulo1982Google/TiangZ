@@ -3,7 +3,7 @@ use gen_macro::Entity;
 //use crate::errors::my_errors::{MyError, RetResult};
 use tracing::trace;
 
-use super::{Awake, Destroy, StdParentOption};
+use super::{AwakeP2, Destroy, StdParentOption};
 
 #[derive(Debug)]
 pub enum SceneType {
@@ -19,7 +19,7 @@ impl Default for SceneType {
 
 create_entity! {
     #[derive(Entity)]
-    #[awake]
+    #[awake(SceneType, StdParentOption)]
     #[destroy]
     pub struct Scene {
         pub scene_type: SceneType,
@@ -27,9 +27,12 @@ create_entity! {
     }
 }
 
-impl Awake for std::sync::Arc<tokio::sync::Mutex<Scene>> {
-    fn awake(&self) {
-        trace!("Scene awake called,");
+impl AwakeP2<SceneType, StdParentOption> for std::sync::Arc<tokio::sync::Mutex<Scene>> {
+    fn awake(&self, scene_type: SceneType, parent: StdParentOption) {
+        //let scene = self.lock().unwrap();
+        //scene.scene_type = scene_type;
+        //scene.parent = parent;
+        trace!("Scene awake called, scene_type: {:?}, parent: {:?}", scene_type, parent);
     }
 }
 
@@ -45,7 +48,7 @@ pub struct SceneFactory {
 
 impl SceneFactory {
     pub fn create_scene(scene_type: SceneType, parent: StdParentOption) -> std::sync::Arc<tokio::sync::Mutex<Scene>> {
-        Scene::new_origin_with_param(scene_type, parent)
+        Scene::new_origin(scene_type, parent)
     }
 }
 

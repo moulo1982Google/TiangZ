@@ -63,11 +63,6 @@ impl Root {
             scene: SceneFactory::create_scene(super::scene::SceneType::Process, None),
             components: dashmap::DashMap::new(),
         };
-
-        ins.add_component::<ServerSceneManagerComponent>();
-
-
-
         ins
     }
 

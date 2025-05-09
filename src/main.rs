@@ -44,6 +44,7 @@ async fn main() -> io::Result<()> {
     init_logging(&args.log);
 
     let root = Root::instance();
+    root.add_component::<crate::entity::server_scene_manager::ServerSceneManagerComponent>();
     root.add_component::<crate::net_service::NetInnerComponent>();
     root.run().await;
 

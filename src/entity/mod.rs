@@ -42,6 +42,10 @@ pub trait AwakeP1<P1> {
     fn awake(&self, p1: P1);
 }
 
+pub trait AwakeP2<P1, P2> {
+    fn awake(&self, p1: P1, p2: P2);
+}
+
 pub trait Destroy {
     fn destroy(&mut self);
 }
@@ -57,6 +61,10 @@ pub trait Builder: 'static {
 
 pub trait BuilderP1<P1>: 'static {
     fn new(p1: P1)  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
+}
+
+pub trait BuilderP2<P1, P2>: 'static {
+    fn new(p1: P1, p2: P2)  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
 }
 
 pub trait StaticBuilder: 'static {

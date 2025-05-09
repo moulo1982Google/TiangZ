@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{parse_quote, parse_macro_input, DeriveInput, Ident, Attribute, punctuated::Punctuated, Token, Type, TypePath, ItemFn};
+use quote::{quote, format_ident};
+use syn::{parse_macro_input, DeriveInput, Ident, Attribute, punctuated::Punctuated, Token, Type, TypePath, ItemFn};
 
 use syn::{FnArg,ReturnType};
 
@@ -66,6 +66,24 @@ fn extract_awake_types(attrs: &[syn::Attribute]) -> Vec<syn::Type> {
     types
 }
 
+fn generate_params(types: &[syn::Type]) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    let params = types.iter().enumerate().map(|(i, ty)| {
+        let param_name = format_ident!("p{}", i + 1);
+        quote! { #param_name: #ty }
+    });
+
+    let params_name = types.iter().enumerate().map(|(i, _)| {
+        let param_name = format_ident!("p{}", i + 1);
+        quote! { #param_name }
+    });
+    
+    (quote! {
+        #(#params),*
+    }, quote! {
+        #(#params_name),*
+    })
+}
+
 fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     let input_copy = input.clone();
 
@@ -76,29 +94,6 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
 
     // 解析原结构体字段
     let fields = get_fields_from_derive_input(&input).unwrap();
-
-    let fields_data: Vec<_> = fields.iter()
-    .filter(|f| {
-        let ident_name = format!("{}", f.ident.as_ref().unwrap());
-        ident_name != "id" && ident_name != "children" && ident_name != "components"
-    })
-    .map(|f| {
-        let ident = &f.ident;
-        let ty = &f.ty;
-        quote! { #ident: #ty }
-    })
-    .collect();
-
-    let fields_value: Vec<_> = fields.iter()
-    .filter(|f| {
-        let ident_name = format!("{}", f.ident.as_ref().unwrap());
-        ident_name != "id" && ident_name != "children" && ident_name != "components"
-    })
-    .map(|f| {
-        let ident = &f.ident;
-        quote! { #ident }
-    })
-    .collect();
 
     let fields_value_default: Vec<_> = fields.iter()
     .filter(|f| {
@@ -112,31 +107,15 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     })
     .collect();
 
+    let awake_types = extract_awake_types(&input_copy.attrs);
+    let (params, params_name) = generate_params(&awake_types);
+
     let mut new_with_param = quote! {};
 
     if contain_awake_attr(&input_copy) {
-
         if contain_update_attr(&input_copy) {
-            new_with_param.extend( quote! {
-                pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                    let id = crate::utils::generate_id();
-                    let mut ret = Self {
-                        #(#fields_value,)*
-                        id,
-                        children: dashmap::DashMap::new(),
-                        components: dashmap::DashMap::new(),
-                    };
-    
-                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
-        
-                    ret.awake();
-    
-                    crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
-        
-                    ret
-                }
-    
-                pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+            new_with_param.extend( quote! {   
+                pub fn new_origin(#params) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
                     let id = crate::utils::generate_id();
                     let mut ret = Self {
                         #(#fields_value_default,)*
@@ -147,7 +126,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     
                     let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
     
-                    ret.awake();
+                    ret.awake(#params_name);
     
                     crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
     
@@ -155,24 +134,8 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
                 }
             } );
         } else {
-            new_with_param.extend( quote! {
-                pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                    let id = crate::utils::generate_id();
-                    let mut ret = Self {
-                        #(#fields_value,)*
-                        id,
-                        children: dashmap::DashMap::new(),
-                        components: dashmap::DashMap::new(),
-                    };
-    
-                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
-        
-                    ret.awake();
-        
-                    ret
-                }
-    
-                pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+            new_with_param.extend( quote! {   
+                pub fn new_origin(#params) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
                     let id = crate::utils::generate_id();
                     let mut ret = Self {
                         #(#fields_value_default,)*
@@ -183,7 +146,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     
                     let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
     
-                    ret.awake();
+                    ret.awake(#params_name);
     
                     ret
                 }
@@ -192,19 +155,6 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     } else {
         if contain_update_attr(&input_copy) {
             new_with_param.extend( quote! {
-                pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                    let id = crate::utils::generate_id();
-                    let mut ret = Self {
-                        #(#fields_value,)*
-                        id,
-                        children: dashmap::DashMap::new(),
-                        components: dashmap::DashMap::new(),
-                    };
-                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
-                    crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
-                    ret
-                }
-    
                 pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
                     let id = crate::utils::generate_id();
                     let mut ret = Self {
@@ -220,18 +170,6 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
             } );
         } else {
             new_with_param.extend( quote! {
-                pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                    let id = crate::utils::generate_id();
-                    let mut ret = Self {
-                        #(#fields_value,)*
-                        id,
-                        children: dashmap::DashMap::new(),
-                        components: dashmap::DashMap::new(),
-                    };
-                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
-                    ret
-                }
-    
                 pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
                     let id = crate::utils::generate_id();
                     let mut ret = Self {
@@ -249,13 +187,47 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
 
     let mut builder_impl = quote!{};
 
-    builder_impl = quote! {
-        impl crate::entity::Builder for #entity_struct_name {
-            fn new() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                #entity_struct_name::new_origin()
-            }
+    
+    
+    match awake_types.len() {
+        0 => {
+            builder_impl.extend(quote! {
+                impl crate::entity::Builder for #entity_struct_name {
+                    fn new() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                        #entity_struct_name::new_origin()
+                    }
+                }
+            });
         }
-    };
+        1 => {
+            let awake_types_tokens = quote! { #(#awake_types),* };
+            builder_impl.extend(quote! {
+                impl crate::entity::BuilderP1<#awake_types_tokens> for #entity_struct_name {
+                    fn new(#params) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                        #entity_struct_name::new_origin(#params_name)
+                    }
+                }
+            });
+        }
+        2 => {
+            let awake_types_tokens = quote! { #(#awake_types),* };
+            builder_impl.extend(quote! {
+                impl crate::entity::BuilderP2<#awake_types_tokens> for #entity_struct_name {
+                    fn new(#params) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                        #entity_struct_name::new_origin(#params_name)
+                    }
+                }
+            });
+        }
+        _ => {
+            builder_impl.extend(quote! {
+                syn::Error::new_spanned(
+                    "必须指定 awake参数数量不支持, 请在宏代码中增加"
+                )
+            });
+        }
+    }
+
 
     let mut destroy_trait = quote!{};
     if contain_destroy_attr(&input_copy) {
@@ -268,15 +240,6 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
             }
         });
     }
-
-    // if contain_update_attr(&input_copy) {
-    //     inventory::submit! {
-    //         crate::event::event_system::EventHandlerFactory {
-    //             name: concat!(stringify!(#struct_name), "_factory"),
-    //             register_fn: #struct_name::register_handler,
-    //         }
-    //     }
-    // }
 
     // 生成构造函数
     let new_method = quote! {
@@ -461,10 +424,6 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
         #builder_impl
 
         #destroy_trait
-
-        //#awake_trait
-
-        //#awake_trait_impl
         
         #debug_impl
     };
