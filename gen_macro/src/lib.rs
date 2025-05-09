@@ -29,6 +29,15 @@ fn contain_awake_attr(st: &syn::DeriveInput) -> bool {
     false
 }
 
+fn contain_update_attr(st: &syn::DeriveInput) -> bool {
+    for attr in &st.attrs {
+        if attr.path().is_ident("update") {
+            return true;
+        }
+    }
+    false
+}
+
 fn contain_destroy_attr(st: &syn::DeriveInput) -> bool {
     for attr in &st.attrs {
         if attr.path().is_ident("destroy") {
@@ -93,59 +102,136 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     let mut new_with_param = quote! {};
 
     if contain_awake_attr(&input_copy) {
-        new_with_param.extend( quote! {
-            pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                let mut ret = Self {
-                    #(#fields_value,)*
-                    id: crate::utils::generate_id(),
-                    children: dashmap::DashMap::new(),
-                    components: dashmap::DashMap::new(),
-                };
 
-                let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+        if contain_update_attr(&input_copy) {
+            new_with_param.extend( quote! {
+                pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    let id = crate::utils::generate_id();
+                    let mut ret = Self {
+                        #(#fields_value,)*
+                        id,
+                        children: dashmap::DashMap::new(),
+                        components: dashmap::DashMap::new(),
+                    };
     
-                ret.awake();
+                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+        
+                    ret.awake();
     
-                ret
-            }
-
-            pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                let mut ret = Self {
-                    #(#fields_value_default,)*
-                    id: crate::utils::generate_id(),
-                    children: dashmap::DashMap::new(),
-                    components: dashmap::DashMap::new(),
-                };
-
-                let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
-
-                ret.awake();
-
-                ret
-            }
-        } );
+                    crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
+        
+                    ret
+                }
+    
+                pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    let id = crate::utils::generate_id();
+                    let mut ret = Self {
+                        #(#fields_value_default,)*
+                        id,
+                        children: dashmap::DashMap::new(),
+                        components: dashmap::DashMap::new(),
+                    };
+    
+                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+    
+                    ret.awake();
+    
+                    crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
+    
+                    ret
+                }
+            } );
+        } else {
+            new_with_param.extend( quote! {
+                pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    let id = crate::utils::generate_id();
+                    let mut ret = Self {
+                        #(#fields_value,)*
+                        id,
+                        children: dashmap::DashMap::new(),
+                        components: dashmap::DashMap::new(),
+                    };
+    
+                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+        
+                    ret.awake();
+        
+                    ret
+                }
+    
+                pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    let id = crate::utils::generate_id();
+                    let mut ret = Self {
+                        #(#fields_value_default,)*
+                        id,
+                        children: dashmap::DashMap::new(),
+                        components: dashmap::DashMap::new(),
+                    };
+    
+                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+    
+                    ret.awake();
+    
+                    ret
+                }
+            } );
+        }
     } else {
-        new_with_param.extend( quote! {
-            pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                let ret = Self {
-                    #(#fields_value,)*
-                    id: crate::utils::generate_id(),
-                    children: dashmap::DashMap::new(),
-                    components: dashmap::DashMap::new(),
-                };
-                std::sync::Arc::new(tokio::sync::Mutex::new(ret))
-            }
-
-            pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
-                let ret = Self {
-                    #(#fields_value_default,)*
-                    id: crate::utils::generate_id(),
-                    children: dashmap::DashMap::new(),
-                    components: dashmap::DashMap::new(),
-                };
-                std::sync::Arc::new(tokio::sync::Mutex::new(ret))
-            }
-        } );
+        if contain_update_attr(&input_copy) {
+            new_with_param.extend( quote! {
+                pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    let id = crate::utils::generate_id();
+                    let mut ret = Self {
+                        #(#fields_value,)*
+                        id,
+                        children: dashmap::DashMap::new(),
+                        components: dashmap::DashMap::new(),
+                    };
+                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+                    crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
+                    ret
+                }
+    
+                pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    let id = crate::utils::generate_id();
+                    let mut ret = Self {
+                        #(#fields_value_default,)*
+                        id,
+                        children: dashmap::DashMap::new(),
+                        components: dashmap::DashMap::new(),
+                    };
+                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+                    crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
+                    ret
+                }
+            } );
+        } else {
+            new_with_param.extend( quote! {
+                pub fn new_origin_with_param( #(#fields_data),* ) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    let id = crate::utils::generate_id();
+                    let mut ret = Self {
+                        #(#fields_value,)*
+                        id,
+                        children: dashmap::DashMap::new(),
+                        components: dashmap::DashMap::new(),
+                    };
+                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+                    ret
+                }
+    
+                pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    let id = crate::utils::generate_id();
+                    let mut ret = Self {
+                        #(#fields_value_default,)*
+                        id,
+                        children: dashmap::DashMap::new(),
+                        components: dashmap::DashMap::new(),
+                    };
+                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+                    ret
+                }
+            } );
+        }
     }
 
     let builder_impl = quote! {
@@ -183,6 +269,15 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
             }
         });
     }
+
+    // if contain_update_attr(&input_copy) {
+    //     inventory::submit! {
+    //         crate::event::event_system::EventHandlerFactory {
+    //             name: concat!(stringify!(#struct_name), "_factory"),
+    //             register_fn: #struct_name::register_handler,
+    //         }
+    //     }
+    // }
 
     // 生成构造函数
     let new_method = quote! {
@@ -718,7 +813,7 @@ fn do_expend_singleton(input: DeriveInput) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(Component, attributes(awake, destroy))]
+#[proc_macro_derive(Component, attributes(awake, destroy, update))]
 pub fn component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     do_expend(input, "Component")

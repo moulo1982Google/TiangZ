@@ -42,6 +42,11 @@ pub trait Destroy {
     fn destroy(&mut self);
 }
 
+#[async_trait::async_trait]
+pub trait Update {
+    async fn update(&mut self);
+}
+
 pub trait Builder: 'static {
     fn new()  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
 }

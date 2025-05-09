@@ -6,11 +6,12 @@ use tokio::sync::Mutex;
 use crate::net_service::tcp_service::{TcpService, NetService};
 use crate::create_entity;
 use gen_macro::Component;
-use crate::entity::Awake;
+use crate::entity::{Awake, Update};
 
 create_entity! {
     #[derive(Component, Default)]
     #[awake]
+    #[update]
     pub struct NetInnerComponent {
     }
 }
@@ -23,6 +24,13 @@ impl Awake for Arc<Mutex<NetInnerComponent>> {
             let guard = clone.lock().await;
             guard.start().await;
         });
+    }
+}
+
+#[async_trait::async_trait]
+impl Update for NetInnerComponent {
+    async fn update(&mut self) {
+        trace!("NetInnerComponent update called");
     }
 }
 

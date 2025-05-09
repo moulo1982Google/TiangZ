@@ -40,13 +40,16 @@ impl<P: IEventParam> CallBackPack<P> {
 }
 
 pub struct EventSystem {
-    call_back_map: DashMap<std::any::TypeId, Box<dyn Any + Send + Sync>>,
+    call_back_map: DashMap<std::any::TypeId, Box<dyn std::any::Any + Send + Sync>>,
+    update_call_back_map: DashMap<i64, std::sync::Arc<tokio::sync::Mutex<dyn crate::entity::Update + Send + Sync + 'static>>>,
+
 }
 
 impl EventSystem {
     fn new() -> Self {
         Self {
             call_back_map: DashMap::new(),
+            update_call_back_map: DashMap::new(),
         }
     }
 
@@ -81,6 +84,16 @@ impl EventSystem {
                 // 克隆参数而不是借用
                 call_back_pack.handler.handle(param.clone()).await;
             }
+        }
+    }
+
+    pub fn register_update_handler(&self, id: i64, handler: std::sync::Arc<tokio::sync::Mutex<impl crate::entity::Update + Send + Sync + 'static>>) {
+        self.update_call_back_map.insert(id, handler);
+    }
+
+    pub async fn update(&self) {
+        for handler in self.update_call_back_map.iter() {
+            handler.lock().await.update().await;
         }
     }
 }
