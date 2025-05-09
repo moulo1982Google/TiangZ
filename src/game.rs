@@ -1,5 +1,5 @@
 use std::time::{Duration, Instant};
-use spin_sleep::SpinSleeper;
+use tokio::time::{sleep, timeout};
 use lazy_static::lazy_static;
 use tracing::{trace, warn};
 
@@ -7,7 +7,8 @@ const TARGET_FPS: u32 = 60;
 const FRAME_DURATION: Duration = Duration::from_nanos(1_000_000_000 / TARGET_FPS as u64);
 
 lazy_static! {
-    pub static ref GAME_STATE: std::sync::Arc<parking_lot::RwLock<GameState>> = std::sync::Arc::new(parking_lot::RwLock::new(GameState::new()));
+    pub static ref GAME_STATE: std::sync::Arc<tokio::sync::RwLock<GameState>> = 
+        std::sync::Arc::new(tokio::sync::RwLock::new(GameState::new()));
 }
 
 #[derive(Clone, Copy)]  // 允许复制时间数据
@@ -48,22 +49,21 @@ impl GameState {
 }
 
 pub async fn game_loop() {
-    let sleeper = SpinSleeper::default();
     loop {
         let frame_start = Instant::now();
 
         {
-            let mut state = GAME_STATE.write();
+            let mut state = GAME_STATE.write().await;
             state.update_timing(frame_start);
         }
         
         // 更新游戏状态
-        GAME_STATE.read().update().await;
+        GAME_STATE.read().await.update().await;
         
         // 帧率控制：计算当前帧实际耗时，并 sleep 剩余时间
         let elapsed = frame_start.elapsed();
         if let Some(sleep_time) = FRAME_DURATION.checked_sub(elapsed) {
-            sleeper.sleep(sleep_time);
+            sleep(sleep_time).await;
         } else {
             // 如果帧处理超时，打印警告
             warn!("Frame took too long: {:.2}ms (target: {:.2}ms)", 
