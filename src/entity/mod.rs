@@ -38,17 +38,25 @@ pub trait Awake {
     fn awake(&self);
 }
 
+pub trait AwakeP1<P1> {
+    fn awake(&self, p1: P1);
+}
+
 pub trait Destroy {
     fn destroy(&mut self);
 }
 
 #[async_trait::async_trait]
 pub trait Update {
-    async fn update(&mut self);
+    async fn update(&mut self, delta_time: f32);
 }
 
 pub trait Builder: 'static {
     fn new()  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
+}
+
+pub trait BuilderP1<P1>: 'static {
+    fn new(p1: P1)  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
 }
 
 pub trait StaticBuilder: 'static {

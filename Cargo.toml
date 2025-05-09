@@ -44,6 +44,8 @@ once_cell = "1.18"
 futures = "0.3.31"
 tokio_kcp = "0.9.8"
 object-pool = "0.6"
+spin_sleep = "1.3.1"
+parking_lot = "0.12.3"
 #kcp-rust-native = "0.1.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]

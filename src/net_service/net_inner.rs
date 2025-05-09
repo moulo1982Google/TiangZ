@@ -29,7 +29,7 @@ impl Awake for Arc<Mutex<NetInnerComponent>> {
 
 #[async_trait::async_trait]
 impl Update for NetInnerComponent {
-    async fn update(&mut self) {
+    async fn update(&mut self, delta_time: f32) {
         trace!("NetInnerComponent update called");
     }
 }

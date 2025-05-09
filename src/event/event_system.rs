@@ -91,9 +91,13 @@ impl EventSystem {
         self.update_call_back_map.insert(id, handler);
     }
 
-    pub async fn update(&self) {
+    pub fn unregister_update_handler(&self, id: i64) {
+        self.update_call_back_map.remove(&id);
+    }
+
+    pub async fn update(&self, delta_time: f32) {
         for handler in self.update_call_back_map.iter() {
-            handler.lock().await.update().await;
+            handler.lock().await.update(delta_time).await;
         }
     }
 }

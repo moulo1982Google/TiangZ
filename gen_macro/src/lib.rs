@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Ident, Attribute, punctuated::Punctuated, Token, Type, TypePath, ItemFn};
+use syn::{parse_quote, parse_macro_input, DeriveInput, Ident, Attribute, punctuated::Punctuated, Token, Type, TypePath, ItemFn};
 
 use syn::{FnArg,ReturnType};
 
@@ -47,6 +47,25 @@ fn contain_destroy_attr(st: &syn::DeriveInput) -> bool {
     false
 }
 
+fn extract_awake_types(attrs: &[syn::Attribute]) -> Vec<syn::Type> {
+    let mut types = Vec::new();
+    
+    for attr in attrs {
+        if !attr.path().is_ident("awake") {
+            continue;
+        }
+
+        // 解析属性内容
+        attr.parse_args_with(Punctuated::<syn::Type, Token![,]>::parse_terminated)
+            .ok()
+            .iter()
+            .flatten()
+            .for_each(|ty| types.push(ty.clone()));
+    }
+    
+    types
+}
+
 fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     let input_copy = input.clone();
 
@@ -54,12 +73,6 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
 
     let entity_struct_name_string = format!("{}", struct_name);
     let entity_struct_name = Ident::new(&entity_struct_name_string, struct_name.span());
-
-    let awake_struct_name_string = format!("{}Awake", entity_struct_name);
-    let awake_struct_name = Ident::new(&awake_struct_name_string, struct_name.span());
-
-    let awake_func_name_string = format!("{}_Awake", entity_struct_name);
-    let awake_func_name = Ident::new(&awake_func_name_string.to_lowercase(), struct_name.span());
 
     // 解析原结构体字段
     let fields = get_fields_from_derive_input(&input).unwrap();
@@ -234,7 +247,9 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
         }
     }
 
-    let builder_impl = quote! {
+    let mut builder_impl = quote!{};
+
+    builder_impl = quote! {
         impl crate::entity::Builder for #entity_struct_name {
             fn new() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
                 #entity_struct_name::new_origin()
@@ -247,24 +262,8 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
         destroy_trait.extend(quote!{
             impl Drop for #entity_struct_name where Self: crate::entity::Destroy {
                 fn drop(&mut self) {
+                    crate::event::event_system::EventSystem::instance().unregister_update_handler(self.id);
                     self.destroy();
-                }
-            }
-        });
-    }
-
-    let awake_trait = quote! {
-        trait #awake_struct_name {
-            fn #awake_func_name(&mut self);
-        }
-    };
-
-    let mut awake_trait_impl = quote!{};
-    if contain_awake_attr(&input_copy) {
-        awake_trait_impl.extend(quote!{
-            impl #awake_struct_name for std::sync::Arc<tokio::sync::Mutex<#entity_struct_name>> where Self: crate::entity::Awake {
-                fn #awake_func_name(&mut self) {
-                    self.awake();
                 }
             }
         });
@@ -463,9 +462,9 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
 
         #destroy_trait
 
-        #awake_trait
+        //#awake_trait
 
-        #awake_trait_impl
+        //#awake_trait_impl
         
         #debug_impl
     };
@@ -480,12 +479,6 @@ fn do_expend_singleton(input: DeriveInput) -> TokenStream {
 
     let entity_struct_name_string = format!("{}", struct_name);
     let entity_struct_name = Ident::new(&entity_struct_name_string, struct_name.span());
-
-    let awake_struct_name_string = format!("{}Awake", entity_struct_name);
-    let awake_struct_name = Ident::new(&awake_struct_name_string, struct_name.span());
-
-    let awake_func_name_string = format!("{}_Awake", entity_struct_name);
-    let awake_func_name = Ident::new(&awake_func_name_string.to_lowercase(), struct_name.span());
 
     // 解析原结构体字段
     let fields = get_fields_from_derive_input(&input).unwrap();
@@ -599,23 +592,6 @@ fn do_expend_singleton(input: DeriveInput) -> TokenStream {
             impl Drop for #entity_struct_name where Self: crate::entity::Destroy {
                 fn drop(&mut self) {
                     self.destroy();
-                }
-            }
-        });
-    }
-
-    let awake_trait = quote! {
-        trait #awake_struct_name {
-            fn #awake_func_name(&mut self);
-        }
-    };
-
-    let mut awake_trait_impl = quote!{};
-    if contain_awake_attr(&input_copy) {
-        awake_trait_impl.extend(quote!{
-            impl #awake_struct_name for #entity_struct_name where Self: crate::entity::Awake {
-                fn #awake_func_name(&mut self) {
-                    self.awake();
                 }
             }
         });
@@ -802,10 +778,6 @@ fn do_expend_singleton(input: DeriveInput) -> TokenStream {
         #builder_impl
 
         #destroy_trait
-
-        #awake_trait
-
-        #awake_trait_impl
         
         #debug_impl
     };
@@ -819,7 +791,7 @@ pub fn component(input: TokenStream) -> TokenStream {
     do_expend(input, "Component")
 }
 
-#[proc_macro_derive(SingletonComponent, attributes(awake, destroy))]
+#[proc_macro_derive(SingletonComponent, attributes(awake, destroy, update))]
 pub fn singleton_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     do_expend_singleton(input)

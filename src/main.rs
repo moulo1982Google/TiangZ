@@ -16,6 +16,7 @@ mod entity;
 mod utils;
 mod net_service;
 mod my_future;
+mod game;
 
 use entity::root::Root;
 use TiangZ::Server;
@@ -44,27 +45,10 @@ async fn main() -> io::Result<()> {
 
     let root = Root::instance();
     root.add_component::<crate::net_service::NetInnerComponent>();
-
-    // 初始化事件系统 - 会自动注册所有使用#[derive(EventHandler)]的处理器
-    let _system = event::event_system::EventSystem::instance();
-
-    loop {
-        _system.update().await;
-        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-    }
-    // system.publish_async(crate::event::MonsterMoveParam { monster_id: 1, x: 1.0, y: 2.0 }).await;
-    // tokio::spawn(system.publish_async(crate::event::MonsterMoveParam { monster_id: 2, x: 3.0, y: 4.0 }));
-    // tokio::spawn(system.publish_async(crate::event::MonsterDeadParam {x: 1.0, y: 2.0 }));
-    // tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    // trace!("1");
-    // tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    // trace!("2");
-    // tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    // trace!("3");
-
-    let root = Root::instance();
     root.run().await;
-    
+
+    game::game_loop().await;
+
     let mut server: Option<Box<dyn Server>> = Option::None;
     if args.proto == "tcp" {
         server = Some(Box::new(TiangZ::TCPServer::new("0.0.0.0:8080").await));

@@ -29,7 +29,7 @@ create_entity! {
 
 impl Awake for std::sync::Arc<tokio::sync::Mutex<Scene>> {
     fn awake(&self) {
-        trace!("Scene awake called");
+        trace!("Scene awake called,");
     }
 }
 

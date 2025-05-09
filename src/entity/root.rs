@@ -38,6 +38,13 @@ impl Root {
         self.components.insert(std::any::TypeId::of::<T>(), ComponentWrapper(T::new()));
     }
 
+    pub fn add_component_p1<T, P1>(&self, p1: P1) 
+    where 
+        T: crate::entity::ComponentTrait + crate::entity::BuilderP1<P1> + 'static  + Send + Sync
+    {
+        self.components.insert(std::any::TypeId::of::<T>(), ComponentWrapper(T::new(p1)));
+    }
+    
     async fn get_component<T>(
         &self
     ) -> Option<std::sync::Arc<tokio::sync::Mutex<T>>> 
