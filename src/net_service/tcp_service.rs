@@ -41,12 +41,12 @@ impl AService for TcpService {
 }
 
 impl TcpService {
-    pub async fn new(addr: String) -> io::Result<Self> {
+    pub async fn new(addr: &String) -> io::Result<Self> {
 
         let listener: TcpListener = TcpListener::bind(&addr).await?;
         let mut tcp = TcpService {
             service_id: 0,
-            addr,
+            addr: addr.clone(),
             listener: Arc::new(listener),
         };
         tcp.start_accept();
@@ -59,7 +59,7 @@ impl TcpService {
             loop {
                 match listener.accept().await {
                     Ok((socket, remote_addr)) => {
-
+                        //TODO: 处理连接
                     }
                     Err(e) => {
                         error!("accept 失败，退出");
@@ -115,7 +115,7 @@ mod net_test {
         .unwrap());
 
         let service_id = NetService::instance().add_service(
-            Box::new(TcpService::new("0.0.0.0:8080".to_string())
+            Box::new(TcpService::new(&"0.0.0.0:8080".to_string())
             .await.unwrap()));
     }
 }

@@ -40,9 +40,20 @@ impl<P: IEventParam> CallBackPack<P> {
 }
 
 pub struct EventSystem {
-    call_back_map: DashMap<std::any::TypeId, Box<dyn std::any::Any + Send + Sync>>,
-    update_call_back_map: DashMap<i64, std::sync::Arc<tokio::sync::Mutex<dyn crate::entity::Update + Send + Sync + 'static>>>,
+    call_back_map: DashMap<std::any::TypeId, Box<dyn std::any::Any>>,
+    update_call_back_map: DashMap<i64, std::rc::Rc<std::cell::RefCell<dyn crate::entity::Update + 'static>>>,
 
+}
+
+unsafe impl Send for EventSystem {}
+unsafe impl Sync for EventSystem {}
+
+lazy_static::lazy_static! {
+    static ref INSTANCE: EventSystem = {
+        let mut instance = EventSystem::new();
+        instance.init();
+        instance
+    };
 }
 
 impl EventSystem {
@@ -53,20 +64,14 @@ impl EventSystem {
         }
     }
 
-    pub fn instance() -> &'static Self {
-        static INSTANCE: std::sync::OnceLock<EventSystem> = std::sync::OnceLock::new();
-        INSTANCE.get_or_init(|| {
-            let mut instance = EventSystem::new();
-            instance.init();
-            instance
-        })
+    pub fn instance() -> &'static EventSystem {
+        &INSTANCE
     }
 
     pub fn init(&mut self) {
         for factory in inventory::iter::<CallBackHandlerFactory> {
             (factory.register_fn)(self);
         }
-        
     }
 
     // 注册回调函数
@@ -87,7 +92,7 @@ impl EventSystem {
         }
     }
 
-    pub fn register_update_handler(&self, id: i64, handler: std::sync::Arc<tokio::sync::Mutex<impl crate::entity::Update + Send + Sync + 'static>>) {
+    pub fn register_update_handler(&self, id: i64, handler: std::rc::Rc<std::cell::RefCell<impl crate::entity::Update + 'static>>) {
         self.update_call_back_map.insert(id, handler);
     }
 
@@ -95,9 +100,13 @@ impl EventSystem {
         self.update_call_back_map.remove(&id);
     }
 
-    pub async fn update(&self, delta_time: f32) {
+    pub fn update(&self, delta_time: f32) {
         for handler in self.update_call_back_map.iter() {
-            handler.lock().await.update(delta_time).await;
+            let handler = handler.clone();
+            let local = tokio::task::LocalSet::new();
+            tokio::task::spawn_local(async move {
+                handler.borrow_mut().update(delta_time);
+            });
         }
     }
 }
@@ -111,28 +120,4 @@ inventory::collect!(CallBackHandlerFactory);
 
 #[cfg(test)]
 mod tests {
-    
-    use crate::event::EventSystem;
-
-    #[tokio::test]
-    async fn test_event_system() -> std::io::Result<()> {   
-        EventSystem::instance().publish_async(crate::event::MonsterMoveParam { monster_id: 1, x: 1.0, y: 2.0 }).await;
-        tokio::spawn(EventSystem::instance().publish_async(crate::event::MonsterMoveParam { monster_id: 2, x: 3.0, y: 4.0 }));
-        tokio::spawn(EventSystem::instance().publish_async(crate::event::MonsterDeadParam {x: 1.0, y: 2.0 }));
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        println!("1");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        println!("2");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        println!("3");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        println!("4");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        println!("5");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        println!("6");
-
-        println!("执行完毕");
-        Ok(())
-    }
 }

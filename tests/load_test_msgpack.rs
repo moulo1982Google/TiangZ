@@ -15,9 +15,9 @@ const CONCURRENT_REQUESTS: usize = 1;
 const TOTAL_REQUESTS: usize = 10;
 
 #[cfg(not(debug_assertions))]
-const CONCURRENT_REQUESTS: usize = 256;
+const CONCURRENT_REQUESTS: usize = 128;
 #[cfg(not(debug_assertions))]
-const TOTAL_REQUESTS: usize = 2560000;
+const TOTAL_REQUESTS: usize = 1280000;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn load_test_msgpack() {

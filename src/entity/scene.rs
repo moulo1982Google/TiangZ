@@ -27,11 +27,8 @@ create_entity! {
     }
 }
 
-impl AwakeP2<SceneType, StdParentOption> for std::sync::Arc<tokio::sync::Mutex<Scene>> {
+impl AwakeP2<SceneType, StdParentOption> for std::rc::Rc<std::cell::RefCell<Scene>> {
     fn awake(&self, scene_type: SceneType, parent: StdParentOption) {
-        //let scene = self.lock().unwrap();
-        //scene.scene_type = scene_type;
-        //scene.parent = parent;
         trace!("Scene awake called, scene_type: {:?}, parent: {:?}", scene_type, parent);
     }
 }
@@ -47,7 +44,7 @@ pub struct SceneFactory {
 }
 
 impl SceneFactory {
-    pub fn create_scene(scene_type: SceneType, parent: StdParentOption) -> std::sync::Arc<tokio::sync::Mutex<Scene>> {
+    pub fn create_scene(scene_type: SceneType, parent: StdParentOption) -> std::rc::Rc<std::cell::RefCell<Scene>> {
         Scene::new_origin(scene_type, parent)
     }
 }

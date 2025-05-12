@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use lazy_static::lazy_static;
@@ -41,10 +42,10 @@ impl GameState {
         self.timing.current_time = current_time; // 当前帧的时间
     }
 
-    async fn update(&self) {
+    fn update(&self) {
         let timing = self.timing;
         trace!("delta_time: {}", timing.delta_time);
-        crate::event::event_system::EventSystem::instance().update(timing.delta_time).await;
+        crate::event::event_system::EventSystem::instance().update(timing.delta_time);
     }
 }
 
@@ -62,7 +63,7 @@ pub async fn game_loop() {
         }
         
         // 更新游戏状态
-        GAME_STATE.read().update().await;
+        GAME_STATE.read().update();
         
         // 帧率控制：计算当前帧实际耗时，并 sleep 剩余时间
         let elapsed = frame_start.elapsed();

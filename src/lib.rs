@@ -191,17 +191,6 @@ impl Server for TCPServer {
 
         let rt = start_runtime(work_thead_num);
 
-
-        crate::net_service::NetService::instance()
-            .add_service(Box::new(crate::net_service::TcpService::new("0.0.0.0:8080".to_string()).await.unwrap()));
-
-
-
-
-
-
-
-
         let (request_sender, mut request_receiver) = mpsc::channel(queue_len * work_thead_num);
         let clients = self.clients.clone();
         let client_id = self.client_id.clone();

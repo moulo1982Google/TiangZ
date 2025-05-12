@@ -115,7 +115,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     if contain_awake_attr(&input_copy) {
         if contain_update_attr(&input_copy) {
             new_with_param.extend( quote! {   
-                pub fn new_origin(#params) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                pub fn new_origin(#params) -> std::rc::Rc<std::cell::RefCell<Self>> {
                     let id = crate::utils::generate_id();
                     let mut ret = Self {
                         #(#fields_value_default,)*
@@ -124,7 +124,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
                         components: dashmap::DashMap::new(),
                     };
     
-                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+                    let ret = std::rc::Rc::new(std::cell::RefCell::new(ret));
     
                     ret.awake(#params_name);
     
@@ -135,7 +135,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
             } );
         } else {
             new_with_param.extend( quote! {   
-                pub fn new_origin(#params) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                pub fn new_origin(#params) -> std::rc::Rc<std::cell::RefCell<Self>> {
                     let id = crate::utils::generate_id();
                     let mut ret = Self {
                         #(#fields_value_default,)*
@@ -144,7 +144,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
                         components: dashmap::DashMap::new(),
                     };
     
-                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+                    let ret = std::rc::Rc::new(std::cell::RefCell::new(ret));
     
                     ret.awake(#params_name);
     
@@ -155,7 +155,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
     } else {
         if contain_update_attr(&input_copy) {
             new_with_param.extend( quote! {
-                pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                pub fn new_origin() -> std::rc::Rc<std::cell::RefCell<Self>> {
                     let id = crate::utils::generate_id();
                     let mut ret = Self {
                         #(#fields_value_default,)*
@@ -163,14 +163,14 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
                         children: dashmap::DashMap::new(),
                         components: dashmap::DashMap::new(),
                     };
-                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+                    let ret = std::rc::Rc::new(std::cell::RefCell::new(ret));
                     crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
                     ret
                 }
             } );
         } else {
             new_with_param.extend( quote! {
-                pub fn new_origin() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                pub fn new_origin() -> std::rc::Rc<std::cell::RefCell<Self>> {
                     let id = crate::utils::generate_id();
                     let mut ret = Self {
                         #(#fields_value_default,)*
@@ -178,7 +178,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
                         children: dashmap::DashMap::new(),
                         components: dashmap::DashMap::new(),
                     };
-                    let ret = std::sync::Arc::new(tokio::sync::Mutex::new(ret));
+                    let ret = std::rc::Rc::new(std::cell::RefCell::new(ret));
                     ret
                 }
             } );
@@ -193,7 +193,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
         0 => {
             builder_impl.extend(quote! {
                 impl crate::entity::Builder for #entity_struct_name {
-                    fn new() -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    fn new() -> std::rc::Rc<std::cell::RefCell<Self>> {
                         #entity_struct_name::new_origin()
                     }
                 }
@@ -203,7 +203,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
             let awake_types_tokens = quote! { #(#awake_types),* };
             builder_impl.extend(quote! {
                 impl crate::entity::BuilderP1<#awake_types_tokens> for #entity_struct_name {
-                    fn new(#params) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    fn new(#params) -> std::rc::Rc<std::cell::RefCell<Self>> {
                         #entity_struct_name::new_origin(#params_name)
                     }
                 }
@@ -213,7 +213,7 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
             let awake_types_tokens = quote! { #(#awake_types),* };
             builder_impl.extend(quote! {
                 impl crate::entity::BuilderP2<#awake_types_tokens> for #entity_struct_name {
-                    fn new(#params) -> std::sync::Arc<tokio::sync::Mutex<Self>> {
+                    fn new(#params) -> std::rc::Rc<std::cell::RefCell<Self>> {
                         #entity_struct_name::new_origin(#params_name)
                     }
                 }
@@ -288,11 +288,14 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
             //     self.children.borrow_mut().insert(child.get_id(), child)
             // }
 
-            // pub fn add_child<T: crate::entity::Builder + crate::entity::EntityTrait>(&self) -> std::cell::Ref<T> {
+            // pub fn add_child<T>(&self) -> std::cell::Ref<T> 
+            // where 
+            //     T: crate::entity::Builder + crate::entity::EntityTrait
+            // {
             //     let child_entity = T::new();
             //     let child_id = child_entity.get_id();
         
-            //     self.children.borrow_mut().insert(child_id, Box::new(child_entity));
+            //     self.children.insert(child_id, child_entity);
             
             //     std::cell::Ref::map(self.children.borrow(), |map| {
             //         map.get(&child_id)

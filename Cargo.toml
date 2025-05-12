@@ -55,6 +55,9 @@ winapi = { version = "0.3", features = ["timeapi", "winbase"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = "0.30.1"  # 用于与Linux系统交互
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6"
+
 [build-dependencies]
 rayon = "1.10"
 

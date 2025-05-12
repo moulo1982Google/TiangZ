@@ -11,51 +11,54 @@ use crate::entity::server_scene_manager::ServerSceneManagerComponent;
 
 use super::scene::SceneFactory;
 
-struct ComponentWrapper(std::sync::Arc<dyn std::any::Any + Send + Sync>);
+struct ComponentWrapper<T>(std::rc::Rc<std::cell::RefCell<T>>);
+unsafe impl<T> Send for ComponentWrapper<T> {}
+
+unsafe impl Send for Root {}
+unsafe impl Sync for Root {}
+
+lazy_static::lazy_static! {
+    static ref INSTANCE: Root = {
+        let instance = Root::new();
+        instance
+    };
+}
 
 pub struct Root {
-    scene: std::sync::Arc<tokio::sync::Mutex<Scene>>,
+    scene: std::rc::Rc<std::cell::RefCell<Scene>>,
     components: dashmap::DashMap::<
         std::any::TypeId, 
-        ComponentWrapper
+        ComponentWrapper<std::boxed::Box<dyn std::any::Any>>
     >,
 }
 
 impl Root {
 
     pub fn instance() -> &'static Self {
-        static INSTANCE: std::sync::OnceLock<Root> = std::sync::OnceLock::new();
-        INSTANCE.get_or_init(|| {
-            Root::new()
-        })
+        &INSTANCE
     }
 
 
     pub fn add_component<T>(&self) 
     where 
-        T: crate::entity::ComponentTrait + crate::entity::Builder + 'static  + Send + Sync
+        T: crate::entity::ComponentTrait + crate::entity::Builder
     {
-        self.components.insert(std::any::TypeId::of::<T>(), ComponentWrapper(T::new()));
+        self.components.insert(std::any::TypeId::of::<T>(), 
+        ComponentWrapper(std::rc::Rc::new(std::cell::RefCell::new(std::boxed::Box::new(T::new()) as Box<dyn std::any::Any>))));
     }
 
     pub fn add_component_p1<T, P1>(&self, p1: P1) 
     where 
-        T: crate::entity::ComponentTrait + crate::entity::BuilderP1<P1> + 'static  + Send + Sync
+        T: crate::entity::ComponentTrait + crate::entity::BuilderP1<P1>
     {
-        self.components.insert(std::any::TypeId::of::<T>(), ComponentWrapper(T::new(p1)));
+        self.components.insert(std::any::TypeId::of::<T>(), ComponentWrapper(std::rc::Rc::new(std::cell::RefCell::new(std::boxed::Box::new(T::new(p1)) as Box<dyn std::any::Any>))));
     }
-    
-    async fn get_component<T>(
-        &self
-    ) -> Option<std::sync::Arc<tokio::sync::Mutex<T>>> 
+
+    pub fn add_component_p2<T, P1, P2>(&self, p1: P1, p2: P2) 
     where 
-        T: crate::entity::ComponentTrait + crate::entity::Builder + 'static  + Send + Sync
+        T: crate::entity::ComponentTrait + crate::entity::BuilderP2<P1, P2>
     {
-        self.components.get(&std::any::TypeId::of::<T>())
-            .and_then(|entry| {
-                let wrapper = entry.value().0.clone();
-                wrapper.downcast::<tokio::sync::Mutex<T>>().ok()
-            })
+        self.components.insert(std::any::TypeId::of::<T>(), ComponentWrapper(std::rc::Rc::new(std::cell::RefCell::new(std::boxed::Box::new(T::new(p1, p2)) as Box<dyn std::any::Any>))));
     }
 
     pub fn new() -> Self {
@@ -74,13 +77,10 @@ impl Root {
 #[cfg(test)]
 mod tests {
     #![allow(unused_variables)]
-    use crate::net_service::NetInnerComponent;
-
     use super::*;
 
     fn test_root() {
-        let root = Root::instance();
-        root.add_component::<NetInnerComponent>();
+
     }
 }
 

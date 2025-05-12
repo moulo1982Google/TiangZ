@@ -19,12 +19,12 @@ macro_rules! create_entity {
             pub children:
                 dashmap::DashMap::<
                     i64, 
-                    std::borrow::Cow<'static, $children_type>
+                    std::rc::Rc<std::cell::RefCell<$children_type>>
                 >,
             pub components: 
                 dashmap::DashMap::<
                     std::any::TypeId, 
-                    std::sync::Arc<tokio::sync::Mutex<crate::entity::ComponentType>>
+                    crate::entity::ComponentType
                 >,
         }
     };
@@ -48,12 +48,12 @@ macro_rules! create_entity {
             pub children:
                 dashmap::DashMap::<
                     i64, 
-                    std::borrow::Cow<'static, crate::entity::ChildType>
+                    crate::entity::ChildType
                 >,
             pub components: 
                 dashmap::DashMap::<
                     std::any::TypeId, 
-                    std::sync::Arc<tokio::sync::Mutex<crate::entity::ComponentType>>
+                    crate::entity::ComponentType
                 >,
         }
     };

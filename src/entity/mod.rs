@@ -1,21 +1,26 @@
 #![allow(dead_code)]
 
 pub mod scene;
-pub mod monster;
-pub mod player;
-pub mod unit;
-pub mod npc;
 pub mod root;
 pub mod server_scene_manager;
+
+//pub mod unit;
+//pub mod npc;
+//pub mod monster;
+//pub mod player;
 
 use std::any::Any;
 use dashmap::DashMap;
 
-pub type EntityType = dyn EntityTrait + Send + Sync;
-pub type ComponentType = dyn ComponentTrait + Send + Sync;
-pub type StdParentOption = std::option::Option<std::sync::Weak<std::sync::RwLock<EntityType>>>;
-pub type ChildType = std::sync::Arc<std::sync::RwLock<EntityType>>;
-pub type StdChildrens = std::sync::Arc<DashMap<i64, std::sync::Arc<std::sync::RwLock<EntityType>>>>;
+//父级弱引用
+pub type StdParentOption = std::option::Option<std::rc::Weak<std::cell::RefCell<dyn EntityTrait>>>;
+
+//子级强引用
+pub type ChildType = std::rc::Rc<std::cell::RefCell<dyn EntityTrait>>;
+//pub type StdChildrens = dashmap::DashMap<i64, ChildType>;
+
+pub type ComponentType = std::rc::Rc<std::cell::RefCell<dyn ComponentTrait>>;
+//pub type StdComponents = dashmap::DashMap<i64, ComponentType>;
 
 pub trait EntityTrait: Any {
     fn get_id(&self) -> i64;
@@ -50,32 +55,22 @@ pub trait Destroy {
     fn destroy(&mut self);
 }
 
-#[async_trait::async_trait]
 pub trait Update {
-    async fn update(&mut self, delta_time: f32);
+    fn update(&mut self, delta_time: f32);
 }
 
 pub trait Builder: 'static {
-    fn new()  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
+    fn new()  -> std::rc::Rc<std::cell::RefCell<Self>> where Self: Sized;
 }
 
 pub trait BuilderP1<P1>: 'static {
-    fn new(p1: P1)  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
+    fn new(p1: P1)  -> std::rc::Rc<std::cell::RefCell<Self>> where Self: Sized;
 }
 
 pub trait BuilderP2<P1, P2>: 'static {
-    fn new(p1: P1, p2: P2)  -> std::sync::Arc<tokio::sync::Mutex<Self>> where Self: Sized;
+    fn new(p1: P1, p2: P2)  -> std::rc::Rc<std::cell::RefCell<Self>> where Self: Sized;
 }
 
 pub trait StaticBuilder: 'static {
     fn new()  -> &'static Self where Self: Sized;
 }
-
-#[derive(Clone)]
-pub struct ChildBase {
-}
-
-// pub trait Singleton {
-//     fn instance() -> &'static Self;
-// }
-

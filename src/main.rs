@@ -2,10 +2,6 @@ use std::io::Error;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::time::LocalTime;
 use tokio::io::{self};
-
-#[allow(unused_imports)]
-use tokio::time::{sleep, Duration};
-
 use clap::Parser;
 
 
@@ -22,6 +18,12 @@ use entity::root::Root;
 use TiangZ::Server;
 
 
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 lazy_static::lazy_static! {
     //pub static ref WORK_THREAD_NUM: usize = 8;
@@ -45,7 +47,7 @@ async fn main() -> io::Result<()> {
 
     let root = Root::instance();
     root.add_component::<crate::entity::server_scene_manager::ServerSceneManagerComponent>();
-    root.add_component::<crate::net_service::NetInnerComponent>();
+    root.add_component_p1::<crate::net_service::NetInnerComponent, String>("0.0.0.0:8080".to_string());
     root.run().await;
 
     game::game_loop().await;
