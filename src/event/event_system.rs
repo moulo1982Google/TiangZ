@@ -103,7 +103,6 @@ impl EventSystem {
     pub fn update(&self, delta_time: f32) {
         for handler in self.update_call_back_map.iter() {
             let handler = handler.clone();
-            let local = tokio::task::LocalSet::new();
             tokio::task::spawn_local(async move {
                 handler.borrow_mut().update(delta_time);
             });

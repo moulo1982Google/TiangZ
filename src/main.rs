@@ -3,6 +3,8 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::time::LocalTime;
 use tokio::io::{self};
 use clap::Parser;
+use std::{rc::Rc, cell::RefCell};
+use tokio::task::LocalSet;
 
 
 mod errors;
@@ -36,45 +38,51 @@ lazy_static::lazy_static! {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {  
 
-    if let Err(e) = set_process_priority(true) {
-        eprintln!("无法设置进程优先级: {}", e);
-    } else {
-        println!("进程优先级已设置");
-    }
+    let local_set = LocalSet::new();
 
-    let args = Args::parse(); // 先解析命令行参数
-    init_logging(&args.log);
-
-    let root = Root::instance();
-    root.add_component::<crate::entity::server_scene_manager::ServerSceneManagerComponent>();
-    root.add_component_p1::<crate::net_service::NetInnerComponent, String>("0.0.0.0:8080".to_string());
-    root.run().await;
-
-    game::game_loop().await;
-
-    let mut server: Option<Box<dyn Server>> = Option::None;
-    if args.proto == "tcp" {
-        server = Some(Box::new(TiangZ::TCPServer::new("0.0.0.0:8080").await));
-    }// else if args.proto == "kcp" {
-    //    server = Some(Box::new(TiangZ::KCPServer::new("0.0.0.0:3100").await));
-    //}
-
-    match server {
-        Some(server) => {
-            tokio::select! {
-                _ = server.run(*WORK_THREAD_NUM, *QUEUE_LEN) => {
-        
+    local_set.run_until(async {
+        if let Err(e) = set_process_priority(true) {
+            eprintln!("无法设置进程优先级: {}", e);
+        } else {
+            println!("进程优先级已设置");
+        }
+    
+        let args = Args::parse(); // 先解析命令行参数
+        init_logging(&args.log);
+    
+        let root = Root::instance();
+        root.add_component::<crate::entity::server_scene_manager::ServerSceneManagerComponent>();
+        root.add_component_p1::<crate::net_service::NetInnerComponent, String>("0.0.0.0:8080".to_string());
+        root.run().await;
+    
+        game::game_loop().await;
+    
+        let mut server: Option<Box<dyn Server>> = Option::None;
+        if args.proto == "tcp" {
+            server = Some(Box::new(TiangZ::TCPServer::new("0.0.0.0:8080").await));
+        }// else if args.proto == "kcp" {
+        //    server = Some(Box::new(TiangZ::KCPServer::new("0.0.0.0:3100").await));
+        //}
+    
+        match server {
+            Some(server) => {
+                tokio::select! {
+                    _ = server.run(*WORK_THREAD_NUM, *QUEUE_LEN) => {
+            
+                    }
+                    // _ = sleep(Duration::from_secs(20)) => {
+            
+                    // }
                 }
-                // _ = sleep(Duration::from_secs(20)) => {
-        
-                // }
+            }
+    
+            None => {
+    
             }
         }
+    } ).await;
 
-        None => {
-
-        }
-    }
+    
     
     // 运行服务器
     

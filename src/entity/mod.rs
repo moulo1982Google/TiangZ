@@ -10,7 +10,6 @@ pub mod server_scene_manager;
 //pub mod player;
 
 use std::any::Any;
-use dashmap::DashMap;
 
 //父级弱引用
 pub type StdParentOption = std::option::Option<std::rc::Weak<std::cell::RefCell<dyn EntityTrait>>>;
