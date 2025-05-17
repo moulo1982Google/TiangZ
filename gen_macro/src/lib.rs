@@ -125,11 +125,11 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
                     };
     
                     let ret = std::rc::Rc::new(std::cell::RefCell::new(ret));
+
+                    crate::event::event_system::EventSystem::instance()
+                            .register_update_handler(id, ret.clone());
     
                     ret.awake(#params_name);
-    
-                    crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
-    
                     ret
                 }
             } );
@@ -163,8 +163,12 @@ fn do_expend(input: DeriveInput, tail_name: &str) -> TokenStream {
                         children: dashmap::DashMap::new(),
                         components: dashmap::DashMap::new(),
                     };
+
                     let ret = std::rc::Rc::new(std::cell::RefCell::new(ret));
-                    crate::event::event_system::EventSystem::instance().register_update_handler(id, ret.clone());
+
+                    crate::event::event_system::EventSystem::instance()
+                            .register_update_handler(id, ret.clone());
+    
                     ret
                 }
             } );

@@ -69,7 +69,3 @@ pub trait BuilderP1<P1>: 'static {
 pub trait BuilderP2<P1, P2>: 'static {
     fn new(p1: P1, p2: P2)  -> std::rc::Rc<std::cell::RefCell<Self>> where Self: Sized;
 }
-
-pub trait StaticBuilder: 'static {
-    fn new()  -> &'static Self where Self: Sized;
-}

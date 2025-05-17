@@ -44,8 +44,20 @@ pub struct SceneFactory {
 }
 
 impl SceneFactory {
-    pub fn create_scene(scene_type: SceneType, parent: StdParentOption) -> std::rc::Rc<std::cell::RefCell<Scene>> {
-        Scene::new_origin(scene_type, parent)
+    pub fn create_scene(scene_type: SceneType, parent: StdParentOption) -> std::rc::Rc<std::cell::RefCell<std::boxed::Box<Scene>>> {
+        convert(Scene::new_origin(scene_type, parent))
     }
 }
 
+fn convert<T>(rc_refcell: std::rc::Rc<std::cell::RefCell<T>>) -> std::rc::Rc<std::cell::RefCell<std::boxed::Box<T>>> 
+where
+    T: std::fmt::Debug
+{
+    // 1. 从 Rc<RefCell<T>> 中提取 T 的所有权
+    let value = std::rc::Rc::try_unwrap(rc_refcell)  // 尝试解包 Rc
+        .unwrap()                          // 如果 Rc 唯一，则成功
+        .into_inner();                     // 解包 RefCell，获取 T
+
+    // 2. 将 T 包装为 Box<T>，再重新封装为 Rc<RefCell<Box<T>>>
+    std::rc::Rc::new(std::cell::RefCell::new(std::boxed::Box::new(value)))
+}

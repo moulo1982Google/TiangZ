@@ -19,7 +19,7 @@ macro_rules! create_entity {
             pub children:
                 dashmap::DashMap::<
                     i64, 
-                    std::rc::Rc<std::cell::RefCell<$children_type>>
+                    std::rc::Rc<std::cell::RefCell<std::boxed::Box<$children_type>>>
                 >,
             pub components: 
                 dashmap::DashMap::<

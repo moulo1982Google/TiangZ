@@ -104,19 +104,53 @@ impl NetService {
 #[cfg(test)]
 mod net_test {
     use super::*;
+    use std::rc::Rc;
+    use std::cell::RefCell;
+    use crate::entity::Update;
+    use std::boxed::Box;
 
+
+    #[derive(Clone)]
+    struct TestService {
+
+    }
+
+    impl crate::entity::Update for TestService {
+        fn update(&mut self, delta_time: f32) {
+            println!("TestService update called");
+        }
+    }
+    
+    // fn convert_to_dyn_update(rc_self: Rc<RefCell<Box<TestService>>>) -> Rc<RefCell<Box<dyn Update>>> {
+    //     // 1. 解包 Rc<RefCell<Box<MyStruct>>>
+    //     let boxed_self = Rc::try_unwrap(rc_self)
+    //         .unwrap_or_else(|rc| RefCell::try_borrow_mut(&rc).unwrap().take()).into_inner();
+    //     // 或者更安全的方式（如果不能 Rc::try_unwrap）：
+    //     // let mut borrowed = rc_self.borrow_mut();
+    //     // let boxed_self = Box::new((*borrowed).clone()); // 需要 MyStruct: Clone
+    
+    //     // 2. 重新装箱为 Box<dyn Update>
+    //     let boxed_dyn_update: Box<dyn crate::entity::Update> = Box::new(boxed_self); // MyStruct 实现了 Update
+    
+    //     // 3. 重新创建 Rc<RefCell<Box<dyn Update>>>
+    //     Rc::new(RefCell::new(boxed_dyn_update))
+    // }
+    
+    
     #[tokio::test]
     async fn test_net_service() {
+        // // 1. 创建主包装（保留具体类型）
+        // let rc_self = std::rc::Rc::new(std::cell::RefCell::new(TestService{}));
 
-        let rt = Arc::new(tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4)
-        .enable_all()
-        .build()
-        .unwrap());
+        // // 2. 创建trait对象版本（不消费原值）
+        // {
 
-        let service_id = NetService::instance().add_service(
-            Box::new(TcpService::new(&"0.0.0.0:8080".to_string())
-            .await.unwrap()));
+        //     let erased = std::rc::Rc::new(std::cell::RefCell::new(std::rc::Rc::clone(&rc_self).borrow().clone_box()));
+
+        //     // 注册到事件系统
+        //     crate::event::event_system::EventSystem::instance()
+        //         .register_update_handler(1, erased);
+        // }
     }
 }
 

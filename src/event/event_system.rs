@@ -19,11 +19,11 @@ use gen_macro::EventHandler;
 
 //回调，必须有一个回调类型
 
-pub trait IEventParam: Any + Send + Sync + Clone {}
-impl<T: Any + Send + Sync + Clone> IEventParam for T {}
+pub trait IEventParam: Any + Clone {}
+impl<T: Any + Clone> IEventParam for T {}
 
 #[async_trait]
-pub trait IEvent<P: IEventParam>: Send + Sync {
+pub trait IEvent<P: IEventParam> {
     async fn handle(&self, param: P);
 }
 
@@ -40,8 +40,8 @@ impl<P: IEventParam> CallBackPack<P> {
 }
 
 pub struct EventSystem {
-    call_back_map: DashMap<std::any::TypeId, Box<dyn std::any::Any>>,
-    update_call_back_map: DashMap<i64, std::rc::Rc<std::cell::RefCell<dyn crate::entity::Update + 'static>>>,
+    call_back_map: DashMap<std::any::TypeId, std::boxed::Box<dyn std::any::Any>>,
+    update_call_back_map: DashMap<i64, std::rc::Rc<std::cell::RefCell<dyn crate::entity::Update>>>,
 
 }
 
@@ -92,7 +92,7 @@ impl EventSystem {
         }
     }
 
-    pub fn register_update_handler(&self, id: i64, handler: std::rc::Rc<std::cell::RefCell<impl crate::entity::Update + 'static>>) {
+    pub fn register_update_handler(&self, id: i64, handler: std::rc::Rc<std::cell::RefCell<dyn crate::entity::Update>>) {
         self.update_call_back_map.insert(id, handler);
     }
 

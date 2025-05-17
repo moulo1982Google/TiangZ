@@ -25,7 +25,7 @@ lazy_static::lazy_static! {
 }
 
 pub struct Root {
-    scene: std::rc::Rc<std::cell::RefCell<Scene>>,
+    scene: std::rc::Rc<std::cell::RefCell<std::boxed::Box<Scene>>>,
     components: dashmap::DashMap::<
         std::any::TypeId, 
         ComponentWrapper<std::boxed::Box<dyn std::any::Any>>
