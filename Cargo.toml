@@ -1,6 +1,6 @@
 [package]
 name = "TiangZ"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 authors = [
     "moulo <25897084@qq.com>",
@@ -8,9 +8,11 @@ authors = [
 
 keywords = [
     "tz",
-    "tianz",
+    "tiangz",
     "game",
     "server",
+    "ecs",
+    "rust"
 ]
 
 license = "MIT + Apache-2.0"
