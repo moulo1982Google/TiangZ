@@ -1,0 +1,237 @@
+starting process map1 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\perf\results\runtime_configs\map_capacity_20260713_093026\100p_8g_r1\map1.json
+scene map_1 (MapHost) listening on 127.0.0.1:7301
+[process:map1] one V8 started with 1 scene(s)
+[map_1] MapHost scene started at 127.0.0.1:7301
+map_1 accepted 127.0.0.1:61039 as conn 1
+map_1 accepted 127.0.0.1:61099 as conn 2
+map_1 accepted 127.0.0.1:61100 as conn 3
+map_1 accepted 127.0.0.1:61101 as conn 4
+map_1 accepted 127.0.0.1:61102 as conn 5
+map_1 accepted 127.0.0.1:61103 as conn 6
+map_1 accepted 127.0.0.1:61104 as conn 7
+map_1 accepted 127.0.0.1:61105 as conn 8
+[map_1] perf_8g_10_100_1_1783935027106 enter map 1 unit 1000
+map_1 accepted 127.0.0.1:61106 as conn 9
+[map_1] perf_8g_10_100_13_1783935027106 enter map 1 unit 1001
+[map_1] perf_8g_10_100_6_1783935027106 enter map 1 unit 1002
+[map_1] perf_8g_10_100_4_1783935027106 enter map 1 unit 1003
+[map_1] perf_8g_10_100_0_1783935027105 enter map 1 unit 1004
+[map_1] perf_8g_10_100_8_1783935027106 enter map 1 unit 1005
+[map_1] perf_8g_10_100_3_1783935027106 enter map 1 unit 1006
+[map_1] perf_8g_10_100_12_1783935027106 enter map 1 unit 1007
+[map_1] perf_8g_10_100_11_1783935027106 enter map 1 unit 1008
+[map_1] perf_8g_10_100_15_1783935027106 enter map 1 unit 1009
+[map_1] perf_8g_10_100_14_1783935027106 enter map 1 unit 1010
+[map_1] perf_8g_10_100_7_1783935027106 enter map 1 unit 1011
+[map_1] perf_8g_10_100_2_1783935027106 enter map 1 unit 1012
+[map_1] perf_8g_10_100_5_1783935027106 enter map 1 unit 1013
+[map_1] perf_8g_10_100_9_1783935027106 enter map 1 unit 1014
+[map_1] perf_8g_10_100_16_1783935027132 enter map 1 unit 1015
+[map_1] perf_8g_10_100_17_1783935027133 enter map 1 unit 1016
+[map_1] perf_8g_10_100_18_1783935027135 enter map 1 unit 1017
+[map_1] perf_8g_10_100_19_1783935027136 enter map 1 unit 1018
+[map_1] perf_8g_10_100_10_1783935027106 enter map 1 unit 1019
+[map_1] perf_8g_10_100_20_1783935027137 enter map 1 unit 1020
+[map_1] perf_8g_10_100_23_1783935027137 enter map 1 unit 1021
+[map_1] perf_8g_10_100_21_1783935027137 enter map 1 unit 1022
+[map_1] perf_8g_10_100_22_1783935027137 enter map 1 unit 1023
+[map_1] perf_8g_10_100_24_1783935027138 enter map 1 unit 1024
+[map_1] perf_8g_10_100_25_1783935027138 enter map 1 unit 1025
+[map_1] perf_8g_10_100_27_1783935027138 enter map 1 unit 1026
+[map_1] perf_8g_10_100_28_1783935027139 enter map 1 unit 1027
+[map_1] perf_8g_10_100_26_1783935027138 enter map 1 unit 1028
+[map_1] perf_8g_10_100_30_1783935027139 enter map 1 unit 1029
+[map_1] perf_8g_10_100_29_1783935027139 enter map 1 unit 1030
+[map_1] perf_8g_10_100_32_1783935027148 enter map 1 unit 1031
+[map_1] perf_8g_10_100_31_1783935027143 enter map 1 unit 1032
+[map_1] perf_8g_10_100_33_1783935027148 enter map 1 unit 1033
+[map_1] perf_8g_10_100_34_1783935027148 enter map 1 unit 1034
+[map_1] perf_8g_10_100_35_1783935027149 enter map 1 unit 1035
+[map_1] perf_8g_10_100_36_1783935027150 enter map 1 unit 1036
+[map_1] perf_8g_10_100_37_1783935027155 enter map 1 unit 1037
+[map_1] perf_8g_10_100_38_1783935027155 enter map 1 unit 1038
+[map_1] perf_8g_10_100_39_1783935027155 enter map 1 unit 1039
+[map_1] perf_8g_10_100_40_1783935027156 enter map 1 unit 1040
+[map_1] perf_8g_10_100_41_1783935027156 enter map 1 unit 1041
+[map_1] perf_8g_10_100_42_1783935027158 enter map 1 unit 1042
+[map_1] perf_8g_10_100_43_1783935027158 enter map 1 unit 1043
+[map_1] perf_8g_10_100_44_1783935027158 enter map 1 unit 1044
+[map_1] perf_8g_10_100_45_1783935027159 enter map 1 unit 1045
+[map_1] perf_8g_10_100_46_1783935027159 enter map 1 unit 1046
+[map_1] perf_8g_10_100_47_1783935027161 enter map 1 unit 1047
+[map_1] perf_8g_10_100_48_1783935027161 enter map 1 unit 1048
+[map_1] perf_8g_10_100_49_1783935027163 enter map 1 unit 1049
+[map_1] perf_8g_10_100_50_1783935027163 enter map 1 unit 1050
+[map_1] perf_8g_10_100_51_1783935027166 enter map 1 unit 1051
+[map_1] perf_8g_10_100_52_1783935027166 enter map 1 unit 1052
+[map_1] perf_8g_10_100_53_1783935027172 enter map 1 unit 1053
+[map_1] perf_8g_10_100_54_1783935027174 enter map 1 unit 1054
+[map_1] perf_8g_10_100_55_1783935027174 enter map 1 unit 1055
+[map_1] perf_8g_10_100_56_1783935027175 enter map 1 unit 1056
+[map_1] perf_8g_10_100_57_1783935027176 enter map 1 unit 1057
+[map_1] perf_8g_10_100_58_1783935027176 enter map 1 unit 1058
+[map_1] perf_8g_10_100_59_1783935027177 enter map 1 unit 1059
+[map_1] perf_8g_10_100_61_1783935027179 enter map 1 unit 1061
+[map_1] perf_8g_10_100_60_1783935027178 enter map 1 unit 1060
+[map_1] perf_8g_10_100_62_1783935027179 enter map 1 unit 1062
+[map_1] perf_8g_10_100_63_1783935027180 enter map 1 unit 1063
+[map_1] perf_8g_10_100_65_1783935027182 enter map 1 unit 1064
+[map_1] perf_8g_10_100_64_1783935027180 enter map 1 unit 1065
+[map_1] perf_8g_10_100_67_1783935027184 enter map 1 unit 1067
+[map_1] perf_8g_10_100_69_1783935027192 enter map 1 unit 1066
+[map_1] perf_8g_10_100_68_1783935027185 enter map 1 unit 1068
+[map_1] perf_8g_10_100_66_1783935027182 enter map 1 unit 1069
+[map_1] perf_8g_10_100_71_1783935027195 enter map 1 unit 1070
+[map_1] perf_8g_10_100_70_1783935027193 enter map 1 unit 1071
+[map_1] perf_8g_10_100_73_1783935027196 enter map 1 unit 1072
+[map_1] perf_8g_10_100_72_1783935027196 enter map 1 unit 1073
+[map_1] perf_8g_10_100_74_1783935027198 enter map 1 unit 1074
+[map_1] perf_8g_10_100_75_1783935027199 enter map 1 unit 1075
+[map_1] perf_8g_10_100_76_1783935027200 enter map 1 unit 1076
+[map_1] perf_8g_10_100_77_1783935027200 enter map 1 unit 1077
+[map_1] perf_8g_10_100_78_1783935027201 enter map 1 unit 1078
+[map_1] perf_8g_10_100_79_1783935027202 enter map 1 unit 1079
+[map_1] perf_8g_10_100_80_1783935027202 enter map 1 unit 1080
+[map_1] perf_8g_10_100_81_1783935027205 enter map 1 unit 1081
+[map_1] perf_8g_10_100_82_1783935027205 enter map 1 unit 1082
+[map_1] perf_8g_10_100_83_1783935027206 enter map 1 unit 1083
+[map_1] perf_8g_10_100_84_1783935027209 enter map 1 unit 1084
+[map_1] perf_8g_10_100_85_1783935027209 enter map 1 unit 1085
+[map_1] perf_8g_10_100_86_1783935027211 enter map 1 unit 1086
+[map_1] perf_8g_10_100_87_1783935027211 enter map 1 unit 1087
+[map_1] perf_8g_10_100_88_1783935027212 enter map 1 unit 1088
+[map_1] perf_8g_10_100_89_1783935027213 enter map 1 unit 1089
+[map_1] perf_8g_10_100_90_1783935027218 enter map 1 unit 1090
+[map_1] perf_8g_10_100_91_1783935027220 enter map 1 unit 1091
+[map_1] perf_8g_10_100_92_1783935027220 enter map 1 unit 1092
+[map_1] perf_8g_10_100_93_1783935027223 enter map 1 unit 1093
+[map_1] perf_8g_10_100_94_1783935027224 enter map 1 unit 1094
+[map_1] perf_8g_10_100_95_1783935027226 enter map 1 unit 1095
+[map_1] perf_8g_10_100_96_1783935027227 enter map 1 unit 1096
+[map_1] perf_8g_10_100_97_1783935027229 enter map 1 unit 1097
+[map_1] perf_8g_10_100_98_1783935027230 enter map 1 unit 1098
+[map_1] perf_8g_10_100_99_1783935027231 enter map 1 unit 1099
+[metrics:inner_transport] active=8 opened=8 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=43.66 cpu_time_ms=2234 rss_bytes=57323520 v8_heap_used_bytes=9060448 v8_heap_total_bytes=19410944 v8_gc_count=45 v8_gc_ms=11.833 timestamp_ms=1783935031855
+[metrics:map1] scene=map_1 type=MapHost processed=5200 failed=0 ts_queue=0 ts_max_queue=77 rust_queue=0 rust_max_queue=77 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=8.00 total_handler_ms=6040.00
+[metrics:inner_transport] active=8 opened=8 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=46.68 cpu_time_ms=4578 rss_bytes=72658944 v8_heap_used_bytes=11190968 v8_heap_total_bytes=32518144 v8_gc_count=69 v8_gc_ms=17.662 timestamp_ms=1783935036876
+[metrics:map1] scene=map_1 type=MapHost processed=10702 failed=0 ts_queue=0 ts_max_queue=77 rust_queue=88 rust_max_queue=88 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=8.00 total_handler_ms=10072.00
+[metrics:inner_transport] active=8 opened=8 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=47.17 cpu_time_ms=6937 rss_bytes=75714560 v8_heap_used_bytes=13882576 v8_heap_total_bytes=34615296 v8_gc_count=82 v8_gc_ms=21.160 timestamp_ms=1783935041877
+[metrics:map1] scene=map_1 type=MapHost processed=16288 failed=0 ts_queue=0 ts_max_queue=88 rust_queue=12 rust_max_queue=88 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=15.00 total_handler_ms=16577.00
+[metrics:inner_transport] active=8 opened=8 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=47.17 cpu_time_ms=9296 rss_bytes=76824576 v8_heap_used_bytes=10973800 v8_heap_total_bytes=35401728 v8_gc_count=95 v8_gc_ms=24.529 timestamp_ms=1783935046879
+[metrics:map1] scene=map_1 type=MapHost processed=21702 failed=0 ts_queue=0 ts_max_queue=88 rust_queue=86 rust_max_queue=88 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=15.00 total_handler_ms=20604.00
+[metrics:inner_transport] active=8 opened=8 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=40.65 cpu_time_ms=11328 rss_bytes=78094336 v8_heap_used_bytes=9759000 v8_heap_total_bytes=36974592 v8_gc_count=108 v8_gc_ms=28.599 timestamp_ms=1783935051878
+[metrics:map1] scene=map_1 type=MapHost processed=27242 failed=0 ts_queue=0 ts_max_queue=88 rust_queue=53 rust_max_queue=88 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=15.00 total_handler_ms=26785.00
+[metrics:inner_transport] active=8 opened=8 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=33.42 cpu_time_ms=13000 rss_bytes=77635584 v8_heap_used_bytes=4799112 v8_heap_total_bytes=37236736 v8_gc_count=123 v8_gc_ms=34.678 timestamp_ms=1783935056881
+[metrics:map1] scene=map_1 type=MapHost processed=32800 failed=0 ts_queue=0 ts_max_queue=96 rust_queue=0 rust_max_queue=96 backpressure=0 slow_disconnects=0 update_ms=8.00 handler_ms=8.00 max_handler_ms=15.00 total_handler_ms=31856.00
+[metrics:inner_transport] active=8 opened=8 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=48.73 cpu_time_ms=15437 rss_bytes=81235968 v8_heap_used_bytes=17417800 v8_heap_total_bytes=38547456 v8_gc_count=135 v8_gc_ms=38.251 timestamp_ms=1783935061882
+[metrics:map1] scene=map_1 type=MapHost processed=38295 failed=0 ts_queue=0 ts_max_queue=96 rust_queue=5 rust_max_queue=96 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=15.00 total_handler_ms=35529.00
+[metrics:inner_transport] active=8 opened=8 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=29.37 cpu_time_ms=16906 rss_bytes=86134784 v8_heap_used_bytes=22265952 v8_heap_total_bytes=41693184 v8_gc_count=148 v8_gc_ms=43.499 timestamp_ms=1783935066884
+[metrics:map1] scene=map_1 type=MapHost processed=43782 failed=0 ts_queue=0 ts_max_queue=96 rust_queue=18 rust_max_queue=96 backpressure=0 slow_disconnects=0 update_ms=3.00 handler_ms=3.00 max_handler_ms=15.00 total_handler_ms=41969.00
+[map_1] perf_8g_10_100_0_1783935027105 leave map 1 unit 1004
+[map_1] perf_8g_10_100_1_1783935027106 leave map 1 unit 1000
+[map_1] perf_8g_10_100_5_1783935027106 leave map 1 unit 1013
+[map_1] perf_8g_10_100_11_1783935027106 leave map 1 unit 1008
+[map_1] perf_8g_10_100_84_1783935027209 leave map 1 unit 1084
+[map_1] perf_8g_10_100_82_1783935027205 leave map 1 unit 1082
+[map_1] perf_8g_10_100_81_1783935027205 leave map 1 unit 1081
+[map_1] perf_8g_10_100_79_1783935027202 leave map 1 unit 1079
+[map_1] perf_8g_10_100_78_1783935027201 leave map 1 unit 1078
+[map_1] perf_8g_10_100_80_1783935027202 leave map 1 unit 1080
+[map_1] perf_8g_10_100_16_1783935027132 leave map 1 unit 1015
+[map_1] perf_8g_10_100_76_1783935027200 leave map 1 unit 1076
+[map_1] perf_8g_10_100_74_1783935027198 leave map 1 unit 1074
+[map_1] perf_8g_10_100_71_1783935027195 leave map 1 unit 1070
+[map_1] perf_8g_10_100_77_1783935027200 leave map 1 unit 1077
+[map_1] perf_8g_10_100_75_1783935027199 leave map 1 unit 1075
+[map_1] perf_8g_10_100_72_1783935027196 leave map 1 unit 1073
+[map_1] perf_8g_10_100_3_1783935027106 leave map 1 unit 1006
+[map_1] perf_8g_10_100_17_1783935027133 leave map 1 unit 1016
+[map_1] perf_8g_10_100_73_1783935027196 leave map 1 unit 1072
+[map_1] perf_8g_10_100_69_1783935027192 leave map 1 unit 1066
+[map_1] perf_8g_10_100_70_1783935027193 leave map 1 unit 1071
+[map_1] perf_8g_10_100_68_1783935027185 leave map 1 unit 1068
+[map_1] perf_8g_10_100_15_1783935027106 leave map 1 unit 1009
+[map_1] perf_8g_10_100_61_1783935027179 leave map 1 unit 1061
+[map_1] perf_8g_10_100_67_1783935027184 leave map 1 unit 1067
+[map_1] perf_8g_10_100_62_1783935027179 leave map 1 unit 1062
+[map_1] perf_8g_10_100_64_1783935027180 leave map 1 unit 1065
+[map_1] perf_8g_10_100_23_1783935027137 leave map 1 unit 1021
+[map_1] perf_8g_10_100_63_1783935027180 leave map 1 unit 1063
+[map_1] perf_8g_10_100_66_1783935027182 leave map 1 unit 1069
+[map_1] perf_8g_10_100_53_1783935027172 leave map 1 unit 1053
+[map_1] perf_8g_10_100_24_1783935027138 leave map 1 unit 1024
+[map_1] perf_8g_10_100_25_1783935027138 leave map 1 unit 1025
+[map_1] perf_8g_10_100_65_1783935027182 leave map 1 unit 1064
+[map_1] perf_8g_10_100_45_1783935027159 leave map 1 unit 1045
+[map_1] perf_8g_10_100_37_1783935027155 leave map 1 unit 1037
+[map_1] perf_8g_10_100_59_1783935027177 leave map 1 unit 1059
+[map_1] perf_8g_10_100_10_1783935027106 leave map 1 unit 1019
+[map_1] perf_8g_10_100_60_1783935027178 leave map 1 unit 1060
+[map_1] perf_8g_10_100_29_1783935027139 leave map 1 unit 1030
+[map_1] perf_8g_10_100_6_1783935027106 leave map 1 unit 1002
+[map_1] perf_8g_10_100_2_1783935027106 leave map 1 unit 1012
+[map_1] perf_8g_10_100_52_1783935027166 leave map 1 unit 1052
+[map_1] perf_8g_10_100_58_1783935027176 leave map 1 unit 1058
+[map_1] perf_8g_10_100_21_1783935027137 leave map 1 unit 1022
+[map_1] perf_8g_10_100_12_1783935027106 leave map 1 unit 1007
+[map_1] perf_8g_10_100_57_1783935027176 leave map 1 unit 1057
+[map_1] perf_8g_10_100_50_1783935027163 leave map 1 unit 1050
+[map_1] perf_8g_10_100_55_1783935027174 leave map 1 unit 1055
+[map_1] perf_8g_10_100_32_1783935027148 leave map 1 unit 1031
+[map_1] perf_8g_10_100_4_1783935027106 leave map 1 unit 1003
+[map_1] perf_8g_10_100_54_1783935027174 leave map 1 unit 1054
+[map_1] perf_8g_10_100_42_1783935027158 leave map 1 unit 1042
+[map_1] perf_8g_10_100_33_1783935027148 leave map 1 unit 1033
+[map_1] perf_8g_10_100_7_1783935027106 leave map 1 unit 1011
+[map_1] perf_8g_10_100_51_1783935027166 leave map 1 unit 1051
+[map_1] perf_8g_10_100_44_1783935027158 leave map 1 unit 1044
+[map_1] perf_8g_10_100_36_1783935027150 leave map 1 unit 1036
+[map_1] perf_8g_10_100_22_1783935027137 leave map 1 unit 1023
+[map_1] perf_8g_10_100_56_1783935027175 leave map 1 unit 1056
+[map_1] perf_8g_10_100_14_1783935027106 leave map 1 unit 1010
+[map_1] perf_8g_10_100_30_1783935027139 leave map 1 unit 1029
+[map_1] perf_8g_10_100_40_1783935027156 leave map 1 unit 1040
+[map_1] perf_8g_10_100_8_1783935027106 leave map 1 unit 1005
+[map_1] perf_8g_10_100_34_1783935027148 leave map 1 unit 1034
+[map_1] perf_8g_10_100_31_1783935027143 leave map 1 unit 1032
+[map_1] perf_8g_10_100_20_1783935027137 leave map 1 unit 1020
+[map_1] perf_8g_10_100_43_1783935027158 leave map 1 unit 1043
+[map_1] perf_8g_10_100_28_1783935027139 leave map 1 unit 1027
+[map_1] perf_8g_10_100_9_1783935027106 leave map 1 unit 1014
+[map_1] perf_8g_10_100_46_1783935027159 leave map 1 unit 1046
+[map_1] perf_8g_10_100_27_1783935027138 leave map 1 unit 1026
+[map_1] perf_8g_10_100_19_1783935027136 leave map 1 unit 1018
+[map_1] perf_8g_10_100_26_1783935027138 leave map 1 unit 1028
+[map_1] perf_8g_10_100_47_1783935027161 leave map 1 unit 1047
+[map_1] perf_8g_10_100_35_1783935027149 leave map 1 unit 1035
+[map_1] perf_8g_10_100_13_1783935027106 leave map 1 unit 1001
+[map_1] perf_8g_10_100_18_1783935027135 leave map 1 unit 1017
+[map_1] perf_8g_10_100_38_1783935027155 leave map 1 unit 1038
+[map_1] perf_8g_10_100_39_1783935027155 leave map 1 unit 1039
+[map_1] perf_8g_10_100_41_1783935027156 leave map 1 unit 1041
+[map_1] perf_8g_10_100_48_1783935027161 leave map 1 unit 1048
+[map_1] perf_8g_10_100_49_1783935027163 leave map 1 unit 1049
+[map_1] perf_8g_10_100_98_1783935027230 leave map 1 unit 1098
+[map_1] perf_8g_10_100_83_1783935027206 leave map 1 unit 1083
+[map_1] perf_8g_10_100_87_1783935027211 leave map 1 unit 1087
+[map_1] perf_8g_10_100_86_1783935027211 leave map 1 unit 1086
+[map_1] perf_8g_10_100_85_1783935027209 leave map 1 unit 1085
+[map_1] perf_8g_10_100_88_1783935027212 leave map 1 unit 1088
+[map_1] perf_8g_10_100_89_1783935027213 leave map 1 unit 1089
+[map_1] perf_8g_10_100_90_1783935027218 leave map 1 unit 1090
+[map_1] perf_8g_10_100_91_1783935027220 leave map 1 unit 1091
+[map_1] perf_8g_10_100_94_1783935027224 leave map 1 unit 1094
+[map_1] perf_8g_10_100_92_1783935027220 leave map 1 unit 1092
+[map_1] perf_8g_10_100_96_1783935027227 leave map 1 unit 1096
+[map_1] perf_8g_10_100_93_1783935027223 leave map 1 unit 1093
+[map_1] perf_8g_10_100_95_1783935027226 leave map 1 unit 1095
+[map_1] perf_8g_10_100_99_1783935027231 leave map 1 unit 1099
+[map_1] perf_8g_10_100_97_1783935027229 leave map 1 unit 1097

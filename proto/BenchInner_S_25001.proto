@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package ets.bench;
+
+//ResponseType B2B_RuntimePingResponse
+// @ets.msg protocol=BenchInner method=RuntimePing
+message B2B_RuntimePingRequest // IRequest
+{
+  uint32 seq = 1;
+  uint32 delay_ms = 2;
+}
+
+message B2B_RuntimePingResponse // IResponse
+{
+  uint32 seq = 1;
+  uint32 server_concurrency = 2;
+}

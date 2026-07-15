@@ -1,0 +1,55 @@
+starting process gate3 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\perf\results\runtime_configs\map_capacity_20260713_090056\200p_8g_r1\gate3.json
+scene gate_3 (Gate) listening on 127.0.0.1:7203
+[process:gate3] one V8 started with 1 scene(s)
+[gate_3] Gate scene started at 127.0.0.1:7203
+gate_3 accepted 127.0.0.1:53676 as conn 1
+gate_3 accepted 127.0.0.1:54374 as conn 2
+gate_3 accepted 127.0.0.1:54381 as conn 3
+gate_3 accepted 127.0.0.1:54402 as conn 4
+gate_3 accepted 127.0.0.1:54423 as conn 5
+gate_3 accepted 127.0.0.1:54460 as conn 6
+gate_3 accepted 127.0.0.1:54471 as conn 7
+gate_3 accepted 127.0.0.1:54514 as conn 8
+gate_3 accepted 127.0.0.1:54523 as conn 9
+gate_3 accepted 127.0.0.1:54558 as conn 10
+gate_3 accepted 127.0.0.1:54583 as conn 11
+gate_3 accepted 127.0.0.1:54606 as conn 12
+gate_3 accepted 127.0.0.1:54634 as conn 13
+gate_3 accepted 127.0.0.1:54656 as conn 14
+gate_3 accepted 127.0.0.1:54684 as conn 15
+gate_3 accepted 127.0.0.1:54706 as conn 16
+gate_3 accepted 127.0.0.1:54729 as conn 17
+gate_3 accepted 127.0.0.1:54746 as conn 18
+gate_3 accepted 127.0.0.1:54770 as conn 19
+gate_3 accepted 127.0.0.1:54793 as conn 20
+gate_3 accepted 127.0.0.1:54817 as conn 21
+gate_3 accepted 127.0.0.1:54843 as conn 22
+gate_3 accepted 127.0.0.1:54866 as conn 23
+gate_3 accepted 127.0.0.1:54890 as conn 24
+gate_3 accepted 127.0.0.1:54917 as conn 25
+gate_3 accepted 127.0.0.1:54948 as conn 26
+gate_3 accepted 127.0.0.1:54972 as conn 27
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate3 cpu_percent=9.34 cpu_time_ms=546 rss_bytes=43450368 v8_heap_used_bytes=3594600 v8_heap_total_bytes=8138752 v8_gc_count=22 v8_gc_ms=3.760 timestamp_ms=1783933261510
+[metrics:gate3] scene=gate_3 type=Gate processed=4991 failed=0 ts_queue=0 ts_max_queue=171 rust_queue=14 rust_max_queue=170 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=335.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate3 cpu_percent=10.22 cpu_time_ms=1062 rss_bytes=44617728 v8_heap_used_bytes=3891472 v8_heap_total_bytes=8663040 v8_gc_count=31 v8_gc_ms=6.115 timestamp_ms=1783933266557
+[metrics:gate3] scene=gate_3 type=Gate processed=7630 failed=0 ts_queue=0 ts_max_queue=171 rust_queue=0 rust_max_queue=170 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=522.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate3 cpu_percent=3.42 cpu_time_ms=1234 rss_bytes=45883392 v8_heap_used_bytes=5151968 v8_heap_total_bytes=9449472 v8_gc_count=39 v8_gc_ms=7.996 timestamp_ms=1783933271581
+[metrics:gate3] scene=gate_3 type=Gate processed=10255 failed=0 ts_queue=0 ts_max_queue=171 rust_queue=23 rust_max_queue=170 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=762.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate3 cpu_percent=12.15 cpu_time_ms=1843 rss_bytes=47321088 v8_heap_used_bytes=6329232 v8_heap_total_bytes=9973760 v8_gc_count=47 v8_gc_ms=9.252 timestamp_ms=1783933276595
+[metrics:gate3] scene=gate_3 type=Gate processed=12892 failed=0 ts_queue=0 ts_max_queue=171 rust_queue=25 rust_max_queue=170 backpressure=0 slow_disconnects=0 update_ms=4.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=979.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate3 cpu_percent=5.63 cpu_time_ms=2125 rss_bytes=48697344 v8_heap_used_bytes=6431680 v8_heap_total_bytes=10760192 v8_gc_count=56 v8_gc_ms=10.867 timestamp_ms=1783933281603
+[metrics:gate3] scene=gate_3 type=Gate processed=15526 failed=0 ts_queue=0 ts_max_queue=171 rust_queue=19 rust_max_queue=170 backpressure=0 slow_disconnects=0 update_ms=9.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=1188.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate3 cpu_percent=10.17 cpu_time_ms=2640 rss_bytes=49651712 v8_heap_used_bytes=7508864 v8_heap_total_bytes=11546624 v8_gc_count=64 v8_gc_ms=12.130 timestamp_ms=1783933286669
+[metrics:gate3] scene=gate_3 type=Gate processed=18180 failed=0 ts_queue=0 ts_max_queue=171 rust_queue=10 rust_max_queue=170 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=1432.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate3 cpu_percent=9.34 cpu_time_ms=3109 rss_bytes=50749440 v8_heap_used_bytes=8570088 v8_heap_total_bytes=12070912 v8_gc_count=72 v8_gc_ms=13.617 timestamp_ms=1783933291692
+[metrics:gate3] scene=gate_3 type=Gate processed=20805 failed=0 ts_queue=0 ts_max_queue=171 rust_queue=25 rust_max_queue=170 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=1676.00
+[metrics:inner_transport] active=2 opened=2 pending=1 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate3 cpu_percent=8.13 cpu_time_ms=3515 rss_bytes=52072448 v8_heap_used_bytes=8157128 v8_heap_total_bytes=12857344 v8_gc_count=81 v8_gc_ms=15.092 timestamp_ms=1783933296688
+[metrics:gate3] scene=gate_3 type=Gate processed=23431 failed=0 ts_queue=0 ts_max_queue=171 rust_queue=25 rust_max_queue=170 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=1911.00

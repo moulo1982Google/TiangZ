@@ -1,0 +1,63 @@
+starting process mgr with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/mgr.json
+scene login_mgr (LoginMgr) listening on 127.0.0.1:7000
+[process:mgr] one V8 started with 1 scene(s)
+[login_mgr] LoginMgr scene started at 127.0.0.1:7000 with login scenes: login_1, login_2
+login_mgr accepted 127.0.0.1:55120 as conn 1
+login_mgr accepted 127.0.0.1:55127 as conn 2
+login_mgr accepted 127.0.0.1:55128 as conn 3
+login_mgr accepted 127.0.0.1:55129 as conn 4
+login_mgr accepted 127.0.0.1:55130 as conn 5
+login_mgr accepted 127.0.0.1:55131 as conn 6
+login_mgr accepted 127.0.0.1:55132 as conn 7
+login_mgr accepted 127.0.0.1:55133 as conn 8
+login_mgr accepted 127.0.0.1:55134 as conn 9
+login_mgr accepted 127.0.0.1:55135 as conn 10
+login_mgr accepted 127.0.0.1:55136 as conn 11
+login_mgr accepted 127.0.0.1:55137 as conn 12
+login_mgr accepted 127.0.0.1:55138 as conn 13
+login_mgr accepted 127.0.0.1:55139 as conn 14
+login_mgr accepted 127.0.0.1:55140 as conn 15
+login_mgr accepted 127.0.0.1:55141 as conn 16
+login_mgr accepted 127.0.0.1:55142 as conn 17
+login_mgr accepted 127.0.0.1:55180 as conn 18
+login_mgr accepted 127.0.0.1:55181 as conn 19
+login_mgr accepted 127.0.0.1:55186 as conn 20
+login_mgr accepted 127.0.0.1:55187 as conn 21
+login_mgr accepted 127.0.0.1:55188 as conn 22
+login_mgr accepted 127.0.0.1:55189 as conn 23
+login_mgr accepted 127.0.0.1:55190 as conn 24
+login_mgr accepted 127.0.0.1:55191 as conn 25
+login_mgr accepted 127.0.0.1:55192 as conn 26
+login_mgr accepted 127.0.0.1:55193 as conn 27
+login_mgr accepted 127.0.0.1:55194 as conn 28
+login_mgr accepted 127.0.0.1:55196 as conn 29
+login_mgr accepted 127.0.0.1:55197 as conn 30
+login_mgr accepted 127.0.0.1:55198 as conn 31
+login_mgr accepted 127.0.0.1:55199 as conn 32
+login_mgr accepted 127.0.0.1:55200 as conn 33
+login_mgr accepted 127.0.0.1:55203 as conn 34
+login_mgr accepted 127.0.0.1:55205 as conn 35
+login_mgr accepted 127.0.0.1:55236 as conn 36
+login_mgr accepted 127.0.0.1:55237 as conn 37
+login_mgr accepted 127.0.0.1:55242 as conn 38
+login_mgr accepted 127.0.0.1:55245 as conn 39
+login_mgr accepted 127.0.0.1:55246 as conn 40
+login_mgr accepted 127.0.0.1:55247 as conn 41
+login_mgr accepted 127.0.0.1:55248 as conn 42
+login_mgr accepted 127.0.0.1:55249 as conn 43
+login_mgr accepted 127.0.0.1:55250 as conn 44
+login_mgr accepted 127.0.0.1:55251 as conn 45
+login_mgr accepted 127.0.0.1:55252 as conn 46
+login_mgr accepted 127.0.0.1:55253 as conn 47
+login_mgr accepted 127.0.0.1:55254 as conn 48
+login_mgr accepted 127.0.0.1:55255 as conn 49
+login_mgr accepted 127.0.0.1:55256 as conn 50
+login_mgr accepted 127.0.0.1:55257 as conn 51
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=50 failed=0 ts_queue=0 ts_max_queue=3 rust_queue=0 rust_max_queue=3 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=50 failed=0 ts_queue=0 ts_max_queue=3 rust_queue=0 rust_max_queue=3 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=50 failed=0 ts_queue=0 ts_max_queue=3 rust_queue=0 rust_max_queue=3 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=50 failed=0 ts_queue=0 ts_max_queue=3 rust_queue=0 rust_max_queue=3 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00

@@ -1,0 +1,30 @@
+starting process log with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/log.json
+scene log (Log) listening on 127.0.0.1:7100
+[process:log] one V8 started with 1 scene(s)
+[log] Log scene started at 127.0.0.1:7100
+log accepted 127.0.0.1:58329 as conn 1
+log accepted 127.0.0.1:58346 as conn 2
+[log] [login_2] perf_split_10_10_1_1783918764055 login count 1
+log accepted 127.0.0.1:58354 as conn 3
+[log] [login_2] perf_split_10_10_3_1783918764055 login count 1
+[log] [login_1] perf_split_10_10_2_1783918764055 login count 1
+[log] [login_1] perf_split_10_10_0_1783918764054 login count 1
+[log] [login_2] perf_split_10_10_5_1783918764055 login count 1
+[log] [login_2] perf_split_10_10_7_1783918764055 login count 1
+[log] [login_2] perf_split_10_10_9_1783918764055 login count 1
+[log] [login_1] perf_split_10_10_4_1783918764055 login count 1
+[log] [login_1] perf_split_10_10_6_1783918764055 login count 1
+[log] [login_1] perf_split_10_10_8_1783918764055 login count 1
+log accepted 127.0.0.1:58366 as conn 4
+[log] [gate_1] perf_split_10_10_1_1783918764055 enter map_1 as unit 1000
+[log] [gate_1] perf_split_10_10_3_1783918764055 enter map_1 as unit 1001
+[log] [gate_1] perf_split_10_10_2_1783918764055 enter map_1 as unit 1002
+[log] [gate_1] perf_split_10_10_0_1783918764054 enter map_1 as unit 1003
+[log] [gate_1] perf_split_10_10_7_1783918764055 enter map_1 as unit 1004
+[log] [gate_1] perf_split_10_10_5_1783918764055 enter map_1 as unit 1005
+[log] [gate_1] perf_split_10_10_9_1783918764055 enter map_1 as unit 1006
+[log] [gate_1] perf_split_10_10_4_1783918764055 enter map_1 as unit 1007
+[log] [gate_1] perf_split_10_10_6_1783918764055 enter map_1 as unit 1008
+[log] [gate_1] perf_split_10_10_8_1783918764055 enter map_1 as unit 1009
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:log] scene=log type=Log processed=20 failed=0 ts_queue=0 ts_max_queue=5 rust_queue=0 rust_max_queue=5 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=4.00 total_handler_ms=10.00

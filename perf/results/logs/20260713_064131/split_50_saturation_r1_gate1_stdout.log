@@ -1,0 +1,59 @@
+starting process gate1 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/gate1.json
+scene gate_1 (Gate) listening on 127.0.0.1:7201
+[process:gate1] one V8 started with 1 scene(s)
+[gate_1] Gate scene started at 127.0.0.1:7201
+gate_1 accepted 127.0.0.1:58492 as conn 1
+gate_1 accepted 127.0.0.1:58528 as conn 2
+gate_1 accepted 127.0.0.1:58529 as conn 3
+gate_1 accepted 127.0.0.1:58530 as conn 4
+gate_1 accepted 127.0.0.1:58531 as conn 5
+gate_1 accepted 127.0.0.1:58532 as conn 6
+gate_1 accepted 127.0.0.1:58533 as conn 7
+gate_1 accepted 127.0.0.1:58534 as conn 8
+gate_1 accepted 127.0.0.1:58535 as conn 9
+gate_1 accepted 127.0.0.1:58536 as conn 10
+gate_1 accepted 127.0.0.1:58537 as conn 11
+gate_1 accepted 127.0.0.1:58538 as conn 12
+gate_1 accepted 127.0.0.1:58539 as conn 13
+gate_1 accepted 127.0.0.1:58540 as conn 14
+gate_1 accepted 127.0.0.1:58541 as conn 15
+gate_1 accepted 127.0.0.1:58542 as conn 16
+gate_1 accepted 127.0.0.1:58543 as conn 17
+gate_1 accepted 127.0.0.1:58545 as conn 18
+gate_1 accepted 127.0.0.1:58553 as conn 19
+gate_1 accepted 127.0.0.1:58554 as conn 20
+gate_1 accepted 127.0.0.1:58555 as conn 21
+gate_1 accepted 127.0.0.1:58570 as conn 22
+gate_1 accepted 127.0.0.1:58587 as conn 23
+gate_1 accepted 127.0.0.1:58588 as conn 24
+gate_1 accepted 127.0.0.1:58589 as conn 25
+gate_1 accepted 127.0.0.1:58590 as conn 26
+gate_1 accepted 127.0.0.1:58591 as conn 27
+gate_1 accepted 127.0.0.1:58593 as conn 28
+gate_1 accepted 127.0.0.1:58594 as conn 29
+gate_1 accepted 127.0.0.1:58596 as conn 30
+gate_1 accepted 127.0.0.1:58597 as conn 31
+gate_1 accepted 127.0.0.1:58599 as conn 32
+gate_1 accepted 127.0.0.1:58600 as conn 33
+gate_1 accepted 127.0.0.1:58601 as conn 34
+gate_1 accepted 127.0.0.1:58602 as conn 35
+gate_1 accepted 127.0.0.1:58604 as conn 36
+gate_1 accepted 127.0.0.1:58605 as conn 37
+gate_1 accepted 127.0.0.1:58606 as conn 38
+gate_1 accepted 127.0.0.1:58617 as conn 39
+gate_1 accepted 127.0.0.1:58618 as conn 40
+gate_1 accepted 127.0.0.1:58619 as conn 41
+gate_1 accepted 127.0.0.1:58620 as conn 42
+gate_1 accepted 127.0.0.1:58621 as conn 43
+gate_1 accepted 127.0.0.1:58642 as conn 44
+gate_1 accepted 127.0.0.1:58643 as conn 45
+gate_1 accepted 127.0.0.1:58644 as conn 46
+gate_1 accepted 127.0.0.1:58645 as conn 47
+gate_1 accepted 127.0.0.1:58646 as conn 48
+gate_1 accepted 127.0.0.1:58647 as conn 49
+gate_1 accepted 127.0.0.1:58648 as conn 50
+gate_1 accepted 127.0.0.1:58649 as conn 51
+gate_1 accepted 127.0.0.1:58650 as conn 52
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate1 cpu_percent=274.86 cpu_time_ms=13781 rss_bytes=79126528 v8_heap_used_bytes=7157024 v8_heap_total_bytes=32903168 v8_gc_count=347 v8_gc_ms=39.922
+[metrics:gate1] scene=gate_1 type=Gate processed=96552 failed=0 ts_queue=0 ts_max_queue=372 rust_queue=33 rust_max_queue=372 backpressure=0 slow_disconnects=0 update_ms=2.00 handler_ms=0.00 max_handler_ms=4.00 total_handler_ms=4320.00

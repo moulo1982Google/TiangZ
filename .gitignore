@@ -1,1 +1,6 @@
-target/
+/target/
+/node_modules/
+/dist/
+/tmp_*.log
+/cocos_client2D/temp/
+/cocos_client2D/library/

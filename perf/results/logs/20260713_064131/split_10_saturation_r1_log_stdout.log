@@ -1,0 +1,31 @@
+starting process log with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/log.json
+scene log (Log) listening on 127.0.0.1:7100
+[process:log] one V8 started with 1 scene(s)
+[log] Log scene started at 127.0.0.1:7100
+log accepted 127.0.0.1:55941 as conn 1
+log accepted 127.0.0.1:55974 as conn 2
+log accepted 127.0.0.1:55975 as conn 3
+[log] [login_2] perf_split_0_10_1_1783924950041 login count 1
+[log] [login_1] perf_split_0_10_0_1783924950040 login count 1
+[log] [login_2] perf_split_0_10_3_1783924950042 login count 1
+[log] [login_1] perf_split_0_10_2_1783924950042 login count 1
+[log] [login_2] perf_split_0_10_5_1783924950042 login count 1
+[log] [login_1] perf_split_0_10_6_1783924950042 login count 1
+[log] [login_1] perf_split_0_10_8_1783924950042 login count 1
+[log] [login_2] perf_split_0_10_7_1783924950042 login count 1
+[log] [login_2] perf_split_0_10_9_1783924950042 login count 1
+[log] [login_1] perf_split_0_10_4_1783924950042 login count 1
+log accepted 127.0.0.1:55988 as conn 4
+[log] [gate_1] perf_split_0_10_1_1783924950041 enter map_1 as unit 1000
+[log] [gate_1] perf_split_0_10_0_1783924950040 enter map_1 as unit 1001
+[log] [gate_1] perf_split_0_10_2_1783924950042 enter map_1 as unit 1002
+[log] [gate_1] perf_split_0_10_3_1783924950042 enter map_1 as unit 1003
+[log] [gate_1] perf_split_0_10_5_1783924950042 enter map_1 as unit 1004
+[log] [gate_1] perf_split_0_10_6_1783924950042 enter map_1 as unit 1005
+[log] [gate_1] perf_split_0_10_7_1783924950042 enter map_1 as unit 1006
+[log] [gate_1] perf_split_0_10_8_1783924950042 enter map_1 as unit 1007
+[log] [gate_1] perf_split_0_10_4_1783924950042 enter map_1 as unit 1008
+[log] [gate_1] perf_split_0_10_9_1783924950042 enter map_1 as unit 1009
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=0.62 cpu_time_ms=109 rss_bytes=31784960 v8_heap_used_bytes=1941832 v8_heap_total_bytes=5115904 v8_gc_count=2 v8_gc_ms=1.291
+[metrics:log] scene=log type=Log processed=20 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00

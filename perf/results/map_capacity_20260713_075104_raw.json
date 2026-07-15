@@ -1,0 +1,167 @@
+[
+  {
+    "scenario": "gameplay-full-chain",
+    "label": "2g",
+    "players": 5,
+    "setupConcurrency": 16,
+    "warmupSeconds": 5,
+    "durationSeconds": 6,
+    "targetMoveRatePerPlayer": 10,
+    "targetProbeRatePerPlayer": 1,
+    "measurementStartedAtUnixMs": 1783929069846,
+    "measurementEndedAtUnixMs": 1783929075846,
+    "workload": "steady-10hz",
+    "setup": {
+      "count": 5,
+      "perSecond": 269.8312475377899,
+      "p50Ms": 16.6542,
+      "p90Ms": 17.6263,
+      "p95Ms": 17.6263,
+      "p99Ms": 17.6263,
+      "maxMs": 17.6263,
+      "elapsedSeconds": 0.018530099999999997
+    },
+    "movement": {
+      "count": 275,
+      "perSecond": 45.833333333333336,
+      "p50Ms": 1.091299999999137,
+      "p90Ms": 2.0778000000009342,
+      "p95Ms": 2.386099999999715,
+      "p99Ms": 3.191900000001624,
+      "maxMs": 17.38040000000001,
+      "entityMovePushes": 2525,
+      "pushesPerSecond": 229.54545454545453,
+      "errors": 0
+    },
+    "probe": {
+      "count": 30,
+      "perSecond": 5,
+      "p50Ms": 1.6376999999993131,
+      "p90Ms": 2.034899999999652,
+      "p95Ms": 2.1688999999996668,
+      "p99Ms": 2.3649999999997817,
+      "maxMs": 2.3649999999997817,
+      "errors": 0
+    },
+    "loadGenerator": {
+      "cpuUserMs": 31,
+      "cpuSystemMs": 31,
+      "maxRssBytes": 51171328,
+      "rssBytes": 50257920,
+      "heapUsedBytes": 5249760,
+      "heapTotalBytes": 7397376,
+      "v8HeapLimitBytes": 4496293888,
+      "gcCount": 12,
+      "gcDurationMs": 5.246899995952845
+    },
+    "gates": 2,
+    "round": 1,
+    "serverResources": {
+      "processes": [
+        {
+          "process": "log",
+          "samples": 1,
+          "averageCpuPercent": 0.32,
+          "p90CpuPercent": 0.32,
+          "peakCpuPercent": 0.32,
+          "peakRssBytes": 31432704,
+          "v8GcCount": 2,
+          "v8GcMs": 0.77
+        },
+        {
+          "process": "map1",
+          "samples": 1,
+          "averageCpuPercent": 0.32,
+          "p90CpuPercent": 0.32,
+          "peakCpuPercent": 0.32,
+          "peakRssBytes": 35610624,
+          "v8GcCount": 8,
+          "v8GcMs": 1.44
+        },
+        {
+          "process": "gate1",
+          "samples": 1,
+          "averageCpuPercent": 0.32,
+          "p90CpuPercent": 0.32,
+          "peakCpuPercent": 0.32,
+          "peakRssBytes": 35696640,
+          "v8GcCount": 5,
+          "v8GcMs": 1.093
+        },
+        {
+          "process": "gate2",
+          "samples": 1,
+          "averageCpuPercent": 0.3,
+          "p90CpuPercent": 0.3,
+          "peakCpuPercent": 0.3,
+          "peakRssBytes": 35643392,
+          "v8GcCount": 4,
+          "v8GcMs": 1.062
+        },
+        {
+          "process": "login1",
+          "samples": 1,
+          "averageCpuPercent": 0.32,
+          "p90CpuPercent": 0.32,
+          "peakCpuPercent": 0.32,
+          "peakRssBytes": 32186368,
+          "v8GcCount": 2,
+          "v8GcMs": 0.697
+        },
+        {
+          "process": "mgr",
+          "samples": 1,
+          "averageCpuPercent": 0.32,
+          "p90CpuPercent": 0.32,
+          "peakCpuPercent": 0.32,
+          "peakRssBytes": 30920704,
+          "v8GcCount": 1,
+          "v8GcMs": 0.301
+        }
+      ],
+      "map": {
+        "process": "map1",
+        "samples": 1,
+        "averageCpuPercent": 0.32,
+        "p90CpuPercent": 0.32,
+        "peakCpuPercent": 0.32,
+        "peakRssBytes": 35610624,
+        "v8GcCount": 8,
+        "v8GcMs": 1.44
+      },
+      "gates": [
+        {
+          "process": "gate1",
+          "samples": 1,
+          "averageCpuPercent": 0.32,
+          "p90CpuPercent": 0.32,
+          "peakCpuPercent": 0.32,
+          "peakRssBytes": 35696640,
+          "v8GcCount": 5,
+          "v8GcMs": 1.093
+        },
+        {
+          "process": "gate2",
+          "samples": 1,
+          "averageCpuPercent": 0.3,
+          "p90CpuPercent": 0.3,
+          "peakCpuPercent": 0.3,
+          "peakRssBytes": 35643392,
+          "v8GcCount": 4,
+          "v8GcMs": 1.062
+        }
+      ],
+      "gateMaxAverageCpuPercent": 0.32,
+      "gateMaxPeakCpuPercent": 0.32,
+      "totalPeakRssBytes": 201490432
+    },
+    "transport": {
+      "innerOverloads": 0,
+      "innerTimeouts": 0,
+      "backpressure": 0,
+      "slowDisconnects": 0
+    },
+    "logDirectory": "E:\\VsCode\\skynet\\ets_runtime\\perf\\results\\logs\\map_capacity_20260713_075104",
+    "configDirectory": "E:\\VsCode\\skynet\\ets_runtime\\perf\\results\\runtime_configs\\map_capacity_20260713_075104"
+  }
+]

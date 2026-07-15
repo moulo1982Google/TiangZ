@@ -1,0 +1,211 @@
+starting process log with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/log.json
+scene log (Log) listening on 127.0.0.1:7100
+[process:log] one V8 started with 1 scene(s)
+[log] Log scene started at 127.0.0.1:7100
+log accepted 127.0.0.1:51193 as conn 1
+log accepted 127.0.0.1:51229 as conn 2
+log accepted 127.0.0.1:51230 as conn 3
+[log] [login_1] perf_split_10_100_0_1783924975210 login count 1
+[log] [login_2] perf_split_10_100_1_1783924975211 login count 1
+[log] [login_1] perf_split_10_100_2_1783924975211 login count 1
+[log] [login_2] perf_split_10_100_3_1783924975211 login count 1
+[log] [login_2] perf_split_10_100_5_1783924975211 login count 1
+[log] [login_1] perf_split_10_100_6_1783924975211 login count 1
+[log] [login_2] perf_split_10_100_7_1783924975211 login count 1
+[log] [login_1] perf_split_10_100_8_1783924975211 login count 1
+[log] [login_2] perf_split_10_100_9_1783924975211 login count 1
+[log] [login_1] perf_split_10_100_4_1783924975211 login count 1
+[log] [login_2] perf_split_10_100_11_1783924975212 login count 1
+[log] [login_1] perf_split_10_100_10_1783924975212 login count 1
+[log] [login_2] perf_split_10_100_15_1783924975212 login count 1
+[log] [login_1] perf_split_10_100_12_1783924975212 login count 1
+[log] [login_2] perf_split_10_100_13_1783924975212 login count 1
+[log] [login_1] perf_split_10_100_14_1783924975212 login count 1
+log accepted 127.0.0.1:51249 as conn 4
+[log] [gate_1] perf_split_10_100_1_1783924975211 enter map_1 as unit 1000
+[log] [gate_1] perf_split_10_100_0_1783924975210 enter map_1 as unit 1001
+[log] [gate_1] perf_split_10_100_2_1783924975211 enter map_1 as unit 1002
+[log] [gate_1] perf_split_10_100_3_1783924975211 enter map_1 as unit 1003
+[log] [gate_1] perf_split_10_100_5_1783924975211 enter map_1 as unit 1004
+[log] [gate_1] perf_split_10_100_10_1783924975212 enter map_1 as unit 1005
+[log] [gate_1] perf_split_10_100_6_1783924975211 enter map_1 as unit 1006
+[log] [gate_1] perf_split_10_100_11_1783924975212 enter map_1 as unit 1007
+[log] [login_2] perf_split_10_100_17_1783924975241 login count 1
+[log] [login_1] perf_split_10_100_16_1783924975240 login count 1
+[log] [login_2] perf_split_10_100_19_1783924975241 login count 1
+[log] [login_1] perf_split_10_100_18_1783924975241 login count 1
+[log] [gate_1] perf_split_10_100_7_1783924975211 enter map_1 as unit 1008
+[log] [gate_1] perf_split_10_100_9_1783924975211 enter map_1 as unit 1009
+[log] [gate_1] perf_split_10_100_13_1783924975212 enter map_1 as unit 1010
+[log] [gate_1] perf_split_10_100_15_1783924975212 enter map_1 as unit 1011
+[log] [gate_1] perf_split_10_100_14_1783924975212 enter map_1 as unit 1012
+[log] [gate_1] perf_split_10_100_8_1783924975211 enter map_1 as unit 1013
+[log] [gate_1] perf_split_10_100_4_1783924975211 enter map_1 as unit 1014
+[log] [gate_1] perf_split_10_100_12_1783924975212 enter map_1 as unit 1015
+[log] [login_1] perf_split_10_100_20_1783924975250 login count 1
+[log] [gate_1] perf_split_10_100_16_1783924975240 enter map_1 as unit 1016
+[log] [gate_1] perf_split_10_100_19_1783924975241 enter map_1 as unit 1017
+[log] [gate_1] perf_split_10_100_18_1783924975241 enter map_1 as unit 1018
+[log] [gate_1] perf_split_10_100_17_1783924975241 enter map_1 as unit 1019
+[log] [login_1] perf_split_10_100_22_1783924975253 login count 1
+[log] [login_2] perf_split_10_100_23_1783924975253 login count 1
+[log] [gate_1] perf_split_10_100_20_1783924975250 enter map_1 as unit 1020
+[log] [login_2] perf_split_10_100_21_1783924975252 login count 1
+[log] [login_2] perf_split_10_100_25_1783924975254 login count 1
+[log] [login_2] perf_split_10_100_29_1783924975255 login count 1
+[log] [login_1] perf_split_10_100_24_1783924975253 login count 1
+[log] [login_2] perf_split_10_100_27_1783924975254 login count 1
+[log] [login_1] perf_split_10_100_26_1783924975254 login count 1
+[log] [login_1] perf_split_10_100_28_1783924975254 login count 1
+[log] [login_1] perf_split_10_100_30_1783924975255 login count 1
+[log] [login_2] perf_split_10_100_31_1783924975255 login count 1
+[log] [login_1] perf_split_10_100_32_1783924975260 login count 1
+[log] [gate_1] perf_split_10_100_23_1783924975253 enter map_1 as unit 1021
+[log] [login_1] perf_split_10_100_34_1783924975264 login count 1
+[log] [login_2] perf_split_10_100_33_1783924975263 login count 1
+[log] [gate_1] perf_split_10_100_22_1783924975253 enter map_1 as unit 1022
+[log] [login_1] perf_split_10_100_36_1783924975264 login count 1
+[log] [login_2] perf_split_10_100_35_1783924975264 login count 1
+[log] [gate_1] perf_split_10_100_27_1783924975254 enter map_1 as unit 1023
+[log] [gate_1] perf_split_10_100_21_1783924975252 enter map_1 as unit 1024
+[log] [gate_1] perf_split_10_100_25_1783924975254 enter map_1 as unit 1025
+[log] [login_2] perf_split_10_100_37_1783924975271 login count 1
+[log] [gate_1] perf_split_10_100_29_1783924975255 enter map_1 as unit 1026
+[log] [gate_1] perf_split_10_100_28_1783924975254 enter map_1 as unit 1027
+[log] [gate_1] perf_split_10_100_26_1783924975254 enter map_1 as unit 1028
+[log] [gate_1] perf_split_10_100_24_1783924975253 enter map_1 as unit 1029
+[log] [login_1] perf_split_10_100_38_1783924975275 login count 1
+[log] [login_2] perf_split_10_100_39_1783924975276 login count 1
+[log] [gate_1] perf_split_10_100_30_1783924975255 enter map_1 as unit 1030
+[log] [login_1] perf_split_10_100_40_1783924975276 login count 1
+[log] [gate_1] perf_split_10_100_31_1783924975255 enter map_1 as unit 1031
+[log] [gate_1] perf_split_10_100_34_1783924975264 enter map_1 as unit 1032
+[log] [gate_1] perf_split_10_100_32_1783924975260 enter map_1 as unit 1033
+[log] [login_2] perf_split_10_100_41_1783924975281 login count 1
+[log] [login_1] perf_split_10_100_42_1783924975281 login count 1
+[log] [login_2] perf_split_10_100_43_1783924975281 login count 1
+[log] [gate_1] perf_split_10_100_35_1783924975264 enter map_1 as unit 1034
+[log] [gate_1] perf_split_10_100_36_1783924975264 enter map_1 as unit 1035
+[log] [gate_1] perf_split_10_100_33_1783924975263 enter map_1 as unit 1036
+[log] [gate_1] perf_split_10_100_37_1783924975271 enter map_1 as unit 1037
+[log] [gate_1] perf_split_10_100_38_1783924975275 enter map_1 as unit 1038
+[log] [login_1] perf_split_10_100_44_1783924975288 login count 1
+[log] [gate_1] perf_split_10_100_40_1783924975276 enter map_1 as unit 1039
+[log] [login_2] perf_split_10_100_45_1783924975288 login count 1
+[log] [login_1] perf_split_10_100_46_1783924975288 login count 1
+[log] [login_2] perf_split_10_100_47_1783924975289 login count 1
+[log] [gate_1] perf_split_10_100_39_1783924975276 enter map_1 as unit 1040
+[log] [login_1] perf_split_10_100_48_1783924975291 login count 1
+[log] [login_2] perf_split_10_100_49_1783924975291 login count 1
+[log] [gate_1] perf_split_10_100_42_1783924975281 enter map_1 as unit 1041
+[log] [login_2] perf_split_10_100_51_1783924975292 login count 1
+[log] [login_1] perf_split_10_100_50_1783924975292 login count 1
+[log] [login_1] perf_split_10_100_52_1783924975292 login count 1
+[log] [gate_1] perf_split_10_100_41_1783924975281 enter map_1 as unit 1042
+[log] [gate_1] perf_split_10_100_43_1783924975281 enter map_1 as unit 1043
+[log] [login_2] perf_split_10_100_53_1783924975296 login count 1
+[log] [gate_1] perf_split_10_100_44_1783924975288 enter map_1 as unit 1044
+[log] [gate_1] perf_split_10_100_45_1783924975288 enter map_1 as unit 1045
+[log] [login_2] perf_split_10_100_55_1783924975300 login count 1
+[log] [login_1] perf_split_10_100_54_1783924975299 login count 1
+[log] [login_1] perf_split_10_100_56_1783924975300 login count 1
+[log] [login_2] perf_split_10_100_57_1783924975301 login count 1
+[log] [login_1] perf_split_10_100_59_1783924975302 login count 1
+[log] [gate_1] perf_split_10_100_47_1783924975289 enter map_1 as unit 1046
+[log] [login_2] perf_split_10_100_58_1783924975302 login count 1
+[log] [gate_1] perf_split_10_100_46_1783924975288 enter map_1 as unit 1047
+[log] [gate_1] perf_split_10_100_48_1783924975291 enter map_1 as unit 1048
+[log] [gate_1] perf_split_10_100_49_1783924975291 enter map_1 as unit 1049
+[log] [gate_1] perf_split_10_100_50_1783924975292 enter map_1 as unit 1050
+[log] [login_1] perf_split_10_100_60_1783924975310 login count 1
+[log] [gate_1] perf_split_10_100_51_1783924975292 enter map_1 as unit 1051
+[log] [gate_1] perf_split_10_100_52_1783924975292 enter map_1 as unit 1052
+[log] [gate_1] perf_split_10_100_53_1783924975296 enter map_1 as unit 1053
+[log] [gate_1] perf_split_10_100_54_1783924975299 enter map_1 as unit 1054
+[log] [gate_1] perf_split_10_100_56_1783924975300 enter map_1 as unit 1055
+[log] [gate_1] perf_split_10_100_55_1783924975300 enter map_1 as unit 1056
+[log] [login_2] perf_split_10_100_61_1783924975316 login count 1
+[log] [login_1] perf_split_10_100_62_1783924975317 login count 1
+[log] [login_2] perf_split_10_100_63_1783924975317 login count 1
+[log] [login_1] perf_split_10_100_64_1783924975318 login count 1
+[log] [login_2] perf_split_10_100_65_1783924975318 login count 1
+[log] [gate_1] perf_split_10_100_57_1783924975301 enter map_1 as unit 1057
+[log] [login_1] perf_split_10_100_66_1783924975319 login count 1
+[log] [login_2] perf_split_10_100_67_1783924975319 login count 1
+[log] [login_2] perf_split_10_100_69_1783924975320 login count 1
+[log] [login_1] perf_split_10_100_68_1783924975319 login count 1
+[log] [gate_1] perf_split_10_100_59_1783924975302 enter map_1 as unit 1058
+[log] [gate_1] perf_split_10_100_58_1783924975302 enter map_1 as unit 1059
+[log] [gate_1] perf_split_10_100_60_1783924975310 enter map_1 as unit 1060
+[log] [login_1] perf_split_10_100_70_1783924975329 login count 1
+[log] [login_2] perf_split_10_100_71_1783924975329 login count 1
+[log] [gate_1] perf_split_10_100_61_1783924975316 enter map_1 as unit 1061
+[log] [login_2] perf_split_10_100_75_1783924975333 login count 1
+[log] [login_1] perf_split_10_100_72_1783924975332 login count 1
+[log] [gate_1] perf_split_10_100_62_1783924975317 enter map_1 as unit 1062
+[log] [login_1] perf_split_10_100_74_1783924975332 login count 1
+[log] [login_1] perf_split_10_100_76_1783924975333 login count 1
+[log] [login_2] perf_split_10_100_73_1783924975332 login count 1
+[log] [gate_1] perf_split_10_100_64_1783924975318 enter map_1 as unit 1063
+[log] [gate_1] perf_split_10_100_63_1783924975317 enter map_1 as unit 1064
+[log] [gate_1] perf_split_10_100_65_1783924975318 enter map_1 as unit 1065
+[log] [gate_1] perf_split_10_100_69_1783924975320 enter map_1 as unit 1066
+[log] [gate_1] perf_split_10_100_67_1783924975319 enter map_1 as unit 1067
+[log] [gate_1] perf_split_10_100_66_1783924975319 enter map_1 as unit 1068
+[log] [gate_1] perf_split_10_100_68_1783924975319 enter map_1 as unit 1069
+[log] [gate_1] perf_split_10_100_70_1783924975329 enter map_1 as unit 1070
+[log] [gate_1] perf_split_10_100_71_1783924975329 enter map_1 as unit 1071
+[log] [login_2] perf_split_10_100_77_1783924975349 login count 1
+[log] [gate_1] perf_split_10_100_72_1783924975332 enter map_1 as unit 1072
+[log] [gate_1] perf_split_10_100_74_1783924975332 enter map_1 as unit 1073
+[log] [gate_1] perf_split_10_100_75_1783924975333 enter map_1 as unit 1074
+[log] [login_1] perf_split_10_100_78_1783924975351 login count 1
+[log] [login_2] perf_split_10_100_79_1783924975352 login count 1
+[log] [login_1] perf_split_10_100_80_1783924975352 login count 1
+[log] [login_1] perf_split_10_100_84_1783924975353 login count 1
+[log] [login_2] perf_split_10_100_81_1783924975352 login count 1
+[log] [login_1] perf_split_10_100_82_1783924975352 login count 1
+[log] [login_2] perf_split_10_100_83_1783924975353 login count 1
+[log] [login_2] perf_split_10_100_85_1783924975354 login count 1
+[log] [gate_1] perf_split_10_100_76_1783924975333 enter map_1 as unit 1075
+[log] [login_1] perf_split_10_100_86_1783924975354 login count 1
+[log] [login_2] perf_split_10_100_87_1783924975354 login count 1
+[log] [gate_1] perf_split_10_100_73_1783924975332 enter map_1 as unit 1076
+[log] [gate_1] perf_split_10_100_77_1783924975349 enter map_1 as unit 1077
+[log] [login_1] perf_split_10_100_88_1783924975362 login count 1
+[log] [login_2] perf_split_10_100_89_1783924975362 login count 1
+[log] [gate_1] perf_split_10_100_78_1783924975351 enter map_1 as unit 1078
+[log] [login_1] perf_split_10_100_90_1783924975366 login count 1
+[log] [gate_1] perf_split_10_100_80_1783924975352 enter map_1 as unit 1079
+[log] [login_2] perf_split_10_100_91_1783924975366 login count 1
+[log] [login_1] perf_split_10_100_92_1783924975366 login count 1
+[log] [login_2] perf_split_10_100_93_1783924975367 login count 1
+[log] [gate_1] perf_split_10_100_84_1783924975353 enter map_1 as unit 1080
+[log] [gate_1] perf_split_10_100_79_1783924975352 enter map_1 as unit 1081
+[log] [gate_1] perf_split_10_100_81_1783924975352 enter map_1 as unit 1082
+[log] [gate_1] perf_split_10_100_82_1783924975352 enter map_1 as unit 1083
+[log] [gate_1] perf_split_10_100_83_1783924975353 enter map_1 as unit 1084
+[log] [gate_1] perf_split_10_100_85_1783924975354 enter map_1 as unit 1085
+[log] [gate_1] perf_split_10_100_86_1783924975354 enter map_1 as unit 1086
+[log] [gate_1] perf_split_10_100_87_1783924975354 enter map_1 as unit 1087
+[log] [gate_1] perf_split_10_100_88_1783924975362 enter map_1 as unit 1088
+[log] [login_1] perf_split_10_100_94_1783924975383 login count 1
+[log] [gate_1] perf_split_10_100_89_1783924975362 enter map_1 as unit 1089
+[log] [gate_1] perf_split_10_100_91_1783924975366 enter map_1 as unit 1090
+[log] [login_2] perf_split_10_100_95_1783924975390 login count 1
+[log] [login_1] perf_split_10_100_96_1783924975391 login count 1
+[log] [gate_1] perf_split_10_100_92_1783924975366 enter map_1 as unit 1091
+[log] [login_1] perf_split_10_100_98_1783924975391 login count 1
+[log] [login_2] perf_split_10_100_97_1783924975391 login count 1
+[log] [login_2] perf_split_10_100_99_1783924975392 login count 1
+[log] [gate_1] perf_split_10_100_90_1783924975366 enter map_1 as unit 1092
+[log] [gate_1] perf_split_10_100_93_1783924975367 enter map_1 as unit 1093
+[log] [gate_1] perf_split_10_100_94_1783924975383 enter map_1 as unit 1094
+[log] [gate_1] perf_split_10_100_98_1783924975391 enter map_1 as unit 1095
+[log] [gate_1] perf_split_10_100_97_1783924975391 enter map_1 as unit 1096
+[log] [gate_1] perf_split_10_100_99_1783924975392 enter map_1 as unit 1097
+[log] [gate_1] perf_split_10_100_95_1783924975390 enter map_1 as unit 1098
+[log] [gate_1] perf_split_10_100_96_1783924975391 enter map_1 as unit 1099
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=0.61 cpu_time_ms=109 rss_bytes=33021952 v8_heap_used_bytes=3266336 v8_heap_total_bytes=5902336 v8_gc_count=2 v8_gc_ms=0.613
+[metrics:log] scene=log type=Log processed=200 failed=0 ts_queue=0 ts_max_queue=12 rust_queue=0 rust_max_queue=12 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00

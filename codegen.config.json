@@ -1,0 +1,14 @@
+{
+  "hotfix": {
+    "sceneSearchRoots": ["app"],
+    "handlerSearchRoots": ["app"],
+    "serverProtocolSearchRoots": ["app/generated/model/server"]
+  },
+  "cocosClientProtocol": {
+    "enabled": true,
+    "outputRoot": "cocos_client2D/assets/scripts/Generated/Model",
+    "binaryRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Binary.ts",
+    "messageRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Message.ts",
+    "rpcRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Rpc.ts"
+  }
+}

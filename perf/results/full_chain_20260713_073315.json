@@ -1,0 +1,1383 @@
+{
+  "generatedAt": "2026-07-13T07:36:07.855Z",
+  "runId": "20260713_073315",
+  "parameters": {
+    "mode": "both",
+    "players": [
+      10,
+      50,
+      100
+    ],
+    "moveRates": [
+      10,
+      0
+    ],
+    "duration": 10,
+    "warmup": 3,
+    "rounds": 1,
+    "setupConcurrency": 16,
+    "host": "127.0.0.1",
+    "managerPort": 7000,
+    "remote": false,
+    "debugRuntime": false
+  },
+  "loadGeneratorMachine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
+    "logicalCpus": 8,
+    "memoryBytes": 16178061312,
+    "os": "linux 7.0.0-27-generic"
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "independentlyDeployed": false,
+    "note": "服务端与压测端在同一台机器，资源竞争会影响结果"
+  },
+  "cases": [
+    {
+      "label": "all",
+      "players": 10,
+      "workload": "steady-10hz",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 245.39391932517844,
+        "setupP95Ms": 38.011532,
+        "movesPerSecond": 100,
+        "pushesPerSecond": 1000,
+        "moveP50Ms": 0.8965230000012525,
+        "moveP95Ms": 6.828605999999127,
+        "moveP99Ms": 11.018144000000575,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 3.58,
+        "serverPeakRssBytesSum": 61304832,
+        "serverGcCount": 27,
+        "serverGcMs": 5.03,
+        "loadCpuMs": 210.06799999999998,
+        "loadPeakRssBytes": 62582784,
+        "loadGcCount": 17,
+        "loadGcMs": 8.424939004704356
+      }
+    },
+    {
+      "label": "all",
+      "players": 10,
+      "workload": "saturation",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 234.55087284119963,
+        "setupP95Ms": 40.387313,
+        "movesPerSecond": 7804.4,
+        "pushesPerSecond": 76262.76923076923,
+        "moveP50Ms": 1.077578999999787,
+        "moveP95Ms": 2.661579999999958,
+        "moveP99Ms": 4.123515999999654,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 78.17,
+        "serverPeakRssBytesSum": 81498112,
+        "serverGcCount": 792,
+        "serverGcMs": 114.638,
+        "loadCpuMs": 3910.8419999999996,
+        "loadPeakRssBytes": 84008960,
+        "loadGcCount": 284,
+        "loadGcMs": 98.16579301655293
+      }
+    },
+    {
+      "label": "all",
+      "players": 50,
+      "workload": "steady-10hz",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 336.66605344067256,
+        "setupP95Ms": 54.44431600000001,
+        "movesPerSecond": 500,
+        "pushesPerSecond": 25000,
+        "moveP50Ms": 2.9447869999985414,
+        "moveP95Ms": 12.040236000000732,
+        "moveP99Ms": 14.414022000000841,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 19.19,
+        "serverPeakRssBytesSum": 91631616,
+        "serverGcCount": 109,
+        "serverGcMs": 31.588,
+        "loadCpuMs": 883.044,
+        "loadPeakRssBytes": 69918720,
+        "loadGcCount": 89,
+        "loadGcMs": 29.19237400405109
+      }
+    },
+    {
+      "label": "all",
+      "players": 50,
+      "workload": "saturation",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 370.9623631008842,
+        "setupP95Ms": 48.37012800000001,
+        "movesPerSecond": 5214,
+        "pushesPerSecond": 258043.15384615384,
+        "moveP50Ms": 9.447808999999324,
+        "moveP95Ms": 14.615187000000333,
+        "moveP99Ms": 16.87576900000022,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 149.91,
+        "serverPeakRssBytesSum": 119025664,
+        "serverGcCount": 496,
+        "serverGcMs": 159.102,
+        "loadCpuMs": 3839.17,
+        "loadPeakRssBytes": 84279296,
+        "loadGcCount": 377,
+        "loadGcMs": 172.2644459810108
+      }
+    },
+    {
+      "label": "all",
+      "players": 100,
+      "workload": "steady-10hz",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 290.0894361396448,
+        "setupP95Ms": 66.935924,
+        "movesPerSecond": 1000,
+        "pushesPerSecond": 100000,
+        "moveP50Ms": 8.051727000000028,
+        "moveP95Ms": 20.50181100000009,
+        "moveP99Ms": 30.88756599999988,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 61.54,
+        "serverPeakRssBytesSum": 189325312,
+        "serverGcCount": 130,
+        "serverGcMs": 95.807,
+        "loadCpuMs": 2072.638,
+        "loadPeakRssBytes": 81584128,
+        "loadGcCount": 156,
+        "loadGcMs": 70.62946899607778
+      }
+    },
+    {
+      "label": "all",
+      "players": 100,
+      "workload": "saturation",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 306.42795389744856,
+        "setupP95Ms": 67.77672999999999,
+        "movesPerSecond": 2263.4,
+        "pushesPerSecond": 226511.07692307694,
+        "moveP50Ms": 43.90309800000068,
+        "moveP95Ms": 56.175397999999404,
+        "moveP99Ms": 60.052880000001096,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 158.03,
+        "serverPeakRssBytesSum": 194707456,
+        "serverGcCount": 224,
+        "serverGcMs": 183.976,
+        "loadCpuMs": 2588.015,
+        "loadPeakRssBytes": 83832832,
+        "loadGcCount": 261,
+        "loadGcMs": 109.81406799703836
+      }
+    },
+    {
+      "label": "split",
+      "players": 10,
+      "workload": "steady-10hz",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 125.02588660982255,
+        "setupP95Ms": 76.872024,
+        "movesPerSecond": 100,
+        "pushesPerSecond": 1000,
+        "moveP50Ms": 4.390735000000859,
+        "moveP95Ms": 6.497757000001002,
+        "moveP99Ms": 8.612395999999535,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 9.76,
+        "serverPeakRssBytesSum": 309391360,
+        "serverGcCount": 38,
+        "serverGcMs": 25.331000000000003,
+        "loadCpuMs": 243.111,
+        "loadPeakRssBytes": 62259200,
+        "loadGcCount": 18,
+        "loadGcMs": 6.193187003955245
+      }
+    },
+    {
+      "label": "split",
+      "players": 10,
+      "workload": "saturation",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 141.17676224281706,
+        "setupP95Ms": 70.653799,
+        "movesPerSecond": 3279,
+        "pushesPerSecond": 32875.153846153844,
+        "moveP50Ms": 2.8690559999995457,
+        "moveP95Ms": 4.956286999999975,
+        "moveP99Ms": 6.383918999999878,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 152.39,
+        "serverPeakRssBytesSum": 337920000,
+        "serverGcCount": 644,
+        "serverGcMs": 134.012,
+        "loadCpuMs": 2684.784,
+        "loadPeakRssBytes": 72175616,
+        "loadGcCount": 181,
+        "loadGcMs": 54.87322498485446
+      }
+    },
+    {
+      "label": "split",
+      "players": 50,
+      "workload": "steady-10hz",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 176.70671143505285,
+        "setupP95Ms": 101.08829499999999,
+        "movesPerSecond": 500,
+        "pushesPerSecond": 25000,
+        "moveP50Ms": 16.081340000000637,
+        "moveP95Ms": 23.80283799999961,
+        "moveP99Ms": 32.923355000000356,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 37.03,
+        "serverPeakRssBytesSum": 357789696,
+        "serverGcCount": 225,
+        "serverGcMs": 54.173,
+        "loadCpuMs": 805.991,
+        "loadPeakRssBytes": 70344704,
+        "loadGcCount": 80,
+        "loadGcMs": 27.34559698961675
+      }
+    },
+    {
+      "label": "split",
+      "players": 50,
+      "workload": "saturation",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 165.45374402067543,
+        "setupP95Ms": 116.515444,
+        "movesPerSecond": 2827.5,
+        "pushesPerSecond": 143844.46153846153,
+        "moveP50Ms": 17.723472000001493,
+        "moveP95Ms": 22.206811000000016,
+        "moveP99Ms": 24.681150000000343,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 157.98,
+        "serverPeakRssBytesSum": 372781056,
+        "serverGcCount": 838,
+        "serverGcMs": 185.12,
+        "loadCpuMs": 2979.382,
+        "loadPeakRssBytes": 81002496,
+        "loadGcCount": 271,
+        "loadGcMs": 94.25496200658381
+      }
+    },
+    {
+      "label": "split",
+      "players": 100,
+      "workload": "steady-10hz",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 178.47350398422464,
+        "setupP95Ms": 110.35636999999997,
+        "movesPerSecond": 1000,
+        "pushesPerSecond": 100000,
+        "moveP50Ms": 38.9602219999997,
+        "moveP95Ms": 49.86039199999959,
+        "moveP99Ms": 57.663220999999794,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 87.47999999999999,
+        "serverPeakRssBytesSum": 451858432,
+        "serverGcCount": 397,
+        "serverGcMs": 139.553,
+        "loadCpuMs": 1750.712,
+        "loadPeakRssBytes": 83439616,
+        "loadGcCount": 143,
+        "loadGcMs": 71.79288999736309
+      }
+    },
+    {
+      "label": "split",
+      "players": 100,
+      "workload": "saturation",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 176.37429025905308,
+        "setupP95Ms": 111.11973900000001,
+        "movesPerSecond": 2070,
+        "pushesPerSecond": 206335.38461538462,
+        "moveP50Ms": 47.72663499999999,
+        "moveP95Ms": 65.3549920000005,
+        "moveP99Ms": 74.20818000000054,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 152.13,
+        "serverPeakRssBytesSum": 458989568,
+        "serverGcCount": 749,
+        "serverGcMs": 255.653,
+        "loadCpuMs": 2734.065,
+        "loadPeakRssBytes": 82440192,
+        "loadGcCount": 248,
+        "loadGcMs": 106.15558901615441
+      }
+    }
+  ],
+  "rounds": [
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 10,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 10,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 10,
+        "perSecond": 245.39391932517844,
+        "p50Ms": 36.841817999999996,
+        "p95Ms": 38.011532,
+        "p99Ms": 38.011532,
+        "maxMs": 38.011532,
+        "elapsedSeconds": 0.04075080600000001
+      },
+      "movement": {
+        "count": 1000,
+        "perSecond": 100,
+        "p50Ms": 0.8965230000012525,
+        "p95Ms": 6.828605999999127,
+        "p99Ms": 11.018144000000575,
+        "maxMs": 11.884456999999202,
+        "entityMovePushes": 13000,
+        "pushesPerSecond": 1000,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 144.346,
+        "cpuSystemMs": 65.722,
+        "maxRssBytes": 62582784,
+        "rssBytes": 62582784,
+        "heapUsedBytes": 7185240,
+        "heapTotalBytes": 11513856,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 17,
+        "gcDurationMs": 8.424939004704356
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 2,
+            "peakCpuPercent": 3.58,
+            "peakRssBytes": 61304832,
+            "peakV8HeapUsedBytes": 3718512,
+            "cpuTimeMs": 300,
+            "v8GcCount": 27,
+            "v8GcMs": 5.03
+          }
+        ],
+        "peakCpuPercentSum": 3.58,
+        "peakRssBytesSum": 61304832,
+        "peakV8HeapUsedBytesSum": 3718512,
+        "cpuTimeMsSum": 300,
+        "v8GcCountSum": 27,
+        "v8GcMsSum": 5.03
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 10,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 0,
+      "workload": "saturation",
+      "setup": {
+        "count": 10,
+        "perSecond": 234.55087284119963,
+        "p50Ms": 38.34805200000001,
+        "p95Ms": 40.387313,
+        "p99Ms": 40.387313,
+        "maxMs": 40.387313,
+        "elapsedSeconds": 0.042634674
+      },
+      "movement": {
+        "count": 78044,
+        "perSecond": 7804.4,
+        "p50Ms": 1.077578999999787,
+        "p95Ms": 2.661579999999958,
+        "p99Ms": 4.123515999999654,
+        "maxMs": 11.963616000000002,
+        "entityMovePushes": 991416,
+        "pushesPerSecond": 76262.76923076923,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 2410.115,
+        "cpuSystemMs": 1500.727,
+        "maxRssBytes": 84008960,
+        "rssBytes": 84008960,
+        "heapUsedBytes": 10007456,
+        "heapTotalBytes": 28471296,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 284,
+        "gcDurationMs": 98.16579301655293
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 2,
+            "peakCpuPercent": 78.17,
+            "peakRssBytes": 81498112,
+            "peakV8HeapUsedBytes": 10553728,
+            "cpuTimeMs": 7610,
+            "v8GcCount": 792,
+            "v8GcMs": 114.638
+          }
+        ],
+        "peakCpuPercentSum": 78.17,
+        "peakRssBytesSum": 81498112,
+        "peakV8HeapUsedBytesSum": 10553728,
+        "cpuTimeMsSum": 7610,
+        "v8GcCountSum": 792,
+        "v8GcMsSum": 114.638
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 50,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 10,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 50,
+        "perSecond": 336.66605344067256,
+        "p50Ms": 42.871805,
+        "p95Ms": 54.44431600000001,
+        "p99Ms": 55.189488000000004,
+        "maxMs": 55.189488000000004,
+        "elapsedSeconds": 0.148515122
+      },
+      "movement": {
+        "count": 5000,
+        "perSecond": 500,
+        "p50Ms": 2.9447869999985414,
+        "p95Ms": 12.040236000000732,
+        "p99Ms": 14.414022000000841,
+        "maxMs": 17.51225499999964,
+        "entityMovePushes": 325000,
+        "pushesPerSecond": 25000,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 611.91,
+        "cpuSystemMs": 271.134,
+        "maxRssBytes": 69918720,
+        "rssBytes": 69918720,
+        "heapUsedBytes": 7058000,
+        "heapTotalBytes": 15970304,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 89,
+        "gcDurationMs": 29.19237400405109
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 2,
+            "peakCpuPercent": 19.19,
+            "peakRssBytes": 91631616,
+            "peakV8HeapUsedBytes": 8703792,
+            "cpuTimeMs": 1660,
+            "v8GcCount": 109,
+            "v8GcMs": 31.588
+          }
+        ],
+        "peakCpuPercentSum": 19.19,
+        "peakRssBytesSum": 91631616,
+        "peakV8HeapUsedBytesSum": 8703792,
+        "cpuTimeMsSum": 1660,
+        "v8GcCountSum": 109,
+        "v8GcMsSum": 31.588
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 50,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 0,
+      "workload": "saturation",
+      "setup": {
+        "count": 50,
+        "perSecond": 370.9623631008842,
+        "p50Ms": 36.764071,
+        "p95Ms": 48.37012800000001,
+        "p99Ms": 49.329003000000014,
+        "maxMs": 49.329003000000014,
+        "elapsedSeconds": 0.134784563
+      },
+      "movement": {
+        "count": 52140,
+        "perSecond": 5214,
+        "p50Ms": 9.447808999999324,
+        "p95Ms": 14.615187000000333,
+        "p99Ms": 16.87576900000022,
+        "maxMs": 22.038291999999274,
+        "entityMovePushes": 3354561,
+        "pushesPerSecond": 258043.15384615384,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 2696.423,
+        "cpuSystemMs": 1142.747,
+        "maxRssBytes": 84279296,
+        "rssBytes": 84189184,
+        "heapUsedBytes": 12193288,
+        "heapTotalBytes": 26910720,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 377,
+        "gcDurationMs": 172.2644459810108
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 2,
+            "peakCpuPercent": 149.91,
+            "peakRssBytes": 119025664,
+            "peakV8HeapUsedBytes": 11872152,
+            "cpuTimeMs": 15030,
+            "v8GcCount": 496,
+            "v8GcMs": 159.102
+          }
+        ],
+        "peakCpuPercentSum": 149.91,
+        "peakRssBytesSum": 119025664,
+        "peakV8HeapUsedBytesSum": 11872152,
+        "cpuTimeMsSum": 15030,
+        "v8GcCountSum": 496,
+        "v8GcMsSum": 159.102
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 100,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 10,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 100,
+        "perSecond": 290.0894361396448,
+        "p50Ms": 52.937419000000006,
+        "p95Ms": 66.935924,
+        "p99Ms": 69.20351199999999,
+        "maxMs": 69.20351199999999,
+        "elapsedSeconds": 0.34472127399999997
+      },
+      "movement": {
+        "count": 10000,
+        "perSecond": 1000,
+        "p50Ms": 8.051727000000028,
+        "p95Ms": 20.50181100000009,
+        "p99Ms": 30.88756599999988,
+        "maxMs": 42.137447000000066,
+        "entityMovePushes": 1300000,
+        "pushesPerSecond": 100000,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 1477.286,
+        "cpuSystemMs": 595.352,
+        "maxRssBytes": 81584128,
+        "rssBytes": 81158144,
+        "heapUsedBytes": 8998744,
+        "heapTotalBytes": 25407488,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 156,
+        "gcDurationMs": 70.62946899607778
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 2,
+            "peakCpuPercent": 61.54,
+            "peakRssBytes": 189325312,
+            "peakV8HeapUsedBytes": 28363888,
+            "cpuTimeMs": 5410,
+            "v8GcCount": 130,
+            "v8GcMs": 95.807
+          }
+        ],
+        "peakCpuPercentSum": 61.54,
+        "peakRssBytesSum": 189325312,
+        "peakV8HeapUsedBytesSum": 28363888,
+        "cpuTimeMsSum": 5410,
+        "v8GcCountSum": 130,
+        "v8GcMsSum": 95.807
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 100,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 0,
+      "workload": "saturation",
+      "setup": {
+        "count": 100,
+        "perSecond": 306.42795389744856,
+        "p50Ms": 43.548761,
+        "p95Ms": 67.77672999999999,
+        "p99Ms": 68.63471899999996,
+        "maxMs": 68.63471899999996,
+        "elapsedSeconds": 0.326340984
+      },
+      "movement": {
+        "count": 22634,
+        "perSecond": 2263.4,
+        "p50Ms": 43.90309800000068,
+        "p95Ms": 56.175397999999404,
+        "p99Ms": 60.052880000001096,
+        "maxMs": 63.64285100000052,
+        "entityMovePushes": 2944644,
+        "pushesPerSecond": 226511.07692307694,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 1878.856,
+        "cpuSystemMs": 709.159,
+        "maxRssBytes": 83832832,
+        "rssBytes": 83664896,
+        "heapUsedBytes": 10977672,
+        "heapTotalBytes": 26390528,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 261,
+        "gcDurationMs": 109.81406799703836
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 2,
+            "peakCpuPercent": 158.03,
+            "peakRssBytes": 194707456,
+            "peakV8HeapUsedBytes": 36145952,
+            "cpuTimeMs": 15440,
+            "v8GcCount": 224,
+            "v8GcMs": 183.976
+          }
+        ],
+        "peakCpuPercentSum": 158.03,
+        "peakRssBytesSum": 194707456,
+        "peakV8HeapUsedBytesSum": 36145952,
+        "cpuTimeMsSum": 15440,
+        "v8GcCountSum": 224,
+        "v8GcMsSum": 183.976
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "split",
+      "players": 10,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 10,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 10,
+        "perSecond": 125.02588660982255,
+        "p50Ms": 75.550034,
+        "p95Ms": 76.872024,
+        "p99Ms": 76.872024,
+        "maxMs": 76.872024,
+        "elapsedSeconds": 0.079983436
+      },
+      "movement": {
+        "count": 1000,
+        "perSecond": 100,
+        "p50Ms": 4.390735000000859,
+        "p95Ms": 6.497757000001002,
+        "p99Ms": 8.612395999999535,
+        "maxMs": 9.045474000000468,
+        "entityMovePushes": 13000,
+        "pushesPerSecond": 1000,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 184.283,
+        "cpuSystemMs": 58.828,
+        "maxRssBytes": 62259200,
+        "rssBytes": 62259200,
+        "heapUsedBytes": 6076208,
+        "heapTotalBytes": 11513856,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 18,
+        "gcDurationMs": 6.193187003955245
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 2,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 46989312,
+            "peakV8HeapUsedBytes": 2137720,
+            "cpuTimeMs": 70,
+            "v8GcCount": 2,
+            "v8GcMs": 2.879
+          },
+          {
+            "process": "mgr",
+            "samples": 2,
+            "peakCpuPercent": 0.6,
+            "peakRssBytes": 46792704,
+            "peakV8HeapUsedBytes": 2088560,
+            "cpuTimeMs": 80,
+            "v8GcCount": 2,
+            "v8GcMs": 5.494
+          },
+          {
+            "process": "login1",
+            "samples": 2,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 49389568,
+            "peakV8HeapUsedBytes": 2153384,
+            "cpuTimeMs": 70,
+            "v8GcCount": 2,
+            "v8GcMs": 1.675
+          },
+          {
+            "process": "login2",
+            "samples": 2,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 49086464,
+            "peakV8HeapUsedBytes": 2171224,
+            "cpuTimeMs": 70,
+            "v8GcCount": 2,
+            "v8GcMs": 1.9
+          },
+          {
+            "process": "gate1",
+            "samples": 2,
+            "peakCpuPercent": 4.37,
+            "peakRssBytes": 59723776,
+            "peakV8HeapUsedBytes": 3175784,
+            "cpuTimeMs": 410,
+            "v8GcCount": 12,
+            "v8GcMs": 8.734
+          },
+          {
+            "process": "map1",
+            "samples": 2,
+            "peakCpuPercent": 3.59,
+            "peakRssBytes": 57409536,
+            "peakV8HeapUsedBytes": 3530792,
+            "cpuTimeMs": 340,
+            "v8GcCount": 18,
+            "v8GcMs": 4.649
+          }
+        ],
+        "peakCpuPercentSum": 9.76,
+        "peakRssBytesSum": 309391360,
+        "peakV8HeapUsedBytesSum": 15257464,
+        "cpuTimeMsSum": 1040,
+        "v8GcCountSum": 38,
+        "v8GcMsSum": 25.331000000000003
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "split",
+      "players": 10,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 0,
+      "workload": "saturation",
+      "setup": {
+        "count": 10,
+        "perSecond": 141.17676224281706,
+        "p50Ms": 67.225705,
+        "p95Ms": 70.653799,
+        "p99Ms": 70.653799,
+        "maxMs": 70.653799,
+        "elapsedSeconds": 0.07083318699999999
+      },
+      "movement": {
+        "count": 32790,
+        "perSecond": 3279,
+        "p50Ms": 2.8690559999995457,
+        "p95Ms": 4.956286999999975,
+        "p99Ms": 6.383918999999878,
+        "maxMs": 15.598006000000169,
+        "entityMovePushes": 427377,
+        "pushesPerSecond": 32875.153846153844,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 1695.002,
+        "cpuSystemMs": 989.782,
+        "maxRssBytes": 72175616,
+        "rssBytes": 72175616,
+        "heapUsedBytes": 9322136,
+        "heapTotalBytes": 17821696,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 181,
+        "gcDurationMs": 54.87322498485446
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 2,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 48959488,
+            "peakV8HeapUsedBytes": 2119352,
+            "cpuTimeMs": 60,
+            "v8GcCount": 2,
+            "v8GcMs": 4.965
+          },
+          {
+            "process": "mgr",
+            "samples": 2,
+            "peakCpuPercent": 0.6,
+            "peakRssBytes": 46649344,
+            "peakV8HeapUsedBytes": 2063240,
+            "cpuTimeMs": 60,
+            "v8GcCount": 2,
+            "v8GcMs": 2.002
+          },
+          {
+            "process": "login1",
+            "samples": 2,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 49041408,
+            "peakV8HeapUsedBytes": 2183024,
+            "cpuTimeMs": 60,
+            "v8GcCount": 2,
+            "v8GcMs": 1.436
+          },
+          {
+            "process": "login2",
+            "samples": 2,
+            "peakCpuPercent": 0.6,
+            "peakRssBytes": 49008640,
+            "peakV8HeapUsedBytes": 2153776,
+            "cpuTimeMs": 60,
+            "v8GcCount": 2,
+            "v8GcMs": 1.601
+          },
+          {
+            "process": "gate1",
+            "samples": 2,
+            "peakCpuPercent": 87.19,
+            "peakRssBytes": 74010624,
+            "peakV8HeapUsedBytes": 6636816,
+            "cpuTimeMs": 8610,
+            "v8GcCount": 303,
+            "v8GcMs": 51.11
+          },
+          {
+            "process": "map1",
+            "samples": 2,
+            "peakCpuPercent": 63.2,
+            "peakRssBytes": 70250496,
+            "peakV8HeapUsedBytes": 8830280,
+            "cpuTimeMs": 6340,
+            "v8GcCount": 333,
+            "v8GcMs": 72.898
+          }
+        ],
+        "peakCpuPercentSum": 152.39,
+        "peakRssBytesSum": 337920000,
+        "peakV8HeapUsedBytesSum": 23986488,
+        "cpuTimeMsSum": 15190,
+        "v8GcCountSum": 644,
+        "v8GcMsSum": 134.012
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "split",
+      "players": 50,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 10,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 50,
+        "perSecond": 176.70671143505285,
+        "p50Ms": 82.577661,
+        "p95Ms": 101.08829499999999,
+        "p99Ms": 105.17579099999999,
+        "maxMs": 105.17579099999999,
+        "elapsedSeconds": 0.28295473099999996
+      },
+      "movement": {
+        "count": 5000,
+        "perSecond": 500,
+        "p50Ms": 16.081340000000637,
+        "p95Ms": 23.80283799999961,
+        "p99Ms": 32.923355000000356,
+        "maxMs": 35.795864000000165,
+        "entityMovePushes": 325000,
+        "pushesPerSecond": 25000,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 605.56,
+        "cpuSystemMs": 200.431,
+        "maxRssBytes": 70344704,
+        "rssBytes": 70344704,
+        "heapUsedBytes": 7649904,
+        "heapTotalBytes": 15970304,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 80,
+        "gcDurationMs": 27.34559698961675
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 2,
+            "peakCpuPercent": 0.79,
+            "peakRssBytes": 51245056,
+            "peakV8HeapUsedBytes": 2446432,
+            "cpuTimeMs": 90,
+            "v8GcCount": 2,
+            "v8GcMs": 1.53
+          },
+          {
+            "process": "mgr",
+            "samples": 2,
+            "peakCpuPercent": 0.6,
+            "peakRssBytes": 48734208,
+            "peakV8HeapUsedBytes": 2145328,
+            "cpuTimeMs": 80,
+            "v8GcCount": 2,
+            "v8GcMs": 1.552
+          },
+          {
+            "process": "login1",
+            "samples": 2,
+            "peakCpuPercent": 0.8,
+            "peakRssBytes": 49967104,
+            "peakV8HeapUsedBytes": 2502240,
+            "cpuTimeMs": 80,
+            "v8GcCount": 2,
+            "v8GcMs": 1.853
+          },
+          {
+            "process": "login2",
+            "samples": 2,
+            "peakCpuPercent": 0.6,
+            "peakRssBytes": 51572736,
+            "peakV8HeapUsedBytes": 2493928,
+            "cpuTimeMs": 80,
+            "v8GcCount": 2,
+            "v8GcMs": 1.795
+          },
+          {
+            "process": "gate1",
+            "samples": 2,
+            "peakCpuPercent": 20.88,
+            "peakRssBytes": 89116672,
+            "peakV8HeapUsedBytes": 9150840,
+            "cpuTimeMs": 1930,
+            "v8GcCount": 63,
+            "v8GcMs": 20.825
+          },
+          {
+            "process": "map1",
+            "samples": 2,
+            "peakCpuPercent": 13.36,
+            "peakRssBytes": 67153920,
+            "peakV8HeapUsedBytes": 5795400,
+            "cpuTimeMs": 1210,
+            "v8GcCount": 154,
+            "v8GcMs": 26.618
+          }
+        ],
+        "peakCpuPercentSum": 37.03,
+        "peakRssBytesSum": 357789696,
+        "peakV8HeapUsedBytesSum": 24534168,
+        "cpuTimeMsSum": 3470,
+        "v8GcCountSum": 225,
+        "v8GcMsSum": 54.173
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "split",
+      "players": 50,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 0,
+      "workload": "saturation",
+      "setup": {
+        "count": 50,
+        "perSecond": 165.45374402067543,
+        "p50Ms": 89.98044999999999,
+        "p95Ms": 116.515444,
+        "p99Ms": 116.72093699999999,
+        "maxMs": 116.72093699999999,
+        "elapsedSeconds": 0.30219926599999997
+      },
+      "movement": {
+        "count": 28275,
+        "perSecond": 2827.5,
+        "p50Ms": 17.723472000001493,
+        "p95Ms": 22.206811000000016,
+        "p99Ms": 24.681150000000343,
+        "maxMs": 33.170476000001145,
+        "entityMovePushes": 1869978,
+        "pushesPerSecond": 143844.46153846153,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 2153.799,
+        "cpuSystemMs": 825.583,
+        "maxRssBytes": 81002496,
+        "rssBytes": 81002496,
+        "heapUsedBytes": 8455512,
+        "heapTotalBytes": 26697728,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 271,
+        "gcDurationMs": 94.25496200658381
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 2,
+            "peakCpuPercent": 0.79,
+            "peakRssBytes": 49143808,
+            "peakV8HeapUsedBytes": 2500792,
+            "cpuTimeMs": 80,
+            "v8GcCount": 2,
+            "v8GcMs": 1.484
+          },
+          {
+            "process": "mgr",
+            "samples": 2,
+            "peakCpuPercent": 0.6,
+            "peakRssBytes": 49172480,
+            "peakV8HeapUsedBytes": 2143544,
+            "cpuTimeMs": 70,
+            "v8GcCount": 2,
+            "v8GcMs": 4.043
+          },
+          {
+            "process": "login1",
+            "samples": 2,
+            "peakCpuPercent": 0.6,
+            "peakRssBytes": 49672192,
+            "peakV8HeapUsedBytes": 2511344,
+            "cpuTimeMs": 70,
+            "v8GcCount": 2,
+            "v8GcMs": 1.824
+          },
+          {
+            "process": "login2",
+            "samples": 2,
+            "peakCpuPercent": 0.79,
+            "peakRssBytes": 50094080,
+            "peakV8HeapUsedBytes": 2527608,
+            "cpuTimeMs": 70,
+            "v8GcCount": 2,
+            "v8GcMs": 1.825
+          },
+          {
+            "process": "gate1",
+            "samples": 2,
+            "peakCpuPercent": 96.6,
+            "peakRssBytes": 94363648,
+            "peakV8HeapUsedBytes": 7014160,
+            "cpuTimeMs": 9540,
+            "v8GcCount": 271,
+            "v8GcMs": 60.897
+          },
+          {
+            "process": "map1",
+            "samples": 2,
+            "peakCpuPercent": 58.6,
+            "peakRssBytes": 80334848,
+            "peakV8HeapUsedBytes": 8324576,
+            "cpuTimeMs": 5870,
+            "v8GcCount": 559,
+            "v8GcMs": 115.047
+          }
+        ],
+        "peakCpuPercentSum": 157.98,
+        "peakRssBytesSum": 372781056,
+        "peakV8HeapUsedBytesSum": 25022024,
+        "cpuTimeMsSum": 15700,
+        "v8GcCountSum": 838,
+        "v8GcMsSum": 185.12
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "split",
+      "players": 100,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 10,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 100,
+        "perSecond": 178.47350398422464,
+        "p50Ms": 81.89202999999998,
+        "p95Ms": 110.35636999999997,
+        "p99Ms": 114.036899,
+        "maxMs": 114.036899,
+        "elapsedSeconds": 0.5603072600000001
+      },
+      "movement": {
+        "count": 10000,
+        "perSecond": 1000,
+        "p50Ms": 38.9602219999997,
+        "p95Ms": 49.86039199999959,
+        "p99Ms": 57.663220999999794,
+        "maxMs": 90.35591000000022,
+        "entityMovePushes": 1300000,
+        "pushesPerSecond": 100000,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 1286.063,
+        "cpuSystemMs": 464.649,
+        "maxRssBytes": 83439616,
+        "rssBytes": 83439616,
+        "heapUsedBytes": 6818088,
+        "heapTotalBytes": 26193920,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 143,
+        "gcDurationMs": 71.79288999736309
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 2,
+            "peakCpuPercent": 1.19,
+            "peakRssBytes": 49508352,
+            "peakV8HeapUsedBytes": 2364536,
+            "cpuTimeMs": 110,
+            "v8GcCount": 3,
+            "v8GcMs": 6.024
+          },
+          {
+            "process": "mgr",
+            "samples": 2,
+            "peakCpuPercent": 1.19,
+            "peakRssBytes": 49459200,
+            "peakV8HeapUsedBytes": 2373904,
+            "cpuTimeMs": 90,
+            "v8GcCount": 2,
+            "v8GcMs": 4.784
+          },
+          {
+            "process": "login1",
+            "samples": 2,
+            "peakCpuPercent": 0.99,
+            "peakRssBytes": 49238016,
+            "peakV8HeapUsedBytes": 3035736,
+            "cpuTimeMs": 90,
+            "v8GcCount": 2,
+            "v8GcMs": 2.58
+          },
+          {
+            "process": "login2",
+            "samples": 2,
+            "peakCpuPercent": 0.79,
+            "peakRssBytes": 49614848,
+            "peakV8HeapUsedBytes": 3035520,
+            "cpuTimeMs": 90,
+            "v8GcCount": 2,
+            "v8GcMs": 2.015
+          },
+          {
+            "process": "gate1",
+            "samples": 2,
+            "peakCpuPercent": 56.61,
+            "peakRssBytes": 177172480,
+            "peakV8HeapUsedBytes": 12339416,
+            "cpuTimeMs": 5380,
+            "v8GcCount": 130,
+            "v8GcMs": 71.329
+          },
+          {
+            "process": "map1",
+            "samples": 2,
+            "peakCpuPercent": 26.71,
+            "peakRssBytes": 76865536,
+            "peakV8HeapUsedBytes": 11242384,
+            "cpuTimeMs": 2550,
+            "v8GcCount": 258,
+            "v8GcMs": 52.821
+          }
+        ],
+        "peakCpuPercentSum": 87.47999999999999,
+        "peakRssBytesSum": 451858432,
+        "peakV8HeapUsedBytesSum": 34391496,
+        "cpuTimeMsSum": 8310,
+        "v8GcCountSum": 397,
+        "v8GcMsSum": 139.553
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "split",
+      "players": 100,
+      "setupConcurrency": 16,
+      "warmupSeconds": 3,
+      "durationSeconds": 10,
+      "targetMoveRatePerPlayer": 0,
+      "workload": "saturation",
+      "setup": {
+        "count": 100,
+        "perSecond": 176.37429025905308,
+        "p50Ms": 89.321461,
+        "p95Ms": 111.11973900000001,
+        "p99Ms": 131.039376,
+        "maxMs": 131.039376,
+        "elapsedSeconds": 0.5669760589999999
+      },
+      "movement": {
+        "count": 20700,
+        "perSecond": 2070,
+        "p50Ms": 47.72663499999999,
+        "p95Ms": 65.3549920000005,
+        "p99Ms": 74.20818000000054,
+        "maxMs": 89.12596699999995,
+        "entityMovePushes": 2682360,
+        "pushesPerSecond": 206335.38461538462,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 2052.388,
+        "cpuSystemMs": 681.677,
+        "maxRssBytes": 82440192,
+        "rssBytes": 82440192,
+        "heapUsedBytes": 13199216,
+        "heapTotalBytes": 26284032,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 248,
+        "gcDurationMs": 106.15558901615441
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 2,
+            "peakCpuPercent": 1.2,
+            "peakRssBytes": 49876992,
+            "peakV8HeapUsedBytes": 2372976,
+            "cpuTimeMs": 100,
+            "v8GcCount": 3,
+            "v8GcMs": 1.34
+          },
+          {
+            "process": "mgr",
+            "samples": 2,
+            "peakCpuPercent": 0.8,
+            "peakRssBytes": 49852416,
+            "peakV8HeapUsedBytes": 2368096,
+            "cpuTimeMs": 80,
+            "v8GcCount": 2,
+            "v8GcMs": 5.472
+          },
+          {
+            "process": "login1",
+            "samples": 2,
+            "peakCpuPercent": 0.99,
+            "peakRssBytes": 49192960,
+            "peakV8HeapUsedBytes": 3050136,
+            "cpuTimeMs": 90,
+            "v8GcCount": 2,
+            "v8GcMs": 1.469
+          },
+          {
+            "process": "login2",
+            "samples": 2,
+            "peakCpuPercent": 0.8,
+            "peakRssBytes": 53706752,
+            "peakV8HeapUsedBytes": 2949184,
+            "cpuTimeMs": 80,
+            "v8GcCount": 2,
+            "v8GcMs": 1.647
+          },
+          {
+            "process": "gate1",
+            "samples": 2,
+            "peakCpuPercent": 99.36,
+            "peakRssBytes": 176521216,
+            "peakV8HeapUsedBytes": 23501872,
+            "cpuTimeMs": 9920,
+            "v8GcCount": 231,
+            "v8GcMs": 149.201
+          },
+          {
+            "process": "map1",
+            "samples": 2,
+            "peakCpuPercent": 48.98,
+            "peakRssBytes": 79839232,
+            "peakV8HeapUsedBytes": 12470672,
+            "cpuTimeMs": 4780,
+            "v8GcCount": 509,
+            "v8GcMs": 96.524
+          }
+        ],
+        "peakCpuPercentSum": 152.13,
+        "peakRssBytesSum": 458989568,
+        "peakV8HeapUsedBytesSum": 46712936,
+        "cpuTimeMsSum": 15050,
+        "v8GcCountSum": 749,
+        "v8GcMsSum": 255.653
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/20260713_073315"
+    }
+  ]
+}

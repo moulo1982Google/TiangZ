@@ -1,0 +1,229 @@
+starting process mgr with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\perf\results\runtime_configs\map_capacity_20260713_090056\200p_8g_r2\mgr.json
+scene login_mgr (LoginMgr) listening on 127.0.0.1:7000
+[process:mgr] one V8 started with 1 scene(s)
+[login_mgr] LoginMgr scene started at 127.0.0.1:7000 with login scenes: login_1
+login_mgr accepted 127.0.0.1:58098 as conn 1
+login_mgr accepted 127.0.0.1:58111 as conn 2
+login_mgr accepted 127.0.0.1:58112 as conn 3
+login_mgr accepted 127.0.0.1:58113 as conn 4
+login_mgr accepted 127.0.0.1:58114 as conn 5
+login_mgr accepted 127.0.0.1:58115 as conn 6
+login_mgr accepted 127.0.0.1:58116 as conn 7
+login_mgr accepted 127.0.0.1:58117 as conn 8
+login_mgr accepted 127.0.0.1:58118 as conn 9
+login_mgr accepted 127.0.0.1:58119 as conn 10
+login_mgr accepted 127.0.0.1:58120 as conn 11
+login_mgr accepted 127.0.0.1:58121 as conn 12
+login_mgr accepted 127.0.0.1:58122 as conn 13
+login_mgr accepted 127.0.0.1:58123 as conn 14
+login_mgr accepted 127.0.0.1:58124 as conn 15
+login_mgr accepted 127.0.0.1:58125 as conn 16
+login_mgr accepted 127.0.0.1:58126 as conn 17
+login_mgr accepted 127.0.0.1:58178 as conn 18
+login_mgr accepted 127.0.0.1:58188 as conn 19
+login_mgr accepted 127.0.0.1:58190 as conn 20
+login_mgr accepted 127.0.0.1:58191 as conn 21
+login_mgr accepted 127.0.0.1:58195 as conn 22
+login_mgr accepted 127.0.0.1:58196 as conn 23
+login_mgr accepted 127.0.0.1:58197 as conn 24
+login_mgr accepted 127.0.0.1:58198 as conn 25
+login_mgr accepted 127.0.0.1:58199 as conn 26
+login_mgr accepted 127.0.0.1:58200 as conn 27
+login_mgr accepted 127.0.0.1:58201 as conn 28
+login_mgr accepted 127.0.0.1:58202 as conn 29
+login_mgr accepted 127.0.0.1:58203 as conn 30
+login_mgr accepted 127.0.0.1:58205 as conn 31
+login_mgr accepted 127.0.0.1:58206 as conn 32
+login_mgr accepted 127.0.0.1:58207 as conn 33
+login_mgr accepted 127.0.0.1:58208 as conn 34
+login_mgr accepted 127.0.0.1:58211 as conn 35
+login_mgr accepted 127.0.0.1:58226 as conn 36
+login_mgr accepted 127.0.0.1:58238 as conn 37
+login_mgr accepted 127.0.0.1:58244 as conn 38
+login_mgr accepted 127.0.0.1:58249 as conn 39
+login_mgr accepted 127.0.0.1:58250 as conn 40
+login_mgr accepted 127.0.0.1:58251 as conn 41
+login_mgr accepted 127.0.0.1:58252 as conn 42
+login_mgr accepted 127.0.0.1:58253 as conn 43
+login_mgr accepted 127.0.0.1:58254 as conn 44
+login_mgr accepted 127.0.0.1:58257 as conn 45
+login_mgr accepted 127.0.0.1:58258 as conn 46
+login_mgr accepted 127.0.0.1:58259 as conn 47
+login_mgr accepted 127.0.0.1:58260 as conn 48
+login_mgr accepted 127.0.0.1:58261 as conn 49
+login_mgr accepted 127.0.0.1:58262 as conn 50
+login_mgr accepted 127.0.0.1:58267 as conn 51
+login_mgr accepted 127.0.0.1:58269 as conn 52
+login_mgr accepted 127.0.0.1:58270 as conn 53
+login_mgr accepted 127.0.0.1:58271 as conn 54
+login_mgr accepted 127.0.0.1:58289 as conn 55
+login_mgr accepted 127.0.0.1:58298 as conn 56
+login_mgr accepted 127.0.0.1:58299 as conn 57
+login_mgr accepted 127.0.0.1:58300 as conn 58
+login_mgr accepted 127.0.0.1:58302 as conn 59
+login_mgr accepted 127.0.0.1:58303 as conn 60
+login_mgr accepted 127.0.0.1:58304 as conn 61
+login_mgr accepted 127.0.0.1:58307 as conn 62
+login_mgr accepted 127.0.0.1:58313 as conn 63
+login_mgr accepted 127.0.0.1:58314 as conn 64
+login_mgr accepted 127.0.0.1:58315 as conn 65
+login_mgr accepted 127.0.0.1:58320 as conn 66
+login_mgr accepted 127.0.0.1:58321 as conn 67
+login_mgr accepted 127.0.0.1:58322 as conn 68
+login_mgr accepted 127.0.0.1:58323 as conn 69
+login_mgr accepted 127.0.0.1:58326 as conn 70
+login_mgr accepted 127.0.0.1:58333 as conn 71
+login_mgr accepted 127.0.0.1:58342 as conn 72
+login_mgr accepted 127.0.0.1:58344 as conn 73
+login_mgr accepted 127.0.0.1:58346 as conn 74
+login_mgr accepted 127.0.0.1:58352 as conn 75
+login_mgr accepted 127.0.0.1:58353 as conn 76
+login_mgr accepted 127.0.0.1:58354 as conn 77
+login_mgr accepted 127.0.0.1:58356 as conn 78
+login_mgr accepted 127.0.0.1:58360 as conn 79
+login_mgr accepted 127.0.0.1:58361 as conn 80
+login_mgr accepted 127.0.0.1:58363 as conn 81
+login_mgr accepted 127.0.0.1:58368 as conn 82
+login_mgr accepted 127.0.0.1:58371 as conn 83
+login_mgr accepted 127.0.0.1:58374 as conn 84
+login_mgr accepted 127.0.0.1:58375 as conn 85
+login_mgr accepted 127.0.0.1:58376 as conn 86
+login_mgr accepted 127.0.0.1:58382 as conn 87
+login_mgr accepted 127.0.0.1:58391 as conn 88
+login_mgr accepted 127.0.0.1:58392 as conn 89
+login_mgr accepted 127.0.0.1:58395 as conn 90
+login_mgr accepted 127.0.0.1:58399 as conn 91
+login_mgr accepted 127.0.0.1:58405 as conn 92
+login_mgr accepted 127.0.0.1:58406 as conn 93
+login_mgr accepted 127.0.0.1:58407 as conn 94
+login_mgr accepted 127.0.0.1:58411 as conn 95
+login_mgr accepted 127.0.0.1:58412 as conn 96
+login_mgr accepted 127.0.0.1:58413 as conn 97
+login_mgr accepted 127.0.0.1:58418 as conn 98
+login_mgr accepted 127.0.0.1:58419 as conn 99
+login_mgr accepted 127.0.0.1:58424 as conn 100
+login_mgr accepted 127.0.0.1:58425 as conn 101
+login_mgr accepted 127.0.0.1:58426 as conn 102
+login_mgr accepted 127.0.0.1:58428 as conn 103
+login_mgr accepted 127.0.0.1:58433 as conn 104
+login_mgr accepted 127.0.0.1:58434 as conn 105
+login_mgr accepted 127.0.0.1:58436 as conn 106
+login_mgr accepted 127.0.0.1:58444 as conn 107
+login_mgr accepted 127.0.0.1:58450 as conn 108
+login_mgr accepted 127.0.0.1:58454 as conn 109
+login_mgr accepted 127.0.0.1:58455 as conn 110
+login_mgr accepted 127.0.0.1:58457 as conn 111
+login_mgr accepted 127.0.0.1:58460 as conn 112
+login_mgr accepted 127.0.0.1:58462 as conn 113
+login_mgr accepted 127.0.0.1:58464 as conn 114
+login_mgr accepted 127.0.0.1:58465 as conn 115
+login_mgr accepted 127.0.0.1:58471 as conn 116
+login_mgr accepted 127.0.0.1:58474 as conn 117
+login_mgr accepted 127.0.0.1:58477 as conn 118
+login_mgr accepted 127.0.0.1:58478 as conn 119
+login_mgr accepted 127.0.0.1:58485 as conn 120
+login_mgr accepted 127.0.0.1:58486 as conn 121
+login_mgr accepted 127.0.0.1:58487 as conn 122
+login_mgr accepted 127.0.0.1:58493 as conn 123
+login_mgr accepted 127.0.0.1:58494 as conn 124
+login_mgr accepted 127.0.0.1:58502 as conn 125
+login_mgr accepted 127.0.0.1:58505 as conn 126
+login_mgr accepted 127.0.0.1:58506 as conn 127
+login_mgr accepted 127.0.0.1:58507 as conn 128
+login_mgr accepted 127.0.0.1:58512 as conn 129
+login_mgr accepted 127.0.0.1:58513 as conn 130
+login_mgr accepted 127.0.0.1:58514 as conn 131
+login_mgr accepted 127.0.0.1:58516 as conn 132
+login_mgr accepted 127.0.0.1:58521 as conn 133
+login_mgr accepted 127.0.0.1:58522 as conn 134
+login_mgr accepted 127.0.0.1:58523 as conn 135
+login_mgr accepted 127.0.0.1:58532 as conn 136
+login_mgr accepted 127.0.0.1:58537 as conn 137
+login_mgr accepted 127.0.0.1:58539 as conn 138
+login_mgr accepted 127.0.0.1:58542 as conn 139
+login_mgr accepted 127.0.0.1:58543 as conn 140
+login_mgr accepted 127.0.0.1:58545 as conn 141
+login_mgr accepted 127.0.0.1:58553 as conn 142
+login_mgr accepted 127.0.0.1:58557 as conn 143
+login_mgr accepted 127.0.0.1:58558 as conn 144
+login_mgr accepted 127.0.0.1:58569 as conn 145
+login_mgr accepted 127.0.0.1:58570 as conn 146
+login_mgr accepted 127.0.0.1:58571 as conn 147
+login_mgr accepted 127.0.0.1:58572 as conn 148
+login_mgr accepted 127.0.0.1:58581 as conn 149
+login_mgr accepted 127.0.0.1:58582 as conn 150
+login_mgr accepted 127.0.0.1:58583 as conn 151
+login_mgr accepted 127.0.0.1:58584 as conn 152
+login_mgr accepted 127.0.0.1:58593 as conn 153
+login_mgr accepted 127.0.0.1:58594 as conn 154
+login_mgr accepted 127.0.0.1:58595 as conn 155
+login_mgr accepted 127.0.0.1:58596 as conn 156
+login_mgr accepted 127.0.0.1:58605 as conn 157
+login_mgr accepted 127.0.0.1:58606 as conn 158
+login_mgr accepted 127.0.0.1:58607 as conn 159
+login_mgr accepted 127.0.0.1:58608 as conn 160
+login_mgr accepted 127.0.0.1:58619 as conn 161
+login_mgr accepted 127.0.0.1:58620 as conn 162
+login_mgr accepted 127.0.0.1:58621 as conn 163
+login_mgr accepted 127.0.0.1:58622 as conn 164
+login_mgr accepted 127.0.0.1:58631 as conn 165
+login_mgr accepted 127.0.0.1:58632 as conn 166
+login_mgr accepted 127.0.0.1:58633 as conn 167
+login_mgr accepted 127.0.0.1:58634 as conn 168
+login_mgr accepted 127.0.0.1:58643 as conn 169
+login_mgr accepted 127.0.0.1:58644 as conn 170
+login_mgr accepted 127.0.0.1:58645 as conn 171
+login_mgr accepted 127.0.0.1:58646 as conn 172
+login_mgr accepted 127.0.0.1:58656 as conn 173
+login_mgr accepted 127.0.0.1:58657 as conn 174
+login_mgr accepted 127.0.0.1:58658 as conn 175
+login_mgr accepted 127.0.0.1:58659 as conn 176
+login_mgr accepted 127.0.0.1:58670 as conn 177
+login_mgr accepted 127.0.0.1:58671 as conn 178
+login_mgr accepted 127.0.0.1:58672 as conn 179
+login_mgr accepted 127.0.0.1:58673 as conn 180
+login_mgr accepted 127.0.0.1:58684 as conn 181
+login_mgr accepted 127.0.0.1:58685 as conn 182
+login_mgr accepted 127.0.0.1:58686 as conn 183
+login_mgr accepted 127.0.0.1:58687 as conn 184
+login_mgr accepted 127.0.0.1:58696 as conn 185
+login_mgr accepted 127.0.0.1:58697 as conn 186
+login_mgr accepted 127.0.0.1:58698 as conn 187
+login_mgr accepted 127.0.0.1:58699 as conn 188
+login_mgr accepted 127.0.0.1:58709 as conn 189
+login_mgr accepted 127.0.0.1:58710 as conn 190
+login_mgr accepted 127.0.0.1:58711 as conn 191
+login_mgr accepted 127.0.0.1:58712 as conn 192
+login_mgr accepted 127.0.0.1:58721 as conn 193
+login_mgr accepted 127.0.0.1:58722 as conn 194
+login_mgr accepted 127.0.0.1:58723 as conn 195
+login_mgr accepted 127.0.0.1:58724 as conn 196
+login_mgr accepted 127.0.0.1:58733 as conn 197
+login_mgr accepted 127.0.0.1:58734 as conn 198
+login_mgr accepted 127.0.0.1:58735 as conn 199
+login_mgr accepted 127.0.0.1:58736 as conn 200
+login_mgr accepted 127.0.0.1:58745 as conn 201
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=0.93 cpu_time_ms=78 rss_bytes=33447936 v8_heap_used_bytes=3274080 v8_heap_total_bytes=5517312 v8_gc_count=2 v8_gc_ms=0.533 timestamp_ms=1783933304115
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=4.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=0.30 cpu_time_ms=93 rss_bytes=33792000 v8_heap_used_bytes=3434936 v8_heap_total_bytes=5779456 v8_gc_count=2 v8_gc_ms=0.533 timestamp_ms=1783933309158
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=4.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=0.32 cpu_time_ms=109 rss_bytes=33890304 v8_heap_used_bytes=3564552 v8_heap_total_bytes=6041600 v8_gc_count=2 v8_gc_ms=0.533 timestamp_ms=1783933314206
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=4.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=0.32 cpu_time_ms=125 rss_bytes=33898496 v8_heap_used_bytes=2133976 v8_heap_total_bytes=4206592 v8_gc_count=3 v8_gc_ms=0.686 timestamp_ms=1783933319253
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=4.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=0.91 cpu_time_ms=171 rss_bytes=33910784 v8_heap_used_bytes=2263576 v8_heap_total_bytes=4206592 v8_gc_count=3 v8_gc_ms=0.686 timestamp_ms=1783933324303
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=4.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=0.00 cpu_time_ms=171 rss_bytes=33882112 v8_heap_used_bytes=2393184 v8_heap_total_bytes=4206592 v8_gc_count=3 v8_gc_ms=0.686 timestamp_ms=1783933329352
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=4.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=1.25 cpu_time_ms=234 rss_bytes=33947648 v8_heap_used_bytes=2522784 v8_heap_total_bytes=4206592 v8_gc_count=3 v8_gc_ms=0.686 timestamp_ms=1783933334398
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=4.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=0.32 cpu_time_ms=250 rss_bytes=33947648 v8_heap_used_bytes=2652384 v8_heap_total_bytes=4206592 v8_gc_count=3 v8_gc_ms=0.686 timestamp_ms=1783933339455
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=4.00

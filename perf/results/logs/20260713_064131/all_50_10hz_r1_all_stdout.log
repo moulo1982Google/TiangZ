@@ -1,0 +1,428 @@
+starting process all with one V8 and 6 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/all.json
+scene log (Log) listening on 127.0.0.1:7100
+scene login_mgr (LoginMgr) listening on 127.0.0.1:7000
+scene login_1 (Login) listening on 127.0.0.1:7001
+scene login_2 (Login) listening on 127.0.0.1:7002
+scene gate_1 (Gate) listening on 127.0.0.1:7201
+scene map_1 (MapHost) listening on 127.0.0.1:7301
+login_mgr accepted 127.0.0.1:51587 as conn 1
+login_1 accepted 127.0.0.1:51588 as conn 2
+login_2 accepted 127.0.0.1:51589 as conn 3
+log accepted 127.0.0.1:51590 as conn 4
+gate_1 accepted 127.0.0.1:51591 as conn 5
+map_1 accepted 127.0.0.1:51592 as conn 6
+[process:all] one V8 started with 6 scene(s)
+[log] Log scene started at 127.0.0.1:7100
+[login_mgr] LoginMgr scene started at 127.0.0.1:7000 with login scenes: login_1, login_2
+[login_1] Login scene started at 127.0.0.1:7001
+[login_2] Login scene started at 127.0.0.1:7002
+[gate_1] Gate scene started at 127.0.0.1:7201
+[map_1] MapHost scene started at 127.0.0.1:7301
+login_mgr accepted 127.0.0.1:51593 as conn 7
+login_mgr accepted 127.0.0.1:51594 as conn 8
+login_mgr accepted 127.0.0.1:51595 as conn 9
+login_mgr accepted 127.0.0.1:51596 as conn 10
+login_mgr accepted 127.0.0.1:51597 as conn 11
+login_mgr accepted 127.0.0.1:51598 as conn 12
+login_mgr accepted 127.0.0.1:51599 as conn 13
+login_mgr accepted 127.0.0.1:51604 as conn 14
+login_mgr accepted 127.0.0.1:51605 as conn 15
+login_mgr accepted 127.0.0.1:51606 as conn 16
+login_mgr accepted 127.0.0.1:51607 as conn 17
+login_mgr accepted 127.0.0.1:51608 as conn 18
+login_mgr accepted 127.0.0.1:51609 as conn 19
+login_mgr accepted 127.0.0.1:51610 as conn 20
+login_mgr accepted 127.0.0.1:51611 as conn 21
+login_mgr accepted 127.0.0.1:51612 as conn 22
+login_1 accepted 127.0.0.1:51613 as conn 23
+login_2 accepted 127.0.0.1:51614 as conn 24
+login_1 accepted 127.0.0.1:51615 as conn 25
+login_2 accepted 127.0.0.1:51616 as conn 26
+login_2 accepted 127.0.0.1:51617 as conn 27
+login_1 accepted 127.0.0.1:51618 as conn 28
+login_2 accepted 127.0.0.1:51619 as conn 29
+login_1 accepted 127.0.0.1:51621 as conn 30
+login_1 accepted 127.0.0.1:51622 as conn 31
+login_2 accepted 127.0.0.1:51623 as conn 32
+login_1 accepted 127.0.0.1:51624 as conn 33
+login_1 accepted 127.0.0.1:51625 as conn 34
+login_2 accepted 127.0.0.1:51626 as conn 35
+login_2 accepted 127.0.0.1:51628 as conn 36
+login_1 accepted 127.0.0.1:51629 as conn 37
+login_2 accepted 127.0.0.1:51630 as conn 38
+[all/perf_all_10_50_0_1783924907895] login perf_all_10_50_0_1783924907895 count 1
+[log] [login_1] perf_all_10_50_0_1783924907895 login count 1
+[all/perf_all_10_50_2_1783924907896] login perf_all_10_50_2_1783924907896 count 1
+[all/perf_all_10_50_8_1783924907897] login perf_all_10_50_8_1783924907897 count 1
+[all/perf_all_10_50_4_1783924907897] login perf_all_10_50_4_1783924907897 count 1
+[all/perf_all_10_50_10_1783924907897] login perf_all_10_50_10_1783924907897 count 1
+[all/perf_all_10_50_12_1783924907897] login perf_all_10_50_12_1783924907897 count 1
+[all/perf_all_10_50_6_1783924907897] login perf_all_10_50_6_1783924907897 count 1
+[all/perf_all_10_50_14_1783924907897] login perf_all_10_50_14_1783924907897 count 1
+[all/perf_all_10_50_1_1783924907896] login perf_all_10_50_1_1783924907896 count 1
+[all/perf_all_10_50_5_1783924907897] login perf_all_10_50_5_1783924907897 count 1
+[all/perf_all_10_50_3_1783924907897] login perf_all_10_50_3_1783924907897 count 1
+[all/perf_all_10_50_9_1783924907897] login perf_all_10_50_9_1783924907897 count 1
+[all/perf_all_10_50_11_1783924907897] login perf_all_10_50_11_1783924907897 count 1
+[all/perf_all_10_50_7_1783924907897] login perf_all_10_50_7_1783924907897 count 1
+[all/perf_all_10_50_13_1783924907897] login perf_all_10_50_13_1783924907897 count 1
+[all/perf_all_10_50_15_1783924907897] login perf_all_10_50_15_1783924907897 count 1
+[log] [login_1] perf_all_10_50_2_1783924907896 login count 1
+[log] [login_1] perf_all_10_50_8_1783924907897 login count 1
+[log] [login_1] perf_all_10_50_4_1783924907897 login count 1
+[log] [login_1] perf_all_10_50_10_1783924907897 login count 1
+[log] [login_1] perf_all_10_50_12_1783924907897 login count 1
+[log] [login_1] perf_all_10_50_6_1783924907897 login count 1
+gate_1 accepted 127.0.0.1:51631 as conn 39
+[log] [login_1] perf_all_10_50_14_1783924907897 login count 1
+[log] [login_2] perf_all_10_50_1_1783924907896 login count 1
+[log] [login_2] perf_all_10_50_5_1783924907897 login count 1
+[log] [login_2] perf_all_10_50_3_1783924907897 login count 1
+[log] [login_2] perf_all_10_50_9_1783924907897 login count 1
+[log] [login_2] perf_all_10_50_11_1783924907897 login count 1
+[log] [login_2] perf_all_10_50_7_1783924907897 login count 1
+[log] [login_2] perf_all_10_50_13_1783924907897 login count 1
+[log] [login_2] perf_all_10_50_15_1783924907897 login count 1
+gate_1 accepted 127.0.0.1:51632 as conn 40
+gate_1 accepted 127.0.0.1:51633 as conn 41
+gate_1 accepted 127.0.0.1:51634 as conn 42
+gate_1 accepted 127.0.0.1:51635 as conn 43
+gate_1 accepted 127.0.0.1:51636 as conn 44
+gate_1 accepted 127.0.0.1:51637 as conn 45
+gate_1 accepted 127.0.0.1:51638 as conn 46
+gate_1 accepted 127.0.0.1:51639 as conn 47
+gate_1 accepted 127.0.0.1:51640 as conn 48
+gate_1 accepted 127.0.0.1:51641 as conn 49
+gate_1 accepted 127.0.0.1:51642 as conn 50
+gate_1 accepted 127.0.0.1:51643 as conn 51
+gate_1 accepted 127.0.0.1:51644 as conn 52
+gate_1 accepted 127.0.0.1:51645 as conn 53
+gate_1 accepted 127.0.0.1:51646 as conn 54
+[map_1] perf_all_10_50_0_1783924907895 enter map 1 unit 1000
+[log] [gate_1] perf_all_10_50_0_1783924907895 enter map_1 as unit 1000
+login_mgr accepted 127.0.0.1:51647 as conn 55
+[map_1] perf_all_10_50_8_1783924907897 enter map 1 unit 1001
+[log] [gate_1] perf_all_10_50_8_1783924907897 enter map_1 as unit 1001
+[map_1] perf_all_10_50_2_1783924907896 enter map 1 unit 1002
+[log] [gate_1] perf_all_10_50_2_1783924907896 enter map_1 as unit 1002
+[map_1] perf_all_10_50_10_1783924907897 enter map 1 unit 1003
+[log] [gate_1] perf_all_10_50_10_1783924907897 enter map_1 as unit 1003
+[map_1] perf_all_10_50_4_1783924907897 enter map 1 unit 1004
+login_mgr accepted 127.0.0.1:51648 as conn 56
+[log] [gate_1] perf_all_10_50_4_1783924907897 enter map_1 as unit 1004
+[map_1] perf_all_10_50_5_1783924907897 enter map 1 unit 1005
+[log] [gate_1] perf_all_10_50_5_1783924907897 enter map_1 as unit 1005
+[map_1] perf_all_10_50_6_1783924907897 enter map 1 unit 1006
+[log] [gate_1] perf_all_10_50_6_1783924907897 enter map_1 as unit 1006
+[map_1] perf_all_10_50_12_1783924907897 enter map 1 unit 1007
+[log] [gate_1] perf_all_10_50_12_1783924907897 enter map_1 as unit 1007
+[map_1] perf_all_10_50_14_1783924907897 enter map 1 unit 1008
+[log] [gate_1] perf_all_10_50_14_1783924907897 enter map_1 as unit 1008
+[map_1] perf_all_10_50_1_1783924907896 enter map 1 unit 1009
+[log] [gate_1] perf_all_10_50_1_1783924907896 enter map_1 as unit 1009
+[map_1] perf_all_10_50_3_1783924907897 enter map 1 unit 1010
+[log] [gate_1] perf_all_10_50_3_1783924907897 enter map_1 as unit 1010
+[map_1] perf_all_10_50_9_1783924907897 enter map 1 unit 1011
+[log] [gate_1] perf_all_10_50_9_1783924907897 enter map_1 as unit 1011
+[map_1] perf_all_10_50_11_1783924907897 enter map 1 unit 1012
+[log] [gate_1] perf_all_10_50_11_1783924907897 enter map_1 as unit 1012
+[map_1] perf_all_10_50_7_1783924907897 enter map 1 unit 1013
+[log] [gate_1] perf_all_10_50_7_1783924907897 enter map_1 as unit 1013
+login_mgr accepted 127.0.0.1:51649 as conn 57
+[map_1] perf_all_10_50_13_1783924907897 enter map 1 unit 1014
+[log] [gate_1] perf_all_10_50_13_1783924907897 enter map_1 as unit 1014
+login_mgr accepted 127.0.0.1:51650 as conn 58
+[map_1] perf_all_10_50_15_1783924907897 enter map 1 unit 1015
+[log] [gate_1] perf_all_10_50_15_1783924907897 enter map_1 as unit 1015
+login_mgr accepted 127.0.0.1:51651 as conn 59
+login_mgr accepted 127.0.0.1:51652 as conn 60
+login_mgr accepted 127.0.0.1:51653 as conn 61
+login_mgr accepted 127.0.0.1:51654 as conn 62
+login_mgr accepted 127.0.0.1:51655 as conn 63
+login_mgr accepted 127.0.0.1:51656 as conn 64
+login_mgr accepted 127.0.0.1:51657 as conn 65
+login_mgr accepted 127.0.0.1:51658 as conn 66
+login_mgr accepted 127.0.0.1:51659 as conn 67
+login_2 accepted 127.0.0.1:51660 as conn 68
+login_1 accepted 127.0.0.1:51661 as conn 69
+login_mgr accepted 127.0.0.1:51662 as conn 70
+login_mgr accepted 127.0.0.1:51663 as conn 71
+login_mgr accepted 127.0.0.1:51664 as conn 72
+login_1 accepted 127.0.0.1:51665 as conn 73
+login_2 accepted 127.0.0.1:51666 as conn 74
+login_1 accepted 127.0.0.1:51667 as conn 75
+login_2 accepted 127.0.0.1:51668 as conn 76
+[all/perf_all_10_50_17_1783924907914] login perf_all_10_50_17_1783924907914 count 1
+[log] [login_2] perf_all_10_50_17_1783924907914 login count 1
+[all/perf_all_10_50_16_1783924907912] login perf_all_10_50_16_1783924907912 count 1
+[log] [login_1] perf_all_10_50_16_1783924907912 login count 1
+login_1 accepted 127.0.0.1:51669 as conn 77
+login_2 accepted 127.0.0.1:51670 as conn 78
+login_2 accepted 127.0.0.1:51671 as conn 79
+login_1 accepted 127.0.0.1:51672 as conn 80
+login_2 accepted 127.0.0.1:51673 as conn 81
+login_1 accepted 127.0.0.1:51674 as conn 82
+login_1 accepted 127.0.0.1:51675 as conn 83
+[all/perf_all_10_50_18_1783924907917] login perf_all_10_50_18_1783924907917 count 1
+[log] [login_1] perf_all_10_50_18_1783924907917 login count 1
+[all/perf_all_10_50_20_1783924907918] login perf_all_10_50_20_1783924907918 count 1
+[all/perf_all_10_50_19_1783924907917] login perf_all_10_50_19_1783924907917 count 1
+[all/perf_all_10_50_21_1783924907918] login perf_all_10_50_21_1783924907918 count 1
+[log] [login_1] perf_all_10_50_20_1783924907918 login count 1
+[log] [login_2] perf_all_10_50_19_1783924907917 login count 1
+[log] [login_2] perf_all_10_50_21_1783924907918 login count 1
+gate_1 accepted 127.0.0.1:51676 as conn 84
+[all/perf_all_10_50_22_1783924907918] login perf_all_10_50_22_1783924907918 count 1
+[log] [login_1] perf_all_10_50_22_1783924907918 login count 1
+login_2 accepted 127.0.0.1:51677 as conn 85
+gate_1 accepted 127.0.0.1:51678 as conn 86
+login_1 accepted 127.0.0.1:51679 as conn 87
+login_2 accepted 127.0.0.1:51680 as conn 88
+[all/perf_all_10_50_25_1783924907919] login perf_all_10_50_25_1783924907919 count 1
+[all/perf_all_10_50_23_1783924907918] login perf_all_10_50_23_1783924907918 count 1
+[log] [login_2] perf_all_10_50_25_1783924907919 login count 1
+[log] [login_2] perf_all_10_50_23_1783924907918 login count 1
+[all/perf_all_10_50_24_1783924907918] login perf_all_10_50_24_1783924907918 count 1
+[all/perf_all_10_50_26_1783924907919] login perf_all_10_50_26_1783924907919 count 1
+[all/perf_all_10_50_28_1783924907919] login perf_all_10_50_28_1783924907919 count 1
+[all/perf_all_10_50_27_1783924907919] login perf_all_10_50_27_1783924907919 count 1
+[log] [login_1] perf_all_10_50_24_1783924907918 login count 1
+[log] [login_1] perf_all_10_50_26_1783924907919 login count 1
+[log] [login_1] perf_all_10_50_28_1783924907919 login count 1
+[log] [login_2] perf_all_10_50_27_1783924907919 login count 1
+gate_1 accepted 127.0.0.1:51681 as conn 89
+gate_1 accepted 127.0.0.1:51682 as conn 90
+gate_1 accepted 127.0.0.1:51683 as conn 91
+gate_1 accepted 127.0.0.1:51684 as conn 92
+gate_1 accepted 127.0.0.1:51685 as conn 93
+[all/perf_all_10_50_29_1783924907920] login perf_all_10_50_29_1783924907920 count 1
+[log] [login_2] perf_all_10_50_29_1783924907920 login count 1
+[all/perf_all_10_50_30_1783924907920] login perf_all_10_50_30_1783924907920 count 1
+[all/perf_all_10_50_31_1783924907920] login perf_all_10_50_31_1783924907920 count 1
+[log] [login_1] perf_all_10_50_30_1783924907920 login count 1
+[log] [login_2] perf_all_10_50_31_1783924907920 login count 1
+gate_1 accepted 127.0.0.1:51686 as conn 94
+gate_1 accepted 127.0.0.1:51687 as conn 95
+gate_1 accepted 127.0.0.1:51688 as conn 96
+gate_1 accepted 127.0.0.1:51689 as conn 97
+gate_1 accepted 127.0.0.1:51690 as conn 98
+gate_1 accepted 127.0.0.1:51691 as conn 99
+[map_1] perf_all_10_50_17_1783924907914 enter map 1 unit 1016
+gate_1 accepted 127.0.0.1:51692 as conn 100
+[log] [gate_1] perf_all_10_50_17_1783924907914 enter map_1 as unit 1016
+gate_1 accepted 127.0.0.1:51693 as conn 101
+[map_1] perf_all_10_50_16_1783924907912 enter map 1 unit 1017
+[log] [gate_1] perf_all_10_50_16_1783924907912 enter map_1 as unit 1017
+gate_1 accepted 127.0.0.1:51694 as conn 102
+[map_1] perf_all_10_50_18_1783924907917 enter map 1 unit 1018
+[log] [gate_1] perf_all_10_50_18_1783924907917 enter map_1 as unit 1018
+login_mgr accepted 127.0.0.1:51695 as conn 103
+[map_1] perf_all_10_50_19_1783924907917 enter map 1 unit 1019
+[log] [gate_1] perf_all_10_50_19_1783924907917 enter map_1 as unit 1019
+[map_1] perf_all_10_50_20_1783924907918 enter map 1 unit 1020
+login_mgr accepted 127.0.0.1:51696 as conn 104
+[log] [gate_1] perf_all_10_50_20_1783924907918 enter map_1 as unit 1020
+login_mgr accepted 127.0.0.1:51697 as conn 105
+[map_1] perf_all_10_50_21_1783924907918 enter map 1 unit 1021
+[log] [gate_1] perf_all_10_50_21_1783924907918 enter map_1 as unit 1021
+login_mgr accepted 127.0.0.1:51698 as conn 106
+[map_1] perf_all_10_50_22_1783924907918 enter map 1 unit 1022
+[log] [gate_1] perf_all_10_50_22_1783924907918 enter map_1 as unit 1022
+login_mgr accepted 127.0.0.1:51699 as conn 107
+[map_1] perf_all_10_50_23_1783924907918 enter map 1 unit 1023
+[log] [gate_1] perf_all_10_50_23_1783924907918 enter map_1 as unit 1023
+[map_1] perf_all_10_50_25_1783924907919 enter map 1 unit 1024
+[log] [gate_1] perf_all_10_50_25_1783924907919 enter map_1 as unit 1024
+[map_1] perf_all_10_50_24_1783924907918 enter map 1 unit 1025
+[log] [gate_1] perf_all_10_50_24_1783924907918 enter map_1 as unit 1025
+[map_1] perf_all_10_50_28_1783924907919 enter map 1 unit 1026
+[log] [gate_1] perf_all_10_50_28_1783924907919 enter map_1 as unit 1026
+[map_1] perf_all_10_50_27_1783924907919 enter map 1 unit 1027
+[log] [gate_1] perf_all_10_50_27_1783924907919 enter map_1 as unit 1027
+[map_1] perf_all_10_50_26_1783924907919 enter map 1 unit 1028
+[log] [gate_1] perf_all_10_50_26_1783924907919 enter map_1 as unit 1028
+[map_1] perf_all_10_50_29_1783924907920 enter map 1 unit 1029
+[log] [gate_1] perf_all_10_50_29_1783924907920 enter map_1 as unit 1029
+login_1 accepted 127.0.0.1:51700 as conn 108
+[map_1] perf_all_10_50_31_1783924907920 enter map 1 unit 1030
+[log] [gate_1] perf_all_10_50_31_1783924907920 enter map_1 as unit 1030
+login_mgr accepted 127.0.0.1:51701 as conn 109
+[map_1] perf_all_10_50_30_1783924907920 enter map 1 unit 1031
+[log] [gate_1] perf_all_10_50_30_1783924907920 enter map_1 as unit 1031
+login_mgr accepted 127.0.0.1:51702 as conn 110
+login_mgr accepted 127.0.0.1:51703 as conn 111
+login_mgr accepted 127.0.0.1:51704 as conn 112
+login_mgr accepted 127.0.0.1:51705 as conn 113
+login_mgr accepted 127.0.0.1:51706 as conn 114
+login_mgr accepted 127.0.0.1:51707 as conn 115
+login_mgr accepted 127.0.0.1:51708 as conn 116
+login_2 accepted 127.0.0.1:51709 as conn 117
+[all/perf_all_10_50_32_1783924907929] login perf_all_10_50_32_1783924907929 count 1
+[log] [login_1] perf_all_10_50_32_1783924907929 login count 1
+login_2 accepted 127.0.0.1:51710 as conn 118
+login_mgr accepted 127.0.0.1:51711 as conn 119
+login_1 accepted 127.0.0.1:51712 as conn 120
+login_1 accepted 127.0.0.1:51713 as conn 121
+login_mgr accepted 127.0.0.1:51714 as conn 122
+login_mgr accepted 127.0.0.1:51715 as conn 123
+[all/perf_all_10_50_33_1783924907930] login perf_all_10_50_33_1783924907930 count 1
+[log] [login_2] perf_all_10_50_33_1783924907930 login count 1
+gate_1 accepted 127.0.0.1:51716 as conn 124
+[all/perf_all_10_50_35_1783924907931] login perf_all_10_50_35_1783924907931 count 1
+[log] [login_2] perf_all_10_50_35_1783924907931 login count 1
+[all/perf_all_10_50_34_1783924907931] login perf_all_10_50_34_1783924907931 count 1
+[all/perf_all_10_50_36_1783924907932] login perf_all_10_50_36_1783924907932 count 1
+[log] [login_1] perf_all_10_50_34_1783924907931 login count 1
+[log] [login_1] perf_all_10_50_36_1783924907932 login count 1
+login_2 accepted 127.0.0.1:51717 as conn 125
+login_1 accepted 127.0.0.1:51718 as conn 126
+login_2 accepted 127.0.0.1:51719 as conn 127
+login_1 accepted 127.0.0.1:51720 as conn 128
+login_2 accepted 127.0.0.1:51721 as conn 129
+login_1 accepted 127.0.0.1:51722 as conn 130
+login_1 accepted 127.0.0.1:51723 as conn 131
+login_2 accepted 127.0.0.1:51724 as conn 132
+gate_1 accepted 127.0.0.1:51725 as conn 133
+gate_1 accepted 127.0.0.1:51726 as conn 134
+login_2 accepted 127.0.0.1:51727 as conn 135
+gate_1 accepted 127.0.0.1:51728 as conn 136
+gate_1 accepted 127.0.0.1:51729 as conn 137
+[all/perf_all_10_50_37_1783924907935] login perf_all_10_50_37_1783924907935 count 1
+[log] [login_2] perf_all_10_50_37_1783924907935 login count 1
+login_1 accepted 127.0.0.1:51730 as conn 138
+[all/perf_all_10_50_38_1783924907936] login perf_all_10_50_38_1783924907936 count 1
+[log] [login_1] perf_all_10_50_38_1783924907936 login count 1
+login_2 accepted 127.0.0.1:51731 as conn 139
+[all/perf_all_10_50_39_1783924907937] login perf_all_10_50_39_1783924907937 count 1
+[log] [login_2] perf_all_10_50_39_1783924907937 login count 1
+[all/perf_all_10_50_40_1783924907937] login perf_all_10_50_40_1783924907937 count 1
+[all/perf_all_10_50_42_1783924907937] login perf_all_10_50_42_1783924907937 count 1
+[all/perf_all_10_50_41_1783924907937] login perf_all_10_50_41_1783924907937 count 1
+[log] [login_1] perf_all_10_50_40_1783924907937 login count 1
+[log] [login_1] perf_all_10_50_42_1783924907937 login count 1
+[log] [login_2] perf_all_10_50_41_1783924907937 login count 1
+[all/perf_all_10_50_44_1783924907938] login perf_all_10_50_44_1783924907938 count 1
+[all/perf_all_10_50_43_1783924907938] login perf_all_10_50_43_1783924907938 count 1
+[log] [login_1] perf_all_10_50_44_1783924907938 login count 1
+[log] [login_2] perf_all_10_50_43_1783924907938 login count 1
+[all/perf_all_10_50_45_1783924907939] login perf_all_10_50_45_1783924907939 count 1
+[log] [login_2] perf_all_10_50_45_1783924907939 login count 1
+gate_1 accepted 127.0.0.1:51732 as conn 140
+[map_1] perf_all_10_50_32_1783924907929 enter map 1 unit 1032
+[log] [gate_1] perf_all_10_50_32_1783924907929 enter map_1 as unit 1032
+gate_1 accepted 127.0.0.1:51733 as conn 141
+[all/perf_all_10_50_46_1783924907939] login perf_all_10_50_46_1783924907939 count 1
+[all/perf_all_10_50_47_1783924907940] login perf_all_10_50_47_1783924907940 count 1
+[log] [login_1] perf_all_10_50_46_1783924907939 login count 1
+[log] [login_2] perf_all_10_50_47_1783924907940 login count 1
+gate_1 accepted 127.0.0.1:51734 as conn 142
+gate_1 accepted 127.0.0.1:51735 as conn 143
+gate_1 accepted 127.0.0.1:51736 as conn 144
+gate_1 accepted 127.0.0.1:51737 as conn 145
+gate_1 accepted 127.0.0.1:51738 as conn 146
+[map_1] perf_all_10_50_33_1783924907930 enter map 1 unit 1033
+gate_1 accepted 127.0.0.1:51739 as conn 147
+[log] [gate_1] perf_all_10_50_33_1783924907930 enter map_1 as unit 1033
+gate_1 accepted 127.0.0.1:51740 as conn 148
+login_mgr accepted 127.0.0.1:51741 as conn 149
+gate_1 accepted 127.0.0.1:51742 as conn 150
+[map_1] perf_all_10_50_35_1783924907931 enter map 1 unit 1034
+[log] [gate_1] perf_all_10_50_35_1783924907931 enter map_1 as unit 1034
+gate_1 accepted 127.0.0.1:51743 as conn 151
+[map_1] perf_all_10_50_34_1783924907931 enter map 1 unit 1035
+login_mgr accepted 127.0.0.1:51744 as conn 152
+[log] [gate_1] perf_all_10_50_34_1783924907931 enter map_1 as unit 1035
+[map_1] perf_all_10_50_36_1783924907932 enter map 1 unit 1036
+[log] [gate_1] perf_all_10_50_36_1783924907932 enter map_1 as unit 1036
+[map_1] perf_all_10_50_37_1783924907935 enter map 1 unit 1037
+[log] [gate_1] perf_all_10_50_37_1783924907935 enter map_1 as unit 1037
+[map_1] perf_all_10_50_38_1783924907936 enter map 1 unit 1038
+[log] [gate_1] perf_all_10_50_38_1783924907936 enter map_1 as unit 1038
+[map_1] perf_all_10_50_39_1783924907937 enter map 1 unit 1039
+[log] [gate_1] perf_all_10_50_39_1783924907937 enter map_1 as unit 1039
+login_1 accepted 127.0.0.1:51745 as conn 153
+[map_1] perf_all_10_50_40_1783924907937 enter map 1 unit 1040
+[log] [gate_1] perf_all_10_50_40_1783924907937 enter map_1 as unit 1040
+login_2 accepted 127.0.0.1:51746 as conn 154
+[map_1] perf_all_10_50_42_1783924907937 enter map 1 unit 1041
+[log] [gate_1] perf_all_10_50_42_1783924907937 enter map_1 as unit 1041
+[map_1] perf_all_10_50_41_1783924907937 enter map 1 unit 1042
+[log] [gate_1] perf_all_10_50_41_1783924907937 enter map_1 as unit 1042
+[map_1] perf_all_10_50_44_1783924907938 enter map 1 unit 1043
+[log] [gate_1] perf_all_10_50_44_1783924907938 enter map_1 as unit 1043
+[map_1] perf_all_10_50_45_1783924907939 enter map 1 unit 1044
+[log] [gate_1] perf_all_10_50_45_1783924907939 enter map_1 as unit 1044
+[map_1] perf_all_10_50_43_1783924907938 enter map 1 unit 1045
+[log] [gate_1] perf_all_10_50_43_1783924907938 enter map_1 as unit 1045
+[all/perf_all_10_50_48_1783924907947] login perf_all_10_50_48_1783924907947 count 1
+[all/perf_all_10_50_49_1783924907949] login perf_all_10_50_49_1783924907949 count 1
+[log] [login_1] perf_all_10_50_48_1783924907947 login count 1
+[log] [login_2] perf_all_10_50_49_1783924907949 login count 1
+[map_1] perf_all_10_50_46_1783924907939 enter map 1 unit 1046
+[log] [gate_1] perf_all_10_50_46_1783924907939 enter map_1 as unit 1046
+[map_1] perf_all_10_50_47_1783924907940 enter map 1 unit 1047
+[log] [gate_1] perf_all_10_50_47_1783924907940 enter map_1 as unit 1047
+gate_1 accepted 127.0.0.1:51747 as conn 155
+gate_1 accepted 127.0.0.1:51748 as conn 156
+[map_1] perf_all_10_50_49_1783924907949 enter map 1 unit 1048
+[log] [gate_1] perf_all_10_50_49_1783924907949 enter map_1 as unit 1048
+[map_1] perf_all_10_50_48_1783924907947 enter map 1 unit 1049
+[log] [gate_1] perf_all_10_50_48_1783924907947 enter map_1 as unit 1049
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=all cpu_percent=8.74 cpu_time_ms=484 rss_bytes=65351680 v8_heap_used_bytes=11549432 v8_heap_total_bytes=23203840 v8_gc_count=67 v8_gc_ms=13.877
+[metrics:all] scene=log type=Log processed=100 failed=0 ts_queue=0 ts_max_queue=0 rust_queue=0 rust_max_queue=50 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00
+[metrics:all] scene=login_mgr type=LoginMgr processed=50 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=50 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00
+[metrics:all] scene=login_1 type=Login processed=25 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=50 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=9.00
+[metrics:all] scene=login_2 type=Login processed=25 failed=0 ts_queue=0 ts_max_queue=8 rust_queue=0 rust_max_queue=50 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=8.00
+[metrics:all] scene=gate_1 type=Gate processed=5875 failed=0 ts_queue=0 ts_max_queue=50 rust_queue=0 rust_max_queue=50 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=2.00 total_handler_ms=248.00
+[metrics:all] scene=map_1 type=MapHost processed=2300 failed=0 ts_queue=0 ts_max_queue=0 rust_queue=0 rust_max_queue=50 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=2.00 total_handler_ms=458.00
+[map_1] perf_all_10_50_0_1783924907895 leave map 1 unit 1000
+[map_1] perf_all_10_50_1_1783924907896 leave map 1 unit 1009
+[map_1] perf_all_10_50_2_1783924907896 leave map 1 unit 1002
+[map_1] perf_all_10_50_3_1783924907897 leave map 1 unit 1010
+[map_1] perf_all_10_50_4_1783924907897 leave map 1 unit 1004
+[map_1] perf_all_10_50_5_1783924907897 leave map 1 unit 1005
+[map_1] perf_all_10_50_6_1783924907897 leave map 1 unit 1006
+[map_1] perf_all_10_50_7_1783924907897 leave map 1 unit 1013
+[map_1] perf_all_10_50_8_1783924907897 leave map 1 unit 1001
+[map_1] perf_all_10_50_10_1783924907897 leave map 1 unit 1003
+[map_1] perf_all_10_50_9_1783924907897 leave map 1 unit 1011
+[map_1] perf_all_10_50_15_1783924907897 leave map 1 unit 1015
+[map_1] perf_all_10_50_11_1783924907897 leave map 1 unit 1012
+[map_1] perf_all_10_50_12_1783924907897 leave map 1 unit 1007
+[map_1] perf_all_10_50_13_1783924907897 leave map 1 unit 1014
+[map_1] perf_all_10_50_14_1783924907897 leave map 1 unit 1008
+[map_1] perf_all_10_50_45_1783924907939 leave map 1 unit 1044
+[map_1] perf_all_10_50_25_1783924907919 leave map 1 unit 1024
+[map_1] perf_all_10_50_26_1783924907919 leave map 1 unit 1028
+[map_1] perf_all_10_50_16_1783924907912 leave map 1 unit 1017
+[map_1] perf_all_10_50_27_1783924907919 leave map 1 unit 1027
+[map_1] perf_all_10_50_17_1783924907914 leave map 1 unit 1016
+[map_1] perf_all_10_50_28_1783924907919 leave map 1 unit 1026
+[map_1] perf_all_10_50_18_1783924907917 leave map 1 unit 1018
+[map_1] perf_all_10_50_29_1783924907920 leave map 1 unit 1029
+[map_1] perf_all_10_50_19_1783924907917 leave map 1 unit 1019
+[map_1] perf_all_10_50_30_1783924907920 leave map 1 unit 1031
+[map_1] perf_all_10_50_20_1783924907918 leave map 1 unit 1020
+[map_1] perf_all_10_50_31_1783924907920 leave map 1 unit 1030
+[map_1] perf_all_10_50_21_1783924907918 leave map 1 unit 1021
+[map_1] perf_all_10_50_32_1783924907929 leave map 1 unit 1032
+[map_1] perf_all_10_50_22_1783924907918 leave map 1 unit 1022
+[map_1] perf_all_10_50_33_1783924907930 leave map 1 unit 1033
+[map_1] perf_all_10_50_23_1783924907918 leave map 1 unit 1023
+[map_1] perf_all_10_50_40_1783924907937 leave map 1 unit 1040
+[map_1] perf_all_10_50_39_1783924907937 leave map 1 unit 1039
+[map_1] perf_all_10_50_24_1783924907918 leave map 1 unit 1025
+[map_1] perf_all_10_50_41_1783924907937 leave map 1 unit 1042
+[map_1] perf_all_10_50_34_1783924907931 leave map 1 unit 1035
+[map_1] perf_all_10_50_42_1783924907937 leave map 1 unit 1041
+[map_1] perf_all_10_50_36_1783924907932 leave map 1 unit 1036
+[map_1] perf_all_10_50_37_1783924907935 leave map 1 unit 1037
+[map_1] perf_all_10_50_43_1783924907938 leave map 1 unit 1045
+[map_1] perf_all_10_50_38_1783924907936 leave map 1 unit 1038
+[map_1] perf_all_10_50_44_1783924907938 leave map 1 unit 1043
+[map_1] perf_all_10_50_35_1783924907931 leave map 1 unit 1034
+[map_1] perf_all_10_50_46_1783924907939 leave map 1 unit 1046
+[map_1] perf_all_10_50_49_1783924907949 leave map 1 unit 1048
+[map_1] perf_all_10_50_47_1783924907940 leave map 1 unit 1047
+[map_1] perf_all_10_50_48_1783924907947 leave map 1 unit 1049

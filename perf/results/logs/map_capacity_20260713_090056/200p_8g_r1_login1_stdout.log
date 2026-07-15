@@ -1,0 +1,429 @@
+starting process login1 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\perf\results\runtime_configs\map_capacity_20260713_090056\200p_8g_r1\login1.json
+scene login_1 (Login) listening on 127.0.0.1:7001
+[process:login1] one V8 started with 1 scene(s)
+[login_1] Login scene started at 127.0.0.1:7001
+login_1 accepted 127.0.0.1:53671 as conn 1
+login_1 accepted 127.0.0.1:54356 as conn 2
+login_1 accepted 127.0.0.1:54357 as conn 3
+login_1 accepted 127.0.0.1:54358 as conn 4
+login_1 accepted 127.0.0.1:54359 as conn 5
+login_1 accepted 127.0.0.1:54360 as conn 6
+login_1 accepted 127.0.0.1:54361 as conn 7
+login_1 accepted 127.0.0.1:54362 as conn 8
+login_1 accepted 127.0.0.1:54363 as conn 9
+login_1 accepted 127.0.0.1:54364 as conn 10
+login_1 accepted 127.0.0.1:54365 as conn 11
+login_1 accepted 127.0.0.1:54366 as conn 12
+login_1 accepted 127.0.0.1:54367 as conn 13
+login_1 accepted 127.0.0.1:54368 as conn 14
+login_1 accepted 127.0.0.1:54369 as conn 15
+login_1 accepted 127.0.0.1:54370 as conn 16
+login_1 accepted 127.0.0.1:54371 as conn 17
+[login1/perf_8g_10_200_0_1783933256708] login perf_8g_10_200_0_1783933256708 count 1
+[login1/perf_8g_10_200_1_1783933256709] login perf_8g_10_200_1_1783933256709 count 1
+[login1/perf_8g_10_200_4_1783933256709] login perf_8g_10_200_4_1783933256709 count 1
+[login1/perf_8g_10_200_3_1783933256709] login perf_8g_10_200_3_1783933256709 count 1
+[login1/perf_8g_10_200_2_1783933256709] login perf_8g_10_200_2_1783933256709 count 1
+[login1/perf_8g_10_200_7_1783933256709] login perf_8g_10_200_7_1783933256709 count 1
+[login1/perf_8g_10_200_8_1783933256709] login perf_8g_10_200_8_1783933256709 count 1
+[login1/perf_8g_10_200_5_1783933256709] login perf_8g_10_200_5_1783933256709 count 1
+[login1/perf_8g_10_200_6_1783933256709] login perf_8g_10_200_6_1783933256709 count 1
+[login1/perf_8g_10_200_10_1783933256710] login perf_8g_10_200_10_1783933256710 count 1
+[login1/perf_8g_10_200_9_1783933256709] login perf_8g_10_200_9_1783933256709 count 1
+[login1/perf_8g_10_200_11_1783933256710] login perf_8g_10_200_11_1783933256710 count 1
+[login1/perf_8g_10_200_12_1783933256710] login perf_8g_10_200_12_1783933256710 count 1
+[login1/perf_8g_10_200_13_1783933256710] login perf_8g_10_200_13_1783933256710 count 1
+[login1/perf_8g_10_200_14_1783933256710] login perf_8g_10_200_14_1783933256710 count 1
+[login1/perf_8g_10_200_15_1783933256710] login perf_8g_10_200_15_1783933256710 count 1
+login_1 accepted 127.0.0.1:54412 as conn 18
+[login1/perf_8g_10_200_16_1783933256733] login perf_8g_10_200_16_1783933256733 count 1
+login_1 accepted 127.0.0.1:54417 as conn 19
+[login1/perf_8g_10_200_17_1783933256735] login perf_8g_10_200_17_1783933256735 count 1
+login_1 accepted 127.0.0.1:54421 as conn 20
+login_1 accepted 127.0.0.1:54422 as conn 21
+[login1/perf_8g_10_200_18_1783933256737] login perf_8g_10_200_18_1783933256737 count 1
+[login1/perf_8g_10_200_19_1783933256737] login perf_8g_10_200_19_1783933256737 count 1
+login_1 accepted 127.0.0.1:54438 as conn 22
+login_1 accepted 127.0.0.1:54439 as conn 23
+login_1 accepted 127.0.0.1:54440 as conn 24
+login_1 accepted 127.0.0.1:54441 as conn 25
+login_1 accepted 127.0.0.1:54442 as conn 26
+login_1 accepted 127.0.0.1:54443 as conn 27
+login_1 accepted 127.0.0.1:54444 as conn 28
+login_1 accepted 127.0.0.1:54445 as conn 29
+login_1 accepted 127.0.0.1:54446 as conn 30
+login_1 accepted 127.0.0.1:54448 as conn 31
+[login1/perf_8g_10_200_20_1783933256739] login perf_8g_10_200_20_1783933256739 count 1
+login_1 accepted 127.0.0.1:54449 as conn 32
+login_1 accepted 127.0.0.1:54450 as conn 33
+login_1 accepted 127.0.0.1:54452 as conn 34
+[login1/perf_8g_10_200_21_1783933256740] login perf_8g_10_200_21_1783933256740 count 1
+[login1/perf_8g_10_200_22_1783933256740] login perf_8g_10_200_22_1783933256740 count 1
+[login1/perf_8g_10_200_24_1783933256741] login perf_8g_10_200_24_1783933256741 count 1
+[login1/perf_8g_10_200_23_1783933256741] login perf_8g_10_200_23_1783933256741 count 1
+[login1/perf_8g_10_200_25_1783933256741] login perf_8g_10_200_25_1783933256741 count 1
+[login1/perf_8g_10_200_26_1783933256741] login perf_8g_10_200_26_1783933256741 count 1
+[login1/perf_8g_10_200_27_1783933256742] login perf_8g_10_200_27_1783933256742 count 1
+[login1/perf_8g_10_200_28_1783933256742] login perf_8g_10_200_28_1783933256742 count 1
+[login1/perf_8g_10_200_29_1783933256742] login perf_8g_10_200_29_1783933256742 count 1
+[login1/perf_8g_10_200_30_1783933256742] login perf_8g_10_200_30_1783933256742 count 1
+[login1/perf_8g_10_200_31_1783933256743] login perf_8g_10_200_31_1783933256743 count 1
+[login1/perf_8g_10_200_32_1783933256743] login perf_8g_10_200_32_1783933256743 count 1
+login_1 accepted 127.0.0.1:54456 as conn 35
+login_1 accepted 127.0.0.1:54462 as conn 36
+login_1 accepted 127.0.0.1:54463 as conn 37
+[login1/perf_8g_10_200_33_1783933256747] login perf_8g_10_200_33_1783933256747 count 1
+[login1/perf_8g_10_200_34_1783933256748] login perf_8g_10_200_34_1783933256748 count 1
+[login1/perf_8g_10_200_35_1783933256749] login perf_8g_10_200_35_1783933256749 count 1
+login_1 accepted 127.0.0.1:54476 as conn 38
+login_1 accepted 127.0.0.1:54477 as conn 39
+login_1 accepted 127.0.0.1:54478 as conn 40
+[login1/perf_8g_10_200_36_1783933256756] login perf_8g_10_200_36_1783933256756 count 1
+[login1/perf_8g_10_200_37_1783933256757] login perf_8g_10_200_37_1783933256757 count 1
+[login1/perf_8g_10_200_38_1783933256758] login perf_8g_10_200_38_1783933256758 count 1
+login_1 accepted 127.0.0.1:54483 as conn 41
+login_1 accepted 127.0.0.1:54484 as conn 42
+login_1 accepted 127.0.0.1:54485 as conn 43
+[login1/perf_8g_10_200_40_1783933256760] login perf_8g_10_200_40_1783933256760 count 1
+[login1/perf_8g_10_200_39_1783933256760] login perf_8g_10_200_39_1783933256760 count 1
+[login1/perf_8g_10_200_41_1783933256760] login perf_8g_10_200_41_1783933256760 count 1
+login_1 accepted 127.0.0.1:54501 as conn 44
+login_1 accepted 127.0.0.1:54502 as conn 45
+login_1 accepted 127.0.0.1:54504 as conn 46
+login_1 accepted 127.0.0.1:54505 as conn 47
+login_1 accepted 127.0.0.1:54506 as conn 48
+login_1 accepted 127.0.0.1:54507 as conn 49
+login_1 accepted 127.0.0.1:54508 as conn 50
+[login1/perf_8g_10_200_42_1783933256763] login perf_8g_10_200_42_1783933256763 count 1
+[login1/perf_8g_10_200_43_1783933256763] login perf_8g_10_200_43_1783933256763 count 1
+login_1 accepted 127.0.0.1:54509 as conn 51
+login_1 accepted 127.0.0.1:54510 as conn 52
+login_1 accepted 127.0.0.1:54511 as conn 53
+[login1/perf_8g_10_200_44_1783933256764] login perf_8g_10_200_44_1783933256764 count 1
+[login1/perf_8g_10_200_45_1783933256764] login perf_8g_10_200_45_1783933256764 count 1
+[login1/perf_8g_10_200_46_1783933256764] login perf_8g_10_200_46_1783933256764 count 1
+[login1/perf_8g_10_200_47_1783933256765] login perf_8g_10_200_47_1783933256765 count 1
+[login1/perf_8g_10_200_48_1783933256765] login perf_8g_10_200_48_1783933256765 count 1
+[login1/perf_8g_10_200_49_1783933256766] login perf_8g_10_200_49_1783933256766 count 1
+[login1/perf_8g_10_200_50_1783933256766] login perf_8g_10_200_50_1783933256766 count 1
+login_1 accepted 127.0.0.1:54516 as conn 54
+[login1/perf_8g_10_200_51_1783933256767] login perf_8g_10_200_51_1783933256767 count 1
+[login1/perf_8g_10_200_52_1783933256769] login perf_8g_10_200_52_1783933256769 count 1
+login_1 accepted 127.0.0.1:54530 as conn 55
+login_1 accepted 127.0.0.1:54531 as conn 56
+[login1/perf_8g_10_200_53_1783933256772] login perf_8g_10_200_53_1783933256772 count 1
+[login1/perf_8g_10_200_54_1783933256772] login perf_8g_10_200_54_1783933256772 count 1
+login_1 accepted 127.0.0.1:54535 as conn 57
+login_1 accepted 127.0.0.1:54536 as conn 58
+login_1 accepted 127.0.0.1:54537 as conn 59
+[login1/perf_8g_10_200_55_1783933256775] login perf_8g_10_200_55_1783933256775 count 1
+[login1/perf_8g_10_200_56_1783933256777] login perf_8g_10_200_56_1783933256777 count 1
+[login1/perf_8g_10_200_57_1783933256778] login perf_8g_10_200_57_1783933256778 count 1
+login_1 accepted 127.0.0.1:54547 as conn 60
+[login1/perf_8g_10_200_58_1783933256781] login perf_8g_10_200_58_1783933256781 count 1
+login_1 accepted 127.0.0.1:54552 as conn 61
+login_1 accepted 127.0.0.1:54553 as conn 62
+login_1 accepted 127.0.0.1:54554 as conn 63
+[login1/perf_8g_10_200_59_1783933256783] login perf_8g_10_200_59_1783933256783 count 1
+[login1/perf_8g_10_200_60_1783933256783] login perf_8g_10_200_60_1783933256783 count 1
+[login1/perf_8g_10_200_61_1783933256783] login perf_8g_10_200_61_1783933256783 count 1
+login_1 accepted 127.0.0.1:54562 as conn 64
+login_1 accepted 127.0.0.1:54563 as conn 65
+login_1 accepted 127.0.0.1:54564 as conn 66
+login_1 accepted 127.0.0.1:54566 as conn 67
+login_1 accepted 127.0.0.1:54568 as conn 68
+[login1/perf_8g_10_200_63_1783933256786] login perf_8g_10_200_63_1783933256786 count 1
+login_1 accepted 127.0.0.1:54572 as conn 69
+[login1/perf_8g_10_200_62_1783933256786] login perf_8g_10_200_62_1783933256786 count 1
+[login1/perf_8g_10_200_64_1783933256787] login perf_8g_10_200_64_1783933256787 count 1
+[login1/perf_8g_10_200_65_1783933256787] login perf_8g_10_200_65_1783933256787 count 1
+login_1 accepted 127.0.0.1:54575 as conn 70
+login_1 accepted 127.0.0.1:54576 as conn 71
+[login1/perf_8g_10_200_66_1783933256789] login perf_8g_10_200_66_1783933256789 count 1
+login_1 accepted 127.0.0.1:54577 as conn 72
+[login1/perf_8g_10_200_67_1783933256790] login perf_8g_10_200_67_1783933256790 count 1
+[login1/perf_8g_10_200_68_1783933256791] login perf_8g_10_200_68_1783933256791 count 1
+login_1 accepted 127.0.0.1:54581 as conn 73
+[login1/perf_8g_10_200_69_1783933256791] login perf_8g_10_200_69_1783933256791 count 1
+[login1/perf_8g_10_200_70_1783933256792] login perf_8g_10_200_70_1783933256792 count 1
+login_1 accepted 127.0.0.1:54586 as conn 74
+login_1 accepted 127.0.0.1:54587 as conn 75
+[login1/perf_8g_10_200_71_1783933256794] login perf_8g_10_200_71_1783933256794 count 1
+[login1/perf_8g_10_200_72_1783933256795] login perf_8g_10_200_72_1783933256795 count 1
+[login1/perf_8g_10_200_73_1783933256796] login perf_8g_10_200_73_1783933256796 count 1
+login_1 accepted 127.0.0.1:54595 as conn 76
+[login1/perf_8g_10_200_74_1783933256800] login perf_8g_10_200_74_1783933256800 count 1
+login_1 accepted 127.0.0.1:54599 as conn 77
+login_1 accepted 127.0.0.1:54604 as conn 78
+login_1 accepted 127.0.0.1:54605 as conn 79
+[login1/perf_8g_10_200_75_1783933256805] login perf_8g_10_200_75_1783933256805 count 1
+login_1 accepted 127.0.0.1:54611 as conn 80
+[login1/perf_8g_10_200_76_1783933256807] login perf_8g_10_200_76_1783933256807 count 1
+[login1/perf_8g_10_200_77_1783933256807] login perf_8g_10_200_77_1783933256807 count 1
+login_1 accepted 127.0.0.1:54613 as conn 81
+login_1 accepted 127.0.0.1:54614 as conn 82
+login_1 accepted 127.0.0.1:54616 as conn 83
+login_1 accepted 127.0.0.1:54617 as conn 84
+[login1/perf_8g_10_200_78_1783933256811] login perf_8g_10_200_78_1783933256811 count 1
+login_1 accepted 127.0.0.1:54620 as conn 85
+[login1/perf_8g_10_200_79_1783933256812] login perf_8g_10_200_79_1783933256812 count 1
+[login1/perf_8g_10_200_80_1783933256813] login perf_8g_10_200_80_1783933256813 count 1
+login_1 accepted 127.0.0.1:54623 as conn 86
+login_1 accepted 127.0.0.1:54624 as conn 87
+[login1/perf_8g_10_200_81_1783933256814] login perf_8g_10_200_81_1783933256814 count 1
+login_1 accepted 127.0.0.1:54625 as conn 88
+[login1/perf_8g_10_200_82_1783933256816] login perf_8g_10_200_82_1783933256816 count 1
+login_1 accepted 127.0.0.1:54627 as conn 89
+[login1/perf_8g_10_200_83_1783933256817] login perf_8g_10_200_83_1783933256817 count 1
+[login1/perf_8g_10_200_84_1783933256818] login perf_8g_10_200_84_1783933256818 count 1
+[login1/perf_8g_10_200_85_1783933256818] login perf_8g_10_200_85_1783933256818 count 1
+[login1/perf_8g_10_200_86_1783933256819] login perf_8g_10_200_86_1783933256819 count 1
+login_1 accepted 127.0.0.1:54633 as conn 90
+[login1/perf_8g_10_200_87_1783933256820] login perf_8g_10_200_87_1783933256820 count 1
+login_1 accepted 127.0.0.1:54637 as conn 91
+[login1/perf_8g_10_200_88_1783933256822] login perf_8g_10_200_88_1783933256822 count 1
+[login1/perf_8g_10_200_89_1783933256823] login perf_8g_10_200_89_1783933256823 count 1
+login_1 accepted 127.0.0.1:54645 as conn 92
+[login1/perf_8g_10_200_90_1783933256828] login perf_8g_10_200_90_1783933256828 count 1
+login_1 accepted 127.0.0.1:54649 as conn 93
+login_1 accepted 127.0.0.1:54651 as conn 94
+[login1/perf_8g_10_200_91_1783933256831] login perf_8g_10_200_91_1783933256831 count 1
+login_1 accepted 127.0.0.1:54655 as conn 95
+login_1 accepted 127.0.0.1:54657 as conn 96
+[login1/perf_8g_10_200_92_1783933256834] login perf_8g_10_200_92_1783933256834 count 1
+[login1/perf_8g_10_200_93_1783933256835] login perf_8g_10_200_93_1783933256835 count 1
+[login1/perf_8g_10_200_94_1783933256836] login perf_8g_10_200_94_1783933256836 count 1
+login_1 accepted 127.0.0.1:54662 as conn 97
+login_1 accepted 127.0.0.1:54663 as conn 98
+[login1/perf_8g_10_200_95_1783933256837] login perf_8g_10_200_95_1783933256837 count 1
+[login1/perf_8g_10_200_96_1783933256839] login perf_8g_10_200_96_1783933256839 count 1
+login_1 accepted 127.0.0.1:54670 as conn 99
+login_1 accepted 127.0.0.1:54671 as conn 100
+login_1 accepted 127.0.0.1:54672 as conn 101
+[login1/perf_8g_10_200_97_1783933256841] login perf_8g_10_200_97_1783933256841 count 1
+[login1/perf_8g_10_200_98_1783933256841] login perf_8g_10_200_98_1783933256841 count 1
+[login1/perf_8g_10_200_99_1783933256842] login perf_8g_10_200_99_1783933256842 count 1
+login_1 accepted 127.0.0.1:54678 as conn 102
+login_1 accepted 127.0.0.1:54680 as conn 103
+login_1 accepted 127.0.0.1:54682 as conn 104
+[login1/perf_8g_10_200_100_1783933256846] login perf_8g_10_200_100_1783933256846 count 1
+[login1/perf_8g_10_200_101_1783933256846] login perf_8g_10_200_101_1783933256846 count 1
+[login1/perf_8g_10_200_102_1783933256847] login perf_8g_10_200_102_1783933256847 count 1
+login_1 accepted 127.0.0.1:54689 as conn 105
+login_1 accepted 127.0.0.1:54690 as conn 106
+login_1 accepted 127.0.0.1:54691 as conn 107
+login_1 accepted 127.0.0.1:54693 as conn 108
+login_1 accepted 127.0.0.1:54694 as conn 109
+[login1/perf_8g_10_200_103_1783933256851] login perf_8g_10_200_103_1783933256851 count 1
+[login1/perf_8g_10_200_104_1783933256852] login perf_8g_10_200_104_1783933256852 count 1
+login_1 accepted 127.0.0.1:54698 as conn 110
+[login1/perf_8g_10_200_105_1783933256852] login perf_8g_10_200_105_1783933256852 count 1
+login_1 accepted 127.0.0.1:54700 as conn 111
+[login1/perf_8g_10_200_106_1783933256854] login perf_8g_10_200_106_1783933256854 count 1
+login_1 accepted 127.0.0.1:54701 as conn 112
+[login1/perf_8g_10_200_107_1783933256855] login perf_8g_10_200_107_1783933256855 count 1
+[login1/perf_8g_10_200_108_1783933256856] login perf_8g_10_200_108_1783933256856 count 1
+[login1/perf_8g_10_200_109_1783933256857] login perf_8g_10_200_109_1783933256857 count 1
+[login1/perf_8g_10_200_110_1783933256858] login perf_8g_10_200_110_1783933256858 count 1
+login_1 accepted 127.0.0.1:54707 as conn 113
+login_1 accepted 127.0.0.1:54710 as conn 114
+[login1/perf_8g_10_200_111_1783933256862] login perf_8g_10_200_111_1783933256862 count 1
+[login1/perf_8g_10_200_112_1783933256863] login perf_8g_10_200_112_1783933256863 count 1
+login_1 accepted 127.0.0.1:54715 as conn 115
+[login1/perf_8g_10_200_113_1783933256867] login perf_8g_10_200_113_1783933256867 count 1
+login_1 accepted 127.0.0.1:54721 as conn 116
+login_1 accepted 127.0.0.1:54722 as conn 117
+[login1/perf_8g_10_200_114_1783933256871] login perf_8g_10_200_114_1783933256871 count 1
+login_1 accepted 127.0.0.1:54725 as conn 118
+[login1/perf_8g_10_200_115_1783933256872] login perf_8g_10_200_115_1783933256872 count 1
+login_1 accepted 127.0.0.1:54726 as conn 119
+login_1 accepted 127.0.0.1:54727 as conn 120
+login_1 accepted 127.0.0.1:54728 as conn 121
+[login1/perf_8g_10_200_116_1783933256875] login perf_8g_10_200_116_1783933256875 count 1
+[login1/perf_8g_10_200_117_1783933256876] login perf_8g_10_200_117_1783933256876 count 1
+[login1/perf_8g_10_200_118_1783933256876] login perf_8g_10_200_118_1783933256876 count 1
+[login1/perf_8g_10_200_119_1783933256878] login perf_8g_10_200_119_1783933256878 count 1
+login_1 accepted 127.0.0.1:54739 as conn 122
+login_1 accepted 127.0.0.1:54740 as conn 123
+login_1 accepted 127.0.0.1:54741 as conn 124
+login_1 accepted 127.0.0.1:54742 as conn 125
+[login1/perf_8g_10_200_120_1783933256882] login perf_8g_10_200_120_1783933256882 count 1
+[login1/perf_8g_10_200_121_1783933256883] login perf_8g_10_200_121_1783933256883 count 1
+[login1/perf_8g_10_200_122_1783933256884] login perf_8g_10_200_122_1783933256884 count 1
+[login1/perf_8g_10_200_123_1783933256884] login perf_8g_10_200_123_1783933256884 count 1
+login_1 accepted 127.0.0.1:54751 as conn 126
+login_1 accepted 127.0.0.1:54752 as conn 127
+login_1 accepted 127.0.0.1:54753 as conn 128
+login_1 accepted 127.0.0.1:54754 as conn 129
+[login1/perf_8g_10_200_125_1783933256889] login perf_8g_10_200_125_1783933256889 count 1
+[login1/perf_8g_10_200_124_1783933256889] login perf_8g_10_200_124_1783933256889 count 1
+[login1/perf_8g_10_200_126_1783933256890] login perf_8g_10_200_126_1783933256890 count 1
+[login1/perf_8g_10_200_127_1783933256890] login perf_8g_10_200_127_1783933256890 count 1
+login_1 accepted 127.0.0.1:54763 as conn 130
+login_1 accepted 127.0.0.1:54764 as conn 131
+login_1 accepted 127.0.0.1:54765 as conn 132
+login_1 accepted 127.0.0.1:54766 as conn 133
+[login1/perf_8g_10_200_128_1783933256895] login perf_8g_10_200_128_1783933256895 count 1
+[login1/perf_8g_10_200_129_1783933256895] login perf_8g_10_200_129_1783933256895 count 1
+[login1/perf_8g_10_200_130_1783933256895] login perf_8g_10_200_130_1783933256895 count 1
+[login1/perf_8g_10_200_131_1783933256896] login perf_8g_10_200_131_1783933256896 count 1
+login_1 accepted 127.0.0.1:54775 as conn 134
+login_1 accepted 127.0.0.1:54776 as conn 135
+login_1 accepted 127.0.0.1:54777 as conn 136
+login_1 accepted 127.0.0.1:54778 as conn 137
+[login1/perf_8g_10_200_132_1783933256900] login perf_8g_10_200_132_1783933256900 count 1
+[login1/perf_8g_10_200_134_1783933256901] login perf_8g_10_200_134_1783933256901 count 1
+[login1/perf_8g_10_200_133_1783933256901] login perf_8g_10_200_133_1783933256901 count 1
+[login1/perf_8g_10_200_135_1783933256902] login perf_8g_10_200_135_1783933256902 count 1
+login_1 accepted 127.0.0.1:54787 as conn 138
+login_1 accepted 127.0.0.1:54788 as conn 139
+login_1 accepted 127.0.0.1:54789 as conn 140
+[login1/perf_8g_10_200_136_1783933256906] login perf_8g_10_200_136_1783933256906 count 1
+login_1 accepted 127.0.0.1:54790 as conn 141
+[login1/perf_8g_10_200_137_1783933256907] login perf_8g_10_200_137_1783933256907 count 1
+[login1/perf_8g_10_200_138_1783933256907] login perf_8g_10_200_138_1783933256907 count 1
+[login1/perf_8g_10_200_139_1783933256908] login perf_8g_10_200_139_1783933256908 count 1
+login_1 accepted 127.0.0.1:54799 as conn 142
+login_1 accepted 127.0.0.1:54800 as conn 143
+login_1 accepted 127.0.0.1:54801 as conn 144
+login_1 accepted 127.0.0.1:54802 as conn 145
+[login1/perf_8g_10_200_140_1783933256913] login perf_8g_10_200_140_1783933256913 count 1
+[login1/perf_8g_10_200_141_1783933256913] login perf_8g_10_200_141_1783933256913 count 1
+[login1/perf_8g_10_200_142_1783933256914] login perf_8g_10_200_142_1783933256914 count 1
+[login1/perf_8g_10_200_143_1783933256915] login perf_8g_10_200_143_1783933256915 count 1
+login_1 accepted 127.0.0.1:54811 as conn 146
+login_1 accepted 127.0.0.1:54812 as conn 147
+login_1 accepted 127.0.0.1:54813 as conn 148
+[login1/perf_8g_10_200_144_1783933256920] login perf_8g_10_200_144_1783933256920 count 1
+login_1 accepted 127.0.0.1:54814 as conn 149
+[login1/perf_8g_10_200_145_1783933256921] login perf_8g_10_200_145_1783933256921 count 1
+[login1/perf_8g_10_200_146_1783933256921] login perf_8g_10_200_146_1783933256921 count 1
+[login1/perf_8g_10_200_147_1783933256922] login perf_8g_10_200_147_1783933256922 count 1
+login_1 accepted 127.0.0.1:54823 as conn 150
+login_1 accepted 127.0.0.1:54824 as conn 151
+login_1 accepted 127.0.0.1:54825 as conn 152
+[login1/perf_8g_10_200_148_1783933256927] login perf_8g_10_200_148_1783933256927 count 1
+login_1 accepted 127.0.0.1:54826 as conn 153
+[login1/perf_8g_10_200_150_1783933256929] login perf_8g_10_200_150_1783933256929 count 1
+[login1/perf_8g_10_200_149_1783933256928] login perf_8g_10_200_149_1783933256928 count 1
+[login1/perf_8g_10_200_151_1783933256930] login perf_8g_10_200_151_1783933256930 count 1
+login_1 accepted 127.0.0.1:54835 as conn 154
+login_1 accepted 127.0.0.1:54836 as conn 155
+login_1 accepted 127.0.0.1:54838 as conn 156
+[login1/perf_8g_10_200_152_1783933256934] login perf_8g_10_200_152_1783933256934 count 1
+login_1 accepted 127.0.0.1:54840 as conn 157
+[login1/perf_8g_10_200_153_1783933256935] login perf_8g_10_200_153_1783933256935 count 1
+[login1/perf_8g_10_200_154_1783933256936] login perf_8g_10_200_154_1783933256936 count 1
+[login1/perf_8g_10_200_155_1783933256937] login perf_8g_10_200_155_1783933256937 count 1
+login_1 accepted 127.0.0.1:54849 as conn 158
+login_1 accepted 127.0.0.1:54850 as conn 159
+login_1 accepted 127.0.0.1:54851 as conn 160
+[login1/perf_8g_10_200_156_1783933256941] login perf_8g_10_200_156_1783933256941 count 1
+login_1 accepted 127.0.0.1:54852 as conn 161
+[login1/perf_8g_10_200_157_1783933256942] login perf_8g_10_200_157_1783933256942 count 1
+[login1/perf_8g_10_200_158_1783933256943] login perf_8g_10_200_158_1783933256943 count 1
+[login1/perf_8g_10_200_159_1783933256943] login perf_8g_10_200_159_1783933256943 count 1
+login_1 accepted 127.0.0.1:54861 as conn 162
+login_1 accepted 127.0.0.1:54862 as conn 163
+login_1 accepted 127.0.0.1:54863 as conn 164
+login_1 accepted 127.0.0.1:54864 as conn 165
+[login1/perf_8g_10_200_160_1783933256948] login perf_8g_10_200_160_1783933256948 count 1
+[login1/perf_8g_10_200_161_1783933256948] login perf_8g_10_200_161_1783933256948 count 1
+[login1/perf_8g_10_200_162_1783933256949] login perf_8g_10_200_162_1783933256949 count 1
+[login1/perf_8g_10_200_163_1783933256950] login perf_8g_10_200_163_1783933256950 count 1
+login_1 accepted 127.0.0.1:54873 as conn 166
+login_1 accepted 127.0.0.1:54874 as conn 167
+login_1 accepted 127.0.0.1:54875 as conn 168
+[login1/perf_8g_10_200_164_1783933256954] login perf_8g_10_200_164_1783933256954 count 1
+login_1 accepted 127.0.0.1:54876 as conn 169
+[login1/perf_8g_10_200_165_1783933256955] login perf_8g_10_200_165_1783933256955 count 1
+[login1/perf_8g_10_200_166_1783933256956] login perf_8g_10_200_166_1783933256956 count 1
+[login1/perf_8g_10_200_167_1783933256956] login perf_8g_10_200_167_1783933256956 count 1
+login_1 accepted 127.0.0.1:54885 as conn 170
+login_1 accepted 127.0.0.1:54886 as conn 171
+login_1 accepted 127.0.0.1:54887 as conn 172
+[login1/perf_8g_10_200_168_1783933256961] login perf_8g_10_200_168_1783933256961 count 1
+login_1 accepted 127.0.0.1:54888 as conn 173
+[login1/perf_8g_10_200_169_1783933256963] login perf_8g_10_200_169_1783933256963 count 1
+[login1/perf_8g_10_200_170_1783933256963] login perf_8g_10_200_170_1783933256963 count 1
+[login1/perf_8g_10_200_171_1783933256964] login perf_8g_10_200_171_1783933256964 count 1
+login_1 accepted 127.0.0.1:54898 as conn 174
+login_1 accepted 127.0.0.1:54901 as conn 175
+[login1/perf_8g_10_200_172_1783933256969] login perf_8g_10_200_172_1783933256969 count 1
+login_1 accepted 127.0.0.1:54902 as conn 176
+login_1 accepted 127.0.0.1:54903 as conn 177
+[login1/perf_8g_10_200_173_1783933256969] login perf_8g_10_200_173_1783933256969 count 1
+[login1/perf_8g_10_200_174_1783933256970] login perf_8g_10_200_174_1783933256970 count 1
+[login1/perf_8g_10_200_175_1783933256971] login perf_8g_10_200_175_1783933256971 count 1
+login_1 accepted 127.0.0.1:54912 as conn 178
+login_1 accepted 127.0.0.1:54913 as conn 179
+login_1 accepted 127.0.0.1:54914 as conn 180
+[login1/perf_8g_10_200_176_1783933256977] login perf_8g_10_200_176_1783933256977 count 1
+login_1 accepted 127.0.0.1:54915 as conn 181
+[login1/perf_8g_10_200_177_1783933256977] login perf_8g_10_200_177_1783933256977 count 1
+[login1/perf_8g_10_200_178_1783933256978] login perf_8g_10_200_178_1783933256978 count 1
+[login1/perf_8g_10_200_179_1783933256979] login perf_8g_10_200_179_1783933256979 count 1
+login_1 accepted 127.0.0.1:54925 as conn 182
+login_1 accepted 127.0.0.1:54927 as conn 183
+login_1 accepted 127.0.0.1:54928 as conn 184
+login_1 accepted 127.0.0.1:54929 as conn 185
+[login1/perf_8g_10_200_180_1783933256984] login perf_8g_10_200_180_1783933256984 count 1
+[login1/perf_8g_10_200_181_1783933256985] login perf_8g_10_200_181_1783933256985 count 1
+[login1/perf_8g_10_200_182_1783933256986] login perf_8g_10_200_182_1783933256986 count 1
+[login1/perf_8g_10_200_183_1783933256986] login perf_8g_10_200_183_1783933256986 count 1
+login_1 accepted 127.0.0.1:54938 as conn 186
+login_1 accepted 127.0.0.1:54939 as conn 187
+login_1 accepted 127.0.0.1:54940 as conn 188
+login_1 accepted 127.0.0.1:54941 as conn 189
+[login1/perf_8g_10_200_184_1783933256992] login perf_8g_10_200_184_1783933256992 count 1
+[login1/perf_8g_10_200_185_1783933256993] login perf_8g_10_200_185_1783933256993 count 1
+[login1/perf_8g_10_200_186_1783933256993] login perf_8g_10_200_186_1783933256993 count 1
+[login1/perf_8g_10_200_187_1783933256994] login perf_8g_10_200_187_1783933256994 count 1
+login_1 accepted 127.0.0.1:54953 as conn 190
+login_1 accepted 127.0.0.1:54954 as conn 191
+login_1 accepted 127.0.0.1:54956 as conn 192
+login_1 accepted 127.0.0.1:54957 as conn 193
+[login1/perf_8g_10_200_188_1783933257001] login perf_8g_10_200_188_1783933257001 count 1
+[login1/perf_8g_10_200_190_1783933257002] login perf_8g_10_200_190_1783933257002 count 1
+[login1/perf_8g_10_200_189_1783933257001] login perf_8g_10_200_189_1783933257001 count 1
+[login1/perf_8g_10_200_191_1783933257003] login perf_8g_10_200_191_1783933257003 count 1
+login_1 accepted 127.0.0.1:54966 as conn 194
+login_1 accepted 127.0.0.1:54967 as conn 195
+login_1 accepted 127.0.0.1:54968 as conn 196
+[login1/perf_8g_10_200_192_1783933257010] login perf_8g_10_200_192_1783933257010 count 1
+login_1 accepted 127.0.0.1:54969 as conn 197
+[login1/perf_8g_10_200_193_1783933257011] login perf_8g_10_200_193_1783933257011 count 1
+[login1/perf_8g_10_200_194_1783933257011] login perf_8g_10_200_194_1783933257011 count 1
+[login1/perf_8g_10_200_195_1783933257012] login perf_8g_10_200_195_1783933257012 count 1
+login_1 accepted 127.0.0.1:54979 as conn 198
+login_1 accepted 127.0.0.1:54980 as conn 199
+[login1/perf_8g_10_200_196_1783933257020] login perf_8g_10_200_196_1783933257020 count 1
+login_1 accepted 127.0.0.1:54981 as conn 200
+login_1 accepted 127.0.0.1:54982 as conn 201
+[login1/perf_8g_10_200_197_1783933257021] login perf_8g_10_200_197_1783933257021 count 1
+[login1/perf_8g_10_200_198_1783933257021] login perf_8g_10_200_198_1783933257021 count 1
+[login1/perf_8g_10_200_199_1783933257022] login perf_8g_10_200_199_1783933257022 count 1
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=13 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login1 cpu_percent=4.05 cpu_time_ms=250 rss_bytes=39157760 v8_heap_used_bytes=3285408 v8_heap_total_bytes=6828032 v8_gc_count=4 v8_gc_ms=0.893 timestamp_ms=1783933261658
+[metrics:login1] scene=login_1 type=Login processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=74.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=13 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login1 cpu_percent=0.61 cpu_time_ms=281 rss_bytes=39227392 v8_heap_used_bytes=3428976 v8_heap_total_bytes=6828032 v8_gc_count=4 v8_gc_ms=0.893 timestamp_ms=1783933266713
+[metrics:login1] scene=login_1 type=Login processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=74.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=13 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login1 cpu_percent=0.30 cpu_time_ms=296 rss_bytes=39391232 v8_heap_used_bytes=3581016 v8_heap_total_bytes=7090176 v8_gc_count=4 v8_gc_ms=0.893 timestamp_ms=1783933271780
+[metrics:login1] scene=login_1 type=Login processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=74.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=13 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login1 cpu_percent=0.32 cpu_time_ms=312 rss_bytes=39399424 v8_heap_used_bytes=3707736 v8_heap_total_bytes=7090176 v8_gc_count=4 v8_gc_ms=0.893 timestamp_ms=1783933276779
+[metrics:login1] scene=login_1 type=Login processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=74.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=13 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login1 cpu_percent=0.32 cpu_time_ms=328 rss_bytes=39411712 v8_heap_used_bytes=3834496 v8_heap_total_bytes=7090176 v8_gc_count=4 v8_gc_ms=0.893 timestamp_ms=1783933281789
+[metrics:login1] scene=login_1 type=Login processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=74.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=13 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login1 cpu_percent=0.61 cpu_time_ms=359 rss_bytes=39514112 v8_heap_used_bytes=2484784 v8_heap_total_bytes=4468736 v8_gc_count=5 v8_gc_ms=4.359 timestamp_ms=1783933286840
+[metrics:login1] scene=login_1 type=Login processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=74.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=13 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login1 cpu_percent=0.61 cpu_time_ms=390 rss_bytes=39514112 v8_heap_used_bytes=2613088 v8_heap_total_bytes=4468736 v8_gc_count=5 v8_gc_ms=4.359 timestamp_ms=1783933291901
+[metrics:login1] scene=login_1 type=Login processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=74.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=13 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login1 cpu_percent=0.32 cpu_time_ms=406 rss_bytes=39579648 v8_heap_used_bytes=2739808 v8_heap_total_bytes=4468736 v8_gc_count=5 v8_gc_ms=4.359 timestamp_ms=1783933296909
+[metrics:login1] scene=login_1 type=Login processed=200 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=74.00

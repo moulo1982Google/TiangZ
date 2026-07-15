@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package ets.demo;
+
+import "./DataDefine_CS_50001.proto";
+
+//ResponseType S2C_GetLoginServiceAddr
+// @ets.msg protocol=LoginMgr
+message C2S_GetLoginServiceAddr // IRequest
+{
+}
+
+message S2C_GetLoginServiceAddr // IResponse
+{
+  string name = 1;
+  string ip = 2;
+  uint32 port = 3;
+}
+
+//ResponseType S2C_Login
+// @ets.msg protocol=Login
+message C2S_Login // IRequest
+{
+  string account = 1;
+}
+
+message S2C_Login // IResponse
+{
+  string account = 1;
+  string service = 2;
+  uint32 login_count = 3;
+  string token = 4;
+  string gate_name = 5;
+  string gate_ip = 6;
+  uint32 gate_port = 7;
+}
+
+//ResponseType S2C_Log
+// @ets.msg protocol=Log
+message C2S_Log // IRequest
+{
+  string message = 1;
+}
+
+message S2C_Log // IResponse
+{
+}
+
+//ResponseType G2C_LoginGate
+// @ets.msg protocol=Gate
+message C2G_LoginGate // IRequest
+{
+  string account = 1;
+  string token = 2;
+}
+
+message G2C_LoginGate // IResponse
+{
+  string account = 1;
+}
+
+//ResponseType G2C_EnterMap
+// @ets.msg protocol=Gate
+message C2G_EnterMap // IRequest
+{
+  uint32 map_id = 1;
+}
+
+message G2C_EnterMap // IResponse
+{
+  string account = 1;
+  string map_service = 2;
+  uint32 map_id = 3;
+  uint32 unit_id = 4;
+  sint32 x = 5;
+  sint32 y = 6;
+  repeated MapEntitySnapshot entities = 7;
+}
+
+// @ets.msg protocol=Client method=MapReady
+message G2C_MapReady // IMessage
+{
+  string account = 1;
+  uint32 map_id = 2;
+  uint32 unit_id = 3;
+  sint32 x = 4;
+  sint32 y = 5;
+}
+
+// @ets.msg protocol=Map method=Move
+message C2M_Move // IActorLocationMessage
+{
+  sint32 input_x = 1;
+  sint32 input_y = 2;
+  uint32 sequence = 3;
+}
+
+//ResponseType M2C_MapProbe
+// @ets.msg protocol=Map method=Probe
+message C2M_MapProbe // IActorLocationRequest
+{
+  uint32 sequence = 1;
+}
+
+message M2C_MapProbe // IActorLocationResponse
+{
+  uint32 sequence = 1;
+}
+
+// @ets.msg protocol=Client method=EntityMove
+message G2C_EntityMove // IMessage
+{
+  uint32 unit_id = 1;
+  sint32 x = 2;
+  sint32 y = 3;
+  uint32 sequence = 4;
+}
+
+// @ets.msg protocol=Client method=EntityEnter
+message G2C_EntityEnter // IMessage
+{
+  MapEntitySnapshot entity = 1;
+}
+
+// @ets.msg protocol=Client method=EntityLeave
+message G2C_EntityLeave // IMessage
+{
+  uint32 unit_id = 1;
+}

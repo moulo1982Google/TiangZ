@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-07-13T05:14:32.483Z",
+  "runId": "20260713_131430",
+  "profile": "debug",
+  "machine": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
+    "logicalCpus": 24,
+    "memoryGB": 63.8,
+    "node": "v24.11.1"
+  },
+  "target": {
+    "sceneName": "bench",
+    "host": "127.0.0.1",
+    "port": 7400
+  },
+  "parameters": {
+    "durationSeconds": 1,
+    "warmupSeconds": 0,
+    "connections": 2,
+    "concurrency": 16,
+    "delayMs": 0,
+    "payloads": [
+      64
+    ]
+  },
+  "results": [
+    {
+      "payloadBytes": 64,
+      "requests": 76588,
+      "requestsPerSecond": 76588,
+      "errors": 0,
+      "peakInFlight": 16,
+      "p50Ms": 0.16,
+      "p95Ms": 0.448,
+      "p99Ms": 0.651,
+      "maxMs": 3.215
+    }
+  ],
+  "logs": {
+    "runtimeStdout": "perf\\results\\rpc_baseline_20260713_131430_runtime_stdout.log",
+    "runtimeStderr": "perf\\results\\rpc_baseline_20260713_131430_runtime_stderr.log"
+  }
+}

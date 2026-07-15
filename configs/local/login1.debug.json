@@ -1,0 +1,32 @@
+{
+  "process": {
+    "name": "login1.debug",
+    "debug": {
+      "inspectorIp": "127.0.0.1",
+      "inspectorPort": 9231,
+      "breakOnStart": true
+    }
+  },
+  "scenes": [
+    {
+      "name": "login_1_debug",
+      "sceneType": "Login",
+      "ip": "127.0.0.1",
+      "port": 17001
+    }
+  ],
+  "knownScenes": [
+    {
+      "name": "log",
+      "sceneType": "Log",
+      "ip": "127.0.0.1",
+      "port": 7100
+    },
+    {
+      "name": "gate_1",
+      "sceneType": "Gate",
+      "ip": "127.0.0.1",
+      "port": 7201
+    }
+  ]
+}

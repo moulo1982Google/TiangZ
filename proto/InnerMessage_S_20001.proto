@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package ets.demo;
+
+import "./DataDefine_CS_50001.proto";
+
+message L2L_LogWrite // IActorMessage
+{
+  string message = 1;
+}
+
+//ResponseType M2G_EnterMap
+// @ets.msg protocol=Map
+message G2M_EnterMap // IRequest
+{
+  string account = 1;
+  string token = 2;
+  string gate_name = 3;
+  uint32 map_id = 4;
+  string gate_session_id = 5;
+}
+
+message M2G_EnterMap // IResponse
+{
+  string account = 1;
+  uint32 map_id = 2;
+  uint32 unit_id = 3;
+  sint32 x = 4;
+  sint32 y = 5;
+  repeated MapEntitySnapshot entities = 6;
+  uint32 actor_instance_id = 7;
+}
+
+//ResponseType L2L_LogWriteResponse
+// @ets.msg protocol=InnerLog method=Write
+message L2L_LogWriteRequest // IRequest
+{
+  string message = 1;
+}
+
+message L2L_LogWriteResponse // IResponse
+{
+}
+
+// @ets.msg protocol=Gate method=MapReady
+message M2G_MapReady // IActorMessage
+{
+  string account = 1;
+  uint32 map_id = 2;
+  uint32 unit_id = 3;
+  sint32 x = 4;
+  sint32 y = 5;
+}
+
+// @ets.msg protocol=Map method=LeaveMap
+message G2M_LeaveMap // IActorMessage
+{
+  string account = 1;
+  uint32 map_id = 2;
+  uint32 unit_id = 3;
+  string gate_name = 4;
+  string gate_session_id = 5;
+}
+
+// @ets.msg protocol=Gate method=EntityMove
+message M2G_EntityMove // IActorMessage
+{
+  repeated uint32 target_unit_ids = 1;
+  uint32 unit_id = 2;
+  sint32 x = 3;
+  sint32 y = 4;
+  uint32 sequence = 5;
+}
+
+// @ets.msg protocol=Gate method=EntityEnter
+message M2G_EntityEnter // IActorMessage
+{
+  uint32 target_unit_id = 1;
+  MapEntitySnapshot entity = 2;
+}
+
+// @ets.msg protocol=Gate method=EntityLeave
+message M2G_EntityLeave // IActorMessage
+{
+  uint32 target_unit_id = 1;
+  uint32 unit_id = 2;
+}

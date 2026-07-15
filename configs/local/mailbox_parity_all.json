@@ -1,0 +1,33 @@
+{
+  "process": {
+    "name": "mailbox_parity_all"
+  },
+  "scenes": [
+    {
+      "name": "mailbox_parity",
+      "sceneType": "MailboxParity",
+      "ip": "127.0.0.1",
+      "port": 7410
+    },
+    {
+      "name": "bench",
+      "sceneType": "Bench",
+      "ip": "127.0.0.1",
+      "port": 7400
+    }
+  ],
+  "knownScenes": [
+    {
+      "name": "mailbox_parity",
+      "sceneType": "MailboxParity",
+      "ip": "127.0.0.1",
+      "port": 7410
+    },
+    {
+      "name": "bench",
+      "sceneType": "Bench",
+      "ip": "127.0.0.1",
+      "port": 7400
+    }
+  ]
+}

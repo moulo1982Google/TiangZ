@@ -1,0 +1,108 @@
+starting process all with one V8 and 6 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/all.json
+scene log (Log) listening on 127.0.0.1:7100
+scene login_mgr (LoginMgr) listening on 127.0.0.1:7000
+scene login_1 (Login) listening on 127.0.0.1:7001
+scene login_2 (Login) listening on 127.0.0.1:7002
+scene gate_1 (Gate) listening on 127.0.0.1:7201
+scene map_1 (MapHost) listening on 127.0.0.1:7301
+[process:all] one V8 started with 6 scene(s)
+[log] Log scene started at 127.0.0.1:7100
+[login_mgr] LoginMgr scene started at 127.0.0.1:7000 with login scenes: login_1, login_2
+[login_1] Login scene started at 127.0.0.1:7001
+[login_2] Login scene started at 127.0.0.1:7002
+[gate_1] Gate scene started at 127.0.0.1:7201
+[map_1] MapHost scene started at 127.0.0.1:7301
+login_mgr accepted 127.0.0.1:51544 as conn 1
+login_1 accepted 127.0.0.1:51545 as conn 2
+login_2 accepted 127.0.0.1:51546 as conn 3
+log accepted 127.0.0.1:51548 as conn 4
+gate_1 accepted 127.0.0.1:51549 as conn 5
+map_1 accepted 127.0.0.1:51550 as conn 6
+login_mgr accepted 127.0.0.1:51551 as conn 7
+login_mgr accepted 127.0.0.1:51552 as conn 8
+login_mgr accepted 127.0.0.1:51553 as conn 9
+login_mgr accepted 127.0.0.1:51554 as conn 10
+login_mgr accepted 127.0.0.1:51555 as conn 11
+login_mgr accepted 127.0.0.1:51556 as conn 12
+login_mgr accepted 127.0.0.1:51557 as conn 13
+login_mgr accepted 127.0.0.1:51558 as conn 14
+login_mgr accepted 127.0.0.1:51559 as conn 15
+login_mgr accepted 127.0.0.1:51560 as conn 16
+login_1 accepted 127.0.0.1:51561 as conn 17
+login_2 accepted 127.0.0.1:51562 as conn 18
+login_2 accepted 127.0.0.1:51563 as conn 19
+login_2 accepted 127.0.0.1:51564 as conn 20
+login_1 accepted 127.0.0.1:51565 as conn 21
+login_2 accepted 127.0.0.1:51567 as conn 22
+login_1 accepted 127.0.0.1:51568 as conn 23
+login_1 accepted 127.0.0.1:51569 as conn 24
+login_2 accepted 127.0.0.1:51570 as conn 25
+login_1 accepted 127.0.0.1:51571 as conn 26
+[all/perf_all_0_10_0_1783924899654] login perf_all_0_10_0_1783924899654 count 1
+[log] [login_1] perf_all_0_10_0_1783924899654 login count 1
+[all/perf_all_0_10_2_1783924899655] login perf_all_0_10_2_1783924899655 count 1
+[all/perf_all_0_10_4_1783924899655] login perf_all_0_10_4_1783924899655 count 1
+[all/perf_all_0_10_8_1783924899655] login perf_all_0_10_8_1783924899655 count 1
+[all/perf_all_0_10_6_1783924899655] login perf_all_0_10_6_1783924899655 count 1
+[all/perf_all_0_10_1_1783924899655] login perf_all_0_10_1_1783924899655 count 1
+[all/perf_all_0_10_3_1783924899655] login perf_all_0_10_3_1783924899655 count 1
+[all/perf_all_0_10_5_1783924899655] login perf_all_0_10_5_1783924899655 count 1
+[all/perf_all_0_10_7_1783924899655] login perf_all_0_10_7_1783924899655 count 1
+[all/perf_all_0_10_9_1783924899655] login perf_all_0_10_9_1783924899655 count 1
+[log] [login_1] perf_all_0_10_2_1783924899655 login count 1
+[log] [login_1] perf_all_0_10_4_1783924899655 login count 1
+[log] [login_1] perf_all_0_10_8_1783924899655 login count 1
+[log] [login_1] perf_all_0_10_6_1783924899655 login count 1
+[log] [login_2] perf_all_0_10_1_1783924899655 login count 1
+[log] [login_2] perf_all_0_10_3_1783924899655 login count 1
+[log] [login_2] perf_all_0_10_5_1783924899655 login count 1
+[log] [login_2] perf_all_0_10_7_1783924899655 login count 1
+[log] [login_2] perf_all_0_10_9_1783924899655 login count 1
+gate_1 accepted 127.0.0.1:51572 as conn 27
+gate_1 accepted 127.0.0.1:51573 as conn 28
+gate_1 accepted 127.0.0.1:51575 as conn 29
+gate_1 accepted 127.0.0.1:51576 as conn 30
+gate_1 accepted 127.0.0.1:51577 as conn 31
+gate_1 accepted 127.0.0.1:51578 as conn 32
+gate_1 accepted 127.0.0.1:51579 as conn 33
+gate_1 accepted 127.0.0.1:51580 as conn 34
+gate_1 accepted 127.0.0.1:51581 as conn 35
+gate_1 accepted 127.0.0.1:51582 as conn 36
+[map_1] perf_all_0_10_0_1783924899654 enter map 1 unit 1000
+[log] [gate_1] perf_all_0_10_0_1783924899654 enter map_1 as unit 1000
+[map_1] perf_all_0_10_6_1783924899655 enter map 1 unit 1001
+[log] [gate_1] perf_all_0_10_6_1783924899655 enter map_1 as unit 1001
+[map_1] perf_all_0_10_8_1783924899655 enter map 1 unit 1002
+[log] [gate_1] perf_all_0_10_8_1783924899655 enter map_1 as unit 1002
+[map_1] perf_all_0_10_5_1783924899655 enter map 1 unit 1003
+[log] [gate_1] perf_all_0_10_5_1783924899655 enter map_1 as unit 1003
+[map_1] perf_all_0_10_7_1783924899655 enter map 1 unit 1004
+[log] [gate_1] perf_all_0_10_7_1783924899655 enter map_1 as unit 1004
+[map_1] perf_all_0_10_3_1783924899655 enter map 1 unit 1005
+[log] [gate_1] perf_all_0_10_3_1783924899655 enter map_1 as unit 1005
+[map_1] perf_all_0_10_2_1783924899655 enter map 1 unit 1006
+[log] [gate_1] perf_all_0_10_2_1783924899655 enter map_1 as unit 1006
+[map_1] perf_all_0_10_9_1783924899655 enter map 1 unit 1007
+[log] [gate_1] perf_all_0_10_9_1783924899655 enter map_1 as unit 1007
+[map_1] perf_all_0_10_4_1783924899655 enter map 1 unit 1008
+[log] [gate_1] perf_all_0_10_4_1783924899655 enter map_1 as unit 1008
+[map_1] perf_all_0_10_1_1783924899655 enter map 1 unit 1009
+[log] [gate_1] perf_all_0_10_1_1783924899655 enter map_1 as unit 1009
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=all cpu_percent=520.30 cpu_time_ms=26046 rss_bytes=68177920 v8_heap_used_bytes=10629472 v8_heap_total_bytes=21630976 v8_gc_count=1321 v8_gc_ms=109.146
+[metrics:all] scene=log type=Log processed=20 failed=0 ts_queue=0 ts_max_queue=0 rust_queue=5 rust_max_queue=10 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=0.00 total_handler_ms=0.00
+[metrics:all] scene=login_mgr type=LoginMgr processed=10 failed=0 ts_queue=0 ts_max_queue=9 rust_queue=5 rust_max_queue=10 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=0.00 total_handler_ms=0.00
+[metrics:all] scene=login_1 type=Login processed=5 failed=0 ts_queue=0 ts_max_queue=4 rust_queue=5 rust_max_queue=10 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00
+[metrics:all] scene=login_2 type=Login processed=5 failed=0 ts_queue=0 ts_max_queue=5 rust_queue=5 rust_max_queue=10 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=0.00 total_handler_ms=0.00
+[metrics:all] scene=gate_1 type=Gate processed=324229 failed=0 ts_queue=0 ts_max_queue=10 rust_queue=5 rust_max_queue=10 backpressure=0 slow_disconnects=0 update_ms=1.00 handler_ms=0.00 max_handler_ms=3.00 total_handler_ms=2811.00
+[metrics:all] scene=map_1 type=MapHost processed=162082 failed=0 ts_queue=0 ts_max_queue=0 rust_queue=5 rust_max_queue=10 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=3.00 total_handler_ms=4986.00
+[map_1] perf_all_0_10_0_1783924899654 leave map 1 unit 1000
+[map_1] perf_all_0_10_1_1783924899655 leave map 1 unit 1009
+[map_1] perf_all_0_10_2_1783924899655 leave map 1 unit 1006
+[map_1] perf_all_0_10_3_1783924899655 leave map 1 unit 1005
+[map_1] perf_all_0_10_4_1783924899655 leave map 1 unit 1008
+[map_1] perf_all_0_10_7_1783924899655 leave map 1 unit 1004
+[map_1] perf_all_0_10_5_1783924899655 leave map 1 unit 1003
+[map_1] perf_all_0_10_6_1783924899655 leave map 1 unit 1001
+[map_1] perf_all_0_10_8_1783924899655 leave map 1 unit 1002
+[map_1] perf_all_0_10_9_1783924899655 leave map 1 unit 1007

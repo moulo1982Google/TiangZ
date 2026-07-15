@@ -1,0 +1,27 @@
+{
+  "process": {
+    "name": "login2"
+  },
+  "scenes": [
+    {
+      "name": "login_2",
+      "sceneType": "Login",
+      "ip": "127.0.0.1",
+      "port": 7002
+    }
+  ],
+  "knownScenes": [
+    {
+      "name": "log",
+      "sceneType": "Log",
+      "ip": "127.0.0.1",
+      "port": 7100
+    },
+    {
+      "name": "gate_1",
+      "sceneType": "Gate",
+      "ip": "127.0.0.1",
+      "port": 7201
+    }
+  ]
+}

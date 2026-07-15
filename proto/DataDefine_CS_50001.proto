@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package ets.demo;
+
+message LoginServiceAddress
+{
+  string name = 1;
+  string ip = 2;
+  uint32 port = 3;
+}
+
+message MapEntitySnapshot
+{
+  uint32 unit_id = 1;
+  sint32 x = 2;
+  sint32 y = 3;
+  float heading = 4;
+  bool alive = 5;
+  bytes state = 6;
+  string account = 7;
+}

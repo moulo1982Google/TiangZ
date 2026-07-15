@@ -1,0 +1,53 @@
+{
+    "generatedAt":  "2026-07-13T12:42:46.4209574+08:00",
+    "runId":  "20260713_124240",
+    "profile":  "debug",
+    "machine":  {
+                    "cpu":  "13th Gen Intel(R) Core(TM) i7-13700F",
+                    "memoryGB":  63.8,
+                    "os":  "Microsoft Windows NT 10.0.26200.0"
+                },
+    "parameters":  {
+                       "durationSeconds":  1,
+                       "warmupSeconds":  1,
+                       "setupConcurrency":  2,
+                       "baselineConcurrency":  512,
+                       "baselineConnections":  8
+                   },
+    "baseline":  [
+
+                 ],
+    "gameplay":  [
+                     {
+                         "scenario":  "gameplay-full-chain",
+                         "label":  "all",
+                         "players":  5,
+                         "setupConcurrency":  2,
+                         "warmupSeconds":  1,
+                         "durationSeconds":  1,
+                         "setup":  {
+                                       "count":  5,
+                                       "perSecond":  28.90041437414129,
+                                       "p50Ms":  10.764299999999999,
+                                       "p95Ms":  157.2687,
+                                       "p99Ms":  157.2687,
+                                       "maxMs":  157.2687,
+                                       "elapsedSeconds":  0.17300790000000002
+                                   },
+                         "movement":  {
+                                          "count":  20738,
+                                          "perSecond":  20738,
+                                          "p50Ms":  0.2178999999998723,
+                                          "p95Ms":  0.36779999999998836,
+                                          "p99Ms":  0.4651000000001204,
+                                          "maxMs":  2.3546000000001186,
+                                          "entityMovePushes":  196505,
+                                          "pushesPerSecond":  98252.5,
+                                          "errors":  0
+                                      },
+                         "serverMetrics":  [
+
+                                           ]
+                     }
+                 ]
+}

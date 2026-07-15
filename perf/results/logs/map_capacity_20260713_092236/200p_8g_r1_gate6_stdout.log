@@ -1,0 +1,55 @@
+starting process gate6 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\perf\results\runtime_configs\map_capacity_20260713_092236\200p_8g_r1\gate6.json
+scene gate_6 (Gate) listening on 127.0.0.1:7206
+[process:gate6] one V8 started with 1 scene(s)
+[gate_6] Gate scene started at 127.0.0.1:7206
+gate_6 accepted 127.0.0.1:59647 as conn 1
+gate_6 accepted 127.0.0.1:59689 as conn 2
+gate_6 accepted 127.0.0.1:59697 as conn 3
+gate_6 accepted 127.0.0.1:59714 as conn 4
+gate_6 accepted 127.0.0.1:59766 as conn 5
+gate_6 accepted 127.0.0.1:59775 as conn 6
+gate_6 accepted 127.0.0.1:59796 as conn 7
+gate_6 accepted 127.0.0.1:59838 as conn 8
+gate_6 accepted 127.0.0.1:59851 as conn 9
+gate_6 accepted 127.0.0.1:59885 as conn 10
+gate_6 accepted 127.0.0.1:59899 as conn 11
+gate_6 accepted 127.0.0.1:59931 as conn 12
+gate_6 accepted 127.0.0.1:59950 as conn 13
+gate_6 accepted 127.0.0.1:59970 as conn 14
+gate_6 accepted 127.0.0.1:59999 as conn 15
+gate_6 accepted 127.0.0.1:60026 as conn 16
+gate_6 accepted 127.0.0.1:60042 as conn 17
+gate_6 accepted 127.0.0.1:60063 as conn 18
+gate_6 accepted 127.0.0.1:60084 as conn 19
+gate_6 accepted 127.0.0.1:60108 as conn 20
+gate_6 accepted 127.0.0.1:60132 as conn 21
+gate_6 accepted 127.0.0.1:60155 as conn 22
+gate_6 accepted 127.0.0.1:60180 as conn 23
+gate_6 accepted 127.0.0.1:60207 as conn 24
+gate_6 accepted 127.0.0.1:60228 as conn 25
+gate_6 accepted 127.0.0.1:60252 as conn 26
+gate_6 accepted 127.0.0.1:60276 as conn 27
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate6 cpu_percent=109.50 cpu_time_ms=5562 rss_bytes=54706176 v8_heap_used_bytes=6456000 v8_heap_total_bytes=14168064 v8_gc_count=90 v8_gc_ms=18.329 timestamp_ms=1783934562048
+[metrics:gate6] scene=gate_6 type=Gate processed=12981 failed=0 ts_queue=0 ts_max_queue=196 rust_queue=61 rust_max_queue=196 backpressure=0 slow_disconnects=0 update_ms=1.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=1163.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate6 cpu_percent=134.22 cpu_time_ms=12281 rss_bytes=58015744 v8_heap_used_bytes=6140072 v8_heap_total_bytes=14692352 v8_gc_count=170 v8_gc_ms=39.268 timestamp_ms=1783934567054
+[metrics:gate6] scene=gate_6 type=Gate processed=24241 failed=0 ts_queue=0 ts_max_queue=196 rust_queue=151 rust_max_queue=196 backpressure=0 slow_disconnects=0 update_ms=1.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=2243.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate6 cpu_percent=151.66 cpu_time_ms=19859 rss_bytes=63406080 v8_heap_used_bytes=5512048 v8_heap_total_bytes=19935232 v8_gc_count=236 v8_gc_ms=58.969 timestamp_ms=1783934572051
+[metrics:gate6] scene=gate_6 type=Gate processed=35731 failed=0 ts_queue=0 ts_max_queue=196 rust_queue=59 rust_max_queue=196 backpressure=0 slow_disconnects=0 update_ms=2.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=3548.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate6 cpu_percent=207.33 cpu_time_ms=30234 rss_bytes=66957312 v8_heap_used_bytes=10131016 v8_heap_total_bytes=20197376 v8_gc_count=275 v8_gc_ms=69.068 timestamp_ms=1783934577055
+[metrics:gate6] scene=gate_6 type=Gate processed=46822 failed=0 ts_queue=0 ts_max_queue=196 rust_queue=79 rust_max_queue=196 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=4944.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate6 cpu_percent=181.22 cpu_time_ms=39296 rss_bytes=69636096 v8_heap_used_bytes=11341688 v8_heap_total_bytes=22556672 v8_gc_count=316 v8_gc_ms=82.793 timestamp_ms=1783934582055
+[metrics:gate6] scene=gate_6 type=Gate processed=58448 failed=0 ts_queue=0 ts_max_queue=196 rust_queue=69 rust_max_queue=196 backpressure=0 slow_disconnects=0 update_ms=2.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=6442.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate6 cpu_percent=158.64 cpu_time_ms=47234 rss_bytes=66293760 v8_heap_used_bytes=4952712 v8_heap_total_bytes=22294528 v8_gc_count=358 v8_gc_ms=98.018 timestamp_ms=1783934587059
+[metrics:gate6] scene=gate_6 type=Gate processed=69742 failed=0 ts_queue=0 ts_max_queue=196 rust_queue=98 rust_max_queue=196 backpressure=0 slow_disconnects=0 update_ms=1.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=7728.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate6 cpu_percent=181.76 cpu_time_ms=56328 rss_bytes=68153344 v8_heap_used_bytes=8539824 v8_heap_total_bytes=22294528 v8_gc_count=398 v8_gc_ms=109.036 timestamp_ms=1783934592062
+[metrics:gate6] scene=gate_6 type=Gate processed=81139 failed=0 ts_queue=0 ts_max_queue=196 rust_queue=119 rust_max_queue=196 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=9039.00
+[metrics:inner_transport] active=2 opened=2 pending=0 max_pending=1 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=gate6 cpu_percent=160.81 cpu_time_ms=64375 rss_bytes=69689344 v8_heap_used_bytes=9237128 v8_heap_total_bytes=23080960 v8_gc_count=438 v8_gc_ms=120.990 timestamp_ms=1783934597066
+[metrics:gate6] scene=gate_6 type=Gate processed=92489 failed=0 ts_queue=0 ts_max_queue=196 rust_queue=136 rust_max_queue=196 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=17.00 total_handler_ms=10417.00

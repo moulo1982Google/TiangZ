@@ -1,0 +1,56 @@
+{
+    "generatedAt":  "2026-07-13T12:57:01.7479545+08:00",
+    "runId":  "20260713_125656",
+    "profile":  "debug",
+    "machine":  {
+                    "cpu":  "13th Gen Intel(R) Core(TM) i7-13700F",
+                    "memoryGB":  63.8,
+                    "os":  "Microsoft Windows NT 10.0.26200.0"
+                },
+    "parameters":  {
+                       "durationSeconds":  1,
+                       "warmupSeconds":  1,
+                       "setupConcurrency":  16,
+                       "baselineConcurrency":  512,
+                       "baselineConnections":  8,
+                       "moveRates":  [
+                                         10
+                                     ]
+                   },
+    "baseline":  [
+
+                 ],
+    "gameplay":  [
+                     {
+                         "scenario":  "gameplay-full-chain",
+                         "label":  "all",
+                         "players":  5,
+                         "setupConcurrency":  16,
+                         "warmupSeconds":  1,
+                         "durationSeconds":  1,
+                         "targetMoveRatePerPlayer":  10,
+                         "workload":  "steady-10hz",
+                         "setup":  {
+                                       "count":  5,
+                                       "perSecond":  271.4499771982019,
+                                       "p50Ms":  16.904500000000002,
+                                       "p95Ms":  18.2175,
+                                       "p99Ms":  18.2175,
+                                       "maxMs":  18.2175,
+                                       "elapsedSeconds":  0.0184196
+                                   },
+                         "movement":  {
+                                          "count":  45,
+                                          "perSecond":  45,
+                                          "p50Ms":  0.9248000000000047,
+                                          "p95Ms":  1.299600000000055,
+                                          "p99Ms":  1.338399999999865,
+                                          "maxMs":  1.338399999999865,
+                                          "entityMovePushes":  475,
+                                          "pushesPerSecond":  237.5,
+                                          "errors":  0
+                                      },
+                         "logDirectory":  "E:\\VsCode\\skynet\\ets_runtime\\perf\\results\\logs\\20260713_125656"
+                     }
+                 ]
+}

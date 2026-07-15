@@ -1,0 +1,59 @@
+starting process bench with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/bench.json
+scene bench (Bench) listening on 127.0.0.1:7400
+[process:bench] one V8 started with 1 scene(s)
+[bench] Bench scene started at 127.0.0.1:7400
+bench accepted 127.0.0.1:51111 as conn 1
+bench accepted 127.0.0.1:51118 as conn 2
+bench accepted 127.0.0.1:51120 as conn 3
+bench accepted 127.0.0.1:51117 as conn 4
+bench accepted 127.0.0.1:51119 as conn 5
+bench accepted 127.0.0.1:51115 as conn 6
+bench accepted 127.0.0.1:51113 as conn 7
+bench accepted 127.0.0.1:51114 as conn 8
+bench accepted 127.0.0.1:51116 as conn 9
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:bench] scene=bench type=Bench processed=1241811 failed=0 ts_queue=0 ts_max_queue=334 rust_queue=152 rust_max_queue=333 backpressure=0 slow_disconnects=0 update_ms=1.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=3070.00
+bench accepted 127.0.0.1:54374 as conn 10
+bench accepted 127.0.0.1:54377 as conn 11
+bench accepted 127.0.0.1:54379 as conn 12
+bench accepted 127.0.0.1:54381 as conn 13
+bench accepted 127.0.0.1:54375 as conn 14
+bench accepted 127.0.0.1:54380 as conn 15
+bench accepted 127.0.0.1:54378 as conn 16
+bench accepted 127.0.0.1:54376 as conn 17
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:bench] scene=bench type=Bench processed=2486095 failed=0 ts_queue=0 ts_max_queue=349 rust_queue=262 rust_max_queue=346 backpressure=0 slow_disconnects=0 update_ms=1.00 handler_ms=0.00 max_handler_ms=2.00 total_handler_ms=6291.00
+bench accepted 127.0.0.1:54452 as conn 18
+bench accepted 127.0.0.1:54455 as conn 19
+bench accepted 127.0.0.1:54450 as conn 20
+bench accepted 127.0.0.1:54449 as conn 21
+bench accepted 127.0.0.1:54451 as conn 22
+bench accepted 127.0.0.1:54453 as conn 23
+bench accepted 127.0.0.1:54454 as conn 24
+bench accepted 127.0.0.1:54456 as conn 25
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:bench] scene=bench type=Bench processed=3713767 failed=0 ts_queue=0 ts_max_queue=349 rust_queue=215 rust_max_queue=346 backpressure=0 slow_disconnects=0 update_ms=1.00 handler_ms=0.00 max_handler_ms=2.00 total_handler_ms=9468.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:bench] scene=bench type=Bench processed=4746878 failed=0 ts_queue=0 ts_max_queue=468 rust_queue=243 rust_max_queue=468 backpressure=0 slow_disconnects=0 update_ms=1.00 handler_ms=0.00 max_handler_ms=2.00 total_handler_ms=12870.00
+bench accepted 127.0.0.1:54501 as conn 26
+bench accepted 127.0.0.1:54505 as conn 27
+bench accepted 127.0.0.1:54499 as conn 28
+bench accepted 127.0.0.1:54502 as conn 29
+bench accepted 127.0.0.1:54500 as conn 30
+bench accepted 127.0.0.1:54504 as conn 31
+bench accepted 127.0.0.1:54506 as conn 32
+bench accepted 127.0.0.1:54503 as conn 33
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:bench] scene=bench type=Bench processed=5570035 failed=0 ts_queue=0 ts_max_queue=480 rust_queue=242 rust_max_queue=468 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=2.00 total_handler_ms=16149.00
+bench accepted 127.0.0.1:54516 as conn 34
+bench accepted 127.0.0.1:54517 as conn 35
+bench accepted 127.0.0.1:54515 as conn 36
+bench accepted 127.0.0.1:54514 as conn 37
+bench accepted 127.0.0.1:54518 as conn 38
+bench accepted 127.0.0.1:54519 as conn 39
+bench accepted 127.0.0.1:54521 as conn 40
+bench accepted 127.0.0.1:54520 as conn 41
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:bench] scene=bench type=Bench processed=6183432 failed=0 ts_queue=0 ts_max_queue=480 rust_queue=233 rust_max_queue=468 backpressure=0 slow_disconnects=0 update_ms=6.00 handler_ms=0.00 max_handler_ms=3.00 total_handler_ms=19492.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:bench] scene=bench type=Bench processed=6488893 failed=0 ts_queue=0 ts_max_queue=480 rust_queue=208 rust_max_queue=468 backpressure=0 slow_disconnects=0 update_ms=2.00 handler_ms=0.00 max_handler_ms=3.00 total_handler_ms=23073.00

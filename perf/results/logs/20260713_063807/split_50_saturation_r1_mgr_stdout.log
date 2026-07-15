@@ -1,0 +1,58 @@
+starting process mgr with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/mgr.json
+scene login_mgr (LoginMgr) listening on 127.0.0.1:7000
+[process:mgr] one V8 started with 1 scene(s)
+[login_mgr] LoginMgr scene started at 127.0.0.1:7000 with login scenes: login_1, login_2
+login_mgr accepted 127.0.0.1:60743 as conn 1
+login_mgr accepted 127.0.0.1:60750 as conn 2
+login_mgr accepted 127.0.0.1:60751 as conn 3
+login_mgr accepted 127.0.0.1:60752 as conn 4
+login_mgr accepted 127.0.0.1:60753 as conn 5
+login_mgr accepted 127.0.0.1:60754 as conn 6
+login_mgr accepted 127.0.0.1:60755 as conn 7
+login_mgr accepted 127.0.0.1:60756 as conn 8
+login_mgr accepted 127.0.0.1:60757 as conn 9
+login_mgr accepted 127.0.0.1:60759 as conn 10
+login_mgr accepted 127.0.0.1:60760 as conn 11
+login_mgr accepted 127.0.0.1:60761 as conn 12
+login_mgr accepted 127.0.0.1:60762 as conn 13
+login_mgr accepted 127.0.0.1:60763 as conn 14
+login_mgr accepted 127.0.0.1:60765 as conn 15
+login_mgr accepted 127.0.0.1:60766 as conn 16
+login_mgr accepted 127.0.0.1:60767 as conn 17
+login_mgr accepted 127.0.0.1:60805 as conn 18
+login_mgr accepted 127.0.0.1:60806 as conn 19
+login_mgr accepted 127.0.0.1:60807 as conn 20
+login_mgr accepted 127.0.0.1:60808 as conn 21
+login_mgr accepted 127.0.0.1:60809 as conn 22
+login_mgr accepted 127.0.0.1:60820 as conn 23
+login_mgr accepted 127.0.0.1:60823 as conn 24
+login_mgr accepted 127.0.0.1:60824 as conn 25
+login_mgr accepted 127.0.0.1:60825 as conn 26
+login_mgr accepted 127.0.0.1:60826 as conn 27
+login_mgr accepted 127.0.0.1:60827 as conn 28
+login_mgr accepted 127.0.0.1:60828 as conn 29
+login_mgr accepted 127.0.0.1:60829 as conn 30
+login_mgr accepted 127.0.0.1:60830 as conn 31
+login_mgr accepted 127.0.0.1:60831 as conn 32
+login_mgr accepted 127.0.0.1:60832 as conn 33
+login_mgr accepted 127.0.0.1:60843 as conn 34
+login_mgr accepted 127.0.0.1:60855 as conn 35
+login_mgr accepted 127.0.0.1:60856 as conn 36
+login_mgr accepted 127.0.0.1:60857 as conn 37
+login_mgr accepted 127.0.0.1:60858 as conn 38
+login_mgr accepted 127.0.0.1:60859 as conn 39
+login_mgr accepted 127.0.0.1:60871 as conn 40
+login_mgr accepted 127.0.0.1:60872 as conn 41
+login_mgr accepted 127.0.0.1:60873 as conn 42
+login_mgr accepted 127.0.0.1:60874 as conn 43
+login_mgr accepted 127.0.0.1:60875 as conn 44
+login_mgr accepted 127.0.0.1:60876 as conn 45
+login_mgr accepted 127.0.0.1:60877 as conn 46
+login_mgr accepted 127.0.0.1:60892 as conn 47
+login_mgr accepted 127.0.0.1:60893 as conn 48
+login_mgr accepted 127.0.0.1:60894 as conn 49
+login_mgr accepted 127.0.0.1:60895 as conn 50
+login_mgr accepted 127.0.0.1:60896 as conn 51
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=mgr cpu_percent=0.00 cpu_time_ms=62 rss_bytes=32161792 v8_heap_used_bytes=2210448 v8_heap_total_bytes=4853760 v8_gc_count=2 v8_gc_ms=0.602
+[metrics:mgr] scene=login_mgr type=LoginMgr processed=50 failed=0 ts_queue=0 ts_max_queue=15 rust_queue=0 rust_max_queue=15 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=1.00

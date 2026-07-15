@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package ets.bench;
+
+//ResponseType S2C_RuntimePing
+// @ets.msg protocol=Bench
+message C2S_RuntimePing // IRequest
+{
+  uint32 seq = 1;
+  bytes payload = 2;
+  uint32 delay_ms = 3;
+}
+
+message S2C_RuntimePing // IResponse
+{
+  uint32 seq = 1;
+  bytes payload = 2;
+}
+
+//ResponseType S2C_MailboxParity
+// @ets.msg protocol=MailboxParity
+message C2S_MailboxParity // IRequest
+{
+  uint32 call_count = 1;
+  uint32 delay_ms = 2;
+}
+
+message S2C_MailboxParity // IResponse
+{
+  uint32 elapsed_ms = 1;
+  uint32 max_server_concurrency = 2;
+}

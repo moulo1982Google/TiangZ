@@ -1,0 +1,21 @@
+{
+  "process": {
+    "name": "bench"
+  },
+  "scenes": [
+    {
+      "name": "bench",
+      "sceneType": "Bench",
+      "ip": "127.0.0.1",
+      "port": 7400
+    }
+  ],
+  "knownScenes": [
+    {
+      "name": "bench",
+      "sceneType": "Bench",
+      "ip": "127.0.0.1",
+      "port": 7400
+    }
+  ]
+}

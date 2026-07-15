@@ -1,0 +1,27 @@
+{
+  "process": {
+    "name": "gate3"
+  },
+  "scenes": [
+    {
+      "name": "gate_3",
+      "sceneType": "Gate",
+      "ip": "127.0.0.1",
+      "port": 7203
+    }
+  ],
+  "knownScenes": [
+    {
+      "name": "map_1",
+      "sceneType": "MapHost",
+      "ip": "127.0.0.1",
+      "port": 7301
+    },
+    {
+      "name": "log",
+      "sceneType": "Log",
+      "ip": "127.0.0.1",
+      "port": 7100
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+export const SystemErrCode = {
+  Success: 0,
+  MalformedFrame: 1001,
+  UnknownMsgCode: 1002,
+  HandlerNotFound: 1003,
+  DecodeFailed: 1004,
+  HandlerFailed: 1005,
+  SceneCallFailed: 1006,
+  UnexpectedResponseCode: 1007,
+  SceneNotFound: 1008,
+  AmbiguousScene: 1009,
+  RpcIdMismatch: 1010,
+  SceneOverloaded: 1011,
+  ActorLocationNotFound: 1012,
+} as const;

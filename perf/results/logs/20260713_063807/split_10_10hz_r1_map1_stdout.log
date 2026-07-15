@@ -1,0 +1,29 @@
+starting process map1 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/map1.json
+scene map_1 (MapHost) listening on 127.0.0.1:7301
+[process:map1] one V8 started with 1 scene(s)
+[map_1] MapHost scene started at 127.0.0.1:7301
+map_1 accepted 127.0.0.1:55986 as conn 1
+map_1 accepted 127.0.0.1:56019 as conn 2
+[map_1] perf_split_10_10_1_1783924737612 enter map 1 unit 1000
+[map_1] perf_split_10_10_0_1783924737611 enter map 1 unit 1001
+[map_1] perf_split_10_10_5_1783924737613 enter map 1 unit 1002
+[map_1] perf_split_10_10_3_1783924737613 enter map 1 unit 1003
+[map_1] perf_split_10_10_9_1783924737613 enter map 1 unit 1004
+[map_1] perf_split_10_10_7_1783924737613 enter map 1 unit 1005
+[map_1] perf_split_10_10_6_1783924737613 enter map 1 unit 1006
+[map_1] perf_split_10_10_8_1783924737613 enter map 1 unit 1007
+[map_1] perf_split_10_10_4_1783924737613 enter map 1 unit 1008
+[map_1] perf_split_10_10_2_1783924737613 enter map 1 unit 1009
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=map1 cpu_percent=0.00 cpu_time_ms=140 rss_bytes=35667968 v8_heap_used_bytes=3265080 v8_heap_total_bytes=7213056 v8_gc_count=9 v8_gc_ms=1.408
+[metrics:map1] scene=map_1 type=MapHost processed=461 failed=0 ts_queue=0 ts_max_queue=9 rust_queue=9 rust_max_queue=9 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=2.00 total_handler_ms=82.00
+[map_1] perf_split_10_10_0_1783924737611 leave map 1 unit 1001
+[map_1] perf_split_10_10_8_1783924737613 leave map 1 unit 1007
+[map_1] perf_split_10_10_9_1783924737613 leave map 1 unit 1004
+[map_1] perf_split_10_10_4_1783924737613 leave map 1 unit 1008
+[map_1] perf_split_10_10_5_1783924737613 leave map 1 unit 1002
+[map_1] perf_split_10_10_1_1783924737612 leave map 1 unit 1000
+[map_1] perf_split_10_10_6_1783924737613 leave map 1 unit 1006
+[map_1] perf_split_10_10_2_1783924737613 leave map 1 unit 1009
+[map_1] perf_split_10_10_7_1783924737613 leave map 1 unit 1005
+[map_1] perf_split_10_10_3_1783924737613 leave map 1 unit 1003

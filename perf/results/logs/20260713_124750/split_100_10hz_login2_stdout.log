@@ -1,0 +1,109 @@
+starting process login2 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/login2.json
+scene login_2 (Login) listening on 127.0.0.1:7002
+[process:login2] one V8 started with 1 scene(s)
+[login_2] Login scene started at 127.0.0.1:7002
+login_2 accepted 127.0.0.1:62751 as conn 1
+login_2 accepted 127.0.0.1:62772 as conn 2
+[login2/perf_split_10_100_1_1783918204757] login perf_split_10_100_1_1783918204757 count 1
+login_2 accepted 127.0.0.1:62774 as conn 3
+login_2 accepted 127.0.0.1:62777 as conn 4
+login_2 accepted 127.0.0.1:62779 as conn 5
+login_2 accepted 127.0.0.1:62782 as conn 6
+login_2 accepted 127.0.0.1:62783 as conn 7
+[login2/perf_split_10_100_3_1783918204757] login perf_split_10_100_3_1783918204757 count 1
+[login2/perf_split_10_100_5_1783918204757] login perf_split_10_100_5_1783918204757 count 1
+[login2/perf_split_10_100_7_1783918204757] login perf_split_10_100_7_1783918204757 count 1
+[login2/perf_split_10_100_11_1783918204758] login perf_split_10_100_11_1783918204758 count 1
+[login2/perf_split_10_100_9_1783918204757] login perf_split_10_100_9_1783918204757 count 1
+login_2 accepted 127.0.0.1:62786 as conn 8
+login_2 accepted 127.0.0.1:62789 as conn 9
+[login2/perf_split_10_100_15_1783918204758] login perf_split_10_100_15_1783918204758 count 1
+[login2/perf_split_10_100_13_1783918204758] login perf_split_10_100_13_1783918204758 count 1
+login_2 accepted 127.0.0.1:62811 as conn 10
+[login2/perf_split_10_100_17_1783918204801] login perf_split_10_100_17_1783918204801 count 1
+login_2 accepted 127.0.0.1:62820 as conn 11
+login_2 accepted 127.0.0.1:62823 as conn 12
+login_2 accepted 127.0.0.1:62824 as conn 13
+[login2/perf_split_10_100_21_1783918204813] login perf_split_10_100_21_1783918204813 count 1
+[login2/perf_split_10_100_22_1783918204813] login perf_split_10_100_22_1783918204813 count 1
+[login2/perf_split_10_100_18_1783918204812] login perf_split_10_100_18_1783918204812 count 1
+login_2 accepted 127.0.0.1:62835 as conn 14
+[login2/perf_split_10_100_25_1783918204818] login perf_split_10_100_25_1783918204818 count 1
+login_2 accepted 127.0.0.1:62848 as conn 15
+login_2 accepted 127.0.0.1:62849 as conn 16
+login_2 accepted 127.0.0.1:62851 as conn 17
+login_2 accepted 127.0.0.1:62853 as conn 18
+[login2/perf_split_10_100_29_1783918204822] login perf_split_10_100_29_1783918204822 count 1
+[login2/perf_split_10_100_27_1783918204821] login perf_split_10_100_27_1783918204821 count 1
+[login2/perf_split_10_100_31_1783918204823] login perf_split_10_100_31_1783918204823 count 1
+[login2/perf_split_10_100_33_1783918204823] login perf_split_10_100_33_1783918204823 count 1
+login_2 accepted 127.0.0.1:62869 as conn 19
+login_2 accepted 127.0.0.1:62871 as conn 20
+[login2/perf_split_10_100_35_1783918204832] login perf_split_10_100_35_1783918204832 count 1
+[login2/perf_split_10_100_37_1783918204833] login perf_split_10_100_37_1783918204833 count 1
+login_2 accepted 127.0.0.1:62878 as conn 21
+[login2/perf_split_10_100_39_1783918204836] login perf_split_10_100_39_1783918204836 count 1
+login_2 accepted 127.0.0.1:62883 as conn 22
+[login2/perf_split_10_100_40_1783918204839] login perf_split_10_100_40_1783918204839 count 1
+login_2 accepted 127.0.0.1:62889 as conn 23
+[login2/perf_split_10_100_43_1783918204846] login perf_split_10_100_43_1783918204846 count 1
+login_2 accepted 127.0.0.1:62899 as conn 24
+login_2 accepted 127.0.0.1:62901 as conn 25
+login_2 accepted 127.0.0.1:62903 as conn 26
+[login2/perf_split_10_100_47_1783918204850] login perf_split_10_100_47_1783918204850 count 1
+[login2/perf_split_10_100_49_1783918204850] login perf_split_10_100_49_1783918204850 count 1
+[login2/perf_split_10_100_45_1783918204849] login perf_split_10_100_45_1783918204849 count 1
+login_2 accepted 127.0.0.1:62920 as conn 27
+login_2 accepted 127.0.0.1:62922 as conn 28
+[login2/perf_split_10_100_51_1783918204857] login perf_split_10_100_51_1783918204857 count 1
+login_2 accepted 127.0.0.1:62924 as conn 29
+login_2 accepted 127.0.0.1:62926 as conn 30
+[login2/perf_split_10_100_53_1783918204858] login perf_split_10_100_53_1783918204858 count 1
+[login2/perf_split_10_100_55_1783918204859] login perf_split_10_100_55_1783918204859 count 1
+[login2/perf_split_10_100_57_1783918204860] login perf_split_10_100_57_1783918204860 count 1
+login_2 accepted 127.0.0.1:62945 as conn 31
+login_2 accepted 127.0.0.1:62946 as conn 32
+[login2/perf_split_10_100_59_1783918204871] login perf_split_10_100_59_1783918204871 count 1
+login_2 accepted 127.0.0.1:62949 as conn 33
+login_2 accepted 127.0.0.1:62951 as conn 34
+[login2/perf_split_10_100_60_1783918204871] login perf_split_10_100_60_1783918204871 count 1
+[login2/perf_split_10_100_63_1783918204872] login perf_split_10_100_63_1783918204872 count 1
+[login2/perf_split_10_100_65_1783918204873] login perf_split_10_100_65_1783918204873 count 1
+login_2 accepted 127.0.0.1:62962 as conn 35
+[login2/perf_split_10_100_67_1783918204881] login perf_split_10_100_67_1783918204881 count 1
+login_2 accepted 127.0.0.1:62972 as conn 36
+login_2 accepted 127.0.0.1:62973 as conn 37
+login_2 accepted 127.0.0.1:62976 as conn 38
+[login2/perf_split_10_100_68_1783918204884] login perf_split_10_100_68_1783918204884 count 1
+[login2/perf_split_10_100_69_1783918204885] login perf_split_10_100_69_1783918204885 count 1
+[login2/perf_split_10_100_73_1783918204886] login perf_split_10_100_73_1783918204886 count 1
+login_2 accepted 127.0.0.1:62986 as conn 39
+[login2/perf_split_10_100_75_1783918204896] login perf_split_10_100_75_1783918204896 count 1
+login_2 accepted 127.0.0.1:62997 as conn 40
+login_2 accepted 127.0.0.1:62999 as conn 41
+login_2 accepted 127.0.0.1:63001 as conn 42
+login_2 accepted 127.0.0.1:63003 as conn 43
+[login2/perf_split_10_100_77_1783918204899] login perf_split_10_100_77_1783918204899 count 1
+[login2/perf_split_10_100_76_1783918204899] login perf_split_10_100_76_1783918204899 count 1
+[login2/perf_split_10_100_81_1783918204901] login perf_split_10_100_81_1783918204901 count 1
+[login2/perf_split_10_100_83_1783918204901] login perf_split_10_100_83_1783918204901 count 1
+login_2 accepted 127.0.0.1:63022 as conn 44
+login_2 accepted 127.0.0.1:63024 as conn 45
+login_2 accepted 127.0.0.1:63027 as conn 46
+login_2 accepted 127.0.0.1:63028 as conn 47
+[login2/perf_split_10_100_86_1783918204914] login perf_split_10_100_86_1783918204914 count 1
+[login2/perf_split_10_100_89_1783918204915] login perf_split_10_100_89_1783918204915 count 1
+[login2/perf_split_10_100_87_1783918204914] login perf_split_10_100_87_1783918204914 count 1
+[login2/perf_split_10_100_91_1783918204916] login perf_split_10_100_91_1783918204916 count 1
+login_2 accepted 127.0.0.1:63046 as conn 48
+login_2 accepted 127.0.0.1:63048 as conn 49
+login_2 accepted 127.0.0.1:63051 as conn 50
+login_2 accepted 127.0.0.1:63052 as conn 51
+[login2/perf_split_10_100_93_1783918204931] login perf_split_10_100_93_1783918204931 count 1
+[login2/perf_split_10_100_99_1783918204933] login perf_split_10_100_99_1783918204933 count 1
+[login2/perf_split_10_100_95_1783918204932] login perf_split_10_100_95_1783918204932 count 1
+[login2/perf_split_10_100_97_1783918204932] login perf_split_10_100_97_1783918204932 count 1
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=5 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:login2] scene=login_2 type=Login processed=50 failed=0 ts_queue=0 ts_max_queue=5 rust_queue=0 rust_max_queue=5 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=2.00 max_handler_ms=11.00 total_handler_ms=87.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=5 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:login2] scene=login_2 type=Login processed=50 failed=0 ts_queue=0 ts_max_queue=5 rust_queue=0 rust_max_queue=5 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=2.00 max_handler_ms=11.00 total_handler_ms=87.00

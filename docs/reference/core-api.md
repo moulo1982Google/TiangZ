@@ -1,0 +1,79 @@
+# Core API 参考
+
+## ProcessRuntime
+
+- 一个 OS Process 创建一个实例。
+- 按配置创建多个 EntryScene。
+- 根据 Rust 事件元数据中的 `sceneIndex` 分发连接帧。
+- 本地 Scene call/send 直接路由；远程调用交给 Host Op。
+- 汇总全部 Scene outbound 和 metrics。
+
+## EntryScene
+
+- `self: SceneConfig`：当前入口 Scene 地址。
+- `scenes: SceneMessageHelper`：Scene 发现与 call/send。
+- `processHost: ProcessHost`：创建动态 Scene、Actor、Component。
+- `mailbox`：`ordered` 或 `unordered`，默认 ordered。
+- `sendClient(connectionId, descriptor, message)`：向客户端连接推送消息。
+- `registerSceneRpc/registerActorRpc`：把协议入口路由到动态 Scene/Actor。
+- `childSceneId(localId)`：生成入口 Scene 范围内唯一的子 Scene ID。
+- EntryScene 也继承 `Entity`，可使用 `AddComponent/GetComponent/RemoveComponent` 组织业务能力。
+
+## 装饰器
+
+- `@entryScene(name?)`：注册 EntryScene；省略时去掉类名末尾 `Scene`。
+- `@rpc(descriptor)`：绑定 RPC Handler。
+- `@message(descriptor)`：绑定单向 Message Handler。
+- `@rpcHandler(SceneType, descriptor)`：把独立 Handler class 绑定到指定 EntryScene 的 RPC。
+- `@messageHandler(SceneType, descriptor)`：把独立 Handler class 绑定到指定 EntryScene 的单向消息。
+- `@actorRpcHandler(ActorType, descriptor)`：把 Actor RPC 绑定到指定 Actor/Unit 类型。
+- `@actorMessageHandler(ActorType, descriptor)`：把 Actor Message 绑定到指定 Actor/Unit 类型。
+- `@scene/@actor/@component`：注册运行时实体类型和 mailbox 元数据。
+- `@handler(name)`：绑定 Scene/Actor Handler。
+
+`@rpc/@message` 方法装饰器继续兼容小型 Scene。业务增长后优先使用独立 Handler class；每个 EntryScene 实例会创建自己的一组 Handler 实例，最终仍进入该 EntryScene 的同一个 Registry 和 mailbox。相同 Scene、相同 msgcode 重复绑定会在启动前抛错。
+
+## SceneMessageHelper
+
+- `one(type)`：返回唯一实例，否则抛 `SceneNotFound/AmbiguousScene`。
+- `optionalOne(type)`：允许不存在，但不允许多个。
+- `many(type)`：返回全部实例。
+- `byName(name)`：按实例名查找。
+- `call/callOne/callOptionalOne`：RPC。
+- `send/sendOne`：单向消息。
+- `callActor/sendActor`：已知目标 EntryScene 与 InstanceId 时直接发送 Actor 消息。
+
+## ProcessHost
+
+- `spawnScene/despawnScene`。
+- `spawnActor(sceneId, actorId, Type, ...awakeArgs)/despawnActor`；Actor 参数由其 `Actor<[...args]>` 类型约束，并由框架同步调用一次 `Awake`。
+- `localSceneRef/localActorRef`。
+- `Root.Get(instanceId)`：O(1) 获取当前生命周期 Entity。
+- `runActorMailbox(instanceId, callback)`：通过 Actor 自身 MailBoxComponent 调度。
+- `call/send`：动态 Scene/Actor mailbox 调度。
+
+## Unit 与 UnitComponent
+
+- `Unit` 继承 Actor，玩家、怪物和 NPC 使用同一实体基类。
+- `Unit.Id/UnitId` 是业务 ID；`Unit.InstanceId` 是本次生命周期 Actor 地址。
+- `Unit.Parent` 指向所在地图的 `UnitComponent`。
+- `Unit.DomainScene()` 直接取得所在动态 MapScene。
+- `UnitComponent.Create/Get/Remove/GetAll` 按 UnitId 管理地图全部 Unit。
+- Unit 销毁必须经过 UnitComponent/ProcessHost，保证 Unit 集合、Root 和 mailbox 同步移除。
+- `MailBoxComponent` 挂在每个 Actor 上，当前支持 ordered/unordered。
+
+## Entity 与 Component
+
+- `EntryScene`、动态 `Scene` 和 `Actor` 都继承 `Entity`，可以持有多个不同类型的 Component。
+- `AddComponent(Type, ...awakeArgs)`：创建组件并同步调用 `Awake`；参数由 Component 的元组泛型约束，同类型只允许一个实例。
+- `GetComponent(Type)`：获取必需组件，不存在时抛错。
+- `TryGetComponent(Type)/HasComponent(Type)`：查询可选组件。
+- `RemoveComponent(Type)`：移除组件并执行其 `OnDestroy()`。
+- `despawnActor` 会销毁 Actor 的全部组件；业务层不直接调用内部 `__dispose()`。
+- 动态 Scene/Actor 增删带 `@handler` 的组件时，对应 mailbox Handler 会同步注册和移除。
+- 所有业务组件统一继承 `Component`。挂载目标由 `entryScene.AddComponent(...)`、`mapScene.AddComponent(...)` 或 `unit.AddComponent(...)` 决定。
+- Component 通过 `GetParent<T>()` 取得直接宿主，通过 `DomainScene<T>()` 取得所属动态 Scene；不提供按宿主拆分的 Component Context。
+- EntryScene 的协议 Handler 绑定在 Scene 类型上，再通过 `scene.GetComponent(...)` 协调一个或多个组件；组件本身不承担网络路由注册。
+- Component `Awake` 只做同步初始化；异步加载由业务 Factory 编排。
+
+精确泛型签名以 `app/core/process` 与 `app/core/runtime` 为准。新增公共 API 时同步更新本文档和教程。

@@ -1,0 +1,428 @@
+starting process log with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\perf\results\runtime_configs\map_capacity_20260713_081609\195p_8g_r1\log.json
+scene log (Log) listening on 127.0.0.1:7100
+[process:log] one V8 started with 1 scene(s)
+[log] Log scene started at 127.0.0.1:7100
+log accepted 127.0.0.1:52355 as conn 1
+log accepted 127.0.0.1:52399 as conn 2
+[log] [login_1] perf_8g_10_195_0_1783930696064 login count 1
+[log] [login_1] perf_8g_10_195_5_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_4_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_1_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_7_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_3_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_2_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_6_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_8_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_9_1783930696065 login count 1
+[log] [login_1] perf_8g_10_195_10_1783930696066 login count 1
+[log] [login_1] perf_8g_10_195_12_1783930696066 login count 1
+[log] [login_1] perf_8g_10_195_13_1783930696066 login count 1
+[log] [login_1] perf_8g_10_195_11_1783930696066 login count 1
+[log] [login_1] perf_8g_10_195_14_1783930696066 login count 1
+[log] [login_1] perf_8g_10_195_15_1783930696066 login count 1
+log accepted 127.0.0.1:52425 as conn 3
+[log] [gate_1] perf_8g_10_195_0_1783930696064 enter map_1 as unit 1000
+[log] [gate_1] perf_8g_10_195_8_1783930696065 enter map_1 as unit 1007
+log accepted 127.0.0.1:52433 as conn 4
+log accepted 127.0.0.1:52434 as conn 5
+log accepted 127.0.0.1:52436 as conn 6
+log accepted 127.0.0.1:52435 as conn 7
+[log] [gate_3] perf_8g_10_195_4_1783930696065 enter map_1 as unit 1004
+log accepted 127.0.0.1:52438 as conn 8
+log accepted 127.0.0.1:52437 as conn 9
+[log] [gate_5] perf_8g_10_195_7_1783930696065 enter map_1 as unit 1003
+[log] [gate_8] perf_8g_10_195_15_1783930696066 enter map_1 as unit 1006
+[log] [gate_6] perf_8g_10_195_3_1783930696065 enter map_1 as unit 1005
+[log] [gate_4] perf_8g_10_195_1_1783930696065 enter map_1 as unit 1002
+[log] [gate_2] perf_8g_10_195_5_1783930696065 enter map_1 as unit 1001
+[log] [login_1] perf_8g_10_195_16_1783930696090 login count 1
+[log] [gate_4] perf_8g_10_195_12_1783930696066 enter map_1 as unit 1008
+[log] [gate_6] perf_8g_10_195_11_1783930696066 enter map_1 as unit 1009
+[log] [login_1] perf_8g_10_195_17_1783930696091 login count 1
+[log] [gate_5] perf_8g_10_195_13_1783930696066 enter map_1 as unit 1011
+[log] [gate_8] perf_8g_10_195_6_1783930696065 enter map_1 as unit 1010
+[log] [gate_2] perf_8g_10_195_9_1783930696065 enter map_1 as unit 1012
+[log] [gate_3] perf_8g_10_195_10_1783930696066 enter map_1 as unit 1013
+[log] [gate_1] perf_8g_10_195_16_1783930696090 enter map_1 as unit 1014
+[log] [login_1] perf_8g_10_195_18_1783930696093 login count 1
+[log] [gate_2] perf_8g_10_195_17_1783930696091 enter map_1 as unit 1015
+[log] [login_1] perf_8g_10_195_19_1783930696093 login count 1
+[log] [login_1] perf_8g_10_195_20_1783930696094 login count 1
+[log] [login_1] perf_8g_10_195_21_1783930696094 login count 1
+[log] [login_1] perf_8g_10_195_22_1783930696094 login count 1
+[log] [login_1] perf_8g_10_195_23_1783930696095 login count 1
+[log] [login_1] perf_8g_10_195_24_1783930696095 login count 1
+[log] [login_1] perf_8g_10_195_25_1783930696095 login count 1
+[log] [login_1] perf_8g_10_195_26_1783930696095 login count 1
+[log] [login_1] perf_8g_10_195_27_1783930696096 login count 1
+log accepted 127.0.0.1:52476 as conn 10
+[log] [gate_7] perf_8g_10_195_2_1783930696065 enter map_1 as unit 1016
+[log] [login_1] perf_8g_10_195_29_1783930696096 login count 1
+[log] [login_1] perf_8g_10_195_30_1783930696096 login count 1
+[log] [login_1] perf_8g_10_195_28_1783930696096 login count 1
+[log] [gate_7] perf_8g_10_195_14_1783930696066 enter map_1 as unit 1017
+[log] [gate_3] perf_8g_10_195_18_1783930696093 enter map_1 as unit 1018
+[log] [gate_4] perf_8g_10_195_19_1783930696093 enter map_1 as unit 1019
+[log] [gate_5] perf_8g_10_195_20_1783930696094 enter map_1 as unit 1020
+[log] [login_1] perf_8g_10_195_31_1783930696101 login count 1
+[log] [gate_6] perf_8g_10_195_21_1783930696094 enter map_1 as unit 1021
+[log] [gate_7] perf_8g_10_195_22_1783930696094 enter map_1 as unit 1022
+[log] [gate_1] perf_8g_10_195_24_1783930696095 enter map_1 as unit 1024
+[log] [gate_2] perf_8g_10_195_25_1783930696095 enter map_1 as unit 1025
+[log] [gate_8] perf_8g_10_195_23_1783930696095 enter map_1 as unit 1023
+[log] [login_1] perf_8g_10_195_32_1783930696105 login count 1
+[log] [gate_3] perf_8g_10_195_26_1783930696095 enter map_1 as unit 1026
+[log] [gate_4] perf_8g_10_195_27_1783930696096 enter map_1 as unit 1027
+[log] [gate_5] perf_8g_10_195_29_1783930696096 enter map_1 as unit 1028
+[log] [gate_6] perf_8g_10_195_30_1783930696096 enter map_1 as unit 1029
+[log] [gate_7] perf_8g_10_195_28_1783930696096 enter map_1 as unit 1030
+[log] [login_1] perf_8g_10_195_33_1783930696107 login count 1
+[log] [login_1] perf_8g_10_195_34_1783930696108 login count 1
+[log] [gate_8] perf_8g_10_195_31_1783930696101 enter map_1 as unit 1031
+[log] [login_1] perf_8g_10_195_35_1783930696108 login count 1
+[log] [login_1] perf_8g_10_195_36_1783930696109 login count 1
+[log] [login_1] perf_8g_10_195_37_1783930696110 login count 1
+[log] [login_1] perf_8g_10_195_38_1783930696111 login count 1
+[log] [gate_1] perf_8g_10_195_32_1783930696105 enter map_1 as unit 1032
+[log] [login_1] perf_8g_10_195_39_1783930696113 login count 1
+[log] [login_1] perf_8g_10_195_40_1783930696113 login count 1
+[log] [login_1] perf_8g_10_195_41_1783930696113 login count 1
+[log] [login_1] perf_8g_10_195_42_1783930696115 login count 1
+[log] [login_1] perf_8g_10_195_43_1783930696115 login count 1
+[log] [gate_2] perf_8g_10_195_33_1783930696107 enter map_1 as unit 1033
+[log] [login_1] perf_8g_10_195_44_1783930696116 login count 1
+[log] [gate_3] perf_8g_10_195_34_1783930696108 enter map_1 as unit 1034
+[log] [login_1] perf_8g_10_195_45_1783930696116 login count 1
+[log] [login_1] perf_8g_10_195_46_1783930696117 login count 1
+[log] [gate_4] perf_8g_10_195_35_1783930696108 enter map_1 as unit 1035
+[log] [gate_5] perf_8g_10_195_36_1783930696109 enter map_1 as unit 1036
+[log] [gate_6] perf_8g_10_195_37_1783930696110 enter map_1 as unit 1037
+[log] [login_1] perf_8g_10_195_47_1783930696118 login count 1
+[log] [gate_7] perf_8g_10_195_38_1783930696111 enter map_1 as unit 1038
+[log] [gate_8] perf_8g_10_195_39_1783930696113 enter map_1 as unit 1039
+[log] [gate_1] perf_8g_10_195_40_1783930696113 enter map_1 as unit 1040
+[log] [login_1] perf_8g_10_195_48_1783930696122 login count 1
+[log] [gate_2] perf_8g_10_195_41_1783930696113 enter map_1 as unit 1041
+[log] [gate_3] perf_8g_10_195_42_1783930696115 enter map_1 as unit 1043
+[log] [gate_4] perf_8g_10_195_43_1783930696115 enter map_1 as unit 1042
+[log] [login_1] perf_8g_10_195_49_1783930696125 login count 1
+[log] [gate_6] perf_8g_10_195_45_1783930696116 enter map_1 as unit 1045
+[log] [gate_5] perf_8g_10_195_44_1783930696116 enter map_1 as unit 1044
+[log] [gate_7] perf_8g_10_195_46_1783930696117 enter map_1 as unit 1046
+[log] [login_1] perf_8g_10_195_50_1783930696126 login count 1
+[log] [login_1] perf_8g_10_195_51_1783930696127 login count 1
+[log] [gate_8] perf_8g_10_195_47_1783930696118 enter map_1 as unit 1047
+[log] [login_1] perf_8g_10_195_52_1783930696128 login count 1
+[log] [login_1] perf_8g_10_195_53_1783930696129 login count 1
+[log] [login_1] perf_8g_10_195_54_1783930696130 login count 1
+[log] [gate_1] perf_8g_10_195_48_1783930696122 enter map_1 as unit 1048
+[log] [login_1] perf_8g_10_195_55_1783930696132 login count 1
+[log] [login_1] perf_8g_10_195_56_1783930696132 login count 1
+[log] [gate_2] perf_8g_10_195_49_1783930696125 enter map_1 as unit 1049
+[log] [login_1] perf_8g_10_195_57_1783930696134 login count 1
+[log] [login_1] perf_8g_10_195_58_1783930696135 login count 1
+[log] [login_1] perf_8g_10_195_59_1783930696135 login count 1
+[log] [gate_3] perf_8g_10_195_50_1783930696126 enter map_1 as unit 1050
+[log] [login_1] perf_8g_10_195_60_1783930696136 login count 1
+[log] [login_1] perf_8g_10_195_61_1783930696137 login count 1
+[log] [gate_4] perf_8g_10_195_51_1783930696127 enter map_1 as unit 1051
+[log] [login_1] perf_8g_10_195_62_1783930696137 login count 1
+[log] [gate_5] perf_8g_10_195_52_1783930696128 enter map_1 as unit 1052
+[log] [login_1] perf_8g_10_195_63_1783930696139 login count 1
+[log] [gate_6] perf_8g_10_195_53_1783930696129 enter map_1 as unit 1053
+[log] [gate_7] perf_8g_10_195_54_1783930696130 enter map_1 as unit 1054
+[log] [gate_8] perf_8g_10_195_55_1783930696132 enter map_1 as unit 1055
+[log] [gate_1] perf_8g_10_195_56_1783930696132 enter map_1 as unit 1056
+[log] [login_1] perf_8g_10_195_64_1783930696142 login count 1
+[log] [gate_2] perf_8g_10_195_57_1783930696134 enter map_1 as unit 1057
+[log] [gate_3] perf_8g_10_195_58_1783930696135 enter map_1 as unit 1058
+[log] [login_1] perf_8g_10_195_65_1783930696144 login count 1
+[log] [gate_4] perf_8g_10_195_59_1783930696135 enter map_1 as unit 1059
+[log] [gate_5] perf_8g_10_195_60_1783930696136 enter map_1 as unit 1060
+[log] [login_1] perf_8g_10_195_66_1783930696146 login count 1
+[log] [gate_7] perf_8g_10_195_62_1783930696137 enter map_1 as unit 1062
+[log] [gate_6] perf_8g_10_195_61_1783930696137 enter map_1 as unit 1061
+[log] [gate_8] perf_8g_10_195_63_1783930696139 enter map_1 as unit 1063
+[log] [login_1] perf_8g_10_195_67_1783930696148 login count 1
+[log] [login_1] perf_8g_10_195_68_1783930696149 login count 1
+[log] [login_1] perf_8g_10_195_69_1783930696150 login count 1
+[log] [login_1] perf_8g_10_195_70_1783930696152 login count 1
+[log] [gate_1] perf_8g_10_195_64_1783930696142 enter map_1 as unit 1064
+[log] [login_1] perf_8g_10_195_71_1783930696154 login count 1
+[log] [login_1] perf_8g_10_195_72_1783930696155 login count 1
+[log] [gate_2] perf_8g_10_195_65_1783930696144 enter map_1 as unit 1065
+[log] [login_1] perf_8g_10_195_73_1783930696157 login count 1
+[log] [login_1] perf_8g_10_195_74_1783930696157 login count 1
+[log] [gate_3] perf_8g_10_195_66_1783930696146 enter map_1 as unit 1066
+[log] [login_1] perf_8g_10_195_75_1783930696159 login count 1
+[log] [login_1] perf_8g_10_195_76_1783930696160 login count 1
+[log] [gate_4] perf_8g_10_195_67_1783930696148 enter map_1 as unit 1067
+[log] [login_1] perf_8g_10_195_77_1783930696160 login count 1
+[log] [login_1] perf_8g_10_195_78_1783930696160 login count 1
+[log] [gate_5] perf_8g_10_195_68_1783930696149 enter map_1 as unit 1068
+[log] [login_1] perf_8g_10_195_79_1783930696161 login count 1
+[log] [gate_6] perf_8g_10_195_69_1783930696150 enter map_1 as unit 1069
+[log] [gate_7] perf_8g_10_195_70_1783930696152 enter map_1 as unit 1070
+[log] [gate_8] perf_8g_10_195_71_1783930696154 enter map_1 as unit 1071
+[log] [gate_1] perf_8g_10_195_72_1783930696155 enter map_1 as unit 1072
+[log] [login_1] perf_8g_10_195_80_1783930696166 login count 1
+[log] [gate_2] perf_8g_10_195_73_1783930696157 enter map_1 as unit 1073
+[log] [login_1] perf_8g_10_195_81_1783930696168 login count 1
+[log] [gate_3] perf_8g_10_195_74_1783930696157 enter map_1 as unit 1074
+[log] [login_1] perf_8g_10_195_82_1783930696170 login count 1
+[log] [gate_4] perf_8g_10_195_75_1783930696159 enter map_1 as unit 1075
+[log] [gate_5] perf_8g_10_195_76_1783930696160 enter map_1 as unit 1076
+[log] [login_1] perf_8g_10_195_83_1783930696173 login count 1
+[log] [gate_7] perf_8g_10_195_78_1783930696160 enter map_1 as unit 1078
+[log] [gate_8] perf_8g_10_195_79_1783930696161 enter map_1 as unit 1079
+[log] [gate_6] perf_8g_10_195_77_1783930696160 enter map_1 as unit 1077
+[log] [login_1] perf_8g_10_195_84_1783930696174 login count 1
+[log] [login_1] perf_8g_10_195_85_1783930696176 login count 1
+[log] [login_1] perf_8g_10_195_86_1783930696177 login count 1
+[log] [gate_1] perf_8g_10_195_80_1783930696166 enter map_1 as unit 1080
+[log] [login_1] perf_8g_10_195_87_1783930696179 login count 1
+[log] [login_1] perf_8g_10_195_88_1783930696180 login count 1
+[log] [login_1] perf_8g_10_195_89_1783930696182 login count 1
+[log] [gate_2] perf_8g_10_195_81_1783930696168 enter map_1 as unit 1081
+[log] [gate_3] perf_8g_10_195_82_1783930696170 enter map_1 as unit 1082
+[log] [login_1] perf_8g_10_195_90_1783930696185 login count 1
+[log] [gate_4] perf_8g_10_195_83_1783930696173 enter map_1 as unit 1083
+[log] [login_1] perf_8g_10_195_91_1783930696186 login count 1
+[log] [gate_5] perf_8g_10_195_84_1783930696174 enter map_1 as unit 1084
+[log] [login_1] perf_8g_10_195_92_1783930696187 login count 1
+[log] [login_1] perf_8g_10_195_93_1783930696188 login count 1
+[log] [gate_6] perf_8g_10_195_85_1783930696176 enter map_1 as unit 1085
+[log] [login_1] perf_8g_10_195_94_1783930696188 login count 1
+[log] [login_1] perf_8g_10_195_95_1783930696189 login count 1
+[log] [gate_7] perf_8g_10_195_86_1783930696177 enter map_1 as unit 1086
+[log] [gate_8] perf_8g_10_195_87_1783930696179 enter map_1 as unit 1087
+[log] [gate_1] perf_8g_10_195_88_1783930696180 enter map_1 as unit 1088
+[log] [gate_2] perf_8g_10_195_89_1783930696182 enter map_1 as unit 1089
+[log] [login_1] perf_8g_10_195_96_1783930696192 login count 1
+[log] [gate_3] perf_8g_10_195_90_1783930696185 enter map_1 as unit 1090
+[log] [login_1] perf_8g_10_195_97_1783930696196 login count 1
+[log] [login_1] perf_8g_10_195_98_1783930696197 login count 1
+[log] [gate_4] perf_8g_10_195_91_1783930696186 enter map_1 as unit 1091
+[log] [login_1] perf_8g_10_195_99_1783930696198 login count 1
+[log] [gate_5] perf_8g_10_195_92_1783930696187 enter map_1 as unit 1092
+[log] [login_1] perf_8g_10_195_100_1783930696200 login count 1
+[log] [login_1] perf_8g_10_195_101_1783930696202 login count 1
+[log] [login_1] perf_8g_10_195_102_1783930696204 login count 1
+[log] [gate_7] perf_8g_10_195_94_1783930696188 enter map_1 as unit 1094
+[log] [gate_8] perf_8g_10_195_95_1783930696189 enter map_1 as unit 1095
+[log] [gate_6] perf_8g_10_195_93_1783930696188 enter map_1 as unit 1093
+[log] [login_1] perf_8g_10_195_103_1783930696205 login count 1
+[log] [gate_1] perf_8g_10_195_96_1783930696192 enter map_1 as unit 1096
+[log] [login_1] perf_8g_10_195_104_1783930696206 login count 1
+[log] [login_1] perf_8g_10_195_105_1783930696207 login count 1
+[log] [gate_2] perf_8g_10_195_97_1783930696196 enter map_1 as unit 1097
+[log] [gate_3] perf_8g_10_195_98_1783930696197 enter map_1 as unit 1098
+[log] [login_1] perf_8g_10_195_106_1783930696211 login count 1
+[log] [gate_4] perf_8g_10_195_99_1783930696198 enter map_1 as unit 1099
+[log] [login_1] perf_8g_10_195_107_1783930696213 login count 1
+[log] [gate_5] perf_8g_10_195_100_1783930696200 enter map_1 as unit 1100
+[log] [login_1] perf_8g_10_195_108_1783930696215 login count 1
+[log] [gate_6] perf_8g_10_195_101_1783930696202 enter map_1 as unit 1101
+[log] [gate_7] perf_8g_10_195_102_1783930696204 enter map_1 as unit 1102
+[log] [gate_8] perf_8g_10_195_103_1783930696205 enter map_1 as unit 1103
+[log] [login_1] perf_8g_10_195_109_1783930696218 login count 1
+[log] [gate_1] perf_8g_10_195_104_1783930696206 enter map_1 as unit 1104
+[log] [login_1] perf_8g_10_195_110_1783930696219 login count 1
+[log] [login_1] perf_8g_10_195_111_1783930696219 login count 1
+[log] [gate_2] perf_8g_10_195_105_1783930696207 enter map_1 as unit 1105
+[log] [login_1] perf_8g_10_195_112_1783930696222 login count 1
+[log] [login_1] perf_8g_10_195_113_1783930696224 login count 1
+[log] [gate_3] perf_8g_10_195_106_1783930696211 enter map_1 as unit 1106
+[log] [login_1] perf_8g_10_195_114_1783930696230 login count 1
+[log] [gate_5] perf_8g_10_195_108_1783930696215 enter map_1 as unit 1107
+[log] [login_1] perf_8g_10_195_115_1783930696231 login count 1
+[log] [gate_4] perf_8g_10_195_107_1783930696213 enter map_1 as unit 1108
+[log] [login_1] perf_8g_10_195_116_1783930696233 login count 1
+[log] [login_1] perf_8g_10_195_117_1783930696234 login count 1
+[log] [login_1] perf_8g_10_195_118_1783930696236 login count 1
+[log] [gate_6] perf_8g_10_195_109_1783930696218 enter map_1 as unit 1109
+[log] [login_1] perf_8g_10_195_119_1783930696237 login count 1
+[log] [login_1] perf_8g_10_195_120_1783930696239 login count 1
+[log] [login_1] perf_8g_10_195_121_1783930696241 login count 1
+[log] [gate_8] perf_8g_10_195_111_1783930696219 enter map_1 as unit 1111
+[log] [gate_7] perf_8g_10_195_110_1783930696219 enter map_1 as unit 1110
+[log] [login_1] perf_8g_10_195_122_1783930696246 login count 1
+[log] [gate_1] perf_8g_10_195_112_1783930696222 enter map_1 as unit 1112
+[log] [gate_2] perf_8g_10_195_113_1783930696224 enter map_1 as unit 1113
+[log] [login_1] perf_8g_10_195_123_1783930696247 login count 1
+[log] [login_1] perf_8g_10_195_124_1783930696249 login count 1
+[log] [gate_3] perf_8g_10_195_114_1783930696230 enter map_1 as unit 1114
+[log] [gate_4] perf_8g_10_195_115_1783930696231 enter map_1 as unit 1115
+[log] [login_1] perf_8g_10_195_125_1783930696254 login count 1
+[log] [login_1] perf_8g_10_195_126_1783930696257 login count 1
+[log] [login_1] perf_8g_10_195_127_1783930696258 login count 1
+[log] [login_1] perf_8g_10_195_128_1783930696261 login count 1
+[log] [login_1] perf_8g_10_195_129_1783930696261 login count 1
+[log] [gate_5] perf_8g_10_195_116_1783930696233 enter map_1 as unit 1116
+[log] [gate_8] perf_8g_10_195_119_1783930696237 enter map_1 as unit 1119
+[log] [gate_7] perf_8g_10_195_118_1783930696236 enter map_1 as unit 1118
+[log] [gate_6] perf_8g_10_195_117_1783930696234 enter map_1 as unit 1117
+[log] [login_1] perf_8g_10_195_130_1783930696265 login count 1
+[log] [login_1] perf_8g_10_195_131_1783930696265 login count 1
+[log] [gate_1] perf_8g_10_195_120_1783930696239 enter map_1 as unit 1121
+[log] [gate_2] perf_8g_10_195_121_1783930696241 enter map_1 as unit 1120
+[log] [gate_4] perf_8g_10_195_123_1783930696247 enter map_1 as unit 1123
+[log] [gate_3] perf_8g_10_195_122_1783930696246 enter map_1 as unit 1122
+[log] [login_1] perf_8g_10_195_132_1783930696272 login count 1
+[log] [login_1] perf_8g_10_195_133_1783930696273 login count 1
+[log] [login_1] perf_8g_10_195_134_1783930696274 login count 1
+[log] [login_1] perf_8g_10_195_135_1783930696274 login count 1
+[log] [login_1] perf_8g_10_195_136_1783930696280 login count 1
+[log] [login_1] perf_8g_10_195_137_1783930696283 login count 1
+[log] [login_1] perf_8g_10_195_138_1783930696284 login count 1
+[log] [login_1] perf_8g_10_195_139_1783930696285 login count 1
+[log] [gate_7] perf_8g_10_195_126_1783930696257 enter map_1 as unit 1126
+[log] [gate_5] perf_8g_10_195_124_1783930696249 enter map_1 as unit 1125
+[log] [gate_8] perf_8g_10_195_127_1783930696258 enter map_1 as unit 1124
+[log] [gate_6] perf_8g_10_195_125_1783930696254 enter map_1 as unit 1127
+[log] [login_1] perf_8g_10_195_140_1783930696291 login count 1
+[log] [login_1] perf_8g_10_195_141_1783930696292 login count 1
+[log] [login_1] perf_8g_10_195_142_1783930696293 login count 1
+[log] [login_1] perf_8g_10_195_143_1783930696294 login count 1
+[log] [gate_2] perf_8g_10_195_129_1783930696261 enter map_1 as unit 1131
+[log] [gate_3] perf_8g_10_195_130_1783930696265 enter map_1 as unit 1129
+[log] [gate_1] perf_8g_10_195_128_1783930696261 enter map_1 as unit 1130
+[log] [gate_4] perf_8g_10_195_131_1783930696265 enter map_1 as unit 1128
+[log] [login_1] perf_8g_10_195_144_1783930696300 login count 1
+[log] [login_1] perf_8g_10_195_145_1783930696301 login count 1
+[log] [login_1] perf_8g_10_195_146_1783930696302 login count 1
+[log] [login_1] perf_8g_10_195_147_1783930696303 login count 1
+[log] [gate_7] perf_8g_10_195_134_1783930696274 enter map_1 as unit 1135
+[log] [gate_8] perf_8g_10_195_135_1783930696274 enter map_1 as unit 1133
+[log] [gate_6] perf_8g_10_195_133_1783930696273 enter map_1 as unit 1134
+[log] [gate_5] perf_8g_10_195_132_1783930696272 enter map_1 as unit 1132
+[log] [login_1] perf_8g_10_195_148_1783930696309 login count 1
+[log] [login_1] perf_8g_10_195_149_1783930696310 login count 1
+[log] [login_1] perf_8g_10_195_150_1783930696311 login count 1
+[log] [login_1] perf_8g_10_195_151_1783930696311 login count 1
+[log] [gate_1] perf_8g_10_195_136_1783930696280 enter map_1 as unit 1138
+[log] [gate_2] perf_8g_10_195_137_1783930696283 enter map_1 as unit 1137
+[log] [gate_4] perf_8g_10_195_139_1783930696285 enter map_1 as unit 1139
+[log] [gate_3] perf_8g_10_195_138_1783930696284 enter map_1 as unit 1136
+[log] [login_1] perf_8g_10_195_153_1783930696320 login count 1
+[log] [login_1] perf_8g_10_195_152_1783930696318 login count 1
+[log] [gate_5] perf_8g_10_195_140_1783930696291 enter map_1 as unit 1143
+[log] [gate_6] perf_8g_10_195_141_1783930696292 enter map_1 as unit 1142
+[log] [login_1] perf_8g_10_195_154_1783930696321 login count 1
+[log] [login_1] perf_8g_10_195_155_1783930696321 login count 1
+[log] [gate_8] perf_8g_10_195_143_1783930696294 enter map_1 as unit 1141
+[log] [gate_7] perf_8g_10_195_142_1783930696293 enter map_1 as unit 1140
+[log] [login_1] perf_8g_10_195_156_1783930696327 login count 1
+[log] [login_1] perf_8g_10_195_157_1783930696328 login count 1
+[log] [login_1] perf_8g_10_195_158_1783930696329 login count 1
+[log] [login_1] perf_8g_10_195_159_1783930696330 login count 1
+[log] [gate_4] perf_8g_10_195_147_1783930696303 enter map_1 as unit 1145
+[log] [gate_2] perf_8g_10_195_145_1783930696301 enter map_1 as unit 1146
+[log] [gate_1] perf_8g_10_195_144_1783930696300 enter map_1 as unit 1144
+[log] [gate_3] perf_8g_10_195_146_1783930696302 enter map_1 as unit 1147
+[log] [login_1] perf_8g_10_195_160_1783930696337 login count 1
+[log] [login_1] perf_8g_10_195_161_1783930696338 login count 1
+[log] [login_1] perf_8g_10_195_162_1783930696339 login count 1
+[log] [login_1] perf_8g_10_195_163_1783930696340 login count 1
+[log] [gate_8] perf_8g_10_195_151_1783930696311 enter map_1 as unit 1150
+[log] [gate_5] perf_8g_10_195_148_1783930696309 enter map_1 as unit 1148
+[log] [gate_6] perf_8g_10_195_149_1783930696310 enter map_1 as unit 1149
+[log] [gate_7] perf_8g_10_195_150_1783930696311 enter map_1 as unit 1151
+[log] [login_1] perf_8g_10_195_164_1783930696346 login count 1
+[log] [login_1] perf_8g_10_195_165_1783930696348 login count 1
+[log] [login_1] perf_8g_10_195_166_1783930696348 login count 1
+[log] [login_1] perf_8g_10_195_167_1783930696349 login count 1
+[log] [gate_2] perf_8g_10_195_152_1783930696318 enter map_1 as unit 1152
+[log] [gate_3] perf_8g_10_195_154_1783930696321 enter map_1 as unit 1153
+[log] [gate_1] perf_8g_10_195_153_1783930696320 enter map_1 as unit 1154
+[log] [gate_4] perf_8g_10_195_155_1783930696321 enter map_1 as unit 1155
+[log] [login_1] perf_8g_10_195_168_1783930696356 login count 1
+[log] [login_1] perf_8g_10_195_169_1783930696357 login count 1
+[log] [login_1] perf_8g_10_195_170_1783930696358 login count 1
+[log] [login_1] perf_8g_10_195_171_1783930696359 login count 1
+[log] [gate_6] perf_8g_10_195_157_1783930696328 enter map_1 as unit 1156
+[log] [gate_7] perf_8g_10_195_158_1783930696329 enter map_1 as unit 1158
+[log] [gate_8] perf_8g_10_195_159_1783930696330 enter map_1 as unit 1159
+[log] [gate_5] perf_8g_10_195_156_1783930696327 enter map_1 as unit 1157
+[log] [login_1] perf_8g_10_195_172_1783930696366 login count 1
+[log] [login_1] perf_8g_10_195_174_1783930696368 login count 1
+[log] [login_1] perf_8g_10_195_173_1783930696367 login count 1
+[log] [login_1] perf_8g_10_195_175_1783930696369 login count 1
+[log] [gate_3] perf_8g_10_195_162_1783930696339 enter map_1 as unit 1163
+[log] [gate_1] perf_8g_10_195_160_1783930696337 enter map_1 as unit 1162
+[log] [gate_2] perf_8g_10_195_161_1783930696338 enter map_1 as unit 1161
+[log] [gate_4] perf_8g_10_195_163_1783930696340 enter map_1 as unit 1160
+[log] [login_1] perf_8g_10_195_176_1783930696375 login count 1
+[log] [login_1] perf_8g_10_195_177_1783930696377 login count 1
+[log] [login_1] perf_8g_10_195_178_1783930696377 login count 1
+[log] [login_1] perf_8g_10_195_179_1783930696378 login count 1
+[log] [gate_6] perf_8g_10_195_165_1783930696348 enter map_1 as unit 1166
+[log] [gate_8] perf_8g_10_195_167_1783930696349 enter map_1 as unit 1165
+[log] [gate_7] perf_8g_10_195_166_1783930696348 enter map_1 as unit 1164
+[log] [gate_5] perf_8g_10_195_164_1783930696346 enter map_1 as unit 1167
+[log] [login_1] perf_8g_10_195_180_1783930696387 login count 1
+[log] [login_1] perf_8g_10_195_181_1783930696388 login count 1
+[log] [login_1] perf_8g_10_195_182_1783930696389 login count 1
+[log] [login_1] perf_8g_10_195_183_1783930696389 login count 1
+[log] [gate_3] perf_8g_10_195_170_1783930696358 enter map_1 as unit 1168
+[log] [gate_1] perf_8g_10_195_168_1783930696356 enter map_1 as unit 1171
+[log] [gate_2] perf_8g_10_195_169_1783930696357 enter map_1 as unit 1169
+[log] [gate_4] perf_8g_10_195_171_1783930696359 enter map_1 as unit 1170
+[log] [login_1] perf_8g_10_195_184_1783930696397 login count 1
+[log] [login_1] perf_8g_10_195_185_1783930696398 login count 1
+[log] [login_1] perf_8g_10_195_186_1783930696399 login count 1
+[log] [login_1] perf_8g_10_195_187_1783930696400 login count 1
+[log] [gate_7] perf_8g_10_195_173_1783930696367 enter map_1 as unit 1175
+[log] [gate_8] perf_8g_10_195_175_1783930696369 enter map_1 as unit 1172
+[log] [gate_6] perf_8g_10_195_174_1783930696368 enter map_1 as unit 1173
+[log] [gate_5] perf_8g_10_195_172_1783930696366 enter map_1 as unit 1174
+[log] [login_1] perf_8g_10_195_188_1783930696406 login count 1
+[log] [login_1] perf_8g_10_195_189_1783930696407 login count 1
+[log] [login_1] perf_8g_10_195_190_1783930696407 login count 1
+[log] [login_1] perf_8g_10_195_191_1783930696408 login count 1
+[log] [gate_3] perf_8g_10_195_178_1783930696377 enter map_1 as unit 1179
+[log] [gate_4] perf_8g_10_195_179_1783930696378 enter map_1 as unit 1178
+[log] [gate_1] perf_8g_10_195_176_1783930696375 enter map_1 as unit 1176
+[log] [gate_2] perf_8g_10_195_177_1783930696377 enter map_1 as unit 1177
+[log] [login_1] perf_8g_10_195_192_1783930696417 login count 1
+[log] [login_1] perf_8g_10_195_193_1783930696418 login count 1
+[log] [login_1] perf_8g_10_195_194_1783930696419 login count 1
+[log] [gate_5] perf_8g_10_195_180_1783930696387 enter map_1 as unit 1182
+[log] [gate_6] perf_8g_10_195_181_1783930696388 enter map_1 as unit 1180
+[log] [gate_8] perf_8g_10_195_183_1783930696389 enter map_1 as unit 1183
+[log] [gate_7] perf_8g_10_195_182_1783930696389 enter map_1 as unit 1181
+[log] [gate_2] perf_8g_10_195_185_1783930696398 enter map_1 as unit 1186
+[log] [gate_1] perf_8g_10_195_184_1783930696397 enter map_1 as unit 1187
+[log] [gate_4] perf_8g_10_195_187_1783930696400 enter map_1 as unit 1185
+[log] [gate_3] perf_8g_10_195_186_1783930696399 enter map_1 as unit 1184
+[log] [gate_8] perf_8g_10_195_191_1783930696408 enter map_1 as unit 1189
+[log] [gate_5] perf_8g_10_195_188_1783930696406 enter map_1 as unit 1188
+[log] [gate_7] perf_8g_10_195_190_1783930696407 enter map_1 as unit 1191
+[log] [gate_6] perf_8g_10_195_189_1783930696407 enter map_1 as unit 1190
+[log] [gate_3] perf_8g_10_195_194_1783930696419 enter map_1 as unit 1194
+[log] [gate_1] perf_8g_10_195_192_1783930696417 enter map_1 as unit 1192
+[log] [gate_2] perf_8g_10_195_193_1783930696418 enter map_1 as unit 1193
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=2.18 cpu_time_ms=156 rss_bytes=36986880 v8_heap_used_bytes=2713032 v8_heap_total_bytes=6037504 v8_gc_count=3 v8_gc_ms=0.800 timestamp_ms=1783930700854
+[metrics:log] scene=log type=Log processed=390 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=0.00 cpu_time_ms=156 rss_bytes=37068800 v8_heap_used_bytes=2850000 v8_heap_total_bytes=6037504 v8_gc_count=3 v8_gc_ms=0.800 timestamp_ms=1783930705867
+[metrics:log] scene=log type=Log processed=390 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=0.62 cpu_time_ms=187 rss_bytes=37453824 v8_heap_used_bytes=3003088 v8_heap_total_bytes=6037504 v8_gc_count=3 v8_gc_ms=0.800 timestamp_ms=1783930710884
+[metrics:log] scene=log type=Log processed=390 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=0.32 cpu_time_ms=203 rss_bytes=37609472 v8_heap_used_bytes=3131120 v8_heap_total_bytes=6299648 v8_gc_count=3 v8_gc_ms=0.800 timestamp_ms=1783930715882
+[metrics:log] scene=log type=Log processed=390 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=0.62 cpu_time_ms=234 rss_bytes=37740544 v8_heap_used_bytes=3259120 v8_heap_total_bytes=6299648 v8_gc_count=3 v8_gc_ms=0.800 timestamp_ms=1783930720885
+[metrics:log] scene=log type=Log processed=390 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=1.24 cpu_time_ms=296 rss_bytes=37756928 v8_heap_used_bytes=3387168 v8_heap_total_bytes=6561792 v8_gc_count=3 v8_gc_ms=0.800 timestamp_ms=1783930725886
+[metrics:log] scene=log type=Log processed=390 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=0.00 cpu_time_ms=296 rss_bytes=38068224 v8_heap_used_bytes=3519520 v8_heap_total_bytes=6561792 v8_gc_count=3 v8_gc_ms=0.800 timestamp_ms=1783930730891
+[metrics:log] scene=log type=Log processed=390 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00
+[metrics:inner_transport] active=0 opened=0 pending=0 max_pending=0 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=log cpu_percent=0.32 cpu_time_ms=312 rss_bytes=38244352 v8_heap_used_bytes=3646320 v8_heap_total_bytes=6823936 v8_gc_count=3 v8_gc_ms=0.800 timestamp_ms=1783930735907
+[metrics:log] scene=log type=Log processed=390 failed=0 ts_queue=0 ts_max_queue=7 rust_queue=0 rust_max_queue=7 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=0.00 max_handler_ms=1.00 total_handler_ms=7.00

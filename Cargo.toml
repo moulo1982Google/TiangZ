@@ -1,76 +1,31 @@
 [package]
 name = "TiangZ"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
-authors = [
-    "moulo <25897084@qq.com>",
-]
+default-run = "TiangZ"
 
-keywords = [
-    "tz",
-    "tiangz",
-    "game",
-    "server",
-    "ecs",
-    "rust"
-]
-
-license = "MIT + Apache-2.0"
+[features]
+default = ["mimalloc-allocator"]
+mimalloc-allocator = ["dep:mimalloc"]
+io-uring = ["dep:tokio-uring"]
 
 [dependencies]
-gen_macro = {path="./gen_macro"}
-
-thiserror = "2"
-crossbeam = "0.8"
-crossbeam-channel = "0.5"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "local-time"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-rmp-serde = "1.3"
-inventory = "0.3"
-lazy_static = "1.5"
-simd-json = "0.15"
-tokio = { version = "1.47", features = ["full"] }
-tokio-util = { version = "0.7", features = ["time"] }
+anyhow = "1"
+base64 = "0.22"
 bytes = "1"
-criterion = "0.7"
-dashmap = "6.0"
-rand = "0.9"
-async_once = "0.2"
-clap = { version = "4.5.40", features = ["derive"] }
-async-trait = "0.1.88"
-num_cpus = "1.17"
-core_affinity = "0.8.3"
-once_cell = "1.18"
-futures = "0.3.31"
-tokio_kcp = "0.9.8"
-object-pool = "0.6"
-spin_sleep = "1.3.2"
-parking_lot = "0.12.4"
-profiling = "1.0.17"
-#kcp-rust-native = "0.1.0"
-
-[target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.61", features = ["Win32", "Win32_System_Threading", "Win32_Foundation"] }
-winapi = { version = "0.3", features = ["timeapi", "winbase"] }
+deno_core = "0.407"
+deno_error = "0.7.1"
+deno_inspector_server = "0.28.0"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = "0.30"
+mimalloc = { version = "0.1.52", optional = true }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = "0.30.1"  # 用于与Linux系统交互
+tokio-uring = { version = "0.5.0", optional = true }
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.6"
-
-[build-dependencies]
-rayon = "1.10"
-
-[[bench]]
-name = "benchmark"
-harness = false
-
-[profile.release]
-opt-level = 3
-codegen-units = 1  
-debug = true
-
-
+[dev-dependencies]
+tempfile = "3"

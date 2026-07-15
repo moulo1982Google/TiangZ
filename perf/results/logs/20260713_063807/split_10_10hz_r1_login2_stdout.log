@@ -1,0 +1,18 @@
+starting process login2 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/login2.json
+scene login_2 (Login) listening on 127.0.0.1:7002
+[process:login2] one V8 started with 1 scene(s)
+[login_2] Login scene started at 127.0.0.1:7002
+login_2 accepted 127.0.0.1:55983 as conn 1
+login_2 accepted 127.0.0.1:55998 as conn 2
+login_2 accepted 127.0.0.1:56002 as conn 3
+login_2 accepted 127.0.0.1:56004 as conn 4
+login_2 accepted 127.0.0.1:56005 as conn 5
+login_2 accepted 127.0.0.1:56006 as conn 6
+[login2/perf_split_10_10_1_1783924737612] login perf_split_10_10_1_1783924737612 count 1
+[login2/perf_split_10_10_3_1783924737613] login perf_split_10_10_3_1783924737613 count 1
+[login2/perf_split_10_10_5_1783924737613] login perf_split_10_10_5_1783924737613 count 1
+[login2/perf_split_10_10_9_1783924737613] login perf_split_10_10_9_1783924737613 count 1
+[login2/perf_split_10_10_7_1783924737613] login perf_split_10_10_7_1783924737613 count 1
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=4 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[process-metrics] process=login2 cpu_percent=0.00 cpu_time_ms=93 rss_bytes=31985664 v8_heap_used_bytes=1987184 v8_heap_total_bytes=4853760 v8_gc_count=2 v8_gc_ms=0.569
+[metrics:login2] scene=login_2 type=Login processed=5 failed=0 ts_queue=0 ts_max_queue=4 rust_queue=0 rust_max_queue=4 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=1.00 max_handler_ms=3.00 total_handler_ms=7.00

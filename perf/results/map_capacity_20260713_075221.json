@@ -1,0 +1,1232 @@
+{
+  "generatedAt": "2026-07-13T07:55:02.226Z",
+  "runId": "20260713_075221",
+  "parameters": {
+    "players": [
+      100,
+      125,
+      150,
+      175,
+      200
+    ],
+    "gates": 4,
+    "moveRate": 10,
+    "probeRate": 1,
+    "duration": 20,
+    "warmup": 10,
+    "rounds": 1,
+    "setupConcurrency": 16,
+    "timeoutMs": 60000,
+    "movementTimeoutMs": 10000,
+    "targetMapCpu": 85,
+    "managerPort": 7000,
+    "loginPort": 7001,
+    "logPort": 7100,
+    "gateBasePort": 7201,
+    "mapPort": 7301,
+    "debugRuntime": false
+  },
+  "machine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
+    "logicalCpus": 8,
+    "memoryBytes": 16178061312,
+    "os": "linux 7.0.0-27-generic"
+  },
+  "capacityCandidate": {
+    "players": 200,
+    "roundCount": 1,
+    "median": {
+      "mapCpuAverage": 63.394999999999996,
+      "mapCpuP90": 64.39,
+      "mapCpuPeak": 64.39,
+      "gateMaxCpuAverage": 63.394999999999996,
+      "gateMaxCpuPeak": 67.39,
+      "movesPerSecond": 1996.9,
+      "pushesPerSecond": 397933.3333333333,
+      "moveErrors": 0,
+      "probePerSecond": 200,
+      "probeP50Ms": 46.206670999999915,
+      "probeP90Ms": 81.70356600000014,
+      "probeP95Ms": 87.46530299999722,
+      "probeP99Ms": 103.03580899999906,
+      "probeMaxMs": 110.47795500000029,
+      "probeErrors": 0,
+      "innerOverloads": 0,
+      "backpressure": 0,
+      "serverRssBytes": 790315008
+    }
+  },
+  "nearestTarget": {
+    "players": 200,
+    "roundCount": 1,
+    "median": {
+      "mapCpuAverage": 63.394999999999996,
+      "mapCpuP90": 64.39,
+      "mapCpuPeak": 64.39,
+      "gateMaxCpuAverage": 63.394999999999996,
+      "gateMaxCpuPeak": 67.39,
+      "movesPerSecond": 1996.9,
+      "pushesPerSecond": 397933.3333333333,
+      "moveErrors": 0,
+      "probePerSecond": 200,
+      "probeP50Ms": 46.206670999999915,
+      "probeP90Ms": 81.70356600000014,
+      "probeP95Ms": 87.46530299999722,
+      "probeP99Ms": 103.03580899999906,
+      "probeMaxMs": 110.47795500000029,
+      "probeErrors": 0,
+      "innerOverloads": 0,
+      "backpressure": 0,
+      "serverRssBytes": 790315008
+    }
+  },
+  "cases": [
+    {
+      "players": 100,
+      "roundCount": 1,
+      "median": {
+        "mapCpuAverage": 22.814999999999998,
+        "mapCpuP90": 25.19,
+        "mapCpuPeak": 25.19,
+        "gateMaxCpuAverage": 19.2775,
+        "gateMaxCpuPeak": 21.2,
+        "movesPerSecond": 1001.25,
+        "pushesPerSecond": 100333.33333333333,
+        "moveErrors": 0,
+        "probePerSecond": 101.35,
+        "probeP50Ms": 11.378379999998288,
+        "probeP90Ms": 28.59257400000206,
+        "probeP95Ms": 33.41872700000022,
+        "probeP99Ms": 43.976878999999826,
+        "probeMaxMs": 46.16109900000083,
+        "probeErrors": 0,
+        "innerOverloads": 0,
+        "backpressure": 0,
+        "serverRssBytes": 641146880
+      }
+    },
+    {
+      "players": 125,
+      "roundCount": 1,
+      "median": {
+        "mapCpuAverage": 30.475,
+        "mapCpuP90": 31.32,
+        "mapCpuPeak": 31.32,
+        "gateMaxCpuAverage": 25.584999999999997,
+        "gateMaxCpuPeak": 26.77,
+        "movesPerSecond": 1253.3,
+        "pushesPerSecond": 156525,
+        "moveErrors": 0,
+        "probePerSecond": 125,
+        "probeP50Ms": 28.256980999998632,
+        "probeP90Ms": 59.3069349999987,
+        "probeP95Ms": 65.02672600000005,
+        "probeP99Ms": 72.26389800000106,
+        "probeMaxMs": 83.42015200000242,
+        "probeErrors": 0,
+        "innerOverloads": 0,
+        "backpressure": 0,
+        "serverRssBytes": 662786048
+      }
+    },
+    {
+      "players": 150,
+      "roundCount": 1,
+      "median": {
+        "mapCpuAverage": 40.89,
+        "mapCpuP90": 42.99,
+        "mapCpuPeak": 42.99,
+        "gateMaxCpuAverage": 38.7925,
+        "gateMaxCpuPeak": 39.79,
+        "movesPerSecond": 1499.95,
+        "pushesPerSecond": 225020,
+        "moveErrors": 0,
+        "probePerSecond": 151.35,
+        "probeP50Ms": 25.188191000001098,
+        "probeP90Ms": 50.782484999999724,
+        "probeP95Ms": 57.86427899999762,
+        "probeP99Ms": 64.48460700000032,
+        "probeMaxMs": 66.77815199999895,
+        "probeErrors": 0,
+        "innerOverloads": 0,
+        "backpressure": 0,
+        "serverRssBytes": 686993408
+      }
+    },
+    {
+      "players": 175,
+      "roundCount": 1,
+      "median": {
+        "mapCpuAverage": 53.724999999999994,
+        "mapCpuP90": 56.39,
+        "mapCpuPeak": 56.39,
+        "gateMaxCpuAverage": 54.43,
+        "gateMaxCpuPeak": 56.79,
+        "movesPerSecond": 1749.6,
+        "pushesPerSecond": 305818.3333333333,
+        "moveErrors": 0,
+        "probePerSecond": 174.65,
+        "probeP50Ms": 28.961749000000054,
+        "probeP90Ms": 70.37120499999946,
+        "probeP95Ms": 77.63595900000291,
+        "probeP99Ms": 94.01704900000004,
+        "probeMaxMs": 106.38363500000196,
+        "probeErrors": 0,
+        "innerOverloads": 0,
+        "backpressure": 0,
+        "serverRssBytes": 762757120
+      }
+    },
+    {
+      "players": 200,
+      "roundCount": 1,
+      "median": {
+        "mapCpuAverage": 63.394999999999996,
+        "mapCpuP90": 64.39,
+        "mapCpuPeak": 64.39,
+        "gateMaxCpuAverage": 63.394999999999996,
+        "gateMaxCpuPeak": 67.39,
+        "movesPerSecond": 1996.9,
+        "pushesPerSecond": 397933.3333333333,
+        "moveErrors": 0,
+        "probePerSecond": 200,
+        "probeP50Ms": 46.206670999999915,
+        "probeP90Ms": 81.70356600000014,
+        "probeP95Ms": 87.46530299999722,
+        "probeP99Ms": 103.03580899999906,
+        "probeMaxMs": 110.47795500000029,
+        "probeErrors": 0,
+        "innerOverloads": 0,
+        "backpressure": 0,
+        "serverRssBytes": 790315008
+      }
+    }
+  ],
+  "rounds": [
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "4g",
+      "players": 100,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 20,
+      "targetMoveRatePerPlayer": 10,
+      "targetProbeRatePerPlayer": 1,
+      "measurementStartedAtUnixMs": 1783929151976,
+      "measurementEndedAtUnixMs": 1783929171976,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 100,
+        "perSecond": 307.56162144715273,
+        "p50Ms": 45.99886000000001,
+        "p90Ms": 84.1585,
+        "p95Ms": 87.78063599999999,
+        "p99Ms": 91.178033,
+        "maxMs": 91.178033,
+        "elapsedSeconds": 0.325138096
+      },
+      "movement": {
+        "count": 20025,
+        "perSecond": 1001.25,
+        "p50Ms": 5.985348999998678,
+        "p90Ms": 11.397162000001117,
+        "p95Ms": 13.692904999999882,
+        "p99Ms": 20.235427999999956,
+        "maxMs": 49.5769339999988,
+        "entityMovePushes": 3010000,
+        "pushesPerSecond": 100333.33333333333,
+        "errors": 0
+      },
+      "probe": {
+        "count": 2027,
+        "perSecond": 101.35,
+        "p50Ms": 11.378379999998288,
+        "p90Ms": 28.59257400000206,
+        "p95Ms": 33.41872700000022,
+        "p99Ms": 43.976878999999826,
+        "maxMs": 46.16109900000083,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 4338.972,
+        "cpuSystemMs": 2169.296,
+        "maxRssBytes": 96362496,
+        "rssBytes": 96227328,
+        "heapUsedBytes": 8301272,
+        "heapTotalBytes": 42893312,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 258,
+        "gcDurationMs": 148.69579301029444
+      },
+      "gates": 4,
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 4,
+            "averageCpuPercent": 0.30000000000000004,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 50905088,
+            "v8GcCount": 3,
+            "v8GcMs": 4.846
+          },
+          {
+            "process": "map1",
+            "samples": 4,
+            "averageCpuPercent": 22.814999999999998,
+            "p90CpuPercent": 25.19,
+            "peakCpuPercent": 25.19,
+            "peakRssBytes": 135307264,
+            "v8GcCount": 214,
+            "v8GcMs": 175.058
+          },
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 18.91,
+            "p90CpuPercent": 21.2,
+            "peakCpuPercent": 21.2,
+            "peakRssBytes": 92151808,
+            "v8GcCount": 226,
+            "v8GcMs": 56.816
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 18.880000000000003,
+            "p90CpuPercent": 20.4,
+            "peakCpuPercent": 20.4,
+            "peakRssBytes": 83877888,
+            "v8GcCount": 258,
+            "v8GcMs": 51.4
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 19.2775,
+            "p90CpuPercent": 20.99,
+            "peakCpuPercent": 20.99,
+            "peakRssBytes": 91955200,
+            "v8GcCount": 255,
+            "v8GcMs": 61.159
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 18.8275,
+            "p90CpuPercent": 20.4,
+            "peakCpuPercent": 20.4,
+            "peakRssBytes": 81420288,
+            "v8GcCount": 257,
+            "v8GcMs": 64.806
+          },
+          {
+            "process": "login1",
+            "samples": 4,
+            "averageCpuPercent": 0.35,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 53661696,
+            "v8GcCount": 3,
+            "v8GcMs": 6.228
+          },
+          {
+            "process": "mgr",
+            "samples": 4,
+            "averageCpuPercent": 0.35,
+            "p90CpuPercent": 0.6,
+            "peakCpuPercent": 0.6,
+            "peakRssBytes": 51867648,
+            "v8GcCount": 2,
+            "v8GcMs": 1.677
+          }
+        ],
+        "map": {
+          "process": "map1",
+          "samples": 4,
+          "averageCpuPercent": 22.814999999999998,
+          "p90CpuPercent": 25.19,
+          "peakCpuPercent": 25.19,
+          "peakRssBytes": 135307264,
+          "v8GcCount": 214,
+          "v8GcMs": 175.058
+        },
+        "gates": [
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 18.91,
+            "p90CpuPercent": 21.2,
+            "peakCpuPercent": 21.2,
+            "peakRssBytes": 92151808,
+            "v8GcCount": 226,
+            "v8GcMs": 56.816
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 18.880000000000003,
+            "p90CpuPercent": 20.4,
+            "peakCpuPercent": 20.4,
+            "peakRssBytes": 83877888,
+            "v8GcCount": 258,
+            "v8GcMs": 51.4
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 19.2775,
+            "p90CpuPercent": 20.99,
+            "peakCpuPercent": 20.99,
+            "peakRssBytes": 91955200,
+            "v8GcCount": 255,
+            "v8GcMs": 61.159
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 18.8275,
+            "p90CpuPercent": 20.4,
+            "peakCpuPercent": 20.4,
+            "peakRssBytes": 81420288,
+            "v8GcCount": 257,
+            "v8GcMs": 64.806
+          }
+        ],
+        "gateMaxAverageCpuPercent": 19.2775,
+        "gateMaxPeakCpuPercent": 21.2,
+        "totalPeakRssBytes": 641146880
+      },
+      "transport": {
+        "innerOverloads": 0,
+        "innerTimeouts": 0,
+        "backpressure": 0,
+        "slowDisconnects": 0
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/map_capacity_20260713_075221",
+      "configDirectory": "/home/moulo/ets_runtime/perf/results/runtime_configs/map_capacity_20260713_075221"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "4g",
+      "players": 125,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 20,
+      "targetMoveRatePerPlayer": 10,
+      "targetProbeRatePerPlayer": 1,
+      "measurementStartedAtUnixMs": 1783929184533,
+      "measurementEndedAtUnixMs": 1783929204533,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 125,
+        "perSecond": 310.1043254708333,
+        "p50Ms": 46.63095500000003,
+        "p90Ms": 68.29578099999998,
+        "p95Ms": 70.993888,
+        "p99Ms": 80.981964,
+        "maxMs": 82.34418199999999,
+        "elapsedSeconds": 0.403090153
+      },
+      "movement": {
+        "count": 25066,
+        "perSecond": 1253.3,
+        "p50Ms": 7.490293999999267,
+        "p90Ms": 17.518788999997923,
+        "p95Ms": 35.39599199999793,
+        "p99Ms": 63.101167000000714,
+        "maxMs": 93.6363569999994,
+        "entityMovePushes": 4695750,
+        "pushesPerSecond": 156525,
+        "errors": 0
+      },
+      "probe": {
+        "count": 2500,
+        "perSecond": 125,
+        "p50Ms": 28.256980999998632,
+        "p90Ms": 59.3069349999987,
+        "p95Ms": 65.02672600000005,
+        "p99Ms": 72.26389800000106,
+        "maxMs": 83.42015200000242,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 5825.777,
+        "cpuSystemMs": 2958.568,
+        "maxRssBytes": 99889152,
+        "rssBytes": 99643392,
+        "heapUsedBytes": 9833512,
+        "heapTotalBytes": 44032000,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 304,
+        "gcDurationMs": 186.64193599671125
+      },
+      "gates": 4,
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 4,
+            "averageCpuPercent": 0.25,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 51298304,
+            "v8GcCount": 3,
+            "v8GcMs": 3.255
+          },
+          {
+            "process": "map1",
+            "samples": 4,
+            "averageCpuPercent": 30.475,
+            "p90CpuPercent": 31.32,
+            "peakCpuPercent": 31.32,
+            "peakRssBytes": 133435392,
+            "v8GcCount": 292,
+            "v8GcMs": 157.064
+          },
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 25.584999999999997,
+            "p90CpuPercent": 26.77,
+            "peakCpuPercent": 26.77,
+            "peakRssBytes": 94855168,
+            "v8GcCount": 222,
+            "v8GcMs": 68.336
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 25.1375,
+            "p90CpuPercent": 26.38,
+            "peakCpuPercent": 26.38,
+            "peakRssBytes": 91463680,
+            "v8GcCount": 223,
+            "v8GcMs": 70.838
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 24.6375,
+            "p90CpuPercent": 25.78,
+            "peakCpuPercent": 25.78,
+            "peakRssBytes": 90882048,
+            "v8GcCount": 222,
+            "v8GcMs": 57.962
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 25.03,
+            "p90CpuPercent": 26.39,
+            "peakCpuPercent": 26.39,
+            "peakRssBytes": 96608256,
+            "v8GcCount": 232,
+            "v8GcMs": 65.198
+          },
+          {
+            "process": "login1",
+            "samples": 4,
+            "averageCpuPercent": 0.30000000000000004,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 53649408,
+            "v8GcCount": 3,
+            "v8GcMs": 5.795
+          },
+          {
+            "process": "mgr",
+            "samples": 4,
+            "averageCpuPercent": 0.30000000000000004,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 50593792,
+            "v8GcCount": 2,
+            "v8GcMs": 2.761
+          }
+        ],
+        "map": {
+          "process": "map1",
+          "samples": 4,
+          "averageCpuPercent": 30.475,
+          "p90CpuPercent": 31.32,
+          "peakCpuPercent": 31.32,
+          "peakRssBytes": 133435392,
+          "v8GcCount": 292,
+          "v8GcMs": 157.064
+        },
+        "gates": [
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 25.584999999999997,
+            "p90CpuPercent": 26.77,
+            "peakCpuPercent": 26.77,
+            "peakRssBytes": 94855168,
+            "v8GcCount": 222,
+            "v8GcMs": 68.336
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 25.1375,
+            "p90CpuPercent": 26.38,
+            "peakCpuPercent": 26.38,
+            "peakRssBytes": 91463680,
+            "v8GcCount": 223,
+            "v8GcMs": 70.838
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 24.6375,
+            "p90CpuPercent": 25.78,
+            "peakCpuPercent": 25.78,
+            "peakRssBytes": 90882048,
+            "v8GcCount": 222,
+            "v8GcMs": 57.962
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 25.03,
+            "p90CpuPercent": 26.39,
+            "peakCpuPercent": 26.39,
+            "peakRssBytes": 96608256,
+            "v8GcCount": 232,
+            "v8GcMs": 65.198
+          }
+        ],
+        "gateMaxAverageCpuPercent": 25.584999999999997,
+        "gateMaxPeakCpuPercent": 26.77,
+        "totalPeakRssBytes": 662786048
+      },
+      "transport": {
+        "innerOverloads": 0,
+        "innerTimeouts": 0,
+        "backpressure": 0,
+        "slowDisconnects": 0
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/map_capacity_20260713_075221",
+      "configDirectory": "/home/moulo/ets_runtime/perf/results/runtime_configs/map_capacity_20260713_075221"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "4g",
+      "players": 150,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 20,
+      "targetMoveRatePerPlayer": 10,
+      "targetProbeRatePerPlayer": 1,
+      "measurementStartedAtUnixMs": 1783929216267,
+      "measurementEndedAtUnixMs": 1783929236267,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 150,
+        "perSecond": 308.6471067255604,
+        "p50Ms": 49.734712,
+        "p90Ms": 66.57567600000004,
+        "p95Ms": 73.562637,
+        "p99Ms": 91.146794,
+        "maxMs": 95.96040599999998,
+        "elapsedSeconds": 0.48599191999999997
+      },
+      "movement": {
+        "count": 29999,
+        "perSecond": 1499.95,
+        "p50Ms": 8.005419999999503,
+        "p90Ms": 17.046486999999615,
+        "p95Ms": 20.03519099999903,
+        "p99Ms": 33.17154400000072,
+        "maxMs": 79.06375599999956,
+        "entityMovePushes": 6750600,
+        "pushesPerSecond": 225020,
+        "errors": 0
+      },
+      "probe": {
+        "count": 3027,
+        "perSecond": 151.35,
+        "p50Ms": 25.188191000001098,
+        "p90Ms": 50.782484999999724,
+        "p95Ms": 57.86427899999762,
+        "p99Ms": 64.48460700000032,
+        "maxMs": 66.77815199999895,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 9526.642,
+        "cpuSystemMs": 4804.186,
+        "maxRssBytes": 128712704,
+        "rssBytes": 128712704,
+        "heapUsedBytes": 35849976,
+        "heapTotalBytes": 79847424,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 364,
+        "gcDurationMs": 255.13030200079083
+      },
+      "gates": 4,
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 4,
+            "averageCpuPercent": 0.25,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 51343360,
+            "v8GcCount": 3,
+            "v8GcMs": 1.651
+          },
+          {
+            "process": "map1",
+            "samples": 4,
+            "averageCpuPercent": 40.89,
+            "p90CpuPercent": 42.99,
+            "peakCpuPercent": 42.99,
+            "peakRssBytes": 137490432,
+            "v8GcCount": 415,
+            "v8GcMs": 216.798
+          },
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 37.8375,
+            "p90CpuPercent": 39,
+            "peakCpuPercent": 39,
+            "peakRssBytes": 95793152,
+            "v8GcCount": 320,
+            "v8GcMs": 90.641
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 38.7925,
+            "p90CpuPercent": 39.79,
+            "peakCpuPercent": 39.79,
+            "peakRssBytes": 94314496,
+            "v8GcCount": 308,
+            "v8GcMs": 76.682
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 37.415,
+            "p90CpuPercent": 37.71,
+            "peakCpuPercent": 37.71,
+            "peakRssBytes": 101629952,
+            "v8GcCount": 314,
+            "v8GcMs": 91.095
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 37.442499999999995,
+            "p90CpuPercent": 38.19,
+            "peakCpuPercent": 38.19,
+            "peakRssBytes": 95031296,
+            "v8GcCount": 285,
+            "v8GcMs": 79.783
+          },
+          {
+            "process": "login1",
+            "samples": 4,
+            "averageCpuPercent": 0.2,
+            "p90CpuPercent": 0.2,
+            "peakCpuPercent": 0.2,
+            "peakRssBytes": 58433536,
+            "v8GcCount": 4,
+            "v8GcMs": 3.199
+          },
+          {
+            "process": "mgr",
+            "samples": 4,
+            "averageCpuPercent": 0.35,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 52957184,
+            "v8GcCount": 2,
+            "v8GcMs": 1.821
+          }
+        ],
+        "map": {
+          "process": "map1",
+          "samples": 4,
+          "averageCpuPercent": 40.89,
+          "p90CpuPercent": 42.99,
+          "peakCpuPercent": 42.99,
+          "peakRssBytes": 137490432,
+          "v8GcCount": 415,
+          "v8GcMs": 216.798
+        },
+        "gates": [
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 37.8375,
+            "p90CpuPercent": 39,
+            "peakCpuPercent": 39,
+            "peakRssBytes": 95793152,
+            "v8GcCount": 320,
+            "v8GcMs": 90.641
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 38.7925,
+            "p90CpuPercent": 39.79,
+            "peakCpuPercent": 39.79,
+            "peakRssBytes": 94314496,
+            "v8GcCount": 308,
+            "v8GcMs": 76.682
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 37.415,
+            "p90CpuPercent": 37.71,
+            "peakCpuPercent": 37.71,
+            "peakRssBytes": 101629952,
+            "v8GcCount": 314,
+            "v8GcMs": 91.095
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 37.442499999999995,
+            "p90CpuPercent": 38.19,
+            "peakCpuPercent": 38.19,
+            "peakRssBytes": 95031296,
+            "v8GcCount": 285,
+            "v8GcMs": 79.783
+          }
+        ],
+        "gateMaxAverageCpuPercent": 38.7925,
+        "gateMaxPeakCpuPercent": 39.79,
+        "totalPeakRssBytes": 686993408
+      },
+      "transport": {
+        "innerOverloads": 0,
+        "innerTimeouts": 0,
+        "backpressure": 0,
+        "slowDisconnects": 0
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/map_capacity_20260713_075221",
+      "configDirectory": "/home/moulo/ets_runtime/perf/results/runtime_configs/map_capacity_20260713_075221"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "4g",
+      "players": 175,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 20,
+      "targetMoveRatePerPlayer": 10,
+      "targetProbeRatePerPlayer": 1,
+      "measurementStartedAtUnixMs": 1783929249019,
+      "measurementEndedAtUnixMs": 1783929269019,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 175,
+        "perSecond": 295.64896459762457,
+        "p50Ms": 51.37346199999996,
+        "p90Ms": 73.526385,
+        "p95Ms": 78.38057700000002,
+        "p99Ms": 100.31161200000003,
+        "maxMs": 102.742661,
+        "elapsedSeconds": 0.59191819
+      },
+      "movement": {
+        "count": 34992,
+        "perSecond": 1749.6,
+        "p50Ms": 8.345328999999765,
+        "p90Ms": 23.171540999999706,
+        "p95Ms": 36.074163999997836,
+        "p99Ms": 80.93821500000195,
+        "maxMs": 134.08944100000008,
+        "entityMovePushes": 9174550,
+        "pushesPerSecond": 305818.3333333333,
+        "errors": 0
+      },
+      "probe": {
+        "count": 3493,
+        "perSecond": 174.65,
+        "p50Ms": 28.961749000000054,
+        "p90Ms": 70.37120499999946,
+        "p95Ms": 77.63595900000291,
+        "p99Ms": 94.01704900000004,
+        "maxMs": 106.38363500000196,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 13873.895,
+        "cpuSystemMs": 6955.483,
+        "maxRssBytes": 135340032,
+        "rssBytes": 135340032,
+        "heapUsedBytes": 31240264,
+        "heapTotalBytes": 80175104,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 402,
+        "gcDurationMs": 328.69937500730157
+      },
+      "gates": 4,
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 4,
+            "averageCpuPercent": 0.25,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 51396608,
+            "v8GcCount": 3,
+            "v8GcMs": 2.674
+          },
+          {
+            "process": "map1",
+            "samples": 4,
+            "averageCpuPercent": 53.724999999999994,
+            "p90CpuPercent": 56.39,
+            "peakCpuPercent": 56.39,
+            "peakRssBytes": 140533760,
+            "v8GcCount": 507,
+            "v8GcMs": 264.915
+          },
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 49.6825,
+            "p90CpuPercent": 54.6,
+            "peakCpuPercent": 54.6,
+            "peakRssBytes": 126681088,
+            "v8GcCount": 338,
+            "v8GcMs": 132.537
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 51.6925,
+            "p90CpuPercent": 55.6,
+            "peakCpuPercent": 55.6,
+            "peakRssBytes": 111374336,
+            "v8GcCount": 371,
+            "v8GcMs": 132.695
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 54.43,
+            "p90CpuPercent": 56.79,
+            "peakCpuPercent": 56.79,
+            "peakRssBytes": 109645824,
+            "v8GcCount": 395,
+            "v8GcMs": 109.289
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 53.4725,
+            "p90CpuPercent": 56.32,
+            "peakCpuPercent": 56.32,
+            "peakRssBytes": 111472640,
+            "v8GcCount": 389,
+            "v8GcMs": 120.353
+          },
+          {
+            "process": "login1",
+            "samples": 4,
+            "averageCpuPercent": 0.30000000000000004,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 60370944,
+            "v8GcCount": 4,
+            "v8GcMs": 2.822
+          },
+          {
+            "process": "mgr",
+            "samples": 4,
+            "averageCpuPercent": 0.30000000000000004,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 51281920,
+            "v8GcCount": 3,
+            "v8GcMs": 1.601
+          }
+        ],
+        "map": {
+          "process": "map1",
+          "samples": 4,
+          "averageCpuPercent": 53.724999999999994,
+          "p90CpuPercent": 56.39,
+          "peakCpuPercent": 56.39,
+          "peakRssBytes": 140533760,
+          "v8GcCount": 507,
+          "v8GcMs": 264.915
+        },
+        "gates": [
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 49.6825,
+            "p90CpuPercent": 54.6,
+            "peakCpuPercent": 54.6,
+            "peakRssBytes": 126681088,
+            "v8GcCount": 338,
+            "v8GcMs": 132.537
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 51.6925,
+            "p90CpuPercent": 55.6,
+            "peakCpuPercent": 55.6,
+            "peakRssBytes": 111374336,
+            "v8GcCount": 371,
+            "v8GcMs": 132.695
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 54.43,
+            "p90CpuPercent": 56.79,
+            "peakCpuPercent": 56.79,
+            "peakRssBytes": 109645824,
+            "v8GcCount": 395,
+            "v8GcMs": 109.289
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 53.4725,
+            "p90CpuPercent": 56.32,
+            "peakCpuPercent": 56.32,
+            "peakRssBytes": 111472640,
+            "v8GcCount": 389,
+            "v8GcMs": 120.353
+          }
+        ],
+        "gateMaxAverageCpuPercent": 54.43,
+        "gateMaxPeakCpuPercent": 56.79,
+        "totalPeakRssBytes": 762757120
+      },
+      "transport": {
+        "innerOverloads": 0,
+        "innerTimeouts": 0,
+        "backpressure": 0,
+        "slowDisconnects": 0
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/map_capacity_20260713_075221",
+      "configDirectory": "/home/moulo/ets_runtime/perf/results/runtime_configs/map_capacity_20260713_075221"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "4g",
+      "players": 200,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 20,
+      "targetMoveRatePerPlayer": 10,
+      "targetProbeRatePerPlayer": 1,
+      "measurementStartedAtUnixMs": 1783929281065,
+      "measurementEndedAtUnixMs": 1783929301065,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 200,
+        "perSecond": 266.1229706957533,
+        "p50Ms": 53.010306000000014,
+        "p90Ms": 85.80513400000007,
+        "p95Ms": 94.18336800000003,
+        "p99Ms": 120.583482,
+        "maxMs": 129.96514599999995,
+        "elapsedSeconds": 0.751532269
+      },
+      "movement": {
+        "count": 39938,
+        "perSecond": 1996.9,
+        "p50Ms": 6.99900499999967,
+        "p90Ms": 18.350453999999445,
+        "p95Ms": 45.70469199999934,
+        "p99Ms": 88.86971099999937,
+        "maxMs": 140.5559489999996,
+        "entityMovePushes": 11938000,
+        "pushesPerSecond": 397933.3333333333,
+        "errors": 0
+      },
+      "probe": {
+        "count": 4000,
+        "perSecond": 200,
+        "p50Ms": 46.206670999999915,
+        "p90Ms": 81.70356600000014,
+        "p95Ms": 87.46530299999722,
+        "p99Ms": 103.03580899999906,
+        "maxMs": 110.47795500000029,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 15920.646,
+        "cpuSystemMs": 8241.167,
+        "maxRssBytes": 138518528,
+        "rssBytes": 138272768,
+        "heapUsedBytes": 16115464,
+        "heapTotalBytes": 80039936,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 434,
+        "gcDurationMs": 381.34526800364256
+      },
+      "gates": 4,
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "log",
+            "samples": 4,
+            "averageCpuPercent": 0.25,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 56705024,
+            "v8GcCount": 3,
+            "v8GcMs": 1.918
+          },
+          {
+            "process": "map1",
+            "samples": 4,
+            "averageCpuPercent": 63.394999999999996,
+            "p90CpuPercent": 64.39,
+            "peakCpuPercent": 64.39,
+            "peakRssBytes": 141258752,
+            "v8GcCount": 611,
+            "v8GcMs": 376.582
+          },
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 59.287499999999994,
+            "p90CpuPercent": 60.38,
+            "peakCpuPercent": 60.38,
+            "peakRssBytes": 121470976,
+            "v8GcCount": 298,
+            "v8GcMs": 168.471
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 61.425,
+            "p90CpuPercent": 62.19,
+            "peakCpuPercent": 62.19,
+            "peakRssBytes": 123949056,
+            "v8GcCount": 320,
+            "v8GcMs": 146.606
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 63.394999999999996,
+            "p90CpuPercent": 67.39,
+            "peakCpuPercent": 67.39,
+            "peakRssBytes": 121040896,
+            "v8GcCount": 382,
+            "v8GcMs": 147.488
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 61.43,
+            "p90CpuPercent": 62.59,
+            "peakCpuPercent": 62.59,
+            "peakRssBytes": 116006912,
+            "v8GcCount": 317,
+            "v8GcMs": 165.171
+          },
+          {
+            "process": "login1",
+            "samples": 4,
+            "averageCpuPercent": 0.25,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 59019264,
+            "v8GcCount": 4,
+            "v8GcMs": 2.53
+          },
+          {
+            "process": "mgr",
+            "samples": 4,
+            "averageCpuPercent": 0.25,
+            "p90CpuPercent": 0.4,
+            "peakCpuPercent": 0.4,
+            "peakRssBytes": 50864128,
+            "v8GcCount": 3,
+            "v8GcMs": 3.097
+          }
+        ],
+        "map": {
+          "process": "map1",
+          "samples": 4,
+          "averageCpuPercent": 63.394999999999996,
+          "p90CpuPercent": 64.39,
+          "peakCpuPercent": 64.39,
+          "peakRssBytes": 141258752,
+          "v8GcCount": 611,
+          "v8GcMs": 376.582
+        },
+        "gates": [
+          {
+            "process": "gate1",
+            "samples": 4,
+            "averageCpuPercent": 59.287499999999994,
+            "p90CpuPercent": 60.38,
+            "peakCpuPercent": 60.38,
+            "peakRssBytes": 121470976,
+            "v8GcCount": 298,
+            "v8GcMs": 168.471
+          },
+          {
+            "process": "gate2",
+            "samples": 4,
+            "averageCpuPercent": 61.425,
+            "p90CpuPercent": 62.19,
+            "peakCpuPercent": 62.19,
+            "peakRssBytes": 123949056,
+            "v8GcCount": 320,
+            "v8GcMs": 146.606
+          },
+          {
+            "process": "gate3",
+            "samples": 4,
+            "averageCpuPercent": 63.394999999999996,
+            "p90CpuPercent": 67.39,
+            "peakCpuPercent": 67.39,
+            "peakRssBytes": 121040896,
+            "v8GcCount": 382,
+            "v8GcMs": 147.488
+          },
+          {
+            "process": "gate4",
+            "samples": 4,
+            "averageCpuPercent": 61.43,
+            "p90CpuPercent": 62.59,
+            "peakCpuPercent": 62.59,
+            "peakRssBytes": 116006912,
+            "v8GcCount": 317,
+            "v8GcMs": 165.171
+          }
+        ],
+        "gateMaxAverageCpuPercent": 63.394999999999996,
+        "gateMaxPeakCpuPercent": 67.39,
+        "totalPeakRssBytes": 790315008
+      },
+      "transport": {
+        "innerOverloads": 0,
+        "innerTimeouts": 0,
+        "backpressure": 0,
+        "slowDisconnects": 0
+      },
+      "logDirectory": "/home/moulo/ets_runtime/perf/results/logs/map_capacity_20260713_075221",
+      "configDirectory": "/home/moulo/ets_runtime/perf/results/runtime_configs/map_capacity_20260713_075221"
+    }
+  ]
+}

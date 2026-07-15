@@ -1,0 +1,123 @@
+{
+  "generatedAt": "2026-07-13T06:37:40.644Z",
+  "runId": "20260713_063732",
+  "parameters": {
+    "mode": "all",
+    "players": [
+      2
+    ],
+    "moveRates": [
+      10
+    ],
+    "duration": 6,
+    "warmup": 1,
+    "rounds": 1,
+    "setupConcurrency": 16,
+    "host": "127.0.0.1",
+    "managerPort": 7000,
+    "remote": false,
+    "debugRuntime": false
+  },
+  "loadGeneratorMachine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
+    "logicalCpus": 24,
+    "memoryBytes": 68464029696,
+    "os": "win32 10.0.26200"
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "independentlyDeployed": false,
+    "note": "服务端与压测端在同一台机器，资源竞争会影响结果"
+  },
+  "cases": [
+    {
+      "label": "all",
+      "players": 2,
+      "workload": "steady-10hz",
+      "roundCount": 1,
+      "median": {
+        "setupPerSecond": 206.13244009275957,
+        "setupP95Ms": 9.246199999999998,
+        "movesPerSecond": 18.333333333333332,
+        "pushesPerSecond": 37.142857142857146,
+        "moveP50Ms": 0.8092999999998938,
+        "moveP95Ms": 2.858200000000579,
+        "moveP99Ms": 5.876600000000053,
+        "stalled": 0,
+        "serverPeakCpuPercentSum": 0,
+        "serverPeakRssBytesSum": 34607104,
+        "serverGcCount": 3,
+        "serverGcMs": 0.795,
+        "loadCpuMs": 46,
+        "loadPeakRssBytes": 47972352,
+        "loadGcCount": 2,
+        "loadGcMs": 0.9114999994635582
+      }
+    }
+  ],
+  "rounds": [
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 2,
+      "setupConcurrency": 16,
+      "warmupSeconds": 1,
+      "durationSeconds": 6,
+      "targetMoveRatePerPlayer": 10,
+      "workload": "steady-10hz",
+      "setup": {
+        "count": 2,
+        "perSecond": 206.13244009275957,
+        "p50Ms": 9.246199999999998,
+        "p95Ms": 9.246199999999998,
+        "p99Ms": 9.246199999999998,
+        "maxMs": 9.246199999999998,
+        "elapsedSeconds": 0.009702500000000001
+      },
+      "movement": {
+        "count": 110,
+        "perSecond": 18.333333333333332,
+        "p50Ms": 0.8092999999998938,
+        "p95Ms": 2.858200000000579,
+        "p99Ms": 5.876600000000053,
+        "maxMs": 5.900200000000041,
+        "entityMovePushes": 260,
+        "pushesPerSecond": 37.142857142857146,
+        "errors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 31,
+        "cpuSystemMs": 15,
+        "maxRssBytes": 47972352,
+        "rssBytes": 47673344,
+        "heapUsedBytes": 5375064,
+        "heapTotalBytes": 7135232,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 2,
+        "gcDurationMs": 0.9114999994635582
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 1,
+            "peakCpuPercent": 0,
+            "peakRssBytes": 34607104,
+            "peakV8HeapUsedBytes": 3607184,
+            "cpuTimeMs": 62,
+            "v8GcCount": 3,
+            "v8GcMs": 0.795
+          }
+        ],
+        "peakCpuPercentSum": 0,
+        "peakRssBytesSum": 34607104,
+        "peakV8HeapUsedBytesSum": 3607184,
+        "cpuTimeMsSum": 62,
+        "v8GcCountSum": 3,
+        "v8GcMsSum": 0.795
+      },
+      "logDirectory": "E:\\VsCode\\skynet\\ets_runtime\\perf\\results\\logs\\20260713_063732"
+    }
+  ]
+}

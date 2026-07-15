@@ -1,0 +1,101 @@
+# 业务开发清单
+
+## 新增入口 Scene
+
+1. 在 `app/<game>/scenes/XxxScene.ts` 定义 `@entryScene()` class。
+2. 业务状态放实例字段或 Actor/Component，不放模块级可变单例。
+3. 运行 `npm run codegen`，确认生成入口导入。
+4. 在配置 `scenes` 中增加本进程实例。
+5. 在调用方 `knownScenes` 中增加可路由地址。
+
+## 新增协议
+
+1. 在 proto 中定义 Message 或 IRequest/IResponse。
+2. RPC Request 注释声明 ResponseType 和 protocol。
+3. 运行 `npm run codegen`。
+4. 在 `app/<game>/<domain>/handlers` 中创建独立 Handler，使用 `@rpcHandler(SceneType, rpc)` 或 `@messageHandler(SceneType, message)`。
+5. 普通错误使用业务错误码；框架错误码小于 10000。
+
+小型 Scene 仍可使用方法级 `@rpc/@message`。当协议超过少量时应拆为独立 Handler，避免 Scene 同时承担路由、状态和业务实现。
+
+发给具体 Unit 的协议使用 `@actorRpcHandler(UnitType, rpc)` 或 `@actorMessageHandler(UnitType, message)`。Handler 参数直接是 Unit，不允许再从 MapHost 遍历地图定位。
+
+## 选择调用目标
+
+- 全局唯一：`this.scenes.callOne("Rank", ...)`。
+- 多实例：`many("Gate")` 后做负载均衡，再 `call(target, ...)`。
+- 已绑定实例：`byName(player.gateName)`。
+- 通知：`send`，不要伪造无意义 RPC Response。
+
+## 选择 mailbox
+
+- 共享强一致状态：ordered EntryScene/Actor。
+- 不同玩家独立：入口 Scene unordered，玩家 Actor ordered。
+- CPU 密集任务：拆分 Process 或下沉专用 worker，unordered 不会产生多线程 CPU 并行。
+
+## 管理 Component
+
+- 在 EntryScene 或 Actor/Scene Factory 中显式调用 `AddComponent(Type, ...awakeArgs)`，由创建场景决定实体具备哪些能力。
+- Actor 自身的创建参数传给 `spawnActor(..., ActorType, ...awakeArgs)`；不要为初始化定义一次性的 mailbox Handler。
+- `Awake` 只初始化同步状态；需要数据库或 RPC 时，由 Factory 在发布 Entity 前显式等待。
+- 运行期能力同样使用 `AddComponent` 与 `RemoveComponent` 动态开关。
+- 必需依赖使用 `GetComponent(Type)`，可选依赖使用 `TryGetComponent(Type)`。
+- Component 负责聚合状态和领域能力；一个 Handler 可以协调多个 Component，不要求 Handler 挂在某个 Component 上。
+- 只有持有定时器、订阅或宿主句柄的 Component 才覆写 `OnDestroy()`，纯数据组件不写空生命周期方法。
+
+## 编写业务调用链
+
+推荐结构是“Handler 薄适配，Entity 做功能胶水，Component 实现领域能力”：
+
+```ts
+@actorMessageHandler(PlayerUnit, ItemMessages.UseItem)
+export class C2M_UseItemHandler {
+  handle(unit: PlayerUnit, message: C2M_UseItem): void {
+    unit.UseItem(message.itemId);
+  }
+}
+
+export class PlayerUnit extends Unit {
+  UseItem(itemId: number): void {
+    this.GetComponent(BagComponent).UseItem(itemId);
+    this.GetComponent(SkillComponent).AddSkillByItem(itemId);
+  }
+}
+```
+
+如果 `BagComponent.UseItem()` 已经能够确定新增技能，也可以由它直接取得同一 Unit 上的 `SkillComponent`：
+
+```ts
+UseItem(itemId: number): void {
+  const unit = this.GetParent<PlayerUnit>();
+  const skillId = this.consumeSkillBook(itemId);
+  unit.GetComponent(SkillComponent).AddSkill(skillId);
+}
+```
+
+不要为这条调用链增加 `UseItemSink`、`SkillEventDelegate` 或只转发一次调用的 Component。只有跨 mailbox、跨进程、协议编解码、Location 路由等真实边界才需要框架适配层。
+
+推荐的 EntryScene 业务结构：
+
+```text
+scenes/MapHostScene.ts                 # 边界、mailbox、组件装配
+mapHost/MapHostComponent.ts            # 地图宿主状态与领域方法
+mapHost/handlers/G2M_EnterMapHandler.ts # 一个协议入口一个文件
+```
+
+新增平级游戏目录（例如 `app/mymmorpg`）时，只要位于 codegen 的 `sceneSearchRoots/handlerSearchRoots` 下，就会自动进入生成导入表。
+
+## 多地图与副本
+
+MapHost EntryScene 创建多个动态 MapScene，每个 MapScene 挂载 `UnitComponent` 和拥有单图行为的 `MapComponent`。玩家、怪物、NPC 都创建为 Unit；低负载地图共享一个 Process，需要扩容时增加 MapHost 实例，并由 Directory/Location 决定具体 Scene。不要为每只怪物创建顶层 EntryScene。
+
+查询规则：
+
+- Actor 消息：InstanceId -> ProcessHost.Root，O(1)。
+- 地图业务：UnitId -> 当前 MapScene.UnitComponent，O(1)。
+- 登录重连：account -> PlayerDirectory 辅助索引，O(1)。
+- 不允许遍历 MapHost 的全部地图查找 Unit。
+
+## 部署拆分
+
+只调整 `scenes` 归属和 `knownScenes` 地址，不修改 Handler 调用。提交前运行 `npm run test:runtime`，同时验证 all-in-one 与 split。

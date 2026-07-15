@@ -1,0 +1,59 @@
+starting process login2 with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs/local/login2.json
+scene login_2 (Login) listening on 127.0.0.1:7002
+[process:login2] one V8 started with 1 scene(s)
+[login_2] Login scene started at 127.0.0.1:7002
+login_2 accepted 127.0.0.1:58651 as conn 1
+login_2 accepted 127.0.0.1:58672 as conn 2
+[login2/perf_split_0_50_1_1783918794893] login perf_split_0_50_1_1783918794893 count 1
+login_2 accepted 127.0.0.1:58674 as conn 3
+login_2 accepted 127.0.0.1:58677 as conn 4
+login_2 accepted 127.0.0.1:58679 as conn 5
+login_2 accepted 127.0.0.1:58681 as conn 6
+login_2 accepted 127.0.0.1:58683 as conn 7
+[login2/perf_split_0_50_3_1783918794893] login perf_split_0_50_3_1783918794893 count 1
+[login2/perf_split_0_50_5_1783918794893] login perf_split_0_50_5_1783918794893 count 1
+[login2/perf_split_0_50_7_1783918794893] login perf_split_0_50_7_1783918794893 count 1
+[login2/perf_split_0_50_11_1783918794893] login perf_split_0_50_11_1783918794893 count 1
+[login2/perf_split_0_50_9_1783918794893] login perf_split_0_50_9_1783918794893 count 1
+login_2 accepted 127.0.0.1:58687 as conn 8
+login_2 accepted 127.0.0.1:58689 as conn 9
+[login2/perf_split_0_50_14_1783918794893] login perf_split_0_50_14_1783918794893 count 1
+[login2/perf_split_0_50_13_1783918794893] login perf_split_0_50_13_1783918794893 count 1
+login_2 accepted 127.0.0.1:58711 as conn 10
+[login2/perf_split_0_50_17_1783918794939] login perf_split_0_50_17_1783918794939 count 1
+login_2 accepted 127.0.0.1:58731 as conn 11
+login_2 accepted 127.0.0.1:58733 as conn 12
+login_2 accepted 127.0.0.1:58735 as conn 13
+login_2 accepted 127.0.0.1:58737 as conn 14
+login_2 accepted 127.0.0.1:58739 as conn 15
+login_2 accepted 127.0.0.1:58742 as conn 16
+login_2 accepted 127.0.0.1:58744 as conn 17
+[login2/perf_split_0_50_21_1783918794956] login perf_split_0_50_21_1783918794956 count 1
+[login2/perf_split_0_50_19_1783918794956] login perf_split_0_50_19_1783918794956 count 1
+login_2 accepted 127.0.0.1:58746 as conn 18
+[login2/perf_split_0_50_27_1783918794958] login perf_split_0_50_27_1783918794958 count 1
+[login2/perf_split_0_50_26_1783918794958] login perf_split_0_50_26_1783918794958 count 1
+[login2/perf_split_0_50_28_1783918794958] login perf_split_0_50_28_1783918794958 count 1
+[login2/perf_split_0_50_29_1783918794958] login perf_split_0_50_29_1783918794958 count 1
+[login2/perf_split_0_50_31_1783918794959] login perf_split_0_50_31_1783918794959 count 1
+[login2/perf_split_0_50_33_1783918794959] login perf_split_0_50_33_1783918794959 count 1
+login_2 accepted 127.0.0.1:58765 as conn 19
+[login2/perf_split_0_50_35_1783918794970] login perf_split_0_50_35_1783918794970 count 1
+login_2 accepted 127.0.0.1:58784 as conn 20
+login_2 accepted 127.0.0.1:58787 as conn 21
+login_2 accepted 127.0.0.1:58788 as conn 22
+login_2 accepted 127.0.0.1:58791 as conn 23
+login_2 accepted 127.0.0.1:58793 as conn 24
+login_2 accepted 127.0.0.1:58794 as conn 25
+[login2/perf_split_0_50_37_1783918794989] login perf_split_0_50_37_1783918794989 count 1
+login_2 accepted 127.0.0.1:58796 as conn 26
+[login2/perf_split_0_50_39_1783918794990] login perf_split_0_50_39_1783918794990 count 1
+[login2/perf_split_0_50_41_1783918794990] login perf_split_0_50_41_1783918794990 count 1
+[login2/perf_split_0_50_43_1783918794991] login perf_split_0_50_43_1783918794991 count 1
+[login2/perf_split_0_50_45_1783918794991] login perf_split_0_50_45_1783918794991 count 1
+[login2/perf_split_0_50_47_1783918794992] login perf_split_0_50_47_1783918794992 count 1
+[login2/perf_split_0_50_49_1783918794993] login perf_split_0_50_49_1783918794993 count 1
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=6 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:login2] scene=login_2 type=Login processed=25 failed=0 ts_queue=0 ts_max_queue=6 rust_queue=0 rust_max_queue=6 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=3.00 max_handler_ms=11.00 total_handler_ms=92.00
+[metrics:inner_transport] active=1 opened=1 pending=0 max_pending=6 overloads=0 timeouts=0 disconnected_calls=0 late_responses=0 idle_closes=0
+[metrics:login2] scene=login_2 type=Login processed=25 failed=0 ts_queue=0 ts_max_queue=6 rust_queue=0 rust_max_queue=6 backpressure=0 slow_disconnects=0 update_ms=0.00 handler_ms=3.00 max_handler_ms=11.00 total_handler_ms=92.00
