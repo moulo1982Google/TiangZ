@@ -12,12 +12,14 @@ import {
 
 @entryScene()
 export class MailboxParityScene extends EntryScene {
+  protected override readonly mailbox = "unordered" as const;
+
   @rpc(MailboxParityProtocol.MailboxParity)
   private async mailboxParity(
     request: C2S_MailboxParity,
   ): Promise<S2C_MailboxParity> {
-    const callCount = Math.max(2, Math.min(request.callCount || 2, 16));
-    const delayMs = Math.max(1, Math.min(request.delayMs || 50, 1000));
+    const callCount = Math.max(1, Math.min(request.callCount || 1, 16));
+    const delayMs = Math.max(0, Math.min(request.delayMs ?? 0, 1000));
     const startedAt = Date.now();
     const responses = await Promise.all(
       Array.from({ length: callCount }, (_, index) =>

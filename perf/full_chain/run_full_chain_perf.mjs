@@ -16,7 +16,7 @@ const executable = path.join(
   root,
   "target",
   options.debugRuntime ? "debug" : "release",
-  process.platform === "win32" ? "ets_runtime.exe" : "ets_runtime",
+  process.platform === "win32" ? "TiangZ.exe" : "TiangZ",
 );
 const gameClient = path.join(root, "dist", "full_chain_load_test.cjs");
 const rawResults = [];

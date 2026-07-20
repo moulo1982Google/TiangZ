@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -6,7 +7,9 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, tcp::OwnedReadHalf, tcp::OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{Instant, sleep_until, timeout, timeout_at};
+use tokio::time::{Instant, sleep_until, timeout_at};
+#[cfg(test)]
+use tokio::time::timeout;
 
 const MAX_FRAME_LEN: usize = 1024 * 1024;
 const TRANSPORT_QUEUE_CAPACITY: usize = 1024;
@@ -15,6 +18,8 @@ pub(crate) const INNER_HANDSHAKE_MAGIC: u32 = u32::from_be_bytes(*b"ETSI");
 const DEFAULT_INNER_TOKEN: &str = "ets-local-inner-token";
 const MAX_INNER_TOKEN_LEN: usize = 1024;
 const INNER_CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const INNER_WRITE_BATCH_FRAME_CAPACITY: usize = 64;
+const INNER_WRITE_BATCH_BYTE_CAPACITY: usize = 256 * 1024;
 
 type CallResult = std::result::Result<Vec<u8>, String>;
 type SendResult = std::result::Result<(), String>;
@@ -144,19 +149,9 @@ pub async fn call_remote_scene(
         }
     }
 
-    let call = async move {
-        response_rx
-            .await
-            .map_err(|_| "remote scene connection dropped the call".to_string())?
-    };
-
-    match timeout(call_timeout, call).await {
-        Ok(result) => result,
-        Err(_) => Err(format!(
-            "remote scene call timed out after {}ms",
-            call_timeout.as_millis()
-        )),
-    }
+    response_rx
+        .await
+        .map_err(|_| "remote scene connection dropped the call".to_string())?
 }
 
 pub async fn send_remote_scene(
@@ -196,14 +191,9 @@ pub async fn send_remote_scene(
         }
     }
 
-    match timeout(send_timeout, result_rx).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err("remote scene connection dropped the send".to_string()),
-        Err(_) => Err(format!(
-            "remote scene send timed out after {}ms",
-            send_timeout.as_millis()
-        )),
-    }
+    result_rx
+        .await
+        .map_err(|_| "remote scene connection dropped the send".to_string())?
 }
 
 async fn run_transport_manager(
@@ -266,13 +256,14 @@ async fn run_connection(
     let mut session: Option<SocketSession> = None;
     let mut generation = 0_u64;
     let mut pending = HashMap::<u32, PendingCall>::new();
+    let mut deadlines = BinaryHeap::<Reverse<(Instant, u32)>>::new();
     let mut last_activity = Instant::now();
 
     loop {
-        let next_deadline = pending
-            .values()
-            .map(|call| call.deadline)
-            .min()
+        prune_deadlines(&pending, &mut deadlines);
+        let next_deadline = deadlines
+            .peek()
+            .map(|entry| entry.0.0)
             .unwrap_or_else(|| Instant::now() + Duration::from_secs(24 * 60 * 60));
         let idle_deadline = last_activity + INNER_CONNECTION_IDLE_TIMEOUT;
 
@@ -295,6 +286,7 @@ async fn run_connection(
                     &mut session,
                     &mut generation,
                     &mut pending,
+                    &mut deadlines,
                     &mut last_activity,
                     &metrics,
                 ).await;
@@ -312,7 +304,7 @@ async fn run_connection(
                 }
             }
             _ = sleep_until(next_deadline), if !pending.is_empty() => {
-                expire_pending(&mut pending, &metrics);
+                expire_pending(&mut pending, &mut deadlines, &metrics);
             }
             _ = sleep_until(idle_deadline), if session.is_some() && pending.is_empty() => {
                 close_session(&mut session, &metrics);
@@ -330,6 +322,7 @@ async fn handle_command(
     session: &mut Option<SocketSession>,
     generation: &mut u64,
     pending: &mut HashMap<u32, PendingCall>,
+    deadlines: &mut BinaryHeap<Reverse<(Instant, u32)>>,
     last_activity: &mut Instant,
     metrics: &RemoteTransportMetrics,
 ) {
@@ -430,6 +423,7 @@ async fn handle_command(
                     response_tx,
                 },
             );
+            deadlines.push(Reverse((deadline, rpc_id)));
             metrics.pending_added();
             match outbound_tx.try_send(frame) {
                 Ok(()) => *last_activity = Instant::now(),
@@ -581,10 +575,36 @@ async fn write_requests(
     mut outbound_rx: mpsc::Receiver<Vec<u8>>,
     event_tx: mpsc::Sender<SocketEvent>,
 ) {
+    let mut packet = Vec::with_capacity(INNER_WRITE_BATCH_BYTE_CAPACITY);
     while let Some(frame) = outbound_rx.recv().await {
-        if let Err(error) = write_frame(&mut writer, &frame).await {
+        packet.clear();
+        if let Err(error) = append_frame(&mut packet, &frame) {
             let _ = event_tx
                 .send(SocketEvent::Closed { generation, error })
+                .await;
+            return;
+        }
+        let mut frame_count = 1;
+        while frame_count < INNER_WRITE_BATCH_FRAME_CAPACITY
+            && packet.len() < INNER_WRITE_BATCH_BYTE_CAPACITY
+        {
+            let Ok(frame) = outbound_rx.try_recv() else {
+                break;
+            };
+            if let Err(error) = append_frame(&mut packet, &frame) {
+                let _ = event_tx
+                    .send(SocketEvent::Closed { generation, error })
+                    .await;
+                return;
+            }
+            frame_count += 1;
+        }
+        if let Err(error) = writer.write_all(&packet).await {
+            let _ = event_tx
+                .send(SocketEvent::Closed {
+                    generation,
+                    error: error.to_string(),
+                })
                 .await;
             return;
         }
@@ -604,15 +624,11 @@ async fn read_frame(reader: &mut OwnedReadHalf) -> CallResult {
     Ok(frame)
 }
 
-async fn write_frame(writer: &mut OwnedWriteHalf, frame: &[u8]) -> Result<(), String> {
+fn append_frame(packet: &mut Vec<u8>, frame: &[u8]) -> Result<(), String> {
     let length = u32::try_from(frame.len()).map_err(|_| "scene frame too large".to_string())?;
-    let mut packet = Vec::with_capacity(4 + frame.len());
     packet.extend_from_slice(&length.to_be_bytes());
     packet.extend_from_slice(frame);
-    writer
-        .write_all(&packet)
-        .await
-        .map_err(|error| error.to_string())
+    Ok(())
 }
 
 fn extract_rpc_id(frame: &[u8]) -> Result<u32, String> {
@@ -677,14 +693,37 @@ fn skip_field(bytes: &[u8], offset: &mut usize, wire_type: u8) -> Result<(), Str
     Ok(())
 }
 
-fn expire_pending(pending: &mut HashMap<u32, PendingCall>, metrics: &RemoteTransportMetrics) {
+fn prune_deadlines(
+    pending: &HashMap<u32, PendingCall>,
+    deadlines: &mut BinaryHeap<Reverse<(Instant, u32)>>,
+) {
+    while let Some(Reverse((deadline, rpc_id))) = deadlines.peek().copied() {
+        if pending
+            .get(&rpc_id)
+            .is_some_and(|call| call.deadline == deadline)
+        {
+            break;
+        }
+        deadlines.pop();
+    }
+}
+
+fn expire_pending(
+    pending: &mut HashMap<u32, PendingCall>,
+    deadlines: &mut BinaryHeap<Reverse<(Instant, u32)>>,
+    metrics: &RemoteTransportMetrics,
+) {
     let now = Instant::now();
-    let expired = pending
-        .iter()
-        .filter_map(|(rpc_id, call)| (call.deadline <= now).then_some(*rpc_id))
-        .collect::<Vec<_>>();
-    for rpc_id in expired {
+    while let Some(Reverse((deadline, rpc_id))) = deadlines.peek().copied() {
+        if deadline > now {
+            break;
+        }
+        deadlines.pop();
         if let Some(call) = pending.remove(&rpc_id) {
+            if call.deadline != deadline {
+                pending.insert(rpc_id, call);
+                continue;
+            }
             metrics.pending_removed(1);
             metrics.timed_out_calls.fetch_add(1, Ordering::Relaxed);
             let _ = call

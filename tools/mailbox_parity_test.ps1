@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
-$RuntimeExe = Join-Path $Root "target\debug\ets_runtime.exe"
+$RuntimeExe = Join-Path $Root "target\debug\TiangZ.exe"
 $Client = Join-Path $Root "dist\mailbox_parity_test.cjs"
 
 function Wait-TcpPort {

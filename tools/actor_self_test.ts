@@ -19,6 +19,12 @@ import {
 } from "../app/demo/map/PlayerUnit";
 import { PositionComponent } from "../app/demo/map/PositionComponent";
 import { UnitGateComponent } from "../app/demo/map/UnitGateComponent";
+import { BinaryWriter } from "../app/core/protocol/binary";
+import { packFrame } from "../app/core/protocol/registry";
+import {
+  extractFrameRpcId,
+  rewriteFrameRpcId,
+} from "../app/core/process/ActorLocation";
 
 void main();
 
@@ -26,7 +32,26 @@ async function main(): Promise<void> {
   await testPlayerUnitComponents();
   await testComponentContainer();
   await testOrderedActorMailbox();
+  testRpcIdRewrite();
   console.log("actor self-test passed");
+}
+
+function testRpcIdRewrite(): void {
+  const writer = new BinaryWriter();
+  writer.uint32(1, 7);
+  writer.bytes(2, Uint8Array.from([0xd0, 0x05, 0x7f]));
+  writer.uint32(90, 1);
+  const frame = packFrame(12_345, writer.finish());
+  const rewritten = rewriteFrameRpcId(frame, 300_000);
+
+  assert.equal(extractFrameRpcId(frame), 1);
+  assert.equal(extractFrameRpcId(rewritten), 300_000);
+  assert.equal(rewritten[0], frame[0]);
+  assert.equal(rewritten[1], frame[1]);
+  assert.throws(
+    () => rewriteFrameRpcId(packFrame(12_345, Uint8Array.from([8, 1])), 2),
+    /no rpcId/,
+  );
 }
 
 @component()

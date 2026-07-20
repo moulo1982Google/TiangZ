@@ -10,7 +10,7 @@
 | `npm run typecheck` | 服务端 TS 类型检查 |
 | `npm run build` | 生产 TS bundle、协议和 smoke client |
 | `npm run build:debug` | 带内联 sourcemap 的调试 bundle |
-| `cargo run --bin ets_runtime -- configs/local/all.json` | 单进程、单 V8 启动全部 Demo Scene |
+| `cargo run --bin TiangZ -- configs/local/all.json` | 单进程、单 V8 启动全部 Demo Scene |
 | `npm run smoke:client` | Node 客户端跑登录地图链路 |
 | `npm run check` | TS、协议、Actor、Cocos 静态检查 |
 | `cargo test --all-targets` | Rust 全目标测试 |

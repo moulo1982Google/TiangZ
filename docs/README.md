@@ -1,4 +1,4 @@
-# ets_runtime 文档
+# TiangZ 文档
 
 ## 学习手册
 
@@ -14,6 +14,7 @@
 - [配置与协议](reference/config-and-protocol.md)
 - [Core API](reference/core-api.md)
 - [常用命令](reference/commands.md)
+- [可观测性与链路耗时](reference/observability.md)
 - [故障排查](reference/troubleshooting.md)
 - [业务开发清单](guides/business-cookbook.md)
 - [运行时维护者指南](design/maintainer-guide.md)

@@ -13,6 +13,7 @@ import type {
 export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
   metrics: SceneMetricsSnapshot[];
+  pendingAsync: boolean;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {
@@ -29,6 +30,7 @@ export class ProcessRuntime implements LocalSceneRouter {
         );
       }
       const instance = new ctor({
+        process: config.process,
         self: scene,
         knownScenes: config.knownScenes,
         tickMs: config.tickMs,
@@ -93,8 +95,26 @@ export class ProcessRuntime implements LocalSceneRouter {
 }
 
 function mergeResults(results: SceneUpdateResult[]): ProcessUpdateResult {
+  if (results.length === 1) {
+    return {
+      outbound: results[0].outbound,
+      metrics: [results[0].metrics],
+      pendingAsync: results[0].pendingAsync,
+    };
+  }
+  const outbound: OutboundBatch[] = [];
+  const metrics: SceneMetricsSnapshot[] = [];
+  let pendingAsync = false;
+  for (const result of results) {
+    pendingAsync ||= result.pendingAsync;
+    metrics.push(result.metrics);
+    for (const batch of result.outbound) {
+      outbound.push(batch);
+    }
+  }
   return {
-    outbound: results.flatMap((result) => result.outbound),
-    metrics: results.map((result) => result.metrics),
+    outbound,
+    metrics,
+    pendingAsync,
   };
 }

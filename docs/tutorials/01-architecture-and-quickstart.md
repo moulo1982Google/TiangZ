@@ -53,7 +53,7 @@ TS 单线程：Tick/protobuf/Handler/Scene/Actor/Component
 ```powershell
 npm install
 npm run build
-cargo run --bin ets_runtime -- configs/local/all.json
+cargo run --bin TiangZ -- configs/local/all.json
 ```
 
 日志应出现：

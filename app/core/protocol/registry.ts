@@ -4,6 +4,7 @@ import type { AnyMessageDescriptor } from "./message";
 import { RpcError } from "./RpcError";
 import { AnyRpcDescriptor } from "./rpc";
 import { SystemErrCode } from "./SystemErrCode";
+import { nowMs } from "../metrics/latency";
 
 export interface Route<TReq, TResp> {
   responseCode: number;
@@ -20,6 +21,10 @@ export interface ProtocolContext {
   actorInstanceId?: number;
 }
 
+export interface ProtocolMetrics {
+  record(name: string, elapsedMs: number, msgcode?: number): void;
+}
+
 interface MessageRoute<TMessage> {
   decode(payload: Uint8Array): TMessage;
   handle?: (
@@ -32,7 +37,10 @@ export class ProtocolRegistry {
   private readonly routes = new Map<number, Route<unknown, unknown>>();
   private readonly messageRoutes = new Map<number, MessageRoute<unknown>>();
 
-  constructor(private readonly log: (message: string) => void = console.error) {}
+  constructor(
+    private readonly log: (message: string) => void = console.error,
+    private readonly metrics?: ProtocolMetrics,
+  ) {}
 
   registerKnownRpc(descriptor: AnyRpcDescriptor): void {
     this.routes.set(descriptor.requestCode, {
@@ -88,17 +96,25 @@ export class ProtocolRegistry {
     }
 
     let request: unknown;
+    const decodeStartedAt = this.metrics ? nowMs() : 0;
     try {
       request = route.decode(payload);
       rpcId = getRpcId(request) ?? rpcId;
     } catch (error) {
+      if (this.metrics) {
+        this.metrics.record("protocol.decode", nowMs() - decodeStartedAt, msgcode);
+      }
       rpcId = extractRpcId(payload) ?? 0;
       return this.rpcErrorResponse(
         route,
         rpcId,
         SystemErrCode.DecodeFailed,
         error instanceof Error ? error.message : String(error),
+        msgcode,
       );
+    }
+    if (this.metrics) {
+      this.metrics.record("protocol.decode", nowMs() - decodeStartedAt, msgcode);
     }
 
     if (!route.handle) {
@@ -107,26 +123,44 @@ export class ProtocolRegistry {
         rpcId,
         SystemErrCode.HandlerNotFound,
         `handler not found for msgcode: ${msgcode}`,
+        msgcode,
       );
     }
 
     let response: MaybePromise<unknown>;
+    const handlerStartedAt = this.metrics ? nowMs() : 0;
     try {
       response = route.handle(request, context);
     } catch (error) {
-      return this.handlerErrorResponse(route, rpcId, error);
+      if (this.metrics) {
+        this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
+      }
+      return this.handlerErrorResponse(route, rpcId, error, msgcode);
     }
 
     if (isPromiseLike(response)) {
       return Promise.resolve(response)
-        .then((value) => this.rpcSuccessResponse(route, rpcId, value))
-        .catch((error) => this.handlerErrorResponse(route, rpcId, error));
+        .then((value) => {
+          if (this.metrics) {
+            this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
+          }
+          return this.rpcSuccessResponse(route, rpcId, value, msgcode);
+        })
+        .catch((error) => {
+          if (this.metrics) {
+            this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
+          }
+          return this.handlerErrorResponse(route, rpcId, error, msgcode);
+        });
     }
 
+    if (this.metrics) {
+      this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
+    }
     try {
-      return this.rpcSuccessResponse(route, rpcId, response);
+      return this.rpcSuccessResponse(route, rpcId, response, msgcode);
     } catch (error) {
-      return this.handlerErrorResponse(route, rpcId, error);
+      return this.handlerErrorResponse(route, rpcId, error, msgcode);
     }
   }
 
@@ -147,6 +181,7 @@ export class ProtocolRegistry {
       extractRpcId(frame.subarray(2)) ?? 0,
       code,
       message,
+      msgcode,
     );
   }
 
@@ -161,14 +196,21 @@ export class ProtocolRegistry {
     context: ProtocolContext,
   ): MaybePromise<undefined> {
     let message: unknown;
+    const decodeStartedAt = this.metrics ? nowMs() : 0;
     try {
       message = route.decode(payload);
     } catch (error) {
+      if (this.metrics) {
+        this.metrics.record("protocol.decode", nowMs() - decodeStartedAt, msgcode);
+      }
       this.logSystemError(
         SystemErrCode.DecodeFailed,
         error instanceof Error ? error.message : String(error),
       );
       return undefined;
+    }
+    if (this.metrics) {
+      this.metrics.record("protocol.decode", nowMs() - decodeStartedAt, msgcode);
     }
 
     if (!route.handle) {
@@ -179,18 +221,33 @@ export class ProtocolRegistry {
       return undefined;
     }
 
+    const handlerStartedAt = this.metrics ? nowMs() : 0;
     try {
       const result = route.handle(message, context);
       if (isPromiseLike(result)) {
         return Promise.resolve(result).then(
-          () => undefined,
+          () => {
+            if (this.metrics) {
+              this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
+            }
+            return undefined;
+          },
           (error) => {
+            if (this.metrics) {
+              this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
+            }
             this.logMessageHandlerError(msgcode, error);
             return undefined;
           },
         );
       }
+      if (this.metrics) {
+        this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
+      }
     } catch (error) {
+      if (this.metrics) {
+        this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
+      }
       this.logMessageHandlerError(msgcode, error);
     }
     return undefined;
@@ -208,20 +265,27 @@ export class ProtocolRegistry {
     route: Route<unknown, unknown>,
     rpcId: number,
     response: unknown,
+    msgcode?: number,
   ): Uint8Array {
     setResponseMeta(response, rpcId, SystemErrCode.Success);
-    return packFrame(route.responseCode, route.encode(response));
+    const encodeStartedAt = this.metrics ? nowMs() : 0;
+    const payload = route.encode(response);
+    if (this.metrics) {
+      this.metrics.record("protocol.encode", nowMs() - encodeStartedAt, msgcode);
+    }
+    return packFrame(route.responseCode, payload);
   }
 
   private handlerErrorResponse(
     route: Route<unknown, unknown>,
     rpcId: number,
     error: unknown,
+    msgcode?: number,
   ): Uint8Array {
     const code =
       error instanceof RpcError ? error.code : SystemErrCode.HandlerFailed;
     const message = error instanceof Error ? error.message : String(error);
-    return this.rpcErrorResponse(route, rpcId, code, message);
+    return this.rpcErrorResponse(route, rpcId, code, message, msgcode);
   }
 
   private rpcErrorResponse(
@@ -229,12 +293,18 @@ export class ProtocolRegistry {
     rpcId: number,
     code: number,
     message: string,
+    msgcode?: number,
   ): Uint8Array {
     if (code < 10000) {
       this.logSystemError(code, message);
     }
     const response = { rpcId, error: code, message };
-    return packFrame(route.responseCode, route.encode(response));
+    const encodeStartedAt = this.metrics ? nowMs() : 0;
+    const payload = route.encode(response);
+    if (this.metrics) {
+      this.metrics.record("protocol.encode", nowMs() - encodeStartedAt, msgcode);
+    }
+    return packFrame(route.responseCode, payload);
   }
 
   private logSystemError(code: number, message: string): void {

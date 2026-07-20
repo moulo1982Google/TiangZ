@@ -50,15 +50,17 @@ Phase 2.8 位于多人地图纵向链路与正式角色业务之间。目标不�
 - 确定并实现 `uint64/int64` 在服务端与 Cocos 中的表示。
 - 补充 enum、optional、repeated scalar packed 和兼容性测试。
 
-## Phase 2.8.3：日志与错误模型
+## Phase 2.8.3：日志、错误模型与链路耗时
 
-状态：待开始。
+状态：部分完成。
 
 - Core 提供结构化 Logger，统一 Rust、V8 和 Cocos 的日志字段。
 - RequestContext 携带 service、rpcId、msgcode、connectionId、source、target 和 traceId。
 - 服务端保存完整错误堆栈，客户端只接收稳定错误码和脱敏消息。
 - 区分框架日志、普通业务日志和会影响业务结果的审计日志。
 - 修复 Handler 异常被转换为响应后 `failedFrames` 仍为零的问题。
+- 已完成第一版链路耗时聚合：`ingress.queue`、`frame.total`、`protocol.decode`、`protocol.handler`、`protocol.encode`、`scene.call/send.local/remote`。
+- 链路耗时以 `[latency:<process>]` 日志输出，字段包含 `scene/type/name/msgcode/count/avg/p50/p95/p99/max`；详细口径见 `docs/reference/observability.md`。
 
 ## Phase 2.8.4：指标与健康检查
 

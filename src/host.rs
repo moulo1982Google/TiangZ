@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::task::Poll;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -8,27 +9,13 @@ use deno_core::convert::Uint8Array;
 use deno_core::error::AnyError;
 use deno_core::{JsBuffer, JsRuntime, PollEventLoopOptions, RuntimeOptions, op2};
 use deno_error::JsErrorBox;
-use serde::Deserialize;
-
+use futures_util::future::poll_fn;
 use crate::transport::{call_remote_scene, send_remote_scene};
 
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
 const HOST_OUTBOUND_MAX_TARGETS: usize = 4096;
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct HostCallRequest {
-    source: HostCallScene,
-    target: HostCallScene,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct HostCallScene {
-    name: String,
-    ip: String,
-    port: u16,
-}
+const HOST_OUTBOUND_MAX_BATCHES: usize = 65_536;
+const HOST_OUTBOUND_MAX_PACKED_LEN: usize = 64 * 1024 * 1024;
 
 thread_local! {
     static LAST_JS_RESULT: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -87,6 +74,14 @@ fn op_host_push_outbound_batch(
     push_outbound_batch(connection_ids, frame)
 }
 
+#[op2]
+fn op_host_push_outbound_packed(#[buffer] packed: JsBuffer) -> Result<(), JsErrorBox> {
+    let batches = decode_packed_outbound(Bytes::from(packed.to_vec()))
+        .map_err(|error| JsErrorBox::generic(error.to_string()))?;
+    OUTBOUND_BINARY_BATCHES.with(|slot| slot.borrow_mut().extend(batches));
+    Ok(())
+}
+
 fn push_outbound_batch(connection_ids: Vec<u64>, frame: JsBuffer) -> Result<(), JsErrorBox> {
     if connection_ids.is_empty() {
         return Err(JsErrorBox::generic("outbound batch has no targets"));
@@ -127,34 +122,94 @@ fn decode_connection_ids(bytes: &[u8]) -> Result<Vec<u64>> {
         .collect())
 }
 
+fn decode_packed_outbound(packet: Bytes) -> Result<Vec<BinaryOutboundBatch>> {
+    if !(4..=HOST_OUTBOUND_MAX_PACKED_LEN).contains(&packet.len()) {
+        bail!("invalid packed outbound length: {}", packet.len());
+    }
+
+    let mut offset = 0;
+    let batch_count = read_packed_u32(&packet, &mut offset)? as usize;
+    if batch_count == 0 || batch_count > HOST_OUTBOUND_MAX_BATCHES {
+        bail!("invalid packed outbound batch count: {batch_count}");
+    }
+
+    let mut batches = Vec::with_capacity(batch_count);
+    for _ in 0..batch_count {
+        let target_count = read_packed_u32(&packet, &mut offset)? as usize;
+        if target_count == 0 || target_count > HOST_OUTBOUND_MAX_TARGETS {
+            bail!("invalid packed outbound target count: {target_count}");
+        }
+        let target_bytes = target_count
+            .checked_mul(4)
+            .context("packed outbound target byte count overflow")?;
+        let target_end = offset
+            .checked_add(target_bytes)
+            .filter(|end| *end <= packet.len())
+            .context("truncated packed outbound connection ids")?;
+        let connection_ids = packet[offset..target_end]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()) as u64)
+            .collect();
+        offset = target_end;
+
+        let frame_len = read_packed_u32(&packet, &mut offset)? as usize;
+        if !(2..=HOST_CALL_MAX_FRAME_LEN).contains(&frame_len) {
+            bail!("invalid packed outbound frame length: {frame_len}");
+        }
+        let frame_end = offset
+            .checked_add(frame_len)
+            .filter(|end| *end <= packet.len())
+            .context("truncated packed outbound frame")?;
+        let frame = packet.slice(offset..frame_end);
+        offset = frame_end;
+        batches.push(BinaryOutboundBatch {
+            connection_ids,
+            frame,
+        });
+    }
+
+    if offset != packet.len() {
+        bail!("packed outbound has {} trailing bytes", packet.len() - offset);
+    }
+    Ok(batches)
+}
+
+fn read_packed_u32(packet: &[u8], offset: &mut usize) -> Result<u32> {
+    let end = offset
+        .checked_add(4)
+        .filter(|end| *end <= packet.len())
+        .context("truncated packed outbound uint32")?;
+    let value = u32::from_le_bytes(packet[*offset..end].try_into().unwrap());
+    *offset = end;
+    Ok(value)
+}
+
 #[op2]
 async fn op_host_scene_call(
-    #[string] target_json: String,
+    #[string] source_name: String,
+    #[string] target_name: String,
+    #[string] target_ip: String,
+    target_port: u16,
     #[buffer] frame: JsBuffer,
     timeout_ms: u32,
 ) -> Result<Uint8Array, JsErrorBox> {
     let timeout_ms = timeout_ms.max(1);
     let call = async move {
-        let request: HostCallRequest = serde_json::from_str(&target_json)
-            .with_context(|| format!("invalid scene call request: {target_json}"))?;
         let frame = frame.to_vec();
         if frame.len() < 2 || frame.len() > HOST_CALL_MAX_FRAME_LEN {
             bail!("invalid scene call frame length: {}", frame.len());
         }
 
-        if is_same_scene(&request.source, &request.target) {
-            bail!(
-                "scene {} cannot synchronously call itself",
-                request.source.name
-            );
+        if source_name == target_name {
+            bail!("scene {source_name} cannot synchronously call itself");
         }
 
         let timeout = Duration::from_millis(timeout_ms as u64);
         call_remote_scene(
-            request.source.name,
-            request.target.name,
-            request.target.ip,
-            request.target.port,
+            source_name,
+            target_name,
+            target_ip,
+            target_port,
             frame,
             timeout,
         )
@@ -163,39 +218,36 @@ async fn op_host_scene_call(
         .map_err(anyhow::Error::msg)
     };
 
-    match tokio::time::timeout(Duration::from_millis(timeout_ms as u64), call).await {
-        Ok(result) => result.map_err(|error| JsErrorBox::generic(format!("{error:#}"))),
-        Err(_) => Err(JsErrorBox::generic(format!(
-            "scene call timed out after {timeout_ms}ms"
-        ))),
-    }
+    call.await
+        .map_err(|error| JsErrorBox::generic(format!("{error:#}")))
 }
 
 #[op2]
 async fn op_host_scene_send(
-    #[string] target_json: String,
+    #[string] source_name: String,
+    #[string] target_name: String,
+    #[string] target_ip: String,
+    target_port: u16,
     #[buffer] frame: JsBuffer,
     timeout_ms: u32,
 ) -> Result<(), JsErrorBox> {
     let timeout_ms = timeout_ms.max(1);
     let send = async move {
-        let request: HostCallRequest = serde_json::from_str(&target_json)
-            .with_context(|| format!("invalid scene send request: {target_json}"))?;
         let frame = frame.to_vec();
         if frame.len() < 2 || frame.len() > HOST_CALL_MAX_FRAME_LEN {
             bail!("invalid scene send frame length: {}", frame.len());
         }
 
-        if is_same_scene(&request.source, &request.target) {
-            bail!("scene {} cannot send to itself", request.source.name);
+        if source_name == target_name {
+            bail!("scene {source_name} cannot send to itself");
         }
 
         let timeout = Duration::from_millis(timeout_ms as u64);
         send_remote_scene(
-            request.source.name,
-            request.target.name,
-            request.target.ip,
-            request.target.port,
+            source_name,
+            target_name,
+            target_ip,
+            target_port,
             frame,
             timeout,
         )
@@ -203,16 +255,8 @@ async fn op_host_scene_send(
         .map_err(anyhow::Error::msg)
     };
 
-    match tokio::time::timeout(Duration::from_millis(timeout_ms as u64), send).await {
-        Ok(result) => result.map_err(|error| JsErrorBox::generic(format!("{error:#}"))),
-        Err(_) => Err(JsErrorBox::generic(format!(
-            "scene send timed out after {timeout_ms}ms"
-        ))),
-    }
-}
-
-fn is_same_scene(source: &HostCallScene, target: &HostCallScene) -> bool {
-    source.name == target.name || (source.ip == target.ip && source.port == target.port)
+    send.await
+        .map_err(|error| JsErrorBox::generic(format!("{error:#}")))
 }
 
 deno_core::extension!(
@@ -225,6 +269,7 @@ deno_core::extension!(
         op_host_take_binary_arg,
         op_host_push_outbound,
         op_host_push_outbound_batch,
+        op_host_push_outbound_packed,
         op_host_scene_call,
         op_host_scene_send
     ],
@@ -250,10 +295,18 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
           core.ops.op_host_push_outbound(connectionId >>> 0, frame);
         globalThis.__hostPushOutboundBatch = (connectionIdBytes, frame) =>
           core.ops.op_host_push_outbound_batch(connectionIdBytes, frame);
-        globalThis.__hostSceneCall = (targetJson, frame, timeoutMs) =>
-          core.ops.op_host_scene_call(String(targetJson), frame, timeoutMs >>> 0);
-        globalThis.__hostSceneSend = (targetJson, frame, timeoutMs) =>
-          core.ops.op_host_scene_send(String(targetJson), frame, timeoutMs >>> 0);
+        globalThis.__hostPushOutboundPacked = (packed) =>
+          core.ops.op_host_push_outbound_packed(packed);
+        globalThis.__hostSceneCall = (sourceName, targetName, targetIp, targetPort, frame, timeoutMs) =>
+          core.ops.op_host_scene_call(
+            String(sourceName), String(targetName), String(targetIp), targetPort >>> 0,
+            frame, timeoutMs >>> 0,
+          );
+        globalThis.__hostSceneSend = (sourceName, targetName, targetIp, targetPort, frame, timeoutMs) =>
+          core.ops.op_host_scene_send(
+            String(sourceName), String(targetName), String(targetIp), targetPort >>> 0,
+            frame, timeoutMs >>> 0,
+          );
         globalThis.console = {
           log: (...args) => __hostLog(args.map((value) => {
             if (typeof value === "string") return value;
@@ -286,13 +339,20 @@ pub fn call_js_string(
         runtime
             .execute_script("ets-runtime:host-call.js", source)
             .context("failed to call JS")?;
+        runtime.v8_isolate().perform_microtask_checkpoint();
     }
-    js_event_loop
-        .block_on(runtime.run_event_loop(PollEventLoopOptions::default()))
-        .context("failed to run JS event loop after host call")?;
-    LAST_JS_RESULT
-        .with(|slot| slot.borrow_mut().take())
-        .context("JS did not set a result")
+    js_event_loop.block_on(poll_fn(|cx| {
+        let event_loop = runtime.poll_event_loop(cx, PollEventLoopOptions::default());
+        if let Some(result) = LAST_JS_RESULT.with(|slot| slot.borrow_mut().take()) {
+            return Poll::Ready(Ok(result));
+        }
+        match event_loop {
+            Poll::Ready(Err(error)) => Poll::Ready(Err(anyhow::Error::from(error)
+                .context("failed to run JS event loop after host call"))),
+            Poll::Ready(Ok(())) => Poll::Ready(Err(anyhow::anyhow!("JS did not set a result"))),
+            Poll::Pending => Poll::Pending,
+        }
+    }))
 }
 
 pub fn push_binary_args(args: Vec<Vec<u8>>) {
@@ -343,5 +403,27 @@ mod tests {
     fn rejects_invalid_connection_id_buffer() {
         assert!(decode_connection_ids(&[]).is_err());
         assert!(decode_connection_ids(&[1, 2, 3]).is_err());
+    }
+
+    #[test]
+    fn decodes_packed_outbound_with_shared_backing_bytes() {
+        let packed = vec![
+            2, 0, 0, 0,
+            2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 10, 11,
+            1, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 20, 21, 22,
+        ];
+        let batches = decode_packed_outbound(Bytes::from(packed)).unwrap();
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].connection_ids, vec![1, 2]);
+        assert_eq!(&batches[0].frame[..], &[10, 11]);
+        assert_eq!(batches[1].connection_ids, vec![3]);
+        assert_eq!(&batches[1].frame[..], &[20, 21, 22]);
+    }
+
+    #[test]
+    fn rejects_truncated_or_trailing_packed_outbound() {
+        assert!(decode_packed_outbound(Bytes::from_static(&[1, 0, 0, 0])).is_err());
+        assert!(decode_packed_outbound(Bytes::from_static(&[0, 0, 0, 0])).is_err());
+        assert!(decode_packed_outbound(Bytes::from_static(&[1, 0, 0, 0, 0])).is_err());
     }
 }

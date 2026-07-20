@@ -119,7 +119,7 @@ async fn inspector_breaks_before_app_and_publishes_inline_source_map() {
     )
     .unwrap();
 
-    let child = Command::new(env!("CARGO_BIN_EXE_ets_runtime"))
+    let child = Command::new(env!("CARGO_BIN_EXE_TiangZ"))
         .arg(&config_path)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .stdout(Stdio::null())

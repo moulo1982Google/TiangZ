@@ -34,7 +34,7 @@ Client SDK 按 msgcode 分发 Push
 ## Cocos 验证
 
 1. 运行 `npm run build`。
-2. 运行 `cargo run --bin ets_runtime -- configs/local/all.json`。
+2. 运行 `cargo run --bin TiangZ -- configs/local/all.json`。
 3. 用 Cocos Creator 打开 `cocos_client2D`。
 4. Preview 后进入游戏，多开页面可观察玩家互见和移动。
 

@@ -29,5 +29,5 @@
 项目有多个二进制，使用：
 
 ```powershell
-cargo run --bin ets_runtime -- configs/local/all.json
+cargo run --bin TiangZ -- configs/local/all.json
 ```

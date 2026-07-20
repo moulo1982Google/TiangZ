@@ -31,6 +31,8 @@ interface Options {
   movementTimeoutMs: number;
   moveRate: number;
   probeRate: number;
+  probeConcurrency: number;
+  disableMove: boolean;
   label: string;
 }
 
@@ -78,8 +80,15 @@ async function main(): Promise<void> {
   const workloads = await Promise.all(
     players.map(async ({ player }, index) => {
       const [movement, probe] = await Promise.all([
-        player.runMovement(measurementStart, sendDeadline, index, options.moveRate),
-        player.runProbes(measurementStart, sendDeadline, options.probeRate),
+        options.disableMove
+          ? Promise.resolve({ latenciesMs: [], errors: 0 })
+          : player.runMovement(measurementStart, sendDeadline, index, options.moveRate),
+        player.runProbes(
+          measurementStart,
+          sendDeadline,
+          options.probeRate,
+          options.probeConcurrency,
+        ),
       ]);
       return { movement, probe };
     }),
@@ -112,7 +121,9 @@ async function main(): Promise<void> {
     measurementStartedAtUnixMs,
     measurementEndedAtUnixMs:
       measurementStartedAtUnixMs + options.durationSeconds * 1000,
-    workload: options.moveRate > 0 ? `steady-${options.moveRate}hz` : "saturation",
+    workload: options.disableMove
+      ? `probe-only-${options.probeRate}hz`
+      : options.moveRate > 0 ? `steady-${options.moveRate}hz` : "saturation",
     setup: {
       ...timing(setupLatencies, setupElapsedSeconds),
       elapsedSeconds: setupElapsedSeconds,
@@ -223,8 +234,9 @@ class GamePlayer {
     measurementStart: number,
     sendDeadline: number,
     probeRate: number,
+    probeConcurrency: number,
   ): Promise<{ latenciesMs: number[]; errors: number }> {
-    return this.gate.runProbes(measurementStart, sendDeadline, probeRate);
+    return this.gate.runProbes(measurementStart, sendDeadline, probeRate, probeConcurrency);
   }
 
   close(): Promise<void> { return this.gate.close(); }
@@ -361,26 +373,58 @@ class GateConnection {
     measurementStart: number,
     sendDeadline: number,
     probeRate: number,
+    probeConcurrency: number,
   ): Promise<{ latenciesMs: number[]; errors: number }> {
     const latenciesMs: number[] = [];
     let sequence = 0;
     let errors = 0;
     if (probeRate <= 0) return { latenciesMs, errors };
+    if (probeConcurrency <= 1) {
+      while (performance.now() < sendDeadline) {
+        const startedAt = performance.now();
+        sequence += 1;
+        const rpcId = allocateRpcId();
+        try {
+          const response = decodeMapProbeFrame(
+            await this.request(
+              rpcId,
+              buildMapProbePacket(rpcId, { sequence }),
+            ),
+          ).body;
+          checkResponse(response, rpcId, "MapProbe");
+          if (response.sequence !== sequence) {
+            throw new Error(`MapProbe sequence mismatch: ${response.sequence} != ${sequence}`);
+          }
+          if (startedAt >= measurementStart) {
+            latenciesMs.push(performance.now() - startedAt);
+          }
+        } catch {
+          errors += 1;
+        }
 
-    while (performance.now() < sendDeadline) {
+        const elapsed = performance.now() - startedAt;
+        await sleep(Math.max(0, 1000 / probeRate - elapsed));
+      }
+      return { latenciesMs, errors };
+    }
+
+    const inFlight = new Set<Promise<void>>();
+    let nextSendAt = performance.now();
+    const sendOne = async () => {
       const startedAt = performance.now();
       sequence += 1;
+      const currentSequence = sequence;
       const rpcId = allocateRpcId();
       try {
         const response = decodeMapProbeFrame(
           await this.request(
             rpcId,
-            buildMapProbePacket(rpcId, { sequence }),
+            buildMapProbePacket(rpcId, { sequence: currentSequence }),
           ),
         ).body;
         checkResponse(response, rpcId, "MapProbe");
-        if (response.sequence !== sequence) {
-          throw new Error(`MapProbe sequence mismatch: ${response.sequence} != ${sequence}`);
+        if (response.sequence !== currentSequence) {
+          throw new Error(`MapProbe sequence mismatch: ${response.sequence} != ${currentSequence}`);
         }
         if (startedAt >= measurementStart) {
           latenciesMs.push(performance.now() - startedAt);
@@ -388,10 +432,19 @@ class GateConnection {
       } catch {
         errors += 1;
       }
+    };
 
-      const elapsed = performance.now() - startedAt;
-      await sleep(Math.max(0, 1000 / probeRate - elapsed));
+    while (performance.now() < sendDeadline) {
+      while (inFlight.size >= probeConcurrency) {
+        await Promise.race(inFlight);
+      }
+      const task = sendOne();
+      inFlight.add(task);
+      task.finally(() => inFlight.delete(task));
+      nextSendAt += 1000 / probeRate;
+      await sleep(Math.max(0, nextSendAt - performance.now()));
     }
+    await Promise.allSettled(inFlight);
     return { latenciesMs, errors };
   }
 
@@ -549,10 +602,17 @@ function sleep(ms: number): Promise<void> { return new Promise((resolve) => setT
 
 function parseOptions(args: string[]): Options {
   const values = new Map<string, string>();
-  for (let index = 0; index < args.length; index += 2) {
+  const flags = new Set<string>();
+  for (let index = 0; index < args.length; index += 1) {
     const key = args[index]?.replace(/^--?/, "").toLowerCase();
+    if (!key) continue;
     const value = args[index + 1];
-    if (key && value) values.set(key, value);
+    if (value && !value.startsWith("-")) {
+      values.set(key, value);
+      index += 1;
+    } else {
+      flags.add(key);
+    }
   }
   const number = (name: string, fallback: number) => {
     const value = Number(values.get(name) ?? fallback);
@@ -570,6 +630,8 @@ function parseOptions(args: string[]): Options {
     movementTimeoutMs: Math.floor(number("movement-timeout", 5_000)),
     moveRate: nonNegativeNumber(values, "move-rate", 0),
     probeRate: nonNegativeNumber(values, "probe-rate", 0),
+    probeConcurrency: Math.floor(number("probe-concurrency", 1)),
+    disableMove: flags.has("disable-move"),
     label: values.get("label") ?? "manual",
   };
 }

@@ -20,6 +20,24 @@ pub struct ProcessConfig {
     pub name: String,
     #[serde(default)]
     pub debug: Option<ProcessDebugConfig>,
+    #[serde(default)]
+    pub observability: Option<ProcessObservabilityConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessObservabilityConfig {
+    #[serde(default)]
+    pub latency: Option<LatencyObservabilityConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LatencyObservabilityConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_latency_sample_rate")]
+    pub sample_rate: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -61,6 +79,10 @@ fn default_inspector_ip() -> String {
     "127.0.0.1".to_string()
 }
 
+fn default_latency_sample_rate() -> u32 {
+    1
+}
+
 pub fn resolve_startup_path(root: &Path, startup_path: String) -> PathBuf {
     let path = PathBuf::from(startup_path);
     let resolved = if path.is_absolute() {
@@ -100,6 +122,16 @@ pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
 fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     if config.process.name.trim().is_empty() {
         bail!("process.name must not be empty");
+    }
+    if let Some(latency) = config
+        .process
+        .observability
+        .as_ref()
+        .and_then(|observability| observability.latency.as_ref())
+    {
+        if latency.sample_rate == 0 {
+            bail!("process observability.latency.sampleRate must not be 0");
+        }
     }
 
     let mut scene_names = HashSet::new();
@@ -176,6 +208,7 @@ mod tests {
                 break_on_start: false,
                 allow_remote: false,
             }),
+            observability: None,
         }
     }
 

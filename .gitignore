@@ -4,3 +4,10 @@
 /tmp_*.log
 /cocos_client2D/temp/
 /cocos_client2D/library/
+/perf/results/logs/
+/perf/results/runtime_configs/
+/perf/results/*_raw.json
+/perf/results/*.cpuprofile
+/perf/results/**/*.log
+/perf/results/*_20*.json
+/perf/results/*_20*.md

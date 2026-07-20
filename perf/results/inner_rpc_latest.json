@@ -1,0 +1,33 @@
+{
+  "generatedAt": "2026-07-20T10:19:32.476Z",
+  "runId": "20260720_101922",
+  "machine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
+    "logicalCpus": 24,
+    "memoryBytes": 68464029696
+  },
+  "parameters": {
+    "mode": "remote",
+    "duration": 8,
+    "warmup": 2,
+    "connections": 8,
+    "concurrency": 1024,
+    "callCount": 1,
+    "delay": 0,
+    "drain": 10
+  },
+  "results": [
+    {
+      "deployment": "remote",
+      "requests": 336294,
+      "requestsPerSecond": 42037,
+      "errors": 0,
+      "peakInFlight": 1024,
+      "maxServerConcurrency": 950,
+      "p50Ms": 21.646,
+      "p95Ms": 51.869,
+      "p99Ms": 82.323,
+      "maxMs": 222.754
+    }
+  ]
+}

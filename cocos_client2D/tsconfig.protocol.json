@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": [],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": [
+    "assets/scripts/Core/**/*.ts",
+    "assets/scripts/Generated/**/*.ts",
+    "assets/scripts/Demo/Login/**/*.ts"
+  ]
+}

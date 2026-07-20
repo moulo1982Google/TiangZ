@@ -19,7 +19,7 @@ const root = path.resolve(scriptDirectory, "../..");
 const options = parseOptions(process.argv.slice(2));
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
 const profileDirectory = options.profile === "release" ? "release" : "debug";
-const runtimePath = path.join(root, "target", profileDirectory, `ets_runtime${executableSuffix}`);
+const runtimePath = path.join(root, "target", profileDirectory, `TiangZ${executableSuffix}`);
 const loadClientPath = path.join(root, "target", profileDirectory, `runtime_load${executableSuffix}`);
 const configPath = path.resolve(root, options.config);
 const resultsDirectory = path.join(root, "perf", "results");
@@ -47,7 +47,7 @@ try {
     await runNpm(["run", "build"]);
     const cargoArgs = ["build"];
     if (options.profile === "release") cargoArgs.push("--release");
-    cargoArgs.push("--bin", "ets_runtime", "--bin", "runtime_load");
+    cargoArgs.push("--bin", "TiangZ", "--bin", "runtime_load");
     await runInherited("cargo", cargoArgs);
   }
 

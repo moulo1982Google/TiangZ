@@ -49,6 +49,8 @@ interface GateSession {
 
 @entryScene()
 export class GateScene extends EntryScene {
+  protected override readonly mailbox = "unordered" as const;
+
   private mapScenes: SceneConfig[] = [];
   private readonly bootId: string;
   private readonly sessions = new Map<number, GateSession>();

@@ -25,7 +25,7 @@ GetLoginServiceAddr
 
 ## 一键运行
 
-在 `ets_runtime` 目录执行：
+在 `TiangZ` 目录执行：
 
 ```powershell
 npm run perf:full-chain

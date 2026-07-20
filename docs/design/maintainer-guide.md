@@ -36,9 +36,16 @@ EntryScene 同样是 Component 容器。入口 Scene class 负责声明业务边
 
 ## 批量下行 Bridge
 
-`sendClient` 和 `sendClientMany` 都进入 `OutboundBatch`。群发只编码一次协议帧，并把小端 uint32 connectionId 列表和一份 `Uint8Array` 通过 `__hostPushOutboundBatch` 交给 Rust。禁止在 `app/main.ts` 中重新展开成逐连接 Host Op。
+`sendClient` 和 `sendClientMany` 都进入 `OutboundBatch`。群发只编码一次协议帧；`app/main.ts` 在每次 update 结束时把当帧全部批次打成一个紧凑二进制包，通过一次 `__hostPushOutboundPacked` 交给 Rust。禁止重新展开成逐连接或逐批次 Host Op。
 
-Rust 只把 V8 帧复制为一次 `Bytes`，向各连接 writer 投递时使用引用计数克隆。每个客户端的帧数、逻辑字节、队列上限和慢连接断开仍独立计算；共享物理内存不能改变背压语义。同一批次和不同批次按产生顺序入队，必须保持单连接消息顺序。
+批包格式固定为小端整数：
+
+```text
+[batchCount:u32]
+  repeated [targetCount:u32][targetIds:u32...][frameLen:u32][frame]
+```
+
+Rust 把整个 V8 批包复制为一次 `Bytes`，各批次 frame 使用 `Bytes::slice` 共享同一块 backing storage，向各连接 writer 投递时继续使用引用计数克隆。每个客户端的帧数、逻辑字节、队列上限和慢连接断开仍独立计算；共享物理内存不能改变背压语义。同一批次和不同批次按产生顺序入队，必须保持单连接消息顺序。
 
 进程指标区分 `outbound_batches`、`outbound_recipients`、`outbound_bridge_bytes` 和 `outbound_logical_bytes`。全地图广播中 recipients 可以是 batches 的数十倍，这是预期扇出，不应被当作漏发。
 
@@ -51,6 +58,8 @@ Rust 只把 V8 帧复制为一次 `Bytes`，向各连接 writer 投递时使用�
 - 远程：调用 `__hostSceneCall/__hostSceneSend`，进入 `src/transport.rs`。
 
 远程连接按来源 Scene/目标地址复用。多个 pending RPC 共享 TCP，由 protobuf payload rpcId 唤醒各自 oneshot；缺失响应不会阻塞其他 rpcId。
+
+Gate 转发 ActorLocation RPC 时使用 Core 原始帧路径：只扫描并替换 protobuf 顶层 `rpcId`，以进程内唯一 rpcId 完成内部多路复用，响应返回时再恢复客户端 rpcId。该路径禁止把业务请求完整 decode 成对象后再 encode；同时必须保留 response msgcode 和内部 rpcId 校验。
 
 不要让本地调用绕过 mailbox，也不要把本地调用送回 Rust queue 后等待同一个 V8，那会自锁。
 

@@ -1,4 +1,4 @@
-# ets_runtime 路线图
+# TiangZ 路线图
 
 ## 最终目标
 
@@ -91,8 +91,11 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 已在 Demo 业务层按 Gate 聚合 `M2G_EntityMove(targetUnitIds)`；它不是框架对广播语义的假设。
 - MapScene 的 UnitComponent 直接读取本地 PlayerUnit 轻量 Snapshot，不产生跨 Actor 请求。
 - Core `sendClientMany` 使用单个 `OutboundBatch`；Rust 一次接收目标列表和帧，并通过 `Bytes` 向多个 writer 共享帧内存。
+- TS 每个 update 只执行一次 packed outbound Host Op；Rust 对整包复制一次，各批次通过 `Bytes::slice` 共享 backing storage。
+- Gate 的 ActorLocation RPC 转发改为原始 protobuf frame 替换 rpcId，不再为路由完整 decode/encode 业务对象。
 - 200 玩家、8 Gate、全员 10Hz 移动下，约 40 万 recipients/s 合并为 1.62 万 batch/s，V8 到 Rust 的帧复制带宽约为逻辑下行的 1/25。
 - 批量 Bridge 后最忙 Gate 三轮中位 CPU 从 197.9% 降至 137.9%；下一层瓶颈是逐连接 writer enqueue 和网络消息数量。
+- 600 玩家、8 Gate、单 MapHost 的 Probe Only 完整链路三轮中位数：4.20 万 RPC/s 时 Map CPU 60.6%、p99 102.18ms；当前饱和边界约 4.88 万 RPC/s，Map CPU 74.3%、p99 161.03ms，零 RPC 错误和 transport overload。
 - 默认性能命令升级为 60 秒、三轮中位数，并采集服务端与压测端 CPU/RSS/GC；支持独立压测机。
 - 网格 AOI 保留到 Phase 4，当前继续用全地图可见性验证链路和聚合收益。
 - 可重复命令、指标口径和报告位置见 `perf/full_chain/README.md`。

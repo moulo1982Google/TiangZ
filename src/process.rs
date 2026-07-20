@@ -63,6 +63,8 @@ enum ProcessEvent {
 struct UpdateResult {
     #[serde(default)]
     metrics: Vec<SceneMetricsSnapshot>,
+    #[serde(default)]
+    pending_async: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +80,25 @@ struct SceneMetricsSnapshot {
     last_handler_cost_ms: f64,
     max_handler_cost_ms: f64,
     total_handler_cost_ms: f64,
+    #[serde(default)]
+    async_in_flight: usize,
+    #[serde(default)]
+    max_async_in_flight: usize,
+    #[serde(default)]
+    latencies: Vec<LatencyMetricSnapshot>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LatencyMetricSnapshot {
+    name: String,
+    msgcode: Option<u16>,
+    count: u64,
+    avg_ms: f64,
+    p50_ms: f64,
+    p95_ms: f64,
+    p99_ms: f64,
+    max_ms: f64,
 }
 
 type ConnectionWriters = Arc<Mutex<HashMap<u64, ConnectionWriter>>>;
@@ -360,10 +381,12 @@ fn run_process_runtime(
         .map(|process| process.accumulated_cpu_time())
         .unwrap_or_default();
     let mut last_resource_sample_at = Instant::now();
+    let mut pending_async = false;
     loop {
         let mut event_meta = Vec::<u8>::new();
         let mut binary_args = Vec::<Vec<u8>>::new();
-        match event_rx.recv_timeout(Duration::from_millis(PROCESS_TICK_MS)) {
+        let wait_ms = if pending_async { 1 } else { PROCESS_TICK_MS };
+        match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
             Ok(event) => {
                 queue_stats.dequeue();
                 push_event(&mut event_meta, &mut binary_args, event)?
@@ -383,7 +406,7 @@ fn run_process_runtime(
             }
         }
 
-        flush_runtime_batch(
+        pending_async = flush_runtime_batch(
             &js_event_loop,
             &mut runtime,
             &writers,
@@ -424,7 +447,7 @@ fn flush_runtime_batch(
     gc_metrics: &V8GcMetrics,
     last_process_cpu_time_ms: &mut u64,
     last_resource_sample_at: &mut Instant,
-) -> Result<()> {
+) -> Result<bool> {
     if !event_meta.is_empty() {
         call_js_push_host_events(
             runtime,
@@ -449,7 +472,8 @@ fn flush_runtime_batch(
         last_process_cpu_time_ms,
         last_resource_sample_at,
     );
-    flush_outbound(outbound, writers, queue_stats)
+    flush_outbound(outbound, writers, queue_stats)?;
+    Ok(result.pending_async)
 }
 
 fn maybe_log_metrics(
@@ -500,13 +524,15 @@ fn maybe_log_metrics(
     );
     for metric in metrics {
         println!(
-            "[metrics:{process_name}] scene={} type={} processed={} failed={} ts_queue={} ts_max_queue={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
+            "[metrics:{process_name}] scene={} type={} processed={} failed={} ts_queue={} ts_max_queue={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
             metric.scene,
             metric.scene_type,
             metric.processed_frames,
             metric.failed_frames,
             metric.ingress_queue_length,
             metric.max_ingress_queue_length,
+            metric.async_in_flight,
+            metric.max_async_in_flight,
             queue_stats
                 .depth
                 .load(Ordering::Relaxed)
@@ -519,6 +545,24 @@ fn maybe_log_metrics(
             metric.max_handler_cost_ms,
             metric.total_handler_cost_ms,
         );
+        for latency in &metric.latencies {
+            println!(
+                "[latency:{process_name}] scene={} type={} name={} msgcode={} count={} avg_ms={:.3} p50_ms={:.3} p95_ms={:.3} p99_ms={:.3} max_ms={:.3}",
+                metric.scene,
+                metric.scene_type,
+                latency.name,
+                latency
+                    .msgcode
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                latency.count,
+                latency.avg_ms,
+                latency.p50_ms,
+                latency.p95_ms,
+                latency.p99_ms,
+                latency.max_ms,
+            );
+        }
     }
 }
 

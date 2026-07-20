@@ -4,9 +4,12 @@ import { packFrame } from "../protocol/registry";
 import { RpcError } from "../protocol/RpcError";
 import type { RpcDescriptor } from "../protocol/rpc";
 import { SystemErrCode } from "../protocol/SystemErrCode";
+import { nowMs, type LatencyRecorder } from "../metrics/latency";
 import type { LocalSceneRouter, RuntimeEntrySceneConfig, SceneConfig } from "./types";
 import {
   encodeActorLocationEnvelope,
+  extractFrameRpcId,
+  rewriteFrameRpcId,
   type ActorLocationTarget,
 } from "./ActorLocation";
 
@@ -19,6 +22,7 @@ export class SceneCallContext {
   constructor(
     private readonly config: RuntimeEntrySceneConfig,
     private readonly localRouter: LocalSceneRouter,
+    private readonly latencies?: LatencyRecorder,
   ) {}
 
   get self(): SceneConfig { return this.config.self; }
@@ -70,6 +74,36 @@ export class SceneCallContext {
     return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
   }
 
+  async callActorFrame(
+    target: ActorLocationTarget,
+    frame: Uint8Array,
+    expectedResponseCode: number,
+    options: SceneCallOptions = {},
+  ): Promise<Uint8Array> {
+    const clientRpcId = extractFrameRpcId(frame);
+    if (!clientRpcId) {
+      throw new RpcError(SystemErrCode.MalformedFrame, "actor RPC request has no rpcId");
+    }
+    const internalRpcId = this.allocateRpcId();
+    const innerFrame = rewriteFrameRpcId(frame, internalRpcId);
+    const envelope = encodeActorLocationEnvelope({
+      instanceId: target.instanceId,
+      frame: innerFrame,
+      rpcId: internalRpcId,
+    });
+    const responseFrame = await this.callFrame(target.scene, envelope, options);
+    if (responseFrame.length < 2 || readU16BE(responseFrame, 0) !== expectedResponseCode) {
+      throw new RpcError(
+        SystemErrCode.UnexpectedResponseCode,
+        `unexpected actor response code ${responseFrame.length < 2 ? "missing" : readU16BE(responseFrame, 0)}, expected ${expectedResponseCode}`,
+      );
+    }
+    if (extractFrameRpcId(responseFrame) !== internalRpcId) {
+      throw new RpcError(SystemErrCode.RpcIdMismatch, "actor response rpcId mismatch");
+    }
+    return rewriteFrameRpcId(responseFrame, clientRpcId);
+  }
+
   private decodeRpcResponse<TReq, TResp extends IResponse>(
     descriptor: RpcDescriptor<TReq, TResp>,
     responseFrame: Uint8Array,
@@ -104,8 +138,10 @@ export class SceneCallContext {
     frame: Uint8Array,
     options: SceneCallOptions = {},
   ): Promise<Uint8Array> {
+    const startedAt = this.latencies ? nowMs() : 0;
+    const isLocal = this.localRouter.hasLocalScene(target.name);
     try {
-      return this.localRouter.hasLocalScene(target.name)
+      return isLocal
         ? await this.localRouter.callLocalScene(this.self.name, target.name, frame)
         : await hostSceneCall(this.self, target, frame, options.timeoutMs ?? 5000);
     } catch (error) {
@@ -116,6 +152,14 @@ export class SceneCallContext {
           : SystemErrCode.SceneCallFailed,
         message,
       );
+    } finally {
+      if (this.latencies) {
+        this.latencies.record(
+          isLocal ? "scene.call.local" : "scene.call.remote",
+          nowMs() - startedAt,
+          frame.length >= 2 ? readU16BE(frame, 0) : undefined,
+        );
+      }
     }
   }
 
@@ -148,8 +192,10 @@ export class SceneCallContext {
     frame: Uint8Array,
     options: SceneSendOptions = {},
   ): Promise<void> {
+    const startedAt = this.latencies ? nowMs() : 0;
+    const isLocal = this.localRouter.hasLocalScene(target.name);
     try {
-      if (this.localRouter.hasLocalScene(target.name)) {
+      if (isLocal) {
         await this.localRouter.sendLocalScene(this.self.name, target.name, frame);
       } else {
         await hostSceneSend(this.self, target, frame, options.timeoutMs ?? 5000);
@@ -162,6 +208,14 @@ export class SceneCallContext {
           : SystemErrCode.SceneCallFailed,
         text,
       );
+    } finally {
+      if (this.latencies) {
+        this.latencies.record(
+          isLocal ? "scene.send.local" : "scene.send.remote",
+          nowMs() - startedAt,
+          frame.length >= 2 ? readU16BE(frame, 0) : undefined,
+        );
+      }
     }
   }
 
@@ -174,16 +228,44 @@ export class SceneCallContext {
 
 function hostSceneSend(source: SceneConfig, target: SceneConfig, frame: Uint8Array, timeoutMs: number): Promise<void> {
   const host = globalThis as typeof globalThis & {
-    __hostSceneSend?: (targetJson: string, frame: Uint8Array, timeoutMs: number) => Promise<void>;
+    __hostSceneSend?: (
+      sourceName: string,
+      targetName: string,
+      targetIp: string,
+      targetPort: number,
+      frame: Uint8Array,
+      timeoutMs: number,
+    ) => Promise<void>;
   };
   if (!host.__hostSceneSend) throw new Error("host scene send op is not available");
-  return host.__hostSceneSend(JSON.stringify({ source, target }), frame, timeoutMs);
+  return host.__hostSceneSend(
+    source.name,
+    target.name,
+    target.ip,
+    target.port,
+    frame,
+    timeoutMs,
+  );
 }
 
 function hostSceneCall(source: SceneConfig, target: SceneConfig, frame: Uint8Array, timeoutMs: number): Promise<Uint8Array> {
   const host = globalThis as typeof globalThis & {
-    __hostSceneCall?: (targetJson: string, frame: Uint8Array, timeoutMs: number) => Promise<Uint8Array>;
+    __hostSceneCall?: (
+      sourceName: string,
+      targetName: string,
+      targetIp: string,
+      targetPort: number,
+      frame: Uint8Array,
+      timeoutMs: number,
+    ) => Promise<Uint8Array>;
   };
   if (!host.__hostSceneCall) throw new Error("host scene call op is not available");
-  return host.__hostSceneCall(JSON.stringify({ source, target }), frame, timeoutMs);
+  return host.__hostSceneCall(
+    source.name,
+    target.name,
+    target.ip,
+    target.port,
+    frame,
+    timeoutMs,
+  );
 }

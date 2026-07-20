@@ -9,10 +9,10 @@
 - Linux C/C++ 编译工具链。Ubuntu/Debian 可安装 `build-essential`、`pkg-config`。
 - 首次构建需要访问 Cargo 和 npm 依赖源。
 
-将整个 `ets_runtime` 目录复制到 Linux 后执行：
+将整个 `TiangZ` 目录复制到 Linux 后执行：
 
 ```bash
-cd ets_runtime
+cd TiangZ
 npm ci
 npm run perf:rpc-baseline
 ```

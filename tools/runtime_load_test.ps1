@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 $RuntimeProfile = if ($Release) { "release" } else { "debug" }
-$RuntimeExe = Join-Path $Root "target\$RuntimeProfile\ets_runtime.exe"
+$RuntimeExe = Join-Path $Root "target\$RuntimeProfile\TiangZ.exe"
 $ClientScript = Join-Path $Root "dist\runtime_load_test.cjs"
 $RustClient = Join-Path $Root "target\$RuntimeProfile\runtime_load.exe"
 $Stdout = Join-Path $Root "tmp_runtime_load_stdout.log"

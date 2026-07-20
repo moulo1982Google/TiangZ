@@ -6,7 +6,7 @@ Phase 1.9 在保持“一个 Service 对应一个 V8 实例”的前提下，对
 
 ## 验收命令
 
-在 `ets_runtime/` 目录执行：
+在 `TiangZ/` 目录执行：
 
 ```bash
 npm run test:phase1.9

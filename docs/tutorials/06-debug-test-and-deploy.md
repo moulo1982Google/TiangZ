@@ -4,7 +4,7 @@
 
 ```powershell
 npm run build:debug
-cargo run --bin ets_runtime -- configs/local/login1.debug.json
+cargo run --bin TiangZ -- configs/local/login1.debug.json
 ```
 
 `debug` 位于 `process` 下。一个 OS Process 只有一个 V8 和一个 Inspector，进程中的全部 EntryScene 都可在同一调试会话中断点。`breakOnStart` 会在业务 bundle 执行前等待调试器。

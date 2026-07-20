@@ -24,6 +24,12 @@ import { readU16BE } from "../protocol/binary";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { RpcError } from "../protocol/RpcError";
 import type { ActorRef, MessageTarget, SceneRef } from "../runtime";
+import {
+  LatencyRecorder,
+  nowMs,
+  type LatencyMetricSnapshot,
+  type LatencyRecorderOptions,
+} from "../metrics/latency";
 import { SceneCallContext } from "./context";
 import { SceneMessageHelper } from "./SceneMessageHelper";
 import {
@@ -31,7 +37,6 @@ import {
   ActorLocationEnvelopeMsgCode,
   decodeActorLocationEnvelope,
   encodeActorLocationEnvelope,
-  extractFrameRpcId,
 } from "./ActorLocation";
 import {
   getSceneMessageHandlerBindings,
@@ -51,9 +56,15 @@ export interface SceneConfig {
 
 export interface ProcessConfig {
   name: string;
+  observability?: ProcessObservabilityConfig;
+}
+
+export interface ProcessObservabilityConfig {
+  latency?: LatencyRecorderOptions;
 }
 
 export interface RuntimeEntrySceneConfig {
+  process: ProcessConfig;
   self: SceneConfig;
   knownScenes: SceneConfig[];
   tickMs: number;
@@ -82,6 +93,7 @@ export interface OutboundBatch {
 export interface SceneUpdateResult {
   outbound: OutboundBatch[];
   metrics: SceneMetricsSnapshot;
+  pendingAsync: boolean;
 }
 
 export interface SceneMetricsSnapshot {
@@ -95,6 +107,9 @@ export interface SceneMetricsSnapshot {
   lastHandlerCostMs: number;
   maxHandlerCostMs: number;
   totalHandlerCostMs: number;
+  asyncInFlight: number;
+  maxAsyncInFlight: number;
+  latencies: LatencyMetricSnapshot[];
 }
 
 export type SceneMailboxType = "ordered" | "unordered";
@@ -104,10 +119,12 @@ type QueuedEvent =
       kind: "frame";
       connectionId: number;
       frame: Uint8Array;
+      queuedAtMs: number;
     }
   | {
       kind: "disconnect";
       connectionId: number;
+      queuedAtMs: number;
     };
 
 interface MailboxTask<T = unknown> {
@@ -117,6 +134,7 @@ interface MailboxTask<T = unknown> {
 }
 
 export abstract class EntryScene extends Entity {
+  private static readonly MAX_UNORDERED_IN_FLIGHT = 4096;
   protected readonly registry: ProtocolRegistry;
   private readonly actorRegistry: ProtocolRegistry;
   protected readonly ctx: SceneCallContext;
@@ -127,6 +145,7 @@ export abstract class EntryScene extends Entity {
   private readonly ingress: QueuedEvent[] = [];
   private ingressHead = 0;
   private readonly outbound: OutboundBatch[] = [];
+  private readonly unorderedTasks = new Set<Promise<void>>();
   private mailboxBusy = false;
   private readonly mailboxTasks: MailboxTask[] = [];
   private readonly metrics = {
@@ -137,7 +156,9 @@ export abstract class EntryScene extends Entity {
     lastHandlerCostMs: 0,
     maxHandlerCostMs: 0,
     totalHandlerCostMs: 0,
+    maxAsyncInFlight: 0,
   };
+  private readonly latencies: LatencyRecorder;
   private readonly knownRpcsByCode = new Map<number, AnyRpcDescriptor>();
   private readonly knownMessagesByCode = new Map<number, AnyMessageDescriptor>();
   private readonly registeredRpcHandlers = new Map<number, string>();
@@ -149,14 +170,18 @@ export abstract class EntryScene extends Entity {
     knownMessages: readonly AnyMessageDescriptor[] = getKnownMessageDescriptors(),
   ) {
     super();
-    this.ctx = new SceneCallContext(config, config.localRouter);
+    this.latencies = new LatencyRecorder(config.process.observability?.latency);
+    const latencyMetrics = this.latencies.enabled ? this.latencies : undefined;
+    this.ctx = new SceneCallContext(config, config.localRouter, latencyMetrics);
     this.scenes = new SceneMessageHelper(this.ctx);
     this.processHost = config.processHost;
-    this.registry = new ProtocolRegistry((message) =>
-      console.error(`[${config.self.name}] ${message}`),
+    this.registry = new ProtocolRegistry(
+      (message) => console.error(`[${config.self.name}] ${message}`),
+      latencyMetrics,
     );
-    this.actorRegistry = new ProtocolRegistry((message) =>
-      console.error(`[${config.self.name}/actor] ${message}`),
+    this.actorRegistry = new ProtocolRegistry(
+      (message) => console.error(`[${config.self.name}/actor] ${message}`),
+      latencyMetrics,
     );
     for (const descriptor of knownRpcs) {
       this.knownRpcsByCode.set(descriptor.requestCode, descriptor);
@@ -186,11 +211,20 @@ export abstract class EntryScene extends Entity {
   }
 
   pushHostFrame(connectionId: number, frame: Uint8Array): void {
-    this.enqueueIngress({ kind: "frame", connectionId, frame });
+    this.enqueueIngress({
+      kind: "frame",
+      connectionId,
+      frame,
+      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+    });
   }
 
   pushHostDisconnect(connectionId: number): void {
-    this.enqueueIngress({ kind: "disconnect", connectionId });
+    this.enqueueIngress({
+      kind: "disconnect",
+      connectionId,
+      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+    });
   }
 
   private enqueueIngress(event: QueuedEvent): void {
@@ -209,6 +243,9 @@ export abstract class EntryScene extends Entity {
 
     if (isPromiseLike(drained)) {
       return Promise.resolve(drained).then(() => this.completeUpdate(startedAt));
+    }
+    if (this.mailbox === "unordered" && this.unorderedTasks.size > 0) {
+      return Promise.race(this.unorderedTasks).then(() => this.completeUpdate(startedAt));
     }
     return this.completeUpdate(startedAt);
   }
@@ -286,6 +323,9 @@ export abstract class EntryScene extends Entity {
       lastHandlerCostMs: this.metrics.lastHandlerCostMs,
       maxHandlerCostMs: this.metrics.maxHandlerCostMs,
       totalHandlerCostMs: this.metrics.totalHandlerCostMs,
+      asyncInFlight: this.unorderedTasks.size,
+      maxAsyncInFlight: this.metrics.maxAsyncInFlight,
+      latencies: this.latencies.snapshot(),
     };
   }
 
@@ -319,6 +359,7 @@ export abstract class EntryScene extends Entity {
     return {
       outbound: this.drainOutbound(),
       metrics: this.metricsSnapshot(),
+      pendingAsync: this.unorderedTasks.size > 0,
     };
   }
 
@@ -341,22 +382,33 @@ export abstract class EntryScene extends Entity {
 
   private drainUnordered(maxFrames: number): MaybePromise<void> {
     let processed = 0;
-    const pending: Promise<void>[] = [];
-    while (this.ingressLength > 0 && processed < maxFrames) {
+    while (
+      this.ingressLength > 0 &&
+      processed < maxFrames &&
+      this.unorderedTasks.size < EntryScene.MAX_UNORDERED_IN_FLIGHT
+    ) {
       const item = this.dequeueIngress()!;
       try {
         const result = this.processIngress(item);
         if (isPromiseLike(result)) {
-          pending.push(Promise.resolve(result));
+          let task: Promise<void>;
+          task = Promise.resolve(result)
+            .catch((error) => {
+              console.error(`[${this.self.name}] unordered handler failed`, error);
+            })
+            .finally(() => {
+              this.unorderedTasks.delete(task);
+            });
+          this.unorderedTasks.add(task);
+          this.metrics.maxAsyncInFlight = Math.max(
+            this.metrics.maxAsyncInFlight,
+            this.unorderedTasks.size,
+          );
         }
       } catch (error) {
-        pending.push(Promise.reject(error));
+        console.error(`[${this.self.name}] unordered handler failed`, error);
       }
       processed += 1;
-    }
-
-    if (pending.length > 0) {
-      return Promise.all(pending).then(() => undefined);
     }
   }
 
@@ -414,6 +466,9 @@ export abstract class EntryScene extends Entity {
   }
 
   private processIngress(item: QueuedEvent): MaybePromise<void> {
+    if (this.latencies.enabled) {
+      this.latencies.record("ingress.queue", nowMs() - item.queuedAtMs);
+    }
     if (item.kind === "disconnect") {
       try {
         const result = this.onDisconnect(item.connectionId);
@@ -461,24 +516,39 @@ export abstract class EntryScene extends Entity {
     context: ProtocolContext = {},
   ): MaybePromise<Uint8Array | undefined> {
     const startedAt = nowMs();
+    const msgcode = this.latencies.enabled && frame.length >= 2
+      ? readU16BE(frame, 0)
+      : undefined;
     try {
       const response = this.routeOrHandleFrame(frame, context);
       if (isPromiseLike(response)) {
         return Promise.resolve(response).then(
           (value) => {
             this.completeHandler(startedAt, false);
+            if (this.latencies.enabled) {
+              this.latencies.record("frame.total", nowMs() - startedAt, msgcode);
+            }
             return value;
           },
           (error) => {
             this.completeHandler(startedAt, true);
+            if (this.latencies.enabled) {
+              this.latencies.record("frame.total", nowMs() - startedAt, msgcode);
+            }
             throw error;
           },
         );
       }
       this.completeHandler(startedAt, false);
+      if (this.latencies.enabled) {
+        this.latencies.record("frame.total", nowMs() - startedAt, msgcode);
+      }
       return response;
     } catch (error) {
       this.completeHandler(startedAt, true);
+      if (this.latencies.enabled) {
+        this.latencies.record("frame.total", nowMs() - startedAt, msgcode);
+      }
       throw error;
     }
   }
@@ -527,20 +597,24 @@ export abstract class EntryScene extends Entity {
       );
     }
 
-    const routedFrame = encodeActorLocationEnvelope({
-      instanceId: target.instanceId,
-      frame,
-      rpcId: rpcDescriptor ? extractFrameRpcId(frame) : undefined,
-    });
     if (rpcDescriptor) {
-      return this.ctx.callFrame(target.scene, routedFrame).catch((error) =>
-        this.registry.routingErrorResponse(
+      return this.ctx.callActorFrame(
+        target,
+        frame,
+        rpcDescriptor.responseCode,
+      ).then(
+        (response) => response,
+        (error) => this.registry.routingErrorResponse(
           frame,
           error instanceof RpcError ? error.code : SystemErrCode.SceneCallFailed,
           `actor location call failed: ${errorText(error)}`,
         ),
       );
     }
+    const routedFrame = encodeActorLocationEnvelope({
+      instanceId: target.instanceId,
+      frame,
+    });
     return this.ctx.sendFrame(target.scene, routedFrame).then(
       () => undefined,
       (error) => {
@@ -763,10 +837,6 @@ export type EntrySceneCtor = new (config: RuntimeEntrySceneConfig) => EntryScene
 export interface TargetRpcOptions<TReq, TResp> {
   handlerName?: string;
   after?: (this: EntryScene, request: TReq, response: TResp) => void | Promise<void>;
-}
-
-function nowMs(): number {
-  return Date.now();
 }
 
 function packConnectionIds(connectionIds: readonly number[]): Uint8Array {

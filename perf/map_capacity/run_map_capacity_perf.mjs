@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const options = parseOptions(process.argv.slice(2));
+if (options.client === "rust" && !options.probeOnly) {
+  throw new Error("--client rust currently supports --probe-only workloads only");
+}
 const runId = timestamp();
 const resultDir = path.join(root, "perf", "results");
 const logDir = path.join(resultDir, "logs", `map_capacity_${runId}`);
@@ -18,9 +21,15 @@ const executable = path.join(
   root,
   "target",
   options.debugRuntime ? "debug" : "release",
-  process.platform === "win32" ? "ets_runtime.exe" : "ets_runtime",
+  process.platform === "win32" ? "TiangZ.exe" : "TiangZ",
 );
 const loadClient = path.join(root, "dist", "full_chain_load_test.cjs");
+const rustLoadClient = path.join(
+  root,
+  "target",
+  "release",
+  process.platform === "win32" ? "map_probe_load.exe" : "map_probe_load",
+);
 const rawResults = [];
 
 await main();
@@ -84,8 +93,9 @@ async function runCase(players, round) {
       await waitPort("127.0.0.1", port, 30_000);
     }
 
-    const output = await runCommand(process.execPath, [
-      loadClient,
+    const useRustClient = options.client === "rust";
+    const output = await runCommand(useRustClient ? rustLoadClient : process.execPath, [
+      ...(useRustClient ? [] : [loadClient]),
       "--host", "127.0.0.1",
       "--manager-port", String(options.managerPort),
       "--players", String(players),
@@ -94,9 +104,11 @@ async function runCase(players, round) {
       "--warmup", String(options.warmup),
       "--move-rate", String(options.moveRate),
       "--probe-rate", String(options.probeRate),
+      "--probe-concurrency", String(options.probeConcurrency),
       "--timeout", String(options.timeoutMs),
       "--movement-timeout", String(options.movementTimeoutMs),
       "--label", `${options.gates}g`,
+      ...(!useRustClient && options.probeOnly ? ["--disable-move"] : []),
     ]);
     process.stdout.write(output);
     const line = output.split(/\r?\n/).findLast((item) => item.startsWith("RESULT_JSON "));
@@ -291,9 +303,11 @@ function aggregateCases(rounds) {
         (item) => item.serverResources.gateOutboundLogicalBytesPerSecond,
       )),
       movesPerSecond: median(group.map((item) => item.movement.perSecond)),
-      moveTargetPercent: median(group.map(
-        (item) => item.movement.perSecond / (item.players * options.moveRate) * 100,
-      )),
+      moveTargetPercent: options.probeOnly || options.moveRate === 0
+        ? 100
+        : median(group.map(
+          (item) => item.movement.perSecond / (item.players * options.moveRate) * 100,
+        )),
       pushesPerSecond: median(group.map((item) => item.movement.pushesPerSecond)),
       moveErrors: median(group.map((item) => item.movement.errors)),
       probePerSecond: median(group.map((item) => item.probe.perSecond)),
@@ -316,7 +330,9 @@ function renderMarkdown(report) {
     "",
     `- 时间：${report.generatedAt}`,
     `- 拓扑：1 MapHost / ${options.gates} Gate / 1 Login / 1 LoginMgr`,
-    `- 负载：每玩家 ${options.moveRate}Hz Move + ${options.probeRate}Hz MapProbe`,
+    `- 负载：${options.probeOnly ? "Probe Only，" : `每玩家 ${options.moveRate}Hz Move + `}每玩家 ${options.probeRate}Hz MapProbe`,
+    `- Probe in-flight：每连接 ${options.probeConcurrency}`,
+    `- 压测客户端：${options.client === "rust" ? "Rust" : "Node.js"}`,
     `- 正式测试：${options.duration}s；预热：${options.warmup}s；轮数：${options.rounds}`,
     `- Map CPU 目标：${options.targetMapCpu}%（100% 表示一个逻辑核）`,
     `- 机器：${report.machine.cpu} / ${report.machine.logicalCpus} 逻辑核 / ${formatBytes(report.machine.memoryBytes)}`,
@@ -371,7 +387,9 @@ function renderMarkdown(report) {
     "",
     "- `MapProbe` 是 ActorLocation RPC，链路为客户端 -> Gate -> MapHost -> Gate -> 客户端，不产生 AOI 广播。",
     "- Map/Gate CPU 使用正式测试窗口内的 5 秒进程 CPU 样本；平均值用于容量判断。",
-    "- 容量点要求实际 Move 吞吐至少达到设定频率的 95%，避免闭环变慢后 CPU 被动下降造成误判。",
+    options.probeOnly
+      ? "- Probe Only 模式关闭 Move 和 AOI 广播，用于测 MapHost pingpong RPC 基线吞吐。"
+      : "- 容量点要求实际 Move 吞吐至少达到设定频率的 95%，避免闭环变慢后 CPU 被动下降造成误判。",
     "- `push/s` 仍是全地图全量可见广播，代表最坏同屏 O(N^2) 场景。",
     "- Gate 数量用于分摊连接、编码和下行发送；MapHost 始终只有一个。",
     "",
@@ -391,8 +409,9 @@ function parseOptions(args) {
   return {
     players: csvNumbers(values.get("--players") ?? "100,125,150,175,200"),
     gates: positive(values.get("--gates") ?? "4", "--gates"),
-    moveRate: positive(values.get("--move-rate") ?? "10", "--move-rate"),
+    moveRate: nonNegative(values.get("--move-rate") ?? "10", "--move-rate"),
     probeRate: positive(values.get("--probe-rate") ?? "1", "--probe-rate"),
+    probeConcurrency: positive(values.get("--probe-concurrency") ?? "1", "--probe-concurrency"),
     duration: positive(values.get("--duration") ?? "30", "--duration"),
     warmup: nonNegative(values.get("--warmup") ?? "10", "--warmup"),
     rounds: positive(values.get("--rounds") ?? "1", "--rounds"),
@@ -406,6 +425,8 @@ function parseOptions(args) {
     gateBasePort: positive(values.get("--gate-base-port") ?? "7201", "--gate-base-port"),
     mapPort: positive(values.get("--map-port") ?? "7301", "--map-port"),
     debugRuntime: flags.has("--debug-runtime"),
+    probeOnly: flags.has("--probe-only"),
+    client: enumValue(values.get("--client") ?? "node", ["node", "rust"], "--client"),
   };
 }
 
@@ -463,6 +484,7 @@ function numberOrder(left, right) { return left - right; }
 function csvNumbers(value) { return value.split(",").map((item) => positive(item.trim(), "--players")); }
 function positive(value, name) { const number = Number(value); if (!(number > 0)) throw new Error(`${name} must be > 0`); return number; }
 function nonNegative(value, name) { const number = Number(value); if (!(number >= 0)) throw new Error(`${name} must be >= 0`); return number; }
+function enumValue(value, allowed, name) { if (!allowed.includes(value)) throw new Error(`${name} must be one of ${allowed.join(", ")}`); return value; }
 function round(value, digits = 0) { const scale = 10 ** digits; return Math.round(value * scale) / scale; }
 function formatBytes(value) { return `${(value / 1024 / 1024).toFixed(1)}MB`; }
 function formatRate(value) { return `${(value / 1024 / 1024).toFixed(2)}MB/s`; }

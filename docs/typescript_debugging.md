@@ -8,7 +8,7 @@
 
 ```powershell
 npm run build:debug
-cargo run --bin ets_runtime -- configs/local/login1.debug.json
+cargo run --bin TiangZ -- configs/local/login1.debug.json
 ```
 
 示例业务端口为 `17001`，Inspector 为 `127.0.0.1:9231`。`breakOnStart: true` 会在 bundle 业务代码执行前等待调试器。
@@ -19,12 +19,12 @@ VS Code 附加配置：
 {
   "type": "node",
   "request": "attach",
-  "name": "附加 ets_runtime Process",
+  "name": "附加 TiangZ Process",
   "address": "127.0.0.1",
   "port": 9231,
   "sourceMaps": true,
   "sourceMapPathOverrides": {
-    "*": "${workspaceFolder}/ets_runtime/*"
+    "*": "${workspaceFolder}/TiangZ/*"
   }
 }
 ```

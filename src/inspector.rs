@@ -25,7 +25,7 @@ impl ProcessInspector {
             .with_context(|| format!("invalid inspector IP for {}", process.name))?;
         let server = InspectorServer::new(
             SocketAddr::new(ip, debug.inspector_port),
-            "ets_runtime",
+            "TiangZ",
             InspectPublishUid::default(),
         )
         .with_context(|| format!("{} failed to start inspector", process.name))?;

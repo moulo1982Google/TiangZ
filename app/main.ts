@@ -43,10 +43,44 @@ function updateBinary(_arg: string): MaybePromise<string> {
 }
 
 function flushUpdateResult(result: ProcessUpdateResult): string {
-  for (const batch of result.outbound) {
-    hostPushOutboundBatch(batch.connectionIdBytes, batch.frame);
+  const outbound = result.outbound;
+  if (outbound.length > 0) {
+    hostPushOutboundPacked(packOutbound(outbound));
   }
-  return JSON.stringify({ metrics: result.metrics });
+  return JSON.stringify({
+    metrics: result.metrics,
+    pendingAsync: result.pendingAsync,
+  });
+}
+
+function packOutbound(outbound: ProcessUpdateResult["outbound"]): Uint8Array {
+  // [batchCount:u32] + repeated [targetCount:u32][targetIds:u32...][frameLen:u32][frame]
+  let byteLength = 4;
+  for (const batch of outbound) {
+    if (batch.connectionIdBytes.length === 0 || batch.connectionIdBytes.length % 4 !== 0) {
+      throw new Error("outbound connection ids must be non-empty uint32 values");
+    }
+    byteLength += 4 + batch.connectionIdBytes.length + 4 + batch.frame.length;
+    if (!Number.isSafeInteger(byteLength) || byteLength > 0xffff_ffff) {
+      throw new Error(`outbound packet is too large: ${byteLength}`);
+    }
+  }
+
+  const packed = new Uint8Array(byteLength);
+  const view = new DataView(packed.buffer);
+  view.setUint32(0, outbound.length, true);
+  let offset = 4;
+  for (const batch of outbound) {
+    view.setUint32(offset, batch.connectionIdBytes.length / 4, true);
+    offset += 4;
+    packed.set(batch.connectionIdBytes, offset);
+    offset += batch.connectionIdBytes.length;
+    view.setUint32(offset, batch.frame.length, true);
+    offset += 4;
+    packed.set(batch.frame, offset);
+    offset += batch.frame.length;
+  }
+  return packed;
 }
 
 function hostTakeBinaryArg(): Uint8Array {
@@ -54,17 +88,9 @@ function hostTakeBinaryArg(): Uint8Array {
     .__hostTakeBinaryArg();
 }
 
-function hostPushOutboundBatch(
-  connectionIdBytes: Uint8Array,
-  frame: Uint8Array,
-): void {
-  (globalThis as typeof globalThis & {
-    __hostPushOutboundBatch: (
-      connectionIdBytes: Uint8Array,
-      frame: Uint8Array,
-    ) => void;
-  }).__hostPushOutboundBatch(connectionIdBytes, frame);
-}
+const hostPushOutboundPacked = (globalThis as typeof globalThis & {
+    __hostPushOutboundPacked: (packed: Uint8Array) => void;
+  }).__hostPushOutboundPacked;
 
 const host = globalThis as typeof globalThis & {
   __etsStartProcess: (configJson: string) => string;

@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
-$RuntimeExe = Join-Path $Root "target\debug\ets_runtime.exe"
+$RuntimeExe = Join-Path $Root "target\debug\TiangZ.exe"
 $SmokeClient = Join-Path $Root "dist\smoke_client.cjs"
 
 if (-not (Test-Path $RuntimeExe)) {

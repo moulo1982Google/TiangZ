@@ -1,4 +1,4 @@
-﻿param(
+param(
     [ValidateSet("all", "split", "both")]
     [string]$Mode = "both",
     [string]$Players = "10,50,100",
@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $Profile = if ($DebugRuntime) { "debug" } else { "release" }
-$RuntimeExe = Join-Path $Root "target\$Profile\ets_runtime.exe"
+$RuntimeExe = Join-Path $Root "target\$Profile\TiangZ.exe"
 $RuntimeLoadExe = Join-Path $Root "target\$Profile\runtime_load.exe"
 $GameClient = Join-Path $Root "dist\full_chain_load_test.cjs"
 $ResultDir = Join-Path $Root "perf\results"

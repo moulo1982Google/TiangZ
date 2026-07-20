@@ -159,6 +159,7 @@ async function testExternalHandlerDispatch(): Promise<void> {
 
 function createScene(): HandlerProbeScene {
   return new HandlerProbeScene({
+    process: { name: "handler-component-self-test" },
     self: sceneConfig(),
     knownScenes: [sceneConfig()],
     tickMs: 50,
