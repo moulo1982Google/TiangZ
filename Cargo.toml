@@ -13,9 +13,9 @@ io-uring = ["dep:tokio-uring"]
 anyhow = "1"
 base64 = "0.22"
 bytes = "1"
-deno_core = "0.407"
+deno_core = "0.408"
 deno_error = "0.7.1"
-deno_inspector_server = "0.28.0"
+deno_inspector_server = "0.29.0"
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
