@@ -70,6 +70,18 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Scene ProtocolRegistry 与 Actor ProtocolRegistry 分离。
 - 单进程、拆进程登录、重连、移动、实体进出链路通过。
 
+### Phase 2.12：固定 Game.Update 与游戏定时器
+
+状态：完成（2026-07）。
+
+- Runtime Pump 保持事件驱动，Game.Update 独立为默认 20Hz 固定业务帧。
+- `TimeSystem`、`TimerSystem`、`UpdateSystem` 和 `Game` 使用可复用的进程级 SingletonRegistry。
+- 实现 `Update()` 的 Component 自动注册与注销，无需维护业务 Update 表。
+- 一次性、重复、取消和 WaitAsync 游戏定时器使用单调时钟与最小堆。
+- Actor 与 Actor Component 定时器进入实体 mailbox，并随实体生命周期自动取消。
+- 固定帧补偿有 `maxCatchUpSteps` 上限，并输出 skipped、Update、Timer 指标。
+- `npm run test:game-update` 验证固定帧、生命周期、定时器和 ordered Actor 不重入语义。
+
 ## Phase 2.9：文档与开发体验
 
 状态：本轮完成核心部分，持续维护。
@@ -83,7 +95,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 2.10：全链路性能基线
 
-状态：测试体系、Snapshot 投影和批量下行 Bridge 第一轮整改完成，持续维护。
+状态：测试体系、Snapshot 投影、上下行批处理和内部 RPC 热路径第二轮整改完成，持续维护。
 
 - 已覆盖 TCP、Rust 有界队列、V8、protobuf、Handler、跨进程 Scene 调用、地图 Actor、移动和客户端 AOI Push。
 - 已建立 64B 到 16KB Payload、10/50/100 玩家、单进程/拆分进程、10Hz/极限闭环矩阵。
@@ -93,9 +105,18 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Core `sendClientMany` 使用单个 `OutboundBatch`；Rust 一次接收目标列表和帧，并通过 `Bytes` 向多个 writer 共享帧内存。
 - TS 每个 update 只执行一次 packed outbound Host Op；Rust 对整包复制一次，各批次通过 `Bytes::slice` 共享 backing storage。
 - Gate 的 ActorLocation RPC 转发改为原始 protobuf frame 替换 rpcId，不再为路由完整 decode/encode 业务对象。
+- ActorLocation 外层改为固定 14 字节二进制头，Rust 可直接读取内部 rpcId，不解析业务 protobuf。
+- TS 到 Rust 的远程 Scene 操作按 update 打包提交；Rust 共享批包 backing storage、每批一个调度任务，并把批内并发限制为 256。
+- 单向 Message 不再创建 Promise completion；RPC call 和 timer 才回 completion，避免进图广播产生海量无意义唤醒。
+- Actor 同步 Handler 走真正同步的 mailbox 快路径；Raw TCP、WebSocket 和内部 TCP writer 都已批量写出。
+- Process completion 与网络 frame 统一进入同一有界事件队列，并增加 frame/completion/update/batch 累计指标。
+- Rust 到 TS 的入站事件改为一个连续二进制批包，每个 update 只跨一次 Host Op；不再逐事件调用 `__hostTakeBinaryArg`。
+- V8 启动后缓存三个 Runtime 入口 Function，移除每 tick 动态 `execute_script`；Scene metrics 改为每 5 秒采样一次，普通 update 不再 stringify/parse JSON。
+- 单连接 response 复用 connectionId 二进制表示，`packFrame` 只分配最终帧；Actor Handler 首次按 `instanceof` 匹配后按构造器缓存。
+- Process 提供 `low-latency`、`throughput`、`adaptive` 三种调度模式；默认 adaptive 在高负载下使用微秒级 yield 聚合，避免 Windows 亚毫秒定时器放大延迟。
 - 200 玩家、8 Gate、全员 10Hz 移动下，约 40 万 recipients/s 合并为 1.62 万 batch/s，V8 到 Rust 的帧复制带宽约为逻辑下行的 1/25。
 - 批量 Bridge 后最忙 Gate 三轮中位 CPU 从 197.9% 降至 137.9%；下一层瓶颈是逐连接 writer enqueue 和网络消息数量。
-- 600 玩家、8 Gate、单 MapHost 的 Probe Only 完整链路三轮中位数：4.20 万 RPC/s 时 Map CPU 60.6%、p99 102.18ms；当前饱和边界约 4.88 万 RPC/s，Map CPU 74.3%、p99 161.03ms，零 RPC 错误和 transport overload。
+- 2026-07-20 第三轮优化后，600 玩家、8 Gate、单 MapHost、每玩家 70Hz Probe Only 的完整链路三轮中位数为 4.20 万 RPC/s，Map CPU 54.3%，p50/p95/p99 为 4.05/8.23/10.38ms，最忙 Gate 平均/峰值 CPU 为 66.3/85.9%，三轮均为零 RPC 错误、零 transport overload、零 Process 背压。同一负载口径在本轮开始前的短时单轮样本为 Map CPU 89.1%、p95/p99 5.87/8.22ms；CPU 明显下降，聚合引入了约 1 到 2ms 的可控尾延迟。该结果仍是纯 Probe 框架基线，不是业务容量承诺。
 - 默认性能命令升级为 60 秒、三轮中位数，并采集服务端与压测端 CPU/RSS/GC；支持独立压测机。
 - 网格 AOI 保留到 Phase 4，当前继续用全地图可见性验证链路和聚合收益。
 - 可重复命令、指标口径和报告位置见 `perf/full_chain/README.md`。

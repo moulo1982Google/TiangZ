@@ -22,6 +22,8 @@ import { UnitGateComponent } from "../app/demo/map/UnitGateComponent";
 import { BinaryWriter } from "../app/core/protocol/binary";
 import { packFrame } from "../app/core/protocol/registry";
 import {
+  decodeActorLocationEnvelope,
+  encodeActorLocationEnvelope,
   extractFrameRpcId,
   rewriteFrameRpcId,
 } from "../app/core/process/ActorLocation";
@@ -52,6 +54,16 @@ function testRpcIdRewrite(): void {
     () => rewriteFrameRpcId(packFrame(12_345, Uint8Array.from([8, 1])), 2),
     /no rpcId/,
   );
+
+  const envelope = encodeActorLocationEnvelope({
+    instanceId: 9_007_199_254_000,
+    rpcId: 300_000,
+    frame: rewritten,
+  });
+  const decoded = decodeActorLocationEnvelope(envelope);
+  assert.equal(decoded.instanceId, 9_007_199_254_000);
+  assert.equal(decoded.rpcId, 300_000);
+  assert.deepEqual(decoded.frame, rewritten);
 }
 
 @component()

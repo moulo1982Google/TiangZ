@@ -1,4 +1,4 @@
-import { BinaryReader, concatBytes, readU16BE, writeU16BE } from "./binary";
+import { BinaryReader, readU16BE } from "./binary";
 import { isPromiseLike, type MaybePromise } from "../async";
 import type { AnyMessageDescriptor } from "./message";
 import { RpcError } from "./RpcError";
@@ -313,7 +313,11 @@ export class ProtocolRegistry {
 }
 
 export function packFrame(msgcode: number, payload: Uint8Array): Uint8Array {
-  return concatBytes(writeU16BE(msgcode), payload);
+  const frame = new Uint8Array(payload.length + 2);
+  frame[0] = (msgcode >>> 8) & 0xff;
+  frame[1] = msgcode & 0xff;
+  frame.set(payload, 2);
+  return frame;
 }
 
 function getRpcId(value: unknown): number | undefined {

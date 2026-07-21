@@ -260,7 +260,7 @@ function parseOptions(args) {
   return {
     mode,
     players: csvNumbers(values.get("--players") ?? "10,50,100"),
-    moveRates: csvNumbers(values.get("--move-rates") ?? "10,0"),
+    moveRates: csvNumbers(values.get("--move-rates") ?? "5,0"),
     duration: positive(values.get("--duration") ?? "60", "--duration"),
     warmup: nonNegative(values.get("--warmup") ?? "10", "--warmup"),
     rounds: positive(values.get("--rounds") ?? "3", "--rounds"),

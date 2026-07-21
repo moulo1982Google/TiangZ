@@ -10,6 +10,8 @@ import type {
   SceneRef,
 } from "./types";
 import type { Actor } from "./entities";
+import type { MaybePromise } from "../async";
+import type { TimerId } from "./TimerSystem";
 
 export class SceneContext {
   constructor(
@@ -94,6 +96,24 @@ export class ActorContext {
 
   sleep(ms: number): Promise<void> {
     return hostSleep(ms);
+  }
+
+  newOnceTimer(
+    delayMs: number,
+    callback: (actor: Actor<any[]>) => MaybePromise<void>,
+  ): TimerId {
+    return this.host.newActorOnceTimer(this.self.instanceId, delayMs, callback);
+  }
+
+  newRepeatedTimer(
+    intervalMs: number,
+    callback: (actor: Actor<any[]>) => MaybePromise<void>,
+  ): TimerId {
+    return this.host.newActorRepeatedTimer(this.self.instanceId, intervalMs, callback);
+  }
+
+  removeTimer(timerId: TimerId): boolean {
+    return this.host.removeActorTimer(this.self.instanceId, timerId);
   }
 
   log(...args: unknown[]): void {

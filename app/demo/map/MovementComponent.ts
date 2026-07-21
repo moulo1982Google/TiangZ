@@ -1,5 +1,10 @@
 import { Component, component } from "../../core/runtime";
 
+// 默认客户端以 5Hz 上报输入，因此正常两个输入包之间相隔 200ms。
+// 服务端仍以 20Hz Game.Update 运行；这里按服务端收包时间计算权威移动步长。
+const DEFAULT_MOVE_STEP_MS = 200;
+const MAX_MOVE_STEP_MS = 250;
+
 @component()
 export class MovementComponent extends Component {
   private currentSequence = 0;
@@ -23,8 +28,8 @@ export class MovementComponent extends Component {
 
     const elapsedMs =
       this.lastMoveAtMs === 0
-        ? 50
-        : Math.max(0, Math.min(nowMs - this.lastMoveAtMs, 100));
+        ? DEFAULT_MOVE_STEP_MS
+        : Math.max(0, Math.min(nowMs - this.lastMoveAtMs, MAX_MOVE_STEP_MS));
     this.currentSequence = sequence;
     this.lastMoveAtMs = nowMs;
     return elapsedMs / 1000;

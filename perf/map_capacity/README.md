@@ -4,8 +4,10 @@
 
 测试拓扑固定为一个 MapHost，可通过 `--gates` 横向增加 Gate。每个玩家同时执行：
 
-- `10Hz C2M_Move`，触发同地图全量广播。
+- `5Hz C2M_Move`，触发同地图全量广播；这是 Demo 客户端默认输入上报频率。
 - `1Hz C2M_MapProbe`，经过客户端、Gate、MapHost 和返回链路，但不触发广播。
+
+服务端 `Game.Update` 默认固定为 20Hz。当前移动消息到达后立即更新并广播，因此 20Hz 是游戏逻辑刷新频率，不代表网络位置广播也固定为 20Hz。
 
 默认执行：
 
@@ -19,7 +21,7 @@ npm run perf:map-capacity
 npm run perf:map-capacity -- \
   --gates 4 \
   --players 100,125,150,175,200 \
-  --move-rate 10 \
+  --move-rate 5 \
   --probe-rate 1 \
   --warmup 10 \
   --duration 30 \

@@ -1,4 +1,7 @@
 import type { ActorContext, SceneContext } from "./contexts";
+import type { MaybePromise } from "../async";
+import { TimerSystem, type TimerId } from "./TimerSystem";
+import { UpdateSystem } from "./UpdateSystem";
 import type {
   ActorAwakeArgs,
   ActorCtor,
@@ -11,6 +14,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   private awoken = false;
   private disposed = false;
   private parent: Entity | undefined;
+  private readonly timers = new Set<TimerId>();
 
   get IsDisposed(): boolean {
     return this.disposed;
@@ -34,6 +38,43 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   protected Awake(..._args: TAwakeArgs): void {}
 
   protected OnDestroy(): void {}
+
+  NewOnceTimer(
+    delayMs: number,
+    callback: (self: this) => MaybePromise<void>,
+  ): TimerId {
+    let timerId = 0;
+    const run = () => {
+      this.timers.delete(timerId);
+      if (!this.disposed) return callback(this);
+    };
+    timerId = this.Parent instanceof Actor
+      ? this.Parent.NewOnceTimer(delayMs, run)
+      : TimerSystem.Instance.NewOnceTimer(delayMs, run);
+    this.timers.add(timerId);
+    return timerId;
+  }
+
+  NewRepeatedTimer(
+    intervalMs: number,
+    callback: (self: this) => MaybePromise<void>,
+  ): TimerId {
+    const run = () => {
+      if (!this.disposed) return callback(this);
+    };
+    const timerId = this.Parent instanceof Actor
+      ? this.Parent.NewRepeatedTimer(intervalMs, run)
+      : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run);
+    this.timers.add(timerId);
+    return timerId;
+  }
+
+  RemoveTimer(timerId: TimerId): boolean {
+    if (!this.timers.delete(timerId)) return false;
+    return this.parent instanceof Actor
+      ? this.parent.RemoveTimer(timerId)
+      : TimerSystem.Instance.Remove(timerId);
+  }
 
   __attach(parent: Entity): void {
     if (this.parent) {
@@ -59,11 +100,14 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
         `component Awake must be synchronous: ${this.constructor.name}`,
       );
     }
+    UpdateSystem.TryRegister(this);
   }
 
   __dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    UpdateSystem.TryUnregister(this);
+    for (const timerId of [...this.timers]) this.RemoveTimer(timerId);
     this.OnDestroy();
     this.parent = undefined;
   }
@@ -284,6 +328,27 @@ export abstract class Actor<
   }
 
   protected Awake(..._args: TAwakeArgs): void {}
+
+  NewOnceTimer(
+    delayMs: number,
+    callback: (actor: this) => MaybePromise<void>,
+  ): TimerId {
+    return this.ctx.newOnceTimer(delayMs, callback as (actor: Actor<any[]>) => MaybePromise<void>);
+  }
+
+  NewRepeatedTimer(
+    intervalMs: number,
+    callback: (actor: this) => MaybePromise<void>,
+  ): TimerId {
+    return this.ctx.newRepeatedTimer(
+      intervalMs,
+      callback as (actor: Actor<any[]>) => MaybePromise<void>,
+    );
+  }
+
+  RemoveTimer(timerId: TimerId): boolean {
+    return this.ctx.removeTimer(timerId);
+  }
 
   __awake(...args: TAwakeArgs): void {
     if (this.awoken) {

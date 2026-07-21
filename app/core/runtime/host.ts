@@ -7,6 +7,7 @@ import type {
 import { MailBoxComponent } from "./MailBoxComponent";
 import { EntityRoot } from "./root";
 import { Unit, UnitComponent } from "./Unit";
+import { TimerSystem, type TimerId } from "./TimerSystem";
 import {
   getActorOptions,
   getHandlerMetadata,
@@ -46,6 +47,7 @@ interface ActorRuntime extends MailboxRuntime {
   ref: ActorRef;
   instance: Actor<any[]>;
   mailBox: MailBoxComponent;
+  timers: Set<TimerId>;
 }
 
 interface PendingDispatch {
@@ -154,6 +156,7 @@ export class ProcessHost {
         handlers,
         queue: [],
         running: false,
+        timers: new Set(),
       };
       scene.actors.set(actorId, runtime);
       this.actorsByInstanceId.set(ref.instanceId, runtime);
@@ -227,6 +230,8 @@ export class ProcessHost {
     scene.actors.delete(actorId);
     this.actorsByInstanceId.delete(actor.ref.instanceId);
     this.Root.Remove(actor.ref.instanceId);
+    for (const timerId of actor.timers) TimerSystem.Instance.Remove(timerId);
+    actor.timers.clear();
     if (
       actor.instance instanceof Unit &&
       actor.instance.Parent instanceof UnitComponent
@@ -245,18 +250,79 @@ export class ProcessHost {
     return true;
   }
 
+  newActorOnceTimer(
+    instanceId: InstanceId,
+    delayMs: number,
+    callback: (actor: Actor<any[]>) => MaybePromise<void>,
+  ): TimerId {
+    const actor = this.requireActorRuntime(instanceId);
+    let timerId = 0;
+    timerId = TimerSystem.Instance.NewOnceTimer(delayMs, () => {
+      actor.timers.delete(timerId);
+      return this.runActorMailbox(instanceId, callback);
+    });
+    actor.timers.add(timerId);
+    return timerId;
+  }
+
+  newActorRepeatedTimer(
+    instanceId: InstanceId,
+    intervalMs: number,
+    callback: (actor: Actor<any[]>) => MaybePromise<void>,
+  ): TimerId {
+    const actor = this.requireActorRuntime(instanceId);
+    const timerId = TimerSystem.Instance.NewRepeatedTimer(
+      intervalMs,
+      () => this.runActorMailbox(instanceId, callback),
+    );
+    actor.timers.add(timerId);
+    return timerId;
+  }
+
+  removeActorTimer(instanceId: InstanceId, timerId: TimerId): boolean {
+    const actor = this.actorsByInstanceId.get(instanceId);
+    if (!actor || !actor.timers.delete(timerId)) return false;
+    return TimerSystem.Instance.Remove(timerId);
+  }
+
   runActorMailbox<T>(
     instanceId: InstanceId,
     run: (actor: Actor<any[]>) => MaybePromise<T>,
-  ): Promise<T> {
+  ): MaybePromise<T> {
     const actor = this.actorsByInstanceId.get(instanceId);
     const entity = this.Root.Get(instanceId);
     if (!actor || entity !== actor.instance) {
       return Promise.reject(new Error(`actor instance not found: ${instanceId}`));
     }
 
+    if (mailboxType(actor) === "unordered") return run(actor.instance);
+
+    if (!actor.running) {
+      actor.running = true;
+      try {
+        const result = run(actor.instance);
+        if (isPromiseLike(result)) {
+          return Promise.resolve(result).then(
+            (value) => {
+              this.finishDirectActorCall(actor);
+              return value;
+            },
+            (error) => {
+              this.finishDirectActorCall(actor);
+              throw error;
+            },
+          );
+        }
+        this.finishDirectActorCall(actor);
+        return result;
+      } catch (error) {
+        this.finishDirectActorCall(actor);
+        throw error;
+      }
+    }
+
     return new Promise<T>((resolve, reject) => {
-      this.dispatch({
+      actor.queue.push({
         envelope: {
           id: this.nextMessageId++,
           to: actor.ref,
@@ -269,6 +335,22 @@ export class ProcessHost {
         reject,
       });
     });
+  }
+
+  private requireActorRuntime(instanceId: InstanceId): ActorRuntime {
+    const actor = this.actorsByInstanceId.get(instanceId);
+    if (!actor || this.Root.Get(instanceId) !== actor.instance) {
+      throw new Error(`actor instance not found: ${instanceId}`);
+    }
+    return actor;
+  }
+
+  private finishDirectActorCall(actor: ActorRuntime): void {
+    if (actor.queue.length > 0) {
+      this.drainOrdered(actor);
+    } else {
+      actor.running = false;
+    }
   }
 
   call<TResponse = unknown>(

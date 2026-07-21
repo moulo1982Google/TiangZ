@@ -7,6 +7,10 @@ import {
 import { RpcSocket } from "../../Core/Net/RpcSocket";
 import { MapMessages } from "../../Generated/Model/demo/protocol/messageDescriptors";
 
+// 客户端只以 5Hz 上报方向输入；服务端以 20Hz 固定逻辑帧运行。
+// 网络上报频率与服务端逻辑刷新频率分离，避免把渲染帧率变成网络包频率。
+const MOVE_REPORT_INTERVAL_SECONDS = 1 / 5;
+
 export class LocalPlayerController {
   private readonly pressed = new Set<KeyCode>();
   private registered = false;
@@ -32,8 +36,8 @@ export class LocalPlayerController {
     }
 
     this.sendAccumulator += deltaTime;
-    if (this.sendAccumulator < 0.05) return;
-    this.sendAccumulator %= 0.05;
+    if (this.sendAccumulator < MOVE_REPORT_INTERVAL_SECONDS) return;
+    this.sendAccumulator %= MOVE_REPORT_INTERVAL_SECONDS;
     this.sequence += 1;
     void this.socket.send(MapMessages.Move, {
       inputX: dx,

@@ -1,33 +1,78 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 
+use crate::transport::{call_remote_scene, send_remote_scene};
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use deno_core::convert::Uint8Array;
 use deno_core::error::AnyError;
-use deno_core::{JsBuffer, JsRuntime, PollEventLoopOptions, RuntimeOptions, op2};
+use deno_core::{JsBuffer, JsRuntime, PollEventLoopOptions, RuntimeOptions, op2, v8};
 use deno_error::JsErrorBox;
-use futures_util::future::poll_fn;
-use crate::transport::{call_remote_scene, send_remote_scene};
+use futures_util::{StreamExt, future::poll_fn, stream};
+use tokio::runtime::Handle;
 
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
 const HOST_OUTBOUND_MAX_TARGETS: usize = 4096;
 const HOST_OUTBOUND_MAX_BATCHES: usize = 65_536;
 const HOST_OUTBOUND_MAX_PACKED_LEN: usize = 64 * 1024 * 1024;
+const HOST_SCENE_MAX_ROUTES: usize = 4096;
+const HOST_SCENE_MAX_OPERATIONS: usize = 65_536;
+const HOST_SCENE_OPERATION_META_BYTES: usize = 17;
+const HOST_SCENE_MAX_IN_FLIGHT: usize = 256;
+const BACKPRESSURE_RETRY_MS: u64 = 1;
 
 thread_local! {
-    static LAST_JS_RESULT: RefCell<Option<String>> = const { RefCell::new(None) };
-    static NEXT_EVENT_META: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
-    static NEXT_BINARY_ARGS: RefCell<VecDeque<Vec<u8>>> = const { RefCell::new(VecDeque::new()) };
+    static NEXT_HOST_EVENT_BATCH: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
     static OUTBOUND_BINARY_BATCHES: RefCell<Vec<BinaryOutboundBatch>> = const { RefCell::new(Vec::new()) };
+    static HOST_SCENE_ROUTES: RefCell<Vec<HostSceneRoute>> = const { RefCell::new(Vec::new()) };
+    static HOST_SCENE_RUNTIME: RefCell<Option<Handle>> = const { RefCell::new(None) };
+    static HOST_SCENE_COMPLETION_SINK: RefCell<Option<HostSceneCompletionSink>> = const { RefCell::new(None) };
 }
 
 #[derive(Debug)]
 pub struct BinaryOutboundBatch {
     pub connection_ids: Vec<u64>,
     pub frame: Bytes,
+}
+
+#[derive(Debug)]
+pub struct HostSceneCompletion {
+    pub operation_id: u32,
+    pub result: std::result::Result<Vec<u8>, String>,
+}
+
+pub type HostSceneCompletionSink =
+    Arc<dyn Fn(HostSceneCompletion) -> std::result::Result<(), HostSceneCompletion> + Send + Sync>;
+
+pub struct JsEntrypoints {
+    start_process: v8::Global<v8::Function>,
+    update: v8::Global<v8::Function>,
+    dispatch_host_events: v8::Global<v8::Function>,
+}
+
+#[derive(Clone, Debug)]
+struct HostSceneRoute {
+    source_name: String,
+    target_name: String,
+    target_ip: String,
+    target_port: u16,
+}
+
+#[derive(Debug)]
+struct HostSceneOperation {
+    operation_id: u32,
+    route: Option<HostSceneRoute>,
+    kind: u8,
+    timeout_ms: u32,
+    frame: Bytes,
+}
+
+pub fn configure_host_scene_bridge(runtime: Handle, completion_sink: HostSceneCompletionSink) {
+    HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
+    HOST_SCENE_RUNTIME.with(|slot| *slot.borrow_mut() = Some(runtime));
+    HOST_SCENE_COMPLETION_SINK.with(|slot| *slot.borrow_mut() = Some(completion_sink));
 }
 
 #[op2(nofast)]
@@ -40,22 +85,9 @@ async fn op_host_sleep(ms: u32) {
     tokio::time::sleep(Duration::from_millis(ms as u64)).await;
 }
 
-#[op2(nofast)]
-fn op_host_set_result(#[string] result: String) {
-    LAST_JS_RESULT.with(|slot| {
-        *slot.borrow_mut() = Some(result);
-    });
-}
-
 #[op2]
-fn op_host_take_binary_arg() -> Uint8Array {
-    let bytes = NEXT_BINARY_ARGS.with(|slot| slot.borrow_mut().pop_front().unwrap_or_default());
-    bytes.into()
-}
-
-#[op2]
-fn op_host_take_event_meta() -> Uint8Array {
-    let bytes = NEXT_EVENT_META.with(|slot| slot.borrow_mut().take().unwrap_or_default());
+fn op_host_take_event_batch() -> Uint8Array {
+    let bytes = NEXT_HOST_EVENT_BATCH.with(|slot| slot.borrow_mut().take().unwrap_or_default());
     bytes.into()
 }
 
@@ -80,6 +112,118 @@ fn op_host_push_outbound_packed(#[buffer] packed: JsBuffer) -> Result<(), JsErro
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
     OUTBOUND_BINARY_BATCHES.with(|slot| slot.borrow_mut().extend(batches));
     Ok(())
+}
+
+#[op2(nofast)]
+fn op_host_register_scene_route(
+    #[string] source_name: String,
+    #[string] target_name: String,
+    #[string] target_ip: String,
+    target_port: u16,
+) -> Result<u32, JsErrorBox> {
+    if source_name.is_empty() || target_name.is_empty() || target_ip.is_empty() || target_port == 0
+    {
+        return Err(JsErrorBox::generic("invalid host scene route"));
+    }
+    if source_name == target_name {
+        return Err(JsErrorBox::generic(format!(
+            "scene {source_name} cannot synchronously call itself"
+        )));
+    }
+    HOST_SCENE_ROUTES.with(|slot| {
+        let mut routes = slot.borrow_mut();
+        if routes.len() >= HOST_SCENE_MAX_ROUTES {
+            return Err(JsErrorBox::generic("host scene route limit reached"));
+        }
+        routes.push(HostSceneRoute {
+            source_name,
+            target_name,
+            target_ip,
+            target_port,
+        });
+        Ok(routes.len() as u32)
+    })
+}
+
+#[op2]
+fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, JsErrorBox> {
+    let operations = decode_packed_scene_operations(Bytes::from(packed.to_vec()))
+        .map_err(|error| JsErrorBox::generic(error.to_string()))?;
+    let operation_count = operations.len() as u32;
+    let runtime = HOST_SCENE_RUNTIME
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsErrorBox::generic("host scene runtime is not configured"))?;
+    let completion_sink = HOST_SCENE_COMPLETION_SINK
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsErrorBox::generic("host scene completion sink is not configured"))?;
+
+    runtime.spawn(async move {
+        let mut pending = stream::iter(operations)
+            .map(|operation| async move {
+                let timeout = Duration::from_millis(operation.timeout_ms.max(1) as u64);
+                match (operation.kind, operation.route) {
+                    (1, Some(route)) => Some(HostSceneCompletion {
+                        operation_id: operation.operation_id,
+                        result: call_remote_scene(
+                            route.source_name,
+                            route.target_name,
+                            route.target_ip,
+                            route.target_port,
+                            operation.frame,
+                            timeout,
+                        )
+                        .await,
+                    }),
+                    (2, Some(route)) => {
+                        let source_name = route.source_name.clone();
+                        let target_name = route.target_name.clone();
+                        if let Err(error) = send_remote_scene(
+                            route.source_name,
+                            route.target_name,
+                            route.target_ip,
+                            route.target_port,
+                            operation.frame,
+                            timeout,
+                        )
+                        .await
+                        {
+                            eprintln!(
+                                "one-way scene send {source_name}->{target_name} failed: {error}"
+                            );
+                        }
+                        None
+                    }
+                    (3, None) => {
+                        tokio::time::sleep(Duration::from_millis(operation.timeout_ms as u64))
+                            .await;
+                        Some(HostSceneCompletion {
+                            operation_id: operation.operation_id,
+                            result: Ok(Vec::new()),
+                        })
+                    }
+                    _ => Some(HostSceneCompletion {
+                        operation_id: operation.operation_id,
+                        result: Err("invalid host scene operation route".to_string()),
+                    }),
+                }
+            })
+            .buffer_unordered(HOST_SCENE_MAX_IN_FLIGHT);
+        while let Some(completion) = pending.next().await {
+            let Some(mut completion) = completion else {
+                continue;
+            };
+            loop {
+                match completion_sink(completion) {
+                    Ok(()) => break,
+                    Err(returned) => {
+                        completion = returned;
+                        tokio::time::sleep(Duration::from_millis(BACKPRESSURE_RETRY_MS)).await;
+                    }
+                }
+            }
+        }
+    });
+    Ok(operation_count)
 }
 
 fn push_outbound_batch(connection_ids: Vec<u64>, frame: JsBuffer) -> Result<(), JsErrorBox> {
@@ -169,7 +313,10 @@ fn decode_packed_outbound(packet: Bytes) -> Result<Vec<BinaryOutboundBatch>> {
     }
 
     if offset != packet.len() {
-        bail!("packed outbound has {} trailing bytes", packet.len() - offset);
+        bail!(
+            "packed outbound has {} trailing bytes",
+            packet.len() - offset
+        );
     }
     Ok(batches)
 }
@@ -184,79 +331,64 @@ fn read_packed_u32(packet: &[u8], offset: &mut usize) -> Result<u32> {
     Ok(value)
 }
 
-#[op2]
-async fn op_host_scene_call(
-    #[string] source_name: String,
-    #[string] target_name: String,
-    #[string] target_ip: String,
-    target_port: u16,
-    #[buffer] frame: JsBuffer,
-    timeout_ms: u32,
-) -> Result<Uint8Array, JsErrorBox> {
-    let timeout_ms = timeout_ms.max(1);
-    let call = async move {
-        let frame = frame.to_vec();
-        if frame.len() < 2 || frame.len() > HOST_CALL_MAX_FRAME_LEN {
-            bail!("invalid scene call frame length: {}", frame.len());
+fn decode_packed_scene_operations(packet: Bytes) -> Result<Vec<HostSceneOperation>> {
+    if !(4..=HOST_OUTBOUND_MAX_PACKED_LEN).contains(&packet.len()) {
+        bail!("invalid packed scene operation length: {}", packet.len());
+    }
+    let mut offset = 0;
+    let operation_count = read_packed_u32(&packet, &mut offset)? as usize;
+    if operation_count == 0 || operation_count > HOST_SCENE_MAX_OPERATIONS {
+        bail!("invalid host scene operation count: {operation_count}");
+    }
+    let routes = HOST_SCENE_ROUTES.with(|slot| slot.borrow().clone());
+    let mut operations = Vec::with_capacity(operation_count);
+    for _ in 0..operation_count {
+        if packet.len().saturating_sub(offset) < HOST_SCENE_OPERATION_META_BYTES {
+            bail!("truncated host scene operation metadata");
         }
-
-        if source_name == target_name {
-            bail!("scene {source_name} cannot synchronously call itself");
+        let operation_id = read_packed_u32(&packet, &mut offset)?;
+        let route_id = read_packed_u32(&packet, &mut offset)? as usize;
+        let kind = packet[offset];
+        offset += 1;
+        let timeout_ms = read_packed_u32(&packet, &mut offset)?;
+        let frame_len = read_packed_u32(&packet, &mut offset)? as usize;
+        if !(1..=3).contains(&kind) || (operation_id == 0 && kind != 2) {
+            bail!("invalid host scene operation id or kind");
         }
-
-        let timeout = Duration::from_millis(timeout_ms as u64);
-        call_remote_scene(
-            source_name,
-            target_name,
-            target_ip,
-            target_port,
-            frame,
-            timeout,
-        )
-        .await
-        .map(Uint8Array::from)
-        .map_err(anyhow::Error::msg)
-    };
-
-    call.await
-        .map_err(|error| JsErrorBox::generic(format!("{error:#}")))
-}
-
-#[op2]
-async fn op_host_scene_send(
-    #[string] source_name: String,
-    #[string] target_name: String,
-    #[string] target_ip: String,
-    target_port: u16,
-    #[buffer] frame: JsBuffer,
-    timeout_ms: u32,
-) -> Result<(), JsErrorBox> {
-    let timeout_ms = timeout_ms.max(1);
-    let send = async move {
-        let frame = frame.to_vec();
-        if frame.len() < 2 || frame.len() > HOST_CALL_MAX_FRAME_LEN {
-            bail!("invalid scene send frame length: {}", frame.len());
+        let route = if kind == 3 {
+            if route_id != 0 || frame_len != 0 {
+                bail!("host sleep operation cannot contain route or frame");
+            }
+            None
+        } else {
+            Some(
+                route_id
+                    .checked_sub(1)
+                    .and_then(|index| routes.get(index))
+                    .cloned()
+                    .context("unknown host scene route")?,
+            )
+        };
+        if kind != 3 && !(2..=HOST_CALL_MAX_FRAME_LEN).contains(&frame_len) {
+            bail!("invalid host scene frame length: {frame_len}");
         }
-
-        if source_name == target_name {
-            bail!("scene {source_name} cannot send to itself");
-        }
-
-        let timeout = Duration::from_millis(timeout_ms as u64);
-        send_remote_scene(
-            source_name,
-            target_name,
-            target_ip,
-            target_port,
-            frame,
-            timeout,
-        )
-        .await
-        .map_err(anyhow::Error::msg)
-    };
-
-    send.await
-        .map_err(|error| JsErrorBox::generic(format!("{error:#}")))
+        let frame_end = offset
+            .checked_add(frame_len)
+            .filter(|end| *end <= packet.len())
+            .context("truncated host scene frame")?;
+        operations.push(HostSceneOperation {
+            operation_id,
+            route,
+            kind,
+            timeout_ms,
+            frame: packet.slice(offset..frame_end),
+        });
+        offset = frame_end;
+    }
+    if offset != packet.len() {
+        bail!("packed host scene operations have trailing bytes");
+    }
+    Ok(operations)
 }
 
 deno_core::extension!(
@@ -264,14 +396,12 @@ deno_core::extension!(
     ops = [
         op_host_log,
         op_host_sleep,
-        op_host_set_result,
-        op_host_take_event_meta,
-        op_host_take_binary_arg,
+        op_host_take_event_batch,
         op_host_push_outbound,
         op_host_push_outbound_batch,
         op_host_push_outbound_packed,
-        op_host_scene_call,
-        op_host_scene_send
+        op_host_register_scene_route,
+        op_host_submit_scene_operations
     ],
 );
 
@@ -288,25 +418,21 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
         const core = globalThis.Deno.core;
         globalThis.__hostLog = (message) => core.ops.op_host_log(String(message));
         globalThis.__hostSleep = (ms) => core.ops.op_host_sleep(ms);
-        globalThis.__hostSetResult = (result) => core.ops.op_host_set_result(String(result));
-        globalThis.__hostTakeEventMeta = () => core.ops.op_host_take_event_meta();
-        globalThis.__hostTakeBinaryArg = () => core.ops.op_host_take_binary_arg();
+        globalThis.__hostTakeEventBatch = () => core.ops.op_host_take_event_batch();
         globalThis.__hostPushOutbound = (connectionId, frame) =>
           core.ops.op_host_push_outbound(connectionId >>> 0, frame);
         globalThis.__hostPushOutboundBatch = (connectionIdBytes, frame) =>
           core.ops.op_host_push_outbound_batch(connectionIdBytes, frame);
         globalThis.__hostPushOutboundPacked = (packed) =>
           core.ops.op_host_push_outbound_packed(packed);
-        globalThis.__hostSceneCall = (sourceName, targetName, targetIp, targetPort, frame, timeoutMs) =>
-          core.ops.op_host_scene_call(
+        globalThis.__hostRegisterSceneRoute = (sourceName, targetName, targetIp, targetPort) =>
+          core.ops.op_host_register_scene_route(
             String(sourceName), String(targetName), String(targetIp), targetPort >>> 0,
-            frame, timeoutMs >>> 0,
           );
-        globalThis.__hostSceneSend = (sourceName, targetName, targetIp, targetPort, frame, timeoutMs) =>
-          core.ops.op_host_scene_send(
-            String(sourceName), String(targetName), String(targetIp), targetPort >>> 0,
-            frame, timeoutMs >>> 0,
-          );
+        globalThis.__hostSubmitSceneOperations = (packed) =>
+          core.ops.op_host_submit_scene_operations(packed);
+        globalThis.__etsDispatchHostEvents = () =>
+          globalThis.__etsPushHostEventsBinary(globalThis.__hostTakeEventBatch());
         globalThis.console = {
           log: (...args) => __hostLog(args.map((value) => {
             if (typeof value === "string") return value;
@@ -320,61 +446,89 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
     Ok(runtime)
 }
 
-pub fn call_js_string(
-    js_event_loop: &tokio::runtime::Runtime,
-    runtime: &mut JsRuntime,
-    function_name: &str,
-    json_arg: &str,
-) -> Result<String> {
-    let function_name = serde_json::to_string(function_name)?;
-    let json_arg = serde_json::to_string(json_arg)?;
-    LAST_JS_RESULT.with(|slot| {
-        *slot.borrow_mut() = None;
-    });
-    let source = format!(
-        "Promise.resolve(globalThis[{function_name}]({json_arg})).then((result) => globalThis.__hostSetResult(result))"
-    );
-    {
-        let _guard = js_event_loop.enter();
-        runtime
-            .execute_script("ets-runtime:host-call.js", source)
-            .context("failed to call JS")?;
-        runtime.v8_isolate().perform_microtask_checkpoint();
-    }
-    js_event_loop.block_on(poll_fn(|cx| {
-        let event_loop = runtime.poll_event_loop(cx, PollEventLoopOptions::default());
-        if let Some(result) = LAST_JS_RESULT.with(|slot| slot.borrow_mut().take()) {
-            return Poll::Ready(Ok(result));
-        }
-        match event_loop {
-            Poll::Ready(Err(error)) => Poll::Ready(Err(anyhow::Error::from(error)
-                .context("failed to run JS event loop after host call"))),
-            Poll::Ready(Ok(())) => Poll::Ready(Err(anyhow::anyhow!("JS did not set a result"))),
-            Poll::Pending => Poll::Pending,
-        }
-    }))
+pub fn load_js_entrypoints(runtime: &mut JsRuntime) -> Result<JsEntrypoints> {
+    Ok(JsEntrypoints {
+        start_process: get_global_function(runtime, "__etsStartProcess")?,
+        update: get_global_function(runtime, "__etsUpdateBinary")?,
+        dispatch_host_events: get_global_function(runtime, "__etsDispatchHostEvents")?,
+    })
 }
 
-pub fn push_binary_args(args: Vec<Vec<u8>>) {
-    NEXT_BINARY_ARGS.with(|slot| {
-        *slot.borrow_mut() = args.into();
-    });
+fn get_global_function(
+    runtime: &mut JsRuntime,
+    function_name: &str,
+) -> Result<v8::Global<v8::Function>> {
+    deno_core::scope!(scope, runtime);
+    let key = v8::String::new(scope, function_name)
+        .with_context(|| format!("failed to allocate JS function name: {function_name}"))?;
+    let value = scope
+        .get_current_context()
+        .global(scope)
+        .get(scope, key.into())
+        .with_context(|| format!("JS entrypoint not found: {function_name}"))?;
+    let function = v8::Local::<v8::Function>::try_from(value)
+        .map_err(|_| anyhow::anyhow!("JS entrypoint is not a function: {function_name}"))?;
+    Ok(v8::Global::new(scope, function))
+}
+
+fn v8_string_arg(runtime: &mut JsRuntime, value: &str) -> Result<v8::Global<v8::Value>> {
+    deno_core::scope!(scope, runtime);
+    let value = v8::String::new(scope, value).context("failed to allocate JS string argument")?;
+    let value: v8::Local<v8::Value> = value.into();
+    Ok(v8::Global::new(scope, value))
+}
+
+fn v8_bool_arg(runtime: &mut JsRuntime, value: bool) -> v8::Global<v8::Value> {
+    deno_core::scope!(scope, runtime);
+    let value: v8::Local<v8::Value> = v8::Boolean::new(scope, value).into();
+    v8::Global::new(scope, value)
+}
+
+fn call_js_function_string(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+    function: &v8::Global<v8::Function>,
+    args: &[v8::Global<v8::Value>],
+) -> Result<String> {
+    let _guard = js_event_loop.enter();
+    #[allow(
+        deprecated,
+        reason = "deno_core provides this combined call/event-loop helper"
+    )]
+    let value = js_event_loop
+        .block_on(runtime.call_with_args_and_await(function, args))
+        .context("failed to call cached JS entrypoint")?;
+    deno_core::scope!(scope, runtime);
+    let value = value.open(scope);
+    let value = value
+        .to_string(scope)
+        .context("JS entrypoint result cannot be converted to string")?;
+    Ok(value.to_rust_string_lossy(scope))
+}
+
+pub fn call_js_start_process(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+    entrypoints: &JsEntrypoints,
+    config_json: &str,
+) -> Result<String> {
+    let arg = v8_string_arg(runtime, config_json)?;
+    call_js_function_string(js_event_loop, runtime, &entrypoints.start_process, &[arg])
 }
 
 pub fn call_js_push_host_events(
     runtime: &mut JsRuntime,
-    event_meta: Vec<u8>,
-    binary_args: Vec<Vec<u8>>,
+    entrypoints: &JsEntrypoints,
+    packed_events: Vec<u8>,
 ) -> Result<()> {
-    NEXT_EVENT_META.with(|slot| {
-        *slot.borrow_mut() = Some(event_meta);
+    NEXT_HOST_EVENT_BATCH.with(|slot| {
+        *slot.borrow_mut() = Some(packed_events);
     });
-    push_binary_args(binary_args);
-    runtime
-        .execute_script(
-            "ets-runtime:push-host-events.js",
-            "globalThis.__etsPushHostEventsBinary(globalThis.__hostTakeEventMeta())",
-        )
+    deno_core::scope!(scope, runtime);
+    let function = entrypoints.dispatch_host_events.open(scope);
+    let receiver = v8::undefined(scope).into();
+    function
+        .call(scope, receiver, &[])
         .context("failed to push host events to JS")?;
     Ok(())
 }
@@ -382,11 +536,33 @@ pub fn call_js_push_host_events(
 pub fn call_js_update_binary(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
+    entrypoints: &JsEntrypoints,
+    sample_metrics: bool,
 ) -> Result<(String, Vec<BinaryOutboundBatch>)> {
     OUTBOUND_BINARY_BATCHES.with(|slot| slot.borrow_mut().clear());
-    let metrics_json = call_js_string(js_event_loop, runtime, "__etsUpdateBinary", "{}")?;
+    let arg = v8_bool_arg(runtime, sample_metrics);
+    let metrics_json =
+        call_js_function_string(js_event_loop, runtime, &entrypoints.update, &[arg])?;
     let outbound = OUTBOUND_BINARY_BATCHES.with(|slot| slot.borrow_mut().drain(..).collect());
     Ok((metrics_json, outbound))
+}
+
+pub fn pump_js_event_loop_once(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+) -> Result<()> {
+    let _guard = js_event_loop.enter();
+    let result = js_event_loop.block_on(poll_fn(|cx| {
+        let result = runtime.poll_event_loop(cx, PollEventLoopOptions::default());
+        Poll::Ready(match result {
+            Poll::Ready(Err(error)) => {
+                Err(anyhow::Error::from(error).context("failed to pump JS event loop"))
+            }
+            Poll::Ready(Ok(())) | Poll::Pending => Ok(()),
+        })
+    }));
+    runtime.v8_isolate().perform_microtask_checkpoint();
+    result
 }
 
 #[cfg(test)]
@@ -408,9 +584,8 @@ mod tests {
     #[test]
     fn decodes_packed_outbound_with_shared_backing_bytes() {
         let packed = vec![
-            2, 0, 0, 0,
-            2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 10, 11,
-            1, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 20, 21, 22,
+            2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 10, 11, 1, 0, 0, 0, 3, 0,
+            0, 0, 3, 0, 0, 0, 20, 21, 22,
         ];
         let batches = decode_packed_outbound(Bytes::from(packed)).unwrap();
         assert_eq!(batches.len(), 2);

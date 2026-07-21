@@ -7,6 +7,29 @@
 - 根据 Rust 事件元数据中的 `sceneIndex` 分发连接帧。
 - 本地 Scene call/send 直接路由；远程调用交给 Host Op。
 - 汇总全部 Scene outbound 和 metrics。
+- 每次 Runtime Pump 依次推进 Time/Timer、Scene mailbox、固定 Game.Update，最后汇总同一 Pump 产生的 outbound。
+
+## Singleton 与时间系统
+
+- `SingletonRegistry.Add/Get/TryGet/Remove/DestroyAll`：进程级单例容器；同一类型只允许一个实例。
+- Core 单例通过强类型静态属性访问，例如 `TimeSystem.Instance`、`TimerSystem.Instance`、`Game.Instance`。
+- `TimeSystem.FrameTime/DeltaTime`：V8 单调时钟及本次 Runtime Pump 间隔，适合耗时和游戏定时。
+- `TimeSystem.ServerNow`：Unix 毫秒墙上时间，适合日期、活动开放时间和日志。
+- `TimeSystem.FixedTime/FixedDeltaTime/FrameCount`：当前固定游戏帧时间、固定步长和累计帧数。
+
+业务单例可以继承 `Singleton`，在 Process 启动阶段注册。不要在模块加载阶段偷偷创建单例，也不要用单例替代应归属 Scene、Actor 或 Component 的业务状态。
+
+## TimerSystem 与 IUpdate
+
+- `TimerSystem.NewOnceTimer(delayMs, callback)`：创建一次性游戏定时器。
+- `TimerSystem.NewRepeatedTimer(intervalMs, callback)`：创建重复游戏定时器；Process 卡顿时只触发一次并跳过过期周期，不突发补齐。
+- `TimerSystem.Remove(timerId)`：取消定时器。
+- `TimerSystem.WaitAsync(delayMs)`：等待游戏时钟推进；它不是 Rust/Tokio IO 超时。
+- Component 实现同步 `Update(): void` 后，会在 `AddComponent` 成功时自动注册，在 `RemoveComponent`/销毁时自动注销。
+- `Component.NewOnceTimer/NewRepeatedTimer/RemoveTimer`：定时器随组件销毁自动清理。
+- `Actor.NewOnceTimer/NewRepeatedTimer/RemoveTimer`：回调先进入 Actor 自己的 mailbox；ordered Actor 忙碌时排队，Actor 销毁时自动取消。
+
+`IUpdate.Update()` 不允许返回 Promise。需要异步串行语义时使用消息或 Actor 定时器，让它进入 mailbox；不要在每帧 Update 内堆积未完成的异步任务。
 
 ## EntryScene
 
@@ -75,5 +98,7 @@
 - Component 通过 `GetParent<T>()` 取得直接宿主，通过 `DomainScene<T>()` 取得所属动态 Scene；不提供按宿主拆分的 Component Context。
 - EntryScene 的协议 Handler 绑定在 Scene 类型上，再通过 `scene.GetComponent(...)` 协调一个或多个组件；组件本身不承担网络路由注册。
 - Component `Awake` 只做同步初始化；异步加载由业务 Factory 编排。
+- Component 实现 `Update(): void` 即自动参加固定游戏帧，不需要手工维护 Update 列表。
+- Component 自有定时器在组件销毁时自动取消；挂在 Actor 上的组件定时器还会遵循 Actor mailbox。
 
 精确泛型签名以 `app/core/process` 与 `app/core/runtime` 为准。新增公共 API 时同步更新本文档和教程。

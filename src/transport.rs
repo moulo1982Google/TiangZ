@@ -1,19 +1,23 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::io::IoSlice;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use bytes::Bytes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, tcp::OwnedReadHalf, tcp::OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{Instant, sleep_until, timeout_at};
 #[cfg(test)]
 use tokio::time::timeout;
+use tokio::time::{Instant, sleep_until, timeout_at};
 
 const MAX_FRAME_LEN: usize = 1024 * 1024;
-const TRANSPORT_QUEUE_CAPACITY: usize = 1024;
-const CONNECTION_QUEUE_CAPACITY: usize = 1024;
+const ACTOR_LOCATION_ENVELOPE_MSGCODE: u16 = 29_999;
+const ACTOR_LOCATION_ENVELOPE_HEADER_LEN: usize = 14;
+const TRANSPORT_QUEUE_CAPACITY: usize = 4096;
+const CONNECTION_QUEUE_CAPACITY: usize = 4096;
 pub(crate) const INNER_HANDSHAKE_MAGIC: u32 = u32::from_be_bytes(*b"ETSI");
 const DEFAULT_INNER_TOKEN: &str = "ets-local-inner-token";
 const MAX_INNER_TOKEN_LEN: usize = 1024;
@@ -64,13 +68,13 @@ struct TransportCommand {
     source_name: String,
     target_name: String,
     address: String,
-    frame: Vec<u8>,
+    frame: Bytes,
     deadline: Instant,
     completion: CommandCompletion,
 }
 
 struct ConnectionCommand {
-    frame: Vec<u8>,
+    frame: Bytes,
     deadline: Instant,
     completion: CommandCompletion,
 }
@@ -87,7 +91,7 @@ struct PendingCall {
 
 struct SocketSession {
     generation: u64,
-    outbound_tx: mpsc::Sender<Vec<u8>>,
+    outbound_tx: mpsc::Sender<Bytes>,
 }
 
 enum SocketEvent {
@@ -117,7 +121,7 @@ pub async fn call_remote_scene(
     target_name: String,
     target_ip: String,
     target_port: u16,
-    frame: Vec<u8>,
+    frame: Bytes,
     call_timeout: Duration,
 ) -> CallResult {
     let Some(transport) = REMOTE_TRANSPORT.get().cloned() else {
@@ -159,7 +163,7 @@ pub async fn send_remote_scene(
     target_name: String,
     target_ip: String,
     target_port: u16,
-    frame: Vec<u8>,
+    frame: Bytes,
     send_timeout: Duration,
 ) -> SendResult {
     let Some(transport) = REMOTE_TRANSPORT.get().cloned() else {
@@ -572,39 +576,26 @@ async fn read_responses(
 async fn write_requests(
     mut writer: OwnedWriteHalf,
     generation: u64,
-    mut outbound_rx: mpsc::Receiver<Vec<u8>>,
+    mut outbound_rx: mpsc::Receiver<Bytes>,
     event_tx: mpsc::Sender<SocketEvent>,
 ) {
-    let mut packet = Vec::with_capacity(INNER_WRITE_BATCH_BYTE_CAPACITY);
+    let mut frames = Vec::<Bytes>::with_capacity(INNER_WRITE_BATCH_FRAME_CAPACITY);
     while let Some(frame) = outbound_rx.recv().await {
-        packet.clear();
-        if let Err(error) = append_frame(&mut packet, &frame) {
-            let _ = event_tx
-                .send(SocketEvent::Closed { generation, error })
-                .await;
-            return;
-        }
-        let mut frame_count = 1;
-        while frame_count < INNER_WRITE_BATCH_FRAME_CAPACITY
-            && packet.len() < INNER_WRITE_BATCH_BYTE_CAPACITY
+        frames.clear();
+        let mut packet_bytes = 4 + frame.len();
+        frames.push(frame);
+        while frames.len() < INNER_WRITE_BATCH_FRAME_CAPACITY
+            && packet_bytes < INNER_WRITE_BATCH_BYTE_CAPACITY
         {
             let Ok(frame) = outbound_rx.try_recv() else {
                 break;
             };
-            if let Err(error) = append_frame(&mut packet, &frame) {
-                let _ = event_tx
-                    .send(SocketEvent::Closed { generation, error })
-                    .await;
-                return;
-            }
-            frame_count += 1;
+            packet_bytes += 4 + frame.len();
+            frames.push(frame);
         }
-        if let Err(error) = writer.write_all(&packet).await {
+        if let Err(error) = write_frames_vectored(&mut writer, &frames).await {
             let _ = event_tx
-                .send(SocketEvent::Closed {
-                    generation,
-                    error: error.to_string(),
-                })
+                .send(SocketEvent::Closed { generation, error })
                 .await;
             return;
         }
@@ -624,16 +615,53 @@ async fn read_frame(reader: &mut OwnedReadHalf) -> CallResult {
     Ok(frame)
 }
 
-fn append_frame(packet: &mut Vec<u8>, frame: &[u8]) -> Result<(), String> {
-    let length = u32::try_from(frame.len()).map_err(|_| "scene frame too large".to_string())?;
-    packet.extend_from_slice(&length.to_be_bytes());
-    packet.extend_from_slice(frame);
+async fn write_frames_vectored(
+    writer: &mut OwnedWriteHalf,
+    frames: &[Bytes],
+) -> Result<(), String> {
+    let lengths = frames
+        .iter()
+        .map(|frame| {
+            u32::try_from(frame.len())
+                .map(u32::to_be_bytes)
+                .map_err(|_| "scene frame too large".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut slices = Vec::with_capacity(frames.len() * 2);
+    for (length, frame) in lengths.iter().zip(frames) {
+        slices.push(IoSlice::new(length));
+        slices.push(IoSlice::new(frame));
+    }
+    let mut remaining = slices.as_mut_slice();
+    while !remaining.is_empty() {
+        let written = writer
+            .write_vectored(remaining)
+            .await
+            .map_err(|error| error.to_string())?;
+        if written == 0 {
+            return Err("scene connection writer made no progress".to_string());
+        }
+        IoSlice::advance_slices(&mut remaining, written);
+    }
     Ok(())
 }
 
 fn extract_rpc_id(frame: &[u8]) -> Result<u32, String> {
     if frame.len() < 2 {
         return Err("scene frame is shorter than msgcode".to_string());
+    }
+
+    let msgcode = u16::from_be_bytes([frame[0], frame[1]]);
+    if msgcode == ACTOR_LOCATION_ENVELOPE_MSGCODE {
+        if frame.len() < ACTOR_LOCATION_ENVELOPE_HEADER_LEN + 2 {
+            return Err("actor location envelope is truncated".to_string());
+        }
+        let rpc_id = u32::from_le_bytes(frame[10..14].try_into().unwrap());
+        return if rpc_id == 0 {
+            Err("actor location RPC frame has zero rpcId".to_string())
+        } else {
+            Ok(rpc_id)
+        };
     }
 
     let mut offset = 2;
@@ -816,6 +844,15 @@ mod tests {
         assert_eq!(extract_rpc_id(&frame).unwrap(), 77);
     }
 
+    #[test]
+    fn extracts_rpc_id_from_fixed_actor_location_header() {
+        let mut frame = vec![0_u8; ACTOR_LOCATION_ENVELOPE_HEADER_LEN + 2];
+        frame[..2].copy_from_slice(&ACTOR_LOCATION_ENVELOPE_MSGCODE.to_be_bytes());
+        frame[2..10].copy_from_slice(&42_u64.to_le_bytes());
+        frame[10..14].copy_from_slice(&77_u32.to_le_bytes());
+        assert_eq!(extract_rpc_id(&frame).unwrap(), 77);
+    }
+
     #[tokio::test]
     async fn one_way_send_does_not_block_following_rpc() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -844,7 +881,7 @@ mod tests {
         let (send_tx, send_rx) = oneshot::channel();
         command_tx
             .send(ConnectionCommand {
-                frame: vec![0x4e, 0x26, 0x0a, 0x00],
+                frame: vec![0x4e, 0x26, 0x0a, 0x00].into(),
                 deadline: Instant::now() + Duration::from_secs(1),
                 completion: CommandCompletion::Send(send_tx),
             })
@@ -856,7 +893,7 @@ mod tests {
         let (response_tx, response_rx) = oneshot::channel();
         command_tx
             .send(ConnectionCommand {
-                frame: test_frame(31),
+                frame: test_frame(31).into(),
                 deadline: Instant::now() + Duration::from_secs(1),
                 completion: CommandCompletion::Call(response_tx),
             })
@@ -900,7 +937,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(2);
         command_tx
             .send(ConnectionCommand {
-                frame: test_frame(1),
+                frame: test_frame(1).into(),
                 deadline,
                 completion: CommandCompletion::Call(response1_tx),
             })
@@ -908,7 +945,7 @@ mod tests {
             .unwrap();
         command_tx
             .send(ConnectionCommand {
-                frame: test_frame(2),
+                frame: test_frame(2).into(),
                 deadline,
                 completion: CommandCompletion::Call(response2_tx),
             })
@@ -964,7 +1001,7 @@ mod tests {
         let (response2_tx, response2_rx) = oneshot::channel();
         command_tx
             .send(ConnectionCommand {
-                frame: test_frame(11),
+                frame: test_frame(11).into(),
                 deadline: Instant::now() + Duration::from_millis(80),
                 completion: CommandCompletion::Call(response1_tx),
             })
@@ -972,7 +1009,7 @@ mod tests {
             .unwrap();
         command_tx
             .send(ConnectionCommand {
-                frame: test_frame(12),
+                frame: test_frame(12).into(),
                 deadline: Instant::now() + Duration::from_secs(1),
                 completion: CommandCompletion::Call(response2_tx),
             })

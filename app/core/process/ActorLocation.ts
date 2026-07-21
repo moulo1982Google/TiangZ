@@ -1,8 +1,8 @@
-import { BinaryReader, BinaryWriter } from "../protocol/binary";
-import { packFrame } from "../protocol/registry";
+import { BinaryReader, readU16BE } from "../protocol/binary";
 import type { SceneConfig } from "./types";
 
 export const ActorLocationEnvelopeMsgCode = 29_999;
+export const ActorLocationEnvelopeHeaderBytes = 14;
 
 export interface ActorLocationTarget {
   instanceId: number;
@@ -37,28 +37,48 @@ export class ActorLocationDirectory {
 export function encodeActorLocationEnvelope(
   envelope: ActorLocationEnvelope,
 ): Uint8Array {
-  const writer = new BinaryWriter(envelope.frame.length + 32);
-  writer.uint32(1, envelope.instanceId);
-  writer.bytes(2, envelope.frame);
-  writer.uint32(90, envelope.rpcId);
-  return packFrame(ActorLocationEnvelopeMsgCode, writer.finish());
+  if (!Number.isSafeInteger(envelope.instanceId) || envelope.instanceId <= 0) {
+    throw new Error(`invalid actor instanceId: ${envelope.instanceId}`);
+  }
+  if (envelope.frame.length < 2) throw new Error("actor inner frame is too short");
+  const rpcId = envelope.rpcId ?? 0;
+  if (!Number.isSafeInteger(rpcId) || rpcId < 0 || rpcId > 0xffff_ffff) {
+    throw new Error(`invalid actor rpcId: ${rpcId}`);
+  }
+
+  const result = new Uint8Array(ActorLocationEnvelopeHeaderBytes + envelope.frame.length);
+  const view = new DataView(result.buffer);
+  view.setUint16(0, ActorLocationEnvelopeMsgCode, false);
+  view.setBigUint64(2, BigInt(envelope.instanceId), true);
+  view.setUint32(10, rpcId, true);
+  result.set(envelope.frame, ActorLocationEnvelopeHeaderBytes);
+  return result;
 }
 
 export function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnvelope {
-  const reader = new BinaryReader(frame.subarray(2));
-  let instanceId = 0;
-  let innerFrame: Uint8Array = new Uint8Array(0);
-  let rpcId: number | undefined;
-  while (!reader.eof()) {
-    const tag = reader.tag();
-    if (tag.fieldNo === 1 && tag.wireType === 0) instanceId = reader.uint32();
-    else if (tag.fieldNo === 2 && tag.wireType === 2) innerFrame = reader.bytesField();
-    else if (tag.fieldNo === 90 && tag.wireType === 0) rpcId = reader.uint32();
-    else reader.skip(tag.wireType);
+  const instanceId = readActorLocationInstanceId(frame);
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+  const rpcId = view.getUint32(10, true);
+  return {
+    instanceId,
+    frame: frame.subarray(ActorLocationEnvelopeHeaderBytes),
+    rpcId: rpcId === 0 ? undefined : rpcId,
+  };
+}
+
+export function readActorLocationInstanceId(frame: Uint8Array): number {
+  if (
+    frame.length < ActorLocationEnvelopeHeaderBytes + 2 ||
+    readU16BE(frame, 0) !== ActorLocationEnvelopeMsgCode
+  ) {
+    throw new Error("invalid actor location envelope header");
   }
-  if (instanceId <= 0) throw new Error("actor location envelope has no instanceId");
-  if (innerFrame.length < 2) throw new Error("actor location envelope has no inner frame");
-  return { instanceId, frame: innerFrame, rpcId };
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+  const rawInstanceId = view.getBigUint64(2, true);
+  if (rawInstanceId === 0n || rawInstanceId > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`invalid actor instanceId: ${rawInstanceId}`);
+  }
+  return Number(rawInstanceId);
 }
 
 export function extractFrameRpcId(frame: Uint8Array): number | undefined {

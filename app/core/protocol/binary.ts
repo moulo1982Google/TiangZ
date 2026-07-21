@@ -2,7 +2,7 @@ export class BinaryWriter {
   private buffer: Uint8Array;
   private length = 0;
 
-  constructor(initialCapacity = 512) {
+  constructor(initialCapacity = 64) {
     this.buffer = new Uint8Array(initialCapacity);
   }
 
@@ -278,7 +278,7 @@ function utf8Encode(value: string): Uint8Array {
   return bytes.slice(0, offset);
 }
 
-function utf8Decode(value: Uint8Array): string {
+export function utf8Decode(value: Uint8Array): string {
   let result = "";
   for (let i = 0; i < value.length;) {
     const b1 = value[i++];

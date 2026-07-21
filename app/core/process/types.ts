@@ -20,6 +20,7 @@ import {
   RpcDescriptor,
 } from "../protocol/rpc";
 import { Entity, ProcessHost } from "../runtime";
+import type { GameUpdateConfig } from "../runtime/Game";
 import { readU16BE } from "../protocol/binary";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { RpcError } from "../protocol/RpcError";
@@ -35,8 +36,9 @@ import { SceneMessageHelper } from "./SceneMessageHelper";
 import {
   ActorLocationDirectory,
   ActorLocationEnvelopeMsgCode,
-  decodeActorLocationEnvelope,
+  ActorLocationEnvelopeHeaderBytes,
   encodeActorLocationEnvelope,
+  readActorLocationInstanceId,
 } from "./ActorLocation";
 import {
   getSceneMessageHandlerBindings,
@@ -56,7 +58,16 @@ export interface SceneConfig {
 
 export interface ProcessConfig {
   name: string;
+  game?: GameUpdateConfig;
+  scheduling?: ProcessSchedulingConfig;
   observability?: ProcessObservabilityConfig;
+}
+
+export interface ProcessSchedulingConfig {
+  mode?: "low-latency" | "throughput" | "adaptive";
+  idleTickMs?: number;
+  maxEventsPerUpdate?: number;
+  coalesceMicros?: number;
 }
 
 export interface ProcessObservabilityConfig {
@@ -92,7 +103,7 @@ export interface OutboundBatch {
 
 export interface SceneUpdateResult {
   outbound: OutboundBatch[];
-  metrics: SceneMetricsSnapshot;
+  metrics?: SceneMetricsSnapshot;
   pendingAsync: boolean;
 }
 
@@ -145,7 +156,9 @@ export abstract class EntryScene extends Entity {
   private readonly ingress: QueuedEvent[] = [];
   private ingressHead = 0;
   private readonly outbound: OutboundBatch[] = [];
+  private readonly connectionIdBytes = new Map<number, Uint8Array>();
   private readonly unorderedTasks = new Set<Promise<void>>();
+  private orderedTask: Promise<void> | undefined;
   private mailboxBusy = false;
   private readonly mailboxTasks: MailboxTask[] = [];
   private readonly metrics = {
@@ -235,19 +248,20 @@ export abstract class EntryScene extends Entity {
     );
   }
 
-  update(maxFrames = 512): MaybePromise<SceneUpdateResult> {
-    const startedAt = nowMs();
-    const drained = this.mailbox === "unordered"
-      ? this.drainUnordered(maxFrames)
-      : this.drainOrdered(maxFrames);
+  update(maxFrames = 512, includeMetrics = true): SceneUpdateResult {
+    const startedAt = this.__pumpMailbox(maxFrames);
+    return this.__completeUpdate(startedAt, includeMetrics);
+  }
 
-    if (isPromiseLike(drained)) {
-      return Promise.resolve(drained).then(() => this.completeUpdate(startedAt));
-    }
-    if (this.mailbox === "unordered" && this.unorderedTasks.size > 0) {
-      return Promise.race(this.unorderedTasks).then(() => this.completeUpdate(startedAt));
-    }
-    return this.completeUpdate(startedAt);
+  __pumpMailbox(maxFrames = 512): number {
+    const startedAt = nowMs();
+    if (this.mailbox === "unordered") this.drainUnordered(maxFrames);
+    else this.drainOrdered(maxFrames);
+    return startedAt;
+  }
+
+  __completeUpdate(startedAt: number, includeMetrics = true): SceneUpdateResult {
+    return this.completeUpdate(startedAt, includeMetrics);
   }
 
   protected registerHandlers(): void {}
@@ -264,7 +278,7 @@ export abstract class EntryScene extends Entity {
     message: TMessage,
   ): void {
     this.outbound.push({
-      connectionIdBytes: packConnectionIds([connectionId]),
+      connectionIdBytes: this.packConnectionId(connectionId),
       frame: packFrame(descriptor.msgcode, descriptor.codec.encode(message)),
     });
   }
@@ -354,33 +368,38 @@ export abstract class EntryScene extends Entity {
     return item;
   }
 
-  private completeUpdate(startedAt: number): SceneUpdateResult {
+  private completeUpdate(startedAt: number, includeMetrics: boolean): SceneUpdateResult {
     this.metrics.lastUpdateCostMs = nowMs() - startedAt;
     return {
       outbound: this.drainOutbound(),
-      metrics: this.metricsSnapshot(),
-      pendingAsync: this.unorderedTasks.size > 0,
+      metrics: includeMetrics ? this.metricsSnapshot() : undefined,
+      pendingAsync: this.orderedTask !== undefined || this.unorderedTasks.size > 0,
     };
   }
 
-  private drainOrdered(maxFrames: number): MaybePromise<void> {
+  private drainOrdered(maxFrames: number): void {
+    if (this.orderedTask) return;
     let processed = 0;
     while (this.ingressLength > 0 && processed < maxFrames) {
       const item = this.dequeueIngress()!;
       const result = this.dispatchMailbox(() => this.processIngress(item));
       processed += 1;
       if (isPromiseLike(result)) {
-        const remaining = maxFrames - processed;
-        return Promise.resolve(result).then(() => {
-          if (remaining > 0) {
-            return this.drainOrdered(remaining);
-          }
-        });
+        let task: Promise<void>;
+        task = Promise.resolve(result)
+          .catch((error) => {
+            console.error(`[${this.self.name}] ordered handler failed`, error);
+          })
+          .finally(() => {
+            if (this.orderedTask === task) this.orderedTask = undefined;
+          });
+        this.orderedTask = task;
+        break;
       }
     }
   }
 
-  private drainUnordered(maxFrames: number): MaybePromise<void> {
+  private drainUnordered(maxFrames: number): void {
     let processed = 0;
     while (
       this.ingressLength > 0 &&
@@ -470,6 +489,7 @@ export abstract class EntryScene extends Entity {
       this.latencies.record("ingress.queue", nowMs() - item.queuedAtMs);
     }
     if (item.kind === "disconnect") {
+      this.connectionIdBytes.delete(item.connectionId);
       try {
         const result = this.onDisconnect(item.connectionId);
         if (isPromiseLike(result)) {
@@ -506,9 +526,18 @@ export abstract class EntryScene extends Entity {
   ): void {
     if (!response) return;
     this.outbound.push({
-      connectionIdBytes: packConnectionIds([connectionId]),
+      connectionIdBytes: this.packConnectionId(connectionId),
       frame: response,
     });
+  }
+
+  private packConnectionId(connectionId: number): Uint8Array {
+    let bytes = this.connectionIdBytes.get(connectionId);
+    if (!bytes) {
+      bytes = packConnectionIds([connectionId]);
+      this.connectionIdBytes.set(connectionId, bytes);
+    }
+    return bytes;
   }
 
   private handleFrame(
@@ -562,9 +591,9 @@ export abstract class EntryScene extends Entity {
     const msgcode = readU16BE(frame, 0);
     if (msgcode === ActorLocationEnvelopeMsgCode) {
       try {
-        const envelope = decodeActorLocationEnvelope(frame);
-        return this.actorRegistry.handle(envelope.frame, {
-          actorInstanceId: envelope.instanceId,
+        const instanceId = readActorLocationInstanceId(frame);
+        return this.actorRegistry.handle(frame.subarray(ActorLocationEnvelopeHeaderBytes), {
+          actorInstanceId: instanceId,
         });
       } catch (error) {
         this.registry.reportSystemError(
@@ -736,6 +765,7 @@ export abstract class EntryScene extends Entity {
         ...binding,
         handler: new binding.handlerCtor(),
       }));
+      const handlerByActorCtor = new Map<Function, (typeof handlers)[number]>();
       this.actorRegistry.register(msgcode, {
         responseCode: descriptor.responseCode,
         decode: descriptor.requestCodec.decode,
@@ -755,7 +785,12 @@ export abstract class EntryScene extends Entity {
             );
           }
           return this.processHost.runActorMailbox(instanceId, (actor) => {
-            const binding = handlers.find((item) => actor instanceof item.actorCtor);
+            const actorCtor = actor.constructor;
+            let binding = handlerByActorCtor.get(actorCtor);
+            if (!binding) {
+              binding = handlers.find((item) => actor instanceof item.actorCtor);
+              if (binding) handlerByActorCtor.set(actorCtor, binding);
+            }
             if (!binding) {
               throw new RpcError(
                 SystemErrCode.HandlerNotFound,
@@ -780,6 +815,7 @@ export abstract class EntryScene extends Entity {
         ...binding,
         handler: new binding.handlerCtor(),
       }));
+      const handlerByActorCtor = new Map<Function, (typeof handlers)[number]>();
       this.actorRegistry.registerMessage(msgcode, {
         decode: descriptor.codec.decode,
         handle: (message, context) => {
@@ -797,7 +833,12 @@ export abstract class EntryScene extends Entity {
             );
           }
           return this.processHost.runActorMailbox(instanceId, (actor) => {
-            const binding = handlers.find((item) => actor instanceof item.actorCtor);
+            const actorCtor = actor.constructor;
+            let binding = handlerByActorCtor.get(actorCtor);
+            if (!binding) {
+              binding = handlers.find((item) => actor instanceof item.actorCtor);
+              if (binding) handlerByActorCtor.set(actorCtor, binding);
+            }
             if (!binding) {
               throw new RpcError(
                 SystemErrCode.HandlerNotFound,

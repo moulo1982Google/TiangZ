@@ -6,3 +6,8 @@ export * from "./host";
 export * from "./root";
 export * from "./MailBoxComponent";
 export * from "./Unit";
+export * from "./Singleton";
+export * from "./TimeSystem";
+export * from "./TimerSystem";
+export * from "./UpdateSystem";
+export * from "./Game";

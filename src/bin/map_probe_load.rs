@@ -88,7 +88,12 @@ async fn main() -> Result<()> {
         let semaphore = Arc::clone(&semaphore);
         setup_tasks.spawn(async move {
             let permit = semaphore.acquire_owned().await?;
-            let account = format!("rust_perf_{}_{}_{}", std::process::id(), account_seed, index);
+            let account = format!(
+                "rust_perf_{}_{}_{}",
+                std::process::id(),
+                account_seed,
+                index
+            );
             let player = setup_player(&options, &login_address, &account).await;
             drop(permit);
             player
@@ -212,7 +217,11 @@ async fn get_login_address(options: &Options) -> Result<Address> {
     })
 }
 
-async fn setup_player(options: &Options, login: &Address, account: &str) -> Result<PlayerConnection> {
+async fn setup_player(
+    options: &Options,
+    login: &Address,
+    account: &str,
+) -> Result<PlayerConnection> {
     let mut login_payload = Vec::with_capacity(account.len() + 16);
     push_string(&mut login_payload, 1, account);
     let response = request_one(
@@ -231,9 +240,12 @@ async fn setup_player(options: &Options, login: &Address, account: &str) -> Resu
         },
     };
 
-    let stream = tokio::time::timeout(options.timeout, TcpStream::connect((&*login.gate.ip, login.gate.port)))
-        .await
-        .context("gate connect timed out")??;
+    let stream = tokio::time::timeout(
+        options.timeout,
+        TcpStream::connect((&*login.gate.ip, login.gate.port)),
+    )
+    .await
+    .context("gate connect timed out")??;
     stream.set_nodelay(true)?;
     let (mut reader, mut writer) = stream.into_split();
 
@@ -292,8 +304,8 @@ async fn run_player(
     });
     let mut pending = HashMap::<u32, PendingProbe>::with_capacity(options.probe_concurrency * 2);
     let mut sequence = 0_u32;
-    let interval = (options.probe_rate > 0)
-        .then(|| Duration::from_secs_f64(1.0 / options.probe_rate as f64));
+    let interval =
+        (options.probe_rate > 0).then(|| Duration::from_secs_f64(1.0 / options.probe_rate as f64));
     let mut next_send = Instant::now();
 
     loop {
@@ -347,7 +359,10 @@ async fn run_player(
             .remove(&rpc_id)
             .with_context(|| format!("unknown MapProbe rpcId {rpc_id}"))?;
         if request.sequence != response_sequence {
-            bail!("MapProbe sequence mismatch: {response_sequence} != {}", request.sequence);
+            bail!(
+                "MapProbe sequence mismatch: {response_sequence} != {}",
+                request.sequence
+            );
         }
         if request.measured {
             result
@@ -409,7 +424,10 @@ fn packet(frame: &[u8]) -> Result<Vec<u8>> {
     Ok(packet)
 }
 
-async fn read_frame_timeout(reader: &mut tokio::net::tcp::OwnedReadHalf, timeout: Duration) -> Result<Vec<u8>> {
+async fn read_frame_timeout(
+    reader: &mut tokio::net::tcp::OwnedReadHalf,
+    timeout: Duration,
+) -> Result<Vec<u8>> {
     tokio::time::timeout(timeout, read_frame(reader))
         .await
         .context("response timed out")?
@@ -425,7 +443,10 @@ async fn read_frame_stream(stream: &mut TcpStream) -> Result<Vec<u8>> {
     read_frame_body(stream, length).await
 }
 
-async fn read_frame_body(reader: &mut (impl AsyncReadExt + Unpin), length: usize) -> Result<Vec<u8>> {
+async fn read_frame_body(
+    reader: &mut (impl AsyncReadExt + Unpin),
+    length: usize,
+) -> Result<Vec<u8>> {
     if !(2..=MAX_FRAME_LEN).contains(&length) {
         bail!("invalid frame length {length}");
     }
@@ -446,7 +467,9 @@ fn encode_rpc(msgcode: u16, rpc_id: u32, fields: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn push_uint32(buffer: &mut Vec<u8>, field: u32, value: u32) {
-    if value == 0 { return; }
+    if value == 0 {
+        return;
+    }
     push_varint(buffer, u64::from(field << 3));
     push_varint(buffer, u64::from(value));
 }
@@ -479,27 +502,45 @@ impl DecodedMessage {
         u16::try_from(self.u32(field)?).with_context(|| format!("field {field} exceeds uint16"))
     }
     fn string(&self, field: u32) -> Result<String> {
-        self.strings.get(&field).cloned().with_context(|| format!("missing string field {field}"))
+        self.strings
+            .get(&field)
+            .cloned()
+            .with_context(|| format!("missing string field {field}"))
     }
 }
 
-fn decode_message(frame: &[u8], expected_msgcode: u16, expected_rpc: Option<u32>) -> Result<DecodedMessage> {
+fn decode_message(
+    frame: &[u8],
+    expected_msgcode: u16,
+    expected_rpc: Option<u32>,
+) -> Result<DecodedMessage> {
     let msgcode = frame_msgcode(frame)?;
     if msgcode != expected_msgcode {
         bail!("unexpected msgcode {msgcode}, expected {expected_msgcode}");
     }
     let mut offset = 2;
-    let mut message = DecodedMessage { varints: HashMap::new(), strings: HashMap::new() };
+    let mut message = DecodedMessage {
+        varints: HashMap::new(),
+        strings: HashMap::new(),
+    };
     while offset < frame.len() {
         let tag = read_varint(frame, &mut offset)?;
         let field = (tag >> 3) as u32;
         match tag & 7 {
-            0 => { message.varints.insert(field, read_varint(frame, &mut offset)?); }
+            0 => {
+                message
+                    .varints
+                    .insert(field, read_varint(frame, &mut offset)?);
+            }
             1 => advance(frame, &mut offset, 8)?,
             2 => {
                 let length = read_varint(frame, &mut offset)? as usize;
-                let end = offset.checked_add(length).context("field length overflow")?;
-                if end > frame.len() { bail!("unexpected eof in field {field}"); }
+                let end = offset
+                    .checked_add(length)
+                    .context("field length overflow")?;
+                if end > frame.len() {
+                    bail!("unexpected eof in field {field}");
+                }
                 if let Ok(value) = std::str::from_utf8(&frame[offset..end]) {
                     message.strings.insert(field, value.to_string());
                 }
@@ -510,16 +551,22 @@ fn decode_message(frame: &[u8], expected_msgcode: u16, expected_rpc: Option<u32>
         }
     }
     let error = message.u32(91)?;
-    if error != 0 { bail!("RPC returned error {error}"); }
+    if error != 0 {
+        bail!("RPC returned error {error}");
+    }
     if let Some(expected) = expected_rpc {
         let actual = message.u32(90)?;
-        if actual != expected { bail!("rpcId mismatch {actual} != {expected}"); }
+        if actual != expected {
+            bail!("rpcId mismatch {actual} != {expected}");
+        }
     }
     Ok(message)
 }
 
 fn frame_msgcode(frame: &[u8]) -> Result<u16> {
-    if frame.len() < 2 { bail!("frame is shorter than msgcode"); }
+    if frame.len() < 2 {
+        bail!("frame is shorter than msgcode");
+    }
     Ok(u16::from_be_bytes([frame[0], frame[1]]))
 }
 
@@ -529,30 +576,46 @@ fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64> {
         let byte = *bytes.get(*offset).context("unexpected eof in varint")?;
         *offset += 1;
         value |= u64::from(byte & 0x7f) << shift;
-        if byte & 0x80 == 0 { return Ok(value); }
+        if byte & 0x80 == 0 {
+            return Ok(value);
+        }
     }
     bail!("varint is too long")
 }
 
 fn advance(bytes: &[u8], offset: &mut usize, length: usize) -> Result<()> {
-    *offset = offset.checked_add(length).context("field length overflow")?;
-    if *offset > bytes.len() { bail!("unexpected eof while skipping field"); }
+    *offset = offset
+        .checked_add(length)
+        .context("field length overflow")?;
+    if *offset > bytes.len() {
+        bail!("unexpected eof while skipping field");
+    }
     Ok(())
 }
 
 fn percentile(sorted: &[u64], ratio: f64) -> u64 {
-    if sorted.is_empty() { return 0; }
+    if sorted.is_empty() {
+        return 0;
+    }
     sorted[((sorted.len() as f64 * ratio) as usize).min(sorted.len() - 1)]
 }
 
 fn parse_options(args: Vec<String>) -> Result<Options> {
     let mut values = HashMap::<String, String>::new();
     for pair in args.chunks(2) {
-        if pair.len() != 2 { bail!("arguments must use --name value pairs"); }
-        values.insert(pair[0].trim_start_matches('-').to_ascii_lowercase(), pair[1].clone());
+        if pair.len() != 2 {
+            bail!("arguments must use --name value pairs");
+        }
+        values.insert(
+            pair[0].trim_start_matches('-').to_ascii_lowercase(),
+            pair[1].clone(),
+        );
     }
     let number = |name: &str, fallback: u64| -> Result<u64> {
-        values.get(name).map(|value| value.parse::<u64>()).transpose()
+        values
+            .get(name)
+            .map(|value| value.parse::<u64>())
+            .transpose()
             .with_context(|| format!("invalid --{name}"))
             .map(|value| value.unwrap_or(fallback))
     };
@@ -561,11 +624,17 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
     let probe_concurrency = number("probe-concurrency", 4)? as usize;
     let duration = number("duration", 10)?;
     if players == 0 || setup_concurrency == 0 || probe_concurrency == 0 || duration == 0 {
-        bail!("players, setup-concurrency, probe-concurrency and duration must be greater than zero");
+        bail!(
+            "players, setup-concurrency, probe-concurrency and duration must be greater than zero"
+        );
     }
     Ok(Options {
-        host: values.get("host").cloned().unwrap_or_else(|| "127.0.0.1".to_string()),
-        manager_port: u16::try_from(number("manager-port", 7000)?).context("manager port exceeds uint16")?,
+        host: values
+            .get("host")
+            .cloned()
+            .unwrap_or_else(|| "127.0.0.1".to_string()),
+        manager_port: u16::try_from(number("manager-port", 7000)?)
+            .context("manager port exceeds uint16")?,
         players,
         setup_concurrency,
         warmup: Duration::from_secs(number("warmup", 2)?),
@@ -573,6 +642,9 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         timeout: Duration::from_millis(number("timeout", 60_000)?),
         probe_rate: number("probe-rate", 20)?,
         probe_concurrency,
-        label: values.get("label").cloned().unwrap_or_else(|| "rust".to_string()),
+        label: values
+            .get("label")
+            .cloned()
+            .unwrap_or_else(|| "rust".to_string()),
     })
 }

@@ -3,6 +3,11 @@ import "./generated/hotfix/handlers";
 import { isPromiseLike, type MaybePromise } from "./core/async";
 import { ProcessRuntime, type ProcessUpdateResult } from "./core/process/ProcessRuntime";
 import type { ProcessRuntimeConfig } from "./core/process/types";
+import {
+  completeHostSceneOperation,
+  flushHostSceneOperations,
+  sleepHost,
+} from "./core/process/HostSceneTransport";
 
 let processRuntime: ProcessRuntime | undefined;
 
@@ -11,44 +16,61 @@ function startProcess(configJson: string): string {
   return processRuntime.start();
 }
 
-const HOST_EVENT_META_BYTES = 9;
+const HOST_EVENT_HEADER_BYTES = 13;
 
-function pushHostEventsBinary(metadata: Uint8Array): string {
+function pushHostEventsBinary(batch: Uint8Array): string {
   if (!processRuntime) return "false";
-  if (metadata.length % HOST_EVENT_META_BYTES !== 0) {
-    throw new Error(`invalid host event metadata length: ${metadata.length}`);
-  }
-  const view = new DataView(metadata.buffer, metadata.byteOffset, metadata.byteLength);
-  for (let offset = 0; offset < metadata.length; offset += HOST_EVENT_META_BYTES) {
-    const eventType = metadata[offset];
+  if (batch.length < 4) throw new Error(`invalid host event batch length: ${batch.length}`);
+  const view = new DataView(batch.buffer, batch.byteOffset, batch.byteLength);
+  const count = view.getUint32(0, true);
+  let offset = 4;
+  for (let index = 0; index < count; index += 1) {
+    if (offset + HOST_EVENT_HEADER_BYTES > batch.length) {
+      throw new Error(`truncated host event header at index ${index}`);
+    }
+    const eventType = batch[offset];
     const connectionId = view.getUint32(offset + 1, true);
     const sceneIndex = view.getUint32(offset + 5, true);
+    const payloadLength = view.getUint32(offset + 9, true);
+    offset += HOST_EVENT_HEADER_BYTES;
+    const payloadEnd = offset + payloadLength;
+    if (payloadEnd > batch.length) {
+      throw new Error(`truncated host event payload at index ${index}`);
+    }
+    const payload = batch.subarray(offset, payloadEnd);
+    offset = payloadEnd;
     if (eventType === 1) {
-      processRuntime.pushHostFrame(sceneIndex, connectionId, hostTakeBinaryArg());
+      processRuntime.pushHostFrame(sceneIndex, connectionId, payload);
     } else if (eventType === 2) {
       processRuntime.pushHostDisconnect(sceneIndex, connectionId);
+    } else if (eventType === 3 || eventType === 4) {
+      completeHostSceneOperation(connectionId, eventType === 3, payload);
     } else {
       throw new Error(`unknown host event type: ${eventType}`);
     }
   }
+  if (offset !== batch.length) throw new Error("host event batch has trailing bytes");
   return "true";
 }
 
-function updateBinary(_arg: string): MaybePromise<string> {
+function updateBinary(sampleMetrics: boolean): MaybePromise<string> {
   if (!processRuntime) return JSON.stringify({});
-  const result = processRuntime.update();
+  const result = processRuntime.update(sampleMetrics);
   return isPromiseLike(result)
-    ? Promise.resolve(result).then(flushUpdateResult)
-    : flushUpdateResult(result);
+    ? Promise.resolve(result).then((value) => flushUpdateResult(value, sampleMetrics))
+    : flushUpdateResult(result, sampleMetrics);
 }
 
-function flushUpdateResult(result: ProcessUpdateResult): string {
+function flushUpdateResult(result: ProcessUpdateResult, sampleMetrics: boolean): string {
+  flushHostSceneOperations();
   const outbound = result.outbound;
   if (outbound.length > 0) {
     hostPushOutboundPacked(packOutbound(outbound));
   }
+  if (!sampleMetrics) return result.pendingAsync ? "1" : "0";
   return JSON.stringify({
     metrics: result.metrics,
+    game: result.game,
     pendingAsync: result.pendingAsync,
   });
 }
@@ -83,11 +105,6 @@ function packOutbound(outbound: ProcessUpdateResult["outbound"]): Uint8Array {
   return packed;
 }
 
-function hostTakeBinaryArg(): Uint8Array {
-  return (globalThis as typeof globalThis & { __hostTakeBinaryArg: () => Uint8Array })
-    .__hostTakeBinaryArg();
-}
-
 const hostPushOutboundPacked = (globalThis as typeof globalThis & {
     __hostPushOutboundPacked: (packed: Uint8Array) => void;
   }).__hostPushOutboundPacked;
@@ -95,8 +112,10 @@ const hostPushOutboundPacked = (globalThis as typeof globalThis & {
 const host = globalThis as typeof globalThis & {
   __etsStartProcess: (configJson: string) => string;
   __etsPushHostEventsBinary: (metadata: Uint8Array) => string;
-  __etsUpdateBinary: (arg: string) => string | Promise<string>;
+  __etsUpdateBinary: (sampleMetrics: boolean) => string | Promise<string>;
+  __hostSleep: (ms: number) => Promise<void>;
 };
+host.__hostSleep = sleepHost;
 host.__etsStartProcess = startProcess;
 host.__etsPushHostEventsBinary = pushHostEventsBinary;
 host.__etsUpdateBinary = updateBinary;

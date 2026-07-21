@@ -6,6 +6,7 @@ import type { RpcDescriptor } from "../protocol/rpc";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { nowMs, type LatencyRecorder } from "../metrics/latency";
 import type { LocalSceneRouter, RuntimeEntrySceneConfig, SceneConfig } from "./types";
+import { callRemoteScene, sendRemoteScene } from "./HostSceneTransport";
 import {
   encodeActorLocationEnvelope,
   extractFrameRpcId,
@@ -143,7 +144,7 @@ export class SceneCallContext {
     try {
       return isLocal
         ? await this.localRouter.callLocalScene(this.self.name, target.name, frame)
-        : await hostSceneCall(this.self, target, frame, options.timeoutMs ?? 5000);
+        : await callRemoteScene(this.self, target, frame, options.timeoutMs ?? 5000);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new RpcError(
@@ -198,7 +199,7 @@ export class SceneCallContext {
       if (isLocal) {
         await this.localRouter.sendLocalScene(this.self.name, target.name, frame);
       } else {
-        await hostSceneSend(this.self, target, frame, options.timeoutMs ?? 5000);
+        await sendRemoteScene(this.self, target, frame, options.timeoutMs ?? 5000);
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
@@ -224,48 +225,4 @@ export class SceneCallContext {
     this.nextRpcId = (this.nextRpcId % 0xffff_ffff) + 1;
     return rpcId;
   }
-}
-
-function hostSceneSend(source: SceneConfig, target: SceneConfig, frame: Uint8Array, timeoutMs: number): Promise<void> {
-  const host = globalThis as typeof globalThis & {
-    __hostSceneSend?: (
-      sourceName: string,
-      targetName: string,
-      targetIp: string,
-      targetPort: number,
-      frame: Uint8Array,
-      timeoutMs: number,
-    ) => Promise<void>;
-  };
-  if (!host.__hostSceneSend) throw new Error("host scene send op is not available");
-  return host.__hostSceneSend(
-    source.name,
-    target.name,
-    target.ip,
-    target.port,
-    frame,
-    timeoutMs,
-  );
-}
-
-function hostSceneCall(source: SceneConfig, target: SceneConfig, frame: Uint8Array, timeoutMs: number): Promise<Uint8Array> {
-  const host = globalThis as typeof globalThis & {
-    __hostSceneCall?: (
-      sourceName: string,
-      targetName: string,
-      targetIp: string,
-      targetPort: number,
-      frame: Uint8Array,
-      timeoutMs: number,
-    ) => Promise<Uint8Array>;
-  };
-  if (!host.__hostSceneCall) throw new Error("host scene call op is not available");
-  return host.__hostSceneCall(
-    source.name,
-    target.name,
-    target.ip,
-    target.port,
-    frame,
-    timeoutMs,
-  );
 }

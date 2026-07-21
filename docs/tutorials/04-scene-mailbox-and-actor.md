@@ -124,6 +124,33 @@ Unit/Actor/Component 的 `Awake` 中只设置同步状态和组装组件，不�
 
 JavaScript 的 GC 会回收普通对象内存，因此纯状态组件不需要销毁代码。组件持有定时器、事件订阅或宿主资源时，可以覆写受保护的 `OnDestroy()`；`RemoveComponent` 和 `UnitComponent.Remove` 会自动调用它。业务代码不直接 Dispose Unit，否则会让 Root、UnitComponent 与 mailbox 路由脱节。
 
+## 固定 Update 与游戏定时器
+
+需要每个固定游戏帧执行的组件直接实现 `Update()`。框架会在组件 Add/Awake 成功后自动注册，移除组件时自动注销：
+
+```ts
+export class MonsterPatrolComponent extends Component implements IUpdate {
+  protected override Awake(): void {
+    this.NewRepeatedTimer(1000, (self) => self.ChooseNextTarget());
+  }
+
+  Update(): void {
+    const dt = TimeSystem.Instance.FixedDeltaTime / 1000;
+    this.MoveTowardTarget(dt);
+  }
+
+  private ChooseNextTarget(): void {
+    // 选择新的巡逻点
+  }
+
+  private MoveTowardTarget(_dt: number): void {}
+}
+```
+
+`Update()` 必须同步，不要标记为 `async`。定时器由组件持有，组件销毁后自动取消。组件挂在 Unit/Actor 上时，回调会进入该 Actor 的 mailbox：ordered mailbox 正在等待一个异步 Handler 时，定时器回调会排队，不会重入玩家状态。
+
+`TimerSystem.WaitAsync` 使用游戏 Pump 推进，适合业务时间；网络超时、文件 IO 等基础设施等待仍使用 Rust/Tokio 提供的 `ctx.sleep` 或对应 Host API。
+
 ## ActorLocation 直达 Unit
 
 ActorLocation 保存的是 `MapHost EntryScene + Unit InstanceId`，不是只保存 UnitId。目标进程收到 Envelope 后执行：

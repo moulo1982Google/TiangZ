@@ -145,7 +145,14 @@ async fn run_connection(
     let mut next_rpc_id = 1_u32;
 
     for _ in 0..window {
-        send_request(&mut writer, &mut pending, &mut next_rpc_id, &options, timing).await?;
+        send_request(
+            &mut writer,
+            &mut pending,
+            &mut next_rpc_id,
+            &options,
+            timing,
+        )
+        .await?;
     }
 
     while !pending.is_empty() {
@@ -171,7 +178,14 @@ async fn run_connection(
         }
 
         if Instant::now() < timing.send_deadline {
-            send_request(&mut writer, &mut pending, &mut next_rpc_id, &options, timing).await?;
+            send_request(
+                &mut writer,
+                &mut pending,
+                &mut next_rpc_id,
+                &options,
+                timing,
+            )
+            .await?;
         }
     }
 
@@ -302,7 +316,9 @@ fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64> {
 }
 
 fn advance(bytes: &[u8], offset: &mut usize, length: usize) -> Result<()> {
-    let next = offset.checked_add(length).context("protobuf length overflow")?;
+    let next = offset
+        .checked_add(length)
+        .context("protobuf length overflow")?;
     if next > bytes.len() {
         bail!("unexpected eof in protobuf field");
     }

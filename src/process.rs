@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::io::IoSlice;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -17,27 +18,78 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc as tokio_mpsc, watch};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
-use crate::config::{ProcessConfig, RuntimeConfig, SceneConfig};
+use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
 use crate::host::{
-    BinaryOutboundBatch, call_js_push_host_events, call_js_string, call_js_update_binary,
-    create_runtime,
+    BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
+    call_js_update_binary, configure_host_scene_bridge, create_runtime, load_js_entrypoints,
+    pump_js_event_loop_once,
 };
 use crate::inspector::ProcessInspector;
 use crate::transport::{INNER_HANDSHAKE_MAGIC, init_remote_transport, inner_token};
 
 const MAX_FRAME_LEN: usize = 1024 * 1024;
-const PROCESS_TICK_MS: u64 = 50;
 const PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
-const PROCESS_EVENT_BATCH_CAPACITY: usize = 512;
 const CONNECTION_OUTBOUND_FRAME_CAPACITY: usize = 4096;
 const CONNECTION_OUTBOUND_BYTE_CAPACITY: usize = 4 * 1024 * 1024;
 const RAW_WRITE_BATCH_FRAME_CAPACITY: usize = 64;
 const RAW_WRITE_BATCH_BYTE_CAPACITY: usize = 256 * 1024;
-const EVENT_META_BYTES: usize = 9;
+const EVENT_HEADER_BYTES: usize = 13;
 const BACKPRESSURE_RETRY_MS: u64 = 1;
 const INNER_MSGCODE_START: u16 = 20_000;
 const INNER_MSGCODE_END_EXCLUSIVE: u16 = 30_000;
 const MAX_INNER_TOKEN_LEN: usize = 1024;
+
+#[derive(Clone, Copy)]
+struct RuntimeScheduling {
+    mode: ProcessSchedulingMode,
+    idle_tick_ms: u64,
+    max_events_per_update: usize,
+    coalesce_micros: u64,
+}
+
+impl RuntimeScheduling {
+    fn from_process(process: &ProcessConfig) -> Self {
+        //空闲时tick 间隔default_tick毫秒，每次最多处理default_batch个Rust事件，聚合窗口时间（微妙）
+        let (default_tick, default_batch, default_coalesce) = match process.scheduling.mode {
+            ProcessSchedulingMode::LowLatency => (10, 64, 0),
+            ProcessSchedulingMode::Throughput => (50, 1024, 1_000),
+            ProcessSchedulingMode::Adaptive => (50, 512, 250),
+        };
+        Self {
+            mode: process.scheduling.mode,
+            idle_tick_ms: process
+                .scheduling
+                .idle_tick_ms
+                .unwrap_or(default_tick)
+                .min(process.game.fixed_update_ms),
+            max_events_per_update: process
+                .scheduling
+                .max_events_per_update
+                .unwrap_or(default_batch),
+            coalesce_micros: process
+                .scheduling
+                .coalesce_micros
+                .unwrap_or(default_coalesce),
+        }
+    }
+
+    fn batch_capacity(self, queued_events: usize) -> usize {
+        match self.mode {
+            ProcessSchedulingMode::Adaptive if queued_events < 64 => {
+                self.max_events_per_update.min(64)
+            }
+            _ => self.max_events_per_update,
+        }
+    }
+
+    fn coalesce_deadline(self, queued_events: usize) -> Instant {
+        let micros = match self.mode {
+            ProcessSchedulingMode::Adaptive if queued_events < 8 => 0,
+            _ => self.coalesce_micros,
+        };
+        Instant::now() + Duration::from_micros(micros)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ConnectionKind {
@@ -56,6 +108,7 @@ enum ProcessEvent {
         scene_index: u32,
         connection_id: u64,
     },
+    HostSceneCompletion(HostSceneCompletion),
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,7 +117,21 @@ struct UpdateResult {
     #[serde(default)]
     metrics: Vec<SceneMetricsSnapshot>,
     #[serde(default)]
+    game: Option<GameMetricsSnapshot>,
+    #[serde(default)]
     pending_async: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GameMetricsSnapshot {
+    fixed_update_ms: u64,
+    frame_count: u64,
+    skipped_fixed_updates: u64,
+    update_targets: usize,
+    update_calls: u64,
+    update_failures: u64,
+    timers: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,6 +217,12 @@ struct ProcessQueueStats {
     outbound_recipients: AtomicU64,
     outbound_bridge_bytes: AtomicU64,
     outbound_logical_bytes: AtomicU64,
+    inbound_frames: AtomicU64,
+    host_completions: AtomicU64,
+    disconnects: AtomicU64,
+    runtime_updates: AtomicU64,
+    runtime_events: AtomicU64,
+    max_runtime_batch: AtomicUsize,
 }
 
 impl ProcessQueueStats {
@@ -206,6 +279,31 @@ impl ProcessEventSender {
             }
         }
     }
+
+    fn try_send_completion(
+        &self,
+        completion: HostSceneCompletion,
+    ) -> std::result::Result<(), HostSceneCompletion> {
+        self.stats.queued();
+        match self
+            .sender
+            .try_send(ProcessEvent::HostSceneCompletion(completion))
+        {
+            Ok(()) => Ok(()),
+            Err(mpsc::TrySendError::Full(ProcessEvent::HostSceneCompletion(completion))) => {
+                self.stats.dequeue();
+                self.stats
+                    .backpressure_waits
+                    .fetch_add(1, Ordering::Relaxed);
+                Err(completion)
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                self.stats.dequeue();
+                Ok(())
+            }
+            Err(_) => unreachable!("completion event changed while entering the process queue"),
+        }
+    }
 }
 
 pub async fn run_runtime_config(
@@ -249,11 +347,15 @@ pub async fn run_runtime_config(
         stats: Arc::clone(&queue_stats),
     };
     let next_connection_id = Arc::new(AtomicU64::new(1));
+    let completion_sender = event_tx.clone();
+    let completion_sink: crate::host::HostSceneCompletionSink =
+        Arc::new(move |completion| completion_sender.try_send_completion(completion));
 
     let process = config.process.clone();
     let scenes = config.scenes.clone();
     let known_scenes = config.known_scenes.clone();
     let runtime_writers = Arc::clone(&writers);
+    let host_runtime = tokio::runtime::Handle::current();
     thread::spawn(move || {
         if let Err(error) = run_process_runtime(
             process,
@@ -264,6 +366,8 @@ pub async fn run_runtime_config(
             event_rx,
             runtime_writers,
             queue_stats,
+            host_runtime,
+            completion_sink,
         ) {
             eprintln!("process runtime stopped: {error:?}");
         }
@@ -327,12 +431,16 @@ fn run_process_runtime(
     event_rx: mpsc::Receiver<ProcessEvent>,
     writers: ConnectionWriters,
     queue_stats: Arc<ProcessQueueStats>,
+    host_runtime: tokio::runtime::Handle,
+    completion_sink: crate::host::HostSceneCompletionSink,
 ) -> Result<()> {
     let process_name = process.name.clone();
+    let scheduling = RuntimeScheduling::from_process(&process);
     let js_event_loop = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .context("failed to create JS event loop runtime")?;
+    configure_host_scene_bridge(host_runtime, completion_sink);
     // This state must outlive the V8 isolate because V8 stores its raw pointer.
     let mut gc_metrics = Box::<V8GcMetrics>::default();
     let gc_metrics_ptr = (&mut *gc_metrics) as *mut V8GcMetrics as *mut c_void;
@@ -362,15 +470,23 @@ fn run_process_runtime(
         "process": process,
         "scenes": scenes,
         "knownScenes": known_scenes,
-        "tickMs": PROCESS_TICK_MS,
+        "tickMs": process.game.fixed_update_ms,
     });
-    let start_result = call_js_string(
+    let entrypoints = load_js_entrypoints(&mut runtime)?;
+    let start_result = call_js_start_process(
         &js_event_loop,
         &mut runtime,
-        "__etsStartProcess",
+        &entrypoints,
         &serde_json::to_string(&process_config)?,
     )?;
     println!("{start_result}");
+    println!(
+        "[process:{process_name}] scheduling={:?} idle_tick_ms={} max_events_per_update={} coalesce_micros={}",
+        scheduling.mode,
+        scheduling.idle_tick_ms,
+        scheduling.max_events_per_update,
+        scheduling.coalesce_micros,
+    );
 
     let mut last_metrics_log = Instant::now();
     let process_pid = Pid::from_u32(std::process::id());
@@ -381,37 +497,45 @@ fn run_process_runtime(
         .map(|process| process.accumulated_cpu_time())
         .unwrap_or_default();
     let mut last_resource_sample_at = Instant::now();
-    let mut pending_async = false;
     loop {
-        let mut event_meta = Vec::<u8>::new();
-        let mut binary_args = Vec::<Vec<u8>>::new();
-        let wait_ms = if pending_async { 1 } else { PROCESS_TICK_MS };
+        let mut packed_events = vec![0; 4];
+        let mut event_count = 0_u32;
+        let wait_ms = scheduling.idle_tick_ms;
         match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
             Ok(event) => {
                 queue_stats.dequeue();
-                push_event(&mut event_meta, &mut binary_args, event)?
+                push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
 
-        while event_meta.len() < PROCESS_EVENT_BATCH_CAPACITY * EVENT_META_BYTES {
+        let batch_capacity = scheduling
+            .batch_capacity(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
+        let coalesce_deadline = scheduling
+            .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
+        while event_count < batch_capacity as u32 {
             match event_rx.try_recv() {
                 Ok(event) => {
                     queue_stats.dequeue();
-                    push_event(&mut event_meta, &mut binary_args, event)?
+                    push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
                 }
-                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Empty) => {
+                    if Instant::now() >= coalesce_deadline {
+                        break;
+                    }
+                    thread::yield_now();
+                }
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
         }
-
-        pending_async = flush_runtime_batch(
+        let _pending_async = flush_runtime_batch(
             &js_event_loop,
             &mut runtime,
+            &entrypoints,
             &writers,
-            &mut event_meta,
-            &mut binary_args,
+            &mut packed_events,
+            event_count,
             &process_name,
             &mut last_metrics_log,
             &queue_stats,
@@ -436,9 +560,10 @@ fn run_process_runtime(
 fn flush_runtime_batch(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut deno_core::JsRuntime,
+    entrypoints: &crate::host::JsEntrypoints,
     writers: &ConnectionWriters,
-    event_meta: &mut Vec<u8>,
-    binary_args: &mut Vec<Vec<u8>>,
+    packed_events: &mut Vec<u8>,
+    event_count: u32,
     process_name: &str,
     last_metrics_log: &mut Instant,
     queue_stats: &ProcessQueueStats,
@@ -448,37 +573,54 @@ fn flush_runtime_batch(
     last_process_cpu_time_ms: &mut u64,
     last_resource_sample_at: &mut Instant,
 ) -> Result<bool> {
-    if !event_meta.is_empty() {
-        call_js_push_host_events(
-            runtime,
-            std::mem::take(event_meta),
-            std::mem::take(binary_args),
-        )?;
+    queue_stats.runtime_updates.fetch_add(1, Ordering::Relaxed);
+    queue_stats
+        .runtime_events
+        .fetch_add(event_count as u64, Ordering::Relaxed);
+    queue_stats
+        .max_runtime_batch
+        .fetch_max(event_count as usize, Ordering::Relaxed);
+    if event_count > 0 {
+        packed_events[0..4].copy_from_slice(&event_count.to_le_bytes());
+        let batch = std::mem::replace(packed_events, vec![0; 4]);
+        call_js_push_host_events(runtime, entrypoints, batch)?;
     }
+    pump_js_event_loop_once(js_event_loop, runtime)?;
 
-    let (outbound_json, outbound) = call_js_update_binary(js_event_loop, runtime)?;
-    let result: UpdateResult = serde_json::from_str(&outbound_json).with_context(|| {
-        format!("TS update returned invalid outbound frame list: {outbound_json}")
-    })?;
-    maybe_log_metrics(
-        process_name,
-        &result.metrics,
-        last_metrics_log,
-        queue_stats,
-        runtime,
-        system,
-        process_pid,
-        gc_metrics,
-        last_process_cpu_time_ms,
-        last_resource_sample_at,
-    );
+    let sample_metrics = last_metrics_log.elapsed() >= Duration::from_secs(5);
+    let (update_result, outbound) =
+        call_js_update_binary(js_event_loop, runtime, entrypoints, sample_metrics)?;
+    let (pending_async, metrics, game_metrics) = if sample_metrics {
+        let result: UpdateResult = serde_json::from_str(&update_result).with_context(|| {
+            format!("TS update returned invalid metrics snapshot: {update_result}")
+        })?;
+        (result.pending_async, result.metrics, result.game)
+    } else {
+        (update_result == "1", Vec::new(), None)
+    };
+    if sample_metrics {
+        maybe_log_metrics(
+            process_name,
+            &metrics,
+            game_metrics.as_ref(),
+            last_metrics_log,
+            queue_stats,
+            runtime,
+            system,
+            process_pid,
+            gc_metrics,
+            last_process_cpu_time_ms,
+            last_resource_sample_at,
+        );
+    }
     flush_outbound(outbound, writers, queue_stats)?;
-    Ok(result.pending_async)
+    Ok(pending_async)
 }
 
 fn maybe_log_metrics(
     process_name: &str,
     metrics: &[SceneMetricsSnapshot],
+    game_metrics: Option<&GameMetricsSnapshot>,
     last_metrics_log: &mut Instant,
     queue_stats: &ProcessQueueStats,
     runtime: &mut deno_core::JsRuntime,
@@ -512,16 +654,34 @@ fn maybe_log_metrics(
         .unwrap_or_default()
         .as_millis();
     println!(
-        "[process-metrics] process={process_name} cpu_percent={cpu_percent:.2} cpu_time_ms={cpu_time_ms} rss_bytes={rss_bytes} v8_heap_used_bytes={} v8_heap_total_bytes={} v8_gc_count={} v8_gc_ms={:.3} timestamp_ms={timestamp_ms} outbound_batches={} outbound_recipients={} outbound_bridge_bytes={} outbound_logical_bytes={}",
+        "[process-metrics] process={process_name} cpu_percent={cpu_percent:.2} cpu_time_ms={cpu_time_ms} rss_bytes={rss_bytes} v8_heap_used_bytes={} v8_heap_total_bytes={} v8_gc_count={} v8_gc_ms={:.3} timestamp_ms={timestamp_ms} inbound_frames={} host_completions={} disconnects={} runtime_updates={} runtime_events={} max_runtime_batch={} outbound_batches={} outbound_recipients={} outbound_bridge_bytes={} outbound_logical_bytes={}",
         heap.used_heap_size(),
         heap.total_heap_size(),
         gc_metrics.count,
         gc_metrics.total_duration.as_secs_f64() * 1000.0,
+        queue_stats.inbound_frames.load(Ordering::Relaxed),
+        queue_stats.host_completions.load(Ordering::Relaxed),
+        queue_stats.disconnects.load(Ordering::Relaxed),
+        queue_stats.runtime_updates.load(Ordering::Relaxed),
+        queue_stats.runtime_events.load(Ordering::Relaxed),
+        queue_stats.max_runtime_batch.load(Ordering::Relaxed),
         queue_stats.outbound_batches.load(Ordering::Relaxed),
         queue_stats.outbound_recipients.load(Ordering::Relaxed),
         queue_stats.outbound_bridge_bytes.load(Ordering::Relaxed),
         queue_stats.outbound_logical_bytes.load(Ordering::Relaxed),
     );
+    if let Some(game) = game_metrics {
+        println!(
+            "[game-metrics] process={process_name} fixed_update_ms={} frame_count={} skipped_fixed_updates={} update_targets={} update_calls={} update_failures={} timers={}",
+            game.fixed_update_ms,
+            game.frame_count,
+            game.skipped_fixed_updates,
+            game.update_targets,
+            game.update_calls,
+            game.update_failures,
+            game.timers,
+        );
+    }
     for metric in metrics {
         println!(
             "[metrics:{process_name}] scene={} type={} processed={} failed={} ts_queue={} ts_max_queue={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
@@ -567,9 +727,10 @@ fn maybe_log_metrics(
 }
 
 fn push_event(
-    event_meta: &mut Vec<u8>,
-    binary_args: &mut Vec<Vec<u8>>,
+    packed_events: &mut Vec<u8>,
+    event_count: &mut u32,
     event: ProcessEvent,
+    queue_stats: &ProcessQueueStats,
 ) -> Result<()> {
     match event {
         ProcessEvent::Frame {
@@ -577,29 +738,50 @@ fn push_event(
             connection_id,
             frame,
         } => {
-            binary_args.push(frame);
-            push_event_meta(event_meta, 1, connection_id, scene_index)?;
+            queue_stats.inbound_frames.fetch_add(1, Ordering::Relaxed);
+            push_packed_event(packed_events, 1, connection_id, scene_index, &frame)?;
         }
         ProcessEvent::Disconnect {
             scene_index,
             connection_id,
         } => {
-            push_event_meta(event_meta, 2, connection_id, scene_index)?;
+            queue_stats.disconnects.fetch_add(1, Ordering::Relaxed);
+            push_packed_event(packed_events, 2, connection_id, scene_index, &[])?;
+        }
+        ProcessEvent::HostSceneCompletion(completion) => {
+            queue_stats.host_completions.fetch_add(1, Ordering::Relaxed);
+            let (event_type, payload) = match completion.result {
+                Ok(frame) => (3, frame),
+                Err(error) => (4, error.into_bytes()),
+            };
+            push_packed_event(
+                packed_events,
+                event_type,
+                completion.operation_id as u64,
+                0,
+                &payload,
+            )?;
         }
     }
+    *event_count += 1;
     Ok(())
 }
 
-fn push_event_meta(
-    event_meta: &mut Vec<u8>,
+fn push_packed_event(
+    packed_events: &mut Vec<u8>,
     event_type: u8,
     connection_id: u64,
     scene_index: u32,
+    payload: &[u8],
 ) -> Result<()> {
     let connection_id = u32::try_from(connection_id).context("connection id exceeds uint32")?;
-    event_meta.push(event_type);
-    event_meta.extend_from_slice(&connection_id.to_le_bytes());
-    event_meta.extend_from_slice(&scene_index.to_le_bytes());
+    let payload_len = u32::try_from(payload.len()).context("host event payload exceeds uint32")?;
+    packed_events.reserve(EVENT_HEADER_BYTES + payload.len());
+    packed_events.push(event_type);
+    packed_events.extend_from_slice(&connection_id.to_le_bytes());
+    packed_events.extend_from_slice(&scene_index.to_le_bytes());
+    packed_events.extend_from_slice(&payload_len.to_le_bytes());
+    packed_events.extend_from_slice(payload);
     Ok(())
 }
 
@@ -708,6 +890,7 @@ async fn handle_raw_tcp_connection(
     let mut writer_shutdown = shutdown_rx.clone();
     let writer_shutdown_tx = shutdown_tx.clone();
     let writer_task = tokio::spawn(async move {
+        let mut frames = Vec::<Bytes>::with_capacity(RAW_WRITE_BATCH_FRAME_CAPACITY);
         loop {
             let frame = tokio::select! {
                 changed = writer_shutdown.changed() => {
@@ -721,19 +904,19 @@ async fn handle_raw_tcp_connection(
                     frame
                 }
             };
-            let mut frame_count = 1;
+            frames.clear();
             let mut queued_frame_bytes = frame.len();
-            let mut packet = Vec::with_capacity(4 + frame.len());
-            append_raw_frame(&mut packet, &frame)?;
-            while frame_count < RAW_WRITE_BATCH_FRAME_CAPACITY
-                && packet.len() < RAW_WRITE_BATCH_BYTE_CAPACITY
+            let mut packet_bytes = 4 + frame.len();
+            frames.push(frame);
+            while frames.len() < RAW_WRITE_BATCH_FRAME_CAPACITY
+                && packet_bytes < RAW_WRITE_BATCH_BYTE_CAPACITY
             {
                 let Ok(frame) = write_rx.try_recv() else {
                     break;
                 };
                 queued_frame_bytes += frame.len();
-                append_raw_frame(&mut packet, &frame)?;
-                frame_count += 1;
+                packet_bytes += 4 + frame.len();
+                frames.push(frame);
             }
             let result = tokio::select! {
                 changed = writer_shutdown.changed() => {
@@ -742,7 +925,7 @@ async fn handle_raw_tcp_connection(
                     }
                     continue;
                 }
-                result = writer.write_all(&packet) => result.map_err(anyhow::Error::from),
+                result = write_raw_frames_vectored(&mut writer, &frames) => result,
             };
             writer_queued_bytes.fetch_sub(queued_frame_bytes, Ordering::Relaxed);
             if let Err(error) = result {
@@ -828,6 +1011,7 @@ async fn handle_websocket_connection(
     let mut writer_shutdown = shutdown_rx.clone();
     let writer_shutdown_tx = shutdown_tx.clone();
     let writer_task = tokio::spawn(async move {
+        let mut frames = Vec::<Bytes>::with_capacity(RAW_WRITE_BATCH_FRAME_CAPACITY);
         loop {
             let frame = tokio::select! {
                 changed = writer_shutdown.changed() => {
@@ -841,7 +1025,18 @@ async fn handle_websocket_connection(
                     frame
                 }
             };
-            let frame_len = frame.len();
+            frames.clear();
+            let mut frame_bytes = frame.len();
+            frames.push(frame);
+            while frames.len() < RAW_WRITE_BATCH_FRAME_CAPACITY
+                && frame_bytes < RAW_WRITE_BATCH_BYTE_CAPACITY
+            {
+                let Ok(frame) = write_rx.try_recv() else {
+                    break;
+                };
+                frame_bytes += frame.len();
+                frames.push(frame);
+            }
             let result = tokio::select! {
                 changed = writer_shutdown.changed() => {
                     if changed.is_err() || *writer_shutdown.borrow() {
@@ -849,9 +1044,14 @@ async fn handle_websocket_connection(
                     }
                     continue;
                 }
-                result = writer.send(Message::Binary(frame.into())) => result,
+                result = async {
+                    for frame in &frames {
+                        writer.feed(Message::Binary(frame.clone())).await?;
+                    }
+                    writer.flush().await
+                } => result,
             };
-            writer_queued_bytes.fetch_sub(frame_len, Ordering::Relaxed);
+            writer_queued_bytes.fetch_sub(frame_bytes, Ordering::Relaxed);
             if let Err(error) = result {
                 let _ = writer_shutdown_tx.send(true);
                 return Err(error.into());
@@ -920,6 +1120,30 @@ async fn handle_websocket_connection(
     Ok(())
 }
 
+async fn write_raw_frames_vectored(
+    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    frames: &[Bytes],
+) -> Result<()> {
+    let prefixes: Vec<[u8; 4]> = frames
+        .iter()
+        .map(|frame| (frame.len() as u32).to_be_bytes())
+        .collect();
+    let mut slices = Vec::with_capacity(frames.len() * 2);
+    for (prefix, frame) in prefixes.iter().zip(frames) {
+        slices.push(IoSlice::new(prefix));
+        slices.push(IoSlice::new(frame));
+    }
+    let mut remaining = slices.as_mut_slice();
+    while !remaining.is_empty() {
+        let written = writer.write_vectored(remaining).await?;
+        if written == 0 {
+            bail!("client socket closed during vectored write");
+        }
+        IoSlice::advance_slices(&mut remaining, written);
+    }
+    Ok(())
+}
+
 async fn read_raw_frame(
     reader: &mut tokio::net::tcp::OwnedReadHalf,
     first_frame_len: &mut Option<usize>,
@@ -979,13 +1203,6 @@ fn validate_frame_access(kind: ConnectionKind, frame: &[u8]) -> Result<()> {
         }
         _ => Ok(()),
     }
-}
-
-fn append_raw_frame(packet: &mut Vec<u8>, frame: &[u8]) -> Result<()> {
-    let len = u32::try_from(frame.len()).context("outbound frame too large")?;
-    packet.extend_from_slice(&len.to_be_bytes());
-    packet.extend_from_slice(frame);
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1117,5 +1334,48 @@ mod tests {
         assert!(validate_frame_access(ConnectionKind::External, &[0x4e, 0x22]).is_err());
         assert!(validate_frame_access(ConnectionKind::Internal, &[0x4e, 0x22]).is_ok());
         assert!(validate_frame_access(ConnectionKind::Internal, &[0x27, 0x12]).is_err());
+    }
+
+    #[test]
+    fn packs_host_events_with_payload_length() {
+        let mut packed = vec![0; 4];
+        push_packed_event(&mut packed, 1, 7, 3, &[10, 11]).unwrap();
+        packed[0..4].copy_from_slice(&1_u32.to_le_bytes());
+
+        assert_eq!(&packed[0..4], &1_u32.to_le_bytes());
+        assert_eq!(packed[4], 1);
+        assert_eq!(&packed[5..9], &7_u32.to_le_bytes());
+        assert_eq!(&packed[9..13], &3_u32.to_le_bytes());
+        assert_eq!(&packed[13..17], &2_u32.to_le_bytes());
+        assert_eq!(&packed[17..], &[10, 11]);
+    }
+
+    #[test]
+    fn parses_game_metrics_from_ts_update() {
+        let result: UpdateResult = serde_json::from_str(
+            r#"{
+                "metrics": [],
+                "game": {
+                    "fixedUpdateMs": 50,
+                    "frameCount": 123,
+                    "skippedFixedUpdates": 2,
+                    "updateTargets": 4,
+                    "updateCalls": 492,
+                    "updateFailures": 0,
+                    "timers": 3
+                },
+                "pendingAsync": false
+            }"#,
+        )
+        .unwrap();
+
+        let game = result.game.unwrap();
+        assert_eq!(game.fixed_update_ms, 50);
+        assert_eq!(game.frame_count, 123);
+        assert_eq!(game.skipped_fixed_updates, 2);
+        assert_eq!(game.update_targets, 4);
+        assert_eq!(game.update_calls, 492);
+        assert_eq!(game.update_failures, 0);
+        assert_eq!(game.timers, 3);
     }
 }

@@ -203,23 +203,24 @@ async function stopRuntimes(runtimes) {
 function collectRuntimeResources(runtimes, startedAt, endedAt) {
   const processes = runtimes.map((runtime) => {
     const text = readText(runtime.stdoutPath);
-    const samples = [...text.matchAll(
-      /\[process-metrics\] process=(\S+) cpu_percent=([0-9.]+) cpu_time_ms=(\d+) rss_bytes=(\d+) v8_heap_used_bytes=(\d+) v8_heap_total_bytes=(\d+) v8_gc_count=(\d+) v8_gc_ms=([0-9.]+)(?: timestamp_ms=(\d+))?(?: outbound_batches=(\d+) outbound_recipients=(\d+) outbound_bridge_bytes=(\d+) outbound_logical_bytes=(\d+))?/g,
-    )].map((match) => ({
-      process: match[1],
-      cpuPercent: Number(match[2]),
-      cpuTimeMs: Number(match[3]),
-      rssBytes: Number(match[4]),
-      v8HeapUsedBytes: Number(match[5]),
-      v8HeapTotalBytes: Number(match[6]),
-      v8GcCount: Number(match[7]),
-      v8GcMs: Number(match[8]),
-      timestampMs: Number(match[9] ?? 0),
-      outboundBatches: Number(match[10] ?? 0),
-      outboundRecipients: Number(match[11] ?? 0),
-      outboundBridgeBytes: Number(match[12] ?? 0),
-      outboundLogicalBytes: Number(match[13] ?? 0),
-    }));
+    const samples = text.split(/\r?\n/)
+      .filter((line) => line.startsWith("[process-metrics] "))
+      .map(parseMetricLine)
+      .map((values) => ({
+        process: values.process ?? runtime.name,
+        cpuPercent: Number(values.cpu_percent ?? 0),
+        cpuTimeMs: Number(values.cpu_time_ms ?? 0),
+        rssBytes: Number(values.rss_bytes ?? 0),
+        v8HeapUsedBytes: Number(values.v8_heap_used_bytes ?? 0),
+        v8HeapTotalBytes: Number(values.v8_heap_total_bytes ?? 0),
+        v8GcCount: Number(values.v8_gc_count ?? 0),
+        v8GcMs: Number(values.v8_gc_ms ?? 0),
+        timestampMs: Number(values.timestamp_ms ?? 0),
+        outboundBatches: Number(values.outbound_batches ?? 0),
+        outboundRecipients: Number(values.outbound_recipients ?? 0),
+        outboundBridgeBytes: Number(values.outbound_bridge_bytes ?? 0),
+        outboundLogicalBytes: Number(values.outbound_logical_bytes ?? 0),
+      }));
     const completeWindowSamples = samples.filter((sample) =>
       startedAt && endedAt &&
       sample.timestampMs >= startedAt + 4_000 &&
@@ -244,6 +245,12 @@ function collectRuntimeResources(runtimes, startedAt, endedAt) {
     gateOutboundLogicalBytesPerSecond: sum(gates.map((item) => item.outboundLogicalBytesPerSecond)),
     totalPeakRssBytes: sum(processes.map((item) => item.peakRssBytes)),
   };
+}
+
+function parseMetricLine(line) {
+  return Object.fromEntries(
+    [...line.matchAll(/([a-zA-Z_]+)=([^\s]+)/g)].map((match) => [match[1], match[2]]),
+  );
 }
 
 function summarizeProcess(fallbackName, samples, last) {
@@ -409,7 +416,8 @@ function parseOptions(args) {
   return {
     players: csvNumbers(values.get("--players") ?? "100,125,150,175,200"),
     gates: positive(values.get("--gates") ?? "4", "--gates"),
-    moveRate: nonNegative(values.get("--move-rate") ?? "10", "--move-rate"),
+    // Demo 默认客户端输入上报频率是 5Hz；服务端 Game.Update 默认保持 20Hz。
+    moveRate: nonNegative(values.get("--move-rate") ?? "5", "--move-rate"),
     probeRate: positive(values.get("--probe-rate") ?? "1", "--probe-rate"),
     probeConcurrency: positive(values.get("--probe-concurrency") ?? "1", "--probe-concurrency"),
     duration: positive(values.get("--duration") ?? "30", "--duration"),

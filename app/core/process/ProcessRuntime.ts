@@ -1,5 +1,13 @@
-import { isPromiseLike, type MaybePromise } from "../async";
-import { ProcessHost } from "../runtime";
+import type { MaybePromise } from "../async";
+import {
+  Game,
+  InitializeGameSingletons,
+  ProcessHost,
+  TimeSystem,
+  TimerSystem,
+  UpdateSystem,
+  monotonicNow,
+} from "../runtime";
 import { getEntrySceneCtor, listEntrySceneTypes } from "./registry";
 import type {
   EntryScene,
@@ -13,7 +21,18 @@ import type {
 export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
   metrics: SceneMetricsSnapshot[];
+  game: GameMetricsSnapshot;
   pendingAsync: boolean;
+}
+
+export interface GameMetricsSnapshot {
+  fixedUpdateMs: number;
+  frameCount: number;
+  skippedFixedUpdates: number;
+  updateTargets: number;
+  updateCalls: number;
+  updateFailures: number;
+  timers: number;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {
@@ -21,6 +40,7 @@ export class ProcessRuntime implements LocalSceneRouter {
   private readonly scenesByName = new Map<string, EntryScene>();
 
   constructor(private readonly config: ProcessRuntimeConfig) {
+    InitializeGameSingletons(config.process.game);
     const processHost = new ProcessHost(config.process.name);
     this.entryScenes = config.scenes.map((scene) => {
       const ctor = getEntrySceneCtor(scene.sceneType);
@@ -56,12 +76,16 @@ export class ProcessRuntime implements LocalSceneRouter {
     this.sceneAt(sceneIndex).pushHostDisconnect(connectionId);
   }
 
-  update(): MaybePromise<ProcessUpdateResult> {
-    const results = this.entryScenes.map((scene) => scene.update());
-    if (results.some(isPromiseLike)) {
-      return Promise.all(results.map((result) => Promise.resolve(result))).then(mergeResults);
-    }
-    return mergeResults(results as SceneUpdateResult[]);
+  update(includeMetrics = true): MaybePromise<ProcessUpdateResult> {
+    const startedAt: number[] = [];
+    Game.Instance.Update(monotonicNow(), Date.now(), () => {
+      for (const scene of this.entryScenes) startedAt.push(scene.__pumpMailbox(512));
+    });
+    return mergeResults(
+      this.entryScenes.map((scene, index) =>
+        scene.__completeUpdate(startedAt[index] ?? monotonicNow(), includeMetrics)
+      ),
+    );
   }
 
   hasLocalScene(name: string): boolean { return this.scenesByName.has(name); }
@@ -95,10 +119,12 @@ export class ProcessRuntime implements LocalSceneRouter {
 }
 
 function mergeResults(results: SceneUpdateResult[]): ProcessUpdateResult {
+  const game = gameMetricsSnapshot();
   if (results.length === 1) {
     return {
       outbound: results[0].outbound,
-      metrics: [results[0].metrics],
+      metrics: results[0].metrics ? [results[0].metrics] : [],
+      game,
       pendingAsync: results[0].pendingAsync,
     };
   }
@@ -107,7 +133,7 @@ function mergeResults(results: SceneUpdateResult[]): ProcessUpdateResult {
   let pendingAsync = false;
   for (const result of results) {
     pendingAsync ||= result.pendingAsync;
-    metrics.push(result.metrics);
+    if (result.metrics) metrics.push(result.metrics);
     for (const batch of result.outbound) {
       outbound.push(batch);
     }
@@ -115,6 +141,19 @@ function mergeResults(results: SceneUpdateResult[]): ProcessUpdateResult {
   return {
     outbound,
     metrics,
+    game,
     pendingAsync,
+  };
+}
+
+function gameMetricsSnapshot(): GameMetricsSnapshot {
+  return {
+    fixedUpdateMs: Game.Instance.FixedUpdateMs,
+    frameCount: TimeSystem.Instance.FrameCount,
+    skippedFixedUpdates: Game.Instance.SkippedFixedUpdates,
+    updateTargets: UpdateSystem.Instance.Count,
+    updateCalls: UpdateSystem.Instance.UpdateCount,
+    updateFailures: UpdateSystem.Instance.FailedCount,
+    timers: TimerSystem.Instance.Count,
   };
 }

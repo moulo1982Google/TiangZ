@@ -154,7 +154,8 @@ Cocos 输入
 - Gate 在 EnterMap 成功后把连接绑定到 UnitId、Actor InstanceId 与 MapHost；业务 Move 不携带账号、UnitId、Gate 或 MapService。
 - codegen 根据 `IActorLocationMessage/Request` 自动生成 `routing: "actor-location"`，Gate 不需要 Move Handler。
 - MapHost EntryScene 使用 unordered mailbox 接入不同玩家；PlayerUnit 使用 ordered MailBoxComponent 串行处理同一玩家移动。
-- MovementComponent 使用服务端时间计算步长，首次按 50ms、后续最多按 100ms 推进，并丢弃重复或过期序号。
+- Cocos 默认以 5Hz 上报方向输入；服务端 Game.Update 固定为 20Hz，两者互不绑定。
+- MovementComponent 使用服务端收包时间计算步长，首次按 200ms、后续最多按 250ms 推进，并丢弃重复或过期序号。
 - PositionComponent 统一处理方向归一化、每秒 180 单位速度和地图边界限制。
 - Map 仍向同地图所有在线玩家广播权威坐标，但先按 Gate 分组；每个 Gate 只占用一条内部 transport 消息。
 - Cocos 不再本地修改权威坐标，仅按 `G2C_EntityMove` 对本地 Unit 做平滑插值。
