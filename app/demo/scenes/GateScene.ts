@@ -3,6 +3,7 @@ import { message } from "../../core/protocol/message";
 import { RpcError } from "../../core/protocol/RpcError";
 import { rpc } from "../../core/protocol/rpc";
 import { entryScene } from "../../core/process/registry";
+import { TimeSystem, TimerSystem } from "../../core/runtime";
 import {
   RuntimeEntrySceneConfig,
   EntryScene,
@@ -12,17 +13,13 @@ import { GameErrCode } from "../../game/protocol/GameErrCode";
 import {
   C2G_EnterMap,
   C2G_LoginGate,
+  C2G_Ping,
   G2C_EnterMap,
-  G2C_EntityEnter,
-  G2C_EntityLeave,
-  G2C_EntityMove,
   G2C_LoginGate,
   G2C_MapReady,
   G2M_EnterMap,
-  G2M_LeaveMap,
-  M2G_EntityMove,
-  M2G_EntityEnter,
-  M2G_EntityLeave,
+  G2M_PlayerDisconnect,
+  S2G_ClientBroadcast,
   M2G_MapReady,
   M2G_EnterMap,
 } from "../../generated/model/server/demo/protocol/messages";
@@ -45,7 +42,11 @@ interface GateSession {
   mapId?: number;
   unitId?: number;
   actorInstanceId?: number;
+  lastActivityAtMs: number;
 }
+
+const CLIENT_PING_INTERVAL_MS = 5_000;
+const CLIENT_TIMEOUT_MS = 30_000;
 
 @entryScene()
 export class GateScene extends EntryScene {
@@ -56,6 +57,7 @@ export class GateScene extends EntryScene {
   private readonly sessions = new Map<number, GateSession>();
   private readonly connectionsByAccount = new Map<string, number>();
   private readonly connectionsByUnitId = new Map<number, number>();
+  private readonly disconnecting = new Set<number>();
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
@@ -64,9 +66,14 @@ export class GateScene extends EntryScene {
     if (this.mapScenes.length === 0) {
       throw new Error("GateScene needs at least one known MapHostScene");
     }
+    TimerSystem.Instance.NewRepeatedTimer(
+      CLIENT_PING_INTERVAL_MS,
+      () => this.disconnectInactiveClients(),
+    );
   }
 
   protected override async onDisconnect(connectionId: number): Promise<void> {
+    this.disconnecting.delete(connectionId);
     const session = this.sessions.get(connectionId);
     if (
       session &&
@@ -88,7 +95,7 @@ export class GateScene extends EntryScene {
       session.unitId !== undefined &&
       session.actorInstanceId !== undefined
     ) {
-      await this.notifyMapDisconnected(session);
+      await this.notifyMapPlayerDisconnected(session);
     }
   }
 
@@ -107,10 +114,12 @@ export class GateScene extends EntryScene {
       throw new RpcError(GameErrCode.GateSessionRequired, "gate connection is required");
     }
 
+    const sessionId = `${this.bootId}:${context.connectionId}`;
     this.sessions.set(context.connectionId, {
-      sessionId: `${this.bootId}:${context.connectionId}`,
+      sessionId,
       account: request.account,
       token: request.token,
+      lastActivityAtMs: TimeSystem.Instance.FrameTime,
     });
     this.actorLocations.unbindConnection(context.connectionId);
     this.connectionsByAccount.set(request.account, context.connectionId);
@@ -118,6 +127,21 @@ export class GateScene extends EntryScene {
     return {
       account: request.account,
     };
+  }
+
+  @message(GateMessages.Ping)
+  private ping(_message: C2G_Ping, context: ProtocolContext): void {
+    const connectionId = context.connectionId;
+    if (connectionId === undefined) return;
+    const session = this.sessions.get(connectionId);
+    if (!session) {
+      this.disconnecting.add(connectionId);
+      this.disconnectClient(connectionId);
+      return;
+    }
+    if (!this.disconnecting.has(connectionId)) {
+      session.lastActivityAtMs = TimeSystem.Instance.FrameTime;
+    }
   }
 
   @message(GateMessages.MapReady)
@@ -140,40 +164,15 @@ export class GateScene extends EntryScene {
     this.sendClient(connectionId, ClientMessages.MapReady, clientMessage);
   }
 
-  @message(GateMessages.EntityMove)
-  private entityMove(message: M2G_EntityMove): void {
+  @message(GateMessages.ClientBroadcast)
+  private clientBroadcast(message: S2G_ClientBroadcast): void {
     const connectionIds: number[] = [];
-    for (const targetUnitId of message.targetUnitIds) {
-      const connectionId = this.connectionsByUnitId.get(targetUnitId);
+    for (const unitId of message.targetUnitIds) {
+      const connectionId = this.connectionsByUnitId.get(unitId);
       if (connectionId === undefined) continue;
       connectionIds.push(connectionId);
     }
-
-    const clientMessage: G2C_EntityMove = {
-      unitId: message.unitId,
-      x: message.x,
-      y: message.y,
-      sequence: message.sequence,
-    };
-    this.sendClientMany(connectionIds, ClientMessages.EntityMove, clientMessage);
-  }
-
-  @message(GateMessages.EntityEnter)
-  private entityEnter(message: M2G_EntityEnter): void {
-    const connectionId = this.connectionsByUnitId.get(message.targetUnitId);
-    if (connectionId === undefined) return;
-
-    const clientMessage: G2C_EntityEnter = { entity: message.entity };
-    this.sendClient(connectionId, ClientMessages.EntityEnter, clientMessage);
-  }
-
-  @message(GateMessages.EntityLeave)
-  private entityLeave(message: M2G_EntityLeave): void {
-    const connectionId = this.connectionsByUnitId.get(message.targetUnitId);
-    if (connectionId === undefined) return;
-
-    const clientMessage: G2C_EntityLeave = { unitId: message.unitId };
-    this.sendClient(connectionId, ClientMessages.EntityLeave, clientMessage);
+    this.sendClientFrameMany(connectionIds, message.frame);
   }
 
   @rpc(GateProtocol.EnterMap)
@@ -229,6 +228,7 @@ export class GateScene extends EntryScene {
       x: mapResponse.x,
       y: mapResponse.y,
       entities: mapResponse.entities,
+      fixedUpdateMs: mapResponse.fixedUpdateMs,
     };
   }
 
@@ -246,8 +246,25 @@ export class GateScene extends EntryScene {
     });
   }
 
-  private async notifyMapDisconnected(session: GateSession): Promise<void> {
-    const message: G2M_LeaveMap = {
+  private disconnectInactiveClients(): void {
+    const now = TimeSystem.Instance.FrameTime;
+    for (const [connectionId, session] of this.sessions) {
+      if (
+        this.disconnecting.has(connectionId) ||
+        now - session.lastActivityAtMs < CLIENT_TIMEOUT_MS
+      ) {
+        continue;
+      }
+      this.disconnecting.add(connectionId);
+      console.log(
+        `[${this.self.name}] disconnecting inactive client ${session.account} connection=${connectionId} idle_ms=${Math.floor(now - session.lastActivityAtMs)}`,
+      );
+      this.disconnectClient(connectionId);
+    }
+  }
+
+  private async notifyMapPlayerDisconnected(session: GateSession): Promise<void> {
+    const message: G2M_PlayerDisconnect = {
       account: session.account,
       mapId: session.mapId!,
       unitId: session.unitId!,
@@ -262,7 +279,7 @@ export class GateScene extends EntryScene {
           scene: target,
           instanceId: session.actorInstanceId!,
         },
-        MapMessages.LeaveMap,
+        MapMessages.PlayerDisconnect,
         message,
       );
     } catch (error) {

@@ -1,10 +1,17 @@
 import { RpcSocket } from "../../Core/Net/RpcSocket";
+import {
+  type ClientEndpoint,
+  endpointWithAddress,
+} from "../../Core/Net/ClientTransport";
 import type {
   G2C_EnterMap,
   G2C_MapReady,
   S2C_Login,
 } from "../../Generated/Model/demo/protocol/messages";
-import { ClientMessages } from "../../Generated/Model/demo/protocol/messageDescriptors";
+import {
+  ClientMessages,
+  GateMessages,
+} from "../../Generated/Model/demo/protocol/messageDescriptors";
 import {
   GateProtocol,
   LoginMgrProtocol,
@@ -22,8 +29,9 @@ export type LoginProgress = (message: string) => void;
 
 export class LoginFlow {
   private gateSocket?: RpcSocket;
+  private gatePingTimer?: ReturnType<typeof setInterval>;
 
-  constructor(private readonly loginMgrUrl: string) {}
+  constructor(private readonly loginMgrEndpoint: ClientEndpoint) {}
 
   async enterGame(
     account: string,
@@ -33,7 +41,7 @@ export class LoginFlow {
     this.close();
 
     onProgress("正在连接 LoginMgr...");
-    const manager = new RpcSocket(this.loginMgrUrl);
+    const manager = new RpcSocket(this.loginMgrEndpoint);
     let loginAddress;
     try {
       loginAddress = await manager.call(LoginMgrProtocol.GetLoginServiceAddr, {});
@@ -45,7 +53,7 @@ export class LoginFlow {
       `正在连接 ${loginAddress.name} ${loginAddress.ip}:${loginAddress.port}...`,
     );
     const loginSocket = new RpcSocket(
-      `ws://${loginAddress.ip}:${loginAddress.port}`,
+      endpointWithAddress(this.loginMgrEndpoint, loginAddress.ip, loginAddress.port),
     );
     let login;
     try {
@@ -57,26 +65,46 @@ export class LoginFlow {
     onProgress(
       `正在进入 Gate ${login.gateName} ${login.gateIp}:${login.gatePort}...`,
     );
-    const gateSocket = new RpcSocket(`ws://${login.gateIp}:${login.gatePort}`);
+    const gateSocket = new RpcSocket(
+      endpointWithAddress(this.loginMgrEndpoint, login.gateIp, login.gatePort),
+    );
     try {
       await gateSocket.call(GateProtocol.LoginGate, {
         account: login.account,
         token: login.token,
       });
+      this.gateSocket = gateSocket;
+      this.startGatePing();
       const [enterMap, mapReady] = await Promise.all([
         gateSocket.call(GateProtocol.EnterMap, { mapId }),
         gateSocket.waitForMessage(ClientMessages.MapReady),
       ]);
-      this.gateSocket = gateSocket;
       return { login, enterMap, mapReady, gateSocket };
     } catch (error) {
-      gateSocket.close();
+      if (this.gateSocket === gateSocket) this.close();
+      else gateSocket.close();
       throw error;
     }
   }
 
   close(): void {
+    if (this.gatePingTimer !== undefined) {
+      clearInterval(this.gatePingTimer);
+      this.gatePingTimer = undefined;
+    }
     this.gateSocket?.close();
     this.gateSocket = undefined;
+  }
+
+  private startGatePing(): void {
+    if (this.gatePingTimer !== undefined) clearInterval(this.gatePingTimer);
+    this.gatePingTimer = setInterval(() => {
+      const socket = this.gateSocket;
+      if (!socket) return;
+      void socket.send(GateMessages.Ping, {}).catch((error) => {
+        console.error("发送 Gate Ping 失败", error);
+        if (this.gateSocket === socket) this.close();
+      });
+    }, 5_000);
   }
 }

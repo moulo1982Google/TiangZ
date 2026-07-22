@@ -54,13 +54,22 @@ export interface SceneConfig {
   sceneType: string;
   ip: string;
   port: number;
+  protocol?: "auto" | "tcp" | "websocket" | "kcp";
+  audience?: "mixed" | "inner" | "outer";
 }
 
 export interface ProcessConfig {
   name: string;
+  network?: ProcessNetworkConfig;
   game?: GameUpdateConfig;
   scheduling?: ProcessSchedulingConfig;
   observability?: ProcessObservabilityConfig;
+}
+
+export interface ProcessNetworkConfig {
+  ioBackend?: "epoll" | "io-uring";
+  uringEntries?: number;
+  uringReadBufferBytes?: number;
 }
 
 export interface ProcessSchedulingConfig {
@@ -121,6 +130,12 @@ export interface SceneMetricsSnapshot {
   asyncInFlight: number;
   maxAsyncInFlight: number;
   latencies: LatencyMetricSnapshot[];
+  customMetrics: CustomMetricSnapshot[];
+}
+
+export interface CustomMetricSnapshot {
+  name: string;
+  values: Readonly<Record<string, number>>;
 }
 
 export type SceneMailboxType = "ordered" | "unordered";
@@ -272,6 +287,13 @@ export abstract class EntryScene extends Entity {
 
   protected onDisconnect(_connectionId: number): MaybePromise<void> {}
 
+  protected disconnectClient(connectionId: number): void {
+    if (!Number.isInteger(connectionId) || connectionId <= 0) {
+      throw new Error(`invalid connection id: ${connectionId}`);
+    }
+    hostCloseConnection(connectionId);
+  }
+
   protected sendClient<TMessage extends IMessage>(
     connectionId: number,
     descriptor: MessageDescriptor<TMessage>,
@@ -291,6 +313,17 @@ export abstract class EntryScene extends Entity {
     if (connectionIds.length === 0) return;
 
     const frame = packFrame(descriptor.msgcode, descriptor.codec.encode(message));
+    this.outbound.push({
+      connectionIdBytes: packConnectionIds(connectionIds),
+      frame,
+    });
+  }
+
+  protected sendClientFrameMany(
+    connectionIds: readonly number[],
+    frame: Uint8Array,
+  ): void {
+    if (connectionIds.length === 0) return;
     this.outbound.push({
       connectionIdBytes: packConnectionIds(connectionIds),
       frame,
@@ -340,6 +373,7 @@ export abstract class EntryScene extends Entity {
       asyncInFlight: this.unorderedTasks.size,
       maxAsyncInFlight: this.metrics.maxAsyncInFlight,
       latencies: this.latencies.snapshot(),
+      customMetrics: [],
     };
   }
 
@@ -872,6 +906,10 @@ export abstract class EntryScene extends Entity {
     this.registeredMessageHandlers.set(msgcode, owner);
   }
 }
+
+const hostCloseConnection = (globalThis as typeof globalThis & {
+  __hostCloseConnection: (connectionId: number) => void;
+}).__hostCloseConnection;
 
 export type EntrySceneCtor = new (config: RuntimeEntrySceneConfig) => EntryScene;
 

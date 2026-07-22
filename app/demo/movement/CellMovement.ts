@@ -1,0 +1,51 @@
+export const CELL_SIZE = 12;
+export const MAP_CELL_COUNT = 128;
+export const UNIT_FOOTPRINT_CELLS = 3;
+export const DEFAULT_MOVE_SPEED_CELLS_PER_SECOND = 10;
+
+// 128 个格子使用 -64..63；3x3 Unit 的中心不能落在最外圈。
+export const MIN_UNIT_CELL = -63;
+export const MAX_UNIT_CELL = 62;
+
+export interface MovementFrame {
+  readonly unitId: number;
+  readonly acknowledgedSequence: number;
+  readonly fromCellX: number;
+  readonly fromCellY: number;
+  readonly toCellX: number;
+  readonly toCellY: number;
+  readonly moveStartTick: number;
+  readonly moveEndTick: number;
+  readonly moving: boolean;
+  readonly stateChanged: boolean;
+}
+
+export type UnitMovementState = Omit<MovementFrame, "unitId">;
+
+export function cellToWorld(cell: number): number {
+  return cell * CELL_SIZE;
+}
+
+export function worldToCell(world: number): number {
+  return Math.round(world / CELL_SIZE);
+}
+
+export function clampDirection(value: number): number {
+  return Math.max(-1, Math.min(1, Math.round(value)));
+}
+
+export function canOccupyCell(x: number, y: number): boolean {
+  return x >= MIN_UNIT_CELL && x <= MAX_UNIT_CELL &&
+    y >= MIN_UNIT_CELL && y <= MAX_UNIT_CELL;
+}
+
+export function stepDurationTicks(
+  directionX: number,
+  directionY: number,
+  fixedUpdateMs: number,
+  speedCellsPerSecond = DEFAULT_MOVE_SPEED_CELLS_PER_SECOND,
+): number {
+  const distance = directionX !== 0 && directionY !== 0 ? Math.SQRT2 : 1;
+  const durationMs = 1_000 * distance / speedCellsPerSecond;
+  return Math.max(1, Math.ceil(durationMs / fixedUpdateMs));
+}

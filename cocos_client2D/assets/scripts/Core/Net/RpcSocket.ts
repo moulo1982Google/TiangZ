@@ -8,6 +8,12 @@ import type {
 } from "../Protocol/Message";
 import type { RpcDescriptor } from "../Protocol/Rpc";
 import { RpcError } from "../Protocol/RpcError";
+import {
+  type ClientEndpoint,
+  type ClientTransport,
+  createClientTransport,
+  formatEndpoint,
+} from "./ClientTransport";
 
 export interface RpcCallOptions {
   timeoutMs?: number;
@@ -27,50 +33,21 @@ interface PendingRequest {
 }
 
 export class RpcSocket {
-  private socket?: WebSocket;
-  private connecting?: Promise<void>;
+  private readonly transport: ClientTransport;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly handlers = new Map<number, Set<MessageHandler>>();
   private nextRpcId = 1;
 
-  constructor(private readonly url: string) {}
+  constructor(private readonly endpoint: ClientEndpoint) {
+    this.transport = createClientTransport(endpoint);
+    this.transport.setListener({
+      onMessage: (frame) => this.handleMessage(frame),
+      onClose: (error) => this.rejectAll(error),
+    });
+  }
 
   connect(): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      return Promise.resolve();
-    }
-    if (this.connecting) return this.connecting;
-
-    this.connecting = new Promise((resolve, reject) => {
-      const socket = new WebSocket(this.url);
-      socket.binaryType = "arraybuffer";
-      let settled = false;
-
-      socket.onopen = () => {
-        settled = true;
-        this.socket = socket;
-        this.connecting = undefined;
-        resolve();
-      };
-      socket.onerror = () => {
-        if (settled) return;
-        settled = true;
-        this.connecting = undefined;
-        reject(new Error(`连接失败：${this.url}`));
-      };
-      socket.onclose = () => {
-        if (!settled) {
-          settled = true;
-          this.connecting = undefined;
-          reject(new Error(`连接建立期间已关闭：${this.url}`));
-        }
-        this.rejectAll(new Error(`连接已关闭：${this.url}`));
-        if (this.socket === socket) this.socket = undefined;
-      };
-      socket.onmessage = (event) => this.handleMessage(event.data);
-    });
-
-    return this.connecting;
+    return this.transport.connect();
   }
 
   async call<TRequest extends IRequest, TResponse extends IResponse>(
@@ -101,7 +78,7 @@ export class RpcSocket {
 
   async sendFrame(frame: Uint8Array): Promise<void> {
     await this.connect();
-    this.requireOpenSocket().send(toArrayBuffer(frame));
+    this.transport.send(frame);
   }
 
   async send<TMessage extends IMessage>(
@@ -167,9 +144,8 @@ export class RpcSocket {
   }
 
   close(): void {
-    this.rejectAll(new Error(`客户端关闭连接：${this.url}`));
-    this.socket?.close();
-    this.socket = undefined;
+    this.rejectAll(new Error(`客户端关闭连接：${formatEndpoint(this.endpoint)}`));
+    this.transport.close();
   }
 
   private async requestFrame(
@@ -179,7 +155,9 @@ export class RpcSocket {
     timeoutMs: number,
   ): Promise<Uint8Array> {
     await this.connect();
-    const socket = this.requireOpenSocket();
+    if (!this.transport.connected) {
+      throw new Error(`连接尚未打开：${formatEndpoint(this.endpoint)}`);
+    }
     if (this.pending.has(rpcId)) {
       throw new Error(`出现重复的 pending rpcId：${rpcId}`);
     }
@@ -190,17 +168,11 @@ export class RpcSocket {
         reject(new Error(`RPC ${rpcId} 在 ${timeoutMs}ms 后超时`));
       }, timeoutMs);
       this.pending.set(rpcId, { responseCode, resolve, reject, timer });
-      socket.send(toArrayBuffer(frame));
+      this.transport.send(frame);
     });
   }
 
-  private handleMessage(data: unknown): void {
-    if (!(data instanceof ArrayBuffer)) {
-      console.error("收到的 WebSocket 消息不是二进制帧");
-      return;
-    }
-
-    const frame = new Uint8Array(data);
+  private handleMessage(frame: Uint8Array): void {
     if (frame.length < 2) {
       console.error("收到的 WebSocket 消息帧短于 msgcode");
       return;
@@ -244,13 +216,6 @@ export class RpcSocket {
     return rpcId;
   }
 
-  private requireOpenSocket(): WebSocket {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      throw new Error(`连接尚未打开：${this.url}`);
-    }
-    return this.socket;
-  }
-
   private rejectAll(error: Error): void {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
@@ -275,10 +240,4 @@ function extractRpcId(frame: Uint8Array): number | undefined {
     return undefined;
   }
   return undefined;
-}
-
-function toArrayBuffer(frame: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(frame.length);
-  copy.set(frame);
-  return copy.buffer;
 }

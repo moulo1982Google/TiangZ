@@ -9,10 +9,13 @@ use crate::watcher::run_start_machine;
 
 mod allocator;
 mod config;
+mod generated;
 mod host;
 mod inspector;
+mod native_data;
 mod process;
 mod transport;
+mod transport_backend;
 mod watcher;
 
 #[tokio::main(flavor = "multi_thread")]

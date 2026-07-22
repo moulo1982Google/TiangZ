@@ -4,10 +4,15 @@ version = "0.1.0"
 edition = "2024"
 default-run = "TiangZ"
 
+[lib]
+name = "tiangz_transport"
+path = "src/transport_lib.rs"
+
 [features]
 default = ["mimalloc-allocator"]
 mimalloc-allocator = ["dep:mimalloc"]
 io-uring = ["dep:tokio-uring"]
+kcp = []
 
 [dependencies]
 anyhow = "1"
@@ -29,3 +34,6 @@ tokio-uring = { version = "0.5.0", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+
+[build-dependencies]
+cc = "1"

@@ -10,7 +10,7 @@ import {
   C2S_LoginCodec,
   M2G_MapReadyCodec,
   M2G_EnterMapCodec,
-  M2G_EntityMoveCodec,
+  S2G_ClientBroadcastCodec,
   MapEntitySnapshotCodec,
   S2C_LoginCodec,
 } from "../app/generated/model/server/demo/protocol/messages";
@@ -94,16 +94,14 @@ function testGeneratedScalarCodec(): void {
     [[42, "tester"], [43, "peer"]],
   );
 
-  const batch = M2G_EntityMoveCodec.decode(
-    M2G_EntityMoveCodec.encode({
-      targetUnitIds: [1001, 1002, 1003],
-      unitId: 1000,
-      x: 12,
-      y: -8,
-      sequence: 9,
+  const broadcast = S2G_ClientBroadcastCodec.decode(
+    S2G_ClientBroadcastCodec.encode({
+      targetUnitIds: [1001, 1002],
+      frame: new Uint8Array([0x27, 0x19, 1, 2, 3]),
     }),
   );
-  assert.deepEqual(batch.targetUnitIds, [1001, 1002, 1003]);
+  assert.deepEqual(broadcast.targetUnitIds, [1001, 1002]);
+  assert.deepEqual([...broadcast.frame], [0x27, 0x19, 1, 2, 3]);
 
   const writer = new BinaryWriter();
   writer.int32(1, -2147483648);

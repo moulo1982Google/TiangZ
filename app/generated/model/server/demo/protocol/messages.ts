@@ -51,6 +51,8 @@ export interface MapEntitySnapshot {
   alive: boolean;
   state: Uint8Array;
   account: string;
+  cellX: number;
+  cellY: number;
 }
 
 export const MapEntitySnapshotCodec = {
@@ -64,6 +66,8 @@ export const MapEntitySnapshotCodec = {
       alive: false,
       state: new Uint8Array(0),
       account: "",
+      cellX: 0,
+      cellY: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -88,6 +92,12 @@ export const MapEntitySnapshotCodec = {
       else if (tag.fieldNo === 7 && tag.wireType === 2) {
         value.account = reader.string();
       }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.cellX = reader.sint32();
+      }
+      else if (tag.fieldNo === 9 && tag.wireType === 0) {
+        value.cellY = reader.sint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -104,6 +114,85 @@ export const MapEntitySnapshotCodec = {
     writer.bool(5, value.alive);
     writer.bytes(6, value.state);
     writer.string(7, value.account);
+    writer.sint32(8, value.cellX);
+    writer.sint32(9, value.cellY);
+    return writer.finish();
+  },
+};
+
+export interface CellMovementState {
+  unitId: number;
+  acknowledgedSequence: number;
+  fromCellX: number;
+  fromCellY: number;
+  toCellX: number;
+  toCellY: number;
+  moveStartTick: number;
+  moveEndTick: number;
+  moving: boolean;
+}
+
+export const CellMovementStateCodec = {
+  decode(payload: Uint8Array): CellMovementState {
+    const reader = new BinaryReader(payload);
+    const value: CellMovementState = {
+      unitId: 0,
+      acknowledgedSequence: 0,
+      fromCellX: 0,
+      fromCellY: 0,
+      toCellX: 0,
+      toCellY: 0,
+      moveStartTick: 0,
+      moveEndTick: 0,
+      moving: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.acknowledgedSequence = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.fromCellX = reader.sint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.fromCellY = reader.sint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.toCellX = reader.sint32();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.toCellY = reader.sint32();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.moveStartTick = reader.uint32();
+      }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.moveEndTick = reader.uint32();
+      }
+      else if (tag.fieldNo === 9 && tag.wireType === 0) {
+        value.moving = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: CellMovementState): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.uint32(1, value.unitId);
+    writer.uint32(2, value.acknowledgedSequence);
+    writer.sint32(3, value.fromCellX);
+    writer.sint32(4, value.fromCellY);
+    writer.sint32(5, value.toCellX);
+    writer.sint32(6, value.toCellY);
+    writer.uint32(7, value.moveStartTick);
+    writer.uint32(8, value.moveEndTick);
+    writer.bool(9, value.moving);
     return writer.finish();
   },
 };
@@ -206,6 +295,7 @@ export interface M2G_EnterMap extends IResponse {
   y: number;
   entities: readonly MapEntitySnapshot[];
   actorInstanceId: number;
+  fixedUpdateMs: number;
 }
 
 export const M2G_EnterMapCodec = {
@@ -219,6 +309,7 @@ export const M2G_EnterMapCodec = {
       y: 0,
       entities: [],
       actorInstanceId: 0,
+      fixedUpdateMs: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -252,6 +343,9 @@ export const M2G_EnterMapCodec = {
       else if (tag.fieldNo === 7 && tag.wireType === 0) {
         value.actorInstanceId = reader.uint32();
       }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.fixedUpdateMs = reader.uint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -271,6 +365,7 @@ export const M2G_EnterMapCodec = {
     writer.sint32(5, value.y);
     for (const item of value.entities) writer.bytes(6, MapEntitySnapshotCodec.encode(item));
     writer.uint32(7, value.actorInstanceId);
+    writer.uint32(8, value.fixedUpdateMs);
     return writer.finish();
   },
 };
@@ -400,7 +495,7 @@ export const M2G_MapReadyCodec = {
   },
 };
 
-export interface G2M_LeaveMap extends IActorMessage {
+export interface G2M_PlayerDisconnect extends IActorMessage {
   account: string;
   mapId: number;
   unitId: number;
@@ -408,10 +503,10 @@ export interface G2M_LeaveMap extends IActorMessage {
   gateSessionId: string;
 }
 
-export const G2M_LeaveMapCodec = {
-  decode(payload: Uint8Array): G2M_LeaveMap {
+export const G2M_PlayerDisconnectCodec = {
+  decode(payload: Uint8Array): G2M_PlayerDisconnect {
     const reader = new BinaryReader(payload);
-    const value: G2M_LeaveMap = {
+    const value: G2M_PlayerDisconnect = {
       account: "",
       mapId: 0,
       unitId: 0,
@@ -442,7 +537,7 @@ export const G2M_LeaveMapCodec = {
     return value;
   },
 
-  encode(value: G2M_LeaveMap): Uint8Array {
+  encode(value: G2M_PlayerDisconnect): Uint8Array {
     const writer = new BinaryWriter();
     writer.string(1, value.account);
     writer.uint32(2, value.mapId);
@@ -453,40 +548,25 @@ export const G2M_LeaveMapCodec = {
   },
 };
 
-export interface M2G_EntityMove extends IActorMessage {
+export interface S2G_ClientBroadcast extends IActorMessage {
   targetUnitIds: readonly number[];
-  unitId: number;
-  x: number;
-  y: number;
-  sequence: number;
+  frame: Uint8Array;
 }
 
-export const M2G_EntityMoveCodec = {
-  decode(payload: Uint8Array): M2G_EntityMove {
+export const S2G_ClientBroadcastCodec = {
+  decode(payload: Uint8Array): S2G_ClientBroadcast {
     const reader = new BinaryReader(payload);
-    const value: M2G_EntityMove = {
+    const value: S2G_ClientBroadcast = {
       targetUnitIds: [],
-      unitId: 0,
-      x: 0,
-      y: 0,
-      sequence: 0,
+      frame: new Uint8Array(0),
     };
     while (!reader.eof()) {
       const tag = reader.tag();
       if (tag.fieldNo === 1 && tag.wireType === 0) {
         (value.targetUnitIds as number[]).push(reader.uint32());
       }
-      else if (tag.fieldNo === 2 && tag.wireType === 0) {
-        value.unitId = reader.uint32();
-      }
-      else if (tag.fieldNo === 3 && tag.wireType === 0) {
-        value.x = reader.sint32();
-      }
-      else if (tag.fieldNo === 4 && tag.wireType === 0) {
-        value.y = reader.sint32();
-      }
-      else if (tag.fieldNo === 5 && tag.wireType === 0) {
-        value.sequence = reader.uint32();
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.frame = reader.bytesField();
       }
       else {
         reader.skip(tag.wireType);
@@ -495,83 +575,10 @@ export const M2G_EntityMoveCodec = {
     return value;
   },
 
-  encode(value: M2G_EntityMove): Uint8Array {
+  encode(value: S2G_ClientBroadcast): Uint8Array {
     const writer = new BinaryWriter();
     for (const item of value.targetUnitIds) writer.uint32(1, item);
-    writer.uint32(2, value.unitId);
-    writer.sint32(3, value.x);
-    writer.sint32(4, value.y);
-    writer.uint32(5, value.sequence);
-    return writer.finish();
-  },
-};
-
-export interface M2G_EntityEnter extends IActorMessage {
-  targetUnitId: number;
-  entity: MapEntitySnapshot;
-}
-
-export const M2G_EntityEnterCodec = {
-  decode(payload: Uint8Array): M2G_EntityEnter {
-    const reader = new BinaryReader(payload);
-    const value: M2G_EntityEnter = {
-      targetUnitId: 0,
-      entity: MapEntitySnapshotCodec.decode(new Uint8Array(0)),
-    };
-    while (!reader.eof()) {
-      const tag = reader.tag();
-      if (tag.fieldNo === 1 && tag.wireType === 0) {
-        value.targetUnitId = reader.uint32();
-      }
-      else if (tag.fieldNo === 2 && tag.wireType === 2) {
-        value.entity = MapEntitySnapshotCodec.decode(reader.bytesField());
-      }
-      else {
-        reader.skip(tag.wireType);
-      }
-    }
-    return value;
-  },
-
-  encode(value: M2G_EntityEnter): Uint8Array {
-    const writer = new BinaryWriter();
-    writer.uint32(1, value.targetUnitId);
-    writer.bytes(2, MapEntitySnapshotCodec.encode(value.entity));
-    return writer.finish();
-  },
-};
-
-export interface M2G_EntityLeave extends IActorMessage {
-  targetUnitId: number;
-  unitId: number;
-}
-
-export const M2G_EntityLeaveCodec = {
-  decode(payload: Uint8Array): M2G_EntityLeave {
-    const reader = new BinaryReader(payload);
-    const value: M2G_EntityLeave = {
-      targetUnitId: 0,
-      unitId: 0,
-    };
-    while (!reader.eof()) {
-      const tag = reader.tag();
-      if (tag.fieldNo === 1 && tag.wireType === 0) {
-        value.targetUnitId = reader.uint32();
-      }
-      else if (tag.fieldNo === 2 && tag.wireType === 0) {
-        value.unitId = reader.uint32();
-      }
-      else {
-        reader.skip(tag.wireType);
-      }
-    }
-    return value;
-  },
-
-  encode(value: M2G_EntityLeave): Uint8Array {
-    const writer = new BinaryWriter();
-    writer.uint32(1, value.targetUnitId);
-    writer.uint32(2, value.unitId);
+    writer.bytes(2, value.frame);
     return writer.finish();
   },
 };
@@ -975,6 +982,7 @@ export interface G2C_EnterMap extends IResponse {
   x: number;
   y: number;
   entities: readonly MapEntitySnapshot[];
+  fixedUpdateMs: number;
 }
 
 export const G2C_EnterMapCodec = {
@@ -988,6 +996,7 @@ export const G2C_EnterMapCodec = {
       x: 0,
       y: 0,
       entities: [],
+      fixedUpdateMs: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1021,6 +1030,9 @@ export const G2C_EnterMapCodec = {
       else if (tag.fieldNo === 7 && tag.wireType === 2) {
         (value.entities as MapEntitySnapshot[]).push(MapEntitySnapshotCodec.decode(reader.bytesField()));
       }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.fixedUpdateMs = reader.uint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1040,6 +1052,7 @@ export const G2C_EnterMapCodec = {
     writer.sint32(5, value.x);
     writer.sint32(6, value.y);
     for (const item of value.entities) writer.bytes(7, MapEntitySnapshotCodec.encode(item));
+    writer.uint32(8, value.fixedUpdateMs);
     return writer.finish();
   },
 };
@@ -1217,34 +1230,24 @@ export const M2C_MapProbeCodec = {
 };
 
 export interface G2C_EntityMove extends IMessage {
-  unitId: number;
-  x: number;
-  y: number;
-  sequence: number;
+  serverTick: number;
+  movements: readonly CellMovementState[];
 }
 
 export const G2C_EntityMoveCodec = {
   decode(payload: Uint8Array): G2C_EntityMove {
     const reader = new BinaryReader(payload);
     const value: G2C_EntityMove = {
-      unitId: 0,
-      x: 0,
-      y: 0,
-      sequence: 0,
+      serverTick: 0,
+      movements: [],
     };
     while (!reader.eof()) {
       const tag = reader.tag();
       if (tag.fieldNo === 1 && tag.wireType === 0) {
-        value.unitId = reader.uint32();
+        value.serverTick = reader.uint32();
       }
-      else if (tag.fieldNo === 2 && tag.wireType === 0) {
-        value.x = reader.sint32();
-      }
-      else if (tag.fieldNo === 3 && tag.wireType === 0) {
-        value.y = reader.sint32();
-      }
-      else if (tag.fieldNo === 4 && tag.wireType === 0) {
-        value.sequence = reader.uint32();
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.movements as CellMovementState[]).push(CellMovementStateCodec.decode(reader.bytesField()));
       }
       else {
         reader.skip(tag.wireType);
@@ -1255,10 +1258,8 @@ export const G2C_EntityMoveCodec = {
 
   encode(value: G2C_EntityMove): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.unitId);
-    writer.sint32(2, value.x);
-    writer.sint32(3, value.y);
-    writer.uint32(4, value.sequence);
+    writer.uint32(1, value.serverTick);
+    for (const item of value.movements) writer.bytes(2, CellMovementStateCodec.encode(item));
     return writer.finish();
   },
 };
@@ -1318,5 +1319,17 @@ export const G2C_EntityLeaveCodec = {
     const writer = new BinaryWriter();
     writer.uint32(1, value.unitId);
     return writer.finish();
+  },
+};
+
+export interface C2G_Ping extends IMessage {}
+
+export const C2G_PingCodec = {
+  decode(payload: Uint8Array): C2G_Ping {
+    return {};
+  },
+
+  encode(_value: C2G_Ping): Uint8Array {
+    return new Uint8Array(0);
   },
 };

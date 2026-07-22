@@ -75,6 +75,7 @@ message G2C_EnterMap // IResponse
   sint32 x = 5;
   sint32 y = 6;
   repeated MapEntitySnapshot entities = 7;
+  uint32 fixed_update_ms = 8;
 }
 
 // @ets.msg protocol=Client method=MapReady
@@ -108,22 +109,28 @@ message M2C_MapProbe // IActorLocationResponse
 }
 
 // @ets.msg protocol=Client method=EntityMove
+// @ets.broadcast mode=latest item=CellMovementState items=movements key=unit_id tick=server_tick
 message G2C_EntityMove // IMessage
 {
-  uint32 unit_id = 1;
-  sint32 x = 2;
-  sint32 y = 3;
-  uint32 sequence = 4;
+  uint32 server_tick = 1;
+  repeated CellMovementState movements = 2;
 }
 
 // @ets.msg protocol=Client method=EntityEnter
+// @ets.broadcast mode=event
 message G2C_EntityEnter // IMessage
 {
   MapEntitySnapshot entity = 1;
 }
 
 // @ets.msg protocol=Client method=EntityLeave
+// @ets.broadcast mode=event
 message G2C_EntityLeave // IMessage
 {
   uint32 unit_id = 1;
+}
+
+// @ets.msg protocol=Gate method=Ping
+message C2G_Ping // IMessage
+{
 }

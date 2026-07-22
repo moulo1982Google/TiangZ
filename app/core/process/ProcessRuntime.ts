@@ -85,6 +85,7 @@ export class ProcessRuntime implements LocalSceneRouter {
       this.entryScenes.map((scene, index) =>
         scene.__completeUpdate(startedAt[index] ?? monotonicNow(), includeMetrics)
       ),
+      includeMetrics,
     );
   }
 
@@ -118,7 +119,10 @@ export class ProcessRuntime implements LocalSceneRouter {
   }
 }
 
-function mergeResults(results: SceneUpdateResult[]): ProcessUpdateResult {
+function mergeResults(
+  results: SceneUpdateResult[],
+  includeMetrics: boolean,
+): ProcessUpdateResult {
   const game = gameMetricsSnapshot();
   if (results.length === 1) {
     return {

@@ -8,8 +8,8 @@ export class MapController {
   ) {}
 
   update(deltaTime: number): void {
-    this.input.update(deltaTime);
-    this.entities.update(deltaTime);
+    const intent = this.input.update();
+    this.entities.update(deltaTime, intent);
   }
 
   dispose(): void {

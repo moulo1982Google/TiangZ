@@ -1,0 +1,24 @@
+namespace demo;
+
+entity Entity {
+  id: u32;
+  instanceId: u32;
+}
+
+entity Unit extends Entity {
+  mapId: u32;
+  x: f32;
+  y: f32;
+  cellX: i32;
+  cellY: i32;
+  targetCellX: i32;
+  targetCellY: i32;
+  moveStartTick: u32;
+  moveEndTick: u32;
+  moving: u32;
+  speedCellsPerSecond: f32;
+  inputX: i8;
+  inputY: i8;
+  inputChanged: u32;
+  sequence: u32;
+}

@@ -6,6 +6,7 @@ import {
   C2G_EnterMapCodec,
   C2G_LoginGate,
   C2G_LoginGateCodec,
+  C2G_PingCodec,
   C2M_Move,
   C2M_MoveCodec,
   C2M_MapProbe,
@@ -99,6 +100,10 @@ export function buildLoginGatePacket(
     MsgCode.C2G_LoginGate,
     C2G_LoginGateCodec.encode({ ...request, rpcId }),
   );
+}
+
+export function buildPingPacket(): Uint8Array {
+  return encodePacket(MsgCode.C2G_Ping, C2G_PingCodec.encode({}));
 }
 
 export function decodeLoginGateFrame(

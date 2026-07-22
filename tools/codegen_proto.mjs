@@ -14,6 +14,7 @@ const cocosClientConfig = resolveCocosClientConfig(
 );
 const appRuntimeFiles = {
   binary: path.join(appDir, "core", "protocol", "binary.ts"),
+  broadcast: path.join(appDir, "core", "broadcast", "index.ts"),
   message: path.join(appDir, "core", "protocol", "message.ts"),
   rpc: path.join(appDir, "core", "protocol", "rpc.ts"),
 };
@@ -80,6 +81,7 @@ async function main() {
           msgCodes: [],
           rpcs: [],
           messageDescriptors: [],
+          broadcastDescriptors: [],
         };
         groups.set(key, group);
       }
@@ -198,6 +200,7 @@ function mergeProtocol(group, protocol) {
   group.msgCodes.push(...protocol.msgCodes);
   group.rpcs.push(...protocol.rpcs);
   group.messageDescriptors.push(...protocol.messageDescriptors);
+  group.broadcastDescriptors.push(...protocol.broadcastDescriptors);
 }
 
 function toCamel(name) {
@@ -247,6 +250,7 @@ function parseProto(source, fileInfo) {
   protocol.msgCodes = parseMsgCodes(messages);
   protocol.rpcs = parseRpcs(messages);
   protocol.messageDescriptors = parseMessageDescriptors(messages);
+  protocol.broadcastDescriptors = parseBroadcastDescriptors(messages);
   validateBaseTypes(messages);
   return protocol;
 }
@@ -278,6 +282,7 @@ function parseMessageMeta(comments, trailingBase) {
     responseType: undefined,
     protocol: undefined,
     method: undefined,
+    broadcast: undefined,
   };
 
   const responseTypeMatch = comments.match(/\/\/\s*ResponseType\s+(\w+)/);
@@ -286,6 +291,14 @@ function parseMessageMeta(comments, trailingBase) {
   }
 
   const msgMatch = comments.match(/\/\/\s*@ets\.msg\b([^\n]*)/);
+  const broadcastMatch = comments.match(/\/\/\s*@ets\.broadcast\b([^\n]*)/);
+  if (broadcastMatch) {
+    meta.broadcast = Object.fromEntries(
+      [...broadcastMatch[1].matchAll(/(\w+)=([A-Za-z0-9_]+)/g)].map(
+        ([, key, value]) => [key, value],
+      ),
+    );
+  }
   if (!msgMatch) return meta;
 
   let rest = msgMatch[1].trim();
@@ -471,6 +484,75 @@ function parseMessageDescriptors(messages) {
     }));
 }
 
+function parseBroadcastDescriptors(messages) {
+  const descriptors = [];
+  for (const message of messages) {
+    if (!message.broadcast) continue;
+    if (!message.protocol || !message.codeName) {
+      throw new Error(`${message.name} broadcast requires @ets.msg protocol=...`);
+    }
+
+    const mode = message.broadcast.mode;
+    if (mode !== "event" && mode !== "latest") {
+      throw new Error(`${message.name} broadcast mode must be event or latest`);
+    }
+    const methodName = message.method ?? defaultMessageMethodName(message.name);
+    if (mode === "event" && !message.broadcast.items) {
+      descriptors.push({
+        serviceName: message.protocol,
+        methodName,
+        messageType: message.name,
+        itemType: message.name,
+        mode,
+      });
+      continue;
+    }
+
+    const itemsField = findBroadcastField(message, message.broadcast.items, true);
+    const itemType = message.broadcast.item ?? itemsField.type;
+    if (itemsField.type !== itemType) {
+      throw new Error(
+        `${message.name} broadcast item ${itemType} does not match ${itemsField.protoName}:${itemsField.type}`,
+      );
+    }
+    const tickField = message.broadcast.tick
+      ? findBroadcastField(message, message.broadcast.tick, false)
+      : undefined;
+    if (mode === "latest" && !message.broadcast.key) {
+      throw new Error(`${message.name} latest broadcast requires key=...`);
+    }
+    descriptors.push({
+      serviceName: message.protocol,
+      methodName,
+      messageType: message.name,
+      itemType,
+      itemsField: itemsField.tsName,
+      tickField: tickField?.tsName,
+      keyField: message.broadcast.key
+        ? toCamel(message.broadcast.key)
+        : undefined,
+      mode,
+    });
+  }
+  return descriptors;
+}
+
+function findBroadcastField(message, fieldName, repeated) {
+  if (!fieldName) {
+    throw new Error(`${message.name} broadcast requires items=...`);
+  }
+  const field = message.fields.find(
+    (candidate) => candidate.protoName === fieldName || candidate.tsName === fieldName,
+  );
+  if (!field) throw new Error(`${message.name} broadcast field not found: ${fieldName}`);
+  if (field.repeated !== repeated) {
+    throw new Error(
+      `${message.name}.${field.protoName} must ${repeated ? "be repeated" : "not be repeated"}`,
+    );
+  }
+  return field;
+}
+
 function stripSuffix(value, suffix) {
   return value.endsWith(suffix) ? value.slice(0, -suffix.length) : value;
 }
@@ -639,6 +721,13 @@ async function writeProtocol(protocol, outputDir, runtimeFiles) {
     emitMessageDescriptors(protocol, outputDir, runtimeFiles),
     "utf8",
   );
+  if (protocol.target === "server" && runtimeFiles.broadcast) {
+    await writeFile(
+      path.join(outputDir, "broadcastDescriptors.ts"),
+      emitBroadcastDescriptors(protocol, outputDir, runtimeFiles),
+      "utf8",
+    );
+  }
 }
 
 function emitMessages(protocol, outputDir, runtimeFiles) {
@@ -710,6 +799,7 @@ function validateProtocol(protocol, label, allowUnknownFieldTypes = false) {
   const seenMessages = new Set();
   const seenRpcNames = new Set();
   const seenMessageDescriptorNames = new Set();
+  const seenBroadcastDescriptorNames = new Set();
 
   for (const message of protocol.messages) {
     if (seenMessages.has(message.name)) {
@@ -763,6 +853,14 @@ function validateProtocol(protocol, label, allowUnknownFieldTypes = false) {
     }
     seenMessageDescriptorNames.add(name);
   }
+
+  for (const descriptor of protocol.broadcastDescriptors ?? []) {
+    const name = `${descriptor.serviceName}.${descriptor.methodName}`;
+    if (seenBroadcastDescriptorNames.has(name)) {
+      throw new Error(`${label}: duplicate broadcast descriptor ${name}`);
+    }
+    seenBroadcastDescriptorNames.add(name);
+  }
 }
 
 function emitMessageDescriptors(protocol, outputDir, runtimeFiles) {
@@ -814,6 +912,71 @@ ${descriptor.routing ? `    routing: "${descriptor.routing}",\n` : ""}  }),`,
     "",
     ...blocks.flatMap((block) => [block, ""]),
     "export const AllMessageDescriptors = [",
+    ...allDescriptors,
+    "] as const;",
+    "",
+  ].join("\n");
+}
+
+function emitBroadcastDescriptors(protocol, outputDir, runtimeFiles) {
+  if ((protocol.broadcastDescriptors?.length ?? 0) === 0) {
+    return [
+      "// Generated by tools/codegen_proto.mjs. Do not edit by hand.",
+      "export const AllBroadcastDescriptors = [] as const;",
+      "",
+    ].join("\n");
+  }
+
+  const descriptors = protocol.broadcastDescriptors;
+  const messageTypes = [
+    ...new Set(
+      descriptors.flatMap((descriptor) => [
+        descriptor.itemType,
+        descriptor.messageType,
+      ]),
+    ),
+  ].sort();
+  const services = [...new Set(descriptors.map((item) => item.serviceName))].sort();
+  const byService = new Map();
+  for (const descriptor of descriptors) {
+    const list = byService.get(descriptor.serviceName) ?? [];
+    list.push(descriptor);
+    byService.set(descriptor.serviceName, list);
+  }
+
+  const blocks = [...byService.entries()].map(([serviceName, items]) => {
+    const entries = items.map((descriptor) => {
+      const define = descriptor.mode === "latest"
+        ? "defineLatestBroadcast"
+        : "defineEventBroadcast";
+      const makeMessage = descriptor.itemsField
+        ? `(${descriptor.itemsField}, tick) => ({\n      ${descriptor.tickField ? `${descriptor.tickField}: tick,\n      ` : ""}${descriptor.itemsField}: [...${descriptor.itemsField}],\n    })`
+        : `(items) => items[0]`;
+      const key = descriptor.mode === "latest"
+        ? `\n    keyOf: (item) => item.${descriptor.keyField},`
+        : "";
+      return `  ${descriptor.methodName}: ${define}<${descriptor.itemType}, ${descriptor.messageType}>({
+    name: "${serviceName}.${descriptor.methodName}",
+    message: ${serviceName}Messages.${descriptor.methodName},${key}
+    batchItems: ${descriptor.itemsField ? "true" : "false"},
+    makeMessage: ${makeMessage},
+  }),`;
+    });
+    return `export const ${serviceName}Broadcasts = {\n${entries.join("\n")}\n};`;
+  });
+  const allDescriptors = descriptors.map(
+    (descriptor) => `  ${descriptor.serviceName}Broadcasts.${descriptor.methodName},`,
+  );
+  const broadcastImport = toTsImport(outputDir, runtimeFiles.broadcast);
+
+  return [
+    "// Generated by tools/codegen_proto.mjs. Do not edit by hand.",
+    `import { defineEventBroadcast, defineLatestBroadcast } from "${broadcastImport}";`,
+    `import type { ${messageTypes.join(", ")} } from "./messages";`,
+    `import { ${services.map((name) => `${name}Messages`).join(", ")} } from "./messageDescriptors";`,
+    "",
+    ...blocks.flatMap((block) => [block, ""]),
+    "export const AllBroadcastDescriptors = [",
     ...allDescriptors,
     "] as const;",
     "",

@@ -10,6 +10,7 @@ import {
   buildLoginPacket,
   buildMapProbePacket,
   buildMovePacket,
+  buildPingPacket,
   decodeEnterMapFrame,
   decodeEntityMoveFrame,
   decodeGetLoginServiceAddrFrame,
@@ -34,6 +35,7 @@ interface Options {
   probeConcurrency: number;
   disableMove: boolean;
   label: string;
+  barrierPort: number;
 }
 
 interface TimingResult {
@@ -49,6 +51,13 @@ interface TimingResult {
 interface PlayerResult {
   player: GamePlayer;
   setupLatencyMs: number;
+}
+
+interface MovementResult {
+  sent: number;
+  skippedTicks: number;
+  latenciesMs: number[];
+  errors: number;
 }
 
 const options = parseOptions(process.argv.slice(2));
@@ -74,6 +83,10 @@ async function main(): Promise<void> {
   const setupElapsedSeconds = (performance.now() - setupStartedAt) / 1000;
   const setupLatencies = players.map((item) => item.setupLatencyMs).sort(numberOrder);
 
+  if (options.barrierPort > 0) {
+    await waitForStartBarrier(options.host, options.barrierPort);
+  }
+
   const measurementStart = performance.now() + options.warmupSeconds * 1000;
   const sendDeadline = measurementStart + options.durationSeconds * 1000;
   const measurementStartedAtUnixMs = Date.now() + options.warmupSeconds * 1000;
@@ -81,7 +94,7 @@ async function main(): Promise<void> {
     players.map(async ({ player }, index) => {
       const [movement, probe] = await Promise.all([
         options.disableMove
-          ? Promise.resolve({ latenciesMs: [], errors: 0 })
+          ? Promise.resolve({ sent: 0, skippedTicks: 0, latenciesMs: [], errors: 0 })
           : player.runMovement(measurementStart, sendDeadline, index, options.moveRate),
         player.runProbes(
           measurementStart,
@@ -101,9 +114,14 @@ async function main(): Promise<void> {
     .flatMap((item) => item.probe.latenciesMs)
     .sort(numberOrder);
   const errors = workloads.reduce((sum, item) => sum + item.movement.errors, 0);
+  const movementSent = workloads.reduce((sum, item) => sum + item.movement.sent, 0);
+  const skippedMoveTicks = workloads.reduce(
+    (sum, item) => sum + item.movement.skippedTicks,
+    0,
+  );
   const probeErrors = workloads.reduce((sum, item) => sum + item.probe.errors, 0);
   const pushes = players.reduce((sum, item) => sum + item.player.entityMovePushes, 0);
-  await Promise.all(players.map(({ player }) => player.close()));
+  await closePlayersInBatches(players);
   gcObserver.disconnect();
   const finalResourceUsage = process.resourceUsage();
   const memory = process.memoryUsage();
@@ -130,6 +148,9 @@ async function main(): Promise<void> {
     },
     movement: {
       ...timing(movementLatencies, options.durationSeconds),
+      count: movementSent,
+      perSecond: movementSent / options.durationSeconds,
+      skippedTicks: skippedMoveTicks,
       entityMovePushes: pushes,
       pushesPerSecond: pushes / (options.warmupSeconds + options.durationSeconds),
       errors,
@@ -156,16 +177,41 @@ async function main(): Promise<void> {
   console.log(
     `[full-chain:${options.label}/${result.workload}] players=${options.players} setup=${result.setup.perSecond.toFixed(1)} users/s ` +
       `moves=${result.movement.perSecond.toFixed(1)}/s pushes=${result.movement.pushesPerSecond.toFixed(1)}/s ` +
-      `move_p50=${result.movement.p50Ms.toFixed(2)}ms p95=${result.movement.p95Ms.toFixed(2)}ms ` +
-      `p99=${result.movement.p99Ms.toFixed(2)}ms errors=${errors} ` +
+      `move_skipped=${result.movement.skippedTicks} errors=${errors} ` +
       `probe=${result.probe.perSecond.toFixed(1)}/s p90=${result.probe.p90Ms.toFixed(2)}ms ` +
       `p95=${result.probe.p95Ms.toFixed(2)}ms p99=${result.probe.p99Ms.toFixed(2)}ms errors=${probeErrors}`,
   );
   console.log(`RESULT_JSON ${JSON.stringify(result)}`);
 }
 
+async function waitForStartBarrier(host: string, port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const socket = net.createConnection({ host, port });
+    socket.once("data", () => {
+      socket.destroy();
+      resolve();
+    });
+    socket.once("error", reject);
+    socket.setTimeout(60_000, () => {
+      socket.destroy();
+      reject(new Error(`timed out waiting for client barrier ${host}:${port}`));
+    });
+  });
+}
+
+async function closePlayersInBatches(players: PlayerResult[]): Promise<void> {
+  const batchSize = 16;
+  for (let index = 0; index < players.length; index += batchSize) {
+    await Promise.all(
+      players.slice(index, index + batchSize).map(({ player }) => player.close()),
+    );
+    if (index + batchSize < players.length) await sleep(25);
+  }
+}
+
 async function createPlayer(index: number): Promise<PlayerResult> {
   const startedAt = performance.now();
+  const localAddress = localAddressForPlayer(index);
   const account = `perf_${options.label}_${options.moveRate}_${options.players}_${index}_${Date.now()}`;
   const managerRpcId = allocateRpcId();
   const managerFrame = await requestOne(
@@ -173,6 +219,7 @@ async function createPlayer(index: number): Promise<PlayerResult> {
     options.managerPort,
     buildGetLoginServiceAddrPacket(managerRpcId),
     options.timeoutMs,
+    localAddress,
   );
   const loginAddress = decodeGetLoginServiceAddrFrame(managerFrame).body;
   checkResponse(loginAddress, managerRpcId, "GetLoginServiceAddr");
@@ -183,11 +230,17 @@ async function createPlayer(index: number): Promise<PlayerResult> {
     loginAddress.port,
     buildLoginPacket(loginRpcId, { account }),
     options.timeoutMs,
+    localAddress,
   );
   const login = decodeLoginFrame(loginFrame).body;
   checkResponse(login, loginRpcId, "Login");
 
-  const gate = new GateConnection(login.gateIp, login.gatePort, options.timeoutMs);
+  const gate = new GateConnection(
+    login.gateIp,
+    login.gatePort,
+    options.timeoutMs,
+    localAddress,
+  );
   await gate.connect();
   const loginGateRpcId = allocateRpcId();
   const loginGate = decodeLoginGateFrame(
@@ -197,6 +250,7 @@ async function createPlayer(index: number): Promise<PlayerResult> {
     ),
   ).body;
   checkResponse(loginGate, loginGateRpcId, "LoginGate");
+  gate.startHeartbeat();
 
   const enterMapRpcId = allocateRpcId();
   const [enterMapFrame, mapReadyFrame] = await Promise.all([
@@ -226,7 +280,7 @@ class GamePlayer {
     sendDeadline: number,
     directionSeed: number,
     moveRate: number,
-  ): Promise<{ latenciesMs: number[]; errors: number }> {
+  ): Promise<MovementResult> {
     return this.gate.runMovement(measurementStart, sendDeadline, directionSeed, moveRate);
   }
 
@@ -243,6 +297,7 @@ class GamePlayer {
 }
 
 class GateConnection {
+  private static readonly HEARTBEAT_INTERVAL_MS = 5_000;
   private readonly socket: net.Socket;
   private readonly decoder = new LengthPrefixedFrameDecoder();
   private readonly connected: Promise<void>;
@@ -251,10 +306,16 @@ class GateConnection {
   private readonly messageWaiters = new Map<number, PendingFrame[]>();
   private unitId = 0;
   private moveHandler?: (frame: Uint8Array) => void;
+  private heartbeat?: ReturnType<typeof setInterval>;
   entityMovePushes = 0;
 
-  constructor(ip: string, port: number, private readonly timeoutMs: number) {
-    this.socket = net.createConnection({ host: ip, port });
+  constructor(
+    ip: string,
+    port: number,
+    private readonly timeoutMs: number,
+    localAddress?: string,
+  ) {
+    this.socket = net.createConnection({ host: ip, port, localAddress });
     this.socket.setNoDelay(true);
     this.connected = new Promise((resolve, reject) => {
       this.socket.once("connect", resolve);
@@ -262,11 +323,21 @@ class GateConnection {
     });
     this.closed = new Promise((resolve) => this.socket.once("close", resolve));
     this.socket.on("data", (chunk: Buffer) => this.onData(chunk));
-    this.socket.on("close", () => this.rejectAll(new Error("gate connection closed")));
+    this.socket.on("close", () => {
+      this.stopHeartbeat();
+      this.rejectAll(new Error("gate connection closed"));
+    });
   }
 
   connect(): Promise<void> { return this.connected; }
   setUnitId(unitId: number): void { this.unitId = unitId; }
+
+  startHeartbeat(): void {
+    if (this.heartbeat) return;
+    this.heartbeat = setInterval(() => {
+      if (!this.socket.destroyed) this.socket.write(buildPingPacket());
+    }, GateConnection.HEARTBEAT_INTERVAL_MS);
+  }
 
   async request(rpcId: number, packet: Uint8Array): Promise<Uint8Array> {
     await this.connected;
@@ -303,13 +374,79 @@ class GateConnection {
     sendDeadline: number,
     directionSeed: number,
     moveRate: number,
-  ): Promise<{ latenciesMs: number[]; errors: number }> {
+  ): Promise<MovementResult> {
+    if (moveRate > 0) {
+      return this.runFixedRateMovement(
+        measurementStart,
+        sendDeadline,
+        directionSeed,
+        moveRate,
+      );
+    }
+    return this.runSaturationMovement(
+      measurementStart,
+      sendDeadline,
+      directionSeed,
+    );
+  }
+
+  private async runFixedRateMovement(
+    measurementStart: number,
+    sendDeadline: number,
+    directionSeed: number,
+    moveRate: number,
+  ): Promise<MovementResult> {
+    const intervalMs = 1000 / moveRate;
+    const phase = ((Math.imul(directionSeed + 1, 2654435761) >>> 0) % 10_000) /
+      10_000;
+    let nextSendAt = performance.now() + phase * intervalMs;
+    let sequence = 0;
+    let sent = 0;
+    let skippedTicks = 0;
+    let errors = 0;
+
+    while (nextSendAt < sendDeadline) {
+      const delay = nextSendAt - performance.now();
+      if (delay > 0) await sleep(delay);
+
+      const now = performance.now();
+      if (now >= sendDeadline) break;
+      if (now - nextSendAt >= intervalMs) {
+        const skipped = Math.floor((now - nextSendAt) / intervalMs);
+        skippedTicks += skipped;
+        nextSendAt += skipped * intervalMs;
+      }
+
+      sequence += 1;
+      const axis = (directionSeed + sequence) & 1;
+      try {
+        this.socket.write(buildMovePacket({
+          inputX: axis === 0 ? 1 : 0,
+          inputY: axis === 0 ? 0 : 1,
+          sequence,
+        }));
+        if (now >= measurementStart) sent += 1;
+      } catch {
+        errors += 1;
+      }
+      nextSendAt += intervalMs;
+    }
+
+    return { sent, skippedTicks, latenciesMs: [], errors };
+  }
+
+  private runSaturationMovement(
+    measurementStart: number,
+    sendDeadline: number,
+    directionSeed: number,
+  ): Promise<MovementResult> {
     const latenciesMs: number[] = [];
     let sequence = 0;
+    let awaitingAcknowledgement = false;
     let sentAt = 0;
-    let nextSendAt = performance.now();
     let measured = false;
     let errors = 0;
+    let sent = 0;
 
     return new Promise((resolve) => {
       let finished = false;
@@ -328,7 +465,7 @@ class GateConnection {
         finished = true;
         clearTimeout(hardTimeout);
         this.moveHandler = undefined;
-        resolve({ latenciesMs, errors });
+        resolve({ sent, skippedTicks: 0, latenciesMs, errors });
       };
       const sendNext = () => {
         const now = performance.now();
@@ -337,8 +474,10 @@ class GateConnection {
           return;
         }
         sequence += 1;
+        awaitingAcknowledgement = true;
         sentAt = now;
         measured = now >= measurementStart;
+        if (measured) sent += 1;
         const axis = (directionSeed + sequence) & 1;
         this.socket.write(
           buildMovePacket({
@@ -355,15 +494,17 @@ class GateConnection {
         );
       };
       this.moveHandler = (frame) => {
-        const move = decodeEntityMoveFrame(frame).body;
-        if (move.unitId !== this.unitId || move.sequence !== sequence) return;
+        const move = decodeEntityMoveFrame(frame).body.movements.find(
+          (movement) => movement.unitId === this.unitId,
+        );
+        if (
+          !move ||
+          !awaitingAcknowledgement ||
+          move.acknowledgedSequence !== sequence
+        ) return;
+        awaitingAcknowledgement = false;
         if (measured) latenciesMs.push(performance.now() - sentAt);
-        if (moveRate <= 0) {
-          sendNext();
-          return;
-        }
-        nextSendAt += 1000 / moveRate;
-        setTimeout(sendNext, Math.max(0, nextSendAt - performance.now()));
+        sendNext();
       };
       sendNext();
     });
@@ -449,10 +590,17 @@ class GateConnection {
   }
 
   async close(): Promise<void> {
+    this.stopHeartbeat();
     if (this.socket.destroyed) return;
     this.socket.end();
     await Promise.race([this.closed, sleep(1000)]);
     this.socket.destroy();
+  }
+
+  private stopHeartbeat(): void {
+    if (!this.heartbeat) return;
+    clearInterval(this.heartbeat);
+    this.heartbeat = undefined;
   }
 
   private onData(chunk: Buffer): void {
@@ -511,9 +659,10 @@ function requestOne(
   port: number,
   packet: Uint8Array,
   timeoutMs: number,
+  localAddress?: string,
 ): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
-    const socket = net.createConnection({ host, port });
+    const socket = net.createConnection({ host, port, localAddress });
     const decoder = new LengthPrefixedFrameDecoder();
     const timer = setTimeout(() => {
       socket.destroy();
@@ -559,6 +708,16 @@ function allocateRpcId(): number {
   const value = nextRpcId;
   nextRpcId = (nextRpcId % 0xffff_ffff) + 1;
   return value;
+}
+
+function localAddressForPlayer(index: number): string | undefined {
+  if (options.host !== "127.0.0.1" && options.host !== "localhost") return undefined;
+  const shard = Number(options.label.match(/-s(\d+)$/)?.[1] ?? "1");
+  const ordinal = Math.max(0, shard - 1) * 100_000 + index;
+  const second = 1 + Math.floor(ordinal / (254 * 254)) % 254;
+  const third = Math.floor(ordinal / 254) % 254;
+  const fourth = 1 + ordinal % 254;
+  return `127.${second}.${third}.${fourth}`;
 }
 
 function timing(latencies: number[], elapsedSeconds: number): TimingResult {
@@ -633,6 +792,7 @@ function parseOptions(args: string[]): Options {
     probeConcurrency: Math.floor(number("probe-concurrency", 1)),
     disableMove: flags.has("disable-move"),
     label: values.get("label") ?? "manual",
+    barrierPort: Math.floor(nonNegativeNumber(values, "barrier-port", 0)),
   };
 }
 

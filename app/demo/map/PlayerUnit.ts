@@ -1,4 +1,6 @@
 import { actor, handler, Unit } from "../../core/runtime";
+import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
+import type { MovementFrame } from "../movement";
 import { MovementComponent } from "./MovementComponent";
 import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
@@ -35,18 +37,14 @@ export interface PlayerSnapshot {
   gateSessionId: string;
   x: number;
   y: number;
-  lastMoveSequence: number;
+  cellX: number;
+  cellY: number;
 }
 
 export interface MovePlayer {
   inputX: number;
   inputY: number;
   sequence: number;
-}
-
-export interface PlayerMoveResult {
-  accepted: boolean;
-  snapshot: PlayerSnapshot;
 }
 
 @actor({ mailbox: "ordered" })
@@ -76,7 +74,7 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
       request.gateName,
       request.gateSessionId,
     );
-    this.GetComponent(MovementComponent).reset();
+    this.ResetMovement();
     return this.Snapshot();
   }
 
@@ -90,9 +88,7 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
       unitId: this.UnitId,
       gateName: gate.gateName,
       gateSessionId: gate.gateSessionId,
-      x: position.x,
-      y: position.y,
-      lastMoveSequence: this.GetComponent(MovementComponent).lastSequence,
+      ...position,
     };
   }
 
@@ -105,23 +101,33 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
   }
 
   @handler(PlayerUnitHandlers.Move)
-  Move(request: MovePlayer): PlayerMoveResult {
+  Move(request: MovePlayer): boolean {
     this.validateMoveInput(request);
+    const native = this.TryGetComponent(NativeUnitRef);
+    return native
+      ? native.SetMovementInput(request.inputX, request.inputY, request.sequence)
+      : this.GetComponent(MovementComponent).SetInput(
+          request.inputX,
+          request.inputY,
+          request.sequence,
+        );
+  }
 
-    const seconds = this.GetComponent(MovementComponent).consumeStepSeconds(
-      request.sequence,
-      Date.now(),
+  UpdateMovement(serverTick: number, fixedUpdateMs: number): MovementFrame | undefined {
+    const state = this.GetComponent(MovementComponent).UpdateStep(
+      serverTick,
+      fixedUpdateMs,
     );
-    if (seconds === undefined) {
-      return { accepted: false, snapshot: this.Snapshot() };
+    return state ? { unitId: this.UnitId, ...state } : undefined;
+  }
+
+  private ResetMovement(): void {
+    const native = this.TryGetComponent(NativeUnitRef);
+    if (native) {
+      native.ResetMovement();
+    } else {
+      this.GetComponent(MovementComponent).Reset();
     }
-
-    this.GetComponent(PositionComponent).applyInput(
-      request.inputX,
-      request.inputY,
-      seconds,
-    );
-    return { accepted: true, snapshot: this.Snapshot() };
   }
 
   private validateMoveInput(request: MovePlayer): void {

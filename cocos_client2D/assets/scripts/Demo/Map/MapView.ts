@@ -1,4 +1,10 @@
-import { Color, Graphics, Node, UITransform } from "cc";
+import { Color, Graphics, Mask, Node, UITransform } from "cc";
+import {
+  CELL_SIZE,
+  MAP_CELL_COUNT,
+  UNIT_FOOTPRINT_CELLS,
+  worldToCell,
+} from "./Movement/CellMovement";
 import type { RpcSocket } from "../../Core/Net/RpcSocket";
 import type {
   G2C_EnterMap,
@@ -22,22 +28,29 @@ export class MapView {
     this.ui.clear();
     this.ui.createBackground(new Color(20, 35, 32, 255));
 
-    const map = new Node("Map");
-    this.ui.root.addChild(map);
+    const viewport = new Node("WorldViewport");
+    this.ui.root.addChild(viewport);
+    const viewportTransform = viewport.addComponent(UITransform);
+    viewportTransform.setContentSize(960, 560);
+    const mask = viewport.addComponent(Mask);
+    mask.type = Mask.Type.GRAPHICS_RECT;
+
+    const map = new Node("MapWorld");
+    viewport.addChild(map);
+    const mapSize = MAP_CELL_COUNT * CELL_SIZE;
     const transform = map.addComponent(UITransform);
-    transform.setContentSize(960, 560);
+    transform.setContentSize(mapSize, mapSize);
     const graphics = map.addComponent(Graphics);
     graphics.fillColor = new Color(42, 88, 76, 255);
-    graphics.fillRect(-480, -280, 960, 560);
-    graphics.strokeColor = new Color(85, 130, 112, 255);
-    graphics.lineWidth = 2;
-    for (let x = -420; x <= 420; x += 120) {
-      graphics.moveTo(x, -250);
-      graphics.lineTo(x, 250);
-    }
-    for (let y = -240; y <= 240; y += 80) {
-      graphics.moveTo(-440, y);
-      graphics.lineTo(440, y);
+    graphics.fillRect(-mapSize / 2, -mapSize / 2, mapSize, mapSize);
+    graphics.strokeColor = new Color(70, 112, 98, 150);
+    graphics.lineWidth = 1;
+    for (let cell = -MAP_CELL_COUNT / 2; cell <= MAP_CELL_COUNT / 2; cell += 1) {
+      const coordinate = cell * CELL_SIZE;
+      graphics.moveTo(coordinate, -mapSize / 2);
+      graphics.lineTo(coordinate, mapSize / 2);
+      graphics.moveTo(-mapSize / 2, coordinate);
+      graphics.lineTo(mapSize / 2, coordinate);
     }
     graphics.stroke();
 
@@ -49,7 +62,7 @@ export class MapView {
       new Color(236, 245, 238, 255),
     );
     this.ui.createLabel(
-      "WASD / 方向键移动（服务端权威位置）",
+      `WASD / 方向键移动（${CELL_SIZE}px Cell，角色 ${UNIT_FOOTPRINT_CELLS}x${UNIT_FOOTPRINT_CELLS} Cell）`,
       0,
       -318,
       16,
@@ -77,6 +90,8 @@ export class MapView {
             heading: 0,
             alive: true,
             state: new Uint8Array(0),
+            cellX: worldToCell(enterMap.x),
+            cellY: worldToCell(enterMap.y),
           },
         ];
     const entities = new MapEntityManager(
@@ -84,8 +99,9 @@ export class MapView {
       map,
       gateSocket,
       enterMap.unitId,
+      enterMap.fixedUpdateMs,
       snapshots,
     );
-    return new MapController(new LocalPlayerController(gateSocket), entities);
+    return new MapController(new LocalPlayerController(), entities);
   }
 }

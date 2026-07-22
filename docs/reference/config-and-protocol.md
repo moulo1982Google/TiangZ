@@ -13,12 +13,16 @@
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `name` | string | Process 唯一名称，也作为 ProcessHost ID |
+| `network` | object? | 操作系统 I/O Backend；默认 `epoll`，Linux 可实验性选择 `io-uring` |
 | `game` | object? | 固定 Game.Update 与掉帧补偿策略，默认 20Hz |
+| `nativeData` | object? | Demo 应用扩展：实验性 Unit 数据后端；默认 `typescript`，可选择 `rust` 做 A/B 测试 |
 | `scheduling` | object? | Process 事件批处理与空闲 Tick 策略，默认 `adaptive` |
 | `observability` | object? | 延迟采样等运行时观测配置 |
 | `debug` | object? | 该 V8 的 Inspector 配置 |
 
 `debug` 支持 `inspectorIp`、`inspectorPort`、`breakOnStart`、`allowRemote`。
+
+`network` 支持 `ioBackend`、`uringEntries` 和 `uringReadBufferBytes`。`ioBackend` 只决定 epoll/io_uring，不决定 TCP/WebSocket。io_uring 的约束、构建方法和性能验收见 [传输与 I/O 分层](transport-backend.md)。
 
 `game` 支持：
 
@@ -31,6 +35,22 @@
 
 - `fixedUpdateMs`：业务 `Game.Update` 固定间隔，默认 50ms，即 20Hz；范围为 1 到 10000ms。
 - `maxCatchUpSteps`：Process 短暂停顿后单次 Pump 最多补跑多少帧，默认 2，范围为 1 到 100。超出的旧帧会计入 `skippedFixedUpdates`，不会形成死亡螺旋。
+
+`nativeData` 当前只用于地图 Unit 数据下沉实验：
+
+```json
+{
+  "backend": "rust",
+  "debugScalarAccess": true,
+  "scalarAccessWarnThreshold": 10000
+}
+```
+
+- `backend`：`typescript` 保持原实现；`rust` 使用 Rust Arena 保存 Unit 的位置和移动状态。
+- `debugScalarAccess`：采样窗口内标量 Get/Set 达到阈值时输出警告。
+- `scalarAccessWarnThreshold`：标量访问警告阈值，必须大于 0。
+
+Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原样保留并传给 TS；字段含义和校验由 Demo 的 `NativeData` 负责。这是可回退的实验开关，不代表所有业务数据都应下沉。Handler、Actor mailbox、AOI 决策和业务 Component 仍留在 TS。
 
 `scheduling` 支持：
 
@@ -58,8 +78,16 @@
 | `sceneType` | string | `@entryScene()` 注册类型 |
 | `ip` | string | 外部/Inner Listener IP |
 | `port` | u16 | Listener 端口 |
+| `protocol` | `auto`、`tcp`、`websocket`、`kcp`? | Endpoint 传输协议；默认 `auto`，KCP 需使用 `--features kcp` 构建 |
+| `audience` | `mixed`、`inner`、`outer`? | Endpoint 面向的连接类型；默认 `mixed`，KCP 必须显式选择 `inner` 或 `outer` |
 
 同一进程内 Scene name 和 endpoint 必须唯一。Inspector 端口不能与任何 Scene 端口冲突。
+
+`auto` 用于当前同一端口兼容内部 TCP 和浏览器 WebSocket。只接受 Native/内部连接的 Scene 可以显式使用 `tcp`；只接受浏览器连接且不会承接内部 TCP 的 Endpoint 才能显式使用 `websocket`。未来支持一个 Scene 配置多个 Endpoint 后，Gate 才能分别显式暴露 Native TCP、WebSocket 和 KCP 端口，并取消生产配置对协议探测的依赖。
+
+`audience` 与 `protocol` 是不同概念：前者决定这是服务器内网连接还是客户端外网连接，后者决定使用 TCP、WebSocket 还是 KCP。现有 TCP `mixed` Endpoint 在握手后仍会得到连接级 `ConnectionKind::Internal/External`；KCP 参数必须在会话创建时确定，因此不允许使用 `mixed`。当前 KCP 仅开放 `outer`，`inner` 会在配置校验阶段明确报错。
+
+旧字段 `network.backend`、`scene.transport` 以及旧值 `raw` 暂时仍可读取，分别映射到 `ioBackend`、`protocol` 和 `tcp`。序列化与新文档只使用新名称。
 
 ## StartMachine
 

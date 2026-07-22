@@ -2,10 +2,14 @@
 /node_modules/
 /dist/
 /tmp_*.log
+/tmp_native_*.png
+/tmp_native_frames_*/
+/temp/
 /cocos_client2D/temp/
 /cocos_client2D/library/
 /perf/results/logs/
 /perf/results/runtime_configs/
+/perf/results/linux_*
 /perf/results/*_raw.json
 /perf/results/*.cpuprofile
 /perf/results/**/*.log

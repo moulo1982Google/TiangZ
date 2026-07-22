@@ -16,8 +16,8 @@ GetLoginServiceAddr
   -> 循环发送 C2M_Move（IActorLocationMessage）
   -> Gate Core 自动定位 Unit 所在 MapHost 并转发
   -> 地图 Actor + MovementComponent
-  -> MapHost 按 Gate 聚合 M2G_EntityMove
-  -> Gate 遍历 targetUnitIds 下发 G2C_EntityMove
+  -> MapHost 发布 latest 移动状态，BroadcastHub 通过通用 S2G_ClientBroadcast 按 Gate 聚合
+  -> Gate 向 targetUnitIds 下发同一个批量 G2C_EntityMove
   -> 客户端收到自身 G2C_EntityMove，完成一次闭环
 ```
 
@@ -68,7 +68,7 @@ node perf/full_chain/run_full_chain_perf.mjs \
 
 - `登录 users/s`：本轮有限玩家并发完成完整登录进图的启动速率。10/50/100 个样本只用于链路对比，不等于登录服容量上限。
 - `move/s`：采样窗口内，客户端从发送 Move 到收到自身权威 `G2C_EntityMove` 的闭环完成数。
-- `push/s`：所有客户端收到的 `G2C_EntityMove` 总数除以完整移动窗口。当前仍是同地图全量可见，因此业务扇出仍为 O(N²)，但 MapHost 到 Gate 的跨进程消息已按 Gate 聚合。
+- `push/s`：所有客户端收到的批量 `G2C_EntityMove` 网络包总数除以完整移动窗口。一个包可以携带多个玩家的 `CellMovementState`；当前仍是同地图全量可见，因此客户端可见状态量仍为 O(N²)，但 MapHost 到 Gate 的跨进程消息和 Gate 下行编码都按批次聚合。
 - `p50/p95/p99`：已完成移动闭环的端到端延迟。
 - `stalled`：在总测试截止时间后仍未收到自身权威移动的玩家数。延迟分位数不包含这些未完成请求，因此必须和 `stalled` 一起判断。
 - `overloads`：内部 TCP transport 有界队列拒绝的消息数，可在对应 Runtime 日志的 `[metrics:inner_transport]` 中查看。

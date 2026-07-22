@@ -9,6 +9,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bytes",
+ "cc",
  "deno_core",
  "deno_error",
  "deno_inspector_server",

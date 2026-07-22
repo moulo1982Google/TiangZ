@@ -100,7 +100,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 已覆盖 TCP、Rust 有界队列、V8、protobuf、Handler、跨进程 Scene 调用、地图 Actor、移动和客户端 AOI Push。
 - 已建立 64B 到 16KB Payload、10/50/100 玩家、单进程/拆分进程、10Hz/极限闭环矩阵。
 - 客户端移动由 Core ActorLocation 自动转发，并通过 InstanceId 直达 PlayerUnit mailbox。
-- 已在 Demo 业务层按 Gate 聚合 `M2G_EntityMove(targetUnitIds)`；它不是框架对广播语义的假设。
+- 已增加 Core BroadcastHub 与 Proto `@ets.broadcast` codegen，明确 `event` 不丢事件和 `latest` 同 key 覆盖两种语义。
+- Map/AOI 只负责生成 Audience；框架通过通用 `S2G_ClientBroadcast(targetUnitIds, frame)` 自动按 Gate 聚合，新增广播不再编写业务专用内网消息和 Gate Handler。
 - MapScene 的 UnitComponent 直接读取本地 PlayerUnit 轻量 Snapshot，不产生跨 Actor 请求。
 - Core `sendClientMany` 使用单个 `OutboundBatch`；Rust 一次接收目标列表和帧，并通过 `Bytes` 向多个 writer 共享帧内存。
 - TS 每个 update 只执行一次 packed outbound Host Op；Rust 对整包复制一次，各批次通过 `Bytes::slice` 共享 backing storage。
@@ -121,6 +122,15 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 网格 AOI 保留到 Phase 4，当前继续用全地图可见性验证链路和聚合收益。
 - 可重复命令、指标口径和报告位置见 `perf/full_chain/README.md`。
 
+### Phase 2.13：Rust Unit 数据下沉 A/B 实验
+
+- 增加 `.native` 原型和 codegen，生成 Rust Entity/Unit 数据结构与 TS 强类型 handle Component。
+- 保持 Handler、Actor mailbox 和协议不变，通过 `process.nativeData.backend` 切换 TS/Rust 数据路径。
+- Rust Arena 使用 generation handle，Unit 销毁自动释放；旧 handle 会被拒绝。
+- Rust 模式已经下沉移动输入、20Hz 权威坐标更新和紧凑移动快照批次；AOI 决策及 protobuf 广播暂留 TS。
+- 增加 `scalar_gets/scalar_sets/batch_calls/live_units` 指标，并在地图容量测试中加入 `--native-data-backend`。
+- 下一步先完成相同负载的正式 A/B 报告，再决定是否下沉快照 protobuf 编码与直接广播；不预设 Rust 一定更优。
+
 ## Phase 3：可复用 TypeScript Client SDK
 
 计划：
@@ -130,6 +140,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 3. Transport Adapter 隔离 WebSocket、Cocos Native Socket 和平台差异。
 4. 验收矩阵：Cocos Web、PixiJS/H5、Cocos Native Windows。
 5. SDK v2 再评估微信/抖音小游戏，无账号环境不作为 v1 阻塞项。
+
+当前进度：Transport Core 已支持 `websocket/tcp/kcp` 选择及平台能力检查；Cocos Native Windows 的 TCP/KCP JSB Adapter 已完成，并通过登录到进图的完整链路。SDK 文件夹生成、PixiJS/H5 Demo 与正式 Update 队列仍属于 Phase 3。
 
 ## Phase 4：MMORPG 业务扩展
 
@@ -148,7 +160,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 - 结构化日志、traceId、指标导出和分布式追踪。
 - 提供 Prometheus 指标端点和 Grafana Dashboard，将吞吐、p50/p95/p99、错误率、队列水位、背压、CPU、RSS、V8 Heap 与 GC 纳入长期观测。
-- 在目标 Linux 上用同一协议、连接数、并发和 Payload 矩阵比较 epoll/io_uring；只有 Raw TCP、WebSocket、Inner TCP 全链路均有稳定收益时，才把 io_uring 提升为正式 Runtime Backend。
+- 已将 I/O Backend 与 Endpoint 协议拆为两个维度：`EpollIoBackend/UringIoBackend` 负责操作系统 I/O，`tcp/websocket/auto/kcp` 负责传输协议。KCP 已完成官方 C v1 静态集成、Outer Profile、Challenge 握手、UDP 会话、超时/CLOSE、Rust smoke 和 Cocos Native Windows 全链路；Inner KCP 要等内部身份认证后开放。io_uring TCP 已完成多帧接收、批量发送和与 epoll 同口径的完整链路报告；默认仍为 epoll。后续补多 Endpoint、注册 Buffer、KCP 弱网/长稳和攻击面测试。
 - Process 监管、优雅退出、滚动更新和崩溃恢复。
 - 配置中心、服务发现和生产级 Inner 身份认证。
 - TS Hotfix 边界、版本校验、回滚和状态迁移。

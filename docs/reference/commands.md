@@ -22,7 +22,9 @@
 | `npm run perf:protocol` | Codec/Handler 协议基准 |
 | `npm run perf:runtime:rust` | Rust 客户端 Runtime 基准 |
 | `npm run perf:rpc-baseline` | Windows/Linux 通用的独立 RPC Payload 基线与报告 |
+| `npm run perf:kcp-loginmgr -- 127.0.0.1:7000 256 5 20` | KCP LoginMgr RPC 基准：地址、连接数、预热秒数、测试秒数 |
 | `npm run perf:full-chain` | 单进程/拆分进程的完整登录、进图、移动与 AOI Push 性能矩阵 |
+| `npm run perf:map-capacity -- --native-data-backend rust` | 使用 Rust Unit 数据后端运行地图容量测试 |
 | `npm run perf:map-capacity -- --gates 8 --players 200 --rounds 3` | 单 MapHost 全员可见广播、批量下行 Bridge 和 Probe 延迟容量测试 |
 
 修改 proto 后至少运行 `npm run codegen && npm run test:protocol`；修改 Core 后运行 `npm run check`、`cargo test --all-targets` 和相关 Runtime smoke。

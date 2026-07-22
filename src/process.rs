@@ -1,43 +1,37 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::io::IoSlice;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use bytes::Bytes;
-use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::json;
 use sysinfo::{Pid, ProcessesToUpdate, System};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+#[cfg(test)]
 use tokio::sync::{mpsc as tokio_mpsc, watch};
-use tokio_tungstenite::{accept_async, tungstenite::Message};
 
 use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
     call_js_update_binary, configure_host_scene_bridge, create_runtime, load_js_entrypoints,
-    pump_js_event_loop_once,
+    pump_js_event_loop_once, take_close_connection_requests,
 };
 use crate::inspector::ProcessInspector;
-use crate::transport::{INNER_HANDSHAKE_MAGIC, init_remote_transport, inner_token};
+use crate::transport::init_remote_transport;
+use crate::transport_backend::{
+    CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionWriters, EndpointContext, create_io_backend,
+};
+#[cfg(test)]
+use crate::transport_backend::{ConnectionKind, ConnectionWriter, validate_frame_access};
 
-const MAX_FRAME_LEN: usize = 1024 * 1024;
 const PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
-const CONNECTION_OUTBOUND_FRAME_CAPACITY: usize = 4096;
-const CONNECTION_OUTBOUND_BYTE_CAPACITY: usize = 4 * 1024 * 1024;
-const RAW_WRITE_BATCH_FRAME_CAPACITY: usize = 64;
-const RAW_WRITE_BATCH_BYTE_CAPACITY: usize = 256 * 1024;
 const EVENT_HEADER_BYTES: usize = 13;
 const BACKPRESSURE_RETRY_MS: u64 = 1;
-const INNER_MSGCODE_START: u16 = 20_000;
-const INNER_MSGCODE_END_EXCLUSIVE: u16 = 30_000;
-const MAX_INNER_TOKEN_LEN: usize = 1024;
 
 #[derive(Clone, Copy)]
 struct RuntimeScheduling {
@@ -91,18 +85,12 @@ impl RuntimeScheduling {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ConnectionKind {
-    External,
-    Internal,
-}
-
 #[derive(Debug)]
-enum ProcessEvent {
+pub(crate) enum ProcessEvent {
     Frame {
         scene_index: u32,
         connection_id: u64,
-        frame: Vec<u8>,
+        frame: Bytes,
     },
     Disconnect {
         scene_index: u32,
@@ -119,7 +107,18 @@ struct UpdateResult {
     #[serde(default)]
     game: Option<GameMetricsSnapshot>,
     #[serde(default)]
+    native_data: Option<NativeDataMetricsSnapshot>,
+    #[serde(default)]
     pending_async: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeDataMetricsSnapshot {
+    scalar_gets: u64,
+    scalar_sets: u64,
+    batch_calls: u64,
+    live_units: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +152,15 @@ struct SceneMetricsSnapshot {
     max_async_in_flight: usize,
     #[serde(default)]
     latencies: Vec<LatencyMetricSnapshot>,
+    #[serde(default)]
+    custom_metrics: Vec<CustomMetricSnapshot>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CustomMetricSnapshot {
+    name: String,
+    #[serde(default)]
+    values: BTreeMap<String, f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -167,8 +175,6 @@ struct LatencyMetricSnapshot {
     p99_ms: f64,
     max_ms: f64,
 }
-
-type ConnectionWriters = Arc<Mutex<HashMap<u64, ConnectionWriter>>>;
 
 #[derive(Default)]
 struct V8GcMetrics {
@@ -200,15 +206,8 @@ extern "C" fn v8_gc_epilogue(
     }
 }
 
-#[derive(Clone)]
-struct ConnectionWriter {
-    sender: tokio_mpsc::Sender<Bytes>,
-    queued_bytes: Arc<AtomicUsize>,
-    shutdown_tx: watch::Sender<bool>,
-}
-
 #[derive(Default)]
-struct ProcessQueueStats {
+pub(crate) struct ProcessQueueStats {
     depth: AtomicUsize,
     max_depth: AtomicUsize,
     backpressure_waits: AtomicU64,
@@ -223,9 +222,31 @@ struct ProcessQueueStats {
     runtime_updates: AtomicU64,
     runtime_events: AtomicU64,
     max_runtime_batch: AtomicUsize,
+    transport_read_ops: AtomicU64,
+    transport_read_frames: AtomicU64,
+    transport_read_bytes: AtomicU64,
+    transport_write_ops: AtomicU64,
+    transport_write_frames: AtomicU64,
+    transport_write_bytes: AtomicU64,
 }
 
 impl ProcessQueueStats {
+    pub(crate) fn transport_read_completed(&self, frames: usize, bytes: usize) {
+        self.transport_read_ops.fetch_add(1, Ordering::Relaxed);
+        self.transport_read_frames
+            .fetch_add(frames as u64, Ordering::Relaxed);
+        self.transport_read_bytes
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+
+    pub(crate) fn transport_write_completed(&self, frames: usize, bytes: usize) {
+        self.transport_write_ops.fetch_add(1, Ordering::Relaxed);
+        self.transport_write_frames
+            .fetch_add(frames as u64, Ordering::Relaxed);
+        self.transport_write_bytes
+            .fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+
     fn queued(&self) {
         let depth = self.depth.fetch_add(1, Ordering::Relaxed) + 1;
         self.max_depth
@@ -242,13 +263,13 @@ impl ProcessQueueStats {
 }
 
 #[derive(Clone)]
-struct ProcessEventSender {
+pub(crate) struct ProcessEventSender {
     sender: mpsc::SyncSender<ProcessEvent>,
     stats: Arc<ProcessQueueStats>,
 }
 
 impl ProcessEventSender {
-    async fn send(
+    pub(crate) async fn send(
         &self,
         mut event: ProcessEvent,
         deadline: Option<tokio::time::Instant>,
@@ -326,19 +347,6 @@ pub async fn run_runtime_config(
         resolved_config.display()
     );
 
-    let mut listeners = Vec::with_capacity(config.scenes.len());
-    for (scene_index, scene) in config.scenes.iter().cloned().enumerate() {
-        let bind_addr = format!("{}:{}", scene.ip, scene.port);
-        let listener = TcpListener::bind(&bind_addr)
-            .await
-            .with_context(|| format!("scene {} failed to bind {}", scene.name, bind_addr))?;
-        println!(
-            "scene {} ({}) listening on {}",
-            scene.name, scene.scene_type, bind_addr
-        );
-        listeners.push((scene_index as u32, scene, listener));
-    }
-
     let (event_tx, event_rx) = mpsc::sync_channel::<ProcessEvent>(PROCESS_EVENT_QUEUE_CAPACITY);
     let queue_stats = Arc::new(ProcessQueueStats::default());
     let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
@@ -355,6 +363,7 @@ pub async fn run_runtime_config(
     let scenes = config.scenes.clone();
     let known_scenes = config.known_scenes.clone();
     let runtime_writers = Arc::clone(&writers);
+    let runtime_queue_stats = Arc::clone(&queue_stats);
     let host_runtime = tokio::runtime::Handle::current();
     thread::spawn(move || {
         if let Err(error) = run_process_runtime(
@@ -365,7 +374,7 @@ pub async fn run_runtime_config(
             app_module_url,
             event_rx,
             runtime_writers,
-            queue_stats,
+            runtime_queue_stats,
             host_runtime,
             completion_sink,
         ) {
@@ -373,53 +382,25 @@ pub async fn run_runtime_config(
         }
     });
 
-    for (scene_index, scene, listener) in listeners {
-        let event_tx = event_tx.clone();
-        let writers = Arc::clone(&writers);
-        let next_connection_id = Arc::clone(&next_connection_id);
-        tokio::spawn(async move {
-            if let Err(error) = run_scene_listener(
-                scene_index,
-                scene,
-                listener,
-                event_tx,
-                writers,
-                next_connection_id,
-            )
-            .await
-            {
-                eprintln!("scene listener stopped: {error:?}");
-            }
-        });
+    let io_backend = create_io_backend(&config.process.network)?;
+    println!(
+        "process {} io backend={}",
+        config.process.name,
+        io_backend.name()
+    );
+    for (scene_index, scene) in config.scenes.iter().cloned().enumerate() {
+        io_backend.start_endpoint(EndpointContext {
+            scene_index: scene_index as u32,
+            scene,
+            event_tx: event_tx.clone(),
+            writers: Arc::clone(&writers),
+            next_connection_id: Arc::clone(&next_connection_id),
+            stats: Arc::clone(&queue_stats),
+        })?;
     }
 
     tokio::signal::ctrl_c().await?;
     Ok(())
-}
-
-async fn run_scene_listener(
-    scene_index: u32,
-    scene: SceneConfig,
-    listener: TcpListener,
-    event_tx: ProcessEventSender,
-    writers: ConnectionWriters,
-    next_connection_id: Arc<AtomicU64>,
-) -> Result<()> {
-    loop {
-        let (stream, peer) = listener.accept().await?;
-        let connection_id = next_connection_id.fetch_add(1, Ordering::Relaxed);
-        println!("{} accepted {} as conn {}", scene.name, peer, connection_id);
-
-        let event_tx = event_tx.clone();
-        let writers = Arc::clone(&writers);
-        tokio::spawn(async move {
-            if let Err(error) =
-                handle_connection(scene_index, connection_id, stream, event_tx, writers).await
-            {
-                eprintln!("conn {connection_id} error: {error:?}");
-            }
-        });
-    }
 }
 
 fn run_process_runtime(
@@ -590,19 +571,25 @@ fn flush_runtime_batch(
     let sample_metrics = last_metrics_log.elapsed() >= Duration::from_secs(5);
     let (update_result, outbound) =
         call_js_update_binary(js_event_loop, runtime, entrypoints, sample_metrics)?;
-    let (pending_async, metrics, game_metrics) = if sample_metrics {
+    let (pending_async, metrics, game_metrics, native_data_metrics) = if sample_metrics {
         let result: UpdateResult = serde_json::from_str(&update_result).with_context(|| {
             format!("TS update returned invalid metrics snapshot: {update_result}")
         })?;
-        (result.pending_async, result.metrics, result.game)
+        (
+            result.pending_async,
+            result.metrics,
+            result.game,
+            result.native_data,
+        )
     } else {
-        (update_result == "1", Vec::new(), None)
+        (update_result == "1", Vec::new(), None, None)
     };
     if sample_metrics {
         maybe_log_metrics(
             process_name,
             &metrics,
             game_metrics.as_ref(),
+            native_data_metrics.as_ref(),
             last_metrics_log,
             queue_stats,
             runtime,
@@ -614,13 +601,30 @@ fn flush_runtime_batch(
         );
     }
     flush_outbound(outbound, writers, queue_stats)?;
+    close_requested_connections(take_close_connection_requests(), writers);
     Ok(pending_async)
+}
+
+fn close_requested_connections(mut connection_ids: Vec<u64>, writers: &ConnectionWriters) {
+    if connection_ids.is_empty() {
+        return;
+    }
+    connection_ids.sort_unstable();
+    connection_ids.dedup();
+
+    let mut writers = writers.lock().expect("connection writer map poisoned");
+    for connection_id in connection_ids {
+        if let Some(writer) = writers.remove(&connection_id) {
+            let _ = writer.shutdown_tx.send(true);
+        }
+    }
 }
 
 fn maybe_log_metrics(
     process_name: &str,
     metrics: &[SceneMetricsSnapshot],
     game_metrics: Option<&GameMetricsSnapshot>,
+    native_data_metrics: Option<&NativeDataMetricsSnapshot>,
     last_metrics_log: &mut Instant,
     queue_stats: &ProcessQueueStats,
     runtime: &mut deno_core::JsRuntime,
@@ -654,7 +658,7 @@ fn maybe_log_metrics(
         .unwrap_or_default()
         .as_millis();
     println!(
-        "[process-metrics] process={process_name} cpu_percent={cpu_percent:.2} cpu_time_ms={cpu_time_ms} rss_bytes={rss_bytes} v8_heap_used_bytes={} v8_heap_total_bytes={} v8_gc_count={} v8_gc_ms={:.3} timestamp_ms={timestamp_ms} inbound_frames={} host_completions={} disconnects={} runtime_updates={} runtime_events={} max_runtime_batch={} outbound_batches={} outbound_recipients={} outbound_bridge_bytes={} outbound_logical_bytes={}",
+        "[process-metrics] process={process_name} cpu_percent={cpu_percent:.2} cpu_time_ms={cpu_time_ms} rss_bytes={rss_bytes} v8_heap_used_bytes={} v8_heap_total_bytes={} v8_gc_count={} v8_gc_ms={:.3} timestamp_ms={timestamp_ms} inbound_frames={} host_completions={} disconnects={} runtime_updates={} runtime_events={} max_runtime_batch={} outbound_batches={} outbound_recipients={} outbound_bridge_bytes={} outbound_logical_bytes={} transport_read_ops={} transport_read_frames={} transport_read_bytes={} transport_write_ops={} transport_write_frames={} transport_write_bytes={}",
         heap.used_heap_size(),
         heap.total_heap_size(),
         gc_metrics.count,
@@ -669,6 +673,12 @@ fn maybe_log_metrics(
         queue_stats.outbound_recipients.load(Ordering::Relaxed),
         queue_stats.outbound_bridge_bytes.load(Ordering::Relaxed),
         queue_stats.outbound_logical_bytes.load(Ordering::Relaxed),
+        queue_stats.transport_read_ops.load(Ordering::Relaxed),
+        queue_stats.transport_read_frames.load(Ordering::Relaxed),
+        queue_stats.transport_read_bytes.load(Ordering::Relaxed),
+        queue_stats.transport_write_ops.load(Ordering::Relaxed),
+        queue_stats.transport_write_frames.load(Ordering::Relaxed),
+        queue_stats.transport_write_bytes.load(Ordering::Relaxed),
     );
     if let Some(game) = game_metrics {
         println!(
@@ -680,6 +690,12 @@ fn maybe_log_metrics(
             game.update_calls,
             game.update_failures,
             game.timers,
+        );
+    }
+    if let Some(native) = native_data_metrics {
+        println!(
+            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_units={}",
+            native.scalar_gets, native.scalar_sets, native.batch_calls, native.live_units,
         );
     }
     for metric in metrics {
@@ -721,6 +737,18 @@ fn maybe_log_metrics(
                 latency.p95_ms,
                 latency.p99_ms,
                 latency.max_ms,
+            );
+        }
+        for custom in &metric.custom_metrics {
+            let values = custom
+                .values
+                .iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!(
+                "[custom-metrics:{process_name}] scene={} type={} name={} timestamp_ms={} {}",
+                metric.scene, metric.scene_type, custom.name, timestamp_ms, values,
             );
         }
     }
@@ -841,370 +869,6 @@ fn flush_outbound(
     Ok(())
 }
 
-async fn handle_connection(
-    scene_index: u32,
-    connection_id: u64,
-    stream: TcpStream,
-    event_tx: ProcessEventSender,
-    writers: ConnectionWriters,
-) -> Result<()> {
-    stream
-        .set_nodelay(true)
-        .context("failed to enable TCP_NODELAY")?;
-    let mut probe = [0_u8; 3];
-    let is_websocket = stream.peek(&mut probe).await? >= 3 && probe == *b"GET";
-    if is_websocket {
-        handle_websocket_connection(scene_index, connection_id, stream, event_tx, writers).await
-    } else {
-        handle_raw_tcp_connection(scene_index, connection_id, stream, event_tx, writers).await
-    }
-}
-
-async fn handle_raw_tcp_connection(
-    scene_index: u32,
-    connection_id: u64,
-    stream: TcpStream,
-    event_tx: ProcessEventSender,
-    writers: ConnectionWriters,
-) -> Result<()> {
-    let (mut reader, mut writer) = stream.into_split();
-    let Some((connection_kind, mut first_frame_len)) = read_raw_preamble(&mut reader).await? else {
-        return Ok(());
-    };
-    let (write_tx, mut write_rx) = tokio_mpsc::channel::<Bytes>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
-    let queued_bytes = Arc::new(AtomicUsize::new(0));
-    let writer_queued_bytes = Arc::clone(&queued_bytes);
-    let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    writers
-        .lock()
-        .expect("connection writer map poisoned")
-        .insert(
-            connection_id,
-            ConnectionWriter {
-                sender: write_tx,
-                queued_bytes,
-                shutdown_tx: shutdown_tx.clone(),
-            },
-        );
-
-    let mut writer_shutdown = shutdown_rx.clone();
-    let writer_shutdown_tx = shutdown_tx.clone();
-    let writer_task = tokio::spawn(async move {
-        let mut frames = Vec::<Bytes>::with_capacity(RAW_WRITE_BATCH_FRAME_CAPACITY);
-        loop {
-            let frame = tokio::select! {
-                changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() {
-                        break;
-                    }
-                    continue;
-                }
-                frame = write_rx.recv() => {
-                    let Some(frame) = frame else { break; };
-                    frame
-                }
-            };
-            frames.clear();
-            let mut queued_frame_bytes = frame.len();
-            let mut packet_bytes = 4 + frame.len();
-            frames.push(frame);
-            while frames.len() < RAW_WRITE_BATCH_FRAME_CAPACITY
-                && packet_bytes < RAW_WRITE_BATCH_BYTE_CAPACITY
-            {
-                let Ok(frame) = write_rx.try_recv() else {
-                    break;
-                };
-                queued_frame_bytes += frame.len();
-                packet_bytes += 4 + frame.len();
-                frames.push(frame);
-            }
-            let result = tokio::select! {
-                changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() {
-                        break;
-                    }
-                    continue;
-                }
-                result = write_raw_frames_vectored(&mut writer, &frames) => result,
-            };
-            writer_queued_bytes.fetch_sub(queued_frame_bytes, Ordering::Relaxed);
-            if let Err(error) = result {
-                let _ = writer_shutdown_tx.send(true);
-                return Err(error);
-            }
-        }
-        Result::<()>::Ok(())
-    });
-
-    let mut reader_shutdown = shutdown_rx;
-    loop {
-        let frame = tokio::select! {
-            changed = reader_shutdown.changed() => {
-                if changed.is_err() || *reader_shutdown.borrow() {
-                    break;
-                }
-                continue;
-            }
-            frame = read_raw_frame(&mut reader, &mut first_frame_len) => frame?,
-        };
-        let Some(frame) = frame else {
-            break;
-        };
-        validate_frame_access(connection_kind, &frame)?;
-        event_tx
-            .send(
-                ProcessEvent::Frame {
-                    scene_index,
-                    connection_id,
-                    frame,
-                },
-                None,
-            )
-            .await
-            .map_err(anyhow::Error::msg)?;
-    }
-
-    let _ = shutdown_tx.send(true);
-    writers
-        .lock()
-        .expect("connection writer map poisoned")
-        .remove(&connection_id);
-    event_tx
-        .send(
-            ProcessEvent::Disconnect {
-                scene_index,
-                connection_id,
-            },
-            None,
-        )
-        .await
-        .map_err(anyhow::Error::msg)?;
-    writer_task.await??;
-    Ok(())
-}
-
-async fn handle_websocket_connection(
-    scene_index: u32,
-    connection_id: u64,
-    stream: TcpStream,
-    event_tx: ProcessEventSender,
-    writers: ConnectionWriters,
-) -> Result<()> {
-    let websocket = accept_async(stream).await?;
-    let (mut writer, mut reader) = websocket.split();
-    let (write_tx, mut write_rx) = tokio_mpsc::channel::<Bytes>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
-    let queued_bytes = Arc::new(AtomicUsize::new(0));
-    let writer_queued_bytes = Arc::clone(&queued_bytes);
-    let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    writers
-        .lock()
-        .expect("connection writer map poisoned")
-        .insert(
-            connection_id,
-            ConnectionWriter {
-                sender: write_tx,
-                queued_bytes,
-                shutdown_tx: shutdown_tx.clone(),
-            },
-        );
-
-    let mut writer_shutdown = shutdown_rx.clone();
-    let writer_shutdown_tx = shutdown_tx.clone();
-    let writer_task = tokio::spawn(async move {
-        let mut frames = Vec::<Bytes>::with_capacity(RAW_WRITE_BATCH_FRAME_CAPACITY);
-        loop {
-            let frame = tokio::select! {
-                changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() {
-                        break;
-                    }
-                    continue;
-                }
-                frame = write_rx.recv() => {
-                    let Some(frame) = frame else { break; };
-                    frame
-                }
-            };
-            frames.clear();
-            let mut frame_bytes = frame.len();
-            frames.push(frame);
-            while frames.len() < RAW_WRITE_BATCH_FRAME_CAPACITY
-                && frame_bytes < RAW_WRITE_BATCH_BYTE_CAPACITY
-            {
-                let Ok(frame) = write_rx.try_recv() else {
-                    break;
-                };
-                frame_bytes += frame.len();
-                frames.push(frame);
-            }
-            let result = tokio::select! {
-                changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() {
-                        break;
-                    }
-                    continue;
-                }
-                result = async {
-                    for frame in &frames {
-                        writer.feed(Message::Binary(frame.clone())).await?;
-                    }
-                    writer.flush().await
-                } => result,
-            };
-            writer_queued_bytes.fetch_sub(frame_bytes, Ordering::Relaxed);
-            if let Err(error) = result {
-                let _ = writer_shutdown_tx.send(true);
-                return Err(error.into());
-            }
-        }
-        Result::<()>::Ok(())
-    });
-
-    let mut reader_shutdown = shutdown_rx;
-    loop {
-        let message = tokio::select! {
-            changed = reader_shutdown.changed() => {
-                if changed.is_err() || *reader_shutdown.borrow() {
-                    break;
-                }
-                continue;
-            }
-            message = reader.next() => message,
-        };
-        let Some(message) = message else {
-            break;
-        };
-        match message? {
-            Message::Binary(frame) => {
-                if !(2..=MAX_FRAME_LEN).contains(&frame.len()) {
-                    bail!("invalid websocket frame length: {}", frame.len());
-                }
-                validate_frame_access(ConnectionKind::External, &frame)?;
-                event_tx
-                    .send(
-                        ProcessEvent::Frame {
-                            scene_index,
-                            connection_id,
-                            frame: frame.to_vec(),
-                        },
-                        None,
-                    )
-                    .await
-                    .map_err(anyhow::Error::msg)?;
-            }
-            Message::Close(_) => break,
-            Message::Ping(_) | Message::Pong(_) => {}
-            Message::Text(_) => {
-                bail!("websocket text frames are not supported");
-            }
-            Message::Frame(_) => {}
-        }
-    }
-
-    let _ = shutdown_tx.send(true);
-    writers
-        .lock()
-        .expect("connection writer map poisoned")
-        .remove(&connection_id);
-    event_tx
-        .send(
-            ProcessEvent::Disconnect {
-                scene_index,
-                connection_id,
-            },
-            None,
-        )
-        .await
-        .map_err(anyhow::Error::msg)?;
-    writer_task.await??;
-    Ok(())
-}
-
-async fn write_raw_frames_vectored(
-    writer: &mut tokio::net::tcp::OwnedWriteHalf,
-    frames: &[Bytes],
-) -> Result<()> {
-    let prefixes: Vec<[u8; 4]> = frames
-        .iter()
-        .map(|frame| (frame.len() as u32).to_be_bytes())
-        .collect();
-    let mut slices = Vec::with_capacity(frames.len() * 2);
-    for (prefix, frame) in prefixes.iter().zip(frames) {
-        slices.push(IoSlice::new(prefix));
-        slices.push(IoSlice::new(frame));
-    }
-    let mut remaining = slices.as_mut_slice();
-    while !remaining.is_empty() {
-        let written = writer.write_vectored(remaining).await?;
-        if written == 0 {
-            bail!("client socket closed during vectored write");
-        }
-        IoSlice::advance_slices(&mut remaining, written);
-    }
-    Ok(())
-}
-
-async fn read_raw_frame(
-    reader: &mut tokio::net::tcp::OwnedReadHalf,
-    first_frame_len: &mut Option<usize>,
-) -> Result<Option<Vec<u8>>> {
-    let len = match first_frame_len.take() {
-        Some(len) => len,
-        None => match reader.read_u32().await {
-            Ok(len) => len as usize,
-            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-            Err(error) => return Err(error.into()),
-        },
-    };
-    if !(2..=MAX_FRAME_LEN).contains(&len) {
-        bail!("invalid frame length: {len}");
-    }
-    let mut frame = vec![0_u8; len];
-    reader.read_exact(&mut frame).await?;
-    Ok(Some(frame))
-}
-
-async fn read_raw_preamble(
-    reader: &mut tokio::net::tcp::OwnedReadHalf,
-) -> Result<Option<(ConnectionKind, Option<usize>)>> {
-    let prefix = match reader.read_u32().await {
-        Ok(prefix) => prefix,
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    if prefix != INNER_HANDSHAKE_MAGIC {
-        return Ok(Some((ConnectionKind::External, Some(prefix as usize))));
-    }
-
-    let token_len = reader.read_u16().await? as usize;
-    if token_len == 0 || token_len > MAX_INNER_TOKEN_LEN {
-        bail!("invalid inner handshake token length: {token_len}");
-    }
-    let mut token = vec![0_u8; token_len];
-    reader.read_exact(&mut token).await?;
-    if token != inner_token().as_bytes() {
-        bail!("invalid inner handshake token");
-    }
-    Ok(Some((ConnectionKind::Internal, None)))
-}
-
-fn validate_frame_access(kind: ConnectionKind, frame: &[u8]) -> Result<()> {
-    if frame.len() < 2 {
-        bail!("frame is shorter than msgcode");
-    }
-    let msgcode = u16::from_be_bytes([frame[0], frame[1]]);
-    let is_inner = (INNER_MSGCODE_START..INNER_MSGCODE_END_EXCLUSIVE).contains(&msgcode);
-    match (kind, is_inner) {
-        (ConnectionKind::External, true) => {
-            bail!("external connection cannot send inner msgcode {msgcode}")
-        }
-        (ConnectionKind::Internal, false) => {
-            bail!("internal connection cannot send outer msgcode {msgcode}")
-        }
-        _ => Ok(()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1287,6 +951,26 @@ mod tests {
         assert!(!writers.lock().unwrap().contains_key(&7));
         assert!(*shutdown_rx.borrow());
         assert_eq!(stats.slow_client_disconnects.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn requested_connection_is_removed_and_signaled() {
+        let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
+        let (sender, _receiver) = tokio_mpsc::channel(1);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        writers.lock().unwrap().insert(
+            7,
+            ConnectionWriter {
+                sender,
+                queued_bytes: Arc::new(AtomicUsize::new(0)),
+                shutdown_tx,
+            },
+        );
+
+        close_requested_connections(vec![7, 7, 999], &writers);
+
+        assert!(!writers.lock().unwrap().contains_key(&7));
+        assert!(*shutdown_rx.borrow());
     }
 
     #[test]
@@ -1377,5 +1061,44 @@ mod tests {
         assert_eq!(game.update_calls, 492);
         assert_eq!(game.update_failures, 0);
         assert_eq!(game.timers, 3);
+    }
+
+    #[test]
+    fn parses_custom_scene_metrics_from_ts_update() {
+        let result: UpdateResult = serde_json::from_str(
+            r#"{
+                "metrics": [{
+                    "scene": "map_1",
+                    "sceneType": "MapHost",
+                    "processedFrames": 1,
+                    "failedFrames": 0,
+                    "ingressQueueLength": 0,
+                    "maxIngressQueueLength": 1,
+                    "lastUpdateCostMs": 0.1,
+                    "lastHandlerCostMs": 0.1,
+                    "maxHandlerCostMs": 0.1,
+                    "totalHandlerCostMs": 0.1,
+                    "asyncInFlight": 0,
+                    "maxAsyncInFlight": 1,
+                    "latencies": [],
+                    "customMetrics": [{
+                        "name": "map_broadcast",
+                        "values": {
+                            "in_flight": 1,
+                            "pending_units": 12,
+                            "coalesced_frames_total": 34
+                        }
+                    }]
+                }],
+                "pendingAsync": false
+            }"#,
+        )
+        .expect("custom scene metrics must deserialize");
+
+        let custom = &result.metrics[0].custom_metrics[0];
+        assert_eq!(custom.name, "map_broadcast");
+        assert_eq!(custom.values.get("in_flight"), Some(&1.0));
+        assert_eq!(custom.values.get("pending_units"), Some(&12.0));
+        assert_eq!(custom.values.get("coalesced_frames_total"), Some(&34.0));
     }
 }

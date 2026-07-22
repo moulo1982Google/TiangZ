@@ -14,7 +14,6 @@ import { MovementComponent } from "../app/demo/map/MovementComponent";
 import {
   PlayerUnit,
   PlayerUnitHandlers,
-  type PlayerMoveResult,
   type PlayerSnapshot,
 } from "../app/demo/map/PlayerUnit";
 import { PositionComponent } from "../app/demo/map/PositionComponent";
@@ -27,6 +26,7 @@ import {
   extractFrameRpcId,
   rewriteFrameRpcId,
 } from "../app/core/process/ActorLocation";
+import movementParity from "../native_data/movement_parity.json";
 
 void main();
 
@@ -184,7 +184,11 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.deepEqual(units.GetAll(PlayerUnit), [player]);
   assert.deepEqual(
     { x: initialized.x, y: initialized.y },
-    { x: 12, y: -8 },
+    { x: 12, y: -12 },
+  );
+  assert.deepEqual(
+    { cellX: initialized.cellX, cellY: initialized.cellY },
+    { cellX: 1, cellY: -1 },
   );
 
   await host.call(
@@ -216,29 +220,39 @@ async function testPlayerUnitComponents(): Promise<void> {
     true,
   );
 
-  const moved = await host.call<PlayerMoveResult>(
-    undefined,
-    actor,
-    PlayerUnitHandlers.Move,
-    { inputX: 1, inputY: 0, sequence: 1 },
-  );
-  assert.equal(moved.accepted, true);
-  assert.ok(moved.snapshot.x > initialized.x);
-  assert.equal(moved.snapshot.y, initialized.y);
+  assert.equal(movementParity.initialCellX, initialized.cellX);
+  assert.equal(movementParity.initialCellY, initialized.cellY);
+  for (const step of movementParity.steps) {
+    if (step.input) {
+      assert.equal(
+        await host.call<boolean>(undefined, actor, PlayerUnitHandlers.Move, {
+          inputX: step.input.x,
+          inputY: step.input.y,
+          sequence: step.input.sequence,
+        }),
+        true,
+      );
+    }
+    assert.deepEqual(
+      player.UpdateMovement(step.tick, movementParity.fixedUpdateMs),
+      { unitId: player.Id, ...step.expected },
+      `TypeScript movement parity failed at tick ${step.tick}`,
+    );
+  }
 
-  const duplicate = await host.call<PlayerMoveResult>(
-    undefined,
-    actor,
-    PlayerUnitHandlers.Move,
-    { inputX: 1, inputY: 0, sequence: 1 },
+  assert.equal(
+    await host.call<boolean>(undefined, actor, PlayerUnitHandlers.Move, {
+      inputX: 0,
+      inputY: 0,
+      sequence: 5,
+    }),
+    false,
   );
-  assert.equal(duplicate.accepted, false);
-  assert.equal(duplicate.snapshot.x, moved.snapshot.x);
   await assert.rejects(
     host.call(undefined, actor, PlayerUnitHandlers.Move, {
       inputX: 2,
       inputY: 0,
-      sequence: 2,
+      sequence: 6,
     }),
     /invalid movement input/,
   );

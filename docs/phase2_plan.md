@@ -85,7 +85,7 @@ npm run check:cocos-demo
 - GateSession 保存 `sessionId`、`account`、`mapService`、`mapId` 和 `unitId`。
 - Gate 维护 `account -> connectionId` 和 `unitId -> connectionId` 反向索引。
 - Disconnect 事件进入 Service mailbox 串行处理，不再在 Rust 推送事件的同步阶段直接执行异步清理。
-- Gate 断线时通过 `G2M_LeaveMap` 通知对应 MapService 清理玩家。
+- Gate 断线时通过 `G2M_PlayerDisconnect` 通知对应 MapHost 清理玩家。
 - Map 中的玩家保存第一版 `UnitGateComponent`，其中记录 Gate 实例和 GateSessionId。
 - Map 会校验账号、UnitId、MapId、Gate 实例和 GateSessionId，旧连接的延迟断线通知不能删除已经重连的玩家。
 - 完整 Token 签发、角色认证、顶号和重连策略仍留在 Phase 3。
@@ -142,10 +142,10 @@ Cocos 输入
 -> Core 根据 Gate 连接保存的 MapHost/InstanceId，用内部 ActorLocationEnvelope 转发原始帧
 -> 目标 ProcessHost.Root 按 InstanceId 定位 PlayerUnit
 -> ActorMessageDispatcher 进入 PlayerUnit 的 MailBoxComponent
--> C2M_MoveHandler 直接取得 PlayerUnit 并更新 PositionComponent
--> Map 按 Gate 聚合接收者，广播 M2G_EntityMove(targetUnitIds)
--> Gate 遍历目标 Unit 路由 G2C_EntityMove
--> Cocos 插值显示
+-> C2M_MoveHandler 直接调用 PlayerUnit.Move() 更新方向状态
+-> Map 固定帧推进 Cell 移动，并向 BroadcastHub 发布 latest 状态
+-> 通用 S2G_ClientBroadcast 按 GateSessionId 聚合并下发 G2C_EntityMove
+-> Cocos 按服务端 fixedUpdateMs 和 Cell 路径逐帧推演
 ```
 
 实现内容：
@@ -154,11 +154,11 @@ Cocos 输入
 - Gate 在 EnterMap 成功后把连接绑定到 UnitId、Actor InstanceId 与 MapHost；业务 Move 不携带账号、UnitId、Gate 或 MapService。
 - codegen 根据 `IActorLocationMessage/Request` 自动生成 `routing: "actor-location"`，Gate 不需要 Move Handler。
 - MapHost EntryScene 使用 unordered mailbox 接入不同玩家；PlayerUnit 使用 ordered MailBoxComponent 串行处理同一玩家移动。
-- Cocos 默认以 5Hz 上报方向输入；服务端 Game.Update 固定为 20Hz，两者互不绑定。
-- MovementComponent 使用服务端收包时间计算步长，首次按 200ms、后续最多按 250ms 推进，并丢弃重复或过期序号。
+- Cocos 在方向变化时立即发送状态，持续移动时以 5Hz 保活；服务端 Game.Update 以 20Hz 持续模拟当前方向，权威位置以 10Hz 校正，方向变化立即下发。
+- MovementComponent 每个逻辑帧只应用最新方向状态，并丢弃重复或过期序号，避免输入队列堆积。
 - PositionComponent 统一处理方向归一化、每秒 180 单位速度和地图边界限制。
-- Map 仍向同地图所有在线玩家广播权威坐标，但先按 Gate 分组；每个 Gate 只占用一条内部 transport 消息。
-- Cocos 不再本地修改权威坐标，仅按 `G2C_EntityMove` 对本地 Unit 做平滑插值。
+- Map 仍向同地图所有在线玩家广播权威坐标；Audience 由地图决定，按 Gate 分组、single-flight 和同 Unit 状态覆盖由 Core BroadcastHub 完成。
+- 本地 Unit 使用输入预测和服务端确认序号；远端 Unit 使用 50ms 状态缓冲、速度推演和禁止反向的误差校正。
 
 验收结果：
 

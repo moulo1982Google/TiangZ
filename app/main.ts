@@ -3,6 +3,7 @@ import "./generated/hotfix/handlers";
 import { isPromiseLike, type MaybePromise } from "./core/async";
 import { ProcessRuntime, type ProcessUpdateResult } from "./core/process/ProcessRuntime";
 import type { ProcessRuntimeConfig } from "./core/process/types";
+import { NativeData } from "./demo/native/NativeData";
 import {
   completeHostSceneOperation,
   flushHostSceneOperations,
@@ -12,7 +13,9 @@ import {
 let processRuntime: ProcessRuntime | undefined;
 
 function startProcess(configJson: string): string {
-  processRuntime = new ProcessRuntime(JSON.parse(configJson) as ProcessRuntimeConfig);
+  const config = JSON.parse(configJson) as ProcessRuntimeConfig;
+  NativeData.ConfigureProcess(config.process);
+  processRuntime = new ProcessRuntime(config);
   return processRuntime.start();
 }
 
@@ -71,6 +74,7 @@ function flushUpdateResult(result: ProcessUpdateResult, sampleMetrics: boolean):
   return JSON.stringify({
     metrics: result.metrics,
     game: result.game,
+    nativeData: NativeData.TakeMetrics(),
     pendingAsync: result.pendingAsync,
   });
 }

@@ -27,6 +27,48 @@
 - 已绑定实例：`byName(player.gateName)`。
 - 通知：`send`，不要伪造无意义 RPC Response。
 
+## 选择客户端广播语义
+
+普通离散消息仍使用 RPC、Message 或单连接 Push。只有需要向一组在线玩家扇出的消息才声明广播语义：
+
+- `event`：技能释放、掉落、进入、离开等事实。每一条都必须送达调度器，队列满会显式报错，不允许静默覆盖。
+- `latest`：位置、朝向、血条等可覆盖状态。相同 `key` 在前一批仍在途时只保留最新值。
+
+在客户端消息 Proto 上声明一次，descriptor 由 codegen 生成：
+
+```proto
+// @ets.msg protocol=Client method=EntityMove
+// @ets.broadcast mode=latest item=CellMovementState items=movements key=unit_id tick=server_tick
+message G2C_EntityMove // IMessage
+{
+  uint32 server_tick = 1;
+  repeated CellMovementState movements = 2;
+}
+
+// @ets.msg protocol=Client method=SkillUsed
+// @ets.broadcast mode=event
+message G2C_SkillUsed // IMessage
+{
+  uint32 caster_id = 1;
+  uint32 skill_id = 2;
+}
+```
+
+业务代码只决定 Audience 和内容：
+
+```ts
+await this.broadcast.Publish(
+  audience,
+  ClientBroadcasts.SkillUsed,
+  { casterId, skillId },
+  serverTick,
+);
+```
+
+`BroadcastAudience` 的 `key` 表示可复用的可见集合，`routes` 只包含 Gate 路由名和 UnitId。地图 AOI、公会在线成员等领域代码负责产生 Audience；Core 负责 protobuf 编码、latest 合并、event 排队、single-flight 和指标；通用 `S2G_ClientBroadcast` 负责按 Gate 批量下行。新增广播业务不再定义对应的 `M2G_Xxx` 和 Gate Handler。
+
+Audience 与广播语义互相独立。同一个技能事件可以发给地图 AOI、队伍或公会；同一批收件人也可以同时接收 event 和 latest。不要把“谁能看到”写进 BroadcastHub。
+
 ## 选择 mailbox
 
 - 共享强一致状态：ordered EntryScene/Actor。

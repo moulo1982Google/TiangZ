@@ -3,6 +3,11 @@ use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 
+use crate::native_data::{
+    op_native_data_take_metrics, op_native_map_fixed_update, op_native_unit_create,
+    op_native_unit_destroy, op_native_unit_reset_movement, op_native_unit_set_movement_input,
+    op_native_unit_snapshot,
+};
 use crate::transport::{call_remote_scene, send_remote_scene};
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
@@ -26,6 +31,7 @@ const BACKPRESSURE_RETRY_MS: u64 = 1;
 thread_local! {
     static NEXT_HOST_EVENT_BATCH: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
     static OUTBOUND_BINARY_BATCHES: RefCell<Vec<BinaryOutboundBatch>> = const { RefCell::new(Vec::new()) };
+    static CLOSE_CONNECTION_REQUESTS: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
     static HOST_SCENE_ROUTES: RefCell<Vec<HostSceneRoute>> = const { RefCell::new(Vec::new()) };
     static HOST_SCENE_RUNTIME: RefCell<Option<Handle>> = const { RefCell::new(None) };
     static HOST_SCENE_COMPLETION_SINK: RefCell<Option<HostSceneCompletionSink>> = const { RefCell::new(None) };
@@ -112,6 +118,21 @@ fn op_host_push_outbound_packed(#[buffer] packed: JsBuffer) -> Result<(), JsErro
         .map_err(|error| JsErrorBox::generic(error.to_string()))?;
     OUTBOUND_BINARY_BATCHES.with(|slot| slot.borrow_mut().extend(batches));
     Ok(())
+}
+
+#[op2(fast)]
+fn op_host_close_connection(connection_id: u32) -> Result<(), JsErrorBox> {
+    if connection_id == 0 {
+        return Err(JsErrorBox::generic(
+            "connection id must be greater than zero",
+        ));
+    }
+    CLOSE_CONNECTION_REQUESTS.with(|slot| slot.borrow_mut().push(connection_id as u64));
+    Ok(())
+}
+
+pub fn take_close_connection_requests() -> Vec<u64> {
+    CLOSE_CONNECTION_REQUESTS.with(|slot| std::mem::take(&mut *slot.borrow_mut()))
 }
 
 #[op2(nofast)]
@@ -400,6 +421,14 @@ deno_core::extension!(
         op_host_push_outbound,
         op_host_push_outbound_batch,
         op_host_push_outbound_packed,
+        op_host_close_connection,
+        op_native_unit_create,
+        op_native_unit_destroy,
+        op_native_unit_set_movement_input,
+        op_native_unit_reset_movement,
+        op_native_unit_snapshot,
+        op_native_map_fixed_update,
+        op_native_data_take_metrics,
         op_host_register_scene_route,
         op_host_submit_scene_operations
     ],
@@ -425,6 +454,28 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
           core.ops.op_host_push_outbound_batch(connectionIdBytes, frame);
         globalThis.__hostPushOutboundPacked = (packed) =>
           core.ops.op_host_push_outbound_packed(packed);
+        globalThis.__hostCloseConnection = (connectionId) =>
+          core.ops.op_host_close_connection(connectionId >>> 0);
+        globalThis.__nativeUnitCreate = (unitId, instanceId, mapId, x, y) =>
+          core.ops.op_native_unit_create(
+            unitId >>> 0, instanceId >>> 0, mapId >>> 0, x, y,
+          );
+        globalThis.__nativeUnitDestroy = (handle) =>
+          core.ops.op_native_unit_destroy(handle >>> 0);
+        globalThis.__nativeUnitSetMovementInput = (handle, inputX, inputY, sequence) =>
+          core.ops.op_native_unit_set_movement_input(
+            handle >>> 0, inputX, inputY, sequence >>> 0,
+          );
+        globalThis.__nativeUnitResetMovement = (handle) =>
+          core.ops.op_native_unit_reset_movement(handle >>> 0);
+        globalThis.__nativeUnitSnapshot = (handle) =>
+          core.ops.op_native_unit_snapshot(handle >>> 0);
+        globalThis.__nativeMapFixedUpdate = (mapId, serverTick, fixedUpdateMs) =>
+          core.ops.op_native_map_fixed_update(
+            mapId >>> 0, serverTick >>> 0, fixedUpdateMs >>> 0,
+          );
+        globalThis.__nativeDataTakeMetrics = () =>
+          core.ops.op_native_data_take_metrics();
         globalThis.__hostRegisterSceneRoute = (sourceName, targetName, targetIp, targetPort) =>
           core.ops.op_host_register_scene_route(
             String(sourceName), String(targetName), String(targetIp), targetPort >>> 0,

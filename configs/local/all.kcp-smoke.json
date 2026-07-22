@@ -1,0 +1,25 @@
+{
+  "process": {
+    "name": "all-kcp-smoke",
+    "game": {
+      "fixedUpdateMs": 50,
+      "maxCatchUpSteps": 2
+    }
+  },
+  "scenes": [
+    { "name": "log", "sceneType": "Log", "ip": "127.0.0.1", "port": 7100, "protocol": "tcp" },
+    { "name": "login_mgr", "sceneType": "LoginMgr", "ip": "127.0.0.1", "port": 7000, "protocol": "kcp", "audience": "outer" },
+    { "name": "login_1", "sceneType": "Login", "ip": "127.0.0.1", "port": 7001, "protocol": "tcp" },
+    { "name": "login_2", "sceneType": "Login", "ip": "127.0.0.1", "port": 7002, "protocol": "tcp" },
+    { "name": "gate_1", "sceneType": "Gate", "ip": "127.0.0.1", "port": 7201, "protocol": "tcp" },
+    { "name": "map_1", "sceneType": "MapHost", "ip": "127.0.0.1", "port": 7301, "protocol": "tcp" }
+  ],
+  "knownScenes": [
+    { "name": "log", "sceneType": "Log", "ip": "127.0.0.1", "port": 7100, "protocol": "tcp" },
+    { "name": "login_mgr", "sceneType": "LoginMgr", "ip": "127.0.0.1", "port": 7000, "protocol": "kcp", "audience": "outer" },
+    { "name": "login_1", "sceneType": "Login", "ip": "127.0.0.1", "port": 7001, "protocol": "tcp" },
+    { "name": "login_2", "sceneType": "Login", "ip": "127.0.0.1", "port": 7002, "protocol": "tcp" },
+    { "name": "gate_1", "sceneType": "Gate", "ip": "127.0.0.1", "port": 7201, "protocol": "tcp" },
+    { "name": "map_1", "sceneType": "MapHost", "ip": "127.0.0.1", "port": 7301, "protocol": "tcp" }
+  ]
+}

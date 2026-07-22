@@ -6,10 +6,8 @@ export const InnerMessage = {
   L2L_LogWriteRequest: 20005,
   L2L_LogWriteResponse: 20006,
   M2G_MapReady: 20007,
-  G2M_LeaveMap: 20008,
-  M2G_EntityMove: 20009,
-  M2G_EntityEnter: 20010,
-  M2G_EntityLeave: 20011,
+  G2M_PlayerDisconnect: 20008,
+  S2G_ClientBroadcast: 20009,
 } as const;
 
 export const OuterMessage = {
@@ -30,6 +28,7 @@ export const OuterMessage = {
   G2C_EntityMove: 10016,
   G2C_EntityEnter: 10017,
   G2C_EntityLeave: 10018,
+  C2G_Ping: 10019,
 } as const;
 
 export const MsgCode = {

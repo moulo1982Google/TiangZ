@@ -7,12 +7,15 @@ import {
   director,
   Label,
   Node,
+  ResolutionPolicy,
   Scene,
   UITransform,
   view,
 } from "cc";
-import { PREVIEW } from "cc/env";
+import { NATIVE, PREVIEW } from "cc/env";
 import { LoginFlow } from "./Login/LoginFlow";
+import type { ClientTransportKind } from "../Core/Net/ClientTransport";
+import "../Core/Net/NativeTransport";
 import { MapController } from "./Map/MapController";
 import { MapView } from "./Map/MapView";
 import { DemoUi } from "./UI/DemoUi";
@@ -22,7 +25,13 @@ const { ccclass, property } = _decorator;
 @ccclass("GameBootstrap")
 export class GameBootstrap extends Component {
   @property
-  loginMgrUrl = "ws://127.0.0.1:7000";
+  transport: ClientTransportKind = NATIVE ? "kcp" : "websocket";
+
+  @property
+  loginMgrHost = "127.0.0.1";
+
+  @property
+  loginMgrPort = 7000;
 
   private started = false;
   private ui?: DemoUi;
@@ -54,6 +63,8 @@ export class GameBootstrap extends Component {
   ensureStarted(): void {
     if (this.started) return;
     this.started = true;
+    view.setDesignResolutionSize(960, 640, ResolutionPolicy.SHOW_ALL);
+    if (!NATIVE) view.resizeWithBrowserSize(true);
     if (!this.node.getComponent(Canvas)) this.node.addComponent(Canvas);
     this.hidePreviewSplash();
     this.ui = new DemoUi(this.ensureUiRoot());
@@ -96,7 +107,11 @@ export class GameBootstrap extends Component {
   private async loginAndEnter(): Promise<void> {
     this.setLoginEnabled(false);
     this.loginFlow?.close();
-    this.loginFlow = new LoginFlow(this.loginMgrUrl);
+    this.loginFlow = new LoginFlow({
+      transport: this.transport,
+      host: this.loginMgrHost,
+      port: this.loginMgrPort,
+    });
     try {
       const result = await this.loginFlow.enterGame(
         this.account,
@@ -135,13 +150,10 @@ export class GameBootstrap extends Component {
 
   private ensureUiRoot(): Node {
     const existing = this.node.getChildByName("EtsUiRoot");
-    if (existing) return existing;
-
-    const root = new Node("EtsUiRoot");
-    this.node.addChild(root);
-    const transform = root.addComponent(UITransform);
-    const visibleSize = view.getVisibleSize();
-    transform.setContentSize(visibleSize.width, visibleSize.height);
+    const root = existing ?? new Node("EtsUiRoot");
+    if (!existing) this.node.addChild(root);
+    const transform = root.getComponent(UITransform) ?? root.addComponent(UITransform);
+    transform.setContentSize(960, 640);
     root.setPosition(0, 0);
     return root;
   }
@@ -163,7 +175,7 @@ function installAutoBootstrap(): void {
   };
   const href = globalThis.location?.href ?? "";
   const browserPreview = href.includes("localhost") || href.includes("127.0.0.1");
-  if ((!PREVIEW && !browserPreview) || global.__etsGameBootstrapAutoMounted) return;
+  if ((!PREVIEW && !browserPreview && !NATIVE) || global.__etsGameBootstrapAutoMounted) return;
   global.__etsGameBootstrapAutoMounted = true;
 
   let attempts = 0;

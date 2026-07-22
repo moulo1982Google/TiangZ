@@ -11,3 +11,4 @@ export * from "./TimeSystem";
 export * from "./TimerSystem";
 export * from "./UpdateSystem";
 export * from "./Game";
+export * from "../broadcast";

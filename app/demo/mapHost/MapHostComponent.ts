@@ -1,6 +1,12 @@
 import { RpcError } from "../../core/protocol/RpcError";
 import { EntryScene } from "../../core/process/types";
-import { Component, UnitComponent } from "../../core/runtime";
+import type { CustomMetricSnapshot } from "../../core/process/types";
+import {
+  Component,
+  Game,
+  UnitComponent,
+} from "../../core/runtime";
+import type { NativeDataBackend } from "../native/NativeData";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import { GateMessages } from "../../generated/model/server/demo/protocol/messageDescriptors";
 import type {
@@ -13,9 +19,18 @@ import { MapScene } from "../map/MapScene";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 
-export class MapHostComponent extends Component {
+export class MapHostComponent extends Component<[dataBackend: NativeDataBackend]> {
   private readonly maps = new Map<number, MapComponent>();
   private nextUnitId = 1000;
+  private dataBackend: NativeDataBackend = "typescript";
+
+  protected override Awake(dataBackend: NativeDataBackend): void {
+    this.dataBackend = dataBackend;
+  }
+
+  BroadcastMetricSnapshots(): CustomMetricSnapshot[] {
+    return [...this.maps.values()].map((map) => map.BroadcastMetricSnapshot());
+  }
 
   async enterMap(request: G2M_EnterMap): Promise<M2G_EnterMap> {
     this.validateEnterMap(request);
@@ -76,6 +91,7 @@ export class MapHostComponent extends Component {
       mapId: snapshot.mapId,
       unitId: snapshot.unitId,
       actorInstanceId: player.InstanceId,
+      fixedUpdateMs: Game.Instance.FixedUpdateMs,
       x: snapshot.x,
       y: snapshot.y,
       entities: map.EntitySnapshots(),
@@ -94,6 +110,7 @@ export class MapHostComponent extends Component {
       mapId,
       this.owner.scenes,
       this.players,
+      this.dataBackend,
     );
     this.maps.set(mapId, map);
     return map;

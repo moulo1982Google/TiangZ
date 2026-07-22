@@ -5,6 +5,7 @@ import { UpdateSystem } from "./UpdateSystem";
 
 // 默认游戏逻辑帧为 20Hz。Runtime Pump 仍由网络事件即时唤醒，两者不是同一个频率。
 export const DEFAULT_FIXED_UPDATE_MS = 50;
+const FRAME_TIME_EPSILON_MS = 1e-6;
 
 export interface GameUpdateConfig {
   fixedUpdateMs?: number;
@@ -52,9 +53,11 @@ export class Game extends Singleton {
   }
 
   private updateFixedFrames(now: number, time: TimeSystem): void {
-    if (now < this.nextFixedUpdateAt) return;
+    if (now + FRAME_TIME_EPSILON_MS < this.nextFixedUpdateAt) return;
 
-    const dueSteps = Math.floor((now - this.nextFixedUpdateAt) / this.fixedUpdateMs) + 1;
+    const dueSteps = Math.floor(
+      (now - this.nextFixedUpdateAt + FRAME_TIME_EPSILON_MS) / this.fixedUpdateMs,
+    ) + 1;
     const runSteps = Math.min(dueSteps, this.maxCatchUpSteps);
     for (let step = 0; step < runSteps; step += 1) {
       time.__beginFixedUpdate(this.nextFixedUpdateAt, this.fixedUpdateMs);

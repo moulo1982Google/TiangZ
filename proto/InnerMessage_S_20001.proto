@@ -29,6 +29,7 @@ message M2G_EnterMap // IResponse
   sint32 y = 5;
   repeated MapEntitySnapshot entities = 6;
   uint32 actor_instance_id = 7;
+  uint32 fixed_update_ms = 8;
 }
 
 //ResponseType L2L_LogWriteResponse
@@ -52,8 +53,8 @@ message M2G_MapReady // IActorMessage
   sint32 y = 5;
 }
 
-// @ets.msg protocol=Map method=LeaveMap
-message G2M_LeaveMap // IActorMessage
+// @ets.msg protocol=Map method=PlayerDisconnect
+message G2M_PlayerDisconnect // IActorMessage
 {
   string account = 1;
   uint32 map_id = 2;
@@ -62,26 +63,11 @@ message G2M_LeaveMap // IActorMessage
   string gate_session_id = 5;
 }
 
-// @ets.msg protocol=Gate method=EntityMove
-message M2G_EntityMove // IActorMessage
+// 所有服务器业务广播统一通过这一条内网消息到达 Gate。
+// frame 已经是最终客户端帧，Gate 不再理解 Move、技能等业务消息。
+// @ets.msg protocol=Gate method=ClientBroadcast
+message S2G_ClientBroadcast // IActorMessage
 {
   repeated uint32 target_unit_ids = 1;
-  uint32 unit_id = 2;
-  sint32 x = 3;
-  sint32 y = 4;
-  uint32 sequence = 5;
-}
-
-// @ets.msg protocol=Gate method=EntityEnter
-message M2G_EntityEnter // IActorMessage
-{
-  uint32 target_unit_id = 1;
-  MapEntitySnapshot entity = 2;
-}
-
-// @ets.msg protocol=Gate method=EntityLeave
-message M2G_EntityLeave // IActorMessage
-{
-  uint32 target_unit_id = 1;
-  uint32 unit_id = 2;
+  bytes frame = 2;
 }

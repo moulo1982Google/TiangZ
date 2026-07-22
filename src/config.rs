@@ -1,9 +1,11 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+
+const MAX_URING_READ_BUFFER_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +21,8 @@ pub struct RuntimeConfig {
 pub struct ProcessConfig {
     pub name: String,
     #[serde(default)]
+    pub network: ProcessNetworkConfig,
+    #[serde(default)]
     pub game: ProcessGameConfig,
     #[serde(default)]
     pub scheduling: ProcessSchedulingConfig,
@@ -26,6 +30,37 @@ pub struct ProcessConfig {
     pub debug: Option<ProcessDebugConfig>,
     #[serde(default)]
     pub observability: Option<ProcessObservabilityConfig>,
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum IoBackendKind {
+    #[default]
+    Epoll,
+    IoUring,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessNetworkConfig {
+    #[serde(default, alias = "backend")]
+    pub io_backend: IoBackendKind,
+    #[serde(default = "default_uring_entries")]
+    pub uring_entries: u32,
+    #[serde(default = "default_uring_read_buffer_bytes")]
+    pub uring_read_buffer_bytes: usize,
+}
+
+impl Default for ProcessNetworkConfig {
+    fn default() -> Self {
+        Self {
+            io_backend: IoBackendKind::default(),
+            uring_entries: default_uring_entries(),
+            uring_read_buffer_bytes: default_uring_read_buffer_bytes(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -102,6 +137,31 @@ pub struct SceneConfig {
     pub scene_type: String,
     pub ip: String,
     pub port: u16,
+    #[serde(default, alias = "transport")]
+    pub protocol: EndpointProtocol,
+    #[serde(default)]
+    pub audience: EndpointAudience,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum EndpointAudience {
+    #[default]
+    Mixed,
+    Inner,
+    Outer,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum EndpointProtocol {
+    #[default]
+    Auto,
+    #[serde(alias = "raw")]
+    Tcp,
+    #[serde(rename = "websocket")]
+    WebSocket,
+    Kcp,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -122,6 +182,14 @@ fn default_inspector_ip() -> String {
 
 fn default_latency_sample_rate() -> u32 {
     1
+}
+
+fn default_uring_entries() -> u32 {
+    1024
+}
+
+fn default_uring_read_buffer_bytes() -> usize {
+    64 * 1024
 }
 
 fn default_fixed_update_ms() -> u64 {
@@ -185,6 +253,18 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     if config.process.game.max_catch_up_steps > 100 {
         bail!("process game.maxCatchUpSteps must not exceed 100");
     }
+    if !config.process.network.uring_entries.is_power_of_two()
+        || !(64..=32_768).contains(&config.process.network.uring_entries)
+    {
+        bail!("process network.uringEntries must be a power of two between 64 and 32768");
+    }
+    if !(4 * 1024..=MAX_URING_READ_BUFFER_BYTES)
+        .contains(&config.process.network.uring_read_buffer_bytes)
+    {
+        bail!(
+            "process network.uringReadBufferBytes must be between 4096 and {MAX_URING_READ_BUFFER_BYTES}"
+        );
+    }
     if config.process.scheduling.idle_tick_ms == Some(0) {
         bail!("process scheduling.idleTickMs must be greater than 0");
     }
@@ -237,6 +317,42 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         if !scene_endpoints.insert((scene.ip.clone(), scene.port)) {
             bail!("duplicate scene endpoint {}:{}", scene.ip, scene.port);
         }
+        if scene.protocol == EndpointProtocol::Kcp {
+            if scene.audience == EndpointAudience::Mixed {
+                bail!(
+                    "scene {} must set audience=inner or audience=outer when protocol=kcp",
+                    scene.name
+                );
+            }
+            if !cfg!(feature = "kcp") {
+                bail!(
+                    "scene {} selects protocol=kcp; rebuild Runtime with --features kcp",
+                    scene.name
+                );
+            }
+            if scene.audience == EndpointAudience::Inner {
+                bail!(
+                    "scene {} selects inner KCP, which is not available until the authenticated inner handshake is implemented",
+                    scene.name
+                );
+            }
+        }
+        if scene.protocol == EndpointProtocol::WebSocket
+            && scene.audience == EndpointAudience::Inner
+        {
+            bail!(
+                "scene {} cannot use websocket for an inner endpoint",
+                scene.name
+            );
+        }
+        if config.process.network.io_backend == IoBackendKind::IoUring
+            && scene.protocol != EndpointProtocol::Tcp
+        {
+            bail!(
+                "scene {} must set protocol=tcp when process network.ioBackend=io-uring",
+                scene.name
+            );
+        }
     }
 
     let Some(debug) = &config.process.debug else {
@@ -280,12 +396,15 @@ mod tests {
             scene_type: "Log".to_string(),
             ip: "127.0.0.1".to_string(),
             port,
+            protocol: EndpointProtocol::Auto,
+            audience: EndpointAudience::Mixed,
         }
     }
 
     fn process(inspector_port: Option<u16>) -> ProcessConfig {
         ProcessConfig {
             name: "test".to_string(),
+            network: ProcessNetworkConfig::default(),
             game: ProcessGameConfig::default(),
             scheduling: ProcessSchedulingConfig::default(),
             debug: inspector_port.map(|inspector_port| ProcessDebugConfig {
@@ -295,7 +414,80 @@ mod tests {
                 allow_remote: false,
             }),
             observability: None,
+            extensions: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn parses_io_backend_and_requires_tcp_endpoints() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "gate1",
+                "network": {
+                    "ioBackend": "io-uring",
+                    "uringEntries": 2048,
+                    "uringReadBufferBytes": 131072
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(process.network.io_backend, IoBackendKind::IoUring);
+        assert_eq!(process.network.uring_entries, 2048);
+        assert_eq!(process.network.uring_read_buffer_bytes, 131072);
+
+        let config = RuntimeConfig {
+            process,
+            scenes: vec![scene("gate", 7201)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn accepts_legacy_network_and_scene_names() {
+        let config: RuntimeConfig = serde_json::from_str(
+            r#"{
+                "process": { "name": "legacy", "network": { "backend": "epoll" } },
+                "scenes": [{
+                    "name": "gate", "sceneType": "Gate",
+                    "ip": "127.0.0.1", "port": 7201, "transport": "raw"
+                }]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(config.process.network.io_backend, IoBackendKind::Epoll);
+        assert_eq!(config.scenes[0].protocol, EndpointProtocol::Tcp);
+    }
+
+    #[test]
+    fn requires_kcp_feature_when_disabled() {
+        let mut kcp_scene = scene("gate", 7201);
+        kcp_scene.protocol = EndpointProtocol::Kcp;
+        kcp_scene.audience = EndpointAudience::Outer;
+        let config = RuntimeConfig {
+            process: process(None),
+            scenes: vec![kcp_scene],
+            known_scenes: vec![],
+        };
+        let result = validate_runtime_config(&config);
+        if cfg!(feature = "kcp") {
+            assert!(result.is_ok());
+        } else {
+            assert!(result.unwrap_err().to_string().contains("--features kcp"));
+        }
+    }
+
+    #[test]
+    fn kcp_endpoint_requires_explicit_audience() {
+        let mut kcp_scene = scene("gate", 7201);
+        kcp_scene.protocol = EndpointProtocol::Kcp;
+        let config = RuntimeConfig {
+            process: process(None),
+            scenes: vec![kcp_scene],
+            known_scenes: vec![],
+        };
+        let error = validate_runtime_config(&config).unwrap_err().to_string();
+        assert!(error.contains("audience=inner or audience=outer"));
     }
 
     #[test]
@@ -360,6 +552,25 @@ mod tests {
         let defaults: ProcessConfig = serde_json::from_str(r#"{ "name": "map2" }"#).unwrap();
         assert_eq!(defaults.game.fixed_update_ms, 50);
         assert_eq!(defaults.game.max_catch_up_steps, 2);
+    }
+
+    #[test]
+    fn preserves_application_specific_process_config() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "nativeData": {
+                    "backend": "rust",
+                    "debugScalarAccess": true,
+                    "scalarAccessWarnThreshold": 2048
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(process.extensions["nativeData"]["backend"], "rust");
+        let serialized = serde_json::to_value(process).unwrap();
+        assert_eq!(serialized["nativeData"]["debugScalarAccess"], true);
+        assert_eq!(serialized["nativeData"]["scalarAccessWarnThreshold"], 2048);
     }
 
     #[test]

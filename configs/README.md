@@ -31,6 +31,16 @@
 
 `all.json` 把全部 Demo Scene 放在一个进程；`log.json`、`mgr.json`、`login1.json` 等把它们拆成多个进程。`npm run test:runtime` 会验证两种部署。
 
+`all.io-uring.json` 是 Linux TCP 实验配置。它使用 `network.ioBackend=io-uring` 和 `scene.protocol=tcp`，需要通过 `cargo build --features io-uring` 构建；Cocos WebSocket 客户端不能连接该配置。
+
+`all.kcp-native.json` 是 Cocos Native KCP 配置。LoginMgr、Login 和 Gate 使用 `protocol=kcp,audience=outer`，MapHost 与 Log 保持内部 TCP。启动命令：
+
+```powershell
+cargo run --features kcp --bin TiangZ -- configs/local/all.kcp-native.json
+```
+
+KCP 暂不支持 `audience=inner`。Cocos Web 不能连接此配置；Web 客户端继续使用 `all.json` 的 WebSocket/auto Endpoint。
+
 ## StartMachine
 
 `StartMachine.json` 按本机 IP 选择并启动 `processes` 中列出的配置文件，作用类似 ET Watcher。压测配置没有加入默认 StartMachine，需要显式启动。

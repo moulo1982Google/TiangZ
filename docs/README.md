@@ -8,16 +8,20 @@
 4. [Scene 通信、Mailbox、Actor 与 Component](tutorials/04-scene-mailbox-and-actor.md)
 5. [登录、Gate、地图与 Cocos 链路](tutorials/05-game-chain-and-client.md)
 6. [调试、测试与部署](tutorials/06-debug-test-and-deploy.md)
+7. [客户端传输协议与 Cocos Native](tutorials/07-client-transport-and-native.md)
 
 ## 开发参考
 
 - [配置与协议](reference/config-and-protocol.md)
+- [传输协议与 I/O Backend](reference/transport-backend.md)
 - [Core API](reference/core-api.md)
 - [常用命令](reference/commands.md)
 - [可观测性与链路耗时](reference/observability.md)
 - [故障排查](reference/troubleshooting.md)
 - [业务开发清单](guides/business-cookbook.md)
 - [运行时维护者指南](design/maintainer-guide.md)
+- [移动预测与快照插值](design/movement-prediction.md)
+- [Rust Unit 数据下沉实验](design/native-data-experiment.md)
 - [TypeScript 调试](typescript_debugging.md)
 - [路线图](roadmap.md)
 

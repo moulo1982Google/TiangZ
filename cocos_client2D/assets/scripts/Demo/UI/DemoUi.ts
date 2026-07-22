@@ -5,7 +5,6 @@ import {
   Label,
   Node,
   UITransform,
-  view,
 } from "cc";
 
 export class DemoUi {
@@ -16,12 +15,13 @@ export class DemoUi {
   }
 
   createBackground(color: Color): Node {
+    const rootSize = this.root.getComponent(UITransform)?.contentSize;
     const background = this.createBox(
       "Background",
       0,
       0,
-      view.getVisibleSize().width,
-      view.getVisibleSize().height,
+      rootSize?.width ?? 960,
+      rootSize?.height ?? 640,
       color,
     );
     background.setSiblingIndex(0);

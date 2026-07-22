@@ -18,4 +18,19 @@ message MapEntitySnapshot
   bool alive = 5;
   bytes state = 6;
   string account = 7;
+  sint32 cell_x = 8;
+  sint32 cell_y = 9;
+}
+
+message CellMovementState
+{
+  uint32 unit_id = 1;
+  uint32 acknowledged_sequence = 2;
+  sint32 from_cell_x = 3;
+  sint32 from_cell_y = 4;
+  sint32 to_cell_x = 5;
+  sint32 to_cell_y = 6;
+  uint32 move_start_tick = 7;
+  uint32 move_end_tick = 8;
+  bool moving = 9;
 }

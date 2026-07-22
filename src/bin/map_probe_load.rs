@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
+use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{Semaphore, mpsc};
@@ -19,8 +21,12 @@ const LOGIN_GATE_RESP: u16 = 10009;
 const ENTER_MAP_REQ: u16 = 10010;
 const ENTER_MAP_RESP: u16 = 10011;
 const MAP_READY: u16 = 10012;
+const MAP_MOVE: u16 = 10013;
 const MAP_PROBE_REQ: u16 = 10014;
 const MAP_PROBE_RESP: u16 = 10015;
+const ENTITY_MOVE: u16 = 10016;
+const CLIENT_PING: u16 = 10019;
+const CLIENT_PING_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 struct Options {
@@ -31,6 +37,7 @@ struct Options {
     warmup: Duration,
     duration: Duration,
     timeout: Duration,
+    move_rate: u64,
     probe_rate: u64,
     probe_concurrency: usize,
     label: String,
@@ -47,9 +54,13 @@ struct LoginResult {
 }
 
 struct PlayerConnection {
-    reader: tokio::net::tcp::OwnedReadHalf,
-    writer: tokio::net::tcp::OwnedWriteHalf,
+    frame_rx: mpsc::UnboundedReceiver<Result<Vec<u8>>>,
+    reader_task: tokio::task::JoinHandle<()>,
+    writer_tx: mpsc::Sender<Vec<u8>>,
+    writer_task: tokio::task::JoinHandle<()>,
+    entity_move_pushes: Arc<AtomicU64>,
     next_rpc_id: u32,
+    unit_id: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -67,11 +78,22 @@ struct PendingProbe {
 #[derive(Default)]
 struct PlayerResult {
     latencies_micros: Vec<u64>,
-    errors: u64,
+    probe_errors: u64,
+    move_errors: u64,
+    move_sent: u64,
+    move_skipped: u64,
+    entity_move_pushes: u64,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let process_pid = Pid::from_u32(std::process::id());
+    let mut system = System::new();
+    system.refresh_processes(ProcessesToUpdate::Some(&[process_pid]), false);
+    let initial_cpu_time_ms = system
+        .process(process_pid)
+        .map(|process| process.accumulated_cpu_time())
+        .unwrap_or_default();
     let options = Arc::new(parse_options(std::env::args().skip(1).collect())?);
     let setup_started = Instant::now();
     let login_address = Arc::new(get_login_address(&options).await?);
@@ -134,7 +156,20 @@ async fn main() -> Result<()> {
     .await
     .context("map probe load test timed out")??;
 
-    let errors = results.iter().map(|result| result.errors).sum::<u64>();
+    let probe_errors = results
+        .iter()
+        .map(|result| result.probe_errors)
+        .sum::<u64>();
+    let move_errors = results.iter().map(|result| result.move_errors).sum::<u64>();
+    let move_sent = results.iter().map(|result| result.move_sent).sum::<u64>();
+    let move_skipped = results
+        .iter()
+        .map(|result| result.move_skipped)
+        .sum::<u64>();
+    let entity_move_pushes = results
+        .iter()
+        .map(|result| result.entity_move_pushes)
+        .sum::<u64>();
     let mut latencies = results
         .into_iter()
         .flat_map(|result| result.latencies_micros)
@@ -143,6 +178,18 @@ async fn main() -> Result<()> {
     let requests = latencies.len();
     let requests_per_second = requests as f64 / options.duration.as_secs_f64();
     let setup_per_second = options.players as f64 / setup_elapsed.as_secs_f64();
+    system.refresh_processes(ProcessesToUpdate::Some(&[process_pid]), false);
+    let (cpu_time_ms, rss_bytes) = system
+        .process(process_pid)
+        .map(|process| {
+            (
+                process
+                    .accumulated_cpu_time()
+                    .saturating_sub(initial_cpu_time_ms),
+                process.memory(),
+            )
+        })
+        .unwrap_or_default();
     let timing_json = json!({
         "count": requests,
         "perSecond": requests_per_second,
@@ -151,7 +198,7 @@ async fn main() -> Result<()> {
         "p95Ms": percentile(&latencies, 0.95) as f64 / 1000.0,
         "p99Ms": percentile(&latencies, 0.99) as f64 / 1000.0,
         "maxMs": latencies.last().copied().unwrap_or_default() as f64 / 1000.0,
-        "errors": errors,
+        "errors": probe_errors,
     });
     let result = json!({
         "scenario": "gameplay-full-chain-rust",
@@ -160,11 +207,15 @@ async fn main() -> Result<()> {
         "setupConcurrency": options.setup_concurrency,
         "warmupSeconds": options.warmup.as_secs_f64(),
         "durationSeconds": options.duration.as_secs_f64(),
-        "targetMoveRatePerPlayer": 0,
+        "targetMoveRatePerPlayer": options.move_rate,
         "targetProbeRatePerPlayer": options.probe_rate,
         "measurementStartedAtUnixMs": started_at_unix_ms,
         "measurementEndedAtUnixMs": started_at_unix_ms + options.duration.as_millis() as u64,
-        "workload": format!("probe-only-{}hz-rust", options.probe_rate),
+        "workload": if options.move_rate > 0 {
+            format!("steady-{}hz-rust", options.move_rate)
+        } else {
+            format!("probe-only-{}hz-rust", options.probe_rate)
+        },
         "setup": {
             "count": options.players,
             "perSecond": setup_per_second,
@@ -176,32 +227,46 @@ async fn main() -> Result<()> {
             "elapsedSeconds": setup_elapsed.as_secs_f64(),
         },
         "movement": {
-            "count": 0,
-            "perSecond": 0,
+            "count": move_sent,
+            "perSecond": move_sent as f64 / options.duration.as_secs_f64(),
             "p50Ms": 0,
             "p90Ms": 0,
             "p95Ms": 0,
             "p99Ms": 0,
             "maxMs": 0,
-            "entityMovePushes": 0,
-            "pushesPerSecond": 0,
-            "errors": 0,
+            "skippedTicks": move_skipped,
+            "entityMovePushes": entity_move_pushes,
+            "pushesPerSecond": entity_move_pushes as f64 /
+                (options.warmup + options.duration).as_secs_f64(),
+            "errors": move_errors,
         },
         "probe": timing_json,
-        "loadGenerator": { "kind": "rust" },
+        "loadGenerator": {
+            "kind": "rust-tokio",
+            "cpuTotalMs": cpu_time_ms,
+            "rssBytes": rss_bytes,
+        },
     });
 
     println!(
-        "[full-chain-rust:{}/probe-only-{}hz] players={} setup={:.1} users/s probe={:.1}/s p50={:.2}ms p95={:.2}ms p99={:.2}ms errors={}",
+        "[full-chain-rust:{}/{}] players={} setup={:.1} users/s move={:.1}/s skipped={} pushes={:.1}/s probe={:.1}/s p50={:.2}ms p95={:.2}ms p99={:.2}ms errors={}/{}",
         options.label,
-        options.probe_rate,
+        if options.move_rate > 0 {
+            format!("steady-{}hz", options.move_rate)
+        } else {
+            format!("probe-only-{}hz", options.probe_rate)
+        },
         options.players,
         setup_per_second,
+        move_sent as f64 / options.duration.as_secs_f64(),
+        move_skipped,
+        entity_move_pushes as f64 / (options.warmup + options.duration).as_secs_f64(),
         requests_per_second,
         percentile(&latencies, 0.50) as f64 / 1000.0,
         percentile(&latencies, 0.95) as f64 / 1000.0,
         percentile(&latencies, 0.99) as f64 / 1000.0,
-        errors,
+        move_errors,
+        probe_errors,
     );
     println!("RESULT_JSON {result}");
     Ok(())
@@ -261,23 +326,61 @@ async fn setup_player(
     write_frame(&mut writer, &encode_rpc(ENTER_MAP_REQ, 3, &enter_map)?).await?;
     let mut received_response = false;
     let mut received_ready = false;
+    let mut unit_id = 0;
     while !received_response || !received_ready {
         let frame = read_frame_timeout(&mut reader, options.timeout).await?;
         let msgcode = frame_msgcode(&frame)?;
         match msgcode {
             ENTER_MAP_RESP => {
-                decode_message(&frame, ENTER_MAP_RESP, Some(3))?;
+                unit_id = decode_message(&frame, ENTER_MAP_RESP, Some(3))?.u32(4)?;
                 received_response = true;
             }
             MAP_READY => received_ready = true,
             _ => {}
         }
     }
+    if unit_id == 0 {
+        bail!("EnterMap returned an invalid unitId");
+    }
+    let (writer_tx, writer_rx) = mpsc::channel(32);
+    let writer_task = tokio::spawn(run_gate_writer(writer, writer_rx));
+    let (frame_tx, frame_rx) = mpsc::unbounded_channel::<Result<Vec<u8>>>();
+    let entity_move_pushes = Arc::new(AtomicU64::new(0));
+    let reader_pushes = Arc::clone(&entity_move_pushes);
+    let reader_task = tokio::spawn(async move {
+        loop {
+            match read_frame(&mut reader).await {
+                Ok(frame) => match frame_msgcode(&frame) {
+                    Ok(ENTITY_MOVE) => {
+                        reader_pushes.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Ok(MAP_PROBE_RESP) => {
+                        if frame_tx.send(Ok(frame)).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        let _ = frame_tx.send(Err(error));
+                        break;
+                    }
+                },
+                Err(error) => {
+                    let _ = frame_tx.send(Err(error));
+                    break;
+                }
+            }
+        }
+    });
 
     Ok(PlayerConnection {
-        reader,
-        writer,
+        frame_rx,
+        reader_task,
+        writer_tx,
+        writer_task,
+        entity_move_pushes,
         next_rpc_id: 4,
+        unit_id,
     })
 }
 
@@ -287,26 +390,25 @@ async fn run_player(
     timing: Timing,
 ) -> Result<PlayerResult> {
     let mut result = PlayerResult::default();
-    let (frame_tx, mut frame_rx) = mpsc::channel::<Result<Vec<u8>>>(options.probe_concurrency * 2);
     let PlayerConnection {
-        mut reader,
-        mut writer,
+        mut frame_rx,
+        reader_task,
+        writer_tx,
+        writer_task,
+        entity_move_pushes,
         mut next_rpc_id,
+        unit_id,
     } = player;
-    let reader_task = tokio::spawn(async move {
-        loop {
-            let frame = read_frame(&mut reader).await;
-            let failed = frame.is_err();
-            if frame_tx.send(frame).await.is_err() || failed {
-                break;
-            }
-        }
-    });
+    let pushes_at_start = entity_move_pushes.load(Ordering::Relaxed);
     let mut pending = HashMap::<u32, PendingProbe>::with_capacity(options.probe_concurrency * 2);
-    let mut sequence = 0_u32;
-    let interval =
+    let mut probe_sequence = 0_u32;
+    let mut move_sequence = 0_u32;
+    let probe_interval =
         (options.probe_rate > 0).then(|| Duration::from_secs_f64(1.0 / options.probe_rate as f64));
-    let mut next_send = Instant::now();
+    let move_interval =
+        (options.move_rate > 0).then(|| Duration::from_secs_f64(1.0 / options.move_rate as f64));
+    let mut next_probe = Instant::now();
+    let mut next_move = Instant::now();
 
     loop {
         let now = Instant::now();
@@ -314,36 +416,69 @@ async fn run_player(
             break;
         }
 
-        if now < timing.send_deadline
-            && pending.len() < options.probe_concurrency
-            && interval.is_none_or(|_| now >= next_send)
-        {
-            send_probe(
-                &mut writer,
-                &mut next_rpc_id,
-                &mut pending,
-                &mut sequence,
-                timing,
-            )
-            .await?;
-            if let Some(interval) = interval {
-                next_send += interval;
+        if now < timing.send_deadline && move_interval.is_some_and(|_| now >= next_move) {
+            let interval = move_interval.expect("checked above");
+            let mut due = 0_u64;
+            while next_move <= now {
+                next_move += interval;
+                due += 1;
+            }
+            result.move_skipped += due.saturating_sub(1);
+            move_sequence = move_sequence.wrapping_add(1).max(1);
+            send_move(&writer_tx, unit_id, move_sequence).await?;
+            if now >= timing.measurement_start {
+                result.move_sent += 1;
             }
             continue;
         }
 
-        if pending.is_empty() {
-            sleep_until(next_send.min(timing.send_deadline)).await;
+        if now < timing.send_deadline
+            && pending.len() < options.probe_concurrency
+            && probe_interval.is_some_and(|_| now >= next_probe)
+        {
+            send_probe(
+                &writer_tx,
+                &mut next_rpc_id,
+                &mut pending,
+                &mut probe_sequence,
+                timing,
+            )
+            .await?;
+            next_probe += probe_interval.expect("checked above");
             continue;
         }
 
-        let can_send_later = now < timing.send_deadline
-            && pending.len() < options.probe_concurrency
-            && interval.is_some();
+        if pending.is_empty() {
+            let wake_at = [
+                move_interval.map(|_| next_move),
+                probe_interval.map(|_| next_probe),
+                Some(timing.send_deadline),
+            ]
+            .into_iter()
+            .flatten()
+            .min()
+            .expect("send deadline is always present");
+            sleep_until(wake_at).await;
+            continue;
+        }
+
+        let can_send_later = now < timing.send_deadline;
         let frame = if can_send_later {
+            let wake_at = [
+                move_interval.map(|_| next_move),
+                (pending.len() < options.probe_concurrency)
+                    .then_some(probe_interval)
+                    .flatten()
+                    .map(|_| next_probe),
+                Some(timing.send_deadline),
+            ]
+            .into_iter()
+            .flatten()
+            .min()
+            .expect("send deadline is always present");
             tokio::select! {
                 frame = frame_rx.recv() => Some(frame.context("gate reader stopped")??),
-                _ = sleep_until(next_send) => None,
+                _ = sleep_until(wake_at) => None,
             }
         } else {
             Some(frame_rx.recv().await.context("gate reader stopped")??)
@@ -371,11 +506,30 @@ async fn run_player(
         }
     }
     reader_task.abort();
+    writer_task.abort();
+    result.entity_move_pushes = entity_move_pushes
+        .load(Ordering::Relaxed)
+        .saturating_sub(pushes_at_start);
     Ok(result)
 }
 
+async fn send_move(writer_tx: &mpsc::Sender<Vec<u8>>, unit_id: u32, sequence: u32) -> Result<()> {
+    let direction = (unit_id.wrapping_add(sequence) % 4) as i32;
+    let (input_x, input_y) = match direction {
+        0 => (1, 0),
+        1 => (0, 1),
+        2 => (-1, 0),
+        _ => (0, -1),
+    };
+    let mut payload = Vec::with_capacity(16);
+    push_sint32(&mut payload, 1, input_x);
+    push_sint32(&mut payload, 2, input_y);
+    push_uint32(&mut payload, 3, sequence);
+    send_client_frame(writer_tx, encode_message(MAP_MOVE, &payload)).await
+}
+
 async fn send_probe(
-    writer: &mut tokio::net::tcp::OwnedWriteHalf,
+    writer_tx: &mpsc::Sender<Vec<u8>>,
     next_rpc_id: &mut u32,
     pending: &mut HashMap<u32, PendingProbe>,
     sequence: &mut u32,
@@ -387,7 +541,7 @@ async fn send_probe(
     let started_at = Instant::now();
     let mut payload = Vec::with_capacity(16);
     push_uint32(&mut payload, 1, *sequence);
-    write_frame(writer, &encode_rpc(MAP_PROBE_REQ, rpc_id, &payload)?).await?;
+    send_client_frame(writer_tx, encode_rpc(MAP_PROBE_REQ, rpc_id, &payload)?).await?;
     pending.insert(
         rpc_id,
         PendingProbe {
@@ -397,6 +551,31 @@ async fn send_probe(
         },
     );
     Ok(())
+}
+
+async fn run_gate_writer(
+    mut writer: tokio::net::tcp::OwnedWriteHalf,
+    mut frame_rx: mpsc::Receiver<Vec<u8>>,
+) {
+    let mut ping = tokio::time::interval(CLIENT_PING_INTERVAL);
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ping.tick().await;
+    loop {
+        let frame = tokio::select! {
+            frame = frame_rx.recv() => {
+                let Some(frame) = frame else { break };
+                frame
+            }
+            _ = ping.tick() => encode_message(CLIENT_PING, &[]),
+        };
+        if write_frame(&mut writer, &frame).await.is_err() {
+            break;
+        }
+    }
+}
+
+async fn send_client_frame(writer_tx: &mpsc::Sender<Vec<u8>>, frame: Vec<u8>) -> Result<()> {
+    writer_tx.send(frame).await.context("gate writer stopped")
 }
 
 async fn request_one(host: &str, port: u16, frame: Vec<u8>, timeout: Duration) -> Result<Vec<u8>> {
@@ -466,12 +645,24 @@ fn encode_rpc(msgcode: u16, rpc_id: u32, fields: &[u8]) -> Result<Vec<u8>> {
     Ok(frame)
 }
 
+fn encode_message(msgcode: u16, fields: &[u8]) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(fields.len() + 2);
+    frame.extend_from_slice(&msgcode.to_be_bytes());
+    frame.extend_from_slice(fields);
+    frame
+}
+
 fn push_uint32(buffer: &mut Vec<u8>, field: u32, value: u32) {
     if value == 0 {
         return;
     }
     push_varint(buffer, u64::from(field << 3));
     push_varint(buffer, u64::from(value));
+}
+
+fn push_sint32(buffer: &mut Vec<u8>, field: u32, value: i32) {
+    let zigzag = ((value << 1) ^ (value >> 31)) as u32;
+    push_uint32(buffer, field, zigzag);
 }
 
 fn push_string(buffer: &mut Vec<u8>, field: u32, value: &str) {
@@ -640,6 +831,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         warmup: Duration::from_secs(number("warmup", 2)?),
         duration: Duration::from_secs(duration),
         timeout: Duration::from_millis(number("timeout", 60_000)?),
+        move_rate: number("move-rate", 0)?,
         probe_rate: number("probe-rate", 20)?,
         probe_concurrency,
         label: values

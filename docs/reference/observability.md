@@ -40,6 +40,15 @@ Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这�
 - `slow_disconnects`：下行队列超过限制后被断开的慢连接数。
 - `handler_ms/max_handler_ms/total_handler_ms`：EntryScene frame 处理耗时。
 
+## Transport Backend 指标
+
+`[process-metrics]` 同时输出：
+
+- `transport_read_ops/read_frames/read_bytes`：累计 Backend 接收批次、拆出的逻辑帧和网络字节；
+- `transport_write_ops/write_frames/write_bytes`：累计 Backend 发送批次、写出的逻辑帧和网络字节。
+
+用 `read_frames / read_ops` 和 `write_frames / write_ops` 可以观察 Backend 的实际批量度。这里的 `op` 不是严格的系统调用计数；`read_exact` 或 `write_all` 内部仍可能执行多次 I/O。io_uring 的价值来自一个异步批次摊销多个逻辑帧，因此不能只比较消息吞吐；还应同时比较该比值、CPU、P95/P99、错误率与背压。
+
 ## Game.Update 与定时器指标
 
 日志格式：
@@ -53,6 +62,44 @@ Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这�
 - `update_targets`：当前自动注册的 IUpdate Component 数。
 - `update_calls/update_failures`：累计 Update 调用数和异常数。
 - `timers`：当前存活游戏定时器数，可用于发现生命周期泄漏。
+
+## Map 移动广播指标
+
+MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
+
+```text
+[custom-metrics:map1] scene=map_1 type=MapHost name=map_broadcast timestamp_ms=... map_id=1 in_flight=1 pending_units=... coalesced_frames_total=...
+```
+
+移动广播采用 single-flight：同一张地图同时最多执行一个广播 Promise。广播在途期间产生的新状态进入待发区；同一个 Unit 多次更新时只保留最新帧，当前广播结束后立即发送合并后的下一批。
+
+关键字段：
+
+- `in_flight/in_flight_units`：当前是否有广播在途，以及该批包含的 Unit 数。
+- `pending_units`：当前待发区中的 Unit 数。持续增长表示下行速度低于状态产生速度。
+- `max_pending_units`：广播在途期间待发区的历史峰值，不包含能够立即发送的正常批次。
+- `max_in_flight_units`：实际广播批次包含的 Unit 数历史峰值。
+- `queued_frames_total`：进入广播调度器的原始移动帧数。
+- `coalesced_frames_total`：被同一 Unit 更新覆盖的旧帧数；这是主动丢弃过时状态，不是网络丢包。
+- `sent_frames_total`：实际进入广播批次的最新状态数。
+- `broadcasts_started_total/broadcasts_completed_total`：开始和完成的广播批次数。
+- `broadcast_failures_total`：广播 Promise 失败数；失败不会停止后续批次。
+- `last/max/total_duration_ms`：广播 Promise 从调用到完成的耗时。
+- `last/max/total_queue_wait_ms`：一批状态从进入空待发区到真正开始广播的等待时间。
+
+容量测试会把这些字段自动汇总到报告的“Map 广播 single-flight”表格。重点观察 `pending` 是否长期存在、合并率是否突然升高、`广播 max` 和 `排队 max` 是否随玩家数出现拐点。
+
+## NativeData 实验指标
+
+选择 `process.nativeData.backend=rust` 时，每 5 秒额外输出：
+
+```text
+[native-data-metrics] process=map1 scalar_gets=... scalar_sets=... batch_calls=... live_units=...
+```
+
+- `scalar_gets/scalar_sets`：TS 通过点状 op 访问 Rust Unit 数据的次数；热循环中持续偏高通常说明应改为批量 API。
+- `batch_calls`：NativeData 地图批量调用次数。
+- `live_units`：Rust Arena 中存活 Unit 数；玩家全部离开后应回到 0。
 
 ## 链路耗时
 

@@ -17,6 +17,9 @@ import {
 import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../app/generated/model/client/demo/protocol/msgcodes";
+import type { CellMovementState } from "../app/generated/model/client/demo/protocol/messages";
+
+type TimedMovementState = CellMovementState & { serverTick: number };
 
 async function main() {
   const loginAddr = await requestLoginServiceAddr("127.0.0.1", 7000);
@@ -121,38 +124,69 @@ async function verifyAuthoritativeMovement(
   gate: TcpRpcConnection,
   player: { unitId: number; x: number; y: number },
 ): Promise<void> {
-  const firstFrame = gate.waitForMessage(MsgCode.G2C_EntityMove);
   await gate.send(buildMovePacket({ inputX: 1, inputY: 0, sequence: 1 }));
-  const first = decodeEntityMoveFrame(await firstFrame).body;
+  const first = await waitForMovementSequence(gate, player.unitId, 1);
   if (
     first.unitId !== player.unitId ||
-    first.sequence !== 1 ||
-    first.x <= player.x ||
-    first.y !== player.y
+    first.acknowledgedSequence !== 1 ||
+    !first.moving ||
+    first.toCellX !== first.fromCellX + 1 ||
+    first.toCellY !== first.fromCellY
   ) {
     throw new Error(`unexpected first authoritative move: ${JSON.stringify(first)}`);
   }
 
   await sleep(60);
-  const secondFrame = gate.waitForMessage(MsgCode.G2C_EntityMove);
   await gate.send(buildMovePacket({ inputX: 1, inputY: 0, sequence: 2 }));
-  const second = decodeEntityMoveFrame(await secondFrame).body;
-  if (second.sequence !== 2 || second.x <= first.x || second.x - first.x > 20) {
+  const second = await waitForMovementSequence(gate, player.unitId, 2);
+  if (
+    second.acknowledgedSequence !== 2 ||
+    !second.moving ||
+    second.toCellX !== second.fromCellX + 1 ||
+    second.toCellY !== second.fromCellY ||
+    second.fromCellX < first.fromCellX
+  ) {
     throw new Error(`unexpected second authoritative move: ${JSON.stringify(second)}`);
   }
 
-  await gate.send(buildMovePacket({ inputX: 1, inputY: 0, sequence: 2 }));
-  let duplicateArrived = false;
-  try {
-    await gate.waitForMessage(MsgCode.G2C_EntityMove, 150);
-    duplicateArrived = true;
-  } catch (error) {
-    if (!(error instanceof Error) || !error.message.includes("timed out")) throw error;
+  await gate.send(buildMovePacket({ inputX: 0, inputY: 0, sequence: 3 }));
+  const stopped = await waitForMovementSequence(gate, player.unitId, 3);
+  if (
+    stopped.acknowledgedSequence !== 3 ||
+    (stopped.moving && stopped.toCellX !== stopped.fromCellX + 1)
+  ) {
+    throw new Error(`unexpected authoritative stop: ${JSON.stringify(stopped)}`);
   }
-  if (duplicateArrived) {
-    throw new Error("duplicate movement sequence produced a client broadcast");
+
+  // 重复序号不会改变输入；移动中的周期快照仍可能正常到达，不能用“无下行包”判断。
+  await gate.send(buildMovePacket({ inputX: 0, inputY: 0, sequence: 3 }));
+  console.log("Authoritative Cell movement:", { first, second, stopped });
+}
+
+async function waitForMovementSequence(
+  gate: TcpRpcConnection,
+  unitId: number,
+  sequence: number,
+): Promise<TimedMovementState> {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const remaining = Math.max(1, deadline - Date.now());
+    const body = decodeEntityMoveFrame(
+      await gate.waitForMessage(MsgCode.G2C_EntityMove, remaining),
+    ).body;
+    const movement = body.movements.find((candidate) => candidate.unitId === unitId);
+    if (!movement) continue;
+    // 移动中会夹杂周期权威快照，测试应等待目标输入被确认，而不是假定下一包必然对应它。
+    if (movement.acknowledgedSequence === sequence) {
+      return { ...movement, serverTick: body.serverTick };
+    }
+    if (movement.acknowledgedSequence > sequence) {
+      throw new Error(
+        `movement sequence skipped ${sequence}: ${JSON.stringify(movement)}`,
+      );
+    }
   }
-  console.log("Authoritative movement:", { first, second });
+  throw new Error(`timed out waiting for movement sequence ${sequence}`);
 }
 
 async function verifySharedMapBroadcast(
@@ -193,11 +227,16 @@ async function verifySharedMapBroadcast(
       moverFrame.then(decodeEntityMoveFrame),
       observerFrame.then(decodeEntityMoveFrame),
     ]);
+    const moverState = moverPush.body.movements.find(
+      (movement) => movement.unitId === mover.enterMap.unitId,
+    );
+    const observerState = observerPush.body.movements.find(
+      (movement) => movement.unitId === mover.enterMap.unitId,
+    );
     if (
-      moverPush.body.unitId !== mover.enterMap.unitId ||
-      observerPush.body.unitId !== mover.enterMap.unitId ||
-      moverPush.body.x !== observerPush.body.x ||
-      moverPush.body.y !== observerPush.body.y
+      !moverState ||
+      !observerState ||
+      JSON.stringify(moverState) !== JSON.stringify(observerState)
     ) {
       throw new Error(
         `shared map broadcast mismatch: ${JSON.stringify({ moverPush, observerPush })}`,
@@ -206,7 +245,7 @@ async function verifySharedMapBroadcast(
     console.log("Shared map movement broadcast:", {
       moverUnitId: mover.enterMap.unitId,
       observerUnitId: observer.enterMap.unitId,
-      position: { x: observerPush.body.x, y: observerPush.body.y },
+      movement: observerState,
     });
 
     const leaveFrame = mover.gate.waitForMessage(MsgCode.G2C_EntityLeave);

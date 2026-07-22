@@ -2,4 +2,4 @@
 import "../../demo/mapHost/handlers/C2M_MapProbeHandler";
 import "../../demo/mapHost/handlers/C2M_MoveHandler";
 import "../../demo/mapHost/handlers/G2M_EnterMapHandler";
-import "../../demo/mapHost/handlers/G2M_LeaveMapHandler";
+import "../../demo/mapHost/handlers/G2M_PlayerDisconnectHandler";

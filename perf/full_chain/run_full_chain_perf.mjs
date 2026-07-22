@@ -240,7 +240,7 @@ function renderMarkdown(report) {
     "- `push/s` 是所有客户端实际收到的 EntityMove 数；当前仍为同地图全量可见，尚未启用 AOI。",
     "- Server CPU/RSS/GC 来自各 Runtime 的 `[process-metrics]`；split 模式按进程汇总。",
     "- Load CPU/RSS/GC 只代表压测客户端，独立压测机模式用于排除它与服务端争抢资源。",
-    "- MapHost 按 Gate 聚合移动广播；一次跨进程 `M2G_EntityMove` 可携带多个目标 Unit。",
+    "- MapHost 发布 latest 移动状态；BroadcastHub 通过通用 `S2G_ClientBroadcast` 按 UnitId 聚合下行。",
     "",
   );
   return lines.join("\n");
