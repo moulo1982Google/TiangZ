@@ -51,9 +51,11 @@ app/generated/model/native/NativeOps.ts
 app/generated/model/native/NativeItemRef.ts
 ```
 
-扫描到的源码先交给 `@tiangz/native-language-core` 解析和校验。语法错误会包含文件、行号、列号和稳定的诊断编号；生成器本身不再使用正则解释 `.native` 语法。对应的 VS Code 扩展与语言核心位于 [tiangz-native-language](https://gitee.com/eblard_admin/tiangz-native-language)。
+扫描到的源码先交给 `@tiangz/native-language-core` 解析和校验，再由 `@tiangz/native-language-core/codegen` 生成内存中的 Rust/TS 文件。语法错误会包含文件、行号、列号和稳定的诊断编号；TiangZ 内的脚本只负责输出路径校验、落盘和 `rustfmt`。对应的 VS Code 扩展、语言核心与生成核心位于 [tiangz-native-language](https://gitee.com/eblard_admin/tiangz-native-language)。
 
 不要手工编辑 Generated 文件。
+
+生成器与 VS Code Hover 共用 Entity API 投影，因此继承字段顺序、字段编号以及 `@component` 的生命周期说明应始终一致。升级依赖 Tag 后，应先运行 codegen，并确认已有 Generated 文件没有非预期变化。
 
 ## 使用普通 Handle
 

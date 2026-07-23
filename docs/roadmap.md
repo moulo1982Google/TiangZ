@@ -133,7 +133,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - `.native` codegen 已生成 TS 数值属性与 Rust `op2(fast)` 标量访问器；Rust 后端的 TS Component 只持有 generation handle，不保留字段镜像，允许开发人员直接写 `native.x += 1`。
 - `.native` 已泛化为多文件 Entity schema：显式 `@typeId`、抽象继承、默认值、普通 handle 与 `@component` handle 共用通用 Arena/Host op；Item 作为第二种实体通过生成与生命周期回归。
 - Native op ABI 已纳入 `.native` codegen：自动生成 Rust Extension、Host bootstrap 和 TS `NativeOps` facade，业务不再维护 `__demoXxx` 全局桥或 `>>> 0` 参数截断。
-- `.native` 语言已拆为独立仓库并升级到 `v0.9.0`；TiangZ codegen 与 VS Code 语言工具共用 Lexer、Parser、AST、Validator 和 Rust/TS 命名投影，生成器中的正则解析、重复校验及本地命名函数已移除。升级后 Native codegen 生成文件零漂移，Actor 自测与 Rust NativeData 测试通过。
+- `.native` 工具链已升级到 `v0.10.0`；独立仓库同时提供 language-core 与无文件系统依赖的 codegen-core。TiangZ 和 VS Code 语言工具共用 Lexer、Parser、AST、Validator、Entity API 投影及 Rust/TS 生成模板；主工程生成器已缩减为扫描、路径校验、落盘和 `rustfmt`。升级后 Native codegen 生成文件零漂移，Actor 自测与 Rust NativeData 测试通过。
 - `.native` VS Code 插件当前仅通过本地 VSIX 供项目内部使用；Marketplace、公开 CI 和 `1.0.0` 发布计划暂停，不作为后续 MMORPG 业务 Phase 的前置条件。
 - 标量访问阈值只用于可观测性提醒，不作为框架策略；NativeData 调用链固定为 TS -> fast op -> Rust Arena，禁止 Rust 回调 TS 获取权威实体数据。
 - 增加 `scalar_gets/scalar_sets/batch_calls/live_units` 指标，地图容量报告固定采集该组指标。
