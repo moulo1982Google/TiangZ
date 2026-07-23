@@ -69,6 +69,17 @@ await this.broadcast.Publish(
 
 Audience 与广播语义互相独立。同一个技能事件可以发给地图 AOI、队伍或公会；同一批收件人也可以同时接收 event 和 latest。不要把“谁能看到”写进 BroadcastHub。
 
+## 新增客户端 Push Handler
+
+1. 在 proto 定义服务端 Push，并运行 `npm run codegen` 生成 Message Descriptor。
+2. 在客户端 `Demo/<domain>/Handlers/XxxHandler.ts` 创建独立 Handler。
+3. 使用 `@clientMessageHandler(DomainMessageScope, ClientMessages.Xxx)` 声明作用域和消息。
+4. Handler 调用领域 Context 的明确方法，不在 Handler 中创建 Cocos Node 或保存长生命周期状态。
+5. 再次运行 `npm run codegen`，生成的 `Generated/Hotfix/handlers.ts` 会自动导入 Handler。
+6. 领域进入时创建 `ClientMessageDispatcher`，退出时调用 `dispose()`。
+
+`RpcSocket.on` 保留为 SDK 底层能力，不作为大型业务的默认组织方式。SDK Core、Generated 协议和 Demo Handler 分层不能互相倒置：Core 不得导入 Cocos 或 Demo，Generated 不写业务逻辑。
+
 ## 选择 mailbox
 
 - 共享强一致状态：ordered EntryScene/Actor。

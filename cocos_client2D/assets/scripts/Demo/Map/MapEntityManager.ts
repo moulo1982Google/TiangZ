@@ -1,7 +1,11 @@
-import { Color, Node } from "cc";
+import { Color, Label, Node } from "cc";
 import type { RpcSocket } from "../../Core/Net/RpcSocket";
-import { ClientMessages, MapMessages } from "../../Generated/Model/demo/protocol/messageDescriptors";
-import type { MapEntitySnapshot } from "../../Generated/Model/demo/protocol/messages";
+import { MapMessages } from "../../Generated/Model/demo/protocol/messageDescriptors";
+import type {
+  G2C_EntityMove,
+  MapEntitySnapshot,
+  UnitNumericSnapshot,
+} from "../../Generated/Model/demo/protocol/messages";
 import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
 import {
@@ -28,7 +32,8 @@ export class MapEntityManager {
   private static readonly VIEWPORT_HEIGHT = 560;
   private local?: LocalEntityVisual;
   private readonly remotes = new Map<number, RemoteEntityVisual>();
-  private readonly unsubscribers: Array<() => void>;
+  private readonly numericLabels = new Map<number, Label>();
+  private readonly numericSnapshots = new Map<number, UnitNumericSnapshot>();
 
   constructor(
     private readonly ui: DemoUi,
@@ -39,25 +44,34 @@ export class MapEntityManager {
     snapshots: readonly MapEntitySnapshot[],
   ) {
     for (const snapshot of snapshots) this.upsert(snapshot);
-    this.unsubscribers = [
-      socket.on(ClientMessages.EntityEnter, (message) => this.upsert(message.entity)),
-      socket.on(ClientMessages.EntityMove, (message) => {
-        for (const movement of message.movements) {
-          const state = { ...movement, serverTick: message.serverTick };
-          if (movement.unitId === this.localUnitId) {
-            this.local?.movement.reconcile(state);
-            continue;
-          }
-          const remote = this.remotes.get(movement.unitId);
-          if (remote) {
-            remote.movement.applyState(state);
-          } else {
-            console.warn(`收到未知 Unit ${movement.unitId} 的移动消息`);
-          }
-        }
-      }),
-      socket.on(ClientMessages.EntityLeave, (message) => this.remove(message.unitId)),
-    ];
+  }
+
+  enter(snapshot: MapEntitySnapshot): void {
+    this.upsert(snapshot);
+  }
+
+  applyMovement(message: G2C_EntityMove): void {
+    for (const movement of message.movements) {
+      const state = { ...movement, serverTick: message.serverTick };
+      if (movement.unitId === this.localUnitId) {
+        this.local?.movement.reconcile(state);
+        continue;
+      }
+      const remote = this.remotes.get(movement.unitId);
+      if (remote) {
+        remote.movement.applyState(state);
+      } else {
+        console.warn(`收到未知 Unit ${movement.unitId} 的移动消息`);
+      }
+    }
+  }
+
+  applyNumerics(snapshots: readonly UnitNumericSnapshot[]): void {
+    for (const snapshot of snapshots) this.applyNumeric(snapshot);
+  }
+
+  leave(unitId: number): void {
+    this.remove(unitId);
   }
 
   update(deltaTime: number, localIntent: MoveIntent): void {
@@ -74,11 +88,12 @@ export class MapEntityManager {
   }
 
   dispose(): void {
-    for (const unsubscribe of this.unsubscribers) unsubscribe();
     this.local?.node.destroy();
     this.local = undefined;
     for (const remote of this.remotes.values()) remote.node.destroy();
     this.remotes.clear();
+    this.numericLabels.clear();
+    this.numericSnapshots.clear();
   }
 
   private upsert(snapshot: MapEntitySnapshot): void {
@@ -96,6 +111,8 @@ export class MapEntityManager {
 
     const local = snapshot.unitId === this.localUnitId;
     const node = this.createUnitNode(snapshot, local);
+    const numeric = this.numericSnapshots.get(snapshot.unitId);
+    if (numeric) this.applyNumeric(numeric);
     if (local) {
       this.local = {
         node,
@@ -146,7 +163,22 @@ export class MapEntityManager {
       new Color(238, 246, 244, 255),
       node,
     );
+    const hpLabel = this.ui.createLabel(
+      "HP --/--",
+      0,
+      -30,
+      12,
+      new Color(132, 238, 148, 255),
+      node,
+    );
+    this.numericLabels.set(snapshot.unitId, hpLabel);
     return node;
+  }
+
+  private applyNumeric(snapshot: UnitNumericSnapshot): void {
+    this.numericSnapshots.set(snapshot.unitId, snapshot);
+    const label = this.numericLabels.get(snapshot.unitId);
+    if (label) label.string = `HP ${snapshot.currentHp}/${snapshot.maxHp}`;
   }
 
   private followLocalPlayer(x: number, y: number): void {
@@ -161,6 +193,8 @@ export class MapEntityManager {
   }
 
   private remove(unitId: number): void {
+    this.numericLabels.delete(unitId);
+    this.numericSnapshots.delete(unitId);
     if (unitId === this.localUnitId) {
       this.local?.node.destroy();
       this.local = undefined;

@@ -1,0 +1,10 @@
+namespace native;
+
+op EntityCreate(entityType: u32, values: f64[]): u32;
+op EntityDestroy(handle: u32): void;
+op EntityGetNumber(handle: u32, field: u32): f64;
+op EntitySetNumber(handle: u32, field: u32, value: f64): void;
+op UnitSetMovementInput(handle: u32, inputX: i8, inputY: i8, sequence: u32): bool;
+op UnitResetMovement(handle: u32): void;
+op MapUpdateMovement(mapId: u32, serverTick: u32, fixedUpdateMs: u32, messageCode: u32): bytes;
+op DataTakeMetrics(): bytes;

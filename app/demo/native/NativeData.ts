@@ -1,3 +1,5 @@
+import { NativeOps } from "../../generated/model/native/NativeOps";
+
 export interface NativeDataConfig {
   debugScalarAccess?: boolean;
   scalarAccessWarnThreshold?: number;
@@ -22,23 +24,6 @@ export interface NativeMovementBroadcast {
   readonly itemCount: number;
   readonly frame: Uint8Array;
 }
-
-const host = globalThis as typeof globalThis & {
-  __demoUnitSetMovementInput: (
-    handle: number,
-    inputX: number,
-    inputY: number,
-    sequence: number,
-  ) => boolean;
-  __demoUnitResetMovement: (handle: number) => void;
-  __demoMapUpdateMovement: (
-    mapId: number,
-    serverTick: number,
-    fixedUpdateMs: number,
-    messageCode: number,
-  ) => Uint8Array;
-  __nativeDataTakeMetrics: () => Uint8Array;
-};
 
 export class NativeData {
   private static debugScalarAccess = false;
@@ -76,11 +61,11 @@ export class NativeData {
     inputY: number,
     sequence: number,
   ): boolean {
-    return host.__demoUnitSetMovementInput(handle, inputX, inputY, sequence);
+    return NativeOps.UnitSetMovementInput(handle, inputX, inputY, sequence);
   }
 
   static ResetMovement(handle: number): void {
-    host.__demoUnitResetMovement(handle);
+    NativeOps.UnitResetMovement(handle);
   }
 
   static UpdateMapMovement(
@@ -89,7 +74,7 @@ export class NativeData {
     fixedUpdateMs: number,
     messageCode: number,
   ): NativeMovementBroadcast {
-    const bytes = host.__demoMapUpdateMovement(
+    const bytes = NativeOps.MapUpdateMovement(
       mapId,
       serverTick,
       fixedUpdateMs,
@@ -101,14 +86,15 @@ export class NativeData {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const itemCount = view.getUint32(0, true);
     const frame = bytes.subarray(4);
-    if (frame[0] !== ((messageCode >>> 8) & 0xff) || frame[1] !== (messageCode & 0xff)) {
+    const encodedMessageCode = frame[0] * 0x100 + frame[1];
+    if (encodedMessageCode !== messageCode) {
       throw new Error("native movement broadcast has an unexpected message code");
     }
     return { itemCount, frame };
   }
 
   static TakeMetrics(): NativeDataMetrics {
-    const bytes = host.__nativeDataTakeMetrics();
+    const bytes = NativeOps.DataTakeMetrics();
     if (bytes.length !== 56) {
       throw new Error(`invalid native metrics length: ${bytes.length}`);
     }

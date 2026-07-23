@@ -9,6 +9,7 @@ import { ClientBroadcasts } from "../app/generated/model/server/demo/protocol/br
 import {
   G2C_EntityLeaveCodec,
   G2C_EntityMoveCodec,
+  G2C_EntityNumericCodec,
   type CellMovementState,
 } from "../app/generated/model/server/demo/protocol/messages";
 import { MsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
@@ -40,9 +41,47 @@ const audience: BroadcastAudience = {
 
 async function main(): Promise<void> {
   await testLatestSingleFlight();
+  await testNumericLatestCoverage();
   await testEncodedLatestSnapshot();
   await testEventOrderingAndCapacity();
   console.log("broadcast framework self-test passed");
+}
+
+async function testNumericLatestCoverage(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+
+  const first = hub.Publish(
+    audience,
+    ClientBroadcasts.EntityNumeric,
+    { unitId: 1, currentHp: 100, maxHp: 1000 },
+    1,
+  );
+  const replaced = hub.Publish(
+    audience,
+    ClientBroadcasts.EntityNumeric,
+    { unitId: 1, currentHp: 101, maxHp: 1000 },
+    2,
+  );
+  const latest = hub.Publish(
+    audience,
+    ClientBroadcasts.EntityNumeric,
+    { unitId: 1, currentHp: 102, maxHp: 1000 },
+    3,
+  );
+
+  assert.equal(transport.sends.length, 1);
+  transport.sends[0].resolve();
+  await settlePromises();
+  assert.equal(transport.sends.length, 2);
+  const body = decodeNumeric(transport.sends[1].frame);
+  assert.equal(body.serverTick, 3);
+  assert.deepEqual(body.numerics, [
+    { unitId: 1, currentHp: 102, maxHp: 1000 },
+  ]);
+  transport.sends[1].resolve();
+  await Promise.all([first, replaced, latest]);
+  assert.equal(hub.Snapshot().coalescedItems, 1);
 }
 
 async function testEncodedLatestSnapshot(): Promise<void> {
@@ -181,6 +220,11 @@ function decodeMovement(frame: Uint8Array) {
 function decodeLeave(frame: Uint8Array) {
   assert.equal(readU16BE(frame, 0), MsgCode.G2C_EntityLeave);
   return G2C_EntityLeaveCodec.decode(frame.subarray(2));
+}
+
+function decodeNumeric(frame: Uint8Array) {
+  assert.equal(readU16BE(frame, 0), MsgCode.G2C_EntityNumeric);
+  return G2C_EntityNumericCodec.decode(frame.subarray(2));
 }
 
 function movement(unitId: number, sequence: number): CellMovementState {

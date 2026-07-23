@@ -13,6 +13,7 @@ import type {
   G2M_EnterMap,
   G2M_PlayerDisconnect,
   MapEntitySnapshot,
+  UnitNumericSnapshot,
 } from "../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
@@ -21,6 +22,7 @@ import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import { NativeData } from "../native/NativeData";
+import { NumericComponent } from "../numeric/NumericComponent";
 
 @component()
 export class MapComponent extends Component<[
@@ -55,20 +57,33 @@ export class MapComponent extends Component<[
     if (this.units.Count === 0) return;
     const fixedDeltaMs = TimeSystem.Instance.FixedDeltaTime;
     this.serverTick += 1;
-    const descriptor = ClientBroadcasts.EntityMove;
+    const moveDescriptor = ClientBroadcasts.EntityMove;
     const encoded = NativeData.UpdateMapMovement(
       this.mapId,
       this.serverTick,
       fixedDeltaMs,
-      descriptor.message.msgcode,
+      moveDescriptor.message.msgcode,
     );
-    if (encoded.itemCount === 0) return;
-    void this.broadcast.PublishEncodedLatestSnapshot(
-      this.BroadcastAudience(),
-      descriptor.name,
-      encoded.frame,
-      encoded.itemCount,
-    ).catch(() => undefined);
+    const numerics = this.CollectChangedNumerics();
+    if (encoded.itemCount === 0 && numerics.length === 0) return;
+
+    const audience = this.BroadcastAudience();
+    if (encoded.itemCount > 0) {
+      void this.broadcast.PublishEncodedLatestSnapshot(
+        audience,
+        moveDescriptor.name,
+        encoded.frame,
+        encoded.itemCount,
+      ).catch(() => undefined);
+    }
+    if (numerics.length > 0) {
+      void this.broadcast.PublishMany(
+        audience,
+        ClientBroadcasts.EntityNumeric,
+        numerics,
+        this.serverTick,
+      ).catch(() => undefined);
+    }
   }
 
   CreatePlayer(unitId: number, request: G2M_EnterMap): PlayerUnit {
@@ -87,6 +102,7 @@ export class MapComponent extends Component<[
         y: 0,
       });
       player.AddComponent(PositionComponent, native);
+      player.AddComponent(NumericComponent);
       player.AddComponent(
         UnitGateComponent,
         request.gateName,
@@ -182,6 +198,15 @@ export class MapComponent extends Component<[
 
   private PlayerSnapshots(): PlayerSnapshot[] {
     return this.units.GetAll(PlayerUnit).map((unit) => unit.Snapshot());
+  }
+
+  private CollectChangedNumerics(): UnitNumericSnapshot[] {
+    const snapshots: UnitNumericSnapshot[] = [];
+    for (const unit of this.units.GetAll(PlayerUnit)) {
+      const snapshot = unit.GetComponent(NumericComponent).TakeChangedSnapshot();
+      if (snapshot) snapshots.push(snapshot);
+    }
+    return snapshots;
   }
 
   protected override OnDestroy(): void {

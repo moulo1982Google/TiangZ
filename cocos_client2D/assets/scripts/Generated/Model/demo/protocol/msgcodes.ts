@@ -15,9 +15,10 @@ export const OuterMessage = {
   C2M_MapProbe: 10014,
   M2C_MapProbe: 10015,
   G2C_EntityMove: 10016,
-  G2C_EntityEnter: 10017,
-  G2C_EntityLeave: 10018,
-  C2G_Ping: 10019,
+  G2C_EntityNumeric: 10017,
+  G2C_EntityEnter: 10018,
+  G2C_EntityLeave: 10019,
+  C2G_Ping: 10020,
 } as const;
 
 export const MsgCode = {

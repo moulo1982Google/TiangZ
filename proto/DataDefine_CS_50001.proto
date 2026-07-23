@@ -34,3 +34,10 @@ message CellMovementState
   uint32 move_end_tick = 8;
   bool moving = 9;
 }
+
+message UnitNumericSnapshot
+{
+  uint32 unit_id = 1;
+  sint32 current_hp = 2;
+  sint32 max_hp = 3;
+}

@@ -4,6 +4,8 @@ import {
   Component,
   MailBoxComponent,
   ProcessHost,
+  InitializeGameSingletons,
+  SingletonRegistry,
   UnitComponent,
   actor,
   component,
@@ -19,6 +21,10 @@ import { PositionComponent } from "../app/demo/map/PositionComponent";
 import { UnitGateComponent } from "../app/demo/map/UnitGateComponent";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { NativeItemRef } from "../app/generated/model/native/NativeItemRef";
+import { NativeNumericRef } from "../app/generated/model/native/NativeNumericRef";
+import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
+import { NumericComponent } from "../app/demo/numeric/NumericComponent";
+import { NumericType } from "../app/demo/numeric/NumericType";
 import { BinaryWriter } from "../app/core/protocol/binary";
 import { packFrame } from "../app/core/protocol/registry";
 import {
@@ -31,13 +37,18 @@ import {
 void main();
 
 async function main(): Promise<void> {
-  await Promise.resolve();
-  testGeneratedNativeHandleScalarAccess();
-  await testPlayerUnitComponents();
-  await testComponentContainer();
-  await testOrderedActorMailbox();
-  testRpcIdRewrite();
-  console.log("actor self-test passed");
+  InitializeGameSingletons({ fixedUpdateMs: 50, maxCatchUpSteps: 2 });
+  try {
+    await Promise.resolve();
+    testGeneratedNativeHandleScalarAccess();
+    await testPlayerUnitComponents();
+    await testComponentContainer();
+    await testOrderedActorMailbox();
+    testRpcIdRewrite();
+    console.log("actor self-test passed");
+  } finally {
+    SingletonRegistry.DestroyAll();
+  }
 }
 
 function testGeneratedNativeHandleScalarAccess(): void {
@@ -46,52 +57,45 @@ function testGeneratedNativeHandleScalarAccess(): void {
   let nextHandle = 7;
   const valuesByHandle = new Map<number, Float64Array>();
   const typesByHandle = new Map<number, number>();
-  const nativeHost = globalThis as typeof globalThis & {
-    __nativeEntityCreate: (entityType: number, values: Float64Array) => number;
-    __nativeEntityGetNumber: (handle: number, field: number) => number;
-    __nativeEntitySetNumber: (handle: number, field: number, value: number) => void;
-    __nativeEntityDestroy: (handle: number) => void;
-    __demoUnitSetMovementInput: (
-      handle: number,
-      inputX: number,
-      inputY: number,
-      sequence: number,
-    ) => boolean;
-    __demoUnitResetMovement: (handle: number) => void;
-  };
-  nativeHost.__nativeEntityCreate = (entityType, values) => {
-    const handle = nextHandle++;
-    valuesByHandle.set(handle, values.slice());
-    typesByHandle.set(handle, entityType);
-    return handle;
-  };
-  nativeHost.__nativeEntityGetNumber = (handle, field) => {
-    gets += 1;
-    return valuesByHandle.get(handle)![field - 1];
-  };
-  nativeHost.__nativeEntitySetNumber = (handle, field, value) => {
-    sets += 1;
-    valuesByHandle.get(handle)![field - 1] = value;
-  };
-  nativeHost.__nativeEntityDestroy = (handle) => {
-    valuesByHandle.delete(handle);
-    typesByHandle.delete(handle);
-  };
-  nativeHost.__demoUnitSetMovementInput = (handle, inputX, inputY, sequence) => {
-    const values = valuesByHandle.get(handle)!;
-    if (sequence <= values[16]) return false;
-    values[13] = inputX;
-    values[14] = inputY;
-    values[15] = 1;
-    values[16] = sequence;
-    return true;
-  };
-  nativeHost.__demoUnitResetMovement = (handle) => {
-    const values = valuesByHandle.get(handle)!;
-    values[13] = 0;
-    values[14] = 0;
-    values[15] = 0;
-    values[16] = 0;
+  (globalThis as typeof globalThis & {
+    __etsNativeOps?: NativeHostOpsApi;
+  }).__etsNativeOps = {
+    entityCreate: (entityType, values) => {
+      const handle = nextHandle++;
+      valuesByHandle.set(handle, values.slice());
+      typesByHandle.set(handle, entityType);
+      return handle;
+    },
+    entityGetNumber: (handle, field) => {
+      gets += 1;
+      return valuesByHandle.get(handle)![field - 1];
+    },
+    entitySetNumber: (handle, field, value) => {
+      sets += 1;
+      valuesByHandle.get(handle)![field - 1] = value;
+    },
+    entityDestroy: (handle) => {
+      valuesByHandle.delete(handle);
+      typesByHandle.delete(handle);
+    },
+    unitSetMovementInput: (handle, inputX, inputY, sequence) => {
+      const values = valuesByHandle.get(handle)!;
+      if (sequence <= values[16]) return false;
+      values[13] = inputX;
+      values[14] = inputY;
+      values[15] = 1;
+      values[16] = sequence;
+      return true;
+    },
+    unitResetMovement: (handle) => {
+      const values = valuesByHandle.get(handle)!;
+      values[13] = 0;
+      values[14] = 0;
+      values[15] = 0;
+      values[16] = 0;
+    },
+    mapUpdateMovement: () => new Uint8Array(0),
+    dataTakeMetrics: () => new Uint8Array(56),
   };
 
   const host = new ProcessHost("native-handle-self-test");
@@ -110,16 +114,24 @@ function testGeneratedNativeHandleScalarAccess(): void {
     configId: 3001,
     count: 2,
   });
+  const numeric = NativeNumericRef.Create({
+    id: 100,
+    instanceId: 102,
+  });
   unit.x += 1;
   item.count += 2;
+  numeric.currentHp += 3;
 
   assert.equal(typesByHandle.get(unit.Handle), 1);
   assert.equal(typesByHandle.get(item.Handle), 2);
+  assert.equal(typesByHandle.get(numeric.Handle), 3);
   assert.equal(valuesByHandle.get(unit.Handle)![3], 13);
   assert.equal(valuesByHandle.get(item.Handle)![3], 4);
-  assert.equal(gets, 2);
-  assert.equal(sets, 2);
+  assert.equal(valuesByHandle.get(numeric.Handle)![2], 103);
+  assert.equal(gets, 3);
+  assert.equal(sets, 3);
   item.Dispose();
+  numeric.Dispose();
   assert.equal(host.despawnActor("map:1", "native-probe"), true);
   assert.equal(valuesByHandle.size, 0);
 }
@@ -259,6 +271,7 @@ async function testPlayerUnitComponents(): Promise<void> {
     targetCellY: -1,
   });
   player.AddComponent(PositionComponent, native);
+  const numeric = player.AddComponent(NumericComponent);
   player.AddComponent(UnitGateComponent, "gate-1", "session-1");
   const actor = host.localActorRef("map:1", 1000);
   const firstInstanceId = actor.instanceId;
@@ -270,6 +283,20 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(player.DomainScene(), map);
   assert.equal(host.Root.Get(actor.instanceId), player);
   assert.equal(player.GetComponent(MailBoxComponent).MailboxType, "ordered");
+  assert.equal(player.GetComponent(NumericComponent), numeric);
+  assert.equal(numeric[NumericType.CurrentHp], 100);
+  assert.deepEqual(numeric.TakeChangedSnapshot(), {
+    unitId: 1000,
+    currentHp: 100,
+    maxHp: 1000,
+  });
+  numeric[NumericType.CurrentHp] += 1;
+  assert.deepEqual(numeric.TakeChangedSnapshot(), {
+    unitId: 1000,
+    currentHp: 101,
+    maxHp: 1000,
+  });
+  assert.equal(numeric.TakeChangedSnapshot(), undefined);
 
   const initialized = await host.call<PlayerSnapshot>(
     undefined,
@@ -361,6 +388,7 @@ async function testPlayerUnitComponents(): Promise<void> {
     mapId: 1,
   });
   recreated.AddComponent(PositionComponent, recreatedNative);
+  recreated.AddComponent(NumericComponent);
   recreated.AddComponent(UnitGateComponent, "gate-2", "session-2");
   assert.notEqual(recreated.InstanceId, firstInstanceId);
   assert.equal(host.despawnActor("map:1", 1000), true);

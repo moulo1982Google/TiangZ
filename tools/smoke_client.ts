@@ -9,6 +9,7 @@ import {
   decodeEntityEnterFrame,
   decodeEntityLeaveFrame,
   decodeEnterMapFrame,
+  decodeEntityNumericFrame,
   decodeGetLoginServiceAddrFrame,
   decodeLoginGateFrame,
   decodeLoginFrame,
@@ -113,11 +114,43 @@ async function verifyGateSessionLifecycle(
       reboundUnitId: first.enterMap.unitId,
       recreatedUnitId: afterDisconnect.enterMap.unitId,
     });
+    await verifyNumericTimer(afterDisconnect.gate, afterDisconnect.enterMap.unitId);
     await verifyAuthoritativeMovement(afterDisconnect.gate, afterDisconnect.enterMap);
     return afterDisconnect.enterMap;
   } finally {
     await afterDisconnect.gate.close();
   }
+}
+
+async function verifyNumericTimer(
+  gate: TcpRpcConnection,
+  unitId: number,
+): Promise<void> {
+  let previous: number | undefined;
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const frame = await gate.waitForMessage(
+      MsgCode.G2C_EntityNumeric,
+      Math.max(1, deadline - Date.now()),
+    );
+    const body = decodeEntityNumericFrame(frame).body;
+    const numeric = body.numerics.find((candidate) => candidate.unitId === unitId);
+    if (!numeric) continue;
+    if (numeric.maxHp !== 1000) {
+      throw new Error(`unexpected MaxHp: ${JSON.stringify(numeric)}`);
+    }
+    if (previous !== undefined && numeric.currentHp > previous) {
+      console.log("Numeric timer broadcast:", {
+        unitId,
+        previousHp: previous,
+        currentHp: numeric.currentHp,
+        serverTick: body.serverTick,
+      });
+      return;
+    }
+    previous = numeric.currentHp;
+  }
+  throw new Error(`timed out waiting for Numeric CurrentHp growth: unit ${unitId}`);
 }
 
 async function verifyAuthoritativeMovement(

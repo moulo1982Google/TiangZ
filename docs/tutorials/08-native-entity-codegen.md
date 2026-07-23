@@ -6,7 +6,7 @@ Native Entity 用于把跨帧权威状态放在 Rust。TS 只保存 generation h
 
 ```text
 TS NativeItemRef.count
-  -> NativeEntityBridge.GetNumber(handle, fieldId)
+  -> generated NativeOps.EntityGetNumber(handle, fieldId)
   -> Rust NativeEntityStore
   -> NativeEntityData::Item(ItemData)
 ```
@@ -45,6 +45,9 @@ npm run codegen:native-data
 
 ```text
 src/generated/native_data.rs
+src/generated/native_ops.rs
+src/generated/native_ops_bootstrap.js
+app/generated/model/native/NativeOps.ts
 app/generated/model/native/NativeItemRef.ts
 ```
 
@@ -100,7 +103,7 @@ PlayerUnit 销毁时 Component 自动释放 Rust handle。不要给 Bag Item 使
 
 ## 通用与业务专用能力
 
-所有实体共用以下 Core Host op，新增 Item 不需要修改 `host.rs`：
+所有实体共用以下 Host op，新增 Item 不需要修改 `host.rs`：
 
 ```text
 native_entity_create
@@ -110,6 +113,24 @@ native_entity_set_number
 ```
 
 Unit 的 `NativeData.SetMovementInput/UpdateMapMovement/protobuf snapshot` 是地图业务的批处理投影，不属于通用 Entity CRUD。新增 Item 不会自动获得移动能力；需要高性能批量背包操作时，应另外设计 `UseItems/LoadBagSnapshot` 这样的粗粒度 Rust API。
+
+## 新增粗粒度 Native op
+
+Native op 的 ABI 统一声明在 `native_data/NativeOps.native`：
+
+```text
+op UnitSetMovementInput(handle: u32, inputX: i8, inputY: i8, sequence: u32): bool;
+op MapUpdateMovement(mapId: u32, serverTick: u32, fixedUpdateMs: u32, messageCode: u32): bytes;
+```
+
+新增 op 的流程是：
+
+1. 在 `NativeOps.native` 声明参数和返回类型。
+2. 在 Rust 实现约定名称，例如 `MapUpdateMovement` 对应 `op_native_map_update_movement`。
+3. 执行 `npm run codegen:native-data`。
+4. TS 通过生成的 `NativeOps.MapUpdateMovement(...)` 调用。
+
+生成器负责 Rust Extension 注册、Host bootstrap、`u32/i32/i8` 范围校验、buffer 类型校验和 TS facade。不要在 `host.rs` 手写 `globalThis.__demoXxx`，也不要用 `value >>> 0` 把无效参数静默截断成 uint32。
 
 ## 验证
 

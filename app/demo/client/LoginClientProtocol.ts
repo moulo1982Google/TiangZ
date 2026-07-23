@@ -27,6 +27,8 @@ import {
   G2C_EntityEnterCodec,
   G2C_EntityLeave,
   G2C_EntityLeaveCodec,
+  G2C_EntityNumeric,
+  G2C_EntityNumericCodec,
   S2C_GetLoginServiceAddr,
   S2C_GetLoginServiceAddrCodec,
   S2C_Login,
@@ -219,5 +221,19 @@ export function decodeEntityLeaveFrame(
     msgcode,
     rpcId: undefined,
     body: G2C_EntityLeaveCodec.decode(frame.subarray(2)),
+  };
+}
+
+export function decodeEntityNumericFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_EntityNumeric> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_EntityNumeric) {
+    throw new Error(`expected G2C_EntityNumeric, got ${msgcode}`);
+  }
+  return {
+    msgcode,
+    rpcId: undefined,
+    body: G2C_EntityNumericCodec.decode(frame.subarray(2)),
   };
 }

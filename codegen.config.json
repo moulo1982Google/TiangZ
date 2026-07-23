@@ -10,5 +10,10 @@
     "binaryRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Binary.ts",
     "messageRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Message.ts",
     "rpcRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Rpc.ts"
+  },
+  "clientHotfix": {
+    "enabled": true,
+    "handlerSearchRoots": ["cocos_client2D/assets/scripts"],
+    "handlerOutput": "cocos_client2D/assets/scripts/Generated/Hotfix/handlers.ts"
   }
 }

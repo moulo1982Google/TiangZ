@@ -10,6 +10,7 @@
 6. [调试、测试与部署](tutorials/06-debug-test-and-deploy.md)
 7. [客户端传输协议与 Cocos Native](tutorials/07-client-transport-and-native.md)
 8. [Rust Entity 与 TS Handle 代码生成](tutorials/08-native-entity-codegen.md)
+9. [NumericComponent、定时器与状态广播](tutorials/09-numeric-component-and-broadcast.md)
 
 ## 开发参考
 

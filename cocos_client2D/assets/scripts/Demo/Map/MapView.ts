@@ -6,6 +6,8 @@ import {
   worldToCell,
 } from "./Movement/CellMovement";
 import type { RpcSocket } from "../../Core/Net/RpcSocket";
+import { ClientMessageDispatcher } from "../../Core/Net/ClientMessageDispatcher";
+import "../../Generated/Hotfix/handlers";
 import type {
   G2C_EnterMap,
   G2C_MapReady,
@@ -14,6 +16,7 @@ import type {
 import { LocalPlayerController } from "./LocalPlayerController";
 import { MapController } from "./MapController";
 import { MapEntityManager } from "./MapEntityManager";
+import { MapMessageScope } from "./MapMessageScope";
 import { DemoUi } from "../UI/DemoUi";
 
 export class MapView {
@@ -102,6 +105,15 @@ export class MapView {
       enterMap.fixedUpdateMs,
       snapshots,
     );
-    return new MapController(new LocalPlayerController(), entities);
+    const messages = new ClientMessageDispatcher(
+      gateSocket,
+      MapMessageScope,
+      entities,
+    );
+    return new MapController(
+      new LocalPlayerController(),
+      entities,
+      messages,
+    );
   }
 }

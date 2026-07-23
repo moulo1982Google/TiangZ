@@ -17,6 +17,13 @@ pub struct ItemData {
 }
 
 #[derive(Debug, Clone)]
+pub struct NumericData {
+    pub entity: EntityData,
+    pub current_hp: i32,
+    pub max_hp: i32,
+}
+
+#[derive(Debug, Clone)]
 pub struct UnitData {
     pub entity: EntityData,
     pub map_id: u32,
@@ -38,6 +45,7 @@ pub struct UnitData {
 
 pub const ENTITY_TYPE_UNIT: u32 = 1;
 pub const ENTITY_TYPE_ITEM: u32 = 2;
+pub const ENTITY_TYPE_NUMERIC: u32 = 3;
 
 pub const UNIT_FIELD_ID: u32 = 1;
 pub const UNIT_FIELD_INSTANCE_ID: u32 = 2;
@@ -292,10 +300,60 @@ pub fn set_item_number(value: &mut ItemData, field: u32, number: f64) -> Result<
     }
 }
 
+pub const NUMERIC_FIELD_ID: u32 = 1;
+pub const NUMERIC_FIELD_INSTANCE_ID: u32 = 2;
+pub const NUMERIC_FIELD_CURRENT_HP: u32 = 3;
+pub const NUMERIC_FIELD_MAX_HP: u32 = 4;
+
+pub fn get_numeric_number(value: &NumericData, field: u32) -> Option<f64> {
+    match field {
+        1 => Some(value.entity.id as f64),
+        2 => Some(value.entity.instance_id as f64),
+        3 => Some(value.current_hp as f64),
+        4 => Some(value.max_hp as f64),
+        _ => None,
+    }
+}
+
+pub fn set_numeric_number(
+    value: &mut NumericData,
+    field: u32,
+    number: f64,
+) -> Result<(), &'static str> {
+    match field {
+        1 => Err("native Numeric field id is readonly"),
+        2 => Err("native Numeric field instanceId is readonly"),
+        3 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Numeric field currentHp must be i32");
+            }
+            value.current_hp = number as i32;
+            Ok(())
+        }
+        4 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Numeric field maxHp must be i32");
+            }
+            value.max_hp = number as i32;
+            Ok(())
+        }
+        _ => Err("unknown native Numeric field"),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum NativeEntityData {
     Unit(UnitData),
     Item(ItemData),
+    Numeric(NumericData),
 }
 
 impl NativeEntityData {
@@ -303,6 +361,7 @@ impl NativeEntityData {
         match self {
             Self::Unit(_) => ENTITY_TYPE_UNIT,
             Self::Item(_) => ENTITY_TYPE_ITEM,
+            Self::Numeric(_) => ENTITY_TYPE_NUMERIC,
         }
     }
 
@@ -330,6 +389,20 @@ impl NativeEntityData {
     pub fn as_item_mut(&mut self) -> Option<&mut ItemData> {
         match self {
             Self::Item(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_numeric(&self) -> Option<&NumericData> {
+        match self {
+            Self::Numeric(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_numeric_mut(&mut self) -> Option<&mut NumericData> {
+        match self {
+            Self::Numeric(value) => Some(value),
             _ => None,
         }
     }
@@ -384,6 +457,22 @@ pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &
                 level: read_u32(values, 5)?,
             }))
         }
+        ENTITY_TYPE_NUMERIC => {
+            if values.len() != 4 {
+                return Err("native Numeric create value count mismatch");
+            }
+            if read_u32(values, 0)? == 0 || read_u32(values, 1)? == 0 {
+                return Err("native Entity id and instanceId must be greater than zero");
+            }
+            Ok(NativeEntityData::Numeric(NumericData {
+                entity: EntityData {
+                    id: read_u32(values, 0)?,
+                    instance_id: read_u32(values, 1)?,
+                },
+                current_hp: read_i32(values, 2)?,
+                max_hp: read_i32(values, 3)?,
+            }))
+        }
         _ => Err("unknown native entity type"),
     }
 }
@@ -392,6 +481,7 @@ pub fn get_entity_number(value: &NativeEntityData, field: u32) -> Option<f64> {
     match value {
         NativeEntityData::Unit(value) => get_unit_number(value, field),
         NativeEntityData::Item(value) => get_item_number(value, field),
+        NativeEntityData::Numeric(value) => get_numeric_number(value, field),
     }
 }
 
@@ -403,6 +493,7 @@ pub fn set_entity_number(
     match value {
         NativeEntityData::Unit(value) => set_unit_number(value, field, number),
         NativeEntityData::Item(value) => set_item_number(value, field, number),
+        NativeEntityData::Numeric(value) => set_numeric_number(value, field, number),
     }
 }
 

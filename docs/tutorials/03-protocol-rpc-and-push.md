@@ -63,7 +63,7 @@ Message 没有 Response。Handler 不存在或抛错时只能记录日志，不�
 
 ## Server Push
 
-服务端使用 Message Descriptor 编码并发送，客户端按 Descriptor 订阅：
+`RpcSocket.on` 是 SDK 提供的底层订阅能力，适合一次性等待、工具代码或非常小的功能：
 
 ```ts
 const unsubscribe = socket.on(ClientMessages.EntityMove, (message) => {
@@ -73,7 +73,31 @@ const unsubscribe = socket.on(ClientMessages.EntityMove, (message) => {
 unsubscribe();
 ```
 
-当前实例见 `MapHostScene` 的 Entity 广播和 Cocos `MapEntityManager`。同一 Push 可有多个订阅者；Handler 异常会隔离并记录。销毁场景或对象时必须取消订阅。
+正式游戏业务不要把大量 `socket.on` 堆在 View、Manager 或 Component 的构造函数中。客户端使用与服务端一致的独立 Handler：
+
+```ts
+@clientMessageHandler(MapMessageScope, ClientMessages.EntityMove)
+export class G2C_EntityMoveHandler implements ClientMessageHandler<
+  MapEntityManager,
+  G2C_EntityMove
+> {
+  handle(entities: MapEntityManager, message: G2C_EntityMove): void {
+    entities.applyMovement(message);
+  }
+}
+```
+
+Handler 文件放在客户端 `Demo/**/Handlers` 下。执行 `npm run codegen` 后，`Generated/Hotfix/handlers.ts` 自动导入这些模块，不维护手写总表。进入地图时创建作用域 Dispatcher：
+
+```ts
+const messages = new ClientMessageDispatcher(
+  gateSocket,
+  MapMessageScope,
+  entities,
+);
+```
+
+退出地图调用 `messages.dispose()`，这一作用域的订阅会一次性释放。SDK Core 不依赖 Cocos，因此同一套 Handler 注册和分发机制可供 PixiJS/H5 使用；具体 Context 和表现实现仍属于各客户端业务。
 
 ## Codec 为什么存在
 
@@ -84,4 +108,4 @@ TypeScript `interface` 编译为 JavaScript 后会消失，因此运行时不知
 - 修改生成文件：下次 codegen 会覆盖，应修改 proto。
 - 手填 MsgCode：消息号由文件起点和定义顺序生成。
 - RPC Response 不匹配：检查 `ResponseType`。
-- 练习：新增一个 S2C `ServerNotice` Push，在 Cocos 中订阅，并在销毁时取消订阅。
+- 练习：新增一个 S2C `ServerNotice` Push，创建独立客户端 Handler，并确认退出对应作用域后不再处理消息。

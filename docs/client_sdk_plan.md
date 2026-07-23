@@ -24,6 +24,7 @@ SDK Core 不得依赖 `cc`、`pixi.js`、DOM 或具体平台全局变量。Cocos
 - Cocos Native Windows TCP：同一业务链路已通过；
 - 通用 WebSocket SDK：`npm run smoke:client-sdk -- websocket 127.0.0.1 7000` 已通过；
 - 不支持协议：`npm run test:client-transport` 验证 TCP/KCP 在无 Native Adapter 环境立即失败。
+- Push Handler：SDK Core 已提供引擎无关的 `ClientMessageScope`、`ClientMessageDispatcher` 和自动释放；Cocos Demo Handler 由 codegen 自动导入，表现对象不再维护 `socket.on` 列表。
 
 Android、iOS、macOS 等 Native 平台以后分别作为独立验收项加入，不能用 Windows x64 的通过结果代替其他操作系统验收。
 

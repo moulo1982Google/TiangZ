@@ -3,11 +3,6 @@ use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 
-use crate::native_data::{
-    op_demo_map_update_movement, op_demo_unit_reset_movement, op_demo_unit_set_movement_input,
-    op_native_data_take_metrics, op_native_entity_create, op_native_entity_destroy,
-    op_native_entity_get_number, op_native_entity_set_number,
-};
 use crate::transport::{call_remote_scene, send_remote_scene};
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
@@ -422,14 +417,6 @@ deno_core::extension!(
         op_host_push_outbound_batch,
         op_host_push_outbound_packed,
         op_host_close_connection,
-        op_native_entity_create,
-        op_native_entity_destroy,
-        op_native_entity_get_number,
-        op_native_entity_set_number,
-        op_demo_unit_set_movement_input,
-        op_demo_unit_reset_movement,
-        op_demo_map_update_movement,
-        op_native_data_take_metrics,
         op_host_register_scene_route,
         op_host_submit_scene_operations
     ],
@@ -437,7 +424,10 @@ deno_core::extension!(
 
 pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
     let mut runtime = JsRuntime::new(RuntimeOptions {
-        extensions: vec![ets_runtime_host::init()],
+        extensions: vec![
+            ets_runtime_host::init(),
+            crate::generated::native_ops::init(),
+        ],
         inspector,
         ..Default::default()
     });
@@ -446,40 +436,26 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
         "ets-runtime:bootstrap.js",
         r#"
         const core = globalThis.Deno.core;
+        const u32 = (value, name) => {
+          if (!Number.isInteger(value) || value < 0 || value > 0xffff_ffff) {
+            throw new RangeError(`${name} must be uint32`);
+          }
+          return value;
+        };
         globalThis.__hostLog = (message) => core.ops.op_host_log(String(message));
-        globalThis.__hostSleep = (ms) => core.ops.op_host_sleep(ms);
+        globalThis.__hostSleep = (ms) => core.ops.op_host_sleep(u32(ms, "ms"));
         globalThis.__hostTakeEventBatch = () => core.ops.op_host_take_event_batch();
         globalThis.__hostPushOutbound = (connectionId, frame) =>
-          core.ops.op_host_push_outbound(connectionId >>> 0, frame);
+          core.ops.op_host_push_outbound(u32(connectionId, "connectionId"), frame);
         globalThis.__hostPushOutboundBatch = (connectionIdBytes, frame) =>
           core.ops.op_host_push_outbound_batch(connectionIdBytes, frame);
         globalThis.__hostPushOutboundPacked = (packed) =>
           core.ops.op_host_push_outbound_packed(packed);
         globalThis.__hostCloseConnection = (connectionId) =>
-          core.ops.op_host_close_connection(connectionId >>> 0);
-        globalThis.__nativeEntityCreate = (entityType, values) =>
-          core.ops.op_native_entity_create(entityType >>> 0, values);
-        globalThis.__nativeEntityDestroy = (handle) =>
-          core.ops.op_native_entity_destroy(handle >>> 0);
-        globalThis.__nativeEntityGetNumber = (handle, field) =>
-          core.ops.op_native_entity_get_number(handle >>> 0, field >>> 0);
-        globalThis.__nativeEntitySetNumber = (handle, field, value) =>
-          core.ops.op_native_entity_set_number(handle >>> 0, field >>> 0, value);
-        globalThis.__demoUnitSetMovementInput = (handle, inputX, inputY, sequence) =>
-          core.ops.op_demo_unit_set_movement_input(
-            handle >>> 0, inputX, inputY, sequence >>> 0,
-          );
-        globalThis.__demoUnitResetMovement = (handle) =>
-          core.ops.op_demo_unit_reset_movement(handle >>> 0);
-        globalThis.__demoMapUpdateMovement = (mapId, serverTick, fixedUpdateMs, messageCode) =>
-          core.ops.op_demo_map_update_movement(
-            mapId >>> 0, serverTick >>> 0, fixedUpdateMs >>> 0, messageCode >>> 0,
-          );
-        globalThis.__nativeDataTakeMetrics = () =>
-          core.ops.op_native_data_take_metrics();
+          core.ops.op_host_close_connection(u32(connectionId, "connectionId"));
         globalThis.__hostRegisterSceneRoute = (sourceName, targetName, targetIp, targetPort) =>
           core.ops.op_host_register_scene_route(
-            String(sourceName), String(targetName), String(targetIp), targetPort >>> 0,
+            String(sourceName), String(targetName), String(targetIp), u32(targetPort, "targetPort"),
           );
         globalThis.__hostSubmitSceneOperations = (packed) =>
           core.ops.op_host_submit_scene_operations(packed);
@@ -493,6 +469,10 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
           error: (...args) => __hostLog("[error] " + args.map(String).join(" ")),
         };
         "#,
+    )?;
+    runtime.execute_script(
+        "ets-runtime:native-ops.js",
+        crate::generated::native_ops::BOOTSTRAP_SOURCE,
     )?;
 
     Ok(runtime)
@@ -628,25 +608,38 @@ mod tests {
             .execute_script(
                 "test:native-item.js",
                 r#"
-                const handle = __nativeEntityCreate(
+                const handle = __etsNativeOps.entityCreate(
                   2,
                   new Float64Array([100, 200, 3001, 2, 0, 1]),
                 );
-                if (__nativeEntityGetNumber(handle, 3) !== 3001) {
+                if (__etsNativeOps.entityGetNumber(handle, 3) !== 3001) {
                   throw new Error("Item configId did not round-trip");
                 }
-                __nativeEntitySetNumber(handle, 4, 3);
-                if (__nativeEntityGetNumber(handle, 4) !== 3) {
+                __etsNativeOps.entitySetNumber(handle, 4, 3);
+                if (__etsNativeOps.entityGetNumber(handle, 4) !== 3) {
                   throw new Error("Item count did not round-trip");
                 }
-                __nativeEntityDestroy(handle);
+                __etsNativeOps.entityDestroy(handle);
                 let rejected = false;
-                try { __nativeEntityGetNumber(handle, 4); } catch (_) { rejected = true; }
+                try { __etsNativeOps.entityGetNumber(handle, 4); } catch (_) { rejected = true; }
                 if (!rejected) throw new Error("stale Item handle was accepted");
                 "ok";
                 "#,
             )
             .unwrap();
+    }
+
+    #[test]
+    fn generated_native_bridge_rejects_uint32_wraparound() {
+        let mut runtime = create_runtime(false).unwrap();
+        let error = runtime
+            .execute_script(
+                "test:native-op-validation.js",
+                r#"__etsNativeOps.entityDestroy(-1);"#,
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("handle"));
+        assert!(error.to_string().contains("integer"));
     }
 
     #[test]

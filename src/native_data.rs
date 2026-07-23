@@ -163,7 +163,7 @@ pub(crate) fn op_native_entity_destroy(handle: u32) -> Result<(), JsErrorBox> {
 }
 
 #[op2(fast)]
-pub(crate) fn op_demo_unit_set_movement_input(
+pub(crate) fn op_native_unit_set_movement_input(
     handle: u32,
     input_x: i8,
     input_y: i8,
@@ -190,7 +190,7 @@ pub(crate) fn op_demo_unit_set_movement_input(
 }
 
 #[op2(fast)]
-pub(crate) fn op_demo_unit_reset_movement(handle: u32) -> Result<(), JsErrorBox> {
+pub(crate) fn op_native_unit_reset_movement(handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.scalar_sets += 1;
@@ -242,7 +242,7 @@ fn native_entity_set_number(handle: u32, field: u32, value: f64) -> Result<(), J
 }
 
 #[op2]
-pub(crate) fn op_demo_map_update_movement(
+pub(crate) fn op_native_map_update_movement(
     map_id: u32,
     server_tick: u32,
     fixed_update_ms: u32,
@@ -626,6 +626,35 @@ mod tests {
         assert!(store.get_unit(handle).is_err());
         store.destroy(handle).unwrap();
         assert!(store.get(handle).is_err());
+    }
+
+    #[test]
+    fn numeric_uses_generated_field_ids_and_scalar_ops() {
+        use crate::generated::native_data::{
+            ENTITY_TYPE_NUMERIC, NUMERIC_FIELD_CURRENT_HP, NUMERIC_FIELD_MAX_HP,
+        };
+
+        let value = create_entity(ENTITY_TYPE_NUMERIC, &[100.0, 200.0, 100.0, 1000.0]).unwrap();
+        let mut store = NativeEntityStore::default();
+        let handle = store.create(value).unwrap();
+        assert_eq!(
+            get_entity_number(store.get(handle).unwrap(), NUMERIC_FIELD_CURRENT_HP),
+            Some(100.0)
+        );
+        set_entity_number(
+            store.get_mut(handle).unwrap(),
+            NUMERIC_FIELD_CURRENT_HP,
+            101.0,
+        )
+        .unwrap();
+        assert_eq!(
+            get_entity_number(store.get(handle).unwrap(), NUMERIC_FIELD_CURRENT_HP),
+            Some(101.0)
+        );
+        assert_eq!(
+            get_entity_number(store.get(handle).unwrap(), NUMERIC_FIELD_MAX_HP),
+            Some(1000.0)
+        );
     }
 
     #[test]

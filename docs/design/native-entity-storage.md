@@ -24,11 +24,14 @@ MapComponent.Update() / 20Hz
 - 原型：`native_data/**/*.native`
 - 生成器：`tools/codegen_native_data.mjs`
 - Rust 输出：`src/generated/native_data.rs`
-- TS 输出：`app/generated/model/native/Native*Ref.ts`
+- Native op 输出：`src/generated/native_ops.rs`、`src/generated/native_ops_bootstrap.js`
+- TS 输出：`app/generated/model/native/NativeOps.ts`、`Native*Ref.ts`
 
 执行 `npm run codegen:native-data` 重新生成。Generated 文件不要手改。
 
-生成器只认识 Entity、继承、字段、`@typeId` 和 `@component`，不认识 Unit、地图或移动。`NativeUnitRef` 与 `NativeItemRef` 都通过通用 `NativeEntityBridge` 创建、销毁和访问数值字段。移动输入、地图批处理与 protobuf 投影属于 Demo，放在 `app/demo/native/NativeData.ts` 和 Rust Demo op 中。
+生成器认识 Entity、继承、字段、`@typeId`、`@component` 和 Native op 签名。`NativeUnitRef` 与 `NativeItemRef` 都通过生成的 `NativeOps` 创建、销毁和访问数值字段。移动输入、地图批处理与 protobuf 投影算法仍属于业务，放在 `app/demo/native/NativeData.ts` 和 Rust `native_data.rs`；但它们的 Extension 注册、Host bootstrap 和 TS facade 由 `native_data/NativeOps.native` 生成。
+
+新增粗粒度 op 时，只声明 ABI 并实现 Rust 函数。`host.rs` 不维护 Native op 列表，也不安装 `__demoXxx` 全局函数。生成 bootstrap 对数值范围和 buffer 类型做显式检查，不使用 `>>> 0` 静默改变错误输入。
 
 Rust 没有类继承，生成结果通过组合让 `UnitData/ItemData` 持有 `EntityData`。所有实体共用 generation Arena；实体销毁后旧 handle 会明确报错。
 

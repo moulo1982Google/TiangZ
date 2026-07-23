@@ -197,6 +197,47 @@ export const CellMovementStateCodec = {
   },
 };
 
+export interface UnitNumericSnapshot {
+  unitId: number;
+  currentHp: number;
+  maxHp: number;
+}
+
+export const UnitNumericSnapshotCodec = {
+  decode(payload: Uint8Array): UnitNumericSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: UnitNumericSnapshot = {
+      unitId: 0,
+      currentHp: 0,
+      maxHp: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.currentHp = reader.sint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.maxHp = reader.sint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: UnitNumericSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.uint32(1, value.unitId);
+    writer.sint32(2, value.currentHp);
+    writer.sint32(3, value.maxHp);
+    return writer.finish();
+  },
+};
+
 export interface L2L_LogWrite extends IActorMessage {
   message: string;
 }
@@ -1260,6 +1301,41 @@ export const G2C_EntityMoveCodec = {
     const writer = new BinaryWriter();
     writer.uint32(1, value.serverTick);
     for (const item of value.movements) writer.bytes(2, CellMovementStateCodec.encode(item));
+    return writer.finish();
+  },
+};
+
+export interface G2C_EntityNumeric extends IMessage {
+  serverTick: number;
+  numerics: readonly UnitNumericSnapshot[];
+}
+
+export const G2C_EntityNumericCodec = {
+  decode(payload: Uint8Array): G2C_EntityNumeric {
+    const reader = new BinaryReader(payload);
+    const value: G2C_EntityNumeric = {
+      serverTick: 0,
+      numerics: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.serverTick = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.numerics as UnitNumericSnapshot[]).push(UnitNumericSnapshotCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_EntityNumeric): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.uint32(1, value.serverTick);
+    for (const item of value.numerics) writer.bytes(2, UnitNumericSnapshotCodec.encode(item));
     return writer.finish();
   },
 };

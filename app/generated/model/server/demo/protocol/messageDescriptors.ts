@@ -11,6 +11,8 @@ import {
   G2C_EntityLeaveCodec,
   G2C_EntityMove,
   G2C_EntityMoveCodec,
+  G2C_EntityNumeric,
+  G2C_EntityNumericCodec,
   G2C_MapReady,
   G2C_MapReadyCodec,
   G2M_PlayerDisconnect,
@@ -65,6 +67,11 @@ export const ClientMessages = {
     msgcode: MsgCode.G2C_EntityMove,
     codec: G2C_EntityMoveCodec,
   }),
+  EntityNumeric: defineMessage<G2C_EntityNumeric>({
+    name: "Client.EntityNumeric",
+    msgcode: MsgCode.G2C_EntityNumeric,
+    codec: G2C_EntityNumericCodec,
+  }),
   EntityEnter: defineMessage<G2C_EntityEnter>({
     name: "Client.EntityEnter",
     msgcode: MsgCode.G2C_EntityEnter,
@@ -84,6 +91,7 @@ export const AllMessageDescriptors = [
   ClientMessages.MapReady,
   MapMessages.Move,
   ClientMessages.EntityMove,
+  ClientMessages.EntityNumeric,
   ClientMessages.EntityEnter,
   ClientMessages.EntityLeave,
   GateMessages.Ping,

@@ -6,7 +6,8 @@
 | `npm run clean` | 删除 Rust/TS/Cocos 编译产物和引擎缓存 |
 | `npm run clean:copy` | 在 clean 基础上删除依赖和旧报告，得到适合跨机器复制的源码目录 |
 | `npm run clean:copy:dry-run` | 预览 clean:copy 将删除的路径和体积 |
-| `npm run codegen` | 生成协议和 EntryScene 导入入口 |
+| `npm run codegen` | 生成协议、Native 数据、服务端 Scene/Handler 和客户端 Handler 导入入口 |
+| `npm run codegen:client-handlers` | 只生成客户端 Handler 自动导入入口 |
 | `npm run typecheck` | 服务端 TS 类型检查 |
 | `npm run build` | 生产 TS bundle、协议和 smoke client |
 | `npm run build:debug` | 带内联 sourcemap 的调试 bundle |
@@ -25,6 +26,7 @@
 | `npm run perf:kcp-loginmgr -- 127.0.0.1:7000 256 5 20` | KCP LoginMgr RPC 基准：地址、连接数、预热秒数、测试秒数 |
 | `npm run perf:full-chain` | 单进程/拆分进程的完整登录、进图、移动与 AOI Push 性能矩阵 |
 | `npm run test:native-data` | 生成句柄、Arena、移动状态机和 Entity 生命周期回归 |
+| `npm run test:client-message` | 引擎无关的客户端 Handler、异步错误与作用域释放测试 |
 | `npm run perf:map-capacity -- --gates 8 --players 200 --rounds 3` | 单 MapHost 全员可见广播、批量下行 Bridge 和 Probe 延迟容量测试 |
 
 修改 proto 后至少运行 `npm run codegen && npm run test:protocol`；修改 Core 后运行 `npm run check`、`cargo test --all-targets` 和相关 Runtime smoke。
