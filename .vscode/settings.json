@@ -1,5 +1,7 @@
 {
   "tiangzNative.sourceRoots": [
     "native_data"
-  ]
+  ],
+  "tiangzNative.codegenCommand": "npm run codegen:native-data",
+  "tiangzNative.codegenWorkingDirectory": "."
 }
