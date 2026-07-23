@@ -2,9 +2,13 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+import { recordGenerator } from "./codegen_manifest.mjs";
+
+const scriptFile = fileURLToPath(import.meta.url);
+const root = path.resolve(path.dirname(scriptFile), "..");
+const configFile = path.join(root, "codegen.config.json");
 const config = JSON.parse(
-  await readFile(path.join(root, "codegen.config.json"), "utf8"),
+  await readFile(configFile, "utf8"),
 );
 const clientConfig = config.clientHotfix;
 if (!clientConfig?.enabled) process.exit(0);
@@ -34,6 +38,18 @@ const content = [
 
 await mkdir(path.dirname(outputFile), { recursive: true });
 await writeFile(outputFile, content, "utf8");
+await recordGenerator(root, {
+  id: "client-handlers",
+  command: "npm run codegen:client-handlers",
+  contentInputs: [scriptFile, configFile],
+  selections: [
+    { kind: "client-handler", roots: searchRoots, paths: handlerFiles },
+  ],
+  outputs: [outputFile],
+  outputRoots: [
+    { path: path.dirname(outputFile), extensions: [".ts"] },
+  ],
+});
 console.log(`[codegen:client-handlers] generated ${handlerFiles.length} import(s)`);
 
 async function collectHandlerFiles(directory, files) {

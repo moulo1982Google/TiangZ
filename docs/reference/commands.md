@@ -3,6 +3,7 @@
 | 命令 | 用途 |
 | --- | --- |
 | `npm install` | 安装 TS 构建依赖 |
+| `npm run codegen` | 运行全部生成器并更新 `codegen.manifest.json` |
 | `npm run clean` | 删除 Rust/TS/Cocos 编译产物和引擎缓存 |
 | `npm run clean:copy` | 在 clean 基础上删除依赖和旧报告，得到适合跨机器复制的源码目录 |
 | `npm run clean:copy:dry-run` | 预览 clean:copy 将删除的路径和体积 |

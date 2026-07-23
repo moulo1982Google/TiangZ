@@ -234,7 +234,7 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 - `src/generated`：Rust Native op 注册与 bootstrap。
 - `cocos_client2D/assets/scripts/Generated`：Cocos 客户端协议和 Handler 入口。
 
-所有 Generated 文件都不应手工编辑。
+所有 Generated 文件都不应手工编辑。`npm run codegen` 会同步更新根目录 `codegen.manifest.json`；Developer Tools 使用该文件检查生成结果是否过期、缺失、遗留或被修改。
 
 ## VS Code 开发工具
 

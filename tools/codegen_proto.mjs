@@ -2,12 +2,20 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+import { collectGeneratedFiles, recordGenerator } from "./codegen_manifest.mjs";
+
+const scriptFile = fileURLToPath(import.meta.url);
+const root = path.resolve(path.dirname(scriptFile), "..");
 const protoDir = path.join(root, "proto");
 const generatedModelDir = path.join(root, "app", "generated", "model");
+const generatedProtocolDirs = [
+  path.join(generatedModelDir, "client"),
+  path.join(generatedModelDir, "server"),
+];
 const appDir = path.join(root, "app");
+const configFile = path.join(root, "codegen.config.json");
 const codegenConfig = JSON.parse(
-  await readFile(path.join(root, "codegen.config.json"), "utf8"),
+  await readFile(configFile, "utf8"),
 );
 const cocosClientConfig = resolveCocosClientConfig(
   codegenConfig.cocosClientProtocol,
@@ -58,9 +66,11 @@ await main();
 
 async function main() {
   const protoFiles = await discoverProtoFiles(protoDir);
-  await rm(generatedModelDir, { recursive: true, force: true });
+  for (const generatedProtocolDir of generatedProtocolDirs) {
+    await rm(generatedProtocolDir, { recursive: true, force: true });
+  }
   if (cocosClientConfig) {
-    await rm(cocosClientConfig.outputRoot, { recursive: true, force: true });
+    await removeGeneratedTypeScript(cocosClientConfig.outputRoot);
   }
 
   const groups = new Map();
@@ -106,6 +116,33 @@ async function main() {
       );
       await writeProtocol(group, cocosOutputDir, cocosClientConfig.runtimeFiles);
     }
+  }
+
+  const outputRoots = [
+    ...generatedProtocolDirs.map((outputPath) => ({ path: outputPath, extensions: [".ts"] })),
+    ...(cocosClientConfig ? [{ path: cocosClientConfig.outputRoot, extensions: [".ts"] }] : []),
+  ];
+  await recordGenerator(root, {
+    id: "proto",
+    command: "npm run codegen:proto",
+    contentInputs: [scriptFile, configFile, ...protoFiles],
+    outputs: await collectGeneratedFiles(outputRoots),
+    outputRoots,
+  });
+}
+
+async function removeGeneratedTypeScript(directory) {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) await removeGeneratedTypeScript(fullPath);
+    else if (entry.isFile() && entry.name.endsWith(".ts")) await rm(fullPath, { force: true });
   }
 }
 

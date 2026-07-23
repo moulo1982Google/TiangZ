@@ -2,7 +2,10 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+import { recordGenerator } from "./codegen_manifest.mjs";
+
+const scriptFile = fileURLToPath(import.meta.url);
+const root = path.resolve(path.dirname(scriptFile), "..");
 const outputFile = path.join(root, "app", "generated", "hotfix", "scenes.ts");
 const handlerOutputFile = path.join(root, "app", "generated", "hotfix", "handlers.ts");
 const configFile = path.join(root, "codegen.config.json");
@@ -161,3 +164,18 @@ ${handlerFiles
 await mkdir(path.dirname(outputFile), { recursive: true });
 await writeFile(outputFile, content, "utf8");
 await writeFile(handlerOutputFile, handlerContent, "utf8");
+await recordGenerator(root, {
+  id: "scenes",
+  command: "npm run codegen:scenes",
+  contentInputs: [scriptFile, configFile],
+  selections: [
+    { kind: "scene", roots: sceneSearchRoots, paths: sceneFiles },
+    { kind: "handler", roots: handlerSearchRoots, paths: handlerFiles },
+    { kind: "protocol-rpc", roots: serverProtocolSearchRoots, paths: protocolFiles },
+    { kind: "protocol-message", roots: serverProtocolSearchRoots, paths: messageProtocolFiles },
+  ],
+  outputs: [outputFile, handlerOutputFile],
+  outputRoots: [
+    { path: path.dirname(outputFile), extensions: [".ts"] },
+  ],
+});

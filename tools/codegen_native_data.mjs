@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { assertValidNativeWorkspace } from "@tiangz/native-language-core";
 import { generateNativeFiles } from "@tiangz/native-language-core/codegen";
+import { recordGenerator } from "./codegen_manifest.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const scriptFile = fileURLToPath(import.meta.url);
+const root = path.resolve(path.dirname(scriptFile), "..");
 const schemaRoot = path.join(root, "native_data");
 const schemaFiles = await collectSchemaFiles(schemaRoot);
 const sources = await Promise.all(schemaFiles.map(async (file) => ({
@@ -15,13 +17,30 @@ const sources = await Promise.all(schemaFiles.map(async (file) => ({
 })));
 const schema = assertValidNativeWorkspace(sources);
 const generatedFiles = generateNativeFiles(schema);
+const outputs = [];
 
 for (const generatedFile of generatedFiles) {
   const output = resolveOutputPath(generatedFile.relativePath);
+  outputs.push(output);
   await mkdir(path.dirname(output), { recursive: true });
   await writeFile(output, generatedFile.content, "utf8");
   if (generatedFile.format === "rust") formatRust(output);
 }
+
+await recordGenerator(root, {
+  id: "native-data",
+  command: "npm run codegen:native-data",
+  contentInputs: [scriptFile, path.join(root, "package.json"), ...schemaFiles],
+  outputs,
+  outputRoots: [
+    { path: path.join(root, "app", "generated", "model", "native"), extensions: [".ts"] },
+    {
+      path: path.join(root, "src", "generated"),
+      extensions: [".js", ".rs"],
+      ignore: [path.join(root, "src", "generated", "mod.rs")],
+    },
+  ],
+});
 
 const concreteEntityCount = schema.entities.filter((entity) => !entity.abstract).length;
 console.log(
