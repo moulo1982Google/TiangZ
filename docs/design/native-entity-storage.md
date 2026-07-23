@@ -23,11 +23,14 @@ MapComponent.Update() / 20Hz
 
 - 原型：`native_data/**/*.native`
 - 生成器：`tools/codegen_native_data.mjs`
+- 语言核心：`@tiangz/native-language-core`，固定到独立仓库的版本 Tag
 - Rust 输出：`src/generated/native_data.rs`
 - Native op 输出：`src/generated/native_ops.rs`、`src/generated/native_ops_bootstrap.js`
 - TS 输出：`app/generated/model/native/NativeOps.ts`、`Native*Ref.ts`
 
 执行 `npm run codegen:native-data` 重新生成。Generated 文件不要手改。
+
+`.native` 的 Lexer、Parser、AST 和语义校验不再由生成器维护。它们来自独立的 [tiangz-native-language](https://gitee.com/eblard_admin/tiangz-native-language) 仓库；生成器只读取校验后的语义模型并负责 Rust/TS 投影。升级语言版本时必须显式修改 `package.json` 中的 Tag，并重新执行完整 codegen 回归。
 
 生成器认识 Entity、继承、字段、`@typeId`、`@component` 和 Native op 签名。`NativeUnitRef` 与 `NativeItemRef` 都通过生成的 `NativeOps` 创建、销毁和访问数值字段。移动输入、地图批处理与 protobuf 投影算法仍属于业务，放在 `app/demo/native/NativeData.ts` 和 Rust `native_data.rs`；但它们的 Extension 注册、Host bootstrap 和 TS facade 由 `native_data/NativeOps.native` 生成。
 

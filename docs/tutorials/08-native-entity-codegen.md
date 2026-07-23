@@ -51,6 +51,8 @@ app/generated/model/native/NativeOps.ts
 app/generated/model/native/NativeItemRef.ts
 ```
 
+扫描到的源码先交给 `@tiangz/native-language-core` 解析和校验。语法错误会包含文件、行号、列号和稳定的诊断编号；生成器本身不再使用正则解释 `.native` 语法。对应的 VS Code 扩展与语言核心位于 [tiangz-native-language](https://gitee.com/eblard_admin/tiangz-native-language)。
+
 不要手工编辑 Generated 文件。
 
 ## 使用普通 Handle

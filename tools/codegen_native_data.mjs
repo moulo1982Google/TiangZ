@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertValidNativeWorkspace } from "@tiangz/native-language-core";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const schemaRoot = path.join(root, "native_data");
@@ -12,11 +13,14 @@ const tsOutputRoot = path.join(root, "app", "generated", "model", "native");
 const tsOpsOutput = path.join(tsOutputRoot, "NativeOps.ts");
 
 const schemaFiles = await collectSchemaFiles(schemaRoot);
-const fragments = await Promise.all(schemaFiles.map(async (file) =>
-  parseSchema(await readFile(file, "utf8"), file)
-));
-const schema = mergeSchemas(fragments);
-validateSchema(schema);
+const sources = await Promise.all(schemaFiles.map(async (file) => ({
+  uri: file,
+  text: await readFile(file, "utf8"),
+})));
+const schema = assertValidNativeWorkspace(sources);
+if (schema.operations.length === 0) {
+  throw new Error("native codegen needs at least one op declaration");
+}
 
 await mkdir(path.dirname(rustOutput), { recursive: true });
 await mkdir(tsOutputRoot, { recursive: true });
@@ -57,158 +61,6 @@ async function collectSchemaFiles(directory) {
     else if (entry.isFile() && entry.name.endsWith(".native")) files.push(fullPath);
   }
   return files.sort((left, right) => left.localeCompare(right, "en"));
-}
-
-function parseSchema(source, file) {
-  const clean = source.replace(/\/\/.*$/gm, "");
-  const namespace = /\bnamespace\s+([A-Za-z_]\w*)\s*;/.exec(clean)?.[1];
-  if (!namespace) throw new Error(`${file}: namespace is required`);
-
-  const entities = [];
-  const operations = [];
-  const entityPattern = /((?:@[A-Za-z_]\w*(?:\([^)]*\))?\s*)*)(?:(abstract)\s+)?entity\s+([A-Za-z_]\w*)(?:\s+extends\s+([A-Za-z_]\w*))?\s*\{([^}]*)\}/g;
-  for (const match of clean.matchAll(entityPattern)) {
-    const annotations = match[1];
-    const typeIdText = /@typeId\((\d+)\)/.exec(annotations)?.[1];
-    const fields = [];
-    const fieldPattern = /(?:(readonly)\s+)?([A-Za-z_]\w*)\s*:\s*(u32|i32|i8|f32)(?:\s*=\s*(-?(?:\d+(?:\.\d*)?|\.\d+)))?\s*;/g;
-    for (const field of match[5].matchAll(fieldPattern)) {
-      fields.push({
-        readonly: field[1] === "readonly",
-        name: field[2],
-        type: field[3],
-        defaultValue: field[4],
-      });
-    }
-    entities.push({
-      namespace,
-      sourceFile: file,
-      typeId: typeIdText === undefined ? undefined : Number(typeIdText),
-      component: /@component\b/.test(annotations),
-      abstract: match[2] === "abstract",
-      name: match[3],
-      parent: match[4],
-      fields,
-    });
-  }
-  const operationPattern = /\bop\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*:\s*(u32|i32|i8|f64|bool|bytes|void)\s*;/g;
-  for (const match of clean.matchAll(operationPattern)) {
-    const params = match[2].trim() === ""
-      ? []
-      : match[2].split(",").map((item) => {
-          const parameter = /^\s*([A-Za-z_]\w*)\s*:\s*(u32|i32|i8|f64|bool|bytes|f64\[\])\s*$/.exec(item);
-          if (!parameter) throw new Error(`${file}: invalid native op parameter ${item.trim()}`);
-          return { name: parameter[1], type: parameter[2] };
-        });
-    operations.push({
-      namespace,
-      sourceFile: file,
-      name: match[1],
-      params,
-      returnType: match[3],
-    });
-  }
-  if (entities.length === 0 && operations.length === 0) {
-    throw new Error(`${file}: no entity or op declarations`);
-  }
-  return { namespace, entities, operations };
-}
-
-function mergeSchemas(fragments) {
-  return {
-    entities: fragments.flatMap((fragment) => fragment.entities),
-    operations: fragments.flatMap((fragment) => fragment.operations),
-  };
-}
-
-function validateSchema(schema) {
-  const byName = entityMap(schema);
-  const typeIds = new Map();
-  for (const entity of schema.entities) {
-    if (byName.get(entity.name) !== entity) {
-      throw new Error(`${entity.sourceFile}: duplicate entity ${entity.name}`);
-    }
-    if (entity.parent && !byName.has(entity.parent)) {
-      throw new Error(`${entity.sourceFile}: unknown parent ${entity.parent}`);
-    }
-    if (entity.abstract && entity.typeId !== undefined) {
-      throw new Error(`${entity.sourceFile}: abstract entity ${entity.name} cannot have @typeId`);
-    }
-    if (entity.abstract && entity.component) {
-      throw new Error(`${entity.sourceFile}: abstract entity ${entity.name} cannot be @component`);
-    }
-    if (!entity.abstract) {
-      if (!Number.isSafeInteger(entity.typeId) || entity.typeId <= 0 || entity.typeId > 0xffff) {
-        throw new Error(`${entity.sourceFile}: concrete entity ${entity.name} needs @typeId(1..65535)`);
-      }
-      const previous = typeIds.get(entity.typeId);
-      if (previous) throw new Error(`${entity.sourceFile}: @typeId(${entity.typeId}) is already used by ${previous}`);
-      typeIds.set(entity.typeId, entity.name);
-      if (!inheritsFrom(schema, entity, "Entity")) {
-        throw new Error(`${entity.sourceFile}: concrete entity ${entity.name} must extend Entity`);
-      }
-    }
-    const localNames = new Set();
-    for (const field of entity.fields) {
-      if (localNames.has(field.name)) throw new Error(`${entity.sourceFile}: duplicate field ${field.name}`);
-      localNames.add(field.name);
-      if (field.defaultValue !== undefined) validateDefault(field, entity.sourceFile);
-    }
-  }
-  for (const entity of schema.entities) {
-    const fields = flattenFields(schema, entity.name);
-    const names = new Set();
-    for (const field of fields) {
-      if (names.has(field.name)) throw new Error(`${entity.sourceFile}: inherited field ${field.name} is duplicated`);
-      names.add(field.name);
-    }
-  }
-
-  const entity = byName.get("Entity");
-  if (!entity?.abstract) throw new Error("native schema needs abstract entity Entity");
-  for (const name of ["id", "instanceId"]) {
-    const field = entity.fields.find((candidate) => candidate.name === name);
-    if (field?.type !== "u32" || !field.readonly) {
-      throw new Error(`Entity.${name} must be readonly u32`);
-    }
-  }
-
-  const operationNames = new Set();
-  for (const operation of schema.operations) {
-    if (operationNames.has(operation.name)) {
-      throw new Error(`${operation.sourceFile}: duplicate native op ${operation.name}`);
-    }
-    operationNames.add(operation.name);
-    const parameterNames = new Set();
-    for (const parameter of operation.params) {
-      if (parameterNames.has(parameter.name)) {
-        throw new Error(
-          `${operation.sourceFile}: duplicate parameter ${parameter.name} in native op ${operation.name}`,
-        );
-      }
-      parameterNames.add(parameter.name);
-    }
-  }
-  if (schema.operations.length === 0) {
-    throw new Error("native schema needs at least one op declaration");
-  }
-}
-
-function validateDefault(field, sourceFile) {
-  const value = Number(field.defaultValue);
-  if (!Number.isFinite(value)) throw new Error(`${sourceFile}: invalid default for ${field.name}`);
-  if (field.type !== "f32" && !Number.isInteger(value)) {
-    throw new Error(`${sourceFile}: ${field.name} default must be an integer`);
-  }
-  const ranges = {
-    u32: [0, 0xffff_ffff],
-    i32: [-0x8000_0000, 0x7fff_ffff],
-    i8: [-128, 127],
-  };
-  const range = ranges[field.type];
-  if (range && (value < range[0] || value > range[1])) {
-    throw new Error(`${sourceFile}: ${field.name} default is outside ${field.type}`);
-  }
 }
 
 function renderRust(schema) {
@@ -570,20 +422,6 @@ function flattenFields(schema, entityName, stack = []) {
 
 function entityMap(schema) {
   return new Map(schema.entities.map((entity) => [entity.name, entity]));
-}
-
-function inheritsFrom(schema, entity, expectedParent) {
-  const byName = entityMap(schema);
-  let current = entity;
-  const visited = new Set();
-  while (current.parent) {
-    if (current.parent === expectedParent) return true;
-    if (visited.has(current.parent)) return false;
-    visited.add(current.parent);
-    current = byName.get(current.parent);
-    if (!current) return false;
-  }
-  return false;
 }
 
 function rustFieldPath(root, field) {
