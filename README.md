@@ -241,9 +241,16 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 TiangZ 目前有两个职责独立的 VS Code 插件，均尚未发布到 Marketplace：
 
 - [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；当前内部版本为 `v0.10.0`。
-- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引 Environment、Machine、Process、Scene、Actor、Component 与 Handler，在资源管理器显示“TiangZ 工程”，提供源码跳转和 Problems 诊断；当前内部版本为 `v0.1.0`。
+- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引 Environment、Machine、Process、Scene、Actor、Component 与 Handler，在资源管理器显示“TiangZ 工程”，提供源码跳转、Problems 诊断和 CI 工程检查；当前内部版本为 `v0.6.0`。
 
 两个插件分开维护，未来可以通过 Extension Pack 一键安装。当前需分别克隆仓库，执行 `npm install`、`npm run check` 和 `npm run package:extension`，再从各仓库 `dist` 目录安装 VSIX。
+
+Developer Tools 的工程检查器已经作为固定 Git Tag 依赖接入主仓库。编辑器 Problems 与命令行共用同一套规则：
+
+```powershell
+npm run check:project
+npm run check:project -- --format json
+```
 
 ## 调试与验证
 

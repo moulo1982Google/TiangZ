@@ -15,6 +15,7 @@
 | `cargo run --bin TiangZ -- configs/local/all.json` | 单进程、单 V8 启动全部 Demo Scene |
 | `npm run smoke:client` | Node 客户端跑登录地图链路 |
 | `npm run check` | TS、协议、Actor、Cocos 静态检查 |
+| `npm run check:project` | 检查配置、Handler、依赖方向和 Generated 完整性；适用于本地与 CI |
 | `cargo test --all-targets` | Rust 全目标测试 |
 | `npm run test:runtime` | 单进程与拆分进程 smoke |
 | `npm run test:backpressure` | 背压验收 |

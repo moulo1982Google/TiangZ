@@ -42,6 +42,7 @@
     "typecheck:cocos-net": "tsc -p cocos_client2D/tsconfig.protocol.json",
     "typecheck:cocos-demo": "tsc -p cocos_client2D/tsconfig.json --noEmit",
     "check:cocos-demo": "esbuild cocos_client2D/assets/scripts/Demo/GameBootstrap.ts --bundle --platform=browser --format=esm --target=es2022 --external:cc --external:cc/env --outfile=dist/cocos_demo_check.js",
+    "check:project": "tiangz-check-project .",
     "check": "npm run build && npm run test:protocol && npm run test:native-data && npm run test:scene-handler && npm run test:game-update && npm run test:movement-prediction && npm run test:map-broadcast && npm run test:client-message && npm run typecheck:cocos-net && npm run typecheck:cocos-demo && npm run check:cocos-demo",
     "test:runtime": "npm run build && cargo build --bin TiangZ && powershell -NoProfile -ExecutionPolicy Bypass -File tools/smoke_runtime.ps1 -Mode both",
     "perf:runtime": "npm run build && npm run build:load && cargo build --release --bin TiangZ && powershell -NoProfile -ExecutionPolicy Bypass -File tools/runtime_load_test.ps1 -Release",
@@ -64,6 +65,7 @@
     "perf:protocol": "cargo run --release --bin protocol_perf --"
   },
   "devDependencies": {
+    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.6.0",
     "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.10.0",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.0",
