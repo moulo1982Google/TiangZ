@@ -5,8 +5,8 @@ import {
   clientMessageHandler,
   type ClientMessageHandler,
   type ClientMessageSource,
-} from "../cocos_client2D/assets/scripts/Core/Net/ClientMessageDispatcher";
-import { defineMessage } from "../cocos_client2D/assets/scripts/Core/Protocol/Message";
+} from "../client_sdk/typescript/Core/Net/ClientMessageDispatcher";
+import { defineMessage } from "../client_sdk/typescript/Core/Protocol/Message";
 
 interface ProbeContext {
   values: number[];

@@ -13,9 +13,10 @@ import {
   view,
 } from "cc";
 import { NATIVE, PREVIEW } from "cc/env";
-import { LoginFlow } from "./Login/LoginFlow";
-import type { ClientTransportKind } from "../Core/Net/ClientTransport";
-import "../Core/Net/NativeTransport";
+import { LoginFlow } from "../Generated/SDK/Demo/LoginFlow";
+import type { ClientTransportKind } from "../Generated/SDK/Core/Net/ClientTransport";
+import "../Generated/SDK/Core/Net/BrowserWebSocketTransport";
+import "../Generated/SDK/Core/Net/NativeTransport";
 import { MapController } from "./Map/MapController";
 import { MapView } from "./Map/MapView";
 import { DemoUi } from "./UI/DemoUi";
@@ -50,6 +51,7 @@ export class GameBootstrap extends Component {
   }
 
   update(deltaTime: number): void {
+    this.loginFlow?.update();
     this.playerController?.update(deltaTime);
   }
 

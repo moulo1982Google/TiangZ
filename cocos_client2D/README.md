@@ -1,6 +1,6 @@
 # cocos_client2D
 
-这是 `ets_runtime` Phase 2 的 Cocos 2D 客户端演示工程。
+这是 TiangZ 的 Cocos 2D 客户端演示工程，也是 TypeScript Client SDK 的 Cocos Web 与 Cocos Native Windows 验收端。
 
 ## 启动服务器
 
@@ -52,12 +52,13 @@ LoginMgr -> LoginService -> GateService -> MapService -> 地图视图
 ## 代码目录
 
 ```text
-assets/scripts/Core/       可复用网络与协议框架
-assets/scripts/Generated/  codegen 自动生成，禁止手工修改
-assets/scripts/Demo/       登录、地图、输入和界面演示业务
+../client_sdk/typescript/              SDK 唯一源码
+assets/scripts/Generated/SDK/          codegen 分发的完整 SDK，禁止手工修改
+assets/scripts/Generated/Hotfix/       客户端 Handler 自动导入入口
+assets/scripts/Demo/                   Cocos 地图、输入和界面演示业务
 ```
 
-在 `ets_runtime/` 执行 `npm run codegen` 会根据 `proto/` 自动更新 Cocos 的 `Generated/Model`。客户端不再维护手写 `DemoProtocol.ts`。
+在项目根目录执行 `npm run codegen`，会根据 `proto/` 更新公共 SDK，再生成 Cocos 使用的完整副本。客户端不维护私有协议 Core，也不手写 `DemoProtocol.ts`。
 
 进入地图时，客户端会同时等待 EnterMap RPC 响应和服务端主动推送的 `MapReady` Message。进入后可使用 `WASD` 或方向键发送方向输入。客户端不会直接修改权威坐标，MapHost 会把消息按 InstanceId 直达 PlayerUnit mailbox，由 PlayerUnit 按服务端时间计算位置，并经 Gate 推送 `G2C_EntityMove`；本地玩家方块对收到的权威坐标做平滑插值。
 

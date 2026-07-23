@@ -1,6 +1,7 @@
 /target/
 /node_modules/
 /dist/
+/pixi_client/dist/
 /tmp_*.log
 /tmp_native_*.png
 /tmp_native_frames_*/

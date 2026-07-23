@@ -4,16 +4,27 @@
     "handlerSearchRoots": ["app"],
     "serverProtocolSearchRoots": ["app/generated/model/server"]
   },
-  "cocosClientProtocol": {
+  "typescriptClientSdk": {
     "enabled": true,
-    "outputRoot": "cocos_client2D/assets/scripts/Generated/Model",
-    "binaryRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Binary.ts",
-    "messageRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Message.ts",
-    "rpcRuntime": "cocos_client2D/assets/scripts/Core/Protocol/Rpc.ts"
+    "sourceRoot": "client_sdk/typescript",
+    "outputRoots": [
+      "cocos_client2D/assets/scripts/Generated/SDK",
+      "pixi_client/src/Generated/SDK"
+    ]
   },
   "clientHotfix": {
     "enabled": true,
-    "handlerSearchRoots": ["cocos_client2D/assets/scripts"],
-    "handlerOutput": "cocos_client2D/assets/scripts/Generated/Hotfix/handlers.ts"
+    "targets": [
+      {
+        "name": "cocos",
+        "handlerSearchRoots": ["cocos_client2D/assets/scripts"],
+        "handlerOutput": "cocos_client2D/assets/scripts/Generated/Hotfix/handlers.ts"
+      },
+      {
+        "name": "pixi",
+        "handlerSearchRoots": ["pixi_client/src"],
+        "handlerOutput": "pixi_client/src/Generated/Hotfix/handlers.ts"
+      }
+    ]
   }
 }

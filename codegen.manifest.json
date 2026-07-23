@@ -5,8 +5,8 @@
     "client-handlers": {
       "command": "npm run codegen:client-handlers",
       "contentInputs": {
-        "codegen.config.json": "fad1e20b8d7e39d13af2119ebfde98c09c2ce2cc3ff3fdf83c6b918165d5f6c2",
-        "tools/codegen_client_handlers.mjs": "d8f39c0439a473a6c35f6a7dd0d576391ef60277b0558214f31ffeeeda116b0e",
+        "codegen.config.json": "181861d244eae3f88a8fe5a8f9d9b44e6d9cbd1152265567a1ec78a9c6e0fe71",
+        "tools/codegen_client_handlers.mjs": "6c0403a5fa6182ae0c6b4e52d8dd45c122106ca4063c2f297dfd3ff7b04eebb1",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495"
       },
       "selections": [
@@ -21,14 +21,133 @@
             "cocos_client2D/assets/scripts/Demo/Map/Handlers/G2C_EntityMoveHandler.ts",
             "cocos_client2D/assets/scripts/Demo/Map/Handlers/G2C_EntityNumericHandler.ts"
           ]
+        },
+        {
+          "kind": "client-handler",
+          "roots": [
+            "pixi_client/src"
+          ],
+          "paths": [
+            "pixi_client/src/Map/Handlers/G2C_EntityEnterHandler.ts",
+            "pixi_client/src/Map/Handlers/G2C_EntityLeaveHandler.ts",
+            "pixi_client/src/Map/Handlers/G2C_EntityMoveHandler.ts",
+            "pixi_client/src/Map/Handlers/G2C_EntityNumericHandler.ts"
+          ]
         }
       ],
       "outputs": {
-        "cocos_client2D/assets/scripts/Generated/Hotfix/handlers.ts": "c8e34498a603e50cd66638625206edc583a0d07535dc5fe4f5f26fc45c7976ff"
+        "cocos_client2D/assets/scripts/Generated/Hotfix/handlers.ts": "c8e34498a603e50cd66638625206edc583a0d07535dc5fe4f5f26fc45c7976ff",
+        "pixi_client/src/Generated/Hotfix/handlers.ts": "3fb815b2cd21678dca22d62c5d4663a19e1b4765678faab367fdafc6a68942ae"
       },
       "outputRoots": [
         {
           "path": "cocos_client2D/assets/scripts/Generated/Hotfix",
+          "extensions": [
+            ".ts"
+          ],
+          "ignore": []
+        },
+        {
+          "path": "pixi_client/src/Generated/Hotfix",
+          "extensions": [
+            ".ts"
+          ],
+          "ignore": []
+        }
+      ]
+    },
+    "client-sdk": {
+      "command": "npm run codegen:client-sdk",
+      "contentInputs": {
+        "client_sdk/typescript/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
+        "client_sdk/typescript/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
+        "client_sdk/typescript/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
+        "client_sdk/typescript/Core/Net/ClientTransport.ts": "62d4fe9935e183ca276a73e4185bc08eab9dbe39bebf6cd93a04118d59776770",
+        "client_sdk/typescript/Core/Net/NativeTransport.ts": "c8bb89579c3752fd5f237fde3451ded764258a71af65c57cebd92fe7030f911e",
+        "client_sdk/typescript/Core/Net/RpcSocket.ts": "c1298d19bafadd912b26234a70c4ce65a1268efd264e6221130f3b397a1e6003",
+        "client_sdk/typescript/Core/Protocol/Binary.ts": "f68292760c65d4d3542ecce4658576af2ec4a39bc71b51af51860ade92607edd",
+        "client_sdk/typescript/Core/Protocol/Frame.ts": "2e1c245952555c1c8df1d60682b783f0f4dd9c5d6a356d47ebf3f807b9a788ae",
+        "client_sdk/typescript/Core/Protocol/Message.ts": "d20651f0cf857d9938a8adc028c44875bab9b3b0c1517023f8b5c5fe779423f0",
+        "client_sdk/typescript/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
+        "client_sdk/typescript/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
+        "client_sdk/typescript/Demo/LoginFlow.ts": "7d5e04b972e8a2d56469df1467336aa258d8e8cd2739f91d3ad5296fefd7c973",
+        "client_sdk/typescript/Generated/Model/bench/protocol/clients.ts": "d5609b3b8fdb47101b464207ee8dba147e3f3389d8cc5c0e287900ff0cd70e1a",
+        "client_sdk/typescript/Generated/Model/bench/protocol/messageDescriptors.ts": "ba50d00677ed62c2d97470333b6cfbf2ce3b27cf828d91358401a2953bb7ca0b",
+        "client_sdk/typescript/Generated/Model/bench/protocol/messages.ts": "45042764df87bad1c5f0b7ffcfa4ce834b15b1e897a642d33f90fcf6d5183e8d",
+        "client_sdk/typescript/Generated/Model/bench/protocol/msgcodes.ts": "6981c8f0ff48fad63d3ef29db2e205ff57cad25f70082ef831c1834693680898",
+        "client_sdk/typescript/Generated/Model/bench/protocol/rpcs.ts": "be8e4bf7d92930a55c65ed0ecdf193a65257d1302d284060feab73353abbfbd4",
+        "client_sdk/typescript/Generated/Model/demo/protocol/clients.ts": "171c90e0de8b0a109d052592d4fd4b9b67c6470201217f5319366e4510f5fed2",
+        "client_sdk/typescript/Generated/Model/demo/protocol/messageDescriptors.ts": "04657ec7695a58336398b2b7af9c9494be31b5458c2c0f2d0f8bfb35a2dfb41f",
+        "client_sdk/typescript/Generated/Model/demo/protocol/messages.ts": "946075facc53d42a7da00a6f8f6ba7ac843b49d7860e90cb9feea82c7c83ade6",
+        "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "ee8864fb5b08074b718ce535b5b4b5849df7549a29aaa71f06171f07bbe31742",
+        "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "da955f97668d64216963953b5d31d831aa9b325f184a724d2b97525b7da09a5a",
+        "client_sdk/typescript/index.ts": "51fc009d49b1b2d81f8732d87a0742720df53e157a972a086f092270edaa81c0",
+        "codegen.config.json": "181861d244eae3f88a8fe5a8f9d9b44e6d9cbd1152265567a1ec78a9c6e0fe71",
+        "tools/codegen_client_sdk.mjs": "176f1abb5ff298a9413147879d2d684e8db15edda48320eb5ede6faaf25e169c",
+        "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495"
+      },
+      "selections": [],
+      "outputs": {
+        "client_sdk/typescript/Generated/ProtocolFingerprint.ts": "58dc0714851afbacf4bda8a77e39fcb7e8e7c331ad221448c8c3a1f3f77390d4",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Net/ClientTransport.ts": "62d4fe9935e183ca276a73e4185bc08eab9dbe39bebf6cd93a04118d59776770",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Net/NativeTransport.ts": "c8bb89579c3752fd5f237fde3451ded764258a71af65c57cebd92fe7030f911e",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Net/RpcSocket.ts": "c1298d19bafadd912b26234a70c4ce65a1268efd264e6221130f3b397a1e6003",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Protocol/Binary.ts": "f68292760c65d4d3542ecce4658576af2ec4a39bc71b51af51860ade92607edd",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Protocol/Frame.ts": "2e1c245952555c1c8df1d60682b783f0f4dd9c5d6a356d47ebf3f807b9a788ae",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Protocol/Message.ts": "d20651f0cf857d9938a8adc028c44875bab9b3b0c1517023f8b5c5fe779423f0",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
+        "cocos_client2D/assets/scripts/Generated/SDK/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
+        "cocos_client2D/assets/scripts/Generated/SDK/Demo/LoginFlow.ts": "7d5e04b972e8a2d56469df1467336aa258d8e8cd2739f91d3ad5296fefd7c973",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/bench/protocol/clients.ts": "d5609b3b8fdb47101b464207ee8dba147e3f3389d8cc5c0e287900ff0cd70e1a",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/bench/protocol/messageDescriptors.ts": "ba50d00677ed62c2d97470333b6cfbf2ce3b27cf828d91358401a2953bb7ca0b",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/bench/protocol/messages.ts": "45042764df87bad1c5f0b7ffcfa4ce834b15b1e897a642d33f90fcf6d5183e8d",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/bench/protocol/msgcodes.ts": "6981c8f0ff48fad63d3ef29db2e205ff57cad25f70082ef831c1834693680898",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/bench/protocol/rpcs.ts": "be8e4bf7d92930a55c65ed0ecdf193a65257d1302d284060feab73353abbfbd4",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "171c90e0de8b0a109d052592d4fd4b9b67c6470201217f5319366e4510f5fed2",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messageDescriptors.ts": "04657ec7695a58336398b2b7af9c9494be31b5458c2c0f2d0f8bfb35a2dfb41f",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messages.ts": "946075facc53d42a7da00a6f8f6ba7ac843b49d7860e90cb9feea82c7c83ade6",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/msgcodes.ts": "ee8864fb5b08074b718ce535b5b4b5849df7549a29aaa71f06171f07bbe31742",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "da955f97668d64216963953b5d31d831aa9b325f184a724d2b97525b7da09a5a",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/ProtocolFingerprint.ts": "58dc0714851afbacf4bda8a77e39fcb7e8e7c331ad221448c8c3a1f3f77390d4",
+        "cocos_client2D/assets/scripts/Generated/SDK/index.ts": "51fc009d49b1b2d81f8732d87a0742720df53e157a972a086f092270edaa81c0",
+        "pixi_client/src/Generated/SDK/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
+        "pixi_client/src/Generated/SDK/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
+        "pixi_client/src/Generated/SDK/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
+        "pixi_client/src/Generated/SDK/Core/Net/ClientTransport.ts": "62d4fe9935e183ca276a73e4185bc08eab9dbe39bebf6cd93a04118d59776770",
+        "pixi_client/src/Generated/SDK/Core/Net/NativeTransport.ts": "c8bb89579c3752fd5f237fde3451ded764258a71af65c57cebd92fe7030f911e",
+        "pixi_client/src/Generated/SDK/Core/Net/RpcSocket.ts": "c1298d19bafadd912b26234a70c4ce65a1268efd264e6221130f3b397a1e6003",
+        "pixi_client/src/Generated/SDK/Core/Protocol/Binary.ts": "f68292760c65d4d3542ecce4658576af2ec4a39bc71b51af51860ade92607edd",
+        "pixi_client/src/Generated/SDK/Core/Protocol/Frame.ts": "2e1c245952555c1c8df1d60682b783f0f4dd9c5d6a356d47ebf3f807b9a788ae",
+        "pixi_client/src/Generated/SDK/Core/Protocol/Message.ts": "d20651f0cf857d9938a8adc028c44875bab9b3b0c1517023f8b5c5fe779423f0",
+        "pixi_client/src/Generated/SDK/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
+        "pixi_client/src/Generated/SDK/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
+        "pixi_client/src/Generated/SDK/Demo/LoginFlow.ts": "7d5e04b972e8a2d56469df1467336aa258d8e8cd2739f91d3ad5296fefd7c973",
+        "pixi_client/src/Generated/SDK/Generated/Model/bench/protocol/clients.ts": "d5609b3b8fdb47101b464207ee8dba147e3f3389d8cc5c0e287900ff0cd70e1a",
+        "pixi_client/src/Generated/SDK/Generated/Model/bench/protocol/messageDescriptors.ts": "ba50d00677ed62c2d97470333b6cfbf2ce3b27cf828d91358401a2953bb7ca0b",
+        "pixi_client/src/Generated/SDK/Generated/Model/bench/protocol/messages.ts": "45042764df87bad1c5f0b7ffcfa4ce834b15b1e897a642d33f90fcf6d5183e8d",
+        "pixi_client/src/Generated/SDK/Generated/Model/bench/protocol/msgcodes.ts": "6981c8f0ff48fad63d3ef29db2e205ff57cad25f70082ef831c1834693680898",
+        "pixi_client/src/Generated/SDK/Generated/Model/bench/protocol/rpcs.ts": "be8e4bf7d92930a55c65ed0ecdf193a65257d1302d284060feab73353abbfbd4",
+        "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "171c90e0de8b0a109d052592d4fd4b9b67c6470201217f5319366e4510f5fed2",
+        "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/messageDescriptors.ts": "04657ec7695a58336398b2b7af9c9494be31b5458c2c0f2d0f8bfb35a2dfb41f",
+        "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/messages.ts": "946075facc53d42a7da00a6f8f6ba7ac843b49d7860e90cb9feea82c7c83ade6",
+        "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/msgcodes.ts": "ee8864fb5b08074b718ce535b5b4b5849df7549a29aaa71f06171f07bbe31742",
+        "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "da955f97668d64216963953b5d31d831aa9b325f184a724d2b97525b7da09a5a",
+        "pixi_client/src/Generated/SDK/Generated/ProtocolFingerprint.ts": "58dc0714851afbacf4bda8a77e39fcb7e8e7c331ad221448c8c3a1f3f77390d4",
+        "pixi_client/src/Generated/SDK/index.ts": "51fc009d49b1b2d81f8732d87a0742720df53e157a972a086f092270edaa81c0"
+      },
+      "outputRoots": [
+        {
+          "path": "cocos_client2D/assets/scripts/Generated/SDK",
+          "extensions": [
+            ".ts"
+          ],
+          "ignore": []
+        },
+        {
+          "path": "pixi_client/src/Generated/SDK",
           "extensions": [
             ".ts"
           ],
@@ -44,7 +163,7 @@
         "native_data/demo/Numeric.native": "6a16aab240ad13e1d80b865333c7072889ce4e4d0167ad910977f0db9107d352",
         "native_data/demo/Unit.native": "a2641db0579c8338e86a5a1915154a4fd544529125ba90593d52f90cc508c0f3",
         "native_data/NativeOps.native": "f08b64bd04fe218a9070642e6d33a23ee5f16a2342232e0611beae98df162fa0",
-        "package.json": "5d37fdc27c99e6c7523b527520e72b9cc65778ec34cb117a0e932240d9813bbc",
+        "package.json": "3cd6a16035d6933379bd91792812628be90f38f149f97722f9fb1f7d0fbc80c1",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -81,14 +200,14 @@
     "proto": {
       "command": "npm run codegen:proto",
       "contentInputs": {
-        "codegen.config.json": "fad1e20b8d7e39d13af2119ebfde98c09c2ce2cc3ff3fdf83c6b918165d5f6c2",
+        "codegen.config.json": "181861d244eae3f88a8fe5a8f9d9b44e6d9cbd1152265567a1ec78a9c6e0fe71",
         "proto/BenchInner_S_25001.proto": "ed3190c3d98c9e6b72bcdd14a8b752e041ae1195fa0f40cdd2889baabd3c1fbb",
         "proto/BenchMessage_C_15001.proto": "ddc78f821b9eb444b236d711f4748d5ba06b22d309f9e3f7a5817b9f88cf2b96",
         "proto/DataDefine_CS_50001.proto": "0bd7d4c2867695a200402b8b4263b265fd888e5fac3d7bddaa932218e899d6e3",
         "proto/InnerMessage_S_20001.proto": "763d80c44b4da9462910ed491b874a282badb1a79f4475d0b268c6f4a57b6525",
         "proto/OuterMessage_C_10001.proto": "f2e705df06688711a324d62969616defea513cc07e77764a87617376e6349c4b",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
-        "tools/codegen_proto.mjs": "c863062289a9f28d6ab78743d96239829a5bb01550982df1862b24220e10bc04"
+        "tools/codegen_proto.mjs": "0e4587441df5efb2fe018973102a7afc4ae90ce46a79881c2de333587cec8a48"
       },
       "selections": [],
       "outputs": {
@@ -110,14 +229,16 @@
         "app/generated/model/server/demo/protocol/messages.ts": "a25bc3d0ddb6fb4f85b37cf14896d88455fb2f237e863a5d1cc4a9a7d33c9e48",
         "app/generated/model/server/demo/protocol/msgcodes.ts": "0123a825695267dbca60529e0b90bcb8d0ba95b0794c58d002588b614afad68f",
         "app/generated/model/server/demo/protocol/rpcs.ts": "5dee2ce2cf6d9b07d13116320dc380502659083df8363b93878c832815ff8e9d",
-        "cocos_client2D/assets/scripts/Generated/Model/bench/protocol/messageDescriptors.ts": "ba50d00677ed62c2d97470333b6cfbf2ce3b27cf828d91358401a2953bb7ca0b",
-        "cocos_client2D/assets/scripts/Generated/Model/bench/protocol/messages.ts": "45042764df87bad1c5f0b7ffcfa4ce834b15b1e897a642d33f90fcf6d5183e8d",
-        "cocos_client2D/assets/scripts/Generated/Model/bench/protocol/msgcodes.ts": "6981c8f0ff48fad63d3ef29db2e205ff57cad25f70082ef831c1834693680898",
-        "cocos_client2D/assets/scripts/Generated/Model/bench/protocol/rpcs.ts": "be8e4bf7d92930a55c65ed0ecdf193a65257d1302d284060feab73353abbfbd4",
-        "cocos_client2D/assets/scripts/Generated/Model/demo/protocol/messageDescriptors.ts": "04657ec7695a58336398b2b7af9c9494be31b5458c2c0f2d0f8bfb35a2dfb41f",
-        "cocos_client2D/assets/scripts/Generated/Model/demo/protocol/messages.ts": "946075facc53d42a7da00a6f8f6ba7ac843b49d7860e90cb9feea82c7c83ade6",
-        "cocos_client2D/assets/scripts/Generated/Model/demo/protocol/msgcodes.ts": "ee8864fb5b08074b718ce535b5b4b5849df7549a29aaa71f06171f07bbe31742",
-        "cocos_client2D/assets/scripts/Generated/Model/demo/protocol/rpcs.ts": "da955f97668d64216963953b5d31d831aa9b325f184a724d2b97525b7da09a5a"
+        "client_sdk/typescript/Generated/Model/bench/protocol/clients.ts": "d5609b3b8fdb47101b464207ee8dba147e3f3389d8cc5c0e287900ff0cd70e1a",
+        "client_sdk/typescript/Generated/Model/bench/protocol/messageDescriptors.ts": "ba50d00677ed62c2d97470333b6cfbf2ce3b27cf828d91358401a2953bb7ca0b",
+        "client_sdk/typescript/Generated/Model/bench/protocol/messages.ts": "45042764df87bad1c5f0b7ffcfa4ce834b15b1e897a642d33f90fcf6d5183e8d",
+        "client_sdk/typescript/Generated/Model/bench/protocol/msgcodes.ts": "6981c8f0ff48fad63d3ef29db2e205ff57cad25f70082ef831c1834693680898",
+        "client_sdk/typescript/Generated/Model/bench/protocol/rpcs.ts": "be8e4bf7d92930a55c65ed0ecdf193a65257d1302d284060feab73353abbfbd4",
+        "client_sdk/typescript/Generated/Model/demo/protocol/clients.ts": "171c90e0de8b0a109d052592d4fd4b9b67c6470201217f5319366e4510f5fed2",
+        "client_sdk/typescript/Generated/Model/demo/protocol/messageDescriptors.ts": "04657ec7695a58336398b2b7af9c9494be31b5458c2c0f2d0f8bfb35a2dfb41f",
+        "client_sdk/typescript/Generated/Model/demo/protocol/messages.ts": "946075facc53d42a7da00a6f8f6ba7ac843b49d7860e90cb9feea82c7c83ade6",
+        "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "ee8864fb5b08074b718ce535b5b4b5849df7549a29aaa71f06171f07bbe31742",
+        "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "da955f97668d64216963953b5d31d831aa9b325f184a724d2b97525b7da09a5a"
       },
       "outputRoots": [
         {
@@ -135,7 +256,7 @@
           "ignore": []
         },
         {
-          "path": "cocos_client2D/assets/scripts/Generated/Model",
+          "path": "client_sdk/typescript/Generated/Model",
           "extensions": [
             ".ts"
           ],
@@ -146,7 +267,7 @@
     "scenes": {
       "command": "npm run codegen:scenes",
       "contentInputs": {
-        "codegen.config.json": "fad1e20b8d7e39d13af2119ebfde98c09c2ce2cc3ff3fdf83c6b918165d5f6c2",
+        "codegen.config.json": "181861d244eae3f88a8fe5a8f9d9b44e6d9cbd1152265567a1ec78a9c6e0fe71",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
         "tools/codegen_scenes.mjs": "7f166bd12958bab4a55fd62bb6194eac813803811745e1502830cec47e20a51a"
       },

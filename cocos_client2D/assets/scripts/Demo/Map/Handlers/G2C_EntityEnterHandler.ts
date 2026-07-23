@@ -1,9 +1,9 @@
 import {
   clientMessageHandler,
   type ClientMessageHandler,
-} from "../../../Core/Net/ClientMessageDispatcher";
-import { ClientMessages } from "../../../Generated/Model/demo/protocol/messageDescriptors";
-import type { G2C_EntityEnter } from "../../../Generated/Model/demo/protocol/messages";
+} from "../../../Generated/SDK/Core/Net/ClientMessageDispatcher";
+import { ClientMessages } from "../../../Generated/SDK/Generated/Model/demo/protocol/messageDescriptors";
+import type { G2C_EntityEnter } from "../../../Generated/SDK/Generated/Model/demo/protocol/messages";
 import type { MapEntityManager } from "../MapEntityManager";
 import { MapMessageScope } from "../MapMessageScope";
 

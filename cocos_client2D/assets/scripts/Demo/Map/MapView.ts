@@ -5,14 +5,14 @@ import {
   UNIT_FOOTPRINT_CELLS,
   worldToCell,
 } from "./Movement/CellMovement";
-import type { RpcSocket } from "../../Core/Net/RpcSocket";
-import { ClientMessageDispatcher } from "../../Core/Net/ClientMessageDispatcher";
+import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
+import { ClientMessageDispatcher } from "../../Generated/SDK/Core/Net/ClientMessageDispatcher";
 import "../../Generated/Hotfix/handlers";
 import type {
   G2C_EnterMap,
   G2C_MapReady,
   S2C_Login,
-} from "../../Generated/Model/demo/protocol/messages";
+} from "../../Generated/SDK/Generated/Model/demo/protocol/messages";
 import { LocalPlayerController } from "./LocalPlayerController";
 import { MapController } from "./MapController";
 import { MapEntityManager } from "./MapEntityManager";

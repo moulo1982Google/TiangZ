@@ -1,6 +1,6 @@
 import { LocalPlayerController } from "./LocalPlayerController";
 import { MapEntityManager } from "./MapEntityManager";
-import type { ClientMessageDispatcher } from "../../Core/Net/ClientMessageDispatcher";
+import type { ClientMessageDispatcher } from "../../Generated/SDK/Core/Net/ClientMessageDispatcher";
 
 export class MapController {
   constructor(

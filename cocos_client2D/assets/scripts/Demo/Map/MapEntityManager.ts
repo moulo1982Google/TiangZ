@@ -1,11 +1,11 @@
 import { Color, Label, Node } from "cc";
-import type { RpcSocket } from "../../Core/Net/RpcSocket";
-import { MapMessages } from "../../Generated/Model/demo/protocol/messageDescriptors";
+import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
+import { MapClient } from "../../Generated/SDK/Generated/Model/demo/protocol/clients";
 import type {
   G2C_EntityMove,
   MapEntitySnapshot,
   UnitNumericSnapshot,
-} from "../../Generated/Model/demo/protocol/messages";
+} from "../../Generated/SDK/Generated/Model/demo/protocol/messages";
 import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
 import {
@@ -34,15 +34,17 @@ export class MapEntityManager {
   private readonly remotes = new Map<number, RemoteEntityVisual>();
   private readonly numericLabels = new Map<number, Label>();
   private readonly numericSnapshots = new Map<number, UnitNumericSnapshot>();
+  private readonly mapClient: MapClient;
 
   constructor(
     private readonly ui: DemoUi,
     private readonly parent: Node,
-    private readonly socket: RpcSocket,
+    socket: RpcSocket,
     private readonly localUnitId: number,
     private readonly fixedUpdateMs: number,
     snapshots: readonly MapEntitySnapshot[],
   ) {
+    this.mapClient = new MapClient(socket);
     for (const snapshot of snapshots) this.upsert(snapshot);
   }
 
@@ -120,7 +122,7 @@ export class MapEntityManager {
           snapshot.cellX,
           snapshot.cellY,
           (state) => {
-            void this.socket.send(MapMessages.Move, {
+            void this.mapClient.move({
               inputX: state.x,
               inputY: state.y,
               sequence: state.sequence,

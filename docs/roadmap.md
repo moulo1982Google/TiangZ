@@ -153,7 +153,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 4. 验收矩阵：Cocos Web、PixiJS/H5、Cocos Native Windows。
 5. SDK v2 再评估微信/抖音小游戏，无账号环境不作为 v1 阻塞项。
 
-当前进度：Transport Core 已支持 `websocket/tcp/kcp` 选择及平台能力检查；Cocos Native Windows 的 TCP/KCP JSB Adapter 已完成，并通过登录到进图的完整链路。SDK 文件夹生成、PixiJS/H5 Demo 与正式 Update 队列仍属于 Phase 3。
+完成状态：Phase 3 已完成。公共 SDK 以 `client_sdk/typescript` 为唯一源码，codegen 生成协议 Client、协议指纹并向 Cocos/Pixi 分发完整副本；Runtime 已覆盖有界 Update 队列、RPC pending/超时/断线、Push、错误模型与不支持协议检查。Cocos Web 完成 Creator Preview bundle，PixiJS/H5 完成 Edge 自动登录进图，Cocos Native Windows 延续已通过的 TCP/KCP 全链路验收。SDK v2 的微信/抖音小游戏 Adapter 等具备账号与真机后再立项。
 
 ## Phase 4：MMORPG 业务扩展
 

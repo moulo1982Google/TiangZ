@@ -47,7 +47,9 @@ app/generated/hotfix/        自动生成的 Scene/Handler 模块入口
 proto/                       protobuf 源文件
 native_data/                 Rust Entity/Native op 原型
 configs/<environment>/       环境启动配置
+client_sdk/typescript/       TypeScript Client SDK 唯一源码
 cocos_client2D/              Cocos Creator 2D Demo 客户端
+pixi_client/                 PixiJS/H5 SDK 通用性验收客户端
 perf/                        RPC、完整链路与地图容量测试
 tools/                       codegen、冒烟测试和维护脚本
 tools-projects/              本机独立工具仓库，不属于 TiangZ 主仓库
@@ -83,6 +85,22 @@ npm run test:runtime
 ```
 
 Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“获取登录服务器地址”，不是框架中的 Service 类型。
+
+## 客户端 SDK
+
+公共 TypeScript SDK 位于 `client_sdk/typescript/`。`Core` 只包含引擎无关的帧、RPC、Push、Update 队列、错误和 Transport 抽象；协议生成代码位于 `Generated/Model`。执行 `npm run codegen` 后，完整 SDK 会分发到 Cocos 与 Pixi 的 `Generated/SDK`，两个客户端不维护私有网络 Core。
+
+```powershell
+# 公共 SDK 真实 WebSocket 登录到进图
+npm run smoke:client-sdk -- websocket 127.0.0.1 7000
+
+# PixiJS/H5
+npm run build:pixi
+npm run serve:pixi
+npm run smoke:pixi
+```
+
+RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClient`；业务不手写 msgcode、rpcId 或 codec。服务端 Push 使用独立的 `@clientMessageHandler`，由 codegen 自动生成 Handler 导入入口。详细规则见 `client_sdk/typescript/README.md` 与 `docs/client_sdk_plan.md`。
 
 ## 配置模型
 

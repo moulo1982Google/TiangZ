@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TiangZ Pixi Client</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #11171a; color: #e9f2ef; font-family: Arial, sans-serif; }
+    #game { position: fixed; inset: 0; }
+    canvas { display: block; }
+    #login { position: fixed; left: 20px; top: 20px; width: min(360px, calc(100vw - 40px)); padding: 16px; background: rgba(17, 27, 30, .94); border: 1px solid #38524d; border-radius: 6px; }
+    #login h1 { margin: 0 0 14px; font-size: 20px; letter-spacing: 0; }
+    #login-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    input, button { min-width: 0; height: 38px; border-radius: 4px; border: 1px solid #46635d; font: inherit; }
+    input { padding: 0 10px; background: #172326; color: #fff; }
+    button { padding: 0 16px; background: #44a07d; color: #07120f; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: default; }
+    #status { min-height: 20px; margin: 12px 0 0; color: #8ed5b9; font-size: 14px; }
+    #hud { position: fixed; left: 16px; bottom: 14px; display: none; padding: 8px 10px; background: rgba(10, 17, 19, .82); border-radius: 4px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+  <section id="login">
+    <h1>TiangZ Pixi Client</h1>
+    <div id="login-row">
+      <input id="account" name="account" autocomplete="off">
+      <button id="enter" type="button">进入游戏</button>
+    </div>
+    <p id="status">准备连接</p>
+  </section>
+  <div id="hud"></div>
+  <script type="module" src="./dist/app.js"></script>
+</body>
+</html>

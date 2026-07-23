@@ -1,5 +1,6 @@
-import type { ClientTransportKind } from "../cocos_client2D/assets/scripts/Core/Net/ClientTransport";
-import { LoginFlow } from "../cocos_client2D/assets/scripts/Demo/Login/LoginFlow";
+import type { ClientTransportKind } from "../client_sdk/typescript/Core/Net/ClientTransport";
+import "../client_sdk/typescript/Core/Net/BrowserWebSocketTransport";
+import { LoginFlow } from "../client_sdk/typescript/Demo/LoginFlow";
 
 async function main(): Promise<void> {
   const transport = (process.argv[2] ?? "websocket") as ClientTransportKind;
@@ -8,6 +9,7 @@ async function main(): Promise<void> {
     host: process.argv[3] ?? "127.0.0.1",
     port: Number(process.argv[4] ?? 7000),
   });
+  const updateTimer = setInterval(() => flow.update(), 5);
 
   try {
     const result = await flow.enterGame(`sdk_smoke_${Date.now()}`, 1);
@@ -20,6 +22,7 @@ async function main(): Promise<void> {
       mapReadyUnitId: result.mapReady.unitId,
     });
   } finally {
+    clearInterval(updateTimer);
     flow.close();
   }
 }

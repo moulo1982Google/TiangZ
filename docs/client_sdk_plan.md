@@ -18,13 +18,20 @@ SDK Core 不得依赖 `cc`、`pixi.js`、DOM 或具体平台全局变量。Cocos
 
 当前 SDK 通过 `ClientEndpoint.transport` 选择 `websocket`、`tcp` 或 `kcp`。协议能力由平台 Adapter 注册，不允许静默降级：Cocos Web/PixiJS 选择 TCP 或 KCP 会立即抛出 `UnsupportedTransportError`；Cocos Native Windows 注册 TCP/KCP JSB Adapter。登录过程中 LoginMgr 返回 Login、Login 返回 Gate 地址时只替换 host/port，transport 选择保持不变。
 
-当前验收结果：
+Phase 3 验收结果：
 
+- SDK 生成：公共源码位于 `client_sdk/typescript`，codegen 向 Cocos/Pixi 分发 24 个 TypeScript 文件并写入同一协议指纹；逐文件一致性由 `npm run test:client-sdk-distribution` 保证；
+- SDK Runtime：网络回调只进入有界队列，游戏主循环显式调用 `update(maxMessages)`；RPC pending、并发 rpcId、超时、断线取消、未知 Push、Handler 错误和队列溢出均有自动测试；
+- 强类型调用：proto 直接生成 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClient`，业务只传请求体，rpcId、msgcode 与 codec 由 SDK 处理；
+- Cocos Web：公共 SDK 已通过 Creator Preview 资源导入和 bundle、TypeScript 检查及 esbuild 检查；
+- PixiJS/H5：同一 SDK 已通过 Edge 自动登录，完成 LoginMgr -> Login -> Gate -> MapReady，并确认 Pixi canvas 与地图 HUD；
 - Cocos Native Windows KCP：LoginMgr -> Login -> Gate -> MapReady 已通过；
 - Cocos Native Windows TCP：同一业务链路已通过；
 - 通用 WebSocket SDK：`npm run smoke:client-sdk -- websocket 127.0.0.1 7000` 已通过；
-- 不支持协议：`npm run test:client-transport` 验证 TCP/KCP 在无 Native Adapter 环境立即失败。
+- 不支持协议：`npm run test:client-transport` 验证 TCP/KCP 在无 Native Adapter 环境立即失败；
 - Push Handler：SDK Core 已提供引擎无关的 `ClientMessageScope`、`ClientMessageDispatcher` 和自动释放；Cocos Demo Handler 由 codegen 自动导入，表现对象不再维护 `socket.on` 列表。
+
+Phase 3 已完成。后续业务功能只能依赖 SDK 公共入口或生成副本，不得在客户端工程内复制另一套网络 Core。Cocos Native 的既有 TCP/KCP 全链路已验收；每次修改 Native Adapter 或 JSB Bridge 时仍必须重新生成 Windows 工程并执行原生回归，不能用 Web/Pixi 结果代替。
 
 Android、iOS、macOS 等 Native 平台以后分别作为独立验收项加入，不能用 Windows x64 的通过结果代替其他操作系统验收。
 

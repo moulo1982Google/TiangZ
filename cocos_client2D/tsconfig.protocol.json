@@ -10,8 +10,7 @@
     "noEmit": true
   },
   "include": [
-    "assets/scripts/Core/**/*.ts",
-    "assets/scripts/Generated/Model/**/*.ts",
+    "assets/scripts/Generated/SDK/**/*.ts",
     "assets/scripts/Demo/Login/**/*.ts"
   ]
 }

@@ -3,7 +3,7 @@ import {
   UnsupportedTransportError,
   createClientTransport,
   registerClientTransport,
-} from "../cocos_client2D/assets/scripts/Core/Net/ClientTransport";
+} from "../client_sdk/typescript/Core/Net/ClientTransport";
 
 function expectUnsupported(transport: "tcp" | "kcp"): void {
   try {
