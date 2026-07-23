@@ -44,7 +44,7 @@
         "native_data/demo/Numeric.native": "6a16aab240ad13e1d80b865333c7072889ce4e4d0167ad910977f0db9107d352",
         "native_data/demo/Unit.native": "a2641db0579c8338e86a5a1915154a4fd544529125ba90593d52f90cc508c0f3",
         "native_data/NativeOps.native": "f08b64bd04fe218a9070642e6d33a23ee5f16a2342232e0611beae98df162fa0",
-        "package.json": "6f01c758e2f0e90f4b23d168f6d47e7959f5daf53005b3a7b3d4090955d207f9",
+        "package.json": "5d37fdc27c99e6c7523b527520e72b9cc65778ec34cb117a0e932240d9813bbc",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
