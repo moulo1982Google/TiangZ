@@ -40,8 +40,52 @@ const audience: BroadcastAudience = {
 
 async function main(): Promise<void> {
   await testLatestSingleFlight();
+  await testEncodedLatestSnapshot();
   await testEventOrderingAndCapacity();
   console.log("broadcast framework self-test passed");
+}
+
+async function testEncodedLatestSnapshot(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  const firstFrame = Uint8Array.from([0x27, 0x20, 1]);
+  const replacedFrame = Uint8Array.from([0x27, 0x20, 2]);
+  const latestFrame = Uint8Array.from([0x27, 0x20, 3]);
+
+  const first = hub.PublishEncodedLatestSnapshot(
+    audience,
+    "Client.EntityMove",
+    firstFrame,
+    2,
+  );
+  const replaced = hub.PublishEncodedLatestSnapshot(
+    audience,
+    "Client.EntityMove",
+    replacedFrame,
+    3,
+  );
+  const latest = hub.PublishEncodedLatestSnapshot(
+    audience,
+    "Client.EntityMove",
+    latestFrame,
+    4,
+  );
+  assert.equal(transport.sends.length, 1);
+  assert.equal(hub.Snapshot().pendingItems, 4);
+
+  transport.sends[0].resolve();
+  await settlePromises();
+  assert.equal(transport.sends.length, 2);
+  assert.equal(transport.sends[1].frame, latestFrame);
+  transport.sends[1].resolve();
+  await Promise.all([first, replaced, latest]);
+
+  const metrics = hub.Snapshot();
+  assert.equal(metrics.queuedItems, 9);
+  assert.equal(metrics.coalescedItems, 3);
+  assert.equal(metrics.sentItems, 6);
+  assert.equal(metrics.broadcastsStarted, 2);
+  assert.equal(metrics.broadcastsCompleted, 2);
 }
 
 async function testLatestSingleFlight(): Promise<void> {

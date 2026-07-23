@@ -10,36 +10,27 @@ import {
 } from "../../core/runtime";
 import { ClientBroadcasts } from "../../generated/model/server/demo/protocol/broadcastDescriptors";
 import type {
-  CellMovementState,
   G2M_EnterMap,
   G2M_PlayerDisconnect,
   MapEntitySnapshot,
 } from "../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
-import { MovementComponent } from "./MovementComponent";
 import { PlayerUnit, type PlayerSnapshot } from "./PlayerUnit";
 import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
-import type { MovementFrame } from "../movement";
-import { NativeData, type NativeDataBackend } from "../native/NativeData";
+import { NativeData } from "../native/NativeData";
 
 @component()
 export class MapComponent extends Component<[
   mapId: number,
   scenes: SceneMessageHelper,
   players: PlayerDirectoryComponent,
-  dataBackend: NativeDataBackend,
 ]> {
-  // 地图以 20Hz 持续模拟当前方向；方向变化立即广播，移动中以 10Hz 权威校正。
-  private static readonly MOVE_BROADCAST_INTERVAL_MS = 100;
   private mapId = 0;
   private players!: PlayerDirectoryComponent;
-  private moveBroadcastElapsedMs = 0;
   private serverTick = 0;
-  private dataBackend: NativeDataBackend = "typescript";
-  private readonly pendingMovementFrames = new Map<number, MovementFrame>();
   private broadcast!: BroadcastHub;
 
   get MapId(): number {
@@ -50,11 +41,9 @@ export class MapComponent extends Component<[
     mapId: number,
     scenes: SceneMessageHelper,
     players: PlayerDirectoryComponent,
-    dataBackend: NativeDataBackend,
   ): void {
     this.mapId = mapId;
     this.players = players;
-    this.dataBackend = dataBackend;
     this.broadcast = new BroadcastHub(new SceneBroadcastTransport(scenes), {
       onError: (name, error) => {
         console.error(`[Map:${this.mapId}] ${name} broadcast failed`, error);
@@ -66,34 +55,19 @@ export class MapComponent extends Component<[
     if (this.units.Count === 0) return;
     const fixedDeltaMs = TimeSystem.Instance.FixedDeltaTime;
     this.serverTick += 1;
-    const movements: MovementFrame[] = [];
-    for (const frame of this.UpdateMovementFrames()) {
-      if (frame.stateChanged || !frame.moving) {
-        this.pendingMovementFrames.delete(frame.unitId);
-        movements.push(frame);
-      } else {
-        this.pendingMovementFrames.set(frame.unitId, frame);
-      }
-    }
-
-    this.moveBroadcastElapsedMs += fixedDeltaMs;
-    let periodicBroadcast = false;
-    if (this.moveBroadcastElapsedMs >= MapComponent.MOVE_BROADCAST_INTERVAL_MS) {
-      this.moveBroadcastElapsedMs %= MapComponent.MOVE_BROADCAST_INTERVAL_MS;
-      periodicBroadcast = true;
-    }
-
-    if (periodicBroadcast) {
-      movements.push(...this.pendingMovementFrames.values());
-      this.pendingMovementFrames.clear();
-    }
-    if (movements.length === 0) return;
-
-    void this.broadcast.PublishMany(
-      this.BroadcastAudience(),
-      ClientBroadcasts.EntityMove,
-      movements.map(toCellMovementState),
+    const descriptor = ClientBroadcasts.EntityMove;
+    const encoded = NativeData.UpdateMapMovement(
+      this.mapId,
       this.serverTick,
+      fixedDeltaMs,
+      descriptor.message.msgcode,
+    );
+    if (encoded.itemCount === 0) return;
+    void this.broadcast.PublishEncodedLatestSnapshot(
+      this.BroadcastAudience(),
+      descriptor.name,
+      encoded.frame,
+      encoded.itemCount,
     ).catch(() => undefined);
   }
 
@@ -105,22 +79,19 @@ export class MapComponent extends Component<[
     });
 
     try {
-      const native = this.dataBackend === "rust"
-        ? player.AddComponent(NativeUnitRef, {
-            unitId,
-            instanceId: player.InstanceId,
-            mapId: this.mapId,
-            x: 0,
-            y: 0,
-          })
-        : undefined;
-      player.AddComponent(PositionComponent, 0, 0, native);
+      const native = player.AddComponent(NativeUnitRef, {
+        id: unitId,
+        instanceId: player.InstanceId,
+        mapId: this.mapId,
+        x: 0,
+        y: 0,
+      });
+      player.AddComponent(PositionComponent, native);
       player.AddComponent(
         UnitGateComponent,
         request.gateName,
         request.gateSessionId,
       );
-      if (!native) player.AddComponent(MovementComponent);
       this.players.Add(player);
       return player;
     } catch (error) {
@@ -198,7 +169,6 @@ export class MapComponent extends Component<[
   async RemovePlayerAndBroadcast(unit: PlayerUnit): Promise<void> {
     this.requirePlayer(unit);
     const unitId = unit.UnitId;
-    this.pendingMovementFrames.delete(unitId);
     this.players.Remove(unit);
     this.units.Remove(unitId);
 
@@ -215,7 +185,6 @@ export class MapComponent extends Component<[
   }
 
   protected override OnDestroy(): void {
-    this.pendingMovementFrames.clear();
     this.broadcast.Dispose();
   }
 
@@ -228,31 +197,6 @@ export class MapComponent extends Component<[
         return { route: gate.gateName, recipientId: unit.UnitId };
       });
     return { key: `map:${this.mapId}`, routes };
-  }
-
-  private UpdateMovementFrames(): MovementFrame[] {
-    const fixedUpdateMs = TimeSystem.Instance.FixedDeltaTime;
-    if (this.dataBackend === "typescript") {
-      const frames: MovementFrame[] = [];
-      for (const unit of this.units.GetAll(PlayerUnit)) {
-        const frame = unit.UpdateMovement(this.serverTick, fixedUpdateMs);
-        if (frame) frames.push(frame);
-      }
-      return frames;
-    }
-
-    return NativeData.FixedUpdateMap(
-      this.mapId,
-      this.serverTick,
-      fixedUpdateMs,
-    ).map((frame) => {
-      if (!this.units.Get<PlayerUnit>(frame.unitId)) {
-        throw new Error(
-          `native movement references missing unit ${frame.unitId} on map ${this.mapId}`,
-        );
-      }
-      return frame;
-    });
   }
 
   private requirePlayer(unit: PlayerUnit): void {
@@ -270,20 +214,6 @@ export class MapComponent extends Component<[
   private get units(): UnitComponent {
     return this.DomainScene().GetComponent(UnitComponent);
   }
-}
-
-function toCellMovementState(frame: MovementFrame): CellMovementState {
-  return {
-    unitId: frame.unitId,
-    acknowledgedSequence: frame.acknowledgedSequence,
-    fromCellX: frame.fromCellX,
-    fromCellY: frame.fromCellY,
-    toCellX: frame.toCellX,
-    toCellY: frame.toCellY,
-    moveStartTick: frame.moveStartTick,
-    moveEndTick: frame.moveEndTick,
-    moving: frame.moving,
-  };
 }
 
 function toMapEntity(snapshot: PlayerSnapshot): MapEntitySnapshot {

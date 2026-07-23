@@ -2,7 +2,6 @@ import { Component, component } from "../../core/runtime";
 import {
   canOccupyCell,
   cellToWorld,
-  worldToCell,
 } from "../movement";
 import type { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 
@@ -14,26 +13,44 @@ export interface PositionSnapshot {
 }
 
 @component()
-export class PositionComponent extends Component<[
-  x: number,
-  y: number,
-  native?: NativeUnitRef,
-]> {
-  private currentCellX = 0;
-  private currentCellY = 0;
-  private native: NativeUnitRef | undefined;
+export class PositionComponent extends Component<[native: NativeUnitRef]> {
+  private native!: NativeUnitRef;
+
+  get x(): number {
+    return this.native.x;
+  }
+
+  set x(value: number) {
+    if (!Number.isFinite(value)) throw new Error(`invalid position x: ${value}`);
+    this.native.x = value;
+  }
+
+  get y(): number {
+    return this.native.y;
+  }
+
+  set y(value: number) {
+    if (!Number.isFinite(value)) throw new Error(`invalid position y: ${value}`);
+    this.native.y = value;
+  }
+
+  get cellX(): number {
+    return this.native.cellX;
+  }
+
+  get cellY(): number {
+    return this.native.cellY;
+  }
 
   get CellX(): number {
-    return this.native?.Snapshot().cellX ?? this.currentCellX;
+    return this.cellX;
   }
 
   get CellY(): number {
-    return this.native?.Snapshot().cellY ?? this.currentCellY;
+    return this.cellY;
   }
 
-  protected override Awake(x: number, y: number, native?: NativeUnitRef): void {
-    this.currentCellX = worldToCell(x);
-    this.currentCellY = worldToCell(y);
+  protected override Awake(native: NativeUnitRef): void {
     this.native = native;
   }
 
@@ -42,31 +59,23 @@ export class PositionComponent extends Component<[
   }
 
   SetCell(cellX: number, cellY: number): void {
-    if (this.native) {
-      throw new Error("native Unit position must be updated by NativeData.FixedUpdateMap");
-    }
     if (!this.CanOccupy(cellX, cellY)) {
       throw new Error(`cell is outside map: ${cellX},${cellY}`);
     }
-    this.currentCellX = cellX;
-    this.currentCellY = cellY;
+    this.native.cellX = cellX;
+    this.native.cellY = cellY;
+    this.native.targetCellX = cellX;
+    this.native.targetCellY = cellY;
+    this.native.x = cellToWorld(cellX);
+    this.native.y = cellToWorld(cellY);
   }
 
   snapshot(): PositionSnapshot {
-    if (this.native) {
-      const snapshot = this.native.Snapshot();
-      return {
-        x: snapshot.x,
-        y: snapshot.y,
-        cellX: snapshot.cellX,
-        cellY: snapshot.cellY,
-      };
-    }
     return {
-      x: cellToWorld(this.currentCellX),
-      y: cellToWorld(this.currentCellY),
-      cellX: this.currentCellX,
-      cellY: this.currentCellY,
+      x: this.native.x,
+      y: this.native.y,
+      cellX: this.native.cellX,
+      cellY: this.native.cellY,
     };
   }
 }

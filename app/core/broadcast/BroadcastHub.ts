@@ -32,12 +32,21 @@ interface LatestJob<TItem> {
   readonly deferred: Deferred[];
 }
 
+interface EncodedSnapshotJob {
+  audience: BroadcastAudience;
+  frame: Uint8Array;
+  itemCount: number;
+  queuedAt: number;
+  readonly deferred: Deferred[];
+}
+
 interface Channel {
   readonly key: string;
   inFlight: boolean;
   inFlightItems: number;
   readonly eventQueue: EventJob<unknown>[];
   latest?: LatestJob<unknown>;
+  encodedLatest?: EncodedSnapshotJob;
 }
 
 const DEFAULT_MAX_EVENT_QUEUE = 1024;
@@ -111,6 +120,59 @@ export class BroadcastHub {
     return this.enqueueEvent(channel, audience, descriptor, items, tick);
   }
 
+  PublishEncodedLatestSnapshot(
+    audience: BroadcastAudience,
+    descriptorName: string,
+    frame: Uint8Array,
+    itemCount: number,
+  ): Promise<void> {
+    if (this.disposed) {
+      return Promise.reject(new Error("broadcast hub is disposed"));
+    }
+    if (itemCount === 0 || audience.routes.length === 0) {
+      return Promise.resolve();
+    }
+    if (!descriptorName) throw new Error("encoded broadcast name is required");
+    if (frame.length < 2) throw new Error("encoded broadcast frame is too short");
+    if (!Number.isSafeInteger(itemCount) || itemCount < 0) {
+      throw new Error(`invalid encoded broadcast item count: ${itemCount}`);
+    }
+
+    this.validateAudience(audience);
+    const channelKey = `${descriptorName}\0${audience.key}`;
+    const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
+    if (channel.latest || channel.eventQueue.length > 0) {
+      throw new Error(`encoded and object broadcasts share channel ${channelKey}`);
+    }
+
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((promiseResolve, promiseReject) => {
+      resolve = promiseResolve;
+      reject = promiseReject;
+    });
+    const existing = channel.encodedLatest;
+    if (existing) {
+      this.metrics.coalescedItems += existing.itemCount;
+      existing.audience = audience;
+      existing.frame = frame;
+      existing.itemCount = itemCount;
+      existing.deferred.push({ resolve, reject });
+    } else {
+      channel.encodedLatest = {
+        audience,
+        frame,
+        itemCount,
+        queuedAt: monotonicNow(),
+        deferred: [{ resolve, reject }],
+      };
+    }
+    this.metrics.queuedItems += itemCount;
+    this.recordPending();
+    this.pumpEncodedSnapshot(channel, descriptorName);
+    return promise;
+  }
+
   Snapshot(): BroadcastMetricsSnapshot {
     let inFlight = 0;
     let inFlightItems = 0;
@@ -119,6 +181,7 @@ export class BroadcastHub {
       if (channel.inFlight) inFlight += 1;
       inFlightItems += channel.inFlightItems;
       if (channel.latest) pendingItems += channel.latest.items.size;
+      if (channel.encodedLatest) pendingItems += channel.encodedLatest.itemCount;
       for (const job of channel.eventQueue) pendingItems += job.items.length;
     }
     return {
@@ -149,8 +212,10 @@ export class BroadcastHub {
     for (const channel of this.channels.values()) {
       for (const job of channel.eventQueue) job.deferred.reject(error);
       for (const deferred of channel.latest?.deferred ?? []) deferred.reject(error);
+      for (const deferred of channel.encodedLatest?.deferred ?? []) deferred.reject(error);
       channel.eventQueue.length = 0;
       channel.latest = undefined;
+      channel.encodedLatest = undefined;
     }
   }
 
@@ -303,6 +368,75 @@ export class BroadcastHub {
     if (
       !channel.inFlight &&
       !channel.latest &&
+      !channel.encodedLatest &&
+      channel.eventQueue.length === 0
+    ) {
+      this.channels.delete(channel.key);
+    }
+  }
+
+  private pumpEncodedSnapshot(channel: Channel, descriptorName: string): void {
+    if (channel.inFlight || this.disposed) return;
+    const job = channel.encodedLatest;
+    if (!job) return;
+    channel.encodedLatest = undefined;
+
+    const startedAt = monotonicNow();
+    const queueWaitMs = Math.max(0, startedAt - job.queuedAt);
+    channel.inFlight = true;
+    channel.inFlightItems = job.itemCount;
+    this.metrics.broadcastsStarted += 1;
+    this.metrics.sentItems += job.itemCount;
+    this.metrics.maxInFlightItems = Math.max(
+      this.metrics.maxInFlightItems,
+      job.itemCount,
+    );
+    this.metrics.lastQueueWaitMs = queueWaitMs;
+    this.metrics.maxQueueWaitMs = Math.max(this.metrics.maxQueueWaitMs, queueWaitMs);
+    this.metrics.totalQueueWaitMs += queueWaitMs;
+
+    void this.transport.Send(job.audience, job.frame)
+      .then(() => this.completeEncodedSnapshot(
+        channel,
+        descriptorName,
+        startedAt,
+        job.deferred,
+      ))
+      .catch((error) => this.completeEncodedSnapshot(
+        channel,
+        descriptorName,
+        startedAt,
+        job.deferred,
+        error,
+      ));
+  }
+
+  private completeEncodedSnapshot(
+    channel: Channel,
+    descriptorName: string,
+    startedAt: number,
+    deferred: readonly Deferred[],
+    error?: unknown,
+  ): void {
+    const durationMs = Math.max(0, monotonicNow() - startedAt);
+    this.metrics.lastDurationMs = durationMs;
+    this.metrics.maxDurationMs = Math.max(this.metrics.maxDurationMs, durationMs);
+    this.metrics.totalDurationMs += durationMs;
+    channel.inFlight = false;
+    channel.inFlightItems = 0;
+    if (error === undefined) {
+      this.metrics.broadcastsCompleted += 1;
+      for (const item of deferred) item.resolve();
+    } else {
+      this.metrics.broadcastFailures += 1;
+      this.onError(descriptorName, error);
+      for (const item of deferred) item.reject(error);
+    }
+    this.pumpEncodedSnapshot(channel, descriptorName);
+    if (
+      !channel.inFlight &&
+      !channel.latest &&
+      !channel.encodedLatest &&
       channel.eventQueue.length === 0
     ) {
       this.channels.delete(channel.key);
@@ -324,6 +458,7 @@ export class BroadcastHub {
     let pending = 0;
     for (const channel of this.channels.values()) {
       if (channel.latest) pending += channel.latest.items.size;
+      if (channel.encodedLatest) pending += channel.encodedLatest.itemCount;
       for (const job of channel.eventQueue) pending += job.items.length;
     }
     this.metrics.maxPendingItems = Math.max(this.metrics.maxPendingItems, pending);

@@ -1,7 +1,6 @@
 import { actor, handler, Unit } from "../../core/runtime";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
-import type { MovementFrame } from "../movement";
-import { MovementComponent } from "./MovementComponent";
+import { NativeData } from "../native/NativeData";
 import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
 
@@ -103,31 +102,16 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
   @handler(PlayerUnitHandlers.Move)
   Move(request: MovePlayer): boolean {
     this.validateMoveInput(request);
-    const native = this.TryGetComponent(NativeUnitRef);
-    return native
-      ? native.SetMovementInput(request.inputX, request.inputY, request.sequence)
-      : this.GetComponent(MovementComponent).SetInput(
-          request.inputX,
-          request.inputY,
-          request.sequence,
-        );
-  }
-
-  UpdateMovement(serverTick: number, fixedUpdateMs: number): MovementFrame | undefined {
-    const state = this.GetComponent(MovementComponent).UpdateStep(
-      serverTick,
-      fixedUpdateMs,
+    return NativeData.SetMovementInput(
+      this.GetComponent(NativeUnitRef).Handle,
+      request.inputX,
+      request.inputY,
+      request.sequence,
     );
-    return state ? { unitId: this.UnitId, ...state } : undefined;
   }
 
   private ResetMovement(): void {
-    const native = this.TryGetComponent(NativeUnitRef);
-    if (native) {
-      native.ResetMovement();
-    } else {
-      this.GetComponent(MovementComponent).Reset();
-    }
+    NativeData.ResetMovement(this.GetComponent(NativeUnitRef).Handle);
   }
 
   private validateMoveInput(request: MovePlayer): void {

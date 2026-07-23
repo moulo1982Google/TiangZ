@@ -108,18 +108,17 @@ MapHostScene
   -> MapScene
        -> UnitComponent
             -> PlayerUnit
+            -> NativeUnitRef
             -> PositionComponent
-            -> GateBindingComponent
-            -> MovementComponent
+            -> UnitGateComponent
 ```
 
 - 地图实体已经迁移为 Unit/Component；玩家是 PlayerUnit，怪物和 NPC 后续使用同一 Unit 基类。
 - MapHostScene 只负责协议入口、MapScene 创建和账号重连辅助目录。
 - 每个地图实例对应一个 MapScene，UnitComponent 按 UnitId 统一维护全部 Unit。
 - PlayerUnit 使用 ordered MailBoxComponent，异步 Handler `await` 时同一玩家不会重入。
-- PositionComponent 保存权威坐标。
+- NativeUnitRef 指向 Rust Arena 中的权威坐标与移动状态，PositionComponent 提供业务视图。
 - UnitGateComponent 保存 Gate 实例和 GateSessionId。
-- MovementComponent 保存移动消息序号，具体移动逻辑留在 Phase 2.5。
 - 玩家重连通过 PlayerUnit Handler 更新 Gate 绑定；有效断线会由 UnitComponent 移除并销毁 PlayerUnit。
 - Core 的 ProcessHost 已增加 `despawnActor()` 生命周期接口。
 
@@ -154,9 +153,9 @@ Cocos 输入
 - Gate 在 EnterMap 成功后把连接绑定到 UnitId、Actor InstanceId 与 MapHost；业务 Move 不携带账号、UnitId、Gate 或 MapService。
 - codegen 根据 `IActorLocationMessage/Request` 自动生成 `routing: "actor-location"`，Gate 不需要 Move Handler。
 - MapHost EntryScene 使用 unordered mailbox 接入不同玩家；PlayerUnit 使用 ordered MailBoxComponent 串行处理同一玩家移动。
-- Cocos 在方向变化时立即发送状态，持续移动时以 5Hz 保活；服务端 Game.Update 以 20Hz 持续模拟当前方向，权威位置以 10Hz 校正，方向变化立即下发。
-- MovementComponent 每个逻辑帧只应用最新方向状态，并丢弃重复或过期序号，避免输入队列堆积。
-- PositionComponent 统一处理方向归一化、每秒 180 单位速度和地图边界限制。
+- Cocos 在方向变化时立即发送状态，持续移动时以 5Hz 保活；服务端 Game.Update 以 20Hz 推进 Rust Unit 状态并输出活动实体快照。
+- Rust 移动批处理每个逻辑帧只应用最新方向状态，并丢弃重复或过期序号，避免输入队列堆积。
+- PositionComponent 通过 NativeUnitRef 访问 Cell 坐标并处理地图边界。
 - Map 仍向同地图所有在线玩家广播权威坐标；Audience 由地图决定，按 Gate 分组、single-flight 和同 Unit 状态覆盖由 Core BroadcastHub 完成。
 - 本地 Unit 使用输入预测和服务端确认序号；远端 Unit 使用 50ms 状态缓冲、速度推演和禁止反向的误差校正。
 

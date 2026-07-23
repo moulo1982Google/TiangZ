@@ -6,7 +6,6 @@ import {
   Game,
   UnitComponent,
 } from "../../core/runtime";
-import type { NativeDataBackend } from "../native/NativeData";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import { GateMessages } from "../../generated/model/server/demo/protocol/messageDescriptors";
 import type {
@@ -19,14 +18,9 @@ import { MapScene } from "../map/MapScene";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 
-export class MapHostComponent extends Component<[dataBackend: NativeDataBackend]> {
+export class MapHostComponent extends Component {
   private readonly maps = new Map<number, MapComponent>();
   private nextUnitId = 1000;
-  private dataBackend: NativeDataBackend = "typescript";
-
-  protected override Awake(dataBackend: NativeDataBackend): void {
-    this.dataBackend = dataBackend;
-  }
 
   BroadcastMetricSnapshots(): CustomMetricSnapshot[] {
     return [...this.maps.values()].map((map) => map.BroadcastMetricSnapshot());
@@ -110,7 +104,6 @@ export class MapHostComponent extends Component<[dataBackend: NativeDataBackend]
       mapId,
       this.owner.scenes,
       this.players,
-      this.dataBackend,
     );
     this.maps.set(mapId, map);
     return map;

@@ -1,154 +1,432 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const schemaFile = path.join(root, "native_data", "demo", "Unit.native");
+const schemaRoot = path.join(root, "native_data");
 const rustOutput = path.join(root, "src", "generated", "native_data.rs");
-const tsOutput = path.join(
-  root,
-  "app",
-  "generated",
-  "model",
-  "native",
-  "NativeUnitRef.ts",
-);
+const tsOutputRoot = path.join(root, "app", "generated", "model", "native");
 
-const schema = parseSchema(await readFile(schemaFile, "utf8"));
-validateUnitSchema(schema);
+const schemaFiles = await collectSchemaFiles(schemaRoot);
+const fragments = await Promise.all(schemaFiles.map(async (file) =>
+  parseSchema(await readFile(file, "utf8"), file)
+));
+const schema = mergeSchemas(fragments);
+validateSchema(schema);
+
 await mkdir(path.dirname(rustOutput), { recursive: true });
-await mkdir(path.dirname(tsOutput), { recursive: true });
+await mkdir(tsOutputRoot, { recursive: true });
 await writeFile(rustOutput, renderRust(schema), "utf8");
-await writeFile(tsOutput, renderTypeScript(), "utf8");
+formatRust(rustOutput);
+const concreteEntities = schema.entities.filter((entity) => !entity.abstract);
+for (const entity of concreteEntities) {
+  const output = path.join(tsOutputRoot, `Native${entity.name}Ref.ts`);
+  await writeFile(output, renderTypeScript(schema, entity), "utf8");
+}
 console.log(
-  `[codegen:native-data] generated ${path.relative(root, rustOutput)} and ${path.relative(root, tsOutput)}`,
+  `[codegen:native-data] generated ${path.relative(root, rustOutput)} and ${concreteEntities.length} TS handle(s)`,
 );
 
-function parseSchema(source) {
+function formatRust(file) {
+  const result = spawnSync("rustfmt", ["--edition", "2024", file], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (result.error) {
+    throw new Error(`failed to start rustfmt: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`rustfmt failed:\n${result.stderr || result.stdout}`);
+  }
+}
+
+async function collectSchemaFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await collectSchemaFiles(fullPath));
+    else if (entry.isFile() && entry.name.endsWith(".native")) files.push(fullPath);
+  }
+  return files.sort((left, right) => left.localeCompare(right, "en"));
+}
+
+function parseSchema(source, file) {
   const clean = source.replace(/\/\/.*$/gm, "");
   const namespace = /\bnamespace\s+([A-Za-z_]\w*)\s*;/.exec(clean)?.[1];
-  if (!namespace) throw new Error(`${schemaFile}: namespace is required`);
+  if (!namespace) throw new Error(`${file}: namespace is required`);
 
   const entities = [];
-  const entityPattern = /\bentity\s+([A-Za-z_]\w*)(?:\s+extends\s+([A-Za-z_]\w*))?\s*\{([^}]*)\}/g;
+  const entityPattern = /((?:@[A-Za-z_]\w*(?:\([^)]*\))?\s*)*)(?:(abstract)\s+)?entity\s+([A-Za-z_]\w*)(?:\s+extends\s+([A-Za-z_]\w*))?\s*\{([^}]*)\}/g;
   for (const match of clean.matchAll(entityPattern)) {
+    const annotations = match[1];
+    const typeIdText = /@typeId\((\d+)\)/.exec(annotations)?.[1];
     const fields = [];
-    const fieldPattern = /([A-Za-z_]\w*)\s*:\s*(u32|i32|i8|f32)\s*;/g;
-    for (const field of match[3].matchAll(fieldPattern)) {
-      fields.push({ name: field[1], type: field[2] });
+    const fieldPattern = /(?:(readonly)\s+)?([A-Za-z_]\w*)\s*:\s*(u32|i32|i8|f32)(?:\s*=\s*(-?(?:\d+(?:\.\d*)?|\.\d+)))?\s*;/g;
+    for (const field of match[5].matchAll(fieldPattern)) {
+      fields.push({
+        readonly: field[1] === "readonly",
+        name: field[2],
+        type: field[3],
+        defaultValue: field[4],
+      });
     }
-    entities.push({ name: match[1], parent: match[2], fields });
+    entities.push({
+      namespace,
+      sourceFile: file,
+      typeId: typeIdText === undefined ? undefined : Number(typeIdText),
+      component: /@component\b/.test(annotations),
+      abstract: match[2] === "abstract",
+      name: match[3],
+      parent: match[4],
+      fields,
+    });
   }
-  if (entities.length === 0) throw new Error(`${schemaFile}: no entity declarations`);
+  if (entities.length === 0) throw new Error(`${file}: no entity declarations`);
   return { namespace, entities };
 }
 
-function validateUnitSchema(schema) {
-  const byName = new Map(schema.entities.map((entity) => [entity.name, entity]));
-  const unit = byName.get("Unit");
-  if (!unit || unit.parent !== "Entity") {
-    throw new Error(`${schemaFile}: Unit must extend Entity`);
-  }
-  const fields = new Map([
-    ...byName.get("Entity").fields,
-    ...unit.fields,
-  ].map((field) => [field.name, field.type]));
-  const required = {
-    id: "u32",
-    instanceId: "u32",
-    mapId: "u32",
-    x: "f32",
-    y: "f32",
-    cellX: "i32",
-    cellY: "i32",
-    targetCellX: "i32",
-    targetCellY: "i32",
-    moveStartTick: "u32",
-    moveEndTick: "u32",
-    moving: "u32",
-    speedCellsPerSecond: "f32",
-    inputX: "i8",
-    inputY: "i8",
-    inputChanged: "u32",
-    sequence: "u32",
-  };
-  for (const [name, type] of Object.entries(required)) {
-    if (fields.get(name) !== type) {
-      throw new Error(`${schemaFile}: ${name} must be ${type}`);
+function mergeSchemas(fragments) {
+  return { entities: fragments.flatMap((fragment) => fragment.entities) };
+}
+
+function validateSchema(schema) {
+  const byName = entityMap(schema);
+  const typeIds = new Map();
+  for (const entity of schema.entities) {
+    if (byName.get(entity.name) !== entity) {
+      throw new Error(`${entity.sourceFile}: duplicate entity ${entity.name}`);
     }
+    if (entity.parent && !byName.has(entity.parent)) {
+      throw new Error(`${entity.sourceFile}: unknown parent ${entity.parent}`);
+    }
+    if (entity.abstract && entity.typeId !== undefined) {
+      throw new Error(`${entity.sourceFile}: abstract entity ${entity.name} cannot have @typeId`);
+    }
+    if (entity.abstract && entity.component) {
+      throw new Error(`${entity.sourceFile}: abstract entity ${entity.name} cannot be @component`);
+    }
+    if (!entity.abstract) {
+      if (!Number.isSafeInteger(entity.typeId) || entity.typeId <= 0 || entity.typeId > 0xffff) {
+        throw new Error(`${entity.sourceFile}: concrete entity ${entity.name} needs @typeId(1..65535)`);
+      }
+      const previous = typeIds.get(entity.typeId);
+      if (previous) throw new Error(`${entity.sourceFile}: @typeId(${entity.typeId}) is already used by ${previous}`);
+      typeIds.set(entity.typeId, entity.name);
+      if (!inheritsFrom(schema, entity, "Entity")) {
+        throw new Error(`${entity.sourceFile}: concrete entity ${entity.name} must extend Entity`);
+      }
+    }
+    const localNames = new Set();
+    for (const field of entity.fields) {
+      if (localNames.has(field.name)) throw new Error(`${entity.sourceFile}: duplicate field ${field.name}`);
+      localNames.add(field.name);
+      if (field.defaultValue !== undefined) validateDefault(field, entity.sourceFile);
+    }
+  }
+  for (const entity of schema.entities) {
+    const fields = flattenFields(schema, entity.name);
+    const names = new Set();
+    for (const field of fields) {
+      if (names.has(field.name)) throw new Error(`${entity.sourceFile}: inherited field ${field.name} is duplicated`);
+      names.add(field.name);
+    }
+  }
+
+  const entity = byName.get("Entity");
+  if (!entity?.abstract) throw new Error("native schema needs abstract entity Entity");
+  for (const name of ["id", "instanceId"]) {
+    const field = entity.fields.find((candidate) => candidate.name === name);
+    if (field?.type !== "u32" || !field.readonly) {
+      throw new Error(`Entity.${name} must be readonly u32`);
+    }
+  }
+}
+
+function validateDefault(field, sourceFile) {
+  const value = Number(field.defaultValue);
+  if (!Number.isFinite(value)) throw new Error(`${sourceFile}: invalid default for ${field.name}`);
+  if (field.type !== "f32" && !Number.isInteger(value)) {
+    throw new Error(`${sourceFile}: ${field.name} default must be an integer`);
+  }
+  const ranges = {
+    u32: [0, 0xffff_ffff],
+    i32: [-0x8000_0000, 0x7fff_ffff],
+    i8: [-128, 127],
+  };
+  const range = ranges[field.type];
+  if (range && (value < range[0] || value > range[1])) {
+    throw new Error(`${sourceFile}: ${field.name} default is outside ${field.type}`);
   }
 }
 
 function renderRust(schema) {
-  const rustType = { u32: "u32", i32: "i32", i8: "i8", f32: "f32" };
-  const entities = schema.entities.map((entity) => {
-    const fields = entity.fields
-      .map((field) => `    pub ${toSnakeCase(field.name)}: ${rustType[field.type]},`)
-      .join("\n");
-    const parent = entity.parent
-      ? `    pub ${toSnakeCase(entity.parent)}: ${entity.parent}Data,\n`
-      : "";
-    return `#[derive(Debug, Clone)]\npub struct ${entity.name}Data {\n${parent}${fields}\n}`;
-  }).join("\n\n");
+  const entities = schema.entities.map((entity) => renderRustStruct(entity)).join("\n\n");
+  const concrete = schema.entities.filter((entity) => !entity.abstract)
+    .sort((left, right) => left.typeId - right.typeId);
+  const typeConstants = concrete
+    .map((entity) => `pub const ENTITY_TYPE_${toScreamingSnakeCase(entity.name)}: u32 = ${entity.typeId};`)
+    .join("\n");
+  const fieldSections = concrete.map((entity) => renderRustFields(schema, entity)).join("\n\n");
+  const variants = concrete.map((entity) => `    ${entity.name}(${entity.name}Data),`).join("\n");
+  const typeMatches = concrete
+    .map((entity) => `            Self::${entity.name}(_) => ENTITY_TYPE_${toScreamingSnakeCase(entity.name)},`)
+    .join("\n");
+  const accessors = concrete.map((entity) => renderRustVariantAccessors(entity)).join("\n");
+  const createMatches = concrete.map((entity) => renderRustCreateMatch(schema, entity)).join("\n");
+  const getterMatches = concrete
+    .map((entity) => `        NativeEntityData::${entity.name}(value) => get_${toSnakeCase(entity.name)}_number(value, field),`)
+    .join("\n");
+  const setterMatches = concrete
+    .map((entity) => `        NativeEntityData::${entity.name}(value) => set_${toSnakeCase(entity.name)}_number(value, field, number),`)
+    .join("\n");
   return `// Generated by tools/codegen_native_data.mjs. Do not edit.\n#![allow(dead_code)]\n\n\
-pub const NATIVE_DATA_NAMESPACE: &str = "${schema.namespace}";\n\n\
-${entities}\n`;
+${entities}\n\n\
+${typeConstants}\n\n\
+${fieldSections}\n\n\
+#[derive(Debug, Clone)]\n\
+pub enum NativeEntityData {\n${variants}\n}\n\n\
+impl NativeEntityData {\n\
+    pub fn type_id(&self) -> u32 {\n\
+        match self {\n${typeMatches}\n        }\n\
+    }\n\n\
+${accessors}\
+}\n\n\
+pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &'static str> {\n\
+    match type_id {\n${createMatches}\n        _ => Err("unknown native entity type"),\n\
+    }\n\
+}\n\n\
+pub fn get_entity_number(value: &NativeEntityData, field: u32) -> Option<f64> {\n\
+    match value {\n${getterMatches}\n    }\n\
+}\n\n\
+pub fn set_entity_number(value: &mut NativeEntityData, field: u32, number: f64) -> Result<(), &'static str> {\n\
+    match value {\n${setterMatches}\n    }\n\
+}\n\n\
+fn read_number(values: &[f64], index: usize) -> Result<f64, &'static str> {\n\
+    values.get(index).copied().ok_or("native entity create values are truncated")\n\
+}\n\n\
+fn read_f32(values: &[f64], index: usize) -> Result<f32, &'static str> {\n\
+    let number = read_number(values, index)?;\n\
+    if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {\n\
+        return Err("native entity create value must be a finite f32");\n\
+    }\n\
+    Ok(number as f32)\n\
+}\n\n\
+fn read_u32(values: &[f64], index: usize) -> Result<u32, &'static str> {\n\
+    let number = read_number(values, index)?;\n\
+    if !number.is_finite() || number.fract() != 0.0 || number < 0.0 || number > u32::MAX as f64 {\n\
+        return Err("native entity create value must be u32");\n\
+    }\n\
+    Ok(number as u32)\n\
+}\n\n\
+fn read_i32(values: &[f64], index: usize) -> Result<i32, &'static str> {\n\
+    let number = read_number(values, index)?;\n\
+    if !number.is_finite() || number.fract() != 0.0 || number < i32::MIN as f64 || number > i32::MAX as f64 {\n\
+        return Err("native entity create value must be i32");\n\
+    }\n\
+    Ok(number as i32)\n\
+}\n\n\
+fn read_i8(values: &[f64], index: usize) -> Result<i8, &'static str> {\n\
+    let number = read_number(values, index)?;\n\
+    if !number.is_finite() || number.fract() != 0.0 || number < i8::MIN as f64 || number > i8::MAX as f64 {\n\
+        return Err("native entity create value must be i8");\n\
+    }\n\
+    Ok(number as i8)\n\
+}\n`;
 }
 
-function renderTypeScript() {
+function renderRustStruct(entity) {
+  const rustType = { u32: "u32", i32: "i32", i8: "i8", f32: "f32" };
+  const parent = entity.parent ? `    pub ${toSnakeCase(entity.parent)}: ${entity.parent}Data,\n` : "";
+  const fields = entity.fields
+    .map((field) => `    pub ${toSnakeCase(field.name)}: ${rustType[field.type]},`)
+    .join("\n");
+  return `#[derive(Debug, Clone)]\npub struct ${entity.name}Data {\n${parent}${fields}\n}`;
+}
+
+function renderRustFields(schema, entity) {
+  const fields = flattenFields(schema, entity.name);
+  const snakeName = toSnakeCase(entity.name);
+  const upperName = toScreamingSnakeCase(entity.name);
+  const constants = fields
+    .map((field, index) => `pub const ${upperName}_FIELD_${toScreamingSnakeCase(field.name)}: u32 = ${index + 1};`)
+    .join("\n");
+  const getters = fields
+    .map((field, index) => `        ${index + 1} => Some(${rustFieldPath("value", field)} as f64),`)
+    .join("\n");
+  const setters = fields
+    .map((field, index) => field.readonly
+      ? `        ${index + 1} => Err("native ${entity.name} field ${field.name} is readonly"),`
+      : `        ${index + 1} => { ${renderRustSetter(entity, field)} Ok(()) },`)
+    .join("\n");
+  return `${constants}\n\n\
+pub fn get_${snakeName}_number(value: &${entity.name}Data, field: u32) -> Option<f64> {\n\
+    match field {\n${getters}\n        _ => None,\n    }\n\
+}\n\n\
+pub fn set_${snakeName}_number(value: &mut ${entity.name}Data, field: u32, number: f64) -> Result<(), &'static str> {\n\
+    match field {\n${setters}\n        _ => Err("unknown native ${entity.name} field"),\n    }\n\
+}`;
+}
+
+function renderRustVariantAccessors(entity) {
+  const snake = toSnakeCase(entity.name);
+  return `    pub fn as_${snake}(&self) -> Option<&${entity.name}Data> {\n\
+        match self { Self::${entity.name}(value) => Some(value), _ => None }\n\
+    }\n\n\
+    pub fn as_${snake}_mut(&mut self) -> Option<&mut ${entity.name}Data> {\n\
+        match self { Self::${entity.name}(value) => Some(value), _ => None }\n\
+    }\n`;
+}
+
+function renderRustCreateMatch(schema, entity) {
+  const fields = flattenFields(schema, entity.name);
+  const values = new Map(fields.map((field, index) => [field.name, `read_${field.type}(values, ${index})?`]));
+  const init = renderRustStructInit(schema, entity.name, values, 12);
+  return `        ENTITY_TYPE_${toScreamingSnakeCase(entity.name)} => {\n\
+            if values.len() != ${fields.length} { return Err("native ${entity.name} create value count mismatch"); }\n\
+            if read_u32(values, 0)? == 0 || read_u32(values, 1)? == 0 {\n\
+                return Err("native Entity id and instanceId must be greater than zero");\n\
+            }\n\
+            Ok(NativeEntityData::${entity.name}(${init}))\n\
+        },`;
+}
+
+function renderRustStructInit(schema, entityName, values, indent) {
+  const entity = entityMap(schema).get(entityName);
+  const padding = " ".repeat(indent);
+  const childPadding = " ".repeat(indent + 4);
+  const lines = [];
+  if (entity.parent) {
+    lines.push(`${childPadding}${toSnakeCase(entity.parent)}: ${renderRustStructInit(schema, entity.parent, values, indent + 4)},`);
+  }
+  for (const field of entity.fields) {
+    lines.push(`${childPadding}${toSnakeCase(field.name)}: ${values.get(field.name)},`);
+  }
+  return `${entity.name}Data {\n${lines.join("\n")}\n${padding}}`;
+}
+
+function renderTypeScript(schema, entity) {
+  const fields = flattenFields(schema, entity.name);
+  const args = fields.map((field) => {
+    const optional = field.defaultValue === undefined ? "" : "?";
+    return `  ${field.name}${optional}: number;`;
+  }).join("\n");
+  const values = fields
+    .map((field) => field.defaultValue === undefined
+      ? `      args.${field.name},`
+      : `      args.${field.name} ?? ${field.defaultValue},`)
+    .join("\n");
+  const properties = fields.map((field, index) => {
+    const setter = field.readonly ? "" : `\n  set ${field.name}(value: number) {\n    NativeEntityBridge.SetNumber(this.Handle, ${index + 1}, value);\n  }\n`;
+    return `  get ${field.name}(): number {\n    return NativeEntityBridge.GetNumber(this.Handle, ${index + 1});\n  }\n${setter}`;
+  }).join("\n");
+  if (!entity.component) {
+    return renderTypeScriptHandle(entity, args, values, properties);
+  }
   return `// Generated by tools/codegen_native_data.mjs. Do not edit.\n\n\
+import { NativeEntityBridge } from "../../../core/native/NativeEntityBridge";\n\
 import { Component } from "../../../core/runtime/entities";\n\
 import { component } from "../../../core/runtime/metadata";\n\
-import { NativeData } from "../../../demo/native/NativeData";\n\n\
-export interface NativeUnitCreateArgs {\n\
-  unitId: number;\n\
-  instanceId: number;\n\
-  mapId: number;\n\
-  x: number;\n\
-  y: number;\n\
-}\n\n\
-export interface NativeUnitSnapshot {\n\
-  unitId: number;\n\
-  x: number;\n\
-  y: number;\n\
-  acknowledgedSequence: number;\n\
-  cellX: number;\n\
-  cellY: number;\n\
-  targetCellX: number;\n\
-  targetCellY: number;\n\
-  moveStartTick: number;\n\
-  moveEndTick: number;\n\
-  moving: boolean;\n\
-}\n\n\
+\n\
+export interface Native${entity.name}CreateArgs {\n${args}\n}\n\n\
 @component()\n\
-export class NativeUnitRef extends Component<[args: NativeUnitCreateArgs]> {\n\
+export class Native${entity.name}Ref extends Component<[args: Native${entity.name}CreateArgs]> {\n\
   private nativeHandle = 0;\n\n\
   get Handle(): number {\n\
-    if (this.nativeHandle === 0) throw new Error("native Unit handle is not alive");\n\
+    if (this.nativeHandle === 0) throw new Error("native ${entity.name} handle is not alive");\n\
     return this.nativeHandle;\n\
   }\n\n\
-  protected override Awake(args: NativeUnitCreateArgs): void {\n\
-    this.nativeHandle = NativeData.CreateUnit(args);\n\
+  protected override Awake(args: Native${entity.name}CreateArgs): void {\n\
+    this.nativeHandle = NativeEntityBridge.Create(${entity.typeId}, new Float64Array([\n${values}\n    ]));\n\
   }\n\n\
-  SetMovementInput(inputX: number, inputY: number, sequence: number): boolean {\n\
-    return NativeData.SetMovementInput(this.Handle, inputX, inputY, sequence);\n\
-  }\n\n\
-  ResetMovement(): void {\n\
-    NativeData.ResetMovement(this.Handle);\n\
-  }\n\n\
-  Snapshot(): NativeUnitSnapshot {\n\
-    return NativeData.UnitSnapshot(this.Handle);\n\
-  }\n\n\
+${properties}\
   protected override OnDestroy(): void {\n\
     if (this.nativeHandle === 0) return;\n\
-    NativeData.DestroyUnit(this.nativeHandle);\n\
+    NativeEntityBridge.Destroy(this.nativeHandle);\n\
     this.nativeHandle = 0;\n\
   }\n\
 }\n`;
 }
 
+function renderTypeScriptHandle(entity, args, values, properties) {
+  return `// Generated by tools/codegen_native_data.mjs. Do not edit.\n\n\
+import { NativeEntityBridge } from "../../../core/native/NativeEntityBridge";\n\n\
+export class Native${entity.name}Ref {\n\
+  private nativeHandle: number;\n\n\
+  private constructor(handle: number) {\n\
+    this.nativeHandle = handle;\n\
+  }\n\n\
+  static Create(args: Native${entity.name}CreateArgs): Native${entity.name}Ref {\n\
+    return new Native${entity.name}Ref(NativeEntityBridge.Create(${entity.typeId}, new Float64Array([\n${values}\n    ])));\n\
+  }\n\n\
+  get Handle(): number {\n\
+    if (this.nativeHandle === 0) throw new Error("native ${entity.name} handle is not alive");\n\
+    return this.nativeHandle;\n\
+  }\n\n\
+${properties}\n\
+  Dispose(): void {\n\
+    if (this.nativeHandle === 0) return;\n\
+    NativeEntityBridge.Destroy(this.nativeHandle);\n\
+    this.nativeHandle = 0;\n\
+  }\n\
+}\n\n\
+export interface Native${entity.name}CreateArgs {\n${args}\n}\n`;
+}
+
+function flattenFields(schema, entityName, stack = []) {
+  if (stack.includes(entityName)) throw new Error(`native entity inheritance cycle: ${[...stack, entityName].join(" -> ")}`);
+  const entity = entityMap(schema).get(entityName);
+  if (!entity) throw new Error(`unknown native entity ${entityName}`);
+  const inherited = entity.parent
+    ? flattenFields(schema, entity.parent, [...stack, entityName]).map((field) => ({
+        ...field,
+        path: [toSnakeCase(entity.parent), ...field.path],
+      }))
+    : [];
+  return [...inherited, ...entity.fields.map((field) => ({ ...field, path: [toSnakeCase(field.name)] }))];
+}
+
+function entityMap(schema) {
+  return new Map(schema.entities.map((entity) => [entity.name, entity]));
+}
+
+function inheritsFrom(schema, entity, expectedParent) {
+  const byName = entityMap(schema);
+  let current = entity;
+  const visited = new Set();
+  while (current.parent) {
+    if (current.parent === expectedParent) return true;
+    if (visited.has(current.parent)) return false;
+    visited.add(current.parent);
+    current = byName.get(current.parent);
+    if (!current) return false;
+  }
+  return false;
+}
+
+function rustFieldPath(root, field) {
+  return `${root}.${field.path.join(".")}`;
+}
+
+function renderRustSetter(entity, field) {
+  const target = rustFieldPath("value", field);
+  if (field.type === "f32") {
+    return `if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 { return Err("native ${entity.name} field ${field.name} must be a finite f32"); } ${target} = number as f32;`;
+  }
+  const ranges = {
+    u32: ["0.0", "u32::MAX as f64", "u32"],
+    i32: ["i32::MIN as f64", "i32::MAX as f64", "i32"],
+    i8: ["i8::MIN as f64", "i8::MAX as f64", "i8"],
+  };
+  const [min, max, type] = ranges[field.type];
+  return `if !number.is_finite() || number.fract() != 0.0 || number < ${min} || number > ${max} { return Err("native ${entity.name} field ${field.name} must be ${field.type}"); } ${target} = number as ${type};`;
+}
+
 function toSnakeCase(value) {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .toLowerCase();
+  return value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+function toScreamingSnakeCase(value) {
+  return toSnakeCase(value).toUpperCase();
 }

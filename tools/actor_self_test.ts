@@ -10,7 +10,6 @@ import {
   handler,
 } from "../app/core/runtime";
 import { MapScene } from "../app/demo/map/MapScene";
-import { MovementComponent } from "../app/demo/map/MovementComponent";
 import {
   PlayerUnit,
   PlayerUnitHandlers,
@@ -18,6 +17,8 @@ import {
 } from "../app/demo/map/PlayerUnit";
 import { PositionComponent } from "../app/demo/map/PositionComponent";
 import { UnitGateComponent } from "../app/demo/map/UnitGateComponent";
+import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
+import { NativeItemRef } from "../app/generated/model/native/NativeItemRef";
 import { BinaryWriter } from "../app/core/protocol/binary";
 import { packFrame } from "../app/core/protocol/registry";
 import {
@@ -26,16 +27,101 @@ import {
   extractFrameRpcId,
   rewriteFrameRpcId,
 } from "../app/core/process/ActorLocation";
-import movementParity from "../native_data/movement_parity.json";
 
 void main();
 
 async function main(): Promise<void> {
+  await Promise.resolve();
+  testGeneratedNativeHandleScalarAccess();
   await testPlayerUnitComponents();
   await testComponentContainer();
   await testOrderedActorMailbox();
   testRpcIdRewrite();
   console.log("actor self-test passed");
+}
+
+function testGeneratedNativeHandleScalarAccess(): void {
+  let gets = 0;
+  let sets = 0;
+  let nextHandle = 7;
+  const valuesByHandle = new Map<number, Float64Array>();
+  const typesByHandle = new Map<number, number>();
+  const nativeHost = globalThis as typeof globalThis & {
+    __nativeEntityCreate: (entityType: number, values: Float64Array) => number;
+    __nativeEntityGetNumber: (handle: number, field: number) => number;
+    __nativeEntitySetNumber: (handle: number, field: number, value: number) => void;
+    __nativeEntityDestroy: (handle: number) => void;
+    __demoUnitSetMovementInput: (
+      handle: number,
+      inputX: number,
+      inputY: number,
+      sequence: number,
+    ) => boolean;
+    __demoUnitResetMovement: (handle: number) => void;
+  };
+  nativeHost.__nativeEntityCreate = (entityType, values) => {
+    const handle = nextHandle++;
+    valuesByHandle.set(handle, values.slice());
+    typesByHandle.set(handle, entityType);
+    return handle;
+  };
+  nativeHost.__nativeEntityGetNumber = (handle, field) => {
+    gets += 1;
+    return valuesByHandle.get(handle)![field - 1];
+  };
+  nativeHost.__nativeEntitySetNumber = (handle, field, value) => {
+    sets += 1;
+    valuesByHandle.get(handle)![field - 1] = value;
+  };
+  nativeHost.__nativeEntityDestroy = (handle) => {
+    valuesByHandle.delete(handle);
+    typesByHandle.delete(handle);
+  };
+  nativeHost.__demoUnitSetMovementInput = (handle, inputX, inputY, sequence) => {
+    const values = valuesByHandle.get(handle)!;
+    if (sequence <= values[16]) return false;
+    values[13] = inputX;
+    values[14] = inputY;
+    values[15] = 1;
+    values[16] = sequence;
+    return true;
+  };
+  nativeHost.__demoUnitResetMovement = (handle) => {
+    const values = valuesByHandle.get(handle)!;
+    values[13] = 0;
+    values[14] = 0;
+    values[15] = 0;
+    values[16] = 0;
+  };
+
+  const host = new ProcessHost("native-handle-self-test");
+  host.spawnScene("map:1", MapScene);
+  const actor = host.spawnActor("map:1", "native-probe", ComponentProbeActor);
+  const unit = actor.AddComponent(NativeUnitRef, {
+    id: 1,
+    instanceId: 2,
+    mapId: 1,
+    x: 12,
+    y: 0,
+  });
+  const item = NativeItemRef.Create({
+    id: 100,
+    instanceId: 101,
+    configId: 3001,
+    count: 2,
+  });
+  unit.x += 1;
+  item.count += 2;
+
+  assert.equal(typesByHandle.get(unit.Handle), 1);
+  assert.equal(typesByHandle.get(item.Handle), 2);
+  assert.equal(valuesByHandle.get(unit.Handle)![3], 13);
+  assert.equal(valuesByHandle.get(item.Handle)![3], 4);
+  assert.equal(gets, 2);
+  assert.equal(sets, 2);
+  item.Dispose();
+  assert.equal(host.despawnActor("map:1", "native-probe"), true);
+  assert.equal(valuesByHandle.size, 0);
 }
 
 function testRpcIdRewrite(): void {
@@ -161,9 +247,19 @@ async function testPlayerUnitComponents(): Promise<void> {
     token: "token-1",
     mapId: 1,
   });
-  player.AddComponent(PositionComponent, 12, -8);
+  const native = player.AddComponent(NativeUnitRef, {
+    id: 1000,
+    instanceId: player.InstanceId,
+    mapId: 1,
+    x: 12,
+    y: -12,
+    cellX: 1,
+    cellY: -1,
+    targetCellX: 1,
+    targetCellY: -1,
+  });
+  player.AddComponent(PositionComponent, native);
   player.AddComponent(UnitGateComponent, "gate-1", "session-1");
-  player.AddComponent(MovementComponent);
   const actor = host.localActorRef("map:1", 1000);
   const firstInstanceId = actor.instanceId;
 
@@ -220,25 +316,14 @@ async function testPlayerUnitComponents(): Promise<void> {
     true,
   );
 
-  assert.equal(movementParity.initialCellX, initialized.cellX);
-  assert.equal(movementParity.initialCellY, initialized.cellY);
-  for (const step of movementParity.steps) {
-    if (step.input) {
-      assert.equal(
-        await host.call<boolean>(undefined, actor, PlayerUnitHandlers.Move, {
-          inputX: step.input.x,
-          inputY: step.input.y,
-          sequence: step.input.sequence,
-        }),
-        true,
-      );
-    }
-    assert.deepEqual(
-      player.UpdateMovement(step.tick, movementParity.fixedUpdateMs),
-      { unitId: player.Id, ...step.expected },
-      `TypeScript movement parity failed at tick ${step.tick}`,
-    );
-  }
+  assert.equal(
+    await host.call<boolean>(undefined, actor, PlayerUnitHandlers.Move, {
+      inputX: 1,
+      inputY: 0,
+      sequence: 5,
+    }),
+    true,
+  );
 
   assert.equal(
     await host.call<boolean>(undefined, actor, PlayerUnitHandlers.Move, {
@@ -270,9 +355,13 @@ async function testPlayerUnitComponents(): Promise<void> {
     token: "token-2",
     mapId: 1,
   });
-  recreated.AddComponent(PositionComponent, 0, 0);
+  const recreatedNative = recreated.AddComponent(NativeUnitRef, {
+    id: 1000,
+    instanceId: recreated.InstanceId,
+    mapId: 1,
+  });
+  recreated.AddComponent(PositionComponent, recreatedNative);
   recreated.AddComponent(UnitGateComponent, "gate-2", "session-2");
-  recreated.AddComponent(MovementComponent);
   assert.notEqual(recreated.InstanceId, firstInstanceId);
   assert.equal(host.despawnActor("map:1", 1000), true);
   assert.equal(units.Get(1000), undefined);

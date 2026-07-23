@@ -15,7 +15,7 @@ GetLoginServiceAddr
   -> MapReady
   -> 循环发送 C2M_Move（IActorLocationMessage）
   -> Gate Core 自动定位 Unit 所在 MapHost 并转发
-  -> 地图 Actor + MovementComponent
+  -> 地图 Actor + NativeUnitRef/Rust 移动批处理
   -> MapHost 发布 latest 移动状态，BroadcastHub 通过通用 S2G_ClientBroadcast 按 Gate 聚合
   -> Gate 向 targetUnitIds 下发同一个批量 G2C_EntityMove
   -> 客户端收到自身 G2C_EntityMove，完成一次闭环

@@ -122,14 +122,23 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 网格 AOI 保留到 Phase 4，当前继续用全地图可见性验证链路和聚合收益。
 - 可重复命令、指标口径和报告位置见 `perf/full_chain/README.md`。
 
-### Phase 2.13：Rust Unit 数据下沉 A/B 实验
+### Phase 2.13：Rust 权威实体数据
+
+状态：迁移完成，旧双后端于 2026-07 清理。
 
 - 增加 `.native` 原型和 codegen，生成 Rust Entity/Unit 数据结构与 TS 强类型 handle Component。
-- 保持 Handler、Actor mailbox 和协议不变，通过 `process.nativeData.backend` 切换 TS/Rust 数据路径。
+- 保持 Handler、Actor mailbox 和协议不变，Unit 跨帧状态统一由 Rust Arena 持有。
 - Rust Arena 使用 generation handle，Unit 销毁自动释放；旧 handle 会被拒绝。
-- Rust 模式已经下沉移动输入、20Hz 权威坐标更新和紧凑移动快照批次；AOI 决策及 protobuf 广播暂留 TS。
-- 增加 `scalar_gets/scalar_sets/batch_calls/live_units` 指标，并在地图容量测试中加入 `--native-data-backend`。
-- 下一步先完成相同负载的正式 A/B 报告，再决定是否下沉快照 protobuf 编码与直接广播；不预设 Rust 一定更优。
+- 已下沉移动输入、20Hz 权威坐标更新，并由 Rust 直接生成最终 `G2C_EntityMove` protobuf frame。
+- `.native` codegen 已生成 TS 数值属性与 Rust `op2(fast)` 标量访问器；Rust 后端的 TS Component 只持有 generation handle，不保留字段镜像，允许开发人员直接写 `native.x += 1`。
+- `.native` 已泛化为多文件 Entity schema：显式 `@typeId`、抽象继承、默认值、普通 handle 与 `@component` handle 共用通用 Arena/Host op；Item 作为第二种实体通过生成与生命周期回归。
+- 标量访问阈值只用于可观测性提醒，不作为框架策略；NativeData 调用链固定为 TS -> fast op -> Rust Arena，禁止 Rust 回调 TS 获取权威实体数据。
+- 增加 `scalar_gets/scalar_sets/batch_calls/live_units` 指标，地图容量报告固定采集该组指标。
+- 迁移阶段的 A/B runner、TypeScript 数据后端和专用配置开关已经删除；历史报告继续保留作决策证据。
+- 3500 玩家/16 Gate 下，Rust 的 Map CPU 中位数从 54.3% 降至 50.6%（-6.8%），p99 从 216.22ms 降至 210.33ms（-2.7%），工作量差异小于 0.1%。
+- 直接 protobuf 广播轮次中，Map CPU 从 55.1% 降至 48.1%（-12.8%），p95/p99 降低 17.7%/6.3%，两边工作量约为 7 万 item/s。
+- 阶段结论：长期目标升级为“Rust 拥有 Entity/Component 跨帧权威状态，TS 使用生成句柄并保留 Handler/Actor 语义”，按数据域逐步迁移。
+- 下一步设计通用 protocol projection codegen、句柄调试器与热更状态迁移；不可覆盖事件仍使用普通 Message/Event 广播。
 
 ## Phase 3：可复用 TypeScript Client SDK
 

@@ -4,9 +4,9 @@ use std::task::Poll;
 use std::time::Duration;
 
 use crate::native_data::{
-    op_native_data_take_metrics, op_native_map_fixed_update, op_native_unit_create,
-    op_native_unit_destroy, op_native_unit_reset_movement, op_native_unit_set_movement_input,
-    op_native_unit_snapshot,
+    op_demo_map_update_movement, op_demo_unit_reset_movement, op_demo_unit_set_movement_input,
+    op_native_data_take_metrics, op_native_entity_create, op_native_entity_destroy,
+    op_native_entity_get_number, op_native_entity_set_number,
 };
 use crate::transport::{call_remote_scene, send_remote_scene};
 use anyhow::{Context, Result, bail};
@@ -422,12 +422,13 @@ deno_core::extension!(
         op_host_push_outbound_batch,
         op_host_push_outbound_packed,
         op_host_close_connection,
-        op_native_unit_create,
-        op_native_unit_destroy,
-        op_native_unit_set_movement_input,
-        op_native_unit_reset_movement,
-        op_native_unit_snapshot,
-        op_native_map_fixed_update,
+        op_native_entity_create,
+        op_native_entity_destroy,
+        op_native_entity_get_number,
+        op_native_entity_set_number,
+        op_demo_unit_set_movement_input,
+        op_demo_unit_reset_movement,
+        op_demo_map_update_movement,
         op_native_data_take_metrics,
         op_host_register_scene_route,
         op_host_submit_scene_operations
@@ -456,23 +457,23 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
           core.ops.op_host_push_outbound_packed(packed);
         globalThis.__hostCloseConnection = (connectionId) =>
           core.ops.op_host_close_connection(connectionId >>> 0);
-        globalThis.__nativeUnitCreate = (unitId, instanceId, mapId, x, y) =>
-          core.ops.op_native_unit_create(
-            unitId >>> 0, instanceId >>> 0, mapId >>> 0, x, y,
-          );
-        globalThis.__nativeUnitDestroy = (handle) =>
-          core.ops.op_native_unit_destroy(handle >>> 0);
-        globalThis.__nativeUnitSetMovementInput = (handle, inputX, inputY, sequence) =>
-          core.ops.op_native_unit_set_movement_input(
+        globalThis.__nativeEntityCreate = (entityType, values) =>
+          core.ops.op_native_entity_create(entityType >>> 0, values);
+        globalThis.__nativeEntityDestroy = (handle) =>
+          core.ops.op_native_entity_destroy(handle >>> 0);
+        globalThis.__nativeEntityGetNumber = (handle, field) =>
+          core.ops.op_native_entity_get_number(handle >>> 0, field >>> 0);
+        globalThis.__nativeEntitySetNumber = (handle, field, value) =>
+          core.ops.op_native_entity_set_number(handle >>> 0, field >>> 0, value);
+        globalThis.__demoUnitSetMovementInput = (handle, inputX, inputY, sequence) =>
+          core.ops.op_demo_unit_set_movement_input(
             handle >>> 0, inputX, inputY, sequence >>> 0,
           );
-        globalThis.__nativeUnitResetMovement = (handle) =>
-          core.ops.op_native_unit_reset_movement(handle >>> 0);
-        globalThis.__nativeUnitSnapshot = (handle) =>
-          core.ops.op_native_unit_snapshot(handle >>> 0);
-        globalThis.__nativeMapFixedUpdate = (mapId, serverTick, fixedUpdateMs) =>
-          core.ops.op_native_map_fixed_update(
-            mapId >>> 0, serverTick >>> 0, fixedUpdateMs >>> 0,
+        globalThis.__demoUnitResetMovement = (handle) =>
+          core.ops.op_demo_unit_reset_movement(handle >>> 0);
+        globalThis.__demoMapUpdateMovement = (mapId, serverTick, fixedUpdateMs, messageCode) =>
+          core.ops.op_demo_map_update_movement(
+            mapId >>> 0, serverTick >>> 0, fixedUpdateMs >>> 0, messageCode >>> 0,
           );
         globalThis.__nativeDataTakeMetrics = () =>
           core.ops.op_native_data_take_metrics();
@@ -619,6 +620,34 @@ pub fn pump_js_event_loop_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_item_round_trips_through_v8_ops() {
+        let mut runtime = create_runtime(false).unwrap();
+        runtime
+            .execute_script(
+                "test:native-item.js",
+                r#"
+                const handle = __nativeEntityCreate(
+                  2,
+                  new Float64Array([100, 200, 3001, 2, 0, 1]),
+                );
+                if (__nativeEntityGetNumber(handle, 3) !== 3001) {
+                  throw new Error("Item configId did not round-trip");
+                }
+                __nativeEntitySetNumber(handle, 4, 3);
+                if (__nativeEntityGetNumber(handle, 4) !== 3) {
+                  throw new Error("Item count did not round-trip");
+                }
+                __nativeEntityDestroy(handle);
+                let rejected = false;
+                try { __nativeEntityGetNumber(handle, 4); } catch (_) { rejected = true; }
+                if (!rejected) throw new Error("stale Item handle was accepted");
+                "ok";
+                "#,
+            )
+            .unwrap();
+    }
 
     #[test]
     fn decodes_little_endian_connection_ids() {

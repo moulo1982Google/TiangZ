@@ -89,17 +89,19 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 
 容量测试会把这些字段自动汇总到报告的“Map 广播 single-flight”表格。重点观察 `pending` 是否长期存在、合并率是否突然升高、`广播 max` 和 `排队 max` 是否随玩家数出现拐点。
 
-## NativeData 实验指标
+## NativeData 指标
 
-选择 `process.nativeData.backend=rust` 时，每 5 秒额外输出：
+使用 Rust 权威实体数据时，每 5 秒输出：
 
 ```text
-[native-data-metrics] process=map1 scalar_gets=... scalar_sets=... batch_calls=... live_units=...
+[native-data-metrics] process=map1 scalar_gets=... scalar_sets=... batch_calls=... live_entities=... live_units=... encoded_frames=... encoded_items=... encoded_bytes=...
 ```
 
-- `scalar_gets/scalar_sets`：TS 通过点状 op 访问 Rust Unit 数据的次数；热循环中持续偏高通常说明应改为批量 API。
+- `scalar_gets/scalar_sets`：TS 通过点状 fast op 访问 Rust Unit 数据的次数；热循环中持续偏高通常说明批量 API 可能更划算。该指标只观测，不限流、不拒绝调用，也不改变业务行为。
 - `batch_calls`：NativeData 地图批量调用次数。
+- `live_entities`：Rust generation Arena 中全部存活实体数，用于发现 Item 等非 Unit 实体泄漏。
 - `live_units`：Rust Arena 中存活 Unit 数；玩家全部离开后应回到 0。
+- `encoded_frames/encoded_items/encoded_bytes`：Rust 直接 protobuf 投影的帧数、Unit 数和唯一帧字节数；逻辑下行还要乘以收件人数。
 
 ## 链路耗时
 

@@ -15,7 +15,7 @@
 | `name` | string | Process 唯一名称，也作为 ProcessHost ID |
 | `network` | object? | 操作系统 I/O Backend；默认 `epoll`，Linux 可实验性选择 `io-uring` |
 | `game` | object? | 固定 Game.Update 与掉帧补偿策略，默认 20Hz |
-| `nativeData` | object? | Demo 应用扩展：实验性 Unit 数据后端；默认 `typescript`，可选择 `rust` 做 A/B 测试 |
+| `nativeData` | object? | Demo 应用扩展：Rust 权威实体数据的诊断配置 |
 | `scheduling` | object? | Process 事件批处理与空闲 Tick 策略，默认 `adaptive` |
 | `observability` | object? | 延迟采样等运行时观测配置 |
 | `debug` | object? | 该 V8 的 Inspector 配置 |
@@ -36,21 +36,19 @@
 - `fixedUpdateMs`：业务 `Game.Update` 固定间隔，默认 50ms，即 20Hz；范围为 1 到 10000ms。
 - `maxCatchUpSteps`：Process 短暂停顿后单次 Pump 最多补跑多少帧，默认 2，范围为 1 到 100。超出的旧帧会计入 `skippedFixedUpdates`，不会形成死亡螺旋。
 
-`nativeData` 当前只用于地图 Unit 数据下沉实验：
+`nativeData` 只控制 Rust 权威实体数据的诊断输出：
 
 ```json
 {
-  "backend": "rust",
   "debugScalarAccess": true,
   "scalarAccessWarnThreshold": 10000
 }
 ```
 
-- `backend`：`typescript` 保持原实现；`rust` 使用 Rust Arena 保存 Unit 的位置和移动状态。
 - `debugScalarAccess`：采样窗口内标量 Get/Set 达到阈值时输出警告。
-- `scalarAccessWarnThreshold`：标量访问警告阈值，必须大于 0。
+- `scalarAccessWarnThreshold`：标量访问日志提醒阈值，必须大于 0；仅在开启 `debugScalarAccess` 时观测，不会限流或阻止 fast op。
 
-Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原样保留并传给 TS；字段含义和校验由 Demo 的 `NativeData` 负责。这是可回退的实验开关，不代表所有业务数据都应下沉。Handler、Actor mailbox、AOI 决策和业务 Component 仍留在 TS。
+Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原样保留并传给 TS；字段含义和校验由 Demo 的 `NativeData` 负责。Unit 始终存放在 Rust Arena，Handler、Actor mailbox、Audience 决策和业务 Component 组合仍留在 TS。
 
 `scheduling` 支持：
 

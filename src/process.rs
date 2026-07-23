@@ -118,7 +118,11 @@ struct NativeDataMetricsSnapshot {
     scalar_gets: u64,
     scalar_sets: u64,
     batch_calls: u64,
+    live_entities: u32,
     live_units: u32,
+    encoded_frames: u64,
+    encoded_items: u64,
+    encoded_bytes: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -694,8 +698,15 @@ fn maybe_log_metrics(
     }
     if let Some(native) = native_data_metrics {
         println!(
-            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_units={}",
-            native.scalar_gets, native.scalar_sets, native.batch_calls, native.live_units,
+            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} encoded_frames={} encoded_items={} encoded_bytes={}",
+            native.scalar_gets,
+            native.scalar_sets,
+            native.batch_calls,
+            native.live_entities,
+            native.live_units,
+            native.encoded_frames,
+            native.encoded_items,
+            native.encoded_bytes,
         );
     }
     for metric in metrics {

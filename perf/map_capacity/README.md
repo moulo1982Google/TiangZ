@@ -7,7 +7,7 @@
 - `5Hz C2M_Move`，触发同地图全量广播；这是容量测试的默认负载参数，不等于 Cocos 客户端的 20Hz 预测输入频率。
 - `1Hz C2M_MapProbe`，经过客户端、Gate、MapHost 和返回链路，但不触发广播。
 
-服务端 `Game.Update` 默认固定为 20Hz。正式 Demo 每帧只应用最新方向状态，移动中的周期权威位置快照以 10Hz 广播；容量测试可以用独立输入频率构造压力。压测客户端按固定频率开环发送 Move，吞吐只统计正式窗口内实际写入的请求，不等待 AOI 广播确认后再发送。虚拟客户端只拆分并计数移动广播帧，不为每个模拟玩家反序列化整份全员快照；端到端延迟由独立的 `MapProbe` 测量。这样可以避免单机压测器的 `O(N^2)` 解码成本先于服务端成为瓶颈。
+服务端 `Game.Update` 默认固定为 20Hz。每帧由 Rust 批量推进地图内 Unit，并直接编码仍在移动或本帧状态改变的权威快照。压测客户端按固定频率开环发送 Move，吞吐只统计正式窗口内实际写入的请求，不等待广播确认后再发送。虚拟客户端只拆分并计数移动广播帧，不为每个模拟玩家反序列化整份全员快照；端到端延迟由独立的 `MapProbe` 测量。这样可以避免单机压测器的 `O(N^2)` 解码成本先于服务端成为瓶颈。
 
 默认执行：
 
@@ -29,13 +29,6 @@ npm run perf:map-capacity -- \
   --target-map-cpu 85
 ```
 
-对比 TS 与 Rust Unit 数据后端时，保持其他参数完全一致，分别增加：
-
-```bash
---native-data-backend typescript
---native-data-backend rust
-```
-
 Linux 上可以用同一套完整业务链路选择 I/O Backend：
 
 ```bash
@@ -55,7 +48,7 @@ npm run perf:map-capacity -- \
 - `--io-backend epoll|io-uring`，默认 `epoll`；旧参数 `--network-backend` 暂时仍可使用；
 - `--uring-entries 2048`；
 - `--uring-read-buffer-bytes 65536`；
-- `--native-data-backend typescript|rust`，默认 `typescript`；
+- `--movement-hold-messages N`，连续 N 次 Move 保持同一方向，默认 1；
 - `--skip-rust-build`，只在已经确认目标二进制 feature 正确时使用。
 
 io_uring 模式会自动使用 `--features io-uring` 构建 Runtime，并把临时 Scene 配置设为 `protocol=tcp`。报告中的 `Transport Backend` 表格会输出 read/write 的 `frames/op`。

@@ -86,7 +86,7 @@ Cocos 使用 960x640 固定设计分辨率和 `SHOW_ALL` 策略。窗口变化�
 - `Demo/Map/Movement`：演示业务的 Cell 常量、本地预测和远端插值。
 - `Generated/Model`：由 proto 生成的方向消息和权威路径结构。
 - `Demo/Map`：键盘输入、消息接线、地图视口和 Cocos Node 显示。
-- `app/demo/movement` 与 `app/demo/map`：服务端演示业务的移动状态、PlayerUnit、MovementComponent 和地图广播。
-- `src/native_data.rs`：Rust 数据后端采用同一 Cell 状态机，用于 A/B 性能实验。
+- `app/demo/movement` 与 `app/demo/map`：服务端演示业务的 Cell 规则、PlayerUnit、句柄组件和地图广播。
+- `src/native_data.rs`：Rust 权威 Unit 数据、Cell 状态机和移动 protobuf 投影。
 
-TS 与 Rust 共同读取 `native_data/movement_parity.json`。该场景覆盖途中转向、停止和斜向三 Tick；执行 `npm run test:movement-parity` 会依次验证两种后端。
+`native_data/movement_regression.json` 覆盖途中转向、停止和斜向移动；执行 `npm run test:native-data` 验证 Rust 状态机与预期帧。

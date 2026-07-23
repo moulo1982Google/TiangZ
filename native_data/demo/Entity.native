@@ -1,0 +1,6 @@
+namespace demo;
+
+abstract entity Entity {
+  readonly id: u32;
+  readonly instanceId: u32;
+}

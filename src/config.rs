@@ -560,14 +560,12 @@ mod tests {
             r#"{
                 "name": "map1",
                 "nativeData": {
-                    "backend": "rust",
                     "debugScalarAccess": true,
                     "scalarAccessWarnThreshold": 2048
                 }
             }"#,
         )
         .unwrap();
-        assert_eq!(process.extensions["nativeData"]["backend"], "rust");
         let serialized = serde_json::to_value(process).unwrap();
         assert_eq!(serialized["nativeData"]["debugScalarAccess"], true);
         assert_eq!(serialized["nativeData"]["scalarAccessWarnThreshold"], 2048);

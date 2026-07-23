@@ -1,0 +1,9 @@
+namespace demo;
+
+@typeId(2)
+entity Item extends Entity {
+  readonly configId: u32;
+  count: u32 = 1;
+  quality: u32 = 0;
+  level: u32 = 1;
+}

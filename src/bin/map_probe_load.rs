@@ -38,6 +38,7 @@ struct Options {
     duration: Duration,
     timeout: Duration,
     move_rate: u64,
+    movement_hold_messages: u32,
     probe_rate: u64,
     probe_concurrency: usize,
     label: String,
@@ -208,6 +209,7 @@ async fn main() -> Result<()> {
         "warmupSeconds": options.warmup.as_secs_f64(),
         "durationSeconds": options.duration.as_secs_f64(),
         "targetMoveRatePerPlayer": options.move_rate,
+        "movementHoldMessages": options.movement_hold_messages,
         "targetProbeRatePerPlayer": options.probe_rate,
         "measurementStartedAtUnixMs": started_at_unix_ms,
         "measurementEndedAtUnixMs": started_at_unix_ms + options.duration.as_millis() as u64,
@@ -236,8 +238,7 @@ async fn main() -> Result<()> {
             "maxMs": 0,
             "skippedTicks": move_skipped,
             "entityMovePushes": entity_move_pushes,
-            "pushesPerSecond": entity_move_pushes as f64 /
-                (options.warmup + options.duration).as_secs_f64(),
+            "pushesPerSecond": entity_move_pushes as f64 / options.duration.as_secs_f64(),
             "errors": move_errors,
         },
         "probe": timing_json,
@@ -260,7 +261,7 @@ async fn main() -> Result<()> {
         setup_per_second,
         move_sent as f64 / options.duration.as_secs_f64(),
         move_skipped,
-        entity_move_pushes as f64 / (options.warmup + options.duration).as_secs_f64(),
+        entity_move_pushes as f64 / options.duration.as_secs_f64(),
         requests_per_second,
         percentile(&latencies, 0.50) as f64 / 1000.0,
         percentile(&latencies, 0.95) as f64 / 1000.0,
@@ -399,7 +400,7 @@ async fn run_player(
         mut next_rpc_id,
         unit_id,
     } = player;
-    let pushes_at_start = entity_move_pushes.load(Ordering::Relaxed);
+    let mut pushes_at_measurement_start = None;
     let mut pending = HashMap::<u32, PendingProbe>::with_capacity(options.probe_concurrency * 2);
     let mut probe_sequence = 0_u32;
     let mut move_sequence = 0_u32;
@@ -412,6 +413,9 @@ async fn run_player(
 
     loop {
         let now = Instant::now();
+        if pushes_at_measurement_start.is_none() && now >= timing.measurement_start {
+            pushes_at_measurement_start = Some(entity_move_pushes.load(Ordering::Relaxed));
+        }
         if now >= timing.send_deadline && pending.is_empty() {
             break;
         }
@@ -425,7 +429,13 @@ async fn run_player(
             }
             result.move_skipped += due.saturating_sub(1);
             move_sequence = move_sequence.wrapping_add(1).max(1);
-            send_move(&writer_tx, unit_id, move_sequence).await?;
+            send_move(
+                &writer_tx,
+                unit_id,
+                move_sequence,
+                options.movement_hold_messages,
+            )
+            .await?;
             if now >= timing.measurement_start {
                 result.move_sent += 1;
             }
@@ -507,14 +517,20 @@ async fn run_player(
     }
     reader_task.abort();
     writer_task.abort();
-    result.entity_move_pushes = entity_move_pushes
-        .load(Ordering::Relaxed)
-        .saturating_sub(pushes_at_start);
+    result.entity_move_pushes = entity_move_pushes.load(Ordering::Relaxed).saturating_sub(
+        pushes_at_measurement_start.unwrap_or_else(|| entity_move_pushes.load(Ordering::Relaxed)),
+    );
     Ok(result)
 }
 
-async fn send_move(writer_tx: &mpsc::Sender<Vec<u8>>, unit_id: u32, sequence: u32) -> Result<()> {
-    let direction = (unit_id.wrapping_add(sequence) % 4) as i32;
+async fn send_move(
+    writer_tx: &mpsc::Sender<Vec<u8>>,
+    unit_id: u32,
+    sequence: u32,
+    hold_messages: u32,
+) -> Result<()> {
+    let direction_step = sequence.saturating_sub(1) / hold_messages;
+    let direction = (unit_id.wrapping_add(direction_step) % 4) as i32;
     let (input_x, input_y) = match direction {
         0 => (1, 0),
         1 => (0, 1),
@@ -813,10 +829,17 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
     let players = number("players", 100)? as usize;
     let setup_concurrency = number("setup-concurrency", 16)? as usize;
     let probe_concurrency = number("probe-concurrency", 4)? as usize;
+    let movement_hold_messages = u32::try_from(number("movement-hold-messages", 1)?)
+        .context("movement hold messages exceeds uint32")?;
     let duration = number("duration", 10)?;
-    if players == 0 || setup_concurrency == 0 || probe_concurrency == 0 || duration == 0 {
+    if players == 0
+        || setup_concurrency == 0
+        || probe_concurrency == 0
+        || movement_hold_messages == 0
+        || duration == 0
+    {
         bail!(
-            "players, setup-concurrency, probe-concurrency and duration must be greater than zero"
+            "players, setup-concurrency, probe-concurrency, movement-hold-messages and duration must be greater than zero"
         );
     }
     Ok(Options {
@@ -832,6 +855,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         duration: Duration::from_secs(duration),
         timeout: Duration::from_millis(number("timeout", 60_000)?),
         move_rate: number("move-rate", 0)?,
+        movement_hold_messages,
         probe_rate: number("probe-rate", 20)?,
         probe_concurrency,
         label: values

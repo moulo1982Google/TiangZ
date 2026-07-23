@@ -9,6 +9,7 @@
 5. [登录、Gate、地图与 Cocos 链路](tutorials/05-game-chain-and-client.md)
 6. [调试、测试与部署](tutorials/06-debug-test-and-deploy.md)
 7. [客户端传输协议与 Cocos Native](tutorials/07-client-transport-and-native.md)
+8. [Rust Entity 与 TS Handle 代码生成](tutorials/08-native-entity-codegen.md)
 
 ## 开发参考
 
@@ -21,7 +22,7 @@
 - [业务开发清单](guides/business-cookbook.md)
 - [运行时维护者指南](design/maintainer-guide.md)
 - [移动预测与快照插值](design/movement-prediction.md)
-- [Rust Unit 数据下沉实验](design/native-data-experiment.md)
+- [Rust 权威实体数据](design/native-entity-storage.md)
 - [TypeScript 调试](typescript_debugging.md)
 - [路线图](roadmap.md)
 
