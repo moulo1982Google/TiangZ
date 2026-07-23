@@ -1,13 +1,13 @@
 # TiangZ
-天工
+天工，一个正在开发中的 MMORPG 服务端框架。
 
-基于ECS模式(伪)，Rust语言编写的的游戏服务器，正在开发中，尚未发布可运行的0.1版本。
+当前版本为 `0.1.0`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
 
-灵感来源：ET，github地址：https://github.com/egametang/ET 感谢猫大的开源作品。感谢字母哥的教学。
+架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
-# 分支：ets_runtime
+## 当前开发分支：`ets_runtime`
 
-`ets_runtime` 是一个 Rust + deno_core + TypeScript 的 MMORPG 服务端实验框架。Rust/Tokio 负责网络、分帧、背压和跨进程连接；一个操作系统进程只创建一个 V8，TypeScript 业务线程在其中承载多个 Scene、Actor 和 Component。
+TiangZ 使用 Rust + deno_core + TypeScript。Rust/Tokio 负责网络、分帧、背压、跨进程连接和 Native Entity 权威数据；一个操作系统进程只创建一个 V8，TypeScript 业务线程在其中承载多个 Scene、Actor 和 Component。
 
 ## 当前架构
 
@@ -29,6 +29,7 @@ Machine
 - `ProcessHost.Root` 按 InstanceId 定位当前生命周期 Entity，MapScene.UnitComponent 按 UnitId 管理地图实体。
 - `Component` 组织状态与能力，不要求 Handler 绑定到单一 Component。
 - 同进程 Scene 调用直接进入目标 Scene mailbox；跨进程调用走持久 Inner TCP。业务代码不判断本地或远程。
+- 高频跨帧 Entity 数据可以保存在 Rust Arena，TypeScript 只持有 generation handle；Handler、mailbox 和业务组合仍保留在 TypeScript。
 
 这套模型借鉴 ET 的 Scene/Actor/Component 心智模型，同时保留 skynet 式消息隔离和小运行时。框架不再把 Skynet Service 与 OS Process 混为一层。
 
@@ -44,7 +45,12 @@ app/demo/scenes/             配置启动的 Demo EntryScene
 app/generated/               全部自动生成代码
 app/generated/hotfix/        自动生成的 Scene/Handler 模块入口
 proto/                       protobuf 源文件
+native_data/                 Rust Entity/Native op 原型
 configs/<environment>/       环境启动配置
+cocos_client2D/              Cocos Creator 2D Demo 客户端
+perf/                        RPC、完整链路与地图容量测试
+tools/                       codegen、冒烟测试和维护脚本
+tools-projects/              本机独立工具仓库，不属于 TiangZ 主仓库
 docs/tutorials/              从零学习手册
 docs/reference/              配置、API、命令参考
 docs/design/                 维护者实现文档
@@ -53,10 +59,10 @@ docs/design/                 维护者实现文档
 ## 快速启动
 
 ```powershell
-cd E:\VsCode\skynet\ets_runtime
+cd E:\gitee\TiangZ
 npm install
 npm run build
-cargo run --bin ets_runtime -- configs/local/all.json
+cargo run -- configs/local/all.json
 ```
 
 `all.json` 在一个 OS 进程、一个 V8 中启动六个入口 Scene，但保留各自客户端/Inner Listener：
@@ -82,10 +88,44 @@ Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“�
 
 ```json
 {
-  "process": { "name": "all" },
+  "process": {
+    "name": "all",
+    "network": {
+      "ioBackend": "epoll"
+    },
+    "game": {
+      "fixedUpdateMs": 50,
+      "maxCatchUpSteps": 2
+    },
+    "nativeData": {
+      "debugScalarAccess": false,
+      "scalarAccessWarnThreshold": 10000
+    },
+    "scheduling": {
+      "mode": "adaptive"
+    },
+    "debug": {
+      "inspectorIp": "127.0.0.1",
+      "inspectorPort": 9231,
+      "breakOnStart": false,
+      "allowRemote": false
+    },
+    "observability": {
+      "latency": {
+        "enabled": true,
+        "sampleRate": 1
+      }
+    }
+  },
   "scenes": [
-    { "name": "login_mgr", "sceneType": "LoginMgr", "ip": "127.0.0.1", "port": 7000 },
-    { "name": "login_1", "sceneType": "Login", "ip": "127.0.0.1", "port": 7001 }
+    {
+      "name": "login_mgr",
+      "sceneType": "LoginMgr",
+      "ip": "127.0.0.1",
+      "port": 7000,
+      "protocol": "auto",
+      "audience": "mixed"
+    }
   ],
   "knownScenes": [
     { "name": "login_mgr", "sceneType": "LoginMgr", "ip": "127.0.0.1", "port": 7000 },
@@ -94,10 +134,17 @@ Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“�
 }
 ```
 
-- `process`：当前 OS 进程，一个配置文件只描述一个 Process/V8。
+- `process.name`：当前 OS 进程名称，一个配置文件只描述一个 Process/V8。
+- `process.network`：I/O Backend；默认 `epoll`，Linux 可显式选择实验性的 `io-uring`。
+- `process.game`：固定游戏帧和最大补帧数；默认 `50ms/20Hz`、最多补跑 2 帧。
+- `process.nativeData`：Demo 的 Rust Native Entity 诊断配置，只观测标量访问，不控制数据是否下沉。
+- `process.scheduling`：Runtime Pump 调度模式及队列参数；默认 `adaptive`。
+- `process.debug`：V8 Inspector 配置。该对象可省略；存在时必须设置 `inspectorPort`。远程监听还必须显式设置 `allowRemote: true`。
+- `process.observability`：延迟采样等可观测性配置；不需要时可以省略。
 - `scenes`：当前进程实际创建的入口 Scene。
-- `knownScenes`：当前进程可路由的 Scene 目录，目标可以在其他进程。
-- `debug`：属于 `process`，因为一个进程只有一个 V8/Inspector。
+- `knownScenes`：当前进程可路由的 Scene 目录，目标可以在其他进程；省略或为空时默认等于 `scenes`。
+- `scene.protocol`：`auto`、`tcp`、`websocket` 或 `kcp`；默认 `auto`。
+- `scene.audience`：`mixed`、`inner` 或 `outer`；默认 `mixed`。
 - `StartMachine.json`：按机器 IP 启动多个进程配置文件。
 
 把 `all.json` 拆成多个配置时，只改变 `scenes` 的部署归属；`knownScenes` 中目标的 name/type/ip/port 保持一致，业务调用代码不改。
@@ -106,23 +153,38 @@ Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“�
 
 ```ts
 import { entryScene } from "../../core/process/registry";
-import { EntryScene } from "../../core/process/types";
+import {
+  EntryScene,
+  RuntimeEntrySceneConfig,
+  SceneConfig,
+} from "../../core/process/types";
 import { rpc } from "../../core/protocol/rpc";
 
 @entryScene() // LoginMgrScene 默认注册为 SceneType "LoginMgr"
 export class LoginMgrScene extends EntryScene {
+  private readonly loginScenes: SceneConfig[];
+  private next = 0;
+
+  constructor(config: RuntimeEntrySceneConfig) {
+    super(config);
+    this.loginScenes = this.scenes.many("Login");
+    if (this.loginScenes.length === 0) {
+      throw new Error("LoginMgrScene needs at least one known LoginScene");
+    }
+  }
+
   @rpc(LoginMgrProtocol.GetLoginServiceAddr)
   private getLoginServiceAddr(
-    request: C2S_GetLoginServiceAddr,
+    _request: C2S_GetLoginServiceAddr,
   ): S2C_GetLoginServiceAddr {
-    const loginScenes = this.scenes.many("Login");
-    const selected = loginScenes[request.rpcId! % loginScenes.length];
+    const selected = this.loginScenes[this.next % this.loginScenes.length];
+    this.next += 1;
     return { name: selected.name, ip: selected.ip, port: selected.port };
   }
 }
 ```
 
-运行 `npm run codegen` 后，`tools/codegen_scenes.mjs` 扫描 Scene 与 handlers 目录，并生成 `app/generated/hotfix/scenes.ts`、`handlers.ts`。无需手工维护 Scene 类型表或 msgcode-to-handler 表。
+运行 `npm run codegen` 后，生成器按照 `codegen.config.json` 的搜索根扫描入口 Scene 和 Handler，并生成 `app/generated/hotfix/scenes.ts`、`handlers.ts`。无需手工维护 Scene 类型表或 msgcode-to-handler 表。
 
 ## Scene 调用
 
@@ -164,13 +226,30 @@ await this.scenes.send(
 [length: u32 big-endian][msgcode: u16 big-endian][protobuf payload]
 ```
 
-Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcode、protobuf、Handler 和响应编码。生成代码全部位于 `app/generated`，不要手工编辑。
+Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcode、protobuf、Handler 和响应编码。Endpoint 当前支持 TCP、二进制 WebSocket、KCP，以及开发期自动识别的 `auto`。
+
+生成代码包括：
+
+- `app/generated`：服务端协议、Native handle 和 Hotfix 入口。
+- `src/generated`：Rust Native op 注册与 bootstrap。
+- `cocos_client2D/assets/scripts/Generated`：Cocos 客户端协议和 Handler 入口。
+
+所有 Generated 文件都不应手工编辑。
+
+## VS Code 开发工具
+
+TiangZ 目前有两个职责独立的 VS Code 插件，均尚未发布到 Marketplace：
+
+- [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；当前内部版本为 `v0.10.0`。
+- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引 Environment、Machine、Process、Scene、Actor、Component 与 Handler，在资源管理器显示“TiangZ 工程”，提供源码跳转和 Problems 诊断；当前内部版本为 `v0.1.0`。
+
+两个插件分开维护，未来可以通过 Extension Pack 一键安装。当前需分别克隆仓库，执行 `npm install`、`npm run check` 和 `npm run package:extension`，再从各仓库 `dist` 目录安装 VSIX。
 
 ## 调试与验证
 
 ```powershell
 npm run build:debug
-cargo run --bin ets_runtime -- configs/local/login1.debug.json
+cargo run -- configs/local/login1.debug.json
 ```
 
 一个 Process 对应一个 Inspector。详见 [TypeScript 调试](docs/typescript_debugging.md)。常用验证：
@@ -197,7 +276,7 @@ npm run clean:copy
 将整个工程复制到 Linux 后，可以直接执行：
 
 ```bash
-cd ets_runtime
+cd TiangZ
 npm ci
 npm run perf:rpc-baseline
 ```
