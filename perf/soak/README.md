@@ -2,20 +2,22 @@
 
 长稳测试复用完整链路压测：玩家依次完成 LoginMgr、Login、Gate、进入地图，然后持续发送移动消息并接收地图广播。它主要观察错误、延迟恶化、队列积压，以及 Runtime 和压测客户端的 RSS/V8 Heap 长期增长趋势。
 
-## 10 小时标准命令
+## 10 分钟预检命令
 
 在空闲机器的工程根目录执行：
 
 ```powershell
-npm run perf:soak -- --hours 10 --mode split --players 200 --move-rate 5
+npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 5
 ```
 
 该命令会先生成代码、完成 TypeScript 构建并编译 Release Runtime，然后启动拆分进程拓扑。正式采样前默认预热 60 秒。测试期间不要同时运行 Cocos、其他压测或 CPU Profile。
 
+预检通过后，10 小时正式长稳使用 `--minutes 600`。
+
 只检查参数和最终展开命令，不启动服务与压测：
 
 ```powershell
-node perf/soak/run_soak.mjs --hours 10 --mode split --players 200 --move-rate 5 --dry-run
+node perf/soak/run_soak.mjs --minutes 10 --mode split --players 200 --move-rate 5 --dry-run
 ```
 
 ## 输出

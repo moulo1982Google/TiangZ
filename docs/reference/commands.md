@@ -33,7 +33,7 @@
 | `npm run perf:rpc-baseline` | Windows/Linux 通用的独立 RPC Payload 基线与报告 |
 | `npm run perf:kcp-loginmgr -- 127.0.0.1:7000 256 5 20` | KCP LoginMgr RPC 基准：地址、连接数、预热秒数、测试秒数 |
 | `npm run perf:full-chain` | 单进程/拆分进程的完整登录、进图、移动与 AOI Push 性能矩阵 |
-| `npm run perf:soak -- --hours 10 --mode split --players 200 --move-rate 5` | 运行 10 小时完整链路长稳并输出内存增长趋势；只在专用空闲机器上手工执行 |
+| `npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 5` | 运行 10 分钟完整链路长稳预检并输出内存增长趋势；正式 10 小时使用 `--minutes 600` |
 | `npm run test:native-data` | 生成句柄、Arena、移动状态机和 Entity 生命周期回归 |
 | `npm run test:client-message` | 引擎无关的客户端 Handler、异步错误与作用域释放测试 |
 | `npm run test:client-sdk` | Client SDK RPC、Update 队列、超时、断线、未知消息和背压测试 |

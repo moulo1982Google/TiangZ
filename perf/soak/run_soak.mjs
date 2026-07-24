@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const options = parseOptions(process.argv.slice(2));
-const durationSeconds = Math.round(options.hours * 3600);
+const durationSeconds = Math.round(options.minutes * 60);
 const runner = path.join(root, "perf", "full_chain", "run_full_chain_perf.mjs");
 const args = [
   runner,
@@ -23,7 +23,7 @@ const args = [
 if (options.remote) args.push("--remote");
 if (options.label) args.push("--label", options.label);
 
-console.log(`[soak] duration=${options.hours}h (${durationSeconds}s)`);
+console.log(`[soak] duration=${options.minutes}m (${durationSeconds}s)`);
 console.log(`[soak] mode=${options.mode} players=${options.players} moveRate=${options.moveRate}Hz`);
 console.log(`[soak] command=${process.execPath} ${args.map(quote).join(" ")}`);
 console.log("[soak] reports=perf/results/soak_latest.json and perf/results/soak_latest.md");
@@ -34,13 +34,32 @@ if (!options.dryRun) {
 }
 
 function parseOptions(args) {
+  const valueOptions = new Set([
+    "--minutes",
+    "--mode",
+    "--players",
+    "--move-rate",
+    "--warmup",
+    "--setup-concurrency",
+    "--host",
+    "--manager-port",
+    "--label",
+  ]);
+  const flagOptions = new Set(["--remote", "--dry-run", "--help"]);
   const values = new Map();
   const flags = new Set();
   for (let index = 0; index < args.length; index += 1) {
     const item = args[index];
     if (!item.startsWith("--")) throw new Error(`unexpected argument: ${item}`);
-    if (index + 1 >= args.length || args[index + 1].startsWith("--")) flags.add(item);
-    else values.set(item, args[++index]);
+    if (flagOptions.has(item)) {
+      flags.add(item);
+      continue;
+    }
+    if (!valueOptions.has(item)) throw new Error(`unknown option: ${item}`);
+    if (index + 1 >= args.length || args[index + 1].startsWith("--")) {
+      throw new Error(`${item} requires a value`);
+    }
+    values.set(item, args[++index]);
   }
   if (flags.has("--help")) {
     printHelp();
@@ -49,7 +68,7 @@ function parseOptions(args) {
   const mode = values.get("--mode") ?? "split";
   if (!["all", "split"].includes(mode)) throw new Error(`invalid --mode: ${mode}`);
   return {
-    hours: positive(values.get("--hours") ?? "1", "--hours"),
+    minutes: positive(values.get("--minutes") ?? "60", "--minutes"),
     mode,
     players: positiveInteger(values.get("--players") ?? "200", "--players"),
     moveRate: nonNegative(values.get("--move-rate") ?? "5", "--move-rate"),
@@ -100,10 +119,10 @@ function printHelp() {
   console.log(`TiangZ long-running stability test
 
 Usage:
-  npm run perf:soak -- --hours 10 --mode split --players 200 --move-rate 5
+  npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 5
 
 Options:
-  --hours <n>              test duration in hours; default 1
+  --minutes <n>            test duration in minutes; default 60
   --mode <all|split>       deployment topology; default split
   --players <n>            concurrent players; default 200
   --move-rate <hz>         movement reports per player per second; default 5

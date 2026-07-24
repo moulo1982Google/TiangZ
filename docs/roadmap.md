@@ -183,7 +183,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Process 可选提供 `/live` 与 `/ready`，就绪状态覆盖端口绑定、TS Scene 启动屏障和停机摘流；Prometheus `/metrics` 仍属于 Phase 5。
 - 新增只读生成物校验、快速质量门和包含拆分进程、mailbox、背压、Watcher 的完整 `npm run verify`。
 - Core、Demo 与 Rust 宿主建立中英文函数注释规范，并由 `verify:comments` 自动检查，重点记录副作用、生命周期、不应怎样使用以及设计原因。
-- 已准备完整链路长稳入口和 RSS/V8 Heap 每小时增长报告；10 小时正式样本由专用空闲机器手工执行，不纳入日常 CI。
+- 已准备按分钟指定时长的完整链路长稳入口和 RSS/V8 Heap 每小时增长报告；10 小时正式样本使用 `--minutes 600`，由专用空闲机器手工执行，不纳入日常 CI。
 
 ## Phase 4：MMORPG 业务扩展
 
