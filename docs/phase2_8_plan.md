@@ -75,9 +75,11 @@ Phase 2.8 位于多人地图纵向链路与正式角色业务之间。目标不�
 
 ## Phase 2.8.5：生命周期与开发体验
 
-状态：待开始。
+状态：部分完成。
 
-- 增加 `onStart/onReady/onStop` 与优雅退出。
+- 已增加可等待的 `onStart/onReady/onStop`；直接启动单个 Process 配置时，Windows `CTRL_C/CTRL_BREAK` 与 Linux `SIGINT/SIGTERM` 会进入 TS stop、关闭连接并等待保存。
+- MapHost 停止时会按 Gate 批量踢出玩家；玩家数据保存封装在幂等 `PlayerUnit.Offline()` 中，踢人逻辑不直接调用 Repository。
+- `process.lifecycle.stopTimeoutMs` 默认 10000ms，保存失败或超时会让停机失败并留下错误日志。
 - Service Runtime 异常退出时让宿主进程 fail-fast，Watcher 支持受控重启和退避。
 - 校验重复 Service 名称、地址、依赖和生产环境 Inner Token。
 - 生成类型安全的 ServiceType、Actor Handler Descriptor 和 Proxy。

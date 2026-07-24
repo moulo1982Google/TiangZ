@@ -29,6 +29,8 @@ pub struct ProcessConfig {
     #[serde(default)]
     pub scheduling: ProcessSchedulingConfig,
     #[serde(default)]
+    pub lifecycle: ProcessLifecycleConfig,
+    #[serde(default)]
     pub debug: Option<ProcessDebugConfig>,
     #[serde(default)]
     pub observability: Option<ProcessObservabilityConfig>,
@@ -49,6 +51,21 @@ pub struct ProcessLoggingConfig {
     pub filter: Option<String>,
     #[serde(default)]
     pub file: Option<ProcessLogFileConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessLifecycleConfig {
+    #[serde(default = "default_stop_timeout_ms")]
+    pub stop_timeout_ms: u64,
+}
+
+impl Default for ProcessLifecycleConfig {
+    fn default() -> Self {
+        Self {
+            stop_timeout_ms: default_stop_timeout_ms(),
+        }
+    }
 }
 
 impl Default for ProcessLoggingConfig {
@@ -285,6 +302,10 @@ fn default_fixed_update_ms() -> u64 {
     50
 }
 
+fn default_stop_timeout_ms() -> u64 {
+    10_000
+}
+
 fn default_max_catch_up_steps() -> usize {
     2
 }
@@ -367,6 +388,9 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     }
     if config.process.game.max_catch_up_steps > 100 {
         bail!("process game.maxCatchUpSteps must not exceed 100");
+    }
+    if !(100..=120_000).contains(&config.process.lifecycle.stop_timeout_ms) {
+        bail!("process lifecycle.stopTimeoutMs must be between 100 and 120000");
     }
     if !config.process.network.uring_entries.is_power_of_two()
         || !(64..=32_768).contains(&config.process.network.uring_entries)
@@ -523,6 +547,7 @@ mod tests {
             network: ProcessNetworkConfig::default(),
             game: ProcessGameConfig::default(),
             scheduling: ProcessSchedulingConfig::default(),
+            lifecycle: ProcessLifecycleConfig::default(),
             debug: inspector_port.map(|inspector_port| ProcessDebugConfig {
                 inspector_ip: default_inspector_ip(),
                 inspector_port,
@@ -689,16 +714,21 @@ mod tests {
                 "game": {
                     "fixedUpdateMs": 100,
                     "maxCatchUpSteps": 3
+                },
+                "lifecycle": {
+                    "stopTimeoutMs": 30000
                 }
             }"#,
         )
         .unwrap();
         assert_eq!(overridden.game.fixed_update_ms, 100);
         assert_eq!(overridden.game.max_catch_up_steps, 3);
+        assert_eq!(overridden.lifecycle.stop_timeout_ms, 30_000);
 
         let defaults: ProcessConfig = serde_json::from_str(r#"{ "name": "map2" }"#).unwrap();
         assert_eq!(defaults.game.fixed_update_ms, 50);
         assert_eq!(defaults.game.max_catch_up_steps, 2);
+        assert_eq!(defaults.lifecycle.stop_timeout_ms, 10_000);
     }
 
     #[test]
@@ -722,6 +752,18 @@ mod tests {
     fn rejects_invalid_game_update_config() {
         let mut process = process(None);
         process.game.fixed_update_ms = 0;
+        let config = RuntimeConfig {
+            process,
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_stop_timeout() {
+        let mut process = process(None);
+        process.lifecycle.stop_timeout_ms = 99;
         let config = RuntimeConfig {
             process,
             scenes: vec![scene("map", 7100)],

@@ -51,6 +51,8 @@ const Read = defineRpc({
   responseCodec: jsonCodec<ReadResponse>(),
 });
 
+const lifecycleEvents: string[] = [];
+
 class CounterComponent extends Component<[number]> {
   value = 0;
   destroyed = false;
@@ -61,12 +63,25 @@ class CounterComponent extends Component<[number]> {
 
   protected override OnDestroy(): void {
     this.destroyed = true;
+    lifecycleEvents.push("component-destroy");
   }
 }
 
 @entryScene("HandlerProbe")
 class HandlerProbeScene extends EntryScene {
   readonly counter = this.AddComponent(CounterComponent, 10);
+
+  protected override onStart(): void {
+    lifecycleEvents.push("start");
+  }
+
+  protected override onReady(): void {
+    lifecycleEvents.push("ready");
+  }
+
+  protected override onStop(): void {
+    lifecycleEvents.push("stop");
+  }
 }
 
 @messageHandler(HandlerProbeScene, Add)
@@ -133,12 +148,15 @@ function testDuplicateHandlerGuard(): void {
 }
 
 async function testExternalHandlerDispatch(): Promise<void> {
+  lifecycleEvents.length = 0;
   const runtime = new ProcessRuntime({
     process: { name: "handler-self-test" },
     scenes: [sceneConfig()],
     knownScenes: [sceneConfig()],
     tickMs: 50,
   });
+  await runtime.start();
+  assert.deepEqual(lifecycleEvents, ["start", "ready"]);
 
   runtime.pushHostFrame(0, 7, packFrame(Add.msgcode, Add.codec.encode({ value: 5 })));
   runtime.pushHostFrame(
@@ -159,6 +177,8 @@ async function testExternalHandlerDispatch(): Promise<void> {
 
   const response = Read.responseCodec.decode(result.outbound[0].frame.subarray(2));
   assert.deepEqual(response, { value: 15, rpcId: 42, error: 0 });
+  await runtime.stop();
+  assert.deepEqual(lifecycleEvents, ["start", "ready", "stop", "component-destroy"]);
 }
 
 function createScene(): HandlerProbeScene {

@@ -67,6 +67,15 @@ export class ProcessHost {
 
   constructor(public readonly processId = "process-1") {}
 
+  Dispose(): void {
+    for (const sceneId of [...this.scenes.keys()].reverse()) {
+      this.despawnScene(sceneId);
+    }
+    if (this.Root.Count !== 0) {
+      throw new Error(`process host leaked ${this.Root.Count} entity reference(s)`);
+    }
+  }
+
   spawnScene<T extends Scene>(
     sceneId: SceneId,
     ctor: SceneCtor<T>,

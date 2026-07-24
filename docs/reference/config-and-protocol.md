@@ -18,6 +18,7 @@
 | `game` | object? | 固定 Game.Update 与掉帧补偿策略，默认 20Hz |
 | `nativeData` | object? | Demo 应用扩展：Rust 权威实体数据的诊断配置 |
 | `scheduling` | object? | Process 事件批处理与空闲 Tick 策略，默认 `adaptive` |
+| `lifecycle` | object? | 进程优雅停机配置；默认最多等待 10000ms |
 | `observability` | object? | 延迟采样等运行时观测配置 |
 | `debug` | object? | 该 V8 的 Inspector 配置 |
 
@@ -62,6 +63,8 @@
 
 - `fixedUpdateMs`：业务 `Game.Update` 固定间隔，默认 50ms，即 20Hz；范围为 1 到 10000ms。
 - `maxCatchUpSteps`：Process 短暂停顿后单次 Pump 最多补跑多少帧，默认 2，范围为 1 到 100。超出的旧帧会计入 `skippedFixedUpdates`，不会形成死亡螺旋。
+
+`lifecycle.stopTimeoutMs` 控制 TS `onStop`、玩家保存等停机工作的最长等待时间，默认 `10000`，允许范围为 `100` 到 `120000`。超时会让进程以错误退出，不能静默假装保存成功。
 
 `nativeData` 只控制 Rust 权威实体数据的诊断输出：
 

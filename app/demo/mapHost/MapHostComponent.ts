@@ -18,13 +18,30 @@ import { MapScene } from "../map/MapScene";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
+import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
 
 export class MapHostComponent extends Component {
   private readonly maps = new Map<number, MapComponent>();
+  private readonly repository = new InMemoryPlayerRepository();
   private nextUnitId = 1000;
 
   BroadcastMetricSnapshots(): CustomMetricSnapshot[] {
     return [...this.maps.values()].map((map) => map.BroadcastMetricSnapshot());
+  }
+
+  async KickAllPlayers(reason: string): Promise<void> {
+    const results = await Promise.allSettled(
+      [...this.maps.values()].map((map) => map.KickAllPlayers(reason)),
+    );
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures.map((failure) => failure.reason),
+        `failed to stop ${failures.length} map(s) cleanly`,
+      );
+    }
   }
 
   async enterMap(request: G2M_EnterMap): Promise<M2G_EnterMap> {
@@ -109,6 +126,7 @@ export class MapHostComponent extends Component {
       mapId,
       this.owner.scenes,
       this.players,
+      this.repository,
     );
     this.maps.set(mapId, map);
     return map;

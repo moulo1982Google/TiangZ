@@ -11,33 +11,41 @@ import {
   component,
 } from "../../core/runtime";
 import { ClientBroadcasts } from "../../generated/model/server/demo/protocol/broadcastDescriptors";
+import { GateMessages } from "../../generated/model/server/demo/protocol/messageDescriptors";
 import type {
   G2M_EnterMap,
   G2M_PlayerDisconnect,
   ItemSnapshot,
+  KickPlayerTarget,
   MapEntitySnapshot,
 } from "../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 import { PlayerUnit, type PlayerSnapshot } from "./PlayerUnit";
+import { MapScene } from "./MapScene";
 import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import { NativeData } from "../native/NativeData";
 import { NumericComponent } from "../numeric/NumericComponent";
 import { ItemComponent } from "../item/ItemComponent";
+import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
+import type { PlayerRepository } from "../persistence/PlayerRepository";
 
 @component()
 export class MapComponent extends Component<[
   mapId: number,
   scenes: SceneMessageHelper,
   players: PlayerDirectoryComponent,
+  repository: PlayerRepository,
 ]> implements IFrameFlush {
   private mapId = 0;
   private players!: PlayerDirectoryComponent;
   private serverTick = 0;
   private broadcast!: BroadcastHub;
   private replication!: StateReplicationSystem;
+  private repository!: PlayerRepository;
+  private scenes!: SceneMessageHelper;
 
   get MapId(): number {
     return this.mapId;
@@ -47,9 +55,12 @@ export class MapComponent extends Component<[
     mapId: number,
     scenes: SceneMessageHelper,
     players: PlayerDirectoryComponent,
+    repository: PlayerRepository,
   ): void {
     this.mapId = mapId;
     this.players = players;
+    this.repository = repository;
+    this.scenes = scenes;
     this.broadcast = new BroadcastHub(new SceneBroadcastTransport(scenes), {
       onError: (name, error) => {
         console.error(`[Map:${this.mapId}] ${name} broadcast failed`, error);
@@ -108,6 +119,7 @@ export class MapComponent extends Component<[
       player.AddComponent(PositionComponent, native);
       player.AddComponent(NumericComponent);
       player.AddComponent(ItemComponent);
+      player.AddComponent(PlayerPersistenceComponent, this.repository);
       player.AddComponent(
         UnitGateComponent,
         request.gateName,
@@ -191,7 +203,7 @@ export class MapComponent extends Component<[
       return;
     }
 
-    await this.RemovePlayerAndBroadcast(unit);
+    await this.OfflinePlayerAndBroadcast(unit, "client-disconnect");
     console.log(
       `[Map:${this.mapId}] ${message.account} leave map as unit ${message.unitId}`,
     );
@@ -200,8 +212,7 @@ export class MapComponent extends Component<[
   async RemovePlayerAndBroadcast(unit: PlayerUnit): Promise<void> {
     this.requirePlayer(unit);
     const unitId = unit.UnitId;
-    this.players.Remove(unit);
-    this.units.Remove(unitId);
+    this.RemovePlayer(unit);
 
     await this.broadcast.Publish(
       this.BroadcastAudience(),
@@ -209,6 +220,93 @@ export class MapComponent extends Component<[
       { unitId },
       this.serverTick,
     );
+  }
+
+  async KickAllPlayers(reason: string): Promise<void> {
+    const players = [...this.units.GetAll(PlayerUnit)];
+    if (players.length === 0) return;
+    const logger = this.DomainScene<MapScene>().logger;
+
+    const byGate = new Map<string, KickPlayerTarget[]>();
+    for (const player of players) {
+      const gate = player.GetComponent(UnitGateComponent);
+      const targets = byGate.get(gate.gateName) ?? [];
+      targets.push({
+        unitId: player.UnitId,
+        gateSessionId: gate.gateSessionId,
+      });
+      byGate.set(gate.gateName, targets);
+    }
+    for (const [gateName, targets] of byGate) {
+      try {
+        void this.scenes.send(
+          this.scenes.byName(gateName),
+          GateMessages.KickPlayers,
+          { players: targets, reason },
+        ).catch((error) => {
+          logger.error("failed to notify gate to kick players", {
+            mapId: this.mapId,
+            gateName,
+            playerCount: targets.length,
+            error,
+          });
+        });
+      } catch (error) {
+        logger.error("failed to notify gate to kick players", {
+          mapId: this.mapId,
+          gateName,
+          playerCount: targets.length,
+          error,
+        });
+      }
+    }
+
+    const results = await Promise.allSettled(
+      players.map((player) => player.Offline(reason)),
+    );
+    for (const player of players) this.RemovePlayer(player);
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    logger.info("map players stopped", {
+      mapId: this.mapId,
+      playerCount: players.length,
+      saveFailures: failures.length,
+      reason,
+    });
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures.map((failure) => failure.reason),
+        `map ${this.mapId} failed to save ${failures.length} player(s)`,
+      );
+    }
+  }
+
+  private async OfflinePlayerAndBroadcast(
+    unit: PlayerUnit,
+    reason: string,
+  ): Promise<void> {
+    this.requirePlayer(unit);
+    let saveError: unknown;
+    try {
+      await unit.Offline(reason);
+    } catch (error) {
+      saveError = error;
+    }
+    const unitId = unit.UnitId;
+    this.RemovePlayer(unit);
+    await this.broadcast.Publish(
+      this.BroadcastAudience(),
+      ClientBroadcasts.EntityLeave,
+      { unitId },
+      this.serverTick,
+    );
+    if (saveError !== undefined) throw saveError;
+  }
+
+  private RemovePlayer(unit: PlayerUnit): void {
+    this.players.Remove(unit);
+    this.units.Remove(unit.UnitId);
   }
 
   private PlayerSnapshots(): PlayerSnapshot[] {

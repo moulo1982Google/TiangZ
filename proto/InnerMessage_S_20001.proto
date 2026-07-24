@@ -72,3 +72,17 @@ message S2G_ClientBroadcast // IActorMessage
   repeated uint32 target_unit_ids = 1;
   bytes frame = 2;
 }
+
+message KickPlayerTarget
+{
+  uint32 unit_id = 1;
+  string gate_session_id = 2;
+}
+
+// Map 批量摘除 Gate 会话。Gate 必须校验 gate_session_id，避免旧请求踢掉重连后的新会话。
+// @ets.msg protocol=Gate method=KickPlayers
+message M2G_KickPlayers // IActorMessage
+{
+  repeated KickPlayerTarget players = 1;
+  string reason = 2;
+}

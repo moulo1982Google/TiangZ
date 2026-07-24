@@ -5,6 +5,7 @@ import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
 import { NumericComponent } from "../numeric/NumericComponent";
 import type { UnitNumericDelta } from "../../generated/model/server/demo/protocol/messages";
+import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 
 export const PlayerUnitHandlers = {
   RebindGate: "Player.RebindGate",
@@ -64,6 +65,14 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
 
   get MapId(): number {
     return this.mapId;
+  }
+
+  Offline(reason: string): Promise<void> {
+    return this.GetComponent(PlayerPersistenceComponent).SaveOnOffline(reason);
+  }
+
+  get IsOffline(): boolean {
+    return this.GetComponent(PlayerPersistenceComponent).HasSaved;
   }
 
   protected override Awake(request: AwakePlayerUnit): void {

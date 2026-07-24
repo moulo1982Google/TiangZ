@@ -19,6 +19,7 @@ import {
   G2C_MapReady,
   G2M_EnterMap,
   G2M_PlayerDisconnect,
+  M2G_KickPlayers,
   S2G_ClientBroadcast,
   M2G_MapReady,
   M2G_EnterMap,
@@ -99,6 +100,14 @@ export class GateScene extends EntryScene {
     }
   }
 
+  protected override onStop(): void {
+    for (const connectionId of this.sessions.keys()) {
+      if (this.disconnecting.has(connectionId)) continue;
+      this.disconnecting.add(connectionId);
+      this.disconnectClient(connectionId);
+    }
+  }
+
   @rpc(GateProtocol.LoginGate)
   private loginGate(
     request: C2G_LoginGate,
@@ -173,6 +182,35 @@ export class GateScene extends EntryScene {
       connectionIds.push(connectionId);
     }
     this.sendClientFrameMany(connectionIds, message.frame);
+  }
+
+  @message(GateMessages.KickPlayers)
+  private kickPlayers(message: M2G_KickPlayers): void {
+    for (const target of message.players) {
+      const connectionId = this.connectionsByUnitId.get(target.unitId);
+      if (connectionId === undefined) continue;
+      const session = this.sessions.get(connectionId);
+      if (
+        !session ||
+        session.unitId !== target.unitId ||
+        session.sessionId !== target.gateSessionId
+      ) {
+        continue;
+      }
+
+      this.connectionsByUnitId.delete(target.unitId);
+      this.actorLocations.unbindConnection(connectionId);
+      session.mapService = undefined;
+      session.mapId = undefined;
+      session.unitId = undefined;
+      session.actorInstanceId = undefined;
+      this.disconnecting.add(connectionId);
+      this.logger.info("map requested client disconnect", {
+        connectionId,
+        reason: message.reason,
+      });
+      this.disconnectClient(connectionId);
+    }
   }
 
   @rpc(GateProtocol.EnterMap)

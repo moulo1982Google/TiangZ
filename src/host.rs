@@ -49,6 +49,7 @@ pub type HostSceneCompletionSink =
 
 pub struct JsEntrypoints {
     start_process: v8::Global<v8::Function>,
+    stop_process: v8::Global<v8::Function>,
     update: v8::Global<v8::Function>,
     dispatch_host_events: v8::Global<v8::Function>,
 }
@@ -537,6 +538,7 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
 pub fn load_js_entrypoints(runtime: &mut JsRuntime) -> Result<JsEntrypoints> {
     Ok(JsEntrypoints {
         start_process: get_global_function(runtime, "__etsStartProcess")?,
+        stop_process: get_global_function(runtime, "__etsStopProcess")?,
         update: get_global_function(runtime, "__etsUpdateBinary")?,
         dispatch_host_events: get_global_function(runtime, "__etsDispatchHostEvents")?,
     })
@@ -602,6 +604,14 @@ pub fn call_js_start_process(
 ) -> Result<String> {
     let arg = v8_string_arg(runtime, config_json)?;
     call_js_function_string(js_event_loop, runtime, &entrypoints.start_process, &[arg])
+}
+
+pub fn call_js_stop_process(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+    entrypoints: &JsEntrypoints,
+) -> Result<String> {
+    call_js_function_string(js_event_loop, runtime, &entrypoints.stop_process, &[])
 }
 
 pub fn call_js_push_host_events(

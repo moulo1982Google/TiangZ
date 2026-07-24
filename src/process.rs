@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use serde::Deserialize;
 use serde_json::json;
@@ -18,8 +18,8 @@ use tokio::sync::{mpsc as tokio_mpsc, watch};
 use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
-    call_js_update_binary, configure_host_scene_bridge, create_runtime, load_js_entrypoints,
-    pump_js_event_loop_once, take_close_connection_requests,
+    call_js_stop_process, call_js_update_binary, configure_host_scene_bridge, create_runtime,
+    load_js_entrypoints, pump_js_event_loop_once, take_close_connection_requests,
 };
 use crate::inspector::ProcessInspector;
 use crate::transport::init_remote_transport;
@@ -97,6 +97,7 @@ pub(crate) enum ProcessEvent {
         connection_id: u64,
     },
     HostSceneCompletion(HostSceneCompletion),
+    Shutdown,
 }
 
 #[derive(Debug, Deserialize)]
@@ -382,8 +383,8 @@ pub async fn run_runtime_config(
     let runtime_writers = Arc::clone(&writers);
     let runtime_queue_stats = Arc::clone(&queue_stats);
     let host_runtime = tokio::runtime::Handle::current();
-    thread::spawn(move || {
-        if let Err(error) = run_process_runtime(
+    let runtime_thread = thread::spawn(move || {
+        run_process_runtime(
             process,
             scenes,
             known_scenes,
@@ -394,9 +395,7 @@ pub async fn run_runtime_config(
             runtime_queue_stats,
             host_runtime,
             completion_sink,
-        ) {
-            tracing::error!(target: "tiangz::runtime", error = ?error, "process runtime stopped");
-        }
+        )
     });
 
     let io_backend = create_io_backend(&config.process.network)?;
@@ -417,7 +416,39 @@ pub async fn run_runtime_config(
         })?;
     }
 
-    tokio::signal::ctrl_c().await?;
+    wait_for_shutdown_signal().await?;
+    shutdown_all_connections(&writers);
+    event_tx
+        .send(ProcessEvent::Shutdown, None)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    tokio::task::spawn_blocking(move || runtime_thread.join())
+        .await
+        .context("failed to join process runtime task")?
+        .map_err(|_| anyhow::anyhow!("process runtime thread panicked"))??;
+    Ok(())
+}
+
+async fn wait_for_shutdown_signal() -> Result<()> {
+    #[cfg(windows)]
+    {
+        let mut ctrl_break =
+            tokio::signal::windows::ctrl_break().context("failed to install CTRL_BREAK handler")?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result?,
+            _ = ctrl_break.recv() => {},
+        }
+    }
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .context("failed to install SIGTERM handler")?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result?,
+            _ = terminate.recv() => {},
+        }
+    }
     Ok(())
 }
 
@@ -503,8 +534,13 @@ fn run_process_runtime(
     loop {
         let mut packed_events = vec![0; 4];
         let mut event_count = 0_u32;
+        let mut shutdown_requested = false;
         let wait_ms = scheduling.idle_tick_ms;
         match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
+            Ok(ProcessEvent::Shutdown) => {
+                queue_stats.dequeue();
+                shutdown_requested = true;
+            }
             Ok(event) => {
                 queue_stats.dequeue();
                 push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
@@ -517,8 +553,13 @@ fn run_process_runtime(
             .batch_capacity(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
         let coalesce_deadline = scheduling
             .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
-        while event_count < batch_capacity as u32 {
+        while !shutdown_requested && event_count < batch_capacity as u32 {
             match event_rx.try_recv() {
+                Ok(ProcessEvent::Shutdown) => {
+                    queue_stats.dequeue();
+                    shutdown_requested = true;
+                    break;
+                }
                 Ok(event) => {
                     queue_stats.dequeue();
                     push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
@@ -548,7 +589,15 @@ fn run_process_runtime(
             &mut last_process_cpu_time_ms,
             &mut last_resource_sample_at,
         )?;
+        if shutdown_requested {
+            break;
+        }
     }
+
+    let stop_result = call_js_stop_process(&js_event_loop, &mut runtime, &entrypoints)
+        .context("failed to stop TypeScript process")?;
+    close_requested_connections(take_close_connection_requests(), &writers);
+    tracing::info!(target: "tiangz::runtime", process = %process_name, message = %stop_result, "TypeScript process stopped");
 
     runtime
         .v8_isolate()
@@ -639,6 +688,13 @@ fn close_requested_connections(mut connection_ids: Vec<u64>, writers: &Connectio
         if let Some(writer) = writers.remove(&connection_id) {
             let _ = writer.shutdown_tx.send(true);
         }
+    }
+}
+
+fn shutdown_all_connections(writers: &ConnectionWriters) {
+    let mut writers = writers.lock().expect("connection writer map poisoned");
+    for (_, writer) in writers.drain() {
+        let _ = writer.shutdown_tx.send(true);
     }
 }
 
@@ -826,6 +882,7 @@ fn push_event(
                 &payload,
             )?;
         }
+        ProcessEvent::Shutdown => bail!("shutdown event cannot enter a host event batch"),
     }
     *event_count += 1;
     Ok(())

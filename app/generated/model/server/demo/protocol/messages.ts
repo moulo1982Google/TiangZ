@@ -778,6 +778,76 @@ export const S2G_ClientBroadcastCodec = {
   },
 };
 
+export interface KickPlayerTarget {
+  unitId: number;
+  gateSessionId: string;
+}
+
+export const KickPlayerTargetCodec = {
+  decode(payload: Uint8Array): KickPlayerTarget {
+    const reader = new BinaryReader(payload);
+    const value: KickPlayerTarget = {
+      unitId: 0,
+      gateSessionId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.gateSessionId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: KickPlayerTarget): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.uint32(1, value.unitId);
+    writer.string(2, value.gateSessionId);
+    return writer.finish();
+  },
+};
+
+export interface M2G_KickPlayers extends IActorMessage {
+  players: readonly KickPlayerTarget[];
+  reason: string;
+}
+
+export const M2G_KickPlayersCodec = {
+  decode(payload: Uint8Array): M2G_KickPlayers {
+    const reader = new BinaryReader(payload);
+    const value: M2G_KickPlayers = {
+      players: [],
+      reason: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        (value.players as KickPlayerTarget[]).push(KickPlayerTargetCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.reason = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2G_KickPlayers): Uint8Array {
+    const writer = new BinaryWriter();
+    for (const item of value.players) writer.bytes(1, KickPlayerTargetCodec.encode(item));
+    writer.string(2, value.reason);
+    return writer.finish();
+  },
+};
+
 export interface C2S_GetLoginServiceAddr extends IRequest {
   rpcId?: number;
 }

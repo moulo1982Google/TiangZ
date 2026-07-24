@@ -8,6 +8,7 @@ export const InnerMessage = {
   M2G_MapReady: 20007,
   G2M_PlayerDisconnect: 20008,
   S2G_ClientBroadcast: 20009,
+  M2G_KickPlayers: 20010,
 } as const;
 
 export const OuterMessage = {

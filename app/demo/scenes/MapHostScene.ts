@@ -17,4 +17,8 @@ export class MapHostScene extends EntryScene {
     metrics.customMetrics.push(...this.mapHost.BroadcastMetricSnapshots());
     return metrics;
   }
+
+  protected override onStop(): Promise<void> {
+    return this.mapHost.KickAllPlayers("map-host-stopping");
+  }
 }

@@ -67,7 +67,12 @@ export interface ProcessConfig {
   network?: ProcessNetworkConfig;
   game?: GameUpdateConfig;
   scheduling?: ProcessSchedulingConfig;
+  lifecycle?: ProcessLifecycleConfig;
   observability?: ProcessObservabilityConfig;
+}
+
+export interface ProcessLifecycleConfig {
+  stopTimeoutMs?: number;
 }
 
 export interface ProcessNetworkConfig {
@@ -207,6 +212,8 @@ export abstract class EntryScene extends Entity {
   private readonly knownMessagesByCode = new Map<number, AnyMessageDescriptor>();
   private readonly registeredRpcHandlers = new Map<number, string>();
   private readonly registeredMessageHandlers = new Map<number, string>();
+  private lifecycleState: "created" | "started" | "ready" | "stopping" | "stopped" = "created";
+  private stopPromise: Promise<void> | undefined;
 
   constructor(
     protected readonly config: RuntimeEntrySceneConfig,
@@ -258,6 +265,51 @@ export abstract class EntryScene extends Entity {
 
   start(): string {
     return `[${this.self.name}] ${this.self.sceneType} scene started at ${this.self.ip}:${this.self.port}`;
+  }
+
+  protected onStart(): MaybePromise<void> {}
+
+  protected onReady(): MaybePromise<void> {}
+
+  protected onStop(): MaybePromise<void> {}
+
+  async __startLifecycle(): Promise<void> {
+    if (this.lifecycleState !== "created") {
+      throw new Error(`scene ${this.self.name} cannot start from ${this.lifecycleState}`);
+    }
+    await this.onStart();
+    this.lifecycleState = "started";
+  }
+
+  async __readyLifecycle(): Promise<void> {
+    if (this.lifecycleState !== "started") {
+      throw new Error(`scene ${this.self.name} cannot become ready from ${this.lifecycleState}`);
+    }
+    await this.onReady();
+    this.lifecycleState = "ready";
+  }
+
+  __stopLifecycle(): Promise<void> {
+    this.stopPromise ??= this.stopLifecycle();
+    return this.stopPromise;
+  }
+
+  private async stopLifecycle(): Promise<void> {
+    if (this.lifecycleState === "stopped") return;
+    if (this.lifecycleState === "created") {
+      this.lifecycleState = "stopped";
+      return;
+    }
+    this.lifecycleState = "stopping";
+    try {
+      await this.onStop();
+    } finally {
+      this.lifecycleState = "stopped";
+    }
+  }
+
+  __disposeRuntime(): void {
+    this.__dispose();
   }
 
   pushHostFrame(connectionId: number, frame: Uint8Array): void {

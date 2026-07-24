@@ -1,6 +1,7 @@
 import type { ActorContext, SceneContext } from "./contexts";
 import type { MaybePromise } from "../async";
 import { CoreLogger } from "../logging/Logger";
+import type { Logger } from "../logging/Logger";
 import { TimerSystem, type TimerId } from "./TimerSystem";
 import { UpdateSystem } from "./UpdateSystem";
 import type {
@@ -307,6 +308,10 @@ export abstract class Scene extends Entity {
     this.ctx = ctx;
   }
 
+  get logger(): Logger {
+    return this.ctx.logger;
+  }
+
   SpawnActor<T extends Actor<any[]>>(
     actorId: ActorId,
     ctor: ActorCtor<T>,
@@ -329,6 +334,10 @@ export abstract class Actor<
   constructor(ctx: ActorContext) {
     super();
     this.ctx = ctx;
+  }
+
+  get logger(): Logger {
+    return this.ctx.logger;
   }
 
   protected Awake(..._args: TAwakeArgs): void {}

@@ -12,11 +12,29 @@ import {
 
 let processRuntime: ProcessRuntime | undefined;
 
-function startProcess(configJson: string): string {
+function startProcess(configJson: string): Promise<string> {
   const config = JSON.parse(configJson) as ProcessRuntimeConfig;
   NativeData.ConfigureProcess(config.process);
-  processRuntime = new ProcessRuntime(config);
-  return processRuntime.start();
+  const runtime = new ProcessRuntime(config);
+  processRuntime = runtime;
+  return runtime.start().catch((error) => {
+    if (processRuntime === runtime) processRuntime = undefined;
+    throw error;
+  });
+}
+
+async function stopProcess(): Promise<string> {
+  if (!processRuntime) return "already stopped";
+  const runtime = processRuntime;
+  processRuntime = undefined;
+  const timeoutMs = runtime.StopTimeoutMs;
+  await Promise.race([
+    runtime.stop(),
+    sleepHost(timeoutMs).then(() => {
+      throw new Error(`process stop timed out after ${timeoutMs}ms`);
+    }),
+  ]);
+  return "stopped";
 }
 
 const HOST_EVENT_HEADER_BYTES = 13;
@@ -114,13 +132,15 @@ const hostPushOutboundPacked = (globalThis as typeof globalThis & {
   }).__hostPushOutboundPacked;
 
 const host = globalThis as typeof globalThis & {
-  __etsStartProcess: (configJson: string) => string;
+  __etsStartProcess: (configJson: string) => string | Promise<string>;
+  __etsStopProcess: () => string | Promise<string>;
   __etsPushHostEventsBinary: (metadata: Uint8Array) => string;
   __etsUpdateBinary: (sampleMetrics: boolean) => string | Promise<string>;
   __hostSleep: (ms: number) => Promise<void>;
 };
 host.__hostSleep = sleepHost;
 host.__etsStartProcess = startProcess;
+host.__etsStopProcess = stopProcess;
 host.__etsPushHostEventsBinary = pushHostEventsBinary;
 host.__etsUpdateBinary = updateBinary;
 

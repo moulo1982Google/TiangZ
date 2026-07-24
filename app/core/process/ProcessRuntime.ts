@@ -6,6 +6,7 @@ import {
   TimeSystem,
   TimerSystem,
   UpdateSystem,
+  SingletonRegistry,
   monotonicNow,
 } from "../runtime";
 import { getEntrySceneCtor, listEntrySceneTypes } from "./registry";
@@ -39,10 +40,14 @@ export interface GameMetricsSnapshot {
 export class ProcessRuntime implements LocalSceneRouter {
   private readonly entryScenes: EntryScene[];
   private readonly scenesByName = new Map<string, EntryScene>();
+  private readonly processHost: ProcessHost;
+  private lifecycleState: "created" | "starting" | "ready" | "stopping" | "stopped" = "created";
+  private stopPromise: Promise<void> | undefined;
 
   constructor(private readonly config: ProcessRuntimeConfig) {
     InitializeGameSingletons(config.process.game);
     const processHost = new ProcessHost(config.process.name);
+    this.processHost = processHost;
     this.entryScenes = config.scenes.map((scene) => {
       const ctor = getEntrySceneCtor(scene.sceneType);
       if (!ctor) {
@@ -64,9 +69,49 @@ export class ProcessRuntime implements LocalSceneRouter {
     });
   }
 
-  start(): string {
+  get StopTimeoutMs(): number {
+    return this.config.process.lifecycle?.stopTimeoutMs ?? 10_000;
+  }
+
+  async start(): Promise<string> {
+    if (this.lifecycleState !== "created") {
+      throw new Error(`process cannot start from ${this.lifecycleState}`);
+    }
+    this.lifecycleState = "starting";
+    try {
+      for (const scene of this.entryScenes) await scene.__startLifecycle();
+      for (const scene of this.entryScenes) await scene.__readyLifecycle();
+    } catch (error) {
+      await this.stopAfterStartFailure();
+      throw error;
+    }
+    this.lifecycleState = "ready";
     const started = this.entryScenes.map((scene) => scene.start()).join("\n");
     return `[process:${this.config.process.name}] one V8 started with ${this.entryScenes.length} scene(s)\n${started}`;
+  }
+
+  stop(): Promise<void> {
+    this.stopPromise ??= this.stopRuntime();
+    return this.stopPromise;
+  }
+
+  private async stopRuntime(): Promise<void> {
+    if (this.lifecycleState === "stopped") return;
+    this.lifecycleState = "stopping";
+    const errors: unknown[] = [];
+    for (const scene of [...this.entryScenes].reverse()) {
+      try {
+        await scene.__stopLifecycle();
+      } catch (error) {
+        errors.push(error);
+        scene.logger.error("scene stop failed", { error });
+      }
+    }
+    this.disposeRuntime(errors);
+    this.lifecycleState = "stopped";
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `process ${this.config.process.name} stop failed`);
+    }
   }
 
   pushHostFrame(sceneIndex: number, connectionId: number, frame: Uint8Array): void {
@@ -117,6 +162,37 @@ export class ProcessRuntime implements LocalSceneRouter {
     const scene = this.scenesByName.get(name);
     if (!scene) throw new Error(`local scene not found: ${name}`);
     return scene;
+  }
+
+  private async stopAfterStartFailure(): Promise<void> {
+    try {
+      await this.stop();
+    } catch (error) {
+      CoreLogger.error("cleanup after process start failure failed", { error });
+    }
+  }
+
+  private disposeRuntime(errors: unknown[]): void {
+    try {
+      this.processHost.Dispose();
+    } catch (error) {
+      errors.push(error);
+      CoreLogger.error("process host destroy failed", { error });
+    }
+    for (const scene of [...this.entryScenes].reverse()) {
+      try {
+        scene.__disposeRuntime();
+      } catch (error) {
+        errors.push(error);
+        scene.logger.error("entry scene destroy failed", { error });
+      }
+    }
+    try {
+      SingletonRegistry.DestroyAll();
+    } catch (error) {
+      errors.push(error);
+      CoreLogger.error("singleton destroy failed", { error });
+    }
   }
 }
 

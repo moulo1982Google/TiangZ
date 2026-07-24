@@ -21,6 +21,8 @@ import {
   G2C_MapReadyCodec,
   G2M_PlayerDisconnect,
   G2M_PlayerDisconnectCodec,
+  M2G_KickPlayers,
+  M2G_KickPlayersCodec,
   M2G_MapReady,
   M2G_MapReadyCodec,
   S2G_ClientBroadcast,
@@ -38,6 +40,11 @@ export const GateMessages = {
     name: "Gate.ClientBroadcast",
     msgcode: MsgCode.S2G_ClientBroadcast,
     codec: S2G_ClientBroadcastCodec,
+  }),
+  KickPlayers: defineMessage<M2G_KickPlayers>({
+    name: "Gate.KickPlayers",
+    msgcode: MsgCode.M2G_KickPlayers,
+    codec: M2G_KickPlayersCodec,
   }),
   Ping: defineMessage<C2G_Ping>({
     name: "Gate.Ping",
@@ -102,6 +109,7 @@ export const AllMessageDescriptors = [
   GateMessages.MapReady,
   MapMessages.PlayerDisconnect,
   GateMessages.ClientBroadcast,
+  GateMessages.KickPlayers,
   ClientMessages.MapReady,
   MapMessages.Move,
   ClientMessages.EntityMove,
