@@ -18,7 +18,7 @@ export class C2M_UseItemHandler implements ActorRpcHandler<
   C2M_UseItem,
   M2C_UseItem
 > {
-  /** Consumes an item, publishes its irreversible event, and returns the authoritative result. */
+  /** 消耗道具、发布不可逆事件，并返回权威结果。 / Consumes an item, publishes its irreversible event, and returns the authoritative result. */
   async handle(unit: PlayerUnit, request: C2M_UseItem): Promise<M2C_UseItem> {
     const item = unit.GetComponent(ItemComponent).UseItem(request.itemId);
     const position = unit.GetComponent(PositionComponent);

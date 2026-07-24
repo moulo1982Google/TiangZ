@@ -1,4 +1,4 @@
-//! Defines TiangZ's authenticated KCP session envelope independently from the KCP stream itself.
+//! 独立于 KCP 字节流定义 TiangZ 带认证的 KCP Session 信封。 / Defines TiangZ's authenticated KCP session envelope independently from the KCP stream itself.
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const HELLO: u8 = 1;

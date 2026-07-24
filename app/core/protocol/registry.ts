@@ -66,7 +66,7 @@ export class ProtocolRegistry {
     private readonly outcome?: (outcome: ProtocolOutcome) => void,
   ) {}
 
-  /** Installs generated RPC codecs; the concrete handler is attached in a later bootstrap step. */
+  /** 安装生成的 RPC Codec；具体 Handler 在后续启动步骤绑定。 / Installs generated RPC codecs; the concrete handler is attached in a later bootstrap step. */
   registerKnownRpc(descriptor: AnyRpcDescriptor): void {
     this.routes.set(descriptor.requestCode, {
       responseCode: descriptor.responseCode,
@@ -75,14 +75,14 @@ export class ProtocolRegistry {
     } as Route<unknown, unknown>);
   }
 
-  /** Installs generated one-way codecs without creating a response contract. */
+  /** 安装生成的单向 Codec，不创建响应契约。 / Installs generated one-way codecs without creating a response contract. */
   registerKnownMessage(descriptor: AnyMessageDescriptor): void {
     this.messageRoutes.set(descriptor.msgcode, {
       decode: descriptor.codec.decode,
     });
   }
 
-  /** Installs a low-level RPC route; ordinary business code should use generated descriptors. */
+  /** 安装底层 RPC 路由；普通业务代码应使用生成描述符。 / Installs a low-level RPC route; ordinary business code should use generated descriptors. */
   register<TReq, TResp>(
     requestCode: number,
     route: Route<TReq, TResp>,
@@ -90,7 +90,7 @@ export class ProtocolRegistry {
     this.routes.set(requestCode, route as Route<unknown, unknown>);
   }
 
-  /** Installs a low-level one-way route whose handler failure is logged but never replied. */
+  /** 安装底层单向路由；Handler 失败只记日志，绝不返回响应。 / Installs a low-level one-way route whose handler failure is logged but never replied. */
   registerMessage<TMessage>(
     msgcode: number,
     route: MessageRoute<TMessage>,
@@ -98,7 +98,7 @@ export class ProtocolRegistry {
     this.messageRoutes.set(msgcode, route as MessageRoute<unknown>);
   }
 
-  /** Decodes and dispatches one frame, returning a frame only when the input is an RPC. */
+  /** 解码并分发一帧；只有输入为 RPC 时才返回响应帧。 / Decodes and dispatches one frame, returning a frame only when the input is an RPC. */
   handle(
     frame: Uint8Array,
     context: ProtocolContext = {},
@@ -440,7 +440,7 @@ function allocateRequestId(): string {
   return requestId;
 }
 
-/** Packs internal `[msgcode][payload]`; transports add the length prefix separately. */
+/** 打包内部 `[msgcode][payload]`；长度前缀由传输层另行添加。 / Packs internal `[msgcode][payload]`; transports add the length prefix separately. */
 export function packFrame(msgcode: number, payload: Uint8Array): Uint8Array {
   const frame = new Uint8Array(payload.length + 2);
   frame[0] = (msgcode >>> 8) & 0xff;

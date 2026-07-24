@@ -26,19 +26,19 @@ export class UpdateSystem extends Singleton {
     return SingletonRegistry.Get(UpdateSystem);
   }
 
-  /** Registers objects that implement an update phase; Component attachment calls this automatically. */
+  /** 注册实现某个 Update 阶段的对象；Component 挂载时会自动调用。 / Registers objects that implement an update phase; Component attachment calls this automatically. */
   static TryRegister(value: object): void {
     if (!isUpdateTarget(value)) return;
     SingletonRegistry.TryGet(UpdateSystem)?.Add(value);
   }
 
-  /** Removes an update target when its Component is detached or disposed. */
+  /** Component 被移除或销毁时注销其 Update 目标。 / Removes an update target when its Component is detached or disposed. */
   static TryUnregister(value: object): void {
     if (!isUpdateTarget(value)) return;
     SingletonRegistry.TryGet(UpdateSystem)?.Remove(value);
   }
 
-  /** Adds a target without allowing collection mutation during an active frame. */
+  /** 添加目标，同时禁止在活动帧中直接修改正在遍历的集合。 / Adds a target without allowing collection mutation during an active frame. */
   Add(target: UpdateTarget): void {
     if (this.updating) {
       this.pendingAdds.add(target);
@@ -47,7 +47,7 @@ export class UpdateSystem extends Singleton {
     this.targets.add(target);
   }
 
-  /** Removes a target from current and deferred sets; it will not run in later phases. */
+  /** 从当前与延迟集合中移除目标，后续阶段不再执行它。 / Removes a target from current and deferred sets; it will not run in later phases. */
   Remove(target: UpdateTarget): boolean {
     this.pendingAdds.delete(target);
     return this.targets.delete(target);

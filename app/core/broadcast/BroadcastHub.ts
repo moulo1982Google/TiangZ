@@ -85,7 +85,7 @@ export class BroadcastHub {
     });
   }
 
-  /** Publishes one event/state item according to the generated descriptor's delivery mode. */
+  /** 按生成描述符指定的投递模式发布一条事件或状态。 / Publishes one event/state item according to the generated descriptor's delivery mode. */
   Publish<TItem, TMessage extends IMessage>(
     audience: BroadcastAudience,
     descriptor: BroadcastDescriptor<TItem, TMessage>,
@@ -96,6 +96,10 @@ export class BroadcastHub {
   }
 
   /**
+   * 向一个逻辑受众频道发布一批数据。
+   * `event` 保留每一项并可能触发背压；`latest` 可以覆盖同 key 的未发送项。
+   * 不可对不可逆事件使用 `latest`。
+   *
    * Publishes a batch to one logical audience channel.
    * `event` preserves every item and may backpressure; `latest` may replace
    * unsent items with the same key. Do not use latest for irreversible events.
@@ -128,6 +132,9 @@ export class BroadcastHub {
   }
 
   /**
+   * 将 Rust 已编码的可覆盖快照直接入队，不在 TS 中解码。
+   * 帧必须视为不可变；同频道较旧的未发送快照可能被覆盖，因此只能用于状态同步。
+   *
    * Queues a Rust-encoded replaceable snapshot without decoding it in TS.
    * The frame is treated as immutable and an older unsent snapshot on the same
    * channel may be superseded; callers must only use this for state.
@@ -185,7 +192,7 @@ export class BroadcastHub {
     return promise;
   }
 
-  /** Returns current queue/in-flight metrics without mutating channel state. */
+  /** 返回当前队列和在途指标，不修改频道状态。 / Returns current queue/in-flight metrics without mutating channel state. */
   Snapshot(): BroadcastMetricsSnapshot {
     let inFlight = 0;
     let inFlightItems = 0;
@@ -218,7 +225,7 @@ export class BroadcastHub {
     };
   }
 
-  /** Rejects pending publishers and prevents future delivery; in-flight transport work is not recalled. */
+  /** 拒绝等待中的发布者并禁止后续投递；已经交给传输层的任务不会被撤回。 / Rejects pending publishers and prevents future delivery; in-flight transport work is not recalled. */
   Dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

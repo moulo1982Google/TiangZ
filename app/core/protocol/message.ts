@@ -25,14 +25,14 @@ const messageBindings = new WeakMap<Function, MessageBinding[]>();
 const knownMessageDescriptors: AnyMessageDescriptor[] = [];
 const knownMessageKeys = new Set<string>();
 
-/** Preserves a generated message descriptor's payload type without runtime wrapping. */
+/** 保留生成消息描述符的 payload 类型，不增加运行时包装。 / Preserves a generated message descriptor's payload type without runtime wrapping. */
 export function defineMessage<TMessage extends IMessage>(
   descriptor: MessageDescriptor<TMessage>,
 ): MessageDescriptor<TMessage> {
   return descriptor;
 }
 
-/** Records a one-way handler binding when its class definition is evaluated. */
+/** 类定义求值时记录单向 Handler 绑定，但不调用 Handler。 / Records a one-way handler binding when its class definition is evaluated. */
 export function message<TMessage extends IMessage>(
   descriptor: MessageDescriptor<TMessage>,
 ): MethodDecorator {
@@ -47,12 +47,12 @@ export function message<TMessage extends IMessage>(
   };
 }
 
-/** Returns decorator metadata for runtime handler installation. */
+/** 返回运行时安装 Handler 所需的装饰器元数据。 / Returns decorator metadata for runtime handler installation. */
 export function getMessageBindings(ctor: Function): MessageBinding[] {
   return messageBindings.get(ctor) ?? [];
 }
 
-/** Adds generated message descriptors idempotently for routing validation. */
+/** 幂等加入生成消息描述符，供路由校验使用。 / Adds generated message descriptors idempotently for routing validation. */
 export function registerKnownMessages(
   descriptors: readonly AnyMessageDescriptor[],
 ): void {
@@ -64,7 +64,7 @@ export function registerKnownMessages(
   }
 }
 
-/** Returns generated descriptors as read-only framework metadata. */
+/** 以只读框架元数据形式返回生成描述符。 / Returns generated descriptors as read-only framework metadata. */
 export function getKnownMessageDescriptors(): readonly AnyMessageDescriptor[] {
   return knownMessageDescriptors;
 }

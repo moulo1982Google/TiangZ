@@ -53,7 +53,7 @@ export class MapComponent extends Component<[
     return this.mapId;
   }
 
-  /** Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */
+  /** 创建地图内 Unit 存储、广播传输和帧尾同步源。 / Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */
   protected override Awake(
     mapId: number,
     scenes: SceneMessageHelper,
@@ -77,7 +77,7 @@ export class MapComponent extends Component<[
     this.RegisterReplicationSources();
   }
 
-  /** Advances Rust-authoritative cell movement once per fixed game update. */
+  /** 每次固定逻辑帧推进一次 Rust 权威 Cell 移动。 / Advances Rust-authoritative cell movement once per fixed game update. */
   Update(): void {
     if (this.units.Count === 0) return;
     const fixedDeltaMs = TimeSystem.Instance.FixedDeltaTime;
@@ -100,12 +100,15 @@ export class MapComponent extends Component<[
     ).catch(() => undefined);
   }
 
-  /** Publishes dirty Numeric and fixed Unit state after all gameplay updates completed. */
+  /** 所有游戏逻辑更新完成后，发布脏 Numeric 与 Unit 固定字段状态。 / Publishes dirty Numeric and fixed Unit state after all gameplay updates completed. */
   FrameFlush(): void {
     if (this.units.Count > 0) this.replication.FrameFlush();
   }
 
   /**
+   * 以一次工厂操作组合 PlayerUnit 及其全部必需组件。
+   * 玩家能力应在这里添加，而不是散落在 Handler 中，确保创建与重连得到相同 Entity 形状。
+   *
    * Composes one PlayerUnit and every required Component as one factory action.
    * Add player capabilities here rather than inside handlers, so creation and
    * reconnect paths always produce the same Entity shape.
@@ -142,12 +145,12 @@ export class MapComponent extends Component<[
     }
   }
 
-  /** Builds a full enter-view snapshot; routine changes use dirty replication instead. */
+  /** 构造进入视野所需的全量快照；常规变化应使用脏数据增量同步。 / Builds a full enter-view snapshot; routine changes use dirty replication instead. */
   EntitySnapshots(): MapEntitySnapshot[] {
     return this.PlayerSnapshots().map(toMapEntity);
   }
 
-  /** Broadcasts a newly visible player after its complete Component graph is ready. */
+  /** 新玩家完整组件图准备好后，广播其进入视野。 / Broadcasts a newly visible player after its complete Component graph is ready. */
   async PlayerEntered(snapshot: PlayerSnapshot): Promise<void> {
     await this.broadcast.Publish(
       this.BroadcastAudience(snapshot.unitId),
@@ -157,7 +160,7 @@ export class MapComponent extends Component<[
     );
   }
 
-  /** Sends an irreversible inventory event immediately; latest coalescing is forbidden here. */
+  /** 立即发送不可逆背包事件；这里禁止使用 latest 合并。 / Sends an irreversible inventory event immediately; latest coalescing is forbidden here. */
   async PublishItemChanged(unit: PlayerUnit, item: ItemSnapshot): Promise<void> {
     this.requirePlayer(unit);
     await this.broadcast.Publish(
@@ -168,7 +171,7 @@ export class MapComponent extends Component<[
     );
   }
 
-  /** Projects broadcast counters into the process custom-metrics format. */
+  /** 将广播计数投影为进程自定义指标格式。 / Projects broadcast counters into the process custom-metrics format. */
   BroadcastMetricSnapshot(): CustomMetricSnapshot {
     const metrics = this.broadcast.Snapshot();
     return {
@@ -196,7 +199,7 @@ export class MapComponent extends Component<[
     };
   }
 
-  /** Ignores stale Gate disconnects and offlines only the session that still owns the Unit. */
+  /** 忽略过期 Gate 断线，仅下线仍拥有该 Unit 的 Session。 / Ignores stale Gate disconnects and offlines only the session that still owns the Unit. */
   async PlayerDisconnect(
     unit: PlayerUnit,
     message: G2M_PlayerDisconnect,
@@ -225,7 +228,7 @@ export class MapComponent extends Component<[
     });
   }
 
-  /** Removes one Unit and publishes leave after persistence has already succeeded. */
+  /** 持久化成功后移除 Unit，并发布离开通知。 / Removes one Unit and publishes leave after persistence has already succeeded. */
   async RemovePlayerAndBroadcast(unit: PlayerUnit): Promise<void> {
     this.requirePlayer(unit);
     const unitId = unit.UnitId;
@@ -239,7 +242,7 @@ export class MapComponent extends Component<[
     );
   }
 
-  /** Saves all players, asks their Gates to close, then removes Units during shutdown. */
+  /** 停机时保存全部玩家、请求各 Gate 关闭连接，随后移除 Unit。 / Saves all players, asks their Gates to close, then removes Units during shutdown. */
   async KickAllPlayers(reason: string): Promise<void> {
     const players = this.units.GetAll(PlayerUnit);
     if (players.length === 0) return;

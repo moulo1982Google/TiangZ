@@ -1,4 +1,4 @@
-//! Multiplexes remote Scene calls over persistent inner connections with bounded backpressure.
+//! 在持久内部连接上多路复用远程 Scene 调用，并实施有界背压。 / Multiplexes remote Scene calls over persistent inner connections with bounded backpressure.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
@@ -101,7 +101,7 @@ enum SocketEvent {
     Closed { generation: u64, error: String },
 }
 
-/// Initializes the process-wide remote Scene transport manager exactly once.
+/// 只初始化一次进程级远程 Scene 传输管理器。 / Initializes the process-wide remote Scene transport manager exactly once.
 pub fn init_remote_transport() {
     if REMOTE_TRANSPORT.get().is_some() {
         return;
@@ -119,6 +119,11 @@ pub fn init_remote_transport() {
     }
 }
 
+/// 发送一个多路复用内部 RPC，并且只等待其 rpcId 对应的完成事件。
+///
+/// 本 Future 等待时，同一 TCP 连接上的其他调用仍可继续。
+/// 取消会移除等待者，但无法撤回已经写给对端的数据帧。
+///
 /// Sends one multiplexed inner RPC and waits only for its rpcId completion.
 ///
 /// Other calls on the same TCP connection continue while this future is
@@ -166,7 +171,7 @@ pub async fn call_remote_scene(
         .map_err(|_| "remote scene connection dropped the call".to_string())?
 }
 
-/// Queues a one-way inner message without allocating a response waiter.
+/// 将单向内部消息入队，不分配响应等待者。 / Queues a one-way inner message without allocating a response waiter.
 pub async fn send_remote_scene(
     source_name: String,
     target_name: String,

@@ -1,4 +1,4 @@
-//! Hosts authenticated outer KCP sessions while preserving the common process event contract.
+//! 托管带认证的外网 KCP Session，同时保持统一进程事件契约。 / Hosts authenticated outer KCP sessions while preserving the common process event contract.
 
 use std::collections::HashMap;
 use std::collections::hash_map::RandomState;

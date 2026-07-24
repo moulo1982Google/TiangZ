@@ -10,7 +10,7 @@ interface PlayerLocation {
 export class PlayerDirectoryComponent extends Component {
   private readonly playersByAccount = new Map<string, PlayerLocation>();
 
-  /** Adds an account reconnect index; ordinary Actor dispatch must use InstanceId instead. */
+  /** 添加账号重连索引；普通 Actor 分发仍必须使用 InstanceId。 / Adds an account reconnect index; ordinary Actor dispatch must use InstanceId instead. */
   Add(unit: PlayerUnit): void {
     const existing = this.Get(unit.Account);
     if (existing && existing !== unit) {
@@ -22,7 +22,7 @@ export class PlayerDirectoryComponent extends Component {
     });
   }
 
-  /** Resolves reconnect state and removes stale disposed entries opportunistically. */
+  /** 解析重连状态，并顺便移除已销毁的过期条目。 / Resolves reconnect state and removes stale disposed entries opportunistically. */
   Get(account: string): PlayerUnit | undefined {
     const location = this.playersByAccount.get(account);
     if (!location) return undefined;
@@ -37,7 +37,7 @@ export class PlayerDirectoryComponent extends Component {
     return entity;
   }
 
-  /** Removes only when the indexed InstanceId still belongs to this Unit. */
+  /** 仅当索引中的 InstanceId 仍属于该 Unit 时才移除。 / Removes only when the indexed InstanceId still belongs to this Unit. */
   Remove(unit: PlayerUnit): boolean {
     const location = this.playersByAccount.get(unit.Account);
     if (!location || location.instanceId !== unit.InstanceId) return false;

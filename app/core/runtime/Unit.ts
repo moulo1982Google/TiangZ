@@ -17,7 +17,7 @@ export abstract class Unit<
 export class UnitComponent extends Component {
   private readonly units = new Map<number, Unit<any[]>>();
 
-  /** Creates a Unit Actor and adds it to this Scene's Unit index as one transaction. */
+  /** 以一次事务创建 Unit Actor，并加入本 Scene 的 Unit 索引。 / Creates a Unit Actor and adds it to this Scene's Unit index as one transaction. */
   Create<T extends Unit<any[]>>(
     unitId: number,
     ctor: ActorCtor<T>,
@@ -41,7 +41,7 @@ export class UnitComponent extends Component {
     }
   }
 
-  /** Indexes an already spawned Unit; the Unit must belong to the same domain Scene. */
+  /** 索引已创建的 Unit；该 Unit 必须属于同一个 DomainScene。 / Indexes an already spawned Unit; the Unit must belong to the same domain Scene. */
   Add<T extends Unit<any[]>>(unit: T): T {
     if (unit.DomainScene() !== this.DomainScene()) {
       throw new Error(`unit ${unit.UnitId} belongs to another domain scene`);
@@ -54,12 +54,12 @@ export class UnitComponent extends Component {
     return unit;
   }
 
-  /** Returns the Unit by business UnitId without performing Actor routing or directory lookup. */
+  /** 按业务 UnitId 返回 Unit，不执行 Actor 路由或目录查询。 / Returns the Unit by business UnitId without performing Actor routing or directory lookup. */
   Get<T extends Unit<any[]> = Unit<any[]>>(unitId: number): T | undefined {
     return this.units.get(unitId) as T | undefined;
   }
 
-  /** Takes a stable array snapshot of current Units, optionally filtered by runtime class. */
+  /** 获取当前 Unit 的稳定数组快照，可按运行时类过滤。 / Takes a stable array snapshot of current Units, optionally filtered by runtime class. */
   GetAll<T extends Unit<any[]> = Unit<any[]>>(
     ctor?: abstract new (...args: any[]) => T,
   ): readonly T[] {
@@ -69,7 +69,7 @@ export class UnitComponent extends Component {
       : values) as T[];
   }
 
-  /** Removes the Unit from both the Unit index and Actor host, which disposes its components. */
+  /** 同时从 Unit 索引和 ActorHost 移除 Unit，并销毁其组件。 / Removes the Unit from both the Unit index and Actor host, which disposes its components. */
   Remove(unitId: number): Unit<any[]> | undefined {
     const unit = this.units.get(unitId);
     if (!unit) return undefined;

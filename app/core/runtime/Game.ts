@@ -22,7 +22,7 @@ export class Game extends Singleton {
     return SingletonRegistry.Get(Game);
   }
 
-  /** Configures fixed-step cadence before simulation; calling it again resets accumulated time. */
+  /** 在模拟开始前配置固定步长；再次调用会重置累计时间。 / Configures fixed-step cadence before simulation; calling it again resets accumulated time. */
   Configure(config: GameUpdateConfig = {}): void {
     const fixedUpdateMs = config.fixedUpdateMs ?? DEFAULT_FIXED_UPDATE_MS;
     const maxCatchUpSteps = config.maxCatchUpSteps ?? 2;
@@ -38,6 +38,9 @@ export class Game extends Singleton {
   }
 
   /**
+   * 依次更新时间、定时器和网络 mailbox，再执行有上限的固定逻辑帧。
+   * 追帧上限防止进程卡顿后无限回放旧帧并饿死新到消息。
+   *
    * Updates clocks/timers, pumps network mailboxes, then runs bounded fixed frames.
    * The catch-up cap prevents a stalled process from replaying old frames forever
    * while starving newly arrived messages.
@@ -79,7 +82,7 @@ export class Game extends Singleton {
   }
 }
 
-/** Creates process time, timer, update, and game singletons in dependency order. */
+/** 按依赖顺序创建进程级时间、定时器、Update 和 Game 单例。 / Creates process time, timer, update, and game singletons in dependency order. */
 export function InitializeGameSingletons(config: GameUpdateConfig = {}): void {
   if (SingletonRegistry.TryGet(Game)) {
     throw new Error("game runtime singletons are already initialized");
@@ -90,7 +93,7 @@ export function InitializeGameSingletons(config: GameUpdateConfig = {}): void {
   SingletonRegistry.Add(Game).Configure(config);
 }
 
-/** Returns a monotonic duration clock; do not persist it as a wall-clock timestamp. */
+/** 返回单调时长时钟；不可作为墙钟时间戳持久化。 / Returns a monotonic duration clock; do not persist it as a wall-clock timestamp. */
 export function monotonicNow(): number {
   return globalThis.performance?.now() ?? Date.now();
 }

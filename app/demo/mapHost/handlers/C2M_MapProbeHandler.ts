@@ -15,7 +15,7 @@ export class C2M_MapProbeHandler implements ActorRpcHandler<
   C2M_MapProbe,
   M2C_MapProbe
 > {
-  /** Echoes a sequence for full-chain latency measurement without mutating player state. */
+  /** 回显序列号用于全链路延迟测量，不修改玩家状态。 / Echoes a sequence for full-chain latency measurement without mutating player state. */
   handle(_unit: PlayerUnit, request: C2M_MapProbe): M2C_MapProbe {
     return { sequence: request.sequence };
   }

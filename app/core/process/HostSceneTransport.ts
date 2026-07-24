@@ -22,7 +22,7 @@ const pending = new Map<number, PendingOperation>();
 const queued: QueuedOperation[] = [];
 let nextOperationId = 1;
 
-/** Queues one remote Scene RPC for Rust transport and resolves by its operation id. */
+/** 将远程 Scene RPC 放入 Rust 传输队列，并按 operation id 完成等待。 / Queues one remote Scene RPC for Rust transport and resolves by its operation id. */
 export function callRemoteScene(
   source: SceneConfig,
   target: SceneConfig,
@@ -32,7 +32,7 @@ export function callRemoteScene(
   return enqueue(source, target, frame, timeoutMs, 1);
 }
 
-/** Queues a one-way remote Scene frame without waiting for a peer response. */
+/** 将远程 Scene 单向帧入队，不等待对端响应。 / Queues a one-way remote Scene frame without waiting for a peer response. */
 export function sendRemoteScene(
   source: SceneConfig,
   target: SceneConfig,
@@ -52,7 +52,7 @@ export function sendRemoteScene(
   return Promise.resolve();
 }
 
-/** Uses the Rust host timer for transport deadlines; gameplay timers belong to TimerSystem. */
+/** 传输超时使用 Rust 宿主定时器；游戏逻辑定时必须使用 TimerSystem。 / Uses the Rust host timer for transport deadlines; gameplay timers belong to TimerSystem. */
 export function sleepHost(ms: number): Promise<void> {
   if (pending.size >= MAX_PENDING_OPERATIONS) {
     return Promise.reject(new Error("host async operation limit reached"));
@@ -96,7 +96,7 @@ function enqueue(
   return promise;
 }
 
-/** Packs all queued call/send operations into one host op at the end of the update. */
+/** 在本次 Update 末尾把所有待处理 call/send 打包为一次 host op。 / Packs all queued call/send operations into one host op at the end of the update. */
 export function flushHostSceneOperations(): void {
   if (queued.length === 0) return;
   const operations = queued.splice(0, queued.length);
@@ -113,7 +113,7 @@ export function flushHostSceneOperations(): void {
   }
 }
 
-/** Completes one pending host operation; unknown ids are ignored as stale completions. */
+/** 完成一个等待中的宿主操作；未知 id 按过期完成事件忽略。 / Completes one pending host operation; unknown ids are ignored as stale completions. */
 export function completeHostSceneOperation(
   id: number,
   succeeded: boolean,

@@ -22,12 +22,12 @@ export class TimerSystem extends Singleton {
     return SingletonRegistry.Get(TimerSystem);
   }
 
-  /** Adds a one-shot game-time timer; zero delay means the next timer update, not reentrant execution. */
+  /** 添加一次性游戏时间定时器；零延迟表示下一次定时器 Update，不会重入执行。 / Adds a one-shot game-time timer; zero delay means the next timer update, not reentrant execution. */
   NewOnceTimer(delayMs: number, callback: TimerCallback): TimerId {
     return this.add(delayMs, 0, callback);
   }
 
-  /** Adds a fixed-interval game timer and skips missed repetitions instead of producing a callback storm. */
+  /** 添加固定间隔游戏定时器；跳过错过的重复次数，避免回调风暴。 / Adds a fixed-interval game timer and skips missed repetitions instead of producing a callback storm. */
   NewRepeatedTimer(intervalMs: number, callback: TimerCallback): TimerId {
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
       throw new Error(`timer interval must be greater than 0: ${intervalMs}`);
@@ -35,12 +35,12 @@ export class TimerSystem extends Singleton {
     return this.add(intervalMs, intervalMs, callback);
   }
 
-  /** Cancels a timer lazily; stale heap entries are ignored when they reach the root. */
+  /** 延迟取消定时器；过期堆节点到达堆顶时会被忽略。 / Cancels a timer lazily; stale heap entries are ignored when they reach the root. */
   Remove(timerId: TimerId): boolean {
     return this.timers.delete(timerId);
   }
 
-  /** Returns a Promise completed by game time; do not use it for wall-clock I/O deadlines. */
+  /** 返回按游戏时间完成的 Promise；不可用于墙钟 I/O 超时。 / Returns a Promise completed by game time; do not use it for wall-clock I/O deadlines. */
   WaitAsync(delayMs: number): Promise<void> {
     return new Promise((resolve) => {
       this.NewOnceTimer(delayMs, resolve);

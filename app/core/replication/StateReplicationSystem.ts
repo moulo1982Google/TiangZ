@@ -26,7 +26,7 @@ export class StateReplicationSystem {
     ) => CoreLogger.error("state replication failed", { sourceName, error }),
   ) {}
 
-  /** Registers one named dirty-state source; names also isolate latest broadcast channels. */
+  /** 注册一个具名脏状态源；名称同时用于隔离 latest 广播频道。 / Registers one named dirty-state source; names also isolate latest broadcast channels. */
   Add(source: StateReplicationSource): void {
     if (!source.name) throw new Error("state replication source name is required");
     if (this.sources.has(source.name)) {
@@ -35,12 +35,16 @@ export class StateReplicationSystem {
     this.sources.set(source.name, source);
   }
 
-  /** Stops future polls of a source but does not cancel an already in-flight send. */
+  /** 停止后续轮询该状态源，但不取消已经在途的发送。 / Stops future polls of a source but does not cancel an already in-flight send. */
   Remove(name: string): boolean {
     return this.sources.delete(name);
   }
 
   /**
+   * 帧尾查看每个状态源，并且只在投递成功后确认版本。
+   * 每个源最多存在一个在途版本，避免旧完成事件清除较新的脏状态。
+   * 本方法只调度异步任务，不阻塞 Game.Update。
+   *
    * Peeks each source at frame end and acknowledges only after delivery succeeds.
    * A source has at most one in-flight revision, preventing an old completion
    * from clearing newer dirty state. This method schedules async work and does

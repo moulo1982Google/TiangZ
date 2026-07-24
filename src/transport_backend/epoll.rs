@@ -1,4 +1,4 @@
-//! Implements the portable Tokio/epoll-or-IOCP stream backend with batched writes.
+//! 实现可移植的 Tokio/epoll 或 IOCP 流后端，并支持批量写入。 / Implements the portable Tokio/epoll-or-IOCP stream backend with batched writes.
 
 use std::io::IoSlice;
 use std::sync::Arc;

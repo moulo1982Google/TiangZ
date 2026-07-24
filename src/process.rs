@@ -1,4 +1,4 @@
-//! Coordinates bounded host queues, one V8 business thread, endpoints, updates, and shutdown.
+//! 协调有界宿主队列、单 V8 业务线程、端点、Update 与停机。 / Coordinates bounded host queues, one V8 business thread, endpoints, updates, and shutdown.
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -378,6 +378,12 @@ impl ProcessEventSender {
     }
 }
 
+/// 使用单 V8 业务线程和异步 I/O 宿主运行一个已配置进程。
+///
+/// 网络端点把事件写入由 V8 线程消费的有界队列。停机时先关闭连接，
+/// 再发送 mailbox 事件执行 TS 生命周期，最后等待线程退出。
+/// 除非已超过配置的宽限时间，调用方不可直接终止 OS 进程。
+///
 /// Runs one configured process with a single V8 business thread and asynchronous I/O host.
 ///
 /// Network endpoints feed a bounded queue consumed by the V8 thread. Shutdown

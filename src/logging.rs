@@ -1,4 +1,4 @@
-//! Installs structured, non-blocking process logging and exposes host-side drop observability.
+//! 安装结构化非阻塞进程日志，并暴露宿主侧日志丢弃指标。 / Installs structured, non-blocking process logging and exposes host-side drop observability.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -19,12 +19,12 @@ pub struct LoggingGuard {
     _workers: Vec<WorkerGuard>,
 }
 
-/// Returns the process label installed during logging initialization.
+/// 返回日志初始化时安装的进程标签。 / Returns the process label installed during logging initialization.
 pub fn process_name() -> &'static str {
     PROCESS_NAME.get().map(String::as_str).unwrap_or("unknown")
 }
 
-/// Returns lines dropped by the non-blocking writer since process start.
+/// 返回进程启动后非阻塞 Writer 丢弃的日志行数。 / Returns lines dropped by the non-blocking writer since process start.
 pub fn dropped_lines() -> usize {
     DROP_COUNTERS
         .get()
@@ -32,7 +32,7 @@ pub fn dropped_lines() -> usize {
         .unwrap_or(0)
 }
 
-/// Computes a conservative TS prefilter so V8 avoids formatting disabled log levels.
+/// 计算保守的 TS 预过滤级别，避免 V8 格式化未启用的日志。 / Computes a conservative TS prefilter so V8 avoids formatting disabled log levels.
 pub fn typescript_min_level(config: &ProcessLoggingConfig) -> u8 {
     resolve_typescript_min_level(config, std::env::var("RUST_LOG").ok().as_deref())
 }
@@ -73,6 +73,11 @@ fn level_code(level: crate::config::ProcessLogLevel) -> u8 {
     }
 }
 
+/// 安装进程级 tracing subscriber，并返回必须比运行时更长寿的 Guard。
+///
+/// 丢弃 Guard 会刷新缓冲输出。本函数每个 OS 进程只能调用一次；
+/// 需要隔离 subscriber 的测试应使用局部 dispatch，而不是重复调用本函数。
+///
 /// Installs the process-global tracing subscriber and returns guards that must outlive the runtime.
 ///
 /// Dropping the guard flushes buffered output. This function may be called only

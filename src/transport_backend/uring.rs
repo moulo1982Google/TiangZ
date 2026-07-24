@@ -1,4 +1,4 @@
-//! Implements the Linux io_uring TCP backend behind the same endpoint contract as epoll.
+//! 在与 epoll 相同的端点契约下实现 Linux io_uring TCP 后端。 / Implements the Linux io_uring TCP backend behind the same endpoint contract as epoll.
 
 use std::io;
 use std::net::Shutdown;

@@ -1,4 +1,4 @@
-//! Loads deployment JSON and enforces runtime invariants before any listener or V8 starts.
+//! 加载部署 JSON，并在任何监听器或 V8 启动前校验运行时不变量。 / Loads deployment JSON and enforces runtime invariants before any listener or V8 starts.
 
 use std::collections::{BTreeMap, HashSet};
 use std::net::IpAddr;
@@ -313,6 +313,11 @@ fn default_max_catch_up_steps() -> usize {
     2
 }
 
+/// 根据项目根目录解析 CLI 路径，并将目录展开为 `StartMachine.json`。
+///
+/// 本函数不执行 I/O，不能用它证明目标存在；加载与校验保持分离，
+/// 以便诊断信息保留原始启动路径。
+///
 /// Resolves a CLI path against the project root and expands directories to `StartMachine.json`.
 ///
 /// This function performs no I/O and must not be used as proof that the target
@@ -332,13 +337,18 @@ pub fn resolve_startup_path(root: &Path, startup_path: String) -> PathBuf {
     resolved
 }
 
-/// Returns whether a resolved startup path selects Watcher mode.
+/// 判断解析后的启动路径是否选择 Watcher 模式。 / Returns whether a resolved startup path selects Watcher mode.
 pub fn is_start_machine_path(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.eq_ignore_ascii_case("StartMachine.json"))
 }
 
+/// 加载一份进程配置、应用默认值并完成校验。
+///
+/// 返回结果保证已填充 `known_scenes`。调用方不应直接反序列化
+/// `RuntimeConfig`，否则会绕过端点唯一性和生命周期超时边界等部署不变量。
+///
 /// Loads, applies defaults, and validates one process configuration.
 ///
 /// The returned `known_scenes` is guaranteed to be populated. Callers should

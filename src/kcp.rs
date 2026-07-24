@@ -1,4 +1,4 @@
-//! Wraps the pinned C KCP implementation with owned Rust buffers and explicit profiles.
+//! 使用 Rust 独占缓冲区和显式参数配置包装固定版本的 C KCP 实现。 / Wraps the pinned C KCP implementation with owned Rust buffers and explicit profiles.
 
 use std::collections::VecDeque;
 use std::ffi::{c_char, c_int, c_long, c_void};

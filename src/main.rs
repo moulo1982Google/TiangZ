@@ -1,4 +1,4 @@
-//! Selects Watcher or single-process mode and wires validated configuration into the runtime.
+//! 选择 Watcher 或单进程模式，并将已校验配置接入运行时。 / Selects Watcher or single-process mode and wires validated configuration into the runtime.
 
 use std::env;
 use std::path::PathBuf;

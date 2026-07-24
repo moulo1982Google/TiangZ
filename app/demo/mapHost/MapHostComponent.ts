@@ -25,12 +25,12 @@ export class MapHostComponent extends Component {
   private readonly repository = new InMemoryPlayerRepository();
   private nextUnitId = 1000;
 
-  /** Collects one broadcast snapshot per hosted map without resetting counters. */
+  /** 收集每张托管地图的广播快照，不重置计数器。 / Collects one broadcast snapshot per hosted map without resetting counters. */
   BroadcastMetricSnapshots(): CustomMetricSnapshot[] {
     return [...this.maps.values()].map((map) => map.BroadcastMetricSnapshot());
   }
 
-  /** Coordinates graceful offline for every hosted map and waits for all saves. */
+  /** 协调全部托管地图优雅下线，并等待所有保存完成。 / Coordinates graceful offline for every hosted map and waits for all saves. */
   async KickAllPlayers(reason: string): Promise<void> {
     const results = await Promise.allSettled(
       [...this.maps.values()].map((map) => map.KickAllPlayers(reason)),
@@ -46,7 +46,7 @@ export class MapHostComponent extends Component {
     }
   }
 
-  /** Selects/creates a map, rebinds reconnects, and returns the authoritative entry snapshot. */
+  /** 选择或创建地图、处理重连改绑，并返回权威进入快照。 / Selects/creates a map, rebinds reconnects, and returns the authoritative entry snapshot. */
   async enterMap(request: G2M_EnterMap): Promise<M2G_EnterMap> {
     this.validateEnterMap(request);
 

@@ -18,7 +18,7 @@ export interface ActorLocationEnvelope {
 export class ActorLocationDirectory {
   private readonly targetsByConnection = new Map<number, ActorLocationTarget>();
 
-  /** Binds a client connection to its authoritative Actor and rejects silent reassignment. */
+  /** 将客户端连接绑定到权威 Actor，并拒绝无提示地改绑。 / Binds a client connection to its authoritative Actor and rejects silent reassignment. */
   bindConnection(connectionId: number, target: ActorLocationTarget): void {
     if (!Number.isSafeInteger(target.instanceId) || target.instanceId <= 0) {
       throw new Error(`invalid actor instance id: ${target.instanceId}`);
@@ -26,18 +26,18 @@ export class ActorLocationDirectory {
     this.targetsByConnection.set(connectionId, target);
   }
 
-  /** Removes routing on disconnect; it does not dispose the target Actor. */
+  /** 连接断开时移除路由，但不销毁目标 Actor。 / Removes routing on disconnect; it does not dispose the target Actor. */
   unbindConnection(connectionId: number): void {
     this.targetsByConnection.delete(connectionId);
   }
 
-  /** Resolves current routing without network or directory calls. */
+  /** 仅查询当前本地路由，不发起网络或目录服务调用。 / Resolves current routing without network or directory calls. */
   resolveConnection(connectionId: number): ActorLocationTarget | undefined {
     return this.targetsByConnection.get(connectionId);
   }
 }
 
-/** Wraps an inner frame with fixed Actor InstanceId routing metadata. */
+/** 使用固定 Actor InstanceId 路由元数据包装内部帧。 / Wraps an inner frame with fixed Actor InstanceId routing metadata. */
 export function encodeActorLocationEnvelope(
   envelope: ActorLocationEnvelope,
 ): Uint8Array {
@@ -59,7 +59,7 @@ export function encodeActorLocationEnvelope(
   return result;
 }
 
-/** Validates and unwraps an ActorLocation envelope before mailbox routing. */
+/** 在进入 mailbox 路由前校验并拆出 ActorLocation 信封。 / Validates and unwraps an ActorLocation envelope before mailbox routing. */
 export function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnvelope {
   const instanceId = readActorLocationInstanceId(frame);
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
@@ -71,7 +71,7 @@ export function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnv
   };
 }
 
-/** Reads only InstanceId for fast routing without copying the embedded frame. */
+/** 只读取 InstanceId 以执行快速路由，不复制内嵌帧。 / Reads only InstanceId for fast routing without copying the embedded frame. */
 export function readActorLocationInstanceId(frame: Uint8Array): number {
   if (
     frame.length < ActorLocationEnvelopeHeaderBytes + 2 ||
@@ -87,7 +87,7 @@ export function readActorLocationInstanceId(frame: Uint8Array): number {
   return Number(rawInstanceId);
 }
 
-/** Scans protobuf payload field 90 without decoding the business request. */
+/** 不解码业务请求，仅扫描 protobuf payload 的 90 号字段。 / Scans protobuf payload field 90 without decoding the business request. */
 export function extractFrameRpcId(frame: Uint8Array): number | undefined {
   try {
     const reader = new BinaryReader(frame.subarray(2));
@@ -102,7 +102,7 @@ export function extractFrameRpcId(frame: Uint8Array): number | undefined {
   return undefined;
 }
 
-/** Replaces payload rpcId while preserving opaque business fields for Gate forwarding. */
+/** 替换 payload 中的 rpcId，同时保持不透明业务字段不变，供 Gate 转发。 / Replaces payload rpcId while preserving opaque business fields for Gate forwarding. */
 export function rewriteFrameRpcId(frame: Uint8Array, rpcId: number): Uint8Array {
   if (frame.length < 2 || !Number.isSafeInteger(rpcId) || rpcId <= 0 || rpcId > 0xffff_ffff) {
     throw new Error(`invalid RPC frame or rpcId: ${rpcId}`);

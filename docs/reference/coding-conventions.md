@@ -2,6 +2,8 @@
 
 TiangZ 的注释用于保存调用契约和设计原因，不用于逐行翻译代码。手写的 `Core`、`Demo` 与 Rust 宿主代码遵循本约定；`Generated` 目录由 codegen 负责，不手工补注释。
 
+面向开发者的函数注释采用中英文对照，中文在前、英文在后。中文是项目内部阅读与评审的主要语言；英文保留术语对照，并方便后续公开文档与外部贡献者阅读。新增或修改公共边界时，不得只写英文注释。
+
 ## TypeScript
 
 - 公共函数、公共或受保护的方法使用 TSDoc `/** ... */`。
@@ -16,6 +18,9 @@ TiangZ 的注释用于保存调用契约和设计原因，不用于逐行翻译�
 /**
  * 保存玩家一次。断线、踢下线和进程停机共用同一个 Promise。
  * 业务 Handler 不应直接调用 Repository，否则会绕过幂等边界。
+ *
+ * Saves the player once. Disconnect, kick, and process shutdown share one Promise.
+ * Business handlers must not call the Repository directly because that bypasses idempotency.
  */
 SaveOnOffline(reason: string): Promise<void>;
 ```

@@ -1,4 +1,4 @@
-//! Separates endpoint protocol semantics from the selected operating-system I/O backend.
+//! 将端点协议语义与所选操作系统 I/O 后端分离。 / Separates endpoint protocol semantics from the selected operating-system I/O backend.
 
 mod epoll;
 #[cfg(feature = "kcp")]
@@ -96,6 +96,8 @@ pub(crate) struct EndpointContext {
     pub(crate) stats: Arc<ProcessQueueStats>,
 }
 
+/// 选择操作系统 I/O 机制；端点协议仍由 `SceneConfig::protocol` 独立选择。
+///
 /// Selects the operating-system I/O mechanism. The endpoint protocol remains
 /// an independent choice in `SceneConfig::protocol`.
 pub(crate) trait IoBackend: Send + Sync {

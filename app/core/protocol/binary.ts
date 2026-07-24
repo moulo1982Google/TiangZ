@@ -1,4 +1,4 @@
-/** Minimal allocation-aware protobuf writer used by generated codecs on server and SDK. */
+/** 服务端与 SDK 生成 Codec 共用的精简 protobuf Writer，设计时关注分配次数。 / Minimal allocation-aware protobuf writer used by generated codecs on server and SDK. */
 export class BinaryWriter {
   private buffer: Uint8Array;
   private length = 0;
@@ -7,7 +7,7 @@ export class BinaryWriter {
     this.buffer = new Uint8Array(initialCapacity);
   }
 
-  /** Writes UTF-8 text; `writeDefault` is reserved for repeated elements whose empty value is significant. */
+  /** 写入 UTF-8 文本；`writeDefault` 仅用于空值也有意义的 repeated 元素。 / Writes UTF-8 text; `writeDefault` is reserved for repeated elements whose empty value is significant. */
   string(fieldNo: number, value: string, writeDefault = false): void {
     if (!writeDefault && !value) return;
     this.tag(fieldNo, 2);
@@ -16,14 +16,14 @@ export class BinaryWriter {
     this.rawBytes(encoded);
   }
 
-  /** Writes a uint32 varint and omits scalar zero unless encoding a repeated element. */
+  /** 写入 uint32 varint；除 repeated 元素外，标量零值会省略。 / Writes a uint32 varint and omits scalar zero unless encoding a repeated element. */
   uint32(fieldNo: number, value: number | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
     this.varint(value);
   }
 
-  /** Writes protobuf int32, including the required ten-byte representation for negatives. */
+  /** 写入 protobuf int32，负数使用规范要求的十字节表示。 / Writes protobuf int32, including the required ten-byte representation for negatives. */
   int32(fieldNo: number, value: number | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
@@ -34,7 +34,7 @@ export class BinaryWriter {
     }
   }
 
-  /** Writes an unsigned protobuf integer without losing bits to JavaScript number coercion. */
+  /** 写入无符号 protobuf 整数，避免 JavaScript number 转换造成位丢失。 / Writes an unsigned protobuf integer without losing bits to JavaScript number coercion. */
   uint64(fieldNo: number, value: bigint | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && value === 0n)) return;
     assertBigIntRange(value, 0n, UINT64_MAX, "uint64");
@@ -42,7 +42,7 @@ export class BinaryWriter {
     this.varintBigInt(value);
   }
 
-  /** Writes a signed two's-complement protobuf integer represented as a bigint. */
+  /** 写入由 bigint 表示的有符号二补码 protobuf 整数。 / Writes a signed two's-complement protobuf integer represented as a bigint. */
   int64(fieldNo: number, value: bigint | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && value === 0n)) return;
     assertBigIntRange(value, INT64_MIN, INT64_MAX, "int64");
@@ -50,35 +50,35 @@ export class BinaryWriter {
     this.varintBigInt(BigInt.asUintN(64, value));
   }
 
-  /** Writes a ZigZag encoded signed 32-bit value. */
+  /** 写入 ZigZag 编码的 32 位有符号值。 / Writes a ZigZag encoded signed 32-bit value. */
   sint32(fieldNo: number, value: number | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
     this.varint(((value << 1) ^ (value >> 31)) >>> 0);
   }
 
-  /** Writes a protobuf bool while preserving false elements inside repeated fields. */
+  /** 写入 protobuf bool，并保留 repeated 字段中的 false 元素。 / Writes a protobuf bool while preserving false elements inside repeated fields. */
   bool(fieldNo: number, value: boolean | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && !value)) return;
     this.tag(fieldNo, 0);
     this.byte(1);
   }
 
-  /** Writes one little-endian fixed32 floating-point field. */
+  /** 写入一个小端 fixed32 浮点字段。 / Writes one little-endian fixed32 floating-point field. */
   float(fieldNo: number, value: number | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 5);
     this.fixed(4, (view) => view.setFloat32(0, value, true));
   }
 
-  /** Writes one little-endian fixed64 floating-point field. */
+  /** 写入一个小端 fixed64 浮点字段。 / Writes one little-endian fixed64 floating-point field. */
   double(fieldNo: number, value: number | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 1);
     this.fixed(8, (view) => view.setFloat64(0, value, true));
   }
 
-  /** Writes a length-delimited byte field without copying the caller's source buffer first. */
+  /** 写入长度限定字节字段，不预先复制调用方源缓冲区。 / Writes a length-delimited byte field without copying the caller's source buffer first. */
   bytes(fieldNo: number, value: Uint8Array | undefined, writeDefault = false): void {
     if (value === undefined || (!writeDefault && value.length === 0)) return;
     this.tag(fieldNo, 2);
@@ -86,7 +86,7 @@ export class BinaryWriter {
     this.rawBytes(value);
   }
 
-  /** Returns a view over written bytes; do not continue writing and assume an older view is immutable. */
+  /** 返回已写字节的视图；继续写入后，旧视图不可再假定为不可变。 / Returns a view over written bytes; do not continue writing and assume an older view is immutable. */
   finish(): Uint8Array {
     return this.buffer.subarray(0, this.length);
   }
@@ -167,18 +167,18 @@ export class BinaryWriter {
   }
 }
 
-/** Bounds-checked protobuf reader; malformed input throws before a handler receives it. */
+/** 带边界检查的 protobuf Reader；畸形输入会在进入 Handler 前抛错。 / Bounds-checked protobuf reader; malformed input throws before a handler receives it. */
 export class BinaryReader {
   private offset = 0;
 
   constructor(private readonly bytes: Uint8Array) {}
 
-  /** Reports whether every byte in this message slice has been consumed. */
+  /** 判断当前消息切片的全部字节是否已消费。 / Reports whether every byte in this message slice has been consumed. */
   eof(): boolean {
     return this.offset >= this.bytes.length;
   }
 
-  /** Reads one field tag and separates its number from protobuf wire type. */
+  /** 读取字段 tag，并拆分字段号与 protobuf wire type。 / Reads one field tag and separates its number from protobuf wire type. */
   tag(): { fieldNo: number; wireType: number } {
     const tag = this.varint();
     return {
@@ -187,7 +187,7 @@ export class BinaryReader {
     };
   }
 
-  /** Reads one bounds-checked UTF-8 length-delimited field. */
+  /** 读取一个经过边界检查的 UTF-8 长度限定字段。 / Reads one bounds-checked UTF-8 length-delimited field. */
   string(): string {
     const len = this.varint();
     const start = this.offset;
@@ -195,7 +195,7 @@ export class BinaryReader {
     return utf8Decode(this.bytes.subarray(start, start + len));
   }
 
-  /** Returns a zero-copy view of a length-delimited field; retain it only while the frame remains alive. */
+  /** 返回长度限定字段的零拷贝视图；只能在原始帧存活期间持有。 / Returns a zero-copy view of a length-delimited field; retain it only while the frame remains alive. */
   bytesField(): Uint8Array {
     const len = this.varint();
     const start = this.offset;
@@ -203,48 +203,48 @@ export class BinaryReader {
     return this.bytes.subarray(start, start + len);
   }
 
-  /** Reads a uint32 varint into an exact JavaScript number. */
+  /** 将 uint32 varint 精确读取为 JavaScript number。 / Reads a uint32 varint into an exact JavaScript number. */
   uint32(): number {
     return this.varint();
   }
 
-  /** Reads the low 32 bits of protobuf int32 and restores its sign. */
+  /** 读取 protobuf int32 的低 32 位并恢复符号。 / Reads the low 32 bits of protobuf int32 and restores its sign. */
   int32(): number {
     return this.varint() | 0;
   }
 
-  /** Reads all 64 bits and returns bigint because number cannot represent every uint64. */
+  /** 读取完整 64 位并返回 bigint，因为 number 无法表示所有 uint64。 / Reads all 64 bits and returns bigint because number cannot represent every uint64. */
   uint64(): bigint {
     return this.varintBigInt();
   }
 
-  /** Reads a protobuf two's-complement int64 without precision loss. */
+  /** 无精度损失地读取 protobuf 二补码 int64。 / Reads a protobuf two's-complement int64 without precision loss. */
   int64(): bigint {
     return BigInt.asIntN(64, this.varintBigInt());
   }
 
-  /** Reads and ZigZag-decodes a signed 32-bit integer. */
+  /** 读取并 ZigZag 解码一个 32 位有符号整数。 / Reads and ZigZag-decodes a signed 32-bit integer. */
   sint32(): number {
     const value = this.varint();
     return (value >>> 1) ^ -(value & 1);
   }
 
-  /** Reads any nonzero varint as true, following protobuf semantics. */
+  /** 按 protobuf 语义将任意非零 varint 读取为 true。 / Reads any nonzero varint as true, following protobuf semantics. */
   bool(): boolean {
     return this.varint() !== 0;
   }
 
-  /** Reads one little-endian fixed32 float. */
+  /** 读取一个小端 fixed32 浮点数。 / Reads one little-endian fixed32 float. */
   float(): number {
     return this.fixed(4).getFloat32(0, true);
   }
 
-  /** Reads one little-endian fixed64 double. */
+  /** 读取一个小端 fixed64 双精度数。 / Reads one little-endian fixed64 double. */
   double(): number {
     return this.fixed(8).getFloat64(0, true);
   }
 
-  /** Skips an unknown field by wire type to preserve forward compatibility. */
+  /** 按 wire type 跳过未知字段，以保持向前兼容。 / Skips an unknown field by wire type to preserve forward compatibility. */
   skip(wireType: number): void {
     if (wireType === 0) {
       this.varint();
@@ -349,7 +349,7 @@ function utf8Encode(value: string): Uint8Array {
   return bytes.slice(0, offset);
 }
 
-/** Decodes UTF-8 without requiring TextDecoder inside the neutral V8 bundle. */
+/** 在 neutral V8 bundle 中不依赖 TextDecoder 解码 UTF-8。 / Decodes UTF-8 without requiring TextDecoder inside the neutral V8 bundle. */
 export function utf8Decode(value: Uint8Array): string {
   let result = "";
   for (let i = 0; i < value.length;) {
@@ -383,17 +383,17 @@ export function utf8Decode(value: Uint8Array): string {
   return result;
 }
 
-/** Encodes a two-byte network-order integer used for msgcode. */
+/** 编码 msgcode 使用的两字节网络序整数。 / Encodes a two-byte network-order integer used for msgcode. */
 export function writeU16BE(value: number): Uint8Array {
   return new Uint8Array([(value >>> 8) & 0xff, value & 0xff]);
 }
 
-/** Reads a two-byte network-order integer without advancing external state. */
+/** 读取两字节网络序整数，不推进外部状态。 / Reads a two-byte network-order integer without advancing external state. */
 export function readU16BE(bytes: Uint8Array, offset = 0): number {
   return (bytes[offset] << 8) | bytes[offset + 1];
 }
 
-/** Encodes a four-byte network-order integer used for frame lengths. */
+/** 编码帧长度使用的四字节网络序整数。 / Encodes a four-byte network-order integer used for frame lengths. */
 export function writeU32BE(value: number): Uint8Array {
   return new Uint8Array([
     (value >>> 24) & 0xff,
@@ -403,7 +403,7 @@ export function writeU32BE(value: number): Uint8Array {
   ]);
 }
 
-/** Reads an unsigned four-byte network-order integer. */
+/** 读取无符号四字节网络序整数。 / Reads an unsigned four-byte network-order integer. */
 export function readU32BE(bytes: Uint8Array, offset = 0): number {
   return (
     ((bytes[offset] << 24) >>> 0) |
@@ -413,7 +413,7 @@ export function readU32BE(bytes: Uint8Array, offset = 0): number {
   ) >>> 0;
 }
 
-/** Concatenates two byte ranges into one owned buffer. */
+/** 将两段字节范围拼接为一个独占缓冲区。 / Concatenates two byte ranges into one owned buffer. */
 export function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   const out = new Uint8Array(a.length + b.length);
   out.set(a, 0);
@@ -421,7 +421,7 @@ export function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   return out;
 }
 
-/** Encodes bytes for JSON-only host paths; gameplay frames should remain binary. */
+/** 为仅支持 JSON 的宿主路径编码字节；游戏帧应始终保持二进制。 / Encodes bytes for JSON-only host paths; gameplay frames should remain binary. */
 export function bytesToBase64(bytes: Uint8Array): string {
   let result = "";
   let i = 0;
@@ -450,7 +450,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return result;
 }
 
-/** Decodes validated base64 used by compatibility tooling, not the runtime hot path. */
+/** 解码兼容工具使用的已校验 base64，不得用于运行时热路径。 / Decodes validated base64 used by compatibility tooling, not the runtime hot path. */
 export function base64ToBytes(base64: string): Uint8Array {
   const clean = base64.replace(/=+$/, "");
   const bytes: number[] = [];

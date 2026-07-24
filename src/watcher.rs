@@ -1,4 +1,4 @@
-//! Starts machine-assigned processes and supervises their bounded graceful shutdown.
+//! 启动分配给本机的进程，并监管其有界优雅停机。 / Starts machine-assigned processes and supervises their bounded graceful shutdown.
 
 use std::collections::HashSet;
 use std::env;
@@ -19,6 +19,11 @@ struct ManagedChild {
     stop_timeout: Duration,
 }
 
+/// 启动分配给本机的全部进程，并监管优雅停机。
+///
+/// Windows 与 Unix 子进程都通过私有 stdin 管道接收停机通知。
+/// Watcher 会先通知全部子进程，再按各自宽限时间等待；超时后才强制终止。
+///
 /// Starts every process assigned to the local machine and supervises graceful shutdown.
 ///
 /// A private stdin pipe carries shutdown to children on both Windows and Unix.
@@ -103,6 +108,12 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
     Ok(())
 }
 
+/// 发送 Watcher 控制消息后立即关闭管道。
+///
+/// 在等待任何子进程前先通知全部子进程，避免某个慢速 Repository 保存
+/// 消耗其他进程的宽限时间。写入失败通常表示子进程已退出，因此这里不直接判失败；
+/// 最终结果由 `wait_for_child_shutdown` 判定。
+///
 /// Sends the Watcher control message and closes the pipe immediately after it.
 ///
 /// All children are notified before any child is awaited, so one process with a
@@ -117,7 +128,7 @@ fn request_graceful_shutdown(child: &mut ManagedChild) {
     }
 }
 
-/// Waits for one child to finish its TS lifecycle and force-kills only on timeout.
+/// 等待一个子进程完成 TS 生命周期，仅在超时时强制终止。 / Waits for one child to finish its TS lifecycle and force-kills only on timeout.
 async fn wait_for_child_shutdown(child: &mut ManagedChild) -> Result<()> {
     let deadline = Instant::now() + child.stop_timeout;
     loop {
@@ -155,7 +166,7 @@ async fn wait_for_child_shutdown(child: &mut ManagedChild) -> Result<()> {
     }
 }
 
-/// Accepts the same operator shutdown signals as a directly launched process.
+/// 接收与直接启动进程相同的运维停机信号。 / Accepts the same operator shutdown signals as a directly launched process.
 async fn wait_for_shutdown_signal() -> Result<()> {
     #[cfg(windows)]
     {

@@ -48,7 +48,7 @@ export interface ActorRpcHandlerBinding {
 const messageHandlers: ActorMessageHandlerBinding[] = [];
 const rpcHandlers: ActorRpcHandlerBinding[] = [];
 
-/** Registers a one-way Actor handler class and rejects duplicate msgcodes at module load. */
+/** 在模块加载时注册单向 Actor Handler 类，并拒绝重复 msgcode。 / Registers a one-way Actor handler class and rejects duplicate msgcodes at module load. */
 export function actorMessageHandler<
   TActor extends AnyActor,
   TMessage extends IMessage,
@@ -66,7 +66,7 @@ export function actorMessageHandler<
   };
 }
 
-/** Registers an Actor RPC handler while preserving request and response generic types. */
+/** 注册 Actor RPC Handler，同时保留请求与响应的泛型类型。 / Registers an Actor RPC handler while preserving request and response generic types. */
 export function actorRpcHandler<TActor extends AnyActor, TReq, TResp>(
   actorCtor: ActorClass<TActor>,
   descriptor: RpcDescriptor<TReq, TResp>,
@@ -81,12 +81,12 @@ export function actorRpcHandler<TActor extends AnyActor, TReq, TResp>(
   };
 }
 
-/** Returns immutable message metadata consumed during EntryScene bootstrap. */
+/** 返回 EntryScene 启动时使用的不可变消息元数据。 / Returns immutable message metadata consumed during EntryScene bootstrap. */
 export function getActorMessageHandlerBindings(): readonly ActorMessageHandlerBinding[] {
   return messageHandlers;
 }
 
-/** Returns immutable RPC metadata consumed during EntryScene bootstrap. */
+/** 返回 EntryScene 启动时使用的不可变 RPC 元数据。 / Returns immutable RPC metadata consumed during EntryScene bootstrap. */
 export function getActorRpcHandlerBindings(): readonly ActorRpcHandlerBinding[] {
   return rpcHandlers;
 }

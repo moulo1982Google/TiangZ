@@ -263,18 +263,18 @@ export abstract class EntryScene extends Entity {
     return this.ctx.logger;
   }
 
-  /** Produces an operator-facing startup summary; subclasses may append topology details. */
+  /** 生成面向运维的启动摘要；子类可追加拓扑信息。 / Produces an operator-facing startup summary; subclasses may append topology details. */
   startupMessage(): string {
     return `[${this.self.name}] ${this.self.sceneType} scene started at ${this.self.ip}:${this.self.port}`;
   }
 
-  /** Acquires Scene resources before readiness; failure aborts process startup. */
+  /** 在 ready 前获取 Scene 资源；失败会中止进程启动。 / Acquires Scene resources before readiness; failure aborts process startup. */
   protected onStart(): MaybePromise<void> {}
 
-  /** Runs after every local Scene started, so cross-Scene dependencies may now be used. */
+  /** 所有本地 Scene start 完成后执行，此时才可使用跨 Scene 依赖。 / Runs after every local Scene started, so cross-Scene dependencies may now be used. */
   protected onReady(): MaybePromise<void> {}
 
-  /** Flushes Scene resources; it must be idempotent and bounded by process stopTimeoutMs. */
+  /** 刷新并释放 Scene 资源；必须幂等，且耗时受进程 stopTimeoutMs 限制。 / Flushes Scene resources; it must be idempotent and bounded by process stopTimeoutMs. */
   protected onStop(): MaybePromise<void> {}
 
   async __startLifecycle(): Promise<void> {
@@ -341,7 +341,7 @@ export abstract class EntryScene extends Entity {
     );
   }
 
-  /** Drains bounded ingress and returns packed outbound work once per process update. */
+  /** 每次进程 Update 消费有界入站队列，并返回打包后的出站任务。 / Drains bounded ingress and returns packed outbound work once per process update. */
   update(maxFrames = 512, includeMetrics = true): SceneUpdateResult {
     const startedAt = this.__pumpMailbox(maxFrames);
     return this.__completeUpdate(startedAt, includeMetrics);
@@ -358,18 +358,18 @@ export abstract class EntryScene extends Entity {
     return this.completeUpdate(startedAt, includeMetrics);
   }
 
-  /** Registers explicit handlers; generated decorator bindings are installed separately. */
+  /** 注册显式 Handler；生成的装饰器绑定会单独安装。 / Registers explicit handlers; generated decorator bindings are installed separately. */
   protected registerHandlers(): void {}
 
-  /** Builds a process-unique child Scene id without exposing the separator contract. */
+  /** 构造进程内唯一的子 Scene id，不向业务暴露分隔符约定。 / Builds a process-unique child Scene id without exposing the separator contract. */
   childSceneId(localId: string): string {
     return `${this.self.name}/${localId}`;
   }
 
-  /** Handles connection loss inside this Scene's mailbox; avoid unbounded retries here. */
+  /** 在本 Scene mailbox 内处理断线；这里禁止无上限重试。 / Handles connection loss inside this Scene's mailbox; avoid unbounded retries here. */
   protected onDisconnect(_connectionId: number): MaybePromise<void> {}
 
-  /** Requests host-side closure; disconnect business logic runs later through the mailbox. */
+  /** 请求宿主关闭连接；断线业务稍后仍通过 mailbox 执行。 / Requests host-side closure; disconnect business logic runs later through the mailbox. */
   protected disconnectClient(connectionId: number): void {
     if (!Number.isInteger(connectionId) || connectionId <= 0) {
       throw new Error(`invalid connection id: ${connectionId}`);
@@ -377,7 +377,7 @@ export abstract class EntryScene extends Entity {
     hostCloseConnection(connectionId);
   }
 
-  /** Encodes and queues one protobuf message for one client connection. */
+  /** 为一个客户端连接编码并入队一条 protobuf 消息。 / Encodes and queues one protobuf message for one client connection. */
   protected sendClient<TMessage extends IMessage>(
     connectionId: number,
     descriptor: MessageDescriptor<TMessage>,
@@ -389,7 +389,7 @@ export abstract class EntryScene extends Entity {
     });
   }
 
-  /** Encodes once and fans the immutable frame out to many client connections. */
+  /** 只编码一次，再将不可变帧扇出到多个客户端连接。 / Encodes once and fans the immutable frame out to many client connections. */
   protected sendClientMany<TMessage extends IMessage>(
     connectionIds: readonly number[],
     descriptor: MessageDescriptor<TMessage>,
@@ -404,7 +404,7 @@ export abstract class EntryScene extends Entity {
     });
   }
 
-  /** Queues an already encoded frame; callers must not mutate it after this call. */
+  /** 将已编码帧入队；调用后不得再修改该帧。 / Queues an already encoded frame; callers must not mutate it after this call. */
   protected sendClientFrameMany(
     connectionIds: readonly number[],
     frame: Uint8Array,
@@ -416,7 +416,7 @@ export abstract class EntryScene extends Entity {
     });
   }
 
-  /** Registers an RPC route explicitly; decorators are preferred for ordinary handlers. */
+  /** 显式注册 RPC 路由；普通业务 Handler 优先使用装饰器。 / Registers an RPC route explicitly; decorators are preferred for ordinary handlers. */
   protected registerSceneRpc<TReq extends IRequest, TResp extends IResponse>(
     descriptor: RpcDescriptor<TReq, TResp>,
     target: SceneRef | ((request: TReq) => SceneRef),
@@ -425,7 +425,7 @@ export abstract class EntryScene extends Entity {
     this.registerTargetRpc(descriptor, target, options);
   }
 
-  /** Registers Actor RPC forwarding for a generated descriptor and Actor type. */
+  /** 为生成描述符和 Actor 类型注册 Actor RPC 转发。 / Registers Actor RPC forwarding for a generated descriptor and Actor type. */
   protected registerActorRpc<TReq extends IRequest, TResp extends IResponse>(
     descriptor: RpcDescriptor<TReq, TResp>,
     target: ActorRef | ((request: TReq) => ActorRef),
@@ -434,7 +434,7 @@ export abstract class EntryScene extends Entity {
     this.registerTargetRpc(descriptor, target, options);
   }
 
-  /** Routes a local call through normal mailbox and protocol dispatch semantics. */
+  /** 按正常 mailbox 与协议分发语义路由本地 call。 / Routes a local call through normal mailbox and protocol dispatch semantics. */
   dispatchLocalCall(frame: Uint8Array): Promise<Uint8Array> {
     const result = this.dispatchMailbox(() => this.handleFrame(frame));
     return Promise.resolve(result).then((response) => {
@@ -443,12 +443,12 @@ export abstract class EntryScene extends Entity {
     });
   }
 
-  /** Routes a local one-way frame without creating a response completion. */
+  /** 路由本地单向帧，不创建响应完成项。 / Routes a local one-way frame without creating a response completion. */
   dispatchLocalSend(frame: Uint8Array): Promise<void> {
     return Promise.resolve(this.dispatchMailbox(() => this.handleFrame(frame))).then(() => undefined);
   }
 
-  /** Returns a point-in-time snapshot without resetting cumulative counters. */
+  /** 返回当前时点快照，不重置累计计数器。 / Returns a point-in-time snapshot without resetting cumulative counters. */
   metricsSnapshot(): SceneMetricsSnapshot {
     return {
       scene: this.self.name,

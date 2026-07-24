@@ -1,4 +1,4 @@
-//! Owns V8 Inspector startup and keeps debugger exposure policy outside the runtime loop.
+//! 管理 V8 Inspector 启动，并将调试器暴露策略隔离在运行时循环之外。 / Owns V8 Inspector startup and keeps debugger exposure policy outside the runtime loop.
 
 use std::net::{IpAddr, SocketAddr};
 

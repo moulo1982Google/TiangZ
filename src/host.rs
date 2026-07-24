@@ -1,4 +1,4 @@
-//! Implements the narrow binary bridge between Rust ownership/I/O and the single V8 business thread.
+//! 实现 Rust 所有权与 I/O 到单 V8 业务线程之间的窄二进制桥。 / Implements the narrow binary bridge between Rust ownership/I/O and the single V8 business thread.
 
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -73,6 +73,11 @@ struct HostSceneOperation {
     frame: Bytes,
 }
 
+/// 安装 V8 host op 使用的 Tokio Handle 与完成事件接收端。
+///
+/// 这是单个运行时的进程级状态，必须在任何 TS Scene call/send op 执行前配置。
+/// 进程运行期间不支持重新配置，否则完成事件可能被路由到错误队列。
+///
 /// Installs the Tokio handle and completion sink used by V8 host ops.
 ///
 /// This is process-global state for one runtime and must be configured before
@@ -158,7 +163,7 @@ fn op_host_close_connection(connection_id: u32) -> Result<(), JsErrorBox> {
     Ok(())
 }
 
-/// Drains connection-close requests emitted by TS during the current host update.
+/// 消费 TS 在本次宿主 Update 中发出的连接关闭请求。 / Drains connection-close requests emitted by TS during the current host update.
 pub fn take_close_connection_requests() -> Vec<u64> {
     CLOSE_CONNECTION_REQUESTS.with(|slot| std::mem::take(&mut *slot.borrow_mut()))
 }
@@ -459,7 +464,7 @@ deno_core::extension!(
     ],
 );
 
-/// Creates a V8 runtime with TiangZ host ops; it does not load or execute business code.
+/// 创建带 TiangZ host op 的 V8 运行时，但不加载或执行业务代码。 / Creates a V8 runtime with TiangZ host ops; it does not load or execute business code.
 pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
     let mut runtime = JsRuntime::new(RuntimeOptions {
         extensions: vec![
@@ -544,7 +549,7 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     Ok(runtime)
 }
 
-/// Resolves and caches required global JS entrypoints once to avoid per-tick script evaluation.
+/// 一次性解析并缓存必需的 JS 全局入口，避免每帧求值脚本。 / Resolves and caches required global JS entrypoints once to avoid per-tick script evaluation.
 pub fn load_js_entrypoints(runtime: &mut JsRuntime) -> Result<JsEntrypoints> {
     Ok(JsEntrypoints {
         start_process: get_global_function(runtime, "__etsStartProcess")?,
@@ -606,7 +611,7 @@ fn call_js_function_string(
     Ok(value.to_rust_string_lossy(scope))
 }
 
-/// Starts the TS ProcessRuntime and returns its operator-facing startup message.
+/// 启动 TS ProcessRuntime，并返回面向运维的启动信息。 / Starts the TS ProcessRuntime and returns its operator-facing startup message.
 pub fn call_js_start_process(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
@@ -617,7 +622,7 @@ pub fn call_js_start_process(
     call_js_function_string(js_event_loop, runtime, &entrypoints.start_process, &[arg])
 }
 
-/// Invokes the idempotent TS stop lifecycle and returns its completion future.
+/// 调用幂等的 TS 停机生命周期，并返回其完成 Future。 / Invokes the idempotent TS stop lifecycle and returns its completion future.
 pub fn call_js_stop_process(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
@@ -626,7 +631,7 @@ pub fn call_js_stop_process(
     call_js_function_string(js_event_loop, runtime, &entrypoints.stop_process, &[])
 }
 
-/// Transfers one packed ingress batch into TS without decoding protobuf in Rust.
+/// 将一批打包入站数据传给 TS，Rust 不解码 protobuf。 / Transfers one packed ingress batch into TS without decoding protobuf in Rust.
 pub fn call_js_push_host_events(
     runtime: &mut JsRuntime,
     entrypoints: &JsEntrypoints,
@@ -644,7 +649,7 @@ pub fn call_js_push_host_events(
     Ok(())
 }
 
-/// Executes one TS update and decodes its packed outbound batches for transport fan-out.
+/// 执行一次 TS Update，并解析打包出站批次供传输层扇出。 / Executes one TS update and decodes its packed outbound batches for transport fan-out.
 pub fn call_js_update_binary(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
@@ -659,7 +664,7 @@ pub fn call_js_update_binary(
     Ok((metrics_json, outbound))
 }
 
-/// Polls pending JS promises once; callers must keep pumping while lifecycle work is unresolved.
+/// 轮询一次待完成 JS Promise；生命周期任务未完成时，调用方必须持续驱动。 / Polls pending JS promises once; callers must keep pumping while lifecycle work is unresolved.
 pub fn pump_js_event_loop_once(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,

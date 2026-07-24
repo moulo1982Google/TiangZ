@@ -10,17 +10,17 @@ export class ItemComponent extends Component {
 
   private readonly items = new Map<number, NativeItemRef>();
 
-  /** Seeds one demo item; production loading should compose inventory from persistent data instead. */
+  /** 创建一件演示道具；生产环境应从持久化数据组合背包。 / Seeds one demo item; production loading should compose inventory from persistent data instead. */
   protected override Awake(): void {
     this.Create(1, 1001, 3);
   }
 
-  /** Copies the current inventory for full sync or persistence without exposing Native handles. */
+  /** 复制当前背包用于全量同步或持久化，不暴露 Native 句柄。 / Copies the current inventory for full sync or persistence without exposing Native handles. */
   Snapshot(): ItemSnapshot[] {
     return [...this.items.values()].map(toSnapshot);
   }
 
-  /** Consumes one item immediately and increments version for non-replaceable event delivery. */
+  /** 立即消耗一件道具并递增版本，用于不可覆盖事件投递。 / Consumes one item immediately and increments version for non-replaceable event delivery. */
   UseItem(itemId: number): ItemSnapshot {
     const item = this.requireItem(itemId);
     if (item.count === 0) {
@@ -31,7 +31,7 @@ export class ItemComponent extends Component {
     return toSnapshot(item);
   }
 
-  /** Adds to an existing stack and returns the authoritative post-change snapshot. */
+  /** 增加已有堆叠，并返回变更后的权威快照。 / Adds to an existing stack and returns the authoritative post-change snapshot. */
   AddItem(itemId: number, count: number): ItemSnapshot {
     requirePositiveCount(count);
     const item = this.requireItem(itemId);
@@ -40,7 +40,7 @@ export class ItemComponent extends Component {
     return toSnapshot(item);
   }
 
-  /** Removes a validated amount atomically or throws without changing the stack. */
+  /** 原子扣除已校验数量；失败时抛错且不改变堆叠。 / Removes a validated amount atomically or throws without changing the stack. */
   RemoveItem(itemId: number, count: number): ItemSnapshot {
     requirePositiveCount(count);
     const item = this.requireItem(itemId);
@@ -52,7 +52,7 @@ export class ItemComponent extends Component {
     return toSnapshot(item);
   }
 
-  /** Releases all Rust Arena handles owned by this inventory. */
+  /** 释放本背包拥有的全部 Rust Arena 句柄。 / Releases all Rust Arena handles owned by this inventory. */
   protected override OnDestroy(): void {
     for (const item of this.items.values()) item.Dispose();
     this.items.clear();

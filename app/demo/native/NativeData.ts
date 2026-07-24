@@ -36,7 +36,7 @@ export class NativeData {
   private static debugScalarAccess = false;
   private static scalarAccessWarnThreshold = 10_000;
 
-  /** Configures observability thresholds only; it never blocks scalar get/set operations. */
+  /** 只配置可观测性阈值，绝不会阻止标量 get/set。 / Configures observability thresholds only; it never blocks scalar get/set operations. */
   static Configure(config: NativeDataConfig = {}): void {
     const debugScalarAccess = config.debugScalarAccess ?? false;
     const scalarAccessWarnThreshold = config.scalarAccessWarnThreshold ?? 10_000;
@@ -55,7 +55,7 @@ export class NativeData {
     this.scalarAccessWarnThreshold = scalarAccessWarnThreshold;
   }
 
-  /** Applies optional NativeData settings from process application config during startup. */
+  /** 启动时应用进程业务配置中的可选 NativeData 设置。 / Applies optional NativeData settings from process application config during startup. */
   static ConfigureProcess(process: object): void {
     const config = (process as DemoProcessConfig).nativeData;
     if (config !== undefined && (typeof config !== "object" || config === null)) {
@@ -64,7 +64,7 @@ export class NativeData {
     this.Configure(config);
   }
 
-  /** Writes validated direction/sequence into the Rust Unit and returns whether intent changed. */
+  /** 将已校验方向和序列写入 Rust Unit，并返回意图是否变化。 / Writes validated direction/sequence into the Rust Unit and returns whether intent changed. */
   static SetMovementInput(
     handle: number,
     inputX: number,
@@ -74,12 +74,12 @@ export class NativeData {
     return NativeOps.UnitSetMovementInput(handle, inputX, inputY, sequence);
   }
 
-  /** Clears queued movement when a player reconnects so stale input cannot continue moving it. */
+  /** 玩家重连时清空排队移动，避免旧输入继续驱动玩家。 / Clears queued movement when a player reconnects so stale input cannot continue moving it. */
   static ResetMovement(handle: number): void {
     NativeOps.UnitResetMovement(handle);
   }
 
-  /** Advances all Rust Units in a map and returns an already encoded replaceable movement frame. */
+  /** 推进地图内全部 Rust Unit，并返回已编码的可覆盖移动帧。 / Advances all Rust Units in a map and returns an already encoded replaceable movement frame. */
   static UpdateMapMovement(
     mapId: number,
     serverTick: number,
@@ -105,7 +105,7 @@ export class NativeData {
     return { itemCount, frame };
   }
 
-  /** Peeks Numeric dirty state without clearing it; the returned revision must be Acked after send. */
+  /** 查看但不清除 Numeric 脏状态；发送成功后必须 Ack 返回的版本。 / Peeks Numeric dirty state without clearing it; the returned revision must be Acked after send. */
   static PeekMapNumericDelta(
     mapId: number,
     serverTick: number,
@@ -126,12 +126,12 @@ export class NativeData {
     return { itemCount, revision, frame };
   }
 
-  /** Acknowledges exactly the Numeric revision delivered to clients, preserving newer writes. */
+  /** 只确认已投递给客户端的 Numeric 版本，保留其后的新写入。 / Acknowledges exactly the Numeric revision delivered to clients, preserving newer writes. */
   static AckMapNumericDelta(mapId: number, revision: Uint8Array): void {
     NativeOps.MapAckNumericDelta(mapId, revision);
   }
 
-  /** Peeks generated fixed-field dirty masks and their encoded protobuf delta. */
+  /** 查看生成固定字段的脏 mask 及其已编码 protobuf 增量。 / Peeks generated fixed-field dirty masks and their encoded protobuf delta. */
   static PeekMapUnitDelta(
     mapId: number,
     serverTick: number,
@@ -157,12 +157,12 @@ export class NativeData {
     return { itemCount, revision, frame };
   }
 
-  /** Clears only fixed fields whose revisions still match the delivered frame. */
+  /** 只清除版本仍与已投递帧一致的固定字段。 / Clears only fixed fields whose revisions still match the delivered frame. */
   static AckMapUnitDelta(mapId: number, revision: Uint8Array): void {
     NativeOps.MapAckUnitDelta(mapId, revision);
   }
 
-  /** Reads and resets interval NativeData op counters for host observability. */
+  /** 读取并重置区间 NativeData op 计数，供宿主可观测性使用。 / Reads and resets interval NativeData op counters for host observability. */
   static TakeMetrics(): NativeDataMetrics {
     const bytes = NativeOps.DataTakeMetrics();
     if (bytes.length !== 56) {

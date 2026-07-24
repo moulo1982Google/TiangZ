@@ -72,7 +72,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.config.process.lifecycle?.stopTimeoutMs ?? 10_000;
   }
 
-  /** Creates a lifecycle barrier: every Scene starts before any Scene becomes ready. */
+  /** 建立生命周期屏障：所有 Scene 都完成 start 后，任何 Scene 才能进入 ready。 / Creates a lifecycle barrier: every Scene starts before any Scene becomes ready. */
   async start(): Promise<string> {
     if (this.lifecycleState !== "created") {
       throw new Error(`process cannot start from ${this.lifecycleState}`);
@@ -90,7 +90,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return `[process:${this.config.process.name}] one V8 started with ${this.entryScenes.length} scene(s)\n${started}`;
   }
 
-  /** Stops the process once; concurrent callers share the same completion and errors. */
+  /** 进程只停机一次；并发调用者共享同一个完成结果与错误。 / Stops the process once; concurrent callers share the same completion and errors. */
   stop(): Promise<void> {
     this.stopPromise ??= this.stopRuntime();
     return this.stopPromise;
@@ -115,17 +115,17 @@ export class ProcessRuntime implements LocalSceneRouter {
     }
   }
 
-  /** Enqueues an immutable host frame into the addressed Scene mailbox. */
+  /** 将不可变宿主帧放入目标 Scene mailbox。 / Enqueues an immutable host frame into the addressed Scene mailbox. */
   pushHostFrame(sceneIndex: number, connectionId: number, frame: Uint8Array): void {
     this.sceneAt(sceneIndex).pushHostFrame(connectionId, frame);
   }
 
-  /** Orders a disconnect notification after frames already accepted for that Scene. */
+  /** 让断线通知排在该 Scene 已接收帧之后，避免越过先前消息。 / Orders a disconnect notification after frames already accepted for that Scene. */
   pushHostDisconnect(sceneIndex: number, connectionId: number): void {
     this.sceneAt(sceneIndex).pushHostDisconnect(connectionId);
   }
 
-  /** Advances Game.Update and every local Scene mailbox inside this process's single V8 thread. */
+  /** 在本进程唯一 V8 线程内推进 Game.Update 和所有本地 Scene mailbox。 / Advances Game.Update and every local Scene mailbox inside this process's single V8 thread. */
   update(includeMetrics = true): MaybePromise<ProcessUpdateResult> {
     const startedAt: number[] = [];
     Game.Instance.Update(monotonicNow(), Date.now(), () => {
@@ -140,7 +140,7 @@ export class ProcessRuntime implements LocalSceneRouter {
 
   hasLocalScene(name: string): boolean { return this.scenesByName.has(name); }
 
-  /** Performs an in-process RPC through the target mailbox; it never shortcuts into the handler. */
+  /** 通过目标 mailbox 执行进程内 RPC，绝不绕过 mailbox 直接调用 Handler。 / Performs an in-process RPC through the target mailbox; it never shortcuts into the handler. */
   callLocalScene(sourceName: string, targetName: string, frame: Uint8Array): Promise<Uint8Array> {
     if (sourceName === targetName) {
       return Promise.reject(new Error(`ordered scene ${sourceName} cannot synchronously call itself`));
@@ -148,7 +148,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.sceneByName(targetName).dispatchLocalCall(frame);
   }
 
-  /** Enqueues an in-process one-way frame and logs later handler failure without blocking the sender. */
+  /** 将进程内单向帧入队；后续 Handler 失败只记录日志，不阻塞发送方。 / Enqueues an in-process one-way frame and logs later handler failure without blocking the sender. */
   sendLocalScene(_sourceName: string, targetName: string, frame: Uint8Array): Promise<void> {
     const target = this.sceneByName(targetName);
     void target.dispatchLocalSend(frame).catch((error) => {

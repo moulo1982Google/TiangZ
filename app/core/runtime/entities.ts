@@ -29,23 +29,23 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     return this.parent;
   }
 
-  /** Returns the owning Entity or throws after removal; do not cache the result past disposal. */
+  /** 返回所属 Entity；移除后调用会抛错，因此不可跨越销毁缓存结果。 / Returns the owning Entity or throws after removal; do not cache the result past disposal. */
   GetParent<T extends Entity>(): T {
     return this.Parent as T;
   }
 
-  /** Resolves the Scene that owns the component's Entity, not merely its immediate parent. */
+  /** 解析拥有组件 Entity 的 Scene，而不只是直接父对象。 / Resolves the Scene that owns the component's Entity, not merely its immediate parent. */
   DomainScene<T extends Scene = Scene>(): T {
     return this.Parent.DomainScene<T>();
   }
 
-  /** Initializes component state synchronously after attachment; asynchronous work belongs in a lifecycle/handler. */
+  /** 挂载后同步初始化组件状态；异步工作应放入生命周期或 Handler。 / Initializes component state synchronously after attachment; asynchronous work belongs in a lifecycle/handler. */
   protected Awake(..._args: TAwakeArgs): void {}
 
-  /** Releases component-owned resources; Entity disposal invokes it exactly once. */
+  /** 释放组件拥有的资源；Entity 销毁时只调用一次。 / Releases component-owned resources; Entity disposal invokes it exactly once. */
   protected OnDestroy(): void {}
 
-  /** Creates a one-shot timer tied to this component and automatically cancels it on disposal. */
+  /** 创建绑定到本组件的一次性定时器，并在销毁时自动取消。 / Creates a one-shot timer tied to this component and automatically cancels it on disposal. */
   NewOnceTimer(
     delayMs: number,
     callback: (self: this) => MaybePromise<void>,
@@ -62,7 +62,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     return timerId;
   }
 
-  /** Creates a repeated timer tied to this component; callbacks never run after disposal. */
+  /** 创建绑定到本组件的重复定时器；销毁后回调不会再执行。 / Creates a repeated timer tied to this component; callbacks never run after disposal. */
   NewRepeatedTimer(
     intervalMs: number,
     callback: (self: this) => MaybePromise<void>,
@@ -77,7 +77,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     return timerId;
   }
 
-  /** Cancels a timer owned by this component and returns whether it was still active. */
+  /** 取消本组件拥有的定时器，并返回它此前是否仍有效。 / Cancels a timer owned by this component and returns whether it was still active. */
   RemoveTimer(timerId: TimerId): boolean {
     if (!this.timers.delete(timerId)) return false;
     return this.parent instanceof Actor
@@ -172,7 +172,7 @@ export abstract class Entity {
     return this.parent;
   }
 
-  /** Resolves the stable domain Scene; it throws before attachment and after disposal. */
+  /** 解析稳定的 DomainScene；挂载前和销毁后调用都会抛错。 / Resolves the stable domain Scene; it throws before attachment and after disposal. */
   DomainScene<T extends Scene = Scene>(): T {
     if (!this.domainScene) {
       throw new Error(`entity has no domain scene: ${this.constructor.name}`);
@@ -181,6 +181,11 @@ export abstract class Entity {
   }
 
   /**
+   * 构造、挂载并同步 Awake 一个组件。
+   *
+   * 本方法会修改 Entity 和 UpdateSystem；Awake 失败时两者都会回滚。
+   * 业务代码不可直接 `new` 可挂载组件，否则会绕过所有权和生命周期注册。
+   *
    * Constructs, attaches, and synchronously awakens one component.
    *
    * The method mutates the Entity and UpdateSystem. It rolls both back when
@@ -210,7 +215,7 @@ export abstract class Entity {
     return instance;
   }
 
-  /** Returns a required component and throws when the Entity was not composed with it. */
+  /** 返回必需组件；Entity 未组合该组件时抛错。 / Returns a required component and throws when the Entity was not composed with it. */
   GetComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): T {
@@ -221,21 +226,21 @@ export abstract class Entity {
     return instance;
   }
 
-  /** Looks up an optional component without creating it or changing lifecycle state. */
+  /** 查询可选组件，不创建实例也不改变生命周期状态。 / Looks up an optional component without creating it or changing lifecycle state. */
   TryGetComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): T | undefined {
     return this.components.get(ctor) as T | undefined;
   }
 
-  /** Tests component composition without exposing the internal component map. */
+  /** 检查组件组合关系，不暴露内部组件表。 / Tests component composition without exposing the internal component map. */
   HasComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): boolean {
     return this.components.has(ctor);
   }
 
-  /** Removes and disposes a component immediately; outstanding references become invalid. */
+  /** 立即移除并销毁组件；外部仍持有的引用随即失效。 / Removes and disposes a component immediately; outstanding references become invalid. */
   RemoveComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): boolean {
@@ -250,7 +255,7 @@ export abstract class Entity {
     return true;
   }
 
-  /** Releases Entity-owned resources after all components have been disposed. */
+  /** 所有组件销毁后释放 Entity 自身资源。 / Releases Entity-owned resources after all components have been disposed. */
   protected OnDestroy(): void {}
 
   __attach(
@@ -332,7 +337,7 @@ export abstract class Scene extends Entity {
     return this.ctx.logger;
   }
 
-  /** Creates an Actor in this Scene and registers its InstanceId before Awake runs. */
+  /** 在本 Scene 创建 Actor，并在 Awake 前注册其 InstanceId。 / Creates an Actor in this Scene and registers its InstanceId before Awake runs. */
   SpawnActor<T extends Actor<any[]>>(
     actorId: ActorId,
     ctor: ActorCtor<T>,
@@ -341,7 +346,7 @@ export abstract class Scene extends Entity {
     return this.ctx.spawnActor(actorId, ctor, ...awakeArgs);
   }
 
-  /** Removes an Actor from routing and disposes it; stale InstanceIds must no longer be used. */
+  /** 从路由中移除并销毁 Actor；此后不可再使用旧 InstanceId。 / Removes an Actor from routing and disposes it; stale InstanceIds must no longer be used. */
   DespawnActor(actorId: ActorId): boolean {
     return this.ctx.despawnActor(actorId);
   }
@@ -362,10 +367,10 @@ export abstract class Actor<
     return this.ctx.logger;
   }
 
-  /** Initializes Actor state synchronously inside its owning Scene. */
+  /** 在所属 Scene 内同步初始化 Actor 状态。 / Initializes Actor state synchronously inside its owning Scene. */
   protected Awake(..._args: TAwakeArgs): void {}
 
-  /** Schedules an Actor-mailbox timer so its callback obeys this Actor's ordering policy. */
+  /** 调度 Actor mailbox 定时器，使回调遵循该 Actor 的顺序策略。 / Schedules an Actor-mailbox timer so its callback obeys this Actor's ordering policy. */
   NewOnceTimer(
     delayMs: number,
     callback: (actor: this) => MaybePromise<void>,
@@ -373,7 +378,7 @@ export abstract class Actor<
     return this.ctx.newOnceTimer(delayMs, callback as (actor: Actor<any[]>) => MaybePromise<void>);
   }
 
-  /** Schedules a repeated Actor-mailbox timer; disposal cancels future callbacks. */
+  /** 调度重复 Actor mailbox 定时器；销毁会取消后续回调。 / Schedules a repeated Actor-mailbox timer; disposal cancels future callbacks. */
   NewRepeatedTimer(
     intervalMs: number,
     callback: (actor: this) => MaybePromise<void>,
@@ -384,7 +389,7 @@ export abstract class Actor<
     );
   }
 
-  /** Cancels an Actor timer through the host that owns its mailbox. */
+  /** 通过拥有该 mailbox 的宿主取消 Actor 定时器。 / Cancels an Actor timer through the host that owns its mailbox. */
   RemoveTimer(timerId: TimerId): boolean {
     return this.ctx.removeTimer(timerId);
   }
