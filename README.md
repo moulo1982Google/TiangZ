@@ -108,6 +108,11 @@ RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClie
 {
   "process": {
     "name": "all",
+    "logging": {
+      "level": "info",
+      "format": "pretty",
+      "console": true
+    },
     "network": {
       "ioBackend": "epoll"
     },
@@ -153,6 +158,7 @@ RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClie
 ```
 
 - `process.name`：当前 OS 进程名称，一个配置文件只描述一个 Process/V8。
+- `process.logging`：统一 Rust/TS 日志的级别、文本或 JSON 格式、控制台和滚动文件输出；默认 INFO 文本控制台。
 - `process.network`：I/O Backend；默认 `epoll`，Linux 可显式选择实验性的 `io-uring`。
 - `process.game`：固定游戏帧和最大补帧数；默认 `50ms/20Hz`、最多补跑 2 帧。
 - `process.nativeData`：Demo 的 Rust Native Entity 诊断配置，只观测标量访问，不控制数据是否下沉。

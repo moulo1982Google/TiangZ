@@ -12,6 +12,7 @@ mod config;
 mod generated;
 mod host;
 mod inspector;
+mod logging;
 mod native_data;
 mod process;
 mod transport;
@@ -26,10 +27,16 @@ async fn main() -> Result<()> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let resolved_config = resolve_startup_path(&root, startup_path);
     if is_start_machine_path(&resolved_config) {
+        let _logging = logging::init(
+            &root,
+            "watcher",
+            &crate::config::ProcessLoggingConfig::default(),
+        )?;
         run_start_machine(&root, resolved_config).await?;
         return Ok(());
     }
 
     let config = load_runtime_config(&resolved_config)?;
+    let _logging = logging::init(&root, &config.process.name, &config.process.logging)?;
     run_runtime_config(&root, &resolved_config, config).await
 }

@@ -166,7 +166,7 @@
         "native_data/demo/Item.native": "1e8eb6f3bc2f00a36c1e718ca45f6029ecfeed39ccc9fd303468e02785810926",
         "native_data/demo/Unit.native": "00c7d04dcc61f6dc6f8ced4a1d0ddc79c68003bbc4bf84a122d38a9c9dc709fd",
         "native_data/NativeOps.native": "d69295b0d47dffc280fa80cffd07971890b2c42b95f335442531153716c5cc46",
-        "package.json": "052938a0e080eaa611633965fe461e9f2ae5087feaf2d0abafa286dda3dc324d",
+        "package.json": "bd6fabbb64c93edf7e7a2dd15641d267728f850ad13d0f996afbff4089aae1a2",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },

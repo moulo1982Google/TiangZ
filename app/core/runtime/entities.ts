@@ -1,5 +1,6 @@
 import type { ActorContext, SceneContext } from "./contexts";
 import type { MaybePromise } from "../async";
+import { CoreLogger } from "../logging/Logger";
 import { TimerSystem, type TimerId } from "./TimerSystem";
 import { UpdateSystem } from "./UpdateSystem";
 import type {
@@ -94,7 +95,10 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     const result = this.Awake(...args) as unknown;
     if (isPromiseLike(result)) {
       void Promise.resolve(result).catch((error) => {
-        console.error(`async component Awake failed: ${this.constructor.name}`, error);
+        CoreLogger.error("async component Awake failed", {
+          component: this.constructor.name,
+          error,
+        });
       });
       throw new Error(
         `component Awake must be synchronous: ${this.constructor.name}`,
@@ -361,7 +365,10 @@ export abstract class Actor<
     const result = this.Awake(...args) as unknown;
     if (isPromiseLike(result)) {
       void Promise.resolve(result).catch((error) => {
-        console.error(`async actor Awake failed: ${this.constructor.name}`, error);
+        CoreLogger.error("async actor Awake failed", {
+          actor: this.constructor.name,
+          error,
+        });
       });
       throw new Error(`actor Awake must be synchronous: ${this.constructor.name}`);
     }

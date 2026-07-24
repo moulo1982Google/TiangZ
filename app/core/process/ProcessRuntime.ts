@@ -17,6 +17,7 @@ import type {
   SceneMetricsSnapshot,
   SceneUpdateResult,
 } from "./types";
+import { CoreLogger } from "../logging/Logger";
 
 export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
@@ -101,7 +102,7 @@ export class ProcessRuntime implements LocalSceneRouter {
   sendLocalScene(_sourceName: string, targetName: string, frame: Uint8Array): Promise<void> {
     const target = this.sceneByName(targetName);
     void target.dispatchLocalSend(frame).catch((error) => {
-      console.error(`[${targetName}] local one-way message failed`, error);
+      CoreLogger.error("local one-way message failed", { targetScene: targetName, error });
     });
     return Promise.resolve();
   }

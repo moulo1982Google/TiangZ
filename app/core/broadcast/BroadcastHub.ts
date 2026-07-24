@@ -10,6 +10,7 @@ import type {
   EventBroadcastDescriptor,
   LatestBroadcastDescriptor,
 } from "./types";
+import { CoreLogger } from "../logging/Logger";
 
 interface Deferred {
   readonly resolve: () => void;
@@ -80,7 +81,7 @@ export class BroadcastHub {
     this.maxEventQueuePerChannel =
       options.maxEventQueuePerChannel ?? DEFAULT_MAX_EVENT_QUEUE;
     this.onError = options.onError ?? ((name, error) => {
-      console.error(`[BroadcastHub] ${name} failed`, error);
+      CoreLogger.error("broadcast channel failed", { channel: name, error });
     });
   }
 

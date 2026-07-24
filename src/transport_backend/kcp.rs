@@ -55,13 +55,13 @@ pub(crate) fn start_kcp_endpoint(context: EndpointContext) -> Result<()> {
     })?;
     socket.set_nonblocking(true)?;
     let socket = UdpSocket::from_std(socket)?;
-    println!(
+    tracing::info!(target: "tiangz::transport",
         "scene {} ({}) listening on {} protocol=Kcp audience={:?} io_backend=epoll",
         context.scene.name, context.scene.scene_type, bind_addr, context.scene.audience
     );
     tokio::spawn(async move {
         if let Err(error) = run_kcp_endpoint(socket, context).await {
-            eprintln!("KCP endpoint stopped: {error:?}");
+            tracing::error!(target: "tiangz::transport", error = ?error, "KCP endpoint stopped");
         }
     });
     Ok(())
@@ -107,7 +107,7 @@ async fn run_kcp_endpoint(socket: UdpSocket, context: EndpointContext) -> Result
                             if let Err(error) = validate_frame_access(ConnectionKind::External, &frame)
                                 .and_then(|_| session.kcp.send(&frame))
                             {
-                                eprintln!("KCP conn {} outbound frame rejected: {error:?}", session.connection_id);
+                                tracing::warn!(target: "tiangz::transport", connection_id = session.connection_id, error = ?error, "KCP outbound frame rejected");
                             } else {
                                 session.last_activity = Instant::now();
                             }

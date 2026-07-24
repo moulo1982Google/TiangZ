@@ -14,6 +14,7 @@ import {
   getSceneOptions,
   type HandlerBinding,
 } from "./metadata";
+import { CoreLogger } from "../logging/Logger";
 import type {
   ActorCtor,
   ActorAwakeArgs,
@@ -185,7 +186,7 @@ export class ProcessHost {
     try {
       scene.instance.__dispose();
     } catch (disposeError) {
-      console.error(`scene destroy failed: ${sceneId}`, disposeError);
+      CoreLogger.error("scene destroy failed", { scene: sceneId, error: disposeError });
     }
     return true;
   }
@@ -245,7 +246,11 @@ export class ProcessHost {
     try {
       actor.instance.__dispose();
     } catch (disposeError) {
-      console.error(`actor destroy failed: ${sceneId}/${actorId}`, disposeError);
+      CoreLogger.error("actor destroy failed", {
+        scene: sceneId,
+        actorId,
+        error: disposeError,
+      });
     }
     return true;
   }
@@ -438,7 +443,7 @@ export class ProcessHost {
     try {
       entity.__dispose();
     } catch (error) {
-      console.error(`${label} cleanup failed`, error);
+      CoreLogger.error("entity cleanup failed", { label, error });
     }
   }
 
@@ -551,12 +556,15 @@ export class ProcessHost {
   private handleInvokeError(pending: PendingDispatch, error: unknown): void {
     pending.reject?.(error);
     if (pending.envelope.kind === "send") {
-      console.error(`send failed: ${pending.envelope.handler}`, error);
+      CoreLogger.error("mailbox send failed", {
+        handler: pending.envelope.handler,
+        error,
+      });
     }
   }
 
   private logUnexpectedDispatchError(error: unknown): void {
-    console.error("mailbox dispatch failed", error);
+    CoreLogger.error("mailbox dispatch failed", { error });
   }
 
   private resolveMailbox(target: MessageTarget): MailboxRuntime | undefined {

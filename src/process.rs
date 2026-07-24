@@ -344,11 +344,12 @@ pub async fn run_runtime_config(
         .map_err(|_| anyhow::anyhow!("failed to convert {} to a file URL", app_path.display()))?
         .to_string();
 
-    println!(
-        "starting process {} with one V8 and {} scene(s) from {}",
-        config.process.name,
-        config.scenes.len(),
-        resolved_config.display()
+    tracing::info!(
+        target: "tiangz::runtime",
+        process = %config.process.name,
+        scene_count = config.scenes.len(),
+        config = %resolved_config.display(),
+        "starting process with one V8"
     );
 
     let (event_tx, event_rx) = mpsc::sync_channel::<ProcessEvent>(PROCESS_EVENT_QUEUE_CAPACITY);
@@ -382,15 +383,16 @@ pub async fn run_runtime_config(
             host_runtime,
             completion_sink,
         ) {
-            eprintln!("process runtime stopped: {error:?}");
+            tracing::error!(target: "tiangz::runtime", error = ?error, "process runtime stopped");
         }
     });
 
     let io_backend = create_io_backend(&config.process.network)?;
-    println!(
-        "process {} io backend={}",
-        config.process.name,
-        io_backend.name()
+    tracing::info!(
+        target: "tiangz::transport",
+        process = %config.process.name,
+        io_backend = io_backend.name(),
+        "process I/O backend selected"
     );
     for (scene_index, scene) in config.scenes.iter().cloned().enumerate() {
         io_backend.start_endpoint(EndpointContext {
@@ -464,8 +466,8 @@ fn run_process_runtime(
         &entrypoints,
         &serde_json::to_string(&process_config)?,
     )?;
-    println!("{start_result}");
-    println!(
+    tracing::info!(target: "tiangz::typescript", process = %process_name, message = %start_result, "TypeScript process started");
+    tracing::info!(target: "tiangz::runtime",
         "[process:{process_name}] scheduling={:?} idle_tick_ms={} max_events_per_update={} coalesce_micros={}",
         scheduling.mode,
         scheduling.idle_tick_ms,
@@ -661,12 +663,13 @@ fn maybe_log_metrics(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    println!(
-        "[process-metrics] process={process_name} cpu_percent={cpu_percent:.2} cpu_time_ms={cpu_time_ms} rss_bytes={rss_bytes} v8_heap_used_bytes={} v8_heap_total_bytes={} v8_gc_count={} v8_gc_ms={:.3} timestamp_ms={timestamp_ms} inbound_frames={} host_completions={} disconnects={} runtime_updates={} runtime_events={} max_runtime_batch={} outbound_batches={} outbound_recipients={} outbound_bridge_bytes={} outbound_logical_bytes={} transport_read_ops={} transport_read_frames={} transport_read_bytes={} transport_write_ops={} transport_write_frames={} transport_write_bytes={}",
+    tracing::info!(target: "tiangz::metrics",
+        "[process-metrics] process={process_name} cpu_percent={cpu_percent:.2} cpu_time_ms={cpu_time_ms} rss_bytes={rss_bytes} v8_heap_used_bytes={} v8_heap_total_bytes={} v8_gc_count={} v8_gc_ms={:.3} timestamp_ms={timestamp_ms} dropped_logs={} inbound_frames={} host_completions={} disconnects={} runtime_updates={} runtime_events={} max_runtime_batch={} outbound_batches={} outbound_recipients={} outbound_bridge_bytes={} outbound_logical_bytes={} transport_read_ops={} transport_read_frames={} transport_read_bytes={} transport_write_ops={} transport_write_frames={} transport_write_bytes={}",
         heap.used_heap_size(),
         heap.total_heap_size(),
         gc_metrics.count,
         gc_metrics.total_duration.as_secs_f64() * 1000.0,
+        crate::logging::dropped_lines(),
         queue_stats.inbound_frames.load(Ordering::Relaxed),
         queue_stats.host_completions.load(Ordering::Relaxed),
         queue_stats.disconnects.load(Ordering::Relaxed),
@@ -685,7 +688,7 @@ fn maybe_log_metrics(
         queue_stats.transport_write_bytes.load(Ordering::Relaxed),
     );
     if let Some(game) = game_metrics {
-        println!(
+        tracing::info!(target: "tiangz::metrics",
             "[game-metrics] process={process_name} fixed_update_ms={} frame_count={} skipped_fixed_updates={} update_targets={} update_calls={} update_failures={} timers={}",
             game.fixed_update_ms,
             game.frame_count,
@@ -697,7 +700,7 @@ fn maybe_log_metrics(
         );
     }
     if let Some(native) = native_data_metrics {
-        println!(
+        tracing::info!(target: "tiangz::metrics",
             "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} encoded_frames={} encoded_items={} encoded_bytes={}",
             native.scalar_gets,
             native.scalar_sets,
@@ -710,7 +713,7 @@ fn maybe_log_metrics(
         );
     }
     for metric in metrics {
-        println!(
+        tracing::info!(target: "tiangz::metrics",
             "[metrics:{process_name}] scene={} type={} processed={} failed={} ts_queue={} ts_max_queue={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
             metric.scene,
             metric.scene_type,
@@ -733,7 +736,7 @@ fn maybe_log_metrics(
             metric.total_handler_cost_ms,
         );
         for latency in &metric.latencies {
-            println!(
+            tracing::info!(target: "tiangz::latency",
                 "[latency:{process_name}] scene={} type={} name={} msgcode={} count={} avg_ms={:.3} p50_ms={:.3} p95_ms={:.3} p99_ms={:.3} max_ms={:.3}",
                 metric.scene,
                 metric.scene_type,
@@ -757,7 +760,7 @@ fn maybe_log_metrics(
                 .map(|(name, value)| format!("{name}={value}"))
                 .collect::<Vec<_>>()
                 .join(" ");
-            println!(
+            tracing::info!(target: "tiangz::metrics",
                 "[custom-metrics:{process_name}] scene={} type={} name={} timestamp_ms={} {}",
                 metric.scene, metric.scene_type, custom.name, timestamp_ms, values,
             );
@@ -874,7 +877,11 @@ fn flush_outbound(
             queue_stats
                 .slow_client_disconnects
                 .fetch_add(1, Ordering::Relaxed);
-            eprintln!("closing slow connection {connection_id}: outbound queue limit exceeded");
+            tracing::warn!(
+                target: "tiangz::transport",
+                connection_id,
+                "closing slow connection: outbound queue limit exceeded"
+            );
         }
     }
     Ok(())

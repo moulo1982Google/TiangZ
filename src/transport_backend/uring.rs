@@ -53,7 +53,7 @@ impl IoBackend for UringIoBackend {
                 let mut builder = tokio_uring::builder();
                 builder.entries(entries);
                 let result = builder.start(async move {
-                    println!(
+                    tracing::info!(target: "tiangz::transport",
                         "scene {scene_name} ({scene_type}) listening on {bind_addr} protocol=Tcp audience={:?} io_backend=io-uring entries={entries} read_buffer_bytes={read_buffer_bytes}",
                         context.scene.audience
                     );
@@ -65,7 +65,7 @@ impl IoBackend for UringIoBackend {
                     .await
                 });
                 if let Err(error) = result {
-                    eprintln!("scene {error_scene_name} io-uring listener stopped: {error:?}");
+                    tracing::error!(target: "tiangz::transport", scene = %error_scene_name, error = ?error, "io-uring listener stopped");
                 }
             })?;
         Ok(())
@@ -80,7 +80,7 @@ async fn run_scene_listener(
     loop {
         let (stream, peer) = listener.accept().await?;
         let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
-        println!(
+        tracing::debug!(target: "tiangz::transport",
             "{} accepted {} as conn {} backend=io-uring",
             context.scene.name, peer, connection_id
         );
@@ -100,7 +100,7 @@ async fn run_scene_listener(
             )
             .await
             {
-                eprintln!("conn {connection_id} io-uring error: {error:?}");
+                tracing::warn!(target: "tiangz::transport", connection_id, error = ?error, "io-uring connection closed with error");
             }
         });
     }

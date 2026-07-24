@@ -55,9 +55,11 @@ Phase 2.8 位于多人地图纵向链路与正式角色业务之间。目标不�
 状态：部分完成。
 
 - Core 提供结构化 Logger，统一 Rust、V8 和 Cocos 的日志字段。
+- 已完成 Rust `tracing`、TS Core Logger、级别过滤、开发文本/生产 JSON、非阻塞控制台与滚动文件输出；Cocos 客户端日志仍保持独立。
 - RequestContext 携带 service、rpcId、msgcode、connectionId、source、target 和 traceId。
 - 服务端保存完整错误堆栈，客户端只接收稳定错误码和脱敏消息。
 - 区分框架日志、普通业务日志和会影响业务结果的审计日志。
+- 框架和普通业务日志已区分类别；可靠审计投递尚未实现，业务不得把普通 Logger 当作审计存储。
 - 修复 Handler 异常被转换为响应后 `failedFrames` 仍为零的问题。
 - 已完成第一版链路耗时聚合：`ingress.queue`、`frame.total`、`protocol.decode`、`protocol.handler`、`protocol.encode`、`scene.call/send.local/remote`。
 - 链路耗时以 `[latency:<process>]` 日志输出，字段包含 `scene/type/name/msgcode/count/avg/p50/p95/p99/max`；详细口径见 `docs/reference/observability.md`。

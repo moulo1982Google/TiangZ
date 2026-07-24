@@ -148,9 +148,9 @@ export class GateScene extends EntryScene {
   private mapReady(message: M2G_MapReady): void {
     const connectionId = this.connectionsByAccount.get(message.account);
     if (connectionId === undefined) {
-      console.error(
-        `[${this.self.name}] cannot push MapReady: account ${message.account} is offline`,
-      );
+      this.logger.warn("cannot push MapReady: account is offline", {
+        account: message.account,
+      });
       return;
     }
 
@@ -257,9 +257,11 @@ export class GateScene extends EntryScene {
         continue;
       }
       this.disconnecting.add(connectionId);
-      console.log(
-        `[${this.self.name}] disconnecting inactive client ${session.account} connection=${connectionId} idle_ms=${Math.floor(now - session.lastActivityAtMs)}`,
-      );
+      this.logger.info("disconnecting inactive client", {
+        account: session.account,
+        connectionId,
+        idleMs: Math.floor(now - session.lastActivityAtMs),
+      });
       this.disconnectClient(connectionId);
     }
   }
@@ -284,10 +286,11 @@ export class GateScene extends EntryScene {
         message,
       );
     } catch (error) {
-      console.error(
-        `[${this.self.name}] failed to notify map scene ${session.mapService} that unit ${message.unitId} disconnected`,
+      this.logger.error("failed to notify map scene that unit disconnected", {
+        targetScene: session.mapService,
+        unitId: message.unitId,
         error,
-      );
+      });
     }
   }
 }

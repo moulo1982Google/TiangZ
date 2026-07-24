@@ -21,6 +21,8 @@ pub struct RuntimeConfig {
 pub struct ProcessConfig {
     pub name: String,
     #[serde(default)]
+    pub logging: ProcessLoggingConfig,
+    #[serde(default)]
     pub network: ProcessNetworkConfig,
     #[serde(default)]
     pub game: ProcessGameConfig,
@@ -32,6 +34,84 @@ pub struct ProcessConfig {
     pub observability: Option<ProcessObservabilityConfig>,
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessLoggingConfig {
+    #[serde(default)]
+    pub level: ProcessLogLevel,
+    #[serde(default)]
+    pub format: ProcessLogFormat,
+    #[serde(default = "default_true")]
+    pub console: bool,
+    #[serde(default)]
+    pub filter: Option<String>,
+    #[serde(default)]
+    pub file: Option<ProcessLogFileConfig>,
+}
+
+impl Default for ProcessLoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: ProcessLogLevel::default(),
+            format: ProcessLogFormat::default(),
+            console: true,
+            filter: None,
+            file: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProcessLogLevel {
+    Trace,
+    Debug,
+    #[default]
+    Info,
+    Warn,
+    Error,
+}
+
+impl ProcessLogLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProcessLogFormat {
+    #[default]
+    Pretty,
+    Json,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessLogFileConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_log_directory")]
+    pub directory: String,
+    #[serde(default)]
+    pub rotation: ProcessLogRotation,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProcessLogRotation {
+    Hourly,
+    #[default]
+    Daily,
+    Never,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
@@ -180,6 +260,14 @@ fn default_inspector_ip() -> String {
     "127.0.0.1".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_log_directory() -> String {
+    "logs".to_string()
+}
+
 fn default_latency_sample_rate() -> u32 {
     1
 }
@@ -240,6 +328,33 @@ pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
 fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     if config.process.name.trim().is_empty() {
         bail!("process.name must not be empty");
+    }
+    let log_file_enabled = config
+        .process
+        .logging
+        .file
+        .as_ref()
+        .is_some_and(|file| file.enabled);
+    if !config.process.logging.console && !log_file_enabled {
+        bail!("process logging must enable console or file output");
+    }
+    if config
+        .process
+        .logging
+        .filter
+        .as_ref()
+        .is_some_and(|filter| filter.trim().is_empty())
+    {
+        bail!("process logging.filter must not be empty");
+    }
+    if config
+        .process
+        .logging
+        .file
+        .as_ref()
+        .is_some_and(|file| file.enabled && file.directory.trim().is_empty())
+    {
+        bail!("process logging.file.directory must not be empty");
     }
     if config.process.game.fixed_update_ms == 0 {
         bail!("process game.fixedUpdateMs must be greater than 0");
@@ -404,6 +519,7 @@ mod tests {
     fn process(inspector_port: Option<u16>) -> ProcessConfig {
         ProcessConfig {
             name: "test".to_string(),
+            logging: ProcessLoggingConfig::default(),
             network: ProcessNetworkConfig::default(),
             game: ProcessGameConfig::default(),
             scheduling: ProcessSchedulingConfig::default(),
@@ -532,6 +648,37 @@ mod tests {
         assert_eq!(process.scheduling.idle_tick_ms, Some(25));
         assert_eq!(process.scheduling.max_events_per_update, Some(1024));
         assert_eq!(process.scheduling.coalesce_micros, Some(500));
+    }
+
+    #[test]
+    fn parses_process_logging_config() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "logging": {
+                    "level": "debug",
+                    "format": "json",
+                    "console": false,
+                    "filter": "TiangZ=debug,tokio=warn",
+                    "file": {
+                        "directory": "logs/server",
+                        "rotation": "hourly"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(process.logging.level, ProcessLogLevel::Debug);
+        assert_eq!(process.logging.format, ProcessLogFormat::Json);
+        assert!(!process.logging.console);
+        assert_eq!(
+            process.logging.filter.as_deref(),
+            Some("TiangZ=debug,tokio=warn")
+        );
+        let file = process.logging.file.unwrap();
+        assert!(file.enabled);
+        assert_eq!(file.directory, "logs/server");
+        assert_eq!(file.rotation, ProcessLogRotation::Hourly);
     }
 
     #[test]

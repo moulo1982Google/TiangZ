@@ -77,8 +77,32 @@ pub fn configure_host_scene_bridge(runtime: Handle, completion_sink: HostSceneCo
 }
 
 #[op2(nofast)]
-fn op_host_log(#[string] message: String) {
-    println!("{message}");
+fn op_host_log(
+    level: u32,
+    #[string] source_target: String,
+    #[string] category: String,
+    #[string] message: String,
+    #[string] attributes: String,
+) {
+    macro_rules! emit {
+        ($macro:ident) => {
+            tracing::$macro!(
+                target: "tiangz::typescript",
+                process = crate::logging::process_name(),
+                source_target = %source_target,
+                category = %category,
+                attributes = %attributes,
+                "{message}"
+            )
+        };
+    }
+    match level {
+        0 => emit!(trace),
+        1 => emit!(debug),
+        2 => emit!(info),
+        3 => emit!(warn),
+        _ => emit!(error),
+    }
 }
 
 #[op2]
@@ -203,8 +227,12 @@ fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, Js
                         )
                         .await
                         {
-                            eprintln!(
-                                "one-way scene send {source_name}->{target_name} failed: {error}"
+                            tracing::error!(
+                                target: "tiangz::scene",
+                                source = %source_name,
+                                target_scene = %target_name,
+                                error = %error,
+                                "one-way scene send failed"
                             );
                         }
                         None
@@ -442,7 +470,24 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
           }
           return value;
         };
-        globalThis.__hostLog = (message) => core.ops.op_host_log(String(message));
+        const stringify = (value) => {
+          if (typeof value === "string") return value;
+          if (value instanceof Error) return value.stack || value.message;
+          try {
+            return JSON.stringify(value, (_, nested) =>
+              typeof nested === "bigint" ? nested.toString() : nested);
+          } catch (_) {
+            return String(value);
+          }
+        };
+        globalThis.__hostLog = (level, target, category, message, attributes = "{}") =>
+          core.ops.op_host_log(
+            u32(level, "level"),
+            String(target),
+            String(category),
+            String(message),
+            String(attributes),
+          );
         globalThis.__hostSleep = (ms) => core.ops.op_host_sleep(u32(ms, "ms"));
         globalThis.__hostTakeEventBatch = () => core.ops.op_host_take_event_batch();
         globalThis.__hostPushOutbound = (connectionId, frame) =>
@@ -462,11 +507,12 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
         globalThis.__etsDispatchHostEvents = () =>
           globalThis.__etsPushHostEventsBinary(globalThis.__hostTakeEventBatch());
         globalThis.console = {
-          log: (...args) => __hostLog(args.map((value) => {
-            if (typeof value === "string") return value;
-            try { return JSON.stringify(value); } catch (_) { return String(value); }
-          }).join(" ")),
-          error: (...args) => __hostLog("[error] " + args.map(String).join(" ")),
+          trace: (...args) => __hostLog(0, "console", "application", args.map(stringify).join(" ")),
+          debug: (...args) => __hostLog(1, "console", "application", args.map(stringify).join(" ")),
+          log: (...args) => __hostLog(2, "console", "application", args.map(stringify).join(" ")),
+          info: (...args) => __hostLog(2, "console", "application", args.map(stringify).join(" ")),
+          warn: (...args) => __hostLog(3, "console", "application", args.map(stringify).join(" ")),
+          error: (...args) => __hostLog(4, "console", "application", args.map(stringify).join(" ")),
         };
         "#,
     )?;

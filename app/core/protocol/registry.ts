@@ -5,6 +5,7 @@ import { RpcError } from "./RpcError";
 import { AnyRpcDescriptor } from "./rpc";
 import { SystemErrCode } from "./SystemErrCode";
 import { nowMs } from "../metrics/latency";
+import { CoreLogger } from "../logging/Logger";
 
 export interface Route<TReq, TResp> {
   responseCode: number;
@@ -38,7 +39,8 @@ export class ProtocolRegistry {
   private readonly messageRoutes = new Map<number, MessageRoute<unknown>>();
 
   constructor(
-    private readonly log: (message: string) => void = console.error,
+    private readonly log: (message: string) => void = (message) =>
+      CoreLogger.error("protocol registry error", { detail: message }),
     private readonly metrics?: ProtocolMetrics,
   ) {}
 

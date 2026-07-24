@@ -13,18 +13,27 @@ import {
   rewriteFrameRpcId,
   type ActorLocationTarget,
 } from "./ActorLocation";
+import { Logger } from "../logging/Logger";
 
 export interface SceneCallOptions { timeoutMs?: number; }
 export type SceneSendOptions = SceneCallOptions;
 
 export class SceneCallContext {
   private nextRpcId = 1;
+  readonly logger: Logger;
 
   constructor(
     private readonly config: RuntimeEntrySceneConfig,
     private readonly localRouter: LocalSceneRouter,
     private readonly latencies?: LatencyRecorder,
-  ) {}
+  ) {
+    this.logger = new Logger(`scene:${config.self.sceneType}`, {
+      category: "business",
+      process: config.process.name,
+      scene: config.self.name,
+      sceneType: config.self.sceneType,
+    });
+  }
 
   get self(): SceneConfig { return this.config.self; }
   get knownScenes(): readonly SceneConfig[] { return this.config.knownScenes; }

@@ -13,6 +13,7 @@
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `name` | string | Process 唯一名称，也作为 ProcessHost ID |
+| `logging` | object? | 日志级别、格式和输出目标；默认 INFO 文本控制台 |
 | `network` | object? | 操作系统 I/O Backend；默认 `epoll`，Linux 可实验性选择 `io-uring` |
 | `game` | object? | 固定 Game.Update 与掉帧补偿策略，默认 20Hz |
 | `nativeData` | object? | Demo 应用扩展：Rust 权威实体数据的诊断配置 |
@@ -21,6 +22,30 @@
 | `debug` | object? | 该 V8 的 Inspector 配置 |
 
 `debug` 支持 `inspectorIp`、`inspectorPort`、`breakOnStart`、`allowRemote`。
+
+`logging` 支持：
+
+```json
+{
+  "level": "info",
+  "format": "json",
+  "console": true,
+  "filter": "TiangZ=info,tokio=warn",
+  "file": {
+    "enabled": true,
+    "directory": "logs",
+    "rotation": "daily"
+  }
+}
+```
+
+- `level`：`trace/debug/info/warn/error`，默认 `info`。
+- `format`：开发使用 `pretty`，生产建议使用一行一个事件的 `json`。
+- `console`：是否输出到 stdout，默认开启。
+- `filter`：可选的 `tracing-subscriber` 过滤表达式；环境变量 `RUST_LOG` 的优先级更高。若配置为 `debug` 却看不到 INFO/DEBUG，请先检查操作系统是否预设了 `RUST_LOG=warn` 等覆盖值。
+- `file`：可选的非阻塞滚动文件输出；相对目录以工程根目录为基准，轮转支持 `hourly/daily/never`。
+
+控制台和文件都使用有界非阻塞队列。队列耗尽时普通日志允许丢弃，保护网络和游戏线程；因此普通 Logger 不能用于充值、货币、道具发放等可靠审计记录。
 
 `network` 支持 `ioBackend`、`uringEntries` 和 `uringReadBufferBytes`。`ioBackend` 只决定 epoll/io_uring，不决定 TCP/WebSocket。io_uring 的约束、构建方法和性能验收见 [传输与 I/O 分层](transport-backend.md)。
 

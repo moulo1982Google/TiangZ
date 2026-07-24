@@ -1,6 +1,7 @@
 import type { MaybePromise } from "../async";
 import { Singleton, SingletonRegistry } from "./Singleton";
 import { TimeSystem } from "./TimeSystem";
+import { CoreLogger } from "../logging/Logger";
 
 export type TimerId = number;
 export type TimerCallback = () => MaybePromise<void>;
@@ -102,11 +103,11 @@ export class TimerSystem extends Singleton {
       const result = timer.callback();
       if (isPromiseLike(result)) {
         void Promise.resolve(result).catch((error) => {
-          console.error(`[TimerSystem] async timer ${timer.id} failed`, error);
+          CoreLogger.error("async timer failed", { timerId: timer.id, error });
         });
       }
     } catch (error) {
-      console.error(`[TimerSystem] timer ${timer.id} failed`, error);
+      CoreLogger.error("timer failed", { timerId: timer.id, error });
     }
   }
 

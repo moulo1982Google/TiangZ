@@ -38,7 +38,7 @@ impl IoBackend for EpollIoBackend {
             .with_context(|| format!("scene {} failed to bind {bind_addr}", context.scene.name))?;
         listener.set_nonblocking(true)?;
         let listener = TcpListener::from_std(listener)?;
-        println!(
+        tracing::info!(target: "tiangz::transport",
             "scene {} ({}) listening on {} protocol={:?} audience={:?} io_backend={}",
             context.scene.name,
             context.scene.scene_type,
@@ -49,7 +49,7 @@ impl IoBackend for EpollIoBackend {
         );
         tokio::spawn(async move {
             if let Err(error) = run_scene_listener(listener, context).await {
-                eprintln!("scene listener stopped: {error:?}");
+                tracing::error!(target: "tiangz::transport", error = ?error, "scene listener stopped");
             }
         });
         Ok(())
@@ -60,7 +60,7 @@ async fn run_scene_listener(listener: TcpListener, context: EndpointContext) -> 
     loop {
         let (stream, peer) = listener.accept().await?;
         let connection_id = context.next_connection_id.fetch_add(1, Ordering::Relaxed);
-        println!(
+        tracing::debug!(target: "tiangz::transport",
             "{} accepted {} as conn {} backend=epoll",
             context.scene.name, peer, connection_id
         );
@@ -82,7 +82,7 @@ async fn run_scene_listener(listener: TcpListener, context: EndpointContext) -> 
             )
             .await
             {
-                eprintln!("conn {connection_id} error: {error:?}");
+                tracing::warn!(target: "tiangz::transport", connection_id, error = ?error, "connection closed with error");
             }
         });
     }

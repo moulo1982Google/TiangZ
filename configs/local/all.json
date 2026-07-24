@@ -1,6 +1,11 @@
 {
   "process": {
     "name": "all",
+    "logging": {
+      "level": "info",
+      "format": "pretty",
+      "console": true
+    },
     "game": {
       "fixedUpdateMs": 50,
       "maxCatchUpSteps": 2

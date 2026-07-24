@@ -15,7 +15,7 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
         .with_context(|| format!("failed to parse {}", start_machine_path.display()))?;
 
     let local_ips = get_local_ips();
-    println!(
+    tracing::info!(target: "tiangz::watcher",
         "start machine from {}, local ips: {}",
         start_machine_path.display(),
         local_ips.iter().cloned().collect::<Vec<_>>().join(", ")
@@ -30,7 +30,7 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
             continue;
         }
 
-        println!(
+        tracing::info!(target: "tiangz::watcher",
             "matched machine {} ({})",
             machine.name.as_deref().unwrap_or("<unnamed>"),
             machine.inner_ip
@@ -58,7 +58,7 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
     let mut children = Vec::<Child>::new();
     for process_config in processes {
         let arg = to_process_arg(root, &process_config);
-        println!("starting process config {}", arg.display());
+        tracing::info!(target: "tiangz::watcher", config = %arg.display(), "starting process config");
         let child = Command::new(&exe)
             .arg(&arg)
             .current_dir(root)
@@ -68,7 +68,7 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
     }
 
     tokio::signal::ctrl_c().await?;
-    println!("stopping {} child process(es)", children.len());
+    tracing::info!(target: "tiangz::watcher", child_count = children.len(), "stopping child processes");
     for child in &mut children {
         let _ = child.kill();
         let _ = child.wait();

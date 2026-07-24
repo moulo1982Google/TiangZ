@@ -2,6 +2,27 @@
 
 Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这个采样点生成和 JSON 序列化，普通 Tick 不承担 metrics JSON 开销。链路耗时在 TypeScript Core 内聚合为直方图，只输出统计结果，不逐条打印消息。
 
+## 结构化日志
+
+Rust 使用 `tracing` 作为统一日志门面；TypeScript 的 `Logger` 通过 deno_core op 进入同一出口。开发环境默认输出易读文本，生产环境建议在 `process.logging` 中选择 JSON 和滚动文件，再由 Vector 或同类 Agent 采集到 Loki。
+
+业务代码优先使用 Scene/Actor 上下文中已经绑定好的 Logger：
+
+```ts
+this.ctx.logger.info("玩家进入地图", { account, unitId, mapId });
+this.ctx.logger.error("使用道具失败", { unitId, itemId, error });
+```
+
+固定字段包括 `process/scene/sceneType/actorId/connectionId/rpcId/msgcode/traceId/unitId`，其他业务字段会进入 `attributes`。`Error` 会保留名称、消息和堆栈。旧的 `console.log/error` 仍可用并会进入统一出口，但缺少 Scene/Actor 绑定字段，只用于兼容旧代码。
+
+日志分类：
+
+- `framework`：Runtime、协议、网络、mailbox、定时器和生命周期错误。
+- `business`：登录、地图、道具等普通业务诊断。
+- `application`：尚未绑定上下文的兼容输出。
+
+禁止记录密码、Token 和完整网络载荷。当前普通日志是可丢弃的诊断通道，可靠审计日志尚未实现。
+
 链路耗时默认关闭，因为它会调用时钟并维护直方图，CPU Profile 时会污染热点。需要诊断链路分段时，在进程配置中显式开启：
 
 ```json
@@ -183,3 +204,5 @@ npm run profile:ts -- --port 9231 --duration 30 --out perf/results/map_150.cpupr
 Process bridge 的累计计数包括 `inbound_frames`、`host_completions`、`disconnects`、`runtime_updates`、`runtime_events` 和 `max_runtime_batch`。当 Rust queue 有流量而 TS `processed` 不增长时，用这些值判断问题位于网络接收、completion 洪峰、V8 注入还是 TS mailbox；单向 Message 正常情况下不会增加 `host_completions`。
 
 `runtime_events / runtime_updates` 可近似观察实际批量度。该值过低且 CPU 偏高，通常表示 V8 update 调用太频繁；该值很高且 `ingress.queue`、客户端 p95/p99 上升，则说明批次或聚合窗口过大。调度模式和覆盖字段见“配置与协议参考”。
+
+`[process-metrics]` 中的 `dropped_logs` 是当前进程控制台与文件非阻塞队列累计丢弃的日志行数。正常运行应保持为 0；持续增长说明日志生产速度超过输出能力，应降低日志级别、限制重复错误或提高采集端吞吐，不能改为阻塞游戏线程来掩盖问题。

@@ -30,12 +30,7 @@ export class LoginActor extends Actor {
     }
 
     this.loginCount += 1;
-    console.log(
-      `[${this.ctx.self.processId}/${this.ctx.self.actorId}] login`,
-      account,
-      "count",
-      this.loginCount,
-    );
+    this.ctx.logger.info("account login", { account, loginCount: this.loginCount });
 
     return {
       account,

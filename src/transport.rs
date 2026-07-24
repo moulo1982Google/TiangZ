@@ -504,7 +504,12 @@ fn handle_socket_event(
                         let _ = call.response_tx.send(Ok(frame));
                     } else {
                         metrics.late_responses.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("scene {target_name} returned unknown or expired rpcId {rpc_id}");
+                        tracing::warn!(
+                            target: "tiangz::transport",
+                            scene = %target_name,
+                            rpc_id,
+                            "scene returned unknown or expired rpcId"
+                        );
                     }
                 }
                 Err(error) => {
@@ -791,7 +796,7 @@ async fn log_transport_metrics(metrics: Arc<RemoteTransportMetrics>) {
     interval.tick().await;
     loop {
         interval.tick().await;
-        println!(
+        tracing::info!(target: "tiangz::metrics",
             "[metrics:inner_transport] active={} opened={} pending={} max_pending={} overloads={} timeouts={} disconnected_calls={} late_responses={} idle_closes={}",
             metrics.active_connections.load(Ordering::Relaxed),
             metrics.opened_connections.load(Ordering::Relaxed),

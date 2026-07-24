@@ -48,6 +48,8 @@ import {
   getActorMessageHandlerBindings,
   getActorRpcHandlerBindings,
 } from "./actorHandlers";
+import type { ProcessLoggingConfig } from "../logging/types";
+import type { Logger } from "../logging/Logger";
 
 export interface SceneConfig {
   name: string;
@@ -60,6 +62,7 @@ export interface SceneConfig {
 
 export interface ProcessConfig {
   name: string;
+  logging?: ProcessLoggingConfig;
   network?: ProcessNetworkConfig;
   game?: GameUpdateConfig;
   scheduling?: ProcessSchedulingConfig;
@@ -204,11 +207,11 @@ export abstract class EntryScene extends Entity {
     this.scenes = new SceneMessageHelper(this.ctx);
     this.processHost = config.processHost;
     this.registry = new ProtocolRegistry(
-      (message) => console.error(`[${config.self.name}] ${message}`),
+      (message) => this.ctx.logger.error("protocol error", { detail: message }),
       latencyMetrics,
     );
     this.actorRegistry = new ProtocolRegistry(
-      (message) => console.error(`[${config.self.name}/actor] ${message}`),
+      (message) => this.ctx.logger.error("actor protocol error", { detail: message }),
       latencyMetrics,
     );
     for (const descriptor of knownRpcs) {
@@ -232,6 +235,10 @@ export abstract class EntryScene extends Entity {
 
   get self(): SceneConfig {
     return this.config.self;
+  }
+
+  get logger(): Logger {
+    return this.ctx.logger;
   }
 
   start(): string {
@@ -422,7 +429,7 @@ export abstract class EntryScene extends Entity {
         let task: Promise<void>;
         task = Promise.resolve(result)
           .catch((error) => {
-            console.error(`[${this.self.name}] ordered handler failed`, error);
+            this.ctx.logger.error("ordered handler failed", { error });
           })
           .finally(() => {
             if (this.orderedTask === task) this.orderedTask = undefined;
@@ -447,7 +454,7 @@ export abstract class EntryScene extends Entity {
           let task: Promise<void>;
           task = Promise.resolve(result)
             .catch((error) => {
-              console.error(`[${this.self.name}] unordered handler failed`, error);
+              this.ctx.logger.error("unordered handler failed", { error });
             })
             .finally(() => {
               this.unorderedTasks.delete(task);
@@ -459,7 +466,7 @@ export abstract class EntryScene extends Entity {
           );
         }
       } catch (error) {
-        console.error(`[${this.self.name}] unordered handler failed`, error);
+        this.ctx.logger.error("unordered handler failed", { error });
       }
       processed += 1;
     }
@@ -528,17 +535,17 @@ export abstract class EntryScene extends Entity {
         const result = this.onDisconnect(item.connectionId);
         if (isPromiseLike(result)) {
           return Promise.resolve(result).catch((error) => {
-            console.error(
-              `[${this.self.name}] disconnect handler failed for connection ${item.connectionId}`,
+            this.ctx.logger.error("disconnect handler failed", {
+              connectionId: item.connectionId,
               error,
-            );
+            });
           });
         }
       } catch (error) {
-        console.error(
-          `[${this.self.name}] disconnect handler failed for connection ${item.connectionId}`,
+        this.ctx.logger.error("disconnect handler failed", {
+          connectionId: item.connectionId,
           error,
-        );
+        });
       }
       return;
     }

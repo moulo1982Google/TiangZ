@@ -1,5 +1,6 @@
 import type { BroadcastHub } from "../broadcast/BroadcastHub";
 import type { BroadcastAudience } from "../broadcast/types";
+import { CoreLogger } from "../logging/Logger";
 
 export interface EncodedStateDelta {
   readonly itemCount: number;
@@ -22,7 +23,7 @@ export class StateReplicationSystem {
     private readonly onError: (sourceName: string, error: unknown) => void = (
       sourceName,
       error,
-    ) => console.error(`[StateReplication] ${sourceName} failed`, error),
+    ) => CoreLogger.error("state replication failed", { sourceName, error }),
   ) {}
 
   Add(source: StateReplicationSource): void {

@@ -12,12 +12,21 @@ import type {
 import type { Actor } from "./entities";
 import type { MaybePromise } from "../async";
 import type { TimerId } from "./TimerSystem";
+import { Logger } from "../logging/Logger";
 
 export class SceneContext {
+  readonly logger: Logger;
+
   constructor(
     private readonly host: ProcessHost,
     public readonly self: SceneRef,
-  ) {}
+  ) {
+    this.logger = new Logger("scene", {
+      category: "business",
+      scene: self.sceneId,
+      sceneType: self.sceneType,
+    });
+  }
 
   call<TResponse = unknown>(
     to: MessageTarget,
@@ -60,15 +69,24 @@ export class SceneContext {
   }
 
   log(...args: unknown[]): void {
-    console.log(`[${this.self.sceneType}:${this.self.sceneId}]`, ...args);
+    this.logger.info(args.map(String).join(" "));
   }
 }
 
 export class ActorContext {
+  readonly logger: Logger;
+
   constructor(
     private readonly host: ProcessHost,
     public readonly self: ActorRef,
-  ) {}
+  ) {
+    this.logger = new Logger("actor", {
+      category: "business",
+      scene: self.sceneId,
+      sceneType: self.sceneType,
+      actorId: self.actorId,
+    });
+  }
 
   call<TResponse = unknown>(
     to: MessageTarget,
@@ -117,10 +135,7 @@ export class ActorContext {
   }
 
   log(...args: unknown[]): void {
-    console.log(
-      `[${this.self.sceneType}:${this.self.sceneId}/${this.self.actorId}]`,
-      ...args,
-    );
+    this.logger.info(args.map(String).join(" "));
   }
 }
 

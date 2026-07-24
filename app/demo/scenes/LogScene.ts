@@ -27,6 +27,6 @@ export class LogScene extends EntryScene {
   }
 
   private write(message: string): void {
-    console.log(`[${this.self.name}]`, message);
+    this.logger.info("demo log message", { detail: message });
   }
 }

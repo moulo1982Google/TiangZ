@@ -64,9 +64,12 @@ export class MapHostComponent extends Component {
       await map.PlayerEntered(snapshot);
     }
 
-    console.log(
-      `[${this.owner.self.name}] ${snapshot.account} enter map ${snapshot.mapId} unit ${snapshot.unitId}@${player.InstanceId}`,
-    );
+    this.owner.logger.info("player entered map", {
+      account: snapshot.account,
+      mapId: snapshot.mapId,
+      unitId: snapshot.unitId,
+      actorId: player.InstanceId,
+    });
 
     const mapReady: M2G_MapReady = {
       account: snapshot.account,

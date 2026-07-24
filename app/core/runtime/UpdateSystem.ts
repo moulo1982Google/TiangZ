@@ -1,4 +1,5 @@
 import { Singleton, SingletonRegistry } from "./Singleton";
+import { CoreLogger } from "../logging/Logger";
 
 export interface IUpdate {
   Update(): void;
@@ -88,7 +89,11 @@ export class UpdateSystem extends Singleton {
         this.updateCount += 1;
       } catch (error) {
         this.failedCount += 1;
-        console.error(`[UpdateSystem] ${target.constructor.name}.${phase} failed`, error);
+        CoreLogger.error("update callback failed", {
+          component: target.constructor.name,
+          phase,
+          error,
+        });
       }
     }
   }
