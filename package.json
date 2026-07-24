@@ -61,6 +61,7 @@
     "perf:kcp-loginmgr": "cargo run --release --features kcp --bin kcp_load --",
     "perf:full-chain": "npm run build && npm run build:perf:full-chain && cargo build --release --bin TiangZ && node perf/full_chain/run_full_chain_perf.mjs",
     "perf:map-capacity": "npm run build && npm run build:perf:full-chain && node perf/map_capacity/run_map_capacity_perf.mjs",
+    "perf:state-sync-full": "npm run build && npm run build:perf:full-chain && node perf/map_capacity/run_map_capacity_perf.mjs --client rust --move-rate 0 --probe-rate 1 --state-sync-mode mixed --state-sync-rate 5",
     "profile:ts": "node tools/capture_v8_profile.mjs",
     "perf:full-chain:legacy": "npm run build && npm run build:perf:full-chain && cargo build --release --bin TiangZ --bin runtime_load && powershell -NoProfile -ExecutionPolicy Bypass -File perf/full_chain/run_full_chain_perf.ps1",
     "test:backpressure": "npm run build && npm run build:load && cargo build --bin TiangZ && powershell -NoProfile -ExecutionPolicy Bypass -File tools/runtime_load_test.ps1 -Duration 2 -Warmup 1 -Concurrency 16384 -Connections 4 -Payload 256 -Delay 1 -RequireBackpressure",
@@ -71,11 +72,12 @@
     "smoke:client-sdk": "npm run build:client-sdk-smoke && node dist/client_sdk_smoke.cjs",
     "perf:bridge": "cargo run --release --bin bridge_perf --",
     "perf:protocol": "cargo run --release --bin protocol_perf --",
-    "perf:dirty-replication": "cargo run --release --bin dirty_replication_perf --"
+    "perf:dirty-replication": "cargo run --release --bin dirty_replication_perf --",
+    "perf:state-sync": "cargo run --release --bin dirty_replication_perf --"
   },
   "devDependencies": {
     "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.7.0",
-    "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.11.2",
+    "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.12.0",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.0",
     "pixi.js": "^8.9.2",

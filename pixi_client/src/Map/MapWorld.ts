@@ -5,8 +5,10 @@ import { MapClient } from "../Generated/SDK/Generated/Model/demo/protocol/client
 import type {
   G2C_EntityMove,
   G2C_EnterMap,
+  ItemSnapshot,
   MapEntitySnapshot,
   UnitNumericDelta,
+  UnitStateDelta,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
 
 const CELL_SIZE = 12;
@@ -23,6 +25,8 @@ export class MapWorld {
   private readonly world = new Container();
   private readonly entities = new Map<number, EntityView>();
   private readonly numerics = new Map<number, Map<number, number>>();
+  private readonly items = new Map<number, ItemSnapshot>();
+  private readonly states = new Map<number, UnitStateDelta>();
   private readonly mapClient: MapClient;
   private readonly pressed = new Set<string>();
   private sequence = 1;
@@ -38,6 +42,7 @@ export class MapWorld {
     this.drawMap();
     app.stage.addChild(this.world);
     for (const entity of enterMap.entities) this.enter(entity);
+    for (const item of enterMap.items) this.applyItem(item);
     if (!this.entities.has(localUnitId)) {
       this.enter({
         unitId: localUnitId,
@@ -49,6 +54,8 @@ export class MapWorld {
         state: new Uint8Array(),
         cellX: Math.round(enterMap.x / CELL_SIZE),
         cellY: Math.round(enterMap.y / CELL_SIZE),
+        numerics: [],
+        speedCellsPerSecond: 10,
       });
     }
     window.addEventListener("keydown", this.onKeyDown);
@@ -59,6 +66,7 @@ export class MapWorld {
     const existing = this.entities.get(snapshot.unitId);
     if (existing) {
       this.setTarget(existing, snapshot.cellX, snapshot.cellY, true);
+      this.applyNumerics(snapshot.numerics);
       return;
     }
     const root = new Container();
@@ -75,6 +83,7 @@ export class MapWorld {
     const view = { root, label, targetX: 0, targetY: 0 };
     this.entities.set(snapshot.unitId, view);
     this.setTarget(view, snapshot.cellX, snapshot.cellY, true);
+    this.applyNumerics(snapshot.numerics);
   }
 
   leave(unitId: number): void {
@@ -99,6 +108,24 @@ export class MapWorld {
       const entity = this.entities.get(numeric.unitId);
       if (entity) entity.label.text = `${entity.label.text.split("  HP")[0]}  HP ${values.get(1) ?? "--"}/${values.get(2) ?? "--"}`;
     }
+  }
+
+  applyStates(states: readonly UnitStateDelta[]): void {
+    for (const state of states) {
+      this.states.set(state.unitId, state);
+      const entity = this.entities.get(state.unitId);
+      if (!entity) continue;
+      if (hasMember(state, 1)) entity.root.x = entity.targetX = state.x;
+      if (hasMember(state, 2)) entity.root.y = entity.targetY = state.y;
+      entity.root.visible = !hasMember(state, 4) || state.alive;
+    }
+  }
+
+  applyItem(item: ItemSnapshot): void {
+    const current = this.items.get(item.itemId);
+    if (current && current.version >= item.version) return;
+    this.items.set(item.itemId, item);
+    console.log(`道具 ${item.itemId} 数量更新为 ${item.count}，版本 ${item.version}`);
   }
 
   update(deltaSeconds: number): void {
@@ -126,6 +153,8 @@ export class MapWorld {
     this.world.destroy({ children: true });
     this.entities.clear();
     this.numerics.clear();
+    this.items.clear();
+    this.states.clear();
   }
 
   private drawMap(): void {
@@ -151,9 +180,20 @@ export class MapWorld {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     this.pressed.add(event.code);
+    if (event.code === "KeyU" && !event.repeat) {
+      void this.mapClient.useItem({ itemId: 1 }).then(
+        (response) => this.applyItem(response.item),
+        (error) => console.error("使用道具失败", error),
+      );
+    }
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     this.pressed.delete(event.code);
   };
+}
+
+function hasMember(delta: UnitStateDelta, memberId: number): boolean {
+  if (memberId < 32) return (delta.dirtyMaskLow & 2 ** memberId) !== 0;
+  return (delta.dirtyMaskHigh & 2 ** (memberId - 32)) !== 0;
 }

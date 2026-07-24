@@ -9,16 +9,19 @@ pub struct EntityData {
 
 #[derive(Debug, Clone)]
 pub struct ItemData {
-    pub(crate) __dirty_mask: u64,
     pub entity: EntityData,
     pub config_id: u32,
     pub count: u32,
     pub quality: u32,
     pub level: u32,
+    pub version: u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct UnitData {
+    pub(crate) __dirty_mask: u64,
+    pub(crate) __revision: u64,
+    pub(crate) __member_revisions: [u64; 64],
     pub entity: EntityData,
     pub map_id: u32,
     pub x: f32,
@@ -31,6 +34,7 @@ pub struct UnitData {
     pub move_end_tick: u32,
     pub moving: u32,
     pub speed_cells_per_second: f32,
+    pub alive: u32,
     pub input_x: i8,
     pub input_y: i8,
     pub input_changed: u32,
@@ -53,10 +57,15 @@ pub const UNIT_FIELD_MOVE_START_TICK: u32 = 10;
 pub const UNIT_FIELD_MOVE_END_TICK: u32 = 11;
 pub const UNIT_FIELD_MOVING: u32 = 12;
 pub const UNIT_FIELD_SPEED_CELLS_PER_SECOND: u32 = 13;
-pub const UNIT_FIELD_INPUT_X: u32 = 14;
-pub const UNIT_FIELD_INPUT_Y: u32 = 15;
-pub const UNIT_FIELD_INPUT_CHANGED: u32 = 16;
-pub const UNIT_FIELD_SEQUENCE: u32 = 17;
+pub const UNIT_FIELD_ALIVE: u32 = 14;
+pub const UNIT_FIELD_INPUT_X: u32 = 15;
+pub const UNIT_FIELD_INPUT_Y: u32 = 16;
+pub const UNIT_FIELD_INPUT_CHANGED: u32 = 17;
+pub const UNIT_FIELD_SEQUENCE: u32 = 18;
+pub const UNIT_MEMBER_X: u32 = 1;
+pub const UNIT_MEMBER_Y: u32 = 2;
+pub const UNIT_MEMBER_SPEED_CELLS_PER_SECOND: u32 = 3;
+pub const UNIT_MEMBER_ALIVE: u32 = 4;
 
 pub fn get_unit_number(value: &UnitData, field: u32) -> Option<f64> {
     match field {
@@ -73,10 +82,11 @@ pub fn get_unit_number(value: &UnitData, field: u32) -> Option<f64> {
         11 => Some(value.move_end_tick as f64),
         12 => Some(value.moving as f64),
         13 => Some(value.speed_cells_per_second as f64),
-        14 => Some(value.input_x as f64),
-        15 => Some(value.input_y as f64),
-        16 => Some(value.input_changed as f64),
-        17 => Some(value.sequence as f64),
+        14 => Some(value.alive as f64),
+        15 => Some(value.input_x as f64),
+        16 => Some(value.input_y as f64),
+        17 => Some(value.input_changed as f64),
+        18 => Some(value.sequence as f64),
         _ => None,
     }
 }
@@ -91,7 +101,12 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
                 return Err("native Unit field x must be a finite f32");
             }
             let converted = number as f32;
-            value.x = converted;
+            if value.x != converted {
+                value.x = converted;
+                value.__revision = value.__revision.wrapping_add(1).max(1);
+                value.__member_revisions[1] = value.__revision;
+                value.__dirty_mask |= 1u64 << 1;
+            }
             Ok(())
         }
         5 => {
@@ -99,7 +114,12 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
                 return Err("native Unit field y must be a finite f32");
             }
             let converted = number as f32;
-            value.y = converted;
+            if value.y != converted {
+                value.y = converted;
+                value.__revision = value.__revision.wrapping_add(1).max(1);
+                value.__member_revisions[2] = value.__revision;
+                value.__dirty_mask |= 1u64 << 2;
+            }
             Ok(())
         }
         6 => {
@@ -191,10 +211,32 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
                 return Err("native Unit field speedCellsPerSecond must be a finite f32");
             }
             let converted = number as f32;
-            value.speed_cells_per_second = converted;
+            if value.speed_cells_per_second != converted {
+                value.speed_cells_per_second = converted;
+                value.__revision = value.__revision.wrapping_add(1).max(1);
+                value.__member_revisions[3] = value.__revision;
+                value.__dirty_mask |= 1u64 << 3;
+            }
             Ok(())
         }
         14 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field alive must be u32");
+            }
+            let converted = number as u32;
+            if value.alive != converted {
+                value.alive = converted;
+                value.__revision = value.__revision.wrapping_add(1).max(1);
+                value.__member_revisions[4] = value.__revision;
+                value.__dirty_mask |= 1u64 << 4;
+            }
+            Ok(())
+        }
+        15 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i8::MIN as f64
@@ -206,7 +248,7 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.input_x = converted;
             Ok(())
         }
-        15 => {
+        16 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i8::MIN as f64
@@ -218,7 +260,7 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.input_y = converted;
             Ok(())
         }
-        16 => {
+        17 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -230,7 +272,7 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.input_changed = converted;
             Ok(())
         }
-        17 => {
+        18 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -246,15 +288,58 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnitDelta {
+    pub revision: u64,
+    pub dirty_mask: u64,
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+    pub speed_cells_per_second: Option<f32>,
+    pub alive: Option<u32>,
+}
+
+pub fn unit_dirty_mask(value: &UnitData) -> u64 {
+    value.__dirty_mask
+}
+
+pub fn peek_unit_delta(value: &UnitData) -> Option<UnitDelta> {
+    let dirty_mask = value.__dirty_mask;
+    if dirty_mask == 0 {
+        return None;
+    }
+    Some(UnitDelta {
+        revision: value.__revision,
+        dirty_mask,
+        x: (dirty_mask & (1u64 << 1) != 0).then_some(value.x),
+        y: (dirty_mask & (1u64 << 2) != 0).then_some(value.y),
+        speed_cells_per_second: (dirty_mask & (1u64 << 3) != 0)
+            .then_some(value.speed_cells_per_second),
+        alive: (dirty_mask & (1u64 << 4) != 0).then_some(value.alive),
+    })
+}
+
+pub fn ack_unit_delta(value: &mut UnitData, revision: u64) {
+    if value.__member_revisions[1] <= revision {
+        value.__dirty_mask &= !(1u64 << 1);
+    }
+    if value.__member_revisions[2] <= revision {
+        value.__dirty_mask &= !(1u64 << 2);
+    }
+    if value.__member_revisions[3] <= revision {
+        value.__dirty_mask &= !(1u64 << 3);
+    }
+    if value.__member_revisions[4] <= revision {
+        value.__dirty_mask &= !(1u64 << 4);
+    }
+}
+
 pub const ITEM_FIELD_ID: u32 = 1;
 pub const ITEM_FIELD_INSTANCE_ID: u32 = 2;
 pub const ITEM_FIELD_CONFIG_ID: u32 = 3;
 pub const ITEM_FIELD_COUNT: u32 = 4;
 pub const ITEM_FIELD_QUALITY: u32 = 5;
 pub const ITEM_FIELD_LEVEL: u32 = 6;
-pub const ITEM_MEMBER_COUNT: u32 = 1;
-pub const ITEM_MEMBER_QUALITY: u32 = 2;
-pub const ITEM_MEMBER_LEVEL: u32 = 3;
+pub const ITEM_FIELD_VERSION: u32 = 7;
 
 pub fn get_item_number(value: &ItemData, field: u32) -> Option<f64> {
     match field {
@@ -264,6 +349,7 @@ pub fn get_item_number(value: &ItemData, field: u32) -> Option<f64> {
         4 => Some(value.count as f64),
         5 => Some(value.quality as f64),
         6 => Some(value.level as f64),
+        7 => Some(value.version as f64),
         _ => None,
     }
 }
@@ -282,10 +368,7 @@ pub fn set_item_number(value: &mut ItemData, field: u32, number: f64) -> Result<
                 return Err("native Item field count must be u32");
             }
             let converted = number as u32;
-            if value.count != converted {
-                value.count = converted;
-                value.__dirty_mask |= 1u64 << 1;
-            }
+            value.count = converted;
             Ok(())
         }
         5 => {
@@ -297,10 +380,7 @@ pub fn set_item_number(value: &mut ItemData, field: u32, number: f64) -> Result<
                 return Err("native Item field quality must be u32");
             }
             let converted = number as u32;
-            if value.quality != converted {
-                value.quality = converted;
-                value.__dirty_mask |= 1u64 << 2;
-            }
+            value.quality = converted;
             Ok(())
         }
         6 => {
@@ -312,43 +392,23 @@ pub fn set_item_number(value: &mut ItemData, field: u32, number: f64) -> Result<
                 return Err("native Item field level must be u32");
             }
             let converted = number as u32;
-            if value.level != converted {
-                value.level = converted;
-                value.__dirty_mask |= 1u64 << 3;
+            value.level = converted;
+            Ok(())
+        }
+        7 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Item field version must be u32");
             }
+            let converted = number as u32;
+            value.version = converted;
             Ok(())
         }
         _ => Err("unknown native Item field"),
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ItemDelta {
-    pub dirty_mask: u64,
-    pub count: Option<u32>,
-    pub quality: Option<u32>,
-    pub level: Option<u32>,
-}
-
-pub fn item_dirty_mask(value: &ItemData) -> u64 {
-    value.__dirty_mask
-}
-
-pub fn take_item_dirty_mask(value: &mut ItemData) -> u64 {
-    std::mem::take(&mut value.__dirty_mask)
-}
-
-pub fn take_item_delta(value: &mut ItemData) -> Option<ItemDelta> {
-    let dirty_mask = take_item_dirty_mask(value);
-    if dirty_mask == 0 {
-        return None;
-    }
-    Some(ItemDelta {
-        dirty_mask,
-        count: (dirty_mask & (1u64 << 1) != 0).then_some(value.count),
-        quality: (dirty_mask & (1u64 << 2) != 0).then_some(value.quality),
-        level: (dirty_mask & (1u64 << 3) != 0).then_some(value.level),
-    })
 }
 
 #[derive(Debug, Clone)]
@@ -397,13 +457,16 @@ impl NativeEntityData {
 pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &'static str> {
     match type_id {
         ENTITY_TYPE_UNIT => {
-            if values.len() != 17 {
+            if values.len() != 18 {
                 return Err("native Unit create value count mismatch");
             }
             if read_u32(values, 0)? == 0 || read_u32(values, 1)? == 0 {
                 return Err("native Entity id and instanceId must be greater than zero");
             }
             Ok(NativeEntityData::Unit(UnitData {
+                __dirty_mask: 0u64,
+                __revision: 0u64,
+                __member_revisions: [0u64; 64],
                 entity: EntityData {
                     id: read_u32(values, 0)?,
                     instance_id: read_u32(values, 1)?,
@@ -419,21 +482,21 @@ pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &
                 move_end_tick: read_u32(values, 10)?,
                 moving: read_u32(values, 11)?,
                 speed_cells_per_second: read_f32(values, 12)?,
-                input_x: read_i8(values, 13)?,
-                input_y: read_i8(values, 14)?,
-                input_changed: read_u32(values, 15)?,
-                sequence: read_u32(values, 16)?,
+                alive: read_u32(values, 13)?,
+                input_x: read_i8(values, 14)?,
+                input_y: read_i8(values, 15)?,
+                input_changed: read_u32(values, 16)?,
+                sequence: read_u32(values, 17)?,
             }))
         }
         ENTITY_TYPE_ITEM => {
-            if values.len() != 6 {
+            if values.len() != 7 {
                 return Err("native Item create value count mismatch");
             }
             if read_u32(values, 0)? == 0 || read_u32(values, 1)? == 0 {
                 return Err("native Entity id and instanceId must be greater than zero");
             }
             Ok(NativeEntityData::Item(ItemData {
-                __dirty_mask: 14u64,
                 entity: EntityData {
                     id: read_u32(values, 0)?,
                     instance_id: read_u32(values, 1)?,
@@ -442,6 +505,7 @@ pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &
                 count: read_u32(values, 3)?,
                 quality: read_u32(values, 4)?,
                 level: read_u32(values, 5)?,
+                version: read_u32(values, 6)?,
             }))
         }
         _ => Err("unknown native entity type"),

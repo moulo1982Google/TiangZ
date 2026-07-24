@@ -30,6 +30,7 @@ message M2G_EnterMap // IResponse
   repeated MapEntitySnapshot entities = 6;
   uint32 actor_instance_id = 7;
   uint32 fixed_update_ms = 8;
+  repeated ItemSnapshot items = 9;
 }
 
 //ResponseType L2L_LogWriteResponse

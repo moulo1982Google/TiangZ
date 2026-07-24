@@ -163,8 +163,11 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Numeric 改为 Rust Unit 上的动态 `NumericType -> i32` 值表和 dirty 表；TS 仅持有 Unit handle，保留 `numeric[type]` 业务写法。
 - Rust 在帧尾直接生成 Numeric protobuf Delta，通过 revision 执行 `Peek -> Send -> Ack`，失败不清脏。
 - latest 广播支持复合键，Numeric 使用 `(unitId,numericType)` 合并。
-- `.native v0.11.2` 支持 `@replicated`、`@memberId(1..63)`、`u64` dirty mask、强类型 `XxxDelta` 生成及中文编辑器提示。
+- `.native v0.12.0` 支持 `@replicated`、`@memberId(1..63)`、`u64` dirty mask、字段 revision、强类型 `XxxDelta` 以及可靠的 `Peek/Ack` 生成。
 - Cocos 与 Pixi 客户端按 NumericType 应用增量；动态 dirty map 与固定 mask 有独立微基准。
+- Snapshot 已与 Dirty 分离，玩家进入通过 `G2C_EnterMap` 定向取得实体 Numeric 和 Item 全量数据，不再调用 `MarkAllDirty`。
+- Core `StateReplicationSystem` 统一调度 Numeric 与 Player 固定字段来源；发送成功才 Ack，发送期间的新修改不会被旧 Ack 清除。
+- ItemComponent 演示不可覆盖的即时事件：`UseItem` 修改 Rust 数据后立即推送 `G2C_ItemChanged`；速度效果则作为 Player 固定字段在帧尾合并。
 - 本阶段不实现接收者空间筛选；状态提取、编码和广播对象选择保持彼此独立。
 
 ## Phase 4：MMORPG 业务扩展

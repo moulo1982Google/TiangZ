@@ -7,17 +7,10 @@ export const NativeItemField = {
   Count: 4,
   Quality: 5,
   Level: 6,
+  Version: 7,
 } as const;
 
 export type NativeItemField = typeof NativeItemField[keyof typeof NativeItemField];
-
-export const NativeItemMember = {
-  Count: 1,
-  Quality: 2,
-  Level: 3,
-} as const;
-
-export type NativeItemMember = typeof NativeItemMember[keyof typeof NativeItemMember];
 
 export class NativeItemRef {
   private nativeHandle: number;
@@ -34,6 +27,7 @@ export class NativeItemRef {
       args.count ?? 1,
       args.quality ?? 0,
       args.level ?? 1,
+      args.version ?? 1,
     ])));
   }
 
@@ -78,6 +72,14 @@ export class NativeItemRef {
     NativeOps.EntitySetNumber(this.Handle, 6, value);
   }
 
+  get version(): number {
+    return NativeOps.EntityGetNumber(this.Handle, 7);
+  }
+
+  set version(value: number) {
+    NativeOps.EntitySetNumber(this.Handle, 7, value);
+  }
+
   Dispose(): void {
     if (this.nativeHandle === 0) return;
     NativeOps.EntityDestroy(this.nativeHandle);
@@ -92,4 +94,5 @@ export interface NativeItemCreateArgs {
   count?: number;
   quality?: number;
   level?: number;
+  version?: number;
 }

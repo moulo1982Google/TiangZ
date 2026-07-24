@@ -11,6 +11,8 @@ import {
   C2M_MoveCodec,
   C2M_MapProbe,
   C2M_MapProbeCodec,
+  C2M_UseItem,
+  C2M_UseItemCodec,
   C2S_Login,
   C2S_LoginCodec,
   G2C_EnterMap,
@@ -29,6 +31,12 @@ import {
   G2C_EntityLeaveCodec,
   G2C_EntityNumeric,
   G2C_EntityNumericCodec,
+  G2C_EntityState,
+  G2C_EntityStateCodec,
+  G2C_ItemChanged,
+  G2C_ItemChangedCodec,
+  M2C_UseItem,
+  M2C_UseItemCodec,
   S2C_GetLoginServiceAddr,
   S2C_GetLoginServiceAddrCodec,
   S2C_Login,
@@ -179,6 +187,53 @@ export function decodeMapProbeFrame(
     msgcode,
     rpcId: body.rpcId,
     body,
+  };
+}
+
+export function buildUseItemPacket(
+  rpcId: number,
+  request: C2M_UseItem,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_UseItem,
+    C2M_UseItemCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeUseItemFrame(frame: Uint8Array): DecodedFrame<M2C_UseItem> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_UseItem) {
+    throw new Error(`expected M2C_UseItem, got ${msgcode}`);
+  }
+  const body = M2C_UseItemCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+export function decodeItemChangedFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_ItemChanged> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_ItemChanged) {
+    throw new Error(`expected G2C_ItemChanged, got ${msgcode}`);
+  }
+  return {
+    msgcode,
+    rpcId: undefined,
+    body: G2C_ItemChangedCodec.decode(frame.subarray(2)),
+  };
+}
+
+export function decodeEntityStateFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_EntityState> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_EntityState) {
+    throw new Error(`expected G2C_EntityState, got ${msgcode}`);
+  }
+  return {
+    msgcode,
+    rpcId: undefined,
+    body: G2C_EntityStateCodec.decode(frame.subarray(2)),
   };
 }
 

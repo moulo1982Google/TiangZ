@@ -65,7 +65,7 @@ export class MapView {
       new Color(236, 245, 238, 255),
     );
     this.ui.createLabel(
-      `WASD / 方向键移动（${CELL_SIZE}px Cell，角色 ${UNIT_FOOTPRINT_CELLS}x${UNIT_FOOTPRINT_CELLS} Cell）`,
+      `WASD / 方向键移动，U 使用道具（${CELL_SIZE}px Cell，角色 ${UNIT_FOOTPRINT_CELLS}x${UNIT_FOOTPRINT_CELLS} Cell）`,
       0,
       -318,
       16,
@@ -95,6 +95,8 @@ export class MapView {
             state: new Uint8Array(0),
             cellX: worldToCell(enterMap.x),
             cellY: worldToCell(enterMap.y),
+            numerics: [],
+            speedCellsPerSecond: 10,
           },
         ];
     const entities = new MapEntityManager(
@@ -104,6 +106,7 @@ export class MapView {
       enterMap.unitId,
       enterMap.fixedUpdateMs,
       snapshots,
+      enterMap.items,
     );
     const messages = new ClientMessageDispatcher(
       gateSocket,

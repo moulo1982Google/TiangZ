@@ -68,6 +68,10 @@ function testGeneratedScalarCodec(): void {
     alive: true,
     state: new Uint8Array([0, 1, 127, 128, 255]),
     account: "tester",
+    cellX: -1,
+    cellY: 2,
+    numerics: [{ unitId: 42, numericType: 1, value: 100 }],
+    speedCellsPerSecond: 10,
   });
   const decoded = MapEntitySnapshotCodec.decode(encoded);
 
@@ -87,6 +91,9 @@ function testGeneratedScalarCodec(): void {
       x: -12345,
       y: 67890,
       entities: [decoded, { ...decoded, unitId: 43, account: "peer" }],
+      actorInstanceId: 99,
+      fixedUpdateMs: 50,
+      items: [],
     }),
   );
   assert.deepEqual(

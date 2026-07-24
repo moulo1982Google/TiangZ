@@ -16,6 +16,9 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --move-rate 5               每玩家每秒 Move 次数
   --movement-hold-messages 1  连续多少次 Move 保持同一方向
   --probe-rate 1              每玩家每秒 Probe RPC 次数
+  --state-sync-mode off       off|numeric|player|item|mixed
+  --state-sync-rate 0         每玩家每秒状态同步触发 RPC 次数
+  --state-sync-concurrency 4  每玩家状态同步最大 in-flight
   --client-shards 1           Node 压测客户端进程数
   --client node|rust          压测客户端实现，默认 node
   --latency-sample-rate 0     链路分段采样；0 表示关闭
@@ -32,6 +35,9 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   process.exit(0);
 }
 const options = parseOptions(cliArgs);
+if (options.stateSyncMode !== "off" && options.client !== "rust") {
+  throw new Error("--state-sync-mode currently requires --client rust");
+}
 if (options.client === "rust" && options.clientShards !== 1) {
   throw new Error("--client-shards currently supports the Node client only");
 }
@@ -89,8 +95,10 @@ async function main() {
     .filter((item) =>
       item.median.mapCpuAverage <= options.targetMapCpu &&
       item.median.moveTargetPercent >= 95 &&
+      item.median.stateSyncTargetPercent >= 95 &&
       item.median.moveErrors === 0 &&
       item.median.probeErrors === 0 &&
+      item.median.stateSyncErrors === 0 &&
       item.median.innerOverloads === 0 &&
       item.median.innerTimeouts === 0 &&
       item.median.slowDisconnects === 0 &&
@@ -181,6 +189,9 @@ async function runLoadClients(players) {
         "--movement-hold-messages", String(options.movementHoldMessages),
         "--probe-rate", String(options.probeRate),
         "--probe-concurrency", String(options.probeConcurrency),
+        "--state-sync-mode", options.stateSyncMode,
+        "--state-sync-rate", String(options.stateSyncRate),
+        "--state-sync-concurrency", String(options.stateSyncConcurrency),
         "--timeout", String(options.timeoutMs),
         "--movement-timeout", String(options.movementTimeoutMs),
         "--label", shardCount === 1 ? `${options.gates}g` : `${options.gates}g-s${index + 1}`,
@@ -252,7 +263,36 @@ function combineClientResults(results, players) {
     },
     movement: combineWorkload(results, "movement"),
     probe: combineWorkload(results, "probe"),
+    stateSync: combineStateSync(results),
     loadGenerator: combineLoadGenerators(results),
+  };
+}
+
+function combineStateSync(results) {
+  const values = results.map((item) => item.stateSync ?? {});
+  return {
+    mode: options.stateSyncMode,
+    targetRatePerPlayer: options.stateSyncRate,
+    count: sum(values.map((item) => item.count ?? 0)),
+    perSecond: sum(values.map((item) => item.perSecond ?? 0)),
+    p50Ms: max(values.map((item) => item.p50Ms ?? 0)),
+    p90Ms: max(values.map((item) => item.p90Ms ?? 0)),
+    p95Ms: max(values.map((item) => item.p95Ms ?? 0)),
+    p99Ms: max(values.map((item) => item.p99Ms ?? 0)),
+    maxMs: max(values.map((item) => item.maxMs ?? 0)),
+    errors: sum(values.map((item) => item.errors ?? 0)),
+    numericPushes: sum(values.map((item) => item.numericPushes ?? 0)),
+    playerInfoPushes: sum(values.map((item) => item.playerInfoPushes ?? 0)),
+    itemPushes: sum(values.map((item) => item.itemPushes ?? 0)),
+    numericPushesPerSecond: sum(values.map((item) => item.numericPushesPerSecond ?? 0)),
+    numericItemsPerSecond: sum(values.map((item) => item.numericItemsPerSecond ?? 0)),
+    numericBytesPerSecond: sum(values.map((item) => item.numericBytesPerSecond ?? 0)),
+    playerInfoPushesPerSecond: sum(values.map((item) => item.playerInfoPushesPerSecond ?? 0)),
+    playerInfoItemsPerSecond: sum(values.map((item) => item.playerInfoItemsPerSecond ?? 0)),
+    playerInfoBytesPerSecond: sum(values.map((item) => item.playerInfoBytesPerSecond ?? 0)),
+    itemPushesPerSecond: sum(values.map((item) => item.itemPushesPerSecond ?? 0)),
+    itemItemsPerSecond: sum(values.map((item) => item.itemItemsPerSecond ?? 0)),
+    itemBytesPerSecond: sum(values.map((item) => item.itemBytesPerSecond ?? 0)),
   };
 }
 
@@ -754,6 +794,46 @@ function aggregateCases(rounds) {
       probeP99Ms: median(group.map((item) => item.probe.p99Ms)),
       probeMaxMs: median(group.map((item) => item.probe.maxMs)),
       probeErrors: median(group.map((item) => item.probe.errors)),
+      stateSyncPerSecond: median(group.map((item) => item.stateSync?.perSecond ?? 0)),
+      stateSyncTargetPercent: options.stateSyncMode === "off" || options.stateSyncRate === 0
+        ? 100
+        : median(group.map(
+          (item) => (item.stateSync?.perSecond ?? 0) /
+            (item.players * options.stateSyncRate) * 100,
+        )),
+      stateSyncP50Ms: median(group.map((item) => item.stateSync?.p50Ms ?? 0)),
+      stateSyncP90Ms: median(group.map((item) => item.stateSync?.p90Ms ?? 0)),
+      stateSyncP95Ms: median(group.map((item) => item.stateSync?.p95Ms ?? 0)),
+      stateSyncP99Ms: median(group.map((item) => item.stateSync?.p99Ms ?? 0)),
+      stateSyncMaxMs: median(group.map((item) => item.stateSync?.maxMs ?? 0)),
+      stateSyncErrors: median(group.map((item) => item.stateSync?.errors ?? 0)),
+      numericPushesPerSecond: median(group.map(
+        (item) => item.stateSync?.numericPushesPerSecond ?? 0,
+      )),
+      numericItemsPerSecond: median(group.map(
+        (item) => item.stateSync?.numericItemsPerSecond ?? 0,
+      )),
+      numericBytesPerSecond: median(group.map(
+        (item) => item.stateSync?.numericBytesPerSecond ?? 0,
+      )),
+      playerInfoPushesPerSecond: median(group.map(
+        (item) => item.stateSync?.playerInfoPushesPerSecond ?? 0,
+      )),
+      playerInfoItemsPerSecond: median(group.map(
+        (item) => item.stateSync?.playerInfoItemsPerSecond ?? 0,
+      )),
+      playerInfoBytesPerSecond: median(group.map(
+        (item) => item.stateSync?.playerInfoBytesPerSecond ?? 0,
+      )),
+      itemPushesPerSecond: median(group.map(
+        (item) => item.stateSync?.itemPushesPerSecond ?? 0,
+      )),
+      itemItemsPerSecond: median(group.map(
+        (item) => item.stateSync?.itemItemsPerSecond ?? 0,
+      )),
+      itemBytesPerSecond: median(group.map(
+        (item) => item.stateSync?.itemBytesPerSecond ?? 0,
+      )),
       innerOverloads: median(group.map((item) => item.transport.innerOverloads)),
       innerTimeouts: median(group.map((item) => item.transport.innerTimeouts)),
       backpressure: median(group.map((item) => item.transport.backpressure)),
@@ -773,6 +853,9 @@ function renderMarkdown(report) {
     `- I/O Backend：${ioBackend}`,
     "- Unit 数据：Rust 权威存储，Rust 批处理并直接编码移动快照",
     `- 负载：${options.probeOnly ? "Probe Only，" : `每玩家 ${options.moveRate}Hz Move + `}每玩家 ${options.probeRate}Hz MapProbe`,
+    ...(options.stateSyncMode !== "off"
+      ? [`- 状态同步：${options.stateSyncMode}，每玩家 ${options.stateSyncRate}Hz，in-flight ${options.stateSyncConcurrency}`]
+      : []),
     ...(!options.probeOnly && options.movementHoldMessages > 1
       ? [`- 移动输入：每 ${options.movementHoldMessages} 次上报保持同一方向`]
       : []),
@@ -800,6 +883,26 @@ function renderMarkdown(report) {
       `${round(value.probeMaxMs, 2)}ms | ${value.moveErrors}/${value.probeErrors} | ` +
       `${value.innerOverloads}/${value.innerTimeouts}/${value.backpressure}/${value.slowDisconnects} | ${formatBytes(value.serverRssBytes)} |`,
     );
+  }
+  if (options.stateSyncMode !== "off") {
+    lines.push(
+      "",
+      "## 状态同步全链路",
+      "",
+      "| 玩家 | 模式 | RPC/s | 达标率 | RPC p50/p90/p95/p99/max | Numeric frames/items/MiB/s | PlayerInfo frames/items/MiB/s | Item frames/items/MiB/s | errors |",
+      "|---:|---|---:|---:|---:|---:|---:|---:|---:|",
+    );
+    for (const item of report.cases) {
+      const value = item.median;
+      lines.push(
+        `| ${item.players} | ${options.stateSyncMode} | ${round(value.stateSyncPerSecond)} | ` +
+        `${round(value.stateSyncTargetPercent, 1)}% | ` +
+        `${round(value.stateSyncP50Ms, 2)}/${round(value.stateSyncP90Ms, 2)}/${round(value.stateSyncP95Ms, 2)}/${round(value.stateSyncP99Ms, 2)}/${round(value.stateSyncMaxMs, 2)}ms | ` +
+        `${round(value.numericPushesPerSecond)}/${round(value.numericItemsPerSecond)}/${round(value.numericBytesPerSecond / 1024 / 1024, 2)} | ` +
+        `${round(value.playerInfoPushesPerSecond)}/${round(value.playerInfoItemsPerSecond)}/${round(value.playerInfoBytesPerSecond / 1024 / 1024, 2)} | ` +
+        `${round(value.itemPushesPerSecond)}/${round(value.itemItemsPerSecond)}/${round(value.itemBytesPerSecond / 1024 / 1024, 2)} | ${value.stateSyncErrors} |`,
+      );
+    }
   }
   lines.push(
     "",
@@ -888,9 +991,9 @@ function renderMarkdown(report) {
     "- `backpressure` 表示入口有界队列满后等待重试，是削峰信号，不等于丢包；容量候选要求零业务错误、零 overload、零内部超时和零慢连接断开。",
     options.probeOnly
       ? "- Probe Only 模式不包含 AOI 下行。"
-      : "- 虚拟客户端只拆分并计数 AOI 帧，不逐连接反序列化全员移动快照；端到端延迟由 MapProbe 独立测量。",
+      : "- 虚拟客户端不完整构造业务对象；状态测试会扫描 protobuf 顶层 repeated 字段，分别统计协议帧、状态项和消息体字节。端到端延迟由 MapProbe 独立测量。",
     "- `push/s` 仍是全地图全量可见广播，代表最坏同屏 O(N^2) 场景。",
-    "- Map 移动广播采用 single-flight；前一批未完成时，同一 Unit 的后续帧只保留最新状态。`pending`、合并率、广播耗时和排队时间用于判断下行是否跟不上 Game.Update。",
+    "- Map 可覆盖状态广播采用 single-flight；前一批未完成时保留最新 dirty revision，发送成功后按 revision Ack。`pending`、合并率、广播耗时和排队时间用于判断下行是否跟不上 Game.Update。",
     "- Gate 数量用于分摊连接、编码和下行发送；MapHost 始终只有一个。",
     "",
   );
@@ -924,6 +1027,16 @@ function parseOptions(args) {
     ),
     probeRate: positive(values.get("--probe-rate") ?? "1", "--probe-rate"),
     probeConcurrency: positive(values.get("--probe-concurrency") ?? "1", "--probe-concurrency"),
+    stateSyncMode: enumValue(
+      values.get("--state-sync-mode") ?? "off",
+      ["off", "numeric", "player", "item", "mixed"],
+      "--state-sync-mode",
+    ),
+    stateSyncRate: nonNegative(values.get("--state-sync-rate") ?? "0", "--state-sync-rate"),
+    stateSyncConcurrency: positive(
+      values.get("--state-sync-concurrency") ?? "4",
+      "--state-sync-concurrency",
+    ),
     clientShards: positive(values.get("--client-shards") ?? "1", "--client-shards"),
     latencySampleRate: nonNegative(
       values.get("--latency-sample-rate") ?? "0",

@@ -5,11 +5,15 @@ import {
   buildLoginGatePacket,
   buildLoginPacket,
   buildMovePacket,
+  buildUseItemPacket,
   decodeEntityMoveFrame,
   decodeEntityEnterFrame,
   decodeEntityLeaveFrame,
   decodeEnterMapFrame,
   decodeEntityNumericFrame,
+  decodeEntityStateFrame,
+  decodeItemChangedFrame,
+  decodeUseItemFrame,
   decodeGetLoginServiceAddrFrame,
   decodeLoginGateFrame,
   decodeLoginFrame,
@@ -119,11 +123,40 @@ async function verifyGateSessionLifecycle(
       afterDisconnect.enterMap.unitId,
       afterDisconnect.initialNumericFrame,
     );
+    await verifyItemChange(afterDisconnect.gate, afterDisconnect.enterMap);
     await verifyAuthoritativeMovement(afterDisconnect.gate, afterDisconnect.enterMap);
     return afterDisconnect.enterMap;
   } finally {
     await afterDisconnect.gate.close();
   }
+}
+
+async function verifyItemChange(
+  gate: TcpRpcConnection,
+  enterMap: { items: readonly { itemId: number; count: number; version: number }[] },
+): Promise<void> {
+  const initial = enterMap.items.find((item) => item.itemId === 1);
+  if (!initial || initial.count !== 3) {
+    throw new Error("enter-map snapshot did not include the initial item state");
+  }
+  const pushed = gate.waitForMessage(MsgCode.G2C_ItemChanged);
+  const statePushed = gate.waitForMessage(MsgCode.G2C_EntityState);
+  const responseFrame = await gate.request(buildUseItemPacket(nextRpcId++, { itemId: 1 }));
+  const response = decodeUseItemFrame(responseFrame).body.item;
+  const event = decodeItemChangedFrame(await pushed).body.item;
+  if (response.count !== 2 || event.count !== 2 || response.version !== event.version) {
+    throw new Error("immediate item response and event are inconsistent");
+  }
+  const state = decodeEntityStateFrame(await statePushed).body.states[0];
+  if (!state || (state.dirtyMaskLow & (1 << 3)) === 0 || state.speedCellsPerSecond !== 11) {
+    throw new Error("speed potion did not produce the expected fixed-field delta");
+  }
+  console.log("Immediate item event:", {
+    itemId: event.itemId,
+    count: event.count,
+    version: event.version,
+    speedCellsPerSecond: state.speedCellsPerSecond,
+  });
 }
 
 async function verifyNumericTimer(

@@ -50,6 +50,17 @@ export class PositionComponent extends Component<[native: NativeUnitRef]> {
     return this.cellY;
   }
 
+  get SpeedCellsPerSecond(): number {
+    return this.native.speedCellsPerSecond;
+  }
+
+  set SpeedCellsPerSecond(value: number) {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`movement speed must be positive: ${value}`);
+    }
+    this.native.speedCellsPerSecond = value;
+  }
+
   protected override Awake(native: NativeUnitRef): void {
     this.native = native;
   }

@@ -11,7 +11,8 @@ export interface NativeHostOpsApi {
   numericSet(unitHandle: number, numericType: number, value: number): boolean;
   mapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapAckNumericDelta(mapId: number, revision: Uint8Array): void;
-  mapMarkAllNumericsDirty(mapId: number): void;
+  mapPeekUnitDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
+  mapAckUnitDelta(mapId: number, revision: Uint8Array): void;
   unitSetMovementInput(handle: number, inputX: number, inputY: number, sequence: number): boolean;
   unitResetMovement(handle: number): void;
   mapUpdateMovement(mapId: number, serverTick: number, fixedUpdateMs: number, messageCode: number): Uint8Array;
@@ -67,8 +68,12 @@ export class NativeOps {
     nativeHostOps().mapAckNumericDelta(mapId, revision);
   }
 
-  static MapMarkAllNumericsDirty(mapId: number): void {
-    nativeHostOps().mapMarkAllNumericsDirty(mapId);
+  static MapPeekUnitDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
+    return nativeHostOps().mapPeekUnitDelta(mapId, serverTick, messageCode);
+  }
+
+  static MapAckUnitDelta(mapId: number, revision: Uint8Array): void {
+    nativeHostOps().mapAckUnitDelta(mapId, revision);
   }
 
   static UnitSetMovementInput(handle: number, inputX: number, inputY: number, sequence: number): boolean {

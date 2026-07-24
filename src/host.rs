@@ -610,7 +610,7 @@ mod tests {
                 r#"
                 const handle = __etsNativeOps.entityCreate(
                   2,
-                  new Float64Array([100, 200, 3001, 2, 0, 1]),
+                  new Float64Array([100, 200, 3001, 2, 0, 1, 1]),
                 );
                 if (__etsNativeOps.entityGetNumber(handle, 3) !== 3001) {
                   throw new Error("Item configId did not round-trip");

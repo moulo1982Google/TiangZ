@@ -1,6 +1,6 @@
 # NumericComponent、脏数据与帧尾同步
 
-本章演示两种并列的状态同步模型：Numeric 动态字典和 `.native` 固定字段脏掩码。Rust 保存权威数据，TypeScript 组织 Component 与业务规则，客户端 SDK 只接收类型明确的 Delta。
+本章演示三种并列语义：Numeric 动态字典、Player 固定字段脏掩码，以及 Item 不可覆盖的即时事件。Rust 保存权威数据，TypeScript 组织 Component 与业务规则，客户端 SDK 只接收类型明确的 Snapshot、Delta 或 Event。
 
 ## Numeric 的业务写法
 
@@ -38,7 +38,7 @@ Unit 销毁时，组件定时器自动取消，Native Numeric 也从该 Unit 解
 2. `LateUpdate()`：依赖普通更新结果的后处理；
 3. `FrameFlush()`：统一提取并发布可覆盖状态。
 
-`MapComponent.FrameFlush()` 不再扫描每个玩家的 `NumericComponent`。它只调用一次批量 Native op，由 Rust 收集 dirty 数值并直接编码：
+`MapComponent.FrameFlush()` 委托 Core `StateReplicationSystem`。每个复制来源只声明 `Peek()` 和成功后的 `Ack()`；Rust 收集 dirty 数值并直接编码：
 
 ```proto
 message UnitNumericDelta
@@ -73,40 +73,57 @@ message G2C_EntityNumeric // IMessage
 
 Cocos 与 Pixi 的 Handler 都只负责把 `message.numerics` 交给地图实体管理器。客户端按 Unit 保存 `numericType -> value` 表，每个 Delta 只更新一个键。新增 NumericType 不需要扩大 Handler，也不需要给协议增加一个固定字段。
 
-## 固定字段脏掩码
+## Player 固定字段脏掩码
 
-字段集合稳定的结构体使用 `.native`：
+字段集合稳定的 Player 状态使用 `.native`：
 
 ```native
-@typeId(2)
+@typeId(1)
+@component
 @replicated
-entity Item extends Entity {
-  readonly configId: u32;
+entity Unit extends Entity {
+  readonly mapId: u32;
   @memberId(1)
-  count: u32 = 1;
+  x: f32 = 0;
   @memberId(2)
-  quality: u32 = 0;
+  y: f32 = 0;
   @memberId(3)
-  level: u32 = 1;
+  speedCellsPerSecond: f32 = 10;
+  @memberId(4)
+  alive: u32 = 1;
 }
 ```
 
 执行 `npm run codegen:native-data` 后会生成：
 
 - Rust 结构体中的 `u64` dirty mask；
-- `ITEM_MEMBER_*` 与 TypeScript `NativeItemMember` 常量；
+- `UNIT_MEMBER_*` 与 TypeScript `NativeUnitMember` 常量；
 - 仅在值实际变化时置位的 setter；
-- `item_dirty_mask` 和 `take_item_dirty_mask`。
+- 强类型 `UnitDelta`、`peek_unit_delta` 和 `ack_unit_delta`。
 
-`memberId` 是稳定的数据契约，范围为 1..63，不应因字段换序而改变。未标记字段不会进入脏掩码；需要立即通知的状态由业务显式发送普通 Message，需要保证顺序且不可覆盖的事实使用 Event。
+`memberId` 是稳定的数据契约，范围为 1..63，不应因字段换序而改变。每个字段记录最后修改 revision；旧 Delta 发送成功后的 Ack 不会清除发送期间产生的新修改。高频普通移动继续使用专用 Cell Movement Snapshot；显式传送、速度和存活状态等字段修改使用通用固定字段 Delta。
+
+## Item 即时事件
+
+库存变化不能使用 latest 合并。连续使用两次道具是两个有序事实，必须都被处理。演示链路为：
+
+```text
+C2M_UseItem
+-> ItemComponent.UseItem()
+-> 修改 Rust NativeItemRef
+-> G2C_ItemChanged event
+-> M2C_UseItem response
+```
+
+默认道具是速度药水。Cocos/Pixi 按 `U` 后，Item 数量通过可靠 Event 立即下发；速度字段自动置脏，在当前逻辑帧末通过 `G2C_EntityState` 合并广播。Item 的 `version` 让客户端忽略迟到的旧库存状态。
 
 ## Snapshot、Delta、Event
 
-- **Snapshot**：创建、进入、重连或主动全量同步时发送完整当前状态。
+- **Snapshot**：进入、重连或主动全量同步时发送完整当前状态，不修改 Dirty。`G2C_EnterMap.entities/items` 是当前演示入口。
 - **Delta**：帧尾发送 dirty 字典或 dirty mask 中的最终值，可以按稳定键覆盖。
 - **Event**：技能释放、获得道具、伤害飘字等事实，必须有序保留，不能使用 latest。
 
-三者不要共用一个 `value: unknown` 容器。Numeric Delta 使用 `i32 value`；固定结构由 codegen 生成 `ItemDelta` 之类的强类型 Rust 数据，协议适配层再明确选择对应 protobuf 字段。
+三者不要共用一个 `value: unknown` 容器。Numeric Delta 使用 `i32 value`；固定结构由 codegen 生成强类型 `UnitDelta`；Item Event 使用强类型 `ItemSnapshot`。进入玩家不再通过 `MarkAllDirty` 伪造全量同步。
 
 ## 验证
 
@@ -117,4 +134,45 @@ npm run test:runtime
 npm run perf:dirty-replication
 ```
 
-`perf:dirty-replication` 是本地数据结构微基准，只比较“5 个字段中修改 3 个”时动态 dirty map 与固定 dirty mask 的更新、收集和确认成本，不代表网络全链路吞吐。
+也可以使用语义更明确的同义命令，并调整测试规模：
+
+```bash
+npm run perf:state-sync -- --entities 1000 --warmup-ms 500 --duration-ms 2000
+```
+
+该基准比较三条 Rust 本地热路径：Numeric 动态字典的修改、脏收集、批量 protobuf 编码与 Ack；Player 固定字段的 Dirty Mask、批量编码与字段级 Ack；Item 修改后立即独立编码 Event。输出包含 `changes/s`、`items/s`、`frames/s`、`MiB/s`、`B/item` 和 `ns/item`。
+
+它不包含 V8 FastOp、`BroadcastHub`、Gate、Socket 和客户端解码，因此用于判断数据结构及编码方式的相对成本，不代表网络全链路吞吐。
+
+## 全链路性能测试
+
+完整链路使用 Rust 虚拟客户端，覆盖客户端 -> Gate -> MapHost Handler -> Rust NativeData -> protobuf -> Gate -> 客户端：
+
+```bash
+npm run perf:state-sync-full -- \
+  --players 500,1000,2000 \
+  --gates 12 \
+  --warmup 10 \
+  --duration 20
+```
+
+默认使用 `mixed` 模式，以每玩家 5Hz 轮流触发 Numeric、PlayerInfo 和 Item。也可以直接调用容量脚本分别测试：
+
+```bash
+node perf/map_capacity/run_map_capacity_perf.mjs \
+  --client rust --skip-rust-build \
+  --players 500,1000,2000 --gates 12 \
+  --move-rate 0 --probe-rate 1 \
+  --state-sync-mode player --state-sync-rate 5 \
+  --warmup 10 --duration 20
+```
+
+`--state-sync-mode` 支持 `numeric`、`player`、`item` 和 `mixed`。Numeric 演示本身已有 100ms 定时器，单测定时同步时使用 `--state-sync-rate 0`，避免额外 RPC 修改数值。
+
+报告中的状态下行同时给出三种口径：
+
+- `frames/s`：所有虚拟客户端合计收到的协议帧数，反映拆包和 Socket 调度频率；
+- `items/s`：解码前扫描 protobuf repeated 字段得到的状态项数，反映真实扇出量；
+- `MiB/s`：所有虚拟客户端实际收到的消息体字节数，不包含 TCP length prefix。
+
+全地图可见时，Numeric 和 PlayerInfo 的 `items/s` 会随玩家数近似 O(N²) 增长；这是当前无 AOI 的最坏同屏模型。ItemChanged 只发给所属玩家，所以 `frames/s = items/s = 触发 RPC/s`，近似 O(N)。

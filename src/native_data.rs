@@ -8,7 +8,8 @@ use deno_error::JsErrorBox;
 #[cfg(test)]
 use crate::generated::native_data::{EntityData, get_unit_number, set_unit_number};
 use crate::generated::native_data::{
-    NativeEntityData, UnitData, create_entity, get_entity_number, set_entity_number,
+    NativeEntityData, UnitData, UnitDelta, ack_unit_delta, create_entity, get_entity_number,
+    peek_unit_delta, set_entity_number,
 };
 
 const INDEX_BITS: u32 = 20;
@@ -222,8 +223,20 @@ pub(crate) fn op_native_unit_reset_movement(handle: u32) -> Result<(), JsErrorBo
         unit.move_start_tick = 0;
         unit.move_end_tick = 0;
         unit.moving = 0;
-        unit.x = cell_to_world(unit.cell_x);
-        unit.y = cell_to_world(unit.cell_y);
+        let x = cell_to_world(unit.cell_x);
+        let y = cell_to_world(unit.cell_y);
+        crate::generated::native_data::set_unit_number(
+            unit,
+            crate::generated::native_data::UNIT_FIELD_X,
+            x as f64,
+        )
+        .map_err(JsErrorBox::generic)?;
+        crate::generated::native_data::set_unit_number(
+            unit,
+            crate::generated::native_data::UNIT_FIELD_Y,
+            y as f64,
+        )
+        .map_err(JsErrorBox::generic)?;
         Ok(())
     })
 }
@@ -425,20 +438,96 @@ fn native_map_ack_numeric_delta(map_id: u32, revision: &[u8]) -> Result<(), JsEr
 }
 
 #[op2(fast)]
-pub(crate) fn op_native_map_mark_all_numerics_dirty(map_id: u32) -> Result<(), JsErrorBox> {
+pub(crate) fn op_native_map_ack_unit_delta(
+    map_id: u32,
+    #[buffer] revision: &[u8],
+) -> Result<(), JsErrorBox> {
+    native_map_ack_unit_delta(map_id, revision)
+}
+
+#[op2]
+pub(crate) fn op_native_map_peek_unit_delta(
+    map_id: u32,
+    server_tick: u32,
+    message_code: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    native_map_peek_unit_delta(map_id, server_tick, message_code).map(Into::into)
+}
+
+fn native_map_peek_unit_delta(
+    map_id: u32,
+    server_tick: u32,
+    message_code: u32,
+) -> Result<Vec<u8>, JsErrorBox> {
+    let message_code = u16::try_from(message_code)
+        .map_err(|_| JsErrorBox::generic("unit state message code exceeds uint16"))?;
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
-        let revision = store.next_numeric_revision();
         let handles = store.units_by_map.get(&map_id).cloned().unwrap_or_default();
+        let mut records = Vec::new();
         for handle in handles {
-            if let Some(numeric) = store.numerics_by_unit.get_mut(&handle) {
-                for numeric_type in numeric.values.keys() {
-                    numeric.dirty.insert(*numeric_type, revision);
+            let unit = store.get_unit(handle)?;
+            if let Some(delta) = peek_unit_delta(unit) {
+                records.push(UnitDeltaRecord {
+                    handle,
+                    unit_id: unit.entity.id,
+                    delta,
+                });
+            }
+        }
+        records.sort_unstable_by_key(|record| record.unit_id);
+        let frame = encode_entity_state_frame(message_code, server_tick, &records);
+        let mut revision = Vec::with_capacity(4 + records.len() * 12);
+        revision.extend_from_slice(&(records.len() as u32).to_le_bytes());
+        for record in &records {
+            revision.extend_from_slice(&record.handle.to_le_bytes());
+            revision.extend_from_slice(&record.delta.revision.to_le_bytes());
+        }
+        store.metrics.batch_calls += 1;
+        store.metrics.encoded_frames += 1;
+        store.metrics.encoded_items += records.len() as u64;
+        store.metrics.encoded_bytes += frame.len() as u64;
+
+        let mut result = Vec::with_capacity(8 + revision.len() + frame.len());
+        result.extend_from_slice(&(records.len() as u32).to_le_bytes());
+        result.extend_from_slice(&(revision.len() as u32).to_le_bytes());
+        result.extend_from_slice(&revision);
+        result.extend_from_slice(&frame);
+        Ok(result)
+    })
+}
+
+fn native_map_ack_unit_delta(map_id: u32, revision: &[u8]) -> Result<(), JsErrorBox> {
+    if revision.len() < 4 {
+        return Err(JsErrorBox::generic("unit state revision is truncated"));
+    }
+    let count = u32::from_le_bytes(revision[0..4].try_into().unwrap()) as usize;
+    if revision.len() != 4 + count * 12 {
+        return Err(JsErrorBox::generic(
+            "unit state revision has an invalid length",
+        ));
+    }
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        for index in 0..count {
+            let offset = 4 + index * 12;
+            let handle = u32::from_le_bytes(revision[offset..offset + 4].try_into().unwrap());
+            let through_revision =
+                u64::from_le_bytes(revision[offset + 4..offset + 12].try_into().unwrap());
+            if let Ok(unit) = store.get_unit_mut(handle) {
+                if unit.map_id == map_id {
+                    ack_unit_delta(unit, through_revision);
                 }
             }
         }
         Ok(())
     })
+}
+
+struct UnitDeltaRecord {
+    handle: u32,
+    unit_id: u32,
+    delta: UnitDelta,
 }
 
 #[op2]
@@ -546,6 +635,38 @@ fn encode_entity_numeric_frame(
     frame
 }
 
+fn encode_entity_state_frame(
+    message_code: u16,
+    server_tick: u32,
+    records: &[UnitDeltaRecord],
+) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(2 + 8 + records.len() * 36);
+    frame.extend_from_slice(&message_code.to_be_bytes());
+    write_uint32_field(&mut frame, 1, server_tick);
+    for record in records {
+        let mut item = Vec::with_capacity(32);
+        write_uint32_field(&mut item, 1, record.unit_id);
+        write_uint32_field(&mut item, 2, record.delta.dirty_mask as u32);
+        write_uint32_field(&mut item, 3, (record.delta.dirty_mask >> 32) as u32);
+        if let Some(value) = record.delta.x {
+            write_float_field(&mut item, 4, value);
+        }
+        if let Some(value) = record.delta.y {
+            write_float_field(&mut item, 5, value);
+        }
+        if let Some(value) = record.delta.speed_cells_per_second {
+            write_float_field(&mut item, 6, value);
+        }
+        if let Some(value) = record.delta.alive {
+            write_bool_field(&mut item, 7, value != 0);
+        }
+        write_tag(&mut frame, 2, 2);
+        write_varint(&mut frame, item.len() as u32);
+        frame.extend_from_slice(&item);
+    }
+    frame
+}
+
 fn encode_cell_movement(bytes: &mut Vec<u8>, record: &[u8; NATIVE_UNIT_RECORD_BYTES]) {
     write_uint32_field(bytes, 1, read_record_u32(record, 0));
     write_uint32_field(bytes, 2, read_record_u32(record, 12));
@@ -611,6 +732,22 @@ fn write_sint32_field(bytes: &mut Vec<u8>, field_number: u32, value: i32) {
     }
     write_tag(bytes, field_number, 0);
     write_varint(bytes, ((value << 1) ^ (value >> 31)) as u32);
+}
+
+fn write_float_field(bytes: &mut Vec<u8>, field_number: u32, value: f32) {
+    if value == 0.0 {
+        return;
+    }
+    write_tag(bytes, field_number, 5);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn write_bool_field(bytes: &mut Vec<u8>, field_number: u32, value: bool) {
+    if !value {
+        return;
+    }
+    write_tag(bytes, field_number, 0);
+    bytes.push(1);
 }
 
 fn write_tag(bytes: &mut Vec<u8>, field_number: u32, wire_type: u32) {
@@ -828,35 +965,21 @@ mod tests {
     #[test]
     fn item_uses_the_same_generation_arena_and_scalar_ops() {
         use crate::generated::native_data::{
-            ENTITY_TYPE_ITEM, ITEM_FIELD_CONFIG_ID, ITEM_FIELD_COUNT, item_dirty_mask,
-            take_item_delta,
+            ENTITY_TYPE_ITEM, ITEM_FIELD_CONFIG_ID, ITEM_FIELD_COUNT,
         };
 
-        let value =
-            create_entity(ENTITY_TYPE_ITEM, &[100.0, 200.0, 3001.0, 2.0, 4.0, 1.0]).unwrap();
+        let value = create_entity(
+            ENTITY_TYPE_ITEM,
+            &[100.0, 200.0, 3001.0, 2.0, 4.0, 1.0, 1.0],
+        )
+        .unwrap();
         let mut store = NativeEntityStore::default();
         let handle = store.create(value).unwrap();
-        let item = store.get_mut(handle).unwrap().as_item_mut().unwrap();
-        assert_eq!(item_dirty_mask(item), 0b1110);
-        let initial = take_item_delta(item).unwrap();
-        assert_eq!(initial.dirty_mask, 0b1110);
-        assert_eq!(initial.count, Some(2));
-        assert_eq!(initial.quality, Some(4));
-        assert_eq!(initial.level, Some(1));
-        assert_eq!(item_dirty_mask(item), 0);
         assert_eq!(
             get_entity_number(store.get(handle).unwrap(), ITEM_FIELD_CONFIG_ID),
             Some(3001.0)
         );
         set_entity_number(store.get_mut(handle).unwrap(), ITEM_FIELD_COUNT, 3.0).unwrap();
-        assert_eq!(
-            item_dirty_mask(store.get(handle).unwrap().as_item().unwrap()),
-            1 << 1,
-        );
-        let changed = take_item_delta(store.get_mut(handle).unwrap().as_item_mut().unwrap()).unwrap();
-        assert_eq!(changed.count, Some(3));
-        assert_eq!(changed.quality, None);
-        assert_eq!(changed.level, None);
         assert_eq!(
             get_entity_number(store.get(handle).unwrap(), ITEM_FIELD_COUNT),
             Some(3.0)
@@ -864,6 +987,28 @@ mod tests {
         assert!(store.get_unit(handle).is_err());
         store.destroy(handle).unwrap();
         assert!(store.get(handle).is_err());
+    }
+
+    #[test]
+    fn fixed_unit_delta_keeps_newer_changes_after_old_ack() {
+        use crate::generated::native_data::{
+            UNIT_FIELD_X, ack_unit_delta, peek_unit_delta, set_unit_number,
+        };
+
+        let mut value = unit(1);
+        assert!(peek_unit_delta(&value).is_none());
+        set_unit_number(&mut value, UNIT_FIELD_X, 12.0).unwrap();
+        let first = peek_unit_delta(&value).unwrap();
+        assert_eq!(first.x, Some(12.0));
+
+        set_unit_number(&mut value, UNIT_FIELD_X, 24.0).unwrap();
+        ack_unit_delta(&mut value, first.revision);
+        let second = peek_unit_delta(&value).unwrap();
+        assert_eq!(second.x, Some(24.0));
+        assert!(second.revision > first.revision);
+
+        ack_unit_delta(&mut value, second.revision);
+        assert!(peek_unit_delta(&value).is_none());
     }
 
     #[test]
@@ -977,6 +1122,9 @@ mod tests {
 
     fn unit(id: u32) -> UnitData {
         UnitData {
+            __dirty_mask: 0,
+            __revision: 0,
+            __member_revisions: [0; 64],
             entity: EntityData {
                 id,
                 instance_id: id,
@@ -992,6 +1140,7 @@ mod tests {
             move_end_tick: 0,
             moving: 0,
             speed_cells_per_second: 10.0,
+            alive: 1,
             input_x: 0,
             input_y: 0,
             input_changed: 0,

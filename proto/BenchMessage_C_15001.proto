@@ -30,3 +30,18 @@ message S2C_MailboxParity // IResponse
   uint32 elapsed_ms = 1;
   uint32 max_server_concurrency = 2;
 }
+
+//ResponseType M2C_StateSyncBench
+// @ets.msg protocol=StateSyncBench method=Trigger
+message C2M_StateSyncBench // IActorLocationRequest
+{
+  // 1=Numeric, 2=PlayerInfo, 3=Item
+  uint32 mode = 1;
+  uint32 sequence = 2;
+}
+
+message M2C_StateSyncBench // IActorLocationResponse
+{
+  uint32 mode = 1;
+  uint32 sequence = 2;
+}

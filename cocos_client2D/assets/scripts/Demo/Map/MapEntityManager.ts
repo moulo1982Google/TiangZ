@@ -3,8 +3,10 @@ import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
 import { MapClient } from "../../Generated/SDK/Generated/Model/demo/protocol/clients";
 import type {
   G2C_EntityMove,
+  ItemSnapshot,
   MapEntitySnapshot,
   UnitNumericDelta,
+  UnitStateDelta,
 } from "../../Generated/SDK/Generated/Model/demo/protocol/messages";
 import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
@@ -34,6 +36,8 @@ export class MapEntityManager {
   private readonly remotes = new Map<number, RemoteEntityVisual>();
   private readonly numericLabels = new Map<number, Label>();
   private readonly numerics = new Map<number, Map<number, number>>();
+  private readonly items = new Map<number, ItemSnapshot>();
+  private readonly states = new Map<number, UnitStateDelta>();
   private readonly mapClient: MapClient;
 
   constructor(
@@ -43,9 +47,11 @@ export class MapEntityManager {
     private readonly localUnitId: number,
     private readonly fixedUpdateMs: number,
     snapshots: readonly MapEntitySnapshot[],
+    items: readonly ItemSnapshot[],
   ) {
     this.mapClient = new MapClient(socket);
     for (const snapshot of snapshots) this.upsert(snapshot);
+    for (const item of items) this.applyItem(item);
   }
 
   enter(snapshot: MapEntitySnapshot): void {
@@ -72,6 +78,35 @@ export class MapEntityManager {
     for (const delta of deltas) this.applyNumeric(delta);
   }
 
+  applyStates(deltas: readonly UnitStateDelta[]): void {
+    for (const delta of deltas) {
+      this.states.set(delta.unitId, delta);
+      const visual = delta.unitId === this.localUnitId
+        ? this.local
+        : this.remotes.get(delta.unitId);
+      if (!visual) continue;
+      if (hasMember(delta, 1)) visual.node.setPosition(delta.x, visual.node.position.y, 0);
+      if (hasMember(delta, 2)) visual.node.setPosition(visual.node.position.x, delta.y, 0);
+      visual.node.active = !hasMember(delta, 4) || delta.alive;
+    }
+  }
+
+  applyItem(item: ItemSnapshot): void {
+    const current = this.items.get(item.itemId);
+    if (current && current.version >= item.version) return;
+    this.items.set(item.itemId, item);
+    console.log(`道具 ${item.itemId} 数量更新为 ${item.count}，版本 ${item.version}`);
+  }
+
+  async UseItem(itemId: number): Promise<void> {
+    try {
+      const response = await this.mapClient.useItem({ itemId });
+      this.applyItem(response.item);
+    } catch (error) {
+      console.error("使用道具失败", error);
+    }
+  }
+
   leave(unitId: number): void {
     this.remove(unitId);
   }
@@ -96,6 +131,8 @@ export class MapEntityManager {
     this.remotes.clear();
     this.numericLabels.clear();
     this.numerics.clear();
+    this.items.clear();
+    this.states.clear();
   }
 
   private upsert(snapshot: MapEntitySnapshot): void {
@@ -108,11 +145,13 @@ export class MapEntityManager {
         cellToWorld(snapshot.cellY),
         0,
       );
+      this.applyNumerics(snapshot.numerics);
       return;
     }
 
     const local = snapshot.unitId === this.localUnitId;
     const node = this.createUnitNode(snapshot, local);
+    this.applyNumerics(snapshot.numerics);
     this.refreshNumeric(snapshot.unitId);
     if (local) {
       this.local = {
@@ -214,4 +253,9 @@ export class MapEntityManager {
     remote.node.destroy();
     this.remotes.delete(unitId);
   }
+}
+
+function hasMember(delta: UnitStateDelta, memberId: number): boolean {
+  if (memberId < 32) return (delta.dirtyMaskLow & 2 ** memberId) !== 0;
+  return (delta.dirtyMaskHigh & 2 ** (memberId - 32)) !== 0;
 }

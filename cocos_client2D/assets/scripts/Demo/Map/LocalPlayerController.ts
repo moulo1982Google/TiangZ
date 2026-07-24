@@ -8,11 +8,13 @@ import {
 export interface MoveIntent {
   x: number;
   y: number;
+  useItem: boolean;
 }
 
 export class LocalPlayerController {
   private readonly pressed = new Set<KeyCode>();
   private registered = false;
+  private useItemRequested = false;
 
   constructor() {
     this.register();
@@ -25,7 +27,9 @@ export class LocalPlayerController {
     if (this.pressed.has(KeyCode.KEY_D) || this.pressed.has(KeyCode.ARROW_RIGHT)) dx += 1;
     if (this.pressed.has(KeyCode.KEY_W) || this.pressed.has(KeyCode.ARROW_UP)) dy += 1;
     if (this.pressed.has(KeyCode.KEY_S) || this.pressed.has(KeyCode.ARROW_DOWN)) dy -= 1;
-    return { x: dx, y: dy };
+    const useItem = this.useItemRequested;
+    this.useItemRequested = false;
+    return { x: dx, y: dy, useItem };
   }
 
   dispose(): void {
@@ -45,6 +49,7 @@ export class LocalPlayerController {
 
   private onKeyDown(event: EventKeyboard): void {
     this.pressed.add(event.keyCode);
+    if (event.keyCode === KeyCode.KEY_U) this.useItemRequested = true;
   }
 
   private onKeyUp(event: EventKeyboard): void {

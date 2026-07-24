@@ -229,6 +229,7 @@ export class GateScene extends EntryScene {
       y: mapResponse.y,
       entities: mapResponse.entities,
       fixedUpdateMs: mapResponse.fixedUpdateMs,
+      items: mapResponse.items,
     };
   }
 

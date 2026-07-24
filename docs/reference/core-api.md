@@ -31,6 +31,14 @@
 
 `IUpdate.Update()` 不允许返回 Promise。需要异步串行语义时使用消息或 Actor 定时器，让它进入 mailbox；不要在每帧 Update 内堆积未完成的异步任务。
 
+## StateReplicationSystem
+
+- `Add(source)`：注册一个具名的编码状态来源；同名来源会被拒绝。
+- `source.Peek()`：返回 `itemCount/frame/Ack`，Peek 不允许提前清除 Dirty。
+- `FrameFlush()`：取得当前 Audience，把所有非空 Delta 交给 `BroadcastHub` 的 latest single-flight 通道。
+- 只有发送成功才调用 `Ack()`；发送失败保留 Dirty，下一帧重新 Peek。
+- Snapshot 和 Event 不注册为状态来源：Snapshot 直接定向发送完整值，Event 使用 `BroadcastHub` 的 event 描述符可靠排队。
+
 ## EntryScene
 
 - `self: SceneConfig`：当前入口 Scene 地址。

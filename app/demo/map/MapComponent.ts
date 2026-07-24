@@ -2,6 +2,7 @@ import type { SceneMessageHelper } from "../../core/process/SceneMessageHelper";
 import type { CustomMetricSnapshot } from "../../core/process/types";
 import {
   BroadcastHub,
+  StateReplicationSystem,
   type BroadcastAudience,
   Component,
   type IFrameFlush,
@@ -13,6 +14,7 @@ import { ClientBroadcasts } from "../../generated/model/server/demo/protocol/bro
 import type {
   G2M_EnterMap,
   G2M_PlayerDisconnect,
+  ItemSnapshot,
   MapEntitySnapshot,
 } from "../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
@@ -23,6 +25,7 @@ import { UnitGateComponent } from "./UnitGateComponent";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import { NativeData } from "../native/NativeData";
 import { NumericComponent } from "../numeric/NumericComponent";
+import { ItemComponent } from "../item/ItemComponent";
 
 @component()
 export class MapComponent extends Component<[
@@ -34,6 +37,7 @@ export class MapComponent extends Component<[
   private players!: PlayerDirectoryComponent;
   private serverTick = 0;
   private broadcast!: BroadcastHub;
+  private replication!: StateReplicationSystem;
 
   get MapId(): number {
     return this.mapId;
@@ -51,6 +55,11 @@ export class MapComponent extends Component<[
         console.error(`[Map:${this.mapId}] ${name} broadcast failed`, error);
       },
     });
+    this.replication = new StateReplicationSystem(
+      this.broadcast,
+      () => this.BroadcastAudience(),
+    );
+    this.RegisterReplicationSources();
   }
 
   Update(): void {
@@ -78,23 +87,7 @@ export class MapComponent extends Component<[
   }
 
   FrameFlush(): void {
-    if (this.units.Count === 0) return;
-    const descriptor = ClientBroadcasts.EntityNumeric;
-    const encoded = NativeData.PeekMapNumericDelta(
-      this.mapId,
-      this.serverTick,
-      descriptor.message.msgcode,
-    );
-    if (encoded.itemCount === 0) return;
-    void this.broadcast.PublishEncodedLatestSnapshot(
-      this.BroadcastAudience(),
-      descriptor.name,
-      encoded.frame,
-      encoded.itemCount,
-    ).then(
-      () => NativeData.AckMapNumericDelta(this.mapId, encoded.revision),
-      () => undefined,
-    );
+    if (this.units.Count > 0) this.replication.FrameFlush();
   }
 
   CreatePlayer(unitId: number, request: G2M_EnterMap): PlayerUnit {
@@ -114,6 +107,7 @@ export class MapComponent extends Component<[
       });
       player.AddComponent(PositionComponent, native);
       player.AddComponent(NumericComponent);
+      player.AddComponent(ItemComponent);
       player.AddComponent(
         UnitGateComponent,
         request.gateName,
@@ -133,11 +127,20 @@ export class MapComponent extends Component<[
   }
 
   async PlayerEntered(snapshot: PlayerSnapshot): Promise<void> {
-    NativeData.MarkAllNumericsDirty(this.mapId);
     await this.broadcast.Publish(
       this.BroadcastAudience(snapshot.unitId),
       ClientBroadcasts.EntityEnter,
       { entity: toMapEntity(snapshot) },
+      this.serverTick,
+    );
+  }
+
+  async PublishItemChanged(unit: PlayerUnit, item: ItemSnapshot): Promise<void> {
+    this.requirePlayer(unit);
+    await this.broadcast.Publish(
+      this.PlayerAudience(unit),
+      ClientBroadcasts.ItemChanged,
+      { item },
       this.serverTick,
     );
   }
@@ -212,6 +215,40 @@ export class MapComponent extends Component<[
     return this.units.GetAll(PlayerUnit).map((unit) => unit.Snapshot());
   }
 
+  private RegisterReplicationSources(): void {
+    const numeric = ClientBroadcasts.EntityNumeric;
+    this.replication.Add({
+      name: numeric.name,
+      Peek: () => {
+        const delta = NativeData.PeekMapNumericDelta(
+          this.mapId,
+          this.serverTick,
+          numeric.message.msgcode,
+        );
+        return {
+          ...delta,
+          Ack: () => NativeData.AckMapNumericDelta(this.mapId, delta.revision),
+        };
+      },
+    });
+
+    const state = ClientBroadcasts.EntityState;
+    this.replication.Add({
+      name: state.name,
+      Peek: () => {
+        const delta = NativeData.PeekMapUnitDelta(
+          this.mapId,
+          this.serverTick,
+          state.message.msgcode,
+        );
+        return {
+          ...delta,
+          Ack: () => NativeData.AckMapUnitDelta(this.mapId, delta.revision),
+        };
+      },
+    });
+  }
+
   protected override OnDestroy(): void {
     this.broadcast.Dispose();
   }
@@ -225,6 +262,14 @@ export class MapComponent extends Component<[
         return { route: gate.gateName, recipientId: unit.UnitId };
       });
     return { key: `map:${this.mapId}`, routes };
+  }
+
+  private PlayerAudience(unit: PlayerUnit): BroadcastAudience {
+    const gate = unit.GetComponent(UnitGateComponent);
+    return {
+      key: `player:${unit.UnitId}`,
+      routes: [{ route: gate.gateName, recipientId: unit.UnitId }],
+    };
   }
 
   private requirePlayer(unit: PlayerUnit): void {
@@ -251,9 +296,11 @@ function toMapEntity(snapshot: PlayerSnapshot): MapEntitySnapshot {
     x: snapshot.x,
     y: snapshot.y,
     heading: 0,
-    alive: true,
     state: new Uint8Array(0),
     cellX: snapshot.cellX,
     cellY: snapshot.cellY,
+    numerics: snapshot.numerics,
+    speedCellsPerSecond: snapshot.speedCellsPerSecond,
+    alive: snapshot.alive,
   };
 }

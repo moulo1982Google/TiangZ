@@ -13,6 +13,7 @@ import {
   type CellMovementState,
 } from "../app/generated/model/server/demo/protocol/messages";
 import { MsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
+import { StateReplicationSystem } from "../app/core/replication";
 
 interface ControlledSend {
   readonly audience: BroadcastAudience;
@@ -43,8 +44,48 @@ async function main(): Promise<void> {
   await testLatestSingleFlight();
   await testNumericLatestCoverage();
   await testEncodedLatestSnapshot();
+  await testReplicationAckOnlyAfterSuccessfulSend();
   await testEventOrderingAndCapacity();
   console.log("broadcast framework self-test passed");
+}
+
+async function testReplicationAckOnlyAfterSuccessfulSend(): Promise<void> {
+  const transport = new ControlledTransport();
+  const errors: unknown[] = [];
+  const hub = new BroadcastHub(transport, { onError: () => undefined });
+  let acknowledged = 0;
+  let peeked = 0;
+  const replication = new StateReplicationSystem(
+    hub,
+    () => audience,
+    (_name, error) => errors.push(error),
+  );
+  replication.Add({
+    name: "Client.TestState",
+    Peek: () => {
+      peeked += 1;
+      return {
+        itemCount: 1,
+        frame: Uint8Array.from([0x27, 0x22, acknowledged + 1]),
+        Ack: () => { acknowledged += 1; },
+      };
+    },
+  });
+
+  replication.FrameFlush();
+  replication.FrameFlush();
+  assert.equal(peeked, 1, "an in-flight source must not be peeked twice");
+  assert.equal(transport.sends.length, 1, "an in-flight revision must not be sent twice");
+  transport.sends[0].reject(new Error("expected replication failure"));
+  await settlePromises();
+  assert.equal(acknowledged, 0, "failed state delivery must not acknowledge dirty data");
+  assert.equal(errors.length, 1);
+
+  replication.FrameFlush();
+  assert.equal(peeked, 2, "failed delivery must make the dirty source retryable");
+  transport.sends[1].resolve();
+  await settlePromises();
+  assert.equal(acknowledged, 1);
 }
 
 async function testNumericLatestCoverage(): Promise<void> {

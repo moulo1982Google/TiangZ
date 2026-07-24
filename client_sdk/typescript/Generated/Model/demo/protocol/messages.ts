@@ -53,6 +53,8 @@ export interface MapEntitySnapshot {
   account: string;
   cellX: number;
   cellY: number;
+  numerics: readonly UnitNumericDelta[];
+  speedCellsPerSecond: number;
 }
 
 export const MapEntitySnapshotCodec = {
@@ -68,6 +70,8 @@ export const MapEntitySnapshotCodec = {
       account: "",
       cellX: 0,
       cellY: 0,
+      numerics: [],
+      speedCellsPerSecond: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -98,6 +102,12 @@ export const MapEntitySnapshotCodec = {
       else if (tag.fieldNo === 9 && tag.wireType === 0) {
         value.cellY = reader.sint32();
       }
+      else if (tag.fieldNo === 10 && tag.wireType === 2) {
+        (value.numerics as UnitNumericDelta[]).push(UnitNumericDeltaCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 11 && tag.wireType === 5) {
+        value.speedCellsPerSecond = reader.float();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -116,6 +126,8 @@ export const MapEntitySnapshotCodec = {
     writer.string(7, value.account);
     writer.sint32(8, value.cellX);
     writer.sint32(9, value.cellY);
+    for (const item of value.numerics) writer.bytes(10, UnitNumericDeltaCodec.encode(item));
+    writer.float(11, value.speedCellsPerSecond);
     return writer.finish();
   },
 };
@@ -234,6 +246,130 @@ export const UnitNumericDeltaCodec = {
     writer.uint32(1, value.unitId);
     writer.uint32(2, value.numericType);
     writer.sint32(3, value.value);
+    return writer.finish();
+  },
+};
+
+export interface UnitStateDelta {
+  unitId: number;
+  dirtyMaskLow: number;
+  dirtyMaskHigh: number;
+  x: number;
+  y: number;
+  speedCellsPerSecond: number;
+  alive: boolean;
+}
+
+export const UnitStateDeltaCodec = {
+  decode(payload: Uint8Array): UnitStateDelta {
+    const reader = new BinaryReader(payload);
+    const value: UnitStateDelta = {
+      unitId: 0,
+      dirtyMaskLow: 0,
+      dirtyMaskHigh: 0,
+      x: 0,
+      y: 0,
+      speedCellsPerSecond: 0,
+      alive: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.dirtyMaskLow = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.dirtyMaskHigh = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 5) {
+        value.x = reader.float();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 5) {
+        value.y = reader.float();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 5) {
+        value.speedCellsPerSecond = reader.float();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.alive = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: UnitStateDelta): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.uint32(1, value.unitId);
+    writer.uint32(2, value.dirtyMaskLow);
+    writer.uint32(3, value.dirtyMaskHigh);
+    writer.float(4, value.x);
+    writer.float(5, value.y);
+    writer.float(6, value.speedCellsPerSecond);
+    writer.bool(7, value.alive);
+    return writer.finish();
+  },
+};
+
+export interface ItemSnapshot {
+  itemId: number;
+  configId: number;
+  count: number;
+  quality: number;
+  level: number;
+  version: number;
+}
+
+export const ItemSnapshotCodec = {
+  decode(payload: Uint8Array): ItemSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: ItemSnapshot = {
+      itemId: 0,
+      configId: 0,
+      count: 0,
+      quality: 0,
+      level: 0,
+      version: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.itemId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.configId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.count = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.quality = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.level = reader.uint32();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.version = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: ItemSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.uint32(1, value.itemId);
+    writer.uint32(2, value.configId);
+    writer.uint32(3, value.count);
+    writer.uint32(4, value.quality);
+    writer.uint32(5, value.level);
+    writer.uint32(6, value.version);
     return writer.finish();
   },
 };
@@ -638,6 +774,7 @@ export interface G2C_EnterMap extends IResponse {
   y: number;
   entities: readonly MapEntitySnapshot[];
   fixedUpdateMs: number;
+  items: readonly ItemSnapshot[];
 }
 
 export const G2C_EnterMapCodec = {
@@ -652,6 +789,7 @@ export const G2C_EnterMapCodec = {
       y: 0,
       entities: [],
       fixedUpdateMs: 0,
+      items: [],
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -688,6 +826,9 @@ export const G2C_EnterMapCodec = {
       else if (tag.fieldNo === 8 && tag.wireType === 0) {
         value.fixedUpdateMs = reader.uint32();
       }
+      else if (tag.fieldNo === 9 && tag.wireType === 2) {
+        (value.items as ItemSnapshot[]).push(ItemSnapshotCodec.decode(reader.bytesField()));
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -708,6 +849,7 @@ export const G2C_EnterMapCodec = {
     writer.sint32(6, value.y);
     for (const item of value.entities) writer.bytes(7, MapEntitySnapshotCodec.encode(item));
     writer.uint32(8, value.fixedUpdateMs);
+    for (const item of value.items) writer.bytes(9, ItemSnapshotCodec.encode(item));
     return writer.finish();
   },
 };
@@ -950,6 +1092,148 @@ export const G2C_EntityNumericCodec = {
     const writer = new BinaryWriter();
     writer.uint32(1, value.serverTick);
     for (const item of value.numerics) writer.bytes(2, UnitNumericDeltaCodec.encode(item));
+    return writer.finish();
+  },
+};
+
+export interface G2C_EntityState extends IMessage {
+  serverTick: number;
+  states: readonly UnitStateDelta[];
+}
+
+export const G2C_EntityStateCodec = {
+  decode(payload: Uint8Array): G2C_EntityState {
+    const reader = new BinaryReader(payload);
+    const value: G2C_EntityState = {
+      serverTick: 0,
+      states: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.serverTick = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.states as UnitStateDelta[]).push(UnitStateDeltaCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_EntityState): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.uint32(1, value.serverTick);
+    for (const item of value.states) writer.bytes(2, UnitStateDeltaCodec.encode(item));
+    return writer.finish();
+  },
+};
+
+export interface C2M_UseItem extends IActorLocationRequest {
+  rpcId?: number;
+  itemId: number;
+}
+
+export const C2M_UseItemCodec = {
+  decode(payload: Uint8Array): C2M_UseItem {
+    const reader = new BinaryReader(payload);
+    const value: C2M_UseItem = {
+      itemId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.itemId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_UseItem): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    writer.uint32(1, value.itemId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_UseItem extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  item: ItemSnapshot;
+}
+
+export const M2C_UseItemCodec = {
+  decode(payload: Uint8Array): M2C_UseItem {
+    const reader = new BinaryReader(payload);
+    const value: M2C_UseItem = {
+      item: ItemSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.item = ItemSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_UseItem): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    writer.bytes(1, ItemSnapshotCodec.encode(value.item));
+    return writer.finish();
+  },
+};
+
+export interface G2C_ItemChanged extends IMessage {
+  item: ItemSnapshot;
+}
+
+export const G2C_ItemChangedCodec = {
+  decode(payload: Uint8Array): G2C_ItemChanged {
+    const reader = new BinaryReader(payload);
+    const value: G2C_ItemChanged = {
+      item: ItemSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.item = ItemSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_ItemChanged): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.bytes(1, ItemSnapshotCodec.encode(value.item));
     return writer.finish();
   },
 };

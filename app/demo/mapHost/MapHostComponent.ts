@@ -17,6 +17,7 @@ import { MapComponent } from "../map/MapComponent";
 import { MapScene } from "../map/MapScene";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
+import { ItemComponent } from "../item/ItemComponent";
 
 export class MapHostComponent extends Component {
   private readonly maps = new Map<number, MapComponent>();
@@ -89,6 +90,7 @@ export class MapHostComponent extends Component {
       x: snapshot.x,
       y: snapshot.y,
       entities: map.EntitySnapshots(),
+      items: player.GetComponent(ItemComponent).Snapshot(),
     };
   }
 

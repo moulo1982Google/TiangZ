@@ -3,3 +3,5 @@ import "../../Demo/Map/Handlers/G2C_EntityEnterHandler";
 import "../../Demo/Map/Handlers/G2C_EntityLeaveHandler";
 import "../../Demo/Map/Handlers/G2C_EntityMoveHandler";
 import "../../Demo/Map/Handlers/G2C_EntityNumericHandler";
+import "../../Demo/Map/Handlers/G2C_EntityStateHandler";
+import "../../Demo/Map/Handlers/G2C_ItemChangedHandler";

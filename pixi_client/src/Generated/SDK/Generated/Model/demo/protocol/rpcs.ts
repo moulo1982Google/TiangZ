@@ -7,6 +7,8 @@ import {
   C2G_LoginGateCodec,
   C2M_MapProbe,
   C2M_MapProbeCodec,
+  C2M_UseItem,
+  C2M_UseItemCodec,
   C2S_GetLoginServiceAddr,
   C2S_GetLoginServiceAddrCodec,
   C2S_Log,
@@ -19,6 +21,8 @@ import {
   G2C_LoginGateCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
+  M2C_UseItem,
+  M2C_UseItemCodec,
   S2C_GetLoginServiceAddr,
   S2C_GetLoginServiceAddrCodec,
   S2C_Log,
@@ -84,6 +88,14 @@ export const MapProtocol = {
     responseCodec: M2C_MapProbeCodec,
     routing: "actor-location",
   }),
+  UseItem: defineRpc<C2M_UseItem, M2C_UseItem>({
+    name: "Map.UseItem",
+    requestCode: MsgCode.C2M_UseItem,
+    responseCode: MsgCode.M2C_UseItem,
+    requestCodec: C2M_UseItemCodec,
+    responseCodec: M2C_UseItemCodec,
+    routing: "actor-location",
+  }),
 };
 
 export const AllRpcDescriptors = [
@@ -93,4 +105,5 @@ export const AllRpcDescriptors = [
   GateProtocol.LoginGate,
   GateProtocol.EnterMap,
   MapProtocol.Probe,
+  MapProtocol.UseItem,
 ] as const;

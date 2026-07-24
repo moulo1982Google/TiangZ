@@ -3,6 +3,8 @@ import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import { NativeData } from "../native/NativeData";
 import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
+import { NumericComponent } from "../numeric/NumericComponent";
+import type { UnitNumericDelta } from "../../generated/model/server/demo/protocol/messages";
 
 export const PlayerUnitHandlers = {
   RebindGate: "Player.RebindGate",
@@ -38,6 +40,9 @@ export interface PlayerSnapshot {
   y: number;
   cellX: number;
   cellY: number;
+  speedCellsPerSecond: number;
+  alive: boolean;
+  numerics: readonly UnitNumericDelta[];
 }
 
 export interface MovePlayer {
@@ -81,12 +86,16 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
   Snapshot(): PlayerSnapshot {
     const position = this.GetComponent(PositionComponent).snapshot();
     const gate = this.GetComponent(UnitGateComponent);
+    const native = this.GetComponent(NativeUnitRef);
     return {
       account: this.account,
       mapId: this.mapId,
       unitId: this.UnitId,
       gateName: gate.gateName,
       gateSessionId: gate.gateSessionId,
+      speedCellsPerSecond: native.speedCellsPerSecond,
+      alive: native.alive !== 0,
+      numerics: this.GetComponent(NumericComponent).Snapshot(),
       ...position,
     };
   }

@@ -9,6 +9,8 @@ export const BenchMessage = {
   S2C_RuntimePing: 15003,
   C2S_MailboxParity: 15004,
   S2C_MailboxParity: 15005,
+  C2M_StateSyncBench: 15006,
+  M2C_StateSyncBench: 15007,
 } as const;
 
 export const MsgCode = {

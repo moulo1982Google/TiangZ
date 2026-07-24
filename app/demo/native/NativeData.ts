@@ -121,8 +121,33 @@ export class NativeData {
     NativeOps.MapAckNumericDelta(mapId, revision);
   }
 
-  static MarkAllNumericsDirty(mapId: number): void {
-    NativeOps.MapMarkAllNumericsDirty(mapId);
+  static PeekMapUnitDelta(
+    mapId: number,
+    serverTick: number,
+    messageCode: number,
+  ): NativeNumericBroadcast {
+    const bytes = NativeOps.MapPeekUnitDelta(mapId, serverTick, messageCode);
+    if (bytes.length < 10) {
+      throw new Error("native unit state broadcast is truncated");
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const itemCount = view.getUint32(0, true);
+    const revisionLength = view.getUint32(4, true);
+    const frameOffset = 8 + revisionLength;
+    if (frameOffset + 2 > bytes.length) {
+      throw new Error("native unit state revision is truncated");
+    }
+    const revision = bytes.slice(8, frameOffset);
+    const frame = bytes.subarray(frameOffset);
+    const encodedMessageCode = frame[0] * 0x100 + frame[1];
+    if (encodedMessageCode !== messageCode) {
+      throw new Error("native unit state broadcast has an unexpected message code");
+    }
+    return { itemCount, revision, frame };
+  }
+
+  static AckMapUnitDelta(mapId: number, revision: Uint8Array): void {
+    NativeOps.MapAckUnitDelta(mapId, revision);
   }
 
   static TakeMetrics(): NativeDataMetrics {

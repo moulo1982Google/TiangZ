@@ -25,8 +25,55 @@ const MAP_MOVE: u16 = 10013;
 const MAP_PROBE_REQ: u16 = 10014;
 const MAP_PROBE_RESP: u16 = 10015;
 const ENTITY_MOVE: u16 = 10016;
-const CLIENT_PING: u16 = 10019;
+const ENTITY_NUMERIC: u16 = 10017;
+const ENTITY_STATE: u16 = 10018;
+const CLIENT_PING: u16 = 10024;
+const ITEM_CHANGED: u16 = 10021;
+const STATE_SYNC_BENCH_REQ: u16 = 15006;
+const STATE_SYNC_BENCH_RESP: u16 = 15007;
 const CLIENT_PING_INTERVAL: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StateSyncMode {
+    Off,
+    Numeric,
+    PlayerInfo,
+    Item,
+    Mixed,
+}
+
+impl StateSyncMode {
+    fn parse(value: &str) -> Result<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "off" => Ok(Self::Off),
+            "numeric" => Ok(Self::Numeric),
+            "player" | "playerinfo" => Ok(Self::PlayerInfo),
+            "item" => Ok(Self::Item),
+            "mixed" => Ok(Self::Mixed),
+            _ => bail!("invalid --state-sync-mode {value}"),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Numeric => "numeric",
+            Self::PlayerInfo => "playerInfo",
+            Self::Item => "item",
+            Self::Mixed => "mixed",
+        }
+    }
+
+    fn request_mode(self, sequence: u32) -> u32 {
+        match self {
+            Self::Numeric => 1,
+            Self::PlayerInfo => 2,
+            Self::Item => 3,
+            Self::Mixed => sequence.saturating_sub(1) % 3 + 1,
+            Self::Off => 0,
+        }
+    }
+}
 
 #[derive(Clone)]
 struct Options {
@@ -41,6 +88,9 @@ struct Options {
     movement_hold_messages: u32,
     probe_rate: u64,
     probe_concurrency: usize,
+    state_sync_mode: StateSyncMode,
+    state_sync_rate: u64,
+    state_sync_concurrency: usize,
     label: String,
 }
 
@@ -60,8 +110,87 @@ struct PlayerConnection {
     writer_tx: mpsc::Sender<Vec<u8>>,
     writer_task: tokio::task::JoinHandle<()>,
     entity_move_pushes: Arc<AtomicU64>,
+    state_pushes: StatePushCounters,
     next_rpc_id: u32,
     unit_id: u32,
+}
+
+#[derive(Clone)]
+struct StatePushCounters {
+    numeric_frames: Arc<AtomicU64>,
+    numeric_items: Arc<AtomicU64>,
+    numeric_bytes: Arc<AtomicU64>,
+    player_info_frames: Arc<AtomicU64>,
+    player_info_items: Arc<AtomicU64>,
+    player_info_bytes: Arc<AtomicU64>,
+    item_frames: Arc<AtomicU64>,
+    item_items: Arc<AtomicU64>,
+    item_bytes: Arc<AtomicU64>,
+}
+
+impl StatePushCounters {
+    fn new() -> Self {
+        Self {
+            numeric_frames: Arc::new(AtomicU64::new(0)),
+            numeric_items: Arc::new(AtomicU64::new(0)),
+            numeric_bytes: Arc::new(AtomicU64::new(0)),
+            player_info_frames: Arc::new(AtomicU64::new(0)),
+            player_info_items: Arc::new(AtomicU64::new(0)),
+            player_info_bytes: Arc::new(AtomicU64::new(0)),
+            item_frames: Arc::new(AtomicU64::new(0)),
+            item_items: Arc::new(AtomicU64::new(0)),
+            item_bytes: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    fn snapshot(&self) -> StatePushSnapshot {
+        StatePushSnapshot {
+            numeric_frames: self.numeric_frames.load(Ordering::Relaxed),
+            numeric_items: self.numeric_items.load(Ordering::Relaxed),
+            numeric_bytes: self.numeric_bytes.load(Ordering::Relaxed),
+            player_info_frames: self.player_info_frames.load(Ordering::Relaxed),
+            player_info_items: self.player_info_items.load(Ordering::Relaxed),
+            player_info_bytes: self.player_info_bytes.load(Ordering::Relaxed),
+            item_frames: self.item_frames.load(Ordering::Relaxed),
+            item_items: self.item_items.load(Ordering::Relaxed),
+            item_bytes: self.item_bytes.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct StatePushSnapshot {
+    numeric_frames: u64,
+    numeric_items: u64,
+    numeric_bytes: u64,
+    player_info_frames: u64,
+    player_info_items: u64,
+    player_info_bytes: u64,
+    item_frames: u64,
+    item_items: u64,
+    item_bytes: u64,
+}
+
+impl StatePushSnapshot {
+    fn saturating_sub(self, earlier: Self) -> Self {
+        Self {
+            numeric_frames: self.numeric_frames.saturating_sub(earlier.numeric_frames),
+            numeric_items: self.numeric_items.saturating_sub(earlier.numeric_items),
+            numeric_bytes: self.numeric_bytes.saturating_sub(earlier.numeric_bytes),
+            player_info_frames: self
+                .player_info_frames
+                .saturating_sub(earlier.player_info_frames),
+            player_info_items: self
+                .player_info_items
+                .saturating_sub(earlier.player_info_items),
+            player_info_bytes: self
+                .player_info_bytes
+                .saturating_sub(earlier.player_info_bytes),
+            item_frames: self.item_frames.saturating_sub(earlier.item_frames),
+            item_items: self.item_items.saturating_sub(earlier.item_items),
+            item_bytes: self.item_bytes.saturating_sub(earlier.item_bytes),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -70,10 +199,17 @@ struct Timing {
     send_deadline: Instant,
 }
 
-struct PendingProbe {
+#[derive(Clone, Copy)]
+enum PendingKind {
+    Probe,
+    StateSync { mode: u32 },
+}
+
+struct PendingRequest {
     started_at: Instant,
     sequence: u32,
     measured: bool,
+    kind: PendingKind,
 }
 
 #[derive(Default)]
@@ -84,6 +220,18 @@ struct PlayerResult {
     move_sent: u64,
     move_skipped: u64,
     entity_move_pushes: u64,
+    state_sync_latencies_micros: Vec<u64>,
+    state_sync_errors: u64,
+    state_sync_sent: u64,
+    numeric_pushes: u64,
+    numeric_items: u64,
+    numeric_bytes: u64,
+    player_info_pushes: u64,
+    player_info_items: u64,
+    player_info_bytes: u64,
+    item_pushes: u64,
+    item_items: u64,
+    item_bytes: u64,
 }
 
 #[tokio::main]
@@ -171,11 +319,51 @@ async fn main() -> Result<()> {
         .iter()
         .map(|result| result.entity_move_pushes)
         .sum::<u64>();
+    let state_sync_errors = results
+        .iter()
+        .map(|result| result.state_sync_errors)
+        .sum::<u64>();
+    let state_sync_sent = results
+        .iter()
+        .map(|result| result.state_sync_sent)
+        .sum::<u64>();
+    let numeric_pushes = results
+        .iter()
+        .map(|result| result.numeric_pushes)
+        .sum::<u64>();
+    let numeric_items = results
+        .iter()
+        .map(|result| result.numeric_items)
+        .sum::<u64>();
+    let numeric_bytes = results
+        .iter()
+        .map(|result| result.numeric_bytes)
+        .sum::<u64>();
+    let player_info_pushes = results
+        .iter()
+        .map(|result| result.player_info_pushes)
+        .sum::<u64>();
+    let player_info_items = results
+        .iter()
+        .map(|result| result.player_info_items)
+        .sum::<u64>();
+    let player_info_bytes = results
+        .iter()
+        .map(|result| result.player_info_bytes)
+        .sum::<u64>();
+    let item_pushes = results.iter().map(|result| result.item_pushes).sum::<u64>();
+    let item_items = results.iter().map(|result| result.item_items).sum::<u64>();
+    let item_bytes = results.iter().map(|result| result.item_bytes).sum::<u64>();
     let mut latencies = results
-        .into_iter()
-        .flat_map(|result| result.latencies_micros)
+        .iter()
+        .flat_map(|result| result.latencies_micros.iter().copied())
         .collect::<Vec<_>>();
     latencies.sort_unstable();
+    let mut state_sync_latencies = results
+        .into_iter()
+        .flat_map(|result| result.state_sync_latencies_micros)
+        .collect::<Vec<_>>();
+    state_sync_latencies.sort_unstable();
     let requests = latencies.len();
     let requests_per_second = requests as f64 / options.duration.as_secs_f64();
     let setup_per_second = options.players as f64 / setup_elapsed.as_secs_f64();
@@ -200,6 +388,36 @@ async fn main() -> Result<()> {
         "p99Ms": percentile(&latencies, 0.99) as f64 / 1000.0,
         "maxMs": latencies.last().copied().unwrap_or_default() as f64 / 1000.0,
         "errors": probe_errors,
+    });
+    let state_sync_json = json!({
+        "mode": options.state_sync_mode.name(),
+        "targetRatePerPlayer": options.state_sync_rate,
+        "count": state_sync_sent,
+        "perSecond": state_sync_sent as f64 / options.duration.as_secs_f64(),
+        "p50Ms": percentile(&state_sync_latencies, 0.50) as f64 / 1000.0,
+        "p90Ms": percentile(&state_sync_latencies, 0.90) as f64 / 1000.0,
+        "p95Ms": percentile(&state_sync_latencies, 0.95) as f64 / 1000.0,
+        "p99Ms": percentile(&state_sync_latencies, 0.99) as f64 / 1000.0,
+        "maxMs": state_sync_latencies.last().copied().unwrap_or_default() as f64 / 1000.0,
+        "errors": state_sync_errors,
+        "numericPushes": numeric_pushes,
+        "numericItems": numeric_items,
+        "numericBytes": numeric_bytes,
+        "playerInfoPushes": player_info_pushes,
+        "playerInfoItems": player_info_items,
+        "playerInfoBytes": player_info_bytes,
+        "itemPushes": item_pushes,
+        "itemItems": item_items,
+        "itemBytes": item_bytes,
+        "numericPushesPerSecond": numeric_pushes as f64 / options.duration.as_secs_f64(),
+        "numericItemsPerSecond": numeric_items as f64 / options.duration.as_secs_f64(),
+        "numericBytesPerSecond": numeric_bytes as f64 / options.duration.as_secs_f64(),
+        "playerInfoPushesPerSecond": player_info_pushes as f64 / options.duration.as_secs_f64(),
+        "playerInfoItemsPerSecond": player_info_items as f64 / options.duration.as_secs_f64(),
+        "playerInfoBytesPerSecond": player_info_bytes as f64 / options.duration.as_secs_f64(),
+        "itemPushesPerSecond": item_pushes as f64 / options.duration.as_secs_f64(),
+        "itemItemsPerSecond": item_items as f64 / options.duration.as_secs_f64(),
+        "itemBytesPerSecond": item_bytes as f64 / options.duration.as_secs_f64(),
     });
     let result = json!({
         "scenario": "gameplay-full-chain-rust",
@@ -242,6 +460,7 @@ async fn main() -> Result<()> {
             "errors": move_errors,
         },
         "probe": timing_json,
+        "stateSync": state_sync_json,
         "loadGenerator": {
             "kind": "rust-tokio",
             "cpuTotalMs": cpu_time_ms,
@@ -250,7 +469,7 @@ async fn main() -> Result<()> {
     });
 
     println!(
-        "[full-chain-rust:{}/{}] players={} setup={:.1} users/s move={:.1}/s skipped={} pushes={:.1}/s probe={:.1}/s p50={:.2}ms p95={:.2}ms p99={:.2}ms errors={}/{}",
+        "[full-chain-rust:{}/{}] players={} setup={:.1} users/s move={:.1}/s skipped={} pushes={:.1}/s probe={:.1}/s p50={:.2}ms p95={:.2}ms p99={:.2}ms state={}:{:.1}/s p95={:.2}ms pushes={}/{}/{} errors={}/{}/{}",
         options.label,
         if options.move_rate > 0 {
             format!("steady-{}hz", options.move_rate)
@@ -266,8 +485,15 @@ async fn main() -> Result<()> {
         percentile(&latencies, 0.50) as f64 / 1000.0,
         percentile(&latencies, 0.95) as f64 / 1000.0,
         percentile(&latencies, 0.99) as f64 / 1000.0,
+        options.state_sync_mode.name(),
+        state_sync_sent as f64 / options.duration.as_secs_f64(),
+        percentile(&state_sync_latencies, 0.95) as f64 / 1000.0,
+        numeric_pushes,
+        player_info_pushes,
+        item_pushes,
         move_errors,
         probe_errors,
+        state_sync_errors,
     );
     println!("RESULT_JSON {result}");
     Ok(())
@@ -348,6 +574,8 @@ async fn setup_player(
     let (frame_tx, frame_rx) = mpsc::unbounded_channel::<Result<Vec<u8>>>();
     let entity_move_pushes = Arc::new(AtomicU64::new(0));
     let reader_pushes = Arc::clone(&entity_move_pushes);
+    let state_pushes = StatePushCounters::new();
+    let reader_state_pushes = state_pushes.clone();
     let reader_task = tokio::spawn(async move {
         loop {
             match read_frame(&mut reader).await {
@@ -355,7 +583,54 @@ async fn setup_player(
                     Ok(ENTITY_MOVE) => {
                         reader_pushes.fetch_add(1, Ordering::Relaxed);
                     }
-                    Ok(MAP_PROBE_RESP) => {
+                    Ok(ENTITY_NUMERIC) => {
+                        let item_count = match count_length_delimited_field(&frame, 2) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                let _ = frame_tx.send(Err(error));
+                                break;
+                            }
+                        };
+                        reader_state_pushes
+                            .numeric_frames
+                            .fetch_add(1, Ordering::Relaxed);
+                        reader_state_pushes
+                            .numeric_items
+                            .fetch_add(item_count, Ordering::Relaxed);
+                        reader_state_pushes
+                            .numeric_bytes
+                            .fetch_add(frame.len() as u64, Ordering::Relaxed);
+                    }
+                    Ok(ENTITY_STATE) => {
+                        let item_count = match count_length_delimited_field(&frame, 2) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                let _ = frame_tx.send(Err(error));
+                                break;
+                            }
+                        };
+                        reader_state_pushes
+                            .player_info_frames
+                            .fetch_add(1, Ordering::Relaxed);
+                        reader_state_pushes
+                            .player_info_items
+                            .fetch_add(item_count, Ordering::Relaxed);
+                        reader_state_pushes
+                            .player_info_bytes
+                            .fetch_add(frame.len() as u64, Ordering::Relaxed);
+                    }
+                    Ok(ITEM_CHANGED) => {
+                        reader_state_pushes
+                            .item_frames
+                            .fetch_add(1, Ordering::Relaxed);
+                        reader_state_pushes
+                            .item_items
+                            .fetch_add(1, Ordering::Relaxed);
+                        reader_state_pushes
+                            .item_bytes
+                            .fetch_add(frame.len() as u64, Ordering::Relaxed);
+                    }
+                    Ok(MAP_PROBE_RESP) | Ok(STATE_SYNC_BENCH_RESP) => {
                         if frame_tx.send(Ok(frame)).is_err() {
                             break;
                         }
@@ -380,6 +655,7 @@ async fn setup_player(
         writer_tx,
         writer_task,
         entity_move_pushes,
+        state_pushes,
         next_rpc_id: 4,
         unit_id,
     })
@@ -397,24 +673,34 @@ async fn run_player(
         writer_tx,
         writer_task,
         entity_move_pushes,
+        state_pushes,
         mut next_rpc_id,
         unit_id,
     } = player;
     let mut pushes_at_measurement_start = None;
-    let mut pending = HashMap::<u32, PendingProbe>::with_capacity(options.probe_concurrency * 2);
+    let mut state_pushes_at_measurement_start = None;
+    let mut pending = HashMap::<u32, PendingRequest>::with_capacity(
+        (options.probe_concurrency + options.state_sync_concurrency) * 2,
+    );
     let mut probe_sequence = 0_u32;
+    let mut state_sync_sequence = 0_u32;
     let mut move_sequence = 0_u32;
     let probe_interval =
         (options.probe_rate > 0).then(|| Duration::from_secs_f64(1.0 / options.probe_rate as f64));
     let move_interval =
         (options.move_rate > 0).then(|| Duration::from_secs_f64(1.0 / options.move_rate as f64));
+    let state_sync_interval = (options.state_sync_mode != StateSyncMode::Off
+        && options.state_sync_rate > 0)
+        .then(|| Duration::from_secs_f64(1.0 / options.state_sync_rate as f64));
     let mut next_probe = Instant::now();
     let mut next_move = Instant::now();
+    let mut next_state_sync = Instant::now();
 
     loop {
         let now = Instant::now();
         if pushes_at_measurement_start.is_none() && now >= timing.measurement_start {
             pushes_at_measurement_start = Some(entity_move_pushes.load(Ordering::Relaxed));
+            state_pushes_at_measurement_start = Some(state_pushes.snapshot());
         }
         if now >= timing.send_deadline && pending.is_empty() {
             break;
@@ -443,7 +729,7 @@ async fn run_player(
         }
 
         if now < timing.send_deadline
-            && pending.len() < options.probe_concurrency
+            && pending_probe_count(&pending) < options.probe_concurrency
             && probe_interval.is_some_and(|_| now >= next_probe)
         {
             send_probe(
@@ -458,10 +744,28 @@ async fn run_player(
             continue;
         }
 
+        if now < timing.send_deadline
+            && pending_state_sync_count(&pending) < options.state_sync_concurrency
+            && state_sync_interval.is_some_and(|_| now >= next_state_sync)
+        {
+            send_state_sync(
+                &writer_tx,
+                &mut next_rpc_id,
+                &mut pending,
+                &mut state_sync_sequence,
+                options.state_sync_mode,
+                timing,
+            )
+            .await?;
+            next_state_sync += state_sync_interval.expect("checked above");
+            continue;
+        }
+
         if pending.is_empty() {
             let wake_at = [
                 move_interval.map(|_| next_move),
                 probe_interval.map(|_| next_probe),
+                state_sync_interval.map(|_| next_state_sync),
                 Some(timing.send_deadline),
             ]
             .into_iter()
@@ -476,10 +780,14 @@ async fn run_player(
         let frame = if can_send_later {
             let wake_at = [
                 move_interval.map(|_| next_move),
-                (pending.len() < options.probe_concurrency)
+                (pending_probe_count(&pending) < options.probe_concurrency)
                     .then_some(probe_interval)
                     .flatten()
                     .map(|_| next_probe),
+                (pending_state_sync_count(&pending) < options.state_sync_concurrency)
+                    .then_some(state_sync_interval)
+                    .flatten()
+                    .map(|_| next_state_sync),
                 Some(timing.send_deadline),
             ]
             .into_iter()
@@ -494,25 +802,46 @@ async fn run_player(
             Some(frame_rx.recv().await.context("gate reader stopped")??)
         };
         let Some(frame) = frame else { continue };
-        if frame_msgcode(&frame)? != MAP_PROBE_RESP {
+        let msgcode = frame_msgcode(&frame)?;
+        if msgcode != MAP_PROBE_RESP && msgcode != STATE_SYNC_BENCH_RESP {
             continue;
         }
-        let response = decode_message(&frame, MAP_PROBE_RESP, None)?;
+        let response = decode_message(&frame, msgcode, None)?;
         let rpc_id = response.u32(90)?;
-        let response_sequence = response.u32(1)?;
+        let response_sequence = if msgcode == STATE_SYNC_BENCH_RESP {
+            response.u32(2)?
+        } else {
+            response.u32(1)?
+        };
         let request = pending
             .remove(&rpc_id)
-            .with_context(|| format!("unknown MapProbe rpcId {rpc_id}"))?;
+            .with_context(|| format!("unknown response rpcId {rpc_id}"))?;
         if request.sequence != response_sequence {
             bail!(
-                "MapProbe sequence mismatch: {response_sequence} != {}",
+                "response sequence mismatch: {response_sequence} != {}",
                 request.sequence
             );
         }
-        if request.measured {
-            result
-                .latencies_micros
-                .push(request.started_at.elapsed().as_micros() as u64);
+        match request.kind {
+            PendingKind::Probe => {
+                if msgcode != MAP_PROBE_RESP {
+                    result.probe_errors += 1;
+                } else if request.measured {
+                    result
+                        .latencies_micros
+                        .push(request.started_at.elapsed().as_micros() as u64);
+                }
+            }
+            PendingKind::StateSync { mode } => {
+                if msgcode != STATE_SYNC_BENCH_RESP || response.u32(1)? != mode {
+                    result.state_sync_errors += 1;
+                } else if request.measured {
+                    result.state_sync_sent += 1;
+                    result
+                        .state_sync_latencies_micros
+                        .push(request.started_at.elapsed().as_micros() as u64);
+                }
+            }
         }
     }
     reader_task.abort();
@@ -520,6 +849,18 @@ async fn run_player(
     result.entity_move_pushes = entity_move_pushes.load(Ordering::Relaxed).saturating_sub(
         pushes_at_measurement_start.unwrap_or_else(|| entity_move_pushes.load(Ordering::Relaxed)),
     );
+    let end_state_pushes = state_pushes.snapshot();
+    let start_state_pushes = state_pushes_at_measurement_start.unwrap_or(end_state_pushes);
+    let measured_state_pushes = end_state_pushes.saturating_sub(start_state_pushes);
+    result.numeric_pushes = measured_state_pushes.numeric_frames;
+    result.numeric_items = measured_state_pushes.numeric_items;
+    result.numeric_bytes = measured_state_pushes.numeric_bytes;
+    result.player_info_pushes = measured_state_pushes.player_info_frames;
+    result.player_info_items = measured_state_pushes.player_info_items;
+    result.player_info_bytes = measured_state_pushes.player_info_bytes;
+    result.item_pushes = measured_state_pushes.item_frames;
+    result.item_items = measured_state_pushes.item_items;
+    result.item_bytes = measured_state_pushes.item_bytes;
     Ok(result)
 }
 
@@ -547,7 +888,7 @@ async fn send_move(
 async fn send_probe(
     writer_tx: &mpsc::Sender<Vec<u8>>,
     next_rpc_id: &mut u32,
-    pending: &mut HashMap<u32, PendingProbe>,
+    pending: &mut HashMap<u32, PendingRequest>,
     sequence: &mut u32,
     timing: Timing,
 ) -> Result<()> {
@@ -560,13 +901,61 @@ async fn send_probe(
     send_client_frame(writer_tx, encode_rpc(MAP_PROBE_REQ, rpc_id, &payload)?).await?;
     pending.insert(
         rpc_id,
-        PendingProbe {
+        PendingRequest {
             started_at,
             sequence: *sequence,
             measured: started_at >= timing.measurement_start && started_at < timing.send_deadline,
+            kind: PendingKind::Probe,
         },
     );
     Ok(())
+}
+
+async fn send_state_sync(
+    writer_tx: &mpsc::Sender<Vec<u8>>,
+    next_rpc_id: &mut u32,
+    pending: &mut HashMap<u32, PendingRequest>,
+    sequence: &mut u32,
+    selected_mode: StateSyncMode,
+    timing: Timing,
+) -> Result<()> {
+    let rpc_id = *next_rpc_id;
+    *next_rpc_id = next_rpc_id.wrapping_add(1).max(1);
+    *sequence = sequence.wrapping_add(1).max(1);
+    let mode = selected_mode.request_mode(*sequence);
+    let started_at = Instant::now();
+    let mut payload = Vec::with_capacity(16);
+    push_uint32(&mut payload, 1, mode);
+    push_uint32(&mut payload, 2, *sequence);
+    send_client_frame(
+        writer_tx,
+        encode_rpc(STATE_SYNC_BENCH_REQ, rpc_id, &payload)?,
+    )
+    .await?;
+    pending.insert(
+        rpc_id,
+        PendingRequest {
+            started_at,
+            sequence: *sequence,
+            measured: started_at >= timing.measurement_start && started_at < timing.send_deadline,
+            kind: PendingKind::StateSync { mode },
+        },
+    );
+    Ok(())
+}
+
+fn pending_probe_count(pending: &HashMap<u32, PendingRequest>) -> usize {
+    pending
+        .values()
+        .filter(|request| matches!(request.kind, PendingKind::Probe))
+        .count()
+}
+
+fn pending_state_sync_count(pending: &HashMap<u32, PendingRequest>) -> usize {
+    pending
+        .values()
+        .filter(|request| matches!(request.kind, PendingKind::StateSync { .. }))
+        .count()
 }
 
 async fn run_gate_writer(
@@ -777,6 +1166,31 @@ fn frame_msgcode(frame: &[u8]) -> Result<u16> {
     Ok(u16::from_be_bytes([frame[0], frame[1]]))
 }
 
+fn count_length_delimited_field(frame: &[u8], expected_field: u32) -> Result<u64> {
+    let mut offset = 2;
+    let mut count = 0_u64;
+    while offset < frame.len() {
+        let tag = read_varint(frame, &mut offset)?;
+        let field = (tag >> 3) as u32;
+        match tag & 7 {
+            0 => {
+                read_varint(frame, &mut offset)?;
+            }
+            1 => advance(frame, &mut offset, 8)?,
+            2 => {
+                let length = read_varint(frame, &mut offset)? as usize;
+                if field == expected_field {
+                    count += 1;
+                }
+                advance(frame, &mut offset, length)?;
+            }
+            5 => advance(frame, &mut offset, 4)?,
+            wire => bail!("unsupported protobuf wire type {wire}"),
+        }
+    }
+    Ok(count)
+}
+
 fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64> {
     let mut value = 0_u64;
     for shift in (0..70).step_by(7) {
@@ -829,17 +1243,19 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
     let players = number("players", 100)? as usize;
     let setup_concurrency = number("setup-concurrency", 16)? as usize;
     let probe_concurrency = number("probe-concurrency", 4)? as usize;
+    let state_sync_concurrency = number("state-sync-concurrency", 4)? as usize;
     let movement_hold_messages = u32::try_from(number("movement-hold-messages", 1)?)
         .context("movement hold messages exceeds uint32")?;
     let duration = number("duration", 10)?;
     if players == 0
         || setup_concurrency == 0
         || probe_concurrency == 0
+        || state_sync_concurrency == 0
         || movement_hold_messages == 0
         || duration == 0
     {
         bail!(
-            "players, setup-concurrency, probe-concurrency, movement-hold-messages and duration must be greater than zero"
+            "players, setup-concurrency, probe-concurrency, state-sync-concurrency, movement-hold-messages and duration must be greater than zero"
         );
     }
     Ok(Options {
@@ -858,9 +1274,35 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         movement_hold_messages,
         probe_rate: number("probe-rate", 20)?,
         probe_concurrency,
+        state_sync_mode: StateSyncMode::parse(
+            values
+                .get("state-sync-mode")
+                .map(String::as_str)
+                .unwrap_or("off"),
+        )?,
+        state_sync_rate: number("state-sync-rate", 0)?,
+        state_sync_concurrency,
         label: values
             .get("label")
             .cloned()
             .unwrap_or_else(|| "rust".to_string()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn counts_top_level_repeated_messages() {
+        let mut frame = ENTITY_NUMERIC.to_be_bytes().to_vec();
+        push_uint32(&mut frame, 1, 42);
+        for payload in [vec![0x08, 0x01], vec![0x08, 0x02, 0x10, 0x03]] {
+            push_varint(&mut frame, u64::from((2_u32 << 3) | 2));
+            push_varint(&mut frame, payload.len() as u64);
+            frame.extend_from_slice(&payload);
+        }
+
+        assert_eq!(count_length_delimited_field(&frame, 2).unwrap(), 2);
+    }
 }

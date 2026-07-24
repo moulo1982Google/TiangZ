@@ -1,6 +1,7 @@
 import { Component, component } from "../../core/runtime";
 import { NativeOps } from "../../generated/model/native/NativeOps";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
+import type { UnitNumericDelta } from "../../generated/model/server/demo/protocol/messages";
 import type { PlayerUnit } from "../map/PlayerUnit";
 import { AllNumericTypes, NumericType, type NumericType as NumericTypeValue } from "./NumericType";
 
@@ -32,6 +33,15 @@ export class NumericComponent extends Component {
       throw new Error(`numeric value must be int32: ${type}=${value}`);
     }
     NativeOps.NumericSet(this.unitHandle, type, value);
+  }
+
+  Snapshot(): UnitNumericDelta[] {
+    const unitId = this.GetParent<PlayerUnit>().UnitId;
+    return AllNumericTypes.map((numericType) => ({
+      unitId,
+      numericType,
+      value: this.Get(numericType),
+    }));
   }
 
   protected override OnDestroy(): void {

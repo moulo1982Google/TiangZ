@@ -76,6 +76,7 @@ message G2C_EnterMap // IResponse
   sint32 y = 6;
   repeated MapEntitySnapshot entities = 7;
   uint32 fixed_update_ms = 8;
+  repeated ItemSnapshot items = 9;
 }
 
 // @ets.msg protocol=Client method=MapReady
@@ -122,6 +123,33 @@ message G2C_EntityNumeric // IMessage
 {
   uint32 server_tick = 1;
   repeated UnitNumericDelta numerics = 2;
+}
+
+// @ets.msg protocol=Client method=EntityState
+// @ets.broadcast mode=latest item=UnitStateDelta items=states key=unit_id tick=server_tick
+message G2C_EntityState // IMessage
+{
+  uint32 server_tick = 1;
+  repeated UnitStateDelta states = 2;
+}
+
+//ResponseType M2C_UseItem
+// @ets.msg protocol=Map method=UseItem
+message C2M_UseItem // IActorLocationRequest
+{
+  uint32 item_id = 1;
+}
+
+message M2C_UseItem // IActorLocationResponse
+{
+  ItemSnapshot item = 1;
+}
+
+// @ets.msg protocol=Client method=ItemChanged
+// @ets.broadcast mode=event
+message G2C_ItemChanged // IMessage
+{
+  ItemSnapshot item = 1;
 }
 
 // @ets.msg protocol=Client method=EntityEnter

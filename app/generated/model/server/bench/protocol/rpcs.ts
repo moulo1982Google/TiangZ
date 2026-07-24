@@ -5,10 +5,14 @@ import {
   B2B_RuntimePingRequestCodec,
   B2B_RuntimePingResponse,
   B2B_RuntimePingResponseCodec,
+  C2M_StateSyncBench,
+  C2M_StateSyncBenchCodec,
   C2S_MailboxParity,
   C2S_MailboxParityCodec,
   C2S_RuntimePing,
   C2S_RuntimePingCodec,
+  M2C_StateSyncBench,
+  M2C_StateSyncBenchCodec,
   S2C_MailboxParity,
   S2C_MailboxParityCodec,
   S2C_RuntimePing,
@@ -46,8 +50,20 @@ export const MailboxParityProtocol = {
   }),
 };
 
+export const StateSyncBenchProtocol = {
+  Trigger: defineRpc<C2M_StateSyncBench, M2C_StateSyncBench>({
+    name: "StateSyncBench.Trigger",
+    requestCode: MsgCode.C2M_StateSyncBench,
+    responseCode: MsgCode.M2C_StateSyncBench,
+    requestCodec: C2M_StateSyncBenchCodec,
+    responseCodec: M2C_StateSyncBenchCodec,
+    routing: "actor-location",
+  }),
+};
+
 export const AllRpcDescriptors = [
   BenchInnerProtocol.RuntimePing,
   BenchProtocol.RuntimePing,
   MailboxParityProtocol.MailboxParity,
+  StateSyncBenchProtocol.Trigger,
 ] as const;

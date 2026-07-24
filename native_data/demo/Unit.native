@@ -2,9 +2,12 @@ namespace demo;
 
 @typeId(1)
 @component
+@replicated
 entity Unit extends Entity {
   readonly mapId: u32;
+  @memberId(1)
   x: f32 = 0;
+  @memberId(2)
   y: f32 = 0;
   cellX: i32 = 0;
   cellY: i32 = 0;
@@ -13,7 +16,10 @@ entity Unit extends Entity {
   moveStartTick: u32 = 0;
   moveEndTick: u32 = 0;
   moving: u32 = 0;
+  @memberId(3)
   speedCellsPerSecond: f32 = 10;
+  @memberId(4)
+  alive: u32 = 1;
   inputX: i8 = 0;
   inputY: i8 = 0;
   inputChanged: u32 = 0;
