@@ -1,13 +1,29 @@
+//! Starts machine-assigned processes and supervises their bounded graceful shutdown.
+
 use std::collections::HashSet;
 use std::env;
+use std::io::Write;
 use std::net::UdpSocket;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-use crate::config::StartMachineConfig;
+use crate::config::{StartMachineConfig, load_runtime_config};
 
+struct ManagedChild {
+    name: String,
+    child: Child,
+    control: Option<ChildStdin>,
+    stop_timeout: Duration,
+}
+
+/// Starts every process assigned to the local machine and supervises graceful shutdown.
+///
+/// A private stdin pipe carries shutdown to children on both Windows and Unix.
+/// All children are notified before waiting begins; each receives its own
+/// configured grace period, after which force termination is the final fallback.
 pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Result<()> {
     let config_text = std::fs::read_to_string(&start_machine_path)
         .with_context(|| format!("failed to read {}", start_machine_path.display()))?;
@@ -55,23 +71,112 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
     }
 
     let exe = env::current_exe().context("failed to get current executable")?;
-    let mut children = Vec::<Child>::new();
+    let mut children = Vec::<ManagedChild>::new();
     for process_config in processes {
         let arg = to_process_arg(root, &process_config);
+        let process_config = load_runtime_config(&process_config)
+            .with_context(|| format!("failed to load child config {}", process_config.display()))?;
         tracing::info!(target: "tiangz::watcher", config = %arg.display(), "starting process config");
-        let child = Command::new(&exe)
+        let mut child = Command::new(&exe)
             .arg(&arg)
             .current_dir(root)
+            .env("TIANGZ_WATCHER_CONTROL", "stdin")
+            .stdin(Stdio::piped())
             .spawn()
             .with_context(|| format!("failed to start {}", arg.display()))?;
-        children.push(child);
+        children.push(ManagedChild {
+            name: process_config.process.name,
+            control: child.stdin.take(),
+            child,
+            stop_timeout: Duration::from_millis(process_config.process.lifecycle.stop_timeout_ms),
+        });
     }
 
-    tokio::signal::ctrl_c().await?;
+    wait_for_shutdown_signal().await?;
     tracing::info!(target: "tiangz::watcher", child_count = children.len(), "stopping child processes");
     for child in &mut children {
-        let _ = child.kill();
-        let _ = child.wait();
+        request_graceful_shutdown(child);
+    }
+    for child in &mut children {
+        wait_for_child_shutdown(child).await?;
+    }
+    Ok(())
+}
+
+/// Sends the Watcher control message and closes the pipe immediately after it.
+///
+/// All children are notified before any child is awaited, so one process with a
+/// slow repository save cannot consume another process's grace period. Failure
+/// to write is not fatal here because it commonly means the child already
+/// exited; `wait_for_child_shutdown` determines the authoritative result.
+fn request_graceful_shutdown(child: &mut ManagedChild) {
+    if let Some(mut control) = child.control.take()
+        && let Err(error) = control.write_all(b"shutdown\n")
+    {
+        tracing::warn!(target: "tiangz::watcher", process = %child.name, %error, "failed to write child shutdown control");
+    }
+}
+
+/// Waits for one child to finish its TS lifecycle and force-kills only on timeout.
+async fn wait_for_child_shutdown(child: &mut ManagedChild) -> Result<()> {
+    let deadline = Instant::now() + child.stop_timeout;
+    loop {
+        if let Some(status) = child
+            .child
+            .try_wait()
+            .with_context(|| format!("failed to query child process {}", child.name))?
+        {
+            tracing::info!(target: "tiangz::watcher", process = %child.name, %status, "child process stopped");
+            if !status.success() {
+                bail!(
+                    "child process {} stopped unsuccessfully: {status}",
+                    child.name
+                );
+            }
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            tracing::error!(target: "tiangz::watcher", process = %child.name, timeout_ms = child.stop_timeout.as_millis(), "child graceful shutdown timed out; forcing termination");
+            child
+                .child
+                .kill()
+                .with_context(|| format!("failed to force-stop child process {}", child.name))?;
+            child
+                .child
+                .wait()
+                .with_context(|| format!("failed to reap child process {}", child.name))?;
+            bail!(
+                "child process {} exceeded graceful shutdown timeout of {}ms",
+                child.name,
+                child.stop_timeout.as_millis()
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+/// Accepts the same operator shutdown signals as a directly launched process.
+async fn wait_for_shutdown_signal() -> Result<()> {
+    #[cfg(windows)]
+    {
+        let mut ctrl_break =
+            tokio::signal::windows::ctrl_break().context("failed to install CTRL_BREAK handler")?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result?,
+            _ = ctrl_break.recv() => {},
+            result = crate::shutdown::wait_for_parent_control() => result?,
+        }
+    }
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .context("failed to install SIGTERM handler")?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result?,
+            _ = terminate.recv() => {},
+            result = crate::shutdown::wait_for_parent_control() => result?,
+        }
     }
     Ok(())
 }
@@ -94,12 +199,11 @@ fn get_local_ips() -> HashSet<String> {
         }
     }
 
-    if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
-        if socket.connect("8.8.8.8:80").is_ok() {
-            if let Ok(addr) = socket.local_addr() {
-                ips.insert(addr.ip().to_string());
-            }
-        }
+    if let Ok(socket) = UdpSocket::bind("0.0.0.0:0")
+        && socket.connect("8.8.8.8:80").is_ok()
+        && let Ok(addr) = socket.local_addr()
+    {
+        ips.insert(addr.ip().to_string());
     }
 
     collect_command_ips(&mut ips, "hostname", &["-I"]);

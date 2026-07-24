@@ -1,3 +1,5 @@
+//! Selects Watcher or single-process mode and wires validated configuration into the runtime.
+
 use std::env;
 use std::path::PathBuf;
 
@@ -15,6 +17,7 @@ mod inspector;
 mod logging;
 mod native_data;
 mod process;
+mod shutdown;
 mod transport;
 mod transport_backend;
 mod watcher;

@@ -10,14 +10,17 @@ export class ItemComponent extends Component {
 
   private readonly items = new Map<number, NativeItemRef>();
 
+  /** Seeds one demo item; production loading should compose inventory from persistent data instead. */
   protected override Awake(): void {
     this.Create(1, 1001, 3);
   }
 
+  /** Copies the current inventory for full sync or persistence without exposing Native handles. */
   Snapshot(): ItemSnapshot[] {
     return [...this.items.values()].map(toSnapshot);
   }
 
+  /** Consumes one item immediately and increments version for non-replaceable event delivery. */
   UseItem(itemId: number): ItemSnapshot {
     const item = this.requireItem(itemId);
     if (item.count === 0) {
@@ -28,6 +31,7 @@ export class ItemComponent extends Component {
     return toSnapshot(item);
   }
 
+  /** Adds to an existing stack and returns the authoritative post-change snapshot. */
   AddItem(itemId: number, count: number): ItemSnapshot {
     requirePositiveCount(count);
     const item = this.requireItem(itemId);
@@ -36,6 +40,7 @@ export class ItemComponent extends Component {
     return toSnapshot(item);
   }
 
+  /** Removes a validated amount atomically or throws without changing the stack. */
   RemoveItem(itemId: number, count: number): ItemSnapshot {
     requirePositiveCount(count);
     const item = this.requireItem(itemId);
@@ -47,6 +52,7 @@ export class ItemComponent extends Component {
     return toSnapshot(item);
   }
 
+  /** Releases all Rust Arena handles owned by this inventory. */
   protected override OnDestroy(): void {
     for (const item of this.items.values()) item.Dispose();
     this.items.clear();

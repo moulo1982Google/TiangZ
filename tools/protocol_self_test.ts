@@ -17,6 +17,7 @@ import {
   MapEntitySnapshotCodec,
   S2C_LoginCodec,
 } from "../app/generated/model/server/demo/protocol/messages";
+import { Integer64FixtureCodec } from "../app/generated/model/server/bench/protocol/messages";
 import {
   GateMessages,
   MapMessages,
@@ -27,11 +28,31 @@ void main();
 
 async function main(): Promise<void> {
   testGeneratedScalarCodec();
+  testGeneratedInteger64Codec();
   testActorLocationEnvelope();
   await testRpcMetadataRoundTrip();
   await testOneWayMessageHasNoResponse();
   testMalformedLengthDelimitedField();
   console.log("protocol self-test passed");
+}
+
+function testGeneratedInteger64Codec(): void {
+  const value = {
+    unsignedValue: 18_446_744_073_709_551_615n,
+    signedValue: -9_223_372_036_854_775_808n,
+    unsignedValues: [0n, 9_007_199_254_740_993n, 18_446_744_073_709_551_615n],
+    signedValues: [-9_223_372_036_854_775_808n, -1n, 9_223_372_036_854_775_807n],
+  };
+  assert.deepEqual(Integer64FixtureCodec.decode(Integer64FixtureCodec.encode(value)), value);
+
+  const writer = new BinaryWriter();
+  assert.throws(() => writer.uint64(1, -1n), /uint64 value/);
+  assert.throws(() => writer.int64(1, 1n << 63n), /int64 value/);
+  const overflow = new BinaryReader(
+    new Uint8Array([0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02]),
+  );
+  assert.deepEqual(overflow.tag(), { fieldNo: 1, wireType: 0 });
+  assert.throws(() => overflow.uint64(), /overflow/);
 }
 
 async function testOneWayMessageHasNoResponse(): Promise<void> {

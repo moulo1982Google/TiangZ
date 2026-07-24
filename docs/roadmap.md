@@ -170,7 +170,20 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - ItemComponent 演示不可覆盖的即时事件：`UseItem` 修改 Rust 数据后立即推送 `G2C_ItemChanged`；速度效果则作为 Player 固定字段在帧尾合并。
 - 本阶段不实现接收者空间筛选；状态提取、编码和广播对象选择保持彼此独立。
 
+## Phase 3.9：Phase 4 准入收尾
+
+状态：完成（2026-07）。
+
+- 修正拆分进程 Numeric 稳定性验收：进入地图全量快照提供初始值，后续脏增量只要求变化字段，不再错误等待未变化的 MaxHp。
+- protobuf opcode lock 成为发布契约；新增消息必须显式更新，历史编号不允许静默变更或复用。
+- `uint64/int64` 在服务端和 TypeScript Client SDK 统一为无损 `bigint`，并覆盖边界值与 repeated 默认值回归。
+- Watcher 对 Windows/Linux 子进程使用统一控制管道，等待 TS `onStop` 与玩家保存，超时才强杀且向操作员返回失败。
+- 新增只读生成物校验、快速质量门和包含拆分进程、mailbox、背压、Watcher 的完整 `npm run verify`。
+- Core、Demo 与 Rust 宿主建立函数注释规范，重点记录副作用、生命周期、不应怎样使用以及设计原因。
+
 ## Phase 4：MMORPG 业务扩展
+
+状态：尚未开始。
 
 计划：
 
@@ -196,12 +209,11 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 ## 当前验收命令
 
 ```powershell
-npm run check
-cargo test --all-targets
-npm run test:runtime
-npm run test:mailbox-parity
-npm run test:backpressure
+npm run verify:quick
+npm run verify
 npm run perf:full-chain
 ```
+
+`verify:quick` 用于日常开发；修改进程、协议、mailbox、背压或生命周期边界后，合并前执行完整 `verify`。
 
 阶段历史文件保留旧实现数据，但当前架构事实以 README、tutorials、reference 和 maintainer-guide 为准。

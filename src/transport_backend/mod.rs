@@ -1,3 +1,5 @@
+//! Separates endpoint protocol semantics from the selected operating-system I/O backend.
+
 mod epoll;
 #[cfg(feature = "kcp")]
 mod kcp;

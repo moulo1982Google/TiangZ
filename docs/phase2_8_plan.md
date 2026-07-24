@@ -43,12 +43,14 @@ Phase 2.8 位于多人地图纵向链路与正式角色业务之间。目标不�
 
 ## Phase 2.8.2：协议稳定性
 
-状态：待开始。
+状态：核心发布契约完成。
 
-- 生成并维护 opcode lock，禁止已发布消息静默改号。
-- 增加协议指纹和客户端版本检查。
-- 确定并实现 `uint64/int64` 在服务端与 Cocos 中的表示。
-- 补充 enum、optional、repeated scalar packed 和兼容性测试。
+- 已提交 `proto/opcode.lock.json`。普通 `npm run codegen:proto` 只校验；评审新消息编号后显式执行 `npm run codegen:proto:update-lock`。
+- 锁文件保留已删除消息的编号占位，旧消息改名、插队导致后续消息重编号、复用历史编号都会失败。
+- `uint64/int64` 在服务端 TS、公共 Client SDK、Cocos 与 Pixi 统一表示为 `bigint`，覆盖无符号最大值、有符号最小值、负数二补码和越过 JS 安全整数范围的测试。
+- 修复 repeated 标量默认值被错误省略的问题，数组中的 `0/0n/false/空字符串` 不再改变元素数量。
+- Client SDK 已生成协议指纹；客户端版本拒绝策略属于生产发布兼容策略，进入 Phase 5 前与热更、灰度和回滚一起确定，不在 Demo 登录链路中硬编码。
+- enum、显式 optional 与 packed scalar 的跨语言兼容矩阵仍属于协议工具链增强，不阻塞当前已有协议和 Phase 4 业务开发。
 
 ## Phase 2.8.3：日志、错误模型与链路耗时
 
@@ -75,16 +77,18 @@ Phase 2.8 位于多人地图纵向链路与正式角色业务之间。目标不�
 
 ## Phase 2.8.5：生命周期与开发体验
 
-状态：部分完成。
+状态：Phase 4 准入项完成。
 
 - 已增加可等待的 `onStart/onReady/onStop`；直接启动单个 Process 配置时，Windows `CTRL_C/CTRL_BREAK` 与 Linux `SIGINT/SIGTERM` 会进入 TS stop、关闭连接并等待保存。
+- Watcher 使用跨平台父子控制管道同时通知所有子进程，再按各自 `stopTimeoutMs` 等待；仅超时才强杀。Watcher 消失造成管道 EOF 时，子进程也会主动收尾，避免遗留孤儿进程。
+- 子进程非零退出或优雅停机超时会让 Watcher 返回失败。自动重启、退避与滚动更新仍属于 Phase 5 生产监管能力。
 - MapHost 停止时会按 Gate 批量踢出玩家；玩家数据保存封装在幂等 `PlayerUnit.Offline()` 中，踢人逻辑不直接调用 Repository。
 - `process.lifecycle.stopTimeoutMs` 默认 10000ms，保存失败或超时会让停机失败并留下错误日志。
-- Service Runtime 异常退出时让宿主进程 fail-fast，Watcher 支持受控重启和退避。
 - 校验重复 Service 名称、地址、依赖和生产环境 Inner Token。
 - 生成类型安全的 ServiceType、Actor Handler Descriptor 和 Proxy。
 - 增加 Timer、IUpdate 和可替换 FakeClock。
-- 接入 TypeScript 格式化、Rust fmt/clippy、生成代码一致性检查和 CI。
+- 增加 `npm run verify:codegen` 的只读哈希/文件集校验、`verify:quick` 日常质量门和完整 `verify` 运行时门；Rust fmt/clippy 已纳入命令，CI 托管仍待远程流水线环境。
+- 手写 Core、Demo 和 Rust 宿主公共边界已按 TSDoc/Rustdoc 补充作用、副作用、误用约束和设计原因；规范见 `docs/reference/coding-conventions.md`。
 
 ## 暂不纳入
 

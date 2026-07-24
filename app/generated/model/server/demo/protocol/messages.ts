@@ -131,7 +131,7 @@ export const MapEntitySnapshotCodec = {
     writer.string(7, value.account);
     writer.sint32(8, value.cellX);
     writer.sint32(9, value.cellY);
-    for (const item of value.numerics) writer.bytes(10, UnitNumericDeltaCodec.encode(item));
+    for (const item of value.numerics) writer.bytes(10, UnitNumericDeltaCodec.encode(item), true);
     writer.float(11, value.speedCellsPerSecond);
     writer.uint32(12, value.facing);
     return writer.finish();
@@ -557,10 +557,10 @@ export const M2G_EnterMapCodec = {
     writer.uint32(3, value.unitId);
     writer.sint32(4, value.x);
     writer.sint32(5, value.y);
-    for (const item of value.entities) writer.bytes(6, MapEntitySnapshotCodec.encode(item));
+    for (const item of value.entities) writer.bytes(6, MapEntitySnapshotCodec.encode(item), true);
     writer.uint32(7, value.actorInstanceId);
     writer.uint32(8, value.fixedUpdateMs);
-    for (const item of value.items) writer.bytes(9, ItemSnapshotCodec.encode(item));
+    for (const item of value.items) writer.bytes(9, ItemSnapshotCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -772,7 +772,7 @@ export const S2G_ClientBroadcastCodec = {
 
   encode(value: S2G_ClientBroadcast): Uint8Array {
     const writer = new BinaryWriter();
-    for (const item of value.targetUnitIds) writer.uint32(1, item);
+    for (const item of value.targetUnitIds) writer.uint32(1, item, true);
     writer.bytes(2, value.frame);
     return writer.finish();
   },
@@ -842,7 +842,7 @@ export const M2G_KickPlayersCodec = {
 
   encode(value: M2G_KickPlayers): Uint8Array {
     const writer = new BinaryWriter();
-    for (const item of value.players) writer.bytes(1, KickPlayerTargetCodec.encode(item));
+    for (const item of value.players) writer.bytes(1, KickPlayerTargetCodec.encode(item), true);
     writer.string(2, value.reason);
     return writer.finish();
   },
@@ -1321,9 +1321,9 @@ export const G2C_EnterMapCodec = {
     writer.uint32(4, value.unitId);
     writer.sint32(5, value.x);
     writer.sint32(6, value.y);
-    for (const item of value.entities) writer.bytes(7, MapEntitySnapshotCodec.encode(item));
+    for (const item of value.entities) writer.bytes(7, MapEntitySnapshotCodec.encode(item), true);
     writer.uint32(8, value.fixedUpdateMs);
-    for (const item of value.items) writer.bytes(9, ItemSnapshotCodec.encode(item));
+    for (const item of value.items) writer.bytes(9, ItemSnapshotCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -1530,7 +1530,7 @@ export const G2C_EntityMoveCodec = {
   encode(value: G2C_EntityMove): Uint8Array {
     const writer = new BinaryWriter();
     writer.uint32(1, value.serverTick);
-    for (const item of value.movements) writer.bytes(2, CellMovementStateCodec.encode(item));
+    for (const item of value.movements) writer.bytes(2, CellMovementStateCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -1565,7 +1565,7 @@ export const G2C_EntityNumericCodec = {
   encode(value: G2C_EntityNumeric): Uint8Array {
     const writer = new BinaryWriter();
     writer.uint32(1, value.serverTick);
-    for (const item of value.numerics) writer.bytes(2, UnitNumericDeltaCodec.encode(item));
+    for (const item of value.numerics) writer.bytes(2, UnitNumericDeltaCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -1600,7 +1600,7 @@ export const G2C_EntityStateCodec = {
   encode(value: G2C_EntityState): Uint8Array {
     const writer = new BinaryWriter();
     writer.uint32(1, value.serverTick);
-    for (const item of value.states) writer.bytes(2, UnitStateDeltaCodec.encode(item));
+    for (const item of value.states) writer.bytes(2, UnitStateDeltaCodec.encode(item), true);
     return writer.finish();
   },
 };

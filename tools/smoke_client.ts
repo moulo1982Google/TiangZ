@@ -121,6 +121,9 @@ async function verifyGateSessionLifecycle(
     await verifyNumericTimer(
       afterDisconnect.gate,
       afterDisconnect.enterMap.unitId,
+      afterDisconnect.enterMap.entities.find(
+        (entity) => entity.unitId === afterDisconnect.enterMap.unitId,
+      )?.numerics ?? [],
       afterDisconnect.initialNumericFrame,
     );
     await verifyItemChange(afterDisconnect.gate, afterDisconnect.enterMap);
@@ -162,19 +165,38 @@ async function verifyItemChange(
 async function verifyNumericTimer(
   gate: TcpRpcConnection,
   unitId: number,
+  initialNumerics: readonly { numericType: number; value: number }[],
   initialFrame?: Uint8Array,
 ): Promise<void> {
-  let previous: number | undefined;
-  let maxHp: number | undefined;
+  let previous = initialNumerics.find((numeric) => numeric.numericType === 1)?.value;
+  const maxHp = initialNumerics.find((numeric) => numeric.numericType === 2)?.value;
+  if (previous === undefined || maxHp !== 1000) {
+    throw new Error(
+      `enter-map snapshot is missing Numeric defaults: unit ${unitId}, numerics=${JSON.stringify(initialNumerics)}`,
+    );
+  }
+  let frameCount = 0;
+  const observed = new Map<number, Map<number, number>>();
   const frames: Uint8Array[] = initialFrame ? [initialFrame] : [];
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
-    const frame = frames.shift() ?? await gate.waitForMessage(
-        MsgCode.G2C_EntityNumeric,
-        Math.max(1, deadline - Date.now()),
-      );
+    let frame: Uint8Array;
+    try {
+      frame = frames.shift() ?? await gate.waitForMessage(
+          MsgCode.G2C_EntityNumeric,
+          Math.max(1, deadline - Date.now()),
+        );
+    } catch (error) {
+      if (Date.now() >= deadline) break;
+      throw error;
+    }
+    frameCount += 1;
     const body = decodeEntityNumericFrame(frame).body;
-    for (const numeric of body.numerics.filter((candidate) => candidate.unitId === unitId)) {
+    for (const numeric of body.numerics) {
+      const values = observed.get(numeric.unitId) ?? new Map<number, number>();
+      values.set(numeric.numericType, numeric.value);
+      observed.set(numeric.unitId, values);
+      if (numeric.unitId !== unitId) continue;
       if (numeric.numericType === 1) {
         if (previous !== undefined && numeric.value > previous && maxHp === 1000) {
           console.log("Numeric timer broadcast:", {
@@ -186,12 +208,17 @@ async function verifyNumericTimer(
           return;
         }
         previous = numeric.value;
-      } else if (numeric.numericType === 2) {
-        maxHp = numeric.value;
       }
     }
   }
-  throw new Error(`timed out waiting for Numeric CurrentHp growth: unit ${unitId}`);
+  throw new Error(
+    `timed out waiting for Numeric CurrentHp growth: unit ${unitId}, frames=${frameCount}, observed=${JSON.stringify(
+      [...observed].map(([observedUnitId, values]) => ({
+        unitId: observedUnitId,
+        values: Object.fromEntries(values),
+      })),
+    )}`,
+  );
 }
 
 async function verifyAuthoritativeMovement(

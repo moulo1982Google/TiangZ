@@ -29,6 +29,8 @@ export class MapHostScene extends EntryScene {
 
 `process.lifecycle.stopTimeoutMs` 是整个 TS stop 的等待上限，默认 10000ms。`Stop-Process -Force`、任务管理器“结束任务”、`kill -9` 和进程崩溃无法执行任何应用层保存逻辑。
 
+通过 `StartMachine.json` 启动时，Watcher 会先同时通知所有子进程，再按每个进程自己的 `stopTimeoutMs` 等待。子进程非零退出或超时会让 Watcher 本身返回失败；只有超时兜底才会强制终止。Watcher 意外退出导致控制管道 EOF 时，子进程也会进入同一套 TS stop，避免成为孤儿进程。
+
 ## 玩家下线
 
 玩家离开地图和玩家下线是两个不同语义：

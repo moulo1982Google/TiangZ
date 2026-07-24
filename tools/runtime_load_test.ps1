@@ -5,6 +5,7 @@ param(
     [int]$Connections = 4,
     [int]$Payload = 256,
     [int]$Delay = 0,
+    [string]$Config = "configs/local/bench.json",
     [ValidateSet("node", "rust")]
     [string]$Client = "node",
     [switch]$RequireBackpressure,
@@ -21,14 +22,21 @@ $Stdout = Join-Path $Root "tmp_runtime_load_stdout.log"
 $Stderr = Join-Path $Root "tmp_runtime_load_stderr.log"
 Remove-Item -LiteralPath $Stdout, $Stderr -Force -ErrorAction SilentlyContinue
 
-$process = Start-Process `
-    -FilePath $RuntimeExe `
-    -ArgumentList "configs/local/bench.json" `
-    -WorkingDirectory $Root `
-    -RedirectStandardOutput $Stdout `
-    -RedirectStandardError $Stderr `
-    -WindowStyle Hidden `
-    -PassThru
+$startInfo = [Diagnostics.ProcessStartInfo]::new()
+$startInfo.FileName = $RuntimeExe
+$startInfo.WorkingDirectory = $Root
+$startInfo.UseShellExecute = $false
+$startInfo.CreateNoWindow = $true
+$startInfo.RedirectStandardInput = $true
+$startInfo.RedirectStandardOutput = $true
+$startInfo.RedirectStandardError = $true
+$startInfo.Environment["TIANGZ_WATCHER_CONTROL"] = "stdin"
+$startInfo.Arguments = $Config
+$process = [Diagnostics.Process]::new()
+$process.StartInfo = $startInfo
+if (-not $process.Start()) { throw "failed to start runtime" }
+$stdoutTask = $process.StandardOutput.ReadToEndAsync()
+$stderrTask = $process.StandardError.ReadToEndAsync()
 
 try {
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
@@ -70,18 +78,28 @@ try {
 }
 finally {
     if (-not $process.HasExited) {
-        Stop-Process -Id $process.Id -Force
+        $process.StandardInput.WriteLine("shutdown")
+        $process.StandardInput.Close()
+        if (-not $process.WaitForExit(15000)) {
+            $process.Kill($true)
+        }
     }
     $process.WaitForExit()
+    $stdoutTask.GetAwaiter().GetResult() | Set-Content -LiteralPath $Stdout
+    $stderrTask.GetAwaiter().GetResult() | Set-Content -LiteralPath $Stderr
+}
+
+if ($process.ExitCode -ne 0) {
+    throw "runtime stopped with exit code $($process.ExitCode)"
 }
 
 $metricLines = Get-Content $Stdout |
-    Select-String -Pattern "\[metrics:bench\]|\[metrics:inner_transport\]" |
+    Select-String -Pattern "\[metrics:[^]]+\]|\[metrics:inner_transport\]" |
     ForEach-Object { $_.Line }
 $metricLines | ForEach-Object { Write-Host $_ }
 
 if ($RequireBackpressure) {
-    $benchMetrics = $metricLines | Where-Object { $_ -match "\[metrics:bench\]" }
+    $benchMetrics = $metricLines | Where-Object { $_ -match "\[metrics:" -and $_ -notmatch "inner_transport" }
     $maxQueue = 0
     $backpressure = 0
     $slowDisconnects = 0
@@ -99,8 +117,9 @@ if ($RequireBackpressure) {
     if ($backpressure -le 0) {
         throw "expected backpressure to activate"
     }
-    if ($maxQueue -gt 4096) {
-        throw "Rust ingress queue exceeded capacity: $maxQueue"
+    $expectedCapacity = if ($Config -match "bench_backpressure") { 64 } else { 4096 }
+    if ($maxQueue -gt $expectedCapacity) {
+        throw "Rust ingress queue exceeded capacity ${expectedCapacity}: $maxQueue"
     }
     if ($slowDisconnects -ne 0) {
         throw "healthy localhost clients were disconnected: $slowDisconnects"

@@ -11,6 +11,7 @@ export class NumericComponent extends Component {
 
   private unitHandle = 0;
 
+  /** Attaches Rust Numeric storage, installs ET-style index access, and starts the demo HP timer. */
   protected override Awake(): void {
     const unit = this.GetParent<PlayerUnit>();
     this.unitHandle = unit.GetComponent(NativeUnitRef).Handle;
@@ -24,10 +25,12 @@ export class NumericComponent extends Component {
     });
   }
 
+  /** Reads one authoritative int32 value through the generated fast op. */
   Get(type: NumericTypeValue): number {
     return NativeOps.NumericGet(this.unitHandle, type);
   }
 
+  /** Writes one value in Rust and marks that NumericType dirty for frame-end replication. */
   Set(type: NumericTypeValue, value: number): void {
     if (!Number.isSafeInteger(value) || value < -0x8000_0000 || value > 0x7fff_ffff) {
       throw new Error(`numeric value must be int32: ${type}=${value}`);
@@ -35,6 +38,7 @@ export class NumericComponent extends Component {
     NativeOps.NumericSet(this.unitHandle, type, value);
   }
 
+  /** Builds a full Numeric snapshot; routine dirty replication must use Peek/Ack instead. */
   Snapshot(): UnitNumericDelta[] {
     const unitId = this.GetParent<PlayerUnit>().UnitId;
     return AllNumericTypes.map((numericType) => ({
@@ -44,6 +48,7 @@ export class NumericComponent extends Component {
     }));
   }
 
+  /** Detaches Numeric storage after Component timers have been cancelled by Core. */
   protected override OnDestroy(): void {
     NativeOps.NumericDetach(this.unitHandle);
     this.unitHandle = 0;

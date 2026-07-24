@@ -1,3 +1,5 @@
+//! Implements the portable Tokio/epoll-or-IOCP stream backend with batched writes.
+
 use std::io::IoSlice;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

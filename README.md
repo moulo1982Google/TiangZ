@@ -267,7 +267,7 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 
 TiangZ 目前有两个职责独立的 VS Code 插件，均尚未发布到 Marketplace：
 
-- [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；当前内部版本为 `v0.10.0`。
+- [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；主工程当前使用 `v0.12.0`。
 - [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引 Environment、Machine、Process、Scene、Actor、Component 与 Handler，在资源管理器显示“TiangZ 工程”，提供源码跳转、Problems 诊断、CI 工程检查和定向代码生成；当前内部版本为 `v0.7.0`。
 
 两个插件分开维护，未来可以通过 Extension Pack 一键安装。当前需分别克隆仓库，执行 `npm install`、`npm run check` 和 `npm run package:extension`，再从各仓库 `dist` 目录安装 VSIX。
@@ -286,15 +286,19 @@ npm run build:debug
 cargo run -- configs/local/login1.debug.json
 ```
 
-一个 Process 对应一个 Inspector。详见 [TypeScript 调试](docs/typescript_debugging.md)。常用验证：
+一个 Process 对应一个 Inspector。详见 [TypeScript 调试](docs/typescript_debugging.md)。日常开发使用快速质量门：
 
 ```powershell
-npm run check
-cargo test --all-targets
-npm run test:runtime
-npm run test:mailbox-parity
-npm run test:backpressure
+npm run verify:quick
 ```
+
+修改协议、进程通信、mailbox、背压或生命周期后，合并前执行完整质量门：
+
+```powershell
+npm run verify
+```
+
+`verify:codegen` 根据 `codegen.manifest.json` 只读校验输入、输出哈希和生成文件集合。新增 protobuf 消息评审编号后执行 `npm run codegen:proto:update-lock`；普通 codegen 不会静默接受新 opcode。手写函数的注释要求见 [代码注释约定](docs/reference/coding-conventions.md)。
 
 ## 跨平台 RPC 性能基线
 

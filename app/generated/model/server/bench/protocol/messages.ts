@@ -92,6 +92,53 @@ export const B2B_RuntimePingResponseCodec = {
   },
 };
 
+export interface Integer64Fixture {
+  unsignedValue: bigint;
+  signedValue: bigint;
+  unsignedValues: readonly bigint[];
+  signedValues: readonly bigint[];
+}
+
+export const Integer64FixtureCodec = {
+  decode(payload: Uint8Array): Integer64Fixture {
+    const reader = new BinaryReader(payload);
+    const value: Integer64Fixture = {
+      unsignedValue: 0n,
+      signedValue: 0n,
+      unsignedValues: [],
+      signedValues: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unsignedValue = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.signedValue = reader.int64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        (value.unsignedValues as bigint[]).push(reader.uint64());
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        (value.signedValues as bigint[]).push(reader.int64());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: Integer64Fixture): Uint8Array {
+    const writer = new BinaryWriter();
+    writer.uint64(1, value.unsignedValue);
+    writer.int64(2, value.signedValue);
+    for (const item of value.unsignedValues) writer.uint64(3, item, true);
+    for (const item of value.signedValues) writer.int64(4, item, true);
+    return writer.finish();
+  },
+};
+
 export interface C2S_RuntimePing extends IRequest {
   rpcId?: number;
   seq: number;

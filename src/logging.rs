@@ -1,3 +1,5 @@
+//! Installs structured, non-blocking process logging and exposes host-side drop observability.
+
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -17,10 +19,12 @@ pub struct LoggingGuard {
     _workers: Vec<WorkerGuard>,
 }
 
+/// Returns the process label installed during logging initialization.
 pub fn process_name() -> &'static str {
     PROCESS_NAME.get().map(String::as_str).unwrap_or("unknown")
 }
 
+/// Returns lines dropped by the non-blocking writer since process start.
 pub fn dropped_lines() -> usize {
     DROP_COUNTERS
         .get()
@@ -28,6 +32,7 @@ pub fn dropped_lines() -> usize {
         .unwrap_or(0)
 }
 
+/// Computes a conservative TS prefilter so V8 avoids formatting disabled log levels.
 pub fn typescript_min_level(config: &ProcessLoggingConfig) -> u8 {
     resolve_typescript_min_level(config, std::env::var("RUST_LOG").ok().as_deref())
 }
@@ -68,6 +73,11 @@ fn level_code(level: crate::config::ProcessLogLevel) -> u8 {
     }
 }
 
+/// Installs the process-global tracing subscriber and returns guards that must outlive the runtime.
+///
+/// Dropping the guard flushes buffered output. This function may be called only
+/// once per OS process; tests that need isolated subscribers should use local
+/// dispatch rather than repeatedly invoking it.
 pub fn init(
     root: &Path,
     process_name: &str,

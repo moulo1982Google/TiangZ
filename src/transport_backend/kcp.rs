@@ -1,3 +1,5 @@
+//! Hosts authenticated outer KCP sessions while preserving the common process event contract.
+
 use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hash, Hasher};

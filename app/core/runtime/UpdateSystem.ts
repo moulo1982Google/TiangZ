@@ -26,16 +26,19 @@ export class UpdateSystem extends Singleton {
     return SingletonRegistry.Get(UpdateSystem);
   }
 
+  /** Registers objects that implement an update phase; Component attachment calls this automatically. */
   static TryRegister(value: object): void {
     if (!isUpdateTarget(value)) return;
     SingletonRegistry.TryGet(UpdateSystem)?.Add(value);
   }
 
+  /** Removes an update target when its Component is detached or disposed. */
   static TryUnregister(value: object): void {
     if (!isUpdateTarget(value)) return;
     SingletonRegistry.TryGet(UpdateSystem)?.Remove(value);
   }
 
+  /** Adds a target without allowing collection mutation during an active frame. */
   Add(target: UpdateTarget): void {
     if (this.updating) {
       this.pendingAdds.add(target);
@@ -44,6 +47,7 @@ export class UpdateSystem extends Singleton {
     this.targets.add(target);
   }
 
+  /** Removes a target from current and deferred sets; it will not run in later phases. */
   Remove(target: UpdateTarget): boolean {
     this.pendingAdds.delete(target);
     return this.targets.delete(target);

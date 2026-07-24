@@ -29,18 +29,23 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     return this.parent;
   }
 
+  /** Returns the owning Entity or throws after removal; do not cache the result past disposal. */
   GetParent<T extends Entity>(): T {
     return this.Parent as T;
   }
 
+  /** Resolves the Scene that owns the component's Entity, not merely its immediate parent. */
   DomainScene<T extends Scene = Scene>(): T {
     return this.Parent.DomainScene<T>();
   }
 
+  /** Initializes component state synchronously after attachment; asynchronous work belongs in a lifecycle/handler. */
   protected Awake(..._args: TAwakeArgs): void {}
 
+  /** Releases component-owned resources; Entity disposal invokes it exactly once. */
   protected OnDestroy(): void {}
 
+  /** Creates a one-shot timer tied to this component and automatically cancels it on disposal. */
   NewOnceTimer(
     delayMs: number,
     callback: (self: this) => MaybePromise<void>,
@@ -57,6 +62,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     return timerId;
   }
 
+  /** Creates a repeated timer tied to this component; callbacks never run after disposal. */
   NewRepeatedTimer(
     intervalMs: number,
     callback: (self: this) => MaybePromise<void>,
@@ -71,6 +77,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     return timerId;
   }
 
+  /** Cancels a timer owned by this component and returns whether it was still active. */
   RemoveTimer(timerId: TimerId): boolean {
     if (!this.timers.delete(timerId)) return false;
     return this.parent instanceof Actor
@@ -165,6 +172,7 @@ export abstract class Entity {
     return this.parent;
   }
 
+  /** Resolves the stable domain Scene; it throws before attachment and after disposal. */
   DomainScene<T extends Scene = Scene>(): T {
     if (!this.domainScene) {
       throw new Error(`entity has no domain scene: ${this.constructor.name}`);
@@ -172,6 +180,13 @@ export abstract class Entity {
     return this.domainScene as T;
   }
 
+  /**
+   * Constructs, attaches, and synchronously awakens one component.
+   *
+   * The method mutates the Entity and UpdateSystem. It rolls both back when
+   * Awake fails. Do not instantiate attachable components with `new` in
+   * business code because that bypasses ownership and lifecycle registration.
+   */
   AddComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
     ...args: ComponentAwakeArgs<T>
@@ -195,6 +210,7 @@ export abstract class Entity {
     return instance;
   }
 
+  /** Returns a required component and throws when the Entity was not composed with it. */
   GetComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): T {
@@ -205,18 +221,21 @@ export abstract class Entity {
     return instance;
   }
 
+  /** Looks up an optional component without creating it or changing lifecycle state. */
   TryGetComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): T | undefined {
     return this.components.get(ctor) as T | undefined;
   }
 
+  /** Tests component composition without exposing the internal component map. */
   HasComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): boolean {
     return this.components.has(ctor);
   }
 
+  /** Removes and disposes a component immediately; outstanding references become invalid. */
   RemoveComponent<T extends Component<any[]>>(
     ctor: ComponentCtor<T>,
   ): boolean {
@@ -231,6 +250,7 @@ export abstract class Entity {
     return true;
   }
 
+  /** Releases Entity-owned resources after all components have been disposed. */
   protected OnDestroy(): void {}
 
   __attach(
@@ -312,6 +332,7 @@ export abstract class Scene extends Entity {
     return this.ctx.logger;
   }
 
+  /** Creates an Actor in this Scene and registers its InstanceId before Awake runs. */
   SpawnActor<T extends Actor<any[]>>(
     actorId: ActorId,
     ctor: ActorCtor<T>,
@@ -320,6 +341,7 @@ export abstract class Scene extends Entity {
     return this.ctx.spawnActor(actorId, ctor, ...awakeArgs);
   }
 
+  /** Removes an Actor from routing and disposes it; stale InstanceIds must no longer be used. */
   DespawnActor(actorId: ActorId): boolean {
     return this.ctx.despawnActor(actorId);
   }
@@ -340,8 +362,10 @@ export abstract class Actor<
     return this.ctx.logger;
   }
 
+  /** Initializes Actor state synchronously inside its owning Scene. */
   protected Awake(..._args: TAwakeArgs): void {}
 
+  /** Schedules an Actor-mailbox timer so its callback obeys this Actor's ordering policy. */
   NewOnceTimer(
     delayMs: number,
     callback: (actor: this) => MaybePromise<void>,
@@ -349,6 +373,7 @@ export abstract class Actor<
     return this.ctx.newOnceTimer(delayMs, callback as (actor: Actor<any[]>) => MaybePromise<void>);
   }
 
+  /** Schedules a repeated Actor-mailbox timer; disposal cancels future callbacks. */
   NewRepeatedTimer(
     intervalMs: number,
     callback: (actor: this) => MaybePromise<void>,
@@ -359,6 +384,7 @@ export abstract class Actor<
     );
   }
 
+  /** Cancels an Actor timer through the host that owns its mailbox. */
   RemoveTimer(timerId: TimerId): boolean {
     return this.ctx.removeTimer(timerId);
   }

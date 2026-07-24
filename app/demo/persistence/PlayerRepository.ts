@@ -14,6 +14,7 @@ export interface PlayerSaveData {
 }
 
 export interface PlayerRepository {
+  /** Persists one self-contained player snapshot; implementations must not retain mutable references. */
   Save(data: PlayerSaveData): MaybePromise<void>;
 }
 
@@ -21,6 +22,7 @@ export class InMemoryPlayerRepository implements PlayerRepository {
   private readonly players = new Map<string, PlayerSaveData>();
   private readonly saveCounts = new Map<string, number>();
 
+  /** Stores a defensive copy and increments a test-visible save count. */
   Save(data: PlayerSaveData): void {
     this.players.set(data.player.account, cloneSaveData(data));
     this.saveCounts.set(
@@ -29,11 +31,13 @@ export class InMemoryPlayerRepository implements PlayerRepository {
     );
   }
 
+  /** Returns a defensive copy so tests cannot mutate repository authority. */
   Get(account: string): PlayerSaveData | undefined {
     const data = this.players.get(account);
     return data ? cloneSaveData(data) : undefined;
   }
 
+  /** Reports how many saves occurred, primarily for lifecycle idempotency tests. */
   SaveCount(account: string): number {
     return this.saveCounts.get(account) ?? 0;
   }

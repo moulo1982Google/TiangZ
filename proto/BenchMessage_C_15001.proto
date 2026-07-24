@@ -2,6 +2,15 @@ syntax = "proto3";
 
 package ets.bench;
 
+// 64-bit codec compatibility fixture. It is a data structure and therefore has no opcode.
+message Integer64Fixture
+{
+  uint64 unsigned_value = 1;
+  int64 signed_value = 2;
+  repeated uint64 unsigned_values = 3;
+  repeated int64 signed_values = 4;
+}
+
 //ResponseType S2C_RuntimePing
 // @ets.msg protocol=Bench
 message C2S_RuntimePing // IRequest

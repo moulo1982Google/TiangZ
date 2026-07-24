@@ -1,3 +1,5 @@
+//! Implements the narrow binary bridge between Rust ownership/I/O and the single V8 business thread.
+
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::task::Poll;
@@ -71,6 +73,11 @@ struct HostSceneOperation {
     frame: Bytes,
 }
 
+/// Installs the Tokio handle and completion sink used by V8 host ops.
+///
+/// This is process-global state for one runtime and must be configured before
+/// any TS Scene call/send op executes. Reconfiguration while a process is live
+/// would route completions to the wrong queue and is unsupported.
 pub fn configure_host_scene_bridge(runtime: Handle, completion_sink: HostSceneCompletionSink) {
     HOST_SCENE_ROUTES.with(|slot| slot.borrow_mut().clear());
     HOST_SCENE_RUNTIME.with(|slot| *slot.borrow_mut() = Some(runtime));
@@ -151,6 +158,7 @@ fn op_host_close_connection(connection_id: u32) -> Result<(), JsErrorBox> {
     Ok(())
 }
 
+/// Drains connection-close requests emitted by TS during the current host update.
 pub fn take_close_connection_requests() -> Vec<u64> {
     CLOSE_CONNECTION_REQUESTS.with(|slot| std::mem::take(&mut *slot.borrow_mut()))
 }
@@ -298,7 +306,7 @@ fn push_outbound_batch(connection_ids: Vec<u64>, frame: JsBuffer) -> Result<(), 
 }
 
 fn decode_connection_ids(bytes: &[u8]) -> Result<Vec<u64>> {
-    if bytes.is_empty() || bytes.len() % 4 != 0 {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         bail!("connection id buffer must contain uint32 little-endian values");
     }
     let count = bytes.len() / 4;
@@ -451,6 +459,7 @@ deno_core::extension!(
     ],
 );
 
+/// Creates a V8 runtime with TiangZ host ops; it does not load or execute business code.
 pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
     let mut runtime = JsRuntime::new(RuntimeOptions {
         extensions: vec![
@@ -535,6 +544,7 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     Ok(runtime)
 }
 
+/// Resolves and caches required global JS entrypoints once to avoid per-tick script evaluation.
 pub fn load_js_entrypoints(runtime: &mut JsRuntime) -> Result<JsEntrypoints> {
     Ok(JsEntrypoints {
         start_process: get_global_function(runtime, "__etsStartProcess")?,
@@ -596,6 +606,7 @@ fn call_js_function_string(
     Ok(value.to_rust_string_lossy(scope))
 }
 
+/// Starts the TS ProcessRuntime and returns its operator-facing startup message.
 pub fn call_js_start_process(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
@@ -606,6 +617,7 @@ pub fn call_js_start_process(
     call_js_function_string(js_event_loop, runtime, &entrypoints.start_process, &[arg])
 }
 
+/// Invokes the idempotent TS stop lifecycle and returns its completion future.
 pub fn call_js_stop_process(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
@@ -614,6 +626,7 @@ pub fn call_js_stop_process(
     call_js_function_string(js_event_loop, runtime, &entrypoints.stop_process, &[])
 }
 
+/// Transfers one packed ingress batch into TS without decoding protobuf in Rust.
 pub fn call_js_push_host_events(
     runtime: &mut JsRuntime,
     entrypoints: &JsEntrypoints,
@@ -631,6 +644,7 @@ pub fn call_js_push_host_events(
     Ok(())
 }
 
+/// Executes one TS update and decodes its packed outbound batches for transport fan-out.
 pub fn call_js_update_binary(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
@@ -645,6 +659,7 @@ pub fn call_js_update_binary(
     Ok((metrics_json, outbound))
 }
 
+/// Polls pending JS promises once; callers must keep pumping while lifecycle work is unresolved.
 pub fn pump_js_event_loop_once(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,

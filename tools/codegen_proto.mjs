@@ -7,6 +7,7 @@ import { collectGeneratedFiles, recordGenerator } from "./codegen_manifest.mjs";
 const scriptFile = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(scriptFile), "..");
 const protoDir = path.join(root, "proto");
+const opcodeLockFile = path.join(protoDir, "opcode.lock.json");
 const generatedModelDir = path.join(root, "app", "generated", "model");
 const generatedProtocolDirs = [
   path.join(generatedModelDir, "client"),
@@ -34,6 +35,8 @@ const supportedTypes = new Set([
   "uint32",
   "int32",
   "sint32",
+  "uint64",
+  "int64",
   "float",
   "double",
 ]);
@@ -65,20 +68,16 @@ const messageOptionKeys = new Set([
 await main();
 
 async function main() {
+  const updateOpcodeLock = process.argv.slice(2).includes("--update-opcode-lock");
   const protoFiles = await discoverProtoFiles(protoDir);
-  for (const generatedProtocolDir of generatedProtocolDirs) {
-    await rm(generatedProtocolDir, { recursive: true, force: true });
-  }
-  if (typescriptClientSdk) {
-    await removeGeneratedTypeScript(typescriptClientSdk.protocolOutputRoot);
-  }
-
   const groups = new Map();
+  const sourceProtocols = [];
   for (const protoFile of protoFiles) {
     const fileInfo = parseProtoFileInfo(protoFile);
     const source = await readFile(protoFile, "utf8");
     const protocol = parseProto(source, fileInfo);
     validateProtocol(protocol, fileInfo.fileName, true);
+    sourceProtocols.push(protocol);
 
     for (const target of targetsForFlag(fileInfo.targetFlag)) {
       const key = `${target}\0${protocol.packageDir}`;
@@ -97,6 +96,15 @@ async function main() {
       }
       mergeProtocol(group, protocol);
     }
+  }
+
+  await enforceOpcodeLock(sourceProtocols, updateOpcodeLock);
+
+  for (const generatedProtocolDir of generatedProtocolDirs) {
+    await rm(generatedProtocolDir, { recursive: true, force: true });
+  }
+  if (typescriptClientSdk) {
+    await removeGeneratedTypeScript(typescriptClientSdk.protocolOutputRoot);
   }
 
   for (const group of [...groups.values()].sort(compareProtocolGroup)) {
@@ -125,7 +133,7 @@ async function main() {
   await recordGenerator(root, {
     id: "proto",
     command: "npm run codegen:proto",
-    contentInputs: [scriptFile, configFile, ...protoFiles],
+    contentInputs: [scriptFile, configFile, opcodeLockFile, ...protoFiles],
     outputs: await collectGeneratedFiles(outputRoots),
     outputRoots,
   });
@@ -211,6 +219,7 @@ function parseProtoFileInfo(protoFile) {
     protoName,
     targetFlag,
     startOpcode: Number(startOpcodeText),
+    relativePath: path.relative(root, protoFile).replaceAll(path.sep, "/"),
   };
 }
 
@@ -273,6 +282,7 @@ function parseProto(source, fileInfo) {
       name,
       fields,
       opcodeScope: fileInfo.protoName,
+      opcodeKey: `${fileInfo.relativePath}#${name}`,
       ...meta,
     };
     addFrameworkFields(message);
@@ -422,6 +432,80 @@ function assignMessageCodes(messages, startOpcode) {
 
     opcode += 1;
     message.code = opcode;
+  }
+}
+
+async function enforceOpcodeLock(protocols, update) {
+  const current = protocols
+    .flatMap((protocol) => protocol.messages)
+    .filter(isProtocolMessage)
+    .map((message) => ({
+      key: message.opcodeKey,
+      name: message.codeName,
+      code: message.code,
+    }))
+    .sort((left, right) => left.key.localeCompare(right.key, "en"));
+  const lock = await readOpcodeLock(update);
+  const entries = new Map(lock.entries.map((entry) => [entry.key, entry]));
+  const owners = new Map(lock.entries.map((entry) => [entry.code, entry.key]));
+  const missing = [];
+
+  for (const message of current) {
+    const locked = entries.get(message.key);
+    if (locked) {
+      if (locked.code !== message.code || locked.name !== message.name) {
+        throw new Error(
+          `opcode lock mismatch for ${message.key}: locked ${locked.name}=${locked.code}, generated ${message.name}=${message.code}. ` +
+            "Published opcodes cannot be renumbered or renamed; append the message or assign an explicit unused code.",
+        );
+      }
+      continue;
+    }
+
+    const owner = owners.get(message.code);
+    if (owner) {
+      throw new Error(
+        `opcode ${message.code} for ${message.key} is reserved by ${owner}; deleted messages keep their opcode reserved`,
+      );
+    }
+    missing.push(message);
+  }
+
+  if (missing.length > 0 && !update) {
+    throw new Error(
+      `opcode lock is missing ${missing.length} message(s): ${missing.map((item) => item.key).join(", ")}. ` +
+        "Review the generated numbers, then run npm run codegen:proto:update-lock.",
+    );
+  }
+
+  if (!update || missing.length === 0) return;
+  for (const message of missing) {
+    entries.set(message.key, message);
+    owners.set(message.code, message.key);
+  }
+  const next = {
+    version: 1,
+    entries: [...entries.values()].sort((left, right) => left.key.localeCompare(right.key, "en")),
+  };
+  await writeFile(opcodeLockFile, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  console.log(`updated opcode lock: ${missing.length} message(s) added`);
+}
+
+async function readOpcodeLock(allowMissing) {
+  try {
+    const lock = JSON.parse(await readFile(opcodeLockFile, "utf8"));
+    if (lock?.version !== 1 || !Array.isArray(lock.entries)) {
+      throw new Error("opcode lock must contain version=1 and an entries array");
+    }
+    return lock;
+  } catch (error) {
+    if (allowMissing && error?.code === "ENOENT") return { version: 1, entries: [] };
+    if (error?.code === "ENOENT") {
+      throw new Error(
+        "proto/opcode.lock.json is missing; initialize it with npm run codegen:proto:update-lock",
+      );
+    }
+    throw error;
   }
 }
 
@@ -616,6 +700,7 @@ function scalarTsType(type) {
   if (type === "string") return "string";
   if (type === "bytes") return "Uint8Array";
   if (type === "bool") return "boolean";
+  if (["uint64", "int64"].includes(type)) return "bigint";
   if (["uint32", "int32", "sint32", "float", "double"].includes(type)) {
     return "number";
   }
@@ -633,6 +718,7 @@ function defaultValue(field) {
   if (type === "string") return '""';
   if (type === "bytes") return "new Uint8Array(0)";
   if (type === "bool") return "false";
+  if (["uint64", "int64"].includes(type)) return "0n";
   if (["uint32", "int32", "sint32", "float", "double"].includes(type)) {
     return "0";
   }
@@ -641,7 +727,7 @@ function defaultValue(field) {
 
 function wireType(type) {
   if (type === "string" || type === "bytes") return 2;
-  if (["uint32", "int32", "sint32", "bool"].includes(type)) return 0;
+  if (["uint32", "int32", "sint32", "uint64", "int64", "bool"].includes(type)) return 0;
   if (type === "double") return 1;
   if (type === "float") return 5;
   return 2;
@@ -650,7 +736,7 @@ function wireType(type) {
 function readerCall(type) {
   if (type === "string") return "reader.string()";
   if (type === "bytes") return "reader.bytesField()";
-  if (["uint32", "int32", "sint32", "bool", "float", "double"].includes(type)) {
+  if (["uint32", "int32", "sint32", "uint64", "int64", "bool", "float", "double"].includes(type)) {
     return `reader.${type}()`;
   }
   return `${type}Codec.decode(reader.bytesField())`;
@@ -659,8 +745,8 @@ function readerCall(type) {
 function writerCall(field) {
   const access = `value.${field.tsName}`;
   const writeValue = supportedTypes.has(field.type)
-    ? `writer.${field.type}(${field.fieldNo}, item);`
-    : `writer.bytes(${field.fieldNo}, ${field.type}Codec.encode(item));`;
+    ? `writer.${field.type}(${field.fieldNo}, item, true);`
+    : `writer.bytes(${field.fieldNo}, ${field.type}Codec.encode(item), true);`;
   if (field.repeated) {
     return `    for (const item of ${access}) ${writeValue}`;
   }

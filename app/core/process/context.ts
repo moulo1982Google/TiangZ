@@ -38,16 +38,19 @@ export class SceneCallContext {
   get self(): SceneConfig { return this.config.self; }
   get knownScenes(): readonly SceneConfig[] { return this.config.knownScenes; }
 
+  /** Resolves the first matching name/type for compatibility; prefer SceneMessageHelper for ambiguity checks. */
   ref(nameOrType: string): SceneConfig | undefined {
     return this.config.knownScenes.find(
       (scene) => scene.name === nameOrType || scene.sceneType === nameOrType,
     );
   }
 
+  /** Lists configured Scene instances of one type without probing the network. */
   refs(sceneType: string): SceneConfig[] {
     return this.config.knownScenes.filter((scene) => scene.sceneType === sceneType);
   }
 
+  /** Assigns rpcId, encodes, routes locally/remotely, then validates response code/id/error. */
   async call<TReq extends IRequest, TResp extends IResponse>(
     target: SceneConfig,
     descriptor: RpcDescriptor<TReq, TResp>,
@@ -63,6 +66,7 @@ export class SceneCallContext {
     return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
   }
 
+  /** Wraps an RPC in ActorLocation metadata and preserves the target Actor mailbox. */
   async callActor<TReq extends IRequest, TResp extends IResponse>(
     target: ActorLocationTarget,
     descriptor: RpcDescriptor<TReq, TResp>,
@@ -84,6 +88,7 @@ export class SceneCallContext {
     return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
   }
 
+  /** Forwards an opaque client Actor RPC while translating external and internal rpcIds. */
   async callActorFrame(
     target: ActorLocationTarget,
     frame: Uint8Array,
@@ -143,6 +148,7 @@ export class SceneCallContext {
     return response;
   }
 
+  /** Chooses local mailbox or remote transport and records one common latency metric. */
   async callFrame(
     target: SceneConfig,
     frame: Uint8Array,
@@ -173,6 +179,7 @@ export class SceneCallContext {
     }
   }
 
+  /** Encodes and sends a one-way Scene message without a response waiter. */
   async send<TMessage extends IMessage>(
     target: SceneConfig,
     descriptor: MessageDescriptor<TMessage>,
@@ -183,6 +190,7 @@ export class SceneCallContext {
     await this.sendFrame(target, frame, options);
   }
 
+  /** Wraps and sends a one-way message to a concrete Actor InstanceId. */
   async sendActor<TMessage extends IMessage>(
     target: ActorLocationTarget,
     descriptor: MessageDescriptor<TMessage>,
@@ -197,6 +205,7 @@ export class SceneCallContext {
     await this.sendFrame(target.scene, frame, options);
   }
 
+  /** Sends an opaque frame through the same local/remote error mapping as RPC calls. */
   async sendFrame(
     target: SceneConfig,
     frame: Uint8Array,

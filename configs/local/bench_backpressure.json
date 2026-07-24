@@ -1,0 +1,25 @@
+{
+  "process": {
+    "name": "bench-backpressure",
+    "scheduling": {
+      "eventQueueCapacity": 64,
+      "maxEventsPerUpdate": 16
+    }
+  },
+  "scenes": [
+    {
+      "name": "bench",
+      "sceneType": "Bench",
+      "ip": "127.0.0.1",
+      "port": 7400
+    }
+  ],
+  "knownScenes": [
+    {
+      "name": "bench",
+      "sceneType": "Bench",
+      "ip": "127.0.0.1",
+      "port": 7400
+    }
+  ]
+}

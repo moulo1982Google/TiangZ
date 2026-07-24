@@ -10,6 +10,7 @@ interface PlayerLocation {
 export class PlayerDirectoryComponent extends Component {
   private readonly playersByAccount = new Map<string, PlayerLocation>();
 
+  /** Adds an account reconnect index; ordinary Actor dispatch must use InstanceId instead. */
   Add(unit: PlayerUnit): void {
     const existing = this.Get(unit.Account);
     if (existing && existing !== unit) {
@@ -21,6 +22,7 @@ export class PlayerDirectoryComponent extends Component {
     });
   }
 
+  /** Resolves reconnect state and removes stale disposed entries opportunistically. */
   Get(account: string): PlayerUnit | undefined {
     const location = this.playersByAccount.get(account);
     if (!location) return undefined;
@@ -35,6 +37,7 @@ export class PlayerDirectoryComponent extends Component {
     return entity;
   }
 
+  /** Removes only when the indexed InstanceId still belongs to this Unit. */
   Remove(unit: PlayerUnit): boolean {
     const location = this.playersByAccount.get(unit.Account);
     if (!location || location.instanceId !== unit.InstanceId) return false;

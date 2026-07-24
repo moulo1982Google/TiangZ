@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "key": "proto/BenchInner_S_25001.proto#B2B_RuntimePingRequest",
+      "name": "B2B_RuntimePingRequest",
+      "code": 25002
+    },
+    {
+      "key": "proto/BenchInner_S_25001.proto#B2B_RuntimePingResponse",
+      "name": "B2B_RuntimePingResponse",
+      "code": 25003
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#C2M_StateSyncBench",
+      "name": "C2M_StateSyncBench",
+      "code": 15006
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#C2S_MailboxParity",
+      "name": "C2S_MailboxParity",
+      "code": 15004
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#C2S_RuntimePing",
+      "name": "C2S_RuntimePing",
+      "code": 15002
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#M2C_StateSyncBench",
+      "name": "M2C_StateSyncBench",
+      "code": 15007
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#S2C_MailboxParity",
+      "name": "S2C_MailboxParity",
+      "code": 15005
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#S2C_RuntimePing",
+      "name": "S2C_RuntimePing",
+      "code": 15003
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_EnterMap",
+      "name": "G2M_EnterMap",
+      "code": 20003
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_PlayerDisconnect",
+      "name": "G2M_PlayerDisconnect",
+      "code": 20008
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2L_LogWrite",
+      "name": "L2L_LogWrite",
+      "code": 20002
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2L_LogWriteRequest",
+      "name": "L2L_LogWriteRequest",
+      "code": 20005
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2L_LogWriteResponse",
+      "name": "L2L_LogWriteResponse",
+      "code": 20006
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_EnterMap",
+      "name": "M2G_EnterMap",
+      "code": 20004
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_KickPlayers",
+      "name": "M2G_KickPlayers",
+      "code": 20010
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_MapReady",
+      "name": "M2G_MapReady",
+      "code": 20007
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2G_ClientBroadcast",
+      "name": "S2G_ClientBroadcast",
+      "code": 20009
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_EnterMap",
+      "name": "C2G_EnterMap",
+      "code": 10010
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_LoginGate",
+      "name": "C2G_LoginGate",
+      "code": 10008
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_Ping",
+      "name": "C2G_Ping",
+      "code": 10024
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_MapProbe",
+      "name": "C2M_MapProbe",
+      "code": 10014
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_Move",
+      "name": "C2M_Move",
+      "code": 10013
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_UseItem",
+      "name": "C2M_UseItem",
+      "code": 10019
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2S_GetLoginServiceAddr",
+      "name": "C2S_GetLoginServiceAddr",
+      "code": 10002
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2S_Log",
+      "name": "C2S_Log",
+      "code": 10006
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2S_Login",
+      "name": "C2S_Login",
+      "code": 10004
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EnterMap",
+      "name": "G2C_EnterMap",
+      "code": 10011
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EntityEnter",
+      "name": "G2C_EntityEnter",
+      "code": 10022
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EntityLeave",
+      "name": "G2C_EntityLeave",
+      "code": 10023
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EntityMove",
+      "name": "G2C_EntityMove",
+      "code": 10016
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EntityNumeric",
+      "name": "G2C_EntityNumeric",
+      "code": 10017
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EntityState",
+      "name": "G2C_EntityState",
+      "code": 10018
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_ItemChanged",
+      "name": "G2C_ItemChanged",
+      "code": 10021
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_LoginGate",
+      "name": "G2C_LoginGate",
+      "code": 10009
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_MapReady",
+      "name": "G2C_MapReady",
+      "code": 10012
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_MapProbe",
+      "name": "M2C_MapProbe",
+      "code": 10015
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_UseItem",
+      "name": "M2C_UseItem",
+      "code": 10020
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#S2C_GetLoginServiceAddr",
+      "name": "S2C_GetLoginServiceAddr",
+      "code": 10003
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#S2C_Log",
+      "name": "S2C_Log",
+      "code": 10007
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#S2C_Login",
+      "name": "S2C_Login",
+      "code": 10005
+    }
+  ]
+}

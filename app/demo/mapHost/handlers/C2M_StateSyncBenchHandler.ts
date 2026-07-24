@@ -24,6 +24,7 @@ export class C2M_StateSyncBenchHandler implements ActorRpcHandler<
   C2M_StateSyncBench,
   M2C_StateSyncBench
 > {
+  /** Exercises Numeric, fixed-field, and immediate-event replication through normal business APIs. */
   async handle(
     unit: PlayerUnit,
     request: C2M_StateSyncBench,

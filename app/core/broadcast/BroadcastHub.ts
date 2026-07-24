@@ -85,6 +85,7 @@ export class BroadcastHub {
     });
   }
 
+  /** Publishes one event/state item according to the generated descriptor's delivery mode. */
   Publish<TItem, TMessage extends IMessage>(
     audience: BroadcastAudience,
     descriptor: BroadcastDescriptor<TItem, TMessage>,
@@ -94,6 +95,11 @@ export class BroadcastHub {
     return this.PublishMany(audience, descriptor, [item], tick);
   }
 
+  /**
+   * Publishes a batch to one logical audience channel.
+   * `event` preserves every item and may backpressure; `latest` may replace
+   * unsent items with the same key. Do not use latest for irreversible events.
+   */
   PublishMany<TItem, TMessage extends IMessage>(
     audience: BroadcastAudience,
     descriptor: BroadcastDescriptor<TItem, TMessage>,
@@ -121,6 +127,11 @@ export class BroadcastHub {
     return this.enqueueEvent(channel, audience, descriptor, items, tick);
   }
 
+  /**
+   * Queues a Rust-encoded replaceable snapshot without decoding it in TS.
+   * The frame is treated as immutable and an older unsent snapshot on the same
+   * channel may be superseded; callers must only use this for state.
+   */
   PublishEncodedLatestSnapshot(
     audience: BroadcastAudience,
     descriptorName: string,
@@ -174,6 +185,7 @@ export class BroadcastHub {
     return promise;
   }
 
+  /** Returns current queue/in-flight metrics without mutating channel state. */
   Snapshot(): BroadcastMetricsSnapshot {
     let inFlight = 0;
     let inFlightItems = 0;
@@ -206,6 +218,7 @@ export class BroadcastHub {
     };
   }
 
+  /** Rejects pending publishers and prevents future delivery; in-flight transport work is not recalled. */
   Dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

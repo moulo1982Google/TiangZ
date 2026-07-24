@@ -22,12 +22,14 @@ const rpcBindings = new WeakMap<Function, RpcBinding[]>();
 const knownRpcDescriptors: AnyRpcDescriptor[] = [];
 const knownRpcKeys = new Set<string>();
 
+/** Preserves a generated RPC descriptor's generic types without adding runtime behavior. */
 export function defineRpc<TReq, TResp>(
   descriptor: RpcDescriptor<TReq, TResp>,
 ): RpcDescriptor<TReq, TResp> {
   return descriptor;
 }
 
+/** Records a method binding while its class module loads; it does not invoke the handler. */
 export function rpc<TReq, TResp>(
   descriptor: RpcDescriptor<TReq, TResp>,
 ): MethodDecorator {
@@ -42,10 +44,12 @@ export function rpc<TReq, TResp>(
   };
 }
 
+/** Returns decorator metadata for one Scene constructor during registry bootstrap. */
 export function getRpcBindings(ctor: Function): RpcBinding[] {
   return rpcBindings.get(ctor) ?? [];
 }
 
+/** Adds generated descriptors idempotently for routing validation and automatic registration. */
 export function registerKnownRpcs(descriptors: readonly AnyRpcDescriptor[]): void {
   for (const descriptor of descriptors) {
     const key = `${descriptor.requestCode}:${descriptor.responseCode}:${descriptor.name}`;
@@ -55,6 +59,7 @@ export function registerKnownRpcs(descriptors: readonly AnyRpcDescriptor[]): voi
   }
 }
 
+/** Exposes read-only metadata; business code should use named generated protocol objects. */
 export function getKnownRpcDescriptors(): readonly AnyRpcDescriptor[] {
   return knownRpcDescriptors;
 }

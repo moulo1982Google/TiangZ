@@ -25,12 +25,14 @@ const messageBindings = new WeakMap<Function, MessageBinding[]>();
 const knownMessageDescriptors: AnyMessageDescriptor[] = [];
 const knownMessageKeys = new Set<string>();
 
+/** Preserves a generated message descriptor's payload type without runtime wrapping. */
 export function defineMessage<TMessage extends IMessage>(
   descriptor: MessageDescriptor<TMessage>,
 ): MessageDescriptor<TMessage> {
   return descriptor;
 }
 
+/** Records a one-way handler binding when its class definition is evaluated. */
 export function message<TMessage extends IMessage>(
   descriptor: MessageDescriptor<TMessage>,
 ): MethodDecorator {
@@ -45,10 +47,12 @@ export function message<TMessage extends IMessage>(
   };
 }
 
+/** Returns decorator metadata for runtime handler installation. */
 export function getMessageBindings(ctor: Function): MessageBinding[] {
   return messageBindings.get(ctor) ?? [];
 }
 
+/** Adds generated message descriptors idempotently for routing validation. */
 export function registerKnownMessages(
   descriptors: readonly AnyMessageDescriptor[],
 ): void {
@@ -60,6 +64,7 @@ export function registerKnownMessages(
   }
 }
 
+/** Returns generated descriptors as read-only framework metadata. */
 export function getKnownMessageDescriptors(): readonly AnyMessageDescriptor[] {
   return knownMessageDescriptors;
 }

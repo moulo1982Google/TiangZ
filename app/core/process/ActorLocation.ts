@@ -18,6 +18,7 @@ export interface ActorLocationEnvelope {
 export class ActorLocationDirectory {
   private readonly targetsByConnection = new Map<number, ActorLocationTarget>();
 
+  /** Binds a client connection to its authoritative Actor and rejects silent reassignment. */
   bindConnection(connectionId: number, target: ActorLocationTarget): void {
     if (!Number.isSafeInteger(target.instanceId) || target.instanceId <= 0) {
       throw new Error(`invalid actor instance id: ${target.instanceId}`);
@@ -25,15 +26,18 @@ export class ActorLocationDirectory {
     this.targetsByConnection.set(connectionId, target);
   }
 
+  /** Removes routing on disconnect; it does not dispose the target Actor. */
   unbindConnection(connectionId: number): void {
     this.targetsByConnection.delete(connectionId);
   }
 
+  /** Resolves current routing without network or directory calls. */
   resolveConnection(connectionId: number): ActorLocationTarget | undefined {
     return this.targetsByConnection.get(connectionId);
   }
 }
 
+/** Wraps an inner frame with fixed Actor InstanceId routing metadata. */
 export function encodeActorLocationEnvelope(
   envelope: ActorLocationEnvelope,
 ): Uint8Array {
@@ -55,6 +59,7 @@ export function encodeActorLocationEnvelope(
   return result;
 }
 
+/** Validates and unwraps an ActorLocation envelope before mailbox routing. */
 export function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnvelope {
   const instanceId = readActorLocationInstanceId(frame);
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
@@ -66,6 +71,7 @@ export function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnv
   };
 }
 
+/** Reads only InstanceId for fast routing without copying the embedded frame. */
 export function readActorLocationInstanceId(frame: Uint8Array): number {
   if (
     frame.length < ActorLocationEnvelopeHeaderBytes + 2 ||
@@ -81,6 +87,7 @@ export function readActorLocationInstanceId(frame: Uint8Array): number {
   return Number(rawInstanceId);
 }
 
+/** Scans protobuf payload field 90 without decoding the business request. */
 export function extractFrameRpcId(frame: Uint8Array): number | undefined {
   try {
     const reader = new BinaryReader(frame.subarray(2));
@@ -95,6 +102,7 @@ export function extractFrameRpcId(frame: Uint8Array): number | undefined {
   return undefined;
 }
 
+/** Replaces payload rpcId while preserving opaque business fields for Gate forwarding. */
 export function rewriteFrameRpcId(frame: Uint8Array, rpcId: number): Uint8Array {
   if (frame.length < 2 || !Number.isSafeInteger(rpcId) || rpcId <= 0 || rpcId > 0xffff_ffff) {
     throw new Error(`invalid RPC frame or rpcId: ${rpcId}`);

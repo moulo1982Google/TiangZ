@@ -13,6 +13,7 @@ export class G2M_PlayerDisconnectHandler implements ActorMessageHandler<
   PlayerUnit,
   G2M_PlayerDisconnect
 > {
+  /** Routes a Gate disconnect to the Unit's authoritative MapComponent for stale-session checks. */
   handle(unit: PlayerUnit, message: G2M_PlayerDisconnect): Promise<void> {
     return unit
       .DomainScene<MapScene>()

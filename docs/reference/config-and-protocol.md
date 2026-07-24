@@ -87,7 +87,8 @@ Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原�
   "mode": "adaptive",
   "idleTickMs": 50,
   "maxEventsPerUpdate": 512,
-  "coalesceMicros": 250
+  "coalesceMicros": 250,
+  "eventQueueCapacity": 4096
 }
 ```
 
@@ -95,6 +96,7 @@ Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原�
 - `idleTickMs`：没有网络事件时 Runtime Pump 的最长等待时间，必须大于 0。Rust 实际等待取它与 `fixedUpdateMs` 的较小值，保证固定帧和游戏定时器不会被饿住。
 - `maxEventsPerUpdate`：单次注入 V8 的事件上限，范围为 1 到 4096。
 - `coalesceMicros`：高负载下允许的微秒级聚合窗口，最大 10000；低延迟模式默认 0。
+- `eventQueueCapacity`：Rust 到单 V8 业务线程的有界事件队列容量，默认 4096，允许 64 到 65536。生产环境通常保留默认值；小容量主要用于确定性背压验收，增大它只能吸收突发，不能解决消费者长期慢于生产者的问题。
 
 这些字段都可省略并使用模式默认值。生产配置应按同一业务负载比较吞吐和 p95/p99 后再覆盖默认值。
 

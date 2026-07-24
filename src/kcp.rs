@@ -1,3 +1,5 @@
+//! Wraps the pinned C KCP implementation with owned Rust buffers and explicit profiles.
+
 use std::collections::VecDeque;
 use std::ffi::{c_char, c_int, c_long, c_void};
 use std::ptr::NonNull;

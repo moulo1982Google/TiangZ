@@ -26,6 +26,7 @@ export class StateReplicationSystem {
     ) => CoreLogger.error("state replication failed", { sourceName, error }),
   ) {}
 
+  /** Registers one named dirty-state source; names also isolate latest broadcast channels. */
   Add(source: StateReplicationSource): void {
     if (!source.name) throw new Error("state replication source name is required");
     if (this.sources.has(source.name)) {
@@ -34,10 +35,17 @@ export class StateReplicationSystem {
     this.sources.set(source.name, source);
   }
 
+  /** Stops future polls of a source but does not cancel an already in-flight send. */
   Remove(name: string): boolean {
     return this.sources.delete(name);
   }
 
+  /**
+   * Peeks each source at frame end and acknowledges only after delivery succeeds.
+   * A source has at most one in-flight revision, preventing an old completion
+   * from clearing newer dirty state. This method schedules async work and does
+   * not block Game.Update.
+   */
   FrameFlush(): void {
     const audience = this.audience();
     for (const source of this.sources.values()) {

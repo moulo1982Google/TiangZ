@@ -1,3 +1,5 @@
+//! Multiplexes remote Scene calls over persistent inner connections with bounded backpressure.
+
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::io::IoSlice;
@@ -99,6 +101,7 @@ enum SocketEvent {
     Closed { generation: u64, error: String },
 }
 
+/// Initializes the process-wide remote Scene transport manager exactly once.
 pub fn init_remote_transport() {
     if REMOTE_TRANSPORT.get().is_some() {
         return;
@@ -116,6 +119,11 @@ pub fn init_remote_transport() {
     }
 }
 
+/// Sends one multiplexed inner RPC and waits only for its rpcId completion.
+///
+/// Other calls on the same TCP connection continue while this future is
+/// pending. Cancellation removes the pending waiter but cannot recall a frame
+/// already written to the peer.
 pub async fn call_remote_scene(
     source_name: String,
     target_name: String,
@@ -158,6 +166,7 @@ pub async fn call_remote_scene(
         .map_err(|_| "remote scene connection dropped the call".to_string())?
 }
 
+/// Queues a one-way inner message without allocating a response waiter.
 pub async fn send_remote_scene(
     source_name: String,
     target_name: String,
@@ -318,6 +327,9 @@ async fn run_connection(
     }
 }
 
+// Connection state is intentionally local to one worker task; passing the
+// pieces explicitly prevents a mutable transport singleton.
+#[allow(clippy::too_many_arguments)]
 async fn handle_command(
     target_name: &str,
     address: &str,

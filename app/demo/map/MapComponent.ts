@@ -53,6 +53,7 @@ export class MapComponent extends Component<[
     return this.mapId;
   }
 
+  /** Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */
   protected override Awake(
     mapId: number,
     scenes: SceneMessageHelper,
@@ -76,6 +77,7 @@ export class MapComponent extends Component<[
     this.RegisterReplicationSources();
   }
 
+  /** Advances Rust-authoritative cell movement once per fixed game update. */
   Update(): void {
     if (this.units.Count === 0) return;
     const fixedDeltaMs = TimeSystem.Instance.FixedDeltaTime;
@@ -98,10 +100,16 @@ export class MapComponent extends Component<[
     ).catch(() => undefined);
   }
 
+  /** Publishes dirty Numeric and fixed Unit state after all gameplay updates completed. */
   FrameFlush(): void {
     if (this.units.Count > 0) this.replication.FrameFlush();
   }
 
+  /**
+   * Composes one PlayerUnit and every required Component as one factory action.
+   * Add player capabilities here rather than inside handlers, so creation and
+   * reconnect paths always produce the same Entity shape.
+   */
   CreatePlayer(unitId: number, request: G2M_EnterMap): PlayerUnit {
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
@@ -134,10 +142,12 @@ export class MapComponent extends Component<[
     }
   }
 
+  /** Builds a full enter-view snapshot; routine changes use dirty replication instead. */
   EntitySnapshots(): MapEntitySnapshot[] {
     return this.PlayerSnapshots().map(toMapEntity);
   }
 
+  /** Broadcasts a newly visible player after its complete Component graph is ready. */
   async PlayerEntered(snapshot: PlayerSnapshot): Promise<void> {
     await this.broadcast.Publish(
       this.BroadcastAudience(snapshot.unitId),
@@ -147,6 +157,7 @@ export class MapComponent extends Component<[
     );
   }
 
+  /** Sends an irreversible inventory event immediately; latest coalescing is forbidden here. */
   async PublishItemChanged(unit: PlayerUnit, item: ItemSnapshot): Promise<void> {
     this.requirePlayer(unit);
     await this.broadcast.Publish(
@@ -157,6 +168,7 @@ export class MapComponent extends Component<[
     );
   }
 
+  /** Projects broadcast counters into the process custom-metrics format. */
   BroadcastMetricSnapshot(): CustomMetricSnapshot {
     const metrics = this.broadcast.Snapshot();
     return {
@@ -184,6 +196,7 @@ export class MapComponent extends Component<[
     };
   }
 
+  /** Ignores stale Gate disconnects and offlines only the session that still owns the Unit. */
   async PlayerDisconnect(
     unit: PlayerUnit,
     message: G2M_PlayerDisconnect,
@@ -212,6 +225,7 @@ export class MapComponent extends Component<[
     });
   }
 
+  /** Removes one Unit and publishes leave after persistence has already succeeded. */
   async RemovePlayerAndBroadcast(unit: PlayerUnit): Promise<void> {
     this.requirePlayer(unit);
     const unitId = unit.UnitId;
@@ -225,6 +239,7 @@ export class MapComponent extends Component<[
     );
   }
 
+  /** Saves all players, asks their Gates to close, then removes Units during shutdown. */
   async KickAllPlayers(reason: string): Promise<void> {
     const players = this.units.GetAll(PlayerUnit);
     if (players.length === 0) return;

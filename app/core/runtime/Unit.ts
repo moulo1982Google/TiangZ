@@ -17,6 +17,7 @@ export abstract class Unit<
 export class UnitComponent extends Component {
   private readonly units = new Map<number, Unit<any[]>>();
 
+  /** Creates a Unit Actor and adds it to this Scene's Unit index as one transaction. */
   Create<T extends Unit<any[]>>(
     unitId: number,
     ctor: ActorCtor<T>,
@@ -40,6 +41,7 @@ export class UnitComponent extends Component {
     }
   }
 
+  /** Indexes an already spawned Unit; the Unit must belong to the same domain Scene. */
   Add<T extends Unit<any[]>>(unit: T): T {
     if (unit.DomainScene() !== this.DomainScene()) {
       throw new Error(`unit ${unit.UnitId} belongs to another domain scene`);
@@ -52,10 +54,12 @@ export class UnitComponent extends Component {
     return unit;
   }
 
+  /** Returns the Unit by business UnitId without performing Actor routing or directory lookup. */
   Get<T extends Unit<any[]> = Unit<any[]>>(unitId: number): T | undefined {
     return this.units.get(unitId) as T | undefined;
   }
 
+  /** Takes a stable array snapshot of current Units, optionally filtered by runtime class. */
   GetAll<T extends Unit<any[]> = Unit<any[]>>(
     ctor?: abstract new (...args: any[]) => T,
   ): readonly T[] {
@@ -65,6 +69,7 @@ export class UnitComponent extends Component {
       : values) as T[];
   }
 
+  /** Removes the Unit from both the Unit index and Actor host, which disposes its components. */
   Remove(unitId: number): Unit<any[]> | undefined {
     const unit = this.units.get(unitId);
     if (!unit) return undefined;

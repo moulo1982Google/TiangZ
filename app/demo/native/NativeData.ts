@@ -36,6 +36,7 @@ export class NativeData {
   private static debugScalarAccess = false;
   private static scalarAccessWarnThreshold = 10_000;
 
+  /** Configures observability thresholds only; it never blocks scalar get/set operations. */
   static Configure(config: NativeDataConfig = {}): void {
     const debugScalarAccess = config.debugScalarAccess ?? false;
     const scalarAccessWarnThreshold = config.scalarAccessWarnThreshold ?? 10_000;
@@ -54,6 +55,7 @@ export class NativeData {
     this.scalarAccessWarnThreshold = scalarAccessWarnThreshold;
   }
 
+  /** Applies optional NativeData settings from process application config during startup. */
   static ConfigureProcess(process: object): void {
     const config = (process as DemoProcessConfig).nativeData;
     if (config !== undefined && (typeof config !== "object" || config === null)) {
@@ -62,6 +64,7 @@ export class NativeData {
     this.Configure(config);
   }
 
+  /** Writes validated direction/sequence into the Rust Unit and returns whether intent changed. */
   static SetMovementInput(
     handle: number,
     inputX: number,
@@ -71,10 +74,12 @@ export class NativeData {
     return NativeOps.UnitSetMovementInput(handle, inputX, inputY, sequence);
   }
 
+  /** Clears queued movement when a player reconnects so stale input cannot continue moving it. */
   static ResetMovement(handle: number): void {
     NativeOps.UnitResetMovement(handle);
   }
 
+  /** Advances all Rust Units in a map and returns an already encoded replaceable movement frame. */
   static UpdateMapMovement(
     mapId: number,
     serverTick: number,
@@ -100,6 +105,7 @@ export class NativeData {
     return { itemCount, frame };
   }
 
+  /** Peeks Numeric dirty state without clearing it; the returned revision must be Acked after send. */
   static PeekMapNumericDelta(
     mapId: number,
     serverTick: number,
@@ -120,10 +126,12 @@ export class NativeData {
     return { itemCount, revision, frame };
   }
 
+  /** Acknowledges exactly the Numeric revision delivered to clients, preserving newer writes. */
   static AckMapNumericDelta(mapId: number, revision: Uint8Array): void {
     NativeOps.MapAckNumericDelta(mapId, revision);
   }
 
+  /** Peeks generated fixed-field dirty masks and their encoded protobuf delta. */
   static PeekMapUnitDelta(
     mapId: number,
     serverTick: number,
@@ -149,10 +157,12 @@ export class NativeData {
     return { itemCount, revision, frame };
   }
 
+  /** Clears only fixed fields whose revisions still match the delivered frame. */
   static AckMapUnitDelta(mapId: number, revision: Uint8Array): void {
     NativeOps.MapAckUnitDelta(mapId, revision);
   }
 
+  /** Reads and resets interval NativeData op counters for host observability. */
   static TakeMetrics(): NativeDataMetrics {
     const bytes = NativeOps.DataTakeMetrics();
     if (bytes.length !== 56) {

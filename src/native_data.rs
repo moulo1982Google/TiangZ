@@ -1,3 +1,5 @@
+//! Owns generation-checked Entity data, dirty revisions, and Rust-side protobuf projection.
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -168,6 +170,7 @@ impl NativeEntityStore {
 }
 
 #[op2(fast)]
+/// Allocates a generated Entity in the Rust Arena and returns a generation-checked handle.
 pub(crate) fn op_native_entity_create(
     entity_type: u32,
     #[buffer] values: &[f64],
@@ -177,11 +180,13 @@ pub(crate) fn op_native_entity_create(
 }
 
 #[op2(fast)]
+/// Destroys one Arena entity; later operations through the stale handle are rejected.
 pub(crate) fn op_native_entity_destroy(handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| slot.borrow_mut().destroy(handle))
 }
 
 #[op2(fast)]
+/// Updates Unit movement intent without advancing simulation or calling back into TS.
 pub(crate) fn op_native_unit_set_movement_input(
     handle: u32,
     input_x: i8,
@@ -209,6 +214,7 @@ pub(crate) fn op_native_unit_set_movement_input(
 }
 
 #[op2(fast)]
+/// Clears current and queued movement for reconnect/session ownership changes.
 pub(crate) fn op_native_unit_reset_movement(handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
@@ -242,6 +248,7 @@ pub(crate) fn op_native_unit_reset_movement(handle: u32) -> Result<(), JsErrorBo
 }
 
 #[op2(fast)]
+/// Reads one generated scalar field; observability thresholds never reject the operation.
 pub(crate) fn op_native_entity_get_number(handle: u32, field: u32) -> Result<f64, JsErrorBox> {
     native_entity_get_number(handle, field)
 }
@@ -256,6 +263,7 @@ fn native_entity_get_number(handle: u32, field: u32) -> Result<f64, JsErrorBox> 
 }
 
 #[op2(fast)]
+/// Writes one generated scalar and lets codegen-managed metadata mark replicated fields dirty.
 pub(crate) fn op_native_entity_set_number(
     handle: u32,
     field: u32,
@@ -273,6 +281,7 @@ fn native_entity_set_number(handle: u32, field: u32, value: f64) -> Result<(), J
 }
 
 #[op2(fast)]
+/// Attaches an empty Numeric dictionary to a Unit that does not already own one.
 pub(crate) fn op_native_numeric_attach(unit_handle: u32) -> Result<(), JsErrorBox> {
     native_numeric_attach(unit_handle)
 }
@@ -292,6 +301,7 @@ fn native_numeric_attach(unit_handle: u32) -> Result<(), JsErrorBox> {
 }
 
 #[op2(fast)]
+/// Removes Numeric values and dirty revisions during Component disposal.
 pub(crate) fn op_native_numeric_detach(unit_handle: u32) -> Result<(), JsErrorBox> {
     native_numeric_detach(unit_handle)
 }
@@ -307,6 +317,7 @@ fn native_numeric_detach(unit_handle: u32) -> Result<(), JsErrorBox> {
 }
 
 #[op2(fast)]
+/// Reads one NumericType from Rust authority and returns zero for an unset key.
 pub(crate) fn op_native_numeric_get(
     unit_handle: u32,
     numeric_type: u32,
@@ -327,6 +338,7 @@ fn native_numeric_get(unit_handle: u32, numeric_type: u32) -> Result<i32, JsErro
 }
 
 #[op2(fast)]
+/// Writes one NumericType and increments its independent dirty revision on change.
 pub(crate) fn op_native_numeric_set(
     unit_handle: u32,
     numeric_type: u32,
@@ -364,6 +376,7 @@ fn native_numeric_set(unit_handle: u32, numeric_type: u32, value: i32) -> Result
 }
 
 #[op2]
+/// Encodes dirty Numeric entries plus revision tokens without clearing them.
 pub(crate) fn op_native_map_peek_numeric_delta(
     map_id: u32,
     server_tick: u32,
@@ -410,6 +423,7 @@ fn native_map_peek_numeric_delta(
 }
 
 #[op2(fast)]
+/// Clears only Numeric entries whose current revisions match a delivered peek.
 pub(crate) fn op_native_map_ack_numeric_delta(
     map_id: u32,
     #[buffer] revision: &[u8],
@@ -438,6 +452,7 @@ fn native_map_ack_numeric_delta(map_id: u32, revision: &[u8]) -> Result<(), JsEr
 }
 
 #[op2(fast)]
+/// Acknowledges generated fixed-field revisions while preserving newer writes.
 pub(crate) fn op_native_map_ack_unit_delta(
     map_id: u32,
     #[buffer] revision: &[u8],
@@ -446,6 +461,7 @@ pub(crate) fn op_native_map_ack_unit_delta(
 }
 
 #[op2]
+/// Encodes generated fixed-field dirty masks directly to a client protobuf frame.
 pub(crate) fn op_native_map_peek_unit_delta(
     map_id: u32,
     server_tick: u32,
@@ -514,10 +530,10 @@ fn native_map_ack_unit_delta(map_id: u32, revision: &[u8]) -> Result<(), JsError
             let handle = u32::from_le_bytes(revision[offset..offset + 4].try_into().unwrap());
             let through_revision =
                 u64::from_le_bytes(revision[offset + 4..offset + 12].try_into().unwrap());
-            if let Ok(unit) = store.get_unit_mut(handle) {
-                if unit.map_id == map_id {
-                    ack_unit_delta(unit, through_revision);
-                }
+            if let Ok(unit) = store.get_unit_mut(handle)
+                && unit.map_id == map_id
+            {
+                ack_unit_delta(unit, through_revision);
             }
         }
         Ok(())
@@ -531,6 +547,7 @@ struct UnitDeltaRecord {
 }
 
 #[op2]
+/// Advances all Units in one map and returns a Rust-encoded replaceable movement snapshot.
 pub(crate) fn op_native_map_update_movement(
     map_id: u32,
     server_tick: u32,
@@ -579,6 +596,7 @@ fn update_map(
 }
 
 #[op2]
+/// Serializes and resets interval NativeData counters for TS observability.
 pub(crate) fn op_native_data_take_metrics() -> Uint8Array {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();

@@ -55,6 +55,7 @@ export interface SceneRpcHandlerBinding {
 const messageHandlers = new WeakMap<Function, SceneMessageHandlerBinding[]>();
 const rpcHandlers = new WeakMap<Function, SceneRpcHandlerBinding[]>();
 
+/** Registers an external one-way Scene handler class at module load time. */
 export function messageHandler<
   TScene extends EntryScene,
   TMessage extends IMessage,
@@ -80,6 +81,7 @@ export function messageHandler<
   };
 }
 
+/** Registers an external Scene RPC handler class with a generated descriptor. */
 export function rpcHandler<TScene extends EntryScene, TReq, TResp>(
   sceneCtor: SceneClass<TScene>,
   descriptor: RpcDescriptor<TReq, TResp>,
@@ -102,12 +104,14 @@ export function rpcHandler<TScene extends EntryScene, TReq, TResp>(
   };
 }
 
+/** Returns immutable message metadata consumed during EntryScene bootstrap. */
 export function getSceneMessageHandlerBindings(
   sceneCtor: Function,
 ): readonly SceneMessageHandlerBinding[] {
   return messageHandlers.get(sceneCtor) ?? [];
 }
 
+/** Returns immutable RPC metadata consumed during EntryScene bootstrap. */
 export function getSceneRpcHandlerBindings(
   sceneCtor: Function,
 ): readonly SceneRpcHandlerBinding[] {

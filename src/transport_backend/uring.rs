@@ -1,3 +1,5 @@
+//! Implements the Linux io_uring TCP backend behind the same endpoint contract as epoll.
+
 use std::io;
 use std::net::Shutdown;
 use std::rc::Rc;

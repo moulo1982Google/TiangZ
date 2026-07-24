@@ -1,3 +1,5 @@
+//! Owns V8 Inspector startup and keeps debugger exposure policy outside the runtime loop.
+
 use std::net::{IpAddr, SocketAddr};
 
 use anyhow::{Context, Result};

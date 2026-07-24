@@ -22,6 +22,7 @@ export class Game extends Singleton {
     return SingletonRegistry.Get(Game);
   }
 
+  /** Configures fixed-step cadence before simulation; calling it again resets accumulated time. */
   Configure(config: GameUpdateConfig = {}): void {
     const fixedUpdateMs = config.fixedUpdateMs ?? DEFAULT_FIXED_UPDATE_MS;
     const maxCatchUpSteps = config.maxCatchUpSteps ?? 2;
@@ -36,6 +37,11 @@ export class Game extends Singleton {
     this.nextFixedUpdateAt = TimeSystem.Instance.FrameTime + fixedUpdateMs;
   }
 
+  /**
+   * Updates clocks/timers, pumps network mailboxes, then runs bounded fixed frames.
+   * The catch-up cap prevents a stalled process from replaying old frames forever
+   * while starving newly arrived messages.
+   */
   Update(frameTime: number, serverNow: number, pumpMessages: () => void): void {
     const time = TimeSystem.Instance;
     time.__update(frameTime, serverNow);
@@ -73,6 +79,7 @@ export class Game extends Singleton {
   }
 }
 
+/** Creates process time, timer, update, and game singletons in dependency order. */
 export function InitializeGameSingletons(config: GameUpdateConfig = {}): void {
   if (SingletonRegistry.TryGet(Game)) {
     throw new Error("game runtime singletons are already initialized");
@@ -83,6 +90,7 @@ export function InitializeGameSingletons(config: GameUpdateConfig = {}): void {
   SingletonRegistry.Add(Game).Configure(config);
 }
 
+/** Returns a monotonic duration clock; do not persist it as a wall-clock timestamp. */
 export function monotonicNow(): number {
   return globalThis.performance?.now() ?? Date.now();
 }

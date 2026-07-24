@@ -1,3 +1,4 @@
+/** Minimal allocation-aware protobuf writer used by generated codecs on server and SDK. */
 export class BinaryWriter {
   private buffer: Uint8Array;
   private length = 0;
@@ -6,22 +7,25 @@ export class BinaryWriter {
     this.buffer = new Uint8Array(initialCapacity);
   }
 
-  string(fieldNo: number, value: string): void {
-    if (!value) return;
+  /** Writes UTF-8 text; `writeDefault` is reserved for repeated elements whose empty value is significant. */
+  string(fieldNo: number, value: string, writeDefault = false): void {
+    if (!writeDefault && !value) return;
     this.tag(fieldNo, 2);
     const encoded = utf8Encode(value);
     this.varint(encoded.length);
     this.rawBytes(encoded);
   }
 
-  uint32(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  /** Writes a uint32 varint and omits scalar zero unless encoding a repeated element. */
+  uint32(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
     this.varint(value);
   }
 
-  int32(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  /** Writes protobuf int32, including the required ten-byte representation for negatives. */
+  int32(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
     if (value >= 0) {
       this.varint(value);
@@ -30,37 +34,59 @@ export class BinaryWriter {
     }
   }
 
-  sint32(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  /** Writes an unsigned protobuf integer without losing bits to JavaScript number coercion. */
+  uint64(fieldNo: number, value: bigint | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0n)) return;
+    assertBigIntRange(value, 0n, UINT64_MAX, "uint64");
+    this.tag(fieldNo, 0);
+    this.varintBigInt(value);
+  }
+
+  /** Writes a signed two's-complement protobuf integer represented as a bigint. */
+  int64(fieldNo: number, value: bigint | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0n)) return;
+    assertBigIntRange(value, INT64_MIN, INT64_MAX, "int64");
+    this.tag(fieldNo, 0);
+    this.varintBigInt(BigInt.asUintN(64, value));
+  }
+
+  /** Writes a ZigZag encoded signed 32-bit value. */
+  sint32(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
     this.varint(((value << 1) ^ (value >> 31)) >>> 0);
   }
 
-  bool(fieldNo: number, value: boolean | undefined): void {
-    if (!value) return;
+  /** Writes a protobuf bool while preserving false elements inside repeated fields. */
+  bool(fieldNo: number, value: boolean | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && !value)) return;
     this.tag(fieldNo, 0);
     this.byte(1);
   }
 
-  float(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  /** Writes one little-endian fixed32 floating-point field. */
+  float(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 5);
     this.fixed(4, (view) => view.setFloat32(0, value, true));
   }
 
-  double(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  /** Writes one little-endian fixed64 floating-point field. */
+  double(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 1);
     this.fixed(8, (view) => view.setFloat64(0, value, true));
   }
 
-  bytes(fieldNo: number, value: Uint8Array | undefined): void {
-    if (value === undefined || value.length === 0) return;
+  /** Writes a length-delimited byte field without copying the caller's source buffer first. */
+  bytes(fieldNo: number, value: Uint8Array | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value.length === 0)) return;
     this.tag(fieldNo, 2);
     this.varint(value.length);
     this.rawBytes(value);
   }
 
+  /** Returns a view over written bytes; do not continue writing and assume an older view is immutable. */
   finish(): Uint8Array {
     return this.buffer.subarray(0, this.length);
   }
@@ -87,6 +113,15 @@ export class BinaryWriter {
       currentHigh >>>= 7;
     }
     this.byte(currentLow);
+  }
+
+  private varintBigInt(value: bigint): void {
+    let current = value;
+    while (current >= 0x80n) {
+      this.byte(Number(current & 0x7fn) | 0x80);
+      current >>= 7n;
+    }
+    this.byte(Number(current));
   }
 
   private fixed(
@@ -132,15 +167,18 @@ export class BinaryWriter {
   }
 }
 
+/** Bounds-checked protobuf reader; malformed input throws before a handler receives it. */
 export class BinaryReader {
   private offset = 0;
 
   constructor(private readonly bytes: Uint8Array) {}
 
+  /** Reports whether every byte in this message slice has been consumed. */
   eof(): boolean {
     return this.offset >= this.bytes.length;
   }
 
+  /** Reads one field tag and separates its number from protobuf wire type. */
   tag(): { fieldNo: number; wireType: number } {
     const tag = this.varint();
     return {
@@ -149,6 +187,7 @@ export class BinaryReader {
     };
   }
 
+  /** Reads one bounds-checked UTF-8 length-delimited field. */
   string(): string {
     const len = this.varint();
     const start = this.offset;
@@ -156,6 +195,7 @@ export class BinaryReader {
     return utf8Decode(this.bytes.subarray(start, start + len));
   }
 
+  /** Returns a zero-copy view of a length-delimited field; retain it only while the frame remains alive. */
   bytesField(): Uint8Array {
     const len = this.varint();
     const start = this.offset;
@@ -163,31 +203,48 @@ export class BinaryReader {
     return this.bytes.subarray(start, start + len);
   }
 
+  /** Reads a uint32 varint into an exact JavaScript number. */
   uint32(): number {
     return this.varint();
   }
 
+  /** Reads the low 32 bits of protobuf int32 and restores its sign. */
   int32(): number {
     return this.varint() | 0;
   }
 
+  /** Reads all 64 bits and returns bigint because number cannot represent every uint64. */
+  uint64(): bigint {
+    return this.varintBigInt();
+  }
+
+  /** Reads a protobuf two's-complement int64 without precision loss. */
+  int64(): bigint {
+    return BigInt.asIntN(64, this.varintBigInt());
+  }
+
+  /** Reads and ZigZag-decodes a signed 32-bit integer. */
   sint32(): number {
     const value = this.varint();
     return (value >>> 1) ^ -(value & 1);
   }
 
+  /** Reads any nonzero varint as true, following protobuf semantics. */
   bool(): boolean {
     return this.varint() !== 0;
   }
 
+  /** Reads one little-endian fixed32 float. */
   float(): number {
     return this.fixed(4).getFloat32(0, true);
   }
 
+  /** Reads one little-endian fixed64 double. */
   double(): number {
     return this.fixed(8).getFloat64(0, true);
   }
 
+  /** Skips an unknown field by wire type to preserve forward compatibility. */
   skip(wireType: number): void {
     if (wireType === 0) {
       this.varint();
@@ -220,6 +277,20 @@ export class BinaryReader {
       if (shift < 32) result |= (byte & 0x7f) << shift;
       if ((byte & 0x80) === 0) return result >>> 0;
       shift += 7;
+    }
+    throw new Error("varint too long");
+  }
+
+  private varintBigInt(): bigint {
+    let result = 0n;
+    for (let index = 0; index < 10; index += 1) {
+      if (this.offset >= this.bytes.length) {
+        throw new Error("unexpected eof while reading varint");
+      }
+      const byte = this.bytes[this.offset++];
+      if (index === 9 && byte > 1) throw new Error("uint64 varint overflow");
+      result |= BigInt(byte & 0x7f) << BigInt(index * 7);
+      if ((byte & 0x80) === 0) return result;
     }
     throw new Error("varint too long");
   }
@@ -278,6 +349,7 @@ function utf8Encode(value: string): Uint8Array {
   return bytes.slice(0, offset);
 }
 
+/** Decodes UTF-8 without requiring TextDecoder inside the neutral V8 bundle. */
 export function utf8Decode(value: Uint8Array): string {
   let result = "";
   for (let i = 0; i < value.length;) {
@@ -311,14 +383,17 @@ export function utf8Decode(value: Uint8Array): string {
   return result;
 }
 
+/** Encodes a two-byte network-order integer used for msgcode. */
 export function writeU16BE(value: number): Uint8Array {
   return new Uint8Array([(value >>> 8) & 0xff, value & 0xff]);
 }
 
+/** Reads a two-byte network-order integer without advancing external state. */
 export function readU16BE(bytes: Uint8Array, offset = 0): number {
   return (bytes[offset] << 8) | bytes[offset + 1];
 }
 
+/** Encodes a four-byte network-order integer used for frame lengths. */
 export function writeU32BE(value: number): Uint8Array {
   return new Uint8Array([
     (value >>> 24) & 0xff,
@@ -328,6 +403,7 @@ export function writeU32BE(value: number): Uint8Array {
   ]);
 }
 
+/** Reads an unsigned four-byte network-order integer. */
 export function readU32BE(bytes: Uint8Array, offset = 0): number {
   return (
     ((bytes[offset] << 24) >>> 0) |
@@ -337,6 +413,7 @@ export function readU32BE(bytes: Uint8Array, offset = 0): number {
   ) >>> 0;
 }
 
+/** Concatenates two byte ranges into one owned buffer. */
 export function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   const out = new Uint8Array(a.length + b.length);
   out.set(a, 0);
@@ -344,6 +421,7 @@ export function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   return out;
 }
 
+/** Encodes bytes for JSON-only host paths; gameplay frames should remain binary. */
 export function bytesToBase64(bytes: Uint8Array): string {
   let result = "";
   let i = 0;
@@ -372,6 +450,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return result;
 }
 
+/** Decodes validated base64 used by compatibility tooling, not the runtime hot path. */
 export function base64ToBytes(base64: string): Uint8Array {
   const clean = base64.replace(/=+$/, "");
   const bytes: number[] = [];
@@ -399,3 +478,18 @@ const BASE64_ALPHABET =
 const BASE64_LOOKUP: Record<string, number> = Object.fromEntries(
   [...BASE64_ALPHABET].map((ch, index) => [ch, index]),
 );
+
+const UINT64_MAX = (1n << 64n) - 1n;
+const INT64_MIN = -(1n << 63n);
+const INT64_MAX = (1n << 63n) - 1n;
+
+function assertBigIntRange(
+  value: bigint,
+  min: bigint,
+  max: bigint,
+  type: string,
+): void {
+  if (value < min || value > max) {
+    throw new RangeError(`${type} value is outside its 64-bit range: ${value}`);
+  }
+}

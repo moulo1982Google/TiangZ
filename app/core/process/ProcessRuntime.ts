@@ -72,6 +72,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.config.process.lifecycle?.stopTimeoutMs ?? 10_000;
   }
 
+  /** Creates a lifecycle barrier: every Scene starts before any Scene becomes ready. */
   async start(): Promise<string> {
     if (this.lifecycleState !== "created") {
       throw new Error(`process cannot start from ${this.lifecycleState}`);
@@ -89,6 +90,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return `[process:${this.config.process.name}] one V8 started with ${this.entryScenes.length} scene(s)\n${started}`;
   }
 
+  /** Stops the process once; concurrent callers share the same completion and errors. */
   stop(): Promise<void> {
     this.stopPromise ??= this.stopRuntime();
     return this.stopPromise;
@@ -113,14 +115,17 @@ export class ProcessRuntime implements LocalSceneRouter {
     }
   }
 
+  /** Enqueues an immutable host frame into the addressed Scene mailbox. */
   pushHostFrame(sceneIndex: number, connectionId: number, frame: Uint8Array): void {
     this.sceneAt(sceneIndex).pushHostFrame(connectionId, frame);
   }
 
+  /** Orders a disconnect notification after frames already accepted for that Scene. */
   pushHostDisconnect(sceneIndex: number, connectionId: number): void {
     this.sceneAt(sceneIndex).pushHostDisconnect(connectionId);
   }
 
+  /** Advances Game.Update and every local Scene mailbox inside this process's single V8 thread. */
   update(includeMetrics = true): MaybePromise<ProcessUpdateResult> {
     const startedAt: number[] = [];
     Game.Instance.Update(monotonicNow(), Date.now(), () => {
@@ -135,6 +140,7 @@ export class ProcessRuntime implements LocalSceneRouter {
 
   hasLocalScene(name: string): boolean { return this.scenesByName.has(name); }
 
+  /** Performs an in-process RPC through the target mailbox; it never shortcuts into the handler. */
   callLocalScene(sourceName: string, targetName: string, frame: Uint8Array): Promise<Uint8Array> {
     if (sourceName === targetName) {
       return Promise.reject(new Error(`ordered scene ${sourceName} cannot synchronously call itself`));
@@ -142,6 +148,7 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.sceneByName(targetName).dispatchLocalCall(frame);
   }
 
+  /** Enqueues an in-process one-way frame and logs later handler failure without blocking the sender. */
   sendLocalScene(_sourceName: string, targetName: string, frame: Uint8Array): Promise<void> {
     const target = this.sceneByName(targetName);
     void target.dispatchLocalSend(frame).catch((error) => {

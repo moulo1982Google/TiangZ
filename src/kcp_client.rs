@@ -1,3 +1,5 @@
+//! Provides the native KCP client used by smoke tests and non-browser SDK validation.
+
 use std::net::SocketAddr;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 

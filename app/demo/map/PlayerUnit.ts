@@ -57,15 +57,18 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
     return this.mapId;
   }
 
+  /** Persists this player once; repeated disconnect/stop paths share the same save Promise. */
   Offline(reason: string): Promise<void> {
     return this.GetComponent(PlayerPersistenceComponent).SaveOnOffline(reason);
   }
 
+  /** Initializes identity only; the factory is responsible for composing gameplay components. */
   protected override Awake(request: AwakePlayerUnit): void {
     this.account = request.account;
     this.mapId = request.mapId;
   }
 
+  /** Replaces Gate ownership after reconnect and stops movement inherited from the stale session. */
   RebindGate(request: RebindPlayerGate): PlayerSnapshot {
     this.GetComponent(UnitGateComponent).bind(
       request.gateName,
@@ -75,6 +78,7 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
     return this.Snapshot();
   }
 
+  /** Projects Rust-authoritative state plus TS ownership metadata into a read-only transfer object. */
   Snapshot(): PlayerSnapshot {
     const position = this.GetComponent(PositionComponent).snapshot();
     const gate = this.GetComponent(UnitGateComponent);
@@ -93,6 +97,7 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
     };
   }
 
+  /** Guards disconnect messages so an old Gate session cannot remove a newly rebound player. */
   MatchesGate(request: MatchPlayerGate): boolean {
     return this.GetComponent(UnitGateComponent).matches(
       request.gateName,
@@ -100,6 +105,7 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
     );
   }
 
+  /** Validates input and updates Rust movement intent; it does not broadcast or move immediately. */
   Move(request: MovePlayer): boolean {
     this.validateMoveInput(request);
     return NativeData.SetMovementInput(

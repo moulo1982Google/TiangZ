@@ -1,3 +1,5 @@
+//! Coordinates bounded host queues, one V8 business thread, endpoints, updates, and shutdown.
+
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -29,7 +31,7 @@ use crate::transport_backend::{
 #[cfg(test)]
 use crate::transport_backend::{ConnectionKind, ConnectionWriter, validate_frame_access};
 
-const PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
+const DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
 const EVENT_HEADER_BYTES: usize = 13;
 const BACKPRESSURE_RETRY_MS: u64 = 1;
 
@@ -223,8 +225,8 @@ extern "C" fn v8_gc_epilogue(
     }
 }
 
-#[derive(Default)]
 pub(crate) struct ProcessQueueStats {
+    capacity: usize,
     depth: AtomicUsize,
     max_depth: AtomicUsize,
     backpressure_waits: AtomicU64,
@@ -248,6 +250,32 @@ pub(crate) struct ProcessQueueStats {
 }
 
 impl ProcessQueueStats {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            depth: AtomicUsize::default(),
+            max_depth: AtomicUsize::default(),
+            backpressure_waits: AtomicU64::default(),
+            slow_client_disconnects: AtomicU64::default(),
+            outbound_batches: AtomicU64::default(),
+            outbound_recipients: AtomicU64::default(),
+            outbound_bridge_bytes: AtomicU64::default(),
+            outbound_logical_bytes: AtomicU64::default(),
+            inbound_frames: AtomicU64::default(),
+            host_completions: AtomicU64::default(),
+            disconnects: AtomicU64::default(),
+            runtime_updates: AtomicU64::default(),
+            runtime_events: AtomicU64::default(),
+            max_runtime_batch: AtomicUsize::default(),
+            transport_read_ops: AtomicU64::default(),
+            transport_read_frames: AtomicU64::default(),
+            transport_read_bytes: AtomicU64::default(),
+            transport_write_ops: AtomicU64::default(),
+            transport_write_frames: AtomicU64::default(),
+            transport_write_bytes: AtomicU64::default(),
+        }
+    }
+
     pub(crate) fn transport_read_completed(&self, frames: usize, bytes: usize) {
         self.transport_read_ops.fetch_add(1, Ordering::Relaxed);
         self.transport_read_frames
@@ -267,7 +295,7 @@ impl ProcessQueueStats {
     fn queued(&self) {
         let depth = self.depth.fetch_add(1, Ordering::Relaxed) + 1;
         self.max_depth
-            .fetch_max(depth.min(PROCESS_EVENT_QUEUE_CAPACITY), Ordering::Relaxed);
+            .fetch_max(depth.min(self.capacity), Ordering::Relaxed);
     }
 
     fn dequeue(&self) {
@@ -276,6 +304,12 @@ impl ProcessQueueStats {
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                 Some(value.saturating_sub(1))
             });
+    }
+}
+
+impl Default for ProcessQueueStats {
+    fn default() -> Self {
+        Self::new(DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY)
     }
 }
 
@@ -344,6 +378,12 @@ impl ProcessEventSender {
     }
 }
 
+/// Runs one configured process with a single V8 business thread and asynchronous I/O host.
+///
+/// Network endpoints feed a bounded queue consumed by the V8 thread. Shutdown
+/// first closes connections, then sends a mailbox event that executes TS
+/// lifecycle hooks before the thread is joined. Callers must not terminate the
+/// OS process to stop it unless the configured grace period has expired.
 pub async fn run_runtime_config(
     root: &Path,
     resolved_config: &Path,
@@ -365,8 +405,13 @@ pub async fn run_runtime_config(
         "starting process with one V8"
     );
 
-    let (event_tx, event_rx) = mpsc::sync_channel::<ProcessEvent>(PROCESS_EVENT_QUEUE_CAPACITY);
-    let queue_stats = Arc::new(ProcessQueueStats::default());
+    let event_queue_capacity = config
+        .process
+        .scheduling
+        .event_queue_capacity
+        .unwrap_or(DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY);
+    let (event_tx, event_rx) = mpsc::sync_channel::<ProcessEvent>(event_queue_capacity);
+    let queue_stats = Arc::new(ProcessQueueStats::new(event_queue_capacity));
     let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
     let event_tx = ProcessEventSender {
         sender: event_tx,
@@ -437,6 +482,7 @@ async fn wait_for_shutdown_signal() -> Result<()> {
         tokio::select! {
             result = tokio::signal::ctrl_c() => result?,
             _ = ctrl_break.recv() => {},
+            result = crate::shutdown::wait_for_parent_control() => result?,
         }
     }
     #[cfg(unix)]
@@ -447,11 +493,15 @@ async fn wait_for_shutdown_signal() -> Result<()> {
         tokio::select! {
             result = tokio::signal::ctrl_c() => result?,
             _ = terminate.recv() => {},
+            result = crate::shutdown::wait_for_parent_control() => result?,
         }
     }
     Ok(())
 }
 
+// These arguments are the explicit ownership handoff from async host to the
+// single V8 thread; grouping them would hide rather than reduce coupling.
+#[allow(clippy::too_many_arguments)]
 fn run_process_runtime(
     process: ProcessConfig,
     scenes: Vec<SceneConfig>,
@@ -609,6 +659,9 @@ fn run_process_runtime(
     Ok(())
 }
 
+// The batch boundary deliberately receives all mutable interval state together
+// so no global runtime state is introduced on this hot path.
+#[allow(clippy::too_many_arguments)]
 fn flush_runtime_batch(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut deno_core::JsRuntime,
@@ -698,6 +751,9 @@ fn shutdown_all_connections(writers: &ConnectionWriters) {
     }
 }
 
+// Metrics are sampled from independent owners; a parameter object would be an
+// allocation-oriented facade with no stronger invariant.
+#[allow(clippy::too_many_arguments)]
 fn maybe_log_metrics(
     process_name: &str,
     metrics: &[SceneMetricsSnapshot],
@@ -804,7 +860,7 @@ fn maybe_log_metrics(
             queue_stats
                 .depth
                 .load(Ordering::Relaxed)
-                .min(PROCESS_EVENT_QUEUE_CAPACITY),
+                .min(queue_stats.capacity),
             queue_stats.max_depth.load(Ordering::Relaxed),
             queue_stats.backpressure_waits.load(Ordering::Relaxed),
             queue_stats.slow_client_disconnects.load(Ordering::Relaxed),

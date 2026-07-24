@@ -6,22 +6,22 @@ export class BinaryWriter {
     this.buffer = new Uint8Array(initialCapacity);
   }
 
-  string(fieldNo: number, value: string | undefined): void {
-    if (!value) return;
+  string(fieldNo: number, value: string | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && !value)) return;
     const encoded = utf8Encode(value);
     this.tag(fieldNo, 2);
     this.varint(encoded.length);
     this.rawBytes(encoded);
   }
 
-  uint32(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  uint32(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
     this.varint(value);
   }
 
-  int32(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  int32(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
     if (value >= 0) {
       this.varint(value);
@@ -30,32 +30,48 @@ export class BinaryWriter {
     }
   }
 
-  sint32(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  /** Writes an unsigned protobuf integer without losing bits to JavaScript number coercion. */
+  uint64(fieldNo: number, value: bigint | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0n)) return;
+    assertBigIntRange(value, 0n, UINT64_MAX, "uint64");
+    this.tag(fieldNo, 0);
+    this.varintBigInt(value);
+  }
+
+  /** Writes a signed two's-complement protobuf integer represented as a bigint. */
+  int64(fieldNo: number, value: bigint | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0n)) return;
+    assertBigIntRange(value, INT64_MIN, INT64_MAX, "int64");
+    this.tag(fieldNo, 0);
+    this.varintBigInt(BigInt.asUintN(64, value));
+  }
+
+  sint32(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 0);
     this.varint(((value << 1) ^ (value >> 31)) >>> 0);
   }
 
-  bool(fieldNo: number, value: boolean | undefined): void {
-    if (!value) return;
+  bool(fieldNo: number, value: boolean | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && !value)) return;
     this.tag(fieldNo, 0);
     this.byte(1);
   }
 
-  float(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  float(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 5);
     this.fixed(4, (view) => view.setFloat32(0, value, true));
   }
 
-  double(fieldNo: number, value: number | undefined): void {
-    if (value === undefined || value === 0) return;
+  double(fieldNo: number, value: number | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value === 0)) return;
     this.tag(fieldNo, 1);
     this.fixed(8, (view) => view.setFloat64(0, value, true));
   }
 
-  bytes(fieldNo: number, value: Uint8Array | undefined): void {
-    if (value === undefined || value.length === 0) return;
+  bytes(fieldNo: number, value: Uint8Array | undefined, writeDefault = false): void {
+    if (value === undefined || (!writeDefault && value.length === 0)) return;
     this.tag(fieldNo, 2);
     this.varint(value.length);
     this.rawBytes(value);
@@ -87,6 +103,15 @@ export class BinaryWriter {
       currentHigh >>>= 7;
     }
     this.byte(currentLow);
+  }
+
+  private varintBigInt(value: bigint): void {
+    let current = value;
+    while (current >= 0x80n) {
+      this.byte(Number(current & 0x7fn) | 0x80);
+      current >>= 7n;
+    }
+    this.byte(Number(current));
   }
 
   private fixed(size: number, write: (view: DataView) => void): void {
@@ -161,6 +186,16 @@ export class BinaryReader {
     return this.varint() | 0;
   }
 
+  /** Reads all 64 bits and returns bigint because number cannot represent every uint64. */
+  uint64(): bigint {
+    return this.varintBigInt();
+  }
+
+  /** Reads a protobuf two's-complement int64 without precision loss. */
+  int64(): bigint {
+    return BigInt.asIntN(64, this.varintBigInt());
+  }
+
   sint32(): number {
     const value = this.varint();
     return (value >>> 1) ^ -(value & 1);
@@ -221,6 +256,20 @@ export class BinaryReader {
     throw new Error("varint too long");
   }
 
+  private varintBigInt(): bigint {
+    let result = 0n;
+    for (let index = 0; index < 10; index += 1) {
+      if (this.offset >= this.bytes.length) {
+        throw new Error("unexpected eof while reading varint");
+      }
+      const byte = this.bytes[this.offset++];
+      if (index === 9 && byte > 1) throw new Error("uint64 varint overflow");
+      result |= BigInt(byte & 0x7f) << BigInt(index * 7);
+      if ((byte & 0x80) === 0) return result;
+    }
+    throw new Error("varint too long");
+  }
+
   private fixed(size: number): DataView {
     const start = this.offset;
     this.advance(size);
@@ -260,4 +309,19 @@ function utf8Encode(value: string): Uint8Array {
 
 function utf8Decode(value: Uint8Array): string {
   return new TextDecoder().decode(value);
+}
+
+const UINT64_MAX = (1n << 64n) - 1n;
+const INT64_MIN = -(1n << 63n);
+const INT64_MAX = (1n << 63n) - 1n;
+
+function assertBigIntRange(
+  value: bigint,
+  min: bigint,
+  max: bigint,
+  type: string,
+): void {
+  if (value < min || value > max) {
+    throw new RangeError(`${type} value is outside its 64-bit range: ${value}`);
+  }
 }

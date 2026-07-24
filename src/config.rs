@@ -1,3 +1,5 @@
+//! Loads deployment JSON and enforces runtime invariants before any listener or V8 starts.
+
 use std::collections::{BTreeMap, HashSet};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
@@ -195,6 +197,7 @@ pub struct ProcessSchedulingConfig {
     pub idle_tick_ms: Option<u64>,
     pub max_events_per_update: Option<usize>,
     pub coalesce_micros: Option<u64>,
+    pub event_queue_capacity: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -310,6 +313,11 @@ fn default_max_catch_up_steps() -> usize {
     2
 }
 
+/// Resolves a CLI path against the project root and expands directories to `StartMachine.json`.
+///
+/// This function performs no I/O and must not be used as proof that the target
+/// exists; loading and validation remain separate so diagnostics retain the
+/// original startup path.
 pub fn resolve_startup_path(root: &Path, startup_path: String) -> PathBuf {
     let path = PathBuf::from(startup_path);
     let resolved = if path.is_absolute() {
@@ -324,12 +332,18 @@ pub fn resolve_startup_path(root: &Path, startup_path: String) -> PathBuf {
     resolved
 }
 
+/// Returns whether a resolved startup path selects Watcher mode.
 pub fn is_start_machine_path(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.eq_ignore_ascii_case("StartMachine.json"))
 }
 
+/// Loads, applies defaults, and validates one process configuration.
+///
+/// The returned `known_scenes` is guaranteed to be populated. Callers should
+/// not deserialize `RuntimeConfig` directly because that bypasses deployment
+/// invariants such as unique endpoints and lifecycle timeout bounds.
 pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
     let config_text = std::fs::read_to_string(resolved_config)
         .with_context(|| format!("failed to read {}", resolved_config.display()))?;
@@ -426,15 +440,22 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     {
         bail!("process scheduling.maxEventsPerUpdate must not exceed 4096");
     }
+    if config
+        .process
+        .scheduling
+        .event_queue_capacity
+        .is_some_and(|value| !(64..=65_536).contains(&value))
+    {
+        bail!("process scheduling.eventQueueCapacity must be between 64 and 65536");
+    }
     if let Some(latency) = config
         .process
         .observability
         .as_ref()
         .and_then(|observability| observability.latency.as_ref())
+        && latency.sample_rate == 0
     {
-        if latency.sample_rate == 0 {
-            bail!("process observability.latency.sampleRate must not be 0");
-        }
+        bail!("process observability.latency.sampleRate must not be 0");
     }
 
     let mut scene_names = HashSet::new();
@@ -660,7 +681,8 @@ mod tests {
                     "mode": "throughput",
                     "idleTickMs": 25,
                     "maxEventsPerUpdate": 1024,
-                    "coalesceMicros": 500
+                    "coalesceMicros": 500,
+                    "eventQueueCapacity": 8192
                 }
             }"#,
         )
@@ -673,6 +695,33 @@ mod tests {
         assert_eq!(process.scheduling.idle_tick_ms, Some(25));
         assert_eq!(process.scheduling.max_events_per_update, Some(1024));
         assert_eq!(process.scheduling.coalesce_micros, Some(500));
+        assert_eq!(process.scheduling.event_queue_capacity, Some(8192));
+    }
+
+    #[test]
+    fn validates_process_event_queue_capacity_bounds() {
+        for capacity in [64, 65_536] {
+            let mut process = process(None);
+            process.scheduling.event_queue_capacity = Some(capacity);
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("map", 7100)],
+                known_scenes: vec![],
+            };
+            assert!(validate_runtime_config(&config).is_ok());
+        }
+
+        for capacity in [63, 65_537] {
+            let mut process = process(None);
+            process.scheduling.event_queue_capacity = Some(capacity);
+            let config = RuntimeConfig {
+                process,
+                scenes: vec![scene("map", 7100)],
+                known_scenes: vec![],
+            };
+            let error = validate_runtime_config(&config).unwrap_err().to_string();
+            assert!(error.contains("eventQueueCapacity"));
+        }
     }
 
     #[test]

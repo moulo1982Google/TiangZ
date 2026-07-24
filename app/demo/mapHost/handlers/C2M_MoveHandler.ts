@@ -11,6 +11,7 @@ export class C2M_MoveHandler implements ActorMessageHandler<
   PlayerUnit,
   C2M_Move
 > {
+  /** Applies intent only; MapComponent.Update owns movement and replaceable broadcast. */
   handle(unit: PlayerUnit, message: C2M_Move): void {
     unit.Move(message);
   }

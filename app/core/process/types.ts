@@ -263,14 +263,18 @@ export abstract class EntryScene extends Entity {
     return this.ctx.logger;
   }
 
+  /** Produces an operator-facing startup summary; subclasses may append topology details. */
   startupMessage(): string {
     return `[${this.self.name}] ${this.self.sceneType} scene started at ${this.self.ip}:${this.self.port}`;
   }
 
+  /** Acquires Scene resources before readiness; failure aborts process startup. */
   protected onStart(): MaybePromise<void> {}
 
+  /** Runs after every local Scene started, so cross-Scene dependencies may now be used. */
   protected onReady(): MaybePromise<void> {}
 
+  /** Flushes Scene resources; it must be idempotent and bounded by process stopTimeoutMs. */
   protected onStop(): MaybePromise<void> {}
 
   async __startLifecycle(): Promise<void> {
@@ -337,6 +341,7 @@ export abstract class EntryScene extends Entity {
     );
   }
 
+  /** Drains bounded ingress and returns packed outbound work once per process update. */
   update(maxFrames = 512, includeMetrics = true): SceneUpdateResult {
     const startedAt = this.__pumpMailbox(maxFrames);
     return this.__completeUpdate(startedAt, includeMetrics);
@@ -353,14 +358,18 @@ export abstract class EntryScene extends Entity {
     return this.completeUpdate(startedAt, includeMetrics);
   }
 
+  /** Registers explicit handlers; generated decorator bindings are installed separately. */
   protected registerHandlers(): void {}
 
+  /** Builds a process-unique child Scene id without exposing the separator contract. */
   childSceneId(localId: string): string {
     return `${this.self.name}/${localId}`;
   }
 
+  /** Handles connection loss inside this Scene's mailbox; avoid unbounded retries here. */
   protected onDisconnect(_connectionId: number): MaybePromise<void> {}
 
+  /** Requests host-side closure; disconnect business logic runs later through the mailbox. */
   protected disconnectClient(connectionId: number): void {
     if (!Number.isInteger(connectionId) || connectionId <= 0) {
       throw new Error(`invalid connection id: ${connectionId}`);
@@ -368,6 +377,7 @@ export abstract class EntryScene extends Entity {
     hostCloseConnection(connectionId);
   }
 
+  /** Encodes and queues one protobuf message for one client connection. */
   protected sendClient<TMessage extends IMessage>(
     connectionId: number,
     descriptor: MessageDescriptor<TMessage>,
@@ -379,6 +389,7 @@ export abstract class EntryScene extends Entity {
     });
   }
 
+  /** Encodes once and fans the immutable frame out to many client connections. */
   protected sendClientMany<TMessage extends IMessage>(
     connectionIds: readonly number[],
     descriptor: MessageDescriptor<TMessage>,
@@ -393,6 +404,7 @@ export abstract class EntryScene extends Entity {
     });
   }
 
+  /** Queues an already encoded frame; callers must not mutate it after this call. */
   protected sendClientFrameMany(
     connectionIds: readonly number[],
     frame: Uint8Array,
@@ -404,6 +416,7 @@ export abstract class EntryScene extends Entity {
     });
   }
 
+  /** Registers an RPC route explicitly; decorators are preferred for ordinary handlers. */
   protected registerSceneRpc<TReq extends IRequest, TResp extends IResponse>(
     descriptor: RpcDescriptor<TReq, TResp>,
     target: SceneRef | ((request: TReq) => SceneRef),
@@ -412,6 +425,7 @@ export abstract class EntryScene extends Entity {
     this.registerTargetRpc(descriptor, target, options);
   }
 
+  /** Registers Actor RPC forwarding for a generated descriptor and Actor type. */
   protected registerActorRpc<TReq extends IRequest, TResp extends IResponse>(
     descriptor: RpcDescriptor<TReq, TResp>,
     target: ActorRef | ((request: TReq) => ActorRef),
@@ -420,6 +434,7 @@ export abstract class EntryScene extends Entity {
     this.registerTargetRpc(descriptor, target, options);
   }
 
+  /** Routes a local call through normal mailbox and protocol dispatch semantics. */
   dispatchLocalCall(frame: Uint8Array): Promise<Uint8Array> {
     const result = this.dispatchMailbox(() => this.handleFrame(frame));
     return Promise.resolve(result).then((response) => {
@@ -428,10 +443,12 @@ export abstract class EntryScene extends Entity {
     });
   }
 
+  /** Routes a local one-way frame without creating a response completion. */
   dispatchLocalSend(frame: Uint8Array): Promise<void> {
     return Promise.resolve(this.dispatchMailbox(() => this.handleFrame(frame))).then(() => undefined);
   }
 
+  /** Returns a point-in-time snapshot without resetting cumulative counters. */
   metricsSnapshot(): SceneMetricsSnapshot {
     return {
       scene: this.self.name,

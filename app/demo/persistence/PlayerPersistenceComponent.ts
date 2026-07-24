@@ -10,10 +10,17 @@ export class PlayerPersistenceComponent extends Component<[
   private repository!: PlayerRepository;
   private savePromise: Promise<void> | undefined;
 
+  /** Captures the process-owned repository selected by the map factory. */
   protected override Awake(repository: PlayerRepository): void {
     this.repository = repository;
   }
 
+  /**
+   * Saves the player exactly once across disconnect, kick, and process stop.
+   * The first reason wins and all later callers await the same Promise. Do not
+   * call the Repository directly from kick handlers because that bypasses this
+   * idempotency boundary and can persist the same Unit multiple times.
+   */
   SaveOnOffline(reason: string): Promise<void> {
     if (this.savePromise) return this.savePromise;
     const player = this.GetParent<PlayerUnit>();

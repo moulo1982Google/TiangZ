@@ -22,6 +22,7 @@ const pending = new Map<number, PendingOperation>();
 const queued: QueuedOperation[] = [];
 let nextOperationId = 1;
 
+/** Queues one remote Scene RPC for Rust transport and resolves by its operation id. */
 export function callRemoteScene(
   source: SceneConfig,
   target: SceneConfig,
@@ -31,6 +32,7 @@ export function callRemoteScene(
   return enqueue(source, target, frame, timeoutMs, 1);
 }
 
+/** Queues a one-way remote Scene frame without waiting for a peer response. */
 export function sendRemoteScene(
   source: SceneConfig,
   target: SceneConfig,
@@ -50,6 +52,7 @@ export function sendRemoteScene(
   return Promise.resolve();
 }
 
+/** Uses the Rust host timer for transport deadlines; gameplay timers belong to TimerSystem. */
 export function sleepHost(ms: number): Promise<void> {
   if (pending.size >= MAX_PENDING_OPERATIONS) {
     return Promise.reject(new Error("host async operation limit reached"));
@@ -93,6 +96,7 @@ function enqueue(
   return promise;
 }
 
+/** Packs all queued call/send operations into one host op at the end of the update. */
 export function flushHostSceneOperations(): void {
   if (queued.length === 0) return;
   const operations = queued.splice(0, queued.length);
@@ -109,6 +113,7 @@ export function flushHostSceneOperations(): void {
   }
 }
 
+/** Completes one pending host operation; unknown ids are ignored as stale completions. */
 export function completeHostSceneOperation(
   id: number,
   succeeded: boolean,
