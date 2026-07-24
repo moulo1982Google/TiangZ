@@ -286,6 +286,7 @@ function movement(unitId: number, sequence: number): CellMovementState {
     moveStartTick: sequence,
     moveEndTick: sequence + 1,
     moving: true,
+    facing: 2,
   };
 }
 

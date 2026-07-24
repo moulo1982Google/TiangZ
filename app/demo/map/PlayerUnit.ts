@@ -41,6 +41,7 @@ export interface PlayerSnapshot {
   cellX: number;
   cellY: number;
   speedCellsPerSecond: number;
+  facing: number;
   alive: boolean;
   numerics: readonly UnitNumericDelta[];
 }
@@ -94,6 +95,7 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
       gateName: gate.gateName,
       gateSessionId: gate.gateSessionId,
       speedCellsPerSecond: native.speedCellsPerSecond,
+      facing: native.facing,
       alive: native.alive !== 0,
       numerics: this.GetComponent(NumericComponent).Snapshot(),
       ...position,

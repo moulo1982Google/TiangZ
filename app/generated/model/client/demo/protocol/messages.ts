@@ -55,6 +55,7 @@ export interface MapEntitySnapshot {
   cellY: number;
   numerics: readonly UnitNumericDelta[];
   speedCellsPerSecond: number;
+  facing: number;
 }
 
 export const MapEntitySnapshotCodec = {
@@ -72,6 +73,7 @@ export const MapEntitySnapshotCodec = {
       cellY: 0,
       numerics: [],
       speedCellsPerSecond: 0,
+      facing: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -108,6 +110,9 @@ export const MapEntitySnapshotCodec = {
       else if (tag.fieldNo === 11 && tag.wireType === 5) {
         value.speedCellsPerSecond = reader.float();
       }
+      else if (tag.fieldNo === 12 && tag.wireType === 0) {
+        value.facing = reader.uint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -128,6 +133,7 @@ export const MapEntitySnapshotCodec = {
     writer.sint32(9, value.cellY);
     for (const item of value.numerics) writer.bytes(10, UnitNumericDeltaCodec.encode(item));
     writer.float(11, value.speedCellsPerSecond);
+    writer.uint32(12, value.facing);
     return writer.finish();
   },
 };
@@ -142,6 +148,7 @@ export interface CellMovementState {
   moveStartTick: number;
   moveEndTick: number;
   moving: boolean;
+  facing: number;
 }
 
 export const CellMovementStateCodec = {
@@ -157,6 +164,7 @@ export const CellMovementStateCodec = {
       moveStartTick: 0,
       moveEndTick: 0,
       moving: false,
+      facing: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -187,6 +195,9 @@ export const CellMovementStateCodec = {
       else if (tag.fieldNo === 9 && tag.wireType === 0) {
         value.moving = reader.bool();
       }
+      else if (tag.fieldNo === 10 && tag.wireType === 0) {
+        value.facing = reader.uint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -205,6 +216,7 @@ export const CellMovementStateCodec = {
     writer.uint32(7, value.moveStartTick);
     writer.uint32(8, value.moveEndTick);
     writer.bool(9, value.moving);
+    writer.uint32(10, value.facing);
     return writer.finish();
   },
 };

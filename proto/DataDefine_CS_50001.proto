@@ -22,6 +22,7 @@ message MapEntitySnapshot
   sint32 cell_y = 9;
   repeated UnitNumericDelta numerics = 10;
   float speed_cells_per_second = 11;
+  uint32 facing = 12;
 }
 
 message CellMovementState
@@ -35,6 +36,7 @@ message CellMovementState
   uint32 move_start_tick = 7;
   uint32 move_end_tick = 8;
   bool moving = 9;
+  uint32 facing = 10;
 }
 
 message UnitNumericDelta

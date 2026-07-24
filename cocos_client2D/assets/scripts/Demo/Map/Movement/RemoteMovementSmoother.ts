@@ -1,5 +1,5 @@
-import { cellToWorld } from "./CellMovement";
-import type { AuthoritativeMovementState, PredictedPosition } from "./LocalMovementPredictor";
+import { cellToWorld, normalizeFacing, type Facing } from "./CellMovement";
+import type { AuthoritativeMovementState, PredictedMovement } from "./LocalMovementPredictor";
 
 export class RemoteMovementSmoother {
   private currentCellX: number;
@@ -10,21 +10,25 @@ export class RemoteMovementSmoother {
   private stepDurationSeconds = 0;
   private moving = false;
   private receivedServerTick = -1;
+  private facing: Facing;
 
   constructor(
     cellX: number,
     cellY: number,
+    facing: number,
     private readonly fixedUpdateMs: number,
   ) {
     this.currentCellX = cellX;
     this.currentCellY = cellY;
     this.targetCellX = cellX;
     this.targetCellY = cellY;
+    this.facing = normalizeFacing(facing);
   }
 
   applyState(state: AuthoritativeMovementState): boolean {
     if (state.serverTick <= this.receivedServerTick) return false;
     this.receivedServerTick = state.serverTick;
+    this.facing = normalizeFacing(state.facing);
 
     if (!state.moving) {
       if (
@@ -61,7 +65,7 @@ export class RemoteMovementSmoother {
     return true;
   }
 
-  update(deltaSeconds: number): PredictedPosition {
+  update(deltaSeconds: number): PredictedMovement {
     if (this.moving) {
       this.stepElapsedSeconds += Math.max(0, Math.min(deltaSeconds, 0.25));
       if (this.stepElapsedSeconds + 1e-6 >= this.stepDurationSeconds) {
@@ -81,9 +85,14 @@ export class RemoteMovementSmoother {
     this.moving = false;
   }
 
-  private position(): PredictedPosition {
+  private position(): PredictedMovement {
     if (!this.moving) {
-      return { x: cellToWorld(this.currentCellX), y: cellToWorld(this.currentCellY) };
+      return {
+        x: cellToWorld(this.currentCellX),
+        y: cellToWorld(this.currentCellY),
+        facing: this.facing,
+        moving: false,
+      };
     }
     const progress = Math.max(
       0,
@@ -94,6 +103,8 @@ export class RemoteMovementSmoother {
         (cellToWorld(this.targetCellX) - cellToWorld(this.currentCellX)) * progress,
       y: cellToWorld(this.currentCellY) +
         (cellToWorld(this.targetCellY) - cellToWorld(this.currentCellY)) * progress,
+      facing: this.facing,
+      moving: true,
     };
   }
 }

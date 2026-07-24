@@ -1,4 +1,4 @@
-import { Color, Label, Node } from "cc";
+import { Color, Label, Node, UITransform } from "cc";
 import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
 import { MapClient } from "../../Generated/SDK/Generated/Model/demo/protocol/clients";
 import type {
@@ -18,15 +18,18 @@ import {
 } from "./Movement/CellMovement";
 import { LocalMovementPredictor } from "./Movement/LocalMovementPredictor";
 import { RemoteMovementSmoother } from "./Movement/RemoteMovementSmoother";
+import { CharacterSprite } from "./CharacterSprite";
 
 interface LocalEntityVisual {
   readonly node: Node;
   readonly movement: LocalMovementPredictor;
+  readonly appearance: CharacterSprite;
 }
 
 interface RemoteEntityVisual {
   readonly node: Node;
   readonly movement: RemoteMovementSmoother;
+  readonly appearance: CharacterSprite;
 }
 
 export class MapEntityManager {
@@ -116,18 +119,24 @@ export class MapEntityManager {
       this.local.movement.setInput(localIntent);
       const position = this.local.movement.update(deltaTime);
       this.local.node.setPosition(position.x, position.y, 0);
+      this.local.appearance.update(deltaTime, position.facing, position.moving);
       this.followLocalPlayer(position.x, position.y);
     }
     for (const remote of this.remotes.values()) {
       const position = remote.movement.update(deltaTime);
       remote.node.setPosition(position.x, position.y, 0);
+      remote.appearance.update(deltaTime, position.facing, position.moving);
     }
   }
 
   dispose(): void {
+    this.local?.appearance.dispose();
     this.local?.node.destroy();
     this.local = undefined;
-    for (const remote of this.remotes.values()) remote.node.destroy();
+    for (const remote of this.remotes.values()) {
+      remote.appearance.dispose();
+      remote.node.destroy();
+    }
     this.remotes.clear();
     this.numericLabels.clear();
     this.numerics.clear();
@@ -150,7 +159,8 @@ export class MapEntityManager {
     }
 
     const local = snapshot.unitId === this.localUnitId;
-    const node = this.createUnitNode(snapshot, local);
+    const visual = this.createUnitVisual(snapshot, local);
+    const { node, appearance } = visual;
     this.applyNumerics(snapshot.numerics);
     this.refreshNumeric(snapshot.unitId);
     if (local) {
@@ -159,6 +169,7 @@ export class MapEntityManager {
         movement: new LocalMovementPredictor(
           snapshot.cellX,
           snapshot.cellY,
+          snapshot.facing,
           (state) => {
             void this.mapClient.move({
               inputX: state.x,
@@ -168,6 +179,7 @@ export class MapEntityManager {
           },
           { fixedUpdateMs: this.fixedUpdateMs, heartbeatSeconds: 1 / 5 },
         ),
+        appearance,
       };
       this.followLocalPlayer(node.position.x, node.position.y);
       return;
@@ -178,29 +190,33 @@ export class MapEntityManager {
       movement: new RemoteMovementSmoother(
         snapshot.cellX,
         snapshot.cellY,
+        snapshot.facing,
         this.fixedUpdateMs,
       ),
+      appearance,
     });
   }
 
-  private createUnitNode(snapshot: MapEntitySnapshot, local: boolean): Node {
-    const node = this.ui.createBox(
-      `Unit:${snapshot.unitId}`,
-      cellToWorld(snapshot.cellX),
-      cellToWorld(snapshot.cellY),
+  private createUnitVisual(
+    snapshot: MapEntitySnapshot,
+    local: boolean,
+  ): { node: Node; appearance: CharacterSprite } {
+    const node = new Node(`Unit:${snapshot.unitId}`);
+    this.parent.addChild(node);
+    node.setPosition(cellToWorld(snapshot.cellX), cellToWorld(snapshot.cellY));
+    node.addComponent(UITransform).setContentSize(
       CELL_SIZE * UNIT_FOOTPRINT_CELLS,
       CELL_SIZE * UNIT_FOOTPRINT_CELLS,
-      local
-        ? new Color(245, 210, 92, 255)
-        : new Color(92, 195, 225, 255),
-      this.parent,
     );
+    const appearance = new CharacterSprite(node, snapshot.facing);
     this.ui.createLabel(
       `${snapshot.account} (${snapshot.unitId})`,
       0,
-      30,
+      38,
       13,
-      new Color(238, 246, 244, 255),
+      local
+        ? new Color(255, 224, 112, 255)
+        : new Color(158, 225, 245, 255),
       node,
     );
     const hpLabel = this.ui.createLabel(
@@ -212,7 +228,7 @@ export class MapEntityManager {
       node,
     );
     this.numericLabels.set(snapshot.unitId, hpLabel);
-    return node;
+    return { node, appearance };
   }
 
   private applyNumeric(delta: UnitNumericDelta): void {
@@ -244,12 +260,14 @@ export class MapEntityManager {
     this.numericLabels.delete(unitId);
     this.numerics.delete(unitId);
     if (unitId === this.localUnitId) {
+      this.local?.appearance.dispose();
       this.local?.node.destroy();
       this.local = undefined;
       return;
     }
     const remote = this.remotes.get(unitId);
     if (!remote) return;
+    remote.appearance.dispose();
     remote.node.destroy();
     this.remotes.delete(unitId);
   }

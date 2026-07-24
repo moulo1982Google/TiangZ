@@ -72,6 +72,7 @@ function testGeneratedScalarCodec(): void {
     cellY: 2,
     numerics: [{ unitId: 42, numericType: 1, value: 100 }],
     speedCellsPerSecond: 10,
+    facing: 2,
   });
   const decoded = MapEntitySnapshotCodec.decode(encoded);
 
@@ -82,6 +83,7 @@ function testGeneratedScalarCodec(): void {
   assert.equal(decoded.alive, true);
   assert.deepEqual([...decoded.state], [0, 1, 127, 128, 255]);
   assert.equal(decoded.account, "tester");
+  assert.equal(decoded.facing, 2);
 
   const mapResponse = M2G_EnterMapCodec.decode(
     M2G_EnterMapCodec.encode({

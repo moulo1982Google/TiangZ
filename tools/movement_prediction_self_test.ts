@@ -13,13 +13,16 @@ function assertPosition(
 
 function testLocalInputChangesOnlyAtCellBoundary(): void {
   const sent: Array<{ x: number; y: number; sequence: number }> = [];
-  const predictor = new LocalMovementPredictor(0, 0, (state) => sent.push(state), {
+  const predictor = new LocalMovementPredictor(0, 0, 0, (state) => sent.push(state), {
     fixedUpdateMs: 50,
     heartbeatSeconds: 0.2,
   });
 
   predictor.setInput({ x: 1, y: 0 });
-  assertPosition(predictor.update(0.05), 6, 0);
+  const firstStep = predictor.update(0.05);
+  assertPosition(firstStep, 6, 0);
+  assert.equal(firstStep.facing, 2);
+  assert.equal(firstStep.moving, true);
 
   predictor.setInput({ x: 0, y: 1 });
   assertPosition(predictor.update(0.05), 12, 0);
@@ -33,7 +36,7 @@ function testLocalInputChangesOnlyAtCellBoundary(): void {
 }
 
 function testLocalAuthoritativePathDoesNotPullBack(): void {
-  const predictor = new LocalMovementPredictor(0, 0, () => {}, {
+  const predictor = new LocalMovementPredictor(0, 0, 0, () => {}, {
     fixedUpdateMs: 50,
     heartbeatSeconds: 0.2,
   });
@@ -50,6 +53,7 @@ function testLocalAuthoritativePathDoesNotPullBack(): void {
     moveStartTick: 10,
     moveEndTick: 12,
     moving: true,
+    facing: 2,
   }), true);
   assertPosition(predictor.update(0), 9, 0);
 
@@ -63,12 +67,13 @@ function testLocalAuthoritativePathDoesNotPullBack(): void {
     moveStartTick: 0,
     moveEndTick: 0,
     moving: false,
+    facing: 2,
   }), true);
   assert.ok(predictor.update(0.05).x >= 12);
 }
 
 function testRemoteFinishesCurrentCellBeforeStopping(): void {
-  const movement = new RemoteMovementSmoother(0, 0, 50);
+  const movement = new RemoteMovementSmoother(0, 0, 0, 50);
   assert.equal(movement.applyState({
     serverTick: 10,
     fromCellX: 0,
@@ -78,6 +83,7 @@ function testRemoteFinishesCurrentCellBeforeStopping(): void {
     moveStartTick: 10,
     moveEndTick: 12,
     moving: true,
+    facing: 2,
   }), true);
   assertPosition(movement.update(0.05), 6, 0);
 
@@ -90,6 +96,7 @@ function testRemoteFinishesCurrentCellBeforeStopping(): void {
     moveStartTick: 0,
     moveEndTick: 0,
     moving: false,
+    facing: 2,
   }), true);
   assertPosition(movement.update(0.05), 12, 0);
 
@@ -102,12 +109,13 @@ function testRemoteFinishesCurrentCellBeforeStopping(): void {
     moveStartTick: 13,
     moveEndTick: 15,
     moving: true,
+    facing: 2,
   }), true);
   assert.ok(movement.update(0.05).x > 12);
 }
 
 function testRemoteRejectsStaleState(): void {
-  const movement = new RemoteMovementSmoother(0, 0, 50);
+  const movement = new RemoteMovementSmoother(0, 0, 0, 50);
   const state = {
     serverTick: 20,
     fromCellX: 0,
@@ -117,8 +125,10 @@ function testRemoteRejectsStaleState(): void {
     moveStartTick: 20,
     moveEndTick: 22,
     moving: true,
+    facing: 2,
   };
   assert.equal(movement.applyState(state), true);
+  assert.equal(movement.update(0).facing, 2);
   assert.equal(movement.applyState({ ...state, serverTick: 19 }), false);
 }
 

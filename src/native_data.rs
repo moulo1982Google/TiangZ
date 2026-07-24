@@ -15,7 +15,7 @@ use crate::generated::native_data::{
 const INDEX_BITS: u32 = 20;
 const INDEX_MASK: u32 = (1 << INDEX_BITS) - 1;
 const MAX_GENERATION: u32 = (1 << (32 - INDEX_BITS)) - 1;
-const NATIVE_UNIT_RECORD_BYTES: usize = 42;
+const NATIVE_UNIT_RECORD_BYTES: usize = 46;
 const CELL_SIZE: f32 = 12.0;
 const MIN_UNIT_CELL: i32 = -63;
 const MAX_UNIT_CELL: i32 = 62;
@@ -680,6 +680,7 @@ fn encode_cell_movement(bytes: &mut Vec<u8>, record: &[u8; NATIVE_UNIT_RECORD_BY
         write_tag(bytes, 9, 0);
         bytes.push(1);
     }
+    write_uint32_field(bytes, 10, read_record_u32(record, 42));
 }
 
 fn cell_movement_encoded_len(record: &[u8; NATIVE_UNIT_RECORD_BYTES]) -> usize {
@@ -692,6 +693,7 @@ fn cell_movement_encoded_len(record: &[u8; NATIVE_UNIT_RECORD_BYTES]) -> usize {
         + uint32_field_len(7, read_record_u32(record, 34))
         + uint32_field_len(8, read_record_u32(record, 38))
         + usize::from(record[17] != 0) * 2
+        + uint32_field_len(10, read_record_u32(record, 42))
 }
 
 fn uint32_field_len(field_number: u32, value: u32) -> usize {
@@ -783,6 +785,7 @@ fn update_movement(unit: &mut UnitData, server_tick: u32, fixed_update_ms: f32) 
     }
 
     if unit.moving == 0 && (unit.input_x != 0 || unit.input_y != 0) {
+        unit.facing = facing_from_input(unit.input_x, unit.input_y);
         let target_x = unit.cell_x + unit.input_x as i32;
         let target_y = unit.cell_y + unit.input_y as i32;
         if can_occupy_cell(target_x, target_y) {
@@ -821,7 +824,22 @@ fn encode_snapshot(unit: &UnitData, state_changed: bool) -> [u8; NATIVE_UNIT_REC
     bytes[30..34].copy_from_slice(&unit.target_cell_y.to_le_bytes());
     bytes[34..38].copy_from_slice(&unit.move_start_tick.to_le_bytes());
     bytes[38..42].copy_from_slice(&unit.move_end_tick.to_le_bytes());
+    bytes[42..46].copy_from_slice(&unit.facing.to_le_bytes());
     bytes
+}
+
+fn facing_from_input(input_x: i8, input_y: i8) -> u32 {
+    if input_y > 0 {
+        3
+    } else if input_y < 0 {
+        0
+    } else if input_x < 0 {
+        1
+    } else if input_x > 0 {
+        2
+    } else {
+        0
+    }
 }
 
 fn cell_to_world(cell: i32) -> f32 {
@@ -1112,12 +1130,22 @@ mod tests {
         value.target_cell_y = 1;
         value.move_start_tick = 15;
         value.move_end_tick = 18;
+        value.facing = 2;
         let record = encode_snapshot(&value, false);
 
         assert_eq!(
             encode_entity_move_frame(10_016, 18, &[record]),
-            hex("272008121210080110051806200228063002380f4012"),
+            hex("272008121212080110051806200228063002380f40125002"),
         );
+    }
+
+    #[test]
+    fn facing_uses_vertical_priority_and_keeps_cardinal_values() {
+        assert_eq!(facing_from_input(0, -1), 0);
+        assert_eq!(facing_from_input(-1, 0), 1);
+        assert_eq!(facing_from_input(1, 0), 2);
+        assert_eq!(facing_from_input(0, 1), 3);
+        assert_eq!(facing_from_input(1, 1), 3);
     }
 
     fn unit(id: u32) -> UnitData {
@@ -1139,6 +1167,7 @@ mod tests {
             move_start_tick: 0,
             move_end_tick: 0,
             moving: 0,
+            facing: 0,
             speed_cells_per_second: 10.0,
             alive: 1,
             input_x: 0,

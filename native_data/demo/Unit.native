@@ -16,6 +16,7 @@ entity Unit extends Entity {
   moveStartTick: u32 = 0;
   moveEndTick: u32 = 0;
   moving: u32 = 0;
+  facing: u32 = 0;
   @memberId(3)
   speedCellsPerSecond: f32 = 10;
   @memberId(4)

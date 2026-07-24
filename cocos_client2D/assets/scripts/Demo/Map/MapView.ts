@@ -97,6 +97,7 @@ export class MapView {
             cellY: worldToCell(enterMap.y),
             numerics: [],
             speedCellsPerSecond: 10,
+            facing: 0,
           },
         ];
     const entities = new MapEntityManager(

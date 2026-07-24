@@ -56,6 +56,7 @@ export class MapWorld {
         cellY: Math.round(enterMap.y / CELL_SIZE),
         numerics: [],
         speedCellsPerSecond: 10,
+        facing: 0,
       });
     }
     window.addEventListener("keydown", this.onKeyDown);

@@ -2,7 +2,10 @@ import {
   canOccupyCell,
   cellToWorld,
   clampDirection,
+  facingFromDirection,
+  normalizeFacing,
   stepDurationSeconds,
+  type Facing,
 } from "./CellMovement";
 
 export interface MovementInput {
@@ -24,11 +27,14 @@ export interface AuthoritativeMovementState {
   readonly moveStartTick: number;
   readonly moveEndTick: number;
   readonly moving: boolean;
+  readonly facing: number;
 }
 
-export interface PredictedPosition {
+export interface PredictedMovement {
   readonly x: number;
   readonly y: number;
+  readonly facing: Facing;
+  readonly moving: boolean;
 }
 
 export interface LocalMovementPredictorOptions {
@@ -48,10 +54,12 @@ export class LocalMovementPredictor {
   private heartbeatElapsed = 0;
   private sequence = 0;
   private acknowledgedSequence = 0;
+  private facing: Facing;
 
   constructor(
     cellX: number,
     cellY: number,
+    facing: number,
     private readonly sendState: (state: MovementInputState) => void,
     private readonly options: LocalMovementPredictorOptions,
   ) {
@@ -59,6 +67,7 @@ export class LocalMovementPredictor {
     this.currentCellY = cellY;
     this.targetCellX = cellX;
     this.targetCellY = cellY;
+    this.facing = normalizeFacing(facing);
   }
 
   setInput(input: MovementInput): void {
@@ -77,7 +86,7 @@ export class LocalMovementPredictor {
     if (!this.moving) this.tryStartStep();
   }
 
-  update(deltaSeconds: number): PredictedPosition {
+  update(deltaSeconds: number): PredictedMovement {
     let remaining = Math.max(0, Math.min(deltaSeconds, 0.25));
     while (remaining > 0) {
       if (!this.moving && !this.tryStartStep()) break;
@@ -108,6 +117,7 @@ export class LocalMovementPredictor {
   reconcile(state: AuthoritativeMovementState): boolean {
     if (state.acknowledgedSequence < this.acknowledgedSequence) return false;
     this.acknowledgedSequence = state.acknowledgedSequence;
+    this.facing = normalizeFacing(state.facing);
 
     if (state.moving) {
       const sameStep = this.moving &&
@@ -158,6 +168,7 @@ export class LocalMovementPredictor {
     if (!canOccupyCell(targetX, targetY)) return false;
     this.targetCellX = targetX;
     this.targetCellY = targetY;
+    this.facing = facingFromDirection(this.desiredInput.x, this.desiredInput.y);
     this.stepDuration = stepDurationSeconds(
       this.desiredInput.x,
       this.desiredInput.y,
@@ -172,9 +183,14 @@ export class LocalMovementPredictor {
     this.sendState({ ...input, sequence: ++this.sequence });
   }
 
-  private position(): PredictedPosition {
+  private position(): PredictedMovement {
     if (!this.moving) {
-      return { x: cellToWorld(this.currentCellX), y: cellToWorld(this.currentCellY) };
+      return {
+        x: cellToWorld(this.currentCellX),
+        y: cellToWorld(this.currentCellY),
+        facing: this.facing,
+        moving: false,
+      };
     }
     const progress = Math.max(0, Math.min(1, this.stepElapsedSeconds / this.stepDuration));
     return {
@@ -182,6 +198,8 @@ export class LocalMovementPredictor {
         (cellToWorld(this.targetCellX) - cellToWorld(this.currentCellX)) * progress,
       y: cellToWorld(this.currentCellY) +
         (cellToWorld(this.targetCellY) - cellToWorld(this.currentCellY)) * progress,
+      facing: this.facing,
+      moving: true,
     };
   }
 }

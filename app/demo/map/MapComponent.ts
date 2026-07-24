@@ -301,6 +301,7 @@ function toMapEntity(snapshot: PlayerSnapshot): MapEntitySnapshot {
     cellY: snapshot.cellY,
     numerics: snapshot.numerics,
     speedCellsPerSecond: snapshot.speedCellsPerSecond,
+    facing: snapshot.facing,
     alive: snapshot.alive,
   };
 }
