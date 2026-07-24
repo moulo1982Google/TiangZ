@@ -21,7 +21,6 @@ import { PositionComponent } from "../app/demo/map/PositionComponent";
 import { UnitGateComponent } from "../app/demo/map/UnitGateComponent";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { NativeItemRef } from "../app/generated/model/native/NativeItemRef";
-import { NativeNumericRef } from "../app/generated/model/native/NativeNumericRef";
 import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NumericComponent } from "../app/demo/numeric/NumericComponent";
 import { NumericType } from "../app/demo/numeric/NumericType";
@@ -57,6 +56,7 @@ function testGeneratedNativeHandleScalarAccess(): void {
   let nextHandle = 7;
   const valuesByHandle = new Map<number, Float64Array>();
   const typesByHandle = new Map<number, number>();
+  const numericsByHandle = new Map<number, Map<number, number>>();
   (globalThis as typeof globalThis & {
     __etsNativeOps?: NativeHostOpsApi;
   }).__etsNativeOps = {
@@ -78,6 +78,18 @@ function testGeneratedNativeHandleScalarAccess(): void {
       valuesByHandle.delete(handle);
       typesByHandle.delete(handle);
     },
+    numericAttach: (handle) => { numericsByHandle.set(handle, new Map()); },
+    numericDetach: (handle) => { numericsByHandle.delete(handle); },
+    numericGet: (handle, numericType) => numericsByHandle.get(handle)?.get(numericType) ?? 0,
+    numericSet: (handle, numericType, value) => {
+      const values = numericsByHandle.get(handle)!;
+      if ((values.get(numericType) ?? 0) === value) return false;
+      values.set(numericType, value);
+      return true;
+    },
+    mapPeekNumericDelta: () => new Uint8Array(14),
+    mapAckNumericDelta: () => undefined,
+    mapMarkAllNumericsDirty: () => undefined,
     unitSetMovementInput: (handle, inputX, inputY, sequence) => {
       const values = valuesByHandle.get(handle)!;
       if (sequence <= values[16]) return false;
@@ -114,24 +126,16 @@ function testGeneratedNativeHandleScalarAccess(): void {
     configId: 3001,
     count: 2,
   });
-  const numeric = NativeNumericRef.Create({
-    id: 100,
-    instanceId: 102,
-  });
   unit.x += 1;
   item.count += 2;
-  numeric.currentHp += 3;
 
   assert.equal(typesByHandle.get(unit.Handle), 1);
   assert.equal(typesByHandle.get(item.Handle), 2);
-  assert.equal(typesByHandle.get(numeric.Handle), 3);
   assert.equal(valuesByHandle.get(unit.Handle)![3], 13);
   assert.equal(valuesByHandle.get(item.Handle)![3], 4);
-  assert.equal(valuesByHandle.get(numeric.Handle)![2], 103);
-  assert.equal(gets, 3);
-  assert.equal(sets, 3);
+  assert.equal(gets, 2);
+  assert.equal(sets, 2);
   item.Dispose();
-  numeric.Dispose();
   assert.equal(host.despawnActor("map:1", "native-probe"), true);
   assert.equal(valuesByHandle.size, 0);
 }
@@ -285,18 +289,8 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(player.GetComponent(MailBoxComponent).MailboxType, "ordered");
   assert.equal(player.GetComponent(NumericComponent), numeric);
   assert.equal(numeric[NumericType.CurrentHp], 100);
-  assert.deepEqual(numeric.TakeChangedSnapshot(), {
-    unitId: 1000,
-    currentHp: 100,
-    maxHp: 1000,
-  });
   numeric[NumericType.CurrentHp] += 1;
-  assert.deepEqual(numeric.TakeChangedSnapshot(), {
-    unitId: 1000,
-    currentHp: 101,
-    maxHp: 1000,
-  });
-  assert.equal(numeric.TakeChangedSnapshot(), undefined);
+  assert.equal(numeric[NumericType.CurrentHp], 101);
 
   const initialized = await host.call<PlayerSnapshot>(
     undefined,

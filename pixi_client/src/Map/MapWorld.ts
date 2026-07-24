@@ -6,7 +6,7 @@ import type {
   G2C_EntityMove,
   G2C_EnterMap,
   MapEntitySnapshot,
-  UnitNumericSnapshot,
+  UnitNumericDelta,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
 
 const CELL_SIZE = 12;
@@ -22,6 +22,7 @@ interface EntityView {
 export class MapWorld {
   private readonly world = new Container();
   private readonly entities = new Map<number, EntityView>();
+  private readonly numerics = new Map<number, Map<number, number>>();
   private readonly mapClient: MapClient;
   private readonly pressed = new Set<string>();
   private sequence = 1;
@@ -90,10 +91,13 @@ export class MapWorld {
     }
   }
 
-  applyNumerics(numerics: readonly UnitNumericSnapshot[]): void {
+  applyNumerics(numerics: readonly UnitNumericDelta[]): void {
     for (const numeric of numerics) {
+      const values = this.numerics.get(numeric.unitId) ?? new Map<number, number>();
+      values.set(numeric.numericType, numeric.value);
+      this.numerics.set(numeric.unitId, values);
       const entity = this.entities.get(numeric.unitId);
-      if (entity) entity.label.text = `${entity.label.text.split("  HP")[0]}  HP ${numeric.currentHp}/${numeric.maxHp}`;
+      if (entity) entity.label.text = `${entity.label.text.split("  HP")[0]}  HP ${values.get(1) ?? "--"}/${values.get(2) ?? "--"}`;
     }
   }
 
@@ -121,6 +125,7 @@ export class MapWorld {
     window.removeEventListener("keyup", this.onKeyUp);
     this.world.destroy({ children: true });
     this.entities.clear();
+    this.numerics.clear();
   }
 
   private drawMap(): void {

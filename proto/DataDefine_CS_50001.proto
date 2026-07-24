@@ -35,9 +35,9 @@ message CellMovementState
   bool moving = 9;
 }
 
-message UnitNumericSnapshot
+message UnitNumericDelta
 {
   uint32 unit_id = 1;
-  sint32 current_hp = 2;
-  sint32 max_hp = 3;
+  uint32 numeric_type = 2;
+  sint32 value = 3;
 }

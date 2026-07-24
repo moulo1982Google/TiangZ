@@ -11,6 +11,14 @@ export const NativeItemField = {
 
 export type NativeItemField = typeof NativeItemField[keyof typeof NativeItemField];
 
+export const NativeItemMember = {
+  Count: 1,
+  Quality: 2,
+  Level: 3,
+} as const;
+
+export type NativeItemMember = typeof NativeItemMember[keyof typeof NativeItemMember];
+
 export class NativeItemRef {
   private nativeHandle: number;
 

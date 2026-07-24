@@ -1,7 +1,0 @@
-namespace demo;
-
-@typeId(3)
-entity Numeric extends Entity {
-  currentHp: i32 = 100;
-  maxHp: i32 = 1000;
-}

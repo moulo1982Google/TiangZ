@@ -117,11 +117,11 @@ message G2C_EntityMove // IMessage
 }
 
 // @ets.msg protocol=Client method=EntityNumeric
-// @ets.broadcast mode=latest item=UnitNumericSnapshot items=numerics key=unit_id tick=server_tick
+// @ets.broadcast mode=latest item=UnitNumericDelta items=numerics key=unit_id,numeric_type tick=server_tick
 message G2C_EntityNumeric // IMessage
 {
   uint32 server_tick = 1;
-  repeated UnitNumericSnapshot numerics = 2;
+  repeated UnitNumericDelta numerics = 2;
 }
 
 // @ets.msg protocol=Client method=EntityEnter

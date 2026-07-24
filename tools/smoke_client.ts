@@ -105,7 +105,7 @@ async function verifyGateSessionLifecycle(
   await third.gate.close();
   await sleep(150);
 
-  const afterDisconnect = await openGateAndEnterMap(ip, port, request);
+  const afterDisconnect = await openGateAndEnterMap(ip, port, request, true);
   try {
     if (afterDisconnect.enterMap.unitId <= first.enterMap.unitId) {
       throw new Error("valid Gate disconnect did not remove the map unit");
@@ -114,7 +114,11 @@ async function verifyGateSessionLifecycle(
       reboundUnitId: first.enterMap.unitId,
       recreatedUnitId: afterDisconnect.enterMap.unitId,
     });
-    await verifyNumericTimer(afterDisconnect.gate, afterDisconnect.enterMap.unitId);
+    await verifyNumericTimer(
+      afterDisconnect.gate,
+      afterDisconnect.enterMap.unitId,
+      afterDisconnect.initialNumericFrame,
+    );
     await verifyAuthoritativeMovement(afterDisconnect.gate, afterDisconnect.enterMap);
     return afterDisconnect.enterMap;
   } finally {
@@ -125,30 +129,34 @@ async function verifyGateSessionLifecycle(
 async function verifyNumericTimer(
   gate: TcpRpcConnection,
   unitId: number,
+  initialFrame?: Uint8Array,
 ): Promise<void> {
   let previous: number | undefined;
+  let maxHp: number | undefined;
+  const frames: Uint8Array[] = initialFrame ? [initialFrame] : [];
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
-    const frame = await gate.waitForMessage(
-      MsgCode.G2C_EntityNumeric,
-      Math.max(1, deadline - Date.now()),
-    );
+    const frame = frames.shift() ?? await gate.waitForMessage(
+        MsgCode.G2C_EntityNumeric,
+        Math.max(1, deadline - Date.now()),
+      );
     const body = decodeEntityNumericFrame(frame).body;
-    const numeric = body.numerics.find((candidate) => candidate.unitId === unitId);
-    if (!numeric) continue;
-    if (numeric.maxHp !== 1000) {
-      throw new Error(`unexpected MaxHp: ${JSON.stringify(numeric)}`);
+    for (const numeric of body.numerics.filter((candidate) => candidate.unitId === unitId)) {
+      if (numeric.numericType === 1) {
+        if (previous !== undefined && numeric.value > previous && maxHp === 1000) {
+          console.log("Numeric timer broadcast:", {
+            unitId,
+            previousHp: previous,
+            currentHp: numeric.value,
+            serverTick: body.serverTick,
+          });
+          return;
+        }
+        previous = numeric.value;
+      } else if (numeric.numericType === 2) {
+        maxHp = numeric.value;
+      }
     }
-    if (previous !== undefined && numeric.currentHp > previous) {
-      console.log("Numeric timer broadcast:", {
-        unitId,
-        previousHp: previous,
-        currentHp: numeric.currentHp,
-        serverTick: body.serverTick,
-      });
-      return;
-    }
-    previous = numeric.currentHp;
   }
   throw new Error(`timed out waiting for Numeric CurrentHp growth: unit ${unitId}`);
 }
@@ -305,7 +313,12 @@ async function openGateAndEnterMap(
   ip: string,
   port: number,
   request: { account: string; token: string; mapId: number },
-): Promise<{ gate: TcpRpcConnection; enterMap: ReturnType<typeof decodeEnterMapFrame>["body"] }> {
+  captureInitialNumeric = false,
+): Promise<{
+  gate: TcpRpcConnection;
+  enterMap: ReturnType<typeof decodeEnterMapFrame>["body"];
+  initialNumericFrame?: Uint8Array;
+}> {
   const gate = new TcpRpcConnection(ip, port);
   try {
     const loginGateRpcId = nextRpcId++;
@@ -321,9 +334,13 @@ async function openGateAndEnterMap(
     }
 
     const enterMapRpcId = nextRpcId++;
-    const [enterMapFrame, mapReadyFrame] = await Promise.all([
+    const initialNumeric = captureInitialNumeric
+      ? gate.waitForMessage(MsgCode.G2C_EntityNumeric)
+      : Promise.resolve(undefined);
+    const [enterMapFrame, mapReadyFrame, initialNumericFrame] = await Promise.all([
       gate.request(buildEnterMapPacket(enterMapRpcId, { mapId: request.mapId })),
       gate.waitForMessage(MsgCode.G2C_MapReady),
+      initialNumeric,
     ]);
     const enterMap = decodeEnterMapFrame(enterMapFrame);
     const mapReady = decodeMapReadyFrame(mapReadyFrame);
@@ -341,7 +358,11 @@ async function openGateAndEnterMap(
     ) {
       throw new Error(`unexpected enter map result: ${JSON.stringify(enterMap.body)}`);
     }
-    return { gate, enterMap: enterMap.body };
+    return {
+      gate,
+      enterMap: enterMap.body,
+      ...(initialNumericFrame ? { initialNumericFrame } : {}),
+    };
   } catch (error) {
     await gate.close();
     throw error;

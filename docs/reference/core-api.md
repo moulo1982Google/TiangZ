@@ -25,7 +25,7 @@
 - `TimerSystem.NewRepeatedTimer(intervalMs, callback)`：创建重复游戏定时器；Process 卡顿时只触发一次并跳过过期周期，不突发补齐。
 - `TimerSystem.Remove(timerId)`：取消定时器。
 - `TimerSystem.WaitAsync(delayMs)`：等待游戏时钟推进；它不是 Rust/Tokio IO 超时。
-- Component 实现同步 `Update(): void` 后，会在 `AddComponent` 成功时自动注册，在 `RemoveComponent`/销毁时自动注销。
+- Component 实现同步 `Update(): void`、`LateUpdate(): void` 或 `FrameFlush(): void` 后，会在 `AddComponent` 成功时自动注册，在 `RemoveComponent`/销毁时自动注销。每个固定逻辑帧严格按 `Update -> LateUpdate -> FrameFlush` 执行，三个阶段都禁止返回 Promise。
 - `Component.NewOnceTimer/NewRepeatedTimer/RemoveTimer`：定时器随组件销毁自动清理。
 - `Actor.NewOnceTimer/NewRepeatedTimer/RemoveTimer`：回调先进入 Actor 自己的 mailbox；ordered Actor 忙碌时排队，Actor 销毁时自动取消。
 

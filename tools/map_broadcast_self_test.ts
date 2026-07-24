@@ -54,19 +54,25 @@ async function testNumericLatestCoverage(): Promise<void> {
   const first = hub.Publish(
     audience,
     ClientBroadcasts.EntityNumeric,
-    { unitId: 1, currentHp: 100, maxHp: 1000 },
+    { unitId: 1, numericType: 1, value: 100 },
     1,
   );
   const replaced = hub.Publish(
     audience,
     ClientBroadcasts.EntityNumeric,
-    { unitId: 1, currentHp: 101, maxHp: 1000 },
+    { unitId: 1, numericType: 1, value: 101 },
     2,
   );
   const latest = hub.Publish(
     audience,
     ClientBroadcasts.EntityNumeric,
-    { unitId: 1, currentHp: 102, maxHp: 1000 },
+    { unitId: 1, numericType: 1, value: 102 },
+    3,
+  );
+  const maxHp = hub.Publish(
+    audience,
+    ClientBroadcasts.EntityNumeric,
+    { unitId: 1, numericType: 2, value: 1000 },
     3,
   );
 
@@ -77,10 +83,11 @@ async function testNumericLatestCoverage(): Promise<void> {
   const body = decodeNumeric(transport.sends[1].frame);
   assert.equal(body.serverTick, 3);
   assert.deepEqual(body.numerics, [
-    { unitId: 1, currentHp: 102, maxHp: 1000 },
+    { unitId: 1, numericType: 1, value: 102 },
+    { unitId: 1, numericType: 2, value: 1000 },
   ]);
   transport.sends[1].resolve();
-  await Promise.all([first, replaced, latest]);
+  await Promise.all([first, replaced, latest, maxHp]);
   assert.equal(hub.Snapshot().coalescedItems, 1);
 }
 

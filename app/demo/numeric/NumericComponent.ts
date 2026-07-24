@@ -1,9 +1,6 @@
 import { Component, component } from "../../core/runtime";
-import type { UnitNumericSnapshot } from "../../generated/model/server/demo/protocol/messages";
-import {
-  NativeNumericRef,
-} from "../../generated/model/native/NativeNumericRef";
 import { NativeOps } from "../../generated/model/native/NativeOps";
+import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import type { PlayerUnit } from "../map/PlayerUnit";
 import { AllNumericTypes, NumericType, type NumericType as NumericTypeValue } from "./NumericType";
 
@@ -11,16 +8,15 @@ import { AllNumericTypes, NumericType, type NumericType as NumericTypeValue } fr
 export class NumericComponent extends Component {
   [type: number]: number;
 
-  private native!: NativeNumericRef;
-  private dirty = true;
+  private unitHandle = 0;
 
   protected override Awake(): void {
     const unit = this.GetParent<PlayerUnit>();
-    this.native = NativeNumericRef.Create({
-      id: unit.UnitId,
-      instanceId: unit.InstanceId,
-    });
+    this.unitHandle = unit.GetComponent(NativeUnitRef).Handle;
+    NativeOps.NumericAttach(this.unitHandle);
     this.installIndexAccessors();
+    this[NumericType.CurrentHp] = 100;
+    this[NumericType.MaxHp] = 1000;
 
     this.NewRepeatedTimer(100, (self) => {
       self[NumericType.CurrentHp] += 1;
@@ -28,30 +24,19 @@ export class NumericComponent extends Component {
   }
 
   Get(type: NumericTypeValue): number {
-    return NativeOps.EntityGetNumber(this.native.Handle, type);
+    return NativeOps.NumericGet(this.unitHandle, type);
   }
 
   Set(type: NumericTypeValue, value: number): void {
-    if (!Number.isFinite(value)) {
-      throw new Error(`numeric value must be finite: ${type}=${value}`);
+    if (!Number.isSafeInteger(value) || value < -0x8000_0000 || value > 0x7fff_ffff) {
+      throw new Error(`numeric value must be int32: ${type}=${value}`);
     }
-    if (this.Get(type) === value) return;
-    NativeOps.EntitySetNumber(this.native.Handle, type, value);
-    this.dirty = true;
-  }
-
-  TakeChangedSnapshot(): UnitNumericSnapshot | undefined {
-    if (!this.dirty) return undefined;
-    this.dirty = false;
-    return {
-      unitId: this.GetParent<PlayerUnit>().UnitId,
-      currentHp: this[NumericType.CurrentHp],
-      maxHp: this[NumericType.MaxHp],
-    };
+    NativeOps.NumericSet(this.unitHandle, type, value);
   }
 
   protected override OnDestroy(): void {
-    this.native.Dispose();
+    NativeOps.NumericDetach(this.unitHandle);
+    this.unitHandle = 0;
   }
 
   private installIndexAccessors(): void {

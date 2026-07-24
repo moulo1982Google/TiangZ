@@ -4,7 +4,7 @@ import { MapClient } from "../../Generated/SDK/Generated/Model/demo/protocol/cli
 import type {
   G2C_EntityMove,
   MapEntitySnapshot,
-  UnitNumericSnapshot,
+  UnitNumericDelta,
 } from "../../Generated/SDK/Generated/Model/demo/protocol/messages";
 import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
@@ -33,7 +33,7 @@ export class MapEntityManager {
   private local?: LocalEntityVisual;
   private readonly remotes = new Map<number, RemoteEntityVisual>();
   private readonly numericLabels = new Map<number, Label>();
-  private readonly numericSnapshots = new Map<number, UnitNumericSnapshot>();
+  private readonly numerics = new Map<number, Map<number, number>>();
   private readonly mapClient: MapClient;
 
   constructor(
@@ -68,8 +68,8 @@ export class MapEntityManager {
     }
   }
 
-  applyNumerics(snapshots: readonly UnitNumericSnapshot[]): void {
-    for (const snapshot of snapshots) this.applyNumeric(snapshot);
+  applyNumerics(deltas: readonly UnitNumericDelta[]): void {
+    for (const delta of deltas) this.applyNumeric(delta);
   }
 
   leave(unitId: number): void {
@@ -95,7 +95,7 @@ export class MapEntityManager {
     for (const remote of this.remotes.values()) remote.node.destroy();
     this.remotes.clear();
     this.numericLabels.clear();
-    this.numericSnapshots.clear();
+    this.numerics.clear();
   }
 
   private upsert(snapshot: MapEntitySnapshot): void {
@@ -113,8 +113,7 @@ export class MapEntityManager {
 
     const local = snapshot.unitId === this.localUnitId;
     const node = this.createUnitNode(snapshot, local);
-    const numeric = this.numericSnapshots.get(snapshot.unitId);
-    if (numeric) this.applyNumeric(numeric);
+    this.refreshNumeric(snapshot.unitId);
     if (local) {
       this.local = {
         node,
@@ -177,10 +176,18 @@ export class MapEntityManager {
     return node;
   }
 
-  private applyNumeric(snapshot: UnitNumericSnapshot): void {
-    this.numericSnapshots.set(snapshot.unitId, snapshot);
-    const label = this.numericLabels.get(snapshot.unitId);
-    if (label) label.string = `HP ${snapshot.currentHp}/${snapshot.maxHp}`;
+  private applyNumeric(delta: UnitNumericDelta): void {
+    const values = this.numerics.get(delta.unitId) ?? new Map<number, number>();
+    values.set(delta.numericType, delta.value);
+    this.numerics.set(delta.unitId, values);
+    this.refreshNumeric(delta.unitId);
+  }
+
+  private refreshNumeric(unitId: number): void {
+    const label = this.numericLabels.get(unitId);
+    if (!label) return;
+    const values = this.numerics.get(unitId);
+    label.string = `HP ${values?.get(1) ?? "--"}/${values?.get(2) ?? "--"}`;
   }
 
   private followLocalPlayer(x: number, y: number): void {
@@ -196,7 +203,7 @@ export class MapEntityManager {
 
   private remove(unitId: number): void {
     this.numericLabels.delete(unitId);
-    this.numericSnapshots.delete(unitId);
+    this.numerics.delete(unitId);
     if (unitId === this.localUnitId) {
       this.local?.node.destroy();
       this.local = undefined;

@@ -1,9 +1,13 @@
 namespace demo;
 
 @typeId(2)
+@replicated
 entity Item extends Entity {
   readonly configId: u32;
+  @memberId(1)
   count: u32 = 1;
+  @memberId(2)
   quality: u32 = 0;
+  @memberId(3)
   level: u32 = 1;
 }

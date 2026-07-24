@@ -13,6 +13,8 @@ import {
   actor,
   scene,
   type IUpdate,
+  type IFrameFlush,
+  type ILateUpdate,
 } from "../app/core/runtime";
 
 @scene({ sceneType: "GameUpdateTest" })
@@ -21,12 +23,22 @@ class TestScene extends Scene {}
 @actor({ mailbox: "ordered" })
 class TestActor extends Actor {}
 
-class CounterComponent extends Component implements IUpdate {
+class CounterComponent extends Component implements IUpdate, ILateUpdate, IFrameFlush {
   updates = 0;
+  readonly phases: string[] = [];
   destroyed = false;
 
   Update(): void {
     this.updates += 1;
+    this.phases.push("update");
+  }
+
+  LateUpdate(): void {
+    this.phases.push("late");
+  }
+
+  FrameFlush(): void {
+    this.phases.push("flush");
   }
 
   protected override OnDestroy(): void {
@@ -48,6 +60,7 @@ async function main(): Promise<void> {
 
   Game.Instance.Update(base + 50, Date.now(), () => undefined);
   assert.equal(counter.updates, 1);
+  assert.deepEqual(counter.phases, ["update", "late", "flush"]);
   assert.equal(TimeSystem.Instance.FixedDeltaTime, 50);
 
   Game.Instance.Update(base + 250, Date.now(), () => undefined);

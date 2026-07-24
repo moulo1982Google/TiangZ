@@ -70,11 +70,12 @@
     "smoke:client": "node dist/smoke_client.cjs",
     "smoke:client-sdk": "npm run build:client-sdk-smoke && node dist/client_sdk_smoke.cjs",
     "perf:bridge": "cargo run --release --bin bridge_perf --",
-    "perf:protocol": "cargo run --release --bin protocol_perf --"
+    "perf:protocol": "cargo run --release --bin protocol_perf --",
+    "perf:dirty-replication": "cargo run --release --bin dirty_replication_perf --"
   },
   "devDependencies": {
     "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.7.0",
-    "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.10.0",
+    "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.11.2",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.0",
     "pixi.js": "^8.9.2",

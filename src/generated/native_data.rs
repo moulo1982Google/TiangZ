@@ -9,18 +9,12 @@ pub struct EntityData {
 
 #[derive(Debug, Clone)]
 pub struct ItemData {
+    pub(crate) __dirty_mask: u64,
     pub entity: EntityData,
     pub config_id: u32,
     pub count: u32,
     pub quality: u32,
     pub level: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct NumericData {
-    pub entity: EntityData,
-    pub current_hp: i32,
-    pub max_hp: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +39,6 @@ pub struct UnitData {
 
 pub const ENTITY_TYPE_UNIT: u32 = 1;
 pub const ENTITY_TYPE_ITEM: u32 = 2;
-pub const ENTITY_TYPE_NUMERIC: u32 = 3;
 
 pub const UNIT_FIELD_ID: u32 = 1;
 pub const UNIT_FIELD_INSTANCE_ID: u32 = 2;
@@ -97,14 +90,16 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
                 return Err("native Unit field x must be a finite f32");
             }
-            value.x = number as f32;
+            let converted = number as f32;
+            value.x = converted;
             Ok(())
         }
         5 => {
             if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
                 return Err("native Unit field y must be a finite f32");
             }
-            value.y = number as f32;
+            let converted = number as f32;
+            value.y = converted;
             Ok(())
         }
         6 => {
@@ -115,7 +110,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field cellX must be i32");
             }
-            value.cell_x = number as i32;
+            let converted = number as i32;
+            value.cell_x = converted;
             Ok(())
         }
         7 => {
@@ -126,7 +122,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field cellY must be i32");
             }
-            value.cell_y = number as i32;
+            let converted = number as i32;
+            value.cell_y = converted;
             Ok(())
         }
         8 => {
@@ -137,7 +134,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field targetCellX must be i32");
             }
-            value.target_cell_x = number as i32;
+            let converted = number as i32;
+            value.target_cell_x = converted;
             Ok(())
         }
         9 => {
@@ -148,7 +146,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field targetCellY must be i32");
             }
-            value.target_cell_y = number as i32;
+            let converted = number as i32;
+            value.target_cell_y = converted;
             Ok(())
         }
         10 => {
@@ -159,7 +158,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field moveStartTick must be u32");
             }
-            value.move_start_tick = number as u32;
+            let converted = number as u32;
+            value.move_start_tick = converted;
             Ok(())
         }
         11 => {
@@ -170,7 +170,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field moveEndTick must be u32");
             }
-            value.move_end_tick = number as u32;
+            let converted = number as u32;
+            value.move_end_tick = converted;
             Ok(())
         }
         12 => {
@@ -181,14 +182,16 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field moving must be u32");
             }
-            value.moving = number as u32;
+            let converted = number as u32;
+            value.moving = converted;
             Ok(())
         }
         13 => {
             if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
                 return Err("native Unit field speedCellsPerSecond must be a finite f32");
             }
-            value.speed_cells_per_second = number as f32;
+            let converted = number as f32;
+            value.speed_cells_per_second = converted;
             Ok(())
         }
         14 => {
@@ -199,7 +202,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field inputX must be i8");
             }
-            value.input_x = number as i8;
+            let converted = number as i8;
+            value.input_x = converted;
             Ok(())
         }
         15 => {
@@ -210,7 +214,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field inputY must be i8");
             }
-            value.input_y = number as i8;
+            let converted = number as i8;
+            value.input_y = converted;
             Ok(())
         }
         16 => {
@@ -221,7 +226,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field inputChanged must be u32");
             }
-            value.input_changed = number as u32;
+            let converted = number as u32;
+            value.input_changed = converted;
             Ok(())
         }
         17 => {
@@ -232,7 +238,8 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             {
                 return Err("native Unit field sequence must be u32");
             }
-            value.sequence = number as u32;
+            let converted = number as u32;
+            value.sequence = converted;
             Ok(())
         }
         _ => Err("unknown native Unit field"),
@@ -245,6 +252,9 @@ pub const ITEM_FIELD_CONFIG_ID: u32 = 3;
 pub const ITEM_FIELD_COUNT: u32 = 4;
 pub const ITEM_FIELD_QUALITY: u32 = 5;
 pub const ITEM_FIELD_LEVEL: u32 = 6;
+pub const ITEM_MEMBER_COUNT: u32 = 1;
+pub const ITEM_MEMBER_QUALITY: u32 = 2;
+pub const ITEM_MEMBER_LEVEL: u32 = 3;
 
 pub fn get_item_number(value: &ItemData, field: u32) -> Option<f64> {
     match field {
@@ -271,7 +281,11 @@ pub fn set_item_number(value: &mut ItemData, field: u32, number: f64) -> Result<
             {
                 return Err("native Item field count must be u32");
             }
-            value.count = number as u32;
+            let converted = number as u32;
+            if value.count != converted {
+                value.count = converted;
+                value.__dirty_mask |= 1u64 << 1;
+            }
             Ok(())
         }
         5 => {
@@ -282,7 +296,11 @@ pub fn set_item_number(value: &mut ItemData, field: u32, number: f64) -> Result<
             {
                 return Err("native Item field quality must be u32");
             }
-            value.quality = number as u32;
+            let converted = number as u32;
+            if value.quality != converted {
+                value.quality = converted;
+                value.__dirty_mask |= 1u64 << 2;
+            }
             Ok(())
         }
         6 => {
@@ -293,67 +311,50 @@ pub fn set_item_number(value: &mut ItemData, field: u32, number: f64) -> Result<
             {
                 return Err("native Item field level must be u32");
             }
-            value.level = number as u32;
+            let converted = number as u32;
+            if value.level != converted {
+                value.level = converted;
+                value.__dirty_mask |= 1u64 << 3;
+            }
             Ok(())
         }
         _ => Err("unknown native Item field"),
     }
 }
 
-pub const NUMERIC_FIELD_ID: u32 = 1;
-pub const NUMERIC_FIELD_INSTANCE_ID: u32 = 2;
-pub const NUMERIC_FIELD_CURRENT_HP: u32 = 3;
-pub const NUMERIC_FIELD_MAX_HP: u32 = 4;
-
-pub fn get_numeric_number(value: &NumericData, field: u32) -> Option<f64> {
-    match field {
-        1 => Some(value.entity.id as f64),
-        2 => Some(value.entity.instance_id as f64),
-        3 => Some(value.current_hp as f64),
-        4 => Some(value.max_hp as f64),
-        _ => None,
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct ItemDelta {
+    pub dirty_mask: u64,
+    pub count: Option<u32>,
+    pub quality: Option<u32>,
+    pub level: Option<u32>,
 }
 
-pub fn set_numeric_number(
-    value: &mut NumericData,
-    field: u32,
-    number: f64,
-) -> Result<(), &'static str> {
-    match field {
-        1 => Err("native Numeric field id is readonly"),
-        2 => Err("native Numeric field instanceId is readonly"),
-        3 => {
-            if !number.is_finite()
-                || number.fract() != 0.0
-                || number < i32::MIN as f64
-                || number > i32::MAX as f64
-            {
-                return Err("native Numeric field currentHp must be i32");
-            }
-            value.current_hp = number as i32;
-            Ok(())
-        }
-        4 => {
-            if !number.is_finite()
-                || number.fract() != 0.0
-                || number < i32::MIN as f64
-                || number > i32::MAX as f64
-            {
-                return Err("native Numeric field maxHp must be i32");
-            }
-            value.max_hp = number as i32;
-            Ok(())
-        }
-        _ => Err("unknown native Numeric field"),
+pub fn item_dirty_mask(value: &ItemData) -> u64 {
+    value.__dirty_mask
+}
+
+pub fn take_item_dirty_mask(value: &mut ItemData) -> u64 {
+    std::mem::take(&mut value.__dirty_mask)
+}
+
+pub fn take_item_delta(value: &mut ItemData) -> Option<ItemDelta> {
+    let dirty_mask = take_item_dirty_mask(value);
+    if dirty_mask == 0 {
+        return None;
     }
+    Some(ItemDelta {
+        dirty_mask,
+        count: (dirty_mask & (1u64 << 1) != 0).then_some(value.count),
+        quality: (dirty_mask & (1u64 << 2) != 0).then_some(value.quality),
+        level: (dirty_mask & (1u64 << 3) != 0).then_some(value.level),
+    })
 }
 
 #[derive(Debug, Clone)]
 pub enum NativeEntityData {
     Unit(UnitData),
     Item(ItemData),
-    Numeric(NumericData),
 }
 
 impl NativeEntityData {
@@ -361,7 +362,6 @@ impl NativeEntityData {
         match self {
             Self::Unit(_) => ENTITY_TYPE_UNIT,
             Self::Item(_) => ENTITY_TYPE_ITEM,
-            Self::Numeric(_) => ENTITY_TYPE_NUMERIC,
         }
     }
 
@@ -389,20 +389,6 @@ impl NativeEntityData {
     pub fn as_item_mut(&mut self) -> Option<&mut ItemData> {
         match self {
             Self::Item(value) => Some(value),
-            _ => None,
-        }
-    }
-
-    pub fn as_numeric(&self) -> Option<&NumericData> {
-        match self {
-            Self::Numeric(value) => Some(value),
-            _ => None,
-        }
-    }
-
-    pub fn as_numeric_mut(&mut self) -> Option<&mut NumericData> {
-        match self {
-            Self::Numeric(value) => Some(value),
             _ => None,
         }
     }
@@ -447,6 +433,7 @@ pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &
                 return Err("native Entity id and instanceId must be greater than zero");
             }
             Ok(NativeEntityData::Item(ItemData {
+                __dirty_mask: 14u64,
                 entity: EntityData {
                     id: read_u32(values, 0)?,
                     instance_id: read_u32(values, 1)?,
@@ -457,22 +444,6 @@ pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &
                 level: read_u32(values, 5)?,
             }))
         }
-        ENTITY_TYPE_NUMERIC => {
-            if values.len() != 4 {
-                return Err("native Numeric create value count mismatch");
-            }
-            if read_u32(values, 0)? == 0 || read_u32(values, 1)? == 0 {
-                return Err("native Entity id and instanceId must be greater than zero");
-            }
-            Ok(NativeEntityData::Numeric(NumericData {
-                entity: EntityData {
-                    id: read_u32(values, 0)?,
-                    instance_id: read_u32(values, 1)?,
-                },
-                current_hp: read_i32(values, 2)?,
-                max_hp: read_i32(values, 3)?,
-            }))
-        }
         _ => Err("unknown native entity type"),
     }
 }
@@ -481,7 +452,6 @@ pub fn get_entity_number(value: &NativeEntityData, field: u32) -> Option<f64> {
     match value {
         NativeEntityData::Unit(value) => get_unit_number(value, field),
         NativeEntityData::Item(value) => get_item_number(value, field),
-        NativeEntityData::Numeric(value) => get_numeric_number(value, field),
     }
 }
 
@@ -493,7 +463,6 @@ pub fn set_entity_number(
     match value {
         NativeEntityData::Unit(value) => set_unit_number(value, field, number),
         NativeEntityData::Item(value) => set_item_number(value, field, number),
-        NativeEntityData::Numeric(value) => set_numeric_number(value, field, number),
     }
 }
 

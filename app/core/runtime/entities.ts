@@ -265,7 +265,7 @@ export abstract class Entity {
     this.disposed = true;
 
     let firstError: unknown;
-    for (const component of this.components.values()) {
+    for (const component of [...this.components.values()].reverse()) {
       try {
         this.componentHooks?.removing(component);
         component.__dispose();

@@ -331,7 +331,7 @@ function parseMessageMeta(comments, trailingBase) {
   const broadcastMatch = comments.match(/\/\/\s*@ets\.broadcast\b([^\n]*)/);
   if (broadcastMatch) {
     meta.broadcast = Object.fromEntries(
-      [...broadcastMatch[1].matchAll(/(\w+)=([A-Za-z0-9_]+)/g)].map(
+      [...broadcastMatch[1].matchAll(/(\w+)=([A-Za-z0-9_,]+)/g)].map(
         ([, key, value]) => [key, value],
       ),
     );
@@ -558,6 +558,9 @@ function parseBroadcastDescriptors(messages) {
     if (mode === "latest" && !message.broadcast.key) {
       throw new Error(`${message.name} latest broadcast requires key=...`);
     }
+    const keyFields = message.broadcast.key
+      ? message.broadcast.key.split(",").map((field) => field.trim()).filter(Boolean)
+      : undefined;
     descriptors.push({
       serviceName: message.protocol,
       methodName,
@@ -565,9 +568,7 @@ function parseBroadcastDescriptors(messages) {
       itemType,
       itemsField: itemsField.tsName,
       tickField: tickField?.tsName,
-      keyField: message.broadcast.key
-        ? toCamel(message.broadcast.key)
-        : undefined,
+      keyFields: keyFields?.map(toCamel),
       mode,
     });
   }
@@ -996,8 +997,11 @@ function emitBroadcastDescriptors(protocol, outputDir, runtimeFiles) {
       const makeMessage = descriptor.itemsField
         ? `(${descriptor.itemsField}, tick) => ({\n      ${descriptor.tickField ? `${descriptor.tickField}: tick,\n      ` : ""}${descriptor.itemsField}: [...${descriptor.itemsField}],\n    })`
         : `(items) => items[0]`;
+      const keyExpression = descriptor.keyFields?.length === 1
+        ? `item.${descriptor.keyFields[0]}`
+        : `\`${descriptor.keyFields?.map((field) => `\${item.${field}}`).join(":")}\``;
       const key = descriptor.mode === "latest"
-        ? `\n    keyOf: (item) => item.${descriptor.keyField},`
+        ? `\n    keyOf: (item) => ${keyExpression},`
         : "";
       return `  ${descriptor.methodName}: ${define}<${descriptor.itemType}, ${descriptor.messageType}>({
     name: "${serviceName}.${descriptor.methodName}",

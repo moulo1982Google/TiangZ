@@ -5,6 +5,13 @@ export interface NativeHostOpsApi {
   entityDestroy(handle: number): void;
   entityGetNumber(handle: number, field: number): number;
   entitySetNumber(handle: number, field: number, value: number): void;
+  numericAttach(unitHandle: number): void;
+  numericDetach(unitHandle: number): void;
+  numericGet(unitHandle: number, numericType: number): number;
+  numericSet(unitHandle: number, numericType: number, value: number): boolean;
+  mapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
+  mapAckNumericDelta(mapId: number, revision: Uint8Array): void;
+  mapMarkAllNumericsDirty(mapId: number): void;
   unitSetMovementInput(handle: number, inputX: number, inputY: number, sequence: number): boolean;
   unitResetMovement(handle: number): void;
   mapUpdateMovement(mapId: number, serverTick: number, fixedUpdateMs: number, messageCode: number): Uint8Array;
@@ -34,6 +41,34 @@ export class NativeOps {
 
   static EntitySetNumber(handle: number, field: number, value: number): void {
     nativeHostOps().entitySetNumber(handle, field, value);
+  }
+
+  static NumericAttach(unitHandle: number): void {
+    nativeHostOps().numericAttach(unitHandle);
+  }
+
+  static NumericDetach(unitHandle: number): void {
+    nativeHostOps().numericDetach(unitHandle);
+  }
+
+  static NumericGet(unitHandle: number, numericType: number): number {
+    return nativeHostOps().numericGet(unitHandle, numericType);
+  }
+
+  static NumericSet(unitHandle: number, numericType: number, value: number): boolean {
+    return nativeHostOps().numericSet(unitHandle, numericType, value);
+  }
+
+  static MapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
+    return nativeHostOps().mapPeekNumericDelta(mapId, serverTick, messageCode);
+  }
+
+  static MapAckNumericDelta(mapId: number, revision: Uint8Array): void {
+    nativeHostOps().mapAckNumericDelta(mapId, revision);
+  }
+
+  static MapMarkAllNumericsDirty(mapId: number): void {
+    nativeHostOps().mapMarkAllNumericsDirty(mapId);
   }
 
   static UnitSetMovementInput(handle: number, inputX: number, inputY: number, sequence: number): boolean {

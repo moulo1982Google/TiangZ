@@ -25,6 +25,10 @@ export interface NativeMovementBroadcast {
   readonly frame: Uint8Array;
 }
 
+export interface NativeNumericBroadcast extends NativeMovementBroadcast {
+  readonly revision: Uint8Array;
+}
+
 export class NativeData {
   private static debugScalarAccess = false;
   private static scalarAccessWarnThreshold = 10_000;
@@ -91,6 +95,34 @@ export class NativeData {
       throw new Error("native movement broadcast has an unexpected message code");
     }
     return { itemCount, frame };
+  }
+
+  static PeekMapNumericDelta(
+    mapId: number,
+    serverTick: number,
+    messageCode: number,
+  ): NativeNumericBroadcast {
+    const bytes = NativeOps.MapPeekNumericDelta(mapId, serverTick, messageCode);
+    if (bytes.length < 14) {
+      throw new Error("native numeric broadcast is truncated");
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const itemCount = view.getUint32(0, true);
+    const revision = bytes.slice(4, 12);
+    const frame = bytes.subarray(12);
+    const encodedMessageCode = frame[0] * 0x100 + frame[1];
+    if (encodedMessageCode !== messageCode) {
+      throw new Error("native numeric broadcast has an unexpected message code");
+    }
+    return { itemCount, revision, frame };
+  }
+
+  static AckMapNumericDelta(mapId: number, revision: Uint8Array): void {
+    NativeOps.MapAckNumericDelta(mapId, revision);
+  }
+
+  static MarkAllNumericsDirty(mapId: number): void {
+    NativeOps.MapMarkAllNumericsDirty(mapId);
   }
 
   static TakeMetrics(): NativeDataMetrics {

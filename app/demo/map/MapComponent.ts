@@ -4,6 +4,7 @@ import {
   BroadcastHub,
   type BroadcastAudience,
   Component,
+  type IFrameFlush,
   TimeSystem,
   UnitComponent,
   component,
@@ -13,7 +14,6 @@ import type {
   G2M_EnterMap,
   G2M_PlayerDisconnect,
   MapEntitySnapshot,
-  UnitNumericSnapshot,
 } from "../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
@@ -29,7 +29,7 @@ export class MapComponent extends Component<[
   mapId: number,
   scenes: SceneMessageHelper,
   players: PlayerDirectoryComponent,
-]> {
+]> implements IFrameFlush {
   private mapId = 0;
   private players!: PlayerDirectoryComponent;
   private serverTick = 0;
@@ -64,8 +64,7 @@ export class MapComponent extends Component<[
       fixedDeltaMs,
       moveDescriptor.message.msgcode,
     );
-    const numerics = this.CollectChangedNumerics();
-    if (encoded.itemCount === 0 && numerics.length === 0) return;
+    if (encoded.itemCount === 0) return;
 
     const audience = this.BroadcastAudience();
     if (encoded.itemCount > 0) {
@@ -76,14 +75,26 @@ export class MapComponent extends Component<[
         encoded.itemCount,
       ).catch(() => undefined);
     }
-    if (numerics.length > 0) {
-      void this.broadcast.PublishMany(
-        audience,
-        ClientBroadcasts.EntityNumeric,
-        numerics,
-        this.serverTick,
-      ).catch(() => undefined);
-    }
+  }
+
+  FrameFlush(): void {
+    if (this.units.Count === 0) return;
+    const descriptor = ClientBroadcasts.EntityNumeric;
+    const encoded = NativeData.PeekMapNumericDelta(
+      this.mapId,
+      this.serverTick,
+      descriptor.message.msgcode,
+    );
+    if (encoded.itemCount === 0) return;
+    void this.broadcast.PublishEncodedLatestSnapshot(
+      this.BroadcastAudience(),
+      descriptor.name,
+      encoded.frame,
+      encoded.itemCount,
+    ).then(
+      () => NativeData.AckMapNumericDelta(this.mapId, encoded.revision),
+      () => undefined,
+    );
   }
 
   CreatePlayer(unitId: number, request: G2M_EnterMap): PlayerUnit {
@@ -122,6 +133,7 @@ export class MapComponent extends Component<[
   }
 
   async PlayerEntered(snapshot: PlayerSnapshot): Promise<void> {
+    NativeData.MarkAllNumericsDirty(this.mapId);
     await this.broadcast.Publish(
       this.BroadcastAudience(snapshot.unitId),
       ClientBroadcasts.EntityEnter,
@@ -198,15 +210,6 @@ export class MapComponent extends Component<[
 
   private PlayerSnapshots(): PlayerSnapshot[] {
     return this.units.GetAll(PlayerUnit).map((unit) => unit.Snapshot());
-  }
-
-  private CollectChangedNumerics(): UnitNumericSnapshot[] {
-    const snapshots: UnitNumericSnapshot[] = [];
-    for (const unit of this.units.GetAll(PlayerUnit)) {
-      const snapshot = unit.GetComponent(NumericComponent).TakeChangedSnapshot();
-      if (snapshot) snapshots.push(snapshot);
-    }
-    return snapshots;
   }
 
   protected override OnDestroy(): void {
