@@ -1,4 +1,7 @@
+import { Logger } from "../../core/logging/Logger";
 import { NativeOps } from "../../generated/model/native/NativeOps";
+
+const logger = new Logger("native-data", { category: "framework" });
 
 export interface NativeDataConfig {
   debugScalarAccess?: boolean;
@@ -170,9 +173,11 @@ export class NativeData {
       this.debugScalarAccess &&
       metrics.scalarGets + metrics.scalarSets >= this.scalarAccessWarnThreshold
     ) {
-      console.log(
-        `[native-data] scalar access is high: gets=${metrics.scalarGets} sets=${metrics.scalarSets} batch=${metrics.batchCalls}`,
-      );
+      logger.warn("native scalar access is high", {
+        scalarGets: metrics.scalarGets,
+        scalarSets: metrics.scalarSets,
+        batchCalls: metrics.batchCalls,
+      });
     }
     return metrics;
   }

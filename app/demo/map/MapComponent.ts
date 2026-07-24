@@ -1,5 +1,6 @@
 import type { SceneMessageHelper } from "../../core/process/SceneMessageHelper";
 import type { CustomMetricSnapshot } from "../../core/process/types";
+import type { Logger } from "../../core/logging/Logger";
 import {
   BroadcastHub,
   StateReplicationSystem,
@@ -46,6 +47,7 @@ export class MapComponent extends Component<[
   private replication!: StateReplicationSystem;
   private repository!: PlayerRepository;
   private scenes!: SceneMessageHelper;
+  private logger!: Logger;
 
   get MapId(): number {
     return this.mapId;
@@ -61,9 +63,10 @@ export class MapComponent extends Component<[
     this.players = players;
     this.repository = repository;
     this.scenes = scenes;
+    this.logger = this.DomainScene<MapScene>().logger.child({ mapId });
     this.broadcast = new BroadcastHub(new SceneBroadcastTransport(scenes), {
       onError: (name, error) => {
-        console.error(`[Map:${this.mapId}] ${name} broadcast failed`, error);
+        this.logger.error("map broadcast failed", { broadcast: name, error });
       },
     });
     this.replication = new StateReplicationSystem(
@@ -197,16 +200,19 @@ export class MapComponent extends Component<[
         gateSessionId: message.gateSessionId,
       })
     ) {
-      console.log(
-        `[Map:${this.mapId}] ignored stale PlayerDisconnect for ${message.account} unit ${message.unitId}@${unit.InstanceId}`,
-      );
+      this.logger.warn("ignored stale player disconnect", {
+        account: message.account,
+        unitId: message.unitId,
+        actorId: unit.InstanceId,
+      });
       return;
     }
 
     await this.OfflinePlayerAndBroadcast(unit, "client-disconnect");
-    console.log(
-      `[Map:${this.mapId}] ${message.account} leave map as unit ${message.unitId}`,
-    );
+    this.logger.info("player left map", {
+      account: message.account,
+      unitId: message.unitId,
+    });
   }
 
   async RemovePlayerAndBroadcast(unit: PlayerUnit): Promise<void> {
@@ -225,7 +231,7 @@ export class MapComponent extends Component<[
   async KickAllPlayers(reason: string): Promise<void> {
     const players = [...this.units.GetAll(PlayerUnit)];
     if (players.length === 0) return;
-    const logger = this.DomainScene<MapScene>().logger;
+    const logger = this.logger;
 
     const byGate = new Map<string, KickPlayerTarget[]>();
     for (const player of players) {
