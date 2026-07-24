@@ -1,4 +1,4 @@
-import { actor, handler, Unit } from "../../core/runtime";
+import { actor, Unit } from "../../core/runtime";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import { NativeData } from "../native/NativeData";
 import { PositionComponent } from "./PositionComponent";
@@ -7,21 +7,12 @@ import { NumericComponent } from "../numeric/NumericComponent";
 import type { UnitNumericDelta } from "../../generated/model/server/demo/protocol/messages";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 
-export const PlayerUnitHandlers = {
-  RebindGate: "Player.RebindGate",
-  Snapshot: "Player.Snapshot",
-  MatchesGate: "Player.MatchesGate",
-  Move: "Player.Move",
-} as const;
-
 export interface AwakePlayerUnit {
   account: string;
-  token: string;
   mapId: number;
 }
 
 export interface RebindPlayerGate {
-  token: string;
   gateName: string;
   gateSessionId: string;
 }
@@ -56,7 +47,6 @@ export interface MovePlayer {
 @actor({ mailbox: "ordered" })
 export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
   private account = "";
-  private token = "";
   private mapId = 0;
 
   get Account(): string {
@@ -71,19 +61,12 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
     return this.GetComponent(PlayerPersistenceComponent).SaveOnOffline(reason);
   }
 
-  get IsOffline(): boolean {
-    return this.GetComponent(PlayerPersistenceComponent).HasSaved;
-  }
-
   protected override Awake(request: AwakePlayerUnit): void {
     this.account = request.account;
-    this.token = request.token;
     this.mapId = request.mapId;
   }
 
-  @handler(PlayerUnitHandlers.RebindGate)
   RebindGate(request: RebindPlayerGate): PlayerSnapshot {
-    this.token = request.token;
     this.GetComponent(UnitGateComponent).bind(
       request.gateName,
       request.gateSessionId,
@@ -92,7 +75,6 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
     return this.Snapshot();
   }
 
-  @handler(PlayerUnitHandlers.Snapshot)
   Snapshot(): PlayerSnapshot {
     const position = this.GetComponent(PositionComponent).snapshot();
     const gate = this.GetComponent(UnitGateComponent);
@@ -111,7 +93,6 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
     };
   }
 
-  @handler(PlayerUnitHandlers.MatchesGate)
   MatchesGate(request: MatchPlayerGate): boolean {
     return this.GetComponent(UnitGateComponent).matches(
       request.gateName,
@@ -119,7 +100,6 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
     );
   }
 
-  @handler(PlayerUnitHandlers.Move)
   Move(request: MovePlayer): boolean {
     this.validateMoveInput(request);
     return NativeData.SetMovementInput(

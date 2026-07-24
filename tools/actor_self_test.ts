@@ -12,11 +12,7 @@ import {
   handler,
 } from "../app/core/runtime";
 import { MapScene } from "../app/demo/map/MapScene";
-import {
-  PlayerUnit,
-  PlayerUnitHandlers,
-  type PlayerSnapshot,
-} from "../app/demo/map/PlayerUnit";
+import { PlayerUnit } from "../app/demo/map/PlayerUnit";
 import { PositionComponent } from "../app/demo/map/PositionComponent";
 import { UnitGateComponent } from "../app/demo/map/UnitGateComponent";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
@@ -260,7 +256,6 @@ async function testPlayerUnitComponents(): Promise<void> {
   const units = map.AddComponent(UnitComponent);
   const player = units.Create(1000, PlayerUnit, {
     account: "tester",
-    token: "token-1",
     mapId: 1,
   });
   const native = player.AddComponent(NativeUnitRef, {
@@ -292,11 +287,7 @@ async function testPlayerUnitComponents(): Promise<void> {
   numeric[NumericType.CurrentHp] += 1;
   assert.equal(numeric[NumericType.CurrentHp], 101);
 
-  const initialized = await host.call<PlayerSnapshot>(
-    undefined,
-    actor,
-    PlayerUnitHandlers.Snapshot,
-  );
+  const initialized = player.Snapshot();
   assert.equal(units.Get<PlayerUnit>(1000), player);
   assert.deepEqual(units.GetAll(PlayerUnit), [player]);
   assert.deepEqual(
@@ -308,37 +299,27 @@ async function testPlayerUnitComponents(): Promise<void> {
     { cellX: 1, cellY: -1 },
   );
 
-  await host.call(
-    undefined,
-    actor,
-    PlayerUnitHandlers.RebindGate,
-    {
-      token: "token-2",
-      gateName: "gate-2",
-      gateSessionId: "session-2",
-    },
-  );
+  player.RebindGate({
+    gateName: "gate-2",
+    gateSessionId: "session-2",
+  });
   assert.equal(
-    await host.call(
-      undefined,
-      actor,
-      PlayerUnitHandlers.MatchesGate,
-      { gateName: "gate-1", gateSessionId: "session-1" },
-    ),
+    player.MatchesGate({
+      gateName: "gate-1",
+      gateSessionId: "session-1",
+    }),
     false,
   );
   assert.equal(
-    await host.call(
-      undefined,
-      actor,
-      PlayerUnitHandlers.MatchesGate,
-      { gateName: "gate-2", gateSessionId: "session-2" },
-    ),
+    player.MatchesGate({
+      gateName: "gate-2",
+      gateSessionId: "session-2",
+    }),
     true,
   );
 
   assert.equal(
-    await host.call<boolean>(undefined, actor, PlayerUnitHandlers.Move, {
+    player.Move({
       inputX: 1,
       inputY: 0,
       sequence: 5,
@@ -347,15 +328,15 @@ async function testPlayerUnitComponents(): Promise<void> {
   );
 
   assert.equal(
-    await host.call<boolean>(undefined, actor, PlayerUnitHandlers.Move, {
+    player.Move({
       inputX: 0,
       inputY: 0,
       sequence: 5,
     }),
     false,
   );
-  await assert.rejects(
-    host.call(undefined, actor, PlayerUnitHandlers.Move, {
+  assert.throws(
+    () => player.Move({
       inputX: 2,
       inputY: 0,
       sequence: 6,
@@ -367,13 +348,12 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(host.hasActor("map:1", 1000), false);
   assert.equal(host.Root.Get(firstInstanceId), undefined);
   await assert.rejects(
-    host.call(undefined, actor, PlayerUnitHandlers.Snapshot),
-    /target not found/,
+    host.runActorMailbox(firstInstanceId, () => undefined),
+    /actor instance not found/,
   );
 
   const recreated = units.Create(1000, PlayerUnit, {
     account: "tester",
-    token: "token-2",
     mapId: 1,
   });
   const recreatedNative = recreated.AddComponent(NativeUnitRef, {

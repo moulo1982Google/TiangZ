@@ -20,9 +20,9 @@ export class LoginMgrScene extends EntryScene {
     }
   }
 
-  override start(): string {
+  override startupMessage(): string {
     const names = this.loginScenes.map((scene) => scene.name).join(", ");
-    return `${super.start()} with login scenes: ${names}`;
+    return `${super.startupMessage()} with login scenes: ${names}`;
   }
 
   @rpc(LoginMgrProtocol.GetLoginServiceAddr)

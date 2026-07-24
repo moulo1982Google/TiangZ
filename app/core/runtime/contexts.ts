@@ -68,9 +68,6 @@ export class SceneContext {
     return hostSleep(ms);
   }
 
-  log(...args: unknown[]): void {
-    this.logger.info(args.map(String).join(" "));
-  }
 }
 
 export class ActorContext {
@@ -134,9 +131,6 @@ export class ActorContext {
     return this.host.removeActorTimer(this.self.instanceId, timerId);
   }
 
-  log(...args: unknown[]): void {
-    this.logger.info(args.map(String).join(" "));
-  }
 }
 
 export function hostSleep(ms: number): Promise<void> {

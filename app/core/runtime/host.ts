@@ -429,7 +429,7 @@ export class ProcessHost {
     const metadata = getHandlerMetadata(ctor);
     if (!metadata) return;
 
-    for (const [handlerName, method] of metadata) {
+    for (const handlerName of metadata.keys()) {
       if (handlers.has(handlerName)) {
         throw new Error(`duplicate handler ${handlerName}`);
       }

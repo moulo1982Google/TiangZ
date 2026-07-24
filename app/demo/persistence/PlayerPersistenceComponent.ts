@@ -40,8 +40,4 @@ export class PlayerPersistenceComponent extends Component<[
       });
     return this.savePromise;
   }
-
-  get HasSaved(): boolean {
-    return this.savePromise !== undefined;
-  }
 }

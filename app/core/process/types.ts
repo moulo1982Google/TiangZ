@@ -263,7 +263,7 @@ export abstract class EntryScene extends Entity {
     return this.ctx.logger;
   }
 
-  start(): string {
+  startupMessage(): string {
     return `[${this.self.name}] ${this.self.sceneType} scene started at ${this.self.ip}:${this.self.port}`;
   }
 

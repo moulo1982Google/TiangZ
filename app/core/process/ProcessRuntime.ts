@@ -46,8 +46,7 @@ export class ProcessRuntime implements LocalSceneRouter {
 
   constructor(private readonly config: ProcessRuntimeConfig) {
     InitializeGameSingletons(config.process.game);
-    const processHost = new ProcessHost(config.process.name);
-    this.processHost = processHost;
+    this.processHost = new ProcessHost(config.process.name);
     this.entryScenes = config.scenes.map((scene) => {
       const ctor = getEntrySceneCtor(scene.sceneType);
       if (!ctor) {
@@ -60,7 +59,7 @@ export class ProcessRuntime implements LocalSceneRouter {
         self: scene,
         knownScenes: config.knownScenes,
         tickMs: config.tickMs,
-        processHost,
+        processHost: this.processHost,
         localRouter: this,
       });
       if (this.scenesByName.has(scene.name)) throw new Error(`duplicate local scene: ${scene.name}`);
@@ -86,7 +85,7 @@ export class ProcessRuntime implements LocalSceneRouter {
       throw error;
     }
     this.lifecycleState = "ready";
-    const started = this.entryScenes.map((scene) => scene.start()).join("\n");
+    const started = this.entryScenes.map((scene) => scene.startupMessage()).join("\n");
     return `[process:${this.config.process.name}] one V8 started with ${this.entryScenes.length} scene(s)\n${started}`;
   }
 
@@ -131,7 +130,6 @@ export class ProcessRuntime implements LocalSceneRouter {
       this.entryScenes.map((scene, index) =>
         scene.__completeUpdate(startedAt[index] ?? monotonicNow(), includeMetrics)
       ),
-      includeMetrics,
     );
   }
 
@@ -198,7 +196,6 @@ export class ProcessRuntime implements LocalSceneRouter {
 
 function mergeResults(
   results: SceneUpdateResult[],
-  includeMetrics: boolean,
 ): ProcessUpdateResult {
   const game = gameMetricsSnapshot();
   if (results.length === 1) {

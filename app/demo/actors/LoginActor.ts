@@ -21,9 +21,7 @@ export class LoginActor extends Actor {
   private loginCount = 0;
 
   @handler(LoginProtocol.Login.name)
-  private async login(request: C2S_Login): Promise<S2C_Login> {
-    await Promise.resolve();
-
+  private login(request: C2S_Login): S2C_Login {
     const account = request.account;
     if (!account) {
       throw new RpcError(GameErrCode.AccountRequired, "account is required");

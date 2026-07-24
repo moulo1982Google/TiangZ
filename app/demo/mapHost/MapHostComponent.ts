@@ -58,7 +58,6 @@ export class MapHostComponent extends Component {
         (actor) => {
           if (actor !== player) throw new Error("player instance changed");
           return player.RebindGate({
-            token: request.token,
             gateName: request.gateName,
             gateSessionId: request.gateSessionId,
           });

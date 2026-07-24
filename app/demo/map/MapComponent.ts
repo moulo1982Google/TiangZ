@@ -90,14 +90,12 @@ export class MapComponent extends Component<[
     if (encoded.itemCount === 0) return;
 
     const audience = this.BroadcastAudience();
-    if (encoded.itemCount > 0) {
-      void this.broadcast.PublishEncodedLatestSnapshot(
-        audience,
-        moveDescriptor.name,
-        encoded.frame,
-        encoded.itemCount,
-      ).catch(() => undefined);
-    }
+    void this.broadcast.PublishEncodedLatestSnapshot(
+      audience,
+      moveDescriptor.name,
+      encoded.frame,
+      encoded.itemCount,
+    ).catch(() => undefined);
   }
 
   FrameFlush(): void {
@@ -107,7 +105,6 @@ export class MapComponent extends Component<[
   CreatePlayer(unitId: number, request: G2M_EnterMap): PlayerUnit {
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
-      token: request.token,
       mapId: this.mapId,
     });
 
@@ -229,7 +226,7 @@ export class MapComponent extends Component<[
   }
 
   async KickAllPlayers(reason: string): Promise<void> {
-    const players = [...this.units.GetAll(PlayerUnit)];
+    const players = this.units.GetAll(PlayerUnit);
     if (players.length === 0) return;
     const logger = this.logger;
 
@@ -251,7 +248,6 @@ export class MapComponent extends Component<[
           { players: targets, reason },
         ).catch((error) => {
           logger.error("failed to notify gate to kick players", {
-            mapId: this.mapId,
             gateName,
             playerCount: targets.length,
             error,
@@ -259,7 +255,6 @@ export class MapComponent extends Component<[
         });
       } catch (error) {
         logger.error("failed to notify gate to kick players", {
-          mapId: this.mapId,
           gateName,
           playerCount: targets.length,
           error,
@@ -275,7 +270,6 @@ export class MapComponent extends Component<[
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
     logger.info("map players stopped", {
-      mapId: this.mapId,
       playerCount: players.length,
       saveFailures: failures.length,
       reason,
