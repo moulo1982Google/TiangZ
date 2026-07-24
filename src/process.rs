@@ -18,6 +18,7 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::sync::{mpsc as tokio_mpsc, watch};
 
 use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
+use crate::health::{HealthServer, ProcessHealthState};
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
     call_js_stop_process, call_js_update_binary, configure_host_scene_bridge, create_runtime,
@@ -423,31 +424,27 @@ pub async fn run_runtime_config(
         sender: event_tx,
         stats: Arc::clone(&queue_stats),
     };
+    let health_state = Arc::new(ProcessHealthState::starting());
+    let health_server = match config
+        .process
+        .observability
+        .as_ref()
+        .and_then(|observability| observability.health.as_ref())
+    {
+        Some(health) => Some(
+            HealthServer::start(
+                health,
+                config.process.name.clone(),
+                Arc::clone(&health_state),
+            )
+            .await?,
+        ),
+        None => None,
+    };
     let next_connection_id = Arc::new(AtomicU64::new(1));
     let completion_sender = event_tx.clone();
     let completion_sink: crate::host::HostSceneCompletionSink =
         Arc::new(move |completion| completion_sender.try_send_completion(completion));
-
-    let process = config.process.clone();
-    let scenes = config.scenes.clone();
-    let known_scenes = config.known_scenes.clone();
-    let runtime_writers = Arc::clone(&writers);
-    let runtime_queue_stats = Arc::clone(&queue_stats);
-    let host_runtime = tokio::runtime::Handle::current();
-    let runtime_thread = thread::spawn(move || {
-        run_process_runtime(
-            process,
-            scenes,
-            known_scenes,
-            app_code,
-            app_module_url,
-            event_rx,
-            runtime_writers,
-            runtime_queue_stats,
-            host_runtime,
-            completion_sink,
-        )
-    });
 
     let io_backend = create_io_backend(&config.process.network)?;
     tracing::info!(
@@ -466,17 +463,68 @@ pub async fn run_runtime_config(
             stats: Arc::clone(&queue_stats),
         })?;
     }
+    health_state.mark_endpoints_ready();
 
-    wait_for_shutdown_signal().await?;
+    let process = config.process.clone();
+    let scenes = config.scenes.clone();
+    let known_scenes = config.known_scenes.clone();
+    let runtime_writers = Arc::clone(&writers);
+    let runtime_queue_stats = Arc::clone(&queue_stats);
+    let runtime_health = Arc::clone(&health_state);
+    let host_runtime = tokio::runtime::Handle::current();
+    let (runtime_exit_tx, mut runtime_exit_rx) = tokio::sync::oneshot::channel();
+    let runtime_thread = thread::spawn(move || {
+        let result = run_process_runtime(
+            process,
+            scenes,
+            known_scenes,
+            app_code,
+            app_module_url,
+            event_rx,
+            runtime_writers,
+            runtime_queue_stats,
+            host_runtime,
+            completion_sink,
+            Arc::clone(&runtime_health),
+        );
+        runtime_health.mark_runtime_stopped();
+        let _ = runtime_exit_tx.send(());
+        result
+    });
+
+    let runtime_exited_early = tokio::select! {
+        result = wait_for_shutdown_signal() => {
+            result?;
+            false
+        }
+        _ = &mut runtime_exit_rx => true,
+    };
+    health_state.mark_stopping();
     shutdown_all_connections(&writers);
-    event_tx
-        .send(ProcessEvent::Shutdown, None)
-        .await
-        .map_err(anyhow::Error::msg)?;
-    tokio::task::spawn_blocking(move || runtime_thread.join())
+    let shutdown_send_error = if !runtime_exited_early {
+        event_tx
+            .send(ProcessEvent::Shutdown, None)
+            .await
+            .err()
+            .map(anyhow::Error::msg)
+    } else {
+        None
+    };
+    let runtime_result = tokio::task::spawn_blocking(move || runtime_thread.join())
         .await
         .context("failed to join process runtime task")?
-        .map_err(|_| anyhow::anyhow!("process runtime thread panicked"))??;
+        .map_err(|_| anyhow::anyhow!("process runtime thread panicked"))?;
+    if let Some(server) = health_server {
+        server.stop().await;
+    }
+    if runtime_exited_early {
+        runtime_result.context("V8 runtime failed before process shutdown was requested")?;
+        bail!("V8 runtime exited unexpectedly before process shutdown was requested");
+    }
+    runtime_result?;
+    if let Some(error) = shutdown_send_error {
+        return Err(error).context("failed to deliver shutdown to V8 runtime");
+    }
     Ok(())
 }
 
@@ -519,6 +567,7 @@ fn run_process_runtime(
     queue_stats: Arc<ProcessQueueStats>,
     host_runtime: tokio::runtime::Handle,
     completion_sink: crate::host::HostSceneCompletionSink,
+    health_state: Arc<ProcessHealthState>,
 ) -> Result<()> {
     let process_name = process.name.clone();
     let scheduling = RuntimeScheduling::from_process(&process);
@@ -570,6 +619,7 @@ fn run_process_runtime(
         &serde_json::to_string(&process_config)?,
     )?;
     tracing::info!(target: "tiangz::typescript", process = %process_name, message = %start_result, "TypeScript process started");
+    health_state.mark_runtime_ready();
     tracing::info!(target: "tiangz::runtime",
         "[process:{process_name}] scheduling={:?} idle_tick_ms={} max_events_per_update={} coalesce_micros={}",
         scheduling.mode,

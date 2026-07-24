@@ -29,7 +29,11 @@ export class MapHostScene extends EntryScene {
 
 `process.lifecycle.stopTimeoutMs` 是整个 TS stop 的等待上限，默认 10000ms。`Stop-Process -Force`、任务管理器“结束任务”、`kill -9` 和进程崩溃无法执行任何应用层保存逻辑。
 
-通过 `StartMachine.json` 启动时，Watcher 会先同时通知所有子进程，再按每个进程自己的 `stopTimeoutMs` 等待。子进程非零退出或超时会让 Watcher 本身返回失败；只有超时兜底才会强制终止。Watcher 意外退出导致控制管道 EOF 时，子进程也会进入同一套 TS stop，避免成为孤儿进程。
+通过 `StartMachine.json` 启动时，Watcher 会同时等待运维信号与全部子进程状态。任一子进程提前退出时，无论退出码是否为零，Watcher 都会把它视为拓扑故障，立即通知其余子进程进入同一套优雅停机，再以非零状态退出。正常停机时 Watcher 先同时通知所有子进程，再按每个进程自己的 `stopTimeoutMs` 等待；只有超时兜底才会强制终止。Watcher 意外退出导致控制管道 EOF 时，子进程也会主动收尾，避免成为孤儿进程。
+
+当前 Watcher 负责故障发现和有界收尾，不负责自动重启。重启退避、失败次数限制、滚动更新和崩溃恢复属于 Phase 5 的生产监管能力。
+
+配置了 `process.observability.health` 时，`/ready` 会在停机开始时立即返回 503，供负载均衡先摘除流量；`/live` 会保持 200，直到 V8 业务线程真正退出。
 
 ## 玩家下线
 

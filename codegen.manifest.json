@@ -166,7 +166,7 @@
         "native_data/demo/Item.native": "1e8eb6f3bc2f00a36c1e718ca45f6029ecfeed39ccc9fd303468e02785810926",
         "native_data/demo/Unit.native": "00c7d04dcc61f6dc6f8ced4a1d0ddc79c68003bbc4bf84a122d38a9c9dc709fd",
         "native_data/NativeOps.native": "d69295b0d47dffc280fa80cffd07971890b2c42b95f335442531153716c5cc46",
-        "package.json": "df6625507d371709dd75e9969ae72ed1370669718ccfd7cdf4973b63bd533595",
+        "package.json": "f7ba590dc790941264bb5cbc0a826a385e44eb4ee5171145aa5e42aa020d2c41",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -209,8 +209,9 @@
         "proto/InnerMessage_S_20001.proto": "d121d364657bf0c3cac9d8042d77fb019d18e8385e65aaad1b33f72af1b74d7b",
         "proto/opcode.lock.json": "0d76d2a6a45e77b080d64625dd58c6a0d3456a929d16b84703c4cd53d4103877",
         "proto/OuterMessage_C_10001.proto": "52e503cdadca308b426461bacaabda372b983e81813001d3dd7f6fe6a238c1ee",
+        "proto/schema.lock.json": "3a8a5e8b6699215e6ea18365bd6f26bb25931c705e0c02280e97052506cdec15",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
-        "tools/codegen_proto.mjs": "9daa0115f170879f4c049d3228c99b7a775fbb5e9a1e5378468a4f558279dc5c"
+        "tools/codegen_proto.mjs": "d656222a224ab3d63b7b233291bb715bb301c1c424345f8c52dbdbeb32e02151"
       },
       "selections": [],
       "outputs": {

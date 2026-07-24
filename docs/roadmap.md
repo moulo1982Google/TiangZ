@@ -176,10 +176,14 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 - 修正拆分进程 Numeric 稳定性验收：进入地图全量快照提供初始值，后续脏增量只要求变化字段，不再错误等待未变化的 MaxHp。
 - protobuf opcode lock 成为发布契约；新增消息必须显式更新，历史编号不允许静默变更或复用。
+- protobuf schema lock 同时固定消息基类、RPC Response 关联以及字段编号、名称、类型和 repeated 语义；协议变化必须显式更新两份锁。
 - `uint64/int64` 在服务端和 TypeScript Client SDK 统一为无损 `bigint`，并覆盖边界值与 repeated 默认值回归。
 - Watcher 对 Windows/Linux 子进程使用统一控制管道，等待 TS `onStop` 与玩家保存，超时才强杀且向操作员返回失败。
+- Watcher 会检测任一子进程提前退出，优雅关闭其余进程后整体失败；自动重启仍保留给 Phase 5。
+- Process 可选提供 `/live` 与 `/ready`，就绪状态覆盖端口绑定、TS Scene 启动屏障和停机摘流；Prometheus `/metrics` 仍属于 Phase 5。
 - 新增只读生成物校验、快速质量门和包含拆分进程、mailbox、背压、Watcher 的完整 `npm run verify`。
-- Core、Demo 与 Rust 宿主建立函数注释规范，重点记录副作用、生命周期、不应怎样使用以及设计原因。
+- Core、Demo 与 Rust 宿主建立中英文函数注释规范，并由 `verify:comments` 自动检查，重点记录副作用、生命周期、不应怎样使用以及设计原因。
+- 已准备完整链路长稳入口和 RSS/V8 Heap 每小时增长报告；10 小时正式样本由专用空闲机器手工执行，不纳入日常 CI。
 
 ## Phase 4：MMORPG 业务扩展
 

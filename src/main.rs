@@ -12,6 +12,7 @@ use crate::watcher::run_start_machine;
 mod allocator;
 mod config;
 mod generated;
+mod health;
 mod host;
 mod inspector;
 mod logging;

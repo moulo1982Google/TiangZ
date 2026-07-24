@@ -2,6 +2,15 @@
 
 Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这个采样点生成和 JSON 序列化，普通 Tick 不承担 metrics JSON 开销。链路耗时在 TypeScript Core 内聚合为直方图，只输出统计结果，不逐条打印消息。
 
+## 健康检查
+
+可在 `process.observability.health` 配置独立 HTTP 端口：
+
+- `/live` 只回答 V8 业务线程是否仍存活。
+- `/ready` 只有在业务端点绑定完成、全部 TS Scene 通过启动屏障且进程未进入停机时才返回成功。
+
+探针使用 HTTP 200/503 和简短 JSON，不执行数据库或其他远程依赖调用，因此不会把探针流量带入业务 mailbox。Prometheus `/metrics` 尚未实现，当前性能与运行指标仍由结构化日志输出；后续接 Prometheus/Grafana 时沿用本页既有字段口径。
+
 ## 结构化日志
 
 Rust 使用 `tracing` 作为统一日志门面；TypeScript 的 `Logger` 通过 deno_core op 进入同一出口。开发环境默认输出易读文本，生产环境建议在 `process.logging` 中选择 JSON 和滚动文件，再由 Vector 或同类 Agent 采集到 Loki。

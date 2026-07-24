@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const options = parseOptions(process.argv.slice(2));
 const runId = timestamp();
 const resultDir = path.join(root, "perf", "results");
-const logDir = path.join(resultDir, "logs", runId);
+const logDir = path.join(resultDir, "logs", `${options.outputPrefix}_${runId}`);
 mkdirSync(logDir, { recursive: true });
 
 const executable = path.join(
@@ -20,6 +20,13 @@ const executable = path.join(
 );
 const gameClient = path.join(root, "dist", "full_chain_load_test.cjs");
 const rawResults = [];
+const activeRuntimes = new Set();
+const activeCommands = new Set();
+let interrupting = false;
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => void handleInterrupt(signal));
+}
 
 await main();
 
@@ -36,7 +43,7 @@ async function main() {
         for (let round = 1; round <= options.rounds; round += 1) {
           const result = await runCase(deployment, players, moveRate, round);
           rawResults.push(result);
-          writeJson(path.join(resultDir, `full_chain_${runId}_raw.json`), rawResults);
+          writeJson(path.join(resultDir, `${options.outputPrefix}_${runId}_raw.json`), rawResults);
         }
       }
     }
@@ -58,14 +65,14 @@ async function main() {
     cases,
     rounds: rawResults,
   };
-  const jsonPath = path.join(resultDir, `full_chain_${runId}.json`);
-  const markdownPath = path.join(resultDir, `full_chain_${runId}.md`);
+  const jsonPath = path.join(resultDir, `${options.outputPrefix}_${runId}.json`);
+  const markdownPath = path.join(resultDir, `${options.outputPrefix}_${runId}.md`);
   writeJson(jsonPath, report);
-  writeJson(path.join(resultDir, "full_chain_latest.json"), report);
+  writeJson(path.join(resultDir, `${options.outputPrefix}_latest.json`), report);
   const markdown = renderMarkdown(report);
   writeFileSync(markdownPath, markdown, "utf8");
-  writeFileSync(path.join(resultDir, "full_chain_latest.md"), markdown, "utf8");
-  console.log(`[full-chain] report: ${markdownPath}`);
+  writeFileSync(path.join(resultDir, `${options.outputPrefix}_latest.md`), markdown, "utf8");
+  console.log(`[${options.outputPrefix}] report: ${markdownPath}`);
   console.log(markdown);
 }
 
@@ -121,24 +128,28 @@ function startRuntime(configName, logName) {
   const stderrPath = path.join(logDir, `${logName}_stderr.log`);
   const child = spawn(executable, [`configs/local/${configName}.json`], {
     cwd: root,
-    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, TIANGZ_WATCHER_CONTROL: "stdin" },
+    stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });
   child.stdout.pipe(createWriteStream(stdoutPath));
   child.stderr.pipe(createWriteStream(stderrPath));
-  return { child, name: configName, stdoutPath, stderrPath };
+  const runtime = { child, name: configName, stdoutPath, stderrPath };
+  activeRuntimes.add(runtime);
+  return runtime;
 }
 
 async function stopRuntimes(runtimes) {
   for (const runtime of runtimes) {
     if (runtime.child.exitCode !== null) continue;
-    runtime.child.kill("SIGTERM");
+    runtime.child.stdin.end("shutdown\n");
   }
   await Promise.all(runtimes.map(async (runtime) => {
     if (runtime.child.exitCode !== null) return;
-    await Promise.race([onceExit(runtime.child), sleep(2_000)]);
+    await Promise.race([onceExit(runtime.child), sleep(15_000)]);
     if (runtime.child.exitCode === null) runtime.child.kill("SIGKILL");
   }));
+  for (const runtime of runtimes) activeRuntimes.delete(runtime);
 }
 
 function collectRuntimeResources(runtimes) {
@@ -146,7 +157,7 @@ function collectRuntimeResources(runtimes) {
     let text = "";
     try { text = readFileSync(runtime.stdoutPath, "utf8"); } catch {}
     const samples = [...text.matchAll(
-      /\[process-metrics\] process=(\S+) cpu_percent=([0-9.]+) cpu_time_ms=(\d+) rss_bytes=(\d+) v8_heap_used_bytes=(\d+) v8_heap_total_bytes=(\d+) v8_gc_count=(\d+) v8_gc_ms=([0-9.]+)/g,
+      /\[process-metrics\] process=(\S+) cpu_percent=([0-9.]+) cpu_time_ms=(\d+) rss_bytes=(\d+) v8_heap_used_bytes=(\d+) v8_heap_total_bytes=(\d+) v8_gc_count=(\d+) v8_gc_ms=([0-9.]+) timestamp_ms=(\d+)/g,
     )].map((match) => ({
       process: match[1],
       cpuPercent: Number(match[2]),
@@ -156,8 +167,11 @@ function collectRuntimeResources(runtimes) {
       v8HeapTotalBytes: Number(match[6]),
       v8GcCount: Number(match[7]),
       v8GcMs: Number(match[8]),
+      timestampMs: Number(match[9]),
     }));
     const last = samples.at(-1);
+    const rssTrend = resourceTrend(samples, "rssBytes");
+    const heapTrend = resourceTrend(samples, "v8HeapUsedBytes");
     return {
       process: last?.process ?? runtime.name,
       samples: samples.length,
@@ -167,6 +181,14 @@ function collectRuntimeResources(runtimes) {
       cpuTimeMs: last?.cpuTimeMs ?? 0,
       v8GcCount: last?.v8GcCount ?? 0,
       v8GcMs: last?.v8GcMs ?? 0,
+      rssStartBytes: rssTrend.start,
+      rssEndBytes: rssTrend.end,
+      rssGrowthBytes: rssTrend.growth,
+      rssGrowthBytesPerHour: rssTrend.perHour,
+      v8HeapStartBytes: heapTrend.start,
+      v8HeapEndBytes: heapTrend.end,
+      v8HeapGrowthBytes: heapTrend.growth,
+      v8HeapGrowthBytesPerHour: heapTrend.perHour,
     };
   });
   return {
@@ -177,6 +199,10 @@ function collectRuntimeResources(runtimes) {
     cpuTimeMsSum: sum(processes.map((item) => item.cpuTimeMs)),
     v8GcCountSum: sum(processes.map((item) => item.v8GcCount)),
     v8GcMsSum: sum(processes.map((item) => item.v8GcMs)),
+    rssGrowthBytesSum: sum(processes.map((item) => item.rssGrowthBytes)),
+    rssGrowthBytesPerHourSum: sum(processes.map((item) => item.rssGrowthBytesPerHour)),
+    v8HeapGrowthBytesSum: sum(processes.map((item) => item.v8HeapGrowthBytes)),
+    v8HeapGrowthBytesPerHourSum: sum(processes.map((item) => item.v8HeapGrowthBytesPerHour)),
   };
 }
 
@@ -206,6 +232,8 @@ function aggregateCases(rounds) {
       serverPeakRssBytesSum: median(group.map((item) => item.serverResources?.peakRssBytesSum ?? 0)),
       serverGcCount: median(group.map((item) => item.serverResources?.v8GcCountSum ?? 0)),
       serverGcMs: median(group.map((item) => item.serverResources?.v8GcMsSum ?? 0)),
+      serverRssGrowthBytesPerHour: median(group.map((item) => item.serverResources?.rssGrowthBytesPerHourSum ?? 0)),
+      serverV8HeapGrowthBytesPerHour: median(group.map((item) => item.serverResources?.v8HeapGrowthBytesPerHourSum ?? 0)),
       loadCpuMs: median(group.map((item) => item.loadGenerator.cpuUserMs + item.loadGenerator.cpuSystemMs)),
       loadPeakRssBytes: median(group.map((item) => item.loadGenerator.maxRssBytes)),
       loadGcCount: median(group.map((item) => item.loadGenerator.gcCount)),
@@ -216,7 +244,7 @@ function aggregateCases(rounds) {
 
 function renderMarkdown(report) {
   const lines = [
-    "# 全链路性能测试报告",
+    options.outputPrefix === "soak" ? "# TiangZ 长稳测试报告" : "# 全链路性能测试报告",
     "",
     `- 时间：${report.generatedAt}`,
     `- 正式测试：${options.duration}s；预热：${options.warmup}s；轮数：${options.rounds}`,
@@ -231,6 +259,31 @@ function renderMarkdown(report) {
   for (const item of report.cases) {
     const value = item.median;
     lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${round(value.moveP50Ms, 2)} | ${round(value.moveP95Ms, 2)} | ${round(value.moveP99Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : round(value.serverGcMs, 2)} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
+  }
+  if (options.outputPrefix === "soak") {
+    lines.push(
+      "",
+      "## 服务端内存趋势",
+      "",
+      "| 进程 | 样本 | RSS 起点 | RSS 终点 | RSS 增长/小时 | V8 Heap 起点 | V8 Heap 终点 | V8 Heap 增长/小时 |",
+      "|---|---:|---:|---:|---:|---:|---:|---:|",
+    );
+    for (const round of report.rounds) {
+      for (const process of round.serverResources?.processes ?? []) {
+        lines.push(`| ${process.process} | ${process.samples} | ${formatBytes(process.rssStartBytes)} | ${formatBytes(process.rssEndBytes)} | ${formatSignedBytes(process.rssGrowthBytesPerHour)} | ${formatBytes(process.v8HeapStartBytes)} | ${formatBytes(process.v8HeapEndBytes)} | ${formatSignedBytes(process.v8HeapGrowthBytesPerHour)} |`);
+      }
+    }
+    lines.push(
+      "",
+      "## 压测端内存趋势",
+      "",
+      "| 部署 | 玩家 | 负载 | 样本 | RSS 起点 | RSS 终点 | RSS 增长/小时 | Heap 起点 | Heap 终点 | Heap 增长/小时 |",
+      "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|",
+    );
+    for (const round of report.rounds) {
+      const load = round.loadGenerator;
+      lines.push(`| ${round.label} | ${round.players} | ${round.workload} | ${load.memorySamples} | ${formatBytes(load.rssStartBytes)} | ${formatBytes(load.rssEndBytes)} | ${formatSignedBytes(load.rssGrowthBytesPerHour)} | ${formatBytes(load.heapStartBytes)} | ${formatBytes(load.heapEndBytes)} | ${formatSignedBytes(load.heapGrowthBytesPerHour)} |`);
+    }
   }
   lines.push(
     "",
@@ -257,6 +310,8 @@ function parseOptions(args) {
   }
   const mode = values.get("--mode") ?? "both";
   if (!["all", "split", "both"].includes(mode)) throw new Error(`invalid --mode: ${mode}`);
+  const outputPrefix = values.get("--output-prefix") ?? "full_chain";
+  if (!/^[a-z0-9_-]+$/.test(outputPrefix)) throw new Error(`invalid --output-prefix: ${outputPrefix}`);
   return {
     mode,
     players: csvNumbers(values.get("--players") ?? "10,50,100"),
@@ -270,21 +325,38 @@ function parseOptions(args) {
     remote: flags.has("--remote"),
     label: values.get("--label"),
     debugRuntime: flags.has("--debug-runtime"),
+    outputPrefix,
   };
 }
 
 function runCommand(command, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: root, windowsHide: true });
+    activeCommands.add(child);
     let output = "";
     child.stdout.on("data", (chunk) => { output += chunk; });
     child.stderr.on("data", (chunk) => { output += chunk; });
-    child.once("error", reject);
+    child.once("error", (error) => {
+      activeCommands.delete(child);
+      reject(error);
+    });
     child.once("exit", (code, signal) => {
+      activeCommands.delete(child);
       if (code === 0) resolve(output);
       else reject(new Error(`${command} failed with code=${code} signal=${signal}\n${output}`));
     });
   });
+}
+
+async function handleInterrupt(signal) {
+  if (interrupting) return;
+  interrupting = true;
+  console.error(`[full-chain] received ${signal}; stopping load generator and runtimes`);
+  for (const child of activeCommands) {
+    if (child.exitCode === null) child.kill("SIGTERM");
+  }
+  await stopRuntimes([...activeRuntimes]);
+  process.exit(130);
 }
 
 async function waitPort(host, port, timeoutMs) {
@@ -307,7 +379,10 @@ function canConnect(host, port) {
   });
 }
 
-function onceExit(child) { return new Promise((resolve) => child.once("exit", resolve)); }
+function onceExit(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => child.once("exit", resolve));
+}
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function sum(values) { return values.reduce((total, value) => total + value, 0); }
 function max(values) { return values.length === 0 ? 0 : Math.max(...values); }
@@ -321,6 +396,19 @@ function positive(value, name) { const number = Number(value); if (!(number > 0)
 function nonNegative(value, name) { const number = Number(value); if (!(number >= 0)) throw new Error(`${name} must be >= 0`); return number; }
 function round(value, digits = 0) { const scale = 10 ** digits; return Math.round(value * scale) / scale; }
 function formatBytes(value) { return `${(value / 1024 / 1024).toFixed(1)}MB`; }
+function formatSignedBytes(value) { return `${value >= 0 ? "+" : ""}${formatBytes(value)}/h`; }
+function resourceTrend(samples, key) {
+  if (samples.length === 0) return { start: 0, end: 0, growth: 0, perHour: 0 };
+  const startIndex = Math.min(samples.length - 1, Math.floor(samples.length * 0.1));
+  const start = samples[startIndex][key];
+  const end = samples.at(-1)[key];
+  const elapsedHours = Math.max(
+    0,
+    (samples.at(-1).timestampMs - samples[startIndex].timestampMs) / 3_600_000,
+  );
+  const growth = end - start;
+  return { start, end, growth, perHour: elapsedHours > 0 ? growth / elapsedHours : 0 };
+}
 function timestamp() { return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_"); }
 function machineInfo() {
   return { cpu: os.cpus()[0]?.model ?? "unknown", logicalCpus: os.cpus().length, memoryBytes: os.totalmem(), os: `${os.platform()} ${os.release()}` };

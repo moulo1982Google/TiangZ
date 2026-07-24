@@ -1,4 +1,5 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +9,7 @@ const scriptFile = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(scriptFile), "..");
 const protoDir = path.join(root, "proto");
 const opcodeLockFile = path.join(protoDir, "opcode.lock.json");
+const schemaLockFile = path.join(protoDir, "schema.lock.json");
 const generatedModelDir = path.join(root, "app", "generated", "model");
 const generatedProtocolDirs = [
   path.join(generatedModelDir, "client"),
@@ -68,7 +70,12 @@ const messageOptionKeys = new Set([
 await main();
 
 async function main() {
-  const updateOpcodeLock = process.argv.slice(2).includes("--update-opcode-lock");
+  const args = process.argv.slice(2);
+  if (args.includes("--self-test-locks")) {
+    runProtocolLockSelfTests();
+    return;
+  }
+  const updateProtocolLocks = args.includes("--update-opcode-lock");
   const protoFiles = await discoverProtoFiles(protoDir);
   const groups = new Map();
   const sourceProtocols = [];
@@ -98,7 +105,8 @@ async function main() {
     }
   }
 
-  await enforceOpcodeLock(sourceProtocols, updateOpcodeLock);
+  await enforceOpcodeLock(sourceProtocols, updateProtocolLocks);
+  await enforceSchemaLock(sourceProtocols, updateProtocolLocks);
 
   for (const generatedProtocolDir of generatedProtocolDirs) {
     await rm(generatedProtocolDir, { recursive: true, force: true });
@@ -133,7 +141,7 @@ async function main() {
   await recordGenerator(root, {
     id: "proto",
     command: "npm run codegen:proto",
-    contentInputs: [scriptFile, configFile, opcodeLockFile, ...protoFiles],
+    contentInputs: [scriptFile, configFile, opcodeLockFile, schemaLockFile, ...protoFiles],
     outputs: await collectGeneratedFiles(outputRoots),
     outputRoots,
   });
@@ -507,6 +515,192 @@ async function readOpcodeLock(allowMissing) {
     }
     throw error;
   }
+}
+
+async function enforceSchemaLock(protocols, update) {
+  const current = protocols
+    .flatMap((protocol) => protocol.messages)
+    .map(toSchemaEntry)
+    .sort((left, right) => left.key.localeCompare(right.key, "en"));
+  const lock = await readSchemaLock(update);
+  const entries = new Map(lock.entries.map((entry) => [entry.key, entry]));
+  const missingMessages = [];
+  let addedFields = 0;
+
+  for (const message of current) {
+    const locked = entries.get(message.key);
+    if (!locked) {
+      missingMessages.push(message);
+      continue;
+    }
+    const additions = compareSchemaEntry(message, locked);
+    if (additions.length === 0) continue;
+    if (!update) {
+      throw new Error(
+        `schema lock is missing ${message.key} field(s): ${additions.map((field) => `${field.name}=${field.number}`).join(", ")}. ` +
+          "Review the additions, then run npm run codegen:proto:update-lock.",
+      );
+    }
+    entries.set(message.key, {
+      ...locked,
+      fields: [...locked.fields, ...additions].sort((left, right) => left.number - right.number),
+    });
+    addedFields += additions.length;
+  }
+
+  if (missingMessages.length > 0 && !update) {
+    throw new Error(
+      `schema lock is missing ${missingMessages.length} message(s): ${missingMessages.map((item) => item.key).join(", ")}. ` +
+        "Review the schemas, then run npm run codegen:proto:update-lock.",
+    );
+  }
+  if (!update || (missingMessages.length === 0 && addedFields === 0)) return;
+
+  for (const message of missingMessages) entries.set(message.key, message);
+  const next = {
+    version: 1,
+    entries: [...entries.values()].sort((left, right) => left.key.localeCompare(right.key, "en")),
+  };
+  await writeFile(schemaLockFile, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  console.log(
+    `updated schema lock: ${missingMessages.length} message(s), ${addedFields} field(s) added`,
+  );
+}
+
+function toSchemaEntry(message) {
+  return {
+    key: message.opcodeKey,
+    name: message.name,
+    base: message.base ?? null,
+    response: message.responseType ?? null,
+    fields: message.fields
+      .map((field) => ({
+        number: field.fieldNo,
+        name: field.protoName,
+        type: field.type,
+        repeated: field.repeated,
+        synthetic: Boolean(field.synthetic),
+      }))
+      .sort((left, right) => left.number - right.number),
+  };
+}
+
+function compareSchemaEntry(current, locked) {
+  if (locked.name !== current.name) {
+    throw new Error(
+      `schema lock mismatch for ${current.key}: message name changed from ${locked.name} to ${current.name}`,
+    );
+  }
+  for (const property of ["base", "response"]) {
+    if ((locked[property] ?? null) !== (current[property] ?? null)) {
+      throw new Error(
+        `schema lock mismatch for ${current.key}: ${property} changed from ${locked[property] ?? "<none>"} to ${current[property] ?? "<none>"}`,
+      );
+    }
+  }
+
+  const byNumber = new Map(locked.fields.map((field) => [field.number, field]));
+  const byName = new Map(locked.fields.map((field) => [field.name, field]));
+  const additions = [];
+  for (const field of current.fields) {
+    const previous = byNumber.get(field.number);
+    if (previous) {
+      for (const property of ["name", "type", "repeated", "synthetic"]) {
+        if (previous[property] !== field[property]) {
+          throw new Error(
+            `schema lock mismatch for ${current.key} field ${field.number}: ${property} changed from ${previous[property]} to ${field[property]}`,
+          );
+        }
+      }
+      continue;
+    }
+    const previousName = byName.get(field.name);
+    if (previousName) {
+      throw new Error(
+        `schema lock mismatch for ${current.key}: field ${field.name} moved from ${previousName.number} to ${field.number}`,
+      );
+    }
+    additions.push(field);
+  }
+  return additions;
+}
+
+async function readSchemaLock(allowMissing) {
+  try {
+    const lock = JSON.parse(await readFile(schemaLockFile, "utf8"));
+    if (lock?.version !== 1 || !Array.isArray(lock.entries)) {
+      throw new Error("schema lock must contain version=1 and an entries array");
+    }
+    for (const entry of lock.entries) {
+      if (typeof entry.key !== "string" || !Array.isArray(entry.fields)) {
+        throw new Error("schema lock entries require key and fields");
+      }
+    }
+    return lock;
+  } catch (error) {
+    if (allowMissing && error?.code === "ENOENT") return { version: 1, entries: [] };
+    if (error?.code === "ENOENT") {
+      throw new Error(
+        "proto/schema.lock.json is missing; initialize it with npm run codegen:proto:update-lock",
+      );
+    }
+    throw error;
+  }
+}
+
+function runProtocolLockSelfTests() {
+  const field = (overrides = {}) => ({
+    number: 1,
+    name: "value",
+    type: "uint32",
+    repeated: false,
+    synthetic: false,
+    ...overrides,
+  });
+  const locked = {
+    key: "proto/Test_C_100.proto#C2S_Test",
+    name: "C2S_Test",
+    base: "IRequest",
+    response: "S2C_Test",
+    fields: [field()],
+  };
+  const current = (overrides = {}) => ({
+    ...locked,
+    fields: [field()],
+    ...overrides,
+  });
+
+  assert.deepEqual(compareSchemaEntry(current(), locked), []);
+  assert.deepEqual(compareSchemaEntry(current({ fields: [] }), locked), []);
+  assert.deepEqual(
+    compareSchemaEntry(current({ fields: [field(), field({ number: 2, name: "added" })] }), locked),
+    [field({ number: 2, name: "added" })],
+  );
+  assert.throws(
+    () => compareSchemaEntry(current({ fields: [field({ number: 2 })] }), locked),
+    /moved from 1 to 2/,
+  );
+  assert.throws(
+    () => compareSchemaEntry(current({ fields: [field({ type: "string" })] }), locked),
+    /type changed/,
+  );
+  assert.throws(
+    () => compareSchemaEntry(current({ fields: [field({ repeated: true })] }), locked),
+    /repeated changed/,
+  );
+  assert.throws(
+    () => compareSchemaEntry(current({ base: "IMessage" }), locked),
+    /base changed/,
+  );
+  assert.throws(
+    () => compareSchemaEntry(current({ response: "S2C_Other" }), locked),
+    /response changed/,
+  );
+  assert.throws(
+    () => compareSchemaEntry(current({ fields: [field({ name: "replacement" })] }), locked),
+    /name changed/,
+  );
+  console.log("protocol lock self-test passed");
 }
 
 function isProtocolMessage(message) {

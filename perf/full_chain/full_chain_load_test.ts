@@ -65,6 +65,7 @@ let nextRpcId = 1;
 const initialResourceUsage = process.resourceUsage();
 let gcCount = 0;
 let gcDurationMs = 0;
+const loadMemorySamples: Array<{ timestampMs: number; rssBytes: number; heapUsedBytes: number }> = [];
 const gcObserver = new PerformanceObserver((items) => {
   for (const entry of items.getEntries()) {
     gcCount += 1;
@@ -90,7 +91,9 @@ async function main(): Promise<void> {
   const measurementStart = performance.now() + options.warmupSeconds * 1000;
   const sendDeadline = measurementStart + options.durationSeconds * 1000;
   const measurementStartedAtUnixMs = Date.now() + options.warmupSeconds * 1000;
-  const workloads = await Promise.all(
+  sampleLoadMemory();
+  const memorySampler = setInterval(sampleLoadMemory, 5_000);
+  const workloadPromise = Promise.all(
     players.map(async ({ player }, index) => {
       const [movement, probe] = await Promise.all([
         options.disableMove
@@ -106,6 +109,13 @@ async function main(): Promise<void> {
       return { movement, probe };
     }),
   );
+  let workloads: Awaited<typeof workloadPromise>;
+  try {
+    workloads = await workloadPromise;
+  } finally {
+    clearInterval(memorySampler);
+    sampleLoadMemory();
+  }
 
   const movementLatencies = workloads
     .flatMap((item) => item.movement.latenciesMs)
@@ -126,6 +136,8 @@ async function main(): Promise<void> {
   const finalResourceUsage = process.resourceUsage();
   const memory = process.memoryUsage();
   const heap = v8.getHeapStatistics();
+  const rssTrend = loadResourceTrend("rssBytes");
+  const heapTrend = loadResourceTrend("heapUsedBytes");
 
   const result = {
     scenario: "gameplay-full-chain",
@@ -171,6 +183,15 @@ async function main(): Promise<void> {
       v8HeapLimitBytes: heap.heap_size_limit,
       gcCount,
       gcDurationMs,
+      memorySamples: loadMemorySamples.length,
+      rssStartBytes: rssTrend.start,
+      rssEndBytes: rssTrend.end,
+      rssGrowthBytes: rssTrend.growth,
+      rssGrowthBytesPerHour: rssTrend.perHour,
+      heapStartBytes: heapTrend.start,
+      heapEndBytes: heapTrend.end,
+      heapGrowthBytes: heapTrend.growth,
+      heapGrowthBytesPerHour: heapTrend.perHour,
     },
   };
 
@@ -182,6 +203,38 @@ async function main(): Promise<void> {
       `p95=${result.probe.p95Ms.toFixed(2)}ms p99=${result.probe.p99Ms.toFixed(2)}ms errors=${probeErrors}`,
   );
   console.log(`RESULT_JSON ${JSON.stringify(result)}`);
+}
+
+function sampleLoadMemory(): void {
+  const memory = process.memoryUsage();
+  loadMemorySamples.push({
+    timestampMs: Date.now(),
+    rssBytes: memory.rss,
+    heapUsedBytes: memory.heapUsed,
+  });
+}
+
+function loadResourceTrend(key: "rssBytes" | "heapUsedBytes"): {
+  start: number;
+  end: number;
+  growth: number;
+  perHour: number;
+} {
+  if (loadMemorySamples.length === 0) return { start: 0, end: 0, growth: 0, perHour: 0 };
+  const startIndex = Math.min(
+    loadMemorySamples.length - 1,
+    Math.floor(loadMemorySamples.length * 0.1),
+  );
+  const first = loadMemorySamples[startIndex];
+  const last = loadMemorySamples[loadMemorySamples.length - 1];
+  const growth = last[key] - first[key];
+  const elapsedHours = Math.max(0, (last.timestampMs - first.timestampMs) / 3_600_000);
+  return {
+    start: first[key],
+    end: last[key],
+    growth,
+    perHour: elapsedHours > 0 ? growth / elapsedHours : 0,
+  };
 }
 
 async function waitForStartBarrier(host: string, port: number): Promise<void> {

@@ -203,8 +203,18 @@ pub struct ProcessSchedulingConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessObservabilityConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latency: Option<LatencyObservabilityConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health: Option<HealthObservabilityConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthObservabilityConfig {
+    #[serde(default = "default_health_ip")]
+    pub ip: String,
+    pub port: u16,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -277,6 +287,10 @@ pub struct ProcessDebugConfig {
 }
 
 fn default_inspector_ip() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_health_ip() -> String {
     "127.0.0.1".to_string()
 }
 
@@ -525,33 +539,61 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         }
     }
 
-    let Some(debug) = &config.process.debug else {
-        return Ok(());
-    };
-    let inspector_ip = debug.inspector_ip.parse::<IpAddr>().with_context(|| {
-        format!(
-            "process {} has invalid debug.inspectorIp: {}",
-            config.process.name, debug.inspector_ip
-        )
-    })?;
-    if debug.inspector_port == 0 {
-        bail!("process debug.inspectorPort must not be 0");
+    let health = config
+        .process
+        .observability
+        .as_ref()
+        .and_then(|observability| observability.health.as_ref());
+    if let Some(health) = health {
+        health.ip.parse::<IpAddr>().with_context(|| {
+            format!(
+                "process {} has invalid observability.health.ip: {}",
+                config.process.name, health.ip
+            )
+        })?;
+        if health.port == 0 {
+            bail!("process observability.health.port must not be 0");
+        }
+        if config.scenes.iter().any(|scene| scene.port == health.port) {
+            bail!(
+                "process health port {} conflicts with a scene port",
+                health.port
+            );
+        }
     }
-    if !inspector_ip.is_loopback() && !debug.allow_remote {
-        bail!(
-            "process inspector {} is not loopback; set debug.allowRemote=true explicitly to expose it",
-            debug.inspector_ip
-        );
-    }
-    if config
-        .scenes
-        .iter()
-        .any(|scene| scene.port == debug.inspector_port)
-    {
-        bail!(
-            "process inspector port {} conflicts with a scene port",
-            debug.inspector_port
-        );
+
+    if let Some(debug) = &config.process.debug {
+        let inspector_ip = debug.inspector_ip.parse::<IpAddr>().with_context(|| {
+            format!(
+                "process {} has invalid debug.inspectorIp: {}",
+                config.process.name, debug.inspector_ip
+            )
+        })?;
+        if debug.inspector_port == 0 {
+            bail!("process debug.inspectorPort must not be 0");
+        }
+        if !inspector_ip.is_loopback() && !debug.allow_remote {
+            bail!(
+                "process inspector {} is not loopback; set debug.allowRemote=true explicitly to expose it",
+                debug.inspector_ip
+            );
+        }
+        if config
+            .scenes
+            .iter()
+            .any(|scene| scene.port == debug.inspector_port)
+        {
+            bail!(
+                "process inspector port {} conflicts with a scene port",
+                debug.inspector_port
+            );
+        }
+        if health.is_some_and(|health| health.port == debug.inspector_port) {
+            bail!(
+                "process health port {} conflicts with inspector port",
+                debug.inspector_port
+            );
+        }
     }
     Ok(())
 }
@@ -763,6 +805,44 @@ mod tests {
         assert!(file.enabled);
         assert_eq!(file.directory, "logs/server");
         assert_eq!(file.rotation, ProcessLogRotation::Hourly);
+    }
+
+    #[test]
+    fn parses_and_validates_health_endpoint() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "observability": {
+                    "health": { "ip": "127.0.0.1", "port": 7601 }
+                }
+            }"#,
+        )
+        .unwrap();
+        let health = process
+            .observability
+            .as_ref()
+            .unwrap()
+            .health
+            .as_ref()
+            .unwrap();
+        assert_eq!(health.ip, "127.0.0.1");
+        assert_eq!(health.port, 7601);
+        let serialized = serde_json::to_value(&process).unwrap();
+        assert!(serialized["observability"].get("latency").is_none());
+
+        let valid = RuntimeConfig {
+            process: process.clone(),
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&valid).is_ok());
+
+        let conflict = RuntimeConfig {
+            process,
+            scenes: vec![scene("map", 7601)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&conflict).is_err());
     }
 
     #[test]

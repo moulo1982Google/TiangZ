@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Net.Http
 $Root = Split-Path $PSScriptRoot -Parent
 $RuntimeExe = Join-Path $Root "target\debug\TiangZ.exe"
 $SmokeClient = Join-Path $Root "dist\smoke_client.cjs"
@@ -35,6 +36,32 @@ function Wait-TcpPort {
         Start-Sleep -Milliseconds 50
     }
     throw "timed out waiting for 127.0.0.1:$Port"
+}
+
+function Wait-HealthReady {
+    param([int]$Port, [int]$TimeoutMs = 10000)
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+    $client = [Net.Http.HttpClient]::new()
+    try {
+        while ([DateTime]::UtcNow -lt $deadline) {
+            try {
+                $response = $client.GetAsync("http://127.0.0.1:$Port/ready").GetAwaiter().GetResult()
+                if ([int]$response.StatusCode -eq 200) {
+                    $response.Dispose()
+                    return
+                }
+                $response.Dispose()
+            }
+            catch {
+            }
+            Start-Sleep -Milliseconds 50
+        }
+    }
+    finally {
+        $client.Dispose()
+    }
+    throw "timed out waiting for http://127.0.0.1:$Port/ready"
 }
 
 function Start-RuntimeProcess {
@@ -80,6 +107,7 @@ function Invoke-AllInOneSmoke {
         foreach ($port in 7000, 7001, 7002, 7100, 7201, 7301) {
             Wait-TcpPort $port
         }
+        Wait-HealthReady 7600
         Invoke-SmokeClient
         $succeeded = $true
     }

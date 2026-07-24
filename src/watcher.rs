@@ -5,7 +5,7 @@ use std::env;
 use std::io::Write;
 use std::net::UdpSocket;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -17,6 +17,12 @@ struct ManagedChild {
     child: Child,
     control: Option<ChildStdin>,
     stop_timeout: Duration,
+    observed_exit: Option<ExitStatus>,
+}
+
+enum WatcherTrigger {
+    OperatorSignal,
+    ChildExited { name: String, status: ExitStatus },
 }
 
 /// 启动分配给本机的全部进程，并监管优雅停机。
@@ -94,18 +100,69 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
             control: child.stdin.take(),
             child,
             stop_timeout: Duration::from_millis(process_config.process.lifecycle.stop_timeout_ms),
+            observed_exit: None,
         });
     }
 
-    wait_for_shutdown_signal().await?;
+    let trigger = wait_for_watcher_trigger(&mut children).await?;
     tracing::info!(target: "tiangz::watcher", child_count = children.len(), "stopping child processes");
     for child in &mut children {
         request_graceful_shutdown(child);
     }
+    let mut shutdown_errors = Vec::new();
     for child in &mut children {
-        wait_for_child_shutdown(child).await?;
+        if let Err(error) = wait_for_child_shutdown(child).await {
+            shutdown_errors.push(format!("{}: {error:#}", child.name));
+        }
+    }
+
+    if let WatcherTrigger::ChildExited { name, status } = trigger {
+        let sibling_detail = if shutdown_errors.is_empty() {
+            String::new()
+        } else {
+            format!("; sibling shutdown errors: {}", shutdown_errors.join(" | "))
+        };
+        bail!("child process {name} exited unexpectedly with {status}{sibling_detail}");
+    }
+    if !shutdown_errors.is_empty() {
+        bail!("child shutdown failed: {}", shutdown_errors.join(" | "));
     }
     Ok(())
+}
+
+/// 同时等待运维停机信号与任一子进程退出；这里只检测故障，不负责自动重启。
+///
+/// Waits for either an operator shutdown signal or any child exit. This detects failures but
+/// deliberately does not implement automatic restart.
+async fn wait_for_watcher_trigger(children: &mut [ManagedChild]) -> Result<WatcherTrigger> {
+    let shutdown_signal = wait_for_shutdown_signal();
+    tokio::pin!(shutdown_signal);
+    let mut poll = tokio::time::interval(Duration::from_millis(50));
+    poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            result = &mut shutdown_signal => {
+                result?;
+                return Ok(WatcherTrigger::OperatorSignal);
+            }
+            _ = poll.tick() => {
+                for child in children.iter_mut() {
+                    let Some(status) = child.child.try_wait()
+                        .with_context(|| format!("failed to query child process {}", child.name))?
+                    else {
+                        continue;
+                    };
+                    child.observed_exit = Some(status);
+                    tracing::error!(target: "tiangz::watcher", process = %child.name, %status, "child process exited unexpectedly");
+                    return Ok(WatcherTrigger::ChildExited {
+                        name: child.name.clone(),
+                        status,
+                    });
+                }
+            }
+        }
+    }
 }
 
 /// 发送 Watcher 控制消息后立即关闭管道。
@@ -130,6 +187,10 @@ fn request_graceful_shutdown(child: &mut ManagedChild) {
 
 /// 等待一个子进程完成 TS 生命周期，仅在超时时强制终止。 / Waits for one child to finish its TS lifecycle and force-kills only on timeout.
 async fn wait_for_child_shutdown(child: &mut ManagedChild) -> Result<()> {
+    if let Some(status) = child.observed_exit.take() {
+        tracing::info!(target: "tiangz::watcher", process = %child.name, %status, "child process was already reaped");
+        return Ok(());
+    }
     let deadline = Instant::now() + child.stop_timeout;
     loop {
         if let Some(status) = child

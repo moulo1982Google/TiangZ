@@ -68,11 +68,12 @@ Phase 2.8 位于多人地图纵向链路与正式角色业务之间。目标不�
 
 ## Phase 2.8.4：指标与健康检查
 
-状态：部分完成。
+状态：健康检查完成，Prometheus 导出待 Phase 5。
 
 - 已按 Scene 统计协议成功、业务错误、系统错误、解码错误、无 Handler 和单向消息 Handler 异常。
 - 增加 Handler 延迟分布、慢 Handler、Actor mailbox 深度和丢弃消息指标。
-- 增加存活、就绪和 Prometheus 指标入口。
+- 已增加独立 HTTP `/live` 与 `/ready`：就绪要求业务端口和 TS Scene 启动屏障均完成，停机开始立即撤销。
+- Prometheus `/metrics` 尚未实现；现有指标继续通过结构化日志输出，Phase 5 再接入 Prometheus/Grafana。
 - 指标采用窗口值和速率，避免累计最大值长期失真。
 
 ## Phase 2.8.5：生命周期与开发体验
@@ -81,7 +82,7 @@ Phase 2.8 位于多人地图纵向链路与正式角色业务之间。目标不�
 
 - 已增加可等待的 `onStart/onReady/onStop`；直接启动单个 Process 配置时，Windows `CTRL_C/CTRL_BREAK` 与 Linux `SIGINT/SIGTERM` 会进入 TS stop、关闭连接并等待保存。
 - Watcher 使用跨平台父子控制管道同时通知所有子进程，再按各自 `stopTimeoutMs` 等待；仅超时才强杀。Watcher 消失造成管道 EOF 时，子进程也会主动收尾，避免遗留孤儿进程。
-- 子进程非零退出或优雅停机超时会让 Watcher 返回失败。自动重启、退避与滚动更新仍属于 Phase 5 生产监管能力。
+- 任一子进程提前退出都会触发其余进程优雅停机并让 Watcher 返回失败；优雅停机超时才强杀。自动重启、退避与滚动更新仍属于 Phase 5 生产监管能力。
 - MapHost 停止时会按 Gate 批量踢出玩家；玩家数据保存封装在幂等 `PlayerUnit.Offline()` 中，踢人逻辑不直接调用 Repository。
 - `process.lifecycle.stopTimeoutMs` 默认 10000ms，保存失败或超时会让停机失败并留下错误日志。
 - 校验重复 Service 名称、地址、依赖和生产环境 Inner Token。
