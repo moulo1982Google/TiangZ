@@ -228,6 +228,7 @@ function aggregateCases(rounds) {
       setupP95Ms: median(group.map((item) => item.setup.p95Ms)),
       movesPerSecond: median(group.map((item) => item.movement.perSecond)),
       pushesPerSecond: median(group.map((item) => item.movement.pushesPerSecond)),
+      moveAcknowledged: median(group.map((item) => item.movement.acknowledged ?? 0)),
       moveLatencySamples: median(group.map((item) => item.movement.latencySamples ?? 0)),
       moveP50Ms: median(group.map((item) => item.movement.p50Ms)),
       moveP95Ms: median(group.map((item) => item.movement.p95Ms)),
@@ -258,12 +259,12 @@ function renderMarkdown(report) {
     "",
     `## ${options.rounds} 轮中位数`,
     "",
-    "| 部署 | 负载 | 玩家 | move/s | push/s | 延迟样本 | p50 ms | p95 ms | p99 ms | stalled | Server CPU% | Server RSS | Server GC ms | Load CPU ms | Load RSS |",
-    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| 部署 | 负载 | 玩家 | move/s | push/s | 确认数 | 延迟样本 | p50 ms | p95 ms | p99 ms | stalled | Server CPU% | Server RSS | Server GC ms | Load CPU ms | Load RSS |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
   ];
   for (const item of report.cases) {
     const value = item.median;
-    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${value.moveLatencySamples} | ${round(value.moveP50Ms, 2)} | ${round(value.moveP95Ms, 2)} | ${round(value.moveP99Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : round(value.serverGcMs, 2)} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
+    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${value.moveAcknowledged} | ${value.moveLatencySamples} | ${round(value.moveP50Ms, 2)} | ${round(value.moveP95Ms, 2)} | ${round(value.moveP99Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : round(value.serverGcMs, 2)} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
   }
   if (options.outputPrefix === "soak") {
     lines.push(
@@ -295,6 +296,7 @@ function renderMarkdown(report) {
     "## 指标口径",
     "",
     "- `move/s` 是客户端发送移动到收到自身权威位置 Push 的闭环吞吐。",
+    "- `确认数` 统计所有匹配 `acknowledgedSequence` 的权威 Push；延迟分位数使用每玩家最多约 1024 个均匀样本，避免长稳工具自身内存线性增长。",
     "- `push/s` 是所有客户端实际收到的 EntityMove 数；当前仍为同地图全量可见，尚未启用 AOI。",
     "- Server CPU/RSS/GC 来自各 Runtime 的 `[process-metrics]`；split 模式按进程汇总。",
     "- Load CPU/RSS/GC 只代表压测客户端，独立压测机模式用于排除它与服务端争抢资源。",

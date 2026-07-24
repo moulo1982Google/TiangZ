@@ -55,6 +55,7 @@ interface PlayerResult {
 
 interface MovementResult {
   sent: number;
+  acknowledged: number;
   skippedTicks: number;
   latenciesMs: number[];
   errors: number;
@@ -97,7 +98,13 @@ async function main(): Promise<void> {
     players.map(async ({ player }, index) => {
       const [movement, probe] = await Promise.all([
         options.disableMove
-          ? Promise.resolve({ sent: 0, skippedTicks: 0, latenciesMs: [], errors: 0 })
+          ? Promise.resolve({
+            sent: 0,
+            acknowledged: 0,
+            skippedTicks: 0,
+            latenciesMs: [],
+            errors: 0,
+          })
           : player.runMovement(measurementStart, sendDeadline, index, options.moveRate),
         player.runProbes(
           measurementStart,
@@ -125,6 +132,10 @@ async function main(): Promise<void> {
     .sort(numberOrder);
   const errors = workloads.reduce((sum, item) => sum + item.movement.errors, 0);
   const movementSent = workloads.reduce((sum, item) => sum + item.movement.sent, 0);
+  const movementAcknowledged = workloads.reduce(
+    (sum, item) => sum + item.movement.acknowledged,
+    0,
+  );
   const skippedMoveTicks = workloads.reduce(
     (sum, item) => sum + item.movement.skippedTicks,
     0,
@@ -162,6 +173,7 @@ async function main(): Promise<void> {
       ...timing(movementLatencies, options.durationSeconds),
       count: movementSent,
       perSecond: movementSent / options.durationSeconds,
+      acknowledged: movementAcknowledged,
       latencySamples: movementLatencies.length,
       skippedTicks: skippedMoveTicks,
       entityMovePushes: pushes,
@@ -491,8 +503,13 @@ class GateConnection {
     moveRate: number,
   ): Promise<MovementResult> {
     const latenciesMs: number[] = [];
-    const pendingMeasured = new Map<number, number>();
+    const pendingMeasured = new Map<number, { sentAt: number; sampled: boolean }>();
     const intervalMs = 1000 / moveRate;
+    const expectedMeasuredSends = Math.max(
+      1,
+      Math.ceil(((sendDeadline - measurementStart) / 1000) * moveRate),
+    );
+    const latencySampleStride = Math.max(1, Math.ceil(expectedMeasuredSends / 1024));
     const phase = ((Math.imul(directionSeed + 1, 2654435761) >>> 0) % 10_000) /
       10_000;
     let nextSendAt = performance.now() + phase * intervalMs;
@@ -500,6 +517,7 @@ class GateConnection {
     let sent = 0;
     let skippedTicks = 0;
     let errors = 0;
+    let acknowledged = 0;
     let lastAcknowledgedSequence = 0;
 
     this.moveHandler = (frame) => {
@@ -508,8 +526,11 @@ class GateConnection {
       );
       if (!move || move.acknowledgedSequence <= lastAcknowledgedSequence) return;
       lastAcknowledgedSequence = move.acknowledgedSequence;
-      const sentAt = pendingMeasured.get(move.acknowledgedSequence);
-      if (sentAt !== undefined) latenciesMs.push(performance.now() - sentAt);
+      const pending = pendingMeasured.get(move.acknowledgedSequence);
+      if (pending !== undefined) {
+        acknowledged += 1;
+        if (pending.sampled) latenciesMs.push(performance.now() - pending.sentAt);
+      }
       for (const pendingSequence of pendingMeasured.keys()) {
         if (pendingSequence <= move.acknowledgedSequence) {
           pendingMeasured.delete(pendingSequence);
@@ -540,7 +561,10 @@ class GateConnection {
           }));
           if (now >= measurementStart) {
             sent += 1;
-            pendingMeasured.set(sequence, now);
+            pendingMeasured.set(sequence, {
+              sentAt: now,
+              sampled: sent % latencySampleStride === 0,
+            });
           }
         } catch {
           errors += 1;
@@ -561,7 +585,7 @@ class GateConnection {
       this.moveHandler = undefined;
     }
 
-    return { sent, skippedTicks, latenciesMs, errors };
+    return { sent, acknowledged, skippedTicks, latenciesMs, errors };
   }
 
   private runSaturationMovement(
@@ -576,6 +600,7 @@ class GateConnection {
     let measured = false;
     let errors = 0;
     let sent = 0;
+    let acknowledged = 0;
 
     return new Promise((resolve) => {
       let finished = false;
@@ -594,7 +619,7 @@ class GateConnection {
         finished = true;
         clearTimeout(hardTimeout);
         this.moveHandler = undefined;
-        resolve({ sent, skippedTicks: 0, latenciesMs, errors });
+        resolve({ sent, acknowledged, skippedTicks: 0, latenciesMs, errors });
       };
       const sendNext = () => {
         const now = performance.now();
@@ -632,7 +657,10 @@ class GateConnection {
           move.acknowledgedSequence !== sequence
         ) return;
         awaitingAcknowledgement = false;
-        if (measured) latenciesMs.push(performance.now() - sentAt);
+        if (measured) {
+          acknowledged += 1;
+          latenciesMs.push(performance.now() - sentAt);
+        }
         sendNext();
       };
       sendNext();

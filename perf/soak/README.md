@@ -28,7 +28,7 @@ node perf/soak/run_soak.mjs --minutes 10 --mode split --players 200 --move-rate 
 
 测试完成后保留上述三个位置。验收时重点检查：
 
-1. `errors`、`stalled`、背压和广播失败是否为零。
+1. Move 确认数是否接近发送数，以及 `errors`、`stalled`、背压和广播失败是否为零。延迟分位数使用有界均匀样本，不会随测试时长无限占用内存。
 2. 后半程 p95/p99 是否持续恶化，而不是偶发抖动。
 3. RSS/V8 Heap 的首尾折算值与后 1/4 线性斜率是否同时持续为正；阶跃后平台化不能直接判为泄漏。
 4. `live_entities`、`live_units`、定时器和连接数量是否与在线玩家规模一致。
