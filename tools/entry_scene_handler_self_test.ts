@@ -146,9 +146,13 @@ async function testExternalHandlerDispatch(): Promise<void> {
     7,
     packFrame(Read.requestCode, Read.requestCodec.encode({ rpcId: 42 })),
   );
+  runtime.pushHostFrame(0, 7, packFrame(65000, new Uint8Array()));
 
   const result = await runtime.update();
-  assert.equal(result.metrics[0]?.processedFrames, 2);
+  assert.equal(result.metrics[0]?.processedFrames, 3);
+  assert.equal(result.metrics[0]?.protocolSuccesses, 2);
+  assert.equal(result.metrics[0]?.failedFrames, 1);
+  assert.equal(result.metrics[0]?.systemErrors, 1);
   assert.equal(result.outbound.length, 1);
   assert.deepEqual([...result.outbound[0].connectionIdBytes], [7, 0, 0, 0]);
   assert.equal(readU16BE(result.outbound[0].frame, 0), Read.responseCode);

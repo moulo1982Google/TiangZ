@@ -20,12 +20,16 @@ const captured: CapturedLog[] = [];
 }).__hostLog = (level, target, category, message, attributes) => {
   captured.push({ level, target, category, message, attributes });
 };
+(globalThis as typeof globalThis & { __hostLogMinLevel: number }).__hostLogMinLevel = 3;
 
 const logger = new Logger("scene:MapHost", {
   category: "business",
   process: "map1",
   scene: "map_1",
 }).child({ actorId: 1001 });
+logger.debug("this must not cross the host bridge", {
+  expensive: { nested: true },
+});
 logger.error("use item failed", {
   rpcId: 17,
   itemId: 2001,

@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { isPromiseLike } from "../app/core/async";
 import { BinaryReader, BinaryWriter } from "../app/core/protocol/binary";
 import { ProtocolRegistry } from "../app/core/protocol/registry";
+import type { ProtocolContext, ProtocolOutcome } from "../app/core/protocol/registry";
+import { RpcError } from "../app/core/protocol/RpcError";
+import { Logger } from "../app/core/logging/Logger";
 import {
   decodeActorLocationEnvelope,
   encodeActorLocationEnvelope,
@@ -143,20 +146,41 @@ function testActorLocationEnvelope(): void {
 }
 
 async function testRpcMetadataRoundTrip(): Promise<void> {
-  const registry = new ProtocolRegistry();
+  const outcomes: ProtocolOutcome[] = [];
+  const requestLogs: string[] = [];
+  (globalThis as typeof globalThis & { __hostLogMinLevel: number }).__hostLogMinLevel = 0;
+  (globalThis as typeof globalThis & {
+    __hostLog: (
+      level: number,
+      target: string,
+      category: string,
+      message: string,
+      attributes: string,
+    ) => void;
+  }).__hostLog = (_level, _target, _category, message, attributes) => {
+    if (message === "request context probe") requestLogs.push(attributes);
+  };
+  let receivedContext: ProtocolContext | undefined;
+  const registry = new ProtocolRegistry(undefined, undefined, (outcome) => {
+    outcomes.push(outcome);
+  });
   registry.register(LoginProtocol.Login.requestCode, {
     responseCode: LoginProtocol.Login.responseCode,
     decode: C2S_LoginCodec.decode,
     encode: S2C_LoginCodec.encode,
-    handle: (request) => ({
-      account: request.account,
-      service: "self-test",
-      loginCount: 1,
-      token: "token",
-      gateName: "gate",
-      gateIp: "127.0.0.1",
-      gatePort: 7201,
-    }),
+    handle: (request, context) => {
+      receivedContext = context;
+      context.logger?.info("request context probe");
+      return {
+        account: request.account,
+        service: "self-test",
+        loginCount: 1,
+        token: "token",
+        gateName: "gate",
+        gateIp: "127.0.0.1",
+        gatePort: 7201,
+      };
+    },
   });
 
   const requestPayload = C2S_LoginCodec.encode({
@@ -168,7 +192,10 @@ async function testRpcMetadataRoundTrip(): Promise<void> {
   request[1] = LoginProtocol.Login.requestCode & 0xff;
   request.set(requestPayload, 2);
 
-  const responseResult = registry.handle(request);
+  const responseResult = registry.handle(request, {
+    connectionId: 9,
+    logger: new Logger("protocol-self-test"),
+  });
   assert.equal(isPromiseLike(responseResult), false);
   const responseFrame = await responseResult;
   assert.ok(responseFrame);
@@ -176,6 +203,16 @@ async function testRpcMetadataRoundTrip(): Promise<void> {
   assert.equal(response.rpcId, 77);
   assert.equal(response.error ?? 0, 0);
   assert.equal(response.account, "tester");
+  assert.equal(receivedContext?.connectionId, 9);
+  assert.equal(receivedContext?.msgcode, LoginProtocol.Login.requestCode);
+  assert.equal(receivedContext?.rpcId, 77);
+  assert.ok(receivedContext?.requestId);
+  const requestLog = JSON.parse(requestLogs[0]) as Record<string, unknown>;
+  assert.equal(requestLog.connectionId, 9);
+  assert.equal(requestLog.msgcode, LoginProtocol.Login.requestCode);
+  assert.equal(requestLog.rpcId, 77);
+  assert.equal(requestLog.requestId, receivedContext?.requestId);
+  assert.equal(outcomes.at(-1)?.kind, "success");
 
   registry.register(LoginProtocol.Login.requestCode, {
     responseCode: LoginProtocol.Login.responseCode,
@@ -199,6 +236,21 @@ async function testRpcMetadataRoundTrip(): Promise<void> {
   const asyncResponse = S2C_LoginCodec.decode(asyncResponseFrame.subarray(2));
   assert.equal(asyncResponse.rpcId, 77);
   assert.equal(asyncResponse.service, "async-self-test");
+
+  registry.register(LoginProtocol.Login.requestCode, {
+    responseCode: LoginProtocol.Login.responseCode,
+    decode: C2S_LoginCodec.decode,
+    encode: S2C_LoginCodec.encode,
+    handle: () => {
+      throw new RpcError(10001, "business rejected");
+    },
+  });
+  const rejectedFrame = await registry.handle(request);
+  assert.ok(rejectedFrame);
+  const rejected = S2C_LoginCodec.decode(rejectedFrame.subarray(2));
+  assert.equal(rejected.error, 10001);
+  assert.equal(rejected.rpcId, 77);
+  assert.equal(outcomes.at(-1)?.kind, "business-error");
 }
 
 function testMalformedLengthDelimitedField(): void {

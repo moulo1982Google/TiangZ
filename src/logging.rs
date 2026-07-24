@@ -28,6 +28,46 @@ pub fn dropped_lines() -> usize {
         .unwrap_or(0)
 }
 
+pub fn typescript_min_level(config: &ProcessLoggingConfig) -> u8 {
+    resolve_typescript_min_level(config, std::env::var("RUST_LOG").ok().as_deref())
+}
+
+fn resolve_typescript_min_level(
+    config: &ProcessLoggingConfig,
+    environment_filter: Option<&str>,
+) -> u8 {
+    let filter = environment_filter
+        .map(str::to_owned)
+        .or_else(|| config.filter.clone());
+    match filter.as_deref().and_then(simple_level_code) {
+        Some(level) => level,
+        None if filter.is_some() => 0,
+        None => level_code(config.level),
+    }
+}
+
+fn simple_level_code(value: &str) -> Option<u8> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "trace" => Some(0),
+        "debug" => Some(1),
+        "info" => Some(2),
+        "warn" => Some(3),
+        "error" => Some(4),
+        "off" => Some(5),
+        _ => None,
+    }
+}
+
+fn level_code(level: crate::config::ProcessLogLevel) -> u8 {
+    match level {
+        crate::config::ProcessLogLevel::Trace => 0,
+        crate::config::ProcessLogLevel::Debug => 1,
+        crate::config::ProcessLogLevel::Info => 2,
+        crate::config::ProcessLogLevel::Warn => 3,
+        crate::config::ProcessLogLevel::Error => 4,
+    }
+}
+
 pub fn init(
     root: &Path,
     process_name: &str,
@@ -147,6 +187,24 @@ mod tests {
     #[test]
     fn process_name_is_safe_for_log_file() {
         assert_eq!(sanitize_file_name("map:1/test"), "map_1_test");
+    }
+
+    #[test]
+    fn typescript_level_uses_config_for_the_common_case() {
+        let config = ProcessLoggingConfig {
+            level: crate::config::ProcessLogLevel::Warn,
+            ..ProcessLoggingConfig::default()
+        };
+        assert_eq!(resolve_typescript_min_level(&config, None), 3);
+    }
+
+    #[test]
+    fn complex_filter_keeps_typescript_prefilter_conservative() {
+        let config = ProcessLoggingConfig {
+            filter: Some("info,tiangz::typescript=debug".to_string()),
+            ..ProcessLoggingConfig::default()
+        };
+        assert_eq!(resolve_typescript_min_level(&config, None), 0);
     }
 
     #[test]

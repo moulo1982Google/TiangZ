@@ -450,7 +450,7 @@ deno_core::extension!(
     ],
 );
 
-pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
+pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRuntime, AnyError> {
     let mut runtime = JsRuntime::new(RuntimeOptions {
         extensions: vec![
             ets_runtime_host::init(),
@@ -480,7 +480,8 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
             return String(value);
           }
         };
-        globalThis.__hostLog = (level, target, category, message, attributes = "{}") =>
+        globalThis.__hostLog = (level, target, category, message, attributes = "{}") => {
+          if (level < (globalThis.__hostLogMinLevel ?? 0)) return;
           core.ops.op_host_log(
             u32(level, "level"),
             String(target),
@@ -488,6 +489,7 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
             String(message),
             String(attributes),
           );
+        };
         globalThis.__hostSleep = (ms) => core.ops.op_host_sleep(u32(ms, "ms"));
         globalThis.__hostTakeEventBatch = () => core.ops.op_host_take_event_batch();
         globalThis.__hostPushOutbound = (connectionId, frame) =>
@@ -506,15 +508,23 @@ pub fn create_runtime(inspector: bool) -> Result<JsRuntime, AnyError> {
           core.ops.op_host_submit_scene_operations(packed);
         globalThis.__etsDispatchHostEvents = () =>
           globalThis.__etsPushHostEventsBinary(globalThis.__hostTakeEventBatch());
+        const consoleWrite = (level, args) => {
+          if (level < (globalThis.__hostLogMinLevel ?? 0)) return;
+          __hostLog(level, "console", "application", args.map(stringify).join(" "));
+        };
         globalThis.console = {
-          trace: (...args) => __hostLog(0, "console", "application", args.map(stringify).join(" ")),
-          debug: (...args) => __hostLog(1, "console", "application", args.map(stringify).join(" ")),
-          log: (...args) => __hostLog(2, "console", "application", args.map(stringify).join(" ")),
-          info: (...args) => __hostLog(2, "console", "application", args.map(stringify).join(" ")),
-          warn: (...args) => __hostLog(3, "console", "application", args.map(stringify).join(" ")),
-          error: (...args) => __hostLog(4, "console", "application", args.map(stringify).join(" ")),
+          trace: (...args) => consoleWrite(0, args),
+          debug: (...args) => consoleWrite(1, args),
+          log: (...args) => consoleWrite(2, args),
+          info: (...args) => consoleWrite(2, args),
+          warn: (...args) => consoleWrite(3, args),
+          error: (...args) => consoleWrite(4, args),
         };
         "#,
+    )?;
+    runtime.execute_script(
+        "ets-runtime:logging-config.js",
+        format!("globalThis.__hostLogMinLevel = {host_log_min_level};"),
     )?;
     runtime.execute_script(
         "ets-runtime:native-ops.js",
@@ -649,7 +659,7 @@ mod tests {
 
     #[test]
     fn native_item_round_trips_through_v8_ops() {
-        let mut runtime = create_runtime(false).unwrap();
+        let mut runtime = create_runtime(false, 0).unwrap();
         runtime
             .execute_script(
                 "test:native-item.js",
@@ -677,7 +687,7 @@ mod tests {
 
     #[test]
     fn generated_native_bridge_rejects_uint32_wraparound() {
-        let mut runtime = create_runtime(false).unwrap();
+        let mut runtime = create_runtime(false, 0).unwrap();
         let error = runtime
             .execute_script(
                 "test:native-op-validation.js",
@@ -686,6 +696,22 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("handle"));
         assert!(error.to_string().contains("integer"));
+    }
+
+    #[test]
+    fn console_filters_before_formatting_arguments() {
+        let mut runtime = create_runtime(false, 3).unwrap();
+        runtime
+            .execute_script(
+                "test:console-log-filter.js",
+                r#"
+                let formatted = 0;
+                const expensive = { toJSON() { formatted += 1; return "value"; } };
+                console.debug("disabled", expensive);
+                if (formatted !== 0) throw new Error("disabled console log was formatted");
+                "#,
+            )
+            .unwrap();
     }
 
     #[test]

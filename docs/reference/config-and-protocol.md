@@ -47,6 +47,8 @@
 
 控制台和文件都使用有界非阻塞队列。队列耗尽时普通日志允许丢弃，保护网络和游戏线程；因此普通 Logger 不能用于充值、货币、道具发放等可靠审计记录。
 
+当 `level`、`filter` 或 `RUST_LOG` 是单一日志级别时，Runtime 会把最低级别同步给 V8，TS 在字段合并和序列化之前直接过滤。复杂 target filter 无法用单个级别精确表达，TS 会保守放行，再由 Rust `tracing` 完成最终过滤。
+
 `network` 支持 `ioBackend`、`uringEntries` 和 `uringReadBufferBytes`。`ioBackend` 只决定 epoll/io_uring，不决定 TCP/WebSocket。io_uring 的约束、构建方法和性能验收见 [传输与 I/O 分层](transport-backend.md)。
 
 `game` 支持：

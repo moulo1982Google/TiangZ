@@ -12,6 +12,7 @@ import {
   packFrame,
   ProtocolContext,
   ProtocolRegistry,
+  type ProtocolOutcome,
 } from "../protocol/registry";
 import {
   AnyRpcDescriptor,
@@ -124,6 +125,12 @@ export interface SceneMetricsSnapshot {
   sceneType: string;
   processedFrames: number;
   failedFrames: number;
+  protocolSuccesses: number;
+  businessErrors: number;
+  systemErrors: number;
+  decodeErrors: number;
+  handlerNotFound: number;
+  messageHandlerFailures: number;
   ingressQueueLength: number;
   maxIngressQueueLength: number;
   lastUpdateCostMs: number;
@@ -182,6 +189,12 @@ export abstract class EntryScene extends Entity {
   private readonly metrics = {
     processedFrames: 0,
     failedFrames: 0,
+    protocolSuccesses: 0,
+    businessErrors: 0,
+    systemErrors: 0,
+    decodeErrors: 0,
+    handlerNotFound: 0,
+    messageHandlerFailures: 0,
     maxIngressQueueLength: 0,
     lastUpdateCostMs: 0,
     lastHandlerCostMs: 0,
@@ -209,10 +222,12 @@ export abstract class EntryScene extends Entity {
     this.registry = new ProtocolRegistry(
       (message) => this.ctx.logger.error("protocol error", { detail: message }),
       latencyMetrics,
+      (outcome) => this.recordProtocolOutcome(outcome),
     );
     this.actorRegistry = new ProtocolRegistry(
       (message) => this.ctx.logger.error("actor protocol error", { detail: message }),
       latencyMetrics,
+      (outcome) => this.recordProtocolOutcome(outcome),
     );
     for (const descriptor of knownRpcs) {
       this.knownRpcsByCode.set(descriptor.requestCode, descriptor);
@@ -371,6 +386,12 @@ export abstract class EntryScene extends Entity {
       sceneType: this.self.sceneType,
       processedFrames: this.metrics.processedFrames,
       failedFrames: this.metrics.failedFrames,
+      protocolSuccesses: this.metrics.protocolSuccesses,
+      businessErrors: this.metrics.businessErrors,
+      systemErrors: this.metrics.systemErrors,
+      decodeErrors: this.metrics.decodeErrors,
+      handlerNotFound: this.metrics.handlerNotFound,
+      messageHandlerFailures: this.metrics.messageHandlerFailures,
       ingressQueueLength: this.ingressLength,
       maxIngressQueueLength: this.metrics.maxIngressQueueLength,
       lastUpdateCostMs: this.metrics.lastUpdateCostMs,
@@ -585,12 +606,15 @@ export abstract class EntryScene extends Entity {
     frame: Uint8Array,
     context: ProtocolContext = {},
   ): MaybePromise<Uint8Array | undefined> {
+    const requestContext = context.logger
+      ? context
+      : { ...context, logger: this.logger };
     const startedAt = nowMs();
     const msgcode = this.latencies.enabled && frame.length >= 2
       ? readU16BE(frame, 0)
       : undefined;
     try {
-      const response = this.routeOrHandleFrame(frame, context);
+      const response = this.routeOrHandleFrame(frame, requestContext);
       if (isPromiseLike(response)) {
         return Promise.resolve(response).then(
           (value) => {
@@ -635,11 +659,13 @@ export abstract class EntryScene extends Entity {
         const instanceId = readActorLocationInstanceId(frame);
         return this.actorRegistry.handle(frame.subarray(ActorLocationEnvelopeHeaderBytes), {
           actorInstanceId: instanceId,
+          logger: context.logger,
         });
       } catch (error) {
         this.registry.reportSystemError(
           SystemErrCode.MalformedFrame,
           `invalid actor location envelope: ${errorText(error)}`,
+          context,
         );
         return undefined;
       }
@@ -664,6 +690,7 @@ export abstract class EntryScene extends Entity {
         frame,
         SystemErrCode.ActorLocationNotFound,
         `actor location is not bound for connection ${context.connectionId}`,
+        context,
       );
     }
 
@@ -678,6 +705,7 @@ export abstract class EntryScene extends Entity {
           frame,
           error instanceof RpcError ? error.code : SystemErrCode.SceneCallFailed,
           `actor location call failed: ${errorText(error)}`,
+          context,
         ),
       );
     }
@@ -691,6 +719,7 @@ export abstract class EntryScene extends Entity {
         this.registry.reportSystemError(
           error instanceof RpcError ? error.code : SystemErrCode.SceneCallFailed,
           `actor location send failed: ${errorText(error)}`,
+          context,
         );
         return undefined;
       },
@@ -707,6 +736,30 @@ export abstract class EntryScene extends Entity {
       cost,
     );
     this.metrics.totalHandlerCostMs += cost;
+  }
+
+  private recordProtocolOutcome(outcome: ProtocolOutcome): void {
+    switch (outcome.kind) {
+      case "success":
+        this.metrics.protocolSuccesses += 1;
+        return;
+      case "business-error":
+        this.metrics.businessErrors += 1;
+        return;
+      case "decode-error":
+        this.metrics.decodeErrors += 1;
+        break;
+      case "handler-not-found":
+        this.metrics.handlerNotFound += 1;
+        break;
+      case "message-handler-failed":
+        this.metrics.messageHandlerFailures += 1;
+        break;
+      case "system-error":
+        break;
+    }
+    this.metrics.systemErrors += 1;
+    this.metrics.failedFrames += 1;
   }
 
   private registerTargetRpc<TReq extends IRequest, TResp extends IResponse>(

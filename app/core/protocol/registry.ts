@@ -6,6 +6,7 @@ import { AnyRpcDescriptor } from "./rpc";
 import { SystemErrCode } from "./SystemErrCode";
 import { nowMs } from "../metrics/latency";
 import { CoreLogger } from "../logging/Logger";
+import type { Logger } from "../logging/Logger";
 
 export interface Route<TReq, TResp> {
   responseCode: number;
@@ -20,6 +21,24 @@ export interface Route<TReq, TResp> {
 export interface ProtocolContext {
   connectionId?: number;
   actorInstanceId?: number;
+  msgcode?: number;
+  rpcId?: number;
+  requestId?: string;
+  logger?: Logger;
+}
+
+export type ProtocolOutcomeKind =
+  | "success"
+  | "business-error"
+  | "system-error"
+  | "decode-error"
+  | "handler-not-found"
+  | "message-handler-failed";
+
+export interface ProtocolOutcome {
+  kind: ProtocolOutcomeKind;
+  code: number;
+  context: ProtocolContext;
 }
 
 export interface ProtocolMetrics {
@@ -34,6 +53,8 @@ interface MessageRoute<TMessage> {
   ) => MaybePromise<void>;
 }
 
+let nextProtocolRequestId = 1;
+
 export class ProtocolRegistry {
   private readonly routes = new Map<number, Route<unknown, unknown>>();
   private readonly messageRoutes = new Map<number, MessageRoute<unknown>>();
@@ -42,6 +63,7 @@ export class ProtocolRegistry {
     private readonly log: (message: string) => void = (message) =>
       CoreLogger.error("protocol registry error", { detail: message }),
     private readonly metrics?: ProtocolMetrics,
+    private readonly outcome?: (outcome: ProtocolOutcome) => void,
   ) {}
 
   registerKnownRpc(descriptor: AnyRpcDescriptor): void {
@@ -77,7 +99,9 @@ export class ProtocolRegistry {
     context: ProtocolContext = {},
   ): MaybePromise<Uint8Array | undefined> {
     if (frame.length < 2) {
-      this.logSystemError(SystemErrCode.MalformedFrame, "frame too short");
+      const requestContext = this.bindContext(context);
+      this.logSystemError(SystemErrCode.MalformedFrame, "frame too short", requestContext);
+      this.recordOutcome("system-error", SystemErrCode.MalformedFrame, requestContext);
       return undefined;
     }
 
@@ -90,9 +114,16 @@ export class ProtocolRegistry {
       if (messageRoute) {
         return this.handleMessage(msgcode, payload, messageRoute, context);
       }
+      const requestContext = this.bindContext(context, msgcode);
       this.logSystemError(
         SystemErrCode.UnknownMsgCode,
         `unknown msgcode: ${msgcode}`,
+        requestContext,
+      );
+      this.recordOutcome(
+        "system-error",
+        SystemErrCode.UnknownMsgCode,
+        requestContext,
       );
       return undefined;
     }
@@ -113,6 +144,8 @@ export class ProtocolRegistry {
         SystemErrCode.DecodeFailed,
         error instanceof Error ? error.message : String(error),
         msgcode,
+        this.bindContext(context, msgcode, rpcId),
+        "decode-error",
       );
     }
     if (this.metrics) {
@@ -126,18 +159,22 @@ export class ProtocolRegistry {
         SystemErrCode.HandlerNotFound,
         `handler not found for msgcode: ${msgcode}`,
         msgcode,
+        this.bindContext(context, msgcode, rpcId),
+        "handler-not-found",
       );
     }
+
+    const requestContext = this.bindContext(context, msgcode, rpcId);
 
     let response: MaybePromise<unknown>;
     const handlerStartedAt = this.metrics ? nowMs() : 0;
     try {
-      response = route.handle(request, context);
+      response = route.handle(request, requestContext);
     } catch (error) {
       if (this.metrics) {
         this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
       }
-      return this.handlerErrorResponse(route, rpcId, error, msgcode);
+      return this.handlerErrorResponse(route, rpcId, error, msgcode, requestContext);
     }
 
     if (isPromiseLike(response)) {
@@ -146,13 +183,13 @@ export class ProtocolRegistry {
           if (this.metrics) {
             this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
           }
-          return this.rpcSuccessResponse(route, rpcId, value, msgcode);
+          return this.rpcSuccessResponse(route, rpcId, value, msgcode, requestContext);
         })
         .catch((error) => {
           if (this.metrics) {
             this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
           }
-          return this.handlerErrorResponse(route, rpcId, error, msgcode);
+          return this.handlerErrorResponse(route, rpcId, error, msgcode, requestContext);
         });
     }
 
@@ -160,9 +197,9 @@ export class ProtocolRegistry {
       this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
     }
     try {
-      return this.rpcSuccessResponse(route, rpcId, response, msgcode);
+      return this.rpcSuccessResponse(route, rpcId, response, msgcode, requestContext);
     } catch (error) {
-      return this.handlerErrorResponse(route, rpcId, error, msgcode);
+      return this.handlerErrorResponse(route, rpcId, error, msgcode, requestContext);
     }
   }
 
@@ -170,25 +207,36 @@ export class ProtocolRegistry {
     frame: Uint8Array,
     code: number,
     message: string,
+    context: ProtocolContext = {},
   ): Uint8Array | undefined {
     if (frame.length < 2) return undefined;
     const msgcode = readU16BE(frame, 0);
     const route = this.routes.get(msgcode);
     if (!route) {
-      this.logSystemError(code, message);
+      const requestContext = this.bindContext(context, msgcode);
+      this.logSystemError(code, message, requestContext);
+      this.recordOutcome("system-error", code, requestContext);
       return undefined;
     }
+    const rpcId = extractRpcId(frame.subarray(2)) ?? 0;
     return this.rpcErrorResponse(
       route,
-      extractRpcId(frame.subarray(2)) ?? 0,
+      rpcId,
       code,
       message,
       msgcode,
+      this.bindContext(context, msgcode, rpcId),
     );
   }
 
-  reportSystemError(code: number, message: string): void {
-    this.logSystemError(code, message);
+  reportSystemError(
+    code: number,
+    message: string,
+    context: ProtocolContext = {},
+  ): void {
+    const requestContext = this.bindContext(context);
+    this.logSystemError(code, message, requestContext);
+    this.recordOutcome("system-error", code, requestContext);
   }
 
   private handleMessage(
@@ -197,6 +245,7 @@ export class ProtocolRegistry {
     route: MessageRoute<unknown>,
     context: ProtocolContext,
   ): MaybePromise<undefined> {
+    const requestContext = this.bindContext(context, msgcode);
     let message: unknown;
     const decodeStartedAt = this.metrics ? nowMs() : 0;
     try {
@@ -208,7 +257,9 @@ export class ProtocolRegistry {
       this.logSystemError(
         SystemErrCode.DecodeFailed,
         error instanceof Error ? error.message : String(error),
+        requestContext,
       );
+      this.recordOutcome("decode-error", SystemErrCode.DecodeFailed, requestContext);
       return undefined;
     }
     if (this.metrics) {
@@ -219,26 +270,29 @@ export class ProtocolRegistry {
       this.logSystemError(
         SystemErrCode.HandlerNotFound,
         `message handler not found for msgcode: ${msgcode}`,
+        requestContext,
       );
+      this.recordOutcome("handler-not-found", SystemErrCode.HandlerNotFound, requestContext);
       return undefined;
     }
 
     const handlerStartedAt = this.metrics ? nowMs() : 0;
     try {
-      const result = route.handle(message, context);
+      const result = route.handle(message, requestContext);
       if (isPromiseLike(result)) {
         return Promise.resolve(result).then(
           () => {
             if (this.metrics) {
               this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
             }
+            this.recordOutcome("success", SystemErrCode.Success, requestContext);
             return undefined;
           },
           (error) => {
             if (this.metrics) {
               this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
             }
-            this.logMessageHandlerError(msgcode, error);
+            this.logMessageHandlerError(msgcode, error, requestContext);
             return undefined;
           },
         );
@@ -246,21 +300,28 @@ export class ProtocolRegistry {
       if (this.metrics) {
         this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
       }
+      this.recordOutcome("success", SystemErrCode.Success, requestContext);
     } catch (error) {
       if (this.metrics) {
         this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
       }
-      this.logMessageHandlerError(msgcode, error);
+      this.logMessageHandlerError(msgcode, error, requestContext);
     }
     return undefined;
   }
 
-  private logMessageHandlerError(msgcode: number, error: unknown): void {
+  private logMessageHandlerError(
+    msgcode: number,
+    error: unknown,
+    context: ProtocolContext,
+  ): void {
     const message = error instanceof Error ? error.message : String(error);
     this.logSystemError(
       SystemErrCode.HandlerFailed,
       `message handler failed for msgcode ${msgcode}: ${message}`,
+      context,
     );
+    this.recordOutcome("message-handler-failed", SystemErrCode.HandlerFailed, context);
   }
 
   private rpcSuccessResponse(
@@ -268,6 +329,7 @@ export class ProtocolRegistry {
     rpcId: number,
     response: unknown,
     msgcode?: number,
+    context: ProtocolContext = {},
   ): Uint8Array {
     setResponseMeta(response, rpcId, SystemErrCode.Success);
     const encodeStartedAt = this.metrics ? nowMs() : 0;
@@ -275,7 +337,9 @@ export class ProtocolRegistry {
     if (this.metrics) {
       this.metrics.record("protocol.encode", nowMs() - encodeStartedAt, msgcode);
     }
-    return packFrame(route.responseCode, payload);
+    const frame = packFrame(route.responseCode, payload);
+    this.recordOutcome("success", SystemErrCode.Success, context);
+    return frame;
   }
 
   private handlerErrorResponse(
@@ -283,11 +347,12 @@ export class ProtocolRegistry {
     rpcId: number,
     error: unknown,
     msgcode?: number,
+    context: ProtocolContext = {},
   ): Uint8Array {
     const code =
       error instanceof RpcError ? error.code : SystemErrCode.HandlerFailed;
     const message = error instanceof Error ? error.message : String(error);
-    return this.rpcErrorResponse(route, rpcId, code, message, msgcode);
+    return this.rpcErrorResponse(route, rpcId, code, message, msgcode, context);
   }
 
   private rpcErrorResponse(
@@ -296,9 +361,11 @@ export class ProtocolRegistry {
     code: number,
     message: string,
     msgcode?: number,
+    context: ProtocolContext = {},
+    outcomeKind?: ProtocolOutcomeKind,
   ): Uint8Array {
     if (code < 10000) {
-      this.logSystemError(code, message);
+      this.logSystemError(code, message, context);
     }
     const response = { rpcId, error: code, message };
     const encodeStartedAt = this.metrics ? nowMs() : 0;
@@ -306,12 +373,66 @@ export class ProtocolRegistry {
     if (this.metrics) {
       this.metrics.record("protocol.encode", nowMs() - encodeStartedAt, msgcode);
     }
-    return packFrame(route.responseCode, payload);
+    const frame = packFrame(route.responseCode, payload);
+    this.recordOutcome(
+      outcomeKind ?? (code < 10000 ? "system-error" : "business-error"),
+      code,
+      context,
+    );
+    return frame;
   }
 
-  private logSystemError(code: number, message: string): void {
+  private logSystemError(
+    code: number,
+    message: string,
+    context?: ProtocolContext,
+  ): void {
+    if (context?.logger) {
+      context.logger.error("protocol error", { errorCode: code, detail: message });
+      return;
+    }
     this.log(`[err ${code}] ${message}`);
   }
+
+  private bindContext(
+    context: ProtocolContext,
+    msgcode?: number,
+    rpcId?: number,
+  ): ProtocolContext {
+    const requestId = context.requestId ?? allocateRequestId();
+    const fields = {
+      ...(context.connectionId === undefined
+        ? {}
+        : { connectionId: context.connectionId }),
+      ...(context.actorInstanceId === undefined
+        ? {}
+        : { actorId: context.actorInstanceId }),
+      ...(msgcode === undefined ? {} : { msgcode }),
+      ...(rpcId === undefined || rpcId === 0 ? {} : { rpcId }),
+      requestId,
+    };
+    return {
+      ...context,
+      ...fields,
+      logger: context.logger?.child(fields),
+    };
+  }
+
+  private recordOutcome(
+    kind: ProtocolOutcomeKind,
+    code: number,
+    context: ProtocolContext,
+  ): void {
+    this.outcome?.({ kind, code, context });
+  }
+}
+
+function allocateRequestId(): string {
+  const requestId = String(nextProtocolRequestId);
+  nextProtocolRequestId = nextProtocolRequestId >= Number.MAX_SAFE_INTEGER
+    ? 1
+    : nextProtocolRequestId + 1;
+  return requestId;
 }
 
 export function packFrame(msgcode: number, payload: Uint8Array): Uint8Array {

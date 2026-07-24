@@ -11,6 +11,7 @@ export interface LogFields {
   readonly rpcId?: number;
   readonly msgcode?: number;
   readonly traceId?: string;
+  readonly requestId?: string;
   readonly unitId?: number | string;
   readonly [key: string]: unknown;
 }
@@ -62,10 +63,15 @@ export class Logger {
   }
 
   private write(level: LogLevel, message: string, fields: LogFields = {}): void {
+    const globals = globalThis as typeof globalThis & {
+      __hostLog?: HostLog;
+      __hostLogMinLevel?: number;
+    };
+    if (levelCodes[level] < (globals.__hostLogMinLevel ?? 0)) return;
     const attributes = { ...this.boundFields, ...fields };
     const category = attributes.category ?? "application";
     delete (attributes as { category?: LogCategory }).category;
-    const hostLog = (globalThis as typeof globalThis & { __hostLog?: HostLog }).__hostLog;
+    const hostLog = globals.__hostLog;
     if (!hostLog) {
       console[level === "trace" ? "debug" : level](message, attributes);
       return;

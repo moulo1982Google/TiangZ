@@ -13,7 +13,9 @@ this.ctx.logger.info("玩家进入地图", { account, unitId, mapId });
 this.ctx.logger.error("使用道具失败", { unitId, itemId, error });
 ```
 
-固定字段包括 `process/scene/sceneType/actorId/connectionId/rpcId/msgcode/traceId/unitId`，其他业务字段会进入 `attributes`。`Error` 会保留名称、消息和堆栈。旧的 `console.log/error` 仍可用并会进入统一出口，但缺少 Scene/Actor 绑定字段，只用于兼容旧代码。
+固定字段包括 `process/scene/sceneType/actorId/connectionId/rpcId/msgcode/requestId/unitId`，其他业务字段会进入 `attributes`。协议分发时会自动绑定 `connectionId/actorId/msgcode/rpcId/requestId`，Handler 可直接使用 `context.logger`，不需要重复填写这些字段。`requestId` 当前只保证单个 Process/V8 生命周期内可区分请求，不等同于跨进程 Trace；真正的 `traceId` 传播留给后续内部协议设计。`Error` 会保留名称、消息和堆栈。旧的 `console.log/error` 仍可用并会进入统一出口，但缺少 Scene/Actor 绑定字段，只用于兼容旧代码。
+
+TS Logger 会在合并字段和 JSON 序列化之前检查最低日志级别，关闭的低级别日志不会跨 deno_core op。简单的 `level`、`RUST_LOG=info` 等配置可精确预过滤；复杂的 target filter 会保守地允许 TS 日志进入 Rust，再由 `tracing` 做最终过滤，避免错误丢弃本应开启的 target。
 
 日志分类：
 
@@ -52,7 +54,11 @@ this.ctx.logger.error("使用道具失败", { unitId, itemId, error });
 字段含义：
 
 - `processed`：该 EntryScene 已处理的 frame 数。
-- `failed`：处理过程中抛出未被协议层转换的失败数。
+- `failed`：框架失败总数，包括未捕获异常、系统错误、解码失败、缺 Handler 和单向消息 Handler 异常；业务正常拒绝不计入。
+- `protocol_successes`：RPC 或单向消息成功完成次数。
+- `business_errors`：错误码大于等于 10000 的业务拒绝次数。
+- `system_errors`：错误码小于 10000 的框架错误总数；包含下面三个细分类。
+- `decode_errors/handler_not_found/message_handler_failures`：协议解码、缺 Handler、单向消息 Handler 异常的细分次数。
 - `ts_queue`：当前 TS 入站队列长度。
 - `ts_max_queue`：该进程启动以来 TS 入站队列峰值。
 - `rust_queue`：Rust 到 V8 的进程事件队列当前长度。

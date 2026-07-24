@@ -52,23 +52,23 @@ Phase 2.8 位于多人地图纵向链路与正式角色业务之间。目标不�
 
 ## Phase 2.8.3：日志、错误模型与链路耗时
 
-状态：部分完成。
+状态：主体完成。
 
-- Core 提供结构化 Logger，统一 Rust、V8 和 Cocos 的日志字段。
+- Core 提供结构化 Logger，统一 Rust 与 V8 的日志字段；Cocos SDK 的日志接口仍待单独设计。
 - 已完成 Rust `tracing`、TS Core Logger、级别过滤、开发文本/生产 JSON、非阻塞控制台与滚动文件输出；Cocos 客户端日志仍保持独立。
-- RequestContext 携带 service、rpcId、msgcode、connectionId、source、target 和 traceId。
+- ProtocolContext 已自动携带 `connectionId/rpcId/msgcode/requestId/logger`；跨进程 `traceId/source/target` 传播尚未设计，不能用本地 requestId 冒充。
 - 服务端保存完整错误堆栈，客户端只接收稳定错误码和脱敏消息。
 - 区分框架日志、普通业务日志和会影响业务结果的审计日志。
 - 框架和普通业务日志已区分类别；可靠审计投递尚未实现，业务不得把普通 Logger 当作审计存储。
-- 修复 Handler 异常被转换为响应后 `failedFrames` 仍为零的问题。
+- 已修复 Handler 异常被转换为响应后 `failedFrames` 仍为零的问题；业务错误单列，不污染框架失败率。
 - 已完成第一版链路耗时聚合：`ingress.queue`、`frame.total`、`protocol.decode`、`protocol.handler`、`protocol.encode`、`scene.call/send.local/remote`。
 - 链路耗时以 `[latency:<process>]` 日志输出，字段包含 `scene/type/name/msgcode/count/avg/p50/p95/p99/max`；详细口径见 `docs/reference/observability.md`。
 
 ## Phase 2.8.4：指标与健康检查
 
-状态：待开始。
+状态：部分完成。
 
-- 按协议统计成功、业务错误、系统错误、解码错误和无 Handler。
+- 已按 Scene 统计协议成功、业务错误、系统错误、解码错误、无 Handler 和单向消息 Handler 异常。
 - 增加 Handler 延迟分布、慢 Handler、Actor mailbox 深度和丢弃消息指标。
 - 增加存活、就绪和 Prometheus 指标入口。
 - 指标采用窗口值和速率，避免累计最大值长期失真。

@@ -144,6 +144,18 @@ struct SceneMetricsSnapshot {
     scene_type: String,
     processed_frames: u64,
     failed_frames: u64,
+    #[serde(default)]
+    protocol_successes: u64,
+    #[serde(default)]
+    business_errors: u64,
+    #[serde(default)]
+    system_errors: u64,
+    #[serde(default)]
+    decode_errors: u64,
+    #[serde(default)]
+    handler_not_found: u64,
+    #[serde(default)]
+    message_handler_failures: u64,
     ingress_queue_length: usize,
     max_ingress_queue_length: usize,
     last_update_cost_ms: f64,
@@ -433,7 +445,11 @@ fn run_process_runtime(
     let gc_metrics_ptr = (&mut *gc_metrics) as *mut V8GcMetrics as *mut c_void;
     let mut runtime = {
         let _guard = js_event_loop.enter();
-        create_runtime(process.debug.is_some()).context("failed to create V8 runtime")?
+        create_runtime(
+            process.debug.is_some(),
+            crate::logging::typescript_min_level(&process.logging),
+        )
+        .context("failed to create V8 runtime")?
     };
     runtime.v8_isolate().add_gc_prologue_callback(
         v8_gc_prologue,
@@ -714,11 +730,17 @@ fn maybe_log_metrics(
     }
     for metric in metrics {
         tracing::info!(target: "tiangz::metrics",
-            "[metrics:{process_name}] scene={} type={} processed={} failed={} ts_queue={} ts_max_queue={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
+            "[metrics:{process_name}] scene={} type={} processed={} failed={} protocol_successes={} business_errors={} system_errors={} decode_errors={} handler_not_found={} message_handler_failures={} ts_queue={} ts_max_queue={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
             metric.scene,
             metric.scene_type,
             metric.processed_frames,
             metric.failed_frames,
+            metric.protocol_successes,
+            metric.business_errors,
+            metric.system_errors,
+            metric.decode_errors,
+            metric.handler_not_found,
+            metric.message_handler_failures,
             metric.ingress_queue_length,
             metric.max_ingress_queue_length,
             metric.async_in_flight,
