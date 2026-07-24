@@ -162,6 +162,7 @@ async function main(): Promise<void> {
       ...timing(movementLatencies, options.durationSeconds),
       count: movementSent,
       perSecond: movementSent / options.durationSeconds,
+      latencySamples: movementLatencies.length,
       skippedTicks: skippedMoveTicks,
       entityMovePushes: pushes,
       pushesPerSecond: pushes / (options.warmupSeconds + options.durationSeconds),
@@ -188,10 +189,15 @@ async function main(): Promise<void> {
       rssEndBytes: rssTrend.end,
       rssGrowthBytes: rssTrend.growth,
       rssGrowthBytesPerHour: rssTrend.perHour,
+      rssLastHalfBytesPerHour: rssTrend.lastHalfPerHour,
+      rssLastQuarterBytesPerHour: rssTrend.lastQuarterPerHour,
       heapStartBytes: heapTrend.start,
       heapEndBytes: heapTrend.end,
       heapGrowthBytes: heapTrend.growth,
       heapGrowthBytesPerHour: heapTrend.perHour,
+      heapLastHalfBytesPerHour: heapTrend.lastHalfPerHour,
+      heapLastQuarterBytesPerHour: heapTrend.lastQuarterPerHour,
+      memoryTrendSamples: loadMemorySamples,
     },
   };
 
@@ -219,8 +225,19 @@ function loadResourceTrend(key: "rssBytes" | "heapUsedBytes"): {
   end: number;
   growth: number;
   perHour: number;
+  lastHalfPerHour: number;
+  lastQuarterPerHour: number;
 } {
-  if (loadMemorySamples.length === 0) return { start: 0, end: 0, growth: 0, perHour: 0 };
+  if (loadMemorySamples.length === 0) {
+    return {
+      start: 0,
+      end: 0,
+      growth: 0,
+      perHour: 0,
+      lastHalfPerHour: 0,
+      lastQuarterPerHour: 0,
+    };
+  }
   const startIndex = Math.min(
     loadMemorySamples.length - 1,
     Math.floor(loadMemorySamples.length * 0.1),
@@ -234,7 +251,31 @@ function loadResourceTrend(key: "rssBytes" | "heapUsedBytes"): {
     end: last[key],
     growth,
     perHour: elapsedHours > 0 ? growth / elapsedHours : 0,
+    lastHalfPerHour: regressionPerHour(loadMemorySamples, key, 0.5),
+    lastQuarterPerHour: regressionPerHour(loadMemorySamples, key, 0.75),
   };
+}
+
+function regressionPerHour(
+  samples: Array<{ timestampMs: number; rssBytes: number; heapUsedBytes: number }>,
+  key: "rssBytes" | "heapUsedBytes",
+  startFraction: number,
+): number {
+  if (samples.length < 2) return 0;
+  const startIndex = Math.min(samples.length - 2, Math.floor(samples.length * startFraction));
+  const selected = samples.slice(startIndex);
+  const firstTimestamp = selected[0].timestampMs;
+  const xs = selected.map((sample) => (sample.timestampMs - firstTimestamp) / 3_600_000);
+  const xMean = xs.reduce((sum, value) => sum + value, 0) / xs.length;
+  const yMean = selected.reduce((sum, sample) => sum + sample[key], 0) / selected.length;
+  let numerator = 0;
+  let denominator = 0;
+  for (let index = 0; index < selected.length; index += 1) {
+    const dx = xs[index] - xMean;
+    numerator += dx * (selected[index][key] - yMean);
+    denominator += dx * dx;
+  }
+  return denominator > 0 ? numerator / denominator : 0;
 }
 
 async function waitForStartBarrier(host: string, port: number): Promise<void> {
@@ -449,6 +490,8 @@ class GateConnection {
     directionSeed: number,
     moveRate: number,
   ): Promise<MovementResult> {
+    const latenciesMs: number[] = [];
+    const pendingMeasured = new Map<number, number>();
     const intervalMs = 1000 / moveRate;
     const phase = ((Math.imul(directionSeed + 1, 2654435761) >>> 0) % 10_000) /
       10_000;
@@ -457,35 +500,68 @@ class GateConnection {
     let sent = 0;
     let skippedTicks = 0;
     let errors = 0;
+    let lastAcknowledgedSequence = 0;
 
-    while (nextSendAt < sendDeadline) {
-      const delay = nextSendAt - performance.now();
-      if (delay > 0) await sleep(delay);
+    this.moveHandler = (frame) => {
+      const move = decodeEntityMoveFrame(frame).body.movements.find(
+        (movement) => movement.unitId === this.unitId,
+      );
+      if (!move || move.acknowledgedSequence <= lastAcknowledgedSequence) return;
+      lastAcknowledgedSequence = move.acknowledgedSequence;
+      const sentAt = pendingMeasured.get(move.acknowledgedSequence);
+      if (sentAt !== undefined) latenciesMs.push(performance.now() - sentAt);
+      for (const pendingSequence of pendingMeasured.keys()) {
+        if (pendingSequence <= move.acknowledgedSequence) {
+          pendingMeasured.delete(pendingSequence);
+        }
+      }
+    };
 
-      const now = performance.now();
-      if (now >= sendDeadline) break;
-      if (now - nextSendAt >= intervalMs) {
-        const skipped = Math.floor((now - nextSendAt) / intervalMs);
-        skippedTicks += skipped;
-        nextSendAt += skipped * intervalMs;
+    try {
+      while (nextSendAt < sendDeadline) {
+        const delay = nextSendAt - performance.now();
+        if (delay > 0) await sleep(delay);
+
+        const now = performance.now();
+        if (now >= sendDeadline) break;
+        if (now - nextSendAt >= intervalMs) {
+          const skipped = Math.floor((now - nextSendAt) / intervalMs);
+          skippedTicks += skipped;
+          nextSendAt += skipped * intervalMs;
+        }
+
+        sequence += 1;
+        const axis = (directionSeed + sequence) & 1;
+        try {
+          this.socket.write(buildMovePacket({
+            inputX: axis === 0 ? 1 : 0,
+            inputY: axis === 0 ? 0 : 1,
+            sequence,
+          }));
+          if (now >= measurementStart) {
+            sent += 1;
+            pendingMeasured.set(sequence, now);
+          }
+        } catch {
+          errors += 1;
+        }
+        nextSendAt += intervalMs;
       }
 
-      sequence += 1;
-      const axis = (directionSeed + sequence) & 1;
-      try {
-        this.socket.write(buildMovePacket({
-          inputX: axis === 0 ? 1 : 0,
-          inputY: axis === 0 ? 0 : 1,
-          sequence,
-        }));
-        if (now >= measurementStart) sent += 1;
-      } catch {
-        errors += 1;
+      const finalSequence = sequence;
+      const acknowledgementDeadline = performance.now() + options.movementTimeoutMs;
+      while (
+        lastAcknowledgedSequence < finalSequence &&
+        performance.now() < acknowledgementDeadline
+      ) {
+        await sleep(5);
       }
-      nextSendAt += intervalMs;
+      if (lastAcknowledgedSequence < finalSequence) errors += 1;
+    } finally {
+      this.moveHandler = undefined;
     }
 
-    return { sent, skippedTicks, latenciesMs: [], errors };
+    return { sent, skippedTicks, latenciesMs, errors };
   }
 
   private runSaturationMovement(

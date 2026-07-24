@@ -185,10 +185,14 @@ function collectRuntimeResources(runtimes) {
       rssEndBytes: rssTrend.end,
       rssGrowthBytes: rssTrend.growth,
       rssGrowthBytesPerHour: rssTrend.perHour,
+      rssLastHalfBytesPerHour: rssTrend.lastHalfPerHour,
+      rssLastQuarterBytesPerHour: rssTrend.lastQuarterPerHour,
       v8HeapStartBytes: heapTrend.start,
       v8HeapEndBytes: heapTrend.end,
       v8HeapGrowthBytes: heapTrend.growth,
       v8HeapGrowthBytesPerHour: heapTrend.perHour,
+      v8HeapLastHalfBytesPerHour: heapTrend.lastHalfPerHour,
+      v8HeapLastQuarterBytesPerHour: heapTrend.lastQuarterPerHour,
     };
   });
   return {
@@ -224,6 +228,7 @@ function aggregateCases(rounds) {
       setupP95Ms: median(group.map((item) => item.setup.p95Ms)),
       movesPerSecond: median(group.map((item) => item.movement.perSecond)),
       pushesPerSecond: median(group.map((item) => item.movement.pushesPerSecond)),
+      moveLatencySamples: median(group.map((item) => item.movement.latencySamples ?? 0)),
       moveP50Ms: median(group.map((item) => item.movement.p50Ms)),
       moveP95Ms: median(group.map((item) => item.movement.p95Ms)),
       moveP99Ms: median(group.map((item) => item.movement.p99Ms)),
@@ -253,36 +258,36 @@ function renderMarkdown(report) {
     "",
     `## ${options.rounds} 轮中位数`,
     "",
-    "| 部署 | 负载 | 玩家 | move/s | push/s | p50 ms | p95 ms | p99 ms | stalled | Server CPU% | Server RSS | Server GC ms | Load CPU ms | Load RSS |",
-    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| 部署 | 负载 | 玩家 | move/s | push/s | 延迟样本 | p50 ms | p95 ms | p99 ms | stalled | Server CPU% | Server RSS | Server GC ms | Load CPU ms | Load RSS |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
   ];
   for (const item of report.cases) {
     const value = item.median;
-    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${round(value.moveP50Ms, 2)} | ${round(value.moveP95Ms, 2)} | ${round(value.moveP99Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : round(value.serverGcMs, 2)} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
+    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${value.moveLatencySamples} | ${round(value.moveP50Ms, 2)} | ${round(value.moveP95Ms, 2)} | ${round(value.moveP99Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : round(value.serverGcMs, 2)} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
   }
   if (options.outputPrefix === "soak") {
     lines.push(
       "",
       "## 服务端内存趋势",
       "",
-      "| 进程 | 样本 | RSS 起点 | RSS 终点 | RSS 增长/小时 | V8 Heap 起点 | V8 Heap 终点 | V8 Heap 增长/小时 |",
-      "|---|---:|---:|---:|---:|---:|---:|---:|",
+      "| 进程 | 样本 | RSS 起点 | RSS 终点 | RSS 首尾折算/小时 | RSS 后1/4斜率/小时 | V8 Heap 起点 | V8 Heap 终点 | Heap 首尾折算/小时 | Heap 后1/4斜率/小时 |",
+      "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     );
     for (const round of report.rounds) {
       for (const process of round.serverResources?.processes ?? []) {
-        lines.push(`| ${process.process} | ${process.samples} | ${formatBytes(process.rssStartBytes)} | ${formatBytes(process.rssEndBytes)} | ${formatSignedBytes(process.rssGrowthBytesPerHour)} | ${formatBytes(process.v8HeapStartBytes)} | ${formatBytes(process.v8HeapEndBytes)} | ${formatSignedBytes(process.v8HeapGrowthBytesPerHour)} |`);
+        lines.push(`| ${process.process} | ${process.samples} | ${formatBytes(process.rssStartBytes)} | ${formatBytes(process.rssEndBytes)} | ${formatSignedBytes(process.rssGrowthBytesPerHour)} | ${formatSignedBytes(process.rssLastQuarterBytesPerHour)} | ${formatBytes(process.v8HeapStartBytes)} | ${formatBytes(process.v8HeapEndBytes)} | ${formatSignedBytes(process.v8HeapGrowthBytesPerHour)} | ${formatSignedBytes(process.v8HeapLastQuarterBytesPerHour)} |`);
       }
     }
     lines.push(
       "",
       "## 压测端内存趋势",
       "",
-      "| 部署 | 玩家 | 负载 | 样本 | RSS 起点 | RSS 终点 | RSS 增长/小时 | Heap 起点 | Heap 终点 | Heap 增长/小时 |",
-      "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|",
+      "| 部署 | 玩家 | 负载 | 样本 | RSS 起点 | RSS 终点 | RSS 首尾折算/小时 | RSS 后1/4斜率/小时 | Heap 起点 | Heap 终点 | Heap 首尾折算/小时 | Heap 后1/4斜率/小时 |",
+      "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     );
     for (const round of report.rounds) {
       const load = round.loadGenerator;
-      lines.push(`| ${round.label} | ${round.players} | ${round.workload} | ${load.memorySamples} | ${formatBytes(load.rssStartBytes)} | ${formatBytes(load.rssEndBytes)} | ${formatSignedBytes(load.rssGrowthBytesPerHour)} | ${formatBytes(load.heapStartBytes)} | ${formatBytes(load.heapEndBytes)} | ${formatSignedBytes(load.heapGrowthBytesPerHour)} |`);
+      lines.push(`| ${round.label} | ${round.players} | ${round.workload} | ${load.memorySamples} | ${formatBytes(load.rssStartBytes)} | ${formatBytes(load.rssEndBytes)} | ${formatSignedBytes(load.rssGrowthBytesPerHour)} | ${formatSignedBytes(load.rssLastQuarterBytesPerHour)} | ${formatBytes(load.heapStartBytes)} | ${formatBytes(load.heapEndBytes)} | ${formatSignedBytes(load.heapGrowthBytesPerHour)} | ${formatSignedBytes(load.heapLastQuarterBytesPerHour)} |`);
     }
   }
   lines.push(
@@ -398,7 +403,16 @@ function round(value, digits = 0) { const scale = 10 ** digits; return Math.roun
 function formatBytes(value) { return `${(value / 1024 / 1024).toFixed(1)}MB`; }
 function formatSignedBytes(value) { return `${value >= 0 ? "+" : ""}${formatBytes(value)}/h`; }
 function resourceTrend(samples, key) {
-  if (samples.length === 0) return { start: 0, end: 0, growth: 0, perHour: 0 };
+  if (samples.length === 0) {
+    return {
+      start: 0,
+      end: 0,
+      growth: 0,
+      perHour: 0,
+      lastHalfPerHour: 0,
+      lastQuarterPerHour: 0,
+    };
+  }
   const startIndex = Math.min(samples.length - 1, Math.floor(samples.length * 0.1));
   const start = samples[startIndex][key];
   const end = samples.at(-1)[key];
@@ -407,7 +421,31 @@ function resourceTrend(samples, key) {
     (samples.at(-1).timestampMs - samples[startIndex].timestampMs) / 3_600_000,
   );
   const growth = end - start;
-  return { start, end, growth, perHour: elapsedHours > 0 ? growth / elapsedHours : 0 };
+  return {
+    start,
+    end,
+    growth,
+    perHour: elapsedHours > 0 ? growth / elapsedHours : 0,
+    lastHalfPerHour: regressionPerHour(samples, key, 0.5),
+    lastQuarterPerHour: regressionPerHour(samples, key, 0.75),
+  };
+}
+function regressionPerHour(samples, key, startFraction) {
+  if (samples.length < 2) return 0;
+  const startIndex = Math.min(samples.length - 2, Math.floor(samples.length * startFraction));
+  const selected = samples.slice(startIndex);
+  const firstTimestamp = selected[0].timestampMs;
+  const xs = selected.map((sample) => (sample.timestampMs - firstTimestamp) / 3_600_000);
+  const xMean = sum(xs) / xs.length;
+  const yMean = sum(selected.map((sample) => sample[key])) / selected.length;
+  let numerator = 0;
+  let denominator = 0;
+  for (let index = 0; index < selected.length; index += 1) {
+    const dx = xs[index] - xMean;
+    numerator += dx * (selected[index][key] - yMean);
+    denominator += dx * dx;
+  }
+  return denominator > 0 ? numerator / denominator : 0;
 }
 function timestamp() { return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_"); }
 function machineInfo() {

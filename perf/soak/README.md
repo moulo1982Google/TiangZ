@@ -1,6 +1,6 @@
 # 长稳测试
 
-长稳测试复用完整链路压测：玩家依次完成 LoginMgr、Login、Gate、进入地图，然后持续发送移动消息并接收地图广播。它主要观察错误、延迟恶化、队列积压，以及 Runtime 和压测客户端的 RSS/V8 Heap 长期增长趋势。
+长稳测试复用完整链路压测：玩家依次完成 LoginMgr、Login、Gate、进入地图，然后持续发送移动消息并接收地图广播。它主要观察错误、移动请求到自身权威 Push 的闭环延迟、队列积压，以及 Runtime 和压测客户端的 RSS/V8 Heap 长期增长趋势。
 
 ## 10 分钟预检命令
 
@@ -30,7 +30,7 @@ node perf/soak/run_soak.mjs --minutes 10 --mode split --players 200 --move-rate 
 
 1. `errors`、`stalled`、背压和广播失败是否为零。
 2. 后半程 p95/p99 是否持续恶化，而不是偶发抖动。
-3. `rssGrowthBytesPerHour` 与 `v8HeapGrowthBytesPerHour` 是否在预热后仍持续正增长。
+3. RSS/V8 Heap 的首尾折算值与后 1/4 线性斜率是否同时持续为正；阶跃后平台化不能直接判为泄漏。
 4. `live_entities`、`live_units`、定时器和连接数量是否与在线玩家规模一致。
 
-单次“起点到终点”的增长只能用于发现明显泄漏，不等于严格的内存泄漏证明。若增长异常，应结合 Runtime 日志和分阶段采样重复验证。
+单次“起点到终点”的增长只能用于发现明显泄漏，不等于严格的内存泄漏证明。JSON 会保留压测端的完整内存时间序列，服务端时间序列保留在 Runtime 日志中；若增长异常，应结合后半程斜率和分阶段采样重复验证。
