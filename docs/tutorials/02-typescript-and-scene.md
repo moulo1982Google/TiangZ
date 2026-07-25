@@ -14,8 +14,7 @@
 创建 `app/demo/scenes/EchoScene.ts`：
 
 ```ts
-import { entryScene } from "../../core/process/registry";
-import { EntryScene } from "../../core/process/types";
+import { EntryScene, entryScene } from "../../core/public";
 
 @entryScene()
 export class EchoScene extends EntryScene {}

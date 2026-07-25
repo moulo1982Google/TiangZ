@@ -1,8 +1,8 @@
 import type {
   BroadcastAudience,
   BroadcastTransport,
-} from "../../core/broadcast";
-import type { SceneMessageHelper } from "../../core/process/SceneMessageHelper";
+  SceneMessageHelper,
+} from "../../core/public";
 import { GateMessages } from "../../generated/model/server/demo/protocol/messageDescriptors";
 
 export class SceneBroadcastTransport implements BroadcastTransport {

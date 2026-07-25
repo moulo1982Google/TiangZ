@@ -406,6 +406,7 @@ pub async fn run_runtime_config(
 
     tracing::info!(
         target: "tiangz::runtime",
+        version = crate::version::current(),
         process = %config.process.name,
         scene_count = config.scenes.len(),
         config = %resolved_config.display(),

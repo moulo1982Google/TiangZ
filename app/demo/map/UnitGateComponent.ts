@@ -1,4 +1,4 @@
-import { Component, component } from "../../core/runtime";
+import { Component, component } from "../../core/public";
 
 @component()
 export class UnitGateComponent extends Component<[

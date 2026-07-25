@@ -1,4 +1,4 @@
-import { Scene, scene } from "../../core/runtime";
+import { Scene, scene } from "../../core/public";
 
 @scene({
   sceneType: "Map",

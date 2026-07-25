@@ -1,6 +1,4 @@
-import { RpcError } from "../../core/protocol/RpcError";
-import { actor, handler, scene } from "../../core/runtime";
-import { Actor, Scene } from "../../core/runtime";
+import { Actor, RpcError, Scene, actor, handler, scene } from "../../core/public";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import {
   C2S_Login,

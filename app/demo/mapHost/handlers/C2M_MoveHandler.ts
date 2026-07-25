@@ -1,7 +1,7 @@
 import {
   actorMessageHandler,
   type ActorMessageHandler,
-} from "../../../core/process/actorHandlers";
+} from "../../../core/public";
 import type { C2M_Move } from "../../../generated/model/server/demo/protocol/messages";
 import { MapMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
 import { PlayerUnit } from "../../map/PlayerUnit";

@@ -1,8 +1,8 @@
-import { entryScene } from "../../core/process/registry";
 import {
   EntryScene,
+  entryScene,
   type SceneMetricsSnapshot,
-} from "../../core/process/types";
+} from "../../core/public";
 import { MapHostComponent } from "../mapHost/MapHostComponent";
 import { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 

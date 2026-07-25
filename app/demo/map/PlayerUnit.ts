@@ -1,4 +1,4 @@
-import { actor, Unit } from "../../core/runtime";
+import { Unit, actor } from "../../core/public";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import { NativeData } from "../native/NativeData";
 import { PositionComponent } from "./PositionComponent";

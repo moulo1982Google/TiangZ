@@ -1,5 +1,4 @@
-import { EntryScene } from "../../core/process/types";
-import { Component } from "../../core/runtime";
+import { Component, EntryScene } from "../../core/public";
 import { PlayerUnit } from "../map/PlayerUnit";
 
 interface PlayerLocation {

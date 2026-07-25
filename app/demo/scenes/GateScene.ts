@@ -1,14 +1,15 @@
-import { ProtocolContext } from "../../core/protocol/registry";
-import { message } from "../../core/protocol/message";
-import { RpcError } from "../../core/protocol/RpcError";
-import { rpc } from "../../core/protocol/rpc";
-import { entryScene } from "../../core/process/registry";
-import { TimeSystem, TimerSystem } from "../../core/runtime";
 import {
-  RuntimeEntrySceneConfig,
   EntryScene,
-  SceneConfig,
-} from "../../core/process/types";
+  RpcError,
+  TimeSystem,
+  TimerSystem,
+  entryScene,
+  message,
+  rpc,
+  type ProtocolContext,
+  type RuntimeEntrySceneConfig,
+  type SceneConfig,
+} from "../../core/public";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import {
   C2G_EnterMap,

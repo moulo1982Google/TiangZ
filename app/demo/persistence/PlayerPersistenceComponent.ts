@@ -1,4 +1,4 @@
-import { Component, component } from "../../core/runtime";
+import { Component, component } from "../../core/public";
 import { ItemComponent } from "../item/ItemComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
 import type { PlayerRepository } from "./PlayerRepository";

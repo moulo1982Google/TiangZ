@@ -1,7 +1,7 @@
 import {
   rpcHandler,
   type SceneRpcHandler,
-} from "../../../core/process/sceneHandlers";
+} from "../../../core/public";
 import type {
   G2M_EnterMap,
   M2G_EnterMap,

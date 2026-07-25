@@ -1,11 +1,11 @@
-import { RpcError } from "../../core/protocol/RpcError";
-import { EntryScene } from "../../core/process/types";
-import type { CustomMetricSnapshot } from "../../core/process/types";
 import {
   Component,
+  EntryScene,
   Game,
+  RpcError,
   UnitComponent,
-} from "../../core/runtime";
+  type CustomMetricSnapshot,
+} from "../../core/public";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import { GateMessages } from "../../generated/model/server/demo/protocol/messageDescriptors";
 import type {

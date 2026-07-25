@@ -1,5 +1,7 @@
 # Core API 参考
 
+业务代码统一从`app/core/public.ts`导入本页API，不得依赖Core实现文件的深层路径。Stable、Experimental、Internal和Generated分级及变更流程见[公共API与版本稳定性](api-stability.md)。
+
 ## ProcessRuntime
 
 - 一个 OS Process 创建一个实例。
@@ -109,4 +111,4 @@
 - Component 实现 `Update(): void` 即自动参加固定游戏帧，不需要手工维护 Update 列表。
 - Component 自有定时器在组件销毁时自动取消；挂在 Actor 上的组件定时器还会遵循 Actor mailbox。
 
-精确泛型签名以 `app/core/process` 与 `app/core/runtime` 为准。新增公共 API 时同步更新本文档和教程。
+精确泛型签名以`app/core/public.ts`及其引用的类型定义为准。新增公共API时显式更新API锁，并同步更新本文档、教程和两份AI交接文档。

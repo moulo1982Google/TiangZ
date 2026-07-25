@@ -1,7 +1,7 @@
 import {
   actorRpcHandler,
   type ActorRpcHandler,
-} from "../../../core/process/actorHandlers";
+} from "../../../core/public";
 import type {
   C2M_StateSyncBench,
   M2C_StateSyncBench,

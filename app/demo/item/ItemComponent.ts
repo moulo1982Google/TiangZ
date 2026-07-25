@@ -1,5 +1,4 @@
-import { Component, component } from "../../core/runtime";
-import { RpcError } from "../../core/protocol/RpcError";
+import { Component, RpcError, component } from "../../core/public";
 import { NativeItemRef } from "../../generated/model/native/NativeItemRef";
 import type { ItemSnapshot } from "../../generated/model/server/demo/protocol/messages";
 import { GameErrCode } from "../../game/protocol/GameErrCode";

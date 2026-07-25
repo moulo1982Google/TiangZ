@@ -1,7 +1,7 @@
 import {
   actorRpcHandler,
   type ActorRpcHandler,
-} from "../../../core/process/actorHandlers";
+} from "../../../core/public";
 import type {
   C2M_UseItem,
   M2C_UseItem,

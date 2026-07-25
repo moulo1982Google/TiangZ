@@ -1,5 +1,4 @@
-import { readU16BE } from "../../core/protocol/binary";
-import { encodePacket } from "../../core/protocol/frame";
+import { encodePacket, readU16BE } from "../../core/public";
 import {
   C2S_GetLoginServiceAddrCodec,
   C2G_EnterMap,

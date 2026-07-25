@@ -21,13 +21,17 @@ mod process;
 mod shutdown;
 mod transport;
 mod transport_backend;
+mod version;
 mod watcher;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
-    let startup_path = env::args()
-        .nth(1)
-        .unwrap_or_else(|| "configs/local/StartMachine.json".to_string());
+    let first_arg = env::args().nth(1);
+    if matches!(first_arg.as_deref(), Some("--version" | "-V")) {
+        println!("{}", version::display());
+        return Ok(());
+    }
+    let startup_path = first_arg.unwrap_or_else(|| "configs/local/StartMachine.json".to_string());
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let resolved_config = resolve_startup_path(&root, startup_path);
     if is_start_machine_path(&resolved_config) {

@@ -185,6 +185,52 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Core、Demo 与 Rust 宿主建立中英文函数注释规范，并由 `verify:comments` 自动检查，重点记录副作用、生命周期、不应怎样使用以及设计原因。
 - 已准备按分钟指定时长的完整链路长稳入口和 RSS/V8 Heap 每小时增长报告；10 小时正式样本使用 `--minutes 600`，由专用空闲机器手工执行，不纳入日常 CI。
 
+## Phase 3.10：框架稳定化
+
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.0`。
+
+本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
+
+### Phase 3.10.1：公共API冻结
+
+状态：完成（2026-07）。
+
+- `Cargo.toml`成为项目版本源，`package.json`、lockfile和README由`verify:version`检查一致性。
+- Runtime支持`--version/-V`，启动结构化日志携带版本。
+- `app/core/public.ts`成为服务端业务唯一Stable入口，其他Core实现路径默认Internal。
+- `public-api.lock.json`锁定TypeScript真实导出集合；变更必须显式评审并执行`core-api:update-lock`。
+- 自动拒绝Demo深层import Core、Core反向依赖Demo/Generated。
+- 最小业务夹具只依赖Stable入口定义EntryScene、Unit、Component和Handler。
+- Demo与当前教程迁移到公共入口，未改变运行时语义。
+
+### Phase 3.10.2：RPC与Actor正确性
+
+状态：待开始。
+
+- 本地/远程RPC、timeout、迟到或重复Response、断线清理、rpcId复用与停机取消。
+- Actor销毁、旧InstanceId、ordered跨await与unordered异常隔离。
+- 单向Message和RPC的错误返回语义保持分离。
+
+### Phase 3.10.3：故障注入
+
+状态：待开始。覆盖Process退出、Inner断线、慢客户端、队列过载、Handler异常、非法帧、重连风暴和保存失败。
+
+### Phase 3.10.4：Prometheus与Grafana
+
+状态：待开始。复用现有指标快照增加`/metrics`、Dashboard和告警规则，禁止unitId/rpcId/connectionId等高基数字段成为Label。
+
+### Phase 3.10.5：TypeScript热更闭环
+
+状态：待开始。实现新Bundle自检、版本切换、旧异步调用排空、Timer归属、卸载和回滚；Rust权威Entity状态不随TS模块切换丢失。
+
+### Phase 3.10.6：性能回归门
+
+状态：待开始。把Inner RPC、mailbox、状态复制和完整链路短基准升级为可比较的吞吐、p99、错误、背压和RSS门槛。
+
+### Phase 3.10.7：发布与跨平台收口
+
+状态：待开始。补Windows/Linux CI、可复现Release、依赖审计、迁移说明、版本Tag和一键验收。
+
 ## Phase 4：MMORPG 业务扩展
 
 状态：尚未开始。

@@ -1,6 +1,10 @@
-import { rpc } from "../../core/protocol/rpc";
-import { entryScene } from "../../core/process/registry";
-import { RuntimeEntrySceneConfig, EntryScene, SceneConfig } from "../../core/process/types";
+import {
+  EntryScene,
+  entryScene,
+  rpc,
+  type RuntimeEntrySceneConfig,
+  type SceneConfig,
+} from "../../core/public";
 import {
   C2S_GetLoginServiceAddr,
   S2C_GetLoginServiceAddr,

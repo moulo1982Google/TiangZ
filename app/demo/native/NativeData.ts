@@ -1,4 +1,4 @@
-import { Logger } from "../../core/logging/Logger";
+import { Logger } from "../../core/public";
 import { NativeOps } from "../../generated/model/native/NativeOps";
 
 const logger = new Logger("native-data", { category: "framework" });

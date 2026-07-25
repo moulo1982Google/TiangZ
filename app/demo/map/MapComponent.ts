@@ -1,16 +1,16 @@
-import type { SceneMessageHelper } from "../../core/process/SceneMessageHelper";
-import type { CustomMetricSnapshot } from "../../core/process/types";
-import type { Logger } from "../../core/logging/Logger";
 import {
   BroadcastHub,
   StateReplicationSystem,
   type BroadcastAudience,
   Component,
+  type CustomMetricSnapshot,
   type IFrameFlush,
+  type Logger,
+  type SceneMessageHelper,
   TimeSystem,
   UnitComponent,
   component,
-} from "../../core/runtime";
+} from "../../core/public";
 import { ClientBroadcasts } from "../../generated/model/server/demo/protocol/broadcastDescriptors";
 import { GateMessages } from "../../generated/model/server/demo/protocol/messageDescriptors";
 import type {

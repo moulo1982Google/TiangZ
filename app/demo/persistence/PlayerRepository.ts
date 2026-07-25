@@ -1,4 +1,4 @@
-import type { MaybePromise } from "../../core/async";
+import type { MaybePromise } from "../../core/public";
 import type { ItemSnapshot } from "../../generated/model/server/demo/protocol/messages";
 import type { PlayerSnapshot } from "../map/PlayerUnit";
 

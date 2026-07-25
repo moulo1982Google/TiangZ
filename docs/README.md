@@ -1,5 +1,11 @@
 # TiangZ 文档
 
+## AI 协作
+
+- [AI 项目上下文](ai/project-context.md)：架构演进、关键决策、当前状态、性能事实和明确暂缓事项。
+- [AI 业务开发手册](ai/business-development-manual.md)：业务需求的默认修改边界、实现配方、禁区和验证矩阵。
+- 根目录 [`AGENTS.md`](../AGENTS.md)：编码 AI 必须先读的高优先级规则。
+
 ## 学习手册
 
 1. [架构与快速启动](tutorials/01-architecture-and-quickstart.md)
@@ -17,6 +23,7 @@
 - [配置与协议](reference/config-and-protocol.md)
 - [传输协议与 I/O Backend](reference/transport-backend.md)
 - [Core API](reference/core-api.md)
+- [公共 API 与版本稳定性](reference/api-stability.md)
 - [常用命令](reference/commands.md)
 - [可观测性与链路耗时](reference/observability.md)
 - [故障排查](reference/troubleshooting.md)

@@ -1,4 +1,4 @@
-import { Component, component } from "../../core/runtime";
+import { Component, component } from "../../core/public";
 import { NativeOps } from "../../generated/model/native/NativeOps";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import type { UnitNumericDelta } from "../../generated/model/server/demo/protocol/messages";

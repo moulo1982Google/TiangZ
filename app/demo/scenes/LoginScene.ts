@@ -1,10 +1,10 @@
-import { entryScene } from "../../core/process/registry";
 import {
-  RuntimeEntrySceneConfig,
   EntryScene,
-  SceneConfig,
-  SceneMailboxType,
-} from "../../core/process/types";
+  entryScene,
+  type RuntimeEntrySceneConfig,
+  type SceneConfig,
+  type SceneMailboxType,
+} from "../../core/public";
 import {
   C2S_Login,
   S2C_Login,

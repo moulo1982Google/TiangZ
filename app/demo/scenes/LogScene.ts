@@ -1,6 +1,4 @@
-import { rpc } from "../../core/protocol/rpc";
-import { entryScene } from "../../core/process/registry";
-import { EntryScene } from "../../core/process/types";
+import { EntryScene, entryScene, rpc } from "../../core/public";
 import {
   C2S_Log,
   L2L_LogWriteRequest,
