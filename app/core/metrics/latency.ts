@@ -7,6 +7,9 @@ export interface LatencyMetricSnapshot {
   p95Ms: number;
   p99Ms: number;
   maxMs: number;
+  sumMs: number;
+  boundsMs: readonly number[];
+  bucketCounts: number[];
 }
 
 export interface LatencyRecorderOptions {
@@ -85,6 +88,9 @@ export class LatencyRecorder {
           p95Ms: percentile(metric, 0.95),
           p99Ms: percentile(metric, 0.99),
           maxMs: metric.maxMs,
+          sumMs: metric.totalMs,
+          boundsMs: BUCKETS_MS,
+          bucketCounts: [...metric.buckets],
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name) || (a.msgcode ?? 0) - (b.msgcode ?? 0));

@@ -180,14 +180,14 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - `uint64/int64` 在服务端和 TypeScript Client SDK 统一为无损 `bigint`，并覆盖边界值与 repeated 默认值回归。
 - Watcher 对 Windows/Linux 子进程使用统一控制管道，等待 TS `onStop` 与玩家保存，超时才强杀且向操作员返回失败。
 - Watcher 会检测任一子进程提前退出，优雅关闭其余进程后整体失败；自动重启仍保留给 Phase 5。
-- Process 可选提供 `/live` 与 `/ready`，就绪状态覆盖端口绑定、TS Scene 启动屏障和停机摘流；Prometheus `/metrics` 仍属于 Phase 5。
+- Process 可选提供 `/live` 与 `/ready`，就绪状态覆盖端口绑定、TS Scene 启动屏障和停机摘流；`/metrics` 已在 3.10.4 以最小形态接入。
 - 新增只读生成物校验、快速质量门和包含拆分进程、mailbox、背压、Watcher 的完整 `npm run verify`。
 - Core、Demo 与 Rust 宿主建立中英文函数注释规范，并由 `verify:comments` 自动检查，重点记录副作用、生命周期、不应怎样使用以及设计原因。
 - 已准备按分钟指定时长的完整链路长稳入口和 RSS/V8 Heap 每小时增长报告；10 小时正式样本使用 `--minutes 600`，由专用空闲机器手工执行，不纳入日常 CI。
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.0`。
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.2`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -205,19 +205,37 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 3.10.2：RPC与Actor正确性
 
-状态：待开始。
+状态：完成（2026-07）。
 
-- 本地/远程RPC、timeout、迟到或重复Response、断线清理、rpcId复用与停机取消。
-- Actor销毁、旧InstanceId、ordered跨await与unordered异常隔离。
-- 单向Message和RPC的错误返回语义保持分离。
+- `SceneCallContext`预留在途`rpcId`，uint32回绕时跳过未完成调用；Response继续校验msgcode、payload id和错误码。
+- 显式本地timeout使用Host timer，远程timeout由Rust transport管理；迟到或重复Response只记指标，不会完成其他调用。
+- 连接断开拒绝该连接全部等待者；Process停机拒绝TS bridge pending操作并清空未提交队列。
+- Actor销毁拒绝排队调用，旧InstanceId永久失效，正在await的旧实例不能返回成功。
+- ordered跨await保持串行；unordered允许并发和自调用，单个异常相互隔离。
+- RPC框架错误返回对应Response；单向Message只记日志和指标，不生成ErrorResponse。
+- 新增`test:rpc-actor-correctness`和Rust transport状态机矩阵，并接入`verify:quick`。
 
 ### Phase 3.10.3：故障注入
 
-状态：待开始。覆盖Process退出、Inner断线、慢客户端、队列过载、Handler异常、非法帧、重连风暴和保存失败。
+状态：完成（2026-07）。
+
+- 新增`test:fault-injection`一键矩阵，并拆分Core快速夹具和Runtime真实故障两个入口。
+- Process退出在所有端口就绪后终止真实Watcher子进程，断言兄弟进程清理和非零退出。
+- Inner断线、慢客户端和队列过载分别验证pending清理、定向断连和有界背压。
+- Handler异常与非法帧验证错误返回、单向Message语义和故障后继续服务。
+- 5000次Location换代与1000次Gate Session改绑验证迟到断线不会破坏最新所有权。
+- Repository固定失败验证错误传播、保存幂等和无重复写入。
+- 故障注入只存在于测试Fake、测试进程和Rust测试模块，不增加可误启用的生产配置。
 
 ### Phase 3.10.4：Prometheus与Grafana
 
-状态：待开始。复用现有指标快照增加`/metrics`、Dashboard和告警规则，禁止unitId/rpcId/connectionId等高基数字段成为Label。
+状态：完成（2026-07）。每个 Process 通过健康端口提供 `/metrics`，Target 按 `StartMachine.json` 中实际启动清单原子生成；延迟使用可跨 Process 聚合的 Histogram，Grafana 已提供核心运行诊断面板。
+
+- `/live`、`/ready` 继续输出生命周期 JSON；新增`/metrics`输出 Prometheus 文本格式的 `tiangz_process_live`、`tiangz_process_ready`、`tiangz_process_uptime_seconds`。
+- 提供 `tools/observability/docker-compose.yml` 与 `docs/reference/observability.md`，默认在 `http://127.0.0.1:3000`（Grafana）访问。
+- `/ready` 使用 V8 Runtime 心跳识别“HTTP 仍响应但业务线程卡死”；Prometheus 提供 12 条基础告警判定规则。
+- 自定义 Scene 指标显式区分 Counter/Gauge；`verify:observability` 验收 Target、Dashboard、规则、Histogram 与累计 Counter。
+- 多机部署使用 `StartMachine.innerIp` 作为抓取地址；远程 Process 必须监听管理 IP 或 `0.0.0.0`，不得用 loopback 伪装成可远程抓取端点。
 
 ### Phase 3.10.5：TypeScript热更闭环
 
@@ -248,8 +266,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 计划：
 
-- 结构化日志、traceId、指标导出和分布式追踪。
-- 提供 Prometheus 指标端点和 Grafana Dashboard，将吞吐、p50/p95/p99、错误率、队列水位、背压、CPU、RSS、V8 Heap 与 GC 纳入长期观测。
+- 生产化现有 Prometheus/Grafana：Alertmanager 通知路由、node/windows exporter、认证与 HTTPS、保留期和长期存储、HA。
+- 接入 Loki 与跨进程 traceId/分布式追踪，统一日志、指标和 Trace 下钻。
 - 已将 I/O Backend 与 Endpoint 协议拆为两个维度：`EpollIoBackend/UringIoBackend` 负责操作系统 I/O，`tcp/websocket/auto/kcp` 负责传输协议。KCP 已完成官方 C v1 静态集成、Outer Profile、Challenge 握手、UDP 会话、超时/CLOSE、Rust smoke 和 Cocos Native Windows 全链路；Inner KCP 要等内部身份认证后开放。io_uring TCP 已完成多帧接收、批量发送和与 epoll 同口径的完整链路报告；默认仍为 epoll。后续补多 Endpoint、注册 Buffer、KCP 弱网/长稳和攻击面测试。
 - Process 监管、优雅退出、滚动更新和崩溃恢复。
 - 配置中心、服务发现和生产级 Inner 身份认证。

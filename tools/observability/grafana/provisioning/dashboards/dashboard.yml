@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: "tiangz-process"
+    orgId: 1
+    folder: "Tiangz"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/files
+      foldersFromFilesStructure: true

@@ -1,6 +1,16 @@
 {
   "process": {
-    "name": "map1"
+    "name": "map1",
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7606
+      },
+      "latency": {
+        "enabled": true,
+        "sampleRate": 10
+      }
+    }
   },
   "scenes": [
     {

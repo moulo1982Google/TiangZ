@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.0`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.9已经完成，Phase 3.10框架稳定化正在推进，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.2`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.4已经完成，Phase 3.10框架稳定化继续推进到3.10.5+，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 
@@ -201,6 +201,9 @@ Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`
 - Phase 3.5：Numeric字典、固定字段dirty mask、Item Event和通用状态复制基础。
 - Phase 3.9：协议锁、64位无损bigint、Watcher优雅停机、质量门、双语注释和长稳工具。
 - Phase 3.10.1：项目版本身份、Stable Core入口、API锁、依赖方向检查和独立业务夹具。
+- Phase 3.10.2：RPC在途id避让、本地/远程timeout、迟到/重复响应与断线/停机清理，以及Actor销毁、旧InstanceId、ordered/unordered正确性矩阵。
+- Phase 3.10.3：Process退出、Inner断线、慢客户端、过载、Handler异常、非法帧、重连风暴和保存失败的一键故障注入矩阵。
+- Phase 3.10.4：每个 Process 通过健康端口开放 `/metrics`；Prometheus 按 `StartMachine.json` 发现实际 Process，Grafana 提供 Process/Scene/延迟/队列/背压/Runtime 分层面板。`/ready` 依赖 V8 Runtime 心跳，Scene 自定义指标显式区分 Counter/Gauge，并有基础告警规则与 `verify:observability` 验收。禁止新增业务 Observer Scene 汇总指标。
 
 ## 已验证的稳定性事实
 
@@ -215,7 +218,7 @@ Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`
 
 ## 当前未完成和明确暂缓
 
-Phase 3.10剩余框架稳定化工作：RPC/Actor正确性矩阵、故障注入、Prometheus/Grafana、TypeScript热更闭环、性能回归门和跨平台发布收口。完成前不急于进入Phase 4业务扩展。
+Phase 3.10剩余框架稳定化工作：TypeScript热更闭环、性能回归门和跨平台发布收口。Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部署仍需补 node/windows exporter、告警规则和长期存储策略。
 
 Phase 4计划：
 
@@ -228,7 +231,7 @@ Phase 4计划：
 
 Phase 5计划：
 
-- Prometheus、Grafana和分布式追踪。
+- 现有 Prometheus/Grafana 的生产化（Alertmanager、机器 Exporter、权限、长期存储）和分布式追踪。
 - 生产级服务发现、Inner身份认证、崩溃恢复和滚动更新。
 - TypeScript Hotfix版本切换、排空、回滚和状态迁移。
 - KCP弱网/长稳与io_uring进一步优化。

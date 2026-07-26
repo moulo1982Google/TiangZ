@@ -1,6 +1,16 @@
 {
   "process": {
-    "name": "gate1"
+    "name": "gate1",
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7605
+      },
+      "latency": {
+        "enabled": true,
+        "sampleRate": 10
+      }
+    }
   },
   "scenes": [
     {

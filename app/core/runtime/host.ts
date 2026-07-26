@@ -373,7 +373,8 @@ export class ProcessHost {
     handlerName: HandlerName,
     payload?: unknown,
   ): Promise<TResponse> {
-    if (from && isSameMailbox(from, to)) {
+    const destination = this.resolveMailbox(to);
+    if (from && isSameMailbox(from, to) && destination && mailboxType(destination) === "ordered") {
       throw new Error(`ordered self-call is forbidden: ${targetKey(to)}.${handlerName}`);
     }
 
@@ -529,11 +530,11 @@ export class ProcessHost {
         const result = pending.direct((mailbox as ActorRuntime).instance);
         if (isPromiseLike(result)) {
           return Promise.resolve(result).then(
-            (value) => pending.resolve?.(value),
+            (value) => this.completeInvoke(mailbox, pending, value),
             (error) => this.handleInvokeError(pending, error),
           );
         }
-        pending.resolve?.(result);
+        this.completeInvoke(mailbox, pending, result);
         return;
       }
 
@@ -552,11 +553,11 @@ export class ProcessHost {
       ) as MaybePromise<unknown>;
       if (isPromiseLike(result)) {
         return Promise.resolve(result).then(
-          (value) => pending.resolve?.(value),
+          (value) => this.completeInvoke(mailbox, pending, value),
           (error) => this.handleInvokeError(pending, error),
         );
       }
-      pending.resolve?.(result);
+      this.completeInvoke(mailbox, pending, result);
     } catch (error) {
       this.handleInvokeError(pending, error);
     }
@@ -570,6 +571,23 @@ export class ProcessHost {
         error,
       });
     }
+  }
+
+  /** 只让仍指向同一存活 mailbox 的调用成功完成，阻止旧 InstanceId 在 await 后泄漏成功响应。 / Completes a call only while its mailbox is still alive, preventing stale InstanceIds from returning success after await. */
+  private completeInvoke(
+    mailbox: MailboxRuntime,
+    pending: PendingDispatch,
+    value: unknown,
+  ): void {
+    if (this.resolveMailbox(pending.envelope.to) !== mailbox) {
+      const error = new Error(
+        `target despawned during dispatch: ${targetKey(pending.envelope.to)}`,
+      );
+      if (pending.envelope.kind === "call") pending.reject?.(error);
+      else CoreLogger.error("mailbox send target despawned", { error });
+      return;
+    }
+    pending.resolve?.(value);
   }
 
   private logUnexpectedDispatchError(error: unknown): void {

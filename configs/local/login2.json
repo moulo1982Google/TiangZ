@@ -1,6 +1,12 @@
 {
   "process": {
-    "name": "login2"
+    "name": "login2",
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7604
+      }
+    }
   },
   "scenes": [
     {

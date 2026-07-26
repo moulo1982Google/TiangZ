@@ -215,6 +215,8 @@ pub struct HealthObservabilityConfig {
     #[serde(default = "default_health_ip")]
     pub ip: String,
     pub port: u16,
+    #[serde(default = "default_health_stale_after_ms")]
+    pub stale_after_ms: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -292,6 +294,10 @@ fn default_inspector_ip() -> String {
 
 fn default_health_ip() -> String {
     "127.0.0.1".to_string()
+}
+
+fn default_health_stale_after_ms() -> u64 {
+    15_000
 }
 
 fn default_true() -> bool {
@@ -553,6 +559,9 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         })?;
         if health.port == 0 {
             bail!("process observability.health.port must not be 0");
+        }
+        if health.stale_after_ms < 10_000 {
+            bail!("process observability.health.staleAfterMs must be at least 10000");
         }
         if config.scenes.iter().any(|scene| scene.port == health.port) {
             bail!(
@@ -827,6 +836,7 @@ mod tests {
             .unwrap();
         assert_eq!(health.ip, "127.0.0.1");
         assert_eq!(health.port, 7601);
+        assert_eq!(health.stale_after_ms, 15_000);
         let serialized = serde_json::to_value(&process).unwrap();
         assert!(serialized["observability"].get("latency").is_none());
 

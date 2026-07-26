@@ -5,6 +5,7 @@ import { ProcessRuntime, type ProcessUpdateResult } from "./core/process/Process
 import type { ProcessRuntimeConfig } from "./core/process/types";
 import { NativeData } from "./demo/native/NativeData";
 import {
+  cancelHostSceneOperations,
   completeHostSceneOperation,
   flushHostSceneOperations,
   sleepHost,
@@ -28,13 +29,17 @@ async function stopProcess(): Promise<string> {
   const runtime = processRuntime;
   processRuntime = undefined;
   const timeoutMs = runtime.StopTimeoutMs;
-  await Promise.race([
-    runtime.stop(),
-    sleepHost(timeoutMs).then(() => {
-      throw new Error(`process stop timed out after ${timeoutMs}ms`);
-    }),
-  ]);
-  return "stopped";
+  try {
+    await Promise.race([
+      runtime.stop(),
+      sleepHost(timeoutMs).then(() => {
+        throw new Error(`process stop timed out after ${timeoutMs}ms`);
+      }),
+    ]);
+    return "stopped";
+  } finally {
+    cancelHostSceneOperations("process stopped before host operation completed");
+  }
 }
 
 const HOST_EVENT_HEADER_BYTES = 13;

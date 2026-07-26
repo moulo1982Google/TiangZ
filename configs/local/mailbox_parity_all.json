@@ -1,6 +1,12 @@
 {
   "process": {
-    "name": "mailbox_parity_all"
+    "name": "mailbox_parity_all",
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7610
+      }
+    }
   },
   "scenes": [
     {

@@ -18,14 +18,18 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::sync::{mpsc as tokio_mpsc, watch};
 
 use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
-use crate::health::{HealthServer, ProcessHealthState};
+use crate::health::{
+    GameObservabilitySnapshot, HealthServer, LatencyObservabilitySnapshot,
+    NativeDataObservabilitySnapshot, ProcessHealthState, ProcessObservabilitySnapshot,
+    SceneCustomMetricKind, SceneCustomMetricSnapshot, SceneObservabilitySnapshot,
+};
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
     call_js_stop_process, call_js_update_binary, configure_host_scene_bridge, create_runtime,
     load_js_entrypoints, pump_js_event_loop_once, take_close_connection_requests,
 };
 use crate::inspector::ProcessInspector;
-use crate::transport::init_remote_transport;
+use crate::transport::{init_remote_transport, snapshot_remote_transport};
 use crate::transport_backend::{
     CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionWriters, EndpointContext, create_io_backend,
 };
@@ -181,6 +185,16 @@ struct CustomMetricSnapshot {
     name: String,
     #[serde(default)]
     values: BTreeMap<String, f64>,
+    #[serde(default)]
+    kinds: BTreeMap<String, CustomMetricKind>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum CustomMetricKind {
+    Counter,
+    #[default]
+    Gauge,
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,6 +208,9 @@ struct LatencyMetricSnapshot {
     p95_ms: f64,
     p99_ms: f64,
     max_ms: f64,
+    sum_ms: f64,
+    bounds_ms: Vec<f64>,
+    bucket_counts: Vec<u64>,
 }
 
 #[derive(Default)]
@@ -425,7 +442,14 @@ pub async fn run_runtime_config(
         sender: event_tx,
         stats: Arc::clone(&queue_stats),
     };
-    let health_state = Arc::new(ProcessHealthState::starting());
+    let runtime_stale_after = config
+        .process
+        .observability
+        .as_ref()
+        .and_then(|observability| observability.health.as_ref())
+        .map(|health| Duration::from_millis(health.stale_after_ms.max(1)))
+        .unwrap_or_else(|| Duration::from_secs(15));
+    let health_state = Arc::new(ProcessHealthState::starting(runtime_stale_after));
     let health_server = match config
         .process
         .observability
@@ -695,6 +719,7 @@ fn run_process_runtime(
             &gc_metrics,
             &mut last_process_cpu_time_ms,
             &mut last_resource_sample_at,
+            &health_state,
         )?;
         if shutdown_requested {
             break;
@@ -734,6 +759,7 @@ fn flush_runtime_batch(
     gc_metrics: &V8GcMetrics,
     last_process_cpu_time_ms: &mut u64,
     last_resource_sample_at: &mut Instant,
+    health_state: &ProcessHealthState,
 ) -> Result<bool> {
     queue_stats.runtime_updates.fetch_add(1, Ordering::Relaxed);
     queue_stats
@@ -779,6 +805,8 @@ fn flush_runtime_batch(
             gc_metrics,
             last_process_cpu_time_ms,
             last_resource_sample_at,
+            writers,
+            health_state,
         );
     }
     flush_outbound(outbound, writers, queue_stats)?;
@@ -824,6 +852,8 @@ fn maybe_log_metrics(
     gc_metrics: &V8GcMetrics,
     last_process_cpu_time_ms: &mut u64,
     last_resource_sample_at: &mut Instant,
+    writers: &ConnectionWriters,
+    health_state: &ProcessHealthState,
 ) {
     if last_metrics_log.elapsed() < Duration::from_secs(5) {
         return;
@@ -848,13 +878,19 @@ fn maybe_log_metrics(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
+    let active_connections = writers
+        .lock()
+        .expect("connection writers lock poisoned")
+        .len() as u64;
+    let dropped_logs = crate::logging::dropped_lines();
+    let remote_transport = snapshot_remote_transport();
     tracing::info!(target: "tiangz::metrics",
         "[process-metrics] process={process_name} cpu_percent={cpu_percent:.2} cpu_time_ms={cpu_time_ms} rss_bytes={rss_bytes} v8_heap_used_bytes={} v8_heap_total_bytes={} v8_gc_count={} v8_gc_ms={:.3} timestamp_ms={timestamp_ms} dropped_logs={} inbound_frames={} host_completions={} disconnects={} runtime_updates={} runtime_events={} max_runtime_batch={} outbound_batches={} outbound_recipients={} outbound_bridge_bytes={} outbound_logical_bytes={} transport_read_ops={} transport_read_frames={} transport_read_bytes={} transport_write_ops={} transport_write_frames={} transport_write_bytes={}",
         heap.used_heap_size(),
         heap.total_heap_size(),
         gc_metrics.count,
         gc_metrics.total_duration.as_secs_f64() * 1000.0,
-        crate::logging::dropped_lines(),
+        dropped_logs as u64,
         queue_stats.inbound_frames.load(Ordering::Relaxed),
         queue_stats.host_completions.load(Ordering::Relaxed),
         queue_stats.disconnects.load(Ordering::Relaxed),
@@ -957,6 +993,154 @@ fn maybe_log_metrics(
             );
         }
     }
+
+    let mut scene_snapshots = Vec::with_capacity(metrics.len());
+    for metric in metrics {
+        let mut latency_snapshots = Vec::with_capacity(metric.latencies.len());
+        for latency in &metric.latencies {
+            latency_snapshots.push(LatencyObservabilitySnapshot {
+                name: latency.name.clone(),
+                msgcode: latency.msgcode.map(|msgcode| msgcode.to_string()),
+                count: latency.count,
+                sum_ms: latency.sum_ms,
+                bounds_ms: latency.bounds_ms.clone(),
+                bucket_counts: latency.bucket_counts.clone(),
+            });
+        }
+        scene_snapshots.push(SceneObservabilitySnapshot {
+            scene: metric.scene.clone(),
+            scene_type: metric.scene_type.clone(),
+            processed_frames: metric.processed_frames,
+            failed_frames: metric.failed_frames,
+            protocol_successes: metric.protocol_successes,
+            business_errors: metric.business_errors,
+            system_errors: metric.system_errors,
+            decode_errors: metric.decode_errors,
+            handler_not_found: metric.handler_not_found,
+            message_handler_failures: metric.message_handler_failures,
+            ingress_queue_length: metric.ingress_queue_length as u64,
+            max_ingress_queue_length: metric.max_ingress_queue_length as u64,
+            async_in_flight: metric.async_in_flight as u64,
+            max_async_in_flight: metric.max_async_in_flight as u64,
+            last_update_cost_ms: metric.last_update_cost_ms,
+            last_handler_cost_ms: metric.last_handler_cost_ms,
+            max_handler_cost_ms: metric.max_handler_cost_ms,
+            total_handler_cost_ms: metric.total_handler_cost_ms,
+            latencies: latency_snapshots,
+            custom_metrics: metric
+                .custom_metrics
+                .iter()
+                .map(|item| SceneCustomMetricSnapshot {
+                    name: item.name.clone(),
+                    values: item.values.clone(),
+                    kinds: item
+                        .kinds
+                        .iter()
+                        .map(|(key, kind)| {
+                            let kind = match kind {
+                                CustomMetricKind::Counter => SceneCustomMetricKind::Counter,
+                                CustomMetricKind::Gauge => SceneCustomMetricKind::Gauge,
+                            };
+                            (key.clone(), kind)
+                        })
+                        .collect(),
+                })
+                .collect(),
+        });
+    }
+
+    let game_snapshot = game_metrics.map(|game| GameObservabilitySnapshot {
+        fixed_update_ms: game.fixed_update_ms,
+        frame_count: game.frame_count,
+        skipped_fixed_updates: game.skipped_fixed_updates,
+        update_targets: game.update_targets as u64,
+        update_calls: game.update_calls,
+        update_failures: game.update_failures,
+        timers: game.timers as u64,
+    });
+    let native_snapshot = native_data_metrics.map(|native| NativeDataObservabilitySnapshot {
+        scalar_gets: native.scalar_gets,
+        scalar_sets: native.scalar_sets,
+        batch_calls: native.batch_calls,
+        live_entities: native.live_entities as u64,
+        live_units: native.live_units as u64,
+        encoded_frames: native.encoded_frames,
+        encoded_items: native.encoded_items,
+        encoded_bytes: native.encoded_bytes,
+    });
+
+    health_state.set_observability_snapshot(ProcessObservabilitySnapshot {
+        sample_timestamp_ms: timestamp_ms as u64,
+        cpu_percent,
+        cpu_time_ms,
+        rss_bytes,
+        v8_heap_used_bytes: heap.used_heap_size() as u64,
+        v8_heap_total_bytes: heap.total_heap_size() as u64,
+        v8_gc_count: gc_metrics.count,
+        v8_gc_ms: gc_metrics.total_duration.as_secs_f64() * 1000.0,
+        dropped_logs: dropped_logs as u64,
+        backpressure_waits: queue_stats.backpressure_waits.load(Ordering::Relaxed),
+        slow_client_disconnects: queue_stats.slow_client_disconnects.load(Ordering::Relaxed),
+        inbound_frames: queue_stats.inbound_frames.load(Ordering::Relaxed),
+        host_completions: queue_stats.host_completions.load(Ordering::Relaxed),
+        disconnects: queue_stats.disconnects.load(Ordering::Relaxed),
+        runtime_updates: queue_stats.runtime_updates.load(Ordering::Relaxed),
+        runtime_events: queue_stats.runtime_events.load(Ordering::Relaxed),
+        max_runtime_batch: queue_stats.max_runtime_batch.load(Ordering::Relaxed) as u64,
+        outbound_batches: queue_stats.outbound_batches.load(Ordering::Relaxed),
+        outbound_recipients: queue_stats.outbound_recipients.load(Ordering::Relaxed),
+        outbound_bridge_bytes: queue_stats.outbound_bridge_bytes.load(Ordering::Relaxed),
+        outbound_logical_bytes: queue_stats.outbound_logical_bytes.load(Ordering::Relaxed),
+        transport_read_ops: queue_stats.transport_read_ops.load(Ordering::Relaxed),
+        transport_read_frames: queue_stats.transport_read_frames.load(Ordering::Relaxed),
+        transport_read_bytes: queue_stats.transport_read_bytes.load(Ordering::Relaxed),
+        transport_write_ops: queue_stats.transport_write_ops.load(Ordering::Relaxed),
+        transport_write_frames: queue_stats.transport_write_frames.load(Ordering::Relaxed),
+        transport_write_bytes: queue_stats.transport_write_bytes.load(Ordering::Relaxed),
+        active_connections,
+        remote_transport_active_connections: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.active_connections)
+            .unwrap_or_default(),
+        remote_transport_opened_connections: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.opened_connections)
+            .unwrap_or_default(),
+        remote_transport_pending_calls: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.pending_calls)
+            .unwrap_or_default(),
+        remote_transport_max_pending_calls: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.max_pending_calls)
+            .unwrap_or_default(),
+        remote_transport_overload_rejections: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.overload_rejections)
+            .unwrap_or_default(),
+        remote_transport_timed_out_calls: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.timed_out_calls)
+            .unwrap_or_default(),
+        remote_transport_disconnected_calls: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.disconnected_calls)
+            .unwrap_or_default(),
+        remote_transport_late_responses: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.late_responses)
+            .unwrap_or_default(),
+        remote_transport_idle_closes: remote_transport
+            .as_ref()
+            .map(|snapshot| snapshot.idle_closes)
+            .unwrap_or_default(),
+        queue_depth: queue_stats.depth.load(Ordering::Relaxed) as u64,
+        queue_capacity: queue_stats.capacity as u64,
+        queue_max_depth: queue_stats.max_depth.load(Ordering::Relaxed) as u64,
+        scenes: scene_snapshots,
+        game: game_snapshot,
+        native_data: native_snapshot,
+    });
 }
 
 fn push_event(
@@ -1297,7 +1481,8 @@ mod tests {
                             "in_flight": 1,
                             "pending_units": 12,
                             "coalesced_frames_total": 34
-                        }
+                        },
+                        "kinds": { "coalesced_frames_total": "counter" }
                     }]
                 }],
                 "pendingAsync": false
@@ -1310,5 +1495,9 @@ mod tests {
         assert_eq!(custom.values.get("in_flight"), Some(&1.0));
         assert_eq!(custom.values.get("pending_units"), Some(&12.0));
         assert_eq!(custom.values.get("coalesced_frames_total"), Some(&34.0));
+        assert!(matches!(
+            custom.kinds.get("coalesced_frames_total"),
+            Some(CustomMetricKind::Counter)
+        ));
     }
 }

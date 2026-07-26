@@ -1,0 +1,93 @@
+groups:
+  - name: tiangz-runtime
+    rules:
+      - alert: TiangZProcessDown
+        expr: up{job="tiangz-process-metrics"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "TiangZ Process 无法抓取"
+          description: "{{ $labels.machine }}/{{ $labels.process }} 已连续 30 秒无法抓取。"
+      - alert: TiangZProcessNotReady
+        expr: tiangz_process_ready == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "TiangZ Process 未就绪"
+          description: "{{ $labels.machine }}/{{ $labels.process }} 已连续 30 秒未就绪。"
+      - alert: TiangZRuntimeHeartbeatStale
+        expr: tiangz_process_runtime_fresh == 0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "V8 Runtime 心跳停止"
+          description: "{{ $labels.process }} 的业务线程没有继续推进。"
+      - alert: TiangZProcessQueueHigh
+        expr: tiangz_process_rust_queue_depth / clamp_min(tiangz_process_rust_queue_capacity, 1) > 0.7
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Process 队列超过 70%"
+          description: "{{ $labels.process }} 的 Rust 到 V8 队列持续偏高。"
+      - alert: TiangZProcessQueueCritical
+        expr: tiangz_process_rust_queue_depth / clamp_min(tiangz_process_rust_queue_capacity, 1) > 0.9
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Process 队列超过 90%"
+          description: "{{ $labels.process }} 即将耗尽有界队列容量。"
+      - alert: TiangZBackpressureDetected
+        expr: increase(tiangz_process_backpressure_waits_total[1m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Process 发生背压等待"
+          description: "{{ $labels.process }} 最近一分钟出现生产者等待。"
+      - alert: TiangZInnerRpcFailures
+        expr: increase(tiangz_transport_inner_overload_rejections[1m]) + increase(tiangz_transport_inner_timed_out_calls[1m]) + increase(tiangz_transport_inner_disconnected_calls[1m]) + increase(tiangz_transport_inner_late_responses[1m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Inner RPC 出现失败"
+          description: "{{ $labels.process }} 最近一分钟出现拒绝、超时、断线或迟到响应。"
+      - alert: TiangZSceneSystemErrors
+        expr: increase(tiangz_scene_system_errors_total[1m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scene 出现系统错误"
+          description: "{{ $labels.process }}/{{ $labels.scene }} 最近一分钟出现系统错误。"
+      - alert: TiangZSceneHandlerMissing
+        expr: increase(tiangz_scene_handler_not_found_total[1m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Scene 缺少消息 Handler"
+          description: "{{ $labels.process }}/{{ $labels.scene }} 收到未注册协议。"
+      - alert: TiangZGameUpdateSkipped
+        expr: increase(tiangz_game_skipped_fixed_updates_total[1m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Game.Update 跳帧"
+          description: "{{ $labels.process }} 最近一分钟主动丢弃了过期 Fixed Update。"
+      - alert: TiangZLogsDropped
+        expr: increase(tiangz_process_dropped_logs_total[1m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "日志队列发生丢弃"
+          description: "{{ $labels.process }} 最近一分钟丢弃了日志。"
+      - alert: TiangZHandlerP99High
+        expr: histogram_quantile(0.99, sum by (le, process, scene) (rate(tiangz_scene_latency_ms_bucket{stage="protocol.handler"}[5m]))) > 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Handler P99 超过 20ms"
+          description: "{{ $labels.process }}/{{ $labels.scene }} 的 Handler P99 持续超出默认预算。"

@@ -230,6 +230,8 @@ await this.scenes.send(
 - `callOne`只用于配置上恰好一个实例的SceneType。
 - 多实例必须先明确负载均衡、归属或Location结果。
 - `send`成功只表示被本地mailbox接受或进入远程发送队列，不表示目标Handler执行完成。
+- 框架自动分配并保留在途`rpcId`；业务不得写入、缓存或复用它。只有确实需要deadline时才传`{ timeoutMs }`，本地默认不为每次调用创建额外timer。
+- Actor跨`await`后如果可能已下线或销毁，应检查`IsDisposed`或重新验证权威句柄；JavaScript Promise不能被框架强制终止。
 
 ## 选择Snapshot、Delta或Event
 
@@ -377,6 +379,8 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 | 客户端SDK | `npm run test:client-sdk`、`npm run test:client-sdk-distribution`、Cocos/Pixi typecheck |
 | Scene部署或跨进程调用 | `npm run test:runtime` |
 | mailbox、背压、生命周期 | 完整`npm run verify` |
+| RPC、Actor路由或生命周期 | `npm run test:rpc-actor-correctness`和完整`npm run verify` |
+| 异常恢复、连接清理或持久化失败 | `npm run test:fault-injection` |
 | 一般合并前质量门 | `npm run verify:quick` |
 
 性能结果必须注明机器、配置、玩家数、Gate数、频率、持续时间、是否AOI以及指标口径。不要把Probe基线或全地图可见Demo结果描述为正式业务容量。
@@ -395,3 +399,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 10. 是否在最终说明中列出验证过和未验证的部分？
 11. 如果存在设计变更，是否同步更新了AI项目上下文和AI业务开发手册？
 12. 是否只从`app/core/public.ts`导入Core，而没有依赖Internal路径？
+13. 故障测试是否使用确定性Fake或真实边界，而没有向生产配置加入随机故障开关？
+## 可观测性边界
+
+业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。

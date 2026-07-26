@@ -31,6 +31,9 @@ async function main(): Promise<void> {
   testGeneratedInteger64Codec();
   testActorLocationEnvelope();
   await testRpcMetadataRoundTrip();
+  await testHandlerFailureIsolation();
+  await testIllegalFrameIsolation();
+  await testMissingHandlerErrorSemantics();
   await testOneWayMessageHasNoResponse();
   testMalformedLengthDelimitedField();
   console.log("protocol self-test passed");
@@ -81,6 +84,41 @@ async function testOneWayMessageHasNoResponse(): Promise<void> {
   assert.equal(isPromiseLike(result), true);
   assert.equal(await result, undefined);
   assert.equal(receivedUnitId, 42);
+}
+
+async function testMissingHandlerErrorSemantics(): Promise<void> {
+  const outcomes: ProtocolOutcome[] = [];
+  const registry = new ProtocolRegistry(undefined, undefined, (outcome) => {
+    outcomes.push(outcome);
+  });
+  registry.registerKnownRpc(LoginProtocol.Login);
+  registry.registerKnownMessage(GateMessages.MapReady);
+
+  const requestPayload = C2S_LoginCodec.encode({ account: "missing", rpcId: 88 });
+  const request = new Uint8Array(2 + requestPayload.length);
+  request[0] = LoginProtocol.Login.requestCode >>> 8;
+  request[1] = LoginProtocol.Login.requestCode & 0xff;
+  request.set(requestPayload, 2);
+  const rpcFrame = await registry.handle(request);
+  assert.ok(rpcFrame);
+  const rpcError = S2C_LoginCodec.decode(rpcFrame.subarray(2));
+  assert.equal(rpcError.rpcId, 88);
+  assert.equal(rpcError.error, 1003);
+  assert.equal(outcomes.at(-1)?.kind, "handler-not-found");
+
+  const messagePayload = M2G_MapReadyCodec.encode({
+    account: "missing",
+    mapId: 1,
+    unitId: 1,
+    x: 0,
+    y: 0,
+  });
+  const message = new Uint8Array(2 + messagePayload.length);
+  message[0] = GateMessages.MapReady.msgcode >>> 8;
+  message[1] = GateMessages.MapReady.msgcode & 0xff;
+  message.set(messagePayload, 2);
+  assert.equal(await registry.handle(message), undefined);
+  assert.equal(outcomes.at(-1)?.kind, "handler-not-found");
 }
 
 function testGeneratedScalarCodec(): void {
@@ -164,6 +202,115 @@ function testActorLocationEnvelope(): void {
   );
   assert.equal(envelope.instanceId, 1001);
   assert.deepEqual(envelope.frame, moveFrame);
+  assert.throws(
+    () => decodeActorLocationEnvelope(Uint8Array.of(0, 1)),
+    /invalid actor location envelope header/,
+  );
+}
+
+async function testHandlerFailureIsolation(): Promise<void> {
+  const outcomes: ProtocolOutcome[] = [];
+  const registry = new ProtocolRegistry(undefined, undefined, (outcome) => {
+    outcomes.push(outcome);
+  });
+  const requestPayload = C2S_LoginCodec.encode({ account: "fault", rpcId: 91 });
+  const request = frame(LoginProtocol.Login.requestCode, requestPayload);
+
+  registry.register(LoginProtocol.Login.requestCode, {
+    responseCode: LoginProtocol.Login.responseCode,
+    decode: C2S_LoginCodec.decode,
+    encode: S2C_LoginCodec.encode,
+    handle: async () => {
+      throw new Error("injected async handler failure");
+    },
+  });
+  const failedFrame = await registry.handle(request);
+  assert.ok(failedFrame);
+  const failed = S2C_LoginCodec.decode(failedFrame.subarray(2));
+  assert.equal(failed.rpcId, 91);
+  assert.equal(failed.error, 1005);
+  assert.match(failed.message ?? "", /injected async handler failure/);
+  assert.equal(outcomes.at(-1)?.kind, "system-error");
+
+  registry.register(LoginProtocol.Login.requestCode, {
+    responseCode: LoginProtocol.Login.responseCode,
+    decode: C2S_LoginCodec.decode,
+    encode: S2C_LoginCodec.encode,
+    handle: (value) => ({
+      account: value.account,
+      service: "recovered",
+      loginCount: 1,
+      token: "token",
+      gateName: "gate",
+      gateIp: "127.0.0.1",
+      gatePort: 7201,
+    }),
+  });
+  const recoveredFrame = await registry.handle(request);
+  assert.ok(recoveredFrame);
+  assert.equal(S2C_LoginCodec.decode(recoveredFrame.subarray(2)).service, "recovered");
+
+  registry.registerMessage(GateMessages.MapReady.msgcode, {
+    decode: M2G_MapReadyCodec.decode,
+    handle: () => {
+      throw new Error("injected message handler failure");
+    },
+  });
+  const messagePayload = M2G_MapReadyCodec.encode({
+    account: "fault",
+    mapId: 1,
+    unitId: 1,
+    x: 0,
+    y: 0,
+  });
+  assert.equal(
+    await registry.handle(frame(GateMessages.MapReady.msgcode, messagePayload)),
+    undefined,
+  );
+  assert.equal(outcomes.at(-1)?.kind, "message-handler-failed");
+}
+
+async function testIllegalFrameIsolation(): Promise<void> {
+  const outcomes: ProtocolOutcome[] = [];
+  const registry = new ProtocolRegistry(undefined, undefined, (outcome) => {
+    outcomes.push(outcome);
+  });
+  registry.registerKnownRpc(LoginProtocol.Login);
+
+  assert.equal(await registry.handle(Uint8Array.of(1)), undefined);
+  assert.equal(outcomes.at(-1)?.kind, "system-error");
+  assert.equal(outcomes.at(-1)?.code, 1001);
+
+  const malformed = frame(
+    LoginProtocol.Login.requestCode,
+    Uint8Array.of(0x0a, 0x05, 0x01),
+  );
+  const responseFrame = await registry.handle(malformed);
+  assert.ok(responseFrame);
+  const response = S2C_LoginCodec.decode(responseFrame.subarray(2));
+  assert.equal(response.error, 1004);
+  assert.equal(outcomes.at(-1)?.kind, "decode-error");
+
+  const validPayload = C2S_LoginCodec.encode({ account: "after-malformed", rpcId: 92 });
+  registry.register(LoginProtocol.Login.requestCode, {
+    responseCode: LoginProtocol.Login.responseCode,
+    decode: C2S_LoginCodec.decode,
+    encode: S2C_LoginCodec.encode,
+    handle: (value) => ({
+      account: value.account,
+      service: "still-alive",
+      loginCount: 1,
+      token: "token",
+      gateName: "gate",
+      gateIp: "127.0.0.1",
+      gatePort: 7201,
+    }),
+  });
+  const validFrame = await registry.handle(
+    frame(LoginProtocol.Login.requestCode, validPayload),
+  );
+  assert.ok(validFrame);
+  assert.equal(S2C_LoginCodec.decode(validFrame.subarray(2)).service, "still-alive");
 }
 
 async function testRpcMetadataRoundTrip(): Promise<void> {
@@ -278,4 +425,12 @@ function testMalformedLengthDelimitedField(): void {
   const malformed = new BinaryReader(new Uint8Array([0x0a, 0x05, 0x01]));
   assert.deepEqual(malformed.tag(), { fieldNo: 1, wireType: 2 });
   assert.throws(() => malformed.bytesField(), /unexpected eof/);
+}
+
+function frame(msgcode: number, payload: Uint8Array): Uint8Array {
+  const result = new Uint8Array(2 + payload.length);
+  result[0] = msgcode >>> 8;
+  result[1] = msgcode & 0xff;
+  result.set(payload, 2);
+  return result;
 }

@@ -58,6 +58,7 @@ export { SceneMessageHelper } from "./process/SceneMessageHelper";
 export { EntryScene } from "./process/types";
 export type {
   CustomMetricSnapshot,
+  CustomMetricKind,
   ProcessConfig,
   ProcessLifecycleConfig,
   ProcessNetworkConfig,

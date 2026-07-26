@@ -24,6 +24,7 @@ import { BinaryWriter } from "../app/core/protocol/binary";
 import { packFrame } from "../app/core/protocol/registry";
 import {
   decodeActorLocationEnvelope,
+  ActorLocationDirectory,
   encodeActorLocationEnvelope,
   extractFrameRpcId,
   rewriteFrameRpcId,
@@ -39,6 +40,9 @@ async function main(): Promise<void> {
     await testPlayerUnitComponents();
     await testComponentContainer();
     await testOrderedActorMailbox();
+    await testActorDespawnRejectsInFlightAndQueuedCalls();
+    await testUnorderedActorIsolation();
+    testReconnectStormKeepsLatestLocation();
     testRpcIdRewrite();
     console.log("actor self-test passed");
   } finally {
@@ -318,6 +322,21 @@ async function testPlayerUnitComponents(): Promise<void> {
     true,
   );
 
+  for (let generation = 3; generation <= 1002; generation += 1) {
+    player.RebindGate({
+      gateName: `gate-${generation % 4}`,
+      gateSessionId: `session-${generation}`,
+    });
+  }
+  assert.equal(
+    player.MatchesGate({ gateName: "gate-2", gateSessionId: "session-2" }),
+    false,
+  );
+  assert.equal(
+    player.MatchesGate({ gateName: "gate-2", gateSessionId: "session-1002" }),
+    true,
+  );
+
   assert.equal(
     player.Move({
       inputX: 1,
@@ -365,6 +384,10 @@ async function testPlayerUnitComponents(): Promise<void> {
   recreated.AddComponent(NumericComponent);
   recreated.AddComponent(UnitGateComponent, "gate-2", "session-2");
   assert.notEqual(recreated.InstanceId, firstInstanceId);
+  await assert.rejects(
+    host.call(undefined, actor, "Probe.Noop"),
+    /target not found/,
+  );
   assert.equal(host.despawnActor("map:1", 1000), true);
   assert.equal(units.Get(1000), undefined);
 }
@@ -398,4 +421,116 @@ async function testOrderedActorMailbox(): Promise<void> {
 
   assert.equal(probe.maxRunning, 1);
   assert.deepEqual(probe.completed, [1, 2]);
+}
+
+@actor({ mailbox: "ordered" })
+class DespawnProbeActor extends Actor {
+  private releaseGate!: () => void;
+  private readonly gate = new Promise<void>((resolve) => {
+    this.releaseGate = resolve;
+  });
+
+  release(): void {
+    this.releaseGate();
+  }
+
+  @handler("Probe.WaitForDespawn")
+  private async waitForDespawn(): Promise<string> {
+    await this.gate;
+    return "stale-success";
+  }
+}
+
+async function testActorDespawnRejectsInFlightAndQueuedCalls(): Promise<void> {
+  const host = new ProcessHost("actor-despawn-self-test");
+  host.spawnScene("map:1", MapScene);
+  const probe = host.spawnActor("map:1", "probe", DespawnProbeActor);
+  const actor = host.localActorRef("map:1", "probe");
+  const running = host.call<string>(undefined, actor, "Probe.WaitForDespawn");
+  const queued = host.call<string>(undefined, actor, "Probe.WaitForDespawn");
+
+  assert.equal(host.despawnActor("map:1", "probe"), true);
+  await assert.rejects(queued, /actor despawned/);
+  probe.release();
+  await assert.rejects(running, /target despawned during dispatch/);
+}
+
+@actor({ mailbox: "unordered" })
+class UnorderedProbeActor extends Actor {
+  maxRunning = 0;
+  private running = 0;
+
+  @handler("Probe.UnorderedRun")
+  private async run(request: { fail?: boolean }): Promise<string> {
+    this.running += 1;
+    this.maxRunning = Math.max(this.maxRunning, this.running);
+    await Promise.resolve();
+    this.running -= 1;
+    if (request.fail) throw new Error("isolated unordered failure");
+    return "ok";
+  }
+
+  @handler("Probe.UnorderedSelf")
+  private selfCall(): Promise<string> {
+    return this.ctx.call(this.ctx.self, "Probe.UnorderedLeaf");
+  }
+
+  @handler("Probe.UnorderedLeaf")
+  private leaf(): string {
+    return "self-ok";
+  }
+}
+
+async function testUnorderedActorIsolation(): Promise<void> {
+  const host = new ProcessHost("unordered-self-test");
+  host.spawnScene("map:1", MapScene);
+  const probe = host.spawnActor("map:1", "probe", UnorderedProbeActor);
+  const actor = host.localActorRef("map:1", "probe");
+  const results = await Promise.allSettled([
+    host.call(undefined, actor, "Probe.UnorderedRun", {}),
+    host.call(undefined, actor, "Probe.UnorderedRun", { fail: true }),
+  ]);
+
+  assert.equal(probe.maxRunning, 2);
+  assert.equal(results[0].status, "fulfilled");
+  assert.equal(results[1].status, "rejected");
+  assert.equal(
+    await host.call(undefined, actor, "Probe.UnorderedSelf"),
+    "self-ok",
+  );
+}
+
+function testReconnectStormKeepsLatestLocation(): void {
+  const directory = new ActorLocationDirectory();
+  const mapScene = {
+    name: "map-1",
+    sceneType: "MapHost",
+    ip: "127.0.0.1",
+    port: 7301,
+  };
+  let previousConnectionId = 0;
+  for (let generation = 1; generation <= 5000; generation += 1) {
+    const connectionId = 10_000 + generation;
+    directory.bindConnection(connectionId, {
+      instanceId: generation,
+      scene: mapScene,
+    });
+    if (previousConnectionId !== 0) {
+      directory.unbindConnection(previousConnectionId);
+      assert.equal(directory.resolveConnection(previousConnectionId), undefined);
+    }
+    assert.equal(
+      directory.resolveConnection(connectionId)?.instanceId,
+      generation,
+    );
+    previousConnectionId = connectionId;
+  }
+
+  const latestConnectionId = 99_999;
+  directory.bindConnection(latestConnectionId, {
+    instanceId: 5000,
+    scene: mapScene,
+  });
+  directory.unbindConnection(previousConnectionId);
+  assert.equal(directory.resolveConnection(latestConnectionId)?.instanceId, 5000);
 }

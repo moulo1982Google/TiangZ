@@ -5,6 +5,12 @@
       "inspectorIp": "127.0.0.1",
       "inspectorPort": 9231,
       "breakOnStart": true
+    },
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7609
+      }
     }
   },
   "scenes": [

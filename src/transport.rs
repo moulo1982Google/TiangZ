@@ -51,7 +51,34 @@ struct RemoteTransportMetrics {
     idle_closes: AtomicU64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RemoteTransportMetricsSnapshot {
+    pub(crate) active_connections: u64,
+    pub(crate) opened_connections: u64,
+    pub(crate) pending_calls: u64,
+    pub(crate) max_pending_calls: u64,
+    pub(crate) overload_rejections: u64,
+    pub(crate) timed_out_calls: u64,
+    pub(crate) disconnected_calls: u64,
+    pub(crate) late_responses: u64,
+    pub(crate) idle_closes: u64,
+}
+
 impl RemoteTransportMetrics {
+    fn snapshot(&self) -> RemoteTransportMetricsSnapshot {
+        RemoteTransportMetricsSnapshot {
+            active_connections: self.active_connections.load(Ordering::Relaxed) as u64,
+            opened_connections: self.opened_connections.load(Ordering::Relaxed),
+            pending_calls: self.pending_calls.load(Ordering::Relaxed) as u64,
+            max_pending_calls: self.max_pending_calls.load(Ordering::Relaxed) as u64,
+            overload_rejections: self.overload_rejections.load(Ordering::Relaxed),
+            timed_out_calls: self.timed_out_calls.load(Ordering::Relaxed),
+            disconnected_calls: self.disconnected_calls.load(Ordering::Relaxed),
+            late_responses: self.late_responses.load(Ordering::Relaxed),
+            idle_closes: self.idle_closes.load(Ordering::Relaxed),
+        }
+    }
+
     fn pending_added(&self) {
         let pending = self.pending_calls.fetch_add(1, Ordering::Relaxed) + 1;
         self.max_pending_calls.fetch_max(pending, Ordering::Relaxed);
@@ -63,6 +90,12 @@ impl RemoteTransportMetrics {
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                 Some(value.saturating_sub(count))
             });
+    }
+}
+
+impl RemoteTransportHandle {
+    fn snapshot(&self) -> RemoteTransportMetricsSnapshot {
+        self.metrics.snapshot()
     }
 }
 
@@ -117,6 +150,10 @@ pub fn init_remote_transport() {
         tokio::spawn(run_transport_manager(rx, Arc::clone(&metrics)));
         tokio::spawn(log_transport_metrics(metrics));
     }
+}
+
+pub(crate) fn snapshot_remote_transport() -> Option<RemoteTransportMetricsSnapshot> {
+    REMOTE_TRANSPORT.get().map(|transport| transport.snapshot())
 }
 
 /// 发送一个多路复用内部 RPC，并且只等待其 rpcId 对应的完成事件。
@@ -1052,6 +1089,160 @@ mod tests {
         assert!(response1.unwrap_err().contains("timed out"));
         assert_eq!(metrics.pending_calls.load(Ordering::Relaxed), 0);
         assert_eq!(metrics.timed_out_calls.load(Ordering::Relaxed), 1);
+
+        drop(command_tx);
+        worker.await.unwrap();
+        server.await.unwrap();
+    }
+
+    /// 验证重复响应只完成一次等待者，后续副本被计为迟到响应。 / Verifies that a duplicate response completes one waiter and its copy is counted as late.
+    #[tokio::test]
+    async fn duplicate_response_is_ignored_after_first_completion() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_test_handshake(&mut stream).await;
+            let frame = read_test_frame(&mut stream).await;
+            write_test_frame(&mut stream, &frame).await;
+            write_test_frame(&mut stream, &frame).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        });
+
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let metrics = Arc::new(RemoteTransportMetrics::default());
+        let worker = tokio::spawn(run_connection(
+            "test_scene".to_string(),
+            address,
+            command_rx,
+            Arc::clone(&metrics),
+        ));
+        let (response_tx, response_rx) = oneshot::channel();
+        command_tx
+            .send(ConnectionCommand {
+                frame: test_frame(21).into(),
+                deadline: Instant::now() + Duration::from_secs(1),
+                completion: CommandCompletion::Call(response_tx),
+            })
+            .await
+            .unwrap();
+
+        assert!(response_rx.await.unwrap().is_ok());
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(metrics.pending_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.late_responses.load(Ordering::Relaxed), 1);
+
+        drop(command_tx);
+        worker.await.unwrap();
+        server.await.unwrap();
+    }
+
+    /// 验证同一连接上的重复在途 rpcId 被拒绝，但原调用仍可正常完成。 / Verifies that a duplicate in-flight rpcId is rejected without disturbing the original call.
+    #[tokio::test]
+    async fn duplicate_pending_rpc_id_is_rejected() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_test_handshake(&mut stream).await;
+            let frame = read_test_frame(&mut stream).await;
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            write_test_frame(&mut stream, &frame).await;
+        });
+
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let metrics = Arc::new(RemoteTransportMetrics::default());
+        let worker = tokio::spawn(run_connection(
+            "test_scene".to_string(),
+            address,
+            command_rx,
+            Arc::clone(&metrics),
+        ));
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let (first_tx, first_rx) = oneshot::channel();
+        let (duplicate_tx, duplicate_rx) = oneshot::channel();
+        command_tx
+            .send(ConnectionCommand {
+                frame: test_frame(22).into(),
+                deadline,
+                completion: CommandCompletion::Call(first_tx),
+            })
+            .await
+            .unwrap();
+        command_tx
+            .send(ConnectionCommand {
+                frame: test_frame(22).into(),
+                deadline,
+                completion: CommandCompletion::Call(duplicate_tx),
+            })
+            .await
+            .unwrap();
+
+        assert!(
+            duplicate_rx
+                .await
+                .unwrap()
+                .unwrap_err()
+                .contains("duplicate pending rpcId")
+        );
+        assert!(first_rx.await.unwrap().is_ok());
+        assert_eq!(metrics.pending_calls.load(Ordering::Relaxed), 0);
+
+        drop(command_tx);
+        worker.await.unwrap();
+        server.await.unwrap();
+    }
+
+    /// 验证连接断开会一次性拒绝其全部 RPC 等待者。 / Verifies that disconnecting a connection rejects all of its RPC waiters.
+    #[tokio::test]
+    async fn disconnect_rejects_all_pending_calls() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_test_handshake(&mut stream).await;
+            let _ = read_test_frame(&mut stream).await;
+            let _ = read_test_frame(&mut stream).await;
+        });
+
+        let (command_tx, command_rx) = mpsc::channel(8);
+        let metrics = Arc::new(RemoteTransportMetrics::default());
+        let worker = tokio::spawn(run_connection(
+            "test_scene".to_string(),
+            address,
+            command_rx,
+            Arc::clone(&metrics),
+        ));
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let (first_tx, first_rx) = oneshot::channel();
+        let (second_tx, second_rx) = oneshot::channel();
+        for (rpc_id, response_tx) in [(23, first_tx), (24, second_tx)] {
+            command_tx
+                .send(ConnectionCommand {
+                    frame: test_frame(rpc_id).into(),
+                    deadline,
+                    completion: CommandCompletion::Call(response_tx),
+                })
+                .await
+                .unwrap();
+        }
+
+        assert!(
+            first_rx
+                .await
+                .unwrap()
+                .unwrap_err()
+                .contains("connection closed")
+        );
+        assert!(
+            second_rx
+                .await
+                .unwrap()
+                .unwrap_err()
+                .contains("connection closed")
+        );
+        assert_eq!(metrics.pending_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.disconnected_calls.load(Ordering::Relaxed), 2);
 
         drop(command_tx);
         worker.await.unwrap();

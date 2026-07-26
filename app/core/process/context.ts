@@ -6,7 +6,7 @@ import type { RpcDescriptor } from "../protocol/rpc";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { nowMs, type LatencyRecorder } from "../metrics/latency";
 import type { LocalSceneRouter, RuntimeEntrySceneConfig, SceneConfig } from "./types";
-import { callRemoteScene, sendRemoteScene } from "./HostSceneTransport";
+import { callRemoteScene, sendRemoteScene, sleepHost } from "./HostSceneTransport";
 import {
   encodeActorLocationEnvelope,
   extractFrameRpcId,
@@ -20,6 +20,7 @@ export type SceneSendOptions = SceneCallOptions;
 
 export class SceneCallContext {
   private nextRpcId = 1;
+  private readonly inFlightRpcIds = new Set<number>();
   readonly logger: Logger;
 
   constructor(
@@ -57,13 +58,15 @@ export class SceneCallContext {
     request: TReq,
     options: SceneCallOptions = {},
   ): Promise<TResp> {
-    const rpcId = this.allocateRpcId();
+    const rpcId = this.reserveRpcId();
     request.rpcId = rpcId;
     const frame = packFrame(descriptor.requestCode, descriptor.requestCodec.encode(request));
-
-    const responseFrame = await this.callFrame(target, frame, options);
-
-    return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
+    try {
+      const responseFrame = await this.callFrame(target, frame, options);
+      return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
+    } finally {
+      this.inFlightRpcIds.delete(rpcId);
+    }
   }
 
   /** 使用 ActorLocation 元数据包装 RPC，并保持目标 Actor mailbox 语义。 / Wraps an RPC in ActorLocation metadata and preserves the target Actor mailbox. */
@@ -73,7 +76,7 @@ export class SceneCallContext {
     request: TReq,
     options: SceneCallOptions = {},
   ): Promise<TResp> {
-    const rpcId = this.allocateRpcId();
+    const rpcId = this.reserveRpcId();
     request.rpcId = rpcId;
     const innerFrame = packFrame(
       descriptor.requestCode,
@@ -84,8 +87,12 @@ export class SceneCallContext {
       frame: innerFrame,
       rpcId,
     });
-    const responseFrame = await this.callFrame(target.scene, frame, options);
-    return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
+    try {
+      const responseFrame = await this.callFrame(target.scene, frame, options);
+      return this.decodeRpcResponse(descriptor, responseFrame, rpcId);
+    } finally {
+      this.inFlightRpcIds.delete(rpcId);
+    }
   }
 
   /** 转发不透明客户端 Actor RPC，同时转换外部与内部 rpcId。 / Forwards an opaque client Actor RPC while translating external and internal rpcIds. */
@@ -99,24 +106,28 @@ export class SceneCallContext {
     if (!clientRpcId) {
       throw new RpcError(SystemErrCode.MalformedFrame, "actor RPC request has no rpcId");
     }
-    const internalRpcId = this.allocateRpcId();
+    const internalRpcId = this.reserveRpcId();
     const innerFrame = rewriteFrameRpcId(frame, internalRpcId);
     const envelope = encodeActorLocationEnvelope({
       instanceId: target.instanceId,
       frame: innerFrame,
       rpcId: internalRpcId,
     });
-    const responseFrame = await this.callFrame(target.scene, envelope, options);
-    if (responseFrame.length < 2 || readU16BE(responseFrame, 0) !== expectedResponseCode) {
-      throw new RpcError(
-        SystemErrCode.UnexpectedResponseCode,
-        `unexpected actor response code ${responseFrame.length < 2 ? "missing" : readU16BE(responseFrame, 0)}, expected ${expectedResponseCode}`,
-      );
+    try {
+      const responseFrame = await this.callFrame(target.scene, envelope, options);
+      if (responseFrame.length < 2 || readU16BE(responseFrame, 0) !== expectedResponseCode) {
+        throw new RpcError(
+          SystemErrCode.UnexpectedResponseCode,
+          `unexpected actor response code ${responseFrame.length < 2 ? "missing" : readU16BE(responseFrame, 0)}, expected ${expectedResponseCode}`,
+        );
+      }
+      if (extractFrameRpcId(responseFrame) !== internalRpcId) {
+        throw new RpcError(SystemErrCode.RpcIdMismatch, "actor response rpcId mismatch");
+      }
+      return rewriteFrameRpcId(responseFrame, clientRpcId);
+    } finally {
+      this.inFlightRpcIds.delete(internalRpcId);
     }
-    if (extractFrameRpcId(responseFrame) !== internalRpcId) {
-      throw new RpcError(SystemErrCode.RpcIdMismatch, "actor response rpcId mismatch");
-    }
-    return rewriteFrameRpcId(responseFrame, clientRpcId);
   }
 
   private decodeRpcResponse<TReq, TResp extends IResponse>(
@@ -157,9 +168,29 @@ export class SceneCallContext {
     const startedAt = this.latencies ? nowMs() : 0;
     const isLocal = this.localRouter.hasLocalScene(target.name);
     try {
-      return isLocal
-        ? await this.localRouter.callLocalScene(this.self.name, target.name, frame)
-        : await callRemoteScene(this.self, target, frame, options.timeoutMs ?? 5000);
+      if (!isLocal) {
+        return await callRemoteScene(
+          this.self,
+          target,
+          frame,
+          options.timeoutMs ?? 5000,
+        );
+      }
+      const localCall = this.localRouter.callLocalScene(
+        this.self.name,
+        target.name,
+        frame,
+      );
+      if (options.timeoutMs === undefined) return await localCall;
+      const timeoutMs = Math.max(1, Math.min(options.timeoutMs, 0xffff_ffff));
+      return await Promise.race([
+        localCall,
+        sleepHost(timeoutMs).then(() => {
+          throw new Error(
+            `local scene call to ${target.name} timed out after ${timeoutMs}ms`,
+          );
+        }),
+      ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new RpcError(
@@ -238,9 +269,19 @@ export class SceneCallContext {
     }
   }
 
-  private allocateRpcId(): number {
-    const rpcId = this.nextRpcId;
-    this.nextRpcId = (this.nextRpcId % 0xffff_ffff) + 1;
-    return rpcId;
+  /** 预留未被在途调用占用的 rpcId；直到调用完成前都不允许复用。 / Reserves an rpcId not used by an in-flight call and keeps it unavailable until completion. */
+  private reserveRpcId(): number {
+    if (this.inFlightRpcIds.size >= 0xffff_ffff) {
+      throw new RpcError(SystemErrCode.SceneOverloaded, "rpcId space is exhausted");
+    }
+    const attemptsLimit = this.inFlightRpcIds.size + 1;
+    for (let attempts = 0; attempts < attemptsLimit; attempts += 1) {
+      const rpcId = this.nextRpcId;
+      this.nextRpcId = (this.nextRpcId % 0xffff_ffff) + 1;
+      if (this.inFlightRpcIds.has(rpcId)) continue;
+      this.inFlightRpcIds.add(rpcId);
+      return rpcId;
+    }
+    throw new RpcError(SystemErrCode.SceneOverloaded, "rpcId space is exhausted");
   }
 }

@@ -1,9 +1,12 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const executable = path.join(
@@ -14,6 +17,7 @@ const executable = path.join(
 );
 
 await verifyOperatorShutdown();
+await verifyRunningChildExit();
 await verifyUnexpectedChildExit();
 
 /**
@@ -73,6 +77,55 @@ async function verifyUnexpectedChildExit() {
   }
 }
 
+/**
+ * 在全部端口就绪后强制终止一个真实子进程，验证Watcher关闭兄弟进程并返回失败。
+ *
+ * Force-kills one live child after all endpoints are ready, then verifies that
+ * the Watcher stops every sibling and reports failure.
+ */
+async function verifyRunningChildExit() {
+  const watcher = startWatcher("configs/local/StartMachine.json");
+  try {
+    const ports = [7000, 7001, 7002, 7100, 7201, 7301];
+    await Promise.all(ports.map(waitForPort));
+    const childPids = await directChildProcessIds(watcher.child.pid);
+    if (childPids.length === 0) {
+      throw new Error(`Watcher ${watcher.child.pid} has no discoverable child process`);
+    }
+    process.kill(childPids[0], "SIGKILL");
+    const { code, signal } = await waitForExit(
+      watcher.child,
+      90_000,
+      watcher.output,
+    );
+    if (code === 0) {
+      throw new Error(`Watcher succeeded after child ${childPids[0]} was killed; signal=${signal}`);
+    }
+    if (!watcher.output().includes("exited unexpectedly")) {
+      throw new Error(`Watcher did not report killed child failure:\n${watcher.output()}`);
+    }
+    await Promise.all(ports.map((port) => waitForPortClosed(port, 10_000)));
+    console.log("watcher live-child fault injection passed (killed child stopped siblings)");
+  } finally {
+    stopIfRunning(watcher.child);
+  }
+}
+
+/** 查询Watcher直接子进程，不依赖日志文本中的PID。 / Finds direct Watcher children without parsing process log text. */
+async function directChildProcessIds(parentPid) {
+  const { stdout } = process.platform === "win32"
+    ? await execFileAsync("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      `Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq ${parentPid} -and $_.Name -eq 'TiangZ.exe' } | Select-Object -ExpandProperty ProcessId`,
+    ], { windowsHide: true })
+    : await execFileAsync("ps", ["-o", "pid=", "--ppid", String(parentPid)]);
+  return stdout
+    .split(/\s+/)
+    .map((value) => Number(value))
+    .filter((value) => Number.isSafeInteger(value) && value > 0);
+}
+
 /** 启动一个可通过私有 stdin 控制的 Watcher，并收集完整输出。 / Starts a stdin-controlled Watcher and captures all output. */
 function startWatcher(config) {
   const child = spawn(executable, [config], {
@@ -128,12 +181,14 @@ function canConnect(port) {
   });
 }
 
-function waitForExit(processHandle, timeoutMs) {
+function waitForExit(processHandle, timeoutMs, output = () => "") {
   if (processHandle.exitCode !== null || processHandle.signalCode !== null) {
     return Promise.resolve({ code: processHandle.exitCode, signal: processHandle.signalCode });
   }
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Watcher shutdown timed out")), timeoutMs);
+    const timer = setTimeout(() => reject(new Error(
+      `Watcher shutdown timed out after ${timeoutMs}ms:\n${output()}`,
+    )), timeoutMs);
     processHandle.once("close", (code, signal) => {
       clearTimeout(timer);
       resolve({ code, signal });

@@ -1,0 +1,30 @@
+- targets: ["host.docker.internal:7605"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "gate1"
+- targets: ["host.docker.internal:7601"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "log"
+- targets: ["host.docker.internal:7603"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "login1"
+- targets: ["host.docker.internal:7604"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "login2"
+- targets: ["host.docker.internal:7606"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "map1"
+- targets: ["host.docker.internal:7602"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "mgr"

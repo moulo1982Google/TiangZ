@@ -35,6 +35,7 @@ export interface NativeNumericBroadcast extends NativeMovementBroadcast {
 export class NativeData {
   private static debugScalarAccess = false;
   private static scalarAccessWarnThreshold = 10_000;
+  private static previousMetrics: NativeDataMetrics | undefined;
 
   /** 只配置可观测性阈值，绝不会阻止标量 get/set。 / Configures observability thresholds only; it never blocks scalar get/set operations. */
   static Configure(config: NativeDataConfig = {}): void {
@@ -162,7 +163,7 @@ export class NativeData {
     NativeOps.MapAckUnitDelta(mapId, revision);
   }
 
-  /** 读取并重置区间 NativeData op 计数，供宿主可观测性使用。 / Reads and resets interval NativeData op counters for host observability. */
+  /** 读取生命周期累计 NativeData 指标；相邻快照差值只用于本地高频访问告警。 / Reads monotonic NativeData metrics; snapshot deltas are used only for local access warnings. */
   static TakeMetrics(): NativeDataMetrics {
     const bytes = NativeOps.DataTakeMetrics();
     if (bytes.length !== 56) {
@@ -179,14 +180,20 @@ export class NativeData {
       encodedItems: Number(view.getBigUint64(40, true)),
       encodedBytes: Number(view.getBigUint64(48, true)),
     };
+    const previous = this.previousMetrics;
+    this.previousMetrics = metrics;
+    const intervalScalarAccesses = previous
+      ? Math.max(0, metrics.scalarGets - previous.scalarGets) +
+        Math.max(0, metrics.scalarSets - previous.scalarSets)
+      : 0;
     if (
       this.debugScalarAccess &&
-      metrics.scalarGets + metrics.scalarSets >= this.scalarAccessWarnThreshold
+      intervalScalarAccesses >= this.scalarAccessWarnThreshold
     ) {
       logger.warn("native scalar access is high", {
-        scalarGets: metrics.scalarGets,
-        scalarSets: metrics.scalarSets,
-        batchCalls: metrics.batchCalls,
+        scalarGets: previous ? metrics.scalarGets - previous.scalarGets : 0,
+        scalarSets: previous ? metrics.scalarSets - previous.scalarSets : 0,
+        batchCalls: previous ? metrics.batchCalls - previous.batchCalls : 0,
       });
     }
     return metrics;

@@ -113,3 +113,17 @@ npm run verify:core-api
 - Demo全部迁移到公共入口，功能语义不变。
 - 新增公共API锁、依赖方向检查和独立业务夹具。
 - Cargo版本成为项目版本源，CLI支持`--version`和`-V`。
+
+### 0.3.10-alpha.1
+
+- 完成Phase 3.10.2 RPC与Actor正确性矩阵。
+- `rpcId`回绕时避让在途调用；本地显式timeout和远程transport timeout语义冻结。
+- 迟到/重复Response、连接断开、Process停机与Actor销毁均有确定性清理测试。
+- 此版本未改变Stable公共导出集合，也未改变客户端协议fingerprint。
+
+### 0.3.10-alpha.2
+
+- 完成Phase 3.10.3确定性故障注入矩阵。
+- 新增运行期Process终止、Inner断线、慢客户端、真实背压、Handler异常、非法帧、重连风暴和保存失败验收。
+- 故障能力只存在于测试边界，不新增生产配置字段或Stable公共API。
+- 此版本未改变客户端协议fingerprint。

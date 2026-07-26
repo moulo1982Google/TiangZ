@@ -17,6 +17,7 @@
     "Codec",
     "Component",
     "ComponentCtor",
+    "CustomMetricKind",
     "CustomMetricSnapshot",
     "EncodedStateDelta",
     "Entity",

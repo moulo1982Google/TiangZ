@@ -126,6 +126,16 @@ export function completeHostSceneOperation(
   else operation.reject(new Error(utf8Decode(payload)));
 }
 
+/** 停机时拒绝所有尚未完成的宿主操作并丢弃未提交队列；迟到完成事件会被安全忽略。 / Rejects all unfinished host operations and drops unsubmitted work during shutdown; late completions are safely ignored. */
+export function cancelHostSceneOperations(
+  reason = "process stopped before host operation completed",
+): void {
+  queued.splice(0, queued.length);
+  const error = new Error(reason);
+  for (const operation of pending.values()) operation.reject(error);
+  pending.clear();
+}
+
 function allocateOperationId(): number {
   for (let attempts = 0; attempts < MAX_PENDING_OPERATIONS; attempts += 1) {
     const id = nextOperationId;

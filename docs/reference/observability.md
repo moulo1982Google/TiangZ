@@ -2,14 +2,121 @@
 
 Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这个采样点生成和 JSON 序列化，普通 Tick 不承担 metrics JSON 开销。链路耗时在 TypeScript Core 内聚合为直方图，只输出统计结果，不逐条打印消息。
 
+## Prometheus 与 Grafana（3.10.4）
+
+这是用于本机调试和拆分 Process 部署的最小监控栈。每个 TiangZ Process 独立暴露 `/metrics`，Prometheus 负责抓取全部实际运行的 Process，Grafana 再按环境、机器和 Process 聚合。不要在业务层新增 Observer Scene 来转发指标；它会引入单点、额外队列和错误的指标归属。
+
+### 启动
+
+Watcher 拆分部署（默认读取 `configs/local/StartMachine.json`）：
+
+```powershell
+npm run observability:up
+```
+
+`all.json` 单进程调试：
+
+```powershell
+npm run observability:up:single
+```
+
+### 启动 TiangZ 并验证
+
+1. 新开终端启动与监控目标一致的服务端：
+
+```powershell
+cargo run --bin TiangZ -- configs/local/StartMachine.json
+```
+
+2. 验证一个实际 Process 健康端口（例如 Map 的 7606）：
+
+```powershell
+iwr http://127.0.0.1:7606/metrics
+iwr http://127.0.0.1:7606/live
+```
+
+3. 打开 Prometheus targets 页面确认抓取到 UP：
+
+`http://127.0.0.1:9090/targets`
+
+确认 `State: UP` 后，打开面板看曲线：
+
+`http://127.0.0.1:3000/d/tiangz-process-overview/tiangz-process-overview`
+
+### 停止
+
+```powershell
+cd tools/observability
+docker compose down
+```
+
+清理数据卷时可用：
+
+```powershell
+cd tools/observability
+docker compose down -v --remove-orphans
+```
+
+### 访问入口
+
+- Prometheus：`http://127.0.0.1:9090`
+- Prometheus 告警：`http://127.0.0.1:9090/alerts`
+- Grafana：`http://127.0.0.1:3000`
+  - 默认账号：`admin`
+  - 默认密码：`admin`
+
+### Dashboard 核心字段
+
+- Process：就绪状态、CPU、RSS、V8 Heap、当前连接数和网络吞吐。
+- Scene：处理吞吐、Mailbox 当前队列、异步在途和 Handler/Update 耗时。
+- 延迟：通过标准 Prometheus Histogram 计算 P50/P95/P99，可跨 Process 聚合。
+- 背压：Rust 队列占用率、等待次数、慢连接断开和 Inner RPC pending/错误率。
+- 游戏循环：Fixed Update 跳帧、V8 GC、Native 编码吞吐和 Map 广播队列。
+
+`tiangz_process_cpu_percent` 使用“单个逻辑核心为 100%”的进程口径，多线程 Host 在多个核心同时工作时可以超过 100%；它不是任务管理器中除以整机核心数后的总机百分比。
+
+### TiangZ 已暴露的指标（部分）
+
+- `/live`、`/ready`、`/metrics`（可通过 `process.observability.health.port` 配置）
+- `tiangz_process_live`、`tiangz_process_ready`、`tiangz_process_uptime_seconds`
+- `tiangz_process_runtime_fresh`、`tiangz_process_runtime_heartbeat_age_seconds`：识别健康 HTTP 可响应但 V8 业务线程已经卡住的假存活。
+- `tiangz_transport_inner_pending_calls`：内网 RPC 待返回调用
+- `tiangz_transport_inner_overload_rejections`：transport 队列过载拒绝数
+- `tiangz_transport_inner_timed_out_calls`：跨进程 RPC 超时
+- `tiangz_transport_inner_disconnected_calls`：连接断开丢弃数
+- `tiangz_scene_*`：按进程/Scene 聚合的处理与错误计数
+- `tiangz_native_live_units`：Rust Arena 中在线 Unit 数
+- `tiangz_native_encoded_bytes_total`：Native snapshot 下发累计字节
+
+### 目标端口生成
+
+`tools/observability/prometheus/targets.yml` 由 `npm run observability:update-targets` 自动生成（`observability:up` 会先执行）。生成器读取 `StartMachine.json` 中实际部署的 Process，不扫描整个配置目录，因此不会把互斥的压测、KCP、io_uring 和单进程配置同时当作在线 Target。
+
+如需监控其他启动入口，可显式生成：
+
+```powershell
+node tools/observability/generate_prom_targets.mjs --startup configs/local/all.json --local-host host.docker.internal
+```
+
+`--local-host` 只替换 `127.*`、`localhost` 和 `::1`；远程机器仍使用 `StartMachine.json` 中的 `innerIp`。`host.docker.internal` 在 Docker Desktop 下映射宿主机。
+
+生成器先写同目录临时文件并校验，再原子替换 `targets.yml`，避免 Prometheus 读到半截 YAML。Compose 只读挂载整个 `prometheus/` 目录而不是单独挂载该文件，保证 Linux/Docker 下原子替换后容器能看到新 inode。修改 `StartMachine.json`、Process 清单或健康端口后，必须重新执行 `npm run observability:update-targets`；`observability:up` 会自动执行这一步。远程机器不得把健康端口只绑定到 loopback，否则生成器会直接报错。
+
+机器 CPU、整机内存、磁盘和网卡不属于 TiangZ Process 指标。正式部署时应在每台机器安装一个 `node_exporter`（Linux）或 `windows_exporter`（Windows），避免把机器指标重复挂在每个游戏进程上。
+
+`all.json`、`gate1.json`和`map1.json`默认开启 `sampleRate=10` 的延迟采样，用于本地 Dashboard。性能基线配置默认不开启延迟采样；对比压测时必须保持两轮的采样设置一致。
+
 ## 健康检查
 
 可在 `process.observability.health` 配置独立 HTTP 端口：
 
-- `/live` 只回答 V8 业务线程是否仍存活。
-- `/ready` 只有在业务端点绑定完成、全部 TS Scene 通过启动屏障且进程未进入停机时才返回成功。
+- `/live` 回答 Runtime 线程是否仍未退出；它不会因为一次心跳过期就宣告进程死亡。
+- `/ready` 只有在业务端点绑定完成、全部 TS Scene 通过启动屏障、进程未进入停机且 Runtime 心跳未过期时才返回成功。
+- `/metrics` 返回 Prometheus 文本格式的生命周期指标：`tiangz_process_live`、`tiangz_process_ready`、`tiangz_process_uptime_seconds`。
 
-探针使用 HTTP 200/503 和简短 JSON，不执行数据库或其他远程依赖调用，因此不会把探针流量带入业务 mailbox。Prometheus `/metrics` 尚未实现，当前性能与运行指标仍由结构化日志输出；后续接 Prometheus/Grafana 时沿用本页既有字段口径。
+Runtime 每次发布 5 秒观测快照时刷新心跳，默认超过 `15000ms` 即撤销 ready。心跳只能由 V8 业务线程刷新，健康 HTTP 线程不会代刷，因此 `Game.Update` 或事件循环卡死能够被发现。
+
+探针使用 HTTP 200/503 或文本快照，不执行数据库或其他远程依赖调用，因此不会把探针流量带入业务 mailbox。`/metrics` 已覆盖 Process、Scene、游戏循环、NativeData、Inner Transport 和延迟 Histogram；结构化日志用于保留带上下文的离散事件，二者职责不同。
 
 ## 结构化日志
 
@@ -75,6 +182,32 @@ TS Logger 会在合并字段和 JSON 序列化之前检查最低日志级别，�
 - `backpressure`：Rust 入站队列满后等待次数。
 - `slow_disconnects`：下行队列超过限制后被断开的慢连接数。
 - `handler_ms/max_handler_ms/total_handler_ms`：EntryScene frame 处理耗时。
+
+业务自定义指标通过 `CustomMetricSnapshot` 投影。`values` 中未声明类型的字段按 Gauge 导出；进程生命周期累计值必须在 `kinds` 中声明为 `counter`：
+
+```ts
+return {
+  name: "map_broadcast",
+  values: { pending_units: pending, sent_frames_total: sent },
+  kinds: { sent_frames_total: "counter" },
+};
+```
+
+Gauge 使用 `tiangz_scene_custom_metric_gauge`，Counter 使用 `tiangz_scene_custom_metric_total`。不要根据字段名后缀猜类型，也不要把会回退或每帧重置的值标为 Counter。
+
+## 告警规则
+
+`tools/observability/prometheus/rules/tiangz.yml` 已覆盖 Target down、Process 未就绪、Runtime 心跳过期、Rust 队列 70%/90%、背压、Inner RPC 失败、系统错误、缺 Handler、Update 跳帧、日志丢弃和 Handler P99 超预算。规则判定可在 Prometheus `/alerts` 查看。
+
+当前没有接入 Alertmanager，规则只负责产生告警状态，不发送邮件或 Webhook。通知渠道、值班路由与抑制策略属于 Phase 5。
+
+修改 Dashboard、Target 生成器或告警规则后执行：
+
+```powershell
+npm run verify:observability
+```
+
+该命令检查拆分/单进程 Target、Dashboard 生成漂移、面板 ID/refId、规则接线、Prometheus 指标格式、心跳语义、Histogram 结构和 Native Counter 单调性。安装 Docker 时，还应使用仓库固定的 Prometheus 镜像执行 `promtool check config`。
 
 ## Transport Backend 指标
 
@@ -161,6 +294,15 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 
 `msgcode=-` 表示该指标不绑定单个协议号，例如入站队列等待。其他指标会尽量带上请求 `msgcode`，方便区分登录、移动、探针等消息。
 
+### Prometheus 关键指标
+
+- `tiangz_transport_inner_pending_calls`：内网 RPC 等待队列长度，持续上升说明跨进程调用比返回慢。
+- `tiangz_transport_inner_overload_rejections`：内网 transport 队列满导致新调用被直接拒绝，说明需要提升 `process.observability.remoteTransportQueue` 或拆分热点进程。
+- `tiangz_transport_inner_timed_out_calls`：跨进程调用超时，常见于目标进程阻塞或对端连接异常。
+- `tiangz_transport_inner_disconnected_calls`：在链路断开时丢弃的调用数量，和 `disconnects` 联动可定位网络抖动。
+- `tiangz_native_encoded_bytes_total`：Native snapshot 下发编码字节，通常比 TS 下发在高并发场景更直观体现下行压力。
+- `tiangz_scene_latency_ms_bucket`：标准 Histogram bucket；Grafana 使用 `histogram_quantile()` 计算可聚合的 P50/P95/P99。
+
 ## 使用方式
 
 压测时先看客户端端到端 p95/p99，再对照服务端日志：
@@ -174,7 +316,7 @@ rust_queue/backpressure 高：Rust 到 V8 事件队列成为瓶颈。
 slow_disconnects 增长：客户端下行消费慢或广播过量。
 ```
 
-这些指标是第一版工程诊断口径。后续接 Prometheus/Grafana 时，应沿用相同名称和含义，只替换输出后端。
+这些指标是第一版工程诊断口径。所有带 `_total` 的 NativeData 和 Runtime Counter 都是进程生命周期累计值，不会因 5 秒快照而清零；区间速率统一交给 Prometheus 的 `rate()`/`increase()` 计算。
 
 ## TypeScript CPU 火焰图
 

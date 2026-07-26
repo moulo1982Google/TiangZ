@@ -4,6 +4,12 @@
     "scheduling": {
       "eventQueueCapacity": 64,
       "maxEventsPerUpdate": 16
+    },
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7608
+      }
     }
   },
   "scenes": [

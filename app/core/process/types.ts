@@ -151,7 +151,11 @@ export interface SceneMetricsSnapshot {
 export interface CustomMetricSnapshot {
   name: string;
   values: Readonly<Record<string, number>>;
+  /** 未声明的字段按 gauge 导出；累计值必须显式声明为 counter。 / Undeclared fields are gauges; cumulative values must be marked as counters. */
+  kinds?: Readonly<Record<string, CustomMetricKind>>;
 }
+
+export type CustomMetricKind = "counter" | "gauge";
 
 export type SceneMailboxType = "ordered" | "unordered";
 

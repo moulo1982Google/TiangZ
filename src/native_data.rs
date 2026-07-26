@@ -26,7 +26,7 @@ thread_local! {
     static STORE: RefCell<NativeEntityStore> = RefCell::new(NativeEntityStore::default());
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct NativeDataMetrics {
     scalar_gets: u64,
     scalar_sets: u64,
@@ -596,13 +596,17 @@ fn update_map(
 }
 
 #[op2]
-/// 序列化并重置区间 NativeData 计数器，供 TS 可观测性使用。 / Serializes and resets interval NativeData counters for TS observability.
+/// 序列化 NativeData 生命周期累计计数器，供 TS 与 Prometheus 读取。
+///
+/// 这些值遵循 Prometheus Counter 的单调递增语义；调用方不得把读取动作当作清零边界。
+/// Serializes lifetime NativeData counters for TS and Prometheus. Values are monotonic and a
+/// read must never be treated as a reset boundary.
 pub(crate) fn op_native_data_take_metrics() -> Uint8Array {
     STORE.with(|slot| {
-        let mut store = slot.borrow_mut();
+        let store = slot.borrow();
         let live_entities = store.live_entities();
         let live_units = store.live_units();
-        let metrics = std::mem::take(&mut store.metrics);
+        let metrics = store.metrics.clone();
         let mut bytes = Vec::with_capacity(56);
         bytes.extend_from_slice(&metrics.scalar_gets.to_le_bytes());
         bytes.extend_from_slice(&metrics.scalar_sets.to_le_bytes());
@@ -995,6 +999,25 @@ mod tests {
             assert_eq!(store.metrics.scalar_gets, 2);
             assert_eq!(store.metrics.scalar_sets, 1);
             assert_eq!(store.get_unit(handle).unwrap().x, 1.0);
+        });
+    }
+
+    #[test]
+    fn metrics_snapshot_does_not_reset_prometheus_counters() {
+        STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+            store.metrics.scalar_gets = 7;
+            store.metrics.encoded_bytes = 128;
+        });
+
+        let _first = op_native_data_take_metrics();
+        let _second = op_native_data_take_metrics();
+
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            assert_eq!(store.metrics.scalar_gets, 7);
+            assert_eq!(store.metrics.encoded_bytes, 128);
         });
     }
 

@@ -1,4 +1,14 @@
 {
+   // 资源管理器目录树缩进像素（核心）
+  "workbench.tree.indent": 25,
+
+  // 始终显示层级竖参考线，层级一眼分清（必开）
+  "workbench.tree.renderIndentGuides": "always",
+
+  // 微调参考线颜色，更醒目
+  "workbench.colorCustomizations": {
+    "tree.indentGuidesStroke": "#888888"
+  },
   "tiangzNative.sourceRoots": [
     "native_data"
   ],

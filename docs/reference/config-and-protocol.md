@@ -31,17 +31,20 @@
   "observability": {
     "health": {
       "ip": "127.0.0.1",
-      "port": 7600
+      "port": 7600,
+      "staleAfterMs": 15000
     }
   }
 }
 ```
 
 - `GET /live`：V8 业务线程仍存活时返回 HTTP 200；线程退出后返回 503。
-- `GET /ready`：全部业务端点绑定成功且全部 TS Scene 完成 `onStart/onReady` 后返回 HTTP 200；启动中、停机中或 Runtime 已退出时返回 503。
+- `GET /ready`：全部业务端点绑定成功、全部 TS Scene 完成 `onStart/onReady`，并且 V8 Runtime 心跳未超过 `staleAfterMs` 时返回 HTTP 200；启动中、停机中、Runtime 退出或业务线程停止推进时返回 503。
 - 未配置 `health` 时不启动 HTTP 监听。每个拆分进程应配置不同端口，健康端口不得与该进程的 Scene 或 Inspector 端口冲突。
 
-健康检查只表达生命周期状态，不承载 Prometheus 指标，也不能代替业务级依赖检查。
+`staleAfterMs` 默认 `15000`，应至少覆盖两个 5 秒指标采样周期。单机 Docker Desktop 可以继续绑定 `127.0.0.1`；远程 Prometheus 抓取时必须绑定机器管理 IP 或 `0.0.0.0`，并通过防火墙只允许监控网段访问。`StartMachine.json` 写远程 `innerIp` 但 Process 仍绑定 loopback 时，Target 生成器会拒绝生成错误配置。
+
+健康检查继续表达生命周期状态；`/metrics` 提供基础生命周期指标，不承载业务级依赖状态，也不能代替业务级健康策略。
 
 `logging` 支持：
 

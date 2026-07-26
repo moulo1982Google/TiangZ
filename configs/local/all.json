@@ -19,6 +19,10 @@
       "health": {
         "ip": "127.0.0.1",
         "port": 7600
+      },
+      "latency": {
+        "enabled": true,
+        "sampleRate": 10
       }
     }
   },

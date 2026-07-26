@@ -24,6 +24,10 @@
 | `npm run verify` | 在快速质量门上追加 Runtime、拆分进程、mailbox、背压与 Watcher 验收 |
 | `cargo test --all-targets` | Rust 全目标测试 |
 | `npm run test:runtime` | 单进程与拆分进程 smoke |
+| `npm run test:rpc-actor-correctness` | RPC回绕/timeout/停机取消与Actor生命周期专项测试 |
+| `npm run test:fault-injection` | Process退出、Inner断线、慢客户端、过载、异常、非法帧、重连和保存失败矩阵 |
+| `npm run test:fault-injection:core` | 只执行Handler、非法帧、重连和保存失败等快速确定性夹具 |
+| `npm run test:fault-injection:runtime` | 执行真实TCP、Runtime背压和Watcher子进程故障注入 |
 | `npm run test:backpressure` | 背压验收 |
 | `npm run test:inspector` | TS Inspector 验收 |
 | `npm run test:phase1.9` | Phase 1.9 完整验收 |
@@ -42,5 +46,15 @@
 | `npm run serve:pixi` | 在 `http://127.0.0.1:7460` 启动 Pixi 静态服务器 |
 | `npm run smoke:pixi` | Windows Edge 自动完成 Pixi 登录、进图和 canvas 验收 |
 | `npm run perf:map-capacity -- --gates 8 --players 200 --rounds 3` | 单 MapHost 全员可见广播、批量下行 Bridge 和 Probe 延迟容量测试 |
+| `npm run observability:up` | 按 `StartMachine.json` 的实际 Process 清单生成 Target，并启动 Prometheus + Grafana |
+| `npm run observability:up:single` | 按 `all.json` 单进程配置启动本地监控栈 |
+| `npm run observability:update-targets` | 仅重新生成 Watcher 拆分部署的 Prometheus Target |
+| `npm run observability:dashboard` | 重新生成 TiangZ Runtime Grafana Dashboard JSON |
+| `npm run verify:observability` | 验收 Target、Dashboard、告警接线、Runtime 心跳、Histogram 与 Native Counter |
+| `npm run observability:down` | 停止 Prometheus + Grafana 容器 |
+| `npm run observability:down:clean` | 停止并清理监控容器数据卷 |
+| `npm run observability:reset` | 停止容器并清理后再移除服务端点（用于重新拉起到干净状态） |
 
 修改 proto 后至少运行 `npm run codegen && npm run test:protocol`；修改 Core 后运行 `npm run check`、`cargo test --all-targets` 和相关 Runtime smoke。
+
+`verify:quick` 会执行无需 Docker 的观测资产检查；改动 Prometheus 配置后，还应使用固定镜像运行 `promtool check config`。

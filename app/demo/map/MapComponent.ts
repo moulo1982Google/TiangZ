@@ -196,6 +196,16 @@ export class MapComponent extends Component<[
         max_queue_wait_ms: metrics.maxQueueWaitMs,
         total_queue_wait_ms: metrics.totalQueueWaitMs,
       },
+      kinds: {
+        queued_frames_total: "counter",
+        coalesced_frames_total: "counter",
+        sent_frames_total: "counter",
+        broadcasts_started_total: "counter",
+        broadcasts_completed_total: "counter",
+        broadcast_failures_total: "counter",
+        total_duration_ms: "counter",
+        total_queue_wait_ms: "counter",
+      },
     };
   }
 

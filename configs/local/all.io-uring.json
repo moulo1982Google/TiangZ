@@ -9,6 +9,12 @@
     "game": {
       "fixedUpdateMs": 50,
       "maxCatchUpSteps": 2
+    },
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7613
+      }
     }
   },
   "scenes": [

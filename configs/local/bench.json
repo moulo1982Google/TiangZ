@@ -1,6 +1,12 @@
 {
   "process": {
-    "name": "bench"
+    "name": "bench",
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7607
+      }
+    }
   },
   "scenes": [
     {
