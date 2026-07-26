@@ -18,7 +18,7 @@ import {
   decodeLoginGateFrame,
   decodeMapProbeFrame,
   decodeMapReadyFrame,
-} from "../../app/demo/client/LoginClientProtocol";
+} from "../../tools/support/DemoClientProtocol";
 import { MsgCode } from "../../app/generated/model/client/demo/protocol/msgcodes";
 
 interface Options {

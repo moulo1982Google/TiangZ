@@ -18,7 +18,7 @@ import {
   decodeLoginGateFrame,
   decodeLoginFrame,
   decodeMapReadyFrame,
-} from "../app/demo/client/LoginClientProtocol";
+} from "./support/DemoClientProtocol";
 import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../app/generated/model/client/demo/protocol/msgcodes";

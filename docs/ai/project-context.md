@@ -183,10 +183,13 @@ pixi_client/src/             Pixi业务及SDK验收
 configs/<environment>/       环境、Process与Scene部署配置
 perf/                        性能与长稳工具、历史报告
 tools/                       codegen和工程工具
+tools/support/               冒烟测试和压测共享的低层协议辅助，不属于业务API
 docs/                        教程、参考、设计和阶段记录
 ```
 
 Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`codegen.config.json`的搜索根发现Scene和Handler，不维护手工类型表。
+
+测试和压测专用的裸帧构造、响应解码、Fake与Fixture必须放在`tools/support`、`perf`或对应测试文件中，禁止放入`app/core`或`app/<game>`。正式客户端能力只能进入`client_sdk`及其Generated分发目录。
 
 业务代码只能从`app/core/public.ts`导入Core能力。`public-api.lock.json`锁定Stable导出；其余Core实现默认Internal。NativeData、io_uring和部分KCP能力仍按专项文档视为Experimental或平台限定。公共API变化必须提供迁移记录，并同步更新本文和AI业务开发手册。
 

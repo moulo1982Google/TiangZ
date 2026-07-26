@@ -1,4 +1,4 @@
-import { encodePacket, readU16BE } from "../../core/public";
+import { encodePacket, readU16BE } from "../../app/core/public";
 import {
   C2S_GetLoginServiceAddrCodec,
   C2G_EnterMap,
@@ -40,8 +40,8 @@ import {
   S2C_GetLoginServiceAddrCodec,
   S2C_Login,
   S2C_LoginCodec,
-} from "../../generated/model/client/demo/protocol/messages";
-import { MsgCode } from "../../generated/model/client/demo/protocol/msgcodes";
+} from "../../app/generated/model/client/demo/protocol/messages";
+import { MsgCode } from "../../app/generated/model/client/demo/protocol/msgcodes";
 
 export interface DecodedFrame<T> {
   msgcode: number;

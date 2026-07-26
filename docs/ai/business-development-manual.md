@@ -28,6 +28,8 @@ src/generated/
 客户端 Generated/
 ```
 
+测试辅助代码同样不能放进`app/core`或`app/demo`。裸帧构造、压测Codec包装、Fake和Fixture应放到`tools/support`、`perf`或对应自测文件；普通业务不得依赖这些目录。客户端正式调用统一使用`client_sdk`生成的Client和Push Handler。
+
 只有现有公共能力无法表达需求时才进入Core。只有明确的数据所有权或性能证据支持时才进入Rust或`native_data`。开始修改前必须能用一句话说明业务边界和权威状态归属。
 
 所有服务端业务只从`app/core/public.ts`导入Core能力。其他Core路径属于Internal，即使其中某个类当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。

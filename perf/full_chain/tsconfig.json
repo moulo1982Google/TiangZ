@@ -8,7 +8,7 @@
   "include": [
     "full_chain_load_test.ts",
     "../../app/core/**/*.ts",
-    "../../app/demo/client/**/*.ts",
+    "../../tools/support/DemoClientProtocol.ts",
     "../../app/generated/model/client/**/*.ts"
   ]
 }
