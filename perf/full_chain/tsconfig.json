@@ -9,6 +9,6 @@
     "full_chain_load_test.ts",
     "../../app/core/**/*.ts",
     "../../tools/support/DemoClientProtocol.ts",
-    "../../app/generated/model/client/**/*.ts"
+    "../../client_sdk/typescript/**/*.ts"
   ]
 }

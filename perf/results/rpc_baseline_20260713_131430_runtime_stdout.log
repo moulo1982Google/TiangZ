@@ -1,7 +1,0 @@
-starting process bench with one V8 and 1 scene(s) from E:\VsCode\skynet\ets_runtime\configs\local\bench.json
-scene bench (Bench) listening on 127.0.0.1:7400
-[process:bench] one V8 started with 1 scene(s)
-[bench] Bench scene started at 127.0.0.1:7400
-bench accepted 127.0.0.1:58294 as conn 1
-bench accepted 127.0.0.1:58295 as conn 2
-bench accepted 127.0.0.1:58296 as conn 3

@@ -135,3 +135,11 @@ npm run verify:core-api
 - 新增`Session`、`SessionComponent`与`sessionRpcHandler/sessionMessageHandler`。客户端连接消息直接进入连接Session mailbox，同连接跨`await`串行，不同连接可并行。
 - 删除只为登录串行而存在的`LoginActor`；Login和Gate均使用独立Session Handler，Gate会话状态统一保存在GateSession Entity。
 - 此版本未改变客户端协议fingerprint；旧业务代码只需按真实目标将Actor Handler改为Unit Handler或Session Handler。
+
+### 0.3.10-alpha.4
+
+- Runtime彻底删除字符串`@handler`、动态组件Handler hooks与`ProcessHost.call/send`旁路，Scene/Session/Unit统一使用生成descriptor和类型化Handler。
+- Stable入口移除不再承载可调用语义的`MessageTarget`，同时删除未使用的`ISocial*`与`IRank*`预设协议基类。
+- `app/generated`只生成服务端协议；客户端生成物以`client_sdk/typescript/Generated`为唯一来源。
+- 正常bundle不再包含Bench Scene和压测Handler；测试与性能脚本迁移到`build:bench`。
+- 删除LogScene及其演示协议。历史opcode仍在lock中永久保留，不会被新消息复用。

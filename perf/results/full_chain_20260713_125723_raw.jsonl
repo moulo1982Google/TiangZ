@@ -1,2 +1,0 @@
-{"type":"baseline","value":{"payloadBytes":64,"requests":1189906,"requestsPerSecond":237981,"errors":0,"p50Ms":2.135,"p95Ms":2.929,"p99Ms":3.372,"maxMs":20.527}}
-{"type":"baseline","value":{"payloadBytes":256,"requests":1172304,"requestsPerSecond":234461,"errors":0,"p50Ms":2.143,"p95Ms":2.951,"p99Ms":3.416,"maxMs":15.629}}

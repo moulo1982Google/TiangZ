@@ -26,12 +26,6 @@
       "sceneType": "Gate",
       "ip": "127.0.0.1",
       "port": 7201
-    },
-    {
-      "name": "log",
-      "sceneType": "Log",
-      "ip": "127.0.0.1",
-      "port": 7100
     }
   ]
 }

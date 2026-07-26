@@ -40,8 +40,8 @@ import {
   S2C_GetLoginServiceAddrCodec,
   S2C_Login,
   S2C_LoginCodec,
-} from "../../app/generated/model/client/demo/protocol/messages";
-import { MsgCode } from "../../app/generated/model/client/demo/protocol/msgcodes";
+} from "../../client_sdk/typescript/Generated/Model/demo/protocol/messages";
+import { MsgCode } from "../../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 
 export interface DecodedFrame<T> {
   msgcode: number;

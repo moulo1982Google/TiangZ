@@ -17,6 +17,9 @@ if (typeof sdkConfig.sourceRoot !== "string" || !Array.isArray(sdkConfig.outputR
 }
 
 const sourceRoot = path.resolve(root, sdkConfig.sourceRoot);
+const distributionExcludes = resolveDistributionExcludes(
+  sdkConfig.distributionExcludes ?? [],
+);
 const outputRoots = sdkConfig.outputRoots.map((value) => {
   if (typeof value !== "string" || !value.trim()) throw new Error("typescriptClientSdk.outputRoots must contain paths");
   return path.resolve(root, value);
@@ -24,7 +27,8 @@ const outputRoots = sdkConfig.outputRoots.map((value) => {
 const fingerprintFile = path.join(sourceRoot, "Generated", "ProtocolFingerprint.ts");
 const sourceFiles = (await discoverTypeScript(sourceRoot))
   .filter((file) => file !== fingerprintFile);
-const protocolFiles = sourceFiles.filter((file) => file.includes(`${path.sep}Generated${path.sep}Model${path.sep}`));
+const distributableSourceFiles = sourceFiles.filter((file) => !isDistributionExcluded(file));
+const protocolFiles = distributableSourceFiles.filter((file) => file.includes(`${path.sep}Generated${path.sep}Model${path.sep}`));
 const fingerprint = await hashFiles(protocolFiles);
 await mkdir(path.dirname(fingerprintFile), { recursive: true });
 await writeFile(
@@ -33,9 +37,15 @@ await writeFile(
   "utf8",
 );
 
-const completeSourceFiles = [...sourceFiles, fingerprintFile].sort(comparePath);
+const completeSourceFiles = [...distributableSourceFiles, fingerprintFile].sort(comparePath);
 for (const outputRoot of outputRoots) {
   await removeGeneratedTypeScript(outputRoot);
+  for (const excluded of distributionExcludes) {
+    await rm(path.join(outputRoot, ...excluded.split("/")), {
+      recursive: true,
+      force: true,
+    });
+  }
   for (const sourceFile of completeSourceFiles) {
     const relativePath = path.relative(sourceRoot, sourceFile);
     const outputFile = path.join(outputRoot, relativePath);
@@ -47,7 +57,7 @@ for (const outputRoot of outputRoots) {
 await recordGenerator(root, {
   id: "client-sdk",
   command: "npm run codegen:client-sdk",
-  contentInputs: [scriptFile, configFile, ...sourceFiles],
+  contentInputs: [scriptFile, configFile, ...distributableSourceFiles],
   outputs: [
     fingerprintFile,
     ...await collectGeneratedFiles(outputRoots.map((outputRoot) => ({ path: outputRoot, extensions: [".ts"] }))),
@@ -56,6 +66,25 @@ await recordGenerator(root, {
 });
 
 console.log(`[codegen:client-sdk] generated ${outputRoots.length} SDK copy/copies, fingerprint=${fingerprint.slice(0, 12)}`);
+
+function resolveDistributionExcludes(items) {
+  if (!Array.isArray(items)) {
+    throw new Error("typescriptClientSdk.distributionExcludes must be an array");
+  }
+  return items.map((value) => {
+    if (typeof value !== "string" || !value.trim()) {
+      throw new Error("typescriptClientSdk.distributionExcludes must contain paths");
+    }
+    return value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "");
+  });
+}
+
+function isDistributionExcluded(file) {
+  const relative = path.relative(sourceRoot, file).replaceAll("\\", "/");
+  return distributionExcludes.some((prefix) =>
+    relative === prefix || relative.startsWith(`${prefix}/`)
+  );
+}
 
 async function discoverTypeScript(directory) {
   const files = [];

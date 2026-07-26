@@ -1,6 +1,7 @@
 import {
   EntryScene,
   entryScene,
+  type RuntimeEntrySceneConfig,
   type SceneMetricsSnapshot,
 } from "../../core/public";
 import { MapHostComponent } from "../mapHost/MapHostComponent";
@@ -9,8 +10,13 @@ import { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 @entryScene()
 export class MapHostScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
-  private readonly players = this.AddComponent(PlayerDirectoryComponent);
-  private readonly mapHost = this.AddComponent(MapHostComponent);
+  private readonly mapHost: MapHostComponent;
+
+  constructor(config: RuntimeEntrySceneConfig) {
+    super(config);
+    this.AddComponent(PlayerDirectoryComponent);
+    this.mapHost = this.AddComponent(MapHostComponent);
+  }
 
   override metricsSnapshot(): SceneMetricsSnapshot {
     const metrics = super.metricsSnapshot();

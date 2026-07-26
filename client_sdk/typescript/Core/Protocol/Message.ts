@@ -35,11 +35,3 @@ export interface IActorResponse extends IResponse {}
 export interface IActorLocationMessage extends IActorMessage {}
 export interface IActorLocationRequest extends IActorRequest {}
 export interface IActorLocationResponse extends IActorResponse {}
-
-export interface ISocialMessage extends IMessage {}
-export interface ISocialRequest extends IRequest {}
-export interface ISocialResponse extends IResponse {}
-
-export interface IRankMessage extends IMessage {}
-export interface IRankRequest extends IRequest {}
-export interface IRankResponse extends IResponse {}

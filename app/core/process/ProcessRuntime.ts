@@ -1,14 +1,10 @@
 import type { MaybePromise } from "../async";
-import {
-  Game,
-  InitializeGameSingletons,
-  ProcessHost,
-  TimeSystem,
-  TimerSystem,
-  UpdateSystem,
-  SingletonRegistry,
-  monotonicNow,
-} from "../runtime";
+import { Game, InitializeGameSingletons, monotonicNow } from "../runtime/Game";
+import { ProcessHost } from "../runtime/host";
+import { SingletonRegistry } from "../runtime/Singleton";
+import { TimeSystem } from "../runtime/TimeSystem";
+import { TimerSystem } from "../runtime/TimerSystem";
+import { UpdateSystem } from "../runtime/UpdateSystem";
 import { getEntrySceneCtor, listEntrySceneTypes } from "./registry";
 import type {
   EntryScene,

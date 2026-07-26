@@ -1,16 +1,11 @@
 import assert from "node:assert/strict";
-import {
-  Actor,
-  Component,
-  MailBoxComponent,
-  ProcessHost,
-  InitializeGameSingletons,
-  SingletonRegistry,
-  UnitComponent,
-  actor,
-  component,
-  handler,
-} from "../app/core/runtime";
+import { Actor, Component } from "../app/core/runtime/entities";
+import { InitializeGameSingletons } from "../app/core/runtime/Game";
+import { ProcessHost } from "../app/core/runtime/host";
+import { MailBoxComponent } from "../app/core/runtime/MailBoxComponent";
+import { actor, component } from "../app/core/runtime/metadata";
+import { SingletonRegistry } from "../app/core/runtime/Singleton";
+import { UnitComponent } from "../app/core/runtime/Unit";
 import { MapScene } from "../app/demo/map/MapScene";
 import { PlayerUnit } from "../app/demo/map/PlayerUnit";
 import { PositionComponent } from "../app/demo/map/PositionComponent";
@@ -177,8 +172,7 @@ class LifecycleProbeComponent extends Component<[value: string]> {
     this.awakeValue = value;
   }
 
-  @handler("Probe.ComponentValue")
-  private value(): string {
+  get Value(): string {
     return this.awakeValue;
   }
 
@@ -188,10 +182,7 @@ class LifecycleProbeComponent extends Component<[value: string]> {
 }
 
 @actor({ mailbox: "ordered" })
-class ComponentProbeActor extends Actor {
-  @handler("Probe.Noop")
-  private noop(): void {}
-}
+class ComponentProbeActor extends Actor {}
 
 @component()
 class AsyncAwakeComponent extends Component {
@@ -204,7 +195,6 @@ async function testComponentContainer(): Promise<void> {
   const host = new ProcessHost("component-self-test");
   host.spawnScene("map:1", MapScene);
   const actor = host.spawnActor("map:1", "component-probe", ComponentProbeActor);
-  const actorRef = host.localActorRef("map:1", "component-probe");
 
   const component = actor.AddComponent(
     LifecycleProbeComponent,
@@ -213,10 +203,7 @@ async function testComponentContainer(): Promise<void> {
   assert.equal(actor.GetComponent(LifecycleProbeComponent), component);
   assert.equal(actor.TryGetComponent(LifecycleProbeComponent), component);
   assert.equal(actor.HasComponent(LifecycleProbeComponent), true);
-  assert.equal(
-    await host.call(undefined, actorRef, "Probe.ComponentValue"),
-    "component-value",
-  );
+  assert.equal(component.Value, "component-value");
   assert.throws(
     () => actor.AddComponent(LifecycleProbeComponent, "duplicate"),
     /already has component/,
@@ -232,10 +219,6 @@ async function testComponentContainer(): Promise<void> {
   assert.equal(component.destroyed, true);
   assert.equal(actor.TryGetComponent(LifecycleProbeComponent), undefined);
   assert.equal(actor.RemoveComponent(LifecycleProbeComponent), false);
-  await assert.rejects(
-    host.call(undefined, actorRef, "Probe.ComponentValue"),
-    /handler not found/,
-  );
   assert.throws(
     () => actor.GetComponent(LifecycleProbeComponent),
     /component not found/,
@@ -276,15 +259,14 @@ async function testPlayerUnitComponents(): Promise<void> {
   player.AddComponent(PositionComponent, native);
   const numeric = player.AddComponent(NumericComponent);
   player.AddComponent(UnitGateComponent, "gate-1", "session-1");
-  const actor = host.localActorRef("map:1", 1000);
-  const firstInstanceId = actor.instanceId;
+  const firstInstanceId = player.InstanceId;
 
   assert.equal(player.Id, 1000);
   assert.equal(player.UnitId, 1000);
-  assert.equal(player.InstanceId, actor.instanceId);
+  assert.equal(player.InstanceId, firstInstanceId);
   assert.equal(player.Parent, units);
   assert.equal(player.DomainScene(), map);
-  assert.equal(host.Root.Get(actor.instanceId), player);
+  assert.equal(host.Root.Get(firstInstanceId), player);
   assert.equal(player.GetComponent(MailBoxComponent).MailboxType, "ordered");
   assert.equal(player.GetComponent(NumericComponent), numeric);
   assert.equal(numeric[NumericType.CurrentHp], 100);
@@ -364,7 +346,6 @@ async function testPlayerUnitComponents(): Promise<void> {
   );
 
   assert.equal(units.Remove(1000), player);
-  assert.equal(host.hasActor("map:1", 1000), false);
   assert.equal(host.Root.Get(firstInstanceId), undefined);
   await assert.rejects(
     host.runActorMailbox(firstInstanceId, () => undefined),
@@ -384,10 +365,6 @@ async function testPlayerUnitComponents(): Promise<void> {
   recreated.AddComponent(NumericComponent);
   recreated.AddComponent(UnitGateComponent, "gate-2", "session-2");
   assert.notEqual(recreated.InstanceId, firstInstanceId);
-  await assert.rejects(
-    host.call(undefined, actor, "Probe.Noop"),
-    /target not found/,
-  );
   assert.equal(host.despawnActor("map:1", 1000), true);
   assert.equal(units.Get(1000), undefined);
 }
@@ -398,8 +375,7 @@ class OrderedProbeActor extends Actor {
   maxRunning = 0;
   private running = 0;
 
-  @handler("Probe.Run")
-  private async run(request: { id: number; delayMs: number }): Promise<void> {
+  async Run(request: { id: number; delayMs: number }): Promise<void> {
     this.running += 1;
     this.maxRunning = Math.max(this.maxRunning, this.running);
     await new Promise((resolve) => setTimeout(resolve, request.delayMs));
@@ -412,11 +388,14 @@ async function testOrderedActorMailbox(): Promise<void> {
   const host = new ProcessHost("mailbox-self-test");
   host.spawnScene("map:1", MapScene);
   const probe = host.spawnActor("map:1", "probe", OrderedProbeActor);
-  const actor = host.localActorRef("map:1", "probe");
 
   await Promise.all([
-    host.call(undefined, actor, "Probe.Run", { id: 1, delayMs: 10 }),
-    host.call(undefined, actor, "Probe.Run", { id: 2, delayMs: 0 }),
+    host.runActorMailbox(probe.InstanceId, (actor) =>
+      (actor as OrderedProbeActor).Run({ id: 1, delayMs: 10 })
+    ),
+    host.runActorMailbox(probe.InstanceId, (actor) =>
+      (actor as OrderedProbeActor).Run({ id: 2, delayMs: 0 })
+    ),
   ]);
 
   assert.equal(probe.maxRunning, 1);
@@ -434,8 +413,7 @@ class DespawnProbeActor extends Actor {
     this.releaseGate();
   }
 
-  @handler("Probe.WaitForDespawn")
-  private async waitForDespawn(): Promise<string> {
+  async WaitForDespawn(): Promise<string> {
     await this.gate;
     return "stale-success";
   }
@@ -445,14 +423,17 @@ async function testActorDespawnRejectsInFlightAndQueuedCalls(): Promise<void> {
   const host = new ProcessHost("actor-despawn-self-test");
   host.spawnScene("map:1", MapScene);
   const probe = host.spawnActor("map:1", "probe", DespawnProbeActor);
-  const actor = host.localActorRef("map:1", "probe");
-  const running = host.call<string>(undefined, actor, "Probe.WaitForDespawn");
-  const queued = host.call<string>(undefined, actor, "Probe.WaitForDespawn");
+  const running = host.runActorMailbox(probe.InstanceId, (actor) =>
+    (actor as DespawnProbeActor).WaitForDespawn()
+  );
+  const queued = host.runActorMailbox(probe.InstanceId, (actor) =>
+    (actor as DespawnProbeActor).WaitForDespawn()
+  );
 
   assert.equal(host.despawnActor("map:1", "probe"), true);
-  await assert.rejects(queued, /actor despawned/);
+  await assert.rejects(Promise.resolve(queued), /actor despawned/);
   probe.release();
-  await assert.rejects(running, /target despawned during dispatch/);
+  await assert.rejects(Promise.resolve(running), /actor despawned during mailbox execution/);
 }
 
 @actor({ mailbox: "unordered" })
@@ -460,8 +441,7 @@ class UnorderedProbeActor extends Actor {
   maxRunning = 0;
   private running = 0;
 
-  @handler("Probe.UnorderedRun")
-  private async run(request: { fail?: boolean }): Promise<string> {
+  async Run(request: { fail?: boolean }): Promise<string> {
     this.running += 1;
     this.maxRunning = Math.max(this.maxRunning, this.running);
     await Promise.resolve();
@@ -469,35 +449,24 @@ class UnorderedProbeActor extends Actor {
     if (request.fail) throw new Error("isolated unordered failure");
     return "ok";
   }
-
-  @handler("Probe.UnorderedSelf")
-  private selfCall(): Promise<string> {
-    return this.ctx.call(this.ctx.self, "Probe.UnorderedLeaf");
-  }
-
-  @handler("Probe.UnorderedLeaf")
-  private leaf(): string {
-    return "self-ok";
-  }
 }
 
 async function testUnorderedActorIsolation(): Promise<void> {
   const host = new ProcessHost("unordered-self-test");
   host.spawnScene("map:1", MapScene);
   const probe = host.spawnActor("map:1", "probe", UnorderedProbeActor);
-  const actor = host.localActorRef("map:1", "probe");
   const results = await Promise.allSettled([
-    host.call(undefined, actor, "Probe.UnorderedRun", {}),
-    host.call(undefined, actor, "Probe.UnorderedRun", { fail: true }),
+    host.runActorMailbox(probe.InstanceId, (actor) =>
+      (actor as UnorderedProbeActor).Run({})
+    ),
+    host.runActorMailbox(probe.InstanceId, (actor) =>
+      (actor as UnorderedProbeActor).Run({ fail: true })
+    ),
   ]);
 
   assert.equal(probe.maxRunning, 2);
   assert.equal(results[0].status, "fulfilled");
   assert.equal(results[1].status, "rejected");
-  assert.equal(
-    await host.call(undefined, actor, "Probe.UnorderedSelf"),
-    "self-ok",
-  );
 }
 
 function testReconnectStormKeepsLatestLocation(): void {

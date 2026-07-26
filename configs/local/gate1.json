@@ -26,12 +26,6 @@
       "sceneType": "MapHost",
       "ip": "127.0.0.1",
       "port": 7301
-    },
-    {
-      "name": "log",
-      "sceneType": "Log",
-      "ip": "127.0.0.1",
-      "port": 7100
     }
   ]
 }

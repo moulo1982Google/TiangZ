@@ -30,6 +30,10 @@ src/generated/
 
 测试辅助代码同样不能放进`app/core`或`app/demo`。裸帧构造、压测Codec包装、Fake和Fixture应放到`tools/support`、`perf`或对应自测文件；普通业务不得依赖这些目录。客户端正式调用统一使用`client_sdk`生成的Client和Push Handler。
 
+基准Scene和压测专用Handler只放在`app/bench`，并通过`npm run build:bench`显式装配。正常`npm run build`不得包含Bench；Cocos/Pixi分发SDK也不得携带Bench协议。
+
+Bench代码可以调用真实业务API，但业务代码不得引用`app/bench`。正式、压测等装配分别写在`app/main.ts`、`app/main.<用途>.ts`组合入口中；不要为了消除依赖诊断把Bench实现搬回Demo。
+
 只有现有公共能力无法表达需求时才进入Core。只有明确的数据所有权或性能证据支持时才进入Rust或`native_data`。开始修改前必须能用一句话说明业务边界和权威状态归属。
 
 所有服务端业务只从`app/core/public.ts`导入Core能力。其他Core路径属于Internal，即使其中某个类当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
@@ -124,6 +128,8 @@ Handler只负责协议适配、基础校验和调用领域能力。先按消息�
 
 不要新增泛化`XxxActor`来承接普通业务请求。连接状态放Session，地图实体状态放Unit，全局业务状态放Scene或其Component。Unit消息直接拿到目标Unit：
 
+不要使用字符串`@handler`、`ProcessHost.call/send`或给Component动态注册网络入口；这些旧旁路已从Runtime移除。Scene间调用使用`SceneMessageHelper`，Session/Unit入口使用上表中的类型化Handler。
+
 ```ts
 @unitRpcHandler(PlayerUnit, MapProtocol.UseItem)
 export class C2M_UseItemHandler implements UnitRpcHandler<
@@ -188,7 +194,7 @@ message M2C_UseSkill // IActorLocationResponse
 2. 评审消息类型、Response关联、字段编号和兼容性。
 3. 新消息编号需要接受时，显式执行`npm run codegen:proto:update-lock`。
 4. 执行`npm run codegen`。
-5. 只从`app/generated`或客户端SDK Generated导入生成类型和descriptor。
+5. 服务端只从`app/generated/model/server`导入；客户端、工具和压测客户端只从`client_sdk/typescript/Generated`导入。
 6. 执行`npm run test:protocol`和相关业务测试。
 
 不得手工修改`opcode.lock.json/schema.lock.json`来绕过生成器，也不得在业务代码中硬编码msgcode、rpcId或codec。

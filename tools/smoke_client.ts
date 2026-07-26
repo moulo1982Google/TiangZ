@@ -21,8 +21,8 @@ import {
 } from "./support/DemoClientProtocol";
 import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
-import { MsgCode } from "../app/generated/model/client/demo/protocol/msgcodes";
-import type { CellMovementState } from "../app/generated/model/client/demo/protocol/messages";
+import { MsgCode } from "../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
+import type { CellMovementState } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
 
 type TimedMovementState = CellMovementState & { serverTick: number };
 

@@ -35,17 +35,6 @@ message S2C_Login // IResponse
   uint32 gate_port = 7;
 }
 
-//ResponseType S2C_Log
-// @ets.msg protocol=Log
-message C2S_Log // IRequest
-{
-  string message = 1;
-}
-
-message S2C_Log // IResponse
-{
-}
-
 //ResponseType G2C_LoginGate
 // @ets.msg protocol=Gate
 message C2G_LoginGate // IRequest

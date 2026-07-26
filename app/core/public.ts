@@ -101,7 +101,6 @@ export type {
   EntityId,
   InstanceId,
   MailboxType,
-  MessageTarget,
   SceneId,
   SceneRef,
   SceneType,

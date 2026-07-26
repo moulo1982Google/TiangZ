@@ -4,8 +4,6 @@ export const OuterMessage = {
   S2C_GetLoginServiceAddr: 10003,
   C2S_Login: 10004,
   S2C_Login: 10005,
-  C2S_Log: 10006,
-  S2C_Log: 10007,
   C2G_LoginGate: 10008,
   G2C_LoginGate: 10009,
   C2G_EnterMap: 10010,

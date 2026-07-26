@@ -18,7 +18,6 @@
     { "name": "login_1", "sceneType": "Login", "ip": "127.0.0.1", "port": 7001 }
   ],
   "knownScenes": [
-    { "name": "log", "sceneType": "Log", "ip": "127.0.0.1", "port": 7100 },
     { "name": "gate_1", "sceneType": "Gate", "ip": "127.0.0.1", "port": 7201 }
   ]
 }
@@ -29,11 +28,11 @@
 - `knownScenes` 是路由目录，不表示目标一定在本进程。
 - `debug` 放在 `process` 下；一个 V8 只需要一个 Inspector 端口。
 
-`all.json` 把全部 Demo Scene 放在一个进程；`log.json`、`mgr.json`、`login1.json` 等把它们拆成多个进程。`npm run test:runtime` 会验证两种部署。
+`all.json` 把全部 Demo Scene 放在一个进程；`mgr.json`、`login1.json`、`gate1.json` 等把它们拆成多个进程。`npm run test:runtime` 会验证两种部署。
 
 `all.io-uring.json` 是 Linux TCP 实验配置。它使用 `network.ioBackend=io-uring` 和 `scene.protocol=tcp`，需要通过 `cargo build --features io-uring` 构建；Cocos WebSocket 客户端不能连接该配置。
 
-`all.kcp-native.json` 是 Cocos Native KCP 配置。LoginMgr、Login 和 Gate 使用 `protocol=kcp,audience=outer`，MapHost 与 Log 保持内部 TCP。启动命令：
+`all.kcp-native.json` 是 Cocos Native KCP 配置。LoginMgr、Login 和 Gate 使用 `protocol=kcp,audience=outer`，MapHost 保持内部 TCP。启动命令：
 
 ```powershell
 cargo run --features kcp --bin TiangZ -- configs/local/all.kcp-native.json

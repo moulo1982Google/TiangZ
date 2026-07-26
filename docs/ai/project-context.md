@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.3`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.4已经完成，Phase 3.10框架稳定化继续推进到3.10.5+，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.4`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.4已经完成，Phase 3.10框架稳定化继续推进到3.10.5+，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 
@@ -133,7 +133,7 @@ Rust负责length-prefix分帧，并把不含length的二进制帧批量交给TS�
 - `IActorMessage/IActorRequest/IActorResponse`：明确Actor目标。
 - `IActorLocation*`：由玩家位置路由到具体Unit。
 
-消息编号按proto文件起始编号和定义顺序生成，并由`opcode.lock.json`与`schema.lock.json`锁定。生成器负责请求响应关联、descriptor、codec、客户端Client和Handler导入，不让开发者手工维护msgcode表。
+消息编号按proto文件起始编号和定义顺序生成，并由`opcode.lock.json`与`schema.lock.json`锁定。已有消息始终沿用lock编号，删除消息的编号永久保留，新消息自动跳过保留号。生成器负责请求响应关联、descriptor、codec、客户端Client和Handler导入，不让开发者手工维护msgcode表。
 
 ## 状态复制模型
 
@@ -153,7 +153,7 @@ AOI目前尚未实现。当前全地图可见是最坏压力模型，不应把�
 
 ## 客户端与Transport
 
-`client_sdk/typescript`是TypeScript Client SDK唯一源码，codegen将完整副本分发给Cocos和Pixi。SDK Core与引擎无关，平台通过Transport Adapter接入。
+`client_sdk/typescript`是TypeScript Client SDK唯一源码，codegen将正式协议副本分发给Cocos和Pixi；Bench协议只保留在规范SDK供工具使用。SDK Core与引擎无关，平台通过Transport Adapter接入。
 
 当前验收范围：
 
@@ -171,7 +171,8 @@ AOI目前尚未实现。当前全地图可见是最坏压力模型，不应把�
 app/core/                    TypeScript框架
 app/core/public.ts           业务唯一Stable Core API入口
 app/demo/                    当前MMORPG演示业务
-app/generated/               服务端自动生成代码
+app/bench/                   仅由build:bench装配的基准代码
+app/generated/               服务端与Native自动生成代码
 src/                         Rust Runtime、Transport和宿主
 src/generated/               Rust自动生成代码
 proto/                       protobuf唯一源文件
@@ -188,6 +189,12 @@ docs/                        教程、参考、设计和阶段记录
 ```
 
 Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`codegen.config.json`的搜索根发现Scene和Handler，不维护手工类型表。
+
+正常`npm run build`只装配`app/demo`及正式服务端协议；压测入口必须使用`npm run build:bench`显式加入`app/bench`。服务端`app/generated`不再生成客户端协议副本，工具和性能测试统一从`client_sdk/typescript/Generated`导入。
+
+`app/bench`可以调用真实业务目录来测量生产 API，但业务目录不得反向依赖 Bench；`app/main.ts`与`app/main.<用途>.ts`统一视为组合入口。Developer Tools 与`tiangz-check-project`共同强制这条依赖方向。
+
+Actor Runtime只保留Scene、Session、Unit的生命周期、InstanceId与mailbox。旧式`@handler("字符串")`、动态组件Handler hooks和`ProcessHost.call/send`已移除；业务入口只能使用生成descriptor绑定的Scene/Session/Unit类型化Handler。
 
 测试和压测专用的裸帧构造、响应解码、Fake与Fixture必须放在`tools/support`、`perf`或对应测试文件中，禁止放入`app/core`或`app/<game>`。正式客户端能力只能进入`client_sdk`及其Generated分发目录。
 
@@ -218,7 +225,7 @@ Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`
 - p50/p95/p99为33.90/61.79/70.04ms。
 - Gate和Map后四分之一RSS趋势约为`+0.3MB/h`与`+0.2MB/h`，V8 Heap没有持续增长证据。
 
-详细口径见`perf/results/soak_20260724_143058.md`。这是特定机器和全地图可见Demo负载的稳定性证据，不是生产容量承诺。
+详细口径见`perf/results/soak_latest.md`。这是特定机器和全地图可见Demo负载的稳定性证据，不是生产容量承诺。
 
 ## 当前未完成和明确暂缓
 

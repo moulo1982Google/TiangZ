@@ -20,8 +20,6 @@ export interface MovementFrame {
   readonly stateChanged: boolean;
 }
 
-export type UnitMovementState = Omit<MovementFrame, "unitId">;
-
 export function cellToWorld(cell: number): number {
   return cell * CELL_SIZE;
 }
@@ -37,15 +35,4 @@ export function clampDirection(value: number): number {
 export function canOccupyCell(x: number, y: number): boolean {
   return x >= MIN_UNIT_CELL && x <= MAX_UNIT_CELL &&
     y >= MIN_UNIT_CELL && y <= MAX_UNIT_CELL;
-}
-
-export function stepDurationTicks(
-  directionX: number,
-  directionY: number,
-  fixedUpdateMs: number,
-  speedCellsPerSecond = DEFAULT_MOVE_SPEED_CELLS_PER_SECOND,
-): number {
-  const distance = directionX !== 0 && directionY !== 0 ? Math.SQRT2 : 1;
-  const durationMs = 1_000 * distance / speedCellsPerSecond;
-  return Math.max(1, Math.ceil(durationMs / fixedUpdateMs));
 }

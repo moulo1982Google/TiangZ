@@ -3,11 +3,6 @@
     env: "local"
     machine: "local"
     process: "gate1"
-- targets: ["host.docker.internal:7601"]
-  labels:
-    env: "local"
-    machine: "local"
-    process: "log"
 - targets: ["host.docker.internal:7603"]
   labels:
     env: "local"

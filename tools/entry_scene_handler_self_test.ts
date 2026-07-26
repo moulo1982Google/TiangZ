@@ -24,7 +24,9 @@ import {
   sessionMessageHandler,
   type SessionMessageHandler,
 } from "../app/core/process/sessionHandlers";
-import { Component, ProcessHost, Session } from "../app/core/runtime";
+import { Component } from "../app/core/runtime/entities";
+import { ProcessHost } from "../app/core/runtime/host";
+import { Session } from "../app/core/runtime/Session";
 
 interface AddMessage extends IMessage {
   value: number;

@@ -90,15 +90,3 @@ export interface IActorLocationMessage extends IActorMessage {}
 export interface IActorLocationRequest extends IActorRequest {}
 
 export interface IActorLocationResponse extends IActorResponse {}
-
-export interface ISocialMessage extends IActorMessage {}
- 
-export interface ISocialRequest extends IActorRequest {}
-
-export interface ISocialResponse extends IActorResponse {}
-
-export interface IRankMessage extends IActorMessage {}
-
-export interface IRankRequest extends IActorRequest {}
-
-export interface IRankResponse extends IActorResponse {}

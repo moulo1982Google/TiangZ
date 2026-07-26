@@ -11,9 +11,7 @@ import { Session, SessionComponent } from "./Session";
 import { TimerSystem, type TimerId } from "./TimerSystem";
 import {
   getActorOptions,
-  getHandlerMetadata,
   getSceneOptions,
-  type HandlerBinding,
 } from "./metadata";
 import { CoreLogger } from "../logging/Logger";
 import type {
@@ -21,10 +19,7 @@ import type {
   ActorAwakeArgs,
   ActorId,
   ActorRef,
-  Envelope,
-  HandlerName,
   MailboxType,
-  MessageTarget,
   SceneCtor,
   SceneId,
   SceneRef,
@@ -32,38 +27,31 @@ import type {
   InstanceId,
 } from "./types";
 
-interface MailboxRuntime {
-  mailbox: MailboxType;
-  handlers: Map<HandlerName, HandlerBinding>;
-  queue: PendingDispatch[];
-  running: boolean;
-}
-
-interface SceneRuntime extends MailboxRuntime {
+interface SceneRuntime {
   ref: SceneRef;
   instance: Scene;
   actors: Map<ActorId, ActorRuntime>;
 }
 
-interface ActorRuntime extends MailboxRuntime {
+interface ActorRuntime {
   ref: ActorRef;
   instance: Actor<any[]>;
   mailBox: MailBoxComponent;
+  queue: PendingActorCall[];
+  running: boolean;
   timers: Set<TimerId>;
 }
 
-interface PendingDispatch {
-  envelope: Envelope;
-  direct?: (actor: Actor<any[]>) => MaybePromise<unknown>;
-  resolve?: (value: unknown) => void;
-  reject?: (reason: unknown) => void;
+interface PendingActorCall {
+  run: (actor: Actor<any[]>) => MaybePromise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
 }
 
 export class ProcessHost {
   readonly Root = new EntityRoot();
   private readonly scenes = new Map<SceneId, SceneRuntime>();
   private readonly actorsByInstanceId = new Map<InstanceId, ActorRuntime>();
-  private nextMessageId = 1;
   private nextInstanceId = 1;
 
   constructor(public readonly processId = "process-1") {}
@@ -104,7 +92,7 @@ export class ProcessHost {
     return this.attachScene(sceneId, ref.sceneType, instance, options.mailbox ?? "ordered");
   }
 
-  /** 将配置创建或动态创建的 Scene 接入同一 EntityRoot、Mailbox 与子 Entity 容器。 / Attaches configured or dynamic Scenes to one EntityRoot, mailbox, and child-entity container. */
+  /** 将配置或动态创建的 Scene 接入同一 EntityRoot 和子 Entity 容器。 / Attaches configured or dynamic Scenes to one EntityRoot and child-entity container. */
   attachScene<T extends Scene>(
     sceneId: SceneId,
     sceneType: string,
@@ -116,20 +104,13 @@ export class ProcessHost {
     }
     const ref: SceneRef = { processId: this.processId, sceneId, sceneType };
     const instanceId = this.allocateInstanceId();
-    const handlers = new Map<HandlerName, HandlerBinding>();
     try {
       instance.__attach(sceneId, instanceId, undefined, instance);
       this.Root.Add(instance);
-      const mailBox = instance.AddComponent(MailBoxComponent, mailbox);
-      this.collectHandlers(instance.constructor, instance, handlers);
-      this.bindComponentHandlers(instance, handlers);
+      instance.AddComponent(MailBoxComponent, mailbox);
       this.scenes.set(sceneId, {
         ref,
         instance,
-        mailbox: mailBox.MailboxType,
-        handlers,
-        queue: [],
-        running: false,
         actors: new Map(),
       });
       return instance;
@@ -152,7 +133,6 @@ export class ProcessHost {
     }
 
     const options = getActorOptions(ctor) ?? {};
-
     const ref: ActorRef = {
       ...scene.ref,
       actorId,
@@ -160,7 +140,6 @@ export class ProcessHost {
     };
     const actorCtx = new ActorContext(this, ref);
     const instance = new ctor(actorCtx);
-    const handlers = new Map<HandlerName, HandlerBinding>();
 
     try {
       instance.__attach(actorId, ref.instanceId, scene.instance, scene.instance);
@@ -170,14 +149,10 @@ export class ProcessHost {
         options.mailbox ?? "ordered",
       );
       instance.__awake(...awakeArgs);
-      this.collectHandlers(ctor, instance, handlers);
-      this.bindComponentHandlers(instance, handlers);
       const runtime: ActorRuntime = {
         ref,
         instance,
-        mailbox: mailBox.MailboxType,
         mailBox,
-        handlers,
         queue: [],
         running: false,
         timers: new Set(),
@@ -202,10 +177,6 @@ export class ProcessHost {
     }
     this.scenes.delete(sceneId);
     this.Root.Remove(scene.instance.InstanceId);
-    const error = new Error(`scene despawned: ${sceneId}`);
-    for (const pending of scene.queue.splice(0, scene.queue.length)) {
-      pending.reject?.(error);
-    }
     try {
       scene.instance.__dispose();
     } catch (disposeError) {
@@ -214,36 +185,8 @@ export class ProcessHost {
     return true;
   }
 
-  localSceneRef(sceneId: SceneId): SceneRef {
-    return this.getLocalScene(sceneId).ref;
-  }
-
-  localActorRef(sceneId: SceneId, actorId: ActorId): ActorRef {
-    const scene = this.getLocalScene(sceneId);
-    const actor = scene.actors.get(actorId);
-    if (!actor) {
-      throw new Error(`actor not found: ${sceneId}/${actorId}`);
-    }
-    return actor.ref;
-  }
-
-  actorRefByInstanceId(instanceId: InstanceId): ActorRef | undefined {
-    return this.actorsByInstanceId.get(instanceId)?.ref;
-  }
-
-  actorByInstanceId<T extends Actor<any[]> = Actor<any[]>>(
-    instanceId: InstanceId,
-  ): T | undefined {
-    return this.actorsByInstanceId.get(instanceId)?.instance as T | undefined;
-  }
-
   sceneById<T extends Scene = Scene>(sceneId: SceneId): T {
     return this.getLocalScene(sceneId).instance as T;
-  }
-
-  hasActor(sceneId: SceneId, actorId: ActorId): boolean {
-    const scene = this.getLocalScene(sceneId);
-    return scene.actors.has(actorId);
   }
 
   despawnActor(sceneId: SceneId, actorId: ActorId): boolean {
@@ -270,7 +213,7 @@ export class ProcessHost {
     }
     const error = new Error(`actor despawned: ${sceneId}/${actorId}`);
     for (const pending of actor.queue.splice(0, actor.queue.length)) {
-      pending.reject?.(error);
+      pending.reject(error);
     }
     try {
       actor.instance.__dispose();
@@ -319,52 +262,59 @@ export class ProcessHost {
     return TimerSystem.Instance.Remove(timerId);
   }
 
+  /**
+   * 在目标 Actor 的 mailbox 中执行一个已经类型化的回调。
+   *
+   * ordered Actor 会串行等待前一个 Promise；unordered Actor 允许并发。
+   * 本方法是 Session/Unit Handler 和 Actor 定时器共用的底层入口，业务代码
+   * 不应把它包装回字符串 Handler 或自行构造路由。
+   *
+   * Runs an already typed callback through the target Actor mailbox.
+   *
+   * Ordered Actors await the previous Promise while unordered Actors may run
+   * concurrently. Session/Unit handlers and Actor timers share this low-level
+   * path; business code must not rebuild string handlers or routing on top.
+   */
   runActorMailbox<T>(
     instanceId: InstanceId,
     run: (actor: Actor<any[]>) => MaybePromise<T>,
   ): MaybePromise<T> {
     const actor = this.actorsByInstanceId.get(instanceId);
-    const entity = this.Root.Get(instanceId);
-    if (!actor || entity !== actor.instance) {
+    if (!actor || this.Root.Get(instanceId) !== actor.instance) {
       return Promise.reject(new Error(`actor instance not found: ${instanceId}`));
     }
 
-    if (mailboxType(actor) === "unordered") return run(actor.instance);
+    if (actor.mailBox.MailboxType === "unordered") {
+      return this.executeActorCall(actor, run);
+    }
 
     if (!actor.running) {
       actor.running = true;
       try {
-        const result = run(actor.instance);
+        const result = this.executeActorCall(actor, run);
         if (isPromiseLike(result)) {
           return Promise.resolve(result).then(
             (value) => {
-              this.finishDirectActorCall(actor);
+              this.finishActorCall(actor);
               return value;
             },
             (error) => {
-              this.finishDirectActorCall(actor);
+              this.finishActorCall(actor);
               throw error;
             },
           );
         }
-        this.finishDirectActorCall(actor);
+        this.finishActorCall(actor);
         return result;
       } catch (error) {
-        this.finishDirectActorCall(actor);
+        this.finishActorCall(actor);
         throw error;
       }
     }
 
     return new Promise<T>((resolve, reject) => {
       actor.queue.push({
-        envelope: {
-          id: this.nextMessageId++,
-          to: actor.ref,
-          handler: `<actor-instance:${instanceId}>`,
-          payload: undefined,
-          kind: "call",
-        },
-        direct: run as (actor: Actor<any[]>) => MaybePromise<unknown>,
+        run: run as (actor: Actor<any[]>) => MaybePromise<unknown>,
         resolve: resolve as (value: unknown) => void,
         reject,
       });
@@ -379,7 +329,33 @@ export class ProcessHost {
     return actor;
   }
 
-  private finishDirectActorCall(actor: ActorRuntime): void {
+  private executeActorCall<T>(
+    actor: ActorRuntime,
+    run: (instance: Actor<any[]>) => MaybePromise<T>,
+  ): MaybePromise<T> {
+    const result = run(actor.instance);
+    if (isPromiseLike(result)) {
+      return Promise.resolve(result).then((value) => {
+        this.requireCurrentActor(actor);
+        return value;
+      });
+    }
+    this.requireCurrentActor(actor);
+    return result;
+  }
+
+  private requireCurrentActor(actor: ActorRuntime): void {
+    if (
+      this.actorsByInstanceId.get(actor.ref.instanceId) !== actor ||
+      this.Root.Get(actor.ref.instanceId) !== actor.instance
+    ) {
+      throw new Error(
+        `actor despawned during mailbox execution: ${actor.ref.sceneId}/${actor.ref.actorId}`,
+      );
+    }
+  }
+
+  private finishActorCall(actor: ActorRuntime): void {
     if (actor.queue.length > 0) {
       this.drainOrdered(actor);
     } else {
@@ -387,86 +363,30 @@ export class ProcessHost {
     }
   }
 
-  call<TResponse = unknown>(
-    from: MessageTarget | undefined,
-    to: MessageTarget,
-    handlerName: HandlerName,
-    payload?: unknown,
-  ): Promise<TResponse> {
-    const destination = this.resolveMailbox(to);
-    if (from && isSameMailbox(from, to) && destination && mailboxType(destination) === "ordered") {
-      throw new Error(`ordered self-call is forbidden: ${targetKey(to)}.${handlerName}`);
-    }
-
-    return new Promise<TResponse>((resolve, reject) => {
-      this.dispatch({
-        envelope: {
-          id: this.nextMessageId++,
-          from,
-          to,
-          handler: handlerName,
-          payload,
-          kind: "call",
-        },
-        resolve: resolve as (value: unknown) => void,
-        reject,
-      });
-    });
-  }
-
-  send(
-    from: MessageTarget | undefined,
-    to: MessageTarget,
-    handlerName: HandlerName,
-    payload?: unknown,
-  ): void {
-    this.dispatch({
-      envelope: {
-        id: this.nextMessageId++,
-        from,
-        to,
-        handler: handlerName,
-        payload,
-        kind: "send",
-      },
-    });
-  }
-
-  private bindComponentHandlers(
-    entity: Scene | Actor,
-    handlers: Map<HandlerName, HandlerBinding>,
-  ): void {
-    entity.__bindComponentHooks({
-      added: (ctor, instance) => this.collectHandlers(ctor, instance, handlers),
-      removing: (instance) => this.removeHandlers(instance, handlers),
-    });
-  }
-
-  private collectHandlers(
-    ctor: Function,
-    owner: object,
-    handlers: Map<HandlerName, HandlerBinding>,
-  ): void {
-    const metadata = getHandlerMetadata(ctor);
-    if (!metadata) return;
-
-    for (const handlerName of metadata.keys()) {
-      if (handlers.has(handlerName)) {
-        throw new Error(`duplicate handler ${handlerName}`);
+  private drainOrdered(actor: ActorRuntime): void {
+    while (actor.queue.length > 0) {
+      const pending = actor.queue.shift()!;
+      try {
+        const result = this.executeActorCall(actor, pending.run);
+        if (isPromiseLike(result)) {
+          void Promise.resolve(result).then(
+            (value) => {
+              pending.resolve(value);
+              this.drainOrdered(actor);
+            },
+            (error) => {
+              pending.reject(error);
+              this.drainOrdered(actor);
+            },
+          );
+          return;
+        }
+        pending.resolve(result);
+      } catch (error) {
+        pending.reject(error);
       }
     }
-    for (const [handlerName, method] of metadata) {
-      handlers.set(handlerName, { owner, method });
-    }
-  }
-
-  private removeHandlers(
-    owner: object,
-    handlers: Map<HandlerName, HandlerBinding>,
-  ): void {
-    for (const [handlerName, binding] of handlers) {
-      if (binding.owner === owner) handlers.delete(handlerName);
-    }
+    actor.running = false;
   }
 
   private disposeFailedEntity(entity: Scene | Actor, label: string): void {
@@ -475,161 +395,6 @@ export class ProcessHost {
     } catch (error) {
       CoreLogger.error("entity cleanup failed", { label, error });
     }
-  }
-
-  private dispatch(pending: PendingDispatch): void {
-    if (pending.envelope.to.processId !== this.processId) {
-      pending.reject?.(
-        new Error(
-          `remote dispatch is not implemented yet: ${pending.envelope.to.processId}`,
-        ),
-      );
-      return;
-    }
-
-    const mailbox = this.resolveMailbox(pending.envelope.to);
-    if (!mailbox) {
-      pending.reject?.(new Error(`target not found: ${targetKey(pending.envelope.to)}`));
-      return;
-    }
-
-    if (mailboxType(mailbox) === "unordered") {
-      const result = this.invoke(mailbox, pending);
-      if (isPromiseLike(result)) {
-        void result.catch((error) => this.logUnexpectedDispatchError(error));
-      }
-      return;
-    }
-
-    mailbox.queue.push(pending);
-    if (!mailbox.running) {
-      mailbox.running = true;
-      this.drainOrdered(mailbox);
-    }
-  }
-
-  private drainOrdered(mailbox: MailboxRuntime): void {
-    while (mailbox.queue.length > 0) {
-      const pending = mailbox.queue.shift()!;
-      const result = this.invoke(mailbox, pending);
-      if (isPromiseLike(result)) {
-        void result.then(
-          () => this.drainOrdered(mailbox),
-          (error) => {
-            this.logUnexpectedDispatchError(error);
-            this.drainOrdered(mailbox);
-          },
-        );
-        return;
-      }
-    }
-    mailbox.running = false;
-  }
-
-  private invoke(
-    mailbox: MailboxRuntime,
-    pending: PendingDispatch,
-  ): MaybePromise<void> {
-    const binding = pending.direct
-      ? undefined
-      : mailbox.handlers.get(pending.envelope.handler);
-    if (!pending.direct && !binding) {
-      pending.reject?.(
-        new Error(
-          `handler not found: ${targetKey(pending.envelope.to)}.${pending.envelope.handler}`,
-        ),
-      );
-      return;
-    }
-
-    try {
-      if (pending.direct) {
-        if (!("instance" in mailbox) || !("mailBox" in mailbox)) {
-          throw new Error("direct actor dispatch requires an Actor mailbox");
-        }
-        const result = pending.direct((mailbox as ActorRuntime).instance);
-        if (isPromiseLike(result)) {
-          return Promise.resolve(result).then(
-            (value) => this.completeInvoke(mailbox, pending, value),
-            (error) => this.handleInvokeError(pending, error),
-          );
-        }
-        this.completeInvoke(mailbox, pending, result);
-        return;
-      }
-
-      if (!binding) {
-        throw new Error(`handler binding disappeared: ${pending.envelope.handler}`);
-      }
-      const fn = (binding.owner as unknown as Record<string, unknown>)[binding.method];
-      if (typeof fn !== "function") {
-        throw new Error(`handler is not a function: ${binding.method}`);
-      }
-
-      const result = fn.call(
-        binding.owner,
-        pending.envelope.payload,
-        pending.envelope,
-      ) as MaybePromise<unknown>;
-      if (isPromiseLike(result)) {
-        return Promise.resolve(result).then(
-          (value) => this.completeInvoke(mailbox, pending, value),
-          (error) => this.handleInvokeError(pending, error),
-        );
-      }
-      this.completeInvoke(mailbox, pending, result);
-    } catch (error) {
-      this.handleInvokeError(pending, error);
-    }
-  }
-
-  private handleInvokeError(pending: PendingDispatch, error: unknown): void {
-    pending.reject?.(error);
-    if (pending.envelope.kind === "send") {
-      CoreLogger.error("mailbox send failed", {
-        handler: pending.envelope.handler,
-        error,
-      });
-    }
-  }
-
-  /** 只让仍指向同一存活 mailbox 的调用成功完成，阻止旧 InstanceId 在 await 后泄漏成功响应。 / Completes a call only while its mailbox is still alive, preventing stale InstanceIds from returning success after await. */
-  private completeInvoke(
-    mailbox: MailboxRuntime,
-    pending: PendingDispatch,
-    value: unknown,
-  ): void {
-    if (this.resolveMailbox(pending.envelope.to) !== mailbox) {
-      const error = new Error(
-        `target despawned during dispatch: ${targetKey(pending.envelope.to)}`,
-      );
-      if (pending.envelope.kind === "call") pending.reject?.(error);
-      else CoreLogger.error("mailbox send target despawned", { error });
-      return;
-    }
-    pending.resolve?.(value);
-  }
-
-  private logUnexpectedDispatchError(error: unknown): void {
-    CoreLogger.error("mailbox dispatch failed", { error });
-  }
-
-  private resolveMailbox(target: MessageTarget): MailboxRuntime | undefined {
-    if (isActorRef(target)) {
-      const actor = this.actorsByInstanceId.get(target.instanceId);
-      const entity = this.Root.Get(target.instanceId);
-      if (
-        !actor ||
-        entity !== actor.instance ||
-        actor.ref.sceneId !== target.sceneId ||
-        actor.ref.actorId !== target.actorId
-      ) {
-        return undefined;
-      }
-      return actor;
-    }
-
-    return this.scenes.get(target.sceneId);
   }
 
   private getLocalScene(sceneId: SceneId): SceneRuntime {
@@ -646,31 +411,4 @@ export class ProcessHost {
     }
     return this.nextInstanceId++;
   }
-}
-
-function mailboxType(mailbox: MailboxRuntime): MailboxType {
-  return "mailBox" in mailbox
-    ? (mailbox as ActorRuntime).mailBox.MailboxType
-    : mailbox.mailbox;
-}
-
-function isActorRef(target: MessageTarget): target is ActorRef {
-  return "actorId" in target;
-}
-
-function isSameMailbox(a: MessageTarget, b: MessageTarget): boolean {
-  if (a.processId !== b.processId || a.sceneId !== b.sceneId) {
-    return false;
-  }
-  if (isActorRef(a) || isActorRef(b)) {
-    return isActorRef(a) && isActorRef(b) && a.instanceId === b.instanceId;
-  }
-  return true;
-}
-
-function targetKey(target: MessageTarget): string {
-  if (isActorRef(target)) {
-    return `${target.processId}/${target.sceneType}:${target.sceneId}/${target.actorId}@${target.instanceId}`;
-  }
-  return `${target.processId}/${target.sceneType}:${target.sceneId}`;
 }

@@ -20,20 +20,16 @@ import {
   getRpcBindings,
   RpcDescriptor,
 } from "../protocol/rpc";
-import {
-  ProcessHost,
-  Scene,
-  SceneContext,
-  Session,
-  SessionComponent,
-  Unit,
-} from "../runtime";
+import { Scene } from "../runtime/entities";
+import { SceneContext } from "../runtime/contexts";
+import { ProcessHost } from "../runtime/host";
+import { Session, SessionComponent } from "../runtime/Session";
+import { Unit } from "../runtime/Unit";
 import type { GameUpdateConfig } from "../runtime/Game";
 import { readU16BE } from "../protocol/binary";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { RpcError } from "../protocol/RpcError";
-import type { MessageTarget, SceneRef } from "../runtime";
-import type { ActorAwakeArgs, ActorCtor } from "../runtime";
+import type { ActorAwakeArgs, ActorCtor } from "../runtime/types";
 import {
   LatencyRecorder,
   nowMs,
@@ -491,15 +487,6 @@ export abstract class EntryScene extends Scene {
     });
   }
 
-  /** 显式注册 RPC 路由；普通业务 Handler 优先使用装饰器。 / Registers an RPC route explicitly; decorators are preferred for ordinary handlers. */
-  protected registerSceneRpc<TReq extends IRequest, TResp extends IResponse>(
-    descriptor: RpcDescriptor<TReq, TResp>,
-    target: SceneRef | ((request: TReq) => SceneRef),
-    options: TargetRpcOptions<TReq, TResp> = {},
-  ): void {
-    this.registerTargetRpc(descriptor, target, options);
-  }
-
   /** 按正常 mailbox 与协议分发语义路由本地 call。 / Routes a local call through normal mailbox and protocol dispatch semantics. */
   dispatchLocalCall(frame: Uint8Array): Promise<Uint8Array> {
     const result = this.dispatchMailbox(() => this.handleFrame(frame));
@@ -902,32 +889,6 @@ export abstract class EntryScene extends Scene {
     this.metrics.failedFrames += 1;
   }
 
-  private registerTargetRpc<TReq extends IRequest, TResp extends IResponse>(
-    descriptor: RpcDescriptor<TReq, TResp>,
-    target: MessageTarget | ((request: TReq) => MessageTarget),
-    options: TargetRpcOptions<TReq, TResp>,
-  ): void {
-    const handlerName = options.handlerName ?? descriptor.name;
-    this.claimRpcHandler(descriptor.requestCode, handlerName);
-    this.registry.register(descriptor.requestCode, {
-      responseCode: descriptor.responseCode,
-      decode: descriptor.requestCodec.decode,
-      encode: descriptor.responseCodec.encode,
-      handle: async (request) => {
-        const resolvedTarget =
-          typeof target === "function" ? target(request) : target;
-        const response = await this.processHost.call<TResp>(
-          undefined,
-          resolvedTarget,
-          handlerName,
-          request,
-        );
-        await options.after?.call(this, request, response);
-        return response;
-      },
-    });
-  }
-
   private registerDecoratedRpcHandlers(): void {
     for (const binding of getRpcBindings(this.constructor)) {
       const descriptor = binding.descriptor;
@@ -1160,11 +1121,6 @@ const hostCloseConnection = (globalThis as typeof globalThis & {
 }).__hostCloseConnection;
 
 export type EntrySceneCtor = new (config: RuntimeEntrySceneConfig) => EntryScene;
-
-export interface TargetRpcOptions<TReq, TResp> {
-  handlerName?: string;
-  after?: (this: EntryScene, request: TReq, response: TResp) => void | Promise<void>;
-}
 
 function packConnectionIds(connectionIds: readonly number[]): Uint8Array {
   const bytes = new Uint8Array(connectionIds.length * 4);

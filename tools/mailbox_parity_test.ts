@@ -7,8 +7,8 @@ import {
 import {
   C2S_MailboxParityCodec,
   S2C_MailboxParityCodec,
-} from "../app/generated/model/client/bench/protocol/messages";
-import { MailboxParityProtocol } from "../app/generated/model/client/bench/protocol/rpcs";
+} from "../client_sdk/typescript/Generated/Model/bench/protocol/messages";
+import { MailboxParityProtocol } from "../client_sdk/typescript/Generated/Model/bench/protocol/rpcs";
 
 void main();
 

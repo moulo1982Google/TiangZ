@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { Entity } from "../app/core/runtime";
+import type { Entity } from "../app/core/runtime/entities";
 import { PlayerPersistenceComponent } from "../app/demo/persistence/PlayerPersistenceComponent";
 import { InMemoryPlayerRepository } from "../app/demo/persistence/PlayerRepository";
 import type {

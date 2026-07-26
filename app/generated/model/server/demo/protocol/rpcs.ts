@@ -11,8 +11,6 @@ import {
   C2M_UseItemCodec,
   C2S_GetLoginServiceAddr,
   C2S_GetLoginServiceAddrCodec,
-  C2S_Log,
-  C2S_LogCodec,
   C2S_Login,
   C2S_LoginCodec,
   G2C_EnterMap,
@@ -21,10 +19,6 @@ import {
   G2C_LoginGateCodec,
   G2M_EnterMap,
   G2M_EnterMapCodec,
-  L2L_LogWriteRequest,
-  L2L_LogWriteRequestCodec,
-  L2L_LogWriteResponse,
-  L2L_LogWriteResponseCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
   M2C_UseItem,
@@ -33,8 +27,6 @@ import {
   M2G_EnterMapCodec,
   S2C_GetLoginServiceAddr,
   S2C_GetLoginServiceAddrCodec,
-  S2C_Log,
-  S2C_LogCodec,
   S2C_Login,
   S2C_LoginCodec,
 } from "./messages";
@@ -66,16 +58,6 @@ export const MapProtocol = {
   }),
 };
 
-export const InnerLogProtocol = {
-  Write: defineRpc<L2L_LogWriteRequest, L2L_LogWriteResponse>({
-    name: "InnerLog.Write",
-    requestCode: MsgCode.L2L_LogWriteRequest,
-    responseCode: MsgCode.L2L_LogWriteResponse,
-    requestCodec: L2L_LogWriteRequestCodec,
-    responseCodec: L2L_LogWriteResponseCodec,
-  }),
-};
-
 export const LoginMgrProtocol = {
   GetLoginServiceAddr: defineRpc<C2S_GetLoginServiceAddr, S2C_GetLoginServiceAddr>({
     name: "LoginMgr.GetLoginServiceAddr",
@@ -93,16 +75,6 @@ export const LoginProtocol = {
     responseCode: MsgCode.S2C_Login,
     requestCodec: C2S_LoginCodec,
     responseCodec: S2C_LoginCodec,
-  }),
-};
-
-export const LogProtocol = {
-  Log: defineRpc<C2S_Log, S2C_Log>({
-    name: "Log.Log",
-    requestCode: MsgCode.C2S_Log,
-    responseCode: MsgCode.S2C_Log,
-    requestCodec: C2S_LogCodec,
-    responseCodec: S2C_LogCodec,
   }),
 };
 
@@ -125,10 +97,8 @@ export const GateProtocol = {
 
 export const AllRpcDescriptors = [
   MapProtocol.EnterMap,
-  InnerLogProtocol.Write,
   LoginMgrProtocol.GetLoginServiceAddr,
   LoginProtocol.Login,
-  LogProtocol.Log,
   GateProtocol.LoginGate,
   GateProtocol.EnterMap,
   MapProtocol.Probe,

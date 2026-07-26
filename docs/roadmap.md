@@ -187,7 +187,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.3`。
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.4`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -247,6 +247,16 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Unit Handler公共API改为`unitRpcHandler/unitMessageHandler`，与Session Handler、Scene Handler形成三种明确入口。
 - 配置EntryScene与动态Scene统一挂入ProcessHost的EntityRoot和MailBoxComponent。
 - 新增同连接跨`await`串行、不同连接并行、断线销毁测试；单进程和拆分进程完整冒烟均通过。
+
+### 0.3.10-alpha.4：工程边界清理
+
+状态：完成（2026-07）。
+
+- 删除LogScene演示链、旧字符串Actor Handler旁路和未使用的协议基类。
+- 正常构建只装配Demo，Bench改为`build:bench`显式入口。
+- 客户端协议只生成到规范TypeScript SDK，Cocos/Pixi分发副本不再携带Bench。
+- opcode生成器沿用历史lock并跳过删除消息保留号，不要求业务手写编号。
+- 删除旧3D Cocos空项目和历史压测流水，只保留各基准latest摘要。
 
 ### Phase 3.10.5：TypeScript热更闭环
 

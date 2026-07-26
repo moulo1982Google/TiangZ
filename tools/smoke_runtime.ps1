@@ -104,7 +104,7 @@ function Invoke-AllInOneSmoke {
     $succeeded = $false
     try {
         $processes += Start-RuntimeProcess "configs/local/all.json" "all"
-        foreach ($port in 7000, 7001, 7002, 7100, 7201, 7301) {
+        foreach ($port in 7000, 7001, 7002, 7201, 7301) {
             Wait-TcpPort $port
         }
         Wait-HealthReady 7600
@@ -123,12 +123,12 @@ function Invoke-SplitSmoke {
     Write-Host "[smoke] split-process"
     $processes = @()
     $succeeded = $false
-    $configs = @("log", "mgr", "login1", "login2", "gate1", "map1")
+    $configs = @("mgr", "login1", "login2", "gate1", "map1")
     try {
         foreach ($name in $configs) {
             $processes += Start-RuntimeProcess "configs/local/$name.json" "split_$name"
         }
-        foreach ($port in 7000, 7001, 7002, 7100, 7201, 7301) {
+        foreach ($port in 7000, 7001, 7002, 7201, 7301) {
             Wait-TcpPort $port
         }
         Invoke-SmokeClient

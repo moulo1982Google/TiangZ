@@ -22,7 +22,7 @@ export class C2S_LoginHandler implements SessionRpcHandler<
     scene: LoginScene,
     _session: Session,
     request: C2S_Login,
-  ): Promise<S2C_Login> {
+  ): S2C_Login {
     return scene.Login(request);
   }
 }

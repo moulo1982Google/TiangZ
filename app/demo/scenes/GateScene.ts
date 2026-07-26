@@ -27,10 +27,7 @@ import {
   GateMessages,
   MapMessages,
 } from "../../generated/model/server/demo/protocol/messageDescriptors";
-import {
-  InnerLogProtocol,
-  MapProtocol,
-} from "../../generated/model/server/demo/protocol/rpcs";
+import { MapProtocol } from "../../generated/model/server/demo/protocol/rpcs";
 import { GateSession } from "../gate/GateSession";
 
 const CLIENT_PING_INTERVAL_MS = 5_000;
@@ -230,7 +227,12 @@ export class GateScene extends EntryScene {
       scene: mapHostScene,
     });
 
-    await this.writeEnterMapLog(session.account, mapHostScene.name, mapResponse.unitId);
+    this.logger.info("player entered map", {
+      account: session.account,
+      mapHost: mapHostScene.name,
+      mapId: mapResponse.mapId,
+      unitId: mapResponse.unitId,
+    });
 
     return {
       account: mapResponse.account,
@@ -247,16 +249,6 @@ export class GateScene extends EntryScene {
 
   private selectMapHostScene(mapId: number): SceneConfig {
     return this.mapScenes[(mapId - 1) % this.mapScenes.length];
-  }
-
-  private async writeEnterMapLog(
-    account: string,
-    mapService: string,
-    unitId: number,
-  ): Promise<void> {
-    await this.scenes.callOptionalOne("Log", InnerLogProtocol.Write, {
-      message: `[${this.self.name}] ${account} enter ${mapService} as unit ${unitId}`,
-    });
   }
 
   private disconnectInactiveClients(): void {

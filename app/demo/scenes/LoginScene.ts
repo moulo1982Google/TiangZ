@@ -9,9 +9,6 @@ import {
   C2S_Login,
   S2C_Login,
 } from "../../generated/model/server/demo/protocol/messages";
-import {
-  InnerLogProtocol,
-} from "../../generated/model/server/demo/protocol/rpcs";
 import { LoginComponent } from "../login/LoginComponent";
 
 @entryScene()
@@ -28,19 +25,14 @@ export class LoginScene extends EntryScene {
     this.login = this.AddComponent(LoginComponent, gateScenes, config.process.name);
   }
 
-  /** 执行登录业务并在响应前完成 Gate 分配与日志；账号不再被伪装成 Actor。 / Runs login, Gate assignment, and logging without manufacturing an account Actor. */
-  async Login(request: C2S_Login): Promise<S2C_Login> {
+  /** 执行登录业务、分配 Gate 并记录结构化日志；账号不会被伪装成 Actor。 / Runs login, assigns a Gate, and records a structured log without manufacturing an account Actor. */
+  Login(request: C2S_Login): S2C_Login {
     const response = this.login.Login(request);
-    await this.writeLoginLog(request, response);
-    return response;
-  }
-
-  private async writeLoginLog(
-    request: C2S_Login,
-    response: S2C_Login,
-  ): Promise<void> {
-    await this.scenes.callOptionalOne("Log", InnerLogProtocol.Write, {
-      message: `[${this.self.name}] ${request.account} login count ${response.loginCount}`,
+    this.logger.info("player login completed", {
+      account: request.account,
+      gate: response.gateName,
+      loginCount: response.loginCount,
     });
+    return response;
   }
 }

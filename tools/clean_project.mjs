@@ -25,7 +25,6 @@ const cocosGeneratedNames = [
 const targets = [
   "target",
   "dist",
-  ...cocosGeneratedNames.map((name) => path.join("cocos_client", name)),
   ...cocosGeneratedNames.map((name) => path.join("cocos_client2D", name)),
 ];
 
@@ -36,10 +35,17 @@ for (const entry of readdirSync(root, { withFileTypes: true })) {
 if (copyMode) {
   targets.push(
     "node_modules",
-    path.join("cocos_client", "node_modules"),
     path.join("cocos_client2D", "node_modules"),
-    path.join("perf", "results"),
   );
+  const resultsDirectory = path.join(root, "perf", "results");
+  try {
+    for (const entry of readdirSync(resultsDirectory, { withFileTypes: true })) {
+      if (entry.isFile() && /_latest\.(json|md)$/i.test(entry.name)) continue;
+      targets.push(path.join("perf", "results", entry.name));
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
 }
 
 let totalBytes = 0;

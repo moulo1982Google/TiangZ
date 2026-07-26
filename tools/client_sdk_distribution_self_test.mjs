@@ -9,7 +9,13 @@ const sdk = config.typescriptClientSdk;
 
 assert.equal(sdk?.enabled, true, "typescriptClientSdk must be enabled");
 const sourceRoot = path.resolve(root, sdk.sourceRoot);
-const sourceFiles = await discover(sourceRoot);
+const excludes = (sdk.distributionExcludes ?? []).map((value) =>
+  value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "")
+);
+const sourceFiles = (await discover(sourceRoot)).filter((file) => {
+  const relative = path.relative(sourceRoot, file).replaceAll("\\", "/");
+  return !excludes.some((prefix) => relative === prefix || relative.startsWith(`${prefix}/`));
+});
 assert.ok(sourceFiles.length > 0, "canonical TypeScript SDK is empty");
 
 for (const configuredRoot of sdk.outputRoots) {

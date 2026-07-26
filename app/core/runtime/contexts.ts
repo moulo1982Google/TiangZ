@@ -4,9 +4,6 @@ import type {
   ActorAwakeArgs,
   ActorId,
   ActorRef,
-  HandlerName,
-  MessageTarget,
-  SceneId,
   SceneRef,
 } from "./types";
 import type { Actor } from "./entities";
@@ -28,20 +25,6 @@ export class SceneContext {
     });
   }
 
-  /** 经由目标 mailbox 调用内部 Handler，并等待结果。 / Calls an internal handler through the destination mailbox and waits for its result. */
-  call<TResponse = unknown>(
-    to: MessageTarget,
-    handlerName: HandlerName,
-    payload?: unknown,
-  ): Promise<TResponse> {
-    return this.host.call<TResponse>(this.self, to, handlerName, payload);
-  }
-
-  /** 将单向内部 Handler 调用入队；失败由宿主报告。 / Enqueues a one-way internal handler call; failures are reported by the host. */
-  send(to: MessageTarget, handlerName: HandlerName, payload?: unknown): void {
-    this.host.send(this.self, to, handlerName, payload);
-  }
-
   /** 在本 Scene 内创建并挂载 Actor。 / Creates and attaches an Actor inside this Scene. */
   spawnActor<T extends Actor<any[]>>(
     actorId: ActorId,
@@ -59,16 +42,6 @@ export class SceneContext {
   /** 解析当前上下文所属的 Scene Entity。 / Resolves this context's owning Scene Entity. */
   DomainScene<T extends import("./entities").Scene = import("./entities").Scene>(): T {
     return this.host.sceneById<T>(this.self.sceneId);
-  }
-
-  /** 创建经过校验的本地 Scene 引用。 / Creates a checked reference to a local Scene. */
-  ref(sceneId: SceneId): SceneRef {
-    return this.host.localSceneRef(sceneId);
-  }
-
-  /** 按业务 id 创建经过校验的本地 Actor 引用。 / Creates a checked reference to a local Actor by business id. */
-  actorRef(sceneId: SceneId, actorId: ActorId): ActorRef {
-    return this.host.localActorRef(sceneId, actorId);
   }
 
   /** 按宿主时间休眠；游戏逻辑调度应使用 Entity 定时器。 / Sleeps on host time; gameplay scheduling should use Entity timers. */
@@ -91,30 +64,6 @@ export class ActorContext {
       sceneType: self.sceneType,
       actorId: self.actorId,
     });
-  }
-
-  /** 调用另一个内部目标，并保留当前 Actor 作为发送方。 / Calls another internal target while preserving this Actor as the sender. */
-  call<TResponse = unknown>(
-    to: MessageTarget,
-    handlerName: HandlerName,
-    payload?: unknown,
-  ): Promise<TResponse> {
-    return this.host.call<TResponse>(this.self, to, handlerName, payload);
-  }
-
-  /** 发送内部单向消息，不等待目标执行完成。 / Sends an internal one-way message without waiting for target execution. */
-  send(to: MessageTarget, handlerName: HandlerName, payload?: unknown): void {
-    this.host.send(this.self, to, handlerName, payload);
-  }
-
-  /** 创建经过校验的本地 Scene 引用。 / Creates a checked local Scene reference. */
-  ref(sceneId: SceneId): SceneRef {
-    return this.host.localSceneRef(sceneId);
-  }
-
-  /** 创建经过校验的本地 Actor 引用。 / Creates a checked local Actor reference. */
-  actorRef(sceneId: SceneId, actorId: ActorId): ActorRef {
-    return this.host.localActorRef(sceneId, actorId);
   }
 
   /** 解析拥有当前 Actor 的 Scene。 / Resolves the Scene that owns this Actor. */

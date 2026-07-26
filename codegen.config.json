@@ -1,12 +1,13 @@
 {
   "hotfix": {
-    "sceneSearchRoots": ["app"],
-    "handlerSearchRoots": ["app"],
-    "serverProtocolSearchRoots": ["app/generated/model/server"]
+    "sceneSearchRoots": ["app/demo"],
+    "handlerSearchRoots": ["app/demo"],
+    "serverProtocolSearchRoots": ["app/generated/model/server/demo"]
   },
   "typescriptClientSdk": {
     "enabled": true,
     "sourceRoot": "client_sdk/typescript",
+    "distributionExcludes": ["Generated/Model/bench"],
     "outputRoots": [
       "cocos_client2D/assets/scripts/Generated/SDK",
       "pixi_client/src/Generated/SDK"

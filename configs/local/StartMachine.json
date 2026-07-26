@@ -4,7 +4,6 @@
       "name": "local",
       "innerIp": "127.0.0.1",
       "processes": [
-        "log.json",
         "mgr.json",
         "login1.json",
         "login2.json",

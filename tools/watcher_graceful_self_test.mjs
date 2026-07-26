@@ -28,7 +28,7 @@ await verifyUnexpectedChildExit();
 async function verifyOperatorShutdown() {
   const watcher = startWatcher("configs/local/StartMachine.json");
   try {
-    await Promise.all([7000, 7001, 7002, 7100, 7201, 7301].map(waitForPort));
+    await Promise.all([7000, 7001, 7002, 7201, 7301].map(waitForPort));
     watcher.child.stdin.end("shutdown\n");
     const { code, signal } = await waitForExit(watcher.child, 30_000);
     if (code !== 0) throw new Error(`Watcher exited with code=${code} signal=${signal}`);
@@ -54,8 +54,8 @@ async function verifyUnexpectedChildExit() {
         name: "watcher-failure-test",
         innerIp: "127.0.0.1",
         processes: [
-          path.join(root, "configs/local/log.json"),
-          path.join(root, "configs/local/log.json"),
+          path.join(root, "configs/local/mgr.json"),
+          path.join(root, "configs/local/mgr.json"),
         ],
       }],
     }, null, 2)}\n`,
@@ -69,7 +69,7 @@ async function verifyUnexpectedChildExit() {
     if (!watcher.output().includes("exited unexpectedly")) {
       throw new Error(`Watcher did not report the unexpected child exit:\n${watcher.output()}`);
     }
-    await waitForPortClosed(7100, 10_000);
+    await waitForPortClosed(7000, 10_000);
     console.log("watcher failure self-test passed (unexpected child exit stopped siblings)");
   } finally {
     stopIfRunning(watcher.child);
@@ -86,7 +86,7 @@ async function verifyUnexpectedChildExit() {
 async function verifyRunningChildExit() {
   const watcher = startWatcher("configs/local/StartMachine.json");
   try {
-    const ports = [7000, 7001, 7002, 7100, 7201, 7301];
+    const ports = [7000, 7001, 7002, 7201, 7301];
     await Promise.all(ports.map(waitForPort));
     const childPids = await directChildProcessIds(watcher.child.pid);
     if (childPids.length === 0) {

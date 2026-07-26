@@ -8,9 +8,10 @@ const root = process.cwd();
 const temporary = mkdtempSync(path.join(os.tmpdir(), "tiangz-observability-"));
 
 try {
+  const splitStartup = path.resolve(root, "configs/local/StartMachine.json");
   const splitTargets = path.join(temporary, "split-targets.yml");
-  run("node", ["tools/observability/generate_prom_targets.mjs", "--startup", "configs/local/StartMachine.json", "--local-host", "host.docker.internal", "--output", splitTargets]);
-  verifyTargets(splitTargets, 6);
+  run("node", ["tools/observability/generate_prom_targets.mjs", "--startup", splitStartup, "--local-host", "host.docker.internal", "--output", splitTargets]);
+  verifyTargets(splitTargets, countConfiguredProcesses(splitStartup));
 
   const singleTargets = path.join(temporary, "single-targets.yml");
   run("node", ["tools/observability/generate_prom_targets.mjs", "--startup", "configs/local/all.json", "--local-host", "host.docker.internal", "--output", singleTargets]);
@@ -72,6 +73,16 @@ function verifyTargets(file, expectedCount) {
     const count = (body.match(new RegExp(`^    ${label}: "[^"\\r\\n]+"$`, "gm")) ?? []).length;
     if (count !== expectedCount) throw new Error(`${file} has invalid ${label} labels`);
   }
+}
+
+/** 从 StartMachine 计算应生成的进程目标数，避免拓扑调整后维护重复常量。 / Counts configured process targets so topology changes do not require a duplicate constant. */
+function countConfiguredProcesses(file) {
+  const startup = JSON.parse(readFileSync(file, "utf8"));
+  if (!Array.isArray(startup.machines)) throw new Error(`${file} has no machines array`);
+  return startup.machines.reduce((total, machine) => {
+    if (!Array.isArray(machine.processes)) throw new Error(`${file} contains a machine without processes`);
+    return total + machine.processes.length;
+  }, 0);
 }
 
 /** 防止面板 ID、查询 refId 冲突，并确保核心诊断视图没有被误删。 / Prevents panel/refId collisions and guards required diagnostics. */

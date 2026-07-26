@@ -19,7 +19,7 @@ import {
   decodeMapProbeFrame,
   decodeMapReadyFrame,
 } from "../../tools/support/DemoClientProtocol";
-import { MsgCode } from "../../app/generated/model/client/demo/protocol/msgcodes";
+import { MsgCode } from "../../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 
 interface Options {
   host: string;

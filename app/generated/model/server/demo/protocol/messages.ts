@@ -2,47 +2,6 @@
 import { BinaryReader, BinaryWriter } from "../../../../../core/protocol/binary";
 import type { IActorLocationMessage, IActorLocationRequest, IActorLocationResponse, IActorMessage, IMessage, IRequest, IResponse } from "../../../../../core/protocol/message";
 
-export interface LoginServiceAddress {
-  name: string;
-  ip: string;
-  port: number;
-}
-
-export const LoginServiceAddressCodec = {
-  decode(payload: Uint8Array): LoginServiceAddress {
-    const reader = new BinaryReader(payload);
-    const value: LoginServiceAddress = {
-      name: "",
-      ip: "",
-      port: 0,
-    };
-    while (!reader.eof()) {
-      const tag = reader.tag();
-      if (tag.fieldNo === 1 && tag.wireType === 2) {
-        value.name = reader.string();
-      }
-      else if (tag.fieldNo === 2 && tag.wireType === 2) {
-        value.ip = reader.string();
-      }
-      else if (tag.fieldNo === 3 && tag.wireType === 0) {
-        value.port = reader.uint32();
-      }
-      else {
-        reader.skip(tag.wireType);
-      }
-    }
-    return value;
-  },
-
-  encode(value: LoginServiceAddress): Uint8Array {
-    const writer = new BinaryWriter();
-    writer.string(1, value.name);
-    writer.string(2, value.ip);
-    writer.uint32(3, value.port);
-    return writer.finish();
-  },
-};
-
 export interface MapEntitySnapshot {
   unitId: number;
   x: number;
@@ -386,35 +345,6 @@ export const ItemSnapshotCodec = {
   },
 };
 
-export interface L2L_LogWrite extends IActorMessage {
-  message: string;
-}
-
-export const L2L_LogWriteCodec = {
-  decode(payload: Uint8Array): L2L_LogWrite {
-    const reader = new BinaryReader(payload);
-    const value: L2L_LogWrite = {
-      message: "",
-    };
-    while (!reader.eof()) {
-      const tag = reader.tag();
-      if (tag.fieldNo === 1 && tag.wireType === 2) {
-        value.message = reader.string();
-      }
-      else {
-        reader.skip(tag.wireType);
-      }
-    }
-    return value;
-  },
-
-  encode(value: L2L_LogWrite): Uint8Array {
-    const writer = new BinaryWriter();
-    writer.string(1, value.message);
-    return writer.finish();
-  },
-};
-
 export interface G2M_EnterMap extends IRequest {
   rpcId?: number;
   account: string;
@@ -561,78 +491,6 @@ export const M2G_EnterMapCodec = {
     writer.uint32(7, value.actorInstanceId);
     writer.uint32(8, value.fixedUpdateMs);
     for (const item of value.items) writer.bytes(9, ItemSnapshotCodec.encode(item), true);
-    return writer.finish();
-  },
-};
-
-export interface L2L_LogWriteRequest extends IRequest {
-  rpcId?: number;
-  message: string;
-}
-
-export const L2L_LogWriteRequestCodec = {
-  decode(payload: Uint8Array): L2L_LogWriteRequest {
-    const reader = new BinaryReader(payload);
-    const value: L2L_LogWriteRequest = {
-      message: "",
-    };
-    while (!reader.eof()) {
-      const tag = reader.tag();
-      if (tag.fieldNo === 90 && tag.wireType === 0) {
-        value.rpcId = reader.uint32();
-      }
-      else if (tag.fieldNo === 1 && tag.wireType === 2) {
-        value.message = reader.string();
-      }
-      else {
-        reader.skip(tag.wireType);
-      }
-    }
-    return value;
-  },
-
-  encode(value: L2L_LogWriteRequest): Uint8Array {
-    const writer = new BinaryWriter();
-    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.string(1, value.message);
-    return writer.finish();
-  },
-};
-
-export interface L2L_LogWriteResponse extends IResponse {
-  message?: string;
-  error?: number;
-  rpcId?: number;
-}
-
-export const L2L_LogWriteResponseCodec = {
-  decode(payload: Uint8Array): L2L_LogWriteResponse {
-    const reader = new BinaryReader(payload);
-    const value: L2L_LogWriteResponse = {
-    };
-    while (!reader.eof()) {
-      const tag = reader.tag();
-      if (tag.fieldNo === 92 && tag.wireType === 2) {
-        value.message = reader.string();
-      }
-      else if (tag.fieldNo === 91 && tag.wireType === 0) {
-        value.error = reader.uint32();
-      }
-      else if (tag.fieldNo === 90 && tag.wireType === 0) {
-        value.rpcId = reader.uint32();
-      }
-      else {
-        reader.skip(tag.wireType);
-      }
-    }
-    return value;
-  },
-
-  encode(value: L2L_LogWriteResponse): Uint8Array {
-    const writer = new BinaryWriter();
-    if (value.message !== undefined) writer.string(92, value.message);
-    if (value.error !== undefined) writer.uint32(91, value.error);
-    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     return writer.finish();
   },
 };
@@ -1042,78 +900,6 @@ export const S2C_LoginCodec = {
     writer.string(5, value.gateName);
     writer.string(6, value.gateIp);
     writer.uint32(7, value.gatePort);
-    return writer.finish();
-  },
-};
-
-export interface C2S_Log extends IRequest {
-  rpcId?: number;
-  message: string;
-}
-
-export const C2S_LogCodec = {
-  decode(payload: Uint8Array): C2S_Log {
-    const reader = new BinaryReader(payload);
-    const value: C2S_Log = {
-      message: "",
-    };
-    while (!reader.eof()) {
-      const tag = reader.tag();
-      if (tag.fieldNo === 90 && tag.wireType === 0) {
-        value.rpcId = reader.uint32();
-      }
-      else if (tag.fieldNo === 1 && tag.wireType === 2) {
-        value.message = reader.string();
-      }
-      else {
-        reader.skip(tag.wireType);
-      }
-    }
-    return value;
-  },
-
-  encode(value: C2S_Log): Uint8Array {
-    const writer = new BinaryWriter();
-    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.string(1, value.message);
-    return writer.finish();
-  },
-};
-
-export interface S2C_Log extends IResponse {
-  message?: string;
-  error?: number;
-  rpcId?: number;
-}
-
-export const S2C_LogCodec = {
-  decode(payload: Uint8Array): S2C_Log {
-    const reader = new BinaryReader(payload);
-    const value: S2C_Log = {
-    };
-    while (!reader.eof()) {
-      const tag = reader.tag();
-      if (tag.fieldNo === 92 && tag.wireType === 2) {
-        value.message = reader.string();
-      }
-      else if (tag.fieldNo === 91 && tag.wireType === 0) {
-        value.error = reader.uint32();
-      }
-      else if (tag.fieldNo === 90 && tag.wireType === 0) {
-        value.rpcId = reader.uint32();
-      }
-      else {
-        reader.skip(tag.wireType);
-      }
-    }
-    return value;
-  },
-
-  encode(value: S2C_Log): Uint8Array {
-    const writer = new BinaryWriter();
-    if (value.message !== undefined) writer.string(92, value.message);
-    if (value.error !== undefined) writer.uint32(91, value.error);
-    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     return writer.finish();
   },
 };

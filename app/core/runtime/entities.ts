@@ -139,14 +139,8 @@ export type ComponentCtor<TComponent extends Component<any[]> = Component<any[]>
 type ComponentAwakeArgs<TComponent> =
   TComponent extends Component<infer TAwakeArgs> ? TAwakeArgs : never;
 
-interface ComponentHooks {
-  added(ctor: Function, instance: Component<any[]>): void;
-  removing(instance: Component<any[]>): void;
-}
-
 export abstract class Entity {
   private readonly components = new Map<Function, Component<any[]>>();
-  private componentHooks?: ComponentHooks;
   private disposed = false;
   private id: EntityId | undefined;
   private instanceId: InstanceId = 0;
@@ -206,7 +200,6 @@ export abstract class Entity {
     this.components.set(ctor, instance);
     try {
       instance.__awake(...args);
-      this.componentHooks?.added(ctor, instance);
     } catch (error) {
       this.components.delete(ctor);
       instance.__dispose();
@@ -250,7 +243,6 @@ export abstract class Entity {
     if (!instance) return false;
 
     this.components.delete(ctor);
-    this.componentHooks?.removing(instance);
     instance.__dispose();
     return true;
   }
@@ -280,16 +272,6 @@ export abstract class Entity {
     this.parent = parent;
   }
 
-  __bindComponentHooks(hooks: ComponentHooks): void {
-    if (this.componentHooks) {
-      throw new Error("entity component hooks are already bound");
-    }
-    this.componentHooks = hooks;
-    for (const [ctor, instance] of this.components) {
-      hooks.added(ctor, instance);
-    }
-  }
-
   __dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -297,7 +279,6 @@ export abstract class Entity {
     let firstError: unknown;
     for (const component of [...this.components.values()].reverse()) {
       try {
-        this.componentHooks?.removing(component);
         component.__dispose();
       } catch (error) {
         firstError ??= error;

@@ -44,7 +44,7 @@ try {
   mkdirSync(resultsDirectory, { recursive: true });
   if (!options.skipBuild) {
     await ensureNodeDependencies();
-    await runNpm(["run", "build"]);
+    await runNpm(["run", "build:bench"]);
     const cargoArgs = ["build"];
     if (options.profile === "release") cargoArgs.push("--release");
     cargoArgs.push("--bin", "TiangZ", "--bin", "runtime_load");

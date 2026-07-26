@@ -11,10 +11,8 @@ const protoDir = path.join(root, "proto");
 const opcodeLockFile = path.join(protoDir, "opcode.lock.json");
 const schemaLockFile = path.join(protoDir, "schema.lock.json");
 const generatedModelDir = path.join(root, "app", "generated", "model");
-const generatedProtocolDirs = [
-  path.join(generatedModelDir, "client"),
-  path.join(generatedModelDir, "server"),
-];
+const generatedServerProtocolDir = path.join(generatedModelDir, "server");
+const obsoleteAppClientProtocolDir = path.join(generatedModelDir, "client");
 const appDir = path.join(root, "app");
 const configFile = path.join(root, "codegen.config.json");
 const codegenConfig = JSON.parse(
@@ -52,12 +50,6 @@ const knownBaseTypes = new Set([
   "IActorLocationMessage",
   "IActorLocationRequest",
   "IActorLocationResponse",
-  "ISocialMessage",
-  "ISocialRequest",
-  "ISocialResponse",
-  "IRankMessage",
-  "IRankRequest",
-  "IRankResponse",
 ]);
 const messageOptionKeys = new Set([
   "base",
@@ -76,13 +68,14 @@ async function main() {
     return;
   }
   const updateProtocolLocks = args.includes("--update-opcode-lock");
+  const opcodeLock = await readOpcodeLock(updateProtocolLocks);
   const protoFiles = await discoverProtoFiles(protoDir);
   const groups = new Map();
   const sourceProtocols = [];
   for (const protoFile of protoFiles) {
     const fileInfo = parseProtoFileInfo(protoFile);
     const source = await readFile(protoFile, "utf8");
-    const protocol = parseProto(source, fileInfo);
+    const protocol = parseProto(source, fileInfo, opcodeLock);
     validateProtocol(protocol, fileInfo.fileName, true);
     sourceProtocols.push(protocol);
 
@@ -105,25 +98,25 @@ async function main() {
     }
   }
 
-  await enforceOpcodeLock(sourceProtocols, updateProtocolLocks);
+  await enforceOpcodeLock(sourceProtocols, updateProtocolLocks, opcodeLock);
   await enforceSchemaLock(sourceProtocols, updateProtocolLocks);
 
-  for (const generatedProtocolDir of generatedProtocolDirs) {
-    await rm(generatedProtocolDir, { recursive: true, force: true });
-  }
+  await rm(generatedServerProtocolDir, { recursive: true, force: true });
+  await rm(obsoleteAppClientProtocolDir, { recursive: true, force: true });
   if (typescriptClientSdk) {
     await removeGeneratedTypeScript(typescriptClientSdk.protocolOutputRoot);
   }
 
   for (const group of [...groups.values()].sort(compareProtocolGroup)) {
     validateProtocol(group, `${group.target}/${group.packageDir}`);
-    const outputDir = path.join(
-      generatedModelDir,
-      group.target,
-      group.packageDir,
-      "protocol",
-    );
-    await writeProtocol(group, outputDir, appRuntimeFiles);
+    if (group.target === "server") {
+      const outputDir = path.join(
+        generatedServerProtocolDir,
+        group.packageDir,
+        "protocol",
+      );
+      await writeProtocol(group, outputDir, appRuntimeFiles);
+    }
     if (typescriptClientSdk && group.target === "client") {
       const sdkOutputDir = path.join(
         typescriptClientSdk.protocolOutputRoot,
@@ -135,7 +128,7 @@ async function main() {
   }
 
   const outputRoots = [
-    ...generatedProtocolDirs.map((outputPath) => ({ path: outputPath, extensions: [".ts"] })),
+    { path: generatedServerProtocolDir, extensions: [".ts"] },
     ...(typescriptClientSdk ? [{ path: typescriptClientSdk.protocolOutputRoot, extensions: [".ts"] }] : []),
   ];
   await recordGenerator(root, {
@@ -261,7 +254,7 @@ function toCamel(name) {
   return name.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
 }
 
-function parseProto(source, fileInfo) {
+function parseProto(source, fileInfo, opcodeLock) {
   const messages = [];
   const startOpcode = parseOpcodeStart(source, fileInfo);
   const messagePattern =
@@ -297,7 +290,7 @@ function parseProto(source, fileInfo) {
     messages.push(message);
   }
 
-  assignMessageCodes(messages, startOpcode);
+  assignMessageCodes(messages, startOpcode, opcodeLock);
   const protocol = {
     packageDir: parsePackageDir(source),
     messages,
@@ -426,8 +419,14 @@ function addSyntheticField(message, field) {
   });
 }
 
-function assignMessageCodes(messages, startOpcode) {
+function assignMessageCodes(messages, startOpcode, opcodeLock) {
   let opcode = startOpcode;
+  const lockedByKey = new Map(
+    (opcodeLock?.entries ?? []).map((entry) => [entry.key, entry]),
+  );
+  const reservedCodes = new Set(
+    (opcodeLock?.entries ?? []).map((entry) => entry.code),
+  );
 
   for (const message of messages) {
     if (!isProtocolMessage(message)) continue;
@@ -438,12 +437,21 @@ function assignMessageCodes(messages, startOpcode) {
       continue;
     }
 
-    opcode += 1;
+    const locked = lockedByKey.get(message.opcodeKey);
+    if (locked) {
+      message.code = locked.code;
+      opcode = Math.max(opcode, locked.code);
+      continue;
+    }
+
+    do opcode += 1;
+    while (reservedCodes.has(opcode));
     message.code = opcode;
+    reservedCodes.add(opcode);
   }
 }
 
-async function enforceOpcodeLock(protocols, update) {
+async function enforceOpcodeLock(protocols, update, lock) {
   const current = protocols
     .flatMap((protocol) => protocol.messages)
     .filter(isProtocolMessage)
@@ -453,7 +461,6 @@ async function enforceOpcodeLock(protocols, update) {
       code: message.code,
     }))
     .sort((left, right) => left.key.localeCompare(right.key, "en"));
-  const lock = await readOpcodeLock(update);
   const entries = new Map(lock.entries.map((entry) => [entry.key, entry]));
   const owners = new Map(lock.entries.map((entry) => [entry.code, entry.key]));
   const missing = [];

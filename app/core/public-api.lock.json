@@ -45,7 +45,6 @@
     "MaybePromise",
     "MessageDescriptor",
     "MessageRouting",
-    "MessageTarget",
     "ProcessConfig",
     "ProcessHost",
     "ProcessLifecycleConfig",

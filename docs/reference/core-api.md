@@ -48,7 +48,6 @@
 - `processHost: ProcessHost`：创建动态 Scene、Actor、Component。
 - `mailbox`：`ordered` 或 `unordered`，默认 ordered。
 - `sendClient(connectionId, descriptor, message)`：向客户端连接推送消息。
-- `registerSceneRpc/registerActorRpc`：把协议入口路由到动态 Scene/Actor。
 - `childSceneId(localId)`：生成入口 Scene 范围内唯一的子 Scene ID。
 - EntryScene 也继承 `Entity`，可使用 `AddComponent/GetComponent/RemoveComponent` 组织业务能力。
 
@@ -79,10 +78,10 @@
 
 - `spawnScene/despawnScene`。
 - `spawnActor(sceneId, actorId, Type, ...awakeArgs)/despawnActor`；Actor 参数由其 `Actor<[...args]>` 类型约束，并由框架同步调用一次 `Awake`。
-- `localSceneRef/localActorRef`。
 - `Root.Get(instanceId)`：O(1) 获取当前生命周期 Entity。
-- `runActorMailbox(instanceId, callback)`：通过 Actor 自身 MailBoxComponent 调度。
-- `call/send`：动态 Scene/Actor mailbox 调度。
+- `runActorMailbox(instanceId, callback)`：Session/Unit Handler 与 Actor 定时器共用的类型化 mailbox 底层入口。
+
+普通业务不直接调用 `ProcessHost`。内部 Scene 通讯使用 `SceneMessageHelper` 和生成 descriptor；Session/Unit 消息由类型化 Handler 自动进入目标 mailbox。Runtime 不再提供 `@handler("字符串")`、`ProcessHost.call/send` 这条旁路。
 
 ## Unit 与 UnitComponent
 
@@ -102,7 +101,6 @@
 - `TryGetComponent(Type)/HasComponent(Type)`：查询可选组件。
 - `RemoveComponent(Type)`：移除组件并执行其 `OnDestroy()`。
 - `despawnActor` 会销毁 Actor 的全部组件；业务层不直接调用内部 `__dispose()`。
-- 动态 Scene/Actor 增删带 `@handler` 的组件时，对应 mailbox Handler 会同步注册和移除。
 - 所有业务组件统一继承 `Component`。挂载目标由 `entryScene.AddComponent(...)`、`mapScene.AddComponent(...)` 或 `unit.AddComponent(...)` 决定。
 - Component 通过 `GetParent<T>()` 取得直接宿主，通过 `DomainScene<T>()` 取得所属动态 Scene；不提供按宿主拆分的 Component Context。
 - EntryScene 的协议 Handler 绑定在 Scene 类型上，再通过 `scene.GetComponent(...)` 协调一个或多个组件；组件本身不承担网络路由注册。

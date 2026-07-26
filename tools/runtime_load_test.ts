@@ -4,8 +4,8 @@ import { packFrame } from "../app/core/protocol/registry";
 import {
   C2S_RuntimePingCodec,
   S2C_RuntimePingCodec,
-} from "../app/generated/model/client/bench/protocol/messages";
-import { BenchProtocol } from "../app/generated/model/client/bench/protocol/rpcs";
+} from "../client_sdk/typescript/Generated/Model/bench/protocol/messages";
+import { BenchProtocol } from "../client_sdk/typescript/Generated/Model/bench/protocol/rpcs";
 
 interface Options {
   host: string;

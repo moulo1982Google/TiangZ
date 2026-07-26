@@ -10,10 +10,11 @@
 | `npm run codegen` | 生成协议、Native 数据、服务端 Scene/Handler 和客户端 Handler 导入入口 |
 | `npm run codegen:proto:update-lock` | 评审协议变化后显式更新 opcode 与 schema 两份发布锁 |
 | `npm run test:protocol-locks` | 自测协议锁对字段增删、改号、改型、继承和 RPC 关联变化的拦截 |
-| `npm run codegen:client-sdk` | 计算协议指纹并向 Cocos/Pixi 分发完整 TypeScript SDK |
+| `npm run codegen:client-sdk` | 计算正式协议指纹并向 Cocos/Pixi 分发不含 Bench 的 TypeScript SDK |
 | `npm run codegen:client-handlers` | 只生成客户端 Handler 自动导入入口 |
 | `npm run typecheck` | 服务端 TS 类型检查 |
 | `npm run build` | 生产 TS bundle、协议和 smoke client |
+| `npm run build:bench` | 在生产 Demo 之外显式装配 Bench Scene 与压测 Handler |
 | `npm run build:debug` | 带内联 sourcemap 的调试 bundle |
 | `cargo run --bin TiangZ -- configs/local/all.json` | 单进程、单 V8 启动全部 Demo Scene |
 | `npm run smoke:client` | Node 客户端跑登录地图链路 |

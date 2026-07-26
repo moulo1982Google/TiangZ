@@ -86,11 +86,11 @@ async function runCase(deployment, players, moveRate, round) {
     if (!options.remote) {
       const configs = deployment === "all"
         ? ["all"]
-        : ["log", "mgr", "login1", "login2", "gate1", "map1"];
+        : ["mgr", "login1", "login2", "gate1", "map1"];
       for (const config of configs) {
         runtimes.push(startRuntime(config, `${caseName}_${config}`));
       }
-      for (const port of [7000, 7001, 7002, 7100, 7201, 7301]) {
+      for (const port of [7000, 7001, 7002, 7201, 7301]) {
         await waitPort("127.0.0.1", port, 20_000);
       }
     } else {

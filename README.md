@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.3.10-alpha.3`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
+当前开发版本为 `0.3.10-alpha.4`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
@@ -44,7 +44,8 @@ app/core/process/            ProcessRuntime、EntryScene、Scene 路由
 app/core/runtime/            EntityRoot、动态 Scene、Session、Unit、Component、mailbox
 app/demo/                    MMORPG Demo 业务
 app/demo/scenes/             配置启动的 Demo EntryScene
-app/generated/               全部自动生成代码
+app/bench/                   显式启用的基准 Scene 与压测 Handler
+app/generated/               服务端与 Native 自动生成代码
 app/generated/hotfix/        自动生成的 Scene/Handler 模块入口
 proto/                       protobuf 源文件
 native_data/                 Rust Entity/Native op 原型
@@ -69,10 +70,9 @@ npm run build
 cargo run -- configs/local/all.json
 ```
 
-`all.json` 在一个 OS 进程、一个 V8 中启动六个入口 Scene，但保留各自客户端/Inner Listener：
+`all.json` 在一个 OS 进程、一个 V8 中启动五个入口 Scene，但保留各自客户端/Inner Listener：
 
 ```text
-log       Log       127.0.0.1:7100
 login_mgr LoginMgr  127.0.0.1:7000
 login_1   Login     127.0.0.1:7001
 login_2   Login     127.0.0.1:7002
@@ -90,7 +90,7 @@ Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“�
 
 ## 客户端 SDK
 
-公共 TypeScript SDK 位于 `client_sdk/typescript/`。`Core` 只包含引擎无关的帧、RPC、Push、Update 队列、错误和 Transport 抽象；协议生成代码位于 `Generated/Model`。执行 `npm run codegen` 后，完整 SDK 会分发到 Cocos 与 Pixi 的 `Generated/SDK`，两个客户端不维护私有网络 Core。
+公共 TypeScript SDK 位于 `client_sdk/typescript/`。`Core` 只包含引擎无关的帧、RPC、Push、Update 队列、错误和 Transport 抽象；客户端协议生成代码只位于 SDK 的 `Generated/Model`。执行 `npm run codegen` 后，正式 SDK 会分发到 Cocos 与 Pixi 的 `Generated/SDK`，Bench 协议只留在规范 SDK 供压测工具使用，两个客户端不维护私有网络 Core。
 
 ```powershell
 # 公共 SDK 真实 WebSocket 登录到进图
@@ -311,7 +311,7 @@ npm run clean:copy:dry-run
 npm run clean:copy
 ```
 
-`clean:copy:dry-run` 只预览；`clean:copy` 会删除 Rust `target`、TS `dist`、各级 `node_modules`、Cocos `library/temp/build/native` 等缓存以及 `perf/results`。源码、配置、proto、`tools` 和 Cocos `assets/settings` 不会删除。
+`clean:copy:dry-run` 只预览；`clean:copy` 会删除 Rust `target`、TS `dist`、各级 `node_modules`、Cocos `library/temp/build/native` 等缓存，以及 `perf/results` 中除 `*_latest.json/md` 外的临时报告。源码、配置、proto、`tools` 和最近一次基准摘要不会删除。
 
 将整个工程复制到 Linux 后，可以直接执行：
 

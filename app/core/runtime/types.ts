@@ -12,7 +12,6 @@ export type SceneType = string;
 export type EntityId = string | number;
 export type InstanceId = number;
 export type ActorId = EntityId;
-export type HandlerName = string;
 export type MailboxType = "ordered" | "unordered";
 
 export interface SceneRef {
@@ -24,17 +23,6 @@ export interface SceneRef {
 export interface ActorRef extends SceneRef {
   actorId: ActorId;
   instanceId: InstanceId;
-}
-
-export type MessageTarget = SceneRef | ActorRef;
-
-export interface Envelope<TPayload = unknown> {
-  id: number;
-  from?: MessageTarget;
-  to: MessageTarget;
-  handler: HandlerName;
-  payload: TPayload;
-  kind: "call" | "send";
 }
 
 export interface SceneOptions {

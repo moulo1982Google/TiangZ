@@ -4,11 +4,6 @@ package ets.demo;
 
 import "./DataDefine_CS_50001.proto";
 
-message L2L_LogWrite // IActorMessage
-{
-  string message = 1;
-}
-
 //ResponseType M2G_EnterMap
 // @ets.msg protocol=Map
 message G2M_EnterMap // IRequest
@@ -31,17 +26,6 @@ message M2G_EnterMap // IResponse
   uint32 actor_instance_id = 7;
   uint32 fixed_update_ms = 8;
   repeated ItemSnapshot items = 9;
-}
-
-//ResponseType L2L_LogWriteResponse
-// @ets.msg protocol=InnerLog method=Write
-message L2L_LogWriteRequest // IRequest
-{
-  string message = 1;
-}
-
-message L2L_LogWriteResponse // IResponse
-{
 }
 
 // @ets.msg protocol=Gate method=MapReady

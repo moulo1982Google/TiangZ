@@ -129,11 +129,11 @@ function Invoke-GameplayCase {
             $handles += Start-Runtime "configs/local/all.json" "${Deployment}_${PlayerCount}_${workload}_all"
         }
         else {
-            foreach ($name in "log", "mgr", "login1", "login2", "gate1", "map1") {
+            foreach ($name in "mgr", "login1", "login2", "gate1", "map1") {
                 $handles += Start-Runtime "configs/local/$name.json" "${Deployment}_${PlayerCount}_${workload}_$name"
             }
         }
-        foreach ($port in 7000, 7001, 7002, 7100, 7201, 7301) { Wait-TcpPort $port }
+        foreach ($port in 7000, 7001, 7002, 7201, 7301) { Wait-TcpPort $port }
         $output = @(& node $GameClient `
             --players $PlayerCount `
             --setup-concurrency $SetupConcurrency `

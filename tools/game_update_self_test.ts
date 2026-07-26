@@ -1,21 +1,17 @@
 import assert from "node:assert/strict";
+import { Actor, Component, Scene } from "../app/core/runtime/entities";
+import { Game, InitializeGameSingletons } from "../app/core/runtime/Game";
+import { ProcessHost } from "../app/core/runtime/host";
+import { actor, scene } from "../app/core/runtime/metadata";
+import { SingletonRegistry } from "../app/core/runtime/Singleton";
+import { TimeSystem } from "../app/core/runtime/TimeSystem";
+import { TimerSystem } from "../app/core/runtime/TimerSystem";
 import {
-  Actor,
-  Component,
-  Game,
-  InitializeGameSingletons,
-  ProcessHost,
-  Scene,
-  SingletonRegistry,
-  TimeSystem,
-  TimerSystem,
   UpdateSystem,
-  actor,
-  scene,
-  type IUpdate,
   type IFrameFlush,
   type ILateUpdate,
-} from "../app/core/runtime";
+  type IUpdate,
+} from "../app/core/runtime/UpdateSystem";
 
 @scene({ sceneType: "GameUpdateTest" })
 class TestScene extends Scene {}

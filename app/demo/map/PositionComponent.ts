@@ -42,14 +42,6 @@ export class PositionComponent extends Component<[native: NativeUnitRef]> {
     return this.native.cellY;
   }
 
-  get CellX(): number {
-    return this.cellX;
-  }
-
-  get CellY(): number {
-    return this.cellY;
-  }
-
   get SpeedCellsPerSecond(): number {
     return this.native.speedCellsPerSecond;
   }

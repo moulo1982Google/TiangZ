@@ -343,7 +343,6 @@ function writeTopologyConfigs(caseName) {
     port,
     ...(options.ioBackend === "io-uring" ? { protocol: "tcp" } : {}),
   });
-  const logScene = scene("log", "Log", options.logPort);
   const managerScene = scene("login_mgr", "LoginMgr", options.managerPort);
   const loginScene = scene("login_1", "Login", options.loginPort);
   const mapScene = scene("map_1", "MapHost", options.mapPort);
@@ -352,12 +351,11 @@ function writeTopologyConfigs(caseName) {
     (_, index) => scene(`gate_${index + 1}`, "Gate", options.gateBasePort + index),
   );
   const configs = [
-    runtimeConfig("log", [logScene], [logScene]),
-    runtimeConfig("map1", [mapScene], [...gateScenes, logScene]),
+    runtimeConfig("map1", [mapScene], gateScenes),
     ...gateScenes.map((gate, index) =>
-      runtimeConfig(`gate${index + 1}`, [gate], [mapScene, logScene])
+      runtimeConfig(`gate${index + 1}`, [gate], [mapScene])
     ),
-    runtimeConfig("login1", [loginScene], [logScene, ...gateScenes]),
+    runtimeConfig("login1", [loginScene], gateScenes),
     runtimeConfig("mgr", [managerScene], [loginScene]),
   ];
   const runtimes = configs.map((config) => {
@@ -370,7 +368,6 @@ function writeTopologyConfigs(caseName) {
     ports: [
       options.managerPort,
       options.loginPort,
-      options.logPort,
       options.mapPort,
       ...gateScenes.map((item) => item.port),
     ],
@@ -1051,7 +1048,6 @@ function parseOptions(args) {
     targetMapCpu: positive(values.get("--target-map-cpu") ?? "85", "--target-map-cpu"),
     managerPort: positive(values.get("--manager-port") ?? "7000", "--manager-port"),
     loginPort: positive(values.get("--login-port") ?? "7001", "--login-port"),
-    logPort: positive(values.get("--log-port") ?? "7100", "--log-port"),
     gateBasePort: positive(values.get("--gate-base-port") ?? "7201", "--gate-base-port"),
     mapPort: positive(values.get("--map-port") ?? "7301", "--map-port"),
     debugRuntime: flags.has("--debug-runtime"),
