@@ -1122,8 +1122,10 @@ mod tests {
 
     #[test]
     fn movement_matches_regression_fixture() {
-        let fixture: MovementFixture =
-            serde_json::from_str(include_str!("../native_data/movement_regression.json")).unwrap();
+        let fixture: MovementFixture = serde_json::from_str(include_str!(
+            "../tests/fixtures/native_data/movement_regression.json"
+        ))
+        .unwrap();
         let mut value = unit(1);
         value.cell_x = fixture.initial_cell_x;
         value.cell_y = fixture.initial_cell_y;

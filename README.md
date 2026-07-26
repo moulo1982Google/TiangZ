@@ -48,7 +48,8 @@ app/bench/                   显式启用的基准 Scene 与压测 Handler
 app/generated/               服务端与 Native 自动生成代码
 app/generated/hotfix/        自动生成的 Scene/Handler 模块入口
 proto/                       protobuf 源文件
-native_data/                 Rust Entity/Native op 原型
+native_data/core/            框架内置 Rust Entity op 原型
+native_data/demo/            Demo Entity 与粗粒度 Native op 原型
 configs/<environment>/       环境启动配置
 client_sdk/typescript/       TypeScript Client SDK 唯一源码
 cocos_client2D/              Cocos Creator 2D Demo 客户端
@@ -172,7 +173,7 @@ RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClie
 - `knownScenes`：当前进程可路由的 Scene 目录，目标可以在其他进程；省略或为空时默认等于 `scenes`。
 - `scene.protocol`：`auto`、`tcp`、`websocket` 或 `kcp`；默认 `auto`。
 - `scene.audience`：`mixed`、`inner` 或 `outer`；默认 `mixed`。
-- `StartMachine.json`：按机器 IP 启动多个进程配置文件。
+- `StartMachine.json`：按机器 IP 启动多个进程配置文件。正式环境放在 `configs/<environment>`；压测、自动测试和传输实验分别放在 `configs/bench`、`configs/tests`、`configs/experiments`。
 
 把 `all.json` 拆成多个配置时，只改变 `scenes` 的部署归属；`knownScenes` 中目标的 name/type/ip/port 保持一致，业务调用代码不改。
 

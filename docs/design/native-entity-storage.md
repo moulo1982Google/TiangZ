@@ -34,7 +34,7 @@ MapComponent.Update() / 20Hz
 
 字段继承顺序、字段编号、生成名称与 Component 生命周期来自共享 Entity API 投影。VS Code Hover 和 codegen-core 共用这份投影，禁止在主工程生成器或插件中重新实现规则。
 
-生成器认识 Entity、继承、字段、`@typeId`、`@component` 和 Native op 签名。`NativeUnitRef` 与 `NativeItemRef` 都通过生成的 `NativeOps` 创建、销毁和访问数值字段。移动输入、地图批处理与 protobuf 投影算法仍属于业务，放在 `app/demo/native/NativeData.ts` 和 Rust `native_data.rs`；但它们的 Extension 注册、Host bootstrap 和 TS facade 由 `native_data/NativeOps.native` 生成。
+生成器认识 Entity、继承、字段、`@typeId`、`@component` 和 Native op 签名。`NativeUnitRef` 与 `NativeItemRef` 都通过生成的 `NativeOps` 创建、销毁和访问数值字段。框架通用 Entity ABI 位于 `native_data/core/EntityOps.native`；移动输入、地图批处理与 protobuf 投影属于 Demo，ABI 位于 `native_data/demo/MapOps.native`，TS facade 和 Rust Extension 仍由 codegen 聚合生成。业务不得把自定义 op 塞回 Core 原型。
 
 新增粗粒度 op 时，只声明 ABI 并实现 Rust 函数。`host.rs` 不维护 Native op 列表，也不安装 `__demoXxx` 全局函数。生成 bootstrap 对数值范围和 buffer 类型做显式检查，不使用 `>>> 0` 静默改变错误输入。
 
@@ -80,7 +80,7 @@ npm run test:native-data
 npm run perf:map-capacity -- --gates 16 --players 3500 --rounds 3
 ```
 
-移动状态机回归数据位于 `native_data/movement_regression.json`。地图容量报告会同时记录 NativeData 边界指标。
+移动状态机回归夹具位于 `tests/fixtures/native_data/movement_regression.json`。它固定每个 Tick 的输入与期望状态，不是 Native Entity 原型。地图容量报告会同时记录 NativeData 边界指标。
 
 ## 历史决策
 

@@ -104,7 +104,7 @@ try {
 function parseOptions(args) {
   const values = {
     profile: "release",
-    config: "configs/local/bench.json",
+    config: "configs/bench/bench.json",
     payloads: [64, 256, 1024, 4096, 16384],
     durationSeconds: 10,
     warmupSeconds: 2,
@@ -160,7 +160,7 @@ function printHelp() {
 
 参数：
   --profile release|debug       构建配置，默认 release
-  --config <path>               Bench 配置，默认 configs/local/bench.json
+  --config <path>               Bench 配置，默认 configs/bench/bench.json
   --payloads <bytes,...>        默认 64,256,1024,4096,16384
   --duration <seconds>          每档正式采样时间，默认 10
   --warmup <seconds>            每档预热时间，默认 2

@@ -147,11 +147,12 @@
     "native-data": {
       "command": "npm run codegen:native-data",
       "contentInputs": {
+        "native_data/core/EntityOps.native": "71cbf421bc2fe8f48696536d0f977b4274612a942d50544ebd1323b5e59fb16d",
         "native_data/demo/Entity.native": "e96362f2fb4f75ccf96b756ced9bae3282295f897ddf79172c0c40275f7b93c5",
         "native_data/demo/Item.native": "1e8eb6f3bc2f00a36c1e718ca45f6029ecfeed39ccc9fd303468e02785810926",
+        "native_data/demo/MapOps.native": "fd867209c156b84dd7f949641f5f20dde01958e74bb44c99671d0e75a2cf2d77",
         "native_data/demo/Unit.native": "00c7d04dcc61f6dc6f8ced4a1d0ddc79c68003bbc4bf84a122d38a9c9dc709fd",
-        "native_data/NativeOps.native": "d69295b0d47dffc280fa80cffd07971890b2c42b95f335442531153716c5cc46",
-        "package.json": "55d7ee9ed28bf66aef87197c9271277de60cd59c2d874634c446fa8dce5f4fd0",
+        "package.json": "1bd8a1103d70e95583e8e50a496c7880538dda4204c464f1c25a190274b751d2",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },

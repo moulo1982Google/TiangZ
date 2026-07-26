@@ -48,11 +48,11 @@ async function runDeployment(deployment) {
   const children = [];
   try {
     if (deployment === "local") {
-      children.push(startRuntime("local", "configs/local/mailbox_parity_all.json"));
+      children.push(startRuntime("local", "configs/tests/mailbox_parity_all.json"));
       await waitPort("127.0.0.1", 7410, 30_000);
     } else {
-      children.push(startRuntime("bench", "configs/local/mailbox_parity_bench.json"));
-      children.push(startRuntime("caller", "configs/local/mailbox_parity_caller.json"));
+      children.push(startRuntime("bench", "configs/tests/mailbox_parity_bench.json"));
+      children.push(startRuntime("caller", "configs/tests/mailbox_parity_caller.json"));
       await waitPort("127.0.0.1", 7400, 30_000);
       await waitPort("127.0.0.1", 7410, 30_000);
     }

@@ -120,7 +120,7 @@ Unit 的 `NativeData.SetMovementInput/UpdateMapMovement/protobuf snapshot` 是�
 
 ## 新增粗粒度 Native op
 
-Native op 的 ABI 统一声明在 `native_data/NativeOps.native`：
+框架通用 Entity ABI 声明在 `native_data/core/EntityOps.native`；业务专用的粗粒度 ABI 放在对应游戏目录，例如 Demo 的 `native_data/demo/MapOps.native`：
 
 ```text
 op UnitSetMovementInput(handle: u32, inputX: i8, inputY: i8, sequence: u32): bool;
@@ -129,7 +129,7 @@ op MapUpdateMovement(mapId: u32, serverTick: u32, fixedUpdateMs: u32, messageCod
 
 新增 op 的流程是：
 
-1. 在 `NativeOps.native` 声明参数和返回类型。
+1. 在 `native_data/<game>/XxxOps.native` 声明参数和返回类型；不要修改 Core Entity op。
 2. 在 Rust 实现约定名称，例如 `MapUpdateMovement` 对应 `op_native_map_update_movement`。
 3. 执行 `npm run codegen:native-data`。
 4. TS 通过生成的 `NativeOps.MapUpdateMovement(...)` 调用。

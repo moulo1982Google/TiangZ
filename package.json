@@ -88,7 +88,7 @@
     "perf:state-sync-full": "npm run build:bench && npm run build:perf:full-chain && node perf/map_capacity/run_map_capacity_perf.mjs --client rust --move-rate 0 --probe-rate 1 --state-sync-mode mixed --state-sync-rate 5",
     "profile:ts": "node tools/capture_v8_profile.mjs",
     "perf:full-chain:legacy": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --bin TiangZ --bin runtime_load && powershell -NoProfile -ExecutionPolicy Bypass -File perf/full_chain/run_full_chain_perf.ps1",
-    "test:backpressure": "cargo test --bin TiangZ process::tests::bounded_process_queue_applies_backpressure && npm run build:bench && npm run build:load && cargo build --bin TiangZ && powershell -NoProfile -ExecutionPolicy Bypass -File tools/runtime_load_test.ps1 -Config configs/local/bench_backpressure.json -Duration 2 -Warmup 1 -Concurrency 16384 -Connections 4 -Payload 256 -Delay 1",
+    "test:backpressure": "cargo test --bin TiangZ process::tests::bounded_process_queue_applies_backpressure && npm run build:bench && npm run build:load && cargo build --bin TiangZ && powershell -NoProfile -ExecutionPolicy Bypass -File tools/runtime_load_test.ps1 -Config configs/bench/bench_backpressure.json -Duration 2 -Warmup 1 -Concurrency 16384 -Connections 4 -Payload 256 -Delay 1",
     "test:phase1.9": "npm run check && cargo test --all-targets && npm run test:runtime && npm run test:backpressure",
     "test:phase2.8.1": "npm run check && cargo test --all-targets && npm run test:mailbox-parity && npm run test:runtime",
     "test:inspector": "npm run build:debug && cargo test --test inspector_debug -- --nocapture",

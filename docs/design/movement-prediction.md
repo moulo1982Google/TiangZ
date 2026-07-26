@@ -89,4 +89,4 @@ Cocos 使用 960x640 固定设计分辨率和 `SHOW_ALL` 策略。窗口变化�
 - `app/demo/movement` 与 `app/demo/map`：服务端演示业务的 Cell 规则、PlayerUnit、句柄组件和地图广播。
 - `src/native_data.rs`：Rust 权威 Unit 数据、Cell 状态机和移动 protobuf 投影。
 
-`native_data/movement_regression.json` 覆盖途中转向、停止和斜向移动；执行 `npm run test:native-data` 验证 Rust 状态机与预期帧。
+`tests/fixtures/native_data/movement_regression.json` 覆盖途中转向、停止和斜向移动；执行 `npm run test:native-data` 验证 Rust 状态机与预期帧。

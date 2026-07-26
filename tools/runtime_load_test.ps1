@@ -5,7 +5,7 @@ param(
     [int]$Connections = 4,
     [int]$Payload = 256,
     [int]$Delay = 0,
-    [string]$Config = "configs/local/bench.json",
+    [string]$Config = "configs/bench/bench.json",
     [ValidateSet("node", "rust")]
     [string]$Client = "node",
     [switch]$RequireBackpressure,

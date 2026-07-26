@@ -1,9 +1,5 @@
 namespace native;
 
-op EntityCreate(entityType: u32, values: f64[]): u32;
-op EntityDestroy(handle: u32): void;
-op EntityGetNumber(handle: u32, field: u32): f64;
-op EntitySetNumber(handle: u32, field: u32, value: f64): void;
 op NumericAttach(unitHandle: u32): void;
 op NumericDetach(unitHandle: u32): void;
 op NumericGet(unitHandle: u32, numericType: u32): i32;

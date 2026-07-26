@@ -24,10 +24,10 @@ const endpoint = {
 
 ## 服务端 KCP
 
-KCP 由 Cargo feature 控制，外网示例配置为 `configs/local/all.kcp-native.json`：
+KCP 由 Cargo feature 控制，外网示例配置为 `configs/experiments/all.kcp-native.json`：
 
 ```powershell
-cargo run --features kcp --bin TiangZ -- configs/local/all.kcp-native.json
+cargo run --features kcp --bin TiangZ -- configs/experiments/all.kcp-native.json
 ```
 
 当前 LoginMgr、Login 和 Gate 使用 Outer KCP 参数：MTU 470、收发窗口 256、`nodelay(1,10,2,1)`、最小 RTO 30ms。MapHost 和 Log 仍走内部 TCP。Inner KCP 尚未接入内部身份认证，因此配置 `protocol=kcp,audience=inner` 会明确启动失败。

@@ -176,12 +176,15 @@ app/generated/               服务端与Native自动生成代码
 src/                         Rust Runtime、Transport和宿主
 src/generated/               Rust自动生成代码
 proto/                       protobuf唯一源文件
-native_data/                 Rust Entity和Native op原型
+native_data/core/            框架内置Entity op原型，业务不得修改
+native_data/<game>/          游戏Entity和粗粒度Native op原型
 client_sdk/typescript/       引擎无关TS SDK唯一源码
 cocos_client2D/.../Demo/     Cocos业务和表现
 cocos_client2D/.../Generated 自动分发SDK和Handler入口
 pixi_client/src/             Pixi业务及SDK验收
-configs/<environment>/       环境、Process与Scene部署配置
+configs/<environment>/       环境、Process与Scene正式部署配置
+configs/bench|tests|experiments/ 压测、自动测试与传输实验配置
+tests/fixtures/              不进入生产运行时的确定性回归数据
 perf/                        性能与长稳工具、历史报告
 tools/                       codegen和工程工具
 tools/support/               冒烟测试和压测共享的低层协议辅助，不属于业务API
@@ -189,6 +192,8 @@ docs/                        教程、参考、设计和阶段记录
 ```
 
 Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`codegen.config.json`的搜索根发现Scene和Handler，不维护手工类型表。
+
+`.native`是codegen输入而不是生成物。框架通用ABI只放`native_data/core`；游戏新增Rust批处理能力时在`native_data/<game>/XxxOps.native`声明，生成器聚合产生Rust Extension、Host bootstrap和TS `NativeOps`。状态机黄金数据属于`tests/fixtures`，禁止混入原型目录。
 
 正常`npm run build`只装配`app/demo`及正式服务端协议；压测入口必须使用`npm run build:bench`显式加入`app/bench`。服务端`app/generated`不再生成客户端协议副本，工具和性能测试统一从`client_sdk/typescript/Generated`导入。
 

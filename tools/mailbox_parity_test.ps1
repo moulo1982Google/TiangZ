@@ -68,12 +68,12 @@ function Invoke-Case {
 Push-Location $Root
 try {
     if ($Mode -eq "all" -or $Mode -eq "both") {
-        Invoke-Case "all-in-one" @("configs/local/mailbox_parity_all.json")
+        Invoke-Case "all-in-one" @("configs/tests/mailbox_parity_all.json")
     }
     if ($Mode -eq "split" -or $Mode -eq "both") {
         Invoke-Case "split-process" @(
-            "configs/local/mailbox_parity_bench.json",
-            "configs/local/mailbox_parity_caller.json"
+            "configs/tests/mailbox_parity_bench.json",
+            "configs/tests/mailbox_parity_caller.json"
         )
     }
     Write-Host "[mailbox-parity] all cases passed"

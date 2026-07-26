@@ -39,7 +39,7 @@ npm run clean:copy
 
 1. 生成并构建 TypeScript Runtime bundle。
 2. 使用 Cargo 构建 Release Runtime 和 Rust 压测客户端。
-3. 启动 `configs/local/bench.json`。
+3. 启动 `configs/bench/bench.json`。
 4. 等待 `127.0.0.1:7400` 可以连接。
 5. 依次测试 64B、256B、1KB、4KB、16KB Payload。
 6. 停止 Runtime 并生成 Markdown、JSON 和 Runtime 日志。

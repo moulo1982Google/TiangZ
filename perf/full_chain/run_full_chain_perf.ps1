@@ -79,7 +79,7 @@ function Stop-Runtimes {
 
 function Invoke-Baseline {
     Write-Host "[full-chain] framework RPC payload baseline"
-    $handle = Start-Runtime "configs/local/bench.json" "baseline"
+    $handle = Start-Runtime "configs/bench/bench.json" "baseline"
     try {
         Wait-TcpPort 7400
         foreach ($payload in $payloadSizes) {

@@ -68,7 +68,7 @@ io_uring 必须显式启用，并把本进程启动的 Scene 标记为 `tcp`：
 }
 ```
 
-完整单进程示例见 `configs/local/all.io-uring.json`。
+完整单进程示例见 `configs/experiments/all.io-uring.json`。
 
 配置限制：
 
@@ -106,7 +106,7 @@ KCP Runtime 构建与 smoke：
 
 ```powershell
 cargo test --features kcp --lib --bin TiangZ --bin kcp_smoke
-cargo run --features kcp --bin TiangZ -- configs/local/all.kcp-native.json
+cargo run --features kcp --bin TiangZ -- configs/experiments/all.kcp-native.json
 ```
 
 启动 `all.kcp-smoke.json` 后，可以运行多会话 LoginMgr RPC 基准：
@@ -145,7 +145,7 @@ Linux 编译：
 
 ```bash
 cargo build --release --features io-uring --bin TiangZ
-./target/release/TiangZ configs/local/all.io-uring.json
+./target/release/TiangZ configs/experiments/all.io-uring.json
 ```
 
 容量测试可以用同一个命令切换 Backend：
