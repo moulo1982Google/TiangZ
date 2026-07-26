@@ -1,0 +1,32 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  framework:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+      - run: npm ci
+      - run: cargo install cargo-audit --locked
+      - run: npm run audit:dependencies
+      - run: npm run verify
+      - run: npm run release:package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TiangZ-${{ matrix.os }}
+          path: dist/release/

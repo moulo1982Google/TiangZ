@@ -23,6 +23,11 @@
 | `npm run verify:comments` | 检查 Core、Demo 与 Rust 手写文档注释是否中英文齐全 |
 | `npm run verify:quick` | 生成物、注释、协议锁、TS 与 Rust 的快速质量门 |
 | `npm run verify` | 在快速质量门上追加 Runtime、拆分进程、mailbox、背压与 Watcher 验收 |
+| `npm run verify:perf` | 执行三轮框架性能门并与当前机器基线比较 |
+| `npm run perf:gate:update -- --profile <name> --reason "原因"` | 显式建立或更新当前机器基线，并生成新旧值评审报告 |
+| `npm run verify:dependency-policy` | 校验依赖漏洞例外的负责人、原因和到期日期 |
+| `npm run audit:dependencies` | 在线审计npm高危漏洞和Cargo advisory；需先安装`cargo-audit` |
+| `npm run release:package` | 构建Release制品、生成版本与SHA-256，并在制品目录运行smoke |
 | `cargo test --all-targets` | Rust 全目标测试 |
 | `npm run test:runtime` | 单进程与拆分进程 smoke |
 | `npm run test:rpc-actor-correctness` | RPC回绕/timeout/停机取消与Actor生命周期专项测试 |
@@ -44,6 +49,8 @@
 | `npm run test:client-sdk` | Client SDK RPC、Update 队列、超时、断线、未知消息和背压测试 |
 | `npm run test:client-sdk-distribution` | 验证 Cocos/Pixi SDK 副本与公共源码逐文件一致 |
 | `npm run build:pixi` | 生成 SDK 并构建 PixiJS/H5 验收客户端 |
+| `npm run typecheck:cocos-demo` | 有Cocos编辑器类型时执行完整tsc；干净CI中自动退化为引擎无关bundle检查 |
+| `npm run typecheck:cocos-demo:engine` | 强制使用Cocos编辑器生成类型执行完整Demo类型检查 |
 | `npm run serve:pixi` | 在 `http://127.0.0.1:7460` 启动 Pixi 静态服务器 |
 | `npm run smoke:pixi` | Windows Edge 自动完成 Pixi 登录、进图和 canvas 验收 |
 | `npm run perf:map-capacity -- --gates 8 --players 200 --rounds 3` | 单 MapHost 全员可见广播、批量下行 Bridge 和 Probe 延迟容量测试 |

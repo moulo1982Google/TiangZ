@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "profile": "windows-i7-13700f",
+  "updatedAt": "2026-07-26T11:26:12.377Z",
+  "updateReason": "空闲机器重建 Windows 正式框架基线",
+  "machine": {
+    "platform": "win32",
+    "arch": "x64",
+    "release": "10.0.26200",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
+    "logicalCpus": 24,
+    "memoryBytes": 68464029696,
+    "nodeMajor": 24
+  },
+  "configHash": "684468add2b87fb187bba27f2a7d2b1c89903b9c8f455f9e2f00ddc025bdbd01",
+  "tolerance": {
+    "minimumThroughputRatio": 0.9,
+    "maximumLatencyRatio": 1.25,
+    "rpcLatencySlackMs": 1,
+    "innerRpcLatencySlackMs": 5
+  },
+  "metrics": {
+    "rpc.64.throughput": {
+      "direction": "higher",
+      "value": 162404,
+      "samples": [
+        186210,
+        162404,
+        109001
+      ]
+    },
+    "rpc.64.p99Ms": {
+      "direction": "lower",
+      "value": 9.228,
+      "samples": [
+        9.228,
+        9.124,
+        12.488
+      ]
+    },
+    "rpc.64.errors": {
+      "direction": "zero",
+      "value": 0,
+      "samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    "rpc.1024.throughput": {
+      "direction": "higher",
+      "value": 96245,
+      "samples": [
+        96245,
+        96806,
+        84993
+      ]
+    },
+    "rpc.1024.p99Ms": {
+      "direction": "lower",
+      "value": 12.958,
+      "samples": [
+        12.335,
+        12.958,
+        15.894
+      ]
+    },
+    "rpc.1024.errors": {
+      "direction": "zero",
+      "value": 0,
+      "samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    "rpc.16384.throughput": {
+      "direction": "higher",
+      "value": 19279,
+      "samples": [
+        19279,
+        21615,
+        18860
+      ]
+    },
+    "rpc.16384.p99Ms": {
+      "direction": "lower",
+      "value": 46.423,
+      "samples": [
+        44.83,
+        46.423,
+        46.934
+      ]
+    },
+    "rpc.16384.errors": {
+      "direction": "zero",
+      "value": 0,
+      "samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    "innerRpc.local.throughput": {
+      "direction": "higher",
+      "value": 74127,
+      "samples": [
+        76078,
+        74127,
+        67565
+      ]
+    },
+    "innerRpc.local.p99Ms": {
+      "direction": "lower",
+      "value": 17.712,
+      "samples": [
+        17.401,
+        17.712,
+        21.604
+      ]
+    },
+    "innerRpc.local.errors": {
+      "direction": "zero",
+      "value": 0,
+      "samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    "innerRpc.remote.throughput": {
+      "direction": "higher",
+      "value": 74287,
+      "samples": [
+        74287,
+        79483,
+        71622
+      ]
+    },
+    "innerRpc.remote.p99Ms": {
+      "direction": "lower",
+      "value": 17.292,
+      "samples": [
+        17.292,
+        16.597,
+        20.483
+      ]
+    },
+    "innerRpc.remote.errors": {
+      "direction": "zero",
+      "value": 0,
+      "samples": [
+        0,
+        0,
+        0
+      ]
+    },
+    "stateReplication.numeric-dynamic.itemsPerSecond": {
+      "direction": "higher",
+      "value": 28145305.309121776,
+      "samples": [
+        29381266.50447675,
+        25647989.197646905,
+        28145305.309121776
+      ]
+    },
+    "stateReplication.playerinfo-fixed.itemsPerSecond": {
+      "direction": "higher",
+      "value": 31861575.799358647,
+      "samples": [
+        36343163.850879654,
+        31861575.799358647,
+        31093619.589260288
+      ]
+    },
+    "stateReplication.item-immediate.itemsPerSecond": {
+      "direction": "higher",
+      "value": 35856941.402898334,
+      "samples": [
+        38987196.8205486,
+        33828152.98284714,
+        35856941.402898334
+      ]
+    }
+  }
+}

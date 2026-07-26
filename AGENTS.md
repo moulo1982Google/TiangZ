@@ -108,4 +108,4 @@ npm run verify
 - TypeScript是唯一主业务语言，Rust是Runtime和权威数据层。
 - Wasm只作为未来重计算模块的候选，例如确定性战斗核心；当前不接入。
 - Rhai只作为未来脚本后端候选；当前不为它增加兼容层。
-- Phase 4开始前的质量门已完成；当前业务路线从账号/角色、地图传送、AOI、怪物和社交域继续。
+- Phase 4开始前的质量门尚未完成；Developer Tools规则、Windows/Linux性能门和跨平台Release已完成，当前按[框架成熟度审计](docs/design/framework-readiness-audit.md)实现Process级TS热更闭环。

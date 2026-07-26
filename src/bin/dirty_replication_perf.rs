@@ -3,6 +3,8 @@ use std::env;
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
+use serde::Serialize;
+
 #[cfg(feature = "mimalloc-allocator")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -17,6 +19,7 @@ struct Options {
     entities: usize,
     warmup: Duration,
     duration: Duration,
+    json: bool,
 }
 
 #[derive(Default)]
@@ -69,6 +72,28 @@ struct Measurement {
     checksum: u64,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeasurementReport {
+    name: &'static str,
+    changes_per_second: f64,
+    items_per_second: f64,
+    frames_per_second: f64,
+    mib_per_second: f64,
+    bytes_per_item: f64,
+    nanoseconds_per_item: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BenchmarkReport {
+    entities: usize,
+    warmup_ms: u128,
+    duration_ms: u128,
+    changed_fields: usize,
+    results: Vec<MeasurementReport>,
+}
+
 fn main() {
     let options = parse_options();
     println!("TiangZ state synchronization microbenchmark");
@@ -92,8 +117,23 @@ fn main() {
         "{:<20} {:>13} {:>13} {:>12} {:>11} {:>11} {:>12}",
         "模式", "changes/s", "items/s", "frames/s", "MiB/s", "B/item", "ns/item",
     );
-    for benchmark in benchmarks {
-        print_result(benchmark(options, options.duration));
+    let results =
+        benchmarks.map(|benchmark| measurement_report(benchmark(options, options.duration)));
+    for result in &results {
+        print_result(result);
+    }
+    if options.json {
+        let report = BenchmarkReport {
+            entities: options.entities,
+            warmup_ms: options.warmup.as_millis(),
+            duration_ms: options.duration.as_millis(),
+            changed_fields: CHANGED_FIELDS,
+            results: results.into_iter().collect(),
+        };
+        println!(
+            "RESULT_JSON {}",
+            serde_json::to_string(&report).expect("serializing benchmark report")
+        );
     }
 }
 
@@ -409,25 +449,32 @@ fn checksum(bytes: &[u8]) -> u64 {
         .fold(0_u64, |value, byte| value.rotate_left(5) ^ u64::from(*byte))
 }
 
-fn print_result(result: Measurement) {
+fn measurement_report(result: Measurement) -> MeasurementReport {
     let seconds = result.elapsed.as_secs_f64();
-    let changes_per_second = result.changes as f64 / seconds;
-    let items_per_second = result.items as f64 / seconds;
-    let frames_per_second = result.frames as f64 / seconds;
-    let mib_per_second = result.bytes as f64 / seconds / 1_048_576.0;
-    let bytes_per_item = result.bytes as f64 / result.items.max(1) as f64;
-    let nanoseconds_per_item = result.elapsed.as_nanos() as f64 / result.items.max(1) as f64;
+    let report = MeasurementReport {
+        name: result.name,
+        changes_per_second: result.changes as f64 / seconds,
+        items_per_second: result.items as f64 / seconds,
+        frames_per_second: result.frames as f64 / seconds,
+        mib_per_second: result.bytes as f64 / seconds / 1_048_576.0,
+        bytes_per_item: result.bytes as f64 / result.items.max(1) as f64,
+        nanoseconds_per_item: result.elapsed.as_nanos() as f64 / result.items.max(1) as f64,
+    };
+    black_box((result.cycles, result.checksum));
+    report
+}
+
+fn print_result(result: &MeasurementReport) {
     println!(
         "{:<20} {:>13.0} {:>13.0} {:>12.0} {:>11.2} {:>11.2} {:>12.2}",
         result.name,
-        changes_per_second,
-        items_per_second,
-        frames_per_second,
-        mib_per_second,
-        bytes_per_item,
-        nanoseconds_per_item,
+        result.changes_per_second,
+        result.items_per_second,
+        result.frames_per_second,
+        result.mib_per_second,
+        result.bytes_per_item,
+        result.nanoseconds_per_item,
     );
-    black_box((result.cycles, result.checksum));
 }
 
 fn parse_options() -> Options {
@@ -435,6 +482,7 @@ fn parse_options() -> Options {
         entities: DEFAULT_ENTITIES,
         warmup: Duration::from_millis(DEFAULT_WARMUP_MS),
         duration: Duration::from_millis(DEFAULT_DURATION_MS),
+        json: false,
     };
     let args = env::args().skip(1).collect::<Vec<_>>();
     let mut index = 0;
@@ -443,10 +491,15 @@ fn parse_options() -> Options {
             "--entities" => ("entities", 0),
             "--warmup-ms" => ("warmup-ms", 1),
             "--duration-ms" => ("duration-ms", 2),
+            "--json" => {
+                options.json = true;
+                index += 1;
+                continue;
+            }
             "--help" | "-h" => {
                 println!(
                     "Usage: cargo run --release --bin dirty_replication_perf -- \
-                     [--entities N] [--warmup-ms N] [--duration-ms N]"
+                     [--entities N] [--warmup-ms N] [--duration-ms N] [--json]"
                 );
                 std::process::exit(0);
             }

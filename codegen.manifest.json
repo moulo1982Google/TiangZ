@@ -7,7 +7,7 @@
       "contentInputs": {
         "codegen.config.json": "61d7e3e9af3c722d8101b15cf635d536bd09805b651d194e04dcc0bb44d9a96e",
         "tools/codegen_client_handlers.mjs": "6c0403a5fa6182ae0c6b4e52d8dd45c122106ca4063c2f297dfd3ff7b04eebb1",
-        "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495"
+        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
       "selections": [
         {
@@ -83,7 +83,7 @@
         "client_sdk/typescript/index.ts": "51fc009d49b1b2d81f8732d87a0742720df53e157a972a086f092270edaa81c0",
         "codegen.config.json": "61d7e3e9af3c722d8101b15cf635d536bd09805b651d194e04dcc0bb44d9a96e",
         "tools/codegen_client_sdk.mjs": "9612282dd74ba1031610583ea5013961f6739c1469d2f7e36bb01cc7d5f506f0",
-        "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495"
+        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
       "selections": [],
       "outputs": {
@@ -152,8 +152,8 @@
         "native_data/demo/Item.native": "1e8eb6f3bc2f00a36c1e718ca45f6029ecfeed39ccc9fd303468e02785810926",
         "native_data/demo/MapOps.native": "fd867209c156b84dd7f949641f5f20dde01958e74bb44c99671d0e75a2cf2d77",
         "native_data/demo/Unit.native": "00c7d04dcc61f6dc6f8ced4a1d0ddc79c68003bbc4bf84a122d38a9c9dc709fd",
-        "package.json": "1bd8a1103d70e95583e8e50a496c7880538dda4204c464f1c25a190274b751d2",
-        "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
+        "package.json": "5c3c27034b0c8880d2053e01838e8e0e051a11b35615760b9fab28d51372cc83",
+        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
       "selections": [],
@@ -196,7 +196,7 @@
         "proto/opcode.lock.json": "0d76d2a6a45e77b080d64625dd58c6a0d3456a929d16b84703c4cd53d4103877",
         "proto/OuterMessage_C_10001.proto": "59e17f6a4ed2e6f11fcc403e6c92b2ab00cc710ebb3cc553abbfcdab673bde61",
         "proto/schema.lock.json": "3a8a5e8b6699215e6ea18365bd6f26bb25931c705e0c02280e97052506cdec15",
-        "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
+        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_proto.mjs": "7c5248b034a271c667af269e0a4584cef44055d5e8cd72501a8f8c1d078cae62"
       },
       "selections": [],
@@ -243,7 +243,7 @@
       "command": "npm run codegen:scenes",
       "contentInputs": {
         "codegen.config.json": "61d7e3e9af3c722d8101b15cf635d536bd09805b651d194e04dcc0bb44d9a96e",
-        "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
+        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_scenes.mjs": "7f166bd12958bab4a55fd62bb6194eac813803811745e1502830cec47e20a51a"
       },
       "selections": [

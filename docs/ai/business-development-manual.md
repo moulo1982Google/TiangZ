@@ -389,6 +389,8 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
+当前仍处于`0.3.10`框架稳定化阶段。Developer Tools规则、Windows/Linux性能门和跨平台发布验收已完成；进入Phase 4前只剩Process级热更闭环。业务样例只能用于验证框架，不以增加玩法数量代替热更验收。热更按整个Process原子提交Bundle generation，但不会为每个Scene创建V8，也不会默认重建现有Entity/Component。业务不得设计单Scene私有模块替换协议，不得把跨热更状态留在模块全局变量或无所有者Timer中；可热更类禁止使用`#private`，字段形状变化需要migration。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+
 | 修改类型 | 最少验证 |
 |---|---|
 | 纯TS业务Component/Handler | `npm run typecheck`和对应自测 |
@@ -401,8 +403,12 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 | RPC、Actor路由或生命周期 | `npm run test:rpc-actor-correctness`和完整`npm run verify` |
 | 异常恢复、连接清理或持久化失败 | `npm run test:fault-injection` |
 | 一般合并前质量门 | `npm run verify:quick` |
+| 框架热路径或Runtime优化 | `npm run verify:perf`，背压和长稳按改动风险另跑 |
+| Release候选 | `npm run audit:dependencies`、`npm run verify`、`npm run release:package` |
 
 性能结果必须注明机器、配置、玩家数、Gate数、频率、持续时间、是否AOI以及指标口径。不要把Probe基线或全地图可见Demo结果描述为正式业务容量。
+
+Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:cocos-demo:engine`；CI中的`typecheck:cocos-demo`只保证入口及依赖可bundle，不伪造引擎类型。客户端SDK本身仍必须通过与引擎无关的`typecheck:cocos-net`。
 
 ## AI提交前自检
 

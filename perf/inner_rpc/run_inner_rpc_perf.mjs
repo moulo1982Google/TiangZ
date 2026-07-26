@@ -27,9 +27,13 @@ const report = {
   generatedAt: new Date().toISOString(),
   runId,
   machine: {
+    platform: process.platform,
+    arch: process.arch,
+    release: os.release(),
     cpu: os.cpus()[0]?.model ?? "unknown",
     logicalCpus: os.cpus().length,
     memoryBytes: os.totalmem(),
+    node: process.version,
   },
   parameters: options,
   results,
@@ -39,8 +43,11 @@ const markdownPath = path.join(resultDir, `inner_rpc_${runId}.md`);
 const markdown = renderMarkdown(report);
 writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 writeFileSync(markdownPath, markdown, "utf8");
-writeFileSync(path.join(resultDir, "inner_rpc_latest.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
-writeFileSync(path.join(resultDir, "inner_rpc_latest.md"), markdown, "utf8");
+if (!options.noLatest) {
+  writeFileSync(path.join(resultDir, "inner_rpc_latest.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  writeFileSync(path.join(resultDir, "inner_rpc_latest.md"), markdown, "utf8");
+}
+console.log(`[inner-rpc] report-json: ${jsonPath}`);
 console.log(`[inner-rpc] report: ${markdownPath}`);
 console.log(markdown);
 
@@ -181,8 +188,17 @@ async function stopChild(item) {
 
 function parseOptions(args) {
   const values = new Map();
+  let noLatest = false;
   for (let index = 0; index < args.length; index += 1) {
     const name = args[index];
+    if (name === "--help" || name === "-h") {
+      printHelp();
+      process.exit(0);
+    }
+    if (name === "--no-latest") {
+      noLatest = true;
+      continue;
+    }
     const value = args[index + 1];
     if (!name?.startsWith("--") || value === undefined || value.startsWith("--")) {
       throw new Error(`invalid argument near ${name}`);
@@ -199,7 +215,27 @@ function parseOptions(args) {
     callCount: positive(values.get("--call-count") ?? "1", "--call-count"),
     delay: nonNegative(values.get("--delay") ?? "0", "--delay"),
     drain: positive(values.get("--drain") ?? "10", "--drain"),
+    noLatest,
   };
+}
+
+function printHelp() {
+  console.log(`内部 Scene RPC 性能测试
+
+用法：
+  npm run perf:inner-rpc -- [options]
+
+参数：
+  --mode both|local|remote      部署模式，默认 both
+  --duration <seconds>          正式采样时间，默认 10
+  --warmup <seconds>            预热时间，默认 2
+  --connections <count>         TCP 连接数，默认 8
+  --concurrency <count>         总在途 RPC 数，默认 512
+  --call-count <count>          每个外部请求触发的内部调用数，默认 1
+  --delay <milliseconds>        内部 Handler 延迟，默认 0
+  --drain <seconds>             排空超时，默认 10
+  --no-latest                   不覆盖版本化的 latest 基线文件
+`);
 }
 
 function enumValue(value, allowed, name) {

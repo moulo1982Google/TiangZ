@@ -30,6 +30,7 @@ const targets = [
 
 for (const entry of readdirSync(root, { withFileTypes: true })) {
   if (entry.isFile() && /^tmp_.*\.log$/i.test(entry.name)) targets.push(entry.name);
+  if (/^codegen\.manifest\.json\.(tmp.*|lock)$/i.test(entry.name)) targets.push(entry.name);
 }
 
 if (copyMode) {

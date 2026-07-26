@@ -89,10 +89,13 @@ try {
   const markdownPath = path.join(resultsDirectory, `rpc_baseline_${runId}.md`);
   writeFileSync(jsonPath, json, "utf8");
   writeFileSync(markdownPath, markdown, "utf8");
-  writeFileSync(path.join(resultsDirectory, "rpc_baseline_latest.json"), json, "utf8");
-  writeFileSync(path.join(resultsDirectory, "rpc_baseline_latest.md"), markdown, "utf8");
+  if (!options.noLatest) {
+    writeFileSync(path.join(resultsDirectory, "rpc_baseline_latest.json"), json, "utf8");
+    writeFileSync(path.join(resultsDirectory, "rpc_baseline_latest.md"), markdown, "utf8");
+  }
 
-  console.log(`\n[rpc-baseline] report: ${markdownPath}`);
+  console.log(`\n[rpc-baseline] report-json: ${jsonPath}`);
+  console.log(`[rpc-baseline] report: ${markdownPath}`);
   console.log(markdown);
 } catch (error) {
   console.error(`[rpc-baseline] failed: ${error instanceof Error ? error.message : error}`);
@@ -114,6 +117,7 @@ function parseOptions(args) {
     drainSeconds: 10,
     startupTimeoutMs: 30_000,
     skipBuild: false,
+    noLatest: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -124,6 +128,10 @@ function parseOptions(args) {
     }
     if (name === "--skip-build") {
       values.skipBuild = true;
+      continue;
+    }
+    if (name === "--no-latest") {
+      values.noLatest = true;
       continue;
     }
     const value = args[++index];
@@ -170,6 +178,7 @@ function printHelp() {
   --drain <seconds>             停止发送后的排空超时，默认 10
   --startup-timeout <ms>        Runtime 启动超时，默认 30000
   --skip-build                  使用已有 dist 和 target 产物
+  --no-latest                   不覆盖版本化的 latest 基线文件
 `);
 }
 

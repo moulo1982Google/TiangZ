@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "rounds": 3,
+  "rpc": {
+    "payloads": [64, 1024, 16384],
+    "durationSeconds": 3,
+    "warmupSeconds": 1,
+    "connections": 8,
+    "concurrency": 512
+  },
+  "innerRpc": {
+    "durationSeconds": 3,
+    "warmupSeconds": 1,
+    "connections": 8,
+    "concurrency": 512
+  },
+  "stateReplication": {
+    "entities": 10000,
+    "durationMs": 1000,
+    "warmupMs": 200
+  },
+  "tolerance": {
+    "minimumThroughputRatio": 0.9,
+    "maximumLatencyRatio": 1.25,
+    "rpcLatencySlackMs": 1,
+    "innerRpcLatencySlackMs": 5
+  }
+}

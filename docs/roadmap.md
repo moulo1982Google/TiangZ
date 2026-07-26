@@ -260,15 +260,19 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 3.10.5：TypeScript热更闭环
 
-状态：待开始。实现新Bundle自检、版本切换、旧异步调用排空、Timer归属、卸载和回滚；Rust权威Entity状态不随TS模块切换丢失。
+状态：设计冻结，实现待开始。2026-07-26确认热更粒度是整个Process的TS世界，同时保留当前V8和现有对象；候选Bundle经隔离V8预检后，在当前V8暂存稳定typeId对应的prototype补丁、migration与Handler表，再原子提交。旧异步调用按generation排空，Timer/Update改为稳定owner调度；连续热更后的编译代码通过有序Process重启收敛。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)。
 
 ### Phase 3.10.6：性能回归门
 
-状态：待开始。把Inner RPC、mailbox、状态复制和完整链路短基准升级为可比较的吞吐、p99、错误、背压和RSS门槛。
+状态：完成（2026-07-26）。`npm run verify:perf`统一执行RPC payload、local/remote Inner RPC和Numeric/PlayerInfo/Item状态复制，三轮取中位数并按机器身份比较吞吐、p99与错误；Windows物理机和Linux虚拟机已有独立版本化基线并通过比较模式。`perf:gate:update -- --reason ...`是唯一基线更新入口。完整链路、背压和长稳继续由各自专项测试负责。
 
 ### Phase 3.10.7：发布与跨平台收口
 
-状态：待开始。补Windows/Linux CI、可复现Release、依赖审计、迁移说明、版本Tag和一键验收。
+状态：完成（2026-07-26）。核心Runtime、mailbox和背压入口已迁移为跨平台Node runner；固定Rust 1.97.1、Node 24和npm 11，增加Windows/Linux CI、依赖审计策略以及携带版本和SHA-256的Release制品。Windows和Ubuntu Linux均通过完整`verify`、0 advisory依赖审计，以及最终制品目录内的登录、进图、状态同步和移动smoke。
+
+### 2026-07-26成熟度审计
+
+状态：R1、R3和R4完成，R2热更实现尚未开始。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。Process级热更闭环完成前，不宣称Phase 4准入完成。
 
 ## Phase 4：MMORPG 业务扩展
 

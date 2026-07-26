@@ -2,6 +2,10 @@
 
 本目录记录运行时的本机微基准和完整链路负载测试。
 
+## 框架性能回归门
+
+固定性能机器首次使用`npm run perf:gate:update`显式建立基线，后续使用`npm run perf:gate`或`npm run verify:perf`执行三轮中位数比较。该命令检查RPC Payload、同/跨Process Inner RPC和Rust状态复制；配置、容差与基线更新规则见[gate/README.md](gate/README.md)。
+
 ## 跨平台 RPC 基线
 
 Windows 和 Linux 使用相同命令：

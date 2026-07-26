@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,45 +9,92 @@ const manifestScript = fileURLToPath(import.meta.url);
 
 export async function recordGenerator(root, descriptor) {
   const manifestFile = path.join(root, "codegen.manifest.json");
-  const previous = await readManifest(manifestFile);
-  const contentInputs = await hashFiles(root, [manifestScript, ...descriptor.contentInputs]);
-  const outputs = await hashFiles(root, descriptor.outputs);
-  const selections = [...(descriptor.selections ?? [])]
-    .map((selection) => ({
-      kind: selection.kind,
-      roots: normalizePaths(root, selection.roots),
-      paths: normalizePaths(root, selection.paths),
-    }))
-    .sort((left, right) => selectionKey(left).localeCompare(selectionKey(right), "en"));
-  const outputRoots = [...descriptor.outputRoots]
-    .map((item) => ({
-      path: relativePath(root, item.path),
-      extensions: [...item.extensions].sort((left, right) => left.localeCompare(right, "en")),
-      ignore: normalizePaths(root, item.ignore ?? []),
-    }))
-    .sort((left, right) => left.path.localeCompare(right.path, "en"));
-  const generators = {
-    ...(previous?.generators ?? {}),
-    [descriptor.id]: {
-      command: descriptor.command,
-      contentInputs,
-      selections,
-      outputs,
-      outputRoots,
-    },
-  };
-  const manifest = {
-    version: MANIFEST_VERSION,
-    hashAlgorithm: HASH_ALGORITHM,
-    generators: Object.fromEntries(
-      Object.entries(generators).sort(([left], [right]) => left.localeCompare(right, "en")),
-    ),
-  };
-  const content = `${JSON.stringify(manifest, null, 2)}\n`;
-  await mkdir(path.dirname(manifestFile), { recursive: true });
-  const temporary = `${manifestFile}.tmp`;
-  await writeFile(temporary, content, "utf8");
-  await rename(temporary, manifestFile);
+  const lockDirectory = `${manifestFile}.lock`;
+  await withManifestLock(lockDirectory, async () => {
+    const previous = await readManifest(manifestFile);
+    const contentInputs = await hashFiles(root, [manifestScript, ...descriptor.contentInputs]);
+    const outputs = await hashFiles(root, descriptor.outputs);
+    const selections = [...(descriptor.selections ?? [])]
+      .map((selection) => ({
+        kind: selection.kind,
+        roots: normalizePaths(root, selection.roots),
+        paths: normalizePaths(root, selection.paths),
+      }))
+      .sort((left, right) => selectionKey(left).localeCompare(selectionKey(right), "en"));
+    const outputRoots = [...descriptor.outputRoots]
+      .map((item) => ({
+        path: relativePath(root, item.path),
+        extensions: [...item.extensions].sort((left, right) => left.localeCompare(right, "en")),
+        ignore: normalizePaths(root, item.ignore ?? []),
+      }))
+      .sort((left, right) => left.path.localeCompare(right.path, "en"));
+    const generators = {
+      ...(previous?.generators ?? {}),
+      [descriptor.id]: {
+        command: descriptor.command,
+        contentInputs,
+        selections,
+        outputs,
+        outputRoots,
+      },
+    };
+    const manifest = {
+      version: MANIFEST_VERSION,
+      hashAlgorithm: HASH_ALGORITHM,
+      generators: Object.fromEntries(
+        Object.entries(generators).sort(([left], [right]) => left.localeCompare(right, "en")),
+      ),
+    };
+    const content = `${JSON.stringify(manifest, null, 2)}\n`;
+    await mkdir(path.dirname(manifestFile), { recursive: true });
+    const temporary = `${manifestFile}.tmp-${process.pid}-${randomUUID()}`;
+    try {
+      await writeFile(temporary, content, "utf8");
+      await renameWithRetry(temporary, manifestFile);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  });
+}
+
+async function withManifestLock(directory, action) {
+  const deadline = Date.now() + 30_000;
+  while (true) {
+    try {
+      await mkdir(directory);
+      break;
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      const ageMs = Date.now() - (await stat(directory)).mtimeMs;
+      if (ageMs > 60_000) {
+        await rm(directory, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) throw new Error(`timed out waiting for codegen lock: ${directory}`);
+      await sleep(25);
+    }
+  }
+  try {
+    return await action();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function renameWithRetry(source, destination) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      if (!["EPERM", "EACCES"].includes(error?.code) || attempt >= 20) throw error;
+      await sleep(25 * (attempt + 1));
+    }
+  }
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export async function collectGeneratedFiles(roots) {

@@ -234,7 +234,15 @@ Actor Runtime只保留Scene、Session、Unit的生命周期、InstanceId与mailb
 
 ## 当前未完成和明确暂缓
 
-Phase 3.10剩余框架稳定化工作：TypeScript热更闭环、性能回归门和跨平台发布收口。Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部署仍需补 node/windows exporter、告警规则和长期存储策略。
+2026-07-26完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1、R3和R4。Developer Tools `v0.8.1` 已修复目录规则，`check:project` 已接入快速质量门并全绿。Windows与Ubuntu Linux均通过同名完整`verify`、依赖审计和Release目录内smoke；两台机器分别保存性能基线并通过比较模式。当前唯一准入阻塞项是Process级TypeScript热更实现。
+
+性能回归职责必须分层：`verify:perf` 比较三轮中位数吞吐、p99与错误；`test:backpressure` 验证有界队列和生产者等待；长稳测试判断RSS/V8 Heap趋势。不要把短时RSS噪声或故意过载指标混入普通性能基线。
+
+Cocos Demo完整类型检查依赖编辑器生成的`cocos_client2D/temp/tsconfig.cocos.json`和`cc`类型，不得把该缓存提交或复制到CI。`typecheck:cocos-demo`在编辑器环境执行完整tsc，在干净Linux/CI环境执行入口bundle检查；引擎无关Client SDK始终由`typecheck:cocos-net`完整检查。
+
+热更粒度固定为整个Process的TS世界，而不是单个Scene，也不为每个EntryScene增加V8。当前决策是保留现有V8和对象：候选Bundle先在隔离V8无副作用预检，再在当前V8暂存稳定typeId对应的prototype补丁、migration和Handler表，最后原子提交；现有Entity/Component及Rust handle不重建。旧异步调用按generation排空，Timer/Update必须使用稳定owner调度；多次热更残留代码最终通过Process滚动重启收敛。详见[热更设计](../design/typescript-hot-reload.md)。
+
+Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部署仍需补 node/windows exporter、通知路由和长期存储策略，这些属于Phase 5，不阻塞`0.3.10`框架准入。
 
 Phase 4计划：
 
@@ -249,7 +257,6 @@ Phase 5计划：
 
 - 现有 Prometheus/Grafana 的生产化（Alertmanager、机器 Exporter、权限、长期存储）和分布式追踪。
 - 生产级服务发现、Inner身份认证、崩溃恢复和滚动更新。
-- TypeScript Hotfix版本切换、排空、回滚和状态迁移。
 - KCP弱网/长稳与io_uring进一步优化。
 
 当前语言策略：

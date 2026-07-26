@@ -1,6 +1,8 @@
 /target/
 /node_modules/
 /dist/
+/codegen.manifest.json.tmp*
+/codegen.manifest.json.lock/
 /pixi_client/dist/
 /tmp_*.log
 /tmp_native_*.png
@@ -16,3 +18,4 @@
 /perf/results/**/*.log
 /perf/results/*_20*.json
 /perf/results/*_20*.md
+/perf/results/gate/
