@@ -16,7 +16,7 @@ kcp = []
 
 [dependencies]
 anyhow = "1"
-base64 = "0.22"
+base64 = "0.23"
 bytes = "1"
 deno_core = "0.409"
 deno_error = "0.7.1"
