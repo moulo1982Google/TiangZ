@@ -51,13 +51,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 状态：完成。
 
 - LoginMgr 选登录入口。
-- LoginActor 同账号有序 mailbox。
-- GateSession 登录、重连和断线生命周期。
+- Login 与 Gate 的客户端协议进入连接 Session mailbox；不同连接并行，同一连接跨 `await` 串行。
+- GateSession 作为 Entity 管理登录、重连、断线和组件生命周期，不再维护平行的普通对象会话表。
 - MapHost 创建多个 MapScene；UnitComponent 统一管理 PlayerUnit/MonsterUnit/NpcUnit。
 - 服务端权威移动、多人 AOI 可见性和实体进出 Push。
 - Cocos 2D Preview 可多开互相看到移动。
 
-### Phase 2.11：ET 风格 Entity/Unit/Actor 统一
+### Phase 2.11：ET 风格 Entity/Unit/Mailbox 统一
 
 状态：完成（2026-07）。
 
@@ -66,7 +66,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Actor 自动挂载 MailBoxComponent；旧 InstanceId 在重建后失效。
 - UnitComponent 作为 MapScene 的统一 Unit 集合，玩家和后续怪物共享模型。
 - PlayerDirectory 仅承担账号重连辅助索引，不参与普通 Actor 消息定位。
-- ActorLocationEnvelope 携带 InstanceId，Actor Handler 直接取得 PlayerUnit。
+- ActorLocationEnvelope 携带 InstanceId，Unit Handler 直接取得 PlayerUnit。
 - Scene ProtocolRegistry 与 Actor ProtocolRegistry 分离。
 - 单进程、拆进程登录、重连、移动、实体进出链路通过。
 
@@ -113,7 +113,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Process completion 与网络 frame 统一进入同一有界事件队列，并增加 frame/completion/update/batch 累计指标。
 - Rust 到 TS 的入站事件改为一个连续二进制批包，每个 update 只跨一次 Host Op；不再逐事件调用 `__hostTakeBinaryArg`。
 - V8 启动后缓存三个 Runtime 入口 Function，移除每 tick 动态 `execute_script`；Scene metrics 改为每 5 秒采样一次，普通 update 不再 stringify/parse JSON。
-- 单连接 response 复用 connectionId 二进制表示，`packFrame` 只分配最终帧；Actor Handler 首次按 `instanceof` 匹配后按构造器缓存。
+- 单连接 response 复用 connectionId 二进制表示，`packFrame` 只分配最终帧；Unit Handler 首次按 `instanceof` 匹配后按构造器缓存。
 - Process 提供 `low-latency`、`throughput`、`adaptive` 三种调度模式；默认 adaptive 在高负载下使用微秒级 yield 聚合，避免 Windows 亚毫秒定时器放大延迟。
 - 200 玩家、8 Gate、全员 10Hz 移动下，约 40 万 recipients/s 合并为 1.62 万 batch/s，V8 到 Rust 的帧复制带宽约为逻辑下行的 1/25。
 - 批量 Bridge 后最忙 Gate 三轮中位 CPU 从 197.9% 降至 137.9%；下一层瓶颈是逐连接 writer enqueue 和网络消息数量。
@@ -187,7 +187,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.2`。
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.3`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -236,6 +236,17 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - `/ready` 使用 V8 Runtime 心跳识别“HTTP 仍响应但业务线程卡死”；Prometheus 提供 12 条基础告警判定规则。
 - 自定义 Scene 指标显式区分 Counter/Gauge；`verify:observability` 验收 Target、Dashboard、规则、Histogram 与累计 Counter。
 - 多机部署使用 `StartMachine.innerIp` 作为抓取地址；远程 Process 必须监听管理 IP 或 `0.0.0.0`，不得用 loopback 伪装成可远程抓取端点。
+
+### 0.3.10-alpha.3：业务目标模型收口
+
+状态：完成（2026-07）。
+
+- Actor收口为Scene、Session、Unit三类mailbox目标的统称，业务不再继承泛化Actor基类。
+- Login删除永久`LoginActor`；Login与Gate的客户端消息进入连接Session mailbox。
+- GateSession成为Entity，由SessionComponent统一创建、索引、断线销毁和停机清理。
+- Unit Handler公共API改为`unitRpcHandler/unitMessageHandler`，与Session Handler、Scene Handler形成三种明确入口。
+- 配置EntryScene与动态Scene统一挂入ProcessHost的EntityRoot和MailBoxComponent。
+- 新增同连接跨`await`串行、不同连接并行、断线销毁测试；单进程和拆分进程完整冒烟均通过。
 
 ### Phase 3.10.5：TypeScript热更闭环
 

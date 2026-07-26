@@ -20,7 +20,11 @@ import {
 import {
   EntryScene,
 } from "../app/core/process/types";
-import { Component, ProcessHost } from "../app/core/runtime";
+import {
+  sessionMessageHandler,
+  type SessionMessageHandler,
+} from "../app/core/process/sessionHandlers";
+import { Component, ProcessHost, Session } from "../app/core/runtime";
 
 interface AddMessage extends IMessage {
   value: number;
@@ -49,6 +53,16 @@ const Read = defineRpc({
   responseCode: 61003,
   requestCodec: jsonCodec<ReadRequest>(),
   responseCodec: jsonCodec<ReadResponse>(),
+});
+
+interface SessionWorkMessage extends IMessage {
+  value: number;
+}
+
+const SessionWork = defineMessage({
+  name: "SessionProbe.Work",
+  msgcode: 61004,
+  codec: jsonCodec<SessionWorkMessage>(),
 });
 
 const lifecycleEvents: string[] = [];
@@ -84,6 +98,54 @@ class HandlerProbeScene extends EntryScene {
   }
 }
 
+const sessionEvents: string[] = [];
+let releaseFirstSessionWork: (() => void) | undefined;
+let activeSessionScene: SessionHandlerProbeScene | undefined;
+
+class ProbeSession extends Session {
+  protected override OnDestroy(): void {
+    sessionEvents.push(`destroy:${this.ConnectionId}`);
+  }
+}
+
+@entryScene("SessionHandlerProbe")
+class SessionHandlerProbeScene extends EntryScene {
+  protected override readonly mailbox = "unordered" as const;
+
+  protected override onStart(): void {
+    activeSessionScene = this;
+  }
+
+  protected override createSession(connectionId: number): ProbeSession {
+    return this.addSession(connectionId, ProbeSession);
+  }
+
+  SessionCount(): number {
+    return this.getSessions().length;
+  }
+}
+
+@sessionMessageHandler(SessionHandlerProbeScene, SessionWork)
+class SessionWorkHandler implements SessionMessageHandler<
+  SessionHandlerProbeScene,
+  ProbeSession,
+  SessionWorkMessage
+> {
+  async handle(
+    _scene: SessionHandlerProbeScene,
+    session: ProbeSession,
+    message: SessionWorkMessage,
+  ): Promise<void> {
+    sessionEvents.push(`start:${session.ConnectionId}:${message.value}`);
+    if (message.value === 1) {
+      await new Promise<void>((resolve) => {
+        releaseFirstSessionWork = resolve;
+      });
+    }
+    sessionEvents.push(`end:${session.ConnectionId}:${message.value}`);
+  }
+}
+
 @messageHandler(HandlerProbeScene, Add)
 class AddHandler implements SceneMessageHandler<HandlerProbeScene, AddMessage> {
   handle(scene: HandlerProbeScene, message: AddMessage): void {
@@ -108,7 +170,52 @@ async function main(): Promise<void> {
   testComponentContainer();
   testDuplicateHandlerGuard();
   await testExternalHandlerDispatch();
+  await testSessionMailboxAndDisconnect();
   console.log("entry scene handler self-test passed");
+}
+
+async function testSessionMailboxAndDisconnect(): Promise<void> {
+  sessionEvents.length = 0;
+  releaseFirstSessionWork = undefined;
+  const config = sessionSceneConfig();
+  const runtime = new ProcessRuntime({
+    process: { name: "session-handler-self-test" },
+    scenes: [config],
+    knownScenes: [config],
+    tickMs: 50,
+  });
+  await runtime.start();
+
+  const frame = (value: number) =>
+    packFrame(SessionWork.msgcode, SessionWork.codec.encode({ value }));
+  runtime.pushHostFrame(0, 11, frame(1));
+  runtime.pushHostFrame(0, 11, frame(2));
+  runtime.pushHostFrame(0, 22, frame(3));
+  runtime.update();
+  await waitUntil(() => sessionEvents.includes("end:22:3"));
+  assert.deepEqual(sessionEvents, ["start:11:1", "start:22:3", "end:22:3"]);
+
+  releaseFirstSessionWork?.();
+  await waitUntil(() => sessionEvents.includes("end:11:2"));
+  assert.deepEqual(sessionEvents.slice(3), ["end:11:1", "start:11:2", "end:11:2"]);
+
+  const scene = activeSessionScene;
+  assert.ok(scene);
+  assert.equal(scene.SessionCount(), 2);
+  runtime.pushHostDisconnect(0, 11);
+  runtime.update();
+  await waitUntil(() => sessionEvents.includes("destroy:11"));
+  assert.equal(scene.SessionCount(), 1);
+  await runtime.stop();
+  assert.equal(sessionEvents.includes("destroy:22"), true);
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("timed out waiting for Session handler state");
 }
 
 function testComponentContainer(): void {
@@ -200,6 +307,15 @@ function sceneConfig() {
   return {
     name: "handler-probe-1",
     sceneType: "HandlerProbe",
+    ip: "127.0.0.1",
+    port: 0,
+  };
+}
+
+function sessionSceneConfig() {
+  return {
+    name: "session-handler-probe-1",
+    sceneType: "SessionHandlerProbe",
     ip: "127.0.0.1",
     port: 0,
   };

@@ -33,7 +33,7 @@ Phase 3.10.1、3.10.2等是工作项，不使用四段版本号。客户端协�
 import {
   Component,
   EntryScene,
-  actorRpcHandler,
+  unitRpcHandler,
   component,
   entryScene,
 } from "../../core/public";
@@ -127,3 +127,11 @@ npm run verify:core-api
 - 新增运行期Process终止、Inner断线、慢客户端、真实背压、Handler异常、非法帧、重连风暴和保存失败验收。
 - 故障能力只存在于测试边界，不新增生产配置字段或Stable公共API。
 - 此版本未改变客户端协议fingerprint。
+
+### 0.3.10-alpha.3
+
+- Actor明确收敛为Scene、Session、Unit三类mailbox目标的统称，不再作为业务需要继承的Stable基类。
+- 删除`Actor`、`@actor`、`@handler`、`actorRpcHandler/actorMessageHandler`等旧Stable入口；Unit协议迁移到`unitRpcHandler/unitMessageHandler`。
+- 新增`Session`、`SessionComponent`与`sessionRpcHandler/sessionMessageHandler`。客户端连接消息直接进入连接Session mailbox，同连接跨`await`串行，不同连接可并行。
+- 删除只为登录串行而存在的`LoginActor`；Login和Gate均使用独立Session Handler，Gate会话状态统一保存在GateSession Entity。
+- 此版本未改变客户端协议fingerprint；旧业务代码只需按真实目标将Actor Handler改为Unit Handler或Session Handler。

@@ -47,25 +47,49 @@ export class ProcessRuntime implements LocalSceneRouter {
   constructor(private readonly config: ProcessRuntimeConfig) {
     InitializeGameSingletons(config.process.game);
     this.processHost = new ProcessHost(config.process.name);
-    this.entryScenes = config.scenes.map((scene) => {
-      const ctor = getEntrySceneCtor(scene.sceneType);
-      if (!ctor) {
-        throw new Error(
-          `unknown scene type: ${scene.sceneType}; registered: ${listEntrySceneTypes().join(", ")}`,
+    this.entryScenes = [];
+    try {
+      for (const scene of config.scenes) {
+        const ctor = getEntrySceneCtor(scene.sceneType);
+        if (!ctor) {
+          throw new Error(
+            `unknown scene type: ${scene.sceneType}; registered: ${listEntrySceneTypes().join(", ")}`,
+          );
+        }
+        const instance = new ctor({
+          process: config.process,
+          self: scene,
+          knownScenes: config.knownScenes,
+          tickMs: config.tickMs,
+          processHost: this.processHost,
+          localRouter: this,
+        });
+        this.processHost.attachScene(
+          scene.name,
+          scene.sceneType,
+          instance,
+          instance.__mailboxType(),
         );
+        instance.__initializeRuntime();
+        if (this.scenesByName.has(scene.name)) {
+          throw new Error(`duplicate local scene: ${scene.name}`);
+        }
+        this.scenesByName.set(scene.name, instance);
+        this.entryScenes.push(instance);
       }
-      const instance = new ctor({
-        process: config.process,
-        self: scene,
-        knownScenes: config.knownScenes,
-        tickMs: config.tickMs,
-        processHost: this.processHost,
-        localRouter: this,
-      });
-      if (this.scenesByName.has(scene.name)) throw new Error(`duplicate local scene: ${scene.name}`);
-      this.scenesByName.set(scene.name, instance);
-      return instance;
-    });
+    } catch (error) {
+      try {
+        this.processHost.Dispose();
+      } catch (cleanupError) {
+        CoreLogger.error("process constructor cleanup failed", { cleanupError });
+      }
+      try {
+        SingletonRegistry.DestroyAll();
+      } catch (cleanupError) {
+        CoreLogger.error("singleton constructor cleanup failed", { cleanupError });
+      }
+      throw error;
+    }
   }
 
   get StopTimeoutMs(): number {

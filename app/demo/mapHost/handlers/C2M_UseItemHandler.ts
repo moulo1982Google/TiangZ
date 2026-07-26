@@ -1,6 +1,6 @@
 import {
-  actorRpcHandler,
-  type ActorRpcHandler,
+  unitRpcHandler,
+  type UnitRpcHandler,
 } from "../../../core/public";
 import type {
   C2M_UseItem,
@@ -12,8 +12,8 @@ import { MapComponent } from "../../map/MapComponent";
 import { PlayerUnit } from "../../map/PlayerUnit";
 import { PositionComponent } from "../../map/PositionComponent";
 
-@actorRpcHandler(PlayerUnit, MapProtocol.UseItem)
-export class C2M_UseItemHandler implements ActorRpcHandler<
+@unitRpcHandler(PlayerUnit, MapProtocol.UseItem)
+export class C2M_UseItemHandler implements UnitRpcHandler<
   PlayerUnit,
   C2M_UseItem,
   M2C_UseItem

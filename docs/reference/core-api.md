@@ -59,12 +59,11 @@
 - `@message(descriptor)`：绑定单向 Message Handler。
 - `@rpcHandler(SceneType, descriptor)`：把独立 Handler class 绑定到指定 EntryScene 的 RPC。
 - `@messageHandler(SceneType, descriptor)`：把独立 Handler class 绑定到指定 EntryScene 的单向消息。
-- `@actorRpcHandler(ActorType, descriptor)`：把 Actor RPC 绑定到指定 Actor/Unit 类型。
-- `@actorMessageHandler(ActorType, descriptor)`：把 Actor Message 绑定到指定 Actor/Unit 类型。
-- `@scene/@actor/@component`：注册运行时实体类型和 mailbox 元数据。
-- `@handler(name)`：绑定 Scene/Actor Handler。
+- `@sessionRpcHandler(SceneType, descriptor)` / `@sessionMessageHandler(...)`：绑定客户端连接消息，Handler 直接取得 Session。
+- `@unitRpcHandler(UnitType, descriptor)` / `@unitMessageHandler(...)`：绑定 Unit 消息，Handler 直接取得 Unit。
+- `@scene/@component`：注册 Scene 与 Component 元数据。Session 和 Unit 默认使用 ordered mailbox，业务不需要 `@actor`。
 
-`@rpc/@message` 方法装饰器继续兼容小型 Scene。业务增长后优先使用独立 Handler class；每个 EntryScene 实例会创建自己的一组 Handler 实例，最终仍进入该 EntryScene 的同一个 Registry 和 mailbox。相同 Scene、相同 msgcode 重复绑定会在启动前抛错。
+`@rpc/@message` 方法装饰器继续兼容小型 Scene。业务增长后优先使用独立 Handler class；Scene、Session、Unit 三类 Handler 分别表达目标身份，不要求开发者理解内部 Actor 基类。相同目标类型、相同 msgcode 重复绑定会在启动前抛错。
 
 ## SceneMessageHelper
 

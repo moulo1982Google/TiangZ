@@ -1,6 +1,6 @@
 import {
-  actorRpcHandler,
-  type ActorRpcHandler,
+  unitRpcHandler,
+  type UnitRpcHandler,
 } from "../../../core/public";
 import type {
   C2M_StateSyncBench,
@@ -18,8 +18,8 @@ const NUMERIC_MODE = 1;
 const PLAYER_INFO_MODE = 2;
 const ITEM_MODE = 3;
 
-@actorRpcHandler(PlayerUnit, StateSyncBenchProtocol.Trigger)
-export class C2M_StateSyncBenchHandler implements ActorRpcHandler<
+@unitRpcHandler(PlayerUnit, StateSyncBenchProtocol.Trigger)
+export class C2M_StateSyncBenchHandler implements UnitRpcHandler<
   PlayerUnit,
   C2M_StateSyncBench,
   M2C_StateSyncBench

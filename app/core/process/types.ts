@@ -20,12 +20,20 @@ import {
   getRpcBindings,
   RpcDescriptor,
 } from "../protocol/rpc";
-import { Entity, ProcessHost } from "../runtime";
+import {
+  ProcessHost,
+  Scene,
+  SceneContext,
+  Session,
+  SessionComponent,
+  Unit,
+} from "../runtime";
 import type { GameUpdateConfig } from "../runtime/Game";
 import { readU16BE } from "../protocol/binary";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { RpcError } from "../protocol/RpcError";
-import type { ActorRef, MessageTarget, SceneRef } from "../runtime";
+import type { MessageTarget, SceneRef } from "../runtime";
+import type { ActorAwakeArgs, ActorCtor } from "../runtime";
 import {
   LatencyRecorder,
   nowMs,
@@ -46,9 +54,13 @@ import {
   getSceneRpcHandlerBindings,
 } from "./sceneHandlers";
 import {
-  getActorMessageHandlerBindings,
-  getActorRpcHandlerBindings,
-} from "./actorHandlers";
+  getUnitMessageHandlerBindings,
+  getUnitRpcHandlerBindings,
+} from "./unitHandlers";
+import {
+  getSessionMessageHandlerBindings,
+  getSessionRpcHandlerBindings,
+} from "./sessionHandlers";
 import type { ProcessLoggingConfig } from "../logging/types";
 import type { Logger } from "../logging/Logger";
 
@@ -178,7 +190,7 @@ interface MailboxTask<T = unknown> {
   reject: (reason?: unknown) => void;
 }
 
-export abstract class EntryScene extends Entity {
+export abstract class EntryScene extends Scene {
   private static readonly MAX_UNORDERED_IN_FLIGHT = 4096;
   protected readonly registry: ProtocolRegistry;
   private readonly actorRegistry: ProtocolRegistry;
@@ -218,13 +230,18 @@ export abstract class EntryScene extends Entity {
   private readonly registeredMessageHandlers = new Map<number, string>();
   private lifecycleState: "created" | "started" | "ready" | "stopping" | "stopped" = "created";
   private stopPromise: Promise<void> | undefined;
+  private sessionComponent: SessionComponent | undefined;
 
   constructor(
     protected readonly config: RuntimeEntrySceneConfig,
     knownRpcs: readonly AnyRpcDescriptor[] = getKnownRpcDescriptors(),
     knownMessages: readonly AnyMessageDescriptor[] = getKnownMessageDescriptors(),
   ) {
-    super();
+    super(new SceneContext(config.processHost, {
+      processId: config.process.name,
+      sceneId: config.self.name,
+      sceneType: config.self.sceneType,
+    }));
     this.latencies = new LatencyRecorder(config.process.observability?.latency);
     const latencyMetrics = this.latencies.enabled ? this.latencies : undefined;
     this.ctx = new SceneCallContext(config, config.localRouter, latencyMetrics);
@@ -250,13 +267,67 @@ export abstract class EntryScene extends Entity {
       this.registry.registerKnownMessage(descriptor);
       this.actorRegistry.registerKnownMessage(descriptor);
     }
+  }
+
+  /** Scene 挂入 ProcessHost 后注册协议；禁止在构造期间调用，以免子类字段尚未初始化。 / Registers protocols after ProcessHost attachment; never call during construction before subclass fields initialize. */
+  __initializeRuntime(): void {
+    const hasSessionHandlers =
+      getSessionRpcHandlerBindings(this.constructor).length > 0 ||
+      getSessionMessageHandlerBindings(this.constructor).length > 0;
+    if (hasSessionHandlers) {
+      this.sessionComponent = this.AddComponent(SessionComponent);
+    }
     this.registerDecoratedRpcHandlers();
     this.registerDecoratedMessageHandlers();
     this.registerExternalRpcHandlers();
     this.registerExternalMessageHandlers();
-    this.registerActorRpcHandlers();
-    this.registerActorMessageHandlers();
+    this.registerSessionRpcHandlers();
+    this.registerSessionMessageHandlers();
+    this.registerUnitRpcHandlers();
+    this.registerUnitMessageHandlers();
     this.registerHandlers();
+  }
+
+  /** 返回配置要求的 Mailbox 类型，由 ProcessHost 创建唯一 MailBoxComponent。 / Returns the configured mailbox type used by ProcessHost to create the sole MailBoxComponent. */
+  __mailboxType(): SceneMailboxType {
+    return this.mailbox;
+  }
+
+  /** 首次收到 Session Handler 消息时创建连接实体；有额外状态的 Scene 可覆盖 Session 类型。 / Creates the connection entity on its first Session-handler message; Scenes with stateful sessions may override its type. */
+  protected createSession(connectionId: number): Session<any[]> {
+    return this.addSession(connectionId, Session);
+  }
+
+  /** 供有状态连接类型复用 Core 的创建与索引事务；业务不要直接调用 ProcessHost。 / Lets stateful connection types reuse Core's create/index transaction; business code must not call ProcessHost directly. */
+  protected addSession<T extends Session<any[]>>(
+    connectionId: number,
+    ctor: ActorCtor<T>,
+    ...awakeArgs: ActorAwakeArgs<T>
+  ): T {
+    return this.requireSessionComponent().Create(connectionId, ctor, ...awakeArgs);
+  }
+
+  /** 查询已存在的连接 Session；不会因普通 Scene 消息而隐式创建。 / Finds an existing connection Session without creating one for ordinary Scene messages. */
+  protected getSession<T extends Session<any[]> = Session<any[]>>(
+    connectionId: number,
+  ): T | undefined {
+    return this.requireSessionComponent().Get<T>(connectionId);
+  }
+
+  /** 返回当前连接 Session 的稳定快照，遍历期间允许断线移除。 / Returns a stable Session snapshot so disconnects may remove entries during iteration. */
+  protected getSessions<T extends Session<any[]> = Session<any[]>>(): readonly T[] {
+    return this.requireSessionComponent().GetAll<T>();
+  }
+
+  private getOrCreateSession(connectionId: number): Session<any[]> {
+    return this.getSession(connectionId) ?? this.createSession(connectionId);
+  }
+
+  private requireSessionComponent(): SessionComponent {
+    if (!this.sessionComponent) {
+      throw new Error(`scene ${this.self.name} SessionComponent is not initialized`);
+    }
+    return this.sessionComponent;
   }
 
   get self(): SceneConfig {
@@ -424,15 +495,6 @@ export abstract class EntryScene extends Entity {
   protected registerSceneRpc<TReq extends IRequest, TResp extends IResponse>(
     descriptor: RpcDescriptor<TReq, TResp>,
     target: SceneRef | ((request: TReq) => SceneRef),
-    options: TargetRpcOptions<TReq, TResp> = {},
-  ): void {
-    this.registerTargetRpc(descriptor, target, options);
-  }
-
-  /** 为生成描述符和 Actor 类型注册 Actor RPC 转发。 / Registers Actor RPC forwarding for a generated descriptor and Actor type. */
-  protected registerActorRpc<TReq extends IRequest, TResp extends IResponse>(
-    descriptor: RpcDescriptor<TReq, TResp>,
-    target: ActorRef | ((request: TReq) => ActorRef),
     options: TargetRpcOptions<TReq, TResp> = {},
   ): void {
     this.registerTargetRpc(descriptor, target, options);
@@ -628,12 +690,16 @@ export abstract class EntryScene extends Entity {
       try {
         const result = this.onDisconnect(item.connectionId);
         if (isPromiseLike(result)) {
-          return Promise.resolve(result).catch((error) => {
-            this.ctx.logger.error("disconnect handler failed", {
-              connectionId: item.connectionId,
-              error,
+          return Promise.resolve(result)
+            .catch((error) => {
+              this.ctx.logger.error("disconnect handler failed", {
+                connectionId: item.connectionId,
+                error,
+              });
+            })
+            .finally(() => {
+              this.sessionComponent?.Remove(item.connectionId);
             });
-          });
         }
       } catch (error) {
         this.ctx.logger.error("disconnect handler failed", {
@@ -641,6 +707,7 @@ export abstract class EntryScene extends Entity {
           error,
         });
       }
+      this.sessionComponent?.Remove(item.connectionId);
       return;
     }
 
@@ -921,9 +988,57 @@ export abstract class EntryScene extends Entity {
     }
   }
 
-  private registerActorRpcHandlers(): void {
+  private registerSessionRpcHandlers(): void {
+    for (const binding of getSessionRpcHandlerBindings(this.constructor)) {
+      const handler = new binding.handlerCtor();
+      this.claimRpcHandler(binding.descriptor.requestCode, binding.handlerCtor.name);
+      this.registry.register(binding.descriptor.requestCode, {
+        responseCode: binding.descriptor.responseCode,
+        decode: binding.descriptor.requestCodec.decode,
+        encode: binding.descriptor.responseCodec.encode,
+        handle: (request, context) => {
+          const connectionId = context.connectionId;
+          if (connectionId === undefined) {
+            throw new RpcError(
+              SystemErrCode.SessionNotFound,
+              `Session RPC requires a client connection: ${binding.descriptor.name}`,
+            );
+          }
+          const session = this.getOrCreateSession(connectionId);
+          return this.processHost.runActorMailbox(session.InstanceId, (target) =>
+            handler.handle(this, target as Session<any[]>, request, context)
+          );
+        },
+      });
+    }
+  }
+
+  private registerSessionMessageHandlers(): void {
+    for (const binding of getSessionMessageHandlerBindings(this.constructor)) {
+      const handler = new binding.handlerCtor();
+      this.claimMessageHandler(binding.descriptor.msgcode, binding.handlerCtor.name);
+      this.registry.registerMessage(binding.descriptor.msgcode, {
+        decode: binding.descriptor.codec.decode,
+        handle: (message, context) => {
+          const connectionId = context.connectionId;
+          if (connectionId === undefined) {
+            throw new RpcError(
+              SystemErrCode.SessionNotFound,
+              `Session message requires a client connection: ${binding.descriptor.name}`,
+            );
+          }
+          const session = this.getOrCreateSession(connectionId);
+          return this.processHost.runActorMailbox(session.InstanceId, (target) =>
+            handler.handle(this, target as Session<any[]>, message, context)
+          );
+        },
+      });
+    }
+  }
+
+  private registerUnitRpcHandlers(): void {
     const grouped = groupByCode(
-      getActorRpcHandlerBindings(),
+      getUnitRpcHandlerBindings(),
       (binding) => binding.descriptor.requestCode,
     );
     for (const [msgcode, bindings] of grouped) {
@@ -932,7 +1047,7 @@ export abstract class EntryScene extends Entity {
         ...binding,
         handler: new binding.handlerCtor(),
       }));
-      const handlerByActorCtor = new Map<Function, (typeof handlers)[number]>();
+      const handlerByUnitCtor = new Map<Function, (typeof handlers)[number]>();
       this.actorRegistry.register(msgcode, {
         responseCode: descriptor.responseCode,
         decode: descriptor.requestCodec.decode,
@@ -952,28 +1067,28 @@ export abstract class EntryScene extends Entity {
             );
           }
           return this.processHost.runActorMailbox(instanceId, (actor) => {
-            const actorCtor = actor.constructor;
-            let binding = handlerByActorCtor.get(actorCtor);
+            const unitCtor = actor.constructor;
+            let binding = handlerByUnitCtor.get(unitCtor);
             if (!binding) {
-              binding = handlers.find((item) => actor instanceof item.actorCtor);
-              if (binding) handlerByActorCtor.set(actorCtor, binding);
+              binding = handlers.find((item) => actor instanceof item.unitCtor);
+              if (binding) handlerByUnitCtor.set(unitCtor, binding);
             }
             if (!binding) {
               throw new RpcError(
                 SystemErrCode.HandlerNotFound,
-                `actor RPC handler not found: ${actor.constructor.name} msgcode ${msgcode}`,
+                `Unit RPC handler not found: ${actor.constructor.name} msgcode ${msgcode}`,
               );
             }
-            return binding.handler.handle(actor, request, context);
+            return binding.handler.handle(actor as Unit<any[]>, request, context);
           });
         },
       });
     }
   }
 
-  private registerActorMessageHandlers(): void {
+  private registerUnitMessageHandlers(): void {
     const grouped = groupByCode(
-      getActorMessageHandlerBindings(),
+      getUnitMessageHandlerBindings(),
       (binding) => binding.descriptor.msgcode,
     );
     for (const [msgcode, bindings] of grouped) {
@@ -982,7 +1097,7 @@ export abstract class EntryScene extends Entity {
         ...binding,
         handler: new binding.handlerCtor(),
       }));
-      const handlerByActorCtor = new Map<Function, (typeof handlers)[number]>();
+      const handlerByUnitCtor = new Map<Function, (typeof handlers)[number]>();
       this.actorRegistry.registerMessage(msgcode, {
         decode: descriptor.codec.decode,
         handle: (message, context) => {
@@ -1000,19 +1115,19 @@ export abstract class EntryScene extends Entity {
             );
           }
           return this.processHost.runActorMailbox(instanceId, (actor) => {
-            const actorCtor = actor.constructor;
-            let binding = handlerByActorCtor.get(actorCtor);
+            const unitCtor = actor.constructor;
+            let binding = handlerByUnitCtor.get(unitCtor);
             if (!binding) {
-              binding = handlers.find((item) => actor instanceof item.actorCtor);
-              if (binding) handlerByActorCtor.set(actorCtor, binding);
+              binding = handlers.find((item) => actor instanceof item.unitCtor);
+              if (binding) handlerByUnitCtor.set(unitCtor, binding);
             }
             if (!binding) {
               throw new RpcError(
                 SystemErrCode.HandlerNotFound,
-                `actor message handler not found: ${actor.constructor.name} msgcode ${msgcode}`,
+                `Unit message handler not found: ${actor.constructor.name} msgcode ${msgcode}`,
               );
             }
-            return binding.handler.handle(actor, message, context);
+            return binding.handler.handle(actor as Unit<any[]>, message, context);
           });
         },
       });

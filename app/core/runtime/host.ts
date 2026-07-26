@@ -7,6 +7,7 @@ import type {
 import { MailBoxComponent } from "./MailBoxComponent";
 import { EntityRoot } from "./root";
 import { Unit, UnitComponent } from "./Unit";
+import { Session, SessionComponent } from "./Session";
 import { TimerSystem, type TimerId } from "./TimerSystem";
 import {
   getActorOptions,
@@ -100,30 +101,43 @@ export class ProcessHost {
     };
     const sceneCtx = new SceneContext(this, ref);
     const instance = new ctor(sceneCtx);
+    return this.attachScene(sceneId, ref.sceneType, instance, options.mailbox ?? "ordered");
+  }
+
+  /** 将配置创建或动态创建的 Scene 接入同一 EntityRoot、Mailbox 与子 Entity 容器。 / Attaches configured or dynamic Scenes to one EntityRoot, mailbox, and child-entity container. */
+  attachScene<T extends Scene>(
+    sceneId: SceneId,
+    sceneType: string,
+    instance: T,
+    mailbox: MailboxType = "ordered",
+  ): T {
+    if (this.scenes.has(sceneId)) {
+      throw new Error(`scene already exists: ${sceneId}`);
+    }
+    const ref: SceneRef = { processId: this.processId, sceneId, sceneType };
     const instanceId = this.allocateInstanceId();
-    instance.__attach(sceneId, instanceId, undefined, instance);
-    this.Root.Add(instance);
     const handlers = new Map<HandlerName, HandlerBinding>();
     try {
-      this.collectHandlers(ctor, instance, handlers);
+      instance.__attach(sceneId, instanceId, undefined, instance);
+      this.Root.Add(instance);
+      const mailBox = instance.AddComponent(MailBoxComponent, mailbox);
+      this.collectHandlers(instance.constructor, instance, handlers);
       this.bindComponentHandlers(instance, handlers);
+      this.scenes.set(sceneId, {
+        ref,
+        instance,
+        mailbox: mailBox.MailboxType,
+        handlers,
+        queue: [],
+        running: false,
+        actors: new Map(),
+      });
+      return instance;
     } catch (error) {
       this.Root.Remove(instanceId);
       this.disposeFailedEntity(instance, `scene ${sceneId}`);
       throw error;
     }
-
-    this.scenes.set(sceneId, {
-      ref,
-      instance,
-      mailbox: options.mailbox ?? "ordered",
-      handlers,
-      queue: [],
-      running: false,
-      actors: new Map(),
-    });
-
-    return instance;
   }
 
   spawnActor<T extends Actor<any[]>>(
@@ -247,6 +261,12 @@ export class ProcessHost {
       actor.instance.Parent instanceof UnitComponent
     ) {
       actor.instance.Parent.__detach(actor.instance.UnitId);
+    }
+    if (
+      actor.instance instanceof Session &&
+      actor.instance.Parent instanceof SessionComponent
+    ) {
+      actor.instance.Parent.__detach(actor.instance.ConnectionId);
     }
     const error = new Error(`actor despawned: ${sceneId}/${actorId}`);
     for (const pending of actor.queue.splice(0, actor.queue.length)) {

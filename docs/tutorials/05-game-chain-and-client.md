@@ -5,8 +5,8 @@
 ```text
 Client
   -> LoginMgrScene：选择 LoginScene 地址
-  -> LoginScene：创建/路由 LoginActor，签发 Demo Token，选择 GateScene
-  -> GateScene：维护连接和 GateSession，转发客户端消息
+  -> LoginScene：由连接 Session Handler 签发 Demo Token，选择 GateScene
+  -> GateScene：GateSession 表示连接实体，保存认证和玩家路由状态
   -> MapHostScene：创建多个 MapScene，管理 PlayerUnit Directory
        -> MapScene.UnitComponent：统一管理玩家、怪物和 NPC Unit
   <- GateScene：把 Map Push 发送给对应客户端
@@ -16,7 +16,7 @@ Client
 
 ## 路由数据保存
 
-玩家登录 Gate 后，GateSession 保存 account、token、unitId、actorInstanceId、MapHost Scene 名和 GateSessionId。UnitId 用于业务和客户端显示，actorInstanceId 只用于服务端 Actor 寻址。玩家进入地图时把当前 Gate Scene 名传给 PlayerUnit；玩家不换 Gate 时，该绑定可以随玩家状态保存。
+玩家登录 Gate 后，GateSession 保存 account、token、unitId、actorInstanceId、MapHost Scene 名和 GateSessionId。GateSession 本身就是带 mailbox 的连接 Entity，不再同时维护一个普通对象会话和一个额外 Actor。UnitId 用于业务和客户端显示，actorInstanceId 只用于服务端 Unit 寻址。玩家进入地图时把当前 Gate Scene 名传给 PlayerUnit；玩家不换 Gate 时，该绑定可以随玩家状态保存。
 
 ```text
 MapHostScene send GateScene

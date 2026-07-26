@@ -1,4 +1,4 @@
-import { Unit, actor } from "../../core/public";
+import { Unit } from "../../core/public";
 import { NativeUnitRef } from "../../generated/model/native/NativeUnitRef";
 import { NativeData } from "../native/NativeData";
 import { PositionComponent } from "./PositionComponent";
@@ -44,7 +44,6 @@ export interface MovePlayer {
   sequence: number;
 }
 
-@actor({ mailbox: "ordered" })
 export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
   private account = "";
   private mapId = 0;

@@ -2,12 +2,11 @@ import {
   Component,
   EntryScene,
   Unit,
-  actor,
-  actorMessageHandler,
+  unitMessageHandler,
   component,
   entryScene,
   rpcHandler,
-  type ActorMessageHandler,
+  type UnitMessageHandler,
   type MessageDescriptor,
   type RpcDescriptor,
   type SceneRpcHandler,
@@ -49,16 +48,15 @@ class FixtureComponent extends Component<[initialValue: number]> {
   }
 }
 
-@actor({ mailbox: "ordered" })
 class FixtureUnit extends Unit {}
 
 @entryScene("CoreApiFixture")
 class FixtureScene extends EntryScene {}
 
-@actorMessageHandler(FixtureUnit, fixtureMessage)
-class FixtureActorHandler implements ActorMessageHandler<FixtureUnit, FixtureMessage> {
-  handle(actor: FixtureUnit, message: FixtureMessage): void {
-    actor.GetComponent(FixtureComponent).value = message.value;
+@unitMessageHandler(FixtureUnit, fixtureMessage)
+class FixtureUnitHandler implements UnitMessageHandler<FixtureUnit, FixtureMessage> {
+  handle(unit: FixtureUnit, message: FixtureMessage): void {
+    unit.GetComponent(FixtureComponent).value = message.value;
   }
 }
 
@@ -74,9 +72,9 @@ class FixtureRpcHandler implements SceneRpcHandler<
 }
 
 if (
-  typeof actorMessageHandler !== "function" ||
+  typeof unitMessageHandler !== "function" ||
   typeof rpcHandler !== "function" ||
-  FixtureActorHandler.prototype.handle.length !== 2 ||
+  FixtureUnitHandler.prototype.handle.length !== 2 ||
   FixtureRpcHandler.prototype.handle.length !== 2
 ) {
   throw new Error("stable Core API fixture failed");

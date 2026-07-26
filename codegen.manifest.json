@@ -166,7 +166,7 @@
         "native_data/demo/Item.native": "1e8eb6f3bc2f00a36c1e718ca45f6029ecfeed39ccc9fd303468e02785810926",
         "native_data/demo/Unit.native": "00c7d04dcc61f6dc6f8ced4a1d0ddc79c68003bbc4bf84a122d38a9c9dc709fd",
         "native_data/NativeOps.native": "d69295b0d47dffc280fa80cffd07971890b2c42b95f335442531153716c5cc46",
-        "package.json": "8520eab4d2d54f2be09458d848d03c95f7a31f02d66c7e66c8ecc69a94f79573",
+        "package.json": "eb750a1140389e417165f3d54b544348b0e8386c9dd63274b09a4467d0bedef2",
         "tools/codegen_manifest.mjs": "8173d7aaeec04cc8865ef20db6205d9b5e42880a5a6133decfcdb3a6b4b84495",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -282,6 +282,10 @@
             "app"
           ],
           "paths": [
+            "app/demo/gate/handlers/C2G_EnterMapHandler.ts",
+            "app/demo/gate/handlers/C2G_LoginGateHandler.ts",
+            "app/demo/gate/handlers/C2G_PingHandler.ts",
+            "app/demo/login/handlers/C2S_LoginHandler.ts",
             "app/demo/mapHost/handlers/C2M_MapProbeHandler.ts",
             "app/demo/mapHost/handlers/C2M_MoveHandler.ts",
             "app/demo/mapHost/handlers/C2M_StateSyncBenchHandler.ts",
@@ -327,7 +331,7 @@
         }
       ],
       "outputs": {
-        "app/generated/hotfix/handlers.ts": "cc633d106b149ffae6cf4c58aa1ac545a3cd586e80bfa0e3ca5d7ac5267003a4",
+        "app/generated/hotfix/handlers.ts": "a271c35452c4aad88f64139e414ab2db5ede0b9c2bc19d272b51c97d21b39b9b",
         "app/generated/hotfix/scenes.ts": "ea93a7b9bed6a17fe6de0d1b61392c94ee30a1b50634a6be3a0a5f007b3b861b"
       },
       "outputRoots": [

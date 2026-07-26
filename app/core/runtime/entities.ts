@@ -326,15 +326,15 @@ export abstract class Entity {
 }
 
 export abstract class Scene extends Entity {
-  protected readonly ctx: SceneContext;
+  protected readonly sceneContext: SceneContext;
 
   constructor(ctx: SceneContext) {
     super();
-    this.ctx = ctx;
+    this.sceneContext = ctx;
   }
 
   get logger(): Logger {
-    return this.ctx.logger;
+    return this.sceneContext.logger;
   }
 
   /** 在本 Scene 创建 Actor，并在 Awake 前注册其 InstanceId。 / Creates an Actor in this Scene and registers its InstanceId before Awake runs. */
@@ -343,12 +343,12 @@ export abstract class Scene extends Entity {
     ctor: ActorCtor<T>,
     ...awakeArgs: ActorAwakeArgs<T>
   ): T {
-    return this.ctx.spawnActor(actorId, ctor, ...awakeArgs);
+    return this.sceneContext.spawnActor(actorId, ctor, ...awakeArgs);
   }
 
   /** 从路由中移除并销毁 Actor；此后不可再使用旧 InstanceId。 / Removes an Actor from routing and disposes it; stale InstanceIds must no longer be used. */
   DespawnActor(actorId: ActorId): boolean {
-    return this.ctx.despawnActor(actorId);
+    return this.sceneContext.despawnActor(actorId);
   }
 }
 

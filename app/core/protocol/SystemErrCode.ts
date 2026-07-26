@@ -12,4 +12,5 @@ export const SystemErrCode = {
   RpcIdMismatch: 1010,
   SceneOverloaded: 1011,
   ActorLocationNotFound: 1012,
+  SessionNotFound: 1013,
 } as const;

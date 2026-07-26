@@ -29,12 +29,20 @@ await this.scenes.send(
 
 ## ordered 与 unordered
 
-EntryScene、动态 Scene、Actor 都可以是 mailbox owner：
+配置 Scene、动态 Scene、Session、Unit 都可以是 mailbox owner：
 
 - `ordered`：当前 Handler 完成前不开始下一条消息，包括跨越 `await`。
 - `unordered`：异步 Handler 可以重叠；同步 CPU 代码仍串行执行。
 
-`LoginScene` 选择 unordered，避免一个账号的 IO 等待阻塞所有账号；每个 `LoginActor` 选择 ordered，保证同一账号串行。
+`LoginScene` 选择 unordered，避免一个连接的 IO 等待阻塞其他连接；每个 Session 默认 ordered，保证同一连接串行。若同一账号允许从多个连接同时登录，账号级互斥应由账号领域锁或 Location 处理，不能把账号永久包装成 `LoginActor`。
+
+业务 Handler 按目标只有三种：
+
+- Scene Handler：处理发给业务 Scene 的消息。
+- Session Handler：处理客户端连接消息，直接取得该连接 Session。
+- Unit Handler：处理发给玩家、怪物、NPC 的消息，直接取得目标 Unit。
+
+Actor只是这三类 mailbox 目标的统称和底层路由术语，不是业务必须继承的第四种类型。
 
 ## 为什么 send 不等待 Handler
 
@@ -126,7 +134,7 @@ player.AddComponent(PositionComponent, native);
 player.AddComponent(UnitGateComponent, gateName, gateSessionId);
 ```
 
-Unit/Actor/Component 的 `Awake` 中只设置同步状态和组装组件，不发送消息、不发布 Location。若创建流程还要读取数据库，Factory 应在完成所有 `await` 后再发布到 Location；创建失败时由 UnitComponent 删除 Unit，其组件会被级联清理。
+Unit/Component 的 `Awake` 中只设置同步状态和组装组件，不发送消息、不发布 Location。若创建流程还要读取数据库，Factory 应在完成所有 `await` 后再发布到 Location；创建失败时由 UnitComponent 删除 Unit，其组件会被级联清理。
 
 JavaScript 的 GC 会回收普通对象内存，因此纯状态组件不需要销毁代码。组件持有定时器、事件订阅或宿主资源时，可以覆写受保护的 `OnDestroy()`；`RemoveComponent` 和 `UnitComponent.Remove` 会自动调用它。业务代码不直接 Dispose Unit，否则会让 Root、UnitComponent 与 mailbox 路由脱节。
 
@@ -153,7 +161,7 @@ export class MonsterPatrolComponent extends Component implements IUpdate {
 }
 ```
 
-`Update()` 必须同步，不要标记为 `async`。定时器由组件持有，组件销毁后自动取消。组件挂在 Unit/Actor 上时，回调会进入该 Actor 的 mailbox：ordered mailbox 正在等待一个异步 Handler 时，定时器回调会排队，不会重入玩家状态。
+`Update()` 必须同步，不要标记为 `async`。定时器由组件持有，组件销毁后自动取消。组件挂在 Unit 或 Session 上时，回调会进入所属 Entity 的 mailbox：ordered mailbox 正在等待一个异步 Handler 时，定时器回调会排队，不会重入状态。
 
 `TimerSystem.WaitAsync` 使用游戏 Pump 推进，适合业务时间；网络超时、文件 IO 等基础设施等待仍使用 Rust/Tokio 提供的 `ctx.sleep` 或对应 Host API。
 
@@ -164,15 +172,15 @@ ActorLocation 保存的是 `MapHost EntryScene + Unit InstanceId`，不是只保
 ```text
 ActorLocationEnvelope(instanceId)
 -> ProcessHost.Root.Get(instanceId)
--> ActorMessageDispatcher
+-> UnitMessageDispatcher
 -> Unit.MailBoxComponent
--> @actorMessageHandler / @actorRpcHandler
+-> @unitMessageHandler / @unitRpcHandler
 ```
 
-Actor Handler 直接取得 Unit：
+Unit Handler 直接取得 Unit：
 
 ```ts
-@actorMessageHandler(PlayerUnit, MapMessages.Move)
+@unitMessageHandler(PlayerUnit, MapMessages.Move)
 export class C2M_MoveHandler {
   async handle(unit: PlayerUnit, message: C2M_Move): Promise<void> {
     const result = unit.Move(message);

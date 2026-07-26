@@ -1,6 +1,6 @@
 # RPC与Actor正确性
 
-本文记录Phase 3.10.2冻结的调用、错误和生命周期语义。业务开发者通常只需要使用生成descriptor、`SceneMessageHelper`和Actor Handler；不得手工管理`rpcId`或绕过mailbox。
+本文记录Phase 3.10.2冻结的调用、错误和生命周期语义。业务开发者通常只需要使用生成descriptor、`SceneMessageHelper`以及Session/Unit Handler；不得手工管理`rpcId`或绕过mailbox。
 
 ## RPC不变量
 

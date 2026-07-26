@@ -1,6 +1,6 @@
 import {
-  actorRpcHandler,
-  type ActorRpcHandler,
+  unitRpcHandler,
+  type UnitRpcHandler,
 } from "../../../core/public";
 import type {
   C2M_MapProbe,
@@ -9,8 +9,8 @@ import type {
 import { MapProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { PlayerUnit } from "../../map/PlayerUnit";
 
-@actorRpcHandler(PlayerUnit, MapProtocol.Probe)
-export class C2M_MapProbeHandler implements ActorRpcHandler<
+@unitRpcHandler(PlayerUnit, MapProtocol.Probe)
+export class C2M_MapProbeHandler implements UnitRpcHandler<
   PlayerUnit,
   C2M_MapProbe,
   M2C_MapProbe

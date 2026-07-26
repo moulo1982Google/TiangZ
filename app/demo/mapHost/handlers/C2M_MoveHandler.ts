@@ -1,13 +1,13 @@
 import {
-  actorMessageHandler,
-  type ActorMessageHandler,
+  unitMessageHandler,
+  type UnitMessageHandler,
 } from "../../../core/public";
 import type { C2M_Move } from "../../../generated/model/server/demo/protocol/messages";
 import { MapMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
 import { PlayerUnit } from "../../map/PlayerUnit";
 
-@actorMessageHandler(PlayerUnit, MapMessages.Move)
-export class C2M_MoveHandler implements ActorMessageHandler<
+@unitMessageHandler(PlayerUnit, MapMessages.Move)
+export class C2M_MoveHandler implements UnitMessageHandler<
   PlayerUnit,
   C2M_Move
 > {

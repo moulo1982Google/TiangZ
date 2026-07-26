@@ -49,11 +49,19 @@ export { rpc } from "./protocol/rpc";
 export type { RpcDescriptor, RpcRouting } from "./protocol/rpc";
 export { SystemErrCode } from "./protocol/SystemErrCode";
 
-export { actorMessageHandler, actorRpcHandler } from "./process/actorHandlers";
-export type { ActorMessageHandler, ActorRpcHandler } from "./process/actorHandlers";
+export { unitMessageHandler, unitRpcHandler } from "./process/unitHandlers";
+export type { UnitMessageHandler, UnitRpcHandler } from "./process/unitHandlers";
 export { entryScene } from "./process/registry";
 export { messageHandler, rpcHandler } from "./process/sceneHandlers";
 export type { SceneMessageHandler, SceneRpcHandler } from "./process/sceneHandlers";
+export {
+  sessionMessageHandler,
+  sessionRpcHandler,
+} from "./process/sessionHandlers";
+export type {
+  SessionMessageHandler,
+  SessionRpcHandler,
+} from "./process/sessionHandlers";
 export { SceneMessageHelper } from "./process/SceneMessageHelper";
 export { EntryScene } from "./process/types";
 export type {
@@ -77,12 +85,12 @@ export type {
   StateReplicationSource,
 } from "./replication/StateReplicationSystem";
 
-export { Actor, Component, Entity, Scene } from "./runtime/entities";
+export { Component, Entity, Scene } from "./runtime/entities";
 export type { ComponentCtor } from "./runtime/entities";
 export { Game } from "./runtime/Game";
 export type { GameUpdateConfig } from "./runtime/Game";
 export { ProcessHost } from "./runtime/host";
-export { actor, component, handler, scene } from "./runtime/metadata";
+export { component, scene } from "./runtime/metadata";
 export { Singleton, SingletonRegistry } from "./runtime/Singleton";
 export { TimerSystem } from "./runtime/TimerSystem";
 export type { TimerId } from "./runtime/TimerSystem";
@@ -99,4 +107,5 @@ export type {
   SceneType,
 } from "./runtime/types";
 export { Unit, UnitComponent } from "./runtime/Unit";
+export { Session, SessionComponent } from "./runtime/Session";
 export type { IFrameFlush, ILateUpdate, IUpdate } from "./runtime/UpdateSystem";

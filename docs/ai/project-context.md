@@ -4,13 +4,13 @@
 
 维护契约：任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须同时更新本文和[AI业务开发手册](business-development-manual.md)。设计改动未同步这两份文档，视为尚未完成。
 
-更新时间：2026-07-25。
+更新时间：2026-07-26。
 
 ## 一句话定位
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.2`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.4已经完成，Phase 3.10框架稳定化继续推进到3.10.5+，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.3`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.4已经完成，Phase 3.10框架稳定化继续推进到3.10.5+，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 
@@ -30,10 +30,11 @@ TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络�
 Machine
   -> Process（OS进程、一个V8、一个TS业务线程、Inspector和故障边界）
       -> EntityRoot（InstanceId到Entity的生命周期索引）
-      -> EntryScene（Login、Gate、MapHost、Social等配置入口）
-          -> Scene（map:1、副本实例等动态业务容器）
+      -> 配置 Scene / EntryScene（Login、Gate、MapHost、Social等业务入口）
+          -> Session（网络连接）
+          -> 动态 Scene（map:1、副本实例等业务容器）
               -> UnitComponent（地图Unit集合）
-                  -> Unit/Actor（玩家、怪物、NPC）
+                  -> Unit（玩家、怪物、NPC）
                       -> Component（Numeric、Item、Position等状态与能力）
 ```
 
@@ -51,17 +52,17 @@ EntryScene是可配置、可寻址的顶层业务边界，例如`LoginMgr`、`Lo
 
 普通Scene是Process内动态创建的业务容器。一个MapHost可以创建多个MapScene，让低负载地图共享同一线程；扩容时再增加MapHost Process或EntryScene实例。动态副本也应由宿主或Directory创建Scene，不为每个副本启动一个V8。
 
-### Actor、Unit与Mailbox
+### Actor、Scene、Session、Unit与Mailbox
 
-Actor是带生命周期`InstanceId`和`MailBoxComponent`的消息目标。Unit继承Actor，统一表示玩家、怪物、NPC等地图实体。
+Actor是运行时路由概念，不是要求业务继承并随意创建的第四种实体。Scene、Session、Unit拥有`MailBoxComponent`后都是Actor消息目标：Scene表示业务边界，Session表示网络连接，Unit表示玩家、怪物、NPC。业务代码直接选择这三种明确类型，不创建`LoginActor`之类只为获得mailbox而存在的包装类。
 
 - `Id/UnitId`是业务身份。
 - `InstanceId`是本次生命周期地址，Entity重建后旧值失效。
-- Actor消息根据InstanceId在EntityRoot中O(1)定位。
+- Session和Unit消息根据InstanceId在EntityRoot中O(1)定位。
 - `ordered`保证同一mailbox的消息跨越`await`仍然串行。
 - `unordered`允许异步调用重叠，但所有CPU代码仍在同一TS线程执行。
 
-这解决了Skynet协程在`call`让出时可能处理后续消息而造成逻辑重入的问题。玩家通常使用ordered mailbox，入口Scene可按职责使用unordered，再把同玩家请求路由到PlayerUnit。
+这解决了Skynet协程在`call`让出时可能处理后续消息而造成逻辑重入的问题。Session和Unit默认使用ordered mailbox。Login/Gate入口Scene使用unordered，使不同连接可以并行；同一连接跨`await`仍由Session串行。账号级并发不是连接级并发，只有真实账号业务需要时才使用账号Location或领域锁，不能用永久`LoginActor`伪装账号状态。
 
 ### Component
 
@@ -194,7 +195,7 @@ Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`
 - Phase 0：Rust/deno_core/TS构建、目录、配置、proto codegen和错误码。
 - Phase 1：二进制协议、RPC、同步/异步Handler、Inner TCP多路复用、背压、Inspector和基础性能验证。
 - Phase 1.11：统一为一Process一V8、多EntryScene，本地/远程调用语义一致。
-- Phase 2：登录到地图纵向链路、GateSession、Unit/Actor、多人移动和客户端可见。
+- Phase 2：登录到地图纵向链路、GateSession、Unit、多人移动和客户端可见。
 - Phase 2.12：固定Game.Update、TimeSystem和游戏定时器。
 - Phase 2.13：Rust权威实体数据、generation handle、Native op codegen和Rust直接protobuf广播。
 - Phase 3：可复用TypeScript Client SDK及Cocos/Pixi/Cocos Native验收。
@@ -249,11 +250,12 @@ Phase 5计划：
 1. 接业务需求先阅读[AI业务开发手册](business-development-manual.md)和最接近的`app/demo`实现。
 2. 不把阶段历史文档中的旧Service/V8模型恢复到当前设计。
 3. 不因为性能猜测下沉Rust，先建立业务路径和指标；用户明确要求实验时再做最小A/B。
-4. 不在收到Actor消息后通过账号、地图遍历或全局Manager再次定位Unit。
+4. 不在收到Unit消息后通过账号、地图遍历或全局Manager再次定位Unit。
 5. 不把不可覆盖Event塞进latest状态通道。
 6. 不把AOI收件人选择写进BroadcastHub；AOI产生Audience，Core只负责排队、编码和投递。
 7. 不为未来Wasm/Rhai设计当前用不到的多语言抽象。
 8. 修改架构事实、目录所有权、协议语义或Phase状态时，同步更新本文、`README.md`和`docs/roadmap.md`。
+9. Actor只作为Scene、Session、Unit的统称和底层路由术语；不要为普通业务身份新增泛化`XxxActor`。
 
 ## 新AI建议阅读顺序
 

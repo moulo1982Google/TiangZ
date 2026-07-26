@@ -1,6 +1,6 @@
 # TiangZ AI 业务开发手册
 
-本文面向承担TiangZ业务需求的AI和开发者。目标是用已有Scene、Actor、Component、协议、状态复制和Client SDK完成业务，不把普通需求升级成框架或Rust Runtime改造。
+本文面向承担TiangZ业务需求的AI和开发者。目标是用已有Scene、Session、Unit、Component、协议、状态复制和Client SDK完成业务，不把普通需求升级成框架或Rust Runtime改造。
 
 维护契约：任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须同时更新本文和[AI项目上下文](project-context.md)。设计改动未同步这两份文档，视为尚未完成。
 
@@ -51,9 +51,10 @@ src/generated/
 ## 第二步：找到最接近的样例
 
 - 玩家创建和组件装配：`app/demo/map/MapComponent.ts::CreatePlayer`。
-- 玩家Actor：`app/demo/map/PlayerUnit.ts`。
-- Actor RPC：`app/demo/mapHost/handlers/C2M_UseItemHandler.ts`。
-- Actor Message：`app/demo/mapHost/handlers/C2M_MoveHandler.ts`。
+- 玩家Unit：`app/demo/map/PlayerUnit.ts`。
+- Unit RPC：`app/demo/mapHost/handlers/C2M_UseItemHandler.ts`。
+- Unit Message：`app/demo/mapHost/handlers/C2M_MoveHandler.ts`。
+- Session RPC：`app/demo/gate/handlers/C2G_LoginGateHandler.ts`。
 - EntryScene RPC：`app/demo/mapHost/handlers/G2M_EnterMapHandler.ts`。
 - Numeric字典Delta：`app/demo/numeric/NumericComponent.ts`。
 - Item即时Event：`app/demo/item/ItemComponent.ts`和`C2M_UseItemHandler.ts`。
@@ -111,11 +112,19 @@ unit.GetComponent(SkillComponent).AddSkill(skillId);
 
 ## 编写Handler
 
-Handler只负责协议适配、基础校验和调用领域能力。Actor消息直接拿到目标Unit：
+Handler只负责协议适配、基础校验和调用领域能力。先按消息目标选择唯一对应的形状：
+
+| 目标 | 装饰器 | Handler首个业务对象 |
+|---|---|---|
+| 配置Scene | `@rpcHandler/@messageHandler` | Scene |
+| 客户端连接 | `@sessionRpcHandler/@sessionMessageHandler` | Scene、Session |
+| 玩家/怪物/NPC | `@unitRpcHandler/@unitMessageHandler` | Unit |
+
+不要新增泛化`XxxActor`来承接普通业务请求。连接状态放Session，地图实体状态放Unit，全局业务状态放Scene或其Component。Unit消息直接拿到目标Unit：
 
 ```ts
-@actorRpcHandler(PlayerUnit, MapProtocol.UseItem)
-export class C2M_UseItemHandler implements ActorRpcHandler<
+@unitRpcHandler(PlayerUnit, MapProtocol.UseItem)
+export class C2M_UseItemHandler implements UnitRpcHandler<
   PlayerUnit,
   C2M_UseItem,
   M2C_UseItem
@@ -131,7 +140,7 @@ export class C2M_UseItemHandler implements ActorRpcHandler<
 不要这样做：
 
 ```ts
-// 错误：已经得到Actor，又遍历所有地图查找玩家。
+// 错误：已经得到Unit，又遍历所有地图查找玩家。
 const unit = mapHost.findPlayer(request.account);
 ```
 

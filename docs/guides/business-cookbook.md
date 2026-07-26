@@ -13,12 +13,16 @@
 1. 在 proto 中定义 Message 或 IRequest/IResponse。
 2. RPC Request 注释声明 ResponseType 和 protocol。
 3. 运行 `npm run codegen`。
-4. 在 `app/<game>/<domain>/handlers` 中创建独立 Handler，使用 `@rpcHandler(SceneType, rpc)` 或 `@messageHandler(SceneType, message)`。
+4. 在 `app/<game>/<domain>/handlers` 中创建独立 Handler，根据目标使用 Scene、Session 或 Unit Handler 装饰器。
 5. 普通错误使用业务错误码；框架错误码小于 10000。
 
 小型 Scene 仍可使用方法级 `@rpc/@message`。当协议超过少量时应拆为独立 Handler，避免 Scene 同时承担路由、状态和业务实现。
 
-发给具体 Unit 的协议使用 `@actorRpcHandler(UnitType, rpc)` 或 `@actorMessageHandler(UnitType, message)`。Handler 参数直接是 Unit，不允许再从 MapHost 遍历地图定位。
+- Scene 消息：`@rpcHandler(SceneType, rpc)` / `@messageHandler(SceneType, message)`。
+- 客户端连接消息：`@sessionRpcHandler(SceneType, rpc)` / `@sessionMessageHandler(SceneType, message)`。
+- 发给具体 Unit：`@unitRpcHandler(UnitType, rpc)` / `@unitMessageHandler(UnitType, message)`。
+
+Unit Handler 参数直接是目标 Unit，不允许再从 MapHost 遍历地图定位。Session Handler 直接取得连接 Session，不要另建平行的 session Map 或 `LoginActor`。
 
 ## 选择调用目标
 
@@ -82,14 +86,15 @@ Audience 与广播语义互相独立。同一个技能事件可以发给地图 A
 
 ## 选择 mailbox
 
-- 共享强一致状态：ordered EntryScene/Actor。
-- 不同玩家独立：入口 Scene unordered，玩家 Actor ordered。
+- 共享强一致状态：ordered Scene。
+- 不同连接独立：入口 Scene unordered，连接 Session ordered。
+- 不同玩家独立：入口 Scene unordered，玩家 Unit ordered。
 - CPU 密集任务：拆分 Process 或下沉专用 worker，unordered 不会产生多线程 CPU 并行。
 
 ## 管理 Component
 
-- 在 EntryScene 或 Actor/Scene Factory 中显式调用 `AddComponent(Type, ...awakeArgs)`，由创建场景决定实体具备哪些能力。
-- Actor 自身的创建参数传给 `spawnActor(..., ActorType, ...awakeArgs)`；不要为初始化定义一次性的 mailbox Handler。
+- 在 Scene、Session 或 Unit Factory 中显式调用 `AddComponent(Type, ...awakeArgs)`，由创建位置决定实体具备哪些能力。
+- Unit 由 `UnitComponent.Create(unitId, UnitType, ...awakeArgs)` 创建；Session 由网络连接和 Session Handler 按需创建。不要为初始化定义一次性的 mailbox Handler。
 - `Awake` 只初始化同步状态；需要数据库或 RPC 时，由 Factory 在发布 Entity 前显式等待。
 - 运行期能力同样使用 `AddComponent` 与 `RemoveComponent` 动态开关。
 - 必需依赖使用 `GetComponent(Type)`，可选依赖使用 `TryGetComponent(Type)`。
@@ -101,7 +106,7 @@ Audience 与广播语义互相独立。同一个技能事件可以发给地图 A
 推荐结构是“Handler 薄适配，Entity 做功能胶水，Component 实现领域能力”：
 
 ```ts
-@actorMessageHandler(PlayerUnit, ItemMessages.UseItem)
+@unitMessageHandler(PlayerUnit, ItemMessages.UseItem)
 export class C2M_UseItemHandler {
   handle(unit: PlayerUnit, message: C2M_UseItem): void {
     unit.UseItem(message.itemId);

@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.3.10-alpha.2`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
+当前开发版本为 `0.3.10-alpha.3`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
@@ -15,17 +15,18 @@ TiangZ 使用 Rust + deno_core + TypeScript。Rust/Tokio 负责网络、分帧�
 Machine
   -> OS Process（一个 V8、一个 TS 业务线程）
       -> EntityRoot（InstanceId -> Entity）
-      -> EntryScene（配置启动，可通过 name/type 寻址）
-          -> Scene（动态业务场景，例如地图实例）
+      -> 配置 Scene / EntryScene（可通过 name/type 寻址）
+          -> 动态 Scene（例如地图实例）
+          -> Session（网络连接）
               -> UnitComponent（地图全部 Unit 的业务集合）
-                  -> Unit/Actor（玩家、怪物、NPC 等消息目标）
+                  -> Unit（玩家、怪物、NPC）
                       -> Component（状态与领域能力）
 ```
 
 - `Process` 是部署、V8、线程、Inspector 和故障隔离边界。
-- `EntryScene` 是顶层业务边界，例如 `LoginMgr`、`Login`、`Gate`、`MapHost`。
-- 普通 `Scene` 是进程内动态业务容器，例如 `map:1`、副本实例。
-- `Actor` 是带 `Id/InstanceId` 和 MailBoxComponent 的消息目标；地图 Actor 统一继承 Unit。
+- 配置 Scene 是顶层业务边界，例如 `LoginMgr`、`Login`、`Gate`、`MapHost`；代码中的 `EntryScene` 只是这类 Scene 的运行时基类。
+- 动态 Scene 是进程内业务容器，例如 `map:1`、副本实例。
+- `Session` 表示一条网络连接，`Unit` 表示玩家、怪物、NPC。它们和 Scene 都可拥有 MailBoxComponent，因此都属于 Actor 消息目标；业务不创建泛化的 `XxxActor` 类。
 - `ProcessHost.Root` 按 InstanceId 定位当前生命周期 Entity，MapScene.UnitComponent 按 UnitId 管理地图实体。
 - `Component` 组织状态与能力，不要求 Handler 绑定到单一 Component。
 - 同进程 Scene 调用直接进入目标 Scene mailbox；跨进程调用走持久 Inner TCP。业务代码不判断本地或远程。
@@ -40,7 +41,7 @@ src/                         Rust 宿主、Process 运行时、网络与 Inspect
 app/core/                    框架代码
 app/core/public.ts           业务唯一 Stable Core API 入口
 app/core/process/            ProcessRuntime、EntryScene、Scene 路由
-app/core/runtime/            EntityRoot、动态 Scene、Unit/Actor、Component、mailbox
+app/core/runtime/            EntityRoot、动态 Scene、Session、Unit、Component、mailbox
 app/demo/                    MMORPG Demo 业务
 app/demo/scenes/             配置启动的 Demo EntryScene
 app/generated/               全部自动生成代码
@@ -243,7 +244,7 @@ await this.scenes.send(
 - `unordered` 允许不同消息异步重叠，CPU 代码仍运行在同一个 TS 线程。
 - 动态 Scene 和 Actor 也拥有独立 mailbox。
 - Actor 消息通过 InstanceId 在 EntityRoot 中 O(1) 定位，再进入目标 MailBoxComponent。
-- `LoginScene` 使用 unordered，把同账号消息路由到 ordered `LoginActor`。
+- `LoginScene` 使用 unordered，不同连接可以并行；每条连接由 ordered `Session` 保证跨 `await` 串行。账号级互斥属于账号业务域，不通过虚构 `LoginActor` 获得。
 - 单向本地 `send` 只排入目标 mailbox，不等待执行，从而避免 `Gate call Map -> Map send Gate` 形成调用环死锁。
 
 ## 协议与代码生成
