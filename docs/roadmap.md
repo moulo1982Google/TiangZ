@@ -15,7 +15,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 状态：完成。
 
 - Rust + deno_core + TypeScript 正式构建链。
-- Core、Generated、Demo 目录边界。
+- Core、Generated、Model、Hotfix目录边界。
 - 环境配置目录和 StartMachine。
 - protobuf codegen、Decorator Registry、系统/业务错误码。
 
@@ -182,12 +182,12 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Watcher 会检测任一子进程提前退出，优雅关闭其余进程后整体失败；自动重启仍保留给 Phase 5。
 - Process 可选提供 `/live` 与 `/ready`，就绪状态覆盖端口绑定、TS Scene 启动屏障和停机摘流；`/metrics` 已在 3.10.4 以最小形态接入。
 - 新增只读生成物校验、快速质量门和包含拆分进程、mailbox、背压、Watcher 的完整 `npm run verify`。
-- Core、Demo 与 Rust 宿主建立中英文函数注释规范，并由 `verify:comments` 自动检查，重点记录副作用、生命周期、不应怎样使用以及设计原因。
+- Core、Model、Hotfix与Rust宿主建立中英文函数注释规范，并由`verify:comments`自动检查，重点记录副作用、生命周期、不应怎样使用以及设计原因。
 - 已准备按分钟指定时长的完整链路长稳入口和 RSS/V8 Heap 每小时增长报告；10 小时正式样本使用 `--minutes 600`，由专用空闲机器手工执行，不纳入日常 CI。
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.4`。
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.5`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -260,7 +260,9 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 3.10.5：TypeScript热更闭环
 
-状态：设计冻结，实现待开始。2026-07-26确认热更粒度是整个Process的TS世界，同时保留当前V8和现有对象；候选Bundle经隔离V8预检后，在当前V8暂存稳定typeId对应的prototype补丁、migration与Handler表，再原子提交。旧异步调用按generation排空，Timer/Update改为稳定owner调度；连续热更后的编译代码通过有序Process重启收敛。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)。
+状态：基础实现完成，在线运维闭环待完成。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix：Model拥有状态、字段、构造、继承和稳定身份；Hotfix只拥有Handler和方法实现。Runtime已支持双ESM Bundle、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。
+
+剩余工作是管理命令或Watcher触发运行中候选加载、Rust入站投递屏障与排空超时、有连接/慢RPC/Timer测试、连续generation长稳和热更可观测性。第一版必须排空到零再切换，不做字段migration，也不允许Model在线替换。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)。
 
 ### Phase 3.10.6：性能回归门
 
@@ -272,7 +274,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### 2026-07-26成熟度审计
 
-状态：R1、R3和R4完成，R2热更实现尚未开始。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。Process级热更闭环完成前，不宣称Phase 4准入完成。
+状态：R1、R3和R4完成；R2双Bundle与事务切换基础完成，在线操作和运行时验收未完成。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。Process级热更闭环完成前，不宣称Phase 4准入完成。
 
 ## Phase 4：MMORPG 业务扩展
 

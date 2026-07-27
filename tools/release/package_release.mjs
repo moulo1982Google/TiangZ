@@ -30,7 +30,14 @@ rmSync(output, { recursive: true, force: true });
 mkdirSync(path.join(output, "dist"), { recursive: true });
 const executable = process.platform === "win32" ? "TiangZ.exe" : "TiangZ";
 copyRequired(path.join(root, "target", "release", executable), path.join(output, executable));
-copyRequired(path.join(root, "dist", "main.js"), path.join(output, "dist", "main.js"));
+for (const runtimeFile of [
+  "model.js",
+  "hotfix.js",
+  "model.manifest.json",
+  "hotfix.manifest.json",
+]) {
+  copyRequired(path.join(root, "dist", runtimeFile), path.join(output, "dist", runtimeFile));
+}
 copyRequired(path.join(root, "dist", "smoke_client.cjs"), path.join(output, "dist", "smoke_client.cjs"));
 cpSync(path.join(root, "configs"), path.join(output, "configs"), { recursive: true });
 copyRequired(path.join(root, "README.md"), path.join(output, "README.md"));

@@ -81,7 +81,7 @@ npm run verify:core-api
 该命令执行三项检查：
 
 1. 使用TypeScript类型系统解析`app/core/public.ts`的真实导出，并与`public-api.lock.json`比较；
-2. 拒绝`app/demo`对Core实现文件的深层import，也拒绝Core反向依赖Demo或Generated；
+2. 拒绝Model对Core实现文件的深层import、Hotfix绕过`#tiangz/model`深层import，也拒绝Core/Model反向依赖业务Hotfix；
 3. 编译并运行`tools/core_public_api_self_test.ts`，证明一个独立业务模块只依赖Stable入口即可定义EntryScene、Unit、Component和Handler。
 
 新增非破坏性公共API或完成破坏性变更评审后，显式执行：
@@ -143,3 +143,11 @@ npm run verify:core-api
 - `app/generated`只生成服务端协议；客户端生成物以`client_sdk/typescript/Generated`为唯一来源。
 - 正常bundle不再包含Bench Scene和压测Handler；测试与性能脚本迁移到`build:bench`。
 - 删除LogScene及其演示协议。历史opcode仍在lock中永久保留，不会被新消息复用。
+
+### 0.3.10-alpha.5
+
+- 服务端TS拆分为`app/model`与`app/hotfix`，构建产物拆分为`model.js`和`hotfix.js`。
+- Model成为Process生命周期内不可变边界；字段、构造、继承、协议、Stable Core API或Native schema变化必须重启Process。
+- Hotfix只允许通过`#tiangz/model`使用稳定类型，并只提交方法实现与Handler绑定；不提供字段migration或Model reload API。
+- 新增Hotfix staging、prototype/Handler事务提交、失败回滚、隔离V8预检和兼容指纹校验。
+- `app/core/public.ts`新增Hotfix行为声明所需Stable API；变更由`public-api.lock.json`锁定。

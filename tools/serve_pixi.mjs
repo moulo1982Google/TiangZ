@@ -6,7 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "pixi_client");
 const port = Number(process.argv[2] ?? 7460);
-const types = new Map([[".html", "text/html; charset=utf-8"], [".js", "text/javascript; charset=utf-8"], [".map", "application/json"]]);
+const types = new Map([
+  [".html", "text/html; charset=utf-8"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".map", "application/json"],
+  [".png", "image/png"],
+]);
 
 createServer(async (request, response) => {
   try {

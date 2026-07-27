@@ -26,8 +26,9 @@ use crate::health::{
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
     call_js_stop_process, call_js_update_binary, configure_host_scene_bridge, create_runtime,
-    load_js_entrypoints, pump_js_event_loop_once, take_close_connection_requests,
+    pump_js_event_loop_once, take_close_connection_requests,
 };
+use crate::hotfix::RuntimeBundles;
 use crate::inspector::ProcessInspector;
 use crate::transport::{init_remote_transport, snapshot_remote_transport};
 use crate::transport_backend::{
@@ -414,16 +415,12 @@ pub async fn run_runtime_config(
     config: RuntimeConfig,
 ) -> Result<()> {
     init_remote_transport();
-    let app_path = root.join("dist").join("main.js");
-    let app_code = std::fs::read_to_string(&app_path)
-        .with_context(|| format!("failed to read {}", app_path.display()))?;
-    let app_module_url = deno_core::ModuleSpecifier::from_file_path(&app_path)
-        .map_err(|_| anyhow::anyhow!("failed to convert {} to a file URL", app_path.display()))?
-        .to_string();
+    let runtime_bundles = RuntimeBundles::load(root)?;
 
     tracing::info!(
         target: "tiangz::runtime",
         version = crate::version::current(),
+        hotfix = runtime_bundles.bundle_version(),
         process = %config.process.name,
         scene_count = config.scenes.len(),
         config = %resolved_config.display(),
@@ -503,8 +500,7 @@ pub async fn run_runtime_config(
             process,
             scenes,
             known_scenes,
-            app_code,
-            app_module_url,
+            runtime_bundles,
             event_rx,
             runtime_writers,
             runtime_queue_stats,
@@ -585,8 +581,7 @@ fn run_process_runtime(
     process: ProcessConfig,
     scenes: Vec<SceneConfig>,
     known_scenes: Vec<SceneConfig>,
-    app_code: String,
-    app_module_url: String,
+    runtime_bundles: RuntimeBundles,
     event_rx: mpsc::Receiver<ProcessEvent>,
     writers: ConnectionWriters,
     queue_stats: Arc<ProcessQueueStats>,
@@ -601,6 +596,19 @@ fn run_process_runtime(
         .build()
         .context("failed to create JS event loop runtime")?;
     configure_host_scene_bridge(host_runtime, completion_sink);
+    {
+        let mut preflight_runtime = {
+            let _guard = js_event_loop.enter();
+            create_runtime(
+                false,
+                crate::logging::typescript_min_level(&process.logging),
+            )
+            .context("failed to create isolated Hotfix preflight V8")?
+        };
+        runtime_bundles
+            .preflight(&js_event_loop, &mut preflight_runtime)
+            .context("isolated Hotfix preflight failed")?;
+    }
     // This state must outlive the V8 isolate because V8 stores its raw pointer.
     let mut gc_metrics = Box::<V8GcMetrics>::default();
     let gc_metrics_ptr = (&mut *gc_metrics) as *mut V8GcMetrics as *mut c_void;
@@ -622,13 +630,14 @@ fn run_process_runtime(
         gc_metrics_ptr,
         deno_core::v8::GCType::kGCTypeAll,
     );
-    let _inspector = ProcessInspector::start(&mut runtime, &process, app_module_url.clone())?;
-    {
-        let _guard = js_event_loop.enter();
-        runtime
-            .execute_script(deno_core::FastString::from(app_module_url), app_code)
-            .context("failed to execute dist/main.js")?;
-    }
+    let _inspector = ProcessInspector::start(
+        &mut runtime,
+        &process,
+        runtime_bundles.model_specifier().to_string(),
+    )?;
+    let entrypoints = runtime_bundles
+        .install_initial(&js_event_loop, &mut runtime)
+        .context("failed to install initial Model/Hotfix generation")?;
 
     let process_config = json!({
         "process": process,
@@ -636,7 +645,6 @@ fn run_process_runtime(
         "knownScenes": known_scenes,
         "tickMs": process.game.fixed_update_ms,
     });
-    let entrypoints = load_js_entrypoints(&mut runtime)?;
     let start_result = call_js_start_process(
         &js_event_loop,
         &mut runtime,

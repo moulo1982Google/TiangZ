@@ -88,6 +88,7 @@
     "defineLatestBroadcast",
     "encodePacket",
     "entryScene",
+    "hotfixFor",
     "isPromiseLike",
     "message",
     "messageHandler",

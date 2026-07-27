@@ -2,7 +2,11 @@
 
 ## unknown scene type
 
-确认 class 使用 `@entryScene()`，文件位于 codegen 的 `*/scenes/*.ts` 搜索范围，执行过 `npm run codegen`，并检查 `app/generated/hotfix/scenes.ts`。
+确认class使用`@entryScene()`，文件位于`serverBundles.sceneSearchRoots`的`*/scenes/*.ts`范围，执行过`npm run codegen`，并检查`app/generated/bootstrap/scenes.ts`。
+
+## Hotfix-only构建拒绝Model变化
+
+`npm run build:hotfix`只适用于行为变化。字段、构造、继承、Core、协议锁或`.native`变化都会改变冻结指纹；应执行完整`npm run build`，部署配对的Model/Hotfix并重启Process。不要手工修改manifest绕过检查。
 
 ## scene not found / ambiguous scene
 

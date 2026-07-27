@@ -1,7 +1,9 @@
 {
-  "hotfix": {
-    "sceneSearchRoots": ["app/demo"],
-    "handlerSearchRoots": ["app/demo"],
+  "serverBundles": {
+    "sceneSearchRoots": ["app/model/demo"],
+    "handlerSearchRoots": ["app/hotfix/demo"],
+    "patchSearchRoots": ["app/hotfix/demo"],
+    "benchHandlerSearchRoots": ["app/hotfix/bench"],
     "serverProtocolSearchRoots": ["app/generated/model/server/demo"]
   },
   "typescriptClientSdk": {

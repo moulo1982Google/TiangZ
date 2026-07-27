@@ -1,15 +1,15 @@
 # Phase 4 前框架成熟度审计
 
-审计日期：2026-07-26。审计基线：`0.3.10-alpha.4`。
+审计日期：2026-07-26。初始审计基线：`0.3.10-alpha.4`；当前实现版本：`0.3.10-alpha.5`。
 
 本审计回答一个问题：在继续扩展 MMORPG 业务前，TiangZ 还缺少哪些可以被自动验证的框架能力。业务功能只作为验收夹具，不以增加玩法数量表示框架成熟。
 
 ## 结论
 
-Phase 3.10.1 至 3.10.4 已经建立公共 API、RPC/Actor 正确性、故障注入和可观测性基础。R1、R3 与 R4 已于 2026-07-26 完成；Phase 4 准入目前只被 R2 TypeScript 热更闭环阻塞。
+Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`已经完成R2的Model/Hotfix双Bundle、候选预检与事务提交基础；Phase 4准入仍被在线触发、投递屏障和完整运行时验收阻塞。
 
 1. Developer Tools 的架构规则与仓库约定不一致；已完成。
-2. TypeScript 热更没有形成可回滚的进程级闭环；待实现。
+2. TypeScript热更已形成可回滚的进程内事务基础；在线运维闭环待完成。
 3. 性能测试能生成报告，但不能自动判定回归；已完成 Windows/Linux 基线与门禁。
 4. 完整质量门和 Release 流程尚未同时覆盖 Windows 与 Linux；已完成。
 
@@ -18,7 +18,7 @@ Phase 3.10.1 至 3.10.4 已经建立公共 API、RPC/Actor 正确性、故障注
 ## 已确认基础
 
 - 一个 OS Process 拥有一个 V8 和一个 TS 业务线程，可承载多个 EntryScene。
-- Core、Generated、Demo 的运行时依赖方向正确，Stable API 由 `app/core/public.ts` 和 API lock 管理。
+- Core、Generated Bootstrap、Model和Hotfix的运行时依赖方向由Developer Tools与Hotfix边界检查共同约束，Stable API由`app/core/public.ts`和API lock管理。
 - codegen manifest 与项目版本检查通过。
 - RPC id、多路复用、mailbox、Actor 生命周期、断线清理、背压和故障注入已有确定性测试。
 - Prometheus/Grafana 已能按 Process 采集 Runtime、Scene、队列、延迟和 NativeData 指标。
@@ -28,7 +28,7 @@ Phase 3.10.1 至 3.10.4 已经建立公共 API、RPC/Actor 正确性、故障注
 
 ### 当前事实
 
-状态：完成（2026-07-26）。Developer Tools `v0.8.1` 已在共享规则核心表达 `bench -> demo` 单向依赖和 `app/main*.ts` 组合入口，反向依赖仍会报错。主仓库已升级依赖，`npm run check:project` 检查 226 个文件，结果为 0 错误、0 警告，并已接入 `verify:quick`。
+状态：完成（2026-07-26）。Developer Tools `v0.9.1`已在共享规则核心表达Model/Hotfix双层、Generated Bootstrap/Hotfix入口和Hotfix只能经`#tiangz/model`进入稳定层；主仓库锁定该Tag，`npm run check:project`已接入`verify:quick`。
 
 这不是通过忽略规则解决的问题。VS Code 诊断与 CLI 使用同一规则核心，错误模型会直接影响开发者对目录边界的理解。
 
@@ -45,27 +45,34 @@ Phase 3.10.1 至 3.10.4 已经建立公共 API、RPC/Actor 正确性、故障注
 
 ### 世界观
 
-热更粒度是整个 Process 的 TS 世界，不是单个 Scene。一个 Process 内的 EntryScene、进程级 Singleton、Timer、mailbox 和异步任务共同属于同一 Bundle 版本；不允许同一个 V8 中长期存在半新半旧的业务定义。
+热更粒度是整个Process的TS行为世界，不是单个Scene。一个Process内的EntryScene共享一个V8；Model在Process启动后永久冻结，只有Hotfix行为允许作为一个事务切换。
 
-Rust `NativeEntityStore` 当前是 V8 线程上的持久权威存储。它可以成为热更后保留状态的基础，但目前没有版本、所有权、重绑定和迁移契约。仅仅重新执行 `dist/main.js` 不构成热更。
+Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model字段、构造、继承、协议和Native schema不参与在线迁移；任何变化必须完整部署并重启Process。仅替换文件而没有兼容校验、切换屏障和事务提交不构成热更。
 
 ### 必须冻结的语义
 
 1. **候选自检**：新 Bundle 在隔离 V8 中以无副作用注册模式完成语法、入口、协议指纹、Stable API 和 Native schema 兼容检查。
-2. **稳定类型**：可热更类型拥有稳定 typeId；新 generation 通过 staging registry 提交 prototype 方法补丁，现有 Entity/Component 不重建。
+2. **稳定Model**：现有Entity/Component不重建；候选generation只能通过staging registry提交Model类型的prototype方法补丁，不能修改字段、构造或继承。
 3. **切换屏障**：Rust 短暂停止投递新业务帧，同时保持宿主队列有界；外部连接不因切换断开。
-4. **异步排空**：已进入 Handler 的旧 Promise 继续完成并持有旧 generation；新消息只进入新 Handler 表。
-5. **生命周期归属**：Scene、Entity、Component、Timer、Update target 和异步任务都能归属到 Bundle generation；长期 Timer 不保存无法追踪的旧闭包。
-6. **原子切换与回滚**：prototype、migration 和 Handler 表作为一次事务提交；失败时恢复旧描述符和注册表。
+4. **异步排空**：第一版暂停入站并等待Scene队列和在途Promise归零，之后才提交新Handler；不长期并存两个generation。
+5. **生命周期归属**：Scene、Entity、Component、Timer和Update target具有稳定owner；长期Timer不保存无法追踪的Hotfix匿名闭包。
+6. **原子切换与回滚**：prototype和Handler表作为一次同步事务提交；失败时恢复旧描述符和注册表，不执行字段migration。
 7. **可观测性**：日志和指标携带 Bundle 版本、切换阶段、耗时、在途 generation 数和失败原因。
 
 ### 验收条件
 
 - 无连接和有连接两种热更均有自动化测试。
-- 覆盖同步 Handler、等待远程 RPC、重复 Timer、Entity/Component、Rust Native Entity 和切换失败回滚。
+- 覆盖同步Handler、等待远程RPC、重复Timer、Entity/Component、Rust Native Entity和切换失败回滚。
 - 热更前后 Session、Unit、Component 实例与 Rust handle 保持不变，现有实例能调用新 prototype 方法。
 - 热更期间队列不越界、RPC 不错配、单向 Message 不重复。
-- 同一 Bundle 连续切换 100 次后，V8 Heap、Rust Entity 数、Timer 数和 pending operation 回到稳定区间。
+- Hotfix-only构建对Model/Core、protocol、Stable API和Native schema变化全部拒绝。
+- 同一Model下连续切换100次Hotfix后，V8 Heap、Rust Entity数、Timer数和pending operation回到稳定区间。
+
+### 0.3.10-alpha.5进展
+
+已完成：`app/model`与`app/hotfix`分层、`model.js/hotfix.js`双Bundle及manifest、实际文件SHA-256校验、隔离V8预检、staging registry、prototype与Scene/Session/Unit Handler事务提交、失败回滚和边界自测。Runtime启动时先安装Hotfix generation 1，再开放服务。
+
+待完成：管理命令或Watcher触发运行中候选加载、Rust入站投递屏障、排空超时与恢复策略、有连接和慢RPC运行时测试、连续切换长稳以及热更指标面板。完成这些项之前，R2仍不是完整闭环。
 
 完整决策和限制见[Process级TypeScript热更设计](typescript-hot-reload.md)。
 
@@ -115,17 +122,17 @@ Rust `NativeEntityStore` 当前是 V8 线程上的持久权威存储。它可以
 
 以下问题需要治理，但不能为了“文件行数好看”进行机械重构：
 
-- `app/core/process/types.ts` 同时承载配置类型、EntryScene、mailbox 和协议分发，热更实现前应按责任拆分 Internal 模块，保持 Stable 导出不变。
+- `app/core/process/types.ts` 同时承载配置类型、EntryScene、mailbox和协议分发；后续只在在线切换接线确实需要时按责任拆分Internal模块，保持Stable导出不变。
 - `src/health.rs`、`src/process.rs`、`src/transport.rs` 和 `src/native_data.rs` 责任密度较高。只在新增行为需要修改对应边界时拆分，并先补行为测试。
 - Demo 中应优先使用 Scene/Entity/Component 所有权 API 创建 Timer，不直接持有进程级 Timer，作为热更生命周期夹具。
 - 根目录临时日志已被 `.gitignore` 和 clean 命令覆盖，不是源码问题；发布任务必须从干净复制目录构建。
 
 ## 执行顺序
 
-1. 修复 R1，让架构检查重新可信并全绿。
-2. 设计并实现 R2；热更会触碰生命周期，是风险最高的框架改造。
-3. 在热更前后运行相同基准，完成 R3，防止稳定化工作引入隐性性能退化。
-4. 完成 R4，以 Windows/Linux Release 候选验收整个 `0.3.10`。
-5. 发布 `0.3.10` 后再开始 Phase 4。
+1. R1、R3、R4保持全绿。
+2. 在`0.3.10-alpha.5`双Bundle和事务基础上完成R2在线操作闭环。
+3. 对切换前后运行相同基准，并执行有连接、慢RPC、Timer和连续generation验收。
+4. 以Windows/Linux Release候选验收整个`0.3.10`。
+5. 发布`0.3.10`后再开始Phase 4。
 
 每个阻塞项独立提交、独立验收。涉及架构、目录边界、数据所有权或业务开发流程时，必须同时更新 `docs/ai/project-context.md` 与 `docs/ai/business-development-manual.md`。

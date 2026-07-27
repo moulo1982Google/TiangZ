@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "TiangZ"
-version = "0.3.10-alpha.4"
+version = "0.3.10-alpha.5"
 dependencies = [
  "anyhow",
  "base64 0.23.0",
@@ -17,6 +17,7 @@ dependencies = [
  "mimalloc",
  "serde",
  "serde_json",
+ "sha2",
  "sysinfo",
  "tempfile",
  "tokio",
@@ -1709,6 +1710,17 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
  "digest 0.11.3",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest 0.10.7",
 ]
 
 [[package]]

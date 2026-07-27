@@ -429,6 +429,15 @@ export abstract class EntryScene extends Scene {
     return this.completeUpdate(startedAt, includeMetrics);
   }
 
+  /** 返回本 Scene 是否已排空到可原子切换 Hotfix 的状态。 / Reports whether this Scene is fully drained for an atomic Hotfix switch. */
+  __canCommitHotfix(): boolean {
+    return this.ingressLength === 0 &&
+      this.unorderedTasks.size === 0 &&
+      this.orderedTask === undefined &&
+      !this.mailboxBusy &&
+      this.mailboxTasks.length === 0;
+  }
+
   /** 注册显式 Handler；生成的装饰器绑定会单独安装。 / Registers explicit handlers; generated decorator bindings are installed separately. */
   protected registerHandlers(): void {}
 
@@ -903,7 +912,13 @@ export abstract class EntryScene extends Scene {
         responseCode: descriptor.responseCode,
         decode: descriptor.requestCodec.decode,
         encode: descriptor.responseCodec.encode,
-        handle: (request, context) => method.call(this, request, context),
+        handle: (request, context) => {
+          const current = (this as unknown as Record<string, unknown>)[binding.method];
+          if (typeof current !== "function") {
+            throw new Error(`RPC handler is not a function: ${descriptor.name}`);
+          }
+          return current.call(this, request, context);
+        },
       });
     }
   }
@@ -920,38 +935,68 @@ export abstract class EntryScene extends Scene {
 
       this.registry.registerMessage(descriptor.msgcode, {
         decode: descriptor.codec.decode,
-        handle: (message, context) => method.call(this, message, context),
+        handle: (message, context) => {
+          const current = (this as unknown as Record<string, unknown>)[binding.method];
+          if (typeof current !== "function") {
+            throw new Error(`Message handler is not a function: ${descriptor.name}`);
+          }
+          return current.call(this, message, context);
+        },
       });
     }
   }
 
   private registerExternalRpcHandlers(): void {
     for (const binding of getSceneRpcHandlerBindings(this.constructor)) {
-      const handler = new binding.handlerCtor();
+      let handlerCtor = binding.handlerCtor;
+      let handler = new handlerCtor();
+      const currentHandler = () => {
+        if (handlerCtor !== binding.handlerCtor) {
+          handlerCtor = binding.handlerCtor;
+          handler = new handlerCtor();
+        }
+        return handler;
+      };
       this.claimRpcHandler(binding.descriptor.requestCode, binding.handlerCtor.name);
       this.registry.register(binding.descriptor.requestCode, {
         responseCode: binding.descriptor.responseCode,
         decode: binding.descriptor.requestCodec.decode,
         encode: binding.descriptor.responseCodec.encode,
-        handle: (request, context) => handler.handle(this, request, context),
+        handle: (request, context) => currentHandler().handle(this, request, context),
       });
     }
   }
 
   private registerExternalMessageHandlers(): void {
     for (const binding of getSceneMessageHandlerBindings(this.constructor)) {
-      const handler = new binding.handlerCtor();
+      let handlerCtor = binding.handlerCtor;
+      let handler = new handlerCtor();
+      const currentHandler = () => {
+        if (handlerCtor !== binding.handlerCtor) {
+          handlerCtor = binding.handlerCtor;
+          handler = new handlerCtor();
+        }
+        return handler;
+      };
       this.claimMessageHandler(binding.descriptor.msgcode, binding.handlerCtor.name);
       this.registry.registerMessage(binding.descriptor.msgcode, {
         decode: binding.descriptor.codec.decode,
-        handle: (message, context) => handler.handle(this, message, context),
+        handle: (message, context) => currentHandler().handle(this, message, context),
       });
     }
   }
 
   private registerSessionRpcHandlers(): void {
     for (const binding of getSessionRpcHandlerBindings(this.constructor)) {
-      const handler = new binding.handlerCtor();
+      let handlerCtor = binding.handlerCtor;
+      let handler = new handlerCtor();
+      const currentHandler = () => {
+        if (handlerCtor !== binding.handlerCtor) {
+          handlerCtor = binding.handlerCtor;
+          handler = new handlerCtor();
+        }
+        return handler;
+      };
       this.claimRpcHandler(binding.descriptor.requestCode, binding.handlerCtor.name);
       this.registry.register(binding.descriptor.requestCode, {
         responseCode: binding.descriptor.responseCode,
@@ -967,7 +1012,7 @@ export abstract class EntryScene extends Scene {
           }
           const session = this.getOrCreateSession(connectionId);
           return this.processHost.runActorMailbox(session.InstanceId, (target) =>
-            handler.handle(this, target as Session<any[]>, request, context)
+            currentHandler().handle(this, target as Session<any[]>, request, context)
           );
         },
       });
@@ -976,7 +1021,15 @@ export abstract class EntryScene extends Scene {
 
   private registerSessionMessageHandlers(): void {
     for (const binding of getSessionMessageHandlerBindings(this.constructor)) {
-      const handler = new binding.handlerCtor();
+      let handlerCtor = binding.handlerCtor;
+      let handler = new handlerCtor();
+      const currentHandler = () => {
+        if (handlerCtor !== binding.handlerCtor) {
+          handlerCtor = binding.handlerCtor;
+          handler = new handlerCtor();
+        }
+        return handler;
+      };
       this.claimMessageHandler(binding.descriptor.msgcode, binding.handlerCtor.name);
       this.registry.registerMessage(binding.descriptor.msgcode, {
         decode: binding.descriptor.codec.decode,
@@ -990,7 +1043,7 @@ export abstract class EntryScene extends Scene {
           }
           const session = this.getOrCreateSession(connectionId);
           return this.processHost.runActorMailbox(session.InstanceId, (target) =>
-            handler.handle(this, target as Session<any[]>, message, context)
+            currentHandler().handle(this, target as Session<any[]>, message, context)
           );
         },
       });
@@ -1005,7 +1058,8 @@ export abstract class EntryScene extends Scene {
     for (const [msgcode, bindings] of grouped) {
       const descriptor = bindings[0].descriptor;
       const handlers = bindings.map((binding) => ({
-        ...binding,
+        binding,
+        handlerCtor: binding.handlerCtor,
         handler: new binding.handlerCtor(),
       }));
       const handlerByUnitCtor = new Map<Function, (typeof handlers)[number]>();
@@ -1031,7 +1085,7 @@ export abstract class EntryScene extends Scene {
             const unitCtor = actor.constructor;
             let binding = handlerByUnitCtor.get(unitCtor);
             if (!binding) {
-              binding = handlers.find((item) => actor instanceof item.unitCtor);
+              binding = handlers.find((item) => actor instanceof item.binding.unitCtor);
               if (binding) handlerByUnitCtor.set(unitCtor, binding);
             }
             if (!binding) {
@@ -1039,6 +1093,10 @@ export abstract class EntryScene extends Scene {
                 SystemErrCode.HandlerNotFound,
                 `Unit RPC handler not found: ${actor.constructor.name} msgcode ${msgcode}`,
               );
+            }
+            if (binding.handlerCtor !== binding.binding.handlerCtor) {
+              binding.handlerCtor = binding.binding.handlerCtor;
+              binding.handler = new binding.handlerCtor();
             }
             return binding.handler.handle(actor as Unit<any[]>, request, context);
           });
@@ -1055,7 +1113,8 @@ export abstract class EntryScene extends Scene {
     for (const [msgcode, bindings] of grouped) {
       const descriptor = bindings[0].descriptor;
       const handlers = bindings.map((binding) => ({
-        ...binding,
+        binding,
+        handlerCtor: binding.handlerCtor,
         handler: new binding.handlerCtor(),
       }));
       const handlerByUnitCtor = new Map<Function, (typeof handlers)[number]>();
@@ -1079,7 +1138,7 @@ export abstract class EntryScene extends Scene {
             const unitCtor = actor.constructor;
             let binding = handlerByUnitCtor.get(unitCtor);
             if (!binding) {
-              binding = handlers.find((item) => actor instanceof item.unitCtor);
+              binding = handlers.find((item) => actor instanceof item.binding.unitCtor);
               if (binding) handlerByUnitCtor.set(unitCtor, binding);
             }
             if (!binding) {
@@ -1087,6 +1146,10 @@ export abstract class EntryScene extends Scene {
                 SystemErrCode.HandlerNotFound,
                 `Unit message handler not found: ${actor.constructor.name} msgcode ${msgcode}`,
               );
+            }
+            if (binding.handlerCtor !== binding.binding.handlerCtor) {
+              binding.handlerCtor = binding.binding.handlerCtor;
+              binding.handler = new binding.handlerCtor();
             }
             return binding.handler.handle(actor as Unit<any[]>, message, context);
           });

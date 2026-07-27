@@ -92,6 +92,12 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.config.process.lifecycle?.stopTimeoutMs ?? 10_000;
   }
 
+  /** 仅在没有待处理帧和异步业务任务时开放 Hotfix 提交屏障。 / Opens the Hotfix commit barrier only when no queued frame or asynchronous business task remains. */
+  get CanCommitHotfix(): boolean {
+    return this.lifecycleState === "ready" &&
+      this.entryScenes.every((scene) => scene.__canCommitHotfix());
+  }
+
   /** 建立生命周期屏障：所有 Scene 都完成 start 后，任何 Scene 才能进入 ready。 / Creates a lifecycle barrier: every Scene starts before any Scene becomes ready. */
   async start(): Promise<string> {
     if (this.lifecycleState !== "created") {

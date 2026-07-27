@@ -5,7 +5,7 @@
     "client-handlers": {
       "command": "npm run codegen:client-handlers",
       "contentInputs": {
-        "codegen.config.json": "61d7e3e9af3c722d8101b15cf635d536bd09805b651d194e04dcc0bb44d9a96e",
+        "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
         "tools/codegen_client_handlers.mjs": "6c0403a5fa6182ae0c6b4e52d8dd45c122106ca4063c2f297dfd3ff7b04eebb1",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -81,7 +81,7 @@
         "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "a6599665f11a4723ebd0d4e13cc9361fac8ea767e91a8a5c831e6e2c917e434a",
         "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "cb19019e96eb7e134a4700cbdf0b906397e22c4c8cee29b5c360b83cea8d4ac5",
         "client_sdk/typescript/index.ts": "51fc009d49b1b2d81f8732d87a0742720df53e157a972a086f092270edaa81c0",
-        "codegen.config.json": "61d7e3e9af3c722d8101b15cf635d536bd09805b651d194e04dcc0bb44d9a96e",
+        "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
         "tools/codegen_client_sdk.mjs": "9612282dd74ba1031610583ea5013961f6739c1469d2f7e36bb01cc7d5f506f0",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -152,7 +152,7 @@
         "native_data/demo/Item.native": "1e8eb6f3bc2f00a36c1e718ca45f6029ecfeed39ccc9fd303468e02785810926",
         "native_data/demo/MapOps.native": "fd867209c156b84dd7f949641f5f20dde01958e74bb44c99671d0e75a2cf2d77",
         "native_data/demo/Unit.native": "00c7d04dcc61f6dc6f8ced4a1d0ddc79c68003bbc4bf84a122d38a9c9dc709fd",
-        "package.json": "5c3c27034b0c8880d2053e01838e8e0e051a11b35615760b9fab28d51372cc83",
+        "package.json": "524b2b7ac1c5a952f916f60230f5f40dcf52084115cd8bda692f8b2b0302b812",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -188,7 +188,7 @@
     "proto": {
       "command": "npm run codegen:proto",
       "contentInputs": {
-        "codegen.config.json": "61d7e3e9af3c722d8101b15cf635d536bd09805b651d194e04dcc0bb44d9a96e",
+        "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
         "proto/BenchInner_S_25001.proto": "ed3190c3d98c9e6b72bcdd14a8b752e041ae1195fa0f40cdd2889baabd3c1fbb",
         "proto/BenchMessage_C_15001.proto": "43296cd2bfc8a3f121ca62968a5eb0bac6f01fe16a72c59e663ea500ca9efad1",
         "proto/DataDefine_CS_50001.proto": "0db21e90e9795239f266a6086faa65825ad26f59e05109fae9284f692de0f07d",
@@ -242,26 +242,44 @@
     "scenes": {
       "command": "npm run codegen:scenes",
       "contentInputs": {
-        "codegen.config.json": "61d7e3e9af3c722d8101b15cf635d536bd09805b651d194e04dcc0bb44d9a96e",
+        "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/codegen_scenes.mjs": "7f166bd12958bab4a55fd62bb6194eac813803811745e1502830cec47e20a51a"
+        "tools/codegen_scenes.mjs": "9dc25738c2819bf566af00a288c994077af2e50710c9f1dff20c413decde381d"
       },
       "selections": [
         {
-          "kind": "handler",
+          "kind": "bench-handler",
           "roots": [
-            "app/demo"
+            "app/hotfix/bench"
           ],
           "paths": [
-            "app/demo/gate/handlers/C2G_EnterMapHandler.ts",
-            "app/demo/gate/handlers/C2G_LoginGateHandler.ts",
-            "app/demo/gate/handlers/C2G_PingHandler.ts",
-            "app/demo/login/handlers/C2S_LoginHandler.ts",
-            "app/demo/mapHost/handlers/C2M_MapProbeHandler.ts",
-            "app/demo/mapHost/handlers/C2M_MoveHandler.ts",
-            "app/demo/mapHost/handlers/C2M_UseItemHandler.ts",
-            "app/demo/mapHost/handlers/G2M_EnterMapHandler.ts",
-            "app/demo/mapHost/handlers/G2M_PlayerDisconnectHandler.ts"
+            "app/hotfix/bench/handlers/C2M_StateSyncBenchHandler.ts"
+          ]
+        },
+        {
+          "kind": "handler",
+          "roots": [
+            "app/hotfix/demo"
+          ],
+          "paths": [
+            "app/hotfix/demo/gate/handlers/C2G_EnterMapHandler.ts",
+            "app/hotfix/demo/gate/handlers/C2G_LoginGateHandler.ts",
+            "app/hotfix/demo/gate/handlers/C2G_PingHandler.ts",
+            "app/hotfix/demo/login/handlers/C2S_LoginHandler.ts",
+            "app/hotfix/demo/mapHost/handlers/C2M_MapProbeHandler.ts",
+            "app/hotfix/demo/mapHost/handlers/C2M_MoveHandler.ts",
+            "app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts",
+            "app/hotfix/demo/mapHost/handlers/G2M_EnterMapHandler.ts",
+            "app/hotfix/demo/mapHost/handlers/G2M_PlayerDisconnectHandler.ts"
+          ]
+        },
+        {
+          "kind": "hotfix-patch",
+          "roots": [
+            "app/hotfix/demo"
+          ],
+          "paths": [
+            "app/hotfix/demo/login/LoginComponentHotfix.ts"
           ]
         },
         {
@@ -285,21 +303,30 @@
         {
           "kind": "scene",
           "roots": [
-            "app/demo"
+            "app/model/demo"
           ],
           "paths": [
-            "app/demo/scenes/GateScene.ts",
-            "app/demo/scenes/LoginMgrScene.ts",
-            "app/demo/scenes/LoginScene.ts",
-            "app/demo/scenes/MapHostScene.ts"
+            "app/model/demo/scenes/GateScene.ts",
+            "app/model/demo/scenes/LoginMgrScene.ts",
+            "app/model/demo/scenes/LoginScene.ts",
+            "app/model/demo/scenes/MapHostScene.ts"
           ]
         }
       ],
       "outputs": {
-        "app/generated/hotfix/handlers.ts": "bd887b3349e544c3bc840abcfee6ea21538b02e48df107ec1bbd795cbda349a2",
-        "app/generated/hotfix/scenes.ts": "93c094df8e905c90ff8b0f013f462f33c54836c115dc899d2dc6c3d1d845616e"
+        "app/generated/bootstrap/scenes.ts": "f88ce598a822d0fa27509a14559ca48964898ac8aba7267d81f636d3b134a641",
+        "app/generated/hotfix/handlers.bench.ts": "fe744e5cfd7b7f0340cb5c333ec275aef0ebedc79c45e2c77a37e7fbf41348ae",
+        "app/generated/hotfix/handlers.ts": "bc8de6a80009b146dfd6e5a0a33f08f64fbba0fc5fbae8d5fa6757ec3dbec5f3",
+        "app/generated/hotfix/patches.ts": "87bfca4dc05b10d1b24dae838732d5803b6c1070d71f1872fdffac6c8004396e"
       },
       "outputRoots": [
+        {
+          "path": "app/generated/bootstrap",
+          "extensions": [
+            ".ts"
+          ],
+          "ignore": []
+        },
         {
           "path": "app/generated/hotfix",
           "extensions": [

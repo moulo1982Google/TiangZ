@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourceRoots = ["app/core", "app/demo", "src"];
+const sourceRoots = ["app/core", "app/model", "app/hotfix", "src"];
 const excludedDirectories = new Set(["generated", "node_modules", "target", "dist"]);
 const chinesePattern = /[\u3400-\u9fff]/;
 const englishPattern = /[A-Za-z]/;

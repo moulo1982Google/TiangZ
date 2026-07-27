@@ -13,14 +13,18 @@
 | `npm run codegen:client-sdk` | 计算正式协议指纹并向 Cocos/Pixi 分发不含 Bench 的 TypeScript SDK |
 | `npm run codegen:client-handlers` | 只生成客户端 Handler 自动导入入口 |
 | `npm run typecheck` | 服务端 TS 类型检查 |
-| `npm run build` | 生产 TS bundle、协议和 smoke client |
-| `npm run build:bench` | 在生产 Demo 之外显式装配 Bench Scene 与压测 Handler |
-| `npm run build:debug` | 带内联 sourcemap 的调试 bundle |
+| `npm run build` | 生成正式`model.js/hotfix.js`双Bundle、manifest、协议和smoke client；Model变化后使用 |
+| `npm run build:hotfix` | 只重建正式Hotfix候选；Model/Core/协议/Native schema变化时拒绝 |
+| `npm run build:bench` | 生成显式包含Bench Scene/Handler的双Bundle |
+| `npm run build:hotfix:bench` | 在已有且匹配的Bench Model上只重建Bench Hotfix |
+| `npm run build:debug` | 生成带内联sourcemap的正式双Bundle |
 | `cargo run --bin TiangZ -- configs/local/all.json` | 单进程、单 V8 启动全部 Demo Scene |
 | `npm run smoke:client` | Node 客户端跑登录地图链路 |
 | `npm run check` | TS、协议、Actor、Cocos 静态检查 |
 | `npm run check:project` | 检查配置、Handler、依赖方向和 Generated 完整性；适用于本地与 CI |
-| `npm run verify:comments` | 检查 Core、Demo 与 Rust 手写文档注释是否中英文齐全 |
+| `npm run verify:comments` | 检查Core、Model、Hotfix与Rust手写文档注释是否中英文齐全 |
+| `npm run verify:hotfix-boundary` | 检查Model/Hotfix依赖方向及Hotfix类没有字段、构造和静态初始化 |
+| `npm run test:hotfix` | 验证现有实例补丁、Handler槽、失败回滚与Hotfix-only构建边界 |
 | `npm run verify:quick` | 生成物、注释、协议锁、TS 与 Rust 的快速质量门 |
 | `npm run verify` | 在快速质量门上追加 Runtime、拆分进程、mailbox、背压与 Watcher 验收 |
 | `npm run verify:perf` | 执行三轮框架性能门并与当前机器基线比较 |

@@ -18,6 +18,17 @@ impl Drop for ChildGuard {
     }
 }
 
+fn take_child_output(child: &mut Child) -> String {
+    let mut output = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut output);
+    }
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut output);
+    }
+    output
+}
+
 fn unused_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -66,7 +77,7 @@ async fn inspector_breaks_before_app_and_publishes_inline_source_map() {
     let bundle = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("dist")
-            .join("main.js"),
+            .join("model.js"),
     )
     .unwrap();
     let expect_inline_source_map =
@@ -86,7 +97,7 @@ async fn inspector_breaks_before_app_and_publishes_inline_source_map() {
         assert!(map["sources"].as_array().unwrap().iter().any(|source| {
             source
                 .as_str()
-                .is_some_and(|source| source.ends_with("app/main.ts"))
+                .is_some_and(|source| source.ends_with("app/model/main.ts"))
         }));
         assert_eq!(
             map["sources"].as_array().unwrap().len(),
@@ -94,7 +105,12 @@ async fn inspector_breaks_before_app_and_publishes_inline_source_map() {
         );
     }
     let business_port = unused_port();
-    let inspector_port = unused_port();
+    let inspector_port = loop {
+        let candidate = unused_port();
+        if candidate != business_port {
+            break candidate;
+        }
+    };
     let temp = tempfile::tempdir().unwrap();
     let config_path = temp.path().join("inspector.json");
     std::fs::write(
@@ -109,8 +125,8 @@ async fn inspector_breaks_before_app_and_publishes_inline_source_map() {
                 }
             },
             "scenes": [{
-                "name": "log_debug_test",
-                "sceneType": "Log",
+                "name": "map_debug_test",
+                "sceneType": "MapHost",
                 "ip": "127.0.0.1",
                 "port": business_port
             }]
@@ -122,8 +138,8 @@ async fn inspector_breaks_before_app_and_publishes_inline_source_map() {
     let child = Command::new(env!("CARGO_BIN_EXE_TiangZ"))
         .arg(&config_path)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let mut child = ChildGuard(child);
@@ -131,7 +147,8 @@ async fn inspector_breaks_before_app_and_publishes_inline_source_map() {
     let deadline = Instant::now() + Duration::from_secs(15);
     let target = loop {
         if let Some(status) = child.0.try_wait().unwrap() {
-            panic!("runtime exited before inspector attach: {status}");
+            let output = take_child_output(&mut child.0);
+            panic!("runtime exited before inspector attach: {status}\n{output}");
         }
         if let Some(target) =
             fetch_targets(inspector_port).and_then(|items| items.into_iter().next())
@@ -168,7 +185,7 @@ async fn inspector_breaks_before_app_and_publishes_inline_source_map() {
         source_map |= value["method"] == "Debugger.scriptParsed"
             && value["params"]["url"]
                 .as_str()
-                .is_some_and(|url| url.ends_with("/dist/main.js"))
+                .is_some_and(|url| url.ends_with("/dist/model.js"))
             && value["params"]["sourceMapURL"]
                 .as_str()
                 .is_some_and(|url| url.starts_with("data:application/json;base64,"));

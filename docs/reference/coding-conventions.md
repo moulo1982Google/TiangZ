@@ -34,4 +34,4 @@ SaveOnOffline(reason: string): Promise<void>;
 
 ## 验收
 
-`npm run verify:comments` 会扫描手写的 `app/core`、`app/demo` 与 `src`，要求每个 TSDoc/Rustdoc 注释块同时包含中文和英文；生成目录不参与检查。日常修改执行 `npm run verify:quick`。准备合并阶段或运行时边界有变化时执行完整的 `npm run verify`，其中包含拆分进程、mailbox、背压和 Watcher 优雅停机验收。
+`npm run verify:comments`会扫描手写的`app/core`、`app/model`、`app/hotfix`与`src`，要求每个TSDoc/Rustdoc注释块同时包含中文和英文；生成目录不参与检查。日常修改执行`npm run verify:quick`。准备合并阶段或运行时边界有变化时执行完整的`npm run verify`，其中包含拆分进程、mailbox、背压和Watcher优雅停机验收。

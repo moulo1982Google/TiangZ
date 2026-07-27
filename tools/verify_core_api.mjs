@@ -30,7 +30,7 @@ if (updateLock) {
 
 const boundaryErrors = [];
 await scanDirectory(path.join(root, "app", "core"), checkCoreImport);
-await scanDirectory(path.join(root, "app", "demo"), checkDemoImport);
+await scanDirectory(path.join(root, "app", "model"), checkModelImport);
 if (boundaryErrors.length > 0) {
   throw new Error(`Core API boundary violations:\n- ${boundaryErrors.join("\n- ")}`);
 }
@@ -90,21 +90,27 @@ async function scanDirectory(directory, checkImport) {
 function checkCoreImport(file, specifier) {
   const resolved = resolveRelative(file, specifier);
   if (!resolved) return;
-  if (isWithin(resolved, path.join(root, "app", "demo"))) {
-    boundaryErrors.push(`${relative(file)} imports Demo module ${specifier}`);
+  if (isWithin(resolved, path.join(root, "app", "model"))) {
+    boundaryErrors.push(`${relative(file)} imports Model module ${specifier}`);
+  }
+  if (isWithin(resolved, path.join(root, "app", "hotfix"))) {
+    boundaryErrors.push(`${relative(file)} imports Hotfix module ${specifier}`);
   }
   if (isWithin(resolved, path.join(root, "app", "generated"))) {
     boundaryErrors.push(`${relative(file)} imports Generated module ${specifier}`);
   }
 }
 
-function checkDemoImport(file, specifier) {
+function checkModelImport(file, specifier) {
+  const modelFile = relative(file);
+  if (/^app\/model\/main(?:\.[^/]+)?\.ts$/.test(modelFile)) return;
+  if (modelFile.startsWith("app/model/bench/")) return;
   const resolved = resolveRelative(file, specifier);
   if (!resolved || !isWithin(resolved, path.join(root, "app", "core"))) return;
   const publicModule = path.normalize(publicFile.slice(0, -3));
   if (stripTypeScriptExtension(resolved) !== publicModule) {
     boundaryErrors.push(
-      `${relative(file)} deep-imports ${specifier}; use app/core/public.ts`,
+      `${relative(file)} deep-imports ${specifier}; Model business code must use app/core/public.ts`,
     );
   }
 }

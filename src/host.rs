@@ -1,6 +1,7 @@
 //! 实现 Rust 所有权与 I/O 到单 V8 业务线程之间的窄二进制桥。 / Implements the narrow binary bridge between Rust ownership/I/O and the single V8 business thread.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -10,7 +11,10 @@ use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use deno_core::convert::Uint8Array;
 use deno_core::error::AnyError;
-use deno_core::{JsBuffer, JsRuntime, PollEventLoopOptions, RuntimeOptions, op2, v8};
+use deno_core::{
+    FsModuleLoader, JsBuffer, JsRuntime, ModuleSpecifier, PollEventLoopOptions, RuntimeOptions,
+    op2, v8,
+};
 use deno_error::JsErrorBox;
 use futures_util::{StreamExt, future::poll_fn, stream};
 use tokio::runtime::Handle;
@@ -54,6 +58,9 @@ pub struct JsEntrypoints {
     stop_process: v8::Global<v8::Function>,
     update: v8::Global<v8::Function>,
     dispatch_host_events: v8::Global<v8::Function>,
+    begin_hotfix: v8::Global<v8::Function>,
+    commit_hotfix: v8::Global<v8::Function>,
+    abort_hotfix: v8::Global<v8::Function>,
 }
 
 #[derive(Clone, Debug)]
@@ -472,6 +479,7 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
             crate::generated::native_ops::init(),
         ],
         inspector,
+        module_loader: Some(Rc::new(FsModuleLoader)),
         ..Default::default()
     });
 
@@ -556,7 +564,68 @@ pub fn load_js_entrypoints(runtime: &mut JsRuntime) -> Result<JsEntrypoints> {
         stop_process: get_global_function(runtime, "__etsStopProcess")?,
         update: get_global_function(runtime, "__etsUpdateBinary")?,
         dispatch_host_events: get_global_function(runtime, "__etsDispatchHostEvents")?,
+        begin_hotfix: get_global_function(runtime, "__etsBeginHotfix")?,
+        commit_hotfix: get_global_function(runtime, "__etsCommitHotfix")?,
+        abort_hotfix: get_global_function(runtime, "__etsAbortHotfix")?,
     })
+}
+
+/// 加载并执行一个 ESM 根模块；Model 使用 main，Hotfix generation 使用 side module。 / Loads and evaluates an ESM root; Model is main while Hotfix generations are side modules.
+pub fn load_es_module(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+    specifier: &ModuleSpecifier,
+    main: bool,
+) -> Result<()> {
+    let _guard = js_event_loop.enter();
+    js_event_loop.block_on(async {
+        let module_id = if main {
+            runtime.load_main_es_module(specifier).await
+        } else {
+            runtime.load_side_es_module(specifier).await
+        }
+        .with_context(|| format!("failed to load ES module {specifier}"))?;
+        let evaluation = runtime.mod_evaluate(module_id);
+        runtime
+            .run_event_loop(PollEventLoopOptions::default())
+            .await
+            .with_context(|| format!("failed to run ES module {specifier}"))?;
+        evaluation
+            .await
+            .with_context(|| format!("failed to evaluate ES module {specifier}"))?;
+        Ok(())
+    })
+}
+
+/// 打开 TS Hotfix 暂存区；调用后只允许加载候选模块，不能投递业务帧。 / Opens TS Hotfix staging; only candidate evaluation is allowed until commit or abort.
+pub fn call_js_begin_hotfix(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+    entrypoints: &JsEntrypoints,
+    manifest_json: &str,
+) -> Result<String> {
+    let arg = v8_string_arg(runtime, manifest_json)?;
+    call_js_function_string(js_event_loop, runtime, &entrypoints.begin_hotfix, &[arg])
+}
+
+/// 原子提交已经完成模块求值的 Hotfix 候选。 / Atomically commits a fully evaluated Hotfix candidate.
+pub fn call_js_commit_hotfix(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+    entrypoints: &JsEntrypoints,
+) -> Result<String> {
+    call_js_function_string(js_event_loop, runtime, &entrypoints.commit_hotfix, &[])
+}
+
+/// 候选加载失败时清空 TS 暂存区，避免污染下一次尝试。 / Clears TS staging after candidate failure so the next attempt starts cleanly.
+pub fn call_js_abort_hotfix(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+    entrypoints: &JsEntrypoints,
+    reason: &str,
+) -> Result<String> {
+    let arg = v8_string_arg(runtime, reason)?;
+    call_js_function_string(js_event_loop, runtime, &entrypoints.abort_hotfix, &[arg])
 }
 
 fn get_global_function(

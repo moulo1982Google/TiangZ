@@ -7,6 +7,7 @@ import type {
 import type { ProtocolContext } from "../protocol/registry";
 import type { AnyRpcDescriptor, RpcDescriptor } from "../protocol/rpc";
 import type { Unit } from "../runtime/Unit";
+import { HotfixBindingStore } from "../hotReload/HotfixSystem";
 
 type AnyUnit = Unit<any[]>;
 type UnitClass<TUnit extends AnyUnit> = abstract new (...args: any[]) => TUnit;
@@ -45,8 +46,8 @@ export interface UnitRpcHandlerBinding {
   handlerCtor: AnyUnitRpcHandlerCtor;
 }
 
-const messageHandlers: UnitMessageHandlerBinding[] = [];
-const rpcHandlers: UnitRpcHandlerBinding[] = [];
+const messageHandlers = new HotfixBindingStore<UnitMessageHandlerBinding>("unit-message");
+const rpcHandlers = new HotfixBindingStore<UnitRpcHandlerBinding>("unit-rpc");
 
 /** 为指定 Unit 类型注册单向消息 Handler；消息会先按 InstanceId 进入该 Unit 的 mailbox。 / Registers a one-way handler for a Unit type; dispatch first enters that Unit's mailbox by InstanceId. */
 export function unitMessageHandler<
@@ -57,8 +58,7 @@ export function unitMessageHandler<
   descriptor: MessageDescriptor<TMessage>,
 ): (handlerCtor: new () => UnitMessageHandler<TUnit, TMessage>) => void {
   return (handlerCtor) => {
-    assertUnique(messageHandlers, unitCtor, descriptor.msgcode, descriptor.name);
-    messageHandlers.push({
+    messageHandlers.Register(bindingKey(unitCtor, descriptor.msgcode), {
       unitCtor: unitCtor as UnitClass<AnyUnit>,
       descriptor: descriptor as AnyMessageDescriptor,
       handlerCtor: handlerCtor as AnyUnitMessageHandlerCtor,
@@ -72,8 +72,7 @@ export function unitRpcHandler<TUnit extends AnyUnit, TReq, TResp>(
   descriptor: RpcDescriptor<TReq, TResp>,
 ): (handlerCtor: new () => UnitRpcHandler<TUnit, TReq, TResp>) => void {
   return (handlerCtor) => {
-    assertUnique(rpcHandlers, unitCtor, descriptor.requestCode, descriptor.name);
-    rpcHandlers.push({
+    rpcHandlers.Register(bindingKey(unitCtor, descriptor.requestCode), {
       unitCtor: unitCtor as UnitClass<AnyUnit>,
       descriptor: descriptor as AnyRpcDescriptor,
       handlerCtor: handlerCtor as AnyUnitRpcHandlerCtor,
@@ -83,29 +82,14 @@ export function unitRpcHandler<TUnit extends AnyUnit, TReq, TResp>(
 
 /** 仅供 EntryScene 初始化协议路由使用。 / Used only while EntryScene initializes protocol routes. */
 export function getUnitMessageHandlerBindings(): readonly UnitMessageHandlerBinding[] {
-  return messageHandlers;
+  return messageHandlers.Values();
 }
 
 /** 仅供 EntryScene 初始化协议路由使用。 / Used only while EntryScene initializes protocol routes. */
 export function getUnitRpcHandlerBindings(): readonly UnitRpcHandlerBinding[] {
-  return rpcHandlers;
+  return rpcHandlers.Values();
 }
 
-function assertUnique(
-  bindings: readonly (UnitMessageHandlerBinding | UnitRpcHandlerBinding)[],
-  unitCtor: UnitClass<AnyUnit>,
-  msgcode: number,
-  descriptorName: string,
-): void {
-  const duplicate = bindings.find((binding) => {
-    const bindingCode = "msgcode" in binding.descriptor
-      ? binding.descriptor.msgcode
-      : binding.descriptor.requestCode;
-    return binding.unitCtor === unitCtor && bindingCode === msgcode;
-  });
-  if (duplicate) {
-    throw new Error(
-      `duplicate Unit handler for ${unitCtor.name} msgcode ${msgcode}: ${descriptorName}`,
-    );
-  }
+function bindingKey(unitCtor: UnitClass<AnyUnit>, msgcode: number): string {
+  return `${unitCtor.name}:${msgcode}`;
 }

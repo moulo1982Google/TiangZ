@@ -9,7 +9,8 @@
 收到“新增技能、背包、公会、地图、怪物、任务”等业务需求时，默认修改范围是：
 
 ```text
-app/demo/
+app/model/demo/       新增或改变状态、字段、构造、继承和稳定类型时
+app/hotfix/demo/      普通Handler与可热更领域行为
 proto/
 cocos_client2D/assets/scripts/Demo/
 pixi_client/src/
@@ -28,15 +29,23 @@ src/generated/
 客户端 Generated/
 ```
 
-测试辅助代码同样不能放进`app/core`或`app/demo`。裸帧构造、压测Codec包装、Fake和Fixture应放到`tools/support`、`perf`或对应自测文件；普通业务不得依赖这些目录。客户端正式调用统一使用`client_sdk`生成的Client和Push Handler。
+测试辅助代码同样不能放进`app/core`、`app/model`或`app/hotfix`。裸帧构造、压测Codec包装、Fake和Fixture应放到`tools/support`、`perf`或对应自测文件；普通业务不得依赖这些目录。客户端正式调用统一使用`client_sdk`生成的Client和Push Handler。
 
-基准Scene和压测专用Handler只放在`app/bench`，并通过`npm run build:bench`显式装配。正常`npm run build`不得包含Bench；Cocos/Pixi分发SDK也不得携带Bench协议。
+基准Scene放在`app/model/bench`，压测专用Handler放在`app/hotfix/bench`，并通过`npm run build:bench`显式装配。正常`npm run build`不得包含Bench Scene/Handler；Cocos/Pixi分发SDK也不得携带Bench协议。
 
-Bench代码可以调用真实业务API，但业务代码不得引用`app/bench`。正式、压测等装配分别写在`app/main.ts`、`app/main.<用途>.ts`组合入口中；不要为了消除依赖诊断把Bench实现搬回Demo。
+Bench Hotfix可以通过`#tiangz/model`调用真实业务API，但Demo不得引用Bench。正式、压测等装配分别写在`app/model/main*.ts`与`app/hotfix/main*.ts`；不要为了消除依赖诊断把Bench实现搬回Demo。
 
 只有现有公共能力无法表达需求时才进入Core。只有明确的数据所有权或性能证据支持时才进入Rust或`native_data`。开始修改前必须能用一句话说明业务边界和权威状态归属。
 
-所有服务端业务只从`app/core/public.ts`导入Core能力。其他Core路径属于Internal，即使其中某个类当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
+Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#tiangz/model`取得Model类型、协议和Stable Core API；禁止深层导入`app/model`或`app/core`。其他Core路径属于Internal，即使当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
+
+## Model与Hotfix怎么选
+
+- 新增字段、默认值、构造参数、继承关系、Scene/Entity/Component类型：写`app/model`，完整构建并重启Process。
+- 新增或修改Handler、校验、流程编排和领域方法实现：写`app/hotfix`，可使用Hotfix-only构建。
+- Hotfix通过`@hotfixFor(ModelType)`实现Model声明的稳定方法；实现类没有字段、构造函数或静态初始化块，也不会被实例化。
+- Model绝对不能在线热更，不设计字段migration。`npm run build:hotfix`拒绝时，说明这次改动已经越过行为边界，不能规避检查。
+- 当前运行中热更操作入口尚未完成；`build:hotfix`生成兼容候选，不代表覆盖文件已经在线生效。
 
 ## 第一步：给需求分类
 
@@ -56,16 +65,17 @@ Bench代码可以调用真实业务API，但业务代码不得引用`app/bench`�
 
 ## 第二步：找到最接近的样例
 
-- 玩家创建和组件装配：`app/demo/map/MapComponent.ts::CreatePlayer`。
-- 玩家Unit：`app/demo/map/PlayerUnit.ts`。
-- Unit RPC：`app/demo/mapHost/handlers/C2M_UseItemHandler.ts`。
-- Unit Message：`app/demo/mapHost/handlers/C2M_MoveHandler.ts`。
-- Session RPC：`app/demo/gate/handlers/C2G_LoginGateHandler.ts`。
-- EntryScene RPC：`app/demo/mapHost/handlers/G2M_EnterMapHandler.ts`。
-- Numeric字典Delta：`app/demo/numeric/NumericComponent.ts`。
-- Item即时Event：`app/demo/item/ItemComponent.ts`和`C2M_UseItemHandler.ts`。
-- 帧尾同步：`app/demo/map/MapComponent.ts::FrameFlush`。
-- 玩家下线保存：`app/demo/persistence/PlayerPersistenceComponent.ts`。
+- 玩家创建和组件装配：`app/model/demo/map/MapComponent.ts::CreatePlayer`。
+- 玩家Unit：`app/model/demo/map/PlayerUnit.ts`。
+- Unit RPC：`app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts`。
+- Unit Message：`app/hotfix/demo/mapHost/handlers/C2M_MoveHandler.ts`。
+- Session RPC：`app/hotfix/demo/gate/handlers/C2G_LoginGateHandler.ts`。
+- EntryScene RPC：`app/hotfix/demo/mapHost/handlers/G2M_EnterMapHandler.ts`。
+- Numeric字典Delta：`app/model/demo/numeric/NumericComponent.ts`。
+- Item即时Event：`app/model/demo/item/ItemComponent.ts`和Hotfix中的`C2M_UseItemHandler.ts`。
+- 帧尾同步：`app/model/demo/map/MapComponent.ts::FrameFlush`。
+- 玩家下线保存：`app/model/demo/persistence/PlayerPersistenceComponent.ts`。
+- Model/Hotfix领域方法范例：`app/model/demo/login/LoginComponent.ts`与`app/hotfix/demo/login/LoginComponentHotfix.ts`。
 - 客户端Push：`cocos_client2D/assets/scripts/Demo/Map/Handlers`。
 - Scene发现和调用：`app/core/process/SceneMessageHelper.ts`及`docs/guides/business-cookbook.md`。
 
@@ -76,10 +86,9 @@ Bench代码可以调用真实业务API，但业务代码不得引用`app/bench`�
 普通业务状态先写TS Component：
 
 ```ts
-import { Component, component } from "../../core/public";
+import { Component } from "../../core/public";
 import type { PlayerUnit } from "../map/PlayerUnit";
 
-@component()
 export class SkillComponent extends Component {
   private readonly skills = new Set<number>();
 
@@ -389,11 +398,13 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-当前仍处于`0.3.10`框架稳定化阶段。Developer Tools规则、Windows/Linux性能门和跨平台发布验收已完成；进入Phase 4前只剩Process级热更闭环。业务样例只能用于验证框架，不以增加玩法数量代替热更验收。热更按整个Process原子提交Bundle generation，但不会为每个Scene创建V8，也不会默认重建现有Entity/Component。业务不得设计单Scene私有模块替换协议，不得把跨热更状态留在模块全局变量或无所有者Timer中；可热更类禁止使用`#private`，字段形状变化需要migration。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、兼容指纹和事务提交基础已完成；进入Phase 4前仍需补齐运行中触发、投递屏障和有连接/慢RPC/Timer/连续切换验收。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 | 修改类型 | 最少验证 |
 |---|---|
 | 纯TS业务Component/Handler | `npm run typecheck`和对应自测 |
+| 只修改Hotfix行为 | `npm run build:hotfix`、`npm run test:hotfix` |
+| Model字段、类型、构造或继承 | `npm run build`、相关测试并重启Process；不得使用Hotfix-only |
 | proto或客户端Push | `npm run codegen`、`npm run test:protocol`、对应Client测试 |
 | Native Entity/字段 | `npm run test:native-data`、`cargo test --all-targets` |
 | 状态复制/广播 | `npm run test:map-broadcast`、相关性能基准 |
@@ -423,8 +434,9 @@ Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:co
 9. 是否执行了与改动匹配的codegen和测试？
 10. 是否在最终说明中列出验证过和未验证的部分？
 11. 如果存在设计变更，是否同步更新了AI项目上下文和AI业务开发手册？
-12. 是否只从`app/core/public.ts`导入Core，而没有依赖Internal路径？
-13. 故障测试是否使用确定性Fake或真实边界，而没有向生产配置加入随机故障开关？
+12. Model是否只从`app/core/public.ts`导入Core，Hotfix是否只从`#tiangz/model`导入稳定依赖？
+13. Hotfix实现类是否误加了字段、构造、静态初始化或新的状态形状？
+14. 故障测试是否使用确定性Fake或真实边界，而没有向生产配置加入随机故障开关？
 ## 可观测性边界
 
 业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。

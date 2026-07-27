@@ -14,6 +14,7 @@ mod config;
 mod generated;
 mod health;
 mod host;
+mod hotfix;
 mod inspector;
 mod logging;
 mod native_data;

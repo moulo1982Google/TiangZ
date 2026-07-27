@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.4`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.4已经完成，Phase 3.10框架稳定化继续推进到3.10.5+，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.5`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.4已经完成，Phase 3.10.5正在完成Model/Hotfix热更闭环，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 
@@ -170,9 +170,16 @@ AOI目前尚未实现。当前全地图可见是最坏压力模型，不应把�
 ```text
 app/core/                    TypeScript框架
 app/core/public.ts           业务唯一Stable Core API入口
-app/demo/                    当前MMORPG演示业务
-app/bench/                   仅由build:bench装配的基准代码
+app/model/                   不可热更的状态、稳定类型与启动结构
+app/model/demo/              当前MMORPG演示的稳定类型和状态
+app/model/bench/             仅由build:bench装配的稳定基准结构
+app/model/public.ts          Hotfix唯一允许导入的Model入口
+app/hotfix/                  可热更的Handler和领域方法实现
+app/hotfix/demo/             当前MMORPG演示的可热更行为
+app/hotfix/bench/            仅由build:bench装配的压测Handler
 app/generated/               服务端与Native自动生成代码
+app/generated/bootstrap/     自动生成的Model Scene启动入口
+app/generated/hotfix/        自动生成的Hotfix Handler和补丁入口
 src/                         Rust Runtime、Transport和宿主
 src/generated/               Rust自动生成代码
 proto/                       protobuf唯一源文件
@@ -195,15 +202,15 @@ Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`
 
 `.native`是codegen输入而不是生成物。框架通用ABI只放`native_data/core`；游戏新增Rust批处理能力时在`native_data/<game>/XxxOps.native`声明，生成器聚合产生Rust Extension、Host bootstrap和TS `NativeOps`。状态机黄金数据属于`tests/fixtures`，禁止混入原型目录。
 
-正常`npm run build`只装配`app/demo`及正式服务端协议；压测入口必须使用`npm run build:bench`显式加入`app/bench`。服务端`app/generated`不再生成客户端协议副本，工具和性能测试统一从`client_sdk/typescript/Generated`导入。
+正常`npm run build`装配Demo的Model与Hotfix双Bundle；压测入口必须使用`npm run build:bench`显式加入`app/model/bench`和`app/hotfix/bench`。服务端`app/generated`不再生成客户端协议副本，工具和性能测试统一从`client_sdk/typescript/Generated`导入。
 
-`app/bench`可以调用真实业务目录来测量生产 API，但业务目录不得反向依赖 Bench；`app/main.ts`与`app/main.<用途>.ts`统一视为组合入口。Developer Tools 与`tiangz-check-project`共同强制这条依赖方向。
+Bench Hotfix可以通过`#tiangz/model`调用稳定业务API来测量生产路径，普通Demo不得反向依赖Bench。`app/model/main*.ts`与`app/hotfix/main*.ts`分别是两层组合入口；根`app/main*.ts`只保留源码兼容入口。Developer Tools与`tiangz-check-project`共同强制依赖方向。
 
 Actor Runtime只保留Scene、Session、Unit的生命周期、InstanceId与mailbox。旧式`@handler("字符串")`、动态组件Handler hooks和`ProcessHost.call/send`已移除；业务入口只能使用生成descriptor绑定的Scene/Session/Unit类型化Handler。
 
 测试和压测专用的裸帧构造、响应解码、Fake与Fixture必须放在`tools/support`、`perf`或对应测试文件中，禁止放入`app/core`或`app/<game>`。正式客户端能力只能进入`client_sdk`及其Generated分发目录。
 
-业务代码只能从`app/core/public.ts`导入Core能力。`public-api.lock.json`锁定Stable导出；其余Core实现默认Internal。NativeData、io_uring和部分KCP能力仍按专项文档视为Experimental或平台限定。公共API变化必须提供迁移记录，并同步更新本文和AI业务开发手册。
+Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tiangz/model`取得Model与Stable Core API，不得深层导入。`public-api.lock.json`锁定Stable导出；其余Core实现默认Internal。NativeData、io_uring和部分KCP能力仍按专项文档视为Experimental或平台限定。公共API变化必须提供迁移记录，并同步更新本文和AI业务开发手册。
 
 ## 已完成阶段
 
@@ -234,13 +241,13 @@ Actor Runtime只保留Scene、Session、Unit的生命周期、InstanceId与mailb
 
 ## 当前未完成和明确暂缓
 
-2026-07-26完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1、R3和R4。Developer Tools `v0.8.1` 已修复目录规则，`check:project` 已接入快速质量门并全绿。Windows与Ubuntu Linux均通过同名完整`verify`、依赖审计和Release目录内smoke；两台机器分别保存性能基线并通过比较模式。当前唯一准入阻塞项是Process级TypeScript热更实现。
+2026-07-26完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1、R3和R4。`0.3.10-alpha.5`已完成R2的Model/Hotfix双Bundle、指纹兼容检查、隔离V8预检、staging和prototype/Handler事务回滚基础。当前准入阻塞项是运行中触发入口、Rust投递屏障、有连接/慢RPC/Timer与连续切换验收。Developer Tools `v0.9.1`已发布并由主仓库锁定，VS Code与CLI共同检查Model/Hotfix依赖边界和新生成入口。
 
 性能回归职责必须分层：`verify:perf` 比较三轮中位数吞吐、p99与错误；`test:backpressure` 验证有界队列和生产者等待；长稳测试判断RSS/V8 Heap趋势。不要把短时RSS噪声或故意过载指标混入普通性能基线。
 
 Cocos Demo完整类型检查依赖编辑器生成的`cocos_client2D/temp/tsconfig.cocos.json`和`cc`类型，不得把该缓存提交或复制到CI。`typecheck:cocos-demo`在编辑器环境执行完整tsc，在干净Linux/CI环境执行入口bundle检查；引擎无关Client SDK始终由`typecheck:cocos-net`完整检查。
 
-热更粒度固定为整个Process的TS世界，而不是单个Scene，也不为每个EntryScene增加V8。当前决策是保留现有V8和对象：候选Bundle先在隔离V8无副作用预检，再在当前V8暂存稳定typeId对应的prototype补丁、migration和Handler表，最后原子提交；现有Entity/Component及Rust handle不重建。旧异步调用按generation排空，Timer/Update必须使用稳定owner调度；多次热更残留代码最终通过Process滚动重启收敛。详见[热更设计](../design/typescript-hot-reload.md)。
+热更粒度固定为整个Process的TS行为世界，而不是单个Scene，也不为每个EntryScene增加V8。TS分为绝对不可热更的Model和可热更Hotfix：Model拥有字段、构造、继承和稳定类型，Process运行中不存在Model reload API；Hotfix只提交方法与Handler。候选先在隔离V8预检，再在当前V8暂存；第一版暂停入站并等待在途任务归零后原子提交，不做字段migration或双generation长期并存。任何Model/Core/协议/Native schema变化都必须重启Process。详见[热更设计](../design/typescript-hot-reload.md)。
 
 Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部署仍需补 node/windows exporter、通知路由和长期存储策略，这些属于Phase 5，不阻塞`0.3.10`框架准入。
 
@@ -269,7 +276,7 @@ Phase 5计划：
 
 ## 对后续AI的工作要求
 
-1. 接业务需求先阅读[AI业务开发手册](business-development-manual.md)和最接近的`app/demo`实现。
+1. 接业务需求先阅读[AI业务开发手册](business-development-manual.md)、最接近的`app/model/demo`状态定义和`app/hotfix/demo`行为实现。
 2. 不把阶段历史文档中的旧Service/V8模型恢复到当前设计。
 3. 不因为性能猜测下沉Rust，先建立业务路径和指标；用户明确要求实验时再做最小A/B。
 4. 不在收到Unit消息后通过账号、地图遍历或全局Manager再次定位Unit。

@@ -138,9 +138,18 @@ Scene metrics 只在 5 秒日志采样点创建并 JSON 序列化；普通 updat
 
 `[game-metrics]` 输出固定帧间隔、累计帧数、跳帧数、Update 组件数/调用数/失败数和存活 Timer 数。`skipped_fixed_updates` 持续增长说明单线程业务帧无法按配置频率完成，需要看 CPU Profile 或降低 Tick 频率。
 
-## 代码生成
+## 代码生成与双Bundle
 
-`tools/codegen_proto.mjs` 负责协议模型和 TS 输出；`tools/codegen_scenes.mjs` 扫描 `sceneSearchRoots` 下的 `*/scenes/*.ts`，并扫描 `handlerSearchRoots` 下所有 `handlers` 目录，分别生成 `app/generated/hotfix/scenes.ts` 与 `handlers.ts`。生成物只放 `app/generated`。
+`tools/codegen_proto.mjs`负责协议模型和TS输出。`tools/codegen_scenes.mjs`分别扫描Model Scene、Hotfix Handler与`@hotfixFor`行为实现，生成：
+
+- `app/generated/bootstrap/scenes.ts`：Model启动注册入口；
+- `app/generated/hotfix/handlers.ts`：正式Hotfix Handler入口；
+- `app/generated/hotfix/patches.ts`：正式Hotfix行为补丁入口；
+- `app/generated/hotfix/handlers.bench.ts`：Bench专用Handler入口。
+
+`tools/build_runtime_bundles.mjs`把两层构建为`dist/model.js`与`dist/hotfix.js`，并写入各自manifest。Model ESM由Rust正式V8加载一次；Hotfix以独立ESM加载。`--hotfix-only`必须复用现有Model manifest，并在Model源码指纹变化时失败。不得恢复执行`dist/main.js`或把两层重新合并成一个可重复求值的Bundle。
+
+Model启动后没有重载入口。Hotfix安装由Rust先验证实际SHA-256和四类兼容指纹，再在隔离V8预检，最后通过`HotfixSystem`暂存和提交。生产在线触发完成前，维护脚本不得通过覆盖文件并重复执行模块来模拟热更。
 
 ## Inspector
 

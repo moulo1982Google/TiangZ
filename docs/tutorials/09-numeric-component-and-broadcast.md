@@ -18,7 +18,7 @@ const hp = numeric[NumericType.CurrentHp];
 numeric[NumericType.CurrentHp] += 1;
 ```
 
-开发者在 `app/demo/numeric/NumericType.ts` 维护稳定的整数类型。`NumericComponent` 只保存 Unit 的 Native handle；真正的 `NumericType -> i32` 值表和 dirty 表都在 Rust。
+开发者在`app/model/demo/numeric/NumericType.ts`维护稳定的整数类型。`NumericComponent`只保存Unit的Native handle；真正的`NumericType -> i32`值表和dirty表都在Rust。新增NumericType会改变Model，必须完整构建并重启Process。
 
 当前演示每 100ms 增加一次生命值：
 

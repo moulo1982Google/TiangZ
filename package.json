@@ -1,6 +1,6 @@
 {
   "name": "ets-runtime",
-  "version": "0.3.10-alpha.4",
+  "version": "0.3.10-alpha.5",
   "private": true,
   "packageManager": "npm@11.18.0",
   "engines": {
@@ -8,6 +8,9 @@
     "npm": "11.x"
   },
   "type": "module",
+  "imports": {
+    "#tiangz/model": "./app/model/public.ts"
+  },
   "scripts": {
     "clean": "node tools/clean_project.mjs",
     "clean:copy": "node tools/clean_project.mjs --copy",
@@ -20,9 +23,11 @@
     "codegen:scenes": "node tools/codegen_scenes.mjs",
     "codegen:client-handlers": "node tools/codegen_client_handlers.mjs",
     "typecheck": "tsc --noEmit",
-    "build:ts": "esbuild app/main.ts --bundle --platform=neutral --format=iife --target=es2022 --outfile=dist/main.js",
-    "build:ts:bench": "esbuild app/main.bench.ts --bundle --platform=neutral --format=iife --target=es2022 --outfile=dist/main.js",
-    "build:ts:debug": "esbuild app/main.ts --bundle --platform=neutral --format=iife --target=es2022 --sourcemap=inline --sources-content=true --outfile=dist/main.js",
+    "build:ts": "node tools/build_runtime_bundles.mjs",
+    "build:ts:bench": "node tools/build_runtime_bundles.mjs --bench",
+    "build:ts:debug": "node tools/build_runtime_bundles.mjs --debug",
+    "build:hotfix": "npm run codegen && npm run typecheck && node tools/build_runtime_bundles.mjs --hotfix-only",
+    "build:hotfix:bench": "npm run codegen && npm run typecheck && node tools/build_runtime_bundles.mjs --bench --hotfix-only",
     "build:client": "esbuild tools/smoke_client.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/smoke_client.cjs",
     "build:test": "esbuild tools/protocol_self_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/protocol_self_test.cjs",
     "build:test:actor": "esbuild tools/actor_self_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/actor_self_test.cjs",
@@ -38,6 +43,7 @@
     "build:test:player-persistence": "esbuild tools/player_persistence_self_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/player_persistence_self_test.cjs",
     "build:test:core-api": "esbuild tools/core_public_api_self_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/core_public_api_self_test.cjs",
     "build:test:rpc-actor-correctness": "esbuild tools/rpc_actor_correctness_self_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/rpc_actor_correctness_self_test.cjs",
+    "build:test:hotfix": "esbuild tools/hotfix_system_self_test.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/hotfix_system_self_test.cjs",
     "build:client-sdk-smoke": "esbuild tools/client_sdk_smoke.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/client_sdk_smoke.cjs",
     "build:load": "esbuild tools/runtime_load_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/runtime_load_test.cjs",
     "build:perf:full-chain": "tsc -p perf/full_chain/tsconfig.json && esbuild perf/full_chain/full_chain_load_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/full_chain_load_test.cjs",
@@ -62,6 +68,7 @@
     "test:fault-injection:runtime": "cargo test --bin TiangZ transport::tests::disconnect_rejects_all_pending_calls && cargo test --bin TiangZ process::tests::slow_connection_is_closed_when_outbound_queue_is_full && npm run test:backpressure && npm run test:watcher-graceful",
     "test:fault-injection": "npm run test:fault-injection:core && npm run test:fault-injection:runtime",
     "test:rpc-actor-correctness": "npm run build:test:rpc-actor-correctness && node dist/rpc_actor_correctness_self_test.cjs",
+    "test:hotfix": "npm run build:test:hotfix && node dist/hotfix_system_self_test.cjs && node tools/hotfix_build_boundary_self_test.mjs",
     "typecheck:cocos-net": "tsc -p cocos_client2D/tsconfig.protocol.json",
     "typecheck:cocos-demo": "node tools/typecheck_cocos_demo.mjs",
     "typecheck:cocos-demo:engine": "tsc -p cocos_client2D/tsconfig.json --noEmit",
@@ -76,11 +83,12 @@
     "verify:comments": "node tools/verify_bilingual_comments.mjs",
     "verify:version": "node tools/verify_project_version.mjs",
     "verify:dependency-policy": "node tools/verify_dependency_exceptions.mjs",
+    "verify:hotfix-boundary": "node tools/verify_hotfix_boundary.mjs",
     "audit:dependencies": "node tools/audit_dependencies.mjs",
     "verify:core-api": "node tools/verify_core_api.mjs && npm run build:test:core-api && node dist/core_public_api_self_test.cjs",
     "core-api:update-lock": "node tools/verify_core_api.mjs --update-lock",
     "test:protocol-locks": "node tools/codegen_proto.mjs --self-test-locks",
-    "verify:quick": "npm run codegen && npm run verify:codegen && npm run verify:comments && npm run verify:version && npm run verify:dependency-policy && npm run verify:observability:assets && npm run check:project && npm run test:protocol-locks && npm run check && npm run test:rpc-actor-correctness && cargo fmt --check && cargo clippy --all-targets --locked && cargo test --all-targets --locked",
+    "verify:quick": "npm run codegen && npm run verify:codegen && npm run verify:comments && npm run verify:version && npm run verify:dependency-policy && npm run verify:hotfix-boundary && npm run verify:observability:assets && npm run check:project && npm run test:protocol-locks && npm run check && npm run test:hotfix && npm run test:rpc-actor-correctness && cargo fmt --check && cargo clippy --all-targets --locked && cargo test --all-targets --locked",
     "test:watcher-graceful": "npm run build && cargo build --bin TiangZ && node tools/watcher_graceful_self_test.mjs",
     "verify": "npm run verify:quick && npm run test:runtime && npm run test:mailbox-parity && npm run test:backpressure && npm run test:watcher-graceful",
     "release:package": "node tools/release/package_release.mjs",
@@ -123,7 +131,7 @@
     "observability:reset": "cd tools/observability && docker compose down -v --remove-orphans && docker compose rm -f"
   },
   "devDependencies": {
-    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.8.1",
+    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.9.1",
     "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.12.0",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.0",

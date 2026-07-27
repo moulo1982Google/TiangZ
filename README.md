@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.3.10-alpha.4`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
+当前开发版本为 `0.3.10-alpha.5`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
@@ -42,11 +42,15 @@ app/core/                    框架代码
 app/core/public.ts           业务唯一 Stable Core API 入口
 app/core/process/            ProcessRuntime、EntryScene、Scene 路由
 app/core/runtime/            EntityRoot、动态 Scene、Session、Unit、Component、mailbox
-app/demo/                    MMORPG Demo 业务
-app/demo/scenes/             配置启动的 Demo EntryScene
-app/bench/                   显式启用的基准 Scene 与压测 Handler
+app/model/                   不可热更的状态、稳定类型与启动结构
+app/model/demo/              MMORPG Demo 的 Scene、Entity、Component 状态
+app/model/bench/             仅由 build:bench 装配的稳定基准结构
+app/hotfix/                  可热更的 Handler 与领域方法实现
+app/hotfix/demo/             Demo 可热更行为
+app/hotfix/bench/            仅由 build:bench 装配的压测 Handler
 app/generated/               服务端与 Native 自动生成代码
-app/generated/hotfix/        自动生成的 Scene/Handler 模块入口
+app/generated/bootstrap/     自动生成的 Model Scene 启动入口
+app/generated/hotfix/        自动生成的 Hotfix Handler/补丁入口
 proto/                       protobuf 源文件
 native_data/core/            框架内置 Rust Entity op 原型
 native_data/demo/            Demo Entity 与粗粒度 Native op 原型
@@ -214,7 +218,21 @@ export class LoginMgrScene extends EntryScene {
 }
 ```
 
-运行 `npm run codegen` 后，生成器按照 `codegen.config.json` 的搜索根扫描入口 Scene 和 Handler，并生成 `app/generated/hotfix/scenes.ts`、`handlers.ts`。无需手工维护 Scene 类型表或 msgcode-to-handler 表。
+运行`npm run codegen`后，生成器按照`codegen.config.json`扫描Model入口Scene、Hotfix Handler和行为补丁，分别生成`app/generated/bootstrap/scenes.ts`、`app/generated/hotfix/handlers.ts`与`patches.ts`。无需手工维护Scene类型表、msgcode-to-handler表或补丁入口。
+
+## Model与Hotfix
+
+服务端TS固定拆成两个ESM Bundle：`dist/model.js`与`dist/hotfix.js`。Model拥有字段、构造、继承、Scene/Entity/Component身份和稳定类型，Process启动后永久冻结；Hotfix只拥有Handler和方法实现。
+
+```powershell
+# Model/Core/协议/Native schema有变化：完整构建并重启Process
+npm run build
+
+# 只修改app/hotfix行为：只重建Hotfix候选
+npm run build:hotfix
+```
+
+Hotfix只能从`#tiangz/model`导入稳定类型。`build:hotfix`会比较Model源码、协议锁、Stable Core API和Native schema指纹；任何一项变化都直接拒绝，不支持强制绕过。当前已完成双Bundle、隔离预检、暂存、prototype/Handler事务提交和失败回滚；运行中管理命令与完整有连接验收仍在实现，因此不能把“替换hotfix.js文件”当成已完成的在线热更操作。详见[Process级TypeScript热更设计](docs/design/typescript-hot-reload.md)。
 
 ## Scene 调用
 
@@ -260,7 +278,7 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 
 生成代码包括：
 
-- `app/generated`：服务端协议、Native handle 和 Hotfix 入口。
+- `app/generated`：服务端协议、Native handle、Model bootstrap和Hotfix入口。
 - `src/generated`：Rust Native op 注册与 bootstrap。
 - `cocos_client2D/assets/scripts/Generated`：Cocos 客户端协议和 Handler 入口。
 
@@ -271,7 +289,7 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 TiangZ 目前有两个职责独立的 VS Code 插件，均尚未发布到 Marketplace：
 
 - [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；主工程当前使用 `v0.12.0`。
-- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引 Environment、Machine、Process、Scene、Session、Unit、Component 与 Handler，在资源管理器显示“TiangZ 工程”，提供源码跳转、Problems 诊断、CI 工程检查和定向代码生成；当前内部版本为 `v0.8.0`。
+- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成；主工程当前使用`v0.9.1`，会检查Model/Hotfix依赖边界与新生成入口。
 
 两个插件分开维护，未来可以通过 Extension Pack 一键安装。当前需分别克隆仓库，执行 `npm install`、`npm run check` 和 `npm run package:extension`，再从各仓库 `dist` 目录安装 VSIX。
 

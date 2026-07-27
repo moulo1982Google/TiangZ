@@ -6,7 +6,7 @@
 
 1. 执行 `git status --short`，保留用户已有修改、未跟踪文件和本地配置，不得擅自还原、删除或覆盖。
 2. 先判断请求属于业务、协议、客户端、框架、Rust Runtime、生成器还是性能工具。
-3. 业务需求优先查找 `app/demo` 中最接近的现有实现，再阅读对应教程和测试。
+3. 业务需求优先查找 `app/model/demo` 中最接近的状态定义和 `app/hotfix/demo` 中最接近的行为实现，再阅读对应教程和测试。
 4. 当前事实的可信顺序是：运行中的代码与测试 > `README.md`、`docs/tutorials`、`docs/reference`、`docs/design/maintainer-guide.md` > `docs/roadmap.md` > 历史 `phase*_plan/acceptance` 和旧性能报告。
 5. 用户说“讨论”“先看”或“先别改”时，只检查和说明，不修改文件。
 
@@ -22,7 +22,7 @@ Machine
 ```
 
 - Rust/Tokio负责网络、分帧、背压、跨进程连接、宿主能力和Rust权威实体数据。
-- TypeScript负责Scene、Actor、Component、Handler和可热更业务编排。
+- TypeScript负责Scene、Actor、Component、Handler和业务编排；其中Model定义稳定状态，只有Hotfix行为允许在线替换。
 - 一个Process内可以启动多个EntryScene；同进程调用进入目标mailbox，跨进程调用走Inner TCP，业务代码不判断本地或远程。
 - Actor通过`InstanceId`直接定位并进入自己的mailbox。不得收到玩家消息后遍历地图寻找玩家。
 - `ordered` mailbox在Handler跨越`await`时仍保持同一Actor/Scene串行；`unordered`允许异步重叠，但不会获得多线程CPU并行。
@@ -31,7 +31,8 @@ Machine
 
 | 路径 | 职责 | 业务需求默认是否修改 |
 |---|---|---|
-| `app/demo` | 服务端示例业务 | 是 |
+| `app/model` | 不可热更的Scene、Entity、Component状态、稳定类型和启动结构 | 需要新增状态或类型时；修改后必须重启Process |
+| `app/hotfix` | 可热更的Handler和领域方法实现 | 普通服务端行为需求默认修改 |
 | `proto` | 协议源文件 | 需要新消息时 |
 | `cocos_client2D/assets/scripts/Demo` | Cocos业务和表现 | 需要客户端行为时 |
 | `pixi_client/src` | Pixi/H5验收业务 | 需要跨客户端验收时 |
@@ -44,7 +45,16 @@ Machine
 
 如果业务可以通过现有Scene、Actor、Component、协议和广播能力完成，不得为了该业务新增Core抽象或Rust特殊分支。确实缺少通用能力时，先说明现有机制为什么无法表达、影响范围和最小扩展方案，再修改框架。
 
-业务只能从`app/core/public.ts`导入Core能力。该文件及`public-api.lock.json`定义Stable API；其他Core路径默认是Internal。公共API分级和变更流程见[公共API与版本稳定性](docs/reference/api-stability.md)。
+Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深层导入`app/model`或`app/core`。Model内部只能从`app/core/public.ts`导入Core能力。`app/core/public.ts`及`public-api.lock.json`定义Stable API；其他Core路径默认是Internal。公共API分级和变更流程见[公共API与版本稳定性](docs/reference/api-stability.md)。
+
+## Model与Hotfix硬边界
+
+- `app/model`随Process启动加载一次，运行中没有Model reload API，也不得新增这种入口。
+- Model承载实例字段、构造、继承、状态默认值、Scene/Entity/Component身份和稳定方法形状；任何修改都必须完整构建、部署并重启Process。
+- Hotfix只承载方法实现和Handler绑定。`@hotfixFor(ModelType)`实现类不得声明字段、构造函数、静态初始化块或改变继承关系。
+- 热更不得改变协议锁、Stable Core API、Native schema或Model源码指纹；兼容性不符时必须拒绝，不提供强制跳过参数。
+- 不为在线热更设计字段migration。需要字段迁移说明Model已经改变，应走版本化部署、数据兼容和Process重启。
+- 当前热更事务基础支持候选预检、暂存、prototype/Handler提交和失败回滚；生产操作入口及重复在线切换验收未完成前，不宣称“替换文件即可在线生效”。
 
 ## 业务代码形状
 
@@ -84,7 +94,7 @@ Machine
 
 ## 代码和文档约定
 
-- 手写`app/core`、`app/demo`和`src`函数注释遵循[代码注释约定](docs/reference/coding-conventions.md)：中文在前、英文在后，重点说明副作用、生命周期、顺序和错误语义。
+- 手写`app/core`、`app/model`、`app/hotfix`和`src`函数注释遵循[代码注释约定](docs/reference/coding-conventions.md)：中文在前、英文在后，重点说明副作用、生命周期、顺序和错误语义。
 - 新增文档以中文为主；公共术语可保留英文对照。
 - 任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须在同一改动中同步更新[AI项目上下文](docs/ai/project-context.md)和[AI业务开发手册](docs/ai/business-development-manual.md)。不能只改代码或只更新其中一份。
 - 不修改Generated文件；修改其输入后运行codegen。
@@ -108,4 +118,4 @@ npm run verify
 - TypeScript是唯一主业务语言，Rust是Runtime和权威数据层。
 - Wasm只作为未来重计算模块的候选，例如确定性战斗核心；当前不接入。
 - Rhai只作为未来脚本后端候选；当前不为它增加兼容层。
-- Phase 4开始前的质量门尚未完成；Developer Tools规则、Windows/Linux性能门和跨平台Release已完成，当前按[框架成熟度审计](docs/design/framework-readiness-audit.md)实现Process级TS热更闭环。
+- Phase 4开始前的质量门尚未完成；Model/Hotfix双Bundle、兼容校验和事务切换基础已完成，当前按[框架成熟度审计](docs/design/framework-readiness-audit.md)补齐在线操作入口与重复切换验收。

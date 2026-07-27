@@ -157,4 +157,4 @@ Outer TCP/WebSocket 只允许客户端消息号；Inner TCP 握手后只允许�
 
 ## 业务代码扫描
 
-`codegen.config.json` 的 `hotfix.sceneSearchRoots` 控制 EntryScene 扫描根目录，`hotfix.handlerSearchRoots` 控制独立 Handler 扫描根目录。默认都可设为 `app`，因此 `app/demo`、`app/mymmorpg` 等平级游戏目录无需登记单独的 Scene 或 Handler 总表。
+`codegen.config.json`的`serverBundles.sceneSearchRoots`控制Model EntryScene扫描根目录，`handlerSearchRoots`控制Hotfix Handler，`patchSearchRoots`控制`@hotfixFor`行为补丁。默认分别是`app/model`与`app/hotfix`；增加平级游戏时，把两层对应根目录加入数组即可，不登记Scene、Handler或补丁总表。

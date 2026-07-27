@@ -10,6 +10,7 @@ import type {
   UnitNumericDelta,
   UnitStateDelta,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
+import { CharacterSprite } from "./CharacterSprite";
 
 const CELL_SIZE = 12;
 const MAP_CELLS = 128;
@@ -17,8 +18,11 @@ const MAP_CELLS = 128;
 interface EntityView {
   readonly root: Container;
   readonly label: Text;
+  readonly appearance: CharacterSprite;
   targetX: number;
   targetY: number;
+  facing: number;
+  moving: boolean;
 }
 
 export class MapWorld {
@@ -71,8 +75,7 @@ export class MapWorld {
       return;
     }
     const root = new Container();
-    const local = snapshot.unitId === this.localUnitId;
-    root.addChild(new Graphics().rect(-18, -18, 36, 36).fill(local ? 0xf3d35e : 0x58c4df));
+    const appearance = new CharacterSprite(root, snapshot.facing);
     const label = new Text({
       text: snapshot.account,
       style: { fill: 0xeaf5f1, fontSize: 12, align: "center" },
@@ -81,7 +84,15 @@ export class MapWorld {
     label.y = 22;
     root.addChild(label);
     this.world.addChild(root);
-    const view = { root, label, targetX: 0, targetY: 0 };
+    const view = {
+      root,
+      label,
+      appearance,
+      targetX: 0,
+      targetY: 0,
+      facing: snapshot.facing,
+      moving: false,
+    };
     this.entities.set(snapshot.unitId, view);
     this.setTarget(view, snapshot.cellX, snapshot.cellY, true);
     this.applyNumerics(snapshot.numerics);
@@ -90,6 +101,7 @@ export class MapWorld {
   leave(unitId: number): void {
     const entity = this.entities.get(unitId);
     if (!entity) return;
+    entity.appearance.dispose();
     entity.root.destroy({ children: true });
     this.entities.delete(unitId);
   }
@@ -97,7 +109,10 @@ export class MapWorld {
   applyMovement(message: G2C_EntityMove): void {
     for (const movement of message.movements) {
       const entity = this.entities.get(movement.unitId);
-      if (entity) this.setTarget(entity, movement.toCellX, movement.toCellY, false);
+      if (!entity) continue;
+      entity.facing = movement.facing;
+      entity.moving = movement.moving;
+      this.setTarget(entity, movement.toCellX, movement.toCellY, false);
     }
   }
 
@@ -117,7 +132,7 @@ export class MapWorld {
       const entity = this.entities.get(state.unitId);
       if (!entity) continue;
       if (hasMember(state, 1)) entity.root.x = entity.targetX = state.x;
-      if (hasMember(state, 2)) entity.root.y = entity.targetY = state.y;
+      if (hasMember(state, 2)) entity.root.y = entity.targetY = worldToScreenY(state.y);
       entity.root.visible = !hasMember(state, 4) || state.alive;
     }
   }
@@ -134,6 +149,7 @@ export class MapWorld {
       const factor = Math.min(1, deltaSeconds * 14);
       entity.root.x += (entity.targetX - entity.root.x) * factor;
       entity.root.y += (entity.targetY - entity.root.y) * factor;
+      entity.appearance.update(deltaSeconds, entity.facing, entity.moving);
     }
     const local = this.entities.get(this.localUnitId);
     if (local) {
@@ -151,6 +167,7 @@ export class MapWorld {
   dispose(): void {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
+    for (const entity of this.entities.values()) entity.appearance.dispose();
     this.world.destroy({ children: true });
     this.entities.clear();
     this.numerics.clear();
@@ -160,14 +177,15 @@ export class MapWorld {
 
   private drawMap(): void {
     const size = MAP_CELLS * CELL_SIZE;
-    const background = new Graphics().rect(0, 0, size, size).fill(0x245a4b);
-    background.rect(0, 0, size, size).stroke({ color: 0x4e8071, width: 1 });
+    const origin = -size / 2;
+    const background = new Graphics().rect(origin, origin, size, size).fill(0x245a4b);
+    background.rect(origin, origin, size, size).stroke({ color: 0x4e8071, width: 1 });
     this.world.addChild(background);
   }
 
   private setTarget(entity: EntityView, cellX: number, cellY: number, immediate: boolean): void {
     entity.targetX = cellX * CELL_SIZE;
-    entity.targetY = cellY * CELL_SIZE;
+    entity.targetY = worldToScreenY(cellY * CELL_SIZE);
     if (immediate) entity.root.position.set(entity.targetX, entity.targetY);
   }
 
@@ -192,6 +210,10 @@ export class MapWorld {
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     this.pressed.delete(event.code);
   };
+}
+
+function worldToScreenY(worldY: number): number {
+  return -worldY;
 }
 
 function hasMember(delta: UnitStateDelta, memberId: number): boolean {

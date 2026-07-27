@@ -5,6 +5,7 @@ import type { AnyRpcDescriptor, RpcDescriptor } from "../protocol/rpc";
 import type { AnyMessageDescriptor } from "../protocol/message";
 import type { Session } from "../runtime/Session";
 import type { EntryScene } from "./types";
+import { HotfixBindingStore } from "../hotReload/HotfixSystem";
 
 type SceneClass<TScene extends EntryScene> = new (...args: any[]) => TScene;
 
@@ -39,17 +40,19 @@ type AnySessionMessageHandlerCtor = new () => SessionMessageHandler<EntryScene, 
 type AnySessionRpcHandlerCtor = new () => SessionRpcHandler<EntryScene, Session<any[]>, unknown, unknown>;
 
 export interface SessionMessageHandlerBinding {
+  sceneCtor: Function;
   descriptor: AnyMessageDescriptor;
   handlerCtor: AnySessionMessageHandlerCtor;
 }
 
 export interface SessionRpcHandlerBinding {
+  sceneCtor: Function;
   descriptor: AnyRpcDescriptor;
   handlerCtor: AnySessionRpcHandlerCtor;
 }
 
-const messageHandlers = new WeakMap<Function, SessionMessageHandlerBinding[]>();
-const rpcHandlers = new WeakMap<Function, SessionRpcHandlerBinding[]>();
+const messageHandlers = new HotfixBindingStore<SessionMessageHandlerBinding>("session-message");
+const rpcHandlers = new HotfixBindingStore<SessionRpcHandlerBinding>("session-rpc");
 
 /** 为指定 Scene 注册连接 Session 的单向消息 Handler。 / Registers a one-way connection-Session handler for one Scene. */
 export function sessionMessageHandler<
@@ -61,13 +64,11 @@ export function sessionMessageHandler<
   descriptor: MessageDescriptor<TMessage>,
 ): (handlerCtor: new () => SessionMessageHandler<TScene, TSession, TMessage>) => void {
   return (handlerCtor) => {
-    const bindings = messageHandlers.get(sceneCtor) ?? [];
-    assertUnique(bindings, descriptor.msgcode, sceneCtor.name, descriptor.name);
-    bindings.push({
+    messageHandlers.Register(bindingKey(sceneCtor, descriptor.msgcode), {
+      sceneCtor,
       descriptor: descriptor as AnyMessageDescriptor,
       handlerCtor: handlerCtor as AnySessionMessageHandlerCtor,
     });
-    messageHandlers.set(sceneCtor, bindings);
   };
 }
 
@@ -82,36 +83,22 @@ export function sessionRpcHandler<
   descriptor: RpcDescriptor<TReq, TResp>,
 ): (handlerCtor: new () => SessionRpcHandler<TScene, TSession, TReq, TResp>) => void {
   return (handlerCtor) => {
-    const bindings = rpcHandlers.get(sceneCtor) ?? [];
-    assertUnique(bindings, descriptor.requestCode, sceneCtor.name, descriptor.name);
-    bindings.push({
+    rpcHandlers.Register(bindingKey(sceneCtor, descriptor.requestCode), {
+      sceneCtor,
       descriptor: descriptor as AnyRpcDescriptor,
       handlerCtor: handlerCtor as AnySessionRpcHandlerCtor,
     });
-    rpcHandlers.set(sceneCtor, bindings);
   };
 }
 
 export function getSessionMessageHandlerBindings(sceneCtor: Function): readonly SessionMessageHandlerBinding[] {
-  return messageHandlers.get(sceneCtor) ?? [];
+  return messageHandlers.Values().filter((binding) => binding.sceneCtor === sceneCtor);
 }
 
 export function getSessionRpcHandlerBindings(sceneCtor: Function): readonly SessionRpcHandlerBinding[] {
-  return rpcHandlers.get(sceneCtor) ?? [];
+  return rpcHandlers.Values().filter((binding) => binding.sceneCtor === sceneCtor);
 }
 
-function assertUnique(
-  bindings: readonly (SessionMessageHandlerBinding | SessionRpcHandlerBinding)[],
-  msgcode: number,
-  sceneName: string,
-  descriptorName: string,
-): void {
-  const duplicate = bindings.some((binding) =>
-    "msgcode" in binding.descriptor
-      ? binding.descriptor.msgcode === msgcode
-      : binding.descriptor.requestCode === msgcode
-  );
-  if (duplicate) {
-    throw new Error(`duplicate Session handler for ${sceneName} msgcode ${msgcode}: ${descriptorName}`);
-  }
+function bindingKey(sceneCtor: Function, msgcode: number): string {
+  return `${sceneCtor.name}:${msgcode}`;
 }

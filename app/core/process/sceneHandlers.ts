@@ -10,6 +10,7 @@ import type {
   RpcDescriptor,
 } from "../protocol/rpc";
 import type { EntryScene } from "./types";
+import { HotfixBindingStore } from "../hotReload/HotfixSystem";
 
 type SceneClass<TScene extends EntryScene> = new (...args: any[]) => TScene;
 
@@ -43,17 +44,19 @@ type AnySceneRpcHandlerCtor = new () => SceneRpcHandler<
 >;
 
 export interface SceneMessageHandlerBinding {
+  sceneCtor: Function;
   descriptor: AnyMessageDescriptor;
   handlerCtor: AnySceneMessageHandlerCtor;
 }
 
 export interface SceneRpcHandlerBinding {
+  sceneCtor: Function;
   descriptor: AnyRpcDescriptor;
   handlerCtor: AnySceneRpcHandlerCtor;
 }
 
-const messageHandlers = new WeakMap<Function, SceneMessageHandlerBinding[]>();
-const rpcHandlers = new WeakMap<Function, SceneRpcHandlerBinding[]>();
+const messageHandlers = new HotfixBindingStore<SceneMessageHandlerBinding>("scene-message");
+const rpcHandlers = new HotfixBindingStore<SceneRpcHandlerBinding>("scene-rpc");
 
 /** 在模块加载时注册外部单向 Scene Handler 类。 / Registers an external one-way Scene handler class at module load time. */
 export function messageHandler<
@@ -66,18 +69,11 @@ export function messageHandler<
   handlerCtor: new () => SceneMessageHandler<TScene, TMessage>,
 ) => void {
   return (handlerCtor) => {
-    const bindings = messageHandlers.get(sceneCtor) ?? [];
-    assertUnique(
-      bindings,
-      descriptor.msgcode,
-      sceneCtor.name,
-      descriptor.name,
-    );
-    bindings.push({
+    messageHandlers.Register(bindingKey(sceneCtor, descriptor.msgcode), {
+      sceneCtor,
       descriptor: descriptor as AnyMessageDescriptor,
       handlerCtor: handlerCtor as AnySceneMessageHandlerCtor,
     });
-    messageHandlers.set(sceneCtor, bindings);
   };
 }
 
@@ -89,18 +85,11 @@ export function rpcHandler<TScene extends EntryScene, TReq, TResp>(
   handlerCtor: new () => SceneRpcHandler<TScene, TReq, TResp>,
 ) => void {
   return (handlerCtor) => {
-    const bindings = rpcHandlers.get(sceneCtor) ?? [];
-    assertUnique(
-      bindings,
-      descriptor.requestCode,
-      sceneCtor.name,
-      descriptor.name,
-    );
-    bindings.push({
+    rpcHandlers.Register(bindingKey(sceneCtor, descriptor.requestCode), {
+      sceneCtor,
       descriptor: descriptor as AnyRpcDescriptor,
       handlerCtor: handlerCtor as AnySceneRpcHandlerCtor,
     });
-    rpcHandlers.set(sceneCtor, bindings);
   };
 }
 
@@ -108,30 +97,16 @@ export function rpcHandler<TScene extends EntryScene, TReq, TResp>(
 export function getSceneMessageHandlerBindings(
   sceneCtor: Function,
 ): readonly SceneMessageHandlerBinding[] {
-  return messageHandlers.get(sceneCtor) ?? [];
+  return messageHandlers.Values().filter((binding) => binding.sceneCtor === sceneCtor);
 }
 
 /** 返回 EntryScene 启动时使用的不可变 RPC 元数据。 / Returns immutable RPC metadata consumed during EntryScene bootstrap. */
 export function getSceneRpcHandlerBindings(
   sceneCtor: Function,
 ): readonly SceneRpcHandlerBinding[] {
-  return rpcHandlers.get(sceneCtor) ?? [];
+  return rpcHandlers.Values().filter((binding) => binding.sceneCtor === sceneCtor);
 }
 
-function assertUnique(
-  bindings: readonly (SceneMessageHandlerBinding | SceneRpcHandlerBinding)[],
-  msgcode: number,
-  sceneName: string,
-  descriptorName: string,
-): void {
-  const duplicate = bindings.find((binding) =>
-    "msgcode" in binding.descriptor
-      ? binding.descriptor.msgcode === msgcode
-      : binding.descriptor.requestCode === msgcode
-  );
-  if (duplicate) {
-    throw new Error(
-      `duplicate external handler for ${sceneName} msgcode ${msgcode}: ${descriptorName}`,
-    );
-  }
+function bindingKey(sceneCtor: Function, msgcode: number): string {
+  return `${sceneCtor.name}:${msgcode}`;
 }
