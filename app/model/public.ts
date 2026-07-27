@@ -27,7 +27,7 @@ export type {
 } from "../generated/model/server/bench/protocol/messages";
 
 export { GateSession } from "./demo/gate/GateSession";
-export { ItemComponent } from "./demo/item/ItemComponent";
+export { ItemComponent, type ItemView } from "./demo/item/ItemComponent";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
 export { MapComponent } from "./demo/map/MapComponent";
 export { MapScene } from "./demo/map/MapScene";

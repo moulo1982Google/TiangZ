@@ -242,7 +242,7 @@
     "scenes": {
       "command": "npm run codegen:scenes",
       "contentInputs": {
-        "app/hotfix/demo/item/ItemComponentSystem.ts": "9c44be6ea65376518b1852a9588e7100a9bfb2e2aa9fe50911d950faeaba4c60",
+        "app/hotfix/demo/item/ItemComponentSystem.ts": "bd852321ffd9c42e57d12bdcb27b481b9df1aba2a242fd506b3efcc46447571a",
         "app/hotfix/demo/login/LoginComponentSystem.ts": "602d57fbfbd09f790ef87fc7d689c6282abb14ef5bd55a8daeb874861088d824",
         "app/hotfix/demo/map/PlayerUnitSystem.ts": "e883ff4361fd045e2407c149bcb9a315d09d772f9ab8d22a3220bc1f855891e1",
         "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
@@ -327,7 +327,7 @@
       ],
       "outputs": {
         "app/generated/bootstrap/scenes.ts": "6e3fd77032f23e5d5cf2f9fad8c2b687b7f39922cf037d02ec06458cfb6bce6a",
-        "app/generated/bootstrap/systems/ItemComponentSystem.d.ts": "867730e6f322df1895acf69d4c703bed7a186d4c82cef9d511d2c8eae538b2c9",
+        "app/generated/bootstrap/systems/ItemComponentSystem.d.ts": "f6355ebea2fd7855ba6695eff71b037f87724ad79157653a478dd9ae8ae33e08",
         "app/generated/bootstrap/systems/LoginComponentSystem.d.ts": "dc7d6b931f04cce0e5c6541a2b8674025b1b95c8b94d7f5fdcce85e18d088a58",
         "app/generated/bootstrap/systems/PlayerUnitSystem.d.ts": "7c2c39926505bf1ae638ab675dba3dd7aab4b579b0feb9714f7762e8cc287875",
         "app/generated/hotfix/handlers.bench.ts": "fe744e5cfd7b7f0340cb5c333ec275aef0ebedc79c45e2c77a37e7fbf41348ae",

@@ -1,6 +1,7 @@
 import {
   GameErrCode,
   ItemComponent,
+  type ItemView,
   type ItemSnapshot,
   NativeItemRef,
   RpcError,
@@ -13,6 +14,15 @@ export class ItemComponentSystem extends ItemComponent {
   /** 创建一件演示道具；生产加载应从持久化数据组合背包。 / Seeds one demo item; production loading should compose inventory from persisted data. */
   protected override Awake(): void {
     this.Create(1, 1001, 3);
+  }
+
+  /**
+   * 返回短期只读视图；调用方不得跨 await 或玩家生命周期长期保存该引用。
+   * Returns a short-lived read-only view; callers must not retain it across an
+   * await boundary or beyond the owning player's lifetime.
+   */
+  GetItem(itemId: number): ItemView | undefined {
+    return this.items.get(itemId);
   }
 
   /** 复制当前背包用于全量同步或持久化，不暴露 Native 句柄。 / Copies current inventory for full sync or persistence without exposing Native handles. */

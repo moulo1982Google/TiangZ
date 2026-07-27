@@ -80,6 +80,20 @@ C2M_UseItemHandler
 
 不要为了扁平调用增加只转发一次的Sink或Delegate层。
 
+### Component拥有的子对象
+
+Component既是能力组合点，也可以是某类子对象集合的唯一所有者。例如`ItemComponent`拥有玩家全部道具，`QuestComponent`拥有任务状态，`AchievementComponent`拥有成就状态。外部业务不能直接取得或修改这些Component内部的`Map`。
+
+子对象是否继承Entity取决于它是否真的具有独立身份和生命周期，而不是为了统一外观：
+
+- 道具实例拥有稳定`ItemId`，并可能有强化、耐久、绑定、随机词条、交易锁等独立状态，适合成为Item Entity。它仍是`ItemComponent`的子对象，不是Actor，没有mailbox，也不能被跨Process路由。
+- 普通任务和成就通常由配置ID唯一确定，只需要Component拥有的`QuestState`或`AchievementState`；只有可重复实例、独立计时或动态子目标等需求出现时，才升级为子Entity。
+- 金币、材料数量等没有实例差异的数据使用整数、Map或Numeric，不为每个值创建Entity。
+
+运行时对象、协议快照和持久化记录必须分开命名：`Item`/`NativeItemRef`表示运行时权威对象或句柄，`ItemSnapshot`表示跨边界副本，`ItemRecord`表示数据库记录。不要用`ItemDB`同时承担三种语义。
+
+领域边界采用“可以读取对象，修改经过拥有它的Component”：`GetItem`可以返回不带修改和`Dispose`能力的短期`ItemView`；使用、增减、拆分、移动和删除道具必须调用`ItemComponent`方法，以统一维护校验、集合索引、dirty/version、持久化和通知。Native可变句柄只在所属System内部使用，不得从Handler泄漏，也不得跨`await`或所有者生命周期长期保存。
+
 ### Rust Entity Store（历史上也称Rust Arena）
 
 它表示Rust侧集中保存Entity数据的仓库。TS持有带generation的handle，通过生成的Native Ref和Fast Op访问；对象删除后旧handle被拒绝。`Arena`只是可选实现术语，不是Rust语言关键字，也不是业务开发必须直接使用的API。
@@ -290,6 +304,7 @@ Phase 5计划：
 8. 修改架构事实、目录所有权、协议语义或Phase状态时，同步更新本文、`README.md`和`docs/roadmap.md`。
 9. Actor只作为Scene、Session、Unit的统称和底层路由术语；不要为普通业务身份新增泛化`XxxActor`。
 10. 新业务状态写Model，生命周期和行为写`@systemFor`；不要恢复Model方法空壳，也不要在每次方法调用前查System Registry。
+11. Component拥有的子对象只能由所属Component维护集合和业务修改；不要从Handler直接操作Native Ref，也不要把每条Quest或Achievement机械地做成Entity。
 
 ## 新AI建议阅读顺序
 

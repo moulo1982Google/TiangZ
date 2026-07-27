@@ -128,6 +128,61 @@ unit.GetComponent(SkillComponent).AddSkill(skillId);
 - 同类型组件只挂一个；可选依赖使用`TryGetComponent`。
 - 不直接`new SkillComponent()`，必须走`AddComponent`，否则绕过生命周期和Update注册。
 
+## Component下的多个业务对象
+
+道具、任务和成就都遵循同一个所有权规则，但不强制使用相同的数据形状：
+
+```text
+PlayerUnit
+├── ItemComponent          -> Map<ItemId, NativeItemRef>
+├── QuestComponent         -> Map<QuestId, QuestState>
+└── AchievementComponent   -> Map<AchievementId, AchievementState>
+```
+
+`XXXComponent`拥有集合并负责所有会改变业务结果的操作。业务代码不能访问它的可变`Map`，也不能从Handler直接修改Native Ref。Entity不等于Actor：Item即使是Entity，也没有mailbox，不能作为跨Process消息目标。
+
+### 什么时候创建子Entity
+
+满足以下任一条件时，优先使用有稳定实例ID的子Entity：
+
+- 同一配置可能产生多个不同实例。
+- 对象有强化、耐久、绑定、随机词条、锁定等独立状态。
+- 对象有独立创建、销毁、持久化或计时生命周期。
+- 其他领域需要稳定引用这个具体实例。
+
+如果数据只由配置ID唯一确定，并且只有进度、状态或数量，优先使用普通State、Map、数组或Numeric。普通Quest和Achievement默认不创建Entity；可重复任务、动态任务实例或独立计时任务再升级。
+
+### 查询对象，修改经过Component
+
+读取一件道具时可以取得短期只读视图：
+
+```ts
+const items = unit.GetComponent(ItemComponent);
+const item = items.GetItem(itemId);
+if (item?.quality === 5) {
+  // 只读取，不长期保存item。
+}
+```
+
+业务修改必须经过拥有它的Component：
+
+```ts
+const changed = items.UseItem(itemId);
+items.AddItem(itemId, 10);
+items.RemoveItem(itemId, 2);
+```
+
+禁止：
+
+```ts
+// 错误：绕过数量校验、版本、持久化和客户端通知。
+item.count -= 1;
+```
+
+道具自身的局部规则可以由Item方法实现，例如改变耐久或锁定状态；涉及集合所有权的新增、删除、拆分、合并、换格和转移始终由`ItemComponent`协调。跨Component业务由PlayerUnit领域方法或Handler协调，例如先让`ItemComponent`消费技能书，再调用`SkillComponent.AddSkill`，不要让SkillComponent直接删除背包数据。
+
+`ItemView`只用于当前同步调用中的读取，不能跨`await`、Timer或玩家下线长期保存。协议和持久化边界分别复制为`ItemSnapshot`和`ItemRecord`；不要把运行时对象命名为`ItemDB`，也不要把可变Native句柄直接序列化。
+
 ## 编写Handler
 
 Handler只负责协议适配、基础校验和调用领域能力。先按消息目标选择唯一对应的形状：
@@ -292,6 +347,8 @@ Rust自动维护`NumericType -> i32`值和dirty表，FrameFlush按`(unitId, nume
 ### Item等即时Event
 
 库存、技能命中和奖励是不可覆盖事实。修改权威状态后立即发布event；如果同一次操作还改变可覆盖属性，例如速度，则该属性继续走帧尾Delta。
+
+`ItemComponent`持有`Map<ItemId, NativeItemRef>`，其中`NativeItemRef`已经是Item运行时实体句柄，不需要再增加职责重复的`ItemDB`。外部读取使用`GetItem`返回的`ItemView`，修改使用Component领域方法；只有所属`ItemComponentSystem`可以直接操作可变Native句柄。
 
 ## 广播给谁与如何广播
 
