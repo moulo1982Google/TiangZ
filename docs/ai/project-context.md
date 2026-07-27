@@ -274,6 +274,7 @@ Phase 4计划：
 - 账号与角色选择、正式持久化。
 - 地图传送和动态副本Directory。
 - Rust AOI和按可见集合广播。
+- Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。
 - 怪物Actor、巡逻、仇恨和战斗。
 - Location/Online Scene。
 - Guild、Friend、Chat等EntryScene与Component业务域。

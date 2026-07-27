@@ -487,6 +487,12 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:cocos-demo:engine`；CI中的`typecheck:cocos-demo`只保证入口及依赖可bundle，不伪造引擎类型。客户端SDK本身仍必须通过与引擎无关的`typecheck:cocos-net`。
 
+## 后续Map同步策略
+
+同步方式属于Map的玩法策略，不属于整个Process或Runtime。Phase 4后续允许普通大世界使用状态同步、竞技场等独立Map使用帧同步，以及少数高精度场景使用高频状态同步。同一个部署中可以同时存在这些Map，但玩家切换同步方式应通过退出旧Map、进入新Map完成。
+
+当前业务继续使用已有状态同步链路，不要提前在Handler中散落同步模式判断，也不要自行建立另一套帧号、输入队列或广播接口。后续实现应由Map创建配置选择策略，并由对应Component承接输入、模拟和广播；Handler仍只表达移动、施法等领域意图。逻辑Tick、网络同步频率与客户端渲染频率必须分别配置，提升其中一项不能隐式提高其他两项。
+
 ## AI提交前自检
 
 1. 是否只修改了需求真正涉及的目录？

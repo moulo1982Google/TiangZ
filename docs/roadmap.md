@@ -285,6 +285,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 账号/角色选择与持久化。
 - 地图传送和动态副本 Directory。
 - AOI 数据结构与批量广播优化。
+- Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
 - 怪物 Actor、巡逻、仇恨和战斗。
 - Location/Online Scene，支持按 UnitId 定位 Gate/Map。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
