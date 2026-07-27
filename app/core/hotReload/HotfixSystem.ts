@@ -6,6 +6,7 @@ type ConcreteCtor = new (...args: any[]) => object;
 interface MethodCandidate {
   readonly target: AnyCtor;
   readonly implementation: ConcreteCtor;
+  readonly required: boolean;
 }
 
 interface BindingCandidate<T extends object> {
@@ -23,6 +24,7 @@ interface StagingGeneration {
 interface InstalledType {
   readonly baseline: Map<PropertyKey, PropertyDescriptor | undefined>;
   methods: Set<PropertyKey>;
+  required: boolean;
 }
 
 interface BindingUndo<T extends object> {
@@ -48,7 +50,16 @@ export class HotfixSystem {
   private static generation = 0;
   private static phase: HotfixStatus["phase"] = "idle";
   private static lastError: string | undefined;
+  private static readonly requiredTypes = new Set<AnyCtor>();
   private static readonly installedTypes = new Map<AnyCtor, InstalledType>();
+
+  /** 注册Model要求的业务System；Generated Bootstrap通常在首个候选前调用，暂存期间禁止修改。 / Registers a Model-required business System, normally before the first candidate; registration is forbidden while staging. */
+  static RequireType(target: AnyCtor): void {
+    if (this.staging) {
+      throw new Error(`required System registration is closed: ${target.name}`);
+    }
+    this.requiredTypes.add(target);
+  }
 
   /** 在求值候选 Bundle 前建立暂存区；Model 指纹兼容性由 Rust 宿主先行校验。 / Opens staging before candidate evaluation; the Rust host validates Model fingerprints first. */
   static Begin(manifest: HotfixManifest): void {
@@ -71,12 +82,16 @@ export class HotfixSystem {
   }
 
   /** 记录一个完整行为实现类；类只提供 prototype 方法，绝不会被实例化。 / Stages a complete behavior implementation class; it contributes prototype methods and is never instantiated. */
-  static StageType(target: AnyCtor, implementation: ConcreteCtor): void {
+  static StageType(
+    target: AnyCtor,
+    implementation: ConcreteCtor,
+    required = false,
+  ): void {
     const staging = this.requireStaging();
     if (staging.methods.some((candidate) => candidate.target === target)) {
       throw new Error(`duplicate hotfix implementation: ${target.name}`);
     }
-    staging.methods.push({ target, implementation });
+    staging.methods.push({ target, implementation, required });
   }
 
   /** 记录 Handler 槽候选；提交前不会影响正在服务的 generation。 / Stages a handler slot without changing the currently serving generation. */
@@ -112,10 +127,20 @@ export class HotfixSystem {
       target: AnyCtor;
       descriptors: Map<PropertyKey, PropertyDescriptor | undefined>;
       previousMethods: Set<PropertyKey>;
+      previousRequired: boolean;
     }> = [];
     const bindingUndo: BindingUndo<object>[] = [];
 
     try {
+      const requiredTargets = new Set(this.requiredTypes);
+      for (const [target, installed] of this.installedTypes) {
+        if (installed.required) requiredTargets.add(target);
+      }
+      for (const target of requiredTargets) {
+        const candidate = staging.methods.find((item) => item.target === target);
+        if (!candidate) throw new Error(`required System is missing: ${target.name}`);
+        if (!candidate.required) throw new Error(`required System must use @systemFor: ${target.name}`);
+      }
       const nextTargets = new Set(staging.methods.map((candidate) => candidate.target));
       for (const [target, installed] of this.installedTypes) {
         if (nextTargets.has(target)) continue;
@@ -128,6 +153,7 @@ export class HotfixSystem {
         const installed = this.installedTypes.get(candidate.target) ?? {
           baseline: new Map<PropertyKey, PropertyDescriptor | undefined>(),
           methods: new Set<PropertyKey>(),
+          required: false,
         };
         if (!this.installedTypes.has(candidate.target)) {
           this.installedTypes.set(candidate.target, installed);
@@ -195,6 +221,25 @@ export function hotfixFor<TTarget extends AnyCtor>(
       throw new Error(`${implementation.name} must extend ${target.name}`);
     }
     HotfixSystem.StageType(target, implementation);
+  };
+}
+
+/**
+ * 声明 Model 类型的必需业务 System。第一代提交后，后续候选必须继续提供该
+ * System；缺失候选会整体拒绝并保留旧 generation，避免生命周期悄悄退回空实现。
+ *
+ * Declares a required business System for a Model type. Once installed in the
+ * first generation, every later candidate must provide it; omission rejects
+ * the whole candidate and preserves the active generation.
+ */
+export function systemFor<TTarget extends AnyCtor>(
+  target: TTarget,
+): <TImplementation extends ConcreteCtor>(implementation: TImplementation) => void {
+  return (implementation) => {
+    if (!(implementation.prototype instanceof target)) {
+      throw new Error(`${implementation.name} must extend ${target.name}`);
+    }
+    HotfixSystem.StageType(target, implementation, true);
   };
 }
 
@@ -280,6 +325,7 @@ function installCandidate(candidate: MethodCandidate, installed: InstalledType):
     Object.defineProperty(candidate.target.prototype, method, descriptor);
   }
   installed.methods = nextMethods;
+  installed.required ||= candidate.required;
 }
 
 function snapshotInstalled(target: AnyCtor, installed: InstalledType) {
@@ -287,7 +333,12 @@ function snapshotInstalled(target: AnyCtor, installed: InstalledType) {
   for (const method of installed.methods) {
     descriptors.set(method, Object.getOwnPropertyDescriptor(target.prototype, method));
   }
-  return { target, descriptors, previousMethods: new Set(installed.methods) };
+  return {
+    target,
+    descriptors,
+    previousMethods: new Set(installed.methods),
+    previousRequired: installed.required,
+  };
 }
 
 function restoreBaseline(target: AnyCtor, installed: InstalledType): void {
@@ -312,6 +363,7 @@ function restorePrototypeUndo(
     else Reflect.deleteProperty(undo.target.prototype, method);
   }
   installed.methods = undo.previousMethods;
+  installed.required = undo.previousRequired;
 }
 
 function replaceObjectProperties(target: object, source: object | PropertyDescriptorMap): void {

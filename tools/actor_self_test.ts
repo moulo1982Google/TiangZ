@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   InitializeGameSingletons({ fixedUpdateMs: 50, maxCatchUpSteps: 2 });
   try {
     HotfixSystem.Begin(testHotfixManifest("actor-normal"));
-    await import("../app/hotfix/demo/map/PlayerUnitHotfix");
+    await import("../app/hotfix/demo/map/PlayerUnitSystem");
     HotfixSystem.Commit();
     await Promise.resolve();
     testGeneratedNativeHandleScalarAccess();

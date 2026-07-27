@@ -5,9 +5,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use serde_json::json;
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream};
 use tokio::sync::{Semaphore, mpsc};
 use tokio::time::{Instant, sleep_until};
 
@@ -78,6 +80,7 @@ impl StateSyncMode {
 #[derive(Clone)]
 struct Options {
     host: String,
+    source_ip: Option<IpAddr>,
     manager_port: u16,
     players: usize,
     setup_concurrency: usize,
@@ -92,6 +95,7 @@ struct Options {
     state_sync_rate: u64,
     state_sync_concurrency: usize,
     label: String,
+    measurement_signal_file: Option<PathBuf>,
 }
 
 struct Address {
@@ -265,7 +269,7 @@ async fn main() -> Result<()> {
                 account_seed,
                 index
             );
-            let player = setup_player(&options, &login_address, &account).await;
+            let player = setup_player(&options, &login_address, &account, index).await;
             drop(permit);
             player
         });
@@ -287,6 +291,14 @@ async fn main() -> Result<()> {
         .unwrap_or_default()
         .as_millis() as u64
         + options.warmup.as_millis() as u64;
+    if let Some(signal_file) = &options.measurement_signal_file {
+        std::fs::write(signal_file, started_at_unix_ms.to_string()).with_context(|| {
+            format!(
+                "failed to write measurement signal {}",
+                signal_file.display()
+            )
+        })?;
+    }
 
     let mut load_tasks = tokio::task::JoinSet::new();
     for player in players {
@@ -501,7 +513,15 @@ async fn main() -> Result<()> {
 
 async fn get_login_address(options: &Options) -> Result<Address> {
     let frame = encode_rpc(GET_LOGIN_ADDR_REQ, 1, &[])?;
-    let response = request_one(&options.host, options.manager_port, frame, options.timeout).await?;
+    let response = request_one(
+        &options.host,
+        options.manager_port,
+        frame,
+        options.timeout,
+        options.source_ip,
+        options.source_ip.map(|_| 10_000),
+    )
+    .await?;
     let message = decode_message(&response, GET_LOGIN_ADDR_RESP, Some(1))?;
     Ok(Address {
         ip: message.string(2)?,
@@ -513,6 +533,7 @@ async fn setup_player(
     options: &Options,
     login: &Address,
     account: &str,
+    index: usize,
 ) -> Result<PlayerConnection> {
     let mut login_payload = Vec::with_capacity(account.len() + 16);
     push_string(&mut login_payload, 1, account);
@@ -521,6 +542,8 @@ async fn setup_player(
         login.port,
         encode_rpc(LOGIN_REQ, 1, &login_payload)?,
         options.timeout,
+        options.source_ip,
+        source_port(options.source_ip, 22_000, index)?,
     )
     .await?;
     let login_response = decode_message(&response, LOGIN_RESP, Some(1))?;
@@ -534,7 +557,12 @@ async fn setup_player(
 
     let stream = tokio::time::timeout(
         options.timeout,
-        TcpStream::connect((&*login.gate.ip, login.gate.port)),
+        connect_tcp(
+            &login.gate.ip,
+            login.gate.port,
+            options.source_ip,
+            source_port(options.source_ip, 43_000, index)?,
+        ),
     )
     .await
     .context("gate connect timed out")??;
@@ -983,9 +1011,16 @@ async fn send_client_frame(writer_tx: &mpsc::Sender<Vec<u8>>, frame: Vec<u8>) ->
     writer_tx.send(frame).await.context("gate writer stopped")
 }
 
-async fn request_one(host: &str, port: u16, frame: Vec<u8>, timeout: Duration) -> Result<Vec<u8>> {
+async fn request_one(
+    host: &str,
+    port: u16,
+    frame: Vec<u8>,
+    timeout: Duration,
+    source_ip: Option<IpAddr>,
+    source_port: Option<u16>,
+) -> Result<Vec<u8>> {
     tokio::time::timeout(timeout, async {
-        let mut stream = TcpStream::connect((host, port)).await?;
+        let mut stream = connect_tcp(host, port, source_ip, source_port).await?;
         stream.set_nodelay(true)?;
         let packet = packet(&frame)?;
         stream.write_all(&packet).await?;
@@ -993,6 +1028,51 @@ async fn request_one(host: &str, port: u16, frame: Vec<u8>, timeout: Duration) -
     })
     .await
     .with_context(|| format!("request to {host}:{port} timed out"))?
+}
+
+/// 从指定源地址建立压测连接，用不同 loopback 地址隔离 Windows TIME_WAIT 端口池。
+///
+/// Connects from an optional source address so repeated benchmark rounds can use independent
+/// Windows TIME_WAIT pools. This helper belongs to the load generator and must not be used by the
+/// production transport to conceal real connection churn.
+async fn connect_tcp(
+    host: &str,
+    port: u16,
+    source_ip: Option<IpAddr>,
+    source_port: Option<u16>,
+) -> Result<TcpStream> {
+    let target = tokio::net::lookup_host((host, port))
+        .await?
+        .next()
+        .with_context(|| format!("failed to resolve {host}:{port}"))?;
+    let socket = if target.is_ipv4() {
+        TcpSocket::new_v4()?
+    } else {
+        TcpSocket::new_v6()?
+    };
+    if let Some(source_ip) = source_ip {
+        if source_ip.is_ipv4() != target.is_ipv4() {
+            bail!("source IP family does not match target {target}");
+        }
+        let source = SocketAddr::new(source_ip, source_port.unwrap_or(0));
+        socket
+            .bind(source)
+            .with_context(|| format!("failed to bind benchmark source {source} for {target}"))?;
+    }
+    Ok(socket.connect(target).await?)
+}
+
+/// 为同一轮中的玩家分配稳定源端口；不同轮由不同 loopback IP 隔离。
+///
+/// Allocates deterministic source ports per player. Combined with a per-round loopback IP this
+/// prevents the load generator's own TIME_WAIT sockets from exhausting Windows' dynamic pool.
+fn source_port(source_ip: Option<IpAddr>, base: usize, index: usize) -> Result<Option<u16>> {
+    if source_ip.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(
+        u16::try_from(base + index).context("benchmark source port exceeds uint16")?,
+    ))
 }
 
 async fn write_frame(writer: &mut tokio::net::tcp::OwnedWriteHalf, frame: &[u8]) -> Result<()> {
@@ -1263,6 +1343,11 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
             .get("host")
             .cloned()
             .unwrap_or_else(|| "127.0.0.1".to_string()),
+        source_ip: values
+            .get("source-ip")
+            .map(|value| value.parse::<IpAddr>())
+            .transpose()
+            .context("invalid --source-ip")?,
         manager_port: u16::try_from(number("manager-port", 7000)?)
             .context("manager port exceeds uint16")?,
         players,
@@ -1286,6 +1371,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
             .get("label")
             .cloned()
             .unwrap_or_else(|| "rust".to_string()),
+        measurement_signal_file: values.get("measurement-signal-file").map(PathBuf::from),
     })
 }
 

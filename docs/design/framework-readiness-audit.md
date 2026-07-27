@@ -1,15 +1,15 @@
 # Phase 4 前框架成熟度审计
 
-审计日期：2026-07-26。初始审计基线：`0.3.10-alpha.4`；当前实现版本：`0.3.10-alpha.5`。
+审计日期：2026-07-26。初始审计基线：`0.3.10-alpha.4`；当前实现版本：`0.3.10-alpha.6`。
 
 本审计回答一个问题：在继续扩展 MMORPG 业务前，TiangZ 还缺少哪些可以被自动验证的框架能力。业务功能只作为验收夹具，不以增加玩法数量表示框架成熟。
 
 ## 结论
 
-Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`已经完成R2的Model/Hotfix双Bundle、不可变候选、Watcher Reload、候选预检、超时投递屏障、事务提交和Prometheus指标；Phase 4准入仍被有连接高负载、慢RPC/Timer与连续切换长稳验收阻塞。
+Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`建立R2的Model/Hotfix双Bundle和在线Reload事务；`0.3.10-alpha.6`加入`@systemFor`、生成声明和3000玩家1Hz Reload A/B。Phase 4准入仍被慢RPC/Timer与连续切换长稳验收阻塞。
 
 1. Developer Tools 的架构规则与仓库约定不一致；已完成。
-2. TypeScript热更已形成可回滚的进程内事务与在线操作基础；高负载和长稳验收待完成。
+2. TypeScript热更已形成可回滚的进程内事务，3000玩家1Hz Reload A/B已完成；慢RPC/Timer和连续generation长稳仍待验收。
 3. 性能测试能生成报告，但不能自动判定回归；已完成 Windows/Linux 基线与门禁。
 4. 完整质量门和 Release 流程尚未同时覆盖 Windows 与 Linux；已完成。
 
@@ -28,7 +28,7 @@ Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入�
 
 ### 当前事实
 
-状态：完成（2026-07-26）。Developer Tools `v0.9.1`已在共享规则核心表达Model/Hotfix双层、Generated Bootstrap/Hotfix入口和Hotfix只能经`#tiangz/model`进入稳定层；主仓库锁定该Tag，`npm run check:project`已接入`verify:quick`。
+状态：完成（2026-07-27）。Developer Tools `v0.11.0`已在共享规则核心表达Model/Hotfix双层、Generated Bootstrap/Hotfix入口、`@systemFor`生成声明和Hotfix只能经`#tiangz/model`进入稳定层；主仓库锁定该Tag，`npm run check:project`已接入`verify:quick`。
 
 这不是通过忽略规则解决的问题。VS Code 诊断与 CLI 使用同一规则核心，错误模型会直接影响开发者对目录边界的理解。
 
@@ -68,11 +68,11 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 - Hotfix-only构建对Model/Core、protocol、Stable API和Native schema变化全部拒绝。
 - 同一Model下连续切换100次Hotfix后，V8 Heap、Rust Entity数、Timer数和pending operation回到稳定区间。
 
-### 0.3.10-alpha.5进展
+### 0.3.10-alpha.5至alpha.6进展
 
 已完成：`app/model`与`app/hotfix`分层、`model.js/hotfix.js`双Bundle及manifest、实际文件SHA-256校验、隔离V8预检、staging registry、prototype与Scene/Session/Unit Handler事务提交、失败回滚和边界自测。Runtime启动时先安装Hotfix generation 1，再开放服务。
 
-已完成Watcher触发、Rust有界投递屏障、30秒默认排空超时、失败保留旧generation、5个拆分Process连续切换和Prometheus分段指标。待完成：3000玩家有连接切换、慢RPC/Timer运行时测试、连续切换长稳以及Grafana面板。完成这些项之前，R2仍不是完整闭环。
+已完成Watcher触发、Rust有界投递屏障、30秒默认排空超时、失败保留旧generation、5个拆分Process连续切换、Prometheus分段指标和3000玩家1Hz Reload A/B。待完成：慢RPC/Timer运行时测试与连续切换长稳。完成这些项之前，R2仍不是完整闭环。
 
 完整决策和限制见[Process级TypeScript热更设计](typescript-hot-reload.md)。
 
@@ -130,7 +130,7 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 ## 执行顺序
 
 1. R1、R3、R4保持全绿。
-2. 在`0.3.10-alpha.5`双Bundle和事务基础上完成R2在线操作闭环。
+2. 在`0.3.10-alpha.6`的System、双Bundle和事务基础上完成R2在线操作闭环。
 3. 对切换前后运行相同基准，并执行有连接、慢RPC、Timer和连续generation验收。
 4. 以Windows/Linux Release候选验收整个`0.3.10`。
 5. 发布`0.3.10`后再开始Phase 4。

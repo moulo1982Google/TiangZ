@@ -40,9 +40,9 @@ npm run typecheck
 
 生成的`app/generated/bootstrap/scenes.ts`会导入Scene模块，让装饰器在Model加载时执行。无需手工维护Scene构造器表。新增Scene改变Model，不能使用`build:hotfix`上线。
 
-## Component状态与Hotfix行为
+## Component状态与Hotfix System
 
-Model声明状态和稳定方法形状：
+Model只声明稳定状态和身份，不再为热更方法手写抛错空壳：
 
 ```ts
 // app/model/mymmorpg/social/SocialComponent.ts
@@ -50,28 +50,32 @@ import { Component } from "../../../core/public";
 
 export class SocialComponent extends Component {
   protected readonly friends = new Set<string>();
-
-  QueryFriendCount(_account: string): number {
-    throw new Error("SocialComponent Hotfix is not installed");
-  }
 }
 ```
 
-Hotfix提供方法实现：
+Hotfix System提供生命周期和领域方法：
 
 ```ts
-// app/hotfix/mymmorpg/social/SocialComponentHotfix.ts
-import { hotfixFor, SocialComponent } from "#tiangz/model";
+// app/hotfix/mymmorpg/social/SocialComponentSystem.ts
+import { SocialComponent, systemFor } from "#tiangz/model";
 
-@hotfixFor(SocialComponent)
-export class SocialComponentHotfix extends SocialComponent {
-  override QueryFriendCount(_account: string): number {
+@systemFor(SocialComponent)
+export class SocialComponentSystem extends SocialComponent {
+  protected override Awake(): void {
+    // 业务初始化写在Hotfix；新增字段仍必须回到Model并重启Process。
+  }
+
+  QueryFriendCount(_account: string): number {
     return this.friends.size;
   }
 }
 ```
 
-实现类不会被实例化，只贡献prototype方法。不要给它增加字段、构造函数、静态初始化块或不同的继承关系。需要这些内容时修改Model并重启。
+System不会被实例化，只贡献prototype方法。不要给它增加字段、构造函数、静态成员或不同的继承关系。需要这些内容时修改Model并重启。
+
+`npm run codegen`会生成`app/generated/bootstrap/systems/SocialComponentSystem.d.ts`，把公开方法合并到`SocialComponent`类型。因此Handler可以直接写`component.QueryFriendCount(account)`，不需要在Model重复声明方法。`Awake`、`OnDestroy`等受保护生命周期只参加运行时安装，不会出现在公开方法声明中。
+
+公开方法的参数和返回类型必须显式标注。只改方法体可以Hotfix-only；修改公开签名会改变生成的Model声明，必须完整构建并重启Process。System第一代安装后，后续候选必须继续包含它；遗漏会拒绝整次Reload并保留旧版本。
 
 新Model类型还需要从`app/model/public.ts`导出，Hotfix才能通过`#tiangz/model`使用。后续会把这份导出表也交给codegen；当前不要在Hotfix中用相对路径绕过公共入口。
 
@@ -104,7 +108,7 @@ export class QueryFriendCountHandler implements SceneRpcHandler<
 }
 ```
 
-`tools/codegen_scenes.mjs`生成`app/generated/hotfix/handlers.ts`和`patches.ts`。Handler实例属于具体EntryScene，并经过原有Registry与mailbox；拆文件不会改变串行、并行、RPC错误或`rpcId`语义。
+`tools/codegen_scenes.mjs`生成`app/generated/hotfix/handlers.ts`、`patches.ts`和`app/generated/bootstrap/systems/*.d.ts`。Handler实例属于具体EntryScene，并经过原有Registry与mailbox；拆文件不会改变串行、并行、RPC错误或`rpcId`语义。
 
 Handler是薄协议适配器。它可以只有一行，因为这一行负责把协议消息交给正确的Scene、Unit或Component；不要再增加Sink、Delegate或纯转发Manager。
 

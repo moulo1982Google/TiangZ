@@ -140,11 +140,12 @@ Scene metrics 只在 5 秒日志采样点创建并 JSON 序列化；普通 updat
 
 ## 代码生成与双Bundle
 
-`tools/codegen_proto.mjs`负责协议模型和TS输出。`tools/codegen_scenes.mjs`分别扫描Model Scene、Hotfix Handler与`@hotfixFor`行为实现，生成：
+`tools/codegen_proto.mjs`负责协议模型和TS输出。`tools/codegen_scenes.mjs`分别扫描Model Scene、Hotfix Handler与`@systemFor`业务System，生成：
 
 - `app/generated/bootstrap/scenes.ts`：Model启动注册入口；
 - `app/generated/hotfix/handlers.ts`：正式Hotfix Handler入口；
 - `app/generated/hotfix/patches.ts`：正式Hotfix行为补丁入口；
+- `app/generated/bootstrap/systems/*.d.ts`：System公开方法合并到Model类型的声明；
 - `app/generated/hotfix/handlers.bench.ts`：Bench专用Handler入口。
 
 `tools/build_runtime_bundles.mjs`把两层构建为`dist/model.js`与`dist/hotfix.js`，并写入各自manifest。Model ESM由Rust正式V8加载一次；Hotfix以独立ESM加载。`--hotfix-only`必须复用现有Model manifest，并在Model源码指纹变化时失败。不得恢复执行`dist/main.js`或把两层重新合并成一个可重复求值的Bundle。

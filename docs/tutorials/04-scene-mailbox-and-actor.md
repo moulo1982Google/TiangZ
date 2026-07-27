@@ -107,7 +107,7 @@ export class PositionComponent extends Component<[
 }
 ```
 
-`Awake` 必须同步完成且只执行一次。数据库读取、远程 RPC 等异步初始化由 Factory 显式 `await`，完成后再把 Entity 发布到地图或 Location；框架会拒绝 `async Awake`，避免其他消息观察到半初始化对象。这里直接使用 TypeScript 覆写方法，不复制 ET 为不同参数数量定义多套 `IAwake<T...>` 和 AwakeSystem。
+`Awake` 必须同步完成且只执行一次。数据库读取、远程 RPC 等异步初始化由 Factory 显式 `await`，完成后再把 Entity 发布到地图或 Location；框架会拒绝 `async Awake`，避免其他消息观察到半初始化对象。业务 `Awake` 写在Hotfix的`@systemFor`类中，Core仍只保留一套泛型生命周期骨架，不复制ET按参数数量拆分的多套接口。
 
 Actor 自身也使用相同模式，创建参数直接传给 `spawnActor`，不需要伪造一条只执行一次的 Initialize 消息：
 

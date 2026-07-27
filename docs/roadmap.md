@@ -187,7 +187,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.5`。
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.6`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -260,9 +260,9 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 3.10.5：TypeScript热更闭环
 
-状态：在线Reload基础闭环与本地源码开发模式完成，高负载与长稳验收待完成。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix：Model拥有状态、字段、构造、继承和稳定身份；Hotfix只拥有Handler和方法实现。Runtime已支持双ESM Bundle、不可变候选目录、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、Watcher Reload、Rust有界投递屏障、超时拒绝、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。`npm run dev`在本地初次完整构建后监听Hotfix，自动完成生成、类型检查、候选构建和Reload；正式部署仍只接收不可变候选，不执行源码监听。
+状态：在线Reload闭环、本地源码开发模式和3000玩家1Hz Reload A/B已经完成。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix；`0.3.10-alpha.6`加入`@systemFor`，让Model拥有状态、字段、构造、继承和稳定身份，Hotfix拥有生命周期、领域方法和Handler。Runtime已支持双ESM Bundle、不可变候选目录、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、Watcher Reload、Rust有界投递屏障、超时拒绝、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。codegen从System公开方法生成Model类型声明，Model不再维护抛错空壳。`npm run dev`在本地初次完整构建后监听Hotfix，自动完成生成、类型检查、候选构建和Reload；正式部署仍只接收不可变候选，不执行源码监听。
 
-剩余工作是3000玩家有连接负载、慢RPC/Timer测试、连续generation长稳和Grafana面板。第一版必须排空到零再切换，不做字段migration，也不允许Model在线替换。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)。
+3000玩家基线与1Hz Reload各3轮已完成：Move吞吐中位数差异`+0.02%`，90/90次Reload成功且无错误；Reload组Probe p95/p99约增加`31.91%/31.14%`，说明切换屏障有可测尾延迟。剩余工作是慢RPC/Timer和连续generation长稳。第一版必须排空到零再切换，不做字段migration，也不允许Model在线替换。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)与`perf/results/hotfix_latest.md`。
 
 ### Phase 3.10.6：性能回归门
 

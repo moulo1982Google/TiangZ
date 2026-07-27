@@ -67,8 +67,13 @@ function inspectHotfixClasses(file, tree) {
   const visit = (node) => {
     if (ts.isClassDeclaration(node) && hasHotfixDecorator(node)) {
       for (const member of node.members) {
-        if (ts.isConstructorDeclaration(member) || ts.isPropertyDeclaration(member) || ts.isClassStaticBlockDeclaration(member)) {
-          errors.push(`${relative(file)}: @hotfixFor类只能声明方法/accessor，不能声明字段、构造函数或static块`);
+        if (
+          ts.isConstructorDeclaration(member) ||
+          ts.isPropertyDeclaration(member) ||
+          ts.isClassStaticBlockDeclaration(member) ||
+          member.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword)
+        ) {
+          errors.push(`${relative(file)}: System类只能声明实例方法/accessor，不能声明字段、构造函数或static成员`);
         }
       }
     }
@@ -81,7 +86,7 @@ function hasHotfixDecorator(node) {
   return ts.getDecorators(node)?.some((decorator) =>
     ts.isCallExpression(decorator.expression) &&
     ts.isIdentifier(decorator.expression.expression) &&
-    decorator.expression.expression.text === "hotfixFor"
+    ["hotfixFor", "systemFor"].includes(decorator.expression.expression.text)
   ) ?? false;
 }
 

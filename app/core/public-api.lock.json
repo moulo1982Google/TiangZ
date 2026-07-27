@@ -98,6 +98,7 @@
     "scene",
     "sessionMessageHandler",
     "sessionRpcHandler",
+    "systemFor",
     "unitMessageHandler",
     "unitRpcHandler"
   ]

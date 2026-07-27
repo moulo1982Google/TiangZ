@@ -1,6 +1,6 @@
 {
   "name": "ets-runtime",
-  "version": "0.3.10-alpha.5",
+  "version": "0.3.10-alpha.6",
   "private": true,
   "packageManager": "npm@11.18.0",
   "engines": {
@@ -71,7 +71,7 @@
     "test:fault-injection:runtime": "cargo test --bin TiangZ transport::tests::disconnect_rejects_all_pending_calls && cargo test --bin TiangZ process::tests::slow_connection_is_closed_when_outbound_queue_is_full && npm run test:backpressure && npm run test:watcher-graceful",
     "test:fault-injection": "npm run test:fault-injection:core && npm run test:fault-injection:runtime",
     "test:rpc-actor-correctness": "npm run build:test:rpc-actor-correctness && node dist/rpc_actor_correctness_self_test.cjs",
-    "test:hotfix": "npm run build:test:hotfix && node dist/hotfix_system_self_test.cjs && node tools/hotfix_build_boundary_self_test.mjs",
+    "test:hotfix": "npm run codegen:scenes && npm run typecheck && node tools/system_codegen_self_test.mjs && npm run build:test:hotfix && node dist/hotfix_system_self_test.cjs && node tools/hotfix_build_boundary_self_test.mjs",
     "test:hotfix-reload": "npm run build && npm run build:test:hotfix-reload && cargo build --locked --bin TiangZ && node tools/hotfix_reload_self_test.mjs",
     "typecheck:cocos-net": "tsc -p cocos_client2D/tsconfig.protocol.json",
     "typecheck:cocos-demo": "node tools/typecheck_cocos_demo.mjs",
@@ -106,6 +106,7 @@
     "perf:full-chain": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --bin TiangZ && node perf/full_chain/run_full_chain_perf.mjs",
     "perf:soak": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --bin TiangZ && node perf/soak/run_soak.mjs",
     "perf:map-capacity": "npm run build:bench && npm run build:perf:full-chain && node perf/map_capacity/run_map_capacity_perf.mjs",
+    "perf:hotfix": "node perf/hotfix/run_hotfix_perf.mjs",
     "perf:state-sync-full": "npm run build:bench && npm run build:perf:full-chain && node perf/map_capacity/run_map_capacity_perf.mjs --client rust --move-rate 0 --probe-rate 1 --state-sync-mode mixed --state-sync-rate 5",
     "profile:ts": "node tools/capture_v8_profile.mjs",
     "perf:full-chain:legacy": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --bin TiangZ --bin runtime_load && powershell -NoProfile -ExecutionPolicy Bypass -File perf/full_chain/run_full_chain_perf.ps1",
@@ -135,7 +136,7 @@
     "observability:reset": "cd tools/observability && docker compose down -v --remove-orphans && docker compose rm -f"
   },
   "devDependencies": {
-    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.9.1",
+    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.11.0",
     "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.12.0",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.0",

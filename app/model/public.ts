@@ -28,14 +28,24 @@ export type {
 
 export { GateSession } from "./demo/gate/GateSession";
 export { ItemComponent } from "./demo/item/ItemComponent";
+export { NativeItemRef } from "../generated/model/native/NativeItemRef";
 export { MapComponent } from "./demo/map/MapComponent";
 export { MapScene } from "./demo/map/MapScene";
-export { PlayerUnit, type MovePlayer } from "./demo/map/PlayerUnit";
+export {
+  PlayerUnit,
+  type AwakePlayerUnit,
+  type MatchPlayerGate,
+  type MovePlayer,
+  type PlayerSnapshot,
+  type RebindPlayerGate,
+} from "./demo/map/PlayerUnit";
 export { PositionComponent } from "./demo/map/PositionComponent";
+export { UnitGateComponent } from "./demo/map/UnitGateComponent";
 export { MapHostComponent } from "./demo/mapHost/MapHostComponent";
 export { NumericComponent } from "./demo/numeric/NumericComponent";
 export { NumericType } from "./demo/numeric/NumericType";
 export { LoginComponent } from "./demo/login/LoginComponent";
+export { PlayerPersistenceComponent } from "./demo/persistence/PlayerPersistenceComponent";
 export { NativeData } from "./demo/native/NativeData";
 export { NativeUnitRef } from "../generated/model/native/NativeUnitRef";
 export { GameErrCode } from "./game/protocol/GameErrCode";

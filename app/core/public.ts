@@ -89,7 +89,7 @@ export { Component, Entity, Scene } from "./runtime/entities";
 export type { ComponentCtor } from "./runtime/entities";
 export { Game } from "./runtime/Game";
 export type { GameUpdateConfig } from "./runtime/Game";
-export { hotfixFor } from "./hotReload/HotfixSystem";
+export { hotfixFor, systemFor } from "./hotReload/HotfixSystem";
 export { ProcessHost } from "./runtime/host";
 export { component, scene } from "./runtime/metadata";
 export { Singleton, SingletonRegistry } from "./runtime/Singleton";

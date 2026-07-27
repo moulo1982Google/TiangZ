@@ -43,7 +43,10 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 
 - 新增字段、默认值、构造参数、继承关系、Scene/Entity/Component类型：写`app/model`，完整构建并重启Process。
 - 新增或修改Handler、校验、流程编排和领域方法实现：写`app/hotfix`，可使用Hotfix-only构建。
-- Hotfix通过`@hotfixFor(ModelType)`实现Model声明的稳定方法；实现类没有字段、构造函数或静态初始化块，也不会被实例化。
+- Hotfix通过`@systemFor(ModelType)`提供生命周期和领域方法；System没有字段、构造函数或静态成员，也不会被实例化。
+- Model不手写“System未安装”的抛错空壳。codegen从System公开方法生成`app/generated/bootstrap/systems/*.d.ts`，调用方仍直接写`unit.Move()`或`component.UseItem()`。
+- System公开方法必须显式写参数和返回类型。只改方法体可热更；修改公开签名会改变Model声明，必须完整构建并重启。
+- `Awake/OnDestroy`可写在System中。Reload不重跑现有对象的`Awake`；新对象使用新版本Awake，现有对象后续方法和销毁使用当前generation。
 - Model绝对不能在线热更，不设计字段migration。`npm run build:hotfix`拒绝时，说明这次改动已经越过行为边界，不能规避检查。
 - `npm run build:hotfix`生成`dist/hotfix-candidates/<hash>`不可变候选，不覆盖当前Bundle。在Watcher终端输入`reload <候选目录>`才会触发每个Process独立校验和提交；禁止手工覆盖`dist/hotfix.js`。
 
@@ -72,10 +75,10 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 - Session RPC：`app/hotfix/demo/gate/handlers/C2G_LoginGateHandler.ts`。
 - EntryScene RPC：`app/hotfix/demo/mapHost/handlers/G2M_EnterMapHandler.ts`。
 - Numeric字典Delta：`app/model/demo/numeric/NumericComponent.ts`。
-- Item即时Event：`app/model/demo/item/ItemComponent.ts`和Hotfix中的`C2M_UseItemHandler.ts`。
+- Item即时Event：`app/model/demo/item/ItemComponent.ts`、`app/hotfix/demo/item/ItemComponentSystem.ts`和`C2M_UseItemHandler.ts`。
 - 帧尾同步：`app/model/demo/map/MapComponent.ts::FrameFlush`。
 - 玩家下线保存：`app/model/demo/persistence/PlayerPersistenceComponent.ts`。
-- Model/Hotfix领域方法范例：`app/model/demo/login/LoginComponent.ts`与`app/hotfix/demo/login/LoginComponentHotfix.ts`。
+- Model/System领域方法范例：`app/model/demo/login/LoginComponent.ts`与`app/hotfix/demo/login/LoginComponentSystem.ts`。
 - 客户端Push：`cocos_client2D/assets/scripts/Demo/Map/Handlers`。
 - Scene发现和调用：`app/core/process/SceneMessageHelper.ts`及`docs/guides/business-cookbook.md`。
 
@@ -398,7 +401,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚和Prometheus指标已完成；进入Phase 4前仍需执行3000玩家有连接负载、慢RPC、Timer和连续切换验收。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标和3000玩家1Hz Reload A/B已完成；进入Phase 4前仍需慢RPC、Timer和连续generation长稳验收。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools对运行时类中的显式`any`、跨基本存储种类联合字段、`delete`字段和`as any`写属性给出黄色性能建议；警告不是错误，`T | null`、判别联合与显式Map/Record仍可正常使用，真实性能以基准和Profile为准。
 
@@ -437,7 +440,7 @@ Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:co
 10. 是否在最终说明中列出验证过和未验证的部分？
 11. 如果存在设计变更，是否同步更新了AI项目上下文和AI业务开发手册？
 12. Model是否只从`app/core/public.ts`导入Core，Hotfix是否只从`#tiangz/model`导入稳定依赖？
-13. Hotfix实现类是否误加了字段、构造、静态初始化或新的状态形状？
+13. System是否误加了字段、构造、静态成员或新的状态形状？公开方法是否显式标注参数和返回类型？
 14. 故障测试是否使用确定性Fake或真实边界，而没有向生产配置加入随机故障开关？
 ## 可观测性边界
 

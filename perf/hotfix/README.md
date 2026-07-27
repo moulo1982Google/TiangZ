@@ -10,7 +10,7 @@
 - 压测客户端和 Runtime 都使用 Release 构建。
 - 正式运行前关闭 Cocos、浏览器、Docker Desktop 和其他高 CPU 程序。
 
-当前框架已经具备双 Bundle、不可变候选目录、兼容性校验、隔离预检、Watcher/Process Reload、超时屏障、TypeScript事务提交和Prometheus指标。5个拆分Process的无连接切换与损坏候选拒绝已经自动化；下述2人有连接语义和3000人性能场景仍是中午正式验收合同，不能用“停服后替换文件并重启”代替。
+当前框架已经具备双 Bundle、不可变候选目录、兼容性校验、隔离预检、Watcher/Process Reload、超时屏障、TypeScript事务提交和Prometheus指标。5个拆分Process的无连接切换、损坏候选拒绝、2人有连接语义和3000人1Hz Reload A/B均已自动化；后续慢RPC、Timer和连续generation长稳仍不能用“停服后替换文件并重启”代替。
 
 ## 用例 A：3000 玩家容量回归
 
@@ -40,6 +40,16 @@ npm run perf:map-capacity -- `
   --rounds 3 `
   --target-map-cpu 80
 ```
+
+正式 A/B 验收统一使用下面的单独命令。它会先完成 Release 构建，然后依次运行“不 Reload”与“每秒 Reload”两组三轮测试，并生成 `perf/results/hotfix_latest.json` 和 `perf/results/hotfix_latest.md`：
+
+```powershell
+npm run perf:hotfix
+```
+
+候选 Bundle 会在压测前构建，构建耗时不进入正式窗口。两组都会打开相同的 Process 健康端口，避免把观测服务本身的开销错误算作 Reload 开销。测试模式会直接向每个 Process 注入与 Watcher 相同的父进程控制命令；业务 Runtime 和协议链路不使用测试专用捷径。
+
+Rust 压测客户端会在玩家全部登录后写出正式测量时间，runner 只在预热结束、正式窗口开始时启动 Reload。Windows 下每轮使用独立 loopback IP 与固定源端口段，隔离大量登录短连接产生的 `TIME_WAIT`；这只修复负载发生器自身的端口耗尽，不减少连接数，也不改变服务端链路。
 
 主要观察：
 
@@ -113,5 +123,5 @@ npm run perf:map-capacity -- `
 2. 已完成：正常版和上下反转版候选输出到独立目录，不覆盖正在服务的文件。
 3. 已完成：Watcher到Process的跨平台Reload控制消息。
 4. 已完成：Process在超时安全屏障处加载候选，并返回结构化阶段耗时与结果。
-5. 待完成：`perf:hotfix` runner自动加载3000玩家、触发两次切换并生成JSON/Markdown报告。
+5. 已完成：`perf:hotfix` runner 自动执行 3000 玩家基线与 1Hz Reload A/B 测试，并生成 JSON/Markdown 报告。
 6. 已完成Prometheus指标；Grafana面板留到相应可观测性阶段统一展示。

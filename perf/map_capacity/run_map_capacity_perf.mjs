@@ -29,6 +29,10 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --uring-entries 2048        io_uring 队列深度
   --uring-read-buffer-bytes 65536
   --probe-only                只测 Probe RPC，不发送 Move
+  --hotfix-mode off          off|baseline|reload；baseline 只开启同口径观测
+  --hotfix-candidates a,b    reload 模式交替加载的候选目录
+  --hotfix-interval-ms 1000  在线 Reload 周期
+  --health-base-port 7800    Hotfix 测试使用的 Process 健康端口起点
   --skip-rust-build           使用已有 Runtime 二进制
   --debug-runtime             使用 debug Runtime
   --help                      显示帮助并退出`);
@@ -40,6 +44,9 @@ if (options.stateSyncMode !== "off" && options.client !== "rust") {
 }
 if (options.client === "rust" && options.clientShards !== 1) {
   throw new Error("--client-shards currently supports the Node client only");
+}
+if (options.hotfixMode === "reload" && options.client !== "rust") {
+  throw new Error("--hotfix-mode reload requires --client rust for measurement alignment");
 }
 if (options.ioBackend === "io-uring" && process.platform !== "linux") {
   throw new Error("--io-backend io-uring only supports Linux");
@@ -135,9 +142,13 @@ async function main() {
 async function runCase(players, round) {
   const caseName = `${players}p_${options.gates}g_r${round}`;
   console.log(`[map-capacity] ${caseName}`);
-  const topology = writeTopologyConfigs(caseName);
+  const topology = writeTopologyConfigs(caseName, round);
   const runtimes = [];
   let clientResult;
+  let hotfixController;
+  let hotfixResult;
+  let healthSampler;
+  let healthSamples;
   try {
     for (const runtime of topology.runtimes) {
       runtimes.push(startRuntime(runtime));
@@ -146,8 +157,28 @@ async function runCase(players, round) {
       await waitPort("127.0.0.1", port, 30_000);
     }
 
-    clientResult = await runLoadClients(players);
+    if (options.hotfixMode !== "off") healthSampler = startHealthSampler(runtimes);
+    const measurementSignal = path.join(configDir, `${caseName}_measurement.txt`);
+    const clientTask = runLoadClients(players, topology.managerPort, round, measurementSignal);
+    if (options.hotfixMode === "reload") {
+      const measurementStartedAt = await waitMeasurementSignal(measurementSignal, 120_000);
+      hotfixController = startHotfixReloadController(runtimes, measurementStartedAt);
+    }
+    clientResult = await clientTask;
+    healthSamples = await healthSampler?.stop() ?? new Map();
+    hotfixResult = await hotfixController?.stop(clientResult) ?? {
+      mode: options.hotfixMode,
+      attempts: 0,
+      formalWindowAttempts: 0,
+      formalWindowCompleted: 0,
+      formalWindowMissed: 0,
+      samples: [],
+    };
   } finally {
+    if (hotfixController && !hotfixResult) {
+      hotfixResult = await hotfixController.stop(clientResult);
+    }
+    if (healthSampler && !healthSamples) healthSamples = await healthSampler.stop();
     await stopRuntimes(runtimes);
   }
 
@@ -155,6 +186,7 @@ async function runCase(players, round) {
     runtimes,
     clientResult?.measurementStartedAtUnixMs,
     clientResult?.measurementEndedAtUnixMs,
+    healthSamples,
   );
   return {
     ...clientResult,
@@ -162,12 +194,13 @@ async function runCase(players, round) {
     round,
     serverResources: resources,
     transport: collectTransportMetrics(runtimes),
+    hotfix: hotfixResult,
     logDirectory: logDir,
     configDirectory: configDir,
   };
 }
 
-async function runLoadClients(players) {
+async function runLoadClients(players, managerPort, round, measurementSignal) {
   const useRustClient = options.client === "rust";
   const shardCount = useRustClient ? 1 : Math.min(options.clientShards, players);
   const basePlayers = Math.floor(players / shardCount);
@@ -180,7 +213,11 @@ async function runLoadClients(players) {
       return runCommand(useRustClient ? rustLoadClient : process.execPath, [
         ...(useRustClient ? [] : [loadClient]),
         "--host", "127.0.0.1",
-        "--manager-port", String(options.managerPort),
+        "--manager-port", String(managerPort),
+        ...(useRustClient && process.platform === "win32"
+          ? ["--source-ip", `127.0.0.${options.sourceIpBase + round - 1}`]
+          : []),
+        ...(useRustClient ? ["--measurement-signal-file", measurementSignal] : []),
         "--players", String(shardPlayers),
         "--setup-concurrency", String(options.setupConcurrency),
         "--duration", String(options.duration),
@@ -333,9 +370,17 @@ function combineLoadGenerators(results) {
   };
 }
 
-function writeTopologyConfigs(caseName) {
+function writeTopologyConfigs(caseName, round) {
   const caseDir = path.join(configDir, caseName);
   mkdirSync(caseDir, { recursive: true });
+  // Windows 会为登录阶段的短连接保留 TIME_WAIT；每轮换一组服务端端口，避免本机
+  // 临时端口耗尽干扰长时间 A/B 测试。业务拓扑、连接数和协议链路保持不变。
+  const roundPortOffset = (round - 1) * 100;
+  const managerPort = options.managerPort + roundPortOffset;
+  const loginPort = options.loginPort + roundPortOffset;
+  const gateBasePort = options.gateBasePort + roundPortOffset;
+  const mapPort = options.mapPort + roundPortOffset;
+  const healthBasePort = options.healthBasePort + roundPortOffset;
   const scene = (name, sceneType, port) => ({
     name,
     sceneType,
@@ -343,12 +388,12 @@ function writeTopologyConfigs(caseName) {
     port,
     ...(options.ioBackend === "io-uring" ? { protocol: "tcp" } : {}),
   });
-  const managerScene = scene("login_mgr", "LoginMgr", options.managerPort);
-  const loginScene = scene("login_1", "Login", options.loginPort);
-  const mapScene = scene("map_1", "MapHost", options.mapPort);
+  const managerScene = scene("login_mgr", "LoginMgr", managerPort);
+  const loginScene = scene("login_1", "Login", loginPort);
+  const mapScene = scene("map_1", "MapHost", mapPort);
   const gateScenes = Array.from(
     { length: options.gates },
-    (_, index) => scene(`gate_${index + 1}`, "Gate", options.gateBasePort + index),
+    (_, index) => scene(`gate_${index + 1}`, "Gate", gateBasePort + index),
   );
   const configs = [
     runtimeConfig("map1", [mapScene], gateScenes),
@@ -358,36 +403,61 @@ function writeTopologyConfigs(caseName) {
     runtimeConfig("login1", [loginScene], gateScenes),
     runtimeConfig("mgr", [managerScene], [loginScene]),
   ];
-  const runtimes = configs.map((config) => {
+  const runtimes = configs.map((config, index) => {
+    const healthPort = options.hotfixMode === "off"
+      ? undefined
+      : healthBasePort + index;
+    if (healthPort) {
+      config.process.observability = {
+        ...config.process.observability,
+        health: { ip: "127.0.0.1", port: healthPort },
+      };
+    }
     const configPath = path.join(caseDir, `${config.process.name}.json`);
     writeJson(configPath, config);
-    return { name: config.process.name, configPath, logName: `${caseName}_${config.process.name}` };
+    return {
+      name: config.process.name,
+      configPath,
+      healthPort,
+      logName: `${caseName}_${config.process.name}`,
+    };
   });
   return {
     runtimes,
     ports: [
-      options.managerPort,
-      options.loginPort,
-      options.mapPort,
+      managerPort,
+      loginPort,
+      mapPort,
       ...gateScenes.map((item) => item.port),
+      ...runtimes.flatMap((runtime) => runtime.healthPort ? [runtime.healthPort] : []),
     ],
+    managerPort,
   };
 }
 
-function runtimeConfig(name, scenes, knownScenes) {
+function runtimeConfig(name, scenes, knownScenes, healthPort) {
+  const observability = {
+    ...(options.latencySampleRate > 0
+      ? {
+        latency: {
+          enabled: true,
+          sampleRate: options.latencySampleRate,
+        },
+      }
+      : {}),
+    ...(healthPort
+      ? {
+        health: {
+          ip: "127.0.0.1",
+          port: healthPort,
+        },
+      }
+      : {}),
+  };
   return {
     process: {
       name,
-      ...(options.latencySampleRate > 0
-        ? {
-          observability: {
-            latency: {
-              enabled: true,
-              sampleRate: options.latencySampleRate,
-            },
-          },
-        }
-        : {}),
+      ...(Object.keys(observability).length > 0 ? { observability } : {}),
       network: {
         ioBackend: options.ioBackend,
         uringEntries: options.uringEntries,
@@ -404,12 +474,180 @@ function startRuntime(runtime) {
   const stderrPath = path.join(logDir, `${runtime.logName}_stderr.log`);
   const child = spawn(executable, [runtime.configPath], {
     cwd: root,
-    stdio: ["ignore", "pipe", "pipe"],
+    env: options.hotfixMode === "off"
+      ? process.env
+      : { ...process.env, TIANGZ_WATCHER_CONTROL: "stdin" },
+    stdio: [options.hotfixMode === "off" ? "ignore" : "pipe", "pipe", "pipe"],
     windowsHide: true,
   });
   child.stdout.pipe(createWriteStream(stdoutPath));
   child.stderr.pipe(createWriteStream(stderrPath));
-  return { child, name: runtime.name, stdoutPath, stderrPath };
+  return { child, name: runtime.name, healthPort: runtime.healthPort, stdoutPath, stderrPath };
+}
+
+function startHotfixReloadController(runtimes, startAtUnixMs) {
+  let active = true;
+  let attempts = 0;
+  const samples = [];
+  const task = (async () => {
+    if (startAtUnixMs > Date.now()) await sleep(startAtUnixMs - Date.now());
+    let nextAt = startAtUnixMs;
+    while (active) {
+      const waitMs = nextAt - Date.now();
+      if (waitMs > 0) await sleep(waitMs);
+      if (!active) break;
+      const candidate = options.hotfixCandidates[attempts % options.hotfixCandidates.length];
+      attempts += 1;
+      const requestedAtUnixMs = Date.now();
+      const before = await Promise.all(runtimes.map(readHotfixMetrics));
+      for (const runtime of runtimes) runtime.child.stdin.write(`reload ${candidate}\n`);
+
+      const deadline = requestedAtUnixMs + options.hotfixIntervalMs;
+      let snapshots = [];
+      while (active && Date.now() < deadline) {
+        snapshots = await Promise.all(runtimes.map(readHotfixMetrics));
+        if (snapshots.every((snapshot, index) =>
+          snapshot.successes > (before[index].successes ?? 0) ||
+          snapshot.failures > (before[index].failures ?? 0)
+        )) break;
+        await sleep(25);
+      }
+      const completedAtUnixMs = Date.now();
+      const map = snapshots.find((snapshot) => snapshot.process === "map1") ?? {};
+      const completedProcesses = snapshots.filter((snapshot, index) =>
+        snapshot.successes > (before[index].successes ?? 0)
+      ).length;
+      const failedProcesses = snapshots.filter((snapshot, index) =>
+        snapshot.failures > (before[index].failures ?? 0)
+      ).length;
+      samples.push({
+        attempt: attempts,
+        candidate,
+        requestedAtUnixMs,
+        completedAtUnixMs,
+        completed: completedProcesses === runtimes.length,
+        processSuccesses: completedProcesses,
+        processFailures: failedProcesses,
+        processCount: runtimes.length,
+        map,
+      });
+      nextAt += options.hotfixIntervalMs;
+      if (nextAt < Date.now()) nextAt = Date.now();
+    }
+  })();
+  return {
+    stop: async (clientResult) => {
+      active = false;
+      await task;
+      const startedAt = clientResult?.measurementStartedAtUnixMs ?? Number.MAX_SAFE_INTEGER;
+      const endedAt = clientResult?.measurementEndedAtUnixMs ?? 0;
+      const formal = samples.filter((sample) =>
+        sample.requestedAtUnixMs >= startedAt && sample.requestedAtUnixMs <= endedAt
+      );
+      return {
+        mode: options.hotfixMode,
+        intervalMs: options.hotfixIntervalMs,
+        attempts,
+        formalWindowAttempts: formal.length,
+        formalWindowCompleted: formal.filter((sample) => sample.completed).length,
+        formalWindowMissed: formal.filter((sample) => !sample.completed).length,
+        samples: formal,
+      };
+    },
+  };
+}
+
+async function waitMeasurementSignal(file, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = readText(file).trim();
+    if (value) return Number(value);
+    await sleep(25);
+  }
+  throw new Error(`timed out waiting for measurement signal ${file}`);
+}
+
+function startHealthSampler(runtimes) {
+  let active = true;
+  const samples = new Map(runtimes.map((runtime) => [runtime.name, []]));
+  const task = (async () => {
+    while (active) {
+      const snapshots = await Promise.all(runtimes.map(readProcessHealthMetrics));
+      for (const snapshot of snapshots) {
+        if (!snapshot.timestampMs) continue;
+        const processSamples = samples.get(snapshot.process);
+        if (processSamples && processSamples.at(-1)?.timestampMs !== snapshot.timestampMs) {
+          processSamples.push(snapshot);
+        }
+      }
+      await sleep(1_000);
+    }
+  })();
+  return {
+    stop: async () => {
+      active = false;
+      await task;
+      return samples;
+    },
+  };
+}
+
+async function readProcessHealthMetrics(runtime) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${runtime.healthPort}/metrics`);
+    if (!response.ok) return { process: runtime.name };
+    const body = await response.text();
+    const metric = (name) => prometheusMetric(body, name);
+    return {
+      process: runtime.name,
+      cpuPercent: metric("tiangz_process_cpu_percent"),
+      cpuTimeMs: metric("tiangz_process_cpu_time_ms"),
+      rssBytes: metric("tiangz_process_rss_bytes"),
+      v8HeapUsedBytes: metric("tiangz_process_v8_heap_used_bytes"),
+      v8HeapTotalBytes: metric("tiangz_process_v8_heap_total_bytes"),
+      v8GcCount: metric("tiangz_process_v8_gc_count_total"),
+      v8GcMs: metric("tiangz_process_v8_gc_ms_total"),
+      timestampMs: metric("tiangz_process_metrics_timestamp_ms"),
+      outboundBatches: metric("tiangz_process_outbound_batches_total"),
+      outboundRecipients: metric("tiangz_process_outbound_recipients_total"),
+      outboundBridgeBytes: metric("tiangz_process_outbound_bridge_bytes_total"),
+      outboundLogicalBytes: metric("tiangz_process_outbound_logical_bytes_total"),
+      transportReadOps: metric("tiangz_process_transport_read_ops_total"),
+      transportReadFrames: metric("tiangz_process_transport_read_frames_total"),
+      transportReadBytes: metric("tiangz_process_transport_read_bytes_total"),
+      transportWriteOps: metric("tiangz_process_transport_write_ops_total"),
+      transportWriteFrames: metric("tiangz_process_transport_write_frames_total"),
+      transportWriteBytes: metric("tiangz_process_transport_write_bytes_total"),
+    };
+  } catch {
+    return { process: runtime.name };
+  }
+}
+
+async function readHotfixMetrics(runtime) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${runtime.healthPort}/metrics`);
+    if (!response.ok) return { process: runtime.name };
+    const body = await response.text();
+    return {
+      process: runtime.name,
+      generation: prometheusMetric(body, "tiangz_hotfix_active_generation"),
+      successes: prometheusMetric(body, "tiangz_hotfix_reload_successes_total"),
+      failures: prometheusMetric(body, "tiangz_hotfix_reload_failures_total"),
+      preflightMs: prometheusMetric(body, "tiangz_hotfix_preflight_ms"),
+      barrierWaitMs: prometheusMetric(body, "tiangz_hotfix_barrier_wait_ms"),
+      candidateEvalMs: prometheusMetric(body, "tiangz_hotfix_candidate_eval_ms"),
+      commitMs: prometheusMetric(body, "tiangz_hotfix_commit_ms"),
+      reloadTotalMs: prometheusMetric(body, "tiangz_hotfix_reload_total_ms"),
+    };
+  } catch {
+    return { process: runtime.name };
+  }
+}
+
+function prometheusMetric(body, name) {
+  const line = body.split(/\r?\n/).find((value) => value.startsWith(`${name}{`));
+  return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
 }
 
 async function stopRuntimes(runtimes) {
@@ -423,11 +661,11 @@ async function stopRuntimes(runtimes) {
   }));
 }
 
-function collectRuntimeResources(runtimes, startedAt, endedAt) {
+function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = new Map()) {
   const processes = runtimes.map((runtime) => {
-    const text = readText(runtime.stdoutPath);
+    const text = readRuntimeLogs(runtime);
     const lines = text.split(/\r?\n/);
-    const samples = lines
+    const logSamples = lines
       .filter((line) => line.startsWith("[process-metrics] "))
       .map(parseMetricLine)
       .map((values) => ({
@@ -451,6 +689,9 @@ function collectRuntimeResources(runtimes, startedAt, endedAt) {
         transportWriteFrames: Number(values.transport_write_frames ?? 0),
         transportWriteBytes: Number(values.transport_write_bytes ?? 0),
       }));
+    const samples = healthSamples.get(runtime.name)?.length > 0
+      ? healthSamples.get(runtime.name)
+      : logSamples;
     const completeWindowSamples = samples.filter((sample) =>
       startedAt && endedAt &&
       sample.timestampMs >= startedAt + 4_000 &&
@@ -640,7 +881,7 @@ function summarizeMapBroadcast(samples, formalWindowSamples) {
 }
 
 function collectTransportMetrics(runtimes) {
-  const text = runtimes.map((runtime) => readText(runtime.stdoutPath)).join("\n");
+  const text = runtimes.map(readRuntimeLogs).join("\n");
   return {
     innerOverloads: maxMatches(text, /overloads=(\d+)/g),
     innerTimeouts: maxMatches(text, /timeouts=(\d+)/g),
@@ -1064,7 +1305,32 @@ function parseOptions(args) {
       values.get("--uring-read-buffer-bytes") ?? "65536",
       "--uring-read-buffer-bytes",
     ),
+    hotfixMode: enumValue(
+      values.get("--hotfix-mode") ?? "off",
+      ["off", "baseline", "reload"],
+      "--hotfix-mode",
+    ),
+    hotfixCandidates: (values.get("--hotfix-candidates") ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => path.resolve(root, item)),
+    hotfixIntervalMs: positive(
+      values.get("--hotfix-interval-ms") ?? "1000",
+      "--hotfix-interval-ms",
+    ),
+    healthBasePort: positive(
+      values.get("--health-base-port") ?? "7800",
+      "--health-base-port",
+    ),
+    sourceIpBase: positive(values.get("--source-ip-base") ?? "2", "--source-ip-base"),
   };
+  if (options.hotfixMode === "reload" && options.hotfixCandidates.length < 2) {
+    throw new Error("--hotfix-mode reload requires at least two --hotfix-candidates");
+  }
+  if (options.sourceIpBase + options.rounds - 1 > 254) {
+    throw new Error("--source-ip-base plus --rounds must stay within 127.0.0.254");
+  }
   return options;
 }
 
@@ -1103,6 +1369,7 @@ function canConnect(host, port) {
 }
 
 function readText(file) { try { return readFileSync(file, "utf8"); } catch { return ""; } }
+function readRuntimeLogs(runtime) { return `${readText(runtime.stdoutPath)}\n${readText(runtime.stderrPath)}`; }
 function maxMatches(text, regex) { return max([...text.matchAll(regex)].map((match) => Number(match[1]))); }
 function onceExit(child) { return new Promise((resolve) => child.once("exit", resolve)); }
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }

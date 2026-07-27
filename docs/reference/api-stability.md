@@ -151,3 +151,10 @@ npm run verify:core-api
 - Hotfix只允许通过`#tiangz/model`使用稳定类型，并只提交方法实现与Handler绑定；不提供字段migration或Model reload API。
 - 新增Hotfix staging、prototype/Handler事务提交、失败回滚、隔离V8预检和兼容指纹校验。
 - `app/core/public.ts`新增Hotfix行为声明所需Stable API；变更由`public-api.lock.json`锁定。
+
+### 0.3.10-alpha.6
+
+- 新增`systemFor` Stable API与Generated Bootstrap必需System注册；公开System签名由codegen冻结为Model声明，签名变化要求重启Process。
+- PlayerUnit、LoginComponent与ItemComponent迁移到ET风格Hotfix System，Model不再手写抛错方法空壳。
+- 新增3000玩家基线与1Hz Reload A/B runner和正式报告；90/90次Reload成功，Move吞吐无可见下降。
+- Developer Tools升级到`v0.11.0`，VS Code与CI共同识别`@systemFor`和生成入口。

@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.3.10-alpha.5`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
+当前开发版本为 `0.3.10-alpha.6`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
@@ -219,7 +219,7 @@ export class LoginMgrScene extends EntryScene {
 }
 ```
 
-运行`npm run codegen`后，生成器按照`codegen.config.json`扫描Model入口Scene、Hotfix Handler和行为补丁，分别生成`app/generated/bootstrap/scenes.ts`、`app/generated/hotfix/handlers.ts`与`patches.ts`。无需手工维护Scene类型表、msgcode-to-handler表或补丁入口。
+运行`npm run codegen`后，生成器按照`codegen.config.json`扫描Model入口Scene、Hotfix Handler和`@systemFor`业务System，生成Model启动入口、Hotfix入口以及`app/generated/bootstrap/systems/*.d.ts`方法声明。Model只写状态，调用方仍可直接使用`player.Move()`，无需手工维护类型表、Handler表、补丁入口或空方法。
 
 ## Model与Hotfix
 
@@ -293,7 +293,7 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 TiangZ 目前有两个职责独立的 VS Code 插件，均尚未发布到 Marketplace：
 
 - [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；主工程当前使用 `v0.12.0`。
-- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成；主工程当前使用`v0.9.1`，会检查Model/Hotfix依赖边界与新生成入口。
+- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component、System与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成；主工程当前使用`v0.11.0`，会检查Model/Hotfix依赖边界、`@systemFor`与生成入口。
 
 两个插件分开维护，未来可以通过 Extension Pack 一键安装。当前需分别克隆仓库，执行 `npm install`、`npm run check` 和 `npm run package:extension`，再从各仓库 `dist` 目录安装 VSIX。
 

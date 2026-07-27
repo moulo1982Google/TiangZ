@@ -9,7 +9,7 @@ TiangZ保持“一Process一V8、多EntryScene”。Process是V8、TS业务线�
 ```text
 Model Bundle                     Hotfix Bundle
   状态、字段、构造、继承           Handler与领域方法实现
-  Scene/Entity/Component身份       @hotfixFor(ModelType)行为补丁
+  Scene/Entity/Component身份       @systemFor(ModelType)业务System
   Core与协议稳定形状               可重复构建的业务行为
   Process启动后永久冻结            兼容时允许在线替换
 ```
@@ -24,7 +24,8 @@ Model Bundle                     Hotfix Bundle
 - `app/hotfix`：可热更的Handler和领域方法实现。
 - `app/model/public.ts`：Hotfix唯一允许导入的Model入口，对外包名是`#tiangz/model`。
 - `app/generated/bootstrap`：Model启动注册表。
-- `app/generated/hotfix`：Hotfix Handler与行为补丁注册入口。
+- `app/generated/hotfix`：Hotfix Handler与System注册入口。
+- `app/generated/bootstrap/systems`：从System公开方法生成并合并到Model的类型声明；禁止手改。
 
 Hotfix不得深层导入Model或Core。Model/Core不得反向依赖业务Hotfix。`verify:hotfix-boundary`与Developer Tools共同检查这条依赖方向。
 
@@ -50,31 +51,33 @@ Model manifest冻结以下内容：
 
 Hotfix manifest必须逐项匹配这些冻结值。`npm run build:hotfix`只重建Hotfix；只要Model源指纹改变就立即失败，并要求完整构建、部署和Process重启。没有忽略兼容检查的参数。Hotfix-only构建不会覆盖正在服务的`dist/hotfix.js`，而是输出`dist/hotfix-candidates/<内容哈希>/hotfix.js`与manifest，避免Runtime读到写了一半的候选。
 
-## 行为补丁
+## 业务System
 
-Model中的类型拥有真实实例和状态。Hotfix实现类只提供方法：
+Model中的类型拥有真实实例和状态，不再手写只会抛错的方法空壳。Hotfix System提供生命周期和领域方法：
 
 ```ts
 // app/model/demo/login/LoginComponent.ts
 export class LoginComponent extends Component {
   protected loginCount = 0;
-
-  Login(account: string): LoginResult {
-    throw new Error("Login Hotfix is not installed");
-  }
 }
 
-// app/hotfix/demo/login/LoginComponentHotfix.ts
-@hotfixFor(LoginComponent)
-export class LoginComponentHotfix extends LoginComponent {
-  override Login(account: string): LoginResult {
+// app/hotfix/demo/login/LoginComponentSystem.ts
+@systemFor(LoginComponent)
+export class LoginComponentSystem extends LoginComponent {
+  protected override Awake(): void {
+    this.loginCount = 0;
+  }
+
+  Login(account: string): LoginResult {
     this.loginCount += 1;
     return { account, loginCount: this.loginCount };
   }
 }
 ```
 
-`LoginComponentHotfix`永远不会被实例化。提交时，框架只把它的prototype方法安装到Model的规范prototype上，因此已经存在的Component实例和Rust handle都不重建。
+`LoginComponentSystem`永远不会被实例化。codegen读取其公开方法，为Model生成声明，因此调用方仍写`component.Login(account)`；运行时直接把System的prototype描述符安装到Model prototype，不增加每次调用的Registry查找。`Awake`、`OnDestroy`等受保护生命周期同样由System提供，但不会生成公开API。
+
+System在第一代安装后成为必需项。后续候选漏掉任意必需System，整次提交都会被拒绝并保留旧generation，不能让生命周期悄悄退回Model基类的空实现。Reload不会给现有对象重跑`Awake`；新对象使用新System的`Awake`，现有对象的普通方法和未来`OnDestroy`使用当前generation。
 
 实现类禁止声明：
 
@@ -128,7 +131,7 @@ Runtime启动时先验证两个manifest和实际文件SHA-256，再进行隔离�
 - 现有PlayerUnit在不改变InstanceId和Native handle时获得上下反转Move实现；
 - 边界与事务自测。
 
-尚未完成的是3000玩家有连接负载、慢RPC、Timer与连续多generation长稳验收，以及Grafana面板。Reload已经可用，但仍然不能直接覆盖`dist/hotfix.js`；必须构建不可变候选目录并通过Watcher命令提交。
+3000玩家基线与1Hz Reload A/B已经完成，90/90次切换成功且Move吞吐无可见下降，但Probe尾延迟约增加三成。尚未完成的是慢RPC、Timer与连续多generation长稳验收。Reload仍然不能直接覆盖`dist/hotfix.js`；必须构建不可变候选目录并通过Watcher命令提交。
 
 ## Timer、Update与状态
 
@@ -169,7 +172,7 @@ cargo build --locked --bin TiangZ
 # 部署完整Model/Hotfix配对并重启Process
 ```
 
-普通业务开发者只需记住：状态写在Model，行为优先写在Hotfix；Hotfix实现类没有字段和构造；`build:hotfix`拒绝时不要绕过，它是在告诉你这次变更必须重启。
+普通业务开发者只需记住：状态写在Model，行为写在Hotfix System；System没有字段和构造；公开方法签名变化会改变生成的Model声明，因此必须完整构建并重启。`build:hotfix`拒绝时不要绕过，它是在告诉你这次变更已经越过纯行为边界。
 
 正式服发布只传输`dist/hotfix-candidates/<hash>`完整目录。候选必须先上传到临时目录，完成后原子重命名到目标hash目录；不得逐文件覆盖`dist/hotfix.js`。当前多机器仍需分别上传并向每台Watcher提交，同服跨机器Prepare/Commit协调器尚未实现。
 

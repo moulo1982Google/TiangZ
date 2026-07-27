@@ -61,6 +61,8 @@
 - `@sessionRpcHandler(SceneType, descriptor)` / `@sessionMessageHandler(...)`：绑定客户端连接消息，Handler 直接取得 Session。
 - `@unitRpcHandler(UnitType, descriptor)` / `@unitMessageHandler(...)`：绑定 Unit 消息，Handler 直接取得 Unit。
 - `@scene/@component`：注册 Scene 与 Component 元数据。Session 和 Unit 默认使用 ordered mailbox，业务不需要 `@actor`。
+- `@systemFor(ModelType)`：声明必需的Hotfix业务System；公开方法由codegen合并到Model类型，受保护的`Awake/OnDestroy`参与生命周期。System不能声明字段、构造或静态成员。
+- `@hotfixFor(ModelType)`：兼容旧版可选方法补丁；新业务默认使用`@systemFor`，因为它会校验每个generation都提供完整System。
 
 `@rpc/@message` 方法装饰器继续兼容小型 Scene。业务增长后优先使用独立 Handler class；Scene、Session、Unit 三类 Handler 分别表达目标身份，不要求开发者理解内部 Actor 基类。相同目标类型、相同 msgcode 重复绑定会在启动前抛错。
 
