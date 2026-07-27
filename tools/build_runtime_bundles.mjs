@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -7,14 +7,32 @@ import { build } from "esbuild";
 
 const root = path.resolve(import.meta.dirname, "..");
 const dist = path.join(root, "dist");
-const hotfixCandidateFile = path.join(dist, "hotfix.candidate.js");
 const bench = process.argv.includes("--bench");
 const debug = process.argv.includes("--debug");
 const hotfixOnly = process.argv.includes("--hotfix-only");
+const requestedHotfixOut = argumentValue("--hotfix-out");
+const requestedHotfixEntry = argumentValue("--hotfix-entry");
 const buildMode = bench ? "bench" : "demo";
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 
-await rm(path.join(dist, "main.js"), { force: true });
+if ((requestedHotfixOut || requestedHotfixEntry) && !hotfixOnly) {
+  throw new Error("--hotfix-out and --hotfix-entry require --hotfix-only");
+}
+
+const automaticCandidate = hotfixOnly && !requestedHotfixOut;
+const hotfixOutputDirectory = hotfixOnly
+  ? path.resolve(root, requestedHotfixOut ?? "dist/hotfix-candidates/.building")
+  : dist;
+const hotfixCandidateFile = path.join(hotfixOutputDirectory, "hotfix.candidate.js");
+const hotfixOutputFile = path.join(hotfixOutputDirectory, "hotfix.js");
+const hotfixManifestFile = path.join(hotfixOutputDirectory, "hotfix.manifest.json");
+const hotfixEntry = requestedHotfixEntry
+  ? path.resolve(root, requestedHotfixEntry)
+  : path.join(root, bench ? "app/hotfix/main.bench.ts" : "app/hotfix/main.ts");
+
+if (!hotfixOnly) await rm(path.join(dist, "main.js"), { force: true });
+if (automaticCandidate) await rm(hotfixOutputDirectory, { recursive: true, force: true });
+await mkdir(hotfixOutputDirectory, { recursive: true });
 await rm(hotfixCandidateFile, { force: true });
 
 const common = {
@@ -54,13 +72,13 @@ if (hotfixOnly) {
 
 await build({
   ...common,
-  entryPoints: [path.join(root, bench ? "app/hotfix/main.bench.ts" : "app/hotfix/main.ts")],
+  entryPoints: [hotfixEntry],
   outfile: hotfixCandidateFile,
   plugins: [{
     name: "immutable-model-boundary",
     setup(buildApi) {
       buildApi.onResolve({ filter: /^#tiangz\/model$/ }, () => ({
-        path: "./model.js",
+        path: relativeModulePath(path.dirname(hotfixOutputFile), path.join(dist, "model.js")),
         external: true,
       }));
       buildApi.onResolve({ filter: /^#tiangz\/model\// }, (args) => ({
@@ -102,11 +120,17 @@ const hotfixManifest = {
 };
 
 if (!hotfixOnly) await writeJson(path.join(dist, "model.manifest.json"), modelManifest);
-await writeFile(path.join(dist, "hotfix.js"), hotfixBytes);
-await writeJson(path.join(dist, "hotfix.manifest.json"), hotfixManifest);
+await writeFile(hotfixOutputFile, hotfixBytes);
+await writeJson(hotfixManifestFile, hotfixManifest);
 await rm(hotfixCandidateFile, { force: true });
+let publishedDirectory = hotfixOutputDirectory;
+if (automaticCandidate) {
+  publishedDirectory = path.join(dist, "hotfix-candidates", hotfixManifest.hotfixHash.slice(0, 16));
+  await rm(publishedDirectory, { recursive: true, force: true });
+  await rename(hotfixOutputDirectory, publishedDirectory);
+}
 process.stdout.write(
-  `[build:runtime] ${buildMode} model=${modelManifest.modelFingerprint.slice(0, 12)} hotfix=${hotfixManifest.hotfixHash.slice(0, 12)}\n`,
+  `[build:runtime] ${buildMode} model=${modelManifest.modelFingerprint.slice(0, 12)} hotfix=${hotfixManifest.hotfixHash.slice(0, 12)} output=${path.relative(root, publishedDirectory).replaceAll(path.sep, "/")}\n`,
 );
 
 async function hashDirectory(directory, extension) {
@@ -155,4 +179,17 @@ function sha256(value) {
 
 async function writeJson(file, value) {
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function argumentValue(name) {
+  const prefix = `${name}=`;
+  const inline = process.argv.find((value) => value.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+function relativeModulePath(fromDirectory, target) {
+  const relative = path.relative(fromDirectory, target).replaceAll(path.sep, "/");
+  return relative.startsWith(".") ? relative : `./${relative}`;
 }

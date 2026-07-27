@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 #[cfg(test)]
@@ -28,8 +28,11 @@ use crate::host::{
     call_js_stop_process, call_js_update_binary, configure_host_scene_bridge, create_runtime,
     pump_js_event_loop_once, take_close_connection_requests,
 };
-use crate::hotfix::RuntimeBundles;
+use crate::hotfix::{HotfixInstallResult, RuntimeBundles};
 use crate::inspector::ProcessInspector;
+use crate::shutdown::{
+    ParentControlCommand, receive_parent_control, spawn_parent_control_receiver,
+};
 use crate::transport::{init_remote_transport, snapshot_remote_transport};
 use crate::transport_backend::{
     CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionWriters, EndpointContext, create_io_backend,
@@ -106,6 +109,31 @@ pub(crate) enum ProcessEvent {
     },
     HostSceneCompletion(HostSceneCompletion),
     Shutdown,
+}
+
+enum RuntimeControl {
+    ReloadHotfix {
+        candidate_directory: PathBuf,
+        requested_at: Instant,
+        response: tokio::sync::oneshot::Sender<std::result::Result<HotfixReloadReport, String>>,
+    },
+}
+
+/// Hotfix 控制面返回的分段结果，同时作为结构化日志与性能测试的稳定字段。 / Segmented Hotfix control result used by structured logs and performance tests.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HotfixReloadReport {
+    candidate_directory: String,
+    bundle_version: String,
+    generation: u64,
+    validation_ms: f64,
+    preflight_ms: f64,
+    barrier_wait_ms: f64,
+    begin_ms: f64,
+    candidate_eval_ms: f64,
+    commit_ms: f64,
+    reload_total_ms: f64,
+    status_json: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -433,6 +461,7 @@ pub async fn run_runtime_config(
         .event_queue_capacity
         .unwrap_or(DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY);
     let (event_tx, event_rx) = mpsc::sync_channel::<ProcessEvent>(event_queue_capacity);
+    let (runtime_control_tx, runtime_control_rx) = mpsc::channel::<RuntimeControl>();
     let queue_stats = Arc::new(ProcessQueueStats::new(event_queue_capacity));
     let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
     let event_tx = ProcessEventSender {
@@ -502,6 +531,7 @@ pub async fn run_runtime_config(
             known_scenes,
             runtime_bundles,
             event_rx,
+            runtime_control_rx,
             runtime_writers,
             runtime_queue_stats,
             host_runtime,
@@ -513,12 +543,48 @@ pub async fn run_runtime_config(
         result
     });
 
-    let runtime_exited_early = tokio::select! {
-        result = wait_for_shutdown_signal() => {
-            result?;
-            false
+    let mut parent_control = spawn_parent_control_receiver();
+    let shutdown_signal = wait_for_shutdown_signal();
+    tokio::pin!(shutdown_signal);
+    let runtime_exited_early = loop {
+        tokio::select! {
+            result = &mut shutdown_signal => {
+                result?;
+                break false;
+            }
+            _ = &mut runtime_exit_rx => break true,
+            command = receive_parent_control(&mut parent_control) => {
+                match command? {
+                    ParentControlCommand::Shutdown => break false,
+                    ParentControlCommand::Reload(candidate_directory) => {
+                        let candidate_directory = if candidate_directory.is_absolute() {
+                            candidate_directory
+                        } else {
+                            root.join(candidate_directory)
+                        };
+                        let (response, completed) = tokio::sync::oneshot::channel();
+                        runtime_control_tx
+                            .send(RuntimeControl::ReloadHotfix {
+                                candidate_directory,
+                                requested_at: Instant::now(),
+                                response,
+                            })
+                            .map_err(|_| anyhow::anyhow!("V8 runtime control channel is stopped"))?;
+                        tokio::spawn(async move {
+                            match completed.await {
+                                Ok(Ok(report)) => tracing::info!(
+                                    target: "tiangz::hotfix",
+                                    report = %serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()),
+                                    "Hotfix reload completed"
+                                ),
+                                Ok(Err(error)) => tracing::error!(target: "tiangz::hotfix", %error, "Hotfix reload rejected; active generation preserved"),
+                                Err(_) => tracing::warn!(target: "tiangz::hotfix", "Hotfix reload response was dropped during shutdown"),
+                            }
+                        });
+                    }
+                }
+            }
         }
-        _ = &mut runtime_exit_rx => true,
     };
     health_state.mark_stopping();
     shutdown_all_connections(&writers);
@@ -557,7 +623,6 @@ async fn wait_for_shutdown_signal() -> Result<()> {
         tokio::select! {
             result = tokio::signal::ctrl_c() => result?,
             _ = ctrl_break.recv() => {},
-            result = crate::shutdown::wait_for_parent_control() => result?,
         }
     }
     #[cfg(unix)]
@@ -568,7 +633,6 @@ async fn wait_for_shutdown_signal() -> Result<()> {
         tokio::select! {
             result = tokio::signal::ctrl_c() => result?,
             _ = terminate.recv() => {},
-            result = crate::shutdown::wait_for_parent_control() => result?,
         }
     }
     Ok(())
@@ -583,6 +647,7 @@ fn run_process_runtime(
     known_scenes: Vec<SceneConfig>,
     runtime_bundles: RuntimeBundles,
     event_rx: mpsc::Receiver<ProcessEvent>,
+    runtime_control_rx: mpsc::Receiver<RuntimeControl>,
     writers: ConnectionWriters,
     queue_stats: Arc<ProcessQueueStats>,
     host_runtime: tokio::runtime::Handle,
@@ -638,6 +703,7 @@ fn run_process_runtime(
     let entrypoints = runtime_bundles
         .install_initial(&js_event_loop, &mut runtime)
         .context("failed to install initial Model/Hotfix generation")?;
+    health_state.record_initial_hotfix(runtime_bundles.bundle_version().to_string());
 
     let process_config = json!({
         "process": process,
@@ -670,7 +736,69 @@ fn run_process_runtime(
         .map(|process| process.accumulated_cpu_time())
         .unwrap_or_default();
     let mut last_resource_sample_at = Instant::now();
+    let mut active_generation = 1_u64;
+    let mut pending_async = false;
+    let mut pending_reload: Option<(PathBuf, Instant, tokio::sync::oneshot::Sender<_>)> = None;
+    let hotfix_reload_timeout = Duration::from_millis(process.lifecycle.hotfix_reload_timeout_ms);
     loop {
+        if pending_reload.is_none()
+            && let Ok(RuntimeControl::ReloadHotfix {
+                candidate_directory,
+                requested_at,
+                response,
+            }) = runtime_control_rx.try_recv()
+        {
+            pending_reload = Some((candidate_directory, requested_at, response));
+        }
+
+        if pending_reload
+            .as_ref()
+            .is_some_and(|(_, requested_at, _)| requested_at.elapsed() >= hotfix_reload_timeout)
+            && let Some((candidate_directory, _, response)) = pending_reload.take()
+        {
+            health_state.record_hotfix_failure();
+            let _ = response.send(Err(format!(
+                "Hotfix candidate {} did not reach a safe commit barrier within {}ms",
+                candidate_directory.display(),
+                hotfix_reload_timeout.as_millis(),
+            )));
+            continue;
+        }
+
+        if !pending_async
+            && let Some((candidate_directory, requested_at, response)) = pending_reload.take()
+        {
+            let next_generation = active_generation + 1;
+            let result = execute_hotfix_reload(
+                &runtime_bundles,
+                &js_event_loop,
+                &mut runtime,
+                &entrypoints,
+                &candidate_directory,
+                requested_at,
+                next_generation,
+                crate::logging::typescript_min_level(&process.logging),
+            );
+            if result.is_ok() {
+                active_generation = next_generation;
+            }
+            match &result {
+                Ok(report) => health_state.record_hotfix_success(
+                    report.generation,
+                    report.bundle_version.clone(),
+                    report.validation_ms,
+                    report.preflight_ms,
+                    report.barrier_wait_ms,
+                    report.candidate_eval_ms,
+                    report.commit_ms,
+                    report.reload_total_ms,
+                ),
+                Err(_) => health_state.record_hotfix_failure(),
+            }
+            let _ = response.send(result.map_err(|error| format!("{error:#}")));
+            continue;
+        }
+
         let mut packed_events = vec![0; 4];
         let mut event_count = 0_u32;
         let mut shutdown_requested = false;
@@ -712,7 +840,7 @@ fn run_process_runtime(
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
         }
-        let _pending_async = flush_runtime_batch(
+        pending_async = flush_runtime_batch(
             &js_event_loop,
             &mut runtime,
             &entrypoints,
@@ -734,6 +862,12 @@ fn run_process_runtime(
         }
     }
 
+    if let Some((_, _, response)) = pending_reload {
+        let _ = response.send(Err(
+            "Process stopped before Hotfix reached its commit barrier".to_string(),
+        ));
+    }
+
     let stop_result = call_js_stop_process(&js_event_loop, &mut runtime, &entrypoints)
         .context("failed to stop TypeScript process")?;
     close_requested_connections(take_close_connection_requests(), &writers);
@@ -747,6 +881,71 @@ fn run_process_runtime(
         .remove_gc_epilogue_callback(v8_gc_epilogue, gc_metrics_ptr);
 
     Ok(())
+}
+
+/// 在安全屏障内完成候选复核、隔离预检和正式 V8 提交；调用期间不从业务队列取新帧。
+///
+/// Revalidates, preflights, and commits one candidate inside the switch barrier. The caller does
+/// not dequeue new business frames while this function runs, so queued ingress remains bounded in
+/// Rust and observes either the old or the new handler table, never a partially committed table.
+#[allow(clippy::too_many_arguments)]
+fn execute_hotfix_reload(
+    runtime_bundles: &RuntimeBundles,
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut deno_core::JsRuntime,
+    entrypoints: &crate::host::JsEntrypoints,
+    candidate_directory: &Path,
+    requested_at: Instant,
+    generation: u64,
+    typescript_log_level: u8,
+) -> Result<HotfixReloadReport> {
+    let candidate_directory = candidate_directory.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve Hotfix candidate {}",
+            candidate_directory.display()
+        )
+    })?;
+    let validation_at = Instant::now();
+    let candidate = runtime_bundles.load_candidate(&candidate_directory)?;
+    let validation_ms = elapsed_ms(validation_at);
+
+    let preflight_at = Instant::now();
+    {
+        let mut preflight_runtime = {
+            let _guard = js_event_loop.enter();
+            create_runtime(false, typescript_log_level)
+                .context("failed to create isolated Hotfix reload preflight V8")?
+        };
+        runtime_bundles
+            .preflight_candidate(js_event_loop, &mut preflight_runtime, &candidate)
+            .context("isolated Hotfix reload preflight failed")?;
+    }
+    let preflight_ms = elapsed_ms(preflight_at);
+    let install: HotfixInstallResult =
+        candidate.install(js_event_loop, runtime, entrypoints, generation)?;
+    Ok(HotfixReloadReport {
+        candidate_directory: candidate_directory.display().to_string(),
+        bundle_version: install.bundle_version,
+        generation,
+        validation_ms,
+        preflight_ms,
+        barrier_wait_ms: (elapsed_ms(requested_at)
+            - validation_ms
+            - preflight_ms
+            - install.timings.begin_ms
+            - install.timings.candidate_eval_ms
+            - install.timings.commit_ms)
+            .max(0.0),
+        begin_ms: install.timings.begin_ms,
+        candidate_eval_ms: install.timings.candidate_eval_ms,
+        commit_ms: install.timings.commit_ms,
+        reload_total_ms: elapsed_ms(requested_at),
+        status_json: install.status_json,
+    })
+}
+
+fn elapsed_ms(started_at: Instant) -> f64 {
+    started_at.elapsed().as_secs_f64() * 1_000.0
 }
 
 // The batch boundary deliberately receives all mutable interval state together

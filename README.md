@@ -171,6 +171,7 @@ RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClie
 - `process.nativeData`：Demo 的 Rust Native Entity 诊断配置，只观测标量访问，不控制数据是否下沉。
 - `process.scheduling`：Runtime Pump 调度模式及队列参数；默认 `adaptive`。
 - `process.lifecycle.stopTimeoutMs`：优雅停机等待上限，默认 10000ms。
+- `process.lifecycle.hotfixReloadTimeoutMs`：Hotfix等待安全屏障的上限，默认30000ms；超时保留旧generation。
 - `process.debug`：V8 Inspector 配置。该对象可省略；存在时必须设置 `inspectorPort`。远程监听还必须显式设置 `allowRemote: true`。
 - `process.observability`：延迟采样等可观测性配置；不需要时可以省略。
 - `scenes`：当前进程实际创建的入口 Scene。
@@ -230,9 +231,12 @@ npm run build
 
 # 只修改app/hotfix行为：只重建Hotfix候选
 npm run build:hotfix
+
+# 开发模式：初次构建后监听Hotfix源码，保存即自动构建候选并Reload
+npm run dev -- configs/local/StartMachine.json
 ```
 
-Hotfix只能从`#tiangz/model`导入稳定类型。`build:hotfix`会比较Model源码、协议锁、Stable Core API和Native schema指纹；任何一项变化都直接拒绝，不支持强制绕过。当前已完成双Bundle、隔离预检、暂存、prototype/Handler事务提交和失败回滚；运行中管理命令与完整有连接验收仍在实现，因此不能把“替换hotfix.js文件”当成已完成的在线热更操作。详见[Process级TypeScript热更设计](docs/design/typescript-hot-reload.md)。
+Hotfix只能从`#tiangz/model`导入稳定类型。`build:hotfix`会比较Model源码、协议锁、Stable Core API和Native schema指纹；任何一项变化都直接拒绝，不支持强制绕过。命令输出按内容哈希命名的`dist/hotfix-candidates/<hash>`目录，不覆盖当前Bundle。Watcher运行时输入`reload <候选目录>`会让每个Process独立预检并在安全屏障提交；失败或超时继续使用旧generation。`npm run dev`只是把codegen、类型检查、候选构建和Reload自动化，V8仍只执行生成的JavaScript；该命令只用于本地开发，正式部署必须传输完整不可变候选目录。完整有连接压力验收仍待执行，不能直接替换`dist/hotfix.js`。详见[Process级TypeScript热更设计](docs/design/typescript-hot-reload.md)。
 
 ## Scene 调用
 

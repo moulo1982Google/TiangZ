@@ -106,29 +106,11 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
 
   /** 校验输入并更新 Rust 移动意图；本函数不会立即移动或广播。 / Validates input and updates Rust movement intent; it does not broadcast or move immediately. */
   Move(request: MovePlayer): boolean {
-    this.validateMoveInput(request);
-    return NativeData.SetMovementInput(
-      this.GetComponent(NativeUnitRef).Handle,
-      request.inputX,
-      request.inputY,
-      request.sequence,
-    );
+    void request;
+    throw new Error("PlayerUnit.Move hotfix is not installed");
   }
 
   private ResetMovement(): void {
     NativeData.ResetMovement(this.GetComponent(NativeUnitRef).Handle);
-  }
-
-  private validateMoveInput(request: MovePlayer): void {
-    if (
-      !Number.isInteger(request.inputX) ||
-      !Number.isInteger(request.inputY) ||
-      Math.abs(request.inputX) > 1 ||
-      Math.abs(request.inputY) > 1
-    ) {
-      throw new Error(
-        `invalid movement input: ${request.inputX},${request.inputY}`,
-      );
-    }
   }
 }

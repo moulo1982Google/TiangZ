@@ -1,38 +1,118 @@
-//! 提供 Watcher 监管使用的跨平台父进程到子进程停机控制。 / Shares the cross-platform parent-to-child shutdown control used by Watcher supervision.
+//! 提供 Watcher 与 Process 共用的跨平台父子控制协议。 / Shares the cross-platform parent-child control protocol used by Watcher and Process.
 
 use std::ffi::OsStr;
 use std::io::BufRead;
+use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{Result, bail};
+use tokio::sync::mpsc;
 
-/// 等待父 Watcher 安装的私有 stdin 停机管道。
+/// 父进程可以要求子进程优雅停机，或从一个不可变候选目录在线加载 Hotfix。
 ///
-/// 直接启动不会设置 `TIANGZ_WATCHER_CONTROL`，因此该 Future 会保持 pending，
-/// 终端信号继续拥有控制权。受监管进程把一行消息和 EOF 都视为停机请求：
-/// EOF 表示父进程已经消失，继续运行会产生无人管理的进程。
-/// 启用此模式时，进程宿主以外的代码不得消费 stdin。
+/// A parent can request graceful shutdown or an online Hotfix reload from an immutable candidate
+/// directory. This protocol is intentionally line based so Watcher, tests, and shell tooling use
+/// the same cross-platform transport without opening another administrative port.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) enum ParentControlCommand {
+    Shutdown,
+    Reload(PathBuf),
+}
+
+pub(crate) type ParentControlMessage = std::result::Result<ParentControlCommand, String>;
+
+/// 当 `TIANGZ_WATCHER_CONTROL=stdin` 时启动唯一的阻塞读取线程。
 ///
-/// Waits for the private stdin shutdown pipe installed by a parent Watcher.
+/// EOF 等价于 `shutdown`，因为受监管子进程失去父进程后不可继续成为孤儿。调用方必须只
+/// 创建一个 Receiver；其他代码不得再读取 stdin。
 ///
-/// Direct launches do not set `TIANGZ_WATCHER_CONTROL`, so this future remains
-/// pending and terminal signals retain control. A supervised process treats
-/// both a line and EOF as a shutdown request: EOF means its parent disappeared,
-/// and continuing would leave an unmanaged runtime. Code outside the process
-/// host must never consume stdin while this mode is enabled.
-pub async fn wait_for_parent_control() -> Result<()> {
+/// Starts the single blocking reader thread when `TIANGZ_WATCHER_CONTROL=stdin`. EOF is treated as
+/// shutdown because a supervised child must not outlive its parent. The caller must create only one
+/// receiver, and no other code may consume stdin afterwards.
+pub(crate) fn spawn_parent_control_receiver()
+-> Option<mpsc::UnboundedReceiver<ParentControlMessage>> {
     if std::env::var_os("TIANGZ_WATCHER_CONTROL").as_deref() != Some(OsStr::new("stdin")) {
-        std::future::pending::<()>().await;
-        return Ok(());
+        return None;
     }
 
-    let (sender, receiver) = tokio::sync::oneshot::channel();
+    Some(spawn_stdin_control_receiver())
+}
+
+/// 为顶层 Watcher 启动运维 stdin；Watcher 自己不需要父进程环境变量。 / Starts operator stdin for a top-level Watcher, which does not require a parent-control environment variable.
+pub(crate) fn spawn_stdin_control_receiver() -> mpsc::UnboundedReceiver<ParentControlMessage> {
+    let (sender, receiver) = mpsc::unbounded_channel();
     std::thread::spawn(move || {
-        let mut line = String::new();
-        let result = std::io::stdin().lock().read_line(&mut line).map(|_| ());
-        let _ = sender.send(result);
+        let stdin = std::io::stdin();
+        let mut lines = stdin.lock().lines();
+        loop {
+            match lines.next() {
+                Some(Ok(line)) if line.trim().is_empty() => continue,
+                Some(Ok(line)) => {
+                    if sender.send(parse_parent_control(&line)).is_err() {
+                        break;
+                    }
+                }
+                Some(Err(error)) => {
+                    let _ = sender.send(Err(format!("failed to read parent control: {error}")));
+                    break;
+                }
+                None => {
+                    let _ = sender.send(Ok(ParentControlCommand::Shutdown));
+                    break;
+                }
+            }
+        }
     });
     receiver
-        .await
-        .context("parent shutdown pipe task stopped")?
-        .context("failed to read parent shutdown pipe")
+}
+
+/// 等待下一条父进程命令；未启用私有 stdin 控制时永久 pending。
+///
+/// Waits for the next parent command and remains pending forever when private stdin control is not
+/// enabled. Keeping this behavior lets direct terminal launches retain Ctrl+C ownership.
+pub(crate) async fn receive_parent_control(
+    receiver: &mut Option<mpsc::UnboundedReceiver<ParentControlMessage>>,
+) -> Result<ParentControlCommand> {
+    let Some(receiver) = receiver.as_mut() else {
+        std::future::pending::<()>().await;
+        unreachable!("pending parent control future returned")
+    };
+    match receiver.recv().await {
+        Some(Ok(command)) => Ok(command),
+        Some(Err(error)) => bail!(error),
+        None => Ok(ParentControlCommand::Shutdown),
+    }
+}
+
+fn parse_parent_control(line: &str) -> ParentControlMessage {
+    let command = line.trim();
+    if command.eq_ignore_ascii_case("shutdown") {
+        return Ok(ParentControlCommand::Shutdown);
+    }
+    if let Some(path) = command.strip_prefix("reload ").map(str::trim)
+        && !path.is_empty()
+    {
+        return Ok(ParentControlCommand::Reload(PathBuf::from(path)));
+    }
+    Err(format!(
+        "unknown parent control command: {command}; expected shutdown or reload <candidate-directory>"
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ParentControlCommand, parse_parent_control};
+    use std::path::PathBuf;
+
+    #[test]
+    fn parses_shutdown_and_reload_without_losing_spaces() {
+        assert_eq!(
+            parse_parent_control("shutdown\n").unwrap(),
+            ParentControlCommand::Shutdown
+        );
+        assert_eq!(
+            parse_parent_control("reload E:\\build output\\candidate v2\n").unwrap(),
+            ParentControlCommand::Reload(PathBuf::from("E:\\build output\\candidate v2"))
+        );
+        assert!(parse_parent_control("reload").is_err());
+    }
 }

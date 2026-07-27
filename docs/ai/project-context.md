@@ -241,13 +241,15 @@ Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tian
 
 ## 当前未完成和明确暂缓
 
-2026-07-26完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1、R3和R4。`0.3.10-alpha.5`已完成R2的Model/Hotfix双Bundle、指纹兼容检查、隔离V8预检、staging和prototype/Handler事务回滚基础。当前准入阻塞项是运行中触发入口、Rust投递屏障、有连接/慢RPC/Timer与连续切换验收。Developer Tools `v0.9.1`已发布并由主仓库锁定，VS Code与CLI共同检查Model/Hotfix依赖边界和新生成入口。
+2026-07-26完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1、R3和R4。`0.3.10-alpha.5`已完成R2的Model/Hotfix双Bundle、指纹兼容检查、隔离V8预检、staging、prototype/Handler事务回滚、Watcher Reload、Rust有界投递屏障、30秒默认超时与Prometheus分段指标。5个拆分Process已连续提交generation 2、3并拒绝损坏候选；当前准入阻塞项缩小为3000玩家有连接负载、慢RPC、Timer与连续切换长稳验收。Developer Tools `v0.9.1`已发布并由主仓库锁定，VS Code与CLI共同检查Model/Hotfix依赖边界和新生成入口。
 
 性能回归职责必须分层：`verify:perf` 比较三轮中位数吞吐、p99与错误；`test:backpressure` 验证有界队列和生产者等待；长稳测试判断RSS/V8 Heap趋势。不要把短时RSS噪声或故意过载指标混入普通性能基线。
 
 Cocos Demo完整类型检查依赖编辑器生成的`cocos_client2D/temp/tsconfig.cocos.json`和`cc`类型，不得把该缓存提交或复制到CI。`typecheck:cocos-demo`在编辑器环境执行完整tsc，在干净Linux/CI环境执行入口bundle检查；引擎无关Client SDK始终由`typecheck:cocos-net`完整检查。
 
 热更粒度固定为整个Process的TS行为世界，而不是单个Scene，也不为每个EntryScene增加V8。TS分为绝对不可热更的Model和可热更Hotfix：Model拥有字段、构造、继承和稳定类型，Process运行中不存在Model reload API；Hotfix只提交方法与Handler。候选先在隔离V8预检，再在当前V8暂存；第一版暂停入站并等待在途任务归零后原子提交，不做字段migration或双generation长期并存。任何Model/Core/协议/Native schema变化都必须重启Process。详见[热更设计](../design/typescript-hot-reload.md)。
+
+本地开发可使用`npm run dev -- configs/<环境>/StartMachine.json`：开发宿主初次完整构建并启动Watcher，随后仅监听`app/hotfix`，自动串行执行生成入口、类型检查、不可变候选构建和Reload。它不改变生产模型，不监听Model，也不允许V8直接执行TS；正式部署仍需分发完整候选目录。Developer Tools `0.10.0`源码增加对应启动/停止命令和`tiangz.performance.unstable-shape`黄色建议，主仓库依赖只能在插件提交并发布标签后更新。
 
 Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部署仍需补 node/windows exporter、通知路由和长期存储策略，这些属于Phase 5，不阻塞`0.3.10`框架准入。
 

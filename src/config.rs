@@ -60,12 +60,15 @@ pub struct ProcessLoggingConfig {
 pub struct ProcessLifecycleConfig {
     #[serde(default = "default_stop_timeout_ms")]
     pub stop_timeout_ms: u64,
+    #[serde(default = "default_hotfix_reload_timeout_ms")]
+    pub hotfix_reload_timeout_ms: u64,
 }
 
 impl Default for ProcessLifecycleConfig {
     fn default() -> Self {
         Self {
             stop_timeout_ms: default_stop_timeout_ms(),
+            hotfix_reload_timeout_ms: default_hotfix_reload_timeout_ms(),
         }
     }
 }
@@ -329,6 +332,10 @@ fn default_stop_timeout_ms() -> u64 {
     10_000
 }
 
+fn default_hotfix_reload_timeout_ms() -> u64 {
+    30_000
+}
+
 fn default_max_catch_up_steps() -> usize {
     2
 }
@@ -435,6 +442,9 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     }
     if !(100..=120_000).contains(&config.process.lifecycle.stop_timeout_ms) {
         bail!("process lifecycle.stopTimeoutMs must be between 100 and 120000");
+    }
+    if !(100..=120_000).contains(&config.process.lifecycle.hotfix_reload_timeout_ms) {
+        bail!("process lifecycle.hotfixReloadTimeoutMs must be between 100 and 120000");
     }
     if !config.process.network.uring_entries.is_power_of_two()
         || !(64..=32_768).contains(&config.process.network.uring_entries)
@@ -865,7 +875,8 @@ mod tests {
                     "maxCatchUpSteps": 3
                 },
                 "lifecycle": {
-                    "stopTimeoutMs": 30000
+                    "stopTimeoutMs": 30000,
+                    "hotfixReloadTimeoutMs": 45000
                 }
             }"#,
         )
@@ -873,11 +884,13 @@ mod tests {
         assert_eq!(overridden.game.fixed_update_ms, 100);
         assert_eq!(overridden.game.max_catch_up_steps, 3);
         assert_eq!(overridden.lifecycle.stop_timeout_ms, 30_000);
+        assert_eq!(overridden.lifecycle.hotfix_reload_timeout_ms, 45_000);
 
         let defaults: ProcessConfig = serde_json::from_str(r#"{ "name": "map2" }"#).unwrap();
         assert_eq!(defaults.game.fixed_update_ms, 50);
         assert_eq!(defaults.game.max_catch_up_steps, 2);
         assert_eq!(defaults.lifecycle.stop_timeout_ms, 10_000);
+        assert_eq!(defaults.lifecycle.hotfix_reload_timeout_ms, 30_000);
     }
 
     #[test]
@@ -913,6 +926,18 @@ mod tests {
     fn rejects_invalid_stop_timeout() {
         let mut process = process(None);
         process.lifecycle.stop_timeout_ms = 99;
+        let config = RuntimeConfig {
+            process,
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_hotfix_reload_timeout() {
+        let mut process = process(None);
+        process.lifecycle.hotfix_reload_timeout_ms = 99;
         let config = RuntimeConfig {
             process,
             scenes: vec![scene("map", 7100)],

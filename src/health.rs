@@ -23,6 +23,21 @@ pub(crate) struct ProcessHealthState {
     runtime_heartbeat_at: Mutex<Instant>,
     runtime_stale_after: Duration,
     observability_snapshot: Mutex<ProcessObservabilitySnapshot>,
+    hotfix_snapshot: Mutex<HotfixObservabilitySnapshot>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct HotfixObservabilitySnapshot {
+    active_generation: u64,
+    successes: u64,
+    failures: u64,
+    bundle_version: String,
+    validation_ms: f64,
+    preflight_ms: f64,
+    barrier_wait_ms: f64,
+    candidate_eval_ms: f64,
+    commit_ms: f64,
+    reload_total_ms: f64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -159,6 +174,10 @@ impl ProcessHealthState {
             runtime_heartbeat_at: Mutex::new(now),
             runtime_stale_after,
             observability_snapshot: Mutex::new(ProcessObservabilitySnapshot::default()),
+            hotfix_snapshot: Mutex::new(HotfixObservabilitySnapshot {
+                active_generation: 1,
+                ..HotfixObservabilitySnapshot::default()
+            }),
         }
     }
 
@@ -195,6 +214,52 @@ impl ProcessHealthState {
             .observability_snapshot
             .lock()
             .expect("observability snapshot lock poisoned") = snapshot;
+    }
+
+    /// 原子发布一次成功 Reload 的 generation 与分段耗时，供 Prometheus 和验收脚本读取。 / Atomically publishes one successful Reload generation and segmented timings for Prometheus and acceptance tests.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_hotfix_success(
+        &self,
+        generation: u64,
+        bundle_version: String,
+        validation_ms: f64,
+        preflight_ms: f64,
+        barrier_wait_ms: f64,
+        candidate_eval_ms: f64,
+        commit_ms: f64,
+        reload_total_ms: f64,
+    ) {
+        let mut snapshot = self
+            .hotfix_snapshot
+            .lock()
+            .expect("Hotfix observability lock poisoned");
+        snapshot.active_generation = generation;
+        snapshot.successes += 1;
+        snapshot.bundle_version = bundle_version;
+        snapshot.validation_ms = validation_ms;
+        snapshot.preflight_ms = preflight_ms;
+        snapshot.barrier_wait_ms = barrier_wait_ms;
+        snapshot.candidate_eval_ms = candidate_eval_ms;
+        snapshot.commit_ms = commit_ms;
+        snapshot.reload_total_ms = reload_total_ms;
+    }
+
+    /// 发布启动时安装的 generation 1，不把它计入在线 Reload 成功数。 / Publishes startup generation 1 without counting it as an online Reload success.
+    pub(crate) fn record_initial_hotfix(&self, bundle_version: String) {
+        let mut snapshot = self
+            .hotfix_snapshot
+            .lock()
+            .expect("Hotfix observability lock poisoned");
+        snapshot.active_generation = 1;
+        snapshot.bundle_version = bundle_version;
+    }
+
+    /// 记录被拒绝的候选，不改变 active generation。 / Records a rejected candidate without changing the active generation.
+    pub(crate) fn record_hotfix_failure(&self) {
+        self.hotfix_snapshot
+            .lock()
+            .expect("Hotfix observability lock poisoned")
+            .failures += 1;
     }
 
     fn observability_snapshot(&self) -> ProcessObservabilitySnapshot {
@@ -370,6 +435,11 @@ fn format_prometheus_metrics(process_name: &str, state: &ProcessHealthState) -> 
     let runtime_heartbeat_age_seconds = state.runtime_heartbeat_age().as_secs_f64();
     let uptime_seconds = state.started_at.elapsed().as_secs_f64();
     let snapshot = state.observability_snapshot();
+    let hotfix = state
+        .hotfix_snapshot
+        .lock()
+        .expect("Hotfix observability lock poisoned")
+        .clone();
     let mut output = String::new();
 
     writeln!(
@@ -450,8 +520,93 @@ fn format_prometheus_metrics(process_name: &str, state: &ProcessHealthState) -> 
     if let Some(native) = &snapshot.native_data {
         append_native_data_metrics_prometheus(&mut output, &safe_process_name, native);
     }
+    append_hotfix_metrics_prometheus(&mut output, &safe_process_name, &hotfix);
 
     output
+}
+
+fn append_hotfix_metrics_prometheus(
+    output: &mut String,
+    process_name: &str,
+    snapshot: &HotfixObservabilitySnapshot,
+) {
+    let bundle = snapshot
+        .bundle_version
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    for (name, help, metric_type, value) in [
+        (
+            "tiangz_hotfix_active_generation",
+            "Active Hotfix generation",
+            "gauge",
+            snapshot.active_generation as f64,
+        ),
+        (
+            "tiangz_hotfix_reload_successes_total",
+            "Successful Hotfix reloads",
+            "counter",
+            snapshot.successes as f64,
+        ),
+        (
+            "tiangz_hotfix_reload_failures_total",
+            "Rejected Hotfix reloads",
+            "counter",
+            snapshot.failures as f64,
+        ),
+        (
+            "tiangz_hotfix_validation_ms",
+            "Last Hotfix candidate validation milliseconds",
+            "gauge",
+            snapshot.validation_ms,
+        ),
+        (
+            "tiangz_hotfix_preflight_ms",
+            "Last Hotfix isolated preflight milliseconds",
+            "gauge",
+            snapshot.preflight_ms,
+        ),
+        (
+            "tiangz_hotfix_barrier_wait_ms",
+            "Last Hotfix barrier wait milliseconds",
+            "gauge",
+            snapshot.barrier_wait_ms,
+        ),
+        (
+            "tiangz_hotfix_candidate_eval_ms",
+            "Last Hotfix serving V8 evaluation milliseconds",
+            "gauge",
+            snapshot.candidate_eval_ms,
+        ),
+        (
+            "tiangz_hotfix_commit_ms",
+            "Last Hotfix transaction commit milliseconds",
+            "gauge",
+            snapshot.commit_ms,
+        ),
+        (
+            "tiangz_hotfix_reload_total_ms",
+            "Last Hotfix reload total milliseconds",
+            "gauge",
+            snapshot.reload_total_ms,
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}").expect("formatting Hotfix metric help");
+        writeln!(output, "# TYPE {name} {metric_type}").expect("formatting Hotfix metric type");
+        writeln!(output, "{name}{{process=\"{process_name}\"}} {value:.6}")
+            .expect("formatting Hotfix metric");
+    }
+    writeln!(
+        output,
+        "# HELP tiangz_hotfix_bundle_info Active Hotfix bundle information"
+    )
+    .expect("formatting Hotfix metric help");
+    writeln!(output, "# TYPE tiangz_hotfix_bundle_info gauge")
+        .expect("formatting Hotfix metric type");
+    writeln!(
+        output,
+        "tiangz_hotfix_bundle_info{{process=\"{process_name}\",bundle_version=\"{bundle}\"}} 1"
+    )
+    .expect("formatting Hotfix metric");
 }
 
 fn append_process_metrics_prometheus(
@@ -1629,6 +1784,26 @@ mod tests {
                 .contains("tiangz_process_runtime_heartbeat_age_seconds")
         );
         assert!(response.2.contains("process=\"map-demo\""));
+        assert!(
+            response
+                .2
+                .contains("tiangz_hotfix_active_generation{process=\"map-demo\"} 1")
+        );
+    }
+
+    #[test]
+    fn hotfix_metrics_preserve_active_generation_after_failure() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.record_initial_hotfix("v1".to_string());
+        state.record_hotfix_success(2, "v2".to_string(), 1.0, 2.0, 3.0, 4.0, 5.0, 15.0);
+        state.record_hotfix_failure();
+
+        let body = format_prometheus_metrics("map1", &state);
+        assert!(body.contains("tiangz_hotfix_active_generation{process=\"map1\"} 2"));
+        assert!(body.contains("tiangz_hotfix_reload_successes_total{process=\"map1\"} 1"));
+        assert!(body.contains("tiangz_hotfix_reload_failures_total{process=\"map1\"} 1"));
+        assert!(body.contains("bundle_version=\"v2\""));
+        assert!(body.contains("tiangz_hotfix_reload_total_ms{process=\"map1\"} 15.000000"));
     }
 
     #[test]

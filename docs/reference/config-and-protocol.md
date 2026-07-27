@@ -88,6 +88,8 @@
 
 `lifecycle.stopTimeoutMs` 控制 TS `onStop`、玩家保存等停机工作的最长等待时间，默认 `10000`，允许范围为 `100` 到 `120000`。超时会让进程以错误退出，不能静默假装保存成功。
 
+`lifecycle.hotfixReloadTimeoutMs`控制Reload等待Scene入口和异步Handler排空的最长时间，默认`30000`，范围同样为`100`到`120000`。超时只拒绝候选并保留旧generation，不会关闭Process或断开客户端。
+
 `nativeData` 只控制 Rust 权威实体数据的诊断输出：
 
 ```json

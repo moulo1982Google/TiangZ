@@ -152,7 +152,7 @@
         "native_data/demo/Item.native": "1e8eb6f3bc2f00a36c1e718ca45f6029ecfeed39ccc9fd303468e02785810926",
         "native_data/demo/MapOps.native": "fd867209c156b84dd7f949641f5f20dde01958e74bb44c99671d0e75a2cf2d77",
         "native_data/demo/Unit.native": "00c7d04dcc61f6dc6f8ced4a1d0ddc79c68003bbc4bf84a122d38a9c9dc709fd",
-        "package.json": "524b2b7ac1c5a952f916f60230f5f40dcf52084115cd8bda692f8b2b0302b812",
+        "package.json": "4184d765b36b35d8e5372a1b42c77fedaed38d9c831b696c4f5c605cfe5f85e2",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -279,7 +279,8 @@
             "app/hotfix/demo"
           ],
           "paths": [
-            "app/hotfix/demo/login/LoginComponentHotfix.ts"
+            "app/hotfix/demo/login/LoginComponentHotfix.ts",
+            "app/hotfix/demo/map/PlayerUnitHotfix.ts"
           ]
         },
         {
@@ -317,7 +318,7 @@
         "app/generated/bootstrap/scenes.ts": "f88ce598a822d0fa27509a14559ca48964898ac8aba7267d81f636d3b134a641",
         "app/generated/hotfix/handlers.bench.ts": "fe744e5cfd7b7f0340cb5c333ec275aef0ebedc79c45e2c77a37e7fbf41348ae",
         "app/generated/hotfix/handlers.ts": "bc8de6a80009b146dfd6e5a0a33f08f64fbba0fc5fbae8d5fa6757ec3dbec5f3",
-        "app/generated/hotfix/patches.ts": "87bfca4dc05b10d1b24dae838732d5803b6c1070d71f1872fdffac6c8004396e"
+        "app/generated/hotfix/patches.ts": "c6aa01709f434d7665c12d44e3101551b8df0230debf5bfecc460e81d41bb25f"
       },
       "outputRoots": [
         {

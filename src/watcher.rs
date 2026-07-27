@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 
 use crate::config::{StartMachineConfig, load_runtime_config};
+use crate::shutdown::{ParentControlCommand, receive_parent_control, spawn_stdin_control_receiver};
 
 struct ManagedChild {
     name: String,
@@ -104,7 +105,7 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
         });
     }
 
-    let trigger = wait_for_watcher_trigger(&mut children).await?;
+    let trigger = wait_for_watcher_trigger(root, &mut children).await?;
     tracing::info!(target: "tiangz::watcher", child_count = children.len(), "stopping child processes");
     for child in &mut children {
         request_graceful_shutdown(child);
@@ -134,9 +135,13 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
 ///
 /// Waits for either an operator shutdown signal or any child exit. This detects failures but
 /// deliberately does not implement automatic restart.
-async fn wait_for_watcher_trigger(children: &mut [ManagedChild]) -> Result<WatcherTrigger> {
+async fn wait_for_watcher_trigger(
+    root: &Path,
+    children: &mut [ManagedChild],
+) -> Result<WatcherTrigger> {
     let shutdown_signal = wait_for_shutdown_signal();
     tokio::pin!(shutdown_signal);
+    let mut parent_control = Some(spawn_stdin_control_receiver());
     let mut poll = tokio::time::interval(Duration::from_millis(50));
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -145,6 +150,15 @@ async fn wait_for_watcher_trigger(children: &mut [ManagedChild]) -> Result<Watch
             result = &mut shutdown_signal => {
                 result?;
                 return Ok(WatcherTrigger::OperatorSignal);
+            }
+            command = receive_parent_control(&mut parent_control) => {
+                match command? {
+                    ParentControlCommand::Shutdown => return Ok(WatcherTrigger::OperatorSignal),
+                    ParentControlCommand::Reload(candidate) => {
+                        let candidate = if candidate.is_absolute() { candidate } else { root.join(candidate) };
+                        broadcast_reload(children, &candidate)?;
+                    }
+                }
             }
             _ = poll.tick() => {
                 for child in children.iter_mut() {
@@ -163,6 +177,33 @@ async fn wait_for_watcher_trigger(children: &mut [ManagedChild]) -> Result<Watch
             }
         }
     }
+}
+
+/// 将同一个候选目录发送给本机全部 Process；每个 Process 独立校验并在自己的 V8 屏障提交。
+///
+/// Sends one candidate directory to every local Process. Each Process validates it independently
+/// and commits at its own V8 barrier; one Process never trusts another Process's validation result.
+fn broadcast_reload(children: &mut [ManagedChild], candidate: &Path) -> Result<()> {
+    let candidate = candidate
+        .canonicalize()
+        .with_context(|| format!("failed to resolve Hotfix candidate {}", candidate.display()))?;
+    let command = format!("reload {}\n", candidate.display());
+    for child in children.iter_mut() {
+        let control = child.control.as_mut().with_context(|| {
+            format!(
+                "process {} no longer has a Watcher control pipe",
+                child.name
+            )
+        })?;
+        control
+            .write_all(command.as_bytes())
+            .with_context(|| format!("failed to request Hotfix reload for {}", child.name))?;
+        control
+            .flush()
+            .with_context(|| format!("failed to flush Hotfix reload for {}", child.name))?;
+    }
+    tracing::info!(target: "tiangz::watcher", candidate = %candidate.display(), child_count = children.len(), "Hotfix reload broadcast to child processes");
+    Ok(())
 }
 
 /// 发送 Watcher 控制消息后立即关闭管道。
@@ -236,7 +277,6 @@ async fn wait_for_shutdown_signal() -> Result<()> {
         tokio::select! {
             result = tokio::signal::ctrl_c() => result?,
             _ = ctrl_break.recv() => {},
-            result = crate::shutdown::wait_for_parent_control() => result?,
         }
     }
     #[cfg(unix)]
@@ -247,7 +287,6 @@ async fn wait_for_shutdown_signal() -> Result<()> {
         tokio::select! {
             result = tokio::signal::ctrl_c() => result?,
             _ = terminate.recv() => {},
-            result = crate::shutdown::wait_for_parent_control() => result?,
         }
     }
     Ok(())

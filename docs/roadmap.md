@@ -260,9 +260,9 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 3.10.5：TypeScript热更闭环
 
-状态：基础实现完成，在线运维闭环待完成。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix：Model拥有状态、字段、构造、继承和稳定身份；Hotfix只拥有Handler和方法实现。Runtime已支持双ESM Bundle、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。
+状态：在线Reload基础闭环与本地源码开发模式完成，高负载与长稳验收待完成。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix：Model拥有状态、字段、构造、继承和稳定身份；Hotfix只拥有Handler和方法实现。Runtime已支持双ESM Bundle、不可变候选目录、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、Watcher Reload、Rust有界投递屏障、超时拒绝、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。`npm run dev`在本地初次完整构建后监听Hotfix，自动完成生成、类型检查、候选构建和Reload；正式部署仍只接收不可变候选，不执行源码监听。
 
-剩余工作是管理命令或Watcher触发运行中候选加载、Rust入站投递屏障与排空超时、有连接/慢RPC/Timer测试、连续generation长稳和热更可观测性。第一版必须排空到零再切换，不做字段migration，也不允许Model在线替换。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)。
+剩余工作是3000玩家有连接负载、慢RPC/Timer测试、连续generation长稳和Grafana面板。第一版必须排空到零再切换，不做字段migration，也不允许Model在线替换。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)。
 
 ### Phase 3.10.6：性能回归门
 

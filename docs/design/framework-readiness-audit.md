@@ -6,10 +6,10 @@
 
 ## 结论
 
-Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`已经完成R2的Model/Hotfix双Bundle、候选预检与事务提交基础；Phase 4准入仍被在线触发、投递屏障和完整运行时验收阻塞。
+Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`已经完成R2的Model/Hotfix双Bundle、不可变候选、Watcher Reload、候选预检、超时投递屏障、事务提交和Prometheus指标；Phase 4准入仍被有连接高负载、慢RPC/Timer与连续切换长稳验收阻塞。
 
 1. Developer Tools 的架构规则与仓库约定不一致；已完成。
-2. TypeScript热更已形成可回滚的进程内事务基础；在线运维闭环待完成。
+2. TypeScript热更已形成可回滚的进程内事务与在线操作基础；高负载和长稳验收待完成。
 3. 性能测试能生成报告，但不能自动判定回归；已完成 Windows/Linux 基线与门禁。
 4. 完整质量门和 Release 流程尚未同时覆盖 Windows 与 Linux；已完成。
 
@@ -72,7 +72,7 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 
 已完成：`app/model`与`app/hotfix`分层、`model.js/hotfix.js`双Bundle及manifest、实际文件SHA-256校验、隔离V8预检、staging registry、prototype与Scene/Session/Unit Handler事务提交、失败回滚和边界自测。Runtime启动时先安装Hotfix generation 1，再开放服务。
 
-待完成：管理命令或Watcher触发运行中候选加载、Rust入站投递屏障、排空超时与恢复策略、有连接和慢RPC运行时测试、连续切换长稳以及热更指标面板。完成这些项之前，R2仍不是完整闭环。
+已完成Watcher触发、Rust有界投递屏障、30秒默认排空超时、失败保留旧generation、5个拆分Process连续切换和Prometheus分段指标。待完成：3000玩家有连接切换、慢RPC/Timer运行时测试、连续切换长稳以及Grafana面板。完成这些项之前，R2仍不是完整闭环。
 
 完整决策和限制见[Process级TypeScript热更设计](typescript-hot-reload.md)。
 

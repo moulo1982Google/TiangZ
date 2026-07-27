@@ -2,10 +2,11 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use deno_core::{JsRuntime, ModuleSpecifier};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::host::{
@@ -13,7 +14,7 @@ use crate::host::{
     load_es_module, load_js_entrypoints,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ModelManifest {
     format_version: u32,
@@ -42,9 +43,33 @@ struct HotfixManifest {
 /// 表示启动时已经过文件哈希和冻结契约校验的双 Bundle。 / Represents Model and Hotfix bundles whose hashes and frozen contracts passed startup validation.
 pub struct RuntimeBundles {
     model_specifier: ModuleSpecifier,
+    model_manifest: ModelManifest,
+    initial_hotfix: HotfixCandidate,
+}
+
+/// 表示已经过文件哈希与冻结 Model 契约校验、但尚未进入 V8 的候选。 / Represents a candidate whose file hash and frozen Model contracts passed validation but has not entered V8 yet.
+pub struct HotfixCandidate {
     hotfix_path: PathBuf,
-    hotfix_manifest_json: String,
-    hotfix_manifest: HotfixManifest,
+    manifest_json: String,
+    manifest: HotfixManifest,
+}
+
+/// 记录真正发生在 V8 切换阶段中的分段耗时；候选构建不属于这里。 / Records segmented V8 switch costs; candidate build time is intentionally excluded.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotfixInstallTimings {
+    pub begin_ms: f64,
+    pub candidate_eval_ms: f64,
+    pub commit_ms: f64,
+}
+
+/// 返回 Hotfix 提交后的可观测结果。 / Returns the observable result after a Hotfix commit.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotfixInstallResult {
+    pub bundle_version: String,
+    pub status_json: String,
+    pub timings: HotfixInstallTimings,
 }
 
 impl RuntimeBundles {
@@ -66,46 +91,19 @@ impl RuntimeBundles {
             bail!("unsupported runtime bundle manifest format");
         }
         verify_hash(&model_path, &model_manifest.model_fingerprint, "Model")?;
-        verify_hash(&hotfix_path, &hotfix_manifest.hotfix_hash, "Hotfix")?;
-        require_equal(
-            "modelFingerprint",
-            &model_manifest.model_fingerprint,
-            &hotfix_manifest.model_fingerprint,
-        )?;
-        require_equal(
-            "modelSourceHash",
-            &model_manifest.model_source_hash,
-            &hotfix_manifest.model_source_hash,
-        )?;
-        require_equal(
-            "protocolFingerprint",
-            &model_manifest.protocol_fingerprint,
-            &hotfix_manifest.protocol_fingerprint,
-        )?;
-        require_equal(
-            "stableCoreApiHash",
-            &model_manifest.stable_core_api_hash,
-            &hotfix_manifest.stable_core_api_hash,
-        )?;
-        require_equal(
-            "nativeSchemaHash",
-            &model_manifest.native_schema_hash,
-            &hotfix_manifest.native_schema_hash,
-        )?;
-        require_equal(
-            "buildMode",
-            &model_manifest.build_mode,
-            &hotfix_manifest.build_mode,
-        )?;
+        verify_hotfix_contract(&model_manifest, &hotfix_path, &hotfix_manifest)?;
 
         let model_specifier = ModuleSpecifier::from_file_path(&model_path).map_err(|_| {
             anyhow::anyhow!("failed to convert {} to a file URL", model_path.display())
         })?;
         Ok(Self {
             model_specifier,
-            hotfix_path,
-            hotfix_manifest_json,
-            hotfix_manifest,
+            model_manifest,
+            initial_hotfix: HotfixCandidate {
+                hotfix_path,
+                manifest_json: hotfix_manifest_json,
+                manifest: hotfix_manifest,
+            },
         })
     }
 
@@ -114,16 +112,53 @@ impl RuntimeBundles {
     }
 
     pub fn bundle_version(&self) -> &str {
-        &self.hotfix_manifest.bundle_version
+        self.initial_hotfix.bundle_version()
     }
 
-    /// 在一个隔离 V8 中完成无 Process 实例的模块注册自检。 / Performs registration-only module validation in an isolated V8 with no Process instance.
+    /// 从不可变候选目录读取 `hotfix.js` 与 manifest，并逐项匹配当前 Process 的 Model。 / Reads `hotfix.js` and its manifest from an immutable candidate directory and matches every frozen Model contract.
+    pub fn load_candidate(&self, directory: &Path) -> Result<HotfixCandidate> {
+        let hotfix_path = directory.join("hotfix.js");
+        let manifest_path = directory.join("hotfix.manifest.json");
+        let manifest_json = fs::read_to_string(&manifest_path)
+            .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+        let manifest: HotfixManifest = serde_json::from_str(&manifest_json)
+            .with_context(|| format!("failed to parse {}", manifest_path.display()))?;
+        if manifest.format_version != 1 {
+            bail!(
+                "unsupported Hotfix manifest format: {}",
+                manifest.format_version
+            );
+        }
+        verify_hotfix_contract(&self.model_manifest, &hotfix_path, &manifest)?;
+        Ok(HotfixCandidate {
+            hotfix_path,
+            manifest_json,
+            manifest,
+        })
+    }
+
+    /// 在一个隔离 V8 中完成无 Process 实例的初始模块注册自检。 / Performs initial registration-only module validation in an isolated V8 with no Process instance.
     pub fn preflight(
         &self,
         js_event_loop: &tokio::runtime::Runtime,
         runtime: &mut JsRuntime,
     ) -> Result<()> {
-        self.load_and_commit(js_event_loop, runtime, 0).map(|_| ())
+        self.preflight_candidate(js_event_loop, runtime, &self.initial_hotfix)
+    }
+
+    /// 在隔离 V8 中验证指定候选；不会修改正式 Process。 / Validates a specific candidate in an isolated V8 without mutating the serving Process.
+    pub fn preflight_candidate(
+        &self,
+        js_event_loop: &tokio::runtime::Runtime,
+        runtime: &mut JsRuntime,
+        candidate: &HotfixCandidate,
+    ) -> Result<()> {
+        load_es_module(js_event_loop, runtime, &self.model_specifier, true)
+            .context("failed to load immutable Model bundle")?;
+        let entrypoints = load_js_entrypoints(runtime)?;
+        candidate
+            .install(js_event_loop, runtime, &entrypoints, 0)
+            .map(|_| ())
     }
 
     /// 在正式 V8 中加载不可变 Model 和第一代 Hotfix。 / Loads immutable Model and the first Hotfix generation into the serving V8.
@@ -132,48 +167,67 @@ impl RuntimeBundles {
         js_event_loop: &tokio::runtime::Runtime,
         runtime: &mut JsRuntime,
     ) -> Result<JsEntrypoints> {
-        let (entrypoints, status) = self.load_and_commit(js_event_loop, runtime, 1)?;
+        load_es_module(js_event_loop, runtime, &self.model_specifier, true)
+            .context("failed to load immutable Model bundle")?;
+        let entrypoints = load_js_entrypoints(runtime)?;
+        let result = self
+            .initial_hotfix
+            .install(js_event_loop, runtime, &entrypoints, 1)?;
         tracing::info!(
             target: "tiangz::hotfix",
-            bundle_version = %self.hotfix_manifest.bundle_version,
-            status = %status,
+            bundle_version = %result.bundle_version,
+            status = %result.status_json,
             "initial Hotfix generation committed"
         );
         Ok(entrypoints)
     }
+}
 
-    fn load_and_commit(
+impl HotfixCandidate {
+    pub fn bundle_version(&self) -> &str {
+        &self.manifest.bundle_version
+    }
+
+    /// 在已经排空的正式 V8 中求值并事务提交候选；任何失败都会 Abort 暂存区。 / Evaluates and transactionally commits the candidate in a drained serving V8; every failure aborts staging.
+    pub fn install(
         &self,
         js_event_loop: &tokio::runtime::Runtime,
         runtime: &mut JsRuntime,
+        entrypoints: &JsEntrypoints,
         generation: u64,
-    ) -> Result<(JsEntrypoints, String)> {
-        load_es_module(js_event_loop, runtime, &self.model_specifier, true)
-            .context("failed to load immutable Model bundle")?;
-        let entrypoints = load_js_entrypoints(runtime)?;
-        call_js_begin_hotfix(
-            js_event_loop,
-            runtime,
-            &entrypoints,
-            &self.hotfix_manifest_json,
-        )?;
+    ) -> Result<HotfixInstallResult> {
+        let begin_at = Instant::now();
+        call_js_begin_hotfix(js_event_loop, runtime, entrypoints, &self.manifest_json)?;
+        let begin_ms = elapsed_ms(begin_at);
 
-        let hotfix_specifier = self.hotfix_specifier(generation)?;
-        if let Err(error) = load_es_module(js_event_loop, runtime, &hotfix_specifier, false) {
-            let _ = call_js_abort_hotfix(js_event_loop, runtime, &entrypoints, &error.to_string());
+        let eval_at = Instant::now();
+        let specifier = self.specifier(generation)?;
+        if let Err(error) = load_es_module(js_event_loop, runtime, &specifier, false) {
+            let _ = call_js_abort_hotfix(js_event_loop, runtime, entrypoints, &error.to_string());
             return Err(error).context("Hotfix candidate evaluation failed");
         }
-        match call_js_commit_hotfix(js_event_loop, runtime, &entrypoints) {
-            Ok(status) => Ok((entrypoints, status)),
+        let candidate_eval_ms = elapsed_ms(eval_at);
+
+        let commit_at = Instant::now();
+        match call_js_commit_hotfix(js_event_loop, runtime, entrypoints) {
+            Ok(status_json) => Ok(HotfixInstallResult {
+                bundle_version: self.manifest.bundle_version.clone(),
+                status_json,
+                timings: HotfixInstallTimings {
+                    begin_ms,
+                    candidate_eval_ms,
+                    commit_ms: elapsed_ms(commit_at),
+                },
+            }),
             Err(error) => {
                 let _ =
-                    call_js_abort_hotfix(js_event_loop, runtime, &entrypoints, &error.to_string());
+                    call_js_abort_hotfix(js_event_loop, runtime, entrypoints, &error.to_string());
                 Err(error).context("Hotfix candidate commit failed")
             }
         }
     }
 
-    fn hotfix_specifier(&self, generation: u64) -> Result<ModuleSpecifier> {
+    fn specifier(&self, generation: u64) -> Result<ModuleSpecifier> {
         let mut specifier = ModuleSpecifier::from_file_path(&self.hotfix_path).map_err(|_| {
             anyhow::anyhow!(
                 "failed to convert {} to a file URL",
@@ -183,6 +237,40 @@ impl RuntimeBundles {
         specifier.set_query(Some(&format!("generation={generation}")));
         Ok(specifier)
     }
+}
+
+fn verify_hotfix_contract(
+    model: &ModelManifest,
+    hotfix_path: &Path,
+    hotfix: &HotfixManifest,
+) -> Result<()> {
+    verify_hash(hotfix_path, &hotfix.hotfix_hash, "Hotfix")?;
+    require_equal(
+        "modelFingerprint",
+        &model.model_fingerprint,
+        &hotfix.model_fingerprint,
+    )?;
+    require_equal(
+        "modelSourceHash",
+        &model.model_source_hash,
+        &hotfix.model_source_hash,
+    )?;
+    require_equal(
+        "protocolFingerprint",
+        &model.protocol_fingerprint,
+        &hotfix.protocol_fingerprint,
+    )?;
+    require_equal(
+        "stableCoreApiHash",
+        &model.stable_core_api_hash,
+        &hotfix.stable_core_api_hash,
+    )?;
+    require_equal(
+        "nativeSchemaHash",
+        &model.native_schema_hash,
+        &hotfix.native_schema_hash,
+    )?;
+    require_equal("buildMode", &model.build_mode, &hotfix.build_mode)
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
@@ -209,4 +297,8 @@ fn require_equal(name: &str, model: &str, hotfix: &str) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn elapsed_ms(started_at: Instant) -> f64 {
+    started_at.elapsed().as_secs_f64() * 1_000.0
 }

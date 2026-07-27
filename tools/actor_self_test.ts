@@ -24,12 +24,17 @@ import {
   extractFrameRpcId,
   rewriteFrameRpcId,
 } from "../app/core/process/ActorLocation";
+import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
+import type { HotfixManifest } from "../app/core/hotReload/contracts";
 
 void main();
 
 async function main(): Promise<void> {
   InitializeGameSingletons({ fixedUpdateMs: 50, maxCatchUpSteps: 2 });
   try {
+    HotfixSystem.Begin(testHotfixManifest("actor-normal"));
+    await import("../app/hotfix/demo/map/PlayerUnitHotfix");
+    HotfixSystem.Commit();
     await Promise.resolve();
     testGeneratedNativeHandleScalarAccess();
     await testPlayerUnitComponents();
@@ -43,6 +48,20 @@ async function main(): Promise<void> {
   } finally {
     SingletonRegistry.DestroyAll();
   }
+}
+
+function testHotfixManifest(bundleVersion: string): HotfixManifest {
+  return {
+    formatVersion: 1,
+    bundleVersion,
+    modelFingerprint: "actor-self-test",
+    modelSourceHash: "actor-self-test",
+    protocolFingerprint: "actor-self-test",
+    stableCoreApiHash: "actor-self-test",
+    nativeSchemaHash: "actor-self-test",
+    hotfixHash: bundleVersion,
+    buildMode: "demo",
+  };
 }
 
 function testGeneratedNativeHandleScalarAccess(): void {
@@ -87,19 +106,19 @@ function testGeneratedNativeHandleScalarAccess(): void {
     mapMarkAllNumericsDirty: () => undefined,
     unitSetMovementInput: (handle, inputX, inputY, sequence) => {
       const values = valuesByHandle.get(handle)!;
-      if (sequence <= values[16]) return false;
-      values[13] = inputX;
-      values[14] = inputY;
-      values[15] = 1;
-      values[16] = sequence;
+      if (sequence <= values[18]) return false;
+      values[15] = inputX;
+      values[16] = inputY;
+      values[17] = 1;
+      values[18] = sequence;
       return true;
     },
     unitResetMovement: (handle) => {
       const values = valuesByHandle.get(handle)!;
-      values[13] = 0;
-      values[14] = 0;
       values[15] = 0;
       values[16] = 0;
+      values[17] = 0;
+      values[18] = 0;
     },
     mapUpdateMovement: () => new Uint8Array(0),
     dataTakeMetrics: () => new Uint8Array(56),
@@ -344,6 +363,18 @@ async function testPlayerUnitComponents(): Promise<void> {
     }),
     /invalid movement input/,
   );
+
+  const stableHandle = native.Handle;
+  HotfixSystem.Begin(testHotfixManifest("actor-inverted"));
+  await import("../perf/hotfix/fixtures/inverted");
+  HotfixSystem.Commit();
+  assert.equal(
+    player.Move({ inputX: 0, inputY: 1, sequence: 6 }),
+    true,
+  );
+  assert.equal(native.inputY, -1);
+  assert.equal(player.InstanceId, firstInstanceId);
+  assert.equal(native.Handle, stableHandle);
 
   assert.equal(units.Remove(1000), player);
   assert.equal(host.Root.Get(firstInstanceId), undefined);

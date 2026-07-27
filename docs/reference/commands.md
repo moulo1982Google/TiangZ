@@ -14,7 +14,9 @@
 | `npm run codegen:client-handlers` | 只生成客户端 Handler 自动导入入口 |
 | `npm run typecheck` | 服务端 TS 类型检查 |
 | `npm run build` | 生成正式`model.js/hotfix.js`双Bundle、manifest、协议和smoke client；Model变化后使用 |
-| `npm run build:hotfix` | 只重建正式Hotfix候选；Model/Core/协议/Native schema变化时拒绝 |
+| `npm run build:hotfix` | 只构建`dist/hotfix-candidates/<hash>`不可变候选；Model/Core/协议/Native schema变化时拒绝 |
+| `npm run dev -- configs/local/StartMachine.json` | 本地源码开发模式；初次完整构建，之后保存Hotfix自动生成候选并Reload |
+| `npm run test:dev-runtime` | 验证源码开发宿主只接受不可变候选目录，不启动真实服务器 |
 | `npm run build:bench` | 生成显式包含Bench Scene/Handler的双Bundle |
 | `npm run build:hotfix:bench` | 在已有且匹配的Bench Model上只重建Bench Hotfix |
 | `npm run build:debug` | 生成带内联sourcemap的正式双Bundle |
@@ -25,6 +27,7 @@
 | `npm run verify:comments` | 检查Core、Model、Hotfix与Rust手写文档注释是否中英文齐全 |
 | `npm run verify:hotfix-boundary` | 检查Model/Hotfix依赖方向及Hotfix类没有字段、构造和静态初始化 |
 | `npm run test:hotfix` | 验证现有实例补丁、Handler槽、失败回滚与Hotfix-only构建边界 |
+| `npm run test:hotfix-reload` | 启动5个Process，在线切到反转/正常generation并验证损坏候选不改变当前版本 |
 | `npm run verify:quick` | 生成物、注释、协议锁、TS 与 Rust 的快速质量门 |
 | `npm run verify` | 在快速质量门上追加 Runtime、拆分进程、mailbox、背压与 Watcher 验收 |
 | `npm run verify:perf` | 执行三轮框架性能门并与当前机器基线比较 |

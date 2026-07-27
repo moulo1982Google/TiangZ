@@ -29,6 +29,8 @@ npm run perf:full-chain
 
 完整矩阵、指标口径和结果文件见 [full_chain/README.md](full_chain/README.md)。
 
+单 MapHost 的 3000 玩家回归和运行中 Hotfix 测试口径见 [hotfix/README.md](hotfix/README.md)。Hotfix 用例会区分候选构建耗时与真正的业务切换耗时，并验证现有玩家、连接和 Native handle 不重建。
+
 ## Bridge 性能
 
 运行：

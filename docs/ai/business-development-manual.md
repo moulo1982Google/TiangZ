@@ -45,7 +45,7 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 - 新增或修改Handler、校验、流程编排和领域方法实现：写`app/hotfix`，可使用Hotfix-only构建。
 - Hotfix通过`@hotfixFor(ModelType)`实现Model声明的稳定方法；实现类没有字段、构造函数或静态初始化块，也不会被实例化。
 - Model绝对不能在线热更，不设计字段migration。`npm run build:hotfix`拒绝时，说明这次改动已经越过行为边界，不能规避检查。
-- 当前运行中热更操作入口尚未完成；`build:hotfix`生成兼容候选，不代表覆盖文件已经在线生效。
+- `npm run build:hotfix`生成`dist/hotfix-candidates/<hash>`不可变候选，不覆盖当前Bundle。在Watcher终端输入`reload <候选目录>`才会触发每个Process独立校验和提交；禁止手工覆盖`dist/hotfix.js`。
 
 ## 第一步：给需求分类
 
@@ -398,7 +398,9 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、兼容指纹和事务提交基础已完成；进入Phase 4前仍需补齐运行中触发、投递屏障和有连接/慢RPC/Timer/连续切换验收。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚和Prometheus指标已完成；进入Phase 4前仍需执行3000玩家有连接负载、慢RPC、Timer和连续切换验收。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+
+本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools对运行时类中的显式`any`、跨基本存储种类联合字段、`delete`字段和`as any`写属性给出黄色性能建议；警告不是错误，`T | null`、判别联合与显式Map/Record仍可正常使用，真实性能以基准和Profile为准。
 
 | 修改类型 | 最少验证 |
 |---|---|

@@ -48,7 +48,7 @@ Model manifest冻结以下内容：
 - Native schema指纹；
 - demo或bench构建模式。
 
-Hotfix manifest必须逐项匹配这些冻结值。`npm run build:hotfix`只重建Hotfix；只要Model源指纹改变就立即失败，并要求完整构建、部署和Process重启。没有忽略兼容检查的参数。
+Hotfix manifest必须逐项匹配这些冻结值。`npm run build:hotfix`只重建Hotfix；只要Model源指纹改变就立即失败，并要求完整构建、部署和Process重启。没有忽略兼容检查的参数。Hotfix-only构建不会覆盖正在服务的`dist/hotfix.js`，而是输出`dist/hotfix-candidates/<内容哈希>/hotfix.js`与manifest，避免Runtime读到写了一半的候选。
 
 ## 行为补丁
 
@@ -101,13 +101,13 @@ Scene、Session和Unit的外置Handler保存在身份稳定的绑定槽中。路
 一次候选安装按以下顺序执行：
 
 1. **离线构建**：codegen、typecheck、边界检查和指纹生成通过。
-2. **隔离预检**：Rust在没有Process实例的临时V8中加载Model和候选Hotfix，检查语法、入口和无副作用注册。
-3. **在线暂存**：当前V8建立staging generation，求值候选Hotfix；装饰器只写暂存区。
-4. **切换屏障**：暂停新业务帧进入，并等待Scene入口队列与在途异步任务归零。
+2. **切换屏障**：Process停止从Rust业务队列取新帧，并等待Scene入口队列与在途异步任务归零；网络线程仍可写入有界队列。
+3. **隔离预检**：Rust在没有Process实例的临时V8中加载Model和候选Hotfix，检查语法、入口和无副作用注册。
+4. **在线暂存**：当前V8建立staging generation，求值候选Hotfix；装饰器只写暂存区。
 5. **原子提交**：同步安装完整prototype方法集与Handler绑定，然后恢复投递。
 6. **失败回滚**：任一步异常都恢复旧prototype描述符与旧Handler槽，旧版本继续服务。
 
-第一版选择“排空到零再切换”，不让旧Promise和新Handler长期并存。这会让切换等待正在执行的慢RPC，但显著简化generation、Timer和闭包所有权。以后只有真实指标证明停顿不可接受时，才考虑双generation排空。
+第一版选择“排空到零再切换”，不让旧Promise和新Handler长期并存。这会让切换等待正在执行的慢RPC，但显著简化generation、Timer和闭包所有权。`lifecycle.hotfixReloadTimeoutMs`默认30秒；超时只拒绝候选，不关闭Process。当前隔离预检也位于停止取新业务帧的窗口内，后续由性能测试决定是否值得迁到独立工作线程。以后只有真实指标证明停顿不可接受时，才考虑双generation排空。
 
 ## 启动与当前实现状态
 
@@ -121,16 +121,14 @@ Runtime启动时先验证两个manifest和实际文件SHA-256，再进行隔离�
 - staging、prototype/Handler事务提交与失败回滚；
 - 现有实例原地获得新方法；
 - Hotfix-only构建拒绝Model变化；
+- Watcher通过跨平台stdin控制协议广播`reload <候选目录>`；
+- Process独立复核候选，在安全屏障提交，超时或失败保留旧generation；
+- `/metrics`发布active generation、成功/失败次数及validation/preflight/barrier/eval/commit/total耗时；
+- 5个拆分Process连续切换generation 2、3并拒绝损坏候选的运行时自测；
+- 现有PlayerUnit在不改变InstanceId和Native handle时获得上下反转Move实现；
 - 边界与事务自测。
 
-尚未完成：
-
-- Watcher/管理命令触发运行中Process重新加载候选文件；
-- Rust投递屏障与超时策略的生产化接线；
-- 有连接、慢RPC、Timer、连续多generation的完整运行时验收；
-- 热更阶段、耗时和失败原因的Prometheus/Grafana面板。
-
-因此现在的双Bundle是可靠的热更基础和启动安装机制，但还不能宣传成“覆盖文件即可在线热更”。
+尚未完成的是3000玩家有连接负载、慢RPC、Timer与连续多generation长稳验收，以及Grafana面板。Reload已经可用，但仍然不能直接覆盖`dist/hotfix.js`；必须构建不可变候选目录并通过Watcher命令提交。
 
 ## Timer、Update与状态
 
@@ -145,10 +143,22 @@ Rust Native Entity是权威状态时同样不迁移schema。`.native`变化意�
 
 ## 开发流程
 
+本地日常开发优先使用源码模式：
+
+```powershell
+npm run dev -- configs/local/StartMachine.json
+```
+
+开发宿主先执行一次完整构建并启动Watcher，之后只监听`app/hotfix/**/*.ts`。每次保存会串行执行Scene/补丁入口生成、类型检查、不可变候选构建和Watcher Reload；连续保存会合并，构建失败时不发送Reload，旧generation继续运行。它不监听Model、Core、Proto或`.native`，这些边界变化仍要求开发人员停止并重新启动。源码模式只是隐藏构建步骤，不会让V8直接执行TypeScript，也不得用于正式部署。
+
 只改行为：
 
 ```powershell
 npm run build:hotfix
+# 命令会打印 output=dist/hotfix-candidates/<hash>
+
+# Watcher运行期间，在它的终端输入：
+reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 ```
 
 修改字段、类型、协议、Core或`.native`：
@@ -160,6 +170,8 @@ cargo build --locked --bin TiangZ
 ```
 
 普通业务开发者只需记住：状态写在Model，行为优先写在Hotfix；Hotfix实现类没有字段和构造；`build:hotfix`拒绝时不要绕过，它是在告诉你这次变更必须重启。
+
+正式服发布只传输`dist/hotfix-candidates/<hash>`完整目录。候选必须先上传到临时目录，完成后原子重命名到目标hash目录；不得逐文件覆盖`dist/hotfix.js`。当前多机器仍需分别上传并向每台Watcher提交，同服跨机器Prepare/Commit协调器尚未实现。
 
 ## 最小验收矩阵
 
