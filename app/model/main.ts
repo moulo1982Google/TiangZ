@@ -11,8 +11,16 @@ import {
   flushHostSceneOperations,
   sleepHost,
 } from "../core/process/HostSceneTransport";
+import * as ModelPublic from "./public";
 
 export * from "./public";
+
+Object.defineProperty(globalThis, "__tiangzModelExports", {
+  value: ModelPublic,
+  configurable: false,
+  enumerable: false,
+  writable: false,
+});
 
 let processRuntime: ProcessRuntime | undefined;
 

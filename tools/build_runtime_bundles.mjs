@@ -38,7 +38,6 @@ await rm(hotfixCandidateFile, { force: true });
 const common = {
   bundle: true,
   platform: "neutral",
-  format: "esm",
   target: "es2022",
   sourcemap: debug ? "inline" : false,
   sourcesContent: debug,
@@ -65,6 +64,7 @@ if (hotfixOnly) {
   await rm(path.join(dist, "model.js"), { force: true });
   await build({
     ...common,
+    format: "esm",
     entryPoints: [path.join(root, bench ? "app/model/main.bench.ts" : "app/model/main.ts")],
     outfile: path.join(dist, "model.js"),
   });
@@ -72,13 +72,22 @@ if (hotfixOnly) {
 
 await build({
   ...common,
+  format: "iife",
+  banner: {
+    js: `var require = (specifier) => {
+  if (specifier !== "tiangz:model") throw new Error("unsupported Hotfix external: " + specifier);
+  const model = globalThis.__tiangzModelExports;
+  if (!model) throw new Error("immutable Model exports are not installed");
+  return model;
+};`,
+  },
   entryPoints: [hotfixEntry],
   outfile: hotfixCandidateFile,
   plugins: [{
     name: "immutable-model-boundary",
     setup(buildApi) {
       buildApi.onResolve({ filter: /^#tiangz\/model$/ }, () => ({
-        path: relativeModulePath(path.dirname(hotfixOutputFile), path.join(dist, "model.js")),
+        path: "tiangz:model",
         external: true,
       }));
       buildApi.onResolve({ filter: /^#tiangz\/model\// }, (args) => ({
@@ -187,9 +196,4 @@ function argumentValue(name) {
   if (inline) return inline.slice(prefix.length);
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] : undefined;
-}
-
-function relativeModulePath(fromDirectory, target) {
-  const relative = path.relative(fromDirectory, target).replaceAll(path.sep, "/");
-  return relative.startsWith(".") ? relative : `./${relative}`;
 }

@@ -1,0 +1,11 @@
+{
+  "machines": [
+    {
+      "name": "bench-local",
+      "innerIp": "127.0.0.1",
+      "processes": [
+        "bench.json"
+      ]
+    }
+  ]
+}

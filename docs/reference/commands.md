@@ -27,6 +27,8 @@
 | `npm run verify:comments` | 检查Core、Model、Hotfix与Rust手写文档注释是否中英文齐全 |
 | `npm run verify:hotfix-boundary` | 检查Model/Hotfix依赖方向及Hotfix类没有字段、构造和静态初始化 |
 | `npm run test:hotfix` | 验证现有实例补丁、Handler槽、失败回滚与Hotfix-only构建边界 |
+| `npm run test:hotfix-barrier` | 用8秒慢异步RPC验证Reload等待在途任务排空且RPC不发生错配 |
+| `npm run test:hotfix-soak` | 连续Reload 100次，拒绝损坏候选并检查Timer、Native实体、pending、V8 Heap与RSS趋势 |
 | `npm run test:hotfix-reload` | 启动5个Process，在线切到反转/正常generation并验证损坏候选不改变当前版本 |
 | `npm run verify:quick` | 生成物、注释、协议锁、TS 与 Rust 的快速质量门 |
 | `npm run verify` | 在快速质量门上追加 Runtime、拆分进程、mailbox、背压与 Watcher 验收 |

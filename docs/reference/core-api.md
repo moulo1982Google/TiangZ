@@ -28,8 +28,8 @@
 - `TimerSystem.Remove(timerId)`：取消定时器。
 - `TimerSystem.WaitAsync(delayMs)`：等待游戏时钟推进；它不是 Rust/Tokio IO 超时。
 - Component 实现同步 `Update(): void`、`LateUpdate(): void` 或 `FrameFlush(): void` 后，会在 `AddComponent` 成功时自动注册，在 `RemoveComponent`/销毁时自动注销。每个固定逻辑帧严格按 `Update -> LateUpdate -> FrameFlush` 执行，三个阶段都禁止返回 Promise。
-- `Component.NewOnceTimer/NewRepeatedTimer/RemoveTimer`：定时器随组件销毁自动清理。
-- `Actor.NewOnceTimer/NewRepeatedTimer/RemoveTimer`：回调先进入 Actor 自己的 mailbox；ordered Actor 忙碌时排队，Actor 销毁时自动取消。
+- `Component.NewOnceTimer(delayMs, methodName)` / `NewRepeatedTimer(intervalMs, methodName)`：定时器随组件销毁自动清理；触发时按方法名解析当前Hotfix prototype，不允许业务闭包长期保留旧generation。
+- `Actor.NewOnceTimer(delayMs, methodName)` / `NewRepeatedTimer(intervalMs, methodName)`：触发后先进入Actor自己的mailbox并解析当前方法；ordered Actor忙碌时排队，Actor销毁时自动取消。
 
 `IUpdate.Update()` 不允许返回 Promise。需要异步串行语义时使用消息或 Actor 定时器，让它进入 mailbox；不要在每帧 Update 内堆积未完成的异步任务。
 

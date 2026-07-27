@@ -376,10 +376,14 @@ await this.broadcast.Publish(
 Component拥有的周期任务使用组件定时器：
 
 ```ts
-this.NewRepeatedTimer(100, (self) => {
-  self[NumericType.CurrentHp] += 1;
-});
+this.NewRepeatedTimer(100, "RegenerateHp");
+
+protected RegenerateHp(): void {
+  this[NumericType.CurrentHp] += 1;
+}
 ```
+
+Component和Actor业务Timer必须传方法名，不能传匿名闭包。触发时框架从当前prototype解析方法，因此现有Timer会自然进入新Hotfix generation；Timer仍随owner销毁自动取消。
 
 逐固定帧逻辑实现同步`Update()`，帧末复制实现`FrameFlush()`。不要在Update中创建未等待的异步任务：
 
@@ -458,7 +462,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标和3000玩家1Hz Reload A/B已完成；进入Phase 4前仍需慢RPC、Timer和连续generation长稳验收。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools对运行时类中的显式`any`、跨基本存储种类联合字段、`delete`字段和`as any`写属性给出黄色性能建议；警告不是错误，`T | null`、判别联合与显式Map/Record仍可正常使用，真实性能以基准和Profile为准。
 

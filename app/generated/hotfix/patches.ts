@@ -2,3 +2,4 @@
 import "../../hotfix/demo/item/ItemComponentSystem";
 import "../../hotfix/demo/login/LoginComponentSystem";
 import "../../hotfix/demo/map/PlayerUnitSystem";
+import "../../hotfix/demo/numeric/NumericComponentSystem";

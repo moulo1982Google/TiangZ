@@ -145,7 +145,7 @@ JavaScript 的 GC 会回收普通对象内存，因此纯状态组件不需要�
 ```ts
 export class MonsterPatrolComponent extends Component implements IUpdate {
   protected override Awake(): void {
-    this.NewRepeatedTimer(1000, (self) => self.ChooseNextTarget());
+    this.NewRepeatedTimer(1000, "ChooseNextTarget");
   }
 
   Update(): void {
@@ -153,7 +153,7 @@ export class MonsterPatrolComponent extends Component implements IUpdate {
     this.MoveTowardTarget(dt);
   }
 
-  private ChooseNextTarget(): void {
+  protected ChooseNextTarget(): void {
     // 选择新的巡逻点
   }
 

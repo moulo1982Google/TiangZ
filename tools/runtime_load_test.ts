@@ -92,6 +92,9 @@ async function run(options: Options): Promise<void> {
   }
 
   for (const client of clients) client.fillWindow();
+  if (process.env.TIANGZ_LOAD_SIGNAL_SENT === "1") {
+    process.stdout.write("[runtime-load] initial window sent\n");
+  }
   await delay(options.warmupSeconds * 1000);
   measurementStart = performance.now();
   sendDeadline = measurementStart + options.durationSeconds * 1000;

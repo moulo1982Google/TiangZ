@@ -1,0 +1,82 @@
+{
+  "generatedAt": "2026-07-27T09:16:37.709Z",
+  "reloads": 100,
+  "resourceBaselineGeneration": 11,
+  "finalGeneration": 101,
+  "rejectedCorruptedCandidate": true,
+  "passed": true,
+  "heapGrowthLimitBytes": 4194304,
+  "rssGrowthLimitBytes": 16777216,
+  "processes": [
+    {
+      "process": "mgr",
+      "timers": 0,
+      "nativeEntities": 0,
+      "nativeUnits": 0,
+      "pendingInnerCalls": 0,
+      "asyncInFlight": 0,
+      "heapBeforeBytes": 3203216,
+      "heapAfterBytes": 5000832,
+      "heapGrowthBytes": 1797616,
+      "rssBeforeBytes": 53100544,
+      "rssAfterBytes": 60387328,
+      "rssGrowthBytes": 7286784
+    },
+    {
+      "process": "login1",
+      "timers": 0,
+      "nativeEntities": 0,
+      "nativeUnits": 0,
+      "pendingInnerCalls": 0,
+      "asyncInFlight": 0,
+      "heapBeforeBytes": 3196544,
+      "heapAfterBytes": 5005448,
+      "heapGrowthBytes": 1808904,
+      "rssBeforeBytes": 53633024,
+      "rssAfterBytes": 59469824,
+      "rssGrowthBytes": 5836800
+    },
+    {
+      "process": "login2",
+      "timers": 0,
+      "nativeEntities": 0,
+      "nativeUnits": 0,
+      "pendingInnerCalls": 0,
+      "asyncInFlight": 0,
+      "heapBeforeBytes": 3193088,
+      "heapAfterBytes": 5097144,
+      "heapGrowthBytes": 1904056,
+      "rssBeforeBytes": 53542912,
+      "rssAfterBytes": 59097088,
+      "rssGrowthBytes": 5554176
+    },
+    {
+      "process": "gate1",
+      "timers": 1,
+      "nativeEntities": 0,
+      "nativeUnits": 0,
+      "pendingInnerCalls": 0,
+      "asyncInFlight": 0,
+      "heapBeforeBytes": 3114056,
+      "heapAfterBytes": 5027768,
+      "heapGrowthBytes": 1913712,
+      "rssBeforeBytes": 54566912,
+      "rssAfterBytes": 60424192,
+      "rssGrowthBytes": 5857280
+    },
+    {
+      "process": "map1",
+      "timers": 0,
+      "nativeEntities": 0,
+      "nativeUnits": 0,
+      "pendingInnerCalls": 0,
+      "asyncInFlight": 0,
+      "heapBeforeBytes": 3202592,
+      "heapAfterBytes": 5008376,
+      "heapGrowthBytes": 1805784,
+      "rssBeforeBytes": 53174272,
+      "rssAfterBytes": 59031552,
+      "rssGrowthBytes": 5857280
+    }
+  ]
+}

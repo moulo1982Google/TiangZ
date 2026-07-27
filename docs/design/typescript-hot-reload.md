@@ -114,7 +114,7 @@ Scene、Session和Unit的外置Handler保存在身份稳定的绑定槽中。路
 
 ## 启动与当前实现状态
 
-Runtime启动时先验证两个manifest和实际文件SHA-256，再进行隔离预检。正式V8只加载一次Model ESM，然后把Hotfix作为独立ESM安装为generation 1，最后才启动Process并开放服务端口。
+Runtime启动时先验证两个manifest和实际文件SHA-256，再进行隔离预检。正式V8只加载一次Model ESM，并通过不可写全局桥提供`#tiangz/model`稳定导出；Hotfix是完整IIFE脚本，以固定脚本名求值并安装generation 1，最后才启动Process并开放服务端口。Hotfix不进入ESM ModuleMap，也不为每代生成新的脚本URL。
 
 当前已经完成：
 
@@ -127,18 +127,21 @@ Runtime启动时先验证两个manifest和实际文件SHA-256，再进行隔离�
 - Watcher通过跨平台stdin控制协议广播`reload <候选目录>`；
 - Process独立复核候选，在安全屏障提交，超时或失败保留旧generation；
 - `/metrics`发布active generation、成功/失败次数及validation/preflight/barrier/eval/commit/total耗时；
-- 5个拆分Process连续切换generation 2、3并拒绝损坏候选的运行时自测；
+- 5个拆分Process连续切换100次至generation 101并拒绝损坏候选的运行时自测；
 - 现有PlayerUnit在不改变InstanceId和Native handle时获得上下反转Move实现；
+- 8秒慢异步RPC使Reload屏障等待约7.7秒，完成后正常提交且RPC没有错配；
+- Component/Actor一次性与重复Timer只保存owner和方法名，现有Timer切换后调用新prototype；
+- 100代资源测试先预热10代，再测量后90代：Timer、Native实体和pending均无漂移，5个Process的V8 Heap/RSS增长通过4MB/16MB硬门槛；
 - 边界与事务自测。
 
-3000玩家基线与1Hz Reload A/B已经完成，90/90次切换成功且Move吞吐无可见下降，但Probe尾延迟约增加三成。尚未完成的是慢RPC、Timer与连续多generation长稳验收。Reload仍然不能直接覆盖`dist/hotfix.js`；必须构建不可变候选目录并通过Watcher命令提交。
+3000玩家基线与1Hz Reload A/B已经完成，90/90次切换成功且Move吞吐无可见下降，但Probe尾延迟约增加三成。慢RPC、Timer与连续100 generation专项验收也已完成。Reload仍然不能直接覆盖`dist/hotfix.js`；必须构建不可变候选目录并通过Watcher命令提交。进入Phase 4前只剩`0.3.10` Release候选全矩阵与正式发布流程，不再增加热更语义。
 
 ## Timer、Update与状态
 
 Model对象和字段在Process生命周期内不变，热更只替换其方法。Timer与Update仍需遵守所有权规则：
 
 - 业务Timer归属于Scene、Entity或Component，owner销毁时自动取消；
-- 长期Timer不要保存Hotfix匿名闭包作为不可追踪身份；
+- Component/Actor的一次性与重复Timer都传入Hotfix方法名，框架触发时解析当前prototype；不要绕过owner API把业务闭包直接交给进程级Timer；
 - 热更提交前必须等在途业务任务归零；
 - 模块级可变状态不属于任何Model对象，禁止用它保存业务状态。
 

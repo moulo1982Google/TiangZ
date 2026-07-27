@@ -921,8 +921,7 @@ fn execute_hotfix_reload(
             .context("isolated Hotfix reload preflight failed")?;
     }
     let preflight_ms = elapsed_ms(preflight_at);
-    let install: HotfixInstallResult =
-        candidate.install(js_event_loop, runtime, entrypoints, generation)?;
+    let install: HotfixInstallResult = candidate.install(js_event_loop, runtime, entrypoints)?;
     Ok(HotfixReloadReport {
         candidate_directory: candidate_directory.display().to_string(),
         bundle_version: install.bundle_version,

@@ -23,12 +23,14 @@ numeric[NumericType.CurrentHp] += 1;
 当前演示每 100ms 增加一次生命值：
 
 ```ts
-this.NewRepeatedTimer(100, (self) => {
-  self[NumericType.CurrentHp] += 1;
-});
+this.NewRepeatedTimer(100, "RegenerateHp");
+
+protected RegenerateHp(): void {
+  this[NumericType.CurrentHp] += 1;
+}
 ```
 
-Unit 销毁时，组件定时器自动取消，Native Numeric 也从该 Unit 解绑。
+Timer触发时按方法名解析当前Hotfix实现，不会保存旧generation闭包。Unit销毁时，组件定时器自动取消，Native Numeric也从该Unit解绑。
 
 ## 帧尾 Delta
 

@@ -43,7 +43,12 @@ export { PositionComponent } from "./demo/map/PositionComponent";
 export { UnitGateComponent } from "./demo/map/UnitGateComponent";
 export { MapHostComponent } from "./demo/mapHost/MapHostComponent";
 export { NumericComponent } from "./demo/numeric/NumericComponent";
-export { NumericType } from "./demo/numeric/NumericType";
+export {
+  AllNumericTypes,
+  NumericType,
+  type NumericType as NumericTypeValue,
+} from "./demo/numeric/NumericType";
+export { NativeOps } from "../generated/model/native/NativeOps";
 export { LoginComponent } from "./demo/login/LoginComponent";
 export { PlayerPersistenceComponent } from "./demo/persistence/PlayerPersistenceComponent";
 export { NativeData } from "./demo/native/NativeData";

@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.6`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.4已经完成，Phase 3.10.5正在完成Model/Hotfix热更闭环，Phase 4业务扩展尚未开始。它已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.7`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，Phase 4业务扩展尚未开始；进入Phase 4前仍要完成`0.3.10` Release候选全矩阵与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 
@@ -255,7 +255,7 @@ Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tian
 
 ## 当前未完成和明确暂缓
 
-2026-07-26完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1、R3和R4。`0.3.10-alpha.5`建立Model/Hotfix双Bundle、指纹兼容检查、隔离V8预检、staging、prototype/Handler事务回滚、Watcher Reload、Rust有界投递屏障、30秒默认超时与Prometheus分段指标；`0.3.10-alpha.6`进一步加入`@systemFor`、生成声明和高负载验收。5个拆分Process已连续提交generation 2、3并拒绝损坏候选。3000玩家A/B已验证1Hz Reload吞吐无可见下降，但Probe p95/p99约增加32%/31%，90次Reload全部成功且无错误。Developer Tools `v0.11.0`识别System生成声明，VS Code与CLI共同检查Model/Hotfix依赖边界和生成入口。
+2026-07完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1至R4实现与专项验收。`0.3.10-alpha.5`建立Model/Hotfix双Bundle和在线事务，`alpha.6`加入`@systemFor`和高负载验收，`alpha.7`把Hotfix改为固定脚本名IIFE、统一业务Timer方法名语义，并补齐8秒慢RPC屏障与100代资源长稳。3000玩家A/B已验证1Hz Reload吞吐无可见下降，但Probe p95/p99约增加32%/31%；100代测试中损坏候选被拒绝，Timer、Native实体和pending均无漂移，预热后的V8 Heap/RSS增长通过4MB/16MB硬门槛。Developer Tools `v0.11.0`识别System生成声明，VS Code与CLI共同检查Model/Hotfix依赖边界和生成入口。
 
 性能回归职责必须分层：`verify:perf` 比较三轮中位数吞吐、p99与错误；`test:backpressure` 验证有界队列和生产者等待；长稳测试判断RSS/V8 Heap趋势。不要把短时RSS噪声或故意过载指标混入普通性能基线。
 
@@ -265,7 +265,7 @@ Cocos Demo完整类型检查依赖编辑器生成的`cocos_client2D/temp/tsconfi
 
 业务行为采用ET风格System表达：`@systemFor(ModelType)`类写`Awake/OnDestroy`和公开领域方法，但不创建实例、不保存字段。codegen把公开方法生成到`app/generated/bootstrap/systems/*.d.ts`并合并回Model类型，所以调用方保持`unit.Move()`的面向对象写法，Model无需手写抛错空壳。运行时仍直接安装prototype描述符，没有逐次Registry查找。System首次安装后为必需项，候选遗漏会整体拒绝；Reload不重跑现有对象Awake，新对象使用新Awake，已有对象后续方法和销毁使用当前generation。
 
-本地开发可使用`npm run dev -- configs/<环境>/StartMachine.json`：开发宿主初次完整构建并启动Watcher，随后仅监听`app/hotfix`，自动串行执行生成入口、类型检查、不可变候选构建和Reload。它不改变生产模型，不监听Model，也不允许V8直接执行TS；正式部署仍需分发完整候选目录。Developer Tools `0.11.0`同时提供启动/停止、`tiangz.performance.unstable-shape`黄色建议和System生成完整性检查。
+本地开发可使用`npm run dev -- configs/<环境>/StartMachine.json`：开发宿主初次完整构建并启动Watcher，随后仅监听`app/hotfix`，自动串行执行生成入口、类型检查、不可变候选构建和Reload。它不改变生产模型，不监听Model，也不允许V8直接执行TS；正式部署仍需分发完整候选目录。Model以ESM加载一次，Hotfix以固定脚本名IIFE重复求值，避免ESM ModuleMap和每代脚本URL持续增长。Developer Tools `0.11.0`同时提供启动/停止、`tiangz.performance.unstable-shape`黄色建议和System生成完整性检查。
 
 Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部署仍需补 node/windows exporter、通知路由和长期存储策略，这些属于Phase 5，不阻塞`0.3.10`框架准入。
 

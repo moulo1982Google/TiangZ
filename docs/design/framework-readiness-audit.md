@@ -1,15 +1,15 @@
 # Phase 4 前框架成熟度审计
 
-审计日期：2026-07-26。初始审计基线：`0.3.10-alpha.4`；当前实现版本：`0.3.10-alpha.6`。
+审计日期：2026-07-27。初始审计基线：`0.3.10-alpha.4`；当前实现版本：`0.3.10-alpha.7`。
 
 本审计回答一个问题：在继续扩展 MMORPG 业务前，TiangZ 还缺少哪些可以被自动验证的框架能力。业务功能只作为验收夹具，不以增加玩法数量表示框架成熟。
 
 ## 结论
 
-Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`建立R2的Model/Hotfix双Bundle和在线Reload事务；`0.3.10-alpha.6`加入`@systemFor`、生成声明和3000玩家1Hz Reload A/B。Phase 4准入仍被慢RPC/Timer与连续切换长稳验收阻塞。
+Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`建立R2的Model/Hotfix双Bundle和在线Reload事务，`alpha.6`加入`@systemFor`、生成声明和3000玩家1Hz Reload A/B，`alpha.7`完成慢RPC、Timer和连续100 generation资源长稳。R1至R4的实现与专项验收均已完成；Phase 4准入只剩`0.3.10` Release候选全矩阵和正式Tag。
 
 1. Developer Tools 的架构规则与仓库约定不一致；已完成。
-2. TypeScript热更已形成可回滚的进程内事务，3000玩家1Hz Reload A/B已完成；慢RPC/Timer和连续generation长稳仍待验收。
+2. TypeScript热更已形成可回滚的进程内事务；3000玩家1Hz Reload、慢RPC屏障、Timer跨代和连续100 generation长稳均已完成。
 3. 性能测试能生成报告，但不能自动判定回归；已完成 Windows/Linux 基线与门禁。
 4. 完整质量门和 Release 流程尚未同时覆盖 Windows 与 Linux；已完成。
 
@@ -68,11 +68,11 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 - Hotfix-only构建对Model/Core、protocol、Stable API和Native schema变化全部拒绝。
 - 同一Model下连续切换100次Hotfix后，V8 Heap、Rust Entity数、Timer数和pending operation回到稳定区间。
 
-### 0.3.10-alpha.5至alpha.6进展
+### 0.3.10-alpha.5至alpha.7进展
 
 已完成：`app/model`与`app/hotfix`分层、`model.js/hotfix.js`双Bundle及manifest、实际文件SHA-256校验、隔离V8预检、staging registry、prototype与Scene/Session/Unit Handler事务提交、失败回滚和边界自测。Runtime启动时先安装Hotfix generation 1，再开放服务。
 
-已完成Watcher触发、Rust有界投递屏障、30秒默认排空超时、失败保留旧generation、5个拆分Process连续切换、Prometheus分段指标和3000玩家1Hz Reload A/B。待完成：慢RPC/Timer运行时测试与连续切换长稳。完成这些项之前，R2仍不是完整闭环。
+已完成Watcher触发、Rust有界投递屏障、30秒默认排空超时、失败保留旧generation、Prometheus分段指标和3000玩家1Hz Reload A/B。`0.3.10-alpha.7`进一步使用固定脚本名IIFE执行Hotfix，避免ESM ModuleMap和每代脚本URL积累；8秒慢RPC屏障等待约7.7秒后正常提交；Component/Actor一次性与重复Timer均按方法名解析当前prototype；5个拆分Process连续切换100次至generation 101并拒绝损坏候选。预热10代后的90代测量中，Timer、Native实体和pending无漂移，V8 Heap/RSS增长通过4MB/16MB硬门槛。R2闭环完成。
 
 完整决策和限制见[Process级TypeScript热更设计](typescript-hot-reload.md)。
 
@@ -130,9 +130,8 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 ## 执行顺序
 
 1. R1、R3、R4保持全绿。
-2. 在`0.3.10-alpha.6`的System、双Bundle和事务基础上完成R2在线操作闭环。
-3. 对切换前后运行相同基准，并执行有连接、慢RPC、Timer和连续generation验收。
-4. 以Windows/Linux Release候选验收整个`0.3.10`。
-5. 发布`0.3.10`后再开始Phase 4。
+2. R2在线操作闭环、慢RPC、Timer和连续generation验收已完成。
+3. 以Windows/Linux Release候选验收整个`0.3.10`。
+4. 发布`0.3.10`后再开始Phase 4。
 
 每个阻塞项独立提交、独立验收。涉及架构、目录边界、数据所有权或业务开发流程时，必须同时更新 `docs/ai/project-context.md` 与 `docs/ai/business-development-manual.md`。

@@ -187,7 +187,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.6`。
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.7`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -260,9 +260,9 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 3.10.5：TypeScript热更闭环
 
-状态：在线Reload闭环、本地源码开发模式和3000玩家1Hz Reload A/B已经完成。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix；`0.3.10-alpha.6`加入`@systemFor`，让Model拥有状态、字段、构造、继承和稳定身份，Hotfix拥有生命周期、领域方法和Handler。Runtime已支持双ESM Bundle、不可变候选目录、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、Watcher Reload、Rust有界投递屏障、超时拒绝、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。codegen从System公开方法生成Model类型声明，Model不再维护抛错空壳。`npm run dev`在本地初次完整构建后监听Hotfix，自动完成生成、类型检查、候选构建和Reload；正式部署仍只接收不可变候选，不执行源码监听。
+状态：完成（2026-07-27）。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix；`alpha.6`加入`@systemFor`，让Model拥有状态、字段、构造、继承和稳定身份，Hotfix拥有生命周期、领域方法和Handler；`alpha.7`把Hotfix改为固定脚本名IIFE，补齐慢RPC、Timer和连续100 generation资源长稳。Runtime支持不可变候选目录、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、Watcher Reload、Rust有界投递屏障、超时拒绝、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。codegen从System公开方法生成Model类型声明，Model不再维护抛错空壳。`npm run dev`在本地初次完整构建后监听Hotfix，自动完成生成、类型检查、不可变候选构建和Reload；正式部署仍只接收不可变候选，不执行源码监听。
 
-3000玩家基线与1Hz Reload各3轮已完成：Move吞吐中位数差异`+0.02%`，90/90次Reload成功且无错误；Reload组Probe p95/p99约增加`31.91%/31.14%`，说明切换屏障有可测尾延迟。剩余工作是慢RPC/Timer和连续generation长稳。第一版必须排空到零再切换，不做字段migration，也不允许Model在线替换。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)与`perf/results/hotfix_latest.md`。
+3000玩家基线与1Hz Reload各3轮已完成：Move吞吐中位数差异`+0.02%`，90/90次Reload成功且无错误；Reload组Probe p95/p99约增加`31.91%/31.14%`，说明切换屏障有可测尾延迟。8秒慢RPC使屏障等待约`7.7s`后提交；一次性与重复Timer跨generation调用当前prototype；100次Reload到generation 101后，损坏候选被拒绝，Timer、Native实体和pending无漂移，预热后的V8 Heap/RSS增长通过`4MB/16MB`硬门槛。第一版必须排空到零再切换，不做字段migration，也不允许Model在线替换。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)、`perf/results/hotfix_latest.md`与`perf/results/hotfix_soak_latest.md`。
 
 ### Phase 3.10.6：性能回归门
 
@@ -274,7 +274,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### 2026-07-26成熟度审计
 
-状态：R1、R3和R4完成；R2双Bundle与事务切换基础完成，在线操作和运行时验收未完成。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。Process级热更闭环完成前，不宣称Phase 4准入完成。
+状态：R1至R4实现与专项验收完成。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。进入Phase 4前仍需完成`0.3.10` Windows/Linux Release候选全矩阵并发布正式Tag。
 
 ## Phase 4：MMORPG 业务扩展
 

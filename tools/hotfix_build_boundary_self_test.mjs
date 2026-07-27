@@ -7,6 +7,14 @@ const root = path.resolve(import.meta.dirname, "..");
 await run(["tools/build_runtime_bundles.mjs"]);
 await run(["tools/build_runtime_bundles.mjs", "--hotfix-only"]);
 
+const hotfixBundle = await readFile(path.join(root, "dist", "hotfix.js"), "utf8");
+if (/^\s*import\s/m.test(hotfixBundle)) {
+  throw new Error("Hotfix bundle must be a self-contained IIFE, not an ESM module");
+}
+if (!hotfixBundle.includes("globalThis.__tiangzModelExports")) {
+  throw new Error("Hotfix bundle does not use the immutable Model export bridge");
+}
+
 const modelManifestFile = path.join(root, "dist", "model.manifest.json");
 const original = await readFile(modelManifestFile, "utf8");
 const manifest = JSON.parse(original);

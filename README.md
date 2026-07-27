@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.3.10-alpha.6`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
+当前开发版本为 `0.3.10-alpha.7`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
@@ -223,7 +223,7 @@ export class LoginMgrScene extends EntryScene {
 
 ## Model与Hotfix
 
-服务端TS固定拆成两个ESM Bundle：`dist/model.js`与`dist/hotfix.js`。Model拥有字段、构造、继承、Scene/Entity/Component身份和稳定类型，Process启动后永久冻结；Hotfix只拥有Handler和方法实现。
+服务端TS固定拆成两个Bundle：`dist/model.js`是只加载一次的ESM，`dist/hotfix.js`是可重复求值的IIFE脚本。Model拥有字段、构造、继承、Scene/Entity/Component身份和稳定类型，Process启动后永久冻结；Hotfix只拥有Handler和方法实现。固定脚本名避免连续Reload把每代候选积累到V8模块表或调试元数据中。
 
 ```powershell
 # Model/Core/协议/Native schema有变化：完整构建并重启Process
@@ -236,7 +236,7 @@ npm run build:hotfix
 npm run dev -- configs/local/StartMachine.json
 ```
 
-Hotfix只能从`#tiangz/model`导入稳定类型。`build:hotfix`会比较Model源码、协议锁、Stable Core API和Native schema指纹；任何一项变化都直接拒绝，不支持强制绕过。命令输出按内容哈希命名的`dist/hotfix-candidates/<hash>`目录，不覆盖当前Bundle。Watcher运行时输入`reload <候选目录>`会让每个Process独立预检并在安全屏障提交；失败或超时继续使用旧generation。`npm run dev`只是把codegen、类型检查、候选构建和Reload自动化，V8仍只执行生成的JavaScript；该命令只用于本地开发，正式部署必须传输完整不可变候选目录。完整有连接压力验收仍待执行，不能直接替换`dist/hotfix.js`。详见[Process级TypeScript热更设计](docs/design/typescript-hot-reload.md)。
+Hotfix只能从`#tiangz/model`导入稳定类型。`build:hotfix`会比较Model源码、协议锁、Stable Core API和Native schema指纹；任何一项变化都直接拒绝，不支持强制绕过。命令输出按内容哈希命名的`dist/hotfix-candidates/<hash>`目录，不覆盖当前Bundle。Watcher运行时输入`reload <候选目录>`会让每个Process独立预检并在安全屏障提交；失败或超时继续使用旧generation。`npm run dev`只是把codegen、类型检查、候选构建和Reload自动化，V8仍只执行生成的JavaScript；该命令只用于本地开发，正式部署必须传输完整不可变候选目录。3000玩家1Hz Reload、8秒慢RPC屏障和100代资源长稳均已有自动化或版本化报告；仍不能直接替换`dist/hotfix.js`。详见[Process级TypeScript热更设计](docs/design/typescript-hot-reload.md)。
 
 ## Scene 调用
 

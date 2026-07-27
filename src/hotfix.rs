@@ -50,6 +50,7 @@ pub struct RuntimeBundles {
 /// 表示已经过文件哈希与冻结 Model 契约校验、但尚未进入 V8 的候选。 / Represents a candidate whose file hash and frozen Model contracts passed validation but has not entered V8 yet.
 pub struct HotfixCandidate {
     hotfix_path: PathBuf,
+    hotfix_source: String,
     manifest_json: String,
     manifest: HotfixManifest,
 }
@@ -86,12 +87,14 @@ impl RuntimeBundles {
             .with_context(|| format!("failed to read {}", hotfix_manifest_path.display()))?;
         let hotfix_manifest: HotfixManifest = serde_json::from_str(&hotfix_manifest_json)
             .with_context(|| format!("failed to parse {}", hotfix_manifest_path.display()))?;
+        let hotfix_bytes = fs::read(&hotfix_path)
+            .with_context(|| format!("failed to read {}", hotfix_path.display()))?;
 
         if model_manifest.format_version != 1 || hotfix_manifest.format_version != 1 {
             bail!("unsupported runtime bundle manifest format");
         }
         verify_hash(&model_path, &model_manifest.model_fingerprint, "Model")?;
-        verify_hotfix_contract(&model_manifest, &hotfix_path, &hotfix_manifest)?;
+        verify_hotfix_contract(&model_manifest, &hotfix_bytes, &hotfix_manifest)?;
 
         let model_specifier = ModuleSpecifier::from_file_path(&model_path).map_err(|_| {
             anyhow::anyhow!("failed to convert {} to a file URL", model_path.display())
@@ -100,6 +103,7 @@ impl RuntimeBundles {
             model_specifier,
             model_manifest,
             initial_hotfix: HotfixCandidate {
+                hotfix_source: decode_hotfix_source(&hotfix_path, hotfix_bytes)?,
                 hotfix_path,
                 manifest_json: hotfix_manifest_json,
                 manifest: hotfix_manifest,
@@ -129,8 +133,11 @@ impl RuntimeBundles {
                 manifest.format_version
             );
         }
-        verify_hotfix_contract(&self.model_manifest, &hotfix_path, &manifest)?;
+        let hotfix_bytes = fs::read(&hotfix_path)
+            .with_context(|| format!("failed to read {}", hotfix_path.display()))?;
+        verify_hotfix_contract(&self.model_manifest, &hotfix_bytes, &manifest)?;
         Ok(HotfixCandidate {
+            hotfix_source: decode_hotfix_source(&hotfix_path, hotfix_bytes)?,
             hotfix_path,
             manifest_json,
             manifest,
@@ -157,7 +164,7 @@ impl RuntimeBundles {
             .context("failed to load immutable Model bundle")?;
         let entrypoints = load_js_entrypoints(runtime)?;
         candidate
-            .install(js_event_loop, runtime, &entrypoints, 0)
+            .install(js_event_loop, runtime, &entrypoints)
             .map(|_| ())
     }
 
@@ -172,7 +179,7 @@ impl RuntimeBundles {
         let entrypoints = load_js_entrypoints(runtime)?;
         let result = self
             .initial_hotfix
-            .install(js_event_loop, runtime, &entrypoints, 1)?;
+            .install(js_event_loop, runtime, &entrypoints)?;
         tracing::info!(
             target: "tiangz::hotfix",
             bundle_version = %result.bundle_version,
@@ -194,17 +201,18 @@ impl HotfixCandidate {
         js_event_loop: &tokio::runtime::Runtime,
         runtime: &mut JsRuntime,
         entrypoints: &JsEntrypoints,
-        generation: u64,
     ) -> Result<HotfixInstallResult> {
         let begin_at = Instant::now();
         call_js_begin_hotfix(js_event_loop, runtime, entrypoints, &self.manifest_json)?;
         let begin_ms = elapsed_ms(begin_at);
 
         let eval_at = Instant::now();
-        let specifier = self.specifier(generation)?;
-        if let Err(error) = load_es_module(js_event_loop, runtime, &specifier, false) {
+        let specifier = self.specifier()?;
+        if let Err(error) =
+            runtime.execute_script(specifier.to_string(), self.hotfix_source.clone())
+        {
             let _ = call_js_abort_hotfix(js_event_loop, runtime, entrypoints, &error.to_string());
-            return Err(error).context("Hotfix candidate evaluation failed");
+            return Err(error).context("Hotfix candidate script evaluation failed");
         }
         let candidate_eval_ms = elapsed_ms(eval_at);
 
@@ -227,24 +235,22 @@ impl HotfixCandidate {
         }
     }
 
-    fn specifier(&self, generation: u64) -> Result<ModuleSpecifier> {
-        let mut specifier = ModuleSpecifier::from_file_path(&self.hotfix_path).map_err(|_| {
+    fn specifier(&self) -> Result<ModuleSpecifier> {
+        ModuleSpecifier::from_file_path(&self.hotfix_path).map_err(|_| {
             anyhow::anyhow!(
                 "failed to convert {} to a file URL",
                 self.hotfix_path.display()
             )
-        })?;
-        specifier.set_query(Some(&format!("generation={generation}")));
-        Ok(specifier)
+        })
     }
 }
 
 fn verify_hotfix_contract(
     model: &ModelManifest,
-    hotfix_path: &Path,
+    hotfix_bytes: &[u8],
     hotfix: &HotfixManifest,
 ) -> Result<()> {
-    verify_hash(hotfix_path, &hotfix.hotfix_hash, "Hotfix")?;
+    verify_bytes_hash(hotfix_bytes, &hotfix.hotfix_hash, "Hotfix")?;
     require_equal(
         "modelFingerprint",
         &model.model_fingerprint,
@@ -281,6 +287,10 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
 
 fn verify_hash(path: &Path, expected: &str, kind: &str) -> Result<()> {
     let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    verify_bytes_hash(&bytes, expected, kind)
+}
+
+fn verify_bytes_hash(bytes: &[u8], expected: &str, kind: &str) -> Result<()> {
     let actual = format!("{:x}", Sha256::digest(bytes));
     if actual != expected {
         bail!(
@@ -288,6 +298,11 @@ fn verify_hash(path: &Path, expected: &str, kind: &str) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn decode_hotfix_source(path: &Path, bytes: Vec<u8>) -> Result<String> {
+    String::from_utf8(bytes)
+        .with_context(|| format!("Hotfix script is not valid UTF-8: {}", path.display()))
 }
 
 fn require_equal(name: &str, model: &str, hotfix: &str) -> Result<()> {

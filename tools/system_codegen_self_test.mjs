@@ -9,6 +9,11 @@ const cases = [
     "GetItem(itemId: number): ItemView | undefined;",
     "UseItem(itemId: number): ItemSnapshot;",
   ]],
+  ["NumericComponentSystem.d.ts", [
+    "Get(type: NumericTypeValue): number;",
+    "Set(type: NumericTypeValue, value: number): void;",
+    "Snapshot(): UnitNumericDelta[];",
+  ]],
 ];
 
 for (const [file, expected] of cases) {
@@ -27,6 +32,7 @@ const modelFiles = [
   "app/model/demo/map/PlayerUnit.ts",
   "app/model/demo/login/LoginComponent.ts",
   "app/model/demo/item/ItemComponent.ts",
+  "app/model/demo/numeric/NumericComponent.ts",
 ];
 for (const file of modelFiles) {
   const content = await readFile(path.join(root, file), "utf8");

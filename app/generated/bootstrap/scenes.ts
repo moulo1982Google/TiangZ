@@ -10,10 +10,12 @@ import "../../model/demo/scenes/LoginScene";
 import "../../model/demo/scenes/MapHostScene";
 import { ItemComponent as SystemTarget0 } from "../../model/demo/item/ItemComponent";
 import { LoginComponent as SystemTarget1 } from "../../model/demo/login/LoginComponent";
-import { PlayerUnit as SystemTarget2 } from "../../model/demo/map/PlayerUnit";
+import { NumericComponent as SystemTarget2 } from "../../model/demo/numeric/NumericComponent";
+import { PlayerUnit as SystemTarget3 } from "../../model/demo/map/PlayerUnit";
 
 registerKnownRpcs(RpcDescriptors0);
 registerKnownMessages(MessageDescriptors0);
 HotfixSystem.RequireType(SystemTarget0);
 HotfixSystem.RequireType(SystemTarget1);
 HotfixSystem.RequireType(SystemTarget2);
+HotfixSystem.RequireType(SystemTarget3);

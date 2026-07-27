@@ -24,7 +24,7 @@ import {
   extractFrameRpcId,
   rewriteFrameRpcId,
 } from "../app/core/process/ActorLocation";
-import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
+import { HotfixSystem, systemFor } from "../app/core/hotReload/HotfixSystem";
 import type { HotfixManifest } from "../app/core/hotReload/contracts";
 
 void main();
@@ -34,6 +34,7 @@ async function main(): Promise<void> {
   try {
     HotfixSystem.Begin(testHotfixManifest("actor-normal"));
     await import("../app/hotfix/demo/map/PlayerUnitSystem");
+    await import("../app/hotfix/demo/numeric/NumericComponentSystem");
     HotfixSystem.Commit();
     await Promise.resolve();
     testGeneratedNativeHandleScalarAccess();
@@ -367,6 +368,10 @@ async function testPlayerUnitComponents(): Promise<void> {
   const stableHandle = native.Handle;
   HotfixSystem.Begin(testHotfixManifest("actor-inverted"));
   await import("../perf/hotfix/fixtures/inverted");
+  const { NumericComponentSystem } = await import(
+    "../app/hotfix/demo/numeric/NumericComponentSystem"
+  );
+  systemFor(NumericComponent)(NumericComponentSystem);
   HotfixSystem.Commit();
   assert.equal(
     player.Move({ inputX: 0, inputY: 1, sequence: 6 }),

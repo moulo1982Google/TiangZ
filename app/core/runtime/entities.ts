@@ -45,33 +45,41 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   /** 释放组件拥有的资源；Entity 销毁时只调用一次。 / Releases component-owned resources; Entity disposal invokes it exactly once. */
   protected OnDestroy(): void {}
 
-  /** 创建绑定到本组件的一次性定时器，并在销毁时自动取消。 / Creates a one-shot timer tied to this component and automatically cancels it on disposal. */
+  /** 创建按当前prototype方法名执行的一次性组件定时器；不保存Hotfix闭包，销毁时自动取消。 / Creates a one-shot component timer resolved by method name on the current prototype; it retains no Hotfix closure and is cancelled on disposal. */
   NewOnceTimer(
     delayMs: number,
-    callback: (self: this) => MaybePromise<void>,
+    methodName: string,
   ): TimerId {
     let timerId = 0;
     const run = () => {
       this.timers.delete(timerId);
-      if (!this.disposed) return callback(this);
+      if (!this.disposed) return invokeTimerMethod(this, methodName);
     };
     timerId = this.Parent instanceof Actor
-      ? this.Parent.NewOnceTimer(delayMs, run)
+      ? this.Parent.__newOnceTimer(delayMs, run)
       : TimerSystem.Instance.NewOnceTimer(delayMs, run);
     this.timers.add(timerId);
     return timerId;
   }
 
-  /** 创建绑定到本组件的重复定时器；销毁后回调不会再执行。 / Creates a repeated timer tied to this component; callbacks never run after disposal. */
+  /**
+   * 创建绑定到本组件的重复定时器，并在每次触发时按方法名解析当前Hotfix实现。
+   * 不接受业务闭包，避免长期Timer让旧generation无法释放；销毁组件会自动取消。
+   *
+   * Creates a repeated timer tied to this component and resolves the current
+   * Hotfix method by name on every tick. Business closures are intentionally
+   * rejected so long-lived timers do not retain old generations; disposing the
+   * component cancels the timer automatically.
+   */
   NewRepeatedTimer(
     intervalMs: number,
-    callback: (self: this) => MaybePromise<void>,
+    methodName: string,
   ): TimerId {
     const run = () => {
-      if (!this.disposed) return callback(this);
+      if (!this.disposed) return invokeTimerMethod(this, methodName);
     };
     const timerId = this.Parent instanceof Actor
-      ? this.Parent.NewRepeatedTimer(intervalMs, run)
+      ? this.Parent.__newRepeatedTimer(intervalMs, run)
       : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run);
     this.timers.add(timerId);
     return timerId;
@@ -132,6 +140,16 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
     "then" in value &&
     typeof value.then === "function"
   );
+}
+
+/** 按名字调用所有者当前prototype上的Timer方法，使长期Timer跟随Hotfix切换。 / Invokes the named timer method from the owner's current prototype so long-lived timers follow Hotfix switches. */
+function invokeTimerMethod(owner: object, methodName: string): MaybePromise<void> {
+  if (!methodName) throw new Error("timer method name must not be empty");
+  const method = (owner as Record<string, unknown>)[methodName];
+  if (typeof method !== "function") {
+    throw new Error(`timer method not found: ${owner.constructor.name}.${methodName}`);
+  }
+  return (method as (this: object) => MaybePromise<void>).call(owner);
 }
 
 export type ComponentCtor<TComponent extends Component<any[]> = Component<any[]>> =
@@ -351,16 +369,45 @@ export abstract class Actor<
   /** 在所属 Scene 内同步初始化 Actor 状态。 / Initializes Actor state synchronously inside its owning Scene. */
   protected Awake(..._args: TAwakeArgs): void {}
 
-  /** 调度 Actor mailbox 定时器，使回调遵循该 Actor 的顺序策略。 / Schedules an Actor-mailbox timer so its callback obeys this Actor's ordering policy. */
+  /** 调度按当前prototype方法名执行的一次性Actor mailbox定时器。 / Schedules a one-shot Actor-mailbox timer resolved by method name on the current prototype. */
   NewOnceTimer(
+    delayMs: number,
+    methodName: string,
+  ): TimerId {
+    return this.__newOnceTimer(
+      delayMs,
+      (actor) => invokeTimerMethod(actor, methodName),
+    );
+  }
+
+  /** 仅供Component把稳定Core回调接入Actor mailbox；业务应使用方法名版本。 / Lets Components route a stable Core callback through the Actor mailbox; business code should use the method-name API. */
+  __newOnceTimer(
     delayMs: number,
     callback: (actor: this) => MaybePromise<void>,
   ): TimerId {
-    return this.ctx.newOnceTimer(delayMs, callback as (actor: Actor<any[]>) => MaybePromise<void>);
+    return this.ctx.newOnceTimer(
+      delayMs,
+      callback as (actor: Actor<any[]>) => MaybePromise<void>,
+    );
   }
 
-  /** 调度重复 Actor mailbox 定时器；销毁会取消后续回调。 / Schedules a repeated Actor-mailbox timer; disposal cancels future callbacks. */
+  /**
+   * 调度按当前prototype方法名执行的重复Actor mailbox定时器；销毁会取消后续回调。
+   * Schedules a repeated Actor-mailbox timer that resolves a method on the
+   * current prototype; disposal cancels future callbacks.
+   */
   NewRepeatedTimer(
+    intervalMs: number,
+    methodName: string,
+  ): TimerId {
+    return this.__newRepeatedTimer(
+      intervalMs,
+      (actor) => invokeTimerMethod(actor, methodName),
+    );
+  }
+
+  /** 仅供Component把稳定Core回调接入Actor mailbox；业务应使用方法名版本。 / Lets Components route a stable Core callback through the Actor mailbox; business code should use the method-name API. */
+  __newRepeatedTimer(
     intervalMs: number,
     callback: (actor: this) => MaybePromise<void>,
   ): TimerId {

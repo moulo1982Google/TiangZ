@@ -158,3 +158,10 @@ npm run verify:core-api
 - PlayerUnit、LoginComponent与ItemComponent迁移到ET风格Hotfix System，Model不再手写抛错方法空壳。
 - 新增3000玩家基线与1Hz Reload A/B runner和正式报告；90/90次Reload成功，Move吞吐无可见下降。
 - Developer Tools升级到`v0.11.0`，VS Code与CI共同识别`@systemFor`和生成入口。
+
+### 0.3.10-alpha.7
+
+- Hotfix从每代独立ESM改为固定脚本名IIFE；Model仍只加载一次，并通过只读桥提供稳定公开类型，避免V8 ModuleMap和脚本URL随generation增长。
+- Component与Actor的一次性、重复Timer统一改为方法名API，触发时解析当前Hotfix prototype；进程级`TimerSystem`闭包API仅供Core和稳定层使用。
+- NumericComponent生命周期和领域行为迁入`@systemFor`，Model只保留Native handle状态。
+- 新增8秒慢RPC切换屏障和100 generation资源长稳命令，并将慢RPC验收纳入完整`npm run verify`。
