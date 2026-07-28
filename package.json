@@ -1,6 +1,6 @@
 {
   "name": "ets-runtime",
-  "version": "0.3.10-alpha.9",
+  "version": "0.3.10-rc.1",
   "private": true,
   "packageManager": "npm@11.18.0",
   "engines": {

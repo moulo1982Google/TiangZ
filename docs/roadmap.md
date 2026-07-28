@@ -187,7 +187,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.9`。
+目标版本：`0.3.10`。当前候选版本：`0.3.10-rc.1`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -283,7 +283,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### 2026-07-26成熟度审计
 
-状态：R1至R4实现与专项验收完成，`alpha.9` Windows与Linux Release候选预演均已通过。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。进入Phase 4前仍需冻结`0.3.10-rc.1`、执行最终全矩阵确认并发布正式Tag。
+状态：R1至R4实现与专项验收完成，`alpha.9` Windows与Linux Release候选预演均已通过，`0.3.10-rc.1`已经冻结。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。进入Phase 4前只剩最终双平台矩阵与`v0.3.10`正式Tag。
 
 ## Phase 4：MMORPG 业务扩展
 

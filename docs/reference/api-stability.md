@@ -172,6 +172,12 @@ npm run verify:core-api
 - Item迁移为真实ChildEntity，NativeItemRef由Item自身持有并使用ProcessHost分配的真实InstanceId；Item局部规则和集合规则分别由Hotfix System承载。
 - 新增`perf:child-entity`微基准，防止子Entity生命周期能力出现无依据的性能回归。
 
+### 0.3.10-rc.1
+
+- 冻结`0.3.10`的Stable API、Model/Hotfix边界、协议指纹和Native Schema，不再接受功能扩展。
+- Windows与Linux使用同一提交执行依赖审计、完整`verify`和最终制品smoke；RC期间只接受发布阻塞修复。
+- RPC系统错误响应从生成Codec创建完整默认对象；账号断线与重进交叠时重新查询权威目录，避免使用已销毁Unit引用。
+
 ### 0.3.10-alpha.7
 
 - Hotfix从每代独立ESM改为固定脚本名IIFE；Model仍只加载一次，并通过只读桥提供稳定公开类型，避免V8 ModuleMap和脚本URL随generation增长。
