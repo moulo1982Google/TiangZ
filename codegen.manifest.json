@@ -152,7 +152,7 @@
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
         "native_data/demo/MapOps.native": "fd867209c156b84dd7f949641f5f20dde01958e74bb44c99671d0e75a2cf2d77",
         "native_data/demo/Unit.native": "0d87240fa5e4d46e539330b1e83aa449a05b44782f7ddc6a04e3ba620240f3e4",
-        "package.json": "838e8b2cc8b52e86230cba8fcd4e9820a775e75b4b193087e36c09f0690a8ceb",
+        "package.json": "b3e403ed33eeaf9620b9a5d9dc8ca96a34177ee17acbe9ed38f9326de9c168c9",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -242,7 +242,8 @@
     "scenes": {
       "command": "npm run codegen:scenes",
       "contentInputs": {
-        "app/hotfix/demo/item/ItemComponentSystem.ts": "bd852321ffd9c42e57d12bdcb27b481b9df1aba2a242fd506b3efcc46447571a",
+        "app/hotfix/demo/item/ItemComponentSystem.ts": "fd12ccd069ae799d195c688ec02212cc217a1e32fbffc63e041bfe0a56902bd6",
+        "app/hotfix/demo/item/ItemSystem.ts": "609514843905741ca0f93ce86e5c7ef6a11b73d802982276e968b10e357c6e22",
         "app/hotfix/demo/login/LoginComponentSystem.ts": "602d57fbfbd09f790ef87fc7d689c6282abb14ef5bd55a8daeb874861088d824",
         "app/hotfix/demo/map/PlayerUnitSystem.ts": "e883ff4361fd045e2407c149bcb9a315d09d772f9ab8d22a3220bc1f855891e1",
         "app/hotfix/demo/numeric/NumericComponentSystem.ts": "1434909aa0e132f5c53a528e9e811ca91cd7a483cb913730f982c71f4ff3c268",
@@ -291,6 +292,7 @@
           ],
           "paths": [
             "app/hotfix/demo/item/ItemComponentSystem.ts",
+            "app/hotfix/demo/item/ItemSystem.ts",
             "app/hotfix/demo/login/LoginComponentSystem.ts",
             "app/hotfix/demo/map/PlayerUnitSystem.ts",
             "app/hotfix/demo/numeric/NumericComponentSystem.ts"
@@ -328,14 +330,15 @@
         }
       ],
       "outputs": {
-        "app/generated/bootstrap/scenes.ts": "b5ba20efb520c898681f32a4d28be785702ac4a6d8707a8e4e415da95bf7679d",
+        "app/generated/bootstrap/scenes.ts": "c86f525e5641356fc4878d4a0a213a0ce70818666938684056a686c787450bad",
         "app/generated/bootstrap/systems/ItemComponentSystem.d.ts": "f6355ebea2fd7855ba6695eff71b037f87724ad79157653a478dd9ae8ae33e08",
+        "app/generated/bootstrap/systems/ItemSystem.d.ts": "cdaa9797c5474c72fa5e2b8b465a24af6620338fa58968ca666bd9cd036b359b",
         "app/generated/bootstrap/systems/LoginComponentSystem.d.ts": "dc7d6b931f04cce0e5c6541a2b8674025b1b95c8b94d7f5fdcce85e18d088a58",
         "app/generated/bootstrap/systems/NumericComponentSystem.d.ts": "4897bb4399bf57f27f981ca2e32ac746eae7e03de962cc97e0312024b4a62189",
         "app/generated/bootstrap/systems/PlayerUnitSystem.d.ts": "7c2c39926505bf1ae638ab675dba3dd7aab4b579b0feb9714f7762e8cc287875",
         "app/generated/hotfix/handlers.bench.ts": "fe744e5cfd7b7f0340cb5c333ec275aef0ebedc79c45e2c77a37e7fbf41348ae",
         "app/generated/hotfix/handlers.ts": "bc8de6a80009b146dfd6e5a0a33f08f64fbba0fc5fbae8d5fa6757ec3dbec5f3",
-        "app/generated/hotfix/patches.ts": "bc1d0d9203e258f13630480e9834e0121d8a16b465ff7352a2035eeccdbf90fb"
+        "app/generated/hotfix/patches.ts": "3e46fe4b7c8db0348bbd9ac9392e21e5f14349f2a7601acefecba47a275c1bd5"
       },
       "outputRoots": [
         {

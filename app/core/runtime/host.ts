@@ -2,7 +2,14 @@ import { ActorContext, SceneContext } from "./contexts";
 import { isPromiseLike, type MaybePromise } from "../async";
 import type {
   Actor,
+  ChildEntity,
+  Component,
+  Entity,
   Scene,
+} from "./entities";
+import type {
+  ChildEntityAwakeArgs,
+  ChildEntityCtor,
 } from "./entities";
 import { MailBoxComponent } from "./MailBoxComponent";
 import { EntityRoot } from "./root";
@@ -19,6 +26,7 @@ import type {
   ActorAwakeArgs,
   ActorId,
   ActorRef,
+  EntityId,
   MailboxType,
   SceneCtor,
   SceneId,
@@ -166,6 +174,74 @@ export class ProcessHost {
     }
 
     return instance;
+  }
+
+  /**
+   * 创建并注册一个由 Component 拥有的本地子 Entity。
+   *
+   * 子 Entity 进入 EntityRoot 以获得统一 O(1) 生命周期索引，但不会进入
+   * actorsByInstanceId，也不会分配 mailbox 或网络路由。
+   *
+   * Creates and registers a local child Entity owned by a Component. It enters
+   * EntityRoot for O(1) lifecycle lookup, but never enters actor routing and
+   * receives neither a mailbox nor a network address.
+   */
+  spawnChild<T extends ChildEntity<any[]>>(
+    sceneId: SceneId,
+    parent: Component<any[]>,
+    id: EntityId,
+    ctor: ChildEntityCtor<T>,
+    ...awakeArgs: ChildEntityAwakeArgs<T>
+  ): T {
+    const scene = this.getLocalScene(sceneId);
+    if (parent.DomainScene() !== scene.instance) {
+      throw new Error(`child owner belongs to another domain scene: ${String(id)}`);
+    }
+
+    const instanceId = this.allocateInstanceId();
+    const instance = new ctor();
+    try {
+      instance.__attach(id, instanceId, parent, scene.instance);
+      this.Root.Add(instance);
+      instance.__awake(...awakeArgs);
+      return instance;
+    } catch (error) {
+      this.Root.Remove(instanceId);
+      this.disposeFailedEntity(instance, `child ${sceneId}/${String(id)}`);
+      throw error;
+    }
+  }
+
+  /** 从 EntityRoot 移除并销毁一个本地子 Entity；只有当前拥有者可以执行。 / Removes and disposes a local child Entity; only its current owner may do so. */
+  despawnChild(
+    sceneId: SceneId,
+    parent: Component<any[]>,
+    child: ChildEntity<any[]>,
+  ): boolean {
+    const scene = this.getLocalScene(sceneId);
+    if (
+      child.Parent !== parent ||
+      child.DomainScene() !== scene.instance ||
+      this.Root.Get(child.InstanceId) !== child
+    ) {
+      return false;
+    }
+
+    const entityId = child.Id;
+    const instanceId = child.InstanceId;
+    this.Root.Remove(instanceId);
+    try {
+      child.__dispose();
+    } catch (disposeError) {
+      CoreLogger.error("child entity destroy failed", {
+        scene: sceneId,
+        entity: child.constructor.name,
+        entityId,
+        instanceId,
+        error: disposeError,
+      });
+    }
+    return true;
   }
 
   despawnScene(sceneId: SceneId): boolean {
@@ -389,7 +465,7 @@ export class ProcessHost {
     actor.running = false;
   }
 
-  private disposeFailedEntity(entity: Scene | Actor, label: string): void {
+  private disposeFailedEntity(entity: Entity, label: string): void {
     try {
       entity.__dispose();
     } catch (error) {

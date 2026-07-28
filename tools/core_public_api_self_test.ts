@@ -1,5 +1,6 @@
 import {
   Component,
+  ChildEntity,
   EntryScene,
   Unit,
   unitMessageHandler,
@@ -50,6 +51,8 @@ class FixtureComponent extends Component<[initialValue: number]> {
 
 class FixtureUnit extends Unit {}
 
+class FixtureChild extends ChildEntity {}
+
 @entryScene("CoreApiFixture")
 class FixtureScene extends EntryScene {}
 
@@ -79,5 +82,7 @@ if (
 ) {
   throw new Error("stable Core API fixture failed");
 }
+
+void FixtureChild;
 
 console.log("core public API self-test passed");

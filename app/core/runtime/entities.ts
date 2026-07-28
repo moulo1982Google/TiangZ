@@ -17,6 +17,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   private disposed = false;
   private parent: Entity | undefined;
   private readonly timers = new Set<TimerId>();
+  private readonly children = new Map<EntityId, ChildEntity<any[]>>();
 
   get IsDisposed(): boolean {
     return this.disposed;
@@ -93,6 +94,89 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
       : TimerSystem.Instance.Remove(timerId);
   }
 
+  /**
+   * 创建并拥有一个没有 mailbox 的本地子 Entity。
+   *
+   * 子 Entity 会取得进程唯一 InstanceId 并进入 EntityRoot，但不能作为 Actor
+   * 接收网络消息。Awake 失败时 Root、所有权索引和已创建资源都会回滚。
+   *
+   * Creates and owns one local child Entity without a mailbox. The child gets
+   * a process-unique InstanceId and enters EntityRoot, but is not routable as an
+   * Actor. Failed Awake rolls back the Root entry and owned resources.
+   */
+  AddChild<T extends ChildEntity<any[]>>(
+    ctor: ChildEntityCtor<T>,
+    id: EntityId,
+    ...args: ChildEntityAwakeArgs<T>
+  ): T {
+    if (this.disposed) {
+      throw new Error(`component is disposed: ${this.constructor.name}`);
+    }
+    if (this.children.has(id)) {
+      throw new Error(`component already has child: ${String(id)}`);
+    }
+
+    const child = this.DomainScene<Scene>().__spawnChild(this, id, ctor, ...args);
+    this.children.set(id, child);
+    return child;
+  }
+
+  /** 返回指定类型的必需子 Entity；不存在或类型不符时抛错。 / Returns a required child Entity and throws when it is missing or has another type. */
+  GetChild<T extends ChildEntity<any[]>>(
+    ctor: ChildEntityCtor<T>,
+    id: EntityId,
+  ): T {
+    const child = this.TryGetChild(ctor, id);
+    if (!child) {
+      throw new Error(`component child not found: ${ctor.name}#${String(id)}`);
+    }
+    return child;
+  }
+
+  /** 查询可选子 Entity，不创建实例也不改变生命周期。 / Looks up an optional child Entity without creating it or changing lifecycle. */
+  TryGetChild<T extends ChildEntity<any[]>>(
+    ctor: ChildEntityCtor<T>,
+    id: EntityId,
+  ): T | undefined {
+    const child = this.children.get(id);
+    return child instanceof ctor ? child : undefined;
+  }
+
+  /** 返回稳定数组快照，可按运行时子 Entity 类型过滤。 / Returns a stable array snapshot, optionally filtered by child Entity type. */
+  GetChildren<T extends ChildEntity<any[]> = ChildEntity<any[]>>(
+    ctor?: ChildEntityCtor<T>,
+  ): readonly T[] {
+    const values = [...this.children.values()];
+    return (ctor
+      ? values.filter((child): child is T => child instanceof ctor)
+      : values) as T[];
+  }
+
+  /**
+   * 从所有权索引和 EntityRoot 移除子 Entity，并立即级联销毁其组件与 Timer。
+   * 返回值只用于确认移除的对象；移除后不得继续访问该引用。
+   *
+   * Removes a child from ownership and EntityRoot, then immediately disposes
+   * its Components and timers. The returned object is only an identity result
+   * and must not be used after removal.
+   */
+  RemoveChild<T extends ChildEntity<any[]>>(
+    ctor: ChildEntityCtor<T>,
+    id: EntityId,
+  ): T | undefined {
+    if (this.disposed) return undefined;
+    const child = this.TryGetChild(ctor, id);
+    if (!child) return undefined;
+
+    this.children.delete(id);
+    this.DomainScene<Scene>().__despawnChild(this, child);
+    return child;
+  }
+
+  get ChildCount(): number {
+    return this.children.size;
+  }
+
   __attach(parent: Entity): void {
     if (this.parent) {
       throw new Error(`component is already attached: ${this.constructor.name}`);
@@ -128,6 +212,10 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     this.disposed = true;
     UpdateSystem.TryUnregister(this);
     for (const timerId of [...this.timers]) this.RemoveTimer(timerId);
+    for (const child of [...this.children.values()].reverse()) {
+      this.children.delete(child.Id);
+      this.DomainScene<Scene>().__despawnChild(this, child);
+    }
     this.OnDestroy();
     this.parent = undefined;
   }
@@ -160,8 +248,8 @@ type ComponentAwakeArgs<TComponent> =
 export abstract class Entity {
   private readonly components = new Map<Function, Component<any[]>>();
   private disposed = false;
-  private id: EntityId | undefined;
-  private instanceId: InstanceId = 0;
+  private entityId: EntityId | undefined;
+  private entityInstanceId: InstanceId = 0;
   private parent: Entity | Component<any[]> | undefined;
   private domainScene: Scene | undefined;
 
@@ -170,14 +258,14 @@ export abstract class Entity {
   }
 
   get Id(): EntityId {
-    if (this.id === undefined) {
+    if (this.entityId === undefined) {
       throw new Error(`entity is not attached: ${this.constructor.name}`);
     }
-    return this.id;
+    return this.entityId;
   }
 
   get InstanceId(): InstanceId {
-    return this.instanceId;
+    return this.entityInstanceId;
   }
 
   get Parent(): Entity | Component<any[]> | undefined {
@@ -274,14 +362,14 @@ export abstract class Entity {
     parent: Entity | Component<any[]> | undefined,
     domainScene: Scene,
   ): void {
-    if (this.instanceId !== 0) {
+    if (this.entityInstanceId !== 0) {
       throw new Error(`entity is already attached: ${this.constructor.name}`);
     }
     if (!Number.isSafeInteger(instanceId) || instanceId <= 0) {
       throw new Error(`invalid entity instance id: ${instanceId}`);
     }
-    this.id = id;
-    this.instanceId = instanceId;
+    this.entityId = id;
+    this.entityInstanceId = instanceId;
     this.parent = parent;
     this.domainScene = domainScene;
   }
@@ -310,7 +398,7 @@ export abstract class Entity {
       firstError ??= error;
     }
 
-    this.instanceId = 0;
+    this.entityInstanceId = 0;
     this.parent = undefined;
     this.domainScene = undefined;
 
@@ -321,6 +409,106 @@ export abstract class Entity {
     if (this.disposed) {
       throw new Error(`entity is disposed: ${this.constructor.name}`);
     }
+  }
+}
+
+export type ChildEntityCtor<
+  TEntity extends ChildEntity<any[]> = ChildEntity<any[]>,
+> = new () => TEntity;
+export type ChildEntityAwakeArgs<TEntity> =
+  TEntity extends ChildEntity<infer TAwakeArgs> ? TAwakeArgs : never;
+
+/**
+ * 由 Component 拥有、没有独立 mailbox 的本地 Entity。
+ *
+ * Item、Buff、Quest 等独立实例使用该类型；它们拥有稳定 Id/InstanceId、组件
+ * 和 Timer 生命周期，但不能直接成为跨进程消息目标。挂在 Actor 下的子 Entity
+ * Timer 会进入所属 Actor mailbox，从而与玩家消息保持同一串行边界。
+ *
+ * A local Entity owned by a Component and without its own mailbox. Item, Buff,
+ * and Quest instances use this type. They have stable identity, Components,
+ * and timers, but are not cross-process message targets. Timers below an Actor
+ * enter that Actor's mailbox and share its serialization boundary.
+ */
+export abstract class ChildEntity<
+  TAwakeArgs extends unknown[] = [],
+> extends Entity {
+  private awoken = false;
+  private readonly timers = new Set<TimerId>();
+
+  /** 子 Entity 挂载并注册 Root 后同步初始化；不得执行异步 IO。 / Synchronously initializes a child after Root registration; asynchronous I/O is forbidden. */
+  protected Awake(..._args: TAwakeArgs): void {}
+
+  /** 创建按当前 Hotfix prototype 方法解析的一次性 Timer。 / Creates a one-shot timer resolved against the current Hotfix prototype. */
+  NewOnceTimer(delayMs: number, methodName: string): TimerId {
+    let timerId = 0;
+    const run = () => {
+      this.timers.delete(timerId);
+      if (!this.IsDisposed) return invokeTimerMethod(this, methodName);
+    };
+    const actor = this.OwnerActor();
+    timerId = actor
+      ? actor.__newOnceTimer(delayMs, run)
+      : TimerSystem.Instance.NewOnceTimer(delayMs, run);
+    this.timers.add(timerId);
+    return timerId;
+  }
+
+  /** 创建按当前 Hotfix prototype 方法解析的重复 Timer；高数量对象优先使用所属 Component 的合并调度。 / Creates a repeated timer resolved against the current Hotfix prototype; high-cardinality objects should prefer owner-level coalesced scheduling. */
+  NewRepeatedTimer(intervalMs: number, methodName: string): TimerId {
+    const run = () => {
+      if (!this.IsDisposed) return invokeTimerMethod(this, methodName);
+    };
+    const actor = this.OwnerActor();
+    const timerId = actor
+      ? actor.__newRepeatedTimer(intervalMs, run)
+      : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run);
+    this.timers.add(timerId);
+    return timerId;
+  }
+
+  /** 取消本子 Entity 拥有的 Timer。 / Cancels one timer owned by this child Entity. */
+  RemoveTimer(timerId: TimerId): boolean {
+    if (!this.timers.delete(timerId)) return false;
+    const actor = this.OwnerActor();
+    return actor
+      ? actor.RemoveTimer(timerId)
+      : TimerSystem.Instance.Remove(timerId);
+  }
+
+  __awake(...args: TAwakeArgs): void {
+    if (this.awoken) {
+      throw new Error(`child entity is already awake: ${this.constructor.name}`);
+    }
+    if (this.IsDisposed) {
+      throw new Error(`child entity is disposed: ${this.constructor.name}`);
+    }
+    this.awoken = true;
+    const result = this.Awake(...args) as unknown;
+    if (isPromiseLike(result)) {
+      void Promise.resolve(result).catch((error) => {
+        CoreLogger.error("async child entity Awake failed", {
+          entity: this.constructor.name,
+          error,
+        });
+      });
+      throw new Error(`child entity Awake must be synchronous: ${this.constructor.name}`);
+    }
+  }
+
+  override __dispose(): void {
+    if (this.IsDisposed) return;
+    for (const timerId of [...this.timers]) this.RemoveTimer(timerId);
+    super.__dispose();
+  }
+
+  private OwnerActor(): Actor<any[]> | undefined {
+    let owner: Entity | Component<any[]> | undefined = this.Parent;
+    while (owner) {
+      if (owner instanceof Actor) return owner;
+      owner = owner instanceof Component ? owner.Parent : owner.Parent;
+    }
+    return undefined;
   }
 }
 
@@ -348,6 +536,21 @@ export abstract class Scene extends Entity {
   /** 从路由中移除并销毁 Actor；此后不可再使用旧 InstanceId。 / Removes an Actor from routing and disposes it; stale InstanceIds must no longer be used. */
   DespawnActor(actorId: ActorId): boolean {
     return this.sceneContext.despawnActor(actorId);
+  }
+
+  /** 仅供 Component 创建无 mailbox 的本地子 Entity。 / Internal Component entry for creating a local child Entity without a mailbox. */
+  __spawnChild<T extends ChildEntity<any[]>>(
+    parent: Component<any[]>,
+    id: EntityId,
+    ctor: ChildEntityCtor<T>,
+    ...awakeArgs: ChildEntityAwakeArgs<T>
+  ): T {
+    return this.sceneContext.spawnChild(parent, id, ctor, ...awakeArgs);
+  }
+
+  /** 仅供拥有者 Component 销毁其本地子 Entity。 / Internal owner entry for destroying a local child Entity. */
+  __despawnChild(parent: Component<any[]>, child: ChildEntity<any[]>): boolean {
+    return this.sceneContext.despawnChild(parent, child);
   }
 }
 

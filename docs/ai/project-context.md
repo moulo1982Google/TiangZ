@@ -4,13 +4,13 @@
 
 维护契约：任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须同时更新本文和[AI业务开发手册](business-development-manual.md)。设计改动未同步这两份文档，视为尚未完成。
 
-更新时间：2026-07-26。
+更新时间：2026-07-28。
 
 ## 一句话定位
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.8`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，Phase 4业务扩展尚未开始；进入Phase 4前仍要完成`0.3.10` Release候选全矩阵与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.9`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，Phase 4业务扩展尚未开始；进入Phase 4前仍要完成`0.3.10` Release候选全矩阵与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 
@@ -35,7 +35,8 @@ Machine
           -> 动态 Scene（map:1、副本实例等业务容器）
               -> UnitComponent（地图Unit集合）
                   -> Unit（玩家、怪物、NPC）
-                      -> Component（Numeric、Item、Position等状态与能力）
+                      -> Component（Numeric、Item、Buff等状态与能力）
+                          -> ChildEntity（Item、Buff、动态Quest等本地子实例）
 ```
 
 ## 核心名词
@@ -82,17 +83,31 @@ C2M_UseItemHandler
 
 ### Component拥有的子对象
 
-Component既是能力组合点，也可以是某类子对象集合的唯一所有者。例如`ItemComponent`拥有玩家全部道具，`QuestComponent`拥有任务状态，`AchievementComponent`拥有成就状态。外部业务不能直接取得或修改这些Component内部的`Map`。
+Component既是能力组合点，也是某类子对象集合的唯一所有者。Core提供`AddChild/GetChild/TryGetChild/GetChildren/RemoveChild`，统一维护Component所有权索引、EntityRoot、Timer和级联销毁；业务Component不再重复手写一套生命周期Map。
 
 子对象是否继承Entity取决于它是否真的具有独立身份和生命周期，而不是为了统一外观：
 
-- 道具实例拥有稳定`ItemId`，并可能有强化、耐久、绑定、随机词条、交易锁等独立状态，适合成为Item Entity。它仍是`ItemComponent`的子对象，不是Actor，没有mailbox，也不能被跨Process路由。
-- 普通任务和成就通常由配置ID唯一确定，只需要Component拥有的`QuestState`或`AchievementState`；只有可重复实例、独立计时或动态子目标等需求出现时，才升级为子Entity。
+- 道具实例拥有稳定`ItemId`，并可能有强化、耐久、绑定、随机词条、交易锁等独立状态，适合成为`Item extends ChildEntity`。Buff和进行中的Quest在具有独立生命周期时使用同一语义。
+- `QuestComponent`只为当前进行中的任务创建Quest子Entity；初始可以为空。任务完成时删除Quest，并把稳定的Quest配置ID写入已完成集合。已完成记录不是运行时Entity，可按规模使用Set、位图或持久化索引。
 - 金币、材料数量等没有实例差异的数据使用整数、Map或Numeric，不为每个值创建Entity。
 
 运行时对象、协议快照和持久化记录必须分开命名：`Item`/`NativeItemRef`表示运行时权威对象或句柄，`ItemSnapshot`表示跨边界副本，`ItemRecord`表示数据库记录。不要用`ItemDB`同时承担三种语义。
 
-领域边界采用“可以读取对象，修改经过拥有它的Component”：`GetItem`可以返回不带修改和`Dispose`能力的短期`ItemView`；使用、增减、拆分、移动和删除道具必须调用`ItemComponent`方法，以统一维护校验、集合索引、dirty/version、持久化和通知。Native可变句柄只在所属System内部使用，不得从Handler泄漏，也不得跨`await`或所有者生命周期长期保存。
+ChildEntity拥有稳定`Id/InstanceId`并进入EntityRoot，但没有mailbox、网络地址和跨Process路由能力。它的Parent是所属Component，DomainScene仍是玩家所在地图。其Awake必须同步；Component删除或玩家下线时，Core按所有权链自动取消Timer、销毁子Entity并移除Root。
+
+领域边界采用“可以读取对象，集合变化经过拥有它的Component”：单个Item/Buff的局部规则写在自身Hotfix System，新增、删除、转移、堆叠合并和对外同步由所属Component协调。Native可变句柄只在对应System内部使用，不得跨`await`或所有者生命周期长期保存。
+
+Buff需要被AOI玩家看到，不代表Buff需要mailbox，也不需要通用dirty Delta。Buff创建时向当前AOI广播`BuffAdded`，删除时广播`BuffRemoved`；进入AOI时，Buff列表随Unit整体Snapshot一次性发送，离开AOI时只移除Unit。Buff Tick只执行Action，不同步Buff本身：Numeric变化走Numeric帧尾合并，移动走Move同步，其他效果走各自领域协议。客户端根据创建快照中的起止时间自行显示剩余时间。少量Buff可使用ChildEntity Timer；大量Buff应由BuffComponent使用到期时间堆和一个最近到期Timer合并调度，避免每个Buff常驻一个重复Timer。
+
+Quest默认是玩家私有状态。接受任务时创建Quest子Entity，进度变化默认只通知拥有者客户端；只有任务规则明确要求共享时，才向`PartyAudience`发送队友所需的进度摘要。完成任务时，QuestComponent在一个领域操作中结算奖励、记录已完成配置ID、RemoveChild并发送完成通知。登录或重连时向本人发送活动Quest与已完成摘要的全量快照；队友进入AOI时，可在Unit整体Snapshot中携带允许共享的任务摘要，普通观察者不包含Quest数据；离开AOI时仍只移除Unit。
+
+### 领域设计规则与开发助手
+
+业务系统设计先查[`docs/patterns`](../patterns/README.md)。其中用稳定规则编号描述所有权、Entity形态、Audience、状态复制、生命周期、Timer和数据位置；这些文档是人类可读的设计依据，不是自动生成的业务代码。
+
+TiangZ Developer Tools `v0.13.0`把可机械判断的部分固化到不依赖VS Code的`design-core`，并向上提供设计向导、`@tiangz`聊天解释、`tiangz-design` CLI和只读`tiangz-design-mcp`。相同结构化输入必须得到相同确定性结论；AI模型只在用户主动聊天时解释报告，不能改变规则结论、虚构API，或把普通业务引向Core、Rust Runtime和Generated。
+
+这套助手用于降低开始设计时的心智负担，不取代工程事实。权威顺序仍是：当前代码与测试、项目检查和生成锁，高于设计报告；发现规则与真实实现冲突时，应修正规则库和对应测试，而不是让AI临时圆回来。
 
 ### Rust Entity Store（历史上也称Rust Arena）
 
@@ -109,7 +124,7 @@ Component既是能力组合点，也可以是某类子对象集合的唯一所�
 - 每个固定帧严格执行`Update -> LateUpdate -> FrameFlush`。
 - `Update/LateUpdate/FrameFlush`必须同步，不得返回Promise。
 - 需要异步顺序的工作应通过消息或Actor定时器重新进入mailbox。
-- Component定时器在Component销毁时自动取消；Actor定时器遵循Actor mailbox。
+- Component和ChildEntity定时器在所有者销毁时自动取消；挂在Actor下时回调遵循该Actor mailbox。
 
 `await`只释放当前异步调用，不会让JavaScript获得多线程并行。是否允许同一业务目标重入，由目标mailbox决定。
 
@@ -210,6 +225,7 @@ perf/                        性能与长稳工具、历史报告
 tools/                       codegen和工程工具
 tools/support/               冒烟测试和压测共享的低层协议辅助，不属于业务API
 docs/                        教程、参考、设计和阶段记录
+docs/patterns/               MMORPG领域设计原则与稳定规则编号
 ```
 
 Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`codegen.config.json`的搜索根发现Scene和Handler，不维护手工类型表。
@@ -255,7 +271,7 @@ Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tian
 
 ## 当前未完成和明确暂缓
 
-2026-07完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1至R4实现与专项验收。`0.3.10-alpha.5`建立Model/Hotfix双Bundle和在线事务，`alpha.6`加入`@systemFor`和高负载验收，`alpha.7`把Hotfix改为固定脚本名IIFE、统一业务Timer方法名语义，并补齐8秒慢RPC屏障与100代资源长稳。3000玩家A/B已验证1Hz Reload吞吐无可见下降，但Probe p95/p99约增加32%/31%；100代测试中损坏候选被拒绝，Timer、Native实体和pending均无漂移，预热后的V8 Heap/RSS增长通过4MB/16MB硬门槛。Developer Tools `v0.11.0`识别System生成声明，VS Code与CLI共同检查Model/Hotfix依赖边界和生成入口。
+2026-07完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1至R4实现与专项验收。`0.3.10-alpha.5`建立Model/Hotfix双Bundle和在线事务，`alpha.6`加入`@systemFor`和高负载验收，`alpha.7`把Hotfix改为固定脚本名IIFE、统一业务Timer方法名语义，并补齐8秒慢RPC屏障与100代资源长稳。3000玩家A/B已验证1Hz Reload吞吐无可见下降，但Probe p95/p99约增加32%/31%；100代测试中损坏候选被拒绝，Timer、Native实体和pending均无漂移，预热后的V8 Heap/RSS增长通过4MB/16MB硬门槛。Developer Tools `v0.12.0`已作为主工程CLI检查依赖，当前独立工具工作树的`v0.13.0`新增确定性领域设计助手，待提交和Tag后再升级主工程固定依赖。
 
 性能回归职责必须分层：`verify:perf` 比较三轮中位数吞吐、p99与错误；`test:backpressure` 验证有界队列和生产者等待；长稳测试判断RSS/V8 Heap趋势。不要把短时RSS噪声或故意过载指标混入普通性能基线。
 

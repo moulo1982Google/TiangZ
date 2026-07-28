@@ -39,6 +39,20 @@ Bench Hotfix可以通过`#tiangz/model`调用真实业务API，但Demo不得引�
 
 Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#tiangz/model`取得Model类型、协议和Stable Core API；禁止深层导入`app/model`或`app/core`。其他Core路径属于Internal，即使当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
 
+## 开始设计前
+
+新增Item、Buff、Quest、Achievement、Numeric或其他业务系统前，先阅读[领域设计模式](../patterns/README.md)，按下面七个问题写清楚设计：
+
+1. 谁拥有状态：PlayerUnit、MapScene、EntryScene还是Session。
+2. 数据是普通值、Component、本地ChildEntity，还是需要跨Process寻址的Actor。
+3. 谁创建、删除、保存，并负责清理Timer和外部句柄。
+4. 谁能看到：自己、队伍、AOI还是全局。
+5. 变化是Snapshot、可覆盖Latest、不可丢Event，还是无需网络同步。
+6. 变化频率和持久化频率分别是多少。
+7. TypeScript是否已经足够；只有明确性能或权威所有权收益时才进入Native。
+
+安装TiangZ Developer Tools `v0.13.0`后，可执行“TiangZ：设计业务系统”、输入`@tiangz /design quest`，或运行`tiangz-design`。CLI和向导使用确定性规则；聊天模型只负责解释。输出是设计起点，不会自动创建代码，也不能绕过目录依赖、Generated锁和验证命令。
+
 ## Model与Hotfix怎么选
 
 - 新增字段、默认值、构造参数、继承关系、Scene/Entity/Component类型：写`app/model`，完整构建并重启Process。
@@ -134,12 +148,23 @@ unit.GetComponent(SkillComponent).AddSkill(skillId);
 
 ```text
 PlayerUnit
-├── ItemComponent          -> Map<ItemId, NativeItemRef>
-├── QuestComponent         -> Map<QuestId, QuestState>
-└── AchievementComponent   -> Map<AchievementId, AchievementState>
+├── ItemComponent          -> Item ChildEntity
+├── BuffComponent          -> Buff ChildEntity
+├── QuestComponent         -> 进行中的Quest ChildEntity + 已完成配置ID集合
+└── AchievementComponent   -> AchievementState或动态Achievement ChildEntity
 ```
 
-`XXXComponent`拥有集合并负责所有会改变业务结果的操作。业务代码不能访问它的可变`Map`，也不能从Handler直接修改Native Ref。Entity不等于Actor：Item即使是Entity，也没有mailbox，不能作为跨Process消息目标。
+`XXXComponent`拥有集合并负责集合级操作。Core用`AddChild/GetChild/TryGetChild/GetChildren/RemoveChild`统一维护所有权、EntityRoot和销毁，不需要每个业务Component再写生命周期Map。Entity不等于Actor：Item和Buff即使是Entity，也没有mailbox，不能作为跨Process消息目标。
+
+```ts
+const item = items.AddChild(Item, itemId, { configId, count });
+const same = items.GetChild(Item, itemId);
+const optional = items.TryGetChild(Item, itemId);
+const snapshot = items.GetChildren(Item);
+items.RemoveChild(Item, itemId);
+```
+
+`GetChildren`返回稳定数组快照，适合低频管理和持久化，不应在高频广播中每帧调用。高频路径由所属Component维护dirty集合或紧凑索引。
 
 ### 什么时候创建子Entity
 
@@ -154,7 +179,7 @@ PlayerUnit
 
 ### 查询对象，修改经过Component
 
-读取一件道具时可以取得短期只读视图：
+读取一件道具时可以取得短期只读视图；当前Item实现本身就是ChildEntity，但调用者只依赖`ItemView`：
 
 ```ts
 const items = unit.GetComponent(ItemComponent);
@@ -164,7 +189,7 @@ if (item?.quality === 5) {
 }
 ```
 
-业务修改必须经过拥有它的Component：
+集合操作必须经过拥有它的Component：
 
 ```ts
 const changed = items.UseItem(itemId);
@@ -348,7 +373,47 @@ Rust自动维护`NumericType -> i32`值和dirty表，FrameFlush按`(unitId, nume
 
 库存、技能命中和奖励是不可覆盖事实。修改权威状态后立即发布event；如果同一次操作还改变可覆盖属性，例如速度，则该属性继续走帧尾Delta。
 
-`ItemComponent`持有`Map<ItemId, NativeItemRef>`，其中`NativeItemRef`已经是Item运行时实体句柄，不需要再增加职责重复的`ItemDB`。外部读取使用`GetItem`返回的`ItemView`，修改使用Component领域方法；只有所属`ItemComponentSystem`可以直接操作可变Native句柄。
+`ItemComponent`通过Core子Entity容器拥有`Item`；每个Item内部持有自己的`NativeItemRef`，其InstanceId与子Entity真实生命周期一致，不再由ItemComponent伪造ID。外部读取使用`GetItem`返回的`ItemView`，集合修改使用Component领域方法，Item局部状态修改使用Item领域方法；只有对应System可以直接操作可变Native句柄。
+
+### Buff与AOI
+
+Buff作为ChildEntity只解决身份、生命周期、热更方法和Timer归属，不负责选择网络接收者，也不使用通用dirty字段同步：
+
+```text
+创建Buff -> 向当前AOI广播BuffAdded
+Buff Tick -> 执行Action -> Numeric/Move/其他领域各自同步
+删除Buff -> 向当前AOI广播BuffRemoved
+进入AOI -> Buff列表随Unit整体Snapshot发送
+离开AOI -> 移除Unit，不逐个发送BuffRemoved
+```
+
+- Buff创建和删除是不可覆盖的生命周期Event，分别广播一次Add/Remove。
+- Tick不修改或广播Buff本身，只执行Action；Action修改哪个领域，就复用哪个领域已有的同步机制。
+- 客户端从BuffAdded或Unit Snapshot携带的开始/结束时间自行计算剩余时间，服务端不逐Tick同步倒计时。
+- 进入AOI时Buff列表包含在Unit整体Snapshot中；离开AOI时Unit整体消失，不逐个发送BuffRemoved。
+- 不扫描EntityRoot收集Buff，也不让每个Buff成为Actor。未来AOI直接从目标Unit的BuffComponent取得快照。
+- 少量Buff允许使用`Buff.NewOnceTimer/NewRepeatedTimer`；大量Buff推荐在BuffComponent保存`nextTickAt/expireAt`，使用最小堆和一个最近到期Timer统一调度。持久化保存时间戳，不保存TimerId。
+
+如果未来出现层数刷新、图标变化等确实需要客户端立即知道的Buff元数据变化，应新增明确的`BuffUpdated`事件，或者将旧Buff Remove后重新Add；不要为了少数需求让全部Buff每帧维护dirty和Delta。
+
+### Quest生命周期与可见范围
+
+任务系统区分“正在进行的实例”和“已经完成的事实”：
+
+```text
+QuestComponent
+├── activeQuests: Quest ChildEntity集合
+└── completedQuestConfigIds: Set/Bitmap
+```
+
+- 玩家没有进行中任务时，QuestComponent可以不包含任何Quest子Entity。
+- 接受任务时通过`AddChild(Quest, questInstanceId, ...)`创建进行中实例。
+- 进度变化默认立即通知任务拥有者客户端，不广播给普通地图观察者。
+- 只有组队共享任务明确需要时，才向`PartyAudience`发送必要的进度摘要；不要把完整Quest对象发送给队友。
+- 完成时由QuestComponent统一执行奖励结算、写入已完成Quest配置ID、`RemoveChild`和客户端完成通知，Handler不应分别修改这几处状态。
+- 登录或重连时向本人发送活动Quest和已完成摘要的全量快照。队友进入AOI时，可随Unit整体Snapshot取得允许共享的任务摘要；普通观察者的Unit快照不包含Quest。离开AOI时只移除Unit。
+
+如果同一配置任务不会同时存在多个活动实例，可以直接用配置ID作为ChildEntity Id；可重复任务、限时活动任务等允许并存时，必须使用独立Quest实例ID，并单独保存`configId`。已完成集合始终记录稳定配置ID，不保存已经销毁的InstanceId。
 
 ## 广播给谁与如何广播
 

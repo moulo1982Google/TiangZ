@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { Actor, Component } from "../app/core/runtime/entities";
-import { InitializeGameSingletons } from "../app/core/runtime/Game";
+import { Actor, ChildEntity, Component } from "../app/core/runtime/entities";
+import { Game, InitializeGameSingletons } from "../app/core/runtime/Game";
 import { ProcessHost } from "../app/core/runtime/host";
 import { MailBoxComponent } from "../app/core/runtime/MailBoxComponent";
 import { actor, component } from "../app/core/runtime/metadata";
@@ -15,6 +15,9 @@ import { NativeItemRef } from "../app/generated/model/native/NativeItemRef";
 import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
 import { NumericType } from "../app/model/demo/numeric/NumericType";
+import { Item } from "../app/model/demo/item/Item";
+import { ItemComponent } from "../app/model/demo/item/ItemComponent";
+import { TimeSystem } from "../app/core/runtime/TimeSystem";
 import { BinaryWriter } from "../app/core/protocol/binary";
 import { packFrame } from "../app/core/protocol/registry";
 import {
@@ -35,11 +38,15 @@ async function main(): Promise<void> {
     HotfixSystem.Begin(testHotfixManifest("actor-normal"));
     await import("../app/hotfix/demo/map/PlayerUnitSystem");
     await import("../app/hotfix/demo/numeric/NumericComponentSystem");
+    await import("../app/hotfix/demo/item/ItemSystem");
+    await import("../app/hotfix/demo/item/ItemComponentSystem");
     HotfixSystem.Commit();
     await Promise.resolve();
     testGeneratedNativeHandleScalarAccess();
     await testPlayerUnitComponents();
     await testComponentContainer();
+    await testChildEntityContainer();
+    await testItemChildEntity();
     await testOrderedActorMailbox();
     await testActorDespawnRejectsInFlightAndQueuedCalls();
     await testUnorderedActorIsolation();
@@ -211,6 +218,33 @@ class AsyncAwakeComponent extends Component {
   }
 }
 
+class LifecycleProbeChild extends ChildEntity<[value: string]> {
+  value = "";
+  ticks = 0;
+  destroyed = false;
+
+  protected override Awake(value: string): void {
+    this.value = value;
+  }
+
+  Tick(): void {
+    this.ticks += 1;
+  }
+
+  protected override OnDestroy(): void {
+    this.destroyed = true;
+  }
+}
+
+class AsyncAwakeChild extends ChildEntity {
+  protected override async Awake(): Promise<void> {
+    await Promise.resolve();
+  }
+}
+
+@component()
+class ChildOwnerComponent extends Component {}
+
 async function testComponentContainer(): Promise<void> {
   const host = new ProcessHost("component-self-test");
   host.spawnScene("map:1", MapScene);
@@ -255,6 +289,82 @@ async function testComponentContainer(): Promise<void> {
     () => actor.AddComponent(LifecycleProbeComponent, "disposed"),
     /entity is disposed/,
   );
+}
+
+async function testChildEntityContainer(): Promise<void> {
+  const host = new ProcessHost("child-entity-self-test");
+  const map = host.spawnScene("map:1", MapScene);
+  const actor = host.spawnActor("map:1", "child-owner", ComponentProbeActor);
+  const owner = actor.AddComponent(ChildOwnerComponent);
+  const rootCountBefore = host.Root.Count;
+  const child = owner.AddChild(LifecycleProbeChild, 101, "awake-value");
+
+  assert.equal(child.Id, 101);
+  assert.equal(child.Parent, owner);
+  assert.equal(child.DomainScene(), map);
+  assert.equal(child.value, "awake-value");
+  assert.equal(owner.GetChild(LifecycleProbeChild, 101), child);
+  assert.equal(owner.TryGetChild(LifecycleProbeChild, 101), child);
+  assert.deepEqual(owner.GetChildren(LifecycleProbeChild), [child]);
+  assert.equal(owner.ChildCount, 1);
+  assert.equal(host.Root.Get(child.InstanceId), child);
+  assert.equal(host.Root.Count, rootCountBefore + 1);
+  assert.equal(child.HasComponent(MailBoxComponent), false);
+  assert.throws(
+    () => owner.AddChild(LifecycleProbeChild, 101, "duplicate"),
+    /already has child/,
+  );
+
+  const timerBase = TimeSystem.Instance.FrameTime;
+  child.NewRepeatedTimer(10, "Tick");
+  Game.Instance.Update(timerBase + 10, Date.now(), () => undefined);
+  await Promise.resolve();
+  assert.equal(child.ticks, 1);
+
+  assert.throws(
+    () => owner.AddChild(AsyncAwakeChild, 102),
+    /Awake must be synchronous/,
+  );
+  assert.equal(owner.TryGetChild(AsyncAwakeChild, 102), undefined);
+  assert.equal(host.Root.Count, rootCountBefore + 1);
+
+  const childInstanceId = child.InstanceId;
+  const removed = owner.RemoveChild(LifecycleProbeChild, 101);
+  assert.equal(removed, child);
+  assert.equal(child.IsDisposed, true);
+  assert.equal(child.destroyed, true);
+  assert.equal(host.Root.Get(childInstanceId), undefined);
+  assert.equal(owner.ChildCount, 0);
+
+  const cascaded = owner.AddChild(LifecycleProbeChild, 103, "cascade");
+  assert.equal(actor.RemoveComponent(ChildOwnerComponent), true);
+  assert.equal(cascaded.IsDisposed, true);
+  assert.equal(cascaded.destroyed, true);
+  assert.equal(host.Root.Count, rootCountBefore);
+  host.Dispose();
+}
+
+async function testItemChildEntity(): Promise<void> {
+  const host = new ProcessHost("item-child-self-test");
+  host.spawnScene("map:1", MapScene);
+  const actor = host.spawnActor("map:1", "item-owner", ComponentProbeActor);
+  const inventory = actor.AddComponent(ItemComponent);
+  const item = inventory.GetChild(Item, 1);
+
+  assert.equal(item.Parent, inventory);
+  assert.equal(item.instanceId, item.InstanceId);
+  assert.equal(item.configId, 1001);
+  assert.equal(item.count, 3);
+  assert.equal(host.Root.Get(item.InstanceId), item);
+  assert.equal(inventory.UseItem(1).count, 2);
+  assert.equal(inventory.AddItem(1, 2).count, 4);
+  assert.equal(inventory.RemoveItem(1, 3).count, 1);
+
+  const instanceId = item.InstanceId;
+  assert.equal(host.despawnActor("map:1", "item-owner"), true);
+  assert.equal(item.IsDisposed, true);
+  assert.equal(host.Root.Get(instanceId), undefined);
+  host.Dispose();
 }
 
 async function testPlayerUnitComponents(): Promise<void> {
@@ -371,7 +481,13 @@ async function testPlayerUnitComponents(): Promise<void> {
   const { NumericComponentSystem } = await import(
     "../app/hotfix/demo/numeric/NumericComponentSystem"
   );
+  const { ItemSystem } = await import("../app/hotfix/demo/item/ItemSystem");
+  const { ItemComponentSystem } = await import(
+    "../app/hotfix/demo/item/ItemComponentSystem"
+  );
   systemFor(NumericComponent)(NumericComponentSystem);
+  systemFor(Item)(ItemSystem);
+  systemFor(ItemComponent)(ItemComponentSystem);
   HotfixSystem.Commit();
   assert.equal(
     player.Move({ inputX: 0, inputY: 1, sequence: 6 }),

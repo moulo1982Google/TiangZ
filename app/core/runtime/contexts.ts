@@ -7,6 +7,12 @@ import type {
   SceneRef,
 } from "./types";
 import type { Actor } from "./entities";
+import type {
+  ChildEntity,
+  ChildEntityAwakeArgs,
+  ChildEntityCtor,
+  Component,
+} from "./entities";
 import type { MaybePromise } from "../async";
 import type { TimerId } from "./TimerSystem";
 import { Logger } from "../logging/Logger";
@@ -37,6 +43,30 @@ export class SceneContext {
   /** 移除 Actor，并使其 InstanceId 路由失效。 / Removes an Actor and invalidates its InstanceId routing. */
   despawnActor(actorId: ActorId): boolean {
     return this.host.despawnActor(this.self.sceneId, actorId);
+  }
+
+  /** 创建挂在 Component 下、没有 mailbox 的本地子 Entity。 / Creates a local child Entity owned by a Component and without a mailbox. */
+  spawnChild<T extends ChildEntity<any[]>>(
+    parent: Component<any[]>,
+    id: import("./types").EntityId,
+    ctor: ChildEntityCtor<T>,
+    ...awakeArgs: ChildEntityAwakeArgs<T>
+  ): T {
+    return this.host.spawnChild(
+      this.self.sceneId,
+      parent,
+      id,
+      ctor,
+      ...awakeArgs,
+    );
+  }
+
+  /** 销毁所属 Component 的本地子 Entity。 / Destroys a local child Entity owned by the Component. */
+  despawnChild(
+    parent: Component<any[]>,
+    child: ChildEntity<any[]>,
+  ): boolean {
+    return this.host.despawnChild(this.self.sceneId, parent, child);
   }
 
   /** 解析当前上下文所属的 Scene Entity。 / Resolves this context's owning Scene Entity. */

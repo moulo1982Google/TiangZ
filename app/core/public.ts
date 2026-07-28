@@ -85,8 +85,12 @@ export type {
   StateReplicationSource,
 } from "./replication/StateReplicationSystem";
 
-export { Component, Entity, Scene } from "./runtime/entities";
-export type { ComponentCtor } from "./runtime/entities";
+export { ChildEntity, Component, Entity, Scene } from "./runtime/entities";
+export type {
+  ChildEntityAwakeArgs,
+  ChildEntityCtor,
+  ComponentCtor,
+} from "./runtime/entities";
 export { Game } from "./runtime/Game";
 export type { GameUpdateConfig } from "./runtime/Game";
 export { hotfixFor, systemFor } from "./hotReload/HotfixSystem";

@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.3.10-alpha.8`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
+当前开发版本为 `0.3.10-alpha.9`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
@@ -21,6 +21,7 @@ Machine
               -> UnitComponent（地图全部 Unit 的业务集合）
                   -> Unit（玩家、怪物、NPC）
                       -> Component（状态与领域能力）
+                          -> ChildEntity（Item、Buff、动态Quest等本地子实例）
 ```
 
 - `Process` 是部署、V8、线程、Inspector 和故障隔离边界。
@@ -29,6 +30,7 @@ Machine
 - `Session` 表示一条网络连接，`Unit` 表示玩家、怪物、NPC。它们和 Scene 都可拥有 MailBoxComponent，因此都属于 Actor 消息目标；业务不创建泛化的 `XxxActor` 类。
 - `ProcessHost.Root` 按 InstanceId 定位当前生命周期 Entity，MapScene.UnitComponent 按 UnitId 管理地图实体。
 - `Component` 组织状态与能力，不要求 Handler 绑定到单一 Component。
+- `ChildEntity` 由 Component 唯一拥有，具备稳定身份和生命周期但没有 mailbox；它不会成为网络 Actor。
 - 同进程 Scene 调用直接进入目标 Scene mailbox；跨进程调用走持久 Inner TCP。业务代码不判断本地或远程。
 - 高频跨帧 Entity 数据可以保存在 Rust Arena，TypeScript 只持有 generation handle；Handler、mailbox 和业务组合仍保留在 TypeScript。
 
@@ -62,6 +64,7 @@ perf/                        RPC、完整链路与地图容量测试
 tools/                       codegen、冒烟测试和维护脚本
 tools-projects/              本机独立工具仓库，不属于 TiangZ 主仓库
 docs/tutorials/              从零学习手册
+docs/patterns/               MMORPG领域设计模式与稳定规则编号
 docs/reference/              配置、API、命令参考
 docs/design/                 维护者实现文档
 ```
@@ -293,7 +296,7 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 TiangZ 目前有两个职责独立的 VS Code 插件，均尚未发布到 Marketplace：
 
 - [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；主工程当前使用 `v0.12.0`。
-- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component、System与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成；主工程当前使用`v0.11.0`，会检查Model/Hotfix依赖边界、`@systemFor`与生成入口。
+- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component、System与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成。`v0.13.0`增加确定性领域设计规则、设计向导、`@tiangz`聊天入口、CLI与只读MCP服务；主工程当前CI检查依赖仍固定在`v0.12.0`，待工具独立仓库提交并打Tag后再升级。
 
 两个插件分开维护，未来可以通过 Extension Pack 一键安装。当前需分别克隆仓库，执行 `npm install`、`npm run check` 和 `npm run package:extension`，再从各仓库 `dist` 目录安装 VSIX。
 
@@ -303,6 +306,8 @@ Developer Tools 的工程检查器已经作为固定 Git Tag 依赖接入主仓�
 npm run check:project
 npm run check:project -- --format json
 ```
+
+设计Item、Buff、Quest、Achievement、Numeric或自定义业务系统时，先阅读[`docs/patterns`](docs/patterns/README.md)，也可以在Developer Tools执行“TiangZ：设计业务系统”或输入`@tiangz /design buff`。规则库先确定所有权、Entity形态、生命周期、Audience和同步语义，AI只负责解释；最终仍以当前代码、项目检查和测试为准。
 
 ## 调试与验证
 

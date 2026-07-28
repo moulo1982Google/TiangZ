@@ -110,4 +110,12 @@
 - Component 实现 `Update(): void` 即自动参加固定游戏帧，不需要手工维护 Update 列表。
 - Component 自有定时器在组件销毁时自动取消；挂在 Actor 上的组件定时器还会遵循 Actor mailbox。
 
+## ChildEntity
+
+- `ChildEntity`表示由Component唯一拥有、没有mailbox的本地实体，适用于Item、Buff和具有独立生命周期的Quest/Achievement实例。
+- `Component.AddChild(Type, id, ...awakeArgs)`创建子Entity，同步调用Awake，并在成功前完成Parent、DomainScene、InstanceId和EntityRoot注册；Awake失败会完整回滚。
+- `GetChild/TryGetChild`按业务Id执行O(1)查询；`GetChildren(Type)`返回稳定数组快照；`RemoveChild`同步移除所有权与Root并级联销毁。
+- ChildEntity不能接收网络消息，不进入Actor路由。它的Timer挂在Actor所有权链下时复用该Actor mailbox，并在自身或父Component销毁时自动取消。
+- 高频集合不能每帧调用`GetChildren`或扫描`EntityRoot`。所属Component应维护dirty集合、到期堆或Rust紧凑索引，再生成Snapshot/Delta/Event。
+
 精确泛型签名以`app/core/public.ts`及其引用的类型定义为准。新增公共API时显式更新API锁，并同步更新本文档、教程和两份AI交接文档。

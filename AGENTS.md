@@ -6,7 +6,7 @@
 
 1. 执行 `git status --short`，保留用户已有修改、未跟踪文件和本地配置，不得擅自还原、删除或覆盖。
 2. 先判断请求属于业务、协议、客户端、框架、Rust Runtime、生成器还是性能工具。
-3. 业务需求优先查找 `app/model/demo` 中最接近的状态定义和 `app/hotfix/demo` 中最接近的行为实现，再阅读对应教程和测试。
+3. 业务需求先查 `docs/patterns` 并明确所有者、Entity形态、生命周期、Audience和同步语义，再查找 `app/model/demo` 中最接近的状态定义和 `app/hotfix/demo` 中最接近的行为实现。
 4. 当前事实的可信顺序是：运行中的代码与测试 > `README.md`、`docs/tutorials`、`docs/reference`、`docs/design/maintainer-guide.md` > `docs/roadmap.md` > 历史 `phase*_plan/acceptance` 和旧性能报告。
 5. 用户说“讨论”“先看”或“先别改”时，只检查和说明，不修改文件。
 
@@ -44,6 +44,8 @@ Machine
 | `app/generated`、`src/generated`、客户端`Generated` | 自动生成物 | 永远不手工修改 |
 
 如果业务可以通过现有Scene、Actor、Component、协议和广播能力完成，不得为了该业务新增Core抽象或Rust特殊分支。确实缺少通用能力时，先说明现有机制为什么无法表达、影响范围和最小扩展方案，再修改框架。
+
+Developer Tools的设计向导、`@tiangz`、`tiangz-design`和MCP只能提供设计建议。AI解释不能覆盖确定性规则，也不能替代代码、项目检查、生成锁与测试。
 
 Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深层导入`app/model`或`app/core`。Model内部只能从`app/core/public.ts`导入Core能力。`app/core/public.ts`及`public-api.lock.json`定义Stable API；其他Core路径默认是Internal。公共API分级和变更流程见[公共API与版本稳定性](docs/reference/api-stability.md)。
 

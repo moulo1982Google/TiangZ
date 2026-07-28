@@ -187,7 +187,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.8`。
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.9`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -271,6 +271,15 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 ### Phase 3.10.7：发布与跨平台收口
 
 状态：完成（2026-07-26）。核心Runtime、mailbox和背压入口已迁移为跨平台Node runner；固定Rust 1.97.1、Node 24和npm 11，增加Windows/Linux CI、依赖审计策略以及携带版本和SHA-256的Release制品。Windows和Ubuntu Linux均通过完整`verify`、0 advisory依赖审计，以及最终制品目录内的登录、进图、状态同步和移动smoke。
+
+### 0.3.10-alpha.9：子Entity与领域设计规则
+
+状态：实现完成，等待本轮提交与Release候选总验收。
+
+- Core提供Component拥有的ChildEntity生命周期语义，Item迁移为真实子Entity，并增加独立性能基准。
+- 固化Buff生命周期事件、Quest活动实例与完成配置ID、Audience和同步语义，避免把“需要被看见”错误等价为Actor或通用Dirty Delta。
+- `docs/patterns`成为领域设计原则入口；Developer Tools `v0.13.0`提供确定性设计核心、VS Code向导、聊天解释、CLI与只读MCP服务。
+- 设计助手不生成业务代码，不覆盖工程检查、Generated锁和测试；主工程固定CLI依赖待工具仓库发布Tag后升级。
 
 ### 2026-07-26成熟度审计
 

@@ -1,14 +1,14 @@
 import {
   GameErrCode,
+  Item,
   ItemComponent,
-  type ItemView,
   type ItemSnapshot,
-  NativeItemRef,
+  type ItemView,
   RpcError,
   systemFor,
 } from "#tiangz/model";
 
-/** 承载背包的可热更规则；items 容器和 Native 句柄所有权保留在 Model。 / Hosts hot-reloadable inventory rules while Model retains the item container and Native handle ownership. */
+/** 承载背包集合的可热更规则；子 Item Entity 和 Native handle 的销毁由 Core 所有权链保证。 / Hosts hot-reloadable inventory collection rules; Core ownership disposes child Item entities and Native handles. */
 @systemFor(ItemComponent)
 export class ItemComponentSystem extends ItemComponent {
   /** 创建一件演示道具；生产加载应从持久化数据组合背包。 / Seeds one demo item; production loading should compose inventory from persisted data. */
@@ -16,94 +16,49 @@ export class ItemComponentSystem extends ItemComponent {
     this.Create(1, 1001, 3);
   }
 
-  /**
-   * 返回短期只读视图；调用方不得跨 await 或玩家生命周期长期保存该引用。
-   * Returns a short-lived read-only view; callers must not retain it across an
-   * await boundary or beyond the owning player's lifetime.
-   */
+  /** 返回短期只读视图；不得跨 await 或玩家生命周期保存。 / Returns a short-lived read-only view that must not cross await or player lifetime boundaries. */
   GetItem(itemId: number): ItemView | undefined {
-    return this.items.get(itemId);
+    return this.TryGetChild(Item, itemId);
   }
 
-  /** 复制当前背包用于全量同步或持久化，不暴露 Native 句柄。 / Copies current inventory for full sync or persistence without exposing Native handles. */
+  /** 复制当前背包用于全量同步或持久化，不暴露子 Entity 或 Native handle。 / Copies inventory for full sync or persistence without exposing child entities or Native handles. */
   Snapshot(): ItemSnapshot[] {
-    return [...this.items.values()].map(toSnapshot);
+    return this.GetChildren(Item).map((item) => item.Snapshot());
   }
 
-  /** 立即消耗一件道具并递增版本，用于不可覆盖事件投递。 / Consumes one item immediately and increments its version for non-coalescing event delivery. */
+  /** 消耗一件道具并返回不可覆盖事件所需快照。 / Consumes one item and returns the snapshot required by a non-coalescing event. */
   UseItem(itemId: number): ItemSnapshot {
     const item = this.requireItem(itemId);
     if (item.count === 0) {
       throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is empty`);
     }
-    item.count -= 1;
-    item.version += 1;
-    return toSnapshot(item);
+    return item.RemoveCount(1);
   }
 
-  /** 增加已有堆叠，并返回变更后的权威快照。 / Adds to an existing stack and returns the authoritative post-change snapshot. */
+  /** 增加已有堆叠并返回权威快照。 / Adds to an existing stack and returns its authoritative snapshot. */
   AddItem(itemId: number, count: number): ItemSnapshot {
-    requirePositiveCount(count);
-    const item = this.requireItem(itemId);
-    item.count += count;
-    item.version += 1;
-    return toSnapshot(item);
+    return this.requireItem(itemId).AddCount(count);
   }
 
-  /** 原子扣除已校验数量；失败时抛错且不改变堆叠。 / Removes a validated amount atomically or throws without changing the stack. */
+  /** 原子扣除已校验数量；失败时不改变堆叠。 / Atomically removes a validated count or leaves the stack unchanged. */
   RemoveItem(itemId: number, count: number): ItemSnapshot {
-    requirePositiveCount(count);
     const item = this.requireItem(itemId);
     if (item.count < count) {
       throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is not enough`);
     }
-    item.count -= count;
-    item.version += 1;
-    return toSnapshot(item);
+    return item.RemoveCount(count);
   }
 
-  /** Core 取消组件 Timer 后释放本背包拥有的全部 Rust Arena 句柄。 / Releases every Rust Arena handle owned by this inventory after Core cancels Component timers. */
-  protected override OnDestroy(): void {
-    for (const item of this.items.values()) item.Dispose();
-    this.items.clear();
+  private Create(itemId: number, configId: number, count: number): Item {
+    return this.AddChild(Item, itemId, { configId, count });
   }
 
-  private Create(itemId: number, configId: number, count: number): NativeItemRef {
-    if (this.items.has(itemId)) throw new Error(`item already exists: ${itemId}`);
-    const instanceId = ItemComponent.nextNativeInstanceId++;
-    if (ItemComponent.nextNativeInstanceId > 0xffff_ffff) {
-      ItemComponent.nextNativeInstanceId = 1;
-    }
-    const item = NativeItemRef.Create({ id: itemId, instanceId, configId, count });
-    this.items.set(itemId, item);
-    return item;
-  }
-
-  private requireItem(itemId: number): NativeItemRef {
+  private requireItem(itemId: number): Item {
     if (!Number.isSafeInteger(itemId) || itemId <= 0) {
       throw new RpcError(GameErrCode.ItemNotFound, `invalid item id: ${itemId}`);
     }
-    const item = this.items.get(itemId);
+    const item = this.TryGetChild(Item, itemId);
     if (!item) throw new RpcError(GameErrCode.ItemNotFound, `item not found: ${itemId}`);
     return item;
-  }
-}
-
-/** 将 Native Item 复制为协议快照，避免业务泄漏可变句柄。 / Copies a Native Item into a protocol snapshot so mutable handles do not leak. */
-function toSnapshot(item: NativeItemRef): ItemSnapshot {
-  return {
-    itemId: item.id,
-    configId: item.configId,
-    count: item.count,
-    quality: item.quality,
-    level: item.level,
-    version: item.version,
-  };
-}
-
-/** 校验堆叠变化数量，失败时不修改任何权威状态。 / Validates stack mutations without changing authoritative state on failure. */
-function requirePositiveCount(count: number): void {
-  if (!Number.isSafeInteger(count) || count <= 0) {
-    throw new Error(`item count must be a positive integer: ${count}`);
   }
 }

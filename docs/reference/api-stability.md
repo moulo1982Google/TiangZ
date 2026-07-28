@@ -165,6 +165,13 @@ npm run verify:core-api
 - NativeData指标增加Rust Pool、TS NativeRef和帧尾scratch容量；帧尾直接编码最终输出buffer。
 - Developer Tools对Model长期字段类型稳定性执行错误级检查。
 
+### 0.3.10-alpha.9
+
+- Stable Core新增`ChildEntity`和Component子Entity容器API，统一Item、Buff、动态Quest与Achievement实例的身份、Root索引、Timer和级联销毁语义。
+- ChildEntity明确不拥有mailbox和网络地址；Unit仍是地图Actor，二者不能互换。
+- Item迁移为真实ChildEntity，NativeItemRef由Item自身持有并使用ProcessHost分配的真实InstanceId；Item局部规则和集合规则分别由Hotfix System承载。
+- 新增`perf:child-entity`微基准，防止子Entity生命周期能力出现无依据的性能回归。
+
 ### 0.3.10-alpha.7
 
 - Hotfix从每代独立ESM改为固定脚本名IIFE；Model仍只加载一次，并通过只读桥提供稳定公开类型，避免V8 ModuleMap和脚本URL随generation增长。

@@ -1,6 +1,6 @@
 {
   "name": "ets-runtime",
-  "version": "0.3.10-alpha.8",
+  "version": "0.3.10-alpha.9",
   "private": true,
   "packageManager": "npm@11.18.0",
   "engines": {
@@ -124,6 +124,7 @@
     "perf:dirty-replication": "cargo run --release --bin dirty_replication_perf --",
     "perf:state-sync": "cargo run --release --bin dirty_replication_perf --",
     "perf:native-storage": "node perf/native_storage/run_native_storage_perf.mjs",
+    "perf:child-entity": "node perf/child_entity/run_child_entity_perf.mjs",
     "test:perf-gate": "node perf/gate/run_performance_gate.mjs --self-test",
     "perf:gate": "node perf/gate/run_performance_gate.mjs",
     "perf:gate:update": "node perf/gate/run_performance_gate.mjs --update-baseline",

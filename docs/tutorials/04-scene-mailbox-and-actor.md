@@ -78,6 +78,20 @@ units.Remove(unitId);
 
 Unit 同时也是 Actor：Unit 决定身份、生命周期和 mailbox；Component 承载状态与领域能力；Handler 可以组合多个 Component。
 
+Item、Buff、动态Quest等需要独立身份和生命周期、但不需要接收网络消息的对象继承`ChildEntity`。它们由Component创建和拥有：
+
+```ts
+const buffs = player.GetComponent(BuffComponent);
+const buff = buffs.AddChild(Buff, buffInstanceId, awakeArgs);
+
+buffs.GetChild(Buff, buffInstanceId);
+buffs.TryGetChild(Buff, buffInstanceId);
+buffs.GetChildren(Buff);
+buffs.RemoveChild(Buff, buffInstanceId);
+```
+
+ChildEntity进入`EntityRoot`并具有真实`InstanceId`，Parent是所属Component，DomainScene是玩家所在地图；它没有mailbox，也不会进入Actor路由。Component移除或玩家销毁时，子Entity、其Component、Timer和Native handle按所有权链级联释放。业务不得直接`new Buff()`或调用内部销毁入口。
+
 `Scene` 和 `Actor` 都继承 Core 的最小 `Entity`，组件由 Entity 按具体 class 作为 key 管理：
 
 ```ts
@@ -161,7 +175,7 @@ export class MonsterPatrolComponent extends Component implements IUpdate {
 }
 ```
 
-`Update()` 必须同步，不要标记为 `async`。定时器由组件持有，组件销毁后自动取消。组件挂在 Unit 或 Session 上时，回调会进入所属 Entity 的 mailbox：ordered mailbox 正在等待一个异步 Handler 时，定时器回调会排队，不会重入状态。
+`Update()` 必须同步，不要标记为 `async`。定时器可由Component或ChildEntity持有，所有者销毁后自动取消。它们挂在Unit或Session之下时，回调会进入所属Entity的mailbox：ordered mailbox正在等待异步Handler时，定时器回调会排队，不会重入状态。高数量Buff不要各自创建常驻重复Timer，应由BuffComponent合并调度最近到期项。
 
 `TimerSystem.WaitAsync` 使用游戏 Pump 推进，适合业务时间；网络超时、文件 IO 等基础设施等待仍使用 Rust/Tokio 提供的 `ctx.sleep` 或对应 Host API。
 
