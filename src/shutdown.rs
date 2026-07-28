@@ -16,6 +16,7 @@ use tokio::sync::mpsc;
 pub(crate) enum ParentControlCommand {
     Shutdown,
     Reload(PathBuf),
+    ReloadConfig(PathBuf),
 }
 
 pub(crate) type ParentControlMessage = std::result::Result<ParentControlCommand, String>;
@@ -93,8 +94,13 @@ fn parse_parent_control(line: &str) -> ParentControlMessage {
     {
         return Ok(ParentControlCommand::Reload(PathBuf::from(path)));
     }
+    if let Some(path) = command.strip_prefix("reload-config ").map(str::trim)
+        && !path.is_empty()
+    {
+        return Ok(ParentControlCommand::ReloadConfig(PathBuf::from(path)));
+    }
     Err(format!(
-        "unknown parent control command: {command}; expected shutdown or reload <candidate-directory>"
+        "unknown parent control command: {command}; expected shutdown, reload <candidate-directory>, or reload-config <candidate-directory>"
     ))
 }
 
@@ -112,6 +118,10 @@ mod tests {
         assert_eq!(
             parse_parent_control("reload E:\\build output\\candidate v2\n").unwrap(),
             ParentControlCommand::Reload(PathBuf::from("E:\\build output\\candidate v2"))
+        );
+        assert_eq!(
+            parse_parent_control("reload-config E:\\config output\\candidate v3\n").unwrap(),
+            ParentControlCommand::ReloadConfig(PathBuf::from("E:\\config output\\candidate v3"))
         );
         assert!(parse_parent_control("reload").is_err());
     }

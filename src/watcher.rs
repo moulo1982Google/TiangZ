@@ -158,6 +158,10 @@ async fn wait_for_watcher_trigger(
                         let candidate = if candidate.is_absolute() { candidate } else { root.join(candidate) };
                         broadcast_reload(children, &candidate)?;
                     }
+                    ParentControlCommand::ReloadConfig(candidate) => {
+                        let candidate = if candidate.is_absolute() { candidate } else { root.join(candidate) };
+                        broadcast_config_reload(children, &candidate)?;
+                    }
                 }
             }
             _ = poll.tick() => {
@@ -203,6 +207,38 @@ fn broadcast_reload(children: &mut [ManagedChild], candidate: &Path) -> Result<(
             .with_context(|| format!("failed to flush Hotfix reload for {}", child.name))?;
     }
     tracing::info!(target: "tiangz::watcher", candidate = %candidate.display(), child_count = children.len(), "Hotfix reload broadcast to child processes");
+    Ok(())
+}
+
+/// 把同一个配置数据候选发送给本机全部Process；各Process独立校验并原子切换。 / Sends one config-data candidate to every local Process for independent validation and atomic switching.
+fn broadcast_config_reload(children: &mut [ManagedChild], candidate: &Path) -> Result<()> {
+    let candidate = candidate.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve game config candidate {}",
+            candidate.display()
+        )
+    })?;
+    let command = format!("reload-config {}\n", candidate.display());
+    for child in children.iter_mut() {
+        let control = child.control.as_mut().with_context(|| {
+            format!(
+                "process {} no longer has a Watcher control pipe",
+                child.name
+            )
+        })?;
+        control
+            .write_all(command.as_bytes())
+            .with_context(|| format!("failed to request game config reload for {}", child.name))?;
+        control
+            .flush()
+            .with_context(|| format!("failed to flush game config reload for {}", child.name))?;
+    }
+    tracing::info!(
+        target: "tiangz::watcher",
+        candidate = %candidate.display(),
+        child_count = children.len(),
+        "game config reload broadcast to child processes"
+    );
     Ok(())
 }
 

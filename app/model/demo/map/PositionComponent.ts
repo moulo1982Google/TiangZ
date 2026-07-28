@@ -13,8 +13,14 @@ export interface PositionSnapshot {
 }
 
 @component()
-export class PositionComponent extends Component<[native: NativeUnitRef]> {
+export class PositionComponent extends Component<[
+  native: NativeUnitRef,
+  mapWidthCells: number,
+  mapHeightCells: number,
+]> {
   private native!: NativeUnitRef;
+  private mapWidthCells = 0;
+  private mapHeightCells = 0;
 
   get x(): number {
     return this.native.x;
@@ -53,12 +59,23 @@ export class PositionComponent extends Component<[native: NativeUnitRef]> {
     this.native.speedCellsPerSecond = value;
   }
 
-  protected override Awake(native: NativeUnitRef): void {
+  protected override Awake(
+    native: NativeUnitRef,
+    mapWidthCells: number,
+    mapHeightCells: number,
+  ): void {
     this.native = native;
+    this.mapWidthCells = mapWidthCells;
+    this.mapHeightCells = mapHeightCells;
   }
 
   CanOccupy(cellX: number, cellY: number): boolean {
-    return canOccupyCell(cellX, cellY);
+    return canOccupyCell(
+      cellX,
+      cellY,
+      this.mapWidthCells,
+      this.mapHeightCells,
+    );
   }
 
   SetCell(cellX: number, cellY: number): void {

@@ -1,5 +1,7 @@
 # 配置与协议参考
 
+本页的`RuntimeConfig`描述机器、Process、Scene、端口和运行参数。策划维护的道具、地图、玩家基础数值位于`game_config/`，由Luban生成，不能写进Runtime JSON。完整流程见[游戏配置教程](../tutorials/10-game-config.md)。
+
 ## RuntimeConfig
 
 | 字段 | 类型 | 含义 |

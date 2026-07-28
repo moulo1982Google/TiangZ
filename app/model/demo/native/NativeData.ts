@@ -85,6 +85,16 @@ export class NativeData {
     NativeOps.UnitResetMovement(handle);
   }
 
+  /** 向Rust注册地图尺寸，移动热循环只读取预计算边界而不回调TS。 / Registers map dimensions in Rust so the movement hot loop reads precomputed bounds without calling back into TS. */
+  static ConfigureMap(mapId: number, widthCells: number, heightCells: number): void {
+    NativeOps.MapConfigure(mapId, widthCells, heightCells);
+  }
+
+  /** 地图销毁时移除Rust边界配置。 / Removes Rust-side map bounds when the map is destroyed. */
+  static UnconfigureMap(mapId: number): void {
+    NativeOps.MapUnconfigure(mapId);
+  }
+
   /** 推进地图内全部 Rust Unit，并返回已编码的可覆盖移动帧。 / Advances all Rust Units in a map and returns an already encoded replaceable movement frame. */
   static UpdateMapMovement(
     mapId: number,

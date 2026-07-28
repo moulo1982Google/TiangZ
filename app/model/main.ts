@@ -12,6 +12,7 @@ import {
   sleepHost,
 } from "../core/process/HostSceneTransport";
 import * as ModelPublic from "./public";
+import { GameConfigRegistry } from "../generated/model/config";
 
 export * from "./public";
 
@@ -133,6 +134,10 @@ function abortHotfix(reason: string): string {
   return JSON.stringify(HotfixSystem.Status());
 }
 
+function installGameConfig(manifestJson: string, dataJson: string): string {
+  return JSON.stringify(GameConfigRegistry.Install(manifestJson, dataJson));
+}
+
 function packOutbound(outbound: ProcessUpdateResult["outbound"]): Uint8Array {
   // [batchCount:u32] + repeated [targetCount:u32][targetIds:u32...][frameLen:u32][frame]
   let byteLength = 4;
@@ -175,6 +180,7 @@ const host = globalThis as typeof globalThis & {
   __etsBeginHotfix: (manifestJson: string) => string;
   __etsCommitHotfix: () => string;
   __etsAbortHotfix: (reason: string) => string;
+  __etsInstallGameConfig: (manifestJson: string, dataJson: string) => string;
   __hostSleep: (ms: number) => Promise<void>;
 };
 host.__hostSleep = sleepHost;
@@ -185,3 +191,4 @@ host.__etsUpdateBinary = updateBinary;
 host.__etsBeginHotfix = beginHotfix;
 host.__etsCommitHotfix = commitHotfix;
 host.__etsAbortHotfix = abortHotfix;
+host.__etsInstallGameConfig = installGameConfig;

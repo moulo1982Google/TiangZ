@@ -155,7 +155,7 @@ Rust Native Entity是权威状态时同样不迁移schema。`.native`变化意�
 npm run dev -- configs/local/StartMachine.json
 ```
 
-开发宿主先执行一次完整构建并启动Watcher，之后只监听`app/hotfix/**/*.ts`。每次保存会串行执行Scene/补丁入口生成、类型检查、不可变候选构建和Watcher Reload；连续保存会合并，构建失败时不发送Reload，旧generation继续运行。它不监听Model、Core、Proto或`.native`，这些边界变化仍要求开发人员停止并重新启动。源码模式只是隐藏构建步骤，不会让V8直接执行TypeScript，也不得用于正式部署。
+开发宿主先执行一次完整构建并启动Watcher，之后监听`app/hotfix/**/*.ts`以及`game_config`的Excel/定义源。Hotfix保存会串行执行入口生成、类型检查、不可变候选构建和Watcher `reload`；纯配置数据变化会构建独立数据候选并执行`reload-config`。连续保存会合并，构建失败时不发送切换命令，旧generation或旧配置快照继续运行。它不监听Model、Core、Proto或`.native`；配置表结构变化也会被schema门拒绝，这些边界变化仍要求开发人员停止、完整构建并重新启动。源码模式只是隐藏构建步骤，不会让V8直接执行TypeScript，也不得用于正式部署。
 
 只改行为：
 

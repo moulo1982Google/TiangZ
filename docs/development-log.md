@@ -130,3 +130,31 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 在 Rust AOI 落地后重新测量入图快照、增量广播和单 Map 容量。
 - 为容量候选增加明确的 Probe p95/p99 SLO，避免只按 CPU 和错误数判断。
 - Linux 环境补充 epoll/io_uring 同口径验证；本次数据只代表 Windows IOCP。
+# 2026-07-28 - Luban游戏配置基础
+
+## 目标
+
+在进入完整MMORPG业务前建立统一静态配置链路，先覆盖道具、地图和玩家初始模板，并避免把策划数值、部署JSON和运行时持久化数据混在一起。
+
+## 完成内容
+
+- 固定引入Luban 4.10.2官方CLI及MIT许可证，生成过程不依赖在线下载。
+- 新增`game_config` Excel源目录和`ItemConfig`、`MapConfig`、`PlayerConfig`三张表；玩家模板只含创建时基础值，不承载升级后状态。
+- 按`c/s`生成服务端和客户端不同字段集合，使用`#ref`验证初始地图与初始道具引用。
+- 生成只读`GameConfigs`入口及配置指纹，并随公共Client SDK自动分发到Cocos和Pixi。
+- Demo的地图尺寸/出生点、玩家HP/速度、初始道具和道具回血改为读取配置；Rust地图移动边界由Map配置注册。
+- 增加`test:game-config`，覆盖查询、缺失ID、外键、分端裁剪、只读对象和双端指纹一致性。
+
+## 设计决定
+
+- `configs`只负责部署，`game_config`只负责游戏静态数值。
+- 配置结构属于不可热更Model；纯数据从Model Bundle拆出为带schema/data指纹的完整快照，可由Watcher在线切换。
+- 业务只依赖`GameConfigs.Get/TryGet/GetAll`，不直接读取Excel、Luban JSON或Generated内部类。
+
+## 数据热更补充
+
+- `build:game-config`发布内容寻址的完整候选，Rust先校验文件哈希和Model schema，TS再构造、冻结并验证全部表，最后一次性替换当前快照。
+- 失败候选不会污染当前快照；Prometheus暴露成功/失败次数、提交耗时、总耗时和当前数据指纹。
+- Watcher新增`reload-config`，`npm run dev`同时监听Hotfix与游戏配置源文件；Release制品携带初始`dist/game-config`。
+- 已增加5 Process真实Reload验收：有效数据全部生效，悬空引用候选全部拒绝且旧指纹保持。
+- 当前只在线切换服务端配置；客户端配置仍通过Client SDK发布。跨机器Process可能短暂处于不同数据版本，后续有严格全局一致需求时再增加prepare/commit协调。

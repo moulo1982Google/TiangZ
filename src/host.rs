@@ -61,6 +61,7 @@ pub struct JsEntrypoints {
     begin_hotfix: v8::Global<v8::Function>,
     commit_hotfix: v8::Global<v8::Function>,
     abort_hotfix: v8::Global<v8::Function>,
+    install_game_config: v8::Global<v8::Function>,
 }
 
 #[derive(Clone, Debug)]
@@ -567,6 +568,7 @@ pub fn load_js_entrypoints(runtime: &mut JsRuntime) -> Result<JsEntrypoints> {
         begin_hotfix: get_global_function(runtime, "__etsBeginHotfix")?,
         commit_hotfix: get_global_function(runtime, "__etsCommitHotfix")?,
         abort_hotfix: get_global_function(runtime, "__etsAbortHotfix")?,
+        install_game_config: get_global_function(runtime, "__etsInstallGameConfig")?,
     })
 }
 
@@ -626,6 +628,24 @@ pub fn call_js_abort_hotfix(
 ) -> Result<String> {
     let arg = v8_string_arg(runtime, reason)?;
     call_js_function_string(js_event_loop, runtime, &entrypoints.abort_hotfix, &[arg])
+}
+
+/// 在当前V8中构造完整配置Snapshot并原子替换Registry。 / Builds a complete config snapshot in the current V8 and atomically swaps the registry.
+pub fn call_js_install_game_config(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut JsRuntime,
+    entrypoints: &JsEntrypoints,
+    manifest_json: &str,
+    data_json: &str,
+) -> Result<String> {
+    let manifest = v8_string_arg(runtime, manifest_json)?;
+    let data = v8_string_arg(runtime, data_json)?;
+    call_js_function_string(
+        js_event_loop,
+        runtime,
+        &entrypoints.install_game_config,
+        &[manifest, data],
+    )
 }
 
 fn get_global_function(

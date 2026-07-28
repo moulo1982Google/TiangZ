@@ -54,6 +54,7 @@ app/generated/               服务端与 Native 自动生成代码
 app/generated/bootstrap/     自动生成的 Model Scene 启动入口
 app/generated/hotfix/        自动生成的 Hotfix Handler/补丁入口
 proto/                       protobuf 源文件
+game_config/                 Luban Excel游戏配置唯一源文件
 native_data/core/            框架内置 Rust Entity op 原型
 native_data/demo/            Demo Entity 与粗粒度 Native op 原型
 configs/<environment>/       环境启动配置
@@ -111,6 +112,19 @@ npm run smoke:pixi
 ```
 
 RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClient`；业务不手写 msgcode、rpcId 或 codec。服务端 Push 使用独立的 `@clientMessageHandler`，由 codegen 自动生成 Handler 导入入口。详细规则见 `client_sdk/typescript/README.md` 与 `docs/client_sdk_plan.md`。
+
+## 游戏配置
+
+`game_config/`是策划数值的唯一源目录，使用固定版本的[Luban](https://github.com/focus-creative-games/luban)从Excel生成服务端与客户端强类型配置。它和`configs/<environment>/`的Process、Scene、端口部署配置是两套完全不同的东西。
+
+第一批表包括`ItemConfig`、`MapConfig`和`PlayerConfig`。修改Excel后执行：
+
+```powershell
+npm run build:game-config
+npm run test:game-config
+```
+
+服务端从`app/generated/model/config`读取，客户端通过公共SDK的`Generated/Config`读取；业务统一使用`GameConfigs.XxxConfig.Get(id)`，不得解析Excel、JSON或手工编辑Generated。表结构属于不可热更Model；只修改数据时，`build:game-config`会产生内容寻址候选，运行中的Watcher可执行`reload-config <候选目录>`让各Process原子切换。`npm run dev`会自动完成这一步。客户端配置仍随SDK发布，不会被服务端Reload远程替换。详见[游戏配置教程](docs/tutorials/10-game-config.md)。
 
 ## 配置模型
 

@@ -29,6 +29,7 @@ import {
 } from "../../../generated/model/server/demo/protocol/messageDescriptors";
 import { MapProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { GateSession } from "../gate/GateSession";
+import { GameConfigs } from "../../../generated/model/config";
 
 const CLIENT_PING_INTERVAL_MS = 5_000;
 const CLIENT_TIMEOUT_MS = 30_000;
@@ -200,7 +201,10 @@ export class GateScene extends EntryScene {
     }
     const connectionId = session.ConnectionId;
 
-    const mapId = request.mapId || 1;
+    const mapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
+    if (!GameConfigs.MapConfig.TryGet(mapId)) {
+      throw new RpcError(GameErrCode.MapNotFound, `map config not found: ${mapId}`);
+    }
     const mapHostScene = this.selectMapHostScene(mapId);
     const mapResponse = await this.scenes.call<G2M_EnterMap, M2G_EnterMap>(
       mapHostScene,

@@ -24,6 +24,7 @@ pub(crate) struct ProcessHealthState {
     runtime_stale_after: Duration,
     observability_snapshot: Mutex<ProcessObservabilitySnapshot>,
     hotfix_snapshot: Mutex<HotfixObservabilitySnapshot>,
+    game_config_snapshot: Mutex<GameConfigObservabilitySnapshot>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -36,6 +37,15 @@ struct HotfixObservabilitySnapshot {
     preflight_ms: f64,
     barrier_wait_ms: f64,
     candidate_eval_ms: f64,
+    commit_ms: f64,
+    reload_total_ms: f64,
+}
+
+#[derive(Debug, Clone, Default)]
+struct GameConfigObservabilitySnapshot {
+    data_fingerprint: String,
+    successes: u64,
+    failures: u64,
     commit_ms: f64,
     reload_total_ms: f64,
 }
@@ -183,6 +193,7 @@ impl ProcessHealthState {
                 active_generation: 1,
                 ..HotfixObservabilitySnapshot::default()
             }),
+            game_config_snapshot: Mutex::new(GameConfigObservabilitySnapshot::default()),
         }
     }
 
@@ -264,6 +275,39 @@ impl ProcessHealthState {
         self.hotfix_snapshot
             .lock()
             .expect("Hotfix observability lock poisoned")
+            .failures += 1;
+    }
+
+    /// 发布启动时配置版本，不计入在线Reload成功数。 / Publishes the startup config version without counting it as an online reload.
+    pub(crate) fn record_initial_game_config(&self, data_fingerprint: String) {
+        self.game_config_snapshot
+            .lock()
+            .expect("game config observability lock poisoned")
+            .data_fingerprint = data_fingerprint;
+    }
+
+    /// 原子记录成功切换后的版本和耗时。 / Atomically records the version and timings after a successful swap.
+    pub(crate) fn record_game_config_success(
+        &self,
+        data_fingerprint: String,
+        commit_ms: f64,
+        reload_total_ms: f64,
+    ) {
+        let mut snapshot = self
+            .game_config_snapshot
+            .lock()
+            .expect("game config observability lock poisoned");
+        snapshot.data_fingerprint = data_fingerprint;
+        snapshot.successes += 1;
+        snapshot.commit_ms = commit_ms;
+        snapshot.reload_total_ms = reload_total_ms;
+    }
+
+    /// 记录失败但保留当前版本。 / Records a failure while preserving the active version.
+    pub(crate) fn record_game_config_failure(&self) {
+        self.game_config_snapshot
+            .lock()
+            .expect("game config observability lock poisoned")
             .failures += 1;
     }
 
@@ -445,6 +489,11 @@ fn format_prometheus_metrics(process_name: &str, state: &ProcessHealthState) -> 
         .lock()
         .expect("Hotfix observability lock poisoned")
         .clone();
+    let game_config = state
+        .game_config_snapshot
+        .lock()
+        .expect("game config observability lock poisoned")
+        .clone();
     let mut output = String::new();
 
     writeln!(
@@ -526,8 +575,64 @@ fn format_prometheus_metrics(process_name: &str, state: &ProcessHealthState) -> 
         append_native_data_metrics_prometheus(&mut output, &safe_process_name, native);
     }
     append_hotfix_metrics_prometheus(&mut output, &safe_process_name, &hotfix);
+    append_game_config_metrics_prometheus(&mut output, &safe_process_name, &game_config);
 
     output
+}
+
+fn append_game_config_metrics_prometheus(
+    output: &mut String,
+    process_name: &str,
+    snapshot: &GameConfigObservabilitySnapshot,
+) {
+    for (name, help, metric_type, value) in [
+        (
+            "tiangz_game_config_reload_successes_total",
+            "Successful game config data reloads",
+            "counter",
+            snapshot.successes as f64,
+        ),
+        (
+            "tiangz_game_config_reload_failures_total",
+            "Rejected game config data reloads",
+            "counter",
+            snapshot.failures as f64,
+        ),
+        (
+            "tiangz_game_config_commit_ms",
+            "Last game config V8 snapshot commit milliseconds",
+            "gauge",
+            snapshot.commit_ms,
+        ),
+        (
+            "tiangz_game_config_reload_total_ms",
+            "Last game config reload total milliseconds",
+            "gauge",
+            snapshot.reload_total_ms,
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}").expect("formatting game config metric help");
+        writeln!(output, "# TYPE {name} {metric_type}")
+            .expect("formatting game config metric type");
+        writeln!(output, "{name}{{process=\"{process_name}\"}} {value:.6}")
+            .expect("formatting game config metric");
+    }
+    let fingerprint = snapshot
+        .data_fingerprint
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    writeln!(
+        output,
+        "# HELP tiangz_game_config_info Active game config data information"
+    )
+    .expect("formatting game config metric help");
+    writeln!(output, "# TYPE tiangz_game_config_info gauge")
+        .expect("formatting game config metric type");
+    writeln!(
+        output,
+        "tiangz_game_config_info{{process=\"{process_name}\",data_fingerprint=\"{fingerprint}\"}} 1"
+    )
+    .expect("formatting game config metric");
 }
 
 fn append_hotfix_metrics_prometheus(
@@ -1870,6 +1975,21 @@ mod tests {
         assert!(body.contains("tiangz_hotfix_reload_failures_total{process=\"map1\"} 1"));
         assert!(body.contains("bundle_version=\"v2\""));
         assert!(body.contains("tiangz_hotfix_reload_total_ms{process=\"map1\"} 15.000000"));
+    }
+
+    #[test]
+    fn game_config_metrics_preserve_active_fingerprint_after_failure() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.record_initial_game_config("data-v1".to_string());
+        state.record_game_config_success("data-v2".to_string(), 1.5, 2.5);
+        state.record_game_config_failure();
+
+        let body = format_prometheus_metrics("map1", &state);
+        assert!(body.contains("tiangz_game_config_reload_successes_total{process=\"map1\"} 1"));
+        assert!(body.contains("tiangz_game_config_reload_failures_total{process=\"map1\"} 1"));
+        assert!(body.contains("data_fingerprint=\"data-v2\""));
+        assert!(body.contains("tiangz_game_config_commit_ms{process=\"map1\"} 1.500000"));
+        assert!(body.contains("tiangz_game_config_reload_total_ms{process=\"map1\"} 2.500000"));
     }
 
     #[test]

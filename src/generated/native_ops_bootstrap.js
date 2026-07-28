@@ -43,6 +43,8 @@
     numericDetach: (unitHandle) => core.ops.op_native_numeric_detach(u32(unitHandle, "unitHandle")),
     numericGet: (unitHandle, numericType) => core.ops.op_native_numeric_get(u32(unitHandle, "unitHandle"), u32(numericType, "numericType")),
     numericSet: (unitHandle, numericType, value) => core.ops.op_native_numeric_set(u32(unitHandle, "unitHandle"), u32(numericType, "numericType"), i32(value, "value")),
+    mapConfigure: (mapId, widthCells, heightCells) => core.ops.op_native_map_configure(u32(mapId, "mapId"), u32(widthCells, "widthCells"), u32(heightCells, "heightCells")),
+    mapUnconfigure: (mapId) => core.ops.op_native_map_unconfigure(u32(mapId, "mapId")),
     mapPeekNumericDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_peek_numeric_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),
     mapAckNumericDelta: (mapId, revision) => core.ops.op_native_map_ack_numeric_delta(u32(mapId, "mapId"), bytes(revision, "revision")),
     mapPeekUnitDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_peek_unit_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),

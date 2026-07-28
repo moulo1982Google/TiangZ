@@ -9,6 +9,8 @@ export interface NativeHostOpsApi {
   numericDetach(unitHandle: number): void;
   numericGet(unitHandle: number, numericType: number): number;
   numericSet(unitHandle: number, numericType: number, value: number): boolean;
+  mapConfigure(mapId: number, widthCells: number, heightCells: number): void;
+  mapUnconfigure(mapId: number): void;
   mapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapAckNumericDelta(mapId: number, revision: Uint8Array): void;
   mapPeekUnitDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
@@ -77,6 +79,14 @@ export class NativeOps {
 
   static NumericSet(unitHandle: number, numericType: number, value: number): boolean {
     return nativeHostOps().numericSet(unitHandle, numericType, value);
+  }
+
+  static MapConfigure(mapId: number, widthCells: number, heightCells: number): void {
+    nativeHostOps().mapConfigure(mapId, widthCells, heightCells);
+  }
+
+  static MapUnconfigure(mapId: number): void {
+    nativeHostOps().mapUnconfigure(mapId);
   }
 
   static MapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {

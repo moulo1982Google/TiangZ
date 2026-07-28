@@ -1,11 +1,13 @@
 import {
   type C2M_UseItem,
+  GameConfigs,
   ItemComponent,
   type M2C_UseItem,
   MapComponent,
   MapProtocol,
+  NumericComponent,
+  NumericType,
   PlayerUnit,
-  PositionComponent,
   unitRpcHandler,
   type UnitRpcHandler,
 } from "#tiangz/model";
@@ -19,8 +21,12 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
   /** 消耗道具、发布不可逆事件，并返回权威结果。 / Consumes an item, publishes its irreversible event, and returns the authoritative result. */
   async handle(unit: PlayerUnit, request: C2M_UseItem): Promise<M2C_UseItem> {
     const item = unit.GetComponent(ItemComponent).UseItem(request.itemId);
-    const position = unit.GetComponent(PositionComponent);
-    position.SpeedCellsPerSecond += 1;
+    const itemConfig = GameConfigs.ItemConfig.Get(item.configId);
+    const numeric = unit.GetComponent(NumericComponent);
+    numeric[NumericType.CurrentHp] = Math.min(
+      numeric[NumericType.MaxHp],
+      numeric[NumericType.CurrentHp] + itemConfig.restoreHp,
+    );
     await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(unit, item);
     return { item };
   }

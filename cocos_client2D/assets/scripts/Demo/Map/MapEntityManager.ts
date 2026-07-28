@@ -12,7 +12,6 @@ import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
 import {
   CELL_SIZE,
-  MAP_CELL_COUNT,
   UNIT_FOOTPRINT_CELLS,
   cellToWorld,
 } from "./Movement/CellMovement";
@@ -49,6 +48,8 @@ export class MapEntityManager {
     socket: RpcSocket,
     private readonly localUnitId: number,
     private readonly fixedUpdateMs: number,
+    private readonly mapWidthCells: number,
+    private readonly mapHeightCells: number,
     snapshots: readonly MapEntitySnapshot[],
     items: readonly ItemSnapshot[],
   ) {
@@ -177,7 +178,13 @@ export class MapEntityManager {
               sequence: state.sequence,
             }).catch((error) => console.error("发送移动输入失败", error));
           },
-          { fixedUpdateMs: this.fixedUpdateMs, heartbeatSeconds: 1 / 5 },
+          {
+            fixedUpdateMs: this.fixedUpdateMs,
+            heartbeatSeconds: 1 / 5,
+            mapWidthCells: this.mapWidthCells,
+            mapHeightCells: this.mapHeightCells,
+            moveSpeedCellsPerSecond: snapshot.speedCellsPerSecond,
+          },
         ),
         appearance,
       };
@@ -246,9 +253,10 @@ export class MapEntityManager {
   }
 
   private followLocalPlayer(x: number, y: number): void {
-    const mapSize = MAP_CELL_COUNT * CELL_SIZE;
-    const maxX = Math.max(0, (mapSize - MapEntityManager.VIEWPORT_WIDTH) / 2);
-    const maxY = Math.max(0, (mapSize - MapEntityManager.VIEWPORT_HEIGHT) / 2);
+    const mapWidth = this.mapWidthCells * CELL_SIZE;
+    const mapHeight = this.mapHeightCells * CELL_SIZE;
+    const maxX = Math.max(0, (mapWidth - MapEntityManager.VIEWPORT_WIDTH) / 2);
+    const maxY = Math.max(0, (mapHeight - MapEntityManager.VIEWPORT_HEIGHT) / 2);
     this.parent.setPosition(
       Math.max(-maxX, Math.min(maxX, -x)),
       Math.max(-maxY, Math.min(maxY, -y)),

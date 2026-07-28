@@ -18,15 +18,17 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::sync::{mpsc as tokio_mpsc, watch};
 
 use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneConfig};
+use crate::game_config::GameConfigBundle;
 use crate::health::{
     GameObservabilitySnapshot, HealthServer, LatencyObservabilitySnapshot,
     NativeDataObservabilitySnapshot, ProcessHealthState, ProcessObservabilitySnapshot,
     SceneCustomMetricKind, SceneCustomMetricSnapshot, SceneObservabilitySnapshot,
 };
 use crate::host::{
-    BinaryOutboundBatch, HostSceneCompletion, call_js_push_host_events, call_js_start_process,
-    call_js_stop_process, call_js_update_binary, configure_host_scene_bridge, create_runtime,
-    pump_js_event_loop_once, take_close_connection_requests,
+    BinaryOutboundBatch, HostSceneCompletion, call_js_install_game_config,
+    call_js_push_host_events, call_js_start_process, call_js_stop_process, call_js_update_binary,
+    configure_host_scene_bridge, create_runtime, pump_js_event_loop_once,
+    take_close_connection_requests,
 };
 use crate::hotfix::{HotfixInstallResult, RuntimeBundles};
 use crate::inspector::ProcessInspector;
@@ -117,6 +119,11 @@ enum RuntimeControl {
         requested_at: Instant,
         response: tokio::sync::oneshot::Sender<std::result::Result<HotfixReloadReport, String>>,
     },
+    ReloadGameConfig {
+        candidate: Box<GameConfigBundle>,
+        requested_at: Instant,
+        response: tokio::sync::oneshot::Sender<std::result::Result<GameConfigReloadReport, String>>,
+    },
 }
 
 /// Hotfix 控制面返回的分段结果，同时作为结构化日志与性能测试的稳定字段。 / Segmented Hotfix control result used by structured logs and performance tests.
@@ -131,6 +138,17 @@ struct HotfixReloadReport {
     barrier_wait_ms: f64,
     begin_ms: f64,
     candidate_eval_ms: f64,
+    commit_ms: f64,
+    reload_total_ms: f64,
+    status_json: String,
+}
+
+/// 配置数据控制面结果；schema不变时只替换Snapshot，不改变Model或Hotfix generation。 / Config-data control result; a schema-compatible swap changes only the snapshot, not Model or Hotfix generation.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GameConfigReloadReport {
+    candidate_directory: String,
+    data_fingerprint: String,
     commit_ms: f64,
     reload_total_ms: f64,
     status_json: String,
@@ -454,11 +472,16 @@ pub async fn run_runtime_config(
 ) -> Result<()> {
     init_remote_transport();
     let runtime_bundles = RuntimeBundles::load(root)?;
+    let game_config_schema_fingerprint =
+        runtime_bundles.game_config_schema_fingerprint().to_string();
+    let initial_game_config = GameConfigBundle::load(&root.join("dist/game-config"))?;
+    initial_game_config.verify_schema(&game_config_schema_fingerprint)?;
 
     tracing::info!(
         target: "tiangz::runtime",
         version = crate::version::current(),
         hotfix = runtime_bundles.bundle_version(),
+        game_config = initial_game_config.data_fingerprint(),
         process = %config.process.name,
         scene_count = config.scenes.len(),
         config = %resolved_config.display(),
@@ -540,6 +563,7 @@ pub async fn run_runtime_config(
             scenes,
             known_scenes,
             runtime_bundles,
+            initial_game_config,
             event_rx,
             runtime_control_rx,
             runtime_writers,
@@ -591,6 +615,51 @@ pub async fn run_runtime_config(
                                 Err(_) => tracing::warn!(target: "tiangz::hotfix", "Hotfix reload response was dropped during shutdown"),
                             }
                         });
+                    }
+                    ParentControlCommand::ReloadConfig(candidate_directory) => {
+                        let candidate_directory = if candidate_directory.is_absolute() {
+                            candidate_directory
+                        } else {
+                            root.join(candidate_directory)
+                        };
+                        let requested_at = Instant::now();
+                        match GameConfigBundle::load(&candidate_directory)
+                            .and_then(|candidate| {
+                                candidate.verify_schema(&game_config_schema_fingerprint)?;
+                                Ok(candidate)
+                            })
+                        {
+                            Ok(candidate) => {
+                                let (response, completed) = tokio::sync::oneshot::channel();
+                                runtime_control_tx
+                                    .send(RuntimeControl::ReloadGameConfig {
+                                        candidate: Box::new(candidate),
+                                        requested_at,
+                                        response,
+                                    })
+                                    .map_err(|_| anyhow::anyhow!("V8 runtime control channel is stopped"))?;
+                                tokio::spawn(async move {
+                                    match completed.await {
+                                        Ok(Ok(report)) => tracing::info!(
+                                            target: "tiangz::game_config",
+                                            report = %serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()),
+                                            "game config reload completed"
+                                        ),
+                                        Ok(Err(error)) => tracing::error!(target: "tiangz::game_config", %error, "game config reload rejected; active snapshot preserved"),
+                                        Err(_) => tracing::warn!(target: "tiangz::game_config", "game config reload response was dropped during shutdown"),
+                                    }
+                                });
+                            }
+                            Err(error) => {
+                                health_state.record_game_config_failure();
+                                tracing::error!(
+                                    target: "tiangz::game_config",
+                                    error = %format!("{error:#}"),
+                                    candidate = %candidate_directory.display(),
+                                    "game config candidate validation failed; active snapshot preserved"
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -656,6 +725,7 @@ fn run_process_runtime(
     scenes: Vec<SceneConfig>,
     known_scenes: Vec<SceneConfig>,
     runtime_bundles: RuntimeBundles,
+    initial_game_config: GameConfigBundle,
     event_rx: mpsc::Receiver<ProcessEvent>,
     runtime_control_rx: mpsc::Receiver<RuntimeControl>,
     writers: ConnectionWriters,
@@ -714,6 +784,21 @@ fn run_process_runtime(
         .install_initial(&js_event_loop, &mut runtime)
         .context("failed to install initial Model/Hotfix generation")?;
     health_state.record_initial_hotfix(runtime_bundles.bundle_version().to_string());
+    let initial_config_status = call_js_install_game_config(
+        &js_event_loop,
+        &mut runtime,
+        &entrypoints,
+        initial_game_config.manifest_json(),
+        initial_game_config.server_data_json(),
+    )
+    .context("failed to install initial game config data")?;
+    tracing::info!(
+        target: "tiangz::game_config",
+        data_fingerprint = initial_game_config.data_fingerprint(),
+        status = %initial_config_status,
+        "initial game config snapshot installed"
+    );
+    health_state.record_initial_game_config(initial_game_config.data_fingerprint().to_string());
 
     let process_config = json!({
         "process": process,
@@ -749,16 +834,61 @@ fn run_process_runtime(
     let mut active_generation = 1_u64;
     let mut pending_async = false;
     let mut pending_reload: Option<(PathBuf, Instant, tokio::sync::oneshot::Sender<_>)> = None;
+    let mut pending_config_reload: Option<(
+        Box<GameConfigBundle>,
+        Instant,
+        tokio::sync::oneshot::Sender<_>,
+    )> = None;
     let hotfix_reload_timeout = Duration::from_millis(process.lifecycle.hotfix_reload_timeout_ms);
     loop {
-        if pending_reload.is_none()
-            && let Ok(RuntimeControl::ReloadHotfix {
-                candidate_directory,
+        while let Ok(control) = runtime_control_rx.try_recv() {
+            match control {
+                RuntimeControl::ReloadHotfix {
+                    candidate_directory,
+                    requested_at,
+                    response,
+                } => {
+                    if pending_reload.is_some() {
+                        let _ = response
+                            .send(Err("another Hotfix reload is already pending".to_string()));
+                    } else {
+                        pending_reload = Some((candidate_directory, requested_at, response));
+                    }
+                }
+                RuntimeControl::ReloadGameConfig {
+                    candidate,
+                    requested_at,
+                    response,
+                } => {
+                    if pending_config_reload.is_some() {
+                        let _ = response.send(Err(
+                            "another game config reload is already pending".to_string()
+                        ));
+                    } else {
+                        pending_config_reload = Some((candidate, requested_at, response));
+                    }
+                }
+            }
+        }
+
+        if let Some((candidate, requested_at, response)) = pending_config_reload.take() {
+            let result = execute_game_config_reload(
+                &js_event_loop,
+                &mut runtime,
+                &entrypoints,
+                &candidate,
                 requested_at,
-                response,
-            }) = runtime_control_rx.try_recv()
-        {
-            pending_reload = Some((candidate_directory, requested_at, response));
+            );
+            match &result {
+                Ok(report) => health_state.record_game_config_success(
+                    report.data_fingerprint.clone(),
+                    report.commit_ms,
+                    report.reload_total_ms,
+                ),
+                Err(_) => health_state.record_game_config_failure(),
+            }
+            let _ = response.send(result.map_err(|error| format!("{error:#}")));
+            continue;
         }
 
         if pending_reload
@@ -877,6 +1007,11 @@ fn run_process_runtime(
             "Process stopped before Hotfix reached its commit barrier".to_string(),
         ));
     }
+    if let Some((_, _, response)) = pending_config_reload {
+        let _ = response.send(Err(
+            "Process stopped before game config reload was committed".to_string(),
+        ));
+    }
 
     let stop_result = call_js_stop_process(&js_event_loop, &mut runtime, &entrypoints)
         .context("failed to stop TypeScript process")?;
@@ -891,6 +1026,32 @@ fn run_process_runtime(
         .remove_gc_epilogue_callback(v8_gc_epilogue, gc_metrics_ptr);
 
     Ok(())
+}
+
+/// 在两个Update之间构造并替换配置Snapshot；失败不会修改当前Registry。 / Builds and swaps a config snapshot between updates; failure leaves the active registry untouched.
+fn execute_game_config_reload(
+    js_event_loop: &tokio::runtime::Runtime,
+    runtime: &mut deno_core::JsRuntime,
+    entrypoints: &crate::host::JsEntrypoints,
+    candidate: &GameConfigBundle,
+    requested_at: Instant,
+) -> Result<GameConfigReloadReport> {
+    let commit_started = Instant::now();
+    let status_json = call_js_install_game_config(
+        js_event_loop,
+        runtime,
+        entrypoints,
+        candidate.manifest_json(),
+        candidate.server_data_json(),
+    )
+    .context("TypeScript game config snapshot validation failed")?;
+    Ok(GameConfigReloadReport {
+        candidate_directory: candidate.directory().display().to_string(),
+        data_fingerprint: candidate.data_fingerprint().to_string(),
+        commit_ms: elapsed_ms(commit_started),
+        reload_total_ms: elapsed_ms(requested_at),
+        status_json,
+    })
 }
 
 /// 在安全屏障内完成候选复核、隔离预检和正式 V8 提交；调用期间不从业务队列取新帧。

@@ -40,17 +40,26 @@ export function clampDirection(value: number): number {
   return Math.max(-1, Math.min(1, Math.round(value)));
 }
 
-export function canOccupyCell(x: number, y: number): boolean {
-  return x >= MIN_UNIT_CELL && x <= MAX_UNIT_CELL &&
-    y >= MIN_UNIT_CELL && y <= MAX_UNIT_CELL;
+export function canOccupyCell(
+  x: number,
+  y: number,
+  widthCells = MAP_CELL_COUNT,
+  heightCells = MAP_CELL_COUNT,
+): boolean {
+  const minX = -Math.floor(widthCells / 2) + 1;
+  const maxX = Math.floor((widthCells - 1) / 2) - 1;
+  const minY = -Math.floor(heightCells / 2) + 1;
+  const maxY = Math.floor((heightCells - 1) / 2) - 1;
+  return x >= minX && x <= maxX && y >= minY && y <= maxY;
 }
 
 export function stepDurationSeconds(
   directionX: number,
   directionY: number,
   fixedUpdateMs: number,
+  speedCellsPerSecond = DEFAULT_MOVE_SPEED_CELLS_PER_SECOND,
 ): number {
   const distance = directionX !== 0 && directionY !== 0 ? Math.SQRT2 : 1;
-  const durationMs = 1_000 * distance / DEFAULT_MOVE_SPEED_CELLS_PER_SECOND;
+  const durationMs = 1_000 * distance / speedCellsPerSecond;
   return Math.max(1, Math.ceil(durationMs / fixedUpdateMs)) * fixedUpdateMs / 1_000;
 }

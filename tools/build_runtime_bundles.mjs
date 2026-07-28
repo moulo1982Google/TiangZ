@@ -14,6 +14,9 @@ const requestedHotfixOut = argumentValue("--hotfix-out");
 const requestedHotfixEntry = argumentValue("--hotfix-entry");
 const buildMode = bench ? "bench" : "demo";
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const gameConfigManifest = JSON.parse(
+  await readFile(path.join(root, "game_config", "generated", "game-config.manifest.json"), "utf8"),
+);
 
 if ((requestedHotfixOut || requestedHotfixEntry) && !hotfixOnly) {
   throw new Error("--hotfix-out and --hotfix-entry require --hotfix-only");
@@ -113,6 +116,7 @@ if (!hotfixOnly) {
       path.join(root, "app", "core", "public-api.lock.json"),
     ]),
     nativeSchemaHash: await hashDirectory(path.join(root, "native_data"), ".native"),
+    gameConfigSchemaFingerprint: gameConfigManifest.schemaFingerprint,
     buildMode,
   };
 }
@@ -124,6 +128,7 @@ const hotfixManifest = {
   protocolFingerprint: modelManifest.protocolFingerprint,
   stableCoreApiHash: modelManifest.stableCoreApiHash,
   nativeSchemaHash: modelManifest.nativeSchemaHash,
+  gameConfigSchemaFingerprint: modelManifest.gameConfigSchemaFingerprint,
   hotfixHash: sha256(hotfixBytes),
   buildMode,
 };

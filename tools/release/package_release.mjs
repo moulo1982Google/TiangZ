@@ -39,6 +39,7 @@ for (const runtimeFile of [
   copyRequired(path.join(root, "dist", runtimeFile), path.join(output, "dist", runtimeFile));
 }
 copyRequired(path.join(root, "dist", "smoke_client.cjs"), path.join(output, "dist", "smoke_client.cjs"));
+cpSync(path.join(root, "dist", "game-config"), path.join(output, "dist", "game-config"), { recursive: true });
 cpSync(path.join(root, "configs"), path.join(output, "configs"), { recursive: true });
 copyRequired(path.join(root, "README.md"), path.join(output, "README.md"));
 copyRequired(path.join(root, "LICENSE"), path.join(output, "LICENSE"));

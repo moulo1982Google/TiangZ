@@ -75,12 +75,15 @@
         "client_sdk/typescript/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
         "client_sdk/typescript/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
         "client_sdk/typescript/Demo/LoginFlow.ts": "7d5e04b972e8a2d56469df1467336aa258d8e8cd2739f91d3ad5296fefd7c973",
+        "client_sdk/typescript/Generated/Config/GameConfigs.ts": "2de3095819fe5f8e81e1b1bc1b14f3fb2455b218b9e48948bba4ce9f7ac493a1",
+        "client_sdk/typescript/Generated/Config/index.ts": "57b0d5d55e6fefa03a0ca636ca77aac268b56f0d3594fb27bd72d3fce4db1f4f",
+        "client_sdk/typescript/Generated/Config/schema.ts": "0afc6df3fb0887be63103c263fe14191798950ccb58d12c5ea11a606b98ade28",
         "client_sdk/typescript/Generated/Model/demo/protocol/clients.ts": "b9f3e23c0230b1bd5d589ee7f0923914917daf23a3be0220656771277733331a",
         "client_sdk/typescript/Generated/Model/demo/protocol/messageDescriptors.ts": "d600520575da7eae2ed75c73efb4ee09248d728cb8fda1a304e44beb7f5f1c9f",
         "client_sdk/typescript/Generated/Model/demo/protocol/messages.ts": "dd4c2dabae8c1d9ff0c29e073aad979d5403f325251a5da98f1fac2e510f4829",
         "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "a6599665f11a4723ebd0d4e13cc9361fac8ea767e91a8a5c831e6e2c917e434a",
         "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "cb19019e96eb7e134a4700cbdf0b906397e22c4c8cee29b5c360b83cea8d4ac5",
-        "client_sdk/typescript/index.ts": "51fc009d49b1b2d81f8732d87a0742720df53e157a972a086f092270edaa81c0",
+        "client_sdk/typescript/index.ts": "fa805c9b9d0a335f290a882403873822ff15008a298ddf53b08d1c02f84c9918",
         "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
         "tools/codegen_client_sdk.mjs": "9612282dd74ba1031610583ea5013961f6739c1469d2f7e36bb01cc7d5f506f0",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
@@ -100,13 +103,16 @@
         "cocos_client2D/assets/scripts/Generated/SDK/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
         "cocos_client2D/assets/scripts/Generated/SDK/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
         "cocos_client2D/assets/scripts/Generated/SDK/Demo/LoginFlow.ts": "7d5e04b972e8a2d56469df1467336aa258d8e8cd2739f91d3ad5296fefd7c973",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Config/GameConfigs.ts": "2de3095819fe5f8e81e1b1bc1b14f3fb2455b218b9e48948bba4ce9f7ac493a1",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Config/index.ts": "57b0d5d55e6fefa03a0ca636ca77aac268b56f0d3594fb27bd72d3fce4db1f4f",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Config/schema.ts": "0afc6df3fb0887be63103c263fe14191798950ccb58d12c5ea11a606b98ade28",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "b9f3e23c0230b1bd5d589ee7f0923914917daf23a3be0220656771277733331a",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messageDescriptors.ts": "d600520575da7eae2ed75c73efb4ee09248d728cb8fda1a304e44beb7f5f1c9f",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messages.ts": "dd4c2dabae8c1d9ff0c29e073aad979d5403f325251a5da98f1fac2e510f4829",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/msgcodes.ts": "a6599665f11a4723ebd0d4e13cc9361fac8ea767e91a8a5c831e6e2c917e434a",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "cb19019e96eb7e134a4700cbdf0b906397e22c4c8cee29b5c360b83cea8d4ac5",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/ProtocolFingerprint.ts": "7ba39e6cfcb51162d5bdf109885d5490f66ceaaee26f7e638fc0f9a19e51b7b7",
-        "cocos_client2D/assets/scripts/Generated/SDK/index.ts": "51fc009d49b1b2d81f8732d87a0742720df53e157a972a086f092270edaa81c0",
+        "cocos_client2D/assets/scripts/Generated/SDK/index.ts": "fa805c9b9d0a335f290a882403873822ff15008a298ddf53b08d1c02f84c9918",
         "pixi_client/src/Generated/SDK/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
         "pixi_client/src/Generated/SDK/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
         "pixi_client/src/Generated/SDK/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
@@ -119,13 +125,16 @@
         "pixi_client/src/Generated/SDK/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
         "pixi_client/src/Generated/SDK/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
         "pixi_client/src/Generated/SDK/Demo/LoginFlow.ts": "7d5e04b972e8a2d56469df1467336aa258d8e8cd2739f91d3ad5296fefd7c973",
+        "pixi_client/src/Generated/SDK/Generated/Config/GameConfigs.ts": "2de3095819fe5f8e81e1b1bc1b14f3fb2455b218b9e48948bba4ce9f7ac493a1",
+        "pixi_client/src/Generated/SDK/Generated/Config/index.ts": "57b0d5d55e6fefa03a0ca636ca77aac268b56f0d3594fb27bd72d3fce4db1f4f",
+        "pixi_client/src/Generated/SDK/Generated/Config/schema.ts": "0afc6df3fb0887be63103c263fe14191798950ccb58d12c5ea11a606b98ade28",
         "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "b9f3e23c0230b1bd5d589ee7f0923914917daf23a3be0220656771277733331a",
         "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/messageDescriptors.ts": "d600520575da7eae2ed75c73efb4ee09248d728cb8fda1a304e44beb7f5f1c9f",
         "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/messages.ts": "dd4c2dabae8c1d9ff0c29e073aad979d5403f325251a5da98f1fac2e510f4829",
         "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/msgcodes.ts": "a6599665f11a4723ebd0d4e13cc9361fac8ea767e91a8a5c831e6e2c917e434a",
         "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "cb19019e96eb7e134a4700cbdf0b906397e22c4c8cee29b5c360b83cea8d4ac5",
         "pixi_client/src/Generated/SDK/Generated/ProtocolFingerprint.ts": "7ba39e6cfcb51162d5bdf109885d5490f66ceaaee26f7e638fc0f9a19e51b7b7",
-        "pixi_client/src/Generated/SDK/index.ts": "51fc009d49b1b2d81f8732d87a0742720df53e157a972a086f092270edaa81c0"
+        "pixi_client/src/Generated/SDK/index.ts": "fa805c9b9d0a335f290a882403873822ff15008a298ddf53b08d1c02f84c9918"
       },
       "outputRoots": [
         {
@@ -144,26 +153,75 @@
         }
       ]
     },
+    "game-config": {
+      "command": "npm run codegen:game-config",
+      "contentInputs": {
+        "game_config/Datas/__tables__.xlsx": "83b7a861802685f64585d0825113c4e8bd80bbfda4eb7d0cad7c968faf5219d4",
+        "game_config/Datas/ItemConfig.xlsx": "1bfdd6e9d521c3449f4cd3886121a0079c9b1cb6b1670a079567223083da9e1f",
+        "game_config/Datas/MapConfig.xlsx": "a3e4fcaeb98473b2057359eee2cd2367b724b8f282e74e39fa3604cd9f7e5964",
+        "game_config/Datas/PlayerConfig.xlsx": "ca8d41de4ac7e2dc5ac5aa2a5f04d91bfb68cb782ef12a3e190aed6322dcc11e",
+        "game_config/Defines/builtin.xml": "0746493d3ec7a25983109af2c27096ed4c538f7250cb9b90f7d7f1858f06a2e7",
+        "game_config/luban.conf": "eb2527f701f2aaca4df688d3120bb1e992aa287997aeec5707c8a98e66badd7c",
+        "tools/codegen_game_config.mjs": "470186b22628610d8185e10cf0c895458e6f800ca73c51180c07460ced2a25ec",
+        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
+        "tools/third_party/luban/4.10.2/Luban.dll": "9639581e0abe31f43f8175155a82319f942bbe495c4ee9bd8d3baeaee3bd1028"
+      },
+      "selections": [],
+      "outputs": {
+        "app/generated/model/config/GameConfigs.ts": "0c9d08430b8e84fd35684de1c66d4c53312e58ad89e0945e0776c4bb61a75488",
+        "app/generated/model/config/index.ts": "57b0d5d55e6fefa03a0ca636ca77aac268b56f0d3594fb27bd72d3fce4db1f4f",
+        "app/generated/model/config/schema.ts": "a29b8e31472bc260a6c1535c0dd21e8407f41c1aadf2afc665ac221b1471a040",
+        "client_sdk/typescript/Generated/Config/GameConfigs.ts": "2de3095819fe5f8e81e1b1bc1b14f3fb2455b218b9e48948bba4ce9f7ac493a1",
+        "client_sdk/typescript/Generated/Config/index.ts": "57b0d5d55e6fefa03a0ca636ca77aac268b56f0d3594fb27bd72d3fce4db1f4f",
+        "client_sdk/typescript/Generated/Config/schema.ts": "0afc6df3fb0887be63103c263fe14191798950ccb58d12c5ea11a606b98ade28",
+        "game_config/generated/client.json": "0070b24017e99e4c3b5bfd329563ca0175873a23d1a8f46a08e3dba4689bb462",
+        "game_config/generated/game-config.manifest.json": "9839d468c3c3c94dcb402cde8e5429827baa3e839f3404b3ed32b3bf3f5a6546",
+        "game_config/generated/server.json": "4916b73e1cb15323895e351b8e0230b86433601d0d06bf673a433b41c3933069"
+      },
+      "outputRoots": [
+        {
+          "path": "app/generated/model/config",
+          "extensions": [
+            ".ts"
+          ],
+          "ignore": []
+        },
+        {
+          "path": "client_sdk/typescript/Generated/Config",
+          "extensions": [
+            ".ts"
+          ],
+          "ignore": []
+        },
+        {
+          "path": "game_config/generated",
+          "extensions": [
+            ".json"
+          ],
+          "ignore": []
+        }
+      ]
+    },
     "native-data": {
       "command": "npm run codegen:native-data",
       "contentInputs": {
         "native_data/core/EntityOps.native": "71cbf421bc2fe8f48696536d0f977b4274612a942d50544ebd1323b5e59fb16d",
         "native_data/demo/Entity.native": "9cdd2c4b7d54d6fcf4b63c132cef25b43bd786247a766fec9798513bd32b1336",
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
-        "native_data/demo/MapOps.native": "fd867209c156b84dd7f949641f5f20dde01958e74bb44c99671d0e75a2cf2d77",
+        "native_data/demo/MapOps.native": "046b4718fdbbb4b630315d849aa682173443d6367c423c0f4cd6cdb25b680bd5",
         "native_data/demo/Unit.native": "0d87240fa5e4d46e539330b1e83aa449a05b44782f7ddc6a04e3ba620240f3e4",
-        "package.json": "f67862aa9b83dd6dce942ed7641eefd6e9c69c0301509b28812fbcc12f253c2f",
+        "package.json": "d84cffd32a97a5b7564e61d6362904e8fc525ac8fe6b3859bfcd5cce3612db49",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
       "selections": [],
       "outputs": {
         "app/generated/model/native/NativeItemRef.ts": "47abb3166b30399b6503b9bc095ef08421cdde887f2f13bf9e3012ab535f1697",
-        "app/generated/model/native/NativeOps.ts": "9cbd5fa7e66e534e3209288042ffabb64814d1b5c1d923d21955fb5436b7278b",
+        "app/generated/model/native/NativeOps.ts": "12bb8f0c9a4ee5f8ad0c2e7b066aaa6e383d9552de91827f4c61b86d871f8c08",
         "app/generated/model/native/NativeUnitRef.ts": "bf0ae88926e60743d6ec3cfdbce77839c45c97c53036d90aefecb7ae4b456b8c",
         "src/generated/native_data.rs": "08303dbed6f09c2a75182a2ce77fd0bc9e892c9a97fd99571ae660840eb8ce57",
-        "src/generated/native_ops_bootstrap.js": "dbbd84088bea24b51b1b00a55d3556c68770e7094e88ab8381e35bca70037bb5",
-        "src/generated/native_ops.rs": "09787952872c88b5fd3875d15ff2a3acadfb50c31657f9a0fcc10420ff4a1548"
+        "src/generated/native_ops_bootstrap.js": "d56f259c2aac4d2abfb302d159d16b83f1db29e154bd72a5ada3bf85821b8940",
+        "src/generated/native_ops.rs": "280322ef3f6a9d4109d6dd0aeb7f474a634c19ef287b52f0081a5634fb5ba59d"
       },
       "outputRoots": [
         {
@@ -242,11 +300,11 @@
     "scenes": {
       "command": "npm run codegen:scenes",
       "contentInputs": {
-        "app/hotfix/demo/item/ItemComponentSystem.ts": "fd12ccd069ae799d195c688ec02212cc217a1e32fbffc63e041bfe0a56902bd6",
+        "app/hotfix/demo/item/ItemComponentSystem.ts": "61874b0e0f1956774a1e1e318a786813632cd01e987a1dd5d7627b29c4050d6b",
         "app/hotfix/demo/item/ItemSystem.ts": "609514843905741ca0f93ce86e5c7ef6a11b73d802982276e968b10e357c6e22",
         "app/hotfix/demo/login/LoginComponentSystem.ts": "602d57fbfbd09f790ef87fc7d689c6282abb14ef5bd55a8daeb874861088d824",
         "app/hotfix/demo/map/PlayerUnitSystem.ts": "e883ff4361fd045e2407c149bcb9a315d09d772f9ab8d22a3220bc1f855891e1",
-        "app/hotfix/demo/numeric/NumericComponentSystem.ts": "1434909aa0e132f5c53a528e9e811ca91cd7a483cb913730f982c71f4ff3c268",
+        "app/hotfix/demo/numeric/NumericComponentSystem.ts": "b3b1291241aca230ac086cf49e975a5fe01ecad0e0bc00a42e51f41a803739fe",
         "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_scenes.mjs": "8253d41820db4315bfb082a4b73b547f688ec5f6aef9ae0cb417f53e614bc028"

@@ -23,6 +23,7 @@ struct ModelManifest {
     protocol_fingerprint: String,
     stable_core_api_hash: String,
     native_schema_hash: String,
+    game_config_schema_fingerprint: String,
     build_mode: String,
 }
 
@@ -36,6 +37,7 @@ struct HotfixManifest {
     protocol_fingerprint: String,
     stable_core_api_hash: String,
     native_schema_hash: String,
+    game_config_schema_fingerprint: String,
     hotfix_hash: String,
     build_mode: String,
 }
@@ -117,6 +119,10 @@ impl RuntimeBundles {
 
     pub fn bundle_version(&self) -> &str {
         self.initial_hotfix.bundle_version()
+    }
+
+    pub fn game_config_schema_fingerprint(&self) -> &str {
+        &self.model_manifest.game_config_schema_fingerprint
     }
 
     /// 从不可变候选目录读取 `hotfix.js` 与 manifest，并逐项匹配当前 Process 的 Model。 / Reads `hotfix.js` and its manifest from an immutable candidate directory and matches every frozen Model contract.
@@ -275,6 +281,11 @@ fn verify_hotfix_contract(
         "nativeSchemaHash",
         &model.native_schema_hash,
         &hotfix.native_schema_hash,
+    )?;
+    require_equal(
+        "gameConfigSchemaFingerprint",
+        &model.game_config_schema_fingerprint,
+        &hotfix.game_config_schema_fingerprint,
     )?;
     require_equal("buildMode", &model.build_mode, &hotfix.build_mode)
 }

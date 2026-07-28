@@ -1,0 +1,74 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+import {
+  GameConfigFingerprint as clientFingerprint,
+  GameConfigs as clientConfigs,
+} from "../client_sdk/typescript/Generated/Config";
+import {
+  GameConfigRegistry,
+  GameConfigs as serverConfigs,
+} from "../app/generated/model/config";
+
+/** 验证Luban配置的查询、分端裁剪、引用解析和只读约束。 / Verifies Luban lookup, target filtering, references, and immutability. */
+function main(): void {
+  const generated = path.resolve("game_config/generated");
+  const manifestJson = readFileSync(
+    path.join(generated, "game-config.manifest.json"),
+    "utf8",
+  );
+  const dataJson = readFileSync(path.join(generated, "server.json"), "utf8");
+  const manifest = JSON.parse(manifestJson) as { dataFingerprint: string };
+  GameConfigRegistry.Install(manifestJson, dataJson);
+  assert.equal(manifest.dataFingerprint, clientFingerprint);
+
+  const player = serverConfigs.PlayerConfig.Get(1);
+  assert.equal(player.initialMapId_ref, serverConfigs.MapConfig.Get(1));
+  assert.equal(
+    player.initialItemConfigId_ref,
+    serverConfigs.ItemConfig.Get(player.initialItemConfigId),
+  );
+  assert.equal(serverConfigs.MapConfig.GetAll().length, 2);
+  assert.equal(serverConfigs.ItemConfig.TryGet(999_999), undefined);
+  assert.throws(
+    () => serverConfigs.MapConfig.Get(999_999),
+    /game config not found/,
+  );
+
+  const clientPlayer = clientConfigs.PlayerConfig.Get(1);
+  assert.equal(clientPlayer.initialMapId_ref, clientConfigs.MapConfig.Get(1));
+  assert.equal("initialItemConfigId" in clientPlayer, false);
+  assert.equal("initialItemCount" in clientPlayer, false);
+  assert.equal("description" in serverConfigs.ItemConfig.Get(1001), false);
+  assert.equal(clientConfigs.ItemConfig.Get(1001).description.length > 0, true);
+  assert.equal(Object.isFrozen(player), true);
+  assert.equal(Object.isFrozen(serverConfigs.PlayerConfig.GetAll()), true);
+
+  const oldItem = serverConfigs.ItemConfig.Get(1001);
+  const changed = JSON.parse(dataJson) as Record<string, Array<Record<string, unknown>>>;
+  const changedItem = changed.game_tbitemconfig.find((item) => item.id === 1001);
+  assert.ok(changedItem);
+  changedItem.restore_hp = 77;
+  GameConfigRegistry.Install(
+    JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "a".repeat(64) }),
+    JSON.stringify(changed),
+  );
+  assert.equal(oldItem.restoreHp, 50);
+  assert.equal(serverConfigs.ItemConfig.Get(1001).restoreHp, 77);
+
+  const invalid = structuredClone(changed);
+  invalid.game_tbplayerconfig[0].initial_map_id = 999_999;
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "b".repeat(64) }),
+      JSON.stringify(invalid),
+    ),
+    /missing reference/,
+  );
+  assert.equal(serverConfigs.ItemConfig.Get(1001).restoreHp, 77);
+
+  console.log("game config self-test passed");
+}
+
+main();

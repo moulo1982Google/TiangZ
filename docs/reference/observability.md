@@ -302,6 +302,9 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 - `tiangz_transport_inner_disconnected_calls`：在链路断开时丢弃的调用数量，和 `disconnects` 联动可定位网络抖动。
 - `tiangz_native_encoded_bytes_total`：Native snapshot 下发编码字节，通常比 TS 下发在高并发场景更直观体现下行压力。
 - `tiangz_scene_latency_ms_bucket`：标准 Histogram bucket；Grafana 使用 `histogram_quantile()` 计算可聚合的 P50/P95/P99。
+- `tiangz_game_config_info{data_fingerprint="..."}`：该Process当前生效的游戏配置数据版本；多Process版本不一致时可直接比较标签。
+- `tiangz_game_config_reload_successes_total` / `tiangz_game_config_reload_failures_total`：配置数据在线切换成功和拒绝次数。
+- `tiangz_game_config_commit_ms` / `tiangz_game_config_reload_total_ms`：最近一次成功切换在V8内提交和从收到命令到完成的总耗时。
 
 ## 使用方式
 

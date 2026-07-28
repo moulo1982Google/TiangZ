@@ -40,6 +40,9 @@ export interface PredictedMovement {
 export interface LocalMovementPredictorOptions {
   readonly fixedUpdateMs: number;
   readonly heartbeatSeconds: number;
+  readonly mapWidthCells?: number;
+  readonly mapHeightCells?: number;
+  readonly moveSpeedCellsPerSecond?: number;
 }
 
 export class LocalMovementPredictor {
@@ -165,7 +168,12 @@ export class LocalMovementPredictor {
     if (this.desiredInput.x === 0 && this.desiredInput.y === 0) return false;
     const targetX = this.currentCellX + this.desiredInput.x;
     const targetY = this.currentCellY + this.desiredInput.y;
-    if (!canOccupyCell(targetX, targetY)) return false;
+    if (!canOccupyCell(
+      targetX,
+      targetY,
+      this.options.mapWidthCells,
+      this.options.mapHeightCells,
+    )) return false;
     this.targetCellX = targetX;
     this.targetCellY = targetY;
     this.facing = facingFromDirection(this.desiredInput.x, this.desiredInput.y);
@@ -173,6 +181,7 @@ export class LocalMovementPredictor {
       this.desiredInput.x,
       this.desiredInput.y,
       this.options.fixedUpdateMs,
+      this.options.moveSpeedCellsPerSecond,
     );
     this.stepElapsedSeconds = 0;
     this.moving = true;

@@ -1,5 +1,6 @@
 import {
   GameErrCode,
+  GameConfigs,
   Item,
   ItemComponent,
   type ItemSnapshot,
@@ -13,7 +14,12 @@ import {
 export class ItemComponentSystem extends ItemComponent {
   /** 创建一件演示道具；生产加载应从持久化数据组合背包。 / Seeds one demo item; production loading should compose inventory from persisted data. */
   protected override Awake(): void {
-    this.Create(1, 1001, 3);
+    const playerConfig = GameConfigs.PlayerConfig.Get(1);
+    this.Create(
+      1,
+      playerConfig.initialItemConfigId,
+      playerConfig.initialItemCount,
+    );
   }
 
   /** 返回短期只读视图；不得跨 await 或玩家生命周期保存。 / Returns a short-lived read-only view that must not cross await or player lifetime boundaries. */

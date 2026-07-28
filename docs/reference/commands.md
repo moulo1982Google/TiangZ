@@ -38,6 +38,8 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | 只修改Hotfix方法体或Handler | `npm run build:hotfix`，或直接使用`npm run dev -- configs/local/StartMachine.json` |
 | 修改Model字段、构造、继承或System公开签名 | `npm run build`，然后重启Process |
 | 修改Proto | `npm run codegen && npm run test:protocol` |
+| 只修改Luban配置数据 | `npm run build:game-config && npm run test:game-config`，再向Watcher输入`reload-config <候选目录>` |
+| 修改Luban表结构、字段类型/分组/引用 | `npm run build`，重启Process并发布匹配的客户端SDK |
 | 修改`.native` | `npm run codegen && npm run test:native-data`，然后重新编译Rust并重启Process |
 | 修改Core | `npm run check && cargo test --all-targets`，再运行相关Runtime smoke |
 | 修改Cocos/Pixi客户端 | 使用对应类型检查或构建命令 |
@@ -47,6 +49,8 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | 命令 | 用途 |
 | --- | --- |
 | `npm run codegen:proto:update-lock` | 评审协议变化后显式更新opcode与schema发布锁 |
+| `npm run codegen:game-config` | 使用仓库固定的Luban生成服务端和客户端强类型游戏配置 |
+| `npm run build:game-config` | 生成并校验数据，输出不可变、内容寻址的服务端热更候选 |
 | `npm run codegen:client-sdk` | 生成正式协议指纹，并向Cocos/Pixi分发不含Bench的TypeScript SDK |
 | `npm run codegen:client-handlers` | 只生成客户端Handler自动导入入口 |
 | `npm run build:pixi` | 生成SDK并构建PixiJS/H5客户端 |
@@ -89,6 +93,8 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run test:client-message` | 验证引擎无关客户端Handler、异步错误和作用域释放 |
 | `npm run test:client-sdk` | 验证Client SDK RPC、Update队列、超时、断线、未知消息和背压 |
 | `npm run test:client-sdk-distribution` | 验证Cocos/Pixi SDK副本与公共源码逐文件一致 |
+| `npm run test:game-config` | 验证配置查询、外键、分端字段裁剪、指纹和只读约束 |
+| `npm run test:game-config-reload` | 启动5个Process，验证配置候选全量切换、坏引用回滚和指标 |
 | `npm run smoke:pixi` | Windows Edge自动完成Pixi登录、进图和canvas验收 |
 | `cargo test --all-targets` | 执行Rust全部目标测试 |
 | `npm run test:phase1.9` | 执行历史Phase 1.9完整验收 |

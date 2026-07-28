@@ -12,6 +12,7 @@
 app/model/demo/       新增或改变状态、字段、构造、继承和稳定类型时
 app/hotfix/demo/      普通Handler与可热更领域行为
 proto/
+game_config/                 策划静态配置Excel；结构完整部署，纯数据可生成候选热更
 cocos_client2D/assets/scripts/Demo/
 pixi_client/src/
 configs/
@@ -73,6 +74,7 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 | 登录、Gate、排行榜、社交 | EntryScene和其Component |
 | 一个网络入口 | 独立Handler文件 |
 | 新请求或通知 | proto源文件，再codegen |
+| 道具、地图、玩家模板等静态数值 | `game_config/Datas/*.xlsx`，再执行Luban codegen |
 | 客户端收到Push后的行为 | 客户端独立Handler和领域Context |
 | 可覆盖属性同步 | Delta/latest，通常FrameFlush |
 | 不可丢事实 | Event，立即可靠排队 |
@@ -97,6 +99,20 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 - Scene发现和调用：`app/core/process/SceneMessageHelper.ts`及`docs/guides/business-cookbook.md`。
 
 先复用这些形状，不重新发明Manager、ServiceLocator或事件总线。
+
+## 游戏配置开发规则
+
+静态策划配置统一维护在`game_config/Datas`，启动部署配置继续维护在`configs/<environment>`，两者不能混用。新增或修改配置时：
+
+1. 在Excel中维护字段和值；新增整张表时同步登记`__tables__.xlsx`。
+2. 用`##group`明确字段属于客户端`c`、服务端`s`或两端`c,s`；服务端秘密和校验数据不得为了省事发给客户端。
+3. 跨表ID使用Luban `#ref`，让生成阶段拒绝悬空引用。
+4. 纯数据变化执行`npm run build:game-config`和`npm run test:game-config`；结构变化执行完整`npm run build`。
+5. 服务端通过`GameConfigs`读取，客户端通过分发SDK中的同名入口读取；禁止直接读Excel/JSON、手改Generated或自行维护第二份配置缓存。
+
+`PlayerConfig`表示创建玩家时的基础模板，不表示某个玩家升级后的等级、经验、当前生命或背包结果。运行时状态属于Entity/Component和持久化记录。配置对象与数组只读；`GetAll()`只用于低频初始化和管理流程，帧内热路径应按ID查询或预先建立明确索引。
+
+游戏配置的表名、字段、类型、分组、索引和引用关系属于Model，不能热更；变化后必须完整构建、重启相关Process并同步客户端SDK。只修改数据行或字段值时，`build:game-config`会生成独立候选，可通过Watcher的`reload-config`原子切换服务端快照。Reload不重跑Awake、不修改既有Entity状态；业务不要长期缓存配置行，应在真正使用数值时通过`GameConfigs`查询。客户端数据仍随SDK发布，不能把服务端Reload当作客户端配置下发。详细格式和示例见[游戏配置教程](../tutorials/10-game-config.md)。
 
 ## 新增玩家Component
 
@@ -538,6 +554,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 | 只修改Hotfix行为 | `npm run build:hotfix`、`npm run test:hotfix` |
 | Model字段、类型、构造或继承 | `npm run build`、相关测试并重启Process；不得使用Hotfix-only |
 | proto或客户端Push | `npm run codegen`、`npm run test:protocol`、对应Client测试 |
+| Luban游戏配置 | 纯数据用`npm run build:game-config`、`npm run test:game-config`和Reload验收；结构变化追加完整构建、重启与客户端类型检查 |
 | Native Entity/字段 | `npm run test:native-data`、`cargo test --all-targets` |
 | 状态复制/广播 | `npm run test:map-broadcast`、相关性能基准 |
 | 客户端SDK | `npm run test:client-sdk`、`npm run test:client-sdk-distribution`、Cocos/Pixi typecheck |

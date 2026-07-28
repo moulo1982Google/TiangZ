@@ -287,10 +287,11 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 4：MMORPG 业务扩展
 
-状态：尚未开始。
+状态：业务主体尚未开始；Luban静态游戏配置基础已先行完成。
 
 计划：
 
+- 已固定Luban 4.10.2工具链，建立`game_config` Excel源目录、服务端/客户端分组生成、只读强类型查询、外键校验、配置指纹与自测；首批接入`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`。表结构属于不可热更Model，纯数据可生成内容寻址候选并由Watcher令各Process原子切换；部署配置仍独立留在`configs`。
 - 账号/角色选择与持久化。
 - 地图传送和动态副本 Directory。
 - AOI 数据结构与批量广播优化。

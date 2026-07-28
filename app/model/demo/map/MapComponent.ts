@@ -32,6 +32,12 @@ import { NumericComponent } from "../numeric/NumericComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import type { PlayerRepository } from "../persistence/PlayerRepository";
+import {
+  GameConfigs,
+  type MapConfig as MapConfigData,
+} from "../../../generated/model/config";
+
+const DEMO_PLAYER_CONFIG_ID = 1;
 
 @component()
 export class MapComponent extends Component<[
@@ -48,6 +54,7 @@ export class MapComponent extends Component<[
   private repository!: PlayerRepository;
   private scenes!: SceneMessageHelper;
   private logger!: Logger;
+  private config!: MapConfigData;
 
   get MapId(): number {
     return this.mapId;
@@ -61,6 +68,8 @@ export class MapComponent extends Component<[
     repository: PlayerRepository,
   ): void {
     this.mapId = mapId;
+    this.config = GameConfigs.MapConfig.Get(mapId);
+    NativeData.ConfigureMap(mapId, this.config.widthCells, this.config.heightCells);
     this.players = players;
     this.repository = repository;
     this.scenes = scenes;
@@ -114,6 +123,7 @@ export class MapComponent extends Component<[
    * reconnect paths always produce the same Entity shape.
    */
   CreatePlayer(unitId: number, request: G2M_EnterMap): PlayerUnit {
+    const playerConfig = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID);
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
       mapId: this.mapId,
@@ -127,7 +137,14 @@ export class MapComponent extends Component<[
         x: 0,
         y: 0,
       });
-      player.AddComponent(PositionComponent, native);
+      const position = player.AddComponent(
+        PositionComponent,
+        native,
+        this.config.widthCells,
+        this.config.heightCells,
+      );
+      position.SetCell(this.config.spawnCellX, this.config.spawnCellY);
+      position.SpeedCellsPerSecond = playerConfig.moveSpeed;
       player.AddComponent(NumericComponent);
       player.AddComponent(ItemComponent);
       player.AddComponent(PlayerPersistenceComponent, this.repository);
@@ -377,6 +394,7 @@ export class MapComponent extends Component<[
 
   protected override OnDestroy(): void {
     this.broadcast.Dispose();
+    NativeData.UnconfigureMap(this.mapId);
   }
 
   private BroadcastAudience(excludeUnitId?: number): BroadcastAudience {

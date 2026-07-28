@@ -11,7 +11,6 @@ import {
   decodeEntityLeaveFrame,
   decodeEnterMapFrame,
   decodeEntityNumericFrame,
-  decodeEntityStateFrame,
   decodeItemChangedFrame,
   decodeUseItemFrame,
   decodeGetLoginServiceAddrFrame,
@@ -23,6 +22,7 @@ import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 import type { CellMovementState } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
+import { GameConfigs } from "../client_sdk/typescript/Generated/Config";
 
 type TimedMovementState = CellMovementState & { serverTick: number };
 
@@ -118,7 +118,7 @@ async function verifyGateSessionLifecycle(
       reboundUnitId: first.enterMap.unitId,
       recreatedUnitId: afterDisconnect.enterMap.unitId,
     });
-    await verifyNumericTimer(
+    const currentHp = await verifyNumericTimer(
       afterDisconnect.gate,
       afterDisconnect.enterMap.unitId,
       afterDisconnect.enterMap.entities.find(
@@ -126,7 +126,7 @@ async function verifyGateSessionLifecycle(
       )?.numerics ?? [],
       afterDisconnect.initialNumericFrame,
     );
-    await verifyItemChange(afterDisconnect.gate, afterDisconnect.enterMap);
+    await verifyItemChange(afterDisconnect.gate, afterDisconnect.enterMap, currentHp);
     await verifyAuthoritativeMovement(afterDisconnect.gate, afterDisconnect.enterMap);
     return afterDisconnect.enterMap;
   } finally {
@@ -136,29 +136,51 @@ async function verifyGateSessionLifecycle(
 
 async function verifyItemChange(
   gate: TcpRpcConnection,
-  enterMap: { items: readonly { itemId: number; count: number; version: number }[] },
+  enterMap: {
+    unitId: number;
+    items: readonly { itemId: number; configId: number; count: number; version: number }[];
+  },
+  previousHp: number,
 ): Promise<void> {
   const initial = enterMap.items.find((item) => item.itemId === 1);
   if (!initial || initial.count !== 3) {
     throw new Error("enter-map snapshot did not include the initial item state");
   }
+  const itemConfig = GameConfigs.ItemConfig.Get(initial.configId);
+  const maxHp = GameConfigs.PlayerConfig.Get(1).maxHp;
+  const expectedHp = Math.min(maxHp, previousHp + itemConfig.restoreHp);
   const pushed = gate.waitForMessage(MsgCode.G2C_ItemChanged);
-  const statePushed = gate.waitForMessage(MsgCode.G2C_EntityState);
+  let numericPushed = gate.waitForMessage(MsgCode.G2C_EntityNumeric);
   const responseFrame = await gate.request(buildUseItemPacket(nextRpcId++, { itemId: 1 }));
   const response = decodeUseItemFrame(responseFrame).body.item;
   const event = decodeItemChangedFrame(await pushed).body.item;
   if (response.count !== 2 || event.count !== 2 || response.version !== event.version) {
     throw new Error("immediate item response and event are inconsistent");
   }
-  const state = decodeEntityStateFrame(await statePushed).body.states[0];
-  if (!state || (state.dirtyMaskLow & (1 << 3)) === 0 || state.speedCellsPerSecond !== 11) {
-    throw new Error("speed potion did not produce the expected fixed-field delta");
+
+  const deadline = Date.now() + 2_000;
+  let currentHp: number | undefined;
+  while (Date.now() < deadline) {
+    const frame = await numericPushed;
+    currentHp = decodeEntityNumericFrame(frame).body.numerics.find(
+      (numeric) => numeric.unitId === enterMap.unitId && numeric.numericType === 1,
+    )?.value;
+    if (currentHp !== undefined && currentHp >= expectedHp) break;
+    numericPushed = gate.waitForMessage(
+      MsgCode.G2C_EntityNumeric,
+      Math.max(1, deadline - Date.now()),
+    );
+  }
+  if (currentHp === undefined || currentHp < expectedHp || currentHp > maxHp) {
+    throw new Error(
+      `health potion did not produce the expected Numeric delta: expected>=${expectedHp}, actual=${currentHp}`,
+    );
   }
   console.log("Immediate item event:", {
     itemId: event.itemId,
     count: event.count,
     version: event.version,
-    speedCellsPerSecond: state.speedCellsPerSecond,
+    currentHp,
   });
 }
 
@@ -167,7 +189,7 @@ async function verifyNumericTimer(
   unitId: number,
   initialNumerics: readonly { numericType: number; value: number }[],
   initialFrame?: Uint8Array,
-): Promise<void> {
+): Promise<number> {
   let previous = initialNumerics.find((numeric) => numeric.numericType === 1)?.value;
   const maxHp = initialNumerics.find((numeric) => numeric.numericType === 2)?.value;
   if (previous === undefined || maxHp !== 1000) {
@@ -205,7 +227,7 @@ async function verifyNumericTimer(
             currentHp: numeric.value,
             serverTick: body.serverTick,
           });
-          return;
+          return numeric.value;
         }
         previous = numeric.value;
       }

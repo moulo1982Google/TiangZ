@@ -55,6 +55,14 @@ export { PlayerPersistenceComponent } from "./demo/persistence/PlayerPersistence
 export { NativeData } from "./demo/native/NativeData";
 export { NativeUnitRef } from "../generated/model/native/NativeUnitRef";
 export { GameErrCode } from "./game/protocol/GameErrCode";
+export {
+  GameConfigRegistry,
+  GameConfigSchemaFingerprint,
+  GameConfigs,
+  type ItemConfig as ItemConfigData,
+  type MapConfig as MapConfigData,
+  type PlayerConfig as PlayerConfigData,
+} from "../generated/model/config";
 export { GateScene } from "./demo/scenes/GateScene";
 export { LoginScene } from "./demo/scenes/LoginScene";
 export { MapHostScene } from "./demo/scenes/MapHostScene";

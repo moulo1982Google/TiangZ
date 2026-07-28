@@ -19,8 +19,36 @@ const INDEX_MASK: u32 = (1 << INDEX_BITS) - 1;
 const MAX_GENERATION: u32 = (1 << (32 - INDEX_BITS)) - 1;
 const NATIVE_UNIT_RECORD_BYTES: usize = 46;
 const CELL_SIZE: f32 = 12.0;
-const MIN_UNIT_CELL: i32 = -63;
-const MAX_UNIT_CELL: i32 = 62;
+
+#[derive(Clone, Copy)]
+struct MapBounds {
+    min_x: i32,
+    max_x: i32,
+    min_y: i32,
+    max_y: i32,
+}
+
+impl MapBounds {
+    fn new(width_cells: u32, height_cells: u32) -> Result<Self, JsErrorBox> {
+        if !(3..=1_000_000).contains(&width_cells) || !(3..=1_000_000).contains(&height_cells) {
+            return Err(JsErrorBox::generic(
+                "map dimensions must be between 3 and 1000000 cells",
+            ));
+        }
+        let width = width_cells as i32;
+        let height = height_cells as i32;
+        Ok(Self {
+            min_x: -(width / 2) + 1,
+            max_x: (width - 1) / 2 - 1,
+            min_y: -(height / 2) + 1,
+            max_y: (height - 1) / 2 - 1,
+        })
+    }
+
+    fn contains(self, x: i32, y: i32) -> bool {
+        (self.min_x..=self.max_x).contains(&x) && (self.min_y..=self.max_y).contains(&y)
+    }
+}
 
 thread_local! {
     static STORE: RefCell<NativeEntityStore> = RefCell::new(NativeEntityStore::default());
@@ -60,6 +88,7 @@ struct NativeEntityStore {
     free: Vec<usize>,
     pools: NativeEntityPools,
     units_by_map: HashMap<u32, Vec<u32>>,
+    map_bounds: HashMap<u32, MapBounds>,
     numerics_by_unit: HashMap<u32, NumericData>,
     scratch_handles: Vec<u32>,
     scratch_movement_records: Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
@@ -616,6 +645,36 @@ struct UnitDeltaRecord {
     delta: UnitDelta,
 }
 
+#[op2(fast)]
+/// 注册一张地图的移动边界；重复注册会原子替换旧值。 / Registers movement bounds for a map, atomically replacing an older value.
+pub(crate) fn op_native_map_configure(
+    map_id: u32,
+    width_cells: u32,
+    height_cells: u32,
+) -> Result<(), JsErrorBox> {
+    native_map_configure(map_id, width_cells, height_cells)
+}
+
+fn native_map_configure(
+    map_id: u32,
+    width_cells: u32,
+    height_cells: u32,
+) -> Result<(), JsErrorBox> {
+    let bounds = MapBounds::new(width_cells, height_cells)?;
+    STORE.with(|slot| {
+        slot.borrow_mut().map_bounds.insert(map_id, bounds);
+    });
+    Ok(())
+}
+
+#[op2(fast)]
+/// 删除地图移动边界；不存在时保持幂等。 / Removes map movement bounds and remains idempotent when absent.
+pub(crate) fn op_native_map_unconfigure(map_id: u32) {
+    STORE.with(|slot| {
+        slot.borrow_mut().map_bounds.remove(&map_id);
+    });
+}
+
 #[op2]
 /// 推进一张地图中的全部 Unit，并返回 Rust 编码的可覆盖移动快照。 / Advances all Units in one map and returns a Rust-encoded replaceable movement snapshot.
 pub(crate) fn op_native_map_update_movement(
@@ -643,6 +702,10 @@ fn native_map_update_movement(
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.batch_calls += 1;
+        let bounds = *store
+            .map_bounds
+            .get(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("map {map_id} is not configured")))?;
         let handles = store.take_map_handles(map_id);
         let mut records = take_scratch(&mut store.scratch_movement_records);
         let previous_capacity = records.capacity();
@@ -652,6 +715,7 @@ fn native_map_update_movement(
                 &handles,
                 server_tick,
                 fixed_update_ms as f32,
+                bounds,
                 &mut records,
             )?;
             let mut result = Vec::with_capacity(6 + records.len() * 24);
@@ -675,11 +739,12 @@ fn update_map(
     handles: &[u32],
     server_tick: u32,
     fixed_update_ms: f32,
+    bounds: MapBounds,
     records: &mut Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
 ) -> Result<(), JsErrorBox> {
     for &handle in handles {
         let unit = store.get_unit_hot_mut(handle)?;
-        let state_changed = update_movement(unit, server_tick, fixed_update_ms);
+        let state_changed = update_movement(unit, server_tick, fixed_update_ms, bounds);
         if unit.moving != 0 || state_changed {
             records.push(encode_snapshot(unit, state_changed));
         }
@@ -906,7 +971,12 @@ fn read_record_i32(record: &[u8; NATIVE_UNIT_RECORD_BYTES], offset: usize) -> i3
     i32::from_le_bytes(record[offset..offset + 4].try_into().unwrap())
 }
 
-fn update_movement(unit: &mut UnitHotData, server_tick: u32, fixed_update_ms: f32) -> bool {
+fn update_movement(
+    unit: &mut UnitHotData,
+    server_tick: u32,
+    fixed_update_ms: f32,
+    bounds: MapBounds,
+) -> bool {
     let mut state_changed = unit.input_changed != 0;
     unit.input_changed = 0;
     if unit.moving != 0 && server_tick >= unit.move_end_tick {
@@ -922,7 +992,7 @@ fn update_movement(unit: &mut UnitHotData, server_tick: u32, fixed_update_ms: f3
         unit.facing = facing_from_input(unit.input_x, unit.input_y);
         let target_x = unit.cell_x + unit.input_x as i32;
         let target_y = unit.cell_y + unit.input_y as i32;
-        if can_occupy_cell(target_x, target_y) {
+        if bounds.contains(target_x, target_y) {
             unit.target_cell_x = target_x;
             unit.target_cell_y = target_y;
             unit.move_start_tick = server_tick;
@@ -980,10 +1050,6 @@ fn cell_to_world(cell: i32) -> f32 {
     cell as f32 * CELL_SIZE
 }
 
-fn can_occupy_cell(x: i32, y: i32) -> bool {
-    (MIN_UNIT_CELL..=MAX_UNIT_CELL).contains(&x) && (MIN_UNIT_CELL..=MAX_UNIT_CELL).contains(&y)
-}
-
 fn step_duration_ticks(
     input_x: i8,
     input_y: i8,
@@ -1025,6 +1091,16 @@ fn wrong_entity_type(handle: u32, expected: &str) -> JsErrorBox {
 mod tests {
     use super::*;
     use serde::Deserialize;
+
+    #[test]
+    fn map_bounds_reserve_the_outer_cell_for_a_three_by_three_unit() {
+        let bounds = MapBounds::new(128, 64).unwrap();
+        assert!(bounds.contains(-63, -31));
+        assert!(bounds.contains(62, 30));
+        assert!(!bounds.contains(-64, 0));
+        assert!(!bounds.contains(0, 31));
+        assert!(MapBounds::new(2, 128).is_err());
+    }
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -1153,6 +1229,7 @@ mod tests {
             store.create(NativeEntityData::Unit(unit(10))).unwrap()
         });
         native_unit_set_movement_input_impl(handle, 1, 0, 1).unwrap();
+        native_map_configure(1, 128, 128).unwrap();
 
         native_map_update_movement(1, 1, 50, 10_016).unwrap();
         let first_growths = STORE.with(|slot| slot.borrow().metrics.scratch_growths);
@@ -1235,11 +1312,12 @@ mod tests {
 
     #[test]
     fn movement_finishes_current_cell_before_using_next_direction() {
+        let bounds = MapBounds::new(128, 128).unwrap();
         let mut value = unit_hot(1);
         value.input_x = 1;
         value.sequence = 7;
         value.input_changed = 1;
-        assert!(update_movement(&mut value, 10, 50.0));
+        assert!(update_movement(&mut value, 10, 50.0, bounds));
         assert_eq!(value.target_cell_x, 1);
         assert_eq!(value.move_end_tick, 12);
         assert_eq!(value.sequence, 7);
@@ -1248,11 +1326,11 @@ mod tests {
         value.input_y = 1;
         value.sequence = 8;
         value.input_changed = 1;
-        assert!(update_movement(&mut value, 11, 50.0));
+        assert!(update_movement(&mut value, 11, 50.0, bounds));
         assert_eq!(value.target_cell_x, 1);
         assert_eq!(value.target_cell_y, 0);
 
-        assert!(update_movement(&mut value, 12, 50.0));
+        assert!(update_movement(&mut value, 12, 50.0, bounds));
         assert_eq!(value.cell_x, 1);
         assert_eq!(value.cell_y, 0);
         assert_eq!(value.target_cell_x, 1);
@@ -1261,6 +1339,7 @@ mod tests {
 
     #[test]
     fn movement_matches_regression_fixture() {
+        let bounds = MapBounds::new(128, 128).unwrap();
         let fixture: MovementFixture = serde_json::from_str(include_str!(
             "../tests/fixtures/native_data/movement_regression.json"
         ))
@@ -1281,8 +1360,12 @@ mod tests {
                 value.input_y = input.y;
                 value.sequence = input.sequence;
             }
-            let state_changed =
-                update_movement(&mut value, step.tick, fixture.fixed_update_ms as f32);
+            let state_changed = update_movement(
+                &mut value,
+                step.tick,
+                fixture.fixed_update_ms as f32,
+                bounds,
+            );
             let actual = ExpectedMovement {
                 acknowledged_sequence: value.sequence,
                 from_cell_x: value.cell_x,

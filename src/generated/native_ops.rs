@@ -2,10 +2,10 @@
 use crate::native_data::{
     op_native_data_take_metrics, op_native_entity_create, op_native_entity_destroy,
     op_native_entity_get_number, op_native_entity_set_number, op_native_map_ack_numeric_delta,
-    op_native_map_ack_unit_delta, op_native_map_peek_numeric_delta, op_native_map_peek_unit_delta,
-    op_native_map_update_movement, op_native_numeric_attach, op_native_numeric_detach,
-    op_native_numeric_get, op_native_numeric_set, op_native_unit_reset_movement,
-    op_native_unit_set_movement_input,
+    op_native_map_ack_unit_delta, op_native_map_configure, op_native_map_peek_numeric_delta,
+    op_native_map_peek_unit_delta, op_native_map_unconfigure, op_native_map_update_movement,
+    op_native_numeric_attach, op_native_numeric_detach, op_native_numeric_get,
+    op_native_numeric_set, op_native_unit_reset_movement, op_native_unit_set_movement_input,
 };
 
 deno_core::extension!(
@@ -19,6 +19,8 @@ deno_core::extension!(
         op_native_numeric_detach,
         op_native_numeric_get,
         op_native_numeric_set,
+        op_native_map_configure,
+        op_native_map_unconfigure,
         op_native_map_peek_numeric_delta,
         op_native_map_ack_numeric_delta,
         op_native_map_peek_unit_delta,

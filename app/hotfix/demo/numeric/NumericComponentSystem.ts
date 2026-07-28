@@ -1,5 +1,6 @@
 import {
   AllNumericTypes,
+  GameConfigs,
   NativeOps,
   NativeUnitRef,
   NumericComponent,
@@ -19,8 +20,9 @@ export class NumericComponentSystem extends NumericComponent {
     this.unitHandle = unit.GetComponent(NativeUnitRef).Handle;
     NativeOps.NumericAttach(this.unitHandle);
     this.installIndexAccessors();
-    this[NumericType.CurrentHp] = 100;
-    this[NumericType.MaxHp] = 1000;
+    const config = GameConfigs.PlayerConfig.Get(1);
+    this[NumericType.CurrentHp] = config.initialHp;
+    this[NumericType.MaxHp] = config.maxHp;
     this.NewRepeatedTimer(100, "RegenerateHp");
   }
 

@@ -19,6 +19,7 @@ import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
+import { GameConfigs } from "../../../generated/model/config";
 
 export class MapHostComponent extends Component {
   private readonly maps = new Map<number, MapComponent>();
@@ -50,7 +51,10 @@ export class MapHostComponent extends Component {
   async enterMap(request: G2M_EnterMap): Promise<M2G_EnterMap> {
     this.validateEnterMap(request);
 
-    const mapId = request.mapId || 1;
+    const mapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
+    if (!GameConfigs.MapConfig.TryGet(mapId)) {
+      throw new RpcError(GameErrCode.MapNotFound, `map config not found: ${mapId}`);
+    }
     let player: PlayerUnit | undefined;
     let snapshot: PlayerSnapshot;
     let isNewPlayer = false;

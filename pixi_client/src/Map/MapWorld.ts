@@ -11,9 +11,9 @@ import type {
   UnitStateDelta,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
 import { CharacterSprite } from "./CharacterSprite";
+import { GameConfigs } from "../Generated/SDK/Generated/Config";
 
 const CELL_SIZE = 12;
-const MAP_CELLS = 128;
 
 interface EntityView {
   readonly root: Container;
@@ -40,8 +40,9 @@ export class MapWorld {
     private readonly app: Application,
     socket: RpcSocket,
     private readonly localUnitId: number,
-    enterMap: G2C_EnterMap,
+    private readonly enterMap: G2C_EnterMap,
   ) {
+    const playerConfig = GameConfigs.PlayerConfig.Get(1);
     this.mapClient = new MapClient(socket);
     this.drawMap();
     app.stage.addChild(this.world);
@@ -59,7 +60,7 @@ export class MapWorld {
         cellX: Math.round(enterMap.x / CELL_SIZE),
         cellY: Math.round(enterMap.y / CELL_SIZE),
         numerics: [],
-        speedCellsPerSecond: 10,
+        speedCellsPerSecond: playerConfig.moveSpeed,
         facing: 0,
       });
     }
@@ -176,10 +177,13 @@ export class MapWorld {
   }
 
   private drawMap(): void {
-    const size = MAP_CELLS * CELL_SIZE;
-    const origin = -size / 2;
-    const background = new Graphics().rect(origin, origin, size, size).fill(0x245a4b);
-    background.rect(origin, origin, size, size).stroke({ color: 0x4e8071, width: 1 });
+    const config = GameConfigs.MapConfig.Get(this.enterMap.mapId);
+    const width = config.widthCells * CELL_SIZE;
+    const height = config.heightCells * CELL_SIZE;
+    const originX = -width / 2;
+    const originY = -height / 2;
+    const background = new Graphics().rect(originX, originY, width, height).fill(0x245a4b);
+    background.rect(originX, originY, width, height).stroke({ color: 0x4e8071, width: 1 });
     this.world.addChild(background);
   }
 
