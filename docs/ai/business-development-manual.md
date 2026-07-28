@@ -488,6 +488,16 @@ await player.Offline(reason);
 
 业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。旧Gate Session的断线消息必须校验`gateSessionId`，不能踢掉已重连玩家。
 
+当前正式数据库链路尚未实现，Phase 4.1才会建设Rust `PersistenceProxy`和Redis/永久DB分层。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端。
+
+计划中的开发者语义只保留三种存储域：
+
+- `transient`：连接、移动中间态等运行时数据，不保存。
+- `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
+- `transactional`：Wallet、Inventory、Trade等经济数据；不能直接赋值，只通过领域事务方法修改，永久DB提交成功后才更新Redis缓存和内存状态。
+
+同一字段只能属于一个存储域。Redis中的事务字段只是永久DB结果的带版本缓存，不是第二个业务写入口；普通快照也不得覆盖Wallet、Inventory等事务域。未来由`.native`在Entity/Component级声明模式并由codegen生成约束，在该语法正式落地前不要自行发明`@redis`、`@mongodb`或每字段保存频率注解。
+
 ## 客户端业务
 
 RPC使用生成Client：

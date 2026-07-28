@@ -130,6 +130,13 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 在 Rust AOI 落地后重新测量入图快照、增量广播和单 Map 容量。
 - 为容量候选增加明确的 Probe p95/p99 SLO，避免只按 CPU 和错误数判断。
 - Linux 环境补充 epoll/io_uring 同口径验证；本次数据只代表 Windows IOCP。
+# 2026-07-28 - Phase 4.1持久化方案排期
+
+- 持久化基础延后到Phase 4.1，在正式账号、角色和经济业务之前实施，当前不改Runtime代码。
+- 计划使用可分片Rust `PersistenceProxy`；业务继续依赖Repository和领域Component，不直接连接Redis或永久数据库。
+- `.native`未来按Entity/Component声明`transient/snapshot/transactional`。普通快照自动标脏、合并写Redis并异步落库；经济事务以永久DB为唯一权威，Redis只缓存带版本的事务结果。
+- 同一字段禁止同时拥有Redis和DB两条权威写路径，版本按存储域隔离；第一版只实现一种永久数据库Adapter。
+
 # 2026-07-28 - Luban游戏配置基础
 
 ## 目标

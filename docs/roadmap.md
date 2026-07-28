@@ -301,6 +301,18 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Location/Online Scene，支持按 UnitId 定位 Gate/Map。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
 
+### Phase 4.1：持久化基础
+
+状态：仅完成设计讨论，尚未实现；进入账号、角色和经济业务前实施。
+
+- 建立独立、可按玩家ID分片的Rust `PersistenceProxy`，业务Handler继续只依赖`PlayerRepository`/领域Component，不直接访问Redis或永久数据库。
+- 扩展`.native`持久化元数据，按Entity/Component声明`transient`、`snapshot`或`transactional`存储域；codegen生成稳定MemberId、快照codec、dirty收集、schema版本和恢复入口。存储结构属于Model，不能热更。
+- `snapshot`字段保持普通属性写法；Rust setter只标脏，框架按短窗口合并并批量写Redis，再异步批量落永久数据库，禁止一次属性赋值对应一次网络请求。
+- `transactional`存储域用于Wallet、Inventory、Trade等经济数据；字段不开放普通setter，只能通过领域事务方法修改。永久数据库提交是权威写入，Redis只接收带revision的事务结果缓存，不能成为第二个独立写入口。
+- 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
+- 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
+- 验收覆盖进程崩溃、Redis短暂不可用、永久DB不可用、重复/乱序请求、幂等重试、积压背压、下线Flush和恢复；Prometheus至少暴露dirty数量、最老待落库年龄、Redis/DB延迟、失败、重试和版本冲突。
+
 ## Phase 5：生产工程化
 
 计划：

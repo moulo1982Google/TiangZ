@@ -293,7 +293,8 @@ Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部�
 Phase 4计划：
 
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
-- 账号与角色选择、正式持久化。
+- Phase 4.1先建设持久化基础，再进入账号与角色选择：计划增加可分片Rust `PersistenceProxy`，`.native`按Entity/Component声明`transient/snapshot/transactional`存储域并生成快照、dirty、schema和恢复入口。`snapshot`由框架合并写Redis并异步落永久DB；`transactional`以永久DB事务为唯一权威写入，Redis只缓存带revision的提交结果。同一字段不得同时拥有两条权威写路径，版本按存储域隔离。第一版只实现一种永久DB Adapter，不提前维护MongoDB/MySQL/PostgreSQL三套实现。该能力尚未实现，当前业务不得直接连接Redis/DB或自行增加持久化注解。
+- 账号与角色选择、正式持久化业务接入。
 - 地图传送和动态副本Directory。
 - Rust AOI和按可见集合广播。
 - Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；高负载地图容量A/B尚未执行，不能把纯布局吞吐直接写成服务器容量。
