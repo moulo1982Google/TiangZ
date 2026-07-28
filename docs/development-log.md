@@ -30,6 +30,14 @@
 
 Windows Node 24、单进程、100,000个纯TS ChildEntity、1,000,000次随机查询：创建约47.24ms（2.12M/s），查询约92.93ms（10.76M/s），稳定数组遍历约4.15ms，销毁约22.80ms（4.39M/s），保留V8 Heap约506字节/实例。该结果只说明容器和生命周期开销可控，不能推导地图或AOI容量。
 
+### Windows Release候选预演
+
+2026-07-28在Windows x64完成`0.3.10-alpha.9` Release候选预演。依赖审计耗时26.3秒，完整`npm run verify`成功轮耗时231.0秒，`release:package`耗时43.8秒；稳定完整流程合计301.1秒，约5分01秒。
+
+首轮`verify`在228.4秒发现Hotfix反转移动夹具漏装配新增的`ItemSystem`，候选预检正确拒绝不完整generation。补齐夹具后，针对性Reload测试用22.8秒验证5个Process两次切换到generation 3并拒绝损坏候选，随后完整`verify`重新通过。
+
+最终制品`TiangZ-0.3.10-alpha.9-win32-x64`包含28个文件、27条SHA-256，约49.1MiB；在制品目录完成登录、GateSession重建、Numeric Timer、Item Event、权威移动与多人Entity生命周期smoke。Windows验收通过，Linux同版本Release候选仍待执行。
+
 ### 设计决定
 
 - Unit是带mailbox的地图Actor；Item/Buff/动态Quest是Component拥有的本地ChildEntity。是否需要被AOI看到不决定它是否是Actor。

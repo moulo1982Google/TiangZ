@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.9`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，Phase 4业务扩展尚未开始；进入Phase 4前仍要完成`0.3.10` Release候选全矩阵与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.9`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，`alpha.9` Windows Release候选预演已通过，Phase 4业务扩展尚未开始；进入Phase 4前仍要完成Linux同版本验收、`0.3.10-rc.1`全矩阵确认与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 

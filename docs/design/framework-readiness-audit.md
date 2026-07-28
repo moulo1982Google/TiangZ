@@ -1,12 +1,12 @@
 # Phase 4 前框架成熟度审计
 
-审计日期：2026-07-27。初始审计基线：`0.3.10-alpha.4`；当前实现版本：`0.3.10-alpha.9`。
+审计日期：2026-07-28。初始审计基线：`0.3.10-alpha.4`；当前实现版本：`0.3.10-alpha.9`。
 
 本审计回答一个问题：在继续扩展 MMORPG 业务前，TiangZ 还缺少哪些可以被自动验证的框架能力。业务功能只作为验收夹具，不以增加玩法数量表示框架成熟。
 
 ## 结论
 
-Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`建立R2的Model/Hotfix双Bundle和在线Reload事务，`alpha.6`加入`@systemFor`、生成声明和3000玩家1Hz Reload A/B，`alpha.7`完成慢RPC、Timer和连续100 generation资源长稳。R1至R4的实现与专项验收均已完成；Phase 4准入只剩`0.3.10` Release候选全矩阵和正式Tag。
+Phase 3.10.1至3.10.4已经建立公共API、RPC/Actor正确性、故障注入和可观测性基础。R1、R3与R4已于2026-07-26完成。`0.3.10-alpha.5`建立R2的Model/Hotfix双Bundle和在线Reload事务，`alpha.6`加入`@systemFor`、生成声明和3000玩家1Hz Reload A/B，`alpha.7`完成慢RPC、Timer和连续100 generation资源长稳。R1至R4的实现与专项验收均已完成；`alpha.9` Windows Release候选预演已通过，Phase 4准入只剩Linux同版本验收、`0.3.10-rc.1`全矩阵确认和正式Tag。
 
 1. Developer Tools 的架构规则与仓库约定不一致；已完成。
 2. TypeScript热更已形成可回滚的进程内事务；3000玩家1Hz Reload、慢RPC屏障、Timer跨代和连续100 generation长稳均已完成。
@@ -131,7 +131,7 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 
 1. R1、R3、R4保持全绿。
 2. R2在线操作闭环、慢RPC、Timer和连续generation验收已完成。
-3. 以Windows/Linux Release候选验收整个`0.3.10`。
+3. Windows `alpha.9`候选预演已通过；继续在Linux执行同名依赖审计、完整`verify`和制品smoke。
 4. 发布`0.3.10`后再开始Phase 4。
 
 每个阻塞项独立提交、独立验收。涉及架构、目录边界、数据所有权或业务开发流程时，必须同时更新 `docs/ai/project-context.md` 与 `docs/ai/business-development-manual.md`。
