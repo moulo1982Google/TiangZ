@@ -1,6 +1,6 @@
 # 单 MapHost 同屏容量测试报告
 
-- 时间：2026-07-27T05:37:21.873Z
+- 时间：2026-07-28T04:15:28.160Z
 - 拓扑：1 MapHost / 16 Gate / 1 Login / 1 LoginMgr
 - I/O Backend：IOCP（Tokio/Mio；兼容配置值 epoll）
 - Unit 数据：Rust 权威存储，Rust 批处理并直接编码移动快照
@@ -8,44 +8,44 @@
 - 移动输入：每 5 次上报保持同一方向
 - Probe in-flight：每连接 1
 - 压测客户端：Rust
-- 正式测试：30s；预热：10s；轮数：3
+- 正式测试：20s；预热：10s；轮数：1
 - Map CPU 目标：80%（100% 表示一个逻辑核）
 - 机器：13th Gen Intel(R) Core(TM) i7-13700F / 24 逻辑核 / 65292.4MB
 
-## 3 轮中位数
+## 1 轮中位数
 
 | 玩家 | Map CPU avg/p90/peak | Map 窗口样本 | Gate max avg/peak | move/s | Move 达标率 | push/s | Probe/s | Probe p50 | p90 | p95 | p99 | max | move/probe errors | overload/timeout/backpressure/slow | RSS |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3000 | 49.9/55.7/55.7% | 5 | 63.7/76.9% | 14992 | 99.9% | 59938 | 3000 | 122.14ms | 184.94ms | 238.11ms | 314.73ms | 418.2ms | 0/0 | 0/0/0/0 | 3252.8MB |
+| 3000 | 50.5/55.7/55.7% | 3 | 65.2/73.8% | 14985 | 99.9% | 59846 | 3000 | 91.08ms | 155.99ms | 178.17ms | 226.83ms | 383.65ms | 0/0 | 0/0/473/0 | 3083.6MB |
 
 ## NativeData 边界指标
 
-| 玩家 | 指标样本 | scalar gets/s | scalar sets/s | batch calls/s | encoded frames/items | encoded bytes/s | live Entities/Units | Map V8 Heap peak |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3000 | 0 | 0 | 0 | 0 | 0/0 | 0.0MB/s | 0/0 | 35.7MB |
+| 玩家 | 指标样本 | scalar gets/s | scalar sets/s | batch calls/s | encoded frames/items | encoded bytes/s | live E/U/I | Pool/Scratch | scratch grows/s (total) | TS refs | Map V8 Heap peak |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 3000 | 3 | 0 | 15024.9 | 59.9 | 59.9/90304 | 1.7MB/s | 6000/3000/3000 | 2.5MB/0.2MB | 0 (21) | 6000 | 44.0MB |
 
 ## Map 广播 single-flight
 
 | 玩家 | 指标样本 | pending 采样峰值/生命周期峰值 | queued/s | coalesced/s (%) | sent/s | batch/s | frames/batch | 广播 avg/max | 排队 avg/max | failures |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3000 | 0 | 0/0 | 0 | 0 (0%) | 0 | 0 | 0 | 0/0ms | 0/0ms | 0 |
+| 3000 | 3 | 0/3002 | 90304 | 0 (0%) | 90304 | 39.8 | 2268.7 | 9/69ms | 0.23/64ms | 0 |
 
 ## 批量下行 Bridge
 
 | 玩家 | Gate batch/s | recipients/s | recipients/batch | Bridge copy | logical outbound |
 |---:|---:|---:|---:|---:|---:|
-| 3000 | 3634 | 120751 | 33.23 | 27.23MB/s | 5101.61MB/s |
+| 3000 | 3633 | 122589 | 33.75 | 26.96MB/s | 5051.45MB/s |
 
 ## 容量判断
 
-- 保守容量点：3000 玩家，Map CPU 平均 49.9%，Probe p95/p99 238.11/314.73ms。
-- 最接近 80% 的测试点：3000 玩家，Map CPU 平均 49.9%。
+- 保守容量点：3000 玩家，Map CPU 平均 50.5%，Probe p95/p99 178.17/226.83ms。
+- 最接近 80% 的测试点：3000 玩家，Map CPU 平均 50.5%。
 
 ## Transport Backend
 
 | 玩家 | Map read frames/op | Map write frames/op | Gate read frames/op | Gate write frames/op |
 |---:|---:|---:|---:|---:|
-| 3000 | 1.00 | 15.82 | 1.00 | 1.78 |
+| 3000 | 1.00 | 11.13 | 1.00 | 1.76 |
 
 ## 指标口径
 

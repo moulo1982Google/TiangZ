@@ -157,6 +157,16 @@ struct NativeDataMetricsSnapshot {
     batch_calls: u64,
     live_entities: u32,
     live_units: u32,
+    #[serde(default)]
+    live_items: u32,
+    #[serde(default)]
+    pool_capacity_bytes: u64,
+    #[serde(default)]
+    scratch_capacity_bytes: u64,
+    #[serde(default)]
+    scratch_growths: u64,
+    #[serde(default)]
+    native_refs: BTreeMap<String, u64>,
     encoded_frames: u64,
     encoded_items: u64,
     encoded_bytes: u64,
@@ -1128,12 +1138,17 @@ fn maybe_log_metrics(
     }
     if let Some(native) = native_data_metrics {
         tracing::info!(target: "tiangz::metrics",
-            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} encoded_frames={} encoded_items={} encoded_bytes={}",
+            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} live_items={} pool_capacity_bytes={} scratch_capacity_bytes={} scratch_growths={} native_refs={} encoded_frames={} encoded_items={} encoded_bytes={}",
             native.scalar_gets,
             native.scalar_sets,
             native.batch_calls,
             native.live_entities,
             native.live_units,
+            native.live_items,
+            native.pool_capacity_bytes,
+            native.scratch_capacity_bytes,
+            native.scratch_growths,
+            native.native_refs.values().sum::<u64>(),
             native.encoded_frames,
             native.encoded_items,
             native.encoded_bytes,
@@ -1270,6 +1285,11 @@ fn maybe_log_metrics(
         batch_calls: native.batch_calls,
         live_entities: native.live_entities as u64,
         live_units: native.live_units as u64,
+        live_items: native.live_items as u64,
+        pool_capacity_bytes: native.pool_capacity_bytes,
+        scratch_capacity_bytes: native.scratch_capacity_bytes,
+        scratch_growths: native.scratch_growths,
+        native_refs: native.native_refs.clone(),
         encoded_frames: native.encoded_frames,
         encoded_items: native.encoded_items,
         encoded_bytes: native.encoded_bytes,

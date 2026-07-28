@@ -464,7 +464,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
-本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools对运行时类中的显式`any`、跨基本存储种类联合字段、`delete`字段和`as any`写属性给出黄色性能建议；警告不是错误，`T | null`、判别联合与显式Map/Record仍可正常使用，真实性能以基准和Profile为准。
+本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 
 | 修改类型 | 最少验证 |
 |---|---|
@@ -484,6 +484,8 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 | Release候选 | `npm run audit:dependencies`、`npm run verify`、`npm run release:package` |
 
 性能结果必须注明机器、配置、玩家数、Gate数、频率、持续时间、是否AOI以及指标口径。不要把Probe基线或全地图可见Demo结果描述为正式业务容量。
+
+Native字段可用`@hot`和`@cold`表达Rust存储温度，但这属于Model/schema设计，不是业务Hotfix。`@hot`只用于每Tick确实会连续扫描的最小字段集；低频字段和未标记字段不应为了猜测性能全部标热。codegen负责生成类型池和冷热访问器；业务仍只通过`NativeXxxRef`与粗粒度op访问数据，不直接引用`XxxHotData`、`XxxColdData`、保存Rust池索引或管理Pool。修改冷热归属后运行`npm run perf:native-storage`与`npm run test:native-data`，并完整重启Process。
 
 Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:cocos-demo:engine`；CI中的`typecheck:cocos-demo`只保证入口及依赖可bundle，不伪造引擎类型。客户端SDK本身仍必须通过与引擎无关的`typecheck:cocos-net`。
 

@@ -19,6 +19,8 @@ export interface NativeHostOpsApi {
   dataTakeMetrics(): Uint8Array;
 }
 
+export type NativeRefMetrics = Readonly<Record<string, number>>;
+
 function nativeHostOps(): NativeHostOpsApi {
   const host = (globalThis as typeof globalThis & {
     __etsNativeOps?: NativeHostOpsApi;
@@ -28,6 +30,23 @@ function nativeHostOps(): NativeHostOpsApi {
 }
 
 export class NativeOps {
+  private static readonly nativeRefCounts = new Map<string, number>();
+
+  static TrackNativeRefCreated(entityType: string): void {
+    this.nativeRefCounts.set(entityType, (this.nativeRefCounts.get(entityType) ?? 0) + 1);
+  }
+
+  static TrackNativeRefDestroyed(entityType: string): void {
+    const next = (this.nativeRefCounts.get(entityType) ?? 0) - 1;
+    if (next < 0) throw new Error("native " + entityType + " ref count became negative");
+    if (next === 0) this.nativeRefCounts.delete(entityType);
+    else this.nativeRefCounts.set(entityType, next);
+  }
+
+  static NativeRefMetrics(): NativeRefMetrics {
+    return Object.freeze(Object.fromEntries(this.nativeRefCounts));
+  }
+
   static EntityCreate(entityType: number, values: Float64Array): number {
     return nativeHostOps().entityCreate(entityType, values);
   }

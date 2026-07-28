@@ -18,6 +18,11 @@ export interface NativeDataMetrics {
   batchCalls: number;
   liveEntities: number;
   liveUnits: number;
+  liveItems: number;
+  poolCapacityBytes: number;
+  scratchCapacityBytes: number;
+  scratchGrowths: number;
+  nativeRefs: Readonly<Record<string, number>>;
   encodedFrames: number;
   encodedItems: number;
   encodedBytes: number;
@@ -166,7 +171,7 @@ export class NativeData {
   /** 读取生命周期累计 NativeData 指标；相邻快照差值只用于本地高频访问告警。 / Reads monotonic NativeData metrics; snapshot deltas are used only for local access warnings. */
   static TakeMetrics(): NativeDataMetrics {
     const bytes = NativeOps.DataTakeMetrics();
-    if (bytes.length !== 56) {
+    if (bytes.length !== 84) {
       throw new Error(`invalid native metrics length: ${bytes.length}`);
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -179,6 +184,11 @@ export class NativeData {
       encodedFrames: Number(view.getBigUint64(32, true)),
       encodedItems: Number(view.getBigUint64(40, true)),
       encodedBytes: Number(view.getBigUint64(48, true)),
+      poolCapacityBytes: Number(view.getBigUint64(56, true)),
+      liveItems: view.getUint32(64, true),
+      scratchCapacityBytes: Number(view.getBigUint64(68, true)),
+      scratchGrowths: Number(view.getBigUint64(76, true)),
+      nativeRefs: NativeOps.NativeRefMetrics(),
     };
     const previous = this.previousMetrics;
     this.previousMetrics = metrics;

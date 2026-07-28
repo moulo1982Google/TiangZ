@@ -42,6 +42,461 @@ pub struct UnitData {
     pub sequence: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct UnitHotData {
+    pub id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub cell_x: i32,
+    pub cell_y: i32,
+    pub target_cell_x: i32,
+    pub target_cell_y: i32,
+    pub move_start_tick: u32,
+    pub move_end_tick: u32,
+    pub moving: u32,
+    pub facing: u32,
+    pub speed_cells_per_second: f32,
+    pub input_x: i8,
+    pub input_y: i8,
+    pub input_changed: u32,
+    pub sequence: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnitColdData {
+    pub(crate) __dirty_mask: u64,
+    pub(crate) __revision: u64,
+    pub(crate) __member_revisions: [u64; 64],
+    pub instance_id: u32,
+    pub map_id: u32,
+    pub alive: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnitSplitData {
+    pub hot: UnitHotData,
+    pub cold: UnitColdData,
+}
+
+impl From<UnitData> for UnitSplitData {
+    fn from(value: UnitData) -> Self {
+        Self {
+            hot: UnitHotData {
+                id: value.entity.id,
+                x: value.x,
+                y: value.y,
+                cell_x: value.cell_x,
+                cell_y: value.cell_y,
+                target_cell_x: value.target_cell_x,
+                target_cell_y: value.target_cell_y,
+                move_start_tick: value.move_start_tick,
+                move_end_tick: value.move_end_tick,
+                moving: value.moving,
+                facing: value.facing,
+                speed_cells_per_second: value.speed_cells_per_second,
+                input_x: value.input_x,
+                input_y: value.input_y,
+                input_changed: value.input_changed,
+                sequence: value.sequence,
+            },
+            cold: UnitColdData {
+                __dirty_mask: value.__dirty_mask,
+                __revision: value.__revision,
+                __member_revisions: value.__member_revisions,
+                instance_id: value.entity.instance_id,
+                map_id: value.map_id,
+                alive: value.alive,
+            },
+        }
+    }
+}
+
+pub fn get_unit_split_number(hot: &UnitHotData, cold: &UnitColdData, field: u32) -> Option<f64> {
+    match field {
+        1 => Some(hot.id as f64),
+        2 => Some(cold.instance_id as f64),
+        3 => Some(cold.map_id as f64),
+        4 => Some(hot.x as f64),
+        5 => Some(hot.y as f64),
+        6 => Some(hot.cell_x as f64),
+        7 => Some(hot.cell_y as f64),
+        8 => Some(hot.target_cell_x as f64),
+        9 => Some(hot.target_cell_y as f64),
+        10 => Some(hot.move_start_tick as f64),
+        11 => Some(hot.move_end_tick as f64),
+        12 => Some(hot.moving as f64),
+        13 => Some(hot.facing as f64),
+        14 => Some(hot.speed_cells_per_second as f64),
+        15 => Some(cold.alive as f64),
+        16 => Some(hot.input_x as f64),
+        17 => Some(hot.input_y as f64),
+        18 => Some(hot.input_changed as f64),
+        19 => Some(hot.sequence as f64),
+        _ => None,
+    }
+}
+
+pub fn set_unit_split_number(
+    hot: &mut UnitHotData,
+    cold: &mut UnitColdData,
+    field: u32,
+    number: f64,
+) -> Result<(), &'static str> {
+    let _ = (&mut *hot, &mut *cold);
+    match field {
+        1 => Err("native Unit field id is readonly"),
+        2 => Err("native Unit field instanceId is readonly"),
+        3 => Err("native Unit field mapId is readonly"),
+        4 => {
+            if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
+                return Err("native Unit field x must be a finite f32");
+            }
+            let converted = number as f32;
+            if hot.x != converted {
+                hot.x = converted;
+                cold.__revision = cold.__revision.wrapping_add(1).max(1);
+                cold.__member_revisions[1] = cold.__revision;
+                cold.__dirty_mask |= 1u64 << 1;
+            }
+            Ok(())
+        }
+        5 => {
+            if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
+                return Err("native Unit field y must be a finite f32");
+            }
+            let converted = number as f32;
+            if hot.y != converted {
+                hot.y = converted;
+                cold.__revision = cold.__revision.wrapping_add(1).max(1);
+                cold.__member_revisions[2] = cold.__revision;
+                cold.__dirty_mask |= 1u64 << 2;
+            }
+            Ok(())
+        }
+        6 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Unit field cellX must be i32");
+            }
+            let converted = number as i32;
+            hot.cell_x = converted;
+            Ok(())
+        }
+        7 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Unit field cellY must be i32");
+            }
+            let converted = number as i32;
+            hot.cell_y = converted;
+            Ok(())
+        }
+        8 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Unit field targetCellX must be i32");
+            }
+            let converted = number as i32;
+            hot.target_cell_x = converted;
+            Ok(())
+        }
+        9 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i32::MIN as f64
+                || number > i32::MAX as f64
+            {
+                return Err("native Unit field targetCellY must be i32");
+            }
+            let converted = number as i32;
+            hot.target_cell_y = converted;
+            Ok(())
+        }
+        10 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field moveStartTick must be u32");
+            }
+            let converted = number as u32;
+            hot.move_start_tick = converted;
+            Ok(())
+        }
+        11 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field moveEndTick must be u32");
+            }
+            let converted = number as u32;
+            hot.move_end_tick = converted;
+            Ok(())
+        }
+        12 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field moving must be u32");
+            }
+            let converted = number as u32;
+            hot.moving = converted;
+            Ok(())
+        }
+        13 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field facing must be u32");
+            }
+            let converted = number as u32;
+            hot.facing = converted;
+            Ok(())
+        }
+        14 => {
+            if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
+                return Err("native Unit field speedCellsPerSecond must be a finite f32");
+            }
+            let converted = number as f32;
+            if hot.speed_cells_per_second != converted {
+                hot.speed_cells_per_second = converted;
+                cold.__revision = cold.__revision.wrapping_add(1).max(1);
+                cold.__member_revisions[3] = cold.__revision;
+                cold.__dirty_mask |= 1u64 << 3;
+            }
+            Ok(())
+        }
+        15 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field alive must be u32");
+            }
+            let converted = number as u32;
+            if cold.alive != converted {
+                cold.alive = converted;
+                cold.__revision = cold.__revision.wrapping_add(1).max(1);
+                cold.__member_revisions[4] = cold.__revision;
+                cold.__dirty_mask |= 1u64 << 4;
+            }
+            Ok(())
+        }
+        16 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i8::MIN as f64
+                || number > i8::MAX as f64
+            {
+                return Err("native Unit field inputX must be i8");
+            }
+            let converted = number as i8;
+            hot.input_x = converted;
+            Ok(())
+        }
+        17 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < i8::MIN as f64
+                || number > i8::MAX as f64
+            {
+                return Err("native Unit field inputY must be i8");
+            }
+            let converted = number as i8;
+            hot.input_y = converted;
+            Ok(())
+        }
+        18 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field inputChanged must be u32");
+            }
+            let converted = number as u32;
+            hot.input_changed = converted;
+            Ok(())
+        }
+        19 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Unit field sequence must be u32");
+            }
+            let converted = number as u32;
+            hot.sequence = converted;
+            Ok(())
+        }
+        _ => Err("unknown native Unit field"),
+    }
+}
+
+pub fn peek_unit_split_delta(hot: &UnitHotData, cold: &UnitColdData) -> Option<UnitDelta> {
+    let dirty_mask = cold.__dirty_mask;
+    if dirty_mask == 0 {
+        return None;
+    }
+    Some(UnitDelta {
+        revision: cold.__revision,
+        dirty_mask,
+        x: (dirty_mask & (1u64 << 1) != 0).then_some(hot.x),
+        y: (dirty_mask & (1u64 << 2) != 0).then_some(hot.y),
+        speed_cells_per_second: (dirty_mask & (1u64 << 3) != 0)
+            .then_some(hot.speed_cells_per_second),
+        alive: (dirty_mask & (1u64 << 4) != 0).then_some(cold.alive),
+    })
+}
+
+pub fn ack_unit_split_delta(cold: &mut UnitColdData, revision: u64) {
+    if cold.__member_revisions[1] <= revision {
+        cold.__dirty_mask &= !(1u64 << 1);
+    }
+    if cold.__member_revisions[2] <= revision {
+        cold.__dirty_mask &= !(1u64 << 2);
+    }
+    if cold.__member_revisions[3] <= revision {
+        cold.__dirty_mask &= !(1u64 << 3);
+    }
+    if cold.__member_revisions[4] <= revision {
+        cold.__dirty_mask &= !(1u64 << 4);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ItemHotData {
+    pub id: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ItemColdData {
+    pub instance_id: u32,
+    pub config_id: u32,
+    pub count: u32,
+    pub quality: u32,
+    pub level: u32,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ItemSplitData {
+    pub hot: ItemHotData,
+    pub cold: ItemColdData,
+}
+
+impl From<ItemData> for ItemSplitData {
+    fn from(value: ItemData) -> Self {
+        Self {
+            hot: ItemHotData {
+                id: value.entity.id,
+            },
+            cold: ItemColdData {
+                instance_id: value.entity.instance_id,
+                config_id: value.config_id,
+                count: value.count,
+                quality: value.quality,
+                level: value.level,
+                version: value.version,
+            },
+        }
+    }
+}
+
+pub fn get_item_split_number(hot: &ItemHotData, cold: &ItemColdData, field: u32) -> Option<f64> {
+    match field {
+        1 => Some(hot.id as f64),
+        2 => Some(cold.instance_id as f64),
+        3 => Some(cold.config_id as f64),
+        4 => Some(cold.count as f64),
+        5 => Some(cold.quality as f64),
+        6 => Some(cold.level as f64),
+        7 => Some(cold.version as f64),
+        _ => None,
+    }
+}
+
+pub fn set_item_split_number(
+    hot: &mut ItemHotData,
+    cold: &mut ItemColdData,
+    field: u32,
+    number: f64,
+) -> Result<(), &'static str> {
+    let _ = (&mut *hot, &mut *cold);
+    match field {
+        1 => Err("native Item field id is readonly"),
+        2 => Err("native Item field instanceId is readonly"),
+        3 => Err("native Item field configId is readonly"),
+        4 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Item field count must be u32");
+            }
+            let converted = number as u32;
+            cold.count = converted;
+            Ok(())
+        }
+        5 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Item field quality must be u32");
+            }
+            let converted = number as u32;
+            cold.quality = converted;
+            Ok(())
+        }
+        6 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Item field level must be u32");
+            }
+            let converted = number as u32;
+            cold.level = converted;
+            Ok(())
+        }
+        7 => {
+            if !number.is_finite()
+                || number.fract() != 0.0
+                || number < 0.0
+                || number > u32::MAX as f64
+            {
+                return Err("native Item field version must be u32");
+            }
+            let converted = number as u32;
+            cold.version = converted;
+            Ok(())
+        }
+        _ => Err("unknown native Item field"),
+    }
+}
+
 pub const ENTITY_TYPE_UNIT: u32 = 1;
 pub const ENTITY_TYPE_ITEM: u32 = 2;
 
@@ -543,6 +998,264 @@ pub fn set_entity_number(
     match value {
         NativeEntityData::Unit(value) => set_unit_number(value, field, number),
         NativeEntityData::Item(value) => set_item_number(value, field, number),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativePoolLocation {
+    Unit(usize),
+    Item(usize),
+}
+
+#[derive(Default)]
+pub struct NativeEntityPools {
+    unit_hot: Vec<UnitHotData>,
+    unit_cold: Vec<Option<UnitColdData>>,
+    unit_free: Vec<usize>,
+    item_hot: Vec<ItemHotData>,
+    item_cold: Vec<Option<ItemColdData>>,
+    item_free: Vec<usize>,
+}
+
+impl NativeEntityPools {
+    pub fn insert(&mut self, value: NativeEntityData) -> NativePoolLocation {
+        match value {
+            NativeEntityData::Unit(value) => {
+                let split = UnitSplitData::from(value);
+                let index = if let Some(index) = self.unit_free.pop() {
+                    self.unit_hot[index] = split.hot;
+                    self.unit_cold[index] = Some(split.cold);
+                    index
+                } else {
+                    let index = self.unit_hot.len();
+                    self.unit_hot.push(split.hot);
+                    self.unit_cold.push(Some(split.cold));
+                    index
+                };
+                NativePoolLocation::Unit(index)
+            }
+            NativeEntityData::Item(value) => {
+                let split = ItemSplitData::from(value);
+                let index = if let Some(index) = self.item_free.pop() {
+                    self.item_hot[index] = split.hot;
+                    self.item_cold[index] = Some(split.cold);
+                    index
+                } else {
+                    let index = self.item_hot.len();
+                    self.item_hot.push(split.hot);
+                    self.item_cold.push(Some(split.cold));
+                    index
+                };
+                NativePoolLocation::Item(index)
+            }
+        }
+    }
+
+    pub fn remove(&mut self, location: NativePoolLocation) -> bool {
+        match location {
+            NativePoolLocation::Unit(index) => {
+                let removed = self
+                    .unit_cold
+                    .get_mut(index)
+                    .and_then(Option::take)
+                    .is_some();
+                if removed {
+                    self.unit_free.push(index);
+                }
+                removed
+            }
+            NativePoolLocation::Item(index) => {
+                let removed = self
+                    .item_cold
+                    .get_mut(index)
+                    .and_then(Option::take)
+                    .is_some();
+                if removed {
+                    self.item_free.push(index);
+                }
+                removed
+            }
+        }
+    }
+
+    pub fn get_number(&self, location: NativePoolLocation, field: u32) -> Option<f64> {
+        match location {
+            NativePoolLocation::Unit(index) => get_unit_split_number(
+                self.unit_hot.get(index)?,
+                self.unit_cold.get(index)?.as_ref()?,
+                field,
+            ),
+            NativePoolLocation::Item(index) => get_item_split_number(
+                self.item_hot.get(index)?,
+                self.item_cold.get(index)?.as_ref()?,
+                field,
+            ),
+        }
+    }
+
+    pub fn set_number(
+        &mut self,
+        location: NativePoolLocation,
+        field: u32,
+        number: f64,
+    ) -> Result<(), &'static str> {
+        match location {
+            NativePoolLocation::Unit(index) => {
+                let hot = self
+                    .unit_hot
+                    .get_mut(index)
+                    .ok_or("native pool location is stale")?;
+                let cold = self
+                    .unit_cold
+                    .get_mut(index)
+                    .and_then(Option::as_mut)
+                    .ok_or("native pool location is stale")?;
+                set_unit_split_number(hot, cold, field, number)
+            }
+            NativePoolLocation::Item(index) => {
+                let hot = self
+                    .item_hot
+                    .get_mut(index)
+                    .ok_or("native pool location is stale")?;
+                let cold = self
+                    .item_cold
+                    .get_mut(index)
+                    .and_then(Option::as_mut)
+                    .ok_or("native pool location is stale")?;
+                set_item_split_number(hot, cold, field, number)
+            }
+        }
+    }
+
+    pub fn live_entities(&self) -> usize {
+        self.live_unit() + self.live_item()
+    }
+
+    pub fn estimated_capacity_bytes(&self) -> usize {
+        self.unit_hot.capacity() * std::mem::size_of::<UnitHotData>()
+            + self.unit_cold.capacity() * std::mem::size_of::<Option<UnitColdData>>()
+            + self.item_hot.capacity() * std::mem::size_of::<ItemHotData>()
+            + self.item_cold.capacity() * std::mem::size_of::<Option<ItemColdData>>()
+    }
+
+    pub fn get_unit_hot(&self, location: NativePoolLocation) -> Option<&UnitHotData> {
+        let NativePoolLocation::Unit(index) = location else {
+            return None;
+        };
+        self.unit_cold.get(index)?.as_ref()?;
+        self.unit_hot.get(index)
+    }
+
+    pub fn get_unit_hot_mut(&mut self, location: NativePoolLocation) -> Option<&mut UnitHotData> {
+        let NativePoolLocation::Unit(index) = location else {
+            return None;
+        };
+        self.unit_cold.get(index)?.as_ref()?;
+        self.unit_hot.get_mut(index)
+    }
+
+    pub fn get_unit_cold(&self, location: NativePoolLocation) -> Option<&UnitColdData> {
+        let NativePoolLocation::Unit(index) = location else {
+            return None;
+        };
+        self.unit_cold.get(index)?.as_ref()
+    }
+
+    pub fn get_unit_cold_mut(&mut self, location: NativePoolLocation) -> Option<&mut UnitColdData> {
+        let NativePoolLocation::Unit(index) = location else {
+            return None;
+        };
+        self.unit_cold.get_mut(index)?.as_mut()
+    }
+
+    pub fn get_unit_parts(
+        &self,
+        location: NativePoolLocation,
+    ) -> Option<(&UnitHotData, &UnitColdData)> {
+        let NativePoolLocation::Unit(index) = location else {
+            return None;
+        };
+        Some((
+            self.unit_hot.get(index)?,
+            self.unit_cold.get(index)?.as_ref()?,
+        ))
+    }
+
+    pub fn get_unit_parts_mut(
+        &mut self,
+        location: NativePoolLocation,
+    ) -> Option<(&mut UnitHotData, &mut UnitColdData)> {
+        let NativePoolLocation::Unit(index) = location else {
+            return None;
+        };
+        Some((
+            self.unit_hot.get_mut(index)?,
+            self.unit_cold.get_mut(index)?.as_mut()?,
+        ))
+    }
+
+    pub fn live_unit(&self) -> usize {
+        self.unit_cold.len() - self.unit_free.len()
+    }
+
+    pub fn get_item_hot(&self, location: NativePoolLocation) -> Option<&ItemHotData> {
+        let NativePoolLocation::Item(index) = location else {
+            return None;
+        };
+        self.item_cold.get(index)?.as_ref()?;
+        self.item_hot.get(index)
+    }
+
+    pub fn get_item_hot_mut(&mut self, location: NativePoolLocation) -> Option<&mut ItemHotData> {
+        let NativePoolLocation::Item(index) = location else {
+            return None;
+        };
+        self.item_cold.get(index)?.as_ref()?;
+        self.item_hot.get_mut(index)
+    }
+
+    pub fn get_item_cold(&self, location: NativePoolLocation) -> Option<&ItemColdData> {
+        let NativePoolLocation::Item(index) = location else {
+            return None;
+        };
+        self.item_cold.get(index)?.as_ref()
+    }
+
+    pub fn get_item_cold_mut(&mut self, location: NativePoolLocation) -> Option<&mut ItemColdData> {
+        let NativePoolLocation::Item(index) = location else {
+            return None;
+        };
+        self.item_cold.get_mut(index)?.as_mut()
+    }
+
+    pub fn get_item_parts(
+        &self,
+        location: NativePoolLocation,
+    ) -> Option<(&ItemHotData, &ItemColdData)> {
+        let NativePoolLocation::Item(index) = location else {
+            return None;
+        };
+        Some((
+            self.item_hot.get(index)?,
+            self.item_cold.get(index)?.as_ref()?,
+        ))
+    }
+
+    pub fn get_item_parts_mut(
+        &mut self,
+        location: NativePoolLocation,
+    ) -> Option<(&mut ItemHotData, &mut ItemColdData)> {
+        let NativePoolLocation::Item(index) = location else {
+            return None;
+        };
+        Some((
+            self.item_hot.get_mut(index)?,
+            self.item_cold.get_mut(index)?.as_mut()?,
+        ))
+    }
+
+    pub fn live_item(&self) -> usize {
+        self.item_cold.len() - self.item_free.len()
     }
 }
 

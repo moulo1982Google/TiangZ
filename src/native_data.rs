@@ -8,10 +8,10 @@ use deno_core::op2;
 use deno_error::JsErrorBox;
 
 #[cfg(test)]
-use crate::generated::native_data::{EntityData, get_unit_number, set_unit_number};
+use crate::generated::native_data::{EntityData, UnitData, UnitSplitData};
 use crate::generated::native_data::{
-    NativeEntityData, UnitData, UnitDelta, ack_unit_delta, create_entity, get_entity_number,
-    peek_unit_delta, set_entity_number,
+    NativeEntityData, NativeEntityPools, NativePoolLocation, UnitColdData, UnitDelta, UnitHotData,
+    ack_unit_split_delta, create_entity, peek_unit_split_delta,
 };
 
 const INDEX_BITS: u32 = 20;
@@ -34,11 +34,12 @@ struct NativeDataMetrics {
     encoded_frames: u64,
     encoded_items: u64,
     encoded_bytes: u64,
+    scratch_growths: u64,
 }
 
 struct EntitySlot {
     generation: u32,
-    value: Option<NativeEntityData>,
+    location: Option<NativePoolLocation>,
 }
 
 #[derive(Default)]
@@ -47,30 +48,44 @@ struct NumericData {
     dirty: HashMap<u32, u64>,
 }
 
+fn take_scratch<T>(slot: &mut Vec<T>) -> Vec<T> {
+    let mut scratch = std::mem::take(slot);
+    scratch.clear();
+    scratch
+}
+
 #[derive(Default)]
 struct NativeEntityStore {
     slots: Vec<EntitySlot>,
     free: Vec<usize>,
+    pools: NativeEntityPools,
     units_by_map: HashMap<u32, Vec<u32>>,
     numerics_by_unit: HashMap<u32, NumericData>,
+    scratch_handles: Vec<u32>,
+    scratch_movement_records: Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
+    scratch_numeric_records: Vec<(u32, u32, i32)>,
+    scratch_unit_delta_records: Vec<UnitDeltaRecord>,
     numeric_revision: u64,
     metrics: NativeDataMetrics,
 }
 
 impl NativeEntityStore {
     fn create(&mut self, value: NativeEntityData) -> Result<u32, JsErrorBox> {
+        if self.free.is_empty() && self.slots.len() >= INDEX_MASK as usize {
+            return Err(JsErrorBox::generic(
+                "native Entity handle directory is full",
+            ));
+        }
         let unit_map_id = value.as_unit().map(|unit| unit.map_id);
+        let location = self.pools.insert(value);
         let index = if let Some(index) = self.free.pop() {
-            self.slots[index].value = Some(value);
+            self.slots[index].location = Some(location);
             index
         } else {
-            if self.slots.len() >= INDEX_MASK as usize {
-                return Err(JsErrorBox::generic("native Entity arena is full"));
-            }
             let index = self.slots.len();
             self.slots.push(EntitySlot {
                 generation: 1,
-                value: Some(value),
+                location: Some(location),
             });
             index
         };
@@ -81,38 +96,36 @@ impl NativeEntityStore {
         Ok(handle)
     }
 
-    fn get(&self, handle: u32) -> Result<&NativeEntityData, JsErrorBox> {
+    fn location(&self, handle: u32) -> Result<NativePoolLocation, JsErrorBox> {
         let (index, generation) = decode_handle(handle)?;
         let slot = self.slots.get(index).ok_or_else(|| stale_handle(handle))?;
         if slot.generation != generation {
             return Err(stale_handle(handle));
         }
-        slot.value.as_ref().ok_or_else(|| stale_handle(handle))
+        slot.location.ok_or_else(|| stale_handle(handle))
     }
 
-    fn get_mut(&mut self, handle: u32) -> Result<&mut NativeEntityData, JsErrorBox> {
-        let (index, generation) = decode_handle(handle)?;
-        let slot = self
-            .slots
-            .get_mut(index)
-            .ok_or_else(|| stale_handle(handle))?;
-        if slot.generation != generation {
-            return Err(stale_handle(handle));
-        }
-        slot.value.as_mut().ok_or_else(|| stale_handle(handle))
+    fn get_number(&self, handle: u32, field: u32) -> Result<f64, JsErrorBox> {
+        self.pools
+            .get_number(self.location(handle)?, field)
+            .ok_or_else(|| JsErrorBox::generic(format!("unknown native Entity field: {field}")))
+    }
+
+    fn set_number(&mut self, handle: u32, field: u32, value: f64) -> Result<(), JsErrorBox> {
+        let location = self.location(handle)?;
+        self.pools
+            .set_number(location, field, value)
+            .map_err(JsErrorBox::generic)
     }
 
     fn destroy(&mut self, handle: u32) -> Result<(), JsErrorBox> {
         let (index, generation) = decode_handle(handle)?;
-        let slot = self
-            .slots
-            .get_mut(index)
-            .ok_or_else(|| stale_handle(handle))?;
-        if slot.generation != generation {
+        let location = self.location(handle)?;
+        let unit_map_id = self.pools.get_unit_cold(location).map(|unit| unit.map_id);
+        if !self.pools.remove(location) {
             return Err(stale_handle(handle));
         }
-        let value = slot.value.take().ok_or_else(|| stale_handle(handle))?;
-        if let Some(map_id) = value.as_unit().map(|unit| unit.map_id) {
+        if let Some(map_id) = unit_map_id {
             self.numerics_by_unit.remove(&handle);
             if let Some(handles) = self.units_by_map.get_mut(&map_id) {
                 handles.retain(|candidate| *candidate != handle);
@@ -121,6 +134,12 @@ impl NativeEntityStore {
                 }
             }
         }
+        let slot = self
+            .slots
+            .get_mut(index)
+            .ok_or_else(|| stale_handle(handle))?;
+        debug_assert_eq!(slot.generation, generation);
+        slot.location = None;
         slot.generation = if slot.generation >= MAX_GENERATION {
             1
         } else {
@@ -131,30 +150,63 @@ impl NativeEntityStore {
     }
 
     fn live_units(&self) -> u32 {
-        self.slots
-            .iter()
-            .filter(|slot| {
-                slot.value
-                    .as_ref()
-                    .and_then(NativeEntityData::as_unit)
-                    .is_some()
-            })
-            .count() as u32
+        self.pools.live_unit() as u32
     }
 
     fn live_entities(&self) -> u32 {
-        (self.slots.len() - self.free.len()) as u32
+        self.pools.live_entities() as u32
     }
 
-    fn get_unit(&self, handle: u32) -> Result<&UnitData, JsErrorBox> {
-        self.get(handle)?
-            .as_unit()
+    fn live_items(&self) -> u32 {
+        self.pools.live_item() as u32
+    }
+
+    fn pool_capacity_bytes(&self) -> u64 {
+        self.pools.estimated_capacity_bytes() as u64
+    }
+
+    fn scratch_capacity_bytes(&self) -> u64 {
+        (self.scratch_handles.capacity() * std::mem::size_of::<u32>()
+            + self.scratch_movement_records.capacity()
+                * std::mem::size_of::<[u8; NATIVE_UNIT_RECORD_BYTES]>()
+            + self.scratch_numeric_records.capacity() * std::mem::size_of::<(u32, u32, i32)>()
+            + self.scratch_unit_delta_records.capacity() * std::mem::size_of::<UnitDeltaRecord>())
+            as u64
+    }
+
+    fn take_map_handles(&mut self, map_id: u32) -> Vec<u32> {
+        let mut handles = take_scratch(&mut self.scratch_handles);
+        let previous_capacity = handles.capacity();
+        if let Some(source) = self.units_by_map.get(&map_id) {
+            handles.extend_from_slice(source);
+        }
+        self.metrics.scratch_growths += u64::from(handles.capacity() > previous_capacity);
+        handles
+    }
+
+    fn get_unit_hot(&self, handle: u32) -> Result<&UnitHotData, JsErrorBox> {
+        self.pools
+            .get_unit_hot(self.location(handle)?)
             .ok_or_else(|| wrong_entity_type(handle, "Unit"))
     }
 
-    fn get_unit_mut(&mut self, handle: u32) -> Result<&mut UnitData, JsErrorBox> {
-        self.get_mut(handle)?
-            .as_unit_mut()
+    fn get_unit_hot_mut(&mut self, handle: u32) -> Result<&mut UnitHotData, JsErrorBox> {
+        let location = self.location(handle)?;
+        self.pools
+            .get_unit_hot_mut(location)
+            .ok_or_else(|| wrong_entity_type(handle, "Unit"))
+    }
+
+    fn get_unit_parts(&self, handle: u32) -> Result<(&UnitHotData, &UnitColdData), JsErrorBox> {
+        self.pools
+            .get_unit_parts(self.location(handle)?)
+            .ok_or_else(|| wrong_entity_type(handle, "Unit"))
+    }
+
+    fn get_unit_cold_mut(&mut self, handle: u32) -> Result<&mut UnitColdData, JsErrorBox> {
+        let location = self.location(handle)?;
+        self.pools
+            .get_unit_cold_mut(location)
             .ok_or_else(|| wrong_entity_type(handle, "Unit"))
     }
 }
@@ -170,7 +222,7 @@ impl NativeEntityStore {
 }
 
 #[op2(fast)]
-/// 在 Rust Arena 中分配生成 Entity，并返回带世代校验的句柄。 / Allocates a generated Entity in the Rust Arena and returns a generation-checked handle.
+/// 在生成的类型池中分配Entity，并返回带世代校验的稳定句柄。 / Allocates an Entity in generated typed pools and returns a generation-checked stable handle.
 pub(crate) fn op_native_entity_create(
     entity_type: u32,
     #[buffer] values: &[f64],
@@ -180,7 +232,7 @@ pub(crate) fn op_native_entity_create(
 }
 
 #[op2(fast)]
-/// 销毁一个 Arena Entity；此后通过旧句柄执行的操作会被拒绝。 / Destroys one Arena entity; later operations through the stale handle are rejected.
+/// 销毁一个池化Entity；此后通过旧句柄执行的操作会被拒绝。 / Destroys one pooled Entity; later operations through the stale handle are rejected.
 pub(crate) fn op_native_entity_destroy(handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| slot.borrow_mut().destroy(handle))
 }
@@ -188,6 +240,15 @@ pub(crate) fn op_native_entity_destroy(handle: u32) -> Result<(), JsErrorBox> {
 #[op2(fast)]
 /// 更新 Unit 移动意图，但不推进模拟，也不回调 TS。 / Updates Unit movement intent without advancing simulation or calling back into TS.
 pub(crate) fn op_native_unit_set_movement_input(
+    handle: u32,
+    input_x: i8,
+    input_y: i8,
+    sequence: u32,
+) -> Result<bool, JsErrorBox> {
+    native_unit_set_movement_input_impl(handle, input_x, input_y, sequence)
+}
+
+fn native_unit_set_movement_input_impl(
     handle: u32,
     input_x: i8,
     input_y: i8,
@@ -201,7 +262,7 @@ pub(crate) fn op_native_unit_set_movement_input(
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.scalar_sets += 1;
-        let unit = store.get_unit_mut(handle)?;
+        let unit = store.get_unit_hot_mut(handle)?;
         if sequence <= unit.sequence {
             return Ok(false);
         }
@@ -219,30 +280,29 @@ pub(crate) fn op_native_unit_reset_movement(handle: u32) -> Result<(), JsErrorBo
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.scalar_sets += 1;
-        let unit = store.get_unit_mut(handle)?;
-        unit.input_x = 0;
-        unit.input_y = 0;
-        unit.input_changed = 0;
-        unit.sequence = 0;
-        unit.target_cell_x = unit.cell_x;
-        unit.target_cell_y = unit.cell_y;
-        unit.move_start_tick = 0;
-        unit.move_end_tick = 0;
-        unit.moving = 0;
-        let x = cell_to_world(unit.cell_x);
-        let y = cell_to_world(unit.cell_y);
-        crate::generated::native_data::set_unit_number(
-            unit,
+        let (x, y) = {
+            let unit = store.get_unit_hot_mut(handle)?;
+            unit.input_x = 0;
+            unit.input_y = 0;
+            unit.input_changed = 0;
+            unit.sequence = 0;
+            unit.target_cell_x = unit.cell_x;
+            unit.target_cell_y = unit.cell_y;
+            unit.move_start_tick = 0;
+            unit.move_end_tick = 0;
+            unit.moving = 0;
+            (cell_to_world(unit.cell_x), cell_to_world(unit.cell_y))
+        };
+        store.set_number(
+            handle,
             crate::generated::native_data::UNIT_FIELD_X,
             x as f64,
-        )
-        .map_err(JsErrorBox::generic)?;
-        crate::generated::native_data::set_unit_number(
-            unit,
+        )?;
+        store.set_number(
+            handle,
             crate::generated::native_data::UNIT_FIELD_Y,
             y as f64,
-        )
-        .map_err(JsErrorBox::generic)?;
+        )?;
         Ok(())
     })
 }
@@ -257,8 +317,7 @@ fn native_entity_get_number(handle: u32, field: u32) -> Result<f64, JsErrorBox> 
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.scalar_gets += 1;
-        get_entity_number(store.get(handle)?, field)
-            .ok_or_else(|| JsErrorBox::generic(format!("unknown native Entity field: {field}")))
+        store.get_number(handle, field)
     })
 }
 
@@ -276,7 +335,7 @@ fn native_entity_set_number(handle: u32, field: u32, value: f64) -> Result<(), J
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.scalar_sets += 1;
-        set_entity_number(store.get_mut(handle)?, field, value).map_err(JsErrorBox::generic)
+        store.set_number(handle, field, value)
     })
 }
 
@@ -289,7 +348,7 @@ pub(crate) fn op_native_numeric_attach(unit_handle: u32) -> Result<(), JsErrorBo
 fn native_numeric_attach(unit_handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
-        store.get_unit(unit_handle)?;
+        store.get_unit_hot(unit_handle)?;
         if store.numerics_by_unit.contains_key(&unit_handle) {
             return Err(JsErrorBox::generic("native Numeric is already attached"));
         }
@@ -328,7 +387,7 @@ pub(crate) fn op_native_numeric_get(
 fn native_numeric_get(unit_handle: u32, numeric_type: u32) -> Result<i32, JsErrorBox> {
     STORE.with(|slot| {
         let store = slot.borrow();
-        store.get_unit(unit_handle)?;
+        store.get_unit_hot(unit_handle)?;
         let numeric = store
             .numerics_by_unit
             .get(&unit_handle)
@@ -355,7 +414,7 @@ fn native_numeric_set(unit_handle: u32, numeric_type: u32, value: i32) -> Result
     }
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
-        store.get_unit(unit_handle)?;
+        store.get_unit_hot(unit_handle)?;
         let current = store
             .numerics_by_unit
             .get(&unit_handle)
@@ -395,30 +454,36 @@ fn native_map_peek_numeric_delta(
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         let through_revision = store.numeric_revision;
-        let handles = store.units_by_map.get(&map_id).cloned().unwrap_or_default();
-        let mut records = Vec::new();
-        for handle in handles {
-            let unit_id = store.get_unit(handle)?.entity.id;
-            if let Some(numeric) = store.numerics_by_unit.get(&handle) {
-                for (&numeric_type, &revision) in &numeric.dirty {
-                    if revision <= through_revision {
-                        records.push((unit_id, numeric_type, numeric.values[&numeric_type]));
+        let handles = store.take_map_handles(map_id);
+        let mut records = take_scratch(&mut store.scratch_numeric_records);
+        let previous_capacity = records.capacity();
+        let outcome = (|| {
+            for &handle in &handles {
+                let unit_id = store.get_unit_hot(handle)?.id;
+                if let Some(numeric) = store.numerics_by_unit.get(&handle) {
+                    for (&numeric_type, &revision) in &numeric.dirty {
+                        if revision <= through_revision {
+                            records.push((unit_id, numeric_type, numeric.values[&numeric_type]));
+                        }
                     }
                 }
             }
-        }
-        records.sort_unstable_by_key(|record| (record.0, record.1));
-        let frame = encode_entity_numeric_frame(message_code, server_tick, &records);
-        store.metrics.batch_calls += 1;
-        store.metrics.encoded_frames += 1;
-        store.metrics.encoded_items += records.len() as u64;
-        store.metrics.encoded_bytes += frame.len() as u64;
-
-        let mut result = Vec::with_capacity(12 + frame.len());
-        result.extend_from_slice(&(records.len() as u32).to_le_bytes());
-        result.extend_from_slice(&through_revision.to_le_bytes());
-        result.extend_from_slice(&frame);
-        Ok(result)
+            records.sort_unstable_by_key(|record| (record.0, record.1));
+            let mut result = Vec::with_capacity(14 + records.len() * 14);
+            result.extend_from_slice(&(records.len() as u32).to_le_bytes());
+            result.extend_from_slice(&through_revision.to_le_bytes());
+            let frame_start = result.len();
+            encode_entity_numeric_frame_into(&mut result, message_code, server_tick, &records);
+            store.metrics.batch_calls += 1;
+            store.metrics.encoded_frames += 1;
+            store.metrics.encoded_items += records.len() as u64;
+            store.metrics.encoded_bytes += (result.len() - frame_start) as u64;
+            Ok(result)
+        })();
+        store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
+        store.scratch_handles = handles;
+        store.scratch_numeric_records = records;
+        outcome
     })
 }
 
@@ -479,37 +544,42 @@ fn native_map_peek_unit_delta(
         .map_err(|_| JsErrorBox::generic("unit state message code exceeds uint16"))?;
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
-        let handles = store.units_by_map.get(&map_id).cloned().unwrap_or_default();
-        let mut records = Vec::new();
-        for handle in handles {
-            let unit = store.get_unit(handle)?;
-            if let Some(delta) = peek_unit_delta(unit) {
-                records.push(UnitDeltaRecord {
-                    handle,
-                    unit_id: unit.entity.id,
-                    delta,
-                });
+        let handles = store.take_map_handles(map_id);
+        let mut records = take_scratch(&mut store.scratch_unit_delta_records);
+        let previous_capacity = records.capacity();
+        let outcome = (|| {
+            for &handle in &handles {
+                let (hot, cold) = store.get_unit_parts(handle)?;
+                if let Some(delta) = peek_unit_split_delta(hot, cold) {
+                    records.push(UnitDeltaRecord {
+                        handle,
+                        unit_id: hot.id,
+                        delta,
+                    });
+                }
             }
-        }
-        records.sort_unstable_by_key(|record| record.unit_id);
-        let frame = encode_entity_state_frame(message_code, server_tick, &records);
-        let mut revision = Vec::with_capacity(4 + records.len() * 12);
-        revision.extend_from_slice(&(records.len() as u32).to_le_bytes());
-        for record in &records {
-            revision.extend_from_slice(&record.handle.to_le_bytes());
-            revision.extend_from_slice(&record.delta.revision.to_le_bytes());
-        }
-        store.metrics.batch_calls += 1;
-        store.metrics.encoded_frames += 1;
-        store.metrics.encoded_items += records.len() as u64;
-        store.metrics.encoded_bytes += frame.len() as u64;
-
-        let mut result = Vec::with_capacity(8 + revision.len() + frame.len());
-        result.extend_from_slice(&(records.len() as u32).to_le_bytes());
-        result.extend_from_slice(&(revision.len() as u32).to_le_bytes());
-        result.extend_from_slice(&revision);
-        result.extend_from_slice(&frame);
-        Ok(result)
+            records.sort_unstable_by_key(|record| record.unit_id);
+            let revision_len = 4 + records.len() * 12;
+            let mut result = Vec::with_capacity(8 + revision_len + 2 + records.len() * 36);
+            result.extend_from_slice(&(records.len() as u32).to_le_bytes());
+            result.extend_from_slice(&(revision_len as u32).to_le_bytes());
+            result.extend_from_slice(&(records.len() as u32).to_le_bytes());
+            for record in &records {
+                result.extend_from_slice(&record.handle.to_le_bytes());
+                result.extend_from_slice(&record.delta.revision.to_le_bytes());
+            }
+            let frame_start = result.len();
+            encode_entity_state_frame_into(&mut result, message_code, server_tick, &records);
+            store.metrics.batch_calls += 1;
+            store.metrics.encoded_frames += 1;
+            store.metrics.encoded_items += records.len() as u64;
+            store.metrics.encoded_bytes += (result.len() - frame_start) as u64;
+            Ok(result)
+        })();
+        store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
+        store.scratch_handles = handles;
+        store.scratch_unit_delta_records = records;
+        outcome
     })
 }
 
@@ -530,10 +600,10 @@ fn native_map_ack_unit_delta(map_id: u32, revision: &[u8]) -> Result<(), JsError
             let handle = u32::from_le_bytes(revision[offset..offset + 4].try_into().unwrap());
             let through_revision =
                 u64::from_le_bytes(revision[offset + 4..offset + 12].try_into().unwrap());
-            if let Ok(unit) = store.get_unit_mut(handle)
+            if let Ok(unit) = store.get_unit_cold_mut(handle)
                 && unit.map_id == map_id
             {
-                ack_unit_delta(unit, through_revision);
+                ack_unit_split_delta(unit, through_revision);
             }
         }
         Ok(())
@@ -554,6 +624,15 @@ pub(crate) fn op_native_map_update_movement(
     fixed_update_ms: u32,
     message_code: u32,
 ) -> Result<Uint8Array, JsErrorBox> {
+    native_map_update_movement(map_id, server_tick, fixed_update_ms, message_code).map(Into::into)
+}
+
+fn native_map_update_movement(
+    map_id: u32,
+    server_tick: u32,
+    fixed_update_ms: u32,
+    message_code: u32,
+) -> Result<Vec<u8>, JsErrorBox> {
     if fixed_update_ms == 0 {
         return Err(JsErrorBox::generic(
             "fixed update milliseconds must be greater than zero",
@@ -564,35 +643,48 @@ pub(crate) fn op_native_map_update_movement(
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.batch_calls += 1;
-        let records = update_map(&mut store, map_id, server_tick, fixed_update_ms as f32)?;
-        let frame = encode_entity_move_frame(message_code, server_tick, &records);
-        store.metrics.encoded_frames += 1;
-        store.metrics.encoded_items += records.len() as u64;
-        store.metrics.encoded_bytes += frame.len() as u64;
-
-        let mut result = Vec::with_capacity(4 + frame.len());
-        result.extend_from_slice(&(records.len() as u32).to_le_bytes());
-        result.extend_from_slice(&frame);
-        Ok(result.into())
+        let handles = store.take_map_handles(map_id);
+        let mut records = take_scratch(&mut store.scratch_movement_records);
+        let previous_capacity = records.capacity();
+        let outcome = (|| {
+            update_map(
+                &mut store,
+                &handles,
+                server_tick,
+                fixed_update_ms as f32,
+                &mut records,
+            )?;
+            let mut result = Vec::with_capacity(6 + records.len() * 24);
+            result.extend_from_slice(&(records.len() as u32).to_le_bytes());
+            let frame_start = result.len();
+            encode_entity_move_frame_into(&mut result, message_code, server_tick, &records);
+            store.metrics.encoded_frames += 1;
+            store.metrics.encoded_items += records.len() as u64;
+            store.metrics.encoded_bytes += (result.len() - frame_start) as u64;
+            Ok(result)
+        })();
+        store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
+        store.scratch_handles = handles;
+        store.scratch_movement_records = records;
+        outcome
     })
 }
 
 fn update_map(
     store: &mut NativeEntityStore,
-    map_id: u32,
+    handles: &[u32],
     server_tick: u32,
     fixed_update_ms: f32,
-) -> Result<Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>, JsErrorBox> {
-    let handles = store.units_by_map.get(&map_id).cloned().unwrap_or_default();
-    let mut records = Vec::with_capacity(handles.len());
-    for handle in handles {
-        let unit = store.get_unit_mut(handle)?;
+    records: &mut Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
+) -> Result<(), JsErrorBox> {
+    for &handle in handles {
+        let unit = store.get_unit_hot_mut(handle)?;
         let state_changed = update_movement(unit, server_tick, fixed_update_ms);
         if unit.moving != 0 || state_changed {
             records.push(encode_snapshot(unit, state_changed));
         }
     }
-    Ok(records)
+    Ok(())
 }
 
 #[op2]
@@ -602,12 +694,19 @@ fn update_map(
 /// Serializes lifetime NativeData counters for TS and Prometheus. Values are monotonic and a
 /// read must never be treated as a reset boundary.
 pub(crate) fn op_native_data_take_metrics() -> Uint8Array {
+    native_data_metrics_bytes().into()
+}
+
+fn native_data_metrics_bytes() -> Vec<u8> {
     STORE.with(|slot| {
         let store = slot.borrow();
         let live_entities = store.live_entities();
         let live_units = store.live_units();
+        let live_items = store.live_items();
+        let pool_capacity_bytes = store.pool_capacity_bytes();
+        let scratch_capacity_bytes = store.scratch_capacity_bytes();
         let metrics = store.metrics.clone();
-        let mut bytes = Vec::with_capacity(56);
+        let mut bytes = Vec::with_capacity(84);
         bytes.extend_from_slice(&metrics.scalar_gets.to_le_bytes());
         bytes.extend_from_slice(&metrics.scalar_sets.to_le_bytes());
         bytes.extend_from_slice(&metrics.batch_calls.to_le_bytes());
@@ -616,57 +715,60 @@ pub(crate) fn op_native_data_take_metrics() -> Uint8Array {
         bytes.extend_from_slice(&metrics.encoded_frames.to_le_bytes());
         bytes.extend_from_slice(&metrics.encoded_items.to_le_bytes());
         bytes.extend_from_slice(&metrics.encoded_bytes.to_le_bytes());
-        bytes.into()
+        bytes.extend_from_slice(&pool_capacity_bytes.to_le_bytes());
+        bytes.extend_from_slice(&live_items.to_le_bytes());
+        bytes.extend_from_slice(&scratch_capacity_bytes.to_le_bytes());
+        bytes.extend_from_slice(&metrics.scratch_growths.to_le_bytes());
+        bytes
     })
 }
 
-fn encode_entity_move_frame(
+fn encode_entity_move_frame_into(
+    frame: &mut Vec<u8>,
     message_code: u16,
     server_tick: u32,
     records: &[[u8; NATIVE_UNIT_RECORD_BYTES]],
-) -> Vec<u8> {
-    let mut frame = Vec::with_capacity(2 + 8 + records.len() * 24);
+) {
     frame.extend_from_slice(&message_code.to_be_bytes());
-    write_uint32_field(&mut frame, 1, server_tick);
+    write_uint32_field(frame, 1, server_tick);
     for record in records {
-        write_tag(&mut frame, 2, 2);
-        write_varint(&mut frame, cell_movement_encoded_len(record) as u32);
-        encode_cell_movement(&mut frame, record);
+        write_tag(frame, 2, 2);
+        write_varint(frame, cell_movement_encoded_len(record) as u32);
+        encode_cell_movement(frame, record);
     }
-    frame
 }
 
-fn encode_entity_numeric_frame(
+fn encode_entity_numeric_frame_into(
+    frame: &mut Vec<u8>,
     message_code: u16,
     server_tick: u32,
     records: &[(u32, u32, i32)],
-) -> Vec<u8> {
-    let mut frame = Vec::with_capacity(2 + 8 + records.len() * 14);
+) {
     frame.extend_from_slice(&message_code.to_be_bytes());
-    write_uint32_field(&mut frame, 1, server_tick);
+    write_uint32_field(frame, 1, server_tick);
     for &(unit_id, numeric_type, value) in records {
         let item_len = uint32_field_len(1, unit_id)
             + uint32_field_len(2, numeric_type)
             + sint32_field_len(3, value);
-        write_tag(&mut frame, 2, 2);
-        write_varint(&mut frame, item_len as u32);
-        write_uint32_field(&mut frame, 1, unit_id);
-        write_uint32_field(&mut frame, 2, numeric_type);
-        write_sint32_field(&mut frame, 3, value);
+        write_tag(frame, 2, 2);
+        write_varint(frame, item_len as u32);
+        write_uint32_field(frame, 1, unit_id);
+        write_uint32_field(frame, 2, numeric_type);
+        write_sint32_field(frame, 3, value);
     }
-    frame
 }
 
-fn encode_entity_state_frame(
+fn encode_entity_state_frame_into(
+    frame: &mut Vec<u8>,
     message_code: u16,
     server_tick: u32,
     records: &[UnitDeltaRecord],
-) -> Vec<u8> {
-    let mut frame = Vec::with_capacity(2 + 8 + records.len() * 36);
+) {
     frame.extend_from_slice(&message_code.to_be_bytes());
-    write_uint32_field(&mut frame, 1, server_tick);
+    write_uint32_field(frame, 1, server_tick);
+    let mut item = Vec::with_capacity(32);
     for record in records {
-        let mut item = Vec::with_capacity(32);
+        item.clear();
         write_uint32_field(&mut item, 1, record.unit_id);
         write_uint32_field(&mut item, 2, record.delta.dirty_mask as u32);
         write_uint32_field(&mut item, 3, (record.delta.dirty_mask >> 32) as u32);
@@ -682,10 +784,20 @@ fn encode_entity_state_frame(
         if let Some(value) = record.delta.alive {
             write_bool_field(&mut item, 7, value != 0);
         }
-        write_tag(&mut frame, 2, 2);
-        write_varint(&mut frame, item.len() as u32);
+        write_tag(frame, 2, 2);
+        write_varint(frame, item.len() as u32);
         frame.extend_from_slice(&item);
     }
+}
+
+#[cfg(test)]
+fn encode_entity_move_frame(
+    message_code: u16,
+    server_tick: u32,
+    records: &[[u8; NATIVE_UNIT_RECORD_BYTES]],
+) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(2 + 8 + records.len() * 24);
+    encode_entity_move_frame_into(&mut frame, message_code, server_tick, records);
     frame
 }
 
@@ -794,7 +906,7 @@ fn read_record_i32(record: &[u8; NATIVE_UNIT_RECORD_BYTES], offset: usize) -> i3
     i32::from_le_bytes(record[offset..offset + 4].try_into().unwrap())
 }
 
-fn update_movement(unit: &mut UnitData, server_tick: u32, fixed_update_ms: f32) -> bool {
+fn update_movement(unit: &mut UnitHotData, server_tick: u32, fixed_update_ms: f32) -> bool {
     let mut state_changed = unit.input_changed != 0;
     unit.input_changed = 0;
     if unit.moving != 0 && server_tick >= unit.move_end_tick {
@@ -832,9 +944,9 @@ fn update_movement(unit: &mut UnitData, server_tick: u32, fixed_update_ms: f32) 
     state_changed
 }
 
-fn encode_snapshot(unit: &UnitData, state_changed: bool) -> [u8; NATIVE_UNIT_RECORD_BYTES] {
+fn encode_snapshot(unit: &UnitHotData, state_changed: bool) -> [u8; NATIVE_UNIT_RECORD_BYTES] {
     let mut bytes = [0_u8; NATIVE_UNIT_RECORD_BYTES];
-    bytes[0..4].copy_from_slice(&unit.entity.id.to_le_bytes());
+    bytes[0..4].copy_from_slice(&unit.id.to_le_bytes());
     bytes[4..8].copy_from_slice(&unit.x.round().to_le_bytes());
     bytes[8..12].copy_from_slice(&unit.y.round().to_le_bytes());
     bytes[12..16].copy_from_slice(&unit.sequence.to_le_bytes());
@@ -958,26 +1070,36 @@ mod tests {
         store.destroy(first).unwrap();
         let second = store.create(NativeEntityData::Unit(unit(2))).unwrap();
         assert_ne!(first, second);
-        assert!(store.get(first).is_err());
-        assert_eq!(store.get_unit(second).unwrap().entity.id, 2);
+        assert!(store.location(first).is_err());
+        assert_eq!(store.get_unit_hot(second).unwrap().id, 2);
     }
 
     #[test]
     fn generated_scalar_accessors_keep_values_in_rust_store() {
         let mut store = NativeEntityStore::default();
         let handle = store.create(NativeEntityData::Unit(unit(1))).unwrap();
-        let value = store.get_unit_mut(handle).unwrap();
-
-        set_unit_number(value, crate::generated::native_data::UNIT_FIELD_X, 12.5).unwrap();
+        store
+            .set_number(handle, crate::generated::native_data::UNIT_FIELD_X, 12.5)
+            .unwrap();
         assert_eq!(
-            get_unit_number(value, crate::generated::native_data::UNIT_FIELD_X),
-            Some(12.5),
+            store
+                .get_number(handle, crate::generated::native_data::UNIT_FIELD_X)
+                .unwrap(),
+            12.5,
         );
         assert!(
-            set_unit_number(value, crate::generated::native_data::UNIT_FIELD_ID, 2.0,).is_err()
+            store
+                .set_number(handle, crate::generated::native_data::UNIT_FIELD_ID, 2.0)
+                .is_err()
         );
         assert!(
-            set_unit_number(value, crate::generated::native_data::UNIT_FIELD_CELL_X, 1.5,).is_err()
+            store
+                .set_number(
+                    handle,
+                    crate::generated::native_data::UNIT_FIELD_CELL_X,
+                    1.5
+                )
+                .is_err()
         );
     }
 
@@ -998,7 +1120,7 @@ mod tests {
             let store = slot.borrow();
             assert_eq!(store.metrics.scalar_gets, 2);
             assert_eq!(store.metrics.scalar_sets, 1);
-            assert_eq!(store.get_unit(handle).unwrap().x, 1.0);
+            assert_eq!(store.get_unit_hot(handle).unwrap().x, 1.0);
         });
     }
 
@@ -1011,14 +1133,34 @@ mod tests {
             store.metrics.encoded_bytes = 128;
         });
 
-        let _first = op_native_data_take_metrics();
-        let _second = op_native_data_take_metrics();
+        let first = native_data_metrics_bytes();
+        let second = native_data_metrics_bytes();
+        assert_eq!(first.len(), 84);
+        assert_eq!(second.len(), 84);
 
         STORE.with(|slot| {
             let store = slot.borrow();
             assert_eq!(store.metrics.scalar_gets, 7);
             assert_eq!(store.metrics.encoded_bytes, 128);
         });
+    }
+
+    #[test]
+    fn movement_scratch_grows_once_then_reuses_capacity() {
+        let handle = STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+            store.create(NativeEntityData::Unit(unit(10))).unwrap()
+        });
+        native_unit_set_movement_input_impl(handle, 1, 0, 1).unwrap();
+
+        native_map_update_movement(1, 1, 50, 10_016).unwrap();
+        let first_growths = STORE.with(|slot| slot.borrow().metrics.scratch_growths);
+        native_map_update_movement(1, 2, 50, 10_016).unwrap();
+        let second_growths = STORE.with(|slot| slot.borrow().metrics.scratch_growths);
+
+        assert!(first_growths >= 2);
+        assert_eq!(second_growths, first_growths);
     }
 
     #[test]
@@ -1035,17 +1177,14 @@ mod tests {
         let mut store = NativeEntityStore::default();
         let handle = store.create(value).unwrap();
         assert_eq!(
-            get_entity_number(store.get(handle).unwrap(), ITEM_FIELD_CONFIG_ID),
-            Some(3001.0)
+            store.get_number(handle, ITEM_FIELD_CONFIG_ID).unwrap(),
+            3001.0
         );
-        set_entity_number(store.get_mut(handle).unwrap(), ITEM_FIELD_COUNT, 3.0).unwrap();
-        assert_eq!(
-            get_entity_number(store.get(handle).unwrap(), ITEM_FIELD_COUNT),
-            Some(3.0)
-        );
-        assert!(store.get_unit(handle).is_err());
+        store.set_number(handle, ITEM_FIELD_COUNT, 3.0).unwrap();
+        assert_eq!(store.get_number(handle, ITEM_FIELD_COUNT).unwrap(), 3.0);
+        assert!(store.get_unit_hot(handle).is_err());
         store.destroy(handle).unwrap();
-        assert!(store.get(handle).is_err());
+        assert!(store.location(handle).is_err());
     }
 
     #[test]
@@ -1096,7 +1235,7 @@ mod tests {
 
     #[test]
     fn movement_finishes_current_cell_before_using_next_direction() {
-        let mut value = unit(1);
+        let mut value = unit_hot(1);
         value.input_x = 1;
         value.sequence = 7;
         value.input_changed = 1;
@@ -1126,7 +1265,7 @@ mod tests {
             "../tests/fixtures/native_data/movement_regression.json"
         ))
         .unwrap();
-        let mut value = unit(1);
+        let mut value = unit_hot(1);
         value.cell_x = fixture.initial_cell_x;
         value.cell_y = fixture.initial_cell_y;
         value.target_cell_x = fixture.initial_cell_x;
@@ -1165,7 +1304,7 @@ mod tests {
 
     #[test]
     fn entity_move_frame_matches_typescript_protobuf() {
-        let mut value = unit(1);
+        let mut value = unit_hot(1);
         value.sequence = 5;
         value.cell_x = 3;
         value.cell_y = 1;
@@ -1218,6 +1357,10 @@ mod tests {
             input_changed: 0,
             sequence: 0,
         }
+    }
+
+    fn unit_hot(id: u32) -> UnitHotData {
+        UnitSplitData::from(unit(id)).hot
     }
 
     fn hex(value: &str) -> Vec<u8> {

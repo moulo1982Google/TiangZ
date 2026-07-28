@@ -88,6 +88,7 @@ export class NativeUnitRef extends Component<[args: NativeUnitCreateArgs]> {
       args.inputChanged ?? 0,
       args.sequence ?? 0,
     ]));
+    NativeOps.TrackNativeRefCreated("Unit");
   }
 
   get id(): number {
@@ -233,5 +234,6 @@ export class NativeUnitRef extends Component<[args: NativeUnitCreateArgs]> {
     if (this.nativeHandle === 0) return;
     NativeOps.EntityDestroy(this.nativeHandle);
     this.nativeHandle = 0;
+    NativeOps.TrackNativeRefDestroyed("Unit");
   }
 }

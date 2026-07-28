@@ -1,6 +1,6 @@
 {
   "name": "ets-runtime",
-  "version": "0.3.10-alpha.7",
+  "version": "0.3.10-alpha.8",
   "private": true,
   "packageManager": "npm@11.18.0",
   "engines": {
@@ -123,6 +123,7 @@
     "perf:protocol": "cargo run --release --bin protocol_perf --",
     "perf:dirty-replication": "cargo run --release --bin dirty_replication_perf --",
     "perf:state-sync": "cargo run --release --bin dirty_replication_perf --",
+    "perf:native-storage": "node perf/native_storage/run_native_storage_perf.mjs",
     "test:perf-gate": "node perf/gate/run_performance_gate.mjs --self-test",
     "perf:gate": "node perf/gate/run_performance_gate.mjs",
     "perf:gate:update": "node perf/gate/run_performance_gate.mjs --update-baseline",
@@ -139,8 +140,8 @@
     "observability:reset": "cd tools/observability && docker compose down -v --remove-orphans && docker compose rm -f"
   },
   "devDependencies": {
-    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.11.0",
-    "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.12.0",
+    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.12.0",
+    "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.14.0",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.0",
     "pixi.js": "^8.9.2",

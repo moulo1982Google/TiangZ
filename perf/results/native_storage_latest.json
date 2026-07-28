@@ -1,0 +1,100 @@
+{
+  "generatedAt": "2026-07-28T03:57:09.101Z",
+  "machine": {
+    "platform": "win32-x64",
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
+    "logicalCpus": 24,
+    "memoryBytes": 68464029696
+  },
+  "workload": "Unit hot update through current Arena handles; Item entities only form the heterogeneous storage working set; no AOI/network/protobuf",
+  "units": 50000,
+  "itemsPerUnit": 10,
+  "iterations": 200,
+  "warmup": 20,
+  "rounds": 5,
+  "sizes": {
+    "nativeEntityData": 608,
+    "unitData": 600,
+    "itemData": 28,
+    "unitHotData": 60,
+    "unitColdData": 544
+  },
+  "cases": [
+    {
+      "name": "handle-arena",
+      "medianMs": 127.7634,
+      "minMs": 117.8466,
+      "maxMs": 132.1979,
+      "millionUnitUpdatesPerSecond": 78.2696766053502,
+      "nanosecondsPerUnitUpdate": 12.776340000000001,
+      "estimatedStorageBytes": 339200000,
+      "checksum": 875399479296
+    },
+    {
+      "name": "typed-pools",
+      "medianMs": 56.8784,
+      "minMs": 56.0188,
+      "maxMs": 60.8945,
+      "millionUnitUpdatesPerSecond": 175.81366564460322,
+      "nanosecondsPerUnitUpdate": 5.6878400000000005,
+      "estimatedStorageBytes": 44000000,
+      "checksum": 875399479296
+    },
+    {
+      "name": "unit-hot-cold-pools",
+      "medianMs": 16.2069,
+      "minMs": 15.817000000000002,
+      "maxMs": 16.2816,
+      "millionUnitUpdatesPerSecond": 617.02114531465,
+      "nanosecondsPerUnitUpdate": 1.62069,
+      "estimatedStorageBytes": 44200000,
+      "checksum": 875399479296
+    }
+  ],
+  "unitOnlyControl": {
+    "units": 50000,
+    "itemsPerUnit": 0,
+    "iterations": 200,
+    "warmup": 20,
+    "rounds": 5,
+    "sizes": {
+      "nativeEntityData": 608,
+      "unitData": 600,
+      "itemData": 28,
+      "unitHotData": 60,
+      "unitColdData": 544
+    },
+    "cases": [
+      {
+        "name": "handle-arena",
+        "medianMs": 63.30330000000001,
+        "minMs": 60.7609,
+        "maxMs": 67.5503,
+        "millionUnitUpdatesPerSecond": 157.9696477118886,
+        "nanosecondsPerUnitUpdate": 6.330330000000001,
+        "estimatedStorageBytes": 31200000,
+        "checksum": 875399479296
+      },
+      {
+        "name": "typed-pools",
+        "medianMs": 57.8397,
+        "minMs": 54.4732,
+        "maxMs": 59.4129,
+        "millionUnitUpdatesPerSecond": 172.8916297975266,
+        "nanosecondsPerUnitUpdate": 5.78397,
+        "estimatedStorageBytes": 30000000,
+        "checksum": 875399479296
+      },
+      {
+        "name": "unit-hot-cold-pools",
+        "medianMs": 16.218799999999998,
+        "minMs": 15.626999999999999,
+        "maxMs": 16.7081,
+        "millionUnitUpdatesPerSecond": 616.5684267640023,
+        "nanosecondsPerUnitUpdate": 1.6218799999999998,
+        "estimatedStorageBytes": 30200000,
+        "checksum": 875399479296
+      }
+    ]
+  }
+}

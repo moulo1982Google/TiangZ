@@ -1,6 +1,8 @@
 namespace demo;
 
 abstract entity Entity {
+  @hot
   readonly id: u32;
+  @cold
   readonly instanceId: u32;
 }

@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.3.10-alpha.7`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
+当前开发版本为 `0.3.10-alpha.8`，目标稳定版本为 `0.3.10`。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；项目仍处于架构验证阶段，不应视为生产版本。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
@@ -359,6 +359,6 @@ npm run perf:rpc-baseline -- \
 
 完整环境要求、参数和指标口径见 [跨平台 RPC 基线测试](perf/rpc_baseline/README.md)。
 
-学习顺序从 [文档入口](docs/README.md) 开始。
+学习顺序从 [文档入口](docs/README.md) 开始。已经完成的版本变更、验证结果和设计取舍记录在 [开发日志](docs/development-log.md)，未来计划仍以 [路线图](docs/roadmap.md) 为准。
 
 使用 AI 协作开发时，先阅读根目录 [AGENTS.md](AGENTS.md)、[AI 项目上下文](docs/ai/project-context.md)和[AI 业务开发手册](docs/ai/business-development-manual.md)。三份文档分别保存高优先级规则、可迁移的架构记忆和业务层默认开发方式，避免新的 AI 从 Rust Runtime 或 TypeScript Core 开始实现普通业务需求。

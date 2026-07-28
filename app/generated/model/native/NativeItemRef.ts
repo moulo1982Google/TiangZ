@@ -17,6 +17,7 @@ export class NativeItemRef {
 
   private constructor(handle: number) {
     this.nativeHandle = handle;
+    NativeOps.TrackNativeRefCreated("Item");
   }
 
   static Create(args: NativeItemCreateArgs): NativeItemRef {
@@ -84,6 +85,7 @@ export class NativeItemRef {
     if (this.nativeHandle === 0) return;
     NativeOps.EntityDestroy(this.nativeHandle);
     this.nativeHandle = 0;
+    NativeOps.TrackNativeRefDestroyed("Item");
   }
 }
 

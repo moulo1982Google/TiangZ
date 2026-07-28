@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.7`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，Phase 4业务扩展尚未开始；进入Phase 4前仍要完成`0.3.10` Release候选全矩阵与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.8`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，Phase 4业务扩展尚未开始；进入Phase 4前仍要完成`0.3.10` Release候选全矩阵与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 
@@ -265,7 +265,7 @@ Cocos Demo完整类型检查依赖编辑器生成的`cocos_client2D/temp/tsconfi
 
 业务行为采用ET风格System表达：`@systemFor(ModelType)`类写`Awake/OnDestroy`和公开领域方法，但不创建实例、不保存字段。codegen把公开方法生成到`app/generated/bootstrap/systems/*.d.ts`并合并回Model类型，所以调用方保持`unit.Move()`的面向对象写法，Model无需手写抛错空壳。运行时仍直接安装prototype描述符，没有逐次Registry查找。System首次安装后为必需项，候选遗漏会整体拒绝；Reload不重跑现有对象Awake，新对象使用新Awake，已有对象后续方法和销毁使用当前generation。
 
-本地开发可使用`npm run dev -- configs/<环境>/StartMachine.json`：开发宿主初次完整构建并启动Watcher，随后仅监听`app/hotfix`，自动串行执行生成入口、类型检查、不可变候选构建和Reload。它不改变生产模型，不监听Model，也不允许V8直接执行TS；正式部署仍需分发完整候选目录。Model以ESM加载一次，Hotfix以固定脚本名IIFE重复求值，避免ESM ModuleMap和每代脚本URL持续增长。Developer Tools `0.11.0`同时提供启动/停止、`tiangz.performance.unstable-shape`黄色建议和System生成完整性检查。
+本地开发可使用`npm run dev -- configs/<环境>/StartMachine.json`：开发宿主初次完整构建并启动Watcher，随后仅监听`app/hotfix`，自动串行执行生成入口、类型检查、不可变候选构建和Reload。它不改变生产模型，不监听Model，也不允许V8直接执行TS；正式部署仍需分发完整候选目录。Model以ESM加载一次，Hotfix以固定脚本名IIFE重复求值，避免ESM ModuleMap和每代脚本URL持续增长。Developer Tools对Model长期状态中的`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`和`as any`写入按错误处理；DTO、对象`T | null`、判别联合与显式Map/Record不受影响。
 
 Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部署仍需补 node/windows exporter、通知路由和长期存储策略，这些属于Phase 5，不阻塞`0.3.10`框架准入。
 
@@ -274,6 +274,7 @@ Phase 4计划：
 - 账号与角色选择、正式持久化。
 - 地图传送和动态副本Directory。
 - Rust AOI和按可见集合广播。
+- Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；高负载地图容量A/B尚未执行，不能把纯布局吞吐直接写成服务器容量。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。
 - 怪物Actor、巡逻、仇恨和战斗。
 - Location/Online Scene。

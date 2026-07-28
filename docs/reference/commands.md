@@ -102,6 +102,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run perf:gate:update -- --profile <name> --reason "原因"` | 显式建立或更新当前机器性能基线 |
 | `npm run perf:bridge` | Rust/V8 bridge微基准 |
 | `npm run perf:protocol` | Codec/Handler协议微基准 |
+| `npm run perf:native-storage` | Handle Arena、Unit/Item类型分池和Unit冷热分池的纯Rust布局基准；不包含AOI与网络 |
 | `npm run perf:runtime:rust` | Rust客户端Runtime基准 |
 | `npm run perf:rpc-baseline` | Windows/Linux通用RPC Payload基线与报告 |
 | `npm run perf:kcp-loginmgr -- 127.0.0.1:7000 256 5 20` | KCP LoginMgr RPC基准：地址、连接数、预热秒数、测试秒数 |

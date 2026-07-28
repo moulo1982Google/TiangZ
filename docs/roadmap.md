@@ -187,7 +187,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 3.10：框架稳定化
 
-目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.7`。
+目标版本：`0.3.10`。当前开发版本：`0.3.10-alpha.8`。
 
 本阶段不扩展MMORPG业务，集中验证框架在接口演进、异常、断线、过载、热更和发布场景下的确定性。子编号是工作项，不使用`0.3.10.1`等四段版本号；重要预发布节点使用`0.3.10-alpha.N/beta.N/rc.N`。
 
@@ -285,6 +285,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 账号/角色选择与持久化。
 - 地图传送和动态副本 Directory。
 - AOI 数据结构与批量广播优化。
+- AOI前置数据布局已完成正式迁移：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，generation handle目录只负责定位和旧句柄校验；TS NativeRef与Rust Pool容量已可观测，帧尾records跨帧复用并直接编码最终buffer。Rust AOI仍未实现，高负载地图容量A/B需在机器空闲时单独验收。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
 - 怪物 Actor、巡逻、仇恨和战斗。
 - Location/Online Scene，支持按 UnitId 定位 Gate/Map。

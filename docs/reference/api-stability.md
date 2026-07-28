@@ -159,6 +159,12 @@ npm run verify:core-api
 - 新增3000玩家基线与1Hz Reload A/B runner和正式报告；90/90次Reload成功，Move吞吐无可见下降。
 - Developer Tools升级到`v0.11.0`，VS Code与CI共同识别`@systemFor`和生成入口。
 
+### 0.3.10-alpha.8
+
+- Native Entity正式使用codegen类型池与Unit冷热布局；generation handle和TS NativeRef API保持兼容。
+- NativeData指标增加Rust Pool、TS NativeRef和帧尾scratch容量；帧尾直接编码最终输出buffer。
+- Developer Tools对Model长期字段类型稳定性执行错误级检查。
+
 ### 0.3.10-alpha.7
 
 - Hotfix从每代独立ESM改为固定脚本名IIFE；Model仍只加载一次，并通过只读桥提供稳定公开类型，避免V8 ModuleMap和脚本URL随generation增长。

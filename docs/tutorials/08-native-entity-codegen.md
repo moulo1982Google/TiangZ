@@ -57,6 +57,24 @@ app/generated/model/native/NativeItemRef.ts
 
 生成器与 VS Code Hover 共用 Entity API 投影，因此继承字段顺序、字段编号以及 `@component` 的生命周期说明应始终一致。升级依赖 Tag 后，应先运行 codegen，并确认已有 Generated 文件没有非预期变化。
 
+## 声明冷热字段
+
+高频批处理Entity可以在字段上声明存储温度：
+
+```text
+@typeId(1)
+entity Unit extends Entity {
+  @hot
+  x: f32 = 0;
+  @hot
+  y: f32 = 0;
+  @cold
+  readonly mapId: u32;
+}
+```
+
+`@hot`字段用于每Tick连续扫描，`@cold`字段用于低频业务访问。codegen会额外生成`UnitHotData`、`UnitColdData`和`UnitSplitData`候选结构，但TS侧仍使用同一个`NativeUnitRef`，业务代码不直接管理Rust Pool。冷热标记不是性能魔法；应先运行`npm run perf:native-storage`验证布局收益。修改标记需要完整重启，不能通过Hotfix切换。
+
 ## 使用普通 Handle
 
 没有 `@component` 的实体生成普通 handle 类，同一个 Bag 可以持有任意多个 Item：

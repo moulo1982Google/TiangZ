@@ -157,7 +157,7 @@ async function runCase(players, round) {
       await waitPort("127.0.0.1", port, 30_000);
     }
 
-    if (options.hotfixMode !== "off") healthSampler = startHealthSampler(runtimes);
+    healthSampler = startHealthSampler(runtimes);
     const measurementSignal = path.join(configDir, `${caseName}_measurement.txt`);
     const clientTask = runLoadClients(players, topology.managerPort, round, measurementSignal);
     if (options.hotfixMode === "reload") {
@@ -193,7 +193,7 @@ async function runCase(players, round) {
     gates: options.gates,
     round,
     serverResources: resources,
-    transport: collectTransportMetrics(runtimes),
+    transport: collectTransportMetrics(runtimes, resources),
     hotfix: hotfixResult,
     logDirectory: logDir,
     configDirectory: configDir,
@@ -404,9 +404,7 @@ function writeTopologyConfigs(caseName, round) {
     runtimeConfig("mgr", [managerScene], [loginScene]),
   ];
   const runtimes = configs.map((config, index) => {
-    const healthPort = options.hotfixMode === "off"
-      ? undefined
-      : healthBasePort + index;
+    const healthPort = healthBasePort + index;
     if (healthPort) {
       config.process.observability = {
         ...config.process.observability,
@@ -618,6 +616,24 @@ async function readProcessHealthMetrics(runtime) {
       transportWriteOps: metric("tiangz_process_transport_write_ops_total"),
       transportWriteFrames: metric("tiangz_process_transport_write_frames_total"),
       transportWriteBytes: metric("tiangz_process_transport_write_bytes_total"),
+      backpressure: metric("tiangz_process_backpressure_waits_total"),
+      slowDisconnects: metric("tiangz_process_slow_disconnects_total"),
+      innerOverloads: metric("tiangz_transport_inner_overload_rejections"),
+      innerTimeouts: metric("tiangz_transport_inner_timed_out_calls"),
+      nativeScalarGets: metric("tiangz_native_scalar_gets_total"),
+      nativeScalarSets: metric("tiangz_native_scalar_sets_total"),
+      nativeBatchCalls: metric("tiangz_native_batch_calls_total"),
+      nativeLiveEntities: metric("tiangz_native_live_entities"),
+      nativeLiveUnits: metric("tiangz_native_live_units"),
+      nativeLiveItems: metric("tiangz_native_live_items"),
+      nativePoolCapacityBytes: metric("tiangz_native_pool_capacity_bytes"),
+      nativeScratchCapacityBytes: metric("tiangz_native_scratch_capacity_bytes"),
+      nativeScratchGrowths: metric("tiangz_native_scratch_growths_total"),
+      nativeRefs: prometheusMetricSum(body, "tiangz_native_refs"),
+      nativeEncodedFrames: metric("tiangz_native_encoded_frames_total"),
+      nativeEncodedItems: metric("tiangz_native_encoded_items_total"),
+      nativeEncodedBytes: metric("tiangz_native_encoded_bytes_total"),
+      mapBroadcast: readMapBroadcastMetrics(body),
     };
   } catch {
     return { process: runtime.name };
@@ -648,6 +664,41 @@ async function readHotfixMetrics(runtime) {
 function prometheusMetric(body, name) {
   const line = body.split(/\r?\n/).find((value) => value.startsWith(`${name}{`));
   return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
+}
+
+function prometheusMetricSum(body, name) {
+  return body.split(/\r?\n/)
+    .filter((line) => line.startsWith(`${name}{`))
+    .reduce((total, line) => total + Number(line.slice(line.lastIndexOf(" ") + 1)), 0);
+}
+
+function prometheusCustomMetric(body, key) {
+  const line = body.split(/\r?\n/).find((value) =>
+    (value.startsWith("tiangz_scene_custom_metric_total{") ||
+      value.startsWith("tiangz_scene_custom_metric_gauge{")) &&
+    value.includes('name="map_broadcast"') && value.includes(`key="${key}"`)
+  );
+  return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
+}
+
+function readMapBroadcastMetrics(body) {
+  return {
+    inFlight: prometheusCustomMetric(body, "in_flight"),
+    inFlightUnits: prometheusCustomMetric(body, "in_flight_units"),
+    pendingUnits: prometheusCustomMetric(body, "pending_units"),
+    maxPendingUnits: prometheusCustomMetric(body, "max_pending_units"),
+    maxInFlightUnits: prometheusCustomMetric(body, "max_in_flight_units"),
+    queuedFrames: prometheusCustomMetric(body, "queued_frames_total"),
+    coalescedFrames: prometheusCustomMetric(body, "coalesced_frames_total"),
+    sentFrames: prometheusCustomMetric(body, "sent_frames_total"),
+    broadcastsStarted: prometheusCustomMetric(body, "broadcasts_started_total"),
+    broadcastsCompleted: prometheusCustomMetric(body, "broadcasts_completed_total"),
+    broadcastFailures: prometheusCustomMetric(body, "broadcast_failures_total"),
+    totalDurationMs: prometheusCustomMetric(body, "total_duration_ms"),
+    maxDurationMs: prometheusCustomMetric(body, "max_duration_ms"),
+    totalQueueWaitMs: prometheusCustomMetric(body, "total_queue_wait_ms"),
+    maxQueueWaitMs: prometheusCustomMetric(body, "max_queue_wait_ms"),
+  };
 }
 
 async function stopRuntimes(runtimes) {
@@ -700,20 +751,42 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     const selected = completeWindowSamples.length > 0
       ? completeWindowSamples
       : samples.slice(-Math.max(1, Math.floor(options.duration / 5)));
-    const nativeDataSamples = lines
-      .filter((line) => line.startsWith("[native-data-metrics] "))
-      .map(parseMetricLine)
-      .map((values, index) => ({
-        timestampMs: samples[index]?.timestampMs ?? 0,
-        scalarGets: Number(values.scalar_gets ?? 0),
-        scalarSets: Number(values.scalar_sets ?? 0),
-        batchCalls: Number(values.batch_calls ?? 0),
-        liveEntities: Number(values.live_entities ?? 0),
-        liveUnits: Number(values.live_units ?? 0),
-        encodedFrames: Number(values.encoded_frames ?? 0),
-        encodedItems: Number(values.encoded_items ?? 0),
-        encodedBytes: Number(values.encoded_bytes ?? 0),
-      }));
+    const nativeDataSamples = healthSamples.get(runtime.name)?.length > 0
+      ? samples.map((sample) => ({
+        timestampMs: sample.timestampMs,
+        scalarGets: sample.nativeScalarGets,
+        scalarSets: sample.nativeScalarSets,
+        batchCalls: sample.nativeBatchCalls,
+        liveEntities: sample.nativeLiveEntities,
+        liveUnits: sample.nativeLiveUnits,
+        liveItems: sample.nativeLiveItems,
+        poolCapacityBytes: sample.nativePoolCapacityBytes,
+        scratchCapacityBytes: sample.nativeScratchCapacityBytes,
+        scratchGrowths: sample.nativeScratchGrowths,
+        nativeRefs: sample.nativeRefs,
+        encodedFrames: sample.nativeEncodedFrames,
+        encodedItems: sample.nativeEncodedItems,
+        encodedBytes: sample.nativeEncodedBytes,
+      }))
+      : lines
+        .filter((line) => line.startsWith("[native-data-metrics] "))
+        .map(parseMetricLine)
+        .map((values, index) => ({
+          timestampMs: samples[index]?.timestampMs ?? 0,
+          scalarGets: Number(values.scalar_gets ?? 0),
+          scalarSets: Number(values.scalar_sets ?? 0),
+          batchCalls: Number(values.batch_calls ?? 0),
+          liveEntities: Number(values.live_entities ?? 0),
+          liveUnits: Number(values.live_units ?? 0),
+          liveItems: Number(values.live_items ?? 0),
+          poolCapacityBytes: Number(values.pool_capacity_bytes ?? 0),
+          scratchCapacityBytes: Number(values.scratch_capacity_bytes ?? 0),
+          scratchGrowths: Number(values.scratch_growths ?? 0),
+          nativeRefs: Number(values.native_refs ?? 0),
+          encodedFrames: Number(values.encoded_frames ?? 0),
+          encodedItems: Number(values.encoded_items ?? 0),
+          encodedBytes: Number(values.encoded_bytes ?? 0),
+        }));
     const completeNativeDataSamples = nativeDataSamples.filter((sample) =>
       startedAt && endedAt &&
       sample.timestampMs >= startedAt + 4_000 &&
@@ -722,10 +795,12 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     const selectedNativeData = completeNativeDataSamples.length > 0
       ? completeNativeDataSamples
       : nativeDataSamples.slice(-Math.max(1, Math.floor(options.duration / 5)));
-    const mapBroadcastSamples = lines
-      .filter((line) => line.startsWith("[custom-metrics:") && line.includes("name=map_broadcast"))
-      .map(parseMetricLine)
-      .map((values) => ({
+    const mapBroadcastSamples = healthSamples.get(runtime.name)?.length > 0
+      ? samples.map((sample) => ({ timestampMs: sample.timestampMs, ...sample.mapBroadcast }))
+      : lines
+        .filter((line) => line.startsWith("[custom-metrics:") && line.includes("name=map_broadcast"))
+        .map(parseMetricLine)
+        .map((values) => ({
         timestampMs: Number(values.timestamp_ms ?? 0),
         inFlight: Number(values.in_flight ?? 0),
         inFlightUnits: Number(values.in_flight_units ?? 0),
@@ -742,7 +817,7 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         maxDurationMs: Number(values.max_duration_ms ?? 0),
         totalQueueWaitMs: Number(values.total_queue_wait_ms ?? 0),
         maxQueueWaitMs: Number(values.max_queue_wait_ms ?? 0),
-      }));
+        }));
     const completeMapBroadcastSamples = mapBroadcastSamples.filter((sample) =>
       startedAt && endedAt &&
       sample.timestampMs >= startedAt + 4_000 &&
@@ -814,36 +889,33 @@ function summarizeProcess(fallbackName, samples, last) {
     transportWriteOpsPerSecond: counterRate(samples, "transportWriteOps"),
     transportWriteFramesPerSecond: counterRate(samples, "transportWriteFrames"),
     transportWriteBytesPerSecond: counterRate(samples, "transportWriteBytes"),
+    backpressure: last?.backpressure ?? 0,
+    slowDisconnects: last?.slowDisconnects ?? 0,
+    innerOverloads: last?.innerOverloads ?? 0,
+    innerTimeouts: last?.innerTimeouts ?? 0,
   };
 }
 
 function summarizeNativeData(samples, formalWindowSamples) {
-  const measuredSeconds = samples.length * 5;
   return {
     samples: samples.length,
     formalWindowSamples,
-    scalarGetsPerSecond: measuredSeconds > 0
-      ? sum(samples.map((item) => item.scalarGets)) / measuredSeconds
-      : 0,
-    scalarSetsPerSecond: measuredSeconds > 0
-      ? sum(samples.map((item) => item.scalarSets)) / measuredSeconds
-      : 0,
-    batchCallsPerSecond: measuredSeconds > 0
-      ? sum(samples.map((item) => item.batchCalls)) / measuredSeconds
-      : 0,
+    scalarGetsPerSecond: counterRate(samples, "scalarGets"),
+    scalarSetsPerSecond: counterRate(samples, "scalarSets"),
+    batchCallsPerSecond: counterRate(samples, "batchCalls"),
     liveEntities: samples.at(-1)?.liveEntities ?? 0,
     maxLiveEntities: max(samples.map((item) => item.liveEntities)),
     liveUnits: samples.at(-1)?.liveUnits ?? 0,
     maxLiveUnits: max(samples.map((item) => item.liveUnits)),
-    encodedFramesPerSecond: measuredSeconds > 0
-      ? sum(samples.map((item) => item.encodedFrames)) / measuredSeconds
-      : 0,
-    encodedItemsPerSecond: measuredSeconds > 0
-      ? sum(samples.map((item) => item.encodedItems)) / measuredSeconds
-      : 0,
-    encodedBytesPerSecond: measuredSeconds > 0
-      ? sum(samples.map((item) => item.encodedBytes)) / measuredSeconds
-      : 0,
+    liveItems: samples.at(-1)?.liveItems ?? 0,
+    poolCapacityBytes: max(samples.map((item) => item.poolCapacityBytes)),
+    scratchCapacityBytes: max(samples.map((item) => item.scratchCapacityBytes)),
+    scratchGrowths: samples.at(-1)?.scratchGrowths ?? 0,
+    scratchGrowthsPerSecond: counterRate(samples, "scratchGrowths"),
+    nativeRefs: samples.at(-1)?.nativeRefs ?? 0,
+    encodedFramesPerSecond: counterRate(samples, "encodedFrames"),
+    encodedItemsPerSecond: counterRate(samples, "encodedItems"),
+    encodedBytesPerSecond: counterRate(samples, "encodedBytes"),
   };
 }
 
@@ -880,13 +952,25 @@ function summarizeMapBroadcast(samples, formalWindowSamples) {
   };
 }
 
-function collectTransportMetrics(runtimes) {
+function collectTransportMetrics(runtimes, resources) {
   const text = runtimes.map(readRuntimeLogs).join("\n");
   return {
-    innerOverloads: maxMatches(text, /overloads=(\d+)/g),
-    innerTimeouts: maxMatches(text, /timeouts=(\d+)/g),
-    backpressure: maxMatches(text, /backpressure=(\d+)/g),
-    slowDisconnects: maxMatches(text, /slow_disconnects=(\d+)/g),
+    innerOverloads: Math.max(
+      maxMatches(text, /overloads=(\d+)/g),
+      max(resources.processes.map((item) => item.innerOverloads)),
+    ),
+    innerTimeouts: Math.max(
+      maxMatches(text, /timeouts=(\d+)/g),
+      max(resources.processes.map((item) => item.innerTimeouts)),
+    ),
+    backpressure: Math.max(
+      maxMatches(text, /backpressure=(\d+)/g),
+      max(resources.processes.map((item) => item.backpressure)),
+    ),
+    slowDisconnects: Math.max(
+      maxMatches(text, /slow_disconnects=(\d+)/g),
+      max(resources.processes.map((item) => item.slowDisconnects)),
+    ),
   };
 }
 
@@ -966,6 +1050,24 @@ function aggregateCases(rounds) {
       )),
       nativeLiveUnits: median(group.map(
         (item) => item.serverResources.map?.nativeData?.liveUnits ?? 0,
+      )),
+      nativeLiveItems: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.liveItems ?? 0,
+      )),
+      nativePoolCapacityBytes: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.poolCapacityBytes ?? 0,
+      )),
+      nativeScratchCapacityBytes: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.scratchCapacityBytes ?? 0,
+      )),
+      nativeScratchGrowths: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.scratchGrowths ?? 0,
+      )),
+      nativeScratchGrowthsPerSecond: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.scratchGrowthsPerSecond ?? 0,
+      )),
+      nativeRefs: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.nativeRefs ?? 0,
       )),
       nativeEncodedFramesPerSecond: median(group.map(
         (item) => item.serverResources.map?.nativeData?.encodedFramesPerSecond ?? 0,
@@ -1146,8 +1248,8 @@ function renderMarkdown(report) {
     "",
     "## NativeData 边界指标",
     "",
-    "| 玩家 | 指标样本 | scalar gets/s | scalar sets/s | batch calls/s | encoded frames/items | encoded bytes/s | live Entities/Units | Map V8 Heap peak |",
-    "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| 玩家 | 指标样本 | scalar gets/s | scalar sets/s | batch calls/s | encoded frames/items | encoded bytes/s | live E/U/I | Pool/Scratch | scratch grows/s (total) | TS refs | Map V8 Heap peak |",
+    "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.cases) {
     const value = item.median;
@@ -1157,7 +1259,9 @@ function renderMarkdown(report) {
       `${round(value.nativeBatchCallsPerSecond, 1)} | ` +
       `${round(value.nativeEncodedFramesPerSecond, 1)}/${round(value.nativeEncodedItemsPerSecond)} | ` +
       `${formatBytes(value.nativeEncodedBytesPerSecond)}/s | ` +
-      `${round(value.nativeLiveEntities)}/${round(value.nativeLiveUnits)} | ` +
+      `${round(value.nativeLiveEntities)}/${round(value.nativeLiveUnits)}/${round(value.nativeLiveItems)} | ` +
+      `${formatBytes(value.nativePoolCapacityBytes)}/${formatBytes(value.nativeScratchCapacityBytes)} | ` +
+      `${round(value.nativeScratchGrowthsPerSecond, 2)} (${round(value.nativeScratchGrowths)}) | ${round(value.nativeRefs)} | ` +
       `${formatBytes(value.mapPeakV8HeapUsedBytes)} |`,
     );
   }

@@ -4,25 +4,42 @@ namespace demo;
 @component
 @replicated
 entity Unit extends Entity {
+  @cold
   readonly mapId: u32;
   @memberId(1)
+  @hot
   x: f32 = 0;
   @memberId(2)
+  @hot
   y: f32 = 0;
+  @hot
   cellX: i32 = 0;
+  @hot
   cellY: i32 = 0;
+  @hot
   targetCellX: i32 = 0;
+  @hot
   targetCellY: i32 = 0;
+  @hot
   moveStartTick: u32 = 0;
+  @hot
   moveEndTick: u32 = 0;
+  @hot
   moving: u32 = 0;
+  @hot
   facing: u32 = 0;
   @memberId(3)
+  @hot
   speedCellsPerSecond: f32 = 10;
   @memberId(4)
+  @cold
   alive: u32 = 1;
+  @hot
   inputX: i8 = 0;
+  @hot
   inputY: i8 = 0;
+  @hot
   inputChanged: u32 = 0;
+  @hot
   sequence: u32 = 0;
 }

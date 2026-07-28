@@ -153,6 +153,11 @@ pub(crate) struct NativeDataObservabilitySnapshot {
     pub(crate) batch_calls: u64,
     pub(crate) live_entities: u64,
     pub(crate) live_units: u64,
+    pub(crate) live_items: u64,
+    pub(crate) pool_capacity_bytes: u64,
+    pub(crate) scratch_capacity_bytes: u64,
+    pub(crate) scratch_growths: u64,
+    pub(crate) native_refs: BTreeMap<String, u64>,
     pub(crate) encoded_frames: u64,
     pub(crate) encoded_items: u64,
     pub(crate) encoded_bytes: u64,
@@ -1671,6 +1676,67 @@ fn append_native_data_metrics_prometheus(
         process_name, snapshot.live_units
     )
     .expect("formatting metric");
+    writeln!(
+        output,
+        "# HELP tiangz_native_live_items Live items in native typed pools"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_native_live_items gauge").expect("formatting metric type");
+    writeln!(
+        output,
+        "tiangz_native_live_items{{process=\"{}\"}} {}",
+        process_name, snapshot.live_items
+    )
+    .expect("formatting metric");
+    writeln!(
+        output,
+        "# HELP tiangz_native_pool_capacity_bytes Reserved capacity of native typed pools"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_native_pool_capacity_bytes gauge")
+        .expect("formatting metric type");
+    writeln!(
+        output,
+        "tiangz_native_pool_capacity_bytes{{process=\"{}\"}} {}",
+        process_name, snapshot.pool_capacity_bytes
+    )
+    .expect("formatting metric");
+    writeln!(output, "# HELP tiangz_native_scratch_capacity_bytes Reserved capacity of reusable frame scratch buffers")
+        .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_native_scratch_capacity_bytes gauge")
+        .expect("formatting metric type");
+    writeln!(
+        output,
+        "tiangz_native_scratch_capacity_bytes{{process=\"{}\"}} {}",
+        process_name, snapshot.scratch_capacity_bytes
+    )
+    .expect("formatting metric");
+    writeln!(output, "# HELP tiangz_native_scratch_growths_total Reallocations caused by reusable frame scratch growth")
+        .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_native_scratch_growths_total counter")
+        .expect("formatting metric type");
+    writeln!(
+        output,
+        "tiangz_native_scratch_growths_total{{process=\"{}\"}} {}",
+        process_name, snapshot.scratch_growths
+    )
+    .expect("formatting metric");
+    writeln!(
+        output,
+        "# HELP tiangz_native_refs Live TypeScript NativeRef objects"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_native_refs gauge").expect("formatting metric type");
+    for (entity_type, count) in &snapshot.native_refs {
+        writeln!(
+            output,
+            "tiangz_native_refs{{process=\"{}\",entity_type=\"{}\"}} {}",
+            process_name,
+            escape_prometheus_label(entity_type),
+            count
+        )
+        .expect("formatting metric");
+    }
     writeln!(
         output,
         "# HELP tiangz_native_encoded_frames_total Native encoded frames"
