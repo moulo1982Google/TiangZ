@@ -9,6 +9,16 @@
 - 公共 API、配置、数据所有权或业务开发方式发生变化时，同步更新对应教程以及两份 AI 文档。
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 
+## 2026-07-28 - v0.3.10
+
+`0.3.10-rc.1`冻结提交为`d31437c`，运行时代码、Stable API、协议指纹和Native Schema在正式版本中保持不变。Windows完整`npm run verify`耗时350.2秒，制品构建与目录内smoke耗时63.1秒；Windows制品包含28个文件、27条SHA-256，约49.1MiB。
+
+Linux使用Git Bundle从同一提交创建干净克隆，`npm ci`耗时29秒且0个漏洞，npm/Cargo联合审计为0个漏洞、0个例外；完整`verify`耗时约295.3秒，制品构建与目录内smoke耗时147.7秒。Linux制品同样包含28个文件、27条SHA-256，约70.6MiB，哈希逐项校验通过。
+
+最终矩阵覆盖codegen幂等、Stable API、Model/Hotfix边界、协议锁、TypeScript与Rust测试、Clippy、真实拆进程、ordered/unordered mailbox、背压、Watcher优雅停机、Hotfix Reload和慢RPC切换屏障。Windows仍会报告已知MSVC `LNK4098 libcmt.lib`警告，但没有链接失败或测试失败；该警告继续作为构建工具链事项跟踪，不阻塞本次发布。
+
+`v0.3.10`是Phase 0至Phase 3.10的稳定框架基线，不等于完整商业MMORPG产品。后续容量规划、AOI、动态副本与业务系统使用新版本演进，不回写本Tag。
+
 ## 2026-07-28 - v0.3.10-alpha.9
 
 ### 本次目标

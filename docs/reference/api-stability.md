@@ -178,6 +178,12 @@ npm run verify:core-api
 - Windows与Linux使用同一提交执行依赖审计、完整`verify`和最终制品smoke；RC期间只接受发布阻塞修复。
 - RPC系统错误响应从生成Codec创建完整默认对象；账号断线与重进交叠时重新查询权威目录，避免使用已销毁Unit引用。
 
+### 0.3.10
+
+- 运行时代码、Stable API、协议指纹与Native Schema均与通过双平台最终矩阵的`0.3.10-rc.1`一致。
+- Windows与Linux制品均从版本化Git提交构建，在最终制品目录完成登录、进图、状态同步、移动和多人生命周期smoke，并生成SHA-256清单。
+- 本版本作为Phase 0至Phase 3.10的稳定框架基线；后续功能和业务扩展使用新版本规划，不回写本Tag。
+
 ### 0.3.10-alpha.7
 
 - Hotfix从每代独立ESM改为固定脚本名IIFE；Model仍只加载一次，并通过只读桥提供稳定公开类型，避免V8 ModuleMap和脚本URL随generation增长。
