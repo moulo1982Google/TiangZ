@@ -341,6 +341,7 @@ await this.scenes.send(
 - `send`成功只表示被本地mailbox接受或进入远程发送队列，不表示目标Handler执行完成。
 - 框架自动分配并保留在途`rpcId`；业务不得写入、缓存或复用它。只有确实需要deadline时才传`{ timeoutMs }`，本地默认不为每次调用创建额外timer。
 - Actor跨`await`后如果可能已下线或销毁，应检查`IsDisposed`或重新验证权威句柄；JavaScript Promise不能被框架强制终止。
+- 账号重进若与旧实例销毁交叠，应重新查询账号目录，禁止继续使用先前缓存的Unit引用。
 
 ## 选择Snapshot、Delta或Event
 

@@ -283,7 +283,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### 2026-07-26成熟度审计
 
-状态：R1至R4实现与专项验收完成，`alpha.9` Windows Release候选预演已通过。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。进入Phase 4前仍需完成Linux同版本验收、`0.3.10-rc.1`全矩阵确认并发布正式Tag。
+状态：R1至R4实现与专项验收完成，`alpha.9` Windows与Linux Release候选预演均已通过。详细证据与验收条件见[Phase 4前框架成熟度审计](design/framework-readiness-audit.md)。进入Phase 4前仍需冻结`0.3.10-rc.1`、执行最终全矩阵确认并发布正式Tag。
 
 ## Phase 4：MMORPG 业务扩展
 

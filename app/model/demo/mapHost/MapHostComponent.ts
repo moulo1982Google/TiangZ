@@ -51,22 +51,33 @@ export class MapHostComponent extends Component {
     this.validateEnterMap(request);
 
     const mapId = request.mapId || 1;
-    let player = this.players.Get(request.account);
+    let player: PlayerUnit | undefined;
     let snapshot: PlayerSnapshot;
     let isNewPlayer = false;
 
-    if (player?.MapId === mapId) {
-      snapshot = await this.owner.processHost.runActorMailbox(
-        player.InstanceId,
-        (actor) => {
-          if (actor !== player) throw new Error("player instance changed");
-          return player.RebindGate({
-            gateName: request.gateName,
-            gateSessionId: request.gateSessionId,
-          });
-        },
-      );
-    } else {
+    for (;;) {
+      player = this.players.Get(request.account);
+      if (player?.MapId === mapId) {
+        try {
+          snapshot = await this.owner.processHost.runActorMailbox(
+            player.InstanceId,
+            (actor) => {
+              if (actor !== player) throw new Error("player instance changed");
+              return player.RebindGate({
+                gateName: request.gateName,
+                gateSessionId: request.gateSessionId,
+              });
+            },
+          );
+          break;
+        } catch (error) {
+          // 断线下线与重进可能交叠。仅当目录已确认旧实例消失时重试，
+          // 其他业务异常必须原样抛出，不能被误判成一次普通重连。
+          if (this.players.Get(request.account) === player) throw error;
+          continue;
+        }
+      }
+
       if (player) {
         await player
           .DomainScene<MapScene>()
@@ -76,6 +87,7 @@ export class MapHostComponent extends Component {
       player = this.ensureMap(mapId).CreatePlayer(this.nextUnitId++, request);
       snapshot = player.Snapshot();
       isNewPlayer = true;
+      break;
     }
 
     const map = this.mapOf(player);

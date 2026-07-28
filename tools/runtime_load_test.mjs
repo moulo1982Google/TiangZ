@@ -46,9 +46,11 @@ try {
     if (!Number.isInteger(healthPort)) {
       throw new Error("backpressure acceptance requires process.observability.health.port");
     }
-    const response = await fetch(`http://127.0.0.1:${healthPort}/metrics`);
-    if (!response.ok) throw new Error(`metrics endpoint returned HTTP ${response.status}`);
-    prometheusMetrics = await response.text();
+    prometheusMetrics = await waitForPrometheusSample(
+      `http://127.0.0.1:${healthPort}/metrics`,
+      "tiangz_process_rust_queue_max_depth",
+      runtime,
+    );
     verifyBackpressure(prometheusMetrics, options.config);
   }
   succeeded = true;
@@ -83,6 +85,31 @@ function prometheusValue(metrics, name) {
   const match = metrics.match(new RegExp(`^${name}\\{[^}]*\\} ([0-9.eE+-]+)$`, "m"));
   if (!match) throw new Error(`Prometheus metric is missing: ${name}`);
   return Number(match[1]);
+}
+
+/**
+ * 等待进程发布首个五秒指标快照，避免快速机器在采样周期到达前误报缺失。
+ * 这里只等待真实快照，不降低生产采样周期，也不接受没有目标指标的空响应。
+ *
+ * Waits for the first five-second process metrics snapshot so fast machines do
+ * not report a false missing metric before the sampling interval. This waits
+ * for a real snapshot; it neither changes production cadence nor accepts an
+ * empty response.
+ */
+async function waitForPrometheusSample(url, metricName, runtime, timeoutMs = 7000) {
+  const deadline = Date.now() + timeoutMs;
+  let latest = "";
+  while (Date.now() < deadline) {
+    if (runtime.child.exitCode !== null) {
+      throw new Error(`Runtime stopped before publishing metrics: code=${runtime.child.exitCode}`);
+    }
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`metrics endpoint returned HTTP ${response.status}`);
+    latest = await response.text();
+    if (new RegExp(`^${metricName}\\{[^}]*\\} `, "m").test(latest)) return latest;
+    await sleep(100);
+  }
+  throw new Error(`Prometheus metric was not sampled within ${timeoutMs}ms: ${metricName}\n${latest}`);
 }
 
 function parseOptions(args) {

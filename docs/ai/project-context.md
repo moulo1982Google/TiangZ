@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前开发版本是`0.3.10-alpha.9`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，`alpha.9` Windows Release候选预演已通过，Phase 4业务扩展尚未开始；进入Phase 4前仍要完成Linux同版本验收、`0.3.10-rc.1`全矩阵确认与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
+当前开发版本是`0.3.10-alpha.9`，目标稳定版本是`0.3.10`。Phase 0到Phase 3.10.5的实现与专项验收已经完成，`alpha.9` Windows与Linux Release候选预演均已通过，Phase 4业务扩展尚未开始；进入Phase 4前仍要冻结`0.3.10-rc.1`、完成最终全矩阵确认与正式Tag。工程已有登录、选服、Gate、进入地图、多人移动、状态复制、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但仍不是生产版本。
 
 ## 为什么形成这套模型
 
@@ -64,6 +64,8 @@ Actor是运行时路由概念，不是要求业务继承并随意创建的第四
 - `unordered`允许异步调用重叠，但所有CPU代码仍在同一TS线程执行。
 
 这解决了Skynet协程在`call`让出时可能处理后续消息而造成逻辑重入的问题。Session和Unit默认使用ordered mailbox。Login/Gate入口Scene使用unordered，使不同连接可以并行；同一连接跨`await`仍由Session串行。账号级并发不是连接级并发，只有真实账号业务需要时才使用账号Location或领域锁，不能用永久`LoginActor`伪装账号状态。
+
+账号断线与重进可能跨Scene并发交叠。重进流程若发现先前查询到的Unit已在其ordered mailbox中完成销毁，必须重新查询账号权威目录后再决定重绑或创建，不能继续使用缓存的Unit引用。
 
 ### Component
 

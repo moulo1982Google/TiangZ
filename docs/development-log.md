@@ -38,6 +38,14 @@ Windows Node 24、单进程、100,000个纯TS ChildEntity、1,000,000次随机�
 
 最终制品`TiangZ-0.3.10-alpha.9-win32-x64`包含28个文件、27条SHA-256，约49.1MiB；在制品目录完成登录、GateSession重建、Numeric Timer、Item Event、权威移动与多人Entity生命周期smoke。Windows验收通过，Linux同版本Release候选仍待执行。
 
+### Linux Release候选预演
+
+2026-07-28在Ubuntu x64虚拟机完成同版本预演。使用Git Bundle克隆精确对象，避免Windows工作树`core.autocrlf`污染跨平台候选；`npm ci`耗时约25秒且0个已知漏洞，修复后完整`npm run verify`耗时142.7秒，`release:package`耗时165.8秒。稳定完整流程约333.5秒，即5分34秒。
+
+首轮Linux运行时smoke暴露了Windows时序下未稳定复现的断线/重进竞态：新`EnterMap`缓存旧Unit后，旧连接恰好完成Actor销毁。MapHost现在只在权威账号目录确认旧实例已经消失时重新解析并重试；其他Handler异常仍原样抛出。同期修复RPC系统错误响应构造，错误包先从生成Codec创建完整默认对象，再写入`rpcId/error/message`，避免带repeated字段的响应在错误路径二次编码失败。
+
+完整验收还发现背压脚本早于五秒指标采样周期读取`/metrics`。测试现等待首个真实队列快照，最长7秒，不修改生产采样周期。Linux背压实测队列容量64、最大深度64、背压等待8962、慢连接误断开0。最终制品`TiangZ-0.3.10-alpha.9-linux-x64`包含28个文件、27条SHA-256，约70.6MiB；哈希与制品目录smoke均通过。
+
 ### 设计决定
 
 - Unit是带mailbox的地图Actor；Item/Buff/动态Quest是Component拥有的本地ChildEntity。是否需要被AOI看到不决定它是否是Actor。

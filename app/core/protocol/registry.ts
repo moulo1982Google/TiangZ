@@ -12,6 +12,7 @@ export interface Route<TReq, TResp> {
   responseCode: number;
   decode(payload: Uint8Array): TReq;
   encode(response: TResp): Uint8Array;
+  createResponse?: () => TResp;
   handle?: (
     request: TReq,
     context: ProtocolContext,
@@ -72,6 +73,7 @@ export class ProtocolRegistry {
       responseCode: descriptor.responseCode,
       decode: descriptor.requestCodec.decode,
       encode: descriptor.responseCodec.encode,
+      createResponse: () => descriptor.responseCodec.decode(new Uint8Array(0)),
     } as Route<unknown, unknown>);
   }
 
@@ -372,7 +374,9 @@ export class ProtocolRegistry {
     if (code < 10000) {
       this.logSystemError(code, message, context);
     }
-    const response = { rpcId, error: code, message };
+    const response = route.createResponse?.() ?? {};
+    setResponseMeta(response, rpcId, code);
+    if (isRecord(response)) response.message = message;
     const encodeStartedAt = this.metrics ? nowMs() : 0;
     const payload = route.encode(response);
     if (this.metrics) {

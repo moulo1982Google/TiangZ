@@ -11,6 +11,7 @@ import {
 } from "../app/core/process/ActorLocation";
 import {
   C2S_LoginCodec,
+  G2M_EnterMapCodec,
   M2G_MapReadyCodec,
   M2G_EnterMapCodec,
   S2G_ClientBroadcastCodec,
@@ -22,7 +23,10 @@ import {
   GateMessages,
   MapMessages,
 } from "../app/generated/model/server/demo/protocol/messageDescriptors";
-import { LoginProtocol } from "../app/generated/model/server/demo/protocol/rpcs";
+import {
+  LoginProtocol,
+  MapProtocol,
+} from "../app/generated/model/server/demo/protocol/rpcs";
 
 void main();
 
@@ -105,6 +109,25 @@ async function testMissingHandlerErrorSemantics(): Promise<void> {
   assert.equal(rpcError.rpcId, 88);
   assert.equal(rpcError.error, 1003);
   assert.equal(outcomes.at(-1)?.kind, "handler-not-found");
+
+  registry.registerKnownRpc(MapProtocol.EnterMap);
+  const mapRequestPayload = G2M_EnterMapCodec.encode({
+    account: "missing",
+    token: "token",
+    gateName: "gate_1",
+    mapId: 1,
+    gateSessionId: "session",
+    rpcId: 89,
+  });
+  const mapErrorFrame = await registry.handle(
+    frame(MapProtocol.EnterMap.requestCode, mapRequestPayload),
+  );
+  assert.ok(mapErrorFrame);
+  const mapError = M2G_EnterMapCodec.decode(mapErrorFrame.subarray(2));
+  assert.equal(mapError.rpcId, 89);
+  assert.equal(mapError.error, 1003);
+  assert.deepEqual(mapError.entities, []);
+  assert.deepEqual(mapError.items, []);
 
   const messagePayload = M2G_MapReadyCodec.encode({
     account: "missing",
