@@ -85,6 +85,7 @@
     "serve:pixi": "node tools/serve_pixi.mjs",
     "smoke:pixi": "node tools/pixi_browser_smoke.mjs",
     "check:project": "tiangz-check-project .",
+    "verify:design-rules": "node tools/verify_design_rules.mjs",
     "check": "npm run verify:core-api && npm run build && npm run test:protocol && npm run test:native-data && npm run test:scene-handler && npm run test:game-update && npm run test:movement-prediction && npm run test:map-broadcast && npm run test:logger && npm run test:player-persistence && npm run test:client-message && npm run test:client-sdk && npm run test:client-sdk-distribution && npm run typecheck:cocos-net && npm run typecheck:cocos-demo && npm run typecheck:pixi && npm run check:cocos-demo",
     "verify:codegen": "node tools/verify_codegen_manifest.mjs",
     "verify:comments": "node tools/verify_bilingual_comments.mjs",
@@ -95,7 +96,7 @@
     "verify:core-api": "node tools/verify_core_api.mjs && npm run build:test:core-api && node dist/core_public_api_self_test.cjs",
     "core-api:update-lock": "node tools/verify_core_api.mjs --update-lock",
     "test:protocol-locks": "node tools/codegen_proto.mjs --self-test-locks",
-    "verify:quick": "npm run codegen && npm run verify:codegen && npm run verify:comments && npm run verify:version && npm run verify:dependency-policy && npm run verify:hotfix-boundary && npm run verify:observability:assets && npm run check:project && npm run test:protocol-locks && npm run check && npm run test:hotfix && npm run test:dev-runtime && npm run test:rpc-actor-correctness && cargo fmt --check && cargo clippy --all-targets --locked && cargo test --all-targets --locked",
+    "verify:quick": "npm run codegen && npm run verify:codegen && npm run verify:comments && npm run verify:version && npm run verify:dependency-policy && npm run verify:hotfix-boundary && npm run verify:observability:assets && npm run verify:design-rules && npm run check:project && npm run test:protocol-locks && npm run check && npm run test:hotfix && npm run test:dev-runtime && npm run test:rpc-actor-correctness && cargo fmt --check && cargo clippy --all-targets --locked && cargo test --all-targets --locked",
     "test:watcher-graceful": "npm run build && cargo build --bin TiangZ && node tools/watcher_graceful_self_test.mjs",
     "verify": "npm run verify:quick && npm run test:runtime && npm run test:mailbox-parity && npm run test:backpressure && npm run test:watcher-graceful && npm run test:hotfix-reload && npm run test:hotfix-barrier",
     "release:package": "node tools/release/package_release.mjs",
@@ -141,7 +142,7 @@
     "observability:reset": "cd tools/observability && docker compose down -v --remove-orphans && docker compose rm -f"
   },
   "devDependencies": {
-    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.12.0",
+    "@tiangz/developer-tools-core": "git+https://gitee.com/eblard_admin/tiangz-developer-tools.git#v0.13.0",
     "@tiangz/native-language-core": "git+https://gitee.com/eblard_admin/tiangz-native-language.git#v0.14.0",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.0",

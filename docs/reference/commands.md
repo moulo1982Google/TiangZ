@@ -62,6 +62,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run verify:quick` | 生成物、注释、架构规则、协议锁、TS与Rust快速质量门 |
 | `npm run verify` | 在快速门上追加真实Runtime、拆分进程、mailbox、背压、Watcher和Hotfix屏障验收 |
 | `npm run verify:comments` | 检查Core、Model、Hotfix与Rust手写函数的中英文注释 |
+| `npm run verify:design-rules` | 检查Developer Tools设计规则与`docs/patterns`的规则ID和归属文档完全一致 |
 | `npm run verify:hotfix-boundary` | 检查Model/Hotfix依赖方向及Hotfix类没有字段、构造和静态初始化 |
 | `npm run verify:dependency-policy` | 校验依赖漏洞例外的负责人、原因和到期日期 |
 

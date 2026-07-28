@@ -51,7 +51,7 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 6. 变化频率和持久化频率分别是多少。
 7. TypeScript是否已经足够；只有明确性能或权威所有权收益时才进入Native。
 
-安装TiangZ Developer Tools `v0.13.0`后，可执行“TiangZ：设计业务系统”、输入`@tiangz /design quest`，或运行`tiangz-design`。CLI和向导使用确定性规则；聊天模型只负责解释。输出是设计起点，不会自动创建代码，也不能绕过目录依赖、Generated锁和验证命令。
+安装TiangZ Developer Tools `v0.13.0`后，可执行“TiangZ：设计业务系统”、输入`@tiangz /design quest`，或运行`tiangz-design`。CLI和向导使用确定性规则；聊天模型只负责解释。输出是设计起点，不会自动创建代码，也不能绕过目录依赖、Generated锁和验证命令。修改`docs/patterns`稳定规则时必须同步修改design-core并升级固定Tag；`npm run verify:design-rules`会拒绝缺失、重复、归属错误或只改一侧的规则。
 
 ## Model与Hotfix怎么选
 
