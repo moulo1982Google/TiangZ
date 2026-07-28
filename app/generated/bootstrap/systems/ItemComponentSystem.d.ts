@@ -6,6 +6,8 @@ declare module "../../../model/demo/item/ItemComponent" {
   interface ItemComponent {
     GetItem(itemId: number): ItemView | undefined;
     Snapshot(): ItemSnapshot[];
+    CaptureTransfer(): ItemSnapshot[];
+    RestoreTransfer(items: readonly ItemSnapshot[]): void;
     UseItem(itemId: number): ItemSnapshot;
     AddItem(itemId: number, count: number): ItemSnapshot;
     RemoveItem(itemId: number, count: number): ItemSnapshot;

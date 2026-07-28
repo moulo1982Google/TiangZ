@@ -14,6 +14,10 @@ import {
 } from "cc";
 import { NATIVE, PREVIEW } from "cc/env";
 import { LoginFlow } from "../Generated/SDK/Demo/LoginFlow";
+import { ClientMessages } from "../Generated/SDK/Generated/Model/demo/protocol/messageDescriptors";
+import { GateClient } from "../Generated/SDK/Generated/Model/demo/protocol/clients";
+import type { S2C_Login } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
+import type { RpcSocket } from "../Generated/SDK/Core/Net/RpcSocket";
 import type { ClientTransportKind } from "../Generated/SDK/Core/Net/ClientTransport";
 import "../Generated/SDK/Core/Net/BrowserWebSocketTransport";
 import "../Generated/SDK/Core/Net/NativeTransport";
@@ -41,6 +45,10 @@ export class GameBootstrap extends Component {
   private statusLabel?: Label;
   private loginButton?: Button;
   private account = "";
+  private gateSocket?: RpcSocket;
+  private loginResult?: S2C_Login;
+  private currentMapId = 0;
+  private switchingMap = false;
 
   onLoad(): void {
     this.ensureStarted();
@@ -60,6 +68,8 @@ export class GameBootstrap extends Component {
     this.playerController = undefined;
     this.loginFlow?.close();
     this.loginFlow = undefined;
+    this.gateSocket = undefined;
+    this.loginResult = undefined;
   }
 
   ensureStarted(): void {
@@ -120,17 +130,54 @@ export class GameBootstrap extends Component {
         1,
         (message) => this.setStatus(message),
       );
-      this.playerController?.dispose();
-      this.playerController = new MapView(this.requireUi()).show(
-        result.login,
-        result.enterMap,
-        result.mapReady,
-        result.gateSocket,
-      );
+      this.gateSocket = result.gateSocket;
+      this.loginResult = result.login;
+      this.showMap(result.enterMap, result.mapReady);
     } catch (error) {
       this.setStatus(error instanceof Error ? error.message : String(error), true);
       this.setLoginEnabled(true);
     }
+  }
+
+  /** 在现有 Gate Session 上切换 Map1/Map2，并用服务端全量快照重建客户端地图。 / Switches Map1/Map2 on the current Gate session and rebuilds the client map from the authoritative snapshot. */
+  private async switchMap(): Promise<void> {
+    if (this.switchingMap || !this.gateSocket || !this.loginResult) return;
+    this.switchingMap = true;
+    const targetMapId = this.currentMapId === 1 ? 2 : 1;
+    try {
+      const gate = new GateClient(this.gateSocket);
+      const [enterMap, mapReady] = await Promise.all([
+        gate.enterMap({ mapId: targetMapId }),
+        this.gateSocket.waitForMessage(ClientMessages.MapReady),
+      ]);
+      this.showMap(enterMap, mapReady);
+    } catch (error) {
+      this.loginFlow?.close();
+      this.loginFlow = undefined;
+      this.gateSocket = undefined;
+      this.loginResult = undefined;
+      this.showLoginView();
+      this.setStatus(`地图传送失败：${error instanceof Error ? error.message : String(error)}`, true);
+      this.setLoginEnabled(true);
+    } finally {
+      this.switchingMap = false;
+    }
+  }
+
+  private showMap(
+    enterMap: Parameters<MapView["show"]>[1],
+    mapReady: Parameters<MapView["show"]>[2],
+  ): void {
+    if (!this.gateSocket || !this.loginResult) throw new Error("Gate Session 尚未建立");
+    this.playerController?.dispose();
+    this.currentMapId = enterMap.mapId;
+    this.playerController = new MapView(this.requireUi()).show(
+      this.loginResult,
+      enterMap,
+      mapReady,
+      this.gateSocket,
+      () => void this.switchMap(),
+    );
   }
 
   private setStatus(text: string, isError = false): void {

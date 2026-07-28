@@ -10,6 +10,18 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-28 - Map1/Map2进程内传送
+
+Phase 4地图链路开始推进。MapHost现在把Map1和Map2按需创建为独立MapScene；玩家在同一Gate Session中再次调用`EnterMap`即可切图。迁移保持UnitId，旧Scene销毁旧Actor并广播离开，目标Scene使用配置出生点创建新Actor InstanceId。
+
+初版把Numeric和Item直接写入玩家迁移DTO，无法让开发者选择组件，随后在本轮内废弃。正式机制由Core Entity统一提供：Component默认不迁移，稳定Model类型显式`@transferable()`并实现同步`ITransfer`后才参加。Numeric、Item各自导出值快照；Position只保留速度、朝向和存活，不带坐标；Gate、Persistence、Native handle和临时组件由目标Factory重建。进程内快照以稳定Model构造器为键，只服务一次Scene切换，不替代持久化记录、跨进程DTO或全局Location。
+
+补充`IDeserialize`二阶段生命周期：`RestoreTransfer`只写回状态，Entity在全部可传送Component恢复后调用一次业务`Deserialize`，用于Buff Timer、派生索引和非序列化缓存等二次加工。Core只负责同步调用顺序和重复调用保护，具体恢复规则留在Hotfix System；未来持久化加载器通过`CompleteDeserialize`复用同一钩子。
+
+补齐生命周期声明契约：Model使用`@lifecycle`按需声明`Awake/OnDestroy/Deserialize`，`@transferable`继续作为迁移能力唯一标记。`codegen:scenes`会检查对应System是否提供同步实现，热更候选提交前再次检查自己的prototype，缺方法或异步实现会拒绝整包并保留旧generation；未声明能力仍不要求空方法。新增生成负例与Hotfix回滚自测。
+
+Cocos Web/Native和Pixi/H5均增加`T`键切换Map1/Map2，客户端等待RPC与`MapReady`后重建地图及消息Dispatcher。Runtime smoke增加传送断言，覆盖UnitId、目标出生点、背包版本和Numeric不回退。跨MapHost/跨进程事务与动态副本Directory保留后续实现。
+
 ## 2026-07-28 - 后续容量规划调整
 
 自动容量推荐与部署参数生成延后到Phase 5。当前业务负载尚未覆盖Rust AOI、怪物、战斗、Buff、任务和持久化，现阶段根据Probe或全地图可见Move测试推导正式在线人数会产生错误承诺。

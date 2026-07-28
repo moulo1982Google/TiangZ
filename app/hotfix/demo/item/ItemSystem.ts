@@ -19,6 +19,9 @@ export class ItemSystem extends Item {
       instanceId: this.InstanceId,
       configId: request.configId,
       count: request.count,
+      quality: request.quality,
+      level: request.level,
+      version: request.version,
     });
   }
 

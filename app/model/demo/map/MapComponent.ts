@@ -10,6 +10,7 @@ import {
   TimeSystem,
   UnitComponent,
   component,
+  type EntityTransferSnapshot,
 } from "../../../core/public";
 import { ClientBroadcasts } from "../../../generated/model/server/demo/protocol/broadcastDescriptors";
 import { GateMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
@@ -122,7 +123,11 @@ export class MapComponent extends Component<[
    * Add player capabilities here rather than inside handlers, so creation and
    * reconnect paths always produce the same Entity shape.
    */
-  CreatePlayer(unitId: number, request: G2M_EnterMap): PlayerUnit {
+  CreatePlayer(
+    unitId: number,
+    request: G2M_EnterMap,
+    transfer?: EntityTransferSnapshot,
+  ): PlayerUnit {
     const playerConfig = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID);
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
@@ -153,6 +158,7 @@ export class MapComponent extends Component<[
         request.gateName,
         request.gateSessionId,
       );
+      if (transfer) player.RestoreTransfer(transfer);
       this.players.Add(player);
       return player;
     } catch (error) {

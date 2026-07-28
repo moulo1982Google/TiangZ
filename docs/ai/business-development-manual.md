@@ -61,7 +61,8 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 - Hotfix通过`@systemFor(ModelType)`提供生命周期和领域方法；System没有字段、构造函数或静态成员，也不会被实例化。
 - Model不手写“System未安装”的抛错空壳。codegen从System公开方法生成`app/generated/bootstrap/systems/*.d.ts`，调用方仍直接写`unit.Move()`或`component.UseItem()`。
 - System公开方法必须显式写参数和返回类型。只改方法体可热更；修改公开签名会改变Model声明，必须完整构建并重启。
-- `Awake/OnDestroy`可写在System中。Reload不重跑现有对象的`Awake`；新对象使用新版本Awake，现有对象后续方法和销毁使用当前generation。
+- `Awake/OnDestroy/Deserialize`都是可选能力。需要Hotfix承担某个生命周期时，Model使用`@lifecycle({ awake: true, destroy: true, deserialize: true })`只声明实际需要的项，System提供实现；未声明的钩子不要求空实现。Reload不重跑现有对象的`Awake`；新对象使用新版本Awake，现有对象后续方法和销毁使用当前generation。
+- `@transferable()`是迁移能力的唯一声明，同时要求Model自身或对应System提供同步`CaptureTransfer/RestoreTransfer`，不再重复写`transfer: true`。codegen缺方法会直接失败，Hotfix候选缺少Model已声明的方法会整包拒绝并保留旧generation。
 - Model绝对不能在线热更，不设计字段migration。`npm run build:hotfix`拒绝时，说明这次改动已经越过行为边界，不能规避检查。
 - `npm run build:hotfix`生成`dist/hotfix-candidates/<hash>`不可变候选，不覆盖当前Bundle。在Watcher终端输入`reload <候选目录>`才会触发每个Process独立校验和提交；禁止手工覆盖`dist/hotfix.js`。
 
@@ -116,27 +117,19 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 
 ## 新增玩家Component
 
-普通业务状态先写TS Component：
+普通业务状态先写TS Component。生命周期声明属于不可热更Model，方法实现属于Hotfix System：
 
 ```ts
-import { Component } from "../../core/public";
-import type { PlayerUnit } from "../map/PlayerUnit";
+import { Component, component, lifecycle } from "../../core/public";
 
+@component()
+@lifecycle({ awake: true, destroy: true })
 export class SkillComponent extends Component {
-  private readonly skills = new Set<number>();
-
-  /** 学习一个尚未拥有的技能，并返回是否发生变化。 / Learns a missing skill and returns whether state changed. */
-  AddSkill(skillId: number): boolean {
-    if (this.skills.has(skillId)) return false;
-    this.skills.add(skillId);
-    return true;
-  }
-
-  private player(): PlayerUnit {
-    return this.GetParent<PlayerUnit>();
-  }
+  protected readonly skills = new Set<number>();
 }
 ```
+
+对应`SkillComponentSystem`使用`@systemFor(SkillComponent)`实现`Awake/OnDestroy`和`AddSkill`等领域方法；Model只保留字段、继承与稳定声明。`@lifecycle`只写System必须实现的钩子，不要为了整齐把所有选项都设为`true`。
 
 在玩家Factory中装配，而不是在Handler中临时添加：
 
@@ -152,9 +145,11 @@ unit.GetComponent(SkillComponent).AddSkill(skillId);
 
 约束：
 
-- `Awake`只做同步初始化。
+- `Awake`只做同步初始化；声明了`awake`却缺少System实现时，生成失败。
 - Component持有的定时器、订阅或句柄在`OnDestroy`释放。
 - 纯数据组件不写空`OnDestroy`。
+- `Deserialize`只在完整数据图恢复后重建Timer、索引和非序列化缓存；不读数据库，也不能返回Promise。
+- `@transferable()`要求同步实现`ITransfer`；没有迁移需求的Component不要标记。
 - 同类型组件只挂一个；可选依赖使用`TryGetComponent`。
 - 不直接`new SkillComponent()`，必须走`AddComponent`，否则绕过生命周期和Update注册。
 
@@ -331,6 +326,16 @@ message M2C_UseSkill // IActorLocationResponse
 - 它不需要成为独立部署和网络寻址边界。
 
 不要为每张地图、每只怪物、每个组件创建EntryScene。
+
+### 玩家地图传送
+
+同一MapHost内切图继续调用Gate的`EnterMap`，不要再定义一套含义重复的`Teleport` RPC。MapHost调用Entity的`CaptureTransfer/RestoreTransfer`，从旧MapScene移除Unit并广播离开，再在目标MapScene用相同UnitId创建新PlayerUnit；位置使用目标`MapConfig`出生点，Actor InstanceId必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
+
+Component迁移遵循显式选择：默认不迁移，只有稳定Model类型加`@transferable()`并实现同步`ITransfer<TState>`才会参加。`@transferable()`本身就是稳定能力声明，生成器会检查`CaptureTransfer/RestoreTransfer`是否位于Model或对应`@systemFor`实现中；运行时仍保留最后一道防线。`CaptureTransfer`必须返回脱离旧Entity和Native handle的值快照，`RestoreTransfer`写入目标Factory已经创建的同类型Component，两者都不能返回Promise。当前Numeric与Item迁移完整业务值；Position只迁移速度、朝向和存活，故意不迁移旧坐标与移动中间态；Gate绑定、Persistence和Native handle由目标Factory重建。临时仇恨、施法过程、副本局部状态等组件不加标记即可丢弃。
+
+`RestoreTransfer`只恢复权威数据，不负责恢复后的运行时加工。需要重建Timer、派生字典、配置缓存或索引的Component，在Model声明`@lifecycle({ deserialize: true })`，并在Hotfix System实现同步`IDeserialize.Deserialize()`。Entity会先恢复所有可传送Component，再统一调用这些Component的`Deserialize`；持久化加载器以后也复用`CompleteDeserialize()`调用同一生命周期。以Buff为例：传送快照保存Buff及结束时间，`RestoreTransfer`重建Buff数据，`Deserialize`根据剩余时间移除过期Buff或重新注册Timer。框架只保证完整数据图之后、Entity发布之前调用一次，不包含任何Buff规则；`Deserialize`不得再次访问数据库、返回Promise或依赖尚未恢复的外部Entity。
+
+Entity迁移快照只用于一次进程内迁移，不能长期缓存、写数据库或当作跨进程协议。跨MapHost时必须由后续Directory设计可编码的跨进程DTO，协调源Scene导出、目标Scene接管、Location切换与失败回滚；业务代码不得扫描所有MapHost寻找玩家，也不得假定当前`PlayerDirectoryComponent`是全局目录。
 
 ## Scene调用规则
 

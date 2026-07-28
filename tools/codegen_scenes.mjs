@@ -213,12 +213,13 @@ await writeFile(benchHandlerOutputFile, benchHandlerContent, "utf8");
 await recordGenerator(root, {
   id: "scenes",
   command: "npm run codegen:scenes",
-  contentInputs: [scriptFile, configFile, ...systemFiles],
+  contentInputs: [scriptFile, configFile, ...systemFiles, ...systemGeneration.modelFiles],
   selections: [
     { kind: "scene", roots: sceneSearchRoots, paths: sceneFiles },
     { kind: "handler", roots: handlerSearchRoots, paths: handlerFiles },
     { kind: "hotfix-patch", roots: patchSearchRoots, paths: legacyPatchFiles },
     { kind: "hotfix-system", roots: patchSearchRoots, paths: systemFiles },
+    { kind: "system-model", roots: [path.join(root, "app", "model")], paths: systemGeneration.modelFiles },
     { kind: "bench-handler", roots: benchHandlerSearchRoots, paths: benchHandlerFiles },
     { kind: "protocol-rpc", roots: serverProtocolSearchRoots, paths: protocolFiles },
     { kind: "protocol-message", roots: serverProtocolSearchRoots, paths: messageProtocolFiles },
@@ -249,7 +250,8 @@ async function generateSystemDeclarations(files) {
   await rm(obsoleteSystemDeclarationRoot, { recursive: true, force: true });
   await rm(systemDeclarationRoot, { recursive: true, force: true });
   await mkdir(systemDeclarationRoot, { recursive: true });
-  const modelTypes = await collectModelTypes();
+  const modelGeneration = await collectModelTypes();
+  const modelTypes = modelGeneration.types;
   const outputs = [];
   const targets = new Set();
   const targetModels = [];
@@ -276,9 +278,11 @@ async function generateSystemDeclarations(files) {
           `${relative(file)}: @systemFor target ${targetName} resolved to ${modelMatches.length} Model classes`,
         );
       }
-      targetModels.push({ name: targetName, file: modelMatches[0] });
+      const model = modelMatches[0];
+      validateSystemLifecycle(file, source, declaration, model);
+      targetModels.push({ name: targetName, file: model.file });
       const output = path.join(systemDeclarationRoot, `${targetName}System.d.ts`);
-      const targetModule = toImportPath(modelMatches[0], output);
+      const targetModule = toImportPath(model.file, output);
       const modelPublic = toImportPath(path.join(root, "app", "model", "public.ts"), output);
       const members = systemPublicMembers(file, source, declaration);
       const imports = modelTypeImports(source, members.join("\n"));
@@ -290,9 +294,31 @@ async function generateSystemDeclarations(files) {
       outputs.push(output);
     }
   }
+  for (const matches of modelTypes.values()) {
+    if (matches.length !== 1) continue;
+    const model = matches[0];
+    const missing = model.transferMethods.filter((method) => !model.methods.has(method));
+    if (missing.length > 0 && !targets.has(model.name)) {
+      throw new Error(
+        `${relative(model.file)}: @transferable requires ${missing.join(" and ")} on Model or its @systemFor class`,
+      );
+    }
+    const asyncTransfer = model.transferMethods.find((method) => model.asyncMethods.has(method));
+    if (asyncTransfer) {
+      throw new Error(
+        `${relative(model.file)}: lifecycle method must be synchronous: ${model.name}.${asyncTransfer}`,
+      );
+    }
+    if (model.lifecycleMethods.length > 0 && !targets.has(model.name)) {
+      throw new Error(
+        `${relative(model.file)}: @lifecycle requires an @systemFor(${model.name}) class`,
+      );
+    }
+  }
   return {
     outputs: outputs.sort((left, right) => left.localeCompare(right)),
     targets: targetModels.sort((left, right) => left.name.localeCompare(right.name)),
+    modelFiles: modelGeneration.files,
   };
 }
 
@@ -313,11 +339,91 @@ async function collectModelTypes() {
     for (const declaration of source.statements) {
       if (!ts.isClassDeclaration(declaration) || !declaration.name) continue;
       const matches = result.get(declaration.name.text) ?? [];
-      matches.push(file);
+      const methods = new Set();
+      const asyncMethods = new Set();
+      for (const member of declaration.members) {
+        if (!ts.isMethodDeclaration(member) || !member.name) continue;
+        const name = member.name.getText(source);
+        methods.add(name);
+        if (hasModifier(member, ts.SyntaxKind.AsyncKeyword)) asyncMethods.add(name);
+      }
+      matches.push({
+        name: declaration.name.text,
+        file,
+        methods,
+        asyncMethods,
+        lifecycleMethods: modelLifecycleMethods(file, source, declaration),
+        transferMethods: hasDecorator(declaration, "transferable")
+          ? ["CaptureTransfer", "RestoreTransfer"]
+          : [],
+      });
       result.set(declaration.name.text, matches);
     }
   }
+  return { types: result, files };
+}
+
+function modelLifecycleMethods(file, source, declaration) {
+  const decorator = (ts.getDecorators(declaration) ?? []).find((item) =>
+    ts.isCallExpression(item.expression) &&
+    ts.isIdentifier(item.expression.expression) &&
+    item.expression.expression.text === "lifecycle"
+  );
+  if (!decorator) return [];
+  const call = decorator.expression;
+  if (call.arguments.length !== 1 || !ts.isObjectLiteralExpression(call.arguments[0])) {
+    throw new Error(`${relative(file)}: @lifecycle requires one object literal`);
+  }
+  const names = new Map([
+    ["awake", "Awake"],
+    ["destroy", "OnDestroy"],
+    ["deserialize", "Deserialize"],
+  ]);
+  const result = [];
+  for (const property of call.arguments[0].properties) {
+    if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) {
+      throw new Error(`${relative(file)}: @lifecycle only accepts named boolean properties`);
+    }
+    const method = names.get(property.name.text);
+    if (!method) {
+      throw new Error(`${relative(file)}: unknown @lifecycle option ${property.name.text}`);
+    }
+    if (property.initializer.kind !== ts.SyntaxKind.TrueKeyword) {
+      throw new Error(`${relative(file)}: @lifecycle.${property.name.text} must be true or omitted`);
+    }
+    result.push(method);
+  }
+  if (result.length === 0) throw new Error(`${relative(file)}: @lifecycle declaration is empty`);
   return result;
+}
+
+function hasDecorator(declaration, name) {
+  return (ts.getDecorators(declaration) ?? []).some((decorator) =>
+    ts.isCallExpression(decorator.expression) &&
+    ts.isIdentifier(decorator.expression.expression) &&
+    decorator.expression.expression.text === name
+  );
+}
+
+function validateSystemLifecycle(file, source, declaration, model) {
+  const methods = new Map();
+  for (const member of declaration.members) {
+    if (!ts.isMethodDeclaration(member) || !member.name) continue;
+    methods.set(member.name.getText(source), member);
+  }
+  const required = [
+    ...model.lifecycleMethods,
+    ...model.transferMethods.filter((method) => !model.methods.has(method)),
+  ];
+  for (const method of required) {
+    const declaration = methods.get(method);
+    if (!declaration) {
+      throw new Error(`${relative(file)}: ${model.name} requires lifecycle method ${method}`);
+    }
+    if (hasModifier(declaration, ts.SyntaxKind.AsyncKeyword)) {
+      throw new Error(`${relative(file)}: lifecycle method must be synchronous: ${model.name}.${method}`);
+    }
+  }
 }
 
 function systemTargetName(declaration) {

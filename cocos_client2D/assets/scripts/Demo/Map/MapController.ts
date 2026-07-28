@@ -7,12 +7,14 @@ export class MapController {
     private readonly input: LocalPlayerController,
     private readonly entities: MapEntityManager,
     private readonly messages: ClientMessageDispatcher<MapEntityManager>,
+    private readonly switchMap: () => void,
   ) {}
 
   update(deltaTime: number): void {
     const intent = this.input.update();
     this.entities.update(deltaTime, intent);
     if (intent.useItem) void this.entities.UseItem(1);
+    if (intent.switchMap) this.switchMap();
   }
 
   dispose(): void {

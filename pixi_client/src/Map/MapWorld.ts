@@ -41,6 +41,7 @@ export class MapWorld {
     socket: RpcSocket,
     private readonly localUnitId: number,
     private readonly enterMap: G2C_EnterMap,
+    private readonly switchMap: () => void,
   ) {
     const playerConfig = GameConfigs.PlayerConfig.Get(1);
     this.mapClient = new MapClient(socket);
@@ -182,7 +183,8 @@ export class MapWorld {
     const height = config.heightCells * CELL_SIZE;
     const originX = -width / 2;
     const originY = -height / 2;
-    const background = new Graphics().rect(originX, originY, width, height).fill(0x245a4b);
+    const backgroundColor = this.enterMap.mapId === 2 ? 0x3e4a76 : 0x245a4b;
+    const background = new Graphics().rect(originX, originY, width, height).fill(backgroundColor);
     background.rect(originX, originY, width, height).stroke({ color: 0x4e8071, width: 1 });
     this.world.addChild(background);
   }
@@ -209,6 +211,7 @@ export class MapWorld {
         (error) => console.error("使用道具失败", error),
       );
     }
+    if (event.code === "KeyT" && !event.repeat) this.switchMap();
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {

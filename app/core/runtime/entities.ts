@@ -11,9 +11,41 @@ import type {
   EntityId,
   InstanceId,
 } from "./types";
+import { isTransferableComponent } from "./metadata";
+
+/** Component自行定义的同步迁移契约；TState必须是脱离原实例的值快照。 / Synchronous Component-owned transfer contract whose state must not retain the source instance. */
+export interface ITransfer<TState = unknown> {
+  CaptureTransfer(): TState;
+  RestoreTransfer(state: TState): void;
+}
+
+/**
+ * 数据字段与子Entity全部恢复后的同步业务钩子。
+ * 用于重建Timer、派生索引和非序列化缓存，不得再次读取数据库或返回Promise。
+ *
+ * Synchronous business hook invoked after fields and child Entities have been
+ * restored. It rebuilds timers, derived indexes, and non-serialized caches;
+ * it must not perform another database read or return a Promise.
+ */
+export interface IDeserialize {
+  Deserialize(): void;
+}
+
+/**
+ * 一次进程内Entity迁移的组件状态集合，以稳定Model构造器作为键。
+ * 该对象不是网络协议或持久化格式，不得跨Process、跨Bundle或长期缓存。
+ *
+ * Component state set for one in-process Entity transfer, keyed by stable Model
+ * constructors. It is not a wire or persistence format and must not cross a
+ * Process/Bundle boundary or be retained long term.
+ */
+export interface EntityTransferSnapshot {
+  readonly components: ReadonlyMap<ComponentCtor, unknown>;
+}
 
 export abstract class Component<TAwakeArgs extends unknown[] = []> {
   private awoken = false;
+  private deserialized = false;
   private disposed = false;
   private parent: Entity | undefined;
   private readonly timers = new Set<TimerId>();
@@ -207,6 +239,31 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     UpdateSystem.TryRegister(this);
   }
 
+  /** 数据恢复完成后至多调用一次业务Deserialize钩子。 / Invokes the business Deserialize hook at most once after state restoration. */
+  __deserialize(): void {
+    if (this.disposed) {
+      throw new Error(`component is disposed: ${this.constructor.name}`);
+    }
+    const candidate = this as Partial<IDeserialize>;
+    if (typeof candidate.Deserialize !== "function") return;
+    if (this.deserialized) {
+      throw new Error(`component is already deserialized: ${this.constructor.name}`);
+    }
+    this.deserialized = true;
+    const result = candidate.Deserialize.call(this) as unknown;
+    if (isPromiseLike(result)) {
+      void Promise.resolve(result).catch((error) => {
+        CoreLogger.error("async component Deserialize failed", {
+          component: this.constructor.name,
+          error,
+        });
+      });
+      throw new Error(
+        `component Deserialize must be synchronous: ${this.constructor.name}`,
+      );
+    }
+  }
+
   __dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -353,6 +410,70 @@ export abstract class Entity {
     return true;
   }
 
+  /**
+   * 同步收集所有显式@transferable组件的值快照。
+   * 未标记组件自动忽略；标记但未实现ITransfer会立即失败，避免静默丢状态。
+   *
+   * Synchronously captures value snapshots from every explicitly @transferable
+   * Component. Unmarked Components are ignored; an invalid opted-in Component
+   * fails immediately instead of silently losing state.
+   */
+  CaptureTransfer(): EntityTransferSnapshot {
+    this.requireAlive();
+    const states = new Map<ComponentCtor, unknown>();
+    for (const [ctor, component] of this.components) {
+      if (!isTransferableComponent(ctor)) continue;
+      const transferable = requireTransferContract(component);
+      const state = transferable.CaptureTransfer();
+      if (isPromiseLike(state)) {
+        throw new Error(`component transfer capture must be synchronous: ${ctor.name}`);
+      }
+      states.set(ctor as ComponentCtor, state);
+    }
+    return { components: states };
+  }
+
+  /**
+   * 把迁移快照恢复到目标Entity已组合的同类型组件。
+   * Factory必须先创建完整组件图；缺少目标组件或异步恢复都会失败。
+   *
+   * Restores a transfer snapshot into matching Components already composed on
+   * the target Entity. The factory must build the full graph first; a missing
+   * target Component or asynchronous restore fails the transfer.
+   */
+  RestoreTransfer(snapshot: EntityTransferSnapshot): void {
+    this.requireAlive();
+    const restored: Component<any[]>[] = [];
+    for (const [ctor, state] of snapshot.components) {
+      const component = this.components.get(ctor);
+      if (!component) {
+        throw new Error(`transfer target component not found: ${ctor.name}`);
+      }
+      if (!isTransferableComponent(ctor)) {
+        throw new Error(`transfer target component is not transferable: ${ctor.name}`);
+      }
+      const result = requireTransferContract(component).RestoreTransfer(state) as unknown;
+      if (isPromiseLike(result)) {
+        throw new Error(`component transfer restore must be synchronous: ${ctor.name}`);
+      }
+      restored.push(component);
+    }
+    for (const component of restored) component.__deserialize();
+  }
+
+  /**
+   * 通知所有已组合Component：外部加载器已经恢复完整Entity图。
+   * 仅供持久化/传输装配器在发布Entity前调用一次，普通业务不得手工调用。
+   *
+   * Notifies all composed Components that an external loader has restored the
+   * complete Entity graph. Persistence/transfer assemblers call it once before
+   * publishing the Entity; ordinary gameplay code must not call it manually.
+   */
+  CompleteDeserialize(): void {
+    this.requireAlive();
+    for (const component of this.components.values()) component.__deserialize();
+  }
+
   /** 所有组件销毁后释放 Entity 自身资源。 / Releases Entity-owned resources after all components have been disposed. */
   protected OnDestroy(): void {}
 
@@ -410,6 +531,19 @@ export abstract class Entity {
       throw new Error(`entity is disposed: ${this.constructor.name}`);
     }
   }
+}
+
+function requireTransferContract(component: Component<any[]>): ITransfer {
+  const candidate = component as Partial<ITransfer>;
+  if (
+    typeof candidate.CaptureTransfer !== "function" ||
+    typeof candidate.RestoreTransfer !== "function"
+  ) {
+    throw new Error(
+      `transferable component must implement ITransfer: ${component.constructor.name}`,
+    );
+  }
+  return candidate as ITransfer;
 }
 
 export type ChildEntityCtor<

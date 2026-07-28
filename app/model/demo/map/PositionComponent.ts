@@ -1,4 +1,9 @@
-import { Component, component } from "../../../core/public";
+import {
+  Component,
+  component,
+  transferable,
+  type ITransfer,
+} from "../../../core/public";
 import {
   canOccupyCell,
   cellToWorld,
@@ -13,11 +18,12 @@ export interface PositionSnapshot {
 }
 
 @component()
+@transferable()
 export class PositionComponent extends Component<[
   native: NativeUnitRef,
   mapWidthCells: number,
   mapHeightCells: number,
-]> {
+]> implements ITransfer<PositionTransferState> {
   private native!: NativeUnitRef;
   private mapWidthCells = 0;
   private mapHeightCells = 0;
@@ -98,4 +104,26 @@ export class PositionComponent extends Component<[
       cellY: this.native.cellY,
     };
   }
+
+  /** 只迁移跨地图仍有效的移动属性，故意排除坐标和移动中间态。 / Captures only movement attributes valid across maps, intentionally excluding coordinates and in-flight movement. */
+  CaptureTransfer(): PositionTransferState {
+    return {
+      speedCellsPerSecond: this.native.speedCellsPerSecond,
+      facing: this.native.facing,
+      alive: this.native.alive !== 0,
+    };
+  }
+
+  /** 在目标地图出生点已设置后恢复移动属性，不覆盖目标坐标。 / Restores movement attributes after target spawn placement without overwriting target coordinates. */
+  RestoreTransfer(state: PositionTransferState): void {
+    this.SpeedCellsPerSecond = state.speedCellsPerSecond;
+    this.native.facing = state.facing;
+    this.native.alive = Number(state.alive);
+  }
+}
+
+export interface PositionTransferState {
+  readonly speedCellsPerSecond: number;
+  readonly facing: number;
+  readonly alive: boolean;
 }

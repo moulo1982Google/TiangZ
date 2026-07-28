@@ -13,6 +13,7 @@ import {
 import { SingletonRegistry } from "../app/core/runtime/Singleton";
 import { TimerSystem } from "../app/core/runtime/TimerSystem";
 import { TimeSystem } from "../app/core/runtime/TimeSystem";
+import { lifecycle } from "../app/core/runtime/metadata";
 
 class StableCounter {
   value = 10;
@@ -82,6 +83,7 @@ HotfixSystem.Begin(manifest("baseline"));
 HotfixSystem.Commit();
 assert(instance.Read() === 10, "omitted complete patch did not restore Model baseline");
 
+@lifecycle({ awake: true, destroy: true })
 class LifecycleComponent extends Component<[value: string]> {
   protected value = "";
   destroyedBy = "";
@@ -107,6 +109,21 @@ try {
   initialSystemRejected = true;
 }
 assert(initialSystemRejected, "first candidate missing a Model-required System was accepted");
+
+HotfixSystem.Begin(manifest("incomplete-lifecycle"));
+class IncompleteLifecycleSystem extends LifecycleComponent {
+  protected override Awake(value: string): void {
+    this.value = value;
+  }
+}
+systemFor(LifecycleComponent)(IncompleteLifecycleSystem);
+let incompleteLifecycleRejected = false;
+try {
+  HotfixSystem.Commit();
+} catch (error) {
+  incompleteLifecycleRejected = String(error).includes("LifecycleComponent.OnDestroy");
+}
+assert(incompleteLifecycleRejected, "candidate missing a declared lifecycle method was accepted");
 
 HotfixSystem.Begin(manifest("system-v1"));
 class LifecycleSystemV1 extends LifecycleComponent {

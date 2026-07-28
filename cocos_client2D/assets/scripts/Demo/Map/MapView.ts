@@ -27,6 +27,7 @@ export class MapView {
     enterMap: G2C_EnterMap,
     mapReady: G2C_MapReady,
     gateSocket: RpcSocket,
+    switchMap: () => void,
   ): MapController {
     const mapConfig = GameConfigs.MapConfig.Get(enterMap.mapId);
     const playerConfig = GameConfigs.PlayerConfig.Get(1);
@@ -47,7 +48,9 @@ export class MapView {
     const transform = map.addComponent(UITransform);
     transform.setContentSize(mapWidth, mapHeight);
     const graphics = map.addComponent(Graphics);
-    graphics.fillColor = new Color(42, 88, 76, 255);
+    graphics.fillColor = enterMap.mapId === 2
+      ? new Color(62, 74, 118, 255)
+      : new Color(42, 88, 76, 255);
     graphics.fillRect(-mapWidth / 2, -mapHeight / 2, mapWidth, mapHeight);
     graphics.strokeColor = new Color(70, 112, 98, 150);
     graphics.lineWidth = 1;
@@ -64,14 +67,14 @@ export class MapView {
     graphics.stroke();
 
     this.ui.createLabel(
-      `${login.account} / Unit ${enterMap.unitId} / 地图 ${enterMap.mapId} (${enterMap.mapService})`,
+      `${login.account} / Unit ${enterMap.unitId} / ${mapConfig.name} [Map ${enterMap.mapId}] (${enterMap.mapService})`,
       0,
       308,
       20,
       new Color(236, 245, 238, 255),
     );
     this.ui.createLabel(
-      `WASD / 方向键移动，U 使用道具（${CELL_SIZE}px Cell，角色 ${UNIT_FOOTPRINT_CELLS}x${UNIT_FOOTPRINT_CELLS} Cell）`,
+      `WASD / 方向键移动，U 使用道具，T 传送 Map1/Map2（${CELL_SIZE}px Cell，角色 ${UNIT_FOOTPRINT_CELLS}x${UNIT_FOOTPRINT_CELLS} Cell）`,
       0,
       -318,
       16,
@@ -126,6 +129,7 @@ export class MapView {
       new LocalPlayerController(),
       entities,
       messages,
+      switchMap,
     );
   }
 }

@@ -1,4 +1,4 @@
-import { Unit } from "../../../core/public";
+import { Unit, lifecycle } from "../../../core/public";
 import type { UnitNumericDelta } from "../../../generated/model/server/demo/protocol/messages";
 
 export interface AwakePlayerUnit {
@@ -38,6 +38,7 @@ export interface MovePlayer {
   sequence: number;
 }
 
+@lifecycle({ awake: true })
 export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
   protected account = "";
   protected mapId = 0;

@@ -5,21 +5,25 @@ import {
   ItemComponent,
   type ItemSnapshot,
   type ItemView,
+  type ITransfer,
   RpcError,
   systemFor,
 } from "#tiangz/model";
 
 /** 承载背包集合的可热更规则；子 Item Entity 和 Native handle 的销毁由 Core 所有权链保证。 / Hosts hot-reloadable inventory collection rules; Core ownership disposes child Item entities and Native handles. */
 @systemFor(ItemComponent)
-export class ItemComponentSystem extends ItemComponent {
+export class ItemComponentSystem extends ItemComponent implements ITransfer<readonly ItemSnapshot[]> {
   /** 创建一件演示道具；生产加载应从持久化数据组合背包。 / Seeds one demo item; production loading should compose inventory from persisted data. */
   protected override Awake(): void {
     const playerConfig = GameConfigs.PlayerConfig.Get(1);
-    this.Create(
-      1,
-      playerConfig.initialItemConfigId,
-      playerConfig.initialItemCount,
-    );
+    this.Create({
+      itemId: 1,
+      configId: playerConfig.initialItemConfigId,
+      count: playerConfig.initialItemCount,
+      quality: 0,
+      level: 1,
+      version: 1,
+    });
   }
 
   /** 返回短期只读视图；不得跨 await 或玩家生命周期保存。 / Returns a short-lived read-only view that must not cross await or player lifetime boundaries. */
@@ -30,6 +34,19 @@ export class ItemComponentSystem extends ItemComponent {
   /** 复制当前背包用于全量同步或持久化，不暴露子 Entity 或 Native handle。 / Copies inventory for full sync or persistence without exposing child entities or Native handles. */
   Snapshot(): ItemSnapshot[] {
     return this.GetChildren(Item).map((item) => item.Snapshot());
+  }
+
+  /** 导出不包含子Entity引用和Native handle的背包快照。 / Exports an inventory snapshot without child Entity references or Native handles. */
+  CaptureTransfer(): ItemSnapshot[] {
+    return this.Snapshot();
+  }
+
+  /** 用迁移快照替换目标Unit初始化出的默认背包。 / Replaces the target Unit's default inventory with the transferred snapshot. */
+  RestoreTransfer(items: readonly ItemSnapshot[]): void {
+    for (const item of this.GetChildren(Item)) {
+      this.RemoveChild(Item, item.Id);
+    }
+    for (const item of items) this.Create(item);
   }
 
   /** 消耗一件道具并返回不可覆盖事件所需快照。 / Consumes one item and returns the snapshot required by a non-coalescing event. */
@@ -55,8 +72,14 @@ export class ItemComponentSystem extends ItemComponent {
     return item.RemoveCount(count);
   }
 
-  private Create(itemId: number, configId: number, count: number): Item {
-    return this.AddChild(Item, itemId, { configId, count });
+  private Create(snapshot: ItemSnapshot): Item {
+    return this.AddChild(Item, snapshot.itemId, {
+      configId: snapshot.configId,
+      count: snapshot.count,
+      quality: snapshot.quality,
+      level: snapshot.level,
+      version: snapshot.version,
+    });
   }
 
   private requireItem(itemId: number): Item {

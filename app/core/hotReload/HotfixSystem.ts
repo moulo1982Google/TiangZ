@@ -1,4 +1,8 @@
 import type { HotfixManifest, HotfixStatus } from "./contracts";
+import {
+  getRequiredLifecycleMethods,
+  getRequiredTransferMethods,
+} from "../runtime/metadata";
 
 type AnyCtor = abstract new (...args: any[]) => object;
 type ConcreteCtor = new (...args: any[]) => object;
@@ -140,6 +144,7 @@ export class HotfixSystem {
         const candidate = staging.methods.find((item) => item.target === target);
         if (!candidate) throw new Error(`required System is missing: ${target.name}`);
         if (!candidate.required) throw new Error(`required System must use @systemFor: ${target.name}`);
+        validateRequiredLifecycle(candidate);
       }
       const nextTargets = new Set(staging.methods.map((candidate) => candidate.target));
       for (const [target, installed] of this.installedTypes) {
@@ -326,6 +331,43 @@ function installCandidate(candidate: MethodCandidate, installed: InstalledType):
   }
   installed.methods = nextMethods;
   installed.required ||= candidate.required;
+}
+
+/**
+ * 只接受候选类自己声明的生命周期实现，不能让 Model/Core 的空钩子冒充业务实现。
+ * Only methods owned by the candidate prototype satisfy the contract; empty
+ * Model/Core fallback hooks must never masquerade as business implementations.
+ */
+function validateRequiredLifecycle(candidate: MethodCandidate): void {
+  for (const method of getRequiredLifecycleMethods(candidate.target)) {
+    validateLifecycleMethod(candidate, method, false);
+  }
+  for (const method of getRequiredTransferMethods(candidate.target)) {
+    validateLifecycleMethod(candidate, method, true);
+  }
+}
+
+function validateLifecycleMethod(
+  candidate: MethodCandidate,
+  method: string,
+  allowStableModel: boolean,
+): void {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    candidate.implementation.prototype,
+    method,
+  ) ?? (allowStableModel
+    ? Object.getOwnPropertyDescriptor(candidate.target.prototype, method)
+    : undefined);
+  if (!descriptor || typeof descriptor.value !== "function") {
+    throw new Error(
+      `required lifecycle method is missing: ${candidate.target.name}.${method}`,
+    );
+  }
+  if (descriptor.value.constructor?.name === "AsyncFunction") {
+    throw new Error(
+      `lifecycle method must be synchronous: ${candidate.target.name}.${method}`,
+    );
+  }
 }
 
 function snapshotInstalled(target: AnyCtor, installed: InstalledType) {

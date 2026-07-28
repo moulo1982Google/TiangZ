@@ -71,6 +71,8 @@ Actor是运行时路由概念，不是要求业务继承并随意创建的第四
 
 Component用于组合状态和领域能力。创建Entity时由Factory决定挂载哪些Component，运行时通过`AddComponent/GetComponent/RemoveComponent`管理。Handler不必依赖单一Component，可以协调玩家身上的多个Component。
 
+生命周期采用“默认可选，声明后强约束”。稳定Model通过`@lifecycle({ awake, destroy, deserialize })`声明对应Hotfix System必须实现的业务钩子；未声明项不要求空方法。迁移继续以`@transferable()`作为唯一能力标记，并要求同步`CaptureTransfer/RestoreTransfer`。`codegen:scenes`在构建期检查声明与System实现，Hotfix提交前再次检查候选prototype；缺失或异步生命周期会拒绝整个候选并保留旧generation，Core继承到的空`Awake/OnDestroy`不能冒充业务实现。
+
 推荐业务链路是：
 
 ```text
@@ -295,7 +297,7 @@ Phase 4计划：
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
 - Phase 4.1先建设持久化基础，再进入账号与角色选择：计划增加可分片Rust `PersistenceProxy`，`.native`按Entity/Component声明`transient/snapshot/transactional`存储域并生成快照、dirty、schema和恢复入口。`snapshot`由框架合并写Redis并异步落永久DB；`transactional`以永久DB事务为唯一权威写入，Redis只缓存带revision的提交结果。同一字段不得同时拥有两条权威写路径，版本按存储域隔离。第一版只实现一种永久DB Adapter，不提前维护MongoDB/MySQL/PostgreSQL三套实现。该能力尚未实现，当前业务不得直接连接Redis/DB或自行增加持久化注解。
 - 账号与角色选择、正式持久化业务接入。
-- 地图传送和动态副本Directory。
+- 地图传送已完成同一MapHost内的第一阶段：Map1/Map2是两个按需创建的MapScene，重复调用Gate `EnterMap`会保留UnitId，在旧图广播离开、目标图出生并重新绑定新的Actor InstanceId；Cocos和Pixi使用`T`键验收。Component默认不传送，稳定Model类型必须显式`@transferable()`并实现同步`ITransfer`才由Entity统一捕获/恢复；当前Numeric、Item参与，Position只迁移速度/朝向/存活，Gate、Persistence、Native handle和旧坐标由目标Factory重建。`RestoreTransfer`只恢复数据；需要二次加工的类型再声明`@lifecycle({ deserialize: true })`并在Hotfix System实现`IDeserialize`，全部状态恢复后重建Timer、派生索引和非序列化缓存。该构造器键控快照仅限同Process一次迁移，不是持久化或跨进程格式。跨MapHost/跨进程迁移和动态副本Directory尚未实现，不能直接把本地PlayerDirectory当作全局Location。
 - Rust AOI和按可见集合广播。
 - Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；高负载地图容量A/B尚未执行，不能把纯布局吞吐直接写成服务器容量。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。

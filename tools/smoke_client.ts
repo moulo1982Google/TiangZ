@@ -126,12 +126,71 @@ async function verifyGateSessionLifecycle(
       )?.numerics ?? [],
       afterDisconnect.initialNumericFrame,
     );
-    await verifyItemChange(afterDisconnect.gate, afterDisconnect.enterMap, currentHp);
+    const currentState = await verifyItemChange(
+      afterDisconnect.gate,
+      afterDisconnect.enterMap,
+      currentHp,
+    );
     await verifyAuthoritativeMovement(afterDisconnect.gate, afterDisconnect.enterMap);
-    return afterDisconnect.enterMap;
+    return await verifyMapTransfer(
+      afterDisconnect.gate,
+      afterDisconnect.enterMap,
+      currentState.item,
+      currentState.currentHp,
+    );
   } finally {
     await afterDisconnect.gate.close();
   }
+}
+
+/** 验证同一 Gate Session 跨图后保持 UnitId 与业务状态，并使用目标地图出生点。 / Verifies that a map transfer preserves UnitId and gameplay state while applying the target-map spawn. */
+async function verifyMapTransfer(
+  gate: TcpRpcConnection,
+  previous: ReturnType<typeof decodeEnterMapFrame>["body"],
+  expectedItem: { itemId: number; count: number; version: number },
+  expectedMinimumHp: number,
+): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
+  const rpcId = nextRpcId++;
+  const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
+  const responseFrame = await gate.request(buildEnterMapPacket(rpcId, { mapId: 2 }));
+  const response = decodeEnterMapFrame(responseFrame);
+  const ready = decodeMapReadyFrame(await readyFrame);
+  if (response.rpcId !== rpcId || response.body.error) {
+    throw new Error(`Map transfer failed: ${JSON.stringify(response.body)}`);
+  }
+  const transferred = response.body;
+  const mapConfig = GameConfigs.MapConfig.Get(2);
+  const itemAfter = transferred.items.find((item) => item.itemId === 1);
+  if (
+    transferred.mapId !== 2 ||
+    transferred.unitId !== previous.unitId ||
+    ready.body.mapId !== 2 ||
+    ready.body.unitId !== previous.unitId ||
+    transferred.x !== mapConfig.spawnCellX * 12 ||
+    transferred.y !== mapConfig.spawnCellY * 12 ||
+    itemAfter?.count !== expectedItem.count ||
+    itemAfter?.version !== expectedItem.version
+  ) {
+    throw new Error(`map transfer did not preserve player state: ${JSON.stringify({ previous, transferred, ready: ready.body })}`);
+  }
+
+  const afterHp = transferred.entities
+    .find((entity) => entity.unitId === transferred.unitId)
+    ?.numerics.find((numeric) => numeric.numericType === 1)?.value;
+  if (afterHp === undefined || afterHp < expectedMinimumHp) {
+    throw new Error(
+      `map transfer lost Numeric state: expected>=${expectedMinimumHp}, after=${afterHp}`,
+    );
+  }
+  console.log("Map transfer:", {
+    unitId: transferred.unitId,
+    fromMapId: previous.mapId,
+    toMapId: transferred.mapId,
+    x: transferred.x,
+    y: transferred.y,
+    itemCount: itemAfter?.count,
+  });
+  return transferred;
 }
 
 async function verifyItemChange(
@@ -141,7 +200,7 @@ async function verifyItemChange(
     items: readonly { itemId: number; configId: number; count: number; version: number }[];
   },
   previousHp: number,
-): Promise<void> {
+) {
   const initial = enterMap.items.find((item) => item.itemId === 1);
   if (!initial || initial.count !== 3) {
     throw new Error("enter-map snapshot did not include the initial item state");
@@ -182,6 +241,7 @@ async function verifyItemChange(
     version: event.version,
     currentHp,
   });
+  return { item: response, currentHp };
 }
 
 async function verifyNumericTimer(

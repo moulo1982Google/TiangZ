@@ -83,12 +83,20 @@ export class MapHostComponent extends Component {
       }
 
       if (player) {
-        await player
+        const unitId = player.UnitId;
+        const transfer = player.CaptureTransfer();
+        // 先同步移除并立即恢复目标组件，再等待旧图广播，避免迁移快照跨越Hotfix切换点。
+        // Detach and restore synchronously before awaiting the old-map broadcast,
+        // so the transfer snapshot cannot cross a Hotfix generation switch.
+        const leaveOldMap = player
           .DomainScene<MapScene>()
           .GetComponent(MapComponent)
           .RemovePlayerAndBroadcast(player);
+        player = this.ensureMap(mapId).CreatePlayer(unitId, request, transfer);
+        await leaveOldMap;
+      } else {
+        player = this.ensureMap(mapId).CreatePlayer(this.nextUnitId++, request);
       }
-      player = this.ensureMap(mapId).CreatePlayer(this.nextUnitId++, request);
       snapshot = player.Snapshot();
       isNewPlayer = true;
       break;

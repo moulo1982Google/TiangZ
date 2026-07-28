@@ -9,12 +9,14 @@ export interface MoveIntent {
   x: number;
   y: number;
   useItem: boolean;
+  switchMap: boolean;
 }
 
 export class LocalPlayerController {
   private readonly pressed = new Set<KeyCode>();
   private registered = false;
   private useItemRequested = false;
+  private switchMapRequested = false;
 
   constructor() {
     this.register();
@@ -28,8 +30,10 @@ export class LocalPlayerController {
     if (this.pressed.has(KeyCode.KEY_W) || this.pressed.has(KeyCode.ARROW_UP)) dy += 1;
     if (this.pressed.has(KeyCode.KEY_S) || this.pressed.has(KeyCode.ARROW_DOWN)) dy -= 1;
     const useItem = this.useItemRequested;
+    const switchMap = this.switchMapRequested;
     this.useItemRequested = false;
-    return { x: dx, y: dy, useItem };
+    this.switchMapRequested = false;
+    return { x: dx, y: dy, useItem, switchMap };
   }
 
   dispose(): void {
@@ -50,6 +54,7 @@ export class LocalPlayerController {
   private onKeyDown(event: EventKeyboard): void {
     this.pressed.add(event.keyCode);
     if (event.keyCode === KeyCode.KEY_U) this.useItemRequested = true;
+    if (event.keyCode === KeyCode.KEY_T) this.switchMapRequested = true;
   }
 
   private onKeyUp(event: EventKeyboard): void {

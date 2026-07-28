@@ -7,6 +7,8 @@ declare module "../../../model/demo/numeric/NumericComponent" {
     Get(type: NumericTypeValue): number;
     Set(type: NumericTypeValue, value: number): void;
     Snapshot(): UnitNumericDelta[];
+    CaptureTransfer(): UnitNumericDelta[];
+    RestoreTransfer(values: readonly UnitNumericDelta[]): void;
   }
 }
 

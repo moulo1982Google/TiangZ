@@ -1,5 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "..");
 const cases = [
@@ -41,4 +42,62 @@ for (const file of modelFiles) {
   }
 }
 
+const fixtureModelDir = path.join(root, "app", "model", "demo", "__lifecycle_codegen_fixture__");
+const fixtureHotfixDir = path.join(root, "app", "hotfix", "demo", "__lifecycle_codegen_fixture__");
+const fixtureModel = path.join(fixtureModelDir, "LifecycleContractFixture.ts");
+const fixtureSystem = path.join(fixtureHotfixDir, "LifecycleContractFixtureSystem.ts");
+try {
+  await mkdir(fixtureModelDir, { recursive: true });
+  await mkdir(fixtureHotfixDir, { recursive: true });
+  await writeFile(fixtureModel, `
+import { Component, component, lifecycle, transferable } from "../../../core/public";
+@component()
+@transferable()
+@lifecycle({ awake: true, destroy: true, deserialize: true })
+export class LifecycleContractFixture extends Component {}
+`, { encoding: "utf8", flag: "wx" });
+  await writeFile(fixtureSystem, `
+import { LifecycleContractFixture, systemFor } from "#tiangz/model";
+@systemFor(LifecycleContractFixture)
+export class LifecycleContractFixtureSystem extends LifecycleContractFixture {
+  protected override Awake(): void {}
+}
+`, { encoding: "utf8", flag: "wx" });
+
+  const failed = runCodegen();
+  if (failed.status === 0 || !failed.stderr.includes("requires lifecycle method OnDestroy")) {
+    throw new Error(`codegen accepted an incomplete lifecycle System:\n${failed.stderr}`);
+  }
+
+  await writeFile(fixtureSystem, `
+import { LifecycleContractFixture, systemFor, type IDeserialize, type ITransfer } from "#tiangz/model";
+@systemFor(LifecycleContractFixture)
+export class LifecycleContractFixtureSystem extends LifecycleContractFixture implements IDeserialize, ITransfer<number> {
+  protected override Awake(): void {}
+  protected override OnDestroy(): void {}
+  Deserialize(): void {}
+  CaptureTransfer(): number { return 1; }
+  RestoreTransfer(_state: number): void {}
+}
+`, "utf8");
+  const passed = runCodegen();
+  if (passed.status !== 0) {
+    throw new Error(`codegen rejected a complete lifecycle System:\n${passed.stderr}`);
+  }
+} finally {
+  await rm(fixtureModelDir, { recursive: true, force: true });
+  await rm(fixtureHotfixDir, { recursive: true, force: true });
+  const restored = runCodegen();
+  if (restored.status !== 0) {
+    throw new Error(`failed to restore generated files after lifecycle fixture:\n${restored.stderr}`);
+  }
+}
+
 process.stdout.write("System declaration codegen self-test passed\n");
+
+function runCodegen() {
+  return spawnSync(process.execPath, [path.join(root, "tools", "codegen_scenes.mjs")], {
+    cwd: root,
+    encoding: "utf8",
+  });
+}

@@ -1,6 +1,8 @@
-import { Component, component } from "../../../core/public";
+import { Component, component, lifecycle, transferable } from "../../../core/public";
 
 @component()
+@transferable()
+@lifecycle({ awake: true, destroy: true })
 export class NumericComponent extends Component {
   [type: number]: number;
 

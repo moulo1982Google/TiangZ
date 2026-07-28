@@ -1,9 +1,12 @@
-import { ChildEntity } from "../../../core/public";
+import { ChildEntity, lifecycle } from "../../../core/public";
 import { NativeItemRef } from "../../../generated/model/native/NativeItemRef";
 
 export interface AwakeItem {
   configId: number;
   count: number;
+  quality?: number;
+  level?: number;
+  version?: number;
 }
 
 /** 道具运行时只读视图；只能在当前同步调用中读取。 / Runtime read-only item view for the current synchronous call. */
@@ -25,6 +28,7 @@ export interface ItemView {
  * a network target. Its Native handle is stable Model state while ItemSystem
  * provides hot-reloadable behavior.
  */
+@lifecycle({ awake: true, destroy: true })
 export class Item extends ChildEntity<[request: AwakeItem]> {
   protected native: NativeItemRef | undefined;
 }
