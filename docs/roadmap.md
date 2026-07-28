@@ -311,6 +311,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 配置中心、服务发现和生产级 Inner 身份认证。
 - TS Hotfix 边界、版本校验、回滚和状态迁移。
 - 压测基线：单地图容量、AOI 广播、跨进程 RPC 和内存稳定性。
+- 容量规划与部署建议延后到Rust AOI、首版怪物/战斗和持久化负载完成后实施。届时按空载在线、移动同步、主城AOI、普通战斗和高密度战斗分别校准，自动爬升负载并以CPU、吞吐、p95/p99、队列趋势和错误共同确定推荐容量、准入上限、Gate数量及Process数量。当前`perf:gate`只负责框架性能回归，`perf:map-capacity`只记录明确负载下的容量证据，不生成生产推荐人数。
 
 ## 当前验收命令
 

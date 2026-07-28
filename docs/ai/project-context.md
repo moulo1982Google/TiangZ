@@ -303,6 +303,7 @@ Phase 5计划：
 - 现有 Prometheus/Grafana 的生产化（Alertmanager、机器 Exporter、权限、长期存储）和分布式追踪。
 - 生产级服务发现、Inner身份认证、崩溃恢复和滚动更新。
 - KCP弱网/长稳与io_uring进一步优化。
+- 在Rust AOI和首版真实怪物、战斗、Buff、任务及持久化负载完成后建设容量规划。容量工具按负载模型自动爬升和复测，以CPU、实际吞吐、p95/p99、队列趋势、错误与安全余量共同给出Map推荐容量、准入上限、Gate及Process部署建议；在此之前不得把`perf:gate`或`perf:map-capacity`结果转换为生产在线人数。
 
 当前语言策略：
 
@@ -325,6 +326,7 @@ Phase 5计划：
 9. Actor只作为Scene、Session、Unit的统称和底层路由术语；不要为普通业务身份新增泛化`XxxActor`。
 10. 新业务状态写Model，生命周期和行为写`@systemFor`；不要恢复Model方法空壳，也不要在每次方法调用前查System Registry。
 11. Component拥有的子对象只能由所属Component维护集合和业务修改；不要从Handler直接操作Native Ref，也不要把每条Quest或Achievement机械地做成Entity。
+12. TiangZ主工程及配套VS Code插件仓库的提交标题默认使用中文；代码标识、命令、版本号和专有名词可保留原文。
 
 ## 新AI建议阅读顺序
 

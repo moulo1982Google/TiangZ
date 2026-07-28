@@ -549,7 +549,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 | 框架热路径或Runtime优化 | `npm run verify:perf`，背压和长稳按改动风险另跑 |
 | Release候选 | `npm run audit:dependencies`、`npm run verify`、`npm run release:package` |
 
-性能结果必须注明机器、配置、玩家数、Gate数、频率、持续时间、是否AOI以及指标口径。不要把Probe基线或全地图可见Demo结果描述为正式业务容量。
+性能结果必须注明机器、配置、玩家数、Gate数、频率、持续时间、是否AOI以及指标口径。不要把Probe基线或全地图可见Demo结果描述为正式业务容量。自动容量推荐延后到Phase 5，必须等Rust AOI和首版真实怪物、战斗、Buff、任务及持久化负载具备后，按负载模型分别校准；业务代码和配置当前不得读取测试报告自行生成准入人数、Gate数或Process数。
 
 Native字段可用`@hot`和`@cold`表达Rust存储温度，但这属于Model/schema设计，不是业务Hotfix。`@hot`只用于每Tick确实会连续扫描的最小字段集；低频字段和未标记字段不应为了猜测性能全部标热。codegen负责生成类型池和冷热访问器；业务仍只通过`NativeXxxRef`与粗粒度op访问数据，不直接引用`XxxHotData`、`XxxColdData`、保存Rust池索引或管理Pool。修改冷热归属后运行`npm run perf:native-storage`与`npm run test:native-data`，并完整重启Process。
 
@@ -577,6 +577,8 @@ Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:co
 12. Model是否只从`app/core/public.ts`导入Core，Hotfix是否只从`#tiangz/model`导入稳定依赖？
 13. System是否误加了字段、构造、静态成员或新的状态形状？公开方法是否显式标注参数和返回类型？
 14. 故障测试是否使用确定性Fake或真实边界，而没有向生产配置加入随机故障开关？
+15. 提交标题是否使用中文，并避免把无必要的英文Conventional Commit格式带入TiangZ及配套插件仓库？
+
 ## 可观测性边界
 
 业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。
