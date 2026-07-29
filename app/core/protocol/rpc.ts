@@ -1,4 +1,4 @@
-import type { Codec } from "./message";
+import type { Codec, TransferRoutingPolicy } from "./message";
 
 export interface RpcDescriptor<TReq, TResp> {
   name: string;
@@ -7,6 +7,7 @@ export interface RpcDescriptor<TReq, TResp> {
   requestCodec: Codec<TReq>;
   responseCodec: Codec<TResp>;
   routing?: RpcRouting;
+  duringTransfer?: TransferRoutingPolicy;
 }
 
 export type RpcRouting = "direct" | "actor-location";

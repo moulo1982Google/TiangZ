@@ -42,7 +42,7 @@ Map -> 清除旧移动意图 -> 返回全量权威快照
 
 `MapHostComponent` 管理多个动态 `MapScene + UnitComponent`。低负载时Map1和Map2共享一个Process/V8；高负载时增加MapHost实例并由Directory/Location选择具体Scene。MapHost的PlayerDirectory只负责本宿主账号重连和迁移辅助索引，普通Unit消息全部通过InstanceId直达。
 
-当前Demo按`T`键可在Map1和Map2之间传送。客户端沿用当前Gate连接再次调用`EnterMap`，服务端保留UnitId，旧地图广播`EntityLeave`，目标地图使用`MapConfig`出生点创建新的Actor实例并广播`EntityEnter`。Numeric、Item等需要保留的Component显式使用`@transferable()`和`ITransfer`导出/恢复自身值快照；未标记的临时组件不会传送。客户端同时等待RPC响应和`MapReady`，随后释放旧地图消息作用域并从全量快照重建地图。跨MapHost传送尚未实现，后续由动态副本Directory增加可编码DTO、跨进程接管和回滚。
+当前Demo按`T`键可在Map1和Map2之间传送。客户端沿用当前Gate连接再次调用`EnterMap`，业务代码不区分两个地图是否位于同一MapHost。Gate在任何异步调用前打开迁移屏障，Location锁住旧Actor位置，目标地图创建新Actor并恢复数据，Location提交后才清理旧Actor。Numeric、Item等需要保留的Component显式使用`@transferable()`和`ITransfer`；未标记的临时组件不会传送。客户端同时等待RPC响应和`MapReady`，随后释放旧地图消息作用域并从全量快照重建地图。拆分配置中的Map1与Map2位于不同Process，`npm run test:runtime`会验证跨进程链路和传送期间消息排队。
 
 如果组件恢复数据后还要重建运行时行为，在Hotfix System实现`IDeserialize`。例如Buff的`RestoreTransfer`只恢复Buff ID、层数和结束时间，`Deserialize`再计算剩余时间并创建Timer。Entity保证所有传送数据先恢复完，再调用`Deserialize`，因此不要在每个字段setter中启动Timer，也不要把Timer句柄写入迁移快照。
 

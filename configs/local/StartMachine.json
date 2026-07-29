@@ -8,7 +8,9 @@
         "login1.json",
         "login2.json",
         "gate1.json",
-        "map1.json"
+        "map1.json",
+        "map2.json",
+        "location.json"
       ]
     }
   ]

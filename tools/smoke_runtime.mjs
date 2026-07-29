@@ -26,6 +26,8 @@ if (mode === "split" || mode === "both") {
     "configs/local/login2.json",
     "configs/local/gate1.json",
     "configs/local/map1.json",
+    "configs/local/map2.json",
+    "configs/local/location.json",
   ], false);
 }
 console.log("[smoke] runtime smoke passed");
@@ -35,7 +37,7 @@ async function runCase(name, configs, checkHealth) {
   const runtimes = configs.map((config) => startRuntime(root, config, path.basename(config, ".json")));
   let succeeded = false;
   try {
-    await Promise.all([7000, 7001, 7002, 7201, 7301].map((port) => waitForPort(port, runtimes[0])));
+    await Promise.all([7000, 7001, 7002, 7201, 7301, 7302, 7401].map((port) => waitForPort(port, runtimes[0])));
     if (checkHealth) await waitForReady(7600);
     await runInherited(process.execPath, [client, ...options.clientArgs], root);
     succeeded = true;

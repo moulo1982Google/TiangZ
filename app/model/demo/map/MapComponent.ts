@@ -20,11 +20,13 @@ import type {
   G2M_EnterMap,
   G2M_PlayerOffline,
   G2M_SecondEnterMap,
+  G2M_TransferPlayer,
   ItemSnapshot,
   KickPlayerTarget,
   MapEntitySnapshot,
   M2G_PlayerOffline,
   M2G_SecondEnterMap,
+  M2G_TransferPlayer,
   PlayerTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
@@ -38,6 +40,7 @@ import { NativeData } from "../native/NativeData";
 import { NumericComponent } from "../numeric/NumericComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
+import { LocationProxy } from "../location/LocationProxy";
 import type { PlayerRepository } from "../persistence/PlayerRepository";
 import {
   GameConfigs,
@@ -46,12 +49,18 @@ import {
 
 const DEMO_PLAYER_CONFIG_ID = 1;
 
+export interface PlayerTransferCoordinator {
+  TransferPlayer(source: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer>;
+}
+
 @component()
 export class MapComponent extends Component<[
   mapId: number,
   scenes: SceneMessageHelper,
   players: PlayerDirectoryComponent,
   repository: PlayerRepository,
+  transferCoordinator: PlayerTransferCoordinator,
+  location: LocationProxy,
 ]> implements IFrameFlush {
   private mapId = 0;
   private players!: PlayerDirectoryComponent;
@@ -62,6 +71,9 @@ export class MapComponent extends Component<[
   private scenes!: SceneMessageHelper;
   private logger!: Logger;
   private config!: MapConfigData;
+  private transferCoordinator!: PlayerTransferCoordinator;
+  private location!: LocationProxy;
+  private nextLocationOperation = 1;
 
   get MapId(): number {
     return this.mapId;
@@ -73,12 +85,16 @@ export class MapComponent extends Component<[
     scenes: SceneMessageHelper,
     players: PlayerDirectoryComponent,
     repository: PlayerRepository,
+    transferCoordinator: PlayerTransferCoordinator,
+    location: LocationProxy,
   ): void {
     this.mapId = mapId;
     this.config = GameConfigs.MapConfig.Get(mapId);
     NativeData.ConfigureMap(mapId, this.config.widthCells, this.config.heightCells);
     this.players = players;
     this.repository = repository;
+    this.transferCoordinator = transferCoordinator;
+    this.location = location;
     this.scenes = scenes;
     this.logger = this.DomainScene<MapScene>().logger.child({ mapId });
     this.broadcast = new BroadcastHub(new SceneBroadcastTransport(scenes), {
@@ -91,6 +107,12 @@ export class MapComponent extends Component<[
       () => this.BroadcastAudience(),
     );
     this.RegisterReplicationSources();
+  }
+
+  /** 把Unit Handler的迁移请求交给MapHost协调器，保持Handler只做一层业务胶水。 / Delegates a Unit Handler migration request to the MapHost coordinator while keeping the Handler as one layer of glue. */
+  TransferPlayer(unit: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer> {
+    this.requirePlayer(unit);
+    return this.transferCoordinator.TransferPlayer(unit, request);
   }
 
   /** 每次固定逻辑帧推进一次 Rust 权威 Cell 移动。 / Advances Rust-authoritative cell movement once per fixed game update. */
@@ -430,9 +452,8 @@ export class MapComponent extends Component<[
     }
 
     const results = await Promise.allSettled(
-      players.map((player) => player.Offline(reason)),
+      players.map((player) => this.OfflinePlayerAndBroadcast(player, reason)),
     );
-    for (const player of players) this.RemovePlayer(player);
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
@@ -454,13 +475,26 @@ export class MapComponent extends Component<[
     reason: string,
   ): Promise<void> {
     this.requirePlayer(unit);
-    let saveError: unknown;
+    const located = await this.location.Resolve({ unitId: unit.UnitId, account: "" });
+    if (!located.found || located.location.actorInstanceId !== unit.InstanceId) {
+      throw new Error(`cannot offline non-authoritative unit ${unit.UnitId}@${unit.InstanceId}`);
+    }
+    const operationId = `offline:${unit.UnitId}:${unit.InstanceId}:${this.nextLocationOperation++}`;
+    await this.location.Lock({
+      unitId: unit.UnitId,
+      expectedRevision: located.location.revision,
+      expectedActorInstanceId: unit.InstanceId,
+      operationId,
+      state: "removing",
+    });
     try {
       await unit.Offline(reason);
     } catch (error) {
-      saveError = error;
+      await this.location.Unlock({ unitId: unit.UnitId, operationId }).catch(() => undefined);
+      throw error;
     }
     const unitId = unit.UnitId;
+    await this.location.Remove({ unitId, operationId });
     this.RemovePlayer(unit);
     await this.broadcast.Publish(
       this.BroadcastAudience(),
@@ -468,7 +502,6 @@ export class MapComponent extends Component<[
       { unitId },
       this.serverTick,
     );
-    if (saveError !== undefined) throw saveError;
   }
 
   private RemovePlayer(unit: PlayerUnit): void {

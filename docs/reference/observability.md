@@ -195,6 +195,8 @@ return {
 
 Gauge 使用 `tiangz_scene_custom_metric_gauge`，Counter 使用 `tiangz_scene_custom_metric_total`。不要根据字段名后缀猜类型，也不要把会回退或每帧重置的值标为 Counter。
 
+玩家路由相关有两组内置自定义指标：`location_directory`观察entries、moving、removing、resolve、mutation和conflict；`actor_transfer_barrier`观察Gate迁移屏障active、queued_frames/bytes以及完成、超时、拒绝、丢弃和过载累计值。二者均不使用account、UnitId或connectionId标签。
+
 ## 告警规则
 
 `tools/observability/prometheus/rules/tiangz.yml` 已覆盖 Target down、Process 未就绪、Runtime 心跳过期、Rust 队列 70%/90%、背压、Inner RPC 失败、系统错误、缺 Handler、Update 跳帧、日志丢弃和 Handler P99 超预算。规则判定可在 Prometheus `/alerts` 查看。

@@ -1,0 +1,24 @@
+{
+  "process": {
+    "name": "location",
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7607
+      },
+      "latency": {
+        "enabled": true,
+        "sampleRate": 10
+      }
+    }
+  },
+  "scenes": [
+    {
+      "name": "location_1",
+      "sceneType": "Location",
+      "ip": "127.0.0.1",
+      "port": 7401
+    }
+  ],
+  "knownScenes": []
+}

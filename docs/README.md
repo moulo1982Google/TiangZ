@@ -37,6 +37,8 @@
 - [移动预测与快照插值](design/movement-prediction.md)
 - [Rust 权威实体数据](design/native-entity-storage.md)
 - [Gate 断线重连与最终下线](design/gate-reconnect.md)
+- [Location 与玩家 Actor 路由](design/location-routing.md)
+- [Entity 地图迁移](design/entity-transfer.md)
 - [TypeScript 调试](typescript_debugging.md)
 - [路线图](roadmap.md)
 

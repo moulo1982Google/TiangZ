@@ -1,9 +1,9 @@
 import {
   Component,
-  CommitPreparedTransfer,
   EntryScene,
   Game,
   RpcError,
+  SystemErrCode,
   UnitComponent,
   type CustomMetricSnapshot,
   TransferStagingRegistry,
@@ -12,7 +12,9 @@ import { GameErrCode } from "../../game/protocol/GameErrCode";
 import { GateMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
 import type {
   G2M_EnterMap,
+  G2M_TransferPlayer,
   M2G_EnterMap,
+  M2G_TransferPlayer,
   M2G_MapReady,
   M2M_AbortPlayerTransfer,
   M2M_AbortPlayerTransferResponse,
@@ -22,6 +24,7 @@ import type {
   M2M_PreparePlayerTransferResponse,
   PlayerTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
+import { MapTransferProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { MapComponent } from "../map/MapComponent";
 import { MapScene } from "../map/MapScene";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
@@ -29,17 +32,28 @@ import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
 import { GameConfigs } from "../../../generated/model/config";
+import { LocationProxy } from "../location/LocationProxy";
+import { UnitGateComponent } from "../map/UnitGateComponent";
 
 export class MapHostComponent extends Component {
   private readonly maps = new Map<number, MapComponent>();
   private readonly repository = new InMemoryPlayerRepository();
-  private nextUnitId = 1000;
   private readonly incomingTransfers =
     new TransferStagingRegistry<PreparedIncomingPlayer>(1024);
+  private location!: LocationProxy;
+  private nextTransferSequence = 1;
+  private readonly pendingSourceCleanup: Array<{
+    source: PlayerUnit;
+    map: MapComponent;
+  }> = [];
+  private sourceCleanupScheduled = false;
+  private recoveringLocations = false;
 
   /** 定期回收源进程宕机遗留的Prepare，以及已完成事务的短期幂等记录。 / Periodically reclaims prepares orphaned by a crashed source and short-lived completed idempotency records. */
   protected override Awake(): void {
+    this.location = new LocationProxy(this.owner.scenes);
     this.NewRepeatedTimer(10_000, "SweepIncomingTransfers");
+    this.NewRepeatedTimer(5_000, "RecoverOwnedLocations");
   }
 
   /** 收集每张托管地图的广播快照，不重置计数器。 / Collects one broadcast snapshot per hosted map without resetting counters. */
@@ -112,45 +126,27 @@ export class MapHostComponent extends Component {
       }
 
       if (player) {
-        const source = player;
-        const sourceMap = source.DomainScene<MapScene>().GetComponent(MapComponent);
-        const targetMap = this.ensureMap(mapId);
-        player = CommitPreparedTransfer({
-          Capture: () => source.CaptureTransfer(),
-          Prepare: (transfer) =>
-            targetMap.PrepareTransferredPlayer(source.UnitId, request, transfer),
-          Commit: (target) => {
-            if (!this.players.Replace(source, target)) {
-              throw new Error(`player changed during map transfer: ${source.Account}`);
-            }
-          },
-          Rollback: (target) => targetMap.DiscardPreparedPlayer(target),
-        });
-
-        // 目录替换是提交点；之后只做源对象清理和通知，外部通知失败不能让权威状态倒退。
-        // Directory replacement is the commit point. Source cleanup and external
-        // notifications follow it and must not roll authoritative state backward.
-        try {
-          sourceMap.RemoveTransferredPlayer(source);
-        } catch (error) {
-          this.owner.logger.error("failed to dispose transferred source player", {
-            account: source.Account,
-            unitId: source.UnitId,
-            fromMapId: source.MapId,
-            toMapId: mapId,
-            error,
-          });
-        }
-        void sourceMap.PlayerLeft(source.UnitId).catch((error) => {
-          this.owner.logger.error("failed to broadcast transferred player leave", {
-            account: source.Account,
-            unitId: source.UnitId,
-            fromMapId: source.MapId,
-            error,
-          });
-        });
+        throw new RpcError(
+          SystemErrCode.LocationConflict,
+          "existing player must transfer through the Unit Actor route",
+        );
       } else {
-        player = this.ensureMap(mapId).CreatePlayer(this.nextUnitId++, request);
+        const allocated = await this.location.AllocateUnitId({ account: request.account });
+        player = this.ensureMap(mapId).CreatePlayer(allocated.unitId, request);
+        try {
+          await this.location.Register({
+            unitId: player.UnitId,
+            account: player.Account,
+            gateName: request.gateName,
+            mapHostName: this.owner.self.name,
+            mapId,
+            mapInstanceId: BigInt(mapId),
+            actorInstanceId: player.InstanceId,
+          });
+        } catch (error) {
+          this.ensureMap(mapId).RemoveTransferredPlayer(player);
+          throw error;
+        }
       }
       snapshot = player.Snapshot();
       isNewPlayer = true;
@@ -182,6 +178,14 @@ export class MapHostComponent extends Component {
       mapReady,
     );
 
+    const located = await this.location.Resolve({ unitId: player.UnitId, account: "" });
+    if (!located.found || located.location.actorInstanceId !== player.InstanceId) {
+      throw new RpcError(
+        GameErrCode.MapNotFound,
+        `player location was not published: ${player.UnitId}`,
+      );
+    }
+
     return {
       account: snapshot.account,
       mapId: snapshot.mapId,
@@ -192,7 +196,243 @@ export class MapHostComponent extends Component {
       y: snapshot.y,
       entities: map.EntitySnapshots(),
       items: player.GetComponent(ItemComponent).Snapshot(),
+      mapInstanceId: located.location.mapInstanceId,
+      locationRevision: located.location.revision,
     };
+  }
+
+  /**
+   * 从源PlayerUnit mailbox协调地图迁移；业务调用不区分同进程和跨进程。
+   * Location Commit是全局权威提交点，提交后只允许重试通知和源对象清理。
+   *
+   * Coordinates map migration from the source PlayerUnit mailbox without
+   * exposing local/remote transport to business code. Location Commit is the
+   * global authority point; after it, only notifications and cleanup may retry.
+   */
+  async TransferPlayer(
+    source: PlayerUnit,
+    request: G2M_TransferPlayer,
+  ): Promise<M2G_TransferPlayer> {
+    if (
+      source.Account !== request.account ||
+      !source.MatchesGate({ gateName: request.gateName })
+    ) {
+      throw new RpcError(GameErrCode.GateSessionRequired, "player transfer identity mismatch");
+    }
+    if (!GameConfigs.MapConfig.TryGet(request.targetMapId)) {
+      throw new RpcError(GameErrCode.MapNotFound, `map config not found: ${request.targetMapId}`);
+    }
+    const operationId = `${this.owner.self.name}:${source.UnitId}:${source.InstanceId}:${this.nextTransferSequence++}`;
+    await this.location.Lock({
+      unitId: source.UnitId,
+      expectedRevision: request.expectedLocationRevision,
+      expectedActorInstanceId: source.InstanceId,
+      operationId,
+      state: "moving",
+    });
+
+    if (request.targetMapHostName === this.owner.self.name) {
+      return await this.TransferLocal(source, request, operationId);
+    }
+    return await this.TransferRemote(source, request, operationId);
+  }
+
+  private async TransferLocal(
+    source: PlayerUnit,
+    request: G2M_TransferPlayer,
+    operationId: string,
+  ): Promise<M2G_TransferPlayer> {
+    const sourceMap = this.mapOf(source);
+    const targetMap = this.ensureMap(request.targetMapId);
+    let target: PlayerUnit | undefined;
+    let directoryReplaced = false;
+    let locationCommitted = false;
+    try {
+      target = targetMap.PrepareTransferredPlayer(
+        source.UnitId,
+        {
+          account: source.Account,
+          token: "map-transfer",
+          gateName: request.gateName,
+          mapId: request.targetMapId,
+        },
+        source.CaptureTransfer(),
+      );
+      if (!this.players.Replace(source, target)) {
+        throw new Error(`player changed during map transfer: ${source.Account}`);
+      }
+      directoryReplaced = true;
+      const committed = await this.location.Commit({
+        unitId: source.UnitId,
+        operationId,
+        gateName: request.gateName,
+        mapHostName: this.owner.self.name,
+        mapId: request.targetMapId,
+        mapInstanceId: BigInt(request.targetMapId),
+        actorInstanceId: target.InstanceId,
+      });
+      locationCommitted = true;
+      const snapshot = target.Snapshot();
+      try {
+        await targetMap.PlayerEntered(snapshot);
+      } catch (error) {
+        // Location提交后目标Actor已经权威，AOI通知失败只能记录并由后续全量同步修复。
+        // Once Location commits, the target Actor is authoritative; an AOI
+        // notification failure is logged and repaired by a later full snapshot.
+        this.owner.logger.error("failed to broadcast locally transferred player enter", {
+          unitId: target.UnitId,
+          mapId: target.MapId,
+          error,
+        });
+      }
+      this.ScheduleSourceCleanup(sourceMap, source);
+      return this.TransferResponse(request.rpcId, target, targetMap, committed.location.revision);
+    } catch (error) {
+      if (!locationCommitted) {
+        if (target && directoryReplaced) this.players.Replace(target, source);
+        if (target) targetMap.DiscardPreparedPlayer(target);
+        await this.location.Unlock({ unitId: source.UnitId, operationId }).catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  private async TransferRemote(
+    source: PlayerUnit,
+    request: G2M_TransferPlayer,
+    operationId: string,
+  ): Promise<M2G_TransferPlayer> {
+    const sourceMap = this.mapOf(source);
+    const targetScene = this.owner.scenes.byName(request.targetMapHostName);
+    let targetCommitted = false;
+    try {
+      const transfer = this.CreateTransferSnapshot(
+        source,
+        request.targetMapId,
+        operationId,
+      );
+      await this.owner.scenes.call(
+        targetScene,
+        MapTransferProtocol.Prepare,
+        { snapshot: transfer },
+      );
+      const target = await this.owner.scenes.call(
+        targetScene,
+        MapTransferProtocol.Commit,
+        { transferId: operationId },
+      );
+      targetCommitted = true;
+      const committed = await this.location.Commit({
+        unitId: source.UnitId,
+        operationId,
+        gateName: request.gateName,
+        mapHostName: target.mapHostName,
+        mapId: target.mapId,
+        mapInstanceId: target.mapInstanceId,
+        actorInstanceId: target.actorInstanceId,
+      });
+      this.ScheduleSourceCleanup(sourceMap, source);
+      return {
+        rpcId: request.rpcId,
+        error: 0,
+        message: "",
+        account: source.Account,
+        mapHostName: target.mapHostName,
+        mapId: target.mapId,
+        mapInstanceId: target.mapInstanceId,
+        unitId: target.unitId,
+        actorInstanceId: target.actorInstanceId,
+        locationRevision: committed.location.revision,
+        x: target.x,
+        y: target.y,
+        entities: target.entities,
+        fixedUpdateMs: target.fixedUpdateMs,
+        items: target.items,
+      };
+    } catch (error) {
+      if (!targetCommitted) {
+        await this.owner.scenes.call(
+          targetScene,
+          MapTransferProtocol.Abort,
+          { transferId: operationId },
+        ).catch(() => undefined);
+        await this.location.Unlock({ unitId: source.UnitId, operationId }).catch(() => undefined);
+      } else {
+        this.owner.logger.error("remote transfer requires recovery after target commit", {
+          operationId,
+          unitId: source.UnitId,
+          targetMapHost: request.targetMapHostName,
+          error,
+        });
+        throw new RpcError(
+          SystemErrCode.LocationUnavailable,
+          `remote transfer outcome is uncertain: ${operationId}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private TransferResponse(
+    rpcId: number | undefined,
+    player: PlayerUnit,
+    map: MapComponent,
+    revision: bigint,
+  ): M2G_TransferPlayer {
+    const snapshot = player.Snapshot();
+    return {
+      rpcId,
+      error: 0,
+      message: "",
+      account: snapshot.account,
+      mapHostName: this.owner.self.name,
+      mapId: snapshot.mapId,
+      mapInstanceId: BigInt(snapshot.mapId),
+      unitId: snapshot.unitId,
+      actorInstanceId: player.InstanceId,
+      locationRevision: revision,
+      x: snapshot.x,
+      y: snapshot.y,
+      entities: map.EntitySnapshots(),
+      fixedUpdateMs: Game.Instance.FixedUpdateMs,
+      items: player.GetComponent(ItemComponent).Snapshot(),
+    };
+  }
+
+  /**
+   * Unit Handler返回后再销毁源Actor，避免在其mailbox回调尚未完成时破坏运行时校验。
+   * 这里允许Location已指向目标Actor；新消息会进入目标，旧Actor只等待下一次Tick清理。
+   *
+   * Defers source disposal until the Unit Handler returns, preserving mailbox
+   * runtime invariants. Location already targets the new Actor, while the old
+   * instance survives only until the next timer turn.
+   */
+  private ScheduleSourceCleanup(map: MapComponent, source: PlayerUnit): void {
+    this.pendingSourceCleanup.push({ source, map });
+    if (this.sourceCleanupScheduled) return;
+    this.sourceCleanupScheduled = true;
+    this.NewOnceTimer(0, "FlushTransferredSources");
+  }
+
+  protected FlushTransferredSources(): void {
+    this.sourceCleanupScheduled = false;
+    for (const { source, map } of this.pendingSourceCleanup.splice(0)) {
+      try {
+        map.RemoveTransferredPlayer(source);
+        void map.PlayerLeft(source.UnitId).catch((error) => {
+          this.owner.logger.error("failed to broadcast transferred source leave", {
+            unitId: source.UnitId,
+            error,
+          });
+        });
+      } catch (error) {
+        this.owner.logger.error("failed to clean transferred source actor", {
+          unitId: source.UnitId,
+          actorInstanceId: source.InstanceId,
+          error,
+        });
+      }
+    }
   }
 
   /** 在目标进程构造不可见玩家；重复请求复用同一候选，尚不改变玩家目录。 / Builds an unpublished player on the target process; retries reuse the same candidate without changing the player directory. */
@@ -258,6 +498,11 @@ export class MapHostComponent extends Component {
       actorInstanceId: committed.target.player.InstanceId,
       x: committed.result.x,
       y: committed.result.y,
+      entities: committed.target.map.EntitySnapshots(),
+      fixedUpdateMs: Game.Instance.FixedUpdateMs,
+      items: committed.target.player.GetComponent(ItemComponent).Snapshot(),
+      mapHostName: this.owner.self.name,
+      mapInstanceId: BigInt(committed.result.mapId),
     };
   }
 
@@ -305,6 +550,44 @@ export class MapHostComponent extends Component {
     }
   }
 
+  /**
+   * 周期性向Location重报本MapHost实际持有的Unit，正常运行时请求是幂等读写。
+   * 这是Location内存进程重启恢复，不是跨机器租约或死亡节点接管机制。
+   *
+   * Periodically re-publishes Units actually owned by this MapHost. Calls are
+   * idempotent during normal operation. This recovers an in-memory Location
+   * process restart; it is not a lease or dead-node failover mechanism.
+   */
+  protected async RecoverOwnedLocations(): Promise<void> {
+    if (this.recoveringLocations) return;
+    this.recoveringLocations = true;
+    try {
+      const locations = this.players.GetAll().map((player) => ({
+        unitId: player.UnitId,
+        account: player.Account,
+        gateName: player.GetComponent(UnitGateComponent).gateName,
+        mapHostName: this.owner.self.name,
+        mapId: player.MapId,
+        mapInstanceId: BigInt(player.MapId),
+        actorInstanceId: player.InstanceId,
+      }));
+      const recovered = await this.location.RecoverOwner({
+        ownerName: this.owner.self.name,
+        locations,
+      });
+      if (recovered.recovered > 0) {
+        this.owner.logger.info("player locations recovered", {
+          recovered: recovered.recovered,
+          unchanged: recovered.unchanged,
+        });
+      }
+    } catch (error) {
+      this.owner.logger.warn("player location recovery failed", { error });
+    } finally {
+      this.recoveringLocations = false;
+    }
+  }
+
   private ensureMap(mapId: number): MapComponent {
     const existing = this.maps.get(mapId);
     if (existing) return existing;
@@ -318,6 +601,8 @@ export class MapHostComponent extends Component {
       this.owner.scenes,
       this.players,
       this.repository,
+      this,
+      this.location,
     );
     this.maps.set(mapId, map);
     return map;

@@ -41,10 +41,10 @@ export const Integer64FixtureCodec = {
 
   encode(value: Integer64Fixture): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint64(1, value.unsignedValue);
-    writer.int64(2, value.signedValue);
-    for (const item of value.unsignedValues) writer.uint64(3, item, true);
-    for (const item of value.signedValues) writer.int64(4, item, true);
+    if (value.unsignedValue !== undefined) writer.uint64(1, value.unsignedValue);
+    if (value.signedValue !== undefined) writer.int64(2, value.signedValue);
+    for (const item of (value.unsignedValues ?? [])) writer.uint64(3, item, true);
+    for (const item of (value.signedValues ?? [])) writer.int64(4, item, true);
     return writer.finish();
   },
 };
@@ -88,9 +88,9 @@ export const C2S_RuntimePingCodec = {
   encode(value: C2S_RuntimePing): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.seq);
-    writer.bytes(2, value.payload);
-    writer.uint32(3, value.delayMs);
+    if (value.seq !== undefined) writer.uint32(1, value.seq);
+    if (value.payload !== undefined) writer.bytes(2, value.payload);
+    if (value.delayMs !== undefined) writer.uint32(3, value.delayMs);
     return writer.finish();
   },
 };
@@ -139,8 +139,8 @@ export const S2C_RuntimePingCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.seq);
-    writer.bytes(2, value.payload);
+    if (value.seq !== undefined) writer.uint32(1, value.seq);
+    if (value.payload !== undefined) writer.bytes(2, value.payload);
     return writer.finish();
   },
 };
@@ -179,8 +179,8 @@ export const C2S_MailboxParityCodec = {
   encode(value: C2S_MailboxParity): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.callCount);
-    writer.uint32(2, value.delayMs);
+    if (value.callCount !== undefined) writer.uint32(1, value.callCount);
+    if (value.delayMs !== undefined) writer.uint32(2, value.delayMs);
     return writer.finish();
   },
 };
@@ -229,8 +229,8 @@ export const S2C_MailboxParityCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.elapsedMs);
-    writer.uint32(2, value.maxServerConcurrency);
+    if (value.elapsedMs !== undefined) writer.uint32(1, value.elapsedMs);
+    if (value.maxServerConcurrency !== undefined) writer.uint32(2, value.maxServerConcurrency);
     return writer.finish();
   },
 };
@@ -269,8 +269,8 @@ export const C2M_StateSyncBenchCodec = {
   encode(value: C2M_StateSyncBench): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.mode);
-    writer.uint32(2, value.sequence);
+    if (value.mode !== undefined) writer.uint32(1, value.mode);
+    if (value.sequence !== undefined) writer.uint32(2, value.sequence);
     return writer.finish();
   },
 };
@@ -319,8 +319,8 @@ export const M2C_StateSyncBenchCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.mode);
-    writer.uint32(2, value.sequence);
+    if (value.mode !== undefined) writer.uint32(1, value.mode);
+    if (value.sequence !== undefined) writer.uint32(2, value.sequence);
     return writer.finish();
   },
 };

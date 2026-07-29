@@ -10,6 +10,16 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-29 - Location路由与跨MapHost传送
+
+新增ordered Location Scene与版本化玩家目录，权威记录包含Unit/account、长期Gate、MapHost/Map实例、Actor InstanceId、revision和`active/moving/removing`状态。注册、迁移和最终下线使用operationId与CAS语义；只知道UnitId的服务端业务通过`MessageHelper`解析一次，Gate普通ActorLocation消息继续使用连接本地缓存，不把Location变成流量中心。MapHost每5秒幂等重报实际持有Unit，可恢复Location内存进程重启后的active目录。
+
+Prometheus自定义指标增加`location_directory`与`actor_transfer_barrier`，分别观察位置数量/状态/冲突，以及迁移屏障数量、排队帧/字节、超时、拒绝、丢弃和过载；标签保持低基数。
+
+同MapHost和跨MapHost传送统一由Gate `EnterMap`发起。Gate必须在第一个`await`前打开每连接有界屏障，Proto `duringTransfer`生成`queue/reject/drop/latest`策略；源PlayerUnit mailbox协调Location Lock、目标Prepare/Commit、Location Commit和源Actor延后销毁。真实smoke发现并修复了“先await解析Location、后开屏障”导致UseItem抢先进入旧Unit的竞态，同时把测试客户端从FIFO响应改为按rpcId多路复用。单进程与拆分进程均验证Map1到Map2传送保持UnitId/Numeric/Item，且并发UseItem只在目标Unit执行一次。
+
+目标已经提交但Location结果不确定时，不允许把缓冲消息重放给旧Actor；Gate拒绝请求并断开连接，Location保留moving诊断态。自动事务恢复、MapHost租约、死亡节点接管、etcd发现和Gate故障转移仍属于后续生产高可用范围。完整语义见[Location路由](design/location-routing.md)和[Entity地图迁移](design/entity-transfer.md)。
+
 ## 2026-07-29 - Gate断线重连所有权重构
 
 Gate连接状态拆为一次性`GateSession`与跨连接`GatePlayerRoute`。Login改用账号Rendezvous Hash稳定选择Gate；同账号新连接原子替换connectionId，旧socket迟到的disconnect不会再删除新连接或Map Unit。客户端继续每5秒发送单向`C2G_Ping`，Gate统一记录所有入站消息的`lastReceiveTime`，出站排队时间只用于观测。

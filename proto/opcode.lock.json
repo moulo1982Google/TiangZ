@@ -62,6 +62,11 @@
       "code": 20017
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_TransferPlayer",
+      "name": "G2M_TransferPlayer",
+      "code": 20035
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#L2L_LogWrite",
       "name": "L2L_LogWrite",
       "code": 20002
@@ -75,6 +80,51 @@
       "key": "proto/InnerMessage_S_20001.proto#L2L_LogWriteResponse",
       "name": "L2L_LogWriteResponse",
       "code": 20006
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_AllocatePlayerUnitId",
+      "name": "L2S_AllocatePlayerUnitId",
+      "code": 20038
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_CommitPlayerLocation",
+      "name": "L2S_CommitPlayerLocation",
+      "code": 20030
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_LockPlayerLocation",
+      "name": "L2S_LockPlayerLocation",
+      "code": 20028
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_RecoverPlayerLocations",
+      "name": "L2S_RecoverPlayerLocations",
+      "code": 20040
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_RegisterPlayerLocation",
+      "name": "L2S_RegisterPlayerLocation",
+      "code": 20022
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_RemovePlayerLocation",
+      "name": "L2S_RemovePlayerLocation",
+      "code": 20034
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_ResolvePlayerLocation",
+      "name": "L2S_ResolvePlayerLocation",
+      "code": 20024
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_ResolvePlayerLocations",
+      "name": "L2S_ResolvePlayerLocations",
+      "code": 20026
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_UnlockPlayerLocation",
+      "name": "L2S_UnlockPlayerLocation",
+      "code": 20032
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#M2G_EnterMap",
@@ -100,6 +150,11 @@
       "key": "proto/InnerMessage_S_20001.proto#M2G_SecondEnterMap",
       "name": "M2G_SecondEnterMap",
       "code": 20018
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_TransferPlayer",
+      "name": "M2G_TransferPlayer",
+      "code": 20036
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#M2M_AbortPlayerTransfer",
@@ -135,6 +190,51 @@
       "key": "proto/InnerMessage_S_20001.proto#S2G_ClientBroadcast",
       "name": "S2G_ClientBroadcast",
       "code": 20009
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_AllocatePlayerUnitId",
+      "name": "S2L_AllocatePlayerUnitId",
+      "code": 20037
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_CommitPlayerLocation",
+      "name": "S2L_CommitPlayerLocation",
+      "code": 20029
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_LockPlayerLocation",
+      "name": "S2L_LockPlayerLocation",
+      "code": 20027
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_RecoverPlayerLocations",
+      "name": "S2L_RecoverPlayerLocations",
+      "code": 20039
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_RegisterPlayerLocation",
+      "name": "S2L_RegisterPlayerLocation",
+      "code": 20021
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_RemovePlayerLocation",
+      "name": "S2L_RemovePlayerLocation",
+      "code": 20033
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_ResolvePlayerLocation",
+      "name": "S2L_ResolvePlayerLocation",
+      "code": 20023
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_ResolvePlayerLocations",
+      "name": "S2L_ResolvePlayerLocations",
+      "code": 20025
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_UnlockPlayerLocation",
+      "name": "S2L_UnlockPlayerLocation",
+      "code": 20031
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2G_EnterMap",

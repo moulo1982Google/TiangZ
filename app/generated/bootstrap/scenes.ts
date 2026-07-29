@@ -5,6 +5,7 @@ import { HotfixSystem } from "../../core/hotReload/HotfixSystem";
 import { AllRpcDescriptors as RpcDescriptors0 } from "../model/server/demo/protocol/rpcs";
 import { AllMessageDescriptors as MessageDescriptors0 } from "../model/server/demo/protocol/messageDescriptors";
 import "../../model/demo/scenes/GateScene";
+import "../../model/demo/scenes/LocationScene";
 import "../../model/demo/scenes/LoginMgrScene";
 import "../../model/demo/scenes/LoginScene";
 import "../../model/demo/scenes/MapHostScene";

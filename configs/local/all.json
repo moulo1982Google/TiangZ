@@ -56,6 +56,18 @@
       "sceneType": "MapHost",
       "ip": "127.0.0.1",
       "port": 7301
+    },
+    {
+      "name": "map_2",
+      "sceneType": "MapHost",
+      "ip": "127.0.0.1",
+      "port": 7302
+    },
+    {
+      "name": "location_1",
+      "sceneType": "Location",
+      "ip": "127.0.0.1",
+      "port": 7401
     }
   ],
   "knownScenes": [
@@ -88,6 +100,18 @@
       "sceneType": "MapHost",
       "ip": "127.0.0.1",
       "port": 7301
+    },
+    {
+      "name": "map_2",
+      "sceneType": "MapHost",
+      "ip": "127.0.0.1",
+      "port": 7302
+    },
+    {
+      "name": "location_1",
+      "sceneType": "Location",
+      "ip": "127.0.0.1",
+      "port": 7401
     }
   ]
 }

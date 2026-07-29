@@ -65,6 +65,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run check` | TS、协议、Actor、客户端SDK和Cocos静态检查 |
 | `npm run verify:quick` | 生成物、注释、架构规则、协议锁、TS与Rust快速质量门 |
 | `npm run test:gate-reconnect` | Gate连接替换、重连宽限、心跳时间和稳定选Gate自测 |
+| `npm run test:location` | Location revision/operation状态机、重启恢复批次与Proto迁移策略自测 |
 | `npm run test:gate-timeout-runtime` | 等待真实30秒宽限并验收Map最终下线；不进入快速质量门 |
 | `npm run verify` | 在快速门上追加真实Runtime、拆分进程、mailbox、背压、Watcher和Hotfix屏障验收 |
 | `npm run verify:comments` | 检查Core、Model、Hotfix与Rust手写函数的中英文注释 |

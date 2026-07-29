@@ -10,9 +10,11 @@ export interface MessageDescriptor<TMessage extends IMessage> {
   msgcode: number;
   codec: Codec<TMessage>;
   routing?: MessageRouting;
+  duringTransfer?: TransferRoutingPolicy;
 }
 
 export type MessageRouting = "direct" | "actor-location";
+export type TransferRoutingPolicy = "queue" | "reject" | "drop" | "latest";
 
 export type AnyMessageDescriptor = MessageDescriptor<any>;
 

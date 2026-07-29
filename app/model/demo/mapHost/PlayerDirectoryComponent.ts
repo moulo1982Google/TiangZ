@@ -57,6 +57,16 @@ export class PlayerDirectoryComponent extends Component {
     return true;
   }
 
+  /** 返回当前仍可解析的玩家快照，用于停机保存和Location恢复；调用方不得长期保存该数组。 / Returns currently resolvable players for shutdown persistence and Location recovery; callers must not retain the array. */
+  GetAll(): readonly PlayerUnit[] {
+    const players: PlayerUnit[] = [];
+    for (const account of [...this.playersByAccount.keys()]) {
+      const player = this.Get(account);
+      if (player) players.push(player);
+    }
+    return players;
+  }
+
   protected override OnDestroy(): void {
     this.playersByAccount.clear();
   }

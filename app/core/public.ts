@@ -42,12 +42,19 @@ export type {
   IResponse,
   MessageDescriptor,
   MessageRouting,
+  TransferRoutingPolicy,
 } from "./protocol/message";
 export type { ProtocolContext } from "./protocol/registry";
 export { RpcError } from "./protocol/RpcError";
 export { rpc } from "./protocol/rpc";
 export type { RpcDescriptor, RpcRouting } from "./protocol/rpc";
 export { SystemErrCode } from "./protocol/SystemErrCode";
+
+export { LocationDirectory } from "./location/LocationDirectory";
+export type {
+  LocationMutationState,
+  LocationRecord,
+} from "./location/LocationDirectory";
 
 export { unitMessageHandler, unitRpcHandler } from "./process/unitHandlers";
 export type { UnitMessageHandler, UnitRpcHandler } from "./process/unitHandlers";

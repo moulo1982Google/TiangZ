@@ -192,7 +192,13 @@ async function verifyMapTransfer(
 ): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
   const rpcId = nextRpcId++;
   const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
-  const responseFrame = await gate.request(buildEnterMapPacket(rpcId, { mapId: 2 }));
+  const responsePromise = gate.request(buildEnterMapPacket(rpcId, { mapId: 2 }));
+  const queuedItemRpcId = nextRpcId++;
+  const queuedItemEvent = gate.waitForMessage(MsgCode.G2C_ItemChanged);
+  const queuedItemResponse = gate.request(
+    buildUseItemPacket(queuedItemRpcId, { itemId: expectedItem.itemId }),
+  );
+  const responseFrame = await responsePromise;
   const response = decodeEnterMapFrame(responseFrame);
   const ready = decodeMapReadyFrame(await readyFrame);
   if (response.rpcId !== rpcId || response.body.error) {
@@ -222,6 +228,16 @@ async function verifyMapTransfer(
       `map transfer lost Numeric state: expected>=${expectedMinimumHp}, after=${afterHp}`,
     );
   }
+  const itemResponse = decodeUseItemFrame(await queuedItemResponse);
+  const itemEvent = decodeItemChangedFrame(await queuedItemEvent);
+  if (
+    itemResponse.rpcId !== queuedItemRpcId ||
+    itemResponse.body.error ||
+    itemResponse.body.item.count !== expectedItem.count - 1 ||
+    itemEvent.body.item.version !== itemResponse.body.item.version
+  ) {
+    throw new Error("queued transfer-time UseItem was not executed exactly once on the target Unit");
+  }
   console.log("Map transfer:", {
     unitId: transferred.unitId,
     fromMapId: previous.mapId,
@@ -229,6 +245,7 @@ async function verifyMapTransfer(
     x: transferred.x,
     y: transferred.y,
     itemCount: itemAfter?.count,
+    queuedItemCount: itemResponse.body.item.count,
   });
   return transferred;
 }
@@ -581,10 +598,10 @@ class TcpRpcConnection {
   private readonly decoder = new LengthPrefixedFrameDecoder();
   private readonly connected: Promise<void>;
   private readonly closed: Promise<void>;
-  private readonly pending: Array<{
+  private readonly pending = new Map<number, {
     resolve: (frame: Uint8Array) => void;
     reject: (error: Error) => void;
-  }> = [];
+  }>();
   private readonly messageWaiters = new Map<
     number,
     Array<{
@@ -606,8 +623,11 @@ class TcpRpcConnection {
     this.socket.on("data", (chunk: Buffer) => {
       try {
         for (const frame of this.decoder.push(chunk)) {
-          if (extractRpcId(frame) !== undefined) {
-            this.pending.shift()?.resolve(frame);
+          const rpcId = extractRpcId(frame);
+          if (rpcId !== undefined) {
+            const pending = this.pending.get(rpcId);
+            this.pending.delete(rpcId);
+            pending?.resolve(frame);
             continue;
           }
           this.dispatchMessage(readU16BE(frame), frame);
@@ -624,8 +644,13 @@ class TcpRpcConnection {
 
   async request(packet: Uint8Array): Promise<Uint8Array> {
     await this.connected;
+    // request()接收的是带4字节length-prefix的网络包，响应分帧后则不带前缀。
+    // request() receives a four-byte length-prefixed packet, while decoded responses do not.
+    const rpcId = extractRpcId(packet.subarray(4));
+    if (rpcId === undefined) throw new Error("RPC request packet has no rpcId");
+    if (this.pending.has(rpcId)) throw new Error(`duplicate pending rpcId: ${rpcId}`);
     return new Promise((resolve, reject) => {
-      this.pending.push({ resolve, reject });
+      this.pending.set(rpcId, { resolve, reject });
       this.socket.write(Buffer.from(packet));
     });
   }
@@ -670,9 +695,8 @@ class TcpRpcConnection {
   }
 
   private rejectAll(error: Error): void {
-    while (this.pending.length > 0) {
-      this.pending.shift()!.reject(error);
-    }
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
     for (const waiters of this.messageWaiters.values()) {
       for (const waiter of waiters) {
         clearTimeout(waiter.timer);

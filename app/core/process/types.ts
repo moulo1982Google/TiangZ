@@ -186,8 +186,26 @@ interface MailboxTask<T = unknown> {
   reject: (reason?: unknown) => void;
 }
 
+interface QueuedActorFrame {
+  readonly frame: Uint8Array;
+  readonly context: ProtocolContext;
+  readonly msgcode: number;
+  readonly rpcDescriptor?: AnyRpcDescriptor;
+  resolve?: (value: Uint8Array | undefined) => void;
+}
+
+interface ActorTransferBuffer {
+  readonly frames: QueuedActorFrame[];
+  bytes: number;
+  readonly expiresAtMs: number;
+  expired: boolean;
+}
+
 export abstract class EntryScene extends Scene {
   private static readonly MAX_UNORDERED_IN_FLIGHT = 4096;
+  private static readonly MAX_TRANSFER_FRAMES_PER_CONNECTION = 64;
+  private static readonly MAX_TRANSFER_BYTES_PER_CONNECTION = 256 * 1024;
+  private static readonly MAX_TRANSFER_WAIT_MS = 3_000;
   protected readonly registry: ProtocolRegistry;
   private readonly actorRegistry: ProtocolRegistry;
   protected readonly ctx: SceneCallContext;
@@ -199,6 +217,17 @@ export abstract class EntryScene extends Scene {
   private ingressHead = 0;
   private readonly outbound: OutboundBatch[] = [];
   private readonly connectionIdBytes = new Map<number, Uint8Array>();
+  private readonly actorTransferBuffers = new Map<number, ActorTransferBuffer>();
+  private readonly actorTransferMetrics = {
+    started: 0,
+    completed: 0,
+    cancelled: 0,
+    timedOut: 0,
+    enqueued: 0,
+    rejected: 0,
+    dropped: 0,
+    overloaded: 0,
+  };
   private readonly unorderedTasks = new Set<Promise<void>>();
   private orderedTask: Promise<void> | undefined;
   private mailboxBusy = false;
@@ -361,6 +390,118 @@ export abstract class EntryScene extends Scene {
    */
   protected onClientSendQueued(_connectionIds: readonly number[]): void {}
 
+  /** 导出Gate迁移屏障的有界队列和累计结果，不包含连接ID等高基数标签。 / Exports bounded Gate transfer queues and cumulative outcomes without high-cardinality connection labels. */
+  protected actorTransferMetricSnapshot(): CustomMetricSnapshot {
+    let queuedFrames = 0;
+    let queuedBytes = 0;
+    for (const buffer of this.actorTransferBuffers.values()) {
+      queuedFrames += buffer.frames.length;
+      queuedBytes += buffer.bytes;
+    }
+    return {
+      name: "actor_transfer_barrier",
+      values: {
+        active: this.actorTransferBuffers.size,
+        queued_frames: queuedFrames,
+        queued_bytes: queuedBytes,
+        started_total: this.actorTransferMetrics.started,
+        completed_total: this.actorTransferMetrics.completed,
+        cancelled_total: this.actorTransferMetrics.cancelled,
+        timed_out_total: this.actorTransferMetrics.timedOut,
+        enqueued_total: this.actorTransferMetrics.enqueued,
+        rejected_total: this.actorTransferMetrics.rejected,
+        dropped_total: this.actorTransferMetrics.dropped,
+        overloaded_total: this.actorTransferMetrics.overloaded,
+      },
+      kinds: {
+        started_total: "counter",
+        completed_total: "counter",
+        cancelled_total: "counter",
+        timed_out_total: "counter",
+        enqueued_total: "counter",
+        rejected_total: "counter",
+        dropped_total: "counter",
+        overloaded_total: "counter",
+      },
+    };
+  }
+
+  /**
+   * 在Actor迁移前建立Gate侧投递屏障；重复调用不会清空已排队消息。
+   * 只有连接入口Scene应调用它，Location和Map不得持有客户端原始帧。
+   *
+   * Opens a Gate-side delivery barrier before Actor migration. Repeated calls
+   * retain queued frames. Only connection-entry Scenes may invoke it; Location
+   * and Map must never own raw client frames.
+   */
+  protected beginActorTransfer(connectionId: number): void {
+    if (!this.actorTransferBuffers.has(connectionId)) {
+      this.actorTransferBuffers.set(connectionId, {
+        frames: [],
+        bytes: 0,
+        expiresAtMs: nowMs() + EntryScene.MAX_TRANSFER_WAIT_MS,
+        expired: false,
+      });
+      this.actorTransferMetrics.started += 1;
+    }
+  }
+
+  /**
+   * 在Gate绑定新Actor后按原到达顺序释放队列。
+   * RPC继续使用原rpcId；单向消息失败只记录日志，不能伪造Response。
+   *
+   * Releases queued frames in arrival order after Gate binds the new Actor.
+   * RPCs keep their original rpcId; one-way failures are logged without fake responses.
+   */
+  protected finishActorTransfer(connectionId: number): void {
+    const buffer = this.actorTransferBuffers.get(connectionId);
+    if (!buffer) return;
+    this.actorTransferBuffers.delete(connectionId);
+    this.actorTransferMetrics.completed += 1;
+    for (const item of buffer.frames) {
+      const result = this.dispatchActorLocationFrame(
+        connectionId,
+        item.frame,
+        item.context,
+        item.rpcDescriptor,
+      );
+      if (item.resolve) {
+        Promise.resolve(result).then(item.resolve, (error) => {
+          item.resolve?.(this.registry.routingErrorResponse(
+            item.frame,
+            error instanceof RpcError ? error.code : SystemErrCode.SceneCallFailed,
+            `queued actor call failed: ${errorText(error)}`,
+            item.context,
+          ));
+        });
+      } else if (isPromiseLike(result)) {
+        void Promise.resolve(result).catch((error) => {
+          this.ctx.logger.error("queued actor message failed", {
+            connectionId,
+            msgcode: item.msgcode,
+            error,
+          });
+        });
+      }
+    }
+  }
+
+  /** 连接关闭时拒绝未执行RPC并丢弃单向消息，避免悬挂Promise。 / Rejects unexecuted RPCs and drops one-way messages when the connection closes. */
+  protected cancelActorTransfer(connectionId: number): void {
+    const buffer = this.actorTransferBuffers.get(connectionId);
+    if (!buffer) return;
+    this.actorTransferBuffers.delete(connectionId);
+    this.actorTransferMetrics.cancelled += 1;
+    for (const item of buffer.frames) {
+      item.resolve?.(this.registry.routingErrorResponse(
+        item.frame,
+        SystemErrCode.SessionNotFound,
+        "client disconnected during actor transfer",
+        item.context,
+      ));
+    }
+  }
+
   /** 所有本地 Scene start 完成后执行，此时才可使用跨 Scene 依赖。 / Runs after every local Scene started, so cross-Scene dependencies may now be used. */
   protected onReady(): MaybePromise<void> {}
 
@@ -438,6 +579,7 @@ export abstract class EntryScene extends Scene {
   }
 
   __pumpMailbox(maxFrames = 512): number {
+    this.expireActorTransfers(nowMs());
     const startedAt = nowMs();
     if (this.mailbox === "unordered") this.drainUnordered(maxFrames);
     else this.drainOrdered(maxFrames);
@@ -705,6 +847,7 @@ export abstract class EntryScene extends Scene {
     }
     if (item.kind === "disconnect") {
       this.connectionIdBytes.delete(item.connectionId);
+      this.cancelActorTransfer(item.connectionId);
       try {
         const result = this.onDisconnect(item.connectionId);
         if (isPromiseLike(result)) {
@@ -844,12 +987,108 @@ export abstract class EntryScene extends Scene {
       return this.registry.handle(frame, context);
     }
 
-    const target = this.actorLocations.resolveConnection(context.connectionId);
+    const transfer = this.actorTransferBuffers.get(context.connectionId);
+    if (transfer) {
+      if (transfer.expired) {
+        if (rpcDescriptor) this.actorTransferMetrics.rejected += 1;
+        else this.actorTransferMetrics.dropped += 1;
+        return rpcDescriptor
+          ? this.registry.routingErrorResponse(
+            frame,
+            SystemErrCode.ActorTransferring,
+            "actor transfer barrier timed out",
+            context,
+          )
+          : undefined;
+      }
+      const policy = rpcDescriptor?.duringTransfer ??
+        messageDescriptor?.duringTransfer ??
+        (rpcDescriptor ? "reject" : "drop");
+      if (policy === "reject" || (rpcDescriptor && (policy === "drop" || policy === "latest"))) {
+        this.actorTransferMetrics.rejected += 1;
+        return this.registry.routingErrorResponse(
+          frame,
+          SystemErrCode.ActorTransferring,
+          "actor is transferring",
+          context,
+        );
+      }
+      if (policy === "drop") {
+        this.actorTransferMetrics.dropped += 1;
+        return undefined;
+      }
+      if (policy === "latest") {
+        const index = transfer.frames.findIndex(
+          (item) => item.msgcode === msgcode && item.resolve === undefined,
+        );
+        const queued: QueuedActorFrame = { frame, context, msgcode };
+        if (index >= 0) {
+          const nextBytes = transfer.bytes + frame.byteLength - transfer.frames[index].frame.byteLength;
+          if (nextBytes > EntryScene.MAX_TRANSFER_BYTES_PER_CONNECTION) {
+            this.actorTransferMetrics.overloaded += 1;
+            this.registry.reportSystemError(
+              SystemErrCode.SceneOverloaded,
+              `actor transfer queue is full for connection ${context.connectionId}`,
+              context,
+            );
+          } else {
+            transfer.bytes = nextBytes;
+            transfer.frames[index] = queued;
+            this.actorTransferMetrics.enqueued += 1;
+          }
+        } else if (!this.tryReserveTransferFrame(transfer, frame.byteLength)) {
+          this.actorTransferMetrics.overloaded += 1;
+          this.registry.reportSystemError(
+            SystemErrCode.SceneOverloaded,
+            `actor transfer queue is full for connection ${context.connectionId}`,
+            context,
+          );
+        } else {
+          transfer.frames.push(queued);
+          this.actorTransferMetrics.enqueued += 1;
+        }
+        return undefined;
+      }
+      if (!this.tryReserveTransferFrame(transfer, frame.byteLength)) {
+        this.actorTransferMetrics.overloaded += 1;
+        return this.registry.routingErrorResponse(
+          frame,
+          SystemErrCode.SceneOverloaded,
+          "actor transfer queue is full",
+          context,
+        );
+      }
+      if (!rpcDescriptor) {
+        transfer.frames.push({ frame, context, msgcode });
+        this.actorTransferMetrics.enqueued += 1;
+        return undefined;
+      }
+      return new Promise<Uint8Array | undefined>((resolve) => {
+        transfer.frames.push({ frame, context, msgcode, rpcDescriptor, resolve });
+        this.actorTransferMetrics.enqueued += 1;
+      });
+    }
+
+    return this.dispatchActorLocationFrame(
+      context.connectionId,
+      frame,
+      context,
+      rpcDescriptor,
+    );
+  }
+
+  private dispatchActorLocationFrame(
+    connectionId: number,
+    frame: Uint8Array,
+    context: ProtocolContext,
+    rpcDescriptor?: AnyRpcDescriptor,
+  ): MaybePromise<Uint8Array | undefined> {
+    const target = this.actorLocations.resolveConnection(connectionId);
     if (!target) {
       return this.registry.routingErrorResponse(
         frame,
         SystemErrCode.ActorLocationNotFound,
-        `actor location is not bound for connection ${context.connectionId}`,
+        `actor location is not bound for connection ${connectionId}`,
         context,
       );
     }
@@ -884,6 +1123,37 @@ export abstract class EntryScene extends Scene {
         return undefined;
       },
     );
+  }
+
+  private tryReserveTransferFrame(buffer: ActorTransferBuffer, bytes: number): boolean {
+    if (
+      buffer.frames.length >= EntryScene.MAX_TRANSFER_FRAMES_PER_CONNECTION ||
+      buffer.bytes + bytes > EntryScene.MAX_TRANSFER_BYTES_PER_CONNECTION
+    ) {
+      return false;
+    }
+    buffer.bytes += bytes;
+    return true;
+  }
+
+  private expireActorTransfers(currentTimeMs: number): void {
+    for (const [connectionId, buffer] of this.actorTransferBuffers) {
+      if (buffer.expired || currentTimeMs < buffer.expiresAtMs) continue;
+      buffer.expired = true;
+      this.actorTransferMetrics.timedOut += 1;
+      for (const item of buffer.frames.splice(0)) {
+        if (item.resolve) this.actorTransferMetrics.rejected += 1;
+        else this.actorTransferMetrics.dropped += 1;
+        item.resolve?.(this.registry.routingErrorResponse(
+          item.frame,
+          SystemErrCode.ActorTransferring,
+          "actor transfer barrier timed out",
+          item.context,
+        ));
+      }
+      buffer.bytes = 0;
+      this.ctx.logger.error("actor transfer barrier timed out", { connectionId });
+    }
   }
 
   private completeHandler(startedAt: number, failed: boolean): void {

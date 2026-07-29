@@ -13,4 +13,7 @@ export const SystemErrCode = {
   SceneOverloaded: 1011,
   ActorLocationNotFound: 1012,
   SessionNotFound: 1013,
+  ActorTransferring: 1014,
+  LocationConflict: 1015,
+  LocationUnavailable: 1016,
 } as const;

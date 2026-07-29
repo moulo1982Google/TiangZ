@@ -20,6 +20,7 @@ export {
   LoginProtocol,
   MapProtocol,
   MapTransferProtocol,
+  LocationProtocol,
 } from "../generated/model/server/demo/protocol/rpcs";
 export { StateSyncBenchProtocol } from "../generated/model/server/bench/protocol/rpcs";
 export type {
@@ -28,8 +29,12 @@ export type {
 } from "../generated/model/server/bench/protocol/messages";
 
 export { GateSession } from "./demo/gate/GateSession";
+export { LocationComponent } from "./demo/location/LocationComponent";
+export { LocationProxy } from "./demo/location/LocationProxy";
+export { MessageHelper } from "./demo/location/MessageHelper";
 export {
   GatePlayerRoute,
+  type GateActorRouteState,
   type GatePlayerMapLocation,
   type GatePlayerRouteState,
 } from "./demo/gate/GatePlayerRoute";
@@ -71,4 +76,5 @@ export {
 } from "../generated/model/config";
 export { GateScene } from "./demo/scenes/GateScene";
 export { LoginScene } from "./demo/scenes/LoginScene";
+export { LocationScene } from "./demo/scenes/LocationScene";
 export { MapHostScene } from "./demo/scenes/MapHostScene";

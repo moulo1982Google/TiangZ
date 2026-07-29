@@ -3,6 +3,11 @@
     env: "local"
     machine: "local"
     process: "gate1"
+- targets: ["host.docker.internal:7607"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "location"
 - targets: ["host.docker.internal:7603"]
   labels:
     env: "local"
@@ -18,6 +23,11 @@
     env: "local"
     machine: "local"
     process: "map1"
+- targets: ["host.docker.internal:7608"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "map2"
 - targets: ["host.docker.internal:7602"]
   labels:
     env: "local"

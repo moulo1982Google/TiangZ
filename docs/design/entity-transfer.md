@@ -28,11 +28,19 @@
 
 目标暂存表有容量上限。Prepare超过30秒未完成会自动回滚；Commit和Abort结果保留60秒供丢包重试，随后清理。Process停机时会销毁全部未提交候选。Prometheus自定义指标`map_transfer_staging`暴露prepared、committed、aborted、total与capacity，便于发现源端宕机、提交停滞和容量逼近。
 
-## 尚未完成的源端协调
+## 源端协调与 Location
 
-当前已经具备目标端协议、可序列化DTO、幂等状态机与故障自测，但尚未实现跨Process全局Location/Directory。因此不能把本地`PlayerDirectoryComponent`当成全局玩家位置，也不能在生产业务中直接启用跨MapHost传送。
+Gate先同步打开该连接的Actor迁移屏障，再通过源PlayerUnit mailbox发起事务。源MapHost按以下顺序执行：
 
-后续源端事务必须按以下顺序协调：目标Prepare成功，原子切换全局Location，目标Commit，源Unit下线。Location切换前失败时调用Abort并保留源Unit；切换后失败时必须重试Commit或进入人工可诊断状态，不能同时让源和目标都成为权威。
+1. 用Location revision、源Actor InstanceId和唯一operationId执行`Lock(moving)`。
+2. 同MapHost创建目标候选并以本地玩家目录CAS发布；跨MapHost执行目标`Prepare`与幂等`Commit`。
+3. 用同一operationId把Location原子切换到目标MapHost与新Actor InstanceId，revision递增。
+4. 延迟到源Handler退出后销毁源Actor，再广播源地图离开。
+5. Gate改绑连接路由并释放屏障；排队消息只投递目标Actor。
+
+步骤2提交前失败会Abort候选、Unlock Location并保留源Unit。Location提交后不得恢复旧Actor；AOI通知失败只能记录并由后续全量快照修复。跨进程目标已经Commit、但Location Commit因网络故障结果不确定时，系统保留`moving`诊断态、拒绝缓冲消息并断开连接，不会伪装回滚。该少见分支仍需Phase 5的持久事务日志和自动恢复器。
+
+Location是全局运行时目录，`PlayerDirectoryComponent`仍只是一个MapHost内的账号重连和迁移CAS索引。普通客户端Actor消息使用Gate缓存，不逐条访问Location。详细路由、恢复和消息策略见[Location与玩家Actor路由](location-routing.md)。
 
 ## 开发约束
 
@@ -41,3 +49,5 @@
 - `RestoreTransfer`只恢复数据，Timer和派生索引由`Deserialize`重建。
 - 协议schema变化属于Model变化，需要完整部署和重启，不是Hotfix。
 - `npm run test:entity-transfer`验证提交前回滚、重复Prepare/Commit/Abort和超时回收。
+- `npm run test:location`验证revision、operation幂等、恢复批次和迁移策略。
+- `npm run test:runtime`验证同进程与跨进程真实传送，以及屏障内RPC只执行一次。

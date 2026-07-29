@@ -81,18 +81,18 @@ export const MapEntitySnapshotCodec = {
 
   encode(value: MapEntitySnapshot): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.unitId);
-    writer.sint32(2, value.x);
-    writer.sint32(3, value.y);
-    writer.float(4, value.heading);
-    writer.bool(5, value.alive);
-    writer.bytes(6, value.state);
-    writer.string(7, value.account);
-    writer.sint32(8, value.cellX);
-    writer.sint32(9, value.cellY);
-    for (const item of value.numerics) writer.bytes(10, UnitNumericDeltaCodec.encode(item), true);
-    writer.float(11, value.speedCellsPerSecond);
-    writer.uint32(12, value.facing);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.x !== undefined) writer.sint32(2, value.x);
+    if (value.y !== undefined) writer.sint32(3, value.y);
+    if (value.heading !== undefined) writer.float(4, value.heading);
+    if (value.alive !== undefined) writer.bool(5, value.alive);
+    if (value.state !== undefined) writer.bytes(6, value.state);
+    if (value.account !== undefined) writer.string(7, value.account);
+    if (value.cellX !== undefined) writer.sint32(8, value.cellX);
+    if (value.cellY !== undefined) writer.sint32(9, value.cellY);
+    for (const item of (value.numerics ?? [])) writer.bytes(10, UnitNumericDeltaCodec.encode(item), true);
+    if (value.speedCellsPerSecond !== undefined) writer.float(11, value.speedCellsPerSecond);
+    if (value.facing !== undefined) writer.uint32(12, value.facing);
     return writer.finish();
   },
 };
@@ -166,16 +166,16 @@ export const CellMovementStateCodec = {
 
   encode(value: CellMovementState): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.unitId);
-    writer.uint32(2, value.acknowledgedSequence);
-    writer.sint32(3, value.fromCellX);
-    writer.sint32(4, value.fromCellY);
-    writer.sint32(5, value.toCellX);
-    writer.sint32(6, value.toCellY);
-    writer.uint32(7, value.moveStartTick);
-    writer.uint32(8, value.moveEndTick);
-    writer.bool(9, value.moving);
-    writer.uint32(10, value.facing);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.acknowledgedSequence !== undefined) writer.uint32(2, value.acknowledgedSequence);
+    if (value.fromCellX !== undefined) writer.sint32(3, value.fromCellX);
+    if (value.fromCellY !== undefined) writer.sint32(4, value.fromCellY);
+    if (value.toCellX !== undefined) writer.sint32(5, value.toCellX);
+    if (value.toCellY !== undefined) writer.sint32(6, value.toCellY);
+    if (value.moveStartTick !== undefined) writer.uint32(7, value.moveStartTick);
+    if (value.moveEndTick !== undefined) writer.uint32(8, value.moveEndTick);
+    if (value.moving !== undefined) writer.bool(9, value.moving);
+    if (value.facing !== undefined) writer.uint32(10, value.facing);
     return writer.finish();
   },
 };
@@ -214,9 +214,9 @@ export const UnitNumericDeltaCodec = {
 
   encode(value: UnitNumericDelta): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.unitId);
-    writer.uint32(2, value.numericType);
-    writer.sint32(3, value.value);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.numericType !== undefined) writer.uint32(2, value.numericType);
+    if (value.value !== undefined) writer.sint32(3, value.value);
     return writer.finish();
   },
 };
@@ -275,13 +275,13 @@ export const UnitStateDeltaCodec = {
 
   encode(value: UnitStateDelta): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.unitId);
-    writer.uint32(2, value.dirtyMaskLow);
-    writer.uint32(3, value.dirtyMaskHigh);
-    writer.float(4, value.x);
-    writer.float(5, value.y);
-    writer.float(6, value.speedCellsPerSecond);
-    writer.bool(7, value.alive);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.dirtyMaskLow !== undefined) writer.uint32(2, value.dirtyMaskLow);
+    if (value.dirtyMaskHigh !== undefined) writer.uint32(3, value.dirtyMaskHigh);
+    if (value.x !== undefined) writer.float(4, value.x);
+    if (value.y !== undefined) writer.float(5, value.y);
+    if (value.speedCellsPerSecond !== undefined) writer.float(6, value.speedCellsPerSecond);
+    if (value.alive !== undefined) writer.bool(7, value.alive);
     return writer.finish();
   },
 };
@@ -335,12 +335,12 @@ export const ItemSnapshotCodec = {
 
   encode(value: ItemSnapshot): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.itemId);
-    writer.uint32(2, value.configId);
-    writer.uint32(3, value.count);
-    writer.uint32(4, value.quality);
-    writer.uint32(5, value.level);
-    writer.uint32(6, value.version);
+    if (value.itemId !== undefined) writer.uint32(1, value.itemId);
+    if (value.configId !== undefined) writer.uint32(2, value.configId);
+    if (value.count !== undefined) writer.uint32(3, value.count);
+    if (value.quality !== undefined) writer.uint32(4, value.quality);
+    if (value.level !== undefined) writer.uint32(5, value.level);
+    if (value.version !== undefined) writer.uint32(6, value.version);
     return writer.finish();
   },
 };
@@ -422,9 +422,9 @@ export const S2C_GetLoginServiceAddrCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.string(1, value.name);
-    writer.string(2, value.ip);
-    writer.uint32(3, value.port);
+    if (value.name !== undefined) writer.string(1, value.name);
+    if (value.ip !== undefined) writer.string(2, value.ip);
+    if (value.port !== undefined) writer.uint32(3, value.port);
     return writer.finish();
   },
 };
@@ -458,7 +458,7 @@ export const C2S_LoginCodec = {
   encode(value: C2S_Login): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.string(1, value.account);
+    if (value.account !== undefined) writer.string(1, value.account);
     return writer.finish();
   },
 };
@@ -532,13 +532,13 @@ export const S2C_LoginCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.string(1, value.account);
-    writer.string(2, value.service);
-    writer.uint32(3, value.loginCount);
-    writer.string(4, value.token);
-    writer.string(5, value.gateName);
-    writer.string(6, value.gateIp);
-    writer.uint32(7, value.gatePort);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.service !== undefined) writer.string(2, value.service);
+    if (value.loginCount !== undefined) writer.uint32(3, value.loginCount);
+    if (value.token !== undefined) writer.string(4, value.token);
+    if (value.gateName !== undefined) writer.string(5, value.gateName);
+    if (value.gateIp !== undefined) writer.string(6, value.gateIp);
+    if (value.gatePort !== undefined) writer.uint32(7, value.gatePort);
     return writer.finish();
   },
 };
@@ -577,8 +577,8 @@ export const C2G_LoginGateCodec = {
   encode(value: C2G_LoginGate): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.string(1, value.account);
-    writer.string(2, value.token);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.token !== undefined) writer.string(2, value.token);
     return writer.finish();
   },
 };
@@ -622,7 +622,7 @@ export const G2C_LoginGateCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.string(1, value.account);
+    if (value.account !== undefined) writer.string(1, value.account);
     return writer.finish();
   },
 };
@@ -656,7 +656,7 @@ export const C2G_EnterMapCodec = {
   encode(value: C2G_EnterMap): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.mapId);
+    if (value.mapId !== undefined) writer.uint32(1, value.mapId);
     return writer.finish();
   },
 };
@@ -740,15 +740,15 @@ export const G2C_EnterMapCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.string(1, value.account);
-    writer.string(2, value.mapService);
-    writer.uint32(3, value.mapId);
-    writer.uint32(4, value.unitId);
-    writer.sint32(5, value.x);
-    writer.sint32(6, value.y);
-    for (const item of value.entities) writer.bytes(7, MapEntitySnapshotCodec.encode(item), true);
-    writer.uint32(8, value.fixedUpdateMs);
-    for (const item of value.items) writer.bytes(9, ItemSnapshotCodec.encode(item), true);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.mapService !== undefined) writer.string(2, value.mapService);
+    if (value.mapId !== undefined) writer.uint32(3, value.mapId);
+    if (value.unitId !== undefined) writer.uint32(4, value.unitId);
+    if (value.x !== undefined) writer.sint32(5, value.x);
+    if (value.y !== undefined) writer.sint32(6, value.y);
+    for (const item of (value.entities ?? [])) writer.bytes(7, MapEntitySnapshotCodec.encode(item), true);
+    if (value.fixedUpdateMs !== undefined) writer.uint32(8, value.fixedUpdateMs);
+    for (const item of (value.items ?? [])) writer.bytes(9, ItemSnapshotCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -797,11 +797,11 @@ export const G2C_MapReadyCodec = {
 
   encode(value: G2C_MapReady): Uint8Array {
     const writer = new BinaryWriter();
-    writer.string(1, value.account);
-    writer.uint32(2, value.mapId);
-    writer.uint32(3, value.unitId);
-    writer.sint32(4, value.x);
-    writer.sint32(5, value.y);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.mapId !== undefined) writer.uint32(2, value.mapId);
+    if (value.unitId !== undefined) writer.uint32(3, value.unitId);
+    if (value.x !== undefined) writer.sint32(4, value.x);
+    if (value.y !== undefined) writer.sint32(5, value.y);
     return writer.finish();
   },
 };
@@ -840,9 +840,9 @@ export const C2M_MoveCodec = {
 
   encode(value: C2M_Move): Uint8Array {
     const writer = new BinaryWriter();
-    writer.sint32(1, value.inputX);
-    writer.sint32(2, value.inputY);
-    writer.uint32(3, value.sequence);
+    if (value.inputX !== undefined) writer.sint32(1, value.inputX);
+    if (value.inputY !== undefined) writer.sint32(2, value.inputY);
+    if (value.sequence !== undefined) writer.uint32(3, value.sequence);
     return writer.finish();
   },
 };
@@ -876,7 +876,7 @@ export const C2M_MapProbeCodec = {
   encode(value: C2M_MapProbe): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.sequence);
+    if (value.sequence !== undefined) writer.uint32(1, value.sequence);
     return writer.finish();
   },
 };
@@ -920,7 +920,7 @@ export const M2C_MapProbeCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.sequence);
+    if (value.sequence !== undefined) writer.uint32(1, value.sequence);
     return writer.finish();
   },
 };
@@ -954,8 +954,8 @@ export const G2C_EntityMoveCodec = {
 
   encode(value: G2C_EntityMove): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.serverTick);
-    for (const item of value.movements) writer.bytes(2, CellMovementStateCodec.encode(item), true);
+    if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
+    for (const item of (value.movements ?? [])) writer.bytes(2, CellMovementStateCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -989,8 +989,8 @@ export const G2C_EntityNumericCodec = {
 
   encode(value: G2C_EntityNumeric): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.serverTick);
-    for (const item of value.numerics) writer.bytes(2, UnitNumericDeltaCodec.encode(item), true);
+    if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
+    for (const item of (value.numerics ?? [])) writer.bytes(2, UnitNumericDeltaCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -1024,8 +1024,8 @@ export const G2C_EntityStateCodec = {
 
   encode(value: G2C_EntityState): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.serverTick);
-    for (const item of value.states) writer.bytes(2, UnitStateDeltaCodec.encode(item), true);
+    if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
+    for (const item of (value.states ?? [])) writer.bytes(2, UnitStateDeltaCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -1059,7 +1059,7 @@ export const C2M_UseItemCodec = {
   encode(value: C2M_UseItem): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.uint32(1, value.itemId);
+    if (value.itemId !== undefined) writer.uint32(1, value.itemId);
     return writer.finish();
   },
 };
@@ -1103,7 +1103,7 @@ export const M2C_UseItemCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    writer.bytes(1, ItemSnapshotCodec.encode(value.item));
+    if (value.item !== undefined) writer.bytes(1, ItemSnapshotCodec.encode(value.item));
     return writer.finish();
   },
 };
@@ -1132,7 +1132,7 @@ export const G2C_ItemChangedCodec = {
 
   encode(value: G2C_ItemChanged): Uint8Array {
     const writer = new BinaryWriter();
-    writer.bytes(1, ItemSnapshotCodec.encode(value.item));
+    if (value.item !== undefined) writer.bytes(1, ItemSnapshotCodec.encode(value.item));
     return writer.finish();
   },
 };
@@ -1161,7 +1161,7 @@ export const G2C_EntityEnterCodec = {
 
   encode(value: G2C_EntityEnter): Uint8Array {
     const writer = new BinaryWriter();
-    writer.bytes(1, MapEntitySnapshotCodec.encode(value.entity));
+    if (value.entity !== undefined) writer.bytes(1, MapEntitySnapshotCodec.encode(value.entity));
     return writer.finish();
   },
 };
@@ -1190,7 +1190,7 @@ export const G2C_EntityLeaveCodec = {
 
   encode(value: G2C_EntityLeave): Uint8Array {
     const writer = new BinaryWriter();
-    writer.uint32(1, value.unitId);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
     return writer.finish();
   },
 };

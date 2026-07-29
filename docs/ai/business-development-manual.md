@@ -329,13 +329,15 @@ message M2C_UseSkill // IActorLocationResponse
 
 ### 玩家地图传送
 
-同一MapHost内切图继续调用Gate的`EnterMap`，不要再定义一套含义重复的`Teleport` RPC。MapHost先创建并完整恢复不可见目标Unit，再用`PlayerDirectoryComponent.Replace(source, target)`比较InstanceId并原子提交；提交前失败会销毁候选并保留源Unit，提交后才销毁源Actor并广播离开。迁移保持UnitId，位置使用目标`MapConfig`出生点，Actor InstanceId必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
+同MapHost与跨MapHost切图都调用Gate的`EnterMap`，不要定义两套`Teleport`业务接口，也不要在Handler判断目标是否同进程。Gate先打开Actor迁移屏障，再由源PlayerUnit mailbox协调Location锁、目标Unit恢复、位置提交和源Actor清理。迁移保持UnitId，使用目标`MapConfig`出生点，Actor InstanceId与Location revision必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
 
 Component迁移遵循显式选择：默认不迁移，只有稳定Model类型加`@transferable()`并实现同步`ITransfer<TState>`才会参加。`@transferable()`本身就是稳定能力声明，生成器会检查`CaptureTransfer/RestoreTransfer`是否位于Model或对应`@systemFor`实现中；运行时仍保留最后一道防线。`CaptureTransfer`必须返回脱离旧Entity和Native handle的值快照，`RestoreTransfer`写入目标Factory已经创建的同类型Component，两者都不能返回Promise。当前Numeric与Item迁移完整业务值；Position只迁移速度、朝向和存活，故意不迁移旧坐标与移动中间态；Gate绑定、Persistence和Native handle由目标Factory重建。临时仇恨、施法过程、副本局部状态等组件不加标记即可丢弃。
 
 `RestoreTransfer`只恢复权威数据，不负责恢复后的运行时加工。需要重建Timer、派生字典、配置缓存或索引的Component，在Model声明`@lifecycle({ deserialize: true })`，并在Hotfix System实现同步`IDeserialize.Deserialize()`。Entity会先恢复所有可传送Component，再统一调用这些Component的`Deserialize`；持久化加载器以后也复用`CompleteDeserialize()`调用同一生命周期。以Buff为例：传送快照保存Buff及结束时间，`RestoreTransfer`重建Buff数据，`Deserialize`根据剩余时间移除过期Buff或重新注册Timer。框架只保证完整数据图之后、Entity发布之前调用一次，不包含任何Buff规则；`Deserialize`不得再次访问数据库、返回Promise或依赖尚未恢复的外部Entity。
 
-Entity迁移快照只用于一次进程内迁移，不能长期缓存、写数据库或当作跨进程协议。跨MapHost目标端已经定义`PlayerTransferSnapshot`和`MapTransfer.Prepare/Commit/Abort`：Prepare创建不可见候选，Commit只发布一次，Abort只销毁未提交候选，暂存项有界并按TTL回收。该协议还不能替代全局Directory；源端必须在后续Location能力中协调“目标Prepare、Location原子切换、目标Commit、源Unit下线”。业务代码不得扫描所有MapHost寻找玩家，也不得假定当前`PlayerDirectoryComponent`是全局目录。完整语义见[Entity地图迁移](../design/entity-transfer.md)。
+Entity迁移快照只用于一次进程内迁移，不能长期缓存、写数据库或当作跨进程协议。跨MapHost使用稳定protobuf `PlayerTransferSnapshot`和`MapTransfer.Prepare/Commit/Abort`；Location以revision和operationId保护唯一权威地址，Gate的有界屏障按Proto `duringTransfer`处理并发Actor消息。必须执行一次的RPC标记`queue`，查询类可标记`reject`，可覆盖单向状态使用`drop/latest`。业务代码不得扫描所有MapHost、不得把本地`PlayerDirectoryComponent`当全局目录，也不得手写msgcode分支控制迁移。完整语义见[Entity地图迁移](../design/entity-transfer.md)和[Location路由](../design/location-routing.md)。
+
+只知道UnitId的服务端业务使用`new MessageHelper(this.scenes).CallUnit/SendUnit`。已经持有PlayerUnit或明确Actor地址时直接调用；普通Gate转发使用连接路由缓存，不查询Location。公会等批量扇出先`ResolveUnits`，再按MapHost/Gate聚合，禁止循环调用单Unit Location RPC。
 
 ## Scene调用规则
 

@@ -1,10 +1,10 @@
 {
   "process": {
-    "name": "map1",
+    "name": "map2",
     "observability": {
       "health": {
         "ip": "127.0.0.1",
-        "port": 7606
+        "port": 7608
       },
       "latency": {
         "enabled": true,
@@ -14,10 +14,10 @@
   },
   "scenes": [
     {
-      "name": "map_1",
+      "name": "map_2",
       "sceneType": "MapHost",
       "ip": "127.0.0.1",
-      "port": 7301
+      "port": 7302
     }
   ],
   "knownScenes": [
@@ -28,10 +28,10 @@
       "port": 7201
     },
     {
-      "name": "map_2",
+      "name": "map_1",
       "sceneType": "MapHost",
       "ip": "127.0.0.1",
-      "port": 7302
+      "port": 7301
     },
     {
       "name": "location_1",

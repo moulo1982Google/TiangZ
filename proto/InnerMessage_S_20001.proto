@@ -49,6 +49,36 @@ message M2G_EnterMap // IResponse
   uint32 actor_instance_id = 7;
   uint32 fixed_update_ms = 8;
   repeated ItemSnapshot items = 9;
+  uint64 map_instance_id = 10;
+  uint64 location_revision = 11;
+}
+
+//ResponseType M2G_TransferPlayer
+// Gate始终调用源PlayerUnit，框架内部决定同MapHost或跨MapHost迁移。
+// @ets.msg protocol=Map method=TransferPlayer
+message G2M_TransferPlayer // IActorRequest
+{
+  string account = 1;
+  string gate_name = 2;
+  uint32 target_map_id = 3;
+  string target_map_host_name = 4;
+  uint64 expected_location_revision = 5;
+}
+
+message M2G_TransferPlayer // IActorResponse
+{
+  string account = 1;
+  string map_host_name = 2;
+  uint32 map_id = 3;
+  uint64 map_instance_id = 4;
+  uint32 unit_id = 5;
+  uint32 actor_instance_id = 6;
+  uint64 location_revision = 7;
+  sint32 x = 8;
+  sint32 y = 9;
+  repeated MapEntitySnapshot entities = 10;
+  uint32 fixed_update_ms = 11;
+  repeated ItemSnapshot items = 12;
 }
 
 // @ets.msg protocol=Gate method=MapReady
@@ -150,6 +180,11 @@ message M2M_CommitPlayerTransferResponse // IResponse
   uint32 actor_instance_id = 5;
   sint32 x = 6;
   sint32 y = 7;
+  repeated MapEntitySnapshot entities = 8;
+  uint32 fixed_update_ms = 9;
+  repeated ItemSnapshot items = 10;
+  string map_host_name = 11;
+  uint64 map_instance_id = 12;
 }
 
 //ResponseType M2M_AbortPlayerTransferResponse
@@ -163,4 +198,162 @@ message M2M_AbortPlayerTransferResponse // IResponse
 {
   string transfer_id = 1;
   bool newly_aborted = 2;
+}
+
+// Location只保存路由元数据，不包含connectionId和玩家业务状态。
+message PlayerLocationSnapshot
+{
+  uint32 unit_id = 1;
+  string account = 2;
+  string gate_name = 3;
+  string map_host_name = 4;
+  uint32 map_id = 5;
+  uint64 map_instance_id = 6;
+  uint32 actor_instance_id = 7;
+  uint64 revision = 8;
+  string state = 9;
+}
+
+//ResponseType L2S_AllocatePlayerUnitId
+// Demo尚无账号数据库时由Location统一分配UnitId，避免多MapHost各自自增冲突。
+// @ets.msg protocol=Location method=AllocateUnitId
+message S2L_AllocatePlayerUnitId // IRequest
+{
+  string account = 1;
+}
+
+message L2S_AllocatePlayerUnitId // IResponse
+{
+  uint32 unit_id = 1;
+}
+
+//ResponseType L2S_RegisterPlayerLocation
+// @ets.msg protocol=Location method=Register
+message S2L_RegisterPlayerLocation // IRequest
+{
+  uint32 unit_id = 1;
+  string account = 2;
+  string gate_name = 3;
+  string map_host_name = 4;
+  uint32 map_id = 5;
+  uint64 map_instance_id = 6;
+  uint32 actor_instance_id = 7;
+}
+
+message L2S_RegisterPlayerLocation // IResponse
+{
+  PlayerLocationSnapshot location = 1;
+  bool created = 2;
+}
+
+//ResponseType L2S_ResolvePlayerLocation
+// @ets.msg protocol=Location method=Resolve
+message S2L_ResolvePlayerLocation // IRequest
+{
+  uint32 unit_id = 1;
+  string account = 2;
+}
+
+message L2S_ResolvePlayerLocation // IResponse
+{
+  bool found = 1;
+  PlayerLocationSnapshot location = 2;
+}
+
+//ResponseType L2S_ResolvePlayerLocations
+// @ets.msg protocol=Location method=ResolveMany
+message S2L_ResolvePlayerLocations // IRequest
+{
+  repeated uint32 unit_ids = 1;
+}
+
+message L2S_ResolvePlayerLocations // IResponse
+{
+  repeated PlayerLocationSnapshot locations = 1;
+}
+
+//ResponseType L2S_LockPlayerLocation
+// @ets.msg protocol=Location method=Lock
+message S2L_LockPlayerLocation // IRequest
+{
+  uint32 unit_id = 1;
+  uint64 expected_revision = 2;
+  uint32 expected_actor_instance_id = 3;
+  string operation_id = 4;
+  string state = 5;
+}
+
+message L2S_LockPlayerLocation // IResponse
+{
+  PlayerLocationSnapshot location = 1;
+}
+
+//ResponseType L2S_CommitPlayerLocation
+// @ets.msg protocol=Location method=Commit
+message S2L_CommitPlayerLocation // IRequest
+{
+  uint32 unit_id = 1;
+  string operation_id = 2;
+  string gate_name = 3;
+  string map_host_name = 4;
+  uint32 map_id = 5;
+  uint64 map_instance_id = 6;
+  uint32 actor_instance_id = 7;
+}
+
+message L2S_CommitPlayerLocation // IResponse
+{
+  PlayerLocationSnapshot location = 1;
+}
+
+//ResponseType L2S_UnlockPlayerLocation
+// @ets.msg protocol=Location method=Unlock
+message S2L_UnlockPlayerLocation // IRequest
+{
+  uint32 unit_id = 1;
+  string operation_id = 2;
+}
+
+message L2S_UnlockPlayerLocation // IResponse
+{
+  PlayerLocationSnapshot location = 1;
+}
+
+//ResponseType L2S_RemovePlayerLocation
+// @ets.msg protocol=Location method=Remove
+message S2L_RemovePlayerLocation // IRequest
+{
+  uint32 unit_id = 1;
+  string operation_id = 2;
+}
+
+message L2S_RemovePlayerLocation // IResponse
+{
+  bool removed = 1;
+}
+
+message PlayerLocationRecovery
+{
+  uint32 unit_id = 1;
+  string account = 2;
+  string gate_name = 3;
+  string map_host_name = 4;
+  uint32 map_id = 5;
+  uint64 map_instance_id = 6;
+  uint32 actor_instance_id = 7;
+}
+
+//ResponseType L2S_RecoverPlayerLocations
+// MapHost周期性重报自己仍持有的Unit，用于Location进程重启后的内存目录恢复。
+// @ets.msg protocol=Location method=RecoverOwner
+message S2L_RecoverPlayerLocations // IRequest
+{
+  string owner_name = 1;
+  repeated PlayerLocationRecovery locations = 2;
+}
+
+message L2S_RecoverPlayerLocations // IResponse
+{
+  uint32 recovered = 1;
+  uint32 unchanged = 2;
 }

@@ -57,6 +57,7 @@ const messageOptionKeys = new Set([
   "protocol",
   "service",
   "method",
+  "duringTransfer",
 ]);
 
 await main();
@@ -331,6 +332,7 @@ function parseMessageMeta(comments, trailingBase) {
     protocol: undefined,
     method: undefined,
     broadcast: undefined,
+    duringTransfer: undefined,
   };
 
   const responseTypeMatch = comments.match(/\/\/\s*ResponseType\s+(\w+)/);
@@ -372,6 +374,7 @@ function parseMessageMeta(comments, trailingBase) {
     if (key === "response") meta.responseType = value;
     if (key === "protocol" || key === "service") meta.protocol = value;
     if (key === "method") meta.method = value;
+    if (key === "duringTransfer") meta.duringTransfer = value;
   }
 
   return meta;
@@ -767,6 +770,7 @@ function parseRpcs(messages) {
     if (!/(?:Response)$/.test(response.base ?? "")) {
       throw new Error(`${response.name} is used as response but is not a Response type`);
     }
+    validateTransferPolicy(message, true);
 
     rpcs.push({
       serviceName: message.protocol,
@@ -780,6 +784,7 @@ function parseRpcs(messages) {
       routing: (message.base ?? "").startsWith("IActorLocation")
         ? "actor-location"
         : undefined,
+      duringTransfer: message.duringTransfer,
     });
   }
 
@@ -787,23 +792,40 @@ function parseRpcs(messages) {
 }
 
 function parseMessageDescriptors(messages) {
-  return messages
+  const descriptors = messages
     .filter(
       (message) =>
         message.protocol &&
         message.codeName &&
         /(?:Message)$/.test(message.base ?? ""),
     )
-    .map((message) => ({
-      serviceName: message.protocol,
-      codeName: message.codeName,
-      code: message.code,
-      methodName: message.method ?? defaultMessageMethodName(message.name),
-      messageType: message.name,
-      routing: (message.base ?? "").startsWith("IActorLocation")
-        ? "actor-location"
-        : undefined,
-    }));
+    .map((message) => {
+      validateTransferPolicy(message, false);
+      return {
+        serviceName: message.protocol,
+        codeName: message.codeName,
+        code: message.code,
+        methodName: message.method ?? defaultMessageMethodName(message.name),
+        messageType: message.name,
+        routing: (message.base ?? "").startsWith("IActorLocation")
+          ? "actor-location"
+          : undefined,
+        duringTransfer: message.duringTransfer,
+      };
+    });
+  return descriptors;
+}
+
+function validateTransferPolicy(message, rpc) {
+  const policy = message.duringTransfer;
+  if (policy === undefined) return;
+  if (!(message.base ?? "").startsWith("IActorLocation")) {
+    throw new Error(`${message.name} duringTransfer requires an IActorLocation base`);
+  }
+  const allowed = rpc ? new Set(["queue", "reject"]) : new Set(["queue", "reject", "drop", "latest"]);
+  if (!allowed.has(policy)) {
+    throw new Error(`${message.name} has invalid duringTransfer=${policy}`);
+  }
 }
 
 function parseBroadcastDescriptors(messages) {
@@ -949,16 +971,16 @@ function writerCall(field) {
     ? `writer.${field.type}(${field.fieldNo}, item, true);`
     : `writer.bytes(${field.fieldNo}, ${field.type}Codec.encode(item), true);`;
   if (field.repeated) {
-    return `    for (const item of ${access}) ${writeValue}`;
+    return `    for (const item of (${access} ?? [])) ${writeValue}`;
   }
   if (field.optional) {
     return `    if (${access} !== undefined) writer.${field.type}(${field.fieldNo}, ${access});`;
   }
 
   if (supportedTypes.has(field.type)) {
-    return `    writer.${field.type}(${field.fieldNo}, ${access});`;
+    return `    if (${access} !== undefined) writer.${field.type}(${field.fieldNo}, ${access});`;
   }
-  return `    writer.bytes(${field.fieldNo}, ${field.type}Codec.encode(${access}));`;
+  return `    if (${access} !== undefined) writer.bytes(${field.fieldNo}, ${field.type}Codec.encode(${access}));`;
 }
 
 function emitInterface(message) {
@@ -1226,7 +1248,7 @@ function emitMessageDescriptors(protocol, outputDir, runtimeFiles) {
     name: "${serviceName}.${descriptor.methodName}",
     msgcode: MsgCode.${descriptor.codeName},
     codec: ${descriptor.messageType}Codec,
-${descriptor.routing ? `    routing: "${descriptor.routing}",\n` : ""}  }),`,
+${descriptor.routing ? `    routing: "${descriptor.routing}",\n` : ""}${protocol.target === "server" && descriptor.duringTransfer ? `    duringTransfer: "${descriptor.duringTransfer}",\n` : ""}  }),`,
     );
     return `export const ${serviceName}Messages = {\n${entries.join("\n")}\n};`;
   });
@@ -1357,7 +1379,7 @@ function emitRpcs(protocol, outputDir, runtimeFiles) {
     responseCode: MsgCode.${rpc.responseCodeName},
     requestCodec: ${rpc.requestType}Codec,
     responseCodec: ${rpc.responseType}Codec,
-${rpc.routing ? `    routing: "${rpc.routing}",\n` : ""}  }),`,
+${rpc.routing ? `    routing: "${rpc.routing}",\n` : ""}${protocol.target === "server" && rpc.duringTransfer ? `    duringTransfer: "${rpc.duringTransfer}",\n` : ""}  }),`,
     );
     return `export const ${serviceName}Protocol = {\n${entries.join("\n")}\n};`;
   });

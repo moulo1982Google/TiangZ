@@ -3,9 +3,13 @@ export type GatePlayerRouteState = "online" | "disconnected" | "removing";
 export interface GatePlayerMapLocation {
   readonly mapService: string;
   readonly mapId: number;
+  readonly mapInstanceId: bigint;
   readonly unitId: number;
   readonly actorInstanceId: number;
+  readonly revision: bigint;
 }
+
+export type GateActorRouteState = "active" | "moving";
 
 /**
  * 保存玩家在一个 Gate 上跨连接存活的长期路由状态。
@@ -23,6 +27,7 @@ export class GatePlayerRoute {
   lastSendTimeMs: number;
   disconnectedAtMs?: number;
   state: GatePlayerRouteState = "online";
+  actorState: GateActorRouteState = "active";
   map?: GatePlayerMapLocation;
 
   constructor(
@@ -78,6 +83,27 @@ export class GatePlayerRoute {
   /** 更新玩家的权威 Map Actor 路由；普通重连不得调用该方法改绑地图。 / Updates the authoritative Map Actor route; ordinary reconnects must not rebind it. */
   BindMap(location: GatePlayerMapLocation): void {
     this.map = { ...location };
+    this.actorState = "active";
+  }
+
+  /** 在迁移前暂停向旧Actor投递；重复进入同一屏障是幂等的。 / Pauses delivery to the old Actor before migration; re-entering the same barrier is idempotent. */
+  BeginActorMove(): boolean {
+    if (this.actorState === "moving" || this.state === "removing") return false;
+    this.actorState = "moving";
+    return true;
+  }
+
+  /** 迁移屏障内刷新Location重建后的revision/Actor地址，但保持moving状态。 / Refreshes a rebuilt Location revision/Actor address inside the barrier while preserving moving state. */
+  RefreshMovingMap(location: GatePlayerMapLocation): void {
+    if (this.actorState !== "moving") {
+      throw new Error(`gate route is not moving: ${this.account}`);
+    }
+    this.map = { ...location };
+  }
+
+  /** 迁移回滚后恢复旧路由；不会修改原Map地址。 / Resumes the old route after rollback without changing its Map address. */
+  AbortActorMove(): void {
+    if (this.state !== "removing") this.actorState = "active";
   }
 
   /** 抢占最终下线所有权，确保超时扫描只发起一次 Map 清理。 / Claims final-offline ownership so timeout scanning starts Map cleanup once. */

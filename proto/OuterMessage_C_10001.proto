@@ -78,7 +78,7 @@ message G2C_MapReady // IMessage
   sint32 y = 5;
 }
 
-// @ets.msg protocol=Map method=Move
+// @ets.msg protocol=Map method=Move duringTransfer=drop
 message C2M_Move // IActorLocationMessage
 {
   sint32 input_x = 1;
@@ -87,7 +87,7 @@ message C2M_Move // IActorLocationMessage
 }
 
 //ResponseType M2C_MapProbe
-// @ets.msg protocol=Map method=Probe
+// @ets.msg protocol=Map method=Probe duringTransfer=reject
 message C2M_MapProbe // IActorLocationRequest
 {
   uint32 sequence = 1;
@@ -123,7 +123,7 @@ message G2C_EntityState // IMessage
 }
 
 //ResponseType M2C_UseItem
-// @ets.msg protocol=Map method=UseItem
+// @ets.msg protocol=Map method=UseItem duringTransfer=queue
 message C2M_UseItem // IActorLocationRequest
 {
   uint32 item_id = 1;

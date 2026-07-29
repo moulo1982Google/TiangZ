@@ -147,7 +147,7 @@ TiangZ Developer Tools `v0.14.0`把可机械判断的部分固化到不依赖VS 
 
 同Process调用直接进入目标mailbox；跨Process调用使用持久Inner TCP和`rpcId`多路复用。某个RPC等待Response时不会阻塞同连接上的其他RPC。
 
-未来Location/Online Scene负责`UnitId -> Gate/Map/InstanceId`的跨进程权威定位，支持公会向所有在线成员所在地图或Gate发送消息。当前Demo用账号Rendezvous Hash在全部Login实例间稳定选择Gate；玩家只保存长期Gate实例，连接代次完全留在Gate的Route/Session层。该粘滞策略不能替代Gate故障转移和全局Location。
+Location Scene已经负责`UnitId/account -> Gate/MapHost/MapInstance/ActorInstance`的跨进程权威定位，并以revision、operationId和`active/moving/removing`状态保护迁移与下线。普通客户端Actor消息仍走Gate本地连接路由缓存，不逐消息查询Location；只知道UnitId的服务端业务使用`MessageHelper`解析一次后直达Actor，批量业务使用`ResolveMany`后按Gate/MapHost分组。账号Rendezvous Hash继续稳定选择Gate，连接代次完全留在Gate的Route/Session层。Location内存进程可由MapHost周期重报恢复，但尚无MapHost租约、死亡节点接管、在途事务日志或Gate故障转移。详见[Location与玩家Actor路由](../design/location-routing.md)。
 
 ## 协议模型
 
@@ -299,12 +299,12 @@ Phase 4计划：
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
 - Phase 4.1先建设持久化基础，再进入账号与角色选择：计划增加可分片Rust `PersistenceProxy`，`.native`按Entity/Component声明`transient/snapshot/transactional`存储域并生成快照、dirty、schema和恢复入口。`snapshot`由框架合并写Redis并异步落永久DB；`transactional`以永久DB事务为唯一权威写入，Redis只缓存带revision的提交结果。同一字段不得同时拥有两条权威写路径，版本按存储域隔离。第一版只实现一种永久DB Adapter，不提前维护MongoDB/MySQL/PostgreSQL三套实现。该能力尚未实现，当前业务不得直接连接Redis/DB或自行增加持久化注解。
 - 账号与角色选择、正式持久化业务接入。
-- 地图传送已完成同一MapHost内的事务化迁移：Map1/Map2是两个按需创建的MapScene，目标Unit先完成Factory、`RestoreTransfer`和`Deserialize`，再由`PlayerDirectory.Replace`比较源InstanceId原子提交；提交前失败销毁候选并保留源Unit，提交后才销毁源Actor和发送通知。Component默认不传送，Numeric、Item显式参与，Position只迁移速度/朝向/存活。跨MapHost目标端已生成`PlayerTransferSnapshot`与`MapTransfer.Prepare/Commit/Abort`，具有有界暂存、幂等重试和超时回收；全局Location/Directory与源端协调尚未实现，因此生产业务仍不能直接启用跨进程迁移。详见[Entity地图迁移](../design/entity-transfer.md)。
+- 地图传送已经统一同MapHost与跨MapHost业务入口：Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
 - Rust AOI和按可见集合广播。
 - Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；高负载地图容量A/B尚未执行，不能把纯布局吞吐直接写成服务器容量。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。
 - 怪物Actor、巡逻、仇恨和战斗。
-- Location/Online Scene。
+- Online/Presence等面向在线状态的业务索引；Location Actor路由基础已完成。
 - Guild、Friend、Chat等EntryScene与Component业务域。
 
 Phase 5计划：

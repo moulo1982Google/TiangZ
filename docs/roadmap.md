@@ -293,12 +293,12 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 - 已固定Luban 4.10.2工具链，建立`game_config` Excel源目录、服务端/客户端分组生成、只读强类型查询、外键校验、配置指纹与自测；首批接入`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`。表结构属于不可热更Model，纯数据可生成内容寻址候选并由Watcher令各Process原子切换；部署配置仍独立留在`configs`。
 - 账号/角色选择与持久化。
-- 地图传送同进程事务已完成：目标Unit完整恢复后，以玩家目录CAS为提交点；提交前失败保留源Unit。跨MapHost目标端已具备protobuf DTO、`Prepare/Commit/Abort`幂等状态机、有界暂存和超时回收；全局Location/Directory与源端事务协调仍待实现，完成前不开放生产跨进程传送。
+- 地图传送已统一同MapHost与跨MapHost入口：Location提供revision/operation状态机，Gate提供Proto驱动的有界消息屏障，MapHost完成目标Prepare/Commit和源Actor清理；单进程/拆分进程smoke已覆盖迁移期间并发RPC。Location进程重启可由MapHost重报恢复；目标提交后的不确定事务自动恢复、MapHost租约和死亡节点接管仍留给Phase 5高可用。
 - AOI 数据结构与批量广播优化。
 - AOI前置数据布局已完成正式迁移：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，generation handle目录只负责定位和旧句柄校验；TS NativeRef与Rust Pool容量已可观测，帧尾records跨帧复用并直接编码最终buffer。Rust AOI仍未实现，高负载地图容量A/B需在机器空闲时单独验收。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
 - 怪物 Actor、巡逻、仇恨和战斗。
-- Location/Online Scene，支持按 UnitId 定位 Gate/Map。
+- Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
 
 ### Phase 4.1：持久化基础

@@ -95,6 +95,7 @@ export const MapMessages = {
     msgcode: MsgCode.C2M_Move,
     codec: C2M_MoveCodec,
     routing: "actor-location",
+    duringTransfer: "drop",
   }),
 };
 

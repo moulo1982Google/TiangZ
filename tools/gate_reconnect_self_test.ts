@@ -17,9 +17,15 @@ function testConnectionReplacementAndGrace(): void {
   route.BindMap({
     mapService: "map-1",
     mapId: 1,
+    mapInstanceId: 1n,
     unitId: 1001,
     actorInstanceId: 2001,
+    revision: 1n,
   });
+  assert.equal(route.BeginActorMove(), true);
+  assert.equal(route.BeginActorMove(), false);
+  route.AbortActorMove();
+  assert.equal(route.actorState, "active");
 
   assert.equal(route.Detach(10, 2_000), true);
   assert.equal(route.state, "disconnected");

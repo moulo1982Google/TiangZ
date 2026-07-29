@@ -1,11 +1,13 @@
 import {
   EntryScene,
   RpcError,
+  SystemErrCode,
   TimeSystem,
   TimerSystem,
   entryScene,
   message,
   type RuntimeEntrySceneConfig,
+  type SceneMetricsSnapshot,
   type SceneConfig,
   type TimerId,
 } from "../../../core/public";
@@ -19,10 +21,12 @@ import {
   type G2M_EnterMap,
   type G2M_PlayerOffline,
   type G2M_SecondEnterMap,
+  type G2M_TransferPlayer,
   type M2G_EnterMap,
   type M2G_KickPlayers,
   type M2G_MapReady,
   type M2G_SecondEnterMap,
+  type M2G_TransferPlayer,
   type S2G_ClientBroadcast,
 } from "../../../generated/model/server/demo/protocol/messages";
 import {
@@ -33,6 +37,7 @@ import { MapProtocol } from "../../../generated/model/server/demo/protocol/rpcs"
 import { GameConfigs } from "../../../generated/model/config";
 import { GatePlayerRoute } from "../gate/GatePlayerRoute";
 import { GateSession } from "../gate/GateSession";
+import { LocationProxy } from "../location/LocationProxy";
 
 export const GATE_CLIENT_TIMEOUT_MS = 30_000;
 export const GATE_RECONNECT_GRACE_MS = 30_000;
@@ -47,14 +52,23 @@ export class GateScene extends EntryScene {
   private readonly routesByConnection = new Map<number, GatePlayerRoute>();
   private readonly routesByUnitId = new Map<number, GatePlayerRoute>();
   private readonly disconnecting = new Set<number>();
+  private readonly location: LocationProxy;
   private timeoutSweepTimer: TimerId = 0;
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
     this.mapScenes = this.scenes.many("MapHost");
+    this.location = new LocationProxy(this.scenes);
     if (this.mapScenes.length === 0) {
       throw new Error("GateScene needs at least one known MapHostScene");
     }
+  }
+
+  /** 在Gate常规Scene指标之外暴露迁移屏障积压和结果计数。 / Adds transfer-barrier backlog and outcome counters to regular Gate Scene metrics. */
+  override metricsSnapshot(): SceneMetricsSnapshot {
+    const metrics = super.metricsSnapshot();
+    metrics.customMetrics.push(this.actorTransferMetricSnapshot());
+    return metrics;
   }
 
   /** 启动一个Gate级合并扫描器；不会为每名玩家创建独立Timer。 / Starts one Gate-level sweep instead of allocating one Timer per player. */
@@ -241,6 +255,9 @@ export class GateScene extends EntryScene {
    */
   async EnterMap(session: GateSession, request: C2G_EnterMap): Promise<G2C_EnterMap> {
     const route = this.RequireCurrentRoute(session);
+    if (route.actorState === "moving") {
+      throw new RpcError(SystemErrCode.ActorTransferring, "player transfer is recovering");
+    }
     if (session.needsSecondEnter && route.map) {
       return await this.SecondEnterMap(session, route);
     }
@@ -248,6 +265,38 @@ export class GateScene extends EntryScene {
     const mapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
     if (!GameConfigs.MapConfig.TryGet(mapId)) {
       throw new RpcError(GameErrCode.MapNotFound, `map config not found: ${mapId}`);
+    }
+    if (!route.map) {
+      const resolved = await this.location.Resolve({ unitId: 0, account: route.account });
+      this.AssertCurrentRoute(session, route);
+      if (resolved.found) {
+        if (resolved.location.gateName !== this.self.name) {
+          throw new RpcError(
+            GameErrCode.GateSessionRequired,
+            `player belongs to Gate ${resolved.location.gateName}`,
+          );
+        }
+        if (resolved.location.state !== "active") {
+          throw new RpcError(SystemErrCode.ActorTransferring, "player location is changing");
+        }
+        route.BindMap({
+          mapService: resolved.location.mapHostName,
+          mapId: resolved.location.mapId,
+          mapInstanceId: resolved.location.mapInstanceId,
+          unitId: resolved.location.unitId,
+          actorInstanceId: resolved.location.actorInstanceId,
+          revision: resolved.location.revision,
+        });
+        this.routesByUnitId.set(resolved.location.unitId, route);
+        this.BindConnectionRoute(route, session.ConnectionId);
+        if (resolved.location.mapId === mapId) {
+          return await this.SecondEnterMap(session, route);
+        }
+      }
+    }
+    if (route.map) {
+      if (route.map.mapId === mapId) return await this.SecondEnterMap(session, route);
+      return await this.TransferPlayer(session, route, mapId);
     }
     const mapHostScene = this.selectMapHostScene(mapId);
     const mapResponse = await this.scenes.call<G2M_EnterMap, M2G_EnterMap>(
@@ -265,8 +314,10 @@ export class GateScene extends EntryScene {
     route.BindMap({
       mapService: mapHostScene.name,
       mapId: mapResponse.mapId,
+      mapInstanceId: mapResponse.mapInstanceId,
       unitId: mapResponse.unitId,
       actorInstanceId: mapResponse.actorInstanceId,
+      revision: mapResponse.locationRevision,
     });
     session.needsSecondEnter = false;
     this.routesByUnitId.set(mapResponse.unitId, route);
@@ -279,6 +330,116 @@ export class GateScene extends EntryScene {
       unitId: mapResponse.unitId,
     });
     return this.ToClientEnterMap(mapHostScene.name, mapResponse);
+  }
+
+  /**
+   * 为同MapHost和跨MapHost迁移提供同一个Gate入口。
+   * 屏障打开后由协议元数据决定排队、拒绝或丢弃，成功和回滚都会释放队列。
+   *
+   * Provides one Gate entrypoint for local and cross-MapHost migration. While
+   * the barrier is open, generated protocol metadata decides queue/reject/drop;
+   * both success and rollback release the buffered frames.
+   */
+  private async TransferPlayer(
+    session: GateSession,
+    route: GatePlayerRoute,
+    targetMapId: number,
+  ): Promise<G2C_EnterMap> {
+    let source = route.map!;
+    const connectionId = session.ConnectionId;
+    if (!route.BeginActorMove()) {
+      throw new RpcError(SystemErrCode.ActorTransferring, "player is already transferring");
+    }
+    // 必须在第一个await之前打开屏障，否则同连接后到的Actor消息可能抢先落入旧Unit。
+    // The barrier must open before the first await, or a later Actor message on
+    // the same connection may overtake this operation and reach the old Unit.
+    this.beginActorTransfer(connectionId);
+    try {
+      // Location重启后revision会重建。只在迁移前刷新一次，不进入普通玩家消息热路径。
+      // A restarted Location rebuilds revisions. Refresh once before migration,
+      // never on the ordinary per-message routing hot path.
+      const resolved = await this.location.Resolve({
+        unitId: source.unitId,
+        account: route.account,
+      });
+      this.AssertCurrentRoute(session, route);
+      if (!resolved.found) {
+        throw new RpcError(SystemErrCode.LocationUnavailable, "player location is recovering");
+      }
+      if (resolved.location.gateName !== this.self.name || resolved.location.state !== "active") {
+        throw new RpcError(SystemErrCode.ActorTransferring, "player location is changing");
+      }
+      route.RefreshMovingMap({
+        mapService: resolved.location.mapHostName,
+        mapId: resolved.location.mapId,
+        mapInstanceId: resolved.location.mapInstanceId,
+        unitId: resolved.location.unitId,
+        actorInstanceId: resolved.location.actorInstanceId,
+        revision: resolved.location.revision,
+      });
+      this.BindConnectionRoute(route, connectionId);
+      source = route.map!;
+      const targetMapHost = this.selectMapHostScene(targetMapId);
+      const response = await this.scenes.callActor<G2M_TransferPlayer, M2G_TransferPlayer>(
+        {
+          scene: this.scenes.byName(source.mapService),
+          instanceId: source.actorInstanceId,
+        },
+        MapProtocol.TransferPlayer,
+        {
+          account: route.account,
+          gateName: this.self.name,
+          targetMapId,
+          targetMapHostName: targetMapHost.name,
+          expectedLocationRevision: source.revision,
+        },
+      );
+      this.AssertCurrentRoute(session, route);
+      route.BindMap({
+        mapService: response.mapHostName,
+        mapId: response.mapId,
+        mapInstanceId: response.mapInstanceId,
+        unitId: response.unitId,
+        actorInstanceId: response.actorInstanceId,
+        revision: response.locationRevision,
+      });
+      this.BindConnectionRoute(route, connectionId);
+      this.sendClient(connectionId, ClientMessages.MapReady, {
+        account: response.account,
+        mapId: response.mapId,
+        unitId: response.unitId,
+        x: response.x,
+        y: response.y,
+      });
+      this.finishActorTransfer(connectionId);
+      return {
+        account: response.account,
+        mapService: response.mapHostName,
+        mapId: response.mapId,
+        unitId: response.unitId,
+        x: response.x,
+        y: response.y,
+        entities: response.entities,
+        fixedUpdateMs: response.fixedUpdateMs,
+        items: response.items,
+      };
+    } catch (error) {
+      if (error instanceof RpcError && error.code === SystemErrCode.LocationUnavailable) {
+        // 目标提交后的不确定结果不能回放给旧Actor。拒绝缓冲请求并断开连接，
+        // 保留moving状态供运维和后续恢复流程诊断。
+        // An uncertain post-target-commit result must never replay into the old
+        // Actor. Reject buffered work, disconnect, and preserve moving state for recovery.
+        this.cancelActorTransfer(connectionId);
+        if (!this.disconnecting.has(connectionId)) {
+          this.disconnecting.add(connectionId);
+          this.disconnectClient(connectionId);
+        }
+        throw error;
+      }
+      route.AbortActorMove();
+      this.finishActorTransfer(connectionId);
+      throw error;
+    }
   }
 
   /** Timer入口：处理无入站消息和物理断线两类超时；出站流量不会为玩家续期。 / Timer entrypoint for receive timeout and reconnect-grace expiry; outbound traffic never renews liveness. */
