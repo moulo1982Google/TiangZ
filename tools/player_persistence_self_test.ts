@@ -53,7 +53,6 @@ function createPlayer(): object {
       mapId: 1,
       unitId: 1001,
       gateName: "gate_1",
-      gateSessionId: "session-1",
       x: 0,
       y: 0,
       cellX: 0,

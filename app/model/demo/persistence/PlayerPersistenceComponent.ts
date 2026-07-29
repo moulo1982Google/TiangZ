@@ -33,7 +33,6 @@ export class PlayerPersistenceComponent extends Component<[
         const snapshot = player.Snapshot();
         const {
           gateName: _gateName,
-          gateSessionId: _gateSessionId,
           ...persistent
         } = snapshot;
         return this.repository.Save({

@@ -6,7 +6,7 @@
 Client
   -> LoginMgrScene：选择 LoginScene 地址
   -> LoginScene：由连接 Session Handler 签发 Demo Token，选择 GateScene
-  -> GateScene：GateSession 表示连接实体，保存认证和玩家路由状态
+  -> GateScene：GateSession表示一次连接，GatePlayerRoute保存跨重连玩家路由
   -> MapHostScene：创建多个 MapScene，管理 PlayerUnit Directory
        -> MapScene.UnitComponent：统一管理玩家、怪物和 NPC Unit
   <- GateScene：把 Map Push 发送给对应客户端
@@ -16,7 +16,7 @@ Client
 
 ## 路由数据保存
 
-玩家登录 Gate 后，GateSession 保存 account、token、unitId、actorInstanceId、MapHost Scene 名和 GateSessionId。GateSession 本身就是带 mailbox 的连接 Entity，不再同时维护一个普通对象会话和一个额外 Actor。UnitId 用于业务和客户端显示，actorInstanceId 只用于服务端 Unit 寻址。玩家进入地图时把当前 Gate Scene 名传给 PlayerUnit；玩家不换 Gate 时，该绑定可以随玩家状态保存。
+玩家登录Gate后，`GateSession`只保存本连接的account、token和Route引用；连接断开后Session立即销毁。`GatePlayerRoute`按账号保存当前connectionId以及MapHost Scene、MapId、UnitId和ActorInstanceId，并在重连宽限期内继续存在。UnitId用于业务和客户端显示，actorInstanceId只用于服务端Unit寻址。PlayerUnit只保存长期Gate Scene名，不知道connectionId或GateSessionId。
 
 ```text
 MapHostScene send GateScene
@@ -26,6 +26,17 @@ Client SDK 按 msgcode 分发 Push
 ```
 
 未来 `SendMessageToClient(unitId, message)` 可以在 Location/Online 目录上封装这条链路，但底层仍是 Scene 路由。
+
+## 断线重连
+
+客户端SDK每5秒发送一次单向`C2G_Ping`。Gate收到任意客户端消息都会刷新`lastReceiveTime`，出站消息只记录`lastSendTime`用于观测。物理连接关闭后玩家Unit仍留在Map中，Gate保留Route等待30秒：
+
+```text
+新连接 -> LoginGate附着旧Route -> SecondEnterMap
+Map -> 清除旧移动意图 -> 返回全量权威快照
+```
+
+该过程不创建Unit、不广播`EntityEnter`、不修改Unit的Gate绑定。宽限期结束仍未重连时，Gate调用`PlayerOffline`；Map保存玩家、移除Unit并广播`EntityLeave`后，Gate才清理Route。Map不运行玩家断线Timer。
 
 ## 多地图
 

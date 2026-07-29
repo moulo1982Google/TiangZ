@@ -107,6 +107,11 @@ npm run verify:core-api
 
 ## 迁移记录
 
+### 开发中
+
+- 新增`CommitPreparedTransfer`与`TransferStagingRegistry`，统一同进程迁移提交前回滚和跨进程目标端Prepare/Commit/Abort幂等语义。
+- 旧业务无需迁移；普通Component不直接依赖这两个协调API。
+
 ### 0.3.10-alpha.0
 
 - 新增`app/core/public.ts`作为业务唯一Stable入口；原有Core深层路径改为Internal。

@@ -116,7 +116,6 @@ async function testMissingHandlerErrorSemantics(): Promise<void> {
     token: "token",
     gateName: "gate_1",
     mapId: 1,
-    gateSessionId: "session",
     rpcId: 89,
   });
   const mapErrorFrame = await registry.handle(

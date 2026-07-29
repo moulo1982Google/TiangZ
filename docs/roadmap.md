@@ -52,7 +52,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 - LoginMgr 选登录入口。
 - Login 与 Gate 的客户端协议进入连接 Session mailbox；不同连接并行，同一连接跨 `await` 串行。
-- GateSession 作为 Entity 管理登录、重连、断线和组件生命周期，不再维护平行的普通对象会话表。
+- GateSession作为Entity只管理一次物理连接；GatePlayerRoute保存跨Session的玩家路由、心跳时间和30秒重连宽限。
 - MapHost 创建多个 MapScene；UnitComponent 统一管理 PlayerUnit/MonsterUnit/NpcUnit。
 - 服务端权威移动、多人 AOI 可见性和实体进出 Push。
 - Cocos 2D Preview 可多开互相看到移动。
@@ -293,7 +293,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 - 已固定Luban 4.10.2工具链，建立`game_config` Excel源目录、服务端/客户端分组生成、只读强类型查询、外键校验、配置指纹与自测；首批接入`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`。表结构属于不可热更Model，纯数据可生成内容寻址候选并由Watcher令各Process原子切换；部署配置仍独立留在`configs`。
 - 账号/角色选择与持久化。
-- 地图传送第一步已完成：同一MapHost内的Map1/Map2按需创建为两个动态MapScene，客户端可在同一Gate Session中切换；迁移保持UnitId，Component默认不传送并通过`@transferable + ITransfer`显式选择，目标Scene重新分配InstanceId并使用目标地图出生点。跨MapHost/跨进程迁移与动态副本Directory仍待实现。
+- 地图传送同进程事务已完成：目标Unit完整恢复后，以玩家目录CAS为提交点；提交前失败保留源Unit。跨MapHost目标端已具备protobuf DTO、`Prepare/Commit/Abort`幂等状态机、有界暂存和超时回收；全局Location/Directory与源端事务协调仍待实现，完成前不开放生产跨进程传送。
 - AOI 数据结构与批量广播优化。
 - AOI前置数据布局已完成正式迁移：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，generation handle目录只负责定位和旧句柄校验；TS NativeRef与Rust Pool容量已可观测，帧尾records跨帧复用并直接编码最终buffer。Rust AOI仍未实现，高负载地图容量A/B需在机器空闲时单独验收。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。

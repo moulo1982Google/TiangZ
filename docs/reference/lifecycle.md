@@ -65,8 +65,10 @@ KickPlayer(player);
 
 1. 按玩家绑定的 Gate 分组。
 2. 向每个 Gate 发送一条 `M2G_KickPlayers` 批量消息。
-3. Gate 同时校验 `unitId` 和 `gateSessionId`，旧会话消息不能踢掉重连后的新连接。
+3. Gate按`unitId`找到长期`GatePlayerRoute`并先标记`removing`，重复踢人不会再次触发清理；旧物理连接不再拥有地图生命周期。
 4. Map 并行等待所有玩家的幂等保存。
 5. 保存完成后删除 Unit；任一保存失败都会记录数量并让停机失败。
 
 停机时跨进程踢人消息采用尽力投递，不能成为 Map 保存的前置依赖；Gate 进程自身也会关闭全部客户端连接。这样 Map 和 Gate 同时收到操作系统停机信号时不会互相等待。
+
+普通网络断开不属于最终下线：Gate销毁`GateSession`但保留`GatePlayerRoute`和Map Unit；30秒内重连调用`SecondEnterMap`恢复视图。只有Gate的重连宽限扫描确认超时，才调用Map的`PlayerOffline`。Map不得创建连接超时Timer，也不得把`connectionId`或`GateSessionId`写入Unit。

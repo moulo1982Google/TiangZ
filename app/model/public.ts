@@ -19,6 +19,7 @@ export {
   LoginMgrProtocol,
   LoginProtocol,
   MapProtocol,
+  MapTransferProtocol,
 } from "../generated/model/server/demo/protocol/rpcs";
 export { StateSyncBenchProtocol } from "../generated/model/server/bench/protocol/rpcs";
 export type {
@@ -27,6 +28,11 @@ export type {
 } from "../generated/model/server/bench/protocol/messages";
 
 export { GateSession } from "./demo/gate/GateSession";
+export {
+  GatePlayerRoute,
+  type GatePlayerMapLocation,
+  type GatePlayerRouteState,
+} from "./demo/gate/GatePlayerRoute";
 export { ItemComponent } from "./demo/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
@@ -38,7 +44,6 @@ export {
   type MatchPlayerGate,
   type MovePlayer,
   type PlayerSnapshot,
-  type RebindPlayerGate,
 } from "./demo/map/PlayerUnit";
 export { PositionComponent } from "./demo/map/PositionComponent";
 export { UnitGateComponent } from "./demo/map/UnitGateComponent";
@@ -51,6 +56,7 @@ export {
 } from "./demo/numeric/NumericType";
 export { NativeOps } from "../generated/model/native/NativeOps";
 export { LoginComponent } from "./demo/login/LoginComponent";
+export { SelectStickyGate } from "./demo/login/GateSelector";
 export { PlayerPersistenceComponent } from "./demo/persistence/PlayerPersistenceComponent";
 export { NativeData } from "./demo/native/NativeData";
 export { NativeUnitRef } from "../generated/model/native/NativeUnitRef";

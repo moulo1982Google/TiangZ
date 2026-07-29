@@ -12,7 +12,8 @@ import {
 } from "./lib/process_test_harness.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const mode = parseMode(process.argv.slice(2));
+const options = parseOptions(process.argv.slice(2));
+const mode = options.mode;
 const client = path.join(root, "dist", "smoke_client.cjs");
 
 if (mode === "all" || mode === "both") {
@@ -36,7 +37,7 @@ async function runCase(name, configs, checkHealth) {
   try {
     await Promise.all([7000, 7001, 7002, 7201, 7301].map((port) => waitForPort(port, runtimes[0])));
     if (checkHealth) await waitForReady(7600);
-    await runInherited(process.execPath, [client], root);
+    await runInherited(process.execPath, [client, ...options.clientArgs], root);
     succeeded = true;
   } finally {
     await Promise.all(runtimes.map((runtime) => stopRuntime(runtime)));
@@ -47,10 +48,22 @@ async function runCase(name, configs, checkHealth) {
   }
 }
 
-function parseMode(args) {
-  if (args.length === 0) return "both";
-  if (args.length === 2 && args[0] === "--mode" && ["all", "split", "both"].includes(args[1])) {
-    return args[1];
+function parseOptions(args) {
+  let mode = "both";
+  const clientArgs = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === "--mode" && ["all", "split", "both"].includes(args[index + 1])) {
+      mode = args[index + 1];
+      index += 1;
+      continue;
+    }
+    if (args[index] === "--gate-timeout-only") {
+      clientArgs.push(args[index]);
+      continue;
+    }
+    throw new Error(
+      "usage: node tools/smoke_runtime.mjs [--mode all|split|both] [--gate-timeout-only]",
+    );
   }
-  throw new Error("usage: node tools/smoke_runtime.mjs [--mode all|split|both]");
+  return { mode, clientArgs };
 }

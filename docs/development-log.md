@@ -10,6 +10,22 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-29 - Gate断线重连所有权重构
+
+Gate连接状态拆为一次性`GateSession`与跨连接`GatePlayerRoute`。Login改用账号Rendezvous Hash稳定选择Gate；同账号新连接原子替换connectionId，旧socket迟到的disconnect不会再删除新连接或Map Unit。客户端继续每5秒发送单向`C2G_Ping`，Gate统一记录所有入站消息的`lastReceiveTime`，出站排队时间只用于观测。
+
+普通transport断开现在进入30秒重连宽限。重连通过Actor RPC `SecondEnterMap`取得原PlayerUnit的权威全量快照，不创建Unit、不广播AOI进入、不改绑Gate；Map只清除旧移动输入。宽限或入站心跳超时后，Gate调用带响应的`PlayerOffline`，Map保存玩家、移除Unit并广播AOI离开，随后Gate回收Route。`UnitGateComponent`、传送快照和持久化快照已删除GateSessionId。
+
+新增`test:gate-reconnect`覆盖连接替换、迟到close、收发时间语义、宽限状态机、重复最终下线与多Login稳定选Gate；Actor、协议、持久化和迁移自测同步适配。同进程与拆分进程Runtime smoke均复用原Unit完成重连；`test:gate-timeout-runtime`实际等待32秒后确认旧UnitId 1000被Map移除，再进入创建UnitId 1001。完整设计见[Gate断线重连与最终下线](design/gate-reconnect.md)。
+
+## 2026-07-29 - 地图迁移事务与Developer Tools 0.14.0
+
+同进程迁移改为“准备候选、目录提交、源对象清理”：目标Unit先完成全部Component恢复和Deserialize，`PlayerDirectory.Replace`成功后才销毁源Unit。目标恢复或目录竞争失败会销毁候选并保留旧玩家，避免玩家从两个地图同时消失。
+
+跨进程目标端增加内网`MapTransfer.Prepare/Commit/Abort`协议、可序列化`PlayerTransferSnapshot`、有界幂等暂存和超时回收；协议只进入服务端生成物。当前没有全局Location/Directory，源端协调尚未开放。新增`test:entity-transfer`覆盖回滚、重复请求、载荷冲突和TTL回收。
+
+TiangZ Developer Tools `v0.14.0`已经发布并成为主工程固定依赖，包含生命周期/迁移契约诊断和生成输入索引修复。
+
 ## 2026-07-28 - Map1/Map2进程内传送
 
 Phase 4地图链路开始推进。MapHost现在把Map1和Map2按需创建为独立MapScene；玩家在同一Gate Session中再次调用`EnterMap`即可切图。迁移保持UnitId，旧Scene销毁旧Actor并广播离开，目标Scene使用配置出生点创建新Actor InstanceId。

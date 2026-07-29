@@ -43,6 +43,20 @@ export class PlayerDirectoryComponent extends Component {
     return this.playersByAccount.delete(unit.Account);
   }
 
+  /** 仅当目录仍指向源Unit时原子替换为目标Unit，作为同进程迁移提交点。 / Atomically replaces the source Unit with the target only while the directory still points to the source, forming the in-process migration commit point. */
+  Replace(source: PlayerUnit, target: PlayerUnit): boolean {
+    if (source.Account !== target.Account || source.UnitId !== target.UnitId) {
+      throw new Error("player directory replacement identity mismatch");
+    }
+    const location = this.playersByAccount.get(source.Account);
+    if (!location || location.instanceId !== source.InstanceId) return false;
+    this.playersByAccount.set(target.Account, {
+      unitId: target.UnitId,
+      instanceId: target.InstanceId,
+    });
+    return true;
+  }
+
   protected override OnDestroy(): void {
     this.playersByAccount.clear();
   }

@@ -8,7 +8,6 @@ import {
   buildUseItemPacket,
   decodeEntityMoveFrame,
   decodeEntityEnterFrame,
-  decodeEntityLeaveFrame,
   decodeEnterMapFrame,
   decodeEntityNumericFrame,
   decodeItemChangedFrame,
@@ -29,6 +28,10 @@ type TimedMovementState = CellMovementState & { serverTick: number };
 async function main() {
   const loginAddr = await requestLoginServiceAddr("127.0.0.1", 7000);
   console.log("LoginMgr selected:", loginAddr);
+  if (process.argv.includes("--gate-timeout-only")) {
+    await verifyGateFinalTimeout(loginAddr.ip, loginAddr.port);
+    return;
+  }
 
   const [login1, login2] = await Promise.all([
     requestLogin(loginAddr.ip, loginAddr.port, "smoke_user"),
@@ -47,13 +50,50 @@ async function main() {
   });
   console.log("EnterMap response:", enterMap);
 
-  const peer = await requestLogin(loginAddr.ip, loginAddr.port, "smoke_peer");
+  const [mover, peer] = await Promise.all([
+    requestLogin(loginAddr.ip, loginAddr.port, "smoke_mover"),
+    requestLogin(loginAddr.ip, loginAddr.port, "smoke_peer"),
+  ]);
   await verifySharedMapBroadcast(
-    login1.gateIp,
-    login1.gatePort,
-    { account: login1.account, token: login1.token, mapId: 1 },
+    mover.gateIp,
+    mover.gatePort,
+    { account: mover.account, token: mover.token, mapId: 1 },
     { account: peer.account, token: peer.token, mapId: 1 },
   );
+}
+
+/** 等待真实30秒宽限结束，验证Gate驱动Map最终下线并让下次进入创建新Unit。 / Waits for the real grace deadline and verifies Gate-driven Map offline causes the next entry to create a new Unit. */
+async function verifyGateFinalTimeout(loginIp: string, loginPort: number): Promise<void> {
+  const account = `smoke_timeout_${Date.now()}`;
+  const firstLogin = await requestLogin(loginIp, loginPort, account);
+  const first = await openGateAndEnterMap(firstLogin.gateIp, firstLogin.gatePort, {
+    account,
+    token: firstLogin.token,
+    mapId: 1,
+  });
+  const firstUnitId = first.enterMap.unitId;
+  await first.gate.close();
+
+  // 30秒宽限加两个1秒扫描周期，避免把调度边界误判为业务失败。
+  await sleep(32_000);
+  const secondLogin = await requestLogin(loginIp, loginPort, account);
+  const second = await openGateAndEnterMap(secondLogin.gateIp, secondLogin.gatePort, {
+    account,
+    token: secondLogin.token,
+    mapId: 1,
+  });
+  try {
+    if (second.enterMap.unitId === firstUnitId) {
+      throw new Error(`Gate timeout retained expired Unit ${firstUnitId}`);
+    }
+    console.log("Gate final timeout:", {
+      account,
+      removedUnitId: firstUnitId,
+      recreatedUnitId: second.enterMap.unitId,
+    });
+  } finally {
+    await second.gate.close();
+  }
 }
 
 let nextRpcId = 1;
@@ -111,12 +151,12 @@ async function verifyGateSessionLifecycle(
 
   const afterDisconnect = await openGateAndEnterMap(ip, port, request, true);
   try {
-    if (afterDisconnect.enterMap.unitId <= first.enterMap.unitId) {
-      throw new Error("valid Gate disconnect did not remove the map unit");
+    if (afterDisconnect.enterMap.unitId !== first.enterMap.unitId) {
+      throw new Error("reconnect grace did not preserve the existing map unit");
     }
     console.log("GateSession lifecycle:", {
       reboundUnitId: first.enterMap.unitId,
-      recreatedUnitId: afterDisconnect.enterMap.unitId,
+      resumedUnitId: afterDisconnect.enterMap.unitId,
     });
     const currentHp = await verifyNumericTimer(
       afterDisconnect.gate,
@@ -431,17 +471,12 @@ async function verifySharedMapBroadcast(
       movement: observerState,
     });
 
-    const leaveFrame = mover.gate.waitForMessage(MsgCode.G2C_EntityLeave);
     await observer.gate.close();
     observerClosed = true;
-    const left = decodeEntityLeaveFrame(await leaveFrame).body;
-    if (left.unitId !== observer.enterMap.unitId) {
-      throw new Error(`entity leave mismatch: ${JSON.stringify(left)}`);
-    }
-    console.log("Shared map entity lifecycle:", {
+    console.log("Shared map reconnect grace:", {
       snapshotIds,
       enteredUnitId: entered.unitId,
-      leftUnitId: left.unitId,
+      retainedUnitId: observer.enterMap.unitId,
     });
   } finally {
     await Promise.all([

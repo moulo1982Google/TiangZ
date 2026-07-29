@@ -34,18 +34,20 @@ cargo run --features kcp --bin TiangZ -- configs/experiments/all.kcp-native.json
 
 ## Gate 心跳与掉线清理
 
-Gate 会话建立后，客户端 SDK 每 5 秒向当前 Gate 发送一次单向 `C2G_Ping`。Gate 只在成功处理该消息后刷新 Session 的存活时间；连续 30 秒没有 Ping 时，Gate 会请求 Rust Transport 主动关闭该 `connectionId`。
+Gate会话建立后，客户端SDK每5秒向当前Gate发送一次单向`C2G_Ping`。Gate收到任意客户端帧都会刷新`GatePlayerRoute.lastReceiveTime`，因此活跃玩家不依赖Ping续期；出站排队只更新`lastSendTime`，不能让已经失联的客户端继续存活。Gate用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
 
-无论连接由客户端主动关闭、网络层断开，还是 Gate 心跳超时关闭，最终都统一进入：
+客户端主动关闭或网络层断开时，只销毁当前`GateSession`并让Route进入30秒重连宽限。新连接仍进入同一个Gate，通过账号找到Route并替换connectionId，然后调用原PlayerUnit的`SecondEnterMap`恢复全量视图。旧连接迟到的close事件不会影响新连接。
+
+只有宽限期结束或连续30秒没有任何入站消息，Gate才发起最终下线：
 
 ```text
-GateScene.onDisconnect
-  -> G2M_PlayerDisconnect
-  -> MapComponent.PlayerDisconnect
-  -> 删除玩家 Unit 并广播 G2C_EntityLeave
+GateScene.SweepClientTimeouts
+  -> MapProtocol.PlayerOffline
+  -> Map保存玩家、删除Unit并广播G2C_EntityLeave
+  -> Gate删除GatePlayerRoute
 ```
 
-退出按钮属于正常操作入口，但不能代替这条兜底链路。进程被强杀或网络中断时客户端无法发送关闭包，仍由 Gate 的 30 秒心跳超时完成清理。
+退出按钮属于正常操作入口，但不能代替这条兜底链路。Map不维护连接超时，不保存GateSessionId；它只执行Gate确认后的最终下线业务。
 
 ## Cocos Native Windows
 

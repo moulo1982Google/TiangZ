@@ -8,7 +8,6 @@ import {
   type PlayerSnapshot,
   PlayerUnit,
   PositionComponent,
-  type RebindPlayerGate,
   type MovePlayer,
   UnitGateComponent,
   systemFor,
@@ -28,9 +27,8 @@ export class PlayerUnitSystem extends PlayerUnit {
     return this.GetComponent(PlayerPersistenceComponent).SaveOnOffline(reason);
   }
 
-  /** 重连后替换 Gate 所有权，并停止旧 Session 遗留的移动。 / Replaces Gate ownership after reconnect and stops movement inherited from the stale session. */
-  RebindGate(request: RebindPlayerGate): PlayerSnapshot {
-    this.GetComponent(UnitGateComponent).bind(request.gateName, request.gateSessionId);
+  /** 重连时停止旧连接遗留的移动输入并返回权威快照；不会改变Gate归属。 / Stops stale movement on reconnect and returns an authoritative snapshot without changing Gate ownership. */
+  SecondEnterMap(): PlayerSnapshot {
     NativeData.ResetMovement(this.GetComponent(NativeUnitRef).Handle);
     return this.Snapshot();
   }
@@ -45,7 +43,6 @@ export class PlayerUnitSystem extends PlayerUnit {
       mapId: this.mapId,
       unitId: this.UnitId,
       gateName: gate.gateName,
-      gateSessionId: gate.gateSessionId,
       speedCellsPerSecond: native.speedCellsPerSecond,
       facing: native.facing,
       alive: native.alive !== 0,
@@ -54,9 +51,9 @@ export class PlayerUnitSystem extends PlayerUnit {
     };
   }
 
-  /** 校验断线消息，防止旧 Gate Session 移除已重新绑定的玩家。 / Guards disconnect messages so a stale Gate session cannot remove a rebound player. */
+  /** 校验最终下线命令来自玩家长期绑定的Gate实例。 / Verifies that final offline originates from the player's stable Gate instance. */
   MatchesGate(request: MatchPlayerGate): boolean {
-    return this.GetComponent(UnitGateComponent).matches(request.gateName, request.gateSessionId);
+    return this.GetComponent(UnitGateComponent).matches(request.gateName);
   }
 
   /** 校验方向并写入 Rust 权威移动意图；不会在 Handler 内直接推进坐标或广播。 / Validates direction and writes Rust-authoritative movement intent without advancing or broadcasting inside the Handler. */

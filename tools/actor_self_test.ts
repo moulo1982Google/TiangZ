@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { Actor, ChildEntity, Component } from "../app/core/runtime/entities";
 import { Game, InitializeGameSingletons } from "../app/core/runtime/Game";
 import { ProcessHost } from "../app/core/runtime/host";
@@ -29,10 +31,16 @@ import {
 } from "../app/core/process/ActorLocation";
 import { HotfixSystem, systemFor } from "../app/core/hotReload/HotfixSystem";
 import type { HotfixManifest } from "../app/core/hotReload/contracts";
+import { GameConfigRegistry } from "../app/generated/model/config";
 
 void main();
 
 async function main(): Promise<void> {
+  const gameConfigDirectory = path.resolve("game_config/generated");
+  GameConfigRegistry.Install(
+    readFileSync(path.join(gameConfigDirectory, "game-config.manifest.json"), "utf8"),
+    readFileSync(path.join(gameConfigDirectory, "server.json"), "utf8"),
+  );
   InitializeGameSingletons({ fixedUpdateMs: 50, maxCatchUpSteps: 2 });
   try {
     HotfixSystem.Begin(testHotfixManifest("actor-normal"));
@@ -388,7 +396,7 @@ async function testPlayerUnitComponents(): Promise<void> {
   });
   player.AddComponent(PositionComponent, native);
   const numeric = player.AddComponent(NumericComponent);
-  player.AddComponent(UnitGateComponent, "gate-1", "session-1");
+  player.AddComponent(UnitGateComponent, "gate-1");
   const firstInstanceId = player.InstanceId;
 
   assert.equal(player.Id, 1000);
@@ -415,39 +423,9 @@ async function testPlayerUnitComponents(): Promise<void> {
     { cellX: 1, cellY: -1 },
   );
 
-  player.RebindGate({
-    gateName: "gate-2",
-    gateSessionId: "session-2",
-  });
-  assert.equal(
-    player.MatchesGate({
-      gateName: "gate-1",
-      gateSessionId: "session-1",
-    }),
-    false,
-  );
-  assert.equal(
-    player.MatchesGate({
-      gateName: "gate-2",
-      gateSessionId: "session-2",
-    }),
-    true,
-  );
-
-  for (let generation = 3; generation <= 1002; generation += 1) {
-    player.RebindGate({
-      gateName: `gate-${generation % 4}`,
-      gateSessionId: `session-${generation}`,
-    });
-  }
-  assert.equal(
-    player.MatchesGate({ gateName: "gate-2", gateSessionId: "session-2" }),
-    false,
-  );
-  assert.equal(
-    player.MatchesGate({ gateName: "gate-2", gateSessionId: "session-1002" }),
-    true,
-  );
+  player.SecondEnterMap();
+  assert.equal(player.MatchesGate({ gateName: "gate-1" }), true);
+  assert.equal(player.MatchesGate({ gateName: "gate-2" }), false);
 
   assert.equal(
     player.Move({
@@ -515,7 +493,7 @@ async function testPlayerUnitComponents(): Promise<void> {
   });
   recreated.AddComponent(PositionComponent, recreatedNative);
   recreated.AddComponent(NumericComponent);
-  recreated.AddComponent(UnitGateComponent, "gate-2", "session-2");
+  recreated.AddComponent(UnitGateComponent, "gate-2");
   assert.notEqual(recreated.InstanceId, firstInstanceId);
   assert.equal(host.despawnActor("map:1", 1000), true);
   assert.equal(units.Get(1000), undefined);

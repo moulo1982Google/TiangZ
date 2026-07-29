@@ -4,7 +4,7 @@
 
 维护契约：任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须同时更新本文和[AI业务开发手册](business-development-manual.md)。设计改动未同步这两份文档，视为尚未完成。
 
-更新时间：2026-07-28。
+更新时间：2026-07-29。
 
 ## 一句话定位
 
@@ -65,7 +65,9 @@ Actor是运行时路由概念，不是要求业务继承并随意创建的第四
 
 这解决了Skynet协程在`call`让出时可能处理后续消息而造成逻辑重入的问题。Session和Unit默认使用ordered mailbox。Login/Gate入口Scene使用unordered，使不同连接可以并行；同一连接跨`await`仍由Session串行。账号级并发不是连接级并发，只有真实账号业务需要时才使用账号Location或领域锁，不能用永久`LoginActor`伪装账号状态。
 
-账号断线与重进可能跨Scene并发交叠。重进流程若发现先前查询到的Unit已在其ordered mailbox中完成销毁，必须重新查询账号权威目录后再决定重绑或创建，不能继续使用缓存的Unit引用。
+Gate连接状态分成两层：`GateSession`只代表一次物理连接，断开即销毁；`GatePlayerRoute`按账号保存`UnitId -> MapHost/Map/ActorInstanceId`和当前`connectionId`，在30秒重连宽限期内继续存在。客户端每5秒发送单向`C2G_Ping`，但Gate收到任意客户端帧都会刷新`lastReceiveTime`；出站排队只更新`lastSendTime`，绝不能延长存活期限。Gate使用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
+
+同账号新连接会在Gate内原子替换旧`connectionId`。旧socket迟到的disconnect只销毁旧Session，不能清理新连接或Map Unit。重连后Gate以现有Actor路由调用`SecondEnterMap`，Map只清除旧移动意图并返回权威全量快照，不创建Unit、不重新广播AOI进入、不改绑Gate。宽限期结束后Gate才调用`PlayerOffline`；Map完成保存、Unit移除和AOI离开广播后响应，Gate最后删除Route。Map不拥有断线Timer，也不保存`gateSessionId`。
 
 ### Component
 
@@ -109,7 +111,7 @@ Quest默认是玩家私有状态。接受任务时创建Quest子Entity，进度�
 
 业务系统设计先查[`docs/patterns`](../patterns/README.md)。其中用稳定规则编号描述所有权、Entity形态、Audience、状态复制、生命周期、Timer和数据位置；这些文档是人类可读的设计依据，不是自动生成的业务代码。
 
-TiangZ Developer Tools `v0.13.0`把可机械判断的部分固化到不依赖VS Code的`design-core`，并向上提供设计向导、`@tiangz`聊天解释、`tiangz-design` CLI和只读`tiangz-design-mcp`。相同结构化输入必须得到相同确定性结论；AI模型只在用户主动聊天时解释报告，不能改变规则结论、虚构API，或把普通业务引向Core、Rust Runtime和Generated。主工程固定依赖该Tag，`verify:design-rules`要求design-core与`docs/patterns`规则ID集合、归属文档和文件路径完全一致。
+TiangZ Developer Tools `v0.14.0`把可机械判断的部分固化到不依赖VS Code的`design-core`，并向上提供设计向导、`@tiangz`聊天解释、`tiangz-design` CLI和只读`tiangz-design-mcp`。相同结构化输入必须得到相同确定性结论；AI模型只在用户主动聊天时解释报告，不能改变规则结论、虚构API，或把普通业务引向Core、Rust Runtime和Generated。主工程固定依赖该Tag，`verify:design-rules`要求design-core与`docs/patterns`规则ID集合、归属文档和文件路径完全一致。
 
 这套助手用于降低开始设计时的心智负担，不取代工程事实。权威顺序仍是：当前代码与测试、项目检查和生成锁，高于设计报告；发现规则与真实实现冲突时，应修正规则库和对应测试，而不是让AI临时圆回来。
 
@@ -145,7 +147,7 @@ TiangZ Developer Tools `v0.13.0`把可机械判断的部分固化到不依赖VS 
 
 同Process调用直接进入目标mailbox；跨Process调用使用持久Inner TCP和`rpcId`多路复用。某个RPC等待Response时不会阻塞同连接上的其他RPC。
 
-未来Location/Online Scene负责`UnitId -> Gate/Map/InstanceId`定位，支持公会向所有在线成员所在地图或Gate发送消息。玩家进入地图时保存Gate实例和Session身份，防止旧断线消息影响重连后的新会话。
+未来Location/Online Scene负责`UnitId -> Gate/Map/InstanceId`的跨进程权威定位，支持公会向所有在线成员所在地图或Gate发送消息。当前Demo用账号Rendezvous Hash在全部Login实例间稳定选择Gate；玩家只保存长期Gate实例，连接代次完全留在Gate的Route/Session层。该粘滞策略不能替代Gate故障转移和全局Location。
 
 ## 协议模型
 
@@ -278,7 +280,7 @@ Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tian
 
 ## 当前未完成和明确暂缓
 
-2026-07完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1至R4实现与专项验收。`0.3.10-alpha.5`建立Model/Hotfix双Bundle和在线事务，`alpha.6`加入`@systemFor`和高负载验收，`alpha.7`把Hotfix改为固定脚本名IIFE、统一业务Timer方法名语义，并补齐8秒慢RPC屏障与100代资源长稳。3000玩家A/B已验证1Hz Reload吞吐无可见下降，但Probe p95/p99约增加32%/31%；100代测试中损坏候选被拒绝，Timer、Native实体和pending均无漂移，预热后的V8 Heap/RSS增长通过4MB/16MB硬门槛。Developer Tools `v0.13.0`已作为主工程固定依赖，VS Code、CLI和MCP共享确定性领域规则，主工程验证其与领域模式文档同步。
+2026-07完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1至R4实现与专项验收。`0.3.10-alpha.5`建立Model/Hotfix双Bundle和在线事务，`alpha.6`加入`@systemFor`和高负载验收，`alpha.7`把Hotfix改为固定脚本名IIFE、统一业务Timer方法名语义，并补齐8秒慢RPC屏障与100代资源长稳。3000玩家A/B已验证1Hz Reload吞吐无可见下降，但Probe p95/p99约增加32%/31%；100代测试中损坏候选被拒绝，Timer、Native实体和pending均无漂移，预热后的V8 Heap/RSS增长通过4MB/16MB硬门槛。Developer Tools `v0.14.0`已作为主工程固定依赖，VS Code、CLI和MCP共享确定性领域规则，主工程验证其与领域模式文档同步。
 
 性能回归职责必须分层：`verify:perf` 比较三轮中位数吞吐、p99与错误；`test:backpressure` 验证有界队列和生产者等待；长稳测试判断RSS/V8 Heap趋势。不要把短时RSS噪声或故意过载指标混入普通性能基线。
 
@@ -297,7 +299,7 @@ Phase 4计划：
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
 - Phase 4.1先建设持久化基础，再进入账号与角色选择：计划增加可分片Rust `PersistenceProxy`，`.native`按Entity/Component声明`transient/snapshot/transactional`存储域并生成快照、dirty、schema和恢复入口。`snapshot`由框架合并写Redis并异步落永久DB；`transactional`以永久DB事务为唯一权威写入，Redis只缓存带revision的提交结果。同一字段不得同时拥有两条权威写路径，版本按存储域隔离。第一版只实现一种永久DB Adapter，不提前维护MongoDB/MySQL/PostgreSQL三套实现。该能力尚未实现，当前业务不得直接连接Redis/DB或自行增加持久化注解。
 - 账号与角色选择、正式持久化业务接入。
-- 地图传送已完成同一MapHost内的第一阶段：Map1/Map2是两个按需创建的MapScene，重复调用Gate `EnterMap`会保留UnitId，在旧图广播离开、目标图出生并重新绑定新的Actor InstanceId；Cocos和Pixi使用`T`键验收。Component默认不传送，稳定Model类型必须显式`@transferable()`并实现同步`ITransfer`才由Entity统一捕获/恢复；当前Numeric、Item参与，Position只迁移速度/朝向/存活，Gate、Persistence、Native handle和旧坐标由目标Factory重建。`RestoreTransfer`只恢复数据；需要二次加工的类型再声明`@lifecycle({ deserialize: true })`并在Hotfix System实现`IDeserialize`，全部状态恢复后重建Timer、派生索引和非序列化缓存。该构造器键控快照仅限同Process一次迁移，不是持久化或跨进程格式。跨MapHost/跨进程迁移和动态副本Directory尚未实现，不能直接把本地PlayerDirectory当作全局Location。
+- 地图传送已完成同一MapHost内的事务化迁移：Map1/Map2是两个按需创建的MapScene，目标Unit先完成Factory、`RestoreTransfer`和`Deserialize`，再由`PlayerDirectory.Replace`比较源InstanceId原子提交；提交前失败销毁候选并保留源Unit，提交后才销毁源Actor和发送通知。Component默认不传送，Numeric、Item显式参与，Position只迁移速度/朝向/存活。跨MapHost目标端已生成`PlayerTransferSnapshot`与`MapTransfer.Prepare/Commit/Abort`，具有有界暂存、幂等重试和超时回收；全局Location/Directory与源端协调尚未实现，因此生产业务仍不能直接启用跨进程迁移。详见[Entity地图迁移](../design/entity-transfer.md)。
 - Rust AOI和按可见集合广播。
 - Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；高负载地图容量A/B尚未执行，不能把纯布局吞吐直接写成服务器容量。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。

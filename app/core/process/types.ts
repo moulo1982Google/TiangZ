@@ -342,6 +342,25 @@ export abstract class EntryScene extends Scene {
   /** 在 ready 前获取 Scene 资源；失败会中止进程启动。 / Acquires Scene resources before readiness; failure aborts process startup. */
   protected onStart(): MaybePromise<void> {}
 
+  /**
+   * 客户端帧进入本 Scene mailbox 时触发；连接域可在这里记录入站活跃时间。
+   * 该钩子发生在协议解析前，不应执行 I/O、业务分发或可能抛错的校验。
+   *
+   * Invoked when a client frame enters this Scene mailbox. Connection domains
+   * may record inbound activity here. It runs before protocol decoding and must
+   * not perform I/O, business dispatch, or validation that may throw.
+   */
+  protected onClientReceive(_connectionId: number): void {}
+
+  /**
+   * 客户端帧写入宿主出站队列时触发；它表示“已排队”，不表示网络写入成功。
+   * 该时间只适合可观测性，不得用于延长客户端存活期限。
+   *
+   * Invoked when client frames enter the host outbound queue. It means queued,
+   * not successfully written to the network, and must never extend liveness.
+   */
+  protected onClientSendQueued(_connectionIds: readonly number[]): void {}
+
   /** 所有本地 Scene start 完成后执行，此时才可使用跨 Scene 依赖。 / Runs after every local Scene started, so cross-Scene dependencies may now be used. */
   protected onReady(): MaybePromise<void> {}
 
@@ -463,6 +482,7 @@ export abstract class EntryScene extends Scene {
     descriptor: MessageDescriptor<TMessage>,
     message: TMessage,
   ): void {
+    this.onClientSendQueued([connectionId]);
     this.outbound.push({
       connectionIdBytes: this.packConnectionId(connectionId),
       frame: packFrame(descriptor.msgcode, descriptor.codec.encode(message)),
@@ -478,6 +498,7 @@ export abstract class EntryScene extends Scene {
     if (connectionIds.length === 0) return;
 
     const frame = packFrame(descriptor.msgcode, descriptor.codec.encode(message));
+    this.onClientSendQueued(connectionIds);
     this.outbound.push({
       connectionIdBytes: packConnectionIds(connectionIds),
       frame,
@@ -490,6 +511,7 @@ export abstract class EntryScene extends Scene {
     frame: Uint8Array,
   ): void {
     if (connectionIds.length === 0) return;
+    this.onClientSendQueued(connectionIds);
     this.outbound.push({
       connectionIdBytes: packConnectionIds(connectionIds),
       frame,
@@ -707,6 +729,7 @@ export abstract class EntryScene extends Scene {
       return;
     }
 
+    this.onClientReceive(item.connectionId);
     const response = this.handleFrame(item.frame, {
       connectionId: item.connectionId,
     });
@@ -723,6 +746,7 @@ export abstract class EntryScene extends Scene {
     response: Uint8Array | undefined,
   ): void {
     if (!response) return;
+    this.onClientSendQueued([connectionId]);
     this.outbound.push({
       connectionIdBytes: this.packConnectionId(connectionId),
       frame: response,

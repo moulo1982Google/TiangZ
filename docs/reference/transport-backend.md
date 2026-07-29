@@ -29,7 +29,7 @@
 - `auto`：读取连接前导数据，在 TCP 与 WebSocket 间探测；当前 Gate 同端口兼容内部 TCP 和浏览器 WebSocket 时需要使用它；
 - `kcp`：UDP + KCP 可靠消息协议，当前由 epoll Backend 支持；包含 Challenge 握手、连接 ID、超时回收、CLOSE 和队列背压。
 
-客户端建立 Gate 会话后每 5 秒发送一次业务层 `C2G_Ping`。Gate 连续 30 秒收不到 Ping 时，通过 Core 的连接关闭接口让 Rust Transport 关闭对应 `connectionId`；随后标准 disconnect 事件驱动 `G2M_PlayerDisconnect`，由 Map 删除玩家 Unit。该机制与 KCP 自身的 UDP 会话回收不是同一层：前者判断游戏客户端是否存活，后者负责传输资源兜底。
+客户端建立Gate会话后每5秒发送一次业务层`C2G_Ping`。Gate以任意客户端入站帧刷新Route存活时间，连续30秒无入站消息才关闭`connectionId`并调用Map的最终`PlayerOffline`。普通transport disconnect只进入30秒重连宽限，不立即删除Map Unit。该机制与KCP自身的UDP会话回收不是同一层：前者判断游戏玩家是否最终离线，后者负责传输资源兜底。
 
 ## 配置
 

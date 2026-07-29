@@ -52,6 +52,16 @@
       "code": 20008
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_PlayerOffline",
+      "name": "G2M_PlayerOffline",
+      "code": 20019
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_SecondEnterMap",
+      "name": "G2M_SecondEnterMap",
+      "code": 20017
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#L2L_LogWrite",
       "name": "L2L_LogWrite",
       "code": 20002
@@ -80,6 +90,46 @@
       "key": "proto/InnerMessage_S_20001.proto#M2G_MapReady",
       "name": "M2G_MapReady",
       "code": 20007
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_PlayerOffline",
+      "name": "M2G_PlayerOffline",
+      "code": 20020
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_SecondEnterMap",
+      "name": "M2G_SecondEnterMap",
+      "code": 20018
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2M_AbortPlayerTransfer",
+      "name": "M2M_AbortPlayerTransfer",
+      "code": 20015
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2M_AbortPlayerTransferResponse",
+      "name": "M2M_AbortPlayerTransferResponse",
+      "code": 20016
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2M_CommitPlayerTransfer",
+      "name": "M2M_CommitPlayerTransfer",
+      "code": 20013
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2M_CommitPlayerTransferResponse",
+      "name": "M2M_CommitPlayerTransferResponse",
+      "code": 20014
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2M_PreparePlayerTransfer",
+      "name": "M2M_PreparePlayerTransfer",
+      "code": 20011
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2M_PreparePlayerTransferResponse",
+      "name": "M2M_PreparePlayerTransferResponse",
+      "code": 20012
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#S2G_ClientBroadcast",

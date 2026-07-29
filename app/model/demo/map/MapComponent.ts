@@ -7,19 +7,25 @@ import {
   type IFrameFlush,
   type Logger,
   type SceneMessageHelper,
+  Game,
   TimeSystem,
   UnitComponent,
   component,
   type EntityTransferSnapshot,
+  type ComponentCtor,
 } from "../../../core/public";
 import { ClientBroadcasts } from "../../../generated/model/server/demo/protocol/broadcastDescriptors";
 import { GateMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
 import type {
   G2M_EnterMap,
-  G2M_PlayerDisconnect,
+  G2M_PlayerOffline,
+  G2M_SecondEnterMap,
   ItemSnapshot,
   KickPlayerTarget,
   MapEntitySnapshot,
+  M2G_PlayerOffline,
+  M2G_SecondEnterMap,
+  PlayerTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
@@ -128,6 +134,80 @@ export class MapComponent extends Component<[
     request: G2M_EnterMap,
     transfer?: EntityTransferSnapshot,
   ): PlayerUnit {
+    const player = this.ComposePlayer(unitId, request, transfer);
+    try {
+      this.players.Add(player);
+      return player;
+    } catch (error) {
+      this.units.Remove(unitId);
+      throw error;
+    }
+  }
+
+  /** 创建完整但尚未写入进程目录的迁移目标；调用方必须随后提交或丢弃。 / Creates a complete transfer target that is not yet published in the process directory; callers must commit or discard it next. */
+  PrepareTransferredPlayer(
+    unitId: number,
+    request: G2M_EnterMap,
+    transfer: EntityTransferSnapshot,
+  ): PlayerUnit {
+    return this.ComposePlayer(unitId, request, transfer);
+  }
+
+  /** 把可序列化跨进程快照恢复为目标地图候选Unit，不发布进程目录。 / Restores a portable cross-process snapshot into a target-map candidate without publishing the process directory. */
+  PrepareRemoteTransferredPlayer(snapshot: PlayerTransferSnapshot): PlayerUnit {
+    const transfer: EntityTransferSnapshot = {
+      components: new Map<ComponentCtor, unknown>([
+        [PositionComponent, {
+          speedCellsPerSecond: snapshot.speedCellsPerSecond,
+          facing: snapshot.facing,
+          alive: snapshot.alive,
+        }],
+        [NumericComponent, snapshot.numerics],
+        [ItemComponent, snapshot.items],
+      ]),
+    };
+    return this.PrepareTransferredPlayer(
+      snapshot.unitId,
+      {
+        account: snapshot.account,
+        token: "cross-process-transfer",
+        gateName: snapshot.gateName,
+        mapId: snapshot.targetMapId,
+      },
+      transfer,
+    );
+  }
+
+  /** 销毁提交前失败的候选Unit；不得用于已经发布到目录的玩家。 / Disposes a candidate Unit after a pre-commit failure; never use it for a player already published in the directory. */
+  DiscardPreparedPlayer(unit: PlayerUnit): void {
+    this.requirePlayer(unit);
+    if (this.players.Get(unit.Account) === unit) {
+      throw new Error(`cannot discard published player: ${unit.Account}`);
+    }
+    this.units.Remove(unit.UnitId);
+  }
+
+  /** 在目录提交后销毁源地图Unit；目录的InstanceId校验会保留新目标。 / Disposes the source-map Unit after directory commit; the directory InstanceId guard preserves the new target. */
+  RemoveTransferredPlayer(unit: PlayerUnit): void {
+    this.requirePlayer(unit);
+    this.RemovePlayer(unit);
+  }
+
+  /** 广播已提交迁移的源地图离开事件；失败不撤销已经完成的数据所有权切换。 / Broadcasts the source-map leave event after commit; failure does not reverse the completed ownership switch. */
+  async PlayerLeft(unitId: number): Promise<void> {
+    await this.broadcast.Publish(
+      this.BroadcastAudience(),
+      ClientBroadcasts.EntityLeave,
+      { unitId },
+      this.serverTick,
+    );
+  }
+
+  private ComposePlayer(
+    unitId: number,
+    request: G2M_EnterMap,
+    transfer?: EntityTransferSnapshot,
+  ): PlayerUnit {
     const playerConfig = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID);
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
@@ -153,16 +233,10 @@ export class MapComponent extends Component<[
       player.AddComponent(NumericComponent);
       player.AddComponent(ItemComponent);
       player.AddComponent(PlayerPersistenceComponent, this.repository);
-      player.AddComponent(
-        UnitGateComponent,
-        request.gateName,
-        request.gateSessionId,
-      );
+      player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
-      this.players.Add(player);
       return player;
     } catch (error) {
-      this.players.Remove(player);
       this.units.Remove(unitId);
       throw error;
     }
@@ -232,33 +306,83 @@ export class MapComponent extends Component<[
     };
   }
 
-  /** 忽略过期 Gate 断线，仅下线仍拥有该 Unit 的 Session。 / Ignores stale Gate disconnects and offlines only the session that still owns the Unit. */
-  async PlayerDisconnect(
+  /**
+   * 为断线重连连接生成权威全量视图；不创建Unit、不广播AOI进入，也不改绑Gate。
+   * 同时清除旧连接遗留的移动输入，避免玩家在宽限期内持续行走。
+   *
+   * Builds the authoritative full view for a reconnected client without
+   * creating a Unit, broadcasting AOI entry, or rebinding Gate ownership. It
+   * also clears movement inherited from the stale connection.
+   */
+  SecondEnterMap(
     unit: PlayerUnit,
-    message: G2M_PlayerDisconnect,
-  ): Promise<void> {
+    message: G2M_SecondEnterMap,
+  ): M2G_SecondEnterMap {
     this.requirePlayer(unit);
     if (
       unit.UnitId !== message.unitId ||
       unit.Account !== message.account ||
-      !unit.MatchesGate({
-        gateName: message.gateName,
-        gateSessionId: message.gateSessionId,
-      })
+      unit.MapId !== message.mapId ||
+      !unit.MatchesGate({ gateName: message.gateName })
     ) {
-      this.logger.warn("ignored stale player disconnect", {
+      throw new Error(`second-enter identity mismatch: ${message.account}#${message.unitId}`);
+    }
+
+    const snapshot = unit.SecondEnterMap();
+    return {
+      rpcId: message.rpcId,
+      error: 0,
+      message: "",
+      account: snapshot.account,
+      mapId: snapshot.mapId,
+      unitId: snapshot.unitId,
+      x: snapshot.x,
+      y: snapshot.y,
+      entities: this.EntitySnapshots(),
+      fixedUpdateMs: Game.Instance.FixedUpdateMs,
+      items: unit.GetComponent(ItemComponent).Snapshot(),
+    };
+  }
+
+  /** Gate确认重连宽限期结束后，持久化并移除玩家，再广播AOI离开。 / Persists and removes a player after Gate confirms reconnect grace expiry, then broadcasts AOI leave. */
+  async PlayerOffline(
+    unit: PlayerUnit,
+    message: G2M_PlayerOffline,
+  ): Promise<M2G_PlayerOffline> {
+    this.requirePlayer(unit);
+    if (
+      unit.UnitId !== message.unitId ||
+      unit.Account !== message.account ||
+      unit.MapId !== message.mapId ||
+      !unit.MatchesGate({ gateName: message.gateName })
+    ) {
+      this.logger.warn("ignored mismatched player offline", {
         account: message.account,
         unitId: message.unitId,
         actorId: unit.InstanceId,
       });
-      return;
+      return {
+        rpcId: message.rpcId,
+        error: 0,
+        message: "",
+        unitId: message.unitId,
+        removed: false,
+      };
     }
 
-    await this.OfflinePlayerAndBroadcast(unit, "client-disconnect");
-    this.logger.info("player left map", {
+    await this.OfflinePlayerAndBroadcast(unit, message.reason || "client-timeout");
+    this.logger.info("player left map after Gate timeout", {
       account: message.account,
       unitId: message.unitId,
+      reason: message.reason,
     });
+    return {
+      rpcId: message.rpcId,
+      error: 0,
+      message: "",
+      unitId: message.unitId,
+      removed: true,
+    };
   }
 
   /** 持久化成功后移除 Unit，并发布离开通知。 / Removes one Unit and publishes leave after persistence has already succeeded. */
@@ -267,12 +391,7 @@ export class MapComponent extends Component<[
     const unitId = unit.UnitId;
     this.RemovePlayer(unit);
 
-    await this.broadcast.Publish(
-      this.BroadcastAudience(),
-      ClientBroadcasts.EntityLeave,
-      { unitId },
-      this.serverTick,
-    );
+    await this.PlayerLeft(unitId);
   }
 
   /** 停机时保存全部玩家、请求各 Gate 关闭连接，随后移除 Unit。 / Saves all players, asks their Gates to close, then removes Units during shutdown. */
@@ -285,10 +404,7 @@ export class MapComponent extends Component<[
     for (const player of players) {
       const gate = player.GetComponent(UnitGateComponent);
       const targets = byGate.get(gate.gateName) ?? [];
-      targets.push({
-        unitId: player.UnitId,
-        gateSessionId: gate.gateSessionId,
-      });
+      targets.push({ unitId: player.UnitId });
       byGate.set(gate.gateName, targets);
     }
     for (const [gateName, targets] of byGate) {

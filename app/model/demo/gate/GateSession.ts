@@ -1,21 +1,18 @@
 import { Session } from "../../../core/public";
+import type { GatePlayerRoute } from "./GatePlayerRoute";
 
 export class GateSession extends Session {
-  sessionId = "";
   account = "";
   token = "";
-  mapService?: string;
-  mapId?: number;
-  unitId?: number;
-  actorInstanceId?: number;
-  lastActivityAtMs = 0;
+  route?: GatePlayerRoute;
+  needsSecondEnter = false;
 
-  /** 登录成功后一次性绑定账号；重复登录同一连接会覆盖旧地图状态前被 Scene 拒绝或清理。 / Binds the account after login; repeated login on one connection must be rejected or cleaned before replacing map state. */
-  BindLogin(sessionId: string, account: string, token: string, nowMs: number): void {
-    this.sessionId = sessionId;
+  /** 绑定本次物理连接的认证信息与长期玩家路由；地图位置不属于 Session。 / Binds authentication and the long-lived player route; map location does not belong to this Session. */
+  BindLogin(account: string, token: string, route: GatePlayerRoute): void {
     this.account = account;
     this.token = token;
-    this.lastActivityAtMs = nowMs;
+    this.route = route;
+    this.needsSecondEnter = route.map !== undefined;
   }
 
   get IsAuthenticated(): boolean {

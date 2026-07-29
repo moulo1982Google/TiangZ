@@ -94,6 +94,17 @@ export type {
   IDeserialize,
   ITransfer,
 } from "./runtime/entities";
+export {
+  CommitPreparedTransfer,
+  TransferStagingRegistry,
+} from "./runtime/EntityTransfer";
+export type {
+  PreparedTransferOptions,
+  TransferCommitResult,
+  TransferPrepareResult,
+  TransferStagingSnapshot,
+  TransferStage,
+} from "./runtime/EntityTransfer";
 export { Game } from "./runtime/Game";
 export type { GameUpdateConfig } from "./runtime/Game";
 export { hotfixFor, systemFor } from "./hotReload/HotfixSystem";

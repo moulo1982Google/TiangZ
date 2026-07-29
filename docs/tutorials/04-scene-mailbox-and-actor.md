@@ -145,7 +145,7 @@ const native = player.AddComponent(NativeUnitRef, {
   y,
 });
 player.AddComponent(PositionComponent, native);
-player.AddComponent(UnitGateComponent, gateName, gateSessionId);
+player.AddComponent(UnitGateComponent, gateName);
 ```
 
 Unit/Component 的 `Awake` 中只设置同步状态和组装组件，不发送消息、不发布 Location。若创建流程还要读取数据库，Factory 应在完成所有 `await` 后再发布到 Location；创建失败时由 UnitComponent 删除 Unit，其组件会被级联清理。

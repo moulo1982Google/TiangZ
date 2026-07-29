@@ -12,7 +12,30 @@ message G2M_EnterMap // IRequest
   string token = 2;
   string gate_name = 3;
   uint32 map_id = 4;
-  string gate_session_id = 5;
+  reserved 5;
+}
+
+//ResponseType M2G_SecondEnterMap
+// 断线宽限期内重连只恢复客户端视图，不创建Unit、不重新进入AOI、不改绑Gate。
+// @ets.msg protocol=Map method=SecondEnterMap
+message G2M_SecondEnterMap // IActorRequest
+{
+  string account = 1;
+  uint32 map_id = 2;
+  uint32 unit_id = 3;
+  string gate_name = 4;
+}
+
+message M2G_SecondEnterMap // IActorResponse
+{
+  string account = 1;
+  uint32 map_id = 2;
+  uint32 unit_id = 3;
+  sint32 x = 4;
+  sint32 y = 5;
+  repeated MapEntitySnapshot entities = 6;
+  uint32 fixed_update_ms = 7;
+  repeated ItemSnapshot items = 8;
 }
 
 message M2G_EnterMap // IResponse
@@ -38,14 +61,22 @@ message M2G_MapReady // IActorMessage
   sint32 y = 5;
 }
 
-// @ets.msg protocol=Map method=PlayerDisconnect
-message G2M_PlayerDisconnect // IActorMessage
+//ResponseType M2G_PlayerOffline
+// Gate确认重连宽限期结束后发起最终下线；Map完成保存、AOI离开和Unit销毁后响应。
+// @ets.msg protocol=Map method=PlayerOffline
+message G2M_PlayerOffline // IActorRequest
 {
   string account = 1;
   uint32 map_id = 2;
   uint32 unit_id = 3;
   string gate_name = 4;
-  string gate_session_id = 5;
+  string reason = 5;
+}
+
+message M2G_PlayerOffline // IActorResponse
+{
+  uint32 unit_id = 1;
+  bool removed = 2;
 }
 
 // 所有服务器业务广播统一通过这一条内网消息到达 Gate。
@@ -60,13 +91,76 @@ message S2G_ClientBroadcast // IActorMessage
 message KickPlayerTarget
 {
   uint32 unit_id = 1;
-  string gate_session_id = 2;
+  reserved 2;
 }
 
-// Map 批量摘除 Gate 会话。Gate 必须校验 gate_session_id，避免旧请求踢掉重连后的新会话。
+// Map 批量摘除玩家长期路由；Gate随后关闭其当前物理连接。
 // @ets.msg protocol=Gate method=KickPlayers
 message M2G_KickPlayers // IActorMessage
 {
   repeated KickPlayerTarget players = 1;
   string reason = 2;
+}
+
+// 跨进程地图迁移的可序列化业务快照。它不包含TS构造函数、Rust handle、Timer或Promise。
+message PlayerTransferSnapshot
+{
+  uint32 schema_version = 1;
+  string transfer_id = 2;
+  uint32 unit_id = 3;
+  string account = 4;
+  uint32 source_map_id = 5;
+  uint32 target_map_id = 6;
+  string gate_name = 7;
+  reserved 8;
+  float speed_cells_per_second = 9;
+  uint32 facing = 10;
+  bool alive = 11;
+  repeated UnitNumericDelta numerics = 12;
+  repeated ItemSnapshot items = 13;
+}
+
+//ResponseType M2M_PreparePlayerTransferResponse
+// @ets.msg protocol=MapTransfer method=Prepare
+message M2M_PreparePlayerTransfer // IRequest
+{
+  PlayerTransferSnapshot snapshot = 1;
+}
+
+message M2M_PreparePlayerTransferResponse // IResponse
+{
+  string transfer_id = 1;
+  string stage = 2;
+  uint32 actor_instance_id = 3;
+}
+
+//ResponseType M2M_CommitPlayerTransferResponse
+// @ets.msg protocol=MapTransfer method=Commit
+message M2M_CommitPlayerTransfer // IRequest
+{
+  string transfer_id = 1;
+}
+
+message M2M_CommitPlayerTransferResponse // IResponse
+{
+  string transfer_id = 1;
+  bool newly_committed = 2;
+  uint32 map_id = 3;
+  uint32 unit_id = 4;
+  uint32 actor_instance_id = 5;
+  sint32 x = 6;
+  sint32 y = 7;
+}
+
+//ResponseType M2M_AbortPlayerTransferResponse
+// @ets.msg protocol=MapTransfer method=Abort
+message M2M_AbortPlayerTransfer // IRequest
+{
+  string transfer_id = 1;
+}
+
+message M2M_AbortPlayerTransferResponse // IResponse
+{
+  string transfer_id = 1;
+  bool newly_aborted = 2;
 }

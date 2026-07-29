@@ -82,18 +82,18 @@ npm run check:cocos-demo
 
 状态：已完成。
 
-- GateSession 保存 `sessionId`、`account`、`mapService`、`mapId` 和 `unitId`。
-- Gate 维护 `account -> connectionId` 和 `unitId -> connectionId` 反向索引。
+- GateSession只保存一次物理连接的认证状态与Route引用；`GatePlayerRoute`保存跨重连的Map/Unit/Actor路由。
+- Gate维护`account -> Route`、`connectionId -> Route`和`unitId -> Route`索引。
 - Disconnect 事件进入 Service mailbox 串行处理，不再在 Rust 推送事件的同步阶段直接执行异步清理。
-- Gate 断线时通过 `G2M_PlayerDisconnect` 通知对应 MapHost 清理玩家。
-- Map 中的玩家保存第一版 `UnitGateComponent`，其中记录 Gate 实例和 GateSessionId。
-- Map 会校验账号、UnitId、MapId、Gate 实例和 GateSessionId，旧连接的延迟断线通知不能删除已经重连的玩家。
+- 普通Disconnect只销毁GateSession并进入30秒重连宽限，不通知Map删除玩家。
+- Map中的`UnitGateComponent`只记录长期Gate实例，不保存GateSessionId。
+- 重连通过`SecondEnterMap`恢复原Unit；最终超时由Gate调用`PlayerOffline`，Map完成保存、删除和AOI离开后Gate清理Route。
 - 完整 Token 签发、角色认证、顶号和重连策略仍留在 Phase 3。
 
 验收结果：
 
 - 同账号新连接进入后，旧连接断开不会删除当前地图玩家：通过。
-- 当前有效连接断开后，Map 会删除玩家并在下次进入时分配新 UnitId：通过。
+- 当前有效连接断开后，宽限期内重连继续使用原UnitId：通过。
 - 单进程配置：通过。
 - 拆分进程配置：通过。
 
@@ -118,8 +118,8 @@ MapHostScene
 - 每个地图实例对应一个 MapScene，UnitComponent 按 UnitId 统一维护全部 Unit。
 - PlayerUnit 使用 ordered MailBoxComponent，异步 Handler `await` 时同一玩家不会重入。
 - NativeUnitRef 指向 Rust Arena 中的权威坐标与移动状态，PositionComponent 提供业务视图。
-- UnitGateComponent 保存 Gate 实例和 GateSessionId。
-- 玩家重连通过 PlayerUnit Handler 更新 Gate 绑定；有效断线会由 UnitComponent 移除并销毁 PlayerUnit。
+- UnitGateComponent只保存Gate实例。
+- 玩家重连通过PlayerUnit Handler返回权威快照但不更新Gate绑定；宽限期结束后的最终下线才由UnitComponent移除并销毁PlayerUnit。
 - Core 的 ProcessHost 已增加 `despawnActor()` 生命周期接口。
 
 验收结果：
@@ -143,7 +143,7 @@ Cocos 输入
 -> ActorMessageDispatcher 进入 PlayerUnit 的 MailBoxComponent
 -> C2M_MoveHandler 直接调用 PlayerUnit.Move() 更新方向状态
 -> Map 固定帧推进 Cell 移动，并向 BroadcastHub 发布 latest 状态
--> 通用 S2G_ClientBroadcast 按 GateSessionId 聚合并下发 G2C_EntityMove
+-> 通用S2G_ClientBroadcast按Gate实例与UnitId聚合，并由GatePlayerRoute解析当前connectionId后下发G2C_EntityMove
 -> Cocos 按服务端 fixedUpdateMs 和 Cell 路径逐帧推演
 ```
 

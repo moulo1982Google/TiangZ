@@ -28,6 +28,7 @@ Machine
 - 配置 Scene 是顶层业务边界，例如 `LoginMgr`、`Login`、`Gate`、`MapHost`；代码中的 `EntryScene` 只是这类 Scene 的运行时基类。
 - 动态 Scene 是进程内业务容器，例如 `map:1`、副本实例。
 - `Session` 表示一条网络连接，`Unit` 表示玩家、怪物、NPC。它们和 Scene 都可拥有 MailBoxComponent，因此都属于 Actor 消息目标；业务不创建泛化的 `XxxActor` 类。
+- Gate中的`GatePlayerRoute`不是Actor：它把跨重连的玩家位置与一次性`GateSession`分离。普通socket断开保留Map Unit，30秒宽限结束后才由Gate请求Map执行最终下线。
 - `ProcessHost.Root` 按 InstanceId 定位当前生命周期 Entity，MapScene.UnitComponent 按 UnitId 管理地图实体。
 - `Component` 组织状态与能力，不要求 Handler 绑定到单一 Component。
 - `ChildEntity` 由 Component 唯一拥有，具备稳定身份和生命周期但没有 mailbox；它不会成为网络 Actor。
@@ -310,7 +311,7 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 TiangZ 目前有两个职责独立的 VS Code 插件，均尚未发布到 Marketplace：
 
 - [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；主工程当前使用 `v0.12.0`。
-- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component、System与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成。主工程固定使用`v0.13.0`，并通过`verify:design-rules`确保设计核心与`docs/patterns`规则ID、归属文档保持一致。
+- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component、System与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成。主工程固定使用`v0.14.0`，并通过`verify:design-rules`确保设计核心与`docs/patterns`规则ID、归属文档保持一致。
 
 两个插件分开维护，未来可以通过 Extension Pack 一键安装。当前需分别克隆仓库，执行 `npm install`、`npm run check` 和 `npm run package:extension`，再从各仓库 `dist` 目录安装 VSIX。
 

@@ -48,6 +48,8 @@
 - `processHost: ProcessHost`：创建动态 Scene、Actor、Component。
 - `mailbox`：`ordered` 或 `unordered`，默认 ordered。
 - `sendClient(connectionId, descriptor, message)`：向客户端连接推送消息。
+- `onClientReceive(connectionId)`：客户端帧进入Scene mailbox时的轻量连接活动钩子；禁止I/O和业务分发。
+- `onClientSendQueued(connectionIds)`：出站帧进入宿主队列时的观测钩子；不代表写入成功，也不能用于存活续期。
 - `childSceneId(localId)`：生成入口 Scene 范围内唯一的子 Scene ID。
 - EntryScene 也继承 `Entity`，可使用 `AddComponent/GetComponent/RemoveComponent` 组织业务能力。
 
@@ -109,6 +111,14 @@
 - Component `Awake` 只做同步初始化；异步加载由业务 Factory 编排。
 - Component 实现 `Update(): void` 即自动参加固定游戏帧，不需要手工维护 Update 列表。
 - Component 自有定时器在组件销毁时自动取消；挂在 Actor 上的组件定时器还会遵循 Actor mailbox。
+
+## Entity迁移事务
+
+- `CommitPreparedTransfer(options)`：同步执行Capture、Prepare和Commit；Commit完成前失败时调用Rollback销毁不可见候选。该函数不销毁源Entity，源端清理由业务在提交点之后执行。
+- `TransferStagingRegistry`：为跨进程Prepare/Commit/Abort保存有界、可重试的目标端状态；重复Commit不重复发布，迟到Abort不能撤销已提交对象。
+- `SweepExpired`：回滚超时Prepare并清理完成态幂等记录；宿主停止时还必须调用`Dispose`清理未提交候选。
+
+普通Component开发不直接使用这两个API。它们只供MapHost、动态副本协调器等真正拥有Entity迁移事务的稳定Model组件使用；迁移组件仍通过`@transferable + ITransfer`声明自己的值状态。
 
 ## ChildEntity
 

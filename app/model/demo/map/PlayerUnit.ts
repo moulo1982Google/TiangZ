@@ -6,14 +6,8 @@ export interface AwakePlayerUnit {
   mapId: number;
 }
 
-export interface RebindPlayerGate {
-  gateName: string;
-  gateSessionId: string;
-}
-
 export interface MatchPlayerGate {
   gateName: string;
-  gateSessionId: string;
 }
 
 export interface PlayerSnapshot {
@@ -21,7 +15,6 @@ export interface PlayerSnapshot {
   mapId: number;
   unitId: number;
   gateName: string;
-  gateSessionId: string;
   x: number;
   y: number;
   cellX: number;

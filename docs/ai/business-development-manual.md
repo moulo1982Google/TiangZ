@@ -52,7 +52,7 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 6. 变化频率和持久化频率分别是多少。
 7. TypeScript是否已经足够；只有明确性能或权威所有权收益时才进入Native。
 
-安装TiangZ Developer Tools `v0.13.0`后，可执行“TiangZ：设计业务系统”、输入`@tiangz /design quest`，或运行`tiangz-design`。CLI和向导使用确定性规则；聊天模型只负责解释。输出是设计起点，不会自动创建代码，也不能绕过目录依赖、Generated锁和验证命令。修改`docs/patterns`稳定规则时必须同步修改design-core并升级固定Tag；`npm run verify:design-rules`会拒绝缺失、重复、归属错误或只改一侧的规则。
+安装TiangZ Developer Tools `v0.14.0`后，可执行“TiangZ：设计业务系统”、输入`@tiangz /design quest`，或运行`tiangz-design`。CLI和向导使用确定性规则；聊天模型只负责解释。输出是设计起点，不会自动创建代码，也不能绕过目录依赖、Generated锁和验证命令。修改`docs/patterns`稳定规则时必须同步修改design-core并升级固定Tag；`npm run verify:design-rules`会拒绝缺失、重复、归属错误或只改一侧的规则。
 
 ## Model与Hotfix怎么选
 
@@ -329,13 +329,13 @@ message M2C_UseSkill // IActorLocationResponse
 
 ### 玩家地图传送
 
-同一MapHost内切图继续调用Gate的`EnterMap`，不要再定义一套含义重复的`Teleport` RPC。MapHost调用Entity的`CaptureTransfer/RestoreTransfer`，从旧MapScene移除Unit并广播离开，再在目标MapScene用相同UnitId创建新PlayerUnit；位置使用目标`MapConfig`出生点，Actor InstanceId必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
+同一MapHost内切图继续调用Gate的`EnterMap`，不要再定义一套含义重复的`Teleport` RPC。MapHost先创建并完整恢复不可见目标Unit，再用`PlayerDirectoryComponent.Replace(source, target)`比较InstanceId并原子提交；提交前失败会销毁候选并保留源Unit，提交后才销毁源Actor并广播离开。迁移保持UnitId，位置使用目标`MapConfig`出生点，Actor InstanceId必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
 
 Component迁移遵循显式选择：默认不迁移，只有稳定Model类型加`@transferable()`并实现同步`ITransfer<TState>`才会参加。`@transferable()`本身就是稳定能力声明，生成器会检查`CaptureTransfer/RestoreTransfer`是否位于Model或对应`@systemFor`实现中；运行时仍保留最后一道防线。`CaptureTransfer`必须返回脱离旧Entity和Native handle的值快照，`RestoreTransfer`写入目标Factory已经创建的同类型Component，两者都不能返回Promise。当前Numeric与Item迁移完整业务值；Position只迁移速度、朝向和存活，故意不迁移旧坐标与移动中间态；Gate绑定、Persistence和Native handle由目标Factory重建。临时仇恨、施法过程、副本局部状态等组件不加标记即可丢弃。
 
 `RestoreTransfer`只恢复权威数据，不负责恢复后的运行时加工。需要重建Timer、派生字典、配置缓存或索引的Component，在Model声明`@lifecycle({ deserialize: true })`，并在Hotfix System实现同步`IDeserialize.Deserialize()`。Entity会先恢复所有可传送Component，再统一调用这些Component的`Deserialize`；持久化加载器以后也复用`CompleteDeserialize()`调用同一生命周期。以Buff为例：传送快照保存Buff及结束时间，`RestoreTransfer`重建Buff数据，`Deserialize`根据剩余时间移除过期Buff或重新注册Timer。框架只保证完整数据图之后、Entity发布之前调用一次，不包含任何Buff规则；`Deserialize`不得再次访问数据库、返回Promise或依赖尚未恢复的外部Entity。
 
-Entity迁移快照只用于一次进程内迁移，不能长期缓存、写数据库或当作跨进程协议。跨MapHost时必须由后续Directory设计可编码的跨进程DTO，协调源Scene导出、目标Scene接管、Location切换与失败回滚；业务代码不得扫描所有MapHost寻找玩家，也不得假定当前`PlayerDirectoryComponent`是全局目录。
+Entity迁移快照只用于一次进程内迁移，不能长期缓存、写数据库或当作跨进程协议。跨MapHost目标端已经定义`PlayerTransferSnapshot`和`MapTransfer.Prepare/Commit/Abort`：Prepare创建不可见候选，Commit只发布一次，Abort只销毁未提交候选，暂存项有界并按TTL回收。该协议还不能替代全局Directory；源端必须在后续Location能力中协调“目标Prepare、Location原子切换、目标Commit、源Unit下线”。业务代码不得扫描所有MapHost寻找玩家，也不得假定当前`PlayerDirectoryComponent`是全局目录。完整语义见[Entity地图迁移](../design/entity-transfer.md)。
 
 ## Scene调用规则
 
@@ -491,7 +491,9 @@ Update(): void {
 await player.Offline(reason);
 ```
 
-业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。旧Gate Session的断线消息必须校验`gateSessionId`，不能踢掉已重连玩家。
+业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。普通socket断开只销毁`GateSession`，不能直接调用玩家`Offline()`；`GatePlayerRoute`在Gate继续保留30秒等待重连。宽限期结束后只能由Gate调用`MapProtocol.PlayerOffline`，Map保存、移除Unit并广播AOI离开后，Gate再删除Route。
+
+玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒发送`C2G_Ping`；任何入站消息都会续期，服务端出站消息不会续期。
 
 当前正式数据库链路尚未实现，Phase 4.1才会建设Rust `PersistenceProxy`和Redis/永久DB分层。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端。
 

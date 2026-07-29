@@ -4,7 +4,7 @@ import type { PlayerSnapshot } from "../map/PlayerUnit";
 
 export type PersistedPlayerState = Omit<
   PlayerSnapshot,
-  "gateName" | "gateSessionId"
+  "gateName"
 >;
 
 export interface PlayerSaveData {
