@@ -111,7 +111,7 @@ Quest默认是玩家私有状态。接受任务时创建Quest子Entity，进度�
 
 业务系统设计先查[`docs/patterns`](../patterns/README.md)。其中用稳定规则编号描述所有权、Entity形态、Audience、状态复制、生命周期、Timer和数据位置；这些文档是人类可读的设计依据，不是自动生成的业务代码。
 
-TiangZ Developer Tools `v0.14.0`把可机械判断的部分固化到不依赖VS Code的`design-core`，并向上提供设计向导、`@tiangz`聊天解释、`tiangz-design` CLI和只读`tiangz-design-mcp`。相同结构化输入必须得到相同确定性结论；AI模型只在用户主动聊天时解释报告，不能改变规则结论、虚构API，或把普通业务引向Core、Rust Runtime和Generated。主工程固定依赖该Tag，`verify:design-rules`要求design-core与`docs/patterns`规则ID集合、归属文档和文件路径完全一致。
+TiangZ Developer Tools `v0.15.0`把可机械判断的部分固化到不依赖VS Code的共享核心，并向上提供设计向导、`@tiangz`聊天解释、`tiangz-design` CLI、只读`tiangz-design-mcp`和Runtime Foundation诊断。相同结构化输入必须得到相同确定性结论；AI模型只在用户主动聊天时解释报告，不能改变规则结论、虚构API，或把普通业务引向Core、Rust Runtime和Generated。主工程固定依赖该Tag，`verify:design-rules`要求design-core与`docs/patterns`规则ID集合、归属文档和文件路径完全一致。
 
 这套助手用于降低开始设计时的心智负担，不取代工程事实。权威顺序仍是：当前代码与测试、项目检查和生成锁，高于设计报告；发现规则与真实实现冲突时，应修正规则库和对应测试，而不是让AI临时圆回来。
 
@@ -287,7 +287,7 @@ Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tian
 
 ## 当前未完成和明确暂缓
 
-2026-07完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1至R4实现与专项验收。`0.3.10-alpha.5`建立Model/Hotfix双Bundle和在线事务，`alpha.6`加入`@systemFor`和高负载验收，`alpha.7`把Hotfix改为固定脚本名IIFE、统一业务Timer方法名语义，并补齐8秒慢RPC屏障与100代资源长稳。3000玩家A/B已验证1Hz Reload吞吐无可见下降，但Probe p95/p99约增加32%/31%；100代测试中损坏候选被拒绝，Timer、Native实体和pending均无漂移，预热后的V8 Heap/RSS增长通过4MB/16MB硬门槛。Developer Tools `v0.14.0`已作为主工程固定依赖，VS Code、CLI和MCP共享确定性领域规则，主工程验证其与领域模式文档同步。
+2026-07完成了[Phase 4前框架成熟度审计](../design/framework-readiness-audit.md)中的R1至R4实现与专项验收。`0.3.10-alpha.5`建立Model/Hotfix双Bundle和在线事务，`alpha.6`加入`@systemFor`和高负载验收，`alpha.7`把Hotfix改为固定脚本名IIFE、统一业务Timer方法名语义，并补齐8秒慢RPC屏障与100代资源长稳。3000玩家A/B已验证1Hz Reload吞吐无可见下降，但Probe p95/p99约增加32%/31%；100代测试中损坏候选被拒绝，Timer、Native实体和pending均无漂移，预热后的V8 Heap/RSS增长通过4MB/16MB硬门槛。Developer Tools `v0.15.0`已作为主工程固定依赖，VS Code、CLI和MCP共享确定性领域规则，并补充运行时基础能力诊断。
 
 性能回归职责必须分层：`verify:perf` 比较三轮中位数吞吐、p99与错误；`test:backpressure` 验证有界队列和生产者等待；长稳测试判断RSS/V8 Heap趋势。不要把短时RSS噪声或故意过载指标混入普通性能基线。
 
