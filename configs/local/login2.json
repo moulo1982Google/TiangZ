@@ -1,6 +1,7 @@
 {
   "process": {
     "name": "login2",
+    "identity": { "originServerId": 1, "workerId": 3 },
     "observability": {
       "health": {
         "ip": "127.0.0.1",

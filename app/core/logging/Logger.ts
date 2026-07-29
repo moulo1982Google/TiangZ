@@ -6,13 +6,13 @@ export interface LogFields {
   readonly process?: string;
   readonly scene?: string;
   readonly sceneType?: string;
-  readonly actorId?: number | string;
+  readonly actorId?: number | string | bigint;
   readonly connectionId?: number;
   readonly rpcId?: number;
   readonly msgcode?: number;
   readonly traceId?: string;
   readonly requestId?: string;
-  readonly unitId?: number | string;
+  readonly unitId?: number | string | bigint;
   readonly [key: string]: unknown;
 }
 

@@ -1,6 +1,7 @@
 {
   "process": {
     "name": "gate1",
+    "identity": { "originServerId": 1, "workerId": 4 },
     "observability": {
       "health": {
         "ip": "127.0.0.1",

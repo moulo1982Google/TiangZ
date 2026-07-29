@@ -17,6 +17,7 @@
 - Core 单例通过强类型静态属性访问，例如 `TimeSystem.Instance`、`TimerSystem.Instance`、`Game.Instance`。
 - `TimeSystem.FrameTime/DeltaTime`：V8 单调时钟及本次 Runtime Pump 间隔，适合耗时和游戏定时。
 - `TimeSystem.ServerNow`：Unix 毫秒墙上时间，适合日期、活动开放时间和日志。
+- `TimeSystem.ServerDeadlineAfter/RemainingServerTime/IsServerDeadlineReached`：处理需要持久化的Unix截止时间。
 - `TimeSystem.FixedTime/FixedDeltaTime/FrameCount`：当前固定游戏帧时间、固定步长和累计帧数。
 
 业务单例可以继承 `Singleton`，在 Process 启动阶段注册。不要在模块加载阶段偷偷创建单例，也不要用单例替代应归属 Scene、Actor 或 Component 的业务状态。
@@ -25,13 +26,25 @@
 
 - `TimerSystem.NewOnceTimer(delayMs, callback)`：创建一次性游戏定时器。
 - `TimerSystem.NewRepeatedTimer(intervalMs, callback)`：创建重复游戏定时器；Process 卡顿时只触发一次并跳过过期周期，不突发补齐。
-- `TimerSystem.Remove(timerId)`：取消定时器。
+- `TimerSystem.Cancel(timerId, reason)`：立即取消定时器并至多通知一次取消回调。
+- `TimerSystem.Remove(timerId)`：兼容旧版的静默清理入口；新业务不再使用。
 - `TimerSystem.WaitAsync(delayMs)`：等待游戏时钟推进；它不是 Rust/Tokio IO 超时。
 - Component 实现同步 `Update(): void`、`LateUpdate(): void` 或 `FrameFlush(): void` 后，会在 `AddComponent` 成功时自动注册，在 `RemoveComponent`/销毁时自动注销。每个固定逻辑帧严格按 `Update -> LateUpdate -> FrameFlush` 执行，三个阶段都禁止返回 Promise。
-- `Component.NewOnceTimer(delayMs, methodName)` / `NewRepeatedTimer(intervalMs, methodName)`：定时器随组件销毁自动清理；触发时按方法名解析当前Hotfix prototype，不允许业务闭包长期保留旧generation。
+- `Component.NewOnceTimer(delayMs, methodName, args, { onCancelled })` / `NewRepeatedTimer(...)`：参数原样传回；业务主动取消时以`(args, context)`调用取消方法。定时器随组件销毁静默清理，触发时按方法名解析当前Hotfix prototype。
 - `Actor.NewOnceTimer(delayMs, methodName)` / `NewRepeatedTimer(intervalMs, methodName)`：触发后先进入Actor自己的mailbox并解析当前方法；ordered Actor忙碌时排队，Actor销毁时自动取消。
 
 `IUpdate.Update()` 不允许返回 Promise。需要异步串行语义时使用消息或 Actor 定时器，让它进入 mailbox；不要在每帧 Update 内堆积未完成的异步任务。
+
+## ID、协程锁与Scene事件
+
+- 每个Entity都有业务`Id`和本次生命周期`InstanceId`；只持久化需要长期存在的`Id`，永远不保存`InstanceId`。
+- `GlobalIdSystem.Next()`生成可合服的63位`bigint`持久ID；JSON边界转十进制字符串，protobuf使用`uint64`。
+- `scene.Locks.RunExclusive(domain, key, callback)`只在当前Scene/Process内按业务键串行；跨Process先路由到唯一所有者。
+- `scene.Events.Publish(syncDescriptor, event)`同步发布当前Scene事件。
+- `await scene.Events.PublishAsync(asyncDescriptor, event)`并发执行当前Scene的异步监听器。
+- `defineSyncEvent/defineAsyncEvent`定义稳定事件描述；`@syncEventHandler/@asyncEventHandler`注册Hotfix监听器。
+
+完整约束和示例见[运行时基础能力](../design/runtime-foundations.md)。
 
 ## StateReplicationSystem
 

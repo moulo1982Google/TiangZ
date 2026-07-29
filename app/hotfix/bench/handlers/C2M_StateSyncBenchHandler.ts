@@ -39,7 +39,10 @@ export class C2M_StateSyncBenchHandler implements UnitRpcHandler<
         break;
       }
       case ITEM_MODE: {
-        const item = unit.GetComponent(ItemComponent).AddItem(1, 1);
+        const inventory = unit.GetComponent(ItemComponent);
+        const itemId = inventory.Snapshot()[0]?.itemId;
+        if (itemId === undefined) throw new Error("state sync benchmark item is missing");
+        const item = inventory.AddItem(itemId, 1);
         await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(unit, item);
         break;
       }

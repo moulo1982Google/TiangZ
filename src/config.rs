@@ -23,6 +23,8 @@ pub struct RuntimeConfig {
 pub struct ProcessConfig {
     pub name: String,
     #[serde(default)]
+    pub identity: ProcessIdentityConfig,
+    #[serde(default)]
     pub logging: ProcessLoggingConfig,
     #[serde(default)]
     pub network: ProcessNetworkConfig,
@@ -38,6 +40,24 @@ pub struct ProcessConfig {
     pub observability: Option<ProcessObservabilityConfig>,
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessIdentityConfig {
+    #[serde(default = "default_origin_server_id")]
+    pub origin_server_id: u16,
+    #[serde(default)]
+    pub worker_id: u8,
+}
+
+impl Default for ProcessIdentityConfig {
+    fn default() -> Self {
+        Self {
+            origin_server_id: default_origin_server_id(),
+            worker_id: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -295,6 +315,10 @@ fn default_inspector_ip() -> String {
     "127.0.0.1".to_string()
 }
 
+fn default_origin_server_id() -> u16 {
+    1
+}
+
 fn default_health_ip() -> String {
     "127.0.0.1".to_string()
 }
@@ -400,6 +424,14 @@ pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
 fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     if config.process.name.trim().is_empty() {
         bail!("process.name must not be empty");
+    }
+    if config.process.identity.origin_server_id == 0
+        || config.process.identity.origin_server_id > 16_383
+    {
+        bail!("process identity.originServerId must be between 1 and 16383");
+    }
+    if config.process.identity.worker_id > 127 {
+        bail!("process identity.workerId must be between 0 and 127");
     }
     let log_file_enabled = config
         .process
@@ -635,6 +667,7 @@ mod tests {
     fn process(inspector_port: Option<u16>) -> ProcessConfig {
         ProcessConfig {
             name: "test".to_string(),
+            identity: ProcessIdentityConfig::default(),
             logging: ProcessLoggingConfig::default(),
             network: ProcessNetworkConfig::default(),
             game: ProcessGameConfig::default(),
@@ -916,6 +949,27 @@ mod tests {
         process.game.fixed_update_ms = 0;
         let config = RuntimeConfig {
             process,
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_process_identity() {
+        let mut zero_origin = process(None);
+        zero_origin.identity.origin_server_id = 0;
+        let config = RuntimeConfig {
+            process: zero_origin,
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&config).is_err());
+
+        let mut high_worker = process(None);
+        high_worker.identity.worker_id = 128;
+        let config = RuntimeConfig {
+            process: high_worker,
             scenes: vec![scene("map", 7100)],
             known_scenes: vec![],
         };

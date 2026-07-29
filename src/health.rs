@@ -154,6 +154,8 @@ pub(crate) struct GameObservabilitySnapshot {
     pub(crate) update_calls: u64,
     pub(crate) update_failures: u64,
     pub(crate) timers: u64,
+    pub(crate) coroutine_lock_waiters: u64,
+    pub(crate) coroutine_lock_timeouts: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1709,6 +1711,34 @@ fn append_game_metrics_prometheus(
         output,
         "tiangz_game_timers_total{{process=\"{}\"}} {}",
         process_name, snapshot.timers
+    )
+    .expect("formatting metric");
+    writeln!(
+        output,
+        "# HELP tiangz_coroutine_lock_waiters Current Process-local coroutine lock waiters"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_coroutine_lock_waiters gauge").expect("formatting metric type");
+    writeln!(
+        output,
+        "tiangz_coroutine_lock_waiters{{process=\"{}\"}} {}",
+        process_name, snapshot.coroutine_lock_waiters
+    )
+    .expect("formatting metric");
+    writeln!(
+        output,
+        "# HELP tiangz_coroutine_lock_timeouts_total Total Process-local coroutine lock wait timeouts"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_coroutine_lock_timeouts_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "tiangz_coroutine_lock_timeouts_total{{process=\"{}\"}} {}",
+        process_name, snapshot.coroutine_lock_timeouts
     )
     .expect("formatting metric");
 }

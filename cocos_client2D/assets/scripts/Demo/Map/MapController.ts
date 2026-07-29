@@ -13,7 +13,7 @@ export class MapController {
   update(deltaTime: number): void {
     const intent = this.input.update();
     this.entities.update(deltaTime, intent);
-    if (intent.useItem) void this.entities.UseItem(1);
+    if (intent.useItem) void this.entities.UseFirstItem();
     if (intent.switchMap) this.switchMap();
   }
 

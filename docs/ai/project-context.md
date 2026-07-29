@@ -131,8 +131,15 @@ TiangZ Developer Tools `v0.14.0`把可机械判断的部分固化到不依赖VS 
 - `Update/LateUpdate/FrameFlush`必须同步，不得返回Promise。
 - 需要异步顺序的工作应通过消息或Actor定时器重新进入mailbox。
 - Component和ChildEntity定时器在所有者销毁时自动取消；挂在Actor下时回调遵循该Actor mailbox。
+- 所有者Timer返回唯一`TimerId`，支持原样业务参数和主动取消方法；取消至多通知一次，Owner销毁时静默清理。
+- `FrameTime`是不可持久化单调时间；活动时间和跨重启截止时间使用`ServerNow`及deadline helper。
+- `Scene.Locks`提供`Scene InstanceId + domain + key`的本Process FIFO协程锁，不是分布式锁；跨Process先路由到唯一所有者。
+- Developer Tools会检查StartMachine实际部署集合中的`process.identity`、Timer方法名与取消回调、Scene Event同步/异步契约，以及`InstanceId/TimerId`误入持久化结构；这些规则与Runtime Foundation自测共同守住业务侧用法。
+- `Scene.Events`只发布当前Scene的同步/异步Event；跨Scene必须使用Message/RPC。
 
 `await`只释放当前异步调用，不会让JavaScript获得多线程并行。是否允许同一业务目标重入，由目标mailbox决定。
+
+所有Entity均具有业务`Id`和本次生命周期`InstanceId`。永久Item等实体使用`GlobalId bigint`；数据库保存`Id`并丢弃`InstanceId`。`GlobalId`编码永久`originServerId`，同服并发Process由`workerId`隔离；Watcher在整套StartMachine启动前拒绝重复组合。完整语义见[运行时基础能力](../design/runtime-foundations.md)。
 
 ## Scene发现和跨进程调用
 

@@ -357,16 +357,17 @@ async function testItemChildEntity(): Promise<void> {
   host.spawnScene("map:1", MapScene);
   const actor = host.spawnActor("map:1", "item-owner", ComponentProbeActor);
   const inventory = actor.AddComponent(ItemComponent);
-  const item = inventory.GetChild(Item, 1);
+  const item = inventory.GetChildren(Item)[0];
+  assert.ok(item);
 
   assert.equal(item.Parent, inventory);
   assert.equal(item.instanceId, item.InstanceId);
   assert.equal(item.configId, 1001);
   assert.equal(item.count, 3);
   assert.equal(host.Root.Get(item.InstanceId), item);
-  assert.equal(inventory.UseItem(1).count, 2);
-  assert.equal(inventory.AddItem(1, 2).count, 4);
-  assert.equal(inventory.RemoveItem(1, 3).count, 1);
+  assert.equal(inventory.UseItem(item.id).count, 2);
+  assert.equal(inventory.AddItem(item.id, 2).count, 4);
+  assert.equal(inventory.RemoveItem(item.id, 3).count, 1);
 
   const instanceId = item.InstanceId;
   assert.equal(host.despawnActor("map:1", "item-owner"), true);

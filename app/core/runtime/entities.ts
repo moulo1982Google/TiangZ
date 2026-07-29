@@ -2,7 +2,12 @@ import type { ActorContext, SceneContext } from "./contexts";
 import type { MaybePromise } from "../async";
 import { CoreLogger } from "../logging/Logger";
 import type { Logger } from "../logging/Logger";
-import { TimerSystem, type TimerId } from "./TimerSystem";
+import {
+  TimerSystem,
+  type TimerCancelledContext,
+  type TimerCancelReason,
+  type TimerId,
+} from "./TimerSystem";
 import { UpdateSystem } from "./UpdateSystem";
 import type {
   ActorAwakeArgs,
@@ -12,6 +17,8 @@ import type {
   InstanceId,
 } from "./types";
 import { isTransferableComponent } from "./metadata";
+import { SceneLockScope } from "./CoroutineLockSystem";
+import { SceneEventScope } from "./SceneEventSystem";
 
 /** Component自行定义的同步迁移契约；TState必须是脱离原实例的值快照。 / Synchronous Component-owned transfer contract whose state must not retain the source instance. */
 export interface ITransfer<TState = unknown> {
@@ -29,6 +36,11 @@ export interface ITransfer<TState = unknown> {
  */
 export interface IDeserialize {
   Deserialize(): void;
+}
+
+export interface OwnedTimerOptions {
+  /** 可选取消方法名；业务主动取消时按当前Hotfix prototype解析。 / Optional cancellation method resolved from the current Hotfix prototype on business cancellation. */
+  readonly onCancelled?: string;
 }
 
 /**
@@ -79,18 +91,32 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   protected OnDestroy(): void {}
 
   /** 创建按当前prototype方法名执行的一次性组件定时器；不保存Hotfix闭包，销毁时自动取消。 / Creates a one-shot component timer resolved by method name on the current prototype; it retains no Hotfix closure and is cancelled on disposal. */
-  NewOnceTimer(
+  NewOnceTimer<TArgs = undefined>(
     delayMs: number,
     methodName: string,
+    args?: TArgs,
+    options: OwnedTimerOptions = {},
   ): TimerId {
-    let timerId = 0;
+    let timerId = 0 as TimerId;
     const run = () => {
       this.timers.delete(timerId);
-      if (!this.disposed) return invokeTimerMethod(this, methodName);
+      if (!this.disposed) return invokeTimerMethod(this, methodName, args);
     };
+    const onCancelled = options.onCancelled
+      ? (context: TimerCancelledContext) => {
+          this.timers.delete(timerId);
+          if (!this.disposed) {
+            return invokeTimerCancelledMethod(this, options.onCancelled!, args, context);
+          }
+        }
+      : undefined;
     timerId = this.Parent instanceof Actor
-      ? this.Parent.__newOnceTimer(delayMs, run)
-      : TimerSystem.Instance.NewOnceTimer(delayMs, run);
+      ? this.Parent.__newOnceTimer(
+          delayMs,
+          run,
+          onCancelled ? (_actor, context) => onCancelled(context) : undefined,
+        )
+      : TimerSystem.Instance.NewOnceTimer(delayMs, run, { onCancelled });
     this.timers.add(timerId);
     return timerId;
   }
@@ -104,26 +130,46 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
    * rejected so long-lived timers do not retain old generations; disposing the
    * component cancels the timer automatically.
    */
-  NewRepeatedTimer(
+  NewRepeatedTimer<TArgs = undefined>(
     intervalMs: number,
     methodName: string,
+    args?: TArgs,
+    options: OwnedTimerOptions = {},
   ): TimerId {
     const run = () => {
-      if (!this.disposed) return invokeTimerMethod(this, methodName);
+      if (!this.disposed) return invokeTimerMethod(this, methodName, args);
     };
-    const timerId = this.Parent instanceof Actor
-      ? this.Parent.__newRepeatedTimer(intervalMs, run)
-      : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run);
+    let timerId = 0 as TimerId;
+    const onCancelled = options.onCancelled
+      ? (context: TimerCancelledContext) => {
+          this.timers.delete(timerId);
+          if (!this.disposed) {
+            return invokeTimerCancelledMethod(this, options.onCancelled!, args, context);
+          }
+        }
+      : undefined;
+    timerId = this.Parent instanceof Actor
+      ? this.Parent.__newRepeatedTimer(
+          intervalMs,
+          run,
+          onCancelled ? (_actor, context) => onCancelled(context) : undefined,
+        )
+      : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run, { onCancelled });
     this.timers.add(timerId);
     return timerId;
   }
 
   /** 取消本组件拥有的定时器，并返回它此前是否仍有效。 / Cancels a timer owned by this component and returns whether it was still active. */
-  RemoveTimer(timerId: TimerId): boolean {
+  CancelTimer(timerId: TimerId, reason: TimerCancelReason = "manual"): boolean {
     if (!this.timers.delete(timerId)) return false;
     return this.parent instanceof Actor
-      ? this.parent.RemoveTimer(timerId)
-      : TimerSystem.Instance.Remove(timerId);
+      ? this.parent.CancelTimer(timerId, reason)
+      : TimerSystem.Instance.Cancel(timerId, reason);
+  }
+
+  /** 旧名称保留一个版本；语义等同业务主动取消。 / Retained for one compatibility cycle and equivalent to business cancellation. */
+  RemoveTimer(timerId: TimerId): boolean {
+    return this.CancelTimer(timerId);
   }
 
   /**
@@ -268,7 +314,14 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     if (this.disposed) return;
     this.disposed = true;
     UpdateSystem.TryUnregister(this);
-    for (const timerId of [...this.timers]) this.RemoveTimer(timerId);
+    for (const timerId of [...this.timers]) {
+      this.timers.delete(timerId);
+      if (this.parent instanceof Actor) {
+        this.parent.__cancelTimer(timerId, "owner-disposed", false);
+      } else {
+        TimerSystem.Instance.Cancel(timerId, "owner-disposed", false);
+      }
+    }
     for (const child of [...this.children.values()].reverse()) {
       this.children.delete(child.Id);
       this.DomainScene<Scene>().__despawnChild(this, child);
@@ -288,13 +341,38 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 }
 
 /** 按名字调用所有者当前prototype上的Timer方法，使长期Timer跟随Hotfix切换。 / Invokes the named timer method from the owner's current prototype so long-lived timers follow Hotfix switches. */
-function invokeTimerMethod(owner: object, methodName: string): MaybePromise<void> {
+function invokeTimerMethod<TArgs>(
+  owner: object,
+  methodName: string,
+  args: TArgs,
+): MaybePromise<void> {
   if (!methodName) throw new Error("timer method name must not be empty");
   const method = (owner as Record<string, unknown>)[methodName];
   if (typeof method !== "function") {
     throw new Error(`timer method not found: ${owner.constructor.name}.${methodName}`);
   }
-  return (method as (this: object) => MaybePromise<void>).call(owner);
+  return (method as (this: object, args: TArgs) => MaybePromise<void>).call(owner, args);
+}
+
+/** 按名字调用取消方法并传回创建时参数和取消原因。 / Invokes a named cancellation method with the original arguments and cancellation context. */
+function invokeTimerCancelledMethod<TArgs>(
+  owner: object,
+  methodName: string,
+  args: TArgs,
+  context: TimerCancelledContext,
+): MaybePromise<void> {
+  if (!methodName) throw new Error("timer cancellation method name must not be empty");
+  const method = (owner as Record<string, unknown>)[methodName];
+  if (typeof method !== "function") {
+    throw new Error(
+      `timer cancellation method not found: ${owner.constructor.name}.${methodName}`,
+    );
+  }
+  return (method as (
+    this: object,
+    args: TArgs,
+    context: TimerCancelledContext,
+  ) => MaybePromise<void>).call(owner, args, context);
 }
 
 export type ComponentCtor<TComponent extends Component<any[]> = Component<any[]>> =
@@ -574,40 +652,80 @@ export abstract class ChildEntity<
   protected Awake(..._args: TAwakeArgs): void {}
 
   /** 创建按当前 Hotfix prototype 方法解析的一次性 Timer。 / Creates a one-shot timer resolved against the current Hotfix prototype. */
-  NewOnceTimer(delayMs: number, methodName: string): TimerId {
-    let timerId = 0;
+  NewOnceTimer<TArgs = undefined>(
+    delayMs: number,
+    methodName: string,
+    args?: TArgs,
+    options: OwnedTimerOptions = {},
+  ): TimerId {
+    let timerId = 0 as TimerId;
     const run = () => {
       this.timers.delete(timerId);
-      if (!this.IsDisposed) return invokeTimerMethod(this, methodName);
+      if (!this.IsDisposed) return invokeTimerMethod(this, methodName, args);
     };
+    const onCancelled = options.onCancelled
+      ? (context: TimerCancelledContext) => {
+          this.timers.delete(timerId);
+          if (!this.IsDisposed) {
+            return invokeTimerCancelledMethod(this, options.onCancelled!, args, context);
+          }
+        }
+      : undefined;
     const actor = this.OwnerActor();
     timerId = actor
-      ? actor.__newOnceTimer(delayMs, run)
-      : TimerSystem.Instance.NewOnceTimer(delayMs, run);
+      ? actor.__newOnceTimer(
+          delayMs,
+          run,
+          onCancelled ? (_actor, context) => onCancelled(context) : undefined,
+        )
+      : TimerSystem.Instance.NewOnceTimer(delayMs, run, { onCancelled });
     this.timers.add(timerId);
     return timerId;
   }
 
   /** 创建按当前 Hotfix prototype 方法解析的重复 Timer；高数量对象优先使用所属 Component 的合并调度。 / Creates a repeated timer resolved against the current Hotfix prototype; high-cardinality objects should prefer owner-level coalesced scheduling. */
-  NewRepeatedTimer(intervalMs: number, methodName: string): TimerId {
+  NewRepeatedTimer<TArgs = undefined>(
+    intervalMs: number,
+    methodName: string,
+    args?: TArgs,
+    options: OwnedTimerOptions = {},
+  ): TimerId {
     const run = () => {
-      if (!this.IsDisposed) return invokeTimerMethod(this, methodName);
+      if (!this.IsDisposed) return invokeTimerMethod(this, methodName, args);
     };
     const actor = this.OwnerActor();
-    const timerId = actor
-      ? actor.__newRepeatedTimer(intervalMs, run)
-      : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run);
+    let timerId = 0 as TimerId;
+    const onCancelled = options.onCancelled
+      ? (context: TimerCancelledContext) => {
+          this.timers.delete(timerId);
+          if (!this.IsDisposed) {
+            return invokeTimerCancelledMethod(this, options.onCancelled!, args, context);
+          }
+        }
+      : undefined;
+    timerId = actor
+      ? actor.__newRepeatedTimer(
+          intervalMs,
+          run,
+          onCancelled ? (_actor, context) => onCancelled(context) : undefined,
+        )
+      : TimerSystem.Instance.NewRepeatedTimer(intervalMs, run, { onCancelled });
     this.timers.add(timerId);
     return timerId;
   }
 
   /** 取消本子 Entity 拥有的 Timer。 / Cancels one timer owned by this child Entity. */
-  RemoveTimer(timerId: TimerId): boolean {
+  CancelTimer(timerId: TimerId, reason: TimerCancelReason = "manual"): boolean {
     if (!this.timers.delete(timerId)) return false;
     const actor = this.OwnerActor();
     return actor
-      ? actor.RemoveTimer(timerId)
-      : TimerSystem.Instance.Remove(timerId);
+      ? actor.CancelTimer(timerId, reason)
+      : TimerSystem.Instance.Cancel(timerId, reason);
+  }
+
+  /** 旧名称保留一个版本；语义等同业务主动取消。 / Retained for one compatibility cycle and equivalent to business cancellation. */
+  RemoveTimer(timerId: TimerId): boolean {
+    return this.CancelTimer(timerId);
   }
 
   __awake(...args: TAwakeArgs): void {
@@ -632,7 +750,12 @@ export abstract class ChildEntity<
 
   override __dispose(): void {
     if (this.IsDisposed) return;
-    for (const timerId of [...this.timers]) this.RemoveTimer(timerId);
+    for (const timerId of [...this.timers]) {
+      this.timers.delete(timerId);
+      const actor = this.OwnerActor();
+      if (actor) actor.__cancelTimer(timerId, "owner-disposed", false);
+      else TimerSystem.Instance.Cancel(timerId, "owner-disposed", false);
+    }
     super.__dispose();
   }
 
@@ -648,6 +771,8 @@ export abstract class ChildEntity<
 
 export abstract class Scene extends Entity {
   protected readonly sceneContext: SceneContext;
+  private lockScope: SceneLockScope | undefined;
+  private eventScope: SceneEventScope | undefined;
 
   constructor(ctx: SceneContext) {
     super();
@@ -656,6 +781,18 @@ export abstract class Scene extends Entity {
 
   get logger(): Logger {
     return this.sceneContext.logger;
+  }
+
+  /** 返回严格限定到当前Scene的协程锁门面；不同Scene即使领域和键相同也不会互相阻塞。 / Returns a coroutine-lock facade strictly scoped to this Scene; identical keys in other Scenes never contend. */
+  get Locks(): SceneLockScope {
+    if (!this.lockScope) this.lockScope = new SceneLockScope(this);
+    return this.lockScope;
+  }
+
+  /** 返回只能发布到当前Scene实例的同步/异步Event门面。 / Returns the synchronous/asynchronous Event facade bound exclusively to this Scene instance. */
+  get Events(): SceneEventScope {
+    if (!this.eventScope) this.eventScope = new SceneEventScope(this);
+    return this.eventScope;
   }
 
   /** 在本 Scene 创建 Actor，并在 Awake 前注册其 InstanceId。 / Creates an Actor in this Scene and registers its InstanceId before Awake runs. */
@@ -707,13 +844,23 @@ export abstract class Actor<
   protected Awake(..._args: TAwakeArgs): void {}
 
   /** 调度按当前prototype方法名执行的一次性Actor mailbox定时器。 / Schedules a one-shot Actor-mailbox timer resolved by method name on the current prototype. */
-  NewOnceTimer(
+  NewOnceTimer<TArgs = undefined>(
     delayMs: number,
     methodName: string,
+    args?: TArgs,
+    options: OwnedTimerOptions = {},
   ): TimerId {
     return this.__newOnceTimer(
       delayMs,
-      (actor) => invokeTimerMethod(actor, methodName),
+      (actor) => invokeTimerMethod(actor, methodName, args),
+      options.onCancelled
+        ? (actor, context) => invokeTimerCancelledMethod(
+            actor,
+            options.onCancelled!,
+            args,
+            context,
+          )
+        : undefined,
     );
   }
 
@@ -721,10 +868,18 @@ export abstract class Actor<
   __newOnceTimer(
     delayMs: number,
     callback: (actor: this) => MaybePromise<void>,
+    onCancelled?: (
+      actor: this,
+      context: TimerCancelledContext,
+    ) => MaybePromise<void>,
   ): TimerId {
     return this.ctx.newOnceTimer(
       delayMs,
       callback as (actor: Actor<any[]>) => MaybePromise<void>,
+      onCancelled as ((
+        actor: Actor<any[]>,
+        context: TimerCancelledContext,
+      ) => MaybePromise<void>) | undefined,
     );
   }
 
@@ -733,13 +888,23 @@ export abstract class Actor<
    * Schedules a repeated Actor-mailbox timer that resolves a method on the
    * current prototype; disposal cancels future callbacks.
    */
-  NewRepeatedTimer(
+  NewRepeatedTimer<TArgs = undefined>(
     intervalMs: number,
     methodName: string,
+    args?: TArgs,
+    options: OwnedTimerOptions = {},
   ): TimerId {
     return this.__newRepeatedTimer(
       intervalMs,
-      (actor) => invokeTimerMethod(actor, methodName),
+      (actor) => invokeTimerMethod(actor, methodName, args),
+      options.onCancelled
+        ? (actor, context) => invokeTimerCancelledMethod(
+            actor,
+            options.onCancelled!,
+            args,
+            context,
+          )
+        : undefined,
     );
   }
 
@@ -747,16 +912,34 @@ export abstract class Actor<
   __newRepeatedTimer(
     intervalMs: number,
     callback: (actor: this) => MaybePromise<void>,
+    onCancelled?: (
+      actor: this,
+      context: TimerCancelledContext,
+    ) => MaybePromise<void>,
   ): TimerId {
     return this.ctx.newRepeatedTimer(
       intervalMs,
       callback as (actor: Actor<any[]>) => MaybePromise<void>,
+      onCancelled as ((
+        actor: Actor<any[]>,
+        context: TimerCancelledContext,
+      ) => MaybePromise<void>) | undefined,
     );
   }
 
   /** 通过拥有该 mailbox 的宿主取消 Actor 定时器。 / Cancels an Actor timer through the host that owns its mailbox. */
+  CancelTimer(timerId: TimerId, reason: TimerCancelReason = "manual"): boolean {
+    return this.ctx.cancelTimer(timerId, reason, true);
+  }
+
+  /** 仅供所有权清理选择是否通知业务取消方法。 / Internal ownership cleanup with explicit cancellation-notification policy. */
+  __cancelTimer(timerId: TimerId, reason: TimerCancelReason, notify: boolean): boolean {
+    return this.ctx.cancelTimer(timerId, reason, notify);
+  }
+
+  /** 旧名称保留一个版本；语义等同业务主动取消。 / Retained for one compatibility cycle and equivalent to business cancellation. */
   RemoveTimer(timerId: TimerId): boolean {
-    return this.ctx.removeTimer(timerId);
+    return this.CancelTimer(timerId);
   }
 
   __awake(...args: TAwakeArgs): void {

@@ -1,6 +1,7 @@
 {
   "process": {
     "name": "bench",
+    "identity": { "originServerId": 16383, "workerId": 127 },
     "observability": {
       "health": {
         "ip": "127.0.0.1",

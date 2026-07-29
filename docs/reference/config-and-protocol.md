@@ -15,6 +15,7 @@
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `name` | string | Process 唯一名称，也作为 ProcessHost ID |
+| `identity` | object? | 全局持久ID来源身份；包含`originServerId`和`workerId` |
 | `logging` | object? | 日志级别、格式和输出目标；默认 INFO 文本控制台 |
 | `network` | object? | 操作系统 I/O Backend；默认 `epoll`，Linux 可实验性选择 `io-uring` |
 | `game` | object? | 固定 Game.Update 与掉帧补偿策略，默认 20Hz |
@@ -25,6 +26,8 @@
 | `debug` | object? | 该 V8 的 Inspector 配置 |
 
 `debug` 支持 `inspectorIp`、`inspectorPort`、`breakOnStart`、`allowRemote`。
+
+`identity.originServerId`范围为1到16383，表示永久来源服；上线后不得修改或复用。`identity.workerId`范围为0到127，表示同一来源服内生成持久ID的Process。Watcher会加载整套`StartMachine`并拒绝重复组合；直接启动单进程配置时由运维保证唯一。详细布局见[运行时基础能力](../design/runtime-foundations.md)。
 
 `observability.health` 可选配置独立的进程健康检查端点：
 
@@ -148,6 +151,8 @@ Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原�
 ## StartMachine
 
 `machines[].innerIp` 匹配本机地址，`machines[].processes` 列出要启动的进程配置。每个配置文件仍只创建一个 Process/V8。
+
+Watcher在启动子进程前读取所有机器引用的Process配置，并全局检查`process.identity`冲突。即使远端机器不由当前Watcher启动，它的配置也必须存在且可读取，避免跨机器复用ID生成槽位。
 
 ## 网络帧
 

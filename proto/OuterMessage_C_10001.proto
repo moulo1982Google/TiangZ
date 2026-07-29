@@ -126,7 +126,7 @@ message G2C_EntityState // IMessage
 // @ets.msg protocol=Map method=UseItem duringTransfer=queue
 message C2M_UseItem // IActorLocationRequest
 {
-  uint32 item_id = 1;
+  uint64 item_id = 1;
 }
 
 message M2C_UseItem // IActorLocationResponse

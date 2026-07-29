@@ -287,7 +287,7 @@ export const UnitStateDeltaCodec = {
 };
 
 export interface ItemSnapshot {
-  itemId: number;
+  itemId: bigint;
   configId: number;
   count: number;
   quality: number;
@@ -299,7 +299,7 @@ export const ItemSnapshotCodec = {
   decode(payload: Uint8Array): ItemSnapshot {
     const reader = new BinaryReader(payload);
     const value: ItemSnapshot = {
-      itemId: 0,
+      itemId: 0n,
       configId: 0,
       count: 0,
       quality: 0,
@@ -309,7 +309,7 @@ export const ItemSnapshotCodec = {
     while (!reader.eof()) {
       const tag = reader.tag();
       if (tag.fieldNo === 1 && tag.wireType === 0) {
-        value.itemId = reader.uint32();
+        value.itemId = reader.uint64();
       }
       else if (tag.fieldNo === 2 && tag.wireType === 0) {
         value.configId = reader.uint32();
@@ -335,7 +335,7 @@ export const ItemSnapshotCodec = {
 
   encode(value: ItemSnapshot): Uint8Array {
     const writer = new BinaryWriter();
-    if (value.itemId !== undefined) writer.uint32(1, value.itemId);
+    if (value.itemId !== undefined) writer.uint64(1, value.itemId);
     if (value.configId !== undefined) writer.uint32(2, value.configId);
     if (value.count !== undefined) writer.uint32(3, value.count);
     if (value.quality !== undefined) writer.uint32(4, value.quality);
@@ -1032,14 +1032,14 @@ export const G2C_EntityStateCodec = {
 
 export interface C2M_UseItem extends IActorLocationRequest {
   rpcId?: number;
-  itemId: number;
+  itemId: bigint;
 }
 
 export const C2M_UseItemCodec = {
   decode(payload: Uint8Array): C2M_UseItem {
     const reader = new BinaryReader(payload);
     const value: C2M_UseItem = {
-      itemId: 0,
+      itemId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1047,7 +1047,7 @@ export const C2M_UseItemCodec = {
         value.rpcId = reader.uint32();
       }
       else if (tag.fieldNo === 1 && tag.wireType === 0) {
-        value.itemId = reader.uint32();
+        value.itemId = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -1059,7 +1059,7 @@ export const C2M_UseItemCodec = {
   encode(value: C2M_UseItem): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
-    if (value.itemId !== undefined) writer.uint32(1, value.itemId);
+    if (value.itemId !== undefined) writer.uint64(1, value.itemId);
     return writer.finish();
   },
 };

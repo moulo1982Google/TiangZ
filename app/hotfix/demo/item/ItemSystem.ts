@@ -1,6 +1,7 @@
 import {
   Item,
   NativeItemRef,
+  requireGlobalId,
   type AwakeItem,
   type ItemSnapshot,
   systemFor,
@@ -11,11 +12,11 @@ import {
 export class ItemSystem extends Item {
   /** 创建与子 Entity InstanceId 一一对应的 Rust 权威数据。 / Creates Rust authoritative data keyed by the child Entity InstanceId. */
   protected override Awake(request: AwakeItem): void {
-    if (typeof this.Id !== "number") {
-      throw new Error(`item id must be a number: ${String(this.Id)}`);
-    }
+    if (typeof this.Id !== "bigint") throw new Error(`item id must be bigint: ${String(this.Id)}`);
+    requireGlobalId(this.Id, "itemId");
     this.native = NativeItemRef.Create({
-      id: this.Id,
+      // Native通用Entity基类仍是u32；永久ItemId由TS Entity.Id持有，不能经f64桥丢精度。
+      id: this.InstanceId,
       instanceId: this.InstanceId,
       configId: request.configId,
       count: request.count,
@@ -25,7 +26,7 @@ export class ItemSystem extends Item {
     });
   }
 
-  get id(): number { return this.requireNative().id; }
+  get id(): bigint { return this.Id as bigint; }
   get instanceId(): number { return this.InstanceId; }
   get configId(): number { return this.requireNative().configId; }
   get count(): number { return this.requireNative().count; }
@@ -37,7 +38,7 @@ export class ItemSystem extends Item {
   Snapshot(): ItemSnapshot {
     const item = this.requireNative();
     return {
-      itemId: item.id,
+      itemId: this.id,
       configId: item.configId,
       count: item.count,
       quality: item.quality,

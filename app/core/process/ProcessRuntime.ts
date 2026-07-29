@@ -15,6 +15,7 @@ import type {
   SceneUpdateResult,
 } from "./types";
 import { CoreLogger } from "../logging/Logger";
+import { CoroutineLockSystem } from "../runtime/CoroutineLockSystem";
 
 export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
@@ -31,6 +32,8 @@ export interface GameMetricsSnapshot {
   updateCalls: number;
   updateFailures: number;
   timers: number;
+  coroutineLockWaiters: number;
+  coroutineLockTimeouts: number;
 }
 
 export class ProcessRuntime implements LocalSceneRouter {
@@ -41,7 +44,7 @@ export class ProcessRuntime implements LocalSceneRouter {
   private stopPromise: Promise<void> | undefined;
 
   constructor(private readonly config: ProcessRuntimeConfig) {
-    InitializeGameSingletons(config.process.game);
+    InitializeGameSingletons(config.process.game, config.process.identity);
     this.processHost = new ProcessHost(config.process.name);
     this.entryScenes = [];
     try {
@@ -266,5 +269,7 @@ function gameMetricsSnapshot(): GameMetricsSnapshot {
     updateCalls: UpdateSystem.Instance.UpdateCount,
     updateFailures: UpdateSystem.Instance.FailedCount,
     timers: TimerSystem.Instance.Count,
+    coroutineLockWaiters: CoroutineLockSystem.Instance.WaitingCount,
+    coroutineLockTimeouts: CoroutineLockSystem.Instance.TimeoutCount,
   };
 }

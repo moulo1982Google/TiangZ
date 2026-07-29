@@ -1,6 +1,7 @@
 {
   "process": {
     "name": "all",
+    "identity": { "originServerId": 1, "workerId": 0 },
     "logging": {
       "level": "info",
       "format": "pretty",

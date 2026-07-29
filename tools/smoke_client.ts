@@ -187,7 +187,7 @@ async function verifyGateSessionLifecycle(
 async function verifyMapTransfer(
   gate: TcpRpcConnection,
   previous: ReturnType<typeof decodeEnterMapFrame>["body"],
-  expectedItem: { itemId: number; count: number; version: number },
+  expectedItem: { itemId: bigint; count: number; version: number },
   expectedMinimumHp: number,
 ): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
   const rpcId = nextRpcId++;
@@ -206,7 +206,7 @@ async function verifyMapTransfer(
   }
   const transferred = response.body;
   const mapConfig = GameConfigs.MapConfig.Get(2);
-  const itemAfter = transferred.items.find((item) => item.itemId === 1);
+  const itemAfter = transferred.items.find((item) => item.itemId === expectedItem.itemId);
   if (
     transferred.mapId !== 2 ||
     transferred.unitId !== previous.unitId ||
@@ -254,11 +254,11 @@ async function verifyItemChange(
   gate: TcpRpcConnection,
   enterMap: {
     unitId: number;
-    items: readonly { itemId: number; configId: number; count: number; version: number }[];
+    items: readonly { itemId: bigint; configId: number; count: number; version: number }[];
   },
   previousHp: number,
 ) {
-  const initial = enterMap.items.find((item) => item.itemId === 1);
+  const initial = enterMap.items[0];
   if (!initial || initial.count !== 3) {
     throw new Error("enter-map snapshot did not include the initial item state");
   }
@@ -267,7 +267,9 @@ async function verifyItemChange(
   const expectedHp = Math.min(maxHp, previousHp + itemConfig.restoreHp);
   const pushed = gate.waitForMessage(MsgCode.G2C_ItemChanged);
   let numericPushed = gate.waitForMessage(MsgCode.G2C_EntityNumeric);
-  const responseFrame = await gate.request(buildUseItemPacket(nextRpcId++, { itemId: 1 }));
+  const responseFrame = await gate.request(
+    buildUseItemPacket(nextRpcId++, { itemId: initial.itemId }),
+  );
   const response = decodeUseItemFrame(responseFrame).body.item;
   const event = decodeItemChangedFrame(await pushed).body.item;
   if (response.count !== 2 || event.count !== 2 || response.version !== event.version) {

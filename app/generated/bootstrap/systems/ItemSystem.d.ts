@@ -7,7 +7,7 @@ declare module "../../../model/demo/item/Item" {
     Snapshot(): ItemSnapshot;
     AddCount(count: number): ItemSnapshot;
     RemoveCount(count: number): ItemSnapshot;
-    readonly id: number;
+    readonly id: bigint;
     readonly instanceId: number;
     readonly configId: number;
     readonly count: number;

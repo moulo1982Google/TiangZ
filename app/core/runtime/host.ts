@@ -15,12 +15,20 @@ import { MailBoxComponent } from "./MailBoxComponent";
 import { EntityRoot } from "./root";
 import { Unit, UnitComponent } from "./Unit";
 import { Session, SessionComponent } from "./Session";
-import { TimerSystem, type TimerId } from "./TimerSystem";
+import {
+  TimerSystem,
+  type TimerCancelledContext,
+  type TimerCancelReason,
+  type TimerId,
+} from "./TimerSystem";
+import { InstanceIdSystem } from "./IdSystem";
+import { CoroutineLockSystem } from "./CoroutineLockSystem";
 import {
   getActorOptions,
   getSceneOptions,
 } from "./metadata";
 import { CoreLogger } from "../logging/Logger";
+import { SingletonRegistry } from "./Singleton";
 import type {
   ActorCtor,
   ActorAwakeArgs,
@@ -60,7 +68,6 @@ export class ProcessHost {
   readonly Root = new EntityRoot();
   private readonly scenes = new Map<SceneId, SceneRuntime>();
   private readonly actorsByInstanceId = new Map<InstanceId, ActorRuntime>();
-  private nextInstanceId = 1;
 
   constructor(public readonly processId = "process-1") {}
 
@@ -252,6 +259,7 @@ export class ProcessHost {
       this.despawnActor(sceneId, actorId);
     }
     this.scenes.delete(sceneId);
+    SingletonRegistry.TryGet(CoroutineLockSystem)?.CancelScene(scene.instance.InstanceId);
     this.Root.Remove(scene.instance.InstanceId);
     try {
       scene.instance.__dispose();
@@ -307,13 +315,28 @@ export class ProcessHost {
     instanceId: InstanceId,
     delayMs: number,
     callback: (actor: Actor<any[]>) => MaybePromise<void>,
+    onCancelled?: (
+      actor: Actor<any[]>,
+      context: TimerCancelledContext,
+    ) => MaybePromise<void>,
   ): TimerId {
     const actor = this.requireActorRuntime(instanceId);
-    let timerId = 0;
-    timerId = TimerSystem.Instance.NewOnceTimer(delayMs, () => {
-      actor.timers.delete(timerId);
-      return this.runActorMailbox(instanceId, callback);
-    });
+    let timerId = 0 as TimerId;
+    timerId = TimerSystem.Instance.NewOnceTimer(
+      delayMs,
+      () => {
+        actor.timers.delete(timerId);
+        return this.runActorMailbox(instanceId, callback);
+      },
+      {
+        onCancelled: onCancelled
+          ? (context) => this.runActorMailbox(
+              instanceId,
+              (target) => onCancelled(target, context),
+            )
+          : undefined,
+      },
+    );
     actor.timers.add(timerId);
     return timerId;
   }
@@ -322,20 +345,38 @@ export class ProcessHost {
     instanceId: InstanceId,
     intervalMs: number,
     callback: (actor: Actor<any[]>) => MaybePromise<void>,
+    onCancelled?: (
+      actor: Actor<any[]>,
+      context: TimerCancelledContext,
+    ) => MaybePromise<void>,
   ): TimerId {
     const actor = this.requireActorRuntime(instanceId);
-    const timerId = TimerSystem.Instance.NewRepeatedTimer(
+    let timerId = 0 as TimerId;
+    timerId = TimerSystem.Instance.NewRepeatedTimer(
       intervalMs,
       () => this.runActorMailbox(instanceId, callback),
+      {
+        onCancelled: onCancelled
+          ? (context) => this.runActorMailbox(
+              instanceId,
+              (target) => onCancelled(target, context),
+            )
+          : undefined,
+      },
     );
     actor.timers.add(timerId);
     return timerId;
   }
 
-  removeActorTimer(instanceId: InstanceId, timerId: TimerId): boolean {
+  cancelActorTimer(
+    instanceId: InstanceId,
+    timerId: TimerId,
+    reason: TimerCancelReason,
+    notify: boolean,
+  ): boolean {
     const actor = this.actorsByInstanceId.get(instanceId);
     if (!actor || !actor.timers.delete(timerId)) return false;
-    return TimerSystem.Instance.Remove(timerId);
+    return TimerSystem.Instance.Cancel(timerId, reason, notify);
   }
 
   /**
@@ -482,9 +523,6 @@ export class ProcessHost {
   }
 
   private allocateInstanceId(): InstanceId {
-    if (this.nextInstanceId > 0xffff_ffff) {
-      throw new Error("entity instance id space exhausted");
-    }
-    return this.nextInstanceId++;
+    return InstanceIdSystem.Instance.Next();
   }
 }

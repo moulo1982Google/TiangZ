@@ -38,7 +38,7 @@ export class MapEntityManager {
   private readonly remotes = new Map<number, RemoteEntityVisual>();
   private readonly numericLabels = new Map<number, Label>();
   private readonly numerics = new Map<number, Map<number, number>>();
-  private readonly items = new Map<number, ItemSnapshot>();
+  private readonly items = new Map<bigint, ItemSnapshot>();
   private readonly states = new Map<number, UnitStateDelta>();
   private readonly mapClient: MapClient;
 
@@ -102,7 +102,9 @@ export class MapEntityManager {
     console.log(`道具 ${item.itemId} 数量更新为 ${item.count}，版本 ${item.version}`);
   }
 
-  async UseItem(itemId: number): Promise<void> {
+  async UseFirstItem(): Promise<void> {
+    const itemId = this.items.keys().next().value as bigint | undefined;
+    if (itemId === undefined) return;
     try {
       const response = await this.mapClient.useItem({ itemId });
       this.applyItem(response.item);

@@ -2,6 +2,12 @@ import { Singleton, SingletonRegistry } from "./Singleton";
 import { TimeSystem } from "./TimeSystem";
 import { TimerSystem } from "./TimerSystem";
 import { UpdateSystem } from "./UpdateSystem";
+import {
+  GlobalIdSystem,
+  InstanceIdSystem,
+  type GlobalIdConfig,
+} from "./IdSystem";
+import { CoroutineLockSystem } from "./CoroutineLockSystem";
 
 // 默认游戏逻辑帧为 20Hz。Runtime Pump 仍由网络事件即时唤醒，两者不是同一个频率。
 export const DEFAULT_FIXED_UPDATE_MS = 50;
@@ -83,12 +89,20 @@ export class Game extends Singleton {
 }
 
 /** 按依赖顺序创建进程级时间、定时器、Update 和 Game 单例。 / Creates process time, timer, update, and game singletons in dependency order. */
-export function InitializeGameSingletons(config: GameUpdateConfig = {}): void {
+export function InitializeGameSingletons(
+  config: GameUpdateConfig = {},
+  idConfig: GlobalIdConfig = {},
+): void {
   if (SingletonRegistry.TryGet(Game)) {
     throw new Error("game runtime singletons are already initialized");
   }
   SingletonRegistry.Add(TimeSystem).__update(monotonicNow(), Date.now());
+  if (!SingletonRegistry.TryGet(InstanceIdSystem)) {
+    SingletonRegistry.Add(InstanceIdSystem);
+  }
+  SingletonRegistry.Add(GlobalIdSystem).Configure(idConfig);
   SingletonRegistry.Add(TimerSystem);
+  SingletonRegistry.Add(CoroutineLockSystem);
   SingletonRegistry.Add(UpdateSystem);
   SingletonRegistry.Add(Game).Configure(config);
 }

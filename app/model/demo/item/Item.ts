@@ -1,5 +1,6 @@
 import { ChildEntity, lifecycle } from "../../../core/public";
 import { NativeItemRef } from "../../../generated/model/native/NativeItemRef";
+import type { GlobalId } from "../../../core/public";
 
 export interface AwakeItem {
   configId: number;
@@ -11,7 +12,7 @@ export interface AwakeItem {
 
 /** 道具运行时只读视图；只能在当前同步调用中读取。 / Runtime read-only item view for the current synchronous call. */
 export interface ItemView {
-  readonly id: number;
+  readonly id: GlobalId;
   readonly instanceId: number;
   readonly configId: number;
   readonly count: number;

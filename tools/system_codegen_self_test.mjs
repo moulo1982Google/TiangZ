@@ -7,8 +7,8 @@ const cases = [
   ["PlayerUnitSystem.d.ts", ["Move(request: MovePlayer): boolean;", "Snapshot(): PlayerSnapshot;"]],
   ["LoginComponentSystem.d.ts", ["Login(request: C2S_Login): S2C_Login;"]],
   ["ItemComponentSystem.d.ts", [
-    "GetItem(itemId: number): ItemView | undefined;",
-    "UseItem(itemId: number): ItemSnapshot;",
+    "GetItem(itemId: bigint): ItemView | undefined;",
+    "UseItem(itemId: bigint): ItemSnapshot;",
   ]],
   ["NumericComponentSystem.d.ts", [
     "Get(type: NumericTypeValue): number;",

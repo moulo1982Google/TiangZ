@@ -53,7 +53,7 @@ export class GateScene extends EntryScene {
   private readonly routesByUnitId = new Map<number, GatePlayerRoute>();
   private readonly disconnecting = new Set<number>();
   private readonly location: LocationProxy;
-  private timeoutSweepTimer: TimerId = 0;
+  private timeoutSweepTimer = 0 as TimerId;
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
@@ -118,7 +118,7 @@ export class GateScene extends EntryScene {
   protected override onStop(): void {
     if (this.timeoutSweepTimer !== 0) {
       TimerSystem.Instance.Remove(this.timeoutSweepTimer);
-      this.timeoutSweepTimer = 0;
+      this.timeoutSweepTimer = 0 as TimerId;
     }
     for (const route of [...this.routesByAccount.values()]) {
       route.BeginRemoving();

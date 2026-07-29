@@ -419,7 +419,7 @@
         {
           "number": 1,
           "name": "item_id",
-          "type": "uint32",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -2725,7 +2725,7 @@
         {
           "number": 1,
           "name": "item_id",
-          "type": "uint32",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },

@@ -71,12 +71,20 @@ export interface SceneConfig {
 
 export interface ProcessConfig {
   name: string;
+  identity?: ProcessIdentityConfig;
   logging?: ProcessLoggingConfig;
   network?: ProcessNetworkConfig;
   game?: GameUpdateConfig;
   scheduling?: ProcessSchedulingConfig;
   lifecycle?: ProcessLifecycleConfig;
   observability?: ProcessObservabilityConfig;
+}
+
+export interface ProcessIdentityConfig {
+  /** 永久来源服编号；不同可合服区服不得重复。 / Immutable origin-server number unique across mergeable servers. */
+  originServerId?: number;
+  /** 同一来源服内生成持久 ID 的 Process 编号。 / Persistent-ID worker number inside one origin server. */
+  workerId?: number;
 }
 
 export interface ProcessLifecycleConfig {

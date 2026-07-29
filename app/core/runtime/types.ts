@@ -6,11 +6,13 @@ import type {
   ActorContext,
   SceneContext,
 } from "./contexts";
+import type { GlobalId, InstanceId } from "./IdSystem";
 
 export type SceneId = string;
 export type SceneType = string;
-export type EntityId = string | number;
-export type InstanceId = number;
+export type EntityId = string | number | bigint;
+export type PersistentEntityId = GlobalId;
+export type { GlobalId, InstanceId } from "./IdSystem";
 export type ActorId = EntityId;
 export type MailboxType = "ordered" | "unordered";
 

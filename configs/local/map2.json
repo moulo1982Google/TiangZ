@@ -1,6 +1,7 @@
 {
   "process": {
     "name": "map2",
+    "identity": { "originServerId": 1, "workerId": 6 },
     "observability": {
       "health": {
         "ip": "127.0.0.1",

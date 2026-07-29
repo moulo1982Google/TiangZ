@@ -474,6 +474,23 @@ protected RegenerateHp(): void {
 
 Component和Actor业务Timer必须传方法名，不能传匿名闭包。触发时框架从当前prototype解析方法，因此现有Timer会自然进入新Hotfix generation；Timer仍随owner销毁自动取消。
 
+需要区分正常结束与主动打断时，保存返回的`TimerId`并声明取消方法：
+
+```ts
+this.castTimerId = this.NewOnceTimer(
+  3_000,
+  "FinishCast",
+  { skillId, targetId },
+  { onCancelled: "CancelCast" },
+);
+
+this.CancelTimer(this.castTimerId, "player-moved");
+```
+
+正常到期只调用`FinishCast(args)`；主动取消只调用一次`CancelCast(args, context)`。Owner销毁属于生命周期清理，不回调业务取消方法。不要把`TimerId`写入数据库。
+
+Developer Tools会检查Timer方法名和取消回调是否存在、取消回调是否接收`(args, context)`、异步Scene Event是否遗漏`await`，以及持久化Snapshot是否错误声明`InstanceId/TimerId`。命令面板可执行“TiangZ：运行 Runtime Foundation 自测”，其结果与`npm run test:runtime-foundation`一致。
+
 逐固定帧逻辑实现同步`Update()`，帧末复制实现`FrameFlush()`。不要在Update中创建未等待的异步任务：
 
 ```ts
@@ -484,6 +501,16 @@ Update(): void {
 ```
 
 需要异步串行时，用Actor定时器或给Actor发送消息，使工作进入其mailbox。
+
+## 业务Id、局部锁与Scene事件
+
+- 玩家、Item、动态副本等长期实体保存稳定`Id`；`InstanceId`只用于当前Process中的EntityRoot和Actor路由，禁止持久化。
+- 新Item由`GlobalIdSystem`生成ID；数据库恢复使用`CreateItemById`保留原ID并获得新的InstanceId。
+- 同一Scene内按门派、队伍、交易单等业务键防重入时使用`await scene.Locks.RunExclusive(domain, key, callback)`。它不跨Process，不替代数据库事务。
+- 同一Scene的功能解耦使用`defineSyncEvent/defineAsyncEvent`和`scene.Events`。同步事件不能I/O；异步事件必须await。
+- 跨Scene、跨Process、需要mailbox顺序或需要响应的交互仍使用生成的Message/RPC，不能拿Event代替。
+
+详细API和错误边界见[运行时基础能力](../design/runtime-foundations.md)。
 
 ## 玩家下线和持久化
 

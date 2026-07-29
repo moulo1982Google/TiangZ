@@ -15,6 +15,10 @@ import type {
 } from "./entities";
 import type { MaybePromise } from "../async";
 import type { TimerId } from "./TimerSystem";
+import type {
+  TimerCancelledContext,
+  TimerCancelReason,
+} from "./TimerSystem";
 import { Logger } from "../logging/Logger";
 
 export class SceneContext {
@@ -110,21 +114,48 @@ export class ActorContext {
   newOnceTimer(
     delayMs: number,
     callback: (actor: Actor<any[]>) => MaybePromise<void>,
+    onCancelled?: (
+      actor: Actor<any[]>,
+      context: TimerCancelledContext,
+    ) => MaybePromise<void>,
   ): TimerId {
-    return this.host.newActorOnceTimer(this.self.instanceId, delayMs, callback);
+    return this.host.newActorOnceTimer(
+      this.self.instanceId,
+      delayMs,
+      callback,
+      onCancelled,
+    );
   }
 
   /** 通过当前 Actor mailbox 调度重复回调。 / Schedules repeated callbacks through this Actor's mailbox. */
   newRepeatedTimer(
     intervalMs: number,
     callback: (actor: Actor<any[]>) => MaybePromise<void>,
+    onCancelled?: (
+      actor: Actor<any[]>,
+      context: TimerCancelledContext,
+    ) => MaybePromise<void>,
   ): TimerId {
-    return this.host.newActorRepeatedTimer(this.self.instanceId, intervalMs, callback);
+    return this.host.newActorRepeatedTimer(
+      this.self.instanceId,
+      intervalMs,
+      callback,
+      onCancelled,
+    );
   }
 
   /** 取消由当前 Actor InstanceId 拥有的一个定时器。 / Cancels one timer owned by this Actor InstanceId. */
-  removeTimer(timerId: TimerId): boolean {
-    return this.host.removeActorTimer(this.self.instanceId, timerId);
+  cancelTimer(
+    timerId: TimerId,
+    reason: TimerCancelReason,
+    notify: boolean,
+  ): boolean {
+    return this.host.cancelActorTimer(
+      this.self.instanceId,
+      timerId,
+      reason,
+      notify,
+    );
   }
 
 }

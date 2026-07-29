@@ -1,6 +1,6 @@
 //! 启动分配给本机的进程，并监管其有界优雅停机。 / Starts machine-assigned processes and supervises their bounded graceful shutdown.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::io::Write;
 use std::net::UdpSocket;
@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-use crate::config::{StartMachineConfig, load_runtime_config};
+use crate::config::{RuntimeConfig, StartMachineConfig, load_runtime_config};
 use crate::shutdown::{ParentControlCommand, receive_parent_control, spawn_stdin_control_receiver};
 
 struct ManagedChild {
@@ -19,6 +19,12 @@ struct ManagedChild {
     control: Option<ChildStdin>,
     stop_timeout: Duration,
     observed_exit: Option<ExitStatus>,
+}
+
+struct ConfiguredProcess {
+    path: PathBuf,
+    config: RuntimeConfig,
+    assigned_to_local_machine: bool,
 }
 
 enum WatcherTrigger {
@@ -52,17 +58,16 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
     let start_dir = start_machine_path
         .parent()
         .context("StartMachine.json has no parent directory")?;
-    let mut processes = Vec::<PathBuf>::new();
+    let mut configured_processes = Vec::<ConfiguredProcess>::new();
     for machine in &start_machine.machines {
-        if !is_this_machine(&machine.inner_ip, &local_ips) {
-            continue;
+        let assigned_to_local_machine = is_this_machine(&machine.inner_ip, &local_ips);
+        if assigned_to_local_machine {
+            tracing::info!(target: "tiangz::watcher",
+                "matched machine {} ({})",
+                machine.name.as_deref().unwrap_or("<unnamed>"),
+                machine.inner_ip
+            );
         }
-
-        tracing::info!(target: "tiangz::watcher",
-            "matched machine {} ({})",
-            machine.name.as_deref().unwrap_or("<unnamed>"),
-            machine.inner_ip
-        );
         for process in &machine.processes {
             let path = PathBuf::from(process);
             let resolved = if path.is_absolute() {
@@ -70,11 +75,21 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
             } else {
                 start_dir.join(path)
             };
-            processes.push(resolved);
+            let config = load_runtime_config(&resolved)
+                .with_context(|| format!("failed to load child config {}", resolved.display()))?;
+            configured_processes.push(ConfiguredProcess {
+                path: resolved,
+                config,
+                assigned_to_local_machine,
+            });
         }
     }
+    validate_unique_process_identities(&configured_processes)?;
 
-    if processes.is_empty() {
+    if !configured_processes
+        .iter()
+        .any(|process| process.assigned_to_local_machine)
+    {
         bail!(
             "not found this machine ip config in {}; local ips: {}",
             start_machine_path.display(),
@@ -84,10 +99,12 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
 
     let exe = env::current_exe().context("failed to get current executable")?;
     let mut children = Vec::<ManagedChild>::new();
-    for process_config in processes {
-        let arg = to_process_arg(root, &process_config);
-        let process_config = load_runtime_config(&process_config)
-            .with_context(|| format!("failed to load child config {}", process_config.display()))?;
+    for configured in configured_processes
+        .into_iter()
+        .filter(|process| process.assigned_to_local_machine)
+    {
+        let arg = to_process_arg(root, &configured.path);
+        let process_config = configured.config;
         tracing::info!(target: "tiangz::watcher", config = %arg.display(), "starting process config");
         let mut child = Command::new(&exe)
             .arg(&arg)
@@ -127,6 +144,29 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
     }
     if !shutdown_errors.is_empty() {
         bail!("child shutdown failed: {}", shutdown_errors.join(" | "));
+    }
+    Ok(())
+}
+
+/// 校验整套部署不会复用同一个全局 ID 生成槽位；远端机器也必须参与检查。 / Ensures the whole deployment does not reuse a global-ID worker slot, including remote machines.
+fn validate_unique_process_identities(processes: &[ConfiguredProcess]) -> Result<()> {
+    let mut owners = HashMap::<(u16, u8), (&str, &Path)>::new();
+    for process in processes {
+        let identity = &process.config.process.identity;
+        let key = (identity.origin_server_id, identity.worker_id);
+        if let Some((existing_name, existing_path)) =
+            owners.insert(key, (&process.config.process.name, process.path.as_path()))
+        {
+            bail!(
+                "duplicate process identity originServerId={} workerId={}: {} ({}) conflicts with {} ({})",
+                key.0,
+                key.1,
+                existing_name,
+                existing_path.display(),
+                process.config.process.name,
+                process.path.display()
+            );
+        }
     }
     Ok(())
 }
@@ -381,5 +421,51 @@ fn add_ip_token(ips: &mut HashSet<String>, token: &str) {
         .unwrap_or("");
     if token.parse::<std::net::IpAddr>().is_ok() {
         ips.insert(token.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn configured(name: &str, origin_server_id: u16, worker_id: u8) -> ConfiguredProcess {
+        let config: RuntimeConfig = serde_json::from_value(serde_json::json!({
+            "process": {
+                "name": name,
+                "identity": {
+                    "originServerId": origin_server_id,
+                    "workerId": worker_id
+                }
+            },
+            "scenes": [],
+            "knownScenes": []
+        }))
+        .unwrap();
+        ConfiguredProcess {
+            path: PathBuf::from(format!("{name}.json")),
+            config,
+            assigned_to_local_machine: true,
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_global_id_worker_slots() {
+        let processes = vec![configured("map1", 1, 5), configured("map2", 1, 5)];
+        let error = validate_unique_process_identities(&processes)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("originServerId=1 workerId=5"));
+        assert!(error.contains("map1"));
+        assert!(error.contains("map2"));
+    }
+
+    #[test]
+    fn accepts_distinct_origin_or_worker_slots() {
+        let processes = vec![
+            configured("map1", 1, 5),
+            configured("map2", 1, 6),
+            configured("merged-map", 2, 5),
+        ];
+        validate_unique_process_identities(&processes).unwrap();
     }
 }

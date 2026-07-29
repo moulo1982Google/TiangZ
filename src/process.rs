@@ -200,6 +200,10 @@ struct GameMetricsSnapshot {
     update_calls: u64,
     update_failures: u64,
     timers: usize,
+    #[serde(default)]
+    coroutine_lock_waiters: usize,
+    #[serde(default)]
+    coroutine_lock_timeouts: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1287,7 +1291,7 @@ fn maybe_log_metrics(
     );
     if let Some(game) = game_metrics {
         tracing::info!(target: "tiangz::metrics",
-            "[game-metrics] process={process_name} fixed_update_ms={} frame_count={} skipped_fixed_updates={} update_targets={} update_calls={} update_failures={} timers={}",
+            "[game-metrics] process={process_name} fixed_update_ms={} frame_count={} skipped_fixed_updates={} update_targets={} update_calls={} update_failures={} timers={} coroutine_lock_waiters={} coroutine_lock_timeouts={}",
             game.fixed_update_ms,
             game.frame_count,
             game.skipped_fixed_updates,
@@ -1295,6 +1299,8 @@ fn maybe_log_metrics(
             game.update_calls,
             game.update_failures,
             game.timers,
+            game.coroutine_lock_waiters,
+            game.coroutine_lock_timeouts,
         );
     }
     if let Some(native) = native_data_metrics {
@@ -1439,6 +1445,8 @@ fn maybe_log_metrics(
         update_calls: game.update_calls,
         update_failures: game.update_failures,
         timers: game.timers as u64,
+        coroutine_lock_waiters: game.coroutine_lock_waiters as u64,
+        coroutine_lock_timeouts: game.coroutine_lock_timeouts,
     });
     let native_snapshot = native_data_metrics.map(|native| NativeDataObservabilitySnapshot {
         scalar_gets: native.scalar_gets,
@@ -1827,7 +1835,9 @@ mod tests {
                     "updateTargets": 4,
                     "updateCalls": 492,
                     "updateFailures": 0,
-                    "timers": 3
+                    "timers": 3,
+                    "coroutineLockWaiters": 2,
+                    "coroutineLockTimeouts": 7
                 },
                 "pendingAsync": false
             }"#,
@@ -1842,6 +1852,8 @@ mod tests {
         assert_eq!(game.update_calls, 492);
         assert_eq!(game.update_failures, 0);
         assert_eq!(game.timers, 3);
+        assert_eq!(game.coroutine_lock_waiters, 2);
+        assert_eq!(game.coroutine_lock_timeouts, 7);
     }
 
     #[test]

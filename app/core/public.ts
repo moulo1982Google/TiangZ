@@ -100,7 +100,37 @@ export type {
   EntityTransferSnapshot,
   IDeserialize,
   ITransfer,
+  OwnedTimerOptions,
 } from "./runtime/entities";
+export {
+  GlobalIdSystem,
+  InstanceIdSystem,
+  requireGlobalId,
+} from "./runtime/IdSystem";
+export type {
+  GlobalId,
+  GlobalIdConfig,
+} from "./runtime/IdSystem";
+export { CoroutineLockSystem, SceneLockScope } from "./runtime/CoroutineLockSystem";
+export type {
+  CoroutineLockDomain,
+  CoroutineLockKey,
+  CoroutineLockOptions,
+} from "./runtime/CoroutineLockSystem";
+export {
+  asyncEventHandler,
+  defineAsyncEvent,
+  defineSyncEvent,
+  SceneEventScope,
+  syncEventHandler,
+} from "./runtime/SceneEventSystem";
+export type {
+  AsyncEventDescriptor,
+  AsyncSceneEventHandler,
+  EventPublishResult,
+  SyncEventDescriptor,
+  SyncSceneEventHandler,
+} from "./runtime/SceneEventSystem";
 export {
   CommitPreparedTransfer,
   TransferStagingRegistry,
@@ -120,13 +150,19 @@ export { component, lifecycle, scene, transferable } from "./runtime/metadata";
 export type { LifecycleOptions } from "./runtime/metadata";
 export { Singleton, SingletonRegistry } from "./runtime/Singleton";
 export { TimerSystem } from "./runtime/TimerSystem";
-export type { TimerId } from "./runtime/TimerSystem";
+export type {
+  TimerCancelledContext,
+  TimerCancelReason,
+  TimerId,
+  TimerOptions,
+} from "./runtime/TimerSystem";
 export { TimeSystem } from "./runtime/TimeSystem";
 export type {
   ActorId,
   ActorRef,
   EntityId,
   InstanceId,
+  PersistentEntityId,
   MailboxType,
   SceneId,
   SceneRef,

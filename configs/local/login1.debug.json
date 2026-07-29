@@ -1,6 +1,7 @@
 {
   "process": {
     "name": "login1.debug",
+    "identity": { "originServerId": 1, "workerId": 2 },
     "debug": {
       "inspectorIp": "127.0.0.1",
       "inspectorPort": 9231,

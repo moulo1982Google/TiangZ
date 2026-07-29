@@ -29,7 +29,7 @@ export class MapWorld {
   private readonly world = new Container();
   private readonly entities = new Map<number, EntityView>();
   private readonly numerics = new Map<number, Map<number, number>>();
-  private readonly items = new Map<number, ItemSnapshot>();
+  private readonly items = new Map<bigint, ItemSnapshot>();
   private readonly states = new Map<number, UnitStateDelta>();
   private readonly mapClient: MapClient;
   private readonly pressed = new Set<string>();
@@ -206,7 +206,9 @@ export class MapWorld {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     this.pressed.add(event.code);
     if (event.code === "KeyU" && !event.repeat) {
-      void this.mapClient.useItem({ itemId: 1 }).then(
+      const itemId = this.items.keys().next().value as bigint | undefined;
+      if (itemId === undefined) return;
+      void this.mapClient.useItem({ itemId }).then(
         (response) => this.applyItem(response.item),
         (error) => console.error("使用道具失败", error),
       );

@@ -5,7 +5,10 @@ import { ProcessHost } from "../app/core/runtime/host";
 import { actor, scene } from "../app/core/runtime/metadata";
 import { SingletonRegistry } from "../app/core/runtime/Singleton";
 import { TimeSystem } from "../app/core/runtime/TimeSystem";
-import { TimerSystem } from "../app/core/runtime/TimerSystem";
+import {
+  TimerSystem,
+  type TimerCancelledContext,
+} from "../app/core/runtime/TimerSystem";
 import {
   UpdateSystem,
   type IFrameFlush,
@@ -19,9 +22,14 @@ class TestScene extends Scene {}
 @actor({ mailbox: "ordered" })
 class TestActor extends Actor {
   timerCount = 0;
+  cancelled: { args: { skillId: number }; context: TimerCancelledContext } | undefined;
 
   CountTimer(): void {
     this.timerCount += 1;
+  }
+
+  CancelCast(args: { skillId: number }, context: TimerCancelledContext): void {
+    this.cancelled = { args, context };
   }
 }
 
@@ -105,6 +113,26 @@ async function main(): Promise<void> {
   await running;
   await Promise.resolve();
   assert.equal(actorInstance.timerCount, 1);
+
+  let releaseCancellationMailbox!: () => void;
+  const cancellationBlocker = new Promise<void>((resolve) => {
+    releaseCancellationMailbox = resolve;
+  });
+  const cancellationRunning = host.runActorMailbox(
+    actorInstance.InstanceId,
+    () => cancellationBlocker,
+  );
+  const castArgs = { skillId: 1001 };
+  const castTimer = actorInstance.NewOnceTimer(1_000, "CountTimer", castArgs, {
+    onCancelled: "CancelCast",
+  });
+  assert.equal(actorInstance.CancelTimer(castTimer, "player-moved"), true);
+  assert.equal(actorInstance.cancelled, undefined, "actor cancellation must obey mailbox order");
+  releaseCancellationMailbox();
+  await cancellationRunning;
+  await Promise.resolve();
+  assert.equal(actorInstance.cancelled?.args, castArgs);
+  assert.equal(actorInstance.cancelled?.context.reason, "player-moved");
 
   actorInstance.NewRepeatedTimer(10, "CountTimer");
   assert.equal(sceneInstance.DespawnActor("player-1"), true);

@@ -39,6 +39,7 @@
 - [Gate 断线重连与最终下线](design/gate-reconnect.md)
 - [Location 与玩家 Actor 路由](design/location-routing.md)
 - [Entity 地图迁移](design/entity-transfer.md)
+- [运行时基础能力：ID、时间、Timer、协程锁与Scene事件](design/runtime-foundations.md)
 - [TypeScript 调试](typescript_debugging.md)
 - [路线图](roadmap.md)
 

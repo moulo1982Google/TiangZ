@@ -2,42 +2,93 @@ import type { MaybePromise } from "../async";
 import { Singleton, SingletonRegistry } from "./Singleton";
 import { TimeSystem } from "./TimeSystem";
 import { CoreLogger } from "../logging/Logger";
+import {
+  InstanceIdSystem,
+  type TimerId,
+} from "./IdSystem";
 
-export type TimerId = number;
 export type TimerCallback = () => MaybePromise<void>;
+export type { TimerId } from "./IdSystem";
+
+export type TimerCancelReason =
+  | "manual"
+  | "replaced"
+  | "owner-disposed"
+  | "process-stopped"
+  | (string & {});
+
+export interface TimerCancelledContext {
+  readonly timerId: TimerId;
+  readonly reason: TimerCancelReason;
+  readonly cancelledAt: number;
+}
+
+export interface TimerOptions {
+  readonly onCancelled?: (context: TimerCancelledContext) => MaybePromise<void>;
+}
 
 interface TimerEntry {
   id: TimerId;
   dueTime: number;
   intervalMs: number;
   callback: TimerCallback;
+  onCancelled?: (context: TimerCancelledContext) => MaybePromise<void>;
 }
 
 export class TimerSystem extends Singleton {
   private readonly timers = new Map<TimerId, TimerEntry>();
   private readonly heap: TimerEntry[] = [];
-  private nextTimerId = 1;
 
   static get Instance(): TimerSystem {
     return SingletonRegistry.Get(TimerSystem);
   }
 
   /** 添加一次性游戏时间定时器；零延迟表示下一次定时器 Update，不会重入执行。 / Adds a one-shot game-time timer; zero delay means the next timer update, not reentrant execution. */
-  NewOnceTimer(delayMs: number, callback: TimerCallback): TimerId {
-    return this.add(delayMs, 0, callback);
+  NewOnceTimer(
+    delayMs: number,
+    callback: TimerCallback,
+    options: TimerOptions = {},
+  ): TimerId {
+    return this.add(delayMs, 0, callback, options);
   }
 
   /** 添加固定间隔游戏定时器；跳过错过的重复次数，避免回调风暴。 / Adds a fixed-interval game timer and skips missed repetitions instead of producing a callback storm. */
-  NewRepeatedTimer(intervalMs: number, callback: TimerCallback): TimerId {
+  NewRepeatedTimer(
+    intervalMs: number,
+    callback: TimerCallback,
+    options: TimerOptions = {},
+  ): TimerId {
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
       throw new Error(`timer interval must be greater than 0: ${intervalMs}`);
     }
-    return this.add(intervalMs, intervalMs, callback);
+    return this.add(intervalMs, intervalMs, callback, options);
   }
 
-  /** 延迟取消定时器；过期堆节点到达堆顶时会被忽略。 / Cancels a timer lazily; stale heap entries are ignored when they reach the root. */
+  /**
+   * 立即把活动Timer标记为取消，并至多投递一次取消通知。
+   * 对Actor所有者而言，通知仍需经过其mailbox；立即指状态切换不等待原到期时间。
+   *
+   * Immediately marks an active timer as cancelled and emits at most one
+   * cancellation notification. Actor-owned notifications still enter the
+   * mailbox; immediate refers to state transition rather than bypassing order.
+   */
+  Cancel(
+    timerId: TimerId,
+    reason: TimerCancelReason = "manual",
+    notify = true,
+  ): boolean {
+    const timer = this.timers.get(timerId);
+    if (!timer) return false;
+    this.timers.delete(timerId);
+    if (notify && timer.onCancelled) {
+      this.invokeCancellation(timer, reason);
+    }
+    return true;
+  }
+
+  /** 兼容旧调用的静默清理入口；新业务使用Cancel。 / Legacy silent-cleanup alias; new business code should use Cancel. */
   Remove(timerId: TimerId): boolean {
-    return this.timers.delete(timerId);
+    return this.Cancel(timerId, "manual", false);
   }
 
   /** 返回按游戏时间完成的 Promise；不可用于墙钟 I/O 超时。 / Returns a Promise completed by game time; do not use it for wall-clock I/O deadlines. */
@@ -76,30 +127,27 @@ export class TimerSystem extends Singleton {
     this.heap.length = 0;
   }
 
-  private add(delayMs: number, intervalMs: number, callback: TimerCallback): TimerId {
+  private add(
+    delayMs: number,
+    intervalMs: number,
+    callback: TimerCallback,
+    options: TimerOptions,
+  ): TimerId {
     if (!Number.isFinite(delayMs) || delayMs < 0) {
       throw new Error(`timer delay must not be negative: ${delayMs}`);
     }
     if (typeof callback !== "function") throw new Error("timer callback must be a function");
 
     const timer: TimerEntry = {
-      id: this.allocateTimerId(),
+      id: InstanceIdSystem.Instance.NextTimerId(),
       dueTime: TimeSystem.Instance.FrameTime + delayMs,
       intervalMs,
       callback,
+      onCancelled: options.onCancelled,
     };
     this.timers.set(timer.id, timer);
     this.push(timer);
     return timer.id;
-  }
-
-  private allocateTimerId(): TimerId {
-    for (let attempts = 0; attempts < 0xffff_ffff; attempts += 1) {
-      const id = this.nextTimerId;
-      this.nextTimerId = (this.nextTimerId % 0xffff_ffff) + 1;
-      if (!this.timers.has(id)) return id;
-    }
-    throw new Error("timer id space is exhausted");
   }
 
   private invoke(timer: TimerEntry): void {
@@ -112,6 +160,31 @@ export class TimerSystem extends Singleton {
       }
     } catch (error) {
       CoreLogger.error("timer failed", { timerId: timer.id, error });
+    }
+  }
+
+  private invokeCancellation(timer: TimerEntry, reason: TimerCancelReason): void {
+    try {
+      const result = timer.onCancelled?.({
+        timerId: timer.id,
+        reason,
+        cancelledAt: TimeSystem.Instance.FrameTime,
+      });
+      if (isPromiseLike(result)) {
+        void Promise.resolve(result).catch((error) => {
+          CoreLogger.error("async timer cancellation failed", {
+            timerId: timer.id,
+            reason,
+            error,
+          });
+        });
+      }
+    } catch (error) {
+      CoreLogger.error("timer cancellation failed", {
+        timerId: timer.id,
+        reason,
+        error,
+      });
     }
   }
 

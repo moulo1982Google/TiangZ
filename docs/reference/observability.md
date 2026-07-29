@@ -225,7 +225,7 @@ npm run verify:observability
 日志格式：
 
 ```text
-[game-metrics] process=map1 fixed_update_ms=50 frame_count=... skipped_fixed_updates=... update_targets=... update_calls=... update_failures=... timers=...
+[game-metrics] process=map1 fixed_update_ms=50 frame_count=... skipped_fixed_updates=... update_targets=... update_calls=... update_failures=... timers=... coroutine_lock_waiters=... coroutine_lock_timeouts=...
 ```
 
 - `frame_count`：启动后执行的固定 Game.Update 帧数。
@@ -233,6 +233,8 @@ npm run verify:observability
 - `update_targets`：当前自动注册的 IUpdate Component 数。
 - `update_calls/update_failures`：累计 Update 调用数和异常数。
 - `timers`：当前存活游戏定时器数，可用于发现生命周期泄漏。
+- `coroutine_lock_waiters`：当前等待Process内协程锁的调用数；持续增长通常表示热点业务键或持锁时间过长。
+- `coroutine_lock_timeouts`：累计锁等待超时数；Prometheus名称为`tiangz_coroutine_lock_timeouts_total`。
 
 ## Map 移动广播指标
 

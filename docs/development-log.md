@@ -10,6 +10,12 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-29 - 运行时基础能力收口
+
+Entity正式区分可持久业务`Id`与本次生命周期`InstanceId`。新增63位`GlobalIdSystem`，使用永久来源服、时间、Process worker和秒内序列保证合服身份隔离；Runtime配置增加`process.identity`，Watcher在启动任何子进程前检查整套StartMachine中的重复生成槽位。Item协议升级为`uint64`，新建使用新GlobalId，数据库/迁移恢复保留原ItemId。
+
+Timer新增唯一`TimerId`、原样用户参数、主动取消原因和至多一次取消回调；Actor所有权链继续通过mailbox保持顺序，Owner销毁静默清理。TimeSystem补齐墙钟deadline helper。新增Scene范围的FIFO协程锁与同步/异步Event；锁等待和超时已接入Process指标与Prometheus。`test:runtime-foundation`和Rust Watcher测试覆盖核心语义，完整说明见[运行时基础能力](design/runtime-foundations.md)。
+
 ## 2026-07-29 - Location路由与跨MapHost传送
 
 新增ordered Location Scene与版本化玩家目录，权威记录包含Unit/account、长期Gate、MapHost/Map实例、Actor InstanceId、revision和`active/moving/removing`状态。注册、迁移和最终下线使用operationId与CAS语义；只知道UnitId的服务端业务通过`MessageHelper`解析一次，Gate普通ActorLocation消息继续使用连接本地缓存，不把Location变成流量中心。MapHost每5秒幂等重报实际持有Unit，可恢复Location内存进程重启后的active目录。

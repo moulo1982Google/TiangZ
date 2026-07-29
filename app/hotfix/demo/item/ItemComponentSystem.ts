@@ -1,12 +1,14 @@
 import {
   GameErrCode,
   GameConfigs,
+  GlobalIdSystem,
   Item,
   ItemComponent,
   type ItemSnapshot,
   type ItemView,
   type ITransfer,
   RpcError,
+  requireGlobalId,
   systemFor,
 } from "#tiangz/model";
 
@@ -16,18 +18,14 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
   /** 创建一件演示道具；生产加载应从持久化数据组合背包。 / Seeds one demo item; production loading should compose inventory from persisted data. */
   protected override Awake(): void {
     const playerConfig = GameConfigs.PlayerConfig.Get(1);
-    this.Create({
-      itemId: 1,
-      configId: playerConfig.initialItemConfigId,
-      count: playerConfig.initialItemCount,
-      quality: 0,
-      level: 1,
-      version: 1,
-    });
+    this.CreateItem(
+      playerConfig.initialItemConfigId,
+      playerConfig.initialItemCount,
+    );
   }
 
   /** 返回短期只读视图；不得跨 await 或玩家生命周期保存。 / Returns a short-lived read-only view that must not cross await or player lifetime boundaries. */
-  GetItem(itemId: number): ItemView | undefined {
+  GetItem(itemId: bigint): ItemView | undefined {
     return this.TryGetChild(Item, itemId);
   }
 
@@ -46,11 +44,11 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     for (const item of this.GetChildren(Item)) {
       this.RemoveChild(Item, item.Id);
     }
-    for (const item of items) this.Create(item);
+    for (const item of items) this.CreateItemById(item.itemId, item);
   }
 
   /** 消耗一件道具并返回不可覆盖事件所需快照。 / Consumes one item and returns the snapshot required by a non-coalescing event. */
-  UseItem(itemId: number): ItemSnapshot {
+  UseItem(itemId: bigint): ItemSnapshot {
     const item = this.requireItem(itemId);
     if (item.count === 0) {
       throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is empty`);
@@ -59,12 +57,12 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
   }
 
   /** 增加已有堆叠并返回权威快照。 / Adds to an existing stack and returns its authoritative snapshot. */
-  AddItem(itemId: number, count: number): ItemSnapshot {
+  AddItem(itemId: bigint, count: number): ItemSnapshot {
     return this.requireItem(itemId).AddCount(count);
   }
 
   /** 原子扣除已校验数量；失败时不改变堆叠。 / Atomically removes a validated count or leaves the stack unchanged. */
-  RemoveItem(itemId: number, count: number): ItemSnapshot {
+  RemoveItem(itemId: bigint, count: number): ItemSnapshot {
     const item = this.requireItem(itemId);
     if (item.count < count) {
       throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is not enough`);
@@ -72,7 +70,28 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     return item.RemoveCount(count);
   }
 
-  private Create(snapshot: ItemSnapshot): Item {
+  /** 生成全新的永久ItemId并创建道具；发放、掉落和拆分堆叠必须走此入口。 / Creates an item with a fresh persistent ID; grants, drops, and stack splits must use this entry. */
+  CreateItem(configId: number, count: number): Item {
+    const itemId = GlobalIdSystem.Instance.Next();
+    return this.CreateItemById(itemId, {
+      itemId,
+      configId,
+      count,
+      quality: 0,
+      level: 1,
+      version: 1,
+    });
+  }
+
+  /** 使用数据库、迁移或恢复数据中的原ItemId重建Entity；普通发放不得指定ID。 / Rebuilds an Entity with its persisted ID during load, transfer, or recovery; ordinary grants must not inject IDs. */
+  CreateItemById(itemId: bigint, snapshot: ItemSnapshot): Item {
+    requireGlobalId(itemId, "itemId");
+    if (snapshot.itemId !== itemId) {
+      throw new Error(`item snapshot id mismatch: ${itemId} != ${snapshot.itemId}`);
+    }
+    if (this.TryGetChild(Item, itemId)) {
+      throw new Error(`duplicate item id: ${itemId}`);
+    }
     return this.AddChild(Item, snapshot.itemId, {
       configId: snapshot.configId,
       count: snapshot.count,
@@ -82,8 +101,10 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     });
   }
 
-  private requireItem(itemId: number): Item {
-    if (!Number.isSafeInteger(itemId) || itemId <= 0) {
+  private requireItem(itemId: bigint): Item {
+    try {
+      requireGlobalId(itemId, "itemId");
+    } catch {
       throw new RpcError(GameErrCode.ItemNotFound, `invalid item id: ${itemId}`);
     }
     const item = this.TryGetChild(Item, itemId);
