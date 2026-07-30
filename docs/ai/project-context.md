@@ -195,6 +195,8 @@ Numeric使用`NumericType -> i32`动态字典和dirty表；Unit固定字段使�
 
 AOI已由Rust稀疏X/Z Grid接管。Cell是移动和空间数据的基础单位，AOI关系只在跨Grid边界时重算；默认一个Grid为15×15 Cell。默认可见关系从实体所在Grid即时推导，不常驻保存候选边或全量可见边；Rust只保存迟滞关系、业务过滤拒绝项和本帧净变化，TS也不得建立镜像关系表。当前全地图可见性能报告仍只是旧版最坏压力基线，不能代表AOI容量收益。
 
+Rust按相同最终Audience编码Movement、Numeric和UnitState后，`BroadcastHub`把同一逻辑作业的全部Encoded batch一次性交给Transport；`SceneBroadcastTransport`再以当前同步Game Tick为短暂聚合边界，把Movement/Numeric/State等作业按Gate重组。每个Gate每次Flush最多接收一条`S2G_ClientBroadcastBatch`，其中保留多组`targetUnitIds + 已编码客户端frame`，Gate不解码业务payload。单玩家即时Event仍可走紧凑的`S2G_ClientBroadcast`。业务层不得直接构造这两条内网消息，也不得为减少消息数自行合并客户端协议帧。
+
 ## 地图空间契约
 
 `0.4.0`冻结服务端地图局部坐标为米制`X/Y/Z + Yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度。坐标必须和`MapInstanceId`一起解释，不建立跨大陆的巨大浮点世界坐标。protobuf与Native schema使用普通`float/f32`，客户端适配层再转换为Cocos `Vec3`、Unity `Vector3/float3`或二维屏幕坐标。

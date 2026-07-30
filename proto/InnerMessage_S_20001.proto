@@ -442,3 +442,17 @@ message L2S_RecoverPlayerLocations // IResponse
   uint32 recovered = 1;
   uint32 unchanged = 2;
 }
+
+// Map在一个逻辑广播作业中交给同一Gate的多组客户端帧。
+// 每组frame已经是最终客户端协议帧；Gate只解析目标Unit并扇出，不解码业务payload。
+message ClientBroadcastBatchItem
+{
+  repeated uint32 target_unit_ids = 1;
+  bytes frame = 2;
+}
+
+// @ets.msg protocol=Gate method=ClientBroadcastBatch
+message S2G_ClientBroadcastBatch // IActorMessage
+{
+  repeated ClientBroadcastBatchItem batches = 1;
+}

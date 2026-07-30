@@ -49,6 +49,16 @@ export type BroadcastDescriptor<TItem, TMessage extends IMessage> =
 
 export interface BroadcastTransport {
   Send(audience: BroadcastAudience, frame: Uint8Array): Promise<void>;
+
+  /**
+   * 将同一逻辑作业中的多组已编码帧一次性交给Transport；实现可继续按物理路由重组。
+   * 未实现时BroadcastHub会兼容回退到逐组Send，不改变自定义Transport的既有行为。
+   *
+   * Hands all encoded groups from one logical job to the transport at once so
+   * it can regroup them by physical route. BroadcastHub falls back to Send
+   * when a custom transport does not implement this optional capability.
+   */
+  SendMany?(batches: readonly EncodedAudienceBatch[]): Promise<void>;
 }
 
 export interface BroadcastMetricsSnapshot {

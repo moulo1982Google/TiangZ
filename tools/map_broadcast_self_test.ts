@@ -3,6 +3,7 @@ import {
   BroadcastHub,
   type BroadcastAudience,
   type BroadcastTransport,
+  type EncodedAudienceBatch,
 } from "../app/core/broadcast";
 import { readU16BE } from "../app/core/protocol/binary";
 import { ClientBroadcasts } from "../app/generated/model/server/demo/protocol/broadcastDescriptors";
@@ -14,6 +15,8 @@ import {
 } from "../app/generated/model/server/demo/protocol/messages";
 import { MsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
 import { StateReplicationSystem } from "../app/core/replication";
+import { SceneBroadcastTransport } from "../app/model/demo/broadcast/SceneBroadcastTransport";
+import type { SceneMessageHelper } from "../app/core/process/SceneMessageHelper";
 
 interface ControlledSend {
   readonly audience: BroadcastAudience;
@@ -32,6 +35,22 @@ class ControlledTransport implements BroadcastTransport {
   }
 }
 
+interface ControlledBatchSend {
+  readonly batches: readonly EncodedAudienceBatch[];
+  resolve(): void;
+  reject(error: Error): void;
+}
+
+class ControlledBatchTransport extends ControlledTransport {
+  readonly batchSends: ControlledBatchSend[] = [];
+
+  SendMany(batches: readonly EncodedAudienceBatch[]): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.batchSends.push({ batches, resolve, reject });
+    });
+  }
+}
+
 const audience: BroadcastAudience = {
   key: "map:1",
   routes: [
@@ -45,10 +64,75 @@ async function main(): Promise<void> {
   await testNumericLatestCoverage();
   await testEncodedLatestSnapshot();
   await testEncodedAoiBatchesSingleFlight();
+  await testEncodedAoiBatchesUseTransportBatch();
+  await testSceneTransportCoalescesJobsByGate();
   await testReplicationAckOnlyAfterSuccessfulSend();
   await testBatchedReplicationAckAfterEveryAudience();
   await testEventOrderingAndCapacity();
   console.log("broadcast framework self-test passed");
+}
+
+async function testSceneTransportCoalescesJobsByGate(): Promise<void> {
+  const sends: Array<{ target: string; message: { batches: readonly unknown[] } }> = [];
+  const scenes = {
+    byName: (name: string) => ({ name }),
+    send: (target: { name: string }, _descriptor: unknown, message: { batches: readonly unknown[] }) => {
+      sends.push({ target: target.name, message });
+      return Promise.resolve();
+    },
+  } as unknown as SceneMessageHelper;
+  const transport = new SceneBroadcastTransport(scenes);
+  const first = transport.SendMany([
+    {
+      audience: { key: "move:a", routes: [{ route: "Gate1", recipientId: 1001 }] },
+      frame: Uint8Array.from([0x27, 0x20, 1]),
+      itemCount: 1,
+    },
+  ]);
+  const second = transport.SendMany([
+    {
+      audience: {
+        key: "numeric:a",
+        routes: [
+          { route: "Gate1", recipientId: 1001 },
+          { route: "Gate2", recipientId: 1002 },
+        ],
+      },
+      frame: Uint8Array.from([0x27, 0x21, 2]),
+      itemCount: 1,
+    },
+  ]);
+
+  assert.equal(sends.length, 0, "same-tick jobs must wait for the transport flush boundary");
+  await Promise.all([first, second]);
+  assert.equal(sends.length, 2, "each Gate must receive at most one inner batch per flush");
+  assert.deepEqual(
+    sends.map((send) => [send.target, send.message.batches.length]),
+    [["Gate1", 2], ["Gate2", 1]],
+  );
+}
+
+async function testEncodedAoiBatchesUseTransportBatch(): Promise<void> {
+  const transport = new ControlledBatchTransport();
+  const hub = new BroadcastHub(transport);
+  const delivery = hub.PublishEncodedLatestBatches("map:1:aoi", "Client.EntityMove", [
+    {
+      audience: { key: "aoi:a", routes: [{ route: "Gate1", recipientId: 1001 }] },
+      frame: Uint8Array.from([0x27, 0x20, 1]),
+      itemCount: 2,
+    },
+    {
+      audience: { key: "aoi:b", routes: [{ route: "Gate2", recipientId: 1002 }] },
+      frame: Uint8Array.from([0x27, 0x20, 2]),
+      itemCount: 1,
+    },
+  ]);
+  assert.equal(transport.sends.length, 0, "batch-capable transports must not receive per-audience sends");
+  assert.equal(transport.batchSends.length, 1, "one AOI job must become one transport batch");
+  assert.equal(transport.batchSends[0].batches.length, 2);
+  transport.batchSends[0].resolve();
+  await delivery;
+  assert.equal(hub.Snapshot().sentItems, 3);
 }
 
 async function testEncodedAoiBatchesSingleFlight(): Promise<void> {

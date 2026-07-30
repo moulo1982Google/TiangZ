@@ -237,6 +237,11 @@
       "code": 20009
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2G_ClientBroadcastBatch",
+      "name": "S2G_ClientBroadcastBatch",
+      "code": 20051
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2L_AllocatePlayerUnitId",
       "name": "S2L_AllocatePlayerUnitId",
       "code": 20037

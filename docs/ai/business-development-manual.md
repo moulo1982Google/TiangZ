@@ -490,10 +490,12 @@ await this.broadcast.Publish(
 规则：
 
 - 不在BroadcastHub中写地图AOI或公会成员查询。
-- 不为每种广播新增`M2G_Xxx`；统一通过`S2G_ClientBroadcast`下行。
+- 不为每种广播新增`M2G_Xxx`；业务只调用`BroadcastHub`。框架按数量自动选择`S2G_ClientBroadcast`或`S2G_ClientBroadcastBatch`，业务不得直接构造内网广播协议。
 - latest descriptor必须有稳定key。
 - event队列满必须显式失败，不能静默丢弃。
 - AOI已经接管Movement、Numeric和Unit固定字段的接收者选择；新增业务广播必须选择明确Audience，不能重新构造全地图玩家列表。
+
+多个Encoded Audience不会逐组跨进程发送。`BroadcastHub`通过Transport的`SendMany`提交一个逻辑作业，`SceneBroadcastTransport`在同一同步Game Tick结束时把Movement、Numeric和UnitState等批量作业按Gate合并；每个Gate每次Flush最多收到一条内网批量消息。批量元素仍保持独立客户端frame边界，Gate只完成Unit到connection的路由与下行扇出。即时不可覆盖Event仍可单独发送，不能为了追求“一Tick一包”而延迟战斗事件或把多个客户端msgcode拼成私有payload。
 
 ## 定时器和Update
 

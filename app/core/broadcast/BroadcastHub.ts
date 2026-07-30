@@ -451,6 +451,8 @@ export class BroadcastHub {
     const dispatchStartedAt = monotonicNow();
     const delivery = job.batches.length === 1
       ? this.transport.Send(job.batches[0].audience, job.batches[0].frame)
+      : this.transport.SendMany
+      ? this.transport.SendMany(job.batches)
       : Promise.all(
         job.batches.map((batch) => this.transport.Send(batch.audience, batch.frame)),
       ).then(() => undefined);

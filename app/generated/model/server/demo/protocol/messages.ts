@@ -3007,6 +3007,70 @@ export const L2S_RecoverPlayerLocationsCodec = {
   },
 };
 
+export interface ClientBroadcastBatchItem {
+  targetUnitIds: readonly number[];
+  frame: Uint8Array;
+}
+
+export const ClientBroadcastBatchItemCodec = {
+  decode(payload: Uint8Array): ClientBroadcastBatchItem {
+    const reader = new BinaryReader(payload);
+    const value: ClientBroadcastBatchItem = {
+      targetUnitIds: [],
+      frame: new Uint8Array(0),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        (value.targetUnitIds as number[]).push(reader.uint32());
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.frame = reader.bytesField();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: ClientBroadcastBatchItem): Uint8Array {
+    const writer = new BinaryWriter();
+    for (const item of (value.targetUnitIds ?? [])) writer.uint32(1, item, true);
+    if (value.frame !== undefined) writer.bytes(2, value.frame);
+    return writer.finish();
+  },
+};
+
+export interface S2G_ClientBroadcastBatch extends IActorMessage {
+  batches: readonly ClientBroadcastBatchItem[];
+}
+
+export const S2G_ClientBroadcastBatchCodec = {
+  decode(payload: Uint8Array): S2G_ClientBroadcastBatch {
+    const reader = new BinaryReader(payload);
+    const value: S2G_ClientBroadcastBatch = {
+      batches: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        (value.batches as ClientBroadcastBatchItem[]).push(ClientBroadcastBatchItemCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: S2G_ClientBroadcastBatch): Uint8Array {
+    const writer = new BinaryWriter();
+    for (const item of (value.batches ?? [])) writer.bytes(1, ClientBroadcastBatchItemCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
 export interface C2S_GetLoginServiceAddr extends IRequest {
   rpcId?: number;
 }

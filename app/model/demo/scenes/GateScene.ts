@@ -27,6 +27,7 @@ import {
   type M2G_SecondEnterMap,
   type M2G_TransferPlayer,
   type S2G_ClientBroadcast,
+  type S2G_ClientBroadcastBatch,
 } from "../../../generated/model/server/demo/protocol/messages";
 import {
   ClientMessages,
@@ -229,6 +230,26 @@ export class GateScene extends EntryScene {
       if (connectionId !== undefined) connectionIds.push(connectionId);
     }
     this.sendClientFrameMany(connectionIds, message.frame);
+  }
+
+  /**
+   * 接收Map按Gate聚合的多帧批次，并保持每个客户端协议帧的独立边界。
+   * Gate只做Unit到连接的路由，不解析或重编码业务payload。
+   *
+   * Receives multiple frame groups already aggregated for this Gate while
+   * preserving each client protocol frame boundary. Gate only resolves Unit
+   * routes and never decodes or re-encodes business payloads.
+   */
+  @message(GateMessages.ClientBroadcastBatch)
+  private ClientBroadcastBatch(message: S2G_ClientBroadcastBatch): void {
+    for (const batch of message.batches) {
+      const connectionIds: number[] = [];
+      for (const unitId of batch.targetUnitIds) {
+        const connectionId = this.routesByUnitId.get(unitId)?.connectionId;
+        if (connectionId !== undefined) connectionIds.push(connectionId);
+      }
+      this.sendClientFrameMany(connectionIds, batch.frame);
+    }
   }
 
   @message(GateMessages.KickPlayers)

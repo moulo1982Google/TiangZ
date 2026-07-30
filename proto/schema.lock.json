@@ -825,6 +825,28 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#ClientBroadcastBatchItem",
+      "name": "ClientBroadcastBatchItem",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "target_unit_ids",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "frame",
+          "type": "bytes",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#G2M_EnterMap",
       "name": "G2M_EnterMap",
       "base": "IRequest",
@@ -2606,6 +2628,21 @@
           "name": "frame",
           "type": "bytes",
           "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2G_ClientBroadcastBatch",
+      "name": "S2G_ClientBroadcastBatch",
+      "base": "IActorMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "batches",
+          "type": "ClientBroadcastBatchItem",
+          "repeated": true,
           "synthetic": false
         }
       ]

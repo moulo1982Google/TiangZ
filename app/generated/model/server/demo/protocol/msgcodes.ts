@@ -45,6 +45,7 @@ export const InnerMessage = {
   L2S_RemovePlayerLocation: 20034,
   S2L_RecoverPlayerLocations: 20039,
   L2S_RecoverPlayerLocations: 20040,
+  S2G_ClientBroadcastBatch: 20051,
 } as const;
 
 export const OuterMessage = {

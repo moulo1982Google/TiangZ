@@ -26,6 +26,10 @@ AOI Grid改为从地图最小Cell建立相对原点，避免225 Cell等奇数Gri
 
 容量工具同时修复Rust客户端`--probe-only`仍沿用默认5Hz Move的问题：现在该模式在统一参数层强制`moveRate=0`，报告中`move/s`和`push/s`必须同时为0才可接受。
 
+AOI拆链路结果进一步推动Map到Gate批量投递：Core的`BroadcastTransport`增加可选`SendMany`，旧自定义Transport自动回退逐组`Send`；正式`SceneBroadcastTransport`在同步Tick尾把多个广播作业按Gate重组，通过新增`S2G_ClientBroadcastBatch`一次携带多组接收者和最终客户端frame。Gate保持frame边界逐组下行，不解析业务payload；即时单帧Event继续使用原协议。单元测试覆盖批量能力、兼容回退、跨作业同Gate合并和protobuf二进制往返，单进程/拆分进程Runtime smoke均通过。
+
+3000人纯Move同口径复测中，10×10、15×15、20×20世界的Map CPU由优化前`103%/143%/205%`降为`83.9%/86.6%/91.4%`；20×20内部过载由36,469降为0，广播平均耗时由58.35ms降为17.19ms，客户端收到的Push由约35.2万/s升至52.4万/s。三个点仍存在2,774/3,535/3,797次入口背压，10×10仍有高密度总扇出字节造成的内部过载，因此3000人不能标记为保守容量。
+
 首次矩阵发现旧Bench流程先在公共出生点Attach、再用ActorLocation RPC搬运，建角会制造不属于稳态的临时Enter/Leave并让定位RPC排队超时。现改为Bench Gate RPC计算冷配置出生点，经可信内网字段在Unit创建时预定位；外网正式EnterMap不能提交坐标。定位RPC仅校验并停止每100ms的Demo回血Timer，避免`state-sync-mode=off`仍混入Numeric广播。统一结果见`perf/results/aoi_grid_matrix_20260730.md`：1000@10×10完整通过但Map CPU平均86.1%略超85%目标；2000/3000在正式负载中出现Actor RPC超时，扩大到15×15和20×20虽显著降低可见关系和移动编码耗时，仍未越过3000玩家18k/s入站消息上限。
 
 Luban增加`ConfigTablePolicy`整表策略，生成完整、Hot、Cold三套数据及独立指纹。Item/Player为Hot；Map/AOI/策略为Cold。Rust验证分区可无重叠还原完整数据，TS和构建工具拒绝运行期Cold变化。空间尺寸、范围和频率即使只改数值也必须完整构建并重启Process。
