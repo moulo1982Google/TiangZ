@@ -5,7 +5,7 @@
     "client-handlers": {
       "command": "npm run codegen:client-handlers",
       "contentInputs": {
-        "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
+        "codegen.config.json": "0aa0358e18024ff379fbfbd912e28a50771d06fd7d015777e61645378cf22953",
         "tools/codegen_client_handlers.mjs": "6c0403a5fa6182ae0c6b4e52d8dd45c122106ca4063c2f297dfd3ff7b04eebb1",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -84,7 +84,7 @@
         "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "a6599665f11a4723ebd0d4e13cc9361fac8ea767e91a8a5c831e6e2c917e434a",
         "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "cb19019e96eb7e134a4700cbdf0b906397e22c4c8cee29b5c360b83cea8d4ac5",
         "client_sdk/typescript/index.ts": "fa805c9b9d0a335f290a882403873822ff15008a298ddf53b08d1c02f84c9918",
-        "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
+        "codegen.config.json": "0aa0358e18024ff379fbfbd912e28a50771d06fd7d015777e61645378cf22953",
         "tools/codegen_client_sdk.mjs": "9612282dd74ba1031610583ea5013961f6739c1469d2f7e36bb01cc7d5f506f0",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -113,6 +113,28 @@
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "cb19019e96eb7e134a4700cbdf0b906397e22c4c8cee29b5c360b83cea8d4ac5",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/ProtocolFingerprint.ts": "d0e57fada6a3a1c2e1046499b168598aaa2860754b05c754cc7aae512b33702f",
         "cocos_client2D/assets/scripts/Generated/SDK/index.ts": "fa805c9b9d0a335f290a882403873822ff15008a298ddf53b08d1c02f84c9918",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Net/ClientTransport.ts": "62d4fe9935e183ca276a73e4185bc08eab9dbe39bebf6cd93a04118d59776770",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Net/NativeTransport.ts": "c8bb89579c3752fd5f237fde3451ded764258a71af65c57cebd92fe7030f911e",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Net/RpcSocket.ts": "c1298d19bafadd912b26234a70c4ce65a1268efd264e6221130f3b397a1e6003",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Protocol/Binary.ts": "657614b2037718858429b3d19200c5ab17eeca6c13e8158d7b1d15c9a7fbd6e7",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Protocol/Frame.ts": "2e1c245952555c1c8df1d60682b783f0f4dd9c5d6a356d47ebf3f807b9a788ae",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Protocol/Message.ts": "40482902a6a836fc4544cea4acd97adf61f051692c09a541f5800271d164f1d6",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Protocol/Rpc.ts": "2939921e0ca29e6423030aed02c2e3179abce6563b9254edd0317d840cfc0705",
+        "cocos_client3D/assets/scripts/Generated/SDK/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
+        "cocos_client3D/assets/scripts/Generated/SDK/Demo/LoginFlow.ts": "7d5e04b972e8a2d56469df1467336aa258d8e8cd2739f91d3ad5296fefd7c973",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Config/GameConfigs.ts": "e3075e9d0ea475ea3772e20b542a2df94f9308ab1d7f5bcb7082f619f244a8d7",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Config/index.ts": "915ccb8d44be42feb445523d0e476d92a741aa4610ba58028b8a9fc9224939b7",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Config/schema.ts": "f1aaf573bb3fed0809a25d29e5554ee4caee628717b7ab415af33cad9b198161",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "b9f3e23c0230b1bd5d589ee7f0923914917daf23a3be0220656771277733331a",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messageDescriptors.ts": "d600520575da7eae2ed75c73efb4ee09248d728cb8fda1a304e44beb7f5f1c9f",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/messages.ts": "17f43c7465b09c34c59fd343dfa6e73c226070e23f6daa77e74b75d3f6bc32a1",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/msgcodes.ts": "a6599665f11a4723ebd0d4e13cc9361fac8ea767e91a8a5c831e6e2c917e434a",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/rpcs.ts": "cb19019e96eb7e134a4700cbdf0b906397e22c4c8cee29b5c360b83cea8d4ac5",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/ProtocolFingerprint.ts": "d0e57fada6a3a1c2e1046499b168598aaa2860754b05c754cc7aae512b33702f",
+        "cocos_client3D/assets/scripts/Generated/SDK/index.ts": "fa805c9b9d0a335f290a882403873822ff15008a298ddf53b08d1c02f84c9918",
         "pixi_client/src/Generated/SDK/Core/Net/BrowserWebSocketTransport.ts": "09e32ea6f862c989e36bc3f83573c13fd82d5451b53e0727838eabd65fce746b",
         "pixi_client/src/Generated/SDK/Core/Net/ClientError.ts": "02053d15dedfd7d6a4252ee4434d560a6dd231c3c1b85baa3ac848e8114a31de",
         "pixi_client/src/Generated/SDK/Core/Net/ClientMessageDispatcher.ts": "35af20e07a591857f36b35ff50a5cef64db74908f173d2070fbeb6edb50347ca",
@@ -139,6 +161,13 @@
       "outputRoots": [
         {
           "path": "cocos_client2D/assets/scripts/Generated/SDK",
+          "extensions": [
+            ".ts"
+          ],
+          "ignore": []
+        },
+        {
+          "path": "cocos_client3D/assets/scripts/Generated/SDK",
           "extensions": [
             ".ts"
           ],
@@ -246,7 +275,7 @@
     "proto": {
       "command": "npm run codegen:proto",
       "contentInputs": {
-        "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
+        "codegen.config.json": "0aa0358e18024ff379fbfbd912e28a50771d06fd7d015777e61645378cf22953",
         "proto/BenchInner_S_25001.proto": "ed3190c3d98c9e6b72bcdd14a8b752e041ae1195fa0f40cdd2889baabd3c1fbb",
         "proto/BenchMessage_C_15001.proto": "43296cd2bfc8a3f121ca62968a5eb0bac6f01fe16a72c59e663ea500ca9efad1",
         "proto/DataDefine_CS_50001.proto": "3164cb5e7165cc70c888a63281b6c2bfd6ef5f9d53fbacd48d68a30ccef55d3e",
@@ -345,7 +374,7 @@
         "app/model/main.bench.ts": "9c62ab5989b0b19cc9ba7642f2aa84429c006ccd641379e98d9dea7807791987",
         "app/model/main.ts": "580af9ba606e985115abf59f9b1872ab50eaa7737c9effb1df6975d05456f16a",
         "app/model/public.ts": "64d4d0c68fce86b8ccc9e75a66cfb1837c9b055122d9903002fb6c489c237146",
-        "codegen.config.json": "80bba2e01617cbfa62a2e6f4312f6e363b6e30b691d00bb16243aec82e8037f8",
+        "codegen.config.json": "0aa0358e18024ff379fbfbd912e28a50771d06fd7d015777e61645378cf22953",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_scenes.mjs": "188748ab69bdfd6f89be2a941b5dfb4620e99174cb2a609eadccdb97509730d4"
       },

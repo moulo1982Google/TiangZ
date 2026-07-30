@@ -12,6 +12,7 @@
     "distributionExcludes": ["Generated/Model/bench"],
     "outputRoots": [
       "cocos_client2D/assets/scripts/Generated/SDK",
+      "cocos_client3D/assets/scripts/Generated/SDK",
       "pixi_client/src/Generated/SDK"
     ]
   },

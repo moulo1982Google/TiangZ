@@ -237,7 +237,7 @@ native_data/<game>/          游戏Entity和粗粒度Native op原型
 client_sdk/typescript/       引擎无关TS SDK唯一源码
 cocos_client2D/.../Demo/     Cocos业务和表现
 cocos_client2D/.../Generated 自动分发SDK和Handler入口
-cocos_client3D/              Phase 4.4的Cocos Creator 3D客户端；当前只有空项目骨架
+cocos_client3D/              Phase 4.4的Cocos Creator 3D客户端；Generated/SDK由公共TS SDK自动分发，业务仍未开始
 pixi_client/src/             Pixi业务及SDK验收
 configs/<environment>/       环境、Process与Scene正式部署配置
 configs/bench|tests|experiments/ 压测、自动测试与传输实验配置
