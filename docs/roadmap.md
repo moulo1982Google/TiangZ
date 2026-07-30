@@ -338,6 +338,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.4：Cocos 3D Demo
 
+状态：Cocos Creator 3.8.8空项目骨架已纳入主仓库，功能尚未开始。
+
 - 接入与服务端同版本的导航资源，完成`Vec3`边界转换、点击寻路、方向移动和服务端校正。
 - 保留Cocos 2D与Pixi Grid2D回归，证明SDK协议结构不依赖具体引擎坐标类型。
 

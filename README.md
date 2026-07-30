@@ -61,6 +61,7 @@ native_data/demo/            Demo Entity 与粗粒度 Native op 原型
 configs/<environment>/       环境启动配置
 client_sdk/typescript/       TypeScript Client SDK 唯一源码
 cocos_client2D/              Cocos Creator 2D Demo 客户端
+cocos_client3D/              Cocos Creator 3D Demo 客户端（Phase 4.4空项目骨架）
 pixi_client/                 PixiJS/H5 SDK 通用性验收客户端
 perf/                        RPC、完整链路与地图容量测试
 tools/                       codegen、冒烟测试和维护脚本

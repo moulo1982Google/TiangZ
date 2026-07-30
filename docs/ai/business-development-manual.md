@@ -14,6 +14,7 @@ app/hotfix/demo/      普通Handler与可热更领域行为
 proto/
 game_config/                 策划静态配置Excel；结构完整部署，纯数据可生成候选热更
 cocos_client2D/assets/scripts/Demo/
+cocos_client3D/assets/       仅在Phase 4.4或明确的3D客户端需求中修改
 pixi_client/src/
 configs/
 tests或tools中的对应业务自测
