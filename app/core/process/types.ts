@@ -67,6 +67,8 @@ export interface SceneConfig {
   port: number;
   protocol?: "auto" | "tcp" | "websocket" | "kcp";
   audience?: "mixed" | "inner" | "outer";
+  /** MapHost启动时创建的静态地图配置ID；动态副本由业务管理器运行时创建。 / Static map configs created at MapHost startup; business managers create dynamic instances at runtime. */
+  staticMapIds?: number[];
 }
 
 export interface ProcessConfig {

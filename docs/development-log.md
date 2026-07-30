@@ -10,6 +10,12 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-29 - 静态地图与动态副本统一
+
+地图身份正式拆为模板`MapConfigId`和运行时`MapInstanceId`。静态实例号等于配置号，由所属MapHost读取`staticMapIds`后创建；动态副本由Demo业务`DynamicMapManagerComponent`使用全局ID创建。两者共享MapHost唯一`CreateMap`、MapScene/Component组合、Rust本地索引与销毁路径。MapHost向Location注册实际托管实例并周期重报，`knownScenes`不再复制地图归属。
+
+玩家业务统一调用`player.TransferToMap(instanceId)`，不传MapHost或判断本地/远程。动态副本显式销毁只接受空地图，框架不替业务踢人、保存或选择回退点；连续无人五分钟的回收放在Demo DynamicMapManager作为兜底策略。单进程与拆分进程Runtime smoke继续通过，新增MapInstance目录测试覆盖幂等注册、冲突保护、静态删除拒绝和动态删除。
+
 ## 2026-07-29 - 运行时基础能力收口
 
 Entity正式区分可持久业务`Id`与本次生命周期`InstanceId`。新增63位`GlobalIdSystem`，使用永久来源服、时间、Process worker和秒内序列保证合服身份隔离；Runtime配置增加`process.identity`，Watcher在启动任何子进程前检查整套StartMachine中的重复生成槽位。Item协议升级为`uint64`，新建使用新GlobalId，数据库/迁移恢复保留原ItemId。

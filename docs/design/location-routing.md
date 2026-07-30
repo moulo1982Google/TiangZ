@@ -22,7 +22,7 @@ Location Scene 使用 ordered mailbox 串行修改目录。`Lock`同时校验 re
 3. 最终下线先锁为 `removing`，玩家保存成功后删除 Location，再移除 Map Unit。保存失败会解锁并保留玩家。
 4. 每个 MapHost 每 5 秒幂等重报自己实际持有的 Unit，用于 Location 内存进程重启后的目录恢复。
 
-当前 Demo 的静态地图令 `mapInstanceId == mapId`。动态副本必须使用独立稳定实例 ID，业务传送仍只提供目标实例/配置，不能扫描全部 MapHost。
+玩家Location目录之外还有独立的MapInstance目录，只保存`mapInstanceId -> mapConfigId + mapHostName + dynamic`。静态地图令`mapInstanceId == mapConfigId`，由所属MapHost按`staticMapIds`创建后注册；动态副本使用`GlobalIdSystem`产生的全局实例号。MapHost每5秒重报实际托管实例，因此Location重启后可恢复路由。业务传送只提供目标实例号，不能扫描全部MapHost，也不能把MapHost地址塞入玩家传送请求。
 
 ## 什么时候查询
 

@@ -11,8 +11,8 @@ message G2M_EnterMap // IRequest
   string account = 1;
   string token = 2;
   string gate_name = 3;
-  uint32 map_id = 4;
-  reserved 5;
+  reserved 4, 5;
+  uint64 map_instance_id = 6;
 }
 
 //ResponseType M2G_SecondEnterMap
@@ -60,9 +60,9 @@ message G2M_TransferPlayer // IActorRequest
 {
   string account = 1;
   string gate_name = 2;
-  uint32 target_map_id = 3;
-  string target_map_host_name = 4;
+  reserved 3, 4;
   uint64 expected_location_revision = 5;
+  uint64 target_map_instance_id = 6;
 }
 
 message M2G_TransferPlayer // IActorResponse
@@ -148,6 +148,79 @@ message PlayerTransferSnapshot
   bool alive = 11;
   repeated UnitNumericDelta numerics = 12;
   repeated ItemSnapshot items = 13;
+  uint64 source_map_instance_id = 14;
+  uint64 target_map_instance_id = 15;
+}
+
+message MapInstanceSnapshot
+{
+  uint64 map_instance_id = 1;
+  uint32 map_config_id = 2;
+  string map_host_name = 3;
+  bool dynamic = 4;
+}
+
+//ResponseType L2S_ResolveMapInstance
+// @ets.msg protocol=MapInstance method=Resolve
+message S2L_ResolveMapInstance // IRequest
+{
+  uint64 map_instance_id = 1;
+}
+
+message L2S_ResolveMapInstance // IResponse
+{
+  bool found = 1;
+  MapInstanceSnapshot instance = 2;
+}
+
+//ResponseType L2S_RegisterMapInstance
+// @ets.msg protocol=MapInstance method=Register
+message S2L_RegisterMapInstance // IRequest
+{
+  MapInstanceSnapshot instance = 1;
+}
+
+message L2S_RegisterMapInstance // IResponse
+{
+  MapInstanceSnapshot instance = 1;
+  bool created = 2;
+}
+
+//ResponseType L2S_RemoveMapInstance
+// @ets.msg protocol=MapInstance method=Remove
+message S2L_RemoveMapInstance // IRequest
+{
+  uint64 map_instance_id = 1;
+  string expected_map_host_name = 2;
+}
+
+message L2S_RemoveMapInstance // IResponse
+{
+  bool removed = 1;
+}
+
+//ResponseType M2S_CreateDynamicMap
+// @ets.msg protocol=DynamicMap method=Create
+message S2M_CreateDynamicMap // IRequest
+{
+  uint32 map_config_id = 1;
+}
+
+message M2S_CreateDynamicMap // IResponse
+{
+  MapInstanceSnapshot instance = 1;
+}
+
+//ResponseType M2S_DisposeDynamicMap
+// @ets.msg protocol=DynamicMap method=Dispose
+message S2M_DisposeDynamicMap // IRequest
+{
+  uint64 map_instance_id = 1;
+}
+
+message M2S_DisposeDynamicMap // IResponse
+{
+  bool disposed = 1;
 }
 
 //ResponseType M2M_PreparePlayerTransferResponse

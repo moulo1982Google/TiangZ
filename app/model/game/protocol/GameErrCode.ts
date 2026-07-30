@@ -5,4 +5,6 @@ export const GameErrCode = {
   ItemNotFound: 10004,
   ItemNotEnough: 10005,
   MapNotFound: 10006,
+  DynamicMapNotEmpty: 10007,
+  StaticMapCannotDispose: 10008,
 } as const;

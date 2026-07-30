@@ -48,6 +48,9 @@
     {
       "name": "map_1",
       "sceneType": "MapHost",
+      "staticMapIds": [
+        1
+      ],
       "ip": "127.0.0.1",
       "port": 7301,
       "protocol": "tcp"

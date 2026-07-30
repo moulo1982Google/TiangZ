@@ -6,6 +6,7 @@ import {
 } from "../../../core/public";
 import { MapHostComponent } from "../mapHost/MapHostComponent";
 import { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
+import { DynamicMapManagerComponent } from "../mapHost/DynamicMapManagerComponent";
 
 @entryScene()
 export class MapHostScene extends EntryScene {
@@ -16,6 +17,7 @@ export class MapHostScene extends EntryScene {
     super(config);
     this.AddComponent(PlayerDirectoryComponent);
     this.mapHost = this.AddComponent(MapHostComponent);
+    this.AddComponent(DynamicMapManagerComponent);
   }
 
   override metricsSnapshot(): SceneMetricsSnapshot {

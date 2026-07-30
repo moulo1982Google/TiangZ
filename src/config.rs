@@ -276,6 +276,10 @@ pub struct SceneConfig {
     pub protocol: EndpointProtocol,
     #[serde(default)]
     pub audience: EndpointAudience,
+    /// 由该 MapHost 在启动时创建的静态地图配置 ID。动态地图不写入启动配置。
+    /// Static map config IDs created by this MapHost during startup. Dynamic maps are never listed here.
+    #[serde(default)]
+    pub static_map_ids: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
@@ -661,6 +665,7 @@ mod tests {
             port,
             protocol: EndpointProtocol::Auto,
             audience: EndpointAudience::Mixed,
+            static_map_ids: Vec::new(),
         }
     }
 

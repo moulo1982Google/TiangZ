@@ -1,7 +1,10 @@
 {
   "process": {
     "name": "map1",
-    "identity": { "originServerId": 1, "workerId": 5 },
+    "identity": {
+      "originServerId": 1,
+      "workerId": 5
+    },
     "observability": {
       "health": {
         "ip": "127.0.0.1",
@@ -17,6 +20,9 @@
     {
       "name": "map_1",
       "sceneType": "MapHost",
+      "staticMapIds": [
+        1
+      ],
       "ip": "127.0.0.1",
       "port": 7301
     }

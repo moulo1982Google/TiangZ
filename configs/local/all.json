@@ -1,7 +1,10 @@
 {
   "process": {
     "name": "all",
-    "identity": { "originServerId": 1, "workerId": 0 },
+    "identity": {
+      "originServerId": 1,
+      "workerId": 0
+    },
     "logging": {
       "level": "info",
       "format": "pretty",
@@ -55,12 +58,18 @@
     {
       "name": "map_1",
       "sceneType": "MapHost",
+      "staticMapIds": [
+        1
+      ],
       "ip": "127.0.0.1",
       "port": 7301
     },
     {
       "name": "map_2",
       "sceneType": "MapHost",
+      "staticMapIds": [
+        2
+      ],
       "ip": "127.0.0.1",
       "port": 7302
     },

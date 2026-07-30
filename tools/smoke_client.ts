@@ -22,12 +22,21 @@ import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 import type { CellMovementState } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
 import { GameConfigs } from "../client_sdk/typescript/Generated/Config";
+import { encodePacket } from "../app/core/public";
+import {
+  M2S_CreateDynamicMapCodec,
+  M2S_DisposeDynamicMapCodec,
+  S2M_CreateDynamicMapCodec,
+  S2M_DisposeDynamicMapCodec,
+} from "../app/generated/model/server/demo/protocol/messages";
+import { MsgCode as ServerMsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
 
 type TimedMovementState = CellMovementState & { serverTick: number };
 
 async function main() {
   const loginAddr = await requestLoginServiceAddr("127.0.0.1", 7000);
   console.log("LoginMgr selected:", loginAddr);
+  await verifyDynamicMapLifecycle();
   if (process.argv.includes("--gate-timeout-only")) {
     await verifyGateFinalTimeout(loginAddr.ip, loginAddr.port);
     return;
@@ -60,6 +69,52 @@ async function main() {
     { account: mover.account, token: mover.token, mapId: 1 },
     { account: peer.account, token: peer.token, mapId: 1 },
   );
+}
+
+/** 通过正式Inner握手验证动态副本创建和空地图销毁。 / Verifies dynamic-map creation and empty-map disposal through the real Inner handshake. */
+async function verifyDynamicMapLifecycle(): Promise<void> {
+  const createRpcId = nextRpcId++;
+  const createFrame = await requestOneInternal(
+    "127.0.0.1",
+    7301,
+    encodePacket(
+      ServerMsgCode.S2M_CreateDynamicMap,
+      S2M_CreateDynamicMapCodec.encode({ rpcId: createRpcId, mapConfigId: 1 }),
+    ),
+  );
+  if (readU16BE(createFrame, 0) !== ServerMsgCode.M2S_CreateDynamicMap) {
+    throw new Error("dynamic map create returned an unexpected msgcode");
+  }
+  const created = M2S_CreateDynamicMapCodec.decode(createFrame.subarray(2));
+  if (created.error || created.instance.mapInstanceId === 1n) {
+    throw new Error(`dynamic map create failed: ${created.error} ${created.message}`);
+  }
+
+  const disposeRpcId = nextRpcId++;
+  const disposeFrame = await requestOneInternal(
+    "127.0.0.1",
+    7301,
+    encodePacket(
+      ServerMsgCode.S2M_DisposeDynamicMap,
+      S2M_DisposeDynamicMapCodec.encode({
+        rpcId: disposeRpcId,
+        mapInstanceId: created.instance.mapInstanceId,
+      }),
+    ),
+  );
+  if (readU16BE(disposeFrame, 0) !== ServerMsgCode.M2S_DisposeDynamicMap) {
+    throw new Error("dynamic map dispose returned an unexpected msgcode");
+  }
+  const disposed = M2S_DisposeDynamicMapCodec.decode(disposeFrame.subarray(2));
+  if (disposed.error || !disposed.disposed) {
+    throw new Error(`dynamic map dispose failed: ${disposed.error} ${disposed.message}`);
+  }
+  console.log("Dynamic map lifecycle:", {
+    mapConfigId: created.instance.mapConfigId,
+    mapInstanceId: created.instance.mapInstanceId,
+    mapHostName: created.instance.mapHostName,
+    disposed: disposed.disposed,
+  });
 }
 
 /** 等待真实30秒宽限结束，验证Gate驱动Map最终下线并让下次进入创建新Unit。 / Waits for the real grace deadline and verifies Gate-driven Map offline causes the next entry to create a new Unit. */
@@ -570,11 +625,41 @@ function sleep(ms: number): Promise<void> {
 }
 
 function requestOne(ip: string, port: number, packet: Uint8Array): Promise<Uint8Array> {
+  return requestOneWithPreamble(ip, port, packet);
+}
+
+/** 发送Rust Inner Transport要求的ETSI+token握手，不把内部RPC伪装成外部客户端消息。 / Sends the ETSI plus token preamble required by Rust Inner Transport instead of disguising internal RPC as client traffic. */
+function requestOneInternal(ip: string, port: number, packet: Uint8Array): Promise<Uint8Array> {
+  const token = Buffer.from(process.env.ETS_INNER_TOKEN ?? "ets-local-inner-token", "utf8");
+  const length = Buffer.allocUnsafe(2);
+  length.writeUInt16BE(token.length);
+  return requestOneWithPreamble(
+    ip,
+    port,
+    packet,
+    Buffer.concat([Buffer.from("ETSI", "ascii"), length, token]),
+  );
+}
+
+function requestOneWithPreamble(
+  ip: string,
+  port: number,
+  packet: Uint8Array,
+  preamble?: Buffer,
+): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ host: ip, port });
     const decoder = new LengthPrefixedFrameDecoder();
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      reject(new Error(`request ${ip}:${port} timed out`));
+    }, 5_000);
 
     socket.on("connect", () => {
+      if (preamble) socket.write(preamble);
       socket.write(Buffer.from(packet));
     });
 
@@ -583,15 +668,22 @@ function requestOne(ip: string, port: number, packet: Uint8Array): Promise<Uint8
         const frames = decoder.push(chunk);
         if (frames.length > 0) {
           socket.end();
+          settled = true;
+          clearTimeout(timeout);
           resolve(frames[0]);
         }
       } catch (error) {
+        clearTimeout(timeout);
         socket.destroy();
         reject(error);
       }
     });
 
     socket.on("error", reject);
+    socket.on("close", () => {
+      clearTimeout(timeout);
+      if (!settled) reject(new Error(`connection ${ip}:${port} closed before response`));
+    });
   });
 }
 

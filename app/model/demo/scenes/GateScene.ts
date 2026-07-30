@@ -8,7 +8,6 @@ import {
   message,
   type RuntimeEntrySceneConfig,
   type SceneMetricsSnapshot,
-  type SceneConfig,
   type TimerId,
 } from "../../../core/public";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
@@ -47,7 +46,6 @@ const GATE_TIMEOUT_SWEEP_MS = 1_000;
 export class GateScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
 
-  private readonly mapScenes: SceneConfig[];
   private readonly routesByAccount = new Map<string, GatePlayerRoute>();
   private readonly routesByConnection = new Map<number, GatePlayerRoute>();
   private readonly routesByUnitId = new Map<number, GatePlayerRoute>();
@@ -57,9 +55,8 @@ export class GateScene extends EntryScene {
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
-    this.mapScenes = this.scenes.many("MapHost");
     this.location = new LocationProxy(this.scenes);
-    if (this.mapScenes.length === 0) {
+    if (this.scenes.many("MapHost").length === 0) {
       throw new Error("GateScene needs at least one known MapHostScene");
     }
   }
@@ -289,16 +286,20 @@ export class GateScene extends EntryScene {
         });
         this.routesByUnitId.set(resolved.location.unitId, route);
         this.BindConnectionRoute(route, session.ConnectionId);
-        if (resolved.location.mapId === mapId) {
+        if (resolved.location.mapInstanceId === BigInt(mapId)) {
           return await this.SecondEnterMap(session, route);
         }
       }
     }
     if (route.map) {
-      if (route.map.mapId === mapId) return await this.SecondEnterMap(session, route);
-      return await this.TransferPlayer(session, route, mapId);
+      if (route.map.mapInstanceId === BigInt(mapId)) return await this.SecondEnterMap(session, route);
+      return await this.TransferToMap(session, route, BigInt(mapId));
     }
-    const mapHostScene = this.selectMapHostScene(mapId);
+    const target = await this.location.ResolveMapInstance({ mapInstanceId: BigInt(mapId) });
+    if (!target.found) {
+      throw new RpcError(GameErrCode.MapNotFound, `map instance not found: ${mapId}`);
+    }
+    const mapHostScene = this.scenes.byName(target.instance.mapHostName);
     const mapResponse = await this.scenes.call<G2M_EnterMap, M2G_EnterMap>(
       mapHostScene,
       MapProtocol.EnterMap,
@@ -306,7 +307,7 @@ export class GateScene extends EntryScene {
         account: session.account,
         token: session.token,
         gateName: this.self.name,
-        mapId,
+        mapInstanceId: target.instance.mapInstanceId,
       },
     );
     this.AssertCurrentRoute(session, route);
@@ -340,10 +341,10 @@ export class GateScene extends EntryScene {
    * the barrier is open, generated protocol metadata decides queue/reject/drop;
    * both success and rollback release the buffered frames.
    */
-  private async TransferPlayer(
+  private async TransferToMap(
     session: GateSession,
     route: GatePlayerRoute,
-    targetMapId: number,
+    targetMapInstanceId: bigint,
   ): Promise<G2C_EnterMap> {
     let source = route.map!;
     const connectionId = session.ConnectionId;
@@ -379,7 +380,6 @@ export class GateScene extends EntryScene {
       });
       this.BindConnectionRoute(route, connectionId);
       source = route.map!;
-      const targetMapHost = this.selectMapHostScene(targetMapId);
       const response = await this.scenes.callActor<G2M_TransferPlayer, M2G_TransferPlayer>(
         {
           scene: this.scenes.byName(source.mapService),
@@ -389,8 +389,7 @@ export class GateScene extends EntryScene {
         {
           account: route.account,
           gateName: this.self.name,
-          targetMapId,
-          targetMapHostName: targetMapHost.name,
+          targetMapInstanceId,
           expectedLocationRevision: source.revision,
         },
       );
@@ -617,7 +616,4 @@ export class GateScene extends EntryScene {
     };
   }
 
-  private selectMapHostScene(mapId: number): SceneConfig {
-    return this.mapScenes[(mapId - 1) % this.mapScenes.length];
-  }
 }

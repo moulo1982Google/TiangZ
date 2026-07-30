@@ -194,6 +194,7 @@ npm run test:game-config
 - `process.observability`：延迟采样等可观测性配置；不需要时可以省略。
 - `scenes`：当前进程实际创建的入口 Scene。
 - `knownScenes`：当前进程可路由的 Scene 目录，目标可以在其他进程；省略或为空时默认等于 `scenes`。
+- `staticMapIds`：只写在实际承载地图的`MapHost`的`scenes`项中；启动时创建这些静态地图，且静态`MapInstanceId`等于配置ID。`knownScenes`路由副本不重复填写。
 - `scene.protocol`：`auto`、`tcp`、`websocket` 或 `kcp`；默认 `auto`。
 - `scene.audience`：`mixed`、`inner` 或 `outer`；默认 `mixed`。
 - `StartMachine.json`：按机器 IP 启动多个进程配置文件。正式环境放在 `configs/<environment>`；压测、自动测试和传输实验分别放在 `configs/bench`、`configs/tests`、`configs/experiments`。
@@ -201,6 +202,8 @@ npm run test:game-config
 把 `all.json` 拆成多个配置时，只改变 `scenes` 的部署归属；`knownScenes` 中目标的 name/type/ip/port 保持一致，业务调用代码不改。
 
 Scene 生命周期和玩家下线保存约定见 [生命周期与玩家下线](docs/reference/lifecycle.md)。
+
+静态地图配置、动态副本创建、统一`TransferToMap`、安全销毁与重登回退流程见[地图实例与动态副本](docs/tutorials/11-map-instance-and-dungeon.md)。
 
 ## 编写入口 Scene
 

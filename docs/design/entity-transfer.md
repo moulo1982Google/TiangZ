@@ -1,6 +1,8 @@
 # Entity地图迁移
 
-本文冻结TiangZ地图迁移的数据所有权和失败语义。业务开发者仍从`MapHostComponent`发起传送，不应在Handler中手工删除、重建或扫描玩家。
+本文冻结TiangZ地图迁移的数据所有权和失败语义。业务开发者只调用`player.TransferToMap(mapInstanceId)`，不应在Handler中查找MapHost、手工删除、重建或扫描玩家。
+
+`MapConfigId`只表示地图模板，`MapInstanceId`才是运行时寻址身份。静态地图实例号等于配置号；同一配置可以创建多个具有不同实例号的动态副本。地图内部Rust热路径使用不可见的Process本地Scene句柄做索引，不能把它保存或当作跨进程实例号。
 
 ## 同进程迁移
 
@@ -32,7 +34,7 @@
 
 Gate先同步打开该连接的Actor迁移屏障，再通过源PlayerUnit mailbox发起事务。源MapHost按以下顺序执行：
 
-1. 用Location revision、源Actor InstanceId和唯一operationId执行`Lock(moving)`。
+1. 用MapInstance目录解析目标MapHost和配置，再用Location revision、源Actor InstanceId和唯一operationId执行`Lock(moving)`。
 2. 同MapHost创建目标候选并以本地玩家目录CAS发布；跨MapHost执行目标`Prepare`与幂等`Commit`。
 3. 用同一operationId把Location原子切换到目标MapHost与新Actor InstanceId，revision递增。
 4. 延迟到源Handler退出后销毁源Actor，再广播源地图离开。
@@ -45,6 +47,7 @@ Location是全局运行时目录，`PlayerDirectoryComponent`仍只是一个MapH
 ## 开发约束
 
 - 新增可迁移Component时，先决定它是否真的跨地图保留；默认不迁移。
+- 静态/动态、同V8/跨V8/跨Process不得定义不同传送API；统一使用MapInstanceId。
 - 同进程状态实现`@transferable() + ITransfer`，跨进程DTO还要增加稳定protobuf投影。
 - `RestoreTransfer`只恢复数据，Timer和派生索引由`Deserialize`重建。
 - 协议schema变化属于Model变化，需要完整部署和重启，不是Hotfix。

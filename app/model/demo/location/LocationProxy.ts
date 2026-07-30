@@ -3,23 +3,32 @@ import type {
   L2S_CommitPlayerLocation,
   L2S_AllocatePlayerUnitId,
   L2S_LockPlayerLocation,
+  L2S_RegisterMapInstance,
   L2S_RegisterPlayerLocation,
   L2S_RecoverPlayerLocations,
   L2S_RemovePlayerLocation,
   L2S_ResolvePlayerLocation,
   L2S_ResolvePlayerLocations,
+  L2S_RemoveMapInstance,
+  L2S_ResolveMapInstance,
   L2S_UnlockPlayerLocation,
   S2L_CommitPlayerLocation,
   S2L_AllocatePlayerUnitId,
   S2L_LockPlayerLocation,
+  S2L_RegisterMapInstance,
   S2L_RegisterPlayerLocation,
   S2L_RecoverPlayerLocations,
   S2L_RemovePlayerLocation,
   S2L_ResolvePlayerLocation,
   S2L_ResolvePlayerLocations,
+  S2L_RemoveMapInstance,
+  S2L_ResolveMapInstance,
   S2L_UnlockPlayerLocation,
 } from "../../../generated/model/server/demo/protocol/messages";
-import { LocationProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
+import {
+  LocationProtocol,
+  MapInstanceProtocol,
+} from "../../../generated/model/server/demo/protocol/rpcs";
 
 /**
  * 隐藏Location Scene名称和RPC细节，业务只表达“注册、解析、切换、删除位置”。
@@ -66,5 +75,20 @@ export class LocationProxy {
   /** MapHost批量重报自己仍持有的权威Unit，仅用于Location内存目录恢复。 / Re-publishes authoritative Units owned by one MapHost solely for Location recovery. */
   RecoverOwner(request: S2L_RecoverPlayerLocations): Promise<L2S_RecoverPlayerLocations> {
     return this.scenes.callOne("Location", LocationProtocol.RecoverOwner, request);
+  }
+
+  /** 解析地图实例所属MapHost；只用于进入、传送和副本管理。 / Resolves the MapHost for entry, transfer, and dynamic-map management only. */
+  ResolveMapInstance(request: S2L_ResolveMapInstance): Promise<L2S_ResolveMapInstance> {
+    return this.scenes.callOne("Location", MapInstanceProtocol.Resolve, request);
+  }
+
+  /** 注册运行时创建的动态地图。 / Registers a runtime-created dynamic map. */
+  RegisterMapInstance(request: S2L_RegisterMapInstance): Promise<L2S_RegisterMapInstance> {
+    return this.scenes.callOne("Location", MapInstanceProtocol.Register, request);
+  }
+
+  /** 删除已经销毁的动态地图路由。 / Removes the route of an already disposed dynamic map. */
+  RemoveMapInstance(request: S2L_RemoveMapInstance): Promise<L2S_RemoveMapInstance> {
+    return this.scenes.callOne("Location", MapInstanceProtocol.Remove, request);
   }
 }

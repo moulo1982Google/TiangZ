@@ -102,14 +102,29 @@
       "code": 20040
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_RegisterMapInstance",
+      "name": "L2S_RegisterMapInstance",
+      "code": 20044
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#L2S_RegisterPlayerLocation",
       "name": "L2S_RegisterPlayerLocation",
       "code": 20022
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_RemoveMapInstance",
+      "name": "L2S_RemoveMapInstance",
+      "code": 20046
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#L2S_RemovePlayerLocation",
       "name": "L2S_RemovePlayerLocation",
       "code": 20034
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#L2S_ResolveMapInstance",
+      "name": "L2S_ResolveMapInstance",
+      "code": 20042
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#L2S_ResolvePlayerLocation",
@@ -187,6 +202,16 @@
       "code": 20012
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#M2S_CreateDynamicMap",
+      "name": "M2S_CreateDynamicMap",
+      "code": 20048
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2S_DisposeDynamicMap",
+      "name": "M2S_DisposeDynamicMap",
+      "code": 20050
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2G_ClientBroadcast",
       "name": "S2G_ClientBroadcast",
       "code": 20009
@@ -212,14 +237,29 @@
       "code": 20039
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_RegisterMapInstance",
+      "name": "S2L_RegisterMapInstance",
+      "code": 20043
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2L_RegisterPlayerLocation",
       "name": "S2L_RegisterPlayerLocation",
       "code": 20021
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_RemoveMapInstance",
+      "name": "S2L_RemoveMapInstance",
+      "code": 20045
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#S2L_RemovePlayerLocation",
       "name": "S2L_RemovePlayerLocation",
       "code": 20033
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2L_ResolveMapInstance",
+      "name": "S2L_ResolveMapInstance",
+      "code": 20041
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#S2L_ResolvePlayerLocation",
@@ -235,6 +275,16 @@
       "key": "proto/InnerMessage_S_20001.proto#S2L_UnlockPlayerLocation",
       "name": "S2L_UnlockPlayerLocation",
       "code": 20031
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2M_CreateDynamicMap",
+      "name": "S2M_CreateDynamicMap",
+      "code": 20047
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2M_DisposeDynamicMap",
+      "name": "S2M_DisposeDynamicMap",
+      "code": 20049
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2G_EnterMap",

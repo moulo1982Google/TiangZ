@@ -20,6 +20,8 @@ export {
   LoginProtocol,
   MapProtocol,
   MapTransferProtocol,
+  MapInstanceProtocol,
+  DynamicMapProtocol,
   LocationProtocol,
 } from "../generated/model/server/demo/protocol/rpcs";
 export { StateSyncBenchProtocol } from "../generated/model/server/bench/protocol/rpcs";
@@ -30,6 +32,7 @@ export type {
 
 export { GateSession } from "./demo/gate/GateSession";
 export { LocationComponent } from "./demo/location/LocationComponent";
+export { MapInstanceDirectoryComponent } from "./demo/location/MapInstanceDirectoryComponent";
 export { LocationProxy } from "./demo/location/LocationProxy";
 export { MessageHelper } from "./demo/location/MessageHelper";
 export {
@@ -53,6 +56,8 @@ export {
 export { PositionComponent } from "./demo/map/PositionComponent";
 export { UnitGateComponent } from "./demo/map/UnitGateComponent";
 export { MapHostComponent } from "./demo/mapHost/MapHostComponent";
+export { DynamicMapManagerComponent } from "./demo/mapHost/DynamicMapManagerComponent";
+export { DynamicMapProxy } from "./demo/mapHost/DynamicMapProxy";
 export { NumericComponent } from "./demo/numeric/NumericComponent";
 export {
   AllNumericTypes,

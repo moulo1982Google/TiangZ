@@ -9,6 +9,8 @@ import {
   type L2S_ResolvePlayerLocations,
   type L2S_UnlockPlayerLocation,
   LocationComponent,
+  MapInstanceDirectoryComponent,
+  MapInstanceProtocol,
   LocationProtocol,
   LocationScene,
   rpcHandler,
@@ -22,6 +24,12 @@ import {
   type S2L_ResolvePlayerLocations,
   type S2L_UnlockPlayerLocation,
   type SceneRpcHandler,
+  type S2L_RegisterMapInstance,
+  type L2S_RegisterMapInstance,
+  type S2L_RemoveMapInstance,
+  type L2S_RemoveMapInstance,
+  type S2L_ResolveMapInstance,
+  type L2S_ResolveMapInstance,
 } from "#tiangz/model";
 
 @rpcHandler(LocationScene, LocationProtocol.AllocateUnitId)
@@ -84,5 +92,26 @@ export class RemovePlayerLocationHandler implements SceneRpcHandler<LocationScen
 export class RecoverPlayerLocationsHandler implements SceneRpcHandler<LocationScene, S2L_RecoverPlayerLocations, L2S_RecoverPlayerLocations> {
   handle(scene: LocationScene, request: S2L_RecoverPlayerLocations): L2S_RecoverPlayerLocations {
     return scene.GetComponent(LocationComponent).RecoverOwner(request);
+  }
+}
+
+@rpcHandler(LocationScene, MapInstanceProtocol.Resolve)
+export class ResolveMapInstanceHandler implements SceneRpcHandler<LocationScene, S2L_ResolveMapInstance, L2S_ResolveMapInstance> {
+  handle(scene: LocationScene, request: S2L_ResolveMapInstance): L2S_ResolveMapInstance {
+    return scene.GetComponent(MapInstanceDirectoryComponent).Resolve(request);
+  }
+}
+
+@rpcHandler(LocationScene, MapInstanceProtocol.Register)
+export class RegisterMapInstanceHandler implements SceneRpcHandler<LocationScene, S2L_RegisterMapInstance, L2S_RegisterMapInstance> {
+  handle(scene: LocationScene, request: S2L_RegisterMapInstance): L2S_RegisterMapInstance {
+    return scene.GetComponent(MapInstanceDirectoryComponent).Register(request);
+  }
+}
+
+@rpcHandler(LocationScene, MapInstanceProtocol.Remove)
+export class RemoveMapInstanceHandler implements SceneRpcHandler<LocationScene, S2L_RemoveMapInstance, L2S_RemoveMapInstance> {
+  handle(scene: LocationScene, request: S2L_RemoveMapInstance): L2S_RemoveMapInstance {
+    return scene.GetComponent(MapInstanceDirectoryComponent).Remove(request);
   }
 }

@@ -46,6 +46,7 @@ import {
   GameConfigs,
   type MapConfig as MapConfigData,
 } from "../../../generated/model/config";
+import type { MapInstanceDefinition } from "./MapInstance";
 
 const DEMO_PLAYER_CONFIG_ID = 1;
 
@@ -53,16 +54,24 @@ export interface PlayerTransferCoordinator {
   TransferPlayer(source: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer>;
 }
 
+export interface MapLifecycleCoordinator {
+  DisposeMap(mapInstanceId: bigint): boolean;
+}
+
 @component()
 export class MapComponent extends Component<[
-  mapId: number,
+  definition: MapInstanceDefinition,
   scenes: SceneMessageHelper,
   players: PlayerDirectoryComponent,
   repository: PlayerRepository,
   transferCoordinator: PlayerTransferCoordinator,
   location: LocationProxy,
+  lifecycle: MapLifecycleCoordinator,
 ]> implements IFrameFlush {
   private mapId = 0;
+  private mapInstanceId = 0n;
+  private nativeMapKey = 0;
+  private dynamic = false;
   private players!: PlayerDirectoryComponent;
   private serverTick = 0;
   private broadcast!: BroadcastHub;
@@ -74,29 +83,50 @@ export class MapComponent extends Component<[
   private transferCoordinator!: PlayerTransferCoordinator;
   private location!: LocationProxy;
   private nextLocationOperation = 1;
+  private lifecycle!: MapLifecycleCoordinator;
 
   get MapId(): number {
     return this.mapId;
   }
 
+  get MapInstanceId(): bigint {
+    return this.mapInstanceId;
+  }
+
+  get IsDynamic(): boolean {
+    return this.dynamic;
+  }
+
+  get PlayerCount(): number {
+    return this.units.Count;
+  }
+
   /** 创建地图内 Unit 存储、广播传输和帧尾同步源。 / Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */
   protected override Awake(
-    mapId: number,
+    definition: MapInstanceDefinition,
     scenes: SceneMessageHelper,
     players: PlayerDirectoryComponent,
     repository: PlayerRepository,
     transferCoordinator: PlayerTransferCoordinator,
     location: LocationProxy,
+    lifecycle: MapLifecycleCoordinator,
   ): void {
-    this.mapId = mapId;
-    this.config = GameConfigs.MapConfig.Get(mapId);
-    NativeData.ConfigureMap(mapId, this.config.widthCells, this.config.heightCells);
+    this.mapId = definition.mapConfigId;
+    this.mapInstanceId = definition.mapInstanceId;
+    this.dynamic = definition.dynamic;
+    this.nativeMapKey = this.DomainScene().InstanceId;
+    this.config = GameConfigs.MapConfig.Get(this.mapId);
+    NativeData.ConfigureMap(this.nativeMapKey, this.config.widthCells, this.config.heightCells);
     this.players = players;
     this.repository = repository;
     this.transferCoordinator = transferCoordinator;
     this.location = location;
+    this.lifecycle = lifecycle;
     this.scenes = scenes;
-    this.logger = this.DomainScene<MapScene>().logger.child({ mapId });
+    this.logger = this.DomainScene<MapScene>().logger.child({
+      mapId: this.mapId,
+      mapInstanceId: this.mapInstanceId.toString(),
+    });
     this.broadcast = new BroadcastHub(new SceneBroadcastTransport(scenes), {
       onError: (name, error) => {
         this.logger.error("map broadcast failed", { broadcast: name, error });
@@ -109,10 +139,44 @@ export class MapComponent extends Component<[
     this.RegisterReplicationSources();
   }
 
+  /**
+   * 请求MapHost销毁本地图实例；只处理对象生命周期，不踢人、不保存、不选择回退地图。
+   * 业务必须先处置仍在地图中的玩家，强制销毁会留下可观测警告。
+   *
+   * Requests MapHost disposal of this instance. It owns object lifecycle only,
+   * never kicking, saving, or selecting fallback maps. Business code must deal
+   * with resident players before disposal.
+   */
+  Dispose(): boolean {
+    return this.lifecycle.DisposeMap(this.mapInstanceId);
+  }
+
   /** 把Unit Handler的迁移请求交给MapHost协调器，保持Handler只做一层业务胶水。 / Delegates a Unit Handler migration request to the MapHost coordinator while keeping the Handler as one layer of glue. */
   TransferPlayer(unit: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer> {
     this.requirePlayer(unit);
     return this.transferCoordinator.TransferPlayer(unit, request);
+  }
+
+  /**
+   * 业务统一地图传送入口，只接收目标MapInstanceId；同V8、跨V8和跨Process由框架路由决定。
+   * 调用者不应查询MapHost或拼装位置revision。
+   *
+   * Unified business transfer API accepting only a target MapInstanceId.
+   * Runtime routing chooses local or remote execution; callers must not resolve
+   * MapHosts or assemble location revisions themselves.
+   */
+  async TransferToMap(unit: PlayerUnit, targetMapInstanceId: bigint): Promise<M2G_TransferPlayer> {
+    this.requirePlayer(unit);
+    const located = await this.location.Resolve({ unitId: unit.UnitId, account: unit.Account });
+    if (!located.found || located.location.actorInstanceId !== unit.InstanceId) {
+      throw new Error(`cannot transfer non-authoritative unit ${unit.UnitId}@${unit.InstanceId}`);
+    }
+    return this.transferCoordinator.TransferPlayer(unit, {
+      account: unit.Account,
+      gateName: unit.GetComponent(UnitGateComponent).gateName,
+      targetMapInstanceId,
+      expectedLocationRevision: located.location.revision,
+    });
   }
 
   /** 每次固定逻辑帧推进一次 Rust 权威 Cell 移动。 / Advances Rust-authoritative cell movement once per fixed game update. */
@@ -122,7 +186,7 @@ export class MapComponent extends Component<[
     this.serverTick += 1;
     const moveDescriptor = ClientBroadcasts.EntityMove;
     const encoded = NativeData.UpdateMapMovement(
-      this.mapId,
+      this.nativeMapKey,
       this.serverTick,
       fixedDeltaMs,
       moveDescriptor.message.msgcode,
@@ -194,7 +258,7 @@ export class MapComponent extends Component<[
         account: snapshot.account,
         token: "cross-process-transfer",
         gateName: snapshot.gateName,
-        mapId: snapshot.targetMapId,
+        mapInstanceId: snapshot.targetMapInstanceId,
       },
       transfer,
     );
@@ -234,13 +298,14 @@ export class MapComponent extends Component<[
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
       mapId: this.mapId,
+      mapInstanceId: this.mapInstanceId,
     });
 
     try {
       const native = player.AddComponent(NativeUnitRef, {
         id: unitId,
         instanceId: player.InstanceId,
-        mapId: this.mapId,
+        mapId: this.nativeMapKey,
         x: 0,
         y: 0,
       });
@@ -519,13 +584,13 @@ export class MapComponent extends Component<[
       name: numeric.name,
       Peek: () => {
         const delta = NativeData.PeekMapNumericDelta(
-          this.mapId,
+          this.nativeMapKey,
           this.serverTick,
           numeric.message.msgcode,
         );
         return {
           ...delta,
-          Ack: () => NativeData.AckMapNumericDelta(this.mapId, delta.revision),
+          Ack: () => NativeData.AckMapNumericDelta(this.nativeMapKey, delta.revision),
         };
       },
     });
@@ -535,13 +600,13 @@ export class MapComponent extends Component<[
       name: state.name,
       Peek: () => {
         const delta = NativeData.PeekMapUnitDelta(
-          this.mapId,
+          this.nativeMapKey,
           this.serverTick,
           state.message.msgcode,
         );
         return {
           ...delta,
-          Ack: () => NativeData.AckMapUnitDelta(this.mapId, delta.revision),
+          Ack: () => NativeData.AckMapUnitDelta(this.nativeMapKey, delta.revision),
         };
       },
     });
@@ -549,7 +614,7 @@ export class MapComponent extends Component<[
 
   protected override OnDestroy(): void {
     this.broadcast.Dispose();
-    NativeData.UnconfigureMap(this.mapId);
+    NativeData.UnconfigureMap(this.nativeMapKey);
   }
 
   private BroadcastAudience(excludeUnitId?: number): BroadcastAudience {
@@ -560,7 +625,7 @@ export class MapComponent extends Component<[
         const gate = unit.GetComponent(UnitGateComponent);
         return { route: gate.gateName, recipientId: unit.UnitId };
       });
-    return { key: `map:${this.mapId}`, routes };
+    return { key: `map:${this.mapInstanceId}`, routes };
   }
 
   private PlayerAudience(unit: PlayerUnit): BroadcastAudience {
@@ -573,12 +638,12 @@ export class MapComponent extends Component<[
 
   private requirePlayer(unit: PlayerUnit): void {
     if (
-      unit.MapId !== this.mapId ||
+      unit.MapInstanceId !== this.mapInstanceId ||
       unit.DomainScene() !== this.DomainScene() ||
       this.units.Get(unit.UnitId) !== unit
     ) {
       throw new Error(
-        `unit ${unit.UnitId}@${unit.InstanceId} does not belong to map ${this.mapId}`,
+        `unit ${unit.UnitId}@${unit.InstanceId} does not belong to map instance ${this.mapInstanceId}`,
       );
     }
   }

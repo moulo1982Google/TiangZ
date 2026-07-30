@@ -7,6 +7,7 @@ import "../../hotfix/demo/login/handlers/C2S_LoginHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_MapProbeHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_MoveHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_UseItemHandler";
+import "../../hotfix/demo/mapHost/handlers/DynamicMapHandlers";
 import "../../hotfix/demo/mapHost/handlers/G2M_EnterMapHandler";
 import "../../hotfix/demo/mapHost/handlers/G2M_PlayerOfflineHandler";
 import "../../hotfix/demo/mapHost/handlers/G2M_SecondEnterMapHandler";

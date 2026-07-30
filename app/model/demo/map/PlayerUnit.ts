@@ -4,6 +4,7 @@ import type { UnitNumericDelta } from "../../../generated/model/server/demo/prot
 export interface AwakePlayerUnit {
   account: string;
   mapId: number;
+  mapInstanceId: bigint;
 }
 
 export interface MatchPlayerGate {
@@ -13,6 +14,7 @@ export interface MatchPlayerGate {
 export interface PlayerSnapshot {
   account: string;
   mapId: number;
+  mapInstanceId: bigint;
   unitId: number;
   gateName: string;
   x: number;
@@ -35,6 +37,7 @@ export interface MovePlayer {
 export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
   protected account = "";
   protected mapId = 0;
+  protected mapInstanceId = 0n;
 
   get Account(): string {
     return this.account;
@@ -42,6 +45,10 @@ export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
 
   get MapId(): number {
     return this.mapId;
+  }
+
+  get MapInstanceId(): bigint {
+    return this.mapInstanceId;
   }
 
 }

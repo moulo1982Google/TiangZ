@@ -6,6 +6,8 @@ import {
   NumericComponent,
   PlayerPersistenceComponent,
   type PlayerSnapshot,
+  type M2G_TransferPlayer,
+  MapComponent,
   PlayerUnit,
   PositionComponent,
   type MovePlayer,
@@ -20,6 +22,7 @@ export class PlayerUnitSystem extends PlayerUnit {
   protected override Awake(request: AwakePlayerUnit): void {
     this.account = request.account;
     this.mapId = request.mapId;
+    this.mapInstanceId = request.mapInstanceId;
   }
 
   /** 只持久化本玩家一次；重复断线或停机路径共享同一个保存 Promise。 / Persists this player once; repeated disconnect and stop paths share the same save Promise. */
@@ -41,6 +44,7 @@ export class PlayerUnitSystem extends PlayerUnit {
     return {
       account: this.account,
       mapId: this.mapId,
+      mapInstanceId: this.mapInstanceId,
       unitId: this.UnitId,
       gateName: gate.gateName,
       speedCellsPerSecond: native.speedCellsPerSecond,
@@ -65,6 +69,11 @@ export class PlayerUnitSystem extends PlayerUnit {
       request.inputY,
       request.sequence,
     );
+  }
+
+  /** 业务只提供目标地图实例；静态地图与动态副本使用完全相同的传送调用。 / Business supplies only the target instance; static maps and dynamic dungeons share this exact transfer call. */
+  TransferToMap(mapInstanceId: bigint): Promise<M2G_TransferPlayer> {
+    return this.DomainScene().GetComponent(MapComponent).TransferToMap(this, mapInstanceId);
   }
 }
 

@@ -329,7 +329,29 @@ message M2C_UseSkill // IActorLocationResponse
 
 ### 玩家地图传送
 
-同MapHost与跨MapHost切图都调用Gate的`EnterMap`，不要定义两套`Teleport`业务接口，也不要在Handler判断目标是否同进程。Gate先打开Actor迁移屏障，再由源PlayerUnit mailbox协调Location锁、目标Unit恢复、位置提交和源Actor清理。迁移保持UnitId，使用目标`MapConfig`出生点，Actor InstanceId与Location revision必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
+静态地图与动态副本都只调用：
+
+```ts
+await player.TransferToMap(targetMapInstanceId);
+```
+
+业务不得传MapHost、IP、端口或判断目标是否同进程。静态地图的`MapInstanceId == MapConfigId`；动态副本使用`DynamicMapProxy.CreateOn(mapHostName, mapConfigId)`返回的全局实例号。只有创建副本时业务需要决定放置在哪个MapHost，之后保存并传递实例号即可。Gate先打开Actor迁移屏障，再由源PlayerUnit mailbox解析实例路由，协调Location锁、目标Unit恢复、位置提交和源Actor清理。迁移保持UnitId，使用目标`MapConfig`出生点，Actor InstanceId与Location revision必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
+
+MapHost配置静态地图：
+
+```json
+{
+  "name": "map_1",
+  "sceneType": "MapHost",
+  "staticMapIds": [1, 3],
+  "ip": "127.0.0.1",
+  "port": 7301
+}
+```
+
+启动时MapHost逐个调用统一`CreateMap`，随后向Location注册实际实例；`knownScenes`中的路由副本不重复填写`staticMapIds`。动态副本由Demo层`DynamicMapManagerComponent`管理，连续无人五分钟自动销毁只是业务兜底策略，不属于Core。正常副本结束应先让业务把玩家逐个`TransferToMap`到入口或其他地图，再调用`DynamicMapProxy.Dispose(instanceId)`。销毁非空地图会明确失败，框架不会暗中踢人、保存或决定回退点。玩家重登时可用`DynamicMapProxy.Exists(instanceId)`判断原副本是否存在，并由业务选择入口地图。
+
+完整开发步骤与代码示例见[地图实例与动态副本教程](../tutorials/11-map-instance-and-dungeon.md)。
 
 Component迁移遵循显式选择：默认不迁移，只有稳定Model类型加`@transferable()`并实现同步`ITransfer<TState>`才会参加。`@transferable()`本身就是稳定能力声明，生成器会检查`CaptureTransfer/RestoreTransfer`是否位于Model或对应`@systemFor`实现中；运行时仍保留最后一道防线。`CaptureTransfer`必须返回脱离旧Entity和Native handle的值快照，`RestoreTransfer`写入目标Factory已经创建的同类型Component，两者都不能返回Promise。当前Numeric与Item迁移完整业务值；Position只迁移速度、朝向和存活，故意不迁移旧坐标与移动中间态；Gate绑定、Persistence和Native handle由目标Factory重建。临时仇恨、施法过程、副本局部状态等组件不加标记即可丢弃。
 

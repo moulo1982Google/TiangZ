@@ -139,8 +139,11 @@ Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原�
 | `port` | u16 | Listener 端口 |
 | `protocol` | `auto`、`tcp`、`websocket`、`kcp`? | Endpoint 传输协议；默认 `auto`，KCP 需使用 `--features kcp` 构建 |
 | `audience` | `mixed`、`inner`、`outer`? | Endpoint 面向的连接类型；默认 `mixed`，KCP 必须显式选择 `inner` 或 `outer` |
+| `staticMapIds` | `u32[]`? | 仅MapHost使用；启动时通过统一CreateMap创建的静态地图配置ID |
 
 同一进程内 Scene name 和 endpoint 必须唯一。Inspector 和健康检查端口都不能与任何 Scene 端口冲突。
+
+`staticMapIds`只写在实际启动该MapHost的`scenes`条目，`knownScenes`中的路由副本不重复填写。静态地图实例号等于配置号；动态副本不进入Runtime JSON，由业务`DynamicMapManagerComponent`运行时创建。
 
 `auto` 用于当前同一端口兼容内部 TCP 和浏览器 WebSocket。只接受 Native/内部连接的 Scene 可以显式使用 `tcp`；只接受浏览器连接且不会承接内部 TCP 的 Endpoint 才能显式使用 `websocket`。未来支持一个 Scene 配置多个 Endpoint 后，Gate 才能分别显式暴露 Native TCP、WebSocket 和 KCP 端口，并取消生产配置对协议探测的依赖。
 

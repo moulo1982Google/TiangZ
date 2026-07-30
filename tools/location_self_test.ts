@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { LocationDirectory } from "../app/core/public";
 import { LocationComponent } from "../app/model/demo/location/LocationComponent";
+import { MapInstanceDirectoryComponent } from "../app/model/demo/location/MapInstanceDirectoryComponent";
 import { MapMessages } from "../app/generated/model/server/demo/protocol/messageDescriptors";
 import { MapProtocol } from "../app/generated/model/server/demo/protocol/rpcs";
 
@@ -10,7 +11,46 @@ function main(): void {
   testLocationCasAndIdempotency();
   testOwnerRecovery();
   testGeneratedTransferPolicies();
+  testMapInstanceDirectory();
   console.log("location self-test passed");
+}
+
+/** 验证静态/动态地图共享同一实例目录，并拒绝冲突覆盖和静态删除。 / Verifies one directory for static and dynamic maps with conflict and static-removal protection. */
+function testMapInstanceDirectory(): void {
+  const directory = new MapInstanceDirectoryComponent();
+  const staticMap = {
+    mapInstanceId: 1n,
+    mapConfigId: 1,
+    mapHostName: "map_1",
+    dynamic: false,
+  };
+  const dynamicMap = {
+    mapInstanceId: 9_000_000_001n,
+    mapConfigId: 1,
+    mapHostName: "map_2",
+    dynamic: true,
+  };
+
+  assert.equal(directory.Register({ instance: staticMap }).created, true);
+  assert.equal(directory.Register({ instance: staticMap }).created, false);
+  assert.equal(directory.Register({ instance: dynamicMap }).created, true);
+  assert.deepEqual(
+    directory.Resolve({ mapInstanceId: dynamicMap.mapInstanceId }).instance,
+    dynamicMap,
+  );
+  assert.throws(
+    () => directory.Register({ instance: { ...dynamicMap, mapHostName: "map_1" } }),
+    /conflicts/,
+  );
+  assert.throws(
+    () => directory.Remove({ mapInstanceId: 1n, expectedMapHostName: "map_1" }),
+    /static map instances cannot be removed/,
+  );
+  assert.equal(directory.Remove({
+    mapInstanceId: dynamicMap.mapInstanceId,
+    expectedMapHostName: "map_2",
+  }).removed, true);
+  assert.equal(directory.Resolve({ mapInstanceId: dynamicMap.mapInstanceId }).found, false);
 }
 
 /** 验证Location重启后可从MapHost权威快照恢复，并且冲突批次不会部分写入。 / Verifies restart recovery from authoritative MapHost snapshots and atomic rejection of conflicting batches. */

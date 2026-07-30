@@ -22,6 +22,7 @@ import type {
   M2M_CommitPlayerTransferResponse,
   M2M_PreparePlayerTransfer,
   M2M_PreparePlayerTransferResponse,
+  MapInstanceSnapshot,
   PlayerTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
 import { MapTransferProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
@@ -34,9 +35,13 @@ import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
 import { GameConfigs } from "../../../generated/model/config";
 import { LocationProxy } from "../location/LocationProxy";
 import { UnitGateComponent } from "../map/UnitGateComponent";
+import {
+  StaticMapInstanceId,
+  type MapInstanceDefinition,
+} from "../map/MapInstance";
 
 export class MapHostComponent extends Component {
-  private readonly maps = new Map<number, MapComponent>();
+  private readonly maps = new Map<bigint, MapComponent>();
   private readonly repository = new InMemoryPlayerRepository();
   private readonly incomingTransfers =
     new TransferStagingRegistry<PreparedIncomingPlayer>(1024);
@@ -48,12 +53,22 @@ export class MapHostComponent extends Component {
   }> = [];
   private sourceCleanupScheduled = false;
   private recoveringLocations = false;
+  private readonly disposingMaps = new Set<bigint>();
 
   /** 定期回收源进程宕机遗留的Prepare，以及已完成事务的短期幂等记录。 / Periodically reclaims prepares orphaned by a crashed source and short-lived completed idempotency records. */
   protected override Awake(): void {
     this.location = new LocationProxy(this.owner.scenes);
+    for (const mapConfigId of this.owner.self.staticMapIds ?? []) {
+      this.CreateMap({
+        mapConfigId,
+        mapInstanceId: StaticMapInstanceId(mapConfigId),
+        dynamic: false,
+      });
+    }
     this.NewRepeatedTimer(10_000, "SweepIncomingTransfers");
     this.NewRepeatedTimer(5_000, "RecoverOwnedLocations");
+    this.NewRepeatedTimer(5_000, "RecoverHostedMapInstances");
+    this.NewOnceTimer(0, "RecoverHostedMapInstances");
   }
 
   /** 收集每张托管地图的广播快照，不重置计数器。 / Collects one broadcast snapshot per hosted map without resetting counters. */
@@ -94,17 +109,15 @@ export class MapHostComponent extends Component {
   async enterMap(request: G2M_EnterMap): Promise<M2G_EnterMap> {
     this.validateEnterMap(request);
 
-    const mapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
-    if (!GameConfigs.MapConfig.TryGet(mapId)) {
-      throw new RpcError(GameErrCode.MapNotFound, `map config not found: ${mapId}`);
-    }
+    const map = this.requireMap(request.mapInstanceId);
+    const mapId = map.MapId;
     let player: PlayerUnit | undefined;
     let snapshot: PlayerSnapshot;
     let isNewPlayer = false;
 
     for (;;) {
       player = this.players.Get(request.account);
-      if (player?.MapId === mapId) {
+      if (player?.MapInstanceId === request.mapInstanceId) {
         try {
           snapshot = await this.owner.processHost.runActorMailbox(
             player.InstanceId,
@@ -132,7 +145,7 @@ export class MapHostComponent extends Component {
         );
       } else {
         const allocated = await this.location.AllocateUnitId({ account: request.account });
-        player = this.ensureMap(mapId).CreatePlayer(allocated.unitId, request);
+        player = map.CreatePlayer(allocated.unitId, request);
         try {
           await this.location.Register({
             unitId: player.UnitId,
@@ -140,11 +153,11 @@ export class MapHostComponent extends Component {
             gateName: request.gateName,
             mapHostName: this.owner.self.name,
             mapId,
-            mapInstanceId: BigInt(mapId),
+            mapInstanceId: map.MapInstanceId,
             actorInstanceId: player.InstanceId,
           });
         } catch (error) {
-          this.ensureMap(mapId).RemoveTransferredPlayer(player);
+          map.RemoveTransferredPlayer(player);
           throw error;
         }
       }
@@ -153,9 +166,9 @@ export class MapHostComponent extends Component {
       break;
     }
 
-    const map = this.mapOf(player);
+    const playerMap = this.mapOf(player);
     if (isNewPlayer) {
-      await map.PlayerEntered(snapshot);
+      await playerMap.PlayerEntered(snapshot);
     }
 
     this.owner.logger.info("player entered map", {
@@ -194,7 +207,7 @@ export class MapHostComponent extends Component {
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       x: snapshot.x,
       y: snapshot.y,
-      entities: map.EntitySnapshots(),
+      entities: playerMap.EntitySnapshots(),
       items: player.GetComponent(ItemComponent).Snapshot(),
       mapInstanceId: located.location.mapInstanceId,
       locationRevision: located.location.revision,
@@ -219,8 +232,22 @@ export class MapHostComponent extends Component {
     ) {
       throw new RpcError(GameErrCode.GateSessionRequired, "player transfer identity mismatch");
     }
-    if (!GameConfigs.MapConfig.TryGet(request.targetMapId)) {
-      throw new RpcError(GameErrCode.MapNotFound, `map config not found: ${request.targetMapId}`);
+    const resolved = await this.location.ResolveMapInstance({
+      mapInstanceId: request.targetMapInstanceId,
+    });
+    if (!resolved.found) {
+      throw new RpcError(
+        GameErrCode.MapNotFound,
+        `map instance not found: ${request.targetMapInstanceId}`,
+      );
+    }
+    if (request.targetMapInstanceId === source.MapInstanceId) {
+      return this.TransferResponse(
+        request.rpcId,
+        source,
+        this.mapOf(source),
+        request.expectedLocationRevision,
+      );
     }
     const operationId = `${this.owner.self.name}:${source.UnitId}:${source.InstanceId}:${this.nextTransferSequence++}`;
     await this.location.Lock({
@@ -231,19 +258,20 @@ export class MapHostComponent extends Component {
       state: "moving",
     });
 
-    if (request.targetMapHostName === this.owner.self.name) {
-      return await this.TransferLocal(source, request, operationId);
+    if (resolved.instance.mapHostName === this.owner.self.name) {
+      return await this.TransferLocal(source, request, resolved.instance, operationId);
     }
-    return await this.TransferRemote(source, request, operationId);
+    return await this.TransferRemote(source, request, resolved.instance, operationId);
   }
 
   private async TransferLocal(
     source: PlayerUnit,
     request: G2M_TransferPlayer,
+    targetInstance: MapInstanceSnapshot,
     operationId: string,
   ): Promise<M2G_TransferPlayer> {
     const sourceMap = this.mapOf(source);
-    const targetMap = this.ensureMap(request.targetMapId);
+    const targetMap = this.requireMap(targetInstance.mapInstanceId);
     let target: PlayerUnit | undefined;
     let directoryReplaced = false;
     let locationCommitted = false;
@@ -254,7 +282,7 @@ export class MapHostComponent extends Component {
           account: source.Account,
           token: "map-transfer",
           gateName: request.gateName,
-          mapId: request.targetMapId,
+          mapInstanceId: targetInstance.mapInstanceId,
         },
         source.CaptureTransfer(),
       );
@@ -267,8 +295,8 @@ export class MapHostComponent extends Component {
         operationId,
         gateName: request.gateName,
         mapHostName: this.owner.self.name,
-        mapId: request.targetMapId,
-        mapInstanceId: BigInt(request.targetMapId),
+        mapId: targetInstance.mapConfigId,
+        mapInstanceId: targetInstance.mapInstanceId,
         actorInstanceId: target.InstanceId,
       });
       locationCommitted = true;
@@ -300,15 +328,16 @@ export class MapHostComponent extends Component {
   private async TransferRemote(
     source: PlayerUnit,
     request: G2M_TransferPlayer,
+    targetInstance: MapInstanceSnapshot,
     operationId: string,
   ): Promise<M2G_TransferPlayer> {
     const sourceMap = this.mapOf(source);
-    const targetScene = this.owner.scenes.byName(request.targetMapHostName);
+    const targetScene = this.owner.scenes.byName(targetInstance.mapHostName);
     let targetCommitted = false;
     try {
       const transfer = this.CreateTransferSnapshot(
         source,
-        request.targetMapId,
+        targetInstance,
         operationId,
       );
       await this.owner.scenes.call(
@@ -361,7 +390,7 @@ export class MapHostComponent extends Component {
         this.owner.logger.error("remote transfer requires recovery after target commit", {
           operationId,
           unitId: source.UnitId,
-          targetMapHost: request.targetMapHostName,
+          targetMapHost: targetInstance.mapHostName,
           error,
         });
         throw new RpcError(
@@ -387,7 +416,7 @@ export class MapHostComponent extends Component {
       account: snapshot.account,
       mapHostName: this.owner.self.name,
       mapId: snapshot.mapId,
-      mapInstanceId: BigInt(snapshot.mapId),
+      mapInstanceId: snapshot.mapInstanceId,
       unitId: snapshot.unitId,
       actorInstanceId: player.InstanceId,
       locationRevision: revision,
@@ -443,9 +472,11 @@ export class MapHostComponent extends Component {
     this.ValidateTransferSnapshot(snapshot);
     const result = this.incomingTransfers.Prepare(
       snapshot.transferId,
-      JSON.stringify(snapshot),
+      JSON.stringify(snapshot, (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      ),
       () => {
-        const map = this.ensureMap(snapshot.targetMapId);
+        const map = this.requireMap(snapshot.targetMapInstanceId);
         return {
           map,
           player: map.PrepareRemoteTransferredPlayer(snapshot),
@@ -502,7 +533,7 @@ export class MapHostComponent extends Component {
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: committed.target.player.GetComponent(ItemComponent).Snapshot(),
       mapHostName: this.owner.self.name,
-      mapInstanceId: BigInt(committed.result.mapId),
+      mapInstanceId: committed.result.mapInstanceId,
     };
   }
 
@@ -522,23 +553,25 @@ export class MapHostComponent extends Component {
   /** 从源Unit生成不含运行时引用的跨进程快照；transferId必须由源侧事务协调器保证唯一。 / Builds a cross-process snapshot without runtime references; the source coordinator must provide a unique transferId. */
   CreateTransferSnapshot(
     player: PlayerUnit,
-    targetMapId: number,
+    targetInstance: MapInstanceSnapshot,
     transferId: string,
   ): PlayerTransferSnapshot {
     const snapshot = player.Snapshot();
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       transferId,
       unitId: snapshot.unitId,
       account: snapshot.account,
       sourceMapId: snapshot.mapId,
-      targetMapId,
+      targetMapId: targetInstance.mapConfigId,
       gateName: snapshot.gateName,
+      sourceMapInstanceId: snapshot.mapInstanceId,
       speedCellsPerSecond: snapshot.speedCellsPerSecond,
       facing: snapshot.facing,
       alive: snapshot.alive,
       numerics: snapshot.numerics,
       items: player.GetComponent(ItemComponent).Snapshot(),
+      targetMapInstanceId: targetInstance.mapInstanceId,
     };
   }
 
@@ -568,7 +601,7 @@ export class MapHostComponent extends Component {
         gateName: player.GetComponent(UnitGateComponent).gateName,
         mapHostName: this.owner.self.name,
         mapId: player.MapId,
-        mapInstanceId: BigInt(player.MapId),
+        mapInstanceId: player.MapInstanceId,
         actorInstanceId: player.InstanceId,
       }));
       const recovered = await this.location.RecoverOwner({
@@ -588,31 +621,129 @@ export class MapHostComponent extends Component {
     }
   }
 
-  private ensureMap(mapId: number): MapComponent {
-    const existing = this.maps.get(mapId);
-    if (existing) return existing;
+  /**
+   * 把实际已创建的地图实例幂等注册到Location；Location重启后也由该重报恢复。
+   * 配置副本中的knownScenes不再复制静态地图归属。
+   *
+   * Idempotently publishes maps actually created by this host and recovers the
+   * directory after a Location restart. Route copies in knownScenes do not
+   * duplicate static-map ownership.
+   */
+  protected async RecoverHostedMapInstances(): Promise<void> {
+    for (const map of this.maps.values()) {
+      if (this.disposingMaps.has(map.MapInstanceId)) continue;
+      try {
+        await this.location.RegisterMapInstance({
+          instance: {
+            mapInstanceId: map.MapInstanceId,
+            mapConfigId: map.MapId,
+            mapHostName: this.owner.self.name,
+            dynamic: map.IsDynamic,
+          },
+        });
+      } catch (error) {
+        this.owner.logger.warn("map instance route recovery failed", {
+          mapId: map.MapId,
+          mapInstanceId: map.MapInstanceId.toString(),
+          error,
+        });
+      }
+    }
+  }
 
-    const sceneId = this.owner.childSceneId(`map:${mapId}`);
+  /** 静态和动态地图共享唯一创建入口；同一实例的幂等重试必须保持定义一致。 / Static and dynamic maps share one creation path; retries for an existing ID must use the same definition. */
+  CreateMap(definition: MapInstanceDefinition): MapComponent {
+    const existing = this.maps.get(definition.mapInstanceId);
+    if (existing) {
+      if (existing.MapId !== definition.mapConfigId || existing.IsDynamic !== definition.dynamic) {
+        throw new Error(`map instance definition conflicts: ${definition.mapInstanceId}`);
+      }
+      return existing;
+    }
+    if (!GameConfigs.MapConfig.TryGet(definition.mapConfigId)) {
+      throw new RpcError(
+        GameErrCode.MapNotFound,
+        `map config not found: ${definition.mapConfigId}`,
+      );
+    }
+
+    const sceneId = this.owner.childSceneId(`map:${definition.mapInstanceId}`);
     const scene = this.owner.processHost.spawnScene(sceneId, MapScene);
-    scene.AddComponent(UnitComponent);
-    const map = scene.AddComponent(
-      MapComponent,
-      mapId,
-      this.owner.scenes,
-      this.players,
-      this.repository,
-      this,
-      this.location,
-    );
-    this.maps.set(mapId, map);
+    try {
+      scene.AddComponent(UnitComponent);
+      const map = scene.AddComponent(
+        MapComponent,
+        definition,
+        this.owner.scenes,
+        this.players,
+        this.repository,
+        this,
+        this.location,
+        this,
+      );
+      this.maps.set(definition.mapInstanceId, map);
+      return map;
+    } catch (error) {
+      this.owner.processHost.despawnScene(sceneId);
+      throw error;
+    }
+  }
+
+  /** 销毁空地图的完整Scene/Component树；不替业务踢人、保存或选择回退地图。 / Disposes an empty map Scene and Component tree without kicking, saving, or choosing fallback destinations. */
+  DisposeMap(mapInstanceId: bigint): boolean {
+    const map = this.maps.get(mapInstanceId);
+    if (!map) return false;
+    if (!map.IsDynamic) {
+      throw new RpcError(GameErrCode.StaticMapCannotDispose, "static map cannot be disposed");
+    }
+    if (map.PlayerCount > 0) {
+      throw new Error(
+        `map ${mapInstanceId} still has ${map.PlayerCount} player(s); business must transfer them first`,
+      );
+    }
+    this.maps.delete(mapInstanceId);
+    this.disposingMaps.delete(mapInstanceId);
+    return this.owner.processHost.despawnScene(this.owner.childSceneId(`map:${mapInstanceId}`));
+  }
+
+  /** 在异步删除Location路由前阻止周期重报；失败时调用CancelMapDisposal恢复。 / Prevents periodic route recovery before asynchronous route removal; call CancelMapDisposal on failure. */
+  BeginMapDisposal(mapInstanceId: bigint): void {
+    const map = this.requireMap(mapInstanceId);
+    if (!map.IsDynamic) {
+      throw new RpcError(GameErrCode.StaticMapCannotDispose, "static map cannot be disposed");
+    }
+    if (map.PlayerCount > 0) {
+      throw new RpcError(
+        GameErrCode.DynamicMapNotEmpty,
+        `dynamic map ${mapInstanceId} still has players`,
+      );
+    }
+    this.disposingMaps.add(mapInstanceId);
+  }
+
+  /** 取消尚未提交的地图销毁，使路由恢复任务可以再次发布实例。 / Cancels an uncommitted map disposal so route recovery may publish it again. */
+  CancelMapDisposal(mapInstanceId: bigint): void {
+    this.disposingMaps.delete(mapInstanceId);
+  }
+
+  /** 返回本MapHost已托管的地图，不会隐式创建。 / Returns a hosted map without implicitly creating it. */
+  GetMap(mapInstanceId: bigint): MapComponent | undefined {
+    return this.maps.get(mapInstanceId);
+  }
+
+  private requireMap(mapInstanceId: bigint): MapComponent {
+    const map = this.maps.get(mapInstanceId);
+    if (!map) {
+      throw new RpcError(GameErrCode.MapNotFound, `map instance is not hosted here: ${mapInstanceId}`);
+    }
     return map;
   }
 
   private mapOf(unit: PlayerUnit): MapComponent {
     const map = unit.DomainScene<MapScene>().GetComponent(MapComponent);
-    if (map !== this.maps.get(unit.MapId)) {
+    if (map !== this.maps.get(unit.MapInstanceId)) {
       throw new Error(
-        `unit ${unit.UnitId}@${unit.InstanceId} has invalid map ${unit.MapId}`,
+        `unit ${unit.UnitId}@${unit.InstanceId} has invalid map instance ${unit.MapInstanceId}`,
       );
     }
     return map;
@@ -642,7 +773,7 @@ export class MapHostComponent extends Component {
   }
 
   private ValidateTransferSnapshot(snapshot: PlayerTransferSnapshot): void {
-    if (snapshot.schemaVersion !== 1) {
+    if (snapshot.schemaVersion !== 2) {
       throw new Error(`unsupported player transfer schema: ${snapshot.schemaVersion}`);
     }
     if (!snapshot.transferId || !snapshot.account || !snapshot.gateName) {
