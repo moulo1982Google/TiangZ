@@ -1605,7 +1605,9 @@ function parseOptions(args) {
     players: csvNumbers(values.get("--players") ?? "100,125,150,175,200"),
     gates: positive(values.get("--gates") ?? "4", "--gates"),
     // Demo 默认客户端输入上报频率是 5Hz；服务端 Game.Update 默认保持 20Hz。
-    moveRate: nonNegative(values.get("--move-rate") ?? "5", "--move-rate"),
+    moveRate: flags.has("--probe-only")
+      ? 0
+      : nonNegative(values.get("--move-rate") ?? "5", "--move-rate"),
     movementHoldMessages: positive(
       values.get("--movement-hold-messages") ?? "5",
       "--movement-hold-messages",

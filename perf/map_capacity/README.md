@@ -60,6 +60,8 @@ io_uring 模式会自动使用 `--features io-uring` 构建 Runtime，并把临�
 
 只测完整链路 pingpong，不测 Move 与 AOI 广播：
 
+`--probe-only`会在容量调度器中强制把`move-rate`设为0，并同时关闭Node/Rust客户端的Move发送；报告中的`move/s`与`push/s`必须为0，否则该轮不能作为Probe基线。
+
 ```bash
 npm run perf:map-capacity -- \
   --probe-only \

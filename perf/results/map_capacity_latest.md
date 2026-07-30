@@ -1,12 +1,12 @@
 # 单 MapHost 全图均匀 AOI 容量测试报告
 
-- 时间：2026-07-30T11:31:25.440Z
+- 时间：2026-07-30T12:18:42.371Z
 - 拓扑：1 MapHost / 16 Gate / 1 Login / 1 LoginMgr / 1 Location
 - I/O Backend：IOCP（Tokio/Mio；兼容配置值 epoll）
-- 地图：10x10 AOI Grid（MapConfig 1）
+- 地图：15x15 AOI Grid（MapConfig 1015）
 - Unit 数据：Rust 权威存储，Rust 批处理并直接编码移动快照
-- 玩家布局：轮询全部AOI Grid，固定在Grid中央Cell（各档平均10人/Grid）
-- 负载：每玩家 5Hz Move + 每玩家 1Hz MapProbe
+- 玩家布局：轮询全部AOI Grid，固定在Grid中央Cell（各档平均13.33人/Grid）
+- 负载：每玩家 5Hz Move + 每玩家 0Hz MapProbe
 - 移动输入：每 5 次上报保持同一方向
 - Probe in-flight：每连接 1
 - 压测客户端：Rust
@@ -19,48 +19,48 @@
 
 | 玩家 | Map CPU avg/p90/peak | Map 窗口样本 | Gate max avg/peak | move/s | Move 达标率 | push/s | Probe/s | Probe p50 | p90 | p95 | p99 | max | move/probe errors | overload/timeout/backpressure/slow | RSS |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1000 | 86.1/102.6/106.1% | 12 | 27/45.3% | 5000 | 100% | 162898 | 1000 | 5.54ms | 14.94ms | 18.72ms | 24.25ms | 54.72ms | 0/0 | 0/0/0/0 | 1501.4MB |
+| 3000 | 143/160.9/167.1% | 11 | 69.5/107.6% | 15004 | 100% | 365756 | 0 | 0ms | 0ms | 0ms | 0ms | 0ms | 0/0 | 40070/0/7540/0 | 1987.6MB |
 
 ## AOI 空间指标
 
 | 玩家 | World/Entity/Grid | candidate/visible | 跨Grid/s | 可见变化/s | 过滤覆盖/s |
 |---:|---:|---:|---:|---:|---:|
-| 1000 | 1/1000/100 | 78376/78376 | 1.2 | 17.7 | 0 |
+| 3000 | 1/3000/225 | 335238/335238 | 5.6 | 183.6 | 0 |
 
 ## 地图进入队列
 
 | 玩家 | 测量结束队列 | 生命周期峰值 | 已放行 | 失败 |
 |---:|---:|---:|---:|---:|
-| 1000 | 0 | 16 | 1000 | 0 |
+| 3000 | 0 | 16 | 3000 | 0 |
 
 ## NativeData 边界指标
 
 | 玩家 | 指标样本 | scalar gets/s | scalar sets/s | batch calls/s | encoded frames/items | encoded bytes/s | live E/U/I | Pool/Scratch | scratch grows/s (total) | TS refs | Map V8 Heap peak |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1000 | 12 | 79.2 | 5001.8 | 80 | 2071.9/20010 | 1.2MB/s | 2000/1000/1000 | 0.6MB/0.1MB | 0 (13) | 2000 | 26.3MB |
+| 3000 | 11 | 736.9 | 3849.9 | 55.2 | 3323.2/41366 | 2.5MB/s | 6000/3000/3000 | 2.5MB/0.2MB | 0 (15) | 6000 | 69.0MB |
 
 ## Map 广播 single-flight
 
 | 玩家 | 指标样本 | pending 采样峰值/生命周期峰值 | queued/s | coalesced/s (%) | sent/s | batch/s | frames/batch | 广播 avg/max | 排队 avg/max | failures |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1000 | 12 | 0/1000 | 20011 | 0 (0%) | 20011 | 20.7 | 968.4 | 6.65/78ms | 0/1ms | 0 |
+| 3000 | 11 | 3000/3000 | 40968 | 0 (0%) | 40968 | 19.9 | 2062 | 43.92/170ms | 3.04/91ms | 0 |
 
 ## 批量下行 Bridge
 
 | 玩家 | Gate batch/s | recipients/s | recipients/batch | Bridge copy | logical outbound |
 |---:|---:|---:|---:|---:|---:|
-| 1000 | 33552 | 164088 | 4.89 | 7.99MB/s | 39.49MB/s |
+| 3000 | 51712 | 359000 | 6.94 | 16.26MB/s | 111.34MB/s |
 
 ## 容量判断
 
 - 本轮没有同时满足 CPU 目标、零超时、零内部过载的容量点。
-- 最接近 85% 的测试点：1000 玩家，Map CPU 平均 86.1%。
+- 最接近 85% 的测试点：3000 玩家，Map CPU 平均 143%。
 
 ## Transport Backend
 
 | 玩家 | Map read frames/op | Map write frames/op | Gate read frames/op | Gate write frames/op |
 |---:|---:|---:|---:|---:|
-| 1000 | 1.00 | 1.25 | 1.00 | 3.80 |
+| 3000 | 1.00 | 0.00 | 1.00 | 3.43 |
 
 ## 指标口径
 

@@ -22,6 +22,10 @@ Rust AOI接入后的同屏压测暴露两类非稳态开销：状态复制曾在
 
 AOI Grid改为从地图最小Cell建立相对原点，避免225 Cell等奇数Grid世界被世界零点切成16列。容量工具新增10×10、15×15、20×20 Grid冷地图矩阵；`grid-uniform`严格把玩家轮询放到每个Grid中央Cell并限制为1 Cell/s。10×10世界的1000/2000/3000人对应每Grid 10/20/30人；静态布局只验证3×3 Enter稳态，5Hz/1Hz迟滞档另做迁移回归。
 
+拆链路复测发现，1000人纯Move（5k Move/s、约15.9万Push/s）时Map CPU平均68.2%、零背压；1000人纯Probe在1k RPC/s和15k RPC/s时Map CPU分别为6.7%和37.3%，后者p95/p99为3.44/4.45ms。3000人纯Move下，10×10、15×15、20×20世界的Map CPU依次为103%、143%、205%。虽然可见关系随世界扩大由约70.7万降至18.8万，但Gate batch由约2.17万/s升至8.70万/s、每批接收者由14.84降至4.04，证明当前瓶颈是稀疏Audience产生的大量小型内部发送，而不是Probe RPC或Rust AOI查询本身。下一步应在不改变AOI语义的前提下，将同一Tick的多组frame按Gate合并为一次内部批量发送。
+
+容量工具同时修复Rust客户端`--probe-only`仍沿用默认5Hz Move的问题：现在该模式在统一参数层强制`moveRate=0`，报告中`move/s`和`push/s`必须同时为0才可接受。
+
 首次矩阵发现旧Bench流程先在公共出生点Attach、再用ActorLocation RPC搬运，建角会制造不属于稳态的临时Enter/Leave并让定位RPC排队超时。现改为Bench Gate RPC计算冷配置出生点，经可信内网字段在Unit创建时预定位；外网正式EnterMap不能提交坐标。定位RPC仅校验并停止每100ms的Demo回血Timer，避免`state-sync-mode=off`仍混入Numeric广播。统一结果见`perf/results/aoi_grid_matrix_20260730.md`：1000@10×10完整通过但Map CPU平均86.1%略超85%目标；2000/3000在正式负载中出现Actor RPC超时，扩大到15×15和20×20虽显著降低可见关系和移动编码耗时，仍未越过3000玩家18k/s入站消息上限。
 
 Luban增加`ConfigTablePolicy`整表策略，生成完整、Hot、Cold三套数据及独立指纹。Item/Player为Hot；Map/AOI/策略为Cold。Rust验证分区可无重叠还原完整数据，TS和构建工具拒绝运行期Cold变化。空间尺寸、范围和频率即使只改数值也必须完整构建并重启Process。
