@@ -26,12 +26,12 @@ export class PositionComponent extends Component<[
   native: NativeUnitRef,
   mapWidthCells: number,
   mapDepthCells: number,
-  gridCellSizeMeters: number,
+  cellSizeMeters: number,
 ]> implements ITransfer<PositionTransferState> {
   private native!: NativeUnitRef;
   private mapWidthCells = 0;
   private mapDepthCells = 0;
-  private gridCellSizeMeters = 1;
+  private cellSizeMeters = 1;
 
   get x(): number {
     return this.native.x;
@@ -92,12 +92,12 @@ export class PositionComponent extends Component<[
     native: NativeUnitRef,
     mapWidthCells: number,
     mapDepthCells: number,
-    gridCellSizeMeters: number,
+    cellSizeMeters: number,
   ): void {
     this.native = native;
     this.mapWidthCells = mapWidthCells;
     this.mapDepthCells = mapDepthCells;
-    this.gridCellSizeMeters = gridCellSizeMeters;
+    this.cellSizeMeters = cellSizeMeters;
   }
 
   CanOccupy(cellX: number, cellZ: number): boolean {
@@ -117,20 +117,20 @@ export class PositionComponent extends Component<[
     this.native.cellZ = cellZ;
     this.native.targetCellX = cellX;
     this.native.targetCellZ = cellZ;
-    this.native.x = cellToWorldMeters(cellX, this.gridCellSizeMeters);
+    this.native.x = cellToWorldMeters(cellX, this.cellSizeMeters);
     this.native.y = heightMeters;
-    this.native.z = cellToWorldMeters(cellZ, this.gridCellSizeMeters);
+    this.native.z = cellToWorldMeters(cellZ, this.cellSizeMeters);
     this.native.yaw = normalizeYaw(yawRadians);
   }
 
   /** 使用米制世界坐标设置Grid2D出生点；X/Z必须精确落在Cell中心。 / Sets a Grid2D spawn in meters; X/Z must land exactly on cell centers. */
   SetGridWorldPosition(x: number, y: number, z: number, yaw: number): void {
-    const cellX = worldMetersToCell(x, this.gridCellSizeMeters);
-    const cellZ = worldMetersToCell(z, this.gridCellSizeMeters);
+    const cellX = worldMetersToCell(x, this.cellSizeMeters);
+    const cellZ = worldMetersToCell(z, this.cellSizeMeters);
     const epsilon = 1e-5;
     if (
-      Math.abs(cellToWorldMeters(cellX, this.gridCellSizeMeters) - x) > epsilon ||
-      Math.abs(cellToWorldMeters(cellZ, this.gridCellSizeMeters) - z) > epsilon
+      Math.abs(cellToWorldMeters(cellX, this.cellSizeMeters) - x) > epsilon ||
+      Math.abs(cellToWorldMeters(cellZ, this.cellSizeMeters) - z) > epsilon
     ) {
       throw new Error(`Grid2D position must be centered on a cell: ${x},${y},${z}`);
     }

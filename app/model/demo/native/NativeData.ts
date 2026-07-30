@@ -26,6 +26,14 @@ export interface NativeDataMetrics {
   encodedFrames: number;
   encodedItems: number;
   encodedBytes: number;
+  aoiWorlds: number;
+  aoiEntries: number;
+  aoiGrids: number;
+  aoiCandidateRelations: number;
+  aoiVisibleRelations: number;
+  aoiRelocations: number;
+  aoiVisibilityChanges: number;
+  aoiFilterOverrides: number;
 }
 
 export interface NativeMovementBroadcast {
@@ -34,6 +42,39 @@ export interface NativeMovementBroadcast {
 }
 
 export interface NativeNumericBroadcast extends NativeMovementBroadcast {
+  readonly revision: Uint8Array;
+}
+
+export interface NativeAoiVisibilityChange {
+  readonly observerId: number;
+  readonly subjectId: number;
+  readonly visible: boolean;
+}
+
+export interface NativeAoiRelation {
+  readonly observerId: number;
+  readonly subjectId: number;
+}
+
+export interface NativeAoiBatch {
+  readonly recipientIds: readonly number[];
+  readonly itemCount: number;
+  readonly frame: Uint8Array;
+}
+
+export interface NativeAoiBroadcast {
+  readonly itemCount: number;
+  readonly batches: readonly NativeAoiBatch[];
+}
+
+export interface NativeAoiSyncTier {
+  /** 以 AOI Grid 为单位的切比雪夫半径。 / Chebyshev radius measured in AOI grids. */
+  readonly radiusGrids: number;
+  /** 两次可覆盖状态发送之间的逻辑 Tick 数。 / Logical ticks between replaceable-state sends. */
+  readonly intervalTicks: number;
+}
+
+export interface NativeAoiRevisionBroadcast extends NativeAoiBroadcast {
   readonly revision: Uint8Array;
 }
 
@@ -109,6 +150,122 @@ export class NativeData {
     NativeOps.SpatialRelease(mapId);
   }
 
+  /** 创建地图实例独占的 AOI Grid；配置在实例生命周期内不可热更。 / Creates immutable AOI-grid visibility and sync policy for one map instance. */
+  static CreateAoi(
+    mapId: number,
+    gridSizeMeters: number,
+    enterRadiusGrids: number,
+    detachRadiusGrids: number,
+    syncTiers: readonly NativeAoiSyncTier[],
+  ): void {
+    const gridSizeMillimeters = Math.round(gridSizeMeters * 1_000);
+    if (gridSizeMillimeters <= 0) {
+      throw new Error(`AOI grid size must be positive: ${gridSizeMeters}`);
+    }
+    if (
+      !Number.isSafeInteger(enterRadiusGrids) || enterRadiusGrids < 0 ||
+      !Number.isSafeInteger(detachRadiusGrids) || detachRadiusGrids < enterRadiusGrids
+    ) {
+      throw new Error(`invalid AOI Enter/Detach radii: ${enterRadiusGrids}/${detachRadiusGrids}`);
+    }
+    const encoded = new Uint8Array(syncTiers.length * 8);
+    const view = new DataView(encoded.buffer);
+    syncTiers.forEach((tier, index) => {
+      if (
+        !Number.isSafeInteger(tier.radiusGrids) || tier.radiusGrids < 0 ||
+        !Number.isSafeInteger(tier.intervalTicks) || tier.intervalTicks <= 0
+      ) {
+        throw new Error(`invalid AOI sync tier: ${JSON.stringify(tier)}`);
+      }
+      view.setUint32(index * 8, tier.radiusGrids, true);
+      view.setUint32(index * 8 + 4, tier.intervalTicks, true);
+    });
+    NativeOps.AoiCreate(
+      mapId,
+      gridSizeMillimeters,
+      enterRadiusGrids,
+      detachRadiusGrids,
+      encoded,
+    );
+  }
+
+  /** 地图销毁时释放空 AOI；仍有已挂载实体时 Rust 会拒绝释放。 / Releases an empty AOI and lets Rust reject worlds with attached entities. */
+  static ReleaseAoi(mapId: number): void {
+    NativeOps.AoiRelease(mapId);
+  }
+
+  /** 完整 Entity 图提交后加入 AOI，并返回待同步过滤器确认的候选变化。 / Attaches a committed Entity and returns candidate changes for synchronous filters. */
+  static AttachAoi(
+    mapId: number,
+    handle: number,
+    observer: boolean,
+    subject: boolean,
+  ): readonly NativeAoiVisibilityChange[] {
+    return parseAoiVisibilityChanges(
+      NativeOps.AoiAttach(mapId, handle, observer, subject),
+    );
+  }
+
+  /** 在销毁 Native Unit 前移出 AOI。 / Detaches from AOI before destroying the Native Unit. */
+  static DetachAoi(mapId: number, handle: number): readonly NativeAoiVisibilityChange[] {
+    return parseAoiVisibilityChanges(NativeOps.AoiDetach(mapId, handle));
+  }
+
+  /** 刷新 X/Z FastOP 标记的空间脏实体，只返回跨 Cell 产生的候选变化。 / Refreshes X/Z FastOP writes and returns only cross-cell candidate changes. */
+  static RefreshAoi(mapId: number): readonly NativeAoiVisibilityChange[] {
+    return parseAoiVisibilityChanges(NativeOps.AoiRefresh(mapId));
+  }
+
+  /** 写回业务过滤器的最终可见判定。 / Writes one final business-filter visibility decision. */
+  static SetAoiVisible(
+    mapId: number,
+    observerId: number,
+    subjectId: number,
+    visible: boolean,
+  ): boolean {
+    return NativeOps.AoiSetVisible(mapId, observerId, subjectId, visible);
+  }
+
+  /** 取走过滤后的最终关系变化。 / Takes final visibility changes after filtering. */
+  static TakeAoiChanges(mapId: number): readonly NativeAoiVisibilityChange[] {
+    return parseAoiVisibilityChanges(NativeOps.AoiTakeChanges(mapId));
+  }
+
+  /** 查询业务状态失效后需要重算的空间候选关系。 / Queries spatial candidates that need reevaluation after business-state invalidation. */
+  static QueryAoiRelations(
+    mapId: number,
+    unitId: number,
+    mode: 1 | 2 | 3,
+  ): readonly NativeAoiRelation[] {
+    return parseAoiRelations(NativeOps.AoiQueryRelations(mapId, unitId, mode));
+  }
+
+  /** 返回 Observer 最终可见的 Subject，不包含自身。 / Returns final visible subjects for an observer, excluding itself. */
+  static VisibleAoiSubjects(mapId: number, observerId: number): readonly number[] {
+    return parseUint32List(NativeOps.AoiVisibleSubjects(mapId, observerId));
+  }
+
+  /** 推进 Rust 权威移动；协议编码在业务过滤完成后单独执行。 / Advances Rust movement; protocol encoding runs only after business filters complete. */
+  static AdvanceMapMovement(
+    mapId: number,
+    serverTick: number,
+    fixedUpdateMs: number,
+  ): number {
+    return NativeOps.MapAdvanceMovement(mapId, serverTick, fixedUpdateMs);
+  }
+
+  /** 将刚推进的移动按最终 AOI 关系分组编码。 / Encodes the just-advanced movement by final AOI relations. */
+  static TakeMapMovementAoiDelta(
+    mapId: number,
+    serverTick: number,
+    messageCode: number,
+  ): NativeAoiBroadcast {
+    return parseAoiBroadcast(
+      NativeOps.MapTakeMovementAoiDelta(mapId, serverTick, messageCode),
+      messageCode,
+    );
+  }
+
   /** 推进地图内全部 Rust Unit，并返回已编码的可覆盖移动帧。 / Advances all Rust Units in a map and returns an already encoded replaceable movement frame. */
   static UpdateMapMovement(
     mapId: number,
@@ -156,6 +313,18 @@ export class NativeData {
     return { itemCount, revision, frame };
   }
 
+  /** 查看按最终 AOI 受众分组的 Numeric 脏状态。 / Peeks Numeric dirty state grouped by final AOI audiences. */
+  static PeekMapNumericAoiDelta(
+    mapId: number,
+    serverTick: number,
+    messageCode: number,
+  ): NativeAoiRevisionBroadcast {
+    const bytes = NativeOps.MapPeekNumericAoiDelta(mapId, serverTick, messageCode);
+    if (bytes.length < 16) throw new Error("native numeric AOI delta is truncated");
+    const revision = bytes.slice(0, 8);
+    return { revision, ...parseAoiBroadcast(bytes.subarray(8), messageCode) };
+  }
+
   /** 只确认已投递给客户端的 Numeric 版本，保留其后的新写入。 / Acknowledges exactly the Numeric revision delivered to clients, preserving newer writes. */
   static AckMapNumericDelta(mapId: number, revision: Uint8Array): void {
     NativeOps.MapAckNumericDelta(mapId, revision);
@@ -187,6 +356,27 @@ export class NativeData {
     return { itemCount, revision, frame };
   }
 
+  /** 查看按最终 AOI 受众分组的固定字段脏状态。 / Peeks fixed-field dirty state grouped by final AOI audiences. */
+  static PeekMapUnitAoiDelta(
+    mapId: number,
+    serverTick: number,
+    messageCode: number,
+  ): NativeAoiRevisionBroadcast {
+    const bytes = NativeOps.MapPeekUnitAoiDelta(mapId, serverTick, messageCode);
+    if (bytes.length < 12) throw new Error("native unit AOI delta is truncated");
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const revisionLength = view.getUint32(0, true);
+    const batchesOffset = 4 + revisionLength;
+    if (batchesOffset + 8 > bytes.length) {
+      throw new Error("native unit AOI revision is truncated");
+    }
+    const revision = bytes.slice(4, batchesOffset);
+    return {
+      revision,
+      ...parseAoiBroadcast(bytes.subarray(batchesOffset), messageCode),
+    };
+  }
+
   /** 只清除版本仍与已投递帧一致的固定字段。 / Clears only fixed fields whose revisions still match the delivered frame. */
   static AckMapUnitDelta(mapId: number, revision: Uint8Array): void {
     NativeOps.MapAckUnitDelta(mapId, revision);
@@ -195,7 +385,7 @@ export class NativeData {
   /** 读取生命周期累计 NativeData 指标；相邻快照差值只用于本地高频访问告警。 / Reads monotonic NativeData metrics; snapshot deltas are used only for local access warnings. */
   static TakeMetrics(): NativeDataMetrics {
     const bytes = NativeOps.DataTakeMetrics();
-    if (bytes.length !== 84) {
+    if (bytes.length !== 136) {
       throw new Error(`invalid native metrics length: ${bytes.length}`);
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -212,6 +402,14 @@ export class NativeData {
       liveItems: view.getUint32(64, true),
       scratchCapacityBytes: Number(view.getBigUint64(68, true)),
       scratchGrowths: Number(view.getBigUint64(76, true)),
+      aoiWorlds: view.getUint32(84, true),
+      aoiEntries: view.getUint32(88, true),
+      aoiGrids: view.getUint32(92, true),
+      aoiCandidateRelations: Number(view.getBigUint64(96, true)),
+      aoiVisibleRelations: Number(view.getBigUint64(104, true)),
+      aoiRelocations: Number(view.getBigUint64(112, true)),
+      aoiVisibilityChanges: Number(view.getBigUint64(120, true)),
+      aoiFilterOverrides: Number(view.getBigUint64(128, true)),
       nativeRefs: NativeOps.NativeRefMetrics(),
     };
     const previous = this.previousMetrics;
@@ -232,4 +430,90 @@ export class NativeData {
     }
     return metrics;
   }
+}
+
+function parseAoiVisibilityChanges(
+  bytes: Uint8Array,
+): readonly NativeAoiVisibilityChange[] {
+  if (bytes.length < 4) throw new Error("native AOI changes are truncated");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = view.getUint32(0, true);
+  if (bytes.length !== 4 + count * 9) {
+    throw new Error("native AOI changes have an invalid length");
+  }
+  const changes: NativeAoiVisibilityChange[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const offset = 4 + index * 9;
+    changes.push({
+      observerId: view.getUint32(offset, true),
+      subjectId: view.getUint32(offset + 4, true),
+      visible: bytes[offset + 8] !== 0,
+    });
+  }
+  return changes;
+}
+
+function parseAoiRelations(bytes: Uint8Array): readonly NativeAoiRelation[] {
+  if (bytes.length < 4) throw new Error("native AOI relations are truncated");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = view.getUint32(0, true);
+  if (bytes.length !== 4 + count * 8) {
+    throw new Error("native AOI relations have an invalid length");
+  }
+  const relations: NativeAoiRelation[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const offset = 4 + index * 8;
+    relations.push({
+      observerId: view.getUint32(offset, true),
+      subjectId: view.getUint32(offset + 4, true),
+    });
+  }
+  return relations;
+}
+
+function parseUint32List(bytes: Uint8Array): readonly number[] {
+  if (bytes.length < 4) throw new Error("native uint32 list is truncated");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = view.getUint32(0, true);
+  if (bytes.length !== 4 + count * 4) {
+    throw new Error("native uint32 list has an invalid length");
+  }
+  return Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, true));
+}
+
+function parseAoiBroadcast(bytes: Uint8Array, messageCode: number): NativeAoiBroadcast {
+  if (bytes.length < 8) throw new Error("native AOI broadcast is truncated");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const itemCount = view.getUint32(0, true);
+  const batchCount = view.getUint32(4, true);
+  const batches: NativeAoiBatch[] = [];
+  let offset = 8;
+  for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
+    if (offset + 4 > bytes.length) throw new Error("native AOI recipients are truncated");
+    const recipientCount = view.getUint32(offset, true);
+    offset += 4;
+    if (offset + recipientCount * 4 + 8 > bytes.length) {
+      throw new Error("native AOI batch is truncated");
+    }
+    const recipientIds = Array.from(
+      { length: recipientCount },
+      (_, index) => view.getUint32(offset + index * 4, true),
+    );
+    offset += recipientCount * 4;
+    const batchItemCount = view.getUint32(offset, true);
+    const frameLength = view.getUint32(offset + 4, true);
+    offset += 8;
+    if (offset + frameLength > bytes.length || frameLength < 2) {
+      throw new Error("native AOI frame is truncated");
+    }
+    const frame = bytes.subarray(offset, offset + frameLength);
+    offset += frameLength;
+    const encodedMessageCode = frame[0] * 0x100 + frame[1];
+    if (encodedMessageCode !== messageCode) {
+      throw new Error("native AOI broadcast has an unexpected message code");
+    }
+    batches.push({ recipientIds, itemCount: batchItemCount, frame });
+  }
+  if (offset !== bytes.length) throw new Error("native AOI broadcast has trailing bytes");
+  return { itemCount, batches };
 }

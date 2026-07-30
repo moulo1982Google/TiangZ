@@ -2,6 +2,35 @@
 import { Tables, type game } from "./schema";
 
 const RAW_DATA: Record<string, unknown> = {
+  "game_tbaoiconfig": [
+    {
+      "id": 1,
+      "name": "默认迟滞AOI",
+      "grid_size_cells": 15,
+      "enter_range_grids": 3,
+      "detach_range_grids": 7
+    }
+  ],
+  "game_tbaoisynctierconfig": [
+    {
+      "id": 1,
+      "aoi_config_id": 1,
+      "range_grids": 3,
+      "sync_hz": 20
+    },
+    {
+      "id": 2,
+      "aoi_config_id": 1,
+      "range_grids": 5,
+      "sync_hz": 5
+    },
+    {
+      "id": 3,
+      "aoi_config_id": 1,
+      "range_grids": 7,
+      "sync_hz": 1
+    }
+  ],
   "game_tbitemconfig": [
     {
       "id": 1001,
@@ -23,14 +52,14 @@ const RAW_DATA: Record<string, unknown> = {
       "id": 1,
       "name": "默认地图一",
       "spatial_mode": 1,
-      "width_cells": 128,
-      "depth_cells": 128,
-      "grid_cell_size_meters": 1,
-      "spawn_x": 0,
+      "width_cells": 150,
+      "depth_cells": 150,
+      "cell_size_meters": 1,
+      "spawn_x": 7,
       "spawn_y": 0,
-      "spawn_z": 0,
+      "spawn_z": 7,
       "spawn_yaw": 0,
-      "aoi_cell_size_meters": 8,
+      "aoi_config_id": 1,
       "navigation_asset": "",
       "navigation_version": "",
       "navigation_hash": ""
@@ -39,14 +68,46 @@ const RAW_DATA: Record<string, unknown> = {
       "id": 2,
       "name": "默认地图二",
       "spatial_mode": 1,
-      "width_cells": 128,
-      "depth_cells": 128,
-      "grid_cell_size_meters": 1,
-      "spawn_x": 8,
+      "width_cells": 150,
+      "depth_cells": 150,
+      "cell_size_meters": 1,
+      "spawn_x": 22,
       "spawn_y": 0,
-      "spawn_z": 8,
+      "spawn_z": 22,
       "spawn_yaw": 0,
-      "aoi_cell_size_meters": 8,
+      "aoi_config_id": 1,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": ""
+    },
+    {
+      "id": 1015,
+      "name": "AOI容量测试15x15 Grid",
+      "spatial_mode": 1,
+      "width_cells": 225,
+      "depth_cells": 225,
+      "cell_size_meters": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 0,
+      "spawn_yaw": 0,
+      "aoi_config_id": 1,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": ""
+    },
+    {
+      "id": 1020,
+      "name": "AOI容量测试20x20 Grid",
+      "spatial_mode": 1,
+      "width_cells": 300,
+      "depth_cells": 300,
+      "cell_size_meters": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 0,
+      "spawn_yaw": 0,
+      "aoi_config_id": 1,
       "navigation_asset": "",
       "navigation_version": "",
       "navigation_hash": ""
@@ -97,10 +158,14 @@ const tables = new Tables((file) => {
 export type ItemConfig = game.ItemConfig;
 export type MapConfig = game.MapConfig;
 export type PlayerConfig = game.PlayerConfig;
+export type AoiConfig = game.AoiConfig;
+export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 
-export const GameConfigFingerprint = "cb2de688852d1b6f2242c480ea64b3d47cd5e60e7fdce84f48da7a52d16c6a14";
+export const GameConfigFingerprint = "d2d0c5f37d8f76091bca7f9445435493e546fe4216ed29ad285a6b5b93203b55";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),
   PlayerConfig: new ConfigTable<game.PlayerConfig>(tables.TbPlayerConfig.getDataList()),
+  AoiConfig: new ConfigTable<game.AoiConfig>(tables.TbAoiConfig.getDataList()),
+  AoiSyncTierConfig: new ConfigTable<game.AoiSyncTierConfig>(tables.TbAoiSyncTierConfig.getDataList()),
 });

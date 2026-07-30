@@ -33,5 +33,14 @@ function Hash32(value: string): number {
     hash ^= value.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193);
   }
+  // FNV-1a 的原始低位对“长公共账号前缀 + 短Gate后缀”相关性较强。最终混合让
+  // Rendezvous候选分数充分扩散，否则配置了多个Gate也可能形成严重热点。
+  // Raw FNV-1a bits correlate for long common account prefixes and short Gate suffixes. The
+  // final avalanche spreads rendezvous scores so adding Gates does not silently create hotspots.
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 0x85ebca6b);
+  hash ^= hash >>> 13;
+  hash = Math.imul(hash, 0xc2b2ae35);
+  hash ^= hash >>> 16;
   return hash >>> 0;
 }

@@ -1,6 +1,6 @@
 # 地图空间与3D坐标契约
 
-本文冻结TiangZ从`0.4.0`开始使用的地图空间语义。它约束Rust权威数据、协议、游戏配置和客户端适配；NavMesh与Rust AOI尚未在本版本实现，但后续实现不得改变本契约。
+本文冻结TiangZ从`0.4.0`开始使用的地图空间语义。它约束Rust权威数据、协议、游戏配置和客户端适配；Rust AOI已进入Phase 4.1，NavMesh尚未实现，但后续实现不得改变本契约。
 
 ## 世界坐标
 
@@ -24,11 +24,11 @@ Luban `MapConfig`使用`SpatialMode`选择空间实现：
 | 模式 | 当前状态 | 含义 |
 | --- | --- | --- |
 | `Grid2D` | 可运行 | X/Z规则网格，米制Cell，服务端Rust权威移动 |
-| `NavMesh3D` | 契约已冻结、运行时待Phase 4.3实现 | tiled NavMesh、位置投影、寻路、射线和高度查询 |
+| `NavMesh3D` | 契约已冻结、运行时待Phase 4.2实现 | tiled NavMesh、位置投影、寻路、射线和高度查询 |
 
-`MapConfig`还包含出生点`spawnX/Y/Z/Yaw`、`aoiCellSizeMeters`以及`navigationAsset/version/hash`。`NavMesh3D`配置缺少资源、版本或小写SHA-256时必须拒绝加载；当前Runtime遇到合法NavMesh3D配置也会明确报出导航运行时尚未安装，不能退化为Grid2D。
+`MapConfig`还包含出生点`spawnX/Y/Z/Yaw`、米制`cellSizeMeters`、`aoiConfigId`以及`navigationAsset/version/hash`。`Cell`是可配置的最小空间单位：Grid2D按Cell离散移动，NavMesh3D允许在Cell内连续移动。`AoiConfig.gridSizeCells`声明一个AOI Grid包含多少个Cell；AOI Grid与NavMesh tile不是同一个概念。`NavMesh3D`配置缺少资源、版本或小写SHA-256时必须拒绝加载；当前Runtime遇到合法NavMesh3D配置也会明确报出导航运行时尚未安装，不能退化为Grid2D。
 
-表结构与空间模式属于不可热更Model；只修改现有字段值仍遵循游戏配置候选的原子切换规则。正在运行的地图不会因配置热更重建空间实现，改变空间模式、Cell尺寸或导航资源应重启对应Process并重新创建MapInstance。
+表结构属于不可热更Model。`MapConfig`、`AoiConfig`和`AoiSyncTierConfig`整表属于Cold配置：空间模式、Cell尺寸、AOI Grid尺寸、可见范围、同步频率或导航资源发生任何数据变化，都必须完整构建并重启Process，运行中的MapInstance绝不接受这些候选。
 
 ## Rust所有权与生命周期
 
@@ -47,13 +47,37 @@ MapInstanceId
 
 多个静态实例或动态副本可以共享同一份只读NavMesh，但每个MapInstance拥有独立AOI、动态障碍和Unit状态。MapScene创建时建立实例私有空间状态，销毁时通过`SpatialRelease`幂等释放；该释放不得卸载仍被其他实例引用的共享导航资产。
 
-当前`Grid2D`由`SpatialCreateGrid2D`创建Rust边界和米制Cell信息。Phase 4.3将增加NavMesh3D创建入口，不复用或伪装Grid2D数据。
+当前`Grid2D`由`SpatialCreateGrid2D`创建Rust边界和米制Cell信息。Phase 4.2将增加NavMesh3D创建入口，不复用或伪装Grid2D数据。
 
 ## TS与Rust边界
 
 TS负责地图规则、AI意图、技能、任务、传送和副本流程。Rust负责高频且权威的空间工作：坐标、移动推进、NavMesh查询、AOI索引和批量快照。推荐使用`ProjectPosition`、`FindPath`、`SetMoveIntent`、`StopMovement`和`Raycast`等粗粒度调用；禁止在每个Tick逐顶点或逐路径节点跨越V8边界。
 
 Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Component`，Rust空间层是Scene之下的原生能力，不取代Scene或把全部地图业务下沉。
+
+## Rust AOI
+
+每个`MapInstanceId`拥有独立的Rust `AoiWorld`。稀疏Hash Grid使用X/Z米制坐标做宽阶段查询；玩家同时是Observer和Subject，后续怪物/NPC可只作为Subject。自身权威状态始终发送给自己的客户端，但自身不产生Enter/Leave关系。
+
+可见性与同步频率是两套独立配置：
+
+- `enterRangeGrids`：从不可见变为可见的范围，进入时发送全量Snapshot。
+- `detachRangeGrids`：已经可见后允许保持关系的迟滞范围；越界才发送Leave，避免边界抖动。
+- `AoiSyncTierConfig.rangeGrids/syncHz`：已可见关系中，可覆盖状态的最大发送频率。同步范围不能超过Detach，但不要求覆盖整个Detach范围。
+
+范围字段填写奇数边长，例如Enter `3`代表3×3 AOI Grid，Detach `7`代表7×7。当前Demo每个Cell为1米、一个AOI Grid为15×15 Cell、默认地图为150×150 Cell即10×10 AOI Grid；3×3内Movement最高20Hz，5×5外圈最高5Hz，7×7外圈最高1Hz并作为Detach迟滞区，再往外不可见。即使同步档位比Enter更大，也只对已经Enter、随后移入外圈且尚未Detach的关系生效，绝不因为单位第一次出现在5×5或7×7内就提前创建视野。低频档按Subject所在Grid稳定错峰，避免所有远距单位在同一个Tick形成周期尖峰；同一Grid仍共享编码帧。
+
+AOI Grid从每张地图的最小Cell开始编号，不从世界坐标0开始切分。地图宽高必须是`gridSizeCells`的整数倍；因此150、225、300 Cell会严格形成10×10、15×15、20×20 Grid，奇数个Grid的地图不会在零点两侧多切出一列。AOI关系只在实体跨越Grid边界时重算；Grid2D每步移动一个Cell，NavMesh3D可以在同一Cell内连续移动。
+
+`NativeUnitRef.x/z`通过FastOP修改时只标记空间脏；帧内可多次写入，帧末只在跨AOI Grid时重算邻域。Enter内默认关系由Grid即时推导，不物化全量关系边；Rust只保存处于Enter与Detach之间的迟滞关系、业务过滤拒绝项和本帧净变化。TS不保存镜像关系表。高频Movement在Rust编码protobuf并按同步档位节流；开始、停止和转向等`stateChanged`记录强制立即发送，不能被低频档漏掉。Numeric和UnitState仍由各自脏数据策略决定发送时机，AOI只负责最终受众，不能把不可覆盖事件套进Movement节流。默认关系按Subject所在Grid聚合相同受众，迟滞或业务过滤例外才计算精确受众。
+
+跨AOI Grid产生的进入/离开是不可覆盖生命周期事件，不能使用latest丢弃中间结果。Rust先把同帧关系抖动折叠为最终变化；TS按Subject收集变化并取得进入Snapshot，再把受众完全相同的多个Subject合并为一个`G2C_AoiDelta`。客户端按消息中的`enters`创建或刷新实体，再按`leaves`移除实体。旧单实体`G2C_EntityEnter/Leave`暂时保留协议兼容，但Runtime不再逐关系发送。
+
+批量登录、切线回城或副本结束可能在极短时间内向同一MapInstance制造大量Attach。每个MapInstance因此拥有独立的入图等待队列，`MapConfig.entryPlayersPerTick`限制每个逻辑Tick真正完成AOI Attach的人数，`entryQueueCapacity`限制等待上限。玩家连接和登录已经完成，只在Loading中等待进入响应；这不是区服满载时的全局登录排队，也不负责决定地图人数上限。首次进入和地图传送都受该队列控制，原Unit仍存在的断线重连不重复Attach，直接恢复全量快照。两个参数属于Cold配置，修改后必须重启Map Process。
+
+阵营、隐身和位面属于业务规则，由同步`IAoiVisibilityFilter.CanObserve(observer, subject)`实现。过滤器只在候选关系变化或显式失效时执行，不逐帧执行；禁止Promise、RPC、数据库、发消息和修改Entity，异常按不可见处理并记录日志。业务字段改变后必须调用`InvalidateObserver`、`InvalidateSubject`或`Invalidate`，框架不会猜测任意业务字段的含义。
+
+生命周期顺序固定为：完整Unit组件图和Location提交完成后Attach；进入响应返回自身加最终可见Subject；退出或传送时先Detach并生成Leave，再销毁Native Unit。Rust会拒绝销毁仍挂在AOI中的Unit。
 
 ## 客户端进入契约
 

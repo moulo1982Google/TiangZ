@@ -61,7 +61,7 @@ native_data/demo/            Demo Entity 与粗粒度 Native op 原型
 configs/<environment>/       环境启动配置
 client_sdk/typescript/       TypeScript Client SDK 唯一源码
 cocos_client2D/              Cocos Creator 2D Demo 客户端
-cocos_client3D/              Cocos Creator 3D Demo 客户端（Phase 4.4空项目骨架）
+cocos_client3D/              Cocos Creator 3D Demo 客户端（Phase 4.3空项目骨架）
 pixi_client/                 PixiJS/H5 SDK 通用性验收客户端
 perf/                        RPC、完整链路与地图容量测试
 tools/                       codegen、冒烟测试和维护脚本
@@ -71,6 +71,8 @@ docs/patterns/               MMORPG领域设计模式与稳定规则编号
 docs/reference/              配置、API、命令参考
 docs/design/                 维护者实现文档
 ```
+
+地图运行时已接入Rust AOI：`MapConfig`引用冷配置`AoiConfig`，分别定义AOI Grid大小、Enter范围、Detach迟滞范围和独立同步档位。同步档位只节流已经可见的可覆盖状态，不会提前建立视野；业务只在阵营、隐身、位面改变时通过`MapAoiComponent.Invalidate*`通知重算。开发约束见[业务开发手册](docs/ai/business-development-manual.md)和[地图空间契约](docs/design/spatial-world.md)。
 
 ## 快速启动
 

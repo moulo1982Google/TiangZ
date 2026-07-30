@@ -12,6 +12,16 @@
       "code": 25003
     },
     {
+      "key": "proto/BenchMessage_C_15001.proto#C2G_MapCapacityEnter",
+      "name": "C2G_MapCapacityEnter",
+      "code": 15010
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#C2M_MapCapacityPlace",
+      "name": "C2M_MapCapacityPlace",
+      "code": 15008
+    },
+    {
       "key": "proto/BenchMessage_C_15001.proto#C2M_StateSyncBench",
       "name": "C2M_StateSyncBench",
       "code": 15006
@@ -25,6 +35,16 @@
       "key": "proto/BenchMessage_C_15001.proto#C2S_RuntimePing",
       "name": "C2S_RuntimePing",
       "code": 15002
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#G2C_MapCapacityEnter",
+      "name": "G2C_MapCapacityEnter",
+      "code": 15011
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#M2C_MapCapacityPlace",
+      "name": "M2C_MapCapacityPlace",
+      "code": 15009
     },
     {
       "key": "proto/BenchMessage_C_15001.proto#M2C_StateSyncBench",
@@ -330,6 +350,11 @@
       "key": "proto/OuterMessage_C_10001.proto#C2S_Login",
       "name": "C2S_Login",
       "code": 10004
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_AoiDelta",
+      "name": "G2C_AoiDelta",
+      "code": 10025
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#G2C_EnterMap",

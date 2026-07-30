@@ -14,7 +14,9 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --players 100,150,200       玩家数量列表
   --gates 4                   Gate 数量
   --move-rate 5               每玩家每秒 Move 次数
-  --movement-hold-messages 1  连续多少次 Move 保持同一方向
+  --movement-hold-messages 5  连续多少次 Move 保持同一方向
+  --spawn-layout same-point   same-point|single-grid|grid-uniform；玩家出生布局
+  --world-grids 10            Grid世界边长；当前支持10|15|20
   --probe-rate 1              每玩家每秒 Probe RPC 次数
   --state-sync-mode off       off|numeric|player|item|mixed
   --state-sync-rate 0         每玩家每秒状态同步触发 RPC 次数
@@ -23,6 +25,7 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --client node|rust          压测客户端实现，默认 node
   --latency-sample-rate 0     链路分段采样；0 表示关闭
   --duration 30               正式测试秒数
+  --post-setup-settle 0       全员进图后、负载预热前的空闲排空秒数
   --warmup 10                 预热秒数
   --rounds 1                  每个负载重复轮数
   --io-backend epoll          epoll（Windows 实际使用 IOCP）或 io-uring
@@ -33,6 +36,9 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --hotfix-candidates a,b    reload 模式交替加载的候选目录
   --hotfix-interval-ms 1000  在线 Reload 周期
   --health-base-port 7800    Hotfix 测试使用的 Process 健康端口起点
+  --location-port 7401       Location Scene 内网端口
+  --map-inspector-port 0     仅为Map开启V8 Inspector；0表示关闭
+  --map-profile-duration 10  Inspector开启时采集CPU Profile的秒数
   --skip-rust-build           使用已有 Runtime 二进制
   --debug-runtime             使用 debug Runtime
   --help                      显示帮助并退出`);
@@ -44,6 +50,12 @@ if (options.stateSyncMode !== "off" && options.client !== "rust") {
 }
 if (options.client === "rust" && options.clientShards !== 1) {
   throw new Error("--client-shards currently supports the Node client only");
+}
+if (options.spawnLayout === "grid-uniform" && options.client !== "rust") {
+  throw new Error("--spawn-layout grid-uniform currently requires --client rust");
+}
+if (options.worldGrids !== 10 && options.client !== "rust") {
+  throw new Error("--world-grids 15|20 currently requires --client rust");
 }
 if (options.hotfixMode === "reload" && options.client !== "rust") {
   throw new Error("--hotfix-mode reload requires --client rust for measurement alignment");
@@ -108,6 +120,7 @@ async function main() {
       item.median.stateSyncErrors === 0 &&
       item.median.innerOverloads === 0 &&
       item.median.innerTimeouts === 0 &&
+      item.median.backpressure === 0 &&
       item.median.slowDisconnects === 0 &&
       item.median.mapFormalWindowSamples >= 2
     )
@@ -149,6 +162,9 @@ async function runCase(players, round) {
   let hotfixResult;
   let healthSampler;
   let healthSamples;
+  let profileTask;
+  let profilePath;
+  let caseError;
   try {
     for (const runtime of topology.runtimes) {
       runtimes.push(startRuntime(runtime));
@@ -156,15 +172,31 @@ async function runCase(players, round) {
     for (const port of topology.ports) {
       await waitPort("127.0.0.1", port, 30_000);
     }
+    await Promise.all(runtimes.map((runtime) => waitReady(runtime.healthPort, 30_000)));
+    // MapHost 的首次路由注册可能早于独立 Location 就绪；等待一次恢复周期，
+    // 避免把启动竞态误记为入图容量失败。该等待不进入预热或正式测量窗口。
+    await sleep(5_500);
 
     healthSampler = startHealthSampler(runtimes);
     const measurementSignal = path.join(configDir, `${caseName}_measurement.txt`);
     const clientTask = runLoadClients(players, topology.managerPort, round, measurementSignal);
-    if (options.hotfixMode === "reload") {
+    if (options.hotfixMode === "reload" || options.mapInspectorPort > 0) {
       const measurementStartedAt = await waitMeasurementSignal(measurementSignal, 120_000);
-      hotfixController = startHotfixReloadController(runtimes, measurementStartedAt);
+      if (options.hotfixMode === "reload") {
+        hotfixController = startHotfixReloadController(runtimes, measurementStartedAt);
+      }
+      if (options.mapInspectorPort > 0) {
+        profilePath = path.join(resultDir, `map_capacity_${runId}_${caseName}.cpuprofile`);
+        profileTask = runCommand(process.execPath, [
+          path.join(root, "tools", "capture_v8_profile.mjs"),
+          "--port", String(options.mapInspectorPort),
+          "--duration", String(options.mapProfileDuration),
+          "--out", profilePath,
+        ]);
+      }
     }
     clientResult = await clientTask;
+    if (profileTask) process.stdout.write(await profileTask);
     healthSamples = await healthSampler?.stop() ?? new Map();
     hotfixResult = await hotfixController?.stop(clientResult) ?? {
       mode: options.hotfixMode,
@@ -174,12 +206,33 @@ async function runCase(players, round) {
       formalWindowMissed: 0,
       samples: [],
     };
+  } catch (error) {
+    caseError = error;
   } finally {
     if (hotfixController && !hotfixResult) {
       hotfixResult = await hotfixController.stop(clientResult);
     }
     if (healthSampler && !healthSamples) healthSamples = await healthSampler.stop();
     await stopRuntimes(runtimes);
+  }
+
+  if (caseError) {
+    const failure = {
+      generatedAt: new Date().toISOString(),
+      runId,
+      caseName,
+      parameters: options,
+      error: caseError instanceof Error
+        ? { name: caseError.name, message: caseError.message, stack: caseError.stack }
+        : { name: "UnknownError", message: String(caseError) },
+      serverResources: collectRuntimeResources(runtimes, undefined, undefined, healthSamples),
+      logDirectory: logDir,
+      configDirectory: configDir,
+    };
+    const failurePath = path.join(resultDir, `map_capacity_${runId}_${caseName}_failure.json`);
+    writeJson(failurePath, failure);
+    console.error(`[map-capacity] failure diagnostics: ${failurePath}`);
+    throw caseError;
   }
 
   const resources = collectRuntimeResources(
@@ -195,6 +248,7 @@ async function runCase(players, round) {
     serverResources: resources,
     transport: collectTransportMetrics(runtimes, resources),
     hotfix: hotfixResult,
+    profilePath,
     logDirectory: logDir,
     configDirectory: configDir,
   };
@@ -214,16 +268,21 @@ async function runLoadClients(players, managerPort, round, measurementSignal) {
         ...(useRustClient ? [] : [loadClient]),
         "--host", "127.0.0.1",
         "--manager-port", String(managerPort),
+        ...(useRustClient ? ["--map-id", String(options.mapId)] : []),
         ...(useRustClient && process.platform === "win32"
-          ? ["--source-ip", `127.0.0.${options.sourceIpBase + round - 1}`]
+          ? ["--source-ip", `127.0.0.${
+            options.sourceIpBase + options.players.indexOf(players) * options.rounds + round - 1
+          }`]
           : []),
         ...(useRustClient ? ["--measurement-signal-file", measurementSignal] : []),
         "--players", String(shardPlayers),
         "--setup-concurrency", String(options.setupConcurrency),
+        "--post-setup-settle", String(options.postSetupSettle),
         "--duration", String(options.duration),
         "--warmup", String(options.warmup),
         "--move-rate", String(options.moveRate),
         "--movement-hold-messages", String(options.movementHoldMessages),
+        "--spawn-layout", options.spawnLayout,
         "--probe-rate", String(options.probeRate),
         "--probe-concurrency", String(options.probeConcurrency),
         "--state-sync-mode", options.stateSyncMode,
@@ -380,6 +439,7 @@ function writeTopologyConfigs(caseName, round) {
   const loginPort = options.loginPort + roundPortOffset;
   const gateBasePort = options.gateBasePort + roundPortOffset;
   const mapPort = options.mapPort + roundPortOffset;
+  const locationPort = options.locationPort + roundPortOffset;
   const healthBasePort = options.healthBasePort + roundPortOffset;
   const scene = (name, sceneType, port) => ({
     name,
@@ -390,18 +450,23 @@ function writeTopologyConfigs(caseName, round) {
   });
   const managerScene = scene("login_mgr", "LoginMgr", managerPort);
   const loginScene = scene("login_1", "Login", loginPort);
-  const mapScene = scene("map_1", "MapHost", mapPort);
+  const mapScene = {
+    ...scene("map_1", "MapHost", mapPort),
+    staticMapIds: [options.mapId],
+  };
+  const locationScene = scene("location_1", "Location", locationPort);
   const gateScenes = Array.from(
     { length: options.gates },
     (_, index) => scene(`gate_${index + 1}`, "Gate", gateBasePort + index),
   );
   const configs = [
-    runtimeConfig("map1", [mapScene], gateScenes),
+    runtimeConfig("map1", [mapScene], [...gateScenes, locationScene]),
     ...gateScenes.map((gate, index) =>
-      runtimeConfig(`gate${index + 1}`, [gate], [mapScene])
+      runtimeConfig(`gate${index + 1}`, [gate], [mapScene, locationScene])
     ),
     runtimeConfig("login1", [loginScene], gateScenes),
     runtimeConfig("mgr", [managerScene], [loginScene]),
+    runtimeConfig("location", [locationScene], []),
   ];
   const runtimes = configs.map((config, index) => {
     const healthPort = healthBasePort + index;
@@ -426,8 +491,10 @@ function writeTopologyConfigs(caseName, round) {
       managerPort,
       loginPort,
       mapPort,
+      locationPort,
       ...gateScenes.map((item) => item.port),
       ...runtimes.flatMap((runtime) => runtime.healthPort ? [runtime.healthPort] : []),
+      ...(options.mapInspectorPort > 0 ? [options.mapInspectorPort] : []),
     ],
     managerPort,
   };
@@ -461,6 +528,15 @@ function runtimeConfig(name, scenes, knownScenes, healthPort) {
         uringEntries: options.uringEntries,
         uringReadBufferBytes: options.uringReadBufferBytes,
       },
+      ...(name === "map1" && options.mapInspectorPort > 0
+        ? {
+          debug: {
+            inspectorIp: "127.0.0.1",
+            inspectorPort: options.mapInspectorPort,
+            breakOnStart: false,
+          },
+        }
+        : {}),
     },
     scenes,
     knownScenes,
@@ -633,6 +709,14 @@ async function readProcessHealthMetrics(runtime) {
       nativeEncodedFrames: metric("tiangz_native_encoded_frames_total"),
       nativeEncodedItems: metric("tiangz_native_encoded_items_total"),
       nativeEncodedBytes: metric("tiangz_native_encoded_bytes_total"),
+      aoiWorlds: metric("tiangz_aoi_worlds"),
+      aoiEntries: metric("tiangz_aoi_entries"),
+      aoiGrids: metric("tiangz_aoi_grids"),
+      aoiCandidateRelations: metric("tiangz_aoi_candidate_relations"),
+      aoiVisibleRelations: metric("tiangz_aoi_visible_relations"),
+      aoiRelocations: metric("tiangz_aoi_relocations_total"),
+      aoiVisibilityChanges: metric("tiangz_aoi_visibility_changes_total"),
+      aoiFilterOverrides: metric("tiangz_aoi_filter_overrides_total"),
       mapBroadcast: readMapBroadcastMetrics(body),
     };
   } catch {
@@ -698,6 +782,22 @@ function readMapBroadcastMetrics(body) {
     maxDurationMs: prometheusCustomMetric(body, "max_duration_ms"),
     totalQueueWaitMs: prometheusCustomMetric(body, "total_queue_wait_ms"),
     maxQueueWaitMs: prometheusCustomMetric(body, "max_queue_wait_ms"),
+    totalDispatchMs: prometheusCustomMetric(body, "total_dispatch_ms"),
+    maxDispatchMs: prometheusCustomMetric(body, "max_dispatch_ms"),
+    movementAdvanceMs: prometheusCustomMetric(body, "movement_advance_ms_total"),
+    aoiRefreshMs: prometheusCustomMetric(body, "aoi_refresh_ms_total"),
+    movementEncodeMs: prometheusCustomMetric(body, "movement_encode_ms_total"),
+    audienceMapMs: prometheusCustomMetric(body, "audience_map_ms_total"),
+    numericPeekMs: prometheusCustomMetric(body, "numeric_peek_ms_total"),
+    statePeekMs: prometheusCustomMetric(body, "state_peek_ms_total"),
+    updateCount: prometheusCustomMetric(body, "update_count_total"),
+    audienceMapCount: prometheusCustomMetric(body, "audience_map_count_total"),
+    numericPeekCount: prometheusCustomMetric(body, "numeric_peek_count_total"),
+    statePeekCount: prometheusCustomMetric(body, "state_peek_count_total"),
+    playerEntryQueue: prometheusCustomMetric(body, "player_entry_queue"),
+    playerEntryQueuePeak: prometheusCustomMetric(body, "player_entry_queue_peak"),
+    playerEntriesAdmitted: prometheusCustomMetric(body, "player_entries_admitted_total"),
+    playerEntryFailures: prometheusCustomMetric(body, "player_entry_failures_total"),
   };
 }
 
@@ -767,6 +867,14 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         encodedFrames: sample.nativeEncodedFrames,
         encodedItems: sample.nativeEncodedItems,
         encodedBytes: sample.nativeEncodedBytes,
+        aoiWorlds: sample.aoiWorlds,
+        aoiEntries: sample.aoiEntries,
+        aoiGrids: sample.aoiGrids,
+        aoiCandidateRelations: sample.aoiCandidateRelations,
+        aoiVisibleRelations: sample.aoiVisibleRelations,
+        aoiRelocations: sample.aoiRelocations,
+        aoiVisibilityChanges: sample.aoiVisibilityChanges,
+        aoiFilterOverrides: sample.aoiFilterOverrides,
       }))
       : lines
         .filter((line) => line.startsWith("[native-data-metrics] "))
@@ -817,6 +925,22 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         maxDurationMs: Number(values.max_duration_ms ?? 0),
         totalQueueWaitMs: Number(values.total_queue_wait_ms ?? 0),
         maxQueueWaitMs: Number(values.max_queue_wait_ms ?? 0),
+        totalDispatchMs: Number(values.total_dispatch_ms ?? 0),
+        maxDispatchMs: Number(values.max_dispatch_ms ?? 0),
+        movementAdvanceMs: Number(values.movement_advance_ms_total ?? 0),
+        aoiRefreshMs: Number(values.aoi_refresh_ms_total ?? 0),
+        movementEncodeMs: Number(values.movement_encode_ms_total ?? 0),
+        audienceMapMs: Number(values.audience_map_ms_total ?? 0),
+        numericPeekMs: Number(values.numeric_peek_ms_total ?? 0),
+        statePeekMs: Number(values.state_peek_ms_total ?? 0),
+        updateCount: Number(values.update_count_total ?? 0),
+        audienceMapCount: Number(values.audience_map_count_total ?? 0),
+        numericPeekCount: Number(values.numeric_peek_count_total ?? 0),
+        statePeekCount: Number(values.state_peek_count_total ?? 0),
+        playerEntryQueue: Number(values.player_entry_queue ?? 0),
+        playerEntryQueuePeak: Number(values.player_entry_queue_peak ?? 0),
+        playerEntriesAdmitted: Number(values.player_entries_admitted_total ?? 0),
+        playerEntryFailures: Number(values.player_entry_failures_total ?? 0),
         }));
     const completeMapBroadcastSamples = mapBroadcastSamples.filter((sample) =>
       startedAt && endedAt &&
@@ -916,6 +1040,14 @@ function summarizeNativeData(samples, formalWindowSamples) {
     encodedFramesPerSecond: counterRate(samples, "encodedFrames"),
     encodedItemsPerSecond: counterRate(samples, "encodedItems"),
     encodedBytesPerSecond: counterRate(samples, "encodedBytes"),
+    aoiWorlds: samples.at(-1)?.aoiWorlds ?? 0,
+    aoiEntries: samples.at(-1)?.aoiEntries ?? 0,
+    aoiGrids: samples.at(-1)?.aoiGrids ?? 0,
+    aoiCandidateRelations: samples.at(-1)?.aoiCandidateRelations ?? 0,
+    aoiVisibleRelations: samples.at(-1)?.aoiVisibleRelations ?? 0,
+    aoiRelocationsPerSecond: counterRate(samples, "aoiRelocations"),
+    aoiVisibilityChangesPerSecond: counterRate(samples, "aoiVisibilityChanges"),
+    aoiFilterOverridesPerSecond: counterRate(samples, "aoiFilterOverrides"),
   };
 }
 
@@ -926,6 +1058,10 @@ function summarizeMapBroadcast(samples, formalWindowSamples) {
   const sentFrames = counterDelta(samples, "sentFrames");
   const broadcastsStarted = counterDelta(samples, "broadcastsStarted");
   const broadcastsCompleted = counterDelta(samples, "broadcastsCompleted");
+  const updateCount = counterDelta(samples, "updateCount");
+  const audienceMapCount = counterDelta(samples, "audienceMapCount");
+  const numericPeekCount = counterDelta(samples, "numericPeekCount");
+  const statePeekCount = counterDelta(samples, "statePeekCount");
   return {
     samples: samples.length,
     formalWindowSamples,
@@ -948,6 +1084,32 @@ function summarizeMapBroadcast(samples, formalWindowSamples) {
       ? counterDelta(samples, "totalQueueWaitMs") / broadcastsStarted
       : 0,
     maxQueueWaitMs: max(samples.map((item) => item.maxQueueWaitMs)),
+    averageDispatchMs: broadcastsStarted > 0
+      ? counterDelta(samples, "totalDispatchMs") / broadcastsStarted
+      : 0,
+    maxDispatchMs: max(samples.map((item) => item.maxDispatchMs)),
+    averageMovementAdvanceMs: updateCount > 0
+      ? counterDelta(samples, "movementAdvanceMs") / updateCount
+      : 0,
+    averageAoiRefreshMs: updateCount > 0
+      ? counterDelta(samples, "aoiRefreshMs") / updateCount
+      : 0,
+    averageMovementEncodeMs: updateCount > 0
+      ? counterDelta(samples, "movementEncodeMs") / updateCount
+      : 0,
+    averageAudienceMapMs: audienceMapCount > 0
+      ? counterDelta(samples, "audienceMapMs") / audienceMapCount
+      : 0,
+    averageNumericPeekMs: numericPeekCount > 0
+      ? counterDelta(samples, "numericPeekMs") / numericPeekCount
+      : 0,
+    averageStatePeekMs: statePeekCount > 0
+      ? counterDelta(samples, "statePeekMs") / statePeekCount
+      : 0,
+    playerEntryQueue: last?.playerEntryQueue ?? 0,
+    playerEntryQueuePeak: max(samples.map((item) => item.playerEntryQueuePeak)),
+    playerEntriesAdmitted: last?.playerEntriesAdmitted ?? 0,
+    playerEntryFailures: last?.playerEntryFailures ?? 0,
     failures: last?.broadcastFailures ?? 0,
   };
 }
@@ -1033,6 +1195,18 @@ function aggregateCases(rounds) {
       mapBroadcastFailures: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.failures ?? 0,
       )),
+      playerEntryQueue: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntryQueue ?? 0,
+      )),
+      playerEntryQueuePeak: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntryQueuePeak ?? 0,
+      )),
+      playerEntriesAdmitted: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntriesAdmitted ?? 0,
+      )),
+      playerEntryFailures: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntryFailures ?? 0,
+      )),
       nativeDataSamples: median(group.map(
         (item) => item.serverResources.map?.nativeData?.formalWindowSamples ?? 0,
       )),
@@ -1077,6 +1251,30 @@ function aggregateCases(rounds) {
       )),
       nativeEncodedBytesPerSecond: median(group.map(
         (item) => item.serverResources.map?.nativeData?.encodedBytesPerSecond ?? 0,
+      )),
+      aoiWorlds: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiWorlds ?? 0,
+      )),
+      aoiEntries: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiEntries ?? 0,
+      )),
+      aoiGrids: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiGrids ?? 0,
+      )),
+      aoiCandidateRelations: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiCandidateRelations ?? 0,
+      )),
+      aoiVisibleRelations: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiVisibleRelations ?? 0,
+      )),
+      aoiRelocationsPerSecond: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiRelocationsPerSecond ?? 0,
+      )),
+      aoiVisibilityChangesPerSecond: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiVisibilityChangesPerSecond ?? 0,
+      )),
+      aoiFilterOverridesPerSecond: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiFilterOverridesPerSecond ?? 0,
       )),
       mapPeakV8HeapUsedBytes: median(group.map(
         (item) => item.serverResources.map?.peakV8HeapUsedBytes ?? 0,
@@ -1186,12 +1384,20 @@ function aggregateCases(rounds) {
 function renderMarkdown(report) {
   const ioBackend = effectiveIoBackendName(options.ioBackend);
   const lines = [
-    "# 单 MapHost 同屏容量测试报告",
+    options.spawnLayout === "grid-uniform"
+      ? "# 单 MapHost 全图均匀 AOI 容量测试报告"
+      : "# 单 MapHost 同屏容量测试报告",
     "",
     `- 时间：${report.generatedAt}`,
-    `- 拓扑：1 MapHost / ${options.gates} Gate / 1 Login / 1 LoginMgr`,
+    `- 拓扑：1 MapHost / ${options.gates} Gate / 1 Login / 1 LoginMgr / 1 Location`,
     `- I/O Backend：${ioBackend}`,
+    `- 地图：${options.worldGrids}x${options.worldGrids} AOI Grid（MapConfig ${options.mapId}）`,
     "- Unit 数据：Rust 权威存储，Rust 批处理并直接编码移动快照",
+    `- 玩家布局：${options.spawnLayout === "grid-uniform"
+      ? `轮询全部AOI Grid，固定在Grid中央Cell（各档平均${options.players.map((players) => formatDensity(players, options.worldGrids)).join("/")}人/Grid）`
+      : options.spawnLayout === "single-grid"
+        ? "固定单个AOI Grid内的安全轨迹（不跨Grid）"
+        : "统一出生点（最坏同屏）"}`,
     `- 负载：${options.probeOnly ? "Probe Only，" : `每玩家 ${options.moveRate}Hz Move + `}每玩家 ${options.probeRate}Hz MapProbe`,
     ...(options.stateSyncMode !== "off"
       ? [`- 状态同步：${options.stateSyncMode}，每玩家 ${options.stateSyncRate}Hz，in-flight ${options.stateSyncConcurrency}`]
@@ -1205,6 +1411,9 @@ function renderMarkdown(report) {
       : []),
     `- 压测客户端：${options.client === "rust" ? "Rust" : "Node.js"}`,
     `- 正式测试：${options.duration}s；预热：${options.warmup}s；轮数：${options.rounds}`,
+    ...(options.postSetupSettle > 0
+      ? [`- Setup后空闲排空：${options.postSetupSettle}s（不发送Move/Probe）`]
+      : []),
     `- Map CPU 目标：${options.targetMapCpu}%（100% 表示一个逻辑核）`,
     `- 机器：${report.machine.cpu} / ${report.machine.logicalCpus} 逻辑核 / ${formatBytes(report.machine.memoryBytes)}`,
     "",
@@ -1243,6 +1452,37 @@ function renderMarkdown(report) {
         `${round(value.itemPushesPerSecond)}/${round(value.itemItemsPerSecond)}/${round(value.itemBytesPerSecond / 1024 / 1024, 2)} | ${value.stateSyncErrors} |`,
       );
     }
+  }
+  lines.push(
+    "",
+    "## AOI 空间指标",
+    "",
+    "| 玩家 | World/Entity/Grid | candidate/visible | 跨Grid/s | 可见变化/s | 过滤覆盖/s |",
+    "|---:|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    lines.push(
+      `| ${item.players} | ${round(value.aoiWorlds)}/${round(value.aoiEntries)}/${round(value.aoiGrids)} | ` +
+      `${round(value.aoiCandidateRelations)}/${round(value.aoiVisibleRelations)} | ` +
+      `${round(value.aoiRelocationsPerSecond, 1)} | ${round(value.aoiVisibilityChangesPerSecond, 1)} | ` +
+      `${round(value.aoiFilterOverridesPerSecond, 1)} |`,
+    );
+  }
+  lines.push(
+    "",
+    "## 地图进入队列",
+    "",
+    "| 玩家 | 测量结束队列 | 生命周期峰值 | 已放行 | 失败 |",
+    "|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    lines.push(
+      `| ${item.players} | ${round(value.playerEntryQueue)} | ` +
+      `${round(value.playerEntryQueuePeak)} | ${round(value.playerEntriesAdmitted)} | ` +
+      `${round(value.playerEntryFailures)} |`,
+    );
   }
   lines.push(
     "",
@@ -1334,7 +1574,10 @@ function renderMarkdown(report) {
     options.probeOnly
       ? "- Probe Only 模式不包含 AOI 下行。"
       : "- 虚拟客户端不完整构造业务对象；状态测试会扫描 protobuf 顶层 repeated 字段，分别统计协议帧、状态项和消息体字节。端到端延迟由 MapProbe 独立测量。",
-    "- `push/s` 仍是全地图全量可见广播，代表最坏同屏 O(N^2) 场景。",
+    options.spawnLayout === "single-grid" || options.spawnLayout === "grid-uniform"
+      ? "- `push/s` 是虚拟客户端实际收到的移动帧数；Bench布局使用Grid内闭合轨迹，正式窗口应没有持续跨Grid或可见关系变化。"
+      : "- `push/s` 是虚拟客户端实际收到的移动帧数；玩家可能跨AOI Grid，实际Grid、候选关系、跨Grid和可见变化见AOI空间指标。",
+    "- AOI进入/离开是不可覆盖事件，但同一逻辑帧内受众完全相同的变化会合并为一个`G2C_AoiDelta`；Movement、Numeric等可覆盖状态仍走latest。",
     "- Map 可覆盖状态广播采用 single-flight；前一批未完成时保留最新 dirty revision，发送成功后按 revision Ack。`pending`、合并率、广播耗时和排队时间用于判断下行是否跟不上 Game.Update。",
     "- Gate 数量用于分摊连接、编码和下行发送；MapHost 始终只有一个。",
     "",
@@ -1364,10 +1607,16 @@ function parseOptions(args) {
     // Demo 默认客户端输入上报频率是 5Hz；服务端 Game.Update 默认保持 20Hz。
     moveRate: nonNegative(values.get("--move-rate") ?? "5", "--move-rate"),
     movementHoldMessages: positive(
-      values.get("--movement-hold-messages") ?? "1",
+      values.get("--movement-hold-messages") ?? "5",
       "--movement-hold-messages",
     ),
-    probeRate: positive(values.get("--probe-rate") ?? "1", "--probe-rate"),
+    spawnLayout: enumValue(
+      values.get("--spawn-layout") ?? "same-point",
+      ["same-point", "single-grid", "grid-uniform"],
+      "--spawn-layout",
+    ),
+    worldGrids: positive(values.get("--world-grids") ?? "10", "--world-grids"),
+    probeRate: nonNegative(values.get("--probe-rate") ?? "1", "--probe-rate"),
     probeConcurrency: positive(values.get("--probe-concurrency") ?? "1", "--probe-concurrency"),
     stateSyncMode: enumValue(
       values.get("--state-sync-mode") ?? "off",
@@ -1388,6 +1637,10 @@ function parseOptions(args) {
     warmup: nonNegative(values.get("--warmup") ?? "10", "--warmup"),
     rounds: positive(values.get("--rounds") ?? "1", "--rounds"),
     setupConcurrency: positive(values.get("--setup-concurrency") ?? "16", "--setup-concurrency"),
+    postSetupSettle: nonNegative(
+      values.get("--post-setup-settle") ?? "0",
+      "--post-setup-settle",
+    ),
     timeoutMs: positive(values.get("--timeout") ?? "60000", "--timeout"),
     movementTimeoutMs: positive(values.get("--movement-timeout") ?? "10000", "--movement-timeout"),
     targetMapCpu: positive(values.get("--target-map-cpu") ?? "85", "--target-map-cpu"),
@@ -1395,6 +1648,15 @@ function parseOptions(args) {
     loginPort: positive(values.get("--login-port") ?? "7001", "--login-port"),
     gateBasePort: positive(values.get("--gate-base-port") ?? "7201", "--gate-base-port"),
     mapPort: positive(values.get("--map-port") ?? "7301", "--map-port"),
+    locationPort: positive(values.get("--location-port") ?? "7401", "--location-port"),
+    mapInspectorPort: nonNegative(
+      values.get("--map-inspector-port") ?? "0",
+      "--map-inspector-port",
+    ),
+    mapProfileDuration: positive(
+      values.get("--map-profile-duration") ?? "10",
+      "--map-profile-duration",
+    ),
     debugRuntime: flags.has("--debug-runtime"),
     skipRustBuild: flags.has("--skip-rust-build"),
     probeOnly: flags.has("--probe-only"),
@@ -1427,15 +1689,28 @@ function parseOptions(args) {
       values.get("--health-base-port") ?? "7800",
       "--health-base-port",
     ),
-    sourceIpBase: positive(values.get("--source-ip-base") ?? "2", "--source-ip-base"),
+    sourceIpBase: positive(
+      values.get("--source-ip-base") ?? String(2 + Math.floor(Date.now() / 1_000) % 100),
+      "--source-ip-base",
+    ),
   };
   if (options.hotfixMode === "reload" && options.hotfixCandidates.length < 2) {
     throw new Error("--hotfix-mode reload requires at least two --hotfix-candidates");
   }
-  if (options.sourceIpBase + options.rounds - 1 > 254) {
-    throw new Error("--source-ip-base plus --rounds must stay within 127.0.0.254");
+  const mapIdsByWorldGrids = new Map([[10, 1], [15, 1015], [20, 1020]]);
+  options.mapId = mapIdsByWorldGrids.get(options.worldGrids);
+  if (!options.mapId) {
+    throw new Error("--world-grids currently supports 10, 15 or 20");
+  }
+  if (options.sourceIpBase + options.players.length * options.rounds - 1 > 254) {
+    throw new Error("--source-ip-base plus all player/round cases must stay within 127.0.0.254");
   }
   return options;
+}
+
+function formatDensity(players, worldGrids) {
+  const density = players / (worldGrids * worldGrids);
+  return Number.isInteger(density) ? String(density) : density.toFixed(2);
 }
 
 function runCommand(command, args) {
@@ -1459,6 +1734,18 @@ async function waitPort(host, port, timeoutMs) {
     await sleep(50);
   }
   throw new Error(`timed out waiting for ${host}:${port}`);
+}
+
+async function waitReady(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/ready`);
+      if (response.status === 200) return;
+    } catch {}
+    await sleep(50);
+  }
+  throw new Error(`timed out waiting for http://127.0.0.1:${port}/ready`);
 }
 
 function canConnect(host, port) {

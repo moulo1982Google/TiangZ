@@ -181,4 +181,4 @@ node perf/map_capacity/run_map_capacity_perf.mjs \
 - `items/s`：解码前扫描 protobuf repeated 字段得到的状态项数，反映真实扇出量；
 - `MiB/s`：所有虚拟客户端实际收到的消息体字节数，不包含 TCP length prefix。
 
-全地图可见时，Numeric 和 PlayerInfo 的 `items/s` 会随玩家数近似 O(N²) 增长；这是当前无 AOI 的最坏同屏模型。ItemChanged 只发给所属玩家，所以 `frames/s = items/s = 触发 RPC/s`，近似 O(N)。
+全地图可见时，Numeric 和 PlayerInfo 的 `items/s` 会随玩家数近似 O(N²) 增长；旧性能报告中的数据采用这一最坏同屏模型。当前Rust AOI会按最终可见集合限制收件人，但所有玩家确实处于同一AOI范围时，真实下行扇出仍然是O(N²)。ItemChanged只发给所属玩家，所以`frames/s = items/s = 触发 RPC/s`，近似O(N)。

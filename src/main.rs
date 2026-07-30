@@ -10,6 +10,7 @@ use crate::process::run_runtime_config;
 use crate::watcher::run_start_machine;
 
 mod allocator;
+mod aoi;
 mod config;
 mod game_config;
 mod generated;

@@ -12,12 +12,15 @@ TiangZ把配置分成两类：
 | 表 | 用途 | 当前关键字段 |
 | --- | --- | --- |
 | `ItemConfig.xlsx` | 道具静态定义 | 名称、客户端描述、最大堆叠、使用后回血 |
-| `MapConfig.xlsx` | 地图静态定义 | 空间模式、米制尺寸、三维出生点、AOI尺寸、导航资源身份 |
+| `MapConfig.xlsx` | 地图静态定义 | 空间模式、米制尺寸、三维出生点、AOI引用、入图节流、导航资源身份 |
 | `PlayerConfig.xlsx` | 玩家初始模板 | 初始地图、初始/最大HP、移动速度、初始道具 |
+| `AoiConfig.xlsx` | AOI冷配置 | AOI Grid包含的Cell数、Enter与Detach范围 |
+| `AoiSyncTierConfig.xlsx` | AOI同步冷配置 | 独立同步范围与最高同步Hz |
+| `ConfigTablePolicy.xlsx` | 表级重载策略 | 每张配置表是Hot还是Cold |
 
 `PlayerConfig`只描述“创建玩家时从哪里开始”，不保存玩家升级后的等级、经验、装备结果或当前血量。那些是玩家运行时和持久化数据。
 
-地图坐标统一为米制X/Y/Z：X/Z是地面平面，Y是高度，Yaw为绕Y轴弧度。Grid2D使用`widthCells/depthCells/gridCellSizeMeters`；NavMesh3D使用`navigationAsset/navigationVersion/navigationHash`。客户端只在引擎边界转换为Cocos `Vec3`、Unity向量或二维屏幕坐标，详细规则见[地图空间与3D坐标契约](../design/spatial-world.md)。
+地图坐标统一为米制X/Y/Z：X/Z是地面平面，Y是高度，Yaw为绕Y轴弧度。Grid2D使用`widthCells/depthCells/cellSizeMeters`；AOI通过`aoiConfigId`引用独立的Grid、Enter、Detach和同步档位；`entryPlayersPerTick/entryQueueCapacity`控制每个MapInstance的隐藏式Loading入图队列；NavMesh3D使用`navigationAsset/navigationVersion/navigationHash`。客户端只在引擎边界转换为Cocos `Vec3`、Unity向量或二维屏幕坐标，详细规则见[地图空间与3D坐标契约](../design/spatial-world.md)。
 
 ## Excel约定
 
@@ -99,14 +102,17 @@ const player = GameConfigs.PlayerConfig.Get(1);
 
 客户端看不到标记为`s`的字段。不要为了方便把服务端奖励、掉落权重或校验数据改成`c,s`；公开给客户端的数据都应按可被读取和篡改的公开信息处理。
 
-## 结构与数据的边界
+## Model、Hot数据与Cold数据
 
 Luban输入被拆成两部分：
 
 - **结构属于Model**：表名、字段名、字段类型、`c/s`分组、索引和`#ref`关系会生成TypeScript类型与解码代码。修改这些内容必须运行完整`npm run build`、重启Process，并发布匹配的客户端SDK。
-- **数据是独立快照**：新增/删除数据行或只修改字段值，不改变生成的TypeScript结构。`npm run build:game-config`会输出`dist/game-config-candidates/<data-fingerprint>`，不需要重建Rust或Model。
+- **Hot数据**：`ConfigTablePolicy.xlsx`标为`Hot`的整张表可以在线原子替换。当前`ItemConfig`和`PlayerConfig`为Hot。
+- **Cold数据**：标为`Cold`的整张表即使只改一个值也必须完整构建并重启Process。当前`MapConfig`、`AoiConfig`、`AoiSyncTierConfig`和策略表本身为Cold。
 
-本地使用`npm run dev -- configs/local/StartMachine.json`时，保存Excel后开发宿主会自动生成、校验并让Watcher广播候选。手工部署时：
+策略按整张表声明，不做字段级Hot/Cold混用。新增配置表必须同时在`ConfigTablePolicy.xlsx`登记，否则codegen直接失败。生成包同时包含完整、Hot、Cold三份JSON与各自指纹；Rust先验证分区确实能无重叠地还原完整数据，TS再验证Cold指纹没有变化，不能只伪造manifest绕过边界。
+
+本地使用`npm run dev -- configs/local/StartMachine.json`时，保存Hot表后开发宿主会自动生成、校验并让Watcher广播候选。Cold表变化会明确提示需要完整构建和重启。手工部署Hot候选时：
 
 ```text
 npm run build:game-config
@@ -114,7 +120,7 @@ npm run build:game-config
 reload-config E:\gitee\TiangZ\dist\game-config-candidates\...
 ```
 
-每个Process依次完成文件哈希校验、Model结构指纹校验、全表解析、外键和业务约束检查；全部通过后才一次性替换当前快照。失败时继续使用旧快照。可以从`tiangz_game_config_info`、`tiangz_game_config_reload_successes_total`和`tiangz_game_config_reload_failures_total`确认结果。
+每个Process依次完成文件哈希、Hot/Cold分区、Model结构指纹、全表解析、外键和业务约束检查；Cold指纹不一致会以“必须重启”拒绝，其他检查全部通过后才一次性替换当前快照。失败时继续使用旧快照。可以从`tiangz_game_config_info`、`tiangz_game_config_reload_successes_total`和`tiangz_game_config_reload_failures_total`确认结果。
 
 切换不会重跑Scene、Entity或Component的`Awake`，也不会修改已经由配置创建出的运行时状态。旧代码若保存过某行配置对象，该引用仍保持旧值；后续通过`GameConfigs.Xxx.Get`取得的是新快照。因此默认在真正使用数值时查询，不要把整行配置长期缓存到Entity字段。地图创建参数和玩家初始模板只自然影响新地图、新玩家；道具使用这类即时查询会立即读取新值。
 

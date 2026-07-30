@@ -13,6 +13,12 @@ message G2M_EnterMap // IRequest
   string gate_name = 3;
   reserved 4, 5;
   uint64 map_instance_id = 6;
+  // Trusted server-side spawn override. Outer clients never write these fields.
+  bool has_initial_spawn_override = 7;
+  float initial_spawn_x = 8;
+  float initial_spawn_y = 9;
+  float initial_spawn_z = 10;
+  float initial_spawn_yaw = 11;
 }
 
 //ResponseType M2G_SecondEnterMap

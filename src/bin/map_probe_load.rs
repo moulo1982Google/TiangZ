@@ -11,7 +11,7 @@ use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpSocket, TcpStream};
 use tokio::sync::{Semaphore, mpsc};
-use tokio::time::{Instant, sleep_until};
+use tokio::time::{Instant, sleep, sleep_until};
 
 const MAX_FRAME_LEN: usize = 1024 * 1024;
 const GET_LOGIN_ADDR_REQ: u16 = 10002;
@@ -33,7 +33,45 @@ const CLIENT_PING: u16 = 10024;
 const ITEM_CHANGED: u16 = 10021;
 const STATE_SYNC_BENCH_REQ: u16 = 15006;
 const STATE_SYNC_BENCH_RESP: u16 = 15007;
+const MAP_CAPACITY_PLACE_REQ: u16 = 15008;
+const MAP_CAPACITY_PLACE_RESP: u16 = 15009;
+const MAP_CAPACITY_ENTER_REQ: u16 = 15010;
+const MAP_CAPACITY_ENTER_RESP: u16 = 15011;
 const CLIENT_PING_INTERVAL: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SpawnLayout {
+    SamePoint,
+    SingleGrid,
+    GridUniform,
+}
+
+impl SpawnLayout {
+    fn parse(value: &str) -> Result<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "same-point" => Ok(Self::SamePoint),
+            "single-grid" => Ok(Self::SingleGrid),
+            "grid-uniform" => Ok(Self::GridUniform),
+            _ => bail!("invalid --spawn-layout {value}"),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::SamePoint => "same-point",
+            Self::SingleGrid => "single-grid",
+            Self::GridUniform => "grid-uniform",
+        }
+    }
+
+    fn placement_code(self) -> Option<u32> {
+        match self {
+            Self::SamePoint => None,
+            Self::GridUniform => Some(1),
+            Self::SingleGrid => Some(2),
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum StateSyncMode {
@@ -82,13 +120,16 @@ struct Options {
     host: String,
     source_ip: Option<IpAddr>,
     manager_port: u16,
+    map_id: u32,
     players: usize,
     setup_concurrency: usize,
+    post_setup_settle: Duration,
     warmup: Duration,
     duration: Duration,
     timeout: Duration,
     move_rate: u64,
     movement_hold_messages: u32,
+    spawn_layout: SpawnLayout,
     probe_rate: u64,
     probe_concurrency: usize,
     state_sync_mode: StateSyncMode,
@@ -280,6 +321,9 @@ async fn main() -> Result<()> {
         players.push(result.context("player setup task panicked")??);
     }
     let setup_elapsed = setup_started.elapsed();
+    if !options.post_setup_settle.is_zero() {
+        sleep(options.post_setup_settle).await;
+    }
 
     let measurement_start = Instant::now() + options.warmup;
     let timing = Timing {
@@ -436,10 +480,13 @@ async fn main() -> Result<()> {
         "label": options.label,
         "players": options.players,
         "setupConcurrency": options.setup_concurrency,
+        "postSetupSettleSeconds": options.post_setup_settle.as_secs_f64(),
         "warmupSeconds": options.warmup.as_secs_f64(),
         "durationSeconds": options.duration.as_secs_f64(),
         "targetMoveRatePerPlayer": options.move_rate,
         "movementHoldMessages": options.movement_hold_messages,
+        "spawnLayout": options.spawn_layout.name(),
+        "mapId": options.map_id,
         "targetProbeRatePerPlayer": options.probe_rate,
         "measurementStartedAtUnixMs": started_at_unix_ms,
         "measurementEndedAtUnixMs": started_at_unix_ms + options.duration.as_millis() as u64,
@@ -546,7 +593,8 @@ async fn setup_player(
         source_port(options.source_ip, 22_000, index)?,
     )
     .await?;
-    let login_response = decode_message(&response, LOGIN_RESP, Some(1))?;
+    let login_response =
+        decode_message(&response, LOGIN_RESP, Some(1)).context("Login RPC failed")?;
     let login = LoginResult {
         token: login_response.string(4)?,
         gate: Address {
@@ -574,11 +622,22 @@ async fn setup_player(
     push_string(&mut gate_login, 2, &login.token);
     write_frame(&mut writer, &encode_rpc(LOGIN_GATE_REQ, 2, &gate_login)?).await?;
     let response = read_frame_timeout(&mut reader, options.timeout).await?;
-    decode_message(&response, LOGIN_GATE_RESP, Some(2))?;
+    decode_message(&response, LOGIN_GATE_RESP, Some(2)).context("LoginGate RPC failed")?;
 
+    let placement_layout = options.spawn_layout.placement_code();
+    let player_index = u32::try_from(index).context("player index exceeds uint32")?;
     let mut enter_map = Vec::with_capacity(16);
-    push_uint32(&mut enter_map, 1, 1);
-    write_frame(&mut writer, &encode_rpc(ENTER_MAP_REQ, 3, &enter_map)?).await?;
+    let (enter_request_code, enter_response_code, unit_id_field) =
+        if let Some(layout) = placement_layout {
+            push_uint32(&mut enter_map, 1, options.map_id);
+            push_uint32(&mut enter_map, 2, player_index);
+            push_uint32(&mut enter_map, 3, layout);
+            (MAP_CAPACITY_ENTER_REQ, MAP_CAPACITY_ENTER_RESP, 1)
+        } else {
+            push_uint32(&mut enter_map, 1, options.map_id);
+            (ENTER_MAP_REQ, ENTER_MAP_RESP, 4)
+        };
+    write_frame(&mut writer, &encode_rpc(enter_request_code, 3, &enter_map)?).await?;
     let mut received_response = false;
     let mut received_ready = false;
     let mut unit_id = 0;
@@ -586,8 +645,10 @@ async fn setup_player(
         let frame = read_frame_timeout(&mut reader, options.timeout).await?;
         let msgcode = frame_msgcode(&frame)?;
         match msgcode {
-            ENTER_MAP_RESP => {
-                unit_id = decode_message(&frame, ENTER_MAP_RESP, Some(3))?.u32(4)?;
+            code if code == enter_response_code => {
+                unit_id = decode_message(&frame, enter_response_code, Some(3))
+                    .context("EnterMap RPC failed")?
+                    .u32(unit_id_field)?;
                 received_response = true;
             }
             MAP_READY => received_ready = true,
@@ -596,6 +657,30 @@ async fn setup_player(
     }
     if unit_id == 0 {
         bail!("EnterMap returned an invalid unitId");
+    }
+    let mut next_rpc_id = 4;
+    if let Some(layout) = placement_layout {
+        let mut placement = Vec::with_capacity(8);
+        push_uint32(&mut placement, 1, player_index);
+        push_uint32(&mut placement, 2, layout);
+        write_frame(
+            &mut writer,
+            &encode_rpc(MAP_CAPACITY_PLACE_REQ, next_rpc_id, &placement)?,
+        )
+        .await?;
+        loop {
+            let frame = read_frame_timeout(&mut reader, options.timeout).await?;
+            if frame_msgcode(&frame)? != MAP_CAPACITY_PLACE_RESP {
+                continue;
+            }
+            let response = decode_message(&frame, MAP_CAPACITY_PLACE_RESP, Some(next_rpc_id))
+                .context("MapCapacityPlace RPC failed")?;
+            if response.u32(1)? != player_index {
+                bail!("map capacity placement index mismatch");
+            }
+            break;
+        }
+        next_rpc_id += 1;
     }
     let (writer_tx, writer_rx) = mpsc::channel(32);
     let writer_task = tokio::spawn(run_gate_writer(writer, writer_rx));
@@ -684,7 +769,7 @@ async fn setup_player(
         writer_task,
         entity_move_pushes,
         state_pushes,
-        next_rpc_id: 4,
+        next_rpc_id,
         unit_id,
     })
 }
@@ -720,9 +805,15 @@ async fn run_player(
     let state_sync_interval = (options.state_sync_mode != StateSyncMode::Off
         && options.state_sync_rate > 0)
         .then(|| Duration::from_secs_f64(1.0 / options.state_sync_rate as f64));
-    let mut next_probe = Instant::now();
-    let mut next_move = Instant::now();
-    let mut next_state_sync = Instant::now();
+    // 每名虚拟玩家使用稳定相位错开周期请求。总QPS保持不变，但不会在每个周期边界
+    // 同时向Map注入全部玩家消息，从而避免把压测器的人造脉冲误判为服务器容量。
+    // Give every virtual player a stable phase. Aggregate QPS is unchanged, while periodic
+    // requests are spread across each interval instead of creating a synthetic synchronized burst.
+    let schedule_origin = Instant::now();
+    let mut next_probe = schedule_origin + phase_offset(probe_interval, unit_id, 0x9e37_79b9);
+    let mut next_move = schedule_origin + phase_offset(move_interval, unit_id, 0x85eb_ca6b);
+    let mut next_state_sync =
+        schedule_origin + phase_offset(state_sync_interval, unit_id, 0xc2b2_ae35);
 
     loop {
         let now = Instant::now();
@@ -890,6 +981,19 @@ async fn run_player(
     result.item_items = measured_state_pushes.item_items;
     result.item_bytes = measured_state_pushes.item_bytes;
     Ok(result)
+}
+
+fn phase_offset(interval: Option<Duration>, unit_id: u32, salt: u32) -> Duration {
+    let Some(interval) = interval else {
+        return Duration::ZERO;
+    };
+    let mut value = unit_id ^ salt;
+    value ^= value >> 16;
+    value = value.wrapping_mul(0x7feb_352d);
+    value ^= value >> 15;
+    value = value.wrapping_mul(0x846c_a68b);
+    value ^= value >> 16;
+    interval.mul_f64(f64::from(value) / (f64::from(u32::MAX) + 1.0))
 }
 
 async fn send_move(
@@ -1228,7 +1332,8 @@ fn decode_message(
     }
     let error = message.u32(91)?;
     if error != 0 {
-        bail!("RPC returned error {error}");
+        let detail = message.string(92).unwrap_or_default();
+        bail!("RPC returned error {error}: {detail}");
     }
     if let Some(expected) = expected_rpc {
         let actual = message.u32(90)?;
@@ -1350,13 +1455,21 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
             .context("invalid --source-ip")?,
         manager_port: u16::try_from(number("manager-port", 7000)?)
             .context("manager port exceeds uint16")?,
+        map_id: u32::try_from(number("map-id", 1)?).context("map id exceeds uint32")?,
         players,
         setup_concurrency,
+        post_setup_settle: Duration::from_secs(number("post-setup-settle", 0)?),
         warmup: Duration::from_secs(number("warmup", 2)?),
         duration: Duration::from_secs(duration),
         timeout: Duration::from_millis(number("timeout", 60_000)?),
         move_rate: number("move-rate", 0)?,
         movement_hold_messages,
+        spawn_layout: SpawnLayout::parse(
+            values
+                .get("spawn-layout")
+                .map(String::as_str)
+                .unwrap_or("same-point"),
+        )?,
         probe_rate: number("probe-rate", 20)?,
         probe_concurrency,
         state_sync_mode: StateSyncMode::parse(
@@ -1390,5 +1503,25 @@ mod tests {
         }
 
         assert_eq!(count_length_delimited_field(&frame, 2).unwrap(), 2);
+    }
+
+    #[test]
+    fn player_phase_offsets_cover_the_interval_without_reaching_its_end() {
+        let interval = Duration::from_secs(1);
+        let offsets: Vec<_> = (1..=1_000)
+            .map(|unit_id| phase_offset(Some(interval), unit_id, 0x9e37_79b9))
+            .collect();
+        assert!(offsets.iter().all(|offset| *offset < interval));
+        assert!(
+            offsets
+                .iter()
+                .any(|offset| *offset < Duration::from_millis(100))
+        );
+        assert!(
+            offsets
+                .iter()
+                .any(|offset| *offset > Duration::from_millis(900))
+        );
+        assert_eq!(phase_offset(None, 1, 0), Duration::ZERO);
     }
 }

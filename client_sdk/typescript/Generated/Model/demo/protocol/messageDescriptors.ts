@@ -5,6 +5,8 @@ import {
   C2G_PingCodec,
   C2M_Move,
   C2M_MoveCodec,
+  G2C_AoiDelta,
+  G2C_AoiDeltaCodec,
   G2C_EntityEnter,
   G2C_EntityEnterCodec,
   G2C_EntityLeave,
@@ -58,6 +60,11 @@ export const ClientMessages = {
     msgcode: MsgCode.G2C_EntityLeave,
     codec: G2C_EntityLeaveCodec,
   }),
+  AoiDelta: defineMessage<G2C_AoiDelta>({
+    name: "Client.AoiDelta",
+    msgcode: MsgCode.G2C_AoiDelta,
+    codec: G2C_AoiDeltaCodec,
+  }),
 };
 
 export const MapMessages = {
@@ -86,5 +93,6 @@ export const AllMessageDescriptors = [
   ClientMessages.ItemChanged,
   ClientMessages.EntityEnter,
   ClientMessages.EntityLeave,
+  ClientMessages.AoiDelta,
   GateMessages.Ping,
 ] as const;

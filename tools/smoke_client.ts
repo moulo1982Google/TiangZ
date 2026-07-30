@@ -6,8 +6,8 @@ import {
   buildLoginPacket,
   buildMovePacket,
   buildUseItemPacket,
+  decodeAoiDeltaFrame,
   decodeEntityMoveFrame,
-  decodeEntityEnterFrame,
   decodeEnterMapFrame,
   decodeEntityNumericFrame,
   decodeItemChangedFrame,
@@ -495,11 +495,13 @@ async function verifySharedMapBroadcast(
   observerRequest: { account: string; token: string; mapId: number },
 ): Promise<void> {
   const mover = await openGateAndEnterMap(ip, port, moverRequest);
-  const enterFrame = mover.gate.waitForMessage(MsgCode.G2C_EntityEnter);
+  const enterFrame = mover.gate.waitForMessage(MsgCode.G2C_AoiDelta);
   const observer = await openGateAndEnterMap(ip, port, observerRequest);
   let observerClosed = false;
   try {
-    const entered = decodeEntityEnterFrame(await enterFrame).body.entity;
+    const entered = decodeAoiDeltaFrame(await enterFrame).body.enters.find(
+      (entity) => entity.unitId === observer.enterMap.unitId,
+    );
     const snapshotIds = observer.enterMap.entities
       .map((entity) => entity.unitId)
       .sort((left, right) => left - right);
@@ -507,7 +509,7 @@ async function verifySharedMapBroadcast(
       (left, right) => left - right,
     );
     if (
-      entered.unitId !== observer.enterMap.unitId ||
+      !entered ||
       entered.account !== observerRequest.account ||
       snapshotIds.length !== expectedIds.length ||
       snapshotIds.some((unitId, index) => unitId !== expectedIds[index])
@@ -547,6 +549,45 @@ async function verifySharedMapBroadcast(
       movement: observerState,
     });
 
+    // Demo使用15米AOI Grid和7x7 Detach；持续移动直到真正越过迟滞外圈。
+    const leaveFrame = observer.gate.waitForMessage(MsgCode.G2C_AoiDelta, 8000);
+    await mover.gate.send(
+      buildMovePacket({ inputX: 0, inputZ: 1, sequence: 2 }),
+    );
+    const left = decodeAoiDeltaFrame(await leaveFrame).body;
+    if (!left.leaves.includes(mover.enterMap.unitId)) {
+      throw new Error(`AOI leave contains the wrong Unit: ${JSON.stringify(left)}`);
+    }
+    await mover.gate.send(
+      buildMovePacket({ inputX: 0, inputZ: 0, sequence: 3 }),
+    );
+    await waitForMovementSequence(mover.gate, mover.enterMap.unitId, 3);
+    await assertNoMovementSequenceAtLeast(
+      observer.gate,
+      mover.enterMap.unitId,
+      3,
+      500,
+    );
+
+    // 返回时只有进入3x3 Enter范围才重新建立关系，不能在Detach外圈提前Enter。
+    const reenterFrame = observer.gate.waitForMessage(MsgCode.G2C_AoiDelta, 5000);
+    await mover.gate.send(
+      buildMovePacket({ inputX: 0, inputZ: -1, sequence: 4 }),
+    );
+    const reentered = decodeAoiDeltaFrame(await reenterFrame).body.enters.find(
+      (entity) => entity.unitId === mover.enterMap.unitId,
+    );
+    if (!reentered) {
+      throw new Error(`AOI reenter contains the wrong Unit: ${JSON.stringify(reentered)}`);
+    }
+    await mover.gate.send(
+      buildMovePacket({ inputX: 0, inputZ: 0, sequence: 5 }),
+    );
+    console.log("Shared map AOI boundary:", {
+      leftUnitId: mover.enterMap.unitId,
+      reenteredUnitId: reentered.unitId,
+    });
+
     await observer.gate.close();
     observerClosed = true;
     console.log("Shared map reconnect grace:", {
@@ -559,6 +600,33 @@ async function verifySharedMapBroadcast(
       mover.gate.close(),
       observerClosed ? Promise.resolve() : observer.gate.close(),
     ]);
+  }
+}
+
+async function assertNoMovementSequenceAtLeast(
+  gate: TcpRpcConnection,
+  unitId: number,
+  minimumSequence: number,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const remaining = Math.max(1, deadline - Date.now());
+    try {
+      const frame = await gate.waitForMessage(MsgCode.G2C_EntityMove, remaining);
+      const movement = decodeEntityMoveFrame(frame).body.movements.find(
+        (candidate) => candidate.unitId === unitId,
+      );
+      if (movement && movement.acknowledgedSequence >= minimumSequence) {
+        throw new Error(
+          `observer outside AOI received mover sequence ${movement.acknowledgedSequence}`,
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && /timed out/i.test(error.message)) return;
+      throw error;
+    }
+    if (Date.now() >= deadline) return;
   }
 }
 

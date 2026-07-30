@@ -54,3 +54,37 @@ message M2C_StateSyncBench // IActorLocationResponse
   uint32 mode = 1;
   uint32 sequence = 2;
 }
+
+//ResponseType M2C_MapCapacityPlace
+// @ets.msg protocol=MapCapacityBench method=Place
+message C2M_MapCapacityPlace // IActorLocationRequest
+{
+  // Zero-based virtual-player index assigned by the load generator.
+  uint32 player_index = 1;
+  // 1=uniform across every AOI Grid, 2=one AOI Grid with direction-safe anchors.
+  uint32 layout = 2;
+}
+
+message M2C_MapCapacityPlace // IActorLocationResponse
+{
+  uint32 player_index = 1;
+  sint32 cell_x = 2;
+  sint32 cell_z = 3;
+}
+
+//ResponseType G2C_MapCapacityEnter
+// @ets.msg protocol=MapCapacityBench method=Enter
+message C2G_MapCapacityEnter // IRequest
+{
+  uint32 map_id = 1;
+  uint32 player_index = 2;
+  // 1=uniform across every AOI Grid, 2=one AOI Grid with direction-safe anchors.
+  uint32 layout = 3;
+}
+
+message G2C_MapCapacityEnter // IResponse
+{
+  uint32 unit_id = 1;
+  sint32 cell_x = 2;
+  sint32 cell_z = 3;
+}

@@ -6,6 +6,10 @@ export const BenchMessage = {
   S2C_MailboxParity: 15005,
   C2M_StateSyncBench: 15006,
   M2C_StateSyncBench: 15007,
+  C2M_MapCapacityPlace: 15008,
+  M2C_MapCapacityPlace: 15009,
+  C2G_MapCapacityEnter: 15010,
+  G2C_MapCapacityEnter: 15011,
 } as const;
 
 export const MsgCode = {

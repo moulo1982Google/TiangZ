@@ -324,3 +324,201 @@ export const M2C_StateSyncBenchCodec = {
     return writer.finish();
   },
 };
+
+export interface C2M_MapCapacityPlace extends IActorLocationRequest {
+  rpcId?: number;
+  playerIndex: number;
+  layout: number;
+}
+
+export const C2M_MapCapacityPlaceCodec = {
+  decode(payload: Uint8Array): C2M_MapCapacityPlace {
+    const reader = new BinaryReader(payload);
+    const value: C2M_MapCapacityPlace = {
+      playerIndex: 0,
+      layout: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.playerIndex = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.layout = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_MapCapacityPlace): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.playerIndex !== undefined) writer.uint32(1, value.playerIndex);
+    if (value.layout !== undefined) writer.uint32(2, value.layout);
+    return writer.finish();
+  },
+};
+
+export interface M2C_MapCapacityPlace extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  playerIndex: number;
+  cellX: number;
+  cellZ: number;
+}
+
+export const M2C_MapCapacityPlaceCodec = {
+  decode(payload: Uint8Array): M2C_MapCapacityPlace {
+    const reader = new BinaryReader(payload);
+    const value: M2C_MapCapacityPlace = {
+      playerIndex: 0,
+      cellX: 0,
+      cellZ: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.playerIndex = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.cellX = reader.sint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.cellZ = reader.sint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_MapCapacityPlace): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.playerIndex !== undefined) writer.uint32(1, value.playerIndex);
+    if (value.cellX !== undefined) writer.sint32(2, value.cellX);
+    if (value.cellZ !== undefined) writer.sint32(3, value.cellZ);
+    return writer.finish();
+  },
+};
+
+export interface C2G_MapCapacityEnter extends IRequest {
+  rpcId?: number;
+  mapId: number;
+  playerIndex: number;
+  layout: number;
+}
+
+export const C2G_MapCapacityEnterCodec = {
+  decode(payload: Uint8Array): C2G_MapCapacityEnter {
+    const reader = new BinaryReader(payload);
+    const value: C2G_MapCapacityEnter = {
+      mapId: 0,
+      playerIndex: 0,
+      layout: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.mapId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.playerIndex = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.layout = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2G_MapCapacityEnter): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.mapId !== undefined) writer.uint32(1, value.mapId);
+    if (value.playerIndex !== undefined) writer.uint32(2, value.playerIndex);
+    if (value.layout !== undefined) writer.uint32(3, value.layout);
+    return writer.finish();
+  },
+};
+
+export interface G2C_MapCapacityEnter extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  unitId: number;
+  cellX: number;
+  cellZ: number;
+}
+
+export const G2C_MapCapacityEnterCodec = {
+  decode(payload: Uint8Array): G2C_MapCapacityEnter {
+    const reader = new BinaryReader(payload);
+    const value: G2C_MapCapacityEnter = {
+      unitId: 0,
+      cellX: 0,
+      cellZ: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.cellX = reader.sint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.cellZ = reader.sint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_MapCapacityEnter): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.cellX !== undefined) writer.sint32(2, value.cellX);
+    if (value.cellZ !== undefined) writer.sint32(3, value.cellZ);
+    return writer.finish();
+  },
+};

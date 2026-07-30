@@ -188,6 +188,22 @@ struct NativeDataMetricsSnapshot {
     encoded_frames: u64,
     encoded_items: u64,
     encoded_bytes: u64,
+    #[serde(default)]
+    aoi_worlds: u32,
+    #[serde(default)]
+    aoi_entries: u32,
+    #[serde(default)]
+    aoi_grids: u32,
+    #[serde(default)]
+    aoi_candidate_relations: u64,
+    #[serde(default)]
+    aoi_visible_relations: u64,
+    #[serde(default)]
+    aoi_relocations: u64,
+    #[serde(default)]
+    aoi_visibility_changes: u64,
+    #[serde(default)]
+    aoi_filter_overrides: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -788,6 +804,8 @@ fn run_process_runtime(
         .install_initial(&js_event_loop, &mut runtime)
         .context("failed to install initial Model/Hotfix generation")?;
     health_state.record_initial_hotfix(runtime_bundles.bundle_version().to_string());
+    let active_game_config_cold_fingerprint =
+        initial_game_config.cold_data_fingerprint().to_string();
     let initial_config_status = call_js_install_game_config(
         &js_event_loop,
         &mut runtime,
@@ -876,13 +894,22 @@ fn run_process_runtime(
         }
 
         if let Some((candidate, requested_at, response)) = pending_config_reload.take() {
-            let result = execute_game_config_reload(
-                &js_event_loop,
-                &mut runtime,
-                &entrypoints,
-                &candidate,
-                requested_at,
-            );
+            let result = if candidate.cold_data_fingerprint() != active_game_config_cold_fingerprint
+            {
+                Err(anyhow::anyhow!(
+                    "cold game config changed: active={}, candidate={}; rebuild and restart the Process",
+                    active_game_config_cold_fingerprint,
+                    candidate.cold_data_fingerprint(),
+                ))
+            } else {
+                execute_game_config_reload(
+                    &js_event_loop,
+                    &mut runtime,
+                    &entrypoints,
+                    &candidate,
+                    requested_at,
+                )
+            };
             match &result {
                 Ok(report) => health_state.record_game_config_success(
                     report.data_fingerprint.clone(),
@@ -1305,7 +1332,7 @@ fn maybe_log_metrics(
     }
     if let Some(native) = native_data_metrics {
         tracing::info!(target: "tiangz::metrics",
-            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} live_items={} pool_capacity_bytes={} scratch_capacity_bytes={} scratch_growths={} native_refs={} encoded_frames={} encoded_items={} encoded_bytes={}",
+            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} live_items={} pool_capacity_bytes={} scratch_capacity_bytes={} scratch_growths={} native_refs={} encoded_frames={} encoded_items={} encoded_bytes={} aoi_worlds={} aoi_entries={} aoi_grids={} aoi_candidate_relations={} aoi_visible_relations={} aoi_relocations={} aoi_visibility_changes={} aoi_filter_overrides={}",
             native.scalar_gets,
             native.scalar_sets,
             native.batch_calls,
@@ -1319,6 +1346,14 @@ fn maybe_log_metrics(
             native.encoded_frames,
             native.encoded_items,
             native.encoded_bytes,
+            native.aoi_worlds,
+            native.aoi_entries,
+            native.aoi_grids,
+            native.aoi_candidate_relations,
+            native.aoi_visible_relations,
+            native.aoi_relocations,
+            native.aoi_visibility_changes,
+            native.aoi_filter_overrides,
         );
     }
     for metric in metrics {
@@ -1462,6 +1497,14 @@ fn maybe_log_metrics(
         encoded_frames: native.encoded_frames,
         encoded_items: native.encoded_items,
         encoded_bytes: native.encoded_bytes,
+        aoi_worlds: native.aoi_worlds as u64,
+        aoi_entries: native.aoi_entries as u64,
+        aoi_grids: native.aoi_grids as u64,
+        aoi_candidate_relations: native.aoi_candidate_relations,
+        aoi_visible_relations: native.aoi_visible_relations,
+        aoi_relocations: native.aoi_relocations,
+        aoi_visibility_changes: native.aoi_visibility_changes,
+        aoi_filter_overrides: native.aoi_filter_overrides,
     });
 
     health_state.set_observability_snapshot(ProcessObservabilitySnapshot {

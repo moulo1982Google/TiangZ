@@ -24,7 +24,7 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
     const config = GameConfigs.PlayerConfig.Get(1);
     this[NumericType.CurrentHp] = config.initialHp;
     this[NumericType.MaxHp] = config.maxHp;
-    this.NewRepeatedTimer(100, "RegenerateHp");
+    this.regenerationTimer = this.NewRepeatedTimer(100, "RegenerateHp");
   }
 
   /** 通过生成的fast op读取一个权威int32数值。 / Reads one authoritative int32 value through the generated fast op. */
@@ -67,8 +67,16 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
     this[NumericType.CurrentHp] += 1;
   }
 
+  /** 主动停止Demo回血Timer；幂等调用不会影响组件的其他Timer。 / Stops only the demo regeneration timer and remains idempotent. */
+  StopRegeneration(): void {
+    if (this.regenerationTimer === 0) return;
+    this.CancelTimer(this.regenerationTimer, "manual");
+    this.regenerationTimer = 0 as typeof this.regenerationTimer;
+  }
+
   /** Core取消组件Timer后解除Numeric存储挂载。 / Detaches Numeric storage after Core cancels Component timers. */
   protected override OnDestroy(): void {
+    this.regenerationTimer = 0 as typeof this.regenerationTimer;
     NativeOps.NumericDetach(this.unitHandle);
     this.unitHandle = 0;
   }

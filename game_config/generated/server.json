@@ -1,4 +1,55 @@
 {
+  "game_tbaoiconfig": [
+    {
+      "id": 1,
+      "name": "默认迟滞AOI",
+      "grid_size_cells": 15,
+      "enter_range_grids": 3,
+      "detach_range_grids": 7
+    }
+  ],
+  "game_tbaoisynctierconfig": [
+    {
+      "id": 1,
+      "aoi_config_id": 1,
+      "range_grids": 3,
+      "sync_hz": 20
+    },
+    {
+      "id": 2,
+      "aoi_config_id": 1,
+      "range_grids": 5,
+      "sync_hz": 5
+    },
+    {
+      "id": 3,
+      "aoi_config_id": 1,
+      "range_grids": 7,
+      "sync_hz": 1
+    }
+  ],
+  "game_tbconfigtablepolicy": [
+    {
+      "table_name": "ItemConfig",
+      "reload_mode": 1
+    },
+    {
+      "table_name": "MapConfig",
+      "reload_mode": 2
+    },
+    {
+      "table_name": "PlayerConfig",
+      "reload_mode": 1
+    },
+    {
+      "table_name": "AoiConfig",
+      "reload_mode": 2
+    },
+    {
+      "table_name": "AoiSyncTierConfig",
+      "reload_mode": 2
+    }
+  ],
   "game_tbitemconfig": [
     {
       "id": 1001,
@@ -18,33 +69,73 @@
       "id": 1,
       "name": "默认地图一",
       "spatial_mode": 1,
-      "width_cells": 128,
-      "depth_cells": 128,
-      "grid_cell_size_meters": 1,
-      "spawn_x": 0,
+      "width_cells": 150,
+      "depth_cells": 150,
+      "cell_size_meters": 1,
+      "spawn_x": 7,
       "spawn_y": 0,
-      "spawn_z": 0,
+      "spawn_z": 7,
       "spawn_yaw": 0,
-      "aoi_cell_size_meters": 8,
+      "aoi_config_id": 1,
       "navigation_asset": "",
       "navigation_version": "",
-      "navigation_hash": ""
+      "navigation_hash": "",
+      "entry_players_per_tick": 1,
+      "entry_queue_capacity": 10000
     },
     {
       "id": 2,
       "name": "默认地图二",
       "spatial_mode": 1,
-      "width_cells": 128,
-      "depth_cells": 128,
-      "grid_cell_size_meters": 1,
-      "spawn_x": 8,
+      "width_cells": 150,
+      "depth_cells": 150,
+      "cell_size_meters": 1,
+      "spawn_x": 22,
       "spawn_y": 0,
-      "spawn_z": 8,
+      "spawn_z": 22,
       "spawn_yaw": 0,
-      "aoi_cell_size_meters": 8,
+      "aoi_config_id": 1,
       "navigation_asset": "",
       "navigation_version": "",
-      "navigation_hash": ""
+      "navigation_hash": "",
+      "entry_players_per_tick": 1,
+      "entry_queue_capacity": 10000
+    },
+    {
+      "id": 1015,
+      "name": "AOI容量测试15x15 Grid",
+      "spatial_mode": 1,
+      "width_cells": 225,
+      "depth_cells": 225,
+      "cell_size_meters": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 0,
+      "spawn_yaw": 0,
+      "aoi_config_id": 1,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": "",
+      "entry_players_per_tick": 1,
+      "entry_queue_capacity": 10000
+    },
+    {
+      "id": 1020,
+      "name": "AOI容量测试20x20 Grid",
+      "spatial_mode": 1,
+      "width_cells": 300,
+      "depth_cells": 300,
+      "cell_size_meters": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 0,
+      "spawn_yaw": 0,
+      "aoi_config_id": 1,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": "",
+      "entry_players_per_tick": 1,
+      "entry_queue_capacity": 10000
     }
   ],
   "game_tbplayerconfig": [

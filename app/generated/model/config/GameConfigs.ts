@@ -5,11 +5,15 @@ export interface GameConfigManifest {
   readonly formatVersion: number;
   readonly schemaFingerprint: string;
   readonly dataFingerprint: string;
+  readonly hotDataFingerprint: string;
+  readonly coldDataFingerprint: string;
 }
 
 export interface GameConfigInstallResult {
   readonly previousFingerprint?: string;
   readonly dataFingerprint: string;
+  readonly hotDataFingerprint: string;
+  readonly coldDataFingerprint: string;
 }
 
 class ConfigTable<T extends { readonly id: number }> {
@@ -40,15 +44,21 @@ class ConfigTable<T extends { readonly id: number }> {
 export type ItemConfig = game.ItemConfig;
 export type MapConfig = game.MapConfig;
 export type PlayerConfig = game.PlayerConfig;
+export type AoiConfig = game.AoiConfig;
+export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 
 interface GameConfigSnapshot {
   readonly dataFingerprint: string;
+  readonly hotDataFingerprint: string;
+  readonly coldDataFingerprint: string;
   readonly ItemConfig: ConfigTable<game.ItemConfig>;
   readonly MapConfig: ConfigTable<game.MapConfig>;
   readonly PlayerConfig: ConfigTable<game.PlayerConfig>;
+  readonly AoiConfig: ConfigTable<game.AoiConfig>;
+  readonly AoiSyncTierConfig: ConfigTable<game.AoiSyncTierConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "3902cdb091781dc0d8ce23b2ff8dc2b156995c58ad070739e958e9adc826a9ce";
+export const GameConfigSchemaFingerprint = "7c5257870e2e75a8495d71d8e18aad97e1244d8505376e87dfa2b22943681716";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -57,9 +67,13 @@ export class GameConfigRegistry {
     return this.current?.dataFingerprint;
   }
 
+  static get CurrentColdFingerprint(): string | undefined {
+    return this.current?.coldDataFingerprint;
+  }
+
   static Install(manifestJson: string, dataJson: string): GameConfigInstallResult {
     const manifest = JSON.parse(manifestJson) as GameConfigManifest;
-    if (manifest.formatVersion !== 1) {
+    if (manifest.formatVersion !== 2) {
       throw new Error(`unsupported game config manifest format: ${manifest.formatVersion}`);
     }
     if (manifest.schemaFingerprint !== GameConfigSchemaFingerprint) {
@@ -67,8 +81,22 @@ export class GameConfigRegistry {
         `game config schema mismatch: model=${GameConfigSchemaFingerprint}, candidate=${manifest.schemaFingerprint}`,
       );
     }
-    if (!/^[0-9a-f]{64}$/.test(manifest.dataFingerprint)) {
-      throw new Error("game config data fingerprint must be lowercase sha256");
+    for (const [name, fingerprint] of Object.entries({
+      dataFingerprint: manifest.dataFingerprint,
+      hotDataFingerprint: manifest.hotDataFingerprint,
+      coldDataFingerprint: manifest.coldDataFingerprint,
+    })) {
+      if (!/^[0-9a-f]{64}$/.test(fingerprint)) {
+        throw new Error(`game config ${name} must be lowercase sha256`);
+      }
+    }
+    if (
+      this.current !== undefined &&
+      manifest.coldDataFingerprint !== this.current.coldDataFingerprint
+    ) {
+      throw new Error(
+        `cold game config changed: active=${this.current.coldDataFingerprint}, candidate=${manifest.coldDataFingerprint}; rebuild and restart the Process`,
+      );
     }
 
     const rawData = JSON.parse(dataJson) as Record<string, unknown>;
@@ -79,9 +107,13 @@ export class GameConfigRegistry {
     });
     const candidate: GameConfigSnapshot = Object.freeze({
       dataFingerprint: manifest.dataFingerprint,
+      hotDataFingerprint: manifest.hotDataFingerprint,
+      coldDataFingerprint: manifest.coldDataFingerprint,
       ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
       MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),
       PlayerConfig: new ConfigTable<game.PlayerConfig>(tables.TbPlayerConfig.getDataList()),
+      AoiConfig: new ConfigTable<game.AoiConfig>(tables.TbAoiConfig.getDataList()),
+      AoiSyncTierConfig: new ConfigTable<game.AoiSyncTierConfig>(tables.TbAoiSyncTierConfig.getDataList()),
     });
     validateSnapshot(candidate);
 
@@ -90,6 +122,8 @@ export class GameConfigRegistry {
     return {
       ...(previousFingerprint ? { previousFingerprint } : {}),
       dataFingerprint: candidate.dataFingerprint,
+      hotDataFingerprint: candidate.hotDataFingerprint,
+      coldDataFingerprint: candidate.coldDataFingerprint,
     };
   }
 
@@ -103,18 +137,68 @@ export const GameConfigs = Object.freeze({
   get ItemConfig() { return GameConfigRegistry.RequireCurrent().ItemConfig; },
   get MapConfig() { return GameConfigRegistry.RequireCurrent().MapConfig; },
   get PlayerConfig() { return GameConfigRegistry.RequireCurrent().PlayerConfig; },
+  get AoiConfig() { return GameConfigRegistry.RequireCurrent().AoiConfig; },
+  get AoiSyncTierConfig() { return GameConfigRegistry.RequireCurrent().AoiSyncTierConfig; },
 });
 
 function validateSnapshot(snapshot: GameConfigSnapshot): void {
+  const tiersByAoi = new Map<number, game.AoiSyncTierConfig[]>();
+  for (const tier of snapshot.AoiSyncTierConfig.GetAll()) {
+    if (!tier.aoiConfigId_ref) {
+      throw new Error(`AOI sync tier ${tier.id} contains a missing AOI reference`);
+    }
+    if (!isPositiveOdd(tier.rangeGrids) || !Number.isSafeInteger(tier.syncHz) || tier.syncHz <= 0) {
+      throw new Error(`AOI sync tier ${tier.id} needs a positive odd range and positive integer Hz`);
+    }
+    const tiers = tiersByAoi.get(tier.aoiConfigId) ?? [];
+    tiers.push(tier);
+    tiersByAoi.set(tier.aoiConfigId, tiers);
+  }
+  for (const aoi of snapshot.AoiConfig.GetAll()) {
+    if (
+      !Number.isSafeInteger(aoi.gridSizeCells) || aoi.gridSizeCells <= 0 ||
+      !isPositiveOdd(aoi.enterRangeGrids) || !isPositiveOdd(aoi.detachRangeGrids) ||
+      aoi.enterRangeGrids > aoi.detachRangeGrids
+    ) {
+      throw new Error(`AOI config ${aoi.id} needs positive Grid size and nested odd Enter/Detach ranges`);
+    }
+    const tiers = (tiersByAoi.get(aoi.id) ?? []).sort((left, right) => left.rangeGrids - right.rangeGrids);
+    if (tiers.length === 0) {
+      throw new Error(`AOI config ${aoi.id} needs at least one sync tier`);
+    }
+    for (let index = 0; index < tiers.length; index += 1) {
+      const tier = tiers[index];
+      if (tier.rangeGrids > aoi.detachRangeGrids) {
+        throw new Error(`AOI sync tier ${tier.id} exceeds Detach range`);
+      }
+      if (index > 0) {
+        const previous = tiers[index - 1];
+        if (tier.rangeGrids === previous.rangeGrids || tier.syncHz > previous.syncHz) {
+          throw new Error(`AOI config ${aoi.id} sync tiers must widen uniquely without increasing Hz`);
+        }
+      }
+    }
+  }
   for (const map of snapshot.MapConfig.GetAll()) {
-    if (![map.spawnX, map.spawnY, map.spawnZ, map.spawnYaw, map.aoiCellSizeMeters].every(Number.isFinite)) {
+    if (![map.spawnX, map.spawnY, map.spawnZ, map.spawnYaw, map.cellSizeMeters].every(Number.isFinite)) {
       throw new Error(`map config ${map.id} contains a non-finite spatial value`);
     }
-    if (map.aoiCellSizeMeters <= 0) {
-      throw new Error(`map config ${map.id} must use a positive AOI cell size`);
+    if (!map.aoiConfigId_ref || map.cellSizeMeters <= 0) {
+      throw new Error(`map config ${map.id} needs a positive Cell size and valid AOI config`);
+    }
+    if (
+      !Number.isSafeInteger(map.entryPlayersPerTick) || map.entryPlayersPerTick <= 0 ||
+      !Number.isSafeInteger(map.entryQueueCapacity) ||
+      map.entryQueueCapacity < map.entryPlayersPerTick
+    ) {
+      throw new Error(`map config ${map.id} has invalid player-entry admission limits`);
     }
     if (map.spatialMode === SpatialMode.Grid2D) {
-      if (map.widthCells < 3 || map.depthCells < 3 || map.gridCellSizeMeters <= 0) {
+      if (
+        map.widthCells < 3 || map.depthCells < 3 ||
+        map.widthCells % map.aoiConfigId_ref.gridSizeCells !== 0 ||
+        map.depthCells % map.aoiConfigId_ref.gridSizeCells !== 0
+      ) {
         throw new Error(`Grid2D map config ${map.id} has invalid dimensions or cell size`);
       }
     } else if (map.spatialMode === SpatialMode.NavMesh3D) {
@@ -136,4 +220,8 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       throw new Error(`player config ${player.id} has invalid movement or item values`);
     }
   }
+}
+
+function isPositiveOdd(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0 && value % 2 === 1;
 }

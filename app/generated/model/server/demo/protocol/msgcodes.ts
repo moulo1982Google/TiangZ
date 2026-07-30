@@ -68,6 +68,7 @@ export const OuterMessage = {
   G2C_ItemChanged: 10021,
   G2C_EntityEnter: 10022,
   G2C_EntityLeave: 10023,
+  G2C_AoiDelta: 10025,
   C2G_Ping: 10024,
 } as const;
 

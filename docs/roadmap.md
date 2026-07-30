@@ -294,8 +294,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 已固定Luban 4.10.2工具链，建立`game_config` Excel源目录、服务端/客户端分组生成、只读强类型查询、外键校验、配置指纹与自测；首批接入`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`。表结构属于不可热更Model，纯数据可生成内容寻址候选并由Watcher令各Process原子切换；部署配置仍独立留在`configs`。
 - 账号/角色选择与持久化。
 - 地图生命周期与传送已统一：静态地图按MapHost `staticMapIds`启动，动态副本由Demo `DynamicMapManagerComponent`通过同一`CreateMap`创建；Location维护并可由MapHost重报恢复MapInstance路由。业务统一调用`player.TransferToMap(mapInstanceId)`，不区分静态/动态、同MapHost/跨MapHost。动态副本只允许业务清空玩家后显式销毁，连续无人五分钟为Demo兜底策略。Gate仍提供Proto驱动的有界消息屏障，MapHost完成目标Prepare/Commit和源Actor清理；单进程/拆分进程smoke已覆盖迁移期间并发RPC。目标提交后的不确定事务自动恢复、MapHost租约和死亡节点接管仍留给Phase 5高可用。
-- AOI 数据结构与批量广播优化。
-- AOI前置数据布局已完成正式迁移：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，generation handle目录只负责定位和旧句柄校验；TS NativeRef与Rust Pool容量已可观测，帧尾records跨帧复用并直接编码最终buffer。Rust AOI仍未实现，高负载地图容量A/B需在机器空闲时单独验收。
+- Rust AOI功能链已经落地：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，稀疏Cell推导默认可见关系，Rust只保存过滤拒绝和本帧净变化；TS NativeRef、Rust Pool和AOI规模均已可观测。高负载地图容量A/B仍需在机器空闲时单独验收。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
 - 怪物 Actor、巡逻、仇恨和战斗。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
@@ -307,14 +306,44 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 - 服务端坐标统一为地图局部米制`X/Y/Z + Yaw`：X/Z为地面，Y为高度，Yaw为绕Y轴弧度；坐标必须与`MapInstanceId`一起解释。
 - Grid2D统一使用`cellX/cellZ`和`inputX/inputZ`，Rust权威位置改为米；Cocos 2D与Pixi仅在客户端适配边界把X/Z映射到屏幕X/Y。
-- Luban `MapConfig`增加`SpatialMode`、三维出生点、Grid Cell米制尺寸、AOI Cell米制尺寸以及导航资源`asset/version/hash`。
+- Luban `MapConfig`增加`SpatialMode`、三维出生点、米制Cell、AOI配置引用以及导航资源`asset/version/hash`。
 - Rust空间状态按MapInstance创建和释放；NavMesh只读资产未来按MapConfig与版本共享，AOI、动态障碍和Unit状态始终按实例隔离。
 - 协议、Native schema与客户端SDK完成显式破坏性升级；旧`0.3.10`客户端不得连接`0.4.x`服务端。
 - 详细契约见[地图空间与3D坐标契约](design/spatial-world.md)。
 
-### Phase 4.1：持久化基础
+### Phase 4.1：Rust AOI
 
-状态：仅完成设计讨论，尚未实现；进入账号、角色和经济业务前实施。
+状态：功能链和普通冒烟已完成；正式地图容量A/B尚未运行，不能宣称容量收益。
+
+- 已在`MapInstanceId`私有空间中建立Rust稀疏AOI索引；`AoiConfig`把AOI Grid大小、Enter范围、Detach迟滞范围分开，`AoiSyncTierConfig`再独立定义已可见关系的可覆盖状态频率。Enter内默认关系从Grid推导，仅迟滞外圈、业务拒绝项与本帧净变化需要存储，不在Rust或TS物化全量关系边。全部空间和AOI表为Cold配置，必须重启才能变更。
+- 玩家是Observer+Subject，自身状态单独保留；后续怪物/NPC支持Subject-only。完整组件图提交后Attach，退出/传送先Detach，Rust拒绝销毁仍挂载的Native Unit。
+- FastOP修改X/Z自动标记空间脏，同AOI Grid不扫描，跨Grid才重建相关边。阵营、隐身、位面通过同步业务过滤器收窄候选关系，业务状态变化必须显式Invalidate。
+- Movement、Numeric和Unit固定字段在Rust编码；默认按变化Subject所在Cell求受众，并把相同受众Cell继续合成一份frame，不展开接收者乘记录数的临时矩阵，只有带业务拒绝覆盖的Subject计算精确受众。TS只把recipientIds映射到Gate，BroadcastHub用稳定地图频道承载多组latest frame，全部发送成功后才Ack。
+- 跨AOI Grid的Enter/Leave仍是不可覆盖事件，但同帧相同受众会批量编码为`G2C_AoiDelta`；Cocos 2D、Pixi和Runtime smoke已适配。容量工具会保留失败诊断并报告跨Grid/可见变化速率。
+- all-in-one与split-process Runtime smoke均已验证同屏可见、跨边界Leave、范围外不再收到新移动sequence、返回后Enter；容量A/B仍需最终验收。
+- Prometheus与Grafana已增加AOI World、Entity、Grid、候选关系、最终关系、跨Grid、关系变化和过滤覆盖指标。
+- 保留独立基线实现用于同拓扑A/B，只有在正式性能测试后才能记录收益和容量结论。
+
+### Phase 4.2：NavMesh3D
+
+- 固定并接入Recast/Detour兼容的tiled NavMesh资源格式，校验`navigationVersion/navigationHash`。
+- Rust实现位置投影、寻路、射线、高度查询、动态障碍与地图实例生命周期。
+- TS只调用粗粒度空间API，不逐节点跨越V8边界，也不在TS保存第二份权威坐标。
+
+### Phase 4.3：Cocos 3D Demo
+
+状态：Cocos Creator 3.8.8空项目骨架已纳入主仓库，功能尚未开始。
+
+- 接入与服务端同版本的导航资源，完成`Vec3`边界转换、点击寻路、方向移动和服务端校正。
+- 保留Cocos 2D与Pixi Grid2D回归，证明SDK协议结构不依赖具体引擎坐标类型。
+
+### Phase 4.4：怪物与战斗
+
+- 增加怪物Unit、巡逻、仇恨、技能与战斗事件，验证Component、Timer、空间查询和状态同步的完整业务体验。
+
+### Phase 4.5：持久化基础
+
+状态：仅完成设计讨论，尚未实现；调整为`0.4.x`最后一个基础阶段，在正式账号、角色和经济业务前实施。
 
 - 建立独立、可按玩家ID分片的Rust `PersistenceProxy`，业务Handler继续只依赖`PlayerRepository`/领域Component，不直接访问Redis或永久数据库。
 - 扩展`.native`持久化元数据，按Entity/Component声明`transient`、`snapshot`或`transactional`存储域；codegen生成稳定MemberId、快照codec、dirty收集、schema版本和恢复入口。存储结构属于Model，不能热更。
@@ -323,29 +352,6 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
 - 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
 - 验收覆盖进程崩溃、Redis短暂不可用、永久DB不可用、重复/乱序请求、幂等重试、积压背压、下线Flush和恢复；Prometheus至少暴露dirty数量、最老待落库年龄、Redis/DB延迟、失败、重试和版本冲突。
-
-### Phase 4.2：Rust AOI
-
-- 在`MapInstanceId`私有空间中建立Rust AOI索引，输出进入、离开和当前可见集合。
-- BroadcastHub只消费Audience结果，不让业务Handler逐玩家组织网络扇出。
-- 保留当前全地图广播作为回归基线，完成同负载A/B后再给出收益结论。
-
-### Phase 4.3：NavMesh3D
-
-- 固定并接入Recast/Detour兼容的tiled NavMesh资源格式，校验`navigationVersion/navigationHash`。
-- Rust实现位置投影、寻路、射线、高度查询、动态障碍与地图实例生命周期。
-- TS只调用粗粒度空间API，不逐节点跨越V8边界，也不在TS保存第二份权威坐标。
-
-### Phase 4.4：Cocos 3D Demo
-
-状态：Cocos Creator 3.8.8空项目骨架已纳入主仓库，功能尚未开始。
-
-- 接入与服务端同版本的导航资源，完成`Vec3`边界转换、点击寻路、方向移动和服务端校正。
-- 保留Cocos 2D与Pixi Grid2D回归，证明SDK协议结构不依赖具体引擎坐标类型。
-
-### Phase 4.5：怪物与战斗
-
-- 增加怪物Unit、巡逻、仇恨、技能与战斗事件，验证Component、Timer、空间查询和状态同步的完整业务体验。
 
 ## Phase 5：生产工程化
 

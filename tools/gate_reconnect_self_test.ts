@@ -8,6 +8,7 @@ void main();
 function main(): void {
   testConnectionReplacementAndGrace();
   testStickyGateSelection();
+  testStickyGateDistribution();
   console.log("gate reconnect self-test passed");
 }
 
@@ -59,6 +60,28 @@ function testStickyGateSelection(): void {
     selectedNames.add(selected.name);
   }
   assert.deepEqual([...selectedNames].sort(), ["gate-1", "gate-2", "gate-3"]);
+}
+
+/** 验证公共前缀账号不会在Rendezvous Hash中形成Gate热点。 / Verifies common-prefix accounts do not form rendezvous-hash Gate hotspots. */
+function testStickyGateDistribution(): void {
+  const gateCount = 12;
+  const accountCount = 12_000;
+  const expectedPerGate = accountCount / gateCount;
+  const gates = Array.from(
+    { length: gateCount },
+    (_, index) => scene(`gate-${index + 1}`, 7_201 + index),
+  );
+  const counts = new Map(gates.map((gate) => [gate.name, 0]));
+  for (let index = 0; index < accountCount; index += 1) {
+    const selected = SelectStickyGate(`rust_perf_same_prefix_${index}`, gates);
+    counts.set(selected.name, (counts.get(selected.name) ?? 0) + 1);
+  }
+  for (const [gateName, count] of counts) {
+    assert.ok(
+      Math.abs(count - expectedPerGate) <= expectedPerGate * 0.10,
+      `${gateName} received ${count}/${accountCount} accounts`,
+    );
+  }
 }
 
 function scene(name: string, port: number): SceneConfig {

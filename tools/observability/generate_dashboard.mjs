@@ -101,6 +101,17 @@ add("Map 广播耗时", "short", [
 add("在线 Native Unit", "short", [
   query(`tiangz_native_live_units{${selector}}`, "{{process}}"),
 ], "none");
+add("AOI 空间规模", "short", [
+  query(`tiangz_aoi_entries{${selector}}`, "{{process}} entries"),
+  query(`tiangz_aoi_grids{${selector}}`, "{{process}} grids"),
+  query(`tiangz_aoi_visible_relations{${selector}}`, "{{process}} visible"),
+  query(`tiangz_aoi_candidate_relations{${selector}}`, "{{process}} candidates"),
+], "none");
+add("AOI 关系变化", "short", [
+  query(`rate(tiangz_aoi_relocations_total{${selector}}[1m])`, "{{process}} grid crossings/s"),
+  query(`rate(tiangz_aoi_visibility_changes_total{${selector}}[1m])`, "{{process}} visibility/s"),
+  query(`rate(tiangz_aoi_filter_overrides_total{${selector}}[1m])`, "{{process}} filter overrides/s"),
+], "ops");
 
 const dashboard = {
   annotations: { list: [] },

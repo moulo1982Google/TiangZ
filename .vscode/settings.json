@@ -1,6 +1,6 @@
 {
    // 资源管理器目录树缩进像素（核心）
-  "workbench.tree.indent": 25,
+  "workbench.tree.indent": 20,
 
   // 始终显示层级竖参考线，层级一眼分清（必开）
   "workbench.tree.renderIndentGuides": "always",

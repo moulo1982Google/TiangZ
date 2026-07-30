@@ -11,10 +11,7 @@ const manifest = JSON.parse(
 );
 
 validateManifest(manifest);
-const serverData = await readFile(path.join(source, manifest.serverFile));
-const clientData = await readFile(path.join(source, manifest.clientFile));
-assertHash(serverData, manifest.serverHash, "server data");
-assertHash(clientData, manifest.clientHash, "client data");
+const files = await readPackageFiles(source, manifest);
 
 const modelManifest = JSON.parse(
   await readFile(path.join(dist, "model.manifest.json"), "utf8"),
@@ -27,9 +24,19 @@ if (modelManifest.gameConfigSchemaFingerprint !== manifest.schemaFingerprint) {
 
 const candidatesRoot = path.join(dist, "game-config-candidates");
 const candidate = path.join(candidatesRoot, manifest.dataFingerprint.slice(0, 16));
-await publish(candidate, manifest, serverData, clientData);
+if (!initial) {
+  const activeManifest = JSON.parse(
+    await readFile(path.join(dist, "game-config", "game-config.manifest.json"), "utf8"),
+  );
+  if (activeManifest.coldDataFingerprint !== manifest.coldDataFingerprint) {
+    throw new Error(
+      "Cold GameConfig data changed; reload-config is forbidden. Run npm run build, deploy the full package, and restart the Process.",
+    );
+  }
+}
+await publish(candidate, manifest, files);
 if (initial) {
-  await publish(path.join(dist, "game-config"), manifest, serverData, clientData, true);
+  await publish(path.join(dist, "game-config"), manifest, files, true);
 }
 
 process.stdout.write(
@@ -37,7 +44,7 @@ process.stdout.write(
 );
 
 /** 原子发布完整数据包；候选按内容寻址，initial目录允许完整替换。 / Atomically publishes a complete package; candidates are content-addressed while the initial directory may be replaced. */
-async function publish(directory, value, server, client, replace = false) {
+async function publish(directory, value, files, replace = false) {
   if (!replace) {
     try {
       const existing = JSON.parse(
@@ -53,8 +60,7 @@ async function publish(directory, value, server, client, replace = false) {
   const building = `${directory}.building-${process.pid}`;
   await rm(building, { recursive: true, force: true });
   await mkdir(building, { recursive: true });
-  await writeFile(path.join(building, value.serverFile), server);
-  await writeFile(path.join(building, value.clientFile), client);
+  for (const [name, bytes] of files) await writeFile(path.join(building, name), bytes);
   await writeFile(
     path.join(building, "game-config.manifest.json"),
     `${JSON.stringify(value, null, 2)}\n`,
@@ -66,22 +72,69 @@ async function publish(directory, value, server, client, replace = false) {
 }
 
 function validateManifest(value) {
-  if (value.formatVersion !== 1) throw new Error("unsupported game config manifest format");
+  if (value.formatVersion !== 2) throw new Error("unsupported game config manifest format");
   for (const key of [
     "schemaFingerprint",
     "clientSchemaFingerprint",
     "dataFingerprint",
+    "hotDataFingerprint",
+    "coldDataFingerprint",
     "serverHash",
+    "serverHotHash",
+    "serverColdHash",
     "clientHash",
+    "clientHotHash",
+    "clientColdHash",
   ]) {
     if (!/^[0-9a-f]{64}$/.test(value[key])) throw new Error(`invalid ${key}`);
   }
-  if (value.serverFile !== "server.json" || value.clientFile !== "client.json") {
+  const expectedFiles = {
+    serverFile: "server.json",
+    serverHotFile: "server.hot.json",
+    serverColdFile: "server.cold.json",
+    clientFile: "client.json",
+    clientHotFile: "client.hot.json",
+    clientColdFile: "client.cold.json",
+  };
+  if (Object.entries(expectedFiles).some(([key, expected]) => value[key] !== expected)) {
     throw new Error("game config data filenames are fixed");
+  }
+  if (!Array.isArray(value.reloadPolicies?.hot) || !Array.isArray(value.reloadPolicies?.cold)) {
+    throw new Error("game config reload policies are missing");
   }
 }
 
+async function readPackageFiles(directory, value) {
+  const specs = [
+    [value.serverFile, value.serverHash, "server data"],
+    [value.serverHotFile, value.serverHotHash, "server hot data"],
+    [value.serverColdFile, value.serverColdHash, "server cold data"],
+    [value.clientFile, value.clientHash, "client data"],
+    [value.clientHotFile, value.clientHotHash, "client hot data"],
+    [value.clientColdFile, value.clientColdHash, "client cold data"],
+  ];
+  const files = [];
+  for (const [name, hash, description] of specs) {
+    const bytes = await readFile(path.join(directory, name));
+    assertHash(bytes, hash, description);
+    files.push([name, bytes]);
+  }
+  assertCombinedHash(files[0][1], files[3][1], value.dataFingerprint, "complete game config");
+  assertCombinedHash(files[1][1], files[4][1], value.hotDataFingerprint, "hot game config");
+  assertCombinedHash(files[2][1], files[5][1], value.coldDataFingerprint, "cold game config");
+  return files;
+}
+
+function assertCombinedHash(server, client, expected, name) {
+  const actual = sha256(Buffer.concat([server, Buffer.from([0]), client]));
+  if (actual !== expected) throw new Error(`${name} fingerprint mismatch: expected ${expected}, actual ${actual}`);
+}
+
 function assertHash(bytes, expected, name) {
-  const actual = createHash("sha256").update(bytes).digest("hex");
+  const actual = sha256(bytes);
   if (actual !== expected) throw new Error(`${name} hash mismatch: expected ${expected}, actual ${actual}`);
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
 }

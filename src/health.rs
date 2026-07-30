@@ -173,6 +173,14 @@ pub(crate) struct NativeDataObservabilitySnapshot {
     pub(crate) encoded_frames: u64,
     pub(crate) encoded_items: u64,
     pub(crate) encoded_bytes: u64,
+    pub(crate) aoi_worlds: u64,
+    pub(crate) aoi_entries: u64,
+    pub(crate) aoi_grids: u64,
+    pub(crate) aoi_candidate_relations: u64,
+    pub(crate) aoi_visible_relations: u64,
+    pub(crate) aoi_relocations: u64,
+    pub(crate) aoi_visibility_changes: u64,
+    pub(crate) aoi_filter_overrides: u64,
 }
 
 impl ProcessHealthState {
@@ -1911,6 +1919,61 @@ fn append_native_data_metrics_prometheus(
         process_name, snapshot.encoded_bytes
     )
     .expect("formatting metric");
+    for (name, help, metric_type, value) in [
+        (
+            "tiangz_aoi_worlds",
+            "Live map-instance AOI worlds",
+            "gauge",
+            snapshot.aoi_worlds,
+        ),
+        (
+            "tiangz_aoi_entries",
+            "Entities attached to AOI",
+            "gauge",
+            snapshot.aoi_entries,
+        ),
+        (
+            "tiangz_aoi_grids",
+            "Occupied sparse AOI grids",
+            "gauge",
+            snapshot.aoi_grids,
+        ),
+        (
+            "tiangz_aoi_candidate_relations",
+            "Spatial candidate visibility relations",
+            "gauge",
+            snapshot.aoi_candidate_relations,
+        ),
+        (
+            "tiangz_aoi_visible_relations",
+            "Final visible relations after business filters",
+            "gauge",
+            snapshot.aoi_visible_relations,
+        ),
+        (
+            "tiangz_aoi_relocations_total",
+            "AOI cell crossings",
+            "counter",
+            snapshot.aoi_relocations,
+        ),
+        (
+            "tiangz_aoi_visibility_changes_total",
+            "Final AOI relation changes",
+            "counter",
+            snapshot.aoi_visibility_changes,
+        ),
+        (
+            "tiangz_aoi_filter_overrides_total",
+            "Business visibility filter overrides",
+            "counter",
+            snapshot.aoi_filter_overrides,
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
+        writeln!(output, "# TYPE {name} {metric_type}").expect("formatting metric type");
+        writeln!(output, "{name}{{process=\"{process_name}\"}} {value}")
+            .expect("formatting metric");
+    }
 }
 
 fn scene_labels(process_name: &str, scene: &SceneObservabilitySnapshot) -> String {

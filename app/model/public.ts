@@ -24,9 +24,16 @@ export {
   DynamicMapProtocol,
   LocationProtocol,
 } from "../generated/model/server/demo/protocol/rpcs";
-export { StateSyncBenchProtocol } from "../generated/model/server/bench/protocol/rpcs";
+export {
+  MapCapacityBenchProtocol,
+  StateSyncBenchProtocol,
+} from "../generated/model/server/bench/protocol/rpcs";
 export type {
+  C2G_MapCapacityEnter,
+  C2M_MapCapacityPlace,
   C2M_StateSyncBench,
+  G2C_MapCapacityEnter,
+  M2C_MapCapacityPlace,
   M2C_StateSyncBench,
 } from "../generated/model/server/bench/protocol/messages";
 

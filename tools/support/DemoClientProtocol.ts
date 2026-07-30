@@ -20,6 +20,8 @@ import {
   G2C_LoginGateCodec,
   G2C_MapReady,
   G2C_MapReadyCodec,
+  G2C_AoiDelta,
+  G2C_AoiDeltaCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
   G2C_EntityMove,
@@ -261,6 +263,20 @@ export function decodeEntityEnterFrame(
     msgcode,
     rpcId: undefined,
     body: G2C_EntityEnterCodec.decode(frame.subarray(2)),
+  };
+}
+
+export function decodeAoiDeltaFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_AoiDelta> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_AoiDelta) {
+    throw new Error(`expected G2C_AoiDelta, got ${msgcode}`);
+  }
+  return {
+    msgcode,
+    rpcId: undefined,
+    body: G2C_AoiDeltaCodec.decode(frame.subarray(2)),
   };
 }
 

@@ -1,0 +1,223 @@
+import {
+  Component,
+  Game,
+  type Logger,
+  type Unit,
+  UnitComponent,
+  component,
+} from "../../../core/public";
+import { NativeUnitRef } from "../../../generated/model/native/NativeUnitRef";
+import type { MapInstanceDefinition } from "./MapInstance";
+import { MapScene } from "./MapScene";
+import { NativeData, type NativeAoiRelation, type NativeAoiVisibilityChange } from "../native/NativeData";
+import { GameConfigs, SpatialMode } from "../../../generated/model/config";
+
+export interface IAoiVisibilityFilter {
+  /**
+   * 同步判断 Observer 是否能看见 Subject；禁止 Promise、RPC、数据库、发消息或修改 Entity。
+   * Synchronously decides whether an observer can see a subject. Promise, RPC, database access,
+   * messaging, and Entity mutation are forbidden here.
+   */
+  CanObserve(observer: Unit<any[]>, subject: Unit<any[]>): boolean;
+}
+
+export interface AoiVisibilityDelta {
+  readonly observerId: number;
+  readonly subjectId: number;
+  readonly visible: boolean;
+}
+
+@component()
+export class MapAoiComponent extends Component<[definition: MapInstanceDefinition]> {
+  private nativeMapKey = 0;
+  private logger!: Logger;
+  private readonly filters = new Set<IAoiVisibilityFilter>();
+
+  /** 从冷配置创建地图实例私有 AOI；Enter/Detach 与同步频率独立。 / Creates a map AOI from cold config with independent visibility and sync ranges. */
+  protected override Awake(definition: MapInstanceDefinition): void {
+    this.nativeMapKey = this.DomainScene().InstanceId;
+    this.logger = this.DomainScene<MapScene>().logger.child({
+      mapId: definition.mapConfigId,
+      mapInstanceId: definition.mapInstanceId.toString(),
+      system: "aoi",
+    });
+    const config = GameConfigs.MapConfig.Get(definition.mapConfigId);
+    if (config.spatialMode !== SpatialMode.Grid2D) {
+      throw new Error(
+        `map ${config.id} uses NavMesh3D, but the Phase 4 navigation runtime is not installed`,
+      );
+    }
+    const aoi = config.aoiConfigId_ref;
+    if (!aoi) throw new Error(`map ${config.id} has no AOI config`);
+    const fixedUpdateMs = Game.Instance.FixedUpdateMs;
+    const ticksPerSecond = 1_000 / fixedUpdateMs;
+    const syncTiers = GameConfigs.AoiSyncTierConfig.GetAll()
+      .filter((tier) => tier.aoiConfigId === aoi.id)
+      .sort((left, right) => left.rangeGrids - right.rangeGrids)
+      .map((tier) => {
+        const intervalTicks = ticksPerSecond / tier.syncHz;
+        if (!Number.isSafeInteger(intervalTicks) || intervalTicks <= 0) {
+          throw new Error(
+            `AOI sync ${tier.syncHz}Hz must divide Process fixed tick ${ticksPerSecond}Hz exactly`,
+          );
+        }
+        return {
+          radiusGrids: (tier.rangeGrids - 1) / 2,
+          intervalTicks,
+        };
+      });
+    NativeData.CreateGrid2DSpatial(
+      this.nativeMapKey,
+      config.widthCells,
+      config.depthCells,
+      config.cellSizeMeters,
+    );
+    try {
+      NativeData.CreateAoi(
+        this.nativeMapKey,
+        config.cellSizeMeters * aoi.gridSizeCells,
+        (aoi.enterRangeGrids - 1) / 2,
+        (aoi.detachRangeGrids - 1) / 2,
+        syncTiers,
+      );
+    } catch (error) {
+      NativeData.ReleaseSpatial(this.nativeMapKey);
+      throw error;
+    }
+  }
+
+  /** 注册一个业务可见性过滤器。过滤器只在空间关系变化或显式失效时执行。 / Registers a business visibility filter evaluated only on spatial changes or explicit invalidation. */
+  AddFilter(filter: IAoiVisibilityFilter): void {
+    this.filters.add(filter);
+  }
+
+  /** 移除过滤器不会自动扩大视野；调用方必须随后 Invalidate 受影响实体。 / Removing a filter does not expand visibility automatically; callers must invalidate affected entities. */
+  RemoveFilter(filter: IAoiVisibilityFilter): boolean {
+    return this.filters.delete(filter);
+  }
+
+  /** 完整 Unit 组件图提交后加入 AOI。新 Observer 的初始实体由 EnterMap 快照返回，不重复推送。 / Attaches a fully committed Unit; the new observer receives its initial entities through EnterMap rather than duplicate pushes. */
+  Attach(unit: Unit<any[]>, observer = true, subject = true): readonly AoiVisibilityDelta[] {
+    const proposed = NativeData.AttachAoi(
+      this.nativeMapKey,
+      unit.GetComponent(NativeUnitRef).Handle,
+      observer,
+      subject,
+    );
+    this.ApplyFilters(proposed);
+    return this.CommitChanges(unit.UnitId);
+  }
+
+  /** 在 Native Unit 销毁前移出 AOI；离开的 Observer 不会收到自己的 Leave。 / Detaches before Native Unit destruction and suppresses leave messages to the departing observer itself. */
+  Detach(unit: Unit<any[]>): readonly AoiVisibilityDelta[] {
+    const changes = NativeData.DetachAoi(
+      this.nativeMapKey,
+      unit.GetComponent(NativeUnitRef).Handle,
+    );
+    return this.ApplyPublishedChanges(changes, unit.UnitId);
+  }
+
+  /** 刷新 FastOP 写入造成的跨 AOI Grid 变化，并运行同步业务过滤器。 / Refreshes cross-grid FastOP writes and runs synchronous business filters. */
+  Refresh(): readonly AoiVisibilityDelta[] {
+    const proposed = NativeData.RefreshAoi(this.nativeMapKey);
+    this.ApplyFilters(proposed);
+    return this.CommitChanges();
+  }
+
+  /** 当阵营、隐身或位面等状态改变时，重算该 Unit 作为 Observer 的关系。 / Reevaluates relations where this Unit is the observer after camp, stealth, or phase changes. */
+  InvalidateObserver(unit: Unit<any[]>): readonly AoiVisibilityDelta[] {
+    return this.InvalidateRelations(unit.UnitId, 1);
+  }
+
+  /** 当阵营、隐身或位面等状态改变时，重算该 Unit 作为 Subject 的关系。 / Reevaluates relations where this Unit is the subject after camp, stealth, or phase changes. */
+  InvalidateSubject(unit: Unit<any[]>): readonly AoiVisibilityDelta[] {
+    return this.InvalidateRelations(unit.UnitId, 2);
+  }
+
+  /** 同时重算该 Unit 作为 Observer 与 Subject 的关系。 / Reevaluates both observer and subject relations for one Unit. */
+  Invalidate(unit: Unit<any[]>): readonly AoiVisibilityDelta[] {
+    return this.InvalidateRelations(unit.UnitId, 3);
+  }
+
+  /** 返回 Observer 的自身加最终可见 UnitId，用于权威进入快照。 / Returns self plus final visible Unit ids for an authoritative entry snapshot. */
+  VisibleUnitIds(observerId: number): readonly number[] {
+    return [observerId, ...NativeData.VisibleAoiSubjects(this.nativeMapKey, observerId)];
+  }
+
+  private InvalidateRelations(unitId: number, mode: 1 | 2 | 3): readonly AoiVisibilityDelta[] {
+    const relations = NativeData.QueryAoiRelations(this.nativeMapKey, unitId, mode);
+    this.ApplyRelationFilters(relations);
+    return this.CommitChanges();
+  }
+
+  private ApplyFilters(changes: readonly NativeAoiVisibilityChange[]): void {
+    this.ApplyRelationFilters(
+      changes
+        .filter((change) => change.visible)
+        .map(({ observerId, subjectId }) => ({ observerId, subjectId })),
+    );
+  }
+
+  private ApplyRelationFilters(relations: readonly NativeAoiRelation[]): void {
+    if (this.filters.size === 0) return;
+    for (const relation of relations) {
+      const observer = this.units.Get(relation.observerId);
+      const subject = this.units.Get(relation.subjectId);
+      let visible = observer !== undefined && subject !== undefined;
+      if (visible) {
+        for (const filter of this.filters) {
+          try {
+            const accepted = filter.CanObserve(observer!, subject!);
+            if (typeof accepted !== "boolean") {
+              throw new Error("AOI visibility filter must return boolean synchronously");
+            }
+            if (!accepted) {
+              visible = false;
+              break;
+            }
+          } catch (error) {
+            visible = false;
+            this.logger.error("AOI visibility filter failed closed", {
+              observerId: relation.observerId,
+              subjectId: relation.subjectId,
+              filter: filter.constructor.name,
+              error,
+            });
+            break;
+          }
+        }
+      }
+      NativeData.SetAoiVisible(
+        this.nativeMapKey,
+        relation.observerId,
+        relation.subjectId,
+        visible,
+      );
+    }
+  }
+
+  private CommitChanges(suppressObserverId?: number): readonly AoiVisibilityDelta[] {
+    return this.ApplyPublishedChanges(
+      NativeData.TakeAoiChanges(this.nativeMapKey),
+      suppressObserverId,
+    );
+  }
+
+  private ApplyPublishedChanges(
+    changes: readonly NativeAoiVisibilityChange[],
+    suppressObserverId?: number,
+  ): readonly AoiVisibilityDelta[] {
+    return suppressObserverId === undefined
+      ? changes
+      : changes.filter((change) => change.observerId !== suppressObserverId);
+  }
+
+  protected override OnDestroy(): void {
+    NativeData.ReleaseAoi(this.nativeMapKey);
+    NativeData.ReleaseSpatial(this.nativeMapKey);
+  }
+
+  private get units(): UnitComponent {
+    return this.DomainScene().GetComponent(UnitComponent);
+  }
+}

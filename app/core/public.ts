@@ -20,6 +20,7 @@ export type {
   BroadcastRoute,
   BroadcastTransport,
   EventBroadcastDescriptor,
+  EncodedAudienceBatch,
   LatestBroadcastDescriptor,
 } from "./broadcast/types";
 

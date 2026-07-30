@@ -369,6 +369,11 @@ export interface G2M_EnterMap extends IRequest {
   token: string;
   gateName: string;
   mapInstanceId: bigint;
+  hasInitialSpawnOverride: boolean;
+  initialSpawnX: number;
+  initialSpawnY: number;
+  initialSpawnZ: number;
+  initialSpawnYaw: number;
 }
 
 export const G2M_EnterMapCodec = {
@@ -379,6 +384,11 @@ export const G2M_EnterMapCodec = {
       token: "",
       gateName: "",
       mapInstanceId: 0n,
+      hasInitialSpawnOverride: false,
+      initialSpawnX: 0,
+      initialSpawnY: 0,
+      initialSpawnZ: 0,
+      initialSpawnYaw: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -397,6 +407,21 @@ export const G2M_EnterMapCodec = {
       else if (tag.fieldNo === 6 && tag.wireType === 0) {
         value.mapInstanceId = reader.uint64();
       }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.hasInitialSpawnOverride = reader.bool();
+      }
+      else if (tag.fieldNo === 8 && tag.wireType === 5) {
+        value.initialSpawnX = reader.float();
+      }
+      else if (tag.fieldNo === 9 && tag.wireType === 5) {
+        value.initialSpawnY = reader.float();
+      }
+      else if (tag.fieldNo === 10 && tag.wireType === 5) {
+        value.initialSpawnZ = reader.float();
+      }
+      else if (tag.fieldNo === 11 && tag.wireType === 5) {
+        value.initialSpawnYaw = reader.float();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -411,6 +436,11 @@ export const G2M_EnterMapCodec = {
     if (value.token !== undefined) writer.string(2, value.token);
     if (value.gateName !== undefined) writer.string(3, value.gateName);
     if (value.mapInstanceId !== undefined) writer.uint64(6, value.mapInstanceId);
+    if (value.hasInitialSpawnOverride !== undefined) writer.bool(7, value.hasInitialSpawnOverride);
+    if (value.initialSpawnX !== undefined) writer.float(8, value.initialSpawnX);
+    if (value.initialSpawnY !== undefined) writer.float(9, value.initialSpawnY);
+    if (value.initialSpawnZ !== undefined) writer.float(10, value.initialSpawnZ);
+    if (value.initialSpawnYaw !== undefined) writer.float(11, value.initialSpawnYaw);
     return writer.finish();
   },
 };
@@ -3859,6 +3889,47 @@ export const G2C_EntityLeaveCodec = {
   encode(value: G2C_EntityLeave): Uint8Array {
     const writer = new BinaryWriter();
     if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_AoiDelta extends IMessage {
+  serverTick: number;
+  enters: readonly MapEntitySnapshot[];
+  leaves: readonly number[];
+}
+
+export const G2C_AoiDeltaCodec = {
+  decode(payload: Uint8Array): G2C_AoiDelta {
+    const reader = new BinaryReader(payload);
+    const value: G2C_AoiDelta = {
+      serverTick: 0,
+      enters: [],
+      leaves: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.serverTick = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.enters as MapEntitySnapshot[]).push(MapEntitySnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        (value.leaves as number[]).push(reader.uint32());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_AoiDelta): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
+    for (const item of (value.enters ?? [])) writer.bytes(2, MapEntitySnapshotCodec.encode(item), true);
+    for (const item of (value.leaves ?? [])) writer.uint32(3, item, true);
     return writer.finish();
   },
 };

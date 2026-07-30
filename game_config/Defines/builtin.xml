@@ -3,6 +3,10 @@
         <var name="Grid2D" value="1"/>
         <var name="NavMesh3D" value="2"/>
     </enum>
+    <enum name="ConfigReloadMode" comment="配置表运行时重载策略">
+        <var name="Hot" value="1"/>
+        <var name="Cold" value="2"/>
+    </enum>
     <bean name="vector2" valueType="1" sep=",">
         <var name="x" type="float"/>
         <var name="y" type="float"/>

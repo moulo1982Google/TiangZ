@@ -28,6 +28,7 @@ import type {
 import { MapTransferProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { MapComponent } from "../map/MapComponent";
 import { MapScene } from "../map/MapScene";
+import { MapAoiComponent } from "../map/MapAoiComponent";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
@@ -168,7 +169,7 @@ export class MapHostComponent extends Component {
 
     const playerMap = this.mapOf(player);
     if (isNewPlayer) {
-      await playerMap.PlayerEntered(snapshot);
+      await playerMap.PlayerEntered(player);
     }
 
     this.owner.logger.info("player entered map", {
@@ -209,7 +210,7 @@ export class MapHostComponent extends Component {
       x: snapshot.x,
       y: snapshot.y,
       z: snapshot.z,
-      entities: playerMap.EntitySnapshots(),
+      entities: playerMap.EntitySnapshots(player),
       items: player.GetComponent(ItemComponent).Snapshot(),
       mapInstanceId: located.location.mapInstanceId,
       locationRevision: located.location.revision,
@@ -285,6 +286,11 @@ export class MapHostComponent extends Component {
           token: "map-transfer",
           gateName: request.gateName,
           mapInstanceId: targetInstance.mapInstanceId,
+          hasInitialSpawnOverride: false,
+          initialSpawnX: 0,
+          initialSpawnY: 0,
+          initialSpawnZ: 0,
+          initialSpawnYaw: 0,
         },
         source.CaptureTransfer(),
       );
@@ -304,7 +310,7 @@ export class MapHostComponent extends Component {
       locationCommitted = true;
       const snapshot = target.Snapshot();
       try {
-        await targetMap.PlayerEntered(snapshot);
+        await targetMap.PlayerEntered(target);
       } catch (error) {
         // Location提交后目标Actor已经权威，AOI通知失败只能记录并由后续全量同步修复。
         // Once Location commits, the target Actor is authoritative; an AOI
@@ -426,7 +432,7 @@ export class MapHostComponent extends Component {
       x: snapshot.x,
       y: snapshot.y,
       z: snapshot.z,
-      entities: map.EntitySnapshots(),
+      entities: map.EntitySnapshots(player),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: player.GetComponent(ItemComponent).Snapshot(),
     };
@@ -451,8 +457,8 @@ export class MapHostComponent extends Component {
     this.sourceCleanupScheduled = false;
     for (const { source, map } of this.pendingSourceCleanup.splice(0)) {
       try {
-        map.RemoveTransferredPlayer(source);
-        void map.PlayerLeft(source.UnitId).catch((error) => {
+        const changes = map.RemoveTransferredPlayer(source);
+        void map.PlayerLeft(changes).catch((error) => {
           this.owner.logger.error("failed to broadcast transferred source leave", {
             unitId: source.UnitId,
             error,
@@ -512,7 +518,7 @@ export class MapHostComponent extends Component {
     );
     if (committed.newlyCommitted) {
       try {
-        await committed.target.map.PlayerEntered(committed.result);
+        await committed.target.map.PlayerEntered(committed.target.player);
       } catch (error) {
         this.owner.logger.error("failed to broadcast incoming transferred player", {
           transferId: request.transferId,
@@ -534,7 +540,7 @@ export class MapHostComponent extends Component {
       x: committed.result.x,
       y: committed.result.y,
       z: committed.result.z,
-      entities: committed.target.map.EntitySnapshots(),
+      entities: committed.target.map.EntitySnapshots(committed.target.player),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: committed.target.player.GetComponent(ItemComponent).Snapshot(),
       mapHostName: this.owner.self.name,
@@ -676,6 +682,7 @@ export class MapHostComponent extends Component {
     const scene = this.owner.processHost.spawnScene(sceneId, MapScene);
     try {
       scene.AddComponent(UnitComponent);
+      const aoi = scene.AddComponent(MapAoiComponent, definition);
       const map = scene.AddComponent(
         MapComponent,
         definition,
@@ -685,6 +692,7 @@ export class MapHostComponent extends Component {
         this,
         this.location,
         this,
+        aoi,
       );
       this.maps.set(definition.mapInstanceId, map);
       return map;

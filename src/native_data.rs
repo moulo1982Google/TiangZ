@@ -1,12 +1,13 @@
 //! 管理带世代校验的 Entity 数据、脏版本和 Rust 侧 protobuf 投影。 / Owns generation-checked Entity data, dirty revisions, and Rust-side protobuf projection.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use deno_core::convert::Uint8Array;
 use deno_core::op2;
 use deno_error::JsErrorBox;
 
+use crate::aoi::{AoiWorld, SyncTier, VisibilityChange};
 #[cfg(test)]
 use crate::generated::native_data::{EntityData, UnitData, UnitSplitData};
 use crate::generated::native_data::{
@@ -25,6 +26,8 @@ struct Grid2DBounds {
     min_z: i32,
     max_z: i32,
     cell_size_meters: f32,
+    origin_x_millimeters: i64,
+    origin_z_millimeters: i64,
 }
 
 impl Grid2DBounds {
@@ -45,12 +48,19 @@ impl Grid2DBounds {
         }
         let width = width_cells as i32;
         let depth = depth_cells as i32;
+        let cell_size_millimeters = i64::from(cell_size_millimeters);
         Ok(Self {
             min_x: -(width / 2) + 1,
             max_x: (width - 1) / 2 - 1,
             min_z: -(depth / 2) + 1,
             max_z: (depth - 1) / 2 - 1,
             cell_size_meters: cell_size_millimeters as f32 / 1_000.0,
+            // Cell 坐标以地图中心附近的 0 为基准；AOI Grid 必须从地图最小 Cell
+            // 开始分组，否则奇数个 Grid 的地图会被世界零点额外切出一列。
+            // Cell coordinates remain centered around zero, while AOI grids are anchored
+            // at the map's minimum cell so odd-sized worlds retain their configured grid count.
+            origin_x_millimeters: -i64::from(width / 2) * cell_size_millimeters,
+            origin_z_millimeters: -i64::from(depth / 2) * cell_size_millimeters,
         })
     }
 
@@ -72,6 +82,9 @@ struct NativeDataMetrics {
     encoded_items: u64,
     encoded_bytes: u64,
     scratch_growths: u64,
+    aoi_relocations: u64,
+    aoi_visibility_changes: u64,
+    aoi_filter_overrides: u64,
 }
 
 struct EntitySlot {
@@ -98,9 +111,12 @@ struct NativeEntityStore {
     pools: NativeEntityPools,
     units_by_map: HashMap<u32, Vec<u32>>,
     grid_2d_bounds: HashMap<u32, Grid2DBounds>,
+    aoi_worlds: HashMap<u32, AoiWorld>,
+    aoi_dirty_by_map: HashMap<u32, HashSet<u32>>,
     numerics_by_unit: HashMap<u32, NumericData>,
     scratch_handles: Vec<u32>,
     scratch_movement_records: Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
+    pending_movement_records: HashMap<u32, Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>>,
     scratch_numeric_records: Vec<(u32, u32, i32)>,
     scratch_unit_delta_records: Vec<UnitDeltaRecord>,
     numeric_revision: u64,
@@ -151,20 +167,57 @@ impl NativeEntityStore {
 
     fn set_number(&mut self, handle: u32, field: u32, value: f64) -> Result<(), JsErrorBox> {
         let location = self.location(handle)?;
+        let spatial_map = if matches!(
+            field,
+            crate::generated::native_data::UNIT_FIELD_X
+                | crate::generated::native_data::UNIT_FIELD_Z
+        ) {
+            self.pools.get_unit_cold(location).map(|unit| unit.map_id)
+        } else {
+            None
+        };
         self.pools
             .set_number(location, field, value)
-            .map_err(JsErrorBox::generic)
+            .map_err(JsErrorBox::generic)?;
+        if let Some(map_id) = spatial_map
+            && self.aoi_worlds.contains_key(&map_id)
+        {
+            self.aoi_dirty_by_map
+                .entry(map_id)
+                .or_default()
+                .insert(handle);
+        }
+        Ok(())
     }
 
     fn destroy(&mut self, handle: u32) -> Result<(), JsErrorBox> {
         let (index, generation) = decode_handle(handle)?;
         let location = self.location(handle)?;
-        let unit_map_id = self.pools.get_unit_cold(location).map(|unit| unit.map_id);
+        let unit_identity = self
+            .pools
+            .get_unit_parts(location)
+            .map(|(hot, cold)| (hot.id, cold.map_id));
+        if let Some((unit_id, map_id)) = unit_identity
+            && self
+                .aoi_worlds
+                .get(&map_id)
+                .is_some_and(|world| world.is_attached(unit_id))
+        {
+            return Err(JsErrorBox::generic(format!(
+                "native Unit {unit_id} must detach from AOI before destroy"
+            )));
+        }
         if !self.pools.remove(location) {
             return Err(stale_handle(handle));
         }
-        if let Some(map_id) = unit_map_id {
+        if let Some((_, map_id)) = unit_identity {
             self.numerics_by_unit.remove(&handle);
+            if let Some(dirty) = self.aoi_dirty_by_map.get_mut(&map_id) {
+                dirty.remove(&handle);
+                if dirty.is_empty() {
+                    self.aoi_dirty_by_map.remove(&map_id);
+                }
+            }
             if let Some(handles) = self.units_by_map.get_mut(&map_id) {
                 handles.retain(|candidate| *candidate != handle);
                 if handles.is_empty() {
@@ -204,9 +257,15 @@ impl NativeEntityStore {
     }
 
     fn scratch_capacity_bytes(&self) -> u64 {
+        let pending_movement_capacity: usize = self
+            .pending_movement_records
+            .values()
+            .map(Vec::capacity)
+            .sum();
         (self.scratch_handles.capacity() * std::mem::size_of::<u32>()
             + self.scratch_movement_records.capacity()
                 * std::mem::size_of::<[u8; NATIVE_UNIT_RECORD_BYTES]>()
+            + pending_movement_capacity * std::mem::size_of::<[u8; NATIVE_UNIT_RECORD_BYTES]>()
             + self.scratch_numeric_records.capacity() * std::mem::size_of::<(u32, u32, i32)>()
             + self.scratch_unit_delta_records.capacity() * std::mem::size_of::<UnitDeltaRecord>())
             as u64
@@ -246,6 +305,11 @@ impl NativeEntityStore {
         self.pools
             .get_unit_cold_mut(location)
             .ok_or_else(|| wrong_entity_type(handle, "Unit"))
+    }
+
+    fn unit_spatial(&self, handle: u32) -> Result<(u32, u32, f32, f32), JsErrorBox> {
+        let (hot, cold) = self.get_unit_parts(handle)?;
+        Ok((hot.id, cold.map_id, hot.x, hot.z))
     }
 }
 
@@ -537,6 +601,59 @@ fn native_map_peek_numeric_delta(
     })
 }
 
+#[op2]
+/// 将 Numeric 脏字典按最终 AOI 受众分组编码，并保留统一 Ack 版本。 / Encodes Numeric dirty entries by final AOI audiences while preserving one Ack revision.
+pub(crate) fn op_native_map_peek_numeric_aoi_delta(
+    map_id: u32,
+    server_tick: u32,
+    message_code: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    let message_code = u16::try_from(message_code)
+        .map_err(|_| JsErrorBox::generic("numeric message code exceeds uint16"))?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let through_revision = store.numeric_revision;
+        let handles = store.take_map_handles(map_id);
+        let mut records = take_scratch(&mut store.scratch_numeric_records);
+        let previous_capacity = records.capacity();
+        let outcome = (|| {
+            for &handle in &handles {
+                let unit_id = store.get_unit_hot(handle)?.id;
+                if let Some(numeric) = store.numerics_by_unit.get(&handle) {
+                    for (&numeric_type, &revision) in &numeric.dirty {
+                        if revision <= through_revision {
+                            records.push((unit_id, numeric_type, numeric.values[&numeric_type]));
+                        }
+                    }
+                }
+            }
+            records.sort_unstable_by_key(|record| (record.0, record.1));
+            let mut result = Vec::new();
+            result.extend_from_slice(&through_revision.to_le_bytes());
+            let batches = {
+                let world = store.aoi_worlds.get(&map_id).ok_or_else(|| {
+                    JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
+                })?;
+                encode_aoi_batches(
+                    world,
+                    records.iter().map(|record| record.0),
+                    |indices, frame| {
+                        let subset: Vec<_> = indices.iter().map(|index| records[*index]).collect();
+                        encode_entity_numeric_frame_into(frame, message_code, server_tick, &subset);
+                    },
+                )
+            };
+            record_aoi_encoding_metrics(&mut store.metrics, &batches);
+            result.extend_from_slice(&batches);
+            Ok(result)
+        })();
+        store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
+        store.scratch_handles = handles;
+        store.scratch_numeric_records = records;
+        outcome.map(Into::into)
+    })
+}
+
 #[op2(fast)]
 /// 只清除当前版本仍与已投递 Peek 匹配的 Numeric 条目。 / Clears only Numeric entries whose current revisions match a delivered peek.
 pub(crate) fn op_native_map_ack_numeric_delta(
@@ -660,10 +777,72 @@ fn native_map_ack_unit_delta(map_id: u32, revision: &[u8]) -> Result<(), JsError
     })
 }
 
+#[derive(Clone)]
 struct UnitDeltaRecord {
     handle: u32,
     unit_id: u32,
     delta: UnitDelta,
+}
+
+#[op2]
+/// 将固定字段脏 mask 按最终 AOI 受众分组编码；revision 仍按实体独立确认。 / Encodes fixed-field dirty masks by final AOI audiences while preserving per-entity revisions.
+pub(crate) fn op_native_map_peek_unit_aoi_delta(
+    map_id: u32,
+    server_tick: u32,
+    message_code: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    let message_code = u16::try_from(message_code)
+        .map_err(|_| JsErrorBox::generic("unit state message code exceeds uint16"))?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let handles = store.take_map_handles(map_id);
+        let mut records = take_scratch(&mut store.scratch_unit_delta_records);
+        let previous_capacity = records.capacity();
+        let outcome = (|| {
+            for &handle in &handles {
+                let (hot, cold) = store.get_unit_parts(handle)?;
+                if let Some(delta) = peek_unit_split_delta(hot, cold) {
+                    records.push(UnitDeltaRecord {
+                        handle,
+                        unit_id: hot.id,
+                        delta,
+                    });
+                }
+            }
+            records.sort_unstable_by_key(|record| record.unit_id);
+            let revision_len = 4 + records.len() * 12;
+            let mut result = Vec::new();
+            result.extend_from_slice(&(revision_len as u32).to_le_bytes());
+            result.extend_from_slice(&(records.len() as u32).to_le_bytes());
+            for record in &records {
+                result.extend_from_slice(&record.handle.to_le_bytes());
+                result.extend_from_slice(&record.delta.revision.to_le_bytes());
+            }
+            let batches = {
+                let world = store.aoi_worlds.get(&map_id).ok_or_else(|| {
+                    JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
+                })?;
+                encode_aoi_batches(
+                    world,
+                    records.iter().map(|record| record.unit_id),
+                    |indices, frame| {
+                        let subset: Vec<_> = indices
+                            .iter()
+                            .map(|index| records[*index].clone())
+                            .collect();
+                        encode_entity_state_frame_into(frame, message_code, server_tick, &subset);
+                    },
+                )
+            };
+            record_aoi_encoding_metrics(&mut store.metrics, &batches);
+            result.extend_from_slice(&batches);
+            Ok(result)
+        })();
+        store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
+        store.scratch_handles = handles;
+        store.scratch_unit_delta_records = records;
+        outcome.map(Into::into)
+    })
 }
 
 #[op2(fast)]
@@ -688,6 +867,262 @@ fn native_spatial_create_grid_2d(
         slot.borrow_mut().grid_2d_bounds.insert(map_id, bounds);
     });
     Ok(())
+}
+
+#[op2(fast)]
+/// 创建地图实例独占的 AOI Grid，并冻结可见迟滞与同步档位。 / Creates one map-instance AOI grid and freezes visibility hysteresis and sync tiers.
+pub(crate) fn op_native_aoi_create(
+    map_id: u32,
+    grid_size_millimeters: u32,
+    enter_radius_grids: u32,
+    detach_radius_grids: u32,
+    #[buffer] sync_tiers: &[u8],
+) -> Result<(), JsErrorBox> {
+    if sync_tiers.len() % 8 != 0 {
+        return Err(JsErrorBox::generic(
+            "AOI sync tiers must contain radius/interval uint32 pairs",
+        ));
+    }
+    let tiers = sync_tiers
+        .chunks_exact(8)
+        .map(|bytes| SyncTier {
+            radius_grids: u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+            interval_ticks: u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+        })
+        .collect();
+    let bounds = STORE
+        .with(|slot| slot.borrow().grid_2d_bounds.get(&map_id).copied())
+        .ok_or_else(|| {
+            JsErrorBox::generic(format!("map spatial world is not configured: {map_id}"))
+        })?;
+    let world = AoiWorld::new(
+        grid_size_millimeters,
+        bounds.origin_x_millimeters,
+        bounds.origin_z_millimeters,
+        enter_radius_grids,
+        detach_radius_grids,
+        tiers,
+    )
+    .map_err(JsErrorBox::generic)?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        if store.aoi_worlds.insert(map_id, world).is_some() {
+            return Err(JsErrorBox::generic(format!(
+                "AOI world is already configured: {map_id}"
+            )));
+        }
+        Ok(())
+    })
+}
+
+#[op2(fast)]
+/// 释放地图 AOI；调用前必须先移除全部实体。 / Releases a map AOI world after every entity has detached.
+pub(crate) fn op_native_aoi_release(map_id: u32) -> Result<(), JsErrorBox> {
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let Some(world) = store.aoi_worlds.remove(&map_id) else {
+            return Ok(());
+        };
+        if store
+            .units_by_map
+            .get(&map_id)
+            .into_iter()
+            .flatten()
+            .filter_map(|handle| store.unit_spatial(*handle).ok())
+            .any(|(unit_id, _, _, _)| world.is_attached(unit_id))
+        {
+            store.aoi_worlds.insert(map_id, world);
+            return Err(JsErrorBox::generic(format!(
+                "AOI world {map_id} still contains attached entities"
+            )));
+        }
+        store.aoi_dirty_by_map.remove(&map_id);
+        Ok(())
+    })
+}
+
+#[op2]
+/// 在完整 Entity 图提交后加入 AOI；返回待业务过滤的候选变化但不清空。 / Attaches a committed Entity and returns candidate changes without clearing them before business filtering.
+pub(crate) fn op_native_aoi_attach(
+    map_id: u32,
+    handle: u32,
+    observer: bool,
+    subject: bool,
+) -> Result<Uint8Array, JsErrorBox> {
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let (unit_id, unit_map_id, x, z) = store.unit_spatial(handle)?;
+        if unit_map_id != map_id {
+            return Err(JsErrorBox::generic(format!(
+                "native Unit {unit_id} belongs to map {unit_map_id}, not {map_id}"
+            )));
+        }
+        store
+            .aoi_worlds
+            .get_mut(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("AOI world is not configured: {map_id}")))?
+            .attach(unit_id, x, z, observer, subject)
+            .map_err(JsErrorBox::generic)?;
+        if let Some(dirty) = store.aoi_dirty_by_map.get_mut(&map_id) {
+            dirty.remove(&handle);
+        }
+        Ok(encode_visibility_changes(&store.aoi_worlds[&map_id].peek_changes()).into())
+    })
+}
+
+#[op2]
+/// 在销毁 Native Entity 前移出 AOI，并返回最终离开关系。 / Detaches before Native Entity destruction and returns final leave relations.
+pub(crate) fn op_native_aoi_detach(map_id: u32, handle: u32) -> Result<Uint8Array, JsErrorBox> {
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let (unit_id, unit_map_id, _, _) = store.unit_spatial(handle)?;
+        if unit_map_id != map_id {
+            return Err(JsErrorBox::generic(format!(
+                "native Unit {unit_id} belongs to map {unit_map_id}, not {map_id}"
+            )));
+        }
+        let changes = {
+            let world = store.aoi_worlds.get_mut(&map_id).ok_or_else(|| {
+                JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
+            })?;
+            world.detach(unit_id);
+            world.take_changes()
+        };
+        store.metrics.aoi_visibility_changes += changes.len() as u64;
+        if let Some(dirty) = store.aoi_dirty_by_map.get_mut(&map_id) {
+            dirty.remove(&handle);
+        }
+        Ok(encode_visibility_changes(&changes).into())
+    })
+}
+
+#[op2]
+/// 刷新 FastOP 写入产生的空间脏实体；同 Cell 写入不会重建邻居关系。 / Refreshes spatially dirty FastOP writes without rebuilding neighbors for same-cell movement.
+pub(crate) fn op_native_aoi_refresh(map_id: u32) -> Result<Uint8Array, JsErrorBox> {
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let handles = store.aoi_dirty_by_map.remove(&map_id).unwrap_or_default();
+        let mut positions = Vec::with_capacity(handles.len());
+        for handle in handles {
+            if let Ok((unit_id, unit_map_id, x, z)) = store.unit_spatial(handle)
+                && unit_map_id == map_id
+            {
+                positions.push((unit_id, x, z));
+            }
+        }
+        let (relocations, changes) = {
+            let world = store.aoi_worlds.get_mut(&map_id).ok_or_else(|| {
+                JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
+            })?;
+            let mut relocations = 0_u64;
+            for (unit_id, x, z) in positions {
+                if world.is_attached(unit_id) {
+                    relocations +=
+                        u64::from(world.relocate(unit_id, x, z).map_err(JsErrorBox::generic)?);
+                }
+            }
+            (relocations, world.peek_changes())
+        };
+        store.metrics.aoi_relocations += relocations;
+        Ok(encode_visibility_changes(&changes).into())
+    })
+}
+
+#[op2(fast)]
+/// 应用同步业务过滤器的最终判定；只能收窄当前空间候选关系。 / Applies a synchronous business-filter decision and can only narrow a current spatial candidate.
+pub(crate) fn op_native_aoi_set_visible(
+    map_id: u32,
+    observer_id: u32,
+    subject_id: u32,
+    visible: bool,
+) -> Result<bool, JsErrorBox> {
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let changed = store
+            .aoi_worlds
+            .get_mut(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("AOI world is not configured: {map_id}")))?
+            .set_visible(observer_id, subject_id, visible);
+        store.metrics.aoi_filter_overrides += u64::from(changed);
+        Ok(changed)
+    })
+}
+
+#[op2]
+/// 取走过滤完成后的规范化可见变化。 / Takes normalized visibility changes after filtering completes.
+pub(crate) fn op_native_aoi_take_changes(map_id: u32) -> Result<Uint8Array, JsErrorBox> {
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let changes = store
+            .aoi_worlds
+            .get_mut(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("AOI world is not configured: {map_id}")))?
+            .take_changes();
+        store.metrics.aoi_visibility_changes += changes.len() as u64;
+        Ok(encode_visibility_changes(&changes).into())
+    })
+}
+
+#[op2]
+/// 查询业务状态失效后必须重算的候选关系；mode 1=Observer、2=Subject、3=两者。 / Queries candidate relations for invalidation; mode 1=observer, 2=subject, 3=both.
+pub(crate) fn op_native_aoi_query_relations(
+    map_id: u32,
+    unit_id: u32,
+    mode: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    if !(1..=3).contains(&mode) {
+        return Err(JsErrorBox::generic(
+            "AOI invalidation mode must be 1, 2, or 3",
+        ));
+    }
+    STORE.with(|slot| {
+        let store = slot.borrow();
+        let pairs = store
+            .aoi_worlds
+            .get(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("AOI world is not configured: {map_id}")))?
+            .candidate_pairs(unit_id, mode & 1 != 0, mode & 2 != 0);
+        let mut bytes = Vec::with_capacity(4 + pairs.len() * 8);
+        bytes.extend_from_slice(&(pairs.len() as u32).to_le_bytes());
+        for (observer_id, subject_id) in pairs {
+            bytes.extend_from_slice(&observer_id.to_le_bytes());
+            bytes.extend_from_slice(&subject_id.to_le_bytes());
+        }
+        Ok(bytes.into())
+    })
+}
+
+#[op2]
+/// 返回某 Observer 的最终可见 Subject 列表；自身快照由调用方显式补入。 / Returns final visible subjects for one observer; callers add the self snapshot explicitly.
+pub(crate) fn op_native_aoi_visible_subjects(
+    map_id: u32,
+    observer_id: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    STORE.with(|slot| {
+        let store = slot.borrow();
+        let subjects = store
+            .aoi_worlds
+            .get(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("AOI world is not configured: {map_id}")))?
+            .visible_subjects(observer_id);
+        let mut bytes = Vec::with_capacity(4 + subjects.len() * 4);
+        bytes.extend_from_slice(&(subjects.len() as u32).to_le_bytes());
+        for subject_id in subjects {
+            bytes.extend_from_slice(&subject_id.to_le_bytes());
+        }
+        Ok(bytes.into())
+    })
+}
+
+fn encode_visibility_changes(changes: &[VisibilityChange]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(4 + changes.len() * 9);
+    bytes.extend_from_slice(&(changes.len() as u32).to_le_bytes());
+    for change in changes {
+        bytes.extend_from_slice(&change.observer_id.to_le_bytes());
+        bytes.extend_from_slice(&change.subject_id.to_le_bytes());
+        bytes.push(u8::from(change.visible));
+    }
+    bytes
 }
 
 #[op2(fast)]
@@ -722,6 +1157,47 @@ fn native_map_update_movement(
     }
     let message_code = u16::try_from(message_code)
         .map_err(|_| JsErrorBox::generic("movement message code exceeds uint16"))?;
+    native_map_advance_movement(map_id, server_tick, fixed_update_ms)?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let records = store
+            .pending_movement_records
+            .get(&map_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let mut result = Vec::with_capacity(6 + records.len() * 24);
+        result.extend_from_slice(&(records.len() as u32).to_le_bytes());
+        let frame_start = result.len();
+        encode_entity_move_frame_into(&mut result, message_code, server_tick, records);
+        let record_count = records.len() as u64;
+        let encoded_bytes = (result.len() - frame_start) as u64;
+        store.metrics.encoded_frames += 1;
+        store.metrics.encoded_items += record_count;
+        store.metrics.encoded_bytes += encoded_bytes;
+        Ok(result)
+    })
+}
+
+#[op2(fast)]
+/// 只推进 Rust 权威移动并刷新 AOI，不编码客户端协议。 / Advances Rust-authoritative movement and AOI without encoding a client protocol frame.
+pub(crate) fn op_native_map_advance_movement(
+    map_id: u32,
+    server_tick: u32,
+    fixed_update_ms: u32,
+) -> Result<u32, JsErrorBox> {
+    native_map_advance_movement(map_id, server_tick, fixed_update_ms)
+}
+
+fn native_map_advance_movement(
+    map_id: u32,
+    server_tick: u32,
+    fixed_update_ms: u32,
+) -> Result<u32, JsErrorBox> {
+    if fixed_update_ms == 0 {
+        return Err(JsErrorBox::generic(
+            "fixed update milliseconds must be greater than zero",
+        ));
+    }
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.batch_calls += 1;
@@ -730,8 +1206,13 @@ fn native_map_update_movement(
             .get(&map_id)
             .ok_or_else(|| JsErrorBox::generic(format!("map {map_id} is not configured")))?;
         let handles = store.take_map_handles(map_id);
-        let mut records = take_scratch(&mut store.scratch_movement_records);
+        let mut records = store
+            .pending_movement_records
+            .remove(&map_id)
+            .unwrap_or_else(|| take_scratch(&mut store.scratch_movement_records));
+        records.clear();
         let previous_capacity = records.capacity();
+        let mut changed_positions = Vec::new();
         let outcome = (|| {
             update_map(
                 &mut store,
@@ -740,20 +1221,64 @@ fn native_map_update_movement(
                 fixed_update_ms as f32,
                 bounds,
                 &mut records,
+                &mut changed_positions,
             )?;
-            let mut result = Vec::with_capacity(6 + records.len() * 24);
-            result.extend_from_slice(&(records.len() as u32).to_le_bytes());
-            let frame_start = result.len();
-            encode_entity_move_frame_into(&mut result, message_code, server_tick, &records);
-            store.metrics.encoded_frames += 1;
-            store.metrics.encoded_items += records.len() as u64;
-            store.metrics.encoded_bytes += (result.len() - frame_start) as u64;
-            Ok(result)
+            let mut relocations = 0_u64;
+            if let Some(world) = store.aoi_worlds.get_mut(&map_id) {
+                for (unit_id, x, z) in changed_positions {
+                    if world.is_attached(unit_id) {
+                        relocations +=
+                            u64::from(world.relocate(unit_id, x, z).map_err(JsErrorBox::generic)?);
+                    }
+                }
+            }
+            store.metrics.aoi_relocations += relocations;
+            Ok(records.len() as u32)
         })();
         store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
         store.scratch_handles = handles;
-        store.scratch_movement_records = records;
+        store.pending_movement_records.insert(map_id, records);
         outcome
+    })
+}
+
+#[op2]
+/// 按最终 AOI 关系分组编码本帧移动；TS 只读取外层接收者，不解码 protobuf。 / Encodes this tick's movement by final AOI audiences; TS reads only recipient envelopes.
+pub(crate) fn op_native_map_take_movement_aoi_delta(
+    map_id: u32,
+    server_tick: u32,
+    message_code: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    let message_code = u16::try_from(message_code)
+        .map_err(|_| JsErrorBox::generic("movement message code exceeds uint16"))?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let records = store
+            .pending_movement_records
+            .remove(&map_id)
+            .unwrap_or_default();
+        let result = {
+            let world = store.aoi_worlds.get(&map_id).ok_or_else(|| {
+                JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
+            })?;
+            encode_tiered_aoi_batches(
+                world,
+                records.iter().map(|record| read_record_u32(record, 0)),
+                records.iter().map(|record| record[16] != 0),
+                server_tick,
+                |indices, frame| {
+                    let subset: Vec<_> = indices.iter().map(|index| records[*index]).collect();
+                    encode_entity_move_frame_into(frame, message_code, server_tick, &subset);
+                },
+            )
+        };
+        record_aoi_encoding_metrics(&mut store.metrics, &result);
+        let mut scratch = records;
+        scratch.clear();
+        if scratch.capacity() > store.scratch_movement_records.capacity() {
+            store.scratch_movement_records = scratch;
+        }
+        Ok(result.into())
     })
 }
 
@@ -764,15 +1289,99 @@ fn update_map(
     fixed_update_ms: f32,
     bounds: Grid2DBounds,
     records: &mut Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
+    changed_positions: &mut Vec<(u32, f32, f32)>,
 ) -> Result<(), JsErrorBox> {
     for &handle in handles {
         let unit = store.get_unit_hot_mut(handle)?;
+        let previous_x = unit.x;
+        let previous_z = unit.z;
         let state_changed = update_movement(unit, server_tick, fixed_update_ms, bounds);
+        if unit.x != previous_x || unit.z != previous_z {
+            changed_positions.push((unit.id, unit.x, unit.z));
+        }
         if unit.moving != 0 || state_changed {
             records.push(encode_snapshot(unit, state_changed));
         }
     }
     Ok(())
+}
+
+fn encode_aoi_batches<I, F>(world: &AoiWorld, subject_ids: I, mut encode_frame: F) -> Vec<u8>
+where
+    I: IntoIterator<Item = u32>,
+    F: FnMut(&[usize], &mut Vec<u8>),
+{
+    let subjects: Vec<_> = subject_ids.into_iter().collect();
+    encode_aoi_delivery_groups(world.delivery_groups(&subjects), &mut encode_frame)
+}
+
+fn encode_tiered_aoi_batches<I, B, F>(
+    world: &AoiWorld,
+    subject_ids: I,
+    force: B,
+    server_tick: u32,
+    mut encode_frame: F,
+) -> Vec<u8>
+where
+    I: IntoIterator<Item = u32>,
+    B: IntoIterator<Item = bool>,
+    F: FnMut(&[usize], &mut Vec<u8>),
+{
+    let subjects: Vec<_> = subject_ids.into_iter().collect();
+    let force: Vec<_> = force.into_iter().collect();
+    encode_aoi_delivery_groups(
+        world.tiered_delivery_groups(&subjects, &force, server_tick),
+        &mut encode_frame,
+    )
+}
+
+fn encode_aoi_delivery_groups<F>(
+    delivery_groups: Vec<(Vec<u32>, Vec<usize>)>,
+    encode_frame: &mut F,
+) -> Vec<u8>
+where
+    F: FnMut(&[usize], &mut Vec<u8>),
+{
+    // 默认关系按 Subject Grid 聚合；只有迟滞或业务过滤例外需要逐 Subject 求精确受众。
+    // Default relations aggregate by subject grid; only hysteresis and filter exceptions need exact audiences.
+    let mut batches = Vec::with_capacity(delivery_groups.len());
+    let mut total_items = 0_u32;
+    for (recipients, indices) in delivery_groups {
+        let mut frame = Vec::new();
+        encode_frame(&indices, &mut frame);
+        total_items = total_items.saturating_add(indices.len() as u32);
+        batches.push((recipients, indices.len() as u32, frame));
+    }
+
+    let capacity = 8 + batches
+        .iter()
+        .map(|(recipients, _, frame)| 12 + recipients.len() * 4 + frame.len())
+        .sum::<usize>();
+    let mut bytes = Vec::with_capacity(capacity);
+    bytes.extend_from_slice(&total_items.to_le_bytes());
+    bytes.extend_from_slice(&(batches.len() as u32).to_le_bytes());
+    for (recipients, item_count, frame) in batches {
+        bytes.extend_from_slice(&(recipients.len() as u32).to_le_bytes());
+        for recipient_id in recipients {
+            bytes.extend_from_slice(&recipient_id.to_le_bytes());
+        }
+        bytes.extend_from_slice(&item_count.to_le_bytes());
+        bytes.extend_from_slice(&(frame.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&frame);
+    }
+    bytes
+}
+
+fn record_aoi_encoding_metrics(metrics: &mut NativeDataMetrics, bytes: &[u8]) {
+    if bytes.len() < 8 {
+        return;
+    }
+    let item_count = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as u64;
+    let batch_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as u64;
+    metrics.batch_calls += 1;
+    metrics.encoded_frames += batch_count;
+    metrics.encoded_items += item_count;
+    metrics.encoded_bytes += bytes.len() as u64;
 }
 
 #[op2]
@@ -793,8 +1402,29 @@ fn native_data_metrics_bytes() -> Vec<u8> {
         let live_items = store.live_items();
         let pool_capacity_bytes = store.pool_capacity_bytes();
         let scratch_capacity_bytes = store.scratch_capacity_bytes();
+        let aoi_worlds = store.aoi_worlds.len() as u32;
+        let aoi_entries = store
+            .aoi_worlds
+            .values()
+            .map(AoiWorld::entry_count)
+            .sum::<usize>() as u32;
+        let aoi_grids = store
+            .aoi_worlds
+            .values()
+            .map(AoiWorld::grid_count)
+            .sum::<usize>() as u32;
+        let aoi_candidate_relations = store
+            .aoi_worlds
+            .values()
+            .map(AoiWorld::candidate_relation_count)
+            .sum::<usize>() as u64;
+        let aoi_visible_relations = store
+            .aoi_worlds
+            .values()
+            .map(AoiWorld::visible_relation_count)
+            .sum::<usize>() as u64;
         let metrics = store.metrics.clone();
-        let mut bytes = Vec::with_capacity(84);
+        let mut bytes = Vec::with_capacity(136);
         bytes.extend_from_slice(&metrics.scalar_gets.to_le_bytes());
         bytes.extend_from_slice(&metrics.scalar_sets.to_le_bytes());
         bytes.extend_from_slice(&metrics.batch_calls.to_le_bytes());
@@ -807,6 +1437,14 @@ fn native_data_metrics_bytes() -> Vec<u8> {
         bytes.extend_from_slice(&live_items.to_le_bytes());
         bytes.extend_from_slice(&scratch_capacity_bytes.to_le_bytes());
         bytes.extend_from_slice(&metrics.scratch_growths.to_le_bytes());
+        bytes.extend_from_slice(&aoi_worlds.to_le_bytes());
+        bytes.extend_from_slice(&aoi_entries.to_le_bytes());
+        bytes.extend_from_slice(&aoi_grids.to_le_bytes());
+        bytes.extend_from_slice(&aoi_candidate_relations.to_le_bytes());
+        bytes.extend_from_slice(&aoi_visible_relations.to_le_bytes());
+        bytes.extend_from_slice(&metrics.aoi_relocations.to_le_bytes());
+        bytes.extend_from_slice(&metrics.aoi_visibility_changes.to_le_bytes());
+        bytes.extend_from_slice(&metrics.aoi_filter_overrides.to_le_bytes());
         bytes
     })
 }
@@ -1245,8 +1883,8 @@ mod tests {
 
         let first = native_data_metrics_bytes();
         let second = native_data_metrics_bytes();
-        assert_eq!(first.len(), 84);
-        assert_eq!(second.len(), 84);
+        assert_eq!(first.len(), 136);
+        assert_eq!(second.len(), 136);
 
         STORE.with(|slot| {
             let store = slot.borrow();
@@ -1272,6 +1910,65 @@ mod tests {
 
         assert!(first_growths >= 2);
         assert_eq!(second_growths, first_growths);
+    }
+
+    #[test]
+    fn aoi_batches_share_one_frame_for_identical_audiences() {
+        let mut world = AoiWorld::new(
+            10_000,
+            0,
+            0,
+            1,
+            1,
+            vec![SyncTier {
+                radius_grids: 1,
+                interval_ticks: 1,
+            }],
+        )
+        .unwrap();
+        world.attach(1, 0.0, 0.0, true, true).unwrap();
+        world.attach(2, 0.0, 0.0, true, true).unwrap();
+        world.attach(3, 0.0, 0.0, true, true).unwrap();
+        world.take_changes();
+
+        let bytes = encode_aoi_batches(&world, [1, 2, 3], |indices, frame| {
+            frame.extend(indices.iter().map(|index| *index as u8));
+        });
+        assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), 3);
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 3);
+    }
+
+    #[test]
+    fn attached_native_unit_must_leave_aoi_before_destroy() {
+        let mut store = NativeEntityStore::default();
+        store.aoi_worlds.insert(
+            1,
+            AoiWorld::new(
+                10_000,
+                0,
+                0,
+                1,
+                1,
+                vec![SyncTier {
+                    radius_grids: 1,
+                    interval_ticks: 1,
+                }],
+            )
+            .unwrap(),
+        );
+        let handle = store.create(NativeEntityData::Unit(unit(1))).unwrap();
+        let (unit_id, _, x, z) = store.unit_spatial(handle).unwrap();
+        store
+            .aoi_worlds
+            .get_mut(&1)
+            .unwrap()
+            .attach(unit_id, x, z, true, true)
+            .unwrap();
+
+        assert!(store.destroy(handle).is_err());
+        store.aoi_worlds.get_mut(&1).unwrap().detach(unit_id);
+        store.destroy(handle).unwrap();
     }
 
     #[test]

@@ -8,7 +8,17 @@
 //------------------------------------------------------------------------------
 
 
- 
+
+/**
+ * 配置表运行时重载策略
+ */
+export enum ConfigReloadMode {
+    Hot = 1,
+    Cold = 2,
+}
+
+
+
 /**
  * 地图空间实现
  */
@@ -17,9 +27,129 @@ export enum SpatialMode {
     NavMesh3D = 2,
 }
 
- 
 
 
+
+
+
+export namespace game {
+export class AoiConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+        if (_json_.grid_size_cells === undefined) { throw new Error() }
+        this.gridSizeCells = _json_.grid_size_cells
+        if (_json_.enter_range_grids === undefined) { throw new Error() }
+        this.enterRangeGrids = _json_.enter_range_grids
+        if (_json_.detach_range_grids === undefined) { throw new Error() }
+        this.detachRangeGrids = _json_.detach_range_grids
+    }
+
+    /**
+     * 配置ID
+     */
+    readonly id: number
+    /**
+     * 配置名称
+     */
+    readonly name: string
+    /**
+     * 每个AOI Grid包含的Cell边长
+     */
+    readonly gridSizeCells: number
+    /**
+     * Enter区域边长（AOI Grid，正奇数）
+     */
+    readonly enterRangeGrids: number
+    /**
+     * Detach迟滞区域边长（AOI Grid，正奇数）
+     */
+    readonly detachRangeGrids: number
+
+    resolve(tables:Tables) {
+
+
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
+export class AoiSyncTierConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.aoi_config_id === undefined) { throw new Error() }
+        this.aoiConfigId = _json_.aoi_config_id
+        if (_json_.range_grids === undefined) { throw new Error() }
+        this.rangeGrids = _json_.range_grids
+        if (_json_.sync_hz === undefined) { throw new Error() }
+        this.syncHz = _json_.sync_hz
+    }
+
+    /**
+     * 层级ID
+     */
+    readonly id: number
+    /**
+     * AOI配置ID
+     */
+    readonly aoiConfigId: number
+    aoiConfigId_ref: game.AoiConfig | undefined
+    /**
+     * 同步区域边长（AOI Grid，正奇数）
+     */
+    readonly rangeGrids: number
+    /**
+     * 该区域内最高同步Hz
+     */
+    readonly syncHz: number
+
+    resolve(tables:Tables) {
+
+        this.aoiConfigId_ref = tables.TbAoiConfig.get(this.aoiConfigId)
+
+
+    }
+}
+
+}
+
+
+export namespace game {
+export class ConfigTablePolicy {
+
+    constructor(_json_: any) {
+        if (_json_.table_name === undefined) { throw new Error() }
+        this.tableName = _json_.table_name
+        if (_json_.reload_mode === undefined) { throw new Error() }
+        this.reloadMode = _json_.reload_mode
+    }
+
+    /**
+     * 配置记录类型名称
+     */
+    readonly tableName: string
+    /**
+     * 重载策略
+     */
+    readonly reloadMode: ConfigReloadMode
+
+    resolve(tables:Tables) {
+
+
+    }
+}
+
+}
 
 
 export namespace game {
@@ -54,10 +184,10 @@ export class ItemConfig {
     readonly restoreHp: number
 
     resolve(tables:Tables) {
-        
-        
-        
-        
+
+
+
+
     }
 }
 
@@ -78,8 +208,8 @@ export class MapConfig {
         this.widthCells = _json_.width_cells
         if (_json_.depth_cells === undefined) { throw new Error() }
         this.depthCells = _json_.depth_cells
-        if (_json_.grid_cell_size_meters === undefined) { throw new Error() }
-        this.gridCellSizeMeters = _json_.grid_cell_size_meters
+        if (_json_.cell_size_meters === undefined) { throw new Error() }
+        this.cellSizeMeters = _json_.cell_size_meters
         if (_json_.spawn_x === undefined) { throw new Error() }
         this.spawnX = _json_.spawn_x
         if (_json_.spawn_y === undefined) { throw new Error() }
@@ -88,14 +218,18 @@ export class MapConfig {
         this.spawnZ = _json_.spawn_z
         if (_json_.spawn_yaw === undefined) { throw new Error() }
         this.spawnYaw = _json_.spawn_yaw
-        if (_json_.aoi_cell_size_meters === undefined) { throw new Error() }
-        this.aoiCellSizeMeters = _json_.aoi_cell_size_meters
+        if (_json_.aoi_config_id === undefined) { throw new Error() }
+        this.aoiConfigId = _json_.aoi_config_id
         if (_json_.navigation_asset === undefined) { throw new Error() }
         this.navigationAsset = _json_.navigation_asset
         if (_json_.navigation_version === undefined) { throw new Error() }
         this.navigationVersion = _json_.navigation_version
         if (_json_.navigation_hash === undefined) { throw new Error() }
         this.navigationHash = _json_.navigation_hash
+        if (_json_.entry_players_per_tick === undefined) { throw new Error() }
+        this.entryPlayersPerTick = _json_.entry_players_per_tick
+        if (_json_.entry_queue_capacity === undefined) { throw new Error() }
+        this.entryQueueCapacity = _json_.entry_queue_capacity
     }
 
     /**
@@ -119,9 +253,9 @@ export class MapConfig {
      */
     readonly depthCells: number
     /**
-     * 每格米数
+     * 每个Cell的米数
      */
-    readonly gridCellSizeMeters: number
+    readonly cellSizeMeters: number
     /**
      * 出生点X（米）
      */
@@ -139,9 +273,10 @@ export class MapConfig {
      */
     readonly spawnYaw: number
     /**
-     * AOI Cell边长（米）
+     * AOI配置ID
      */
-    readonly aoiCellSizeMeters: number
+    readonly aoiConfigId: number
+    aoiConfigId_ref: game.AoiConfig | undefined
     /**
      * 导航资源标识
      */
@@ -154,22 +289,32 @@ export class MapConfig {
      * 导航资源SHA-256
      */
     readonly navigationHash: string
+    /**
+     * 每逻辑Tick最多放行的入图玩家数
+     */
+    readonly entryPlayersPerTick: number
+    /**
+     * 地图入图等待队列容量
+     */
+    readonly entryQueueCapacity: number
 
     resolve(tables:Tables) {
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+
+
+
+
+
+
+
+
+
+
+        this.aoiConfigId_ref = tables.TbAoiConfig.get(this.aoiConfigId)
+
+
+
+
+
     }
 }
 
@@ -228,13 +373,13 @@ export class PlayerConfig {
     readonly initialItemCount: number
 
     resolve(tables:Tables) {
-        
+
         this.initialMapId_ref = tables.TbMapConfig.get(this.initialMapId)
-        
-        
-        
+
+
+
         this.initialItemConfigId_ref = tables.TbItemConfig.get(this.initialItemConfigId)
-        
+
     }
 }
 
@@ -255,8 +400,8 @@ export class vector2 {
     readonly y: number
 
     resolve(tables:Tables) {
-        
-        
+
+
     }
 }
 
@@ -300,7 +445,7 @@ export class TbItemConfig {
 
 export namespace game {
 /**
- * 地图配置
+ * 地图冷配置
  */
 export class TbMapConfig {
     private _dataMap: Map<number, game.MapConfig>
@@ -366,6 +511,108 @@ export class TbPlayerConfig {
 }
 
 
+export namespace game {
+/**
+ * AOI可见性冷配置
+ */
+export class TbAoiConfig {
+    private _dataMap: Map<number, game.AoiConfig>
+    private _dataList: game.AoiConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.AoiConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.AoiConfig
+            _v = new game.AoiConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.AoiConfig> { return this._dataMap; }
+    getDataList(): game.AoiConfig[] { return this._dataList; }
+
+    get(key: number): game.AoiConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
+export namespace game {
+/**
+ * AOI同步层级冷配置
+ */
+export class TbAoiSyncTierConfig {
+    private _dataMap: Map<number, game.AoiSyncTierConfig>
+    private _dataList: game.AoiSyncTierConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.AoiSyncTierConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.AoiSyncTierConfig
+            _v = new game.AoiSyncTierConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.AoiSyncTierConfig> { return this._dataMap; }
+    getDataList(): game.AoiSyncTierConfig[] { return this._dataList; }
+
+    get(key: number): game.AoiSyncTierConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
+export namespace game {
+/**
+ * 配置表冷热策略
+ */
+export class TbConfigTablePolicy {
+    private _dataMap: Map<string, game.ConfigTablePolicy>
+    private _dataList: game.ConfigTablePolicy[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<string, game.ConfigTablePolicy>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.ConfigTablePolicy
+            _v = new game.ConfigTablePolicy(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.tableName, _v)
+        }
+    }
+
+    getDataMap(): Map<string, game.ConfigTablePolicy> { return this._dataMap; }
+    getDataList(): game.ConfigTablePolicy[] { return this._dataList; }
+
+    get(key: string): game.ConfigTablePolicy | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
 
 type JsonLoader = (file: string) => any
 
@@ -377,7 +624,7 @@ export class Tables {
     get TbItemConfig(): game.TbItemConfig  { return this._TbItemConfig;}
     private _TbMapConfig: game.TbMapConfig
     /**
-     * 地图配置
+     * 地图冷配置
      */
     get TbMapConfig(): game.TbMapConfig  { return this._TbMapConfig;}
     private _TbPlayerConfig: game.TbPlayerConfig
@@ -385,15 +632,36 @@ export class Tables {
      * 玩家基础配置
      */
     get TbPlayerConfig(): game.TbPlayerConfig  { return this._TbPlayerConfig;}
+    private _TbAoiConfig: game.TbAoiConfig
+    /**
+     * AOI可见性冷配置
+     */
+    get TbAoiConfig(): game.TbAoiConfig  { return this._TbAoiConfig;}
+    private _TbAoiSyncTierConfig: game.TbAoiSyncTierConfig
+    /**
+     * AOI同步层级冷配置
+     */
+    get TbAoiSyncTierConfig(): game.TbAoiSyncTierConfig  { return this._TbAoiSyncTierConfig;}
+    private _TbConfigTablePolicy: game.TbConfigTablePolicy
+    /**
+     * 配置表冷热策略
+     */
+    get TbConfigTablePolicy(): game.TbConfigTablePolicy  { return this._TbConfigTablePolicy;}
 
     constructor(loader: JsonLoader) {
         this._TbItemConfig = new game.TbItemConfig(loader('game_tbitemconfig'))
         this._TbMapConfig = new game.TbMapConfig(loader('game_tbmapconfig'))
         this._TbPlayerConfig = new game.TbPlayerConfig(loader('game_tbplayerconfig'))
+        this._TbAoiConfig = new game.TbAoiConfig(loader('game_tbaoiconfig'))
+        this._TbAoiSyncTierConfig = new game.TbAoiSyncTierConfig(loader('game_tbaoisynctierconfig'))
+        this._TbConfigTablePolicy = new game.TbConfigTablePolicy(loader('game_tbconfigtablepolicy'))
 
         this._TbItemConfig.resolve(this)
         this._TbMapConfig.resolve(this)
         this._TbPlayerConfig.resolve(this)
+        this._TbAoiConfig.resolve(this)
+        this._TbAoiSyncTierConfig.resolve(this)
+        this._TbConfigTablePolicy.resolve(this)
     }
 }
 

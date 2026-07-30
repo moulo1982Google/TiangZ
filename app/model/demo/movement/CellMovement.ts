@@ -1,6 +1,6 @@
 // 服务端世界坐标统一使用米；Cocos/Pixi自行决定一米对应多少屏幕像素。
 // Server world coordinates are meters; Cocos/Pixi choose their own pixels-per-meter scale.
-export const GRID_CELL_SIZE_METERS = 1;
+export const CELL_SIZE_METERS = 1;
 export const MAP_CELL_COUNT = 128;
 export const UNIT_FOOTPRINT_CELLS = 3;
 export const DEFAULT_MOVE_SPEED_CELLS_PER_SECOND = 10;
@@ -24,14 +24,14 @@ export interface MovementFrame {
 
 export function cellToWorldMeters(
   cell: number,
-  cellSizeMeters = GRID_CELL_SIZE_METERS,
+  cellSizeMeters = CELL_SIZE_METERS,
 ): number {
   return cell * cellSizeMeters;
 }
 
 export function worldMetersToCell(
   world: number,
-  cellSizeMeters = GRID_CELL_SIZE_METERS,
+  cellSizeMeters = CELL_SIZE_METERS,
 ): number {
   return Math.round(world / cellSizeMeters);
 }

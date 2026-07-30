@@ -1,12 +1,25 @@
 import type { BroadcastHub } from "../broadcast/BroadcastHub";
-import type { BroadcastAudience } from "../broadcast/types";
+import type { BroadcastAudience, EncodedAudienceBatch } from "../broadcast/types";
 import { CoreLogger } from "../logging/Logger";
 
-export interface EncodedStateDelta {
+interface EncodedStateDeltaBase {
   readonly itemCount: number;
-  readonly frame: Uint8Array;
   Ack(): void;
 }
+
+export interface EncodedSingleStateDelta extends EncodedStateDeltaBase {
+  readonly frame: Uint8Array;
+  readonly batches?: never;
+  readonly audienceKey?: never;
+}
+
+export interface EncodedBatchedStateDelta extends EncodedStateDeltaBase {
+  readonly frame?: never;
+  readonly batches: readonly EncodedAudienceBatch[];
+  readonly audienceKey: string;
+}
+
+export type EncodedStateDelta = EncodedSingleStateDelta | EncodedBatchedStateDelta;
 
 export interface StateReplicationSource {
   readonly name: string;
@@ -24,6 +37,7 @@ export class StateReplicationSystem {
       sourceName,
       error,
     ) => CoreLogger.error("state replication failed", { sourceName, error }),
+    private readonly beforePublish?: () => Promise<void> | undefined,
   ) {}
 
   /** 注册一个具名脏状态源；名称同时用于隔离 latest 广播频道。 / Registers one named dirty-state source; names also isolate latest broadcast channels. */
@@ -51,7 +65,6 @@ export class StateReplicationSystem {
    * not block Game.Update.
    */
   FrameFlush(): void {
-    const audience = this.audience();
     for (const source of this.sources.values()) {
       if (this.inFlight.has(source.name)) continue;
       let delta: EncodedStateDelta;
@@ -65,12 +78,21 @@ export class StateReplicationSystem {
 
       this.inFlight.add(source.name);
       try {
-        void this.broadcast.PublishEncodedLatestSnapshot(
-          audience,
-          source.name,
-          delta.frame,
-          delta.itemCount,
-        )
+        const publish = () => delta.batches
+            ? this.broadcast.PublishEncodedLatestBatches(
+              delta.audienceKey,
+              source.name,
+              delta.batches,
+            )
+            : this.broadcast.PublishEncodedLatestSnapshot(
+              this.audience(),
+              source.name,
+              delta.frame,
+              delta.itemCount,
+            );
+        const barrier = this.beforePublish?.();
+        const delivery = barrier ? barrier.then(publish) : publish();
+        void delivery
           .then(() => {
             try {
               delta.Ack();

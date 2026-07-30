@@ -13,7 +13,7 @@ import type {
 import { CharacterSprite } from "./CharacterSprite";
 import { GameConfigs, SpatialMode } from "../Generated/SDK/Generated/Config";
 
-const CELL_SIZE = 12;
+const PIXELS_PER_METER = 12;
 
 interface EntityView {
   readonly root: Container;
@@ -68,8 +68,8 @@ export class MapWorld {
         yaw: 0,
         alive: true,
         state: new Uint8Array(),
-        cellX: Math.round(enterMap.x / GameConfigs.MapConfig.Get(enterMap.mapId).gridCellSizeMeters),
-        cellZ: Math.round(enterMap.z / GameConfigs.MapConfig.Get(enterMap.mapId).gridCellSizeMeters),
+        cellX: Math.round(enterMap.x / GameConfigs.MapConfig.Get(enterMap.mapId).cellSizeMeters),
+        cellZ: Math.round(enterMap.z / GameConfigs.MapConfig.Get(enterMap.mapId).cellSizeMeters),
         numerics: [],
         speedCellsPerSecond: playerConfig.moveSpeed,
         facing: 0,
@@ -189,8 +189,8 @@ export class MapWorld {
 
   private drawMap(): void {
     const config = GameConfigs.MapConfig.Get(this.enterMap.mapId);
-    const width = config.widthCells * CELL_SIZE;
-    const height = config.depthCells * CELL_SIZE;
+    const width = config.widthCells * PIXELS_PER_METER;
+    const height = config.depthCells * PIXELS_PER_METER;
     const originX = -width / 2;
     const originY = -height / 2;
     const backgroundColor = this.enterMap.mapId === 2 ? 0x3e4a76 : 0x245a4b;
@@ -202,12 +202,12 @@ export class MapWorld {
   /** 将服务端米制X/Z坐标映射到Pixi像素平面。 / Maps server X/Z meters into the Pixi pixel plane. */
   private worldMetersToScreen(value: number): number {
     const config = GameConfigs.MapConfig.Get(this.enterMap.mapId);
-    return value * CELL_SIZE / config.gridCellSizeMeters;
+    return value * PIXELS_PER_METER / config.cellSizeMeters;
   }
 
   private setTarget(entity: EntityView, cellX: number, cellZ: number, immediate: boolean): void {
-    entity.targetX = cellX * CELL_SIZE;
-    entity.targetY = worldToScreenY(cellZ * CELL_SIZE);
+    entity.targetX = cellX * PIXELS_PER_METER;
+    entity.targetY = worldToScreenY(cellZ * PIXELS_PER_METER);
     if (immediate) entity.root.position.set(entity.targetX, entity.targetY);
   }
 

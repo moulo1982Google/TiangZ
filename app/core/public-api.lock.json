@@ -26,6 +26,7 @@
     "CoroutineLockSystem",
     "CustomMetricKind",
     "CustomMetricSnapshot",
+    "EncodedAudienceBatch",
     "EncodedStateDelta",
     "Entity",
     "EntityId",

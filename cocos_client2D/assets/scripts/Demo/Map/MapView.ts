@@ -1,6 +1,6 @@
 import { Color, Graphics, Mask, Node, UITransform } from "cc";
 import {
-  CELL_SIZE,
+  PIXELS_PER_METER,
   UNIT_FOOTPRINT_CELLS,
 } from "./Movement/CellMovement";
 import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
@@ -52,8 +52,8 @@ export class MapView {
 
     const map = new Node("MapWorld");
     viewport.addChild(map);
-    const mapWidth = mapConfig.widthCells * CELL_SIZE;
-    const mapHeight = mapConfig.depthCells * CELL_SIZE;
+    const mapWidth = mapConfig.widthCells * PIXELS_PER_METER;
+    const mapHeight = mapConfig.depthCells * PIXELS_PER_METER;
     const transform = map.addComponent(UITransform);
     transform.setContentSize(mapWidth, mapHeight);
     const graphics = map.addComponent(Graphics);
@@ -64,12 +64,12 @@ export class MapView {
     graphics.strokeColor = new Color(70, 112, 98, 150);
     graphics.lineWidth = 1;
     for (let cell = -mapConfig.widthCells / 2; cell <= mapConfig.widthCells / 2; cell += 1) {
-      const coordinate = cell * CELL_SIZE;
+      const coordinate = cell * PIXELS_PER_METER;
       graphics.moveTo(coordinate, -mapHeight / 2);
       graphics.lineTo(coordinate, mapHeight / 2);
     }
     for (let cell = -mapConfig.depthCells / 2; cell <= mapConfig.depthCells / 2; cell += 1) {
-      const coordinate = cell * CELL_SIZE;
+      const coordinate = cell * PIXELS_PER_METER;
       graphics.moveTo(-mapWidth / 2, coordinate);
       graphics.lineTo(mapWidth / 2, coordinate);
     }
@@ -83,7 +83,7 @@ export class MapView {
       new Color(236, 245, 238, 255),
     );
     this.ui.createLabel(
-      `WASD / 方向键移动，U 使用道具，T 传送 Map1/Map2（${CELL_SIZE}px Cell，角色 ${UNIT_FOOTPRINT_CELLS}x${UNIT_FOOTPRINT_CELLS} Cell）`,
+      `WASD / 方向键移动，U 使用道具，T 传送 Map1/Map2（${PIXELS_PER_METER}px/m，角色 ${UNIT_FOOTPRINT_CELLS}x${UNIT_FOOTPRINT_CELLS} Cell）`,
       0,
       -318,
       16,
@@ -112,8 +112,8 @@ export class MapView {
             yaw: 0,
             alive: true,
             state: new Uint8Array(0),
-            cellX: Math.round(enterMap.x / mapConfig.gridCellSizeMeters),
-            cellZ: Math.round(enterMap.z / mapConfig.gridCellSizeMeters),
+            cellX: Math.round(enterMap.x / mapConfig.cellSizeMeters),
+            cellZ: Math.round(enterMap.z / mapConfig.cellSizeMeters),
             numerics: [],
             speedCellsPerSecond: playerConfig.moveSpeed,
             facing: 0,
@@ -127,7 +127,7 @@ export class MapView {
       enterMap.fixedUpdateMs,
       mapConfig.widthCells,
       mapConfig.depthCells,
-      mapConfig.gridCellSizeMeters,
+      mapConfig.cellSizeMeters,
       snapshots,
       enterMap.items,
     );

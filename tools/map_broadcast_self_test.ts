@@ -44,9 +44,72 @@ async function main(): Promise<void> {
   await testLatestSingleFlight();
   await testNumericLatestCoverage();
   await testEncodedLatestSnapshot();
+  await testEncodedAoiBatchesSingleFlight();
   await testReplicationAckOnlyAfterSuccessfulSend();
+  await testBatchedReplicationAckAfterEveryAudience();
   await testEventOrderingAndCapacity();
   console.log("broadcast framework self-test passed");
+}
+
+async function testEncodedAoiBatchesSingleFlight(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  const first = hub.PublishEncodedLatestBatches("map:1:aoi", "Client.EntityMove", [
+    {
+      audience: { key: "aoi:a", routes: [{ route: "Gate1", recipientId: 1001 }] },
+      frame: Uint8Array.from([0x27, 0x20, 1]),
+      itemCount: 2,
+    },
+    {
+      audience: { key: "aoi:b", routes: [{ route: "Gate2", recipientId: 1002 }] },
+      frame: Uint8Array.from([0x27, 0x20, 2]),
+      itemCount: 1,
+    },
+  ]);
+  assert.equal(transport.sends.length, 2, "one AOI job may fan out multiple encoded groups");
+  transport.sends[0].resolve();
+  await settlePromises();
+  assert.equal(hub.Snapshot().inFlight, 1, "the AOI job remains in flight until every group completes");
+  transport.sends[1].resolve();
+  await first;
+  assert.equal(hub.Snapshot().sentItems, 3);
+}
+
+async function testBatchedReplicationAckAfterEveryAudience(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  let acknowledged = 0;
+  const replication = new StateReplicationSystem(hub, () => audience);
+  replication.Add({
+    name: "Client.AoiState",
+    Peek: () => ({
+      itemCount: 2,
+      audienceKey: "map:1:aoi",
+      batches: [
+        {
+          audience: { key: "aoi:a", routes: [{ route: "Gate1", recipientId: 1001 }] },
+          frame: Uint8Array.from([0x27, 0x22, 1]),
+          itemCount: 1,
+        },
+        {
+          audience: { key: "aoi:b", routes: [{ route: "Gate2", recipientId: 1002 }] },
+          frame: Uint8Array.from([0x27, 0x22, 2]),
+          itemCount: 1,
+        },
+      ],
+      Ack: () => { acknowledged += 1; },
+    }),
+  });
+
+  replication.FrameFlush();
+  await settlePromises();
+  assert.equal(transport.sends.length, 2);
+  transport.sends[0].resolve();
+  await settlePromises();
+  assert.equal(acknowledged, 0, "partial AOI delivery must not acknowledge dirty state");
+  transport.sends[1].resolve();
+  await settlePromises();
+  assert.equal(acknowledged, 1);
 }
 
 async function testReplicationAckOnlyAfterSuccessfulSend(): Promise<void> {

@@ -74,6 +74,71 @@
       ]
     },
     {
+      "key": "proto/BenchMessage_C_15001.proto#C2G_MapCapacityEnter",
+      "name": "C2G_MapCapacityEnter",
+      "base": "IRequest",
+      "response": "G2C_MapCapacityEnter",
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "player_index",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "layout",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#C2M_MapCapacityPlace",
+      "name": "C2M_MapCapacityPlace",
+      "base": "IActorLocationRequest",
+      "response": "M2C_MapCapacityPlace",
+      "fields": [
+        {
+          "number": 1,
+          "name": "player_index",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "layout",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/BenchMessage_C_15001.proto#C2M_StateSyncBench",
       "name": "C2M_StateSyncBench",
       "base": "IActorLocationRequest",
@@ -168,6 +233,56 @@
       ]
     },
     {
+      "key": "proto/BenchMessage_C_15001.proto#G2C_MapCapacityEnter",
+      "name": "G2C_MapCapacityEnter",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cell_x",
+          "type": "sint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "cell_z",
+          "type": "sint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/BenchMessage_C_15001.proto#Integer64Fixture",
       "name": "Integer64Fixture",
       "base": null,
@@ -200,6 +315,56 @@
           "type": "int64",
           "repeated": true,
           "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/BenchMessage_C_15001.proto#M2C_MapCapacityPlace",
+      "name": "M2C_MapCapacityPlace",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "player_index",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cell_x",
+          "type": "sint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "cell_z",
+          "type": "sint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
         }
       ]
     },
@@ -690,6 +855,41 @@
           "number": 6,
           "name": "map_instance_id",
           "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "has_initial_spawn_override",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "initial_spawn_x",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "initial_spawn_y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "initial_spawn_z",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "initial_spawn_yaw",
+          "type": "float",
           "repeated": false,
           "synthetic": false
         },
@@ -3030,6 +3230,35 @@
           "type": "uint32",
           "repeated": false,
           "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_AoiDelta",
+      "name": "G2C_AoiDelta",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "server_tick",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "enters",
+          "type": "MapEntitySnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "leaves",
+          "type": "uint32",
+          "repeated": true,
+          "synthetic": false
         }
       ]
     },

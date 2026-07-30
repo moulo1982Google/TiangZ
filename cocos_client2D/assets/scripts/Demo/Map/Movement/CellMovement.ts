@@ -1,4 +1,5 @@
-export const CELL_SIZE = 12;
+/** Cocos 2D展示比例；服务端世界仍以米为单位。 / Presentation scale only; the server world remains meter-based. */
+export const PIXELS_PER_METER = 12;
 export const MAP_CELL_COUNT = 128;
 export const UNIT_FOOTPRINT_CELLS = 3;
 export const DEFAULT_MOVE_SPEED_CELLS_PER_SECOND = 10;
@@ -29,11 +30,11 @@ export function facingFromDirection(x: number, y: number): Facing {
 }
 
 export function cellToWorld(cell: number): number {
-  return cell * CELL_SIZE;
+  return cell * PIXELS_PER_METER;
 }
 
 export function worldToCell(world: number): number {
-  return Math.round(world / CELL_SIZE);
+  return Math.round(world / PIXELS_PER_METER);
 }
 
 export function clampDirection(value: number): number {

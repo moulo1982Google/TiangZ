@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约也已完成。工程已有登录、选服、进入地图、多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但尚未包含Rust AOI、NavMesh3D运行时、完整商业MMORPG业务和生产运维方案。
+当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约和Phase 4.1 Rust AOI功能链也已完成。工程已有登录、选服、进入地图、多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但尚未完成Rust AOI正式容量A/B、NavMesh3D运行时、完整商业MMORPG业务和生产运维方案。
 
 ## 为什么形成这套模型
 
@@ -68,6 +68,8 @@ Actor是运行时路由概念，不是要求业务继承并随意创建的第四
 Gate连接状态分成两层：`GateSession`只代表一次物理连接，断开即销毁；`GatePlayerRoute`按账号保存`UnitId -> MapHost/Map/ActorInstanceId`和当前`connectionId`，在30秒重连宽限期内继续存在。客户端每5秒发送单向`C2G_Ping`，但Gate收到任意客户端帧都会刷新`lastReceiveTime`；出站排队只更新`lastSendTime`，绝不能延长存活期限。Gate使用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
 
 同账号新连接会在Gate内原子替换旧`connectionId`。旧socket迟到的disconnect只销毁旧Session，不能清理新连接或Map Unit。重连后Gate以现有Actor路由调用`SecondEnterMap`，Map只清除旧移动意图并返回权威全量快照，不创建Unit、不重新广播AOI进入、不改绑Gate。宽限期结束后Gate才调用`PlayerOffline`；Map完成保存、Unit移除和AOI离开广播后响应，Gate最后删除Route。Map不拥有断线Timer，也不保存`gateSessionId`。
+
+Login使用带最终avalanche混合的Rendezvous Hash按账号稳定选择Gate。所有Login实例对同一Gate拓扑必须给出相同结果；公共前缀账号的批量分配也必须通过分布自测，不能用原始弱哈希分数造成少数Gate热点。该策略只负责稳定初始归属，运行时位置仍以Gate Route和Location为准。
 
 ### Component
 
@@ -191,7 +193,7 @@ Numeric使用`NumericType -> i32`动态字典和dirty表；Unit固定字段使�
 
 帧尾复制采用`Peek -> Send -> Ack`：只有发送成功才确认revision，发送失败保留Dirty，发送期间的新修改不会被旧Ack清除。Audience只决定收件人，Broadcast descriptor只决定event/latest语义。
 
-AOI目前尚未实现。当前全地图可见是最坏压力模型，不应把全员广播写死到新的领域API中。Phase 4计划把AOI放在Rust侧，同时保留业务可定义Rust组件的能力。
+AOI已由Rust稀疏X/Z Grid接管。Cell是移动和空间数据的基础单位，AOI关系只在跨Grid边界时重算；默认一个Grid为15×15 Cell。默认可见关系从实体所在Grid即时推导，不常驻保存候选边或全量可见边；Rust只保存迟滞关系、业务过滤拒绝项和本帧净变化，TS也不得建立镜像关系表。当前全地图可见性能报告仍只是旧版最坏压力基线，不能代表AOI容量收益。
 
 ## 地图空间契约
 
@@ -237,7 +239,7 @@ native_data/<game>/          游戏Entity和粗粒度Native op原型
 client_sdk/typescript/       引擎无关TS SDK唯一源码
 cocos_client2D/.../Demo/     Cocos业务和表现
 cocos_client2D/.../Generated 自动分发SDK和Handler入口
-cocos_client3D/              Phase 4.4的Cocos Creator 3D客户端；Generated/SDK由公共TS SDK自动分发，业务仍未开始
+cocos_client3D/              Phase 4.3的Cocos Creator 3D客户端；Generated/SDK由公共TS SDK自动分发，业务仍未开始
 pixi_client/src/             Pixi业务及SDK验收
 configs/<environment>/       环境、Process与Scene正式部署配置
 configs/bench|tests|experiments/ 压测、自动测试与传输实验配置
@@ -251,7 +253,7 @@ docs/patterns/               MMORPG领域设计原则与稳定规则编号
 
 Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`codegen.config.json`的搜索根发现Scene和Handler，不维护手工类型表。
 
-游戏静态配置与部署配置严格分离：`configs/<environment>`只描述Machine、Process、Scene、端口和Runtime参数；`game_config`保存策划维护的Luban Excel。仓库固定Luban `4.10.2` CLI，按`c/s`分组生成服务端Model类型、客户端SDK类型和独立JSON数据包。表、字段、类型、分组、索引和引用关系属于绝对不可热更的Model；只改数据行或字段值时，`npm run build:game-config`生成内容寻址候选，Watcher通过`reload-config`令每个Process完成哈希/schema/全表约束校验后原子替换当前服务端快照。业务统一通过只读`GameConfigs.Xxx.Get/TryGet/GetAll`读取，不直接解析Excel/JSON，不长期缓存整行对象。Reload不重跑Awake、不回写既有Entity状态，旧引用仍指向旧快照。客户端配置仍随SDK发布，服务端Reload不会远程替换Cocos/Pixi数据。
+游戏静态配置与部署配置严格分离：`configs/<environment>`只描述Machine、Process、Scene、端口和Runtime参数；`game_config`保存策划维护的Luban Excel。仓库固定Luban `4.10.2` CLI，按`c/s`分组生成服务端Model类型、客户端SDK类型和独立JSON数据包。表、字段、类型、分组、索引和引用关系属于绝对不可热更的Model；数据重载策略由`ConfigTablePolicy`按整表声明，不能在一张表内混合Hot/Cold。当前ItemConfig、PlayerConfig为Hot，MapConfig、AoiConfig、AoiSyncTierConfig和策略表为Cold。生成包同时携带完整/Hot/Cold数据及指纹；Rust验证三者分区一致，TS拒绝Cold指纹变化。只有Hot数据可由Watcher通过`reload-config`原子替换，Cold任何值变化都必须完整构建并重启Process。业务统一通过只读`GameConfigs.Xxx.Get/TryGet/GetAll`读取，不直接解析Excel/JSON，不长期缓存整行对象。Reload不重跑Awake、不回写既有Entity状态，旧引用仍指向旧快照。客户端配置仍随SDK发布，服务端Reload不会远程替换Cocos/Pixi数据。
 
 `.native`是codegen输入而不是生成物。框架通用ABI只放`native_data/core`；游戏新增Rust批处理能力时在`native_data/<game>/XxxOps.native`声明，生成器聚合产生Rust Extension、Host bootstrap和TS `NativeOps`。状态机黄金数据属于`tests/fixtures`，禁止混入原型目录。
 
@@ -312,10 +314,11 @@ Phase 4计划：
 
 - Phase 4.0已完成：Native Unit、protobuf、MapConfig、Cocos 2D和Pixi统一采用米制`X/Y/Z + Yaw`契约；Grid2D使用X/Z Cell，MapScene按实例创建和释放Rust空间状态。此次为显式破坏性协议升级，旧`0.3.10`客户端不能混连。
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
-- Phase 4.1先建设持久化基础，再进入账号与角色选择：计划增加可分片Rust `PersistenceProxy`，`.native`按Entity/Component声明`transient/snapshot/transactional`存储域并生成快照、dirty、schema和恢复入口。`snapshot`由框架合并写Redis并异步落永久DB；`transactional`以永久DB事务为唯一权威写入，Redis只缓存带revision的提交结果。同一字段不得同时拥有两条权威写路径，版本按存储域隔离。第一版只实现一种永久DB Adapter，不提前维护MongoDB/MySQL/PostgreSQL三套实现。该能力尚未实现，当前业务不得直接连接Redis/DB或自行增加持久化注解。
+- Phase 4.5最后建设持久化基础，再进入正式账号、角色和经济业务：计划增加可分片Rust `PersistenceProxy`，`.native`按Entity/Component声明`transient/snapshot/transactional`存储域并生成快照、dirty、schema和恢复入口。`snapshot`由框架合并写Redis并异步落永久DB；`transactional`以永久DB事务为唯一权威写入，Redis只缓存带revision的提交结果。同一字段不得同时拥有两条权威写路径，版本按存储域隔离。第一版只实现一种永久DB Adapter，不提前维护MongoDB/MySQL/PostgreSQL三套实现。该能力尚未实现，当前业务不得直接连接Redis/DB或自行增加持久化注解。
 - 账号与角色选择、正式持久化业务接入。
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
-- Phase 4.2实现Rust AOI和按可见集合广播；Phase 4.3接入NavMesh3D；Phase 4.4在已提交的`cocos_client3D`空项目骨架上完成Cocos 3D Demo；Phase 4.5再进入怪物、巡逻、仇恨和战斗。
+- Phase 4.1 Rust AOI功能链已落地，当前Windows容量候选已完成，旧实现A/B和分布式空间负载仍待运行：每个MapInstance创建独立稀疏X/Z AOI Grid。`Cell`是可配置米制空间单位；`AoiConfig`定义每个Grid包含的Cell数，以及彼此独立的Enter与Detach迟滞范围；`AoiSyncTierConfig`独立定义已可见关系的可覆盖状态频率。同步范围大于Enter不会提前建立视野，未覆盖整个Detach也合法。Enter内关系从Grid推导，仅迟滞外圈、业务拒绝和本帧净变化需要存储，TS不镜像全量关系。FastOP X/Z写入自动标脏，跨AOI Grid才重算。Movement按同步档位节流，低频档按Subject Grid稳定错峰，但开始/停止/转向强制立即发送；Numeric、UnitState和不可覆盖事件保留各自同步语义。进入/离开同帧相同受众合并为`G2C_AoiDelta`。阵营/隐身/位面由同步`IAoiVisibilityFilter`查询并显式Invalidate。Prometheus指标统一使用AOI Grid命名。Phase 4.2接入NavMesh3D；Phase 4.3完成Cocos 3D Demo；Phase 4.4进入怪物与战斗；Phase 4.5最后完成持久化基础。
+- 每个MapInstance有独立的隐藏式入图队列：连接和登录完成后，客户端停留在Loading，地图按`MapConfig.entryPlayersPerTick`逐Tick执行AOI Attach，队列上限由`entryQueueCapacity`控制。首次登录和地图传送进入队列；断线重连复用现有Unit，不重复Attach。它只削平单地图Attach与初始Snapshot洪峰，不是区服容量排队，也不替代地图人数上限或负载调度。配置属于Cold，默认Demo为每Tick 1人、最多等待10000人。
 - Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；高负载地图容量A/B尚未执行，不能把纯布局吞吐直接写成服务器容量。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。
 - 怪物Actor、巡逻、仇恨和战斗。

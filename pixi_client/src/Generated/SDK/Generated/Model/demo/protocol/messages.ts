@@ -1249,6 +1249,47 @@ export const G2C_EntityLeaveCodec = {
   },
 };
 
+export interface G2C_AoiDelta extends IMessage {
+  serverTick: number;
+  enters: readonly MapEntitySnapshot[];
+  leaves: readonly number[];
+}
+
+export const G2C_AoiDeltaCodec = {
+  decode(payload: Uint8Array): G2C_AoiDelta {
+    const reader = new BinaryReader(payload);
+    const value: G2C_AoiDelta = {
+      serverTick: 0,
+      enters: [],
+      leaves: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.serverTick = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.enters as MapEntitySnapshot[]).push(MapEntitySnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        (value.leaves as number[]).push(reader.uint32());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_AoiDelta): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
+    for (const item of (value.enters ?? [])) writer.bytes(2, MapEntitySnapshotCodec.encode(item), true);
+    for (const item of (value.leaves ?? [])) writer.uint32(3, item, true);
+    return writer.finish();
+  },
+};
+
 export interface C2G_Ping extends IMessage {}
 
 export const C2G_PingCodec = {

@@ -12,6 +12,12 @@ export interface BroadcastAudience {
   readonly routes: readonly BroadcastRoute[];
 }
 
+export interface EncodedAudienceBatch {
+  readonly audience: BroadcastAudience;
+  readonly frame: Uint8Array;
+  readonly itemCount: number;
+}
+
 interface BroadcastDescriptorBase<TItem, TMessage extends IMessage> {
   readonly name: string;
   readonly message: MessageDescriptor<TMessage>;
@@ -63,6 +69,9 @@ export interface BroadcastMetricsSnapshot {
   readonly lastQueueWaitMs: number;
   readonly maxQueueWaitMs: number;
   readonly totalQueueWaitMs: number;
+  readonly lastDispatchMs: number;
+  readonly maxDispatchMs: number;
+  readonly totalDispatchMs: number;
 }
 
 export interface BroadcastHubOptions {

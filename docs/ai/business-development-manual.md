@@ -14,7 +14,7 @@ app/hotfix/demo/      普通Handler与可热更领域行为
 proto/
 game_config/                 策划静态配置Excel；结构完整部署，纯数据可生成候选热更
 cocos_client2D/assets/scripts/Demo/
-cocos_client3D/assets/       仅在Phase 4.4或明确的3D客户端需求中修改；Generated/SDK禁止手改
+cocos_client3D/assets/       仅在Phase 4.3或明确的3D客户端需求中修改；Generated/SDK禁止手改
 pixi_client/src/
 configs/
 tests或tools中的对应业务自测
@@ -334,6 +334,8 @@ message M2C_UseSkill // IActorLocationResponse
 
 Grid2D业务使用`cellX/cellZ`和`inputX/inputZ`。Cocos 2D与Pixi在客户端边界将服务端X/Z映射为屏幕X/Y，服务端Y通常为零；3D客户端直接把普通数值转换为引擎向量。禁止再次引入`cellY/inputY`表示地面纵轴，否则2D与3D地图会产生相反语义。
 
+Cell是最小空间单位：Grid2D一步移动一个Cell，NavMesh3D允许在Cell内连续移动。AOI只按Grid边界重算，默认15×15 Cell组成一个Grid；Grid从地图最小Cell开始编号，地图宽高必须是Grid边长的整数倍。默认3×3是Enter和20Hz高频区，已可见关系移到5×5外圈后降为5Hz，移到7×7外圈后降为1Hz并保留迟滞，再越界才Leave。外圈不会让一个从未Enter的单位直接可见。
+
 创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。当前只有`Grid2D`运行时可用；`NavMesh3D`配置虽然已经具备资源、版本和哈希字段，但必须等Rust导航运行时完成后才能启用。业务不能捕获“不支持NavMesh”的异常后回退到Grid2D。空间模式、字段结构和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
 
 详细字段、Rust所有权和客户端进入校验见[地图空间与3D坐标契约](../design/spatial-world.md)。
@@ -491,7 +493,7 @@ await this.broadcast.Publish(
 - 不为每种广播新增`M2G_Xxx`；统一通过`S2G_ClientBroadcast`下行。
 - latest descriptor必须有稳定key。
 - event队列满必须显式失败，不能静默丢弃。
-- AOI尚未完成时可以使用当前Audience实现验证业务，但接口不能假定永久全地图可见。
+- AOI已经接管Movement、Numeric和Unit固定字段的接收者选择；新增业务广播必须选择明确Audience，不能重新构造全地图玩家列表。
 
 ## 定时器和Update
 
@@ -557,7 +559,38 @@ await player.Offline(reason);
 
 玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒发送`C2G_Ping`；任何入站消息都会续期，服务端出站消息不会续期。
 
-当前正式数据库链路尚未实现，Phase 4.1才会建设Rust `PersistenceProxy`和Redis/永久DB分层。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端。
+Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
+
+当前正式数据库链路尚未实现，持久化已调整到Phase 4.5，作为`0.4.x`最后一个基础阶段建设Rust `PersistenceProxy`和Redis/永久DB分层。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端。
+
+## AOI业务规则
+
+地图业务不再构造“全地图玩家列表”广播Movement、Numeric或Unit固定字段。`MapAoiComponent`暴露Rust推导出的最终可见结果，`MapComponent`只把Rust已编码分组交给`BroadcastHub`。Enter内默认关系由AOI Grid即时推导，Rust只保存Enter与Detach之间的迟滞关系、业务拒绝覆盖和本帧净变化；状态复制按Subject Grid合并相同受众，不按每名接收者复制记录索引。业务过滤属于稀疏例外。业务TS不得镜像全量关系表，也不要手工合并Grid受众。开发普通移动、传送、上线或下线时不得手工调用底层Native AOI op；X/Z FastOP、`PlayerEntered`和`RemovePlayer`生命周期已经接管。
+
+普通Unit进入/离开视野也不由业务逐个发送。框架把同一帧、相同受众的不可覆盖变化合成`G2C_AoiDelta`，客户端SDK的Handler负责遍历`enters/leaves`。新增Buff、任务摘要等领域可见事件时，应先判断它属于Unit整体Snapshot、独立不可覆盖Event还是可覆盖状态；不得把业务字段塞进通用AOI Delta，也不得恢复逐关系`Publish`。
+
+阵营、隐身、位面等规则实现同步过滤器：
+
+```ts
+class PhaseVisibilityFilter implements IAoiVisibilityFilter {
+  CanObserve(observer: Unit, subject: Unit): boolean {
+    return observer.GetComponent(PhaseComponent).PhaseId ===
+      subject.GetComponent(PhaseComponent).PhaseId;
+  }
+}
+```
+
+`CanObserve`只能读取内存中的Component并立即返回`boolean`，禁止`async`、Promise、RPC、数据库、发消息和修改Entity；异常会按不可见处理。过滤器不会每帧运行。业务状态变化后，必须按影响方向显式通知地图：只影响“我能看见谁”调用`InvalidateObserver(unit)`；只影响“谁能看见我”调用`InvalidateSubject(unit)`；双向规则调用`Invalidate(unit)`。AOI当前只筛选接收者，技能命中、组队权限等业务权威判定仍由各自领域逻辑负责。
+
+空间配置只通过Luban Cold表维护：`MapConfig.cellSizeMeters`定义米制Cell；`AoiConfig.gridSizeCells`定义一个AOI Grid包含多少个Cell；`enterRangeGrids`和`detachRangeGrids`分别控制建立与移除可见关系；`AoiSyncTierConfig`只控制已经可见关系的可覆盖状态频率。范围填写奇数边长，例如3表示3×3 Grid。同步范围可以大于Enter，但不会提前Enter；同步最大范围也可以小于Detach，迟滞外圈此时只保持可见，不接收周期可覆盖状态。Movement的开始、停止和转向不受节流；低频档由框架按Subject Grid稳定错峰。Numeric、技能、Buff等仍按自己的状态或事件语义发送。业务代码不得根据距离自行重复一套频率判断。
+
+`MapConfig`、`AoiConfig`、`AoiSyncTierConfig`是Cold表，任何值变化都必须完整构建并重启Process；`ItemConfig`和`PlayerConfig`当前是Hot表，可以在线替换数据。表结构始终属于Model。新增配置表时必须在`ConfigTablePolicy.xlsx`登记整表策略，不允许一张表内混合Hot与Cold字段。
+
+### 地图入图节流
+
+首次登录或`TransferToMap`到达目标地图时，业务不应直接调用底层AOI Attach，也不需要自己创建Loading队列。`MapComponent.PlayerEntered`会进入当前MapInstance的等待队列，地图每Tick最多按`MapConfig.entryPlayersPerTick`放行；`entryQueueCapacity`满时明确拒绝，防止无限积压。Gate保持连接并等待`EnterMap`或传送响应，客户端继续显示Loading。断线重连调用`SecondEnterMap`并复用原Unit，因此不进入该队列。
+
+这套机制只处理同一地图瞬时进入洪峰。它不检查区服总人数，不显示排队名次，不保证某张地图适合继续接收玩家，也不代替副本分配和MapHost容量规划。业务仍只调用统一传送入口，不为静态地图、动态副本、同进程或跨进程分别写节流代码。
 
 计划中的开发者语义只保留三种存储域：
 

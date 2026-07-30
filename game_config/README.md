@@ -5,7 +5,7 @@
 第一批配置：
 
 - `ItemConfig.xlsx`：道具静态定义。
-- `MapConfig.xlsx`：空间模式、米制地图尺寸、三维出生点、AOI尺寸和导航资源身份。
+- `MapConfig.xlsx`：空间模式、米制地图尺寸、三维出生点、AOI引用、入图节流和导航资源身份。
 - `PlayerConfig.xlsx`：玩家初始基础值；不描述升级后的等级成长。
 
 修改Excel后运行：
@@ -22,4 +22,4 @@ npm run test:game-config
 - `npm run dev -- configs/local/StartMachine.json`会监听Excel并自动生成、校验和切换。
 - Cocos/Pixi配置仍随Client SDK构建和发布，服务端切换不会修改已运行客户端中的数据。
 
-`MapConfig.spatial_mode`当前支持`Grid2D`与`NavMesh3D`。Grid2D必须填写`width_cells/depth_cells/grid_cell_size_meters`；NavMesh3D必须填写`navigation_asset/navigation_version/navigation_hash`，其中哈希为小写SHA-256。坐标采用米制X/Y/Z，X/Z为地面、Y为高度；完整契约见[地图空间与3D坐标契约](../docs/design/spatial-world.md)。
+`MapConfig.spatial_mode`当前支持`Grid2D`与`NavMesh3D`。Grid2D必须填写`width_cells/depth_cells/cell_size_meters`；NavMesh3D必须填写`navigation_asset/navigation_version/navigation_hash`，其中哈希为小写SHA-256。`entry_players_per_tick`限制单个MapInstance每逻辑Tick完成AOI Attach的人数，`entry_queue_capacity`限制仍在Loading中的等待人数；它们属于Cold地图容量配置。坐标采用米制X/Y/Z，X/Z为地面、Y为高度；完整契约见[地图空间与3D坐标契约](../docs/design/spatial-world.md)。

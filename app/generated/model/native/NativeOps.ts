@@ -11,13 +11,26 @@ export interface NativeHostOpsApi {
   numericSet(unitHandle: number, numericType: number, value: number): boolean;
   spatialCreateGrid2D(mapId: number, widthCells: number, depthCells: number, cellSizeMillimeters: number): void;
   spatialRelease(mapId: number): void;
+  aoiCreate(mapId: number, gridSizeMillimeters: number, enterRadiusGrids: number, detachRadiusGrids: number, syncTiers: Uint8Array): void;
+  aoiRelease(mapId: number): void;
+  aoiAttach(mapId: number, handle: number, observer: boolean, subject: boolean): Uint8Array;
+  aoiDetach(mapId: number, handle: number): Uint8Array;
+  aoiRefresh(mapId: number): Uint8Array;
+  aoiSetVisible(mapId: number, observerId: number, subjectId: number, visible: boolean): boolean;
+  aoiTakeChanges(mapId: number): Uint8Array;
+  aoiQueryRelations(mapId: number, unitId: number, mode: number): Uint8Array;
+  aoiVisibleSubjects(mapId: number, observerId: number): Uint8Array;
   mapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
+  mapPeekNumericAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapAckNumericDelta(mapId: number, revision: Uint8Array): void;
   mapPeekUnitDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
+  mapPeekUnitAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapAckUnitDelta(mapId: number, revision: Uint8Array): void;
   unitSetMovementInput(handle: number, inputX: number, inputZ: number, sequence: number): boolean;
   unitResetMovement(handle: number): void;
   mapUpdateMovement(mapId: number, serverTick: number, fixedUpdateMs: number, messageCode: number): Uint8Array;
+  mapAdvanceMovement(mapId: number, serverTick: number, fixedUpdateMs: number): number;
+  mapTakeMovementAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   dataTakeMetrics(): Uint8Array;
 }
 
@@ -89,8 +102,48 @@ export class NativeOps {
     nativeHostOps().spatialRelease(mapId);
   }
 
+  static AoiCreate(mapId: number, gridSizeMillimeters: number, enterRadiusGrids: number, detachRadiusGrids: number, syncTiers: Uint8Array): void {
+    nativeHostOps().aoiCreate(mapId, gridSizeMillimeters, enterRadiusGrids, detachRadiusGrids, syncTiers);
+  }
+
+  static AoiRelease(mapId: number): void {
+    nativeHostOps().aoiRelease(mapId);
+  }
+
+  static AoiAttach(mapId: number, handle: number, observer: boolean, subject: boolean): Uint8Array {
+    return nativeHostOps().aoiAttach(mapId, handle, observer, subject);
+  }
+
+  static AoiDetach(mapId: number, handle: number): Uint8Array {
+    return nativeHostOps().aoiDetach(mapId, handle);
+  }
+
+  static AoiRefresh(mapId: number): Uint8Array {
+    return nativeHostOps().aoiRefresh(mapId);
+  }
+
+  static AoiSetVisible(mapId: number, observerId: number, subjectId: number, visible: boolean): boolean {
+    return nativeHostOps().aoiSetVisible(mapId, observerId, subjectId, visible);
+  }
+
+  static AoiTakeChanges(mapId: number): Uint8Array {
+    return nativeHostOps().aoiTakeChanges(mapId);
+  }
+
+  static AoiQueryRelations(mapId: number, unitId: number, mode: number): Uint8Array {
+    return nativeHostOps().aoiQueryRelations(mapId, unitId, mode);
+  }
+
+  static AoiVisibleSubjects(mapId: number, observerId: number): Uint8Array {
+    return nativeHostOps().aoiVisibleSubjects(mapId, observerId);
+  }
+
   static MapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
     return nativeHostOps().mapPeekNumericDelta(mapId, serverTick, messageCode);
+  }
+
+  static MapPeekNumericAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
+    return nativeHostOps().mapPeekNumericAoiDelta(mapId, serverTick, messageCode);
   }
 
   static MapAckNumericDelta(mapId: number, revision: Uint8Array): void {
@@ -99,6 +152,10 @@ export class NativeOps {
 
   static MapPeekUnitDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
     return nativeHostOps().mapPeekUnitDelta(mapId, serverTick, messageCode);
+  }
+
+  static MapPeekUnitAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
+    return nativeHostOps().mapPeekUnitAoiDelta(mapId, serverTick, messageCode);
   }
 
   static MapAckUnitDelta(mapId: number, revision: Uint8Array): void {
@@ -115,6 +172,14 @@ export class NativeOps {
 
   static MapUpdateMovement(mapId: number, serverTick: number, fixedUpdateMs: number, messageCode: number): Uint8Array {
     return nativeHostOps().mapUpdateMovement(mapId, serverTick, fixedUpdateMs, messageCode);
+  }
+
+  static MapAdvanceMovement(mapId: number, serverTick: number, fixedUpdateMs: number): number {
+    return nativeHostOps().mapAdvanceMovement(mapId, serverTick, fixedUpdateMs);
+  }
+
+  static MapTakeMovementAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
+    return nativeHostOps().mapTakeMovementAoiDelta(mapId, serverTick, messageCode);
   }
 
   static DataTakeMetrics(): Uint8Array {

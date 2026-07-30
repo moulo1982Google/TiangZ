@@ -17,6 +17,7 @@ const healthPorts = [7602, 7603, 7604, 7605, 7606];
 const temporary = await mkdtemp(path.join(os.tmpdir(), "tiangz-game-config-reload-"));
 const validCandidate = path.join(temporary, "valid");
 const invalidCandidate = path.join(temporary, "invalid");
+const coldCandidate = path.join(temporary, "cold");
 
 await createCandidate(validCandidate, (server, client) => {
   server.game_tbitemconfig[0].restore_hp = 77;
@@ -24,6 +25,10 @@ await createCandidate(validCandidate, (server, client) => {
 });
 await createCandidate(invalidCandidate, (server) => {
   server.game_tbplayerconfig[0].initial_map_id = 999_999;
+});
+await createCandidate(coldCandidate, (server, client) => {
+  server.game_tbaoiconfig[0].grid_size_cells = 5;
+  client.game_tbaoiconfig[0].grid_size_cells = 5;
 });
 
 const validManifest = JSON.parse(
@@ -58,11 +63,18 @@ try {
     value.fingerprint === validManifest.dataFingerprint
   ), 30_000, "invalid candidate did not preserve the active snapshot in every Process");
 
+  watcher.stdin.write(`reload-config ${coldCandidate}\n`);
+  await waitFor(async () => (await readAllMetrics()).every((value) =>
+    value.successes === 1 &&
+    value.failures === 2 &&
+    value.fingerprint === validManifest.dataFingerprint
+  ), 30_000, "cold candidate did not require a Process restart");
+
   watcher.stdin.end("shutdown\n");
   const { code, signal } = await waitForExit(45_000);
   if (code !== 0) throw new Error(`Watcher exited with code=${code} signal=${signal}\n${output}`);
   console.log(
-    `game config runtime reload self-test passed: 5 Processes committed ${validManifest.dataFingerprint.slice(0, 12)} and rejected an invalid reference`,
+    `game config runtime reload self-test passed: 5 Processes committed Hot data ${validManifest.dataFingerprint.slice(0, 12)}, rejected an invalid reference, and rejected Cold data`,
   );
 } catch (error) {
   throw new Error(`${error.message}\n[Watcher output]\n${output}`);
@@ -80,17 +92,36 @@ async function createCandidate(directory, mutate) {
   mutate(server, client);
   const serverBytes = Buffer.from(`${JSON.stringify(server, null, 2)}\n`);
   const clientBytes = Buffer.from(`${JSON.stringify(client, null, 2)}\n`);
+  const serverHotBytes = partitionBytes(server, manifest.reloadPolicies.hot);
+  const serverColdBytes = partitionBytes(server, manifest.reloadPolicies.cold);
+  const clientHotBytes = partitionBytes(client, manifest.reloadPolicies.hot);
+  const clientColdBytes = partitionBytes(client, manifest.reloadPolicies.cold);
   manifest.serverHash = sha256(serverBytes);
   manifest.clientHash = sha256(clientBytes);
+  manifest.serverHotHash = sha256(serverHotBytes);
+  manifest.serverColdHash = sha256(serverColdBytes);
+  manifest.clientHotHash = sha256(clientHotBytes);
+  manifest.clientColdHash = sha256(clientColdBytes);
   manifest.dataFingerprint = sha256(Buffer.concat([serverBytes, Buffer.from([0]), clientBytes]));
+  manifest.hotDataFingerprint = sha256(Buffer.concat([serverHotBytes, Buffer.from([0]), clientHotBytes]));
+  manifest.coldDataFingerprint = sha256(Buffer.concat([serverColdBytes, Buffer.from([0]), clientColdBytes]));
   await mkdir(directory, { recursive: true });
   await writeFile(path.join(directory, manifest.serverFile), serverBytes);
+  await writeFile(path.join(directory, manifest.serverHotFile), serverHotBytes);
+  await writeFile(path.join(directory, manifest.serverColdFile), serverColdBytes);
   await writeFile(path.join(directory, manifest.clientFile), clientBytes);
+  await writeFile(path.join(directory, manifest.clientHotFile), clientHotBytes);
+  await writeFile(path.join(directory, manifest.clientColdFile), clientColdBytes);
   await writeFile(
     path.join(directory, "game-config.manifest.json"),
     `${JSON.stringify(manifest, null, 2)}\n`,
     "utf8",
   );
+}
+
+function partitionBytes(data, keys) {
+  const partition = Object.fromEntries(keys.filter((key) => key in data).map((key) => [key, data[key]]));
+  return Buffer.from(`${JSON.stringify(partition, null, 2)}\n`);
 }
 
 async function readAllMetrics() {

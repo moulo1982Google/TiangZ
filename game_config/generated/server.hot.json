@@ -1,0 +1,27 @@
+{
+  "game_tbitemconfig": [
+    {
+      "id": 1001,
+      "name": "小型生命药水",
+      "max_stack": 99,
+      "restore_hp": 50
+    },
+    {
+      "id": 1002,
+      "name": "大型生命药水",
+      "max_stack": 99,
+      "restore_hp": 200
+    }
+  ],
+  "game_tbplayerconfig": [
+    {
+      "id": 1,
+      "initial_map_id": 1,
+      "initial_hp": 100,
+      "max_hp": 1000,
+      "move_speed": 10,
+      "initial_item_config_id": 1001,
+      "initial_item_count": 3
+    }
+  ]
+}

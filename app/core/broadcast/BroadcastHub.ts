@@ -4,6 +4,7 @@ import type { IMessage } from "../protocol/message";
 import type {
   BroadcastAudience,
   BroadcastDescriptor,
+  EncodedAudienceBatch,
   BroadcastHubOptions,
   BroadcastMetricsSnapshot,
   BroadcastTransport,
@@ -34,8 +35,7 @@ interface LatestJob<TItem> {
 }
 
 interface EncodedSnapshotJob {
-  audience: BroadcastAudience;
-  frame: Uint8Array;
+  batches: readonly EncodedAudienceBatch[];
   itemCount: number;
   queuedAt: number;
   readonly deferred: Deferred[];
@@ -72,6 +72,9 @@ export class BroadcastHub {
     lastQueueWaitMs: 0,
     maxQueueWaitMs: 0,
     totalQueueWaitMs: 0,
+    lastDispatchMs: 0,
+    maxDispatchMs: 0,
+    totalDispatchMs: 0,
   };
 
   constructor(
@@ -145,20 +148,45 @@ export class BroadcastHub {
     frame: Uint8Array,
     itemCount: number,
   ): Promise<void> {
+    return this.PublishEncodedLatestBatches(
+      audience.key,
+      descriptorName,
+      [{ audience, frame, itemCount }],
+    );
+  }
+
+  /**
+   * 将同一逻辑帧的多组 AOI 受众作为一个 latest 作业入队。
+   * 频道 key 由地图和描述符保持稳定，受众分组变化不会泄漏频道。
+   *
+   * Queues multiple AOI audience groups as one latest job. The map/descriptor
+   * channel key remains stable even when recipient groups change.
+   */
+  PublishEncodedLatestBatches(
+    audienceKey: string,
+    descriptorName: string,
+    batches: readonly EncodedAudienceBatch[],
+  ): Promise<void> {
     if (this.disposed) {
       return Promise.reject(new Error("broadcast hub is disposed"));
     }
-    if (itemCount === 0 || audience.routes.length === 0) {
+    if (!audienceKey) throw new Error("encoded broadcast audience key is required");
+    const activeBatches = batches.filter(
+      (batch) => batch.itemCount > 0 && batch.audience.routes.length > 0,
+    );
+    if (activeBatches.length === 0) {
       return Promise.resolve();
     }
     if (!descriptorName) throw new Error("encoded broadcast name is required");
-    if (frame.length < 2) throw new Error("encoded broadcast frame is too short");
-    if (!Number.isSafeInteger(itemCount) || itemCount < 0) {
-      throw new Error(`invalid encoded broadcast item count: ${itemCount}`);
+    for (const batch of activeBatches) {
+      if (batch.frame.length < 2) throw new Error("encoded broadcast frame is too short");
+      if (!Number.isSafeInteger(batch.itemCount) || batch.itemCount < 0) {
+        throw new Error(`invalid encoded broadcast item count: ${batch.itemCount}`);
+      }
+      this.validateAudience(batch.audience);
     }
-
-    this.validateAudience(audience);
-    const channelKey = `${descriptorName}\0${audience.key}`;
+    const itemCount = activeBatches.reduce((total, batch) => total + batch.itemCount, 0);
+    const channelKey = `${descriptorName}\0${audienceKey}`;
     const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
     if (channel.latest || channel.eventQueue.length > 0) {
       throw new Error(`encoded and object broadcasts share channel ${channelKey}`);
@@ -173,14 +201,12 @@ export class BroadcastHub {
     const existing = channel.encodedLatest;
     if (existing) {
       this.metrics.coalescedItems += existing.itemCount;
-      existing.audience = audience;
-      existing.frame = frame;
+      existing.batches = activeBatches;
       existing.itemCount = itemCount;
       existing.deferred.push({ resolve, reject });
     } else {
       channel.encodedLatest = {
-        audience,
-        frame,
+        batches: activeBatches,
         itemCount,
         queuedAt: monotonicNow(),
         deferred: [{ resolve, reject }],
@@ -222,6 +248,9 @@ export class BroadcastHub {
       lastQueueWaitMs: this.metrics.lastQueueWaitMs,
       maxQueueWaitMs: this.metrics.maxQueueWaitMs,
       totalQueueWaitMs: this.metrics.totalQueueWaitMs,
+      lastDispatchMs: this.metrics.lastDispatchMs,
+      maxDispatchMs: this.metrics.maxDispatchMs,
+      totalDispatchMs: this.metrics.totalDispatchMs,
     };
   }
 
@@ -359,7 +388,10 @@ export class BroadcastHub {
       return;
     }
 
-    void this.transport.Send(audience, frame)
+    const dispatchStartedAt = monotonicNow();
+    const delivery = this.transport.Send(audience, frame);
+    this.recordDispatch(monotonicNow() - dispatchStartedAt);
+    void delivery
       .then(() => this.complete(channel, descriptor, startedAt, deferred))
       .catch((error) => this.complete(channel, descriptor, startedAt, deferred, error));
   }
@@ -416,7 +448,14 @@ export class BroadcastHub {
     this.metrics.maxQueueWaitMs = Math.max(this.metrics.maxQueueWaitMs, queueWaitMs);
     this.metrics.totalQueueWaitMs += queueWaitMs;
 
-    void this.transport.Send(job.audience, job.frame)
+    const dispatchStartedAt = monotonicNow();
+    const delivery = job.batches.length === 1
+      ? this.transport.Send(job.batches[0].audience, job.batches[0].frame)
+      : Promise.all(
+        job.batches.map((batch) => this.transport.Send(batch.audience, batch.frame)),
+      ).then(() => undefined);
+    this.recordDispatch(monotonicNow() - dispatchStartedAt);
+    void delivery
       .then(() => this.completeEncodedSnapshot(
         channel,
         descriptorName,
@@ -473,6 +512,14 @@ export class BroadcastHub {
     };
     this.channels.set(key, channel);
     return channel;
+  }
+
+  /** 记录 Transport 在返回 Promise 前完成的同步分组与入队耗时。 / Records synchronous grouping and enqueue work completed before Transport returns its Promise. */
+  private recordDispatch(durationMs: number): void {
+    const normalized = Math.max(0, durationMs);
+    this.metrics.lastDispatchMs = normalized;
+    this.metrics.maxDispatchMs = Math.max(this.metrics.maxDispatchMs, normalized);
+    this.metrics.totalDispatchMs += normalized;
   }
 
   private recordPending(): void {

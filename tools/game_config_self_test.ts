@@ -29,10 +29,19 @@ function main(): void {
     player.initialItemConfigId_ref,
     serverConfigs.ItemConfig.Get(player.initialItemConfigId),
   );
-  assert.equal(serverConfigs.MapConfig.GetAll().length, 2);
+  assert.equal(serverConfigs.MapConfig.GetAll().length, 4);
   assert.equal(serverConfigs.MapConfig.Get(1).spatialMode, 1);
-  assert.equal(serverConfigs.MapConfig.Get(1).depthCells, 128);
-  assert.equal(serverConfigs.MapConfig.Get(1).gridCellSizeMeters, 1);
+  assert.equal(serverConfigs.MapConfig.Get(1).depthCells, 150);
+  assert.equal(serverConfigs.MapConfig.Get(1).cellSizeMeters, 1);
+  assert.equal(serverConfigs.MapConfig.Get(1).aoiConfigId_ref?.gridSizeCells, 15);
+  assert.equal(serverConfigs.MapConfig.Get(1).entryPlayersPerTick, 1);
+  assert.equal(serverConfigs.MapConfig.Get(1).entryQueueCapacity, 10_000);
+  assert.equal(serverConfigs.MapConfig.Get(1015).widthCells, 225);
+  assert.equal(serverConfigs.MapConfig.Get(1020).widthCells, 300);
+  assert.deepEqual(
+    serverConfigs.AoiSyncTierConfig.GetAll().map((tier) => [tier.rangeGrids, tier.syncHz]),
+    [[3, 20], [5, 5], [7, 1]],
+  );
   assert.equal(serverConfigs.ItemConfig.TryGet(999_999), undefined);
   assert.throws(
     () => serverConfigs.MapConfig.Get(999_999),
@@ -59,6 +68,18 @@ function main(): void {
   );
   assert.equal(oldItem.restoreHp, 50);
   assert.equal(serverConfigs.ItemConfig.Get(1001).restoreHp, 77);
+
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({
+        ...JSON.parse(manifestJson),
+        dataFingerprint: "d".repeat(64),
+        coldDataFingerprint: "e".repeat(64),
+      }),
+      dataJson,
+    ),
+    /cold game config changed/,
+  );
 
   const invalidNavMesh = structuredClone(changed);
   invalidNavMesh.game_tbmapconfig[0].spatial_mode = 2;

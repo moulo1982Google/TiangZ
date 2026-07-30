@@ -10,6 +10,40 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-30 - MapInstance入图节流与3000人基线复核
+
+Rust AOI接入后的同屏压测暴露两类非稳态开销：状态复制曾在没有实际可见性任务时仍等待Promise微任务屏障；批量进入同一出生点又会集中产生近似O(N²)的Attach关系和初始Snapshot。前者已改为仅在真实空间投递在途时等待，2000人同条件Map CPU由66.7%降至40.1%。后者增加每MapInstance独立的隐藏式Loading队列，由Cold `MapConfig.entryPlayersPerTick/entryQueueCapacity`控制逐Tick放行和有界等待；首次进入及传送使用，断线重连跳过。
+
+默认每Tick放行1人后，3000人、16 Gate、5Hz Move、1Hz Probe、单AOI Grid测试完成全部入图，队列峰值16且零失败，Map CPU平均78.8%。但正式窗口仍出现1774次背压，Probe p95/p99为1814/2568ms，因此只能证明Attach洪峰被削平，不能作为合格容量点。容量报告同时修复了遗漏“零背压”过滤的判定错误。
+
+## 2026-07-30 - AOI可见范围、同步档位与冷热配置解耦
+
+地图空间统一使用可配置米制Cell；AOI宽阶段更名为AOI Grid，并由`gridSizeCells`声明一个Grid包含多少个Cell。Rust `AoiWorld`把Enter和Detach迟滞分开：Enter内关系仍由Grid即时推导，只物化已经进入后停留在迟滞外圈的稀疏关系，保持密集同屏的低内存特性。可覆盖Movement再使用独立同步档位，档位只作用于已可见关系；开始、停止和转向强制立即发送。当前Demo为150×150 Cell、每Grid 15×15 Cell、Enter 3×3@20Hz、5×5外圈@5Hz、Detach 7×7外圈@1Hz。
+
+AOI Grid改为从地图最小Cell建立相对原点，避免225 Cell等奇数Grid世界被世界零点切成16列。容量工具新增10×10、15×15、20×20 Grid冷地图矩阵；`grid-uniform`严格把玩家轮询放到每个Grid中央Cell并限制为1 Cell/s。10×10世界的1000/2000/3000人对应每Grid 10/20/30人；静态布局只验证3×3 Enter稳态，5Hz/1Hz迟滞档另做迁移回归。
+
+首次矩阵发现旧Bench流程先在公共出生点Attach、再用ActorLocation RPC搬运，建角会制造不属于稳态的临时Enter/Leave并让定位RPC排队超时。现改为Bench Gate RPC计算冷配置出生点，经可信内网字段在Unit创建时预定位；外网正式EnterMap不能提交坐标。定位RPC仅校验并停止每100ms的Demo回血Timer，避免`state-sync-mode=off`仍混入Numeric广播。统一结果见`perf/results/aoi_grid_matrix_20260730.md`：1000@10×10完整通过但Map CPU平均86.1%略超85%目标；2000/3000在正式负载中出现Actor RPC超时，扩大到15×15和20×20虽显著降低可见关系和移动编码耗时，仍未越过3000玩家18k/s入站消息上限。
+
+Luban增加`ConfigTablePolicy`整表策略，生成完整、Hot、Cold三套数据及独立指纹。Item/Player为Hot；Map/AOI/策略为Cold。Rust验证分区可无重叠还原完整数据，TS和构建工具拒绝运行期Cold变化。空间尺寸、范围和频率即使只改数值也必须完整构建并重启Process。
+
+## 2026-07-30 - Phase 4顺序调整
+
+持久化基础从原Phase 4.1调整到Phase 4.5，作为`0.4.x`最后一个基础阶段。当前优先推进地图主链路：`0.4.1` Rust AOI、`0.4.2` NavMesh3D、`0.4.3` Cocos 3D Demo、`0.4.4`怪物与战斗，最后由`0.4.5`完成持久化。旧日志中的Phase 4.1是当时排期记录，不再代表当前执行顺序。
+
+## 2026-07-30 - Phase 4.1 Rust AOI功能链
+
+新增地图实例私有Rust `AoiWorld`：稀疏X/Z宽阶段格推导默认候选与可见关系，只保存业务拒绝覆盖和本帧净变化，TS不再镜像全量关系边。Native X/Z setter只标脏，跨宽阶段格才重算邻域；该宽阶段格后来统一更名为AOI Grid。玩家Attach/Detach与Location提交、Native Unit销毁顺序对齐。Movement、Numeric和UnitState不再默认全地图广播，而是在Rust按最终可见集合分组编码，TS只解析接收者外壳并交给稳定latest频道；多组投递全部成功后才Ack。
+
+首次3000人同Cell诊断在建角阶段暴露复制分组的二次方临时数据：每名玩家的Numeric定时变化会把“每名接收者看到哪些记录”展开成矩阵，Map满核后使EnterMap RPC超时。编码入口改为默认按Subject Cell共享frame与受众列表；仅带业务拒绝覆盖的Subject计算精确受众。该改动已经消除该临时矩阵，但正式容量数据必须等同口径复测通过后再记录。
+
+随后3000人诊断又发现Gate分配热点：原始FNV-1a Rendezvous分数对公共账号前缀相关，12 Gate实测连接数约为94到687。Gate选择器增加32位avalanche最终混合，并新增12000账号、12 Gate、单Gate偏差不超过10%的回归测试。该轮仍未形成有效正式性能窗口。
+
+容量工具现在会在失败时保留Process health诊断，而不是丢弃预热样本。诊断还发现Rust虚拟玩家原先从同一时刻启动周期任务，会在每个Move/Probe周期制造全员同步脉冲；现按UnitId为每种周期负载生成稳定相位，总QPS不变但请求均匀铺开。旧同步脉冲失败结果不再用于容量判断。
+
+AOI状态复制进一步按相同受众合并宽阶段格frame；容量报告补充World、Entity、Grid、候选/可见关系、跨Grid和可见变化速率。900人诊断确认约845次跨Grid/s会产生约6.11万条可见变化/s，旧路径按Subject调度约7437次广播/s并出现背压。新增不可覆盖`G2C_AoiDelta`，把同帧相同受众的Enter/Leave批量发送；Cocos 2D、Pixi和all-in-one/split Runtime smoke均通过。改后900人短窗广播约297次/s、平均约0.95ms且无背压；1000人短窗可跑完但Map CPU约98.1%。最终850人、12 Gate、5Hz Move、1Hz Probe、10秒预热加60秒正式窗口通过：Map CPU平均77.2%，Probe p95/p99为39.05/82.16ms，零错误、零过载、零超时、零背压。该结果是当时的Windows候选，不等于生产MMORPG容量；旧实现A/B与分布式空间负载仍待补充。
+
+普通Rust/TS单测、BroadcastHub多受众Ack测试以及all-in-one、split-process Runtime smoke均已通过。边界冒烟覆盖Enter、Leave、范围外不接收新sequence和重新Enter。正式地图容量A/B尚未完成，当前不记录性能收益。
+
 ## 2026-07-30 - v0.4.0 Phase 4.0空间契约
 
 Phase 4从空间契约开始，而不是直接堆叠3D业务。服务端、Native Entity和protobuf统一为地图局部米制`X/Y/Z + Yaw`：X/Z是地面，Y是高度，Yaw为绕Y轴弧度；Grid2D同步迁移到`cellX/cellZ`和`inputX/inputZ`。Cocos 2D与Pixi只在显示边界将X/Z映射到屏幕X/Y，公共SDK不依赖任何引擎向量类型。

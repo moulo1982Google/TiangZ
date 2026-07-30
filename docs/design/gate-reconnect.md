@@ -10,7 +10,7 @@
 | `GatePlayerRoute` | Gate | 跨连接，直到最终下线 | connectionId、收发时间、Map/Unit/Actor位置 |
 | `PlayerUnit` | Map | 玩家进入地图到最终下线或迁移 | 权威游戏状态、长期gateName |
 
-Map不保存connectionId或GateSessionId，也不启动断线Timer。当前Demo的Route只在一个Gate进程内有效；未来LocationService负责Gate故障转移和跨进程全局位置。
+Map不保存connectionId或GateSessionId，也不启动断线Timer。当前Demo的Route只在一个Gate进程内有效；Location负责跨进程Actor位置与迁移锁，但尚不接管Gate进程崩溃后的连接故障转移。
 
 ## 存活检测
 
@@ -37,7 +37,7 @@ disconnected
   -> grace timeout        -> removing
 ```
 
-同账号新连接使用Rendezvous Hash回到相同Gate，并在Gate内原子替换旧connectionId。旧socket之后到达的disconnect会因connectionId不匹配而被忽略。
+同账号新连接使用带32位avalanche最终混合的Rendezvous Hash回到相同Gate，并在Gate内原子替换旧connectionId。最终混合用于打散公共账号前缀造成的候选分数相关性；`test:gate-reconnect`同时验证配置顺序无关和12 Gate分布。旧socket之后到达的disconnect会因connectionId不匹配而被忽略。
 
 所有等待Map RPC的Gate流程在`await`返回后必须再次校验Route仍属于当前Session。否则旧连接启动的Promise可能在新连接顶号后返回，并把ActorLocation错误地绑回旧connectionId。
 
@@ -69,7 +69,7 @@ Map保存失败仍会记录错误并完成Unit清理；Gate在RPC成功、失败
 ## 当前边界
 
 - 粘滞Gate依赖各Login实例拥有相同Gate拓扑。
-- Gate增删时Rendezvous Hash只重映射部分账号，但当前没有LocationService接管在线玩家。
+- Gate增删时Rendezvous Hash只重映射部分新登录账号；Location当前不会迁移仍在线的Gate连接。
 - Gate进程崩溃会丢失内存Route；Gate故障转移、跨进程Map实例定位和全局在线目录仍是后续工作。
 
 快速状态机验证使用`npm run test:gate-reconnect`；真实Timer、Gate RPC与Map销毁链路使用`npm run test:gate-timeout-runtime`，后者会实际等待约32秒，因此不属于日常快速质量门。

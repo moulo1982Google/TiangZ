@@ -11,7 +11,7 @@ import type {
 import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
 import {
-  CELL_SIZE,
+  PIXELS_PER_METER,
   UNIT_FOOTPRINT_CELLS,
   cellToWorld,
 } from "./Movement/CellMovement";
@@ -50,7 +50,7 @@ export class MapEntityManager {
     private readonly fixedUpdateMs: number,
     private readonly mapWidthCells: number,
     private readonly mapDepthCells: number,
-    private readonly gridCellSizeMeters: number,
+    private readonly cellSizeMeters: number,
     snapshots: readonly MapEntitySnapshot[],
     items: readonly ItemSnapshot[],
   ) {
@@ -219,8 +219,8 @@ export class MapEntityManager {
     this.parent.addChild(node);
     node.setPosition(cellToWorld(snapshot.cellX), cellToWorld(snapshot.cellZ));
     node.addComponent(UITransform).setContentSize(
-      CELL_SIZE * UNIT_FOOTPRINT_CELLS,
-      CELL_SIZE * UNIT_FOOTPRINT_CELLS,
+      PIXELS_PER_METER * UNIT_FOOTPRINT_CELLS,
+      PIXELS_PER_METER * UNIT_FOOTPRINT_CELLS,
     );
     const appearance = new CharacterSprite(node, snapshot.facing);
     this.ui.createLabel(
@@ -260,8 +260,8 @@ export class MapEntityManager {
   }
 
   private followLocalPlayer(x: number, y: number): void {
-    const mapWidth = this.mapWidthCells * CELL_SIZE;
-    const mapHeight = this.mapDepthCells * CELL_SIZE;
+    const mapWidth = this.mapWidthCells * PIXELS_PER_METER;
+    const mapHeight = this.mapDepthCells * PIXELS_PER_METER;
     const maxX = Math.max(0, (mapWidth - MapEntityManager.VIEWPORT_WIDTH) / 2);
     const maxY = Math.max(0, (mapHeight - MapEntityManager.VIEWPORT_HEIGHT) / 2);
     this.parent.setPosition(
@@ -273,7 +273,7 @@ export class MapEntityManager {
 
   /** 将服务端米制X/Z坐标转换为Cocos 2D画布像素；世界高度Y在本视图中不参与绘制。 / Maps server X/Z meters to Cocos 2D pixels while world height Y remains outside this view. */
   private worldMetersToScreen(value: number): number {
-    return value * CELL_SIZE / this.gridCellSizeMeters;
+    return value * PIXELS_PER_METER / this.cellSizeMeters;
   }
 
   private remove(unitId: number): void {

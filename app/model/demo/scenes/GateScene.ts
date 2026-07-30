@@ -42,6 +42,13 @@ export const GATE_CLIENT_TIMEOUT_MS = 30_000;
 export const GATE_RECONNECT_GRACE_MS = 30_000;
 const GATE_TIMEOUT_SWEEP_MS = 1_000;
 
+export interface ServerSpawnOverride {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw: number;
+}
+
 @entryScene()
 export class GateScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
@@ -251,7 +258,11 @@ export class GateScene extends EntryScene {
    * SecondEnterMap on the existing PlayerUnit. Both update connection routing
    * only inside Gate; Map never sees a connectionId.
    */
-  async EnterMap(session: GateSession, request: C2G_EnterMap): Promise<G2C_EnterMap> {
+  async EnterMap(
+    session: GateSession,
+    request: C2G_EnterMap,
+    spawnOverride?: ServerSpawnOverride,
+  ): Promise<G2C_EnterMap> {
     const route = this.RequireCurrentRoute(session);
     if (route.actorState === "moving") {
       throw new RpcError(SystemErrCode.ActorTransferring, "player transfer is recovering");
@@ -309,7 +320,13 @@ export class GateScene extends EntryScene {
         token: session.token,
         gateName: this.self.name,
         mapInstanceId: target.instance.mapInstanceId,
+        hasInitialSpawnOverride: spawnOverride !== undefined,
+        initialSpawnX: spawnOverride?.x ?? 0,
+        initialSpawnY: spawnOverride?.y ?? 0,
+        initialSpawnZ: spawnOverride?.z ?? 0,
+        initialSpawnYaw: spawnOverride?.yaw ?? 0,
       },
+      { timeoutMs: 120_000 },
     );
     this.AssertCurrentRoute(session, route);
 

@@ -161,6 +161,15 @@ message G2C_EntityLeave // IMessage
   uint32 unit_id = 1;
 }
 
+// @ets.msg protocol=Client method=AoiDelta
+// @ets.broadcast mode=event
+message G2C_AoiDelta // IMessage
+{
+  uint32 server_tick = 1;
+  repeated MapEntitySnapshot enters = 2;
+  repeated uint32 leaves = 3;
+}
+
 // @ets.msg protocol=Gate method=Ping
 message C2G_Ping // IMessage
 {
