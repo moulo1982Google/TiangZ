@@ -69,6 +69,10 @@ async function main() {
     return;
   }
   const updateProtocolLocks = args.includes("--update-opcode-lock");
+  const replaceSchemaLock = args.includes("--replace-schema-lock");
+  if (replaceSchemaLock && !updateProtocolLocks) {
+    throw new Error("--replace-schema-lock requires --update-opcode-lock");
+  }
   const opcodeLock = await readOpcodeLock(updateProtocolLocks);
   const protoFiles = await discoverProtoFiles(protoDir);
   const groups = new Map();
@@ -100,7 +104,7 @@ async function main() {
   }
 
   await enforceOpcodeLock(sourceProtocols, updateProtocolLocks, opcodeLock);
-  await enforceSchemaLock(sourceProtocols, updateProtocolLocks);
+  await enforceSchemaLock(sourceProtocols, updateProtocolLocks, replaceSchemaLock);
 
   await rm(generatedServerProtocolDir, { recursive: true, force: true });
   await rm(obsoleteAppClientProtocolDir, { recursive: true, force: true });
@@ -527,12 +531,18 @@ async function readOpcodeLock(allowMissing) {
   }
 }
 
-async function enforceSchemaLock(protocols, update) {
+async function enforceSchemaLock(protocols, update, replace = false) {
   const current = protocols
     .flatMap((protocol) => protocol.messages)
     .map(toSchemaEntry)
     .sort((left, right) => left.key.localeCompare(right.key, "en"));
   const lock = await readSchemaLock(update);
+  if (replace) {
+    const next = { version: 1, entries: current };
+    await writeFile(schemaLockFile, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    console.log(`replaced schema lock for an explicitly reviewed breaking release: ${current.length} message(s)`);
+    return;
+  }
   const entries = new Map(lock.entries.map((entry) => [entry.key, entry]));
   const missingMessages = [];
   let addedFields = 0;

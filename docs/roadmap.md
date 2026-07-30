@@ -287,7 +287,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 4：MMORPG 业务扩展
 
-状态：业务主体尚未开始；Luban静态游戏配置基础已先行完成。
+状态：已进入`0.4.x`开发线；Phase 4.0空间契约已完成，业务主体尚未开始。
 
 计划：
 
@@ -301,6 +301,17 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
 
+### Phase 4.0：3D空间契约冻结
+
+状态：完成（`0.4.0`）。
+
+- 服务端坐标统一为地图局部米制`X/Y/Z + Yaw`：X/Z为地面，Y为高度，Yaw为绕Y轴弧度；坐标必须与`MapInstanceId`一起解释。
+- Grid2D统一使用`cellX/cellZ`和`inputX/inputZ`，Rust权威位置改为米；Cocos 2D与Pixi仅在客户端适配边界把X/Z映射到屏幕X/Y。
+- Luban `MapConfig`增加`SpatialMode`、三维出生点、Grid Cell米制尺寸、AOI Cell米制尺寸以及导航资源`asset/version/hash`。
+- Rust空间状态按MapInstance创建和释放；NavMesh只读资产未来按MapConfig与版本共享，AOI、动态障碍和Unit状态始终按实例隔离。
+- 协议、Native schema与客户端SDK完成显式破坏性升级；旧`0.3.10`客户端不得连接`0.4.x`服务端。
+- 详细契约见[地图空间与3D坐标契约](design/spatial-world.md)。
+
 ### Phase 4.1：持久化基础
 
 状态：仅完成设计讨论，尚未实现；进入账号、角色和经济业务前实施。
@@ -312,6 +323,27 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
 - 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
 - 验收覆盖进程崩溃、Redis短暂不可用、永久DB不可用、重复/乱序请求、幂等重试、积压背压、下线Flush和恢复；Prometheus至少暴露dirty数量、最老待落库年龄、Redis/DB延迟、失败、重试和版本冲突。
+
+### Phase 4.2：Rust AOI
+
+- 在`MapInstanceId`私有空间中建立Rust AOI索引，输出进入、离开和当前可见集合。
+- BroadcastHub只消费Audience结果，不让业务Handler逐玩家组织网络扇出。
+- 保留当前全地图广播作为回归基线，完成同负载A/B后再给出收益结论。
+
+### Phase 4.3：NavMesh3D
+
+- 固定并接入Recast/Detour兼容的tiled NavMesh资源格式，校验`navigationVersion/navigationHash`。
+- Rust实现位置投影、寻路、射线、高度查询、动态障碍与地图实例生命周期。
+- TS只调用粗粒度空间API，不逐节点跨越V8边界，也不在TS保存第二份权威坐标。
+
+### Phase 4.4：Cocos 3D Demo
+
+- 接入与服务端同版本的导航资源，完成`Vec3`边界转换、点击寻路、方向移动和服务端校正。
+- 保留Cocos 2D与Pixi Grid2D回归，证明SDK协议结构不依赖具体引擎坐标类型。
+
+### Phase 4.5：怪物与战斗
+
+- 增加怪物Unit、巡逻、仇恨、技能与战斗事件，验证Component、Timer、空间查询和状态同步的完整业务体验。
 
 ## Phase 5：生产工程化
 

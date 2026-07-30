@@ -30,6 +30,9 @@ function main(): void {
     serverConfigs.ItemConfig.Get(player.initialItemConfigId),
   );
   assert.equal(serverConfigs.MapConfig.GetAll().length, 2);
+  assert.equal(serverConfigs.MapConfig.Get(1).spatialMode, 1);
+  assert.equal(serverConfigs.MapConfig.Get(1).depthCells, 128);
+  assert.equal(serverConfigs.MapConfig.Get(1).gridCellSizeMeters, 1);
   assert.equal(serverConfigs.ItemConfig.TryGet(999_999), undefined);
   assert.throws(
     () => serverConfigs.MapConfig.Get(999_999),
@@ -56,6 +59,16 @@ function main(): void {
   );
   assert.equal(oldItem.restoreHp, 50);
   assert.equal(serverConfigs.ItemConfig.Get(1001).restoreHp, 77);
+
+  const invalidNavMesh = structuredClone(changed);
+  invalidNavMesh.game_tbmapconfig[0].spatial_mode = 2;
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "c".repeat(64) }),
+      JSON.stringify(invalidNavMesh),
+    ),
+    /needs an asset, version, and lowercase SHA-256/,
+  );
 
   const invalid = structuredClone(changed);
   invalid.game_tbplayerconfig[0].initial_map_id = 999_999;

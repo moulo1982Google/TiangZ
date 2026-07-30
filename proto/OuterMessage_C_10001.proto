@@ -61,11 +61,16 @@ message G2C_EnterMap // IResponse
   string map_service = 2;
   uint32 map_id = 3;
   uint32 unit_id = 4;
-  sint32 x = 5;
-  sint32 y = 6;
+  float x = 5;
+  float z = 6;
   repeated MapEntitySnapshot entities = 7;
   uint32 fixed_update_ms = 8;
   repeated ItemSnapshot items = 9;
+  float y = 10;
+  uint64 map_instance_id = 11;
+  uint32 spatial_mode = 12;
+  string navigation_version = 13;
+  string navigation_hash = 14;
 }
 
 // @ets.msg protocol=Client method=MapReady
@@ -74,15 +79,16 @@ message G2C_MapReady // IMessage
   string account = 1;
   uint32 map_id = 2;
   uint32 unit_id = 3;
-  sint32 x = 4;
-  sint32 y = 5;
+  float x = 4;
+  float z = 5;
+  float y = 6;
 }
 
 // @ets.msg protocol=Map method=Move duringTransfer=drop
 message C2M_Move // IActorLocationMessage
 {
   sint32 input_x = 1;
-  sint32 input_y = 2;
+  sint32 input_z = 2;
   uint32 sequence = 3;
 }
 

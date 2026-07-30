@@ -18,35 +18,44 @@ const INDEX_BITS: u32 = 20;
 const INDEX_MASK: u32 = (1 << INDEX_BITS) - 1;
 const MAX_GENERATION: u32 = (1 << (32 - INDEX_BITS)) - 1;
 const NATIVE_UNIT_RECORD_BYTES: usize = 46;
-const CELL_SIZE: f32 = 12.0;
-
 #[derive(Clone, Copy)]
-struct MapBounds {
+struct Grid2DBounds {
     min_x: i32,
     max_x: i32,
-    min_y: i32,
-    max_y: i32,
+    min_z: i32,
+    max_z: i32,
+    cell_size_meters: f32,
 }
 
-impl MapBounds {
-    fn new(width_cells: u32, height_cells: u32) -> Result<Self, JsErrorBox> {
-        if !(3..=1_000_000).contains(&width_cells) || !(3..=1_000_000).contains(&height_cells) {
+impl Grid2DBounds {
+    fn new(
+        width_cells: u32,
+        depth_cells: u32,
+        cell_size_millimeters: u32,
+    ) -> Result<Self, JsErrorBox> {
+        if !(3..=1_000_000).contains(&width_cells) || !(3..=1_000_000).contains(&depth_cells) {
             return Err(JsErrorBox::generic(
                 "map dimensions must be between 3 and 1000000 cells",
             ));
         }
+        if !(1..=1_000_000).contains(&cell_size_millimeters) {
+            return Err(JsErrorBox::generic(
+                "grid cell size must be between 1 and 1000000 millimeters",
+            ));
+        }
         let width = width_cells as i32;
-        let height = height_cells as i32;
+        let depth = depth_cells as i32;
         Ok(Self {
             min_x: -(width / 2) + 1,
             max_x: (width - 1) / 2 - 1,
-            min_y: -(height / 2) + 1,
-            max_y: (height - 1) / 2 - 1,
+            min_z: -(depth / 2) + 1,
+            max_z: (depth - 1) / 2 - 1,
+            cell_size_meters: cell_size_millimeters as f32 / 1_000.0,
         })
     }
 
-    fn contains(self, x: i32, y: i32) -> bool {
-        (self.min_x..=self.max_x).contains(&x) && (self.min_y..=self.max_y).contains(&y)
+    fn contains(self, x: i32, z: i32) -> bool {
+        (self.min_x..=self.max_x).contains(&x) && (self.min_z..=self.max_z).contains(&z)
     }
 }
 
@@ -88,7 +97,7 @@ struct NativeEntityStore {
     free: Vec<usize>,
     pools: NativeEntityPools,
     units_by_map: HashMap<u32, Vec<u32>>,
-    map_bounds: HashMap<u32, MapBounds>,
+    grid_2d_bounds: HashMap<u32, Grid2DBounds>,
     numerics_by_unit: HashMap<u32, NumericData>,
     scratch_handles: Vec<u32>,
     scratch_movement_records: Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
@@ -271,19 +280,19 @@ pub(crate) fn op_native_entity_destroy(handle: u32) -> Result<(), JsErrorBox> {
 pub(crate) fn op_native_unit_set_movement_input(
     handle: u32,
     input_x: i8,
-    input_y: i8,
+    input_z: i8,
     sequence: u32,
 ) -> Result<bool, JsErrorBox> {
-    native_unit_set_movement_input_impl(handle, input_x, input_y, sequence)
+    native_unit_set_movement_input_impl(handle, input_x, input_z, sequence)
 }
 
 fn native_unit_set_movement_input_impl(
     handle: u32,
     input_x: i8,
-    input_y: i8,
+    input_z: i8,
     sequence: u32,
 ) -> Result<bool, JsErrorBox> {
-    if !(-1..=1).contains(&input_x) || !(-1..=1).contains(&input_y) {
+    if !(-1..=1).contains(&input_x) || !(-1..=1).contains(&input_z) {
         return Err(JsErrorBox::generic(
             "native movement input must be between -1 and 1",
         ));
@@ -295,9 +304,9 @@ fn native_unit_set_movement_input_impl(
         if sequence <= unit.sequence {
             return Ok(false);
         }
-        unit.input_changed |= u32::from(unit.input_x != input_x || unit.input_y != input_y);
+        unit.input_changed |= u32::from(unit.input_x != input_x || unit.input_z != input_z);
         unit.input_x = input_x;
-        unit.input_y = input_y;
+        unit.input_z = input_z;
         unit.sequence = sequence;
         Ok(true)
     })
@@ -309,18 +318,30 @@ pub(crate) fn op_native_unit_reset_movement(handle: u32) -> Result<(), JsErrorBo
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.scalar_sets += 1;
-        let (x, y) = {
+        let location = store.location(handle)?;
+        let map_id = store
+            .pools
+            .get_unit_cold(location)
+            .ok_or_else(|| wrong_entity_type(handle, "Unit"))?
+            .map_id;
+        let bounds = *store.grid_2d_bounds.get(&map_id).ok_or_else(|| {
+            JsErrorBox::generic(format!("map {map_id} has no Grid2D spatial state"))
+        })?;
+        let (x, z) = {
             let unit = store.get_unit_hot_mut(handle)?;
             unit.input_x = 0;
-            unit.input_y = 0;
+            unit.input_z = 0;
             unit.input_changed = 0;
             unit.sequence = 0;
             unit.target_cell_x = unit.cell_x;
-            unit.target_cell_y = unit.cell_y;
+            unit.target_cell_z = unit.cell_z;
             unit.move_start_tick = 0;
             unit.move_end_tick = 0;
             unit.moving = 0;
-            (cell_to_world(unit.cell_x), cell_to_world(unit.cell_y))
+            (
+                cell_to_world(unit.cell_x, bounds.cell_size_meters),
+                cell_to_world(unit.cell_z, bounds.cell_size_meters),
+            )
         };
         store.set_number(
             handle,
@@ -329,8 +350,8 @@ pub(crate) fn op_native_unit_reset_movement(handle: u32) -> Result<(), JsErrorBo
         )?;
         store.set_number(
             handle,
-            crate::generated::native_data::UNIT_FIELD_Y,
-            y as f64,
+            crate::generated::native_data::UNIT_FIELD_Z,
+            z as f64,
         )?;
         Ok(())
     })
@@ -647,31 +668,33 @@ struct UnitDeltaRecord {
 
 #[op2(fast)]
 /// 注册一张地图的移动边界；重复注册会原子替换旧值。 / Registers movement bounds for a map, atomically replacing an older value.
-pub(crate) fn op_native_map_configure(
+pub(crate) fn op_native_spatial_create_grid2_d(
     map_id: u32,
     width_cells: u32,
-    height_cells: u32,
+    depth_cells: u32,
+    cell_size_millimeters: u32,
 ) -> Result<(), JsErrorBox> {
-    native_map_configure(map_id, width_cells, height_cells)
+    native_spatial_create_grid_2d(map_id, width_cells, depth_cells, cell_size_millimeters)
 }
 
-fn native_map_configure(
+fn native_spatial_create_grid_2d(
     map_id: u32,
     width_cells: u32,
-    height_cells: u32,
+    depth_cells: u32,
+    cell_size_millimeters: u32,
 ) -> Result<(), JsErrorBox> {
-    let bounds = MapBounds::new(width_cells, height_cells)?;
+    let bounds = Grid2DBounds::new(width_cells, depth_cells, cell_size_millimeters)?;
     STORE.with(|slot| {
-        slot.borrow_mut().map_bounds.insert(map_id, bounds);
+        slot.borrow_mut().grid_2d_bounds.insert(map_id, bounds);
     });
     Ok(())
 }
 
 #[op2(fast)]
-/// 删除地图移动边界；不存在时保持幂等。 / Removes map movement bounds and remains idempotent when absent.
-pub(crate) fn op_native_map_unconfigure(map_id: u32) {
+/// 释放地图实例私有空间状态；不存在时保持幂等，共享导航资产不在这里卸载。 / Releases per-instance spatial state idempotently without unloading shared navigation assets.
+pub(crate) fn op_native_spatial_release(map_id: u32) {
     STORE.with(|slot| {
-        slot.borrow_mut().map_bounds.remove(&map_id);
+        slot.borrow_mut().grid_2d_bounds.remove(&map_id);
     });
 }
 
@@ -703,7 +726,7 @@ fn native_map_update_movement(
         let mut store = slot.borrow_mut();
         store.metrics.batch_calls += 1;
         let bounds = *store
-            .map_bounds
+            .grid_2d_bounds
             .get(&map_id)
             .ok_or_else(|| JsErrorBox::generic(format!("map {map_id} is not configured")))?;
         let handles = store.take_map_handles(map_id);
@@ -739,7 +762,7 @@ fn update_map(
     handles: &[u32],
     server_tick: u32,
     fixed_update_ms: f32,
-    bounds: MapBounds,
+    bounds: Grid2DBounds,
     records: &mut Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
 ) -> Result<(), JsErrorBox> {
     for &handle in handles {
@@ -848,6 +871,12 @@ fn encode_entity_state_frame_into(
         }
         if let Some(value) = record.delta.alive {
             write_bool_field(&mut item, 7, value != 0);
+        }
+        if let Some(value) = record.delta.z {
+            write_float_field(&mut item, 8, value);
+        }
+        if let Some(value) = record.delta.yaw {
+            write_float_field(&mut item, 9, value);
         }
         write_tag(frame, 2, 2);
         write_varint(frame, item.len() as u32);
@@ -975,38 +1004,39 @@ fn update_movement(
     unit: &mut UnitHotData,
     server_tick: u32,
     fixed_update_ms: f32,
-    bounds: MapBounds,
+    bounds: Grid2DBounds,
 ) -> bool {
     let mut state_changed = unit.input_changed != 0;
     unit.input_changed = 0;
     if unit.moving != 0 && server_tick >= unit.move_end_tick {
         unit.cell_x = unit.target_cell_x;
-        unit.cell_y = unit.target_cell_y;
-        unit.x = cell_to_world(unit.cell_x);
-        unit.y = cell_to_world(unit.cell_y);
+        unit.cell_z = unit.target_cell_z;
+        unit.x = cell_to_world(unit.cell_x, bounds.cell_size_meters);
+        unit.z = cell_to_world(unit.cell_z, bounds.cell_size_meters);
         unit.moving = 0;
         state_changed = true;
     }
 
-    if unit.moving == 0 && (unit.input_x != 0 || unit.input_y != 0) {
-        unit.facing = facing_from_input(unit.input_x, unit.input_y);
+    if unit.moving == 0 && (unit.input_x != 0 || unit.input_z != 0) {
+        unit.facing = facing_from_input(unit.input_x, unit.input_z);
+        unit.yaw = yaw_from_input(unit.input_x, unit.input_z);
         let target_x = unit.cell_x + unit.input_x as i32;
-        let target_y = unit.cell_y + unit.input_y as i32;
-        if bounds.contains(target_x, target_y) {
+        let target_z = unit.cell_z + unit.input_z as i32;
+        if bounds.contains(target_x, target_z) {
             unit.target_cell_x = target_x;
-            unit.target_cell_y = target_y;
+            unit.target_cell_z = target_z;
             unit.move_start_tick = server_tick;
             unit.move_end_tick = server_tick
                 + step_duration_ticks(
                     unit.input_x,
-                    unit.input_y,
+                    unit.input_z,
                     unit.speed_cells_per_second,
                     fixed_update_ms,
                 );
             unit.moving = 1;
         } else {
             unit.input_x = 0;
-            unit.input_y = 0;
+            unit.input_z = 0;
         }
         state_changed = true;
     }
@@ -1018,24 +1048,24 @@ fn encode_snapshot(unit: &UnitHotData, state_changed: bool) -> [u8; NATIVE_UNIT_
     let mut bytes = [0_u8; NATIVE_UNIT_RECORD_BYTES];
     bytes[0..4].copy_from_slice(&unit.id.to_le_bytes());
     bytes[4..8].copy_from_slice(&unit.x.round().to_le_bytes());
-    bytes[8..12].copy_from_slice(&unit.y.round().to_le_bytes());
+    bytes[8..12].copy_from_slice(&unit.z.round().to_le_bytes());
     bytes[12..16].copy_from_slice(&unit.sequence.to_le_bytes());
     bytes[16] = u8::from(state_changed);
     bytes[17] = u8::from(unit.moving != 0);
     bytes[18..22].copy_from_slice(&unit.cell_x.to_le_bytes());
-    bytes[22..26].copy_from_slice(&unit.cell_y.to_le_bytes());
+    bytes[22..26].copy_from_slice(&unit.cell_z.to_le_bytes());
     bytes[26..30].copy_from_slice(&unit.target_cell_x.to_le_bytes());
-    bytes[30..34].copy_from_slice(&unit.target_cell_y.to_le_bytes());
+    bytes[30..34].copy_from_slice(&unit.target_cell_z.to_le_bytes());
     bytes[34..38].copy_from_slice(&unit.move_start_tick.to_le_bytes());
     bytes[38..42].copy_from_slice(&unit.move_end_tick.to_le_bytes());
     bytes[42..46].copy_from_slice(&unit.facing.to_le_bytes());
     bytes
 }
 
-fn facing_from_input(input_x: i8, input_y: i8) -> u32 {
-    if input_y > 0 {
+fn facing_from_input(input_x: i8, input_z: i8) -> u32 {
+    if input_z > 0 {
         3
-    } else if input_y < 0 {
+    } else if input_z < 0 {
         0
     } else if input_x < 0 {
         1
@@ -1046,17 +1076,21 @@ fn facing_from_input(input_x: i8, input_y: i8) -> u32 {
     }
 }
 
-fn cell_to_world(cell: i32) -> f32 {
-    cell as f32 * CELL_SIZE
+fn yaw_from_input(input_x: i8, input_z: i8) -> f32 {
+    (input_x as f32).atan2(input_z as f32)
+}
+
+fn cell_to_world(cell: i32, cell_size_meters: f32) -> f32 {
+    cell as f32 * cell_size_meters
 }
 
 fn step_duration_ticks(
     input_x: i8,
-    input_y: i8,
+    input_z: i8,
     speed_cells_per_second: f32,
     fixed_update_ms: f32,
 ) -> u32 {
-    let distance = if input_x != 0 && input_y != 0 {
+    let distance = if input_x != 0 && input_z != 0 {
         std::f32::consts::SQRT_2
     } else {
         1.0
@@ -1094,12 +1128,12 @@ mod tests {
 
     #[test]
     fn map_bounds_reserve_the_outer_cell_for_a_three_by_three_unit() {
-        let bounds = MapBounds::new(128, 64).unwrap();
+        let bounds = Grid2DBounds::new(128, 64, 1_000).unwrap();
         assert!(bounds.contains(-63, -31));
         assert!(bounds.contains(62, 30));
         assert!(!bounds.contains(-64, 0));
         assert!(!bounds.contains(0, 31));
-        assert!(MapBounds::new(2, 128).is_err());
+        assert!(Grid2DBounds::new(2, 128, 1_000).is_err());
     }
 
     #[derive(Deserialize)]
@@ -1107,7 +1141,7 @@ mod tests {
     struct MovementFixture {
         fixed_update_ms: u32,
         initial_cell_x: i32,
-        initial_cell_y: i32,
+        initial_cell_z: i32,
         steps: Vec<MovementStep>,
     }
 
@@ -1121,7 +1155,7 @@ mod tests {
     #[derive(Deserialize)]
     struct MovementInput {
         x: i8,
-        y: i8,
+        z: i8,
         sequence: u32,
     }
 
@@ -1130,9 +1164,9 @@ mod tests {
     struct ExpectedMovement {
         acknowledged_sequence: u32,
         from_cell_x: i32,
-        from_cell_y: i32,
+        from_cell_z: i32,
         to_cell_x: i32,
-        to_cell_y: i32,
+        to_cell_z: i32,
         move_start_tick: u32,
         move_end_tick: u32,
         moving: bool,
@@ -1229,7 +1263,7 @@ mod tests {
             store.create(NativeEntityData::Unit(unit(10))).unwrap()
         });
         native_unit_set_movement_input_impl(handle, 1, 0, 1).unwrap();
-        native_map_configure(1, 128, 128).unwrap();
+        native_spatial_create_grid_2d(1, 128, 128, 1_000).unwrap();
 
         native_map_update_movement(1, 1, 50, 10_016).unwrap();
         let first_growths = STORE.with(|slot| slot.borrow().metrics.scratch_growths);
@@ -1312,7 +1346,7 @@ mod tests {
 
     #[test]
     fn movement_finishes_current_cell_before_using_next_direction() {
-        let bounds = MapBounds::new(128, 128).unwrap();
+        let bounds = Grid2DBounds::new(128, 128, 1_000).unwrap();
         let mut value = unit_hot(1);
         value.input_x = 1;
         value.sequence = 7;
@@ -1323,41 +1357,41 @@ mod tests {
         assert_eq!(value.sequence, 7);
 
         value.input_x = 0;
-        value.input_y = 1;
+        value.input_z = 1;
         value.sequence = 8;
         value.input_changed = 1;
         assert!(update_movement(&mut value, 11, 50.0, bounds));
         assert_eq!(value.target_cell_x, 1);
-        assert_eq!(value.target_cell_y, 0);
+        assert_eq!(value.target_cell_z, 0);
 
         assert!(update_movement(&mut value, 12, 50.0, bounds));
         assert_eq!(value.cell_x, 1);
-        assert_eq!(value.cell_y, 0);
+        assert_eq!(value.cell_z, 0);
         assert_eq!(value.target_cell_x, 1);
-        assert_eq!(value.target_cell_y, 1);
+        assert_eq!(value.target_cell_z, 1);
     }
 
     #[test]
     fn movement_matches_regression_fixture() {
-        let bounds = MapBounds::new(128, 128).unwrap();
+        let bounds = Grid2DBounds::new(128, 128, 1_000).unwrap();
         let fixture: MovementFixture = serde_json::from_str(include_str!(
             "../tests/fixtures/native_data/movement_regression.json"
         ))
         .unwrap();
         let mut value = unit_hot(1);
         value.cell_x = fixture.initial_cell_x;
-        value.cell_y = fixture.initial_cell_y;
+        value.cell_z = fixture.initial_cell_z;
         value.target_cell_x = fixture.initial_cell_x;
-        value.target_cell_y = fixture.initial_cell_y;
-        value.x = cell_to_world(fixture.initial_cell_x);
-        value.y = cell_to_world(fixture.initial_cell_y);
+        value.target_cell_z = fixture.initial_cell_z;
+        value.x = cell_to_world(fixture.initial_cell_x, bounds.cell_size_meters);
+        value.z = cell_to_world(fixture.initial_cell_z, bounds.cell_size_meters);
 
         for step in fixture.steps {
             if let Some(input) = step.input {
                 value.input_changed |=
-                    u32::from(value.input_x != input.x || value.input_y != input.y);
+                    u32::from(value.input_x != input.x || value.input_z != input.z);
                 value.input_x = input.x;
-                value.input_y = input.y;
+                value.input_z = input.z;
                 value.sequence = input.sequence;
             }
             let state_changed = update_movement(
@@ -1369,9 +1403,9 @@ mod tests {
             let actual = ExpectedMovement {
                 acknowledged_sequence: value.sequence,
                 from_cell_x: value.cell_x,
-                from_cell_y: value.cell_y,
+                from_cell_z: value.cell_z,
                 to_cell_x: value.target_cell_x,
-                to_cell_y: value.target_cell_y,
+                to_cell_z: value.target_cell_z,
                 move_start_tick: value.move_start_tick,
                 move_end_tick: value.move_end_tick,
                 moving: value.moving != 0,
@@ -1390,9 +1424,9 @@ mod tests {
         let mut value = unit_hot(1);
         value.sequence = 5;
         value.cell_x = 3;
-        value.cell_y = 1;
+        value.cell_z = 1;
         value.target_cell_x = 3;
-        value.target_cell_y = 1;
+        value.target_cell_z = 1;
         value.move_start_tick = 15;
         value.move_end_tick = 18;
         value.facing = 2;
@@ -1425,10 +1459,12 @@ mod tests {
             map_id: 1,
             x: 0.0,
             y: 0.0,
+            z: 0.0,
+            yaw: 0.0,
             cell_x: 0,
-            cell_y: 0,
+            cell_z: 0,
             target_cell_x: 0,
-            target_cell_y: 0,
+            target_cell_z: 0,
             move_start_tick: 0,
             move_end_tick: 0,
             moving: 0,
@@ -1436,7 +1472,7 @@ mod tests {
             speed_cells_per_second: 10.0,
             alive: 1,
             input_x: 0,
-            input_y: 0,
+            input_z: 0,
             input_changed: 0,
             sequence: 0,
         }

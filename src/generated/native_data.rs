@@ -26,10 +26,12 @@ pub struct UnitData {
     pub map_id: u32,
     pub x: f32,
     pub y: f32,
+    pub z: f32,
+    pub yaw: f32,
     pub cell_x: i32,
-    pub cell_y: i32,
+    pub cell_z: i32,
     pub target_cell_x: i32,
-    pub target_cell_y: i32,
+    pub target_cell_z: i32,
     pub move_start_tick: u32,
     pub move_end_tick: u32,
     pub moving: u32,
@@ -37,7 +39,7 @@ pub struct UnitData {
     pub speed_cells_per_second: f32,
     pub alive: u32,
     pub input_x: i8,
-    pub input_y: i8,
+    pub input_z: i8,
     pub input_changed: u32,
     pub sequence: u32,
 }
@@ -47,17 +49,19 @@ pub struct UnitHotData {
     pub id: u32,
     pub x: f32,
     pub y: f32,
+    pub z: f32,
+    pub yaw: f32,
     pub cell_x: i32,
-    pub cell_y: i32,
+    pub cell_z: i32,
     pub target_cell_x: i32,
-    pub target_cell_y: i32,
+    pub target_cell_z: i32,
     pub move_start_tick: u32,
     pub move_end_tick: u32,
     pub moving: u32,
     pub facing: u32,
     pub speed_cells_per_second: f32,
     pub input_x: i8,
-    pub input_y: i8,
+    pub input_z: i8,
     pub input_changed: u32,
     pub sequence: u32,
 }
@@ -85,17 +89,19 @@ impl From<UnitData> for UnitSplitData {
                 id: value.entity.id,
                 x: value.x,
                 y: value.y,
+                z: value.z,
+                yaw: value.yaw,
                 cell_x: value.cell_x,
-                cell_y: value.cell_y,
+                cell_z: value.cell_z,
                 target_cell_x: value.target_cell_x,
-                target_cell_y: value.target_cell_y,
+                target_cell_z: value.target_cell_z,
                 move_start_tick: value.move_start_tick,
                 move_end_tick: value.move_end_tick,
                 moving: value.moving,
                 facing: value.facing,
                 speed_cells_per_second: value.speed_cells_per_second,
                 input_x: value.input_x,
-                input_y: value.input_y,
+                input_z: value.input_z,
                 input_changed: value.input_changed,
                 sequence: value.sequence,
             },
@@ -118,20 +124,22 @@ pub fn get_unit_split_number(hot: &UnitHotData, cold: &UnitColdData, field: u32)
         3 => Some(cold.map_id as f64),
         4 => Some(hot.x as f64),
         5 => Some(hot.y as f64),
-        6 => Some(hot.cell_x as f64),
-        7 => Some(hot.cell_y as f64),
-        8 => Some(hot.target_cell_x as f64),
-        9 => Some(hot.target_cell_y as f64),
-        10 => Some(hot.move_start_tick as f64),
-        11 => Some(hot.move_end_tick as f64),
-        12 => Some(hot.moving as f64),
-        13 => Some(hot.facing as f64),
-        14 => Some(hot.speed_cells_per_second as f64),
-        15 => Some(cold.alive as f64),
-        16 => Some(hot.input_x as f64),
-        17 => Some(hot.input_y as f64),
-        18 => Some(hot.input_changed as f64),
-        19 => Some(hot.sequence as f64),
+        6 => Some(hot.z as f64),
+        7 => Some(hot.yaw as f64),
+        8 => Some(hot.cell_x as f64),
+        9 => Some(hot.cell_z as f64),
+        10 => Some(hot.target_cell_x as f64),
+        11 => Some(hot.target_cell_z as f64),
+        12 => Some(hot.move_start_tick as f64),
+        13 => Some(hot.move_end_tick as f64),
+        14 => Some(hot.moving as f64),
+        15 => Some(hot.facing as f64),
+        16 => Some(hot.speed_cells_per_second as f64),
+        17 => Some(cold.alive as f64),
+        18 => Some(hot.input_x as f64),
+        19 => Some(hot.input_z as f64),
+        20 => Some(hot.input_changed as f64),
+        21 => Some(hot.sequence as f64),
         _ => None,
     }
 }
@@ -174,6 +182,32 @@ pub fn set_unit_split_number(
             Ok(())
         }
         6 => {
+            if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
+                return Err("native Unit field z must be a finite f32");
+            }
+            let converted = number as f32;
+            if hot.z != converted {
+                hot.z = converted;
+                cold.__revision = cold.__revision.wrapping_add(1).max(1);
+                cold.__member_revisions[3] = cold.__revision;
+                cold.__dirty_mask |= 1u64 << 3;
+            }
+            Ok(())
+        }
+        7 => {
+            if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
+                return Err("native Unit field yaw must be a finite f32");
+            }
+            let converted = number as f32;
+            if hot.yaw != converted {
+                hot.yaw = converted;
+                cold.__revision = cold.__revision.wrapping_add(1).max(1);
+                cold.__member_revisions[4] = cold.__revision;
+                cold.__dirty_mask |= 1u64 << 4;
+            }
+            Ok(())
+        }
+        8 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i32::MIN as f64
@@ -185,19 +219,19 @@ pub fn set_unit_split_number(
             hot.cell_x = converted;
             Ok(())
         }
-        7 => {
+        9 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i32::MIN as f64
                 || number > i32::MAX as f64
             {
-                return Err("native Unit field cellY must be i32");
+                return Err("native Unit field cellZ must be i32");
             }
             let converted = number as i32;
-            hot.cell_y = converted;
+            hot.cell_z = converted;
             Ok(())
         }
-        8 => {
+        10 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i32::MIN as f64
@@ -209,19 +243,19 @@ pub fn set_unit_split_number(
             hot.target_cell_x = converted;
             Ok(())
         }
-        9 => {
+        11 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i32::MIN as f64
                 || number > i32::MAX as f64
             {
-                return Err("native Unit field targetCellY must be i32");
+                return Err("native Unit field targetCellZ must be i32");
             }
             let converted = number as i32;
-            hot.target_cell_y = converted;
+            hot.target_cell_z = converted;
             Ok(())
         }
-        10 => {
+        12 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -233,7 +267,7 @@ pub fn set_unit_split_number(
             hot.move_start_tick = converted;
             Ok(())
         }
-        11 => {
+        13 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -245,7 +279,7 @@ pub fn set_unit_split_number(
             hot.move_end_tick = converted;
             Ok(())
         }
-        12 => {
+        14 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -257,7 +291,7 @@ pub fn set_unit_split_number(
             hot.moving = converted;
             Ok(())
         }
-        13 => {
+        15 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -269,7 +303,7 @@ pub fn set_unit_split_number(
             hot.facing = converted;
             Ok(())
         }
-        14 => {
+        16 => {
             if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
                 return Err("native Unit field speedCellsPerSecond must be a finite f32");
             }
@@ -277,12 +311,12 @@ pub fn set_unit_split_number(
             if hot.speed_cells_per_second != converted {
                 hot.speed_cells_per_second = converted;
                 cold.__revision = cold.__revision.wrapping_add(1).max(1);
-                cold.__member_revisions[3] = cold.__revision;
-                cold.__dirty_mask |= 1u64 << 3;
+                cold.__member_revisions[5] = cold.__revision;
+                cold.__dirty_mask |= 1u64 << 5;
             }
             Ok(())
         }
-        15 => {
+        17 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -294,12 +328,12 @@ pub fn set_unit_split_number(
             if cold.alive != converted {
                 cold.alive = converted;
                 cold.__revision = cold.__revision.wrapping_add(1).max(1);
-                cold.__member_revisions[4] = cold.__revision;
-                cold.__dirty_mask |= 1u64 << 4;
+                cold.__member_revisions[6] = cold.__revision;
+                cold.__dirty_mask |= 1u64 << 6;
             }
             Ok(())
         }
-        16 => {
+        18 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i8::MIN as f64
@@ -311,19 +345,19 @@ pub fn set_unit_split_number(
             hot.input_x = converted;
             Ok(())
         }
-        17 => {
+        19 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i8::MIN as f64
                 || number > i8::MAX as f64
             {
-                return Err("native Unit field inputY must be i8");
+                return Err("native Unit field inputZ must be i8");
             }
             let converted = number as i8;
-            hot.input_y = converted;
+            hot.input_z = converted;
             Ok(())
         }
-        18 => {
+        20 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -335,7 +369,7 @@ pub fn set_unit_split_number(
             hot.input_changed = converted;
             Ok(())
         }
-        19 => {
+        21 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -361,9 +395,11 @@ pub fn peek_unit_split_delta(hot: &UnitHotData, cold: &UnitColdData) -> Option<U
         dirty_mask,
         x: (dirty_mask & (1u64 << 1) != 0).then_some(hot.x),
         y: (dirty_mask & (1u64 << 2) != 0).then_some(hot.y),
-        speed_cells_per_second: (dirty_mask & (1u64 << 3) != 0)
+        z: (dirty_mask & (1u64 << 3) != 0).then_some(hot.z),
+        yaw: (dirty_mask & (1u64 << 4) != 0).then_some(hot.yaw),
+        speed_cells_per_second: (dirty_mask & (1u64 << 5) != 0)
             .then_some(hot.speed_cells_per_second),
-        alive: (dirty_mask & (1u64 << 4) != 0).then_some(cold.alive),
+        alive: (dirty_mask & (1u64 << 6) != 0).then_some(cold.alive),
     })
 }
 
@@ -379,6 +415,12 @@ pub fn ack_unit_split_delta(cold: &mut UnitColdData, revision: u64) {
     }
     if cold.__member_revisions[4] <= revision {
         cold.__dirty_mask &= !(1u64 << 4);
+    }
+    if cold.__member_revisions[5] <= revision {
+        cold.__dirty_mask &= !(1u64 << 5);
+    }
+    if cold.__member_revisions[6] <= revision {
+        cold.__dirty_mask &= !(1u64 << 6);
     }
 }
 
@@ -505,24 +547,28 @@ pub const UNIT_FIELD_INSTANCE_ID: u32 = 2;
 pub const UNIT_FIELD_MAP_ID: u32 = 3;
 pub const UNIT_FIELD_X: u32 = 4;
 pub const UNIT_FIELD_Y: u32 = 5;
-pub const UNIT_FIELD_CELL_X: u32 = 6;
-pub const UNIT_FIELD_CELL_Y: u32 = 7;
-pub const UNIT_FIELD_TARGET_CELL_X: u32 = 8;
-pub const UNIT_FIELD_TARGET_CELL_Y: u32 = 9;
-pub const UNIT_FIELD_MOVE_START_TICK: u32 = 10;
-pub const UNIT_FIELD_MOVE_END_TICK: u32 = 11;
-pub const UNIT_FIELD_MOVING: u32 = 12;
-pub const UNIT_FIELD_FACING: u32 = 13;
-pub const UNIT_FIELD_SPEED_CELLS_PER_SECOND: u32 = 14;
-pub const UNIT_FIELD_ALIVE: u32 = 15;
-pub const UNIT_FIELD_INPUT_X: u32 = 16;
-pub const UNIT_FIELD_INPUT_Y: u32 = 17;
-pub const UNIT_FIELD_INPUT_CHANGED: u32 = 18;
-pub const UNIT_FIELD_SEQUENCE: u32 = 19;
+pub const UNIT_FIELD_Z: u32 = 6;
+pub const UNIT_FIELD_YAW: u32 = 7;
+pub const UNIT_FIELD_CELL_X: u32 = 8;
+pub const UNIT_FIELD_CELL_Z: u32 = 9;
+pub const UNIT_FIELD_TARGET_CELL_X: u32 = 10;
+pub const UNIT_FIELD_TARGET_CELL_Z: u32 = 11;
+pub const UNIT_FIELD_MOVE_START_TICK: u32 = 12;
+pub const UNIT_FIELD_MOVE_END_TICK: u32 = 13;
+pub const UNIT_FIELD_MOVING: u32 = 14;
+pub const UNIT_FIELD_FACING: u32 = 15;
+pub const UNIT_FIELD_SPEED_CELLS_PER_SECOND: u32 = 16;
+pub const UNIT_FIELD_ALIVE: u32 = 17;
+pub const UNIT_FIELD_INPUT_X: u32 = 18;
+pub const UNIT_FIELD_INPUT_Z: u32 = 19;
+pub const UNIT_FIELD_INPUT_CHANGED: u32 = 20;
+pub const UNIT_FIELD_SEQUENCE: u32 = 21;
 pub const UNIT_MEMBER_X: u32 = 1;
 pub const UNIT_MEMBER_Y: u32 = 2;
-pub const UNIT_MEMBER_SPEED_CELLS_PER_SECOND: u32 = 3;
-pub const UNIT_MEMBER_ALIVE: u32 = 4;
+pub const UNIT_MEMBER_Z: u32 = 3;
+pub const UNIT_MEMBER_YAW: u32 = 4;
+pub const UNIT_MEMBER_SPEED_CELLS_PER_SECOND: u32 = 5;
+pub const UNIT_MEMBER_ALIVE: u32 = 6;
 
 pub fn get_unit_number(value: &UnitData, field: u32) -> Option<f64> {
     match field {
@@ -531,20 +577,22 @@ pub fn get_unit_number(value: &UnitData, field: u32) -> Option<f64> {
         3 => Some(value.map_id as f64),
         4 => Some(value.x as f64),
         5 => Some(value.y as f64),
-        6 => Some(value.cell_x as f64),
-        7 => Some(value.cell_y as f64),
-        8 => Some(value.target_cell_x as f64),
-        9 => Some(value.target_cell_y as f64),
-        10 => Some(value.move_start_tick as f64),
-        11 => Some(value.move_end_tick as f64),
-        12 => Some(value.moving as f64),
-        13 => Some(value.facing as f64),
-        14 => Some(value.speed_cells_per_second as f64),
-        15 => Some(value.alive as f64),
-        16 => Some(value.input_x as f64),
-        17 => Some(value.input_y as f64),
-        18 => Some(value.input_changed as f64),
-        19 => Some(value.sequence as f64),
+        6 => Some(value.z as f64),
+        7 => Some(value.yaw as f64),
+        8 => Some(value.cell_x as f64),
+        9 => Some(value.cell_z as f64),
+        10 => Some(value.target_cell_x as f64),
+        11 => Some(value.target_cell_z as f64),
+        12 => Some(value.move_start_tick as f64),
+        13 => Some(value.move_end_tick as f64),
+        14 => Some(value.moving as f64),
+        15 => Some(value.facing as f64),
+        16 => Some(value.speed_cells_per_second as f64),
+        17 => Some(value.alive as f64),
+        18 => Some(value.input_x as f64),
+        19 => Some(value.input_z as f64),
+        20 => Some(value.input_changed as f64),
+        21 => Some(value.sequence as f64),
         _ => None,
     }
 }
@@ -581,6 +629,32 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             Ok(())
         }
         6 => {
+            if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
+                return Err("native Unit field z must be a finite f32");
+            }
+            let converted = number as f32;
+            if value.z != converted {
+                value.z = converted;
+                value.__revision = value.__revision.wrapping_add(1).max(1);
+                value.__member_revisions[3] = value.__revision;
+                value.__dirty_mask |= 1u64 << 3;
+            }
+            Ok(())
+        }
+        7 => {
+            if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
+                return Err("native Unit field yaw must be a finite f32");
+            }
+            let converted = number as f32;
+            if value.yaw != converted {
+                value.yaw = converted;
+                value.__revision = value.__revision.wrapping_add(1).max(1);
+                value.__member_revisions[4] = value.__revision;
+                value.__dirty_mask |= 1u64 << 4;
+            }
+            Ok(())
+        }
+        8 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i32::MIN as f64
@@ -592,19 +666,19 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.cell_x = converted;
             Ok(())
         }
-        7 => {
+        9 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i32::MIN as f64
                 || number > i32::MAX as f64
             {
-                return Err("native Unit field cellY must be i32");
+                return Err("native Unit field cellZ must be i32");
             }
             let converted = number as i32;
-            value.cell_y = converted;
+            value.cell_z = converted;
             Ok(())
         }
-        8 => {
+        10 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i32::MIN as f64
@@ -616,19 +690,19 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.target_cell_x = converted;
             Ok(())
         }
-        9 => {
+        11 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i32::MIN as f64
                 || number > i32::MAX as f64
             {
-                return Err("native Unit field targetCellY must be i32");
+                return Err("native Unit field targetCellZ must be i32");
             }
             let converted = number as i32;
-            value.target_cell_y = converted;
+            value.target_cell_z = converted;
             Ok(())
         }
-        10 => {
+        12 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -640,7 +714,7 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.move_start_tick = converted;
             Ok(())
         }
-        11 => {
+        13 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -652,7 +726,7 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.move_end_tick = converted;
             Ok(())
         }
-        12 => {
+        14 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -664,7 +738,7 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.moving = converted;
             Ok(())
         }
-        13 => {
+        15 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -676,7 +750,7 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.facing = converted;
             Ok(())
         }
-        14 => {
+        16 => {
             if !number.is_finite() || number < f32::MIN as f64 || number > f32::MAX as f64 {
                 return Err("native Unit field speedCellsPerSecond must be a finite f32");
             }
@@ -684,12 +758,12 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             if value.speed_cells_per_second != converted {
                 value.speed_cells_per_second = converted;
                 value.__revision = value.__revision.wrapping_add(1).max(1);
-                value.__member_revisions[3] = value.__revision;
-                value.__dirty_mask |= 1u64 << 3;
+                value.__member_revisions[5] = value.__revision;
+                value.__dirty_mask |= 1u64 << 5;
             }
             Ok(())
         }
-        15 => {
+        17 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -701,12 +775,12 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             if value.alive != converted {
                 value.alive = converted;
                 value.__revision = value.__revision.wrapping_add(1).max(1);
-                value.__member_revisions[4] = value.__revision;
-                value.__dirty_mask |= 1u64 << 4;
+                value.__member_revisions[6] = value.__revision;
+                value.__dirty_mask |= 1u64 << 6;
             }
             Ok(())
         }
-        16 => {
+        18 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i8::MIN as f64
@@ -718,19 +792,19 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.input_x = converted;
             Ok(())
         }
-        17 => {
+        19 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < i8::MIN as f64
                 || number > i8::MAX as f64
             {
-                return Err("native Unit field inputY must be i8");
+                return Err("native Unit field inputZ must be i8");
             }
             let converted = number as i8;
-            value.input_y = converted;
+            value.input_z = converted;
             Ok(())
         }
-        18 => {
+        20 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -742,7 +816,7 @@ pub fn set_unit_number(value: &mut UnitData, field: u32, number: f64) -> Result<
             value.input_changed = converted;
             Ok(())
         }
-        19 => {
+        21 => {
             if !number.is_finite()
                 || number.fract() != 0.0
                 || number < 0.0
@@ -764,6 +838,8 @@ pub struct UnitDelta {
     pub dirty_mask: u64,
     pub x: Option<f32>,
     pub y: Option<f32>,
+    pub z: Option<f32>,
+    pub yaw: Option<f32>,
     pub speed_cells_per_second: Option<f32>,
     pub alive: Option<u32>,
 }
@@ -782,9 +858,11 @@ pub fn peek_unit_delta(value: &UnitData) -> Option<UnitDelta> {
         dirty_mask,
         x: (dirty_mask & (1u64 << 1) != 0).then_some(value.x),
         y: (dirty_mask & (1u64 << 2) != 0).then_some(value.y),
-        speed_cells_per_second: (dirty_mask & (1u64 << 3) != 0)
+        z: (dirty_mask & (1u64 << 3) != 0).then_some(value.z),
+        yaw: (dirty_mask & (1u64 << 4) != 0).then_some(value.yaw),
+        speed_cells_per_second: (dirty_mask & (1u64 << 5) != 0)
             .then_some(value.speed_cells_per_second),
-        alive: (dirty_mask & (1u64 << 4) != 0).then_some(value.alive),
+        alive: (dirty_mask & (1u64 << 6) != 0).then_some(value.alive),
     })
 }
 
@@ -800,6 +878,12 @@ pub fn ack_unit_delta(value: &mut UnitData, revision: u64) {
     }
     if value.__member_revisions[4] <= revision {
         value.__dirty_mask &= !(1u64 << 4);
+    }
+    if value.__member_revisions[5] <= revision {
+        value.__dirty_mask &= !(1u64 << 5);
+    }
+    if value.__member_revisions[6] <= revision {
+        value.__dirty_mask &= !(1u64 << 6);
     }
 }
 
@@ -927,7 +1011,7 @@ impl NativeEntityData {
 pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &'static str> {
     match type_id {
         ENTITY_TYPE_UNIT => {
-            if values.len() != 19 {
+            if values.len() != 21 {
                 return Err("native Unit create value count mismatch");
             }
             if read_u32(values, 0)? == 0 || read_u32(values, 1)? == 0 {
@@ -944,20 +1028,22 @@ pub fn create_entity(type_id: u32, values: &[f64]) -> Result<NativeEntityData, &
                 map_id: read_u32(values, 2)?,
                 x: read_f32(values, 3)?,
                 y: read_f32(values, 4)?,
-                cell_x: read_i32(values, 5)?,
-                cell_y: read_i32(values, 6)?,
-                target_cell_x: read_i32(values, 7)?,
-                target_cell_y: read_i32(values, 8)?,
-                move_start_tick: read_u32(values, 9)?,
-                move_end_tick: read_u32(values, 10)?,
-                moving: read_u32(values, 11)?,
-                facing: read_u32(values, 12)?,
-                speed_cells_per_second: read_f32(values, 13)?,
-                alive: read_u32(values, 14)?,
-                input_x: read_i8(values, 15)?,
-                input_y: read_i8(values, 16)?,
-                input_changed: read_u32(values, 17)?,
-                sequence: read_u32(values, 18)?,
+                z: read_f32(values, 5)?,
+                yaw: read_f32(values, 6)?,
+                cell_x: read_i32(values, 7)?,
+                cell_z: read_i32(values, 8)?,
+                target_cell_x: read_i32(values, 9)?,
+                target_cell_z: read_i32(values, 10)?,
+                move_start_tick: read_u32(values, 11)?,
+                move_end_tick: read_u32(values, 12)?,
+                moving: read_u32(values, 13)?,
+                facing: read_u32(values, 14)?,
+                speed_cells_per_second: read_f32(values, 15)?,
+                alive: read_u32(values, 16)?,
+                input_x: read_i8(values, 17)?,
+                input_z: read_i8(values, 18)?,
+                input_changed: read_u32(values, 19)?,
+                sequence: read_u32(values, 20)?,
             }))
         }
         ENTITY_TYPE_ITEM => {

@@ -1,48 +1,48 @@
 {
   "fixedUpdateMs": 50,
   "initialCellX": 1,
-  "initialCellY": -1,
+  "initialCellZ": -1,
   "steps": [
     {
       "tick": 10,
-      "input": { "x": 1, "y": 0, "sequence": 1 },
-      "expected": { "acknowledgedSequence": 1, "fromCellX": 1, "fromCellY": -1, "toCellX": 2, "toCellY": -1, "moveStartTick": 10, "moveEndTick": 12, "moving": true, "stateChanged": true }
+      "input": { "x": 1, "z": 0, "sequence": 1 },
+      "expected": { "acknowledgedSequence": 1, "fromCellX": 1, "fromCellZ": -1, "toCellX": 2, "toCellZ": -1, "moveStartTick": 10, "moveEndTick": 12, "moving": true, "stateChanged": true }
     },
     {
       "tick": 11,
-      "input": { "x": 0, "y": 1, "sequence": 2 },
-      "expected": { "acknowledgedSequence": 2, "fromCellX": 1, "fromCellY": -1, "toCellX": 2, "toCellY": -1, "moveStartTick": 10, "moveEndTick": 12, "moving": true, "stateChanged": true }
+      "input": { "x": 0, "z": 1, "sequence": 2 },
+      "expected": { "acknowledgedSequence": 2, "fromCellX": 1, "fromCellZ": -1, "toCellX": 2, "toCellZ": -1, "moveStartTick": 10, "moveEndTick": 12, "moving": true, "stateChanged": true }
     },
     {
       "tick": 12,
-      "expected": { "acknowledgedSequence": 2, "fromCellX": 2, "fromCellY": -1, "toCellX": 2, "toCellY": 0, "moveStartTick": 12, "moveEndTick": 14, "moving": true, "stateChanged": true }
+      "expected": { "acknowledgedSequence": 2, "fromCellX": 2, "fromCellZ": -1, "toCellX": 2, "toCellZ": 0, "moveStartTick": 12, "moveEndTick": 14, "moving": true, "stateChanged": true }
     },
     {
       "tick": 13,
-      "input": { "x": 0, "y": 0, "sequence": 3 },
-      "expected": { "acknowledgedSequence": 3, "fromCellX": 2, "fromCellY": -1, "toCellX": 2, "toCellY": 0, "moveStartTick": 12, "moveEndTick": 14, "moving": true, "stateChanged": true }
+      "input": { "x": 0, "z": 0, "sequence": 3 },
+      "expected": { "acknowledgedSequence": 3, "fromCellX": 2, "fromCellZ": -1, "toCellX": 2, "toCellZ": 0, "moveStartTick": 12, "moveEndTick": 14, "moving": true, "stateChanged": true }
     },
     {
       "tick": 14,
-      "expected": { "acknowledgedSequence": 3, "fromCellX": 2, "fromCellY": 0, "toCellX": 2, "toCellY": 0, "moveStartTick": 12, "moveEndTick": 14, "moving": false, "stateChanged": true }
+      "expected": { "acknowledgedSequence": 3, "fromCellX": 2, "fromCellZ": 0, "toCellX": 2, "toCellZ": 0, "moveStartTick": 12, "moveEndTick": 14, "moving": false, "stateChanged": true }
     },
     {
       "tick": 15,
-      "input": { "x": 1, "y": 1, "sequence": 4 },
-      "expected": { "acknowledgedSequence": 4, "fromCellX": 2, "fromCellY": 0, "toCellX": 3, "toCellY": 1, "moveStartTick": 15, "moveEndTick": 18, "moving": true, "stateChanged": true }
+      "input": { "x": 1, "z": 1, "sequence": 4 },
+      "expected": { "acknowledgedSequence": 4, "fromCellX": 2, "fromCellZ": 0, "toCellX": 3, "toCellZ": 1, "moveStartTick": 15, "moveEndTick": 18, "moving": true, "stateChanged": true }
     },
     {
       "tick": 16,
-      "expected": { "acknowledgedSequence": 4, "fromCellX": 2, "fromCellY": 0, "toCellX": 3, "toCellY": 1, "moveStartTick": 15, "moveEndTick": 18, "moving": true, "stateChanged": false }
+      "expected": { "acknowledgedSequence": 4, "fromCellX": 2, "fromCellZ": 0, "toCellX": 3, "toCellZ": 1, "moveStartTick": 15, "moveEndTick": 18, "moving": true, "stateChanged": false }
     },
     {
       "tick": 17,
-      "input": { "x": 0, "y": 0, "sequence": 5 },
-      "expected": { "acknowledgedSequence": 5, "fromCellX": 2, "fromCellY": 0, "toCellX": 3, "toCellY": 1, "moveStartTick": 15, "moveEndTick": 18, "moving": true, "stateChanged": true }
+      "input": { "x": 0, "z": 0, "sequence": 5 },
+      "expected": { "acknowledgedSequence": 5, "fromCellX": 2, "fromCellZ": 0, "toCellX": 3, "toCellZ": 1, "moveStartTick": 15, "moveEndTick": 18, "moving": true, "stateChanged": true }
     },
     {
       "tick": 18,
-      "expected": { "acknowledgedSequence": 5, "fromCellX": 3, "fromCellY": 1, "toCellX": 3, "toCellY": 1, "moveStartTick": 15, "moveEndTick": 18, "moving": false, "stateChanged": true }
+      "expected": { "acknowledgedSequence": 5, "fromCellX": 3, "fromCellZ": 1, "toCellX": 3, "toCellZ": 1, "moveStartTick": 15, "moveEndTick": 18, "moving": false, "stateChanged": true }
     }
   ]
 }

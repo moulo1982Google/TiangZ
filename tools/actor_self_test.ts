@@ -120,24 +120,24 @@ function testGeneratedNativeHandleScalarAccess(): void {
     mapPeekNumericDelta: () => new Uint8Array(14),
     mapAckNumericDelta: () => undefined,
     mapMarkAllNumericsDirty: () => undefined,
-    unitSetMovementInput: (handle, inputX, inputY, sequence) => {
+    unitSetMovementInput: (handle, inputX, inputZ, sequence) => {
       const values = valuesByHandle.get(handle)!;
-      if (sequence <= values[18]) return false;
-      values[15] = inputX;
-      values[16] = inputY;
-      values[17] = 1;
-      values[18] = sequence;
+      if (sequence <= values[20]) return false;
+      values[17] = inputX;
+      values[18] = inputZ;
+      values[19] = 1;
+      values[20] = sequence;
       return true;
     },
     unitResetMovement: (handle) => {
       const values = valuesByHandle.get(handle)!;
-      values[15] = 0;
-      values[16] = 0;
       values[17] = 0;
       values[18] = 0;
+      values[19] = 0;
+      values[20] = 0;
     },
     mapUpdateMovement: () => new Uint8Array(0),
-    dataTakeMetrics: () => new Uint8Array(56),
+    dataTakeMetrics: () => new Uint8Array(84),
   };
 
   const host = new ProcessHost("native-handle-self-test");
@@ -147,7 +147,7 @@ function testGeneratedNativeHandleScalarAccess(): void {
     id: 1,
     instanceId: 2,
     mapId: 1,
-    x: 12,
+    x: 1,
     y: 0,
   });
   const item = NativeItemRef.Create({
@@ -161,7 +161,7 @@ function testGeneratedNativeHandleScalarAccess(): void {
 
   assert.equal(typesByHandle.get(unit.Handle), 1);
   assert.equal(typesByHandle.get(item.Handle), 2);
-  assert.equal(valuesByHandle.get(unit.Handle)![3], 13);
+  assert.equal(valuesByHandle.get(unit.Handle)![3], 2);
   assert.equal(valuesByHandle.get(item.Handle)![3], 4);
   assert.equal(gets, 2);
   assert.equal(sets, 2);
@@ -388,14 +388,15 @@ async function testPlayerUnitComponents(): Promise<void> {
     id: 1000,
     instanceId: player.InstanceId,
     mapId: 1,
-    x: 12,
-    y: -12,
+    x: 1,
+    y: 0,
+    z: -1,
     cellX: 1,
-    cellY: -1,
+    cellZ: -1,
     targetCellX: 1,
-    targetCellY: -1,
+    targetCellZ: -1,
   });
-  player.AddComponent(PositionComponent, native);
+  player.AddComponent(PositionComponent, native, 128, 128, 1);
   const numeric = player.AddComponent(NumericComponent);
   player.AddComponent(UnitGateComponent, "gate-1");
   const firstInstanceId = player.InstanceId;
@@ -416,12 +417,12 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(units.Get<PlayerUnit>(1000), player);
   assert.deepEqual(units.GetAll(PlayerUnit), [player]);
   assert.deepEqual(
-    { x: initialized.x, y: initialized.y },
-    { x: 12, y: -12 },
+    { x: initialized.x, y: initialized.y, z: initialized.z },
+    { x: 1, y: 0, z: -1 },
   );
   assert.deepEqual(
-    { cellX: initialized.cellX, cellY: initialized.cellY },
-    { cellX: 1, cellY: -1 },
+    { cellX: initialized.cellX, cellZ: initialized.cellZ },
+    { cellX: 1, cellZ: -1 },
   );
 
   player.SecondEnterMap();
@@ -431,7 +432,7 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(
     player.Move({
       inputX: 1,
-      inputY: 0,
+      inputZ: 0,
       sequence: 5,
     }),
     true,
@@ -440,7 +441,7 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(
     player.Move({
       inputX: 0,
-      inputY: 0,
+      inputZ: 0,
       sequence: 5,
     }),
     false,
@@ -448,7 +449,7 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.throws(
     () => player.Move({
       inputX: 2,
-      inputY: 0,
+      inputZ: 0,
       sequence: 6,
     }),
     /invalid movement input/,
@@ -469,10 +470,10 @@ async function testPlayerUnitComponents(): Promise<void> {
   systemFor(ItemComponent)(ItemComponentSystem);
   HotfixSystem.Commit();
   assert.equal(
-    player.Move({ inputX: 0, inputY: 1, sequence: 6 }),
+    player.Move({ inputX: 0, inputZ: 1, sequence: 6 }),
     true,
   );
-  assert.equal(native.inputY, -1);
+  assert.equal(native.inputZ, -1);
   assert.equal(player.InstanceId, firstInstanceId);
   assert.equal(native.Handle, stableHandle);
 

@@ -3,9 +3,9 @@ import type { AuthoritativeMovementState, PredictedMovement } from "./LocalMovem
 
 export class RemoteMovementSmoother {
   private currentCellX: number;
-  private currentCellY: number;
+  private currentCellZ: number;
   private targetCellX: number;
-  private targetCellY: number;
+  private targetCellZ: number;
   private stepElapsedSeconds = 0;
   private stepDurationSeconds = 0;
   private moving = false;
@@ -14,14 +14,14 @@ export class RemoteMovementSmoother {
 
   constructor(
     cellX: number,
-    cellY: number,
+    cellZ: number,
     facing: number,
     private readonly fixedUpdateMs: number,
   ) {
     this.currentCellX = cellX;
-    this.currentCellY = cellY;
+    this.currentCellZ = cellZ;
     this.targetCellX = cellX;
-    this.targetCellY = cellY;
+    this.targetCellZ = cellZ;
     this.facing = normalizeFacing(facing);
   }
 
@@ -34,23 +34,23 @@ export class RemoteMovementSmoother {
       if (
         this.moving &&
         this.targetCellX === state.fromCellX &&
-        this.targetCellY === state.fromCellY
+        this.targetCellZ === state.fromCellZ
       ) return true;
-      this.setIdle(state.fromCellX, state.fromCellY);
+      this.setIdle(state.fromCellX, state.fromCellZ);
       return true;
     }
 
     const sameStep = this.moving &&
       this.currentCellX === state.fromCellX &&
-      this.currentCellY === state.fromCellY &&
+      this.currentCellZ === state.fromCellZ &&
       this.targetCellX === state.toCellX &&
-      this.targetCellY === state.toCellY;
+      this.targetCellZ === state.toCellZ;
     if (sameStep) return true;
 
     this.currentCellX = state.fromCellX;
-    this.currentCellY = state.fromCellY;
+    this.currentCellZ = state.fromCellZ;
     this.targetCellX = state.toCellX;
-    this.targetCellY = state.toCellY;
+    this.targetCellZ = state.toCellZ;
     this.stepDurationSeconds = Math.max(
       this.fixedUpdateMs / 1_000,
       (state.moveEndTick - state.moveStartTick) * this.fixedUpdateMs / 1_000,
@@ -69,17 +69,17 @@ export class RemoteMovementSmoother {
     if (this.moving) {
       this.stepElapsedSeconds += Math.max(0, Math.min(deltaSeconds, 0.25));
       if (this.stepElapsedSeconds + 1e-6 >= this.stepDurationSeconds) {
-        this.setIdle(this.targetCellX, this.targetCellY);
+        this.setIdle(this.targetCellX, this.targetCellZ);
       }
     }
     return this.position();
   }
 
-  private setIdle(cellX: number, cellY: number): void {
+  private setIdle(cellX: number, cellZ: number): void {
     this.currentCellX = cellX;
-    this.currentCellY = cellY;
+    this.currentCellZ = cellZ;
     this.targetCellX = cellX;
-    this.targetCellY = cellY;
+    this.targetCellZ = cellZ;
     this.stepElapsedSeconds = 0;
     this.stepDurationSeconds = 0;
     this.moving = false;
@@ -89,7 +89,7 @@ export class RemoteMovementSmoother {
     if (!this.moving) {
       return {
         x: cellToWorld(this.currentCellX),
-        y: cellToWorld(this.currentCellY),
+        z: cellToWorld(this.currentCellZ),
         facing: this.facing,
         moving: false,
       };
@@ -101,8 +101,8 @@ export class RemoteMovementSmoother {
     return {
       x: cellToWorld(this.currentCellX) +
         (cellToWorld(this.targetCellX) - cellToWorld(this.currentCellX)) * progress,
-      y: cellToWorld(this.currentCellY) +
-        (cellToWorld(this.targetCellY) - cellToWorld(this.currentCellY)) * progress,
+      z: cellToWorld(this.currentCellZ) +
+        (cellToWorld(this.targetCellZ) - cellToWorld(this.currentCellZ)) * progress,
       facing: this.facing,
       moving: true,
     };

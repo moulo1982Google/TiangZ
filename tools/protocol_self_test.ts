@@ -78,6 +78,7 @@ async function testOneWayMessageHasNoResponse(): Promise<void> {
     unitId: 42,
     x: 10,
     y: -20,
+    z: 30,
   });
   const frame = new Uint8Array(2 + payload.length);
   frame[0] = GateMessages.MapReady.msgcode >>> 8;
@@ -134,6 +135,7 @@ async function testMissingHandlerErrorSemantics(): Promise<void> {
     unitId: 1,
     x: 0,
     y: 0,
+    z: 0,
   });
   const message = new Uint8Array(2 + messagePayload.length);
   message[0] = GateMessages.MapReady.msgcode >>> 8;
@@ -148,12 +150,13 @@ function testGeneratedScalarCodec(): void {
     unitId: 42,
     x: -12345,
     y: 67890,
-    heading: 1.25,
+    z: 23456,
+    yaw: 1.25,
     alive: true,
     state: new Uint8Array([0, 1, 127, 128, 255]),
     account: "tester",
     cellX: -1,
-    cellY: 2,
+    cellZ: 2,
     numerics: [{ unitId: 42, numericType: 1, value: 100 }],
     speedCellsPerSecond: 10,
     facing: 2,
@@ -163,7 +166,8 @@ function testGeneratedScalarCodec(): void {
   assert.equal(decoded.unitId, 42);
   assert.equal(decoded.x, -12345);
   assert.equal(decoded.y, 67890);
-  assert.ok(Math.abs(decoded.heading - 1.25) < 0.0001);
+  assert.equal(decoded.z, 23456);
+  assert.ok(Math.abs(decoded.yaw - 1.25) < 0.0001);
   assert.equal(decoded.alive, true);
   assert.deepEqual([...decoded.state], [0, 1, 127, 128, 255]);
   assert.equal(decoded.account, "tester");
@@ -176,6 +180,7 @@ function testGeneratedScalarCodec(): void {
       unitId: 42,
       x: -12345,
       y: 67890,
+      z: 23456,
       entities: [decoded, { ...decoded, unitId: 43, account: "peer" }],
       actorInstanceId: 99,
       fixedUpdateMs: 50,
@@ -211,7 +216,7 @@ function testActorLocationEnvelope(): void {
   assert.equal(MapMessages.Move.routing, "actor-location");
   const movePayload = MapMessages.Move.codec.encode({
     inputX: 1,
-    inputY: -1,
+    inputZ: -1,
     sequence: 7,
   });
   const moveFrame = new Uint8Array(2 + movePayload.length);
@@ -284,6 +289,7 @@ async function testHandlerFailureIsolation(): Promise<void> {
     unitId: 1,
     x: 0,
     y: 0,
+    z: 0,
   });
   assert.equal(
     await registry.handle(frame(GateMessages.MapReady.msgcode, messagePayload)),

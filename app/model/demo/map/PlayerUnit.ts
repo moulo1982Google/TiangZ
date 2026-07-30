@@ -19,8 +19,10 @@ export interface PlayerSnapshot {
   gateName: string;
   x: number;
   y: number;
+  z: number;
+  yaw: number;
   cellX: number;
-  cellY: number;
+  cellZ: number;
   speedCellsPerSecond: number;
   facing: number;
   alive: boolean;
@@ -29,7 +31,7 @@ export interface PlayerSnapshot {
 
 export interface MovePlayer {
   inputX: number;
-  inputY: number;
+  inputZ: number;
   sequence: number;
 }
 

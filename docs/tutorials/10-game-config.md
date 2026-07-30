@@ -12,10 +12,12 @@ TiangZ把配置分成两类：
 | 表 | 用途 | 当前关键字段 |
 | --- | --- | --- |
 | `ItemConfig.xlsx` | 道具静态定义 | 名称、客户端描述、最大堆叠、使用后回血 |
-| `MapConfig.xlsx` | 地图静态定义 | Cell宽高、默认出生Cell |
+| `MapConfig.xlsx` | 地图静态定义 | 空间模式、米制尺寸、三维出生点、AOI尺寸、导航资源身份 |
 | `PlayerConfig.xlsx` | 玩家初始模板 | 初始地图、初始/最大HP、移动速度、初始道具 |
 
 `PlayerConfig`只描述“创建玩家时从哪里开始”，不保存玩家升级后的等级、经验、装备结果或当前血量。那些是玩家运行时和持久化数据。
+
+地图坐标统一为米制X/Y/Z：X/Z是地面平面，Y是高度，Yaw为绕Y轴弧度。Grid2D使用`widthCells/depthCells/gridCellSizeMeters`；NavMesh3D使用`navigationAsset/navigationVersion/navigationHash`。客户端只在引擎边界转换为Cocos `Vec3`、Unity向量或二维屏幕坐标，详细规则见[地图空间与3D坐标契约](../design/spatial-world.md)。
 
 ## Excel约定
 

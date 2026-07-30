@@ -66,7 +66,7 @@ export class PlayerUnitSystem extends PlayerUnit {
     return NativeData.SetMovementInput(
       this.GetComponent(NativeUnitRef).Handle,
       request.inputX,
-      request.inputY,
+      request.inputZ,
       request.sequence,
     );
   }
@@ -81,10 +81,10 @@ export class PlayerUnitSystem extends PlayerUnit {
 function validateMoveInput(request: MovePlayer): void {
   if (
     !Number.isInteger(request.inputX) ||
-    !Number.isInteger(request.inputY) ||
+    !Number.isInteger(request.inputZ) ||
     Math.abs(request.inputX) > 1 ||
-    Math.abs(request.inputY) > 1
+    Math.abs(request.inputZ) > 1
   ) {
-    throw new Error(`invalid movement input: ${request.inputX},${request.inputY}`);
+    throw new Error(`invalid movement input: ${request.inputX},${request.inputZ}`);
   }
 }

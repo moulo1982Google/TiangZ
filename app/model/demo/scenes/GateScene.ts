@@ -210,6 +210,7 @@ export class GateScene extends EntryScene {
       unitId: message.unitId,
       x: message.x,
       y: message.y,
+      z: message.z,
     });
   }
 
@@ -409,6 +410,7 @@ export class GateScene extends EntryScene {
         unitId: response.unitId,
         x: response.x,
         y: response.y,
+        z: response.z,
       });
       this.finishActorTransfer(connectionId);
       return {
@@ -418,9 +420,12 @@ export class GateScene extends EntryScene {
         unitId: response.unitId,
         x: response.x,
         y: response.y,
+        z: response.z,
         entities: response.entities,
         fixedUpdateMs: response.fixedUpdateMs,
         items: response.items,
+        mapInstanceId: response.mapInstanceId,
+        ...this.ClientSpatialMetadata(response.mapId),
       };
     } catch (error) {
       if (error instanceof RpcError && error.code === SystemErrCode.LocationUnavailable) {
@@ -482,6 +487,7 @@ export class GateScene extends EntryScene {
       unitId: response.unitId,
       x: response.x,
       y: response.y,
+      z: response.z,
     };
     this.sendClient(session.ConnectionId, ClientMessages.MapReady, ready);
     this.logger.info("player resumed existing map unit", {
@@ -497,9 +503,12 @@ export class GateScene extends EntryScene {
       unitId: response.unitId,
       x: response.x,
       y: response.y,
+      z: response.z,
       entities: response.entities,
       fixedUpdateMs: response.fixedUpdateMs,
       items: response.items,
+      mapInstanceId: location.mapInstanceId,
+      ...this.ClientSpatialMetadata(response.mapId),
     };
   }
 
@@ -610,9 +619,25 @@ export class GateScene extends EntryScene {
       unitId: response.unitId,
       x: response.x,
       y: response.y,
+      z: response.z,
       entities: response.entities,
       fixedUpdateMs: response.fixedUpdateMs,
       items: response.items,
+      mapInstanceId: response.mapInstanceId,
+      ...this.ClientSpatialMetadata(response.mapId),
+    };
+  }
+
+  /** 将引擎无关的地图空间契约附加到进入响应；客户端必须校验导航版本后再允许移动。 / Adds the engine-neutral spatial contract to enter responses so clients can validate navigation assets before movement. */
+  private ClientSpatialMetadata(mapId: number): Pick<
+    G2C_EnterMap,
+    "spatialMode" | "navigationVersion" | "navigationHash"
+  > {
+    const config = GameConfigs.MapConfig.Get(mapId);
+    return {
+      spatialMode: config.spatialMode,
+      navigationVersion: config.navigationVersion,
+      navigationHash: config.navigationHash,
     };
   }
 

@@ -6,12 +6,13 @@ export interface MapEntitySnapshot {
   unitId: number;
   x: number;
   y: number;
-  heading: number;
+  z: number;
+  yaw: number;
   alive: boolean;
   state: Uint8Array;
   account: string;
   cellX: number;
-  cellY: number;
+  cellZ: number;
   numerics: readonly UnitNumericDelta[];
   speedCellsPerSecond: number;
   facing: number;
@@ -24,12 +25,13 @@ export const MapEntitySnapshotCodec = {
       unitId: 0,
       x: 0,
       y: 0,
-      heading: 0,
+      z: 0,
+      yaw: 0,
       alive: false,
       state: new Uint8Array(0),
       account: "",
       cellX: 0,
-      cellY: 0,
+      cellZ: 0,
       numerics: [],
       speedCellsPerSecond: 0,
       facing: 0,
@@ -39,14 +41,17 @@ export const MapEntitySnapshotCodec = {
       if (tag.fieldNo === 1 && tag.wireType === 0) {
         value.unitId = reader.uint32();
       }
-      else if (tag.fieldNo === 2 && tag.wireType === 0) {
-        value.x = reader.sint32();
+      else if (tag.fieldNo === 2 && tag.wireType === 5) {
+        value.x = reader.float();
       }
-      else if (tag.fieldNo === 3 && tag.wireType === 0) {
-        value.y = reader.sint32();
+      else if (tag.fieldNo === 13 && tag.wireType === 5) {
+        value.y = reader.float();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 5) {
+        value.z = reader.float();
       }
       else if (tag.fieldNo === 4 && tag.wireType === 5) {
-        value.heading = reader.float();
+        value.yaw = reader.float();
       }
       else if (tag.fieldNo === 5 && tag.wireType === 0) {
         value.alive = reader.bool();
@@ -61,7 +66,7 @@ export const MapEntitySnapshotCodec = {
         value.cellX = reader.sint32();
       }
       else if (tag.fieldNo === 9 && tag.wireType === 0) {
-        value.cellY = reader.sint32();
+        value.cellZ = reader.sint32();
       }
       else if (tag.fieldNo === 10 && tag.wireType === 2) {
         (value.numerics as UnitNumericDelta[]).push(UnitNumericDeltaCodec.decode(reader.bytesField()));
@@ -82,14 +87,15 @@ export const MapEntitySnapshotCodec = {
   encode(value: MapEntitySnapshot): Uint8Array {
     const writer = new BinaryWriter();
     if (value.unitId !== undefined) writer.uint32(1, value.unitId);
-    if (value.x !== undefined) writer.sint32(2, value.x);
-    if (value.y !== undefined) writer.sint32(3, value.y);
-    if (value.heading !== undefined) writer.float(4, value.heading);
+    if (value.x !== undefined) writer.float(2, value.x);
+    if (value.y !== undefined) writer.float(13, value.y);
+    if (value.z !== undefined) writer.float(3, value.z);
+    if (value.yaw !== undefined) writer.float(4, value.yaw);
     if (value.alive !== undefined) writer.bool(5, value.alive);
     if (value.state !== undefined) writer.bytes(6, value.state);
     if (value.account !== undefined) writer.string(7, value.account);
     if (value.cellX !== undefined) writer.sint32(8, value.cellX);
-    if (value.cellY !== undefined) writer.sint32(9, value.cellY);
+    if (value.cellZ !== undefined) writer.sint32(9, value.cellZ);
     for (const item of (value.numerics ?? [])) writer.bytes(10, UnitNumericDeltaCodec.encode(item), true);
     if (value.speedCellsPerSecond !== undefined) writer.float(11, value.speedCellsPerSecond);
     if (value.facing !== undefined) writer.uint32(12, value.facing);
@@ -101,9 +107,9 @@ export interface CellMovementState {
   unitId: number;
   acknowledgedSequence: number;
   fromCellX: number;
-  fromCellY: number;
+  fromCellZ: number;
   toCellX: number;
-  toCellY: number;
+  toCellZ: number;
   moveStartTick: number;
   moveEndTick: number;
   moving: boolean;
@@ -117,9 +123,9 @@ export const CellMovementStateCodec = {
       unitId: 0,
       acknowledgedSequence: 0,
       fromCellX: 0,
-      fromCellY: 0,
+      fromCellZ: 0,
       toCellX: 0,
-      toCellY: 0,
+      toCellZ: 0,
       moveStartTick: 0,
       moveEndTick: 0,
       moving: false,
@@ -137,13 +143,13 @@ export const CellMovementStateCodec = {
         value.fromCellX = reader.sint32();
       }
       else if (tag.fieldNo === 4 && tag.wireType === 0) {
-        value.fromCellY = reader.sint32();
+        value.fromCellZ = reader.sint32();
       }
       else if (tag.fieldNo === 5 && tag.wireType === 0) {
         value.toCellX = reader.sint32();
       }
       else if (tag.fieldNo === 6 && tag.wireType === 0) {
-        value.toCellY = reader.sint32();
+        value.toCellZ = reader.sint32();
       }
       else if (tag.fieldNo === 7 && tag.wireType === 0) {
         value.moveStartTick = reader.uint32();
@@ -169,9 +175,9 @@ export const CellMovementStateCodec = {
     if (value.unitId !== undefined) writer.uint32(1, value.unitId);
     if (value.acknowledgedSequence !== undefined) writer.uint32(2, value.acknowledgedSequence);
     if (value.fromCellX !== undefined) writer.sint32(3, value.fromCellX);
-    if (value.fromCellY !== undefined) writer.sint32(4, value.fromCellY);
+    if (value.fromCellZ !== undefined) writer.sint32(4, value.fromCellZ);
     if (value.toCellX !== undefined) writer.sint32(5, value.toCellX);
-    if (value.toCellY !== undefined) writer.sint32(6, value.toCellY);
+    if (value.toCellZ !== undefined) writer.sint32(6, value.toCellZ);
     if (value.moveStartTick !== undefined) writer.uint32(7, value.moveStartTick);
     if (value.moveEndTick !== undefined) writer.uint32(8, value.moveEndTick);
     if (value.moving !== undefined) writer.bool(9, value.moving);
@@ -229,6 +235,8 @@ export interface UnitStateDelta {
   y: number;
   speedCellsPerSecond: number;
   alive: boolean;
+  z: number;
+  yaw: number;
 }
 
 export const UnitStateDeltaCodec = {
@@ -242,6 +250,8 @@ export const UnitStateDeltaCodec = {
       y: 0,
       speedCellsPerSecond: 0,
       alive: false,
+      z: 0,
+      yaw: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -266,6 +276,12 @@ export const UnitStateDeltaCodec = {
       else if (tag.fieldNo === 7 && tag.wireType === 0) {
         value.alive = reader.bool();
       }
+      else if (tag.fieldNo === 8 && tag.wireType === 5) {
+        value.z = reader.float();
+      }
+      else if (tag.fieldNo === 9 && tag.wireType === 5) {
+        value.yaw = reader.float();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -282,6 +298,8 @@ export const UnitStateDeltaCodec = {
     if (value.y !== undefined) writer.float(5, value.y);
     if (value.speedCellsPerSecond !== undefined) writer.float(6, value.speedCellsPerSecond);
     if (value.alive !== undefined) writer.bool(7, value.alive);
+    if (value.z !== undefined) writer.float(8, value.z);
+    if (value.yaw !== undefined) writer.float(9, value.yaw);
     return writer.finish();
   },
 };
@@ -670,10 +688,15 @@ export interface G2C_EnterMap extends IResponse {
   mapId: number;
   unitId: number;
   x: number;
-  y: number;
+  z: number;
   entities: readonly MapEntitySnapshot[];
   fixedUpdateMs: number;
   items: readonly ItemSnapshot[];
+  y: number;
+  mapInstanceId: bigint;
+  spatialMode: number;
+  navigationVersion: string;
+  navigationHash: string;
 }
 
 export const G2C_EnterMapCodec = {
@@ -685,10 +708,15 @@ export const G2C_EnterMapCodec = {
       mapId: 0,
       unitId: 0,
       x: 0,
-      y: 0,
+      z: 0,
       entities: [],
       fixedUpdateMs: 0,
       items: [],
+      y: 0,
+      mapInstanceId: 0n,
+      spatialMode: 0,
+      navigationVersion: "",
+      navigationHash: "",
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -713,11 +741,11 @@ export const G2C_EnterMapCodec = {
       else if (tag.fieldNo === 4 && tag.wireType === 0) {
         value.unitId = reader.uint32();
       }
-      else if (tag.fieldNo === 5 && tag.wireType === 0) {
-        value.x = reader.sint32();
+      else if (tag.fieldNo === 5 && tag.wireType === 5) {
+        value.x = reader.float();
       }
-      else if (tag.fieldNo === 6 && tag.wireType === 0) {
-        value.y = reader.sint32();
+      else if (tag.fieldNo === 6 && tag.wireType === 5) {
+        value.z = reader.float();
       }
       else if (tag.fieldNo === 7 && tag.wireType === 2) {
         (value.entities as MapEntitySnapshot[]).push(MapEntitySnapshotCodec.decode(reader.bytesField()));
@@ -727,6 +755,21 @@ export const G2C_EnterMapCodec = {
       }
       else if (tag.fieldNo === 9 && tag.wireType === 2) {
         (value.items as ItemSnapshot[]).push(ItemSnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 10 && tag.wireType === 5) {
+        value.y = reader.float();
+      }
+      else if (tag.fieldNo === 11 && tag.wireType === 0) {
+        value.mapInstanceId = reader.uint64();
+      }
+      else if (tag.fieldNo === 12 && tag.wireType === 0) {
+        value.spatialMode = reader.uint32();
+      }
+      else if (tag.fieldNo === 13 && tag.wireType === 2) {
+        value.navigationVersion = reader.string();
+      }
+      else if (tag.fieldNo === 14 && tag.wireType === 2) {
+        value.navigationHash = reader.string();
       }
       else {
         reader.skip(tag.wireType);
@@ -744,11 +787,16 @@ export const G2C_EnterMapCodec = {
     if (value.mapService !== undefined) writer.string(2, value.mapService);
     if (value.mapId !== undefined) writer.uint32(3, value.mapId);
     if (value.unitId !== undefined) writer.uint32(4, value.unitId);
-    if (value.x !== undefined) writer.sint32(5, value.x);
-    if (value.y !== undefined) writer.sint32(6, value.y);
+    if (value.x !== undefined) writer.float(5, value.x);
+    if (value.z !== undefined) writer.float(6, value.z);
     for (const item of (value.entities ?? [])) writer.bytes(7, MapEntitySnapshotCodec.encode(item), true);
     if (value.fixedUpdateMs !== undefined) writer.uint32(8, value.fixedUpdateMs);
     for (const item of (value.items ?? [])) writer.bytes(9, ItemSnapshotCodec.encode(item), true);
+    if (value.y !== undefined) writer.float(10, value.y);
+    if (value.mapInstanceId !== undefined) writer.uint64(11, value.mapInstanceId);
+    if (value.spatialMode !== undefined) writer.uint32(12, value.spatialMode);
+    if (value.navigationVersion !== undefined) writer.string(13, value.navigationVersion);
+    if (value.navigationHash !== undefined) writer.string(14, value.navigationHash);
     return writer.finish();
   },
 };
@@ -758,6 +806,7 @@ export interface G2C_MapReady extends IMessage {
   mapId: number;
   unitId: number;
   x: number;
+  z: number;
   y: number;
 }
 
@@ -769,6 +818,7 @@ export const G2C_MapReadyCodec = {
       mapId: 0,
       unitId: 0,
       x: 0,
+      z: 0,
       y: 0,
     };
     while (!reader.eof()) {
@@ -782,11 +832,14 @@ export const G2C_MapReadyCodec = {
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.unitId = reader.uint32();
       }
-      else if (tag.fieldNo === 4 && tag.wireType === 0) {
-        value.x = reader.sint32();
+      else if (tag.fieldNo === 4 && tag.wireType === 5) {
+        value.x = reader.float();
       }
-      else if (tag.fieldNo === 5 && tag.wireType === 0) {
-        value.y = reader.sint32();
+      else if (tag.fieldNo === 5 && tag.wireType === 5) {
+        value.z = reader.float();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 5) {
+        value.y = reader.float();
       }
       else {
         reader.skip(tag.wireType);
@@ -800,15 +853,16 @@ export const G2C_MapReadyCodec = {
     if (value.account !== undefined) writer.string(1, value.account);
     if (value.mapId !== undefined) writer.uint32(2, value.mapId);
     if (value.unitId !== undefined) writer.uint32(3, value.unitId);
-    if (value.x !== undefined) writer.sint32(4, value.x);
-    if (value.y !== undefined) writer.sint32(5, value.y);
+    if (value.x !== undefined) writer.float(4, value.x);
+    if (value.z !== undefined) writer.float(5, value.z);
+    if (value.y !== undefined) writer.float(6, value.y);
     return writer.finish();
   },
 };
 
 export interface C2M_Move extends IActorLocationMessage {
   inputX: number;
-  inputY: number;
+  inputZ: number;
   sequence: number;
 }
 
@@ -817,7 +871,7 @@ export const C2M_MoveCodec = {
     const reader = new BinaryReader(payload);
     const value: C2M_Move = {
       inputX: 0,
-      inputY: 0,
+      inputZ: 0,
       sequence: 0,
     };
     while (!reader.eof()) {
@@ -826,7 +880,7 @@ export const C2M_MoveCodec = {
         value.inputX = reader.sint32();
       }
       else if (tag.fieldNo === 2 && tag.wireType === 0) {
-        value.inputY = reader.sint32();
+        value.inputZ = reader.sint32();
       }
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.sequence = reader.uint32();
@@ -841,7 +895,7 @@ export const C2M_MoveCodec = {
   encode(value: C2M_Move): Uint8Array {
     const writer = new BinaryWriter();
     if (value.inputX !== undefined) writer.sint32(1, value.inputX);
-    if (value.inputY !== undefined) writer.sint32(2, value.inputY);
+    if (value.inputZ !== undefined) writer.sint32(2, value.inputZ);
     if (value.sequence !== undefined) writer.uint32(3, value.sequence);
     return writer.finish();
   },

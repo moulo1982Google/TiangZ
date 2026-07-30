@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.3.10`，也是框架能力的首个稳定基线。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；该版本尚未包含完整商业 MMORPG 业务和生产运维方案。
+当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；Phase 4将继续建设Rust AOI、3D导航、持久化和MMORPG业务样例。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 

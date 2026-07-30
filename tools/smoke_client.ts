@@ -267,8 +267,9 @@ async function verifyMapTransfer(
     transferred.unitId !== previous.unitId ||
     ready.body.mapId !== 2 ||
     ready.body.unitId !== previous.unitId ||
-    transferred.x !== mapConfig.spawnCellX * 12 ||
-    transferred.y !== mapConfig.spawnCellY * 12 ||
+    transferred.x !== mapConfig.spawnX ||
+    transferred.y !== mapConfig.spawnY ||
+    transferred.z !== mapConfig.spawnZ ||
     itemAfter?.count !== expectedItem.count ||
     itemAfter?.version !== expectedItem.version
   ) {
@@ -299,6 +300,7 @@ async function verifyMapTransfer(
     toMapId: transferred.mapId,
     x: transferred.x,
     y: transferred.y,
+    z: transferred.z,
     itemCount: itemAfter?.count,
     queuedItemCount: itemResponse.body.item.count,
   });
@@ -419,34 +421,34 @@ async function verifyNumericTimer(
 
 async function verifyAuthoritativeMovement(
   gate: TcpRpcConnection,
-  player: { unitId: number; x: number; y: number },
+  player: { unitId: number; x: number; y: number; z: number },
 ): Promise<void> {
-  await gate.send(buildMovePacket({ inputX: 1, inputY: 0, sequence: 1 }));
+  await gate.send(buildMovePacket({ inputX: 1, inputZ: 0, sequence: 1 }));
   const first = await waitForMovementSequence(gate, player.unitId, 1);
   if (
     first.unitId !== player.unitId ||
     first.acknowledgedSequence !== 1 ||
     !first.moving ||
     first.toCellX !== first.fromCellX + 1 ||
-    first.toCellY !== first.fromCellY
+    first.toCellZ !== first.fromCellZ
   ) {
     throw new Error(`unexpected first authoritative move: ${JSON.stringify(first)}`);
   }
 
   await sleep(60);
-  await gate.send(buildMovePacket({ inputX: 1, inputY: 0, sequence: 2 }));
+  await gate.send(buildMovePacket({ inputX: 1, inputZ: 0, sequence: 2 }));
   const second = await waitForMovementSequence(gate, player.unitId, 2);
   if (
     second.acknowledgedSequence !== 2 ||
     !second.moving ||
     second.toCellX !== second.fromCellX + 1 ||
-    second.toCellY !== second.fromCellY ||
+    second.toCellZ !== second.fromCellZ ||
     second.fromCellX < first.fromCellX
   ) {
     throw new Error(`unexpected second authoritative move: ${JSON.stringify(second)}`);
   }
 
-  await gate.send(buildMovePacket({ inputX: 0, inputY: 0, sequence: 3 }));
+  await gate.send(buildMovePacket({ inputX: 0, inputZ: 0, sequence: 3 }));
   const stopped = await waitForMovementSequence(gate, player.unitId, 3);
   if (
     stopped.acknowledgedSequence !== 3 ||
@@ -456,7 +458,7 @@ async function verifyAuthoritativeMovement(
   }
 
   // 重复序号不会改变输入；移动中的周期快照仍可能正常到达，不能用“无下行包”判断。
-  await gate.send(buildMovePacket({ inputX: 0, inputY: 0, sequence: 3 }));
+  await gate.send(buildMovePacket({ inputX: 0, inputZ: 0, sequence: 3 }));
   console.log("Authoritative Cell movement:", { first, second, stopped });
 }
 
@@ -518,7 +520,7 @@ async function verifySharedMapBroadcast(
     const moverFrame = mover.gate.waitForMessage(MsgCode.G2C_EntityMove);
     const observerFrame = observer.gate.waitForMessage(MsgCode.G2C_EntityMove);
     await mover.gate.send(
-      buildMovePacket({ inputX: 0, inputY: 1, sequence: 1 }),
+      buildMovePacket({ inputX: 0, inputZ: 1, sequence: 1 }),
     );
     const [moverPush, observerPush] = await Promise.all([
       moverFrame.then(decodeEntityMoveFrame),

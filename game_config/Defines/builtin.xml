@@ -1,7 +1,10 @@
 <module name="">
+    <enum name="SpatialMode" comment="地图空间实现">
+        <var name="Grid2D" value="1"/>
+        <var name="NavMesh3D" value="2"/>
+    </enum>
     <bean name="vector2" valueType="1" sep=",">
         <var name="x" type="float"/>
         <var name="y" type="float"/>
     </bean>
 </module>
-

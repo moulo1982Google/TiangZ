@@ -58,13 +58,13 @@ moveStartTick -> moveEndTick
 
 `C2M_Move` 是方向状态：
 
-- `input_x/input_y`：取值为 -1、0、1；停止为 `(0, 0)`。
+- `input_x/input_z`：X/Z地面方向，取值为 -1、0、1；停止为 `(0, 0)`。
 - `sequence`：方向状态或保活版本。
 
 `G2C_EntityMove` 是一批权威 Cell 路径。包级 `server_tick` 表示生成批次时的地图逻辑帧，`movements` 中每个 `CellMovementState` 包含：
 
-- `from_cell_x/from_cell_y`：当前步起点 Cell。
-- `to_cell_x/to_cell_y`：当前步目标 Cell。
+- `from_cell_x/from_cell_z`：当前步起点 Cell。
+- `to_cell_x/to_cell_z`：当前步目标 Cell。
 - `move_start_tick/move_end_tick`：当前步的服务端时间区间。
 - `moving`：当前是否处于 Cell 过渡中。
 - `acknowledged_sequence`：服务端已应用的客户端输入版本。
@@ -73,7 +73,7 @@ moveStartTick -> moveEndTick
 
 进入地图响应携带 `fixed_update_ms`。客户端用服务端实际固定帧间隔量化直线和斜线步长，不能自行假定 20Hz。
 
-初次进入地图使用 `MapEntitySnapshot.cell_x/cell_y` 创建实体，避免用浮点世界坐标反推权威 Cell。
+初次进入地图使用 `MapEntitySnapshot.cell_x/cell_z` 创建实体，避免用浮点世界坐标反推权威 Cell。客户端二维显示层再把X/Z映射为屏幕X/Y。
 
 ## Cocos 视口
 

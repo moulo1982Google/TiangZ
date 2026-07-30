@@ -141,7 +141,7 @@ Unit 的 `NativeData.SetMovementInput/UpdateMapMovement/protobuf snapshot` 是�
 框架通用 Entity ABI 声明在 `native_data/core/EntityOps.native`；业务专用的粗粒度 ABI 放在对应游戏目录，例如 Demo 的 `native_data/demo/MapOps.native`：
 
 ```text
-op UnitSetMovementInput(handle: u32, inputX: i8, inputY: i8, sequence: u32): bool;
+op UnitSetMovementInput(handle: u32, inputX: i8, inputZ: i8, sequence: u32): bool;
 op MapUpdateMovement(mapId: u32, serverTick: u32, fixedUpdateMs: u32, messageCode: u32): bytes;
 ```
 

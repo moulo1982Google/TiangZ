@@ -1,6 +1,6 @@
 {
   "name": "ets-runtime",
-  "version": "0.3.10",
+  "version": "0.4.0",
   "private": true,
   "packageManager": "npm@11.18.0",
   "engines": {
@@ -27,6 +27,7 @@
     "build:game-config": "npm run codegen:game-config && node tools/build_game_config_data.mjs",
     "build:game-config:initial": "node tools/build_game_config_data.mjs --initial",
     "codegen:proto:update-lock": "node tools/codegen_proto.mjs --update-opcode-lock",
+    "codegen:proto:replace-schema-lock": "node tools/codegen_proto.mjs --update-opcode-lock --replace-schema-lock",
     "codegen:client-sdk": "node tools/codegen_client_sdk.mjs",
     "codegen:native-data": "node tools/codegen_native_data.mjs",
     "codegen:scenes": "node tools/codegen_scenes.mjs",

@@ -22,18 +22,34 @@ const RAW_DATA: Record<string, unknown> = {
     {
       "id": 1,
       "name": "默认地图一",
+      "spatial_mode": 1,
       "width_cells": 128,
-      "height_cells": 128,
-      "spawn_cell_x": 0,
-      "spawn_cell_y": 0
+      "depth_cells": 128,
+      "grid_cell_size_meters": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 0,
+      "spawn_yaw": 0,
+      "aoi_cell_size_meters": 8,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": ""
     },
     {
       "id": 2,
       "name": "默认地图二",
+      "spatial_mode": 1,
       "width_cells": 128,
-      "height_cells": 128,
-      "spawn_cell_x": 8,
-      "spawn_cell_y": 8
+      "depth_cells": 128,
+      "grid_cell_size_meters": 1,
+      "spawn_x": 8,
+      "spawn_y": 0,
+      "spawn_z": 8,
+      "spawn_yaw": 0,
+      "aoi_cell_size_meters": 8,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": ""
     }
   ],
   "game_tbplayerconfig": [
@@ -82,7 +98,7 @@ export type ItemConfig = game.ItemConfig;
 export type MapConfig = game.MapConfig;
 export type PlayerConfig = game.PlayerConfig;
 
-export const GameConfigFingerprint = "c06666ddb28b3a667e13bea41fce84e7986f5355e25add4ff3bee356f5a26914";
+export const GameConfigFingerprint = "cb2de688852d1b6f2242c480ea64b3d47cd5e60e7fdce84f48da7a52d16c6a14";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),

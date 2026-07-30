@@ -90,8 +90,12 @@ entity Unit extends Entity {
   @memberId(2)
   y: f32 = 0;
   @memberId(3)
-  speedCellsPerSecond: f32 = 10;
+  z: f32 = 0;
   @memberId(4)
+  yaw: f32 = 0;
+  @memberId(5)
+  speedCellsPerSecond: f32 = 10;
+  @memberId(6)
   alive: u32 = 1;
 }
 ```

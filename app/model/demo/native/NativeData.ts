@@ -74,10 +74,10 @@ export class NativeData {
   static SetMovementInput(
     handle: number,
     inputX: number,
-    inputY: number,
+    inputZ: number,
     sequence: number,
   ): boolean {
-    return NativeOps.UnitSetMovementInput(handle, inputX, inputY, sequence);
+    return NativeOps.UnitSetMovementInput(handle, inputX, inputZ, sequence);
   }
 
   /** 玩家重连时清空排队移动，避免旧输入继续驱动玩家。 / Clears queued movement when a player reconnects so stale input cannot continue moving it. */
@@ -85,14 +85,28 @@ export class NativeData {
     NativeOps.UnitResetMovement(handle);
   }
 
-  /** 向Rust注册地图尺寸，移动热循环只读取预计算边界而不回调TS。 / Registers map dimensions in Rust so the movement hot loop reads precomputed bounds without calling back into TS. */
-  static ConfigureMap(mapId: number, widthCells: number, heightCells: number): void {
-    NativeOps.MapConfigure(mapId, widthCells, heightCells);
+  /** 创建Grid2D空间实例；尺寸和米制Cell大小在生命周期内不可改变。 / Creates a Grid2D spatial instance whose bounds and meter-sized cells stay immutable for its lifetime. */
+  static CreateGrid2DSpatial(
+    mapId: number,
+    widthCells: number,
+    depthCells: number,
+    cellSizeMeters: number,
+  ): void {
+    const cellSizeMillimeters = Math.round(cellSizeMeters * 1_000);
+    if (cellSizeMillimeters <= 0) {
+      throw new Error(`grid cell size must be positive: ${cellSizeMeters}`);
+    }
+    NativeOps.SpatialCreateGrid2D(
+      mapId,
+      widthCells,
+      depthCells,
+      cellSizeMillimeters,
+    );
   }
 
-  /** 地图销毁时移除Rust边界配置。 / Removes Rust-side map bounds when the map is destroyed. */
-  static UnconfigureMap(mapId: number): void {
-    NativeOps.MapUnconfigure(mapId);
+  /** 地图销毁时释放实例私有空间状态；共享导航资产不由该调用卸载。 / Releases per-instance spatial state on map disposal without unloading shared navigation assets. */
+  static ReleaseSpatial(mapId: number): void {
+    NativeOps.SpatialRelease(mapId);
   }
 
   /** 推进地图内全部 Rust Unit，并返回已编码的可覆盖移动帧。 / Advances all Rust Units in a map and returns an already encoded replaceable movement frame. */

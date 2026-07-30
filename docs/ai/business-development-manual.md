@@ -327,6 +327,16 @@ message M2C_UseSkill // IActorLocationResponse
 
 不要为每张地图、每只怪物、每个组件创建EntryScene。
 
+### 地图坐标与空间模式
+
+服务端和公共客户端SDK只使用引擎无关的米制`x/y/z/yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度。任何位置都必须同时知道`MapInstanceId`；不得把Cocos `Vec3`、Unity `Vector3/float3`或屏幕像素写进协议、Native数据或地图业务。
+
+Grid2D业务使用`cellX/cellZ`和`inputX/inputZ`。Cocos 2D与Pixi在客户端边界将服务端X/Z映射为屏幕X/Y，服务端Y通常为零；3D客户端直接把普通数值转换为引擎向量。禁止再次引入`cellY/inputY`表示地面纵轴，否则2D与3D地图会产生相反语义。
+
+创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。当前只有`Grid2D`运行时可用；`NavMesh3D`配置虽然已经具备资源、版本和哈希字段，但必须等Rust导航运行时完成后才能启用。业务不能捕获“不支持NavMesh”的异常后回退到Grid2D。空间模式、字段结构和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
+
+详细字段、Rust所有权和客户端进入校验见[地图空间与3D坐标契约](../design/spatial-world.md)。
+
 ### 玩家地图传送
 
 静态地图与动态副本都只调用：
@@ -612,7 +622,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 ## 验证矩阵
 
-当前仍处于`0.3.10`框架稳定化阶段。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
+`0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前继续沿`0.4.x`开发线推进。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
 本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 

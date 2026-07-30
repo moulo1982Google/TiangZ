@@ -42,15 +42,15 @@ export function clampDirection(value: number): number {
 
 export function canOccupyCell(
   x: number,
-  y: number,
+  z: number,
   widthCells = MAP_CELL_COUNT,
-  heightCells = MAP_CELL_COUNT,
+  depthCells = MAP_CELL_COUNT,
 ): boolean {
   const minX = -Math.floor(widthCells / 2) + 1;
   const maxX = Math.floor((widthCells - 1) / 2) - 1;
-  const minY = -Math.floor(heightCells / 2) + 1;
-  const maxY = Math.floor((heightCells - 1) / 2) - 1;
-  return x >= minX && x <= maxX && y >= minY && y <= maxY;
+  const minZ = -Math.floor(depthCells / 2) + 1;
+  const maxZ = Math.floor((depthCells - 1) / 2) - 1;
+  return x >= minX && x <= maxX && z >= minZ && z <= maxZ;
 }
 
 export function stepDurationSeconds(

@@ -8,6 +8,16 @@
 //------------------------------------------------------------------------------
 
 
+ 
+/**
+ * 地图空间实现
+ */
+export enum SpatialMode {
+    Grid2D = 1,
+    NavMesh3D = 2,
+}
+
+ 
 
 
 
@@ -69,14 +79,30 @@ export class MapConfig {
         this.id = _json_.id
         if (_json_.name === undefined) { throw new Error() }
         this.name = _json_.name
+        if (_json_.spatial_mode === undefined) { throw new Error() }
+        this.spatialMode = _json_.spatial_mode
         if (_json_.width_cells === undefined) { throw new Error() }
         this.widthCells = _json_.width_cells
-        if (_json_.height_cells === undefined) { throw new Error() }
-        this.heightCells = _json_.height_cells
-        if (_json_.spawn_cell_x === undefined) { throw new Error() }
-        this.spawnCellX = _json_.spawn_cell_x
-        if (_json_.spawn_cell_y === undefined) { throw new Error() }
-        this.spawnCellY = _json_.spawn_cell_y
+        if (_json_.depth_cells === undefined) { throw new Error() }
+        this.depthCells = _json_.depth_cells
+        if (_json_.grid_cell_size_meters === undefined) { throw new Error() }
+        this.gridCellSizeMeters = _json_.grid_cell_size_meters
+        if (_json_.spawn_x === undefined) { throw new Error() }
+        this.spawnX = _json_.spawn_x
+        if (_json_.spawn_y === undefined) { throw new Error() }
+        this.spawnY = _json_.spawn_y
+        if (_json_.spawn_z === undefined) { throw new Error() }
+        this.spawnZ = _json_.spawn_z
+        if (_json_.spawn_yaw === undefined) { throw new Error() }
+        this.spawnYaw = _json_.spawn_yaw
+        if (_json_.aoi_cell_size_meters === undefined) { throw new Error() }
+        this.aoiCellSizeMeters = _json_.aoi_cell_size_meters
+        if (_json_.navigation_asset === undefined) { throw new Error() }
+        this.navigationAsset = _json_.navigation_asset
+        if (_json_.navigation_version === undefined) { throw new Error() }
+        this.navigationVersion = _json_.navigation_version
+        if (_json_.navigation_hash === undefined) { throw new Error() }
+        this.navigationHash = _json_.navigation_hash
     }
 
     /**
@@ -88,23 +114,63 @@ export class MapConfig {
      */
     readonly name: string
     /**
-     * 地图横向Cell数量
+     * 空间模式
+     */
+    readonly spatialMode: SpatialMode
+    /**
+     * 地图X轴Cell数量
      */
     readonly widthCells: number
     /**
-     * 地图纵向Cell数量
+     * 地图Z轴Cell数量
      */
-    readonly heightCells: number
+    readonly depthCells: number
     /**
-     * 默认出生Cell X
+     * 每格米数
      */
-    readonly spawnCellX: number
+    readonly gridCellSizeMeters: number
     /**
-     * 默认出生Cell Y
+     * 出生点X（米）
      */
-    readonly spawnCellY: number
+    readonly spawnX: number
+    /**
+     * 出生点Y（米）
+     */
+    readonly spawnY: number
+    /**
+     * 出生点Z（米）
+     */
+    readonly spawnZ: number
+    /**
+     * 出生朝向Yaw（弧度）
+     */
+    readonly spawnYaw: number
+    /**
+     * AOI Cell边长（米）
+     */
+    readonly aoiCellSizeMeters: number
+    /**
+     * 导航资源标识
+     */
+    readonly navigationAsset: string
+    /**
+     * 导航资源版本
+     */
+    readonly navigationVersion: string
+    /**
+     * 导航资源SHA-256
+     */
+    readonly navigationHash: string
 
     resolve(tables:Tables) {
+        
+        
+        
+        
+        
+        
+        
+        
         
         
         

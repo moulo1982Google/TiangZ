@@ -10,7 +10,7 @@ import {
 
 export interface MovementInput {
   readonly x: number;
-  readonly y: number;
+  readonly z: number;
 }
 
 export interface MovementInputState extends MovementInput {
@@ -21,9 +21,9 @@ export interface AuthoritativeMovementState {
   readonly acknowledgedSequence: number;
   readonly serverTick: number;
   readonly fromCellX: number;
-  readonly fromCellY: number;
+  readonly fromCellZ: number;
   readonly toCellX: number;
-  readonly toCellY: number;
+  readonly toCellZ: number;
   readonly moveStartTick: number;
   readonly moveEndTick: number;
   readonly moving: boolean;
@@ -32,7 +32,7 @@ export interface AuthoritativeMovementState {
 
 export interface PredictedMovement {
   readonly x: number;
-  readonly y: number;
+  readonly z: number;
   readonly facing: Facing;
   readonly moving: boolean;
 }
@@ -41,16 +41,16 @@ export interface LocalMovementPredictorOptions {
   readonly fixedUpdateMs: number;
   readonly heartbeatSeconds: number;
   readonly mapWidthCells?: number;
-  readonly mapHeightCells?: number;
+  readonly mapDepthCells?: number;
   readonly moveSpeedCellsPerSecond?: number;
 }
 
 export class LocalMovementPredictor {
-  private desiredInput: MovementInput = { x: 0, y: 0 };
+  private desiredInput: MovementInput = { x: 0, z: 0 };
   private currentCellX: number;
-  private currentCellY: number;
+  private currentCellZ: number;
   private targetCellX: number;
-  private targetCellY: number;
+  private targetCellZ: number;
   private stepElapsedSeconds = 0;
   private stepDuration = 0;
   private moving = false;
@@ -61,26 +61,26 @@ export class LocalMovementPredictor {
 
   constructor(
     cellX: number,
-    cellY: number,
+    cellZ: number,
     facing: number,
     private readonly sendState: (state: MovementInputState) => void,
     private readonly options: LocalMovementPredictorOptions,
   ) {
     this.currentCellX = cellX;
-    this.currentCellY = cellY;
+    this.currentCellZ = cellZ;
     this.targetCellX = cellX;
-    this.targetCellY = cellY;
+    this.targetCellZ = cellZ;
     this.facing = normalizeFacing(facing);
   }
 
   setInput(input: MovementInput): void {
     const normalized = {
       x: clampDirection(input.x),
-      y: clampDirection(input.y),
+      z: clampDirection(input.z),
     };
     if (
       normalized.x === this.desiredInput.x &&
-      normalized.y === this.desiredInput.y
+      normalized.z === this.desiredInput.z
     ) return;
 
     this.desiredInput = normalized;
@@ -98,14 +98,14 @@ export class LocalMovementPredictor {
       remaining -= consumed;
       if (this.stepElapsedSeconds + 1e-6 >= this.stepDuration) {
         this.currentCellX = this.targetCellX;
-        this.currentCellY = this.targetCellY;
+        this.currentCellZ = this.targetCellZ;
         this.moving = false;
         this.stepElapsedSeconds = 0;
         this.stepDuration = 0;
       }
     }
 
-    if (this.desiredInput.x !== 0 || this.desiredInput.y !== 0) {
+    if (this.desiredInput.x !== 0 || this.desiredInput.z !== 0) {
       this.heartbeatElapsed += Math.max(0, deltaSeconds);
       while (this.heartbeatElapsed >= this.options.heartbeatSeconds) {
         this.heartbeatElapsed -= this.options.heartbeatSeconds;
@@ -125,15 +125,15 @@ export class LocalMovementPredictor {
     if (state.moving) {
       const sameStep = this.moving &&
         this.currentCellX === state.fromCellX &&
-        this.currentCellY === state.fromCellY &&
+        this.currentCellZ === state.fromCellZ &&
         this.targetCellX === state.toCellX &&
-        this.targetCellY === state.toCellY;
+        this.targetCellZ === state.toCellZ;
       if (sameStep) return true;
 
       this.currentCellX = state.fromCellX;
-      this.currentCellY = state.fromCellY;
+      this.currentCellZ = state.fromCellZ;
       this.targetCellX = state.toCellX;
-      this.targetCellY = state.toCellY;
+      this.targetCellZ = state.toCellZ;
       this.stepDuration = Math.max(
         this.options.fixedUpdateMs / 1_000,
         (state.moveEndTick - state.moveStartTick) * this.options.fixedUpdateMs / 1_000,
@@ -151,13 +151,13 @@ export class LocalMovementPredictor {
     if (
       this.moving &&
       this.targetCellX === state.fromCellX &&
-      this.targetCellY === state.fromCellY
+      this.targetCellZ === state.fromCellZ
     ) return true;
 
     this.currentCellX = state.fromCellX;
-    this.currentCellY = state.fromCellY;
+    this.currentCellZ = state.fromCellZ;
     this.targetCellX = state.fromCellX;
-    this.targetCellY = state.fromCellY;
+    this.targetCellZ = state.fromCellZ;
     this.moving = false;
     this.stepElapsedSeconds = 0;
     this.stepDuration = 0;
@@ -165,21 +165,21 @@ export class LocalMovementPredictor {
   }
 
   private tryStartStep(): boolean {
-    if (this.desiredInput.x === 0 && this.desiredInput.y === 0) return false;
+    if (this.desiredInput.x === 0 && this.desiredInput.z === 0) return false;
     const targetX = this.currentCellX + this.desiredInput.x;
-    const targetY = this.currentCellY + this.desiredInput.y;
+    const targetZ = this.currentCellZ + this.desiredInput.z;
     if (!canOccupyCell(
       targetX,
-      targetY,
+      targetZ,
       this.options.mapWidthCells,
-      this.options.mapHeightCells,
+      this.options.mapDepthCells,
     )) return false;
     this.targetCellX = targetX;
-    this.targetCellY = targetY;
-    this.facing = facingFromDirection(this.desiredInput.x, this.desiredInput.y);
+    this.targetCellZ = targetZ;
+    this.facing = facingFromDirection(this.desiredInput.x, this.desiredInput.z);
     this.stepDuration = stepDurationSeconds(
       this.desiredInput.x,
-      this.desiredInput.y,
+      this.desiredInput.z,
       this.options.fixedUpdateMs,
       this.options.moveSpeedCellsPerSecond,
     );
@@ -196,7 +196,7 @@ export class LocalMovementPredictor {
     if (!this.moving) {
       return {
         x: cellToWorld(this.currentCellX),
-        y: cellToWorld(this.currentCellY),
+        z: cellToWorld(this.currentCellZ),
         facing: this.facing,
         moving: false,
       };
@@ -205,8 +205,8 @@ export class LocalMovementPredictor {
     return {
       x: cellToWorld(this.currentCellX) +
         (cellToWorld(this.targetCellX) - cellToWorld(this.currentCellX)) * progress,
-      y: cellToWorld(this.currentCellY) +
-        (cellToWorld(this.targetCellY) - cellToWorld(this.currentCellY)) * progress,
+      z: cellToWorld(this.currentCellZ) +
+        (cellToWorld(this.targetCellZ) - cellToWorld(this.currentCellZ)) * progress,
       facing: this.facing,
       moving: true,
     };

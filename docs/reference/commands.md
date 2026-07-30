@@ -49,6 +49,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | 命令 | 用途 |
 | --- | --- |
 | `npm run codegen:proto:update-lock` | 评审协议变化后显式更新opcode与schema发布锁 |
+| `npm run codegen:proto:replace-schema-lock` | 仅在明确发布破坏性协议版本时替换schema lock；必须同步版本、迁移说明和全部客户端SDK |
 | `npm run codegen:game-config` | 使用仓库固定的Luban生成服务端和客户端强类型游戏配置 |
 | `npm run build:game-config` | 生成并校验数据，输出不可变、内容寻址的服务端热更候选 |
 | `npm run codegen:client-sdk` | 生成正式协议指纹，并向Cocos/Pixi分发不含Bench的TypeScript SDK |

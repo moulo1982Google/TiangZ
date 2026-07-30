@@ -44,6 +44,7 @@ import { LocationProxy } from "../location/LocationProxy";
 import type { PlayerRepository } from "../persistence/PlayerRepository";
 import {
   GameConfigs,
+  SpatialMode,
   type MapConfig as MapConfigData,
 } from "../../../generated/model/config";
 import type { MapInstanceDefinition } from "./MapInstance";
@@ -116,7 +117,17 @@ export class MapComponent extends Component<[
     this.dynamic = definition.dynamic;
     this.nativeMapKey = this.DomainScene().InstanceId;
     this.config = GameConfigs.MapConfig.Get(this.mapId);
-    NativeData.ConfigureMap(this.nativeMapKey, this.config.widthCells, this.config.heightCells);
+    if (this.config.spatialMode !== SpatialMode.Grid2D) {
+      throw new Error(
+        `map ${this.mapId} uses NavMesh3D, but the Phase 4 navigation runtime is not installed`,
+      );
+    }
+    NativeData.CreateGrid2DSpatial(
+      this.nativeMapKey,
+      this.config.widthCells,
+      this.config.depthCells,
+      this.config.gridCellSizeMeters,
+    );
     this.players = players;
     this.repository = repository;
     this.transferCoordinator = transferCoordinator;
@@ -313,9 +324,15 @@ export class MapComponent extends Component<[
         PositionComponent,
         native,
         this.config.widthCells,
-        this.config.heightCells,
+        this.config.depthCells,
+        this.config.gridCellSizeMeters,
       );
-      position.SetCell(this.config.spawnCellX, this.config.spawnCellY);
+      position.SetGridWorldPosition(
+        this.config.spawnX,
+        this.config.spawnY,
+        this.config.spawnZ,
+        this.config.spawnYaw,
+      );
       position.SpeedCellsPerSecond = playerConfig.moveSpeed;
       player.AddComponent(NumericComponent);
       player.AddComponent(ItemComponent);
@@ -425,9 +442,11 @@ export class MapComponent extends Component<[
       unitId: snapshot.unitId,
       x: snapshot.x,
       y: snapshot.y,
+      z: snapshot.z,
       entities: this.EntitySnapshots(),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: unit.GetComponent(ItemComponent).Snapshot(),
+      mapInstanceId: snapshot.mapInstanceId,
     };
   }
 
@@ -614,7 +633,7 @@ export class MapComponent extends Component<[
 
   protected override OnDestroy(): void {
     this.broadcast.Dispose();
-    NativeData.UnconfigureMap(this.nativeMapKey);
+    NativeData.ReleaseSpatial(this.nativeMapKey);
   }
 
   private BroadcastAudience(excludeUnitId?: number): BroadcastAudience {
@@ -659,10 +678,11 @@ function toMapEntity(snapshot: PlayerSnapshot): MapEntitySnapshot {
     account: snapshot.account,
     x: snapshot.x,
     y: snapshot.y,
-    heading: 0,
+    z: snapshot.z,
+    yaw: snapshot.yaw,
     state: new Uint8Array(0),
     cellX: snapshot.cellX,
-    cellY: snapshot.cellY,
+    cellZ: snapshot.cellZ,
     numerics: snapshot.numerics,
     speedCellsPerSecond: snapshot.speedCellsPerSecond,
     facing: snapshot.facing,

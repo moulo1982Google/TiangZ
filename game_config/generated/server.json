@@ -17,18 +17,34 @@
     {
       "id": 1,
       "name": "默认地图一",
+      "spatial_mode": 1,
       "width_cells": 128,
-      "height_cells": 128,
-      "spawn_cell_x": 0,
-      "spawn_cell_y": 0
+      "depth_cells": 128,
+      "grid_cell_size_meters": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 0,
+      "spawn_yaw": 0,
+      "aoi_cell_size_meters": 8,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": ""
     },
     {
       "id": 2,
       "name": "默认地图二",
+      "spatial_mode": 1,
       "width_cells": 128,
-      "height_cells": 128,
-      "spawn_cell_x": 8,
-      "spawn_cell_y": 8
+      "depth_cells": 128,
+      "grid_cell_size_meters": 1,
+      "spawn_x": 8,
+      "spawn_y": 0,
+      "spawn_z": 8,
+      "spawn_yaw": 0,
+      "aoi_cell_size_meters": 8,
+      "navigation_asset": "",
+      "navigation_version": "",
+      "navigation_hash": ""
     }
   ],
   "game_tbplayerconfig": [

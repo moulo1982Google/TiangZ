@@ -10,6 +10,12 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-30 - v0.4.0 Phase 4.0空间契约
+
+Phase 4从空间契约开始，而不是直接堆叠3D业务。服务端、Native Entity和protobuf统一为地图局部米制`X/Y/Z + Yaw`：X/Z是地面，Y是高度，Yaw为绕Y轴弧度；Grid2D同步迁移到`cellX/cellZ`和`inputX/inputZ`。Cocos 2D与Pixi只在显示边界将X/Z映射到屏幕X/Y，公共SDK不依赖任何引擎向量类型。
+
+Luban `MapConfig`增加`SpatialMode`、三维出生点、Grid/AOI米制Cell及导航资源`asset/version/hash`。Rust按MapInstance创建和释放Grid2D空间状态；NavMesh3D只冻结资源共享和实例生命周期契约，当前启用会明确失败。协议schema lock通过仅供破坏性版本使用的显式命令替换，旧`0.3.10`客户端不得与`0.4.x`混连。
+
 ## 2026-07-29 - 静态地图与动态副本统一
 
 地图身份正式拆为模板`MapConfigId`和运行时`MapInstanceId`。静态实例号等于配置号，由所属MapHost读取`staticMapIds`后创建；动态副本由Demo业务`DynamicMapManagerComponent`使用全局ID创建。两者共享MapHost唯一`CreateMap`、MapScene/Component组合、Rust本地索引与销毁路径。MapHost向Location注册实际托管实例并周期重报，`knownScenes`不再复制地图归属。

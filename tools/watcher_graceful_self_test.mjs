@@ -39,10 +39,10 @@ async function verifyOperatorShutdown() {
 }
 
 /**
- * 通过重复启动同一监听配置制造子进程失败，验证 Watcher 会停掉兄弟进程并返回非零状态。
+ * 通过重复配置同一Process身份，验证Watcher在启动子进程前拒绝歧义配置并返回非零状态。
  *
- * Starts the same listener configuration twice to force one child to fail, then verifies that
- * Watcher stops its sibling and exits with a nonzero status.
+ * Duplicates one Process identity and verifies that Watcher rejects the ambiguous configuration
+ * before starting children, then exits with a nonzero status.
  */
 async function verifyUnexpectedChildExit() {
   const temporary = await mkdtemp(path.join(os.tmpdir(), "tiangz-watcher-failure-"));
@@ -65,12 +65,12 @@ async function verifyUnexpectedChildExit() {
   const watcher = startWatcher(startMachine);
   try {
     const { code, signal } = await waitForExit(watcher.child, 30_000);
-    if (code === 0) throw new Error("Watcher unexpectedly succeeded after a child process failed");
-    if (!watcher.output().includes("exited unexpectedly")) {
-      throw new Error(`Watcher did not report the unexpected child exit:\n${watcher.output()}`);
+    if (code === 0) throw new Error("Watcher unexpectedly accepted a duplicate process identity");
+    if (!watcher.output().includes("duplicate process identity")) {
+      throw new Error(`Watcher did not report the duplicate process identity:\n${watcher.output()}`);
     }
     await waitForPortClosed(7000, 10_000);
-    console.log("watcher failure self-test passed (unexpected child exit stopped siblings)");
+    console.log("watcher failure self-test passed (duplicate process identity rejected before startup)");
   } finally {
     stopIfRunning(watcher.child);
     await rm(temporary, { recursive: true, force: true });

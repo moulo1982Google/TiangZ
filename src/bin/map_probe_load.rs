@@ -900,7 +900,7 @@ async fn send_move(
 ) -> Result<()> {
     let direction_step = sequence.saturating_sub(1) / hold_messages;
     let direction = (unit_id.wrapping_add(direction_step) % 4) as i32;
-    let (input_x, input_y) = match direction {
+    let (input_x, input_z) = match direction {
         0 => (1, 0),
         1 => (0, 1),
         2 => (-1, 0),
@@ -908,7 +908,7 @@ async fn send_move(
     };
     let mut payload = Vec::with_capacity(16);
     push_sint32(&mut payload, 1, input_x);
-    push_sint32(&mut payload, 2, input_y);
+    push_sint32(&mut payload, 2, input_z);
     push_uint32(&mut payload, 3, sequence);
     send_client_frame(writer_tx, encode_message(MAP_MOVE, &payload)).await
 }

@@ -12,14 +12,20 @@ entity Unit extends Entity {
   @memberId(2)
   @hot
   y: f32 = 0;
+  @memberId(3)
+  @hot
+  z: f32 = 0;
+  @memberId(4)
+  @hot
+  yaw: f32 = 0;
   @hot
   cellX: i32 = 0;
   @hot
-  cellY: i32 = 0;
+  cellZ: i32 = 0;
   @hot
   targetCellX: i32 = 0;
   @hot
-  targetCellY: i32 = 0;
+  targetCellZ: i32 = 0;
   @hot
   moveStartTick: u32 = 0;
   @hot
@@ -28,16 +34,16 @@ entity Unit extends Entity {
   moving: u32 = 0;
   @hot
   facing: u32 = 0;
-  @memberId(3)
+  @memberId(5)
   @hot
   speedCellsPerSecond: f32 = 10;
-  @memberId(4)
+  @memberId(6)
   @cold
   alive: u32 = 1;
   @hot
   inputX: i8 = 0;
   @hot
-  inputY: i8 = 0;
+  inputZ: i8 = 0;
   @hot
   inputChanged: u32 = 0;
   @hot

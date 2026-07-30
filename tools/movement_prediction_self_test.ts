@@ -3,33 +3,33 @@ import { LocalMovementPredictor } from "../cocos_client2D/assets/scripts/Demo/Ma
 import { RemoteMovementSmoother } from "../cocos_client2D/assets/scripts/Demo/Map/Movement/RemoteMovementSmoother";
 
 function assertPosition(
-  actual: { readonly x: number; readonly y: number },
+  actual: { readonly x: number; readonly z: number },
   x: number,
-  y: number,
+  z: number,
 ): void {
   assert.ok(Math.abs(actual.x - x) < 0.001, `expected x=${x}, got ${actual.x}`);
-  assert.ok(Math.abs(actual.y - y) < 0.001, `expected y=${y}, got ${actual.y}`);
+  assert.ok(Math.abs(actual.z - z) < 0.001, `expected z=${z}, got ${actual.z}`);
 }
 
 function testLocalInputChangesOnlyAtCellBoundary(): void {
-  const sent: Array<{ x: number; y: number; sequence: number }> = [];
+  const sent: Array<{ x: number; z: number; sequence: number }> = [];
   const predictor = new LocalMovementPredictor(0, 0, 0, (state) => sent.push(state), {
     fixedUpdateMs: 50,
     heartbeatSeconds: 0.2,
   });
 
-  predictor.setInput({ x: 1, y: 0 });
+  predictor.setInput({ x: 1, z: 0 });
   const firstStep = predictor.update(0.05);
   assertPosition(firstStep, 6, 0);
   assert.equal(firstStep.facing, 2);
   assert.equal(firstStep.moving, true);
 
-  predictor.setInput({ x: 0, y: 1 });
+  predictor.setInput({ x: 0, z: 1 });
   assertPosition(predictor.update(0.05), 12, 0);
   assertPosition(predictor.update(0.05), 12, 6);
   assert.deepEqual(sent.map((state) => state.sequence), [1, 2]);
 
-  predictor.setInput({ x: 0, y: 0 });
+  predictor.setInput({ x: 0, z: 0 });
   assertPosition(predictor.update(0.05), 12, 12);
   assertPosition(predictor.update(0.1), 12, 12);
   assert.equal(sent[2].sequence, 3);
@@ -40,16 +40,16 @@ function testLocalAuthoritativePathDoesNotPullBack(): void {
     fixedUpdateMs: 50,
     heartbeatSeconds: 0.2,
   });
-  predictor.setInput({ x: 1, y: 0 });
+  predictor.setInput({ x: 1, z: 0 });
   assertPosition(predictor.update(0.075), 9, 0);
 
   assert.equal(predictor.reconcile({
     acknowledgedSequence: 1,
     serverTick: 11,
     fromCellX: 0,
-    fromCellY: 0,
+    fromCellZ: 0,
     toCellX: 1,
-    toCellY: 0,
+    toCellZ: 0,
     moveStartTick: 10,
     moveEndTick: 12,
     moving: true,
@@ -61,9 +61,9 @@ function testLocalAuthoritativePathDoesNotPullBack(): void {
     acknowledgedSequence: 1,
     serverTick: 12,
     fromCellX: 1,
-    fromCellY: 0,
+    fromCellZ: 0,
     toCellX: 1,
-    toCellY: 0,
+    toCellZ: 0,
     moveStartTick: 0,
     moveEndTick: 0,
     moving: false,
@@ -77,9 +77,9 @@ function testRemoteFinishesCurrentCellBeforeStopping(): void {
   assert.equal(movement.applyState({
     serverTick: 10,
     fromCellX: 0,
-    fromCellY: 0,
+    fromCellZ: 0,
     toCellX: 1,
-    toCellY: 0,
+    toCellZ: 0,
     moveStartTick: 10,
     moveEndTick: 12,
     moving: true,
@@ -90,9 +90,9 @@ function testRemoteFinishesCurrentCellBeforeStopping(): void {
   assert.equal(movement.applyState({
     serverTick: 12,
     fromCellX: 1,
-    fromCellY: 0,
+    fromCellZ: 0,
     toCellX: 1,
-    toCellY: 0,
+    toCellZ: 0,
     moveStartTick: 0,
     moveEndTick: 0,
     moving: false,
@@ -103,9 +103,9 @@ function testRemoteFinishesCurrentCellBeforeStopping(): void {
   assert.equal(movement.applyState({
     serverTick: 13,
     fromCellX: 1,
-    fromCellY: 0,
+    fromCellZ: 0,
     toCellX: 2,
-    toCellY: 0,
+    toCellZ: 0,
     moveStartTick: 13,
     moveEndTick: 15,
     moving: true,
@@ -119,9 +119,9 @@ function testRemoteRejectsStaleState(): void {
   const state = {
     serverTick: 20,
     fromCellX: 0,
-    fromCellY: 0,
+    fromCellZ: 0,
     toCellX: 1,
-    toCellY: 0,
+    toCellZ: 0,
     moveStartTick: 20,
     moveEndTick: 22,
     moving: true,

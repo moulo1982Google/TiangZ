@@ -5,14 +5,15 @@ package ets.demo;
 message MapEntitySnapshot
 {
   uint32 unit_id = 1;
-  sint32 x = 2;
-  sint32 y = 3;
-  float heading = 4;
+  float x = 2;
+  float y = 13;
+  float z = 3;
+  float yaw = 4;
   bool alive = 5;
   bytes state = 6;
   string account = 7;
   sint32 cell_x = 8;
-  sint32 cell_y = 9;
+  sint32 cell_z = 9;
   repeated UnitNumericDelta numerics = 10;
   float speed_cells_per_second = 11;
   uint32 facing = 12;
@@ -23,9 +24,9 @@ message CellMovementState
   uint32 unit_id = 1;
   uint32 acknowledged_sequence = 2;
   sint32 from_cell_x = 3;
-  sint32 from_cell_y = 4;
+  sint32 from_cell_z = 4;
   sint32 to_cell_x = 5;
-  sint32 to_cell_y = 6;
+  sint32 to_cell_z = 6;
   uint32 move_start_tick = 7;
   uint32 move_end_tick = 8;
   bool moving = 9;
@@ -48,6 +49,8 @@ message UnitStateDelta
   float y = 5;
   float speed_cells_per_second = 6;
   bool alive = 7;
+  float z = 8;
+  float yaw = 9;
 }
 
 message ItemSnapshot

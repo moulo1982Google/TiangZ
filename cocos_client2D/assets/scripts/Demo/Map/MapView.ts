@@ -2,7 +2,6 @@ import { Color, Graphics, Mask, Node, UITransform } from "cc";
 import {
   CELL_SIZE,
   UNIT_FOOTPRINT_CELLS,
-  worldToCell,
 } from "./Movement/CellMovement";
 import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
 import { ClientMessageDispatcher } from "../../Generated/SDK/Core/Net/ClientMessageDispatcher";
@@ -17,7 +16,7 @@ import { MapController } from "./MapController";
 import { MapEntityManager } from "./MapEntityManager";
 import { MapMessageScope } from "./MapMessageScope";
 import { DemoUi } from "../UI/DemoUi";
-import { GameConfigs } from "../../Generated/SDK/Generated/Config";
+import { GameConfigs, SpatialMode } from "../../Generated/SDK/Generated/Config";
 
 export class MapView {
   constructor(private readonly ui: DemoUi) {}
@@ -30,6 +29,16 @@ export class MapView {
     switchMap: () => void,
   ): MapController {
     const mapConfig = GameConfigs.MapConfig.Get(enterMap.mapId);
+    if (mapConfig.spatialMode !== SpatialMode.Grid2D) {
+      throw new Error(`Cocos 2D Demo不支持空间模式: ${mapConfig.spatialMode}`);
+    }
+    if (
+      enterMap.spatialMode !== mapConfig.spatialMode ||
+      enterMap.navigationVersion !== mapConfig.navigationVersion ||
+      enterMap.navigationHash !== mapConfig.navigationHash
+    ) {
+      throw new Error(`地图空间资源版本不匹配: map=${enterMap.mapId}`);
+    }
     const playerConfig = GameConfigs.PlayerConfig.Get(1);
     this.ui.clear();
     this.ui.createBackground(new Color(20, 35, 32, 255));
@@ -44,7 +53,7 @@ export class MapView {
     const map = new Node("MapWorld");
     viewport.addChild(map);
     const mapWidth = mapConfig.widthCells * CELL_SIZE;
-    const mapHeight = mapConfig.heightCells * CELL_SIZE;
+    const mapHeight = mapConfig.depthCells * CELL_SIZE;
     const transform = map.addComponent(UITransform);
     transform.setContentSize(mapWidth, mapHeight);
     const graphics = map.addComponent(Graphics);
@@ -59,7 +68,7 @@ export class MapView {
       graphics.moveTo(coordinate, -mapHeight / 2);
       graphics.lineTo(coordinate, mapHeight / 2);
     }
-    for (let cell = -mapConfig.heightCells / 2; cell <= mapConfig.heightCells / 2; cell += 1) {
+    for (let cell = -mapConfig.depthCells / 2; cell <= mapConfig.depthCells / 2; cell += 1) {
       const coordinate = cell * CELL_SIZE;
       graphics.moveTo(-mapWidth / 2, coordinate);
       graphics.lineTo(mapWidth / 2, coordinate);
@@ -99,11 +108,12 @@ export class MapView {
             account: enterMap.account,
             x: enterMap.x,
             y: enterMap.y,
-            heading: 0,
+            z: enterMap.z,
+            yaw: 0,
             alive: true,
             state: new Uint8Array(0),
-            cellX: worldToCell(enterMap.x),
-            cellY: worldToCell(enterMap.y),
+            cellX: Math.round(enterMap.x / mapConfig.gridCellSizeMeters),
+            cellZ: Math.round(enterMap.z / mapConfig.gridCellSizeMeters),
             numerics: [],
             speedCellsPerSecond: playerConfig.moveSpeed,
             facing: 0,
@@ -116,7 +126,8 @@ export class MapView {
       enterMap.unitId,
       enterMap.fixedUpdateMs,
       mapConfig.widthCells,
-      mapConfig.heightCells,
+      mapConfig.depthCells,
+      mapConfig.gridCellSizeMeters,
       snapshots,
       enterMap.items,
     );

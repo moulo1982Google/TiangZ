@@ -11,7 +11,7 @@ import type {
   UnitStateDelta,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
 import { CharacterSprite } from "./CharacterSprite";
-import { GameConfigs } from "../Generated/SDK/Generated/Config";
+import { GameConfigs, SpatialMode } from "../Generated/SDK/Generated/Config";
 
 const CELL_SIZE = 12;
 
@@ -44,6 +44,15 @@ export class MapWorld {
     private readonly switchMap: () => void,
   ) {
     const playerConfig = GameConfigs.PlayerConfig.Get(1);
+    const mapConfig = GameConfigs.MapConfig.Get(enterMap.mapId);
+    if (
+      mapConfig.spatialMode !== SpatialMode.Grid2D ||
+      enterMap.spatialMode !== mapConfig.spatialMode ||
+      enterMap.navigationVersion !== mapConfig.navigationVersion ||
+      enterMap.navigationHash !== mapConfig.navigationHash
+    ) {
+      throw new Error(`Pixi 2D地图空间契约不匹配: map=${enterMap.mapId}`);
+    }
     this.mapClient = new MapClient(socket);
     this.drawMap();
     app.stage.addChild(this.world);
@@ -55,11 +64,12 @@ export class MapWorld {
         account: enterMap.account,
         x: enterMap.x,
         y: enterMap.y,
-        heading: 0,
+        z: enterMap.z,
+        yaw: 0,
         alive: true,
         state: new Uint8Array(),
-        cellX: Math.round(enterMap.x / CELL_SIZE),
-        cellY: Math.round(enterMap.y / CELL_SIZE),
+        cellX: Math.round(enterMap.x / GameConfigs.MapConfig.Get(enterMap.mapId).gridCellSizeMeters),
+        cellZ: Math.round(enterMap.z / GameConfigs.MapConfig.Get(enterMap.mapId).gridCellSizeMeters),
         numerics: [],
         speedCellsPerSecond: playerConfig.moveSpeed,
         facing: 0,
@@ -72,7 +82,7 @@ export class MapWorld {
   enter(snapshot: MapEntitySnapshot): void {
     const existing = this.entities.get(snapshot.unitId);
     if (existing) {
-      this.setTarget(existing, snapshot.cellX, snapshot.cellY, true);
+      this.setTarget(existing, snapshot.cellX, snapshot.cellZ, true);
       this.applyNumerics(snapshot.numerics);
       return;
     }
@@ -96,7 +106,7 @@ export class MapWorld {
       moving: false,
     };
     this.entities.set(snapshot.unitId, view);
-    this.setTarget(view, snapshot.cellX, snapshot.cellY, true);
+    this.setTarget(view, snapshot.cellX, snapshot.cellZ, true);
     this.applyNumerics(snapshot.numerics);
   }
 
@@ -114,7 +124,7 @@ export class MapWorld {
       if (!entity) continue;
       entity.facing = movement.facing;
       entity.moving = movement.moving;
-      this.setTarget(entity, movement.toCellX, movement.toCellY, false);
+      this.setTarget(entity, movement.toCellX, movement.toCellZ, false);
     }
   }
 
@@ -133,9 +143,9 @@ export class MapWorld {
       this.states.set(state.unitId, state);
       const entity = this.entities.get(state.unitId);
       if (!entity) continue;
-      if (hasMember(state, 1)) entity.root.x = entity.targetX = state.x;
-      if (hasMember(state, 2)) entity.root.y = entity.targetY = worldToScreenY(state.y);
-      entity.root.visible = !hasMember(state, 4) || state.alive;
+      if (hasMember(state, 1)) entity.root.x = entity.targetX = this.worldMetersToScreen(state.x);
+      if (hasMember(state, 3)) entity.root.y = entity.targetY = worldToScreenY(this.worldMetersToScreen(state.z));
+      entity.root.visible = !hasMember(state, 6) || state.alive;
     }
   }
 
@@ -161,8 +171,8 @@ export class MapWorld {
     this.sendAccumulator += deltaSeconds;
     if (this.sendAccumulator >= 0.2) {
       this.sendAccumulator %= 0.2;
-      const [inputX, inputY] = this.inputDirection();
-      void this.mapClient.move({ inputX, inputY, sequence: this.sequence++ });
+      const [inputX, inputZ] = this.inputDirection();
+      void this.mapClient.move({ inputX, inputZ, sequence: this.sequence++ });
     }
   }
 
@@ -180,7 +190,7 @@ export class MapWorld {
   private drawMap(): void {
     const config = GameConfigs.MapConfig.Get(this.enterMap.mapId);
     const width = config.widthCells * CELL_SIZE;
-    const height = config.heightCells * CELL_SIZE;
+    const height = config.depthCells * CELL_SIZE;
     const originX = -width / 2;
     const originY = -height / 2;
     const backgroundColor = this.enterMap.mapId === 2 ? 0x3e4a76 : 0x245a4b;
@@ -189,9 +199,15 @@ export class MapWorld {
     this.world.addChild(background);
   }
 
-  private setTarget(entity: EntityView, cellX: number, cellY: number, immediate: boolean): void {
+  /** 将服务端米制X/Z坐标映射到Pixi像素平面。 / Maps server X/Z meters into the Pixi pixel plane. */
+  private worldMetersToScreen(value: number): number {
+    const config = GameConfigs.MapConfig.Get(this.enterMap.mapId);
+    return value * CELL_SIZE / config.gridCellSizeMeters;
+  }
+
+  private setTarget(entity: EntityView, cellX: number, cellZ: number, immediate: boolean): void {
     entity.targetX = cellX * CELL_SIZE;
-    entity.targetY = worldToScreenY(cellY * CELL_SIZE);
+    entity.targetY = worldToScreenY(cellZ * CELL_SIZE);
     if (immediate) entity.root.position.set(entity.targetX, entity.targetY);
   }
 

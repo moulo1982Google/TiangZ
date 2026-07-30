@@ -31,11 +31,13 @@ message M2G_SecondEnterMap // IActorResponse
   string account = 1;
   uint32 map_id = 2;
   uint32 unit_id = 3;
-  sint32 x = 4;
-  sint32 y = 5;
+  float x = 4;
+  float z = 5;
   repeated MapEntitySnapshot entities = 6;
   uint32 fixed_update_ms = 7;
   repeated ItemSnapshot items = 8;
+  float y = 9;
+  uint64 map_instance_id = 10;
 }
 
 message M2G_EnterMap // IResponse
@@ -43,14 +45,15 @@ message M2G_EnterMap // IResponse
   string account = 1;
   uint32 map_id = 2;
   uint32 unit_id = 3;
-  sint32 x = 4;
-  sint32 y = 5;
+  float x = 4;
+  float z = 5;
   repeated MapEntitySnapshot entities = 6;
   uint32 actor_instance_id = 7;
   uint32 fixed_update_ms = 8;
   repeated ItemSnapshot items = 9;
   uint64 map_instance_id = 10;
   uint64 location_revision = 11;
+  float y = 12;
 }
 
 //ResponseType M2G_TransferPlayer
@@ -74,11 +77,12 @@ message M2G_TransferPlayer // IActorResponse
   uint32 unit_id = 5;
   uint32 actor_instance_id = 6;
   uint64 location_revision = 7;
-  sint32 x = 8;
-  sint32 y = 9;
+  float x = 8;
+  float z = 9;
   repeated MapEntitySnapshot entities = 10;
   uint32 fixed_update_ms = 11;
   repeated ItemSnapshot items = 12;
+  float y = 13;
 }
 
 // @ets.msg protocol=Gate method=MapReady
@@ -87,8 +91,9 @@ message M2G_MapReady // IActorMessage
   string account = 1;
   uint32 map_id = 2;
   uint32 unit_id = 3;
-  sint32 x = 4;
-  sint32 y = 5;
+  float x = 4;
+  float z = 5;
+  float y = 6;
 }
 
 //ResponseType M2G_PlayerOffline
@@ -251,13 +256,14 @@ message M2M_CommitPlayerTransferResponse // IResponse
   uint32 map_id = 3;
   uint32 unit_id = 4;
   uint32 actor_instance_id = 5;
-  sint32 x = 6;
-  sint32 y = 7;
+  float x = 6;
+  float z = 7;
   repeated MapEntitySnapshot entities = 8;
   uint32 fixed_update_ms = 9;
   repeated ItemSnapshot items = 10;
   string map_host_name = 11;
   uint64 map_instance_id = 12;
+  float y = 13;
 }
 
 //ResponseType M2M_AbortPlayerTransferResponse

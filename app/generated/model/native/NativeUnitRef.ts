@@ -8,20 +8,22 @@ export const NativeUnitField = {
   MapId: 3,
   X: 4,
   Y: 5,
-  CellX: 6,
-  CellY: 7,
-  TargetCellX: 8,
-  TargetCellY: 9,
-  MoveStartTick: 10,
-  MoveEndTick: 11,
-  Moving: 12,
-  Facing: 13,
-  SpeedCellsPerSecond: 14,
-  Alive: 15,
-  InputX: 16,
-  InputY: 17,
-  InputChanged: 18,
-  Sequence: 19,
+  Z: 6,
+  Yaw: 7,
+  CellX: 8,
+  CellZ: 9,
+  TargetCellX: 10,
+  TargetCellZ: 11,
+  MoveStartTick: 12,
+  MoveEndTick: 13,
+  Moving: 14,
+  Facing: 15,
+  SpeedCellsPerSecond: 16,
+  Alive: 17,
+  InputX: 18,
+  InputZ: 19,
+  InputChanged: 20,
+  Sequence: 21,
 } as const;
 
 export type NativeUnitField = typeof NativeUnitField[keyof typeof NativeUnitField];
@@ -29,8 +31,10 @@ export type NativeUnitField = typeof NativeUnitField[keyof typeof NativeUnitFiel
 export const NativeUnitMember = {
   X: 1,
   Y: 2,
-  SpeedCellsPerSecond: 3,
-  Alive: 4,
+  Z: 3,
+  Yaw: 4,
+  SpeedCellsPerSecond: 5,
+  Alive: 6,
 } as const;
 
 export type NativeUnitMember = typeof NativeUnitMember[keyof typeof NativeUnitMember];
@@ -41,10 +45,12 @@ export interface NativeUnitCreateArgs {
   mapId: number;
   x?: number;
   y?: number;
+  z?: number;
+  yaw?: number;
   cellX?: number;
-  cellY?: number;
+  cellZ?: number;
   targetCellX?: number;
-  targetCellY?: number;
+  targetCellZ?: number;
   moveStartTick?: number;
   moveEndTick?: number;
   moving?: number;
@@ -52,7 +58,7 @@ export interface NativeUnitCreateArgs {
   speedCellsPerSecond?: number;
   alive?: number;
   inputX?: number;
-  inputY?: number;
+  inputZ?: number;
   inputChanged?: number;
   sequence?: number;
 }
@@ -73,10 +79,12 @@ export class NativeUnitRef extends Component<[args: NativeUnitCreateArgs]> {
       args.mapId,
       args.x ?? 0,
       args.y ?? 0,
+      args.z ?? 0,
+      args.yaw ?? 0,
       args.cellX ?? 0,
-      args.cellY ?? 0,
+      args.cellZ ?? 0,
       args.targetCellX ?? 0,
-      args.targetCellY ?? 0,
+      args.targetCellZ ?? 0,
       args.moveStartTick ?? 0,
       args.moveEndTick ?? 0,
       args.moving ?? 0,
@@ -84,7 +92,7 @@ export class NativeUnitRef extends Component<[args: NativeUnitCreateArgs]> {
       args.speedCellsPerSecond ?? 10,
       args.alive ?? 1,
       args.inputX ?? 0,
-      args.inputY ?? 0,
+      args.inputZ ?? 0,
       args.inputChanged ?? 0,
       args.sequence ?? 0,
     ]));
@@ -119,116 +127,132 @@ export class NativeUnitRef extends Component<[args: NativeUnitCreateArgs]> {
     NativeOps.EntitySetNumber(this.Handle, 5, value);
   }
 
-  get cellX(): number {
+  get z(): number {
     return NativeOps.EntityGetNumber(this.Handle, 6);
   }
 
-  set cellX(value: number) {
+  set z(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 6, value);
   }
 
-  get cellY(): number {
+  get yaw(): number {
     return NativeOps.EntityGetNumber(this.Handle, 7);
   }
 
-  set cellY(value: number) {
+  set yaw(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 7, value);
   }
 
-  get targetCellX(): number {
+  get cellX(): number {
     return NativeOps.EntityGetNumber(this.Handle, 8);
   }
 
-  set targetCellX(value: number) {
+  set cellX(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 8, value);
   }
 
-  get targetCellY(): number {
+  get cellZ(): number {
     return NativeOps.EntityGetNumber(this.Handle, 9);
   }
 
-  set targetCellY(value: number) {
+  set cellZ(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 9, value);
   }
 
-  get moveStartTick(): number {
+  get targetCellX(): number {
     return NativeOps.EntityGetNumber(this.Handle, 10);
   }
 
-  set moveStartTick(value: number) {
+  set targetCellX(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 10, value);
   }
 
-  get moveEndTick(): number {
+  get targetCellZ(): number {
     return NativeOps.EntityGetNumber(this.Handle, 11);
   }
 
-  set moveEndTick(value: number) {
+  set targetCellZ(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 11, value);
   }
 
-  get moving(): number {
+  get moveStartTick(): number {
     return NativeOps.EntityGetNumber(this.Handle, 12);
   }
 
-  set moving(value: number) {
+  set moveStartTick(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 12, value);
   }
 
-  get facing(): number {
+  get moveEndTick(): number {
     return NativeOps.EntityGetNumber(this.Handle, 13);
   }
 
-  set facing(value: number) {
+  set moveEndTick(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 13, value);
   }
 
-  get speedCellsPerSecond(): number {
+  get moving(): number {
     return NativeOps.EntityGetNumber(this.Handle, 14);
   }
 
-  set speedCellsPerSecond(value: number) {
+  set moving(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 14, value);
   }
 
-  get alive(): number {
+  get facing(): number {
     return NativeOps.EntityGetNumber(this.Handle, 15);
   }
 
-  set alive(value: number) {
+  set facing(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 15, value);
   }
 
-  get inputX(): number {
+  get speedCellsPerSecond(): number {
     return NativeOps.EntityGetNumber(this.Handle, 16);
   }
 
-  set inputX(value: number) {
+  set speedCellsPerSecond(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 16, value);
   }
 
-  get inputY(): number {
+  get alive(): number {
     return NativeOps.EntityGetNumber(this.Handle, 17);
   }
 
-  set inputY(value: number) {
+  set alive(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 17, value);
   }
 
-  get inputChanged(): number {
+  get inputX(): number {
     return NativeOps.EntityGetNumber(this.Handle, 18);
   }
 
-  set inputChanged(value: number) {
+  set inputX(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 18, value);
   }
 
-  get sequence(): number {
+  get inputZ(): number {
     return NativeOps.EntityGetNumber(this.Handle, 19);
   }
 
-  set sequence(value: number) {
+  set inputZ(value: number) {
     NativeOps.EntitySetNumber(this.Handle, 19, value);
+  }
+
+  get inputChanged(): number {
+    return NativeOps.EntityGetNumber(this.Handle, 20);
+  }
+
+  set inputChanged(value: number) {
+    NativeOps.EntitySetNumber(this.Handle, 20, value);
+  }
+
+  get sequence(): number {
+    return NativeOps.EntityGetNumber(this.Handle, 21);
+  }
+
+  set sequence(value: number) {
+    NativeOps.EntitySetNumber(this.Handle, 21, value);
   }
   protected override OnDestroy(): void {
     if (this.nativeHandle === 0) return;

@@ -6,15 +6,18 @@ import {
 } from "../../../core/public";
 import {
   canOccupyCell,
-  cellToWorld,
+  cellToWorldMeters,
+  worldMetersToCell,
 } from "../movement";
 import type { NativeUnitRef } from "../../../generated/model/native/NativeUnitRef";
 
 export interface PositionSnapshot {
   x: number;
   y: number;
+  z: number;
+  yaw: number;
   cellX: number;
-  cellY: number;
+  cellZ: number;
 }
 
 @component()
@@ -22,11 +25,13 @@ export interface PositionSnapshot {
 export class PositionComponent extends Component<[
   native: NativeUnitRef,
   mapWidthCells: number,
-  mapHeightCells: number,
+  mapDepthCells: number,
+  gridCellSizeMeters: number,
 ]> implements ITransfer<PositionTransferState> {
   private native!: NativeUnitRef;
   private mapWidthCells = 0;
-  private mapHeightCells = 0;
+  private mapDepthCells = 0;
+  private gridCellSizeMeters = 1;
 
   get x(): number {
     return this.native.x;
@@ -46,12 +51,30 @@ export class PositionComponent extends Component<[
     this.native.y = value;
   }
 
+  get z(): number {
+    return this.native.z;
+  }
+
+  set z(value: number) {
+    if (!Number.isFinite(value)) throw new Error(`invalid position z: ${value}`);
+    this.native.z = value;
+  }
+
+  get yaw(): number {
+    return this.native.yaw;
+  }
+
+  set yaw(value: number) {
+    if (!Number.isFinite(value)) throw new Error(`invalid position yaw: ${value}`);
+    this.native.yaw = normalizeYaw(value);
+  }
+
   get cellX(): number {
     return this.native.cellX;
   }
 
-  get cellY(): number {
-    return this.native.cellY;
+  get cellZ(): number {
+    return this.native.cellZ;
   }
 
   get SpeedCellsPerSecond(): number {
@@ -68,40 +91,60 @@ export class PositionComponent extends Component<[
   protected override Awake(
     native: NativeUnitRef,
     mapWidthCells: number,
-    mapHeightCells: number,
+    mapDepthCells: number,
+    gridCellSizeMeters: number,
   ): void {
     this.native = native;
     this.mapWidthCells = mapWidthCells;
-    this.mapHeightCells = mapHeightCells;
+    this.mapDepthCells = mapDepthCells;
+    this.gridCellSizeMeters = gridCellSizeMeters;
   }
 
-  CanOccupy(cellX: number, cellY: number): boolean {
+  CanOccupy(cellX: number, cellZ: number): boolean {
     return canOccupyCell(
       cellX,
-      cellY,
+      cellZ,
       this.mapWidthCells,
-      this.mapHeightCells,
+      this.mapDepthCells,
     );
   }
 
-  SetCell(cellX: number, cellY: number): void {
-    if (!this.CanOccupy(cellX, cellY)) {
-      throw new Error(`cell is outside map: ${cellX},${cellY}`);
+  SetGridCell(cellX: number, cellZ: number, heightMeters = 0, yawRadians = 0): void {
+    if (!this.CanOccupy(cellX, cellZ)) {
+      throw new Error(`cell is outside map: ${cellX},${cellZ}`);
     }
     this.native.cellX = cellX;
-    this.native.cellY = cellY;
+    this.native.cellZ = cellZ;
     this.native.targetCellX = cellX;
-    this.native.targetCellY = cellY;
-    this.native.x = cellToWorld(cellX);
-    this.native.y = cellToWorld(cellY);
+    this.native.targetCellZ = cellZ;
+    this.native.x = cellToWorldMeters(cellX, this.gridCellSizeMeters);
+    this.native.y = heightMeters;
+    this.native.z = cellToWorldMeters(cellZ, this.gridCellSizeMeters);
+    this.native.yaw = normalizeYaw(yawRadians);
+  }
+
+  /** 使用米制世界坐标设置Grid2D出生点；X/Z必须精确落在Cell中心。 / Sets a Grid2D spawn in meters; X/Z must land exactly on cell centers. */
+  SetGridWorldPosition(x: number, y: number, z: number, yaw: number): void {
+    const cellX = worldMetersToCell(x, this.gridCellSizeMeters);
+    const cellZ = worldMetersToCell(z, this.gridCellSizeMeters);
+    const epsilon = 1e-5;
+    if (
+      Math.abs(cellToWorldMeters(cellX, this.gridCellSizeMeters) - x) > epsilon ||
+      Math.abs(cellToWorldMeters(cellZ, this.gridCellSizeMeters) - z) > epsilon
+    ) {
+      throw new Error(`Grid2D position must be centered on a cell: ${x},${y},${z}`);
+    }
+    this.SetGridCell(cellX, cellZ, y, yaw);
   }
 
   snapshot(): PositionSnapshot {
     return {
       x: this.native.x,
       y: this.native.y,
+      z: this.native.z,
+      yaw: this.native.yaw,
       cellX: this.native.cellX,
-      cellY: this.native.cellY,
+      cellZ: this.native.cellZ,
     };
   }
 
@@ -120,6 +163,12 @@ export class PositionComponent extends Component<[
     this.native.facing = state.facing;
     this.native.alive = Number(state.alive);
   }
+}
+
+/** 将服务端朝向约束到[-PI, PI)，避免长期旋转积累出多种等价值。 / Normalizes authoritative yaw to [-PI, PI) so equivalent rotations have one representation. */
+function normalizeYaw(value: number): number {
+  const fullTurn = Math.PI * 2;
+  return ((value + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
 }
 
 export interface PositionTransferState {

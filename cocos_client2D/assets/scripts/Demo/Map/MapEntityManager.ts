@@ -49,7 +49,8 @@ export class MapEntityManager {
     private readonly localUnitId: number,
     private readonly fixedUpdateMs: number,
     private readonly mapWidthCells: number,
-    private readonly mapHeightCells: number,
+    private readonly mapDepthCells: number,
+    private readonly gridCellSizeMeters: number,
     snapshots: readonly MapEntitySnapshot[],
     items: readonly ItemSnapshot[],
   ) {
@@ -89,9 +90,13 @@ export class MapEntityManager {
         ? this.local
         : this.remotes.get(delta.unitId);
       if (!visual) continue;
-      if (hasMember(delta, 1)) visual.node.setPosition(delta.x, visual.node.position.y, 0);
-      if (hasMember(delta, 2)) visual.node.setPosition(visual.node.position.x, delta.y, 0);
-      visual.node.active = !hasMember(delta, 4) || delta.alive;
+      if (hasMember(delta, 1)) {
+        visual.node.setPosition(this.worldMetersToScreen(delta.x), visual.node.position.y, 0);
+      }
+      if (hasMember(delta, 3)) {
+        visual.node.setPosition(visual.node.position.x, this.worldMetersToScreen(delta.z), 0);
+      }
+      visual.node.active = !hasMember(delta, 6) || delta.alive;
     }
   }
 
@@ -119,15 +124,15 @@ export class MapEntityManager {
 
   update(deltaTime: number, localIntent: MoveIntent): void {
     if (this.local) {
-      this.local.movement.setInput(localIntent);
+      this.local.movement.setInput({ x: localIntent.x, z: localIntent.y });
       const position = this.local.movement.update(deltaTime);
-      this.local.node.setPosition(position.x, position.y, 0);
+      this.local.node.setPosition(position.x, position.z, 0);
       this.local.appearance.update(deltaTime, position.facing, position.moving);
-      this.followLocalPlayer(position.x, position.y);
+      this.followLocalPlayer(position.x, position.z);
     }
     for (const remote of this.remotes.values()) {
       const position = remote.movement.update(deltaTime);
-      remote.node.setPosition(position.x, position.y, 0);
+      remote.node.setPosition(position.x, position.z, 0);
       remote.appearance.update(deltaTime, position.facing, position.moving);
     }
   }
@@ -154,7 +159,7 @@ export class MapEntityManager {
     if (existing) {
       existing.node.setPosition(
         cellToWorld(snapshot.cellX),
-        cellToWorld(snapshot.cellY),
+        cellToWorld(snapshot.cellZ),
         0,
       );
       this.applyNumerics(snapshot.numerics);
@@ -171,12 +176,12 @@ export class MapEntityManager {
         node,
         movement: new LocalMovementPredictor(
           snapshot.cellX,
-          snapshot.cellY,
+          snapshot.cellZ,
           snapshot.facing,
           (state) => {
             void this.mapClient.move({
               inputX: state.x,
-              inputY: state.y,
+              inputZ: state.z,
               sequence: state.sequence,
             }).catch((error) => console.error("发送移动输入失败", error));
           },
@@ -184,7 +189,7 @@ export class MapEntityManager {
             fixedUpdateMs: this.fixedUpdateMs,
             heartbeatSeconds: 1 / 5,
             mapWidthCells: this.mapWidthCells,
-            mapHeightCells: this.mapHeightCells,
+            mapDepthCells: this.mapDepthCells,
             moveSpeedCellsPerSecond: snapshot.speedCellsPerSecond,
           },
         ),
@@ -198,7 +203,7 @@ export class MapEntityManager {
       node,
       movement: new RemoteMovementSmoother(
         snapshot.cellX,
-        snapshot.cellY,
+        snapshot.cellZ,
         snapshot.facing,
         this.fixedUpdateMs,
       ),
@@ -212,7 +217,7 @@ export class MapEntityManager {
   ): { node: Node; appearance: CharacterSprite } {
     const node = new Node(`Unit:${snapshot.unitId}`);
     this.parent.addChild(node);
-    node.setPosition(cellToWorld(snapshot.cellX), cellToWorld(snapshot.cellY));
+    node.setPosition(cellToWorld(snapshot.cellX), cellToWorld(snapshot.cellZ));
     node.addComponent(UITransform).setContentSize(
       CELL_SIZE * UNIT_FOOTPRINT_CELLS,
       CELL_SIZE * UNIT_FOOTPRINT_CELLS,
@@ -256,7 +261,7 @@ export class MapEntityManager {
 
   private followLocalPlayer(x: number, y: number): void {
     const mapWidth = this.mapWidthCells * CELL_SIZE;
-    const mapHeight = this.mapHeightCells * CELL_SIZE;
+    const mapHeight = this.mapDepthCells * CELL_SIZE;
     const maxX = Math.max(0, (mapWidth - MapEntityManager.VIEWPORT_WIDTH) / 2);
     const maxY = Math.max(0, (mapHeight - MapEntityManager.VIEWPORT_HEIGHT) / 2);
     this.parent.setPosition(
@@ -264,6 +269,11 @@ export class MapEntityManager {
       Math.max(-maxY, Math.min(maxY, -y)),
       0,
     );
+  }
+
+  /** 将服务端米制X/Z坐标转换为Cocos 2D画布像素；世界高度Y在本视图中不参与绘制。 / Maps server X/Z meters to Cocos 2D pixels while world height Y remains outside this view. */
+  private worldMetersToScreen(value: number): number {
+    return value * CELL_SIZE / this.gridCellSizeMeters;
   }
 
   private remove(unitId: number): void {

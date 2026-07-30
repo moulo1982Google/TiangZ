@@ -556,7 +556,7 @@ class GateConnection {
         try {
           this.socket.write(buildMovePacket({
             inputX: axis === 0 ? 1 : 0,
-            inputY: axis === 0 ? 0 : 1,
+            inputZ: axis === 0 ? 0 : 1,
             sequence,
           }));
           if (now >= measurementStart) {
@@ -636,7 +636,7 @@ class GateConnection {
         this.socket.write(
           buildMovePacket({
             inputX: axis === 0 ? 1 : 0,
-            inputY: axis === 0 ? 0 : 1,
+            inputZ: axis === 0 ? 0 : 1,
             sequence,
           }),
           (error) => {

@@ -65,7 +65,7 @@ Rust 压测客户端会在玩家全部登录后写出正式测量时间，runner
 先以 2 个真实客户端连接验证语义，不让容量压力掩盖功能错误：
 
 1. 启动正常 generation，玩家 A 持续按上，权威坐标只向上变化。
-2. 预构建候选 generation，其中 `PlayerUnit.Move` 将 `inputY` 取反。
+2. 预构建候选 generation，其中 `PlayerUnit.Move` 将世界地面轴 `inputZ` 取反。
 3. 请求在线 Reload，不关闭连接，也不重新创建玩家。
 4. 玩家 A 继续按上，权威坐标改为向下变化；左右方向保持不变。
 5. 玩家 B 能观察到同样的反向权威移动。

@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "schemaFingerprint": "a29b8e31472bc260a6c1535c0dd21e8407f41c1aadf2afc665ac221b1471a040",
-  "clientSchemaFingerprint": "0afc6df3fb0887be63103c263fe14191798950ccb58d12c5ea11a606b98ade28",
-  "dataFingerprint": "c06666ddb28b3a667e13bea41fce84e7986f5355e25add4ff3bee356f5a26914",
+  "schemaFingerprint": "3902cdb091781dc0d8ce23b2ff8dc2b156995c58ad070739e958e9adc826a9ce",
+  "clientSchemaFingerprint": "f1aaf573bb3fed0809a25d29e5554ee4caee628717b7ab415af33cad9b198161",
+  "dataFingerprint": "cb2de688852d1b6f2242c480ea64b3d47cd5e60e7fdce84f48da7a52d16c6a14",
   "serverFile": "server.json",
-  "serverHash": "4916b73e1cb15323895e351b8e0230b86433601d0d06bf673a433b41c3933069",
+  "serverHash": "5c7e0dedd99cea7b4cc241d39a0a84a9c368d6e4c408d4afcd30c57ac555a9b7",
   "clientFile": "client.json",
-  "clientHash": "0070b24017e99e4c3b5bfd329563ca0175873a23d1a8f46a08e3dba4689bb462"
+  "clientHash": "912c46e17da6c1660eada2729ac16b31468de74a50d3eda8e82e0b3a69fc82cd"
 }
