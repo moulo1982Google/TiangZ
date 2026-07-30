@@ -18,6 +18,12 @@ export interface EncodedAudienceBatch {
   readonly itemCount: number;
 }
 
+/** 已经按物理路由完成最终编码的帧；Transport 只能原样发送，不得再次包装。 / A fully encoded frame bound to one physical route. */
+export interface EncodedRouteFrame {
+  readonly route: string;
+  readonly frame: Uint8Array;
+}
+
 interface BroadcastDescriptorBase<TItem, TMessage extends IMessage> {
   readonly name: string;
   readonly message: MessageDescriptor<TMessage>;
@@ -59,6 +65,9 @@ export interface BroadcastTransport {
    * when a custom transport does not implement this optional capability.
    */
   SendMany?(batches: readonly EncodedAudienceBatch[]): Promise<void>;
+
+  /** 原样发送上游已完成路由和协议编码的帧。 / Sends route-bound protocol frames without re-grouping or re-encoding. */
+  SendRouteFrames?(frames: readonly EncodedRouteFrame[]): Promise<void>;
 }
 
 export interface BroadcastMetricsSnapshot {

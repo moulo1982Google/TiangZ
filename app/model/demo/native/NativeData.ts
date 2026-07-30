@@ -67,6 +67,17 @@ export interface NativeAoiBroadcast {
   readonly batches: readonly NativeAoiBatch[];
 }
 
+export interface NativeAoiRouteFrame {
+  readonly routeId: number;
+  /** 已包含内网 msgcode 的完整 Scene 帧。 / Complete Scene frame including its inner msgcode. */
+  readonly frame: Uint8Array;
+}
+
+export interface NativeAoiRouteBroadcast {
+  readonly itemCount: number;
+  readonly routeFrames: readonly NativeAoiRouteFrame[];
+}
+
 export interface NativeAoiSyncTier {
   /** 以 AOI Grid 为单位的切比雪夫半径。 / Chebyshev radius measured in AOI grids. */
   readonly radiusGrids: number;
@@ -200,9 +211,10 @@ export class NativeData {
     handle: number,
     observer: boolean,
     subject: boolean,
+    deliveryRouteId: number,
   ): readonly NativeAoiVisibilityChange[] {
     return parseAoiVisibilityChanges(
-      NativeOps.AoiAttach(mapId, handle, observer, subject),
+      NativeOps.AoiAttach(mapId, handle, observer, subject, deliveryRouteId),
     );
   }
 
@@ -263,6 +275,24 @@ export class NativeData {
     return parseAoiBroadcast(
       NativeOps.MapTakeMovementAoiDelta(mapId, serverTick, messageCode),
       messageCode,
+    );
+  }
+
+  /** 由 Rust 完成 Observer 到 Gate 的分组，并返回每个 Gate 的最终内网帧。 / Lets Rust group observers by Gate and returns final per-Gate inner frames. */
+  static TakeMapMovementAoiRouteFrames(
+    mapId: number,
+    serverTick: number,
+    clientMessageCode: number,
+    routeMessageCode: number,
+  ): NativeAoiRouteBroadcast {
+    return parseAoiRouteBroadcast(
+      NativeOps.MapTakeMovementAoiRouteFrames(
+        mapId,
+        serverTick,
+        clientMessageCode,
+        routeMessageCode,
+      ),
+      routeMessageCode,
     );
   }
 
@@ -516,4 +546,33 @@ function parseAoiBroadcast(bytes: Uint8Array, messageCode: number): NativeAoiBro
   }
   if (offset !== bytes.length) throw new Error("native AOI broadcast has trailing bytes");
   return { itemCount, batches };
+}
+
+function parseAoiRouteBroadcast(
+  bytes: Uint8Array,
+  routeMessageCode: number,
+): NativeAoiRouteBroadcast {
+  if (bytes.length < 8) throw new Error("native AOI route broadcast is truncated");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const itemCount = view.getUint32(0, true);
+  const routeCount = view.getUint32(4, true);
+  const routeFrames: NativeAoiRouteFrame[] = [];
+  let offset = 8;
+  for (let routeIndex = 0; routeIndex < routeCount; routeIndex += 1) {
+    if (offset + 8 > bytes.length) throw new Error("native AOI route header is truncated");
+    const routeId = view.getUint32(offset, true);
+    const frameLength = view.getUint32(offset + 4, true);
+    offset += 8;
+    if (routeId === 0 || frameLength < 2 || offset + frameLength > bytes.length) {
+      throw new Error("native AOI route frame is invalid");
+    }
+    const frame = bytes.subarray(offset, offset + frameLength);
+    offset += frameLength;
+    if (frame[0] * 0x100 + frame[1] !== routeMessageCode) {
+      throw new Error("native AOI route frame has an unexpected message code");
+    }
+    routeFrames.push({ routeId, frame });
+  }
+  if (offset !== bytes.length) throw new Error("native AOI route broadcast has trailing bytes");
+  return { itemCount, routeFrames };
 }

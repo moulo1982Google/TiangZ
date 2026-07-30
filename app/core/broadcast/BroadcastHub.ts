@@ -8,6 +8,7 @@ import type {
   BroadcastHubOptions,
   BroadcastMetricsSnapshot,
   BroadcastTransport,
+  EncodedRouteFrame,
   EventBroadcastDescriptor,
   LatestBroadcastDescriptor,
 } from "./types";
@@ -35,7 +36,8 @@ interface LatestJob<TItem> {
 }
 
 interface EncodedSnapshotJob {
-  batches: readonly EncodedAudienceBatch[];
+  batches?: readonly EncodedAudienceBatch[];
+  routeFrames?: readonly EncodedRouteFrame[];
   itemCount: number;
   queuedAt: number;
   readonly deferred: Deferred[];
@@ -200,6 +202,9 @@ export class BroadcastHub {
     });
     const existing = channel.encodedLatest;
     if (existing) {
+      if (existing.routeFrames) {
+        throw new Error(`encoded audience and route frames share channel ${channelKey}`);
+      }
       this.metrics.coalescedItems += existing.itemCount;
       existing.batches = activeBatches;
       existing.itemCount = itemCount;
@@ -207,6 +212,66 @@ export class BroadcastHub {
     } else {
       channel.encodedLatest = {
         batches: activeBatches,
+        itemCount,
+        queuedAt: monotonicNow(),
+        deferred: [{ resolve, reject }],
+      };
+    }
+    this.metrics.queuedItems += itemCount;
+    this.recordPending();
+    this.pumpEncodedSnapshot(channel, descriptorName);
+    return promise;
+  }
+
+  /**
+   * 将上游已经按物理路由编码完成的可覆盖帧入队。Transport 只做原样发送，
+   * 不再接触接收者列表或 protobuf payload。
+   *
+   * Queues replaceable frames already encoded for physical routes. The transport
+   * sends them verbatim and never rebuilds recipient lists or protobuf payloads.
+   */
+  PublishEncodedLatestRouteFrames(
+    audienceKey: string,
+    descriptorName: string,
+    routeFrames: readonly EncodedRouteFrame[],
+    itemCount: number,
+  ): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error("broadcast hub is disposed"));
+    if (!audienceKey) throw new Error("encoded broadcast audience key is required");
+    if (!descriptorName) throw new Error("encoded broadcast name is required");
+    if (!Number.isSafeInteger(itemCount) || itemCount < 0) {
+      throw new Error(`invalid encoded broadcast item count: ${itemCount}`);
+    }
+    if (itemCount === 0 || routeFrames.length === 0) return Promise.resolve();
+    for (const item of routeFrames) {
+      if (!item.route) throw new Error("encoded route frame has no route");
+      if (item.frame.length < 2) throw new Error("encoded route frame is too short");
+    }
+    const activeFrames = routeFrames;
+    const channelKey = `${descriptorName}\0${audienceKey}`;
+    const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
+    if (channel.latest || channel.eventQueue.length > 0) {
+      throw new Error(`encoded and object broadcasts share channel ${channelKey}`);
+    }
+
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((promiseResolve, promiseReject) => {
+      resolve = promiseResolve;
+      reject = promiseReject;
+    });
+    const existing = channel.encodedLatest;
+    if (existing) {
+      if (existing.batches) {
+        throw new Error(`encoded audience and route frames share channel ${channelKey}`);
+      }
+      this.metrics.coalescedItems += existing.itemCount;
+      existing.routeFrames = activeFrames;
+      existing.itemCount = itemCount;
+      existing.deferred.push({ resolve, reject });
+    } else {
+      channel.encodedLatest = {
+        routeFrames: activeFrames,
         itemCount,
         queuedAt: monotonicNow(),
         deferred: [{ resolve, reject }],
@@ -449,12 +514,16 @@ export class BroadcastHub {
     this.metrics.totalQueueWaitMs += queueWaitMs;
 
     const dispatchStartedAt = monotonicNow();
-    const delivery = job.batches.length === 1
-      ? this.transport.Send(job.batches[0].audience, job.batches[0].frame)
+    const delivery = job.routeFrames
+      ? this.transport.SendRouteFrames
+        ? this.transport.SendRouteFrames(job.routeFrames)
+        : Promise.reject(new Error("broadcast transport does not support encoded route frames"))
+      : job.batches!.length === 1
+      ? this.transport.Send(job.batches![0].audience, job.batches![0].frame)
       : this.transport.SendMany
-      ? this.transport.SendMany(job.batches)
+      ? this.transport.SendMany(job.batches!)
       : Promise.all(
-        job.batches.map((batch) => this.transport.Send(batch.audience, batch.frame)),
+        job.batches!.map((batch) => this.transport.Send(batch.audience, batch.frame)),
       ).then(() => undefined);
     this.recordDispatch(monotonicNow() - dispatchStartedAt);
     void delivery

@@ -1,6 +1,6 @@
 # 单 MapHost 全图均匀 AOI 容量测试报告
 
-- 时间：2026-07-30T12:43:50.492Z
+- 时间：2026-07-30T14:30:50.884Z
 - 拓扑：1 MapHost / 16 Gate / 1 Login / 1 LoginMgr / 1 Location
 - I/O Backend：IOCP（Tokio/Mio；兼容配置值 epoll）
 - 地图：15x15 AOI Grid（MapConfig 1015）
@@ -19,13 +19,19 @@
 
 | 玩家 | Map CPU avg/p90/peak | Map 窗口样本 | Gate max avg/peak | move/s | Move 达标率 | push/s | Probe/s | Probe p50 | p90 | p95 | p99 | max | move/probe errors | overload/timeout/backpressure/slow | RSS |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3000 | 86.6/96.5/100.6% | 11 | 42/59% | 15006 | 100% | 494359 | 0 | 0ms | 0ms | 0ms | 0ms | 0ms | 0/0 | 2001/0/3535/0 | 1638.0MB |
+| 3000 | 47.7/52.2/62.2% | 11 | 44.2/64.8% | 14997 | 100% | 500678 | 0 | 0ms | 0ms | 0ms | 0ms | 0ms | 0/0 | 0/0/0/0 | 1546.2MB |
+
+## 背压责任分解
+
+| 玩家 | Map Frame 正式窗口 waits/total ms | 生命周期 max wait/depth | Map Completion 正式窗口 waits | Gate 正式窗口 manager/connection/call-writer/send-writer overload |
+|---:|---:|---:|---:|---:|
+| 3000 | 0/0 | 0/537 | 0 | 0/0/0/0 |
 
 ## AOI 空间指标
 
 | 玩家 | World/Entity/Grid | candidate/visible | 跨Grid/s | 可见变化/s | 过滤覆盖/s |
 |---:|---:|---:|---:|---:|---:|
-| 3000 | 1/3000/225 | 328814/328814 | 3.7 | 61.5 | 0 |
+| 3000 | 1/3000/225 | 326800/326800 | 1.2 | 22.2 | 0 |
 
 ## 地图进入队列
 
@@ -37,30 +43,30 @@
 
 | 玩家 | 指标样本 | scalar gets/s | scalar sets/s | batch calls/s | encoded frames/items | encoded bytes/s | live E/U/I | Pool/Scratch | scratch grows/s (total) | TS refs | Map V8 Heap peak |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3000 | 11 | 272.6 | 10662.5 | 76.5 | 4551.1/57345 | 3.5MB/s | 6000/3000/3000 | 2.5MB/0.2MB | 0 (15) | 6000 | 55.8MB |
+| 3000 | 11 | 102.4 | 14997.3 | 80 | 319.9/59980 | 26.6MB/s | 6000/3000/3000 | 2.5MB/0.2MB | 0 (15) | 6000 | 46.4MB |
 
 ## Map 广播 single-flight
 
 | 玩家 | 指标样本 | pending 采样峰值/生命周期峰值 | queued/s | coalesced/s (%) | sent/s | batch/s | frames/batch | 广播 avg/max | 排队 avg/max | failures |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3000 | 11 | 3000/3000 | 57051 | 0 (0%) | 56992 | 20.6 | 2767.4 | 16.84/89ms | 0.55/30ms | 0 |
+| 3000 | 11 | 0/3000 | 59980 | 0 (0%) | 59980 | 20.6 | 2912.7 | 1.64/65ms | 0/1ms | 0 |
 
 ## 批量下行 Bridge
 
 | 玩家 | Gate batch/s | recipients/s | recipients/batch | Bridge copy | logical outbound |
 |---:|---:|---:|---:|---:|---:|
-| 3000 | 72043 | 499178 | 6.93 | 23.56MB/s | 161.48MB/s |
+| 3000 | 72748 | 499567 | 6.87 | 24.74MB/s | 169.00MB/s |
 
 ## 容量判断
 
-- 本轮没有同时满足 CPU 目标、零超时、零内部过载的容量点。
-- 最接近 85% 的测试点：3000 玩家，Map CPU 平均 86.6%。
+- 保守容量点：3000 玩家，Map CPU 平均 47.7%，Probe p95/p99 0/0ms。
+- 最接近 85% 的测试点：3000 玩家，Map CPU 平均 47.7%。
 
 ## Transport Backend
 
 | 玩家 | Map read frames/op | Map write frames/op | Gate read frames/op | Gate write frames/op |
 |---:|---:|---:|---:|---:|
-| 3000 | 1.00 | 0.00 | 1.00 | 9.39 |
+| 3000 | 1.00 | 0.00 | 1.00 | 7.96 |
 
 ## 指标口径
 
@@ -68,7 +74,8 @@
 - Map/Gate CPU 使用正式测试窗口内的 5 秒进程 CPU 样本；平均值用于容量判断。
 - Map 正式窗口至少需要 2 个 CPU 样本；不足时该测试点只作故障诊断，不参与容量候选。
 - Move 按固定频率开环发送，吞吐只统计正式窗口内实际写入的请求；容量点要求实际吞吐至少达到目标的 95%。
-- `backpressure` 表示入口有界队列满后等待重试，是削峰信号，不等于丢包；容量候选要求零业务错误、零 overload、零内部超时和零慢连接断开。
+- `backpressure`、overload、timeout 和 slow disconnect 都按正式测试窗口的 Counter 增量计算；Setup/入场期历史值不会污染稳态容量判断。
+- 背压责任分解使用固定 stage 标签：Map 的 `frame` 是网络入站业务帧，`completion` 是异步 Scene 操作完成；Gate 内部传输依次为 manager、目标连接、RPC writer 与单向 send writer 队列。waits/total 是正式窗口增量，max wait/max depth 是进程生命周期峰值。
 - 虚拟客户端不完整构造业务对象；状态测试会扫描 protobuf 顶层 repeated 字段，分别统计协议帧、状态项和消息体字节。端到端延迟由 MapProbe 独立测量。
 - `push/s` 是虚拟客户端实际收到的移动帧数；Bench布局使用Grid内闭合轨迹，正式窗口应没有持续跨Grid或可见关系变化。
 - AOI进入/离开是不可覆盖事件，但同一逻辑帧内受众完全相同的变化会合并为一个`G2C_AoiDelta`；Movement、Numeric等可覆盖状态仍走latest。

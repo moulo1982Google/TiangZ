@@ -49,6 +49,10 @@ struct RemoteTransportMetrics {
     disconnected_calls: AtomicU64,
     late_responses: AtomicU64,
     idle_closes: AtomicU64,
+    manager_queue_overloads: AtomicU64,
+    connection_queue_overloads: AtomicU64,
+    call_writer_queue_overloads: AtomicU64,
+    send_writer_queue_overloads: AtomicU64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -62,6 +66,21 @@ pub(crate) struct RemoteTransportMetricsSnapshot {
     pub(crate) disconnected_calls: u64,
     pub(crate) late_responses: u64,
     pub(crate) idle_closes: u64,
+    pub(crate) overload_stages: Vec<RemoteTransportOverloadSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RemoteTransportOverloadSnapshot {
+    pub(crate) stage: &'static str,
+    pub(crate) rejections: u64,
+}
+
+#[derive(Clone, Copy)]
+enum RemoteTransportOverloadStage {
+    Manager,
+    Connection,
+    CallWriter,
+    SendWriter,
 }
 
 impl RemoteTransportMetrics {
@@ -76,7 +95,36 @@ impl RemoteTransportMetrics {
             disconnected_calls: self.disconnected_calls.load(Ordering::Relaxed),
             late_responses: self.late_responses.load(Ordering::Relaxed),
             idle_closes: self.idle_closes.load(Ordering::Relaxed),
+            overload_stages: vec![
+                RemoteTransportOverloadSnapshot {
+                    stage: "manager_queue",
+                    rejections: self.manager_queue_overloads.load(Ordering::Relaxed),
+                },
+                RemoteTransportOverloadSnapshot {
+                    stage: "connection_queue",
+                    rejections: self.connection_queue_overloads.load(Ordering::Relaxed),
+                },
+                RemoteTransportOverloadSnapshot {
+                    stage: "call_writer_queue",
+                    rejections: self.call_writer_queue_overloads.load(Ordering::Relaxed),
+                },
+                RemoteTransportOverloadSnapshot {
+                    stage: "send_writer_queue",
+                    rejections: self.send_writer_queue_overloads.load(Ordering::Relaxed),
+                },
+            ],
         }
+    }
+
+    fn rejected(&self, stage: RemoteTransportOverloadStage) {
+        self.overload_rejections.fetch_add(1, Ordering::Relaxed);
+        let counter = match stage {
+            RemoteTransportOverloadStage::Manager => &self.manager_queue_overloads,
+            RemoteTransportOverloadStage::Connection => &self.connection_queue_overloads,
+            RemoteTransportOverloadStage::CallWriter => &self.call_writer_queue_overloads,
+            RemoteTransportOverloadStage::SendWriter => &self.send_writer_queue_overloads,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
     }
 
     fn pending_added(&self) {
@@ -194,8 +242,7 @@ pub async fn call_remote_scene(
         Err(mpsc::error::TrySendError::Full(_)) => {
             transport
                 .metrics
-                .overload_rejections
-                .fetch_add(1, Ordering::Relaxed);
+                .rejected(RemoteTransportOverloadStage::Manager);
             return Err("[scene-overloaded] remote transport queue is full".to_string());
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {
@@ -237,8 +284,7 @@ pub async fn send_remote_scene(
         Err(mpsc::error::TrySendError::Full(_)) => {
             transport
                 .metrics
-                .overload_rejections
-                .fetch_add(1, Ordering::Relaxed);
+                .rejected(RemoteTransportOverloadStage::Manager);
             return Err("[scene-overloaded] remote transport queue is full".to_string());
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {
@@ -282,7 +328,7 @@ async fn run_transport_manager(
         match connection_tx.try_send(connection_command) {
             Ok(()) => {}
             Err(mpsc::error::TrySendError::Full(command)) => {
-                metrics.overload_rejections.fetch_add(1, Ordering::Relaxed);
+                metrics.rejected(RemoteTransportOverloadStage::Connection);
                 fail_completion(
                     command.completion,
                     format!(
@@ -486,7 +532,7 @@ async fn handle_command(
             match outbound_tx.try_send(frame) {
                 Ok(()) => *last_activity = Instant::now(),
                 Err(mpsc::error::TrySendError::Full(_)) => {
-                    metrics.overload_rejections.fetch_add(1, Ordering::Relaxed);
+                    metrics.rejected(RemoteTransportOverloadStage::CallWriter);
                     if let Some(call) = pending.remove(&rpc_id) {
                         metrics.pending_removed(1);
                         let _ = call.response_tx.send(Err(format!(
@@ -510,7 +556,7 @@ async fn handle_command(
                 let _ = result_tx.send(Ok(()));
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
-                metrics.overload_rejections.fetch_add(1, Ordering::Relaxed);
+                metrics.rejected(RemoteTransportOverloadStage::SendWriter);
                 let _ = result_tx.send(Err(format!(
                     "[scene-overloaded] scene {target_name} outbound queue is full"
                 )));

@@ -878,7 +878,7 @@ pub(crate) fn op_native_aoi_create(
     detach_radius_grids: u32,
     #[buffer] sync_tiers: &[u8],
 ) -> Result<(), JsErrorBox> {
-    if sync_tiers.len() % 8 != 0 {
+    if !sync_tiers.len().is_multiple_of(8) {
         return Err(JsErrorBox::generic(
             "AOI sync tiers must contain radius/interval uint32 pairs",
         ));
@@ -948,6 +948,7 @@ pub(crate) fn op_native_aoi_attach(
     handle: u32,
     observer: bool,
     subject: bool,
+    delivery_route_id: u32,
 ) -> Result<Uint8Array, JsErrorBox> {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
@@ -961,7 +962,7 @@ pub(crate) fn op_native_aoi_attach(
             .aoi_worlds
             .get_mut(&map_id)
             .ok_or_else(|| JsErrorBox::generic(format!("AOI world is not configured: {map_id}")))?
-            .attach(unit_id, x, z, observer, subject)
+            .attach_routed(unit_id, x, z, observer, subject, delivery_route_id)
             .map_err(JsErrorBox::generic)?;
         if let Some(dirty) = store.aoi_dirty_by_map.get_mut(&map_id) {
             dirty.remove(&handle);
@@ -1267,10 +1268,56 @@ pub(crate) fn op_native_map_take_movement_aoi_delta(
                 records.iter().map(|record| record[16] != 0),
                 server_tick,
                 |indices, frame| {
-                    let subset: Vec<_> = indices.iter().map(|index| records[*index]).collect();
-                    encode_entity_move_frame_into(frame, message_code, server_tick, &subset);
+                    encode_entity_move_frame_indices_into(
+                        frame,
+                        message_code,
+                        server_tick,
+                        &records,
+                        indices,
+                    );
                 },
             )
+        };
+        record_aoi_encoding_metrics(&mut store.metrics, &result);
+        let mut scratch = records;
+        scratch.clear();
+        if scratch.capacity() > store.scratch_movement_records.capacity() {
+            store.scratch_movement_records = scratch;
+        }
+        Ok(result.into())
+    })
+}
+
+#[op2]
+/// 在 Rust 内完成 AOI 接收者到 Gate 路由的分组，并直接生成每个 Gate 的批量内网帧。
+/// Groups AOI recipients by Gate route and emits complete per-Gate inner frames without returning recipient lists to TS.
+pub(crate) fn op_native_map_take_movement_aoi_route_frames(
+    map_id: u32,
+    server_tick: u32,
+    client_message_code: u32,
+    route_message_code: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    let client_message_code = u16::try_from(client_message_code)
+        .map_err(|_| JsErrorBox::generic("client movement message code exceeds uint16"))?;
+    let route_message_code = u16::try_from(route_message_code)
+        .map_err(|_| JsErrorBox::generic("Gate route message code exceeds uint16"))?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let records = store
+            .pending_movement_records
+            .remove(&map_id)
+            .unwrap_or_default();
+        let result = {
+            let world = store.aoi_worlds.get(&map_id).ok_or_else(|| {
+                JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
+            })?;
+            encode_tiered_aoi_route_frames(
+                world,
+                &records,
+                server_tick,
+                client_message_code,
+                route_message_code,
+            )?
         };
         record_aoi_encoding_metrics(&mut store.metrics, &result);
         let mut scratch = records;
@@ -1335,6 +1382,115 @@ where
     )
 }
 
+/// 返回 `[itemCount, routeCount, routeId, frameLength, frame...]`；frame 已经是完整 Gate 消息。
+/// Returns a compact route envelope whose frames are complete Gate protocol messages.
+fn encode_tiered_aoi_route_frames(
+    world: &AoiWorld,
+    records: &[[u8; NATIVE_UNIT_RECORD_BYTES]],
+    server_tick: u32,
+    client_message_code: u16,
+    route_message_code: u16,
+) -> Result<Vec<u8>, JsErrorBox> {
+    let subject_ids: Vec<_> = records
+        .iter()
+        .map(|record| read_record_u32(record, 0))
+        .collect();
+    let force: Vec<_> = records.iter().map(|record| record[16] != 0).collect();
+    let delivery_groups = world.tiered_delivery_groups(&subject_ids, &force, server_tick);
+    let total_items = delivery_groups
+        .iter()
+        .map(|(_, indices)| indices.len() as u32)
+        .sum::<u32>();
+    let route_capacity = usize::try_from(world.max_delivery_route_id())
+        .map_err(|_| JsErrorBox::generic("AOI delivery route id exceeds usize"))?
+        .checked_add(1)
+        .ok_or_else(|| JsErrorBox::generic("AOI delivery route capacity overflow"))?;
+    let mut payloads_by_route: Vec<Vec<u8>> = (0..route_capacity).map(|_| Vec::new()).collect();
+    let mut recipients_by_route: Vec<Vec<u32>> = (0..route_capacity).map(|_| Vec::new()).collect();
+    let mut client_frame = Vec::with_capacity(256);
+
+    for (recipients, indices) in delivery_groups {
+        client_frame.clear();
+        encode_entity_move_frame_indices_into(
+            &mut client_frame,
+            client_message_code,
+            server_tick,
+            records,
+            &indices,
+        );
+        for recipients in &mut recipients_by_route {
+            recipients.clear();
+        }
+        for recipient_id in recipients {
+            let route_id = world.delivery_route_id(recipient_id).ok_or_else(|| {
+                JsErrorBox::generic(format!(
+                    "AOI observer {recipient_id} has no native delivery route"
+                ))
+            })?;
+            recipients_by_route[route_id as usize].push(recipient_id);
+        }
+        for (route_id, route_recipients) in recipients_by_route.iter().enumerate().skip(1) {
+            if route_recipients.is_empty() {
+                continue;
+            }
+            encode_client_broadcast_batch_item(
+                &mut payloads_by_route[route_id],
+                route_recipients,
+                &client_frame,
+            );
+        }
+    }
+
+    let route_count = payloads_by_route
+        .iter()
+        .skip(1)
+        .filter(|payload| !payload.is_empty())
+        .count();
+    let mut bytes = Vec::with_capacity(
+        8 + payloads_by_route
+            .iter()
+            .map(|payload| 10 + payload.len())
+            .sum::<usize>(),
+    );
+    bytes.extend_from_slice(&total_items.to_le_bytes());
+    bytes.extend_from_slice(&(route_count as u32).to_le_bytes());
+    for (route_id, payload) in payloads_by_route.into_iter().enumerate().skip(1) {
+        if payload.is_empty() {
+            continue;
+        }
+        bytes.extend_from_slice(&(route_id as u32).to_le_bytes());
+        bytes.extend_from_slice(&((payload.len() + 2) as u32).to_le_bytes());
+        bytes.extend_from_slice(&route_message_code.to_be_bytes());
+        bytes.extend_from_slice(&payload);
+    }
+    Ok(bytes)
+}
+
+/// 编码 S2G_ClientBroadcastBatch.batches 中的一个元素，保持与 TS 生成 Codec 相同的非 packed uint32 表示。
+/// Encodes one S2G_ClientBroadcastBatch item using the same unpacked uint32 representation as the generated TS codec.
+fn encode_client_broadcast_batch_item(
+    route_payload: &mut Vec<u8>,
+    recipient_ids: &[u32],
+    client_frame: &[u8],
+) {
+    let item_len = recipient_ids
+        .iter()
+        .map(|id| varint_len(1 << 3) + varint_len(*id))
+        .sum::<usize>()
+        + varint_len((2 << 3) | 2)
+        + varint_len(client_frame.len() as u32)
+        + client_frame.len();
+    write_tag(route_payload, 1, 2);
+    write_varint(route_payload, item_len as u32);
+    for &recipient_id in recipient_ids {
+        write_tag(route_payload, 1, 0);
+        write_varint(route_payload, recipient_id);
+    }
+    write_tag(route_payload, 2, 2);
+    write_varint(route_payload, client_frame.len() as u32);
+    route_payload.extend_from_slice(client_frame);
+}
+
 fn encode_aoi_delivery_groups<F>(
     delivery_groups: Vec<(Vec<u32>, Vec<usize>)>,
     encode_frame: &mut F,
@@ -1344,31 +1500,30 @@ where
 {
     // 默认关系按 Subject Grid 聚合；只有迟滞或业务过滤例外需要逐 Subject 求精确受众。
     // Default relations aggregate by subject grid; only hysteresis and filter exceptions need exact audiences.
-    let mut batches = Vec::with_capacity(delivery_groups.len());
+    // 直接写最终外层帧，避免为每个分组创建临时frame后再复制到第二个Vec。
+    // Writes the final envelope directly, avoiding one temporary frame and one second copy per group.
+    let mut bytes = Vec::with_capacity(8 + delivery_groups.len() * 32);
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
     let mut total_items = 0_u32;
+    let mut batch_count = 0_u32;
     for (recipients, indices) in delivery_groups {
-        let mut frame = Vec::new();
-        encode_frame(&indices, &mut frame);
         total_items = total_items.saturating_add(indices.len() as u32);
-        batches.push((recipients, indices.len() as u32, frame));
-    }
-
-    let capacity = 8 + batches
-        .iter()
-        .map(|(recipients, _, frame)| 12 + recipients.len() * 4 + frame.len())
-        .sum::<usize>();
-    let mut bytes = Vec::with_capacity(capacity);
-    bytes.extend_from_slice(&total_items.to_le_bytes());
-    bytes.extend_from_slice(&(batches.len() as u32).to_le_bytes());
-    for (recipients, item_count, frame) in batches {
+        batch_count = batch_count.saturating_add(1);
         bytes.extend_from_slice(&(recipients.len() as u32).to_le_bytes());
         for recipient_id in recipients {
             bytes.extend_from_slice(&recipient_id.to_le_bytes());
         }
-        bytes.extend_from_slice(&item_count.to_le_bytes());
-        bytes.extend_from_slice(&(frame.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&frame);
+        bytes.extend_from_slice(&(indices.len() as u32).to_le_bytes());
+        let frame_len_offset = bytes.len();
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        let frame_start = bytes.len();
+        encode_frame(&indices, &mut bytes);
+        let frame_len = (bytes.len() - frame_start) as u32;
+        bytes[frame_len_offset..frame_len_offset + 4].copy_from_slice(&frame_len.to_le_bytes());
     }
+    bytes[0..4].copy_from_slice(&total_items.to_le_bytes());
+    bytes[4..8].copy_from_slice(&batch_count.to_le_bytes());
     bytes
 }
 
@@ -1458,6 +1613,23 @@ fn encode_entity_move_frame_into(
     frame.extend_from_slice(&message_code.to_be_bytes());
     write_uint32_field(frame, 1, server_tick);
     for record in records {
+        write_tag(frame, 2, 2);
+        write_varint(frame, cell_movement_encoded_len(record) as u32);
+        encode_cell_movement(frame, record);
+    }
+}
+
+fn encode_entity_move_frame_indices_into(
+    frame: &mut Vec<u8>,
+    message_code: u16,
+    server_tick: u32,
+    records: &[[u8; NATIVE_UNIT_RECORD_BYTES]],
+    indices: &[usize],
+) {
+    frame.extend_from_slice(&message_code.to_be_bytes());
+    write_uint32_field(frame, 1, server_tick);
+    for &index in indices {
+        let record = &records[index];
         write_tag(frame, 2, 2);
         write_varint(frame, cell_movement_encoded_len(record) as u32);
         encode_cell_movement(frame, record);
@@ -1940,6 +2112,67 @@ mod tests {
     }
 
     #[test]
+    fn aoi_route_frames_match_gate_batch_protobuf() {
+        let mut world = AoiWorld::new(
+            10_000,
+            0,
+            0,
+            1,
+            1,
+            vec![SyncTier {
+                radius_grids: 1,
+                interval_ticks: 1,
+            }],
+        )
+        .unwrap();
+        world.attach_routed(1, 0.0, 0.0, true, true, 7).unwrap();
+        world.attach_routed(2, 0.0, 0.0, true, true, 8).unwrap();
+        world.take_changes();
+        let records = [
+            encode_snapshot(&unit_hot(1), true),
+            encode_snapshot(&unit_hot(2), true),
+        ];
+        let expected_client_frame = encode_entity_move_frame(10_016, 1, &records);
+        let bytes = encode_tiered_aoi_route_frames(&world, &records, 1, 10_016, 20_010).unwrap();
+
+        assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 2);
+        let mut offset = 8;
+        for (expected_route, expected_recipient) in [(7, 1), (8, 2)] {
+            assert_eq!(
+                u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()),
+                expected_route
+            );
+            let frame_len =
+                u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
+            offset += 8;
+            let frame = &bytes[offset..offset + frame_len];
+            offset += frame_len;
+            assert_eq!(&frame[..2], &20_010_u16.to_be_bytes());
+
+            let mut payload_offset = 2;
+            assert_eq!(take_test_varint(frame, &mut payload_offset), 10);
+            let item_len = take_test_varint(frame, &mut payload_offset) as usize;
+            let item_end = payload_offset + item_len;
+            assert_eq!(take_test_varint(frame, &mut payload_offset), 8);
+            assert_eq!(
+                take_test_varint(frame, &mut payload_offset),
+                expected_recipient
+            );
+            assert_eq!(take_test_varint(frame, &mut payload_offset), 18);
+            let client_len = take_test_varint(frame, &mut payload_offset) as usize;
+            assert_eq!(
+                &frame[payload_offset..payload_offset + client_len],
+                expected_client_frame
+            );
+            payload_offset += client_len;
+            assert_eq!(payload_offset, item_end);
+            assert_eq!(item_end, frame.len());
+        }
+        assert_eq!(offset, bytes.len());
+    }
+
+    #[test]
     fn attached_native_unit_must_leave_aoi_before_destroy() {
         let mut store = NativeEntityStore::default();
         store.aoi_worlds.insert(
@@ -2188,5 +2421,19 @@ mod tests {
                 u8::from_str_radix(text, 16).unwrap()
             })
             .collect()
+    }
+
+    fn take_test_varint(bytes: &[u8], offset: &mut usize) -> u32 {
+        let mut value = 0_u32;
+        let mut shift = 0;
+        loop {
+            let byte = bytes[*offset];
+            *offset += 1;
+            value |= u32::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                return value;
+            }
+            shift += 7;
+        }
     }
 }

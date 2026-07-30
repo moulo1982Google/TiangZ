@@ -249,13 +249,18 @@ fn op_host_submit_scene_operations(#[buffer] packed: JsBuffer) -> Result<u32, Js
                         )
                         .await
                         {
-                            tracing::error!(
-                                target: "tiangz::scene",
-                                source = %source_name,
-                                target_scene = %target_name,
-                                error = %error,
-                                "one-way scene send failed"
-                            );
+                            // 队列过载已有分阶段Counter，逐帧ERROR会在故障时放大CPU与磁盘压力。
+                            // Queue overloads already have stage counters; one ERROR per frame would
+                            // amplify CPU and disk pressure during the incident itself.
+                            if !error.starts_with("[scene-overloaded]") {
+                                tracing::error!(
+                                    target: "tiangz::scene",
+                                    source = %source_name,
+                                    target_scene = %target_name,
+                                    error = %error,
+                                    "one-way scene send failed"
+                                );
+                            }
                         }
                         None
                     }

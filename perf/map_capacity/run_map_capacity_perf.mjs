@@ -91,6 +91,7 @@ const rawResults = [];
 await main();
 
 async function main() {
+  assertBenchBundle();
   if (!options.skipRustBuild) {
     const cargoArgs = ["build"];
     if (!options.debugRuntime) cargoArgs.push("--release");
@@ -181,7 +182,13 @@ async function runCase(players, round) {
     const measurementSignal = path.join(configDir, `${caseName}_measurement.txt`);
     const clientTask = runLoadClients(players, topology.managerPort, round, measurementSignal);
     if (options.hotfixMode === "reload" || options.mapInspectorPort > 0) {
-      const measurementStartedAt = await waitMeasurementSignal(measurementSignal, 120_000);
+      // 地图入场保护会限制每Tick放行数量；大规模诊断不能用固定120秒误杀尚在正常建连的测试。
+      // Map admission is intentionally tick-limited, so large diagnostic runs need a player-scaled wait.
+      const measurementSignalTimeoutMs = Math.max(120_000, players * 100);
+      const measurementStartedAt = await waitMeasurementSignal(
+        measurementSignal,
+        measurementSignalTimeoutMs,
+      );
       if (options.hotfixMode === "reload") {
         hotfixController = startHotfixReloadController(runtimes, measurementStartedAt);
       }
@@ -672,6 +679,32 @@ async function readProcessHealthMetrics(runtime) {
     if (!response.ok) return { process: runtime.name };
     const body = await response.text();
     const metric = (name) => prometheusMetric(body, name);
+    const stageMetric = (name, stage) => prometheusMetricWithLabel(body, name, "stage", stage);
+    const queueStages = Object.fromEntries(
+      ["frame", "completion", "disconnect", "shutdown"].map((stage) => [stage, {
+        depth: stageMetric("tiangz_process_queue_stage_depth", stage),
+        maxDepth: stageMetric("tiangz_process_queue_stage_max_depth", stage),
+        backpressureWaits: stageMetric(
+          "tiangz_process_queue_stage_backpressure_waits_total",
+          stage,
+        ),
+        waitMs: stageMetric(
+          "tiangz_process_queue_stage_backpressure_wait_ms_total",
+          stage,
+        ),
+        maxWaitMs: stageMetric(
+          "tiangz_process_queue_stage_backpressure_wait_ms_max",
+          stage,
+        ),
+      }]),
+    );
+    const innerOverloadStages = Object.fromEntries(
+      ["manager_queue", "connection_queue", "call_writer_queue", "send_writer_queue"]
+        .map((stage) => [stage, stageMetric(
+          "tiangz_transport_inner_overload_stage_rejections_total",
+          stage,
+        )]),
+    );
     return {
       process: runtime.name,
       cpuPercent: metric("tiangz_process_cpu_percent"),
@@ -695,7 +728,9 @@ async function readProcessHealthMetrics(runtime) {
       backpressure: metric("tiangz_process_backpressure_waits_total"),
       slowDisconnects: metric("tiangz_process_slow_disconnects_total"),
       innerOverloads: metric("tiangz_transport_inner_overload_rejections"),
+      innerOverloadStages,
       innerTimeouts: metric("tiangz_transport_inner_timed_out_calls"),
+      queueStages,
       nativeScalarGets: metric("tiangz_native_scalar_gets_total"),
       nativeScalarSets: metric("tiangz_native_scalar_sets_total"),
       nativeBatchCalls: metric("tiangz_native_batch_calls_total"),
@@ -747,6 +782,14 @@ async function readHotfixMetrics(runtime) {
 
 function prometheusMetric(body, name) {
   const line = body.split(/\r?\n/).find((value) => value.startsWith(`${name}{`));
+  return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
+}
+
+function prometheusMetricWithLabel(body, name, label, value) {
+  const expected = `${label}="${value}"`;
+  const line = body.split(/\r?\n/).find((candidate) =>
+    candidate.startsWith(`${name}{`) && candidate.includes(expected)
+  );
   return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
 }
 
@@ -992,6 +1035,28 @@ function parseMetricLine(line) {
 
 function summarizeProcess(fallbackName, samples, last) {
   const cpu = samples.map((item) => item.cpuPercent).sort(numberOrder);
+  const selectedLast = samples.at(-1) ?? last;
+  const stageNames = ["frame", "completion", "disconnect", "shutdown"];
+  const queueStages = Object.fromEntries(stageNames.map((stage) => [stage, {
+    depth: selectedLast?.queueStages?.[stage]?.depth ?? 0,
+    maxDepth: last?.queueStages?.[stage]?.maxDepth ?? 0,
+    backpressureWaits: nestedCounterDelta(
+      samples,
+      (sample) => sample.queueStages?.[stage]?.backpressureWaits,
+    ),
+    waitMs: nestedCounterDelta(samples, (sample) => sample.queueStages?.[stage]?.waitMs),
+    maxWaitMs: last?.queueStages?.[stage]?.maxWaitMs ?? 0,
+  }]));
+  const overloadStageNames = [
+    "manager_queue",
+    "connection_queue",
+    "call_writer_queue",
+    "send_writer_queue",
+  ];
+  const innerOverloadStages = Object.fromEntries(overloadStageNames.map((stage) => [
+    stage,
+    nestedCounterDelta(samples, (sample) => sample.innerOverloadStages?.[stage]),
+  ]));
   return {
     process: last?.process ?? fallbackName,
     samples: samples.length,
@@ -1013,11 +1078,24 @@ function summarizeProcess(fallbackName, samples, last) {
     transportWriteOpsPerSecond: counterRate(samples, "transportWriteOps"),
     transportWriteFramesPerSecond: counterRate(samples, "transportWriteFrames"),
     transportWriteBytesPerSecond: counterRate(samples, "transportWriteBytes"),
-    backpressure: last?.backpressure ?? 0,
-    slowDisconnects: last?.slowDisconnects ?? 0,
-    innerOverloads: last?.innerOverloads ?? 0,
-    innerTimeouts: last?.innerTimeouts ?? 0,
+    backpressure: counterDelta(samples, "backpressure"),
+    slowDisconnects: counterDelta(samples, "slowDisconnects"),
+    innerOverloads: counterDelta(samples, "innerOverloads"),
+    innerOverloadStages,
+    innerTimeouts: counterDelta(samples, "innerTimeouts"),
+    queueStages,
   };
+}
+
+function processQueueStage(round, processName, stage, field) {
+  const process = round.serverResources.processes.find((item) => item.process === processName);
+  return process?.queueStages?.[stage]?.[field] ?? 0;
+}
+
+function gateTransportOverloadStage(round, stage) {
+  return sum(round.serverResources.gates.map(
+    (gate) => gate.innerOverloadStages?.[stage] ?? 0,
+  ));
 }
 
 function summarizeNativeData(samples, formalWindowSamples) {
@@ -1116,23 +1194,15 @@ function summarizeMapBroadcast(samples, formalWindowSamples) {
 
 function collectTransportMetrics(runtimes, resources) {
   const text = runtimes.map(readRuntimeLogs).join("\n");
+  const hasFormalHealth = resources.processes.some((item) => item.samples >= 2);
+  const metric = (field, pattern) => hasFormalHealth
+    ? sum(resources.processes.map((item) => item[field]))
+    : maxMatches(text, pattern);
   return {
-    innerOverloads: Math.max(
-      maxMatches(text, /overloads=(\d+)/g),
-      max(resources.processes.map((item) => item.innerOverloads)),
-    ),
-    innerTimeouts: Math.max(
-      maxMatches(text, /timeouts=(\d+)/g),
-      max(resources.processes.map((item) => item.innerTimeouts)),
-    ),
-    backpressure: Math.max(
-      maxMatches(text, /backpressure=(\d+)/g),
-      max(resources.processes.map((item) => item.backpressure)),
-    ),
-    slowDisconnects: Math.max(
-      maxMatches(text, /slow_disconnects=(\d+)/g),
-      max(resources.processes.map((item) => item.slowDisconnects)),
-    ),
+    innerOverloads: metric("innerOverloads", /overloads=(\d+)/g),
+    innerTimeouts: metric("innerTimeouts", /timeouts=(\d+)/g),
+    backpressure: metric("backpressure", /backpressure=(\d+)/g),
+    slowDisconnects: metric("slowDisconnects", /slow_disconnects=(\d+)/g),
   };
 }
 
@@ -1376,6 +1446,33 @@ function aggregateCases(rounds) {
       innerTimeouts: median(group.map((item) => item.transport.innerTimeouts)),
       backpressure: median(group.map((item) => item.transport.backpressure)),
       slowDisconnects: median(group.map((item) => item.transport.slowDisconnects)),
+      mapFrameBackpressure: median(group.map(
+        (item) => processQueueStage(item, "map1", "frame", "backpressureWaits"),
+      )),
+      mapFrameBackpressureWaitMs: median(group.map(
+        (item) => processQueueStage(item, "map1", "frame", "waitMs"),
+      )),
+      mapFrameBackpressureMaxWaitMs: median(group.map(
+        (item) => processQueueStage(item, "map1", "frame", "maxWaitMs"),
+      )),
+      mapFrameQueueMaxDepth: median(group.map(
+        (item) => processQueueStage(item, "map1", "frame", "maxDepth"),
+      )),
+      mapCompletionBackpressure: median(group.map(
+        (item) => processQueueStage(item, "map1", "completion", "backpressureWaits"),
+      )),
+      gateManagerQueueOverloads: median(group.map(
+        (item) => gateTransportOverloadStage(item, "manager_queue"),
+      )),
+      gateConnectionQueueOverloads: median(group.map(
+        (item) => gateTransportOverloadStage(item, "connection_queue"),
+      )),
+      gateCallWriterQueueOverloads: median(group.map(
+        (item) => gateTransportOverloadStage(item, "call_writer_queue"),
+      )),
+      gateSendWriterQueueOverloads: median(group.map(
+        (item) => gateTransportOverloadStage(item, "send_writer_queue"),
+      )),
       serverRssBytes: median(group.map((item) => item.serverResources.totalPeakRssBytes)),
     },
   }));
@@ -1452,6 +1549,21 @@ function renderMarkdown(report) {
         `${round(value.itemPushesPerSecond)}/${round(value.itemItemsPerSecond)}/${round(value.itemBytesPerSecond / 1024 / 1024, 2)} | ${value.stateSyncErrors} |`,
       );
     }
+  }
+  lines.push(
+    "",
+    "## 背压责任分解",
+    "",
+    "| 玩家 | Map Frame 正式窗口 waits/total ms | 生命周期 max wait/depth | Map Completion 正式窗口 waits | Gate 正式窗口 manager/connection/call-writer/send-writer overload |",
+    "|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    lines.push(
+      `| ${item.players} | ${value.mapFrameBackpressure}/${round(value.mapFrameBackpressureWaitMs, 2)} | ` +
+      `${round(value.mapFrameBackpressureMaxWaitMs, 2)}/${value.mapFrameQueueMaxDepth} | ` +
+      `${value.mapCompletionBackpressure} | ${value.gateManagerQueueOverloads}/${value.gateConnectionQueueOverloads}/${value.gateCallWriterQueueOverloads}/${value.gateSendWriterQueueOverloads} |`,
+    );
   }
   lines.push(
     "",
@@ -1570,7 +1682,8 @@ function renderMarkdown(report) {
     options.probeOnly
       ? "- Probe Only 模式关闭 Move 和 AOI 广播，用于测 MapHost pingpong RPC 基线吞吐。"
       : "- Move 按固定频率开环发送，吞吐只统计正式窗口内实际写入的请求；容量点要求实际吞吐至少达到目标的 95%。",
-    "- `backpressure` 表示入口有界队列满后等待重试，是削峰信号，不等于丢包；容量候选要求零业务错误、零 overload、零内部超时和零慢连接断开。",
+    "- `backpressure`、overload、timeout 和 slow disconnect 都按正式测试窗口的 Counter 增量计算；Setup/入场期历史值不会污染稳态容量判断。",
+    "- 背压责任分解使用固定 stage 标签：Map 的 `frame` 是网络入站业务帧，`completion` 是异步 Scene 操作完成；Gate 内部传输依次为 manager、目标连接、RPC writer 与单向 send writer 队列。waits/total 是正式窗口增量，max wait/max depth 是进程生命周期峰值。",
     options.probeOnly
       ? "- Probe Only 模式不包含 AOI 下行。"
       : "- 虚拟客户端不完整构造业务对象；状态测试会扫描 protobuf 顶层 repeated 字段，分别统计协议帧、状态项和消息体字节。端到端延迟由 MapProbe 独立测量。",
@@ -1715,6 +1828,23 @@ function formatDensity(players, worldGrids) {
   return Number.isInteger(density) ? String(density) : density.toFixed(2);
 }
 
+function assertBenchBundle() {
+  const manifestPath = path.join(root, "dist", "model.manifest.json");
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Bench Bundle不存在或无法读取；请使用 npm run perf:map-capacity 启动。${error}`,
+    );
+  }
+  if (manifest.buildMode !== "bench") {
+    throw new Error(
+      `容量压测需要Bench Bundle，当前是${manifest.buildMode ?? "unknown"}；请使用 npm run perf:map-capacity 启动。`,
+    );
+  }
+}
+
 function runCommand(command, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: root, windowsHide: true });
@@ -1779,6 +1909,10 @@ function counterRate(samples, field) {
 function counterDelta(samples, field) {
   if (samples.length < 2) return 0;
   return Math.max(0, samples.at(-1)[field] - samples[0][field]);
+}
+function nestedCounterDelta(samples, valueOf) {
+  if (samples.length < 2) return 0;
+  return Math.max(0, Number(valueOf(samples.at(-1)) ?? 0) - Number(valueOf(samples[0]) ?? 0));
 }
 function median(values) { return percentile([...values].sort(numberOrder), 0.50); }
 function percentile(sorted, ratio) { return sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))]; }

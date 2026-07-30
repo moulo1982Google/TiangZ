@@ -13,7 +13,7 @@ export interface NativeHostOpsApi {
   spatialRelease(mapId: number): void;
   aoiCreate(mapId: number, gridSizeMillimeters: number, enterRadiusGrids: number, detachRadiusGrids: number, syncTiers: Uint8Array): void;
   aoiRelease(mapId: number): void;
-  aoiAttach(mapId: number, handle: number, observer: boolean, subject: boolean): Uint8Array;
+  aoiAttach(mapId: number, handle: number, observer: boolean, subject: boolean, deliveryRouteId: number): Uint8Array;
   aoiDetach(mapId: number, handle: number): Uint8Array;
   aoiRefresh(mapId: number): Uint8Array;
   aoiSetVisible(mapId: number, observerId: number, subjectId: number, visible: boolean): boolean;
@@ -31,6 +31,7 @@ export interface NativeHostOpsApi {
   mapUpdateMovement(mapId: number, serverTick: number, fixedUpdateMs: number, messageCode: number): Uint8Array;
   mapAdvanceMovement(mapId: number, serverTick: number, fixedUpdateMs: number): number;
   mapTakeMovementAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
+  mapTakeMovementAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number): Uint8Array;
   dataTakeMetrics(): Uint8Array;
 }
 
@@ -110,8 +111,8 @@ export class NativeOps {
     nativeHostOps().aoiRelease(mapId);
   }
 
-  static AoiAttach(mapId: number, handle: number, observer: boolean, subject: boolean): Uint8Array {
-    return nativeHostOps().aoiAttach(mapId, handle, observer, subject);
+  static AoiAttach(mapId: number, handle: number, observer: boolean, subject: boolean, deliveryRouteId: number): Uint8Array {
+    return nativeHostOps().aoiAttach(mapId, handle, observer, subject, deliveryRouteId);
   }
 
   static AoiDetach(mapId: number, handle: number): Uint8Array {
@@ -180,6 +181,10 @@ export class NativeOps {
 
   static MapTakeMovementAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
     return nativeHostOps().mapTakeMovementAoiDelta(mapId, serverTick, messageCode);
+  }
+
+  static MapTakeMovementAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number): Uint8Array {
+    return nativeHostOps().mapTakeMovementAoiRouteFrames(mapId, serverTick, clientMessageCode, routeMessageCode);
   }
 
   static DataTakeMetrics(): Uint8Array {

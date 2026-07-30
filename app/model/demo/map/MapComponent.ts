@@ -3,6 +3,7 @@ import {
   StateReplicationSystem,
   type BroadcastAudience,
   type EncodedAudienceBatch,
+  type EncodedRouteFrame,
   Component,
   type CustomMetricSnapshot,
   type IFrameFlush,
@@ -60,6 +61,11 @@ interface PendingPlayerEntry {
   readonly reject: (error: unknown) => void;
 }
 
+interface EncodedRouteBroadcast {
+  readonly frames: readonly EncodedRouteFrame[];
+  readonly itemCount: number;
+}
+
 export interface PlayerTransferCoordinator {
   TransferPlayer(source: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer>;
 }
@@ -102,8 +108,11 @@ export class MapComponent extends Component<[
     before: boolean;
     change: AoiVisibilityDelta;
   }>();
-  private pendingSpatialMovement: readonly EncodedAudienceBatch[] = [];
+  private pendingSpatialMovement: EncodedRouteBroadcast | undefined;
   private readonly pendingPlayerEntries: PendingPlayerEntry[] = [];
+  private readonly gateRouteIds = new Map<string, number>();
+  private readonly gateNamesByRouteId = new Map<number, string>();
+  private nextGateRouteId = 1;
   private playerEntryQueuePeak = 0;
   private playerEntriesAdmitted = 0;
   private playerEntryFailures = 0;
@@ -246,21 +255,23 @@ export class MapComponent extends Component<[
     visibility.push(...this.aoi.Refresh());
     this.pipelineMetrics.aoiRefreshMs += monotonicNow() - startedAt;
     startedAt = monotonicNow();
-    const movement = NativeData.TakeMapMovementAoiDelta(
+    const movement = NativeData.TakeMapMovementAoiRouteFrames(
       this.nativeMapKey,
       this.serverTick,
       moveDescriptor.message.msgcode,
+      GateMessages.ClientBroadcastBatch.msgcode,
     );
     this.pipelineMetrics.movementEncodeMs += monotonicNow() - startedAt;
     this.pipelineMetrics.updateCount += 1;
-    const batches = this.ToAudienceBatches(movement.batches);
+    const routeBroadcast = this.ToRouteBroadcast(movement);
     if (visibility.length > 0 || this.spatialBarrier) {
-      this.QueueSpatialAndMovement(visibility, batches);
-    } else if (batches.length > 0) {
-      void this.broadcast.PublishEncodedLatestBatches(
+      this.QueueSpatialAndMovement(visibility, routeBroadcast);
+    } else if (routeBroadcast.frames.length > 0) {
+      void this.broadcast.PublishEncodedLatestRouteFrames(
         `map:${this.mapInstanceId}:aoi`,
         moveDescriptor.name,
-        batches,
+        routeBroadcast.frames,
+        routeBroadcast.itemCount,
       ).catch((error) => {
         this.logger.error("map AOI movement publish failed", { error });
       });
@@ -756,7 +767,10 @@ export class MapComponent extends Component<[
       if (!pending) return;
       try {
         this.requirePlayer(pending.unit);
-        this.pendingPlayerEnterChanges.push(...this.aoi.Attach(pending.unit));
+        const gateName = pending.unit.GetComponent(UnitGateComponent).gateName;
+        this.pendingPlayerEnterChanges.push(
+          ...this.aoi.Attach(pending.unit, this.RouteIdForGate(gateName)),
+        );
         this.playerEntriesAdmitted += 1;
         pending.resolve();
       } catch (error) {
@@ -786,6 +800,30 @@ export class MapComponent extends Component<[
     return result;
   }
 
+  /** 把 Rust 的紧凑 routeId 外壳映射为 Scene 名称；不再逐玩家查询组件或重编码协议。 / Maps compact Rust route ids to Scene names without per-player component lookup or protocol re-encoding. */
+  private ToRouteBroadcast(
+    movement: ReturnType<typeof NativeData.TakeMapMovementAoiRouteFrames>,
+  ): EncodedRouteBroadcast {
+    const frames = movement.routeFrames.map((item) => {
+      const route = this.gateNamesByRouteId.get(item.routeId);
+      if (!route) throw new Error(`unknown AOI delivery route id: ${item.routeId}`);
+      return { route, frame: item.frame };
+    });
+    return { frames, itemCount: movement.itemCount };
+  }
+
+  /** 为地图实例内稳定不变的 Gate 名称分配紧凑 routeId。玩家换 Gate 必须先离开并重新 Attach。 / Assigns a compact route id to a stable Gate name; changing Gate requires detach and reattach. */
+  private RouteIdForGate(gateName: string): number {
+    const existing = this.gateRouteIds.get(gateName);
+    if (existing !== undefined) return existing;
+    if (this.nextGateRouteId > 0xffff_ffff) throw new Error("AOI delivery route id exhausted");
+    const routeId = this.nextGateRouteId;
+    this.nextGateRouteId += 1;
+    this.gateRouteIds.set(gateName, routeId);
+    this.gateNamesByRouteId.set(routeId, gateName);
+    return routeId;
+  }
+
   /**
    * 合并在途期间产生的空间变化并只保留最新移动；同一可见关系先 Enter/Leave，后发状态。
    * 这里只维持一个排空 Promise，禁止按 Tick 追加 Promise 链。
@@ -796,7 +834,7 @@ export class MapComponent extends Component<[
    */
   private QueueSpatialAndMovement(
     visibility: readonly AoiVisibilityDelta[],
-    movement: readonly EncodedAudienceBatch[],
+    movement: EncodedRouteBroadcast,
   ): void {
     for (const change of visibility) {
       const key = `${change.observerId}:${change.subjectId}`;
@@ -808,7 +846,7 @@ export class MapComponent extends Component<[
       existing.change = change;
       if (existing.before === change.visible) this.pendingSpatialChanges.delete(key);
     }
-    if (movement.length > 0) this.pendingSpatialMovement = movement;
+    if (movement.frames.length > 0) this.pendingSpatialMovement = movement;
     if (this.spatialBarrier) return;
 
     const drain = this.DrainSpatialBroadcasts();
@@ -822,7 +860,7 @@ export class MapComponent extends Component<[
   }
 
   private async DrainSpatialBroadcasts(): Promise<void> {
-    while (this.pendingSpatialChanges.size > 0 || this.pendingSpatialMovement.length > 0) {
+    while (this.pendingSpatialChanges.size > 0 || this.pendingSpatialMovement) {
       if (this.pendingSpatialChanges.size > 0) {
         const changes = [...this.pendingSpatialChanges.values()].map((item) => item.change);
         this.pendingSpatialChanges.clear();
@@ -834,12 +872,13 @@ export class MapComponent extends Component<[
       }
 
       const movement = this.pendingSpatialMovement;
-      this.pendingSpatialMovement = [];
-      if (movement.length > 0) {
-        await this.broadcast.PublishEncodedLatestBatches(
+      this.pendingSpatialMovement = undefined;
+      if (movement) {
+        await this.broadcast.PublishEncodedLatestRouteFrames(
           `map:${this.mapInstanceId}:aoi`,
           ClientBroadcasts.EntityMove.name,
-          movement,
+          movement.frames,
+          movement.itemCount,
         );
       }
     }

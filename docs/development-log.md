@@ -10,6 +10,14 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-30 - AOI路由帧下沉与3000人稳态回归
+
+针对3000玩家AOI压测补齐了分阶段责任指标：Process队列固定区分`frame/completion/disconnect/shutdown`，Transport过载固定区分`manager_queue/connection_queue/call_writer_queue/send_writer_queue`。容量判定只使用正式窗口Counter增量，避免Setup和入图期历史背压污染稳态；生命周期最大等待与最大深度仍保留用于解释洪峰。重复的单向`scene-overloaded`日志改由指标承载，其他发送错误继续保留日志。
+
+首轮诊断中Map实际只读取约4694 frame/s，Gate `send_writer_queue`累计过载363717次，客户端仅收到约291720 Push/s；该样本在丢工作，不能用于比较CPU。优化先把Rust AOI的相同Audience索引编码改为直接protobuf写入，再让Movement在Attach时登记框架拥有的紧凑Gate routeId，由Rust帧尾直接生成每个Gate完整的`S2G_ClientBroadcastBatch`。TS不再接收大规模recipient数组，也不再按Gate重组和二次编码；通用Numeric、UnitState和即时Event路径保持不变。AOI内部权威整数/Grid集合使用`FxHashMap/FxHashSet`，不用于外部不可信字符串。
+
+最终同口径为Windows、1 MapHost、16 Gate、15×15 AOI Grid、3000玩家均匀位于Grid中央、每玩家5Hz Move、10秒预热、15秒排空、60秒正式窗口。实际Move 14997/s、Push 500678/s，Map CPU平均/p90/峰值为47.7%/52.2%/62.2%，Movement编码平均2.759ms，广播平均1.636ms；正式窗口零业务错误、零Process背压、零Transport过载、零内部超时和零慢连接断开。把delivery route复制进每个Audience元素的实验使CPU和编码耗时回升，已回退；当前保留稠密route bucket方案。证据见`perf/results/map_capacity_latest.md`，它是框架负载回归，不是生产地图人数承诺。
+
 ## 2026-07-30 - MapInstance入图节流与3000人基线复核
 
 Rust AOI接入后的同屏压测暴露两类非稳态开销：状态复制曾在没有实际可见性任务时仍等待Promise微任务屏障；批量进入同一出生点又会集中产生近似O(N²)的Attach关系和初始Snapshot。前者已改为仅在真实空间投递在途时等待，2000人同条件Map CPU由66.7%降至40.1%。后者增加每MapInstance独立的隐藏式Loading队列，由Cold `MapConfig.entryPlayersPerTick/entryQueueCapacity`控制逐Tick放行和有界等待；首次进入及传送使用，断线重连跳过。

@@ -1,6 +1,8 @@
 //! 提供与导航实现无关的稀疏 AOI Grid。 / Provides a navigation-agnostic sparse AOI grid.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// 一条客户端可见关系的最终变化；Observer 可以看见或不再看见 Subject。
 /// A final client-visible relation change between one observer and one subject.
@@ -36,6 +38,7 @@ struct AoiEntry {
     grid: GridCoord,
     observer: bool,
     subject: bool,
+    delivery_route_id: u32,
 }
 
 /// 一张地图实例独占的 AOI 世界。
@@ -53,11 +56,11 @@ pub(crate) struct AoiWorld {
     enter_radius_grids: i32,
     detach_radius_grids: i32,
     sync_tiers: Vec<SyncTier>,
-    entries: HashMap<u32, AoiEntry>,
-    grids: HashMap<GridCoord, HashSet<u32>>,
-    lingering_relations: HashSet<(u32, u32)>,
-    rejected_relations: HashSet<(u32, u32)>,
-    pending_changes: HashMap<(u32, u32), PendingVisibilityChange>,
+    entries: FxHashMap<u32, AoiEntry>,
+    grids: FxHashMap<GridCoord, FxHashSet<u32>>,
+    lingering_relations: FxHashSet<(u32, u32)>,
+    rejected_relations: FxHashSet<(u32, u32)>,
+    pending_changes: FxHashMap<(u32, u32), PendingVisibilityChange>,
 }
 
 impl AoiWorld {
@@ -109,16 +112,17 @@ impl AoiWorld {
             enter_radius_grids: enter_radius_grids as i32,
             detach_radius_grids: detach_radius_grids as i32,
             sync_tiers,
-            entries: HashMap::new(),
-            grids: HashMap::new(),
-            lingering_relations: HashSet::new(),
-            rejected_relations: HashSet::new(),
-            pending_changes: HashMap::new(),
+            entries: FxHashMap::default(),
+            grids: FxHashMap::default(),
+            lingering_relations: FxHashSet::default(),
+            rejected_relations: FxHashSet::default(),
+            pending_changes: FxHashMap::default(),
         })
     }
 
     /// 将实体加入空间索引。新关系只由 Enter 范围建立，Detach 范围不会提前暴露实体。
     /// Attaches an entity; new relations originate only inside Enter, never inside Detach alone.
+    #[cfg(test)]
     pub(crate) fn attach(
         &mut self,
         unit_id: u32,
@@ -126,6 +130,20 @@ impl AoiWorld {
         z: f32,
         observer: bool,
         subject: bool,
+    ) -> Result<(), &'static str> {
+        self.attach_routed(unit_id, x, z, observer, subject, 0)
+    }
+
+    /// 将实体连同宿主分配的稳定投递路由加入空间索引。
+    /// Attaches an entity with the stable host-assigned delivery route used by native fan-out.
+    pub(crate) fn attach_routed(
+        &mut self,
+        unit_id: u32,
+        x: f32,
+        z: f32,
+        observer: bool,
+        subject: bool,
+        delivery_route_id: u32,
     ) -> Result<(), &'static str> {
         if unit_id == 0 {
             return Err("AOI unit id must be greater than zero");
@@ -144,6 +162,7 @@ impl AoiWorld {
                 grid,
                 observer,
                 subject,
+                delivery_route_id,
             },
         );
         self.grids.entry(grid).or_default().insert(unit_id);
@@ -159,6 +178,25 @@ impl AoiWorld {
             }
         }
         Ok(())
+    }
+
+    /// 返回 Observer 的进程内投递路由；0 表示该 Observer 未配置原生快照路由。
+    /// Returns an observer's process-local delivery route; zero means native fan-out is disabled.
+    pub(crate) fn delivery_route_id(&self, observer_id: u32) -> Option<u32> {
+        self.entries
+            .get(&observer_id)
+            .filter(|entry| entry.observer && entry.delivery_route_id != 0)
+            .map(|entry| entry.delivery_route_id)
+    }
+
+    /// 返回当前地图使用的最大投递路由编号，供帧尾复用连续分桶。
+    /// Returns the largest active route id so frame-end fan-out can reuse dense buckets.
+    pub(crate) fn max_delivery_route_id(&self) -> u32 {
+        self.entries
+            .values()
+            .map(|entry| entry.delivery_route_id)
+            .max()
+            .unwrap_or(0)
     }
 
     /// 从 AOI 移除实体并先生成所有最终 Leave。调用方随后才能销毁 Native Entity。
@@ -206,12 +244,12 @@ impl AoiWorld {
         let old_subjects = if entry.observer {
             self.spatial_subjects(unit_id)
         } else {
-            HashSet::new()
+            FxHashSet::default()
         };
         let old_observers = if entry.subject {
             self.spatial_observers(unit_id)
         } else {
-            HashSet::new()
+            FxHashSet::default()
         };
         if let Some(grid) = self.grids.get_mut(&entry.grid) {
             grid.remove(&unit_id);
@@ -334,7 +372,7 @@ impl AoiWorld {
     /// 统计空间候选边；Enter 内按 Grid 聚合，迟滞带只加实际保留的稀疏关系。
     /// Counts spatial edges from aggregated Enter grids plus sparse hysteresis relations.
     pub(crate) fn candidate_relation_count(&self) -> usize {
-        let mut roles: HashMap<GridCoord, (usize, usize, usize)> = HashMap::new();
+        let mut roles: FxHashMap<GridCoord, (usize, usize, usize)> = FxHashMap::default();
         for entry in self.entries.values() {
             let value = roles.entry(entry.grid).or_default();
             value.0 += usize::from(entry.observer);
@@ -394,14 +432,18 @@ impl AoiWorld {
         force: Option<&[bool]>,
         server_tick: u32,
     ) -> Vec<(Vec<u32>, Vec<usize>)> {
-        let special_subjects: HashSet<_> = self
+        let special_subjects: FxHashSet<_> = self
             .rejected_relations
             .iter()
             .chain(self.lingering_relations.iter())
             .map(|pair| pair.1)
             .collect();
         let mut default_groups: BTreeMap<(GridCoord, bool), Vec<usize>> = BTreeMap::new();
-        let mut by_audience: BTreeMap<Vec<u32>, Vec<usize>> = BTreeMap::new();
+        // Audience通常是上百个UnitId。把整段Vec作为BTree键会在每次插入时反复比较
+        // 共同前缀；HashMap只线性扫描键一次，最后再排序一次保持测试和网络输出稳定。
+        // An audience often contains hundreds of UnitIds. Using the whole Vec as a BTree key
+        // repeatedly compares common prefixes; hash once and sort once for deterministic output.
+        let mut by_audience: FxHashMap<Vec<u32>, Vec<usize>> = FxHashMap::default();
         for (index, subject_id) in subject_ids.iter().copied().enumerate() {
             let Some(entry) = self.entries.get(&subject_id) else {
                 continue;
@@ -428,7 +470,9 @@ impl AoiWorld {
                 by_audience.entry(audience).or_default().extend(indices);
             }
         }
-        by_audience.into_iter().collect()
+        let mut groups: Vec<_> = by_audience.into_iter().collect();
+        groups.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        groups
     }
 
     fn default_audience(
@@ -495,9 +539,9 @@ impl AoiWorld {
         self.record_change(pair.0, pair.1, before_visible, after_visible);
     }
 
-    fn spatial_subjects(&self, observer_id: u32) -> HashSet<u32> {
+    fn spatial_subjects(&self, observer_id: u32) -> FxHashSet<u32> {
         let Some(entry) = self.entries.get(&observer_id) else {
-            return HashSet::new();
+            return FxHashSet::default();
         };
         self.nearby_ids(entry.grid, self.detach_radius_grids)
             .filter(|subject_id| {
@@ -511,9 +555,9 @@ impl AoiWorld {
             .collect()
     }
 
-    fn spatial_observers(&self, subject_id: u32) -> HashSet<u32> {
+    fn spatial_observers(&self, subject_id: u32) -> FxHashSet<u32> {
         let Some(entry) = self.entries.get(&subject_id) else {
-            return HashSet::new();
+            return FxHashSet::default();
         };
         self.nearby_ids(entry.grid, self.detach_radius_grids)
             .filter(|observer_id| {
@@ -527,7 +571,7 @@ impl AoiWorld {
             .collect()
     }
 
-    fn subjects_within(&self, observer_id: u32, center: GridCoord, radius: i32) -> HashSet<u32> {
+    fn subjects_within(&self, observer_id: u32, center: GridCoord, radius: i32) -> FxHashSet<u32> {
         self.nearby_ids(center, radius)
             .filter(|id| {
                 *id != observer_id && self.entries.get(id).is_some_and(|entry| entry.subject)
@@ -535,7 +579,7 @@ impl AoiWorld {
             .collect()
     }
 
-    fn observers_within(&self, subject_id: u32, center: GridCoord, radius: i32) -> HashSet<u32> {
+    fn observers_within(&self, subject_id: u32, center: GridCoord, radius: i32) -> FxHashSet<u32> {
         self.nearby_ids(center, radius)
             .filter(|id| {
                 *id != subject_id && self.entries.get(id).is_some_and(|entry| entry.observer)

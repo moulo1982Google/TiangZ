@@ -89,12 +89,30 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) remote_transport_disconnected_calls: u64,
     pub(crate) remote_transport_late_responses: u64,
     pub(crate) remote_transport_idle_closes: u64,
+    pub(crate) remote_transport_overload_stages: Vec<TransportOverloadStageObservabilitySnapshot>,
     pub(crate) queue_depth: u64,
     pub(crate) queue_capacity: u64,
     pub(crate) queue_max_depth: u64,
+    pub(crate) queue_stages: Vec<ProcessQueueStageObservabilitySnapshot>,
     pub(crate) scenes: Vec<SceneObservabilitySnapshot>,
     pub(crate) game: Option<GameObservabilitySnapshot>,
     pub(crate) native_data: Option<NativeDataObservabilitySnapshot>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TransportOverloadStageObservabilitySnapshot {
+    pub(crate) stage: String,
+    pub(crate) rejections: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ProcessQueueStageObservabilitySnapshot {
+    pub(crate) stage: String,
+    pub(crate) depth: u64,
+    pub(crate) max_depth: u64,
+    pub(crate) backpressure_waits: u64,
+    pub(crate) backpressure_wait_ms: f64,
+    pub(crate) max_backpressure_wait_ms: f64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -976,6 +994,83 @@ fn append_process_metrics_prometheus(
     .expect("formatting metric");
     writeln!(
         output,
+        "# HELP tiangz_process_queue_stage_depth Current process ingress queue depth by event stage"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_process_queue_stage_depth gauge")
+        .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_process_queue_stage_max_depth Max process ingress queue depth by event stage since boot"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_process_queue_stage_max_depth gauge")
+        .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_process_queue_stage_backpressure_waits_total Backpressure events by process ingress event stage"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_process_queue_stage_backpressure_waits_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_process_queue_stage_backpressure_wait_ms_total Time spent waiting for process ingress capacity by event stage"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_process_queue_stage_backpressure_wait_ms_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_process_queue_stage_backpressure_wait_ms_max Max time spent waiting for process ingress capacity by event stage"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_process_queue_stage_backpressure_wait_ms_max gauge"
+    )
+    .expect("formatting metric type");
+    for stage in &snapshot.queue_stages {
+        let stage_name = escape_prometheus_label(&stage.stage);
+        writeln!(
+            output,
+            "tiangz_process_queue_stage_depth{{process=\"{}\",stage=\"{}\"}} {}",
+            process_name, stage_name, stage.depth
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_process_queue_stage_max_depth{{process=\"{}\",stage=\"{}\"}} {}",
+            process_name, stage_name, stage.max_depth
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_process_queue_stage_backpressure_waits_total{{process=\"{}\",stage=\"{}\"}} {}",
+            process_name, stage_name, stage.backpressure_waits
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_process_queue_stage_backpressure_wait_ms_total{{process=\"{}\",stage=\"{}\"}} {:.3}",
+            process_name, stage_name, stage.backpressure_wait_ms
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_process_queue_stage_backpressure_wait_ms_max{{process=\"{}\",stage=\"{}\"}} {:.3}",
+            process_name, stage_name, stage.max_backpressure_wait_ms
+        )
+        .expect("formatting metric");
+    }
+    writeln!(
+        output,
         "# HELP tiangz_process_slow_disconnects_total Slow clients disconnected due to backlog"
     )
     .expect("formatting metric help");
@@ -1253,6 +1348,26 @@ fn append_process_metrics_prometheus(
         process_name, snapshot.remote_transport_overload_rejections
     )
     .expect("formatting metric");
+    writeln!(
+        output,
+        "# HELP tiangz_transport_inner_overload_stage_rejections_total Inner transport overload rejections by bounded queue stage"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_transport_inner_overload_stage_rejections_total counter"
+    )
+    .expect("formatting metric type");
+    for stage in &snapshot.remote_transport_overload_stages {
+        writeln!(
+            output,
+            "tiangz_transport_inner_overload_stage_rejections_total{{process=\"{}\",stage=\"{}\"}} {}",
+            process_name,
+            escape_prometheus_label(&stage.stage),
+            stage.rejections
+        )
+        .expect("formatting metric");
+    }
     writeln!(
         output,
         "# HELP tiangz_transport_inner_timed_out_calls Total timed out inner scene RPC calls"
@@ -2053,6 +2168,34 @@ mod tests {
                 .2
                 .contains("tiangz_hotfix_active_generation{process=\"map-demo\"} 1")
         );
+    }
+
+    #[test]
+    fn process_queue_stage_metrics_use_bounded_stage_labels() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            queue_stages: vec![ProcessQueueStageObservabilitySnapshot {
+                stage: "frame".to_string(),
+                depth: 7,
+                max_depth: 11,
+                backpressure_waits: 3,
+                backpressure_wait_ms: 4.5,
+                max_backpressure_wait_ms: 2.25,
+            }],
+            ..ProcessObservabilitySnapshot::default()
+        });
+
+        let body = format_prometheus_metrics("map1", &state);
+        assert!(
+            body.contains("tiangz_process_queue_stage_depth{process=\"map1\",stage=\"frame\"} 7")
+        );
+        assert!(body.contains(
+            "tiangz_process_queue_stage_backpressure_waits_total{process=\"map1\",stage=\"frame\"} 3"
+        ));
+        assert!(body.contains(
+            "tiangz_process_queue_stage_backpressure_wait_ms_total{process=\"map1\",stage=\"frame\"} 4.500"
+        ));
     }
 
     #[test]

@@ -294,7 +294,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 已固定Luban 4.10.2工具链，建立`game_config` Excel源目录、服务端/客户端分组生成、只读强类型查询、外键校验、配置指纹与自测；首批接入`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`。表结构属于不可热更Model，纯数据可生成内容寻址候选并由Watcher令各Process原子切换；部署配置仍独立留在`configs`。
 - 账号/角色选择与持久化。
 - 地图生命周期与传送已统一：静态地图按MapHost `staticMapIds`启动，动态副本由Demo `DynamicMapManagerComponent`通过同一`CreateMap`创建；Location维护并可由MapHost重报恢复MapInstance路由。业务统一调用`player.TransferToMap(mapInstanceId)`，不区分静态/动态、同MapHost/跨MapHost。动态副本只允许业务清空玩家后显式销毁，连续无人五分钟为Demo兜底策略。Gate仍提供Proto驱动的有界消息屏障，MapHost完成目标Prepare/Commit和源Actor清理；单进程/拆分进程smoke已覆盖迁移期间并发RPC。目标提交后的不确定事务自动恢复、MapHost租约和死亡节点接管仍留给Phase 5高可用。
-- Rust AOI功能链已经落地：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，稀疏Cell推导默认可见关系，Rust只保存过滤拒绝和本帧净变化；TS NativeRef、Rust Pool和AOI规模均已可观测。高负载地图容量A/B仍需在机器空闲时单独验收。
+- Rust AOI功能链和Windows正式容量回归已经落地：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，稀疏Grid推导默认可见关系，Rust只保存迟滞关系、过滤拒绝和本帧净变化；TS NativeRef、Rust Pool、AOI规模和分阶段背压均已可观测。3000玩家、16 Gate、15×15 Grid、5Hz Move的60秒正式窗口实现14997 Move/s、500678 Push/s，Map CPU平均/p90为47.7%/52.2%，零背压、零过载、零超时。该结果是框架负载证据，不是生产人数承诺。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
 - 怪物 Actor、巡逻、仇恨和战斗。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
@@ -313,16 +313,16 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.1：Rust AOI
 
-状态：功能链和普通冒烟已完成；正式地图容量A/B尚未运行，不能宣称容量收益。
+状态：功能链、Runtime冒烟和Windows正式地图容量回归已完成；Linux/分布式空间负载和真实业务容量仍待后续阶段验证。
 
 - 已在`MapInstanceId`私有空间中建立Rust稀疏AOI索引；`AoiConfig`把AOI Grid大小、Enter范围、Detach迟滞范围分开，`AoiSyncTierConfig`再独立定义已可见关系的可覆盖状态频率。Enter内默认关系从Grid推导，仅迟滞外圈、业务拒绝项与本帧净变化需要存储，不在Rust或TS物化全量关系边。全部空间和AOI表为Cold配置，必须重启才能变更。
 - 玩家是Observer+Subject，自身状态单独保留；后续怪物/NPC支持Subject-only。完整组件图提交后Attach，退出/传送先Detach，Rust拒绝销毁仍挂载的Native Unit。
 - FastOP修改X/Z自动标记空间脏，同AOI Grid不扫描，跨Grid才重建相关边。阵营、隐身、位面通过同步业务过滤器收窄候选关系，业务状态变化必须显式Invalidate。
-- Movement、Numeric和Unit固定字段在Rust编码；默认按变化Subject所在Cell求受众，并把相同受众Cell继续合成一份frame，不展开接收者乘记录数的临时矩阵，只有带业务拒绝覆盖的Subject计算精确受众。TS只把recipientIds映射到Gate，BroadcastHub用稳定地图频道承载多组latest frame，全部发送成功后才Ack。
+- Movement、Numeric和Unit固定字段在Rust编码；默认按变化Subject所在Grid求受众，并把相同受众继续合成一份frame，不展开接收者乘记录数的临时矩阵，只有带业务拒绝覆盖的Subject计算精确受众。Movement在Rust内利用Attach时登记的紧凑delivery route直接生成每个Gate的完整内网批帧，TS不再接收recipientId数组或重复编码protobuf；Numeric、UnitState和Event保留通用BroadcastHub路径。全部发送成功后才Ack。
 - 跨AOI Grid的Enter/Leave仍是不可覆盖事件，但同帧相同受众会批量编码为`G2C_AoiDelta`；Cocos 2D、Pixi和Runtime smoke已适配。容量工具会保留失败诊断并报告跨Grid/可见变化速率。
-- all-in-one与split-process Runtime smoke均已验证同屏可见、跨边界Leave、范围外不再收到新移动sequence、返回后Enter；容量A/B仍需最终验收。
+- all-in-one与split-process Runtime smoke均已验证同屏可见、跨边界Leave、范围外不再收到新移动sequence、返回后Enter。3000玩家、16 Gate、15×15 Grid、每玩家5Hz Move的Windows正式窗口实现14997 Move/s与500678 Push/s，Map CPU平均/p90/峰值为47.7%/52.2%/62.2%，零业务错误、零背压、零内部过载和零超时；详见`perf/results/map_capacity_latest.md`。
 - Prometheus与Grafana已增加AOI World、Entity、Grid、候选关系、最终关系、跨Grid、关系变化和过滤覆盖指标。
-- 保留独立基线实现用于同拓扑A/B，只有在正式性能测试后才能记录收益和容量结论。
+- 分阶段指标已经区分Process `frame/completion/disconnect/shutdown`等待，以及Transport `manager/connection/call-writer/send-writer`过载。容量报告仅使用正式窗口Counter增量判定稳态，生命周期峰值只用于解释历史洪峰；后续优化必须继续先定位责任阶段再做同拓扑A/B。
 
 ### Phase 4.2：NavMesh3D
 

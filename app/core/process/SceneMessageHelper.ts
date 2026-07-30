@@ -97,6 +97,21 @@ export class SceneMessageHelper {
     return this.ctx.send(target, descriptor, message, options);
   }
 
+  /**
+   * 发送已经包含 msgcode 的完整 Scene 帧，供协议生成器和批量 Transport 使用。
+   * 业务 Handler 应优先使用 `send`，避免绕过 descriptor 的类型检查。
+   *
+   * Sends a complete Scene frame that already includes its msgcode. This is for
+   * generated protocol paths and transports; business handlers should prefer `send`.
+   */
+  sendFrame(
+    target: SceneConfig,
+    frame: Uint8Array,
+    options: SceneSendOptions = {},
+  ): Promise<void> {
+    return this.ctx.sendFrame(target, frame, options);
+  }
+
   /** 向某类型唯一的 Scene 发送单向消息。 / Sends a one-way message to the sole Scene of a type. */
   sendOne<TMessage extends IMessage>(
     sceneType: string,

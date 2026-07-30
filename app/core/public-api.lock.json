@@ -27,6 +27,7 @@
     "CustomMetricKind",
     "CustomMetricSnapshot",
     "EncodedAudienceBatch",
+    "EncodedRouteFrame",
     "EncodedStateDelta",
     "Entity",
     "EntityId",

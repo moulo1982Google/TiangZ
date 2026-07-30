@@ -2,6 +2,7 @@ import type {
   BroadcastAudience,
   BroadcastTransport,
   EncodedAudienceBatch,
+  EncodedRouteFrame,
   SceneMessageHelper,
 } from "../../../core/public";
 import { GateMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
@@ -50,6 +51,16 @@ export class SceneBroadcastTransport implements BroadcastTransport {
       queueMicrotask(() => this.FlushPendingBatches());
     }
     return delivery;
+  }
+
+  /** Rust 已生成完整 Gate Scene 帧；这里只解析一次路由名并原样入队。 / Rust already emitted complete Gate Scene frames, so this only resolves routes and queues bytes verbatim. */
+  SendRouteFrames(frames: readonly EncodedRouteFrame[]): Promise<void> {
+    return Promise.all(
+      frames.map((item) => this.scenes.sendFrame(
+        this.scenes.byName(item.route),
+        item.frame,
+      )),
+    ).then(() => undefined);
   }
 
   /**

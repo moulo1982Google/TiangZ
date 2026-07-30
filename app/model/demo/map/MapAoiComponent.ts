@@ -97,12 +97,24 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
   }
 
   /** 完整 Unit 组件图提交后加入 AOI。新 Observer 的初始实体由 EnterMap 快照返回，不重复推送。 / Attaches a fully committed Unit; the new observer receives its initial entities through EnterMap rather than duplicate pushes. */
-  Attach(unit: Unit<any[]>, observer = true, subject = true): readonly AoiVisibilityDelta[] {
+  Attach(
+    unit: Unit<any[]>,
+    deliveryRouteId: number,
+    observer = true,
+    subject = true,
+  ): readonly AoiVisibilityDelta[] {
+    if (!Number.isSafeInteger(deliveryRouteId) || deliveryRouteId < 0) {
+      throw new Error(`invalid AOI delivery route id: ${deliveryRouteId}`);
+    }
+    if (observer && deliveryRouteId === 0) {
+      throw new Error(`AOI observer ${unit.UnitId} needs a delivery route`);
+    }
     const proposed = NativeData.AttachAoi(
       this.nativeMapKey,
       unit.GetComponent(NativeUnitRef).Handle,
       observer,
       subject,
+      deliveryRouteId,
     );
     this.ApplyFilters(proposed);
     return this.CommitChanges(unit.UnitId);

@@ -476,7 +476,7 @@ QuestComponent
 
 ## 广播给谁与如何广播
 
-业务层产生`BroadcastAudience`：地图全体、AOI、队伍、公会在线成员等。Core的`BroadcastHub`处理编码、event队列、latest合并、single-flight和指标。
+业务层产生`BroadcastAudience`：地图全体、AOI、队伍、公会在线成员等。Core的`BroadcastHub`处理编码、event队列、latest合并、single-flight和指标。Movement等已经由框架提供专用Rust热路径的状态，业务仍只修改权威数据或调用领域方法，不手工构造Audience与传输帧。
 
 ```ts
 await this.broadcast.Publish(
@@ -495,7 +495,7 @@ await this.broadcast.Publish(
 - event队列满必须显式失败，不能静默丢弃。
 - AOI已经接管Movement、Numeric和Unit固定字段的接收者选择；新增业务广播必须选择明确Audience，不能重新构造全地图玩家列表。
 
-多个Encoded Audience不会逐组跨进程发送。`BroadcastHub`通过Transport的`SendMany`提交一个逻辑作业，`SceneBroadcastTransport`在同一同步Game Tick结束时把Movement、Numeric和UnitState等批量作业按Gate合并；每个Gate每次Flush最多收到一条内网批量消息。批量元素仍保持独立客户端frame边界，Gate只完成Unit到connection的路由与下行扇出。即时不可覆盖Event仍可单独发送，不能为了追求“一Tick一包”而延迟战斗事件或把多个客户端msgcode拼成私有payload。
+通用广播不会把多个Encoded Audience逐组跨进程发送。`BroadcastHub`通过Transport的`SendMany`提交逻辑作业，`SceneBroadcastTransport`在同一同步Game Tick内按Gate合并；批量元素仍保持独立客户端frame边界，Gate只完成Unit到connection的路由与下行扇出。Movement热路径更进一步：Rust AOI在Attach时记录框架分配的紧凑delivery route，帧尾直接生成每个Gate的完整内网批帧，TS只做至多Gate数量的routeId到Scene映射并原样发送。业务不得分配routeId、调用`MapTakeMovementAoiRouteFrames`、`SceneMessageHelper.sendFrame`，或直接构造`S2G_ClientBroadcastBatch`。Numeric、UnitState和即时不可覆盖Event仍走通用路径；不能为了追求“一Tick一包”而延迟战斗事件或把多个客户端msgcode拼成私有payload。
 
 ## 定时器和Update
 
@@ -567,7 +567,7 @@ Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随�
 
 ## AOI业务规则
 
-地图业务不再构造“全地图玩家列表”广播Movement、Numeric或Unit固定字段。`MapAoiComponent`暴露Rust推导出的最终可见结果，`MapComponent`只把Rust已编码分组交给`BroadcastHub`。Enter内默认关系由AOI Grid即时推导，Rust只保存Enter与Detach之间的迟滞关系、业务拒绝覆盖和本帧净变化；状态复制按Subject Grid合并相同受众，不按每名接收者复制记录索引。业务过滤属于稀疏例外。业务TS不得镜像全量关系表，也不要手工合并Grid受众。开发普通移动、传送、上线或下线时不得手工调用底层Native AOI op；X/Z FastOP、`PlayerEntered`和`RemovePlayer`生命周期已经接管。
+地图业务不再构造“全地图玩家列表”广播Movement、Numeric或Unit固定字段。`MapAoiComponent`拥有Rust推导的最终可见结果；Movement由Rust在帧尾直接生成按Gate路由的完整批帧，`MapComponent`只调用框架封装并提交结果，不把recipientId数组拉回TS。Enter内默认关系由AOI Grid即时推导，Rust只保存Enter与Detach之间的迟滞关系、业务拒绝覆盖和本帧净变化；状态复制按Subject Grid合并相同受众，不按每名接收者复制记录索引。业务过滤属于稀疏例外。业务TS不得镜像全量关系表、管理delivery route、手工合并Grid受众或直接发送内网帧。开发普通移动、传送、上线或下线时不得手工调用底层Native AOI op；X/Z FastOP、`PlayerEntered`和`RemovePlayer`生命周期已经接管。
 
 普通Unit进入/离开视野也不由业务逐个发送。框架把同一帧、相同受众的不可覆盖变化合成`G2C_AoiDelta`，客户端SDK的Handler负责遍历`enters/leaves`。新增Buff、任务摘要等领域可见事件时，应先判断它属于Unit整体Snapshot、独立不可覆盖Event还是可覆盖状态；不得把业务字段塞进通用AOI Delta，也不得恢复逐关系`Publish`。
 

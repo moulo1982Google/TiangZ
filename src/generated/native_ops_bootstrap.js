@@ -47,7 +47,7 @@
     spatialRelease: (mapId) => core.ops.op_native_spatial_release(u32(mapId, "mapId")),
     aoiCreate: (mapId, gridSizeMillimeters, enterRadiusGrids, detachRadiusGrids, syncTiers) => core.ops.op_native_aoi_create(u32(mapId, "mapId"), u32(gridSizeMillimeters, "gridSizeMillimeters"), u32(enterRadiusGrids, "enterRadiusGrids"), u32(detachRadiusGrids, "detachRadiusGrids"), bytes(syncTiers, "syncTiers")),
     aoiRelease: (mapId) => core.ops.op_native_aoi_release(u32(mapId, "mapId")),
-    aoiAttach: (mapId, handle, observer, subject) => core.ops.op_native_aoi_attach(u32(mapId, "mapId"), u32(handle, "handle"), bool(observer, "observer"), bool(subject, "subject")),
+    aoiAttach: (mapId, handle, observer, subject, deliveryRouteId) => core.ops.op_native_aoi_attach(u32(mapId, "mapId"), u32(handle, "handle"), bool(observer, "observer"), bool(subject, "subject"), u32(deliveryRouteId, "deliveryRouteId")),
     aoiDetach: (mapId, handle) => core.ops.op_native_aoi_detach(u32(mapId, "mapId"), u32(handle, "handle")),
     aoiRefresh: (mapId) => core.ops.op_native_aoi_refresh(u32(mapId, "mapId")),
     aoiSetVisible: (mapId, observerId, subjectId, visible) => core.ops.op_native_aoi_set_visible(u32(mapId, "mapId"), u32(observerId, "observerId"), u32(subjectId, "subjectId"), bool(visible, "visible")),
@@ -65,6 +65,7 @@
     mapUpdateMovement: (mapId, serverTick, fixedUpdateMs, messageCode) => core.ops.op_native_map_update_movement(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(fixedUpdateMs, "fixedUpdateMs"), u32(messageCode, "messageCode")),
     mapAdvanceMovement: (mapId, serverTick, fixedUpdateMs) => core.ops.op_native_map_advance_movement(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(fixedUpdateMs, "fixedUpdateMs")),
     mapTakeMovementAoiDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_take_movement_aoi_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),
+    mapTakeMovementAoiRouteFrames: (mapId, serverTick, clientMessageCode, routeMessageCode) => core.ops.op_native_map_take_movement_aoi_route_frames(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(clientMessageCode, "clientMessageCode"), u32(routeMessageCode, "routeMessageCode")),
     dataTakeMetrics: () => core.ops.op_native_data_take_metrics(),
   });
 })();

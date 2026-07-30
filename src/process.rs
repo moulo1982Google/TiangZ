@@ -22,7 +22,8 @@ use crate::game_config::GameConfigBundle;
 use crate::health::{
     GameObservabilitySnapshot, HealthServer, LatencyObservabilitySnapshot,
     NativeDataObservabilitySnapshot, ProcessHealthState, ProcessObservabilitySnapshot,
-    SceneCustomMetricKind, SceneCustomMetricSnapshot, SceneObservabilitySnapshot,
+    ProcessQueueStageObservabilitySnapshot, SceneCustomMetricKind, SceneCustomMetricSnapshot,
+    SceneObservabilitySnapshot, TransportOverloadStageObservabilitySnapshot,
 };
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_install_game_config,
@@ -111,6 +112,43 @@ pub(crate) enum ProcessEvent {
     },
     HostSceneCompletion(HostSceneCompletion),
     Shutdown,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ProcessEventKind {
+    Frame,
+    Completion,
+    Disconnect,
+    Shutdown,
+}
+
+impl ProcessEventKind {
+    const ALL: [Self; 4] = [
+        Self::Frame,
+        Self::Completion,
+        Self::Disconnect,
+        Self::Shutdown,
+    ];
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Frame => "frame",
+            Self::Completion => "completion",
+            Self::Disconnect => "disconnect",
+            Self::Shutdown => "shutdown",
+        }
+    }
+}
+
+impl ProcessEvent {
+    fn kind(&self) -> ProcessEventKind {
+        match self {
+            Self::Frame { .. } => ProcessEventKind::Frame,
+            Self::HostSceneCompletion(_) => ProcessEventKind::Completion,
+            Self::Disconnect { .. } => ProcessEventKind::Disconnect,
+            Self::Shutdown => ProcessEventKind::Shutdown,
+        }
+    }
 }
 
 enum RuntimeControl {
@@ -342,6 +380,19 @@ pub(crate) struct ProcessQueueStats {
     transport_write_ops: AtomicU64,
     transport_write_frames: AtomicU64,
     transport_write_bytes: AtomicU64,
+    frame: ProcessQueueStageStats,
+    completion: ProcessQueueStageStats,
+    disconnect: ProcessQueueStageStats,
+    shutdown: ProcessQueueStageStats,
+}
+
+#[derive(Default)]
+struct ProcessQueueStageStats {
+    depth: AtomicUsize,
+    max_depth: AtomicUsize,
+    backpressure_waits: AtomicU64,
+    backpressure_wait_ns: AtomicU64,
+    max_backpressure_wait_ns: AtomicU64,
 }
 
 impl ProcessQueueStats {
@@ -368,6 +419,10 @@ impl ProcessQueueStats {
             transport_write_ops: AtomicU64::default(),
             transport_write_frames: AtomicU64::default(),
             transport_write_bytes: AtomicU64::default(),
+            frame: ProcessQueueStageStats::default(),
+            completion: ProcessQueueStageStats::default(),
+            disconnect: ProcessQueueStageStats::default(),
+            shutdown: ProcessQueueStageStats::default(),
         }
     }
 
@@ -387,18 +442,56 @@ impl ProcessQueueStats {
             .fetch_add(bytes as u64, Ordering::Relaxed);
     }
 
-    fn queued(&self) {
+    fn stage(&self, kind: ProcessEventKind) -> &ProcessQueueStageStats {
+        match kind {
+            ProcessEventKind::Frame => &self.frame,
+            ProcessEventKind::Completion => &self.completion,
+            ProcessEventKind::Disconnect => &self.disconnect,
+            ProcessEventKind::Shutdown => &self.shutdown,
+        }
+    }
+
+    fn queued(&self, kind: ProcessEventKind) {
         let depth = self.depth.fetch_add(1, Ordering::Relaxed) + 1;
         self.max_depth
             .fetch_max(depth.min(self.capacity), Ordering::Relaxed);
+        let stage = self.stage(kind);
+        let stage_depth = stage.depth.fetch_add(1, Ordering::Relaxed) + 1;
+        stage
+            .max_depth
+            .fetch_max(stage_depth.min(self.capacity), Ordering::Relaxed);
     }
 
-    fn dequeue(&self) {
+    fn dequeue(&self, kind: ProcessEventKind) {
         let _ = self
             .depth
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                 Some(value.saturating_sub(1))
             });
+        let _ =
+            self.stage(kind)
+                .depth
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                    Some(value.saturating_sub(1))
+                });
+    }
+
+    fn record_backpressure(&self, kind: ProcessEventKind) {
+        self.backpressure_waits.fetch_add(1, Ordering::Relaxed);
+        self.stage(kind)
+            .backpressure_waits
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_backpressure_wait(&self, kind: ProcessEventKind, duration: Duration) {
+        let nanos = duration.as_nanos().min(u128::from(u64::MAX)) as u64;
+        let stage = self.stage(kind);
+        stage
+            .backpressure_wait_ns
+            .fetch_add(nanos, Ordering::Relaxed);
+        stage
+            .max_backpressure_wait_ns
+            .fetch_max(nanos, Ordering::Relaxed);
     }
 }
 
@@ -420,27 +513,39 @@ impl ProcessEventSender {
         mut event: ProcessEvent,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<(), String> {
+        let kind = event.kind();
         let mut counted_backpressure = false;
+        let mut backpressure_started: Option<Instant> = None;
         loop {
-            self.stats.queued();
+            self.stats.queued(kind);
             match self.sender.try_send(event) {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    if let Some(started) = backpressure_started {
+                        self.stats.record_backpressure_wait(kind, started.elapsed());
+                    }
+                    return Ok(());
+                }
                 Err(mpsc::TrySendError::Full(returned)) => {
-                    self.stats.dequeue();
+                    self.stats.dequeue(kind);
                     event = returned;
                     if !counted_backpressure {
-                        self.stats
-                            .backpressure_waits
-                            .fetch_add(1, Ordering::Relaxed);
+                        self.stats.record_backpressure(kind);
+                        backpressure_started = Some(Instant::now());
                         counted_backpressure = true;
                     }
                     if deadline.is_some_and(|deadline| deadline <= tokio::time::Instant::now()) {
+                        if let Some(started) = backpressure_started {
+                            self.stats.record_backpressure_wait(kind, started.elapsed());
+                        }
                         return Err("process ingress queue is overloaded".to_string());
                     }
                     tokio::time::sleep(Duration::from_millis(BACKPRESSURE_RETRY_MS)).await;
                 }
                 Err(mpsc::TrySendError::Disconnected(_)) => {
-                    self.stats.dequeue();
+                    self.stats.dequeue(kind);
+                    if let Some(started) = backpressure_started {
+                        self.stats.record_backpressure_wait(kind, started.elapsed());
+                    }
                     return Err("process event queue is stopped".to_string());
                 }
             }
@@ -451,21 +556,19 @@ impl ProcessEventSender {
         &self,
         completion: HostSceneCompletion,
     ) -> std::result::Result<(), HostSceneCompletion> {
-        self.stats.queued();
+        self.stats.queued(ProcessEventKind::Completion);
         match self
             .sender
             .try_send(ProcessEvent::HostSceneCompletion(completion))
         {
             Ok(()) => Ok(()),
             Err(mpsc::TrySendError::Full(ProcessEvent::HostSceneCompletion(completion))) => {
-                self.stats.dequeue();
-                self.stats
-                    .backpressure_waits
-                    .fetch_add(1, Ordering::Relaxed);
+                self.stats.dequeue(ProcessEventKind::Completion);
+                self.stats.record_backpressure(ProcessEventKind::Completion);
                 Err(completion)
             }
             Err(mpsc::TrySendError::Disconnected(_)) => {
-                self.stats.dequeue();
+                self.stats.dequeue(ProcessEventKind::Completion);
                 Ok(())
             }
             Err(_) => unreachable!("completion event changed while entering the process queue"),
@@ -975,13 +1078,13 @@ fn run_process_runtime(
         let mut shutdown_requested = false;
         let wait_ms = scheduling.idle_tick_ms;
         match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
-            Ok(ProcessEvent::Shutdown) => {
-                queue_stats.dequeue();
-                shutdown_requested = true;
-            }
             Ok(event) => {
-                queue_stats.dequeue();
-                push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                queue_stats.dequeue(event.kind());
+                if matches!(&event, ProcessEvent::Shutdown) {
+                    shutdown_requested = true;
+                } else {
+                    push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -993,13 +1096,12 @@ fn run_process_runtime(
             .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
         while !shutdown_requested && event_count < batch_capacity as u32 {
             match event_rx.try_recv() {
-                Ok(ProcessEvent::Shutdown) => {
-                    queue_stats.dequeue();
-                    shutdown_requested = true;
-                    break;
-                }
                 Ok(event) => {
-                    queue_stats.dequeue();
+                    queue_stats.dequeue(event.kind());
+                    if matches!(&event, ProcessEvent::Shutdown) {
+                        shutdown_requested = true;
+                        break;
+                    }
                     push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
                 }
                 Err(mpsc::TryRecvError::Empty) => {
@@ -1572,9 +1674,39 @@ fn maybe_log_metrics(
             .as_ref()
             .map(|snapshot| snapshot.idle_closes)
             .unwrap_or_default(),
+        remote_transport_overload_stages: remote_transport
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .overload_stages
+                    .iter()
+                    .map(|stage| TransportOverloadStageObservabilitySnapshot {
+                        stage: stage.stage.to_string(),
+                        rejections: stage.rejections,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         queue_depth: queue_stats.depth.load(Ordering::Relaxed) as u64,
         queue_capacity: queue_stats.capacity as u64,
         queue_max_depth: queue_stats.max_depth.load(Ordering::Relaxed) as u64,
+        queue_stages: ProcessEventKind::ALL
+            .into_iter()
+            .map(|kind| {
+                let stage = queue_stats.stage(kind);
+                ProcessQueueStageObservabilitySnapshot {
+                    stage: kind.name().to_string(),
+                    depth: stage.depth.load(Ordering::Relaxed) as u64,
+                    max_depth: stage.max_depth.load(Ordering::Relaxed) as u64,
+                    backpressure_waits: stage.backpressure_waits.load(Ordering::Relaxed),
+                    backpressure_wait_ms: stage.backpressure_wait_ns.load(Ordering::Relaxed) as f64
+                        / 1_000_000.0,
+                    max_backpressure_wait_ms: stage.max_backpressure_wait_ns.load(Ordering::Relaxed)
+                        as f64
+                        / 1_000_000.0,
+                }
+            })
+            .collect(),
         scenes: scene_snapshots,
         game: game_snapshot,
         native_data: native_snapshot,
@@ -1741,12 +1873,21 @@ mod tests {
         assert!(!second.is_finished());
         assert!(stats.backpressure_waits.load(Ordering::Relaxed) >= 1);
 
-        receiver.recv().unwrap();
-        stats.dequeue();
+        let event = receiver.recv().unwrap();
+        stats.dequeue(event.kind());
         second.await.unwrap().unwrap();
-        receiver.recv().unwrap();
-        stats.dequeue();
+        let event = receiver.recv().unwrap();
+        stats.dequeue(event.kind());
         assert_eq!(stats.depth.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.disconnect.depth.load(Ordering::Relaxed), 0);
+        assert!(stats.disconnect.backpressure_waits.load(Ordering::Relaxed) >= 1);
+        assert!(
+            stats
+                .disconnect
+                .backpressure_wait_ns
+                .load(Ordering::Relaxed)
+                > 0
+        );
     }
 
     #[test]

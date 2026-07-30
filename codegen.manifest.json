@@ -246,7 +246,7 @@
         "native_data/core/EntityOps.native": "71cbf421bc2fe8f48696536d0f977b4274612a942d50544ebd1323b5e59fb16d",
         "native_data/demo/Entity.native": "9cdd2c4b7d54d6fcf4b63c132cef25b43bd786247a766fec9798513bd32b1336",
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
-        "native_data/demo/MapOps.native": "fc2100f9f889b4e14fe6d1465672a3380e78bcb8fc2f5baf84a5e5ecb7030f89",
+        "native_data/demo/MapOps.native": "b0e35500776cd47ef483b8c7c9257aa5998a2441167557a24edfd9b288d7eaaa",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
         "package.json": "fc1f14fca522efa006e519923d9957bda0f14fa0feb0054f0a071a69410248fa",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
@@ -255,11 +255,11 @@
       "selections": [],
       "outputs": {
         "app/generated/model/native/NativeItemRef.ts": "47abb3166b30399b6503b9bc095ef08421cdde887f2f13bf9e3012ab535f1697",
-        "app/generated/model/native/NativeOps.ts": "ae1934200068b377677f668adf40736cc42fb74ea1dd91713b32c33f6f4732cc",
+        "app/generated/model/native/NativeOps.ts": "88f7d08493918ad71c53738173803c428bfdaf6e3a88d9da21d25569ea36b90b",
         "app/generated/model/native/NativeUnitRef.ts": "84eab60839d861fad9942de401d606289b510e94dd13f74ec795a2ad4cff3e14",
         "src/generated/native_data.rs": "b4c860c226a96126ff0fcba58ac508c3a53ba043e98d3c4fa1edd6385b78b146",
-        "src/generated/native_ops_bootstrap.js": "7f0cefca8982b59fc2280af5c1fcbe2c21e33b9e509a2dd3692a088dedeaeb25",
-        "src/generated/native_ops.rs": "59ab71b36dfcbcae06b44431cb8b02d475267c838259723f2e1d987d2409a76b"
+        "src/generated/native_ops_bootstrap.js": "13405cc83dc19beefa2339b1040bbc14ea25c5d41a42951029ac905c7f6acde3",
+        "src/generated/native_ops.rs": "71bef5e641b036efdeab645a9a4883acdae600b9091a1f82f3f541fcce0c8c2f"
       },
       "outputRoots": [
         {
@@ -346,7 +346,7 @@
         "app/model/bench/bootstrap.ts": "cc6f3a2b5920e327d9ffbe5e26e9608c2dd9012cb96422128c92c66b833b3677",
         "app/model/bench/scenes/BenchScene.ts": "5efcc06c02308c86d4e1acf26988b42802aeede12248cb5ec05617c788c279bb",
         "app/model/bench/scenes/MailboxParityScene.ts": "a206284533535d0f98460b4cf818c772ef230dda94603bf6eaae96a60eade7ab",
-        "app/model/demo/broadcast/SceneBroadcastTransport.ts": "d89ecb4e72c7381960b10b3d79d3385f3e98f21e2576b3396b466cc091bf4175",
+        "app/model/demo/broadcast/SceneBroadcastTransport.ts": "38d1d716c59bb7e3bd01d26618f09be011d28cf8cfac94a9a88af6a3343a6fad",
         "app/model/demo/gate/GatePlayerRoute.ts": "8a321b34ff981933731d0e19a452b0848a5e31c102b896bc6e600c553416ea22",
         "app/model/demo/gate/GateSession.ts": "8cd06c1956f1dca75ac6b1c5cf75613019736753987668f080593350b4298c9e",
         "app/model/demo/item/Item.ts": "bf7d77f0f747b4b31f33753d8a44f43c804195317fb9ba8f230d03eb5919f01f",
@@ -357,8 +357,8 @@
         "app/model/demo/location/MessageHelper.ts": "daa60196c872c6fc385f468ca4c0aaff8bd6eece4d760460346922f9d3c894f4",
         "app/model/demo/login/GateSelector.ts": "530b9a13e42fe544a751620051a460058454494b8cecf393efc6224ecf70deab",
         "app/model/demo/login/LoginComponent.ts": "ef1ae40d76c40e0c7cb5cd25ecf988dbb58fb7ba1e09e3349e8815580551ae1e",
-        "app/model/demo/map/MapAoiComponent.ts": "926a8f1cd6673b95ba6c0b8bdaf08a42f4d29eb56dabdbd56e799c835e15abed",
-        "app/model/demo/map/MapComponent.ts": "067f7ebb0bbebdc87c0a9d4560d6bdf4b8ae9e8bb29d63478c75acd1806d1e90",
+        "app/model/demo/map/MapAoiComponent.ts": "6f8cc9d389096d5f7c416624f84032eaac8499fc4652be86ac5ec338e546fc98",
+        "app/model/demo/map/MapComponent.ts": "ef470a83d2b3de887389b1c8bd61773fd7b329eb42d6a286d452f8e7933065cd",
         "app/model/demo/map/MapInstance.ts": "5e667a721cef4e5940db280bbd70e59ba7980d8a70eff66a93d9af9f10dbfc1e",
         "app/model/demo/map/MapScene.ts": "e72af39adff73c52b3dfd91dc6051bf060f38781cf6abb87f9d38ebf931894b2",
         "app/model/demo/map/PlayerUnit.ts": "dba9cff9f73b07fd4d9addac8e1b8d7c4d5f2635b4bd913891234c7c86bb26b8",
@@ -370,7 +370,7 @@
         "app/model/demo/mapHost/PlayerDirectoryComponent.ts": "802f5442d2eb7b1842acf567658e761467d12162da8d49979a9aa706b51fcf32",
         "app/model/demo/movement/CellMovement.ts": "8a9c1ff16136d78283d00fb98624ac9eb952b5a81505209a4b36ee45b72984e1",
         "app/model/demo/movement/index.ts": "c7fb436e7b2a22f48ab67a5e4e10eb6132ffc1f5159282c2b8b57d039397449c",
-        "app/model/demo/native/NativeData.ts": "818daabe4bdb7fbb2bbd11dc08cdc6c8f4875b92218f2ce029dd712c6a80d8d4",
+        "app/model/demo/native/NativeData.ts": "8f2b063710a1c2e5c67a7c4454a873d264563d4f613f52215b957f3128823b79",
         "app/model/demo/numeric/NumericComponent.ts": "33129df00969295bca0dc8364640ef02dc006e15e891b6727413b678d4f2bbdb",
         "app/model/demo/numeric/NumericType.ts": "15b349b14aca21ae5b4baed65564b2d3ebbfd2935326774a8288b447d6286352",
         "app/model/demo/persistence/PlayerPersistenceComponent.ts": "89133d1a5b9d65c2e8df6efaac364042e35a003b3d28ff21038dcc0ce7eae8d3",

@@ -15,6 +15,7 @@ dependencies = [
  "deno_inspector_server",
  "futures-util",
  "mimalloc",
+ "rustc-hash",
  "serde",
  "serde_json",
  "sha2",

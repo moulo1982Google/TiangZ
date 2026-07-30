@@ -10,7 +10,7 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
-当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约和Phase 4.1 Rust AOI功能链也已完成。工程已有登录、选服、进入地图、多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，但尚未完成Rust AOI正式容量A/B、NavMesh3D运行时、完整商业MMORPG业务和生产运维方案。
+当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约和Phase 4.1 Rust AOI功能链也已完成。工程已有登录、选服、进入地图、多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，并完成Windows 3000玩家AOI正式容量回归；尚未完成NavMesh3D运行时、Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
 
 ## 为什么形成这套模型
 
@@ -195,7 +195,7 @@ Numeric使用`NumericType -> i32`动态字典和dirty表；Unit固定字段使�
 
 AOI已由Rust稀疏X/Z Grid接管。Cell是移动和空间数据的基础单位，AOI关系只在跨Grid边界时重算；默认一个Grid为15×15 Cell。默认可见关系从实体所在Grid即时推导，不常驻保存候选边或全量可见边；Rust只保存迟滞关系、业务过滤拒绝项和本帧净变化，TS也不得建立镜像关系表。当前全地图可见性能报告仍只是旧版最坏压力基线，不能代表AOI容量收益。
 
-Rust按相同最终Audience编码Movement、Numeric和UnitState后，`BroadcastHub`把同一逻辑作业的全部Encoded batch一次性交给Transport；`SceneBroadcastTransport`再以当前同步Game Tick为短暂聚合边界，把Movement/Numeric/State等作业按Gate重组。每个Gate每次Flush最多接收一条`S2G_ClientBroadcastBatch`，其中保留多组`targetUnitIds + 已编码客户端frame`，Gate不解码业务payload。单玩家即时Event仍可走紧凑的`S2G_ClientBroadcast`。业务层不得直接构造这两条内网消息，也不得为减少消息数自行合并客户端协议帧。
+Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`BroadcastHub`把Encoded batch交给Transport，并由`SceneBroadcastTransport`在同步Game Tick内按Gate重组；Movement高频路径进一步由Rust利用Attach时登记的紧凑delivery route直接生成每个Gate的完整`S2G_ClientBroadcastBatch`帧，TS每Tick只映射至多Gate数量的routeId并原样投递，不展开recipient数组，也不重复编码内网protobuf。Gate不解码业务payload，只完成Unit到connection的路由与下行扇出。Numeric、UnitState和即时Event继续使用通用路径。业务层不得管理routeId、调用底层route-frame Native op、调用`sendFrame`，也不得直接构造内网广播协议。
 
 ## 地图空间契约
 
@@ -319,9 +319,9 @@ Phase 4计划：
 - Phase 4.5最后建设持久化基础，再进入正式账号、角色和经济业务：计划增加可分片Rust `PersistenceProxy`，`.native`按Entity/Component声明`transient/snapshot/transactional`存储域并生成快照、dirty、schema和恢复入口。`snapshot`由框架合并写Redis并异步落永久DB；`transactional`以永久DB事务为唯一权威写入，Redis只缓存带revision的提交结果。同一字段不得同时拥有两条权威写路径，版本按存储域隔离。第一版只实现一种永久DB Adapter，不提前维护MongoDB/MySQL/PostgreSQL三套实现。该能力尚未实现，当前业务不得直接连接Redis/DB或自行增加持久化注解。
 - 账号与角色选择、正式持久化业务接入。
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
-- Phase 4.1 Rust AOI功能链已落地，当前Windows容量候选已完成，旧实现A/B和分布式空间负载仍待运行：每个MapInstance创建独立稀疏X/Z AOI Grid。`Cell`是可配置米制空间单位；`AoiConfig`定义每个Grid包含的Cell数，以及彼此独立的Enter与Detach迟滞范围；`AoiSyncTierConfig`独立定义已可见关系的可覆盖状态频率。同步范围大于Enter不会提前建立视野，未覆盖整个Detach也合法。Enter内关系从Grid推导，仅迟滞外圈、业务拒绝和本帧净变化需要存储，TS不镜像全量关系。FastOP X/Z写入自动标脏，跨AOI Grid才重算。Movement按同步档位节流，低频档按Subject Grid稳定错峰，但开始/停止/转向强制立即发送；Numeric、UnitState和不可覆盖事件保留各自同步语义。进入/离开同帧相同受众合并为`G2C_AoiDelta`。阵营/隐身/位面由同步`IAoiVisibilityFilter`查询并显式Invalidate。Prometheus指标统一使用AOI Grid命名。Phase 4.2接入NavMesh3D；Phase 4.3完成Cocos 3D Demo；Phase 4.4进入怪物与战斗；Phase 4.5最后完成持久化基础。
+- Phase 4.1 Rust AOI功能链和Windows正式容量回归已完成：每个MapInstance创建独立稀疏X/Z AOI Grid。`Cell`是可配置米制空间单位；`AoiConfig`定义每个Grid包含的Cell数，以及彼此独立的Enter与Detach迟滞范围；`AoiSyncTierConfig`独立定义已可见关系的可覆盖状态频率。同步范围大于Enter不会提前建立视野，未覆盖整个Detach也合法。Enter内关系从Grid推导，仅迟滞外圈、业务拒绝和本帧净变化需要存储，TS不镜像全量关系。FastOP X/Z写入自动标脏，跨AOI Grid才重算。Movement按同步档位节流，低频档按Subject Grid稳定错峰，但开始/停止/转向强制立即发送；Numeric、UnitState和不可覆盖事件保留各自同步语义。进入/离开同帧相同受众合并为`G2C_AoiDelta`。阵营/隐身/位面由同步`IAoiVisibilityFilter`查询并显式Invalidate。3000玩家、16 Gate、15×15 Grid、每玩家5Hz Move、60秒正式窗口中，Map CPU平均/p90为47.7%/52.2%，实际Move 14997/s、Push 500678/s，正式窗口零背压、零内部过载、零超时；证据见`perf/results/map_capacity_latest.md`。这是当前机器的框架负载证据，不是生产人数承诺。Phase 4.2接入NavMesh3D；Phase 4.3完成Cocos 3D Demo；Phase 4.4进入怪物与战斗；Phase 4.5最后完成持久化基础。
 - 每个MapInstance有独立的隐藏式入图队列：连接和登录完成后，客户端停留在Loading，地图按`MapConfig.entryPlayersPerTick`逐Tick执行AOI Attach，队列上限由`entryQueueCapacity`控制。首次登录和地图传送进入队列；断线重连复用现有Unit，不重复Attach。它只削平单地图Attach与初始Snapshot洪峰，不是区服容量排队，也不替代地图人数上限或负载调度。配置属于Cold，默认Demo为每Tick 1人、最多等待10000人。
-- Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；高负载地图容量A/B尚未执行，不能把纯布局吞吐直接写成服务器容量。
+- Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；类型分池、冷热布局的微基准与地图容量报告仍须分开解释，不能把任一结果直接换算为生产服务器容量。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。
 - 怪物Actor、巡逻、仇恨和战斗。
 - Online/Presence等面向在线状态的业务索引；Location Actor路由基础已完成。
@@ -349,7 +349,7 @@ Phase 5计划：
 3. 不因为性能猜测下沉Rust，先建立业务路径和指标；用户明确要求实验时再做最小A/B。
 4. 不在收到Unit消息后通过账号、地图遍历或全局Manager再次定位Unit。
 5. 不把不可覆盖Event塞进latest状态通道。
-6. 不把AOI收件人选择写进BroadcastHub；AOI产生Audience，Core只负责排队、编码和投递。
+6. 不把AOI收件人选择写进BroadcastHub；AOI拥有Audience。通用路径由Core排队、编码和投递，Movement专用Rust热路径可在AOI内部把Audience直接投影为Gate route frame，但业务层不能看到或管理routeId。
 7. 不为未来Wasm/Rhai设计当前用不到的多语言抽象。
 8. 修改架构事实、目录所有权、协议语义或Phase状态时，同步更新本文、`README.md`和`docs/roadmap.md`。
 9. Actor只作为Scene、Session、Unit的统称和底层路由术语；不要为普通业务身份新增泛化`XxxActor`。
