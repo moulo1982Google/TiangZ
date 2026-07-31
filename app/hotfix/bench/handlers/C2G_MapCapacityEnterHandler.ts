@@ -23,10 +23,11 @@ export class C2G_MapCapacityEnterHandler implements SessionRpcHandler<
     request: C2G_MapCapacityEnter,
   ): Promise<G2C_MapCapacityEnter> {
     const placement = MapCapacityPlacementOf(request.mapId, request.playerIndex, request.layout);
-    const entered = await scene.EnterMap(
+    const entered = await scene.EnterMapForBenchmark(
       session,
       { mapId: request.mapId },
       placement,
+      request.entrySyncMode,
     );
     return { unitId: entered.unitId, cellX: placement.cellX, cellZ: placement.cellZ };
   }

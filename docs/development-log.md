@@ -10,6 +10,12 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-31：进图洪峰分阶段观测与A/B工具
+
+- MapHost新增进图请求、在途峰值、端到端耗时、ID分配、Player创建、Location注册/确认和MapReady阶段指标；Map增加Admission等待、AOI Attach、初始Snapshot对象数，以及AOI Delta批次、接收者和逻辑实体投递量。指标只按Process/Scene/阶段聚合，不使用玩家身份标签，也不为测字节而在TS重复编码protobuf。
+- Bench进图协议新增受限`entrySyncMode`，可分别运行Attach Only、新玩家快照、老玩家Enter和Full。普通客户端协议无法设置该字段，正式Gate路径默认Full；前三种模式故意破坏客户端完整状态，只能用于拆分成本。
+- 新增`npm run perf:map-entry-stages -- --players 1000 --gates 8`。命令一次构建后顺序运行四组Rust客户端测试，并生成`map_entry_stages_latest.md/json`；Full最后执行，保证通用`map_capacity_latest`最终仍保存完整语义结果。脚本会自动断言四种模式的Snapshot、已有观察者Enter及失败数，避免诊断开关语义回归。
+
 ## 2026-07-31：统一2D移动输入与500ms基线
 
 - Cocos 2D与Pixi/H5统一为“状态变化立即发送、持续移动每500ms保活、静止零周期消息”；失焦、隐藏和地图销毁都会立即清除输入并发送停止，避免遗漏KeyUp后角色继续移动。Pixi此前的周期采样改为方向变化即时上报，Cocos的道具/传送快捷键忽略按键重复。

@@ -614,6 +614,8 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 这套机制只处理同一地图瞬时进入洪峰。它不检查区服总人数，不显示排队名次，不保证某张地图适合继续接收玩家，也不代替副本分配和MapHost容量规划。业务仍只调用统一传送入口，不为静态地图、动态副本、同进程或跨进程分别写节流代码。
 
+业务不得使用`EntrySyncMode`跳过新玩家Snapshot或老玩家Enter；非Full模式只编入Bench Handler，用于`perf:map-entry-stages`拆分性能。排查进图慢时依次观察MapHost请求、Admission等待、Attach、Snapshot对象数、AOI Delta逻辑投递量和Gate下行，不得通过删减客户端必需状态制造虚假的容量结果。Prometheus标签中禁止加入account、UnitId和connectionId。
+
 计划中的开发者语义只保留三种存储域：
 
 - `transient`：连接、移动中间态等运行时数据，不保存。

@@ -40,6 +40,13 @@ import {
   StaticMapInstanceId,
   type MapInstanceDefinition,
 } from "../map/MapInstance";
+import {
+  EntrySyncMode,
+  IncludesNewObserverSnapshot,
+  ParseEntrySyncMode,
+} from "../map/EntrySyncMode";
+
+const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 
 export class MapHostComponent extends Component {
   private readonly maps = new Map<bigint, MapComponent>();
@@ -55,6 +62,30 @@ export class MapHostComponent extends Component {
   private sourceCleanupScheduled = false;
   private recoveringLocations = false;
   private readonly disposingMaps = new Set<bigint>();
+  private readonly entryMetrics = {
+    requests: 0,
+    completed: 0,
+    failures: 0,
+    inFlight: 0,
+    maxInFlight: 0,
+    durationMs: 0,
+    maxDurationMs: 0,
+    idAllocations: 0,
+    idAllocationMs: 0,
+    maxIdAllocationMs: 0,
+    playerCreates: 0,
+    playerCreateMs: 0,
+    maxPlayerCreateMs: 0,
+    locationRegisters: 0,
+    locationRegisterMs: 0,
+    maxLocationRegisterMs: 0,
+    mapReadySends: 0,
+    mapReadySendMs: 0,
+    maxMapReadySendMs: 0,
+    locationResolves: 0,
+    locationResolveMs: 0,
+    maxLocationResolveMs: 0,
+  };
 
   /** 定期回收源进程宕机遗留的Prepare，以及已完成事务的短期幂等记录。 / Periodically reclaims prepares orphaned by a crashed source and short-lived completed idempotency records. */
   protected override Awake(): void {
@@ -87,6 +118,49 @@ export class MapHostComponent extends Component {
           capacity: transfers.capacity,
         },
       },
+      {
+        name: "map_entry",
+        values: {
+          requests_total: this.entryMetrics.requests,
+          completed_total: this.entryMetrics.completed,
+          failures_total: this.entryMetrics.failures,
+          in_flight: this.entryMetrics.inFlight,
+          max_in_flight: this.entryMetrics.maxInFlight,
+          duration_ms_total: this.entryMetrics.durationMs,
+          duration_ms_max: this.entryMetrics.maxDurationMs,
+          id_allocations_total: this.entryMetrics.idAllocations,
+          id_allocation_ms_total: this.entryMetrics.idAllocationMs,
+          id_allocation_ms_max: this.entryMetrics.maxIdAllocationMs,
+          player_creates_total: this.entryMetrics.playerCreates,
+          player_create_ms_total: this.entryMetrics.playerCreateMs,
+          player_create_ms_max: this.entryMetrics.maxPlayerCreateMs,
+          location_registers_total: this.entryMetrics.locationRegisters,
+          location_register_ms_total: this.entryMetrics.locationRegisterMs,
+          location_register_ms_max: this.entryMetrics.maxLocationRegisterMs,
+          map_ready_sends_total: this.entryMetrics.mapReadySends,
+          map_ready_send_ms_total: this.entryMetrics.mapReadySendMs,
+          map_ready_send_ms_max: this.entryMetrics.maxMapReadySendMs,
+          location_resolves_total: this.entryMetrics.locationResolves,
+          location_resolve_ms_total: this.entryMetrics.locationResolveMs,
+          location_resolve_ms_max: this.entryMetrics.maxLocationResolveMs,
+        },
+        kinds: {
+          requests_total: "counter",
+          completed_total: "counter",
+          failures_total: "counter",
+          duration_ms_total: "counter",
+          id_allocations_total: "counter",
+          id_allocation_ms_total: "counter",
+          player_creates_total: "counter",
+          player_create_ms_total: "counter",
+          location_registers_total: "counter",
+          location_register_ms_total: "counter",
+          map_ready_sends_total: "counter",
+          map_ready_send_ms_total: "counter",
+          location_resolves_total: "counter",
+          location_resolve_ms_total: "counter",
+        },
+      },
     ];
   }
 
@@ -108,7 +182,32 @@ export class MapHostComponent extends Component {
 
   /** 选择或创建地图、处理重连改绑，并返回权威进入快照。 / Selects/creates a map, rebinds reconnects, and returns the authoritative entry snapshot. */
   async enterMap(request: G2M_EnterMap): Promise<M2G_EnterMap> {
+    const startedAt = monotonicNow();
+    this.entryMetrics.requests += 1;
+    this.entryMetrics.inFlight += 1;
+    this.entryMetrics.maxInFlight = Math.max(
+      this.entryMetrics.maxInFlight,
+      this.entryMetrics.inFlight,
+    );
+    try {
+      const response = await this.EnterMapCore(request);
+      this.entryMetrics.completed += 1;
+      return response;
+    } catch (error) {
+      this.entryMetrics.failures += 1;
+      throw error;
+    } finally {
+      this.entryMetrics.inFlight -= 1;
+      const elapsedMs = monotonicNow() - startedAt;
+      this.entryMetrics.durationMs += elapsedMs;
+      this.entryMetrics.maxDurationMs = Math.max(this.entryMetrics.maxDurationMs, elapsedMs);
+    }
+  }
+
+  /** 执行进图事务主体；外层方法统一维护成功、失败和在途指标。 / Executes the entry transaction while the wrapper owns outcome and in-flight metrics. */
+  private async EnterMapCore(request: G2M_EnterMap): Promise<M2G_EnterMap> {
     this.validateEnterMap(request);
+    const entrySyncMode = ParseEntrySyncMode(request.entrySyncMode);
 
     const map = this.requireMap(request.mapInstanceId);
     const mapId = map.MapId;
@@ -145,18 +244,45 @@ export class MapHostComponent extends Component {
           "existing player must transfer through the Unit Actor route",
         );
       } else {
+        let stageStartedAt = monotonicNow();
         const allocated = await this.location.AllocateUnitId({ account: request.account });
+        let stageElapsedMs = monotonicNow() - stageStartedAt;
+        this.entryMetrics.idAllocations += 1;
+        this.entryMetrics.idAllocationMs += stageElapsedMs;
+        this.entryMetrics.maxIdAllocationMs = Math.max(
+          this.entryMetrics.maxIdAllocationMs,
+          stageElapsedMs,
+        );
+        stageStartedAt = monotonicNow();
         player = map.CreatePlayer(allocated.unitId, request);
+        stageElapsedMs = monotonicNow() - stageStartedAt;
+        this.entryMetrics.playerCreates += 1;
+        this.entryMetrics.playerCreateMs += stageElapsedMs;
+        this.entryMetrics.maxPlayerCreateMs = Math.max(
+          this.entryMetrics.maxPlayerCreateMs,
+          stageElapsedMs,
+        );
         try {
-          await this.location.Register({
-            unitId: player.UnitId,
-            account: player.Account,
-            gateName: request.gateName,
-            mapHostName: this.owner.self.name,
-            mapId,
-            mapInstanceId: map.MapInstanceId,
-            actorInstanceId: player.InstanceId,
-          });
+          stageStartedAt = monotonicNow();
+          try {
+            await this.location.Register({
+              unitId: player.UnitId,
+              account: player.Account,
+              gateName: request.gateName,
+              mapHostName: this.owner.self.name,
+              mapId,
+              mapInstanceId: map.MapInstanceId,
+              actorInstanceId: player.InstanceId,
+            });
+          } finally {
+            stageElapsedMs = monotonicNow() - stageStartedAt;
+            this.entryMetrics.locationRegisters += 1;
+            this.entryMetrics.locationRegisterMs += stageElapsedMs;
+            this.entryMetrics.maxLocationRegisterMs = Math.max(
+              this.entryMetrics.maxLocationRegisterMs,
+              stageElapsedMs,
+            );
+          }
         } catch (error) {
           map.RemoveTransferredPlayer(player);
           throw error;
@@ -169,7 +295,7 @@ export class MapHostComponent extends Component {
 
     const playerMap = this.mapOf(player);
     if (isNewPlayer) {
-      await playerMap.PlayerEntered(player);
+      await playerMap.PlayerEntered(player, entrySyncMode);
     }
 
     this.owner.logger.info("player entered map", {
@@ -187,13 +313,36 @@ export class MapHostComponent extends Component {
       y: snapshot.y,
       z: snapshot.z,
     };
-    await this.owner.scenes.send(
-      this.owner.scenes.byName(snapshot.gateName),
-      GateMessages.MapReady,
-      mapReady,
-    );
+    let stageStartedAt = monotonicNow();
+    try {
+      await this.owner.scenes.send(
+        this.owner.scenes.byName(snapshot.gateName),
+        GateMessages.MapReady,
+        mapReady,
+      );
+    } finally {
+      const elapsedMs = monotonicNow() - stageStartedAt;
+      this.entryMetrics.mapReadySends += 1;
+      this.entryMetrics.mapReadySendMs += elapsedMs;
+      this.entryMetrics.maxMapReadySendMs = Math.max(
+        this.entryMetrics.maxMapReadySendMs,
+        elapsedMs,
+      );
+    }
 
-    const located = await this.location.Resolve({ unitId: player.UnitId, account: "" });
+    stageStartedAt = monotonicNow();
+    let located;
+    try {
+      located = await this.location.Resolve({ unitId: player.UnitId, account: "" });
+    } finally {
+      const elapsedMs = monotonicNow() - stageStartedAt;
+      this.entryMetrics.locationResolves += 1;
+      this.entryMetrics.locationResolveMs += elapsedMs;
+      this.entryMetrics.maxLocationResolveMs = Math.max(
+        this.entryMetrics.maxLocationResolveMs,
+        elapsedMs,
+      );
+    }
     if (!located.found || located.location.actorInstanceId !== player.InstanceId) {
       throw new RpcError(
         GameErrCode.MapNotFound,
@@ -210,7 +359,9 @@ export class MapHostComponent extends Component {
       x: snapshot.x,
       y: snapshot.y,
       z: snapshot.z,
-      entities: playerMap.EntitySnapshots(player),
+      entities: !isNewPlayer || IncludesNewObserverSnapshot(entrySyncMode)
+        ? playerMap.EntitySnapshots(player)
+        : [],
       items: player.GetComponent(ItemComponent).Snapshot(),
       mapInstanceId: located.location.mapInstanceId,
       locationRevision: located.location.revision,
@@ -291,6 +442,7 @@ export class MapHostComponent extends Component {
           initialSpawnY: 0,
           initialSpawnZ: 0,
           initialSpawnYaw: 0,
+          entrySyncMode: EntrySyncMode.Full,
         },
         source.CaptureTransfer(),
       );

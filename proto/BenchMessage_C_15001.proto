@@ -80,6 +80,8 @@ message C2G_MapCapacityEnter // IRequest
   uint32 player_index = 2;
   // 1=uniform across every AOI Grid, 2=one AOI Grid with direction-safe anchors.
   uint32 layout = 3;
+  // 0=full, 1=attach only, 2=new observer snapshot only, 3=existing observer enter only.
+  uint32 entry_sync_mode = 4;
 }
 
 message G2C_MapCapacityEnter // IResponse

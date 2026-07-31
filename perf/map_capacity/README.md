@@ -56,6 +56,16 @@ npm run perf:map-capacity -- \
 
 Runtime会按照每张地图Cold `MapConfig`中的`entry_players_per_tick`逐Tick完成AOI Attach，`entry_queue_capacity`限制仍在Loading中的等待人数。该队列用于削平地图Attach和初始Snapshot洪峰，不是区服登录排队。报告的“地图进入队列”段会显示测量结束长度、生命周期峰值、累计放行和失败数；正式稳态窗口开始前队列必须归零。
 
+进图洪峰使用独立A/B命令定位：
+
+```bash
+npm run perf:map-entry-stages -- --players 1000 --gates 8
+```
+
+该命令只使用Rust客户端和Bench Bundle，依次运行`attach-only`、`new-observer-only`、`existing-observers-only`、`full`，输出`perf/results/map_entry_stages_latest.md`。前三种模式会故意省略一部分客户端状态，只能用于性能拆分；最后的`full`才具有正式完整进图语义，并会成为最终`map_capacity_latest`。报告同时列出MapHost全链路、ID分配、Player创建、Location、Admission排队、AOI Attach、新玩家Snapshot、老玩家Enter投递及Map/Gate生命周期字节。命令还会自动断言四种模式的Snapshot和Enter路径互不串扰、进图无失败；语义不符时直接以失败状态退出。
+
+单独调用容量工具时也可传`--entry-sync-mode`，但非`full`要求`--client rust`且布局必须为`single-grid`或`grid-uniform`。不要用诊断模式生成容量结论，也不要把Snapshot对象重新编码一遍来测字节；对象条数由TS指标统计，真实字节使用Transport生命周期计数比较。
+
 io_uring 模式会自动使用 `--features io-uring` 构建 Runtime，并把临时 Scene 配置设为 `protocol=tcp`。报告中的 `Transport Backend` 表格会输出 read/write 的 `frames/op`。
 
 只测完整链路 pingpong，不测 Move 与 AOI 广播：

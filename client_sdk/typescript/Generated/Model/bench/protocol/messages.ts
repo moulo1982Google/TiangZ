@@ -426,6 +426,7 @@ export interface C2G_MapCapacityEnter extends IRequest {
   mapId: number;
   playerIndex: number;
   layout: number;
+  entrySyncMode: number;
 }
 
 export const C2G_MapCapacityEnterCodec = {
@@ -435,6 +436,7 @@ export const C2G_MapCapacityEnterCodec = {
       mapId: 0,
       playerIndex: 0,
       layout: 0,
+      entrySyncMode: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -450,6 +452,9 @@ export const C2G_MapCapacityEnterCodec = {
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.layout = reader.uint32();
       }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.entrySyncMode = reader.uint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -463,6 +468,7 @@ export const C2G_MapCapacityEnterCodec = {
     if (value.mapId !== undefined) writer.uint32(1, value.mapId);
     if (value.playerIndex !== undefined) writer.uint32(2, value.playerIndex);
     if (value.layout !== undefined) writer.uint32(3, value.layout);
+    if (value.entrySyncMode !== undefined) writer.uint32(4, value.entrySyncMode);
     return writer.finish();
   },
 };

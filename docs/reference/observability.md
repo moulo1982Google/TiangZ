@@ -197,6 +197,10 @@ Gauge 使用 `tiangz_scene_custom_metric_gauge`，Counter 使用 `tiangz_scene_c
 
 玩家路由相关有两组内置自定义指标：`location_directory`观察entries、moving、removing、resolve、mutation和conflict；`actor_transfer_barrier`观察Gate迁移屏障active、queued_frames/bytes以及完成、超时、拒绝、丢弃和过载累计值。二者均不使用account、UnitId或connectionId标签。
 
+进图链路新增两组低基数自定义指标。`map_entry`汇总MapHost请求、在途峰值、端到端耗时、ID分配、Player创建、Location注册/确认和MapReady发送；`map_broadcast`中的`player_entry_*`与`aoi_delta_*`记录Admission排队、Attach、初始Snapshot对象数、AOI Delta批次、接收者和逻辑实体投递量。指标只带Process、Scene、name和key，不得增加account、UnitId或connectionId标签。
+
+Snapshot指标故意不在TS中二次protobuf编码，因此`player_entry_snapshot_items_total`表示权威对象条数，不表示字节。比较实际网络成本时，同时查看`tiangz_process_transport_write_bytes_total`和Gate的`tiangz_process_outbound_logical_bytes_total`；容量工具会在进图A/B报告中计算这些生命周期Counter的增量。
+
 ## 告警规则
 
 `tools/observability/prometheus/rules/tiangz.yml` 已覆盖 Target down、Process 未就绪、Runtime 心跳过期、Rust 队列 70%/90%、背压、Inner RPC 失败、系统错误、缺 Handler、Update 跳帧、日志丢弃和 Handler P99 超预算。规则判定可在 Prometheus `/alerts` 查看。

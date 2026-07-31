@@ -74,6 +74,44 @@ impl SpawnLayout {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+enum EntrySyncMode {
+    Full,
+    AttachOnly,
+    NewObserverOnly,
+    ExistingObserversOnly,
+}
+
+impl EntrySyncMode {
+    fn parse(value: &str) -> Result<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "full" => Ok(Self::Full),
+            "attach-only" => Ok(Self::AttachOnly),
+            "new-observer-only" => Ok(Self::NewObserverOnly),
+            "existing-observers-only" => Ok(Self::ExistingObserversOnly),
+            _ => bail!("invalid --entry-sync-mode {value}"),
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::AttachOnly => "attach-only",
+            Self::NewObserverOnly => "new-observer-only",
+            Self::ExistingObserversOnly => "existing-observers-only",
+        }
+    }
+
+    const fn code(self) -> u32 {
+        match self {
+            Self::Full => 0,
+            Self::AttachOnly => 1,
+            Self::NewObserverOnly => 2,
+            Self::ExistingObserversOnly => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum StateSyncMode {
     Off,
     Numeric,
@@ -130,6 +168,7 @@ struct Options {
     move_rate: u64,
     movement_hold_messages: u32,
     spawn_layout: SpawnLayout,
+    entry_sync_mode: EntrySyncMode,
     probe_rate: f64,
     probe_concurrency: usize,
     state_sync_mode: StateSyncMode,
@@ -486,6 +525,7 @@ async fn main() -> Result<()> {
         "targetMoveRatePerPlayer": options.move_rate,
         "movementHoldMessages": options.movement_hold_messages,
         "spawnLayout": options.spawn_layout.name(),
+        "entrySyncMode": options.entry_sync_mode.name(),
         "mapId": options.map_id,
         "targetProbeRatePerPlayer": options.probe_rate,
         "measurementStartedAtUnixMs": started_at_unix_ms,
@@ -632,6 +672,7 @@ async fn setup_player(
             push_uint32(&mut enter_map, 1, options.map_id);
             push_uint32(&mut enter_map, 2, player_index);
             push_uint32(&mut enter_map, 3, layout);
+            push_uint32(&mut enter_map, 4, options.entry_sync_mode.code());
             (MAP_CAPACITY_ENTER_REQ, MAP_CAPACITY_ENTER_RESP, 1)
         } else {
             push_uint32(&mut enter_map, 1, options.map_id);
@@ -1481,6 +1522,12 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
                 .get("spawn-layout")
                 .map(String::as_str)
                 .unwrap_or("same-point"),
+        )?,
+        entry_sync_mode: EntrySyncMode::parse(
+            values
+                .get("entry-sync-mode")
+                .map(String::as_str)
+                .unwrap_or("full"),
         )?,
         probe_rate: rate("probe-rate", 0.2)?,
         probe_concurrency,

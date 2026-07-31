@@ -38,6 +38,11 @@ import { GameConfigs } from "../../../generated/model/config";
 import { GatePlayerRoute } from "../gate/GatePlayerRoute";
 import { GateSession } from "../gate/GateSession";
 import { LocationProxy } from "../location/LocationProxy";
+import {
+  EntrySyncMode,
+  ParseEntrySyncMode,
+  type EntrySyncModeValue,
+} from "../map/EntrySyncMode";
 
 export const GATE_CLIENT_TIMEOUT_MS = 30_000;
 export const GATE_RECONNECT_GRACE_MS = 30_000;
@@ -284,6 +289,36 @@ export class GateScene extends EntryScene {
     request: C2G_EnterMap,
     spawnOverride?: ServerSpawnOverride,
   ): Promise<G2C_EnterMap> {
+    return await this.EnterMapCore(
+      session,
+      request,
+      spawnOverride,
+      EntrySyncMode.Full,
+    );
+  }
+
+  /** Bench专用入口，可拆分初始视图阶段；正式Handler禁止调用。 / Bench-only entrypoint for isolating initial-view stages; production handlers must not call it. */
+  async EnterMapForBenchmark(
+    session: GateSession,
+    request: C2G_EnterMap,
+    spawnOverride: ServerSpawnOverride,
+    entrySyncMode: number,
+  ): Promise<G2C_EnterMap> {
+    return await this.EnterMapCore(
+      session,
+      request,
+      spawnOverride,
+      ParseEntrySyncMode(entrySyncMode),
+    );
+  }
+
+  /** 统一正式与Bench进图事务，只有调用入口决定初始同步模式。 / Shares the entry transaction while callers select the initial-sync policy. */
+  private async EnterMapCore(
+    session: GateSession,
+    request: C2G_EnterMap,
+    spawnOverride: ServerSpawnOverride | undefined,
+    entrySyncMode: EntrySyncModeValue,
+  ): Promise<G2C_EnterMap> {
     const route = this.RequireCurrentRoute(session);
     if (route.actorState === "moving") {
       throw new RpcError(SystemErrCode.ActorTransferring, "player transfer is recovering");
@@ -346,6 +381,7 @@ export class GateScene extends EntryScene {
         initialSpawnY: spawnOverride?.y ?? 0,
         initialSpawnZ: spawnOverride?.z ?? 0,
         initialSpawnYaw: spawnOverride?.yaw ?? 0,
+        entrySyncMode,
       },
       { timeoutMs: 120_000 },
     );

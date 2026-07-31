@@ -486,6 +486,7 @@ export interface G2M_EnterMap extends IRequest {
   initialSpawnY: number;
   initialSpawnZ: number;
   initialSpawnYaw: number;
+  entrySyncMode: number;
 }
 
 export const G2M_EnterMapCodec = {
@@ -501,6 +502,7 @@ export const G2M_EnterMapCodec = {
       initialSpawnY: 0,
       initialSpawnZ: 0,
       initialSpawnYaw: 0,
+      entrySyncMode: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -534,6 +536,9 @@ export const G2M_EnterMapCodec = {
       else if (tag.fieldNo === 11 && tag.wireType === 5) {
         value.initialSpawnYaw = reader.float();
       }
+      else if (tag.fieldNo === 12 && tag.wireType === 0) {
+        value.entrySyncMode = reader.uint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -553,6 +558,7 @@ export const G2M_EnterMapCodec = {
     if (value.initialSpawnY !== undefined) writer.float(9, value.initialSpawnY);
     if (value.initialSpawnZ !== undefined) writer.float(10, value.initialSpawnZ);
     if (value.initialSpawnYaw !== undefined) writer.float(11, value.initialSpawnYaw);
+    if (value.entrySyncMode !== undefined) writer.uint32(12, value.entrySyncMode);
     return writer.finish();
   },
 };

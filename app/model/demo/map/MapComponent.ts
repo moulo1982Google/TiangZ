@@ -54,12 +54,19 @@ import {
 } from "../../../generated/model/config";
 import type { MapInstanceDefinition } from "./MapInstance";
 import { MapAoiComponent, type AoiVisibilityDelta } from "./MapAoiComponent";
+import {
+  EntrySyncMode,
+  IncludesExistingObserverEnter,
+  type EntrySyncModeValue,
+} from "./EntrySyncMode";
 
 const DEMO_PLAYER_CONFIG_ID = 1;
 const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 
 interface PendingPlayerEntry {
   readonly unit: PlayerUnit;
+  readonly enqueuedAtMs: number;
+  readonly syncMode: EntrySyncModeValue;
   readonly resolve: () => void;
   readonly reject: (error: unknown) => void;
 }
@@ -120,6 +127,24 @@ export class MapComponent extends Component<[
   private playerEntryQueuePeak = 0;
   private playerEntriesAdmitted = 0;
   private playerEntryFailures = 0;
+  private readonly entryMetrics = {
+    queueWaitMs: 0,
+    maxQueueWaitMs: 0,
+    attachMs: 0,
+    maxAttachMs: 0,
+    visibilityChanges: 0,
+    snapshotCalls: 0,
+    snapshotItems: 0,
+    snapshotMs: 0,
+    maxSnapshotMs: 0,
+    deltaBatches: 0,
+    deltaEnterItems: 0,
+    deltaLeaveItems: 0,
+    deltaRecipients: 0,
+    deltaDeliveries: 0,
+    deltaPrepareMs: 0,
+    deltaPublishMs: 0,
+  };
   private readonly pipelineMetrics = {
     movementAdvanceMs: 0,
     aoiRefreshMs: 0,
@@ -360,6 +385,7 @@ export class MapComponent extends Component<[
         initialSpawnY: 0,
         initialSpawnZ: 0,
         initialSpawnYaw: 0,
+        entrySyncMode: EntrySyncMode.Full,
       },
       transfer,
     );
@@ -434,11 +460,18 @@ export class MapComponent extends Component<[
   /** 构造进入视野所需的全量快照；常规变化应使用脏数据增量同步。 / Builds a full enter-view snapshot; routine changes use dirty replication instead. */
   EntitySnapshots(observer: PlayerUnit): MapEntitySnapshot[] {
     this.requirePlayer(observer);
-    return this.aoi
+    const startedAt = monotonicNow();
+    const snapshots = this.aoi
       .VisibleUnitIds(observer.UnitId)
       .map((unitId) => this.units.Get<PlayerUnit>(unitId))
       .filter((unit): unit is PlayerUnit => unit !== undefined)
       .map((unit) => toMapEntity(unit.Snapshot()));
+    const elapsedMs = monotonicNow() - startedAt;
+    this.entryMetrics.snapshotCalls += 1;
+    this.entryMetrics.snapshotItems += snapshots.length;
+    this.entryMetrics.snapshotMs += elapsedMs;
+    this.entryMetrics.maxSnapshotMs = Math.max(this.entryMetrics.maxSnapshotMs, elapsedMs);
+    return snapshots;
   }
 
   /**
@@ -449,7 +482,10 @@ export class MapComponent extends Component<[
    * until the next fixed tick. EnterMap already carries the new player's initial view,
    * so the login RPC must not wait for fan-out delivery.
    */
-  PlayerEntered(unit: PlayerUnit): Promise<void> {
+  PlayerEntered(
+    unit: PlayerUnit,
+    syncMode: EntrySyncModeValue = EntrySyncMode.Full,
+  ): Promise<void> {
     this.requirePlayer(unit);
     if (this.pendingPlayerEntries.length >= this.config.entryQueueCapacity) {
       return Promise.reject(
@@ -457,7 +493,13 @@ export class MapComponent extends Component<[
       );
     }
     const promise = new Promise<void>((resolve, reject) => {
-      this.pendingPlayerEntries.push({ unit, resolve, reject });
+      this.pendingPlayerEntries.push({
+        unit,
+        enqueuedAtMs: monotonicNow(),
+        syncMode,
+        resolve,
+        reject,
+      });
     });
     this.playerEntryQueuePeak = Math.max(
       this.playerEntryQueuePeak,
@@ -518,6 +560,22 @@ export class MapComponent extends Component<[
         player_entry_queue_peak: this.playerEntryQueuePeak,
         player_entries_admitted_total: this.playerEntriesAdmitted,
         player_entry_failures_total: this.playerEntryFailures,
+        player_entry_queue_wait_ms_total: this.entryMetrics.queueWaitMs,
+        player_entry_queue_wait_ms_max: this.entryMetrics.maxQueueWaitMs,
+        player_entry_attach_ms_total: this.entryMetrics.attachMs,
+        player_entry_attach_ms_max: this.entryMetrics.maxAttachMs,
+        player_entry_visibility_changes_total: this.entryMetrics.visibilityChanges,
+        player_entry_snapshot_calls_total: this.entryMetrics.snapshotCalls,
+        player_entry_snapshot_items_total: this.entryMetrics.snapshotItems,
+        player_entry_snapshot_ms_total: this.entryMetrics.snapshotMs,
+        player_entry_snapshot_ms_max: this.entryMetrics.maxSnapshotMs,
+        aoi_delta_batches_total: this.entryMetrics.deltaBatches,
+        aoi_delta_enter_items_total: this.entryMetrics.deltaEnterItems,
+        aoi_delta_leave_items_total: this.entryMetrics.deltaLeaveItems,
+        aoi_delta_recipients_total: this.entryMetrics.deltaRecipients,
+        aoi_delta_deliveries_total: this.entryMetrics.deltaDeliveries,
+        aoi_delta_prepare_ms_total: this.entryMetrics.deltaPrepareMs,
+        aoi_delta_publish_ms_total: this.entryMetrics.deltaPublishMs,
       },
       kinds: {
         queued_frames_total: "counter",
@@ -541,6 +599,19 @@ export class MapComponent extends Component<[
         state_peek_count_total: "counter",
         player_entries_admitted_total: "counter",
         player_entry_failures_total: "counter",
+        player_entry_queue_wait_ms_total: "counter",
+        player_entry_attach_ms_total: "counter",
+        player_entry_visibility_changes_total: "counter",
+        player_entry_snapshot_calls_total: "counter",
+        player_entry_snapshot_items_total: "counter",
+        player_entry_snapshot_ms_total: "counter",
+        aoi_delta_batches_total: "counter",
+        aoi_delta_enter_items_total: "counter",
+        aoi_delta_leave_items_total: "counter",
+        aoi_delta_recipients_total: "counter",
+        aoi_delta_deliveries_total: "counter",
+        aoi_delta_prepare_ms_total: "counter",
+        aoi_delta_publish_ms_total: "counter",
       },
     };
   }
@@ -788,9 +859,21 @@ export class MapComponent extends Component<[
       try {
         this.requirePlayer(pending.unit);
         const gateName = pending.unit.GetComponent(UnitGateComponent).gateName;
-        this.pendingPlayerEnterChanges.push(
-          ...this.aoi.Attach(pending.unit, this.RouteIdForGate(gateName)),
+        const queueWaitMs = monotonicNow() - pending.enqueuedAtMs;
+        this.entryMetrics.queueWaitMs += queueWaitMs;
+        this.entryMetrics.maxQueueWaitMs = Math.max(
+          this.entryMetrics.maxQueueWaitMs,
+          queueWaitMs,
         );
+        const attachStartedAt = monotonicNow();
+        const changes = this.aoi.Attach(pending.unit, this.RouteIdForGate(gateName));
+        const attachMs = monotonicNow() - attachStartedAt;
+        this.entryMetrics.attachMs += attachMs;
+        this.entryMetrics.maxAttachMs = Math.max(this.entryMetrics.maxAttachMs, attachMs);
+        this.entryMetrics.visibilityChanges += changes.length;
+        if (IncludesExistingObserverEnter(pending.syncMode)) {
+          this.pendingPlayerEnterChanges.push(...changes);
+        }
         this.playerEntriesAdmitted += 1;
         pending.resolve();
       } catch (error) {
@@ -908,6 +991,7 @@ export class MapComponent extends Component<[
   private async PublishAoiChanges(
     changes: readonly AoiVisibilityDelta[],
   ): Promise<void> {
+    const prepareStartedAt = monotonicNow();
     const groups = new Map<string, {
       visible: boolean;
       subjectId: number;
@@ -961,6 +1045,12 @@ export class MapComponent extends Component<[
       );
       batchIndex += 1;
       if (audience.routes.length === 0) continue;
+      const itemCount = batch.enters.length + batch.leaves.length;
+      this.entryMetrics.deltaBatches += 1;
+      this.entryMetrics.deltaEnterItems += batch.enters.length;
+      this.entryMetrics.deltaLeaveItems += batch.leaves.length;
+      this.entryMetrics.deltaRecipients += audience.routes.length;
+      this.entryMetrics.deltaDeliveries += itemCount * audience.routes.length;
       deliveries.push(this.broadcast.Publish(
         audience,
         ClientBroadcasts.AoiDelta,
@@ -968,7 +1058,10 @@ export class MapComponent extends Component<[
         this.serverTick,
       ));
     }
+    this.entryMetrics.deltaPrepareMs += monotonicNow() - prepareStartedAt;
+    const publishStartedAt = monotonicNow();
     await Promise.all(deliveries);
+    this.entryMetrics.deltaPublishMs += monotonicNow() - publishStartedAt;
   }
 
   private AudienceForRecipients(

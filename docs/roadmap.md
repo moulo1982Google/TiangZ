@@ -325,6 +325,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - all-in-one与split-process Runtime smoke均已验证同屏可见、跨边界Leave、范围外不再收到新移动sequence、返回后Enter。当前3000玩家、16 Gate、单Grid安全轨迹、每玩家2Hz Move与0.2Hz Probe的Windows正式窗口实现5982 Move/s与59741 Push/s，Map CPU平均/p90/峰值为39.2%/44.2%/44.2%，零业务错误、零背压、零内部过载和零超时；历史5Hz高频结果另行保留，不与当前口径直接比较。详见`perf/results/map_capacity_latest.md`。
 - Prometheus与Grafana已增加AOI World、Entity、Grid、候选关系、最终关系、跨Grid、关系变化和过滤覆盖指标。
 - 分阶段指标已经区分Process `frame/completion/disconnect/shutdown`等待，以及Transport `manager/connection/call-writer/send-writer`过载。容量报告仅使用正式窗口Counter增量判定稳态，生命周期峰值只用于解释历史洪峰；后续优化必须继续先定位责任阶段再做同拓扑A/B。
+- 进图洪峰增加独立A/B链路：MapHost、ID分配、Player创建、Location、Admission、AOI Attach、新玩家Snapshot、老玩家Enter与Gate下行均可分别计数。Bench支持`attach-only/new-observer-only/existing-observers-only/full`四种模式，只有`full`拥有正式语义；容量结论禁止采用残缺诊断模式。
 
 ### Phase 4.2：NavMesh3D
 

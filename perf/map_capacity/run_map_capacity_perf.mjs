@@ -16,6 +16,7 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --move-rate 2               每玩家每秒 Move 次数（默认500ms一次）
   --movement-hold-messages 2  连续多少次 Move 保持同一方向
   --spawn-layout same-point   same-point|single-grid|grid-uniform；玩家出生布局
+  --entry-sync-mode full      full|attach-only|new-observer-only|existing-observers-only；仅Bench诊断
   --world-grids 10            Grid世界边长；当前支持10|15|20
   --probe-rate 0.2            每玩家每秒 Probe RPC 次数（默认5秒一次）
   --state-sync-mode off       off|numeric|player|item|mixed
@@ -53,6 +54,12 @@ if (options.client === "rust" && options.clientShards !== 1) {
 }
 if (options.spawnLayout === "grid-uniform" && options.client !== "rust") {
   throw new Error("--spawn-layout grid-uniform currently requires --client rust");
+}
+if (options.entrySyncMode !== "full" && options.client !== "rust") {
+  throw new Error("--entry-sync-mode diagnostic variants require --client rust");
+}
+if (options.entrySyncMode !== "full" && options.spawnLayout === "same-point") {
+  throw new Error("--entry-sync-mode diagnostic variants require single-grid or grid-uniform");
 }
 if (options.worldGrids !== 10 && options.client !== "rust") {
   throw new Error("--world-grids 15|20 currently requires --client rust");
@@ -290,6 +297,7 @@ async function runLoadClients(players, managerPort, round, measurementSignal) {
         "--move-rate", String(options.moveRate),
         "--movement-hold-messages", String(options.movementHoldMessages),
         "--spawn-layout", options.spawnLayout,
+        ...(useRustClient ? ["--entry-sync-mode", options.entrySyncMode] : []),
         "--probe-rate", String(options.probeRate),
         "--probe-concurrency", String(options.probeConcurrency),
         "--state-sync-mode", options.stateSyncMode,
@@ -755,6 +763,7 @@ async function readProcessHealthMetrics(runtime) {
       aoiVisibilityChanges: metric("tiangz_aoi_visibility_changes_total"),
       aoiFilterOverrides: metric("tiangz_aoi_filter_overrides_total"),
       mapBroadcast: readMapBroadcastMetrics(body),
+      mapEntry: readMapEntryMetrics(body),
     };
   } catch {
     return { process: runtime.name };
@@ -801,11 +810,11 @@ function prometheusMetricSum(body, name) {
     .reduce((total, line) => total + Number(line.slice(line.lastIndexOf(" ") + 1)), 0);
 }
 
-function prometheusCustomMetric(body, key) {
+function prometheusCustomMetric(body, key, customName = "map_broadcast") {
   const line = body.split(/\r?\n/).find((value) =>
     (value.startsWith("tiangz_scene_custom_metric_total{") ||
       value.startsWith("tiangz_scene_custom_metric_gauge{")) &&
-    value.includes('name="map_broadcast"') && value.includes(`key="${key}"`)
+    value.includes(`name="${customName}"`) && value.includes(`key="${key}"`)
   );
   return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
 }
@@ -843,6 +852,53 @@ function readMapBroadcastMetrics(body) {
     playerEntryQueuePeak: prometheusCustomMetric(body, "player_entry_queue_peak"),
     playerEntriesAdmitted: prometheusCustomMetric(body, "player_entries_admitted_total"),
     playerEntryFailures: prometheusCustomMetric(body, "player_entry_failures_total"),
+    playerEntryQueueWaitMs: prometheusCustomMetric(body, "player_entry_queue_wait_ms_total"),
+    playerEntryQueueWaitMaxMs: prometheusCustomMetric(body, "player_entry_queue_wait_ms_max"),
+    playerEntryAttachMs: prometheusCustomMetric(body, "player_entry_attach_ms_total"),
+    playerEntryAttachMaxMs: prometheusCustomMetric(body, "player_entry_attach_ms_max"),
+    playerEntryVisibilityChanges: prometheusCustomMetric(
+      body,
+      "player_entry_visibility_changes_total",
+    ),
+    playerEntrySnapshotCalls: prometheusCustomMetric(body, "player_entry_snapshot_calls_total"),
+    playerEntrySnapshotItems: prometheusCustomMetric(body, "player_entry_snapshot_items_total"),
+    playerEntrySnapshotMs: prometheusCustomMetric(body, "player_entry_snapshot_ms_total"),
+    playerEntrySnapshotMaxMs: prometheusCustomMetric(body, "player_entry_snapshot_ms_max"),
+    aoiDeltaBatches: prometheusCustomMetric(body, "aoi_delta_batches_total"),
+    aoiDeltaEnterItems: prometheusCustomMetric(body, "aoi_delta_enter_items_total"),
+    aoiDeltaLeaveItems: prometheusCustomMetric(body, "aoi_delta_leave_items_total"),
+    aoiDeltaRecipients: prometheusCustomMetric(body, "aoi_delta_recipients_total"),
+    aoiDeltaDeliveries: prometheusCustomMetric(body, "aoi_delta_deliveries_total"),
+    aoiDeltaPrepareMs: prometheusCustomMetric(body, "aoi_delta_prepare_ms_total"),
+    aoiDeltaPublishMs: prometheusCustomMetric(body, "aoi_delta_publish_ms_total"),
+  };
+}
+
+function readMapEntryMetrics(body) {
+  const metric = (key) => prometheusCustomMetric(body, key, "map_entry");
+  return {
+    requests: metric("requests_total"),
+    completed: metric("completed_total"),
+    failures: metric("failures_total"),
+    inFlight: metric("in_flight"),
+    maxInFlight: metric("max_in_flight"),
+    durationMs: metric("duration_ms_total"),
+    maxDurationMs: metric("duration_ms_max"),
+    idAllocations: metric("id_allocations_total"),
+    idAllocationMs: metric("id_allocation_ms_total"),
+    maxIdAllocationMs: metric("id_allocation_ms_max"),
+    playerCreates: metric("player_creates_total"),
+    playerCreateMs: metric("player_create_ms_total"),
+    maxPlayerCreateMs: metric("player_create_ms_max"),
+    locationRegisters: metric("location_registers_total"),
+    locationRegisterMs: metric("location_register_ms_total"),
+    maxLocationRegisterMs: metric("location_register_ms_max"),
+    mapReadySends: metric("map_ready_sends_total"),
+    mapReadySendMs: metric("map_ready_send_ms_total"),
+    maxMapReadySendMs: metric("map_ready_send_ms_max"),
+    locationResolves: metric("location_resolves_total"),
+    locationResolveMs: metric("location_resolve_ms_total"),
+    maxLocationResolveMs: metric("location_resolve_ms_max"),
   };
 }
 
@@ -998,6 +1054,22 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         playerEntryQueuePeak: Number(values.player_entry_queue_peak ?? 0),
         playerEntriesAdmitted: Number(values.player_entries_admitted_total ?? 0),
         playerEntryFailures: Number(values.player_entry_failures_total ?? 0),
+        playerEntryQueueWaitMs: Number(values.player_entry_queue_wait_ms_total ?? 0),
+        playerEntryQueueWaitMaxMs: Number(values.player_entry_queue_wait_ms_max ?? 0),
+        playerEntryAttachMs: Number(values.player_entry_attach_ms_total ?? 0),
+        playerEntryAttachMaxMs: Number(values.player_entry_attach_ms_max ?? 0),
+        playerEntryVisibilityChanges: Number(values.player_entry_visibility_changes_total ?? 0),
+        playerEntrySnapshotCalls: Number(values.player_entry_snapshot_calls_total ?? 0),
+        playerEntrySnapshotItems: Number(values.player_entry_snapshot_items_total ?? 0),
+        playerEntrySnapshotMs: Number(values.player_entry_snapshot_ms_total ?? 0),
+        playerEntrySnapshotMaxMs: Number(values.player_entry_snapshot_ms_max ?? 0),
+        aoiDeltaBatches: Number(values.aoi_delta_batches_total ?? 0),
+        aoiDeltaEnterItems: Number(values.aoi_delta_enter_items_total ?? 0),
+        aoiDeltaLeaveItems: Number(values.aoi_delta_leave_items_total ?? 0),
+        aoiDeltaRecipients: Number(values.aoi_delta_recipients_total ?? 0),
+        aoiDeltaDeliveries: Number(values.aoi_delta_deliveries_total ?? 0),
+        aoiDeltaPrepareMs: Number(values.aoi_delta_prepare_ms_total ?? 0),
+        aoiDeltaPublishMs: Number(values.aoi_delta_publish_ms_total ?? 0),
         }));
     const completeMapBroadcastSamples = mapBroadcastSamples.filter((sample) =>
       startedAt && endedAt &&
@@ -1007,13 +1079,49 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     const selectedMapBroadcast = completeMapBroadcastSamples.length > 0
       ? completeMapBroadcastSamples
       : mapBroadcastSamples.slice(-Math.max(1, Math.floor(options.duration / 5)));
+    const mapEntrySamples = healthSamples.get(runtime.name)?.length > 0
+      ? samples.map((sample) => ({ timestampMs: sample.timestampMs, ...sample.mapEntry }))
+      : lines
+        .filter((line) => line.startsWith("[custom-metrics:") && line.includes("name=map_entry"))
+        .map(parseMetricLine)
+        .map((values) => ({
+          timestampMs: Number(values.timestamp_ms ?? 0),
+          requests: Number(values.requests_total ?? 0),
+          completed: Number(values.completed_total ?? 0),
+          failures: Number(values.failures_total ?? 0),
+          inFlight: Number(values.in_flight ?? 0),
+          maxInFlight: Number(values.max_in_flight ?? 0),
+          durationMs: Number(values.duration_ms_total ?? 0),
+          maxDurationMs: Number(values.duration_ms_max ?? 0),
+          idAllocations: Number(values.id_allocations_total ?? 0),
+          idAllocationMs: Number(values.id_allocation_ms_total ?? 0),
+          maxIdAllocationMs: Number(values.id_allocation_ms_max ?? 0),
+          playerCreates: Number(values.player_creates_total ?? 0),
+          playerCreateMs: Number(values.player_create_ms_total ?? 0),
+          maxPlayerCreateMs: Number(values.player_create_ms_max ?? 0),
+          locationRegisters: Number(values.location_registers_total ?? 0),
+          locationRegisterMs: Number(values.location_register_ms_total ?? 0),
+          maxLocationRegisterMs: Number(values.location_register_ms_max ?? 0),
+          mapReadySends: Number(values.map_ready_sends_total ?? 0),
+          mapReadySendMs: Number(values.map_ready_send_ms_total ?? 0),
+          maxMapReadySendMs: Number(values.map_ready_send_ms_max ?? 0),
+          locationResolves: Number(values.location_resolves_total ?? 0),
+          locationResolveMs: Number(values.location_resolve_ms_total ?? 0),
+          maxLocationResolveMs: Number(values.location_resolve_ms_max ?? 0),
+        }));
     return {
       ...summarizeProcess(runtime.name, selected, samples.at(-1)),
+      lifecycleTransportReadBytes: counterDelta(samples, "transportReadBytes"),
+      lifecycleTransportWriteBytes: counterDelta(samples, "transportWriteBytes"),
+      lifecycleOutboundBridgeBytes: counterDelta(samples, "outboundBridgeBytes"),
+      lifecycleOutboundLogicalBytes: counterDelta(samples, "outboundLogicalBytes"),
       formalWindowSamples: completeWindowSamples.length,
       mapBroadcast: summarizeMapBroadcast(
         selectedMapBroadcast,
         completeMapBroadcastSamples.length,
+        mapBroadcastSamples.at(-1),
       ),
+      mapEntry: summarizeMapEntry(mapEntrySamples),
       nativeData: summarizeNativeData(
         selectedNativeData,
         completeNativeDataSamples.length,
@@ -1036,6 +1144,9 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     gateTransportReadFramesPerSecond: sum(gates.map((item) => item.transportReadFramesPerSecond)),
     gateTransportWriteOpsPerSecond: sum(gates.map((item) => item.transportWriteOpsPerSecond)),
     gateTransportWriteFramesPerSecond: sum(gates.map((item) => item.transportWriteFramesPerSecond)),
+    gateLifecycleOutboundBridgeBytes: sum(gates.map((item) => item.lifecycleOutboundBridgeBytes)),
+    gateLifecycleOutboundLogicalBytes: sum(gates.map((item) => item.lifecycleOutboundLogicalBytes)),
+    gateLifecycleTransportWriteBytes: sum(gates.map((item) => item.lifecycleTransportWriteBytes)),
     totalPeakRssBytes: sum(processes.map((item) => item.peakRssBytes)),
   };
 }
@@ -1145,7 +1256,7 @@ function summarizeNativeData(samples, formalWindowSamples) {
   };
 }
 
-function summarizeMapBroadcast(samples, formalWindowSamples) {
+function summarizeMapBroadcast(samples, formalWindowSamples, lifecycleLast = samples.at(-1)) {
   const last = samples.at(-1);
   const queuedFrames = counterDelta(samples, "queuedFrames");
   const coalescedFrames = counterDelta(samples, "coalescedFrames");
@@ -1200,12 +1311,69 @@ function summarizeMapBroadcast(samples, formalWindowSamples) {
     averageStatePeekMs: statePeekCount > 0
       ? counterDelta(samples, "statePeekMs") / statePeekCount
       : 0,
-    playerEntryQueue: last?.playerEntryQueue ?? 0,
-    playerEntryQueuePeak: max(samples.map((item) => item.playerEntryQueuePeak)),
-    playerEntriesAdmitted: last?.playerEntriesAdmitted ?? 0,
-    playerEntryFailures: last?.playerEntryFailures ?? 0,
+    playerEntryQueue: lifecycleLast?.playerEntryQueue ?? 0,
+    playerEntryQueuePeak: lifecycleLast?.playerEntryQueuePeak ?? 0,
+    playerEntriesAdmitted: lifecycleLast?.playerEntriesAdmitted ?? 0,
+    playerEntryFailures: lifecycleLast?.playerEntryFailures ?? 0,
+    averagePlayerEntryQueueWaitMs: divide(
+      lifecycleLast?.playerEntryQueueWaitMs,
+      lifecycleLast?.playerEntriesAdmitted,
+    ),
+    maxPlayerEntryQueueWaitMs: lifecycleLast?.playerEntryQueueWaitMaxMs ?? 0,
+    averagePlayerEntryAttachMs: divide(
+      lifecycleLast?.playerEntryAttachMs,
+      lifecycleLast?.playerEntriesAdmitted,
+    ),
+    maxPlayerEntryAttachMs: lifecycleLast?.playerEntryAttachMaxMs ?? 0,
+    playerEntryVisibilityChanges: lifecycleLast?.playerEntryVisibilityChanges ?? 0,
+    playerEntrySnapshotCalls: lifecycleLast?.playerEntrySnapshotCalls ?? 0,
+    playerEntrySnapshotItems: lifecycleLast?.playerEntrySnapshotItems ?? 0,
+    averagePlayerEntrySnapshotItems: divide(
+      lifecycleLast?.playerEntrySnapshotItems,
+      lifecycleLast?.playerEntrySnapshotCalls,
+    ),
+    averagePlayerEntrySnapshotMs: divide(
+      lifecycleLast?.playerEntrySnapshotMs,
+      lifecycleLast?.playerEntrySnapshotCalls,
+    ),
+    maxPlayerEntrySnapshotMs: lifecycleLast?.playerEntrySnapshotMaxMs ?? 0,
+    aoiDeltaBatches: lifecycleLast?.aoiDeltaBatches ?? 0,
+    aoiDeltaEnterItems: lifecycleLast?.aoiDeltaEnterItems ?? 0,
+    aoiDeltaLeaveItems: lifecycleLast?.aoiDeltaLeaveItems ?? 0,
+    aoiDeltaRecipients: lifecycleLast?.aoiDeltaRecipients ?? 0,
+    aoiDeltaDeliveries: lifecycleLast?.aoiDeltaDeliveries ?? 0,
+    aoiDeltaPrepareMs: lifecycleLast?.aoiDeltaPrepareMs ?? 0,
+    aoiDeltaPublishMs: lifecycleLast?.aoiDeltaPublishMs ?? 0,
     failures: last?.broadcastFailures ?? 0,
   };
+}
+
+function summarizeMapEntry(samples) {
+  const last = samples.at(-1) ?? {};
+  return {
+    samples: samples.length,
+    requests: last.requests ?? 0,
+    completed: last.completed ?? 0,
+    failures: last.failures ?? 0,
+    inFlight: last.inFlight ?? 0,
+    maxInFlight: last.maxInFlight ?? 0,
+    averageDurationMs: divide(last.durationMs, last.completed + last.failures),
+    maxDurationMs: last.maxDurationMs ?? 0,
+    averageIdAllocationMs: divide(last.idAllocationMs, last.idAllocations),
+    maxIdAllocationMs: last.maxIdAllocationMs ?? 0,
+    averagePlayerCreateMs: divide(last.playerCreateMs, last.playerCreates),
+    maxPlayerCreateMs: last.maxPlayerCreateMs ?? 0,
+    averageLocationRegisterMs: divide(last.locationRegisterMs, last.locationRegisters),
+    maxLocationRegisterMs: last.maxLocationRegisterMs ?? 0,
+    averageMapReadySendMs: divide(last.mapReadySendMs, last.mapReadySends),
+    maxMapReadySendMs: last.maxMapReadySendMs ?? 0,
+    averageLocationResolveMs: divide(last.locationResolveMs, last.locationResolves),
+    maxLocationResolveMs: last.maxLocationResolveMs ?? 0,
+  };
+}
+
+function divide(numerator = 0, denominator = 0) {
+  return denominator > 0 ? numerator / denominator : 0;
 }
 
 function collectTransportMetrics(runtimes, resources) {
@@ -1293,6 +1461,102 @@ function aggregateCases(rounds) {
       playerEntryFailures: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.playerEntryFailures ?? 0,
       )),
+      playerEntryQueueWaitAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.averagePlayerEntryQueueWaitMs ?? 0,
+      )),
+      playerEntryQueueWaitMaxMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.maxPlayerEntryQueueWaitMs ?? 0,
+      )),
+      playerEntryAttachAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.averagePlayerEntryAttachMs ?? 0,
+      )),
+      playerEntryAttachMaxMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.maxPlayerEntryAttachMs ?? 0,
+      )),
+      playerEntryVisibilityChanges: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntryVisibilityChanges ?? 0,
+      )),
+      playerEntrySnapshotCalls: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntrySnapshotCalls ?? 0,
+      )),
+      playerEntrySnapshotItems: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntrySnapshotItems ?? 0,
+      )),
+      playerEntrySnapshotAverageItems: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.averagePlayerEntrySnapshotItems ?? 0,
+      )),
+      playerEntrySnapshotAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.averagePlayerEntrySnapshotMs ?? 0,
+      )),
+      playerEntrySnapshotMaxMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.maxPlayerEntrySnapshotMs ?? 0,
+      )),
+      aoiDeltaBatches: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.aoiDeltaBatches ?? 0,
+      )),
+      aoiDeltaEnterItems: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.aoiDeltaEnterItems ?? 0,
+      )),
+      aoiDeltaLeaveItems: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.aoiDeltaLeaveItems ?? 0,
+      )),
+      aoiDeltaRecipients: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.aoiDeltaRecipients ?? 0,
+      )),
+      aoiDeltaDeliveries: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.aoiDeltaDeliveries ?? 0,
+      )),
+      aoiDeltaPrepareMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.aoiDeltaPrepareMs ?? 0,
+      )),
+      aoiDeltaPublishMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.aoiDeltaPublishMs ?? 0,
+      )),
+      mapEntryRequests: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.requests ?? 0,
+      )),
+      mapEntryFailures: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.failures ?? 0,
+      )),
+      mapEntryMaxInFlight: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.maxInFlight ?? 0,
+      )),
+      mapEntryAverageDurationMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.averageDurationMs ?? 0,
+      )),
+      mapEntryMaxDurationMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.maxDurationMs ?? 0,
+      )),
+      mapEntryIdAllocationAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.averageIdAllocationMs ?? 0,
+      )),
+      mapEntryIdAllocationMaxMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.maxIdAllocationMs ?? 0,
+      )),
+      mapEntryPlayerCreateAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.averagePlayerCreateMs ?? 0,
+      )),
+      mapEntryPlayerCreateMaxMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.maxPlayerCreateMs ?? 0,
+      )),
+      mapEntryLocationRegisterAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.averageLocationRegisterMs ?? 0,
+      )),
+      mapEntryLocationRegisterMaxMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.maxLocationRegisterMs ?? 0,
+      )),
+      mapEntryMapReadyAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.averageMapReadySendMs ?? 0,
+      )),
+      mapEntryMapReadyMaxMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.maxMapReadySendMs ?? 0,
+      )),
+      mapEntryLocationResolveAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.averageLocationResolveMs ?? 0,
+      )),
+      mapEntryLocationResolveMaxMs: median(group.map(
+        (item) => item.serverResources.map?.mapEntry?.maxLocationResolveMs ?? 0,
+      )),
       nativeDataSamples: median(group.map(
         (item) => item.serverResources.map?.nativeData?.formalWindowSamples ?? 0,
       )),
@@ -1371,6 +1635,9 @@ function aggregateCases(rounds) {
       mapPeakV8HeapUsedBytes: median(group.map(
         (item) => item.serverResources.map?.peakV8HeapUsedBytes ?? 0,
       )),
+      mapLifecycleTransportWriteBytes: median(group.map(
+        (item) => item.serverResources.map?.lifecycleTransportWriteBytes ?? 0,
+      )),
       gateMaxCpuAverage: median(group.map((item) => item.serverResources.gateMaxAverageCpuPercent)),
       gateMaxCpuPeak: median(group.map((item) => item.serverResources.gateMaxPeakCpuPercent)),
       gateOutboundBatchesPerSecond: median(group.map(
@@ -1384,6 +1651,15 @@ function aggregateCases(rounds) {
       )),
       gateOutboundLogicalBytesPerSecond: median(group.map(
         (item) => item.serverResources.gateOutboundLogicalBytesPerSecond,
+      )),
+      gateLifecycleOutboundBridgeBytes: median(group.map(
+        (item) => item.serverResources.gateLifecycleOutboundBridgeBytes,
+      )),
+      gateLifecycleOutboundLogicalBytes: median(group.map(
+        (item) => item.serverResources.gateLifecycleOutboundLogicalBytes,
+      )),
+      gateLifecycleTransportWriteBytes: median(group.map(
+        (item) => item.serverResources.gateLifecycleTransportWriteBytes,
       )),
       mapTransportReadOpsPerSecond: median(group.map(
         (item) => item.serverResources.map?.transportReadOpsPerSecond ?? 0,
@@ -1515,8 +1791,9 @@ function renderMarkdown(report) {
     `- 玩家布局：${options.spawnLayout === "grid-uniform"
       ? `轮询全部AOI Grid，固定在Grid中央Cell（各档平均${options.players.map((players) => formatDensity(players, options.worldGrids)).join("/")}人/Grid）`
       : options.spawnLayout === "single-grid"
-        ? "固定单个AOI Grid内的安全轨迹（不跨Grid）"
-        : "统一出生点（最坏同屏）"}`,
+         ? "固定单个AOI Grid内的安全轨迹（不跨Grid）"
+         : "统一出生点（最坏同屏）"}`,
+    `- 进图同步模式：${options.entrySyncMode}${options.entrySyncMode === "full" ? "（正式完整语义）" : "（仅Bench诊断，不代表可上线语义）"}`,
     `- 负载：${options.probeOnly ? "Probe Only，" : `每玩家 ${options.moveRate}Hz Move + `}每玩家 ${options.probeRate}Hz MapProbe`,
     ...(options.stateSyncMode !== "off"
       ? [`- 状态同步：${options.stateSyncMode}，每玩家 ${options.stateSyncRate}Hz，in-flight ${options.stateSyncConcurrency}`]
@@ -1606,17 +1883,55 @@ function renderMarkdown(report) {
   }
   lines.push(
     "",
-    "## 地图进入队列",
+    "## MapHost进图阶段",
     "",
-    "| 玩家 | 测量结束队列 | 生命周期峰值 | 已放行 | 失败 |",
-    "|---:|---:|---:|---:|---:|",
+    "| 玩家 | 请求/失败/max in-flight | 全链路 avg/max | ID分配 avg/max | 创建Player avg/max | Location注册 avg/max | MapReady avg/max | Location确认 avg/max |",
+    "|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.cases) {
     const value = item.median;
     lines.push(
-      `| ${item.players} | ${round(value.playerEntryQueue)} | ` +
-      `${round(value.playerEntryQueuePeak)} | ${round(value.playerEntriesAdmitted)} | ` +
-      `${round(value.playerEntryFailures)} |`,
+      `| ${item.players} | ${round(value.mapEntryRequests)}/${round(value.mapEntryFailures)}/${round(value.mapEntryMaxInFlight)} | ` +
+      `${round(value.mapEntryAverageDurationMs, 2)}/${round(value.mapEntryMaxDurationMs, 2)}ms | ` +
+      `${round(value.mapEntryIdAllocationAverageMs, 2)}/${round(value.mapEntryIdAllocationMaxMs, 2)}ms | ` +
+      `${round(value.mapEntryPlayerCreateAverageMs, 2)}/${round(value.mapEntryPlayerCreateMaxMs, 2)}ms | ` +
+      `${round(value.mapEntryLocationRegisterAverageMs, 2)}/${round(value.mapEntryLocationRegisterMaxMs, 2)}ms | ` +
+      `${round(value.mapEntryMapReadyAverageMs, 2)}/${round(value.mapEntryMapReadyMaxMs, 2)}ms | ` +
+      `${round(value.mapEntryLocationResolveAverageMs, 2)}/${round(value.mapEntryLocationResolveMaxMs, 2)}ms |`,
+    );
+  }
+  lines.push(
+    "",
+    "## Admission与新玩家快照",
+    "",
+    "| 玩家 | 结束队列/峰值 | 放行/失败 | 排队 avg/max | Attach avg/max | 可见变化 | Snapshot calls/items(avg) | Snapshot avg/max |",
+    "|---:|---:|---:|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    lines.push(
+      `| ${item.players} | ${round(value.playerEntryQueue)}/${round(value.playerEntryQueuePeak)} | ` +
+      `${round(value.playerEntriesAdmitted)}/${round(value.playerEntryFailures)} | ` +
+      `${round(value.playerEntryQueueWaitAverageMs, 2)}/${round(value.playerEntryQueueWaitMaxMs, 2)}ms | ` +
+      `${round(value.playerEntryAttachAverageMs, 3)}/${round(value.playerEntryAttachMaxMs, 3)}ms | ` +
+      `${round(value.playerEntryVisibilityChanges)} | ${round(value.playerEntrySnapshotCalls)}/${round(value.playerEntrySnapshotItems)}(${round(value.playerEntrySnapshotAverageItems, 1)}) | ` +
+      `${round(value.playerEntrySnapshotAverageMs, 3)}/${round(value.playerEntrySnapshotMaxMs, 3)}ms |`,
+    );
+  }
+  lines.push(
+    "",
+    "## AOI Enter/Leave下行",
+    "",
+    "| 玩家 | batch | enter/leave items | recipients | entity deliveries | prepare ms | publish wait ms |",
+    "|---:|---:|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    lines.push(
+      `| ${item.players} | ${round(value.aoiDeltaBatches)} | ` +
+      `${round(value.aoiDeltaEnterItems)}/${round(value.aoiDeltaLeaveItems)} | ` +
+      `${round(value.aoiDeltaRecipients)} | ${round(value.aoiDeltaDeliveries)} | ` +
+      `${round(value.aoiDeltaPrepareMs, 2)} | ${round(value.aoiDeltaPublishMs, 2)} |`,
     );
   }
   lines.push(
@@ -1752,6 +2067,11 @@ function parseOptions(args) {
       values.get("--spawn-layout") ?? "same-point",
       ["same-point", "single-grid", "grid-uniform"],
       "--spawn-layout",
+    ),
+    entrySyncMode: enumValue(
+      values.get("--entry-sync-mode") ?? "full",
+      ["full", "attach-only", "new-observer-only", "existing-observers-only"],
+      "--entry-sync-mode",
     ),
     worldGrids: positive(values.get("--world-grids") ?? "10", "--world-grids"),
     probeRate: nonNegative(values.get("--probe-rate") ?? "0.2", "--probe-rate"),

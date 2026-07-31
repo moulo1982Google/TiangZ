@@ -19,6 +19,8 @@ message G2M_EnterMap // IRequest
   float initial_spawn_y = 9;
   float initial_spawn_z = 10;
   float initial_spawn_yaw = 11;
+  // Trusted diagnostic value from the Bench Gate handler. Production entry always uses 0=full.
+  uint32 entry_sync_mode = 12;
 }
 
 //ResponseType M2G_SecondEnterMap
