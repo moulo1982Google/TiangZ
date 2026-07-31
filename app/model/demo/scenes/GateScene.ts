@@ -6,6 +6,7 @@ import {
   TimerSystem,
   entryScene,
   message,
+  readU16BE,
   type RuntimeEntrySceneConfig,
   type SceneMetricsSnapshot,
   type TimerId,
@@ -43,6 +44,7 @@ import {
   ParseEntrySyncMode,
   type EntrySyncModeValue,
 } from "../map/EntrySyncMode";
+import { MAP_ENTRY_ADMISSION_TIMEOUT_MS } from "../map/MapEntryAdmission";
 
 export const GATE_CLIENT_TIMEOUT_MS = 30_000;
 export const GATE_RECONNECT_GRACE_MS = 30_000;
@@ -94,6 +96,26 @@ export class GateScene extends EntryScene {
     this.routesByConnection
       .get(connectionId)
       ?.TouchReceive(connectionId, TimeSystem.Instance.FrameTime);
+  }
+
+  /**
+   * Ping只维护连接存活，不进入可能被长时间EnterMap占用的Session mailbox。
+   * 未认证连接发送Ping时立即断开；已认证Ping不产生响应，也不占用异步Handler槽位。
+   *
+   * Keeps Ping outside a session mailbox that may be occupied by a long EnterMap call.
+   * Unauthenticated senders are disconnected; authenticated Pings allocate no async handler slot.
+   */
+  protected override consumeClientControlFrame(
+    connectionId: number,
+    frame: Uint8Array,
+  ): boolean {
+    if (frame.byteLength < 2 || readU16BE(frame) !== GateMessages.Ping.msgcode) return false;
+    if (this.routesByConnection.has(connectionId)) return true;
+    if (!this.disconnecting.has(connectionId)) {
+      this.disconnecting.add(connectionId);
+      this.disconnectClient(connectionId);
+    }
+    return true;
   }
 
   /** 记录出站排队时间以供观测；该时间绝不参与存活判定。 / Records outbound queue activity for observability and never for liveness. */
@@ -198,14 +220,6 @@ export class GateScene extends EntryScene {
     }
 
     return { account: request.account };
-  }
-
-  /** Ping只验证认证状态；统一入站钩子已经为所有客户端消息刷新存活时间。 / Ping only checks authentication because the ingress hook refreshes liveness for every client message. */
-  Ping(session: GateSession): void {
-    if (session.IsAuthenticated) return;
-    const connectionId = session.ConnectionId;
-    this.disconnecting.add(connectionId);
-    this.disconnectClient(connectionId);
   }
 
   @message(GateMessages.MapReady)
@@ -383,7 +397,7 @@ export class GateScene extends EntryScene {
         initialSpawnYaw: spawnOverride?.yaw ?? 0,
         entrySyncMode,
       },
-      { timeoutMs: 120_000 },
+      { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
     );
     this.AssertCurrentRoute(session, route);
 
@@ -467,6 +481,7 @@ export class GateScene extends EntryScene {
           targetMapInstanceId,
           expectedLocationRevision: source.revision,
         },
+        { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
       );
       this.AssertCurrentRoute(session, route);
       route.BindMap({

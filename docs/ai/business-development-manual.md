@@ -579,7 +579,7 @@ await player.Offline(reason);
 
 业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。普通socket断开只销毁`GateSession`，不能直接调用玩家`Offline()`；`GatePlayerRoute`在Gate继续保留30秒等待重连。宽限期结束后只能由Gate调用`MapProtocol.PlayerOffline`，Map保存、移除Unit并广播AOI离开后，Gate再删除Route。
 
-玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒发送`C2G_Ping`；任何入站消息都会续期，服务端出站消息不会续期。
+玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒发送`C2G_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Ping是框架已经接管的Gate控制帧，在Session mailbox之前同步消费；业务不再编写`C2G_PingHandler`，也不得把技能、道具等业务消息放进控制帧入口。
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
@@ -610,7 +610,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 ### 地图入图节流
 
-首次登录或`TransferToMap`到达目标地图时，业务不应直接调用底层AOI Attach，也不需要自己创建Loading队列。`MapComponent.PlayerEntered`会进入当前MapInstance的等待队列，地图每Tick最多按`MapConfig.entryPlayersPerTick`放行；`entryQueueCapacity`满时明确拒绝，防止无限积压。Gate保持连接并等待`EnterMap`或传送响应，客户端继续显示Loading。断线重连调用`SecondEnterMap`并复用原Unit，因此不进入该队列。
+首次登录或`TransferToMap`到达目标地图时，业务不应直接调用底层AOI Attach，也不需要自己创建Loading队列。`MapComponent.PlayerEntered`会进入当前MapInstance的等待队列，地图每Tick最多按`MapConfig.entryPlayersPerTick`放行；`entryQueueCapacity`满时明确拒绝，防止无限积压。Gate保持连接并等待`EnterMap`或传送响应，客户端继续显示Loading。首次进图和传送链路由框架统一使用10分钟Admission事务上限，不继承普通Scene RPC的5秒默认值；业务不得自己套一层更短超时破坏队列语义。断线重连调用`SecondEnterMap`并复用原Unit，因此不进入该队列。
 
 这套机制只处理同一地图瞬时进入洪峰。它不检查区服总人数，不显示排队名次，不保证某张地图适合继续接收玩家，也不代替副本分配和MapHost容量规划。业务仍只调用统一传送入口，不为静态地图、动态副本、同进程或跨进程分别写节流代码。
 

@@ -392,6 +392,22 @@ export abstract class EntryScene extends Scene {
   protected onClientReceive(_connectionId: number): void {}
 
   /**
+   * 在业务Handler和Session mailbox之前消费极轻量的连接控制帧。
+   * 返回true时该帧不会进入协议Registry；实现只能做O(1)连接状态更新，禁止业务逻辑、异步调用或响应编码。
+   * 该入口用于心跳等必须在长业务RPC等待期间继续生效的控制消息，普通消息必须返回false。
+   *
+   * Consumes lightweight connection-control frames before business handlers and session mailboxes.
+   * Returning true bypasses the protocol registry. Implementations must remain O(1) and synchronous,
+   * with no business work, async calls, or response encoding. Ordinary frames must return false.
+   */
+  protected consumeClientControlFrame(
+    _connectionId: number,
+    _frame: Uint8Array,
+  ): boolean {
+    return false;
+  }
+
+  /**
    * 客户端帧写入宿主出站队列时触发；它表示“已排队”，不表示网络写入成功。
    * 该时间只适合可观测性，不得用于延长客户端存活期限。
    *
@@ -883,6 +899,7 @@ export abstract class EntryScene extends Scene {
     }
 
     this.onClientReceive(item.connectionId);
+    if (this.consumeClientControlFrame(item.connectionId, item.frame)) return;
     const response = this.handleFrame(item.frame, {
       connectionId: item.connectionId,
     });

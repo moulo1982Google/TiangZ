@@ -15,6 +15,10 @@
 - MapHost新增进图请求、在途峰值、端到端耗时、ID分配、Player创建、Location注册/确认和MapReady阶段指标；Map增加Admission等待、AOI Attach、初始Snapshot对象数，以及AOI Delta批次、接收者和逻辑实体投递量。指标只按Process/Scene/阶段聚合，不使用玩家身份标签，也不为测字节而在TS重复编码protobuf。
 - Bench进图协议新增受限`entrySyncMode`，可分别运行Attach Only、新玩家快照、老玩家Enter和Full。普通客户端协议无法设置该字段，正式Gate路径默认Full；前三种模式故意破坏客户端完整状态，只能用于拆分成本。
 - 新增`npm run perf:map-entry-stages -- --players 1000 --gates 8`。命令一次构建后顺序运行四组Rust客户端测试，并生成`map_entry_stages_latest.md/json`；Full最后执行，保证通用`map_capacity_latest`最终仍保存完整语义结果。脚本会自动断言四种模式的Snapshot、已有观察者Enter及失败数，避免诊断开关语义回归。
+- 1000人与3000人、16 Gate、单AOI Grid、每Tick放行1人的四阶段A/B全部通过。3000人Full在平稳16并发入场下保持约20人/s，产生4498500次可见变化、4504377个Snapshot对象和4498500次老玩家逻辑投递；Snapshot平均/最大6.165/42ms，Map写入345.61MiB、Gate逻辑下行534.38MiB，Probe p95/p99为3.403/5.579ms，业务错误、内部超时、背压和慢连接断开均为0。Attach Only平均0.590ms，说明主要成本位于全量Snapshot和老玩家扇出，而不是Rust AOI Attach本身。
+- Rust客户端和容量驱动新增可选`--map-entry-concurrency`两阶段模式：先按`--setup-concurrency`完成Login、Gate连接和LoginGate，再保持socket reader与5秒心跳并单独同时释放Map Enter。直接把`setup-concurrency`设为3000会先制造Windows TCP/Login洪峰并触发`10054`，不能代表Map Admission容量；20人冒烟已验证连接并发4时Map `max in-flight`和队列峰值都能达到20。
+- 首次3000人隔离洪峰使Map `max in-flight=3000`、队列峰值2998，但暴露Gate首次进图固定120秒RPC超时与默认最长500秒Admission预算冲突；首次进图、Gate到源Unit的传送调用和跨MapHost目标Commit现统一使用10分钟Admission故障上限。随后又定位到Ping排在长EnterMap的Session mailbox后面，累计等待Promise会占满Gate异步槽并造成误判下线；Ping现由Gate同步控制帧入口提前消费，旧`C2G_PingHandler`已删除，普通业务消息仍走原Handler和mailbox。
+- 最终3000人瞬时Map Enter完整通过：连接/Login耗时1.54秒，Map Enter耗时167.52秒，`requests/completed/failures=3000/3000/0`，`max in-flight=3000`，Admission结束队列/峰值`0/2998`，放行/失败`3000/0`。队列平均/最大等待76.99/166.87秒，Snapshot平均/最大10.474/85ms，Map写入351.20MiB、Gate逻辑下行594.00MiB；排空10秒后的Probe约599.6/s，p95/p99为9.656/38.829ms。全部20个Process生命周期均为零业务错误、零内部超时、零过载、零背压和零慢连接断开。该结果证明队列可保住突发请求，不表示线上可以接受167秒Loading；生产仍需限制同时入场人数并为Loading时延建立SLO。
 
 ## 2026-07-31：统一2D移动输入与500ms基线
 

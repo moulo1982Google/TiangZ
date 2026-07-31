@@ -63,6 +63,7 @@
 - `sendClient(connectionId, descriptor, message)`：向客户端连接推送消息。
 - `onClientReceive(connectionId)`：客户端帧进入Scene mailbox时的轻量连接活动钩子；禁止I/O和业务分发。
 - `onClientSendQueued(connectionIds)`：出站帧进入宿主队列时的观测钩子；不代表写入成功，也不能用于存活续期。
+- `consumeClientControlFrame(connectionId, frame)`：在协议Handler和Session mailbox之前同步消费连接控制帧；只允许心跳等O(1)连接状态更新，返回`true`会跳过Registry，禁止承载业务消息或异步逻辑。
 - `childSceneId(localId)`：生成入口 Scene 范围内唯一的子 Scene ID。
 - EntryScene 也继承 `Entity`，可使用 `AddComponent/GetComponent/RemoveComponent` 组织业务能力。
 

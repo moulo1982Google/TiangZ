@@ -25,6 +25,7 @@ import type {
   MapInstanceSnapshot,
   PlayerTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
+import { MAP_ENTRY_ADMISSION_TIMEOUT_MS } from "../map/MapEntryAdmission";
 import { MapTransferProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { MapComponent } from "../map/MapComponent";
 import { MapScene } from "../map/MapScene";
@@ -509,6 +510,7 @@ export class MapHostComponent extends Component {
         targetScene,
         MapTransferProtocol.Commit,
         { transferId: operationId },
+        { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
       );
       targetCommitted = true;
       const committed = await this.location.Commit({

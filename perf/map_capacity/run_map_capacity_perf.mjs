@@ -29,6 +29,8 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --post-setup-settle 0       全员进图后、负载预热前的空闲排空秒数
   --warmup 10                 预热秒数
   --rounds 1                  每个负载重复轮数
+  --setup-concurrency 16      Login、Gate建连和LoginGate并发度
+  --map-entry-concurrency N   连接全部就绪后单独释放Map Enter；仅Rust客户端
   --io-backend epoll          epoll（Windows 实际使用 IOCP）或 io-uring
   --uring-entries 2048        io_uring 队列深度
   --uring-read-buffer-bytes 65536
@@ -51,6 +53,9 @@ if (options.stateSyncMode !== "off" && options.client !== "rust") {
 }
 if (options.client === "rust" && options.clientShards !== 1) {
   throw new Error("--client-shards currently supports the Node client only");
+}
+if (options.mapEntryConcurrency !== null && options.client !== "rust") {
+  throw new Error("--map-entry-concurrency requires --client rust");
 }
 if (options.spawnLayout === "grid-uniform" && options.client !== "rust") {
   throw new Error("--spawn-layout grid-uniform currently requires --client rust");
@@ -291,6 +296,9 @@ async function runLoadClients(players, managerPort, round, measurementSignal) {
         ...(useRustClient ? ["--measurement-signal-file", measurementSignal] : []),
         "--players", String(shardPlayers),
         "--setup-concurrency", String(options.setupConcurrency),
+        ...(useRustClient && options.mapEntryConcurrency !== null
+          ? ["--map-entry-concurrency", String(options.mapEntryConcurrency)]
+          : []),
         "--post-setup-settle", String(options.postSetupSettle),
         "--duration", String(options.duration),
         "--warmup", String(options.warmup),
@@ -1401,6 +1409,10 @@ function aggregateCases(rounds) {
     players,
     roundCount: group.length,
     median: {
+      setupElapsedSeconds: median(group.map((item) => item.setup?.elapsedSeconds ?? 0)),
+      connectionSeconds: median(group.map((item) => item.setup?.connectionSeconds ?? 0)),
+      mapEntrySeconds: median(group.map((item) => item.setup?.mapEntrySeconds ?? 0)),
+      mapEntryPerSecond: median(group.map((item) => item.setup?.mapEntryPerSecond ?? 0)),
       mapCpuAverage: median(group.map((item) => item.serverResources.map?.averageCpuPercent ?? 0)),
       mapCpuP90: median(group.map((item) => item.serverResources.map?.p90CpuPercent ?? 0)),
       mapCpuPeak: median(group.map((item) => item.serverResources.map?.peakCpuPercent ?? 0)),
@@ -1806,6 +1818,9 @@ function renderMarkdown(report) {
       ? [`- 链路耗时采样：每 ${options.latencySampleRate} 个候选指标记录 1 个（诊断模式）`]
       : []),
     `- 压测客户端：${options.client === "rust" ? "Rust" : "Node.js"}`,
+    ...(options.mapEntryConcurrency !== null
+      ? [`- 两阶段进图：连接/Login并发${options.setupConcurrency}；全部就绪后Map Enter并发${options.mapEntryConcurrency}`]
+      : []),
     `- 正式测试：${options.duration}s；预热：${options.warmup}s；轮数：${options.rounds}`,
     ...(options.postSetupSettle > 0
       ? [`- Setup后空闲排空：${options.postSetupSettle}s（不发送Move/Probe）`]
@@ -1846,6 +1861,23 @@ function renderMarkdown(report) {
         `${round(value.numericPushesPerSecond)}/${round(value.numericItemsPerSecond)}/${round(value.numericBytesPerSecond / 1024 / 1024, 2)} | ` +
         `${round(value.playerInfoPushesPerSecond)}/${round(value.playerInfoItemsPerSecond)}/${round(value.playerInfoBytesPerSecond / 1024 / 1024, 2)} | ` +
         `${round(value.itemPushesPerSecond)}/${round(value.itemItemsPerSecond)}/${round(value.itemBytesPerSecond / 1024 / 1024, 2)} | ${value.stateSyncErrors} |`,
+      );
+    }
+  }
+  if (options.mapEntryConcurrency !== null) {
+    lines.push(
+      "",
+      "## 客户端两阶段Setup",
+      "",
+      "| 玩家 | 总耗时 | 连接/Login耗时 | Map Enter耗时 | Map Enter/s |",
+      "|---:|---:|---:|---:|---:|",
+    );
+    for (const item of report.cases) {
+      const value = item.median;
+      lines.push(
+        `| ${item.players} | ${round(value.setupElapsedSeconds, 2)}s | ` +
+        `${round(value.connectionSeconds, 2)}s | ${round(value.mapEntrySeconds, 2)}s | ` +
+        `${round(value.mapEntryPerSecond, 2)} |`,
       );
     }
   }
@@ -2095,6 +2127,9 @@ function parseOptions(args) {
     warmup: nonNegative(values.get("--warmup") ?? "10", "--warmup"),
     rounds: positive(values.get("--rounds") ?? "1", "--rounds"),
     setupConcurrency: positive(values.get("--setup-concurrency") ?? "16", "--setup-concurrency"),
+    mapEntryConcurrency: values.has("--map-entry-concurrency")
+      ? positive(values.get("--map-entry-concurrency"), "--map-entry-concurrency")
+      : null,
     postSetupSettle: nonNegative(
       values.get("--post-setup-settle") ?? "0",
       "--post-setup-settle",

@@ -75,7 +75,7 @@ Rust输出的多个Audience batch不会逐条穿过Map到Gate的内部Transport�
 
 跨AOI Grid产生的进入/离开是不可覆盖生命周期事件，不能使用latest丢弃中间结果。Rust先把同帧关系抖动折叠为最终变化；TS按Subject收集变化并取得进入Snapshot，再把受众完全相同的多个Subject合并为一个`G2C_AoiDelta`。客户端按消息中的`enters`创建或刷新实体，再按`leaves`移除实体。旧单实体`G2C_EntityEnter/Leave`暂时保留协议兼容，但Runtime不再逐关系发送。
 
-批量登录、切线回城或副本结束可能在极短时间内向同一MapInstance制造大量Attach。每个MapInstance因此拥有独立的入图等待队列，`MapConfig.entryPlayersPerTick`限制每个逻辑Tick真正完成AOI Attach的人数，`entryQueueCapacity`限制等待上限。玩家连接和登录已经完成，只在Loading中等待进入响应；这不是区服满载时的全局登录排队，也不负责决定地图人数上限。首次进入和地图传送都受该队列控制，原Unit仍存在的断线重连不重复Attach，直接恢复全量快照。两个参数属于Cold配置，修改后必须重启Map Process。
+批量登录、切线回城或副本结束可能在极短时间内向同一MapInstance制造大量Attach。每个MapInstance因此拥有独立的入图等待队列，`MapConfig.entryPlayersPerTick`限制每个逻辑Tick真正完成AOI Attach的人数，`entryQueueCapacity`限制等待上限。玩家连接和登录已经完成，只在Loading中等待进入响应；这不是区服满载时的全局登录排队，也不负责决定地图人数上限。首次进入和地图传送都受该队列控制，原Unit仍存在的断线重连不重复Attach，直接恢复全量快照。两个参数属于Cold配置，修改后必须重启Map Process。Admission相关的首次进图、源Unit传送和跨MapHost目标提交使用独立10分钟RPC故障上限，以覆盖默认队列的最坏排空预算；普通Scene RPC仍保持短超时，运维容量判断仍应以队列深度和Loading时延为准。
 
 阵营、隐身和位面属于业务规则，由同步`IAoiVisibilityFilter.CanObserve(observer, subject)`实现。过滤器只在候选关系变化或显式失效时执行，不逐帧执行；禁止Promise、RPC、数据库、发消息和修改Entity，异常按不可见处理并记录日志。业务字段改变后必须调用`InvalidateObserver`、`InvalidateSubject`或`Invalidate`，框架不会猜测任意业务字段的含义。
 

@@ -113,7 +113,25 @@ npm run perf:map-capacity -- \
 
 Rust 客户端会真实完成 `LoginMgr -> Login -> Gate -> EnterMap`，支持固定频率 `C2M_Move`、`G2C_EntityMove` Push 计数以及按 `rpcId` 多路复用的 `MapProbe`。它只按 msgcode 统计移动 Push，不反序列化全员快照，因此适合判断服务端 Move/AOI 容量；需要验证 TS SDK 行为时仍使用默认 Node.js 客户端。结果 JSON 的 `loadGenerator.cpuTotalMs` 和 `loadGenerator.rssBytes` 用于观察 Rust 压测进程自身开销。
 
-每个 Rust 玩家完成 EnterMap 后会立即启动常驻 socket reader，即使其他玩家仍在setup，也会持续消费EntityEnter等Push；Move、Probe和状态负载在全部玩家setup完成后才统一启用。`--setup-concurrency`因此表示真实的并发登录/进图压力：较大的值用于测试批量上线能力；要隔离“稳定在线后的Move/AOI容量”，应降低该值并单独记录setup耗时。批量进图容量和稳态地图容量是两个不同指标。
+Rust玩家在LoginGate成功后立即启动常驻socket reader和5秒心跳，等待进图队列期间会持续消费Push，不会被Gate按失活连接清理；Move、Probe和状态负载仍在全部玩家进图后统一启用。默认不传`--map-entry-concurrency`时，`--setup-concurrency`控制`Login -> Gate连接 -> LoginGate -> EnterMap`整条setup链路，适合测试真实批量上线能力。
+
+需要单独测Map入场洪峰时，增加`--map-entry-concurrency`启用两阶段模式：第一阶段按`--setup-concurrency`平稳完成连接和LoginGate，全部连接就绪后，第二阶段按独立并发度同时发送EnterMap。该模式把TCP/Login洪峰与Map Admission洪峰分开，报告会分别给出连接耗时、Map Enter耗时和Enter吞吐。例如：
+
+```bash
+npm run perf:map-capacity -- \
+  --players 3000 \
+  --gates 16 \
+  --client rust \
+  --spawn-layout single-grid \
+  --setup-concurrency 512 \
+  --map-entry-concurrency 3000 \
+  --timeout 300000 \
+  --probe-only
+```
+
+不要用`--setup-concurrency 3000`替代上述隔离测试：它会同时冲击TCP短连接、Login、Gate和Map，连接错误不能用于判断Map Admission容量。批量上线、Map入场洪峰和稳态地图容量是三个不同指标。
+
+Admission事务使用独立10分钟故障上限，覆盖当前冷配置最坏约500秒的队列排空预算；普通Scene RPC仍保持短超时。`C2G_Ping`由Gate在Session mailbox之前同步消费，因此长时间Loading不会阻塞心跳，也不会按“连接数 × 等待轮数”积累异步Promise。洪峰验收必须同时满足：Map请求全部完成、Admission队列最终归零、放行数等于玩家数，并且客户端错误、内部超时、过载、背压和慢连接断开全部为0。最大等待时间仍是独立产品SLO，不能因为技术上没有丢请求就判定线上体验合格。
 
 测试即使在预热或setup后失败，也会生成`map_capacity_<run>_<case>_failure.json`。其中保留失败前最后几次Process health样本、CPU、背压、NativeData和广播指标，禁止只依据客户端的`1006`错误猜测瓶颈。
 

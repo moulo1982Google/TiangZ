@@ -161,6 +161,7 @@ struct Options {
     map_id: u32,
     players: usize,
     setup_concurrency: usize,
+    map_entry_concurrency: Option<usize>,
     post_setup_settle: Duration,
     warmup: Duration,
     duration: Duration,
@@ -186,6 +187,17 @@ struct Address {
 struct LoginResult {
     token: String,
     gate: Address,
+}
+
+struct PreparedPlayerConnection {
+    frame_rx: mpsc::UnboundedReceiver<Result<Vec<u8>>>,
+    reader_task: tokio::task::JoinHandle<()>,
+    writer_tx: mpsc::Sender<Vec<u8>>,
+    writer_task: tokio::task::JoinHandle<()>,
+    entity_move_pushes: Arc<AtomicU64>,
+    state_pushes: StatePushCounters,
+    player_index: u32,
+    placement_layout: Option<u32>,
 }
 
 struct PlayerConnection {
@@ -335,30 +347,80 @@ async fn main() -> Result<()> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
+    let mut connection_elapsed = None;
+    let mut map_entry_elapsed = None;
+    let players = if let Some(map_entry_concurrency) = options.map_entry_concurrency {
+        let mut prepare_tasks = tokio::task::JoinSet::new();
+        for index in 0..options.players {
+            let options = Arc::clone(&options);
+            let login_address = Arc::clone(&login_address);
+            let semaphore = Arc::clone(&semaphore);
+            prepare_tasks.spawn(async move {
+                let permit = semaphore.acquire_owned().await?;
+                let account = format!(
+                    "rust_perf_{}_{}_{}",
+                    std::process::id(),
+                    account_seed,
+                    index
+                );
+                let player = prepare_player(&options, &login_address, &account, index).await;
+                drop(permit);
+                player
+            });
+        }
 
-    let mut setup_tasks = tokio::task::JoinSet::new();
-    for index in 0..options.players {
-        let options = Arc::clone(&options);
-        let login_address = Arc::clone(&login_address);
-        let semaphore = Arc::clone(&semaphore);
-        setup_tasks.spawn(async move {
-            let permit = semaphore.acquire_owned().await?;
-            let account = format!(
-                "rust_perf_{}_{}_{}",
-                std::process::id(),
-                account_seed,
-                index
-            );
-            let player = setup_player(&options, &login_address, &account, index).await;
-            drop(permit);
-            player
-        });
-    }
+        let mut prepared_players = Vec::with_capacity(options.players);
+        while let Some(result) = prepare_tasks.join_next().await {
+            prepared_players.push(result.context("player prepare task panicked")??);
+        }
+        connection_elapsed = Some(setup_started.elapsed());
 
-    let mut players = Vec::with_capacity(options.players);
-    while let Some(result) = setup_tasks.join_next().await {
-        players.push(result.context("player setup task panicked")??);
-    }
+        let entry_started = Instant::now();
+        let entry_semaphore = Arc::new(Semaphore::new(map_entry_concurrency));
+        let mut entry_tasks = tokio::task::JoinSet::new();
+        for prepared in prepared_players {
+            let options = Arc::clone(&options);
+            let semaphore = Arc::clone(&entry_semaphore);
+            entry_tasks.spawn(async move {
+                let permit = semaphore.acquire_owned().await?;
+                let player = enter_player(&options, prepared).await;
+                drop(permit);
+                player
+            });
+        }
+
+        let mut players = Vec::with_capacity(options.players);
+        while let Some(result) = entry_tasks.join_next().await {
+            players.push(result.context("player map entry task panicked")??);
+        }
+        map_entry_elapsed = Some(entry_started.elapsed());
+        players
+    } else {
+        let mut setup_tasks = tokio::task::JoinSet::new();
+        for index in 0..options.players {
+            let options = Arc::clone(&options);
+            let login_address = Arc::clone(&login_address);
+            let semaphore = Arc::clone(&semaphore);
+            setup_tasks.spawn(async move {
+                let permit = semaphore.acquire_owned().await?;
+                let account = format!(
+                    "rust_perf_{}_{}_{}",
+                    std::process::id(),
+                    account_seed,
+                    index
+                );
+                let player = setup_player(&options, &login_address, &account, index).await;
+                drop(permit);
+                player
+            });
+        }
+
+        let mut players = Vec::with_capacity(options.players);
+        while let Some(result) = setup_tasks.join_next().await {
+            players.push(result.context("player setup task panicked")??);
+        }
+        players
+    };
     let setup_elapsed = setup_started.elapsed();
     if !options.post_setup_settle.is_zero() {
         sleep(options.post_setup_settle).await;
@@ -462,6 +524,8 @@ async fn main() -> Result<()> {
     let requests = latencies.len();
     let requests_per_second = requests as f64 / options.duration.as_secs_f64();
     let setup_per_second = options.players as f64 / setup_elapsed.as_secs_f64();
+    let map_entry_per_second =
+        map_entry_elapsed.map(|elapsed| options.players as f64 / elapsed.as_secs_f64());
     system.refresh_processes(ProcessesToUpdate::Some(&[process_pid]), false);
     let (cpu_time_ms, rss_bytes) = system
         .process(process_pid)
@@ -519,6 +583,7 @@ async fn main() -> Result<()> {
         "label": options.label,
         "players": options.players,
         "setupConcurrency": options.setup_concurrency,
+        "mapEntryConcurrency": options.map_entry_concurrency,
         "postSetupSettleSeconds": options.post_setup_settle.as_secs_f64(),
         "warmupSeconds": options.warmup.as_secs_f64(),
         "durationSeconds": options.duration.as_secs_f64(),
@@ -544,6 +609,9 @@ async fn main() -> Result<()> {
             "p99Ms": 0,
             "maxMs": 0,
             "elapsedSeconds": setup_elapsed.as_secs_f64(),
+            "connectionSeconds": connection_elapsed.map(|elapsed| elapsed.as_secs_f64()),
+            "mapEntrySeconds": map_entry_elapsed.map(|elapsed| elapsed.as_secs_f64()),
+            "mapEntryPerSecond": map_entry_per_second,
         },
         "movement": {
             "count": move_sent,
@@ -622,6 +690,16 @@ async fn setup_player(
     account: &str,
     index: usize,
 ) -> Result<PlayerConnection> {
+    let prepared = prepare_player(options, login, account, index).await?;
+    enter_player(options, prepared).await
+}
+
+async fn prepare_player(
+    options: &Options,
+    login: &Address,
+    account: &str,
+    index: usize,
+) -> Result<PreparedPlayerConnection> {
     let mut login_payload = Vec::with_capacity(account.len() + 16);
     push_string(&mut login_payload, 1, account);
     let response = request_one(
@@ -666,6 +744,28 @@ async fn setup_player(
 
     let placement_layout = options.spawn_layout.placement_code();
     let player_index = u32::try_from(index).context("player index exceeds uint32")?;
+    Ok(start_gate_connection(
+        reader,
+        writer,
+        player_index,
+        placement_layout,
+    ))
+}
+
+async fn enter_player(
+    options: &Options,
+    prepared: PreparedPlayerConnection,
+) -> Result<PlayerConnection> {
+    let PreparedPlayerConnection {
+        mut frame_rx,
+        reader_task,
+        writer_tx,
+        writer_task,
+        entity_move_pushes,
+        state_pushes,
+        player_index,
+        placement_layout,
+    } = prepared;
     let mut enter_map = Vec::with_capacity(16);
     let (enter_request_code, enter_response_code, unit_id_field) =
         if let Some(layout) = placement_layout {
@@ -678,12 +778,12 @@ async fn setup_player(
             push_uint32(&mut enter_map, 1, options.map_id);
             (ENTER_MAP_REQ, ENTER_MAP_RESP, 4)
         };
-    write_frame(&mut writer, &encode_rpc(enter_request_code, 3, &enter_map)?).await?;
+    send_client_frame(&writer_tx, encode_rpc(enter_request_code, 3, &enter_map)?).await?;
     let mut received_response = false;
     let mut received_ready = false;
     let mut unit_id = 0;
     while !received_response || !received_ready {
-        let frame = read_frame_timeout(&mut reader, options.timeout).await?;
+        let frame = receive_gate_frame(&mut frame_rx, options.timeout, "EnterMap").await?;
         let msgcode = frame_msgcode(&frame)?;
         match msgcode {
             code if code == enter_response_code => {
@@ -704,13 +804,14 @@ async fn setup_player(
         let mut placement = Vec::with_capacity(8);
         push_uint32(&mut placement, 1, player_index);
         push_uint32(&mut placement, 2, layout);
-        write_frame(
-            &mut writer,
-            &encode_rpc(MAP_CAPACITY_PLACE_REQ, next_rpc_id, &placement)?,
+        send_client_frame(
+            &writer_tx,
+            encode_rpc(MAP_CAPACITY_PLACE_REQ, next_rpc_id, &placement)?,
         )
         .await?;
         loop {
-            let frame = read_frame_timeout(&mut reader, options.timeout).await?;
+            let frame =
+                receive_gate_frame(&mut frame_rx, options.timeout, "MapCapacityPlace").await?;
             if frame_msgcode(&frame)? != MAP_CAPACITY_PLACE_RESP {
                 continue;
             }
@@ -723,6 +824,25 @@ async fn setup_player(
         }
         next_rpc_id += 1;
     }
+
+    Ok(PlayerConnection {
+        frame_rx,
+        reader_task,
+        writer_tx,
+        writer_task,
+        entity_move_pushes,
+        state_pushes,
+        next_rpc_id,
+        unit_id,
+    })
+}
+
+fn start_gate_connection(
+    mut reader: tokio::net::tcp::OwnedReadHalf,
+    writer: tokio::net::tcp::OwnedWriteHalf,
+    player_index: u32,
+    placement_layout: Option<u32>,
+) -> PreparedPlayerConnection {
     let (writer_tx, writer_rx) = mpsc::channel(32);
     let writer_task = tokio::spawn(run_gate_writer(writer, writer_rx));
     let (frame_tx, frame_rx) = mpsc::unbounded_channel::<Result<Vec<u8>>>();
@@ -784,7 +904,12 @@ async fn setup_player(
                             .item_bytes
                             .fetch_add(frame.len() as u64, Ordering::Relaxed);
                     }
-                    Ok(MAP_PROBE_RESP) | Ok(STATE_SYNC_BENCH_RESP) => {
+                    Ok(ENTER_MAP_RESP)
+                    | Ok(MAP_CAPACITY_ENTER_RESP)
+                    | Ok(MAP_READY)
+                    | Ok(MAP_CAPACITY_PLACE_RESP)
+                    | Ok(MAP_PROBE_RESP)
+                    | Ok(STATE_SYNC_BENCH_RESP) => {
                         if frame_tx.send(Ok(frame)).is_err() {
                             break;
                         }
@@ -803,16 +928,27 @@ async fn setup_player(
         }
     });
 
-    Ok(PlayerConnection {
+    PreparedPlayerConnection {
         frame_rx,
         reader_task,
         writer_tx,
         writer_task,
         entity_move_pushes,
         state_pushes,
-        next_rpc_id,
-        unit_id,
-    })
+        player_index,
+        placement_layout,
+    }
+}
+
+async fn receive_gate_frame(
+    frame_rx: &mut mpsc::UnboundedReceiver<Result<Vec<u8>>>,
+    timeout: Duration,
+    phase: &str,
+) -> Result<Vec<u8>> {
+    tokio::time::timeout(timeout, frame_rx.recv())
+        .await
+        .with_context(|| format!("{phase} timed out"))?
+        .context("gate reader stopped")?
 }
 
 async fn run_player(
@@ -1480,6 +1616,11 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
     };
     let players = number("players", 100)? as usize;
     let setup_concurrency = number("setup-concurrency", 16)? as usize;
+    let map_entry_concurrency = values
+        .get("map-entry-concurrency")
+        .map(|value| value.parse::<usize>())
+        .transpose()
+        .context("invalid --map-entry-concurrency")?;
     let probe_concurrency = number("probe-concurrency", 4)? as usize;
     let state_sync_concurrency = number("state-sync-concurrency", 4)? as usize;
     let movement_hold_messages = u32::try_from(number("movement-hold-messages", 1)?)
@@ -1487,13 +1628,14 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
     let duration = number("duration", 10)?;
     if players == 0
         || setup_concurrency == 0
+        || map_entry_concurrency == Some(0)
         || probe_concurrency == 0
         || state_sync_concurrency == 0
         || movement_hold_messages == 0
         || duration == 0
     {
         bail!(
-            "players, setup-concurrency, probe-concurrency, state-sync-concurrency, movement-hold-messages and duration must be greater than zero"
+            "players, setup-concurrency, map-entry-concurrency, probe-concurrency, state-sync-concurrency, movement-hold-messages and duration must be greater than zero"
         );
     }
     Ok(Options {
@@ -1511,6 +1653,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         map_id: u32::try_from(number("map-id", 1)?).context("map id exceeds uint32")?,
         players,
         setup_concurrency,
+        map_entry_concurrency,
         post_setup_settle: Duration::from_secs(number("post-setup-settle", 0)?),
         warmup: Duration::from_secs(number("warmup", 2)?),
         duration: Duration::from_secs(duration),
@@ -1591,5 +1734,20 @@ mod tests {
 
         let explicit = parse_options(vec!["--probe-rate".into(), "0.5".into()]).unwrap();
         assert!((explicit.probe_rate - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn map_entry_concurrency_is_optional_and_must_be_positive() {
+        assert_eq!(
+            parse_options(Vec::new()).unwrap().map_entry_concurrency,
+            None
+        );
+        assert_eq!(
+            parse_options(vec!["--map-entry-concurrency".into(), "3000".into()])
+                .unwrap()
+                .map_entry_concurrency,
+            Some(3000)
+        );
+        assert!(parse_options(vec!["--map-entry-concurrency".into(), "0".into()]).is_err());
     }
 }
