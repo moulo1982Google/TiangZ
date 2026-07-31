@@ -115,6 +115,7 @@ export class MapView {
             cellX: Math.round(enterMap.x / mapConfig.cellSizeMeters),
             cellZ: Math.round(enterMap.z / mapConfig.cellSizeMeters),
             numerics: [],
+            buffs: [],
             speedCellsPerSecond: playerConfig.moveSpeed,
             facing: 0,
           },

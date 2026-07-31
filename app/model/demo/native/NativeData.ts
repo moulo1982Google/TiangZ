@@ -257,6 +257,11 @@ export class NativeData {
     return parseUint32List(NativeOps.AoiVisibleSubjects(mapId, observerId));
   }
 
+  /** 返回最终能看见某 Subject 的 Observer，不包含自身。 / Returns final observers of one subject, excluding itself. */
+  static VisibleAoiObservers(mapId: number, subjectId: number): readonly number[] {
+    return parseUint32List(NativeOps.AoiVisibleObservers(mapId, subjectId));
+  }
+
   /** 推进 Rust 权威移动；协议编码在业务过滤完成后单独执行。 / Advances Rust movement; protocol encoding runs only after business filters complete. */
   static AdvanceMapMovement(
     mapId: number,

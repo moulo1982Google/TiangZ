@@ -14,6 +14,7 @@ export {
   GateMessages,
   MapMessages,
 } from "../generated/model/server/demo/protocol/messageDescriptors";
+export { ClientBroadcasts } from "../generated/model/server/demo/protocol/broadcastDescriptors";
 export {
   GateProtocol,
   LoginMgrProtocol,
@@ -52,6 +53,7 @@ export { ItemComponent } from "./demo/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
 export { MapComponent } from "./demo/map/MapComponent";
+export { MapAoiComponent } from "./demo/map/MapAoiComponent";
 export { MapScene } from "./demo/map/MapScene";
 export {
   PlayerUnit,

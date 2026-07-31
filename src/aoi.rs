@@ -749,8 +749,11 @@ mod tests {
         world.attach(2, 0.0, 0.0, true, true).unwrap();
         assert!(world.set_visible(1, 2, false));
         assert!(world.visible_subjects(1).is_empty());
+        assert!(world.observers_of(2).is_empty());
         assert_eq!(world.visible_subjects(2), vec![1]);
+        assert_eq!(world.observers_of(1), vec![2]);
         assert!(world.set_visible(1, 2, true));
+        assert_eq!(world.observers_of(2), vec![1]);
     }
 
     #[test]

@@ -54,6 +54,7 @@
     aoiTakeChanges: (mapId) => core.ops.op_native_aoi_take_changes(u32(mapId, "mapId")),
     aoiQueryRelations: (mapId, unitId, mode) => core.ops.op_native_aoi_query_relations(u32(mapId, "mapId"), u32(unitId, "unitId"), u32(mode, "mode")),
     aoiVisibleSubjects: (mapId, observerId) => core.ops.op_native_aoi_visible_subjects(u32(mapId, "mapId"), u32(observerId, "observerId")),
+    aoiVisibleObservers: (mapId, subjectId) => core.ops.op_native_aoi_visible_observers(u32(mapId, "mapId"), u32(subjectId, "subjectId")),
     mapPeekNumericDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_peek_numeric_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),
     mapPeekNumericAoiDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_peek_numeric_aoi_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),
     mapAckNumericDelta: (mapId, revision) => core.ops.op_native_map_ack_numeric_delta(u32(mapId, "mapId"), bytes(revision, "revision")),

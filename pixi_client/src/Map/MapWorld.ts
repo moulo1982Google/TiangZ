@@ -3,6 +3,9 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import type { RpcSocket } from "../Generated/SDK/Core/Net/RpcSocket";
 import { MapClient } from "../Generated/SDK/Generated/Model/demo/protocol/clients";
 import type {
+  G2C_BuffAdded,
+  G2C_BuffDetail,
+  G2C_BuffRemoved,
   G2C_EntityMove,
   G2C_EnterMap,
   ItemSnapshot,
@@ -10,6 +13,7 @@ import type {
   UnitNumericDelta,
   UnitStateDelta,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
+import { BuffStateStore } from "../Generated/SDK/Demo/BuffStateStore";
 import { CharacterSprite } from "./CharacterSprite";
 import { GameConfigs, SpatialMode } from "../Generated/SDK/Generated/Config";
 
@@ -31,6 +35,7 @@ export class MapWorld {
   private readonly numerics = new Map<number, Map<number, number>>();
   private readonly items = new Map<bigint, ItemSnapshot>();
   private readonly states = new Map<number, UnitStateDelta>();
+  private readonly buffs = new BuffStateStore();
   private readonly mapClient: MapClient;
   private readonly pressed = new Set<string>();
   private sequence = 1;
@@ -71,6 +76,7 @@ export class MapWorld {
         cellX: Math.round(enterMap.x / GameConfigs.MapConfig.Get(enterMap.mapId).cellSizeMeters),
         cellZ: Math.round(enterMap.z / GameConfigs.MapConfig.Get(enterMap.mapId).cellSizeMeters),
         numerics: [],
+        buffs: [],
         speedCellsPerSecond: playerConfig.moveSpeed,
         facing: 0,
       });
@@ -80,6 +86,7 @@ export class MapWorld {
   }
 
   enter(snapshot: MapEntitySnapshot): void {
+    this.buffs.ApplySnapshot(snapshot);
     const existing = this.entities.get(snapshot.unitId);
     if (existing) {
       this.setTarget(existing, snapshot.cellX, snapshot.cellZ, true);
@@ -111,6 +118,7 @@ export class MapWorld {
   }
 
   leave(unitId: number): void {
+    this.buffs.RemoveUnit(unitId);
     const entity = this.entities.get(unitId);
     if (!entity) return;
     entity.appearance.dispose();
@@ -156,6 +164,21 @@ export class MapWorld {
     console.log(`道具 ${item.itemId} 数量更新为 ${item.count}，版本 ${item.version}`);
   }
 
+  /** 合并公开Buff创建事件。 / Merges a public Buff creation event. */
+  applyBuffAdded(message: G2C_BuffAdded): void {
+    this.buffs.ApplyAdded(message);
+  }
+
+  /** 合并当前客户端有权接收的Buff详情。 / Merges Buff detail visible to the current client. */
+  applyBuffDetail(message: G2C_BuffDetail): void {
+    this.buffs.ApplyDetail(message);
+  }
+
+  /** 移除Buff并阻止迟到详情复活。 / Removes a Buff and rejects stale detail packets. */
+  applyBuffRemoved(message: G2C_BuffRemoved): void {
+    this.buffs.ApplyRemoved(message);
+  }
+
   update(deltaSeconds: number): void {
     for (const entity of this.entities.values()) {
       const factor = Math.min(1, deltaSeconds * 14);
@@ -185,6 +208,7 @@ export class MapWorld {
     this.numerics.clear();
     this.items.clear();
     this.states.clear();
+    this.buffs.Clear();
   }
 
   private drawMap(): void {

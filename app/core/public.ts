@@ -10,6 +10,9 @@ export { isPromiseLike } from "./async";
 export type { MaybePromise } from "./async";
 
 export { BroadcastHub } from "./broadcast/BroadcastHub";
+export { ClientAudience } from "./broadcast/ClientAudience";
+export { ClientBroadcast } from "./broadcast/ClientBroadcast";
+export type { ClientRouteResolver } from "./broadcast/ClientBroadcast";
 export { defineEventBroadcast, defineLatestBroadcast } from "./broadcast/types";
 export type {
   BroadcastAudience,

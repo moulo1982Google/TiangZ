@@ -16,6 +16,7 @@ export interface MapEntitySnapshot {
   numerics: readonly UnitNumericDelta[];
   speedCellsPerSecond: number;
   facing: number;
+  buffs: readonly BuffPublicView[];
 }
 
 export const MapEntitySnapshotCodec = {
@@ -35,6 +36,7 @@ export const MapEntitySnapshotCodec = {
       numerics: [],
       speedCellsPerSecond: 0,
       facing: 0,
+      buffs: [],
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -77,6 +79,9 @@ export const MapEntitySnapshotCodec = {
       else if (tag.fieldNo === 12 && tag.wireType === 0) {
         value.facing = reader.uint32();
       }
+      else if (tag.fieldNo === 14 && tag.wireType === 2) {
+        (value.buffs as BuffPublicView[]).push(BuffPublicViewCodec.decode(reader.bytesField()));
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -99,6 +104,7 @@ export const MapEntitySnapshotCodec = {
     for (const item of (value.numerics ?? [])) writer.bytes(10, UnitNumericDeltaCodec.encode(item), true);
     if (value.speedCellsPerSecond !== undefined) writer.float(11, value.speedCellsPerSecond);
     if (value.facing !== undefined) writer.uint32(12, value.facing);
+    for (const item of (value.buffs ?? [])) writer.bytes(14, BuffPublicViewCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -359,6 +365,112 @@ export const ItemSnapshotCodec = {
     if (value.quality !== undefined) writer.uint32(4, value.quality);
     if (value.level !== undefined) writer.uint32(5, value.level);
     if (value.version !== undefined) writer.uint32(6, value.version);
+    return writer.finish();
+  },
+};
+
+export interface BuffPublicView {
+  unitId: number;
+  buffInstanceId: bigint;
+  buffConfigId: number;
+  stacks: number;
+  expireTimeMs: bigint;
+  revision: number;
+}
+
+export const BuffPublicViewCodec = {
+  decode(payload: Uint8Array): BuffPublicView {
+    const reader = new BinaryReader(payload);
+    const value: BuffPublicView = {
+      unitId: 0,
+      buffInstanceId: 0n,
+      buffConfigId: 0,
+      stacks: 0,
+      expireTimeMs: 0n,
+      revision: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.buffInstanceId = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.buffConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.stacks = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.expireTimeMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.revision = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: BuffPublicView): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.buffInstanceId !== undefined) writer.uint64(2, value.buffInstanceId);
+    if (value.buffConfigId !== undefined) writer.uint32(3, value.buffConfigId);
+    if (value.stacks !== undefined) writer.uint32(4, value.stacks);
+    if (value.expireTimeMs !== undefined) writer.uint64(5, value.expireTimeMs);
+    if (value.revision !== undefined) writer.uint32(6, value.revision);
+    return writer.finish();
+  },
+};
+
+export interface BuffDetailView {
+  unitId: number;
+  buffInstanceId: bigint;
+  absorbRemaining: number;
+  revision: number;
+}
+
+export const BuffDetailViewCodec = {
+  decode(payload: Uint8Array): BuffDetailView {
+    const reader = new BinaryReader(payload);
+    const value: BuffDetailView = {
+      unitId: 0,
+      buffInstanceId: 0n,
+      absorbRemaining: 0,
+      revision: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.buffInstanceId = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.absorbRemaining = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.revision = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: BuffDetailView): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.buffInstanceId !== undefined) writer.uint64(2, value.buffInstanceId);
+    if (value.absorbRemaining !== undefined) writer.uint32(3, value.absorbRemaining);
+    if (value.revision !== undefined) writer.uint32(4, value.revision);
     return writer.finish();
   },
 };
@@ -3895,6 +4007,111 @@ export const G2C_ItemChangedCodec = {
   encode(value: G2C_ItemChanged): Uint8Array {
     const writer = new BinaryWriter();
     if (value.item !== undefined) writer.bytes(1, ItemSnapshotCodec.encode(value.item));
+    return writer.finish();
+  },
+};
+
+export interface G2C_BuffAdded extends IMessage {
+  buff: BuffPublicView;
+}
+
+export const G2C_BuffAddedCodec = {
+  decode(payload: Uint8Array): G2C_BuffAdded {
+    const reader = new BinaryReader(payload);
+    const value: G2C_BuffAdded = {
+      buff: BuffPublicViewCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.buff = BuffPublicViewCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_BuffAdded): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.buff !== undefined) writer.bytes(1, BuffPublicViewCodec.encode(value.buff));
+    return writer.finish();
+  },
+};
+
+export interface G2C_BuffRemoved extends IMessage {
+  unitId: number;
+  buffInstanceId: bigint;
+  revision: number;
+}
+
+export const G2C_BuffRemovedCodec = {
+  decode(payload: Uint8Array): G2C_BuffRemoved {
+    const reader = new BinaryReader(payload);
+    const value: G2C_BuffRemoved = {
+      unitId: 0,
+      buffInstanceId: 0n,
+      revision: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.buffInstanceId = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.revision = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_BuffRemoved): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.buffInstanceId !== undefined) writer.uint64(2, value.buffInstanceId);
+    if (value.revision !== undefined) writer.uint32(3, value.revision);
+    return writer.finish();
+  },
+};
+
+export interface G2C_BuffDetail extends IMessage {
+  serverTick: number;
+  buffs: readonly BuffDetailView[];
+}
+
+export const G2C_BuffDetailCodec = {
+  decode(payload: Uint8Array): G2C_BuffDetail {
+    const reader = new BinaryReader(payload);
+    const value: G2C_BuffDetail = {
+      serverTick: 0,
+      buffs: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.serverTick = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.buffs as BuffDetailView[]).push(BuffDetailViewCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_BuffDetail): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
+    for (const item of (value.buffs ?? [])) writer.bytes(2, BuffDetailViewCodec.encode(item), true);
     return writer.finish();
   },
 };

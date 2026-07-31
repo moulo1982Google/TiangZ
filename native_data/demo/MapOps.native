@@ -15,6 +15,7 @@ op AoiSetVisible(mapId: u32, observerId: u32, subjectId: u32, visible: bool): bo
 op AoiTakeChanges(mapId: u32): bytes;
 op AoiQueryRelations(mapId: u32, unitId: u32, mode: u32): bytes;
 op AoiVisibleSubjects(mapId: u32, observerId: u32): bytes;
+op AoiVisibleObservers(mapId: u32, subjectId: u32): bytes;
 op MapPeekNumericDelta(mapId: u32, serverTick: u32, messageCode: u32): bytes;
 op MapPeekNumericAoiDelta(mapId: u32, serverTick: u32, messageCode: u32): bytes;
 op MapAckNumericDelta(mapId: u32, revision: bytes): void;

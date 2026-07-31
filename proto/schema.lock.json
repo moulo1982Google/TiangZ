@@ -498,6 +498,92 @@
       ]
     },
     {
+      "key": "proto/DataDefine_CS_50001.proto#BuffDetailView",
+      "name": "BuffDetailView",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "buff_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "absorb_remaining",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "revision",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#BuffPublicView",
+      "name": "BuffPublicView",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "buff_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "buff_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "stacks",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "expire_time_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "revision",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/DataDefine_CS_50001.proto#CellMovementState",
       "name": "CellMovementState",
       "base": null,
@@ -720,6 +806,13 @@
           "name": "y",
           "type": "float",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 14,
+          "name": "buffs",
+          "type": "BuffPublicView",
+          "repeated": true,
           "synthetic": false
         }
       ]
@@ -3295,6 +3388,72 @@
           "name": "leaves",
           "type": "uint32",
           "repeated": true,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_BuffAdded",
+      "name": "G2C_BuffAdded",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "buff",
+          "type": "BuffPublicView",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_BuffDetail",
+      "name": "G2C_BuffDetail",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "server_tick",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "buffs",
+          "type": "BuffDetailView",
+          "repeated": true,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_BuffRemoved",
+      "name": "G2C_BuffRemoved",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "buff_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "revision",
+          "type": "uint32",
+          "repeated": false,
           "synthetic": false
         }
       ]

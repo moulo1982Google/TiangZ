@@ -1,5 +1,7 @@
 import {
   BroadcastHub,
+  ClientBroadcast,
+  ClientAudience,
   StateReplicationSystem,
   type BroadcastAudience,
   type EncodedAudienceBatch,
@@ -32,6 +34,7 @@ import type {
   PlayerTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
+import { MapClientRouteResolver } from "../broadcast/MapClientRouteResolver";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 import { PlayerUnit, type PlayerSnapshot } from "./PlayerUnit";
 import { MapScene } from "./MapScene";
@@ -92,6 +95,7 @@ export class MapComponent extends Component<[
   private players!: PlayerDirectoryComponent;
   private serverTick = 0;
   private broadcast!: BroadcastHub;
+  private clientBroadcast!: ClientBroadcast;
   private replication!: StateReplicationSystem;
   private repository!: PlayerRepository;
   private scenes!: SceneMessageHelper;
@@ -145,6 +149,16 @@ export class MapComponent extends Component<[
     return this.units.Count;
   }
 
+  /** 业务广播唯一入口：只接受逻辑ClientAudience，不暴露Gate与内网路由。 / Sole business broadcast entrypoint accepting logical audiences without exposing Gate routes. */
+  get Broadcast(): ClientBroadcast {
+    return this.clientBroadcast;
+  }
+
+  /** 返回本地图AOI受众工厂；业务使用ObserversOf/VisibleSubjectsOf区分关系方向。 / Returns the map AOI audience factory with explicit observer/subject direction. */
+  get Audience(): MapAoiComponent {
+    return this.aoi;
+  }
+
   /** 创建地图内 Unit 存储、广播传输和帧尾同步源。 / Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */
   protected override Awake(
     definition: MapInstanceDefinition,
@@ -182,6 +196,12 @@ export class MapComponent extends Component<[
         this.logger.error("map broadcast failed", { broadcast: name, error });
       },
     });
+    const clientRoutes = new MapClientRouteResolver(
+      (unitId) => this.units.Get<PlayerUnit>(unitId)
+        ?.GetComponent(UnitGateComponent).gateName,
+      location,
+    );
+    this.clientBroadcast = new ClientBroadcast(this.broadcast, clientRoutes);
     this.replication = new StateReplicationSystem(
       this.broadcast,
       () => ({ key: `map:${this.mapInstanceId}:aoi`, routes: [] }),
@@ -449,8 +469,8 @@ export class MapComponent extends Component<[
   /** 立即发送不可逆背包事件；这里禁止使用 latest 合并。 / Sends an irreversible inventory event immediately; latest coalescing is forbidden here. */
   async PublishItemChanged(unit: PlayerUnit, item: ItemSnapshot): Promise<void> {
     this.requirePlayer(unit);
-    await this.broadcast.Publish(
-      this.PlayerAudience(unit),
+    await this.clientBroadcast.Publish(
+      ClientAudience.Self(unit.UnitId),
       ClientBroadcasts.ItemChanged,
       { item },
       this.serverTick,
@@ -964,14 +984,6 @@ export class MapComponent extends Component<[
     return { key, routes };
   }
 
-  private PlayerAudience(unit: PlayerUnit): BroadcastAudience {
-    const gate = unit.GetComponent(UnitGateComponent);
-    return {
-      key: `player:${unit.UnitId}`,
-      routes: [{ route: gate.gateName, recipientId: unit.UnitId }],
-    };
-  }
-
   private requirePlayer(unit: PlayerUnit): void {
     if (
       unit.MapInstanceId !== this.mapInstanceId ||
@@ -1001,6 +1013,7 @@ function toMapEntity(snapshot: PlayerSnapshot): MapEntitySnapshot {
     cellX: snapshot.cellX,
     cellZ: snapshot.cellZ,
     numerics: snapshot.numerics,
+    buffs: [],
     speedCellsPerSecond: snapshot.speedCellsPerSecond,
     facing: snapshot.facing,
     alive: snapshot.alive,

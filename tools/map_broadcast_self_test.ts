@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   BroadcastHub,
+  ClientAudience,
+  ClientBroadcast,
   type BroadcastAudience,
   type BroadcastTransport,
   type EncodedAudienceBatch,
@@ -8,6 +10,8 @@ import {
 import { readU16BE } from "../app/core/protocol/binary";
 import { ClientBroadcasts } from "../app/generated/model/server/demo/protocol/broadcastDescriptors";
 import {
+  G2C_BuffAddedCodec,
+  G2C_BuffDetailCodec,
   G2C_EntityLeaveCodec,
   G2C_EntityMoveCodec,
   G2C_EntityNumericCodec,
@@ -17,6 +21,8 @@ import { MsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
 import { StateReplicationSystem } from "../app/core/replication";
 import { SceneBroadcastTransport } from "../app/model/demo/broadcast/SceneBroadcastTransport";
 import type { SceneMessageHelper } from "../app/core/process/SceneMessageHelper";
+import { MapClientRouteResolver } from "../app/model/demo/broadcast/MapClientRouteResolver";
+import type { LocationProxy } from "../app/model/demo/location/LocationProxy";
 
 interface ControlledSend {
   readonly audience: BroadcastAudience;
@@ -60,6 +66,10 @@ const audience: BroadcastAudience = {
 };
 
 async function main(): Promise<void> {
+  await testLogicalAudienceSetOperations();
+  await testClientBroadcastHidesPhysicalRoutes();
+  await testBuffAudienceProjectionDoesNotLeakDetails();
+  await testMapRouteResolverUsesLocalAndCachedRemoteRoutes();
   await testLatestSingleFlight();
   await testNumericLatestCoverage();
   await testEncodedLatestSnapshot();
@@ -70,6 +80,118 @@ async function main(): Promise<void> {
   await testBatchedReplicationAckAfterEveryAudience();
   await testEventOrderingAndCapacity();
   console.log("broadcast framework self-test passed");
+}
+
+async function testBuffAudienceProjectionDoesNotLeakDetails(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  const broadcast = new ClientBroadcast(hub, {
+    Resolve: (unitIds) => unitIds.map((recipientId) => ({
+      route: recipientId <= 3 ? "GateA" : "GateB",
+      recipientId,
+    })),
+  });
+  const nearby = ClientAudience.ForUnits("map:1:observers:10", [1, 2, 3]);
+  const party = ClientAudience.ForUnits("party:7", [1, 4]);
+  const publicAudience = ClientAudience.Union(nearby, party);
+  const detailAudience = ClientAudience.Union(ClientAudience.Self(1), party);
+  const added = broadcast.Publish(publicAudience, ClientBroadcasts.BuffAdded, {
+    buff: {
+      unitId: 1,
+      buffInstanceId: 9001n,
+      buffConfigId: 100,
+      stacks: 1,
+      expireTimeMs: 30_000n,
+      revision: 1,
+    },
+  });
+  const detail = broadcast.Publish(detailAudience, ClientBroadcasts.BuffDetail, {
+    unitId: 1,
+    buffInstanceId: 9001n,
+    absorbRemaining: 500,
+    revision: 1,
+  }, 20);
+
+  assert.equal(transport.sends.length, 2);
+  const publicSend = transport.sends.find((send) => readU16BE(send.frame, 0) === MsgCode.G2C_BuffAdded)!;
+  const detailSend = transport.sends.find((send) => readU16BE(send.frame, 0) === MsgCode.G2C_BuffDetail)!;
+  assert.deepEqual(publicSend.audience.routes.map((route) => route.recipientId), [1, 2, 3, 4]);
+  assert.deepEqual(detailSend.audience.routes.map((route) => route.recipientId), [1, 4]);
+  assert.equal(G2C_BuffAddedCodec.decode(publicSend.frame.subarray(2)).buff.buffConfigId, 100);
+  assert.equal(G2C_BuffDetailCodec.decode(detailSend.frame.subarray(2)).buffs[0]?.absorbRemaining, 500);
+  for (const send of transport.sends) send.resolve();
+  await Promise.all([added, detail]);
+}
+
+async function testLogicalAudienceSetOperations(): Promise<void> {
+  const aoi = ClientAudience.ForUnits("aoi:1001", [1003, 1001, 1002, 1002]);
+  const party = ClientAudience.ForUnits("party:7", [1002, 1004]);
+  assert.deepEqual(aoi.UnitIds, [1001, 1002, 1003]);
+  assert.deepEqual(ClientAudience.Union(aoi, party).UnitIds, [1001, 1002, 1003, 1004]);
+  assert.deepEqual(ClientAudience.Intersect(aoi, party).UnitIds, [1002]);
+  assert.deepEqual(ClientAudience.Except(aoi, party).UnitIds, [1001, 1003]);
+  assert.deepEqual(ClientAudience.Union(ClientAudience.Self(1001), aoi).UnitIds, [1001, 1002, 1003]);
+}
+
+async function testClientBroadcastHidesPhysicalRoutes(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  const resolvedIds: number[][] = [];
+  const broadcast = new ClientBroadcast(hub, {
+    Resolve: (unitIds) => {
+      resolvedIds.push([...unitIds]);
+      return unitIds.map((recipientId) => ({
+        route: recipientId % 2 === 0 ? "Gate2" : "Gate1",
+        recipientId,
+      }));
+    },
+  });
+  const logical = ClientAudience.ForUnits("buff-public:77", [1002, 1001, 1002]);
+  const delivery = broadcast.Publish(
+    logical,
+    ClientBroadcasts.EntityLeave,
+    { unitId: 77 },
+  );
+  assert.deepEqual(resolvedIds, [[1001, 1002]]);
+  assert.deepEqual(transport.sends[0].audience, {
+    key: "buff-public:77",
+    routes: [
+      { route: "Gate1", recipientId: 1001 },
+      { route: "Gate2", recipientId: 1002 },
+    ],
+  });
+  transport.sends[0].resolve();
+  await delivery;
+}
+
+async function testMapRouteResolverUsesLocalAndCachedRemoteRoutes(): Promise<void> {
+  let locationCalls = 0;
+  const location = {
+    ResolveMany: async ({ unitIds }: { unitIds: readonly number[] }) => {
+      locationCalls += 1;
+      return {
+        locations: unitIds.map((unitId) => ({
+          unitId,
+          gateName: "GateRemote",
+          state: "active",
+        })),
+      };
+    },
+  } as unknown as LocationProxy;
+  const resolver = new MapClientRouteResolver(
+    (unitId) => unitId === 1001 ? "GateLocal" : undefined,
+    location,
+  );
+
+  const first = await resolver.Resolve([1001, 2001]);
+  assert.deepEqual(first, [
+    { route: "GateLocal", recipientId: 1001 },
+    { route: "GateRemote", recipientId: 2001 },
+  ]);
+  const second = resolver.Resolve([1001, 2001]);
+  assert.ok(!("then" in (second as object)), "cached routes should keep the local synchronous path");
+  assert.deepEqual(second, first);
+  assert.equal(locationCalls, 1, "remote routes must be batch-resolved once and then cached");
 }
 
 async function testSceneTransportCoalescesJobsByGate(): Promise<void> {

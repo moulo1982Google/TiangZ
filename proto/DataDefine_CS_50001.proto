@@ -17,6 +17,7 @@ message MapEntitySnapshot
   repeated UnitNumericDelta numerics = 10;
   float speed_cells_per_second = 11;
   uint32 facing = 12;
+  repeated BuffPublicView buffs = 14;
 }
 
 message CellMovementState
@@ -61,4 +62,24 @@ message ItemSnapshot
   uint32 quality = 4;
   uint32 level = 5;
   uint32 version = 6;
+}
+
+// 周围玩家可见的Buff外观数据；不得包含吸收量等私有战斗细节。
+message BuffPublicView
+{
+  uint32 unit_id = 1;
+  uint64 buff_instance_id = 2;
+  uint32 buff_config_id = 3;
+  uint32 stacks = 4;
+  uint64 expire_time_ms = 5;
+  uint32 revision = 6;
+}
+
+// 仅自己、队友或团队成员可见的Buff详情；与公开视图独立合并。
+message BuffDetailView
+{
+  uint32 unit_id = 1;
+  uint64 buff_instance_id = 2;
+  uint32 absorb_remaining = 3;
+  uint32 revision = 4;
 }

@@ -362,6 +362,21 @@
       "code": 10025
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_BuffAdded",
+      "name": "G2C_BuffAdded",
+      "code": 10026
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_BuffDetail",
+      "name": "G2C_BuffDetail",
+      "code": 10028
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_BuffRemoved",
+      "name": "G2C_BuffRemoved",
+      "code": 10027
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_EnterMap",
       "name": "G2C_EnterMap",
       "code": 10011

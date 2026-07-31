@@ -1115,6 +1115,29 @@ pub(crate) fn op_native_aoi_visible_subjects(
     })
 }
 
+#[op2]
+/// 返回当前能看见某 Subject 的最终 Observer；用于业务公开状态广播，不包含 Subject 自身。
+/// Returns final observers that can see one subject for public state broadcasts, excluding self.
+pub(crate) fn op_native_aoi_visible_observers(
+    map_id: u32,
+    subject_id: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    STORE.with(|slot| {
+        let store = slot.borrow();
+        let observers = store
+            .aoi_worlds
+            .get(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("AOI world is not configured: {map_id}")))?
+            .observers_of(subject_id);
+        let mut bytes = Vec::with_capacity(4 + observers.len() * 4);
+        bytes.extend_from_slice(&(observers.len() as u32).to_le_bytes());
+        for observer_id in observers {
+            bytes.extend_from_slice(&observer_id.to_le_bytes());
+        }
+        Ok(bytes.into())
+    })
+}
+
 fn encode_visibility_changes(changes: &[VisibilityChange]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(4 + changes.len() * 9);
     bytes.extend_from_slice(&(changes.len() as u32).to_le_bytes());

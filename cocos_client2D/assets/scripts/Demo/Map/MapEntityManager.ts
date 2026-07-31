@@ -2,12 +2,16 @@ import { Color, Label, Node, UITransform } from "cc";
 import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
 import { MapClient } from "../../Generated/SDK/Generated/Model/demo/protocol/clients";
 import type {
+  G2C_BuffAdded,
+  G2C_BuffDetail,
+  G2C_BuffRemoved,
   G2C_EntityMove,
   ItemSnapshot,
   MapEntitySnapshot,
   UnitNumericDelta,
   UnitStateDelta,
 } from "../../Generated/SDK/Generated/Model/demo/protocol/messages";
+import { BuffStateStore } from "../../Generated/SDK/Demo/BuffStateStore";
 import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
 import {
@@ -40,6 +44,7 @@ export class MapEntityManager {
   private readonly numerics = new Map<number, Map<number, number>>();
   private readonly items = new Map<bigint, ItemSnapshot>();
   private readonly states = new Map<number, UnitStateDelta>();
+  private readonly buffs = new BuffStateStore();
   private readonly mapClient: MapClient;
 
   constructor(
@@ -107,6 +112,21 @@ export class MapEntityManager {
     console.log(`道具 ${item.itemId} 数量更新为 ${item.count}，版本 ${item.version}`);
   }
 
+  /** 合并公开Buff创建事件；渲染层可从Buffs查询外观。 / Merges a public Buff creation event for the presentation layer. */
+  applyBuffAdded(message: G2C_BuffAdded): void {
+    this.buffs.ApplyAdded(message);
+  }
+
+  /** 合并当前客户端有权接收的Buff详情。 / Merges Buff detail visible to the current client. */
+  applyBuffDetail(message: G2C_BuffDetail): void {
+    this.buffs.ApplyDetail(message);
+  }
+
+  /** 移除Buff并保留revision墓碑，避免迟到状态复活。 / Removes a Buff while retaining a revision tombstone. */
+  applyBuffRemoved(message: G2C_BuffRemoved): void {
+    this.buffs.ApplyRemoved(message);
+  }
+
   async UseFirstItem(): Promise<void> {
     const itemId = this.items.keys().next().value as bigint | undefined;
     if (itemId === undefined) return;
@@ -119,6 +139,7 @@ export class MapEntityManager {
   }
 
   leave(unitId: number): void {
+    this.buffs.RemoveUnit(unitId);
     this.remove(unitId);
   }
 
@@ -150,9 +171,11 @@ export class MapEntityManager {
     this.numerics.clear();
     this.items.clear();
     this.states.clear();
+    this.buffs.Clear();
   }
 
   private upsert(snapshot: MapEntitySnapshot): void {
+    this.buffs.ApplySnapshot(snapshot);
     const existing = snapshot.unitId === this.localUnitId
       ? this.local
       : this.remotes.get(snapshot.unitId);

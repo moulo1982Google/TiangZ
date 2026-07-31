@@ -105,7 +105,7 @@ ChildEntity拥有稳定`Id/InstanceId`并进入EntityRoot，但没有mailbox、�
 
 领域边界采用“可以读取对象，集合变化经过拥有它的Component”：单个Item/Buff的局部规则写在自身Hotfix System，新增、删除、转移、堆叠合并和对外同步由所属Component协调。Native可变句柄只在对应System内部使用，不得跨`await`或所有者生命周期长期保存。
 
-Buff需要被AOI玩家看到，不代表Buff需要mailbox，也不需要通用dirty Delta。Buff创建时向当前AOI广播`BuffAdded`，删除时广播`BuffRemoved`；进入AOI时，Buff列表随Unit整体Snapshot一次性发送，离开AOI时只移除Unit。Buff Tick只执行Action，不同步Buff本身：Numeric变化走Numeric帧尾合并，移动走Move同步，其他效果走各自领域协议。客户端根据创建快照中的起止时间自行显示剩余时间。少量Buff可使用ChildEntity Timer；大量Buff应由BuffComponent使用到期时间堆和一个最近到期Timer合并调度，避免每个Buff常驻一个重复Timer。
+Buff需要被AOI玩家看到，不代表Buff需要mailbox，也不需要通用dirty Delta。Buff创建/删除分别使用不可覆盖的`BuffAdded/BuffRemoved`事件；进入AOI时公开Buff随Unit整体Snapshot发送，离开只移除Unit。公开`BuffPublicView`与受限`BuffDetailView`是两套Projection：前者发给AOI观察者与队伍，后者只发给自己与队伍，不能用字段值`0`表达无权限。详情以`(unitId,buffInstanceId)`为latest key，同帧可覆盖。业务只组合逻辑`ClientAudience`，`ClientBroadcast`负责UnitId到Gate及跨地图Location解析。Buff Tick只执行Action，不同步Buff本身：Numeric、Move及其他效果走各自领域协议。少量Buff可使用ChildEntity Timer；大量Buff应由BuffComponent使用到期时间堆和一个最近到期Timer合并调度。
 
 Quest默认是玩家私有状态。接受任务时创建Quest子Entity，进度变化默认只通知拥有者客户端；只有任务规则明确要求共享时，才向`PartyAudience`发送队友所需的进度摘要。完成任务时，QuestComponent在一个领域操作中结算奖励、记录已完成配置ID、RemoveChild并发送完成通知。登录或重连时向本人发送活动Quest与已完成摘要的全量快照；队友进入AOI时，可在Unit整体Snapshot中携带允许共享的任务摘要，普通观察者不包含Quest数据；离开AOI时仍只移除Unit。
 
@@ -191,7 +191,7 @@ TiangZ明确区分三种语义：
 
 Numeric使用`NumericType -> i32`动态字典和dirty表；Unit固定字段使用`.native @replicated + @memberId`生成`u64` dirty mask；Item变更演示不可覆盖的即时Event。
 
-帧尾复制采用`Peek -> Send -> Ack`：只有发送成功才确认revision，发送失败保留Dirty，发送期间的新修改不会被旧Ack清除。Audience只决定收件人，Broadcast descriptor只决定event/latest语义。
+帧尾复制采用`Peek -> Send -> Ack`：只有发送成功才确认revision，发送失败保留Dirty，发送期间的新修改不会被旧Ack清除。Audience只决定收件人，数据Projection决定字段权限，Broadcast descriptor只决定event/latest语义。业务使用只含UnitId的`ClientAudience`；物理`BroadcastAudience`和Gate route是Core内部类型。
 
 AOI已由Rust稀疏X/Z Grid接管。Cell是移动和空间数据的基础单位，AOI关系只在跨Grid边界时重算；默认一个Grid为15×15 Cell。默认可见关系从实体所在Grid即时推导，不常驻保存候选边或全量可见边；Rust只保存迟滞关系、业务过滤拒绝项和本帧净变化，TS也不得建立镜像关系表。当前全地图可见性能报告仍只是旧版最坏压力基线，不能代表AOI容量收益。
 
@@ -319,7 +319,7 @@ Phase 4计划：
 - Phase 4.5最后建设持久化基础，再进入正式账号、角色和经济业务：计划增加可分片Rust `PersistenceProxy`，`.native`按Entity/Component声明`transient/snapshot/transactional`存储域并生成快照、dirty、schema和恢复入口。`snapshot`由框架合并写Redis并异步落永久DB；`transactional`以永久DB事务为唯一权威写入，Redis只缓存带revision的提交结果。同一字段不得同时拥有两条权威写路径，版本按存储域隔离。第一版只实现一种永久DB Adapter，不提前维护MongoDB/MySQL/PostgreSQL三套实现。该能力尚未实现，当前业务不得直接连接Redis/DB或自行增加持久化注解。
 - 账号与角色选择、正式持久化业务接入。
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
-- Phase 4.1 Rust AOI功能链和Windows正式容量回归已完成：每个MapInstance创建独立稀疏X/Z AOI Grid。`Cell`是可配置米制空间单位；`AoiConfig`定义每个Grid包含的Cell数，以及彼此独立的Enter与Detach迟滞范围；`AoiSyncTierConfig`独立定义已可见关系的可覆盖状态频率。同步范围大于Enter不会提前建立视野，未覆盖整个Detach也合法。Enter内关系从Grid推导，仅迟滞外圈、业务拒绝和本帧净变化需要存储，TS不镜像全量关系。FastOP X/Z写入自动标脏，跨AOI Grid才重算。Movement按同步档位节流，低频档按Subject Grid稳定错峰，但开始/停止/转向强制立即发送；Numeric、UnitState和不可覆盖事件保留各自同步语义。进入/离开同帧相同受众合并为`G2C_AoiDelta`。阵营/隐身/位面由同步`IAoiVisibilityFilter`查询并显式Invalidate。3000玩家、16 Gate、15×15 Grid、每玩家5Hz Move、60秒正式窗口中，Map CPU平均/p90为47.7%/52.2%，实际Move 14997/s、Push 500678/s，正式窗口零背压、零内部过载、零超时；证据见`perf/results/map_capacity_latest.md`。这是当前机器的框架负载证据，不是生产人数承诺。Phase 4.2接入NavMesh3D；Phase 4.3完成Cocos 3D Demo；Phase 4.4进入怪物与战斗；Phase 4.5最后完成持久化基础。
+- Phase 4.1 Rust AOI功能链和Windows正式容量回归已完成：每个MapInstance创建独立稀疏X/Z AOI Grid。`Cell`是可配置米制空间单位；`AoiConfig`定义每个Grid包含的Cell数，以及彼此独立的Enter与Detach迟滞范围；`AoiSyncTierConfig`独立定义已可见关系的可覆盖状态频率。同步范围大于Enter不会提前建立视野，未覆盖整个Detach也合法。Enter内关系从Grid推导，仅迟滞外圈、业务拒绝和本帧净变化需要存储，TS不镜像全量关系。FastOP X/Z写入自动标脏，跨AOI Grid才重算。Movement按同步档位节流，低频档按Subject Grid稳定错峰，但开始/停止/转向强制立即发送；Numeric、UnitState和不可覆盖事件保留各自同步语义。进入/离开同帧相同受众合并为`G2C_AoiDelta`。阵营/隐身/位面由同步`IAoiVisibilityFilter`查询并显式Invalidate。业务使用逻辑`ClientAudience`组合AOI、自己和关系成员，由`ClientBroadcast`隐藏Gate与Location路由。最新3000玩家、16 Gate、15×15 Grid、每玩家5Hz Move、60秒正式窗口中，Map CPU平均/p90为48.3%/57.1%，实际Move 15000/s、Push 511810/s，正式窗口零背压、零内部过载、零超时；证据见`perf/results/map_capacity_latest.md`。这是当前机器的框架负载证据，不是生产人数承诺。Phase 4.2接入NavMesh3D；Phase 4.3完成Cocos 3D Demo；Phase 4.4进入怪物与战斗；Phase 4.5最后完成持久化基础。
 - 每个MapInstance有独立的隐藏式入图队列：连接和登录完成后，客户端停留在Loading，地图按`MapConfig.entryPlayersPerTick`逐Tick执行AOI Attach，队列上限由`entryQueueCapacity`控制。首次登录和地图传送进入队列；断线重连复用现有Unit，不重复Attach。它只削平单地图Attach与初始Snapshot洪峰，不是区服容量排队，也不替代地图人数上限或负载调度。配置属于Cold，默认Demo为每Tick 1人、最多等待10000人。
 - Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；类型分池、冷热布局的微基准与地图容量报告仍须分开解释，不能把任一结果直接换算为生产服务器容量。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。

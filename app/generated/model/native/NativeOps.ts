@@ -20,6 +20,7 @@ export interface NativeHostOpsApi {
   aoiTakeChanges(mapId: number): Uint8Array;
   aoiQueryRelations(mapId: number, unitId: number, mode: number): Uint8Array;
   aoiVisibleSubjects(mapId: number, observerId: number): Uint8Array;
+  aoiVisibleObservers(mapId: number, subjectId: number): Uint8Array;
   mapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapPeekNumericAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapAckNumericDelta(mapId: number, revision: Uint8Array): void;
@@ -137,6 +138,10 @@ export class NativeOps {
 
   static AoiVisibleSubjects(mapId: number, observerId: number): Uint8Array {
     return nativeHostOps().aoiVisibleSubjects(mapId, observerId);
+  }
+
+  static AoiVisibleObservers(mapId: number, subjectId: number): Uint8Array {
+    return nativeHostOps().aoiVisibleObservers(mapId, subjectId);
   }
 
   static MapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {

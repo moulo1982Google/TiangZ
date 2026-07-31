@@ -15,6 +15,7 @@ import {
 import { packFrame } from "../client_sdk/typescript/Core/Protocol/Frame";
 import { defineMessage } from "../client_sdk/typescript/Core/Protocol/Message";
 import { BenchProtocol } from "../client_sdk/typescript/Generated/Model/bench/protocol/rpcs";
+import { BuffStateStore } from "../client_sdk/typescript/Demo/BuffStateStore";
 
 class ControlledTransport implements ClientTransport {
   connected = false;
@@ -76,6 +77,7 @@ const Push = defineMessage<{ value: number }>({
 
 async function main(): Promise<void> {
   try {
+    testBuffStateProjectionAndTombstone();
     const socket = new RpcSocket(endpoint);
     let resolved = false;
     const responsePromise = socket.call(BenchProtocol.RuntimePing, {
@@ -146,6 +148,44 @@ async function main(): Promise<void> {
   } finally {
     unregister();
   }
+}
+
+function testBuffStateProjectionAndTombstone(): void {
+  const store = new BuffStateStore();
+  store.ApplyAdded({
+    buff: {
+      unitId: 10,
+      buffInstanceId: 9001n,
+      buffConfigId: 100,
+      stacks: 1,
+      expireTimeMs: 30_000n,
+      revision: 1,
+    },
+  });
+  store.ApplyDetail({
+    serverTick: 20,
+    buffs: [{
+      unitId: 10,
+      buffInstanceId: 9001n,
+      absorbRemaining: 500,
+      revision: 2,
+    }],
+  });
+  assert.equal(store.PublicOf(10)[0]?.buffConfigId, 100);
+  assert.equal(store.DetailOf(10, 9001n)?.absorbRemaining, 500);
+
+  store.ApplyRemoved({ unitId: 10, buffInstanceId: 9001n, revision: 3 });
+  store.ApplyDetail({
+    serverTick: 19,
+    buffs: [{
+      unitId: 10,
+      buffInstanceId: 9001n,
+      absorbRemaining: 700,
+      revision: 2,
+    }],
+  });
+  assert.equal(store.PublicOf(10).length, 0);
+  assert.equal(store.DetailOf(10, 9001n), undefined, "late detail must not resurrect a removed Buff");
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

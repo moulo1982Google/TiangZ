@@ -6,5 +6,6 @@ export * from "./Core/Protocol/Message";
 export * from "./Core/Protocol/Rpc";
 export * from "./Core/Protocol/RpcError";
 export * from "./Demo/LoginFlow";
+export * from "./Demo/BuffStateStore";
 export * from "./Generated/Config";
 export * from "./Generated/ProtocolFingerprint";

@@ -147,6 +147,33 @@ message G2C_ItemChanged // IMessage
   ItemSnapshot item = 1;
 }
 
+// Buff创建是不可覆盖事件；普通AOI玩家、自己和队伍成员都只从这里获得公开外观。
+// @ets.msg protocol=Client method=BuffAdded
+// @ets.broadcast mode=event
+message G2C_BuffAdded // IMessage
+{
+  BuffPublicView buff = 1;
+}
+
+// Buff移除是不可覆盖事件；客户端用revision拒绝迟到的详情状态。
+// @ets.msg protocol=Client method=BuffRemoved
+// @ets.broadcast mode=event
+message G2C_BuffRemoved // IMessage
+{
+  uint32 unit_id = 1;
+  uint64 buff_instance_id = 2;
+  uint32 revision = 3;
+}
+
+// 吸收量等私有详情允许帧内覆盖，只发给自己、队友或团队成员。
+// @ets.msg protocol=Client method=BuffDetail
+// @ets.broadcast mode=latest item=BuffDetailView items=buffs key=unit_id,buff_instance_id tick=server_tick
+message G2C_BuffDetail // IMessage
+{
+  uint32 server_tick = 1;
+  repeated BuffDetailView buffs = 2;
+}
+
 // @ets.msg protocol=Client method=EntityEnter
 // @ets.broadcast mode=event
 message G2C_EntityEnter // IMessage

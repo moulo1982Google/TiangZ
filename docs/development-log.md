@@ -271,3 +271,18 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - Watcher新增`reload-config`，`npm run dev`同时监听Hotfix与游戏配置源文件；Release制品携带初始`dist/game-config`。
 - 已增加5 Process真实Reload验收：有效数据全部生效，悬空引用候选全部拒绝且旧指纹保持。
 - 当前只在线切换服务端配置；客户端配置仍通过Client SDK发布。跨机器Process可能短暂处于不同数据版本，后续有严格全局一致需求时再增加prepare/commit协调。
+# 2026-07-31 - AOI业务Audience与字段Projection
+
+## 完成内容
+
+- 新增只包含有序去重UnitId的`ClientAudience`，提供`Self/ForUnits/Union/Intersect/Except`；业务不再接触Gate route、连接和物理`BroadcastAudience`。
+- `MapAoiComponent`增加方向明确的`ObserversOf(subject)`与`VisibleSubjectsOf(observer)`；Rust暴露反向Observer查询，不在TS维护AOI关系镜像。
+- `ClientBroadcast`统一完成本地图Gate直取、跨地图Location批量解析、短期有界缓存以及BroadcastHub投递。
+- 用Buff验证字段Projection：公开Add/Remove是不可覆盖Event，吸收量详情只发自己/队伍并以`(unitId,buffInstanceId)`做latest覆盖；普通AOI玩家不能收到详情字段。
+- TypeScript Client SDK新增引擎无关`BuffStateStore`，Cocos 2D和Pixi分别使用独立Handler接入；revision墓碑阻止移除后的迟到详情复活Buff。
+
+## 验证
+
+- 项目依赖检查、协议、广播、Client SDK、Cocos 2D、Pixi、Rust AOI和NativeData测试全部通过。
+- Audience微基准以两组各3000个UnitId做20000次Union：约21238次/s，约7.85ns/输入ID；该操作用于低频Event或小型关系受众，不替代Movement Rust热路径。
+- 3000玩家、16 Gate、15x15 AOI Grid、每玩家5Hz Move、60秒正式窗口复测：15000 Move/s、511810 Push/s，Map CPU平均/p90/峰值48.3%/57.1%/69.6%，零背压、零过载、零超时。首次受环境干扰的运行出现619次frame等待，已按规则判无效并由无背压复测替代。

@@ -447,6 +447,9 @@ Buff Tick -> 执行Action -> Numeric/Move/其他领域各自同步
 ```
 
 - Buff创建和删除是不可覆盖的生命周期Event，分别广播一次Add/Remove。
+- `BuffPublicView`只放外观、层数和结束时间；吸收量等受限数据放`BuffDetailView`，禁止用`0`伪装“无权限”。
+- 公开事件发送给`AOI观察者 ∪ 队伍`，详情状态发送给`自己 ∪ 队伍`；`ClientAudience.Union`按UnitId去重，同一玩家不会收到两份。
+- `G2C_BuffDetail`是以`(unitId,buffInstanceId)`为key的latest状态，同帧多次扣盾只保留最终吸收量；Add/Remove绝不能改成latest。
 - Tick不修改或广播Buff本身，只执行Action；Action修改哪个领域，就复用哪个领域已有的同步机制。
 - 客户端从BuffAdded或Unit Snapshot携带的开始/结束时间自行计算剩余时间，服务端不逐Tick同步倒计时。
 - 进入AOI时Buff列表包含在Unit整体Snapshot中；离开AOI时Unit整体消失，不逐个发送BuffRemoved。
@@ -476,21 +479,34 @@ QuestComponent
 
 ## 广播给谁与如何广播
 
-业务层产生`BroadcastAudience`：地图全体、AOI、队伍、公会在线成员等。Core的`BroadcastHub`处理编码、event队列、latest合并、single-flight和指标。Movement等已经由框架提供专用Rust热路径的状态，业务仍只修改权威数据或调用领域方法，不手工构造Audience与传输帧。
+业务层只产生逻辑`ClientAudience`：AOI观察者、自己、队伍、公会在线成员等。`ClientBroadcast`在发送时批量解析UnitId到Gate；同地图成员同步直取Gate，跨地图关系成员通过Location批量查询并短期缓存。业务看不到`BroadcastAudience`、Gate route、连接或内网帧。Core的`BroadcastHub`处理编码、event队列、latest合并、single-flight和指标。Movement等已经由框架提供专用Rust热路径的状态，业务仍只修改权威数据或调用领域方法。
 
 ```ts
-await this.broadcast.Publish(
-  audience,
-  ClientBroadcasts.SkillUsed,
-  { casterId, skillId },
-  serverTick,
-);
+const map = player.DomainScene().GetComponent(MapComponent);
+const nearby = map.Audience.ObserversOf(player); // 谁能看见player，不是player能看见谁
+const party = ClientAudience.ForUnits(`party:${partyId}`, partyMemberUnitIds);
+
+await Promise.all([
+  map.Broadcast.Publish(
+    ClientAudience.Union(nearby, party),
+    ClientBroadcasts.BuffAdded,
+    { buff: publicView },
+  ),
+  map.Broadcast.Publish(
+    ClientAudience.Union(ClientAudience.Self(player.UnitId), party),
+    ClientBroadcasts.BuffDetail,
+    detailView,
+    serverTick,
+  ),
+]);
 ```
 
 规则：
 
-- 不在BroadcastHub中写地图AOI或公会成员查询。
-- 不为每种广播新增`M2G_Xxx`；业务只调用`BroadcastHub`。框架按数量自动选择`S2G_ClientBroadcast`或`S2G_ClientBroadcastBatch`，业务不得直接构造内网广播协议。
+- `ObserversOf(subject)`表示“谁能看见这个Subject”；`VisibleSubjectsOf(observer)`表示“这个Observer能看见谁”，命名方向不能互换。
+- `ClientAudience`的key描述稳定业务身份，例如`party:42`；不能把当前成员列表拼入key，否则latest频道无法连续覆盖。
+- 不在BroadcastHub中写地图AOI、队伍或公会查询；对应业务域只负责产生UnitId集合。
+- 不为每种广播新增`M2G_Xxx`；业务只调用`map.Broadcast`。框架按数量自动选择内部单发或批发，业务不得直接构造内网广播协议。
 - latest descriptor必须有稳定key。
 - event队列满必须显式失败，不能静默丢弃。
 - AOI已经接管Movement、Numeric和Unit固定字段的接收者选择；新增业务广播必须选择明确Audience，不能重新构造全地图玩家列表。

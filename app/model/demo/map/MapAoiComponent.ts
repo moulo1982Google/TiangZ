@@ -1,5 +1,6 @@
 import {
   Component,
+  ClientAudience,
   Game,
   type Logger,
   type Unit,
@@ -32,6 +33,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
   private nativeMapKey = 0;
   private logger!: Logger;
   private readonly filters = new Set<IAoiVisibilityFilter>();
+  private readonly attachedUnitIds = new Set<number>();
 
   /** 从冷配置创建地图实例私有 AOI；Enter/Detach 与同步频率独立。 / Creates a map AOI from cold config with independent visibility and sync ranges. */
   protected override Awake(definition: MapInstanceDefinition): void {
@@ -117,6 +119,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
       deliveryRouteId,
     );
     this.ApplyFilters(proposed);
+    this.attachedUnitIds.add(unit.UnitId);
     return this.CommitChanges(unit.UnitId);
   }
 
@@ -126,6 +129,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
       this.nativeMapKey,
       unit.GetComponent(NativeUnitRef).Handle,
     );
+    this.attachedUnitIds.delete(unit.UnitId);
     return this.ApplyPublishedChanges(changes, unit.UnitId);
   }
 
@@ -156,10 +160,41 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
     return [observerId, ...NativeData.VisibleAoiSubjects(this.nativeMapKey, observerId)];
   }
 
+  /** 返回Observer当前能看见的Unit受众，可选包含自己；不会解析Gate或连接。 / Returns subjects currently visible to an observer, optionally including self, without resolving transport routes. */
+  VisibleSubjectsOf(observer: Unit<any[]>, includeSelf = true): ClientAudience {
+    this.requireAttachedUnit(observer);
+    return ClientAudience.ForUnits(
+      `map:${this.DomainScene().InstanceId}:visible-subjects:${observer.UnitId}:${includeSelf}`,
+      includeSelf
+        ? [observer.UnitId, ...NativeData.VisibleAoiSubjects(this.nativeMapKey, observer.UnitId)]
+        : NativeData.VisibleAoiSubjects(this.nativeMapKey, observer.UnitId),
+    );
+  }
+
+  /** 返回当前能看见Subject的Observer受众，可选包含自己；公开Buff、施法外观等业务广播使用此方向。 / Returns observers currently seeing a subject, optionally including self; public Buff and cast visuals use this direction. */
+  ObserversOf(subject: Unit<any[]>, includeSelf = true): ClientAudience {
+    this.requireAttachedUnit(subject);
+    return ClientAudience.ForUnits(
+      `map:${this.DomainScene().InstanceId}:observers-of:${subject.UnitId}:${includeSelf}`,
+      includeSelf
+        ? [subject.UnitId, ...NativeData.VisibleAoiObservers(this.nativeMapKey, subject.UnitId)]
+        : NativeData.VisibleAoiObservers(this.nativeMapKey, subject.UnitId),
+    );
+  }
+
   private InvalidateRelations(unitId: number, mode: 1 | 2 | 3): readonly AoiVisibilityDelta[] {
     const relations = NativeData.QueryAoiRelations(this.nativeMapKey, unitId, mode);
     this.ApplyRelationFilters(relations);
     return this.CommitChanges();
+  }
+
+  private requireAttachedUnit(unit: Unit<any[]>): void {
+    if (unit.DomainScene() !== this.DomainScene()) {
+      throw new Error(`AOI Unit ${unit.UnitId} belongs to another map`);
+    }
+    if (!this.attachedUnitIds.has(unit.UnitId)) {
+      throw new Error(`AOI Unit ${unit.UnitId} is not attached`);
+    }
   }
 
   private ApplyFilters(changes: readonly NativeAoiVisibilityChange[]): void {
@@ -225,6 +260,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
   }
 
   protected override OnDestroy(): void {
+    this.attachedUnitIds.clear();
     NativeData.ReleaseAoi(this.nativeMapKey);
     NativeData.ReleaseSpatial(this.nativeMapKey);
   }
