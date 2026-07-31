@@ -125,7 +125,7 @@ C2M_UseItem
 
 ## Snapshot、Delta、Event
 
-- **Snapshot**：进入、重连或主动全量同步时发送完整当前状态，不修改 Dirty。`G2C_EnterMap.entities/items` 是当前演示入口。
+- **Snapshot**：重连、传送或主动全量同步时发送完整当前状态，不修改 Dirty。首次进入时，`G2C_EnterMap`只返回坐标、物品和地图元数据；客户端注册`G2C_AoiDelta`监听后调用生成SDK的`GateClient.mapSnapshotReady({ unitId })`，初始实体通过`G2C_AoiDelta.enters`发送。
 - **Delta**：帧尾发送 dirty 字典或 dirty mask 中的最终值，可以按稳定键覆盖。
 - **Event**：技能释放、获得道具、伤害飘字等事实，必须有序保留，不能使用 latest。
 

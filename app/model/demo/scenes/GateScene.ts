@@ -14,15 +14,19 @@ import {
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import {
   type C2G_EnterMap,
+  type C2G_MapSnapshotReady,
   type C2G_LoginGate,
   type G2C_EnterMap,
+  type G2C_MapSnapshotReady,
   type G2C_LoginGate,
   type G2C_MapReady,
   type G2M_EnterMap,
+  type G2M_InitialSnapshot,
   type G2M_PlayerOffline,
   type G2M_SecondEnterMap,
   type G2M_TransferPlayer,
   type M2G_EnterMap,
+  type M2G_InitialSnapshot,
   type M2G_KickPlayers,
   type M2G_MapReady,
   type M2G_SecondEnterMap,
@@ -324,6 +328,32 @@ export class GateScene extends EntryScene {
       spawnOverride,
       ParseEntrySyncMode(entrySyncMode),
     );
+  }
+
+  /**
+   * 校验客户端确认对应当前Unit，再让权威MapHost发送初始视野；Gate不缓存或解析实体快照。
+   * 该确认只能在EnterMap响应后调用，因而Unit到连接的路由已经完成绑定。
+   *
+   * Validates that the ready acknowledgement targets the current Unit, then asks
+   * the authoritative MapHost to publish the initial view without caching it in Gate.
+   */
+  async MapSnapshotReady(
+    session: GateSession,
+    request: C2G_MapSnapshotReady,
+  ): Promise<G2C_MapSnapshotReady> {
+    const route = this.RequireCurrentRoute(session);
+    const map = route.map;
+    if (!map || map.unitId !== request.unitId || route.actorState === "moving") {
+      throw new RpcError(GameErrCode.MapNotFound, "initial snapshot route is not ready");
+    }
+    const response = await this.scenes.call<G2M_InitialSnapshot, M2G_InitialSnapshot>(
+      this.scenes.byName(map.mapService),
+      MapProtocol.InitialSnapshot,
+      { account: route.account, unitId: map.unitId },
+      { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
+    );
+    this.AssertCurrentRoute(session, route);
+    return { rpcId: request.rpcId, error: response.error, message: response.message };
   }
 
   /** 统一正式与Bench进图事务，只有调用入口决定初始同步模式。 / Shares the entry transaction while callers select the initial-sync policy. */

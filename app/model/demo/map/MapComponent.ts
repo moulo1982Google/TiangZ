@@ -57,6 +57,7 @@ import { MapAoiComponent, type AoiVisibilityDelta } from "./MapAoiComponent";
 import {
   EntrySyncMode,
   IncludesExistingObserverEnter,
+  IncludesNewObserverSnapshot,
   type EntrySyncModeValue,
 } from "./EntrySyncMode";
 
@@ -67,8 +68,13 @@ interface PendingPlayerEntry {
   readonly unit: PlayerUnit;
   readonly enqueuedAtMs: number;
   readonly syncMode: EntrySyncModeValue;
-  readonly resolve: () => void;
+  readonly resolve: (entities: readonly MapEntitySnapshot[]) => void;
   readonly reject: (error: unknown) => void;
+}
+
+interface EntrySnapshotBatchCache {
+  readonly byAudience: Map<string, readonly MapEntitySnapshot[]>;
+  readonly byUnit: Map<number, MapEntitySnapshot>;
 }
 
 interface EncodedRouteBroadcast {
@@ -121,6 +127,10 @@ export class MapComponent extends Component<[
   }>();
   private pendingSpatialMovement: EncodedRouteBroadcast | undefined;
   private readonly pendingPlayerEntries: PendingPlayerEntry[] = [];
+  private readonly pendingInitialSnapshots = new Map<number, {
+    readonly actorInstanceId: number;
+    readonly entities: readonly MapEntitySnapshot[];
+  }>();
   private readonly gateRouteIds = new Map<string, number>();
   private readonly gateNamesByRouteId = new Map<number, string>();
   private nextGateRouteId = 1;
@@ -137,6 +147,10 @@ export class MapComponent extends Component<[
     snapshotItems: 0,
     snapshotMs: 0,
     maxSnapshotMs: 0,
+    snapshotBuilds: 0,
+    snapshotMaterializedItems: 0,
+    snapshotAudienceReuseHits: 0,
+    snapshotUnitReuseHits: 0,
     deltaBatches: 0,
     deltaEnterItems: 0,
     deltaLeaveItems: 0,
@@ -458,14 +472,52 @@ export class MapComponent extends Component<[
   }
 
   /** 构造进入视野所需的全量快照；常规变化应使用脏数据增量同步。 / Builds a full enter-view snapshot; routine changes use dirty replication instead. */
-  EntitySnapshots(observer: PlayerUnit): MapEntitySnapshot[] {
+  EntitySnapshots(observer: PlayerUnit): readonly MapEntitySnapshot[] {
+    return this.BuildEntitySnapshots(observer, {
+      byAudience: new Map(),
+      byUnit: new Map(),
+    });
+  }
+
+  /**
+   * 为一次 Admission 批次构造进入快照。可见集合相同的玩家共享数组，不同集合也复用
+   * 已物化的 Unit 快照；缓存只活到本次 Tick 结束，因此不会跨帧读取过期状态。
+   *
+   * Builds entry snapshots for one admission batch. Observers with identical
+   * visibility share an array, while different audiences still reuse materialized
+   * Unit snapshots. The cache never crosses a tick, so stale state cannot escape.
+   */
+  private BuildEntitySnapshots(
+    observer: PlayerUnit,
+    cache: EntrySnapshotBatchCache,
+  ): readonly MapEntitySnapshot[] {
     this.requirePlayer(observer);
     const startedAt = monotonicNow();
-    const snapshots = this.aoi
-      .VisibleUnitIds(observer.UnitId)
-      .map((unitId) => this.units.Get<PlayerUnit>(unitId))
-      .filter((unit): unit is PlayerUnit => unit !== undefined)
-      .map((unit) => toMapEntity(unit.Snapshot()));
+    const visibleUnitIds = [...this.aoi.VisibleUnitIds(observer.UnitId)]
+      .sort((left, right) => left - right);
+    const audienceKey = visibleUnitIds.join(",");
+    let snapshots = cache.byAudience.get(audienceKey);
+    if (snapshots) {
+      this.entryMetrics.snapshotAudienceReuseHits += 1;
+    } else {
+      const built: MapEntitySnapshot[] = [];
+      for (const unitId of visibleUnitIds) {
+        const unit = this.units.Get<PlayerUnit>(unitId);
+        if (!unit) continue;
+        let snapshot = cache.byUnit.get(unitId);
+        if (snapshot) {
+          this.entryMetrics.snapshotUnitReuseHits += 1;
+        } else {
+          snapshot = toMapEntity(unit.Snapshot());
+          cache.byUnit.set(unitId, snapshot);
+          this.entryMetrics.snapshotMaterializedItems += 1;
+        }
+        built.push(snapshot);
+      }
+      snapshots = built;
+      cache.byAudience.set(audienceKey, snapshots);
+      this.entryMetrics.snapshotBuilds += 1;
+    }
     const elapsedMs = monotonicNow() - startedAt;
     this.entryMetrics.snapshotCalls += 1;
     this.entryMetrics.snapshotItems += snapshots.length;
@@ -476,23 +528,23 @@ export class MapComponent extends Component<[
 
   /**
    * 新玩家完整组件图准备好后加入 AOI，并把对既有玩家的 Enter 通知留到下一逻辑帧合并。
-   * 新玩家自己的初始视图由 EnterMap 响应提供，因此登录 RPC 不应等待下行广播。
+   * 新玩家自己的初始视图在客户端注册监听后由 MapSnapshotReady 触发的 AoiDelta 提供，登录 RPC 不等待大型下行广播。
    *
    * Attaches a fully composed player and defers notifications to existing players
-   * until the next fixed tick. EnterMap already carries the new player's initial view,
-   * so the login RPC must not wait for fan-out delivery.
+   * until the next fixed tick. MapSnapshotReady triggers the initial AoiDelta after
+   * client handlers are installed, so EnterMap stays small.
    */
   PlayerEntered(
     unit: PlayerUnit,
     syncMode: EntrySyncModeValue = EntrySyncMode.Full,
-  ): Promise<void> {
+  ): Promise<readonly MapEntitySnapshot[]> {
     this.requirePlayer(unit);
     if (this.pendingPlayerEntries.length >= this.config.entryQueueCapacity) {
       return Promise.reject(
         new Error(`map ${this.mapInstanceId} player-entry queue is full`),
       );
     }
-    const promise = new Promise<void>((resolve, reject) => {
+    const promise = new Promise<readonly MapEntitySnapshot[]>((resolve, reject) => {
       this.pendingPlayerEntries.push({
         unit,
         enqueuedAtMs: monotonicNow(),
@@ -517,6 +569,51 @@ export class MapComponent extends Component<[
       { item },
       this.serverTick,
     );
+  }
+
+  /**
+   * 暂存已经按AOI裁剪的初始实体，等待客户端确认监听器就绪后发送。
+   * 暂存只属于本地图；不要把它放到Gate或全局缓存，也不要放回EnterMap响应。
+   *
+   * Stages an AOI-filtered initial entity view until the client confirms its
+   * listener is ready. Ownership stays in this map; do not move it to Gate or
+   * global storage, and do not put it back into the EnterMap response.
+   */
+  StageInitialSnapshot(
+    unit: PlayerUnit,
+    entities: readonly MapEntitySnapshot[],
+  ): void {
+    this.requirePlayer(unit);
+    this.pendingInitialSnapshots.set(unit.UnitId, {
+      actorInstanceId: unit.InstanceId,
+      entities,
+    });
+  }
+
+  /**
+   * 消费暂存快照并发送；失败时保留数据供客户端重试，重复确认则重新构造当前权威视图。
+   * 暂存归地图所有，因此玩家离图和地图销毁都会自然释放。
+   *
+   * Consumes a staged snapshot after successful delivery, retains it on failure,
+   * and rebuilds the current authoritative view for repeated acknowledgements.
+   */
+  async PublishInitialSnapshot(unit: PlayerUnit): Promise<void> {
+    this.requirePlayer(unit);
+    const pending = this.pendingInitialSnapshots.get(unit.UnitId);
+    if (pending && pending.actorInstanceId !== unit.InstanceId) {
+      this.pendingInitialSnapshots.delete(unit.UnitId);
+      throw new Error(`initial snapshot actor changed: ${unit.UnitId}`);
+    }
+    const entities = pending?.entities ?? this.EntitySnapshots(unit);
+    await this.clientBroadcast.Publish(
+      ClientAudience.Self(unit.UnitId),
+      ClientBroadcasts.AoiDelta,
+      { serverTick: this.serverTick, enters: entities, leaves: [] },
+      this.serverTick,
+    );
+    if (this.pendingInitialSnapshots.get(unit.UnitId) === pending) {
+      this.pendingInitialSnapshots.delete(unit.UnitId);
+    }
   }
 
   /** 将广播计数投影为进程自定义指标格式。 / Projects broadcast counters into the process custom-metrics format. */
@@ -569,6 +666,13 @@ export class MapComponent extends Component<[
         player_entry_snapshot_items_total: this.entryMetrics.snapshotItems,
         player_entry_snapshot_ms_total: this.entryMetrics.snapshotMs,
         player_entry_snapshot_ms_max: this.entryMetrics.maxSnapshotMs,
+        player_entry_snapshot_builds_total: this.entryMetrics.snapshotBuilds,
+        player_entry_snapshot_materialized_items_total:
+          this.entryMetrics.snapshotMaterializedItems,
+        player_entry_snapshot_audience_reuse_hits_total:
+          this.entryMetrics.snapshotAudienceReuseHits,
+        player_entry_snapshot_unit_reuse_hits_total:
+          this.entryMetrics.snapshotUnitReuseHits,
         aoi_delta_batches_total: this.entryMetrics.deltaBatches,
         aoi_delta_enter_items_total: this.entryMetrics.deltaEnterItems,
         aoi_delta_leave_items_total: this.entryMetrics.deltaLeaveItems,
@@ -605,6 +709,10 @@ export class MapComponent extends Component<[
         player_entry_snapshot_calls_total: "counter",
         player_entry_snapshot_items_total: "counter",
         player_entry_snapshot_ms_total: "counter",
+        player_entry_snapshot_builds_total: "counter",
+        player_entry_snapshot_materialized_items_total: "counter",
+        player_entry_snapshot_audience_reuse_hits_total: "counter",
+        player_entry_snapshot_unit_reuse_hits_total: "counter",
         aoi_delta_batches_total: "counter",
         aoi_delta_enter_items_total: "counter",
         aoi_delta_leave_items_total: "counter",
@@ -789,6 +897,7 @@ export class MapComponent extends Component<[
 
   private RemovePlayer(unit: PlayerUnit): readonly AoiVisibilityDelta[] {
     const changes = this.aoi.Detach(unit);
+    this.pendingInitialSnapshots.delete(unit.UnitId);
     this.players.Remove(unit);
     this.units.Remove(unit.UnitId);
     return changes;
@@ -841,6 +950,7 @@ export class MapComponent extends Component<[
   protected override OnDestroy(): void {
     const error = new Error(`map ${this.mapInstanceId} disposed before player entry`);
     for (const pending of this.pendingPlayerEntries.splice(0)) pending.reject(error);
+    this.pendingInitialSnapshots.clear();
     this.broadcast.Dispose();
   }
 
@@ -853,9 +963,10 @@ export class MapComponent extends Component<[
    * method performs synchronous attachment only; frame-end delivery remains async.
    */
   private PumpPlayerEntries(): void {
+    const admittedEntries: PendingPlayerEntry[] = [];
     for (let admitted = 0; admitted < this.config.entryPlayersPerTick; admitted += 1) {
       const pending = this.pendingPlayerEntries.shift();
-      if (!pending) return;
+      if (!pending) break;
       try {
         this.requirePlayer(pending.unit);
         const gateName = pending.unit.GetComponent(UnitGateComponent).gateName;
@@ -875,7 +986,25 @@ export class MapComponent extends Component<[
           this.pendingPlayerEnterChanges.push(...changes);
         }
         this.playerEntriesAdmitted += 1;
-        pending.resolve();
+        admittedEntries.push(pending);
+      } catch (error) {
+        this.playerEntryFailures += 1;
+        pending.reject(error);
+      }
+    }
+
+    if (admittedEntries.length === 0) return;
+    const cache: EntrySnapshotBatchCache = {
+      byAudience: new Map(),
+      byUnit: new Map(),
+    };
+    for (const pending of admittedEntries) {
+      try {
+        pending.resolve(
+          IncludesNewObserverSnapshot(pending.syncMode)
+            ? this.BuildEntitySnapshots(pending.unit, cache)
+            : [],
+        );
       } catch (error) {
         this.playerEntryFailures += 1;
         pending.reject(error);

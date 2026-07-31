@@ -9,6 +9,8 @@ export const OuterMessage = {
   C2G_EnterMap: 10010,
   G2C_EnterMap: 10011,
   G2C_MapReady: 10012,
+  C2G_MapSnapshotReady: 10029,
+  G2C_MapSnapshotReady: 10030,
   C2M_Move: 10013,
   C2M_MapProbe: 10014,
   M2C_MapProbe: 10015,

@@ -3,6 +3,8 @@ import {
   C2S_GetLoginServiceAddrCodec,
   C2G_EnterMap,
   C2G_EnterMapCodec,
+  C2G_MapSnapshotReady,
+  C2G_MapSnapshotReadyCodec,
   C2G_LoginGate,
   C2G_LoginGateCodec,
   C2G_PingCodec,
@@ -20,6 +22,8 @@ import {
   G2C_LoginGateCodec,
   G2C_MapReady,
   G2C_MapReadyCodec,
+  G2C_MapSnapshotReady,
+  G2C_MapSnapshotReadyCodec,
   G2C_AoiDelta,
   G2C_AoiDeltaCodec,
   M2C_MapProbe,
@@ -111,6 +115,27 @@ export function buildLoginGatePacket(
     MsgCode.C2G_LoginGate,
     C2G_LoginGateCodec.encode({ ...request, rpcId }),
   );
+}
+
+export function buildMapSnapshotReadyPacket(
+  rpcId: number,
+  request: C2G_MapSnapshotReady,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2G_MapSnapshotReady,
+    C2G_MapSnapshotReadyCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeMapSnapshotReadyFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_MapSnapshotReady> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_MapSnapshotReady) {
+    throw new Error(`expected G2C_MapSnapshotReady, got ${msgcode}`);
+  }
+  const body = G2C_MapSnapshotReadyCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
 }
 
 export function buildPingPacket(): Uint8Array {

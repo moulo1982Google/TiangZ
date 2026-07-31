@@ -4,6 +4,7 @@ import {
   buildGetLoginServiceAddrPacket,
   buildLoginGatePacket,
   buildLoginPacket,
+  buildMapSnapshotReadyPacket,
   buildMovePacket,
   buildUseItemPacket,
   decodeAoiDeltaFrame,
@@ -16,6 +17,7 @@ import {
   decodeLoginGateFrame,
   decodeLoginFrame,
   decodeMapReadyFrame,
+  decodeMapSnapshotReadyFrame,
 } from "./support/DemoClientProtocol";
 import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
@@ -667,6 +669,23 @@ async function openGateAndEnterMap(
     const mapReady = decodeMapReadyFrame(mapReadyFrame);
     if (enterMap.rpcId !== enterMapRpcId || enterMap.body.error) {
       throw new Error(`EnterMap failed: ${JSON.stringify(enterMap.body)}`);
+    }
+    if (enterMap.body.entities.length === 0) {
+      const snapshotReadyRpcId = nextRpcId++;
+      const snapshotFrame = gate.waitForMessage(MsgCode.G2C_AoiDelta);
+      const snapshotReady = decodeMapSnapshotReadyFrame(
+        await gate.request(buildMapSnapshotReadyPacket(snapshotReadyRpcId, {
+          unitId: enterMap.body.unitId,
+        })),
+      );
+      if (snapshotReady.rpcId !== snapshotReadyRpcId || snapshotReady.body.error) {
+        throw new Error(`MapSnapshotReady failed: ${JSON.stringify(snapshotReady.body)}`);
+      }
+      const initialSnapshot = decodeAoiDeltaFrame(await snapshotFrame).body;
+      enterMap.body = {
+        ...enterMap.body,
+        entities: initialSnapshot.enters,
+      };
     }
     if (
       enterMap.body.unitId === 0 ||

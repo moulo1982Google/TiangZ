@@ -1050,6 +1050,84 @@ export const M2G_MapReadyCodec = {
   },
 };
 
+export interface G2M_InitialSnapshot extends IRequest {
+  rpcId?: number;
+  account: string;
+  unitId: number;
+}
+
+export const G2M_InitialSnapshotCodec = {
+  decode(payload: Uint8Array): G2M_InitialSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: G2M_InitialSnapshot = {
+      account: "",
+      unitId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.account = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2M_InitialSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.unitId !== undefined) writer.uint32(2, value.unitId);
+    return writer.finish();
+  },
+};
+
+export interface M2G_InitialSnapshot extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+}
+
+export const M2G_InitialSnapshotCodec = {
+  decode(payload: Uint8Array): M2G_InitialSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: M2G_InitialSnapshot = {
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2G_InitialSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    return writer.finish();
+  },
+};
+
 export interface G2M_PlayerOffline extends IActorRequest {
   rpcId?: number;
   account: string;
@@ -3682,6 +3760,78 @@ export const G2C_MapReadyCodec = {
     if (value.x !== undefined) writer.float(4, value.x);
     if (value.z !== undefined) writer.float(5, value.z);
     if (value.y !== undefined) writer.float(6, value.y);
+    return writer.finish();
+  },
+};
+
+export interface C2G_MapSnapshotReady extends IRequest {
+  rpcId?: number;
+  unitId: number;
+}
+
+export const C2G_MapSnapshotReadyCodec = {
+  decode(payload: Uint8Array): C2G_MapSnapshotReady {
+    const reader = new BinaryReader(payload);
+    const value: C2G_MapSnapshotReady = {
+      unitId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2G_MapSnapshotReady): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_MapSnapshotReady extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+}
+
+export const G2C_MapSnapshotReadyCodec = {
+  decode(payload: Uint8Array): G2C_MapSnapshotReady {
+    const reader = new BinaryReader(payload);
+    const value: G2C_MapSnapshotReady = {
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_MapSnapshotReady): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     return writer.finish();
   },
 };

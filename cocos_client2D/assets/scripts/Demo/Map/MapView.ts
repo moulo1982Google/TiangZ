@@ -5,6 +5,7 @@ import {
 } from "./Movement/CellMovement";
 import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
 import { ClientMessageDispatcher } from "../../Generated/SDK/Core/Net/ClientMessageDispatcher";
+import { GateClient } from "../../Generated/SDK/Generated/Model/demo/protocol/clients";
 import "../../Generated/Hotfix/handlers";
 import type {
   G2C_EnterMap,
@@ -137,6 +138,13 @@ export class MapView {
       MapMessageScope,
       entities,
     );
+    // 必须在AoiDelta Handler注册后确认，否则高速本机链路可能让初始快照先于地图对象到达。
+    // Acknowledge only after installing AoiDelta handlers so fast local links cannot outrun map setup.
+    if (enterMap.entities.length === 0) {
+      void new GateClient(gateSocket)
+        .mapSnapshotReady({ unitId: enterMap.unitId })
+        .catch((error) => console.error("请求初始地图快照失败", error));
+    }
     return new MapController(
       new LocalPlayerController(() => entities.stopLocalMovement()),
       entities,

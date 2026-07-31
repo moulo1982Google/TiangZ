@@ -104,6 +104,19 @@ message M2G_MapReady // IActorMessage
   float y = 6;
 }
 
+//ResponseType M2G_InitialSnapshot
+// Gate在客户端确认初始视野已就绪后，请MapHost发送一次初始快照。
+// @ets.msg protocol=Map method=InitialSnapshot
+message G2M_InitialSnapshot // IRequest
+{
+  string account = 1;
+  uint32 unit_id = 2;
+}
+
+message M2G_InitialSnapshot // IResponse
+{
+}
+
 //ResponseType M2G_PlayerOffline
 // Gate确认重连宽限期结束后发起最终下线；Map完成保存、AOI离开和Unit销毁后响应。
 // @ets.msg protocol=Map method=PlayerOffline

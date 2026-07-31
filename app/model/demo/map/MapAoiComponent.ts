@@ -98,7 +98,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
     return this.filters.delete(filter);
   }
 
-  /** 完整 Unit 组件图提交后加入 AOI。新 Observer 的初始实体由 EnterMap 快照返回，不重复推送。 / Attaches a fully committed Unit; the new observer receives its initial entities through EnterMap rather than duplicate pushes. */
+  /** 完整 Unit 组件图提交后加入 AOI。新 Observer 的初始实体由客户端就绪确认后的 AoiDelta 推送。 / Attaches a fully committed Unit; the new Observer receives initial entities through AoiDelta after client readiness. */
   Attach(
     unit: Unit<any[]>,
     deliveryRouteId: number,

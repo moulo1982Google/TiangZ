@@ -1032,6 +1032,35 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_InitialSnapshot",
+      "name": "G2M_InitialSnapshot",
+      "base": "IRequest",
+      "response": "M2G_InitialSnapshot",
+      "fields": [
+        {
+          "number": 1,
+          "name": "account",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#G2M_PlayerOffline",
       "name": "G2M_PlayerOffline",
       "base": "IActorRequest",
@@ -1739,6 +1768,35 @@
           "repeated": false,
           "synthetic": false
         },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_InitialSnapshot",
+      "name": "M2G_InitialSnapshot",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
         {
           "number": 90,
           "name": "rpc_id",
@@ -3261,6 +3319,28 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_MapSnapshotReady",
+      "name": "C2G_MapSnapshotReady",
+      "base": "IRequest",
+      "response": "G2C_MapSnapshotReady",
+      "fields": [
+        {
+          "number": 1,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2G_Ping",
       "name": "C2G_Ping",
       "base": "IMessage",
@@ -3793,6 +3873,35 @@
           "type": "float",
           "repeated": false,
           "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_MapSnapshotReady",
+      "name": "G2C_MapSnapshotReady",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
         }
       ]
     },

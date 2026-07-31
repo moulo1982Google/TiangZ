@@ -972,6 +972,78 @@ export const G2C_MapReadyCodec = {
   },
 };
 
+export interface C2G_MapSnapshotReady extends IRequest {
+  rpcId?: number;
+  unitId: number;
+}
+
+export const C2G_MapSnapshotReadyCodec = {
+  decode(payload: Uint8Array): C2G_MapSnapshotReady {
+    const reader = new BinaryReader(payload);
+    const value: C2G_MapSnapshotReady = {
+      unitId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2G_MapSnapshotReady): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_MapSnapshotReady extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+}
+
+export const G2C_MapSnapshotReadyCodec = {
+  decode(payload: Uint8Array): G2C_MapSnapshotReady {
+    const reader = new BinaryReader(payload);
+    const value: G2C_MapSnapshotReady = {
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_MapSnapshotReady): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    return writer.finish();
+  },
+};
+
 export interface C2M_Move extends IActorLocationMessage {
   inputX: number;
   inputZ: number;

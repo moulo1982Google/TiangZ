@@ -5,6 +5,8 @@ import {
   C2G_EnterMapCodec,
   C2G_LoginGate,
   C2G_LoginGateCodec,
+  C2G_MapSnapshotReady,
+  C2G_MapSnapshotReadyCodec,
   C2M_MapProbe,
   C2M_MapProbeCodec,
   C2M_UseItem,
@@ -17,6 +19,8 @@ import {
   G2C_EnterMapCodec,
   G2C_LoginGate,
   G2C_LoginGateCodec,
+  G2C_MapSnapshotReady,
+  G2C_MapSnapshotReadyCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
   M2C_UseItem,
@@ -63,6 +67,13 @@ export const GateProtocol = {
     requestCodec: C2G_EnterMapCodec,
     responseCodec: G2C_EnterMapCodec,
   }),
+  MapSnapshotReady: defineRpc<C2G_MapSnapshotReady, G2C_MapSnapshotReady>({
+    name: "Gate.MapSnapshotReady",
+    requestCode: MsgCode.C2G_MapSnapshotReady,
+    responseCode: MsgCode.G2C_MapSnapshotReady,
+    requestCodec: C2G_MapSnapshotReadyCodec,
+    responseCodec: G2C_MapSnapshotReadyCodec,
+  }),
 };
 
 export const MapProtocol = {
@@ -89,6 +100,7 @@ export const AllRpcDescriptors = [
   LoginProtocol.Login,
   GateProtocol.LoginGate,
   GateProtocol.EnterMap,
+  GateProtocol.MapSnapshotReady,
   MapProtocol.Probe,
   MapProtocol.UseItem,
 ] as const;

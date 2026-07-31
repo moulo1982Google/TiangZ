@@ -872,6 +872,19 @@ function readMapBroadcastMetrics(body) {
     playerEntrySnapshotItems: prometheusCustomMetric(body, "player_entry_snapshot_items_total"),
     playerEntrySnapshotMs: prometheusCustomMetric(body, "player_entry_snapshot_ms_total"),
     playerEntrySnapshotMaxMs: prometheusCustomMetric(body, "player_entry_snapshot_ms_max"),
+    playerEntrySnapshotBuilds: prometheusCustomMetric(body, "player_entry_snapshot_builds_total"),
+    playerEntrySnapshotMaterializedItems: prometheusCustomMetric(
+      body,
+      "player_entry_snapshot_materialized_items_total",
+    ),
+    playerEntrySnapshotAudienceReuseHits: prometheusCustomMetric(
+      body,
+      "player_entry_snapshot_audience_reuse_hits_total",
+    ),
+    playerEntrySnapshotUnitReuseHits: prometheusCustomMetric(
+      body,
+      "player_entry_snapshot_unit_reuse_hits_total",
+    ),
     aoiDeltaBatches: prometheusCustomMetric(body, "aoi_delta_batches_total"),
     aoiDeltaEnterItems: prometheusCustomMetric(body, "aoi_delta_enter_items_total"),
     aoiDeltaLeaveItems: prometheusCustomMetric(body, "aoi_delta_leave_items_total"),
@@ -1071,6 +1084,16 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         playerEntrySnapshotItems: Number(values.player_entry_snapshot_items_total ?? 0),
         playerEntrySnapshotMs: Number(values.player_entry_snapshot_ms_total ?? 0),
         playerEntrySnapshotMaxMs: Number(values.player_entry_snapshot_ms_max ?? 0),
+        playerEntrySnapshotBuilds: Number(values.player_entry_snapshot_builds_total ?? 0),
+        playerEntrySnapshotMaterializedItems: Number(
+          values.player_entry_snapshot_materialized_items_total ?? 0,
+        ),
+        playerEntrySnapshotAudienceReuseHits: Number(
+          values.player_entry_snapshot_audience_reuse_hits_total ?? 0,
+        ),
+        playerEntrySnapshotUnitReuseHits: Number(
+          values.player_entry_snapshot_unit_reuse_hits_total ?? 0,
+        ),
         aoiDeltaBatches: Number(values.aoi_delta_batches_total ?? 0),
         aoiDeltaEnterItems: Number(values.aoi_delta_enter_items_total ?? 0),
         aoiDeltaLeaveItems: Number(values.aoi_delta_leave_items_total ?? 0),
@@ -1345,6 +1368,12 @@ function summarizeMapBroadcast(samples, formalWindowSamples, lifecycleLast = sam
       lifecycleLast?.playerEntrySnapshotCalls,
     ),
     maxPlayerEntrySnapshotMs: lifecycleLast?.playerEntrySnapshotMaxMs ?? 0,
+    playerEntrySnapshotBuilds: lifecycleLast?.playerEntrySnapshotBuilds ?? 0,
+    playerEntrySnapshotMaterializedItems:
+      lifecycleLast?.playerEntrySnapshotMaterializedItems ?? 0,
+    playerEntrySnapshotAudienceReuseHits:
+      lifecycleLast?.playerEntrySnapshotAudienceReuseHits ?? 0,
+    playerEntrySnapshotUnitReuseHits: lifecycleLast?.playerEntrySnapshotUnitReuseHits ?? 0,
     aoiDeltaBatches: lifecycleLast?.aoiDeltaBatches ?? 0,
     aoiDeltaEnterItems: lifecycleLast?.aoiDeltaEnterItems ?? 0,
     aoiDeltaLeaveItems: lifecycleLast?.aoiDeltaLeaveItems ?? 0,
@@ -1502,6 +1531,18 @@ function aggregateCases(rounds) {
       )),
       playerEntrySnapshotMaxMs: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.maxPlayerEntrySnapshotMs ?? 0,
+      )),
+      playerEntrySnapshotBuilds: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntrySnapshotBuilds ?? 0,
+      )),
+      playerEntrySnapshotMaterializedItems: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntrySnapshotMaterializedItems ?? 0,
+      )),
+      playerEntrySnapshotAudienceReuseHits: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntrySnapshotAudienceReuseHits ?? 0,
+      )),
+      playerEntrySnapshotUnitReuseHits: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.playerEntrySnapshotUnitReuseHits ?? 0,
       )),
       aoiDeltaBatches: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.aoiDeltaBatches ?? 0,

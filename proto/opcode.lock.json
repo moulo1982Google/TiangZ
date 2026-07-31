@@ -67,6 +67,11 @@
       "code": 20003
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_InitialSnapshot",
+      "name": "G2M_InitialSnapshot",
+      "code": 20052
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#G2M_PlayerDisconnect",
       "name": "G2M_PlayerDisconnect",
       "code": 20008
@@ -165,6 +170,11 @@
       "key": "proto/InnerMessage_S_20001.proto#M2G_EnterMap",
       "name": "M2G_EnterMap",
       "code": 20004
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_InitialSnapshot",
+      "name": "M2G_InitialSnapshot",
+      "code": 20053
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#M2G_KickPlayers",
@@ -322,6 +332,11 @@
       "code": 10008
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_MapSnapshotReady",
+      "name": "C2G_MapSnapshotReady",
+      "code": 10029
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2G_Ping",
       "name": "C2G_Ping",
       "code": 10024
@@ -420,6 +435,11 @@
       "key": "proto/OuterMessage_C_10001.proto#G2C_MapReady",
       "name": "G2C_MapReady",
       "code": 10012
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_MapSnapshotReady",
+      "name": "G2C_MapSnapshotReady",
+      "code": 10030
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_MapProbe",

@@ -84,6 +84,18 @@ message G2C_MapReady // IMessage
   float y = 6;
 }
 
+//ResponseType G2C_MapSnapshotReady
+// 客户端完成地图对象和初始视野监听注册后确认；Gate随后请求MapHost发送初始快照。
+// @ets.msg protocol=Gate method=MapSnapshotReady
+message C2G_MapSnapshotReady // IRequest
+{
+  uint32 unit_id = 1;
+}
+
+message G2C_MapSnapshotReady // IResponse
+{
+}
+
 // @ets.msg protocol=Map method=Move duringTransfer=drop
 message C2M_Move // IActorLocationMessage
 {

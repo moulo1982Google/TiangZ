@@ -612,6 +612,8 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 首次登录或`TransferToMap`到达目标地图时，业务不应直接调用底层AOI Attach，也不需要自己创建Loading队列。`MapComponent.PlayerEntered`会进入当前MapInstance的等待队列，地图每Tick最多按`MapConfig.entryPlayersPerTick`放行；`entryQueueCapacity`满时明确拒绝，防止无限积压。Gate保持连接并等待`EnterMap`或传送响应，客户端继续显示Loading。首次进图和传送链路由框架统一使用10分钟Admission事务上限，不继承普通Scene RPC的5秒默认值；业务不得自己套一层更短超时破坏队列语义。断线重连调用`SecondEnterMap`并复用原Unit，因此不进入该队列。
 
+同一Tick放行的玩家会先统一完成AOI Attach，再准备初始实体快照。生产进入流程中，`EnterMap`只返回小型进入信息；客户端创建地图对象并注册`G2C_AoiDelta`监听后调用生成SDK中的`GateClient.mapSnapshotReady({ unitId })`，框架随后通过已有广播接口发送初始`AoiDelta`。业务不应手写Gate路由，也不应把初始实体数组重新塞回EnterMap。快照暂存由`MapComponent`管理，玩家移除和地图销毁自动清理。`player_entry_snapshot_items_total`是逻辑发送条数，不能拿它直接当成对象分配数；性能分析还要看`player_entry_snapshot_materialized_items_total`和复用命中指标。不要为了追求更高进图吞吐直接把`entryPlayersPerTick`调大，必须通过分批A/B同时观察Map CPU、初始AoiDelta下行队列和Loading时延。
+
 这套机制只处理同一地图瞬时进入洪峰。它不检查区服总人数，不显示排队名次，不保证某张地图适合继续接收玩家，也不代替副本分配和MapHost容量规划。业务仍只调用统一传送入口，不为静态地图、动态副本、同进程或跨进程分别写节流代码。
 
 业务不得使用`EntrySyncMode`跳过新玩家Snapshot或老玩家Enter；非Full模式只编入Bench Handler，用于`perf:map-entry-stages`拆分性能。排查进图慢时依次观察MapHost请求、Admission等待、Attach、Snapshot对象数、AOI Delta逻辑投递量和Gate下行，不得通过删减客户端必需状态制造虚假的容量结果。Prometheus标签中禁止加入account、UnitId和connectionId。

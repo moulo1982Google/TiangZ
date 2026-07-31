@@ -321,6 +321,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - FastOP修改X/Z自动标记空间脏，同AOI Grid不扫描，跨Grid才重建相关边。阵营、隐身、位面通过同步业务过滤器收窄候选关系，业务状态变化必须显式Invalidate。
 - Movement、Numeric和Unit固定字段在Rust编码；默认按变化Subject所在Grid求受众，并把相同受众继续合成一份frame，不展开接收者乘记录数的临时矩阵，只有带业务拒绝覆盖的Subject计算精确受众。Movement在Rust内利用Attach时登记的紧凑delivery route直接生成每个Gate的完整内网批帧，TS不再接收recipientId数组或重复编码protobuf；Numeric、UnitState和Event保留通用BroadcastHub路径。全部发送成功后才Ack。
 - 跨AOI Grid的Enter/Leave仍是不可覆盖事件，但同帧相同受众会批量编码为`G2C_AoiDelta`；Cocos 2D、Pixi和Runtime smoke已适配。容量工具会保留失败诊断并报告跨Grid/可见变化速率。
+- 进图初始视野已与`EnterMap`大RPC解耦：客户端注册`G2C_AoiDelta`后调用`GateClient.mapSnapshotReady`，Gate校验路由，MapHost通过既有批量广播下发。后续优化重点是初始视野的区域共享、分批和受控下行，不再直接扩大`entryPlayersPerTick`。
 - 业务广播新增逻辑`ClientAudience`：`ObserversOf/VisibleSubjectsOf`明确AOI关系方向，`Self/ForUnits/Union/Intersect/Except`组合自己、队伍和公会等受众；`ClientBroadcast`隐藏Gate、连接和跨地图Location解析。Buff协议以公开Event和受限latest详情验证字段Projection，TypeScript Client SDK提供引擎无关的revision合并与移除墓碑。
 - all-in-one与split-process Runtime smoke均已验证同屏可见、跨边界Leave、范围外不再收到新移动sequence、返回后Enter。当前3000玩家、16 Gate、单Grid安全轨迹、每玩家2Hz Move与0.2Hz Probe的Windows正式窗口实现5982 Move/s与59741 Push/s，Map CPU平均/p90/峰值为39.2%/44.2%/44.2%，零业务错误、零背压、零内部过载和零超时；历史5Hz高频结果另行保留，不与当前口径直接比较。详见`perf/results/map_capacity_latest.md`。
 - Prometheus与Grafana已增加AOI World、Entity、Grid、候选关系、最终关系、跨Grid、关系变化和过滤覆盖指标。

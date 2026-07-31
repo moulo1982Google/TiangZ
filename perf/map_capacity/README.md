@@ -56,6 +56,8 @@ npm run perf:map-capacity -- \
 
 Runtime会按照每张地图Cold `MapConfig`中的`entry_players_per_tick`逐Tick完成AOI Attach，`entry_queue_capacity`限制仍在Loading中的等待人数。该队列用于削平地图Attach和初始Snapshot洪峰，不是区服登录排队。报告的“地图进入队列”段会显示测量结束长度、生命周期峰值、累计放行和失败数；正式稳态窗口开始前队列必须归零。
 
+当前进图报告还区分两类快照成本：`player_entry_snapshot_items_total`是所有玩家逻辑上收到的实体条数，`player_entry_snapshot_materialized_items_total`是实际构造的实体对象条数；`player_entry_snapshot_builds_total`是本批次实际生成的不同可见集合，`player_entry_snapshot_audience_reuse_hits_total`和`player_entry_snapshot_unit_reuse_hits_total`分别表示数组和Unit快照复用。生产路径的`EnterMap`响应不再携带新玩家全量实体；客户端注册`G2C_AoiDelta`后调用生成SDK的`GateClient.mapSnapshotReady({ unitId })`，初始实体经既有批量广播下发。调整`entry_players_per_tick`前，必须同时比较这些指标、Map到Gate初始AoiDelta下行队列和Loading耗时。
+
 进图洪峰使用独立A/B命令定位：
 
 ```bash

@@ -10,6 +10,14 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-31：初始视野与进图 RPC 解耦
+
+- 3000 人进图洪峰的责任点进一步确认：Admission Attach完成后，如果每个玩家都把全量 `MapEntitySnapshot` 放进独立 `EnterMap` 响应，MapHost 到 Gate 的下行队列会同时积压；仅提高 `entry_players_per_tick` 会把洪峰推迟到内部发送队列，不能解决根因。
+- 新增 `C2G_MapSnapshotReady` 握手。客户端完成地图对象创建和 `G2C_AoiDelta` Handler注册后才发送确认；Gate只校验当前Unit路由，再让MapHost发送初始视野。`EnterMap` 保留玩家坐标、物品和地图空间元数据，不再携带新玩家的大型实体数组。
+- 初始视野继续使用既有 `G2C_AoiDelta` 和 `ClientBroadcast`/`ClientBroadcastBatch`，没有增加第二套广播协议。快照暂存归 `MapComponent` 所有，玩家移除和地图销毁时自动清理；发送失败保留暂存，重复确认可重新生成当前权威视图。
+- Cocos、PixiJS 和 Rust压测客户端均已接入握手。Rust客户端在正式 `full` 进图模式下会等待初始 `AoiDelta`，因此容量测试不会通过关闭快照来掩盖问题。
+- 1000人、16 Gate、Windows IOCP、Rust客户端、单Grid、Probe Only冒烟通过：1000人全部进入，错误/超时/过载/背压/慢连接均为0；Map Enter约19.85人/s，完整进图约50.38s。当前测试点Map正式窗口样本不足，不作为稳态容量结论。初始进入阶段仍可见约49.95万Entity Enter，这是业务真实同屏广播量，下一步应做区域级共享/分批下行，而不是继续放大Admission批量。
+
 ## 2026-07-31：进图洪峰分阶段观测与A/B工具
 
 - MapHost新增进图请求、在途峰值、端到端耗时、ID分配、Player创建、Location注册/确认和MapReady阶段指标；Map增加Admission等待、AOI Attach、初始Snapshot对象数，以及AOI Delta批次、接收者和逻辑实体投递量。指标只按Process/Scene/阶段聚合，不使用玩家身份标签，也不为测字节而在TS重复编码protobuf。
@@ -19,6 +27,7 @@
 - Rust客户端和容量驱动新增可选`--map-entry-concurrency`两阶段模式：先按`--setup-concurrency`完成Login、Gate连接和LoginGate，再保持socket reader与5秒心跳并单独同时释放Map Enter。直接把`setup-concurrency`设为3000会先制造Windows TCP/Login洪峰并触发`10054`，不能代表Map Admission容量；20人冒烟已验证连接并发4时Map `max in-flight`和队列峰值都能达到20。
 - 首次3000人隔离洪峰使Map `max in-flight=3000`、队列峰值2998，但暴露Gate首次进图固定120秒RPC超时与默认最长500秒Admission预算冲突；首次进图、Gate到源Unit的传送调用和跨MapHost目标Commit现统一使用10分钟Admission故障上限。随后又定位到Ping排在长EnterMap的Session mailbox后面，累计等待Promise会占满Gate异步槽并造成误判下线；Ping现由Gate同步控制帧入口提前消费，旧`C2G_PingHandler`已删除，普通业务消息仍走原Handler和mailbox。
 - 最终3000人瞬时Map Enter完整通过：连接/Login耗时1.54秒，Map Enter耗时167.52秒，`requests/completed/failures=3000/3000/0`，`max in-flight=3000`，Admission结束队列/峰值`0/2998`，放行/失败`3000/0`。队列平均/最大等待76.99/166.87秒，Snapshot平均/最大10.474/85ms，Map写入351.20MiB、Gate逻辑下行594.00MiB；排空10秒后的Probe约599.6/s，p95/p99为9.656/38.829ms。全部20个Process生命周期均为零业务错误、零内部超时、零过载、零背压和零慢连接断开。该结果证明队列可保住突发请求，不表示线上可以接受167秒Loading；生产仍需限制同时入场人数并为Loading时延建立SLO。
+- 进图快照优化先保持协议和业务调用不变：一个逻辑Tick内先完成整批AOI Attach，再按完全相同的可见Unit集合共享快照数组；不同集合之间继续复用已物化的Unit快照。Admission返回快照后，MapHost不再在RPC尾部重复扫描AOI。新增`player_entry_snapshot_builds_total`、`player_entry_snapshot_materialized_items_total`、`player_entry_snapshot_audience_reuse_hits_total`和`player_entry_snapshot_unit_reuse_hits_total`，用来区分逻辑发送条数与实际对象构造条数。该优化不改变新Observer初始全量、已有Observer Enter和Bench诊断模式语义；后续再用`entry_players_per_tick=1/4/8/16`做独立A/B，不能直接把批量参数改成生产默认值。
 
 ## 2026-07-31：统一2D移动输入与500ms基线
 

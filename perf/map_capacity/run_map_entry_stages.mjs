@@ -151,12 +151,14 @@ function renderMarkdown(report) {
     "",
     "## 初始状态与下行",
     "",
-    "| 模式 | Snapshot calls/items(avg) | Snapshot avg/max | Enter items | recipients | deliveries | Map写入 | Gate逻辑下行 |",
-    "|---|---:|---:|---:|---:|---:|---:|---:|",
+    "| 模式 | Snapshot calls/items(avg) | 实际构造/物化 | 受众复用/Unit复用 | Snapshot avg/max | Enter items | recipients | deliveries | Map写入 | Gate逻辑下行 |",
+    "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const { mode, value } of report.stages) {
     lines.push(
       `| ${mode} | ${number(value.playerEntrySnapshotCalls)}/${number(value.playerEntrySnapshotItems)}(${number(value.playerEntrySnapshotAverageItems, 1)}) | ` +
+      `${number(value.playerEntrySnapshotBuilds)}/${number(value.playerEntrySnapshotMaterializedItems)} | ` +
+      `${number(value.playerEntrySnapshotAudienceReuseHits)}/${number(value.playerEntrySnapshotUnitReuseHits)} | ` +
       `${number(value.playerEntrySnapshotAverageMs, 3)}/${number(value.playerEntrySnapshotMaxMs, 3)}ms | ` +
       `${number(value.aoiDeltaEnterItems)} | ${number(value.aoiDeltaRecipients)} | ` +
       `${number(value.aoiDeltaDeliveries)} | ${bytes(value.mapLifecycleTransportWriteBytes)} | ` +

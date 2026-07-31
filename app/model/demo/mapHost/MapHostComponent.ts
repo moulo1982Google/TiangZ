@@ -12,8 +12,10 @@ import { GameErrCode } from "../../game/protocol/GameErrCode";
 import { GateMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
 import type {
   G2M_EnterMap,
+  G2M_InitialSnapshot,
   G2M_TransferPlayer,
   M2G_EnterMap,
+  M2G_InitialSnapshot,
   M2G_TransferPlayer,
   M2G_MapReady,
   M2M_AbortPlayerTransfer,
@@ -22,6 +24,7 @@ import type {
   M2M_CommitPlayerTransferResponse,
   M2M_PreparePlayerTransfer,
   M2M_PreparePlayerTransferResponse,
+  MapEntitySnapshot,
   MapInstanceSnapshot,
   PlayerTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
@@ -181,7 +184,7 @@ export class MapHostComponent extends Component {
     }
   }
 
-  /** 选择或创建地图、处理重连改绑，并返回权威进入快照。 / Selects/creates a map, rebinds reconnects, and returns the authoritative entry snapshot. */
+  /** 选择或创建地图、处理重连改绑，并返回小型进入响应；初始视野由客户端就绪确认后单独下发。 / Selects/creates a map and returns a small entry response; the initial view is sent after client readiness. */
   async enterMap(request: G2M_EnterMap): Promise<M2G_EnterMap> {
     const startedAt = monotonicNow();
     this.entryMetrics.requests += 1;
@@ -215,6 +218,7 @@ export class MapHostComponent extends Component {
     let player: PlayerUnit | undefined;
     let snapshot: PlayerSnapshot;
     let isNewPlayer = false;
+    let entryEntities: readonly MapEntitySnapshot[] | undefined;
 
     for (;;) {
       player = this.players.Get(request.account);
@@ -296,7 +300,10 @@ export class MapHostComponent extends Component {
 
     const playerMap = this.mapOf(player);
     if (isNewPlayer) {
-      await playerMap.PlayerEntered(player, entrySyncMode);
+      entryEntities = await playerMap.PlayerEntered(player, entrySyncMode);
+      if (IncludesNewObserverSnapshot(entrySyncMode)) {
+        playerMap.StageInitialSnapshot(player, entryEntities);
+      }
     }
 
     this.owner.logger.info("player entered map", {
@@ -360,13 +367,32 @@ export class MapHostComponent extends Component {
       x: snapshot.x,
       y: snapshot.y,
       z: snapshot.z,
-      entities: !isNewPlayer || IncludesNewObserverSnapshot(entrySyncMode)
-        ? playerMap.EntitySnapshots(player)
-        : [],
+      entities: isNewPlayer
+        ? []
+        : IncludesNewObserverSnapshot(entrySyncMode)
+          ? playerMap.EntitySnapshots(player)
+          : [],
       items: player.GetComponent(ItemComponent).Snapshot(),
       mapInstanceId: located.location.mapInstanceId,
       locationRevision: located.location.revision,
     };
+  }
+
+  /**
+   * 客户端显式确认监听器就绪后发送初始AOI快照；快照从EnterMap RPC解耦，避免大响应堵塞Map到Gate队列。
+   * 请求必须命中当前权威Player；发送失败时保留快照供客户端重试，成功后立即释放引用。
+   *
+   * Sends the initial AOI snapshot only after an explicit client-ready handshake.
+   * The snapshot stays available after a failed delivery and is released after success.
+   */
+  async PublishInitialSnapshot(request: G2M_InitialSnapshot): Promise<M2G_InitialSnapshot> {
+    const player = this.players.Get(request.account);
+    if (!player || player.UnitId !== request.unitId) {
+      throw new RpcError(GameErrCode.MapNotFound, `initial snapshot player not found: ${request.account}`);
+    }
+    const map = this.mapOf(player);
+    await map.PublishInitialSnapshot(player);
+    return { rpcId: request.rpcId, error: 0, message: "" };
   }
 
   /**
@@ -462,8 +488,9 @@ export class MapHostComponent extends Component {
       });
       locationCommitted = true;
       const snapshot = target.Snapshot();
+      let entryEntities: readonly MapEntitySnapshot[] | undefined;
       try {
-        await targetMap.PlayerEntered(target);
+        entryEntities = await targetMap.PlayerEntered(target);
       } catch (error) {
         // Location提交后目标Actor已经权威，AOI通知失败只能记录并由后续全量同步修复。
         // Once Location commits, the target Actor is authoritative; an AOI
@@ -475,7 +502,13 @@ export class MapHostComponent extends Component {
         });
       }
       this.ScheduleSourceCleanup(sourceMap, source);
-      return this.TransferResponse(request.rpcId, target, targetMap, committed.location.revision);
+      return this.TransferResponse(
+        request.rpcId,
+        target,
+        targetMap,
+        committed.location.revision,
+        entryEntities,
+      );
     } catch (error) {
       if (!locationCommitted) {
         if (target && directoryReplaced) this.players.Replace(target, source);
@@ -570,6 +603,7 @@ export class MapHostComponent extends Component {
     player: PlayerUnit,
     map: MapComponent,
     revision: bigint,
+    entryEntities?: readonly MapEntitySnapshot[],
   ): M2G_TransferPlayer {
     const snapshot = player.Snapshot();
     return {
@@ -586,7 +620,7 @@ export class MapHostComponent extends Component {
       x: snapshot.x,
       y: snapshot.y,
       z: snapshot.z,
-      entities: map.EntitySnapshots(player),
+      entities: entryEntities ?? map.EntitySnapshots(player),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: player.GetComponent(ItemComponent).Snapshot(),
     };
@@ -670,9 +704,10 @@ export class MapHostComponent extends Component {
         return snapshot;
       },
     );
+    let entryEntities: readonly MapEntitySnapshot[] | undefined;
     if (committed.newlyCommitted) {
       try {
-        await committed.target.map.PlayerEntered(committed.target.player);
+        entryEntities = await committed.target.map.PlayerEntered(committed.target.player);
       } catch (error) {
         this.owner.logger.error("failed to broadcast incoming transferred player", {
           transferId: request.transferId,
@@ -694,7 +729,7 @@ export class MapHostComponent extends Component {
       x: committed.result.x,
       y: committed.result.y,
       z: committed.result.z,
-      entities: committed.target.map.EntitySnapshots(committed.target.player),
+      entities: entryEntities ?? committed.target.map.EntitySnapshots(committed.target.player),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: committed.target.player.GetComponent(ItemComponent).Snapshot(),
       mapHostName: this.owner.self.name,

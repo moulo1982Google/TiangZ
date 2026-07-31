@@ -23,6 +23,8 @@ const LOGIN_GATE_RESP: u16 = 10009;
 const ENTER_MAP_REQ: u16 = 10010;
 const ENTER_MAP_RESP: u16 = 10011;
 const MAP_READY: u16 = 10012;
+const MAP_SNAPSHOT_READY_REQ: u16 = 10029;
+const MAP_SNAPSHOT_READY_RESP: u16 = 10030;
 const MAP_MOVE: u16 = 10013;
 const MAP_PROBE_REQ: u16 = 10014;
 const MAP_PROBE_RESP: u16 = 10015;
@@ -108,6 +110,10 @@ impl EntrySyncMode {
             Self::NewObserverOnly => 2,
             Self::ExistingObserversOnly => 3,
         }
+    }
+
+    const fn includes_new_observer_snapshot(self) -> bool {
+        matches!(self, Self::Full | Self::NewObserverOnly)
     }
 }
 
@@ -781,15 +787,18 @@ async fn enter_player(
     send_client_frame(&writer_tx, encode_rpc(enter_request_code, 3, &enter_map)?).await?;
     let mut received_response = false;
     let mut received_ready = false;
+    let mut inline_snapshot = false;
     let mut unit_id = 0;
     while !received_response || !received_ready {
         let frame = receive_gate_frame(&mut frame_rx, options.timeout, "EnterMap").await?;
         let msgcode = frame_msgcode(&frame)?;
         match msgcode {
             code if code == enter_response_code => {
-                unit_id = decode_message(&frame, enter_response_code, Some(3))
-                    .context("EnterMap RPC failed")?
-                    .u32(unit_id_field)?;
+                let response = decode_message(&frame, enter_response_code, Some(3))
+                    .context("EnterMap RPC failed")?;
+                unit_id = response.u32(unit_id_field)?;
+                inline_snapshot = placement_layout.is_none()
+                    && count_length_delimited_field(&frame, 7)? > 0;
                 received_response = true;
             }
             MAP_READY => received_ready = true,
@@ -800,6 +809,26 @@ async fn enter_player(
         bail!("EnterMap returned an invalid unitId");
     }
     let mut next_rpc_id = 4;
+    if options.entry_sync_mode.includes_new_observer_snapshot() && !inline_snapshot {
+        let mut ready = Vec::with_capacity(8);
+        push_uint32(&mut ready, 1, unit_id);
+        send_client_frame(
+            &writer_tx,
+            encode_rpc(MAP_SNAPSHOT_READY_REQ, next_rpc_id, &ready)?,
+        )
+        .await?;
+        loop {
+            let frame =
+                receive_gate_frame(&mut frame_rx, options.timeout, "MapSnapshotReady").await?;
+            if frame_msgcode(&frame)? != MAP_SNAPSHOT_READY_RESP {
+                continue;
+            }
+            decode_message(&frame, MAP_SNAPSHOT_READY_RESP, Some(next_rpc_id))
+                .context("MapSnapshotReady RPC failed")?;
+            break;
+        }
+        next_rpc_id += 1;
+    }
     if let Some(layout) = placement_layout {
         let mut placement = Vec::with_capacity(8);
         push_uint32(&mut placement, 1, player_index);
@@ -907,6 +936,7 @@ fn start_gate_connection(
                     Ok(ENTER_MAP_RESP)
                     | Ok(MAP_CAPACITY_ENTER_RESP)
                     | Ok(MAP_READY)
+                    | Ok(MAP_SNAPSHOT_READY_RESP)
                     | Ok(MAP_CAPACITY_PLACE_RESP)
                     | Ok(MAP_PROBE_RESP)
                     | Ok(STATE_SYNC_BENCH_RESP) => {

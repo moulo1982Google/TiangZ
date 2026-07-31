@@ -84,6 +84,16 @@ function showMap(enterMap: Parameters<typeof createWorld>[0]): void {
   world?.dispose();
   world = createWorld(enterMap);
   messages = new ClientMessageDispatcher(gateSocket!, MapMessageScope, world);
+  // 先注册地图消息处理器，再确认可以接收初始AOI快照。
+  // Install map handlers before acknowledging readiness for the initial AOI snapshot.
+  if (enterMap.entities.length === 0) {
+    void new GateClient(gateSocket!)
+      .mapSnapshotReady({ unitId: enterMap.unitId })
+      .catch((error) => {
+        status.textContent = `初始地图快照失败：${error instanceof Error ? error.message : String(error)}`;
+        status.style.color = "#ff8e8e";
+      });
+  }
   currentMapId = enterMap.mapId;
   const mapName = GameConfigs.MapConfig.Get(enterMap.mapId).name;
   hud.textContent = `${loginResult!.account} | ${mapName} [Map ${enterMap.mapId}] | Unit ${enterMap.unitId} | T 切换地图`;
