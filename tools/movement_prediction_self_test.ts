@@ -15,7 +15,7 @@ function testLocalInputChangesOnlyAtCellBoundary(): void {
   const sent: Array<{ x: number; z: number; sequence: number }> = [];
   const predictor = new LocalMovementPredictor(0, 0, 0, (state) => sent.push(state), {
     fixedUpdateMs: 50,
-    heartbeatSeconds: 0.2,
+    heartbeatSeconds: 0.5,
   });
 
   predictor.setInput({ x: 1, z: 0 });
@@ -38,7 +38,7 @@ function testLocalInputChangesOnlyAtCellBoundary(): void {
 function testLocalAuthoritativePathDoesNotPullBack(): void {
   const predictor = new LocalMovementPredictor(0, 0, 0, () => {}, {
     fixedUpdateMs: 50,
-    heartbeatSeconds: 0.2,
+    heartbeatSeconds: 0.5,
   });
   predictor.setInput({ x: 1, z: 0 });
   assertPosition(predictor.update(0.075), 9, 0);
@@ -114,6 +114,26 @@ function testRemoteFinishesCurrentCellBeforeStopping(): void {
   assert.ok(movement.update(0.05).x > 12);
 }
 
+function testLocalHeartbeatUsesFiveHundredMilliseconds(): void {
+  const sent: Array<{ x: number; z: number; sequence: number }> = [];
+  const predictor = new LocalMovementPredictor(0, 0, 0, (state) => sent.push(state), {
+    fixedUpdateMs: 50,
+    heartbeatSeconds: 0.5,
+  });
+
+  predictor.setInput({ x: 1, z: 0 });
+  assert.equal(sent.length, 1, "开始移动必须立即发送");
+  predictor.update(0.49);
+  assert.equal(sent.length, 1, "未满500ms不能发送保活Move");
+  predictor.update(0.01);
+  assert.equal(sent.length, 2, "持续移动每500ms发送一次保活Move");
+
+  predictor.setInput({ x: 0, z: 0 });
+  assert.equal(sent.length, 3, "停止移动必须立即发送");
+  predictor.update(1);
+  assert.equal(sent.length, 3, "静止状态不发送周期Move");
+}
+
 function testRemoteRejectsStaleState(): void {
   const movement = new RemoteMovementSmoother(0, 0, 0, 50);
   const state = {
@@ -134,6 +154,7 @@ function testRemoteRejectsStaleState(): void {
 
 testLocalInputChangesOnlyAtCellBoundary();
 testLocalAuthoritativePathDoesNotPullBack();
+testLocalHeartbeatUsesFiveHundredMilliseconds();
 testRemoteFinishesCurrentCellBeforeStopping();
 testRemoteRejectsStaleState();
 console.log("cell movement prediction self-test passed");

@@ -7,7 +7,7 @@
 在空闲机器的工程根目录执行：
 
 ```powershell
-npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 5
+npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 2
 ```
 
 该命令会先生成代码、完成 TypeScript 构建并编译 Release Runtime，然后启动拆分进程拓扑。正式采样前默认预热 60 秒。测试期间不要同时运行 Cocos、其他压测或 CPU Profile。
@@ -17,7 +17,7 @@ npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 5
 只检查参数和最终展开命令，不启动服务与压测：
 
 ```powershell
-node perf/soak/run_soak.mjs --minutes 10 --mode split --players 200 --move-rate 5 --dry-run
+node perf/soak/run_soak.mjs --minutes 10 --mode split --players 200 --move-rate 2 --dry-run
 ```
 
 ## 输出

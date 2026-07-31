@@ -71,7 +71,7 @@ function parseOptions(args) {
     minutes: positive(values.get("--minutes") ?? "60", "--minutes"),
     mode,
     players: positiveInteger(values.get("--players") ?? "200", "--players"),
-    moveRate: nonNegative(values.get("--move-rate") ?? "5", "--move-rate"),
+    moveRate: nonNegative(values.get("--move-rate") ?? "2", "--move-rate"),
     warmup: nonNegative(values.get("--warmup") ?? "60", "--warmup"),
     setupConcurrency: positiveInteger(
       values.get("--setup-concurrency") ?? "32",
@@ -119,13 +119,13 @@ function printHelp() {
   console.log(`TiangZ long-running stability test
 
 Usage:
-  npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 5
+  npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 2
 
 Options:
   --minutes <n>            test duration in minutes; default 60
   --mode <all|split>       deployment topology; default split
   --players <n>            concurrent players; default 200
-  --move-rate <hz>         movement reports per player per second; default 5
+  --move-rate <hz>         movement reports per player per second; default 2
   --warmup <seconds>       warmup duration; default 60
   --setup-concurrency <n>  concurrent login setup; default 32
   --remote                 do not start local server processes

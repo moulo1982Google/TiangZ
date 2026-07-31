@@ -130,7 +130,7 @@ struct Options {
     move_rate: u64,
     movement_hold_messages: u32,
     spawn_layout: SpawnLayout,
-    probe_rate: u64,
+    probe_rate: f64,
     probe_concurrency: usize,
     state_sync_mode: StateSyncMode,
     state_sync_rate: u64,
@@ -799,7 +799,7 @@ async fn run_player(
     let mut state_sync_sequence = 0_u32;
     let mut move_sequence = 0_u32;
     let probe_interval =
-        (options.probe_rate > 0).then(|| Duration::from_secs_f64(1.0 / options.probe_rate as f64));
+        (options.probe_rate > 0.0).then(|| Duration::from_secs_f64(1.0 / options.probe_rate));
     let move_interval =
         (options.move_rate > 0).then(|| Duration::from_secs_f64(1.0 / options.move_rate as f64));
     let state_sync_interval = (options.state_sync_mode != StateSyncMode::Off
@@ -1425,6 +1425,18 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
             .with_context(|| format!("invalid --{name}"))
             .map(|value| value.unwrap_or(fallback))
     };
+    let rate = |name: &str, fallback: f64| -> Result<f64> {
+        let value = values
+            .get(name)
+            .map(|value| value.parse::<f64>())
+            .transpose()
+            .with_context(|| format!("invalid --{name}"))?
+            .unwrap_or(fallback);
+        if !value.is_finite() || value < 0.0 {
+            bail!("--{name} must be a finite number greater than or equal to zero");
+        }
+        Ok(value)
+    };
     let players = number("players", 100)? as usize;
     let setup_concurrency = number("setup-concurrency", 16)? as usize;
     let probe_concurrency = number("probe-concurrency", 4)? as usize;
@@ -1470,7 +1482,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
                 .map(String::as_str)
                 .unwrap_or("same-point"),
         )?,
-        probe_rate: number("probe-rate", 20)?,
+        probe_rate: rate("probe-rate", 0.2)?,
         probe_concurrency,
         state_sync_mode: StateSyncMode::parse(
             values
@@ -1523,5 +1535,14 @@ mod tests {
                 .any(|offset| *offset > Duration::from_millis(900))
         );
         assert_eq!(phase_offset(None, 1, 0), Duration::ZERO);
+    }
+
+    #[test]
+    fn probe_rate_accepts_fractional_hertz_and_defaults_to_five_seconds() {
+        let defaults = parse_options(Vec::new()).unwrap();
+        assert!((defaults.probe_rate - 0.2).abs() < f64::EPSILON);
+
+        let explicit = parse_options(vec!["--probe-rate".into(), "0.5".into()]).unwrap();
+        assert!((explicit.probe_rate - 0.5).abs() < f64::EPSILON);
     }
 }

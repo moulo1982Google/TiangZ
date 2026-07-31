@@ -33,6 +33,39 @@ struct GridCoord {
     z: i32,
 }
 
+/// 对一个 Subject 的最终可见 Observer 集合做增量摘要。
+///
+/// 摘要只用于把“应当拥有相同受众”的 Subject 提前归组；最终接收者仍由
+/// `delivery_audience`按真实AOI关系生成。三项独立信息共同参与分组，避免迟滞关系
+/// 让每个Subject在每个Tick都重复扫描整个Detach范围。
+///
+/// Incremental summary of the final observer set for one subject. It is only a
+/// grouping accelerator: `delivery_audience` still materializes the authoritative
+/// recipients. Count plus two independent commutative accumulators make accidental
+/// grouping collisions vanishingly unlikely without storing the dense N-by-N graph.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct AudienceSignature {
+    count: u32,
+    xor: u64,
+    sum: u64,
+}
+
+impl AudienceSignature {
+    fn insert(&mut self, observer_id: u32) {
+        let mixed = mix_observer_id(observer_id);
+        self.count = self.count.saturating_add(1);
+        self.xor ^= mixed;
+        self.sum = self.sum.wrapping_add(mixed.rotate_left(29));
+    }
+
+    fn remove(&mut self, observer_id: u32) {
+        let mixed = mix_observer_id(observer_id);
+        self.count = self.count.saturating_sub(1);
+        self.xor ^= mixed;
+        self.sum = self.sum.wrapping_sub(mixed.rotate_left(29));
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct AoiEntry {
     grid: GridCoord,
@@ -60,6 +93,8 @@ pub(crate) struct AoiWorld {
     grids: FxHashMap<GridCoord, FxHashSet<u32>>,
     lingering_relations: FxHashSet<(u32, u32)>,
     rejected_relations: FxHashSet<(u32, u32)>,
+    audience_signatures: FxHashMap<u32, AudienceSignature>,
+    scratch_candidates: FxHashSet<u32>,
     pending_changes: FxHashMap<(u32, u32), PendingVisibilityChange>,
 }
 
@@ -116,6 +151,8 @@ impl AoiWorld {
             grids: FxHashMap::default(),
             lingering_relations: FxHashSet::default(),
             rejected_relations: FxHashSet::default(),
+            audience_signatures: FxHashMap::default(),
+            scratch_candidates: FxHashSet::default(),
             pending_changes: FxHashMap::default(),
         })
     }
@@ -166,6 +203,13 @@ impl AoiWorld {
             },
         );
         self.grids.entry(grid).or_default().insert(unit_id);
+        if subject {
+            let mut signature = AudienceSignature::default();
+            if observer {
+                signature.insert(unit_id);
+            }
+            self.audience_signatures.insert(unit_id, signature);
+        }
 
         if observer {
             for subject_id in self.subjects_within(unit_id, grid, self.enter_radius_grids) {
@@ -216,6 +260,7 @@ impl AoiWorld {
             }
         }
         self.entries.remove(&unit_id);
+        self.audience_signatures.remove(&unit_id);
         if let Some(grid) = self.grids.get_mut(&entry.grid) {
             grid.remove(&unit_id);
             if grid.is_empty() {
@@ -241,16 +286,14 @@ impl AoiWorld {
             return Ok(false);
         }
 
-        let old_subjects = if entry.observer {
-            self.spatial_subjects(unit_id)
-        } else {
-            FxHashSet::default()
-        };
-        let old_observers = if entry.subject {
-            self.spatial_observers(unit_id)
-        } else {
-            FxHashSet::default()
-        };
+        // 一次收集旧Detach范围与新Enter范围的并集，同时处理两个可见方向。
+        // A moving observer+subject used to scan and materialize the same dense neighborhood four
+        // times. One candidate pass preserves directional filters while avoiding duplicate work.
+        let mut candidates = std::mem::take(&mut self.scratch_candidates);
+        candidates.clear();
+        candidates.extend(self.nearby_ids(entry.grid, self.detach_radius_grids));
+        candidates.extend(self.nearby_ids(next, self.enter_radius_grids));
+        candidates.remove(&unit_id);
         if let Some(grid) = self.grids.get_mut(&entry.grid) {
             grid.remove(&unit_id);
             if grid.is_empty() {
@@ -260,20 +303,26 @@ impl AoiWorld {
         self.grids.entry(next).or_default().insert(unit_id);
         self.entries.get_mut(&unit_id).unwrap().grid = next;
 
-        if entry.observer {
-            let mut candidates = old_subjects.clone();
-            candidates.extend(self.subjects_within(unit_id, next, self.enter_radius_grids));
-            for subject_id in candidates {
-                self.reconcile_pair((unit_id, subject_id), old_subjects.contains(&subject_id));
+        for other_id in candidates.iter().copied() {
+            let Some(other) = self.entries.get(&other_id).copied() else {
+                continue;
+            };
+            let before_distance = chebyshev(entry.grid, other.grid);
+            let after_distance = chebyshev(next, other.grid);
+            if entry.observer && other.subject {
+                let pair = (unit_id, other_id);
+                let before_spatial = before_distance <= self.enter_radius_grids
+                    || self.lingering_relations.contains(&pair);
+                self.reconcile_pair(pair, before_spatial, after_distance);
+            }
+            if entry.subject && other.observer {
+                let pair = (other_id, unit_id);
+                let before_spatial = before_distance <= self.enter_radius_grids
+                    || self.lingering_relations.contains(&pair);
+                self.reconcile_pair(pair, before_spatial, after_distance);
             }
         }
-        if entry.subject {
-            let mut candidates = old_observers.clone();
-            candidates.extend(self.observers_within(unit_id, next, self.enter_radius_grids));
-            for observer_id in candidates {
-                self.reconcile_pair((observer_id, unit_id), old_observers.contains(&observer_id));
-            }
-        }
+        self.scratch_candidates = candidates;
         Ok(true)
     }
 
@@ -369,6 +418,14 @@ impl AoiWorld {
         self.grids.len()
     }
 
+    pub(crate) fn lingering_relation_count(&self) -> usize {
+        self.lingering_relations.len()
+    }
+
+    pub(crate) fn rejected_relation_count(&self) -> usize {
+        self.rejected_relations.len()
+    }
+
     /// 统计空间候选边；Enter 内按 Grid 聚合，迟滞带只加实际保留的稀疏关系。
     /// Counts spatial edges from aggregated Enter grids plus sparse hysteresis relations.
     pub(crate) fn candidate_relation_count(&self) -> usize {
@@ -432,13 +489,8 @@ impl AoiWorld {
         force: Option<&[bool]>,
         server_tick: u32,
     ) -> Vec<(Vec<u32>, Vec<usize>)> {
-        let special_subjects: FxHashSet<_> = self
-            .rejected_relations
-            .iter()
-            .chain(self.lingering_relations.iter())
-            .map(|pair| pair.1)
-            .collect();
-        let mut default_groups: BTreeMap<(GridCoord, bool), Vec<usize>> = BTreeMap::new();
+        let mut signature_groups: BTreeMap<(GridCoord, AudienceSignature, bool), Vec<usize>> =
+            BTreeMap::new();
         // Audience通常是上百个UnitId。把整段Vec作为BTree键会在每次插入时反复比较
         // 共同前缀；HashMap只线性扫描键一次，最后再排序一次保持测试和网络输出稳定。
         // An audience often contains hundreds of UnitIds. Using the whole Vec as a BTree key
@@ -452,20 +504,19 @@ impl AoiWorld {
                 continue;
             }
             let forced = force.is_none_or(|values| values[index]);
-            if special_subjects.contains(&subject_id) {
-                let audience = self.delivery_audience(subject_id, server_tick, forced);
-                if !audience.is_empty() {
-                    by_audience.entry(audience).or_default().push(index);
-                }
-            } else {
-                default_groups
-                    .entry((entry.grid, forced))
-                    .or_default()
-                    .push(index);
-            }
+            let signature = self
+                .audience_signatures
+                .get(&subject_id)
+                .copied()
+                .unwrap_or_default();
+            signature_groups
+                .entry((entry.grid, signature, forced))
+                .or_default()
+                .push(index);
         }
-        for ((grid, forced), indices) in default_groups {
-            let audience = self.default_audience(grid, server_tick, forced);
+        for ((_grid, _signature, forced), indices) in signature_groups {
+            let subject_id = subject_ids[indices[0]];
+            let audience = self.delivery_audience(subject_id, server_tick, forced);
             if !audience.is_empty() {
                 by_audience.entry(audience).or_default().extend(indices);
             }
@@ -473,21 +524,6 @@ impl AoiWorld {
         let mut groups: Vec<_> = by_audience.into_iter().collect();
         groups.sort_unstable_by(|left, right| left.0.cmp(&right.0));
         groups
-    }
-
-    fn default_audience(
-        &self,
-        subject_grid: GridCoord,
-        server_tick: u32,
-        forced: bool,
-    ) -> Vec<u32> {
-        let mut ids: Vec<_> = self
-            .nearby_ids(subject_grid, self.enter_radius_grids)
-            .filter(|id| self.entries.get(id).is_some_and(|entry| entry.observer))
-            .filter(|id| forced || self.sync_due(self.entries[id].grid, subject_grid, server_tick))
-            .collect();
-        ids.sort_unstable();
-        ids
     }
 
     fn delivery_audience(&self, subject_id: u32, server_tick: u32, forced: bool) -> Vec<u32> {
@@ -520,14 +556,11 @@ impl AoiWorld {
             })
     }
 
-    fn reconcile_pair(&mut self, pair: (u32, u32), before_spatial: bool) {
-        let distance = self.pair_distance(pair);
-        let after_spatial = distance.is_some_and(|value| {
-            value <= self.enter_radius_grids
-                || (before_spatial && value <= self.detach_radius_grids)
-        });
+    fn reconcile_pair(&mut self, pair: (u32, u32), before_spatial: bool, distance: i32) {
+        let after_spatial = distance <= self.enter_radius_grids
+            || (before_spatial && distance <= self.detach_radius_grids);
         let before_visible = before_spatial && !self.rejected_relations.contains(&pair);
-        if after_spatial && distance.unwrap() > self.enter_radius_grids {
+        if after_spatial && distance > self.enter_radius_grids {
             self.lingering_relations.insert(pair);
         } else {
             self.lingering_relations.remove(&pair);
@@ -645,6 +678,13 @@ impl AoiWorld {
         if before == after {
             return;
         }
+        if let Some(signature) = self.audience_signatures.get_mut(&subject_id) {
+            if after {
+                signature.insert(observer_id);
+            } else {
+                signature.remove(observer_id);
+            }
+        }
         let pair = (observer_id, subject_id);
         if let Some(change) = self.pending_changes.get_mut(&pair) {
             change.after = after;
@@ -656,6 +696,13 @@ impl AoiWorld {
                 .insert(pair, PendingVisibilityChange { before, after });
         }
     }
+}
+
+fn mix_observer_id(observer_id: u32) -> u64 {
+    let mut value = u64::from(observer_id).wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }
 
 fn chebyshev(left: GridCoord, right: GridCoord) -> i32 {
@@ -821,6 +868,49 @@ mod tests {
         assert_eq!(
             world.delivery_groups(&subjects),
             vec![((1..=100).collect(), (0..100).collect())]
+        );
+    }
+
+    #[test]
+    fn dense_hysteresis_delivery_still_shares_one_encoded_frame() {
+        let mut world = world();
+        for unit_id in 1..=90 {
+            world.attach(unit_id, 1.0, 1.0, true, true).unwrap();
+        }
+        world.take_changes();
+
+        let grid_offsets = [-1.0_f32, 0.0, 1.0];
+        for unit_id in 1..=90 {
+            let slot = (unit_id - 1) as usize % 9;
+            let x = grid_offsets[slot % 3] * 10.0 + 1.0;
+            let z = grid_offsets[slot / 3] * 10.0 + 1.0;
+            world.relocate(unit_id, x, z).unwrap();
+        }
+
+        assert!(world.lingering_relation_count() > 0);
+        assert_eq!(world.visible_relation_count(), 90 * 89);
+        let subjects: Vec<_> = (1..=90).collect();
+        let groups = world.tiered_delivery_groups(&subjects, &[true; 90], 1);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, (1..=90).collect::<Vec<_>>());
+        let mut indices = groups[0].1.clone();
+        indices.sort_unstable();
+        assert_eq!(indices, (0..90).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn business_filter_splits_only_the_affected_audience() {
+        let mut world = world();
+        for unit_id in 1..=3 {
+            world.attach(unit_id, 0.0, 0.0, true, true).unwrap();
+        }
+        world.take_changes();
+        assert!(world.set_visible(1, 2, false));
+        assert_eq!(world.rejected_relation_count(), 1);
+
+        assert_eq!(
+            world.delivery_groups(&[1, 2, 3]),
+            vec![(vec![1, 2, 3], vec![0, 2]), (vec![2, 3], vec![1])]
         );
     }
 }

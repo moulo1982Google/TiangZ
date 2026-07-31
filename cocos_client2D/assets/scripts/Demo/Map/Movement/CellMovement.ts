@@ -3,6 +3,8 @@ export const PIXELS_PER_METER = 12;
 export const MAP_CELL_COUNT = 128;
 export const UNIT_FOOTPRINT_CELLS = 3;
 export const DEFAULT_MOVE_SPEED_CELLS_PER_SECOND = 10;
+/** 方向状态保活间隔；按下、转向和松开仍立即发送。 / Direction heartbeat interval; press, turn, and release still send immediately. */
+export const MOVE_INPUT_HEARTBEAT_SECONDS = 0.5;
 export const MIN_UNIT_CELL = -63;
 export const MAX_UNIT_CELL = 62;
 

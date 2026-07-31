@@ -19,9 +19,9 @@
 - 1 MapHost、16 Gate、1 Login、1 LoginMgr；
 - Rust 全链路压测客户端；
 - 3000 个玩家全部进入同一地图；
-- 每玩家 5Hz `C2M_Move`；
-- 每玩家 1Hz `C2M_MapProbe`；
-- 同一方向保持 5 次 Move，避免每条消息都人为转向；
+- 每玩家 2Hz（500ms）持续移动心跳；开始、转向和停止仍立即发送 `C2M_Move`；
+- 每玩家 0.2Hz `C2M_MapProbe`，即每5秒一次；
+- 同一方向保持 2 次 Move，约每秒转向一次，避免每条消息都人为转向；
 - 10 秒预热、30 秒正式窗口、3 轮；
 - Windows 使用 IOCP（配置名仍为 `epoll`）。
 
@@ -30,9 +30,9 @@ npm run perf:map-capacity -- `
   --client rust `
   --gates 16 `
   --players 3000 `
-  --move-rate 5 `
-  --movement-hold-messages 5 `
-  --probe-rate 1 `
+  --move-rate 2 `
+  --movement-hold-messages 2 `
+  --probe-rate 0.2 `
   --probe-concurrency 1 `
   --setup-concurrency 4 `
   --warmup 10 `

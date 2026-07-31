@@ -13,11 +13,11 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
 主要参数：
   --players 100,150,200       玩家数量列表
   --gates 4                   Gate 数量
-  --move-rate 5               每玩家每秒 Move 次数
-  --movement-hold-messages 5  连续多少次 Move 保持同一方向
+  --move-rate 2               每玩家每秒 Move 次数（默认500ms一次）
+  --movement-hold-messages 2  连续多少次 Move 保持同一方向
   --spawn-layout same-point   same-point|single-grid|grid-uniform；玩家出生布局
   --world-grids 10            Grid世界边长；当前支持10|15|20
-  --probe-rate 1              每玩家每秒 Probe RPC 次数
+  --probe-rate 0.2            每玩家每秒 Probe RPC 次数（默认5秒一次）
   --state-sync-mode off       off|numeric|player|item|mixed
   --state-sync-rate 0         每玩家每秒状态同步触发 RPC 次数
   --state-sync-concurrency 4  每玩家状态同步最大 in-flight
@@ -749,6 +749,8 @@ async function readProcessHealthMetrics(runtime) {
       aoiGrids: metric("tiangz_aoi_grids"),
       aoiCandidateRelations: metric("tiangz_aoi_candidate_relations"),
       aoiVisibleRelations: metric("tiangz_aoi_visible_relations"),
+      aoiLingeringRelations: metric("tiangz_aoi_lingering_relations"),
+      aoiRejectedRelations: metric("tiangz_aoi_rejected_relations"),
       aoiRelocations: metric("tiangz_aoi_relocations_total"),
       aoiVisibilityChanges: metric("tiangz_aoi_visibility_changes_total"),
       aoiFilterOverrides: metric("tiangz_aoi_filter_overrides_total"),
@@ -915,6 +917,8 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         aoiGrids: sample.aoiGrids,
         aoiCandidateRelations: sample.aoiCandidateRelations,
         aoiVisibleRelations: sample.aoiVisibleRelations,
+        aoiLingeringRelations: sample.aoiLingeringRelations,
+        aoiRejectedRelations: sample.aoiRejectedRelations,
         aoiRelocations: sample.aoiRelocations,
         aoiVisibilityChanges: sample.aoiVisibilityChanges,
         aoiFilterOverrides: sample.aoiFilterOverrides,
@@ -937,6 +941,16 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
           encodedFrames: Number(values.encoded_frames ?? 0),
           encodedItems: Number(values.encoded_items ?? 0),
           encodedBytes: Number(values.encoded_bytes ?? 0),
+          aoiWorlds: Number(values.aoi_worlds ?? 0),
+          aoiEntries: Number(values.aoi_entries ?? 0),
+          aoiGrids: Number(values.aoi_grids ?? 0),
+          aoiCandidateRelations: Number(values.aoi_candidate_relations ?? 0),
+          aoiVisibleRelations: Number(values.aoi_visible_relations ?? 0),
+          aoiLingeringRelations: Number(values.aoi_lingering_relations ?? 0),
+          aoiRejectedRelations: Number(values.aoi_rejected_relations ?? 0),
+          aoiRelocations: Number(values.aoi_relocations ?? 0),
+          aoiVisibilityChanges: Number(values.aoi_visibility_changes ?? 0),
+          aoiFilterOverrides: Number(values.aoi_filter_overrides ?? 0),
         }));
     const completeNativeDataSamples = nativeDataSamples.filter((sample) =>
       startedAt && endedAt &&
@@ -1123,6 +1137,8 @@ function summarizeNativeData(samples, formalWindowSamples) {
     aoiGrids: samples.at(-1)?.aoiGrids ?? 0,
     aoiCandidateRelations: samples.at(-1)?.aoiCandidateRelations ?? 0,
     aoiVisibleRelations: samples.at(-1)?.aoiVisibleRelations ?? 0,
+    aoiLingeringRelations: samples.at(-1)?.aoiLingeringRelations ?? 0,
+    aoiRejectedRelations: samples.at(-1)?.aoiRejectedRelations ?? 0,
     aoiRelocationsPerSecond: counterRate(samples, "aoiRelocations"),
     aoiVisibilityChangesPerSecond: counterRate(samples, "aoiVisibilityChanges"),
     aoiFilterOverridesPerSecond: counterRate(samples, "aoiFilterOverrides"),
@@ -1336,6 +1352,12 @@ function aggregateCases(rounds) {
       )),
       aoiVisibleRelations: median(group.map(
         (item) => item.serverResources.map?.nativeData?.aoiVisibleRelations ?? 0,
+      )),
+      aoiLingeringRelations: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiLingeringRelations ?? 0,
+      )),
+      aoiRejectedRelations: median(group.map(
+        (item) => item.serverResources.map?.nativeData?.aoiRejectedRelations ?? 0,
       )),
       aoiRelocationsPerSecond: median(group.map(
         (item) => item.serverResources.map?.nativeData?.aoiRelocationsPerSecond ?? 0,
@@ -1569,14 +1591,15 @@ function renderMarkdown(report) {
     "",
     "## AOI 空间指标",
     "",
-    "| 玩家 | World/Entity/Grid | candidate/visible | 跨Grid/s | 可见变化/s | 过滤覆盖/s |",
-    "|---:|---:|---:|---:|---:|---:|",
+    "| 玩家 | World/Entity/Grid | candidate/visible | 迟滞关系 | 拒绝关系 | 跨Grid/s | 可见变化/s | 过滤覆盖/s |",
+    "|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.cases) {
     const value = item.median;
     lines.push(
       `| ${item.players} | ${round(value.aoiWorlds)}/${round(value.aoiEntries)}/${round(value.aoiGrids)} | ` +
       `${round(value.aoiCandidateRelations)}/${round(value.aoiVisibleRelations)} | ` +
+      `${round(value.aoiLingeringRelations)} | ${round(value.aoiRejectedRelations)} | ` +
       `${round(value.aoiRelocationsPerSecond, 1)} | ${round(value.aoiVisibilityChangesPerSecond, 1)} | ` +
       `${round(value.aoiFilterOverridesPerSecond, 1)} |`,
     );
@@ -1717,12 +1740,12 @@ function parseOptions(args) {
   const options = {
     players: csvNumbers(values.get("--players") ?? "100,125,150,175,200"),
     gates: positive(values.get("--gates") ?? "4", "--gates"),
-    // Demo 默认客户端输入上报频率是 5Hz；服务端 Game.Update 默认保持 20Hz。
+    // Demo 默认客户端方向保活频率是2Hz；按键变化立即发送，服务端Game.Update保持20Hz。
     moveRate: flags.has("--probe-only")
       ? 0
-      : nonNegative(values.get("--move-rate") ?? "5", "--move-rate"),
+      : nonNegative(values.get("--move-rate") ?? "2", "--move-rate"),
     movementHoldMessages: positive(
-      values.get("--movement-hold-messages") ?? "5",
+      values.get("--movement-hold-messages") ?? "2",
       "--movement-hold-messages",
     ),
     spawnLayout: enumValue(
@@ -1731,7 +1754,7 @@ function parseOptions(args) {
       "--spawn-layout",
     ),
     worldGrids: positive(values.get("--world-grids") ?? "10", "--world-grids"),
-    probeRate: nonNegative(values.get("--probe-rate") ?? "1", "--probe-rate"),
+    probeRate: nonNegative(values.get("--probe-rate") ?? "0.2", "--probe-rate"),
     probeConcurrency: positive(values.get("--probe-concurrency") ?? "1", "--probe-concurrency"),
     stateSyncMode: enumValue(
       values.get("--state-sync-mode") ?? "off",

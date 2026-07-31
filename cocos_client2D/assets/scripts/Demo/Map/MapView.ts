@@ -138,7 +138,7 @@ export class MapView {
       entities,
     );
     return new MapController(
-      new LocalPlayerController(),
+      new LocalPlayerController(() => entities.stopLocalMovement()),
       entities,
       messages,
       switchMap,

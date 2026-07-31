@@ -237,6 +237,10 @@ struct NativeDataMetricsSnapshot {
     #[serde(default)]
     aoi_visible_relations: u64,
     #[serde(default)]
+    aoi_lingering_relations: u64,
+    #[serde(default)]
+    aoi_rejected_relations: u64,
+    #[serde(default)]
     aoi_relocations: u64,
     #[serde(default)]
     aoi_visibility_changes: u64,
@@ -1434,7 +1438,7 @@ fn maybe_log_metrics(
     }
     if let Some(native) = native_data_metrics {
         tracing::info!(target: "tiangz::metrics",
-            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} live_items={} pool_capacity_bytes={} scratch_capacity_bytes={} scratch_growths={} native_refs={} encoded_frames={} encoded_items={} encoded_bytes={} aoi_worlds={} aoi_entries={} aoi_grids={} aoi_candidate_relations={} aoi_visible_relations={} aoi_relocations={} aoi_visibility_changes={} aoi_filter_overrides={}",
+            "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} live_items={} pool_capacity_bytes={} scratch_capacity_bytes={} scratch_growths={} native_refs={} encoded_frames={} encoded_items={} encoded_bytes={} aoi_worlds={} aoi_entries={} aoi_grids={} aoi_candidate_relations={} aoi_visible_relations={} aoi_lingering_relations={} aoi_rejected_relations={} aoi_relocations={} aoi_visibility_changes={} aoi_filter_overrides={}",
             native.scalar_gets,
             native.scalar_sets,
             native.batch_calls,
@@ -1453,6 +1457,8 @@ fn maybe_log_metrics(
             native.aoi_grids,
             native.aoi_candidate_relations,
             native.aoi_visible_relations,
+            native.aoi_lingering_relations,
+            native.aoi_rejected_relations,
             native.aoi_relocations,
             native.aoi_visibility_changes,
             native.aoi_filter_overrides,
@@ -1604,6 +1610,8 @@ fn maybe_log_metrics(
         aoi_grids: native.aoi_grids as u64,
         aoi_candidate_relations: native.aoi_candidate_relations,
         aoi_visible_relations: native.aoi_visible_relations,
+        aoi_lingering_relations: native.aoi_lingering_relations,
+        aoi_rejected_relations: native.aoi_rejected_relations,
         aoi_relocations: native.aoi_relocations,
         aoi_visibility_changes: native.aoi_visibility_changes,
         aoi_filter_overrides: native.aoi_filter_overrides,

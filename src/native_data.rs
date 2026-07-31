@@ -116,6 +116,7 @@ struct NativeEntityStore {
     numerics_by_unit: HashMap<u32, NumericData>,
     scratch_handles: Vec<u32>,
     scratch_movement_records: Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
+    scratch_changed_positions: Vec<(u32, f32, f32)>,
     pending_movement_records: HashMap<u32, Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>>,
     scratch_numeric_records: Vec<(u32, u32, i32)>,
     scratch_unit_delta_records: Vec<UnitDeltaRecord>,
@@ -1236,7 +1237,8 @@ fn native_map_advance_movement(
             .unwrap_or_else(|| take_scratch(&mut store.scratch_movement_records));
         records.clear();
         let previous_capacity = records.capacity();
-        let mut changed_positions = Vec::new();
+        let mut changed_positions = take_scratch(&mut store.scratch_changed_positions);
+        let previous_positions_capacity = changed_positions.capacity();
         let outcome = (|| {
             update_map(
                 &mut store,
@@ -1249,7 +1251,7 @@ fn native_map_advance_movement(
             )?;
             let mut relocations = 0_u64;
             if let Some(world) = store.aoi_worlds.get_mut(&map_id) {
-                for (unit_id, x, z) in changed_positions {
+                for &(unit_id, x, z) in &changed_positions {
                     if world.is_attached(unit_id) {
                         relocations +=
                             u64::from(world.relocate(unit_id, x, z).map_err(JsErrorBox::generic)?);
@@ -1260,7 +1262,10 @@ fn native_map_advance_movement(
             Ok(records.len() as u32)
         })();
         store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
+        store.metrics.scratch_growths +=
+            u64::from(changed_positions.capacity() > previous_positions_capacity);
         store.scratch_handles = handles;
+        store.scratch_changed_positions = changed_positions;
         store.pending_movement_records.insert(map_id, records);
         outcome
     })
@@ -1601,8 +1606,18 @@ fn native_data_metrics_bytes() -> Vec<u8> {
             .values()
             .map(AoiWorld::visible_relation_count)
             .sum::<usize>() as u64;
+        let aoi_lingering_relations = store
+            .aoi_worlds
+            .values()
+            .map(AoiWorld::lingering_relation_count)
+            .sum::<usize>() as u64;
+        let aoi_rejected_relations = store
+            .aoi_worlds
+            .values()
+            .map(AoiWorld::rejected_relation_count)
+            .sum::<usize>() as u64;
         let metrics = store.metrics.clone();
-        let mut bytes = Vec::with_capacity(136);
+        let mut bytes = Vec::with_capacity(152);
         bytes.extend_from_slice(&metrics.scalar_gets.to_le_bytes());
         bytes.extend_from_slice(&metrics.scalar_sets.to_le_bytes());
         bytes.extend_from_slice(&metrics.batch_calls.to_le_bytes());
@@ -1623,6 +1638,8 @@ fn native_data_metrics_bytes() -> Vec<u8> {
         bytes.extend_from_slice(&metrics.aoi_relocations.to_le_bytes());
         bytes.extend_from_slice(&metrics.aoi_visibility_changes.to_le_bytes());
         bytes.extend_from_slice(&metrics.aoi_filter_overrides.to_le_bytes());
+        bytes.extend_from_slice(&aoi_lingering_relations.to_le_bytes());
+        bytes.extend_from_slice(&aoi_rejected_relations.to_le_bytes());
         bytes
     })
 }
@@ -2078,8 +2095,8 @@ mod tests {
 
         let first = native_data_metrics_bytes();
         let second = native_data_metrics_bytes();
-        assert_eq!(first.len(), 136);
-        assert_eq!(second.len(), 136);
+        assert_eq!(first.len(), 152);
+        assert_eq!(second.len(), 152);
 
         STORE.with(|slot| {
             let store = slot.borrow();

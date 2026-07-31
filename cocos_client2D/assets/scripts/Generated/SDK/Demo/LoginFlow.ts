@@ -18,6 +18,9 @@ import {
   LoginMgrClient,
 } from "../Generated/Model/demo/protocol/clients";
 
+/** Gate应用层保活周期；服务端默认30秒无收发才判定离线。 / Gate application heartbeat interval; the server times out after 30 seconds without traffic. */
+const GATE_PING_INTERVAL_MS = 5_000;
+
 export interface EnterGameResult {
   login: S2C_Login;
   enterMap: G2C_EnterMap;
@@ -128,6 +131,6 @@ export class LoginFlow {
         console.error("发送 Gate Ping 失败", error);
         if (this.gateSocket === socket) this.close();
       });
-    }, 5_000);
+    }, GATE_PING_INTERVAL_MS);
   }
 }

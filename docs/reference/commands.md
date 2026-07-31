@@ -120,7 +120,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run perf:kcp-loginmgr -- 127.0.0.1:7000 256 5 20` | KCP LoginMgr RPC基准：地址、连接数、预热秒数、测试秒数 |
 | `npm run perf:full-chain` | 单Process/拆分Process完整登录、进图、移动和Push矩阵 |
 | `npm run perf:map-capacity -- --gates 8 --players 200 --rounds 3` | 单MapHost全员可见广播、批量下行Bridge和Probe容量测试 |
-| `npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 5` | 运行指定分钟的完整链路长稳；正式10小时使用`--minutes 600` |
+| `npm run perf:soak -- --minutes 10 --mode split --players 200 --move-rate 2` | 运行指定分钟的完整链路长稳；正式10小时使用`--minutes 600` |
 
 ## 清理、监控与发布
 

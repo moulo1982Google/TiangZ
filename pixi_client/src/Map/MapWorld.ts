@@ -18,6 +18,7 @@ import { CharacterSprite } from "./CharacterSprite";
 import { GameConfigs, SpatialMode } from "../Generated/SDK/Generated/Config";
 
 const PIXELS_PER_METER = 12;
+const MOVE_INPUT_HEARTBEAT_SECONDS = 0.5;
 
 interface EntityView {
   readonly root: Container;
@@ -39,7 +40,10 @@ export class MapWorld {
   private readonly mapClient: MapClient;
   private readonly pressed = new Set<string>();
   private sequence = 1;
-  private sendAccumulator = 0;
+  private movementHeartbeatElapsed = 0;
+  private lastSentInputX = 0;
+  private lastSentInputZ = 0;
+  private hasSentMovement = false;
 
   constructor(
     private readonly app: Application,
@@ -83,6 +87,8 @@ export class MapWorld {
     }
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
+    window.addEventListener("blur", this.onWindowBlur);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
   }
 
   enter(snapshot: MapEntitySnapshot): void {
@@ -191,17 +197,15 @@ export class MapWorld {
       this.world.x = this.app.screen.width / 2 - local.root.x;
       this.world.y = this.app.screen.height / 2 - local.root.y;
     }
-    this.sendAccumulator += deltaSeconds;
-    if (this.sendAccumulator >= 0.2) {
-      this.sendAccumulator %= 0.2;
-      const [inputX, inputZ] = this.inputDirection();
-      void this.mapClient.move({ inputX, inputZ, sequence: this.sequence++ });
-    }
+    this.syncMovementInput(deltaSeconds);
   }
 
   dispose(): void {
+    this.stopMovement();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
+    window.removeEventListener("blur", this.onWindowBlur);
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
     for (const entity of this.entities.values()) entity.appearance.dispose();
     this.world.destroy({ children: true });
     this.entities.clear();
@@ -243,8 +247,40 @@ export class MapWorld {
     return [x, y];
   }
 
+  /** 方向变化立即发送，持续移动仅每500ms保活；静止时不产生周期Move。 / Sends changes immediately, heartbeats movement every 500ms, and stays silent while idle. */
+  private syncMovementInput(deltaSeconds: number): void {
+    const [inputX, inputZ] = this.inputDirection();
+    if (inputX !== this.lastSentInputX || inputZ !== this.lastSentInputZ) {
+      this.sendMovement(inputX, inputZ);
+      return;
+    }
+    if (inputX === 0 && inputZ === 0) {
+      this.movementHeartbeatElapsed = 0;
+      return;
+    }
+    this.movementHeartbeatElapsed += Math.max(0, deltaSeconds);
+    if (this.movementHeartbeatElapsed < MOVE_INPUT_HEARTBEAT_SECONDS) return;
+    this.sendMovement(inputX, inputZ);
+  }
+
+  private sendMovement(inputX: number, inputZ: number): void {
+    this.lastSentInputX = inputX;
+    this.lastSentInputZ = inputZ;
+    this.hasSentMovement = true;
+    this.movementHeartbeatElapsed = 0;
+    void this.mapClient.move({ inputX, inputZ, sequence: this.sequence++ })
+      .catch((error) => console.error("发送移动输入失败", error));
+  }
+
+  private stopMovement(): void {
+    this.pressed.clear();
+    if (!this.hasSentMovement || (this.lastSentInputX === 0 && this.lastSentInputZ === 0)) return;
+    this.sendMovement(0, 0);
+  }
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     this.pressed.add(event.code);
+    this.syncMovementInput(0);
     if (event.code === "KeyU" && !event.repeat) {
       const itemId = this.items.keys().next().value as bigint | undefined;
       if (itemId === undefined) return;
@@ -258,6 +294,13 @@ export class MapWorld {
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     this.pressed.delete(event.code);
+    this.syncMovementInput(0);
+  };
+
+  private readonly onWindowBlur = (): void => this.stopMovement();
+
+  private readonly onVisibilityChange = (): void => {
+    if (document.hidden) this.stopMovement();
   };
 }
 

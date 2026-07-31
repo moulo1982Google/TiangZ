@@ -31,6 +31,8 @@ export interface NativeDataMetrics {
   aoiGrids: number;
   aoiCandidateRelations: number;
   aoiVisibleRelations: number;
+  aoiLingeringRelations: number;
+  aoiRejectedRelations: number;
   aoiRelocations: number;
   aoiVisibilityChanges: number;
   aoiFilterOverrides: number;
@@ -420,7 +422,7 @@ export class NativeData {
   /** 读取生命周期累计 NativeData 指标；相邻快照差值只用于本地高频访问告警。 / Reads monotonic NativeData metrics; snapshot deltas are used only for local access warnings. */
   static TakeMetrics(): NativeDataMetrics {
     const bytes = NativeOps.DataTakeMetrics();
-    if (bytes.length !== 136) {
+    if (bytes.length !== 152) {
       throw new Error(`invalid native metrics length: ${bytes.length}`);
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -445,6 +447,8 @@ export class NativeData {
       aoiRelocations: Number(view.getBigUint64(112, true)),
       aoiVisibilityChanges: Number(view.getBigUint64(120, true)),
       aoiFilterOverrides: Number(view.getBigUint64(128, true)),
+      aoiLingeringRelations: Number(view.getBigUint64(136, true)),
+      aoiRejectedRelations: Number(view.getBigUint64(144, true)),
       nativeRefs: NativeOps.NativeRefMetrics(),
     };
     const previous = this.previousMetrics;

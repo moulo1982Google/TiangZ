@@ -46,11 +46,14 @@ export function MapCapacityPlacementOf(
   let cellX = gridMinCellX + Math.floor(aoi.gridSizeCells / 2);
   let cellZ = gridMinCellZ + Math.floor(aoi.gridSizeCells / 2);
   if (layout === 2) {
-    if (aoi.gridSizeCells < 5) throw new Error(`AOI Grid is too small: ${aoi.gridSizeCells}`);
-    const lowX = gridMinCellX + 2;
-    const highX = gridMaxCellX - 2;
-    const lowZ = gridMinCellZ + 2;
-    const highZ = gridMaxCellZ - 2;
+    if (aoi.gridSizeCells < 7) throw new Error(`AOI Grid is too small: ${aoi.gridSizeCells}`);
+    const centerX = cellX;
+    const centerZ = cellZ;
+    const anchorOffset = Math.max(1, Math.floor(aoi.gridSizeCells / 6));
+    const lowX = centerX - anchorOffset;
+    const highX = centerX + anchorOffset;
+    const lowZ = centerZ - anchorOffset;
+    const highZ = centerZ + anchorOffset;
     switch (anchorSeed % 4) {
       case 0: [cellX, cellZ] = [lowX, lowZ]; break;
       case 1: [cellX, cellZ] = [highX, lowZ]; break;

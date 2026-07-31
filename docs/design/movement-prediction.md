@@ -16,8 +16,8 @@
 - Unit 占地：3x3 Cell，演示方块为 36x36。
 - 移速：每秒 10 Cell。
 - 服务端地图逻辑帧：20Hz。
-- 客户端方向保活：5Hz。
-- 服务端移动中周期广播：10Hz。
+- 客户端方向保活：2Hz，即500ms一次；按下、转向和松开仍立即发送。
+- 服务端权威推进：20Hz；AOI下行频率独立，按距离档位最高20Hz。
 
 ## 移动规则
 
@@ -34,7 +34,7 @@ moveStartTick -> moveEndTick
 
 ## 本地玩家
 
-`LocalMovementPredictor` 在开始、转向和停止时立即发送递增 `sequence`，持续按键时每 200ms 发送保活。本地渲染帧直接在当前 `fromCell/toCell` 之间插值，无需等待服务器响应。
+`LocalMovementPredictor` 在开始、转向和停止时立即发送递增 `sequence`，持续按键时每500ms发送保活。本地渲染帧直接在当前 `fromCell/toCell` 之间插值，无需等待服务器响应。Cocos窗口隐藏、Pixi页面失焦或地图销毁会主动清空按键并立即发送停止，避免遗漏`KEY_UP`后继续移动。
 
 收到权威状态后：
 

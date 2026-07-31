@@ -4,8 +4,8 @@
 
 测试拓扑固定为一个 MapHost，可通过 `--gates` 横向增加 Gate。每个玩家同时执行：
 
-- `5Hz C2M_Move`，触发当前AOI内广播；所有玩家位于同一Cell时仍是最坏同屏全可见负载。这是容量测试的默认参数，不等于Cocos客户端的20Hz预测输入频率。
-- `1Hz C2M_MapProbe`，经过客户端、Gate、MapHost 和返回链路，但不触发广播。
+- `2Hz C2M_Move`，对应移动中每500ms方向保活；按下、转向、松开在真实客户端仍立即发送。所有玩家位于同一Cell时仍是最坏同屏全可见负载。
+- `0.2Hz C2M_MapProbe`，即每5秒一次；经过客户端、Gate、MapHost 和返回链路，但不触发广播。
 
 服务端 `Game.Update` 默认固定为 20Hz。每帧由 Rust 批量推进地图内 Unit，并直接编码仍在移动或本帧状态改变的权威快照。压测客户端按固定频率开环发送 Move，吞吐只统计正式窗口内实际写入的请求，不等待广播确认后再发送。每个Rust虚拟玩家依据UnitId获得稳定周期相位，Move、Probe和可选状态请求均匀铺在周期内；总QPS不变，但不会在周期边界制造全员同步尖峰。虚拟客户端只拆分并计数移动广播帧，不为每个模拟玩家反序列化整份全员快照；端到端延迟由独立的 `MapProbe` 测量。这样可以避免单机压测器的 `O(N^2)` 解码成本或同步定时脉冲先于服务端成为瓶颈。
 
@@ -21,8 +21,8 @@ npm run perf:map-capacity
 npm run perf:map-capacity -- \
   --gates 4 \
   --players 100,125,150,175,200 \
-  --move-rate 5 \
-  --probe-rate 1 \
+  --move-rate 2 \
+  --probe-rate 0.2 \
   --warmup 10 \
   --duration 30 \
   --rounds 1 \
@@ -36,8 +36,8 @@ npm run perf:map-capacity -- \
   --io-backend io-uring \
   --gates 12 \
   --players 525 \
-  --move-rate 5 \
-  --probe-rate 1 \
+  --move-rate 2 \
+  --probe-rate 0.2 \
   --warmup 10 \
   --duration 30 \
   --rounds 3
@@ -48,8 +48,8 @@ npm run perf:map-capacity -- \
 - `--io-backend epoll|io-uring`，默认 `epoll`；旧参数 `--network-backend` 暂时仍可使用；
 - `--uring-entries 2048`；
 - `--uring-read-buffer-bytes 65536`；
-- `--movement-hold-messages N`，连续 N 次 Move 保持同一方向，默认5；在默认5Hz上报下即每秒换向一次，四个方向形成闭合轨迹，避免把高频转向事件误当成普通持续移动；
-- `--spawn-layout same-point|single-grid|grid-uniform`，默认 `same-point`；`single-grid`通过Bench专用RPC把玩家固定到同一AOI Grid的四个内侧起点；`grid-uniform`把玩家轮询分配到全部AOI Grid并固定在各Grid中央Cell。两种Bench布局都把速度限制为1 Cell/s，消息仍保持5Hz、服务端仍保持20Hz，用于测稳定Grid密度；
+- `--movement-hold-messages N`，连续 N 次 Move 保持同一方向，默认2；在默认2Hz上报下仍是每秒换向一次，四个方向形成闭合轨迹，避免把高频转向事件误当成普通持续移动；
+- `--spawn-layout same-point|single-grid|grid-uniform`，默认 `same-point`；`single-grid`通过Bench专用RPC把玩家固定到同一AOI Grid中央附近的四个安全起点，确保1 Cell/s闭合轨迹不会触碰Grid边界；`grid-uniform`把玩家轮询分配到全部AOI Grid并固定在各Grid中央Cell。两种Bench布局都把速度限制为1 Cell/s，消息保持默认2Hz、服务端仍保持20Hz，用于测稳定Grid密度；
 - `--world-grids 10|15|20`，默认10；分别选择150、225、300 Cell的Cold MapConfig。该参数当前只支持Rust压测客户端；
 - `--post-setup-settle N`，全部玩家进图后空闲排空N秒再开始负载预热，默认0；用于把批量AOI Enter成本与稳态Move容量分开，不能用它掩盖独立的批量进图验收失败；
 - `--skip-rust-build`，只在已经确认目标二进制 feature 正确时使用。
@@ -114,8 +114,8 @@ npm run perf:map-capacity -- \
   --client rust \
   --gates 12 \
   --players 2000 \
-  --move-rate 5 \
-  --probe-rate 1 \
+  --move-rate 2 \
+  --probe-rate 0.2 \
   --warmup 5 \
   --duration 15
 ```
@@ -137,6 +137,10 @@ npm run perf:map-capacity -- \
 
 CPU 的 100% 表示占满一个逻辑核。`same-point`和`single-grid`代表最坏同屏；`grid-uniform`代表Rust AOI切割后的均匀空间密度，两类结果不能混为一条容量曲线。
 
+`single-grid`是稳定的全可见广播基线：玩家位于同一AOI Grid中央附近，以1 Cell/s沿安全闭合轨迹移动，主要测量3000人互相可见时的Movement编码、Gate扇出和端到端延迟。`same-point`保留普通玩家10 Cell/s速度并从同一点开始移动，会快速制造大量跨Grid和迟滞关系；它是AOI边界维护压力测试，不是“静止同屏”的别名，也不能替代`single-grid`容量基线。
+
+AOI报告中的`迟滞关系`与`拒绝关系`均为当前Gauge。迟滞关系持续增长时，应把`跨Grid/s × candidate`视为主要工作量，并同时检查Movement advance、Map Frame队列和Probe延迟。正式容量结果仍要求窗口内backpressure、overload、timeout和slow disconnect全部为0。
+
 使用当前冷配置验证10×10 AOI Grid的实际切割效果：
 
 ```bash
@@ -146,8 +150,8 @@ npm run perf:map-capacity -- \
   --world-grids 10 \
   --gates 16 \
   --players 1000,2000,3000 \
-  --move-rate 5 \
-  --probe-rate 1 \
+  --move-rate 2 \
+  --probe-rate 0.2 \
   --post-setup-settle 15 \
   --warmup 10 \
   --duration 60

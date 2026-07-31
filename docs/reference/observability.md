@@ -275,6 +275,11 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 - `live_entities`：Rust generation Arena 中全部存活实体数，用于发现 Item 等非 Unit 实体泄漏。
 - `live_units`：Rust Arena 中存活 Unit 数；玩家全部离开后应回到 0。
 - `encoded_frames/encoded_items/encoded_bytes`：Rust 直接 protobuf 投影的帧数、Unit 数和唯一帧字节数；逻辑下行还要乘以收件人数。
+- `tiangz_aoi_candidate_relations/tiangz_aoi_visible_relations`：空间候选关系与业务过滤后的最终可见关系，均为当前值 Gauge。
+- `tiangz_aoi_lingering_relations`：仅因为已经 Enter、尚未越过 Detach 而继续保留的迟滞关系。它持续接近 `visible_relations` 时，表示地图正在承受密集人群跨 Grid 的迟滞维护压力。
+- `tiangz_aoi_rejected_relations`：被阵营、隐身、位面等业务过滤器拒绝的空间关系。它是当前拒绝数量，不是累计过滤次数。
+
+`lingering_relations` 高不等于错误，但其维护成本近似“跨 Grid 次数 × 附近候选人数”。分析 AOI 性能时必须同时观察 `tiangz_aoi_relocations_total`、Map CPU、Frame 队列深度和 Movement 分段耗时；不能只看可见人数。
 
 ## 链路耗时
 
@@ -354,7 +359,7 @@ npm run profile:ts -- --port 9231 --duration 30 --out perf/results/map_150.cpupr
 3. 第三个终端启动压测：
 
    ```powershell
-   node dist/full_chain_load_test.cjs --host 127.0.0.1 --manager-port 7000 --players 150 --warmup 3 --duration 30 --move-rate 5
+   node dist/full_chain_load_test.cjs --host 127.0.0.1 --manager-port 7000 --players 150 --warmup 3 --duration 30 --move-rate 2
    ```
 
 `.cpuprofile` 可以用 Chrome DevTools 的 Performance 面板加载，也可以用 <https://www.speedscope.app/> 打开。分析时先看 `Self Time` 高的函数；`Total Time` 高但 `Self Time` 低通常说明它只是调用链入口。

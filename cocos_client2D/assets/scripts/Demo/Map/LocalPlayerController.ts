@@ -1,6 +1,8 @@
 import {
   EventKeyboard,
+  Game,
   Input,
+  game,
   input,
   KeyCode,
 } from "cc";
@@ -18,7 +20,7 @@ export class LocalPlayerController {
   private useItemRequested = false;
   private switchMapRequested = false;
 
-  constructor() {
+  constructor(private readonly onMovementInterrupted: () => void = () => undefined) {
     this.register();
   }
 
@@ -40,6 +42,7 @@ export class LocalPlayerController {
     if (!this.registered) return;
     input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
     input.off(Input.EventType.KEY_UP, this.onKeyUp, this);
+    game.off(Game.EVENT_HIDE, this.onGameHide, this);
     this.registered = false;
     this.pressed.clear();
   }
@@ -48,16 +51,25 @@ export class LocalPlayerController {
     if (this.registered) return;
     input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
     input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
+    game.on(Game.EVENT_HIDE, this.onGameHide, this);
     this.registered = true;
   }
 
   private onKeyDown(event: EventKeyboard): void {
+    const firstPress = !this.pressed.has(event.keyCode);
     this.pressed.add(event.keyCode);
-    if (event.keyCode === KeyCode.KEY_U) this.useItemRequested = true;
-    if (event.keyCode === KeyCode.KEY_T) this.switchMapRequested = true;
+    if (firstPress && event.keyCode === KeyCode.KEY_U) this.useItemRequested = true;
+    if (firstPress && event.keyCode === KeyCode.KEY_T) this.switchMapRequested = true;
   }
 
   private onKeyUp(event: EventKeyboard): void {
     this.pressed.delete(event.keyCode);
+  }
+
+  /** Cocos Web/Native隐藏时可能没有KEY_UP，必须立即清键并通知移动层停止。 / Cocos Web/Native may miss KEY_UP while hidden, so clear keys and stop immediately. */
+  private onGameHide(): void {
+    if (this.pressed.size === 0) return;
+    this.pressed.clear();
+    this.onMovementInterrupted();
   }
 }

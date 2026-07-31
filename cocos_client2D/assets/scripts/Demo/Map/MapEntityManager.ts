@@ -15,6 +15,7 @@ import { BuffStateStore } from "../../Generated/SDK/Demo/BuffStateStore";
 import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
 import {
+  MOVE_INPUT_HEARTBEAT_SECONDS,
   PIXELS_PER_METER,
   UNIT_FOOTPRINT_CELLS,
   cellToWorld,
@@ -138,6 +139,11 @@ export class MapEntityManager {
     }
   }
 
+  /** 立即清除本地移动意图；窗口失焦和地图销毁必须调用，避免遗漏KEY_UP后继续移动。 / Immediately clears local movement intent after focus loss or map disposal. */
+  stopLocalMovement(): void {
+    this.local?.movement.setInput({ x: 0, z: 0 });
+  }
+
   leave(unitId: number): void {
     this.buffs.RemoveUnit(unitId);
     this.remove(unitId);
@@ -159,6 +165,7 @@ export class MapEntityManager {
   }
 
   dispose(): void {
+    this.stopLocalMovement();
     this.local?.appearance.dispose();
     this.local?.node.destroy();
     this.local = undefined;
@@ -210,7 +217,7 @@ export class MapEntityManager {
           },
           {
             fixedUpdateMs: this.fixedUpdateMs,
-            heartbeatSeconds: 1 / 5,
+            heartbeatSeconds: MOVE_INPUT_HEARTBEAT_SECONDS,
             mapWidthCells: this.mapWidthCells,
             mapDepthCells: this.mapDepthCells,
             moveSpeedCellsPerSecond: snapshot.speedCellsPerSecond,

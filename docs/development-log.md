@@ -10,6 +10,11 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-07-31：统一2D移动输入与500ms基线
+
+- Cocos 2D与Pixi/H5统一为“状态变化立即发送、持续移动每500ms保活、静止零周期消息”；失焦、隐藏和地图销毁都会立即清除输入并发送停止，避免遗漏KeyUp后角色继续移动。Pixi此前的周期采样改为方向变化即时上报，Cocos的道具/传送快捷键忽略按键重复。
+- 容量、长稳和热更测试的默认Move频率改为2Hz，MapProbe改为0.2Hz（5秒一次）；客户端SDK和两种压测客户端的Gate Ping均确认保持5秒一次。服务端20Hz权威推进、AOI 20/5/1Hz同步档位和客户端渲染不变。既有5Hz Move + 1Hz Probe容量结果是历史证据，不改写，也不能与新口径直接比较。
+
 ## 2026-07-30 - AOI路由帧下沉与3000人稳态回归
 
 针对3000玩家AOI压测补齐了分阶段责任指标：Process队列固定区分`frame/completion/disconnect/shutdown`，Transport过载固定区分`manager_queue/connection_queue/call_writer_queue/send_writer_queue`。容量判定只使用正式窗口Counter增量，避免Setup和入图期历史背压污染稳态；生命周期最大等待与最大深度仍保留用于解释洪峰。重复的单向`scene-overloaded`日志改由指标承载，其他发送错误继续保留日志。
@@ -286,3 +291,19 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 项目依赖检查、协议、广播、Client SDK、Cocos 2D、Pixi、Rust AOI和NativeData测试全部通过。
 - Audience微基准以两组各3000个UnitId做20000次Union：约21238次/s，约7.85ns/输入ID；该操作用于低频Event或小型关系受众，不替代Movement Rust热路径。
 - 3000玩家、16 Gate、15x15 AOI Grid、每玩家5Hz Move、60秒正式窗口复测：15000 Move/s、511810 Push/s，Map CPU平均/p90/峰值48.3%/57.1%/69.6%，零背压、零过载、零超时。首次受环境干扰的运行出现619次frame等待，已按规则判无效并由无背压复测替代。
+
+# 2026-07-31 - AOI密集迟滞分组优化
+
+## 问题与改造
+
+- 定位到密集人群离开Enter范围但仍处于Detach迟滞带时，旧Movement编码会为每个Subject重新扫描全部Observer，形成永久`O(subject × observer)`重复工作。
+- Rust AOI新增增量Audience签名，按`Subject Grid + Audience签名 + force`共享一次最终受众计算，再按最终Audience合并编码；业务协议、Enter/Detach与方向性过滤语义不变。
+- 跨Grid更新改为一次收集旧Detach与新Enter候选，并在同一遍历中处理两个可见方向；候选HashSet与每Tick坐标变更Vec复用容量。
+- Prometheus和容量报告新增`aoi_lingering_relations`与`aoi_rejected_relations`Gauge，用于区分普通同屏、迟滞膨胀和业务过滤压力。
+
+## 验证结论
+
+- 3000人密集迟滞Rust微基准中，受众分组由约640.5ms/次降到1.05ms/次；临时计时代码未进入仓库，正式测试覆盖受众等价与业务过滤拆组。
+- 最终Release复测使用3000玩家、16 Gate、`single-grid`、2Hz Move、0.2Hz Probe：Move 5981.8/s（99.70%），Map CPU平均/p90 39.25%/44.17%，Probe p95/p99 243.15/425.09ms；玩家始终位于1个AOI Grid，迟滞关系和跨Grid均为0，正式窗口零背压、零内部过载、零超时和零慢连接断开。
+- `same-point`以普通玩家10 Cell/s制造高频跨Grid，2000人可达到约1034次跨Grid/s并形成百万级迟滞关系，仍会触达Map输入队列上限。该场景测的是`跨Grid次数 × 可见人数`，不能替代稳定同屏容量基线。
+- 一次3000人复测在正式窗口前因初始AOI快照洪峰触发Gate慢连接保护，随后相同历史参数复跑通过；失败样本保留为setup期下行洪峰证据，不计入正式容量。

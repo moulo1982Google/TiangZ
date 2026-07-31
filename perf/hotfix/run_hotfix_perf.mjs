@@ -173,9 +173,9 @@ function parseArgs(values) {
   return {
     players: positive(map.get("--players") ?? 3000),
     gates: positive(map.get("--gates") ?? 16),
-    moveRate: positive(map.get("--move-rate") ?? 5),
-    movementHoldMessages: positive(map.get("--movement-hold-messages") ?? 5),
-    probeRate: positive(map.get("--probe-rate") ?? 1),
+    moveRate: positive(map.get("--move-rate") ?? 2),
+    movementHoldMessages: positive(map.get("--movement-hold-messages") ?? 2),
+    probeRate: positive(map.get("--probe-rate") ?? 0.2),
     setupConcurrency: positive(map.get("--setup-concurrency") ?? 4),
     warmup: nonNegative(map.get("--warmup") ?? 10),
     duration: positive(map.get("--duration") ?? 30),

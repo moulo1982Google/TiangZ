@@ -35,7 +35,7 @@ npm run perf:full-chain
 
 - 玩家数：10、50、100。
 - 部署：`all` 和 `split`。
-- 稳定负载：每个玩家目标 10Hz 移动。
+- 稳定负载：每个玩家目标 2Hz（500ms）持续移动心跳。
 - 极限负载：每个玩家收到自身权威移动后立即发送下一条。
 - 每个案例预热 10 秒、正式采样 60 秒、独立运行 3 轮并报告中位数。
 
@@ -43,7 +43,7 @@ npm run perf:full-chain
 
 ```bash
 npm run perf:full-chain -- \
-  --mode all --players 10,50 --move-rates 10,0 \
+  --mode all --players 10,50 --move-rates 2,0 \
   --warmup 2 --duration 10 --rounds 1
 ```
 

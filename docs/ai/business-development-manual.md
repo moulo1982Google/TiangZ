@@ -334,6 +334,8 @@ message M2C_UseSkill // IActorLocationResponse
 
 Grid2D业务使用`cellX/cellZ`和`inputX/inputZ`。Cocos 2D与Pixi在客户端边界将服务端X/Z映射为屏幕X/Y，服务端Y通常为零；3D客户端直接把普通数值转换为引擎向量。禁止再次引入`cellY/inputY`表示地面纵轴，否则2D与3D地图会产生相反语义。
 
+Grid2D客户端只上报移动意图：按下、转向和松开立即发送，按住不变时每`500ms`发送一次保活，静止时不周期发送。窗口隐藏、浏览器失焦和地图销毁必须立即清除按键并发送停止。业务不得把这项`2Hz`输入心跳当成服务端模拟频率；权威移动仍由20Hz Game.Update推进，AOI下行和渲染平滑各自独立。`C2M_MapProbe`只用于测量完整Actor RPC链路延迟，容量基线默认每5秒一次；`C2G_Ping`是Gate存活探测，也固定每5秒一次，不能用二者替代移动或游戏Tick。
+
 Cell是最小空间单位：Grid2D一步移动一个Cell，NavMesh3D允许在Cell内连续移动。AOI只按Grid边界重算，默认15×15 Cell组成一个Grid；Grid从地图最小Cell开始编号，地图宽高必须是Grid边长的整数倍。默认3×3是Enter和20Hz高频区，已可见关系移到5×5外圈后降为5Hz，移到7×7外圈后降为1Hz并保留迟滞，再越界才Leave。外圈不会让一个从未Enter的单位直接可见。
 
 创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。当前只有`Grid2D`运行时可用；`NavMesh3D`配置虽然已经具备资源、版本和哈希字段，但必须等Rust导航运行时完成后才能启用。业务不能捕获“不支持NavMesh”的异常后回退到Grid2D。空间模式、字段结构和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
@@ -480,6 +482,8 @@ QuestComponent
 ## 广播给谁与如何广播
 
 业务层只产生逻辑`ClientAudience`：AOI观察者、自己、队伍、公会在线成员等。`ClientBroadcast`在发送时批量解析UnitId到Gate；同地图成员同步直取Gate，跨地图关系成员通过Location批量查询并短期缓存。业务看不到`BroadcastAudience`、Gate route、连接或内网帧。Core的`BroadcastHub`处理编码、event队列、latest合并、single-flight和指标。Movement等已经由框架提供专用Rust热路径的状态，业务仍只修改权威数据或调用领域方法。
+
+业务开发者不创建、不读取AOI的Audience签名，也不维护迟滞关系集合。Rust会为最终受众相同的状态共享编码；`tiangz_aoi_lingering_relations`和`tiangz_aoi_rejected_relations`只用于诊断。设计地图和移动速度时应让Grid尺寸明显大于单Tick移动距离；若大量Unit持续跨Grid，成本近似“跨Grid次数 × 附近候选人数”，这属于空间负载模型，不应通过在Handler中缓存观察者列表规避。
 
 ```ts
 const map = player.DomainScene().GetComponent(MapComponent);
