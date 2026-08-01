@@ -29,14 +29,31 @@ export interface EnterGameResult {
 
 export type LoginProgress = (message: string) => void;
 
+export interface GatePingSample {
+  /** Ping请求的完整往返时间，是地图HUD显示的延迟。 / Full Ping round-trip time displayed by the map HUD. */
+  readonly latencyMs: number;
+  /** Gate处理Ping时返回的Unix毫秒时间。 / Unix time in milliseconds returned when Gate handled the Ping. */
+  readonly serverTimeMs: number;
+  /** 服务端时钟相对客户端时钟的估算偏差。 / Estimated server clock offset relative to the client clock. */
+  readonly clockOffsetMs: number;
+  /** 客户端收到这次Ping响应的本地时间。 / Local time when this Ping response arrived. */
+  readonly receivedAtMs: number;
+}
+
 export class LoginFlow {
   private readonly sockets = new Set<RpcSocket>();
   private gateSocket?: RpcSocket;
   private gateClient?: GateClient;
   private gatePingTimer?: ReturnType<typeof setInterval>;
   private gatePingInFlight = false;
+  private gatePingSample: GatePingSample | null = null;
 
   constructor(private readonly loginMgrEndpoint: ClientEndpoint) {}
+
+  /** 返回最近一次Gate Ping测量；尚未收到响应时为null。 / Returns the latest Gate Ping measurement, or null before the first response. */
+  get latestGatePing(): GatePingSample | null {
+    return this.gatePingSample;
+  }
 
   async enterGame(
     account: string,
@@ -104,6 +121,7 @@ export class LoginFlow {
     this.gateSocket = undefined;
     this.gateClient = undefined;
     this.gatePingInFlight = false;
+    this.gatePingSample = null;
   }
 
   update(maxMessagesPerSocket = 256): number {
@@ -128,17 +146,35 @@ export class LoginFlow {
 
   private startGatePing(): void {
     if (this.gatePingTimer !== undefined) clearInterval(this.gatePingTimer);
-    this.gatePingTimer = setInterval(() => {
-      const socket = this.gateSocket;
-      const gate = this.gateClient;
-      if (!socket || !gate || this.gatePingInFlight) return;
-      this.gatePingInFlight = true;
-      void gate.ping({}).catch((error) => {
-        console.error("发送 Gate Ping 失败", error);
-        if (this.gateSocket === socket) this.close();
-      }).finally(() => {
-        if (this.gateSocket === socket) this.gatePingInFlight = false;
-      });
-    }, GATE_PING_INTERVAL_MS);
+    void this.measureGatePing();
+    this.gatePingTimer = setInterval(() => void this.measureGatePing(), GATE_PING_INTERVAL_MS);
+  }
+
+  /** 用本地发送/接收时间计算RTT，并利用服务端时间戳估算双方时钟偏差。 / Calculates RTT from local send/receive times and estimates clock offset from the server timestamp. */
+  private async measureGatePing(): Promise<void> {
+    const socket = this.gateSocket;
+    const gate = this.gateClient;
+    if (!socket || !gate || this.gatePingInFlight) return;
+    this.gatePingInFlight = true;
+    const sentAtMs = Date.now();
+    try {
+      const response = await gate.ping({});
+      const receivedAtMs = Date.now();
+      const serverTimeMs = Number(response.serverTime);
+      if (!Number.isSafeInteger(serverTimeMs)) {
+        throw new Error(`Gate返回的服务器时间无法安全转换为number：${response.serverTime}`);
+      }
+      this.gatePingSample = {
+        latencyMs: Math.max(0, receivedAtMs - sentAtMs),
+        serverTimeMs,
+        clockOffsetMs: Math.round(serverTimeMs - (sentAtMs + receivedAtMs) / 2),
+        receivedAtMs,
+      };
+    } catch (error) {
+      console.error("发送 Gate Ping 失败", error);
+      if (this.gateSocket === socket) this.close();
+    } finally {
+      if (this.gateSocket === socket) this.gatePingInFlight = false;
+    }
   }
 }

@@ -39,6 +39,8 @@
     "build:hotfix": "npm run codegen && npm run typecheck && node tools/build_runtime_bundles.mjs --hotfix-only",
     "build:hotfix:bench": "npm run codegen && npm run typecheck && node tools/build_runtime_bundles.mjs --bench --hotfix-only",
     "build:client": "esbuild tools/smoke_client.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/smoke_client.cjs",
+    "build:robot-walk": "esbuild tools/walk_robots.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/walk_robots.cjs",
+    "robot:walk": "npm run build:robot-walk && node dist/walk_robots.cjs",
     "build:test": "esbuild tools/protocol_self_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/protocol_self_test.cjs",
     "build:test:actor": "esbuild tools/actor_self_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/actor_self_test.cjs",
     "build:test:scene-handler": "esbuild tools/entry_scene_handler_self_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/entry_scene_handler_self_test.cjs",

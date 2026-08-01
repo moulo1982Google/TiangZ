@@ -117,6 +117,9 @@ Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“�
 # 公共 SDK 真实 WebSocket 登录到进图
 npm run smoke:client-sdk -- websocket 127.0.0.1 7000
 
+# 启动20个机器人进入Map 1持续遛弯，Ctrl+C停止
+npm run robot:walk -- 20 --map 1
+
 # PixiJS/H5
 npm run build:pixi
 npm run serve:pixi

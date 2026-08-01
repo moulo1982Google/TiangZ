@@ -33,6 +33,10 @@ src/generated/
 
 测试辅助代码同样不能放进`app/core`、`app/model`或`app/hotfix`。裸帧构造、压测Codec包装、Fake和Fixture应放到`tools/support`、`perf`或对应自测文件；普通业务不得依赖这些目录。客户端正式调用统一使用`client_sdk`生成的Client和Push Handler。
 
+需要在真人客户端中观察多人广播时，运行`npm run robot:walk -- <人数>`。这些机器人通过正式SDK进入游戏并遛弯，不是服务端业务Entity模板；业务Handler不得识别或特殊处理机器人账号。
+
+地图HUD需要显示延迟时，读取`LoginFlow.latestGatePing.latencyMs`，不要另外创建Ping定时器。`serverTimeMs`和`clockOffsetMs`用于服务器时间换算；不要直接相减本地时间与服务器时间来冒充网络RTT。
+
 基准Scene放在`app/model/bench`，压测专用Handler放在`app/hotfix/bench`，并通过`npm run build:bench`显式装配。正常`npm run build`不得包含Bench Scene/Handler；Cocos/Pixi分发SDK也不得携带Bench协议。
 
 Bench Hotfix可以通过`#tiangz/model`调用真实业务API，但Demo不得引用Bench。正式、压测等装配分别写在`app/model/main*.ts`与`app/hotfix/main*.ts`；不要为了消除依赖诊断把Bench实现搬回Demo。

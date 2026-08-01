@@ -43,6 +43,8 @@ export class GameBootstrap extends Component {
   private loginFlow?: LoginFlow;
   private playerController?: MapController;
   private statusLabel?: Label;
+  private latencyLabel?: Label;
+  private displayedLatencyMs = -1;
   private loginButton?: Button;
   private account = "";
   private gateSocket?: RpcSocket;
@@ -61,6 +63,7 @@ export class GameBootstrap extends Component {
   update(deltaTime: number): void {
     this.loginFlow?.update();
     this.playerController?.update(deltaTime);
+    this.updateLatencyLabel();
   }
 
   onDestroy(): void {
@@ -68,6 +71,7 @@ export class GameBootstrap extends Component {
     this.playerController = undefined;
     this.loginFlow?.close();
     this.loginFlow = undefined;
+    this.latencyLabel = undefined;
     this.gateSocket = undefined;
     this.loginResult = undefined;
   }
@@ -85,6 +89,8 @@ export class GameBootstrap extends Component {
 
   private showLoginView(): void {
     const ui = this.requireUi();
+    this.latencyLabel = undefined;
+    this.displayedLatencyMs = -1;
     ui.clear();
     ui.createBackground(new Color(24, 28, 36, 255));
     ui.createLabel(
@@ -178,6 +184,32 @@ export class GameBootstrap extends Component {
       this.gateSocket,
       () => void this.switchMap(),
     );
+    this.displayedLatencyMs = -1;
+    this.latencyLabel = this.requireUi().createLabel(
+      "Ping -- ms",
+      400,
+      278,
+      16,
+      new Color(125, 220, 170, 255),
+    );
+    this.updateLatencyLabel();
+  }
+
+  /** 将公共SDK最近一次Ping测量显示在地图右上角；只在采样值变化时修改Label。 / Shows the latest SDK Ping sample in the map HUD and only mutates the label when the sample changes. */
+  private updateLatencyLabel(): void {
+    const label = this.latencyLabel;
+    if (!label?.isValid) return;
+    const latencyMs = this.loginFlow?.latestGatePing?.latencyMs ?? -1;
+    if (latencyMs === this.displayedLatencyMs) return;
+    this.displayedLatencyMs = latencyMs;
+    label.string = latencyMs < 0 ? "Ping -- ms" : `Ping ${latencyMs} ms`;
+    label.color = latencyMs < 0
+      ? new Color(175, 185, 195, 255)
+      : latencyMs < 100
+      ? new Color(125, 220, 170, 255)
+      : latencyMs < 200
+        ? new Color(245, 205, 105, 255)
+        : new Color(255, 120, 120, 255);
   }
 
   private setStatus(text: string, isError = false): void {

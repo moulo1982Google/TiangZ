@@ -15,6 +15,7 @@
 | `npm run check:project` | 检查目录依赖、配置、Handler与Generated完整性 |
 | `cargo run --bin TiangZ -- configs/local/all.json` | 使用单Process、单V8启动本地全部Demo Scene |
 | `npm run smoke:client` | 使用Node客户端验证登录、进图链路 |
+| `npm run robot:walk -- 20` | 启动20个真实SDK机器人进入地图遛弯，按`Ctrl+C`全部停止 |
 | `npm run build:debug` | 需要调试TS源码时生成带内联sourcemap的完整Bundle |
 
 只改Hotfix时，`npm run build:hotfix`会输出：
@@ -100,6 +101,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run test:game-config` | 验证配置查询、外键、分端字段裁剪、指纹和只读约束 |
 | `npm run test:game-config-reload` | 启动5个Process，验证配置候选全量切换、坏引用回滚和指标 |
 | `npm run smoke:pixi` | Windows Edge自动完成Pixi登录、进图和canvas验收 |
+| `npm run robot:walk -- 20 --map 1` | 用正式WebSocket SDK启动可见机器人；支持`--host`、`--port`、`--prefix`、`--spawn-interval`和自动停止的`--duration` |
 | `cargo test --all-targets` | 执行Rust全部目标测试 |
 | `npm run test:phase1.9` | 执行历史Phase 1.9完整验收 |
 

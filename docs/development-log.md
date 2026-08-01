@@ -18,6 +18,12 @@
 - 修正`RunExclusive`的无竞争路径：空闲锁同步进入回调，只有竞争时才异步等待，避免unordered Session中紧随EnterMap的Actor消息在传送屏障建立前抢跑。
 - `TimerComponent`是`TimerSystem`的同类型公开别名，共享现有`TimeSystem.ServerNow`，没有引入第二套时钟或定时器。
 
+## 2026-08-01：增加可见遛弯机器人
+
+- 增加`npm run robot:walk -- <人数>`，通过正式TypeScript SDK批量登录、进图、保活并按500ms移动续报。
+- 机器人方向变化和停止立即上报，活动范围会向出生锚点收敛；优雅退出前先发送停止输入，服务端没有机器人专用代码。
+- `LoginFlow`同时公开最近一次Gate Ping的RTT与服务端时钟偏差，Cocos 2D地图HUD显示并按区间着色，不重复创建保活请求。
+
 ## 2026-08-01：建立Rust游戏业务目录边界
 
 - 新增`src/game`作为开发者可编写的Rust业务模块根目录，首个`movement`模块承载真实Native op入口；`src/native_data.rs`继续拥有句柄、类型Pool、脏版本和受控Store访问。

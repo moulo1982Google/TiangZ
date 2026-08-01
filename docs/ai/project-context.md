@@ -12,6 +12,10 @@ TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络�
 
 TypeScript仍是默认业务语言；开发者明确选择Rust实现的稳定、高负载领域统一放在`src/game/<domain>`，例如Buff执行引擎、战斗计算或移动算法。`src/native_data.rs`属于框架权威Store，不继续混入新的游戏业务。Rust业务随Process编译、不能Hotfix；Actor Handler即使调用Rust算法，也必须先经过TS的Location、Unit/Session定位、传送屏障和mailbox，不能在网络入口旁路Actor语义。
 
+开发期可见机器人位于`tools/walk_robots.ts`，只使用正式TypeScript SDK完成登录、进图、Ping和Move。机器人是外部测试客户端，不得为它在Core、Demo Handler或Map业务中增加专用分支。
+
+公共`LoginFlow.latestGatePing`保存最近一次Gate Ping的RTT、服务端Unix毫秒时间、估算时钟偏差和本地接收时间。客户端显示网络延迟必须使用RTT，不能直接用`Date.now() - serverTime`，否则客户端与服务器的时钟差会被误算成网络延迟。
+
 当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约和Phase 4.1 Rust AOI功能链也已完成。工程已有登录、选服、进入地图、多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，并完成Windows 3000玩家AOI正式容量回归；尚未完成NavMesh3D运行时、Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
 
 ## 为什么形成这套模型
