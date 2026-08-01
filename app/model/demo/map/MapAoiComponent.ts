@@ -44,11 +44,6 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
       system: "aoi",
     });
     const config = GameConfigs.MapConfig.Get(definition.mapConfigId);
-    if (config.spatialMode !== SpatialMode.Grid2D) {
-      throw new Error(
-        `map ${config.id} uses NavMesh3D, but the Phase 4 navigation runtime is not installed`,
-      );
-    }
     const aoi = config.aoiConfigId_ref;
     if (!aoi) throw new Error(`map ${config.id} has no AOI config`);
     const fixedUpdateMs = Game.Instance.FixedUpdateMs;
@@ -68,12 +63,25 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
           intervalTicks,
         };
       });
-    NativeData.CreateGrid2DSpatial(
-      this.nativeMapKey,
-      config.widthCells,
-      config.depthCells,
-      config.cellSizeMeters,
-    );
+    if (config.spatialMode === SpatialMode.Grid2D) {
+      NativeData.CreateGrid2DSpatial(
+        this.nativeMapKey,
+        config.widthCells,
+        config.depthCells,
+        config.cellSizeMeters,
+      );
+    } else if (config.spatialMode === SpatialMode.NavMesh3D) {
+      NativeData.CreateNavMesh3DSpatial(
+        this.nativeMapKey,
+        config.widthCells,
+        config.depthCells,
+        config.cellSizeMeters,
+        config.navigationAsset,
+        config.navigationHash,
+      );
+    } else {
+      throw new Error(`map ${config.id} has unsupported spatial mode: ${config.spatialMode}`);
+    }
     try {
       NativeData.CreateAoi(
         this.nativeMapKey,

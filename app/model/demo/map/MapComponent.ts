@@ -41,7 +41,11 @@ import { MapScene } from "./MapScene";
 import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
 import { NativeUnitRef } from "../../../generated/model/native/NativeUnitRef";
-import { NativeData, type NativeAoiBatch } from "../native/NativeData";
+import {
+  NativeData,
+  type NativeAoiBatch,
+  type NativeVec3,
+} from "../native/NativeData";
 import { NumericComponent } from "../numeric/NumericComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
@@ -198,6 +202,26 @@ export class MapComponent extends Component<[
     return this.aoi;
   }
 
+  /** 将坐标投影到本地图NavMesh；Grid2D调用属于业务错误，不做隐式模式转换。 / Projects onto this map's NavMesh and rejects Grid2D calls instead of converting spatial modes implicitly. */
+  ProjectPosition(
+    point: NativeVec3,
+    halfExtents: NativeVec3 = { x: 2, y: 4, z: 2 },
+  ): NativeVec3 | undefined {
+    this.RequireNavMesh3D();
+    return NativeData.ProjectPosition(this.nativeMapKey, point, halfExtents);
+  }
+
+  /** 一次取得服务端权威路径拐点；结果是普通米制坐标，不暴露Rust或Detour句柄。 / Returns authoritative path corners in one call as plain meter coordinates without exposing Rust or Detour handles. */
+  FindPath(
+    start: NativeVec3,
+    end: NativeVec3,
+    halfExtents: NativeVec3 = { x: 2, y: 4, z: 2 },
+    maxPoints = 64,
+  ): readonly NativeVec3[] {
+    this.RequireNavMesh3D();
+    return NativeData.FindPath(this.nativeMapKey, start, end, halfExtents, maxPoints);
+  }
+
   /** 创建地图内 Unit 存储、广播传输和帧尾同步源。 / Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */
   protected override Awake(
     definition: MapInstanceDefinition,
@@ -214,11 +238,6 @@ export class MapComponent extends Component<[
     this.dynamic = definition.dynamic;
     this.nativeMapKey = this.DomainScene().InstanceId;
     this.config = GameConfigs.MapConfig.Get(this.mapId);
-    if (this.config.spatialMode !== SpatialMode.Grid2D) {
-      throw new Error(
-        `map ${this.mapId} uses NavMesh3D, but the Phase 4 navigation runtime is not installed`,
-      );
-    }
     this.players = players;
     this.repository = repository;
     this.transferCoordinator = transferCoordinator;
@@ -300,11 +319,13 @@ export class MapComponent extends Component<[
     this.serverTick += 1;
     const moveDescriptor = ClientBroadcasts.EntityMove;
     let startedAt = monotonicNow();
-    NativeData.AdvanceMapMovement(
-      this.nativeMapKey,
-      this.serverTick,
-      fixedDeltaMs,
-    );
+    if (this.config.spatialMode === SpatialMode.Grid2D) {
+      NativeData.AdvanceMapMovement(
+        this.nativeMapKey,
+        this.serverTick,
+        fixedDeltaMs,
+      );
+    }
     this.pipelineMetrics.movementAdvanceMs += monotonicNow() - startedAt;
     startedAt = monotonicNow();
     const visibility = this.pendingPlayerEnterChanges.splice(
@@ -452,12 +473,21 @@ export class MapComponent extends Component<[
         this.config.depthCells,
         this.config.cellSizeMeters,
       );
-      position.SetGridWorldPosition(
-        request.hasInitialSpawnOverride ? request.initialSpawnX : this.config.spawnX,
-        request.hasInitialSpawnOverride ? request.initialSpawnY : this.config.spawnY,
-        request.hasInitialSpawnOverride ? request.initialSpawnZ : this.config.spawnZ,
-        request.hasInitialSpawnOverride ? request.initialSpawnYaw : this.config.spawnYaw,
-      );
+      const spawn = {
+        x: request.hasInitialSpawnOverride ? request.initialSpawnX : this.config.spawnX,
+        y: request.hasInitialSpawnOverride ? request.initialSpawnY : this.config.spawnY,
+        z: request.hasInitialSpawnOverride ? request.initialSpawnZ : this.config.spawnZ,
+      };
+      const yaw = request.hasInitialSpawnOverride
+        ? request.initialSpawnYaw
+        : this.config.spawnYaw;
+      if (this.config.spatialMode === SpatialMode.Grid2D) {
+        position.SetGridWorldPosition(spawn.x, spawn.y, spawn.z, yaw);
+      } else {
+        const projected = this.ProjectPosition(spawn);
+        if (!projected) throw new Error(`map ${this.mapId} spawn is outside NavMesh`);
+        position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, yaw);
+      }
       position.SpeedCellsPerSecond = playerConfig.moveSpeed;
       player.AddComponent(NumericComponent);
       player.AddComponent(ItemComponent);
@@ -468,6 +498,12 @@ export class MapComponent extends Component<[
     } catch (error) {
       this.units.Remove(unitId);
       throw error;
+    }
+  }
+
+  private RequireNavMesh3D(): void {
+    if (this.config.spatialMode !== SpatialMode.NavMesh3D) {
+      throw new Error(`map ${this.mapId} does not use NavMesh3D`);
     }
   }
 

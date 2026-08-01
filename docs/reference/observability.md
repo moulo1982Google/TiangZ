@@ -87,6 +87,8 @@ docker compose down -v --remove-orphans
 - `tiangz_scene_*`：按进程/Scene 聚合的处理与错误计数
 - `tiangz_native_live_units`：Rust Arena 中在线 Unit 数
 - `tiangz_native_encoded_bytes_total`：Native snapshot 下发累计字节
+- `tiangz_navigation_assets`：当前Process中仍被MapInstance持有的共享NavMesh资产数
+- `tiangz_navigation_worlds`：当前Process中的MapInstance专属NavMesh查询上下文数
 
 ### 目标端口生成
 

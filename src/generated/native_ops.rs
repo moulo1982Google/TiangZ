@@ -11,7 +11,9 @@ use crate::native_data::{
     op_native_map_take_movement_aoi_delta, op_native_map_take_movement_aoi_route_frames,
     op_native_map_update_movement, op_native_numeric_attach, op_native_numeric_detach,
     op_native_numeric_get, op_native_numeric_set, op_native_spatial_create_grid2_d,
-    op_native_spatial_release, op_native_unit_reset_movement, op_native_unit_set_movement_input,
+    op_native_spatial_create_nav_mesh3_d, op_native_spatial_find_path,
+    op_native_spatial_project_position, op_native_spatial_release, op_native_unit_reset_movement,
+    op_native_unit_set_movement_input,
 };
 
 deno_core::extension!(
@@ -26,6 +28,9 @@ deno_core::extension!(
         op_native_numeric_get,
         op_native_numeric_set,
         op_native_spatial_create_grid2_d,
+        op_native_spatial_create_nav_mesh3_d,
+        op_native_spatial_project_position,
+        op_native_spatial_find_path,
         op_native_spatial_release,
         op_native_aoi_create,
         op_native_aoi_release,

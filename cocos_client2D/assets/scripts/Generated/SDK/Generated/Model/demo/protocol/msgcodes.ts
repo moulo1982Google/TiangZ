@@ -14,6 +14,8 @@ export const OuterMessage = {
   C2M_Move: 10013,
   C2M_MapProbe: 10014,
   M2C_MapProbe: 10015,
+  C2M_FindPath: 10032,
+  M2C_FindPath: 10033,
   G2C_EntityMove: 10016,
   G2C_EntityNumeric: 10017,
   G2C_EntityState: 10018,

@@ -105,6 +105,22 @@ const RAW_DATA: Record<string, unknown> = {
       "navigation_asset": "",
       "navigation_version": "",
       "navigation_hash": ""
+    },
+    {
+      "id": 100,
+      "name": "3D导航灰盒",
+      "spatial_mode": 2,
+      "width_cells": 48,
+      "depth_cells": 48,
+      "cell_size_meters": 1,
+      "spawn_x": -12,
+      "spawn_y": 1,
+      "spawn_z": -12,
+      "spawn_yaw": 0,
+      "aoi_config_id": 1,
+      "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
+      "navigation_version": "demo-3d-v1",
+      "navigation_hash": "94af0f91826b6c08d72f2402cd06383847cf8ceb7d87d9dd9067a2b9c862f304"
     }
   ],
   "game_tbplayerconfig": [
@@ -155,7 +171,7 @@ export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 
-export const GameConfigFingerprint = "159549b002f90ff719b8aa3289512835d998ef9ffe0b013ba3dbbbcb28c9be0a";
+export const GameConfigFingerprint = "f27bf074931422c1e97ec8ea876ca8518e2a65f7abcc3d780b4d1cf8d3cb829c";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),

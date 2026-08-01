@@ -331,7 +331,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.2：NavMesh3D
 
-状态：4.2.1离线资产链路已完成；MapScene自动装载、完整粗粒度FastOP、动态障碍和3D移动尚未完成。
+状态：4.2.2运行时装载与粗粒度查询已完成；射线、高度、动态障碍和3D权威移动尚未完成。
 
 - 固定并接入Recast/Detour兼容的tiled NavMesh资源格式，校验`navigationVersion/navigationHash`。
 - Rust实现位置投影、寻路、射线、高度查询、动态障碍与地图实例生命周期。
@@ -339,11 +339,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 4.2.1已经固定官方Recast/Detour `v1.6.0`与上游提交，增加确定性灰盒OBJ、冷烘焙清单、`npm run navigation:bake`一键离线烘焙、稳定小端tiled资源格式和SHA-256元数据。Rust安全封装已完成资源加载、Hash拒绝、位置投影、绕障寻路，以及按Hash弱引用共享的资产缓存；同一输入重复烘焙必须字节一致。该阶段不要求美术地图，也不把Cocos资源导入或运行时烘焙混入服务端。
 
+4.2.2已按冷配置在Map创建时加载NavMesh3D，按Hash共享不可变资产并为每个MapInstance创建独立查询上下文；Map 100完成出生点投影、AOI接入、真实单/拆分进程传送和`ProjectPosition/FindPath`粗粒度FastOP。`C2M_FindPath`只做Actor路径查询，不修改权威坐标。新增导航资产/实例Prometheus指标和受信项目根目录路径校验。
+
 ### Phase 4.3：Cocos 3D Demo
 
-状态：Cocos Creator 3.8.8空项目骨架已纳入主仓库，功能尚未开始。
+状态：Cocos Creator 3.8.8灰盒查询Demo已可运行；权威移动同步尚未开始。
 
-- 接入与服务端同版本的导航资源，完成`Vec3`边界转换、点击寻路、方向移动和服务端校正。
+- 已完成公共SDK、`Vec3`边界转换、Map 100登录、点击服务端寻路和本地路径预览；继续完成3D权威移动、方向输入、多人插值与服务端校正。
 - 保留Cocos 2D与Pixi Grid2D回归，证明SDK协议结构不依赖具体引擎坐标类型。
 
 ### Phase 4.4：怪物与战斗

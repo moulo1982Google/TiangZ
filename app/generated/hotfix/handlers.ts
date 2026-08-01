@@ -5,6 +5,7 @@ import "../../hotfix/demo/gate/handlers/C2G_MapSnapshotReadyHandler";
 import "../../hotfix/demo/gate/handlers/C2G_PingHandler";
 import "../../hotfix/demo/location/handlers/LocationHandlers";
 import "../../hotfix/demo/login/handlers/C2S_LoginHandler";
+import "../../hotfix/demo/mapHost/handlers/C2M_FindPathHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_MapProbeHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_MoveHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_UseItemHandler";

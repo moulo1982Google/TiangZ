@@ -31,6 +31,7 @@ typedef struct TzNavBytes {
 } TzNavBytes;
 
 typedef struct TzNavMesh TzNavMesh;
+typedef struct TzNavQuery TzNavQuery;
 
 int32_t tz_navmesh_build(
     const float* vertices,
@@ -52,14 +53,21 @@ TzNavMesh* tz_navmesh_load(
 
 void tz_navmesh_free(TzNavMesh* mesh);
 
-int32_t tz_navmesh_project(
+TzNavQuery* tz_navmesh_query_create(
     const TzNavMesh* mesh,
+    char* error,
+    size_t error_capacity);
+
+void tz_navmesh_query_free(TzNavQuery* query);
+
+int32_t tz_navmesh_project(
+    const TzNavQuery* query,
     const float* point,
     const float* half_extents,
     float* projected);
 
 int32_t tz_navmesh_find_path(
-    const TzNavMesh* mesh,
+    const TzNavQuery* query,
     const float* start,
     const float* end,
     const float* half_extents,

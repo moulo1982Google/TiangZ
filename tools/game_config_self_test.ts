@@ -33,7 +33,7 @@ function main(): void {
     player.initialItemConfigId_ref,
     serverConfigs.ItemConfig.Get(player.initialItemConfigId),
   );
-  assert.equal(serverConfigs.MapConfig.GetAll().length, 4);
+  assert.equal(serverConfigs.MapConfig.GetAll().length, 5);
   assert.equal(serverConfigs.MapConfig.Get(1).spatialMode, 1);
   assert.equal(serverConfigs.MapConfig.Get(1).depthCells, 150);
   assert.equal(serverConfigs.MapConfig.Get(1).cellSizeMeters, 1);
@@ -42,6 +42,22 @@ function main(): void {
   assert.equal(serverConfigs.MapConfig.Get(1).entryQueueCapacity, 10_000);
   assert.equal(serverConfigs.MapConfig.Get(1015).widthCells, 225);
   assert.equal(serverConfigs.MapConfig.Get(1020).widthCells, 300);
+  const navigationMap = serverConfigs.MapConfig.Get(100);
+  assert.equal(navigationMap.spatialMode, 2);
+  assert.equal(navigationMap.navigationAsset, "navigation/maps/demo_3d/generated/navigation.bin");
+  assert.equal(navigationMap.navigationVersion, "demo-3d-v1");
+  assert.match(navigationMap.navigationHash, /^[0-9a-f]{64}$/);
+  assert.deepEqual(
+    [navigationMap.spawnX, navigationMap.spawnY, navigationMap.spawnZ],
+    [-12, 1, -12],
+  );
+  assert.equal(
+    Math.abs(navigationMap.spawnX) <= 3
+      && Math.abs(navigationMap.spawnZ) <= 5
+      && navigationMap.spawnY < 3,
+    false,
+    "Map 100 spawn must not overlap the central graybox obstacle",
+  );
   const defaultAoi = serverConfigs.AoiConfig.Get(1);
   const defaultSyncTiers = serverConfigs.AoiSyncTierConfig.GetAll()
     .filter((tier) => tier.aoiConfigId === defaultAoi.id)

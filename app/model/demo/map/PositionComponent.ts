@@ -137,6 +137,21 @@ export class PositionComponent extends Component<[
     this.SetGridCell(cellX, cellZ, y, yaw);
   }
 
+  /** 写入已经由Rust投影校验的NavMesh坐标，并同步AOI使用的Cell索引。 / Stores a Rust-projected NavMesh position and updates the cell indices used by AOI. */
+  SetNavMeshWorldPosition(x: number, y: number, z: number, yaw: number): void {
+    if (![x, y, z, yaw].every(Number.isFinite)) {
+      throw new Error(`invalid NavMesh position: ${x},${y},${z},${yaw}`);
+    }
+    this.native.x = x;
+    this.native.y = y;
+    this.native.z = z;
+    this.native.yaw = normalizeYaw(yaw);
+    this.native.cellX = worldMetersToCell(x, this.cellSizeMeters);
+    this.native.cellZ = worldMetersToCell(z, this.cellSizeMeters);
+    this.native.targetCellX = this.native.cellX;
+    this.native.targetCellZ = this.native.cellZ;
+  }
+
   snapshot(): PositionSnapshot {
     return {
       x: this.native.x,

@@ -201,6 +201,8 @@ pub(crate) struct NativeDataObservabilitySnapshot {
     pub(crate) aoi_relocations: u64,
     pub(crate) aoi_visibility_changes: u64,
     pub(crate) aoi_filter_overrides: u64,
+    pub(crate) navigation_assets: u64,
+    pub(crate) navigation_worlds: u64,
 }
 
 impl ProcessHealthState {
@@ -2042,6 +2044,18 @@ fn append_native_data_metrics_prometheus(
             "Live map-instance AOI worlds",
             "gauge",
             snapshot.aoi_worlds,
+        ),
+        (
+            "tiangz_navigation_assets",
+            "Shared immutable NavMesh assets",
+            "gauge",
+            snapshot.navigation_assets,
+        ),
+        (
+            "tiangz_navigation_worlds",
+            "Live MapInstance NavMesh query contexts",
+            "gauge",
+            snapshot.navigation_worlds,
         ),
         (
             "tiangz_aoi_entries",

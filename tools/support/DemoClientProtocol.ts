@@ -12,6 +12,8 @@ import {
   C2M_MoveCodec,
   C2M_MapProbe,
   C2M_MapProbeCodec,
+  C2M_FindPath,
+  C2M_FindPathCodec,
   C2M_UseItem,
   C2M_UseItemCodec,
   C2S_Login,
@@ -30,6 +32,8 @@ import {
   G2C_AoiDeltaCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
+  M2C_FindPath,
+  M2C_FindPathCodec,
   G2C_EntityMove,
   G2C_EntityMoveCodec,
   G2C_EntityEnter,
@@ -225,6 +229,27 @@ export function decodeMapProbeFrame(
     rpcId: body.rpcId,
     body,
   };
+}
+
+export function buildFindPathPacket(
+  rpcId: number,
+  request: Omit<C2M_FindPath, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_FindPath,
+    C2M_FindPathCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeFindPathFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_FindPath> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_FindPath) {
+    throw new Error(`expected M2C_FindPath, got ${msgcode}`);
+  }
+  const body = M2C_FindPathCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
 }
 
 export function buildUseItemPacket(

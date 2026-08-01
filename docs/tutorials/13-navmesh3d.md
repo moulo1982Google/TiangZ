@@ -1,6 +1,6 @@
-# NavMesh3D离线资源与Rust查询
+# NavMesh3D运行时与Cocos灰盒
 
-Phase 4.2采用“制作期烘焙、运行期只读”的NavMesh流程。你现在不需要寻找正式3D地图，也不需要在Cocos中手工点击Bake；4.2.1先用固定灰盒把资源格式、跨平台构建、Hash和Rust查询链路钉死。
+Phase 4.2采用“制作期烘焙、运行期只读”的NavMesh流程。你现在不需要寻找正式3D地图，也不需要在Cocos中手工点击Bake；固定灰盒已经贯通离线资源、Map Runtime、Actor RPC和Cocos 3D预览。
 
 ## 一键烘焙
 
@@ -49,11 +49,36 @@ Phase 4.3接入真实Cocos 3D地图时，制作流程应从同一场景导出两
 
 两者共享地图局部米制X/Y/Z坐标，但服务端不读取展示模型。地图边界、Cell/AOI Grid划分与导航元数据必须一致，工具会逐步增加自动校验，而不是让运行时猜测。
 
+## 打开3D Demo
+
+1. 启动服务端：
+
+```powershell
+cargo run --bin TiangZ -- configs/local/all.json
+```
+
+2. 使用Cocos Creator 3.8.8打开`cocos_client3D`，打开`assets/scene.scene`并运行浏览器预览。
+3. Demo会自动登录并进入Map 100。看到绿色地面、中央障碍和蓝色玩家后，点击地面即可请求服务端Rust NavMesh路径。
+
+浏览器预览使用WebSocket；Native构建使用KCP。状态栏会显示Map和导航版本，资源Hash不一致时拒绝进入。灰盒几何由客户端代码绘制，只负责展示；服务端仍以`navigation.bin`为权威导航资源。
+
+服务端业务查询保持简单：
+
+```ts
+const path = unit.DomainScene()
+  .GetComponent(MapComponent)
+  .FindPath(start, target);
+```
+
+外部客户端通过生成的`MapClient.findPath()`调用`C2M_FindPath`。该RPC只返回普通`{x,y,z}`拐点，不修改权威位置，也不允许把Detour多边形或句柄传给TS。
+
 ## 当前边界
 
-4.2.1只完成离线资源与Rust查询内核。当前`MapComponent`仍会拒绝`SpatialMode.NavMesh3D`，这是刻意的阶段边界，不允许偷偷回退到Grid2D。下一步将完成：
+4.2.2已经完成启动装载、实例查询上下文、出生点投影、`ProjectPosition/FindPath`和真实传送冒烟。相同Hash的Map实例共享不可变资产，但查询对象按MapInstance隔离；路径、输入和结果均有长度与有限数校验，资产路径只能位于项目`navigation/`目录。
 
-- 按`MapConfig.navigationAsset/version/hash`启动时加载并共享资源。
-- 每个MapInstance创建独立查询上下文、AOI和动态障碍状态。
-- 向TS暴露粗粒度`ProjectPosition`、`FindPath`、`Raycast`和高度查询。
-- 增加动态障碍，再接Cocos 3D点击寻路与服务端校正。
+当前Cocos角色沿返回路径移动只是可视预览，服务端不会因此持续推进权威坐标，其他客户端也不会收到这次预览。下一步仍需完成：
+
+- 3D权威移动意图、Rust逐Tick推进和多人位置同步。
+- `Raycast`、独立高度查询和动态障碍。
+- 客户端预测、插值和服务端校正。
+- 正式展示地图与导航碰撞源的制作期一致性检查。

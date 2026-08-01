@@ -3,6 +3,7 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use anyhow::{Context, Result, bail};
 use tiangz_transport::navigation::{
@@ -31,8 +32,9 @@ fn main() -> Result<()> {
 
     // 在落盘前立即回读 C++ 运行时格式，避免生成一个只能通过 Hash、却不能加载的资源。
     // Load the native runtime format before writing so a hash-valid but unreadable asset cannot be published.
-    let asset = NavigationAsset::load(bytes.clone(), Some(&hash))?;
+    let asset = Rc::new(NavigationAsset::load(bytes.clone(), Some(&hash))?);
     asset
+        .create_world()?
         .project([0.0, 1.0, 0.0], [4.0, 8.0, 4.0])
         .context("灰盒原点附近没有可行走面；请检查三角形绕序和烘焙参数")?;
 

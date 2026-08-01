@@ -59,6 +59,8 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run serve:pixi` | 在`http://127.0.0.1:7460`启动Pixi静态服务器 |
 | `npm run typecheck:cocos-demo` | 有Cocos编辑器类型时执行完整tsc；干净CI中自动退化为引擎无关bundle检查 |
 | `npm run typecheck:cocos-demo:engine` | 强制使用Cocos编辑器生成类型执行完整Demo类型检查 |
+| `npm run typecheck:cocos3d-demo` | 有Cocos编辑器类型时检查3D Demo；CI中退化为bundle检查 |
+| `npm run typecheck:cocos3d-demo:engine` | 强制使用Cocos Creator 3.8.8类型检查3D Demo |
 
 ## 提交前检查
 

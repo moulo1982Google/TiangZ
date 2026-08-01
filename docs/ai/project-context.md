@@ -16,7 +16,7 @@ TypeScript仍是默认业务语言；开发者明确选择Rust实现的稳定、
 
 公共`LoginFlow.latestGatePing`保存最近一次Gate Ping的RTT、服务端Unix毫秒时间、估算时钟偏差和本地接收时间。客户端显示网络延迟必须使用RTT，不能直接用`Date.now() - serverTime`，否则客户端与服务器的时钟差会被误算成网络延迟。
 
-当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约和Phase 4.1 Rust AOI功能链也已完成。工程已有登录、选服、进入地图、多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，并完成Windows 3000玩家AOI正式容量回归；尚未完成NavMesh3D运行时、Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
+当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约、Phase 4.1 Rust AOI和Phase 4.2.2 NavMesh3D运行时查询链已经完成。工程已有登录、选服、进入地图、多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，并完成Windows 3000玩家AOI正式容量回归；尚未完成3D权威移动、动态障碍、Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
 
 ## 为什么形成这套模型
 
@@ -210,7 +210,7 @@ Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`Broa
 
 `0.4.0`冻结服务端地图局部坐标为米制`X/Y/Z + Yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度。坐标必须和`MapInstanceId`一起解释，不建立跨大陆的巨大浮点世界坐标。protobuf与Native schema使用普通`float/f32`，客户端适配层再转换为Cocos `Vec3`、Unity `Vector3/float3`或二维屏幕坐标。
 
-`MapConfig.SpatialMode`区分`Grid2D`与`NavMesh3D`。Grid2D已经运行在X/Z Cell上；NavMesh3D的4.2.1离线资产链路已固定官方Recast/Detour `v1.6.0`，具备确定性灰盒、tiled资源、SHA-256元数据、Rust加载/投影/寻路和按Hash弱引用共享缓存。MapScene自动装载、射线、动态障碍尚未完成，因此Runtime遇到NavMesh3D仍明确拒绝，不能静默退化。每个MapInstance未来仍独占AOI、动态障碍和Unit空间状态；Scene销毁必须幂等释放实例空间。完整约束见[地图空间与3D坐标契约](../design/spatial-world.md)。
+`MapConfig.SpatialMode`区分`Grid2D`与`NavMesh3D`。Grid2D运行在X/Z Cell上；NavMesh3D已固定官方Recast/Detour `v1.6.0`，具备确定性灰盒、tiled资源、SHA-256元数据、Map启动装载、Rust投影/寻路和按Hash弱引用共享缓存。相同资源的MapInstance共享不可变`dtNavMesh`，各自独占`dtNavMeshQuery`、AOI和Unit空间状态；Scene销毁通过`SpatialRelease`幂等释放。Map 100已通过单进程与拆分进程真实传送，Cocos 3D可调用`C2M_FindPath`预览路径。射线、高度、动态障碍和3D权威移动仍未完成，不能把查询预览当成移动同步。完整约束见[地图空间与3D坐标契约](../design/spatial-world.md)。
 
 ## 客户端与Transport
 
@@ -250,7 +250,7 @@ native_data/<game>/          游戏Entity和粗粒度Native op原型
 client_sdk/typescript/       引擎无关TS SDK唯一源码
 cocos_client2D/.../Demo/     Cocos业务和表现
 cocos_client2D/.../Generated 自动分发SDK和Handler入口
-cocos_client3D/              Phase 4.3的Cocos Creator 3D客户端；Generated/SDK由公共TS SDK自动分发，业务仍未开始
+cocos_client3D/              Cocos Creator 3D灰盒客户端；Generated/SDK自动分发，Demo脚本只做登录、查询与显示
 pixi_client/src/             Pixi业务及SDK验收
 configs/<environment>/       环境、Process与Scene正式部署配置
 configs/bench|tests|experiments/ 压测、自动测试与传输实验配置

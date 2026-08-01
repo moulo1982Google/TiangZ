@@ -246,6 +246,10 @@ struct NativeDataMetricsSnapshot {
     aoi_visibility_changes: u64,
     #[serde(default)]
     aoi_filter_overrides: u64,
+    #[serde(default)]
+    navigation_assets: u32,
+    #[serde(default)]
+    navigation_worlds: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -677,6 +681,7 @@ pub async fn run_runtime_config(
     health_state.mark_endpoints_ready();
 
     let process = config.process.clone();
+    let project_root = root.to_path_buf();
     let scenes = config.scenes.clone();
     let known_scenes = config.known_scenes.clone();
     let runtime_writers = Arc::clone(&writers);
@@ -686,6 +691,7 @@ pub async fn run_runtime_config(
     let (runtime_exit_tx, mut runtime_exit_rx) = tokio::sync::oneshot::channel();
     let runtime_thread = thread::spawn(move || {
         let result = run_process_runtime(
+            project_root,
             process,
             scenes,
             known_scenes,
@@ -848,6 +854,7 @@ async fn wait_for_shutdown_signal() -> Result<()> {
 // single V8 thread; grouping them would hide rather than reduce coupling.
 #[allow(clippy::too_many_arguments)]
 fn run_process_runtime(
+    project_root: PathBuf,
     process: ProcessConfig,
     scenes: Vec<SceneConfig>,
     known_scenes: Vec<SceneConfig>,
@@ -861,6 +868,8 @@ fn run_process_runtime(
     completion_sink: crate::host::HostSceneCompletionSink,
     health_state: Arc<ProcessHealthState>,
 ) -> Result<()> {
+    crate::native_data::configure_project_root(&project_root)
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let process_name = process.name.clone();
     let scheduling = RuntimeScheduling::from_process(&process);
     let js_event_loop = tokio::runtime::Builder::new_current_thread()
@@ -1615,6 +1624,8 @@ fn maybe_log_metrics(
         aoi_relocations: native.aoi_relocations,
         aoi_visibility_changes: native.aoi_visibility_changes,
         aoi_filter_overrides: native.aoi_filter_overrides,
+        navigation_assets: native.navigation_assets as u64,
+        navigation_worlds: native.navigation_worlds as u64,
     });
 
     health_state.set_observability_snapshot(ProcessObservabilitySnapshot {

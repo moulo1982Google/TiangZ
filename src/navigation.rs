@@ -116,14 +116,20 @@ unsafe extern "C" {
         error_capacity: usize,
     ) -> *mut c_void;
     fn tz_navmesh_free(mesh: *mut c_void);
-    fn tz_navmesh_project(
+    fn tz_navmesh_query_create(
         mesh: *const c_void,
+        error: *mut c_char,
+        error_capacity: usize,
+    ) -> *mut c_void;
+    fn tz_navmesh_query_free(query: *mut c_void);
+    fn tz_navmesh_project(
+        query: *const c_void,
         point: *const c_float,
         half_extents: *const c_float,
         projected: *mut c_float,
     ) -> c_int;
     fn tz_navmesh_find_path(
-        mesh: *const c_void,
+        query: *const c_void,
         start: *const c_float,
         end: *const c_float,
         half_extents: *const c_float,
@@ -133,7 +139,7 @@ unsafe extern "C" {
     ) -> c_int;
 }
 
-/// 持有只读 Detour 查询实例；查询器内部有临时状态，因此不要跨线程共享同一实例。 / Owns a read-only Detour query instance; its scratch state must not be shared across threads.
+/// 持有可跨MapInstance共享的不可变Detour网格，不包含查询临时状态。 / Owns an immutable Detour mesh shared across MapInstances without query scratch state.
 pub struct NavigationAsset {
     handle: NonNull<c_void>,
     bytes: Vec<u8>,
@@ -151,7 +157,7 @@ impl fmt::Debug for NavigationAsset {
 }
 
 impl NavigationAsset {
-    /// 从已校验资源创建查询实例；Hash 不匹配时在进入 C++ 前失败。 / Creates a query instance from a verified asset and rejects hash drift before entering C++.
+    /// 从已校验资源创建共享资产；Hash 不匹配时在进入 C++ 前失败。 / Creates a shared asset from verified bytes and rejects hash drift before entering C++.
     pub fn load(bytes: Vec<u8>, expected_hash: Option<&str>) -> Result<Self> {
         let hash = sha256_hex(&bytes);
         if let Some(expected) = expected_hash
@@ -172,13 +178,59 @@ impl NavigationAsset {
         })
     }
 
+    /// 为一个MapInstance创建独立查询上下文；资产可共享，但查询临时状态绝不共享。 / Creates one query context per MapInstance; assets are shared while query scratch state is not.
+    pub fn create_world(self: &Rc<Self>) -> Result<NavigationWorld> {
+        let mut error = [0i8; ERROR_CAPACITY];
+        // SAFETY: The asset handle remains alive through the Rc retained by NavigationWorld.
+        let query = unsafe {
+            tz_navmesh_query_create(self.handle.as_ptr(), error.as_mut_ptr(), error.len())
+        };
+        let query = NonNull::new(query).ok_or_else(|| anyhow!(ffi_error(&error)))?;
+        Ok(NavigationWorld {
+            asset: Rc::clone(self),
+            query,
+        })
+    }
+
+    pub fn hash(&self) -> &str {
+        &self.hash
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl Drop for NavigationAsset {
+    fn drop(&mut self) {
+        // SAFETY: The handle was returned by tz_navmesh_load and is freed exactly once here.
+        unsafe { tz_navmesh_free(self.handle.as_ptr()) };
+    }
+}
+
+/// 保存一个MapInstance独占的Detour查询上下文，并强引用其共享只读资产。 / Owns a MapInstance-specific Detour query context and strongly retains its shared immutable asset.
+pub struct NavigationWorld {
+    asset: Rc<NavigationAsset>,
+    query: NonNull<c_void>,
+}
+
+impl fmt::Debug for NavigationWorld {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NavigationWorld")
+            .field("asset_hash", &self.asset.hash())
+            .finish_non_exhaustive()
+    }
+}
+
+impl NavigationWorld {
     /// 将任意世界坐标投影到最近可行走面；搜索盒过小会明确返回 None。 / Projects a world point onto the nearest walkable polygon and returns None when the search box misses.
     pub fn project(&self, point: [f32; 3], half_extents: [f32; 3]) -> Option<[f32; 3]> {
         let mut projected = [0.0; 3];
         // SAFETY: All pointers reference fixed-size arrays and the native handle remains valid for self's lifetime.
         let ok = unsafe {
             tz_navmesh_project(
-                self.handle.as_ptr(),
+                self.query.as_ptr(),
                 point.as_ptr(),
                 half_extents.as_ptr(),
                 projected.as_mut_ptr(),
@@ -206,7 +258,7 @@ impl NavigationAsset {
         // SAFETY: Output storage has max_points * 3 floats and all input arrays remain alive for the call.
         let ok = unsafe {
             tz_navmesh_find_path(
-                self.handle.as_ptr(),
+                self.query.as_ptr(),
                 start.as_ptr(),
                 end.as_ptr(),
                 half_extents.as_ptr(),
@@ -224,19 +276,15 @@ impl NavigationAsset {
             .collect())
     }
 
-    pub fn hash(&self) -> &str {
-        &self.hash
-    }
-
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
+    pub fn asset_hash(&self) -> &str {
+        self.asset.hash()
     }
 }
 
-impl Drop for NavigationAsset {
+impl Drop for NavigationWorld {
     fn drop(&mut self) {
-        // SAFETY: The handle was returned by tz_navmesh_load and is freed exactly once here.
-        unsafe { tz_navmesh_free(self.handle.as_ptr()) };
+        // SAFETY: The query was returned by tz_navmesh_query_create and is freed exactly once here.
+        unsafe { tz_navmesh_query_free(self.query.as_ptr()) };
     }
 }
 
@@ -426,14 +474,15 @@ mod tests {
         let (second, _) = bake_obj(&demo_source(), NavBuildConfig::default()).unwrap();
         assert_eq!(first, second);
 
-        let asset = NavigationAsset::load(first, None).unwrap();
-        let projected = asset.project([0.0, 1.0, -10.0], [2.0, 4.0, 2.0]).unwrap();
+        let asset = Rc::new(NavigationAsset::load(first, None).unwrap());
+        let world = asset.create_world().unwrap();
+        let projected = world.project([0.0, 1.0, -10.0], [2.0, 4.0, 2.0]).unwrap();
         assert!(
             projected[1].abs() <= 0.25,
             "projection should stay within one cell-height of the floor: {projected:?}"
         );
 
-        let path = asset
+        let path = world
             .find_path([-10.0, 0.0, 0.0], [10.0, 0.0, 0.0], [2.0, 4.0, 2.0], 32)
             .unwrap();
         assert!(
@@ -462,7 +511,12 @@ mod tests {
         let first = cache.load(bytes.clone(), &hash).unwrap();
         let second = cache.load(bytes, &hash).unwrap();
         assert!(Rc::ptr_eq(&first, &second));
+        let first_world = first.create_world().unwrap();
+        let second_world = second.create_world().unwrap();
+        assert_ne!(first_world.query, second_world.query);
         assert_eq!(cache.live_assets(), 1);
+        drop(first_world);
+        drop(second_world);
         drop(first);
         drop(second);
         cache.prune();

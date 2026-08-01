@@ -14,7 +14,7 @@ app/hotfix/demo/      普通Handler与可热更领域行为
 proto/
 game_config/                 策划静态配置Excel；结构完整部署，纯数据可生成候选热更
 cocos_client2D/assets/scripts/Demo/
-cocos_client3D/assets/       仅在Phase 4.3或明确的3D客户端需求中修改；Generated/SDK禁止手改
+cocos_client3D/assets/       3D客户端业务与灰盒；Generated/SDK禁止手改
 pixi_client/src/
 configs/
 tests或tools中的对应业务自测
@@ -348,9 +348,9 @@ Cell和AOI Grid尺寸同样属于Cold配置：`MapConfig.cell_size_meters`定义
 
 容量验收不能只测单一地图密度。框架基线固定用`npm run perf:map-capacity:grid-matrix`比较3000人在10×10、15×15、20×20 Grid中的均匀分布，保持80% Grid内移动、20%每2秒跨Grid以及消息频率不变。业务新增地图时应按实际平均人数/Grid选择最接近的结果，不得把稀疏世界结果当作主城同屏容量。进图并发属于初始化压力，必须受控并与正式稳态窗口分开解读。
 
-创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。当前只有`Grid2D` Map Runtime可用；`NavMesh3D`的离线烘焙与Rust查询内核虽然已经完成，仍必须等MapScene自动装载入口完成后才能在配置中启用。业务不能捕获“不支持NavMesh”的异常后回退到Grid2D。空间模式、字段结构、Agent烘焙参数和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
+创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。`Grid2D`与`NavMesh3D` Map Runtime均已可创建；NavMesh3D业务通过`MapComponent.ProjectPosition/FindPath`一次取得普通坐标结果，不读取Detour句柄、不逐节点跨V8，也不能捕获导航错误后回退到Grid2D。空间模式、字段结构、Agent烘焙参数和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
 
-导航源网格由制作工具导出到`navigation/maps/<map>/source`，开发者只维护冷清单并执行`npm run navigation:bake`，不得在TS Handler、Game.Update或服务器启动流程中调用烘焙。业务未来只使用`ProjectPosition/FindPath/Raycast`等粗粒度接口表达意图，不读取Detour多边形、不逐路径节点跨V8调用，也不在TS复制一份权威坐标。4.2.1的Demo灰盒是工具回归输入，不是要求程序员手工寻找或制作正式3D地图。
+导航源网格由制作工具导出到`navigation/maps/<map>/source`，开发者只维护冷清单并执行`npm run navigation:bake`，不得在TS Handler、Game.Update或服务器启动流程中调用烘焙。业务使用`ProjectPosition/FindPath`等粗粒度接口表达意图，不读取Detour多边形、不逐路径节点跨V8调用，也不在TS复制一份权威坐标。`C2M_FindPath`是查询示例，不修改玩家位置；正式移动Handler仍应只提交移动意图，由Rust逐Tick推进和广播。Demo灰盒是工具与客户端回归输入，不是要求程序员手工寻找或制作正式3D地图。
 
 详细字段、Rust所有权和客户端进入校验见[地图空间与3D坐标契约](../design/spatial-world.md)。
 

@@ -76,7 +76,8 @@
       "sceneType": "MapHost",
       "acceptDynamicMaps": true,
       "staticMapIds": [
-        2
+        2,
+        100
       ],
       "ip": "127.0.0.1",
       "port": 7302

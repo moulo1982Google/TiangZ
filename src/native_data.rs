@@ -2,10 +2,13 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Component, Path, PathBuf};
 
 use deno_core::convert::Uint8Array;
 use deno_core::op2;
 use deno_error::JsErrorBox;
+use tiangz_transport::navigation::{NavigationAssetCache, NavigationWorld};
 
 use crate::aoi::{AoiWorld, SyncTier, VisibilityChange};
 // 生成的Native op绑定当前只导入一个稳定模块；这里仅做兼容转发，业务实现仍归属`src/game`。
@@ -79,6 +82,27 @@ impl Grid2DBounds {
 
 thread_local! {
     static STORE: RefCell<NativeEntityStore> = RefCell::new(NativeEntityStore::default());
+    static PROJECT_ROOT: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
+/// 在V8业务线程启动时固定可信工程根目录；导航资源只能从该目录的navigation子树加载。 / Fixes the trusted project root on the V8 thread so navigation assets can only load from its navigation subtree.
+pub(crate) fn configure_project_root(root: &Path) -> Result<(), JsErrorBox> {
+    let root = root
+        .canonicalize()
+        .map_err(|error| JsErrorBox::generic(format!("failed to resolve project root: {error}")))?;
+    PROJECT_ROOT.with(|slot| {
+        let mut current = slot.borrow_mut();
+        if current
+            .as_ref()
+            .is_some_and(|configured| configured != &root)
+        {
+            return Err(JsErrorBox::generic(
+                "native project root cannot change inside one V8 thread",
+            ));
+        }
+        *current = Some(root);
+        Ok(())
+    })
 }
 
 #[derive(Clone, Default)]
@@ -118,7 +142,9 @@ struct NativeEntityStore {
     free: Vec<usize>,
     pools: NativeEntityPools,
     units_by_map: HashMap<u32, Vec<u32>>,
-    grid_2d_bounds: HashMap<u32, Grid2DBounds>,
+    spatial_bounds: HashMap<u32, Grid2DBounds>,
+    navigation_assets: NavigationAssetCache,
+    navigation_worlds: HashMap<u32, NavigationWorld>,
     aoi_worlds: HashMap<u32, AoiWorld>,
     aoi_dirty_by_map: HashMap<u32, HashSet<u32>>,
     numerics_by_unit: HashMap<u32, NumericData>,
@@ -386,7 +412,7 @@ pub(crate) fn reset_unit_movement(handle: u32) -> Result<(), JsErrorBox> {
             .get_unit_cold(location)
             .ok_or_else(|| wrong_entity_type(handle, "Unit"))?
             .map_id;
-        let bounds = *store.grid_2d_bounds.get(&map_id).ok_or_else(|| {
+        let bounds = *store.spatial_bounds.get(&map_id).ok_or_else(|| {
             JsErrorBox::generic(format!("map {map_id} has no Grid2D spatial state"))
         })?;
         let (x, z) = {
@@ -820,7 +846,7 @@ pub(crate) fn op_native_map_peek_unit_aoi_delta(
 }
 
 #[op2(fast)]
-/// 注册一张地图的移动边界；重复注册会原子替换旧值。 / Registers movement bounds for a map, atomically replacing an older value.
+/// 注册一张Grid2D地图的移动边界；同一MapInstance重复创建会被拒绝。 / Registers Grid2D movement bounds and rejects duplicate creation for one MapInstance.
 pub(crate) fn op_native_spatial_create_grid2_d(
     map_id: u32,
     width_cells: u32,
@@ -838,9 +864,253 @@ fn native_spatial_create_grid_2d(
 ) -> Result<(), JsErrorBox> {
     let bounds = Grid2DBounds::new(width_cells, depth_cells, cell_size_millimeters)?;
     STORE.with(|slot| {
-        slot.borrow_mut().grid_2d_bounds.insert(map_id, bounds);
-    });
-    Ok(())
+        let mut store = slot.borrow_mut();
+        if store.spatial_bounds.contains_key(&map_id) {
+            return Err(JsErrorBox::generic(format!(
+                "map spatial world is already configured: {map_id}"
+            )));
+        }
+        store.spatial_bounds.insert(map_id, bounds);
+        Ok(())
+    })
+}
+
+#[op2(fast)]
+/// 从冷配置加载共享NavMesh资产并创建实例独占查询上下文；路径不得越出navigation目录。 / Loads a shared cold NavMesh asset and creates an instance-owned query context within the navigation directory.
+pub(crate) fn op_native_spatial_create_nav_mesh3_d(
+    map_id: u32,
+    width_cells: u32,
+    depth_cells: u32,
+    cell_size_millimeters: u32,
+    #[buffer] asset_path: &[u8],
+    #[buffer] expected_hash: &[u8],
+) -> Result<(), JsErrorBox> {
+    native_spatial_create_nav_mesh_3d(
+        map_id,
+        width_cells,
+        depth_cells,
+        cell_size_millimeters,
+        asset_path,
+        expected_hash,
+    )
+}
+
+fn native_spatial_create_nav_mesh_3d(
+    map_id: u32,
+    width_cells: u32,
+    depth_cells: u32,
+    cell_size_millimeters: u32,
+    asset_path: &[u8],
+    expected_hash: &[u8],
+) -> Result<(), JsErrorBox> {
+    let bounds = Grid2DBounds::new(width_cells, depth_cells, cell_size_millimeters)?;
+    let asset_path = decode_utf8(asset_path, "navigation asset path")?;
+    let expected_hash = decode_utf8(expected_hash, "navigation asset hash")?;
+    let bytes = read_navigation_asset(asset_path)?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        if store.spatial_bounds.contains_key(&map_id) {
+            return Err(JsErrorBox::generic(format!(
+                "map spatial world is already configured: {map_id}"
+            )));
+        }
+        let asset = store
+            .navigation_assets
+            .load(bytes, expected_hash)
+            .map_err(|error| JsErrorBox::generic(format!("{error:#}")))?;
+        let world = asset
+            .create_world()
+            .map_err(|error| JsErrorBox::generic(format!("{error:#}")))?;
+        store.spatial_bounds.insert(map_id, bounds);
+        store.navigation_worlds.insert(map_id, world);
+        Ok(())
+    })
+}
+
+#[op2]
+/// 把地图局部米制坐标投影到最近可行走面；未命中时返回空数组。 / Projects a map-local meter position onto the nearest walkable surface and returns empty bytes on a miss.
+pub(crate) fn op_native_spatial_project_position(
+    map_id: u32,
+    x: f64,
+    y: f64,
+    z: f64,
+    extent_x: f64,
+    extent_y: f64,
+    extent_z: f64,
+) -> Result<Uint8Array, JsErrorBox> {
+    native_spatial_project_position(map_id, x, y, z, extent_x, extent_y, extent_z).map(Into::into)
+}
+
+fn native_spatial_project_position(
+    map_id: u32,
+    x: f64,
+    y: f64,
+    z: f64,
+    extent_x: f64,
+    extent_y: f64,
+    extent_z: f64,
+) -> Result<Vec<u8>, JsErrorBox> {
+    let point = [
+        finite_f32(x, "x")?,
+        finite_f32(y, "y")?,
+        finite_f32(z, "z")?,
+    ];
+    let extents = [
+        positive_f32(extent_x, "extentX")?,
+        positive_f32(extent_y, "extentY")?,
+        positive_f32(extent_z, "extentZ")?,
+    ];
+    STORE.with(|slot| {
+        let store = slot.borrow();
+        let world = store.navigation_worlds.get(&map_id).ok_or_else(|| {
+            JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+        })?;
+        Ok(world
+            .project(point, extents)
+            .map(|point| encode_nav_points([point]))
+            .unwrap_or_default())
+    })
+}
+
+#[op2]
+/// 一次返回有界的路径拐点数组；禁止逐节点跨V8查询。 / Returns a bounded path-corner array in one call instead of crossing V8 once per node.
+pub(crate) fn op_native_spatial_find_path(
+    map_id: u32,
+    start_x: f64,
+    start_y: f64,
+    start_z: f64,
+    end_x: f64,
+    end_y: f64,
+    end_z: f64,
+    extent_x: f64,
+    extent_y: f64,
+    extent_z: f64,
+    max_points: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    native_spatial_find_path(
+        map_id, start_x, start_y, start_z, end_x, end_y, end_z, extent_x, extent_y, extent_z,
+        max_points,
+    )
+    .map(Into::into)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_spatial_find_path(
+    map_id: u32,
+    start_x: f64,
+    start_y: f64,
+    start_z: f64,
+    end_x: f64,
+    end_y: f64,
+    end_z: f64,
+    extent_x: f64,
+    extent_y: f64,
+    extent_z: f64,
+    max_points: u32,
+) -> Result<Vec<u8>, JsErrorBox> {
+    if !(1..=256).contains(&max_points) {
+        return Err(JsErrorBox::generic(
+            "NavMesh maxPoints must be between 1 and 256",
+        ));
+    }
+    let start = [
+        finite_f32(start_x, "startX")?,
+        finite_f32(start_y, "startY")?,
+        finite_f32(start_z, "startZ")?,
+    ];
+    let end = [
+        finite_f32(end_x, "endX")?,
+        finite_f32(end_y, "endY")?,
+        finite_f32(end_z, "endZ")?,
+    ];
+    let extents = [
+        positive_f32(extent_x, "extentX")?,
+        positive_f32(extent_y, "extentY")?,
+        positive_f32(extent_z, "extentZ")?,
+    ];
+    STORE.with(|slot| {
+        let store = slot.borrow();
+        let world = store.navigation_worlds.get(&map_id).ok_or_else(|| {
+            JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+        })?;
+        let points = world
+            .find_path(start, end, extents, max_points as usize)
+            .map_err(|error| JsErrorBox::generic(format!("{error:#}")))?;
+        Ok(encode_nav_points(&points))
+    })
+}
+
+fn decode_utf8<'a>(bytes: &'a [u8], name: &str) -> Result<&'a str, JsErrorBox> {
+    let value = std::str::from_utf8(bytes)
+        .map_err(|_| JsErrorBox::generic(format!("{name} must be UTF-8")))?;
+    if value.is_empty() {
+        return Err(JsErrorBox::generic(format!("{name} must not be empty")));
+    }
+    Ok(value)
+}
+
+fn read_navigation_asset(relative: &str) -> Result<Vec<u8>, JsErrorBox> {
+    let relative = Path::new(relative);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        || relative.components().next() != Some(Component::Normal("navigation".as_ref()))
+    {
+        return Err(JsErrorBox::generic(
+            "navigation asset must be a normalized relative path below navigation/",
+        ));
+    }
+    PROJECT_ROOT.with(|slot| {
+        let root = slot
+            .borrow()
+            .clone()
+            .ok_or_else(|| JsErrorBox::generic("native project root is not configured"))?;
+        let navigation_root = root.join("navigation").canonicalize().map_err(|error| {
+            JsErrorBox::generic(format!("failed to resolve navigation directory: {error}"))
+        })?;
+        let path = root.join(relative).canonicalize().map_err(|error| {
+            JsErrorBox::generic(format!("failed to resolve navigation asset: {error}"))
+        })?;
+        if !path.starts_with(&navigation_root) {
+            return Err(JsErrorBox::generic(
+                "navigation asset resolves outside the navigation directory",
+            ));
+        }
+        fs::read(&path).map_err(|error| {
+            JsErrorBox::generic(format!(
+                "failed to read navigation asset {}: {error}",
+                path.display()
+            ))
+        })
+    })
+}
+
+fn finite_f32(value: f64, name: &str) -> Result<f32, JsErrorBox> {
+    if !value.is_finite() || value < f32::MIN as f64 || value > f32::MAX as f64 {
+        return Err(JsErrorBox::generic(format!("{name} must fit a finite f32")));
+    }
+    Ok(value as f32)
+}
+
+fn positive_f32(value: f64, name: &str) -> Result<f32, JsErrorBox> {
+    let value = finite_f32(value, name)?;
+    if value <= 0.0 {
+        return Err(JsErrorBox::generic(format!("{name} must be positive")));
+    }
+    Ok(value)
+}
+
+fn encode_nav_points(points: impl AsRef<[[f32; 3]]>) -> Vec<u8> {
+    let points = points.as_ref();
+    let mut bytes = Vec::with_capacity(4 + points.len() * 12);
+    bytes.extend_from_slice(&(points.len() as u32).to_le_bytes());
+    for point in points {
+        for coordinate in point {
+            bytes.extend_from_slice(&coordinate.to_le_bytes());
+        }
+    }
+    bytes
 }
 
 #[op2(fast)]
@@ -865,7 +1135,7 @@ pub(crate) fn op_native_aoi_create(
         })
         .collect();
     let bounds = STORE
-        .with(|slot| slot.borrow().grid_2d_bounds.get(&map_id).copied())
+        .with(|slot| slot.borrow().spatial_bounds.get(&map_id).copied())
         .ok_or_else(|| {
             JsErrorBox::generic(format!("map spatial world is not configured: {map_id}"))
         })?;
@@ -1126,8 +1396,15 @@ fn encode_visibility_changes(changes: &[VisibilityChange]) -> Vec<u8> {
 #[op2(fast)]
 /// 释放地图实例私有空间状态；不存在时保持幂等，共享导航资产不在这里卸载。 / Releases per-instance spatial state idempotently without unloading shared navigation assets.
 pub(crate) fn op_native_spatial_release(map_id: u32) {
+    native_spatial_release(map_id);
+}
+
+fn native_spatial_release(map_id: u32) {
     STORE.with(|slot| {
-        slot.borrow_mut().grid_2d_bounds.remove(&map_id);
+        let mut store = slot.borrow_mut();
+        store.spatial_bounds.remove(&map_id);
+        store.navigation_worlds.remove(&map_id);
+        store.navigation_assets.prune();
     });
 }
 
@@ -1200,7 +1477,7 @@ fn native_map_advance_movement(
         let mut store = slot.borrow_mut();
         store.metrics.batch_calls += 1;
         let bounds = *store
-            .grid_2d_bounds
+            .spatial_bounds
             .get(&map_id)
             .ok_or_else(|| JsErrorBox::generic(format!("map {map_id} is not configured")))?;
         let handles = store.take_map_handles(map_id);
@@ -1589,8 +1866,10 @@ fn native_data_metrics_bytes() -> Vec<u8> {
             .values()
             .map(AoiWorld::rejected_relation_count)
             .sum::<usize>() as u64;
+        let navigation_assets = store.navigation_assets.live_assets() as u32;
+        let navigation_worlds = store.navigation_worlds.len() as u32;
         let metrics = store.metrics.clone();
-        let mut bytes = Vec::with_capacity(152);
+        let mut bytes = Vec::with_capacity(160);
         bytes.extend_from_slice(&metrics.scalar_gets.to_le_bytes());
         bytes.extend_from_slice(&metrics.scalar_sets.to_le_bytes());
         bytes.extend_from_slice(&metrics.batch_calls.to_le_bytes());
@@ -1613,6 +1892,8 @@ fn native_data_metrics_bytes() -> Vec<u8> {
         bytes.extend_from_slice(&metrics.aoi_filter_overrides.to_le_bytes());
         bytes.extend_from_slice(&aoi_lingering_relations.to_le_bytes());
         bytes.extend_from_slice(&aoi_rejected_relations.to_le_bytes());
+        bytes.extend_from_slice(&navigation_assets.to_le_bytes());
+        bytes.extend_from_slice(&navigation_worlds.to_le_bytes());
         bytes
     })
 }
@@ -2100,14 +2381,62 @@ mod tests {
 
         let first = native_data_metrics_bytes();
         let second = native_data_metrics_bytes();
-        assert_eq!(first.len(), 152);
-        assert_eq!(second.len(), 152);
+        assert_eq!(first.len(), 160);
+        assert_eq!(second.len(), 160);
 
         STORE.with(|slot| {
             let store = slot.borrow();
             assert_eq!(store.metrics.scalar_gets, 7);
             assert_eq!(store.metrics.encoded_bytes, 128);
         });
+    }
+
+    #[test]
+    fn nav_mesh_world_loads_from_trusted_root_and_queries_in_one_call() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        configure_project_root(root).unwrap();
+        STORE.with(|slot| *slot.borrow_mut() = NativeEntityStore::default());
+        let asset = b"navigation/maps/demo_3d/generated/navigation.bin";
+        let hash = b"94af0f91826b6c08d72f2402cd06383847cf8ceb7d87d9dd9067a2b9c862f304";
+        native_spatial_create_nav_mesh_3d(90_001, 48, 48, 1_000, asset, hash).unwrap();
+        native_spatial_create_nav_mesh_3d(90_002, 48, 48, 1_000, asset, hash).unwrap();
+
+        let projected =
+            native_spatial_project_position(90_001, 0.0, 1.0, -10.0, 2.0, 4.0, 2.0).unwrap();
+        assert_eq!(u32::from_le_bytes(projected[0..4].try_into().unwrap()), 1);
+        let path =
+            native_spatial_find_path(90_001, -10.0, 0.0, 0.0, 10.0, 0.0, 0.0, 2.0, 4.0, 2.0, 32)
+                .unwrap();
+        assert!(u32::from_le_bytes(path[0..4].try_into().unwrap()) >= 3);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            assert_eq!(store.navigation_assets.live_assets(), 1);
+            assert_eq!(store.navigation_worlds.len(), 2);
+        });
+
+        native_spatial_release(90_001);
+        native_spatial_release(90_002);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            assert_eq!(store.navigation_assets.live_assets(), 0);
+            assert!(store.navigation_worlds.is_empty());
+        });
+    }
+
+    #[test]
+    fn nav_mesh_asset_cannot_escape_navigation_directory() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        configure_project_root(root).unwrap();
+        let error = native_spatial_create_nav_mesh_3d(
+            90_003,
+            48,
+            48,
+            1_000,
+            b"navigation/../Cargo.toml",
+            b"0000000000000000000000000000000000000000000000000000000000000000",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("normalized relative path"));
     }
 
     #[test]

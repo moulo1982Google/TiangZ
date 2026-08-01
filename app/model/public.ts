@@ -59,6 +59,7 @@ export { MapScene } from "./demo/map/MapScene";
 export {
   PlayerUnit,
   type AwakePlayerUnit,
+  type FindNavigationPath,
   type MatchPlayerGate,
   type MovePlayer,
   type PlayerSnapshot,
@@ -86,13 +87,14 @@ export { NativeOps } from "../generated/model/native/NativeOps";
 export { LoginComponent } from "./demo/login/LoginComponent";
 export { SelectStickyGate } from "./demo/login/GateSelector";
 export { PlayerPersistenceComponent } from "./demo/persistence/PlayerPersistenceComponent";
-export { NativeData } from "./demo/native/NativeData";
+export { NativeData, type NativeVec3 } from "./demo/native/NativeData";
 export { NativeUnitRef } from "../generated/model/native/NativeUnitRef";
 export { GameErrCode } from "./game/protocol/GameErrCode";
 export {
   GameConfigRegistry,
   GameConfigSchemaFingerprint,
   GameConfigs,
+  SpatialMode,
   type ItemConfig as ItemConfigData,
   type MapConfig as MapConfigData,
   type PlayerConfig as PlayerConfigData,

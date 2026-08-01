@@ -8,6 +8,12 @@ export interface NativeDataConfig {
   scalarAccessWarnThreshold?: number;
 }
 
+export interface NativeVec3 {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
 interface DemoProcessConfig {
   nativeData?: NativeDataConfig;
 }
@@ -33,6 +39,8 @@ export interface NativeDataMetrics {
   aoiVisibleRelations: number;
   aoiLingeringRelations: number;
   aoiRejectedRelations: number;
+  navigationAssets: number;
+  navigationWorlds: number;
   aoiRelocations: number;
   aoiVisibilityChanges: number;
   aoiFilterOverrides: number;
@@ -156,6 +164,71 @@ export class NativeData {
       depthCells,
       cellSizeMillimeters,
     );
+  }
+
+  /** 从冷配置资源创建NavMesh3D实例；文件读取、Hash校验和共享缓存全部留在Rust。 / Creates a NavMesh3D instance from cold assets while Rust owns file I/O, hash validation, and sharing. */
+  static CreateNavMesh3DSpatial(
+    mapId: number,
+    widthCells: number,
+    depthCells: number,
+    cellSizeMeters: number,
+    assetPath: string,
+    expectedHash: string,
+  ): void {
+    const cellSizeMillimeters = Math.round(cellSizeMeters * 1_000);
+    if (cellSizeMillimeters <= 0) {
+      throw new Error(`navigation cell size must be positive: ${cellSizeMeters}`);
+    }
+    NativeOps.SpatialCreateNavMesh3D(
+      mapId,
+      widthCells,
+      depthCells,
+      cellSizeMillimeters,
+      encodeUtf8(assetPath),
+      encodeUtf8(expectedHash),
+    );
+  }
+
+  /** 一次投影一个米制坐标；未命中返回undefined，不暴露Detour多边形引用。 / Projects one meter-space point and returns undefined on a miss without exposing Detour polygon refs. */
+  static ProjectPosition(
+    mapId: number,
+    point: NativeVec3,
+    halfExtents: NativeVec3,
+  ): NativeVec3 | undefined {
+    const points = decodeNavPoints(NativeOps.SpatialProjectPosition(
+      mapId,
+      point.x,
+      point.y,
+      point.z,
+      halfExtents.x,
+      halfExtents.y,
+      halfExtents.z,
+    ));
+    if (points.length > 1) throw new Error(`NavMesh projection returned ${points.length} points`);
+    return points[0];
+  }
+
+  /** 一次取得有界路径拐点；禁止业务逐节点调用Native getter拼路径。 / Gets bounded path corners in one call instead of assembling paths through per-node Native getters. */
+  static FindPath(
+    mapId: number,
+    start: NativeVec3,
+    end: NativeVec3,
+    halfExtents: NativeVec3,
+    maxPoints: number,
+  ): readonly NativeVec3[] {
+    return decodeNavPoints(NativeOps.SpatialFindPath(
+      mapId,
+      start.x,
+      start.y,
+      start.z,
+      end.x,
+      end.y,
+      end.z,
+      halfExtents.x,
+      halfExtents.y,
+      halfExtents.z,
+      maxPoints,
+    ));
   }
 
   /** 地图销毁时释放实例私有空间状态；共享导航资产不由该调用卸载。 / Releases per-instance spatial state on map disposal without unloading shared navigation assets. */
@@ -422,7 +495,7 @@ export class NativeData {
   /** 读取生命周期累计 NativeData 指标；相邻快照差值只用于本地高频访问告警。 / Reads monotonic NativeData metrics; snapshot deltas are used only for local access warnings. */
   static TakeMetrics(): NativeDataMetrics {
     const bytes = NativeOps.DataTakeMetrics();
-    if (bytes.length !== 152) {
+    if (bytes.length !== 160) {
       throw new Error(`invalid native metrics length: ${bytes.length}`);
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -449,6 +522,8 @@ export class NativeData {
       aoiFilterOverrides: Number(view.getBigUint64(128, true)),
       aoiLingeringRelations: Number(view.getBigUint64(136, true)),
       aoiRejectedRelations: Number(view.getBigUint64(144, true)),
+      navigationAssets: view.getUint32(152, true),
+      navigationWorlds: view.getUint32(156, true),
       nativeRefs: NativeOps.NativeRefMetrics(),
     };
     const previous = this.previousMetrics;
@@ -469,6 +544,54 @@ export class NativeData {
     }
     return metrics;
   }
+}
+
+/** 解码Rust批量返回的Vec3，严格拒绝截断或尾随字节。 / Decodes Rust Vec3 batches while rejecting truncation and trailing bytes. */
+function decodeNavPoints(bytes: Uint8Array): readonly NativeVec3[] {
+  if (bytes.byteLength === 0) return [];
+  if (bytes.byteLength < 4) throw new Error("NavMesh point batch is truncated");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = view.getUint32(0, true);
+  if (bytes.byteLength !== 4 + count * 12) {
+    throw new Error(`invalid NavMesh point batch length: ${bytes.byteLength}/${count}`);
+  }
+  const points: NativeVec3[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const offset = 4 + index * 12;
+    points.push({
+      x: view.getFloat32(offset, true),
+      y: view.getFloat32(offset + 4, true),
+      z: view.getFloat32(offset + 8, true),
+    });
+  }
+  return points;
+}
+
+/** 在裸deno_core V8中编码UTF-8，不依赖浏览器TextEncoder全局对象。 / Encodes UTF-8 in bare deno_core V8 without depending on the browser TextEncoder global. */
+function encodeUtf8(value: string): Uint8Array {
+  const bytes: number[] = [];
+  for (const symbol of value) {
+    const codePoint = symbol.codePointAt(0);
+    if (codePoint === undefined) continue;
+    if (codePoint <= 0x7f) bytes.push(codePoint);
+    else if (codePoint <= 0x7ff) {
+      bytes.push(0xc0 | codePoint >> 6, 0x80 | codePoint & 0x3f);
+    } else if (codePoint <= 0xffff) {
+      bytes.push(
+        0xe0 | codePoint >> 12,
+        0x80 | codePoint >> 6 & 0x3f,
+        0x80 | codePoint & 0x3f,
+      );
+    } else {
+      bytes.push(
+        0xf0 | codePoint >> 18,
+        0x80 | codePoint >> 12 & 0x3f,
+        0x80 | codePoint >> 6 & 0x3f,
+        0x80 | codePoint & 0x3f,
+      );
+    }
+  }
+  return Uint8Array.from(bytes);
 }
 
 function parseAoiVisibilityChanges(

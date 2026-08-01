@@ -825,6 +825,35 @@
       ]
     },
     {
+      "key": "proto/DataDefine_CS_50001.proto#NavigationPathPoint",
+      "name": "NavigationPathPoint",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "x",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "z",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/DataDefine_CS_50001.proto#UnitNumericDelta",
       "name": "UnitNumericDelta",
       "base": null,
@@ -3721,6 +3750,63 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_FindPath",
+      "name": "C2M_FindPath",
+      "base": "IActorLocationRequest",
+      "response": "M2C_FindPath",
+      "fields": [
+        {
+          "number": 1,
+          "name": "start_x",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "start_y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "start_z",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "target_x",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "target_y",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "target_z",
+          "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_MapProbe",
       "name": "C2M_MapProbe",
       "base": "IActorLocationRequest",
@@ -4289,6 +4375,42 @@
           "name": "server_time",
           "type": "int64",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_FindPath",
+      "name": "M2C_FindPath",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "points",
+          "type": "NavigationPathPoint",
+          "repeated": true,
           "synthetic": false
         },
         {

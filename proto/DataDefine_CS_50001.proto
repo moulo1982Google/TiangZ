@@ -34,6 +34,14 @@ message CellMovementState
   uint32 facing = 10;
 }
 
+// NavMesh查询返回的米制世界坐标；它是普通协议数据，不暴露引擎Vector3或Detour句柄。
+message NavigationPathPoint
+{
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
 message UnitNumericDelta
 {
   uint32 unit_id = 1;

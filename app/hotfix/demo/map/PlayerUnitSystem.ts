@@ -1,5 +1,6 @@
 import {
   type AwakePlayerUnit,
+  type FindNavigationPath,
   type MatchPlayerGate,
   NativeData,
   NativeUnitRef,
@@ -7,9 +8,11 @@ import {
   PlayerPersistenceComponent,
   type PlayerSnapshot,
   type M2G_TransferPlayer,
+  GameConfigs,
   MapComponent,
   PlayerUnit,
   PositionComponent,
+  SpatialMode,
   type MovePlayer,
   UnitGateComponent,
   systemFor,
@@ -62,12 +65,27 @@ export class PlayerUnitSystem extends PlayerUnit {
 
   /** 校验方向并写入 Rust 权威移动意图；不会在 Handler 内直接推进坐标或广播。 / Validates direction and writes Rust-authoritative movement intent without advancing or broadcasting inside the Handler. */
   Move(request: MovePlayer): boolean {
+    if (GameConfigs.MapConfig.Get(this.mapId).spatialMode !== SpatialMode.Grid2D) {
+      throw new Error(
+        `C2M_Move is a Grid2D input protocol and cannot drive NavMesh3D map ${this.mapId}`,
+      );
+    }
     validateMoveInput(request);
     return NativeData.SetMovementInput(
       this.GetComponent(NativeUnitRef).Handle,
       request.inputX,
       request.inputZ,
       request.sequence,
+    );
+  }
+
+  /** 查询本地图NavMesh路径但不修改权威坐标；用于编辑器预览和移动协议上层决策。 / Queries this map's NavMesh without mutating authoritative position for previews and movement orchestration. */
+  FindPath(request: FindNavigationPath): readonly { x: number; y: number; z: number }[] {
+    validateNavigationPoint(request.startX, request.startY, request.startZ, "start");
+    validateNavigationPoint(request.targetX, request.targetY, request.targetZ, "target");
+    return this.DomainScene().GetComponent(MapComponent).FindPath(
+      { x: request.startX, y: request.startY, z: request.startZ },
+      { x: request.targetX, y: request.targetY, z: request.targetZ },
     );
   }
 
@@ -86,5 +104,12 @@ function validateMoveInput(request: MovePlayer): void {
     Math.abs(request.inputZ) > 1
   ) {
     throw new Error(`invalid movement input: ${request.inputX},${request.inputZ}`);
+  }
+}
+
+/** 在请求进入Rust前拒绝NaN与Infinity，避免无效坐标污染跨语言边界。 / Rejects NaN and Infinity before invalid coordinates cross into Rust. */
+function validateNavigationPoint(x: number, y: number, z: number, label: string): void {
+  if (![x, y, z].every(Number.isFinite)) {
+    throw new Error(`invalid ${label} navigation point: ${x},${y},${z}`);
   }
 }

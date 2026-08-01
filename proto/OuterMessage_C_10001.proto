@@ -118,6 +118,24 @@ message M2C_MapProbe // IActorLocationResponse
   uint32 sequence = 1;
 }
 
+//ResponseType M2C_FindPath
+// 只查询服务端NavMesh路径，不修改玩家权威位置；持续移动由独立的3D移动协议负责。
+// @ets.msg protocol=Map method=FindPath duringTransfer=reject
+message C2M_FindPath // IActorLocationRequest
+{
+  float start_x = 1;
+  float start_y = 2;
+  float start_z = 3;
+  float target_x = 4;
+  float target_y = 5;
+  float target_z = 6;
+}
+
+message M2C_FindPath // IActorLocationResponse
+{
+  repeated NavigationPathPoint points = 1;
+}
+
 // @ets.msg protocol=Client method=EntityMove
 // @ets.broadcast mode=latest item=CellMovementState items=movements key=unit_id tick=server_tick
 message G2C_EntityMove // IMessage

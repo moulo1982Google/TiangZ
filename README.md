@@ -63,7 +63,7 @@ navigation/maps/             3D导航源网格、冷烘焙清单与生成资源
 configs/<environment>/       环境启动配置
 client_sdk/typescript/       TypeScript Client SDK 唯一源码
 cocos_client2D/              Cocos Creator 2D Demo 客户端
-cocos_client3D/              Cocos Creator 3D Demo 客户端（Phase 4.3空项目骨架）
+cocos_client3D/              Cocos Creator 3D NavMesh灰盒与公共SDK客户端
 pixi_client/                 PixiJS/H5 SDK 通用性验收客户端
 perf/                        RPC、完整链路与地图容量测试
 tools/                       codegen、冒烟测试和维护脚本
@@ -80,7 +80,7 @@ Numeric权威值统一使用Rust`i64`、protobuf`int64`和TypeScript`bigint`。�
 
 地图运行时已接入Rust AOI：`MapConfig`引用冷配置`AoiConfig`，分别定义AOI Grid大小、Enter范围、Detach迟滞范围和独立同步档位。同步档位只节流已经可见的可覆盖状态，不会提前建立视野；业务只在阵营、隐身、位面改变时通过`MapAoiComponent.Invalidate*`通知重算。开发约束见[业务开发手册](docs/ai/business-development-manual.md)和[地图空间契约](docs/design/spatial-world.md)。
 
-Phase 4.2.1已经固定官方Recast/Detour `v1.6.0`，提供确定性灰盒、离线tiled NavMesh烘焙、SHA-256元数据、Rust只读加载、位置投影和寻路。执行`npm run navigation:bake`即可重新生成并自检Demo导航资源，不需要启动Cocos或手工烘焙；MapScene自动装载、射线、动态障碍仍按Phase 4.2后续小步推进。详见[NavMesh3D离线资源与Rust查询](docs/tutorials/13-navmesh3d.md)。
+Phase 4.2.2已经把官方Recast/Detour `v1.6.0`资产接入Map Runtime：Map 100启动时校验SHA-256并共享只读NavMesh，每个MapInstance独占查询上下文和AOI；TS通过粗粒度`ProjectPosition/FindPath`调用，不接触Detour句柄。`cocos_client3D`可登录Map 100，点击灰盒地面请求服务端路径并预览行走。该预览尚不是完整的3D权威移动同步；射线、高度、动态障碍和多人校正继续按Phase 4.2/4.3推进。详见[NavMesh3D运行时与Cocos灰盒](docs/tutorials/13-navmesh3d.md)。
 
 ## 快速启动
 

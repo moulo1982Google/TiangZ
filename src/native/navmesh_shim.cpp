@@ -325,11 +325,18 @@ dtNavMesh* deserialize_mesh(const uint8_t* data, size_t len, std::string& error)
 
 struct TzNavMesh {
     dtNavMesh* mesh = nullptr;
-    dtNavMeshQuery* query = nullptr;
 
     ~TzNavMesh() {
-        dtFreeNavMeshQuery(query);
         dtFreeNavMesh(mesh);
+    }
+};
+
+struct TzNavQuery {
+    const TzNavMesh* asset = nullptr;
+    dtNavMeshQuery* query = nullptr;
+
+    ~TzNavQuery() {
+        dtFreeNavMeshQuery(query);
     }
 };
 
@@ -453,12 +460,6 @@ extern "C" TzNavMesh* tz_navmesh_load(const uint8_t* data, size_t len, char* err
         return nullptr;
     }
     result->mesh = mesh;
-    result->query = dtAllocNavMeshQuery();
-    if (result->query == nullptr || dtStatusFailed(result->query->init(mesh, 4096))) {
-        delete result;
-        set_error(error, error_capacity, "NavMesh 查询器初始化失败 / failed to initialize NavMesh query");
-        return nullptr;
-    }
     return result;
 }
 
@@ -466,28 +467,55 @@ extern "C" void tz_navmesh_free(TzNavMesh* mesh) {
     delete mesh;
 }
 
-extern "C" int32_t tz_navmesh_project(
+extern "C" TzNavQuery* tz_navmesh_query_create(
     const TzNavMesh* mesh,
+    char* error,
+    size_t error_capacity) {
+    if (mesh == nullptr || mesh->mesh == nullptr) {
+        set_error(error, error_capacity, "NavMesh资产无效 / invalid NavMesh asset");
+        return nullptr;
+    }
+    TzNavQuery* result = new (std::nothrow) TzNavQuery();
+    if (result == nullptr) {
+        set_error(error, error_capacity, "NavMesh查询上下文分配失败 / failed to allocate NavMesh query context");
+        return nullptr;
+    }
+    result->asset = mesh;
+    result->query = dtAllocNavMeshQuery();
+    if (result->query == nullptr || dtStatusFailed(result->query->init(mesh->mesh, 4096))) {
+        delete result;
+        set_error(error, error_capacity, "NavMesh查询器初始化失败 / failed to initialize NavMesh query");
+        return nullptr;
+    }
+    return result;
+}
+
+extern "C" void tz_navmesh_query_free(TzNavQuery* query) {
+    delete query;
+}
+
+extern "C" int32_t tz_navmesh_project(
+    const TzNavQuery* query,
     const float* point,
     const float* half_extents,
     float* projected) {
-    if (mesh == nullptr || point == nullptr || half_extents == nullptr || projected == nullptr) return 0;
+    if (query == nullptr || point == nullptr || half_extents == nullptr || projected == nullptr) return 0;
     dtQueryFilter filter;
     filter.setIncludeFlags(kWalkFlag);
     dtPolyRef reference = 0;
-    const dtStatus status = mesh->query->findNearestPoly(point, half_extents, &filter, &reference, projected);
+    const dtStatus status = query->query->findNearestPoly(point, half_extents, &filter, &reference, projected);
     return dtStatusSucceed(status) && reference != 0 ? 1 : 0;
 }
 
 extern "C" int32_t tz_navmesh_find_path(
-    const TzNavMesh* mesh,
+    const TzNavQuery* query,
     const float* start,
     const float* end,
     const float* half_extents,
     float* points,
     int32_t max_points,
     int32_t* point_count) {
-    if (mesh == nullptr || start == nullptr || end == nullptr || half_extents == nullptr ||
+    if (query == nullptr || start == nullptr || end == nullptr || half_extents == nullptr ||
         points == nullptr || point_count == nullptr || max_points <= 0) return 0;
     dtQueryFilter filter;
     filter.setIncludeFlags(kWalkFlag);
@@ -495,21 +523,21 @@ extern "C" int32_t tz_navmesh_find_path(
     dtPolyRef end_ref = 0;
     float nearest_start[3];
     float nearest_end[3];
-    if (dtStatusFailed(mesh->query->findNearestPoly(start, half_extents, &filter, &start_ref, nearest_start)) ||
-        dtStatusFailed(mesh->query->findNearestPoly(end, half_extents, &filter, &end_ref, nearest_end)) ||
+    if (dtStatusFailed(query->query->findNearestPoly(start, half_extents, &filter, &start_ref, nearest_start)) ||
+        dtStatusFailed(query->query->findNearestPoly(end, half_extents, &filter, &end_ref, nearest_end)) ||
         start_ref == 0 || end_ref == 0) return 0;
 
     std::vector<dtPolyRef> corridor(256);
     int corridor_count = 0;
-    if (dtStatusFailed(mesh->query->findPath(start_ref, end_ref, nearest_start, nearest_end, &filter,
+    if (dtStatusFailed(query->query->findPath(start_ref, end_ref, nearest_start, nearest_end, &filter,
                                              corridor.data(), &corridor_count, static_cast<int>(corridor.size()))) ||
         corridor_count == 0) return 0;
     if (corridor[corridor_count - 1] != end_ref) {
-        mesh->query->closestPointOnPoly(corridor[corridor_count - 1], nearest_end, nearest_end, nullptr);
+        query->query->closestPointOnPoly(corridor[corridor_count - 1], nearest_end, nearest_end, nullptr);
     }
     std::vector<unsigned char> flags(static_cast<size_t>(max_points));
     int straight_count = 0;
-    if (dtStatusFailed(mesh->query->findStraightPath(nearest_start, nearest_end, corridor.data(), corridor_count,
+    if (dtStatusFailed(query->query->findStraightPath(nearest_start, nearest_end, corridor.data(), corridor_count,
                                                      points, flags.data(), nullptr, &straight_count, max_points))) {
         return 0;
     }

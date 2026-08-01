@@ -1,6 +1,7 @@
 import net from "node:net";
 import {
   buildEnterMapPacket,
+  buildFindPathPacket,
   buildGetLoginServiceAddrPacket,
   buildLoginGatePacket,
   buildLoginPacket,
@@ -10,6 +11,7 @@ import {
   decodeAoiDeltaFrame,
   decodeEntityMoveFrame,
   decodeEnterMapFrame,
+  decodeFindPathFrame,
   decodeEntityNumericFrame,
   decodeItemChangedFrame,
   decodeUseItemFrame,
@@ -25,7 +27,7 @@ import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 import type { CellMovementState } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
-import { GameConfigs } from "../client_sdk/typescript/Generated/Config";
+import { GameConfigs, SpatialMode } from "../client_sdk/typescript/Generated/Config";
 import { encodePacket } from "../app/core/public";
 import {
   M2S_CreateDynamicMapCodec,
@@ -357,7 +359,76 @@ async function verifyMapTransfer(
     itemCount: itemAfter?.count,
     queuedItemCount: itemResponse.body.item.count,
   });
-  return await verifyDynamicMapTransfer(gate, transferred, dynamicMap);
+  const navigation = await verifyNavMeshTransfer(gate, transferred);
+  return await verifyDynamicMapTransfer(gate, navigation, dynamicMap);
+}
+
+/** 验证真实玩家可进入NavMesh3D地图，并收到与冷配置一致的空间资源契约。 / Verifies that a real player can enter a NavMesh3D map with the cold-configured spatial asset contract. */
+async function verifyNavMeshTransfer(
+  gate: TcpRpcConnection,
+  previous: ReturnType<typeof decodeEnterMapFrame>["body"],
+): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
+  const mapConfig = GameConfigs.MapConfig.Get(100);
+  const rpcId = nextRpcId++;
+  const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
+  const responseFrame = await gate.request(
+    buildEnterMapPacket(rpcId, { mapId: mapConfig.id, mapInstanceId: 0n }),
+  );
+  const response = decodeEnterMapFrame(responseFrame);
+  const ready = decodeMapReadyFrame(await readyFrame);
+  const transferred = response.body;
+  const finitePosition = [transferred.x, transferred.y, transferred.z].every(Number.isFinite);
+  const nearConfiguredSpawn =
+    Math.abs(transferred.x - mapConfig.spawnX) <= 0.5 &&
+    Math.abs(transferred.z - mapConfig.spawnZ) <= 0.5;
+  const insideGrayboxObstacle =
+    Math.abs(transferred.x) <= 3 &&
+    Math.abs(transferred.z) <= 5 &&
+    transferred.y < 3;
+  if (
+    response.rpcId !== rpcId ||
+    transferred.error ||
+    transferred.mapId !== mapConfig.id ||
+    transferred.unitId !== previous.unitId ||
+    transferred.spatialMode !== SpatialMode.NavMesh3D ||
+    transferred.navigationVersion !== mapConfig.navigationVersion ||
+    transferred.navigationHash !== mapConfig.navigationHash ||
+    ready.body.mapId !== mapConfig.id ||
+    ready.body.unitId !== previous.unitId ||
+    !finitePosition ||
+    !nearConfiguredSpawn ||
+    insideGrayboxObstacle
+  ) {
+    throw new Error(
+      `NavMesh3D transfer contract mismatch: ${stringifyForError({ transferred, ready: ready.body, mapConfig })}`,
+    );
+  }
+  const pathRpcId = nextRpcId++;
+  const pathResponse = decodeFindPathFrame(await gate.request(buildFindPathPacket(pathRpcId, {
+    startX: transferred.x,
+    startY: transferred.y,
+    startZ: transferred.z,
+    targetX: 10,
+    targetY: 0,
+    targetZ: 10,
+  })));
+  if (
+    pathResponse.rpcId !== pathRpcId ||
+    pathResponse.body.error ||
+    pathResponse.body.points.length < 2 ||
+    pathResponse.body.points.some((point) => ![point.x, point.y, point.z].every(Number.isFinite))
+  ) {
+    throw new Error(`NavMesh3D path query failed: ${stringifyForError(pathResponse.body)}`);
+  }
+  console.log("NavMesh3D transfer:", {
+    unitId: transferred.unitId,
+    mapId: transferred.mapId,
+    position: [transferred.x, transferred.y, transferred.z],
+    navigationVersion: transferred.navigationVersion,
+    navigationHash: transferred.navigationHash,
+    pathPoints: pathResponse.body.points.length,
+  });
+  return transferred;
 }
 
 /** 仅供测试错误输出安全显示bigint协议字段。 / Safely renders bigint protocol fields for test failures only. */

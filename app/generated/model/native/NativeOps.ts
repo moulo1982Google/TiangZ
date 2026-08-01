@@ -10,6 +10,9 @@ export interface NativeHostOpsApi {
   numericGet(unitHandle: number, numericType: number): bigint;
   numericSet(unitHandle: number, numericType: number, value: bigint): boolean;
   spatialCreateGrid2D(mapId: number, widthCells: number, depthCells: number, cellSizeMillimeters: number): void;
+  spatialCreateNavMesh3D(mapId: number, widthCells: number, depthCells: number, cellSizeMillimeters: number, assetPath: Uint8Array, expectedHash: Uint8Array): void;
+  spatialProjectPosition(mapId: number, x: number, y: number, z: number, extentX: number, extentY: number, extentZ: number): Uint8Array;
+  spatialFindPath(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number, maxPoints: number): Uint8Array;
   spatialRelease(mapId: number): void;
   aoiCreate(mapId: number, gridSizeMillimeters: number, enterRadiusGrids: number, detachRadiusGrids: number, syncTiers: Uint8Array): void;
   aoiRelease(mapId: number): void;
@@ -98,6 +101,18 @@ export class NativeOps {
 
   static SpatialCreateGrid2D(mapId: number, widthCells: number, depthCells: number, cellSizeMillimeters: number): void {
     nativeHostOps().spatialCreateGrid2D(mapId, widthCells, depthCells, cellSizeMillimeters);
+  }
+
+  static SpatialCreateNavMesh3D(mapId: number, widthCells: number, depthCells: number, cellSizeMillimeters: number, assetPath: Uint8Array, expectedHash: Uint8Array): void {
+    nativeHostOps().spatialCreateNavMesh3D(mapId, widthCells, depthCells, cellSizeMillimeters, assetPath, expectedHash);
+  }
+
+  static SpatialProjectPosition(mapId: number, x: number, y: number, z: number, extentX: number, extentY: number, extentZ: number): Uint8Array {
+    return nativeHostOps().spatialProjectPosition(mapId, x, y, z, extentX, extentY, extentZ);
+  }
+
+  static SpatialFindPath(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number, maxPoints: number): Uint8Array {
+    return nativeHostOps().spatialFindPath(mapId, startX, startY, startZ, endX, endY, endZ, extentX, extentY, extentZ, maxPoints);
   }
 
   static SpatialRelease(mapId: number): void {

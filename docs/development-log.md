@@ -400,3 +400,10 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 最终Release复测使用3000玩家、16 Gate、`single-grid`、2Hz Move、0.2Hz Probe：Move 5981.8/s（99.70%），Map CPU平均/p90 39.25%/44.17%，Probe p95/p99 243.15/425.09ms；玩家始终位于1个AOI Grid，迟滞关系和跨Grid均为0，正式窗口零背压、零内部过载、零超时和零慢连接断开。
 - `same-point`以普通玩家10 Cell/s制造高频跨Grid，2000人可达到约1034次跨Grid/s并形成百万级迟滞关系，仍会触达Map输入队列上限。该场景测的是`跨Grid次数 × 可见人数`，不能替代稳定同屏容量基线。
 - 一次3000人复测在正式窗口前因初始AOI快照洪峰触发Gate慢连接保护，随后相同历史参数复跑通过；失败样本保留为setup期下行洪峰证据，不计入正式容量。
+# 2026-08-01：Phase 4.2.2 NavMesh3D运行时与Cocos灰盒
+
+- Map 100按Cold `MapConfig.navigationAsset/version/hash`真实启动；Rust只读`dtNavMesh`按Hash共享，`dtNavMeshQuery`按MapInstance隔离，资产路径被限制在项目`navigation/`目录。
+- 增加`SpatialCreateNavMesh3D/SpatialProjectPosition/SpatialFindPath`粗粒度FastOP，TS `MapComponent`开放`ProjectPosition/FindPath`，NavMesh出生点先投影再创建玩家。
+- 新增`C2M_FindPath` Actor RPC和普通`NavigationPathPoint`协议结构；Handler只调用`PlayerUnit.FindPath()`，不持有空间数据，也不修改权威坐标。
+- Cocos Creator 3.8.8工程增加可运行灰盒：公共SDK登录Map 100，核对空间模式与资源指纹，点击地面请求Rust路径并沿拐点做本地预览。
+- 单进程与拆分进程Runtime smoke均完成Map 100真实传送；灰盒出生点移至中央障碍外的`(-12, 1, -12)`，运行时会投影到NavMesh表面。完整3D权威移动、多人同步、射线、高度和动态障碍仍是后续工作。

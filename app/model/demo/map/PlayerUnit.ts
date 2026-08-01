@@ -35,6 +35,15 @@ export interface MovePlayer {
   sequence: number;
 }
 
+export interface FindNavigationPath {
+  startX: number;
+  startY: number;
+  startZ: number;
+  targetX: number;
+  targetY: number;
+  targetZ: number;
+}
+
 /** 玩家权威业务跨await保持串行；Gate连接和无状态入口不继承这个边界。 / Keeps authoritative player work serialized across awaits without imposing this boundary on Gate sessions or stateless entry scenes. */
 @actor({ mailbox: "ordered" })
 @lifecycle({ awake: true })
