@@ -42,11 +42,12 @@ function main(): void {
   assert.equal(serverConfigs.MapConfig.Get(1).entryQueueCapacity, 10_000);
   assert.equal(serverConfigs.MapConfig.Get(1015).widthCells, 225);
   assert.equal(serverConfigs.MapConfig.Get(1020).widthCells, 300);
-  assert.deepEqual(
-    serverConfigs.AoiSyncTierConfig.GetAll().map((tier) => [tier.rangeGrids, tier.syncHz]),
-    [[3, 20], [5, 5]],
-  );
-  assert.equal(serverConfigs.AoiConfig.Get(1).detachRangeGrids, 5);
+  const defaultAoi = serverConfigs.AoiConfig.Get(1);
+  const defaultSyncTiers = serverConfigs.AoiSyncTierConfig.GetAll()
+    .filter((tier) => tier.aoiConfigId === defaultAoi.id)
+    .sort((left, right) => left.rangeGrids - right.rangeGrids);
+  assert.equal(defaultSyncTiers.length > 0, true);
+  assert.equal(defaultSyncTiers.at(-1)?.rangeGrids, defaultAoi.detachRangeGrids);
   const crossingPlayers = Array.from(
     { length: 3_000 },
     (_, playerIndex) => playerIndex,
@@ -108,6 +109,35 @@ function main(): void {
       JSON.stringify(invalidNavMesh),
     ),
     /needs an asset, version, and lowercase SHA-256/,
+  );
+
+  const extendedAoi = structuredClone(changed);
+  extendedAoi.game_tbaoiconfig[0].detach_range_grids = 7;
+  extendedAoi.game_tbaoisynctierconfig.push({
+    id: 3,
+    aoi_config_id: 1,
+    range_grids: 7,
+    sync_hz: 1,
+  });
+  GameConfigRegistry.Install(
+    JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "f".repeat(64) }),
+    JSON.stringify(extendedAoi),
+  );
+  assert.equal(serverConfigs.AoiConfig.Get(1).detachRangeGrids, 7);
+  assert.equal(serverConfigs.AoiSyncTierConfig.Get(3).syncHz, 1);
+
+  const incompleteAoi = structuredClone(extendedAoi);
+  incompleteAoi.game_tbaoisynctierconfig.pop();
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "9".repeat(64) }),
+      JSON.stringify(incompleteAoi),
+    ),
+    /outermost sync tier must equal Detach range/,
+  );
+  GameConfigRegistry.Install(
+    JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "8".repeat(64) }),
+    JSON.stringify(changed),
   );
 
   const invalid = structuredClone(changed);

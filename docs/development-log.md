@@ -10,6 +10,13 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-08-01：AOI范围与同步档位完全冷配置化
+
+- 明确`AoiConfig`只负责Grid大小、Enter和Detach，`AoiSyncTierConfig`按行定义任意数量的范围与同步Hz；Map通过`aoiConfigId`选择配置。当前默认仍为3×3/20Hz和5×5/5Hz，没有重新启用7×7。
+- 增加完整覆盖约束：最外层同步范围必须等于Detach。TS配置生成期和Rust AOI创建期都会拒绝`Detach=7`但同步档位只到5×5的配置，避免单位保持可见却没有普通状态同步。
+- 配置自测已验证`Enter=3、Detach=7、3×3/20Hz、5×5/5Hz、7×7/1Hz`能够直接加载，删除7×7档后会按预期失败。该扩展只需修改Luban Excel、完整构建并重启Process，不修改TS或Rust业务代码，也不允许热更。
+- Cell边长与Grid边长同样保持冷配置：`MapConfig.cellSizeMeters`决定Cell米制大小，`AoiConfig.gridSizeCells`决定每Grid每边Cell数，地图Grid数量由制作产出的宽深Cell数推导。框架不增加重复的`gridCount`字段；Grid2D尺寸不能整除时在配置生成期拒绝。
+
 ## 2026-08-01：3000人AOI Grid密度矩阵
 
 - 新增固定3000玩家的10×10、15×15、20×20世界对照。三档分别平均30、13.33、7.5人/Grid，保持1 MapHost、16 Gate、Rust客户端、2Hz Move、0.2Hz Probe、80% Grid内移动和20%每2秒跨Grid不变。

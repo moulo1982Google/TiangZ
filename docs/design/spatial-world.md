@@ -26,7 +26,17 @@ Luban `MapConfig`使用`SpatialMode`选择空间实现：
 | `Grid2D` | 可运行 | X/Z规则网格，米制Cell，服务端Rust权威移动 |
 | `NavMesh3D` | 契约已冻结、运行时待Phase 4.2实现 | tiled NavMesh、位置投影、寻路、射线和高度查询 |
 
-`MapConfig`还包含出生点`spawnX/Y/Z/Yaw`、米制`cellSizeMeters`、`aoiConfigId`以及`navigationAsset/version/hash`。`Cell`是可配置的最小空间单位：Grid2D按Cell离散移动，NavMesh3D允许在Cell内连续移动。`AoiConfig.gridSizeCells`声明一个AOI Grid包含多少个Cell；AOI Grid与NavMesh tile不是同一个概念。`NavMesh3D`配置缺少资源、版本或小写SHA-256时必须拒绝加载；当前Runtime遇到合法NavMesh3D配置也会明确报出导航运行时尚未安装，不能退化为Grid2D。
+`MapConfig`还包含出生点`spawnX/Y/Z/Yaw`、地图宽深Cell数`widthCells/depthCells`、米制`cellSizeMeters`、`aoiConfigId`以及`navigationAsset/version/hash`。`Cell`是可配置的最小空间单位：Grid2D按Cell离散移动，NavMesh3D允许在Cell内连续移动。`AoiConfig.gridSizeCells`声明一个AOI Grid包含多少个Cell；AOI Grid与NavMesh tile不是同一个概念。地图物理边界由地图制作与导航资源决定，配置记录其导出结果，不允许独立填写一份可能冲突的Grid数量。`NavMesh3D`配置缺少资源、版本或小写SHA-256时必须拒绝加载；当前Runtime遇到合法NavMesh3D配置也会明确报出导航运行时尚未安装，不能退化为Grid2D。
+
+空间配置使用以下唯一换算关系：
+
+```text
+地图宽度(米) = widthCells × cellSizeMeters
+AOI Grid边长(米) = gridSizeCells × cellSizeMeters
+Grid数量X/Z = widthCells/depthCells ÷ gridSizeCells
+```
+
+因此Cell边长、每Grid的Cell数都可以按地图类型配置，Grid数量由地图尺寸自然推导。Grid2D当前要求宽深Cell数能被`gridSizeCells`整除，不自动生成不完整的边缘Grid。Phase 4.2的NavMesh导出工具也必须输出地图局部边界并按同一规则对齐或显式补边，不能让运行时猜测美术场景尺寸。
 
 表结构属于不可热更Model。`MapConfig`、`AoiConfig`和`AoiSyncTierConfig`整表属于Cold配置：空间模式、Cell尺寸、AOI Grid尺寸、可见范围、同步频率或导航资源发生任何数据变化，都必须完整构建并重启Process，运行中的MapInstance绝不接受这些候选。
 
@@ -63,7 +73,7 @@ Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Co
 
 - `enterRangeGrids`：从不可见变为可见的范围，进入时发送全量Snapshot。
 - `detachRangeGrids`：已经可见后允许保持关系的迟滞范围；越界才发送Leave，避免边界抖动。
-- `AoiSyncTierConfig.rangeGrids/syncHz`：已可见关系中，可覆盖状态的最大发送频率。同步范围不能超过Detach，但不要求覆盖整个Detach范围。
+- `AoiSyncTierConfig.rangeGrids/syncHz`：已可见关系中，可覆盖状态的最大发送频率。同步范围不能超过Detach，且最外层必须恰好覆盖Detach范围。
 
 范围字段填写奇数边长，例如Enter `3`代表3×3 AOI Grid，Detach `5`代表5×5。当前Demo每个Cell为1米、一个AOI Grid为15×15 Cell、默认地图为150×150 Cell即10×10 AOI Grid；3×3内Movement最高20Hz，已可见关系移入5×5外圈后降为5Hz，越过5×5立即Leave。5×5不会让一个从未Enter的单位提前创建视野。低频档按Subject所在Grid稳定错峰，避免所有远距单位在同一个Tick形成周期尖峰；同一Grid仍共享编码帧。当前不再配置7×7可见范围和1Hz档位。
 

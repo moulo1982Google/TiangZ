@@ -206,13 +206,13 @@
         "game_config/Datas/PlayerConfig.xlsx": "ca8d41de4ac7e2dc5ac5aa2a5f04d91bfb68cb782ef12a3e190aed6322dcc11e",
         "game_config/Defines/builtin.xml": "0c642f9c94b8f9335d07a8b7dcccb8e22250e241c5e4354b9f661def514bb387",
         "game_config/luban.conf": "eb2527f701f2aaca4df688d3120bb1e992aa287997aeec5707c8a98e66badd7c",
-        "tools/codegen_game_config.mjs": "aead8abc0c8168115dfb4827aa2f934bc2b4cdeafe217cb661d4dc80a9c6f368",
+        "tools/codegen_game_config.mjs": "39d578b0494dd0894abc7514f03ce89dce924ba16dcc306995938645c77bf24e",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/third_party/luban/4.10.2/Luban.dll": "9639581e0abe31f43f8175155a82319f942bbe495c4ee9bd8d3baeaee3bd1028"
       },
       "selections": [],
       "outputs": {
-        "app/generated/model/config/GameConfigs.ts": "e0e282cd2665f9ef6313b91fc06a4307bbb8debc0eadf9f980bd4f3c5a997182",
+        "app/generated/model/config/GameConfigs.ts": "5d7770cc269fdb47bceeffe2ab878f08195982560d3cdba51fb3a9a51e8fde70",
         "app/generated/model/config/index.ts": "2486c40615ca35c4a466eff39963c5773e262aee905062a8b64c446fb5e08406",
         "app/generated/model/config/schema.ts": "7c5257870e2e75a8495d71d8e18aad97e1244d8505376e87dfa2b22943681716",
         "client_sdk/typescript/Generated/Config/GameConfigs.ts": "1595cadd20b52e7c4abb2e5fa7cf8693eaf20e83664cd20614c01deccf6ef417",

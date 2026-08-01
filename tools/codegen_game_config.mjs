@@ -348,6 +348,9 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
         }
       }
     }
+    if (tiers[tiers.length - 1].rangeGrids !== aoi.detachRangeGrids) {
+      throw new Error(\`AOI config \${aoi.id} outermost sync tier must equal Detach range\`);
+    }
   }
   for (const map of snapshot.MapConfig.GetAll()) {
     if (![map.spawnX, map.spawnY, map.spawnZ, map.spawnYaw, map.cellSizeMeters].every(Number.isFinite)) {

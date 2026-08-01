@@ -140,6 +140,9 @@ impl AoiWorld {
             previous_radius = Some(tier.radius_grids);
             previous_interval = Some(tier.interval_ticks);
         }
+        if previous_radius != Some(detach_radius_grids) {
+            return Err("AOI outermost sync tier must cover the detach radius");
+        }
         Ok(Self {
             grid_size_meters: grid_size_millimeters as f32 / 1_000.0,
             origin_x_meters: origin_x_millimeters as f32 / 1_000.0,
@@ -763,6 +766,31 @@ mod tests {
 
         assert_eq!(world.grid_of(-105.0, -105.0), GridCoord { x: 0, z: 0 });
         assert_eq!(world.grid_of(105.0, 105.0), GridCoord { x: 14, z: 14 });
+    }
+
+    #[test]
+    fn outermost_sync_tier_must_cover_detach_radius() {
+        let result = AoiWorld::new(
+            10_000,
+            0,
+            0,
+            1,
+            3,
+            vec![
+                SyncTier {
+                    radius_grids: 1,
+                    interval_ticks: 1,
+                },
+                SyncTier {
+                    radius_grids: 2,
+                    interval_ticks: 4,
+                },
+            ],
+        );
+        assert!(matches!(
+            result,
+            Err("AOI outermost sync tier must cover the detach radius")
+        ));
     }
 
     #[test]

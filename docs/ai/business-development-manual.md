@@ -338,6 +338,10 @@ Grid2D客户端只上报移动意图：按下、转向和松开立即发送，�
 
 Cell是最小空间单位：Grid2D一步移动一个Cell，NavMesh3D允许在Cell内连续移动。AOI只按Grid边界重算，默认15×15 Cell组成一个Grid；Grid从地图最小Cell开始编号，地图宽高必须是Grid边长的整数倍。默认3×3既是Enter区域，也是20Hz高频区；已可见关系移到5×5外圈后降为5Hz，5×5同时是Detach迟滞边界，越界立即Leave。外圈不会让一个从未Enter的单位直接可见，不再保留7×7或1Hz档位。
 
+Enter、Detach和同步频率不是代码常量。开发者在`AoiConfig.xlsx`配置Enter/Detach，在`AoiSyncTierConfig.xlsx`为同一`aoi_config_id`填写任意数量的奇数范围与同步Hz；最外层同步范围必须等于Detach。需要`7×7/1Hz`时，将Detach改为7并增加对应档位即可，不修改Rust或TS。两张表都是Cold配置，必须重新生成并重启，禁止热更。
+
+Cell和AOI Grid尺寸同样属于Cold配置：`MapConfig.cell_size_meters`定义一个Cell的米制边长，`AoiConfig.grid_size_cells`定义每个Grid每条边包含多少Cell。地图制作决定物理宽深并导出为`width_cells/depth_cells`；Grid数量由宽深Cell数除以`grid_size_cells`推导，不另设可冲突的`grid_count`。宽深不能整除时必须调整Cell/Grid划分或在制作阶段显式补边。
+
 容量验收不能只测单一地图密度。框架基线固定用`npm run perf:map-capacity:grid-matrix`比较3000人在10×10、15×15、20×20 Grid中的均匀分布，保持80% Grid内移动、20%每2秒跨Grid以及消息频率不变。业务新增地图时应按实际平均人数/Grid选择最接近的结果，不得把稀疏世界结果当作主城同屏容量。进图并发属于初始化压力，必须受控并与正式稳态窗口分开解读。
 
 创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。当前只有`Grid2D`运行时可用；`NavMesh3D`配置虽然已经具备资源、版本和哈希字段，但必须等Rust导航运行时完成后才能启用。业务不能捕获“不支持NavMesh”的异常后回退到Grid2D。空间模式、字段结构和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
