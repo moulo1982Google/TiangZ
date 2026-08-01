@@ -1,6 +1,7 @@
 import {
   AllNumericTypes,
   GameConfigs,
+  IsDerivedNumericType,
   NativeOps,
   NativeUnitRef,
   NumericComponent,
@@ -22,21 +23,18 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
     NativeOps.NumericAttach(this.unitHandle);
     this.installIndexAccessors();
     const config = GameConfigs.PlayerConfig.Get(1);
-    this[NumericType.CurrentHp] = config.initialHp;
-    this[NumericType.MaxHp] = config.maxHp;
+    this[NumericType.CurrentHp] = BigInt(config.initialHp);
+    this[NumericType.MaxHpBase] = BigInt(config.maxHp);
     this.regenerationTimer = this.NewRepeatedTimer(100, "RegenerateHp");
   }
 
-  /** 通过生成的fast op读取一个权威int32数值。 / Reads one authoritative int32 value through the generated fast op. */
-  Get(type: NumericTypeValue): number {
+  /** 通过生成的fast op无损读取一个权威i64数值。 / Losslessly reads one authoritative i64 value through the generated fast op. */
+  Get(type: NumericTypeValue): bigint {
     return NativeOps.NumericGet(this.unitHandle, type);
   }
 
   /** 在Rust中写入数值，并将NumericType标脏供帧尾同步。 / Writes one value in Rust and marks that NumericType dirty for frame-end replication. */
-  Set(type: NumericTypeValue, value: number): void {
-    if (!Number.isSafeInteger(value) || value < -0x8000_0000 || value > 0x7fff_ffff) {
-      throw new Error(`numeric value must be int32: ${type}=${value}`);
-    }
+  Set(type: NumericTypeValue, value: bigint): void {
     NativeOps.NumericSet(this.unitHandle, type, value);
   }
 
@@ -58,13 +56,14 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
   /** 把Numeric快照写入目标Unit的新Rust存储。 / Restores Numeric values into the target Unit's new Rust storage. */
   RestoreTransfer(values: readonly UnitNumericDelta[]): void {
     for (const numeric of values) {
+      if (IsDerivedNumericType(numeric.numericType)) continue;
       this.Set(numeric.numericType as NumericTypeValue, numeric.value);
     }
   }
 
   /** Timer每100ms调用当前generation的方法，使热更后不重建Timer也能切换规则。 / Lets the timer invoke the current generation every 100ms so behavior changes without rebuilding the timer. */
   protected RegenerateHp(): void {
-    this[NumericType.CurrentHp] += 1;
+    this[NumericType.CurrentHp] += 1n;
   }
 
   /** 主动停止Demo回血Timer；幂等调用不会影响组件的其他Timer。 / Stops only the demo regeneration timer and remains idempotent. */
@@ -87,7 +86,7 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
         configurable: false,
         enumerable: false,
         get: () => this.Get(type),
-        set: (value: number) => this.Set(type, value),
+        set: (value: bigint) => this.Set(type, value),
       });
     }
   }

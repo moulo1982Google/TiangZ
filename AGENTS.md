@@ -38,6 +38,7 @@ Machine
 | `pixi_client/src` | Pixi/H5验收业务 | 需要跨客户端验收时 |
 | `configs` | Process/Scene部署配置 | 需要新增实例或环境时 |
 | `native_data` | Rust权威数据原型与Native op声明 | 只有明确的数据下沉需求时 |
+| `src/game` | 不可热更的Rust游戏业务模块 | 用户明确选择Rust实现且收益成立时 |
 | `app/core` | TypeScript框架 | 默认不修改 |
 | `src` | Rust Runtime、网络和宿主 | 默认不修改 |
 | `tools` | codegen、检查和维护工具 | 默认不修改 |
@@ -93,6 +94,8 @@ Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深�
 - 普通业务数据默认先使用TS Component。只有数据量、访问频率、批量编码或热更状态所有权存在明确收益，并且用户同意后，才增加`.native`原型或Native op。
 - 数据下沉后固定为`TS -> generated Fast Op -> Rust Entity Store`；Rust不得回调TS读取权威状态。
 - 不在Update中默认逐实体逐字段跨边界扫描；需要批量处理时设计粗粒度op。但标量getter/setter仍是允许的API，由开发者根据指标决定是否使用。
+- Rust游戏业务只放`src/game/<domain>`；`src/native_data.rs`保留框架Store和受控访问边界，不继续承载Buff、战斗等业务实现。
+- Unit/Session/Scene Handler即使由Rust实现业务算法，也必须先经过TS路由与mailbox；只有Ping、握手等明确的基础设施控制帧可以在Rust网络入口消费。
 
 ## 代码和文档约定
 
@@ -117,7 +120,7 @@ npm run verify
 
 ## 当前技术方向
 
-- TypeScript是唯一主业务语言，Rust是Runtime和权威数据层。
+- TypeScript是默认主业务语言；性能敏感且规则稳定的领域可显式选择`src/game`中的Rust模块，但修改后必须重新编译并重启Process。
 - Wasm只作为未来重计算模块的候选，例如确定性战斗核心；当前不接入。
 - Rhai只作为未来脚本后端候选；当前不为它增加兼容层。
 - `v0.3.10`质量门已经完成，当前进入`0.4.x` Phase 4开发线；地图空间遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)，Rust AOI与NavMesh3D运行时尚未实现。

@@ -847,7 +847,7 @@
         {
           "number": 3,
           "name": "value",
-          "type": "sint32",
+          "type": "int64",
           "repeated": false,
           "synthetic": false
         }

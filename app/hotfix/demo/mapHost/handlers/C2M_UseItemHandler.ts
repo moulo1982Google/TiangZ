@@ -23,10 +23,10 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
     const item = unit.GetComponent(ItemComponent).UseItem(request.itemId);
     const itemConfig = GameConfigs.ItemConfig.Get(item.configId);
     const numeric = unit.GetComponent(NumericComponent);
-    numeric[NumericType.CurrentHp] = Math.min(
-      numeric[NumericType.MaxHp],
-      numeric[NumericType.CurrentHp] + itemConfig.restoreHp,
-    );
+    const restoredHp = numeric[NumericType.CurrentHp] + BigInt(itemConfig.restoreHp);
+    numeric[NumericType.CurrentHp] = restoredHp < numeric[NumericType.MaxHp]
+      ? restoredHp
+      : numeric[NumericType.MaxHp];
     await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(unit, item);
     return { item };
   }

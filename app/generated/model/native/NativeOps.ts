@@ -7,8 +7,8 @@ export interface NativeHostOpsApi {
   entitySetNumber(handle: number, field: number, value: number): void;
   numericAttach(unitHandle: number): void;
   numericDetach(unitHandle: number): void;
-  numericGet(unitHandle: number, numericType: number): number;
-  numericSet(unitHandle: number, numericType: number, value: number): boolean;
+  numericGet(unitHandle: number, numericType: number): bigint;
+  numericSet(unitHandle: number, numericType: number, value: bigint): boolean;
   spatialCreateGrid2D(mapId: number, widthCells: number, depthCells: number, cellSizeMillimeters: number): void;
   spatialRelease(mapId: number): void;
   aoiCreate(mapId: number, gridSizeMillimeters: number, enterRadiusGrids: number, detachRadiusGrids: number, syncTiers: Uint8Array): void;
@@ -88,11 +88,11 @@ export class NativeOps {
     nativeHostOps().numericDetach(unitHandle);
   }
 
-  static NumericGet(unitHandle: number, numericType: number): number {
+  static NumericGet(unitHandle: number, numericType: number): bigint {
     return nativeHostOps().numericGet(unitHandle, numericType);
   }
 
-  static NumericSet(unitHandle: number, numericType: number, value: number): boolean {
+  static NumericSet(unitHandle: number, numericType: number, value: bigint): boolean {
     return nativeHostOps().numericSet(unitHandle, numericType, value);
   }
 

@@ -293,7 +293,7 @@ async function verifyMapTransfer(
   gate: TcpRpcConnection,
   previous: ReturnType<typeof decodeEnterMapFrame>["body"],
   expectedItem: { itemId: bigint; count: number; version: number },
-  expectedMinimumHp: number,
+  expectedMinimumHp: bigint,
   dynamicMap: MapInstanceSnapshot,
 ): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
   const rpcId = nextRpcId++;
@@ -397,15 +397,16 @@ async function verifyItemChange(
     unitId: number;
     items: readonly { itemId: bigint; configId: number; count: number; version: number }[];
   },
-  previousHp: number,
+  previousHp: bigint,
 ) {
   const initial = enterMap.items[0];
   if (!initial || initial.count !== 3) {
     throw new Error("enter-map snapshot did not include the initial item state");
   }
   const itemConfig = GameConfigs.ItemConfig.Get(initial.configId);
-  const maxHp = GameConfigs.PlayerConfig.Get(1).maxHp;
-  const expectedHp = Math.min(maxHp, previousHp + itemConfig.restoreHp);
+  const maxHp = BigInt(GameConfigs.PlayerConfig.Get(1).maxHp);
+  const restoredHp = previousHp + BigInt(itemConfig.restoreHp);
+  const expectedHp = restoredHp < maxHp ? restoredHp : maxHp;
   const pushed = gate.waitForMessage(MsgCode.G2C_ItemChanged);
   let numericPushed = gate.waitForMessage(MsgCode.G2C_EntityNumeric);
   const responseFrame = await gate.request(
@@ -418,7 +419,7 @@ async function verifyItemChange(
   }
 
   const deadline = Date.now() + 2_000;
-  let currentHp: number | undefined;
+  let currentHp: bigint | undefined;
   while (Date.now() < deadline) {
     const frame = await numericPushed;
     currentHp = decodeEntityNumericFrame(frame).body.numerics.find(
@@ -447,18 +448,18 @@ async function verifyItemChange(
 async function verifyNumericTimer(
   gate: TcpRpcConnection,
   unitId: number,
-  initialNumerics: readonly { numericType: number; value: number }[],
+  initialNumerics: readonly { numericType: number; value: bigint }[],
   initialFrame?: Uint8Array,
-): Promise<number> {
+): Promise<bigint> {
   let previous = initialNumerics.find((numeric) => numeric.numericType === 1)?.value;
-  const maxHp = initialNumerics.find((numeric) => numeric.numericType === 2)?.value;
-  if (previous === undefined || maxHp !== 1000) {
+  const maxHp = initialNumerics.find((numeric) => numeric.numericType === 1_000)?.value;
+  if (previous === undefined || maxHp !== 1000n) {
     throw new Error(
-      `enter-map snapshot is missing Numeric defaults: unit ${unitId}, numerics=${JSON.stringify(initialNumerics)}`,
+      `enter-map snapshot is missing Numeric defaults: unit ${unitId}, numerics=${initialNumerics.map((numeric) => `${numeric.numericType}=${numeric.value}`).join(",")}`,
     );
   }
   let frameCount = 0;
-  const observed = new Map<number, Map<number, number>>();
+  const observed = new Map<number, Map<number, bigint>>();
   const frames: Uint8Array[] = initialFrame ? [initialFrame] : [];
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
@@ -475,12 +476,12 @@ async function verifyNumericTimer(
     frameCount += 1;
     const body = decodeEntityNumericFrame(frame).body;
     for (const numeric of body.numerics) {
-      const values = observed.get(numeric.unitId) ?? new Map<number, number>();
+      const values = observed.get(numeric.unitId) ?? new Map<number, bigint>();
       values.set(numeric.numericType, numeric.value);
       observed.set(numeric.unitId, values);
       if (numeric.unitId !== unitId) continue;
       if (numeric.numericType === 1) {
-        if (previous !== undefined && numeric.value > previous && maxHp === 1000) {
+        if (previous !== undefined && numeric.value > previous && maxHp === 1000n) {
           console.log("Numeric timer broadcast:", {
             unitId,
             previousHp: previous,
@@ -497,7 +498,7 @@ async function verifyNumericTimer(
     `timed out waiting for Numeric CurrentHp growth: unit ${unitId}, frames=${frameCount}, observed=${JSON.stringify(
       [...observed].map(([observedUnitId, values]) => ({
         unitId: observedUnitId,
-        values: Object.fromEntries(values),
+        values: Object.fromEntries([...values].map(([type, value]) => [type, value.toString()])),
       })),
     )}`,
   );

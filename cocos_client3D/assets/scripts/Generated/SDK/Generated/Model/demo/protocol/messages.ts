@@ -195,7 +195,7 @@ export const CellMovementStateCodec = {
 export interface UnitNumericDelta {
   unitId: number;
   numericType: number;
-  value: number;
+  value: bigint;
 }
 
 export const UnitNumericDeltaCodec = {
@@ -204,7 +204,7 @@ export const UnitNumericDeltaCodec = {
     const value: UnitNumericDelta = {
       unitId: 0,
       numericType: 0,
-      value: 0,
+      value: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -215,7 +215,7 @@ export const UnitNumericDeltaCodec = {
         value.numericType = reader.uint32();
       }
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
-        value.value = reader.sint32();
+        value.value = reader.int64();
       }
       else {
         reader.skip(tag.wireType);
@@ -228,7 +228,7 @@ export const UnitNumericDeltaCodec = {
     const writer = new BinaryWriter();
     if (value.unitId !== undefined) writer.uint32(1, value.unitId);
     if (value.numericType !== undefined) writer.uint32(2, value.numericType);
-    if (value.value !== undefined) writer.sint32(3, value.value);
+    if (value.value !== undefined) writer.int64(3, value.value);
     return writer.finish();
   },
 };

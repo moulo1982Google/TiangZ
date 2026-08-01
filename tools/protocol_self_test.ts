@@ -158,7 +158,7 @@ function testGeneratedScalarCodec(): void {
     account: "tester",
     cellX: -1,
     cellZ: 2,
-    numerics: [{ unitId: 42, numericType: 1, value: 100 }],
+    numerics: [{ unitId: 42, numericType: 1, value: 9_007_199_254_740_993n }],
     speedCellsPerSecond: 10,
     facing: 2,
   });
@@ -173,6 +173,7 @@ function testGeneratedScalarCodec(): void {
   assert.deepEqual([...decoded.state], [0, 1, 127, 128, 255]);
   assert.equal(decoded.account, "tester");
   assert.equal(decoded.facing, 2);
+  assert.equal(decoded.numerics[0]?.value, 9_007_199_254_740_993n);
 
   const mapResponse = M2G_EnterMapCodec.decode(
     M2G_EnterMapCodec.encode({

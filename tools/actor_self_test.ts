@@ -86,7 +86,7 @@ function testGeneratedNativeHandleScalarAccess(): void {
   let nextHandle = 7;
   const valuesByHandle = new Map<number, Float64Array>();
   const typesByHandle = new Map<number, number>();
-  const numericsByHandle = new Map<number, Map<number, number>>();
+  const numericsByHandle = new Map<number, Map<number, bigint>>();
   (globalThis as typeof globalThis & {
     __etsNativeOps?: NativeHostOpsApi;
   }).__etsNativeOps = {
@@ -110,11 +110,18 @@ function testGeneratedNativeHandleScalarAccess(): void {
     },
     numericAttach: (handle) => { numericsByHandle.set(handle, new Map()); },
     numericDetach: (handle) => { numericsByHandle.delete(handle); },
-    numericGet: (handle, numericType) => numericsByHandle.get(handle)?.get(numericType) ?? 0,
+    numericGet: (handle, numericType) => numericsByHandle.get(handle)?.get(numericType) ?? 0n,
     numericSet: (handle, numericType, value) => {
       const values = numericsByHandle.get(handle)!;
-      if ((values.get(numericType) ?? 0) === value) return false;
+      if ((values.get(numericType) ?? 0n) === value) return false;
+      if (numericType === NumericType.MaxHp) throw new Error("MaxHp is derived");
       values.set(numericType, value);
+      if ([NumericType.MaxHpBase, NumericType.MaxHpAdd, NumericType.MaxHpPct].includes(numericType)) {
+        const base = values.get(NumericType.MaxHpBase) ?? 0n;
+        const addition = values.get(NumericType.MaxHpAdd) ?? 0n;
+        const percentage = values.get(NumericType.MaxHpPct) ?? 0n;
+        values.set(NumericType.MaxHp, (base + addition) * (100n + percentage) / 100n);
+      }
       return true;
     },
     mapPeekNumericDelta: () => new Uint8Array(14),
@@ -409,9 +416,13 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(host.Root.Get(firstInstanceId), player);
   assert.equal(player.GetComponent(MailBoxComponent).MailboxType, "ordered");
   assert.equal(player.GetComponent(NumericComponent), numeric);
-  assert.equal(numeric[NumericType.CurrentHp], 100);
-  numeric[NumericType.CurrentHp] += 1;
-  assert.equal(numeric[NumericType.CurrentHp], 101);
+  assert.equal(numeric[NumericType.CurrentHp], 100n);
+  assert.equal(numeric[NumericType.MaxHp], 1000n);
+  numeric[NumericType.MaxHpAdd] += 100n;
+  numeric[NumericType.MaxHpPct] += 20n;
+  assert.equal(numeric[NumericType.MaxHp], 1320n);
+  numeric[NumericType.CurrentHp] += 1n;
+  assert.equal(numeric[NumericType.CurrentHp], 101n);
 
   const initialized = player.Snapshot();
   assert.equal(units.Get<PlayerUnit>(1000), player);

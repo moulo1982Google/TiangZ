@@ -364,25 +364,25 @@ async function testNumericLatestCoverage(): Promise<void> {
   const first = hub.Publish(
     audience,
     ClientBroadcasts.EntityNumeric,
-    { unitId: 1, numericType: 1, value: 100 },
+    { unitId: 1, numericType: 1, value: 100n },
     1,
   );
   const replaced = hub.Publish(
     audience,
     ClientBroadcasts.EntityNumeric,
-    { unitId: 1, numericType: 1, value: 101 },
+    { unitId: 1, numericType: 1, value: 101n },
     2,
   );
   const latest = hub.Publish(
     audience,
     ClientBroadcasts.EntityNumeric,
-    { unitId: 1, numericType: 1, value: 102 },
+    { unitId: 1, numericType: 1, value: 102n },
     3,
   );
   const maxHp = hub.Publish(
     audience,
     ClientBroadcasts.EntityNumeric,
-    { unitId: 1, numericType: 2, value: 1000 },
+    { unitId: 1, numericType: 1_000, value: 1000n },
     3,
   );
 
@@ -393,8 +393,8 @@ async function testNumericLatestCoverage(): Promise<void> {
   const body = decodeNumeric(transport.sends[1].frame);
   assert.equal(body.serverTick, 3);
   assert.deepEqual(body.numerics, [
-    { unitId: 1, numericType: 1, value: 102 },
-    { unitId: 1, numericType: 2, value: 1000 },
+    { unitId: 1, numericType: 1, value: 102n },
+    { unitId: 1, numericType: 1_000, value: 1000n },
   ]);
   transport.sends[1].resolve();
   await Promise.all([first, replaced, latest, maxHp]);

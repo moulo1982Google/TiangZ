@@ -425,10 +425,10 @@ await this.scenes.send(
 
 ```ts
 const numeric = unit.GetComponent(NumericComponent);
-numeric[NumericType.CurrentHp] += 1;
+numeric[NumericType.CurrentHp] += 1n;
 ```
 
-Rust自动维护`NumericType -> i32`值和dirty表，FrameFlush按`(unitId, numericType)`合并。新增NumericType通常不增加协议字段。
+Rust自动维护`NumericType -> i64`值与dirty表，TS使用`bigint`，业务字面量应写`1n`。`1..999`是普通属性；`1000..9999`是只读派生结果；结果编号乘10后加`1/2/3`分别表示Base/Add/Pct。Rust只识别编号关系，不重复维护业务枚举。当前`MaxHp=1000`，`MaxHpBase/MaxHpAdd/MaxHpPct=10001/10002/10003`，公式为`(Base+Add)*(100+Pct)/100`。写来源时Rust先计算后原子提交，来源和变化后的结果分别标脏；直接写派生结果会被拒绝。新增同类属性只改TS编号，复杂跨属性公式应写独立Rust领域op。Numeric协议使用`int64`，FrameFlush按`(unitId, numericType)`合并。
 
 ### 固定字段Dirty Mask
 
@@ -437,6 +437,14 @@ Rust自动维护`NumericType -> i32`值和dirty表，FrameFlush按`(unitId, nume
 普通业务不得仅为了少写TS就选择Native字段。只有权威状态确实需要Rust保存、批量计算或直接编码时才使用。
 
 `.native`是生成器输入。普通业务Entity放在`native_data/<game>`；只有确实需要跨边界粗粒度批处理时，才在同目录新增`XxxOps.native`并实现对应Rust op。`native_data/core`属于框架ABI，业务不得修改。移动等确定性状态机的黄金数据放`tests/fixtures`，不能放进`native_data`伪装成模型定义。
+
+### Rust业务模块目录
+
+开发者明确选择Rust实现的稳定、高负载领域统一放在`src/game/<domain>/`，例如`src/game/buff/`、`src/game/combat/`。`.native`只描述Entity数据和op ABI；`src/game`实现规则、批处理和协议投影。`src/native_data.rs`拥有句柄目录、类型Pool、脏版本和受控存储访问，不再接收新的Buff、技能或战斗业务实现。若业务缺少必要的Store能力，应先增加窄而明确的框架访问函数，禁止把`NativeEntityStore`整体公开给业务模块。
+
+Rust模块随Process编译，不能Hotfix。选择它必须同时满足：状态或算法有明确性能收益、规则相对稳定、能够接受重新构建和重启。活动、任务编排和频繁调整的规则仍优先使用TS Hotfix。
+
+Actor消息不能因为Handler算法位于Rust就绕过TS。正式链路保持`TS定位Unit/Session/Scene -> Actor mailbox -> Native op -> Rust领域模块`；薄适配层可以由codegen生成，但Location、传送屏障、RPC错误和mailbox顺序仍由TS框架拥有。只有Ping、握手等不访问业务Actor的基础设施控制帧允许在Rust网络入口直接消费。
 
 ### Item等即时Event
 
@@ -533,7 +541,7 @@ Component拥有的周期任务使用组件定时器：
 this.NewRepeatedTimer(100, "RegenerateHp");
 
 protected RegenerateHp(): void {
-  this[NumericType.CurrentHp] += 1;
+  this[NumericType.CurrentHp] += 1n;
 }
 ```
 

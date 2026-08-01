@@ -2,8 +2,8 @@ namespace native;
 
 op NumericAttach(unitHandle: u32): void;
 op NumericDetach(unitHandle: u32): void;
-op NumericGet(unitHandle: u32, numericType: u32): i32;
-op NumericSet(unitHandle: u32, numericType: u32, value: i32): bool;
+op NumericGet(unitHandle: u32, numericType: u32): i64;
+op NumericSet(unitHandle: u32, numericType: u32, value: i64): bool;
 op SpatialCreateGrid2D(mapId: u32, widthCells: u32, depthCells: u32, cellSizeMillimeters: u32): void;
 op SpatialRelease(mapId: u32): void;
 op AoiCreate(mapId: u32, gridSizeMillimeters: u32, enterRadiusGrids: u32, detachRadiusGrids: u32, syncTiers: bytes): void;

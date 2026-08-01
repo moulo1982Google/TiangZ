@@ -78,6 +78,7 @@ export { DynamicMapProxy } from "./demo/mapHost/DynamicMapProxy";
 export { NumericComponent } from "./demo/numeric/NumericComponent";
 export {
   AllNumericTypes,
+  IsDerivedNumericType,
   NumericType,
   type NumericType as NumericTypeValue,
 } from "./demo/numeric/NumericType";

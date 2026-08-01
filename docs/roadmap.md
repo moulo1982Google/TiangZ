@@ -160,7 +160,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 完成状态：
 
 - 固定逻辑帧增加 `Update -> LateUpdate -> FrameFlush` 三阶段，帧尾同步不再依赖 Component 注册顺序。
-- Numeric 改为 Rust Unit 上的动态 `NumericType -> i32` 值表和 dirty 表；TS 仅持有 Unit handle，保留 `numeric[type]` 业务写法。
+- Numeric 改为 Rust Unit 上的动态 `NumericType -> i64` 值表和 dirty 表；TS 仅持有 Unit handle并通过`bigint`保留`numeric[type]`业务写法。
 - Rust 在帧尾直接生成 Numeric protobuf Delta，通过 revision 执行 `Peek -> Send -> Ack`，失败不清脏。
 - latest 广播支持复合键，Numeric 使用 `(unitId,numericType)` 合并。
 - `.native v0.12.0` 支持 `@replicated`、`@memberId(1..63)`、`u64` dirty mask、字段 revision、强类型 `XxxDelta` 以及可靠的 `Peek/Ack` 生成。

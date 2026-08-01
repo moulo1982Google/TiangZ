@@ -10,6 +10,13 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-08-01：建立Rust游戏业务目录边界
+
+- 新增`src/game`作为开发者可编写的Rust业务模块根目录，首个`movement`模块承载真实Native op入口；`src/native_data.rs`继续拥有句柄、类型Pool、脏版本和受控Store访问。
+- Numeric Native op和派生规则迁入`src/game/numeric.rs`。Numeric值全链路统一为Rust`i64`、protobuf`int64`和TS`bigint`；native-language v0.15.0提供无损op绑定。派生结果使用1000..9999，Base/Add/Pct按`result*10+1/+2/+3`编号，Rust无需重复声明业务常量；来源与结果原子更新并分别置脏，直接写结果会被拒绝。
+- 生成Extension暂时仍通过`crate::native_data`稳定导入op，Runtime只做`src/game`符号兼容转发。新增Buff、战斗等Rust业务不得继续堆入Host、Process或Native Store文件。
+- 冻结混合Handler语义：Actor消息先经过TS Location、实体定位和mailbox，再调用Rust领域模块；Rust业务随Process编译部署，不参与TS Hotfix。
+
 ## 2026-08-01：共享启动目录与动态MapHost完整路由
 
 - Runtime进程配置增加`knownSceneFiles`，相对当前配置文件加载共享`{"knownScenes": [...]}`，再与本地Scene和追加目录去重合并；同名异址、同址异名在监听器启动前拒绝。本地拆分配置迁移到单一`cluster.known-scenes.json`。

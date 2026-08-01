@@ -42,7 +42,7 @@ export class MapEntityManager {
   private local?: LocalEntityVisual;
   private readonly remotes = new Map<number, RemoteEntityVisual>();
   private readonly numericLabels = new Map<number, Label>();
-  private readonly numerics = new Map<number, Map<number, number>>();
+  private readonly numerics = new Map<number, Map<number, bigint>>();
   private readonly items = new Map<bigint, ItemSnapshot>();
   private readonly states = new Map<number, UnitStateDelta>();
   private readonly buffs = new BuffStateStore();
@@ -276,7 +276,7 @@ export class MapEntityManager {
   }
 
   private applyNumeric(delta: UnitNumericDelta): void {
-    const values = this.numerics.get(delta.unitId) ?? new Map<number, number>();
+    const values = this.numerics.get(delta.unitId) ?? new Map<number, bigint>();
     values.set(delta.numericType, delta.value);
     this.numerics.set(delta.unitId, values);
     this.refreshNumeric(delta.unitId);
@@ -286,7 +286,7 @@ export class MapEntityManager {
     const label = this.numericLabels.get(unitId);
     if (!label) return;
     const values = this.numerics.get(unitId);
-    label.string = `HP ${values?.get(1) ?? "--"}/${values?.get(2) ?? "--"}`;
+    label.string = `HP ${values?.get(1) ?? "--"}/${values?.get(1_000) ?? "--"}`;
   }
 
   private followLocalPlayer(x: number, y: number): void {

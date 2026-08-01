@@ -41,6 +41,7 @@ Machine
 
 ```text
 src/                         Rust 宿主、Process 运行时、网络与 Inspector
+src/game/                    开发者可编写的Rust游戏业务模块（需重新编译和重启）
 app/core/                    框架代码
 app/core/public.ts           业务唯一 Stable Core API 入口
 app/core/process/            ProcessRuntime、EntryScene、Scene 路由
@@ -71,6 +72,10 @@ docs/patterns/               MMORPG领域设计模式与稳定规则编号
 docs/reference/              配置、API、命令参考
 docs/design/                 维护者实现文档
 ```
+
+Rust业务代码统一放在`src/game/<domain>/`或对应领域文件中，`.native`只负责数据和op契约。`src/native_data.rs`、`src/process.rs`、`src/host.rs`等仍属于框架Runtime，普通Rust业务不得把实现堆回这些文件。Rust模块不参与TS Hotfix；Actor消息仍先经过TS的Location、Unit定位和mailbox，再由生成或薄适配入口调用Rust。完整约束见[Rust业务模块](docs/tutorials/12-rust-business-modules.md)。
+
+Numeric权威值统一使用Rust`i64`、protobuf`int64`和TypeScript`bigint`。派生结果编号固定在1000..9999，Base/Add/Pct按`result*10+1/+2/+3`约定，Rust按编号自动重算而不重复维护业务枚举。
 
 地图运行时已接入Rust AOI：`MapConfig`引用冷配置`AoiConfig`，分别定义AOI Grid大小、Enter范围、Detach迟滞范围和独立同步档位。同步档位只节流已经可见的可覆盖状态，不会提前建立视野；业务只在阵营、隐身、位面改变时通过`MapAoiComponent.Invalidate*`通知重算。开发约束见[业务开发手册](docs/ai/business-development-manual.md)和[地图空间契约](docs/design/spatial-world.md)。
 

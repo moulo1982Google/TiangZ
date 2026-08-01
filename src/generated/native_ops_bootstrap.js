@@ -9,6 +9,12 @@
   };
   const u32 = (value, name) => integer(value, 0, 0xffff_ffff, name);
   const i32 = (value, name) => integer(value, -0x8000_0000, 0x7fff_ffff, name);
+  const i64 = (value, name) => {
+    if (typeof value !== "bigint" || value < -0x8000_0000_0000_0000n || value > 0x7fff_ffff_ffff_ffffn) {
+      throw new RangeError(`native op ${name} must be an i64 bigint`);
+    }
+    return value;
+  };
   const i8 = (value, name) => integer(value, -128, 127, name);
   const f64 = (value, name) => {
     if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -42,7 +48,7 @@
     numericAttach: (unitHandle) => core.ops.op_native_numeric_attach(u32(unitHandle, "unitHandle")),
     numericDetach: (unitHandle) => core.ops.op_native_numeric_detach(u32(unitHandle, "unitHandle")),
     numericGet: (unitHandle, numericType) => core.ops.op_native_numeric_get(u32(unitHandle, "unitHandle"), u32(numericType, "numericType")),
-    numericSet: (unitHandle, numericType, value) => core.ops.op_native_numeric_set(u32(unitHandle, "unitHandle"), u32(numericType, "numericType"), i32(value, "value")),
+    numericSet: (unitHandle, numericType, value) => core.ops.op_native_numeric_set(u32(unitHandle, "unitHandle"), u32(numericType, "numericType"), i64(value, "value")),
     spatialCreateGrid2D: (mapId, widthCells, depthCells, cellSizeMillimeters) => core.ops.op_native_spatial_create_grid2_d(u32(mapId, "mapId"), u32(widthCells, "widthCells"), u32(depthCells, "depthCells"), u32(cellSizeMillimeters, "cellSizeMillimeters")),
     spatialRelease: (mapId) => core.ops.op_native_spatial_release(u32(mapId, "mapId")),
     aoiCreate: (mapId, gridSizeMillimeters, enterRadiusGrids, detachRadiusGrids, syncTiers) => core.ops.op_native_aoi_create(u32(mapId, "mapId"), u32(gridSizeMillimeters, "gridSizeMillimeters"), u32(enterRadiusGrids, "enterRadiusGrids"), u32(detachRadiusGrids, "detachRadiusGrids"), bytes(syncTiers, "syncTiers")),

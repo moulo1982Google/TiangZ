@@ -10,6 +10,8 @@
 
 TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络和宿主能力，一个操作系统进程创建一个V8，TypeScript在单业务线程中承载多个Scene、Actor和Component；高频跨帧Entity数据可以下沉到Rust，TS通过生成句柄操作。
 
+TypeScript仍是默认业务语言；开发者明确选择Rust实现的稳定、高负载领域统一放在`src/game/<domain>`，例如Buff执行引擎、战斗计算或移动算法。`src/native_data.rs`属于框架权威Store，不继续混入新的游戏业务。Rust业务随Process编译、不能Hotfix；Actor Handler即使调用Rust算法，也必须先经过TS的Location、Unit/Session定位、传送屏障和mailbox，不能在网络入口旁路Actor语义。
+
 当前版本是`0.4.0`，`v0.3.10`是框架能力的首个稳定基线。Phase 0到Phase 3.10.5的实现、专项验收以及Windows/Linux最终发布矩阵已经完成；Phase 4.0空间契约和Phase 4.1 Rust AOI功能链也已完成。工程已有登录、选服、进入地图、多人移动、状态广播、WebSocket/Cocos Web、KCP/Cocos Native和Pixi/H5验收链路，并完成Windows 3000玩家AOI正式容量回归；尚未完成NavMesh3D运行时、Linux/分布式空间负载、完整商业MMORPG业务和生产运维方案。
 
 ## 为什么形成这套模型
@@ -192,7 +194,7 @@ TiangZ明确区分三种语义：
 | Delta | 位置、Numeric、速度等可覆盖状态 | 字典或字段级置脏，帧尾Peek/Send/Ack |
 | Event | 技能、道具、掉落、伤害事实 | 立即可靠排队，不允许latest覆盖 |
 
-Numeric使用`NumericType -> i32`动态字典和dirty表；Unit固定字段使用`.native @replicated + @memberId`生成`u64` dirty mask；Item变更演示不可覆盖的即时Event。
+Numeric使用`NumericType -> i64`动态字典与dirty表，TS边界是`bigint`；`MaxHp`等1000..9999派生结果由`result*10+1/+2/+3`的Base/Add/Pct来源自动重算，不能直接赋值。Unit固定字段使用`.native @replicated + @memberId`生成`u64` dirty mask；Item变更演示不可覆盖的即时Event。
 
 帧尾复制采用`Peek -> Send -> Ack`：只有发送成功才确认revision，发送失败保留Dirty，发送期间的新修改不会被旧Ack清除。Audience只决定收件人，数据Projection决定字段权限，Broadcast descriptor只决定event/latest语义。业务使用只含UnitId的`ClientAudience`；物理`BroadcastAudience`和Gate route是Core内部类型。
 
@@ -331,6 +333,7 @@ Phase 4计划：
 - 2026-08-01的3000人、16 Gate、单Grid完整进图A/B验证`entryPlayersPerTick=1/4/8/16`均可零错误完成，Map Enter吞吐为`19.97/78.88/131.09/164.39人/s`；广播pending峰值为`7/56/136/272`，Location确认平均耗时为`7.17/29.62/127.75/284.46ms`。这说明初始视野解耦修复了原大RPC溢出，也说明批量越大并非无代价。当前正式Cold值仍为`1`，`4`只是下一轮长窗口候选；短窗口CPU样本不足，不得据此形成容量结论。
 - 进图链路以低基数指标拆分MapHost全链路、ID分配、Player创建、Location注册/确认、MapReady、Admission等待、AOI Attach、新玩家Snapshot和老玩家AOI Delta；对象条数与真实Transport字节分开统计，禁止为了观测在TS重复编码protobuf。`perf:map-entry-stages`通过Bench专用`entrySyncMode`运行Attach Only、新玩家快照、老玩家Enter和Full四组A/B；普通`C2G_EnterMap`永远使用Full，前三种残缺模式不得进入生产配置或业务代码。
 - Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；类型分池、冷热布局的微基准与地图容量报告仍须分开解释，不能把任一结果直接换算为生产服务器容量。
+- Numeric权威值统一为Rust`i64`、protobuf`int64`和TS`bigint`。普通属性编号为1..999；1000..9999为只读派生结果；`result*10+1/+2/+3`为Base/Add/Pct来源。Rust按编号约定原子重算，不维护MaxHp等TS业务常量；复杂跨属性公式必须使用显式领域op。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。
 - 怪物Actor、巡逻、仇恨和战斗。
 - Online/Presence等面向在线状态的业务索引；Location Actor路由基础已完成。

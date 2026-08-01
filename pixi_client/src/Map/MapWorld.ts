@@ -33,7 +33,7 @@ interface EntityView {
 export class MapWorld {
   private readonly world = new Container();
   private readonly entities = new Map<number, EntityView>();
-  private readonly numerics = new Map<number, Map<number, number>>();
+  private readonly numerics = new Map<number, Map<number, bigint>>();
   private readonly items = new Map<bigint, ItemSnapshot>();
   private readonly states = new Map<number, UnitStateDelta>();
   private readonly buffs = new BuffStateStore();
@@ -144,11 +144,11 @@ export class MapWorld {
 
   applyNumerics(numerics: readonly UnitNumericDelta[]): void {
     for (const numeric of numerics) {
-      const values = this.numerics.get(numeric.unitId) ?? new Map<number, number>();
+      const values = this.numerics.get(numeric.unitId) ?? new Map<number, bigint>();
       values.set(numeric.numericType, numeric.value);
       this.numerics.set(numeric.unitId, values);
       const entity = this.entities.get(numeric.unitId);
-      if (entity) entity.label.text = `${entity.label.text.split("  HP")[0]}  HP ${values.get(1) ?? "--"}/${values.get(2) ?? "--"}`;
+      if (entity) entity.label.text = `${entity.label.text.split("  HP")[0]}  HP ${values.get(1) ?? "--"}/${values.get(1_000) ?? "--"}`;
     }
   }
 

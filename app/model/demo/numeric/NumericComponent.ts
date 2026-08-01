@@ -9,7 +9,7 @@ export interface NumericComponent {
 @transferable()
 @lifecycle({ awake: true, destroy: true })
 export class NumericComponent extends Component {
-  [type: number]: number;
+  [type: number]: bigint;
 
   protected unitHandle = 0;
   protected regenerationTimer = 0 as TimerId;

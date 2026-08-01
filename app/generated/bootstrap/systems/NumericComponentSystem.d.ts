@@ -4,8 +4,8 @@ import type { NumericTypeValue, UnitNumericDelta } from "../../../model/public";
 
 declare module "../../../model/demo/numeric/NumericComponent" {
   interface NumericComponent {
-    Get(type: NumericTypeValue): number;
-    Set(type: NumericTypeValue, value: number): void;
+    Get(type: NumericTypeValue): bigint;
+    Set(type: NumericTypeValue, value: bigint): void;
     Snapshot(): UnitNumericDelta[];
     CaptureTransfer(): UnitNumericDelta[];
     RestoreTransfer(values: readonly UnitNumericDelta[]): void;

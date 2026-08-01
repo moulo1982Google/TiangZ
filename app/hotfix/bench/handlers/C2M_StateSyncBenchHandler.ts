@@ -30,7 +30,7 @@ export class C2M_StateSyncBenchHandler implements UnitRpcHandler<
     switch (request.mode) {
       case NUMERIC_MODE: {
         const numeric = unit.GetComponent(NumericComponent);
-        numeric[NumericType.CurrentHp] += 1;
+        numeric[NumericType.CurrentHp] += 1n;
         break;
       }
       case PLAYER_INFO_MODE: {

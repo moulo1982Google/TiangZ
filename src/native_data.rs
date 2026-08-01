@@ -8,6 +8,14 @@ use deno_core::op2;
 use deno_error::JsErrorBox;
 
 use crate::aoi::{AoiWorld, SyncTier, VisibilityChange};
+// 生成的Native op绑定当前只导入一个稳定模块；这里仅做兼容转发，业务实现仍归属`src/game`。
+// Generated Native op bindings currently import one stable module; this compatibility
+// re-export keeps business implementations owned by `src/game`.
+pub(crate) use crate::game::{
+    op_native_numeric_attach, op_native_numeric_detach, op_native_numeric_get,
+    op_native_numeric_set,
+};
+pub(crate) use crate::game::{op_native_unit_reset_movement, op_native_unit_set_movement_input};
 #[cfg(test)]
 use crate::generated::native_data::{EntityData, UnitData, UnitSplitData};
 use crate::generated::native_data::{
@@ -94,7 +102,7 @@ struct EntitySlot {
 
 #[derive(Default)]
 struct NumericData {
-    values: HashMap<u32, i32>,
+    values: HashMap<u32, i64>,
     dirty: HashMap<u32, u64>,
 }
 
@@ -118,7 +126,7 @@ struct NativeEntityStore {
     scratch_movement_records: Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
     scratch_changed_positions: Vec<(u32, f32, f32)>,
     pending_movement_records: HashMap<u32, Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>>,
-    scratch_numeric_records: Vec<(u32, u32, i32)>,
+    scratch_numeric_records: Vec<(u32, u32, i64)>,
     scratch_unit_delta_records: Vec<UnitDeltaRecord>,
     numeric_revision: u64,
     metrics: NativeDataMetrics,
@@ -267,7 +275,7 @@ impl NativeEntityStore {
             + self.scratch_movement_records.capacity()
                 * std::mem::size_of::<[u8; NATIVE_UNIT_RECORD_BYTES]>()
             + pending_movement_capacity * std::mem::size_of::<[u8; NATIVE_UNIT_RECORD_BYTES]>()
-            + self.scratch_numeric_records.capacity() * std::mem::size_of::<(u32, u32, i32)>()
+            + self.scratch_numeric_records.capacity() * std::mem::size_of::<(u32, u32, i64)>()
             + self.scratch_unit_delta_records.capacity() * std::mem::size_of::<UnitDeltaRecord>())
             as u64
     }
@@ -340,18 +348,8 @@ pub(crate) fn op_native_entity_destroy(handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| slot.borrow_mut().destroy(handle))
 }
 
-#[op2(fast)]
-/// 更新 Unit 移动意图，但不推进模拟，也不回调 TS。 / Updates Unit movement intent without advancing simulation or calling back into TS.
-pub(crate) fn op_native_unit_set_movement_input(
-    handle: u32,
-    input_x: i8,
-    input_z: i8,
-    sequence: u32,
-) -> Result<bool, JsErrorBox> {
-    native_unit_set_movement_input_impl(handle, input_x, input_z, sequence)
-}
-
-fn native_unit_set_movement_input_impl(
+/// 更新Unit移动意图；仅供`src/game`中的业务op使用，不是生成ABI入口。 / Updates Unit movement intent for game-owned ops; this is not a generated ABI entrypoint.
+pub(crate) fn set_unit_movement_input(
     handle: u32,
     input_x: i8,
     input_z: i8,
@@ -377,9 +375,8 @@ fn native_unit_set_movement_input_impl(
     })
 }
 
-#[op2(fast)]
-/// 在重连或 Session 所有权变化时清除当前及排队移动。 / Clears current and queued movement for reconnect/session ownership changes.
-pub(crate) fn op_native_unit_reset_movement(handle: u32) -> Result<(), JsErrorBox> {
+/// 清除Unit当前及排队移动；调用方必须已经处于正确的Actor/mailbox顺序中。 / Clears current and queued Unit movement; callers must already hold the correct Actor/mailbox ordering.
+pub(crate) fn reset_unit_movement(handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.metrics.scalar_sets += 1;
@@ -454,13 +451,8 @@ fn native_entity_set_number(handle: u32, field: u32, value: f64) -> Result<(), J
     })
 }
 
-#[op2(fast)]
-/// 为尚未拥有 Numeric 的 Unit 挂载空 Numeric 字典。 / Attaches an empty Numeric dictionary to a Unit that does not already own one.
-pub(crate) fn op_native_numeric_attach(unit_handle: u32) -> Result<(), JsErrorBox> {
-    native_numeric_attach(unit_handle)
-}
-
-fn native_numeric_attach(unit_handle: u32) -> Result<(), JsErrorBox> {
+/// 挂载Numeric存储；只向`src/game/numeric`提供生命周期原语。 / Attaches Numeric storage as a lifecycle primitive only for `src/game/numeric`.
+pub(crate) fn attach_numeric(unit_handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.get_unit_hot(unit_handle)?;
@@ -474,13 +466,8 @@ fn native_numeric_attach(unit_handle: u32) -> Result<(), JsErrorBox> {
     })
 }
 
-#[op2(fast)]
-/// Component 销毁时移除 Numeric 数值和脏版本。 / Removes Numeric values and dirty revisions during Component disposal.
-pub(crate) fn op_native_numeric_detach(unit_handle: u32) -> Result<(), JsErrorBox> {
-    native_numeric_detach(unit_handle)
-}
-
-fn native_numeric_detach(unit_handle: u32) -> Result<(), JsErrorBox> {
+/// 移除Numeric存储；重复移除会明确报错。 / Removes Numeric storage and reports duplicate removal explicitly.
+pub(crate) fn detach_numeric(unit_handle: u32) -> Result<(), JsErrorBox> {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         if store.numerics_by_unit.remove(&unit_handle).is_none() {
@@ -490,16 +477,8 @@ fn native_numeric_detach(unit_handle: u32) -> Result<(), JsErrorBox> {
     })
 }
 
-#[op2(fast)]
-/// 从 Rust 权威数据读取一个 NumericType；未设置的 key 返回零。 / Reads one NumericType from Rust authority and returns zero for an unset key.
-pub(crate) fn op_native_numeric_get(
-    unit_handle: u32,
-    numeric_type: u32,
-) -> Result<i32, JsErrorBox> {
-    native_numeric_get(unit_handle, numeric_type)
-}
-
-fn native_numeric_get(unit_handle: u32, numeric_type: u32) -> Result<i32, JsErrorBox> {
+/// 读取一个Numeric值；未设置的key返回零。 / Reads one Numeric value and returns zero for an unset key.
+pub(crate) fn numeric_value(unit_handle: u32, numeric_type: u32) -> Result<i64, JsErrorBox> {
     STORE.with(|slot| {
         let store = slot.borrow();
         store.get_unit_hot(unit_handle)?;
@@ -511,40 +490,34 @@ fn native_numeric_get(unit_handle: u32, numeric_type: u32) -> Result<i32, JsErro
     })
 }
 
-#[op2(fast)]
-/// 写入一个 NumericType；数值变化时递增其独立脏版本。 / Writes one NumericType and increments its independent dirty revision on change.
-pub(crate) fn op_native_numeric_set(
+/// 原子提交一组已完成派生计算的Numeric值，并逐字段维护脏版本。 / Atomically commits derived Numeric values and maintains per-field dirty revisions.
+pub(crate) fn set_numeric_values(
     unit_handle: u32,
-    numeric_type: u32,
-    value: i32,
+    values: &[(u32, i64)],
 ) -> Result<bool, JsErrorBox> {
-    native_numeric_set(unit_handle, numeric_type, value)
-}
-
-fn native_numeric_set(unit_handle: u32, numeric_type: u32, value: i32) -> Result<bool, JsErrorBox> {
-    if numeric_type == 0 {
-        return Err(JsErrorBox::generic(
-            "numeric type must be greater than zero",
-        ));
-    }
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         store.get_unit_hot(unit_handle)?;
-        let current = store
+        let numeric = store
             .numerics_by_unit
             .get(&unit_handle)
-            .ok_or_else(|| JsErrorBox::generic("native Numeric is not attached"))?
-            .values
-            .get(&numeric_type)
+            .ok_or_else(|| JsErrorBox::generic("native Numeric is not attached"))?;
+        let changed: Vec<_> = values
+            .iter()
             .copied()
-            .unwrap_or(0);
-        if current == value {
+            .filter(|(numeric_type, value)| {
+                numeric.values.get(numeric_type).copied().unwrap_or(0) != *value
+            })
+            .collect();
+        if changed.is_empty() {
             return Ok(false);
         }
-        let revision = store.next_numeric_revision();
-        let numeric = store.numerics_by_unit.get_mut(&unit_handle).unwrap();
-        numeric.values.insert(numeric_type, value);
-        numeric.dirty.insert(numeric_type, revision);
+        for (numeric_type, value) in changed {
+            let revision = store.next_numeric_revision();
+            let numeric = store.numerics_by_unit.get_mut(&unit_handle).unwrap();
+            numeric.values.insert(numeric_type, value);
+            numeric.dirty.insert(numeric_type, revision);
+        }
         Ok(true)
     })
 }
@@ -1680,19 +1653,19 @@ fn encode_entity_numeric_frame_into(
     frame: &mut Vec<u8>,
     message_code: u16,
     server_tick: u32,
-    records: &[(u32, u32, i32)],
+    records: &[(u32, u32, i64)],
 ) {
     frame.extend_from_slice(&message_code.to_be_bytes());
     write_uint32_field(frame, 1, server_tick);
     for &(unit_id, numeric_type, value) in records {
         let item_len = uint32_field_len(1, unit_id)
             + uint32_field_len(2, numeric_type)
-            + sint32_field_len(3, value);
+            + int64_field_len(3, value);
         write_tag(frame, 2, 2);
         write_varint(frame, item_len as u32);
         write_uint32_field(frame, 1, unit_id);
         write_uint32_field(frame, 2, numeric_type);
-        write_sint32_field(frame, 3, value);
+        write_int64_field(frame, 3, value);
     }
 }
 
@@ -1788,6 +1761,13 @@ fn sint32_field_len(field_number: u32, value: i32) -> usize {
     varint_len(field_number << 3) + varint_len(((value << 1) ^ (value >> 31)) as u32)
 }
 
+fn int64_field_len(field_number: u32, value: i64) -> usize {
+    if value == 0 {
+        return 0;
+    }
+    varint_len(field_number << 3) + varint64_len(value as u64)
+}
+
 fn varint_len(value: u32) -> usize {
     match value {
         0..=0x7f => 1,
@@ -1796,6 +1776,15 @@ fn varint_len(value: u32) -> usize {
         0x20_0000..=0x0fff_ffff => 4,
         _ => 5,
     }
+}
+
+fn varint64_len(mut value: u64) -> usize {
+    let mut len = 1;
+    while value >= 0x80 {
+        value >>= 7;
+        len += 1;
+    }
+    len
 }
 
 fn write_uint32_field(bytes: &mut Vec<u8>, field_number: u32, value: u32) {
@@ -1812,6 +1801,22 @@ fn write_sint32_field(bytes: &mut Vec<u8>, field_number: u32, value: i32) {
     }
     write_tag(bytes, field_number, 0);
     write_varint(bytes, ((value << 1) ^ (value >> 31)) as u32);
+}
+
+fn write_int64_field(bytes: &mut Vec<u8>, field_number: u32, value: i64) {
+    if value == 0 {
+        return;
+    }
+    write_tag(bytes, field_number, 0);
+    write_varint64(bytes, value as u64);
+}
+
+fn write_varint64(bytes: &mut Vec<u8>, mut value: u64) {
+    while value >= 0x80 {
+        bytes.push((value as u8) | 0x80);
+        value >>= 7;
+    }
+    bytes.push(value as u8);
 }
 
 fn write_float_field(bytes: &mut Vec<u8>, field_number: u32, value: f32) {
@@ -2112,7 +2117,7 @@ mod tests {
             *store = NativeEntityStore::default();
             store.create(NativeEntityData::Unit(unit(10))).unwrap()
         });
-        native_unit_set_movement_input_impl(handle, 1, 0, 1).unwrap();
+        set_unit_movement_input(handle, 1, 0, 1).unwrap();
         native_spatial_create_grid_2d(1, 128, 128, 1_000).unwrap();
 
         native_map_update_movement(1, 1, 50, 10_016).unwrap();
@@ -2297,11 +2302,11 @@ mod tests {
             *store = NativeEntityStore::default();
             store.create(NativeEntityData::Unit(unit(10))).unwrap()
         });
-        native_numeric_attach(handle).unwrap();
-        assert!(native_numeric_set(handle, 1, 100).unwrap());
-        assert!(!native_numeric_set(handle, 1, 100).unwrap());
-        assert!(native_numeric_set(handle, 2, 1000).unwrap());
-        assert_eq!(native_numeric_get(handle, 1).unwrap(), 100);
+        attach_numeric(handle).unwrap();
+        assert!(set_numeric_values(handle, &[(1, 100)]).unwrap());
+        assert!(!set_numeric_values(handle, &[(1, 100)]).unwrap());
+        assert!(set_numeric_values(handle, &[(2, 1000)]).unwrap());
+        assert_eq!(numeric_value(handle, 1).unwrap(), 100);
 
         let first = native_map_peek_numeric_delta(1, 7, 10017).unwrap();
         assert_eq!(u32::from_le_bytes(first[0..4].try_into().unwrap()), 2);
@@ -2312,6 +2317,30 @@ mod tests {
         native_map_ack_numeric_delta(1, &revision).unwrap();
         let empty = native_map_peek_numeric_delta(1, 9, 10017).unwrap();
         assert_eq!(u32::from_le_bytes(empty[0..4].try_into().unwrap()), 0);
+    }
+
+    #[test]
+    fn numeric_dependencies_recompute_max_hp_in_rust() {
+        let handle = STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+            store.create(NativeEntityData::Unit(unit(10))).unwrap()
+        });
+        attach_numeric(handle).unwrap();
+
+        assert!(crate::game::set_numeric(handle, 10_001, 1_000).unwrap());
+        assert_eq!(numeric_value(handle, 1_000).unwrap(), 1_000);
+        assert!(crate::game::set_numeric(handle, 10_002, 100).unwrap());
+        assert_eq!(numeric_value(handle, 1_000).unwrap(), 1_100);
+        assert!(crate::game::set_numeric(handle, 10_003, 20).unwrap());
+        assert_eq!(numeric_value(handle, 1_000).unwrap(), 1_320);
+
+        let direct = crate::game::set_numeric(handle, 1_000, 9_999).unwrap_err();
+        assert!(direct.to_string().contains("derived"));
+        assert_eq!(numeric_value(handle, 1_000).unwrap(), 1_320);
+
+        let encoded = native_map_peek_numeric_delta(1, 7, 10_017).unwrap();
+        assert_eq!(u32::from_le_bytes(encoded[0..4].try_into().unwrap()), 4);
     }
 
     #[test]

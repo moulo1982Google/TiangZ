@@ -15,10 +15,41 @@ player.AddComponent(NumericComponent);
 ```ts
 const numeric = player.GetComponent(NumericComponent);
 const hp = numeric[NumericType.CurrentHp];
-numeric[NumericType.CurrentHp] += 1;
+numeric[NumericType.CurrentHp] += 1n;
 ```
 
-开发者在`app/model/demo/numeric/NumericType.ts`维护稳定的整数类型。`NumericComponent`只保存Unit的Native handle；真正的`NumericType -> i32`值表和dirty表都在Rust。新增NumericType会改变Model，必须完整构建并重启Process。
+开发者在`app/model/demo/numeric/NumericType.ts`维护稳定的整数类型。`NumericComponent`只保存Unit的Native handle；真正的`NumericType -> i64`值表和dirty表都在Rust。TS与生成SDK使用`bigint`，因此字面量必须写成`1n`，不会在JavaScript的安全整数边界丢失精度。新增NumericType会改变Model，必须完整构建并重启Process。
+
+## 派生属性与依赖传播
+
+`MaxHp`是只读派生属性，由Rust按编号约定维护：
+
+```text
+MaxHp = (MaxHpBase + MaxHpAdd) * (100 + MaxHpPct) / 100
+```
+
+编号约定如下：
+
+```text
+1..999       普通属性，例如 CurrentHp=1
+1000..9999   派生结果，只读，例如 MaxHp=1000
+Result*10+1  Base，例如 MaxHpBase=10001
+Result*10+2  Add，例如 MaxHpAdd=10002
+Result*10+3  Pct，例如 MaxHpPct=10003
+```
+
+Rust不保存`MaxHp`等业务常量，只根据编号识别来源与目标。写入`10001/10002/10003`会重算`1000`；其他不符合该模式的编号仍是普通属性。计算使用`i128`中间值、向零截断到`i64`，溢出会拒绝整次写入，不留下部分更新。`MaxHpPct=20n`表示增加20%。业务只修改源属性：
+
+```ts
+const numeric = unit.GetComponent(NumericComponent);
+numeric[NumericType.MaxHpAdd] += 100n;
+numeric[NumericType.MaxHpPct] += 20n;
+const maxHp = numeric[NumericType.MaxHp];
+```
+
+一次`NumericSet`会在Rust中先算出派生结果，然后原子提交源属性和结果。每个实际变化的NumericType分别标脏，因此客户端在帧尾同时收到来源和新的`MaxHp`。直接给`MaxHp`赋值会报错；初始化应写`MaxHpBase`，地图迁移恢复时忽略快照里的派生值并由源属性重新计算。
+
+实现位于`src/game/numeric.rs`。增加`Attack`、`MoveSpeed`等同类派生属性时只需在TS声明符合约定的四个编号，不修改Rust。该约定只表达`Base/Add/Pct -> Result`，不表达`Strength -> Attack -> FinalDamage`这类任意依赖图；复杂公式应使用独立Rust领域op，避免把编号协议演变成隐藏脚本语言。
 
 当前演示每 100ms 增加一次生命值：
 
@@ -26,7 +57,7 @@ numeric[NumericType.CurrentHp] += 1;
 this.NewRepeatedTimer(100, "RegenerateHp");
 
 protected RegenerateHp(): void {
-  this[NumericType.CurrentHp] += 1;
+  this[NumericType.CurrentHp] += 1n;
 }
 ```
 
@@ -47,7 +78,7 @@ message UnitNumericDelta
 {
   uint32 unit_id = 1;
   uint32 numeric_type = 2;
-  sint32 value = 3;
+  int64 value = 3;
 }
 
 // @ets.broadcast mode=latest item=UnitNumericDelta items=numerics key=unit_id,numeric_type tick=server_tick
@@ -129,7 +160,7 @@ C2M_UseItem
 - **Delta**：帧尾发送 dirty 字典或 dirty mask 中的最终值，可以按稳定键覆盖。
 - **Event**：技能释放、获得道具、伤害飘字等事实，必须有序保留，不能使用 latest。
 
-三者不要共用一个 `value: unknown` 容器。Numeric Delta 使用 `i32 value`；固定结构由 codegen 生成强类型 `UnitDelta`；Item Event 使用强类型 `ItemSnapshot`。进入玩家不再通过 `MarkAllDirty` 伪造全量同步。
+三者不要共用一个 `value: unknown` 容器。Numeric Delta 使用 `int64 value`并在TS映射为`bigint`；固定结构由 codegen 生成强类型 `UnitDelta`；Item Event 使用强类型 `ItemSnapshot`。进入玩家不再通过 `MarkAllDirty` 伪造全量同步。
 
 ## 验证
 

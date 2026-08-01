@@ -40,6 +40,10 @@ MapComponent.Update() / 20Hz
 
 新增粗粒度 op 时，只声明 ABI 并实现 Rust 函数。`host.rs` 不维护 Native op 列表，也不安装 `__demoXxx` 全局函数。生成 bootstrap 对数值范围和 buffer 类型做显式检查，不使用 `>>> 0` 静默改变错误输入。
 
+游戏专用Rust实现统一位于`src/game/<domain>`。生成Extension为了保持稳定ABI，当前仍从`crate::native_data`导入op符号；`native_data`只能对`src/game`中的实现做兼容re-export，不能因此把业务代码重新写回Store模块。Runtime公共存储只向游戏模块提供窄访问函数，不公开`NativeEntityStore`、Pool槽位或世代目录。
+
+Numeric动态字典不使用生成Entity字段布局，但仍遵循同一Store边界。值统一保存为`i64`，TS op和protobuf映射为`bigint/int64`；派生属性由`src/game/numeric.rs`按稳定编号约定计算，Store只负责原子写入、逐字段revision和编码。
+
 Rust 没有类继承，生成入口结构通过组合让 `UnitData/ItemData` 持有 `EntityData`。运行时的generation handle目录只保存“世代 + 类型池位置”，Unit、Item等权威数据进入生成的独立Pool；Unit热字段与冷字段分开存放。实体销毁后池槽可复用，但旧handle仍会明确报错。
 
 ## 标量与批量访问
