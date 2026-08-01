@@ -10,7 +10,6 @@ import type {
 } from "../Generated/Model/demo/protocol/messages";
 import {
   ClientMessages,
-  GateMessages,
 } from "../Generated/Model/demo/protocol/messageDescriptors";
 import {
   GateClient,
@@ -33,7 +32,9 @@ export type LoginProgress = (message: string) => void;
 export class LoginFlow {
   private readonly sockets = new Set<RpcSocket>();
   private gateSocket?: RpcSocket;
+  private gateClient?: GateClient;
   private gatePingTimer?: ReturnType<typeof setInterval>;
+  private gatePingInFlight = false;
 
   constructor(private readonly loginMgrEndpoint: ClientEndpoint) {}
 
@@ -79,6 +80,7 @@ export class LoginFlow {
         token: login.token,
       });
       this.gateSocket = gateSocket;
+      this.gateClient = gate;
       this.startGatePing();
       const [enterMap, mapReady] = await Promise.all([
         gate.enterMap({ mapId, mapInstanceId: 0n }),
@@ -100,6 +102,8 @@ export class LoginFlow {
     for (const socket of this.sockets) socket.close();
     this.sockets.clear();
     this.gateSocket = undefined;
+    this.gateClient = undefined;
+    this.gatePingInFlight = false;
   }
 
   update(maxMessagesPerSocket = 256): number {
@@ -126,10 +130,14 @@ export class LoginFlow {
     if (this.gatePingTimer !== undefined) clearInterval(this.gatePingTimer);
     this.gatePingTimer = setInterval(() => {
       const socket = this.gateSocket;
-      if (!socket) return;
-      void socket.send(GateMessages.Ping, {}).catch((error) => {
+      const gate = this.gateClient;
+      if (!socket || !gate || this.gatePingInFlight) return;
+      this.gatePingInFlight = true;
+      void gate.ping({}).catch((error) => {
         console.error("发送 Gate Ping 失败", error);
         if (this.gateSocket === socket) this.close();
+      }).finally(() => {
+        if (this.gateSocket === socket) this.gatePingInFlight = false;
       });
     }, GATE_PING_INTERVAL_MS);
   }

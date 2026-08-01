@@ -52,7 +52,7 @@ export class CoroutineLockSystem extends Singleton {
   }
 
   /** 在指定Scene、领域和键下串行执行回调；异常与Promise拒绝都会自动释放锁。 / Runs a callback exclusively for one Scene/domain/key and always releases after errors or rejected Promises. */
-  async RunExclusive<T>(
+  RunExclusive<T>(
     sceneInstanceId: InstanceId,
     domain: CoroutineLockDomain,
     key: CoroutineLockKey,
@@ -62,11 +62,42 @@ export class CoroutineLockSystem extends Singleton {
     requireLockIdentity(sceneInstanceId, domain, key);
     if (typeof callback !== "function") throw new Error("coroutine lock callback is required");
     const queue = this.getOrCreateQueue(sceneInstanceId, domain, key);
-    await this.acquire(queue, sceneInstanceId, domain, key, options);
+    const waiting = this.acquire(queue, sceneInstanceId, domain, key, options);
+    if (waiting) {
+      return waiting.then(() => this.runAcquired(
+        queue,
+        sceneInstanceId,
+        domain,
+        key,
+        callback,
+      ));
+    }
+    return this.runAcquired(queue, sceneInstanceId, domain, key, callback);
+  }
+
+  /** 空闲锁同步进入回调，避免状态事务在第一个await前被后续消息抢跑。 / Enters an uncontended callback synchronously so later messages cannot overtake state established before its first await. */
+  private runAcquired<T>(
+    queue: LockQueue,
+    sceneInstanceId: InstanceId,
+    domain: CoroutineLockDomain,
+    key: CoroutineLockKey,
+    callback: () => MaybePromise<T>,
+  ): Promise<T> {
     try {
-      return await callback();
-    } finally {
+      const result = callback();
+      return Promise.resolve(result).then(
+        (value) => {
+          this.release(queue, sceneInstanceId, domain, key);
+          return value;
+        },
+        (error) => {
+          this.release(queue, sceneInstanceId, domain, key);
+          throw error;
+        },
+      );
+    } catch (error) {
       this.release(queue, sceneInstanceId, domain, key);
+      return Promise.reject(error);
     }
   }
 
@@ -101,10 +132,10 @@ export class CoroutineLockSystem extends Singleton {
     domain: CoroutineLockDomain,
     key: CoroutineLockKey,
     options: CoroutineLockOptions,
-  ): Promise<void> {
+  ): Promise<void> | undefined {
     if (!queue.locked) {
       queue.locked = true;
-      return Promise.resolve();
+      return undefined;
     }
 
     const maxQueueLength = options.maxQueueLength ?? DEFAULT_MAX_QUEUE_LENGTH;

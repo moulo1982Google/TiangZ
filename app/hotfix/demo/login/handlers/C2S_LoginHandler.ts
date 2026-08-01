@@ -15,7 +15,7 @@ export class C2S_LoginHandler implements SessionRpcHandler<
   C2S_Login,
   S2C_Login
 > {
-  /** Session mailbox 保证同一连接串行；账号级并发应由真正的账号业务锁处理。 / The Session mailbox serializes one connection; real account-level concurrency belongs to an account-domain lock. */
+  /** Login当前为无await的同步事务；未来增加异步账号状态时必须按账号显式加协程锁。 / Login is currently a synchronous transaction without awaits; future asynchronous account state must use an explicit account lock. */
   handle(
     scene: LoginScene,
     _session: Session,

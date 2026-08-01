@@ -50,6 +50,7 @@ Watcher会在启动任何子进程前检查整套`StartMachine`，重复的`orig
 
 - `FrameTime`：宿主提供的单调毫秒时间，用于游戏Timer、耗时与逻辑调度；不可写入数据库。
 - `ServerNow`：Unix毫秒墙钟，用于活动开放时间、日志和持久化截止时间。
+- `TimerComponent.ServerTime()`：`ServerNow`的业务友好静态入口；`TimerComponent`是`TimerSystem`的同类型别名，不创建第二套时钟或定时器。
 - `ServerDeadlineAfter/RemainingServerTime/IsServerDeadlineReached`：处理可持久化截止时间。
 - `FixedTime/FixedDeltaTime/FrameCount`：当前固定逻辑帧。
 
@@ -95,6 +96,8 @@ await scene.Locks.RunExclusive("Guild", guildId, async () => {
 锁身份是`Scene.InstanceId + domain + key`。相同门派串行，不同门派并行；不同Scene永不互相阻塞。队列按FIFO获取，回调抛错或Promise拒绝也会释放。默认等待60秒、单键最多1024个等待者，可通过`timeoutMs`、`signal`和`maxQueueLength`缩小边界。
 
 它只是一台Process的单V8协程锁，不是分布式锁。跨Process操作必须先通过Scene/Actor/Location路由到唯一状态所有者，再在所有者内加锁。不要用它替代数据库事务。
+
+无竞争时`RunExclusive`会同步进入回调，保证回调第一个`await`之前建立的屏障或状态不会被后续消息抢跑；只有锁已被占用时才异步等待。调用方仍统一`await`返回的Promise，不依赖这一实现细节安排业务完成顺序。
 
 Prometheus暴露`tiangz_coroutine_lock_waiters`和`tiangz_coroutine_lock_timeouts_total`。
 

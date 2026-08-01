@@ -29,7 +29,7 @@ Client SDK 按 msgcode 分发 Push
 
 ## 断线重连
 
-客户端SDK每5秒发送一次单向`C2G_Ping`。Gate收到任意客户端消息都会刷新`lastReceiveTime`，出站消息只记录`lastSendTime`用于观测。物理连接关闭后玩家Unit仍留在Map中，Gate保留Route等待30秒：
+客户端SDK每5秒调用一次`C2G_Ping -> G2C_Ping`，回包的`serverTime`是Gate生成响应时的Unix毫秒。Gate收到任意客户端消息都会刷新`lastReceiveTime`，出站消息只记录`lastSendTime`用于观测。物理连接关闭后玩家Unit仍留在Map中，Gate保留Route等待30秒：
 
 ```text
 新连接 -> LoginGate附着旧Route -> SecondEnterMap

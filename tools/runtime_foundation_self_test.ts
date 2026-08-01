@@ -162,6 +162,7 @@ async function testCoroutineLockIsolation(): Promise<void> {
     await firstGate;
     order.push("first-end");
   });
+  assert.deepEqual(order, ["first-start"]);
   const second = scene.Locks.RunExclusive("Guild", "少林", () => {
     order.push("second");
   });

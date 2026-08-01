@@ -399,8 +399,9 @@ export abstract class EntryScene extends Scene {
    * 该入口用于心跳等必须在长业务RPC等待期间继续生效的控制消息，普通消息必须返回false。
    *
    * Consumes lightweight connection-control frames before business handlers and session mailboxes.
-   * Returning true bypasses the protocol registry. Implementations must remain O(1) and synchronous,
-   * with no business work, async calls, or response encoding. Ordinary frames must return false.
+   * Returning true bypasses the protocol registry. Implementations must remain O(1)
+   * and synchronous, with no business work, async calls, or response encoding.
+   * Ordinary frames must return false.
    */
   protected consumeClientControlFrame(
     _connectionId: number,

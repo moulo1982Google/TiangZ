@@ -472,6 +472,11 @@
       "code": 10030
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_Ping",
+      "name": "G2C_Ping",
+      "code": 10031
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_MapProbe",
       "name": "M2C_MapProbe",
       "code": 10015

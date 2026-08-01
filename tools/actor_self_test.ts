@@ -5,11 +5,13 @@ import { Actor, ChildEntity, Component } from "../app/core/runtime/entities";
 import { Game, InitializeGameSingletons } from "../app/core/runtime/Game";
 import { ProcessHost } from "../app/core/runtime/host";
 import { MailBoxComponent } from "../app/core/runtime/MailBoxComponent";
+import { Session } from "../app/core/runtime/Session";
 import { actor, component } from "../app/core/runtime/metadata";
 import { SingletonRegistry } from "../app/core/runtime/Singleton";
 import { UnitComponent } from "../app/core/runtime/Unit";
 import { MapScene } from "../app/model/demo/map/MapScene";
 import { PlayerUnit } from "../app/model/demo/map/PlayerUnit";
+import { GateSession } from "../app/model/demo/gate/GateSession";
 import { PositionComponent } from "../app/model/demo/map/PositionComponent";
 import { UnitGateComponent } from "../app/model/demo/map/UnitGateComponent";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
@@ -386,6 +388,14 @@ async function testItemChildEntity(): Promise<void> {
 async function testPlayerUnitComponents(): Promise<void> {
   const host = new ProcessHost("actor-self-test");
   const map = host.spawnScene("map:1", MapScene);
+  const defaultSession = map.SpawnActor(99_000, Session);
+  assert.equal(defaultSession.GetComponent(MailBoxComponent).MailboxType, "unordered");
+  await assertUnorderedMailbox(host, defaultSession);
+  assert.equal(map.DespawnActor(99_000), true);
+  const gateSession = map.SpawnActor(99_001, GateSession);
+  assert.equal(gateSession.GetComponent(MailBoxComponent).MailboxType, "unordered");
+  await assertUnorderedMailbox(host, gateSession);
+  assert.equal(map.DespawnActor(99_001), true);
   const units = map.AddComponent(UnitComponent);
   const player = units.Create(1000, PlayerUnit, {
     account: "tester",
@@ -415,6 +425,7 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(player.DomainScene(), map);
   assert.equal(host.Root.Get(firstInstanceId), player);
   assert.equal(player.GetComponent(MailBoxComponent).MailboxType, "ordered");
+  await assertOrderedMailbox(host, player);
   assert.equal(player.GetComponent(NumericComponent), numeric);
   assert.equal(numeric[NumericType.CurrentHp], 100n);
   assert.equal(numeric[NumericType.MaxHp], 1000n);
@@ -510,6 +521,33 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.notEqual(recreated.InstanceId, firstInstanceId);
   assert.equal(host.despawnActor("map:1", 1000), true);
   assert.equal(units.Get(1000), undefined);
+}
+
+/** 验证unordered Actor不会让一个等待中的RPC阻塞后续无关调用。 / Verifies that an awaiting unordered Actor does not block a later unrelated call. */
+async function assertUnorderedMailbox(host: ProcessHost, actor: Actor<any[]>): Promise<void> {
+  let release!: () => void;
+  const blocker = new Promise<void>((resolve) => release = resolve);
+  const first = Promise.resolve(host.runActorMailbox(actor.InstanceId, () => blocker));
+  const second = host.runActorMailbox(actor.InstanceId, () => "concurrent");
+  assert.equal(await Promise.resolve(second), "concurrent");
+  release();
+  await first;
+}
+
+/** 验证ordered PlayerUnit会把后续调用保留到前一个异步事务完成。 / Verifies that an ordered PlayerUnit retains a later call until the previous async transaction completes. */
+async function assertOrderedMailbox(host: ProcessHost, actor: Actor<any[]>): Promise<void> {
+  let release!: () => void;
+  const blocker = new Promise<void>((resolve) => release = resolve);
+  const first = Promise.resolve(host.runActorMailbox(actor.InstanceId, () => blocker));
+  let secondRan = false;
+  const second = Promise.resolve(host.runActorMailbox(actor.InstanceId, () => {
+    secondRan = true;
+  }));
+  await Promise.resolve();
+  assert.equal(secondRan, false);
+  release();
+  await Promise.all([first, second]);
+  assert.equal(secondRan, true);
 }
 
 @actor({ mailbox: "ordered" })

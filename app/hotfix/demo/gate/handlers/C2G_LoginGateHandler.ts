@@ -19,7 +19,7 @@ export class C2G_LoginGateHandler implements SessionRpcHandler<
     scene: GateScene,
     session: GateSession,
     request: C2G_LoginGate,
-  ): G2C_LoginGate {
+  ): Promise<G2C_LoginGate> {
     return scene.LoginGate(session, request);
   }
 }

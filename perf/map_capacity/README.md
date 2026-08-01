@@ -142,7 +142,7 @@ npm run perf:map-capacity -- \
 
 不要用`--setup-concurrency 3000`替代上述隔离测试：它会同时冲击TCP短连接、Login、Gate和Map，连接错误不能用于判断Map Admission容量。批量上线、Map入场洪峰和稳态地图容量是三个不同指标。
 
-Admission事务使用独立10分钟故障上限，覆盖当前冷配置最坏约500秒的队列排空预算；普通Scene RPC仍保持短超时。`C2G_Ping`由Gate在Session mailbox之前同步消费，因此长时间Loading不会阻塞心跳，也不会按“连接数 × 等待轮数”积累异步Promise。洪峰验收必须同时满足：Map请求全部完成、Admission队列最终归零、放行数等于玩家数，并且客户端错误、内部超时、过载、背压和慢连接断开全部为0。最大等待时间仍是独立产品SLO，不能因为技术上没有丢请求就判定线上体验合格。
+Admission事务使用独立10分钟故障上限，覆盖当前冷配置最坏约500秒的队列排空预算；普通Scene RPC仍保持短超时。GateSession使用unordered mailbox，`C2G_Ping -> G2C_Ping`是不加锁的普通TS Handler，因此长时间Loading不会阻塞心跳；EnterMap、重连、传送与下线按账号锁保持Route一致。洪峰验收必须同时满足：Map请求全部完成、Admission队列最终归零、放行数等于玩家数，并且客户端错误、内部超时、过载、背压和慢连接断开全部为0。最大等待时间仍是独立产品SLO，不能因为技术上没有丢请求就判定线上体验合格。
 
 测试即使在预热或setup后失败，也会生成`map_capacity_<run>_<case>_failure.json`。其中保留失败前最后几次Process health样本、CPU、背压、NativeData和广播指标，禁止只依据客户端的`1006`错误猜测瓶颈。
 

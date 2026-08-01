@@ -10,6 +10,14 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-08-01：Gate Ping返回服务器时间
+
+- Gate保活由单向`C2G_Ping`升级为TS RPC `C2G_Ping -> G2C_Ping`，响应返回`TimerComponent.ServerTime()`产生的Unix毫秒。
+- Session与GateSession改为unordered，PlayerUnit显式保持ordered。Ping是无锁的普通TS Handler，不再使用控制帧快速路径；客户端SDK限制同一连接最多一个在途Ping，并在EnterMap等待期间继续保活。
+- Gate认证使用连接与账号两级协程锁；进图、重连、传送、快照确认、Map踢人、断线和最终下线按账号锁串行。超时任务取得锁后重新检查条件，避免旧任务覆盖刚完成的重连。
+- 修正`RunExclusive`的无竞争路径：空闲锁同步进入回调，只有竞争时才异步等待，避免unordered Session中紧随EnterMap的Actor消息在传送屏障建立前抢跑。
+- `TimerComponent`是`TimerSystem`的同类型公开别名，共享现有`TimeSystem.ServerNow`，没有引入第二套时钟或定时器。
+
 ## 2026-08-01：建立Rust游戏业务目录边界
 
 - 新增`src/game`作为开发者可编写的Rust业务模块根目录，首个`movement`模块承载真实Native op入口；`src/native_data.rs`继续拥有句柄、类型Pool、脏版本和受控Store访问。

@@ -87,7 +87,7 @@ Audience 与广播语义互相独立。同一个技能事件可以发给地图 A
 ## 选择 mailbox
 
 - 共享强一致状态：ordered Scene。
-- 不同连接独立：入口 Scene unordered，连接 Session ordered。
+- 连接消息默认并发：入口Scene与Session均为unordered；共享状态事务按账号、队伍等稳定Key显式加协程锁。
 - 不同玩家独立：入口 Scene unordered，玩家 Unit ordered。
 - CPU 密集任务：拆分 Process 或下沉专用 worker，unordered 不会产生多线程 CPU 并行。
 

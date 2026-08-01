@@ -39,7 +39,7 @@
 
 - 每个Entity都有业务`Id`和本次生命周期`InstanceId`；只持久化需要长期存在的`Id`，永远不保存`InstanceId`。
 - `GlobalIdSystem.Next()`生成可合服的63位`bigint`持久ID；JSON边界转十进制字符串，protobuf使用`uint64`。
-- `scene.Locks.RunExclusive(domain, key, callback)`只在当前Scene/Process内按业务键串行；跨Process先路由到唯一所有者。
+- `scene.Locks.RunExclusive(domain, key, callback)`只在当前Scene/Process内按业务键串行；无竞争时同步进入回调，已占用时才异步等待。跨Process先路由到唯一所有者。
 - `scene.Events.Publish(syncDescriptor, event)`同步发布当前Scene事件。
 - `await scene.Events.PublishAsync(asyncDescriptor, event)`并发执行当前Scene的异步监听器。
 - `defineSyncEvent/defineAsyncEvent`定义稳定事件描述；`@syncEventHandler/@asyncEventHandler`注册Hotfix监听器。
@@ -76,7 +76,7 @@
 - `@messageHandler(SceneType, descriptor)`：把独立 Handler class 绑定到指定 EntryScene 的单向消息。
 - `@sessionRpcHandler(SceneType, descriptor)` / `@sessionMessageHandler(...)`：绑定客户端连接消息，Handler 直接取得 Session。
 - `@unitRpcHandler(UnitType, descriptor)` / `@unitMessageHandler(...)`：绑定 Unit 消息，Handler 直接取得 Unit。
-- `@scene/@component`：注册 Scene 与 Component 元数据。Session 和 Unit 默认使用 ordered mailbox，业务不需要 `@actor`。
+- `@scene/@actor/@component`：注册Scene、Actor与Component元数据。Session基类声明unordered，PlayerUnit等权威Actor显式声明ordered；Actor子类继承最近的基类mailbox声明。
 - `@systemFor(ModelType)`：声明必需的Hotfix业务System；公开方法由codegen合并到Model类型，受保护的`Awake/OnDestroy`参与生命周期。System不能声明字段、构造或静态成员。
 - `@hotfixFor(ModelType)`：兼容旧版可选方法补丁；新业务默认使用`@systemFor`，因为它会校验每个generation都提供完整System。
 

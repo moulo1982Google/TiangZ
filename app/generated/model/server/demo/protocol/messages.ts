@@ -4801,14 +4801,74 @@ export const G2C_AoiDeltaCodec = {
   },
 };
 
-export interface C2G_Ping extends IMessage {}
+export interface C2G_Ping extends IRequest {
+  rpcId?: number;
+}
 
 export const C2G_PingCodec = {
   decode(payload: Uint8Array): C2G_Ping {
-    return {};
+    const reader = new BinaryReader(payload);
+    const value: C2G_Ping = {
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
   },
 
-  encode(_value: C2G_Ping): Uint8Array {
-    return new Uint8Array(0);
+  encode(value: C2G_Ping): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_Ping extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  serverTime: bigint;
+}
+
+export const G2C_PingCodec = {
+  decode(payload: Uint8Array): G2C_Ping {
+    const reader = new BinaryReader(payload);
+    const value: G2C_Ping = {
+      serverTime: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.serverTime = reader.int64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_Ping): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.serverTime !== undefined) writer.int64(1, value.serverTime);
+    return writer.finish();
   },
 };

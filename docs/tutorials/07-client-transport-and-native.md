@@ -34,7 +34,7 @@ cargo run --features kcp --bin TiangZ -- configs/experiments/all.kcp-native.json
 
 ## Gate 心跳与掉线清理
 
-Gate会话建立后，客户端SDK每5秒向当前Gate发送一次单向`C2G_Ping`。Gate收到任意客户端帧都会刷新`GatePlayerRoute.lastReceiveTime`，因此活跃玩家不依赖Ping续期；出站排队只更新`lastSendTime`，不能让已经失联的客户端继续存活。Gate用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
+Gate会话建立后，客户端SDK每5秒向当前Gate调用一次`C2G_Ping -> G2C_Ping`。`G2C_Ping.serverTime`是Gate生成响应时的Unix毫秒，可用于观测服务器时间，但SDK不会把它当成本地游戏Tick。Gate收到任意客户端帧都会刷新`GatePlayerRoute.lastReceiveTime`，因此活跃玩家不依赖Ping续期；出站排队只更新`lastSendTime`，不能让已经失联的客户端继续存活。Gate用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
 
 客户端主动关闭或网络层断开时，只销毁当前`GateSession`并让Route进入30秒重连宽限。新连接仍进入同一个Gate，通过账号找到Route并替换connectionId，然后调用原PlayerUnit的`SecondEnterMap`恢复全量视图。旧连接迟到的close事件不会影响新连接。
 

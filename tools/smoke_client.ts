@@ -18,6 +18,8 @@ import {
   decodeLoginFrame,
   decodeMapReadyFrame,
   decodeMapSnapshotReadyFrame,
+  decodePingFrame,
+  buildPingPacket,
 } from "./support/DemoClientProtocol";
 import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
@@ -308,7 +310,7 @@ async function verifyMapTransfer(
   const response = decodeEnterMapFrame(responseFrame);
   const ready = decodeMapReadyFrame(await readyFrame);
   if (response.rpcId !== rpcId || response.body.error) {
-    throw new Error(`Map transfer failed: ${JSON.stringify(response.body)}`);
+    throw new Error(`Map transfer failed: ${stringifyForError(response.body)}`);
   }
   const transferred = response.body;
   const mapConfig = GameConfigs.MapConfig.Get(2);
@@ -324,7 +326,7 @@ async function verifyMapTransfer(
     itemAfter?.count !== expectedItem.count ||
     itemAfter?.version !== expectedItem.version
   ) {
-    throw new Error(`map transfer did not preserve player state: ${JSON.stringify({ previous, transferred, ready: ready.body })}`);
+    throw new Error(`map transfer did not preserve player state: ${stringifyForError({ previous, transferred, ready: ready.body })}`);
   }
 
   const afterHp = transferred.entities
@@ -356,6 +358,13 @@ async function verifyMapTransfer(
     queuedItemCount: itemResponse.body.item.count,
   });
   return await verifyDynamicMapTransfer(gate, transferred, dynamicMap);
+}
+
+/** 仅供测试错误输出安全显示bigint协议字段。 / Safely renders bigint protocol fields for test failures only. */
+function stringifyForError(value: unknown): string {
+  return JSON.stringify(value, (_key, field) =>
+    typeof field === "bigint" ? field.toString() : field
+  );
 }
 
 /** 验证目标MapHost完全不在Gate静态目录时，仍可通过Location携带的Endpoint完成传送。 / Verifies transfer through a Location endpoint when the target MapHost is absent from Gate's static directory. */
@@ -737,6 +746,20 @@ async function openGateAndEnterMap(
     const loginGate = decodeLoginGateFrame(loginGateFrame);
     if (loginGate.rpcId !== loginGateRpcId || loginGate.body.error) {
       throw new Error(`LoginGate failed: ${JSON.stringify(loginGate.body)}`);
+    }
+
+    const pingRpcId = nextRpcId++;
+    const pingStartedAt = Date.now();
+    const ping = decodePingFrame(await gate.request(buildPingPacket(pingRpcId)));
+    const pingFinishedAt = Date.now();
+    const serverTime = Number(ping.body.serverTime);
+    if (
+      ping.rpcId !== pingRpcId ||
+      ping.body.error ||
+      serverTime < pingStartedAt - 1_000 ||
+      serverTime > pingFinishedAt + 1_000
+    ) {
+      throw new Error(`Gate Ping returned an invalid server time: ${serverTime}`);
     }
 
     const enterMapRpcId = nextRpcId++;

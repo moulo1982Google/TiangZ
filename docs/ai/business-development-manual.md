@@ -581,7 +581,7 @@ Update(): void {
 
 - 玩家、Item、动态副本等长期实体保存稳定`Id`；`InstanceId`只用于当前Process中的EntityRoot和Actor路由，禁止持久化。
 - 新Item由`GlobalIdSystem`生成ID；数据库恢复使用`CreateItemById`保留原ID并获得新的InstanceId。
-- 同一Scene内按门派、队伍、交易单等业务键防重入时使用`await scene.Locks.RunExclusive(domain, key, callback)`。它不跨Process，不替代数据库事务。
+- 同一Scene内按门派、队伍、交易单等业务键防重入时使用`await scene.Locks.RunExclusive(domain, key, callback)`。它不跨Process，不替代数据库事务。无竞争时回调会同步开始，因此需要阻止后续消息抢跑的标记必须放在回调第一个`await`之前。
 - 同一Scene的功能解耦使用`defineSyncEvent/defineAsyncEvent`和`scene.Events`。同步事件不能I/O；异步事件必须await。
 - 跨Scene、跨Process、需要mailbox顺序或需要响应的交互仍使用生成的Message/RPC，不能拿Event代替。
 
@@ -597,7 +597,7 @@ await player.Offline(reason);
 
 业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。普通socket断开只销毁`GateSession`，不能直接调用玩家`Offline()`；`GatePlayerRoute`在Gate继续保留30秒等待重连。宽限期结束后只能由Gate调用`MapProtocol.PlayerOffline`，Map保存、移除Unit并广播AOI离开后，Gate再删除Route。
 
-玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒发送`C2G_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Ping是框架已经接管的Gate控制帧，在Session mailbox之前同步消费；业务不再编写`C2G_PingHandler`，也不得把技能、道具等业务消息放进控制帧入口。
+玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒调用`C2G_Ping -> G2C_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Session默认unordered，Ping作为普通TS Handler直接返回`TimerComponent.ServerTime()`产生的Unix毫秒且不加锁。登录按连接与账号加锁；进图、重连、传送、快照确认和最终下线按账号加锁。业务只锁会修改共享状态的事务，禁止为了省事把整个Session改回ordered。
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 

@@ -43,6 +43,15 @@ export class TimerSystem extends Singleton {
     return SingletonRegistry.Get(TimerSystem);
   }
 
+  /**
+   * 返回当前服务器Unix毫秒时间；适合协议时间戳、活动截止时间和日志，不用于驱动游戏Tick。
+   * Returns the current server Unix time in milliseconds for protocol timestamps,
+   * persisted deadlines, and logs; do not use it to drive game ticks.
+   */
+  static ServerTime(): number {
+    return TimeSystem.Instance.ServerNow;
+  }
+
   /** 添加一次性游戏时间定时器；零延迟表示下一次定时器 Update，不会重入执行。 / Adds a one-shot game-time timer; zero delay means the next timer update, not reentrant execution. */
   NewOnceTimer(
     delayMs: number,

@@ -78,9 +78,15 @@ export function getSceneOptions(ctor: Function): SceneOptions | undefined {
   return sceneOptions.get(ctor);
 }
 
-/** 读取 Actor 创建时使用的 mailbox 元数据。 / Reads Actor mailbox metadata used during spawn. */
+/** 读取 Actor 创建时使用的 mailbox 元数据并继承最近的基类声明。 / Reads Actor mailbox metadata and inherits the nearest base-class declaration. */
 export function getActorOptions(ctor: Function): ActorOptions | undefined {
-  return actorOptions.get(ctor);
+  let current: Function | null = ctor;
+  while (current && current !== Function.prototype) {
+    const options = actorOptions.get(current);
+    if (options) return options;
+    current = Object.getPrototypeOf(current) as Function | null;
+  }
+  return undefined;
 }
 
 /** 判断Component类型是否显式参加迁移。 / Reports whether a Component type explicitly participates in transfer. */

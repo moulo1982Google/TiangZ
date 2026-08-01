@@ -27,6 +27,7 @@ export const OuterMessage = {
   G2C_EntityLeave: 10023,
   G2C_AoiDelta: 10025,
   C2G_Ping: 10024,
+  G2C_Ping: 10031,
 } as const;
 
 export const MsgCode = {

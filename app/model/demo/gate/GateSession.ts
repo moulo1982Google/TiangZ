@@ -1,10 +1,12 @@
-import { Session } from "../../../core/public";
+import { Session, actor } from "../../../core/public";
 import type { GatePlayerRoute } from "./GatePlayerRoute";
 
+/** Gate连接允许RPC跨await并发；需要一致性的玩家状态由GateScene按账号显式加锁。 / Gate RPCs may overlap across awaits; GateScene explicitly locks account state that requires consistency. */
+@actor({ mailbox: "unordered" })
 export class GateSession extends Session {
   account = "";
   token = "";
-  route?: GatePlayerRoute;
+  route: GatePlayerRoute | null = null;
   needsSecondEnter = false;
 
   /** 绑定本次物理连接的认证信息与长期玩家路由；地图位置不属于 Session。 / Binds authentication and the long-lived player route; map location does not belong to this Session. */

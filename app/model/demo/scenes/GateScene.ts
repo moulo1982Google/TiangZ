@@ -3,10 +3,10 @@ import {
   RpcError,
   SystemErrCode,
   TimeSystem,
+  TimerComponent,
   TimerSystem,
   entryScene,
   message,
-  readU16BE,
   type RuntimeEntrySceneConfig,
   type SceneMetricsSnapshot,
   type TimerId,
@@ -19,6 +19,7 @@ import {
   type G2C_EnterMap,
   type G2C_MapSnapshotReady,
   type G2C_LoginGate,
+  type G2C_Ping,
   type G2C_MapReady,
   type G2M_EnterMap,
   type G2M_InitialSnapshot,
@@ -57,6 +58,8 @@ import {
 export const GATE_CLIENT_TIMEOUT_MS = 30_000;
 export const GATE_RECONNECT_GRACE_MS = 30_000;
 const GATE_TIMEOUT_SWEEP_MS = 1_000;
+const GATE_CONNECTION_LOCK = "GateConnection";
+const GATE_PLAYER_LOCK = "GatePlayer";
 
 export interface ServerSpawnOverride {
   readonly x: number;
@@ -73,6 +76,7 @@ export class GateScene extends EntryScene {
   private readonly routesByConnection = new Map<number, GatePlayerRoute>();
   private readonly routesByUnitId = new Map<number, GatePlayerRoute>();
   private readonly disconnecting = new Set<number>();
+  private readonly finalOfflinePending = new Set<string>();
   private readonly location: LocationProxy;
   private timeoutSweepTimer = 0 as TimerId;
 
@@ -106,26 +110,6 @@ export class GateScene extends EntryScene {
       ?.TouchReceive(connectionId, TimeSystem.Instance.FrameTime);
   }
 
-  /**
-   * Ping只维护连接存活，不进入可能被长时间EnterMap占用的Session mailbox。
-   * 未认证连接发送Ping时立即断开；已认证Ping不产生响应，也不占用异步Handler槽位。
-   *
-   * Keeps Ping outside a session mailbox that may be occupied by a long EnterMap call.
-   * Unauthenticated senders are disconnected; authenticated Pings allocate no async handler slot.
-   */
-  protected override consumeClientControlFrame(
-    connectionId: number,
-    frame: Uint8Array,
-  ): boolean {
-    if (frame.byteLength < 2 || readU16BE(frame) !== GateMessages.Ping.msgcode) return false;
-    if (this.routesByConnection.has(connectionId)) return true;
-    if (!this.disconnecting.has(connectionId)) {
-      this.disconnecting.add(connectionId);
-      this.disconnectClient(connectionId);
-    }
-    return true;
-  }
-
   /** 记录出站排队时间以供观测；该时间绝不参与存活判定。 / Records outbound queue activity for observability and never for liveness. */
   protected override onClientSendQueued(connectionIds: readonly number[]): void {
     const now = TimeSystem.Instance.FrameTime;
@@ -135,12 +119,22 @@ export class GateScene extends EntryScene {
   }
 
   /** 物理连接断开只销毁Session并进入重连宽限，不立即移除Map中的Unit。 / Transport loss disposes only the Session and starts reconnect grace without removing the Map Unit. */
-  protected override onDisconnect(connectionId: number): void {
+  protected override onDisconnect(connectionId: number): void | Promise<void> {
     this.disconnecting.delete(connectionId);
     this.actorLocations.unbindConnection(connectionId);
 
     const route = this.routesByConnection.get(connectionId);
     if (!route) return;
+    return this.Locks.RunExclusive(
+      GATE_PLAYER_LOCK,
+      route.account,
+      () => this.DetachConnection(route, connectionId),
+      { timeoutMs: 0 },
+    );
+  }
+
+  /** 在玩家锁内分离物理连接，旧连接的迟到断线不能覆盖新连接。 / Detaches a physical connection under the player lock so a stale close cannot overwrite a replacement. */
+  private DetachConnection(route: GatePlayerRoute, connectionId: number): void {
     if (this.routesByConnection.get(connectionId) === route) {
       this.routesByConnection.delete(connectionId);
     }
@@ -182,13 +176,28 @@ export class GateScene extends EntryScene {
    * route. A replacement connection supersedes the old one, whose late close
    * event cannot remove the replacement or the Map Unit.
    */
-  LoginGate(session: GateSession, request: C2G_LoginGate): G2C_LoginGate {
+  async LoginGate(session: GateSession, request: C2G_LoginGate): Promise<G2C_LoginGate> {
     if (!request.account) {
       throw new RpcError(GameErrCode.AccountRequired, "account is required");
     }
     if (!request.token) {
       throw new RpcError(GameErrCode.TokenRequired, "token is required");
     }
+    const connectionId = session.ConnectionId;
+    return await this.Locks.RunExclusive(
+      GATE_CONNECTION_LOCK,
+      connectionId,
+      () => this.Locks.RunExclusive(
+        GATE_PLAYER_LOCK,
+        request.account,
+        () => this.LoginGateLocked(session, request),
+        { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
+      ),
+    );
+  }
+
+  /** 在连接锁和账号锁内提交认证与Route替换；调用方不得绕过两级锁。 / Commits authentication and route replacement under connection and account locks; callers must not bypass them. */
+  private LoginGateLocked(session: GateSession, request: C2G_LoginGate): G2C_LoginGate {
     if (session.IsAuthenticated && session.account !== request.account) {
       throw new RpcError(GameErrCode.GateSessionRequired, "connection already owns another account");
     }
@@ -228,6 +237,16 @@ export class GateScene extends EntryScene {
     }
 
     return { account: request.account };
+  }
+
+  /**
+   * 校验当前Gate会话并返回生成响应时的服务器Unix毫秒时间；它不承担网络往返时延修正。
+   * Validates the current Gate session and returns server Unix milliseconds at
+   * response creation time; it does not compensate for network round-trip delay.
+   */
+  Ping(session: GateSession): G2C_Ping {
+    this.RequireCurrentRoute(session);
+    return { serverTime: BigInt(TimerComponent.ServerTime()) };
   }
 
   @message(GateMessages.MapReady)
@@ -283,19 +302,37 @@ export class GateScene extends EntryScene {
   private KickPlayers(message: M2G_KickPlayers): void {
     for (const target of message.players) {
       const route = this.routesByUnitId.get(target.unitId);
-      if (!route || !route.BeginRemoving()) continue;
-      const connectionId = route.connectionId;
-      this.RemoveRoute(route);
-      if (connectionId === undefined || this.disconnecting.has(connectionId)) continue;
-      this.disconnecting.add(connectionId);
-      this.logger.info("map requested player route removal", {
-        account: route.account,
-        unitId: target.unitId,
-        connectionId,
-        reason: message.reason,
+      if (!route) continue;
+      void this.Locks.RunExclusive(
+        GATE_PLAYER_LOCK,
+        route.account,
+        () => this.KickPlayerLocked(route, target.unitId, message.reason),
+        { timeoutMs: 0 },
+      ).catch((error) => {
+        this.logger.error("map player kick failed", {
+          account: route.account,
+          unitId: target.unitId,
+          reason: message.reason,
+          error,
+        });
       });
-      this.disconnectClient(connectionId);
     }
+  }
+
+  /** 在玩家锁内移除Map已处理完成的Gate路由；这里不得再次通知Map下线。 / Removes a Map-completed Gate route under the player lock and must not notify Map offline again. */
+  private KickPlayerLocked(route: GatePlayerRoute, unitId: number, reason: string): void {
+    if (this.routesByUnitId.get(unitId) !== route || !route.BeginRemoving()) return;
+    const connectionId = route.connectionId;
+    this.RemoveRoute(route);
+    if (connectionId === undefined || this.disconnecting.has(connectionId)) return;
+    this.disconnecting.add(connectionId);
+    this.logger.info("map requested player route removal", {
+      account: route.account,
+      unitId,
+      connectionId,
+      reason,
+    });
+    this.disconnectClient(connectionId);
   }
 
   /**
@@ -311,11 +348,14 @@ export class GateScene extends EntryScene {
     request: C2G_EnterMap,
     spawnOverride?: ServerSpawnOverride,
   ): Promise<G2C_EnterMap> {
-    return await this.EnterMapCore(
+    return await this.RunPlayerTransaction(
       session,
-      request,
-      spawnOverride,
-      EntrySyncMode.Full,
+      () => this.EnterMapCore(
+        session,
+        request,
+        spawnOverride,
+        EntrySyncMode.Full,
+      ),
     );
   }
 
@@ -326,11 +366,14 @@ export class GateScene extends EntryScene {
     spawnOverride: ServerSpawnOverride,
     entrySyncMode: number,
   ): Promise<G2C_EnterMap> {
-    return await this.EnterMapCore(
+    return await this.RunPlayerTransaction(
       session,
-      request,
-      spawnOverride,
-      ParseEntrySyncMode(entrySyncMode),
+      () => this.EnterMapCore(
+        session,
+        request,
+        spawnOverride,
+        ParseEntrySyncMode(entrySyncMode),
+      ),
     );
   }
 
@@ -345,19 +388,21 @@ export class GateScene extends EntryScene {
     session: GateSession,
     request: C2G_MapSnapshotReady,
   ): Promise<G2C_MapSnapshotReady> {
-    const route = this.RequireCurrentRoute(session);
-    const map = route.map;
-    if (!map || map.unitId !== request.unitId || route.actorState === "moving") {
-      throw new RpcError(GameErrCode.MapNotFound, "initial snapshot route is not ready");
-    }
-    const response = await this.scenes.call<G2M_InitialSnapshot, M2G_InitialSnapshot>(
-      map.mapHost,
-      MapProtocol.InitialSnapshot,
-      { account: route.account, unitId: map.unitId },
-      { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
-    );
-    this.AssertCurrentRoute(session, route);
-    return { rpcId: request.rpcId, error: response.error, message: response.message };
+    return await this.RunPlayerTransaction(session, async () => {
+      const route = this.RequireCurrentRoute(session);
+      const map = route.map;
+      if (!map || map.unitId !== request.unitId || route.actorState === "moving") {
+        throw new RpcError(GameErrCode.MapNotFound, "initial snapshot route is not ready");
+      }
+      const response = await this.scenes.call<G2M_InitialSnapshot, M2G_InitialSnapshot>(
+        map.mapHost,
+        MapProtocol.InitialSnapshot,
+        { account: route.account, unitId: map.unitId },
+        { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
+      );
+      this.AssertCurrentRoute(session, route);
+      return { rpcId: request.rpcId, error: response.error, message: response.message };
+    });
   }
 
   /** 统一正式与Bench进图事务，只有调用入口决定初始同步模式。 / Shares the entry transaction while callers select the initial-sync policy. */
@@ -576,9 +621,9 @@ export class GateScene extends EntryScene {
     const now = TimeSystem.Instance.FrameTime;
     for (const route of [...this.routesByAccount.values()]) {
       if (route.IsReceiveTimedOut(now, GATE_CLIENT_TIMEOUT_MS)) {
-        this.BeginFinalOffline(route, "client-heartbeat-timeout");
+        this.QueueFinalOffline(route, "client-heartbeat-timeout");
       } else if (route.IsReconnectExpired(now, GATE_RECONNECT_GRACE_MS)) {
-        this.BeginFinalOffline(route, "client-reconnect-timeout");
+        this.QueueFinalOffline(route, "client-reconnect-timeout");
       }
     }
   }
@@ -637,14 +682,37 @@ export class GateScene extends EntryScene {
     };
   }
 
-  private BeginFinalOffline(route: GatePlayerRoute, reason: string): void {
-    if (!route.BeginRemoving()) return;
-    const connectionId = route.connectionId;
-    if (connectionId !== undefined && !this.disconnecting.has(connectionId)) {
-      this.disconnecting.add(connectionId);
-      this.disconnectClient(connectionId);
-    }
-    void this.FinalOffline(route, reason);
+  /** 每个账号最多排队一次最终下线事务；真正取得锁后重新检查超时，避免误踢刚重连的玩家。 / Queues at most one final-offline transaction per account and rechecks expiry after locking. */
+  private QueueFinalOffline(route: GatePlayerRoute, reason: string): void {
+    if (this.finalOfflinePending.has(route.account)) return;
+    this.finalOfflinePending.add(route.account);
+    void this.Locks.RunExclusive(
+      GATE_PLAYER_LOCK,
+      route.account,
+      async () => {
+        if (this.routesByAccount.get(route.account) !== route) return;
+        const now = TimeSystem.Instance.FrameTime;
+        const stillExpired = reason === "client-heartbeat-timeout"
+          ? route.IsReceiveTimedOut(now, GATE_CLIENT_TIMEOUT_MS)
+          : route.IsReconnectExpired(now, GATE_RECONNECT_GRACE_MS);
+        if (!stillExpired || !route.BeginRemoving()) return;
+        const connectionId = route.connectionId;
+        if (connectionId !== undefined && !this.disconnecting.has(connectionId)) {
+          this.disconnecting.add(connectionId);
+          this.disconnectClient(connectionId);
+        }
+        await this.FinalOffline(route, reason);
+      },
+      { timeoutMs: 0 },
+    ).catch((error) => {
+      this.logger.error("gate final offline transaction failed", {
+        account: route.account,
+        reason,
+        error,
+      });
+    }).finally(() => {
+      this.finalOfflinePending.delete(route.account);
+    });
   }
 
   private async FinalOffline(route: GatePlayerRoute, reason: string): Promise<void> {
@@ -679,6 +747,28 @@ export class GateScene extends EntryScene {
     } finally {
       this.RemoveRoute(route);
     }
+  }
+
+  /**
+   * 使用账号作为Gate状态事务键；Ping和纯查询不得调用，避免把无关消息重新串行化。
+   * Uses the account as the Gate state-transaction key. Ping and read-only work
+   * must not call this helper, otherwise unrelated messages become serialized again.
+   */
+  private RunPlayerTransaction<T>(
+    session: GateSession,
+    callback: () => T | Promise<T>,
+  ): Promise<T> {
+    if (!session.IsAuthenticated || !session.account) {
+      return Promise.reject(
+        new RpcError(GameErrCode.GateSessionRequired, "please login gate first"),
+      );
+    }
+    return this.Locks.RunExclusive(
+      GATE_PLAYER_LOCK,
+      session.account,
+      callback,
+      { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
+    );
   }
 
   private RequireCurrentRoute(session: GateSession): GatePlayerRoute {

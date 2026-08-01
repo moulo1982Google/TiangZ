@@ -1,8 +1,9 @@
 import { Actor, Component, Scene } from "./entities";
-import { component } from "./metadata";
+import { actor, component } from "./metadata";
 import type { ActorAwakeArgs, ActorCtor } from "./types";
 
 /** 表示一条连接的状态与 Mailbox；业务按需继承并挂载 Component。 / Represents one connection's state and mailbox; business code may extend it and attach Components. */
+@actor({ mailbox: "unordered" })
 export class Session<
   TAwakeArgs extends unknown[] = [],
 > extends Actor<TAwakeArgs> {

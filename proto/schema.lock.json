@@ -3708,9 +3708,17 @@
     {
       "key": "proto/OuterMessage_C_10001.proto#C2G_Ping",
       "name": "C2G_Ping",
-      "base": "IMessage",
-      "response": null,
-      "fields": []
+      "base": "IRequest",
+      "response": "G2C_Ping",
+      "fields": [
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2M_MapProbe",
@@ -4247,6 +4255,42 @@
       "base": "IResponse",
       "response": null,
       "fields": [
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_Ping",
+      "name": "G2C_Ping",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "server_time",
+          "type": "int64",
+          "repeated": false,
+          "synthetic": false
+        },
         {
           "number": 90,
           "name": "rpc_id",

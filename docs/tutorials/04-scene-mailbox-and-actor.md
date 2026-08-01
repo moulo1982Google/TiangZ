@@ -34,7 +34,7 @@ await this.scenes.send(
 - `ordered`：当前 Handler 完成前不开始下一条消息，包括跨越 `await`。
 - `unordered`：异步 Handler 可以重叠；同步 CPU 代码仍串行执行。
 
-`LoginScene` 选择 unordered，避免一个连接的 IO 等待阻塞其他连接；每个 Session 默认 ordered，保证同一连接串行。若同一账号允许从多个连接同时登录，账号级互斥应由账号领域锁或 Location 处理，不能把账号永久包装成 `LoginActor`。
+`LoginScene`与Session都选择unordered，避免一个连接的IO等待阻塞其他请求。需要一致性的状态转换按稳定Key使用协程锁：Gate认证先锁连接再锁账号，进图、重连、传送和下线锁账号；Ping与无状态查询不加锁。PlayerUnit显式使用ordered，保证同一玩家权威业务串行。不能把账号永久包装成`LoginActor`来代替真正的账号领域锁或Location。
 
 业务 Handler 按目标只有三种：
 

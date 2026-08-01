@@ -24,6 +24,8 @@ import {
   G2C_MapReadyCodec,
   G2C_MapSnapshotReady,
   G2C_MapSnapshotReadyCodec,
+  G2C_Ping,
+  G2C_PingCodec,
   G2C_AoiDelta,
   G2C_AoiDeltaCodec,
   M2C_MapProbe,
@@ -138,8 +140,17 @@ export function decodeMapSnapshotReadyFrame(
   return { msgcode, rpcId: body.rpcId, body };
 }
 
-export function buildPingPacket(): Uint8Array {
-  return encodePacket(MsgCode.C2G_Ping, C2G_PingCodec.encode({}));
+export function buildPingPacket(rpcId = 0): Uint8Array {
+  return encodePacket(MsgCode.C2G_Ping, C2G_PingCodec.encode({ rpcId }));
+}
+
+export function decodePingFrame(frame: Uint8Array): DecodedFrame<G2C_Ping> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_Ping) {
+    throw new Error(`expected G2C_Ping, got ${msgcode}`);
+  }
+  const body = G2C_PingCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
 }
 
 export function decodeLoginGateFrame(

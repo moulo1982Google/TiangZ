@@ -151,10 +151,13 @@ export { Game } from "./runtime/Game";
 export type { GameUpdateConfig } from "./runtime/Game";
 export { hotfixFor, systemFor } from "./hotReload/HotfixSystem";
 export { ProcessHost } from "./runtime/host";
-export { component, lifecycle, scene, transferable } from "./runtime/metadata";
+export { actor, component, lifecycle, scene, transferable } from "./runtime/metadata";
 export type { LifecycleOptions } from "./runtime/metadata";
 export { Singleton, SingletonRegistry } from "./runtime/Singleton";
-export { TimerSystem } from "./runtime/TimerSystem";
+export {
+  TimerSystem,
+  TimerSystem as TimerComponent,
+} from "./runtime/TimerSystem";
 export type {
   TimerCancelledContext,
   TimerCancelReason,

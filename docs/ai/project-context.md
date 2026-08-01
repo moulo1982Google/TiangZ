@@ -67,9 +67,9 @@ Actor是运行时路由概念，不是要求业务继承并随意创建的第四
 - `ordered`保证同一mailbox的消息跨越`await`仍然串行。
 - `unordered`允许异步调用重叠，但所有CPU代码仍在同一TS线程执行。
 
-这解决了Skynet协程在`call`让出时可能处理后续消息而造成逻辑重入的问题。Session和Unit默认使用ordered mailbox。Login/Gate入口Scene使用unordered，使不同连接可以并行；同一连接跨`await`仍由Session串行。账号级并发不是连接级并发，只有真实账号业务需要时才使用账号Location或领域锁，不能用永久`LoginActor`伪装账号状态。
+这解决了Skynet协程在`call`让出时可能处理后续消息而造成逻辑重入的问题，但不能把所有对象都设为ordered。Session默认使用unordered，允许同一连接的无关RPC跨`await`重叠；PlayerUnit显式使用ordered，保持单玩家权威业务串行。Login/Gate入口Scene同样使用unordered。Gate的登录、进图、重连、传送、快照确认和最终下线按连接或账号使用`Scene.Locks`，Ping不加锁。账号级并发只有真实业务需要时才使用账号Location或领域锁，不能用永久`LoginActor`伪装账号状态。
 
-Gate连接状态分成两层：`GateSession`只代表一次物理连接，断开即销毁；`GatePlayerRoute`按账号保存`UnitId -> MapHost/Map/ActorInstanceId`和当前`connectionId`，在30秒重连宽限期内继续存在。客户端每5秒发送单向`C2G_Ping`，但Gate收到任意客户端帧都会刷新`lastReceiveTime`；出站排队只更新`lastSendTime`，绝不能延长存活期限。Ping由Gate的同步控制帧入口在Session mailbox之前消费，不创建Handler Promise，保证长时间Loading/EnterMap期间仍能续期；其他客户端业务帧不得借此绕过Handler和mailbox。Gate使用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
+Gate连接状态分成两层：`GateSession`只代表一次物理连接，断开即销毁；`GatePlayerRoute`按账号保存`UnitId -> MapHost/Map/ActorInstanceId`和当前`connectionId`，在30秒重连宽限期内继续存在。客户端每5秒调用`C2G_Ping -> G2C_Ping`，响应携带Gate生成响应时的Unix毫秒`serverTime`；Gate收到任意客户端帧都会先刷新`lastReceiveTime`，出站排队只更新`lastSendTime`，绝不能延长存活期限。Ping是无锁的普通TS RPC Handler；Session为unordered，所以它不会排在长时间EnterMap之后。会修改Route的操作按账号进入协程锁，断线和超时下线取得锁后必须重新校验连接所有权或超时条件。Gate使用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
 
 同账号新连接会在Gate内原子替换旧`connectionId`。旧socket迟到的disconnect只销毁旧Session，不能清理新连接或Map Unit。重连后Gate以现有Actor路由调用`SecondEnterMap`，Map只清除旧移动意图并返回权威全量快照，不创建Unit、不重新广播AOI进入、不改绑Gate。宽限期结束后Gate才调用`PlayerOffline`；Map完成保存、Unit移除和AOI离开广播后响应，Gate最后删除Route。Map不拥有断线Timer，也不保存`gateSessionId`。
 
@@ -139,8 +139,8 @@ TiangZ Developer Tools `v0.15.0`把可机械判断的部分固化到不依赖VS 
 - 需要异步顺序的工作应通过消息或Actor定时器重新进入mailbox。
 - Component和ChildEntity定时器在所有者销毁时自动取消；挂在Actor下时回调遵循该Actor mailbox。
 - 所有者Timer返回唯一`TimerId`，支持原样业务参数和主动取消方法；取消至多通知一次，Owner销毁时静默清理。
-- `FrameTime`是不可持久化单调时间；活动时间和跨重启截止时间使用`ServerNow`及deadline helper。
-- `Scene.Locks`提供`Scene InstanceId + domain + key`的本Process FIFO协程锁，不是分布式锁；跨Process先路由到唯一所有者。
+- `FrameTime`是不可持久化单调时间；活动时间和跨重启截止时间使用`ServerNow`及deadline helper。业务需要协议时间戳时可调用`TimerComponent.ServerTime()`取得当前Unix毫秒；它与`TimerSystem`是同一单例类型的公开别名，不是第二套定时器。
+- `Scene.Locks`提供`Scene InstanceId + domain + key`的本Process FIFO协程锁，不是分布式锁；跨Process先路由到唯一所有者。无竞争锁必须同步进入回调，保证第一个`await`前建立的传送屏障等状态不会被后续unordered消息抢跑。
 - Developer Tools会检查StartMachine实际部署集合中的`process.identity`、Timer方法名与取消回调、Scene Event同步/异步契约，以及`InstanceId/TimerId`误入持久化结构；这些规则与Runtime Foundation自测共同守住业务侧用法。
 - `Scene.Events`只发布当前Scene的同步/异步Event；跨Scene必须使用Message/RPC。
 

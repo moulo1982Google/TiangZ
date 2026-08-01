@@ -7,6 +7,8 @@ import {
   C2G_LoginGateCodec,
   C2G_MapSnapshotReady,
   C2G_MapSnapshotReadyCodec,
+  C2G_Ping,
+  C2G_PingCodec,
   C2M_MapProbe,
   C2M_MapProbeCodec,
   C2M_UseItem,
@@ -21,6 +23,8 @@ import {
   G2C_LoginGateCodec,
   G2C_MapSnapshotReady,
   G2C_MapSnapshotReadyCodec,
+  G2C_Ping,
+  G2C_PingCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
   M2C_UseItem,
@@ -74,6 +78,13 @@ export const GateProtocol = {
     requestCodec: C2G_MapSnapshotReadyCodec,
     responseCodec: G2C_MapSnapshotReadyCodec,
   }),
+  Ping: defineRpc<C2G_Ping, G2C_Ping>({
+    name: "Gate.Ping",
+    requestCode: MsgCode.C2G_Ping,
+    responseCode: MsgCode.G2C_Ping,
+    requestCodec: C2G_PingCodec,
+    responseCodec: G2C_PingCodec,
+  }),
 };
 
 export const MapProtocol = {
@@ -103,4 +114,5 @@ export const AllRpcDescriptors = [
   GateProtocol.MapSnapshotReady,
   MapProtocol.Probe,
   MapProtocol.UseItem,
+  GateProtocol.Ping,
 ] as const;

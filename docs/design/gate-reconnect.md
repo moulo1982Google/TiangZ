@@ -14,7 +14,7 @@ Map不保存connectionId或GateSessionId，也不启动断线Timer。当前Demo�
 
 ## 存活检测
 
-客户端SDK每5秒发送一次单向`C2G_Ping`。Gate在统一入站钩子中记录所有客户端帧，因此移动、技能或其他消息同样会刷新`lastReceiveTime`。Ping随后由`consumeClientControlFrame`在Session mailbox之前同步消费，不创建Handler Promise；这样即使同一Session正等待长时间EnterMap，心跳也不会排在业务RPC后面。该控制入口只允许O(1)连接状态更新，普通业务消息必须继续进入协议Handler。`lastSendTime`只表示TS已经把帧放入宿主出站队列，用于观测，不代表网络写入成功，也不参与存活判定。
+客户端SDK每5秒调用一次`C2G_Ping -> G2C_Ping`，响应携带Gate生成响应时的Unix毫秒。Gate在统一入站钩子中记录所有客户端帧，因此移动、技能或其他消息同样会刷新`lastReceiveTime`。GateSession是unordered，Ping作为普通TS Handler且不加锁，不会排在长时间EnterMap之后。登录使用连接与账号两级锁；进图、重连、传送和最终下线共享账号锁。断线先按账号取得锁再分离连接，超时任务取得锁后重新检查时限，避免旧连接事件或旧超时任务覆盖刚完成的重连。`lastSendTime`只表示TS已经把帧放入宿主出站队列，用于观测，不代表网络写入成功，也不参与存活判定。
 
 Gate每1秒扫描全部Route：
 

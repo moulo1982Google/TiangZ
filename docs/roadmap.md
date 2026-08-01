@@ -51,7 +51,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 状态：完成。
 
 - LoginMgr 选登录入口。
-- Login 与 Gate 的客户端协议进入连接 Session mailbox；不同连接并行，同一连接跨 `await` 串行。
+- Login与Gate的客户端协议进入unordered Session mailbox；共享状态转换按连接、账号等稳定Key使用协程锁，PlayerUnit保持ordered。
 - GateSession作为Entity只管理一次物理连接；GatePlayerRoute保存跨Session的玩家路由、心跳时间和30秒重连宽限。
 - MapHost 创建多个 MapScene；UnitComponent 统一管理 PlayerUnit/MonsterUnit/NpcUnit。
 - 服务端权威移动、多人 AOI 可见性和实体进出 Push。

@@ -211,7 +211,14 @@ message G2C_AoiDelta // IMessage
   repeated uint32 leaves = 3;
 }
 
+//ResponseType G2C_Ping
 // @ets.msg protocol=Gate method=Ping
-message C2G_Ping // IMessage
+message C2G_Ping // IRequest
 {
+}
+
+message G2C_Ping // IResponse
+{
+  // Gate生成响应时的Unix毫秒时间。
+  int64 server_time = 1;
 }
