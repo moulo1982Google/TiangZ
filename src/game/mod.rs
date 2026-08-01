@@ -8,6 +8,7 @@
 
 mod movement;
 mod numeric;
+pub(crate) mod numeric_formula;
 
 pub(crate) use movement::{op_native_unit_reset_movement, op_native_unit_set_movement_input};
 #[cfg(test)]

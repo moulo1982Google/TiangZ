@@ -430,6 +430,8 @@ numeric[NumericType.CurrentHp] += 1n;
 
 Rust自动维护`NumericType -> i64`值与dirty表，TS使用`bigint`，业务字面量应写`1n`。`1..999`是普通属性；`1000..9999`是只读派生结果；结果编号乘10后加`1/2/3`分别表示Base/Add/Pct。Rust只识别编号关系，不重复维护业务枚举。当前`MaxHp=1000`，`MaxHpBase/MaxHpAdd/MaxHpPct=10001/10002/10003`，公式为`(Base+Add)*(100+Pct)/100`。写来源时Rust先计算后原子提交，来源和变化后的结果分别标脏；直接写派生结果会被拒绝。新增同类属性只改TS编号，复杂跨属性公式应写独立Rust领域op。Numeric协议使用`int64`，FrameFlush按`(unitId, numericType)`合并。
 
+用`npm run perf:numeric`评估派生计算本身。默认业务仍使用清晰的单字段写入；只有基准和真实业务Profile都证明同一逻辑点会集中修改多个来源时，才考虑新增一次提交多个来源的粗粒度op，不能为了微基准数字强迫所有业务使用批量API。
+
 ### 固定字段Dirty Mask
 
 适合字段集合稳定且类型明确的状态，例如Unit速度、存活和显式传送坐标。在`.native`中使用`@replicated`和稳定`@memberId`，codegen生成setter置脏、强类型Delta和Peek/Ack。

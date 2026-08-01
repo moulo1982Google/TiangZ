@@ -3,11 +3,9 @@
 use deno_core::op2;
 use deno_error::JsErrorBox;
 
-const DERIVED_TYPE_MIN: u32 = 1_000;
-const DERIVED_TYPE_MAX: u32 = 9_999;
-const BASE_SUFFIX: u32 = 1;
-const ADD_SUFFIX: u32 = 2;
-const PCT_SUFFIX: u32 = 3;
+use super::numeric_formula::{
+    ADD_SUFFIX, BASE_SUFFIX, PCT_SUFFIX, derive_base_add_pct, is_derived_type, modifier_target,
+};
 
 #[op2(fast)]
 /// 为尚未拥有Numeric的Unit挂载空字典。 / Attaches an empty Numeric dictionary to a Unit that does not already own one.
@@ -48,7 +46,9 @@ pub(crate) fn set_numeric(
     value: i64,
 ) -> Result<bool, JsErrorBox> {
     if numeric_type == 0 {
-        return Err(JsErrorBox::generic("numeric type must be greater than zero"));
+        return Err(JsErrorBox::generic(
+            "numeric type must be greater than zero",
+        ));
     }
     if is_derived_type(numeric_type) {
         return Err(JsErrorBox::generic(format!(
@@ -63,29 +63,15 @@ pub(crate) fn set_numeric(
 
     let mut staged = vec![(numeric_type, value)];
     if let Some(target) = modifier_target(numeric_type) {
-        let base = i128::from(read_value(unit_handle, &staged, target * 10 + BASE_SUFFIX)?);
-        let addition = i128::from(read_value(unit_handle, &staged, target * 10 + ADD_SUFFIX)?);
-        let percentage = i128::from(read_value(unit_handle, &staged, target * 10 + PCT_SUFFIX)?);
-        let derived = (base + addition)
-            .checked_mul(100_i128 + percentage)
-            .ok_or_else(|| JsErrorBox::generic("numeric derived calculation overflowed i128"))?
-            / 100;
-        let derived = i64::try_from(derived)
-            .map_err(|_| JsErrorBox::generic("numeric derived value exceeds i64"))?;
+        let base = read_value(unit_handle, &staged, target * 10 + BASE_SUFFIX)?;
+        let addition = read_value(unit_handle, &staged, target * 10 + ADD_SUFFIX)?;
+        let percentage = read_value(unit_handle, &staged, target * 10 + PCT_SUFFIX)?;
+        let derived = derive_base_add_pct(base, addition, percentage)
+            .ok_or_else(|| JsErrorBox::generic("numeric derived value exceeds i64"))?;
         stage_value(&mut staged, target, derived);
     }
 
     crate::native_data::set_numeric_values(unit_handle, &staged)
-}
-
-fn is_derived_type(numeric_type: u32) -> bool {
-    (DERIVED_TYPE_MIN..=DERIVED_TYPE_MAX).contains(&numeric_type)
-}
-
-fn modifier_target(numeric_type: u32) -> Option<u32> {
-    let target = numeric_type / 10;
-    let suffix = numeric_type % 10;
-    (is_derived_type(target) && (BASE_SUFFIX..=PCT_SUFFIX).contains(&suffix)).then_some(target)
 }
 
 fn read_value(

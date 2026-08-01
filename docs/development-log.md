@@ -16,6 +16,8 @@
 - Numeric Native op和派生规则迁入`src/game/numeric.rs`。Numeric值全链路统一为Rust`i64`、protobuf`int64`和TS`bigint`；native-language v0.15.0提供无损op绑定。派生结果使用1000..9999，Base/Add/Pct按`result*10+1/+2/+3`编号，Rust无需重复声明业务常量；来源与结果原子更新并分别置脏，直接写结果会被拒绝。
 - 生成Extension暂时仍通过`crate::native_data`稳定导入op，Runtime只做`src/game`符号兼容转发。新增Buff、战斗等Rust业务不得继续堆入Host、Process或Native Store文件。
 - 冻结混合Handler语义：Actor消息先经过TS Location、实体定位和mailbox，再调用Rust领域模块；Rust业务随Process编译部署，不参与TS Hotfix。
+- 增加`npm run perf:numeric`纯Rust微基准，分别测普通写、单来源派生、Base/Add/Pct三次独立写和一次批量重算上限；派生公式抽为Runtime与基准共用内核，避免性能样例复制另一套算法。
+- 本机i7-13700F、10,000 Entity、5轮结果：普通写`18.69ns`，单来源派生`57.65ns`，三来源分别写`163.98ns/Entity`，批量一次重算理论上限`87.54ns/Entity`。派生绝对成本很低，当前不增加批量业务API；完整数据见`perf/results/numeric_derivation_latest.md`。
 
 ## 2026-08-01：共享启动目录与动态MapHost完整路由
 

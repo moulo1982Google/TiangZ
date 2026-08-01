@@ -114,6 +114,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run perf:bridge` | Rust/V8 bridge微基准 |
 | `npm run perf:protocol` | Codec/Handler协议微基准 |
 | `npm run perf:native-storage` | Handle Arena、Unit/Item类型分池和Unit冷热分池的纯Rust布局基准；不包含AOI与网络 |
+| `npm run perf:numeric` | Numeric普通写入、约定式派生重算和批量重算上限的纯Rust微基准 |
 | `npm run perf:child-entity -- --children 100000 --lookups 1000000` | ChildEntity创建、O(1)查询、稳定遍历、销毁与V8保留内存微基准；不包含Native、Timer、AOI和网络 |
 | `npm run perf:runtime:rust` | Rust客户端Runtime基准 |
 | `npm run perf:rpc-baseline` | Windows/Linux通用RPC Payload基线与报告 |

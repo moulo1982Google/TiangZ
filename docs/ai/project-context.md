@@ -334,6 +334,7 @@ Phase 4计划：
 - 进图链路以低基数指标拆分MapHost全链路、ID分配、Player创建、Location注册/确认、MapReady、Admission等待、AOI Attach、新玩家Snapshot和老玩家AOI Delta；对象条数与真实Transport字节分开统计，禁止为了观测在TS重复编码protobuf。`perf:map-entry-stages`通过Bench专用`entrySyncMode`运行Attach Only、新玩家快照、老玩家Enter和Full四组A/B；普通`C2G_EnterMap`永远使用Full，前三种残缺模式不得进入生产配置或业务代码。
 - Rust AOI前的权威Entity Store迁移已完成：generation handle目录只做定位与世代校验，`.native`生成Unit/Item类型池及Unit冷热布局；TS只持有生成NativeRef。Rust池容量、活跃实体、TS NativeRef和帧尾scratch扩容已进入Prometheus。迁移保留既有Native op语义；类型分池、冷热布局的微基准与地图容量报告仍须分开解释，不能把任一结果直接换算为生产服务器容量。
 - Numeric权威值统一为Rust`i64`、protobuf`int64`和TS`bigint`。普通属性编号为1..999；1000..9999为只读派生结果；`result*10+1/+2/+3`为Base/Add/Pct来源。Rust按编号约定原子重算，不维护MaxHp等TS业务常量；复杂跨属性公式必须使用显式领域op。
+- `npm run perf:numeric`是Numeric派生计算的纯Rust微基准，分开报告普通写、单来源重算、三次独立来源写和一次批量重算上限；结果不包含V8、protobuf、AOI或Socket，不能直接换算整服容量。
 - Map级同步策略共存：普通大世界使用状态同步，竞技场等独立Map可使用帧同步，高精度场景可使用高频状态同步。同步模式由Map创建配置和对应Component决定，不是Process或Runtime的全局选项；逻辑Tick、网络同步频率和客户端渲染频率必须解耦。该项排在普通状态同步与Rust AOI之后。
 - 怪物Actor、巡逻、仇恨和战斗。
 - Online/Presence等面向在线状态的业务索引；Location Actor路由基础已完成。

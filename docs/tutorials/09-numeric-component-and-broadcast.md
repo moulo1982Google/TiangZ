@@ -169,6 +169,7 @@ npm run test:native-data
 npm run test:map-broadcast
 npm run test:runtime
 npm run perf:dirty-replication
+npm run perf:numeric
 ```
 
 也可以使用语义更明确的同义命令，并调整测试规模：
@@ -178,6 +179,8 @@ npm run perf:state-sync -- --entities 1000 --warmup-ms 500 --duration-ms 2000
 ```
 
 该基准比较三条 Rust 本地热路径：Numeric 动态字典的修改、脏收集、批量 protobuf 编码与 Ack；Player 固定字段的 Dirty Mask、批量编码与字段级 Ack；Item 修改后立即独立编码 Event。输出包含 `changes/s`、`items/s`、`frames/s`、`MiB/s`、`B/item` 和 `ns/item`。
+
+`perf:numeric`进一步隔离Numeric写入和派生公式，不包含V8、protobuf或网络。它对比普通字段写入、单个来源触发一次重算、连续修改Base/Add/Pct触发三次重算，以及三项批量提交后只重算一次的理论上限；后者用于判断是否值得增加批量业务API，不代表当前`numeric[type]`单次赋值路径。
 
 它不包含 V8 FastOp、`BroadcastHub`、Gate、Socket 和客户端解码，因此用于判断数据结构及编码方式的相对成本，不代表网络全链路吞吐。
 
