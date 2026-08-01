@@ -387,6 +387,16 @@
       "code": 10013
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_NavigateInput",
+      "name": "C2M_NavigateInput",
+      "code": 10037
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_NavigateTo",
+      "name": "C2M_NavigateTo",
+      "code": 10034
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_UseItem",
       "name": "C2M_UseItem",
       "code": 10019
@@ -447,6 +457,11 @@
       "code": 10016
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EntityNavigate",
+      "name": "G2C_EntityNavigate",
+      "code": 10036
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_EntityNumeric",
       "name": "G2C_EntityNumeric",
       "code": 10017
@@ -490,6 +505,16 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_MapProbe",
       "name": "M2C_MapProbe",
       "code": 10015
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_NavigateInput",
+      "name": "M2C_NavigateInput",
+      "code": 10038
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_NavigateTo",
+      "name": "M2C_NavigateTo",
+      "code": 10035
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_UseItem",

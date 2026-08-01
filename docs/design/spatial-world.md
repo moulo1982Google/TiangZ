@@ -1,6 +1,6 @@
 # 地图空间与3D坐标契约
 
-本文冻结TiangZ从`0.4.0`开始使用的地图空间语义。它约束Rust权威数据、协议、游戏配置和客户端适配；Rust AOI已完成Phase 4.1，NavMesh3D的离线资产与Map Runtime装载已完成4.2.2，动态障碍与3D权威移动仍未完成。
+本文冻结TiangZ从`0.4.0`开始使用的地图空间语义。它约束Rust权威数据、协议、游戏配置和客户端适配；Rust AOI已完成Phase 4.1，NavMesh3D资产、Map Runtime装载和3D权威移动已完成4.2.3，射线、独立高度查询与动态障碍仍未完成。
 
 ## 世界坐标
 
@@ -24,7 +24,7 @@ Luban `MapConfig`使用`SpatialMode`选择空间实现：
 | 模式 | 当前状态 | 含义 |
 | --- | --- | --- |
 | `Grid2D` | 可运行 | X/Z规则网格，米制Cell，服务端Rust权威移动 |
-| `NavMesh3D` | Map 100运行时已启用 | tiled NavMesh、位置投影和寻路；射线、高度、动态障碍待补 |
+| `NavMesh3D` | Map 100运行时已启用 | tiled NavMesh、位置投影、寻路和连续权威移动；射线、高度、动态障碍待补 |
 
 `MapConfig`还包含出生点`spawnX/Y/Z/Yaw`、地图宽深Cell数`widthCells/depthCells`、米制`cellSizeMeters`、`aoiConfigId`以及`navigationAsset/version/hash`。`Cell`是可配置的最小空间单位：Grid2D按Cell离散移动，NavMesh3D允许在Cell内连续移动。`AoiConfig.gridSizeCells`声明一个AOI Grid包含多少个Cell；AOI Grid与NavMesh tile不是同一个概念。地图物理边界由地图制作与导航资源决定，配置记录其导出结果，不允许独立填写一份可能冲突的Grid数量。`NavMesh3D`配置缺少资源、版本或小写SHA-256时必须拒绝加载，路径越出`navigation/`目录或Hash不符也必须拒绝，不能退化为Grid2D。
 
@@ -63,7 +63,7 @@ MapInstanceId
 
 ## TS与Rust边界
 
-TS负责地图规则、AI意图、技能、任务、传送和副本流程。Rust负责高频且权威的空间工作：坐标、移动推进、NavMesh查询、AOI索引和批量快照。推荐使用`ProjectPosition`、`FindPath`、`SetMoveIntent`、`StopMovement`和`Raycast`等粗粒度调用；禁止在每个Tick逐顶点或逐路径节点跨越V8边界。
+TS负责地图规则、AI意图、技能、任务、传送和副本流程。Rust负责高频且权威的空间工作：坐标、移动推进、NavMesh查询、AOI索引和批量快照。`FindPath`是无副作用查询；`NavigateTo`提交世界目标，`NavigateInput`提交相对`yaw`的前后/横移方向，二者都让Rust持有路径、当前拐点和序号；零方向输入明确终止旧路径。`G2C_EntityNavigate`是可覆盖权威状态。禁止在每个Tick逐顶点或逐路径节点跨越V8边界。
 
 Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Component`，Rust空间层是Scene之下的原生能力，不取代Scene或把全部地图业务下沉。
 
@@ -103,7 +103,7 @@ Rust输出的多个Audience batch不会逐条穿过Map到Gate的内部Transport�
 - `navigationVersion/navigationHash`；
 - `fixedUpdateMs`。
 
-客户端必须先比较本地`MapConfig`与响应中的空间模式和导航版本，再允许玩家移动。Cocos 2D和Pixi只接受`Grid2D`；Cocos 3D灰盒已把普通SDK坐标转换为引擎`Vec3`并通过`MapClient.findPath()`预览服务端路径，但完整权威移动同步尚未完成。
+客户端必须先比较本地`MapConfig`与响应中的空间模式和导航版本，再允许玩家移动。Cocos 2D和Pixi只接受`Grid2D`；Cocos 3D把普通SDK坐标转换为`Vec3`，通过`MapClient.navigateTo()`提交目标并使用返回路径预测，通过`G2C_EntityNavigate`纠偏和插值远端玩家。客户端不得把预测位置写成第二份服务端权威数据。
 
 ## 协议兼容性
 

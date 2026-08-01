@@ -331,7 +331,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.2：NavMesh3D
 
-状态：4.2.2运行时装载与粗粒度查询已完成；射线、高度、动态障碍和3D权威移动尚未完成。
+状态：4.2.3 Rust权威移动与多人AOI同步已完成；射线、独立高度查询和动态障碍尚未完成。
 
 - 固定并接入Recast/Detour兼容的tiled NavMesh资源格式，校验`navigationVersion/navigationHash`。
 - Rust实现位置投影、寻路、射线、高度查询、动态障碍与地图实例生命周期。
@@ -341,11 +341,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 4.2.2已按冷配置在Map创建时加载NavMesh3D，按Hash共享不可变资产并为每个MapInstance创建独立查询上下文；Map 100完成出生点投影、AOI接入、真实单/拆分进程传送和`ProjectPosition/FindPath`粗粒度FastOP。`C2M_FindPath`只做Actor路径查询，不修改权威坐标。新增导航资产/实例Prometheus指标和受信项目根目录路径校验。
 
+4.2.3新增`C2M_NavigateTo/C2M_NavigateInput`意图与`G2C_EntityNavigate`可覆盖状态。Rust从权威坐标寻路、持有路径和当前拐点，并由20Hz固定Tick连续推进`x/y/z/yaw`；TS每次目标或方向变化只跨一次Native边界。方向输入使用500ms短路径续期，零输入明确停止；后退和横移保留角色朝向。3D位置沿用Rust AOI同步档位和Gate批量路由，开始、换目标、停止强制立即发送。Cocos 3D支持左键寻路、W/S前后、A/D转向、按住右键时A/D横移和尾随相机；本地预测以权威Push纠偏，远端玩家只插值。
+
 ### Phase 4.3：Cocos 3D Demo
 
-状态：Cocos Creator 3.8.8灰盒查询Demo已可运行；权威移动同步尚未开始。
+状态：Cocos Creator 3.8.8灰盒、权威点击移动、本地纠偏和远端玩家插值已可运行。
 
-- 已完成公共SDK、`Vec3`边界转换、Map 100登录、点击服务端寻路和本地路径预览；继续完成3D权威移动、方向输入、多人插值与服务端校正。
+- 已完成公共SDK、`Vec3`边界转换、Map 100登录、点击权威寻路、魔兽式方向输入、尾随相机、预测/校正和多人插值；正式角色资源继续按业务需求补充。
 - 保留Cocos 2D与Pixi Grid2D回归，证明SDK协议结构不依赖具体引擎坐标类型。
 
 ### Phase 4.4：怪物与战斗

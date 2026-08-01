@@ -60,6 +60,8 @@ export {
   PlayerUnit,
   type AwakePlayerUnit,
   type FindNavigationPath,
+  type NavigatePlayerTo,
+  type NavigatePlayerInput,
   type MatchPlayerGate,
   type MovePlayer,
   type PlayerSnapshot,

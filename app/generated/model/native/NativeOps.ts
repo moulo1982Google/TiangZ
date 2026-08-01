@@ -13,6 +13,8 @@ export interface NativeHostOpsApi {
   spatialCreateNavMesh3D(mapId: number, widthCells: number, depthCells: number, cellSizeMillimeters: number, assetPath: Uint8Array, expectedHash: Uint8Array): void;
   spatialProjectPosition(mapId: number, x: number, y: number, z: number, extentX: number, extentY: number, extentZ: number): Uint8Array;
   spatialFindPath(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number, maxPoints: number): Uint8Array;
+  unitSetNavigationTarget(mapId: number, handle: number, targetX: number, targetY: number, targetZ: number, sequence: number): Uint8Array;
+  unitSetNavigationInput(mapId: number, handle: number, forward: number, strafe: number, yaw: number, sequence: number): Uint8Array;
   spatialRelease(mapId: number): void;
   aoiCreate(mapId: number, gridSizeMillimeters: number, enterRadiusGrids: number, detachRadiusGrids: number, syncTiers: Uint8Array): void;
   aoiRelease(mapId: number): void;
@@ -36,6 +38,7 @@ export interface NativeHostOpsApi {
   mapAdvanceMovement(mapId: number, serverTick: number, fixedUpdateMs: number): number;
   mapTakeMovementAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapTakeMovementAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number): Uint8Array;
+  mapTakeNavigationAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number): Uint8Array;
   dataTakeMetrics(): Uint8Array;
 }
 
@@ -113,6 +116,14 @@ export class NativeOps {
 
   static SpatialFindPath(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number, maxPoints: number): Uint8Array {
     return nativeHostOps().spatialFindPath(mapId, startX, startY, startZ, endX, endY, endZ, extentX, extentY, extentZ, maxPoints);
+  }
+
+  static UnitSetNavigationTarget(mapId: number, handle: number, targetX: number, targetY: number, targetZ: number, sequence: number): Uint8Array {
+    return nativeHostOps().unitSetNavigationTarget(mapId, handle, targetX, targetY, targetZ, sequence);
+  }
+
+  static UnitSetNavigationInput(mapId: number, handle: number, forward: number, strafe: number, yaw: number, sequence: number): Uint8Array {
+    return nativeHostOps().unitSetNavigationInput(mapId, handle, forward, strafe, yaw, sequence);
   }
 
   static SpatialRelease(mapId: number): void {
@@ -205,6 +216,10 @@ export class NativeOps {
 
   static MapTakeMovementAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number): Uint8Array {
     return nativeHostOps().mapTakeMovementAoiRouteFrames(mapId, serverTick, clientMessageCode, routeMessageCode);
+  }
+
+  static MapTakeNavigationAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number): Uint8Array {
+    return nativeHostOps().mapTakeNavigationAoiRouteFrames(mapId, serverTick, clientMessageCode, routeMessageCode);
   }
 
   static DataTakeMetrics(): Uint8Array {

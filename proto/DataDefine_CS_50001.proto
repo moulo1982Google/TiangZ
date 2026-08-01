@@ -42,6 +42,18 @@ message NavigationPathPoint
   float z = 3;
 }
 
+// NavMesh3D连续移动的权威状态；坐标是玩家脚底在地图局部空间中的米制位置。
+message NavigationMovementState
+{
+  uint32 unit_id = 1;
+  uint32 acknowledged_sequence = 2;
+  float x = 3;
+  float y = 4;
+  float z = 5;
+  float yaw = 6;
+  bool moving = 7;
+}
+
 message UnitNumericDelta
 {
   uint32 unit_id = 1;

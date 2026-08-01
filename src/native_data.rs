@@ -18,7 +18,10 @@ pub(crate) use crate::game::{
     op_native_numeric_attach, op_native_numeric_detach, op_native_numeric_get,
     op_native_numeric_set,
 };
-pub(crate) use crate::game::{op_native_unit_reset_movement, op_native_unit_set_movement_input};
+pub(crate) use crate::game::{
+    op_native_unit_reset_movement, op_native_unit_set_movement_input,
+    op_native_unit_set_navigation_input, op_native_unit_set_navigation_target,
+};
 #[cfg(test)]
 use crate::generated::native_data::{EntityData, UnitData, UnitSplitData};
 use crate::generated::native_data::{
@@ -30,6 +33,27 @@ const INDEX_BITS: u32 = 20;
 const INDEX_MASK: u32 = (1 << INDEX_BITS) - 1;
 const MAX_GENERATION: u32 = (1 << (32 - INDEX_BITS)) - 1;
 const NATIVE_UNIT_RECORD_BYTES: usize = 46;
+
+#[derive(Clone)]
+struct NavigationMovement {
+    points: Vec<[f32; 3]>,
+    next_point: usize,
+    state_changed: bool,
+    preserve_yaw: bool,
+}
+
+#[derive(Clone, Copy)]
+struct NavigationMovementRecord {
+    unit_id: u32,
+    sequence: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+    yaw: f32,
+    moving: bool,
+    state_changed: bool,
+}
+
 #[derive(Clone, Copy)]
 struct Grid2DBounds {
     min_x: i32,
@@ -145,6 +169,7 @@ struct NativeEntityStore {
     spatial_bounds: HashMap<u32, Grid2DBounds>,
     navigation_assets: NavigationAssetCache,
     navigation_worlds: HashMap<u32, NavigationWorld>,
+    navigation_movements: HashMap<u32, NavigationMovement>,
     aoi_worlds: HashMap<u32, AoiWorld>,
     aoi_dirty_by_map: HashMap<u32, HashSet<u32>>,
     numerics_by_unit: HashMap<u32, NumericData>,
@@ -152,6 +177,8 @@ struct NativeEntityStore {
     scratch_movement_records: Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>,
     scratch_changed_positions: Vec<(u32, f32, f32)>,
     pending_movement_records: HashMap<u32, Vec<[u8; NATIVE_UNIT_RECORD_BYTES]>>,
+    scratch_navigation_records: Vec<NavigationMovementRecord>,
+    pending_navigation_records: HashMap<u32, Vec<NavigationMovementRecord>>,
     scratch_numeric_records: Vec<(u32, u32, i64)>,
     scratch_unit_delta_records: Vec<UnitDeltaRecord>,
     numeric_revision: u64,
@@ -247,6 +274,7 @@ impl NativeEntityStore {
         }
         if let Some((_, map_id)) = unit_identity {
             self.numerics_by_unit.remove(&handle);
+            self.navigation_movements.remove(&handle);
             if let Some(dirty) = self.aoi_dirty_by_map.get_mut(&map_id) {
                 dirty.remove(&handle);
                 if dirty.is_empty() {
@@ -301,6 +329,14 @@ impl NativeEntityStore {
             + self.scratch_movement_records.capacity()
                 * std::mem::size_of::<[u8; NATIVE_UNIT_RECORD_BYTES]>()
             + pending_movement_capacity * std::mem::size_of::<[u8; NATIVE_UNIT_RECORD_BYTES]>()
+            + self.scratch_navigation_records.capacity()
+                * std::mem::size_of::<NavigationMovementRecord>()
+            + self
+                .pending_navigation_records
+                .values()
+                .map(Vec::capacity)
+                .sum::<usize>()
+                * std::mem::size_of::<NavigationMovementRecord>()
             + self.scratch_numeric_records.capacity() * std::mem::size_of::<(u32, u32, i64)>()
             + self.scratch_unit_delta_records.capacity() * std::mem::size_of::<UnitDeltaRecord>())
             as u64
@@ -412,6 +448,16 @@ pub(crate) fn reset_unit_movement(handle: u32) -> Result<(), JsErrorBox> {
             .get_unit_cold(location)
             .ok_or_else(|| wrong_entity_type(handle, "Unit"))?
             .map_id;
+        if store.navigation_worlds.contains_key(&map_id) {
+            store.navigation_movements.remove(&handle);
+            let unit = store.get_unit_hot_mut(handle)?;
+            unit.input_x = 0;
+            unit.input_z = 0;
+            unit.input_changed = 0;
+            unit.sequence = 0;
+            unit.moving = 0;
+            return Ok(());
+        }
         let bounds = *store.spatial_bounds.get(&map_id).ok_or_else(|| {
             JsErrorBox::generic(format!("map {map_id} has no Grid2D spatial state"))
         })?;
@@ -1040,6 +1086,156 @@ fn native_spatial_find_path(
     })
 }
 
+/// 设置Unit的NavMesh移动目标；返回值前4字节是确认序号，后续是路径点数组。 / Sets a Unit NavMesh target; the first four bytes are the acknowledged sequence followed by path points.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn set_unit_navigation_target(
+    map_id: u32,
+    handle: u32,
+    target_x: f64,
+    target_y: f64,
+    target_z: f64,
+    sequence: u32,
+) -> Result<Vec<u8>, JsErrorBox> {
+    let target = [
+        finite_f32(target_x, "targetX")?,
+        finite_f32(target_y, "targetY")?,
+        finite_f32(target_z, "targetZ")?,
+    ];
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let (current, current_sequence, unit_map_id) = {
+            let (hot, cold) = store.get_unit_parts(handle)?;
+            ([hot.x, hot.y, hot.z], hot.sequence, cold.map_id)
+        };
+        if unit_map_id != map_id {
+            return Err(JsErrorBox::generic(format!(
+                "native Unit belongs to map {unit_map_id}, not {map_id}"
+            )));
+        }
+        if sequence <= current_sequence {
+            let mut result = Vec::with_capacity(4);
+            result.extend_from_slice(&current_sequence.to_le_bytes());
+            return Ok(result);
+        }
+        let points = store
+            .navigation_worlds
+            .get(&map_id)
+            .ok_or_else(|| {
+                JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+            })?
+            .find_path(current, target, [2.0, 4.0, 2.0], 64)
+            .map_err(|error| JsErrorBox::generic(format!("{error:#}")))?;
+        {
+            let unit = store.get_unit_hot_mut(handle)?;
+            unit.sequence = sequence;
+            unit.input_x = 0;
+            unit.input_z = 0;
+            unit.input_changed = 0;
+            unit.moving = u32::from(points.len() > 1);
+        }
+        store.navigation_movements.insert(
+            handle,
+            NavigationMovement {
+                next_point: usize::from(points.len() > 1),
+                points: points.clone(),
+                state_changed: true,
+                preserve_yaw: false,
+            },
+        );
+        let mut result = Vec::with_capacity(8 + points.len() * 12);
+        result.extend_from_slice(&sequence.to_le_bytes());
+        result.extend_from_slice(&encode_nav_points(&points));
+        Ok(result)
+    })
+}
+
+/// 提交相对朝向的NavMesh方向输入；非零输入生成短路径，零输入清理旧路径并产生停止状态。 / Submits facing-relative NavMesh input; non-zero input creates a short path while zero input clears the old path and emits a stop state.
+pub(crate) fn set_unit_navigation_input(
+    map_id: u32,
+    handle: u32,
+    forward: i8,
+    strafe: i8,
+    yaw: f64,
+    sequence: u32,
+) -> Result<Vec<u8>, JsErrorBox> {
+    if !(-1..=1).contains(&forward) || !(-1..=1).contains(&strafe) {
+        return Err(JsErrorBox::generic(
+            "navigation input must use discrete values from -1 to 1",
+        ));
+    }
+    let yaw = finite_f32(yaw, "yaw")?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let (current, current_sequence, unit_map_id, speed) = {
+            let (hot, cold) = store.get_unit_parts(handle)?;
+            (
+                [hot.x, hot.y, hot.z],
+                hot.sequence,
+                cold.map_id,
+                hot.speed_cells_per_second,
+            )
+        };
+        if unit_map_id != map_id {
+            return Err(JsErrorBox::generic(format!(
+                "Unit map mismatch: expected {map_id}, actual {unit_map_id}"
+            )));
+        }
+        if sequence <= current_sequence {
+            return Ok(current_sequence.to_le_bytes().to_vec());
+        }
+
+        let mut points = vec![current];
+        if forward != 0 || strafe != 0 {
+            let forward_x = yaw.sin();
+            let forward_z = yaw.cos();
+            let right_x = -yaw.cos();
+            let right_z = yaw.sin();
+            let mut direction_x = forward_x * f32::from(forward) + right_x * f32::from(strafe);
+            let mut direction_z = forward_z * f32::from(forward) + right_z * f32::from(strafe);
+            let length = (direction_x * direction_x + direction_z * direction_z).sqrt();
+            direction_x /= length;
+            direction_z /= length;
+            let horizon = (speed.max(0.0) * 0.75).max(3.0);
+            let target = [
+                current[0] + direction_x * horizon,
+                current[1],
+                current[2] + direction_z * horizon,
+            ];
+            points = store
+                .navigation_worlds
+                .get(&map_id)
+                .ok_or_else(|| {
+                    JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+                })?
+                .find_path(current, target, [2.0, 4.0, 2.0], 64)
+                .map_err(|error| JsErrorBox::generic(format!("{error:#}")))?;
+        }
+
+        {
+            let unit = store.get_unit_hot_mut(handle)?;
+            unit.sequence = sequence;
+            unit.yaw = yaw;
+            unit.input_x = 0;
+            unit.input_z = 0;
+            unit.input_changed = 0;
+            unit.moving = u32::from(points.len() > 1);
+        }
+        store.navigation_movements.insert(
+            handle,
+            NavigationMovement {
+                next_point: usize::from(points.len() > 1),
+                points: points.clone(),
+                state_changed: true,
+                preserve_yaw: true,
+            },
+        );
+        let mut result = Vec::with_capacity(8 + points.len() * 12);
+        result.extend_from_slice(&sequence.to_le_bytes());
+        result.extend_from_slice(&encode_nav_points(&points));
+        Ok(result)
+    })
+}
+
 fn decode_utf8<'a>(bytes: &'a [u8], name: &str) -> Result<&'a str, JsErrorBox> {
     let value = std::str::from_utf8(bytes)
         .map_err(|_| JsErrorBox::generic(format!("{name} must be UTF-8")))?;
@@ -1402,6 +1598,13 @@ pub(crate) fn op_native_spatial_release(map_id: u32) {
 fn native_spatial_release(map_id: u32) {
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
+        if let Some(handles) = store.units_by_map.get(&map_id).cloned() {
+            for handle in handles {
+                store.navigation_movements.remove(&handle);
+            }
+        }
+        store.pending_navigation_records.remove(&map_id);
+        store.pending_movement_records.remove(&map_id);
         store.spatial_bounds.remove(&map_id);
         store.navigation_worlds.remove(&map_id);
         store.navigation_assets.prune();
@@ -1480,6 +1683,7 @@ fn native_map_advance_movement(
             .spatial_bounds
             .get(&map_id)
             .ok_or_else(|| JsErrorBox::generic(format!("map {map_id} is not configured")))?;
+        let navigation = store.navigation_worlds.contains_key(&map_id);
         let handles = store.take_map_handles(map_id);
         let mut records = store
             .pending_movement_records
@@ -1489,16 +1693,32 @@ fn native_map_advance_movement(
         let previous_capacity = records.capacity();
         let mut changed_positions = take_scratch(&mut store.scratch_changed_positions);
         let previous_positions_capacity = changed_positions.capacity();
+        let mut navigation_records = store
+            .pending_navigation_records
+            .remove(&map_id)
+            .unwrap_or_else(|| take_scratch(&mut store.scratch_navigation_records));
+        navigation_records.clear();
+        let previous_navigation_capacity = navigation_records.capacity();
         let outcome = (|| {
-            update_map(
-                &mut store,
-                &handles,
-                server_tick,
-                fixed_update_ms as f32,
-                bounds,
-                &mut records,
-                &mut changed_positions,
-            )?;
+            if navigation {
+                update_navigation_map(
+                    &mut store,
+                    &handles,
+                    fixed_update_ms as f32,
+                    &mut navigation_records,
+                    &mut changed_positions,
+                )?;
+            } else {
+                update_map(
+                    &mut store,
+                    &handles,
+                    server_tick,
+                    fixed_update_ms as f32,
+                    bounds,
+                    &mut records,
+                    &mut changed_positions,
+                )?;
+            }
             let mut relocations = 0_u64;
             if let Some(world) = store.aoi_worlds.get_mut(&map_id) {
                 for &(unit_id, x, z) in &changed_positions {
@@ -1509,14 +1729,23 @@ fn native_map_advance_movement(
                 }
             }
             store.metrics.aoi_relocations += relocations;
-            Ok(records.len() as u32)
+            Ok(if navigation {
+                navigation_records.len() as u32
+            } else {
+                records.len() as u32
+            })
         })();
         store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
         store.metrics.scratch_growths +=
             u64::from(changed_positions.capacity() > previous_positions_capacity);
+        store.metrics.scratch_growths +=
+            u64::from(navigation_records.capacity() > previous_navigation_capacity);
         store.scratch_handles = handles;
         store.scratch_changed_positions = changed_positions;
         store.pending_movement_records.insert(map_id, records);
+        store
+            .pending_navigation_records
+            .insert(map_id, navigation_records);
         outcome
     })
 }
@@ -1607,6 +1836,46 @@ pub(crate) fn op_native_map_take_movement_aoi_route_frames(
     })
 }
 
+#[op2]
+/// 按AOI分档编码NavMesh3D权威位置，并在Rust内完成Observer到Gate的路由聚合。 / Encodes authoritative NavMesh positions with AOI tiers and groups observers by Gate in Rust.
+pub(crate) fn op_native_map_take_navigation_aoi_route_frames(
+    map_id: u32,
+    server_tick: u32,
+    client_message_code: u32,
+    route_message_code: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    let client_message_code = u16::try_from(client_message_code)
+        .map_err(|_| JsErrorBox::generic("client navigation message code exceeds uint16"))?;
+    let route_message_code = u16::try_from(route_message_code)
+        .map_err(|_| JsErrorBox::generic("Gate route message code exceeds uint16"))?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let records = store
+            .pending_navigation_records
+            .remove(&map_id)
+            .unwrap_or_default();
+        let result = {
+            let world = store.aoi_worlds.get(&map_id).ok_or_else(|| {
+                JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
+            })?;
+            encode_tiered_navigation_aoi_route_frames(
+                world,
+                &records,
+                server_tick,
+                client_message_code,
+                route_message_code,
+            )?
+        };
+        record_aoi_encoding_metrics(&mut store.metrics, &result);
+        let mut scratch = records;
+        scratch.clear();
+        if scratch.capacity() > store.scratch_navigation_records.capacity() {
+            store.scratch_navigation_records = scratch;
+        }
+        Ok(result.into())
+    })
+}
+
 fn update_map(
     store: &mut NativeEntityStore,
     handles: &[u32],
@@ -1626,6 +1895,78 @@ fn update_map(
         }
         if unit.moving != 0 || state_changed {
             records.push(encode_snapshot(unit, state_changed));
+        }
+    }
+    Ok(())
+}
+
+fn update_navigation_map(
+    store: &mut NativeEntityStore,
+    handles: &[u32],
+    fixed_update_ms: f32,
+    records: &mut Vec<NavigationMovementRecord>,
+    changed_positions: &mut Vec<(u32, f32, f32)>,
+) -> Result<(), JsErrorBox> {
+    for &handle in handles {
+        let Some(mut movement) = store.navigation_movements.remove(&handle) else {
+            continue;
+        };
+        let mut keep_movement = false;
+        {
+            let unit = store.get_unit_hot_mut(handle)?;
+            let previous = [unit.x, unit.y, unit.z];
+            let mut remaining = unit.speed_cells_per_second.max(0.0) * fixed_update_ms / 1_000.0;
+            while remaining > 0.0 && movement.next_point < movement.points.len() {
+                let target = movement.points[movement.next_point];
+                let delta = [target[0] - unit.x, target[1] - unit.y, target[2] - unit.z];
+                let distance =
+                    (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
+                if distance <= 0.0001 {
+                    unit.x = target[0];
+                    unit.y = target[1];
+                    unit.z = target[2];
+                    movement.next_point += 1;
+                    continue;
+                }
+                if !movement.preserve_yaw {
+                    unit.yaw = delta[0].atan2(delta[2]);
+                }
+                let step = remaining.min(distance);
+                let scale = step / distance;
+                unit.x += delta[0] * scale;
+                unit.y += delta[1] * scale;
+                unit.z += delta[2] * scale;
+                remaining -= step;
+                if step >= distance - 0.0001 {
+                    movement.next_point += 1;
+                }
+            }
+            if movement.next_point >= movement.points.len() {
+                unit.moving = 0;
+                movement.state_changed = true;
+            } else {
+                unit.moving = 1;
+                keep_movement = true;
+            }
+            if unit.x != previous[0] || unit.y != previous[1] || unit.z != previous[2] {
+                changed_positions.push((unit.id, unit.x, unit.z));
+            }
+            if unit.moving != 0 || movement.state_changed {
+                records.push(NavigationMovementRecord {
+                    unit_id: unit.id,
+                    sequence: unit.sequence,
+                    x: unit.x,
+                    y: unit.y,
+                    z: unit.z,
+                    yaw: unit.yaw,
+                    moving: unit.moving != 0,
+                    state_changed: movement.state_changed,
+                });
+            }
+        }
+        movement.state_changed = false;
+        if keep_movement {
+            store.navigation_movements.insert(handle, movement);
         }
     }
     Ok(())
@@ -1716,6 +2057,84 @@ fn encode_tiered_aoi_route_frames(
                 route_recipients,
                 &client_frame,
             );
+        }
+    }
+
+    let route_count = payloads_by_route
+        .iter()
+        .skip(1)
+        .filter(|payload| !payload.is_empty())
+        .count();
+    let mut bytes = Vec::with_capacity(
+        8 + payloads_by_route
+            .iter()
+            .map(|payload| 10 + payload.len())
+            .sum::<usize>(),
+    );
+    bytes.extend_from_slice(&total_items.to_le_bytes());
+    bytes.extend_from_slice(&(route_count as u32).to_le_bytes());
+    for (route_id, payload) in payloads_by_route.into_iter().enumerate().skip(1) {
+        if payload.is_empty() {
+            continue;
+        }
+        bytes.extend_from_slice(&(route_id as u32).to_le_bytes());
+        bytes.extend_from_slice(&((payload.len() + 2) as u32).to_le_bytes());
+        bytes.extend_from_slice(&route_message_code.to_be_bytes());
+        bytes.extend_from_slice(&payload);
+    }
+    Ok(bytes)
+}
+
+fn encode_tiered_navigation_aoi_route_frames(
+    world: &AoiWorld,
+    records: &[NavigationMovementRecord],
+    server_tick: u32,
+    client_message_code: u16,
+    route_message_code: u16,
+) -> Result<Vec<u8>, JsErrorBox> {
+    let subject_ids: Vec<_> = records.iter().map(|record| record.unit_id).collect();
+    let force: Vec<_> = records.iter().map(|record| record.state_changed).collect();
+    let delivery_groups = world.tiered_delivery_groups(&subject_ids, &force, server_tick);
+    let total_items = delivery_groups
+        .iter()
+        .map(|(_, indices)| indices.len() as u32)
+        .sum::<u32>();
+    let route_capacity = usize::try_from(world.max_delivery_route_id())
+        .map_err(|_| JsErrorBox::generic("AOI delivery route id exceeds usize"))?
+        .checked_add(1)
+        .ok_or_else(|| JsErrorBox::generic("AOI delivery route capacity overflow"))?;
+    let mut payloads_by_route: Vec<Vec<u8>> = (0..route_capacity).map(|_| Vec::new()).collect();
+    let mut recipients_by_route: Vec<Vec<u32>> = (0..route_capacity).map(|_| Vec::new()).collect();
+    let mut client_frame = Vec::with_capacity(256);
+
+    for (recipients, indices) in delivery_groups {
+        client_frame.clear();
+        encode_entity_navigate_frame_indices_into(
+            &mut client_frame,
+            client_message_code,
+            server_tick,
+            records,
+            &indices,
+        );
+        for route_recipients in &mut recipients_by_route {
+            route_recipients.clear();
+        }
+        for recipient_id in recipients {
+            let route_id = world.delivery_route_id(recipient_id).ok_or_else(|| {
+                JsErrorBox::generic(format!(
+                    "AOI observer {recipient_id} has no native delivery route"
+                ))
+            })?;
+            recipients_by_route[route_id as usize].push(recipient_id);
+        }
+        for (route_id, route_recipients) in recipients_by_route.iter().enumerate().skip(1) {
+            if !route_recipients.is_empty() {
+                encode_client_broadcast_batch_item(
+                    &mut payloads_by_route[route_id],
+                    route_recipients,
+                    &client_frame,
+                );
+            }
         }
     }
 
@@ -1927,6 +2346,32 @@ fn encode_entity_move_frame_indices_into(
         write_tag(frame, 2, 2);
         write_varint(frame, cell_movement_encoded_len(record) as u32);
         encode_cell_movement(frame, record);
+    }
+}
+
+fn encode_entity_navigate_frame_indices_into(
+    frame: &mut Vec<u8>,
+    message_code: u16,
+    server_tick: u32,
+    records: &[NavigationMovementRecord],
+    indices: &[usize],
+) {
+    frame.extend_from_slice(&message_code.to_be_bytes());
+    write_uint32_field(frame, 1, server_tick);
+    let mut item = Vec::with_capacity(40);
+    for &index in indices {
+        let record = records[index];
+        item.clear();
+        write_uint32_field(&mut item, 1, record.unit_id);
+        write_uint32_field(&mut item, 2, record.sequence);
+        write_float_field(&mut item, 3, record.x);
+        write_float_field(&mut item, 4, record.y);
+        write_float_field(&mut item, 5, record.z);
+        write_float_field(&mut item, 6, record.yaw);
+        write_bool_field(&mut item, 7, record.moving);
+        write_tag(frame, 2, 2);
+        write_varint(frame, item.len() as u32);
+        frame.extend_from_slice(&item);
     }
 }
 
@@ -2420,6 +2865,75 @@ mod tests {
             let store = slot.borrow();
             assert_eq!(store.navigation_assets.live_assets(), 0);
             assert!(store.navigation_worlds.is_empty());
+        });
+    }
+
+    #[test]
+    fn nav_mesh_target_stays_in_rust_and_advances_authoritative_position() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        configure_project_root(root).unwrap();
+        STORE.with(|slot| *slot.borrow_mut() = NativeEntityStore::default());
+        native_spatial_create_nav_mesh_3d(
+            1,
+            48,
+            48,
+            1_000,
+            b"navigation/maps/demo_3d/generated/navigation.bin",
+            b"94af0f91826b6c08d72f2402cd06383847cf8ceb7d87d9dd9067a2b9c862f304",
+        )
+        .unwrap();
+        let mut value = unit(77);
+        value.x = -12.0;
+        value.y = 0.2;
+        value.z = -12.0;
+        value.speed_cells_per_second = 4.0;
+        let handle = STORE.with(|slot| {
+            slot.borrow_mut()
+                .create(NativeEntityData::Unit(value))
+                .unwrap()
+        });
+
+        let accepted = set_unit_navigation_target(1, handle, 12.0, 0.0, 12.0, 1).unwrap();
+        assert_eq!(u32::from_le_bytes(accepted[0..4].try_into().unwrap()), 1);
+        assert!(u32::from_le_bytes(accepted[4..8].try_into().unwrap()) >= 3);
+        assert_eq!(native_map_advance_movement(1, 1, 50).unwrap(), 1);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let unit = store.get_unit_hot(handle).unwrap();
+            assert!(unit.x > -12.0 || unit.z > -12.0);
+            assert_eq!(unit.moving, 1);
+            assert!(store.navigation_movements.contains_key(&handle));
+            assert_eq!(store.pending_navigation_records[&1].len(), 1);
+        });
+
+        let stale = set_unit_navigation_target(1, handle, -10.0, 0.0, -10.0, 1).unwrap();
+        assert_eq!(u32::from_le_bytes(stale[0..4].try_into().unwrap()), 1);
+        assert_eq!(stale.len(), 4);
+
+        let yaw = std::f64::consts::FRAC_PI_2;
+        let directional = set_unit_navigation_input(1, handle, 1, 0, yaw, 2).unwrap();
+        assert_eq!(u32::from_le_bytes(directional[0..4].try_into().unwrap()), 2);
+        assert!(u32::from_le_bytes(directional[4..8].try_into().unwrap()) >= 2);
+        assert_eq!(native_map_advance_movement(1, 2, 50).unwrap(), 1);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let unit = store.get_unit_hot(handle).unwrap();
+            assert!((unit.yaw - std::f32::consts::FRAC_PI_2).abs() < 0.0001);
+            assert_eq!(unit.moving, 1);
+        });
+
+        let stopped = set_unit_navigation_input(1, handle, 0, 0, yaw, 3).unwrap();
+        assert_eq!(u32::from_le_bytes(stopped[0..4].try_into().unwrap()), 3);
+        assert_eq!(native_map_advance_movement(1, 3, 50).unwrap(), 1);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let unit = store.get_unit_hot(handle).unwrap();
+            assert_eq!(unit.moving, 0);
+            assert!(!store.navigation_movements.contains_key(&handle));
+            let record = store.pending_navigation_records[&1].last().unwrap();
+            assert_eq!(record.sequence, 3);
+            assert!(!record.moving);
+            assert!(record.state_changed);
         });
     }
 

@@ -3,6 +3,7 @@ import {
   Camera,
   Color,
   Component,
+  EventKeyboard,
   EventMouse,
   geometry,
   input,
@@ -10,16 +11,25 @@ import {
   Material,
   MeshRenderer,
   Node,
+  KeyCode,
   primitives,
   utils,
   Vec3,
 } from "cc";
 import { NATIVE } from "cc/env";
 import { LoginFlow } from "../Generated/SDK/Demo/LoginFlow";
+import { ClientMessageDispatcher } from "../Generated/SDK/Core/Net/ClientMessageDispatcher";
 import {
   GateClient,
   MapClient,
 } from "../Generated/SDK/Generated/Model/demo/protocol/clients";
+import type {
+  G2C_AoiDelta,
+  G2C_EntityNavigate,
+  MapEntitySnapshot,
+} from "../Generated/SDK/Generated/Model/demo/protocol/messages";
+import "../Generated/Hotfix/handlers";
+import { MapMessageScope3D } from "./MapMessageScope3D";
 import {
   GameConfigs,
   SpatialMode,
@@ -31,10 +41,26 @@ import "../Generated/SDK/Core/Net/NativeTransport";
 const { ccclass, property } = _decorator;
 const MAP_ID = 100;
 const PLAYER_HALF_HEIGHT = 0.9;
-const PLAYER_SPEED_METERS_PER_SECOND = 4;
 const ARRIVAL_DISTANCE = 0.05;
+const SNAP_DISTANCE = 2;
+const CORRECTION_RATE = 12;
+const REMOTE_SNAP_DISTANCE = 5;
+const CAMERA_DISTANCE = 8;
+const CAMERA_HEIGHT = 5;
+const CAMERA_LOOK_HEIGHT = 1.2;
+const CAMERA_FOLLOW_RATE = 10;
+const TURN_SPEED_RADIANS = Math.PI * 0.75;
+const MOUSE_YAW_RADIANS_PER_PIXEL = 0.004;
+const INPUT_REFRESH_SECONDS = 0.5;
+const INPUT_TURN_SEND_SECONDS = 0.1;
 
-/** Phase 4.2的3D导航灰盒入口；只演示服务端寻路查询，不冒充完整的权威移动同步。 / Phase 4.2 graybox entrypoint demonstrating server path queries without pretending to be authoritative movement replication. */
+interface RemotePlayer3D {
+  readonly node: Node;
+  readonly targetFoot: Vec3;
+  yaw: number;
+}
+
+/** Phase 4.2的3D导航灰盒入口；演示权威寻路、预测纠偏和AOI多人同步。 / Phase 4.2 graybox entrypoint for authoritative pathing, prediction correction, and AOI multiplayer sync. */
 @ccclass("GameBootstrap3D")
 export class GameBootstrap3D extends Component {
   @property
@@ -44,6 +70,7 @@ export class GameBootstrap3D extends Component {
   loginMgrPort = 7000;
 
   private camera!: Camera;
+  private cameraNode!: Node;
   private player!: Node;
   private targetMarker!: Node;
   private pathRoot!: Node;
@@ -53,23 +80,54 @@ export class GameBootstrap3D extends Component {
   private mapClient?: MapClient;
   private path: Vec3[] = [];
   private pathIndex = 0;
+  private directionalPrediction = false;
   private queryingPath = false;
+  private inputRequestInFlight = false;
+  private inputDirty = false;
+  private inputSendCooldown = 0;
+  private inputRefreshElapsed = 0;
+  private rightMouseHeld = false;
+  private playerYaw = 0;
+  private readonly pressedKeys = new Set<KeyCode>();
+  private localUnitId = 0;
+  private navigationSequence = 0;
+  private acknowledgedSequence = 0;
+  private playerSpeedMetersPerSecond = 4;
+  private authoritativeFoot = new Vec3();
+  private messageDispatcher?: ClientMessageDispatcher<GameBootstrap3D>;
+  private readonly remotePlayers = new Map<number, RemotePlayer3D>();
 
   onLoad(): void {
     this.buildGraybox();
     this.buildHud();
+    input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
+    input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
+    input.on(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
+    input.on(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
     input.on(Input.EventType.MOUSE_UP, this.onMouseUp, this);
     void this.loginAndEnter();
   }
 
   update(deltaTime: number): void {
     this.loginFlow?.update();
+    this.updateDirectionalInput(deltaTime);
     this.advanceAlongPath(deltaTime);
+    this.reconcileAuthoritativePosition(deltaTime);
+    this.interpolateRemotePlayers(deltaTime);
+    this.updateFollowCamera(deltaTime);
   }
 
   onDestroy(): void {
+    input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
+    input.off(Input.EventType.KEY_UP, this.onKeyUp, this);
+    input.off(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
+    input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
     input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
     this.loginFlow?.close();
+    this.messageDispatcher?.dispose();
+    this.messageDispatcher = undefined;
+    for (const remote of this.remotePlayers.values()) remote.node.destroy();
+    this.remotePlayers.clear();
     this.statusElement?.remove();
     this.statusElement = undefined;
     this.loginFlow = undefined;
@@ -85,12 +143,13 @@ export class GameBootstrap3D extends Component {
     const camera = cameraNode?.getComponent(Camera);
     if (!cameraNode || !camera) throw new Error("scene.scene缺少Main Camera");
     this.camera = camera;
+    this.cameraNode = cameraNode;
     camera.projection = Camera.ProjectionType.PERSPECTIVE;
     camera.fov = 50;
     camera.near = 0.1;
     camera.clearColor = new Color(20, 28, 32, 255);
-    cameraNode.setPosition(22, 24, 22);
-    cameraNode.lookAt(new Vec3(0, 0, 0));
+    cameraNode.setPosition(0, CAMERA_HEIGHT, -CAMERA_DISTANCE);
+    cameraNode.lookAt(new Vec3(0, CAMERA_LOOK_HEIGHT, 0));
 
     const world = new Node("NavigationGraybox");
     scene.addChild(world);
@@ -152,19 +211,70 @@ export class GameBootstrap3D extends Component {
       }
       this.gateSocket = result.gateSocket;
       this.mapClient = new MapClient(result.gateSocket);
-      this.setPlayerFootPosition(new Vec3(result.enterMap.x, result.enterMap.y, result.enterMap.z));
+      this.localUnitId = result.enterMap.unitId;
+      const localEntity = result.enterMap.entities.find((entity) => entity.unitId === this.localUnitId);
+      this.playerSpeedMetersPerSecond = localEntity?.speedCellsPerSecond ?? this.playerSpeedMetersPerSecond;
+      this.authoritativeFoot.set(result.enterMap.x, result.enterMap.y, result.enterMap.z);
+      this.playerYaw = localEntity?.yaw ?? 0;
+      this.setPlayerFootPosition(this.authoritativeFoot);
+      this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+      this.snapFollowCamera();
+      this.messageDispatcher = new ClientMessageDispatcher(
+        result.gateSocket,
+        MapMessageScope3D,
+        this,
+      );
+      for (const entity of result.enterMap.entities) this.UpsertRemotePlayer(entity);
       await new GateClient(result.gateSocket).mapSnapshotReady({ unitId: result.enterMap.unitId });
       this.setStatus(
         `${account} / Unit ${result.enterMap.unitId} / ${config.name}\n` +
-        `NavMesh ${config.navigationVersion} 已加载，点击地面查询服务端路径`,
+        `NavMesh ${config.navigationVersion} 已加载\nW/S前后，A/D转向，按住右键时A/D横移；左键点击地面寻路`,
       );
     } catch (error) {
       this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
+  /** 消费独立Handler转发的3D权威状态；本地用于纠偏，远端只做插值。 / Consumes authoritative 3D state from a dedicated handler for local correction and remote interpolation. */
+  ApplyNavigation(message: G2C_EntityNavigate): void {
+    for (const movement of message.movements) {
+      if (movement.unitId === this.localUnitId) {
+        if (movement.acknowledgedSequence < this.acknowledgedSequence) continue;
+        this.acknowledgedSequence = movement.acknowledgedSequence;
+        this.authoritativeFoot.set(movement.x, movement.y, movement.z);
+        this.playerYaw = movement.yaw;
+        if (!movement.moving && movement.acknowledgedSequence === this.navigationSequence) {
+          this.path.length = 0;
+          this.pathIndex = 0;
+        }
+        continue;
+      }
+      const remote = this.remotePlayers.get(movement.unitId);
+      if (!remote) continue;
+      remote.targetFoot.set(movement.x, movement.y, movement.z);
+      remote.yaw = movement.yaw;
+    }
+  }
+
+  /** 应用AOI进入离开事件；公开Snapshot足够创建远端外观，不读取其他玩家私有状态。 / Applies AOI enter/leave events using only public snapshots. */
+  ApplyAoiDelta(message: G2C_AoiDelta): void {
+    for (const entity of message.enters) this.UpsertRemotePlayer(entity);
+    for (const unitId of message.leaves) {
+      const remote = this.remotePlayers.get(unitId);
+      if (!remote) continue;
+      remote.node.destroy();
+      this.remotePlayers.delete(unitId);
+    }
+  }
+
   /** 将屏幕点击投射到y=0灰盒平面，并请求服务端Rust NavMesh路径。 / Projects a screen click onto the graybox plane and requests a Rust NavMesh path from the server. */
   private onMouseUp(event: EventMouse): void {
+    if (event.getButton() === EventMouse.BUTTON_RIGHT) {
+      this.rightMouseHeld = false;
+      this.markInputDirty();
+      return;
+    }
+    if (event.getButton() !== EventMouse.BUTTON_LEFT) return;
     if (!this.mapClient || this.queryingPath) return;
     const location = event.getLocation();
     const ray = new geometry.Ray();
@@ -181,27 +291,129 @@ export class GameBootstrap3D extends Component {
     void this.queryPath(target);
   }
 
-  /** 请求路径时传递当前预览位置；该查询不会修改服务端权威坐标。 / Sends the current preview position for a query that does not mutate authoritative server coordinates. */
+  private onMouseDown(event: EventMouse): void {
+    if (event.getButton() !== EventMouse.BUTTON_RIGHT) return;
+    this.rightMouseHeld = true;
+    this.interruptClickNavigation();
+    this.markInputDirty();
+  }
+
+  private onMouseMove(event: EventMouse): void {
+    if (!this.rightMouseHeld) return;
+    this.playerYaw = normalizeRadians(this.playerYaw - event.getDeltaX() * MOUSE_YAW_RADIANS_PER_PIXEL);
+    this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+    this.markInputDirty(false);
+  }
+
+  private onKeyDown(event: EventKeyboard): void {
+    if (!isMovementKey(event.keyCode) || this.pressedKeys.has(event.keyCode)) return;
+    this.pressedKeys.add(event.keyCode);
+    this.interruptClickNavigation();
+    this.markInputDirty();
+  }
+
+  private onKeyUp(event: EventKeyboard): void {
+    if (!this.pressedKeys.delete(event.keyCode)) return;
+    this.markInputDirty();
+  }
+
+  /** 将WASD解释为角色局部坐标输入；状态变化立即提交，持续移动每500ms续期短路径。 / Interprets WASD in local space, submits changes immediately, and refreshes the short path every 500 ms while held. */
+  private updateDirectionalInput(deltaTime: number): void {
+    this.inputSendCooldown = Math.max(0, this.inputSendCooldown - Math.max(0, deltaTime));
+    this.inputRefreshElapsed += Math.max(0, deltaTime);
+    const left = this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT);
+    const right = this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT);
+    if (!this.rightMouseHeld && left !== right) {
+      this.playerYaw = normalizeRadians(
+        this.playerYaw + (left ? 1 : -1) * TURN_SPEED_RADIANS * Math.max(0, deltaTime),
+      );
+      this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+      this.markInputDirty(false);
+    }
+    const input = this.currentDirectionalInput();
+    if ((input.forward !== 0 || input.strafe !== 0) && this.inputRefreshElapsed >= INPUT_REFRESH_SECONDS) {
+      this.inputDirty = true;
+    }
+    if (this.inputDirty && this.inputSendCooldown <= 0 && !this.inputRequestInFlight) {
+      void this.submitDirectionalInput(input.forward, input.strafe);
+    }
+  }
+
+  private currentDirectionalInput(): { forward: number; strafe: number } {
+    const forward = Number(this.isPressed(KeyCode.KEY_W) || this.isPressed(KeyCode.ARROW_UP)) -
+      Number(this.isPressed(KeyCode.KEY_S) || this.isPressed(KeyCode.ARROW_DOWN));
+    const strafe = this.rightMouseHeld
+      ? Number(this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT)) -
+        Number(this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT))
+      : 0;
+    return { forward, strafe };
+  }
+
+  private async submitDirectionalInput(forward: number, strafe: number): Promise<void> {
+    const mapClient = this.mapClient;
+    if (!mapClient) return;
+    this.inputRequestInFlight = true;
+    this.inputDirty = false;
+    this.inputRefreshElapsed = 0;
+    this.inputSendCooldown = INPUT_TURN_SEND_SECONDS;
+    const sequence = ++this.navigationSequence;
+    try {
+      const response = await mapClient.navigateInput({
+        forward,
+        strafe,
+        yaw: this.playerYaw,
+        sequence,
+      });
+      if (response.acknowledgedSequence !== sequence) return;
+      this.acknowledgedSequence = response.acknowledgedSequence;
+      this.path = response.points.map((point) => new Vec3(point.x, point.y, point.z));
+      this.pathIndex = this.path.length > 1 ? 1 : 0;
+      this.directionalPrediction = true;
+      this.drawPath(this.path);
+    } catch (error) {
+      this.setStatus(`方向移动失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.inputRequestInFlight = false;
+    }
+  }
+
+  private isPressed(key: KeyCode): boolean {
+    return this.pressedKeys.has(key);
+  }
+
+  private markInputDirty(immediate = true): void {
+    this.inputDirty = true;
+    if (immediate) this.inputSendCooldown = 0;
+  }
+
+  private interruptClickNavigation(): void {
+    this.path.length = 0;
+    this.pathIndex = 0;
+    this.drawPath([]);
+  }
+
+  /** 只提交目标点；服务端从Rust权威位置寻路并返回同一路径供本地预测。 / Submits only a target; the server paths from Rust-authoritative position and returns the same path for prediction. */
   private async queryPath(target: Vec3): Promise<void> {
     const mapClient = this.mapClient;
     if (!mapClient) return;
     this.queryingPath = true;
     this.targetMarker.active = true;
     this.targetMarker.setPosition(target.x, 0.05, target.z);
-    const start = this.player.position;
     try {
-      const response = await mapClient.findPath({
-        startX: start.x,
-        startY: start.y - PLAYER_HALF_HEIGHT,
-        startZ: start.z,
+      this.navigationSequence += 1;
+      const response = await mapClient.navigateTo({
         targetX: target.x,
         targetY: target.y,
         targetZ: target.z,
+        sequence: this.navigationSequence,
       });
+      if (response.acknowledgedSequence !== this.navigationSequence) return;
+      this.acknowledgedSequence = response.acknowledgedSequence;
       this.path = response.points.map((point) => new Vec3(point.x, point.y, point.z));
       this.pathIndex = this.path.length > 1 ? 1 : 0;
+      this.directionalPrediction = false;
       this.drawPath(this.path);
-      this.setStatus(`服务端返回 ${this.path.length} 个路径拐点；蓝色角色正在本地预览路径`);
+      this.setStatus(`服务端接受序号 ${response.acknowledgedSequence}，返回 ${this.path.length} 个路径拐点`);
     } catch (error) {
       this.path.length = 0;
       this.drawPath([]);
@@ -211,9 +423,9 @@ export class GameBootstrap3D extends Component {
     }
   }
 
-  /** 仅移动本地可视节点；服务端权威推进和其他玩家同步不属于本查询Demo。 / Moves only the local visual node; authoritative advancement and replication are outside this query demo. */
+  /** 沿服务端接受的同一路径推进本地预测；权威坐标仍由Push持续校正。 / Advances local prediction along the accepted server path while pushes continuously correct authority. */
   private advanceAlongPath(deltaTime: number): void {
-    let remaining = Math.max(0, deltaTime) * PLAYER_SPEED_METERS_PER_SECOND;
+    let remaining = Math.max(0, deltaTime) * this.playerSpeedMetersPerSecond;
     while (remaining > 0 && this.pathIndex < this.path.length) {
       const target = this.path[this.pathIndex];
       const foot = new Vec3(this.player.position.x, this.player.position.y - PLAYER_HALF_HEIGHT, this.player.position.z);
@@ -231,9 +443,103 @@ export class GameBootstrap3D extends Component {
       foot.y += direction.y * step;
       foot.z += direction.z * step;
       this.setPlayerFootPosition(foot);
-      this.player.setRotationFromEuler(0, Math.atan2(direction.x, direction.z) * 180 / Math.PI, 0);
+      if (!this.directionalPrediction) {
+        this.playerYaw = Math.atan2(direction.x, direction.z);
+        this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+      }
       remaining -= step;
     }
+  }
+
+  /** 平滑吸收预测与权威位置的小误差；只有明显脱离路径时才立即校正。 / Smoothly absorbs small prediction errors and snaps only after a clear divergence. */
+  private reconcileAuthoritativePosition(deltaTime: number): void {
+    if (this.localUnitId === 0) return;
+    const foot = new Vec3(
+      this.player.position.x,
+      this.player.position.y - PLAYER_HALF_HEIGHT,
+      this.player.position.z,
+    );
+    const error = Vec3.distance(foot, this.authoritativeFoot);
+    if (error <= 0.001) return;
+    if (error >= SNAP_DISTANCE) {
+      this.setPlayerFootPosition(this.authoritativeFoot);
+      return;
+    }
+    const blend = 1 - Math.exp(-CORRECTION_RATE * Math.max(0, deltaTime));
+    Vec3.lerp(foot, foot, this.authoritativeFoot, blend);
+    this.setPlayerFootPosition(foot);
+  }
+
+  private UpsertRemotePlayer(entity: MapEntitySnapshot): void {
+    if (entity.unitId === this.localUnitId) return;
+    let remote = this.remotePlayers.get(entity.unitId);
+    if (!remote) {
+      const node = createBox(
+        `RemotePlayer_${entity.unitId}`,
+        0.8,
+        1.8,
+        0.8,
+        new Color(220, 112, 142, 255),
+        entity.x,
+        entity.y + PLAYER_HALF_HEIGHT,
+        entity.z,
+      );
+      this.player.parent?.addChild(node);
+      remote = {
+        node,
+        targetFoot: new Vec3(entity.x, entity.y, entity.z),
+        yaw: entity.yaw,
+      };
+      this.remotePlayers.set(entity.unitId, remote);
+    } else {
+      remote.targetFoot.set(entity.x, entity.y, entity.z);
+      remote.yaw = entity.yaw;
+    }
+  }
+
+  /** 远端角色不运行本地预测，只在权威快照之间平滑插值。 / Remote players never predict input and only interpolate between authoritative snapshots. */
+  private interpolateRemotePlayers(deltaTime: number): void {
+    const blend = 1 - Math.exp(-CORRECTION_RATE * Math.max(0, deltaTime));
+    for (const remote of this.remotePlayers.values()) {
+      const foot = new Vec3(
+        remote.node.position.x,
+        remote.node.position.y - PLAYER_HALF_HEIGHT,
+        remote.node.position.z,
+      );
+      if (Vec3.distance(foot, remote.targetFoot) >= REMOTE_SNAP_DISTANCE) {
+        foot.set(remote.targetFoot);
+      } else {
+        Vec3.lerp(foot, foot, remote.targetFoot, blend);
+      }
+      remote.node.setPosition(foot.x, foot.y + PLAYER_HALF_HEIGHT, foot.z);
+      remote.node.setRotationFromEuler(0, remote.yaw * 180 / Math.PI, 0);
+    }
+  }
+
+  /** 尾随相机只读取当前可视位置和朝向，不参与权威移动或NavMesh计算。 / The trailing camera reads visual position and facing only and never participates in authority or NavMesh simulation. */
+  private updateFollowCamera(deltaTime: number): void {
+    if (!this.player || !this.cameraNode) return;
+    const foot = new Vec3(this.player.position.x, this.player.position.y - PLAYER_HALF_HEIGHT, this.player.position.z);
+    const desired = new Vec3(
+      foot.x - Math.sin(this.playerYaw) * CAMERA_DISTANCE,
+      foot.y + CAMERA_HEIGHT,
+      foot.z - Math.cos(this.playerYaw) * CAMERA_DISTANCE,
+    );
+    const position = new Vec3();
+    const blend = 1 - Math.exp(-CAMERA_FOLLOW_RATE * Math.max(0, deltaTime));
+    Vec3.lerp(position, this.cameraNode.position, desired, blend);
+    this.cameraNode.setPosition(position);
+    this.cameraNode.lookAt(new Vec3(foot.x, foot.y + CAMERA_LOOK_HEIGHT, foot.z));
+  }
+
+  private snapFollowCamera(): void {
+    const foot = this.authoritativeFoot;
+    this.cameraNode.setPosition(
+      foot.x - Math.sin(this.playerYaw) * CAMERA_DISTANCE,
+      foot.y + CAMERA_HEIGHT,
+      foot.z - Math.cos(this.playerYaw) * CAMERA_DISTANCE,
+    );
+    this.cameraNode.lookAt(new Vec3(foot.x, foot.y + CAMERA_LOOK_HEIGHT, foot.z));
   }
 
   /** 用脚底NavMesh坐标摆放可视模型，避免把模型中心误当作权威坐标。 / Places the visual model from its NavMesh foot point instead of treating its center as authoritative. */
@@ -295,4 +601,15 @@ function addGridLines(world: Node): void {
     world.addChild(createBox(`GridX_${coordinate}`, 0.035, 0.02, 48, color, coordinate, 0.011, 0));
     world.addChild(createBox(`GridZ_${coordinate}`, 48, 0.02, 0.035, color, 0, 0.011, coordinate));
   }
+}
+
+function isMovementKey(key: KeyCode): boolean {
+  return key === KeyCode.KEY_W || key === KeyCode.KEY_S || key === KeyCode.KEY_A ||
+    key === KeyCode.KEY_D || key === KeyCode.ARROW_UP || key === KeyCode.ARROW_DOWN ||
+    key === KeyCode.ARROW_LEFT || key === KeyCode.ARROW_RIGHT;
+}
+
+function normalizeRadians(value: number): number {
+  const fullTurn = Math.PI * 2;
+  return ((value + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
 }

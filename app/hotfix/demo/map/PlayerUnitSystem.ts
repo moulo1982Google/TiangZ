@@ -1,6 +1,8 @@
 import {
   type AwakePlayerUnit,
   type FindNavigationPath,
+  type NavigatePlayerTo,
+  type NavigatePlayerInput,
   type MatchPlayerGate,
   NativeData,
   NativeUnitRef,
@@ -86,6 +88,55 @@ export class PlayerUnitSystem extends PlayerUnit {
     return this.DomainScene().GetComponent(MapComponent).FindPath(
       { x: request.startX, y: request.startY, z: request.startZ },
       { x: request.targetX, y: request.targetY, z: request.targetZ },
+    );
+  }
+
+  /** 设置NavMesh3D权威移动目标；Rust持有路径并在固定Tick推进，返回路径仅供发起客户端预测。 / Sets an authoritative NavMesh target; Rust owns and advances the path while the returned path is only for initiating prediction. */
+  NavigateTo(request: NavigatePlayerTo): {
+    acknowledgedSequence: number;
+    points: readonly { x: number; y: number; z: number }[];
+  } {
+    if (GameConfigs.MapConfig.Get(this.mapId).spatialMode !== SpatialMode.NavMesh3D) {
+      throw new Error(`C2M_NavigateTo cannot drive Grid2D map ${this.mapId}`);
+    }
+    validateNavigationPoint(request.targetX, request.targetY, request.targetZ, "target");
+    if (!Number.isSafeInteger(request.sequence) || request.sequence <= 0) {
+      throw new Error(`invalid navigation sequence: ${request.sequence}`);
+    }
+    return NativeData.SetNavigationTarget(
+      this.DomainScene().GetComponent(MapComponent).NativeMapKey,
+      this.GetComponent(NativeUnitRef).Handle,
+      { x: request.targetX, y: request.targetY, z: request.targetZ },
+      request.sequence,
+    );
+  }
+
+  /** 设置相对角色朝向的方向移动；Rust负责寻路、停止和权威推进，TS不保存按键状态。 / Sets facing-relative movement while Rust owns pathing, stopping, and authoritative advancement; TS stores no key state. */
+  NavigateInput(request: NavigatePlayerInput): {
+    acknowledgedSequence: number;
+    points: readonly { x: number; y: number; z: number }[];
+  } {
+    if (GameConfigs.MapConfig.Get(this.mapId).spatialMode !== SpatialMode.NavMesh3D) {
+      throw new Error(`C2M_NavigateInput cannot drive Grid2D map ${this.mapId}`);
+    }
+    if (
+      !Number.isInteger(request.forward) ||
+      !Number.isInteger(request.strafe) ||
+      Math.abs(request.forward) > 1 ||
+      Math.abs(request.strafe) > 1 ||
+      !Number.isFinite(request.yaw) ||
+      !Number.isSafeInteger(request.sequence) ||
+      request.sequence <= 0
+    ) {
+      throw new Error("invalid NavMesh direction input");
+    }
+    return NativeData.SetNavigationInput(
+      this.DomainScene().GetComponent(MapComponent).NativeMapKey,
+      this.GetComponent(NativeUnitRef).Handle,
+      request.forward,
+      request.strafe,
+      request.yaw,
+      request.sequence,
     );
   }
 

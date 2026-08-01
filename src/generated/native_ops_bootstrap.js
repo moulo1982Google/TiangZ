@@ -53,6 +53,8 @@
     spatialCreateNavMesh3D: (mapId, widthCells, depthCells, cellSizeMillimeters, assetPath, expectedHash) => core.ops.op_native_spatial_create_nav_mesh3_d(u32(mapId, "mapId"), u32(widthCells, "widthCells"), u32(depthCells, "depthCells"), u32(cellSizeMillimeters, "cellSizeMillimeters"), bytes(assetPath, "assetPath"), bytes(expectedHash, "expectedHash")),
     spatialProjectPosition: (mapId, x, y, z, extentX, extentY, extentZ) => core.ops.op_native_spatial_project_position(u32(mapId, "mapId"), f64(x, "x"), f64(y, "y"), f64(z, "z"), f64(extentX, "extentX"), f64(extentY, "extentY"), f64(extentZ, "extentZ")),
     spatialFindPath: (mapId, startX, startY, startZ, endX, endY, endZ, extentX, extentY, extentZ, maxPoints) => core.ops.op_native_spatial_find_path(u32(mapId, "mapId"), f64(startX, "startX"), f64(startY, "startY"), f64(startZ, "startZ"), f64(endX, "endX"), f64(endY, "endY"), f64(endZ, "endZ"), f64(extentX, "extentX"), f64(extentY, "extentY"), f64(extentZ, "extentZ"), u32(maxPoints, "maxPoints")),
+    unitSetNavigationTarget: (mapId, handle, targetX, targetY, targetZ, sequence) => core.ops.op_native_unit_set_navigation_target(u32(mapId, "mapId"), u32(handle, "handle"), f64(targetX, "targetX"), f64(targetY, "targetY"), f64(targetZ, "targetZ"), u32(sequence, "sequence")),
+    unitSetNavigationInput: (mapId, handle, forward, strafe, yaw, sequence) => core.ops.op_native_unit_set_navigation_input(u32(mapId, "mapId"), u32(handle, "handle"), i8(forward, "forward"), i8(strafe, "strafe"), f64(yaw, "yaw"), u32(sequence, "sequence")),
     spatialRelease: (mapId) => core.ops.op_native_spatial_release(u32(mapId, "mapId")),
     aoiCreate: (mapId, gridSizeMillimeters, enterRadiusGrids, detachRadiusGrids, syncTiers) => core.ops.op_native_aoi_create(u32(mapId, "mapId"), u32(gridSizeMillimeters, "gridSizeMillimeters"), u32(enterRadiusGrids, "enterRadiusGrids"), u32(detachRadiusGrids, "detachRadiusGrids"), bytes(syncTiers, "syncTiers")),
     aoiRelease: (mapId) => core.ops.op_native_aoi_release(u32(mapId, "mapId")),
@@ -76,6 +78,7 @@
     mapAdvanceMovement: (mapId, serverTick, fixedUpdateMs) => core.ops.op_native_map_advance_movement(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(fixedUpdateMs, "fixedUpdateMs")),
     mapTakeMovementAoiDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_take_movement_aoi_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),
     mapTakeMovementAoiRouteFrames: (mapId, serverTick, clientMessageCode, routeMessageCode) => core.ops.op_native_map_take_movement_aoi_route_frames(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(clientMessageCode, "clientMessageCode"), u32(routeMessageCode, "routeMessageCode")),
+    mapTakeNavigationAoiRouteFrames: (mapId, serverTick, clientMessageCode, routeMessageCode) => core.ops.op_native_map_take_navigation_aoi_route_frames(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(clientMessageCode, "clientMessageCode"), u32(routeMessageCode, "routeMessageCode")),
     dataTakeMetrics: () => core.ops.op_native_data_take_metrics(),
   });
 })();

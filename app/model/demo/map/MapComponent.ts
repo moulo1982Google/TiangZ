@@ -84,6 +84,7 @@ interface EntrySnapshotBatchCache {
 interface EncodedRouteBroadcast {
   readonly frames: readonly EncodedRouteFrame[];
   readonly itemCount: number;
+  readonly broadcastName: string;
 }
 
 export interface PlayerTransferCoordinator {
@@ -202,6 +203,11 @@ export class MapComponent extends Component<[
     return this.aoi;
   }
 
+  /** 仅供同一MapScene中的粗粒度Native业务操作使用，不得作为跨Scene路由ID。 / Exposes the map-local Native key only to coarse operations in this MapScene; it is not a cross-scene route id. */
+  get NativeMapKey(): number {
+    return this.nativeMapKey;
+  }
+
   /** 将坐标投影到本地图NavMesh；Grid2D调用属于业务错误，不做隐式模式转换。 / Projects onto this map's NavMesh and rejects Grid2D calls instead of converting spatial modes implicitly. */
   ProjectPosition(
     point: NativeVec3,
@@ -311,21 +317,21 @@ export class MapComponent extends Component<[
     });
   }
 
-  /** 每次固定逻辑帧推进一次 Rust 权威 Cell 移动。 / Advances Rust-authoritative cell movement once per fixed game update. */
+  /** 每次固定逻辑帧推进一次当前空间模式的Rust权威移动。 / Advances Rust-authoritative movement for the current spatial mode once per fixed update. */
   Update(): void {
     this.PumpPlayerEntries();
     if (this.units.Count === 0) return;
     const fixedDeltaMs = TimeSystem.Instance.FixedDeltaTime;
     this.serverTick += 1;
-    const moveDescriptor = ClientBroadcasts.EntityMove;
+    const moveDescriptor = this.config.spatialMode === SpatialMode.NavMesh3D
+      ? ClientBroadcasts.EntityNavigate
+      : ClientBroadcasts.EntityMove;
     let startedAt = monotonicNow();
-    if (this.config.spatialMode === SpatialMode.Grid2D) {
-      NativeData.AdvanceMapMovement(
-        this.nativeMapKey,
-        this.serverTick,
-        fixedDeltaMs,
-      );
-    }
+    NativeData.AdvanceMapMovement(
+      this.nativeMapKey,
+      this.serverTick,
+      fixedDeltaMs,
+    );
     this.pipelineMetrics.movementAdvanceMs += monotonicNow() - startedAt;
     startedAt = monotonicNow();
     const visibility = this.pendingPlayerEnterChanges.splice(
@@ -335,15 +341,22 @@ export class MapComponent extends Component<[
     visibility.push(...this.aoi.Refresh());
     this.pipelineMetrics.aoiRefreshMs += monotonicNow() - startedAt;
     startedAt = monotonicNow();
-    const movement = NativeData.TakeMapMovementAoiRouteFrames(
-      this.nativeMapKey,
-      this.serverTick,
-      moveDescriptor.message.msgcode,
-      GateMessages.ClientBroadcastBatch.msgcode,
-    );
+    const movement = this.config.spatialMode === SpatialMode.NavMesh3D
+      ? NativeData.TakeMapNavigationAoiRouteFrames(
+        this.nativeMapKey,
+        this.serverTick,
+        moveDescriptor.message.msgcode,
+        GateMessages.ClientBroadcastBatch.msgcode,
+      )
+      : NativeData.TakeMapMovementAoiRouteFrames(
+        this.nativeMapKey,
+        this.serverTick,
+        moveDescriptor.message.msgcode,
+        GateMessages.ClientBroadcastBatch.msgcode,
+      );
     this.pipelineMetrics.movementEncodeMs += monotonicNow() - startedAt;
     this.pipelineMetrics.updateCount += 1;
-    const routeBroadcast = this.ToRouteBroadcast(movement);
+    const routeBroadcast = this.ToRouteBroadcast(movement, moveDescriptor.name);
     if (visibility.length > 0 || this.spatialBarrier) {
       this.QueueSpatialAndMovement(visibility, routeBroadcast);
     } else if (routeBroadcast.frames.length > 0) {
@@ -1071,13 +1084,14 @@ export class MapComponent extends Component<[
   /** 把 Rust 的紧凑 routeId 外壳映射为 Scene 名称；不再逐玩家查询组件或重编码协议。 / Maps compact Rust route ids to Scene names without per-player component lookup or protocol re-encoding. */
   private ToRouteBroadcast(
     movement: ReturnType<typeof NativeData.TakeMapMovementAoiRouteFrames>,
+    broadcastName: string,
   ): EncodedRouteBroadcast {
     const frames = movement.routeFrames.map((item) => {
       const route = this.gateNamesByRouteId.get(item.routeId);
       if (!route) throw new Error(`unknown AOI delivery route id: ${item.routeId}`);
       return { route, frame: item.frame };
     });
-    return { frames, itemCount: movement.itemCount };
+    return { frames, itemCount: movement.itemCount, broadcastName };
   }
 
   /** 为地图实例内稳定不变的 Gate 名称分配紧凑 routeId。玩家换 Gate 必须先离开并重新 Attach。 / Assigns a compact route id to a stable Gate name; changing Gate requires detach and reattach. */
@@ -1144,7 +1158,7 @@ export class MapComponent extends Component<[
       if (movement) {
         await this.broadcast.PublishEncodedLatestRouteFrames(
           `map:${this.mapInstanceId}:aoi`,
-          ClientBroadcasts.EntityMove.name,
+          movement.broadcastName,
           movement.frames,
           movement.itemCount,
         );

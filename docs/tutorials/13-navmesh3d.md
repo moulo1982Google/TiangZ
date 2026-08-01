@@ -72,13 +72,28 @@ const path = unit.DomainScene()
 
 外部客户端通过生成的`MapClient.findPath()`调用`C2M_FindPath`。该RPC只返回普通`{x,y,z}`拐点，不修改权威位置，也不允许把Detour多边形或句柄传给TS。
 
-## 当前边界
+## 权威移动
 
-4.2.2已经完成启动装载、实例查询上下文、出生点投影、`ProjectPosition/FindPath`和真实传送冒烟。相同Hash的Map实例共享不可变资产，但查询对象按MapInstance隔离；路径、输入和结果均有长度与有限数校验，资产路径只能位于项目`navigation/`目录。
+4.2.3在查询链上增加了权威移动。客户端只提交目标与递增序号：
 
-当前Cocos角色沿返回路径移动只是可视预览，服务端不会因此持续推进权威坐标，其他客户端也不会收到这次预览。下一步仍需完成：
+```ts
+const result = await mapClient.navigateTo({
+  targetX: 10,
+  targetY: 0,
+  targetZ: 10,
+  sequence: ++sequence,
+});
+```
 
-- 3D权威移动意图、Rust逐Tick推进和多人位置同步。
+服务端Handler只调用`PlayerUnit.NavigateTo()`。Rust从Unit权威坐标寻路并持有路径与当前拐点，20Hz推进`x/y/z/yaw`，再通过`G2C_EntityNavigate`按AOI同步档位和Gate路由批量发送。返回路径用于发起客户端预测，不代表客户端拥有权威位置。
+
+方向操作使用同一条权威链路。Cocos只保存WASD和右键状态：W/S映射前后，普通A/D修改`yaw`，按住右键时A/D映射横移，右键水平拖动修改朝向。状态变化立即发送`C2M_NavigateInput`，持续按住时每500ms续期；Rust把局部方向换算为短NavMesh路径，松键的零输入会清理旧路径并广播停止。点击寻路会沿路径转身，后退和横移则保留角色朝向。
+
+尾随相机只读取客户端可视位置和朝向，不能写权威坐标、参与寻路或影响AOI。客户端可调整相机距离、平滑速度和鼠标灵敏度；这些都是表现参数，不进入服务器冷配置。
+
+Cocos 3D通过独立`ClientMessageDispatcher` Handler消费Push：本地玩家平滑吸收预测误差，明显偏离才直接校正；远端玩家不预测输入，只在权威位置之间插值。真实双客户端冒烟会比较双方收到的同一移动状态。
+
+当前仍需完成：
+
 - `Raycast`、独立高度查询和动态障碍。
-- 客户端预测、插值和服务端校正。
 - 正式展示地图与导航碰撞源的制作期一致性检查。

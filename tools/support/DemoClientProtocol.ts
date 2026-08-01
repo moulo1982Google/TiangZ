@@ -14,6 +14,10 @@ import {
   C2M_MapProbeCodec,
   C2M_FindPath,
   C2M_FindPathCodec,
+  C2M_NavigateTo,
+  C2M_NavigateToCodec,
+  C2M_NavigateInput,
+  C2M_NavigateInputCodec,
   C2M_UseItem,
   C2M_UseItemCodec,
   C2S_Login,
@@ -34,8 +38,14 @@ import {
   M2C_MapProbeCodec,
   M2C_FindPath,
   M2C_FindPathCodec,
+  M2C_NavigateTo,
+  M2C_NavigateToCodec,
+  M2C_NavigateInput,
+  M2C_NavigateInputCodec,
   G2C_EntityMove,
   G2C_EntityMoveCodec,
+  G2C_EntityNavigate,
+  G2C_EntityNavigateCodec,
   G2C_EntityEnter,
   G2C_EntityEnterCodec,
   G2C_EntityLeave,
@@ -252,6 +262,48 @@ export function decodeFindPathFrame(
   return { msgcode, rpcId: body.rpcId, body };
 }
 
+export function buildNavigateToPacket(
+  rpcId: number,
+  request: Omit<C2M_NavigateTo, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_NavigateTo,
+    C2M_NavigateToCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeNavigateToFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_NavigateTo> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_NavigateTo) {
+    throw new Error(`expected M2C_NavigateTo, got ${msgcode}`);
+  }
+  const body = M2C_NavigateToCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+export function buildNavigateInputPacket(
+  rpcId: number,
+  request: Omit<C2M_NavigateInput, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_NavigateInput,
+    C2M_NavigateInputCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeNavigateInputFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_NavigateInput> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_NavigateInput) {
+    throw new Error(`expected M2C_NavigateInput, got ${msgcode}`);
+  }
+  const body = M2C_NavigateInputCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
 export function buildUseItemPacket(
   rpcId: number,
   request: C2M_UseItem,
@@ -310,6 +362,20 @@ export function decodeEntityMoveFrame(
     msgcode,
     rpcId: undefined,
     body: G2C_EntityMoveCodec.decode(frame.subarray(2)),
+  };
+}
+
+export function decodeEntityNavigateFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_EntityNavigate> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_EntityNavigate) {
+    throw new Error(`expected G2C_EntityNavigate, got ${msgcode}`);
+  }
+  return {
+    msgcode,
+    rpcId: undefined,
+    body: G2C_EntityNavigateCodec.decode(frame.subarray(2)),
   };
 }
 

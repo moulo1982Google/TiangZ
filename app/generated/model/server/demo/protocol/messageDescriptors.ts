@@ -17,6 +17,8 @@ import {
   G2C_EntityLeaveCodec,
   G2C_EntityMove,
   G2C_EntityMoveCodec,
+  G2C_EntityNavigate,
+  G2C_EntityNavigateCodec,
   G2C_EntityNumeric,
   G2C_EntityNumericCodec,
   G2C_EntityState,
@@ -69,6 +71,11 @@ export const ClientMessages = {
     name: "Client.EntityMove",
     msgcode: MsgCode.G2C_EntityMove,
     codec: G2C_EntityMoveCodec,
+  }),
+  EntityNavigate: defineMessage<G2C_EntityNavigate>({
+    name: "Client.EntityNavigate",
+    msgcode: MsgCode.G2C_EntityNavigate,
+    codec: G2C_EntityNavigateCodec,
   }),
   EntityNumeric: defineMessage<G2C_EntityNumeric>({
     name: "Client.EntityNumeric",
@@ -135,6 +142,7 @@ export const AllMessageDescriptors = [
   ClientMessages.MapReady,
   MapMessages.Move,
   ClientMessages.EntityMove,
+  ClientMessages.EntityNavigate,
   ClientMessages.EntityNumeric,
   ClientMessages.EntityState,
   ClientMessages.ItemChanged,

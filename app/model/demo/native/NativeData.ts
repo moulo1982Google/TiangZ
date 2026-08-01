@@ -14,6 +14,11 @@ export interface NativeVec3 {
   readonly z: number;
 }
 
+export interface NativeNavigationIntent {
+  readonly acknowledgedSequence: number;
+  readonly points: readonly NativeVec3[];
+}
+
 interface DemoProcessConfig {
   nativeData?: NativeDataConfig;
 }
@@ -231,6 +236,43 @@ export class NativeData {
     ));
   }
 
+  /** 设置Rust持有的NavMesh移动目标，并返回同一次权威寻路结果供客户端预测。 / Sets a Rust-owned NavMesh movement target and returns the same authoritative path for prediction. */
+  static SetNavigationTarget(
+    mapId: number,
+    handle: number,
+    target: NativeVec3,
+    sequence: number,
+  ): NativeNavigationIntent {
+    const bytes = NativeOps.UnitSetNavigationTarget(
+      mapId,
+      handle,
+      target.x,
+      target.y,
+      target.z,
+      sequence,
+    );
+    return decodeNavigationIntent(bytes);
+  }
+
+  /** 提交相对朝向的NavMesh方向输入；零输入会在下一逻辑Tick广播停止。 / Submits facing-relative NavMesh input; zero input broadcasts a stop on the next logic tick. */
+  static SetNavigationInput(
+    mapId: number,
+    handle: number,
+    forward: number,
+    strafe: number,
+    yaw: number,
+    sequence: number,
+  ): NativeNavigationIntent {
+    return decodeNavigationIntent(NativeOps.UnitSetNavigationInput(
+      mapId,
+      handle,
+      forward,
+      strafe,
+      yaw,
+      sequence,
+    ));
+  }
+
   /** 地图销毁时释放实例私有空间状态；共享导航资产不由该调用卸载。 / Releases per-instance spatial state on map disposal without unloading shared navigation assets. */
   static ReleaseSpatial(mapId: number): void {
     NativeOps.SpatialRelease(mapId);
@@ -367,6 +409,24 @@ export class NativeData {
   ): NativeAoiRouteBroadcast {
     return parseAoiRouteBroadcast(
       NativeOps.MapTakeMovementAoiRouteFrames(
+        mapId,
+        serverTick,
+        clientMessageCode,
+        routeMessageCode,
+      ),
+      routeMessageCode,
+    );
+  }
+
+  /** 将NavMesh3D权威位置按最终AOI关系和Gate路由直接编码。 / Encodes authoritative NavMesh positions by final AOI relations and Gate routes. */
+  static TakeMapNavigationAoiRouteFrames(
+    mapId: number,
+    serverTick: number,
+    clientMessageCode: number,
+    routeMessageCode: number,
+  ): NativeAoiRouteBroadcast {
+    return parseAoiRouteBroadcast(
+      NativeOps.MapTakeNavigationAoiRouteFrames(
         mapId,
         serverTick,
         clientMessageCode,
@@ -565,6 +625,15 @@ function decodeNavPoints(bytes: Uint8Array): readonly NativeVec3[] {
     });
   }
   return points;
+}
+
+function decodeNavigationIntent(bytes: Uint8Array): NativeNavigationIntent {
+  if (bytes.byteLength < 4) throw new Error("native navigation intent is truncated");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return {
+    acknowledgedSequence: view.getUint32(0, true),
+    points: decodeNavPoints(bytes.subarray(4)),
+  };
 }
 
 /** 在裸deno_core V8中编码UTF-8，不依赖浏览器TextEncoder全局对象。 / Encodes UTF-8 in bare deno_core V8 without depending on the browser TextEncoder global. */

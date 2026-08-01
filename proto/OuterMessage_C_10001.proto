@@ -136,12 +136,54 @@ message M2C_FindPath // IActorLocationResponse
   repeated NavigationPathPoint points = 1;
 }
 
+//ResponseType M2C_NavigateTo
+// 设置NavMesh3D权威移动目标；Rust一次寻路并持有路径，TS不保存跨帧路径状态。
+// @ets.msg protocol=Map method=NavigateTo duringTransfer=reject
+message C2M_NavigateTo // IActorLocationRequest
+{
+  float target_x = 1;
+  float target_y = 2;
+  float target_z = 3;
+  uint32 sequence = 4;
+}
+
+message M2C_NavigateTo // IActorLocationResponse
+{
+  uint32 acknowledged_sequence = 1;
+  repeated NavigationPathPoint points = 2;
+}
+
+//ResponseType M2C_NavigateInput
+// 提交相对角色朝向的方向输入；零输入会立即停止Rust持有的路径。
+// @ets.msg protocol=Map method=NavigateInput duringTransfer=reject
+message C2M_NavigateInput // IActorLocationRequest
+{
+  sint32 forward = 1;
+  sint32 strafe = 2;
+  float yaw = 3;
+  uint32 sequence = 4;
+}
+
+message M2C_NavigateInput // IActorLocationResponse
+{
+  uint32 acknowledged_sequence = 1;
+  repeated NavigationPathPoint points = 2;
+}
+
 // @ets.msg protocol=Client method=EntityMove
 // @ets.broadcast mode=latest item=CellMovementState items=movements key=unit_id tick=server_tick
 message G2C_EntityMove // IMessage
 {
   uint32 server_tick = 1;
   repeated CellMovementState movements = 2;
+}
+
+// @ets.msg protocol=Client method=EntityNavigate
+// @ets.broadcast mode=latest item=NavigationMovementState items=movements key=unit_id tick=server_tick
+message G2C_EntityNavigate // IMessage
+{
+  uint32 server_tick = 1;
+  repeated NavigationMovementState movements = 2;
 }
 
 // @ets.msg protocol=Client method=EntityNumeric

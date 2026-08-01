@@ -2,6 +2,8 @@ import net from "node:net";
 import {
   buildEnterMapPacket,
   buildFindPathPacket,
+  buildNavigateToPacket,
+  buildNavigateInputPacket,
   buildGetLoginServiceAddrPacket,
   buildLoginGatePacket,
   buildLoginPacket,
@@ -10,8 +12,11 @@ import {
   buildUseItemPacket,
   decodeAoiDeltaFrame,
   decodeEntityMoveFrame,
+  decodeEntityNavigateFrame,
   decodeEnterMapFrame,
   decodeFindPathFrame,
+  decodeNavigateToFrame,
+  decodeNavigateInputFrame,
   decodeEntityNumericFrame,
   decodeItemChangedFrame,
   decodeUseItemFrame,
@@ -420,6 +425,53 @@ async function verifyNavMeshTransfer(
   ) {
     throw new Error(`NavMesh3D path query failed: ${stringifyForError(pathResponse.body)}`);
   }
+  const navigationPush = gate.waitForMessage(MsgCode.G2C_EntityNavigate);
+  const navigateRpcId = nextRpcId++;
+  const navigateResponse = decodeNavigateToFrame(await gate.request(buildNavigateToPacket(
+    navigateRpcId,
+    { targetX: 10, targetY: 0, targetZ: 10, sequence: 1 },
+  )));
+  const navigation = decodeEntityNavigateFrame(await navigationPush);
+  const movement = navigation.body.movements.find((item) => item.unitId === transferred.unitId);
+  if (
+    navigateResponse.rpcId !== navigateRpcId ||
+    navigateResponse.body.error ||
+    navigateResponse.body.acknowledgedSequence !== 1 ||
+    navigateResponse.body.points.length < 2 ||
+    !movement ||
+    movement.acknowledgedSequence !== 1 ||
+    !movement.moving ||
+    (movement.x === transferred.x && movement.z === transferred.z)
+  ) {
+    throw new Error(`NavMesh3D authoritative movement failed: ${stringifyForError({
+      navigate: navigateResponse.body,
+      movement,
+    })}`);
+  }
+  const directionRpcId = nextRpcId++;
+  const direction = decodeNavigateInputFrame(await gate.request(buildNavigateInputPacket(
+    directionRpcId,
+    { forward: 1, strafe: 0, yaw: Math.PI / 2, sequence: 2 },
+  )));
+  const stopRpcId = nextRpcId++;
+  const stop = decodeNavigateInputFrame(await gate.request(buildNavigateInputPacket(
+    stopRpcId,
+    { forward: 0, strafe: 0, yaw: Math.PI / 2, sequence: 3 },
+  )));
+  if (
+    direction.rpcId !== directionRpcId ||
+    direction.body.error ||
+    direction.body.acknowledgedSequence !== 2 ||
+    direction.body.points.length < 2 ||
+    stop.rpcId !== stopRpcId ||
+    stop.body.error ||
+    stop.body.acknowledgedSequence !== 3
+  ) {
+    throw new Error(`NavMesh3D direction input failed: ${stringifyForError({
+      direction: direction.body,
+      stop: stop.body,
+    })}`);
+  }
   console.log("NavMesh3D transfer:", {
     unitId: transferred.unitId,
     mapId: transferred.mapId,
@@ -427,6 +479,7 @@ async function verifyNavMeshTransfer(
     navigationVersion: transferred.navigationVersion,
     navigationHash: transferred.navigationHash,
     pathPoints: pathResponse.body.points.length,
+    authoritativePosition: [movement.x, movement.y, movement.z],
   });
   return transferred;
 }
@@ -753,6 +806,44 @@ async function verifySharedMapBroadcast(
       reenteredUnitId: reentered.unitId,
     });
 
+    const moverNav = await transferConnectedPlayer(mover.gate, 100);
+    const observerNav = await transferConnectedPlayer(observer.gate, 100);
+    const moverNavigationFrame = mover.gate.waitForMessage(MsgCode.G2C_EntityNavigate);
+    const observerNavigationFrame = observer.gate.waitForMessage(MsgCode.G2C_EntityNavigate);
+    const navigateRpcId = nextRpcId++;
+    const navigate = decodeNavigateToFrame(await mover.gate.request(buildNavigateToPacket(
+      navigateRpcId,
+      { targetX: 10, targetY: 0, targetZ: 10, sequence: 1 },
+    )));
+    const [moverNavigation, observerNavigation] = await Promise.all([
+      moverNavigationFrame.then(decodeEntityNavigateFrame),
+      observerNavigationFrame.then(decodeEntityNavigateFrame),
+    ]);
+    const moverNavState = moverNavigation.body.movements.find(
+      (movement) => movement.unitId === moverNav.unitId,
+    );
+    const observerNavState = observerNavigation.body.movements.find(
+      (movement) => movement.unitId === moverNav.unitId,
+    );
+    if (
+      navigate.body.error ||
+      navigate.body.acknowledgedSequence !== 1 ||
+      !moverNavState ||
+      !observerNavState ||
+      JSON.stringify(moverNavState) !== JSON.stringify(observerNavState)
+    ) {
+      throw new Error(`shared NavMesh movement mismatch: ${stringifyForError({
+        navigate: navigate.body,
+        moverNavState,
+        observerNavState,
+      })}`);
+    }
+    console.log("Shared NavMesh movement broadcast:", {
+      moverUnitId: moverNav.unitId,
+      observerUnitId: observerNav.unitId,
+      movement: observerNavState,
+    });
+
     await observer.gate.close();
     observerClosed = true;
     console.log("Shared map reconnect grace:", {
@@ -766,6 +857,34 @@ async function verifySharedMapBroadcast(
       observerClosed ? Promise.resolve() : observer.gate.close(),
     ]);
   }
+}
+
+async function transferConnectedPlayer(
+  gate: TcpRpcConnection,
+  mapId: number,
+): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
+  const rpcId = nextRpcId++;
+  const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
+  const response = decodeEnterMapFrame(await gate.request(
+    buildEnterMapPacket(rpcId, { mapId, mapInstanceId: 0n }),
+  ));
+  const ready = decodeMapReadyFrame(await readyFrame);
+  if (
+    response.body.error ||
+    response.body.mapId !== mapId ||
+    ready.body.mapId !== mapId ||
+    ready.body.unitId !== response.body.unitId
+  ) {
+    throw new Error(`connected transfer failed: ${stringifyForError({ response, ready })}`);
+  }
+  const snapshotRpcId = nextRpcId++;
+  const snapshot = decodeMapSnapshotReadyFrame(await gate.request(
+    buildMapSnapshotReadyPacket(snapshotRpcId, { unitId: response.body.unitId }),
+  ));
+  if (snapshot.body.error) {
+    throw new Error(`connected snapshot ready failed: ${stringifyForError(snapshot.body)}`);
+  }
+  return response.body;
 }
 
 async function assertNoMovementSequenceAtLeast(

@@ -28,6 +28,13 @@
         "name": "pixi",
         "handlerSearchRoots": ["pixi_client/src"],
         "handlerOutput": "pixi_client/src/Generated/Hotfix/handlers.ts"
+      },
+      {
+        "name": "cocos3d",
+        "handlerSearchRoots": [
+          "cocos_client3D/assets/scripts"
+        ],
+        "handlerOutput": "cocos_client3D/assets/scripts/Generated/Hotfix/handlers.ts"
       }
     ]
   }

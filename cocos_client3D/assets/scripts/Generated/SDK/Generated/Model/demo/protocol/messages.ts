@@ -233,6 +233,71 @@ export const NavigationPathPointCodec = {
   },
 };
 
+export interface NavigationMovementState {
+  unitId: number;
+  acknowledgedSequence: number;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  moving: boolean;
+}
+
+export const NavigationMovementStateCodec = {
+  decode(payload: Uint8Array): NavigationMovementState {
+    const reader = new BinaryReader(payload);
+    const value: NavigationMovementState = {
+      unitId: 0,
+      acknowledgedSequence: 0,
+      x: 0,
+      y: 0,
+      z: 0,
+      yaw: 0,
+      moving: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.acknowledgedSequence = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 5) {
+        value.x = reader.float();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 5) {
+        value.y = reader.float();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 5) {
+        value.z = reader.float();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 5) {
+        value.yaw = reader.float();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.moving = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: NavigationMovementState): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.acknowledgedSequence !== undefined) writer.uint32(2, value.acknowledgedSequence);
+    if (value.x !== undefined) writer.float(3, value.x);
+    if (value.y !== undefined) writer.float(4, value.y);
+    if (value.z !== undefined) writer.float(5, value.z);
+    if (value.yaw !== undefined) writer.float(6, value.yaw);
+    if (value.moving !== undefined) writer.bool(7, value.moving);
+    return writer.finish();
+  },
+};
+
 export interface UnitNumericDelta {
   unitId: number;
   numericType: number;
@@ -1318,6 +1383,210 @@ export const M2C_FindPathCodec = {
   },
 };
 
+export interface C2M_NavigateTo extends IActorLocationRequest {
+  rpcId?: number;
+  targetX: number;
+  targetY: number;
+  targetZ: number;
+  sequence: number;
+}
+
+export const C2M_NavigateToCodec = {
+  decode(payload: Uint8Array): C2M_NavigateTo {
+    const reader = new BinaryReader(payload);
+    const value: C2M_NavigateTo = {
+      targetX: 0,
+      targetY: 0,
+      targetZ: 0,
+      sequence: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 5) {
+        value.targetX = reader.float();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 5) {
+        value.targetY = reader.float();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 5) {
+        value.targetZ = reader.float();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.sequence = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_NavigateTo): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.targetX !== undefined) writer.float(1, value.targetX);
+    if (value.targetY !== undefined) writer.float(2, value.targetY);
+    if (value.targetZ !== undefined) writer.float(3, value.targetZ);
+    if (value.sequence !== undefined) writer.uint32(4, value.sequence);
+    return writer.finish();
+  },
+};
+
+export interface M2C_NavigateTo extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  acknowledgedSequence: number;
+  points: readonly NavigationPathPoint[];
+}
+
+export const M2C_NavigateToCodec = {
+  decode(payload: Uint8Array): M2C_NavigateTo {
+    const reader = new BinaryReader(payload);
+    const value: M2C_NavigateTo = {
+      acknowledgedSequence: 0,
+      points: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.acknowledgedSequence = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.points as NavigationPathPoint[]).push(NavigationPathPointCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_NavigateTo): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.acknowledgedSequence !== undefined) writer.uint32(1, value.acknowledgedSequence);
+    for (const item of (value.points ?? [])) writer.bytes(2, NavigationPathPointCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface C2M_NavigateInput extends IActorLocationRequest {
+  rpcId?: number;
+  forward: number;
+  strafe: number;
+  yaw: number;
+  sequence: number;
+}
+
+export const C2M_NavigateInputCodec = {
+  decode(payload: Uint8Array): C2M_NavigateInput {
+    const reader = new BinaryReader(payload);
+    const value: C2M_NavigateInput = {
+      forward: 0,
+      strafe: 0,
+      yaw: 0,
+      sequence: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.forward = reader.sint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.strafe = reader.sint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 5) {
+        value.yaw = reader.float();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.sequence = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_NavigateInput): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.forward !== undefined) writer.sint32(1, value.forward);
+    if (value.strafe !== undefined) writer.sint32(2, value.strafe);
+    if (value.yaw !== undefined) writer.float(3, value.yaw);
+    if (value.sequence !== undefined) writer.uint32(4, value.sequence);
+    return writer.finish();
+  },
+};
+
+export interface M2C_NavigateInput extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  acknowledgedSequence: number;
+  points: readonly NavigationPathPoint[];
+}
+
+export const M2C_NavigateInputCodec = {
+  decode(payload: Uint8Array): M2C_NavigateInput {
+    const reader = new BinaryReader(payload);
+    const value: M2C_NavigateInput = {
+      acknowledgedSequence: 0,
+      points: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.acknowledgedSequence = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.points as NavigationPathPoint[]).push(NavigationPathPointCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_NavigateInput): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.acknowledgedSequence !== undefined) writer.uint32(1, value.acknowledgedSequence);
+    for (const item of (value.points ?? [])) writer.bytes(2, NavigationPathPointCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
 export interface G2C_EntityMove extends IMessage {
   serverTick: number;
   movements: readonly CellMovementState[];
@@ -1349,6 +1618,41 @@ export const G2C_EntityMoveCodec = {
     const writer = new BinaryWriter();
     if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
     for (const item of (value.movements ?? [])) writer.bytes(2, CellMovementStateCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface G2C_EntityNavigate extends IMessage {
+  serverTick: number;
+  movements: readonly NavigationMovementState[];
+}
+
+export const G2C_EntityNavigateCodec = {
+  decode(payload: Uint8Array): G2C_EntityNavigate {
+    const reader = new BinaryReader(payload);
+    const value: G2C_EntityNavigate = {
+      serverTick: 0,
+      movements: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.serverTick = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.movements as NavigationMovementState[]).push(NavigationMovementStateCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_EntityNavigate): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
+    for (const item of (value.movements ?? [])) writer.bytes(2, NavigationMovementStateCodec.encode(item), true);
     return writer.finish();
   },
 };
