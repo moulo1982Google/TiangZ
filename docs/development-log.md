@@ -10,6 +10,14 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-08-01：Phase 4.2.1 NavMesh离线资产链路
+
+- 固定官方Recast/Detour `v1.6.0`及提交`6dc1667f580357e8a2154c28b7867bea7e8ad3a7`，第三方源码保持原样，项目适配集中在独立C ABI与Rust安全封装。
+- 增加确定性灰盒OBJ与冷烘焙清单；`npm run navigation:bake`自动生成灰盒、离线烘焙tiled NavMesh、计算SHA-256并让Detour立即回读自检，不需要Cocos或人工烘焙。
+- 自定义资源头使用显式小端字段，记录Detour参数和每个Tile，避免直接持久化C++内存结构。元数据同时记录版本、Hash、边界、Agent参数和输入规模。
+- Rust已提供位置投影、绕障寻路和按Hash弱引用共享的`NavigationAssetCache`。同一输入两次烘焙字节一致，Hash漂移在进入C++前拒绝，最后一个MapInstance引用释放后共享资产可回收。
+- 本阶段尚未打开`MapConfig.NavMesh3D`：MapScene自动装载、射线/高度FastOP、动态障碍和3D权威移动继续在Phase 4.2后续实现。
+
 ## 2026-08-01：Gate Ping返回服务器时间
 
 - Gate保活由单向`C2G_Ping`升级为TS RPC `C2G_Ping -> G2C_Ping`，响应返回`TimerComponent.ServerTime()`产生的Unix毫秒。

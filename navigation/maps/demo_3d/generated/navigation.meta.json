@@ -1,0 +1,37 @@
+{
+  "format": "tiangz-navmesh",
+  "formatVersion": 1,
+  "recastVersion": "1.6.0",
+  "map": "demo_3d",
+  "navigationVersion": "demo-3d-v1",
+  "navigationHash": "94af0f91826b6c08d72f2402cd06383847cf8ceb7d87d9dd9067a2b9c862f304",
+  "source": "source/map_nav.obj",
+  "vertexCount": 28,
+  "triangleCount": 14,
+  "boundsMin": [
+    -24.0,
+    0.0,
+    -24.0
+  ],
+  "boundsMax": [
+    24.0,
+    3.0,
+    24.0
+  ],
+  "build": {
+    "cellSize": 0.3,
+    "cellHeight": 0.2,
+    "agentHeight": 1.8,
+    "agentRadius": 0.4,
+    "agentMaxClimb": 0.5,
+    "agentMaxSlope": 45.0,
+    "regionMinSize": 8.0,
+    "regionMergeSize": 20.0,
+    "edgeMaxLen": 12.0,
+    "edgeMaxError": 1.3,
+    "detailSampleDist": 6.0,
+    "detailSampleMaxError": 1.0,
+    "vertsPerPoly": 6,
+    "tileSize": 32
+  }
+}

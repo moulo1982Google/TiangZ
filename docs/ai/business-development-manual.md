@@ -348,7 +348,9 @@ Cell和AOI Grid尺寸同样属于Cold配置：`MapConfig.cell_size_meters`定义
 
 容量验收不能只测单一地图密度。框架基线固定用`npm run perf:map-capacity:grid-matrix`比较3000人在10×10、15×15、20×20 Grid中的均匀分布，保持80% Grid内移动、20%每2秒跨Grid以及消息频率不变。业务新增地图时应按实际平均人数/Grid选择最接近的结果，不得把稀疏世界结果当作主城同屏容量。进图并发属于初始化压力，必须受控并与正式稳态窗口分开解读。
 
-创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。当前只有`Grid2D`运行时可用；`NavMesh3D`配置虽然已经具备资源、版本和哈希字段，但必须等Rust导航运行时完成后才能启用。业务不能捕获“不支持NavMesh”的异常后回退到Grid2D。空间模式、字段结构和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
+创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。当前只有`Grid2D` Map Runtime可用；`NavMesh3D`的离线烘焙与Rust查询内核虽然已经完成，仍必须等MapScene自动装载入口完成后才能在配置中启用。业务不能捕获“不支持NavMesh”的异常后回退到Grid2D。空间模式、字段结构、Agent烘焙参数和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
+
+导航源网格由制作工具导出到`navigation/maps/<map>/source`，开发者只维护冷清单并执行`npm run navigation:bake`，不得在TS Handler、Game.Update或服务器启动流程中调用烘焙。业务未来只使用`ProjectPosition/FindPath/Raycast`等粗粒度接口表达意图，不读取Detour多边形、不逐路径节点跨V8调用，也不在TS复制一份权威坐标。4.2.1的Demo灰盒是工具回归输入，不是要求程序员手工寻找或制作正式3D地图。
 
 详细字段、Rust所有权和客户端进入校验见[地图空间与3D坐标契约](../design/spatial-world.md)。
 

@@ -59,6 +59,7 @@ proto/                       protobuf 源文件
 game_config/                 Luban Excel游戏配置唯一源文件
 native_data/core/            框架内置 Rust Entity op 原型
 native_data/demo/            Demo Entity 与粗粒度 Native op 原型
+navigation/maps/             3D导航源网格、冷烘焙清单与生成资源
 configs/<environment>/       环境启动配置
 client_sdk/typescript/       TypeScript Client SDK 唯一源码
 cocos_client2D/              Cocos Creator 2D Demo 客户端
@@ -78,6 +79,8 @@ Rust业务代码统一放在`src/game/<domain>/`或对应领域文件中，`.nat
 Numeric权威值统一使用Rust`i64`、protobuf`int64`和TypeScript`bigint`。派生结果编号固定在1000..9999，Base/Add/Pct按`result*10+1/+2/+3`约定，Rust按编号自动重算而不重复维护业务枚举。
 
 地图运行时已接入Rust AOI：`MapConfig`引用冷配置`AoiConfig`，分别定义AOI Grid大小、Enter范围、Detach迟滞范围和独立同步档位。同步档位只节流已经可见的可覆盖状态，不会提前建立视野；业务只在阵营、隐身、位面改变时通过`MapAoiComponent.Invalidate*`通知重算。开发约束见[业务开发手册](docs/ai/business-development-manual.md)和[地图空间契约](docs/design/spatial-world.md)。
+
+Phase 4.2.1已经固定官方Recast/Detour `v1.6.0`，提供确定性灰盒、离线tiled NavMesh烘焙、SHA-256元数据、Rust只读加载、位置投影和寻路。执行`npm run navigation:bake`即可重新生成并自检Demo导航资源，不需要启动Cocos或手工烘焙；MapScene自动装载、射线、动态障碍仍按Phase 4.2后续小步推进。详见[NavMesh3D离线资源与Rust查询](docs/tutorials/13-navmesh3d.md)。
 
 ## 快速启动
 

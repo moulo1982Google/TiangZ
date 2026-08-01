@@ -15,3 +15,12 @@ TiangZ 的发布质量门同时检查 npm 与 Cargo 依赖。新增依赖必须�
 许可证默认拒绝 AGPL、SSPL 以及没有明确授权的依赖。GPL/LGPL 或商业条款依赖必须在引入前单独评审其链接和分发方式。当前仓库没有许可证例外；后续如需例外，应与漏洞例外一样记录负责人、原因和复审日期。
 
 安全审计依赖在线 advisory 数据，因此不放进每次本地 `verify:quick`，但它属于 CI 和发布候选验收的一部分。
+
+## 仓库内固定源码
+
+| 目录 | 版本 | 许可证 | 用途 |
+|---|---|---|---|
+| `third_party/kcp` | 固定上游提交，见目录README | MIT | 可选KCP可靠UDP传输 |
+| `third_party/recastnavigation` | `v1.6.0` / `6dc1667f580357e8a2154c28b7867bea7e8ad3a7` | zlib | 离线Recast烘焙与只读Detour查询 |
+
+固定源码必须保留上游许可证和TiangZ版本说明。升级时不得覆盖项目适配层，必须重新执行对应专项测试，并在发布前验证Windows与Linux编译；Recast/Detour适配位于`src/native/navmesh_shim.*`，不是直接修改上游源码。

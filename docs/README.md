@@ -17,6 +17,10 @@
 7. [客户端传输协议与 Cocos Native](tutorials/07-client-transport-and-native.md)
 8. [Rust Entity 与 TS Handle 代码生成](tutorials/08-native-entity-codegen.md)
 9. [NumericComponent、定时器与状态广播](tutorials/09-numeric-component-and-broadcast.md)
+10. [Luban游戏配置](tutorials/10-game-config.md)
+11. [地图实例与动态副本](tutorials/11-map-instance-and-dungeon.md)
+12. [Rust业务模块](tutorials/12-rust-business-modules.md)
+13. [NavMesh3D离线资源与Rust查询](tutorials/13-navmesh3d.md)
 
 ## 开发参考
 

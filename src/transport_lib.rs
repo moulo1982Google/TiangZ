@@ -1,3 +1,5 @@
+pub mod navigation;
+
 #[cfg(feature = "kcp")]
 pub mod kcp;
 #[cfg(feature = "kcp")]

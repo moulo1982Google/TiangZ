@@ -210,7 +210,7 @@ Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`Broa
 
 `0.4.0`冻结服务端地图局部坐标为米制`X/Y/Z + Yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度。坐标必须和`MapInstanceId`一起解释，不建立跨大陆的巨大浮点世界坐标。protobuf与Native schema使用普通`float/f32`，客户端适配层再转换为Cocos `Vec3`、Unity `Vector3/float3`或二维屏幕坐标。
 
-`MapConfig.SpatialMode`区分`Grid2D`与`NavMesh3D`。Grid2D已经运行在X/Z Cell上；NavMesh3D目前只冻结资源、版本、哈希及生命周期契约，Runtime遇到该模式会明确拒绝，不能静默退化。只读导航资产未来按MapConfig版本共享，每个MapInstance仍独占AOI、动态障碍和Unit空间状态；Scene销毁必须幂等释放实例空间。完整约束见[地图空间与3D坐标契约](../design/spatial-world.md)。
+`MapConfig.SpatialMode`区分`Grid2D`与`NavMesh3D`。Grid2D已经运行在X/Z Cell上；NavMesh3D的4.2.1离线资产链路已固定官方Recast/Detour `v1.6.0`，具备确定性灰盒、tiled资源、SHA-256元数据、Rust加载/投影/寻路和按Hash弱引用共享缓存。MapScene自动装载、射线、动态障碍尚未完成，因此Runtime遇到NavMesh3D仍明确拒绝，不能静默退化。每个MapInstance未来仍独占AOI、动态障碍和Unit空间状态；Scene销毁必须幂等释放实例空间。完整约束见[地图空间与3D坐标契约](../design/spatial-world.md)。
 
 ## 客户端与Transport
 
@@ -329,6 +329,7 @@ Phase 4计划：
 - 账号与角色选择、正式持久化业务接入。
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
 - Phase 4.1 Rust AOI功能链和Windows正式容量回归已完成：每个MapInstance创建独立稀疏X/Z AOI Grid。`Cell`是可配置米制空间单位；默认15×15 Cell组成一个Grid，3×3同时作为Enter和20Hz高频区，已可见关系进入5×5外圈后降为5Hz，5×5也是Detach边界，越界立即Leave；不再配置7×7和1Hz档位。Enter内关系从Grid推导，仅迟滞外圈、业务拒绝和本帧净变化需要存储，TS不镜像全量关系。FastOP X/Z写入自动标脏，跨AOI Grid才重算。Movement按同步档位节流，低频档按Subject Grid稳定错峰，但开始/停止/转向强制立即发送；Numeric、UnitState和不可覆盖事件保留各自同步语义。进入/离开同帧相同受众合并为`G2C_AoiDelta`。阵营/隐身/位面由同步`IAoiVisibilityFilter`查询并显式Invalidate。旧`single-grid`结果只保留为全可见边界证据；新的3000人正式容量基线固定均匀分布，其中80%在Grid内移动、20%每2秒跨一次Grid，理论跨Grid约300次/s。10×10、15×15、20×20密度矩阵分别为30、13.33、7.5人/Grid，Map CPU平均`74.1%/56.7%/57.3%`，Movement Push约`218.1万/140.9万/107.3万每秒`，三档正式窗口均零错误、过载、超时和背压。容量候选还要求实际跨Grid速率达到理论值的80%至120%。矩阵必须限制进图并发以隔离稳态密度；当前Bench后置Place RPC仍应在后续并入进图事务。Phase 4.2接入NavMesh3D；Phase 4.3完成Cocos 3D Demo；Phase 4.4进入怪物与战斗；Phase 4.5最后完成持久化基础。
+- Phase 4.2.1已完成无需美术资产的导航基础：`tools/navigation`生成固定灰盒，`navmesh_bake`通过官方Recast离线烘焙并由Detour立即回读，输出稳定小端资源与SHA-256元数据；Rust提供位置投影、寻路和按Hash共享缓存。开发者不手工烘焙，真实Cocos 3D地图与碰撞源导出留到Phase 4.3；4.2下一步先完成MapConfig自动装载、射线/高度和动态障碍。
 - AOI范围与频率全部由Cold配置驱动：`AoiConfig`定义Enter/Detach，`AoiSyncTierConfig`可定义任意数量的奇数范围与同步Hz，Map通过`aoiConfigId`选择配置。当前默认不启用7×7，但停服增加`7×7/1Hz`不需要修改框架代码。最外层同步范围必须等于Detach，TS生成期与Rust运行时都会拒绝未覆盖迟滞圈的配置；外层频率不能高于内层，且Hz必须整除Process逻辑Tick。
 - Cell与Grid尺寸也是Cold配置：`MapConfig.cellSizeMeters`定义Cell米制边长，`AoiConfig.gridSizeCells`定义每个Grid每边Cell数。地图物理边界由制作流程决定并记录为`widthCells/depthCells × cellSizeMeters`；Grid数量只由宽深Cell数除以`gridSizeCells`推导，不增加独立`gridCount`。Grid2D必须整除，NavMesh3D在Phase 4.2由资源导出器按相同契约对齐或补边。
 - 2026-08-01首轮10×10新行为基线实测跨Grid`310.3/s`、Move`6004/s`、Movement Push约`211.6万/s`，Map CPU平均`82.1%`，Probe p95/p99为`128.49/156.05ms`，零错误、零过载、零背压。该点略高于80% CPU目标，是接近边界的回归基线，不是保守容量点；原始证据固定在`perf/results/map_capacity_20260801_015926.md`，三档空间密度结论以`perf/results/map_capacity_grid_matrix_latest.md`为准。

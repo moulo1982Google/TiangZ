@@ -1,6 +1,6 @@
 # 地图空间与3D坐标契约
 
-本文冻结TiangZ从`0.4.0`开始使用的地图空间语义。它约束Rust权威数据、协议、游戏配置和客户端适配；Rust AOI已进入Phase 4.1，NavMesh尚未实现，但后续实现不得改变本契约。
+本文冻结TiangZ从`0.4.0`开始使用的地图空间语义。它约束Rust权威数据、协议、游戏配置和客户端适配；Rust AOI已完成Phase 4.1，NavMesh3D的离线资源与Rust查询内核已完成4.2.1，MapScene自动装载与动态障碍仍未完成。
 
 ## 世界坐标
 
@@ -24,9 +24,9 @@ Luban `MapConfig`使用`SpatialMode`选择空间实现：
 | 模式 | 当前状态 | 含义 |
 | --- | --- | --- |
 | `Grid2D` | 可运行 | X/Z规则网格，米制Cell，服务端Rust权威移动 |
-| `NavMesh3D` | 契约已冻结、运行时待Phase 4.2实现 | tiled NavMesh、位置投影、寻路、射线和高度查询 |
+| `NavMesh3D` | 4.2.1离线烘焙与Rust查询内核可用，Map运行时尚未启用 | tiled NavMesh、位置投影、寻路、射线和高度查询 |
 
-`MapConfig`还包含出生点`spawnX/Y/Z/Yaw`、地图宽深Cell数`widthCells/depthCells`、米制`cellSizeMeters`、`aoiConfigId`以及`navigationAsset/version/hash`。`Cell`是可配置的最小空间单位：Grid2D按Cell离散移动，NavMesh3D允许在Cell内连续移动。`AoiConfig.gridSizeCells`声明一个AOI Grid包含多少个Cell；AOI Grid与NavMesh tile不是同一个概念。地图物理边界由地图制作与导航资源决定，配置记录其导出结果，不允许独立填写一份可能冲突的Grid数量。`NavMesh3D`配置缺少资源、版本或小写SHA-256时必须拒绝加载；当前Runtime遇到合法NavMesh3D配置也会明确报出导航运行时尚未安装，不能退化为Grid2D。
+`MapConfig`还包含出生点`spawnX/Y/Z/Yaw`、地图宽深Cell数`widthCells/depthCells`、米制`cellSizeMeters`、`aoiConfigId`以及`navigationAsset/version/hash`。`Cell`是可配置的最小空间单位：Grid2D按Cell离散移动，NavMesh3D允许在Cell内连续移动。`AoiConfig.gridSizeCells`声明一个AOI Grid包含多少个Cell；AOI Grid与NavMesh tile不是同一个概念。地图物理边界由地图制作与导航资源决定，配置记录其导出结果，不允许独立填写一份可能冲突的Grid数量。`NavMesh3D`配置缺少资源、版本或小写SHA-256时必须拒绝加载；4.2.1工具已经生成并校验这些资源，但当前Map Runtime仍会明确拒绝NavMesh3D，不能退化为Grid2D。
 
 空间配置使用以下唯一换算关系：
 
@@ -57,7 +57,9 @@ MapInstanceId
 
 多个静态实例或动态副本可以共享同一份只读NavMesh，但每个MapInstance拥有独立AOI、动态障碍和Unit状态。MapScene创建时建立实例私有空间状态，销毁时通过`SpatialRelease`幂等释放；该释放不得卸载仍被其他实例引用的共享导航资产。
 
-当前`Grid2D`由`SpatialCreateGrid2D`创建Rust边界和米制Cell信息。Phase 4.2将增加NavMesh3D创建入口，不复用或伪装Grid2D数据。
+当前`Grid2D`由`SpatialCreateGrid2D`创建Rust边界和米制Cell信息。4.2.1的`NavigationAssetCache`已按内容Hash共享只读Detour资产，并使用Weak目录保证最后一个持有者退出后自然回收；下一步将增加MapInstance专属NavMesh3D创建入口，不复用或伪装Grid2D数据。
+
+导航网格只能离线烘焙。`navigation/maps/<map>/bake.json`是不可热更的制作输入，`npm run navigation:bake`生成`navigation.bin`和带版本、Hash、边界、Agent参数的元数据。服务端启动时只加载和校验结果，绝不在运行期扫描美术场景或调用Recast烘焙。官方Recast/Detour固定为`v1.6.0`，C++源码保持上游原样，TiangZ适配只放在`src/native/navmesh_shim.*`与Rust安全封装中。
 
 ## TS与Rust边界
 

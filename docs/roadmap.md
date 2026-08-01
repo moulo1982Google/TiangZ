@@ -331,9 +331,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.2：NavMesh3D
 
+状态：4.2.1离线资产链路已完成；MapScene自动装载、完整粗粒度FastOP、动态障碍和3D移动尚未完成。
+
 - 固定并接入Recast/Detour兼容的tiled NavMesh资源格式，校验`navigationVersion/navigationHash`。
 - Rust实现位置投影、寻路、射线、高度查询、动态障碍与地图实例生命周期。
 - TS只调用粗粒度空间API，不逐节点跨越V8边界，也不在TS保存第二份权威坐标。
+
+4.2.1已经固定官方Recast/Detour `v1.6.0`与上游提交，增加确定性灰盒OBJ、冷烘焙清单、`npm run navigation:bake`一键离线烘焙、稳定小端tiled资源格式和SHA-256元数据。Rust安全封装已完成资源加载、Hash拒绝、位置投影、绕障寻路，以及按Hash弱引用共享的资产缓存；同一输入重复烘焙必须字节一致。该阶段不要求美术地图，也不把Cocos资源导入或运行时烘焙混入服务端。
 
 ### Phase 4.3：Cocos 3D Demo
 
