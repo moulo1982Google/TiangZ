@@ -9,6 +9,51 @@ export interface MapCapacityPlacement {
   readonly yaw: number;
 }
 
+const GRID_CROSSING_PLAYER_MODULUS = 5;
+const GRID_CROSSING_SECONDS = 2;
+
+/**
+ * 判断均匀AOI基线中的虚拟玩家是否属于跨Grid组。每5人固定选择1人，保证20%比例可复现。
+ * 该分类只属于Bench负载模型，不能用于正式业务分流。
+ *
+ * Returns whether a virtual player belongs to the deterministic 20% grid-crossing cohort.
+ * This is benchmark workload metadata and must not be used by production gameplay.
+ */
+export function IsMapCapacityGridCrossingPlayer(
+  mapId: number,
+  playerIndex: number,
+  layout: number,
+): boolean {
+  if (layout !== 1) return false;
+  const map = GameConfigs.MapConfig.Get(mapId);
+  const aoi = map.aoiConfigId_ref;
+  if (!aoi) throw new Error(`map ${map.id} has no AOI config`);
+  const gridCount = (map.widthCells / aoi.gridSizeCells) *
+    (map.depthCells / aoi.gridSizeCells);
+  const gridIndex = playerIndex % gridCount;
+  const playerSlotInGrid = Math.floor(playerIndex / gridCount);
+  return (gridIndex + playerSlotInGrid) % GRID_CROSSING_PLAYER_MODULUS === 0;
+}
+
+/**
+ * 返回Bench玩家的权威移动速度。跨Grid组用两秒走完一个Grid中心距，其余玩家保持1 Cell/s。
+ * 速度由服务端设置，压测客户端只发送方向，避免用传送伪造AOI跨界成本。
+ *
+ * Returns the authoritative benchmark speed. Crossing players travel one grid-center distance
+ * every two seconds; local players remain at one cell per second.
+ */
+export function MapCapacitySpeedCellsPerSecond(
+  mapId: number,
+  playerIndex: number,
+  layout: number,
+): number {
+  if (!IsMapCapacityGridCrossingPlayer(mapId, playerIndex, layout)) return 1;
+  const map = GameConfigs.MapConfig.Get(mapId);
+  const aoi = map.aoiConfigId_ref;
+  if (!aoi) throw new Error(`map ${map.id} has no AOI config`);
+  return aoi.gridSizeCells / GRID_CROSSING_SECONDS;
+}
+
 /**
  * 根据冷地图配置计算可复现的Bench出生点。布局1轮询全部Grid中央Cell；布局2使用中央Grid的安全锚点。
  * 该函数只服务Bench Bundle，正式客户端不能选择服务端权威坐标。

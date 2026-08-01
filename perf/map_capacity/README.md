@@ -1,6 +1,6 @@
 # 单 MapHost AOI 容量测试
 
-这个测试用于回答：在增加 Gate 数量、避免 Gate 先成为瓶颈后，一个单线程业务 MapHost 在最坏全量同屏或全图均匀分布下能承载多少玩家。
+这个测试用于回答：在增加 Gate 数量、避免 Gate 先成为瓶颈后，一个单线程业务 MapHost 在可重复的全图均匀行为负载下能承载多少玩家。全量同屏保留为单独边界测试，不再作为默认容量基线。
 
 测试拓扑固定为一个 MapHost，可通过 `--gates` 横向增加 Gate。每个玩家同时执行：
 
@@ -15,18 +15,25 @@
 npm run perf:map-capacity
 ```
 
+默认命令固定为3000玩家、16 Gate、Rust客户端、10×10 AOI Grid均匀分布。每Grid 30人，其中80%在Grid内移动，20%以服务端权威速度每2秒跨越一次相邻Grid；理论跨Grid约300次/s。
+
+2026-08-01首轮10×10正式基线实测跨Grid`310.3/s`（理论值的`103.4%`）、Move`6004/s`、Movement Push约`211.6万/s`，Map CPU平均`82.1%`，Probe p95/p99为`128.49/156.05ms`，全部错误、超时、过载、背压和慢连接为0。它略高于80% CPU目标，因此用于持续回归和定位优化，不代表3000人已经是保守容量；原始报告固定为`perf/results/map_capacity_20260801_015926.md`，最新三档密度对照见`perf/results/map_capacity_grid_matrix_latest.md`。
+
 常用参数：
 
 ```bash
 npm run perf:map-capacity -- \
-  --gates 4 \
-  --players 100,125,150,175,200 \
+  --gates 16 \
+  --players 3000 \
+  --client rust \
+  --spawn-layout grid-uniform \
+  --world-grids 10 \
   --move-rate 2 \
   --probe-rate 0.2 \
   --warmup 10 \
   --duration 30 \
   --rounds 1 \
-  --target-map-cpu 85
+  --target-map-cpu 80
 ```
 
 Linux 上可以用同一套完整业务链路选择 I/O Backend：
@@ -48,8 +55,8 @@ npm run perf:map-capacity -- \
 - `--io-backend epoll|io-uring`，默认 `epoll`；旧参数 `--network-backend` 暂时仍可使用；
 - `--uring-entries 2048`；
 - `--uring-read-buffer-bytes 65536`；
-- `--movement-hold-messages N`，连续 N 次 Move 保持同一方向，默认2；在默认2Hz上报下仍是每秒换向一次，四个方向形成闭合轨迹，避免把高频转向事件误当成普通持续移动；
-- `--spawn-layout same-point|single-grid|grid-uniform`，默认 `same-point`；`single-grid`通过Bench专用RPC把玩家固定到同一AOI Grid中央附近的四个安全起点，确保1 Cell/s闭合轨迹不会触碰Grid边界；`grid-uniform`把玩家轮询分配到全部AOI Grid并固定在各Grid中央Cell。两种Bench布局都把速度限制为1 Cell/s，消息保持默认2Hz、服务端仍保持20Hz，用于测稳定Grid密度；
+- `--movement-hold-messages N`，Grid内移动组连续 N 次 Move 保持同一方向，默认2；在默认2Hz上报下每秒换向一次并形成小闭环；跨Grid组固定每2秒换向，不受该参数改变；
+- `--spawn-layout same-point|single-grid|grid-uniform`，默认 `grid-uniform`；`single-grid`把玩家固定到一个AOI Grid内做1 Cell/s安全闭环；`grid-uniform`轮询全部Grid，从中央Cell出发，每个Grid内确定性选择80%玩家做1 Cell/s小闭环，20%玩家以`gridSizeCells/2` Cell/s在相邻Grid中心间往返；
 - `--world-grids 10|15|20`，默认10；分别选择150、225、300 Cell的Cold MapConfig。该参数当前只支持Rust压测客户端；
 - `--post-setup-settle N`，全部玩家进图后空闲排空N秒再开始负载预热，默认0；用于把批量AOI Enter成本与稳态Move容量分开，不能用它掩盖独立的批量进图验收失败；
 - `--skip-rust-build`，只在已经确认目标二进制 feature 正确时使用。
@@ -57,6 +64,8 @@ npm run perf:map-capacity -- \
 Runtime会按照每张地图Cold `MapConfig`中的`entry_players_per_tick`逐Tick完成AOI Attach，`entry_queue_capacity`限制仍在Loading中的等待人数。该队列用于削平地图Attach和初始Snapshot洪峰，不是区服登录排队。报告的“地图进入队列”段会显示测量结束长度、生命周期峰值、累计放行和失败数；正式稳态窗口开始前队列必须归零。
 
 当前进图报告还区分两类快照成本：`player_entry_snapshot_items_total`是所有玩家逻辑上收到的实体条数，`player_entry_snapshot_materialized_items_total`是实际构造的实体对象条数；`player_entry_snapshot_builds_total`是本批次实际生成的不同可见集合，`player_entry_snapshot_audience_reuse_hits_total`和`player_entry_snapshot_unit_reuse_hits_total`分别表示数组和Unit快照复用。生产路径的`EnterMap`响应不再携带新玩家全量实体；客户端注册`G2C_AoiDelta`后调用生成SDK的`GateClient.mapSnapshotReady({ unitId })`，初始实体经既有批量广播下发。调整`entry_players_per_tick`前，必须同时比较这些指标、Map到Gate初始AoiDelta下行队列和Loading耗时。
+
+2026-08-01的3000人、16 Gate、单Grid完整进图A/B中，每Tick放行`1/4/8/16`人的Map Enter吞吐分别为`19.97/78.88/131.09/164.39人/s`，四档均零错误、零过载；Map广播pending生命周期峰值同时从`7`增长到`56/136/272`，Location确认平均耗时从`7.17ms`增长到`29.62/127.75/284.46ms`。因此正式Cold配置继续保持`1`；`4`是后续长窗口候选，`8/16`不能仅凭更短Loading直接采用。详见`perf/results/map_entry_admission_ab_latest.md`。
 
 进图洪峰使用独立A/B命令定位：
 
@@ -154,6 +163,7 @@ npm run perf:map-capacity -- \
 
 - MapHost 平均 CPU 不超过目标值。
 - 实际 Move 吞吐至少达到设定频率的 95%。
+- `grid-uniform`实际跨Grid速率达到理论值的80%至120%；默认3000人理论值为300次/s。
 - Move 和 MapProbe 没有超时。
 - 内部传输没有 overload 或 timeout，且没有因下行过慢主动断开客户端。
 
@@ -187,11 +197,19 @@ npm run perf:map-capacity -- \
   --duration 60
 ```
 
-10×10世界的1000/2000/3000人分别是平均每Grid 10/20/30人。固定3000人比较地图面积时，分别运行`--world-grids 10`、`15`、`20`；三轮必须保持Gate数、频率、预热和正式窗口一致。
+10×10世界的1000/2000/3000人分别是平均每Grid 10/20/30人。固定3000人比较地图面积时，使用一键密度矩阵：
 
-`grid-uniform`使用Bench专用Gate RPC，在创建Unit时通过可信内网字段传入服务端出生点；正式`C2G_EnterMap`没有坐标字段。玩家因此在AOI Attach前已经位于目标Grid，后续ActorLocation核对RPC只停止Demo自动回血、限制速度并校验位置，不再先从公共出生点搬运。玩家落在Grid中央Cell且采用小范围闭合轨迹，避免边界出生、临时Enter/Leave或Numeric演示Timer混进Move/AOI稳态。正式窗口开始前应确认Grid数量等于地图配置中的已占用Grid数，并且`visible`显著小于`N×(N-1)`；否则该结果不得标记为AOI均匀分布容量。
+```bash
+npm run perf:map-capacity:grid-matrix
+```
 
-静态均匀出生只会建立3×3 Enter关系。5×5@5Hz和7×7@1Hz只作用于已经进入后移动到迟滞外圈的关系；验证两档频率需要单独的“先Enter、再向外移动”回归，不能从静态均匀容量结果推断。
+该命令依次测试10×10、15×15和20×20世界，保持3000人、16 Gate、2Hz Move、0.2Hz Probe、80/20移动画像、预热和正式窗口一致，并生成`perf/results/map_capacity_grid_matrix_latest.md`。矩阵固定Map Enter并发8，只隔离正式稳态的空间密度；不要用不同的瞬时进图洪峰解释AOI稳态性能。
+
+2026-08-01 Windows IOCP正式矩阵结果：10×10、15×15、20×20的平均密度分别为30、13.33、7.5人/Grid；Map CPU平均为`74.1%/56.7%/57.3%`，Movement Push为`218.1万/140.9万/107.3万每秒`，Probe p95为`52.81/43.90/42.78ms`。三档Move均约6000/s、跨Grid均约300/s，正式窗口错误、过载、超时、背压和慢连接均为0。15×15之后CPU不再随接收人数同比下降，说明固定Move、20Hz Update和每帧编码扫描开始占据主要成本。
+
+`grid-uniform`使用Bench专用Gate RPC，在创建Unit时通过可信内网字段传入服务端出生点；正式`C2G_EnterMap`没有坐标字段。玩家因此在AOI Attach前已经位于目标Grid，后续ActorLocation核对RPC停止Demo自动回血并设置Bench权威速度，不会先从公共出生点搬运。80%组保持在出生Grid中央附近；20%组沿X轴在相邻Grid中心间往返，每2秒跨一次Grid，边缘Grid先向地图内部移动。正式窗口必须确认Grid数量等于地图配置中的已占用Grid数、每Grid人数均匀、跨Grid达标率在80%至120%，并且`visible`显著小于`N×(N-1)`；否则不得标记为正式AOI行为基线。稀疏地图初始快照较小，会让这个Bench后置核对RPC更集中地释放；矩阵因此限制Map Enter并发，后续应把核对字段并入Bench进图事务，彻底删除第二次RPC。
+
+当前Cold配置为3×3 Enter与20Hz高频区、5×5 Detach迟滞与5Hz低频区，越过5×5立即Leave；不再存在7×7和1Hz档位。20%跨Grid组会持续覆盖Enter、5Hz迟滞和Leave成本，报告中的`跨Grid/s`与`可见变化/s`必须同时保留。
 
 ## 2026-07-20 RPC 容量回归
 

@@ -294,8 +294,9 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 已固定Luban 4.10.2工具链，建立`game_config` Excel源目录、服务端/客户端分组生成、只读强类型查询、外键校验、配置指纹与自测；首批接入`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`。表结构属于不可热更Model，纯数据可生成内容寻址候选并由Watcher令各Process原子切换；部署配置仍独立留在`configs`。
 - 账号/角色选择与持久化。
 - 地图生命周期与传送已统一：静态地图按MapHost `staticMapIds`启动，动态副本由Demo `DynamicMapManagerComponent`通过同一`CreateMap`创建；Location维护并可由MapHost重报恢复MapInstance路由。业务统一调用`player.TransferToMap(mapInstanceId)`，不区分静态/动态、同MapHost/跨MapHost。动态副本只允许业务清空玩家后显式销毁，连续无人五分钟为Demo兜底策略。Gate仍提供Proto驱动的有界消息屏障，MapHost完成目标Prepare/Commit和源Actor清理；单进程/拆分进程smoke已覆盖迁移期间并发RPC。目标提交后的不确定事务自动恢复、MapHost租约和死亡节点接管仍留给Phase 5高可用。
-- Rust AOI功能链和Windows正式容量回归已经落地：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，稀疏Grid推导默认可见关系，Rust只保存迟滞关系、过滤拒绝和本帧净变化；TS NativeRef、Rust Pool、AOI规模和分阶段背压均已可观测。历史5Hz高频样本实现15000 Move/s、511810 Push/s；当前统一口径下，3000玩家、16 Gate、单Grid安全轨迹、2Hz Move与0.2Hz Probe的30秒正式窗口实现5982 Move/s、59741 Push/s，Map CPU平均/p90为39.2%/44.2%，零业务错误、零背压、零过载和零超时。两个结果口径不同，均只是框架负载证据，不是生产人数承诺。
-- 从2026-07-31起，新容量与长稳测试默认采用每玩家`2Hz`（500ms）持续移动心跳与`0.2Hz`（5秒）MapProbe；按下、转向和停止仍立即发送，Gate Ping保持5秒一次。上条5Hz Move + 1Hz Probe结果保留为历史口径，新旧结果不得直接横向比较；服务端20Hz权威推进和AOI同步档位不变。
+- Rust AOI功能链和Windows容量工具已经落地：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，稀疏Grid推导默认可见关系，Rust只保存迟滞关系、过滤拒绝和本帧净变化；TS NativeRef、Rust Pool、AOI规模和分阶段背压均已可观测。历史单Grid与5Hz结果只保留为边界证据。正式3000玩家、16 Gate、10×10 Grid均匀分布基线已经完成：每Grid 30人，其中80%在Grid内移动、20%每2秒跨Grid一次；实测跨Grid `310.3/s`、Move `6004.2/s`、Map CPU平均`82.1%`，错误、过载和背压均为0。该结果略高于80% CPU目标，定位为接近容量边界的回归基线，而不是保守容量点。
+- 从2026-08-01起，新容量基线默认采用每玩家`2Hz`（500ms）持续移动心跳与`0.2Hz`（5秒）MapProbe；按下、转向和停止仍立即发送，Gate Ping保持5秒一次。AOI Cold配置固定为3×3 Enter/20Hz与5×5 Detach/5Hz，不再使用7×7/1Hz。历史负载结果只保留原口径，不与新行为基线直接横向比较。
+- 3000人AOI密度矩阵已经覆盖10×10、15×15和20×20 Grid：Map CPU平均分别为`74.1%/56.7%/57.3%`，Movement Push约为`218.1万/140.9万/107.3万每秒`，正式窗口均无错误、过载、超时和背压。新增`perf:map-capacity:grid-matrix`作为一键回归入口；Bench后置Place RPC在稀疏地图上会形成初始化突发，后续应并入Bench进图事务。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
 - 怪物 Actor、巡逻、仇恨和战斗。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
@@ -323,7 +324,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 跨AOI Grid的Enter/Leave仍是不可覆盖事件，但同帧相同受众会批量编码为`G2C_AoiDelta`；Cocos 2D、Pixi和Runtime smoke已适配。容量工具会保留失败诊断并报告跨Grid/可见变化速率。
 - 进图初始视野已与`EnterMap`大RPC解耦：客户端注册`G2C_AoiDelta`后调用`GateClient.mapSnapshotReady`，Gate校验路由，MapHost通过既有批量广播下发。后续优化重点是初始视野的区域共享、分批和受控下行，不再直接扩大`entryPlayersPerTick`。
 - 业务广播新增逻辑`ClientAudience`：`ObserversOf/VisibleSubjectsOf`明确AOI关系方向，`Self/ForUnits/Union/Intersect/Except`组合自己、队伍和公会等受众；`ClientBroadcast`隐藏Gate、连接和跨地图Location解析。Buff协议以公开Event和受限latest详情验证字段Projection，TypeScript Client SDK提供引擎无关的revision合并与移除墓碑。
-- all-in-one与split-process Runtime smoke均已验证同屏可见、跨边界Leave、范围外不再收到新移动sequence、返回后Enter。当前3000玩家、16 Gate、单Grid安全轨迹、每玩家2Hz Move与0.2Hz Probe的Windows正式窗口实现5982 Move/s与59741 Push/s，Map CPU平均/p90/峰值为39.2%/44.2%/44.2%，零业务错误、零背压、零内部过载和零超时；历史5Hz高频结果另行保留，不与当前口径直接比较。详见`perf/results/map_capacity_latest.md`。
+- all-in-one与split-process Runtime smoke均已验证同屏可见、跨边界Leave、范围外不再收到新移动sequence、返回后Enter。容量工具现以3000玩家、16 Gate、均匀分布的80/20移动画像为默认基线，并要求实际跨Grid速率达到理论值的80%至120%；首轮10×10结果固定在`perf/results/map_capacity_20260801_015926.md`，10×10、15×15、20×20对照写入`perf/results/map_capacity_grid_matrix_latest.md`。旧单Grid和历史5Hz结果只保留原口径。
 - Prometheus与Grafana已增加AOI World、Entity、Grid、候选关系、最终关系、跨Grid、关系变化和过滤覆盖指标。
 - 分阶段指标已经区分Process `frame/completion/disconnect/shutdown`等待，以及Transport `manager/connection/call-writer/send-writer`过载。容量报告仅使用正式窗口Counter增量判定稳态，生命周期峰值只用于解释历史洪峰；后续优化必须继续先定位责任阶段再做同拓扑A/B。
 - 进图洪峰增加独立A/B链路：MapHost、ID分配、Player创建、Location、Admission、AOI Attach、新玩家Snapshot、老玩家Enter与Gate下行均可分别计数。Bench支持`attach-only/new-observer-only/existing-observers-only/full`四种模式，只有`full`拥有正式语义；容量结论禁止采用残缺诊断模式。

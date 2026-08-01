@@ -65,7 +65,7 @@ Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Co
 - `detachRangeGrids`：已经可见后允许保持关系的迟滞范围；越界才发送Leave，避免边界抖动。
 - `AoiSyncTierConfig.rangeGrids/syncHz`：已可见关系中，可覆盖状态的最大发送频率。同步范围不能超过Detach，但不要求覆盖整个Detach范围。
 
-范围字段填写奇数边长，例如Enter `3`代表3×3 AOI Grid，Detach `7`代表7×7。当前Demo每个Cell为1米、一个AOI Grid为15×15 Cell、默认地图为150×150 Cell即10×10 AOI Grid；3×3内Movement最高20Hz，5×5外圈最高5Hz，7×7外圈最高1Hz并作为Detach迟滞区，再往外不可见。即使同步档位比Enter更大，也只对已经Enter、随后移入外圈且尚未Detach的关系生效，绝不因为单位第一次出现在5×5或7×7内就提前创建视野。低频档按Subject所在Grid稳定错峰，避免所有远距单位在同一个Tick形成周期尖峰；同一Grid仍共享编码帧。
+范围字段填写奇数边长，例如Enter `3`代表3×3 AOI Grid，Detach `5`代表5×5。当前Demo每个Cell为1米、一个AOI Grid为15×15 Cell、默认地图为150×150 Cell即10×10 AOI Grid；3×3内Movement最高20Hz，已可见关系移入5×5外圈后降为5Hz，越过5×5立即Leave。5×5不会让一个从未Enter的单位提前创建视野。低频档按Subject所在Grid稳定错峰，避免所有远距单位在同一个Tick形成周期尖峰；同一Grid仍共享编码帧。当前不再配置7×7可见范围和1Hz档位。
 
 AOI Grid从每张地图的最小Cell开始编号，不从世界坐标0开始切分。地图宽高必须是`gridSizeCells`的整数倍；因此150、225、300 Cell会严格形成10×10、15×15、20×20 Grid，奇数个Grid的地图不会在零点两侧多切出一列。AOI关系只在实体跨越Grid边界时重算；Grid2D每步移动一个Cell，NavMesh3D可以在同一Cell内连续移动。
 

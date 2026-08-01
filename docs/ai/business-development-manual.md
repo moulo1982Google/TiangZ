@@ -336,7 +336,9 @@ Grid2D业务使用`cellX/cellZ`和`inputX/inputZ`。Cocos 2D与Pixi在客户端�
 
 Grid2D客户端只上报移动意图：按下、转向和松开立即发送，按住不变时每`500ms`发送一次保活，静止时不周期发送。窗口隐藏、浏览器失焦和地图销毁必须立即清除按键并发送停止。业务不得把这项`2Hz`输入心跳当成服务端模拟频率；权威移动仍由20Hz Game.Update推进，AOI下行和渲染平滑各自独立。`C2M_MapProbe`只用于测量完整Actor RPC链路延迟，容量基线默认每5秒一次；`C2G_Ping`是Gate存活探测，也固定每5秒一次，不能用二者替代移动或游戏Tick。
 
-Cell是最小空间单位：Grid2D一步移动一个Cell，NavMesh3D允许在Cell内连续移动。AOI只按Grid边界重算，默认15×15 Cell组成一个Grid；Grid从地图最小Cell开始编号，地图宽高必须是Grid边长的整数倍。默认3×3是Enter和20Hz高频区，已可见关系移到5×5外圈后降为5Hz，移到7×7外圈后降为1Hz并保留迟滞，再越界才Leave。外圈不会让一个从未Enter的单位直接可见。
+Cell是最小空间单位：Grid2D一步移动一个Cell，NavMesh3D允许在Cell内连续移动。AOI只按Grid边界重算，默认15×15 Cell组成一个Grid；Grid从地图最小Cell开始编号，地图宽高必须是Grid边长的整数倍。默认3×3既是Enter区域，也是20Hz高频区；已可见关系移到5×5外圈后降为5Hz，5×5同时是Detach迟滞边界，越界立即Leave。外圈不会让一个从未Enter的单位直接可见，不再保留7×7或1Hz档位。
+
+容量验收不能只测单一地图密度。框架基线固定用`npm run perf:map-capacity:grid-matrix`比较3000人在10×10、15×15、20×20 Grid中的均匀分布，保持80% Grid内移动、20%每2秒跨Grid以及消息频率不变。业务新增地图时应按实际平均人数/Grid选择最接近的结果，不得把稀疏世界结果当作主城同屏容量。进图并发属于初始化压力，必须受控并与正式稳态窗口分开解读。
 
 创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。当前只有`Grid2D`运行时可用；`NavMesh3D`配置虽然已经具备资源、版本和哈希字段，但必须等Rust导航运行时完成后才能启用。业务不能捕获“不支持NavMesh”的异常后回退到Grid2D。空间模式、字段结构和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
 
@@ -613,6 +615,8 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 首次登录或`TransferToMap`到达目标地图时，业务不应直接调用底层AOI Attach，也不需要自己创建Loading队列。`MapComponent.PlayerEntered`会进入当前MapInstance的等待队列，地图每Tick最多按`MapConfig.entryPlayersPerTick`放行；`entryQueueCapacity`满时明确拒绝，防止无限积压。Gate保持连接并等待`EnterMap`或传送响应，客户端继续显示Loading。首次进图和传送链路由框架统一使用10分钟Admission事务上限，不继承普通Scene RPC的5秒默认值；业务不得自己套一层更短超时破坏队列语义。断线重连调用`SecondEnterMap`并复用原Unit，因此不进入该队列。
 
 同一Tick放行的玩家会先统一完成AOI Attach，再准备初始实体快照。生产进入流程中，`EnterMap`只返回小型进入信息；客户端创建地图对象并注册`G2C_AoiDelta`监听后调用生成SDK中的`GateClient.mapSnapshotReady({ unitId })`，框架随后通过已有广播接口发送初始`AoiDelta`。业务不应手写Gate路由，也不应把初始实体数组重新塞回EnterMap。快照暂存由`MapComponent`管理，玩家移除和地图销毁自动清理。`player_entry_snapshot_items_total`是逻辑发送条数，不能拿它直接当成对象分配数；性能分析还要看`player_entry_snapshot_materialized_items_total`和复用命中指标。不要为了追求更高进图吞吐直接把`entryPlayersPerTick`调大，必须通过分批A/B同时观察Map CPU、初始AoiDelta下行队列和Loading时延。
+
+当前Demo正式值是每Tick `1`人。3000人A/B表明`4`可以作为后续复测候选，但`8/16`会显著增加广播pending和Location确认延迟。业务开发者不得在Hotfix中动态修改该值，也不得只根据平均Loading时间调整；修改Cold表后必须完整重启，并至少验证完整`full`语义、队列峰值、Location延迟、Gate下行、错误和长窗口稳态CPU。
 
 这套机制只处理同一地图瞬时进入洪峰。它不检查区服总人数，不显示排队名次，不保证某张地图适合继续接收玩家，也不代替副本分配和MapHost容量规划。业务仍只调用统一传送入口，不为静态地图、动态副本、同进程或跨进程分别写节流代码。
 

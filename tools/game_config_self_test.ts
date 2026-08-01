@@ -10,6 +10,10 @@ import {
   GameConfigRegistry,
   GameConfigs as serverConfigs,
 } from "../app/generated/model/config";
+import {
+  IsMapCapacityGridCrossingPlayer,
+  MapCapacitySpeedCellsPerSecond,
+} from "../app/hotfix/bench/MapCapacityLayout";
 
 /** 验证Luban配置的查询、分端裁剪、引用解析和只读约束。 / Verifies Luban lookup, target filtering, references, and immutability. */
 function main(): void {
@@ -40,8 +44,23 @@ function main(): void {
   assert.equal(serverConfigs.MapConfig.Get(1020).widthCells, 300);
   assert.deepEqual(
     serverConfigs.AoiSyncTierConfig.GetAll().map((tier) => [tier.rangeGrids, tier.syncHz]),
-    [[3, 20], [5, 5], [7, 1]],
+    [[3, 20], [5, 5]],
   );
+  assert.equal(serverConfigs.AoiConfig.Get(1).detachRangeGrids, 5);
+  const crossingPlayers = Array.from(
+    { length: 3_000 },
+    (_, playerIndex) => playerIndex,
+  ).filter((playerIndex) => IsMapCapacityGridCrossingPlayer(1, playerIndex, 1));
+  assert.equal(crossingPlayers.length, 600);
+  for (let gridIndex = 0; gridIndex < 100; gridIndex += 1) {
+    const crossingInGrid = Array.from(
+      { length: 30 },
+      (_, slot) => gridIndex + slot * 100,
+    ).filter((playerIndex) => IsMapCapacityGridCrossingPlayer(1, playerIndex, 1));
+    assert.equal(crossingInGrid.length, 6);
+  }
+  assert.equal(MapCapacitySpeedCellsPerSecond(1, 0, 1), 7.5);
+  assert.equal(MapCapacitySpeedCellsPerSecond(1, 100, 1), 1);
   assert.equal(serverConfigs.ItemConfig.TryGet(999_999), undefined);
   assert.throws(
     () => serverConfigs.MapConfig.Get(999_999),

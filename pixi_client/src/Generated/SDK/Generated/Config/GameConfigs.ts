@@ -8,7 +8,7 @@ const RAW_DATA: Record<string, unknown> = {
       "name": "默认迟滞AOI",
       "grid_size_cells": 15,
       "enter_range_grids": 3,
-      "detach_range_grids": 7
+      "detach_range_grids": 5
     }
   ],
   "game_tbaoisynctierconfig": [
@@ -23,12 +23,6 @@ const RAW_DATA: Record<string, unknown> = {
       "aoi_config_id": 1,
       "range_grids": 5,
       "sync_hz": 5
-    },
-    {
-      "id": 3,
-      "aoi_config_id": 1,
-      "range_grids": 7,
-      "sync_hz": 1
     }
   ],
   "game_tbitemconfig": [
@@ -161,7 +155,7 @@ export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 
-export const GameConfigFingerprint = "d2d0c5f37d8f76091bca7f9445435493e546fe4216ed29ad285a6b5b93203b55";
+export const GameConfigFingerprint = "159549b002f90ff719b8aa3289512835d998ef9ffe0b013ba3dbbbcb28c9be0a";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),

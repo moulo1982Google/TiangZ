@@ -551,7 +551,7 @@ async function verifySharedMapBroadcast(
       movement: observerState,
     });
 
-    // Demo使用15米AOI Grid和7x7 Detach；持续移动直到真正越过迟滞外圈。
+    // Demo使用15米AOI Grid和5x5 Detach；持续移动直到真正越过迟滞外圈。
     const leaveFrame = observer.gate.waitForMessage(MsgCode.G2C_AoiDelta, 8000);
     await mover.gate.send(
       buildMovePacket({ inputX: 0, inputZ: 1, sequence: 2 }),

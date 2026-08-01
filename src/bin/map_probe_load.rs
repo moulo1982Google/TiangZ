@@ -40,6 +40,8 @@ const MAP_CAPACITY_PLACE_RESP: u16 = 15009;
 const MAP_CAPACITY_ENTER_REQ: u16 = 15010;
 const MAP_CAPACITY_ENTER_RESP: u16 = 15011;
 const CLIENT_PING_INTERVAL: Duration = Duration::from_secs(5);
+const GRID_CROSSING_PLAYER_MODULUS: u32 = 5;
+const GRID_CROSSING_SECONDS: u64 = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SpawnLayout {
@@ -175,6 +177,7 @@ struct Options {
     move_rate: u64,
     movement_hold_messages: u32,
     spawn_layout: SpawnLayout,
+    world_grids: u32,
     entry_sync_mode: EntrySyncMode,
     probe_rate: f64,
     probe_concurrency: usize,
@@ -215,6 +218,7 @@ struct PlayerConnection {
     state_pushes: StatePushCounters,
     next_rpc_id: u32,
     unit_id: u32,
+    player_index: u32,
 }
 
 #[derive(Clone)]
@@ -596,6 +600,19 @@ async fn main() -> Result<()> {
         "targetMoveRatePerPlayer": options.move_rate,
         "movementHoldMessages": options.movement_hold_messages,
         "spawnLayout": options.spawn_layout.name(),
+        "worldGrids": options.world_grids,
+        "movementProfile": if options.spawn_layout == SpawnLayout::GridUniform {
+            json!({
+                "localPercent": 80,
+                "gridCrossingPercent": 20,
+                "gridCrossingIntervalSeconds": GRID_CROSSING_SECONDS,
+                "expectedGridCrossingsPerSecond": options.players as f64
+                    / f64::from(GRID_CROSSING_PLAYER_MODULUS)
+                    / GRID_CROSSING_SECONDS as f64,
+            })
+        } else {
+            json!(null)
+        },
         "entrySyncMode": options.entry_sync_mode.name(),
         "mapId": options.map_id,
         "targetProbeRatePerPlayer": options.probe_rate,
@@ -797,8 +814,8 @@ async fn enter_player(
                 let response = decode_message(&frame, enter_response_code, Some(3))
                     .context("EnterMap RPC failed")?;
                 unit_id = response.u32(unit_id_field)?;
-                inline_snapshot = placement_layout.is_none()
-                    && count_length_delimited_field(&frame, 7)? > 0;
+                inline_snapshot =
+                    placement_layout.is_none() && count_length_delimited_field(&frame, 7)? > 0;
                 received_response = true;
             }
             MAP_READY => received_ready = true,
@@ -863,6 +880,7 @@ async fn enter_player(
         state_pushes,
         next_rpc_id,
         unit_id,
+        player_index,
     })
 }
 
@@ -996,6 +1014,7 @@ async fn run_player(
         state_pushes,
         mut next_rpc_id,
         unit_id,
+        player_index,
     } = player;
     let mut pushes_at_measurement_start = None;
     let mut state_pushes_at_measurement_start = None;
@@ -1044,8 +1063,12 @@ async fn run_player(
             send_move(
                 &writer_tx,
                 unit_id,
+                player_index,
                 move_sequence,
                 options.movement_hold_messages,
+                options.move_rate,
+                options.spawn_layout,
+                options.world_grids,
             )
             .await?;
             if now >= timing.measurement_start {
@@ -1206,22 +1229,69 @@ fn phase_offset(interval: Option<Duration>, unit_id: u32, salt: u32) -> Duration
 async fn send_move(
     writer_tx: &mpsc::Sender<Vec<u8>>,
     unit_id: u32,
+    player_index: u32,
     sequence: u32,
     hold_messages: u32,
+    move_rate: u64,
+    spawn_layout: SpawnLayout,
+    world_grids: u32,
 ) -> Result<()> {
-    let direction_step = sequence.saturating_sub(1) / hold_messages;
-    let direction = (unit_id.wrapping_add(direction_step) % 4) as i32;
-    let (input_x, input_z) = match direction {
-        0 => (1, 0),
-        1 => (0, 1),
-        2 => (-1, 0),
-        _ => (0, -1),
-    };
+    let (input_x, input_z) = movement_input(
+        unit_id,
+        player_index,
+        sequence,
+        hold_messages,
+        move_rate,
+        spawn_layout,
+        world_grids,
+    );
     let mut payload = Vec::with_capacity(16);
     push_sint32(&mut payload, 1, input_x);
     push_sint32(&mut payload, 2, input_z);
     push_uint32(&mut payload, 3, sequence);
     send_client_frame(writer_tx, encode_message(MAP_MOVE, &payload)).await
+}
+
+fn movement_input(
+    unit_id: u32,
+    player_index: u32,
+    sequence: u32,
+    hold_messages: u32,
+    move_rate: u64,
+    spawn_layout: SpawnLayout,
+    world_grids: u32,
+) -> (i32, i32) {
+    if spawn_layout == SpawnLayout::GridUniform
+        && is_grid_crossing_player(player_index, world_grids)
+    {
+        let reports_per_leg = u32::try_from(move_rate.saturating_mul(GRID_CROSSING_SECONDS))
+            .unwrap_or(u32::MAX)
+            .max(1);
+        let leg = sequence.saturating_sub(1) / reports_per_leg;
+        let grid_x = player_index % world_grids;
+        let initially_positive = grid_x + 1 < world_grids;
+        let positive = if leg % 2 == 0 {
+            initially_positive
+        } else {
+            !initially_positive
+        };
+        return (if positive { 1 } else { -1 }, 0);
+    }
+
+    let direction_step = sequence.saturating_sub(1) / hold_messages;
+    match (unit_id.wrapping_add(direction_step) % 4) as i32 {
+        0 => (1, 0),
+        1 => (0, 1),
+        2 => (-1, 0),
+        _ => (0, -1),
+    }
+}
+
+fn is_grid_crossing_player(player_index: u32, world_grids: u32) -> bool {
+    let grid_count = world_grids.saturating_mul(world_grids).max(1);
+    let grid_index = player_index % grid_count;
+    let player_slot_in_grid = player_index / grid_count;
+    (grid_index + player_slot_in_grid) % GRID_CROSSING_PLAYER_MODULUS == 0
 }
 
 async fn send_probe(
@@ -1655,6 +1725,8 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
     let state_sync_concurrency = number("state-sync-concurrency", 4)? as usize;
     let movement_hold_messages = u32::try_from(number("movement-hold-messages", 1)?)
         .context("movement hold messages exceeds uint32")?;
+    let world_grids =
+        u32::try_from(number("world-grids", 10)?).context("world grids exceeds uint32")?;
     let duration = number("duration", 10)?;
     if players == 0
         || setup_concurrency == 0
@@ -1662,10 +1734,11 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         || probe_concurrency == 0
         || state_sync_concurrency == 0
         || movement_hold_messages == 0
+        || world_grids == 0
         || duration == 0
     {
         bail!(
-            "players, setup-concurrency, map-entry-concurrency, probe-concurrency, state-sync-concurrency, movement-hold-messages and duration must be greater than zero"
+            "players, setup-concurrency, map-entry-concurrency, probe-concurrency, state-sync-concurrency, movement-hold-messages, world-grids and duration must be greater than zero"
         );
     }
     Ok(Options {
@@ -1696,6 +1769,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
                 .map(String::as_str)
                 .unwrap_or("same-point"),
         )?,
+        world_grids,
         entry_sync_mode: EntrySyncMode::parse(
             values
                 .get("entry-sync-mode")
@@ -1779,5 +1853,36 @@ mod tests {
             Some(3000)
         );
         assert!(parse_options(vec!["--map-entry-concurrency".into(), "0".into()]).is_err());
+    }
+
+    #[test]
+    fn uniform_profile_keeps_eighty_percent_local_and_crosses_twenty_percent() {
+        let crossing = (0..3_000)
+            .filter(|index| is_grid_crossing_player(*index, 10))
+            .count();
+        assert_eq!(crossing, 600);
+        for grid_index in 0..100 {
+            let crossing_in_grid = (0..30)
+                .filter(|slot| is_grid_crossing_player(grid_index + slot * 100, 10))
+                .count();
+            assert_eq!(crossing_in_grid, 6);
+        }
+
+        assert_eq!(
+            movement_input(1, 0, 1, 2, 2, SpawnLayout::GridUniform, 10),
+            (1, 0)
+        );
+        assert_eq!(
+            movement_input(1, 0, 4, 2, 2, SpawnLayout::GridUniform, 10),
+            (1, 0)
+        );
+        assert_eq!(
+            movement_input(1, 0, 5, 2, 2, SpawnLayout::GridUniform, 10),
+            (-1, 0)
+        );
+        assert_eq!(
+            movement_input(1, 109, 1, 2, 2, SpawnLayout::GridUniform, 10),
+            (-1, 0)
+        );
     }
 }

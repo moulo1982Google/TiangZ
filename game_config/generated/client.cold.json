@@ -5,7 +5,7 @@
       "name": "默认迟滞AOI",
       "grid_size_cells": 15,
       "enter_range_grids": 3,
-      "detach_range_grids": 7
+      "detach_range_grids": 5
     }
   ],
   "game_tbaoisynctierconfig": [
@@ -20,12 +20,6 @@
       "aoi_config_id": 1,
       "range_grids": 5,
       "sync_hz": 5
-    },
-    {
-      "id": 3,
-      "aoi_config_id": 1,
-      "range_grids": 7,
-      "sync_hz": 1
     }
   ],
   "game_tbmapconfig": [

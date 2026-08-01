@@ -11,11 +11,11 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   console.log(`用法：npm run perf:map-capacity -- [options]
 
 主要参数：
-  --players 100,150,200       玩家数量列表
-  --gates 4                   Gate 数量
+  --players 3000              玩家数量列表；默认正式基线为3000
+  --gates 16                  Gate 数量
   --move-rate 2               每玩家每秒 Move 次数（默认500ms一次）
   --movement-hold-messages 2  连续多少次 Move 保持同一方向
-  --spawn-layout same-point   same-point|single-grid|grid-uniform；玩家出生布局
+  --spawn-layout grid-uniform same-point|single-grid|grid-uniform；默认均匀分布全部Grid
   --entry-sync-mode full      full|attach-only|new-observer-only|existing-observers-only；仅Bench诊断
   --world-grids 10            Grid世界边长；当前支持10|15|20
   --probe-rate 0.2            每玩家每秒 Probe RPC 次数（默认5秒一次）
@@ -23,7 +23,7 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --state-sync-rate 0         每玩家每秒状态同步触发 RPC 次数
   --state-sync-concurrency 4  每玩家状态同步最大 in-flight
   --client-shards 1           Node 压测客户端进程数
-  --client node|rust          压测客户端实现，默认 node
+  --client node|rust          压测客户端实现，默认 rust
   --latency-sample-rate 0     链路分段采样；0 表示关闭
   --duration 30               正式测试秒数
   --post-setup-settle 0       全员进图后、负载预热前的空闲排空秒数
@@ -127,6 +127,8 @@ async function main() {
     .filter((item) =>
       item.median.mapCpuAverage <= options.targetMapCpu &&
       item.median.moveTargetPercent >= 95 &&
+      item.median.aoiRelocationTargetPercent >= 80 &&
+      item.median.aoiRelocationTargetPercent <= 120 &&
       item.median.stateSyncTargetPercent >= 95 &&
       item.median.moveErrors === 0 &&
       item.median.probeErrors === 0 &&
@@ -305,6 +307,7 @@ async function runLoadClients(players, managerPort, round, measurementSignal) {
         "--move-rate", String(options.moveRate),
         "--movement-hold-messages", String(options.movementHoldMessages),
         "--spawn-layout", options.spawnLayout,
+        ...(useRustClient ? ["--world-grids", String(options.worldGrids)] : []),
         ...(useRustClient ? ["--entry-sync-mode", options.entrySyncMode] : []),
         "--probe-rate", String(options.probeRate),
         "--probe-concurrency", String(options.probeConcurrency),
@@ -1679,6 +1682,13 @@ function aggregateCases(rounds) {
       aoiRelocationsPerSecond: median(group.map(
         (item) => item.serverResources.map?.nativeData?.aoiRelocationsPerSecond ?? 0,
       )),
+      aoiRelocationTargetPercent: options.probeOnly ||
+        options.spawnLayout !== "grid-uniform" || options.moveRate === 0
+        ? 100
+        : median(group.map((item) =>
+          (item.serverResources.map?.nativeData?.aoiRelocationsPerSecond ?? 0) /
+          (item.players * 0.1) * 100
+        )),
       aoiVisibilityChangesPerSecond: median(group.map(
         (item) => item.serverResources.map?.nativeData?.aoiVisibilityChangesPerSecond ?? 0,
       )),
@@ -1842,7 +1852,7 @@ function renderMarkdown(report) {
     `- 地图：${options.worldGrids}x${options.worldGrids} AOI Grid（MapConfig ${options.mapId}）`,
     "- Unit 数据：Rust 权威存储，Rust 批处理并直接编码移动快照",
     `- 玩家布局：${options.spawnLayout === "grid-uniform"
-      ? `轮询全部AOI Grid，固定在Grid中央Cell（各档平均${options.players.map((players) => formatDensity(players, options.worldGrids)).join("/")}人/Grid）`
+      ? `轮询全部AOI Grid并从Grid中央Cell开始（各档平均${options.players.map((players) => formatDensity(players, options.worldGrids)).join("/")}人/Grid）`
       : options.spawnLayout === "single-grid"
          ? "固定单个AOI Grid内的安全轨迹（不跨Grid）"
          : "统一出生点（最坏同屏）"}`,
@@ -1853,6 +1863,9 @@ function renderMarkdown(report) {
       : []),
     ...(!options.probeOnly && options.movementHoldMessages > 1
       ? [`- 移动输入：每 ${options.movementHoldMessages} 次上报保持同一方向`]
+      : []),
+    ...(!options.probeOnly && options.spawnLayout === "grid-uniform"
+      ? [`- 移动画像：80%玩家在Grid内闭环；20%玩家每2秒跨越一次相邻Grid，预期跨Grid约${options.players.map((players) => round(players * 0.1, 1)).join("/")}次/s`]
       : []),
     `- Probe in-flight：每连接 ${options.probeConcurrency}`,
     ...(options.latencySampleRate > 0
@@ -1941,7 +1954,7 @@ function renderMarkdown(report) {
     "",
     "## AOI 空间指标",
     "",
-    "| 玩家 | World/Entity/Grid | candidate/visible | 迟滞关系 | 拒绝关系 | 跨Grid/s | 可见变化/s | 过滤覆盖/s |",
+    "| 玩家 | World/Entity/Grid | candidate/visible | 迟滞关系 | 拒绝关系 | 跨Grid/s（达标率） | 可见变化/s | 过滤覆盖/s |",
     "|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.cases) {
@@ -1950,7 +1963,7 @@ function renderMarkdown(report) {
       `| ${item.players} | ${round(value.aoiWorlds)}/${round(value.aoiEntries)}/${round(value.aoiGrids)} | ` +
       `${round(value.aoiCandidateRelations)}/${round(value.aoiVisibleRelations)} | ` +
       `${round(value.aoiLingeringRelations)} | ${round(value.aoiRejectedRelations)} | ` +
-      `${round(value.aoiRelocationsPerSecond, 1)} | ${round(value.aoiVisibilityChangesPerSecond, 1)} | ` +
+      `${round(value.aoiRelocationsPerSecond, 1)}（${round(value.aoiRelocationTargetPercent, 1)}%） | ${round(value.aoiVisibilityChangesPerSecond, 1)} | ` +
       `${round(value.aoiFilterOverridesPerSecond, 1)} |`,
     );
   }
@@ -2098,9 +2111,11 @@ function renderMarkdown(report) {
     options.probeOnly
       ? "- Probe Only 模式不包含 AOI 下行。"
       : "- 虚拟客户端不完整构造业务对象；状态测试会扫描 protobuf 顶层 repeated 字段，分别统计协议帧、状态项和消息体字节。端到端延迟由 MapProbe 独立测量。",
-    options.spawnLayout === "single-grid" || options.spawnLayout === "grid-uniform"
-      ? "- `push/s` 是虚拟客户端实际收到的移动帧数；Bench布局使用Grid内闭合轨迹，正式窗口应没有持续跨Grid或可见关系变化。"
-      : "- `push/s` 是虚拟客户端实际收到的移动帧数；玩家可能跨AOI Grid，实际Grid、候选关系、跨Grid和可见变化见AOI空间指标。",
+    options.spawnLayout === "single-grid"
+      ? "- `push/s` 是虚拟客户端实际收到的移动帧数；单Grid布局使用Grid内闭合轨迹，正式窗口应没有持续跨Grid或可见关系变化。"
+      : options.spawnLayout === "grid-uniform"
+        ? "- `push/s` 是虚拟客户端实际收到的移动帧数；均匀基线固定20%玩家每2秒跨Grid一次，必须结合AOI空间指标中的实际跨Grid速率判断负载是否成立。"
+        : "- `push/s` 是虚拟客户端实际收到的移动帧数；玩家可能跨AOI Grid，实际Grid、候选关系、跨Grid和可见变化见AOI空间指标。",
     "- AOI进入/离开是不可覆盖事件，但同一逻辑帧内受众完全相同的变化会合并为一个`G2C_AoiDelta`；Movement、Numeric等可覆盖状态仍走latest。",
     "- Map 可覆盖状态广播采用 single-flight；前一批未完成时保留最新 dirty revision，发送成功后按 revision Ack。`pending`、合并率、广播耗时和排队时间用于判断下行是否跟不上 Game.Update。",
     "- Gate 数量用于分摊连接、编码和下行发送；MapHost 始终只有一个。",
@@ -2126,8 +2141,8 @@ function parseOptions(args) {
     else values.set(item, args[++index]);
   }
   const options = {
-    players: csvNumbers(values.get("--players") ?? "100,125,150,175,200"),
-    gates: positive(values.get("--gates") ?? "4", "--gates"),
+    players: csvNumbers(values.get("--players") ?? "3000"),
+    gates: positive(values.get("--gates") ?? "16", "--gates"),
     // Demo 默认客户端方向保活频率是2Hz；按键变化立即发送，服务端Game.Update保持20Hz。
     moveRate: flags.has("--probe-only")
       ? 0
@@ -2137,7 +2152,7 @@ function parseOptions(args) {
       "--movement-hold-messages",
     ),
     spawnLayout: enumValue(
-      values.get("--spawn-layout") ?? "same-point",
+      values.get("--spawn-layout") ?? "grid-uniform",
       ["same-point", "single-grid", "grid-uniform"],
       "--spawn-layout",
     ),
@@ -2167,7 +2182,7 @@ function parseOptions(args) {
     duration: positive(values.get("--duration") ?? "30", "--duration"),
     warmup: nonNegative(values.get("--warmup") ?? "10", "--warmup"),
     rounds: positive(values.get("--rounds") ?? "1", "--rounds"),
-    setupConcurrency: positive(values.get("--setup-concurrency") ?? "16", "--setup-concurrency"),
+    setupConcurrency: positive(values.get("--setup-concurrency") ?? "512", "--setup-concurrency"),
     mapEntryConcurrency: values.has("--map-entry-concurrency")
       ? positive(values.get("--map-entry-concurrency"), "--map-entry-concurrency")
       : null,
@@ -2175,9 +2190,9 @@ function parseOptions(args) {
       values.get("--post-setup-settle") ?? "0",
       "--post-setup-settle",
     ),
-    timeoutMs: positive(values.get("--timeout") ?? "60000", "--timeout"),
+    timeoutMs: positive(values.get("--timeout") ?? "600000", "--timeout"),
     movementTimeoutMs: positive(values.get("--movement-timeout") ?? "10000", "--movement-timeout"),
-    targetMapCpu: positive(values.get("--target-map-cpu") ?? "85", "--target-map-cpu"),
+    targetMapCpu: positive(values.get("--target-map-cpu") ?? "80", "--target-map-cpu"),
     managerPort: positive(values.get("--manager-port") ?? "7000", "--manager-port"),
     loginPort: positive(values.get("--login-port") ?? "7001", "--login-port"),
     gateBasePort: positive(values.get("--gate-base-port") ?? "7201", "--gate-base-port"),
@@ -2194,7 +2209,7 @@ function parseOptions(args) {
     debugRuntime: flags.has("--debug-runtime"),
     skipRustBuild: flags.has("--skip-rust-build"),
     probeOnly: flags.has("--probe-only"),
-    client: enumValue(values.get("--client") ?? "node", ["node", "rust"], "--client"),
+    client: enumValue(values.get("--client") ?? "rust", ["node", "rust"], "--client"),
     ioBackend: enumValue(
       values.get("--io-backend") ?? values.get("--network-backend") ?? "epoll",
       ["epoll", "io-uring"],
