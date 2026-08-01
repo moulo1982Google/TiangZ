@@ -38,6 +38,12 @@
       "port": 7000
     },
     {
+      "name": "map_manager",
+      "sceneType": "MapManager",
+      "ip": "127.0.0.1",
+      "port": 7100
+    },
+    {
       "name": "login_1",
       "sceneType": "Login",
       "ip": "127.0.0.1",
@@ -58,6 +64,7 @@
     {
       "name": "map_1",
       "sceneType": "MapHost",
+      "acceptDynamicMaps": true,
       "staticMapIds": [
         1
       ],
@@ -67,6 +74,7 @@
     {
       "name": "map_2",
       "sceneType": "MapHost",
+      "acceptDynamicMaps": true,
       "staticMapIds": [
         2
       ],
@@ -86,6 +94,12 @@
       "sceneType": "LoginMgr",
       "ip": "127.0.0.1",
       "port": 7000
+    },
+    {
+      "name": "map_manager",
+      "sceneType": "MapManager",
+      "ip": "127.0.0.1",
+      "port": 7100
     },
     {
       "name": "login_1",

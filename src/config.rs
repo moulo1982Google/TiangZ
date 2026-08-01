@@ -280,6 +280,16 @@ pub struct SceneConfig {
     /// Static map config IDs created by this MapHost during startup. Dynamic maps are never listed here.
     #[serde(default)]
     pub static_map_ids: Vec<u32>,
+    /// 是否接受MapManager分配的动态地图；静态地图与动态副本仍使用同一种MapHost实现。
+    /// Whether this MapHost accepts dynamic instances assigned by MapManager.
+    #[serde(default)]
+    pub accept_dynamic_maps: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnownSceneFile {
+    known_scenes: Vec<SceneConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq)]
@@ -415,14 +425,103 @@ pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
     let mut config: RuntimeConfig = serde_json::from_str(&config_text)
         .with_context(|| format!("failed to parse {}", resolved_config.display()))?;
 
+    let raw_config: serde_json::Value = serde_json::from_str(&config_text)
+        .with_context(|| format!("failed to parse {}", resolved_config.display()))?;
+    let known_scene_files = parse_known_scene_files(&raw_config, resolved_config)?;
+
     if config.scenes.is_empty() {
         bail!("process must start at least one scene");
     }
-    if config.known_scenes.is_empty() {
-        config.known_scenes = config.scenes.clone();
+    let inline_known_scenes = std::mem::take(&mut config.known_scenes);
+    let mut merged_known_scenes = config.scenes.clone();
+    for known_scene_file in known_scene_files {
+        let file_text = std::fs::read_to_string(&known_scene_file)
+            .with_context(|| format!("failed to read {}", known_scene_file.display()))?;
+        let shared: KnownSceneFile = serde_json::from_str(&file_text)
+            .with_context(|| format!("failed to parse {}", known_scene_file.display()))?;
+        merge_known_scenes(
+            &mut merged_known_scenes,
+            shared.known_scenes,
+            &known_scene_file.display().to_string(),
+        )?;
     }
+    merge_known_scenes(
+        &mut merged_known_scenes,
+        inline_known_scenes,
+        &resolved_config.display().to_string(),
+    )?;
+    config.known_scenes = merged_known_scenes;
     validate_runtime_config(&config)?;
     Ok(config)
+}
+
+fn parse_known_scene_files(
+    raw_config: &serde_json::Value,
+    resolved_config: &Path,
+) -> Result<Vec<PathBuf>> {
+    let Some(value) = raw_config.get("knownSceneFiles") else {
+        return Ok(Vec::new());
+    };
+    let entries = value
+        .as_array()
+        .context("knownSceneFiles must be an array of paths")?;
+    let base = resolved_config.parent().unwrap_or_else(|| Path::new("."));
+    entries
+        .iter()
+        .map(|entry| {
+            let path = entry
+                .as_str()
+                .context("knownSceneFiles entries must be strings")?;
+            if path.trim().is_empty() {
+                bail!("knownSceneFiles entries must not be empty");
+            }
+            let path = PathBuf::from(path);
+            Ok(if path.is_absolute() { path } else { base.join(path) })
+        })
+        .collect()
+}
+
+fn merge_known_scenes(
+    merged: &mut Vec<SceneConfig>,
+    additions: Vec<SceneConfig>,
+    source: &str,
+) -> Result<()> {
+    for addition in additions {
+        if let Some(existing) = merged.iter().find(|scene| scene.name == addition.name) {
+            if same_scene_route(existing, &addition) {
+                continue;
+            }
+            bail!(
+                "known scene {} from {} conflicts with an existing route",
+                addition.name,
+                source
+            );
+        }
+        if let Some(existing) = merged
+            .iter()
+            .find(|scene| scene.ip == addition.ip && scene.port == addition.port)
+        {
+            bail!(
+                "known scene {} from {} reuses endpoint {}:{} owned by {}",
+                addition.name,
+                source,
+                addition.ip,
+                addition.port,
+                existing.name
+            );
+        }
+        merged.push(addition);
+    }
+    Ok(())
+}
+
+fn same_scene_route(left: &SceneConfig, right: &SceneConfig) -> bool {
+    left.name == right.name
+        && left.scene_type == right.scene_type
+        && left.ip == right.ip
+        && left.port == right.port
+        && left.protocol == right.protocol
+        && left.audience == right.audience
 }
 
 fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
@@ -657,6 +756,42 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn loads_shared_known_scene_files_and_dynamic_map_role() {
+        let directory = std::env::temp_dir().join(format!(
+            "tiangz-known-scenes-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let shared_path = directory.join("cluster.json");
+        let process_path = directory.join("dungeon.json");
+        std::fs::write(
+            &shared_path,
+            r#"{"knownScenes":[{"name":"map_manager","sceneType":"MapManager","ip":"127.0.0.1","port":7100}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &process_path,
+            r#"{
+              "process":{"name":"dungeon","identity":{"originServerId":1,"workerId":8}},
+              "scenes":[{"name":"dungeon_1","sceneType":"MapHost","ip":"127.0.0.1","port":7310,"acceptDynamicMaps":true}],
+              "knownSceneFiles":["cluster.json"]
+            }"#,
+        )
+        .unwrap();
+
+        let config = load_runtime_config(&process_path).unwrap();
+        assert!(config.scenes[0].accept_dynamic_maps);
+        assert_eq!(config.known_scenes.len(), 2);
+        assert!(
+            config
+                .known_scenes
+                .iter()
+                .any(|scene| scene.name == "map_manager")
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     fn scene(name: &str, port: u16) -> SceneConfig {
         SceneConfig {
             name: name.to_string(),
@@ -666,6 +801,7 @@ mod tests {
             protocol: EndpointProtocol::Auto,
             audience: EndpointAudience::Mixed,
             static_map_ids: Vec::new(),
+            accept_dynamic_maps: false,
         }
     }
 

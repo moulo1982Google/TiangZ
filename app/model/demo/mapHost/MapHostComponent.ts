@@ -24,7 +24,11 @@ import type {
   M2M_CommitPlayerTransferResponse,
   M2M_PreparePlayerTransfer,
   M2M_PreparePlayerTransferResponse,
+  M2MM_CreateAssignedDynamicMap,
+  MM2M_CreateAssignedDynamicMap,
+  DynamicMapAssignmentSnapshot,
   MapEntitySnapshot,
+  MapHostEndpoint,
   MapInstanceSnapshot,
   PlayerTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
@@ -49,11 +53,17 @@ import {
   IncludesNewObserverSnapshot,
   ParseEntrySyncMode,
 } from "../map/EntrySyncMode";
+import {
+  MapHostEndpointFromScene,
+  SceneConfigFromMapInstance,
+} from "./MapHostEndpoint";
 
 const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 
 export class MapHostComponent extends Component {
   private readonly maps = new Map<bigint, MapComponent>();
+  private readonly dynamicAssignments = new Map<bigint, DynamicMapAssignmentSnapshot>();
+  private readonly dynamicRequestIds = new Map<string, bigint>();
   private readonly repository = new InMemoryPlayerRepository();
   private readonly incomingTransfers =
     new TransferStagingRegistry<PreparedIncomingPlayer>(1024);
@@ -526,7 +536,7 @@ export class MapHostComponent extends Component {
     operationId: string,
   ): Promise<M2G_TransferPlayer> {
     const sourceMap = this.mapOf(source);
-    const targetScene = this.owner.scenes.byName(targetInstance.mapHostName);
+    const targetScene = SceneConfigFromMapInstance(targetInstance);
     let targetCommitted = false;
     try {
       const transfer = this.CreateTransferSnapshot(
@@ -573,6 +583,7 @@ export class MapHostComponent extends Component {
         entities: target.entities,
         fixedUpdateMs: target.fixedUpdateMs,
         items: target.items,
+        mapHost: targetInstance.mapHost,
       };
     } catch (error) {
       if (!targetCommitted) {
@@ -623,6 +634,7 @@ export class MapHostComponent extends Component {
       entities: entryEntities ?? map.EntitySnapshots(player),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: player.GetComponent(ItemComponent).Snapshot(),
+      mapHost: this.EndpointSnapshot(),
     };
   }
 
@@ -839,6 +851,7 @@ export class MapHostComponent extends Component {
             mapConfigId: map.MapId,
             mapHostName: this.owner.self.name,
             dynamic: map.IsDynamic,
+            mapHost: this.EndpointSnapshot(),
           },
         });
       } catch (error) {
@@ -849,6 +862,93 @@ export class MapHostComponent extends Component {
         });
       }
     }
+  }
+
+  /**
+   * 按MapManager预分配的实例号创建动态地图。同一requestId或MapInstanceId的重试必须保持定义一致；
+   * Location响应不确定时保留本地实例，下一次重试继续注册而不会创建第二张地图。
+   *
+   * Creates a dynamic map with the ID assigned by MapManager. Retries by request
+   * or instance ID must keep the same definition. An uncertain Location response
+   * keeps the local instance so the next retry registers it instead of duplicating it.
+   */
+  async CreateAssignedDynamicMap(
+    request: MM2M_CreateAssignedDynamicMap,
+  ): Promise<M2MM_CreateAssignedDynamicMap> {
+    const requestId = request.requestId.trim();
+    if (!requestId) {
+      throw new RpcError(GameErrCode.DynamicMapRequestRequired, "dynamic map requestId is required");
+    }
+    const assignedInstanceId = this.dynamicRequestIds.get(requestId);
+    if (assignedInstanceId !== undefined && assignedInstanceId !== request.mapInstanceId) {
+      throw new RpcError(
+        GameErrCode.DynamicMapRequestConflict,
+        `dynamic map requestId already uses another instance: ${requestId}`,
+      );
+    }
+    const existingAssignment = this.dynamicAssignments.get(request.mapInstanceId);
+    if (
+      existingAssignment &&
+      (existingAssignment.requestId !== requestId ||
+        existingAssignment.mapConfigId !== request.mapConfigId)
+    ) {
+      throw new RpcError(
+        GameErrCode.DynamicMapRequestConflict,
+        `dynamic map instance assignment conflicts: ${request.mapInstanceId}`,
+      );
+    }
+
+    this.CreateMap({
+      mapConfigId: request.mapConfigId,
+      mapInstanceId: request.mapInstanceId,
+      dynamic: true,
+    });
+    const assignment: DynamicMapAssignmentSnapshot = existingAssignment ?? {
+      requestId,
+      mapConfigId: request.mapConfigId,
+      mapInstanceId: request.mapInstanceId,
+    };
+    this.dynamicAssignments.set(request.mapInstanceId, assignment);
+    this.dynamicRequestIds.set(requestId, request.mapInstanceId);
+
+    const registered = await this.location.RegisterMapInstance({
+      instance: {
+        mapInstanceId: request.mapInstanceId,
+        mapConfigId: request.mapConfigId,
+        mapHostName: this.owner.self.name,
+        dynamic: true,
+        mapHost: this.EndpointSnapshot(),
+      },
+    });
+    return {
+      rpcId: request.rpcId,
+      error: 0,
+      message: "",
+      instance: registered.instance,
+    };
+  }
+
+  /** 返回供MapManager恢复幂等状态的只读副本。 / Returns copies of assignments used by MapManager to recover idempotency state. */
+  DynamicAssignments(): DynamicMapAssignmentSnapshot[] {
+    return [...this.dynamicAssignments.values()].map((assignment) => ({ ...assignment }));
+  }
+
+  /** 汇总低频调度负载，不暴露玩家或地图内部状态。 / Summarizes low-frequency placement load without exposing map internals. */
+  LoadSnapshot(): { staticMapCount: number; dynamicMapCount: number; playerCount: number } {
+    let staticMapCount = 0;
+    let dynamicMapCount = 0;
+    let playerCount = 0;
+    for (const map of this.maps.values()) {
+      if (map.IsDynamic) dynamicMapCount += 1;
+      else staticMapCount += 1;
+      playerCount += map.PlayerCount;
+    }
+    return { staticMapCount, dynamicMapCount, playerCount };
+  }
+
+  /** 返回可由Manager和Location传播的本MapHost内网地址。 / Returns this MapHost's inner endpoint for Manager and Location routing. */
+  EndpointSnapshot(): MapHostEndpoint {
+    return MapHostEndpointFromScene(this.owner.self);
   }
 
   /** 静态和动态地图共享唯一创建入口；同一实例的幂等重试必须保持定义一致。 / Static and dynamic maps share one creation path; retries for an existing ID must use the same definition. */
@@ -904,6 +1004,11 @@ export class MapHostComponent extends Component {
       );
     }
     this.maps.delete(mapInstanceId);
+    const assignment = this.dynamicAssignments.get(mapInstanceId);
+    if (assignment) {
+      this.dynamicAssignments.delete(mapInstanceId);
+      this.dynamicRequestIds.delete(assignment.requestId);
+    }
     this.disposingMaps.delete(mapInstanceId);
     return this.owner.processHost.despawnScene(this.owner.childSceneId(`map:${mapInstanceId}`));
   }

@@ -293,7 +293,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 - 已固定Luban 4.10.2工具链，建立`game_config` Excel源目录、服务端/客户端分组生成、只读强类型查询、外键校验、配置指纹与自测；首批接入`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`。表结构属于不可热更Model，纯数据可生成内容寻址候选并由Watcher令各Process原子切换；部署配置仍独立留在`configs`。
 - 账号/角色选择与持久化。
-- 地图生命周期与传送已统一：静态地图按MapHost `staticMapIds`启动，动态副本由Demo `DynamicMapManagerComponent`通过同一`CreateMap`创建；Location维护并可由MapHost重报恢复MapInstance路由。业务统一调用`player.TransferToMap(mapInstanceId)`，不区分静态/动态、同MapHost/跨MapHost。动态副本只允许业务清空玩家后显式销毁，连续无人五分钟为Demo兜底策略。Gate仍提供Proto驱动的有界消息屏障，MapHost完成目标Prepare/Commit和源Actor清理；单进程/拆分进程smoke已覆盖迁移期间并发RPC。目标提交后的不确定事务自动恢复、MapHost租约和死亡节点接管仍留给Phase 5高可用。
+- 地图生命周期与传送已统一：静态与动态地图共享MapHost实现，`staticMapIds + acceptDynamicMaps`区分静态专用、动态专用和混合承载。动态副本由单例MapManager按稳定requestId幂等分配；MapHost每5秒注册/心跳。Location把MapHost Endpoint随MapInstance和玩家位置返回，新增空载副本Host无需进入其他进程knownScenes即可完成首次进入、Actor路由、跨图传送和销毁。稳定启动目录通过`knownSceneFiles`集中复用。Manager与MapHost同时丢失后的持久幂等、死亡节点接管和事务自动恢复仍留给Phase 5高可用。
 - Rust AOI功能链和Windows容量工具已经落地：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，稀疏Grid推导默认可见关系，Rust只保存迟滞关系、过滤拒绝和本帧净变化；TS NativeRef、Rust Pool、AOI规模和分阶段背压均已可观测。历史单Grid与5Hz结果只保留为边界证据。正式3000玩家、16 Gate、10×10 Grid均匀分布基线已经完成：每Grid 30人，其中80%在Grid内移动、20%每2秒跨Grid一次；实测跨Grid `310.3/s`、Move `6004.2/s`、Map CPU平均`82.1%`，错误、过载和背压均为0。该结果略高于80% CPU目标，定位为接近容量边界的回归基线，而不是保守容量点。
 - 从2026-08-01起，新容量基线默认采用每玩家`2Hz`（500ms）持续移动心跳与`0.2Hz`（5秒）MapProbe；按下、转向和停止仍立即发送，Gate Ping保持5秒一次。AOI Cold配置固定为3×3 Enter/20Hz与5×5 Detach/5Hz，不再使用7×7/1Hz。历史负载结果只保留原口径，不与新行为基线直接横向比较。
 - 3000人AOI密度矩阵已经覆盖10×10、15×15和20×20 Grid：Map CPU平均分别为`74.1%/56.7%/57.3%`，Movement Push约为`218.1万/140.9万/107.3万每秒`，正式窗口均无错误、过载、超时和背压。新增`perf:map-capacity:grid-matrix`作为一键回归入口；Bench后置Place RPC在稀疏地图上会形成初始化突发，后续应并入Bench进图事务。

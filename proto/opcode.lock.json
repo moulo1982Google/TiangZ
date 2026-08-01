@@ -232,6 +232,11 @@
       "code": 20012
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#M2MM_CreateAssignedDynamicMap",
+      "name": "M2MM_CreateAssignedDynamicMap",
+      "code": 20059
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#M2S_CreateDynamicMap",
       "name": "M2S_CreateDynamicMap",
       "code": 20048
@@ -240,6 +245,21 @@
       "key": "proto/InnerMessage_S_20001.proto#M2S_DisposeDynamicMap",
       "name": "M2S_DisposeDynamicMap",
       "code": 20050
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2M_CreateAssignedDynamicMap",
+      "name": "MM2M_CreateAssignedDynamicMap",
+      "code": 20058
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_MapHostHeartbeat",
+      "name": "MM2S_MapHostHeartbeat",
+      "code": 20057
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_RegisterMapHost",
+      "name": "MM2S_RegisterMapHost",
+      "code": 20055
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#S2G_ClientBroadcast",
@@ -320,6 +340,16 @@
       "key": "proto/InnerMessage_S_20001.proto#S2M_DisposeDynamicMap",
       "name": "S2M_DisposeDynamicMap",
       "code": 20049
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_MapHostHeartbeat",
+      "name": "S2MM_MapHostHeartbeat",
+      "code": 20056
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_RegisterMapHost",
+      "name": "S2MM_RegisterMapHost",
+      "code": 20054
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2G_EnterMap",

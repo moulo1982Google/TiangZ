@@ -356,7 +356,7 @@ Cell和AOI Grid尺寸同样属于Cold配置：`MapConfig.cell_size_meters`定义
 await player.TransferToMap(targetMapInstanceId);
 ```
 
-业务不得传MapHost、IP、端口或判断目标是否同进程。静态地图的`MapInstanceId == MapConfigId`；动态副本使用`DynamicMapProxy.CreateOn(mapHostName, mapConfigId)`返回的全局实例号。只有创建副本时业务需要决定放置在哪个MapHost，之后保存并传递实例号即可。Gate先打开Actor迁移屏障，再由源PlayerUnit mailbox解析实例路由，协调Location锁、目标Unit恢复、位置提交和源Actor清理。迁移保持UnitId，使用目标`MapConfig`出生点，Actor InstanceId与Location revision必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
+业务不得传MapHost、IP、端口或判断目标是否同进程。静态地图的`MapInstanceId == MapConfigId`；动态副本调用`DynamicMapProxy.Create(requestId, mapConfigId)`。`requestId`必须稳定标识一次业务尝试，例如`teamId + dungeonId + attemptId`；网络超时重试必须复用它，新一轮副本必须换新ID，同一ID不得改用其他MapConfig。MapManager选择宿主并返回全局实例号，业务随后只保存并传递实例号。Gate先打开Actor迁移屏障，再由源PlayerUnit mailbox解析实例路由，协调Location锁、目标Unit恢复、位置提交和源Actor清理。迁移保持UnitId，使用目标`MapConfig`出生点，Actor InstanceId与Location revision必须更新。客户端收到RPC和`MapReady`后销毁旧地图作用域Dispatcher，再用`G2C_EnterMap`全量快照重建视图。
 
 MapHost配置静态地图：
 
@@ -370,7 +370,9 @@ MapHost配置静态地图：
 }
 ```
 
-启动时MapHost逐个调用统一`CreateMap`，随后向Location注册实际实例；`knownScenes`中的路由副本不重复填写`staticMapIds`。动态副本由Demo层`DynamicMapManagerComponent`管理，连续无人五分钟自动销毁只是业务兜底策略，不属于Core。正常副本结束应先让业务把玩家逐个`TransferToMap`到入口或其他地图，再调用`DynamicMapProxy.Dispose(instanceId)`。销毁非空地图会明确失败，框架不会暗中踢人、保存或决定回退点。玩家重登时可用`DynamicMapProxy.Exists(instanceId)`判断原副本是否存在，并由业务选择入口地图。
+启动时MapHost逐个调用统一`CreateMap`并向Location注册实际实例。只有`acceptDynamicMaps=true`的Host向单例MapManager注册自身地址、generation、负载和动态创建关系；`staticMapIds`与该开关可组合为静态专用、动态专用或混合承载。Manager不在`knownScenes`中预列动态Host，租约15秒，超时Host不再获得新实例。MapHost每5秒心跳，Manager丢失注册时自动重发完整关系，因此单独重启Manager可恢复；Manager与Host同时丢失后的跨重启幂等留给持久化阶段。MapInstance与PlayerLocation响应携带MapHost Endpoint，业务不得再用`scenes.byName(dynamicHostName)`。连续无人五分钟自动销毁由MapHost本地`DynamicMapLifecycleComponent`提供，只是业务兜底策略。
+
+稳定基础Scene集中写入共享`knownSceneFiles`；新增动态副本Host只引用该文件，禁止要求所有Gate/MapHost反向追加它。共享文件不可热更，只负责启动依赖；MapManager注册才负责动态发现。完整样例见`configs/local/cluster.known-scenes.json`和`configs/local/dungeon1.json`。
 
 完整开发步骤与代码示例见[地图实例与动态副本教程](../tutorials/11-map-instance-and-dungeon.md)。
 

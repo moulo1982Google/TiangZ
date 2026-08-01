@@ -5,14 +5,14 @@ import type {
 } from "../../../generated/model/server/demo/protocol/messages";
 import { DynamicMapProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { LocationProxy } from "../location/LocationProxy";
+import { SceneConfigFromMapInstance } from "./MapHostEndpoint";
 
 /**
- * 动态副本的业务调用门面。创建时业务选择MapHost；创建后只保存MapInstanceId，
- * 销毁和传送都通过实例目录重新解析，不把IP、端口或进程布局写进业务代码。
+ * 动态副本的业务调用门面。创建由MapManager幂等分配；创建后只保存MapInstanceId，
+ * 销毁和传送都通过实例目录重新解析，不把MapHost、IP、端口或进程布局写进业务代码。
  *
- * Business facade for dynamic maps. Business selects a MapHost only at
- * creation; afterwards it stores the MapInstanceId and resolves disposal or
- * transfer routes without embedding IPs, ports, or process layout.
+ * Business facade for dynamic maps. MapManager performs idempotent placement;
+ * afterwards business stores only MapInstanceId and never embeds deployment data.
  */
 export class DynamicMapProxy {
   private readonly location: LocationProxy;
@@ -21,13 +21,12 @@ export class DynamicMapProxy {
     this.location = new LocationProxy(scenes);
   }
 
-  /** 在指定MapHost创建副本；放置策略由调用方业务决定。 / Creates an instance on a selected MapHost; placement policy belongs to the caller. */
-  CreateOn(mapHostName: string, mapConfigId: number): Promise<M2S_CreateDynamicMap> {
-    return this.scenes.call(
-      this.scenes.byName(mapHostName),
-      DynamicMapProtocol.Create,
-      { mapConfigId },
-    );
+  /** 使用稳定业务requestId创建或取得同一个副本；调用方不选择MapHost。 / Creates or returns one instance by stable business request ID without selecting a MapHost. */
+  Create(requestId: string, mapConfigId: number): Promise<M2S_CreateDynamicMap> {
+    return this.scenes.callOne("MapManager", DynamicMapProtocol.Create, {
+      requestId,
+      mapConfigId,
+    });
   }
 
   /** 只凭实例ID销毁空副本；代理自动解析当前MapHost。 / Disposes an empty instance by ID after resolving its current MapHost. */
@@ -37,7 +36,7 @@ export class DynamicMapProxy {
       return { error: 0, message: "", disposed: false };
     }
     return this.scenes.call(
-      this.scenes.byName(resolved.instance.mapHostName),
+      SceneConfigFromMapInstance(resolved.instance),
       DynamicMapProtocol.Dispose,
       { mapInstanceId },
     );

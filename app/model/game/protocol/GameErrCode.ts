@@ -7,4 +7,7 @@ export const GameErrCode = {
   MapNotFound: 10006,
   DynamicMapNotEmpty: 10007,
   StaticMapCannotDispose: 10008,
+  MapHostUnavailable: 10009,
+  DynamicMapRequestRequired: 10010,
+  DynamicMapRequestConflict: 10011,
 } as const;

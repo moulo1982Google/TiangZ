@@ -67,7 +67,7 @@ async function switchMap(): Promise<void> {
     const targetMapId = currentMapId === 1 ? 2 : 1;
     const gate = new GateClient(gateSocket);
     const [enterMap] = await Promise.all([
-      gate.enterMap({ mapId: targetMapId }),
+      gate.enterMap({ mapId: targetMapId, mapInstanceId: 0n }),
       gateSocket.waitForMessage(ClientMessages.MapReady),
     ]);
     showMap(enterMap);

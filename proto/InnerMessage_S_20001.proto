@@ -91,6 +91,7 @@ message M2G_TransferPlayer // IActorResponse
   uint32 fixed_update_ms = 11;
   repeated ItemSnapshot items = 12;
   float y = 13;
+  MapHostEndpoint map_host = 14;
 }
 
 // @ets.msg protocol=Gate method=MapReady
@@ -184,6 +185,25 @@ message MapInstanceSnapshot
   uint32 map_config_id = 2;
   string map_host_name = 3;
   bool dynamic = 4;
+  MapHostEndpoint map_host = 5;
+}
+
+// MapHost向MapManager报告的可调用内网地址。该地址只用于Manager下发创建命令。
+message MapHostEndpoint
+{
+  string name = 1;
+  string ip = 2;
+  uint32 port = 3;
+  string protocol = 4;
+  string audience = 5;
+}
+
+// MapHost保留的幂等创建关系；MapManager重启后可由注册消息恢复。
+message DynamicMapAssignmentSnapshot
+{
+  string request_id = 1;
+  uint32 map_config_id = 2;
+  uint64 map_instance_id = 3;
 }
 
 //ResponseType L2S_ResolveMapInstance
@@ -230,6 +250,7 @@ message L2S_RemoveMapInstance // IResponse
 message S2M_CreateDynamicMap // IRequest
 {
   uint32 map_config_id = 1;
+  string request_id = 2;
 }
 
 message M2S_CreateDynamicMap // IResponse
@@ -247,6 +268,54 @@ message S2M_DisposeDynamicMap // IRequest
 message M2S_DisposeDynamicMap // IResponse
 {
   bool disposed = 1;
+}
+
+//ResponseType MM2S_RegisterMapHost
+// @ets.msg protocol=MapHostControl method=Register
+message S2MM_RegisterMapHost // IRequest
+{
+  MapHostEndpoint endpoint = 1;
+  uint64 generation = 2;
+  uint32 static_map_count = 3;
+  uint32 dynamic_map_count = 4;
+  uint32 player_count = 5;
+  repeated DynamicMapAssignmentSnapshot assignments = 6;
+}
+
+message MM2S_RegisterMapHost // IResponse
+{
+  bool accepted = 1;
+  uint32 lease_timeout_ms = 2;
+}
+
+//ResponseType MM2S_MapHostHeartbeat
+// @ets.msg protocol=MapHostControl method=Heartbeat
+message S2MM_MapHostHeartbeat // IRequest
+{
+  string map_host_name = 1;
+  uint64 generation = 2;
+  uint32 static_map_count = 3;
+  uint32 dynamic_map_count = 4;
+  uint32 player_count = 5;
+}
+
+message MM2S_MapHostHeartbeat // IResponse
+{
+  bool registered = 1;
+}
+
+//ResponseType M2MM_CreateAssignedDynamicMap
+// @ets.msg protocol=MapHostControl method=CreateAssigned
+message MM2M_CreateAssignedDynamicMap // IRequest
+{
+  string request_id = 1;
+  uint32 map_config_id = 2;
+  uint64 map_instance_id = 3;
+}
+
+message M2MM_CreateAssignedDynamicMap // IResponse
+{
+  MapInstanceSnapshot instance = 1;
 }
 
 //ResponseType M2M_PreparePlayerTransferResponse
@@ -312,6 +381,7 @@ message PlayerLocationSnapshot
   uint32 actor_instance_id = 7;
   uint64 revision = 8;
   string state = 9;
+  MapHostEndpoint map_host = 10;
 }
 
 //ResponseType L2S_AllocatePlayerUnitId

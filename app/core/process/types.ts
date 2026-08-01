@@ -69,6 +69,8 @@ export interface SceneConfig {
   audience?: "mixed" | "inner" | "outer";
   /** MapHost启动时创建的静态地图配置ID；动态副本由业务管理器运行时创建。 / Static map configs created at MapHost startup; business managers create dynamic instances at runtime. */
   staticMapIds?: number[];
+  /** 是否接受MapManager分配的动态地图；false时仅承载staticMapIds。 / Whether this MapHost accepts dynamic instances assigned by MapManager. */
+  acceptDynamicMaps?: boolean;
 }
 
 export interface ProcessConfig {

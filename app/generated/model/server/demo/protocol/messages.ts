@@ -892,6 +892,7 @@ export interface M2G_TransferPlayer extends IActorResponse {
   fixedUpdateMs: number;
   items: readonly ItemSnapshot[];
   y: number;
+  mapHost: MapHostEndpoint;
 }
 
 export const M2G_TransferPlayerCodec = {
@@ -911,6 +912,7 @@ export const M2G_TransferPlayerCodec = {
       fixedUpdateMs: 0,
       items: [],
       y: 0,
+      mapHost: MapHostEndpointCodec.decode(new Uint8Array(0)),
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -962,6 +964,9 @@ export const M2G_TransferPlayerCodec = {
       else if (tag.fieldNo === 13 && tag.wireType === 5) {
         value.y = reader.float();
       }
+      else if (tag.fieldNo === 14 && tag.wireType === 2) {
+        value.mapHost = MapHostEndpointCodec.decode(reader.bytesField());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -987,6 +992,7 @@ export const M2G_TransferPlayerCodec = {
     if (value.fixedUpdateMs !== undefined) writer.uint32(11, value.fixedUpdateMs);
     for (const item of (value.items ?? [])) writer.bytes(12, ItemSnapshotCodec.encode(item), true);
     if (value.y !== undefined) writer.float(13, value.y);
+    if (value.mapHost !== undefined) writer.bytes(14, MapHostEndpointCodec.encode(value.mapHost));
     return writer.finish();
   },
 };
@@ -1447,6 +1453,7 @@ export interface MapInstanceSnapshot {
   mapConfigId: number;
   mapHostName: string;
   dynamic: boolean;
+  mapHost: MapHostEndpoint;
 }
 
 export const MapInstanceSnapshotCodec = {
@@ -1457,6 +1464,7 @@ export const MapInstanceSnapshotCodec = {
       mapConfigId: 0,
       mapHostName: "",
       dynamic: false,
+      mapHost: MapHostEndpointCodec.decode(new Uint8Array(0)),
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1472,6 +1480,9 @@ export const MapInstanceSnapshotCodec = {
       else if (tag.fieldNo === 4 && tag.wireType === 0) {
         value.dynamic = reader.bool();
       }
+      else if (tag.fieldNo === 5 && tag.wireType === 2) {
+        value.mapHost = MapHostEndpointCodec.decode(reader.bytesField());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1485,6 +1496,101 @@ export const MapInstanceSnapshotCodec = {
     if (value.mapConfigId !== undefined) writer.uint32(2, value.mapConfigId);
     if (value.mapHostName !== undefined) writer.string(3, value.mapHostName);
     if (value.dynamic !== undefined) writer.bool(4, value.dynamic);
+    if (value.mapHost !== undefined) writer.bytes(5, MapHostEndpointCodec.encode(value.mapHost));
+    return writer.finish();
+  },
+};
+
+export interface MapHostEndpoint {
+  name: string;
+  ip: string;
+  port: number;
+  protocol: string;
+  audience: string;
+}
+
+export const MapHostEndpointCodec = {
+  decode(payload: Uint8Array): MapHostEndpoint {
+    const reader = new BinaryReader(payload);
+    const value: MapHostEndpoint = {
+      name: "",
+      ip: "",
+      port: 0,
+      protocol: "",
+      audience: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.name = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.ip = reader.string();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.port = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 2) {
+        value.protocol = reader.string();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 2) {
+        value.audience = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: MapHostEndpoint): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.name !== undefined) writer.string(1, value.name);
+    if (value.ip !== undefined) writer.string(2, value.ip);
+    if (value.port !== undefined) writer.uint32(3, value.port);
+    if (value.protocol !== undefined) writer.string(4, value.protocol);
+    if (value.audience !== undefined) writer.string(5, value.audience);
+    return writer.finish();
+  },
+};
+
+export interface DynamicMapAssignmentSnapshot {
+  requestId: string;
+  mapConfigId: number;
+  mapInstanceId: bigint;
+}
+
+export const DynamicMapAssignmentSnapshotCodec = {
+  decode(payload: Uint8Array): DynamicMapAssignmentSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: DynamicMapAssignmentSnapshot = {
+      requestId: "",
+      mapConfigId: 0,
+      mapInstanceId: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.requestId = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.mapConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.mapInstanceId = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: DynamicMapAssignmentSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.requestId !== undefined) writer.string(1, value.requestId);
+    if (value.mapConfigId !== undefined) writer.uint32(2, value.mapConfigId);
+    if (value.mapInstanceId !== undefined) writer.uint64(3, value.mapInstanceId);
     return writer.finish();
   },
 };
@@ -1744,6 +1850,7 @@ export const L2S_RemoveMapInstanceCodec = {
 export interface S2M_CreateDynamicMap extends IRequest {
   rpcId?: number;
   mapConfigId: number;
+  requestId: string;
 }
 
 export const S2M_CreateDynamicMapCodec = {
@@ -1751,6 +1858,7 @@ export const S2M_CreateDynamicMapCodec = {
     const reader = new BinaryReader(payload);
     const value: S2M_CreateDynamicMap = {
       mapConfigId: 0,
+      requestId: "",
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1759,6 +1867,9 @@ export const S2M_CreateDynamicMapCodec = {
       }
       else if (tag.fieldNo === 1 && tag.wireType === 0) {
         value.mapConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.requestId = reader.string();
       }
       else {
         reader.skip(tag.wireType);
@@ -1771,6 +1882,7 @@ export const S2M_CreateDynamicMapCodec = {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.mapConfigId !== undefined) writer.uint32(1, value.mapConfigId);
+    if (value.requestId !== undefined) writer.string(2, value.requestId);
     return writer.finish();
   },
 };
@@ -1893,6 +2005,312 @@ export const M2S_DisposeDynamicMapCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.disposed !== undefined) writer.bool(1, value.disposed);
+    return writer.finish();
+  },
+};
+
+export interface S2MM_RegisterMapHost extends IRequest {
+  rpcId?: number;
+  endpoint: MapHostEndpoint;
+  generation: bigint;
+  staticMapCount: number;
+  dynamicMapCount: number;
+  playerCount: number;
+  assignments: readonly DynamicMapAssignmentSnapshot[];
+}
+
+export const S2MM_RegisterMapHostCodec = {
+  decode(payload: Uint8Array): S2MM_RegisterMapHost {
+    const reader = new BinaryReader(payload);
+    const value: S2MM_RegisterMapHost = {
+      endpoint: MapHostEndpointCodec.decode(new Uint8Array(0)),
+      generation: 0n,
+      staticMapCount: 0,
+      dynamicMapCount: 0,
+      playerCount: 0,
+      assignments: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.endpoint = MapHostEndpointCodec.decode(reader.bytesField());
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.generation = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.staticMapCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.dynamicMapCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.playerCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 2) {
+        (value.assignments as DynamicMapAssignmentSnapshot[]).push(DynamicMapAssignmentSnapshotCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: S2MM_RegisterMapHost): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.endpoint !== undefined) writer.bytes(1, MapHostEndpointCodec.encode(value.endpoint));
+    if (value.generation !== undefined) writer.uint64(2, value.generation);
+    if (value.staticMapCount !== undefined) writer.uint32(3, value.staticMapCount);
+    if (value.dynamicMapCount !== undefined) writer.uint32(4, value.dynamicMapCount);
+    if (value.playerCount !== undefined) writer.uint32(5, value.playerCount);
+    for (const item of (value.assignments ?? [])) writer.bytes(6, DynamicMapAssignmentSnapshotCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface MM2S_RegisterMapHost extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  accepted: boolean;
+  leaseTimeoutMs: number;
+}
+
+export const MM2S_RegisterMapHostCodec = {
+  decode(payload: Uint8Array): MM2S_RegisterMapHost {
+    const reader = new BinaryReader(payload);
+    const value: MM2S_RegisterMapHost = {
+      accepted: false,
+      leaseTimeoutMs: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.accepted = reader.bool();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.leaseTimeoutMs = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: MM2S_RegisterMapHost): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.accepted !== undefined) writer.bool(1, value.accepted);
+    if (value.leaseTimeoutMs !== undefined) writer.uint32(2, value.leaseTimeoutMs);
+    return writer.finish();
+  },
+};
+
+export interface S2MM_MapHostHeartbeat extends IRequest {
+  rpcId?: number;
+  mapHostName: string;
+  generation: bigint;
+  staticMapCount: number;
+  dynamicMapCount: number;
+  playerCount: number;
+}
+
+export const S2MM_MapHostHeartbeatCodec = {
+  decode(payload: Uint8Array): S2MM_MapHostHeartbeat {
+    const reader = new BinaryReader(payload);
+    const value: S2MM_MapHostHeartbeat = {
+      mapHostName: "",
+      generation: 0n,
+      staticMapCount: 0,
+      dynamicMapCount: 0,
+      playerCount: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.mapHostName = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.generation = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.staticMapCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.dynamicMapCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.playerCount = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: S2MM_MapHostHeartbeat): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.mapHostName !== undefined) writer.string(1, value.mapHostName);
+    if (value.generation !== undefined) writer.uint64(2, value.generation);
+    if (value.staticMapCount !== undefined) writer.uint32(3, value.staticMapCount);
+    if (value.dynamicMapCount !== undefined) writer.uint32(4, value.dynamicMapCount);
+    if (value.playerCount !== undefined) writer.uint32(5, value.playerCount);
+    return writer.finish();
+  },
+};
+
+export interface MM2S_MapHostHeartbeat extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  registered: boolean;
+}
+
+export const MM2S_MapHostHeartbeatCodec = {
+  decode(payload: Uint8Array): MM2S_MapHostHeartbeat {
+    const reader = new BinaryReader(payload);
+    const value: MM2S_MapHostHeartbeat = {
+      registered: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.registered = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: MM2S_MapHostHeartbeat): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.registered !== undefined) writer.bool(1, value.registered);
+    return writer.finish();
+  },
+};
+
+export interface MM2M_CreateAssignedDynamicMap extends IRequest {
+  rpcId?: number;
+  requestId: string;
+  mapConfigId: number;
+  mapInstanceId: bigint;
+}
+
+export const MM2M_CreateAssignedDynamicMapCodec = {
+  decode(payload: Uint8Array): MM2M_CreateAssignedDynamicMap {
+    const reader = new BinaryReader(payload);
+    const value: MM2M_CreateAssignedDynamicMap = {
+      requestId: "",
+      mapConfigId: 0,
+      mapInstanceId: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.requestId = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.mapConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.mapInstanceId = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: MM2M_CreateAssignedDynamicMap): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.requestId !== undefined) writer.string(1, value.requestId);
+    if (value.mapConfigId !== undefined) writer.uint32(2, value.mapConfigId);
+    if (value.mapInstanceId !== undefined) writer.uint64(3, value.mapInstanceId);
+    return writer.finish();
+  },
+};
+
+export interface M2MM_CreateAssignedDynamicMap extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  instance: MapInstanceSnapshot;
+}
+
+export const M2MM_CreateAssignedDynamicMapCodec = {
+  decode(payload: Uint8Array): M2MM_CreateAssignedDynamicMap {
+    const reader = new BinaryReader(payload);
+    const value: M2MM_CreateAssignedDynamicMap = {
+      instance: MapInstanceSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.instance = MapInstanceSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2MM_CreateAssignedDynamicMap): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.instance !== undefined) writer.bytes(1, MapInstanceSnapshotCodec.encode(value.instance));
     return writer.finish();
   },
 };
@@ -2231,6 +2649,7 @@ export interface PlayerLocationSnapshot {
   actorInstanceId: number;
   revision: bigint;
   state: string;
+  mapHost: MapHostEndpoint;
 }
 
 export const PlayerLocationSnapshotCodec = {
@@ -2246,6 +2665,7 @@ export const PlayerLocationSnapshotCodec = {
       actorInstanceId: 0,
       revision: 0n,
       state: "",
+      mapHost: MapHostEndpointCodec.decode(new Uint8Array(0)),
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -2276,6 +2696,9 @@ export const PlayerLocationSnapshotCodec = {
       else if (tag.fieldNo === 9 && tag.wireType === 2) {
         value.state = reader.string();
       }
+      else if (tag.fieldNo === 10 && tag.wireType === 2) {
+        value.mapHost = MapHostEndpointCodec.decode(reader.bytesField());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -2294,6 +2717,7 @@ export const PlayerLocationSnapshotCodec = {
     if (value.actorInstanceId !== undefined) writer.uint32(7, value.actorInstanceId);
     if (value.revision !== undefined) writer.uint64(8, value.revision);
     if (value.state !== undefined) writer.string(9, value.state);
+    if (value.mapHost !== undefined) writer.bytes(10, MapHostEndpointCodec.encode(value.mapHost));
     return writer.finish();
   },
 };
@@ -3552,6 +3976,7 @@ export const G2C_LoginGateCodec = {
 export interface C2G_EnterMap extends IRequest {
   rpcId?: number;
   mapId: number;
+  mapInstanceId: bigint;
 }
 
 export const C2G_EnterMapCodec = {
@@ -3559,6 +3984,7 @@ export const C2G_EnterMapCodec = {
     const reader = new BinaryReader(payload);
     const value: C2G_EnterMap = {
       mapId: 0,
+      mapInstanceId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3567,6 +3993,9 @@ export const C2G_EnterMapCodec = {
       }
       else if (tag.fieldNo === 1 && tag.wireType === 0) {
         value.mapId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.mapInstanceId = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -3579,6 +4008,7 @@ export const C2G_EnterMapCodec = {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.mapId !== undefined) writer.uint32(1, value.mapId);
+    if (value.mapInstanceId !== undefined) writer.uint64(2, value.mapInstanceId);
     return writer.finish();
   },
 };

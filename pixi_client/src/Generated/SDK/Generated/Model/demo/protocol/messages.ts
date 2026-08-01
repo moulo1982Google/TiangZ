@@ -760,6 +760,7 @@ export const G2C_LoginGateCodec = {
 export interface C2G_EnterMap extends IRequest {
   rpcId?: number;
   mapId: number;
+  mapInstanceId: bigint;
 }
 
 export const C2G_EnterMapCodec = {
@@ -767,6 +768,7 @@ export const C2G_EnterMapCodec = {
     const reader = new BinaryReader(payload);
     const value: C2G_EnterMap = {
       mapId: 0,
+      mapInstanceId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -775,6 +777,9 @@ export const C2G_EnterMapCodec = {
       }
       else if (tag.fieldNo === 1 && tag.wireType === 0) {
         value.mapId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.mapInstanceId = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -787,6 +792,7 @@ export const C2G_EnterMapCodec = {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.mapId !== undefined) writer.uint32(1, value.mapId);
+    if (value.mapInstanceId !== undefined) writer.uint64(2, value.mapInstanceId);
     return writer.finish();
   },
 };

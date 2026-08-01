@@ -10,6 +10,7 @@ import {
 } from "../../../core/public";
 import type { PlayerLocationSnapshot } from "../../../generated/model/server/demo/protocol/messages";
 import { LocationProxy } from "./LocationProxy";
+import { SceneConfigFromMapHostEndpoint } from "../mapHost/MapHostEndpoint";
 
 /**
  * 为只知道UnitId的服务端业务提供位置透明调用。
@@ -36,7 +37,7 @@ export class MessageHelper {
     const location = await this.ResolveUnit(unitId);
     return await this.scenes.callActor(
       {
-        scene: this.scenes.byName(location.mapHostName),
+        scene: SceneConfigFromMapHostEndpoint(location.mapHost),
         instanceId: location.actorInstanceId,
       },
       descriptor,
@@ -52,7 +53,7 @@ export class MessageHelper {
     const location = await this.ResolveUnit(unitId);
     await this.scenes.sendActor(
       {
-        scene: this.scenes.byName(location.mapHostName),
+        scene: SceneConfigFromMapHostEndpoint(location.mapHost),
         instanceId: location.actorInstanceId,
       },
       descriptor,

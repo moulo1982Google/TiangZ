@@ -947,6 +947,35 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#DynamicMapAssignmentSnapshot",
+      "name": "DynamicMapAssignmentSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "request_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "map_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "map_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#G2M_EnterMap",
       "name": "G2M_EnterMap",
       "base": "IRequest",
@@ -2132,6 +2161,13 @@
           "synthetic": false
         },
         {
+          "number": 14,
+          "name": "map_host",
+          "type": "MapHostEndpoint",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -2434,6 +2470,42 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#M2MM_CreateAssignedDynamicMap",
+      "name": "M2MM_CreateAssignedDynamicMap",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "instance",
+          "type": "MapInstanceSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#M2S_CreateDynamicMap",
       "name": "M2S_CreateDynamicMap",
       "base": "IResponse",
@@ -2506,6 +2578,49 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#MapHostEndpoint",
+      "name": "MapHostEndpoint",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "ip",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "port",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "protocol",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "audience",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#MapInstanceSnapshot",
       "name": "MapInstanceSnapshot",
       "base": null,
@@ -2538,6 +2653,128 @@
           "type": "bool",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "map_host",
+          "type": "MapHostEndpoint",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2M_CreateAssignedDynamicMap",
+      "name": "MM2M_CreateAssignedDynamicMap",
+      "base": "IRequest",
+      "response": "M2MM_CreateAssignedDynamicMap",
+      "fields": [
+        {
+          "number": 1,
+          "name": "request_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "map_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "map_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_MapHostHeartbeat",
+      "name": "MM2S_MapHostHeartbeat",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "registered",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_RegisterMapHost",
+      "name": "MM2S_RegisterMapHost",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "accepted",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "lease_timeout_ms",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
         }
       ]
     },
@@ -2664,6 +2901,13 @@
           "number": 9,
           "name": "state",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "map_host",
+          "type": "MapHostEndpoint",
           "repeated": false,
           "synthetic": false
         }
@@ -3237,6 +3481,13 @@
           "synthetic": false
         },
         {
+          "number": 2,
+          "name": "request_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -3268,6 +3519,113 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_MapHostHeartbeat",
+      "name": "S2MM_MapHostHeartbeat",
+      "base": "IRequest",
+      "response": "MM2S_MapHostHeartbeat",
+      "fields": [
+        {
+          "number": 1,
+          "name": "map_host_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "generation",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "static_map_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "dynamic_map_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "player_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_RegisterMapHost",
+      "name": "S2MM_RegisterMapHost",
+      "base": "IRequest",
+      "response": "MM2S_RegisterMapHost",
+      "fields": [
+        {
+          "number": 1,
+          "name": "endpoint",
+          "type": "MapHostEndpoint",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "generation",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "static_map_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "dynamic_map_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "player_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "assignments",
+          "type": "DynamicMapAssignmentSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2G_EnterMap",
       "name": "C2G_EnterMap",
       "base": "IRequest",
@@ -3277,6 +3635,13 @@
           "number": 1,
           "name": "map_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "map_instance_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },

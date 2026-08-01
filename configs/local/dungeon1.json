@@ -1,0 +1,23 @@
+{
+  "process": {
+    "name": "dungeon1",
+    "identity": { "originServerId": 1, "workerId": 8 },
+    "observability": {
+      "health": { "ip": "127.0.0.1", "port": 7609 },
+      "latency": { "enabled": true, "sampleRate": 10 }
+    }
+  },
+  "scenes": [
+    {
+      "name": "dungeon_1",
+      "sceneType": "MapHost",
+      "acceptDynamicMaps": true,
+      "staticMapIds": [],
+      "ip": "127.0.0.1",
+      "port": 7310,
+      "protocol": "tcp",
+      "audience": "inner"
+    }
+  ],
+  "knownSceneFiles": ["cluster.known-scenes.json"]
+}

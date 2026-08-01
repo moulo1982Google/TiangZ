@@ -9,14 +9,15 @@ import type {
   S2L_RemoveMapInstance,
   S2L_ResolveMapInstance,
 } from "../../../generated/model/server/demo/protocol/messages";
+import { SceneConfigFromMapInstance } from "../mapHost/MapHostEndpoint";
 
 /**
  * 保存地图实例到MapHost的低频路由，不保存玩家或地图业务状态。
- * 静态实例由启动配置预注册；动态实例由DynamicMapManager创建和删除。
+ * 静态实例由启动配置预注册；动态实例由MapManager分配、MapHost创建和删除。
  *
  * Stores low-frequency map-instance routes to MapHosts, never player or map
  * business state. Startup config registers static instances while
- * DynamicMapManager owns dynamic registration and removal.
+ * MapManager assigns dynamic instances while MapHost registers and removes them.
  */
 export class MapInstanceDirectoryComponent extends Component {
   private readonly instances = new Map<bigint, MapInstanceSnapshot>();
@@ -59,9 +60,15 @@ export class MapInstanceDirectoryComponent extends Component {
     if (instance.mapInstanceId <= 0n || instance.mapConfigId <= 0 || !instance.mapHostName) {
       throw new RpcError(SystemErrCode.MalformedFrame, "invalid map instance route");
     }
+    SceneConfigFromMapInstance(instance);
     const existing = this.instances.get(instance.mapInstanceId);
     if (existing && !sameInstance(existing, instance)) this.conflict(instance.mapInstanceId);
     this.instances.set(instance.mapInstanceId, instance);
+  }
+
+  /** 返回Location内部使用的地图路由，不执行网络调用。 / Returns a map route for Location-internal composition without network I/O. */
+  Get(mapInstanceId: bigint): MapInstanceSnapshot | undefined {
+    return this.instances.get(mapInstanceId);
   }
 
   private conflict(mapInstanceId: bigint): never {
@@ -78,12 +85,27 @@ function response<T extends object>(rpcId: number | undefined, value: T): T & { 
 }
 
 function emptyInstance(): MapInstanceSnapshot {
-  return { mapInstanceId: 0n, mapConfigId: 0, mapHostName: "", dynamic: false };
+  return {
+    mapInstanceId: 0n,
+    mapConfigId: 0,
+    mapHostName: "",
+    dynamic: false,
+    mapHost: emptyEndpoint(),
+  };
 }
 
 function sameInstance(left: MapInstanceSnapshot, right: MapInstanceSnapshot): boolean {
   return left.mapInstanceId === right.mapInstanceId &&
     left.mapConfigId === right.mapConfigId &&
     left.mapHostName === right.mapHostName &&
-    left.dynamic === right.dynamic;
+    left.dynamic === right.dynamic &&
+    left.mapHost.name === right.mapHost.name &&
+    left.mapHost.ip === right.mapHost.ip &&
+    left.mapHost.port === right.mapHost.port &&
+    left.mapHost.protocol === right.mapHost.protocol &&
+    left.mapHost.audience === right.mapHost.audience;
+}
+
+function emptyEndpoint() {
+  return { name: "", ip: "", port: 0, protocol: "", audience: "" };
 }

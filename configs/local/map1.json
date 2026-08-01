@@ -20,6 +20,7 @@
     {
       "name": "map_1",
       "sceneType": "MapHost",
+      "acceptDynamicMaps": true,
       "staticMapIds": [
         1
       ],
@@ -27,24 +28,5 @@
       "port": 7301
     }
   ],
-  "knownScenes": [
-    {
-      "name": "gate_1",
-      "sceneType": "Gate",
-      "ip": "127.0.0.1",
-      "port": 7201
-    },
-    {
-      "name": "map_2",
-      "sceneType": "MapHost",
-      "ip": "127.0.0.1",
-      "port": 7302
-    },
-    {
-      "name": "location_1",
-      "sceneType": "Location",
-      "ip": "127.0.0.1",
-      "port": 7401
-    }
-  ]
+  "knownSceneFiles": ["cluster.known-scenes.json"]
 }

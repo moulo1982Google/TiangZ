@@ -147,7 +147,7 @@ export class GameBootstrap extends Component {
     try {
       const gate = new GateClient(this.gateSocket);
       const [enterMap, mapReady] = await Promise.all([
-        gate.enterMap({ mapId: targetMapId }),
+        gate.enterMap({ mapId: targetMapId, mapInstanceId: 0n }),
         this.gateSocket.waitForMessage(ClientMessages.MapReady),
       ]);
       this.showMap(enterMap, mapReady);

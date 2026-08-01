@@ -21,7 +21,7 @@ Process 就是 OS 进程，也是一个 V8、一个 TS 全局空间、一个 TS 
 
 ### EntryScene
 
-配置创建、可通过 name/type 寻址的顶层 Scene。`LoginMgr`、`Login`、`Gate`、`MapHost` 都是 EntryScene。它决定业务边界，不决定必须独占一个进程。
+配置创建、可通过 name/type 寻址的顶层 Scene。`LoginMgr`、`MapManager`、`Login`、`Gate`、`MapHost` 都是 EntryScene。它决定业务边界，不决定必须独占一个进程。
 
 同一份配置可以让一个 Process 承载多个 EntryScene；也可以把它们拆到多个 Process，调用代码不变。
 

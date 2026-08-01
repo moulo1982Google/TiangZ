@@ -49,6 +49,10 @@ import {
   type EntrySyncModeValue,
 } from "../map/EntrySyncMode";
 import { MAP_ENTRY_ADMISSION_TIMEOUT_MS } from "../map/MapEntryAdmission";
+import {
+  SceneConfigFromMapHostEndpoint,
+  SceneConfigFromMapInstance,
+} from "../mapHost/MapHostEndpoint";
 
 export const GATE_CLIENT_TIMEOUT_MS = 30_000;
 export const GATE_RECONNECT_GRACE_MS = 30_000;
@@ -347,7 +351,7 @@ export class GateScene extends EntryScene {
       throw new RpcError(GameErrCode.MapNotFound, "initial snapshot route is not ready");
     }
     const response = await this.scenes.call<G2M_InitialSnapshot, M2G_InitialSnapshot>(
-      this.scenes.byName(map.mapService),
+      map.mapHost,
       MapProtocol.InitialSnapshot,
       { account: route.account, unitId: map.unitId },
       { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
@@ -371,10 +375,8 @@ export class GateScene extends EntryScene {
       return await this.SecondEnterMap(session, route);
     }
 
-    const mapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
-    if (!GameConfigs.MapConfig.TryGet(mapId)) {
-      throw new RpcError(GameErrCode.MapNotFound, `map config not found: ${mapId}`);
-    }
+    const defaultMapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
+    const targetMapInstanceId = request.mapInstanceId || BigInt(defaultMapId);
     if (!route.map) {
       const resolved = await this.location.Resolve({ unitId: 0, account: route.account });
       this.AssertCurrentRoute(session, route);
@@ -390,6 +392,7 @@ export class GateScene extends EntryScene {
         }
         route.BindMap({
           mapService: resolved.location.mapHostName,
+          mapHost: SceneConfigFromMapHostEndpoint(resolved.location.mapHost),
           mapId: resolved.location.mapId,
           mapInstanceId: resolved.location.mapInstanceId,
           unitId: resolved.location.unitId,
@@ -398,20 +401,20 @@ export class GateScene extends EntryScene {
         });
         this.routesByUnitId.set(resolved.location.unitId, route);
         this.BindConnectionRoute(route, session.ConnectionId);
-        if (resolved.location.mapInstanceId === BigInt(mapId)) {
+        if (resolved.location.mapInstanceId === targetMapInstanceId) {
           return await this.SecondEnterMap(session, route);
         }
       }
     }
     if (route.map) {
-      if (route.map.mapInstanceId === BigInt(mapId)) return await this.SecondEnterMap(session, route);
-      return await this.TransferToMap(session, route, BigInt(mapId));
+      if (route.map.mapInstanceId === targetMapInstanceId) return await this.SecondEnterMap(session, route);
+      return await this.TransferToMap(session, route, targetMapInstanceId);
     }
-    const target = await this.location.ResolveMapInstance({ mapInstanceId: BigInt(mapId) });
+    const target = await this.location.ResolveMapInstance({ mapInstanceId: targetMapInstanceId });
     if (!target.found) {
-      throw new RpcError(GameErrCode.MapNotFound, `map instance not found: ${mapId}`);
+      throw new RpcError(GameErrCode.MapNotFound, `map instance not found: ${targetMapInstanceId}`);
     }
-    const mapHostScene = this.scenes.byName(target.instance.mapHostName);
+    const mapHostScene = SceneConfigFromMapInstance(target.instance);
     const mapResponse = await this.scenes.call<G2M_EnterMap, M2G_EnterMap>(
       mapHostScene,
       MapProtocol.EnterMap,
@@ -433,6 +436,7 @@ export class GateScene extends EntryScene {
 
     route.BindMap({
       mapService: mapHostScene.name,
+      mapHost: mapHostScene,
       mapId: mapResponse.mapId,
       mapInstanceId: mapResponse.mapInstanceId,
       unitId: mapResponse.unitId,
@@ -491,6 +495,7 @@ export class GateScene extends EntryScene {
       }
       route.RefreshMovingMap({
         mapService: resolved.location.mapHostName,
+        mapHost: SceneConfigFromMapHostEndpoint(resolved.location.mapHost),
         mapId: resolved.location.mapId,
         mapInstanceId: resolved.location.mapInstanceId,
         unitId: resolved.location.unitId,
@@ -501,7 +506,7 @@ export class GateScene extends EntryScene {
       source = route.map!;
       const response = await this.scenes.callActor<G2M_TransferPlayer, M2G_TransferPlayer>(
         {
-          scene: this.scenes.byName(source.mapService),
+          scene: source.mapHost,
           instanceId: source.actorInstanceId,
         },
         MapProtocol.TransferPlayer,
@@ -516,6 +521,7 @@ export class GateScene extends EntryScene {
       this.AssertCurrentRoute(session, route);
       route.BindMap({
         mapService: response.mapHostName,
+        mapHost: SceneConfigFromMapHostEndpoint(response.mapHost),
         mapId: response.mapId,
         mapInstanceId: response.mapInstanceId,
         unitId: response.unitId,
@@ -582,7 +588,7 @@ export class GateScene extends EntryScene {
     route: GatePlayerRoute,
   ): Promise<G2C_EnterMap> {
     const location = route.map!;
-    const targetScene = this.scenes.byName(location.mapService);
+    const targetScene = location.mapHost;
     const response = await this.scenes.callActor<
       G2M_SecondEnterMap,
       M2G_SecondEnterMap
@@ -654,7 +660,7 @@ export class GateScene extends EntryScene {
         };
         await this.scenes.callActor(
           {
-            scene: this.scenes.byName(location.mapService),
+            scene: location.mapHost,
             instanceId: location.actorInstanceId,
           },
           MapProtocol.PlayerOffline,
@@ -705,7 +711,7 @@ export class GateScene extends EntryScene {
     this.routesByUnitId.set(location.unitId, route);
     this.actorLocations.bindConnection(connectionId, {
       instanceId: location.actorInstanceId,
-      scene: this.scenes.byName(location.mapService),
+      scene: location.mapHost,
     });
   }
 

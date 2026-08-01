@@ -23,12 +23,14 @@ function testMapInstanceDirectory(): void {
     mapConfigId: 1,
     mapHostName: "map_1",
     dynamic: false,
+    mapHost: mapHostEndpoint("map_1", 7301),
   };
   const dynamicMap = {
     mapInstanceId: 9_000_000_001n,
     mapConfigId: 1,
     mapHostName: "map_2",
     dynamic: true,
+    mapHost: mapHostEndpoint("map_2", 7302),
   };
 
   assert.equal(directory.Register({ instance: staticMap }).created, true);
@@ -51,6 +53,10 @@ function testMapInstanceDirectory(): void {
     expectedMapHostName: "map_2",
   }).removed, true);
   assert.equal(directory.Resolve({ mapInstanceId: dynamicMap.mapInstanceId }).found, false);
+}
+
+function mapHostEndpoint(name: string, port: number) {
+  return { name, ip: "127.0.0.1", port, protocol: "tcp", audience: "inner" };
 }
 
 /** 验证Location重启后可从MapHost权威快照恢复，并且冲突批次不会部分写入。 / Verifies restart recovery from authoritative MapHost snapshots and atomic rejection of conflicting batches. */

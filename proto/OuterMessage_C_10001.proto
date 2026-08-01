@@ -53,6 +53,8 @@ message G2C_LoginGate // IResponse
 message C2G_EnterMap // IRequest
 {
   uint32 map_id = 1;
+  // Demo允许直接指定运行实例以验证动态副本；业务项目应先完成队伍/副本权限校验。
+  uint64 map_instance_id = 2;
 }
 
 message G2C_EnterMap // IResponse

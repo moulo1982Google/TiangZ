@@ -81,7 +81,7 @@ export class LoginFlow {
       this.gateSocket = gateSocket;
       this.startGatePing();
       const [enterMap, mapReady] = await Promise.all([
-        gate.enterMap({ mapId }),
+        gate.enterMap({ mapId, mapInstanceId: 0n }),
         gateSocket.waitForMessage(ClientMessages.MapReady),
       ]);
       return { login, enterMap, mapReady, gateSocket };

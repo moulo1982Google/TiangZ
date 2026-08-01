@@ -13,8 +13,9 @@ export class LocationScene extends EntryScene {
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
+    const mapInstances = this.AddComponent(MapInstanceDirectoryComponent);
     this.locations = this.AddComponent(LocationComponent);
-    this.AddComponent(MapInstanceDirectoryComponent);
+    this.locations.BindMapInstances(mapInstances);
   }
 
   /** Location必须保持ordered mailbox；所有CAS修改都在同一业务线程串行完成。 / Location must keep its ordered mailbox so every CAS mutation is serialized on one business thread. */

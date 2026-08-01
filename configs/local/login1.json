@@ -17,12 +17,5 @@
       "port": 7001
     }
   ],
-  "knownScenes": [
-    {
-      "name": "gate_1",
-      "sceneType": "Gate",
-      "ip": "127.0.0.1",
-      "port": 7201
-    }
-  ]
+  "knownSceneFiles": ["cluster.known-scenes.json"]
 }

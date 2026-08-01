@@ -19,6 +19,7 @@ import type {
   L2S_UnlockPlayerLocation,
   PlayerLocationSnapshot,
   PlayerLocationRecovery,
+  MapHostEndpoint,
   S2L_CommitPlayerLocation,
   S2L_AllocatePlayerUnitId,
   S2L_LockPlayerLocation,
@@ -29,6 +30,7 @@ import type {
   S2L_ResolvePlayerLocations,
   S2L_UnlockPlayerLocation,
 } from "../../../generated/model/server/demo/protocol/messages";
+import { MapInstanceDirectoryComponent } from "./MapInstanceDirectoryComponent";
 
 interface PlayerLocationValue {
   readonly account: string;
@@ -55,6 +57,12 @@ export class LocationComponent extends Component {
   private conflicts = 0;
   private resolves = 0;
   private mutations = 0;
+  private mapInstances: MapInstanceDirectoryComponent | null = null;
+
+  /** 绑定同LocationScene的地图实例目录，使玩家路由响应可携带动态MapHost地址。 / Binds the colocated map-instance directory so player routes carry dynamic MapHost endpoints. */
+  BindMapInstances(mapInstances: MapInstanceDirectoryComponent): void {
+    this.mapInstances = mapInstances;
+  }
 
   /** Demo无账号数据库时集中分配稳定UnitId；正式数据库接入后该入口由持久化ID替代。 / Centrally allocates Demo UnitIds until the account database becomes the persistent ID authority. */
   AllocateUnitId(request: S2L_AllocatePlayerUnitId): L2S_AllocatePlayerUnitId {
@@ -86,7 +94,7 @@ export class LocationComponent extends Component {
         this.fail(`unit ${request.unitId} already has another location`);
       }
       return response(request.rpcId, {
-        location: toSnapshot(existing),
+        location: this.toSnapshot(existing),
         created: false,
       });
     }
@@ -95,7 +103,7 @@ export class LocationComponent extends Component {
     this.reservedUnitIdByAccount.delete(request.account);
     this.mutations += 1;
     return response(request.rpcId, {
-      location: toSnapshot(created),
+      location: this.toSnapshot(created),
       created: true,
     });
   }
@@ -114,7 +122,7 @@ export class LocationComponent extends Component {
     const record = unitId === undefined ? undefined : this.directory.Resolve(unitId);
     return response(request.rpcId, {
       found: record !== undefined,
-      location: record ? toSnapshot(record) : emptySnapshot(),
+      location: record ? this.toSnapshot(record) : emptySnapshot(),
     });
   }
 
@@ -127,7 +135,7 @@ export class LocationComponent extends Component {
       visited.add(unitId);
       this.resolves += 1;
       const record = this.directory.Resolve(unitId);
-      if (record) locations.push(toSnapshot(record));
+      if (record) locations.push(this.toSnapshot(record));
     }
     return response(request.rpcId, { locations });
   }
@@ -147,7 +155,7 @@ export class LocationComponent extends Component {
         state,
       );
       this.mutations += 1;
-      return response(request.rpcId, { location: toSnapshot(locked) });
+      return response(request.rpcId, { location: this.toSnapshot(locked) });
     } catch (error) {
       return this.rethrow(error);
     }
@@ -168,7 +176,7 @@ export class LocationComponent extends Component {
     try {
       const committed = this.directory.Commit(request.unitId, request.operationId, value);
       this.mutations += 1;
-      return response(request.rpcId, { location: toSnapshot(committed) });
+      return response(request.rpcId, { location: this.toSnapshot(committed) });
     } catch (error) {
       return this.rethrow(error);
     }
@@ -179,7 +187,7 @@ export class LocationComponent extends Component {
     try {
       const unlocked = this.directory.Unlock(request.unitId, request.operationId);
       this.mutations += 1;
-      return response(request.rpcId, { location: toSnapshot(unlocked) });
+      return response(request.rpcId, { location: this.toSnapshot(unlocked) });
     } catch (error) {
       return this.rethrow(error);
     }
@@ -294,6 +302,13 @@ export class LocationComponent extends Component {
     return record;
   }
 
+  private toSnapshot(
+    record: LocationRecord<number, PlayerLocationValue>,
+  ): PlayerLocationSnapshot {
+    const mapHost = this.mapInstances?.Get(record.value.mapInstanceId)?.mapHost ?? emptyEndpoint();
+    return toSnapshot(record, mapHost);
+  }
+
   private fail(message: string): never {
     this.conflicts += 1;
     throw new RpcError(SystemErrCode.LocationConflict, message);
@@ -318,6 +333,7 @@ function valueOf(request: S2L_RegisterPlayerLocation | PlayerLocationRecovery): 
 
 function toSnapshot(
   record: LocationRecord<number, PlayerLocationValue>,
+  mapHost: MapHostEndpoint,
 ): PlayerLocationSnapshot {
   return {
     unitId: record.key,
@@ -329,6 +345,7 @@ function toSnapshot(
     actorInstanceId: record.value.actorInstanceId,
     revision: record.revision,
     state: record.state,
+    mapHost,
   };
 }
 
@@ -352,7 +369,12 @@ function emptySnapshot(): PlayerLocationSnapshot {
     actorInstanceId: 0,
     revision: 0n,
     state: "",
+    mapHost: emptyEndpoint(),
   };
+}
+
+function emptyEndpoint(): MapHostEndpoint {
+  return { name: "", ip: "", port: 0, protocol: "", audience: "" };
 }
 
 function validateRoute(request: {

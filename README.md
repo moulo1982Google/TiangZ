@@ -83,14 +83,17 @@ npm run build
 cargo run -- configs/local/all.json
 ```
 
-`all.json` 在一个 OS 进程、一个 V8 中启动五个入口 Scene，但保留各自客户端/Inner Listener：
+`all.json` 在一个 OS 进程、一个 V8 中启动八个入口 Scene，但保留各自客户端/Inner Listener：
 
 ```text
 login_mgr LoginMgr  127.0.0.1:7000
+map_manager MapManager 127.0.0.1:7100
 login_1   Login     127.0.0.1:7001
 login_2   Login     127.0.0.1:7002
 gate_1    Gate      127.0.0.1:7201
 map_1     MapHost   127.0.0.1:7301
+map_2     MapHost   127.0.0.1:7302
+location_1 Location 127.0.0.1:7401
 ```
 
 完整冒烟测试会验证单进程和拆分进程具有相同业务行为：
@@ -197,7 +200,10 @@ npm run test:game-config
 - `process.observability`：延迟采样等可观测性配置；不需要时可以省略。
 - `scenes`：当前进程实际创建的入口 Scene。
 - `knownScenes`：当前进程可路由的 Scene 目录，目标可以在其他进程；省略或为空时默认等于 `scenes`。
+- `knownSceneFiles`：相对当前进程配置引用共享稳定Scene目录；本地拆分部署统一使用`configs/local/cluster.known-scenes.json`，避免每个进程复制`knownScenes`。
 - `staticMapIds`：只写在实际承载地图的`MapHost`的`scenes`项中；启动时创建这些静态地图，且静态`MapInstanceId`等于配置ID。`knownScenes`路由副本不重复填写。
+- `acceptDynamicMaps`：MapHost是否向MapManager注册并接受动态副本；默认false。空载副本Host使用空`staticMapIds`和true。
+- `MapManager`：动态地图单例调度Scene。各MapHost把它加入`knownScenes`后主动注册；Manager不需要静态列出将来扩容的MapHost。
 - `scene.protocol`：`auto`、`tcp`、`websocket` 或 `kcp`；默认 `auto`。
 - `scene.audience`：`mixed`、`inner` 或 `outer`；默认 `mixed`。
 - `StartMachine.json`：按机器 IP 启动多个进程配置文件。正式环境放在 `configs/<environment>`；压测、自动测试和传输实验分别放在 `configs/bench`、`configs/tests`、`configs/experiments`。

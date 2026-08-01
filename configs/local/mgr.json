@@ -15,20 +15,13 @@
       "sceneType": "LoginMgr",
       "ip": "127.0.0.1",
       "port": 7000
-    }
-  ],
-  "knownScenes": [
-    {
-      "name": "login_1",
-      "sceneType": "Login",
-      "ip": "127.0.0.1",
-      "port": 7001
     },
     {
-      "name": "login_2",
-      "sceneType": "Login",
+      "name": "map_manager",
+      "sceneType": "MapManager",
       "ip": "127.0.0.1",
-      "port": 7002
+      "port": 7100
     }
-  ]
+  ],
+  "knownSceneFiles": ["cluster.known-scenes.json"]
 }

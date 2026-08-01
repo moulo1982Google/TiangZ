@@ -30,6 +30,7 @@ import {
   M2S_DisposeDynamicMapCodec,
   S2M_CreateDynamicMapCodec,
   S2M_DisposeDynamicMapCodec,
+  type MapInstanceSnapshot,
 } from "../app/generated/model/server/demo/protocol/messages";
 import { MsgCode as ServerMsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
 
@@ -38,7 +39,10 @@ type TimedMovementState = CellMovementState & { serverTick: number };
 async function main() {
   const loginAddr = await requestLoginServiceAddr("127.0.0.1", 7000);
   console.log("LoginMgr selected:", loginAddr);
-  await verifyDynamicMapLifecycle();
+  // Process Ready不代表跨进程MapHost注册已经完成；等待一个5秒续租周期覆盖并发启动顺序。
+  // Process Ready does not imply cross-process MapHost registration; wait one renewal cycle.
+  await sleep(5_500);
+  const dynamicMap = await verifyDynamicMapLifecycle();
   if (process.argv.includes("--gate-timeout-only")) {
     await verifyGateFinalTimeout(loginAddr.ip, loginAddr.port);
     return;
@@ -54,11 +58,16 @@ async function main() {
   }
   console.log("Login responses:", login1, login2);
 
-  const enterMap = await verifyGateSessionLifecycle(login1.gateIp, login1.gatePort, {
-    account: login1.account,
-    token: login1.token,
-    mapId: 1,
-  });
+  const enterMap = await verifyGateSessionLifecycle(
+    login1.gateIp,
+    login1.gatePort,
+    {
+      account: login1.account,
+      token: login1.token,
+      mapId: 1,
+    },
+    dynamicMap,
+  );
   console.log("EnterMap response:", enterMap);
 
   const [mover, peer] = await Promise.all([
@@ -74,14 +83,15 @@ async function main() {
 }
 
 /** 通过正式Inner握手验证动态副本创建和空地图销毁。 / Verifies dynamic-map creation and empty-map disposal through the real Inner handshake. */
-async function verifyDynamicMapLifecycle(): Promise<void> {
+async function verifyDynamicMapLifecycle(): Promise<MapInstanceSnapshot> {
+  const requestId = `runtime-smoke:${Date.now()}`;
   const createRpcId = nextRpcId++;
   const createFrame = await requestOneInternal(
     "127.0.0.1",
-    7301,
+    7100,
     encodePacket(
       ServerMsgCode.S2M_CreateDynamicMap,
-      S2M_CreateDynamicMapCodec.encode({ rpcId: createRpcId, mapConfigId: 1 }),
+      S2M_CreateDynamicMapCodec.encode({ rpcId: createRpcId, mapConfigId: 1, requestId }),
     ),
   );
   if (readU16BE(createFrame, 0) !== ServerMsgCode.M2S_CreateDynamicMap) {
@@ -92,31 +102,67 @@ async function verifyDynamicMapLifecycle(): Promise<void> {
     throw new Error(`dynamic map create failed: ${created.error} ${created.message}`);
   }
 
-  const disposeRpcId = nextRpcId++;
-  const disposeFrame = await requestOneInternal(
+  const retriedFrame = await requestOneInternal(
     "127.0.0.1",
-    7301,
+    7100,
     encodePacket(
-      ServerMsgCode.S2M_DisposeDynamicMap,
-      S2M_DisposeDynamicMapCodec.encode({
-        rpcId: disposeRpcId,
-        mapInstanceId: created.instance.mapInstanceId,
+      ServerMsgCode.S2M_CreateDynamicMap,
+      S2M_CreateDynamicMapCodec.encode({
+        rpcId: nextRpcId++,
+        mapConfigId: 1,
+        requestId,
       }),
     ),
   );
-  if (readU16BE(disposeFrame, 0) !== ServerMsgCode.M2S_DisposeDynamicMap) {
-    throw new Error("dynamic map dispose returned an unexpected msgcode");
+  const retried = M2S_CreateDynamicMapCodec.decode(retriedFrame.subarray(2));
+  if (retried.instance.mapInstanceId !== created.instance.mapInstanceId) {
+    throw new Error("dynamic map idempotent retry returned another instance");
   }
-  const disposed = M2S_DisposeDynamicMapCodec.decode(disposeFrame.subarray(2));
-  if (disposed.error || !disposed.disposed) {
-    throw new Error(`dynamic map dispose failed: ${disposed.error} ${disposed.message}`);
+
+  const secondFrame = await requestOneInternal(
+    "127.0.0.1",
+    7100,
+    encodePacket(
+      ServerMsgCode.S2M_CreateDynamicMap,
+      S2M_CreateDynamicMapCodec.encode({
+        rpcId: nextRpcId++,
+        mapConfigId: 1,
+        requestId: `${requestId}:second`,
+      }),
+    ),
+  );
+  const second = M2S_CreateDynamicMapCodec.decode(secondFrame.subarray(2));
+  if (second.error || second.instance.mapHostName === created.instance.mapHostName) {
+    throw new Error("dynamic map placement did not spread two instances across idle MapHosts");
   }
+
+  const disposed = await disposeDynamicMap(second.instance.mapHost.port, second.instance.mapInstanceId);
   console.log("Dynamic map lifecycle:", {
     mapConfigId: created.instance.mapConfigId,
     mapInstanceId: created.instance.mapInstanceId,
     mapHostName: created.instance.mapHostName,
-    disposed: disposed.disposed,
+    secondDisposed: disposed.disposed,
   });
+  return created.instance;
+}
+
+async function disposeDynamicMap(mapHostPort: number, mapInstanceId: bigint) {
+  const frame = await requestOneInternal(
+    "127.0.0.1",
+    mapHostPort,
+    encodePacket(
+      ServerMsgCode.S2M_DisposeDynamicMap,
+      S2M_DisposeDynamicMapCodec.encode({ rpcId: nextRpcId++, mapInstanceId }),
+    ),
+  );
+  if (readU16BE(frame, 0) !== ServerMsgCode.M2S_DisposeDynamicMap) {
+    throw new Error("dynamic map dispose returned an unexpected msgcode");
+  }
+  const disposed = M2S_DisposeDynamicMapCodec.decode(frame.subarray(2));
+  if (disposed.error || !disposed.disposed) {
+    throw new Error(`dynamic map dispose failed: ${disposed.error} ${disposed.message}`);
+  }
+  return disposed;
 }
 
 /** 等待真实30秒宽限结束，验证Gate驱动Map最终下线并让下次进入创建新Unit。 / Waits for the real grace deadline and verifies Gate-driven Map offline causes the next entry to create a new Unit. */
@@ -187,6 +233,7 @@ async function verifyGateSessionLifecycle(
   ip: string,
   port: number,
   request: { account: string; token: string; mapId: number },
+  dynamicMap: MapInstanceSnapshot,
 ) {
   const first = await openGateAndEnterMap(ip, port, request);
   const second = await openGateAndEnterMap(ip, port, request);
@@ -234,6 +281,7 @@ async function verifyGateSessionLifecycle(
       afterDisconnect.enterMap,
       currentState.item,
       currentState.currentHp,
+      dynamicMap,
     );
   } finally {
     await afterDisconnect.gate.close();
@@ -246,10 +294,11 @@ async function verifyMapTransfer(
   previous: ReturnType<typeof decodeEnterMapFrame>["body"],
   expectedItem: { itemId: bigint; count: number; version: number },
   expectedMinimumHp: number,
+  dynamicMap: MapInstanceSnapshot,
 ): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
   const rpcId = nextRpcId++;
   const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
-  const responsePromise = gate.request(buildEnterMapPacket(rpcId, { mapId: 2 }));
+  const responsePromise = gate.request(buildEnterMapPacket(rpcId, { mapId: 2, mapInstanceId: 0n }));
   const queuedItemRpcId = nextRpcId++;
   const queuedItemEvent = gate.waitForMessage(MsgCode.G2C_ItemChanged);
   const queuedItemResponse = gate.request(
@@ -306,7 +355,40 @@ async function verifyMapTransfer(
     itemCount: itemAfter?.count,
     queuedItemCount: itemResponse.body.item.count,
   });
-  return transferred;
+  return await verifyDynamicMapTransfer(gate, transferred, dynamicMap);
+}
+
+/** 验证目标MapHost完全不在Gate静态目录时，仍可通过Location携带的Endpoint完成传送。 / Verifies transfer through a Location endpoint when the target MapHost is absent from Gate's static directory. */
+async function verifyDynamicMapTransfer(
+  gate: TcpRpcConnection,
+  previous: ReturnType<typeof decodeEnterMapFrame>["body"],
+  dynamicMap: MapInstanceSnapshot,
+): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
+  const rpcId = nextRpcId++;
+  const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
+  const responseFrame = await gate.request(buildEnterMapPacket(rpcId, {
+    mapId: 0,
+    mapInstanceId: dynamicMap.mapInstanceId,
+  }));
+  const response = decodeEnterMapFrame(responseFrame);
+  const ready = decodeMapReadyFrame(await readyFrame);
+  if (
+    response.rpcId !== rpcId ||
+    response.body.error ||
+    response.body.mapInstanceId !== dynamicMap.mapInstanceId ||
+    response.body.mapId !== dynamicMap.mapConfigId ||
+    response.body.unitId !== previous.unitId ||
+    ready.body.unitId !== previous.unitId
+  ) {
+    throw new Error(`dynamic MapHost transfer failed: ${JSON.stringify(response.body)}`);
+  }
+  console.log("Dynamic MapHost transfer:", {
+    unitId: response.body.unitId,
+    mapInstanceId: response.body.mapInstanceId,
+    mapHostName: dynamicMap.mapHostName,
+    mapHostPort: dynamicMap.mapHost.port,
+  });
+  return response.body;
 }
 
 async function verifyItemChange(
@@ -661,7 +743,7 @@ async function openGateAndEnterMap(
       ? gate.waitForMessage(MsgCode.G2C_EntityNumeric)
       : Promise.resolve(undefined);
     const [enterMapFrame, mapReadyFrame, initialNumericFrame] = await Promise.all([
-      gate.request(buildEnterMapPacket(enterMapRpcId, { mapId: request.mapId })),
+      gate.request(buildEnterMapPacket(enterMapRpcId, { mapId: request.mapId, mapInstanceId: 0n })),
       gate.waitForMessage(MsgCode.G2C_MapReady),
       initialNumeric,
     ]);

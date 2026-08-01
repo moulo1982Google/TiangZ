@@ -1,7 +1,10 @@
+import type { SceneConfig } from "../../../core/public";
+
 export type GatePlayerRouteState = "online" | "disconnected" | "removing";
 
 export interface GatePlayerMapLocation {
   readonly mapService: string;
+  readonly mapHost: SceneConfig;
   readonly mapId: number;
   readonly mapInstanceId: bigint;
   readonly unitId: number;

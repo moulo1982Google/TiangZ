@@ -23,6 +23,7 @@ export {
   MapTransferProtocol,
   MapInstanceProtocol,
   DynamicMapProtocol,
+  MapHostControlProtocol,
   LocationProtocol,
 } from "../generated/model/server/demo/protocol/rpcs";
 export {
@@ -65,7 +66,14 @@ export {
 export { PositionComponent } from "./demo/map/PositionComponent";
 export { UnitGateComponent } from "./demo/map/UnitGateComponent";
 export { MapHostComponent } from "./demo/mapHost/MapHostComponent";
-export { DynamicMapManagerComponent } from "./demo/mapHost/DynamicMapManagerComponent";
+export {
+  MapHostEndpointFromScene,
+  SceneConfigFromMapHostEndpoint,
+  SceneConfigFromMapInstance,
+} from "./demo/mapHost/MapHostEndpoint";
+export { DynamicMapLifecycleComponent } from "./demo/mapHost/DynamicMapLifecycleComponent";
+export { MapHostRegistrationComponent } from "./demo/mapHost/MapHostRegistrationComponent";
+export { MapManagerComponent } from "./demo/mapManager/MapManagerComponent";
 export { DynamicMapProxy } from "./demo/mapHost/DynamicMapProxy";
 export { NumericComponent } from "./demo/numeric/NumericComponent";
 export {
@@ -92,3 +100,4 @@ export { GateScene } from "./demo/scenes/GateScene";
 export { LoginScene } from "./demo/scenes/LoginScene";
 export { LocationScene } from "./demo/scenes/LocationScene";
 export { MapHostScene } from "./demo/scenes/MapHostScene";
+export { MapManagerScene } from "./demo/scenes/MapManagerScene";

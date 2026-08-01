@@ -16,3 +16,4 @@ import "../../hotfix/demo/mapHost/handlers/G2M_TransferPlayerHandler";
 import "../../hotfix/demo/mapHost/handlers/M2M_AbortPlayerTransferHandler";
 import "../../hotfix/demo/mapHost/handlers/M2M_CommitPlayerTransferHandler";
 import "../../hotfix/demo/mapHost/handlers/M2M_PreparePlayerTransferHandler";
+import "../../hotfix/demo/mapManager/handlers/MapHostControlHandlers";

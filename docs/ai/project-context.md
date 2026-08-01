@@ -47,11 +47,13 @@ Process是操作系统进程、V8、TS线程、Inspector和故障隔离边界。
 
 ### EntryScene
 
-EntryScene是可配置、可寻址的顶层业务边界，例如`LoginMgr`、`Login`、`Gate`和`MapHost`。未来的`Social`可以作为一个EntryScene，再挂载`GuildComponent`和`FriendComponent`。
+EntryScene是可配置、可寻址的顶层业务边界，例如`LoginMgr`、`MapManager`、`Login`、`Gate`和`MapHost`。未来的`Social`可以作为一个EntryScene，再挂载`GuildComponent`和`FriendComponent`。
 
 ### Scene
 
-普通Scene是Process内动态创建的业务容器。一个MapHost可以创建多个MapScene，让低负载地图共享同一线程；扩容时再增加MapHost Process或EntryScene实例。静态地图与动态副本都由MapHost的同一个`CreateMap({ mapConfigId, mapInstanceId, dynamic })`创建，不为每个副本启动V8。静态地图在所属MapHost的`staticMapIds`启动配置中声明，实例号恒等于配置号；动态地图由Demo业务`DynamicMapManagerComponent`分配全局实例号。Location的MapInstance目录只保存`instance -> MapHost/config`路由，MapHost周期重报可恢复目录。
+普通Scene是Process内动态创建的业务容器。一个MapHost可以创建多个MapScene，让低负载地图共享同一线程；扩容时再增加MapHost Process或EntryScene实例。静态地图与动态副本共享同一个MapHost实现和`CreateMap`入口，不拆两套服务；`staticMapIds + acceptDynamicMaps`组合出静态专用、动态专用和混合Host。动态地图由单例`MapManagerScene`调度：启用动态承载的MapHost主动注册并每5秒报告实例数与玩家数，Manager按最少动态实例、最少玩家、名称稳定排序分配宿主，并用业务`requestId`固定唯一MapInstanceId。Location保存MapInstance路由并在地图实例、玩家位置结果中携带MapHost Endpoint；Gate与MapHost缓存或直接使用该地址，动态Host不进入其他进程的静态knownScenes。
+
+部署配置允许`knownSceneFiles`引用共享稳定目录。Rust启动器把本地Scene、共享目录和本地追加项做冲突校验后合并，再把普通`knownScenes`传给TS。该文件组合是不可热更的启动能力，不是服务发现；本地示例集中在`configs/local/cluster.known-scenes.json`。新增空载副本Host只创建自身Scene并引用共享目录，不修改其他进程配置。
 
 ### Actor、Scene、Session、Unit与Mailbox
 

@@ -27,6 +27,7 @@ if (mode === "split" || mode === "both") {
     "configs/local/gate1.json",
     "configs/local/map1.json",
     "configs/local/map2.json",
+    "configs/local/dungeon1.json",
     "configs/local/location.json",
   ], false);
 }
@@ -37,7 +38,9 @@ async function runCase(name, configs, checkHealth) {
   const runtimes = configs.map((config) => startRuntime(root, config, path.basename(config, ".json")));
   let succeeded = false;
   try {
-    await Promise.all([7000, 7001, 7002, 7201, 7301, 7302, 7401].map((port) => waitForPort(port, runtimes[0])));
+    const ports = [7000, 7001, 7002, 7201, 7301, 7302, 7401];
+    if (configs.some((config) => config.endsWith("dungeon1.json"))) ports.push(7310);
+    await Promise.all(ports.map((port) => waitForPort(port, runtimes[0])));
     if (checkHealth) await waitForReady(7600);
     await runInherited(process.execPath, [client, ...options.clientArgs], root);
     succeeded = true;

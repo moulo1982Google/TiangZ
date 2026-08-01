@@ -9,6 +9,7 @@ import "../../model/demo/scenes/LocationScene";
 import "../../model/demo/scenes/LoginMgrScene";
 import "../../model/demo/scenes/LoginScene";
 import "../../model/demo/scenes/MapHostScene";
+import "../../model/demo/scenes/MapManagerScene";
 import { Item as SystemTarget0 } from "../../model/demo/item/Item";
 import { ItemComponent as SystemTarget1 } from "../../model/demo/item/ItemComponent";
 import { LoginComponent as SystemTarget2 } from "../../model/demo/login/LoginComponent";

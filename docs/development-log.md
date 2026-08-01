@@ -10,6 +10,19 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-08-01：共享启动目录与动态MapHost完整路由
+
+- Runtime进程配置增加`knownSceneFiles`，相对当前配置文件加载共享`{"knownScenes": [...]}`，再与本地Scene和追加目录去重合并；同名异址、同址异名在监听器启动前拒绝。本地拆分配置迁移到单一`cluster.known-scenes.json`。
+- MapHost增加`acceptDynamicMaps`，不再拆静态/动态两种服务实现。空`staticMapIds + true`表示纯副本Host；`dungeon1.json`作为可直接启动的空载样例。
+- MapInstance和PlayerLocation协议携带经过校验的MapHost Endpoint。Gate长期路由、首次进入、重连、下线、Actor消息，MapHost跨图传送及副本销毁全部删除对动态Host静态`byName`的依赖。
+- 拆分Runtime smoke额外启动未列入共享目录的`dungeon_1:7310`；Manager成功分配动态实例，玩家完成Map1→Map2→dungeon_1跨进程传送，证明新增副本Host无需修改其他进程配置。
+
+## 2026-08-01：动态地图改由MapManager幂等调度
+
+- 新增单例`MapManagerScene`。MapHost启动后主动注册完整Inner地址与generation，并每5秒上报静态/动态地图数和玩家数；15秒未续租的Host不再参与新副本分配。默认策略依次比较动态实例数、玩家数和Host名称，调用方不再选择MapHost。
+- `DynamicMapProxy.Create(requestId, mapConfigId)`成为唯一业务创建入口。Manager只生成一次全局MapInstanceId并固定目标Host，MapHost按指定ID幂等创建和注册Location；并发请求共享创建事务，但每个RPC独立返回自己的rpcId。
+- MapHost注册会重报`requestId -> MapInstanceId`关系，单独重启Manager能够恢复。Manager与对应MapHost同时丢失后的跨重启幂等需要后续Redis持久化。本地空图五分钟回收改名为`DynamicMapLifecycleComponent`，避免与中央Manager混淆。
+
 ## 2026-08-01：AOI范围与同步档位完全冷配置化
 
 - 明确`AoiConfig`只负责Grid大小、Enter和Detach，`AoiSyncTierConfig`按行定义任意数量的范围与同步Hz；Map通过`aoiConfigId`选择配置。当前默认仍为3×3/20Hz和5×5/5Hz，没有重新启用7×7。

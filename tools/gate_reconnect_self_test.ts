@@ -17,6 +17,12 @@ function testConnectionReplacementAndGrace(): void {
   const route = new GatePlayerRoute("player-1", "gate-1", 10, 1_000);
   route.BindMap({
     mapService: "map-1",
+    mapHost: {
+      name: "map-1",
+      sceneType: "MapHost",
+      ip: "127.0.0.1",
+      port: 7301,
+    },
     mapId: 1,
     mapInstanceId: 1n,
     unitId: 1001,

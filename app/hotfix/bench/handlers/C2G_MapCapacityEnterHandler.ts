@@ -25,7 +25,7 @@ export class C2G_MapCapacityEnterHandler implements SessionRpcHandler<
     const placement = MapCapacityPlacementOf(request.mapId, request.playerIndex, request.layout);
     const entered = await scene.EnterMapForBenchmark(
       session,
-      { mapId: request.mapId },
+      { mapId: request.mapId, mapInstanceId: 0n },
       placement,
       request.entrySyncMode,
     );
