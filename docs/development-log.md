@@ -439,3 +439,12 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 障碍更新完成后递增Rust空间版本，正在执行的点击路径从权威位置到原终点自动重算；方向输入继续通过最新NavMesh表面推进，不会沿旧走廊穿过新关闭的门。
 - TS只开放`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`，不暴露Detour引用。Map自定义指标增加障碍数量、等待命令、更新次数、重建Tile、耗时和失败。
 - Cocos 3D灰盒增加`E`键动态门和演示RPC。all-in-one与split-process真实Runtime均验证开门2个拐点、关门4个拐点、再次开门恢复2个拐点；Rust单测另覆盖幂等、实例隔离、主动路径重算和地图释放。
+- UE 5.4.4灰盒复用同一个`Map.ToggleDemoDoor`协议：`FTiangZLoginFlow`提供类型化调用，GameMode以`E`键切换与Cocos同坐标的红门，并只在服务端响应后更新Actor表现；UE本地碰撞不参与权威导航。
+- 动态盒障碍改为由Rust按烘焙`agentRadius`统一扩大X/Z导航占用，业务仍提交真实物理尺寸；Cocos方向预测对已确认关闭的演示门增加非权威视觉约束，UE继续只插值服务端权威位置，避免两端重复实现碰撞规则。
+
+# 2026-08-03：Godot 4.7.1 3D客户端演示
+
+- 在用户创建的`godot-3d-4.7.1`空工程中加入GDScript WebSocket适配层、Proto读取器和Map 100灰盒场景。
+- Godot Demo贯通LoginMgr、Login、Gate、Map 100、`G2C_EntityNavigate`、基础AOI、5秒Gate Ping、点击寻路、W/S方向移动、A/D转身和`Map.ToggleDemoDoor`。
+- Godot与TiangZ米制Y-Up坐标直接对齐；表现层只平滑服务端权威位置，不复制Rust NavMesh、TileCache、Agent半径或动态碰撞。
+- Godot协议层已接入`codegen:godot-client-sdk`：从Proto锁文件生成`godot-3d-4.7.1/scripts/generated/tiangz_proto.gd`，客户端只手写连接流程、RPC编排和表现适配；TCP/KCP Adapter仍留作后续工作。

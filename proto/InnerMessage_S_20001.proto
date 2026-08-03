@@ -116,6 +116,7 @@ message G2M_InitialSnapshot // IRequest
 
 message M2G_InitialSnapshot // IResponse
 {
+  bool demo_door_closed = 1;
 }
 
 //ResponseType M2G_PlayerOffline

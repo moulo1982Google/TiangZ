@@ -46,7 +46,9 @@ LoginMgr.GetLoginServiceAddr
 -> Gate.MapSnapshotReady
 ```
 
-进入地图后会消费`G2C_AoiDelta`、`G2C_EntityNavigate`和`G2C_EntityNumeric`，并每5秒调用一次`Gate.Ping`维持Gate在线状态。操作为：左键点击地面寻路，W/S前后，A/D转向，按住右键时A/D横移，右键水平移动调整角色朝向。
+进入地图后会消费`G2C_AoiDelta`、`G2C_EntityNavigate`和`G2C_EntityNumeric`，并每5秒调用一次`Gate.Ping`维持Gate在线状态。操作为：左键点击地面寻路，W/S前后，A/D转向，按住右键时A/D横移，右键水平移动调整角色朝向，滚轮调整相机距离，`E`键开关红色动态门。
+
+动态门与Cocos 3D使用相同的地图局部坐标、物理尺寸和`Map.ToggleDemoDoor`协议。按`E`后，UE等待服务端响应再显示或隐藏门；关闭后点击门后地面会得到绕行路径，重新打开后恢复直线路径。Rust会按烘焙`agentRadius`扩大动态障碍的导航占用，UE不得把半径再次加到门尺寸中。红门Actor关闭本地碰撞，只负责显示；UE没有本地位置预测，继续插值服务端权威位置即可，不能用UE碰撞结果代替Rust TileCache状态。
 
 ## SDK边界
 
@@ -65,7 +67,7 @@ UE代码中的`TiangZYaw`始终属于协议坐标，键盘、鼠标和权威Push
 
 ## 自动化验证
 
-UE Automation测试名为`TiangZ.ClientSDK`，覆盖嵌套数组、正负64位整数、RPC ID、未知字段跳过和截断包拒绝：
+UE Automation测试名为`TiangZ.ClientSDK`，覆盖嵌套数组、正负64位整数、动态门RPC、RPC ID、未知字段跳过和截断包拒绝：
 
 ```powershell
 & "E:\Program Files\Epic Games\UE_5.4\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `

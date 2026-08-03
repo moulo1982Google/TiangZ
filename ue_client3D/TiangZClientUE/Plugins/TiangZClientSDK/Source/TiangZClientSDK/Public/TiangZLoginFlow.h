@@ -19,7 +19,9 @@ public:
     using FAoiDelta = std::function<void(tiangz::protocol::demo::G2C_AoiDelta)>;
     using FNavigate = std::function<void(tiangz::protocol::demo::G2C_EntityNavigate)>;
     using FNumeric = std::function<void(tiangz::protocol::demo::G2C_EntityNumeric)>;
+    using FDemoDoorState = std::function<void(bool bClosed)>;
     using FPing = std::function<void(std::int64_t LatencyMs, std::int64_t ServerTimeMs)>;
+    using FToggleDemoDoor = std::function<void(bool bClosed, bool bChanged)>;
 
     explicit FTiangZLoginFlow(tiangz::client::ClientEndpoint LoginMgrEndpoint);
     ~FTiangZLoginFlow();
@@ -28,13 +30,16 @@ public:
     FTiangZLoginFlow& operator=(const FTiangZLoginFlow&) = delete;
 
     void SetCallbacks(FProgress InProgress, FError InError, FReady InReady,
-        FAoiDelta InAoiDelta, FNavigate InNavigate, FNumeric InNumeric, FPing InPing);
+        FAoiDelta InAoiDelta, FNavigate InNavigate, FNumeric InNumeric,
+        FDemoDoorState InDemoDoorState, FPing InPing);
     void Start(FString Account, std::uint32_t MapId);
     void Tick();
     void Close();
 
     bool NavigateTo(float X, float Y, float Z, std::uint32_t Sequence);
     bool NavigateInput(std::int32_t Forward, std::int32_t Strafe, float Yaw, std::uint32_t Sequence);
+    /** 切换服务端权威动态门；完成回调只在游戏线程Update中执行。 / Toggles the authoritative demo door; completion runs only from game-thread Update. */
+    bool ToggleDemoDoor(bool bClosed, FToggleDemoDoor OnCompleted);
     [[nodiscard]] bool IsReady() const { return bReady; }
 
 private:
@@ -67,6 +72,7 @@ private:
     FAoiDelta OnAoiDelta;
     FNavigate OnNavigate;
     FNumeric OnNumeric;
+    FDemoDoorState OnDemoDoorState;
     FPing OnPing;
     std::chrono::steady_clock::time_point NextPingAt{};
     std::chrono::steady_clock::time_point PingStartedAt{};
@@ -74,4 +80,5 @@ private:
     bool bPingInFlight = false;
     bool bNavigateToInFlight = false;
     bool bNavigateInputInFlight = false;
+    bool bToggleDemoDoorInFlight = false;
 };

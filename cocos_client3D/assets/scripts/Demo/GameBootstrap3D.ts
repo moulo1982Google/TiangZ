@@ -25,6 +25,7 @@ import {
 } from "../Generated/SDK/Generated/Model/demo/protocol/clients";
 import type {
   G2C_AoiDelta,
+  G2C_DemoDoorState,
   G2C_EntityNavigate,
   MapEntitySnapshot,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
@@ -41,6 +42,12 @@ import "../Generated/SDK/Core/Net/NativeTransport";
 const { ccclass, property } = _decorator;
 const MAP_ID = 100;
 const PLAYER_HALF_HEIGHT = 0.9;
+const PLAYER_VISUAL_HALF_WIDTH = 0.4;
+const DEMO_DOOR_CENTER_X = -12;
+const DEMO_DOOR_CENTER_Z = 0;
+const DEMO_DOOR_HALF_WIDTH = 4;
+const DEMO_DOOR_HALF_DEPTH = 1;
+const COLLISION_EPSILON = 0.001;
 const ARRIVAL_DISTANCE = 0.05;
 const SNAP_DISTANCE = 2;
 const CORRECTION_RATE = 12;
@@ -178,9 +185,9 @@ export class GameBootstrap3D extends Component {
       3,
       2,
       new Color(198, 78, 70, 255),
-      -12,
+      DEMO_DOOR_CENTER_X,
       1.5,
-      0,
+      DEMO_DOOR_CENTER_Z,
     );
     this.dynamicDoor.active = false;
     world.addChild(this.dynamicDoor);
@@ -256,7 +263,8 @@ export class GameBootstrap3D extends Component {
         this,
       );
       for (const entity of result.enterMap.entities) this.UpsertRemotePlayer(entity);
-      await new GateClient(result.gateSocket).mapSnapshotReady({ unitId: result.enterMap.unitId });
+      const snapshotReady = await new GateClient(result.gateSocket).mapSnapshotReady({ unitId: result.enterMap.unitId });
+      this.ApplyDemoDoorState(snapshotReady.demoDoorClosed);
       this.setStatus(
         `${account} / Unit ${result.enterMap.unitId} / ${config.name}\n` +
         `NavMesh ${config.navigationVersion} 已加载\nW/S前后，A/D转向，按住右键时A/D横移；E开关动态门；左键点击地面寻路`,
@@ -296,6 +304,16 @@ export class GameBootstrap3D extends Component {
       remote.node.destroy();
       this.remotePlayers.delete(unitId);
     }
+  }
+
+  /** 应用地图权威动态门状态；状态既可能来自进图确认，也可能来自地图广播。 / Applies the authoritative door state from entry confirmation or a map broadcast. */
+  ApplyDemoDoorState(message: G2C_DemoDoorState | boolean): void {
+    const closed = typeof message === "boolean" ? message : message.closed;
+    this.doorClosed = closed;
+    this.dynamicDoor.active = closed;
+    this.path.length = 0;
+    this.pathIndex = 0;
+    this.drawPath([]);
   }
 
   /** 将屏幕点击投射到y=0灰盒平面，并请求服务端Rust NavMesh路径。 / Projects a screen click onto the graybox plane and requests a Rust NavMesh path from the server. */
@@ -374,11 +392,7 @@ export class GameBootstrap3D extends Component {
     const requestedClosed = !this.doorClosed;
     try {
       const response = await mapClient.toggleDemoDoor({ closed: requestedClosed });
-      this.doorClosed = response.closed;
-      this.dynamicDoor.active = response.closed;
-      this.path.length = 0;
-      this.pathIndex = 0;
-      this.drawPath([]);
+      this.ApplyDemoDoorState(response.closed);
       this.setStatus(
         response.closed
           ? "动态门已关闭；TileCache正在按帧更新，稍后点击门后方观察绕行"
@@ -535,7 +549,7 @@ export class GameBootstrap3D extends Component {
     }
   }
 
-  /** 对方向输入做无碰撞本地预测；Rust的贴地移动Push负责吸收墙面和高度误差。 / Predicts directional input without collision while Rust surface-movement pushes absorb wall and height error. */
+  /** 对方向输入做轻量表现预测；已确认动态门使用同尺寸边界约束，其他碰撞仍由Rust权威Push吸收。 / Predicts directional input while constraining the confirmed demo door; Rust authority still owns every other collision. */
   private advanceDirectionalPrediction(deltaTime: number): void {
     if (this.localUnitId === 0) return;
     const input = this.currentDirectionalInput();
@@ -549,12 +563,47 @@ export class GameBootstrap3D extends Component {
     const length = Math.hypot(directionX, directionZ);
     directionX /= length;
     directionZ /= length;
-    const foot = new Vec3(
-      this.player.position.x + directionX * this.playerSpeedMetersPerSecond * Math.max(0, deltaTime),
+    const currentFoot = new Vec3(
+      this.player.position.x,
       this.player.position.y - PLAYER_HALF_HEIGHT,
-      this.player.position.z + directionZ * this.playerSpeedMetersPerSecond * Math.max(0, deltaTime),
+      this.player.position.z,
     );
-    this.setPlayerFootPosition(foot);
+    const nextFoot = new Vec3(
+      currentFoot.x + directionX * this.playerSpeedMetersPerSecond * Math.max(0, deltaTime),
+      currentFoot.y,
+      currentFoot.z + directionZ * this.playerSpeedMetersPerSecond * Math.max(0, deltaTime),
+    );
+    this.constrainPredictionToDemoDoor(currentFoot, nextFoot);
+    this.setPlayerFootPosition(nextFoot);
+  }
+
+  /** 仅约束Demo已确认关闭的门；它改善预测表现，但不能代替服务端TileCache。 / Constrains only the confirmed demo door to improve presentation without replacing server TileCache authority. */
+  private constrainPredictionToDemoDoor(previous: Vec3, next: Vec3): void {
+    if (!this.doorClosed) return;
+    const minX = DEMO_DOOR_CENTER_X - DEMO_DOOR_HALF_WIDTH - PLAYER_VISUAL_HALF_WIDTH;
+    const maxX = DEMO_DOOR_CENTER_X + DEMO_DOOR_HALF_WIDTH + PLAYER_VISUAL_HALF_WIDTH;
+    const minZ = DEMO_DOOR_CENTER_Z - DEMO_DOOR_HALF_DEPTH - PLAYER_VISUAL_HALF_WIDTH;
+    const maxZ = DEMO_DOOR_CENTER_Z + DEMO_DOOR_HALF_DEPTH + PLAYER_VISUAL_HALF_WIDTH;
+    if (next.x < minX || next.x > maxX || next.z < minZ || next.z > maxZ) return;
+
+    if (previous.x <= minX) next.x = minX - COLLISION_EPSILON;
+    else if (previous.x >= maxX) next.x = maxX + COLLISION_EPSILON;
+    else if (previous.z <= minZ) next.z = minZ - COLLISION_EPSILON;
+    else if (previous.z >= maxZ) next.z = maxZ + COLLISION_EPSILON;
+    else {
+      const distances = [
+        { distance: Math.abs(previous.x - minX), axis: "minX" },
+        { distance: Math.abs(maxX - previous.x), axis: "maxX" },
+        { distance: Math.abs(previous.z - minZ), axis: "minZ" },
+        { distance: Math.abs(maxZ - previous.z), axis: "maxZ" },
+      ] as const;
+      const nearest = distances.reduce((best, candidate) =>
+        candidate.distance < best.distance ? candidate : best);
+      if (nearest.axis === "minX") next.x = minX - COLLISION_EPSILON;
+      else if (nearest.axis === "maxX") next.x = maxX + COLLISION_EPSILON;
+      else if (nearest.axis === "minZ") next.z = minZ - COLLISION_EPSILON;
+      else next.z = maxZ + COLLISION_EPSILON;
+    }
   }
 
   private hasManualFacingInput(): boolean {

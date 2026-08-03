@@ -345,7 +345,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 4.2.4将方向输入从“500ms重复生成短路径”改为Rust持有`forward/strafe/yaw`，每个20Hz Tick调用Detour `moveAlongSurface`贴地推进。Unit缓存当前polygon引用，撞墙不能穿越并允许沿边界移动；客户端每500ms续期1.5秒输入租约，断续期后Rust自动广播停止。新增`MapComponent.Raycast/SampleHeight`粗粒度查询，前者只检测NavMesh边界，不代替技能物理碰撞。Cocos方向预测只积分本地输入，墙面和高度误差由Rust权威Push校正；左键点击仍保留完整路径走廊。
 
-4.2.5将导航资源升级为包含压缩高度层的v2格式；共享资产只保存不可变模板，每个MapInstance独立构建`dtNavMesh + dtTileCache + Query`。业务通过稳定地图内`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`，Rust合并同ID目标状态并按每Tick 16条命令、4个Tile的预算更新。障碍版本提交后，已有点击路径在Rust自动重算；方向移动继续直接查询最新表面。Prometheus Map指标包含障碍数、等待命令、重建Tile、耗时和失败。Cocos 3D以`E`键开关灰盒门；真实all-in-one与split-process A/B均得到开门2点、关门4点、再开门2点。
+4.2.5将导航资源升级为包含压缩高度层的v2格式；共享资产只保存不可变模板，每个MapInstance独立构建`dtNavMesh + dtTileCache + Query`。业务通过稳定地图内`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`并提交真实物理尺寸，Rust按烘焙`agentRadius`扩张X/Z占用、合并同ID目标状态并按每Tick 16条命令、4个Tile的预算更新。障碍版本提交后，已有点击路径在Rust自动重算；方向移动继续直接查询最新表面。Prometheus Map指标包含障碍数、等待命令、重建Tile、耗时和失败。Cocos 3D以`E`键开关灰盒门，并为本地预测增加非权威防穿约束；真实all-in-one与split-process A/B均得到开门2点、关门4点、再开门2点。
 
 ### Phase 4.3：Cocos 3D Demo
 
@@ -362,7 +362,17 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - UE插件只实现WebSocket Transport与游戏线程Update，不把UObject、FVector或UE生命周期泄漏进公共SDK；选择未实现的TCP/KCP会立即报错，不能静默降级。
 - Demo贯通LoginMgr、Login、Gate、Map 100、AOI Enter/Leave、Numeric、权威Navigate和5秒Gate Ping；地图坐标只在表现边界转换为UE厘米制与Z-Up。
 - UE Automation覆盖嵌套消息、64位整数、RPC ID、未知字段和损坏包；MSVC 14.38与UE 5.4.4 Editor目标完成编译及真实WebSocket冒烟。
-- UE暂不增加动态门表现；服务端和公共C++ SDK已包含对应协议，UE演示按后续需求接入。
+- UE灰盒已接入与Cocos相同的`Map.ToggleDemoDoor`：`E`键请求服务端开关门，响应后才显示或隐藏同坐标红门；UE不做本地位置预测，Actor不参与本地导航和碰撞判定，统一服从Rust含Agent半径的权威结果。
+
+### Phase 4.3.2：Godot 4.7.1客户端
+
+状态：Godot空工程已接入WebSocket登录、Map 100、权威NavMesh移动、动态门、Ping和基础AOI；Godot协议Codec已经接入主工程生成链路，TCP/KCP Adapter后续补齐。
+
+- 使用Godot内置`WebSocketPeer`，不把Godot节点或`Vector3`泄漏进公共协议SDK。
+- GDScript适配层按`Proto读取 -> WebSocket/RPC -> Godot表现`分层，主场景只处理输入、相机和单位表现。
+- 左键寻路、W/S方向移动、A/D转身、`E`动态门和5秒Ping与Cocos3D、UE保持同一服务端语义。
+- Godot只插值Rust通过`G2C_EntityNavigate`广播的权威位置，不复制NavMesh、TileCache、碰撞和Agent半径。
+- `codegen:godot-client-sdk`从Proto锁文件生成完整GDScript字段Codec和消息常量；Godot演示仍只使用其中的Map 100业务流程，但不再维护手写协议子集。
 
 ### Phase 4.4：怪物与战斗
 

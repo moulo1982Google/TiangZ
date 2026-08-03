@@ -1122,12 +1122,14 @@ export interface G2C_MapSnapshotReady extends IResponse {
   message?: string;
   error?: number;
   rpcId?: number;
+  demoDoorClosed: boolean;
 }
 
 export const G2C_MapSnapshotReadyCodec = {
   decode(payload: Uint8Array): G2C_MapSnapshotReady {
     const reader = new BinaryReader(payload);
     const value: G2C_MapSnapshotReady = {
+      demoDoorClosed: false,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1139,6 +1141,9 @@ export const G2C_MapSnapshotReadyCodec = {
       }
       else if (tag.fieldNo === 90 && tag.wireType === 0) {
         value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.demoDoorClosed = reader.bool();
       }
       else {
         reader.skip(tag.wireType);
@@ -1152,6 +1157,7 @@ export const G2C_MapSnapshotReadyCodec = {
     if (value.message !== undefined) writer.string(92, value.message);
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.demoDoorClosed !== undefined) writer.bool(1, value.demoDoorClosed);
     return writer.finish();
   },
 };
@@ -2118,6 +2124,35 @@ export const G2C_AoiDeltaCodec = {
     if (value.serverTick !== undefined) writer.uint32(1, value.serverTick);
     for (const item of (value.enters ?? [])) writer.bytes(2, MapEntitySnapshotCodec.encode(item), true);
     for (const item of (value.leaves ?? [])) writer.uint32(3, item, true);
+    return writer.finish();
+  },
+};
+
+export interface G2C_DemoDoorState extends IMessage {
+  closed: boolean;
+}
+
+export const G2C_DemoDoorStateCodec = {
+  decode(payload: Uint8Array): G2C_DemoDoorState {
+    const reader = new BinaryReader(payload);
+    const value: G2C_DemoDoorState = {
+      closed: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.closed = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_DemoDoorState): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.closed !== undefined) writer.bool(1, value.closed);
     return writer.finish();
   },
 };

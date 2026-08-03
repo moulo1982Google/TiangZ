@@ -24,6 +24,13 @@
       "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include"
     ]
   },
+  "godotClientSdk": {
+    "enabled": true,
+    "protocolOutput": "godot-3d-4.7.1/scripts/generated/tiangz_proto.gd",
+    "outputRoots": [
+      "godot-3d-4.7.1/scripts/generated"
+    ]
+  },
   "clientHotfix": {
     "enabled": true,
     "targets": [

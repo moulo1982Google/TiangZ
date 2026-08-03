@@ -96,6 +96,7 @@ message C2G_MapSnapshotReady // IRequest
 
 message G2C_MapSnapshotReady // IResponse
 {
+  bool demo_door_closed = 1;
 }
 
 // @ets.msg protocol=Map method=Move duringTransfer=drop
@@ -283,6 +284,13 @@ message G2C_AoiDelta // IMessage
   uint32 server_tick = 1;
   repeated MapEntitySnapshot enters = 2;
   repeated uint32 leaves = 3;
+}
+
+// @ets.msg protocol=Client method=DemoDoorState
+// @ets.broadcast mode=event
+message G2C_DemoDoorState // IMessage
+{
+  bool closed = 1;
 }
 
 //ResponseType G2C_Ping

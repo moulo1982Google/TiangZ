@@ -17,7 +17,7 @@ export class C2M_ToggleDemoDoorHandler implements UnitRpcHandler<
   C2M_ToggleDemoDoor,
   M2C_ToggleDemoDoor
 > {
-  handle(unit: PlayerUnit, request: C2M_ToggleDemoDoor): M2C_ToggleDemoDoor {
+  async handle(unit: PlayerUnit, request: C2M_ToggleDemoDoor): Promise<M2C_ToggleDemoDoor> {
     const map = unit.DomainScene().GetComponent(MapComponent);
     const changed = request.closed
       ? map.UpsertNavigationBoxObstacle(DEMO_DOOR_OBSTACLE_ID, {
@@ -25,6 +25,10 @@ export class C2M_ToggleDemoDoorHandler implements UnitRpcHandler<
         halfExtents: { x: 4, y: 1.5, z: 1 },
       })
       : map.RemoveNavigationObstacle(DEMO_DOOR_OBSTACLE_ID);
+    if (changed) {
+      map.SetDemoDoorClosed(request.closed);
+      await map.PublishDemoDoorState();
+    }
     return { closed: request.closed, changed };
   }
 }

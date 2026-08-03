@@ -11,6 +11,8 @@ import {
   G2C_BuffDetailCodec,
   G2C_BuffRemoved,
   G2C_BuffRemovedCodec,
+  G2C_DemoDoorState,
+  G2C_DemoDoorStateCodec,
   G2C_EntityEnter,
   G2C_EntityEnterCodec,
   G2C_EntityLeave,
@@ -91,6 +93,11 @@ export const ClientMessages = {
     msgcode: MsgCode.G2C_AoiDelta,
     codec: G2C_AoiDeltaCodec,
   }),
+  DemoDoorState: defineMessage<G2C_DemoDoorState>({
+    name: "Client.DemoDoorState",
+    msgcode: MsgCode.G2C_DemoDoorState,
+    codec: G2C_DemoDoorStateCodec,
+  }),
 };
 
 export const MapMessages = {
@@ -116,4 +123,5 @@ export const AllMessageDescriptors = [
   ClientMessages.EntityEnter,
   ClientMessages.EntityLeave,
   ClientMessages.AoiDelta,
+  ClientMessages.DemoDoorState,
 ] as const;

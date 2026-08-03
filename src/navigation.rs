@@ -971,8 +971,8 @@ mod tests {
         drain_obstacle_updates(&mut closed_world);
         let detour = closed_world.find_path(start, end, extents, 32).unwrap();
         assert!(
-            detour.iter().any(|point| (point[0] + 12.0).abs() > 4.0),
-            "closed door should force an X-axis detour: {detour:?}"
+            detour.iter().any(|point| (point[0] + 12.0).abs() > 4.25),
+            "closed door should include agent-radius clearance: {detour:?}"
         );
         assert_eq!(
             open_world.find_path(start, end, extents, 32).unwrap(),

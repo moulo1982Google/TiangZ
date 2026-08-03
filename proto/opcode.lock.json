@@ -442,6 +442,11 @@
       "code": 10027
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_DemoDoorState",
+      "name": "G2C_DemoDoorState",
+      "code": 10041
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_EnterMap",
       "name": "G2C_EnterMap",
       "code": 10011

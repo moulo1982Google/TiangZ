@@ -401,7 +401,12 @@ export class GateScene extends EntryScene {
         { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
       );
       this.AssertCurrentRoute(session, route);
-      return { rpcId: request.rpcId, error: response.error, message: response.message };
+      return {
+        rpcId: request.rpcId,
+        error: response.error,
+        message: response.message,
+        demoDoorClosed: response.demoDoorClosed,
+      };
     });
   }
 

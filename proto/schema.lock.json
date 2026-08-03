@@ -1913,6 +1913,13 @@
       "response": null,
       "fields": [
         {
+          "number": 1,
+          "name": "demo_door_closed",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -4177,6 +4184,21 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_DemoDoorState",
+      "name": "G2C_DemoDoorState",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "closed",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_EnterMap",
       "name": "G2C_EnterMap",
       "base": "IResponse",
@@ -4528,6 +4550,13 @@
       "base": "IResponse",
       "response": null,
       "fields": [
+        {
+          "number": 1,
+          "name": "demo_door_closed",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
         {
           "number": 90,
           "name": "rpc_id",

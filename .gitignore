@@ -16,6 +16,7 @@
 /ue_client3D/**/Intermediate/
 /ue_client3D/**/Saved/
 /ue_client3D/**/*.sln
+/godot-3d-4.7.1/.godot/
 *.VC.db
 *.VC.opendb
 /perf/results/logs/

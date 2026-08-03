@@ -65,7 +65,7 @@ MapInstanceId
 
 TS负责地图规则、AI意图、技能、任务、传送和副本流程。Rust负责高频且权威的空间工作：坐标、移动推进、NavMesh查询、AOI索引和批量快照。`FindPath`是无副作用路径查询；`NavigateTo`提交世界目标并持有路径走廊；`NavigateInput`提交相对`yaw`的前后/横移状态，Rust每Tick通过`moveAlongSurface`推进并缓存polygon引用，零输入明确停止。`Raycast`只查询NavMesh边界，`SampleHeight`按Y选择可行走层。`G2C_EntityNavigate`是可覆盖权威状态。禁止在每个Tick逐顶点或逐路径节点跨越V8边界。
 
-动态障碍使用地图内稳定`ObstacleId: u32`。TS调用`MapComponent.UpsertNavigationBoxObstacle(id, box)`或`RemoveNavigationObstacle(id)`描述最终状态；相同ID和几何保持幂等，业务不能持有`dtObstacleRef`。Rust每Tick最多提交16条障碍命令并重建4个受影响Tile，完成后递增障碍版本，所有尚未完成的点击路径从权威当前位置到原目标自动重算。方向输入每Tick直接使用最新NavMesh表面。障碍属于MapInstance，模板相同的两个副本互不影响，地图销毁后全部释放。
+动态障碍使用地图内稳定`ObstacleId: u32`。TS调用`MapComponent.UpsertNavigationBoxObstacle(id, box)`或`RemoveNavigationObstacle(id)`描述最终状态；相同ID和几何保持幂等，业务不能持有`dtObstacleRef`。业务提交的是障碍真实物理盒体，Rust TileCache会按该导航资源烘焙时的`agentRadius`自动扩大X/Z占用范围，保证角色中心可行走时其体积也不会穿入障碍；业务不得手工重复增加半径。Rust每Tick最多提交16条障碍命令并重建4个受影响Tile，完成后递增障碍版本，所有尚未完成的点击路径从权威当前位置到原目标自动重算。方向输入每Tick直接使用最新NavMesh表面。障碍属于MapInstance，模板相同的两个副本互不影响，地图销毁后全部释放。
 
 Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Component`，Rust空间层是Scene之下的原生能力，不取代Scene或把全部地图业务下沉。
 

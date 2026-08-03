@@ -353,6 +353,7 @@ struct TzNavQuery {
     dtNavMesh* mesh = nullptr;
     dtTileCache* tile_cache = nullptr;
     dtNavMeshQuery* query = nullptr;
+    float agent_radius = 0.0f;
     dtTileCacheAlloc allocator;
     RawTileCacheCompressor compressor;
     WalkableMeshProcess mesh_process;
@@ -504,6 +505,7 @@ extern "C" TzNavQuery* tz_navmesh_query_create(
     result->mesh = dtAllocNavMesh();
     result->tile_cache = dtAllocTileCache();
     result->query = dtAllocNavMeshQuery();
+    result->agent_radius = std::max(0.0f, mesh->asset.cache.walkableRadius);
     if (result->mesh == nullptr || result->tile_cache == nullptr || result->query == nullptr ||
         dtStatusFailed(result->mesh->init(&mesh->asset.nav)) ||
         dtStatusFailed(result->tile_cache->init(&mesh->asset.cache, &result->allocator,
@@ -696,9 +698,15 @@ extern "C" int32_t tz_navmesh_obstacle_add_box(
         set_error(error, error_capacity, "动态障碍参数无效 / invalid dynamic obstacle arguments");
         return 0;
     }
+    // 业务描述物体真实盒体；导航层在地面方向做Minkowski扩张，避免Agent中心合法但表现体积插入障碍。 / Business supplies physical bounds; navigation expands the ground footprint so a valid agent center cannot visually overlap the obstacle.
+    const float navigation_half_extents[3] = {
+        half_extents[0] + query->agent_radius,
+        half_extents[1],
+        half_extents[2] + query->agent_radius,
+    };
     dtObstacleRef reference = 0;
     const dtStatus status = query->tile_cache->addBoxObstacle(
-        center, half_extents, yaw_radians, &reference);
+        center, navigation_half_extents, yaw_radians, &reference);
     if (dtStatusFailed(status) || reference == 0) {
         set_error(error, error_capacity, "动态障碍队列已满或容量不足 / dynamic obstacle queue or capacity is full");
         return 0;

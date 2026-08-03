@@ -5,6 +5,8 @@
 #include "Engine/StaticMeshActor.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 
 using namespace tiangz::protocol::demo;
 
@@ -13,11 +15,14 @@ namespace
 constexpr std::uint32_t DemoMapId = 100;
 constexpr float MetersToCentimeters = 100.0F;
 constexpr float TurnDegreesPerSecond = 180.0F;
+constexpr float MouseYawDegreesPerPixel = 1.0F;
 constexpr float InputRefreshInterval = 0.5F;
 constexpr float InputTurnSendInterval = 0.1F;
 constexpr float CameraMinDistance = 300.0F;
 constexpr float CameraMaxDistance = 1'400.0F;
 constexpr float CameraZoomStep = 100.0F;
+constexpr float CameraFollowSpeed = 8.0F;
+constexpr float CameraRightMouseFollowSpeed = 40.0F;
 constexpr std::uint32_t CurrentHpNumericType = 1;
 constexpr std::uint32_t MaxHpNumericType = 1000;
 }
@@ -71,6 +76,22 @@ void ATiangZDemoGameMode::BuildGraybox()
     NavigationObstacle->SetActorLocation(FVector(0.0F, 0.0F, 150.0F));
     NavigationObstacle->SetActorScale3D(FVector(6.0F, 10.0F, 3.0F));
 
+    // 与Cocos和服务端Demo共享同一米制盒体；UE Actor只表现权威状态，不参与本地寻路。 / Shares the same metric box as Cocos and the server; the UE actor visualizes authority without local pathfinding.
+    DynamicDoor = GetWorld()->SpawnActor<AStaticMeshActor>();
+    DynamicDoor->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+    DynamicDoor->GetStaticMeshComponent()->SetStaticMesh(CubeMesh);
+    DynamicDoor->GetStaticMeshComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    DynamicDoor->SetActorLocation(ToUnreal(-12.0F, 1.5F, 0.0F));
+    DynamicDoor->SetActorScale3D(FVector(8.0F, 2.0F, 3.0F));
+    if (auto* Material = LoadObject<UMaterialInterface>(nullptr,
+        TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+    {
+        DynamicDoorMaterial = UMaterialInstanceDynamic::Create(Material, this);
+        DynamicDoorMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.78F, 0.31F, 0.27F));
+        DynamicDoor->GetStaticMeshComponent()->SetMaterial(0, DynamicDoorMaterial);
+    }
+    SetDemoDoorClosed(false);
+
     CameraActor = GetWorld()->SpawnActor<ACameraActor>();
     if (auto* Controller = GetWorld()->GetFirstPlayerController())
     {
@@ -99,6 +120,7 @@ void ATiangZDemoGameMode::StartLogin()
         [this](G2C_AoiDelta Delta) { HandleAoiDelta(MoveTemp(Delta)); },
         [this](G2C_EntityNavigate Message) { HandleNavigate(MoveTemp(Message)); },
         [this](G2C_EntityNumeric Message) { HandleNumeric(MoveTemp(Message)); },
+        [this](bool bClosed) { HandleDemoDoorState(bClosed); },
         [](std::int64_t LatencyMs, std::int64_t)
         {
             if (GEngine)
@@ -128,6 +150,11 @@ void ATiangZDemoGameMode::HandleAoiDelta(G2C_AoiDelta Delta)
 {
     for (const auto& Entity : Delta.enters) AddOrUpdateUnit(Entity, true);
     for (const auto UnitId : Delta.leaves) RemoveUnit(UnitId);
+}
+
+void ATiangZDemoGameMode::HandleDemoDoorState(bool bClosed)
+{
+    SetDemoDoorClosed(bClosed);
 }
 
 void ATiangZDemoGameMode::HandleNavigate(G2C_EntityNavigate Message)
@@ -203,11 +230,47 @@ void ATiangZDemoGameMode::RemoveUnit(std::uint32_t UnitId)
     Units.Remove(UnitId);
 }
 
+void ATiangZDemoGameMode::ToggleDemoDoor()
+{
+    const bool bRequestedClosed = !bDemoDoorClosed;
+    if (!LoginFlow || !LoginFlow->ToggleDemoDoor(bRequestedClosed,
+        [this](bool bClosed, bool)
+        {
+            SetDemoDoorClosed(bClosed);
+            ShowStatus(bClosed
+                ? TEXT("动态门已关闭，服务端正在更新导航区域")
+                : TEXT("动态门已打开，服务端正在恢复导航区域"),
+                bClosed ? FColor::Red : FColor::Green);
+        }))
+    {
+        ShowStatus(TEXT("动态门请求尚未就绪或仍在处理中"), FColor::Orange);
+    }
+}
+
+void ATiangZDemoGameMode::SetDemoDoorClosed(bool bClosed)
+{
+    bDemoDoorClosed = bClosed;
+    if (!DynamicDoor) return;
+    DynamicDoor->SetActorHiddenInGame(!bClosed);
+    DynamicDoor->SetActorEnableCollision(false);
+}
+
 void ATiangZDemoGameMode::UpdateInput(float DeltaSeconds)
 {
     if (!LoginFlow || !LoginFlow->IsReady()) return;
     auto* Controller = GetWorld()->GetFirstPlayerController();
     if (!Controller) return;
+
+    if (Controller->WasInputKeyJustPressed(EKeys::E)) ToggleDemoDoor();
+
+    if (Controller->WasInputKeyJustPressed(EKeys::RightMouseButton))
+    {
+        SetRightMouseLookMode(Controller, true);
+    }
+    else if (Controller->WasInputKeyJustReleased(EKeys::RightMouseButton))
+    {
+        SetRightMouseLookMode(Controller, false);
+    }
 
     const int32 Forward = (Controller->IsInputKeyDown(EKeys::W) ? 1 : 0) -
         (Controller->IsInputKeyDown(EKeys::S) ? 1 : 0);
@@ -227,7 +290,9 @@ void ATiangZDemoGameMode::UpdateInput(float DeltaSeconds)
     Controller->GetInputMouseDelta(MouseX, MouseY);
     if (bRightMouse && !FMath::IsNearlyZero(MouseX))
     {
-        TiangZYaw -= FMath::DegreesToRadians(MouseX * 0.15F);
+        // 鼠标环绕需要明显高于旧版灵敏度，接近键盘转身的操作反馈；不改变协议坐标或服务端速度。
+        // Orbit sensitivity is intentionally higher than the old value, closer to keyboard turning feedback; protocol coordinates and server speed stay unchanged.
+        TiangZYaw -= FMath::DegreesToRadians(MouseX * MouseYawDegreesPerPixel);
         bDirectionalInputDirty = true;
     }
     if (bManualFacingInputActive)
@@ -319,11 +384,38 @@ void ATiangZDemoGameMode::UpdateCamera(float DeltaSeconds)
 {
     const auto* Visual = Units.Find(LocalUnitId);
     if (!Visual || !Visual->Actor || !CameraActor) return;
+    const auto* Controller = GetWorld()->GetFirstPlayerController();
+    const bool bRightMouse = Controller && Controller->IsInputKeyDown(EKeys::RightMouseButton);
     const FVector Target = Visual->Actor->GetActorLocation() + FVector(0.0F, 0.0F, 100.0F);
     const FVector Back = -Visual->Actor->GetActorForwardVector() * CameraDistance;
     const FVector Desired = Target + Back + FVector(0.0F, 0.0F, CameraDistance * 0.55F);
-    CameraActor->SetActorLocation(FMath::VInterpTo(CameraActor->GetActorLocation(), Desired, DeltaSeconds, 8.0F));
+    // 右键环绕必须快速追上新的轨道位置；普通跟随仍保留平滑，避免服务端移动时镜头抖动。
+    // Right-drag orbit must quickly follow the new orbit position; ordinary follow stays smooth to avoid server-movement jitter.
+    const float FollowSpeed = bRightMouse ? CameraRightMouseFollowSpeed : CameraFollowSpeed;
+    CameraActor->SetActorLocation(FMath::VInterpTo(CameraActor->GetActorLocation(), Desired, DeltaSeconds, FollowSpeed));
     CameraActor->SetActorRotation(UKismetMathLibrary::FindLookAtRotation(CameraActor->GetActorLocation(), Target));
+}
+
+void ATiangZDemoGameMode::SetRightMouseLookMode(APlayerController* Controller, bool bEnabled) const
+{
+    if (!Controller) return;
+    if (bEnabled)
+    {
+        // 右键拖拽时捕获鼠标，避免光标到达窗口边缘后停止环绕；松开后恢复UI鼠标。
+        // Capture the mouse during right-drag so orbiting does not stop at the window edge; restore the UI cursor on release.
+        Controller->bShowMouseCursor = false;
+        FInputModeGameOnly InputMode;
+        Controller->SetInputMode(InputMode);
+        return;
+    }
+
+    Controller->bShowMouseCursor = true;
+    Controller->bEnableClickEvents = true;
+    Controller->bEnableMouseOverEvents = true;
+    FInputModeGameAndUI InputMode;
+    InputMode.SetHideCursorDuringCapture(false);
+    InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    Controller->SetInputMode(InputMode);
 }
 
 void ATiangZDemoGameMode::ShowStatus(const FString& Message, FColor Color) const

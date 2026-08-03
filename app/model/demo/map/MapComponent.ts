@@ -25,6 +25,7 @@ import type {
   G2M_PlayerOffline,
   G2M_SecondEnterMap,
   G2M_TransferPlayer,
+  G2C_DemoDoorState,
   ItemSnapshot,
   KickPlayerTarget,
   MapEntitySnapshot,
@@ -114,6 +115,7 @@ export class MapComponent extends Component<[
   private mapInstanceId = 0n;
   private nativeMapKey = 0;
   private dynamic = false;
+  private demoDoorClosed = false;
   private players!: PlayerDirectoryComponent;
   private serverTick = 0;
   private broadcast!: BroadcastHub;
@@ -204,6 +206,10 @@ export class MapComponent extends Component<[
     return this.dynamic;
   }
 
+  get DemoDoorClosed(): boolean {
+    return this.demoDoorClosed;
+  }
+
   get PlayerCount(): number {
     return this.units.Count;
   }
@@ -282,6 +288,25 @@ export class MapComponent extends Component<[
     const changed = NativeData.RemoveObstacle(this.nativeMapKey, obstacleId);
     if (changed) this.navigationObstaclesPending = true;
     return changed;
+  }
+
+  /** 记录演示动态门的最终状态；导航障碍仍由调用方显式提交，避免把门状态与通用空间API混在一起。 / Records the demo door's final state while keeping obstacle submission explicit and separate from the generic spatial API. */
+  SetDemoDoorClosed(closed: boolean): void {
+    this.demoDoorClosed = closed;
+  }
+
+  /** 向当前地图所有在线玩家发送一次门状态；新玩家通过MapSnapshotReady获得同一状态。 / Sends the door state once to all online players; new players receive the same state through MapSnapshotReady. */
+  async PublishDemoDoorState(): Promise<void> {
+    const audience = ClientAudience.ForUnits(
+      `map:${this.mapInstanceId}:demo-door`,
+      this.units.GetAll(PlayerUnit).map((unit) => unit.UnitId),
+    );
+    await this.clientBroadcast.Publish(
+      audience,
+      ClientBroadcasts.DemoDoorState,
+      { closed: this.demoDoorClosed } satisfies G2C_DemoDoorState,
+      this.serverTick,
+    );
   }
 
   /** 创建地图内 Unit 存储、广播传输和帧尾同步源。 / Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */

@@ -66,6 +66,7 @@ client_sdk/cpp/              引擎无关C++ Client SDK与生成协议
 cocos_client2D/              Cocos Creator 2D Demo 客户端
 cocos_client3D/              Cocos Creator 3D NavMesh灰盒与公共SDK客户端
 ue_client3D/                 Unreal Engine 5.4.4 C++ SDK插件与3D灰盒客户端
+godot-3d-4.7.1/              Godot 4.7.1 GDScript WebSocket 3D灰盒客户端
 pixi_client/                 PixiJS/H5 SDK 通用性验收客户端
 perf/                        RPC、完整链路与地图容量测试
 tools/                       codegen、冒烟测试和维护脚本
@@ -82,7 +83,7 @@ Numeric权威值统一使用Rust`i64`、protobuf`int64`和TypeScript`bigint`。�
 
 地图运行时已接入Rust AOI：`MapConfig`引用冷配置`AoiConfig`，分别定义AOI Grid大小、Enter范围、Detach迟滞范围和独立同步档位。同步档位只节流已经可见的可覆盖状态，不会提前建立视野；业务只在阵营、隐身、位面改变时通过`MapAoiComponent.Invalidate*`通知重算。开发约束见[业务开发手册](docs/ai/business-development-manual.md)和[地图空间契约](docs/design/spatial-world.md)。
 
-Phase 4.2.5已经把官方Recast/Detour `v1.6.0`资产、Rust权威移动、动态障碍和AOI下行接入Map Runtime：Map 100启动时校验SHA-256并共享只读高度层模板，每个MapInstance独占`dtNavMesh + dtTileCache + Query`、路径和AOI状态；TS通过粗粒度`ProjectPosition/FindPath/Raycast/SampleHeight/UpsertNavigationBoxObstacle/RemoveNavigationObstacle`调用，不接触Detour句柄。障碍命令和受影响Tile按Tick限额处理，完成后正在行走的旧路径会在Rust自动重算。`cocos_client3D`支持左键寻路、W/S前后、A/D转向、按住右键时A/D横移、尾随相机和`E`键开关动态门。详见[NavMesh3D运行时与Cocos灰盒](docs/tutorials/13-navmesh3d.md)。
+Phase 4.2.5已经把官方Recast/Detour `v1.6.0`资产、Rust权威移动、动态障碍和AOI下行接入Map Runtime：Map 100启动时校验SHA-256并共享只读高度层模板，每个MapInstance独占`dtNavMesh + dtTileCache + Query`、路径和AOI状态；TS通过粗粒度`ProjectPosition/FindPath/Raycast/SampleHeight/UpsertNavigationBoxObstacle/RemoveNavigationObstacle`调用，不接触Detour句柄。业务提交障碍真实尺寸，Rust按烘焙`agentRadius`扩张水平导航占用；障碍命令和受影响Tile按Tick限额处理，完成后正在行走的旧路径会自动重算。Cocos 3D和UE 5.4.4灰盒均支持`E`键通过同一权威RPC开关动态门，前端只在服务端接受后更新表现；Cocos只额外约束本地预测，UE继续插值权威位置。详见[NavMesh3D运行时与Cocos灰盒](docs/tutorials/13-navmesh3d.md)与[UE 5.4.4客户端教程](docs/tutorials/14-unreal-engine-client.md)。
 
 ## 快速启动
 
@@ -120,7 +121,7 @@ Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“�
 
 公共 TypeScript SDK 位于 `client_sdk/typescript/`。`Core` 只包含引擎无关的帧、RPC、Push、Update 队列、错误和 Transport 抽象；客户端协议生成代码只位于 SDK 的 `Generated/Model`。执行 `npm run codegen` 后，正式 SDK 会分发到 Cocos 与 Pixi 的 `Generated/SDK`，Bench 协议只留在规范 SDK 供压测工具使用，两个客户端不维护私有网络 Core。
 
-公共 C++ SDK 位于 `client_sdk/cpp/`，Proto会生成不依赖Google protobuf runtime的结构、Codec和类型化RPC描述符；`npm run codegen:cpp-client-sdk`把完整头文件副本分发到UE插件。UE 5.4.4只负责WebSocket Adapter、游戏线程Update、坐标换算和Actor表现。当前UE Demo可自动登录Map 100、接收AOI/Numeric、5秒Gate Ping，并支持点击寻路与WASD方向移动，详见[UE 5.4.4客户端教程](docs/tutorials/14-unreal-engine-client.md)。
+公共 C++ SDK 位于 `client_sdk/cpp/`，Proto会生成不依赖Google protobuf runtime的结构、Codec和类型化RPC描述符；`npm run codegen:cpp-client-sdk`把完整头文件副本分发到UE插件。UE 5.4.4只负责WebSocket Adapter、游戏线程Update、坐标换算和Actor表现。当前UE Demo可自动登录Map 100、接收AOI/Numeric、5秒Gate Ping，并支持点击寻路、WASD方向移动和`E`键权威动态门，详见[UE 5.4.4客户端教程](docs/tutorials/14-unreal-engine-client.md)。Godot 4.7.1 Demo使用引擎自带`WebSocketPeer`接入同一主链，覆盖登录、Map 100、权威寻路、动态门、Ping和基础AOI，详见[Godot 4.7.1客户端教程](docs/tutorials/15-godot-client.md)。
 
 ```powershell
 # 公共 SDK 真实 WebSocket 登录到进图

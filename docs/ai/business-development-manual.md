@@ -312,6 +312,7 @@ message M2C_UseSkill // IActorLocationResponse
 5. 服务端只从`app/generated/model/server`导入；客户端、工具和压测客户端只从`client_sdk/typescript/Generated`导入。
 6. C++/UE客户端只从`client_sdk/cpp/include/tiangz/generated`使用生成协议；UE插件中的ThirdParty副本由codegen覆盖，禁止手改msgcode、Codec或rpcId。
 6. 执行`npm run test:protocol`和相关业务测试。
+7. Godot客户端只通过`godot-3d-4.7.1/scripts/tiangz_client.gd`调用登录、RPC和Push；协议Codec由`npm run codegen:godot-client-sdk`生成到`scripts/generated/tiangz_proto.gd`，`main.gd`只做节点表现。Godot当前是WebSocket演示适配，不能自行补TCP/KCP或把Godot的`Vector3`写入协议。
 
 不得手工修改`opcode.lock.json/schema.lock.json`来绕过生成器，也不得在业务代码中硬编码msgcode、rpcId或codec。
 
@@ -358,9 +359,13 @@ Cell和AOI Grid尺寸同样属于Cold配置：`MapConfig.cell_size_meters`定义
 
 创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。`Grid2D`与`NavMesh3D` Map Runtime均已可创建；NavMesh3D业务通过`MapComponent.ProjectPosition/FindPath`查询，通过`PlayerUnit.NavigateTo`提交权威移动目标，不读取Detour句柄、不逐节点跨V8，也不能捕获导航错误后回退到Grid2D。空间模式、字段结构、Agent烘焙参数和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
 
+动态障碍必须由Map业务使用稳定`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`，并传入门或路障的真实物理尺寸；Rust会按导航资源烘焙的`agentRadius`自动扩大X/Z占用，业务禁止手工重复增加半径。客户端只能发送业务意图并根据服务端结果更新表现。Cocos、UE或其他引擎中的门模型和碰撞体都不是权威导航数据；禁止客户端先改门状态后补发请求，也禁止用引擎本地寻路结果替代Rust TileCache。Cocos可以为本地预测增加非权威的视觉约束，UE等只插值权威位置的客户端不需要复制碰撞。Cocos 3D与UE灰盒的`E`键动态门是这一调用边界的演示。
+
 导航源网格由制作工具导出到`navigation/maps/<map>/source`，开发者只维护冷清单并执行`npm run navigation:bake`，不得在TS Handler、Game.Update或服务器启动流程中调用烘焙。`C2M_FindPath`是无副作用查询；`C2M_NavigateTo`的Handler只调用`unit.NavigateTo(request)`，方向移动的Handler只调用`unit.NavigateInput(request)`。点击移动由Rust保存路径走廊，在拐点先连续转身再消费剩余Tick时间移动；方向移动由Rust保存输入、1.5秒租约和polygon引用并在固定Tick调用`moveAlongSurface`。客户端的点击预测必须使用相同转向规则，方向输入每500ms续期，零方向输入必须立即停止，断续期也会自动停止。客户端表现层应分别保存权威、可视角色和本地相机朝向；活跃路径预测期间权威Push只能更新校正目标，不能直接覆盖可视朝向，预测结束后再平滑收敛。相机只能按最短角度追随，不能写回权威状态，也不能对角色两侧的摄像机目标位置直接做XYZ插值。客户端可以保存按键和预测路径，以`G2C_EntityNavigate`校正，但业务不得在TS复制权威路径进度或坐标。业务可通过`MapComponent.Raycast/SampleHeight`做NavMesh边界和地面查询，不能把Raycast当成角色物理碰撞。技能冲锋、AI移动等新意图应复用Unit入口或增加同层粗粒度操作，不能在Handler手写逐Tick位移。Demo灰盒是工具与客户端回归输入，不要求程序员手工制作正式3D地图。
 
 门、升降桥和临时路障使用地图内稳定`ObstacleId`，业务调用`map.UpsertNavigationBoxObstacle(id, { center, halfExtents, yawRadians })`与`map.RemoveNavigationObstacle(id)`，不读取或保存Detour引用。相同ID代表同一个业务对象，重复提交相同最终状态必须依赖框架幂等，不要先Remove再Add模拟更新。框架在固定Tick限额提交命令和重建Tile，Handler只提交一次意图，禁止循环等待`upToDate`。完成后Rust会自动重算尚未结束的点击路径；方向输入直接使用新表面。障碍只属于当前MapInstance，同模板副本互不影响，Map销毁自动释放。障碍几何、稳定ID来源、权限、持久化和客户端门表现仍由业务Component负责；`C2M_ToggleDemoDoor`仅用于Cocos灰盒验收，不是正式通用协议。
+
+动态障碍的客户端表现必须采用两步同步：地图进入完成后，`MapSnapshotReady`响应提供当前状态；状态变化后，Map再向该地图所有在线玩家发送状态事件。不能只把状态放在发起者的`M2C`响应中，否则第二个玩家可能看不到门，但服务端导航已经把门当作阻挡。客户端只更新模型显示，不复制Rust TileCache或本地权威碰撞；正式业务应把这套模式封装在自己的Map/Obstacle业务组件中。
 
 详细字段、Rust所有权和客户端进入校验见[地图空间与3D坐标契约](../design/spatial-world.md)。
 

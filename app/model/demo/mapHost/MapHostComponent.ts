@@ -402,7 +402,12 @@ export class MapHostComponent extends Component {
     }
     const map = this.mapOf(player);
     await map.PublishInitialSnapshot(player);
-    return { rpcId: request.rpcId, error: 0, message: "" };
+    return {
+      rpcId: request.rpcId,
+      error: 0,
+      message: "",
+      demoDoorClosed: map.DemoDoorClosed,
+    };
   }
 
   /**

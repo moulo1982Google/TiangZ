@@ -1515,6 +1515,7 @@ struct G2C_MapSnapshotReady {
   std::optional<std::string> message;
   std::optional<std::uint32_t> error;
   std::optional<std::uint32_t> rpcId;
+  bool demoDoorClosed = false;
 };
 
 struct G2C_MapSnapshotReadyCodec {
@@ -1545,6 +1546,13 @@ struct G2C_MapSnapshotReadyCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.demoDoorClosed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1558,6 +1566,7 @@ struct G2C_MapSnapshotReadyCodec {
     if (value.message.has_value()) writer.String(92, *value.message);
     if (value.error.has_value()) writer.UInt32(91, *value.error);
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.demoDoorClosed);
     return writer.Finish();
   }
 };
@@ -2795,6 +2804,39 @@ struct G2C_AoiDeltaCodec {
   }
 };
 
+struct G2C_DemoDoorState {
+  bool closed = false;
+};
+
+struct G2C_DemoDoorStateCodec {
+  static G2C_DemoDoorState Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_DemoDoorState value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.closed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_DemoDoorState& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.Bool(1, value.closed);
+    return writer.Finish();
+  }
+};
+
 struct C2G_Ping {
   std::optional<std::uint32_t> rpcId;
 };
@@ -2924,6 +2966,7 @@ inline constexpr std::uint16_t G2C_BuffDetail = 10028;
 inline constexpr std::uint16_t G2C_EntityEnter = 10022;
 inline constexpr std::uint16_t G2C_EntityLeave = 10023;
 inline constexpr std::uint16_t G2C_AoiDelta = 10025;
+inline constexpr std::uint16_t G2C_DemoDoorState = 10041;
 inline constexpr std::uint16_t C2G_Ping = 10024;
 inline constexpr std::uint16_t G2C_Ping = 10031;
 } // namespace MsgCode
@@ -3026,6 +3069,10 @@ inline constexpr tiangz::client::MessageDescriptor<G2C_EntityLeave, G2C_EntityLe
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_AoiDelta, G2C_AoiDeltaCodec> Client_AoiDelta{
   "Client.AoiDelta", MsgCode::G2C_AoiDelta
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_DemoDoorState, G2C_DemoDoorStateCodec> Client_DemoDoorState{
+  "Client.DemoDoorState", MsgCode::G2C_DemoDoorState
 };
 
 } // namespace tiangz::protocol::demo

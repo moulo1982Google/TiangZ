@@ -7,7 +7,9 @@
 #include "TiangZDemoGameMode.generated.h"
 
 class ACameraActor;
+class APlayerController;
 class AStaticMeshActor;
+class UMaterialInstanceDynamic;
 
 UCLASS()
 class TIANGZCLIENTUE_API ATiangZDemoGameMode final : public AGameModeBase
@@ -33,13 +35,17 @@ private:
     void HandleReady(const tiangz::protocol::demo::G2C_EnterMap& Enter,
         const tiangz::protocol::demo::G2C_MapReady& Ready);
     void HandleAoiDelta(tiangz::protocol::demo::G2C_AoiDelta Delta);
+    void HandleDemoDoorState(bool bClosed);
     void HandleNavigate(tiangz::protocol::demo::G2C_EntityNavigate Message);
     void HandleNumeric(tiangz::protocol::demo::G2C_EntityNumeric Message);
     void AddOrUpdateUnit(const tiangz::protocol::demo::MapEntitySnapshot& Snapshot, bool bSnap);
     void RemoveUnit(std::uint32_t UnitId);
+    void ToggleDemoDoor();
+    void SetDemoDoorClosed(bool bClosed);
     void UpdateInput(float DeltaSeconds);
     void UpdateVisuals(float DeltaSeconds);
     void UpdateCamera(float DeltaSeconds);
+    void SetRightMouseLookMode(APlayerController* Controller, bool bEnabled) const;
     void ShowStatus(const FString& Message, FColor Color = FColor::White) const;
 
     static FVector ToUnreal(float X, float Y, float Z);
@@ -50,6 +56,8 @@ private:
     TObjectPtr<UStaticMesh> CubeMesh;
     TObjectPtr<AStaticMeshActor> DemoFloor;
     TObjectPtr<AStaticMeshActor> NavigationObstacle;
+    TObjectPtr<AStaticMeshActor> DynamicDoor;
+    TObjectPtr<UMaterialInstanceDynamic> DynamicDoorMaterial;
     TObjectPtr<ACameraActor> CameraActor;
     std::uint32_t LocalUnitId = 0;
     std::uint32_t InputSequence = 0;
@@ -63,6 +71,7 @@ private:
     int32 LastStrafe = 0;
     bool bDirectionalInputDirty = false;
     bool bManualFacingInputActive = false;
+    bool bDemoDoorClosed = false;
     float CameraDistance = 600.0F;
     std::int64_t CurrentHp = 0;
     std::int64_t MaxHp = 0;

@@ -15,7 +15,8 @@ FTiangZLoginFlow::~FTiangZLoginFlow()
 }
 
 void FTiangZLoginFlow::SetCallbacks(FProgress InProgress, FError InError, FReady InReady,
-    FAoiDelta InAoiDelta, FNavigate InNavigate, FNumeric InNumeric, FPing InPing)
+    FAoiDelta InAoiDelta, FNavigate InNavigate, FNumeric InNumeric,
+    FDemoDoorState InDemoDoorState, FPing InPing)
 {
     OnProgress = MoveTemp(InProgress);
     OnError = MoveTemp(InError);
@@ -23,6 +24,7 @@ void FTiangZLoginFlow::SetCallbacks(FProgress InProgress, FError InError, FReady
     OnAoiDelta = MoveTemp(InAoiDelta);
     OnNavigate = MoveTemp(InNavigate);
     OnNumeric = MoveTemp(InNumeric);
+    OnDemoDoorState = MoveTemp(InDemoDoorState);
     OnPing = MoveTemp(InPing);
 }
 
@@ -57,6 +59,7 @@ void FTiangZLoginFlow::Close()
     bPingInFlight = false;
     bNavigateToInFlight = false;
     bNavigateInputInFlight = false;
+    bToggleDemoDoorInFlight = false;
 }
 
 bool FTiangZLoginFlow::NavigateTo(float X, float Y, float Z, std::uint32_t InSequence)
@@ -87,6 +90,26 @@ bool FTiangZLoginFlow::NavigateInput(std::int32_t Forward, std::int32_t Strafe, 
     GateSocket->Call(Map_NavigateInput, MoveTemp(Request),
         [this](M2C_NavigateInput) { bNavigateInputInFlight = false; },
         [this](const std::string& Error) { bNavigateInputInFlight = false; Fail(Error); });
+    return true;
+}
+
+bool FTiangZLoginFlow::ToggleDemoDoor(bool bClosed, FToggleDemoDoor OnCompleted)
+{
+    if (!bReady || !GateSocket || bToggleDemoDoorInFlight) return false;
+    bToggleDemoDoorInFlight = true;
+    C2M_ToggleDemoDoor Request;
+    Request.closed = bClosed;
+    GateSocket->Call(Map_ToggleDemoDoor, MoveTemp(Request),
+        [this, Completion = MoveTemp(OnCompleted)](M2C_ToggleDemoDoor Response) mutable
+        {
+            bToggleDemoDoorInFlight = false;
+            if (Completion) Completion(Response.closed, Response.changed);
+        },
+        [this](const std::string& Error)
+        {
+            bToggleDemoDoorInFlight = false;
+            Fail(Error);
+        });
     return true;
 }
 
@@ -163,6 +186,10 @@ void FTiangZLoginFlow::ConnectGate(const S2C_Login& Login)
     {
         if (OnNumeric) OnNumeric(MoveTemp(Message));
     });
+    GateSocket->On(Client_DemoDoorState, [this](G2C_DemoDoorState Message)
+    {
+        if (OnDemoDoorState) OnDemoDoorState(Message.closed);
+    });
     GateSocket->SetConnectedHandler([this]
     {
         C2G_LoginGate Request;
@@ -197,7 +224,10 @@ void FTiangZLoginFlow::TryFinishEnter()
     if (OnReady) OnReady(*EnterResponse, *MapReady);
     C2G_MapSnapshotReady Request;
     Request.unitId = EnterResponse->unitId;
-    GateSocket->Call(Gate_MapSnapshotReady, MoveTemp(Request), [](G2C_MapSnapshotReady) {},
+    GateSocket->Call(Gate_MapSnapshotReady, MoveTemp(Request), [this](G2C_MapSnapshotReady Response)
+    {
+        if (OnDemoDoorState) OnDemoDoorState(Response.demoDoorClosed);
+    },
         [this](const std::string& Error) { Fail(Error); });
     NextPingAt = std::chrono::steady_clock::now();
 }

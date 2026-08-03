@@ -32,6 +32,14 @@ bool FTiangZCppProtocolRoundTripTest::RunTest(const FString&)
     TestTrue(TEXT("RPC id exists"), RpcDecoded.rpcId.has_value());
     TestEqual(TEXT("RPC id"), RpcDecoded.rpcId.value_or(0), Rpc.rpcId.value());
 
+    C2M_ToggleDemoDoor DoorRequest;
+    DoorRequest.rpcId = 19;
+    DoorRequest.closed = true;
+    const auto DoorDecoded = C2M_ToggleDemoDoorCodec::Decode(
+        C2M_ToggleDemoDoorCodec::Encode(DoorRequest));
+    TestTrue(TEXT("dynamic door request closed"), DoorDecoded.closed);
+    TestEqual(TEXT("dynamic door request rpc id"), DoorDecoded.rpcId.value_or(0), 19U);
+
     const auto Frame = tiangz::client::PackFrame(MsgCode::G2C_EntityNumeric,
         G2C_EntityNumericCodec::Encode(Source));
     TestEqual(TEXT("frame msgcode"), tiangz::client::ReadFrameMsgCode(Frame),

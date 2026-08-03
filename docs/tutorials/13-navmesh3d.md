@@ -111,8 +111,12 @@ map.RemoveNavigationObstacle(doorId);
 
 相同ID和几何重复提交返回`false`，不会重复排队。TS不能保存Detour障碍引用，也不能为了等待完成而在Handler循环调用Native；`MapComponent.Update`每Tick最多处理16条目标状态并重建4个Tile。完成后Rust递增障碍版本，正在执行的点击路径从权威位置到原终点自动重算。方向输入没有旧走廊，每Tick直接在最新表面推进。
 
-障碍状态属于具体`MapInstanceId`。两个副本即使使用同一`navigationHash`，其中一个关门也不会影响另一个；地图销毁通过`SpatialRelease`同时释放TileCache和全部障碍。障碍几何、开关权限、`ObstacleId`分配和向客户端广播门表现都属于业务层，框架只提供空间能力。当前Cocos灰盒的`C2M_ToggleDemoDoor`只是演示协议，不应直接作为正式门系统。
+`halfExtents`描述门或路障的真实物理半尺寸，不包含角色半径。Rust会读取该地图导航资源的`agentRadius`，在送入TileCache前自动扩大盒体的X/Z占用，Y高度保持原值。业务如果再次手工扩大，就会产生双重安全距离。当前一个MapInstance只使用一种烘焙Agent规格；未来若同时支持体型差异很大的角色，应建立独立导航规格，而不是临时改障碍尺寸。
 
-Cocos 3D通过独立`ClientMessageDispatcher` Handler消费Push：本地玩家平滑吸收预测误差，明显偏离才直接校正；远端玩家不预测输入，只在权威位置之间插值。真实双客户端冒烟会比较双方收到的同一移动状态。
+障碍状态属于具体`MapInstanceId`。两个副本即使使用同一`navigationHash`，其中一个关门也不会影响另一个；地图销毁通过`SpatialRelease`同时释放TileCache和全部障碍。障碍几何、开关权限、`ObstacleId`分配和向客户端广播门表现都属于业务层，框架只提供空间能力。客户端进图时应从`MapSnapshotReady`获取当前门状态，之后消费地图广播的状态事件，不能只处理自己发起开关请求的响应。当前Cocos灰盒的`C2M_ToggleDemoDoor`只是演示协议，不应直接作为正式门系统。
+
+Cocos 3D通过独立`ClientMessageDispatcher` Handler消费Push：本地玩家平滑吸收预测误差，明显偏离才直接校正；确认门已关闭后，本地方向预测也会按角色可视半宽约束在门外，减少服务端校正到达前的短暂穿模。这只是表现保护，Rust仍是唯一碰撞与位置权威。远端玩家和UE客户端不预测输入，只在权威位置之间插值，不需要再建立一套客户端权威碰撞。真实双客户端冒烟会比较双方收到的同一移动状态。
+
+“关门时角色正站在门内”属于业务规则：可以拒绝关门、延迟关门或先把角色移动到安全点。TileCache只负责提交后的可行走面，不替业务决定该策略。
 
 当前仍需完成正式展示地图与导航碰撞源的制作期一致性检查；角色碰撞、动态避让和Crowd不属于TileCache静态阻挡，后续单独设计。
