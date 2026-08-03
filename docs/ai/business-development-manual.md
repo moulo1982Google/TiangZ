@@ -611,7 +611,7 @@ Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随�
 
 ## AOI业务规则
 
-地图业务不再构造“全地图玩家列表”广播Movement、Numeric或Unit固定字段。`MapAoiComponent`拥有Rust推导的最终可见结果；Movement由Rust在帧尾直接生成按Gate路由的完整批帧，`MapComponent`只调用框架封装并提交结果，不把recipientId数组拉回TS。Rust内部使用扁平AOI Grid、紧凑`EntityIndex`、连续Cell成员和双向可见位图，这是框架实现细节：业务不得读取或保存`EntityIndex/slotInGrid`，不得假设UnitId等于位图下标，也不得按Tick重建自己的空间索引。业务过滤仍通过`IAoiVisibilityFilter`和显式Invalidate改变最终可见位图。状态复制按Subject Grid合并相同受众，不按每名接收者复制记录索引。业务TS不得镜像全量关系表、管理delivery route、手工合并Grid受众或直接发送内网帧。开发普通移动、传送、上线或下线时不得手工调用底层Native AOI op；X/Z FastOP、`PlayerEntered`和`RemovePlayer`生命周期已经接管。
+地图业务不再构造“全地图玩家列表”广播Movement、Numeric或Unit固定字段。`MapAoiComponent`拥有Rust推导的最终可见结果；Movement由Rust在帧尾直接生成按Gate路由的完整批帧，`MapComponent`只调用框架封装并提交结果，不把recipientId数组拉回TS。Rust内部使用扁平AOI Grid、紧凑`EntityIndex`、连续成员数组和双向可见位图；热点Grid会由框架自动增加成员位图。这些都是框架实现细节：业务不得读取或保存`EntityIndex/slotInGrid`，不得假设UnitId等于位图下标，不得配置热点阈值，也不得按Tick重建自己的空间索引。业务过滤仍通过`IAoiVisibilityFilter`和显式Invalidate改变最终可见位图。状态复制按Subject Grid合并相同受众，不按每名接收者复制记录索引。业务TS不得镜像全量关系表、管理delivery route、手工合并Grid受众或直接发送内网帧。开发普通移动、传送、上线或下线时不得手工调用底层Native AOI op；X/Z FastOP、`PlayerEntered`和`RemovePlayer`生命周期已经接管。
 
 普通Unit进入/离开视野也不由业务逐个发送。框架把同一帧、相同受众的不可覆盖变化合成`G2C_AoiDelta`，客户端SDK的Handler负责遍历`enters/leaves`。新增Buff、任务摘要等领域可见事件时，应先判断它属于Unit整体Snapshot、独立不可覆盖Event还是可覆盖状态；不得把业务字段塞进通用AOI Delta，也不得恢复逐关系`Publish`。
 

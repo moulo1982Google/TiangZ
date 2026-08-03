@@ -6,6 +6,9 @@ use std::collections::BTreeMap;
 use rustc_hash::FxHashMap;
 
 const MAX_DENSE_ENTITIES: usize = 16_384;
+const HOT_GRID_PROMOTE_MEMBERS: usize = 128;
+const HOT_GRID_DEMOTE_MEMBERS: usize = 96;
+const HOT_GRID_WORDS: usize = MAX_DENSE_ENTITIES.div_ceil(64);
 
 /// 一条客户端可见关系的最终变化；Observer 可以看见或不再看见 Subject。
 /// A final client-visible relation change between one observer and one subject.
@@ -103,22 +106,22 @@ impl DenseBitMatrix {
         before
     }
 
-    fn indices(&self, row: usize) -> Vec<usize> {
+    /// 直接遍历一行中的置位索引，供热路径避免先构造临时集合。
+    /// Visits set indices directly so hot paths do not materialize an intermediate collection.
+    fn for_each_index(&self, row: usize, mut visit: impl FnMut(usize)) {
         if row >= self.row_capacity {
-            return Vec::new();
+            return;
         }
         let start = row * self.words_per_row;
         let words = &self.words[start..start + self.words_per_row];
-        let mut indices = Vec::new();
         for (word_index, &word) in words.iter().enumerate() {
             let mut remaining = word;
             while remaining != 0 {
                 let bit = remaining.trailing_zeros() as usize;
-                indices.push(word_index * 64 + bit);
+                visit(word_index * 64 + bit);
                 remaining &= remaining - 1;
             }
         }
-        indices
     }
 
     fn clear_index(&mut self, index: usize) {
@@ -153,7 +156,7 @@ impl AudienceSignature {
 
 #[derive(Clone, Copy, Debug)]
 struct AoiEntry {
-    entity_index: usize,
+    unit_id: u32,
     grid: GridCoord,
     grid_index: usize,
     slot_in_grid: usize,
@@ -179,10 +182,12 @@ pub(crate) struct AoiWorld {
     grid_width: u32,
     grid_depth: u32,
     sync_tiers: Vec<SyncTier>,
-    entries: FxHashMap<u32, AoiEntry>,
-    entity_ids: Vec<Option<u32>>,
+    unit_indices: FxHashMap<u32, usize>,
+    entries: Vec<Option<AoiEntry>>,
+    entry_count: usize,
     free_entity_indices: Vec<usize>,
     grids: Vec<Vec<usize>>,
+    hot_grid_bits: Vec<Option<Box<[u64; HOT_GRID_WORDS]>>>,
     occupied_grid_count: usize,
     spatial_subjects: DenseBitMatrix,
     spatial_observers: DenseBitMatrix,
@@ -192,9 +197,10 @@ pub(crate) struct AoiWorld {
     spatial_relation_count: usize,
     visible_relation_count: usize,
     lingering_relation_count: usize,
-    audience_signatures: FxHashMap<u32, AudienceSignature>,
+    audience_signatures: Vec<AudienceSignature>,
     scratch_candidates: Vec<usize>,
     scratch_candidate_seen: Vec<bool>,
+    scratch_hot_candidates: Box<[u64; HOT_GRID_WORDS]>,
     pending_changes: FxHashMap<(u32, u32), PendingVisibilityChange>,
 }
 
@@ -263,10 +269,12 @@ impl AoiWorld {
             grid_width,
             grid_depth,
             sync_tiers,
-            entries: FxHashMap::default(),
-            entity_ids: Vec::new(),
+            unit_indices: FxHashMap::default(),
+            entries: Vec::new(),
+            entry_count: 0,
             free_entity_indices: Vec::new(),
             grids: (0..grid_count).map(|_| Vec::new()).collect(),
+            hot_grid_bits: (0..grid_count).map(|_| None).collect(),
             occupied_grid_count: 0,
             spatial_subjects: DenseBitMatrix::default(),
             spatial_observers: DenseBitMatrix::default(),
@@ -276,9 +284,10 @@ impl AoiWorld {
             spatial_relation_count: 0,
             visible_relation_count: 0,
             lingering_relation_count: 0,
-            audience_signatures: FxHashMap::default(),
+            audience_signatures: Vec::new(),
             scratch_candidates: Vec::new(),
             scratch_candidate_seen: Vec::new(),
+            scratch_hot_candidates: Box::new([0; HOT_GRID_WORDS]),
             pending_changes: FxHashMap::default(),
         })
     }
@@ -314,57 +323,67 @@ impl AoiWorld {
         if !x.is_finite() || !z.is_finite() {
             return Err("AOI position must be finite");
         }
-        if self.entries.contains_key(&unit_id) {
+        if self.unit_indices.contains_key(&unit_id) {
             return Err("AOI unit is already attached");
         }
-        if self.entries.len() >= MAX_DENSE_ENTITIES {
+        if self.entry_count >= MAX_DENSE_ENTITIES {
             return Err("AOI dense entity capacity exceeds 16384");
         }
-        let entity_index = self.allocate_entity_index(unit_id);
         let grid = self.grid_of(x, z);
         let Some(grid_index) = self.grid_index(grid) else {
-            self.release_entity_index(entity_index);
             return Err("AOI position is outside the configured map grid");
         };
+        let entity_index = self.allocate_entity_index();
         let slot_in_grid = self.push_to_grid(grid_index, entity_index);
-        self.entries.insert(
+        self.entries[entity_index] = Some(AoiEntry {
             unit_id,
-            AoiEntry {
-                entity_index,
-                grid,
-                grid_index,
-                slot_in_grid,
-                observer,
-                subject,
-                delivery_route_id,
-            },
-        );
+            grid,
+            grid_index,
+            slot_in_grid,
+            observer,
+            subject,
+            delivery_route_id,
+        });
+        self.unit_indices.insert(unit_id, entity_index);
+        self.entry_count += 1;
         if subject {
             let mut signature = AudienceSignature::default();
             if observer {
                 signature.insert(unit_id);
             }
-            self.audience_signatures.insert(unit_id, signature);
+            self.audience_signatures[entity_index] = signature;
         }
 
-        if observer {
-            for subject_id in self.subjects_within(unit_id, grid, self.enter_radius_grids) {
-                self.set_spatial_relation(unit_id, subject_id, true);
+        // Observer+Subject实体只扫描一次Enter邻域，并直接以EntityIndex建立双向关系。
+        // Observer+subject entities scan the Enter neighborhood once and update by EntityIndex.
+        let mut candidates = std::mem::take(&mut self.scratch_candidates);
+        candidates.clear();
+        self.collect_candidates(&mut candidates, &[(grid, self.enter_radius_grids)]);
+        for other_index in candidates.iter().copied() {
+            if other_index == entity_index {
+                continue;
+            }
+            let Some(other) = self.entries[other_index] else {
+                continue;
+            };
+            if observer && other.subject {
+                self.set_spatial_relation_indices(entity_index, other_index, true);
+            }
+            if subject && other.observer {
+                self.set_spatial_relation_indices(other_index, entity_index, true);
             }
         }
-        if subject {
-            for observer_id in self.observers_within(unit_id, grid, self.enter_radius_grids) {
-                self.set_spatial_relation(observer_id, unit_id, true);
-            }
+        for &index in &candidates {
+            self.scratch_candidate_seen[index] = false;
         }
+        self.scratch_candidates = candidates;
         Ok(())
     }
 
     /// 返回 Observer 的进程内投递路由；0 表示该 Observer 未配置原生快照路由。
     /// Returns an observer's process-local delivery route; zero means native fan-out is disabled.
     pub(crate) fn delivery_route_id(&self, observer_id: u32) -> Option<u32> {
-        self.entries
-            .get(&observer_id)
+        self.entry(observer_id)
             .filter(|entry| entry.observer && entry.delivery_route_id != 0)
             .map(|entry| entry.delivery_route_id)
     }
@@ -373,7 +392,8 @@ impl AoiWorld {
     /// Returns the largest active route id so frame-end fan-out can reuse dense buckets.
     pub(crate) fn max_delivery_route_id(&self) -> u32 {
         self.entries
-            .values()
+            .iter()
+            .flatten()
             .map(|entry| entry.delivery_route_id)
             .max()
             .unwrap_or(0)
@@ -382,23 +402,35 @@ impl AoiWorld {
     /// 从 AOI 移除实体并先生成所有最终 Leave。调用方随后才能销毁 Native Entity。
     /// Detaches an entity after producing final Leave changes, before Native Entity destruction.
     pub(crate) fn detach(&mut self, unit_id: u32) -> bool {
-        let Some(entry) = self.entries.get(&unit_id).copied() else {
+        let Some(entity_index) = self.entity_index(unit_id) else {
             return false;
         };
+        let Some(entry) = self.entries[entity_index] else {
+            return false;
+        };
+        let mut relations = std::mem::take(&mut self.scratch_candidates);
+        relations.clear();
         if entry.observer {
-            for subject_id in self.spatial_subject_ids(entry.entity_index) {
-                self.set_spatial_relation(unit_id, subject_id, false);
+            self.spatial_subjects
+                .for_each_index(entity_index, |index| relations.push(index));
+            while let Some(subject_index) = relations.pop() {
+                self.set_spatial_relation_indices(entity_index, subject_index, false);
             }
         }
         if entry.subject {
-            for observer_id in self.spatial_observer_ids(entry.entity_index) {
-                self.set_spatial_relation(observer_id, unit_id, false);
+            self.spatial_observers
+                .for_each_index(entity_index, |index| relations.push(index));
+            while let Some(observer_index) = relations.pop() {
+                self.set_spatial_relation_indices(observer_index, entity_index, false);
             }
         }
-        self.audience_signatures.remove(&unit_id);
-        self.remove_from_grid(entry.entity_index, entry.grid_index, entry.slot_in_grid);
-        self.entries.remove(&unit_id);
-        self.release_entity_index(entry.entity_index);
+        self.scratch_candidates = relations;
+        self.audience_signatures[entity_index] = AudienceSignature::default();
+        self.remove_from_grid(entity_index, entry.grid_index, entry.slot_in_grid);
+        self.unit_indices.remove(&unit_id);
+        self.entries[entity_index] = None;
+        self.entry_count -= 1;
+        self.release_entity_index(entity_index);
         true
     }
 
@@ -413,7 +445,10 @@ impl AoiWorld {
         let next_grid_index = self
             .grid_index(next)
             .ok_or("AOI position is outside the configured map grid")?;
-        let Some(entry) = self.entries.get(&unit_id).copied() else {
+        let Some(entity_index) = self.entity_index(unit_id) else {
+            return Err("AOI unit is not attached");
+        };
+        let Some(entry) = self.entries[entity_index] else {
             return Err("AOI unit is not attached");
         };
         if entry.grid == next {
@@ -425,35 +460,45 @@ impl AoiWorld {
         // times. One candidate pass preserves directional filters while avoiding duplicate work.
         let mut candidates = std::mem::take(&mut self.scratch_candidates);
         candidates.clear();
-        self.extend_candidates(&mut candidates, entry.grid, self.detach_radius_grids);
-        self.extend_candidates(&mut candidates, next, self.enter_radius_grids);
-        self.remove_from_grid(entry.entity_index, entry.grid_index, entry.slot_in_grid);
-        let slot_in_grid = self.push_to_grid(next_grid_index, entry.entity_index);
-        let moved = self.entries.get_mut(&unit_id).unwrap();
+        self.collect_candidates(
+            &mut candidates,
+            &[
+                (entry.grid, self.detach_radius_grids),
+                (next, self.enter_radius_grids),
+            ],
+        );
+        self.remove_from_grid(entity_index, entry.grid_index, entry.slot_in_grid);
+        let slot_in_grid = self.push_to_grid(next_grid_index, entity_index);
+        let moved = self.entries[entity_index].as_mut().unwrap();
         moved.grid = next;
         moved.grid_index = next_grid_index;
         moved.slot_in_grid = slot_in_grid;
 
         for other_index in candidates.iter().copied() {
-            if other_index == entry.entity_index {
+            if other_index == entity_index {
                 continue;
             }
-            let Some(other_id) = self.entity_id(other_index) else {
-                continue;
-            };
-            let Some(other) = self.entries.get(&other_id).copied() else {
+            let Some(other) = self.entries[other_index] else {
                 continue;
             };
             let after_distance = chebyshev(next, other.grid);
             if entry.observer && other.subject {
-                let pair = (unit_id, other_id);
-                let before_spatial = self.is_spatially_visible(pair);
-                self.reconcile_pair(pair, before_spatial, after_distance);
+                let before_spatial = self.spatial_subjects.contains(entity_index, other_index);
+                self.reconcile_pair_indices(
+                    entity_index,
+                    other_index,
+                    before_spatial,
+                    after_distance,
+                );
             }
             if entry.subject && other.observer {
-                let pair = (other_id, unit_id);
-                let before_spatial = self.is_spatially_visible(pair);
-                self.reconcile_pair(pair, before_spatial, after_distance);
+                let before_spatial = self.spatial_subjects.contains(other_index, entity_index);
+                self.reconcile_pair_indices(
+                    other_index,
+                    entity_index,
+                    before_spatial,
+                    after_distance,
+                );
             }
         }
         for &index in &candidates {
@@ -466,10 +511,17 @@ impl AoiWorld {
     /// 覆盖一条当前空间关系的业务可见结果；不能把尚未 Enter 的实体强制设为可见。
     /// Overrides business visibility for a current spatial relation without creating visibility.
     pub(crate) fn set_visible(&mut self, observer_id: u32, subject_id: u32, visible: bool) -> bool {
-        let pair = (observer_id, subject_id);
-        let spatial = self.is_spatially_visible(pair);
+        let Some(observer_index) = self.entity_index(observer_id) else {
+            return false;
+        };
+        let Some(subject_index) = self.entity_index(subject_id) else {
+            return false;
+        };
+        let spatial = self
+            .spatial_subjects
+            .contains(observer_index, subject_index);
         let desired = visible && spatial;
-        self.set_visible_relation(observer_id, subject_id, desired)
+        self.set_visible_relation_indices(observer_index, subject_index, desired)
     }
 
     /// 返回实体涉及的当前空间关系，供阵营、隐身、位面等业务状态失效后重新过滤。
@@ -480,23 +532,28 @@ impl AoiWorld {
         include_observer: bool,
         include_subject: bool,
     ) -> Vec<(u32, u32)> {
-        let Some(entry) = self.entries.get(&unit_id).copied() else {
+        let Some(entity_index) = self.entity_index(unit_id) else {
+            return Vec::new();
+        };
+        let Some(entry) = self.entries[entity_index] else {
             return Vec::new();
         };
         let mut pairs = Vec::new();
         if include_observer && entry.observer {
-            pairs.extend(
-                self.spatial_subject_ids(entry.entity_index)
-                    .into_iter()
-                    .map(|id| (unit_id, id)),
-            );
+            self.spatial_subjects
+                .for_each_index(entity_index, |subject_index| {
+                    if let Some(subject) = self.entries[subject_index].as_ref() {
+                        pairs.push((unit_id, subject.unit_id));
+                    }
+                });
         }
         if include_subject && entry.subject {
-            pairs.extend(
-                self.spatial_observer_ids(entry.entity_index)
-                    .into_iter()
-                    .map(|id| (id, unit_id)),
-            );
+            self.spatial_observers
+                .for_each_index(entity_index, |observer_index| {
+                    if let Some(observer) = self.entries[observer_index].as_ref() {
+                        pairs.push((observer.unit_id, unit_id));
+                    }
+                });
         }
         pairs.sort_unstable();
         pairs.dedup();
@@ -504,34 +561,36 @@ impl AoiWorld {
     }
 
     pub(crate) fn visible_subjects(&self, observer_id: u32) -> Vec<u32> {
-        let Some(entry) = self.entries.get(&observer_id) else {
+        let Some(entity_index) = self.entity_index(observer_id) else {
             return Vec::new();
         };
+        let entry = self.entries[entity_index].as_ref().unwrap();
         if !entry.observer {
             return Vec::new();
         }
-        let mut ids = self.visible_subject_ids(entry.entity_index);
+        let mut ids = self.visible_subject_ids(entity_index);
         ids.sort_unstable();
         ids
     }
 
     pub(crate) fn observers_of(&self, subject_id: u32) -> Vec<u32> {
-        let Some(entry) = self.entries.get(&subject_id) else {
+        let Some(entity_index) = self.entity_index(subject_id) else {
             return Vec::new();
         };
+        let entry = self.entries[entity_index].as_ref().unwrap();
         if !entry.subject {
             return Vec::new();
         }
-        let mut ids = self.visible_observer_ids(entry.entity_index);
+        let mut ids = self.visible_observer_ids(entity_index);
         ids.sort_unstable();
         ids
     }
 
     pub(crate) fn is_attached(&self, unit_id: u32) -> bool {
-        self.entries.contains_key(&unit_id)
+        self.unit_indices.contains_key(&unit_id)
     }
     pub(crate) fn entry_count(&self) -> usize {
-        self.entries.len()
+        self.entry_count
     }
     pub(crate) fn grid_count(&self) -> usize {
         self.occupied_grid_count
@@ -598,18 +657,15 @@ impl AoiWorld {
         // repeatedly compares common prefixes; hash once and sort once for deterministic output.
         let mut by_audience: FxHashMap<Vec<u32>, Vec<usize>> = FxHashMap::default();
         for (index, subject_id) in subject_ids.iter().copied().enumerate() {
-            let Some(entry) = self.entries.get(&subject_id) else {
+            let Some(entity_index) = self.entity_index(subject_id) else {
                 continue;
             };
+            let entry = self.entries[entity_index].as_ref().unwrap();
             if !entry.subject {
                 continue;
             }
             let forced = force.is_none_or(|values| values[index]);
-            let signature = self
-                .audience_signatures
-                .get(&subject_id)
-                .copied()
-                .unwrap_or_default();
+            let signature = self.audience_signatures[entity_index];
             signature_groups
                 .entry((entry.grid, signature, forced))
                 .or_default()
@@ -628,16 +684,20 @@ impl AoiWorld {
     }
 
     fn delivery_audience(&self, subject_id: u32, server_tick: u32, forced: bool) -> Vec<u32> {
-        let Some(subject) = self.entries.get(&subject_id) else {
+        let Some(subject_index) = self.entity_index(subject_id) else {
             return Vec::new();
         };
-        let mut ids: Vec<_> = self
-            .observers_of(subject_id)
-            .into_iter()
-            .filter(|observer_id| {
-                forced || self.sync_due(self.entries[observer_id].grid, subject.grid, server_tick)
-            })
-            .collect();
+        let subject = self.entries[subject_index].as_ref().unwrap();
+        let mut ids = Vec::new();
+        self.visible_observers
+            .for_each_index(subject_index, |observer_index| {
+                let Some(observer) = self.entries[observer_index].as_ref() else {
+                    return;
+                };
+                if forced || self.sync_due(observer.grid, subject.grid, server_tick) {
+                    ids.push(observer.unit_id);
+                }
+            });
         // 自身权威回包沿用旧语义，不属于 observer-subject 可见边。
         if subject.observer && (forced || self.sync_due(subject.grid, subject.grid, server_tick)) {
             ids.push(subject_id);
@@ -657,23 +717,21 @@ impl AoiWorld {
             })
     }
 
-    fn reconcile_pair(&mut self, pair: (u32, u32), before_spatial: bool, distance: i32) {
+    fn reconcile_pair_indices(
+        &mut self,
+        observer_index: usize,
+        subject_index: usize,
+        before_spatial: bool,
+        distance: i32,
+    ) {
         let after_spatial = distance <= self.enter_radius_grids
             || (before_spatial && distance <= self.detach_radius_grids);
-        self.set_spatial_relation(pair.0, pair.1, after_spatial);
-        self.set_lingering_relation(
-            pair.0,
-            pair.1,
+        self.set_spatial_relation_indices(observer_index, subject_index, after_spatial);
+        self.set_lingering_relation_indices(
+            observer_index,
+            subject_index,
             after_spatial && distance > self.enter_radius_grids,
         );
-    }
-
-    fn spatial_subject_ids(&self, observer_index: usize) -> Vec<u32> {
-        self.relation_ids(&self.spatial_subjects, observer_index)
-    }
-
-    fn spatial_observer_ids(&self, subject_index: usize) -> Vec<u32> {
-        self.relation_ids(&self.spatial_observers, subject_index)
     }
 
     fn visible_subject_ids(&self, observer_index: usize) -> Vec<u32> {
@@ -685,55 +743,13 @@ impl AoiWorld {
     }
 
     fn relation_ids(&self, matrix: &DenseBitMatrix, row: usize) -> Vec<u32> {
-        matrix
-            .indices(row)
-            .into_iter()
-            .filter_map(|index| self.entity_id(index))
-            .collect()
-    }
-
-    fn subjects_within(&self, observer_id: u32, center: GridCoord, radius: i32) -> Vec<u32> {
-        self.nearby_ids(center, radius)
-            .filter(|id| {
-                *id != observer_id && self.entries.get(id).is_some_and(|entry| entry.subject)
-            })
-            .collect()
-    }
-
-    fn observers_within(&self, subject_id: u32, center: GridCoord, radius: i32) -> Vec<u32> {
-        self.nearby_ids(center, radius)
-            .filter(|id| {
-                *id != subject_id && self.entries.get(id).is_some_and(|entry| entry.observer)
-            })
-            .collect()
-    }
-
-    fn nearby_ids(&self, center: GridCoord, radius: i32) -> impl Iterator<Item = u32> + '_ {
-        self.nearby_indices(center, radius)
-            .filter_map(|entity_index| self.entity_id(entity_index))
-    }
-
-    fn nearby_indices(&self, center: GridCoord, radius: i32) -> impl Iterator<Item = usize> + '_ {
-        self.coords_within(center, radius)
-            .filter_map(|coord| self.grid_index(coord))
-            .flat_map(|index| self.grids[index].iter().copied())
-    }
-
-    fn coords_within(&self, center: GridCoord, radius: i32) -> impl Iterator<Item = GridCoord> {
-        (center.z - radius..=center.z + radius).flat_map(move |z| {
-            (center.x - radius..=center.x + radius).map(move |x| GridCoord { x, z })
-        })
-    }
-
-    fn is_spatially_visible(&self, pair: (u32, u32)) -> bool {
-        let Some(observer) = self.entries.get(&pair.0) else {
-            return false;
-        };
-        let Some(subject) = self.entries.get(&pair.1) else {
-            return false;
-        };
-        self.spatial_subjects
-            .contains(observer.entity_index, subject.entity_index)
+        let mut ids = Vec::new();
+        matrix.for_each_index(row, |index| {
+            if let Some(entry) = self.entries[index].as_ref() {
+                ids.push(entry.unit_id);
+            }
+        });
+        ids
     }
 
     fn grid_of(&self, x: f32, z: f32) -> GridCoord {
@@ -761,6 +777,15 @@ impl AoiWorld {
         }
         let slot = members.len();
         members.push(entity_index);
+        if let Some(bits) = self.hot_grid_bits[grid_index].as_mut() {
+            bits[entity_index / 64] |= 1_u64 << (entity_index % 64);
+        } else if members.len() >= HOT_GRID_PROMOTE_MEMBERS {
+            let mut bits = Box::new([0_u64; HOT_GRID_WORDS]);
+            for &member_index in members.iter() {
+                bits[member_index / 64] |= 1_u64 << (member_index % 64);
+            }
+            self.hot_grid_bits[grid_index] = Some(bits);
+        }
         slot
     }
 
@@ -772,18 +797,24 @@ impl AoiWorld {
             (members.get(slot_in_grid).copied(), members.is_empty())
         };
         if let Some(swapped_index) = swapped_index {
-            let swapped_id = self.entity_id(swapped_index).unwrap();
-            self.entries.get_mut(&swapped_id).unwrap().slot_in_grid = slot_in_grid;
+            self.entries[swapped_index].as_mut().unwrap().slot_in_grid = slot_in_grid;
+        }
+        if let Some(bits) = self.hot_grid_bits[grid_index].as_mut() {
+            bits[entity_index / 64] &= !(1_u64 << (entity_index % 64));
+            if self.grids[grid_index].len() < HOT_GRID_DEMOTE_MEMBERS {
+                self.hot_grid_bits[grid_index] = None;
+            }
         }
         if became_empty {
             self.occupied_grid_count -= 1;
         }
     }
 
-    fn allocate_entity_index(&mut self, unit_id: u32) -> usize {
-        let index = self.free_entity_indices.pop().unwrap_or_else(|| {
-            let index = self.entity_ids.len();
-            self.entity_ids.push(None);
+    fn allocate_entity_index(&mut self) -> usize {
+        self.free_entity_indices.pop().unwrap_or_else(|| {
+            let index = self.entries.len();
+            self.entries.push(None);
+            self.audience_signatures.push(AudienceSignature::default());
             self.spatial_subjects.ensure_dimension(index + 1);
             self.spatial_observers.ensure_dimension(index + 1);
             self.visible_subjects.ensure_dimension(index + 1);
@@ -791,9 +822,7 @@ impl AoiWorld {
             self.lingering_subjects.ensure_dimension(index + 1);
             self.scratch_candidate_seen.push(false);
             index
-        });
-        self.entity_ids[index] = Some(unit_id);
-        index
+        })
     }
 
     fn release_entity_index(&mut self, index: usize) {
@@ -802,72 +831,98 @@ impl AoiWorld {
         self.visible_subjects.clear_index(index);
         self.visible_observers.clear_index(index);
         self.lingering_subjects.clear_index(index);
-        self.entity_ids[index] = None;
         self.free_entity_indices.push(index);
     }
 
-    fn entity_id(&self, index: usize) -> Option<u32> {
-        self.entity_ids.get(index).copied().flatten()
+    fn entity_index(&self, unit_id: u32) -> Option<usize> {
+        self.unit_indices.get(&unit_id).copied()
     }
 
-    fn extend_candidates(&mut self, output: &mut Vec<usize>, center: GridCoord, radius: i32) {
-        let min_x = (center.x - radius).max(0);
-        let max_x = (center.x + radius).min(self.grid_width as i32 - 1);
-        let min_z = (center.z - radius).max(0);
-        let max_z = (center.z + radius).min(self.grid_depth as i32 - 1);
-        for z in min_z..=max_z {
-            for x in min_x..=max_x {
-                let grid_index = z as usize * self.grid_width as usize + x as usize;
-                for member_slot in 0..self.grids[grid_index].len() {
-                    let entity_index = self.grids[grid_index][member_slot];
-                    if !self.scratch_candidate_seen[entity_index] {
-                        self.scratch_candidate_seen[entity_index] = true;
-                        output.push(entity_index);
+    fn entry(&self, unit_id: u32) -> Option<&AoiEntry> {
+        self.entity_index(unit_id)
+            .and_then(|index| self.entries[index].as_ref())
+    }
+
+    fn collect_candidates(&mut self, output: &mut Vec<usize>, regions: &[(GridCoord, i32)]) {
+        self.scratch_hot_candidates.fill(0);
+        for &(center, radius) in regions {
+            let min_x = (center.x - radius).max(0);
+            let max_x = (center.x + radius).min(self.grid_width as i32 - 1);
+            let min_z = (center.z - radius).max(0);
+            let max_z = (center.z + radius).min(self.grid_depth as i32 - 1);
+            for z in min_z..=max_z {
+                for x in min_x..=max_x {
+                    let grid_index = z as usize * self.grid_width as usize + x as usize;
+                    if let Some(bits) = self.hot_grid_bits[grid_index].as_ref() {
+                        for (target, source) in
+                            self.scratch_hot_candidates.iter_mut().zip(bits.iter())
+                        {
+                            *target |= *source;
+                        }
+                        continue;
+                    }
+                    for &entity_index in &self.grids[grid_index] {
+                        if !self.scratch_candidate_seen[entity_index] {
+                            self.scratch_candidate_seen[entity_index] = true;
+                            output.push(entity_index);
+                        }
                     }
                 }
             }
         }
+        for (word_index, &word) in self.scratch_hot_candidates.iter().enumerate() {
+            let mut remaining = word;
+            while remaining != 0 {
+                let bit = remaining.trailing_zeros() as usize;
+                let entity_index = word_index * 64 + bit;
+                if !self.scratch_candidate_seen[entity_index] {
+                    self.scratch_candidate_seen[entity_index] = true;
+                    output.push(entity_index);
+                }
+                remaining &= remaining - 1;
+            }
+        }
     }
 
-    fn set_spatial_relation(&mut self, observer_id: u32, subject_id: u32, spatial: bool) -> bool {
-        let Some(observer) = self.entries.get(&observer_id).copied() else {
-            return false;
-        };
-        let Some(subject) = self.entries.get(&subject_id).copied() else {
-            return false;
-        };
-        if observer_id == subject_id || !observer.observer || !subject.subject {
+    fn set_spatial_relation_indices(
+        &mut self,
+        observer_index: usize,
+        subject_index: usize,
+        spatial: bool,
+    ) -> bool {
+        let observer = self.entries[observer_index].unwrap();
+        let subject = self.entries[subject_index].unwrap();
+        if observer_index == subject_index || !observer.observer || !subject.subject {
             return false;
         }
-        let before =
-            self.spatial_subjects
-                .set(observer.entity_index, subject.entity_index, spatial);
+        let before = self
+            .spatial_subjects
+            .set(observer_index, subject_index, spatial);
         if before == spatial {
             return false;
         }
         self.spatial_observers
-            .set(subject.entity_index, observer.entity_index, spatial);
+            .set(subject_index, observer_index, spatial);
         if spatial {
             self.spatial_relation_count += 1;
-            self.set_visible_relation(observer_id, subject_id, true);
+            self.set_visible_relation_indices(observer_index, subject_index, true);
         } else {
-            self.set_lingering_relation(observer_id, subject_id, false);
-            self.set_visible_relation(observer_id, subject_id, false);
+            self.set_lingering_relation_indices(observer_index, subject_index, false);
+            self.set_visible_relation_indices(observer_index, subject_index, false);
             self.spatial_relation_count -= 1;
         }
         true
     }
 
-    fn set_lingering_relation(&mut self, observer_id: u32, subject_id: u32, lingering: bool) {
-        let Some(observer) = self.entries.get(&observer_id).copied() else {
-            return;
-        };
-        let Some(subject) = self.entries.get(&subject_id).copied() else {
-            return;
-        };
-        let before =
-            self.lingering_subjects
-                .set(observer.entity_index, subject.entity_index, lingering);
+    fn set_lingering_relation_indices(
+        &mut self,
+        observer_index: usize,
+        subject_index: usize,
+        lingering: bool,
+    ) {
+        let before = self
+            .lingering_subjects
+            .set(observer_index, subject_index, lingering);
         if before == lingering {
             return;
         }
@@ -878,27 +933,28 @@ impl AoiWorld {
         }
     }
 
-    fn set_visible_relation(&mut self, observer_id: u32, subject_id: u32, visible: bool) -> bool {
-        let Some(observer) = self.entries.get(&observer_id).copied() else {
-            return false;
-        };
-        let Some(subject) = self.entries.get(&subject_id).copied() else {
-            return false;
-        };
-        let before =
-            self.visible_subjects
-                .set(observer.entity_index, subject.entity_index, visible);
+    fn set_visible_relation_indices(
+        &mut self,
+        observer_index: usize,
+        subject_index: usize,
+        visible: bool,
+    ) -> bool {
+        let observer_id = self.entries[observer_index].unwrap().unit_id;
+        let subject_id = self.entries[subject_index].unwrap().unit_id;
+        let before = self
+            .visible_subjects
+            .set(observer_index, subject_index, visible);
         if before == visible {
             return false;
         }
         self.visible_observers
-            .set(subject.entity_index, observer.entity_index, visible);
+            .set(subject_index, observer_index, visible);
         if visible {
             self.visible_relation_count += 1;
         } else {
             self.visible_relation_count -= 1;
         }
-        self.record_change(observer_id, subject_id, before, visible);
+        self.record_change(observer_id, subject_index, subject_id, before, visible);
         true
     }
 
@@ -916,16 +972,22 @@ impl AoiWorld {
         changes
     }
 
-    fn record_change(&mut self, observer_id: u32, subject_id: u32, before: bool, after: bool) {
+    fn record_change(
+        &mut self,
+        observer_id: u32,
+        subject_index: usize,
+        subject_id: u32,
+        before: bool,
+        after: bool,
+    ) {
         if before == after {
             return;
         }
-        if let Some(signature) = self.audience_signatures.get_mut(&subject_id) {
-            if after {
-                signature.insert(observer_id);
-            } else {
-                signature.remove(observer_id);
-            }
+        let signature = &mut self.audience_signatures[subject_index];
+        if after {
+            signature.insert(observer_id);
+        } else {
+            signature.remove(observer_id);
         }
         let pair = (observer_id, subject_id);
         if let Some(change) = self.pending_changes.get_mut(&pair) {
@@ -962,6 +1024,8 @@ fn grid_phase(grid: GridCoord, interval_ticks: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::hint::black_box;
+    use std::time::{Duration, Instant};
 
     fn world() -> AoiWorld {
         AoiWorld::new(
@@ -1089,6 +1153,27 @@ mod tests {
     }
 
     #[test]
+    fn hot_grid_bitmap_promotes_and_demotes_without_changing_relations() {
+        let mut world = world();
+        for unit_id in 1..=128 {
+            world.attach(unit_id, 1.0, 1.0, true, true).unwrap();
+        }
+        let first_grid = world.grid_index(GridCoord { x: 0, z: 0 }).unwrap();
+        assert!(world.hot_grid_bits[first_grid].is_some());
+        assert_eq!(world.visible_relation_count(), 128 * 127);
+
+        world.relocate(128, 11.0, 1.0).unwrap();
+        assert_eq!(world.visible_subjects(128).len(), 127);
+        for unit_id in 1..=32 {
+            assert!(world.detach(unit_id));
+        }
+
+        assert_eq!(world.grids[first_grid].len(), 95);
+        assert!(world.hot_grid_bits[first_grid].is_none());
+        assert_eq!(world.visible_subjects(128).len(), 95);
+    }
+
+    #[test]
     fn sync_tiers_only_throttle_replaceable_records() {
         let mut world = world();
         world.attach(1, 0.0, 0.0, true, true).unwrap();
@@ -1196,15 +1281,17 @@ mod tests {
         world.relocate(1, 11.0, 1.0).unwrap();
         world.relocate(2, 21.0, 1.0).unwrap();
 
-        let first = world.entries.get(&1).unwrap();
-        let second = world.entries.get(&2).unwrap();
+        let first_index = world.entity_index(1).unwrap();
+        let second_index = world.entity_index(2).unwrap();
+        let first = world.entries[first_index].as_ref().unwrap();
+        let second = world.entries[second_index].as_ref().unwrap();
         assert_eq!(
             world.grids[first.grid_index][first.slot_in_grid],
-            first.entity_index
+            first_index
         );
         assert_eq!(
             world.grids[second.grid_index][second.slot_in_grid],
-            second.entity_index
+            second_index
         );
         assert_eq!(world.occupied_grid_count, 2);
     }
@@ -1215,14 +1302,14 @@ mod tests {
         world.attach(1, 1.0, 1.0, true, true).unwrap();
         world.attach(2, 1.0, 1.0, true, true).unwrap();
         world.take_changes();
-        let released_index = world.entries.get(&2).unwrap().entity_index;
+        let released_index = world.entity_index(2).unwrap();
 
         assert!(world.set_visible(1, 2, false));
         assert!(world.detach(2));
         world.take_changes();
         world.attach(3, 31.0, 1.0, true, true).unwrap();
 
-        assert_eq!(world.entries.get(&3).unwrap().entity_index, released_index);
+        assert_eq!(world.entity_index(3), Some(released_index));
         assert!(world.visible_subjects(1).is_empty());
         assert!(world.observers_of(3).is_empty());
         assert_eq!(world.rejected_relation_count(), 0);
@@ -1235,18 +1322,115 @@ mod tests {
             world.attach(1, -1.0, 0.0, true, true),
             Err("AOI position is outside the configured map grid")
         );
-        assert!(world.entries.is_empty());
-        assert!(world.free_entity_indices.len() == 1);
+        assert_eq!(world.entry_count(), 0);
+        assert!(world.free_entity_indices.is_empty());
 
         world.attach(2, 1.0, 1.0, true, true).unwrap();
-        let before = *world.entries.get(&2).unwrap();
+        let before = *world.entry(2).unwrap();
         assert_eq!(
             world.relocate(2, 1_000.0, 1.0),
             Err("AOI position is outside the configured map grid")
         );
-        let after = world.entries.get(&2).unwrap();
+        let after = world.entry(2).unwrap();
         assert_eq!(after.grid, before.grid);
         assert_eq!(after.grid_index, before.grid_index);
         assert_eq!(after.slot_in_grid, before.slot_in_grid);
+    }
+
+    /// 手工运行的热点Grid候选集合微基准，不进入普通测试与CI。
+    /// Manual hotspot-grid candidate benchmark excluded from regular tests and CI.
+    #[test]
+    #[ignore = "run manually when evaluating hotspot cell storage"]
+    fn benchmark_hot_grid_candidate_storage() {
+        fn vec_collect(
+            cells: &[Vec<usize>],
+            cell_indices: &[usize],
+            seen: &mut [bool],
+            output: &mut Vec<usize>,
+        ) {
+            output.clear();
+            for &cell_index in cell_indices {
+                for &entity_index in &cells[cell_index] {
+                    if !seen[entity_index] {
+                        seen[entity_index] = true;
+                        output.push(entity_index);
+                    }
+                }
+            }
+            for &entity_index in output.iter() {
+                seen[entity_index] = false;
+            }
+        }
+
+        fn bitmap_collect(
+            cells: &[Vec<u64>],
+            cell_indices: &[usize],
+            union: &mut [u64],
+            output: &mut Vec<usize>,
+        ) {
+            output.clear();
+            union.fill(0);
+            for &cell_index in cell_indices {
+                for (target, source) in union.iter_mut().zip(&cells[cell_index]) {
+                    *target |= *source;
+                }
+            }
+            for (word_index, &word) in union.iter().enumerate() {
+                let mut remaining = word;
+                while remaining != 0 {
+                    let bit = remaining.trailing_zeros() as usize;
+                    output.push(word_index * 64 + bit);
+                    remaining &= remaining - 1;
+                }
+            }
+        }
+
+        fn measure(mut operation: impl FnMut()) -> Duration {
+            let started = Instant::now();
+            for _ in 0..10_000 {
+                operation();
+            }
+            started.elapsed()
+        }
+
+        let capacity: usize = 16_384;
+        let words = capacity.div_ceil(64);
+        for density in [8_usize, 16, 32, 64, 128, 256, 512, 1_024, 3_000] {
+            let cell_count = (capacity / density).clamp(1, 28);
+            let mut vec_cells = vec![Vec::new(); cell_count];
+            let mut bitmap_cells = vec![vec![0_u64; words]; cell_count];
+            let mut next_entity = 0;
+            for cell_index in 0..cell_count {
+                for _ in 0..density {
+                    if next_entity == capacity {
+                        break;
+                    }
+                    vec_cells[cell_index].push(next_entity);
+                    bitmap_cells[cell_index][next_entity / 64] |= 1_u64 << (next_entity % 64);
+                    next_entity += 1;
+                }
+            }
+            // 模拟旧Detach与新Enter邻域重叠：热点Grid会被访问两次。
+            // Models overlap between old Detach and new Enter neighborhoods.
+            let mut cell_indices: Vec<_> = (0..cell_count).collect();
+            cell_indices.extend(0..cell_count.min(6));
+            let mut seen = vec![false; capacity];
+            let mut union = vec![0_u64; words];
+            let mut output = Vec::with_capacity(next_entity);
+            let vec_elapsed = measure(|| {
+                vec_collect(&vec_cells, &cell_indices, &mut seen, &mut output);
+                black_box(output.len());
+            });
+            let bitmap_elapsed = measure(|| {
+                bitmap_collect(&bitmap_cells, &cell_indices, &mut union, &mut output);
+                black_box(output.len());
+            });
+            println!(
+                "density={density:4} cells={cell_count:2} entities={next_entity:5} vec_ms={:8.2} bitmap_ms={:8.2} ratio={:.3}",
+                vec_elapsed.as_secs_f64() * 1_000.0,
+                bitmap_elapsed.as_secs_f64() * 1_000.0,
+                bitmap_elapsed.as_secs_f64() / vec_elapsed.as_secs_f64()
+            );
+        }
     }
 }
