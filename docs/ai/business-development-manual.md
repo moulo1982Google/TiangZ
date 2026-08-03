@@ -15,6 +15,7 @@ proto/
 game_config/                 策划静态配置Excel；结构完整部署，纯数据可生成候选热更
 cocos_client2D/assets/scripts/Demo/
 cocos_client3D/assets/       3D客户端业务与灰盒；Generated/SDK禁止手改
+ue_client3D/                 UE客户端业务与表现；插件ThirdParty SDK禁止手改
 pixi_client/src/
 configs/
 tests或tools中的对应业务自测
@@ -303,6 +304,7 @@ message M2C_UseSkill // IActorLocationResponse
 3. 新消息编号需要接受时，显式执行`npm run codegen:proto:update-lock`。
 4. 执行`npm run codegen`。
 5. 服务端只从`app/generated/model/server`导入；客户端、工具和压测客户端只从`client_sdk/typescript/Generated`导入。
+6. C++/UE客户端只从`client_sdk/cpp/include/tiangz/generated`使用生成协议；UE插件中的ThirdParty副本由codegen覆盖，禁止手改msgcode、Codec或rpcId。
 6. 执行`npm run test:protocol`和相关业务测试。
 
 不得手工修改`opcode.lock.json/schema.lock.json`来绕过生成器，也不得在业务代码中硬编码msgcode、rpcId或codec。
@@ -334,7 +336,7 @@ message M2C_UseSkill // IActorLocationResponse
 
 ### 地图坐标与空间模式
 
-服务端和公共客户端SDK只使用引擎无关的米制`x/y/z/yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度。任何位置都必须同时知道`MapInstanceId`；不得把Cocos `Vec3`、Unity `Vector3/float3`或屏幕像素写进协议、Native数据或地图业务。
+服务端和公共客户端SDK只使用引擎无关的米制`x/y/z/yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度，Yaw=0朝+Z，前向量为`(sin(Yaw),0,cos(Yaw))`。任何位置都必须同时知道`MapInstanceId`；不得把Cocos `Vec3`、Unity `Vector3/float3`、UE `FVector/FRotator`或屏幕像素写进协议、Native数据或地图业务。UE业务变量必须明确保存TiangZ Yaw，只在Actor表现边界换算成`90°-TiangZYaw`，不得把`FRotator::Yaw`回传。
 
 Grid2D业务使用`cellX/cellZ`和`inputX/inputZ`。Cocos 2D与Pixi在客户端边界将服务端X/Z映射为屏幕X/Y，服务端Y通常为零；3D客户端直接把普通数值转换为引擎向量。禁止再次引入`cellY/inputY`表示地面纵轴，否则2D与3D地图会产生相反语义。
 

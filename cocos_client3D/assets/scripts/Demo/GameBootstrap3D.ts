@@ -62,6 +62,7 @@ const INPUT_TURN_SEND_SECONDS = 0.1;
 interface RemotePlayer3D {
   readonly node: Node;
   readonly targetFoot: Vec3;
+  /** 使用TiangZ协议Yaw；Cocos Y-Up边界当前可直接转成角度显示。 / Uses protocol-space TiangZ yaw, which the current Cocos Y-up boundary can render directly in degrees. */
   yaw: number;
 }
 
@@ -91,6 +92,7 @@ export class GameBootstrap3D extends Component {
   private inputSendCooldown = 0;
   private inputRefreshElapsed = 0;
   private rightMouseHeld = false;
+  /** 三个Yaw都采用TiangZ语义：0朝+Z、前向量为(sin,0,cos)；它们只承担不同的权威/表现职责。 / All three yaw values use TiangZ semantics while serving authoritative and presentation roles. */
   private playerYaw = 0;
   private authoritativeYaw = 0;
   private cameraYaw = 0;

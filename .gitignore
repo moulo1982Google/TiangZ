@@ -10,6 +10,14 @@
 /temp/
 /cocos_client2D/temp/
 /cocos_client2D/library/
+/ue_client3D/**/.vs/
+/ue_client3D/**/Binaries/
+/ue_client3D/**/DerivedDataCache/
+/ue_client3D/**/Intermediate/
+/ue_client3D/**/Saved/
+/ue_client3D/**/*.sln
+*.VC.db
+*.VC.opendb
 /perf/results/logs/
 /perf/results/runtime_configs/
 /perf/results/linux_*

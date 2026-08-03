@@ -5,7 +5,7 @@
     "client-handlers": {
       "command": "npm run codegen:client-handlers",
       "contentInputs": {
-        "codegen.config.json": "8e9541ce2bf2b480c274648bd07760f319f8d873d5ce1c93e96aa23a2943bf2a",
+        "codegen.config.json": "c7845aad3d3604f96f799d965d57591f3315f3027517b6311ab907e12da855ae",
         "tools/codegen_client_handlers.mjs": "6c0403a5fa6182ae0c6b4e52d8dd45c122106ca4063c2f297dfd3ff7b04eebb1",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -102,7 +102,7 @@
         "client_sdk/typescript/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
         "client_sdk/typescript/Demo/BuffStateStore.ts": "2687fbf17c21545b07b328cd62247063c8b54ab1832f0ca467419d045f6f1c12",
         "client_sdk/typescript/Demo/LoginFlow.ts": "f623e13e28a12d33fff8ed840add021fbeaa4802514bfac61997fdf2bcdc88d1",
-        "client_sdk/typescript/Generated/Config/GameConfigs.ts": "9524db56d748212ddc3c29c86d13797ff6406441c65cebe436092bf9698b3426",
+        "client_sdk/typescript/Generated/Config/GameConfigs.ts": "a8e0c6c820194af87bfe45844ac681224924b8c62c0226e831b2dd907e5b61fd",
         "client_sdk/typescript/Generated/Config/index.ts": "2486c40615ca35c4a466eff39963c5773e262aee905062a8b64c446fb5e08406",
         "client_sdk/typescript/Generated/Config/schema.ts": "9f1a66794af8b0de0d9fa9fc846528a9261dc21879ee864a566bf3c85357757d",
         "client_sdk/typescript/Generated/Model/demo/protocol/clients.ts": "4358d2747a2bba707dbc5ca2251135397cb6996c70eb27749cdd9d93879846f2",
@@ -111,7 +111,7 @@
         "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "f3d349542c24cbe8bbe01a06410b27ac38a2df1045d130ae67a77efff50b0d6e",
         "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "d267aa63e6cb354ba0093006ee90def94a11da2ea0d26ac77e8a95d496b2acfe",
         "client_sdk/typescript/index.ts": "bef496ce5c014299e3cb2ff79b677325c52e7d95c26e7c0b04c7bd1e6dac3d12",
-        "codegen.config.json": "8e9541ce2bf2b480c274648bd07760f319f8d873d5ce1c93e96aa23a2943bf2a",
+        "codegen.config.json": "c7845aad3d3604f96f799d965d57591f3315f3027517b6311ab907e12da855ae",
         "tools/codegen_client_sdk.mjs": "9612282dd74ba1031610583ea5013961f6739c1469d2f7e36bb01cc7d5f506f0",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -131,7 +131,7 @@
         "cocos_client2D/assets/scripts/Generated/SDK/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
         "cocos_client2D/assets/scripts/Generated/SDK/Demo/BuffStateStore.ts": "2687fbf17c21545b07b328cd62247063c8b54ab1832f0ca467419d045f6f1c12",
         "cocos_client2D/assets/scripts/Generated/SDK/Demo/LoginFlow.ts": "f623e13e28a12d33fff8ed840add021fbeaa4802514bfac61997fdf2bcdc88d1",
-        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Config/GameConfigs.ts": "9524db56d748212ddc3c29c86d13797ff6406441c65cebe436092bf9698b3426",
+        "cocos_client2D/assets/scripts/Generated/SDK/Generated/Config/GameConfigs.ts": "a8e0c6c820194af87bfe45844ac681224924b8c62c0226e831b2dd907e5b61fd",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Config/index.ts": "2486c40615ca35c4a466eff39963c5773e262aee905062a8b64c446fb5e08406",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Config/schema.ts": "9f1a66794af8b0de0d9fa9fc846528a9261dc21879ee864a566bf3c85357757d",
         "cocos_client2D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "4358d2747a2bba707dbc5ca2251135397cb6996c70eb27749cdd9d93879846f2",
@@ -154,7 +154,7 @@
         "cocos_client3D/assets/scripts/Generated/SDK/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
         "cocos_client3D/assets/scripts/Generated/SDK/Demo/BuffStateStore.ts": "2687fbf17c21545b07b328cd62247063c8b54ab1832f0ca467419d045f6f1c12",
         "cocos_client3D/assets/scripts/Generated/SDK/Demo/LoginFlow.ts": "f623e13e28a12d33fff8ed840add021fbeaa4802514bfac61997fdf2bcdc88d1",
-        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Config/GameConfigs.ts": "9524db56d748212ddc3c29c86d13797ff6406441c65cebe436092bf9698b3426",
+        "cocos_client3D/assets/scripts/Generated/SDK/Generated/Config/GameConfigs.ts": "a8e0c6c820194af87bfe45844ac681224924b8c62c0226e831b2dd907e5b61fd",
         "cocos_client3D/assets/scripts/Generated/SDK/Generated/Config/index.ts": "2486c40615ca35c4a466eff39963c5773e262aee905062a8b64c446fb5e08406",
         "cocos_client3D/assets/scripts/Generated/SDK/Generated/Config/schema.ts": "9f1a66794af8b0de0d9fa9fc846528a9261dc21879ee864a566bf3c85357757d",
         "cocos_client3D/assets/scripts/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "4358d2747a2bba707dbc5ca2251135397cb6996c70eb27749cdd9d93879846f2",
@@ -177,7 +177,7 @@
         "pixi_client/src/Generated/SDK/Core/Protocol/RpcError.ts": "52a15b853c8e6eaf6f2f2e1e1d00a913cb408d7e2b307a4c347e274bcfaa1fd5",
         "pixi_client/src/Generated/SDK/Demo/BuffStateStore.ts": "2687fbf17c21545b07b328cd62247063c8b54ab1832f0ca467419d045f6f1c12",
         "pixi_client/src/Generated/SDK/Demo/LoginFlow.ts": "f623e13e28a12d33fff8ed840add021fbeaa4802514bfac61997fdf2bcdc88d1",
-        "pixi_client/src/Generated/SDK/Generated/Config/GameConfigs.ts": "9524db56d748212ddc3c29c86d13797ff6406441c65cebe436092bf9698b3426",
+        "pixi_client/src/Generated/SDK/Generated/Config/GameConfigs.ts": "a8e0c6c820194af87bfe45844ac681224924b8c62c0226e831b2dd907e5b61fd",
         "pixi_client/src/Generated/SDK/Generated/Config/index.ts": "2486c40615ca35c4a466eff39963c5773e262aee905062a8b64c446fb5e08406",
         "pixi_client/src/Generated/SDK/Generated/Config/schema.ts": "9f1a66794af8b0de0d9fa9fc846528a9261dc21879ee864a566bf3c85357757d",
         "pixi_client/src/Generated/SDK/Generated/Model/demo/protocol/clients.ts": "4358d2747a2bba707dbc5ca2251135397cb6996c70eb27749cdd9d93879846f2",
@@ -212,6 +212,40 @@
         }
       ]
     },
+    "cpp-client-sdk": {
+      "command": "npm run codegen:cpp-client-sdk",
+      "contentInputs": {
+        "client_sdk/cpp/include/tiangz/client/Binary.h": "ac62a72b24094a272d578d55f81fa831bb85882fddb280eae2c1f66ee94d6048",
+        "client_sdk/cpp/include/tiangz/client/Frame.h": "03f62486b1e6354abb82b2525addb9233575138ef34dbab2670e05f39a930733",
+        "client_sdk/cpp/include/tiangz/client/Protocol.h": "4c88cf0b3f4c1f52ed5422f632ac131313f75ea18fdbc6387a17188647f20b68",
+        "client_sdk/cpp/include/tiangz/client/RpcSocket.h": "0d9a79e9d90b8ab2af56389a7ba7314e124e4a163496a81354fcf646d1453963",
+        "client_sdk/cpp/include/tiangz/client/Transport.h": "ac823789d8631148072661481712d3db0fd0efc62d0203ed22fe33259639d9b4",
+        "client_sdk/cpp/include/tiangz/generated/bench/Protocol.h": "8cd636e24e51702796609832cd460b88f35883529e18dffa4f82d67450bb336d",
+        "client_sdk/cpp/include/tiangz/generated/demo/Protocol.h": "f169faae4c21338b15d8d9041ed5261c39549864f3c6bdff193057c098ee034e",
+        "codegen.config.json": "c7845aad3d3604f96f799d965d57591f3315f3027517b6311ab907e12da855ae",
+        "tools/codegen_cpp_client_sdk.mjs": "56f785970b9b7144ac9aefa3b0ca7b509b675c1d531d5ae5010f0e457b9043d8",
+        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
+      },
+      "selections": [],
+      "outputs": {
+        "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/Binary.h": "ac62a72b24094a272d578d55f81fa831bb85882fddb280eae2c1f66ee94d6048",
+        "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/Frame.h": "03f62486b1e6354abb82b2525addb9233575138ef34dbab2670e05f39a930733",
+        "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/Protocol.h": "4c88cf0b3f4c1f52ed5422f632ac131313f75ea18fdbc6387a17188647f20b68",
+        "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/RpcSocket.h": "0d9a79e9d90b8ab2af56389a7ba7314e124e4a163496a81354fcf646d1453963",
+        "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/client/Transport.h": "ac823789d8631148072661481712d3db0fd0efc62d0203ed22fe33259639d9b4",
+        "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/generated/bench/Protocol.h": "8cd636e24e51702796609832cd460b88f35883529e18dffa4f82d67450bb336d",
+        "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include/tiangz/generated/demo/Protocol.h": "f169faae4c21338b15d8d9041ed5261c39549864f3c6bdff193057c098ee034e"
+      },
+      "outputRoots": [
+        {
+          "path": "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include",
+          "extensions": [
+            ".h"
+          ],
+          "ignore": []
+        }
+      ]
+    },
     "game-config": {
       "command": "npm run codegen:game-config",
       "contentInputs": {
@@ -220,29 +254,29 @@
         "game_config/Datas/AoiSyncTierConfig.xlsx": "22680f278d9d83d9743fc7e5d2772477685c79c9d380e12223787f6f801fa930",
         "game_config/Datas/ConfigTablePolicy.xlsx": "30709abf4838249052d5a9319a5850154d577e7705e1fea7d24c68e921f3708d",
         "game_config/Datas/ItemConfig.xlsx": "1bfdd6e9d521c3449f4cd3886121a0079c9b1cb6b1670a079567223083da9e1f",
-        "game_config/Datas/MapConfig.xlsx": "8f56b01cc3c1d7640e7f9947f60daa4fc6bf6219a113b95a5552e0c1a19c90cc",
+        "game_config/Datas/MapConfig.xlsx": "3a73c512829857868456effc652a179dfd124a502c8ec6c316cab125b8165cb6",
         "game_config/Datas/PlayerConfig.xlsx": "ca8d41de4ac7e2dc5ac5aa2a5f04d91bfb68cb782ef12a3e190aed6322dcc11e",
         "game_config/Defines/builtin.xml": "0c642f9c94b8f9335d07a8b7dcccb8e22250e241c5e4354b9f661def514bb387",
         "game_config/luban.conf": "eb2527f701f2aaca4df688d3120bb1e992aa287997aeec5707c8a98e66badd7c",
-        "tools/codegen_game_config.mjs": "39d578b0494dd0894abc7514f03ce89dce924ba16dcc306995938645c77bf24e",
+        "tools/codegen_game_config.mjs": "04c25e6b476e843c5e0e2322a19b916b346b18fbacec3cf1378c36c7d74b214a",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/third_party/luban/4.10.2/Luban.dll": "9639581e0abe31f43f8175155a82319f942bbe495c4ee9bd8d3baeaee3bd1028"
       },
       "selections": [],
       "outputs": {
-        "app/generated/model/config/GameConfigs.ts": "5d7770cc269fdb47bceeffe2ab878f08195982560d3cdba51fb3a9a51e8fde70",
+        "app/generated/model/config/GameConfigs.ts": "89087fee5c30ca21e44cbcda5470db4791d1c1a41fe3d0772ff5e06727c07ffe",
         "app/generated/model/config/index.ts": "2486c40615ca35c4a466eff39963c5773e262aee905062a8b64c446fb5e08406",
         "app/generated/model/config/schema.ts": "7c5257870e2e75a8495d71d8e18aad97e1244d8505376e87dfa2b22943681716",
-        "client_sdk/typescript/Generated/Config/GameConfigs.ts": "9524db56d748212ddc3c29c86d13797ff6406441c65cebe436092bf9698b3426",
+        "client_sdk/typescript/Generated/Config/GameConfigs.ts": "a8e0c6c820194af87bfe45844ac681224924b8c62c0226e831b2dd907e5b61fd",
         "client_sdk/typescript/Generated/Config/index.ts": "2486c40615ca35c4a466eff39963c5773e262aee905062a8b64c446fb5e08406",
         "client_sdk/typescript/Generated/Config/schema.ts": "9f1a66794af8b0de0d9fa9fc846528a9261dc21879ee864a566bf3c85357757d",
-        "game_config/generated/client.cold.json": "6a4967714877aed48659715f1e4b4b211c4afc79534c6987c45d6aa5bea00bf6",
+        "game_config/generated/client.cold.json": "00842f2d47f0f8093a0513609148ebb890e999a9144fbbf695c4fc3d716f3254",
         "game_config/generated/client.hot.json": "927146cd33dec91bd0c97b729a0b268d3bd350773483c3d9eeffa02f2363eeef",
-        "game_config/generated/client.json": "5d5237e332db34042d18d15c284bbebba07df8041ac4e29f07418489d5923515",
-        "game_config/generated/game-config.manifest.json": "08d51f17a4a81ca90a95d48ace5936669b0161c6cec37ac7e3360d9b8f0282f1",
-        "game_config/generated/server.cold.json": "6e4d2f7ac603e21a3dd9439b6b3a035bce5f1ccb853efc9d8ee72156b54e16cb",
+        "game_config/generated/client.json": "c76b78d2fb9e83c6f3b674a5d91c74d4b5de1941b0c2d0101a732d1af7f33fb5",
+        "game_config/generated/game-config.manifest.json": "5aee9d31f4e544aec1003a77fca1489b5984d27a0ecf36964b2fc645476d91f4",
+        "game_config/generated/server.cold.json": "2e489018bf958a3db2c5577a3b097606b1ca27e5e6aa434b297203f2e8c56b3e",
         "game_config/generated/server.hot.json": "21d23b88c33be6a1b7861960f31679b0d2a37c9f120a2e8f070a689ab775e527",
-        "game_config/generated/server.json": "4fc26cc11f8fb9bcbd245c0828a957a4beaa59ff4d8da7165cc50cdf190b1ce9"
+        "game_config/generated/server.json": "bd961fb9664802ee1af75055a9be20a93f14c691b5e254b045dc19da255065df"
       },
       "outputRoots": [
         {
@@ -276,7 +310,7 @@
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
         "native_data/demo/MapOps.native": "a467e417b57e202a9a4b345c118fb8309a87d0f90fe33c98545ad4e4b3a12eed",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
-        "package.json": "6c3f7cfe23272f0ff9a44f2f00fa044a7772c82e351dcb5ae7dcfbc082230398",
+        "package.json": "065e1978dd1b8b036182e3d79820fa8b2933cdac352a161a83c29c4683e42d90",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -312,7 +346,7 @@
     "proto": {
       "command": "npm run codegen:proto",
       "contentInputs": {
-        "codegen.config.json": "8e9541ce2bf2b480c274648bd07760f319f8d873d5ce1c93e96aa23a2943bf2a",
+        "codegen.config.json": "c7845aad3d3604f96f799d965d57591f3315f3027517b6311ab907e12da855ae",
         "proto/BenchInner_S_25001.proto": "ed3190c3d98c9e6b72bcdd14a8b752e041ae1195fa0f40cdd2889baabd3c1fbb",
         "proto/BenchMessage_C_15001.proto": "95708fb1f09ccaa70c2d355d70b619edb7e798ca05dc7df2f7888031827833c0",
         "proto/DataDefine_CS_50001.proto": "29fa41be0492baa75888d8af5d20c20d669044aeb9db69d2d987a0dd5fa929fa",
@@ -321,7 +355,7 @@
         "proto/OuterMessage_C_10001.proto": "385a2ca7d9ee3f9182728754b674c402f3bfdc6b3944330f4394139a8067c90c",
         "proto/schema.lock.json": "b14e12e7449f1598fa90946f646a80e1f7bc2453bcd700e6fd411a9f82f76cf8",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/codegen_proto.mjs": "5e8fb189fe9f3aa7568bd9b01741209e1e8944f563f73861389868f20fdd3cfa"
+        "tools/codegen_proto.mjs": "56bad3b97df865f9c3e78d983825838f1c111624b9741362e86db45a9a1c3bc4"
       },
       "selections": [],
       "outputs": {
@@ -335,6 +369,8 @@
         "app/generated/model/server/demo/protocol/messages.ts": "a075a32076577339798c17cc9cfc616bc0e50a3d22ec9a0abc1d9af36d8aa0c8",
         "app/generated/model/server/demo/protocol/msgcodes.ts": "490d600d28700c98e2a33bf7ee8665009135311c14beeecda86772d3273e4d60",
         "app/generated/model/server/demo/protocol/rpcs.ts": "bdcbff0261f81dbed942c429bed1c14a66de988417e258cddcfa666f5de89245",
+        "client_sdk/cpp/include/tiangz/generated/bench/Protocol.h": "8cd636e24e51702796609832cd460b88f35883529e18dffa4f82d67450bb336d",
+        "client_sdk/cpp/include/tiangz/generated/demo/Protocol.h": "f169faae4c21338b15d8d9041ed5261c39549864f3c6bdff193057c098ee034e",
         "client_sdk/typescript/Generated/Model/bench/protocol/clients.ts": "d87e760274c5c32e0856ad22d962a031ce39ef2cee220cde69a6cd34421ffa4a",
         "client_sdk/typescript/Generated/Model/bench/protocol/messageDescriptors.ts": "ba50d00677ed62c2d97470333b6cfbf2ce3b27cf828d91358401a2953bb7ca0b",
         "client_sdk/typescript/Generated/Model/bench/protocol/messages.ts": "f4062ab90ec99debe072eac68a3e8450f2f00a70065237014c76ab8579cd2a4a",
@@ -351,6 +387,13 @@
           "path": "app/generated/model/server",
           "extensions": [
             ".ts"
+          ],
+          "ignore": []
+        },
+        {
+          "path": "client_sdk/cpp/include/tiangz/generated",
+          "extensions": [
+            ".h"
           ],
           "ignore": []
         },
@@ -419,7 +462,7 @@
         "app/model/main.bench.ts": "9c62ab5989b0b19cc9ba7642f2aa84429c006ccd641379e98d9dea7807791987",
         "app/model/main.ts": "580af9ba606e985115abf59f9b1872ab50eaa7737c9effb1df6975d05456f16a",
         "app/model/public.ts": "34520c8be4734de74bd5fd85aacb77d0fcd23af379bda8245f817fb30273b57e",
-        "codegen.config.json": "8e9541ce2bf2b480c274648bd07760f319f8d873d5ce1c93e96aa23a2943bf2a",
+        "codegen.config.json": "c7845aad3d3604f96f799d965d57591f3315f3027517b6311ab907e12da855ae",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_scenes.mjs": "188748ab69bdfd6f89be2a941b5dfb4620e99174cb2a609eadccdb97509730d4"
       },

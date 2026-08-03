@@ -9,13 +9,13 @@
 ```text
 X/Z：地面平面
 Y：高度
-Yaw：绕Y轴旋转，单位为弧度，规范化到[-PI, PI)
+Yaw：绕Y轴旋转，单位为弧度，规范化到[-PI, PI)；Yaw=0朝+Z，前向量=(sin(Yaw), 0, cos(Yaw))
 位置单位：米
 ```
 
 坐标始终属于一个`MapInstanceId`。不同大陆、静态地图和动态副本不共享巨大的全局浮点坐标；跨地图传送同时改变`MapInstanceId`和地图局部坐标。Rust与protobuf使用`f32/float`保存`x/y/z/yaw`，不依赖Cocos、Unity或其他引擎类型。
 
-当前Grid2D移动使用X/Z Cell。`cellX/cellZ`和`inputX/inputZ`是服务器地面轴；世界高度Y不参与二维Cell移动。现有Cocos 2D和Pixi把服务器X/Z映射为屏幕X/Y，服务器Y保持为零。客户端SDK只生成普通数值结构，Cocos在边界转换为`Vec3`，Unity在边界转换为`Vector3`或`float3`。
+当前Grid2D移动使用X/Z Cell。`cellX/cellZ`和`inputX/inputZ`是服务器地面轴；世界高度Y不参与二维Cell移动。现有Cocos 2D和Pixi把服务器X/Z映射为屏幕X/Y，服务器Y保持为零。客户端SDK只生成普通数值结构，Cocos在边界转换为`Vec3`，Unity在边界转换为`Vector3`或`float3`。Cocos 3D当前与TiangZ同为Y-Up和X/Z地面，Yaw数值可以直接转换成角度显示，但本地预测、相机与远端表现变量仍必须遵守TiangZ的零方向和前向量公式。UE使用Z-Up且原生Yaw=0朝+X，因此表现边界固定执行`UE(X,Y,Z)=TiangZ(X,Z,Y)×100`和`UEYawDegrees=90-RadiansToDegrees(TiangZYaw)`；UE输入状态仍必须保存并上报TiangZ Yaw，禁止把`FRotator::Yaw`直接写入协议。
 
 ## 地图空间模式
 

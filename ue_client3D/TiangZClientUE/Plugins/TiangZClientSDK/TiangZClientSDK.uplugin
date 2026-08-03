@@ -1,0 +1,18 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.1.0",
+  "FriendlyName": "TiangZ Client SDK",
+  "Description": "TiangZ engine adapter and generated C++ client protocol.",
+  "Category": "Networking",
+  "CreatedBy": "moulo",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Modules": [
+    {
+      "Name": "TiangZClientSDK",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ]
+}

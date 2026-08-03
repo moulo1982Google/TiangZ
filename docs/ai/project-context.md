@@ -208,13 +208,13 @@ Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`Broa
 
 ## 地图空间契约
 
-`0.4.0`冻结服务端地图局部坐标为米制`X/Y/Z + Yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度。坐标必须和`MapInstanceId`一起解释，不建立跨大陆的巨大浮点世界坐标。protobuf与Native schema使用普通`float/f32`，客户端适配层再转换为Cocos `Vec3`、Unity `Vector3/float3`或二维屏幕坐标。
+`0.4.0`冻结服务端地图局部坐标为米制`X/Y/Z + Yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度，Yaw=0朝+Z，前向量固定为`(sin(Yaw),0,cos(Yaw))`。坐标必须和`MapInstanceId`一起解释，不建立跨大陆的巨大浮点世界坐标。protobuf与Native schema使用普通`float/f32`，客户端适配层再转换为具体引擎坐标。UE边界使用`(X,Z,Y)×100`和`90°-TiangZYaw`转换；协议状态不能保存或回传UE原生`FVector/FRotator`。
 
 `MapConfig.SpatialMode`区分`Grid2D`与`NavMesh3D`。Grid2D运行在X/Z Cell上；NavMesh3D固定官方Recast/Detour `v1.6.0`，具备确定性灰盒、tiled资源、SHA-256元数据、Map启动装载、Rust投影/寻路/射线/高度查询和按Hash弱引用共享缓存。相同资源的MapInstance共享不可变`dtNavMesh`，各自独占`dtNavMeshQuery`、路径、AOI和Unit空间状态；Scene销毁通过`SpatialRelease`幂等释放。`C2M_FindPath`只查询，`C2M_NavigateTo`提交路径目标，`C2M_NavigateInput`提交相对朝向的离散方向；点击路径由Rust先连续转向再前进，方向状态由Rust每个20Hz Tick通过`moveAlongSurface`贴地推进，并缓存Unit当前polygon引用，不再重复生成短路径。客户端采用相同的路径转向预测，并每500ms续期1.5秒方向输入租约；断续期后Rust自动停止。Cocos 3D分离权威`authoritativeYaw`、可视`playerYaw`和本地`cameraYaw`：活跃路径预测独占可视朝向，权威Push只保存校正目标，预测结束后才平滑收敛，避免拐点新旧路径朝向争抢；手动转身同步角色与相机，摄像机XYZ不做跨角色插值。权威位置以`G2C_EntityNavigate`按AOI批量广播。动态障碍仍未完成。完整约束见[地图空间与3D坐标契约](../design/spatial-world.md)。
 
 ## 客户端与Transport
 
-`client_sdk/typescript`是TypeScript Client SDK唯一源码，codegen将正式协议副本分发给Cocos和Pixi；Bench协议只保留在规范SDK供工具使用。SDK Core与引擎无关，平台通过Transport Adapter接入。
+`client_sdk/typescript`是TypeScript Client SDK唯一源码，codegen将正式协议副本分发给Cocos和Pixi；`client_sdk/cpp`是C++ SDK唯一源码，Proto生成无Google protobuf runtime依赖的C++20结构、Codec和类型化描述符，再由`codegen:cpp-client-sdk`分发到UE 5.4.4插件。两套SDK Core都不能依赖具体引擎；平台只实现Transport、Update驱动、坐标和表现适配。UE当前只支持WebSocket，TCP/KCP未实现时必须立即报错。
 
 当前验收范围：
 
@@ -251,6 +251,7 @@ client_sdk/typescript/       引擎无关TS SDK唯一源码
 cocos_client2D/.../Demo/     Cocos业务和表现
 cocos_client2D/.../Generated 自动分发SDK和Handler入口
 cocos_client3D/              Cocos Creator 3D灰盒客户端；Generated/SDK自动分发，Demo脚本只做登录、查询与显示
+ue_client3D/                 UE 5.4.4 C++插件与灰盒客户端；ThirdParty SDK由codegen覆盖
 pixi_client/src/             Pixi业务及SDK验收
 configs/<environment>/       环境、Process与Scene正式部署配置
 configs/bench|tests|experiments/ 压测、自动测试与传输实验配置

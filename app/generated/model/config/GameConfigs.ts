@@ -190,6 +190,13 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       throw new Error(`map config ${map.id} needs a positive Cell size and valid AOI config`);
     }
     if (
+      map.widthCells < 3 || map.depthCells < 3 ||
+      map.widthCells % map.aoiConfigId_ref.gridSizeCells !== 0 ||
+      map.depthCells % map.aoiConfigId_ref.gridSizeCells !== 0
+    ) {
+      throw new Error(`map config ${map.id} dimensions must align to its AOI Grid`);
+    }
+    if (
       !Number.isSafeInteger(map.entryPlayersPerTick) || map.entryPlayersPerTick <= 0 ||
       !Number.isSafeInteger(map.entryQueueCapacity) ||
       map.entryQueueCapacity < map.entryPlayersPerTick
@@ -197,13 +204,7 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       throw new Error(`map config ${map.id} has invalid player-entry admission limits`);
     }
     if (map.spatialMode === SpatialMode.Grid2D) {
-      if (
-        map.widthCells < 3 || map.depthCells < 3 ||
-        map.widthCells % map.aoiConfigId_ref.gridSizeCells !== 0 ||
-        map.depthCells % map.aoiConfigId_ref.gridSizeCells !== 0
-      ) {
-        throw new Error(`Grid2D map config ${map.id} has invalid dimensions or cell size`);
-      }
+      // Grid2D没有额外资源字段；公共地图边界校验已经覆盖Cell与AOI Grid对齐。
     } else if (map.spatialMode === SpatialMode.NavMesh3D) {
       if (!map.navigationAsset || !map.navigationVersion || !/^[0-9a-f]{64}$/.test(map.navigationHash)) {
         throw new Error(`NavMesh3D map config ${map.id} needs an asset, version, and lowercase SHA-256`);

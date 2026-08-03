@@ -110,8 +110,8 @@ const RAW_DATA: Record<string, unknown> = {
       "id": 100,
       "name": "3D导航灰盒",
       "spatial_mode": 2,
-      "width_cells": 48,
-      "depth_cells": 48,
+      "width_cells": 60,
+      "depth_cells": 60,
       "cell_size_meters": 1,
       "spawn_x": -12,
       "spawn_y": 1,
@@ -171,7 +171,7 @@ export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 
-export const GameConfigFingerprint = "f27bf074931422c1e97ec8ea876ca8518e2a65f7abcc3d780b4d1cf8d3cb829c";
+export const GameConfigFingerprint = "2a7910c8f9b2962964866e83cb8d0c732be80570d5ec425670bf9dbc6e01798d";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),

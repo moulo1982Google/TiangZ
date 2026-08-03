@@ -16,6 +16,14 @@
       "pixi_client/src/Generated/SDK"
     ]
   },
+  "cppClientSdk": {
+    "enabled": true,
+    "protocolOutputRoot": "client_sdk/cpp/include/tiangz/generated",
+    "sourceRoot": "client_sdk/cpp/include",
+    "outputRoots": [
+      "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include"
+    ]
+  },
   "clientHotfix": {
     "enabled": true,
     "targets": [

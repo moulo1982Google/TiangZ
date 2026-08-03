@@ -62,8 +62,10 @@ native_data/demo/            Demo Entity 与粗粒度 Native op 原型
 navigation/maps/             3D导航源网格、冷烘焙清单与生成资源
 configs/<environment>/       环境启动配置
 client_sdk/typescript/       TypeScript Client SDK 唯一源码
+client_sdk/cpp/              引擎无关C++ Client SDK与生成协议
 cocos_client2D/              Cocos Creator 2D Demo 客户端
 cocos_client3D/              Cocos Creator 3D NavMesh灰盒与公共SDK客户端
+ue_client3D/                 Unreal Engine 5.4.4 C++ SDK插件与3D灰盒客户端
 pixi_client/                 PixiJS/H5 SDK 通用性验收客户端
 perf/                        RPC、完整链路与地图容量测试
 tools/                       codegen、冒烟测试和维护脚本
@@ -115,6 +117,8 @@ Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“�
 ## 客户端 SDK
 
 公共 TypeScript SDK 位于 `client_sdk/typescript/`。`Core` 只包含引擎无关的帧、RPC、Push、Update 队列、错误和 Transport 抽象；客户端协议生成代码只位于 SDK 的 `Generated/Model`。执行 `npm run codegen` 后，正式 SDK 会分发到 Cocos 与 Pixi 的 `Generated/SDK`，Bench 协议只留在规范 SDK 供压测工具使用，两个客户端不维护私有网络 Core。
+
+公共 C++ SDK 位于 `client_sdk/cpp/`，Proto会生成不依赖Google protobuf runtime的结构、Codec和类型化RPC描述符；`npm run codegen:cpp-client-sdk`把完整头文件副本分发到UE插件。UE 5.4.4只负责WebSocket Adapter、游戏线程Update、坐标换算和Actor表现。当前UE Demo可自动登录Map 100、接收AOI/Numeric、5秒Gate Ping，并支持点击寻路与WASD方向移动，详见[UE 5.4.4客户端教程](docs/tutorials/14-unreal-engine-client.md)。
 
 ```powershell
 # 公共 SDK 真实 WebSocket 登录到进图

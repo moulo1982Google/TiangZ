@@ -31,6 +31,7 @@ try {
     server: await generateTarget("server"),
     client: await generateTarget("client"),
   };
+  validateGeneratedSpatialData(generated.server.data);
   const serverSchemaFingerprint = sha256(generated.server.schema);
   const clientSchemaFingerprint = sha256(generated.client.schema);
   const serverData = canonicalJson(generated.server.data);
@@ -360,6 +361,13 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       throw new Error(\`map config \${map.id} needs a positive Cell size and valid AOI config\`);
     }
     if (
+      map.widthCells < 3 || map.depthCells < 3 ||
+      map.widthCells % map.aoiConfigId_ref.gridSizeCells !== 0 ||
+      map.depthCells % map.aoiConfigId_ref.gridSizeCells !== 0
+    ) {
+      throw new Error(\`map config \${map.id} dimensions must align to its AOI Grid\`);
+    }
+    if (
       !Number.isSafeInteger(map.entryPlayersPerTick) || map.entryPlayersPerTick <= 0 ||
       !Number.isSafeInteger(map.entryQueueCapacity) ||
       map.entryQueueCapacity < map.entryPlayersPerTick
@@ -367,13 +375,7 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       throw new Error(\`map config \${map.id} has invalid player-entry admission limits\`);
     }
     if (map.spatialMode === SpatialMode.Grid2D) {
-      if (
-        map.widthCells < 3 || map.depthCells < 3 ||
-        map.widthCells % map.aoiConfigId_ref.gridSizeCells !== 0 ||
-        map.depthCells % map.aoiConfigId_ref.gridSizeCells !== 0
-      ) {
-        throw new Error(\`Grid2D map config \${map.id} has invalid dimensions or cell size\`);
-      }
+      // Grid2D没有额外资源字段；公共地图边界校验已经覆盖Cell与AOI Grid对齐。
     } else if (map.spatialMode === SpatialMode.NavMesh3D) {
       if (!map.navigationAsset || !map.navigationVersion || !/^[0-9a-f]{64}$/.test(map.navigationHash)) {
         throw new Error(\`NavMesh3D map config \${map.id} needs an asset, version, and lowercase SHA-256\`);
@@ -399,6 +401,32 @@ function isPositiveOdd(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0 && value % 2 === 1;
 }
 `;
+}
+
+/** 在写出任何Generated文件前校验地图与AOI冷配置，避免无效空间数据拖到Runtime启动才失败。 / Validates cold Map/AOI data before writing Generated files. */
+function validateGeneratedSpatialData(data) {
+  const maps = data.game_tbmapconfig;
+  const aois = data.game_tbaoiconfig;
+  if (!Array.isArray(maps) || !Array.isArray(aois)) {
+    throw new Error("Luban spatial config tables are missing");
+  }
+  const aoiById = new Map(aois.map((row) => [row.id, row]));
+  for (const map of maps) {
+    const aoi = aoiById.get(map.aoi_config_id);
+    const gridSize = aoi?.grid_size_cells;
+    if (!Number.isSafeInteger(gridSize) || gridSize <= 0) {
+      throw new Error(`MapConfig ${map.id} references an invalid AoiConfig`);
+    }
+    if (
+      !Number.isSafeInteger(map.width_cells) || !Number.isSafeInteger(map.depth_cells) ||
+      map.width_cells < 3 || map.depth_cells < 3 ||
+      map.width_cells % gridSize !== 0 || map.depth_cells % gridSize !== 0
+    ) {
+      throw new Error(
+        `MapConfig ${map.id} width_cells/depth_cells must be positive multiples of AOI grid_size_cells=${gridSize}`,
+      );
+    }
+  }
 }
 
 function createClientFacade(data, dataFingerprint) {

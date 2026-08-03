@@ -352,6 +352,16 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 已完成公共SDK、`Vec3`边界转换、Map 100登录、点击权威寻路、魔兽式方向输入、尾随相机、预测/校正和多人插值；正式角色资源继续按业务需求补充。
 - 保留Cocos 2D与Pixi Grid2D回归，证明SDK协议结构不依赖具体引擎坐标类型。
 
+### Phase 4.3.1：Unreal Engine 5.4.4客户端
+
+状态：C++ SDK骨架、UE Runtime插件和Map 100灰盒主链已经完成；正式美术资源与Native TCP/KCP Adapter按项目需求后续增加。
+
+- Proto生成引擎无关的C++20结构、Codec、msgcode、RPC/Push描述符，不依赖Google protobuf runtime；生成结果由`codegen:cpp-client-sdk`复制到UE插件ThirdParty目录。
+- UE插件只实现WebSocket Transport与游戏线程Update，不把UObject、FVector或UE生命周期泄漏进公共SDK；选择未实现的TCP/KCP会立即报错，不能静默降级。
+- Demo贯通LoginMgr、Login、Gate、Map 100、AOI Enter/Leave、Numeric、权威Navigate和5秒Gate Ping；地图坐标只在表现边界转换为UE厘米制与Z-Up。
+- UE Automation覆盖嵌套消息、64位整数、RPC ID、未知字段和损坏包；MSVC 14.38与UE 5.4.4 Editor目标完成编译及真实WebSocket冒烟。
+- 动态障碍仍保留在NavMesh3D后续工作中，不与本次前端SDK接入混做。
+
 ### Phase 4.4：怪物与战斗
 
 - 增加怪物Unit、巡逻、仇恨、技能与战斗事件，验证Component、Timer、空间查询和状态同步的完整业务体验。
