@@ -360,6 +360,8 @@ Cell和AOI Grid尺寸同样属于Cold配置：`MapConfig.cell_size_meters`定义
 
 导航源网格由制作工具导出到`navigation/maps/<map>/source`，开发者只维护冷清单并执行`npm run navigation:bake`，不得在TS Handler、Game.Update或服务器启动流程中调用烘焙。`C2M_FindPath`是无副作用查询；`C2M_NavigateTo`的Handler只调用`unit.NavigateTo(request)`，方向移动的Handler只调用`unit.NavigateInput(request)`。点击移动由Rust保存路径走廊，在拐点先连续转身再消费剩余Tick时间移动；方向移动由Rust保存输入、1.5秒租约和polygon引用并在固定Tick调用`moveAlongSurface`。客户端的点击预测必须使用相同转向规则，方向输入每500ms续期，零方向输入必须立即停止，断续期也会自动停止。客户端表现层应分别保存权威、可视角色和本地相机朝向；活跃路径预测期间权威Push只能更新校正目标，不能直接覆盖可视朝向，预测结束后再平滑收敛。相机只能按最短角度追随，不能写回权威状态，也不能对角色两侧的摄像机目标位置直接做XYZ插值。客户端可以保存按键和预测路径，以`G2C_EntityNavigate`校正，但业务不得在TS复制权威路径进度或坐标。业务可通过`MapComponent.Raycast/SampleHeight`做NavMesh边界和地面查询，不能把Raycast当成角色物理碰撞。技能冲锋、AI移动等新意图应复用Unit入口或增加同层粗粒度操作，不能在Handler手写逐Tick位移。Demo灰盒是工具与客户端回归输入，不要求程序员手工制作正式3D地图。
 
+门、升降桥和临时路障使用地图内稳定`ObstacleId`，业务调用`map.UpsertNavigationBoxObstacle(id, { center, halfExtents, yawRadians })`与`map.RemoveNavigationObstacle(id)`，不读取或保存Detour引用。相同ID代表同一个业务对象，重复提交相同最终状态必须依赖框架幂等，不要先Remove再Add模拟更新。框架在固定Tick限额提交命令和重建Tile，Handler只提交一次意图，禁止循环等待`upToDate`。完成后Rust会自动重算尚未结束的点击路径；方向输入直接使用新表面。障碍只属于当前MapInstance，同模板副本互不影响，Map销毁自动释放。障碍几何、稳定ID来源、权限、持久化和客户端门表现仍由业务Component负责；`C2M_ToggleDemoDoor`仅用于Cocos灰盒验收，不是正式通用协议。
+
 详细字段、Rust所有权和客户端进入校验见[地图空间与3D坐标契约](../design/spatial-world.md)。
 
 ### 玩家地图传送

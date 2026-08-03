@@ -77,6 +77,8 @@ export const OuterMessage = {
   M2C_NavigateTo: 10035,
   C2M_NavigateInput: 10037,
   M2C_NavigateInput: 10038,
+  C2M_ToggleDemoDoor: 10039,
+  M2C_ToggleDemoDoor: 10040,
   G2C_EntityMove: 10016,
   G2C_EntityNavigate: 10036,
   G2C_EntityNumeric: 10017,

@@ -18,6 +18,8 @@ import {
   C2M_NavigateToCodec,
   C2M_NavigateInput,
   C2M_NavigateInputCodec,
+  C2M_ToggleDemoDoor,
+  C2M_ToggleDemoDoorCodec,
   C2M_UseItem,
   C2M_UseItemCodec,
   C2S_Login,
@@ -42,6 +44,8 @@ import {
   M2C_NavigateToCodec,
   M2C_NavigateInput,
   M2C_NavigateInputCodec,
+  M2C_ToggleDemoDoor,
+  M2C_ToggleDemoDoorCodec,
   G2C_EntityMove,
   G2C_EntityMoveCodec,
   G2C_EntityNavigate,
@@ -301,6 +305,27 @@ export function decodeNavigateInputFrame(
     throw new Error(`expected M2C_NavigateInput, got ${msgcode}`);
   }
   const body = M2C_NavigateInputCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+export function buildToggleDemoDoorPacket(
+  rpcId: number,
+  request: Omit<C2M_ToggleDemoDoor, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_ToggleDemoDoor,
+    C2M_ToggleDemoDoorCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeToggleDemoDoorFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_ToggleDemoDoor> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_ToggleDemoDoor) {
+    throw new Error(`expected M2C_ToggleDemoDoor, got ${msgcode}`);
+  }
+  const body = M2C_ToggleDemoDoorCodec.decode(frame.subarray(2));
   return { msgcode, rpcId: body.rpcId, body };
 }
 

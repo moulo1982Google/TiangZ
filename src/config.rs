@@ -476,7 +476,11 @@ fn parse_known_scene_files(
                 bail!("knownSceneFiles entries must not be empty");
             }
             let path = PathBuf::from(path);
-            Ok(if path.is_absolute() { path } else { base.join(path) })
+            Ok(if path.is_absolute() {
+                path
+            } else {
+                base.join(path)
+            })
         })
         .collect()
 }
@@ -758,10 +762,8 @@ mod tests {
 
     #[test]
     fn loads_shared_known_scene_files_and_dynamic_map_role() {
-        let directory = std::env::temp_dir().join(format!(
-            "tiangz-known-scenes-{}",
-            std::process::id()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("tiangz-known-scenes-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let shared_path = directory.join("cluster.json");
         let process_path = directory.join("dungeon.json");

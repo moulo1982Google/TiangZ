@@ -170,6 +170,20 @@ message M2C_NavigateInput // IActorLocationResponse
   repeated NavigationPathPoint points = 2;
 }
 
+//ResponseType M2C_ToggleDemoDoor
+// Cocos3D灰盒只提交开关门意图；地图业务将其转换为稳定ObstacleId的动态导航障碍。
+// @ets.msg protocol=Map method=ToggleDemoDoor duringTransfer=reject
+message C2M_ToggleDemoDoor // IActorLocationRequest
+{
+  bool closed = 1;
+}
+
+message M2C_ToggleDemoDoor // IActorLocationResponse
+{
+  bool closed = 1;
+  bool changed = 2;
+}
+
 // @ets.msg protocol=Client method=EntityMove
 // @ets.broadcast mode=latest item=CellMovementState items=movements key=unit_id tick=server_tick
 message G2C_EntityMove // IMessage

@@ -12,7 +12,7 @@ npm run navigation:bake
 命令依次执行：
 
 1. `tools/navigation/generate_graybox.mjs`确定性生成`source/map_nav.obj`。
-2. Rust `navmesh_bake`读取`bake.json`，调用官方Recast生成tiled NavMesh。
+2. Rust `navmesh_bake`读取`bake.json`，调用官方Recast生成TileCache所需的压缩高度层。
 3. Detour立即回读结果并在原点附近执行一次投影，损坏资源不会落盘。
 4. 输出`generated/navigation.bin`与`generated/navigation.meta.json`。
 
@@ -22,7 +22,7 @@ npm run navigation:bake
 npm run test:navigation
 ```
 
-测试会检查重复烘焙字节一致、Hash错误被拒绝、坐标可投影、路径能绕过中央障碍，以及相同Hash只创建一个共享资产。
+测试会检查重复烘焙字节一致、Hash错误被拒绝、坐标可投影、路径能绕过中央障碍、动态障碍增删与MapInstance隔离，以及相同Hash只创建一个共享模板。
 
 ## 目录职责
 
@@ -30,12 +30,12 @@ npm run test:navigation
 navigation/maps/demo_3d/
   bake.json                    不可热更的烘焙参数与版本
   source/map_nav.obj           导航碰撞源，不是展示模型
-  generated/navigation.bin     服务端与未来客户端使用的只读资源
+  generated/navigation.bin     v2压缩高度层模板，不可热更
   generated/navigation.meta.json
 
 third_party/recastnavigation/  固定的官方上游源码
 src/native/navmesh_shim.*      TiangZ C ABI，不写业务规则
-src/navigation.rs              Rust安全加载、Hash、投影、寻路和共享缓存
+src/navigation.rs              Rust安全加载、实例TileCache、查询和障碍队列
 ```
 
 不要修改`third_party/recastnavigation`实现业务；升级上游必须作为单独变更，重新烘焙全部资源并跑Windows/Linux兼容矩阵。
@@ -58,7 +58,7 @@ cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
 2. 使用Cocos Creator 3.8.8打开`cocos_client3D`，打开`assets/scene.scene`并运行浏览器预览。
-3. Demo会自动登录并进入Map 100。看到绿色地面、中央障碍和蓝色玩家后，点击地面即可请求服务端Rust NavMesh路径。
+3. Demo会自动登录并进入Map 100。看到绿色地面、中央障碍和蓝色玩家后，点击地面请求服务端路径；按`E`关闭红色动态门，再点击门后方可以观察绕行，再按`E`开门后恢复直线路径。
 
 浏览器预览使用WebSocket；Native构建使用KCP。状态栏会显示Map和导航版本，资源Hash不一致时拒绝进入。灰盒几何由客户端代码绘制，只负责展示；服务端仍以`navigation.bin`为权威导航资源。
 
@@ -93,9 +93,26 @@ const result = await mapClient.navigateTo({
 
 `MapComponent.Raycast(start, end)`检测NavMesh边界阻挡，返回命中比例、位置和法线；它不检测角色、怪物或物理碰撞体。`MapComponent.SampleHeight(point)`按输入Y选择最近可行走层并返回高度，多层地图不能只传X/Z。两者都是同步粗粒度查询，不允许在TS逐polygon调用。
 
+## 动态障碍
+
+门、升降桥和临时路障使用地图内稳定`ObstacleId`，业务只描述最终盒体：
+
+```ts
+const map = unit.DomainScene().GetComponent(MapComponent);
+
+map.UpsertNavigationBoxObstacle(doorId, {
+  center: { x: -12, y: 1.5, z: 0 },
+  halfExtents: { x: 4, y: 1.5, z: 1 },
+  yawRadians: 0,
+});
+
+map.RemoveNavigationObstacle(doorId);
+```
+
+相同ID和几何重复提交返回`false`，不会重复排队。TS不能保存Detour障碍引用，也不能为了等待完成而在Handler循环调用Native；`MapComponent.Update`每Tick最多处理16条目标状态并重建4个Tile。完成后Rust递增障碍版本，正在执行的点击路径从权威位置到原终点自动重算。方向输入没有旧走廊，每Tick直接在最新表面推进。
+
+障碍状态属于具体`MapInstanceId`。两个副本即使使用同一`navigationHash`，其中一个关门也不会影响另一个；地图销毁通过`SpatialRelease`同时释放TileCache和全部障碍。障碍几何、开关权限、`ObstacleId`分配和向客户端广播门表现都属于业务层，框架只提供空间能力。当前Cocos灰盒的`C2M_ToggleDemoDoor`只是演示协议，不应直接作为正式门系统。
+
 Cocos 3D通过独立`ClientMessageDispatcher` Handler消费Push：本地玩家平滑吸收预测误差，明显偏离才直接校正；远端玩家不预测输入，只在权威位置之间插值。真实双客户端冒烟会比较双方收到的同一移动状态。
 
-当前仍需完成：
-
-- `Raycast`、独立高度查询和动态障碍。
-- 正式展示地图与导航碰撞源的制作期一致性检查。
+当前仍需完成正式展示地图与导航碰撞源的制作期一致性检查；角色碰撞、动态避让和Crowd不属于TileCache静态阻挡，后续单独设计。

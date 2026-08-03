@@ -1,6 +1,6 @@
 # 地图空间与3D坐标契约
 
-本文冻结TiangZ从`0.4.0`开始使用的地图空间语义。它约束Rust权威数据、协议、游戏配置和客户端适配；Rust AOI已完成Phase 4.1，NavMesh3D资产、Map Runtime装载和3D权威移动已完成4.2.3，射线、独立高度查询与动态障碍仍未完成。
+本文冻结TiangZ从`0.4.0`开始使用的地图空间语义。它约束Rust权威数据、协议、游戏配置和客户端适配；Rust AOI已完成Phase 4.1，NavMesh3D资产、权威移动、射线、高度查询和动态障碍已完成Phase 4.2.5。
 
 ## 世界坐标
 
@@ -24,7 +24,7 @@ Luban `MapConfig`使用`SpatialMode`选择空间实现：
 | 模式 | 当前状态 | 含义 |
 | --- | --- | --- |
 | `Grid2D` | 可运行 | X/Z规则网格，米制Cell，服务端Rust权威移动 |
-| `NavMesh3D` | Map 100运行时已启用 | tiled NavMesh、位置投影、寻路和连续权威移动；射线、高度、动态障碍待补 |
+| `NavMesh3D` | Map 100运行时已启用 | tiled NavMesh、投影、寻路、连续权威移动、射线、高度和动态障碍 |
 
 `MapConfig`还包含出生点`spawnX/Y/Z/Yaw`、地图宽深Cell数`widthCells/depthCells`、米制`cellSizeMeters`、`aoiConfigId`以及`navigationAsset/version/hash`。`Cell`是可配置的最小空间单位：Grid2D按Cell离散移动，NavMesh3D允许在Cell内连续移动。`AoiConfig.gridSizeCells`声明一个AOI Grid包含多少个Cell；AOI Grid与NavMesh tile不是同一个概念。地图物理边界由地图制作与导航资源决定，配置记录其导出结果，不允许独立填写一份可能冲突的Grid数量。`NavMesh3D`配置缺少资源、版本或小写SHA-256时必须拒绝加载，路径越出`navigation/`目录或Hash不符也必须拒绝，不能退化为Grid2D。
 
@@ -55,15 +55,17 @@ MapInstanceId
   -> Unit空间状态
 ```
 
-多个静态实例或动态副本可以共享同一份只读NavMesh，但每个MapInstance拥有独立AOI、动态障碍和Unit状态。MapScene创建时建立实例私有空间状态，销毁时通过`SpatialRelease`幂等释放；该释放不得卸载仍被其他实例引用的共享导航资产。
+多个静态实例或动态副本共享同一份只读压缩高度层模板，但每个MapInstance独立构建`dtNavMesh + dtTileCache + Query`，并拥有独立AOI、动态障碍和Unit状态。MapScene创建时建立实例私有空间状态，销毁时通过`SpatialRelease`幂等释放；该释放不得卸载仍被其他实例引用的共享导航模板。
 
-`Grid2D`由`SpatialCreateGrid2D`创建Rust边界和米制Cell信息；`NavMesh3D`由`SpatialCreateNavMesh3D`创建实例查询上下文。`NavigationAssetCache`按内容Hash共享只读Detour资产并使用Weak目录回收，每个MapInstance仍拥有独立`dtNavMeshQuery`和AOI；`SpatialRelease`同时释放实例查询对象并清理无持有者的弱缓存。
+`Grid2D`由`SpatialCreateGrid2D`创建Rust边界和米制Cell信息；`NavMesh3D`由`SpatialCreateNavMesh3D`创建实例TileCache和查询上下文。`NavigationAssetCache`按内容Hash共享只读高度层模板并使用Weak目录回收；`SpatialRelease`释放实例NavMesh、TileCache、障碍、查询对象，并清理无持有者的弱缓存。
 
 导航网格只能离线烘焙。`navigation/maps/<map>/bake.json`是不可热更的制作输入，`npm run navigation:bake`生成`navigation.bin`和带版本、Hash、边界、Agent参数的元数据。服务端启动时只加载和校验结果，绝不在运行期扫描美术场景或调用Recast烘焙。官方Recast/Detour固定为`v1.6.0`，C++源码保持上游原样，TiangZ适配只放在`src/native/navmesh_shim.*`与Rust安全封装中。
 
 ## TS与Rust边界
 
 TS负责地图规则、AI意图、技能、任务、传送和副本流程。Rust负责高频且权威的空间工作：坐标、移动推进、NavMesh查询、AOI索引和批量快照。`FindPath`是无副作用路径查询；`NavigateTo`提交世界目标并持有路径走廊；`NavigateInput`提交相对`yaw`的前后/横移状态，Rust每Tick通过`moveAlongSurface`推进并缓存polygon引用，零输入明确停止。`Raycast`只查询NavMesh边界，`SampleHeight`按Y选择可行走层。`G2C_EntityNavigate`是可覆盖权威状态。禁止在每个Tick逐顶点或逐路径节点跨越V8边界。
+
+动态障碍使用地图内稳定`ObstacleId: u32`。TS调用`MapComponent.UpsertNavigationBoxObstacle(id, box)`或`RemoveNavigationObstacle(id)`描述最终状态；相同ID和几何保持幂等，业务不能持有`dtObstacleRef`。Rust每Tick最多提交16条障碍命令并重建4个受影响Tile，完成后递增障碍版本，所有尚未完成的点击路径从权威当前位置到原目标自动重算。方向输入每Tick直接使用最新NavMesh表面。障碍属于MapInstance，模板相同的两个副本互不影响，地图销毁后全部释放。
 
 Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Component`，Rust空间层是Scene之下的原生能力，不取代Scene或把全部地图业务下沉。
 

@@ -431,3 +431,11 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - UE 5.4.4插件实现WebSocket Transport和游戏线程Update；Demo贯通LoginMgr、Login、Gate、Map 100、AOI、Numeric、权威Navigate与5秒Gate Ping，并完成米制Y-Up到厘米制Z-Up的边界转换。
 - UE Automation覆盖嵌套消息、正负64位整数、RPC ID、未知字段和截断包。真实Runtime冒烟已进入Map 100；开发机固定使用UE 5.4推荐的MSVC 14.38工具链。
 - Flat AOI Grid要求地图宽深Cell数能被Grid边长整除，Map 100由48×48调整为60×60；游戏配置生成现在会在写出Generated前拒绝未对齐地图，不再拖到Runtime启动才失败。
+
+# 2026-08-03：Phase 4.2.5动态导航障碍
+
+- 导航资源由只含`dtNavMesh` Tile的v1升级为v2压缩高度层模板；`DetourTileCache`正式进入构建。共享缓存按Hash复用模板，每个MapInstance独占`dtNavMesh + dtTileCache + Query`，相同地图模板的副本障碍互不污染。
+- Rust增加稳定地图内`ObstacleId`、同ID目标状态合并和盒形障碍增删；Map固定Tick每次最多应用16条命令、重建4个Tile。地图销毁会连同等待命令、障碍、TileCache和查询上下文整体释放。
+- 障碍更新完成后递增Rust空间版本，正在执行的点击路径从权威位置到原终点自动重算；方向输入继续通过最新NavMesh表面推进，不会沿旧走廊穿过新关闭的门。
+- TS只开放`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`，不暴露Detour引用。Map自定义指标增加障碍数量、等待命令、更新次数、重建Tile、耗时和失败。
+- Cocos 3D灰盒增加`E`键动态门和演示RPC。all-in-one与split-process真实Runtime均验证开门2个拐点、关门4个拐点、再次开门恢复2个拐点；Rust单测另覆盖幂等、实例隔离、主动路径重算和地图释放。

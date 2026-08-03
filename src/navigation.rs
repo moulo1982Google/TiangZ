@@ -1,11 +1,14 @@
-//! 封装离线 Recast 烘焙与只读 Detour 查询，避免业务层持有 C++ 指针。 / Wraps offline Recast baking and read-only Detour queries without exposing C++ pointers to business code.
+//! 封装离线 Recast 烘焙、Detour 查询与 TileCache 动态障碍，避免业务层持有 C++ 指针。 / Wraps offline Recast baking, Detour queries, and TileCache obstacles without exposing C++ pointers to business code.
 
 use std::ffi::{c_char, c_float, c_int, c_uchar, c_void};
 use std::fs;
 use std::path::Path;
 use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt,
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
@@ -161,6 +164,29 @@ unsafe extern "C" {
         half_extents: *const c_float,
         height: *mut c_float,
     ) -> c_int;
+    fn tz_navmesh_obstacle_add_box(
+        query: *mut c_void,
+        center: *const c_float,
+        half_extents: *const c_float,
+        yaw_radians: c_float,
+        obstacle_ref: *mut u64,
+        error: *mut c_char,
+        error_capacity: usize,
+    ) -> c_int;
+    fn tz_navmesh_obstacle_remove(
+        query: *mut c_void,
+        obstacle_ref: u64,
+        error: *mut c_char,
+        error_capacity: usize,
+    ) -> c_int;
+    fn tz_navmesh_obstacle_update(
+        query: *mut c_void,
+        max_tile_updates: c_int,
+        processed_tile_updates: *mut c_int,
+        up_to_date: *mut c_int,
+        error: *mut c_char,
+        error_capacity: usize,
+    ) -> c_int;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -177,7 +203,36 @@ pub struct NavigationRaycast {
     pub normal: [f32; 3],
 }
 
-/// 持有可跨MapInstance共享的不可变Detour网格，不包含查询临时状态。 / Owns an immutable Detour mesh shared across MapInstances without query scratch state.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NavigationBoxObstacle {
+    pub center: [f32; 3],
+    pub half_extents: [f32; 3],
+    pub yaw_radians: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NavigationObstacleUpdate {
+    pub applied_commands: u32,
+    pub rebuilt_tiles: u32,
+    pub pending_commands: u32,
+    pub obstacle_count: u32,
+    pub up_to_date: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ActiveNavigationObstacle {
+    specification: NavigationBoxObstacle,
+    native_ref: u64,
+}
+
+#[derive(Debug, Default)]
+struct NavigationObstacleState {
+    desired: Option<NavigationBoxObstacle>,
+    active: Option<ActiveNavigationObstacle>,
+    queued: bool,
+}
+
+/// 持有可跨MapInstance共享的不可变烘焙模板；可变NavMesh、TileCache和查询状态由各地图实例创建。 / Owns an immutable baked template shared across MapInstances; each map instance creates its mutable NavMesh, TileCache, and query state.
 pub struct NavigationAsset {
     handle: NonNull<c_void>,
     bytes: Vec<u8>,
@@ -227,6 +282,10 @@ impl NavigationAsset {
         Ok(NavigationWorld {
             asset: Rc::clone(self),
             query,
+            obstacles: HashMap::new(),
+            obstacle_queue: VecDeque::new(),
+            obstacle_revision: 0,
+            obstacle_rebuild_pending: false,
         })
     }
 
@@ -250,6 +309,10 @@ impl Drop for NavigationAsset {
 pub struct NavigationWorld {
     asset: Rc<NavigationAsset>,
     query: NonNull<c_void>,
+    obstacles: HashMap<u32, NavigationObstacleState>,
+    obstacle_queue: VecDeque<u32>,
+    obstacle_revision: u64,
+    obstacle_rebuild_pending: bool,
 }
 
 impl fmt::Debug for NavigationWorld {
@@ -387,9 +450,209 @@ impl NavigationWorld {
         (ok != 0).then_some(height)
     }
 
+    /**
+     * 创建或修改地图实例内的盒形障碍；相同ID只更新目标状态，真正Tile重建由update_obstacles限额执行。
+     * Creates or updates an instance-local box obstacle while update_obstacles performs bounded tile rebuilds.
+     */
+    pub fn upsert_box_obstacle(
+        &mut self,
+        obstacle_id: u32,
+        specification: NavigationBoxObstacle,
+    ) -> Result<bool> {
+        validate_obstacle(obstacle_id, specification)?;
+        let state = self.obstacles.entry(obstacle_id).or_default();
+        if state.desired == Some(specification) {
+            return Ok(false);
+        }
+        state.desired = Some(specification);
+        if !state.queued {
+            state.queued = true;
+            self.obstacle_queue.push_back(obstacle_id);
+        }
+        Ok(true)
+    }
+
+    /** 删除稳定ObstacleId；不存在或已经等待删除时保持幂等。 / Removes a stable ObstacleId idempotently. */
+    pub fn remove_obstacle(&mut self, obstacle_id: u32) -> bool {
+        let Some(state) = self.obstacles.get_mut(&obstacle_id) else {
+            return false;
+        };
+        if state.desired.is_none() {
+            return false;
+        }
+        state.desired = None;
+        if !state.queued {
+            state.queued = true;
+            self.obstacle_queue.push_back(obstacle_id);
+        }
+        true
+    }
+
+    /**
+     * 每逻辑帧限额提交障碍命令并重建受影响Tile；业务不得循环调用直到完成。
+     * Applies bounded obstacle commands and affected-tile rebuilds once per game tick.
+     */
+    pub fn update_obstacles(
+        &mut self,
+        max_commands: u32,
+        max_tile_updates: u32,
+    ) -> Result<NavigationObstacleUpdate> {
+        if max_commands == 0 || max_tile_updates == 0 || max_tile_updates > i32::MAX as u32 {
+            bail!("动态障碍更新预算必须为正数 / dynamic obstacle update budgets must be positive");
+        }
+        let mut applied_commands = 0;
+        while applied_commands < max_commands {
+            let Some(obstacle_id) = self.obstacle_queue.pop_front() else {
+                break;
+            };
+            let (desired, active) = {
+                let state = self
+                    .obstacles
+                    .get_mut(&obstacle_id)
+                    .context("动态障碍队列状态丢失")?;
+                state.queued = false;
+                (state.desired, state.active)
+            };
+            let mut next_active = active;
+            if active.map(|value| value.specification) != desired {
+                if let Some(value) = active {
+                    if let Err(error) = native_remove_obstacle(self.query, value.native_ref) {
+                        if let Some(state) = self.obstacles.get_mut(&obstacle_id) {
+                            state.queued = true;
+                        }
+                        self.obstacle_queue.push_front(obstacle_id);
+                        return Err(error);
+                    }
+                    next_active = None;
+                    if let Some(state) = self.obstacles.get_mut(&obstacle_id) {
+                        state.active = None;
+                    }
+                }
+                if let Some(specification) = desired {
+                    let native_ref = match native_add_box_obstacle(self.query, specification) {
+                        Ok(native_ref) => native_ref,
+                        Err(error) => {
+                            if let Some(state) = self.obstacles.get_mut(&obstacle_id) {
+                                state.queued = true;
+                            }
+                            self.obstacle_queue.push_front(obstacle_id);
+                            return Err(error);
+                        }
+                    };
+                    next_active = Some(ActiveNavigationObstacle {
+                        specification,
+                        native_ref,
+                    });
+                }
+            }
+            if let Some(state) = self.obstacles.get_mut(&obstacle_id) {
+                state.active = next_active;
+            }
+            if desired.is_none() && next_active.is_none() {
+                self.obstacles.remove(&obstacle_id);
+            }
+            applied_commands += 1;
+        }
+
+        let mut error = [0i8; ERROR_CAPACITY];
+        let mut rebuilt_tiles = 0;
+        let mut up_to_date = 0;
+        // SAFETY: The query is instance-owned and all scalar outputs remain valid for the call.
+        let ok = unsafe {
+            tz_navmesh_obstacle_update(
+                self.query.as_ptr(),
+                max_tile_updates as i32,
+                &mut rebuilt_tiles,
+                &mut up_to_date,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        if ok == 0 {
+            bail!("{}", ffi_error(&error));
+        }
+        if applied_commands > 0 {
+            self.obstacle_rebuild_pending = true;
+        }
+        if up_to_date != 0 && self.obstacle_queue.is_empty() && self.obstacle_rebuild_pending {
+            self.obstacle_revision = self.obstacle_revision.wrapping_add(1).max(1);
+            self.obstacle_rebuild_pending = false;
+        }
+        Ok(NavigationObstacleUpdate {
+            applied_commands,
+            rebuilt_tiles: rebuilt_tiles as u32,
+            pending_commands: self.obstacle_queue.len().try_into().unwrap_or(u32::MAX),
+            obstacle_count: self.obstacle_count().try_into().unwrap_or(u32::MAX),
+            up_to_date: up_to_date != 0 && self.obstacle_queue.is_empty(),
+        })
+    }
+
+    pub fn obstacle_count(&self) -> usize {
+        self.obstacles
+            .values()
+            .filter(|state| state.desired.is_some())
+            .count()
+    }
+
+    pub fn obstacle_revision(&self) -> u64 {
+        self.obstacle_revision
+    }
+
     pub fn asset_hash(&self) -> &str {
         self.asset.hash()
     }
+}
+
+fn validate_obstacle(obstacle_id: u32, specification: NavigationBoxObstacle) -> Result<()> {
+    if obstacle_id == 0 {
+        bail!("ObstacleId必须大于0 / ObstacleId must be greater than zero");
+    }
+    if !specification.center.into_iter().all(f32::is_finite)
+        || !specification
+            .half_extents
+            .into_iter()
+            .all(|value| value.is_finite() && value > 0.0)
+        || !specification.yaw_radians.is_finite()
+    {
+        bail!("动态障碍包含无效坐标或尺寸 / dynamic obstacle has invalid coordinates or extents");
+    }
+    Ok(())
+}
+
+fn native_add_box_obstacle(
+    query: NonNull<c_void>,
+    specification: NavigationBoxObstacle,
+) -> Result<u64> {
+    let mut error = [0i8; ERROR_CAPACITY];
+    let mut native_ref = 0;
+    // SAFETY: The query and fixed-size arrays stay valid for the duration of the native call.
+    let ok = unsafe {
+        tz_navmesh_obstacle_add_box(
+            query.as_ptr(),
+            specification.center.as_ptr(),
+            specification.half_extents.as_ptr(),
+            specification.yaw_radians,
+            &mut native_ref,
+            error.as_mut_ptr(),
+            error.len(),
+        )
+    };
+    if ok == 0 {
+        bail!("{}", ffi_error(&error));
+    }
+    Ok(native_ref)
+}
+
+fn native_remove_obstacle(query: NonNull<c_void>, native_ref: u64) -> Result<()> {
+    let mut error = [0i8; ERROR_CAPACITY];
+    // SAFETY: The native reference belongs to this instance-owned query.
+    let ok = unsafe {
+        tz_navmesh_obstacle_remove(query.as_ptr(), native_ref, error.as_mut_ptr(), error.len())
+    };
+    if ok == 0 {
+        bail!("{}", ffi_error(&error));
+    }
+    Ok(())
 }
 
 impl Drop for NavigationWorld {
@@ -685,5 +948,54 @@ mod tests {
         drop(second);
         cache.prune();
         assert_eq!(cache.live_assets(), 0);
+    }
+
+    #[test]
+    fn dynamic_obstacles_are_idempotent_and_isolated_per_world() {
+        let (bytes, _) = bake_obj(&demo_source(), NavBuildConfig::default()).unwrap();
+        let asset = Rc::new(NavigationAsset::load(bytes, None).unwrap());
+        let mut closed_world = asset.create_world().unwrap();
+        let open_world = asset.create_world().unwrap();
+        let start = [-12.0, 0.0, -12.0];
+        let end = [-12.0, 0.0, 12.0];
+        let extents = [2.0, 4.0, 2.0];
+        let direct_path = open_world.find_path(start, end, extents, 32).unwrap();
+
+        let door = NavigationBoxObstacle {
+            center: [-12.0, 1.5, 0.0],
+            half_extents: [4.0, 1.5, 1.0],
+            yaw_radians: 0.0,
+        };
+        assert!(closed_world.upsert_box_obstacle(1, door).unwrap());
+        assert!(!closed_world.upsert_box_obstacle(1, door).unwrap());
+        drain_obstacle_updates(&mut closed_world);
+        let detour = closed_world.find_path(start, end, extents, 32).unwrap();
+        assert!(
+            detour.iter().any(|point| (point[0] + 12.0).abs() > 4.0),
+            "closed door should force an X-axis detour: {detour:?}"
+        );
+        assert_eq!(
+            open_world.find_path(start, end, extents, 32).unwrap(),
+            direct_path,
+            "one MapInstance must not mutate another instance"
+        );
+
+        assert!(closed_world.remove_obstacle(1));
+        assert!(!closed_world.remove_obstacle(1));
+        drain_obstacle_updates(&mut closed_world);
+        assert_eq!(closed_world.obstacle_count(), 0);
+        assert_eq!(
+            closed_world.find_path(start, end, extents, 32).unwrap(),
+            direct_path
+        );
+    }
+
+    fn drain_obstacle_updates(world: &mut NavigationWorld) {
+        for _ in 0..64 {
+            if world.update_obstacles(8, 8).unwrap().up_to_date {
+                return;
+            }
+        }
+        panic!("dynamic obstacle TileCache did not drain within the test budget");
     }
 }

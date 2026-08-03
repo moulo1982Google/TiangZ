@@ -44,6 +44,7 @@ import { NativeUnitRef } from "../../../generated/model/native/NativeUnitRef";
 import {
   NativeData,
   type NativeAoiBatch,
+  type NativeBoxObstacle,
   type NativeRaycastHit,
   type NativeVec3,
 } from "../native/NativeData";
@@ -67,6 +68,8 @@ import {
 } from "./EntrySyncMode";
 
 const DEMO_PLAYER_CONFIG_ID = 1;
+const NAVIGATION_OBSTACLE_COMMANDS_PER_TICK = 16;
+const NAVIGATION_OBSTACLE_TILES_PER_TICK = 4;
 const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 
 interface PendingPlayerEntry {
@@ -177,6 +180,17 @@ export class MapComponent extends Component<[
     numericPeekCount: 0,
     statePeekCount: 0,
   };
+  private navigationObstaclesPending = false;
+  private readonly navigationObstacleMetrics = {
+    obstacleCount: 0,
+    pendingCommands: 0,
+    updateCalls: 0,
+    appliedCommands: 0,
+    rebuiltTiles: 0,
+    updateFailures: 0,
+    updateMs: 0,
+    maxUpdateMs: 0,
+  };
 
   get MapId(): number {
     return this.mapId;
@@ -246,6 +260,28 @@ export class MapComponent extends Component<[
   ): number {
     this.RequireNavMesh3D();
     return NativeData.SampleHeight(this.nativeMapKey, point, halfExtents);
+  }
+
+  /**
+   * 以地图内稳定ObstacleId创建或修改盒形动态障碍。业务只描述世界坐标和尺寸，
+   * 不持有Detour引用，也不要在同一帧反复删除重建同一ID。
+   *
+   * Creates or updates a box obstacle by stable map-local ID. Business code supplies world-space
+   * geometry without retaining Detour references or repeatedly recreating one ID in a frame.
+   */
+  UpsertNavigationBoxObstacle(obstacleId: number, obstacle: NativeBoxObstacle): boolean {
+    this.RequireNavMesh3D();
+    const changed = NativeData.UpsertBoxObstacle(this.nativeMapKey, obstacleId, obstacle);
+    if (changed) this.navigationObstaclesPending = true;
+    return changed;
+  }
+
+  /** 删除动态障碍并在后续固定Tick恢复受影响Tile；不存在时保持幂等。 / Removes an obstacle idempotently and restores affected tiles in subsequent fixed ticks. */
+  RemoveNavigationObstacle(obstacleId: number): boolean {
+    this.RequireNavMesh3D();
+    const changed = NativeData.RemoveObstacle(this.nativeMapKey, obstacleId);
+    if (changed) this.navigationObstaclesPending = true;
+    return changed;
   }
 
   /** 创建地图内 Unit 存储、广播传输和帧尾同步源。 / Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */
@@ -347,6 +383,7 @@ export class MapComponent extends Component<[
    */
   Update(): void {
     this.PumpPlayerEntries();
+    this.UpdateNavigationObstacles();
     if (this.units.Count === 0) return;
     const fixedDeltaMs = TimeSystem.Instance.FixedDeltaTime;
     this.serverTick += 1;
@@ -395,6 +432,34 @@ export class MapComponent extends Component<[
       ).catch((error) => {
         this.logger.error("map AOI movement publish failed", { error });
       });
+    }
+  }
+
+  /** 每Tick只重建有限Tile，避免批量开关门阻塞地图逻辑；失败保留待处理标志并记录指标。 / Rebuilds a bounded number of tiles per tick so obstacle bursts cannot stall map logic. */
+  private UpdateNavigationObstacles(): void {
+    if (!this.navigationObstaclesPending || this.config.spatialMode !== SpatialMode.NavMesh3D) return;
+    const startedAt = monotonicNow();
+    try {
+      const update = NativeData.UpdateObstacles(
+        this.nativeMapKey,
+        NAVIGATION_OBSTACLE_COMMANDS_PER_TICK,
+        NAVIGATION_OBSTACLE_TILES_PER_TICK,
+      );
+      const elapsedMs = monotonicNow() - startedAt;
+      this.navigationObstacleMetrics.obstacleCount = update.obstacleCount;
+      this.navigationObstacleMetrics.pendingCommands = update.pendingCommands;
+      this.navigationObstacleMetrics.updateCalls += 1;
+      this.navigationObstacleMetrics.appliedCommands += update.appliedCommands;
+      this.navigationObstacleMetrics.rebuiltTiles += update.rebuiltTiles;
+      this.navigationObstacleMetrics.updateMs += elapsedMs;
+      this.navigationObstacleMetrics.maxUpdateMs = Math.max(
+        this.navigationObstacleMetrics.maxUpdateMs,
+        elapsedMs,
+      );
+      this.navigationObstaclesPending = !update.upToDate;
+    } catch (error) {
+      this.navigationObstacleMetrics.updateFailures += 1;
+      this.logger.error("navigation obstacle update failed", { error });
     }
   }
 
@@ -734,6 +799,14 @@ export class MapComponent extends Component<[
         audience_map_count_total: this.pipelineMetrics.audienceMapCount,
         numeric_peek_count_total: this.pipelineMetrics.numericPeekCount,
         state_peek_count_total: this.pipelineMetrics.statePeekCount,
+        navigation_obstacle_count: this.navigationObstacleMetrics.obstacleCount,
+        navigation_obstacle_pending_commands: this.navigationObstacleMetrics.pendingCommands,
+        navigation_obstacle_update_calls_total: this.navigationObstacleMetrics.updateCalls,
+        navigation_obstacle_commands_total: this.navigationObstacleMetrics.appliedCommands,
+        navigation_obstacle_rebuilt_tiles_total: this.navigationObstacleMetrics.rebuiltTiles,
+        navigation_obstacle_update_failures_total: this.navigationObstacleMetrics.updateFailures,
+        navigation_obstacle_update_ms_total: this.navigationObstacleMetrics.updateMs,
+        navigation_obstacle_update_ms_max: this.navigationObstacleMetrics.maxUpdateMs,
         player_entry_queue: this.pendingPlayerEntries.length,
         player_entry_queue_peak: this.playerEntryQueuePeak,
         player_entries_admitted_total: this.playerEntriesAdmitted,
@@ -782,6 +855,11 @@ export class MapComponent extends Component<[
         audience_map_count_total: "counter",
         numeric_peek_count_total: "counter",
         state_peek_count_total: "counter",
+        navigation_obstacle_update_calls_total: "counter",
+        navigation_obstacle_commands_total: "counter",
+        navigation_obstacle_rebuilt_tiles_total: "counter",
+        navigation_obstacle_update_failures_total: "counter",
+        navigation_obstacle_update_ms_total: "counter",
         player_entries_admitted_total: "counter",
         player_entry_failures_total: "counter",
         player_entry_queue_wait_ms_total: "counter",

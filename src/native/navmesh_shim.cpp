@@ -5,6 +5,8 @@
 #include "DetourNavMesh.h"
 #include "DetourNavMeshBuilder.h"
 #include "DetourNavMeshQuery.h"
+#include "DetourTileCache.h"
+#include "DetourTileCacheBuilder.h"
 #include "Recast.h"
 
 #include <algorithm>
@@ -18,9 +20,45 @@
 
 namespace {
 
-constexpr uint8_t kMagic[8] = {'T', 'Z', 'N', 'A', 'V', 'M', '0', '1'};
-constexpr uint32_t kFormatVersion = 1;
+constexpr uint8_t kMagic[8] = {'T', 'Z', 'N', 'A', 'V', 'M', '0', '2'};
+constexpr uint32_t kFormatVersion = 2;
 constexpr unsigned short kWalkFlag = 1;
+constexpr int kMaxLayersPerTile = 32;
+constexpr int kMaxObstacles = 1024;
+
+struct RawTileCacheCompressor final : dtTileCacheCompressor {
+    int maxCompressedSize(const int buffer_size) override { return buffer_size; }
+
+    dtStatus compress(const unsigned char* buffer, const int buffer_size,
+                      unsigned char* compressed, const int max_compressed_size,
+                      int* compressed_size) override {
+        if (buffer_size > max_compressed_size) return DT_FAILURE | DT_BUFFER_TOO_SMALL;
+        std::memcpy(compressed, buffer, static_cast<size_t>(buffer_size));
+        *compressed_size = buffer_size;
+        return DT_SUCCESS;
+    }
+
+    dtStatus decompress(const unsigned char* compressed, const int compressed_size,
+                        unsigned char* buffer, const int max_buffer_size,
+                        int* buffer_size) override {
+        if (compressed_size > max_buffer_size) return DT_FAILURE | DT_BUFFER_TOO_SMALL;
+        std::memcpy(buffer, compressed, static_cast<size_t>(compressed_size));
+        *buffer_size = compressed_size;
+        return DT_SUCCESS;
+    }
+};
+
+struct WalkableMeshProcess final : dtTileCacheMeshProcess {
+    void process(dtNavMeshCreateParams* params, unsigned char* poly_areas,
+                 unsigned short* poly_flags) override {
+        // TileCache保留Area供后续地形代价扩展；当前所有可行走面使用统一Flag。
+        // TileCache preserves areas for future costs; every current walkable polygon shares one flag.
+        for (int index = 0; index < params->polyCount; ++index) {
+            if (poly_areas[index] == DT_TILECACHE_WALKABLE_AREA) poly_areas[index] = 0;
+            poly_flags[index] = kWalkFlag;
+        }
+    }
+};
 
 void set_error(char* target, size_t capacity, const std::string& message) {
     if (target == nullptr || capacity == 0) return;
@@ -70,20 +108,20 @@ bool read_f32(const uint8_t*& cursor, const uint8_t* end, float& value) {
 struct TileBuildData {
     rcHeightfield* solid = nullptr;
     rcCompactHeightfield* compact = nullptr;
-    rcContourSet* contours = nullptr;
-    rcPolyMesh* poly_mesh = nullptr;
-    rcPolyMeshDetail* detail_mesh = nullptr;
+    rcHeightfieldLayerSet* layers = nullptr;
 
     ~TileBuildData() {
         rcFreeHeightField(solid);
         rcFreeCompactHeightfield(compact);
-        rcFreeContourSet(contours);
-        rcFreePolyMesh(poly_mesh);
-        rcFreePolyMeshDetail(detail_mesh);
+        rcFreeHeightfieldLayerSet(layers);
     }
 };
 
-bool build_tile(
+struct CompressedLayer {
+    std::vector<uint8_t> bytes;
+};
+
+bool build_tile_layers(
     rcContext& context,
     const float* vertices,
     int vertex_count,
@@ -95,8 +133,7 @@ bool build_tile(
     int tile_y,
     const float* tile_min,
     const float* tile_max,
-    unsigned char** nav_data,
-    int* nav_data_size,
+    std::vector<CompressedLayer>& output,
     std::string& error) {
     rcConfig config{};
     config.cs = input.cell_size;
@@ -161,182 +198,169 @@ bool build_tile(
         error = "无法创建紧凑高度场 / failed to build compact heightfield";
         return false;
     }
-    if (!rcErodeWalkableArea(&context, config.walkableRadius, *build.compact) ||
-        !rcBuildDistanceField(&context, *build.compact) ||
-        !rcBuildRegions(&context, *build.compact, config.borderSize, config.minRegionArea, config.mergeRegionArea)) {
-        error = "无法生成可行走区域 / failed to build walkable regions";
+    if (!rcErodeWalkableArea(&context, config.walkableRadius, *build.compact)) {
+        error = "无法按角色半径侵蚀可行走区域 / failed to erode walkable area";
         return false;
     }
-
-    build.contours = rcAllocContourSet();
-    if (build.contours == nullptr ||
-        !rcBuildContours(&context, *build.compact, config.maxSimplificationError, config.maxEdgeLen, *build.contours)) {
-        error = "无法生成导航轮廓 / failed to build navigation contours";
+    build.layers = rcAllocHeightfieldLayerSet();
+    if (build.layers == nullptr ||
+        !rcBuildHeightfieldLayers(&context, *build.compact, config.borderSize,
+                                  config.walkableHeight, *build.layers)) {
+        error = "无法生成动态导航高度层 / failed to build NavMesh heightfield layers";
         return false;
     }
-    if (build.contours->nconts == 0) return true;
-
-    build.poly_mesh = rcAllocPolyMesh();
-    if (build.poly_mesh == nullptr ||
-        !rcBuildPolyMesh(&context, *build.contours, config.maxVertsPerPoly, *build.poly_mesh)) {
-        error = "无法生成导航多边形 / failed to build navigation polygon mesh";
+    if (build.layers->nlayers > kMaxLayersPerTile) {
+        error = "单个导航Tile的高度层过多 / too many heightfield layers in one navigation tile";
         return false;
     }
-    build.detail_mesh = rcAllocPolyMeshDetail();
-    if (build.detail_mesh == nullptr ||
-        !rcBuildPolyMeshDetail(&context, *build.poly_mesh, *build.compact, config.detailSampleDist,
-                               config.detailSampleMaxError, *build.detail_mesh)) {
-        error = "无法生成导航细节网格 / failed to build navigation detail mesh";
-        return false;
-    }
-    if (build.poly_mesh->nverts >= 0xffff || config.maxVertsPerPoly > DT_VERTS_PER_POLYGON) {
-        error = "单个导航 Tile 的顶点或多边形顶点数超限 / navigation tile limits exceeded";
-        return false;
-    }
-
-    for (int index = 0; index < build.poly_mesh->npolys; ++index) {
-        if (build.poly_mesh->areas[index] == RC_WALKABLE_AREA) build.poly_mesh->areas[index] = 0;
-        build.poly_mesh->flags[index] = kWalkFlag;
-    }
-
-    dtNavMeshCreateParams params{};
-    params.verts = build.poly_mesh->verts;
-    params.vertCount = build.poly_mesh->nverts;
-    params.polys = build.poly_mesh->polys;
-    params.polyAreas = build.poly_mesh->areas;
-    params.polyFlags = build.poly_mesh->flags;
-    params.polyCount = build.poly_mesh->npolys;
-    params.nvp = build.poly_mesh->nvp;
-    params.detailMeshes = build.detail_mesh->meshes;
-    params.detailVerts = build.detail_mesh->verts;
-    params.detailVertsCount = build.detail_mesh->nverts;
-    params.detailTris = build.detail_mesh->tris;
-    params.detailTriCount = build.detail_mesh->ntris;
-    params.walkableHeight = input.agent_height;
-    params.walkableRadius = input.agent_radius;
-    params.walkableClimb = input.agent_max_climb;
-    params.tileX = tile_x;
-    params.tileY = tile_y;
-    params.tileLayer = 0;
-    rcVcopy(params.bmin, build.poly_mesh->bmin);
-    rcVcopy(params.bmax, build.poly_mesh->bmax);
-    params.cs = config.cs;
-    params.ch = config.ch;
-    params.buildBvTree = true;
-    if (!dtCreateNavMeshData(&params, nav_data, nav_data_size)) {
-        error = "Detour Tile 数据生成失败 / failed to create Detour tile data";
-        return false;
+    RawTileCacheCompressor compressor;
+    for (int layer_index = 0; layer_index < build.layers->nlayers; ++layer_index) {
+        const rcHeightfieldLayer& layer = build.layers->layers[layer_index];
+        dtTileCacheLayerHeader header{};
+        header.magic = DT_TILECACHE_MAGIC;
+        header.version = DT_TILECACHE_VERSION;
+        header.tx = tile_x;
+        header.ty = tile_y;
+        header.tlayer = layer_index;
+        rcVcopy(header.bmin, layer.bmin);
+        rcVcopy(header.bmax, layer.bmax);
+        header.width = static_cast<unsigned char>(layer.width);
+        header.height = static_cast<unsigned char>(layer.height);
+        header.minx = static_cast<unsigned char>(layer.minx);
+        header.maxx = static_cast<unsigned char>(layer.maxx);
+        header.miny = static_cast<unsigned char>(layer.miny);
+        header.maxy = static_cast<unsigned char>(layer.maxy);
+        header.hmin = static_cast<unsigned short>(layer.hmin);
+        header.hmax = static_cast<unsigned short>(layer.hmax);
+        unsigned char* layer_data = nullptr;
+        int layer_size = 0;
+        if (dtStatusFailed(dtBuildTileCacheLayer(&compressor, &header, layer.heights,
+                                                 layer.areas, layer.cons,
+                                                 &layer_data, &layer_size))) {
+            dtFree(layer_data);
+            error = "Detour TileCache高度层生成失败 / failed to build Detour TileCache layer";
+            return false;
+        }
+        output.push_back({std::vector<uint8_t>(layer_data, layer_data + layer_size)});
+        dtFree(layer_data);
     }
     return true;
 }
 
-bool serialize_mesh(const dtNavMesh& mesh, std::vector<uint8_t>& output) {
+struct NavAssetData {
+    dtNavMeshParams nav{};
+    dtTileCacheParams cache{};
+    std::vector<CompressedLayer> layers;
+};
+
+bool serialize_asset(const NavAssetData& asset, std::vector<uint8_t>& output) {
     output.insert(output.end(), std::begin(kMagic), std::end(kMagic));
     write_u32(output, kFormatVersion);
-    uint32_t tile_count = 0;
-    for (int index = 0; index < mesh.getMaxTiles(); ++index) {
-        const dtMeshTile* tile = mesh.getTile(index);
-        if (tile != nullptr && tile->header != nullptr && tile->dataSize > 0) ++tile_count;
-    }
-    write_u32(output, tile_count);
-    const dtNavMeshParams* params = mesh.getParams();
-    for (float value : params->orig) write_f32(output, value);
-    write_f32(output, params->tileWidth);
-    write_f32(output, params->tileHeight);
-    write_u32(output, static_cast<uint32_t>(params->maxTiles));
-    write_u32(output, static_cast<uint32_t>(params->maxPolys));
-    for (int index = 0; index < mesh.getMaxTiles(); ++index) {
-        const dtMeshTile* tile = mesh.getTile(index);
-        if (tile == nullptr || tile->header == nullptr || tile->dataSize <= 0) continue;
-        write_u64(output, static_cast<uint64_t>(mesh.getTileRef(tile)));
-        write_u32(output, static_cast<uint32_t>(tile->dataSize));
-        output.insert(output.end(), tile->data, tile->data + tile->dataSize);
+    write_u32(output, static_cast<uint32_t>(asset.layers.size()));
+    for (float value : asset.nav.orig) write_f32(output, value);
+    write_f32(output, asset.nav.tileWidth);
+    write_f32(output, asset.nav.tileHeight);
+    write_u32(output, static_cast<uint32_t>(asset.nav.maxTiles));
+    write_u32(output, static_cast<uint32_t>(asset.nav.maxPolys));
+    for (float value : asset.cache.orig) write_f32(output, value);
+    write_f32(output, asset.cache.cs);
+    write_f32(output, asset.cache.ch);
+    write_u32(output, static_cast<uint32_t>(asset.cache.width));
+    write_u32(output, static_cast<uint32_t>(asset.cache.height));
+    write_f32(output, asset.cache.walkableHeight);
+    write_f32(output, asset.cache.walkableRadius);
+    write_f32(output, asset.cache.walkableClimb);
+    write_f32(output, asset.cache.maxSimplificationError);
+    write_u32(output, static_cast<uint32_t>(asset.cache.maxTiles));
+    write_u32(output, static_cast<uint32_t>(asset.cache.maxObstacles));
+    for (const CompressedLayer& layer : asset.layers) {
+        write_u32(output, static_cast<uint32_t>(layer.bytes.size()));
+        output.insert(output.end(), layer.bytes.begin(), layer.bytes.end());
     }
     return true;
 }
 
-dtNavMesh* deserialize_mesh(const uint8_t* data, size_t len, std::string& error) {
+bool deserialize_asset(const uint8_t* data, size_t len, NavAssetData& asset, std::string& error) {
     if (data == nullptr || len < sizeof(kMagic) || std::memcmp(data, kMagic, sizeof(kMagic)) != 0) {
         error = "不是 TiangZ NavMesh 资源 / invalid TiangZ NavMesh magic";
-        return nullptr;
+        return false;
     }
     const uint8_t* cursor = data + sizeof(kMagic);
     const uint8_t* end = data + len;
     uint32_t version = 0;
-    uint32_t tile_count = 0;
-    dtNavMeshParams params{};
-    uint32_t max_tiles = 0;
-    uint32_t max_polys = 0;
+    uint32_t layer_count = 0;
+    uint32_t nav_max_tiles = 0;
+    uint32_t nav_max_polys = 0;
+    uint32_t cache_width = 0;
+    uint32_t cache_height = 0;
+    uint32_t cache_max_tiles = 0;
+    uint32_t cache_max_obstacles = 0;
     if (!read_u32(cursor, end, version) || version != kFormatVersion ||
-        !read_u32(cursor, end, tile_count) ||
-        !read_f32(cursor, end, params.orig[0]) || !read_f32(cursor, end, params.orig[1]) ||
-        !read_f32(cursor, end, params.orig[2]) || !read_f32(cursor, end, params.tileWidth) ||
-        !read_f32(cursor, end, params.tileHeight) || !read_u32(cursor, end, max_tiles) ||
-        !read_u32(cursor, end, max_polys)) {
+        !read_u32(cursor, end, layer_count) ||
+        !read_f32(cursor, end, asset.nav.orig[0]) || !read_f32(cursor, end, asset.nav.orig[1]) ||
+        !read_f32(cursor, end, asset.nav.orig[2]) || !read_f32(cursor, end, asset.nav.tileWidth) ||
+        !read_f32(cursor, end, asset.nav.tileHeight) || !read_u32(cursor, end, nav_max_tiles) ||
+        !read_u32(cursor, end, nav_max_polys) ||
+        !read_f32(cursor, end, asset.cache.orig[0]) || !read_f32(cursor, end, asset.cache.orig[1]) ||
+        !read_f32(cursor, end, asset.cache.orig[2]) || !read_f32(cursor, end, asset.cache.cs) ||
+        !read_f32(cursor, end, asset.cache.ch) || !read_u32(cursor, end, cache_width) ||
+        !read_u32(cursor, end, cache_height) || !read_f32(cursor, end, asset.cache.walkableHeight) ||
+        !read_f32(cursor, end, asset.cache.walkableRadius) ||
+        !read_f32(cursor, end, asset.cache.walkableClimb) ||
+        !read_f32(cursor, end, asset.cache.maxSimplificationError) ||
+        !read_u32(cursor, end, cache_max_tiles) || !read_u32(cursor, end, cache_max_obstacles)) {
         error = "NavMesh 资源头损坏或版本不支持 / corrupt or unsupported NavMesh header";
-        return nullptr;
+        return false;
     }
-    if (tile_count > max_tiles || max_tiles == 0 || max_polys == 0) {
+    if (layer_count == 0 || layer_count > cache_max_tiles || nav_max_tiles == 0 ||
+        nav_max_polys == 0 || cache_max_tiles == 0 || cache_max_obstacles == 0 ||
+        cache_width == 0 || cache_height == 0) {
         error = "NavMesh 资源容量字段无效 / invalid NavMesh capacity";
-        return nullptr;
+        return false;
     }
-    params.maxTiles = static_cast<int>(max_tiles);
-    params.maxPolys = static_cast<int>(max_polys);
-    dtNavMesh* mesh = dtAllocNavMesh();
-    if (mesh == nullptr || dtStatusFailed(mesh->init(&params))) {
-        dtFreeNavMesh(mesh);
-        error = "无法初始化 Detour NavMesh / failed to initialize Detour NavMesh";
-        return nullptr;
-    }
-    for (uint32_t index = 0; index < tile_count; ++index) {
-        uint64_t tile_ref = 0;
+    asset.nav.maxTiles = static_cast<int>(nav_max_tiles);
+    asset.nav.maxPolys = static_cast<int>(nav_max_polys);
+    asset.cache.width = static_cast<int>(cache_width);
+    asset.cache.height = static_cast<int>(cache_height);
+    asset.cache.maxTiles = static_cast<int>(cache_max_tiles);
+    asset.cache.maxObstacles = static_cast<int>(cache_max_obstacles);
+    asset.layers.clear();
+    asset.layers.reserve(layer_count);
+    for (uint32_t index = 0; index < layer_count; ++index) {
         uint32_t data_size = 0;
-        if (!read_u64(cursor, end, tile_ref) || !read_u32(cursor, end, data_size) ||
+        if (!read_u32(cursor, end, data_size) ||
             data_size == 0 || static_cast<size_t>(end - cursor) < data_size) {
-            dtFreeNavMesh(mesh);
-            error = "NavMesh Tile 数据不完整 / truncated NavMesh tile";
-            return nullptr;
+            error = "NavMesh高度层数据不完整 / truncated NavMesh heightfield layer";
+            return false;
         }
-        unsigned char* tile_data = static_cast<unsigned char*>(dtAlloc(data_size, DT_ALLOC_PERM));
-        if (tile_data == nullptr) {
-            dtFreeNavMesh(mesh);
-            error = "NavMesh Tile 内存分配失败 / failed to allocate NavMesh tile";
-            return nullptr;
-        }
-        std::memcpy(tile_data, cursor, data_size);
+        asset.layers.push_back({std::vector<uint8_t>(cursor, cursor + data_size)});
         cursor += data_size;
-        if (dtStatusFailed(mesh->addTile(tile_data, static_cast<int>(data_size), DT_TILE_FREE_DATA,
-                                         static_cast<dtTileRef>(tile_ref), nullptr))) {
-            dtFree(tile_data);
-            dtFreeNavMesh(mesh);
-            error = "NavMesh Tile 加载失败 / failed to load NavMesh tile";
-            return nullptr;
-        }
     }
     if (cursor != end) {
-        dtFreeNavMesh(mesh);
         error = "NavMesh 资源含有未知尾部数据 / unexpected trailing NavMesh data";
-        return nullptr;
+        return false;
     }
-    return mesh;
+    return true;
 }
 
 }  // namespace
 
 struct TzNavMesh {
-    dtNavMesh* mesh = nullptr;
-
-    ~TzNavMesh() {
-        dtFreeNavMesh(mesh);
-    }
+    NavAssetData asset;
 };
 
 struct TzNavQuery {
-    const TzNavMesh* asset = nullptr;
+    dtNavMesh* mesh = nullptr;
+    dtTileCache* tile_cache = nullptr;
     dtNavMeshQuery* query = nullptr;
+    dtTileCacheAlloc allocator;
+    RawTileCacheCompressor compressor;
+    WalkableMeshProcess mesh_process;
 
     ~TzNavQuery() {
         dtFreeNavMeshQuery(query);
+        dtFreeTileCache(tile_cache);
+        dtFreeNavMesh(mesh);
     }
 };
 
@@ -366,28 +390,13 @@ extern "C" int32_t tz_navmesh_build(
         rcCalcGridSize(bounds_min, bounds_max, config->cell_size, &grid_width, &grid_height);
         const int tile_width = (grid_width + config->tile_size - 1) / config->tile_size;
         const int tile_height = (grid_height + config->tile_size - 1) / config->tile_size;
-        const unsigned int desired_tiles = static_cast<unsigned int>(std::max(1, tile_width * tile_height));
-        const unsigned int tile_bits = std::min(dtIlog2(dtNextPow2(desired_tiles)), 14u);
-        const unsigned int poly_bits = 22u - tile_bits;
         rcChunkyTriMesh chunky_mesh;
         if (!rcCreateChunkyTriMesh(vertices, indices, triangle_count, 256, &chunky_mesh)) {
             set_error(error, error_capacity, "导航三角形空间索引创建失败 / failed to build navigation triangle index");
             return 0;
         }
 
-        dtNavMeshParams params{};
-        rcVcopy(params.orig, bounds_min);
-        params.tileWidth = config->tile_size * config->cell_size;
-        params.tileHeight = config->tile_size * config->cell_size;
-        params.maxTiles = 1 << tile_bits;
-        params.maxPolys = 1 << poly_bits;
-        dtNavMesh* mesh = dtAllocNavMesh();
-        if (mesh == nullptr || dtStatusFailed(mesh->init(&params))) {
-            dtFreeNavMesh(mesh);
-            set_error(error, error_capacity, "无法初始化 Detour Tile 容器 / failed to initialize tiled Detour mesh");
-            return 0;
-        }
-
+        NavAssetData asset;
         rcContext context(false);
         const float tile_world_size = config->tile_size * config->cell_size;
         std::string build_error;
@@ -403,28 +412,41 @@ extern "C" int32_t tz_navmesh_build(
                     bounds_max[1],
                     bounds_min[2] + (tile_y + 1) * tile_world_size,
                 };
-                unsigned char* tile_data = nullptr;
-                int tile_data_size = 0;
-                if (!build_tile(context, vertices, vertex_count, indices, triangle_count, chunky_mesh,
-                                *config, tile_x, tile_y, tile_min, tile_max, &tile_data,
-                                &tile_data_size, build_error)) {
-                    dtFreeNavMesh(mesh);
+                if (!build_tile_layers(context, vertices, vertex_count, indices, triangle_count,
+                                       chunky_mesh, *config, tile_x, tile_y, tile_min, tile_max,
+                                       asset.layers, build_error)) {
                     set_error(error, error_capacity, build_error);
-                    return 0;
-                }
-                if (tile_data != nullptr &&
-                    dtStatusFailed(mesh->addTile(tile_data, tile_data_size, DT_TILE_FREE_DATA, 0, nullptr))) {
-                    dtFree(tile_data);
-                    dtFreeNavMesh(mesh);
-                    set_error(error, error_capacity, "Detour Tile 装载失败 / failed to add Detour tile");
                     return 0;
                 }
             }
         }
+        if (asset.layers.empty()) {
+            set_error(error, error_capacity, "Recast没有生成可行走高度层 / Recast produced no walkable layers");
+            return 0;
+        }
+
+        const unsigned int layer_capacity = dtNextPow2(static_cast<unsigned int>(asset.layers.size()));
+        const unsigned int tile_bits = std::min(dtIlog2(layer_capacity), 14u);
+        const unsigned int poly_bits = 22u - tile_bits;
+        rcVcopy(asset.nav.orig, bounds_min);
+        asset.nav.tileWidth = config->tile_size * config->cell_size;
+        asset.nav.tileHeight = config->tile_size * config->cell_size;
+        asset.nav.maxTiles = 1 << tile_bits;
+        asset.nav.maxPolys = 1 << poly_bits;
+        rcVcopy(asset.cache.orig, bounds_min);
+        asset.cache.cs = config->cell_size;
+        asset.cache.ch = config->cell_height;
+        asset.cache.width = config->tile_size;
+        asset.cache.height = config->tile_size;
+        asset.cache.walkableHeight = config->agent_height;
+        asset.cache.walkableRadius = config->agent_radius;
+        asset.cache.walkableClimb = config->agent_max_climb;
+        asset.cache.maxSimplificationError = config->edge_max_error;
+        asset.cache.maxTiles = asset.nav.maxTiles;
+        asset.cache.maxObstacles = kMaxObstacles;
 
         std::vector<uint8_t> bytes;
-        serialize_mesh(*mesh, bytes);
-        dtFreeNavMesh(mesh);
+        serialize_asset(asset, bytes);
         output->data = static_cast<uint8_t*>(std::malloc(bytes.size()));
         if (output->data == nullptr) {
             set_error(error, error_capacity, "NavMesh 输出内存分配失败 / failed to allocate NavMesh output");
@@ -448,18 +470,17 @@ extern "C" void tz_navmesh_bytes_free(TzNavBytes bytes) {
 
 extern "C" TzNavMesh* tz_navmesh_load(const uint8_t* data, size_t len, char* error, size_t error_capacity) {
     std::string load_error;
-    dtNavMesh* mesh = deserialize_mesh(data, len, load_error);
-    if (mesh == nullptr) {
+    NavAssetData asset;
+    if (!deserialize_asset(data, len, asset, load_error)) {
         set_error(error, error_capacity, load_error);
         return nullptr;
     }
     TzNavMesh* result = new (std::nothrow) TzNavMesh();
     if (result == nullptr) {
-        dtFreeNavMesh(mesh);
         set_error(error, error_capacity, "NavMesh 句柄分配失败 / failed to allocate NavMesh handle");
         return nullptr;
     }
-    result->mesh = mesh;
+    result->asset = std::move(asset);
     return result;
 }
 
@@ -471,7 +492,7 @@ extern "C" TzNavQuery* tz_navmesh_query_create(
     const TzNavMesh* mesh,
     char* error,
     size_t error_capacity) {
-    if (mesh == nullptr || mesh->mesh == nullptr) {
+    if (mesh == nullptr || mesh->asset.layers.empty()) {
         set_error(error, error_capacity, "NavMesh资产无效 / invalid NavMesh asset");
         return nullptr;
     }
@@ -480,9 +501,40 @@ extern "C" TzNavQuery* tz_navmesh_query_create(
         set_error(error, error_capacity, "NavMesh查询上下文分配失败 / failed to allocate NavMesh query context");
         return nullptr;
     }
-    result->asset = mesh;
+    result->mesh = dtAllocNavMesh();
+    result->tile_cache = dtAllocTileCache();
     result->query = dtAllocNavMeshQuery();
-    if (result->query == nullptr || dtStatusFailed(result->query->init(mesh->mesh, 4096))) {
+    if (result->mesh == nullptr || result->tile_cache == nullptr || result->query == nullptr ||
+        dtStatusFailed(result->mesh->init(&mesh->asset.nav)) ||
+        dtStatusFailed(result->tile_cache->init(&mesh->asset.cache, &result->allocator,
+                                                &result->compressor, &result->mesh_process))) {
+        delete result;
+        set_error(error, error_capacity, "MapInstance动态NavMesh初始化失败 / failed to initialize instance NavMesh");
+        return nullptr;
+    }
+    for (const CompressedLayer& source : mesh->asset.layers) {
+        unsigned char* data = static_cast<unsigned char*>(dtAlloc(source.bytes.size(), DT_ALLOC_PERM));
+        if (data == nullptr) {
+            delete result;
+            set_error(error, error_capacity, "TileCache高度层内存分配失败 / failed to allocate TileCache layer");
+            return nullptr;
+        }
+        std::memcpy(data, source.bytes.data(), source.bytes.size());
+        dtCompressedTileRef tile_ref = 0;
+        if (dtStatusFailed(result->tile_cache->addTile(
+                data, static_cast<int>(source.bytes.size()), DT_COMPRESSEDTILE_FREE_DATA, &tile_ref))) {
+            dtFree(data);
+            delete result;
+            set_error(error, error_capacity, "MapInstance Tile装载失败 / failed to add instance TileCache layer");
+            return nullptr;
+        }
+        if (dtStatusFailed(result->tile_cache->buildNavMeshTile(tile_ref, result->mesh))) {
+            delete result;
+            set_error(error, error_capacity, "MapInstance Tile构建失败 / failed to build instance NavMesh tile");
+            return nullptr;
+        }
+    }
+    if (dtStatusFailed(result->query->init(result->mesh, 4096))) {
         delete result;
         set_error(error, error_capacity, "NavMesh查询器初始化失败 / failed to initialize NavMesh query");
         return nullptr;
@@ -628,4 +680,71 @@ extern "C" int32_t tz_navmesh_sample_height(
     if (dtStatusFailed(query->query->findNearestPoly(
             point, half_extents, &filter, &reference, projected)) || reference == 0) return 0;
     return dtStatusSucceed(query->query->getPolyHeight(reference, projected, height)) ? 1 : 0;
+}
+
+extern "C" int32_t tz_navmesh_obstacle_add_box(
+    TzNavQuery* query,
+    const float* center,
+    const float* half_extents,
+    float yaw_radians,
+    uint64_t* obstacle_ref,
+    char* error,
+    size_t error_capacity) {
+    if (query == nullptr || query->tile_cache == nullptr || center == nullptr ||
+        half_extents == nullptr || obstacle_ref == nullptr ||
+        half_extents[0] <= 0.0f || half_extents[1] <= 0.0f || half_extents[2] <= 0.0f) {
+        set_error(error, error_capacity, "动态障碍参数无效 / invalid dynamic obstacle arguments");
+        return 0;
+    }
+    dtObstacleRef reference = 0;
+    const dtStatus status = query->tile_cache->addBoxObstacle(
+        center, half_extents, yaw_radians, &reference);
+    if (dtStatusFailed(status) || reference == 0) {
+        set_error(error, error_capacity, "动态障碍队列已满或容量不足 / dynamic obstacle queue or capacity is full");
+        return 0;
+    }
+    *obstacle_ref = static_cast<uint64_t>(reference);
+    return 1;
+}
+
+extern "C" int32_t tz_navmesh_obstacle_remove(
+    TzNavQuery* query,
+    uint64_t obstacle_ref,
+    char* error,
+    size_t error_capacity) {
+    if (query == nullptr || query->tile_cache == nullptr || obstacle_ref == 0) {
+        set_error(error, error_capacity, "动态障碍引用无效 / invalid dynamic obstacle reference");
+        return 0;
+    }
+    if (dtStatusFailed(query->tile_cache->removeObstacle(static_cast<dtObstacleRef>(obstacle_ref)))) {
+        set_error(error, error_capacity, "动态障碍不存在或更新队列已满 / obstacle is missing or update queue is full");
+        return 0;
+    }
+    return 1;
+}
+
+extern "C" int32_t tz_navmesh_obstacle_update(
+    TzNavQuery* query,
+    int32_t max_tile_updates,
+    int32_t* processed_tile_updates,
+    int32_t* up_to_date,
+    char* error,
+    size_t error_capacity) {
+    if (query == nullptr || query->tile_cache == nullptr || max_tile_updates <= 0 ||
+        processed_tile_updates == nullptr || up_to_date == nullptr) {
+        set_error(error, error_capacity, "动态障碍更新参数无效 / invalid obstacle update arguments");
+        return 0;
+    }
+    int processed = 0;
+    bool current = false;
+    while (processed < max_tile_updates && !current) {
+        if (dtStatusFailed(query->tile_cache->update(0.0f, query->mesh, &current))) {
+            set_error(error, error_capacity, "动态障碍Tile重建失败 / dynamic obstacle tile rebuild failed");
+            return 0;
+        }
+        ++processed;
+    }
+    *processed_tile_updates = processed;
+    *up_to_date = current ? 1 : 0;
+    return 1;
 }

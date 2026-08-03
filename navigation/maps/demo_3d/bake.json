@@ -3,7 +3,7 @@
   "source": "source/map_nav.obj",
   "output": "generated/navigation.bin",
   "metadata": "generated/navigation.meta.json",
-  "navigationVersion": "demo-3d-v1",
+  "navigationVersion": "demo-3d-v2",
   "build": {
     "cellSize": 0.3,
     "cellHeight": 0.2,

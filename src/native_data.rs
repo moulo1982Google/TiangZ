@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 use deno_core::convert::Uint8Array;
 use deno_core::op2;
 use deno_error::JsErrorBox;
-use tiangz_transport::navigation::{NavigationAssetCache, NavigationWorld};
+use tiangz_transport::navigation::{NavigationAssetCache, NavigationBoxObstacle, NavigationWorld};
 
 use crate::aoi::{AoiWorld, SyncTier, VisibilityChange};
 // 生成的Native op绑定当前只导入一个稳定模块；这里仅做兼容转发，业务实现仍归属`src/game`。
@@ -45,6 +45,7 @@ struct NavigationMovement {
     points: Vec<[f32; 3]>,
     next_point: usize,
     state_changed: bool,
+    obstacle_revision: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -1216,6 +1217,127 @@ pub(crate) fn op_native_spatial_sample_height(
     })
 }
 
+#[op2(fast)]
+/// 以稳定ObstacleId创建或修改MapInstance私有盒形障碍；只更新目标状态，不在Handler中重建Tile。 / Creates or updates an instance-local box obstacle without rebuilding tiles inside a Handler.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn op_native_spatial_upsert_box_obstacle(
+    map_id: u32,
+    obstacle_id: u32,
+    center_x: f64,
+    center_y: f64,
+    center_z: f64,
+    half_x: f64,
+    half_y: f64,
+    half_z: f64,
+    yaw_radians: f64,
+) -> Result<bool, JsErrorBox> {
+    native_spatial_upsert_box_obstacle(
+        map_id,
+        obstacle_id,
+        center_x,
+        center_y,
+        center_z,
+        half_x,
+        half_y,
+        half_z,
+        yaw_radians,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_spatial_upsert_box_obstacle(
+    map_id: u32,
+    obstacle_id: u32,
+    center_x: f64,
+    center_y: f64,
+    center_z: f64,
+    half_x: f64,
+    half_y: f64,
+    half_z: f64,
+    yaw_radians: f64,
+) -> Result<bool, JsErrorBox> {
+    let specification = NavigationBoxObstacle {
+        center: [
+            finite_f32(center_x, "centerX")?,
+            finite_f32(center_y, "centerY")?,
+            finite_f32(center_z, "centerZ")?,
+        ],
+        half_extents: [
+            positive_f32(half_x, "halfX")?,
+            positive_f32(half_y, "halfY")?,
+            positive_f32(half_z, "halfZ")?,
+        ],
+        yaw_radians: finite_f32(yaw_radians, "yawRadians")?,
+    };
+    STORE.with(|slot| {
+        slot.borrow_mut()
+            .navigation_worlds
+            .get_mut(&map_id)
+            .ok_or_else(|| {
+                JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+            })?
+            .upsert_box_obstacle(obstacle_id, specification)
+            .map_err(|error| JsErrorBox::generic(format!("{error:#}")))
+    })
+}
+
+#[op2(fast)]
+/// 幂等删除MapInstance内的动态障碍；不存在时返回false。 / Idempotently removes an instance-local obstacle and returns false when absent.
+pub(crate) fn op_native_spatial_remove_obstacle(
+    map_id: u32,
+    obstacle_id: u32,
+) -> Result<bool, JsErrorBox> {
+    native_spatial_remove_obstacle(map_id, obstacle_id)
+}
+
+fn native_spatial_remove_obstacle(map_id: u32, obstacle_id: u32) -> Result<bool, JsErrorBox> {
+    STORE.with(|slot| {
+        Ok(slot
+            .borrow_mut()
+            .navigation_worlds
+            .get_mut(&map_id)
+            .ok_or_else(|| {
+                JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+            })?
+            .remove_obstacle(obstacle_id))
+    })
+}
+
+#[op2]
+/// 按帧预算提交障碍命令并重建Tile；返回命令数、Tile数、Rust等待数和完成标志。 / Applies obstacle commands and tile rebuilds within one frame budget.
+pub(crate) fn op_native_spatial_update_obstacles(
+    map_id: u32,
+    max_commands: u32,
+    max_tile_updates: u32,
+) -> Result<Uint8Array, JsErrorBox> {
+    native_spatial_update_obstacles(map_id, max_commands, max_tile_updates).map(Into::into)
+}
+
+fn native_spatial_update_obstacles(
+    map_id: u32,
+    max_commands: u32,
+    max_tile_updates: u32,
+) -> Result<Vec<u8>, JsErrorBox> {
+    STORE.with(|slot| {
+        let update = slot
+            .borrow_mut()
+            .navigation_worlds
+            .get_mut(&map_id)
+            .ok_or_else(|| {
+                JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+            })?
+            .update_obstacles(max_commands, max_tile_updates)
+            .map_err(|error| JsErrorBox::generic(format!("{error:#}")))?;
+        let mut bytes = Vec::with_capacity(17);
+        bytes.extend_from_slice(&update.applied_commands.to_le_bytes());
+        bytes.extend_from_slice(&update.rebuilt_tiles.to_le_bytes());
+        bytes.extend_from_slice(&update.pending_commands.to_le_bytes());
+        bytes.extend_from_slice(&update.obstacle_count.to_le_bytes());
+        bytes.push(u8::from(update.up_to_date));
+        Ok(bytes)
+    })
+}
+
 /// 设置Unit的NavMesh移动目标；返回值前4字节是确认序号，后续是路径点数组。 / Sets a Unit NavMesh target; the first four bytes are the acknowledged sequence followed by path points.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn set_unit_navigation_target(
@@ -1247,14 +1369,13 @@ pub(crate) fn set_unit_navigation_target(
             result.extend_from_slice(&current_sequence.to_le_bytes());
             return Ok(result);
         }
-        let points = store
-            .navigation_worlds
-            .get(&map_id)
-            .ok_or_else(|| {
-                JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
-            })?
+        let world = store.navigation_worlds.get(&map_id).ok_or_else(|| {
+            JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+        })?;
+        let points = world
             .find_path(current, target, [2.0, 4.0, 2.0], 64)
             .map_err(|error| JsErrorBox::generic(format!("{error:#}")))?;
+        let obstacle_revision = world.obstacle_revision();
         {
             let unit = store.get_unit_hot_mut(handle)?;
             unit.sequence = sequence;
@@ -1269,6 +1390,7 @@ pub(crate) fn set_unit_navigation_target(
                 next_point: usize::from(points.len() > 1),
                 points: points.clone(),
                 state_changed: true,
+                obstacle_revision,
             },
         );
         store.navigation_directional_inputs.remove(&handle);
@@ -2041,6 +2163,22 @@ fn update_navigation_map(
         let Some(mut movement) = store.navigation_movements.remove(&handle) else {
             continue;
         };
+        let (map_id, current) = {
+            let (unit, cold) = store.get_unit_parts(handle)?;
+            (cold.map_id, [unit.x, unit.y, unit.z])
+        };
+        let world = store.navigation_worlds.get(&map_id).ok_or_else(|| {
+            JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+        })?;
+        if movement.obstacle_revision != world.obstacle_revision() {
+            let target = movement.points.last().copied().unwrap_or(current);
+            movement.points = world
+                .find_path(current, target, [2.0, 4.0, 2.0], 64)
+                .unwrap_or_default();
+            movement.next_point = usize::from(movement.points.len() > 1);
+            movement.obstacle_revision = world.obstacle_revision();
+            movement.state_changed = true;
+        }
         let mut keep_movement = false;
         {
             let unit = store.get_unit_hot_mut(handle)?;
@@ -3069,7 +3207,7 @@ mod tests {
         configure_project_root(root).unwrap();
         STORE.with(|slot| *slot.borrow_mut() = NativeEntityStore::default());
         let asset = b"navigation/maps/demo_3d/generated/navigation.bin";
-        let hash = b"94af0f91826b6c08d72f2402cd06383847cf8ceb7d87d9dd9067a2b9c862f304";
+        let hash = b"1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421";
         native_spatial_create_nav_mesh_3d(90_001, 48, 48, 1_000, asset, hash).unwrap();
         native_spatial_create_nav_mesh_3d(90_002, 48, 48, 1_000, asset, hash).unwrap();
 
@@ -3096,6 +3234,65 @@ mod tests {
     }
 
     #[test]
+    fn nav_mesh_obstacle_ops_are_bounded_and_released_with_the_map() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        configure_project_root(root).unwrap();
+        STORE.with(|slot| *slot.borrow_mut() = NativeEntityStore::default());
+        native_spatial_create_nav_mesh_3d(
+            90_004,
+            60,
+            60,
+            1_000,
+            b"navigation/maps/demo_3d/generated/navigation.bin",
+            b"1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
+        )
+        .unwrap();
+        let mut value = unit(88);
+        value.map_id = 90_004;
+        value.x = -12.0;
+        value.y = 0.2;
+        value.z = -12.0;
+        value.speed_cells_per_second = 4.0;
+        let handle = STORE.with(|slot| {
+            slot.borrow_mut()
+                .create(NativeEntityData::Unit(value))
+                .unwrap()
+        });
+        set_unit_navigation_target(90_004, handle, -12.0, 0.0, 12.0, 1).unwrap();
+        assert!(
+            native_spatial_upsert_box_obstacle(90_004, 7, -12.0, 1.5, 0.0, 4.0, 1.5, 1.0, 0.0,)
+                .unwrap()
+        );
+        assert!(
+            !native_spatial_upsert_box_obstacle(90_004, 7, -12.0, 1.5, 0.0, 4.0, 1.5, 1.0, 0.0,)
+                .unwrap()
+        );
+        for _ in 0..64 {
+            let bytes = native_spatial_update_obstacles(90_004, 8, 4).unwrap();
+            if bytes[16] != 0 {
+                break;
+            }
+        }
+        STORE.with(|slot| {
+            assert_eq!(slot.borrow().navigation_worlds[&90_004].obstacle_count(), 1);
+        });
+        native_map_advance_movement(90_004, 1, 50).unwrap();
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let movement = &store.navigation_movements[&handle];
+            assert!(
+                movement
+                    .points
+                    .iter()
+                    .any(|point| (point[0] + 12.0).abs() > 4.0),
+                "an active route must replan after the obstacle revision"
+            );
+        });
+        native_spatial_release(90_004);
+        STORE.with(|slot| assert!(!slot.borrow().navigation_worlds.contains_key(&90_004)));
+    }
+
+    #[test]
     fn nav_mesh_target_stays_in_rust_and_advances_authoritative_position() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         configure_project_root(root).unwrap();
@@ -3106,7 +3303,7 @@ mod tests {
             48,
             1_000,
             b"navigation/maps/demo_3d/generated/navigation.bin",
-            b"94af0f91826b6c08d72f2402cd06383847cf8ceb7d87d9dd9067a2b9c862f304",
+            b"1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
         )
         .unwrap();
         let mut value = unit(77);

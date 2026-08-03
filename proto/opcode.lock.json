@@ -397,6 +397,11 @@
       "code": 10034
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_ToggleDemoDoor",
+      "name": "C2M_ToggleDemoDoor",
+      "code": 10039
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_UseItem",
       "name": "C2M_UseItem",
       "code": 10019
@@ -515,6 +520,11 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_NavigateTo",
       "name": "M2C_NavigateTo",
       "code": 10035
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_ToggleDemoDoor",
+      "name": "M2C_ToggleDemoDoor",
+      "code": 10040
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_UseItem",

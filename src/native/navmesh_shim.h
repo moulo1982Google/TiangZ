@@ -99,6 +99,29 @@ int32_t tz_navmesh_sample_height(
     const float* half_extents,
     float* height);
 
+int32_t tz_navmesh_obstacle_add_box(
+    TzNavQuery* query,
+    const float* center,
+    const float* half_extents,
+    float yaw_radians,
+    uint64_t* obstacle_ref,
+    char* error,
+    size_t error_capacity);
+
+int32_t tz_navmesh_obstacle_remove(
+    TzNavQuery* query,
+    uint64_t obstacle_ref,
+    char* error,
+    size_t error_capacity);
+
+int32_t tz_navmesh_obstacle_update(
+    TzNavQuery* query,
+    int32_t max_tile_updates,
+    int32_t* processed_tile_updates,
+    int32_t* up_to_date,
+    char* error,
+    size_t error_capacity);
+
 #ifdef __cplusplus
 }
 #endif

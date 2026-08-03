@@ -2,9 +2,9 @@
   "formatVersion": 2,
   "schemaFingerprint": "7c5257870e2e75a8495d71d8e18aad97e1244d8505376e87dfa2b22943681716",
   "clientSchemaFingerprint": "9f1a66794af8b0de0d9fa9fc846528a9261dc21879ee864a566bf3c85357757d",
-  "dataFingerprint": "2a7910c8f9b2962964866e83cb8d0c732be80570d5ec425670bf9dbc6e01798d",
+  "dataFingerprint": "a13b88c265c10ab9ea849645aada82e3b43da9e52e1dbaaae48d117d788d4d19",
   "hotDataFingerprint": "87ce3d1c32a2ef8d8a3076bface915f1536ea33806acd356912c0094f266f438",
-  "coldDataFingerprint": "f8b0cd1023af49465b49025b8c5679d7a48d6210d955a8c7969360b03db5d3a0",
+  "coldDataFingerprint": "3d463ef1705f50838a8d1b6c6486d507ac8950e05e6301b61eb0718922bec019",
   "reloadPolicies": {
     "hot": [
       "game_tbitemconfig",
@@ -18,15 +18,15 @@
     ]
   },
   "serverFile": "server.json",
-  "serverHash": "bd961fb9664802ee1af75055a9be20a93f14c691b5e254b045dc19da255065df",
+  "serverHash": "c2ee2a833d648ee03f2af854bfc4d6705cd34aa16c60e9365d70c5ba81195e86",
   "serverHotFile": "server.hot.json",
   "serverHotHash": "21d23b88c33be6a1b7861960f31679b0d2a37c9f120a2e8f070a689ab775e527",
   "serverColdFile": "server.cold.json",
-  "serverColdHash": "2e489018bf958a3db2c5577a3b097606b1ca27e5e6aa434b297203f2e8c56b3e",
+  "serverColdHash": "1387d8b87ee4b60d10aa41f28119394e544a93bbdc551d09d097de3258d98b3a",
   "clientFile": "client.json",
-  "clientHash": "c76b78d2fb9e83c6f3b674a5d91c74d4b5de1941b0c2d0101a732d1af7f33fb5",
+  "clientHash": "fc8bf7921cf01d6ec8f44f9b44f3af2a922b8b49428138d3906d017a5cab825c",
   "clientHotFile": "client.hot.json",
   "clientHotHash": "927146cd33dec91bd0c97b729a0b268d3bd350773483c3d9eeffa02f2363eeef",
   "clientColdFile": "client.cold.json",
-  "clientColdHash": "00842f2d47f0f8093a0513609148ebb890e999a9144fbbf695c4fc3d716f3254"
+  "clientColdHash": "d73dacda91a424e774954d16ba2d052ce0deb600d2946843bd3b1d547d4ac5a5"
 }

@@ -119,8 +119,8 @@ const RAW_DATA: Record<string, unknown> = {
       "spawn_yaw": 0,
       "aoi_config_id": 1,
       "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
-      "navigation_version": "demo-3d-v1",
-      "navigation_hash": "94af0f91826b6c08d72f2402cd06383847cf8ceb7d87d9dd9067a2b9c862f304"
+      "navigation_version": "demo-3d-v2",
+      "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421"
     }
   ],
   "game_tbplayerconfig": [
@@ -171,7 +171,7 @@ export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 
-export const GameConfigFingerprint = "2a7910c8f9b2962964866e83cb8d0c732be80570d5ec425670bf9dbc6e01798d";
+export const GameConfigFingerprint = "a13b88c265c10ab9ea849645aada82e3b43da9e52e1dbaaae48d117d788d4d19";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),

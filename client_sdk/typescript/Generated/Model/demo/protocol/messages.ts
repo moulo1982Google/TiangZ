@@ -1587,6 +1587,90 @@ export const M2C_NavigateInputCodec = {
   },
 };
 
+export interface C2M_ToggleDemoDoor extends IActorLocationRequest {
+  rpcId?: number;
+  closed: boolean;
+}
+
+export const C2M_ToggleDemoDoorCodec = {
+  decode(payload: Uint8Array): C2M_ToggleDemoDoor {
+    const reader = new BinaryReader(payload);
+    const value: C2M_ToggleDemoDoor = {
+      closed: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.closed = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_ToggleDemoDoor): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.closed !== undefined) writer.bool(1, value.closed);
+    return writer.finish();
+  },
+};
+
+export interface M2C_ToggleDemoDoor extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  closed: boolean;
+  changed: boolean;
+}
+
+export const M2C_ToggleDemoDoorCodec = {
+  decode(payload: Uint8Array): M2C_ToggleDemoDoor {
+    const reader = new BinaryReader(payload);
+    const value: M2C_ToggleDemoDoor = {
+      closed: false,
+      changed: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.closed = reader.bool();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.changed = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_ToggleDemoDoor): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.closed !== undefined) writer.bool(1, value.closed);
+    if (value.changed !== undefined) writer.bool(2, value.changed);
+    return writer.finish();
+  },
+};
+
 export interface G2C_EntityMove extends IMessage {
   serverTick: number;
   movements: readonly CellMovementState[];

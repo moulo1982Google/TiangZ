@@ -2138,6 +2138,117 @@ struct M2C_NavigateInputCodec {
   }
 };
 
+struct C2M_ToggleDemoDoor {
+  std::optional<std::uint32_t> rpcId;
+  bool closed = false;
+};
+
+struct C2M_ToggleDemoDoorCodec {
+  static C2M_ToggleDemoDoor Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_ToggleDemoDoor value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.closed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_ToggleDemoDoor& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.closed);
+    return writer.Finish();
+  }
+};
+
+struct M2C_ToggleDemoDoor {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  bool closed = false;
+  bool changed = false;
+};
+
+struct M2C_ToggleDemoDoorCodec {
+  static M2C_ToggleDemoDoor Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_ToggleDemoDoor value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.closed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.changed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_ToggleDemoDoor& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.closed);
+    writer.Bool(2, value.changed);
+    return writer.Finish();
+  }
+};
+
 struct G2C_EntityMove {
   std::uint32_t serverTick = 0;
   std::vector<CellMovementState> movements;
@@ -2798,6 +2909,8 @@ inline constexpr std::uint16_t C2M_NavigateTo = 10034;
 inline constexpr std::uint16_t M2C_NavigateTo = 10035;
 inline constexpr std::uint16_t C2M_NavigateInput = 10037;
 inline constexpr std::uint16_t M2C_NavigateInput = 10038;
+inline constexpr std::uint16_t C2M_ToggleDemoDoor = 10039;
+inline constexpr std::uint16_t M2C_ToggleDemoDoor = 10040;
 inline constexpr std::uint16_t G2C_EntityMove = 10016;
 inline constexpr std::uint16_t G2C_EntityNavigate = 10036;
 inline constexpr std::uint16_t G2C_EntityNumeric = 10017;
@@ -2849,6 +2962,10 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_NavigateTo, M2C_NavigateTo, C
 
 inline constexpr tiangz::client::RpcDescriptor<C2M_NavigateInput, M2C_NavigateInput, C2M_NavigateInputCodec, M2C_NavigateInputCodec> Map_NavigateInput{
   "Map.NavigateInput", MsgCode::C2M_NavigateInput, MsgCode::M2C_NavigateInput
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_ToggleDemoDoor, M2C_ToggleDemoDoor, C2M_ToggleDemoDoorCodec, M2C_ToggleDemoDoorCodec> Map_ToggleDemoDoor{
+  "Map.ToggleDemoDoor", MsgCode::C2M_ToggleDemoDoor, MsgCode::M2C_ToggleDemoDoor
 };
 
 inline constexpr tiangz::client::RpcDescriptor<C2M_UseItem, M2C_UseItem, C2M_UseItemCodec, M2C_UseItemCodec> Map_UseItem{

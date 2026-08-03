@@ -40,7 +40,7 @@ fn main() -> Result<()> {
 
     let metadata = NavAssetMetadata {
         format: "tiangz-navmesh".to_string(),
-        format_version: 1,
+        format_version: 2,
         recast_version: "1.6.0".to_string(),
         map: manifest.map,
         navigation_version: manifest.navigation_version,

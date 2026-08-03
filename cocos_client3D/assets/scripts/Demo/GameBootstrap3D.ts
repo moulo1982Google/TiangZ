@@ -79,6 +79,7 @@ export class GameBootstrap3D extends Component {
   private cameraNode!: Node;
   private player!: Node;
   private targetMarker!: Node;
+  private dynamicDoor!: Node;
   private pathRoot!: Node;
   private statusElement?: HTMLElement;
   private loginFlow?: LoginFlow;
@@ -87,6 +88,8 @@ export class GameBootstrap3D extends Component {
   private path: Vec3[] = [];
   private pathIndex = 0;
   private queryingPath = false;
+  private doorRequestInFlight = false;
+  private doorClosed = false;
   private inputRequestInFlight = false;
   private inputDirty = false;
   private inputSendCooldown = 0;
@@ -169,6 +172,18 @@ export class GameBootstrap3D extends Component {
     scene.addChild(world);
     world.addChild(createBox("Ground", 48, 0.2, 48, new Color(52, 72, 68, 255), 0, -0.1, 0));
     world.addChild(createBox("Obstacle", 6, 3, 10, new Color(115, 96, 78, 255), 0, 1.5, 0));
+    this.dynamicDoor = createBox(
+      "DynamicDoor",
+      8,
+      3,
+      2,
+      new Color(198, 78, 70, 255),
+      -12,
+      1.5,
+      0,
+    );
+    this.dynamicDoor.active = false;
+    world.addChild(this.dynamicDoor);
     addGridLines(world);
 
     this.pathRoot = new Node("PathMarkers");
@@ -244,7 +259,7 @@ export class GameBootstrap3D extends Component {
       await new GateClient(result.gateSocket).mapSnapshotReady({ unitId: result.enterMap.unitId });
       this.setStatus(
         `${account} / Unit ${result.enterMap.unitId} / ${config.name}\n` +
-        `NavMesh ${config.navigationVersion} 已加载\nW/S前后，A/D转向，按住右键时A/D横移；左键点击地面寻路`,
+        `NavMesh ${config.navigationVersion} 已加载\nW/S前后，A/D转向，按住右键时A/D横移；E开关动态门；左键点击地面寻路`,
       );
     } catch (error) {
       this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
@@ -334,6 +349,11 @@ export class GameBootstrap3D extends Component {
   }
 
   private onKeyDown(event: EventKeyboard): void {
+    if (event.keyCode === KeyCode.KEY_E && !this.pressedKeys.has(event.keyCode)) {
+      this.pressedKeys.add(event.keyCode);
+      void this.toggleDemoDoor();
+      return;
+    }
     if (!isMovementKey(event.keyCode) || this.pressedKeys.has(event.keyCode)) return;
     this.pressedKeys.add(event.keyCode);
     this.interruptClickNavigation();
@@ -342,7 +362,33 @@ export class GameBootstrap3D extends Component {
 
   private onKeyUp(event: EventKeyboard): void {
     if (!this.pressedKeys.delete(event.keyCode)) return;
+    if (event.keyCode === KeyCode.KEY_E) return;
     this.markInputDirty();
+  }
+
+  /** 请求地图业务切换稳定ObstacleId；表现只在服务端接受后变化，避免客户端假门。 / Requests a stable server obstacle and changes visuals only after the authoritative response. */
+  private async toggleDemoDoor(): Promise<void> {
+    const mapClient = this.mapClient;
+    if (!mapClient || this.doorRequestInFlight) return;
+    this.doorRequestInFlight = true;
+    const requestedClosed = !this.doorClosed;
+    try {
+      const response = await mapClient.toggleDemoDoor({ closed: requestedClosed });
+      this.doorClosed = response.closed;
+      this.dynamicDoor.active = response.closed;
+      this.path.length = 0;
+      this.pathIndex = 0;
+      this.drawPath([]);
+      this.setStatus(
+        response.closed
+          ? "动态门已关闭；TileCache正在按帧更新，稍后点击门后方观察绕行"
+          : "动态门已打开；TileCache正在按帧恢复，稍后点击门后方观察直线路径",
+      );
+    } catch (error) {
+      this.setStatus(`动态门切换失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.doorRequestInFlight = false;
+    }
   }
 
   /** 将WASD解释为角色局部坐标输入；状态变化立即提交，持续移动每500ms续期短路径。 / Interprets WASD in local space, submits changes immediately, and refreshes the short path every 500 ms while held. */

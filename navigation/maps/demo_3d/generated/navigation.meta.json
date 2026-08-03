@@ -1,10 +1,10 @@
 {
   "format": "tiangz-navmesh",
-  "formatVersion": 1,
+  "formatVersion": 2,
   "recastVersion": "1.6.0",
   "map": "demo_3d",
-  "navigationVersion": "demo-3d-v1",
-  "navigationHash": "94af0f91826b6c08d72f2402cd06383847cf8ceb7d87d9dd9067a2b9c862f304",
+  "navigationVersion": "demo-3d-v2",
+  "navigationHash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
   "source": "source/map_nav.obj",
   "vertexCount": 28,
   "triangleCount": 14,

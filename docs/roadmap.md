@@ -331,7 +331,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.2：NavMesh3D
 
-状态：4.2.4 连续贴地移动、射线和独立高度查询已完成；动态障碍尚未完成。
+状态：4.2.5 动态障碍、实例隔离和Cocos 3D开关门验收已完成。
 
 - 固定并接入Recast/Detour兼容的tiled NavMesh资源格式，校验`navigationVersion/navigationHash`。
 - Rust实现位置投影、寻路、射线、高度查询、动态障碍与地图实例生命周期。
@@ -344,6 +344,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 4.2.3新增`C2M_NavigateTo/C2M_NavigateInput`意图与`G2C_EntityNavigate`可覆盖状态。Rust从权威坐标寻路、持有路径和当前拐点，并由20Hz固定Tick连续推进`x/y/z/yaw`；TS每次目标或方向变化只跨一次Native边界。方向输入使用500ms短路径续期，零输入明确停止；后退和横移保留角色朝向。3D位置沿用Rust AOI同步档位和Gate批量路由，开始、换目标、停止强制立即发送。Cocos 3D支持左键寻路、W/S前后、A/D转向、按住右键时A/D横移和尾随相机；本地预测以权威Push纠偏，远端玩家只插值。
 
 4.2.4将方向输入从“500ms重复生成短路径”改为Rust持有`forward/strafe/yaw`，每个20Hz Tick调用Detour `moveAlongSurface`贴地推进。Unit缓存当前polygon引用，撞墙不能穿越并允许沿边界移动；客户端每500ms续期1.5秒输入租约，断续期后Rust自动广播停止。新增`MapComponent.Raycast/SampleHeight`粗粒度查询，前者只检测NavMesh边界，不代替技能物理碰撞。Cocos方向预测只积分本地输入，墙面和高度误差由Rust权威Push校正；左键点击仍保留完整路径走廊。
+
+4.2.5将导航资源升级为包含压缩高度层的v2格式；共享资产只保存不可变模板，每个MapInstance独立构建`dtNavMesh + dtTileCache + Query`。业务通过稳定地图内`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`，Rust合并同ID目标状态并按每Tick 16条命令、4个Tile的预算更新。障碍版本提交后，已有点击路径在Rust自动重算；方向移动继续直接查询最新表面。Prometheus Map指标包含障碍数、等待命令、重建Tile、耗时和失败。Cocos 3D以`E`键开关灰盒门；真实all-in-one与split-process A/B均得到开门2点、关门4点、再开门2点。
 
 ### Phase 4.3：Cocos 3D Demo
 
@@ -360,7 +362,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - UE插件只实现WebSocket Transport与游戏线程Update，不把UObject、FVector或UE生命周期泄漏进公共SDK；选择未实现的TCP/KCP会立即报错，不能静默降级。
 - Demo贯通LoginMgr、Login、Gate、Map 100、AOI Enter/Leave、Numeric、权威Navigate和5秒Gate Ping；地图坐标只在表现边界转换为UE厘米制与Z-Up。
 - UE Automation覆盖嵌套消息、64位整数、RPC ID、未知字段和损坏包；MSVC 14.38与UE 5.4.4 Editor目标完成编译及真实WebSocket冒烟。
-- 动态障碍仍保留在NavMesh3D后续工作中，不与本次前端SDK接入混做。
+- UE暂不增加动态门表现；服务端和公共C++ SDK已包含对应协议，UE演示按后续需求接入。
 
 ### Phase 4.4：怪物与战斗
 

@@ -15,6 +15,9 @@ export interface NativeHostOpsApi {
   spatialFindPath(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number, maxPoints: number): Uint8Array;
   spatialRaycast(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number): Uint8Array;
   spatialSampleHeight(mapId: number, x: number, y: number, z: number, extentX: number, extentY: number, extentZ: number): number;
+  spatialUpsertBoxObstacle(mapId: number, obstacleId: number, centerX: number, centerY: number, centerZ: number, halfX: number, halfY: number, halfZ: number, yawRadians: number): boolean;
+  spatialRemoveObstacle(mapId: number, obstacleId: number): boolean;
+  spatialUpdateObstacles(mapId: number, maxCommands: number, maxTileUpdates: number): Uint8Array;
   unitSetNavigationTarget(mapId: number, handle: number, targetX: number, targetY: number, targetZ: number, sequence: number): Uint8Array;
   unitSetNavigationInput(mapId: number, handle: number, forward: number, strafe: number, yaw: number, sequence: number): Uint8Array;
   spatialRelease(mapId: number): void;
@@ -126,6 +129,18 @@ export class NativeOps {
 
   static SpatialSampleHeight(mapId: number, x: number, y: number, z: number, extentX: number, extentY: number, extentZ: number): number {
     return nativeHostOps().spatialSampleHeight(mapId, x, y, z, extentX, extentY, extentZ);
+  }
+
+  static SpatialUpsertBoxObstacle(mapId: number, obstacleId: number, centerX: number, centerY: number, centerZ: number, halfX: number, halfY: number, halfZ: number, yawRadians: number): boolean {
+    return nativeHostOps().spatialUpsertBoxObstacle(mapId, obstacleId, centerX, centerY, centerZ, halfX, halfY, halfZ, yawRadians);
+  }
+
+  static SpatialRemoveObstacle(mapId: number, obstacleId: number): boolean {
+    return nativeHostOps().spatialRemoveObstacle(mapId, obstacleId);
+  }
+
+  static SpatialUpdateObstacles(mapId: number, maxCommands: number, maxTileUpdates: number): Uint8Array {
+    return nativeHostOps().spatialUpdateObstacles(mapId, maxCommands, maxTileUpdates);
   }
 
   static UnitSetNavigationTarget(mapId: number, handle: number, targetX: number, targetY: number, targetZ: number, sequence: number): Uint8Array {

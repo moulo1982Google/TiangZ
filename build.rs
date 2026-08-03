@@ -7,6 +7,8 @@ fn main() {
     println!("cargo:rerun-if-changed=third_party/recastnavigation/Recast/Source");
     println!("cargo:rerun-if-changed=third_party/recastnavigation/Detour/Include");
     println!("cargo:rerun-if-changed=third_party/recastnavigation/Detour/Source");
+    println!("cargo:rerun-if-changed=third_party/recastnavigation/DetourTileCache/Include");
+    println!("cargo:rerun-if-changed=third_party/recastnavigation/DetourTileCache/Source");
     println!(
         "cargo:rerun-if-changed=third_party/recastnavigation/RecastDemo/Include/ChunkyTriMesh.h"
     );
@@ -31,6 +33,7 @@ fn main() {
         .std("c++17")
         .include("third_party/recastnavigation/Recast/Include")
         .include("third_party/recastnavigation/Detour/Include")
+        .include("third_party/recastnavigation/DetourTileCache/Include")
         .include("third_party/recastnavigation/RecastDemo/Include")
         .file("third_party/recastnavigation/RecastDemo/Source/ChunkyTriMesh.cpp")
         .file("src/native/navmesh_shim.cpp");
@@ -38,6 +41,9 @@ fn main() {
         recast.file(source);
     }
     for source in glob_sources("third_party/recastnavigation/Detour/Source") {
+        recast.file(source);
+    }
+    for source in glob_sources("third_party/recastnavigation/DetourTileCache/Source") {
         recast.file(source);
     }
     recast.warnings(false).compile("tiangz_recast");

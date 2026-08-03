@@ -26,6 +26,20 @@ export interface NativeRaycastHit {
   readonly normal: NativeVec3;
 }
 
+export interface NativeBoxObstacle {
+  readonly center: NativeVec3;
+  readonly halfExtents: NativeVec3;
+  readonly yawRadians?: number;
+}
+
+export interface NativeObstacleUpdate {
+  readonly appliedCommands: number;
+  readonly rebuiltTiles: number;
+  readonly pendingCommands: number;
+  readonly obstacleCount: number;
+  readonly upToDate: boolean;
+}
+
 interface DemoProcessConfig {
   nativeData?: NativeDataConfig;
 }
@@ -295,6 +309,50 @@ export class NativeData {
       halfExtents.y,
       halfExtents.z,
     );
+  }
+
+  /** 以地图内稳定ID创建或修改盒形动态障碍；相同定义不会重复进入Rust队列。 / Upserts a box obstacle by stable map-local ID without duplicating identical work. */
+  static UpsertBoxObstacle(
+    mapId: number,
+    obstacleId: number,
+    obstacle: NativeBoxObstacle,
+  ): boolean {
+    return NativeOps.SpatialUpsertBoxObstacle(
+      mapId,
+      obstacleId,
+      obstacle.center.x,
+      obstacle.center.y,
+      obstacle.center.z,
+      obstacle.halfExtents.x,
+      obstacle.halfExtents.y,
+      obstacle.halfExtents.z,
+      obstacle.yawRadians ?? 0,
+    );
+  }
+
+  /** 幂等删除动态障碍；这里只记录目标状态，受影响Tile仍在固定Tick限额重建。 / Idempotently removes an obstacle while affected tiles rebuild within fixed-tick budgets. */
+  static RemoveObstacle(mapId: number, obstacleId: number): boolean {
+    return NativeOps.SpatialRemoveObstacle(mapId, obstacleId);
+  }
+
+  /** 执行一次有界障碍维护并严格解码固定布局结果。 / Runs one bounded obstacle-maintenance slice and strictly decodes its fixed layout. */
+  static UpdateObstacles(
+    mapId: number,
+    maxCommands: number,
+    maxTileUpdates: number,
+  ): NativeObstacleUpdate {
+    const bytes = NativeOps.SpatialUpdateObstacles(mapId, maxCommands, maxTileUpdates);
+    if (bytes.byteLength !== 17) {
+      throw new Error(`invalid native obstacle update length: ${bytes.byteLength}`);
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return {
+      appliedCommands: view.getUint32(0, true),
+      rebuiltTiles: view.getUint32(4, true),
+      pendingCommands: view.getUint32(8, true),
+      obstacleCount: view.getUint32(12, true),
+      upToDate: bytes[16] !== 0,
+    };
   }
 
   /** 设置Rust持有的NavMesh移动目标，并返回同一次权威寻路结果供客户端预测。 / Sets a Rust-owned NavMesh movement target and returns the same authoritative path for prediction. */

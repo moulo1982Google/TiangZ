@@ -4,6 +4,7 @@ import {
   buildFindPathPacket,
   buildNavigateToPacket,
   buildNavigateInputPacket,
+  buildToggleDemoDoorPacket,
   buildGetLoginServiceAddrPacket,
   buildLoginGatePacket,
   buildLoginPacket,
@@ -17,6 +18,7 @@ import {
   decodeFindPathFrame,
   decodeNavigateToFrame,
   decodeNavigateInputFrame,
+  decodeToggleDemoDoorFrame,
   decodeEntityNumericFrame,
   decodeItemChangedFrame,
   decodeUseItemFrame,
@@ -425,6 +427,7 @@ async function verifyNavMeshTransfer(
   ) {
     throw new Error(`NavMesh3D path query failed: ${stringifyForError(pathResponse.body)}`);
   }
+  await verifyDynamicNavigationDoor(gate);
   const navigationPush = waitForNavigationProgress(
     gate,
     transferred.unitId,
@@ -495,6 +498,60 @@ async function verifyNavMeshTransfer(
     authoritativePosition: [movement.x, movement.y, movement.z],
   });
   return transferred;
+}
+
+/** 通过正式Map Actor RPC验证开关门会改变Rust TileCache路径，并在开门后恢复。 / Verifies through the real Map Actor RPC that a door changes and then restores the Rust TileCache path. */
+async function verifyDynamicNavigationDoor(gate: TcpRpcConnection): Promise<void> {
+  const queryDoorPath = async () => {
+    const rpcId = nextRpcId++;
+    return decodeFindPathFrame(await gate.request(buildFindPathPacket(rpcId, {
+      startX: -12,
+      startY: 0,
+      startZ: -12,
+      targetX: -12,
+      targetY: 0,
+      targetZ: 12,
+    }))).body.points;
+  };
+  const openPath = await queryDoorPath();
+  const closeRpcId = nextRpcId++;
+  const closed = decodeToggleDemoDoorFrame(await gate.request(
+    buildToggleDemoDoorPacket(closeRpcId, { closed: true }),
+  ));
+  if (closed.body.error || !closed.body.closed) {
+    throw new Error(`dynamic door close failed: ${stringifyForError(closed.body)}`);
+  }
+  let closedPath = openPath;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await sleep(50);
+    closedPath = await queryDoorPath();
+    if (closedPath.some((point) => Math.abs(point.x + 12) > 4)) break;
+  }
+  if (!closedPath.some((point) => Math.abs(point.x + 12) > 4)) {
+    throw new Error(`dynamic door did not force a detour: ${stringifyForError(closedPath)}`);
+  }
+
+  const openRpcId = nextRpcId++;
+  const opened = decodeToggleDemoDoorFrame(await gate.request(
+    buildToggleDemoDoorPacket(openRpcId, { closed: false }),
+  ));
+  if (opened.body.error || opened.body.closed) {
+    throw new Error(`dynamic door open failed: ${stringifyForError(opened.body)}`);
+  }
+  let restoredPath = closedPath;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await sleep(50);
+    restoredPath = await queryDoorPath();
+    if (!restoredPath.some((point) => Math.abs(point.x + 12) > 4)) break;
+  }
+  if (restoredPath.some((point) => Math.abs(point.x + 12) > 4)) {
+    throw new Error(`dynamic door did not restore the open path: ${stringifyForError(restoredPath)}`);
+  }
+  console.log("NavMesh3D dynamic door:", {
+    openPoints: openPath.length,
+    closedPoints: closedPath.length,
+    restoredPoints: restoredPath.length,
+  });
 }
 
 /** 跳过刚接受路径时仍位于起点的合法Push，等待权威位置真正沿路径推进。 / Skips the valid path-start push and waits for authoritative position progress. */

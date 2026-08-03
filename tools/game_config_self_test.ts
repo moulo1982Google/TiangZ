@@ -45,7 +45,7 @@ function main(): void {
   const navigationMap = serverConfigs.MapConfig.Get(100);
   assert.equal(navigationMap.spatialMode, 2);
   assert.equal(navigationMap.navigationAsset, "navigation/maps/demo_3d/generated/navigation.bin");
-  assert.equal(navigationMap.navigationVersion, "demo-3d-v1");
+  assert.equal(navigationMap.navigationVersion, "demo-3d-v2");
   assert.match(navigationMap.navigationHash, /^[0-9a-f]{64}$/);
   assert.deepEqual(
     [navigationMap.spawnX, navigationMap.spawnY, navigationMap.spawnZ],
