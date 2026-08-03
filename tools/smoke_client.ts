@@ -449,27 +449,36 @@ async function verifyNavMeshTransfer(
     })}`);
   }
   const directionRpcId = nextRpcId++;
+  const directionPush = waitForNavigationState(gate, transferred.unitId, 2, true);
   const direction = decodeNavigateInputFrame(await gate.request(buildNavigateInputPacket(
     directionRpcId,
     { forward: 1, strafe: 0, yaw: Math.PI / 2, sequence: 2 },
   )));
+  const directionMovement = await directionPush;
   const stopRpcId = nextRpcId++;
+  const stopPush = waitForNavigationState(gate, transferred.unitId, 3, false);
   const stop = decodeNavigateInputFrame(await gate.request(buildNavigateInputPacket(
     stopRpcId,
     { forward: 0, strafe: 0, yaw: Math.PI / 2, sequence: 3 },
   )));
+  const stoppedMovement = await stopPush;
   if (
     direction.rpcId !== directionRpcId ||
     direction.body.error ||
     direction.body.acknowledgedSequence !== 2 ||
-    direction.body.points.length < 2 ||
+    direction.body.points.length !== 0 ||
+    directionMovement.x <= movement.x ||
+    Math.abs(directionMovement.yaw - Math.PI / 2) > 0.001 ||
     stop.rpcId !== stopRpcId ||
     stop.body.error ||
-    stop.body.acknowledgedSequence !== 3
+    stop.body.acknowledgedSequence !== 3 ||
+    stoppedMovement.x < directionMovement.x
   ) {
     throw new Error(`NavMesh3D direction input failed: ${stringifyForError({
       direction: direction.body,
+      directionMovement,
       stop: stop.body,
+      stoppedMovement,
     })}`);
   }
   console.log("NavMesh3D transfer:", {
@@ -482,6 +491,24 @@ async function verifyNavMeshTransfer(
     authoritativePosition: [movement.x, movement.y, movement.z],
   });
   return transferred;
+}
+
+async function waitForNavigationState(
+  gate: TcpRpcConnection,
+  unitId: number,
+  sequence: number,
+  moving: boolean,
+): Promise<ReturnType<typeof decodeEntityNavigateFrame>["body"]["movements"][number]> {
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const message = decodeEntityNavigateFrame(await gate.waitForMessage(MsgCode.G2C_EntityNavigate));
+    const movement = message.body.movements.find((candidate) =>
+      candidate.unitId === unitId &&
+      candidate.acknowledgedSequence >= sequence &&
+      candidate.moving === moving
+    );
+    if (movement) return movement;
+  }
+  throw new Error(`navigation state not observed: unit=${unitId} sequence=${sequence} moving=${moving}`);
 }
 
 /** 仅供测试错误输出安全显示bigint协议字段。 / Safely renders bigint protocol fields for test failures only. */

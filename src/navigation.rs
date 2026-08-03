@@ -137,6 +137,44 @@ unsafe extern "C" {
         max_points: c_int,
         point_count: *mut c_int,
     ) -> c_int;
+    fn tz_navmesh_move_along_surface(
+        query: *const c_void,
+        start: *const c_float,
+        end: *const c_float,
+        half_extents: *const c_float,
+        start_ref: u64,
+        result: *mut c_float,
+        result_ref: *mut u64,
+    ) -> c_int;
+    fn tz_navmesh_raycast(
+        query: *const c_void,
+        start: *const c_float,
+        end: *const c_float,
+        half_extents: *const c_float,
+        hit_t: *mut c_float,
+        hit_position: *mut c_float,
+        hit_normal: *mut c_float,
+    ) -> c_int;
+    fn tz_navmesh_sample_height(
+        query: *const c_void,
+        point: *const c_float,
+        half_extents: *const c_float,
+        height: *mut c_float,
+    ) -> c_int;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NavigationSurfaceMove {
+    pub position: [f32; 3],
+    pub polygon_ref: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NavigationRaycast {
+    pub hit: bool,
+    pub fraction: f32,
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
 }
 
 /// 持有可跨MapInstance共享的不可变Detour网格，不包含查询临时状态。 / Owns an immutable Detour mesh shared across MapInstances without query scratch state.
@@ -274,6 +312,79 @@ impl NavigationWorld {
             .chunks_exact(3)
             .map(|point| [point[0], point[1], point[2]])
             .collect())
+    }
+
+    /// 沿可行走面推进一个短步长并返回新的Polygon引用；调用方可缓存引用，避免每Tick重复定位。 / Moves one short step along the walkable surface and returns a cacheable polygon reference.
+    pub fn move_along_surface(
+        &self,
+        start: [f32; 3],
+        end: [f32; 3],
+        half_extents: [f32; 3],
+        polygon_ref: u64,
+    ) -> Option<NavigationSurfaceMove> {
+        let mut position = start;
+        let mut result_ref = 0_u64;
+        // SAFETY: All arrays remain alive for the call and the query belongs to this world.
+        let ok = unsafe {
+            tz_navmesh_move_along_surface(
+                self.query.as_ptr(),
+                start.as_ptr(),
+                end.as_ptr(),
+                half_extents.as_ptr(),
+                polygon_ref,
+                position.as_mut_ptr(),
+                &mut result_ref,
+            )
+        };
+        (ok != 0).then_some(NavigationSurfaceMove {
+            position,
+            polygon_ref: result_ref,
+        })
+    }
+
+    /// 沿NavMesh表面检测直线阻挡；未命中时position等于终点且normal为零。 / Raycasts across the NavMesh surface; a miss returns the end position and a zero normal.
+    pub fn raycast(
+        &self,
+        start: [f32; 3],
+        end: [f32; 3],
+        half_extents: [f32; 3],
+    ) -> Option<NavigationRaycast> {
+        let mut fraction = 0.0;
+        let mut position = [0.0; 3];
+        let mut normal = [0.0; 3];
+        // SAFETY: All arrays remain alive for the call and output buffers have exactly three floats.
+        let ok = unsafe {
+            tz_navmesh_raycast(
+                self.query.as_ptr(),
+                start.as_ptr(),
+                end.as_ptr(),
+                half_extents.as_ptr(),
+                &mut fraction,
+                position.as_mut_ptr(),
+                normal.as_mut_ptr(),
+            )
+        };
+        (ok != 0).then_some(NavigationRaycast {
+            hit: fraction < 1.0,
+            fraction,
+            position,
+            normal,
+        })
+    }
+
+    /// 按输入Y选择最近可行走层并返回其地面高度。 / Samples the nearest walkable layer selected by the input Y coordinate.
+    pub fn sample_height(&self, point: [f32; 3], half_extents: [f32; 3]) -> Option<f32> {
+        let mut height = 0.0;
+        // SAFETY: Input arrays and scalar output remain valid for the native call.
+        let ok = unsafe {
+            tz_navmesh_sample_height(
+                self.query.as_ptr(),
+                point.as_ptr(),
+                half_extents.as_ptr(),
+                &mut height,
+            )
+        };
+        (ok != 0).then_some(height)
     }
 
     pub fn asset_hash(&self) -> &str {
@@ -493,6 +604,59 @@ mod tests {
             path.iter().any(|point| point[2].abs() > 5.0),
             "path should leave the obstacle's Z range: {path:?}"
         );
+
+        let moved = world
+            .move_along_surface([-12.0, 0.0, -12.0], [-11.0, 0.0, -12.0], [2.0, 4.0, 2.0], 0)
+            .unwrap();
+        assert!(moved.position[0] > -12.0);
+        assert_ne!(moved.polygon_ref, 0);
+        let continued = world
+            .move_along_surface(
+                moved.position,
+                [-10.0, 0.0, -12.0],
+                [2.0, 4.0, 2.0],
+                moved.polygon_ref,
+            )
+            .unwrap();
+        assert!(continued.position[0] > moved.position[0]);
+
+        let raycast = world
+            .raycast([-10.0, 0.0, 0.0], [10.0, 0.0, 0.0], [2.0, 4.0, 2.0])
+            .unwrap();
+        assert!(raycast.hit);
+        assert!(raycast.fraction < 1.0);
+        let height = world
+            .sample_height([-12.0, 1.0, -12.0], [2.0, 4.0, 2.0])
+            .unwrap();
+        assert!(height.abs() <= 0.25);
+
+        let mut wall_position = [-10.0, 0.0, 0.0];
+        let mut wall_ref = 0;
+        for _ in 0..80 {
+            let moved = world
+                .move_along_surface(
+                    wall_position,
+                    [wall_position[0] + 0.2, wall_position[1], wall_position[2]],
+                    [2.0, 4.0, 2.0],
+                    wall_ref,
+                )
+                .unwrap();
+            wall_position = moved.position;
+            wall_ref = moved.polygon_ref;
+        }
+        assert!(
+            wall_position[0] < -3.0,
+            "movement crossed the obstacle: {wall_position:?}"
+        );
+        let slide = world
+            .move_along_surface(
+                wall_position,
+                [wall_position[0], wall_position[1], wall_position[2] + 0.5],
+                [2.0, 4.0, 2.0],
+                wall_ref,
+            )
+            .unwrap();
+        assert!(slide.position[2] > wall_position[2]);
     }
 
     #[test]

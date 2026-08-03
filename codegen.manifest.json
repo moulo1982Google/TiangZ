@@ -274,7 +274,7 @@
         "native_data/core/EntityOps.native": "71cbf421bc2fe8f48696536d0f977b4274612a942d50544ebd1323b5e59fb16d",
         "native_data/demo/Entity.native": "9cdd2c4b7d54d6fcf4b63c132cef25b43bd786247a766fec9798513bd32b1336",
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
-        "native_data/demo/MapOps.native": "cdc4e437bb02d0dd98b8a95baff562e780458079233f6b47afc9f4df988d11d4",
+        "native_data/demo/MapOps.native": "a467e417b57e202a9a4b345c118fb8309a87d0f90fe33c98545ad4e4b3a12eed",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
         "package.json": "6c3f7cfe23272f0ff9a44f2f00fa044a7772c82e351dcb5ae7dcfbc082230398",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
@@ -283,11 +283,11 @@
       "selections": [],
       "outputs": {
         "app/generated/model/native/NativeItemRef.ts": "47abb3166b30399b6503b9bc095ef08421cdde887f2f13bf9e3012ab535f1697",
-        "app/generated/model/native/NativeOps.ts": "24e722933a75430b0c632d187c5563c8d60d5497ee6c813471bc4efd55a725a7",
+        "app/generated/model/native/NativeOps.ts": "f94966cc4a8d312439c9e291c16cd321f971cdedfa834ae4033dd743b6da62e9",
         "app/generated/model/native/NativeUnitRef.ts": "84eab60839d861fad9942de401d606289b510e94dd13f74ec795a2ad4cff3e14",
         "src/generated/native_data.rs": "b4c860c226a96126ff0fcba58ac508c3a53ba043e98d3c4fa1edd6385b78b146",
-        "src/generated/native_ops_bootstrap.js": "b3d1a131ab15c22ff0ebeb208a964c16cc9894b892927e2559db79d56fd7a369",
-        "src/generated/native_ops.rs": "a1f1e69e831d8f89b3245eb0e38098feb851b4aa4e6da4befd13c6bac7ad0e84"
+        "src/generated/native_ops_bootstrap.js": "64ee67cae07217850c0d4027a6b28d0c27ec06b1b1a7f26203e9b4eb241b577c",
+        "src/generated/native_ops.rs": "c2778a334760d9beb50b7dba23747882ad23213c04d802c1588fe6bbe6afae85"
       },
       "outputRoots": [
         {
@@ -388,7 +388,7 @@
         "app/model/demo/login/LoginComponent.ts": "ef1ae40d76c40e0c7cb5cd25ecf988dbb58fb7ba1e09e3349e8815580551ae1e",
         "app/model/demo/map/EntrySyncMode.ts": "979aca35c1fecd4b91a9b4d649af73fdcb7126acd9533d7243028f7d460a3abb",
         "app/model/demo/map/MapAoiComponent.ts": "d33d04fe559629f3069d34a739dc5a6c15128b85874ff4dcc6127f8487981beb",
-        "app/model/demo/map/MapComponent.ts": "1089990bdcff86d1e7f80646714f18ea6587359df802076a98b3cc6657d1c607",
+        "app/model/demo/map/MapComponent.ts": "02eb51dafe9ce5c12665af00b1849f321383badaa7589949c0d61ed7cb4284bc",
         "app/model/demo/map/MapEntryAdmission.ts": "b8952b228b0b9997ac5c4d23b52bef897a481ee46c5ebb12a5c970c135d11b40",
         "app/model/demo/map/MapInstance.ts": "5e667a721cef4e5940db280bbd70e59ba7980d8a70eff66a93d9af9f10dbfc1e",
         "app/model/demo/map/MapScene.ts": "e72af39adff73c52b3dfd91dc6051bf060f38781cf6abb87f9d38ebf931894b2",
@@ -404,7 +404,7 @@
         "app/model/demo/mapManager/MapManagerComponent.ts": "8149aa8a1ab5c253c78a83988b562002281a6a4010ec11ffd744b89aea0c50e2",
         "app/model/demo/movement/CellMovement.ts": "8a9c1ff16136d78283d00fb98624ac9eb952b5a81505209a4b36ee45b72984e1",
         "app/model/demo/movement/index.ts": "c7fb436e7b2a22f48ab67a5e4e10eb6132ffc1f5159282c2b8b57d039397449c",
-        "app/model/demo/native/NativeData.ts": "3ca56478173c7b7927eb834470f4ff0cd55ba517bc3de293d20a2ffa2b26d08b",
+        "app/model/demo/native/NativeData.ts": "7b2979f4bef9e9d3df5123af000bafac75bedcab4c2b211512bf24a04c736928",
         "app/model/demo/numeric/NumericComponent.ts": "ccfc8f6bb8e8f46f51397e5c244e10cadbfe539e61db5c4e373138c4ace7fc86",
         "app/model/demo/numeric/NumericType.ts": "100a0c26ff582c3ac3f200387de0f57f006e7b6859743d1e5ae74149b209ee61",
         "app/model/demo/persistence/PlayerPersistenceComponent.ts": "89133d1a5b9d65c2e8df6efaac364042e35a003b3d28ff21038dcc0ce7eae8d3",
@@ -418,7 +418,7 @@
         "app/model/game/protocol/GameErrCode.ts": "3bdb41d9e8acfd439ed973eb42df6d81eaca1814371a265deec9bb46fab05a4c",
         "app/model/main.bench.ts": "9c62ab5989b0b19cc9ba7642f2aa84429c006ccd641379e98d9dea7807791987",
         "app/model/main.ts": "580af9ba606e985115abf59f9b1872ab50eaa7737c9effb1df6975d05456f16a",
-        "app/model/public.ts": "924f49ba9aa2fccbf8257f19338b8d1582c1aaf68a4a4d6eecaa7af756c2fead",
+        "app/model/public.ts": "34520c8be4734de74bd5fd85aacb77d0fcd23af379bda8245f817fb30273b57e",
         "codegen.config.json": "8e9541ce2bf2b480c274648bd07760f319f8d873d5ce1c93e96aa23a2943bf2a",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_scenes.mjs": "188748ab69bdfd6f89be2a941b5dfb4620e99174cb2a609eadccdb97509730d4"

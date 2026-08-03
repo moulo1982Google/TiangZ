@@ -8,6 +8,8 @@ op SpatialCreateGrid2D(mapId: u32, widthCells: u32, depthCells: u32, cellSizeMil
 op SpatialCreateNavMesh3D(mapId: u32, widthCells: u32, depthCells: u32, cellSizeMillimeters: u32, assetPath: bytes, expectedHash: bytes): void;
 op SpatialProjectPosition(mapId: u32, x: f64, y: f64, z: f64, extentX: f64, extentY: f64, extentZ: f64): bytes;
 op SpatialFindPath(mapId: u32, startX: f64, startY: f64, startZ: f64, endX: f64, endY: f64, endZ: f64, extentX: f64, extentY: f64, extentZ: f64, maxPoints: u32): bytes;
+op SpatialRaycast(mapId: u32, startX: f64, startY: f64, startZ: f64, endX: f64, endY: f64, endZ: f64, extentX: f64, extentY: f64, extentZ: f64): bytes;
+op SpatialSampleHeight(mapId: u32, x: f64, y: f64, z: f64, extentX: f64, extentY: f64, extentZ: f64): f64;
 op UnitSetNavigationTarget(mapId: u32, handle: u32, targetX: f64, targetY: f64, targetZ: f64, sequence: u32): bytes;
 op UnitSetNavigationInput(mapId: u32, handle: u32, forward: i8, strafe: i8, yaw: f64, sequence: u32): bytes;
 op SpatialRelease(mapId: u32): void;

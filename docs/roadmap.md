@@ -331,7 +331,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.2：NavMesh3D
 
-状态：4.2.3 Rust权威移动与多人AOI同步已完成；射线、独立高度查询和动态障碍尚未完成。
+状态：4.2.4 连续贴地移动、射线和独立高度查询已完成；动态障碍尚未完成。
 
 - 固定并接入Recast/Detour兼容的tiled NavMesh资源格式，校验`navigationVersion/navigationHash`。
 - Rust实现位置投影、寻路、射线、高度查询、动态障碍与地图实例生命周期。
@@ -342,6 +342,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 4.2.2已按冷配置在Map创建时加载NavMesh3D，按Hash共享不可变资产并为每个MapInstance创建独立查询上下文；Map 100完成出生点投影、AOI接入、真实单/拆分进程传送和`ProjectPosition/FindPath`粗粒度FastOP。`C2M_FindPath`只做Actor路径查询，不修改权威坐标。新增导航资产/实例Prometheus指标和受信项目根目录路径校验。
 
 4.2.3新增`C2M_NavigateTo/C2M_NavigateInput`意图与`G2C_EntityNavigate`可覆盖状态。Rust从权威坐标寻路、持有路径和当前拐点，并由20Hz固定Tick连续推进`x/y/z/yaw`；TS每次目标或方向变化只跨一次Native边界。方向输入使用500ms短路径续期，零输入明确停止；后退和横移保留角色朝向。3D位置沿用Rust AOI同步档位和Gate批量路由，开始、换目标、停止强制立即发送。Cocos 3D支持左键寻路、W/S前后、A/D转向、按住右键时A/D横移和尾随相机；本地预测以权威Push纠偏，远端玩家只插值。
+
+4.2.4将方向输入从“500ms重复生成短路径”改为Rust持有`forward/strafe/yaw`，每个20Hz Tick调用Detour `moveAlongSurface`贴地推进。Unit缓存当前polygon引用，撞墙不能穿越并允许沿边界移动；客户端每500ms续期1.5秒输入租约，断续期后Rust自动广播停止。新增`MapComponent.Raycast/SampleHeight`粗粒度查询，前者只检测NavMesh边界，不代替技能物理碰撞。Cocos方向预测只积分本地输入，墙面和高度误差由Rust权威Push校正；左键点击仍保留完整路径走廊。
 
 ### Phase 4.3：Cocos 3D Demo
 

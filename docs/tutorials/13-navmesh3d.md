@@ -87,9 +87,11 @@ const result = await mapClient.navigateTo({
 
 服务端Handler只调用`PlayerUnit.NavigateTo()`。Rust从Unit权威坐标寻路并持有路径与当前拐点，20Hz推进`x/y/z/yaw`，再通过`G2C_EntityNavigate`按AOI同步档位和Gate路由批量发送。返回路径用于发起客户端预测，不代表客户端拥有权威位置。
 
-方向操作使用同一条权威链路。Cocos只保存WASD和右键状态：W/S映射前后，普通A/D修改`yaw`，按住右键时A/D映射横移，右键水平拖动修改朝向。状态变化立即发送`C2M_NavigateInput`，持续按住时每500ms续期；Rust把局部方向换算为短NavMesh路径，松键的零输入会清理旧路径并广播停止。点击寻路会沿路径转身，后退和横移则保留角色朝向。
+方向操作使用同一条权威链路。Cocos只保存WASD和右键状态：W/S映射前后，普通A/D修改`yaw`，按住右键时A/D映射横移，右键水平拖动修改朝向。状态变化立即发送`C2M_NavigateInput`，持续按住时每500ms续期；Rust不为方向输入重复寻路，而是在每个固定Tick用`moveAlongSurface`贴着NavMesh推进并缓存当前polygon引用。输入租约为1.5秒，客户端卡死或停止续期时Rust会自动广播停止；正常松键仍立即发送零输入。点击寻路在路径拐点先按固定角速度转身，再使用当前Tick的剩余时间前进，客户端预测使用同一规则；后退和横移则保留角色朝向。
 
-尾随相机只读取客户端可视位置和朝向，不能写权威坐标、参与寻路或影响AOI。客户端可调整相机距离、平滑速度和鼠标灵敏度；这些都是表现参数，不进入服务器冷配置。
+尾随相机只读取客户端可视位置和朝向，不能写权威坐标、参与寻路或影响AOI。客户端分别保存权威`authoritativeYaw`、可视角色`playerYaw`和本地观察`cameraYaw`：权威Push始终更新`authoritativeYaw`，点击路径预测期间只允许预测推进`playerYaw`，预测结束后才平滑收敛权威朝向，避免路径拐点被稍旧Push反复拉回；键盘转身和右键拖动同步修改角色与相机朝向，点击路径转向时相机沿最短圆弧限速追随。摄像机位置必须每帧由`cameraYaw`和距离直接计算，不能在两侧目标位置之间做XYZ插值，否则可能穿过角色并翻到正面。客户端可调整相机距离、跟随速度和鼠标灵敏度；这些都是表现参数，不进入服务器冷配置。
+
+`MapComponent.Raycast(start, end)`检测NavMesh边界阻挡，返回命中比例、位置和法线；它不检测角色、怪物或物理碰撞体。`MapComponent.SampleHeight(point)`按输入Y选择最近可行走层并返回高度，多层地图不能只传X/Z。两者都是同步粗粒度查询，不允许在TS逐polygon调用。
 
 Cocos 3D通过独立`ClientMessageDispatcher` Handler消费Push：本地玩家平滑吸收预测误差，明显偏离才直接校正；远端玩家不预测输入，只在权威位置之间插值。真实双客户端冒烟会比较双方收到的同一移动状态。
 

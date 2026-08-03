@@ -75,6 +75,30 @@ int32_t tz_navmesh_find_path(
     int32_t max_points,
     int32_t* point_count);
 
+int32_t tz_navmesh_move_along_surface(
+    const TzNavQuery* query,
+    const float* start,
+    const float* end,
+    const float* half_extents,
+    uint64_t start_ref,
+    float* result,
+    uint64_t* result_ref);
+
+int32_t tz_navmesh_raycast(
+    const TzNavQuery* query,
+    const float* start,
+    const float* end,
+    const float* half_extents,
+    float* hit_t,
+    float* hit_position,
+    float* hit_normal);
+
+int32_t tz_navmesh_sample_height(
+    const TzNavQuery* query,
+    const float* point,
+    const float* half_extents,
+    float* height);
+
 #ifdef __cplusplus
 }
 #endif

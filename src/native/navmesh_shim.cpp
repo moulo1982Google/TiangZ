@@ -544,3 +544,88 @@ extern "C" int32_t tz_navmesh_find_path(
     *point_count = straight_count;
     return straight_count > 0 ? 1 : 0;
 }
+
+extern "C" int32_t tz_navmesh_move_along_surface(
+    const TzNavQuery* query,
+    const float* start,
+    const float* end,
+    const float* half_extents,
+    uint64_t start_ref_value,
+    float* result,
+    uint64_t* result_ref_value) {
+    if (query == nullptr || start == nullptr || end == nullptr || half_extents == nullptr ||
+        result == nullptr || result_ref_value == nullptr) return 0;
+    dtQueryFilter filter;
+    filter.setIncludeFlags(kWalkFlag);
+    dtPolyRef start_ref = static_cast<dtPolyRef>(start_ref_value);
+    float nearest_start[3] = {start[0], start[1], start[2]};
+    if (start_ref == 0 || !query->query->isValidPolyRef(start_ref, &filter)) {
+        if (dtStatusFailed(query->query->findNearestPoly(
+                start, half_extents, &filter, &start_ref, nearest_start)) || start_ref == 0) {
+            return 0;
+        }
+    }
+    dtPolyRef visited[32];
+    int visited_count = 0;
+    if (dtStatusFailed(query->query->moveAlongSurface(
+            start_ref, nearest_start, end, &filter, result, visited, &visited_count, 32))) {
+        return 0;
+    }
+    const dtPolyRef result_ref = visited_count > 0 ? visited[visited_count - 1] : start_ref;
+    float height = result[1];
+    if (dtStatusSucceed(query->query->getPolyHeight(result_ref, result, &height))) {
+        result[1] = height;
+    }
+    *result_ref_value = static_cast<uint64_t>(result_ref);
+    return 1;
+}
+
+extern "C" int32_t tz_navmesh_raycast(
+    const TzNavQuery* query,
+    const float* start,
+    const float* end,
+    const float* half_extents,
+    float* hit_t,
+    float* hit_position,
+    float* hit_normal) {
+    if (query == nullptr || start == nullptr || end == nullptr || half_extents == nullptr ||
+        hit_t == nullptr || hit_position == nullptr || hit_normal == nullptr) return 0;
+    dtQueryFilter filter;
+    filter.setIncludeFlags(kWalkFlag);
+    dtPolyRef start_ref = 0;
+    float nearest_start[3];
+    if (dtStatusFailed(query->query->findNearestPoly(
+            start, half_extents, &filter, &start_ref, nearest_start)) || start_ref == 0) return 0;
+    dtPolyRef path[64];
+    int path_count = 0;
+    float t = 0.0f;
+    if (dtStatusFailed(query->query->raycast(
+            start_ref, nearest_start, end, &filter, &t, hit_normal, path, &path_count, 64))) return 0;
+    const float clamped_t = std::min(1.0f, t);
+    hit_position[0] = nearest_start[0] + (end[0] - nearest_start[0]) * clamped_t;
+    hit_position[1] = nearest_start[1] + (end[1] - nearest_start[1]) * clamped_t;
+    hit_position[2] = nearest_start[2] + (end[2] - nearest_start[2]) * clamped_t;
+    if (path_count > 0) {
+        float height = hit_position[1];
+        if (dtStatusSucceed(query->query->getPolyHeight(path[path_count - 1], hit_position, &height))) {
+            hit_position[1] = height;
+        }
+    }
+    *hit_t = clamped_t;
+    return 1;
+}
+
+extern "C" int32_t tz_navmesh_sample_height(
+    const TzNavQuery* query,
+    const float* point,
+    const float* half_extents,
+    float* height) {
+    if (query == nullptr || point == nullptr || half_extents == nullptr || height == nullptr) return 0;
+    dtQueryFilter filter;
+    filter.setIncludeFlags(kWalkFlag);
+    dtPolyRef reference = 0;
+    float projected[3];
+    if (dtStatusFailed(query->query->findNearestPoly(
+            point, half_extents, &filter, &reference, projected)) || reference == 0) return 0;
+    return dtStatusSucceed(query->query->getPolyHeight(reference, projected, height)) ? 1 : 0;
+}

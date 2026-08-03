@@ -409,3 +409,4 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 单进程与拆分进程Runtime smoke均完成Map 100真实传送；灰盒出生点移至中央障碍外的`(-12, 1, -12)`，运行时会投影到NavMesh表面。完整3D权威移动、多人同步、射线、高度和动态障碍仍是后续工作。
 - Phase 4.2.3新增`C2M_NavigateTo/G2C_EntityNavigate`：Rust从权威坐标寻路、保存路径进度并以20Hz推进连续位置，TS每次目标只跨一次Native边界。3D状态复用AOI分档和Gate批量路由；Cocos 3D完成本地预测/纠偏、远端插值和独立消息Handler。真实双客户端冒烟确认移动者与观察者收到相同权威状态；射线、高度和动态障碍继续保留后续。
 - 增加`C2M_NavigateInput`和魔兽式灰盒操作：W/S前后、A/D转向、右键+A/D横移、右键拖动朝向及平滑尾随相机。Rust把方向换算为短NavMesh路径，500ms续期，零输入强制停止；底层回归覆盖推进、保留朝向和停止状态。
+- Phase 4.2.4把方向移动改为Rust每Tick调用Detour `moveAlongSurface`，按Unit缓存polygon引用，不再每500ms完整寻路；新增NavMesh `Raycast/SampleHeight`粗粒度API。回归覆盖撞墙、沿墙移动、射线和高度采样，Cocos改为连续本地输入预测并继续接受权威纠偏。

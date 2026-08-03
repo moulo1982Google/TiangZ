@@ -33,13 +33,28 @@ const INDEX_BITS: u32 = 20;
 const INDEX_MASK: u32 = (1 << INDEX_BITS) - 1;
 const MAX_GENERATION: u32 = (1 << (32 - INDEX_BITS)) - 1;
 const NATIVE_UNIT_RECORD_BYTES: usize = 46;
+const NAVIGATION_INPUT_LEASE_MS: f32 = 1_500.0;
+const NAVIGATION_PATH_TURN_SPEED_RADIANS: f32 = std::f32::consts::TAU;
+
+fn normalize_radians(value: f32) -> f32 {
+    (value + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
+}
 
 #[derive(Clone)]
 struct NavigationMovement {
     points: Vec<[f32; 3]>,
     next_point: usize,
     state_changed: bool,
-    preserve_yaw: bool,
+}
+
+#[derive(Clone, Copy)]
+struct NavigationDirectionalInput {
+    forward: i8,
+    strafe: i8,
+    yaw: f32,
+    polygon_ref: u64,
+    lease_remaining_ms: f32,
+    state_changed: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -170,6 +185,7 @@ struct NativeEntityStore {
     navigation_assets: NavigationAssetCache,
     navigation_worlds: HashMap<u32, NavigationWorld>,
     navigation_movements: HashMap<u32, NavigationMovement>,
+    navigation_directional_inputs: HashMap<u32, NavigationDirectionalInput>,
     aoi_worlds: HashMap<u32, AoiWorld>,
     aoi_dirty_by_map: HashMap<u32, HashSet<u32>>,
     numerics_by_unit: HashMap<u32, NumericData>,
@@ -275,6 +291,7 @@ impl NativeEntityStore {
         if let Some((_, map_id)) = unit_identity {
             self.numerics_by_unit.remove(&handle);
             self.navigation_movements.remove(&handle);
+            self.navigation_directional_inputs.remove(&handle);
             if let Some(dirty) = self.aoi_dirty_by_map.get_mut(&map_id) {
                 dirty.remove(&handle);
                 if dirty.is_empty() {
@@ -450,6 +467,7 @@ pub(crate) fn reset_unit_movement(handle: u32) -> Result<(), JsErrorBox> {
             .map_id;
         if store.navigation_worlds.contains_key(&map_id) {
             store.navigation_movements.remove(&handle);
+            store.navigation_directional_inputs.remove(&handle);
             let unit = store.get_unit_hot_mut(handle)?;
             unit.input_x = 0;
             unit.input_z = 0;
@@ -1086,6 +1104,112 @@ fn native_spatial_find_path(
     })
 }
 
+#[op2]
+/// 检测NavMesh表面两点间的首个边界命中；返回固定长度结果，未命中也包含终点。 / Finds the first NavMesh boundary hit and returns a fixed-size result whose miss position is the end point.
+pub(crate) fn op_native_spatial_raycast(
+    map_id: u32,
+    start_x: f64,
+    start_y: f64,
+    start_z: f64,
+    end_x: f64,
+    end_y: f64,
+    end_z: f64,
+    extent_x: f64,
+    extent_y: f64,
+    extent_z: f64,
+) -> Result<Uint8Array, JsErrorBox> {
+    native_spatial_raycast(
+        map_id, start_x, start_y, start_z, end_x, end_y, end_z, extent_x, extent_y, extent_z,
+    )
+    .map(Into::into)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_spatial_raycast(
+    map_id: u32,
+    start_x: f64,
+    start_y: f64,
+    start_z: f64,
+    end_x: f64,
+    end_y: f64,
+    end_z: f64,
+    extent_x: f64,
+    extent_y: f64,
+    extent_z: f64,
+) -> Result<Vec<u8>, JsErrorBox> {
+    let start = [
+        finite_f32(start_x, "startX")?,
+        finite_f32(start_y, "startY")?,
+        finite_f32(start_z, "startZ")?,
+    ];
+    let end = [
+        finite_f32(end_x, "endX")?,
+        finite_f32(end_y, "endY")?,
+        finite_f32(end_z, "endZ")?,
+    ];
+    let extents = [
+        positive_f32(extent_x, "extentX")?,
+        positive_f32(extent_y, "extentY")?,
+        positive_f32(extent_z, "extentZ")?,
+    ];
+    STORE.with(|slot| {
+        let store = slot.borrow();
+        let hit = store
+            .navigation_worlds
+            .get(&map_id)
+            .ok_or_else(|| {
+                JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+            })?
+            .raycast(start, end, extents)
+            .ok_or_else(|| {
+                JsErrorBox::generic("NavMesh raycast start is outside the query extents")
+            })?;
+        let mut bytes = Vec::with_capacity(29);
+        bytes.push(u8::from(hit.hit));
+        bytes.extend_from_slice(&hit.fraction.to_le_bytes());
+        for value in hit.position.into_iter().chain(hit.normal) {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        Ok(bytes)
+    })
+}
+
+#[op2(fast)]
+/// 按输入Y选择最近NavMesh层并返回地面高度；找不到可行走面时明确报错。 / Selects the nearest NavMesh layer by input Y and returns its floor height, failing when no surface is found.
+pub(crate) fn op_native_spatial_sample_height(
+    map_id: u32,
+    x: f64,
+    y: f64,
+    z: f64,
+    extent_x: f64,
+    extent_y: f64,
+    extent_z: f64,
+) -> Result<f64, JsErrorBox> {
+    let point = [
+        finite_f32(x, "x")?,
+        finite_f32(y, "y")?,
+        finite_f32(z, "z")?,
+    ];
+    let extents = [
+        positive_f32(extent_x, "extentX")?,
+        positive_f32(extent_y, "extentY")?,
+        positive_f32(extent_z, "extentZ")?,
+    ];
+    STORE.with(|slot| {
+        slot.borrow()
+            .navigation_worlds
+            .get(&map_id)
+            .ok_or_else(|| {
+                JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
+            })?
+            .sample_height(point, extents)
+            .map(f64::from)
+            .ok_or_else(|| {
+                JsErrorBox::generic("NavMesh height sample is outside the query extents")
+            })
+    })
+}
+
 /// 设置Unit的NavMesh移动目标；返回值前4字节是确认序号，后续是路径点数组。 / Sets a Unit NavMesh target; the first four bytes are the acknowledged sequence followed by path points.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn set_unit_navigation_target(
@@ -1139,9 +1263,9 @@ pub(crate) fn set_unit_navigation_target(
                 next_point: usize::from(points.len() > 1),
                 points: points.clone(),
                 state_changed: true,
-                preserve_yaw: false,
             },
         );
+        store.navigation_directional_inputs.remove(&handle);
         let mut result = Vec::with_capacity(8 + points.len() * 12);
         result.extend_from_slice(&sequence.to_le_bytes());
         result.extend_from_slice(&encode_nav_points(&points));
@@ -1149,7 +1273,7 @@ pub(crate) fn set_unit_navigation_target(
     })
 }
 
-/// 提交相对朝向的NavMesh方向输入；非零输入生成短路径，零输入清理旧路径并产生停止状态。 / Submits facing-relative NavMesh input; non-zero input creates a short path while zero input clears the old path and emits a stop state.
+/// 提交相对朝向的NavMesh方向状态；Rust在每个固定Tick贴着可行走面推进，零输入明确停止。 / Submits facing-relative NavMesh input that Rust advances along the surface every fixed tick; zero input explicitly stops.
 pub(crate) fn set_unit_navigation_input(
     map_id: u32,
     handle: u32,
@@ -1166,14 +1290,9 @@ pub(crate) fn set_unit_navigation_input(
     let yaw = finite_f32(yaw, "yaw")?;
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
-        let (current, current_sequence, unit_map_id, speed) = {
+        let (current_sequence, unit_map_id) = {
             let (hot, cold) = store.get_unit_parts(handle)?;
-            (
-                [hot.x, hot.y, hot.z],
-                hot.sequence,
-                cold.map_id,
-                hot.speed_cells_per_second,
-            )
+            (hot.sequence, cold.map_id)
         };
         if unit_map_id != map_id {
             return Err(JsErrorBox::generic(format!(
@@ -1183,34 +1302,6 @@ pub(crate) fn set_unit_navigation_input(
         if sequence <= current_sequence {
             return Ok(current_sequence.to_le_bytes().to_vec());
         }
-
-        let mut points = vec![current];
-        if forward != 0 || strafe != 0 {
-            let forward_x = yaw.sin();
-            let forward_z = yaw.cos();
-            let right_x = -yaw.cos();
-            let right_z = yaw.sin();
-            let mut direction_x = forward_x * f32::from(forward) + right_x * f32::from(strafe);
-            let mut direction_z = forward_z * f32::from(forward) + right_z * f32::from(strafe);
-            let length = (direction_x * direction_x + direction_z * direction_z).sqrt();
-            direction_x /= length;
-            direction_z /= length;
-            let horizon = (speed.max(0.0) * 0.75).max(3.0);
-            let target = [
-                current[0] + direction_x * horizon,
-                current[1],
-                current[2] + direction_z * horizon,
-            ];
-            points = store
-                .navigation_worlds
-                .get(&map_id)
-                .ok_or_else(|| {
-                    JsErrorBox::generic(format!("NavMesh world is not configured: {map_id}"))
-                })?
-                .find_path(current, target, [2.0, 4.0, 2.0], 64)
-                .map_err(|error| JsErrorBox::generic(format!("{error:#}")))?;
-        }
-
         {
             let unit = store.get_unit_hot_mut(handle)?;
             unit.sequence = sequence;
@@ -1218,21 +1309,25 @@ pub(crate) fn set_unit_navigation_input(
             unit.input_x = 0;
             unit.input_z = 0;
             unit.input_changed = 0;
-            unit.moving = u32::from(points.len() > 1);
+            unit.moving = u32::from(forward != 0 || strafe != 0);
         }
-        store.navigation_movements.insert(
+        store.navigation_movements.remove(&handle);
+        let polygon_ref = store
+            .navigation_directional_inputs
+            .get(&handle)
+            .map_or(0, |input| input.polygon_ref);
+        store.navigation_directional_inputs.insert(
             handle,
-            NavigationMovement {
-                next_point: usize::from(points.len() > 1),
-                points: points.clone(),
+            NavigationDirectionalInput {
+                forward,
+                strafe,
+                yaw,
+                polygon_ref,
+                lease_remaining_ms: NAVIGATION_INPUT_LEASE_MS,
                 state_changed: true,
-                preserve_yaw: true,
             },
         );
-        let mut result = Vec::with_capacity(8 + points.len() * 12);
-        result.extend_from_slice(&sequence.to_le_bytes());
-        result.extend_from_slice(&encode_nav_points(&points));
-        Ok(result)
+        Ok(sequence.to_le_bytes().to_vec())
     })
 }
 
@@ -1601,6 +1696,7 @@ fn native_spatial_release(map_id: u32) {
         if let Some(handles) = store.units_by_map.get(&map_id).cloned() {
             for handle in handles {
                 store.navigation_movements.remove(&handle);
+                store.navigation_directional_inputs.remove(&handle);
             }
         }
         store.pending_navigation_records.remove(&map_id);
@@ -1908,6 +2004,21 @@ fn update_navigation_map(
     changed_positions: &mut Vec<(u32, f32, f32)>,
 ) -> Result<(), JsErrorBox> {
     for &handle in handles {
+        if let Some(mut input) = store.navigation_directional_inputs.remove(&handle) {
+            update_navigation_directional_input(
+                store,
+                handle,
+                fixed_update_ms,
+                &mut input,
+                records,
+                changed_positions,
+            )?;
+            if input.forward != 0 || input.strafe != 0 {
+                input.state_changed = false;
+                store.navigation_directional_inputs.insert(handle, input);
+            }
+            continue;
+        }
         let Some(mut movement) = store.navigation_movements.remove(&handle) else {
             continue;
         };
@@ -1915,8 +2026,12 @@ fn update_navigation_map(
         {
             let unit = store.get_unit_hot_mut(handle)?;
             let previous = [unit.x, unit.y, unit.z];
-            let mut remaining = unit.speed_cells_per_second.max(0.0) * fixed_update_ms / 1_000.0;
-            while remaining > 0.0 && movement.next_point < movement.points.len() {
+            let speed = unit.speed_cells_per_second.max(0.0);
+            let mut remaining_seconds = fixed_update_ms / 1_000.0;
+            while speed > 0.0
+                && remaining_seconds > 0.0
+                && movement.next_point < movement.points.len()
+            {
                 let target = movement.points[movement.next_point];
                 let delta = [target[0] - unit.x, target[1] - unit.y, target[2] - unit.z];
                 let distance =
@@ -1928,15 +2043,26 @@ fn update_navigation_map(
                     movement.next_point += 1;
                     continue;
                 }
-                if !movement.preserve_yaw {
-                    unit.yaw = delta[0].atan2(delta[2]);
+                let target_yaw = delta[0].atan2(delta[2]);
+                let yaw_delta = normalize_radians(target_yaw - unit.yaw);
+                let turn_seconds = yaw_delta.abs() / NAVIGATION_PATH_TURN_SPEED_RADIANS;
+                if turn_seconds >= remaining_seconds {
+                    unit.yaw = normalize_radians(
+                        unit.yaw
+                            + yaw_delta.signum()
+                                * NAVIGATION_PATH_TURN_SPEED_RADIANS
+                                * remaining_seconds,
+                    );
+                    break;
                 }
-                let step = remaining.min(distance);
+                unit.yaw = target_yaw;
+                remaining_seconds -= turn_seconds;
+                let step = (speed * remaining_seconds).min(distance);
                 let scale = step / distance;
                 unit.x += delta[0] * scale;
                 unit.y += delta[1] * scale;
                 unit.z += delta[2] * scale;
-                remaining -= step;
+                remaining_seconds -= step / speed;
                 if step >= distance - 0.0001 {
                     movement.next_point += 1;
                 }
@@ -1968,6 +2094,88 @@ fn update_navigation_map(
         if keep_movement {
             store.navigation_movements.insert(handle, movement);
         }
+    }
+    Ok(())
+}
+
+fn update_navigation_directional_input(
+    store: &mut NativeEntityStore,
+    handle: u32,
+    fixed_update_ms: f32,
+    input: &mut NavigationDirectionalInput,
+    records: &mut Vec<NavigationMovementRecord>,
+    changed_positions: &mut Vec<(u32, f32, f32)>,
+) -> Result<(), JsErrorBox> {
+    let (unit_id, sequence, map_id, current, speed) = {
+        let (unit, cold) = store.get_unit_parts(handle)?;
+        (
+            unit.id,
+            unit.sequence,
+            cold.map_id,
+            [unit.x, unit.y, unit.z],
+            unit.speed_cells_per_second.max(0.0),
+        )
+    };
+    let mut active = input.forward != 0 || input.strafe != 0;
+    if active {
+        input.lease_remaining_ms -= fixed_update_ms;
+        if input.lease_remaining_ms <= 0.0 {
+            input.forward = 0;
+            input.strafe = 0;
+            input.state_changed = true;
+            active = false;
+        }
+    }
+    let mut position = current;
+    if active {
+        let forward_x = input.yaw.sin();
+        let forward_z = input.yaw.cos();
+        let right_x = -input.yaw.cos();
+        let right_z = input.yaw.sin();
+        let mut direction_x =
+            forward_x * f32::from(input.forward) + right_x * f32::from(input.strafe);
+        let mut direction_z =
+            forward_z * f32::from(input.forward) + right_z * f32::from(input.strafe);
+        let length = (direction_x * direction_x + direction_z * direction_z).sqrt();
+        direction_x /= length;
+        direction_z /= length;
+        let step = speed * fixed_update_ms / 1_000.0;
+        let desired = [
+            current[0] + direction_x * step,
+            current[1],
+            current[2] + direction_z * step,
+        ];
+        if let Some(moved) = store.navigation_worlds.get(&map_id).and_then(|world| {
+            world.move_along_surface(current, desired, [2.0, 4.0, 2.0], input.polygon_ref)
+        }) {
+            position = moved.position;
+            input.polygon_ref = moved.polygon_ref;
+        } else {
+            input.polygon_ref = 0;
+        }
+    }
+    {
+        let unit = store.get_unit_hot_mut(handle)?;
+        unit.x = position[0];
+        unit.y = position[1];
+        unit.z = position[2];
+        unit.yaw = input.yaw;
+        unit.moving = u32::from(active);
+    }
+    if position != current {
+        changed_positions.push((unit_id, position[0], position[2]));
+    }
+    if active || input.state_changed {
+        records.push(NavigationMovementRecord {
+            unit_id,
+            sequence,
+            x: position[0],
+            y: position[1],
+            z: position[2],
+            yaw: input.yaw,
+            moving: active,
+            state_changed: input.state_changed,
+        });
     }
     Ok(())
 }
@@ -2900,10 +3108,19 @@ mod tests {
         STORE.with(|slot| {
             let store = slot.borrow();
             let unit = store.get_unit_hot(handle).unwrap();
-            assert!(unit.x > -12.0 || unit.z > -12.0);
+            assert_eq!(unit.x, -12.0);
+            assert_eq!(unit.z, -12.0);
+            assert_ne!(unit.yaw, 0.0);
             assert_eq!(unit.moving, 1);
             assert!(store.navigation_movements.contains_key(&handle));
             assert_eq!(store.pending_navigation_records[&1].len(), 1);
+        });
+        assert_eq!(native_map_advance_movement(1, 2, 200).unwrap(), 1);
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let unit = store.get_unit_hot(handle).unwrap();
+            assert!(unit.x > -12.0 || unit.z > -12.0);
+            assert_eq!(unit.moving, 1);
         });
 
         let stale = set_unit_navigation_target(1, handle, -10.0, 0.0, -10.0, 1).unwrap();
@@ -2911,27 +3128,45 @@ mod tests {
         assert_eq!(stale.len(), 4);
 
         let yaw = std::f64::consts::FRAC_PI_2;
+        let before_direction = STORE.with(|slot| slot.borrow().get_unit_hot(handle).unwrap().x);
         let directional = set_unit_navigation_input(1, handle, 1, 0, yaw, 2).unwrap();
         assert_eq!(u32::from_le_bytes(directional[0..4].try_into().unwrap()), 2);
-        assert!(u32::from_le_bytes(directional[4..8].try_into().unwrap()) >= 2);
-        assert_eq!(native_map_advance_movement(1, 2, 50).unwrap(), 1);
+        assert_eq!(directional.len(), 4);
+        assert_eq!(native_map_advance_movement(1, 3, 50).unwrap(), 1);
         STORE.with(|slot| {
             let store = slot.borrow();
             let unit = store.get_unit_hot(handle).unwrap();
             assert!((unit.yaw - std::f32::consts::FRAC_PI_2).abs() < 0.0001);
             assert_eq!(unit.moving, 1);
+            assert!(unit.x > before_direction);
+            assert!(store.navigation_directional_inputs.contains_key(&handle));
         });
 
         let stopped = set_unit_navigation_input(1, handle, 0, 0, yaw, 3).unwrap();
         assert_eq!(u32::from_le_bytes(stopped[0..4].try_into().unwrap()), 3);
-        assert_eq!(native_map_advance_movement(1, 3, 50).unwrap(), 1);
+        assert_eq!(native_map_advance_movement(1, 4, 50).unwrap(), 1);
         STORE.with(|slot| {
             let store = slot.borrow();
             let unit = store.get_unit_hot(handle).unwrap();
             assert_eq!(unit.moving, 0);
             assert!(!store.navigation_movements.contains_key(&handle));
+            assert!(!store.navigation_directional_inputs.contains_key(&handle));
             let record = store.pending_navigation_records[&1].last().unwrap();
             assert_eq!(record.sequence, 3);
+            assert!(!record.moving);
+            assert!(record.state_changed);
+        });
+
+        set_unit_navigation_input(1, handle, 1, 0, yaw, 4).unwrap();
+        for tick in 5..35 {
+            native_map_advance_movement(1, tick, 50).unwrap();
+        }
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            assert_eq!(store.get_unit_hot(handle).unwrap().moving, 0);
+            assert!(!store.navigation_directional_inputs.contains_key(&handle));
+            let record = store.pending_navigation_records[&1].last().unwrap();
+            assert_eq!(record.sequence, 4);
             assert!(!record.moving);
             assert!(record.state_changed);
         });

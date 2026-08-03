@@ -19,6 +19,13 @@ export interface NativeNavigationIntent {
   readonly points: readonly NativeVec3[];
 }
 
+export interface NativeRaycastHit {
+  readonly hit: boolean;
+  readonly fraction: number;
+  readonly position: NativeVec3;
+  readonly normal: NativeVec3;
+}
+
 interface DemoProcessConfig {
   nativeData?: NativeDataConfig;
 }
@@ -234,6 +241,60 @@ export class NativeData {
       halfExtents.z,
       maxPoints,
     ));
+  }
+
+  /** 检测NavMesh表面两点间的边界阻挡；该接口不检测物理碰撞体。 / Detects NavMesh boundary obstruction between two points and does not query physics colliders. */
+  static Raycast(
+    mapId: number,
+    start: NativeVec3,
+    end: NativeVec3,
+    halfExtents: NativeVec3,
+  ): NativeRaycastHit {
+    const bytes = NativeOps.SpatialRaycast(
+      mapId,
+      start.x,
+      start.y,
+      start.z,
+      end.x,
+      end.y,
+      end.z,
+      halfExtents.x,
+      halfExtents.y,
+      halfExtents.z,
+    );
+    if (bytes.byteLength !== 29) throw new Error("native NavMesh raycast has an invalid length");
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return {
+      hit: bytes[0] !== 0,
+      fraction: view.getFloat32(1, true),
+      position: {
+        x: view.getFloat32(5, true),
+        y: view.getFloat32(9, true),
+        z: view.getFloat32(13, true),
+      },
+      normal: {
+        x: view.getFloat32(17, true),
+        y: view.getFloat32(21, true),
+        z: view.getFloat32(25, true),
+      },
+    };
+  }
+
+  /** 按输入Y选择最近可行走层并查询地面高度；多层地图不得省略合理的Y。 / Samples floor height from the nearest walkable layer selected by Y; layered maps require a meaningful Y. */
+  static SampleHeight(
+    mapId: number,
+    point: NativeVec3,
+    halfExtents: NativeVec3,
+  ): number {
+    return NativeOps.SpatialSampleHeight(
+      mapId,
+      point.x,
+      point.y,
+      point.z,
+      halfExtents.x,
+      halfExtents.y,
+      halfExtents.z,
+    );
   }
 
   /** 设置Rust持有的NavMesh移动目标，并返回同一次权威寻路结果供客户端预测。 / Sets a Rust-owned NavMesh movement target and returns the same authoritative path for prediction. */

@@ -48,8 +48,13 @@ const REMOTE_SNAP_DISTANCE = 5;
 const CAMERA_DISTANCE = 8;
 const CAMERA_HEIGHT = 5;
 const CAMERA_LOOK_HEIGHT = 1.2;
-const CAMERA_FOLLOW_RATE = 10;
+const CAMERA_ZOOM_RATE = 10;
+const CAMERA_MIN_DISTANCE = 3;
+const CAMERA_MAX_DISTANCE = 16;
+const CAMERA_ZOOM_STEP = 1;
+const CAMERA_YAW_FOLLOW_SPEED_RADIANS = Math.PI;
 const TURN_SPEED_RADIANS = Math.PI * 0.75;
+const PATH_TURN_SPEED_RADIANS = Math.PI * 2;
 const MOUSE_YAW_RADIANS_PER_PIXEL = 0.004;
 const INPUT_REFRESH_SECONDS = 0.5;
 const INPUT_TURN_SEND_SECONDS = 0.1;
@@ -80,7 +85,6 @@ export class GameBootstrap3D extends Component {
   private mapClient?: MapClient;
   private path: Vec3[] = [];
   private pathIndex = 0;
-  private directionalPrediction = false;
   private queryingPath = false;
   private inputRequestInFlight = false;
   private inputDirty = false;
@@ -88,6 +92,10 @@ export class GameBootstrap3D extends Component {
   private inputRefreshElapsed = 0;
   private rightMouseHeld = false;
   private playerYaw = 0;
+  private authoritativeYaw = 0;
+  private cameraYaw = 0;
+  private cameraDistance = CAMERA_DISTANCE;
+  private visibleCameraDistance = CAMERA_DISTANCE;
   private readonly pressedKeys = new Set<KeyCode>();
   private localUnitId = 0;
   private navigationSequence = 0;
@@ -105,14 +113,17 @@ export class GameBootstrap3D extends Component {
     input.on(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
     input.on(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
     input.on(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+    input.on(Input.EventType.MOUSE_WHEEL, this.onMouseWheel, this);
     void this.loginAndEnter();
   }
 
   update(deltaTime: number): void {
     this.loginFlow?.update();
     this.updateDirectionalInput(deltaTime);
+    this.advanceDirectionalPrediction(deltaTime);
     this.advanceAlongPath(deltaTime);
     this.reconcileAuthoritativePosition(deltaTime);
+    this.reconcileAuthoritativeFacing(deltaTime);
     this.interpolateRemotePlayers(deltaTime);
     this.updateFollowCamera(deltaTime);
   }
@@ -123,6 +134,7 @@ export class GameBootstrap3D extends Component {
     input.off(Input.EventType.MOUSE_DOWN, this.onMouseDown, this);
     input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
     input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
+    input.off(Input.EventType.MOUSE_WHEEL, this.onMouseWheel, this);
     this.loginFlow?.close();
     this.messageDispatcher?.dispose();
     this.messageDispatcher = undefined;
@@ -216,6 +228,8 @@ export class GameBootstrap3D extends Component {
       this.playerSpeedMetersPerSecond = localEntity?.speedCellsPerSecond ?? this.playerSpeedMetersPerSecond;
       this.authoritativeFoot.set(result.enterMap.x, result.enterMap.y, result.enterMap.z);
       this.playerYaw = localEntity?.yaw ?? 0;
+      this.authoritativeYaw = this.playerYaw;
+      this.cameraYaw = this.playerYaw;
       this.setPlayerFootPosition(this.authoritativeFoot);
       this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
       this.snapFollowCamera();
@@ -242,7 +256,7 @@ export class GameBootstrap3D extends Component {
         if (movement.acknowledgedSequence < this.acknowledgedSequence) continue;
         this.acknowledgedSequence = movement.acknowledgedSequence;
         this.authoritativeFoot.set(movement.x, movement.y, movement.z);
-        this.playerYaw = movement.yaw;
+        this.authoritativeYaw = movement.yaw;
         if (!movement.moving && movement.acknowledgedSequence === this.navigationSequence) {
           this.path.length = 0;
           this.pathIndex = 0;
@@ -300,9 +314,21 @@ export class GameBootstrap3D extends Component {
 
   private onMouseMove(event: EventMouse): void {
     if (!this.rightMouseHeld) return;
-    this.playerYaw = normalizeRadians(this.playerYaw - event.getDeltaX() * MOUSE_YAW_RADIANS_PER_PIXEL);
+    const yawDelta = -event.getDeltaX() * MOUSE_YAW_RADIANS_PER_PIXEL;
+    this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
+    this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
     this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
     this.markInputDirty(false);
+  }
+
+  /** 滚轮只调整本地尾随距离；向前拉近、向后拉远，并限制在可用观察范围内。 / Mouse wheel only changes local follow distance, zooming in forward and out backward within safe bounds. */
+  private onMouseWheel(event: EventMouse): void {
+    const direction = Math.sign(event.getScrollY());
+    if (direction === 0) return;
+    this.cameraDistance = Math.min(
+      CAMERA_MAX_DISTANCE,
+      Math.max(CAMERA_MIN_DISTANCE, this.cameraDistance - direction * CAMERA_ZOOM_STEP),
+    );
   }
 
   private onKeyDown(event: EventKeyboard): void {
@@ -324,9 +350,9 @@ export class GameBootstrap3D extends Component {
     const left = this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT);
     const right = this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT);
     if (!this.rightMouseHeld && left !== right) {
-      this.playerYaw = normalizeRadians(
-        this.playerYaw + (left ? 1 : -1) * TURN_SPEED_RADIANS * Math.max(0, deltaTime),
-      );
+      const yawDelta = (left ? 1 : -1) * TURN_SPEED_RADIANS * Math.max(0, deltaTime);
+      this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
+      this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
       this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
       this.markInputDirty(false);
     }
@@ -368,8 +394,9 @@ export class GameBootstrap3D extends Component {
       this.acknowledgedSequence = response.acknowledgedSequence;
       this.path = response.points.map((point) => new Vec3(point.x, point.y, point.z));
       this.pathIndex = this.path.length > 1 ? 1 : 0;
-      this.directionalPrediction = true;
-      this.drawPath(this.path);
+      if (response.points.length !== 0) {
+        throw new Error("方向输入不应返回路径；连续移动由Rust固定Tick推进");
+      }
     } catch (error) {
       this.setStatus(`方向移动失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -411,7 +438,6 @@ export class GameBootstrap3D extends Component {
       this.acknowledgedSequence = response.acknowledgedSequence;
       this.path = response.points.map((point) => new Vec3(point.x, point.y, point.z));
       this.pathIndex = this.path.length > 1 ? 1 : 0;
-      this.directionalPrediction = false;
       this.drawPath(this.path);
       this.setStatus(`服务端接受序号 ${response.acknowledgedSequence}，返回 ${this.path.length} 个路径拐点`);
     } catch (error) {
@@ -425,8 +451,9 @@ export class GameBootstrap3D extends Component {
 
   /** 沿服务端接受的同一路径推进本地预测；权威坐标仍由Push持续校正。 / Advances local prediction along the accepted server path while pushes continuously correct authority. */
   private advanceAlongPath(deltaTime: number): void {
-    let remaining = Math.max(0, deltaTime) * this.playerSpeedMetersPerSecond;
-    while (remaining > 0 && this.pathIndex < this.path.length) {
+    if (this.playerSpeedMetersPerSecond <= 0) return;
+    let remainingSeconds = Math.max(0, deltaTime);
+    while (remainingSeconds > 0 && this.pathIndex < this.path.length) {
       const target = this.path[this.pathIndex];
       const foot = new Vec3(this.player.position.x, this.player.position.y - PLAYER_HALF_HEIGHT, this.player.position.z);
       const direction = new Vec3();
@@ -438,17 +465,57 @@ export class GameBootstrap3D extends Component {
         continue;
       }
       direction.normalize();
-      const step = Math.min(distance, remaining);
+      const targetYaw = Math.atan2(direction.x, direction.z);
+      const yawDelta = normalizeRadians(targetYaw - this.playerYaw);
+      const turnSeconds = Math.abs(yawDelta) / PATH_TURN_SPEED_RADIANS;
+      if (turnSeconds >= remainingSeconds) {
+        this.playerYaw = normalizeRadians(
+          this.playerYaw + Math.sign(yawDelta) * PATH_TURN_SPEED_RADIANS * remainingSeconds,
+        );
+        this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+        break;
+      }
+      this.playerYaw = targetYaw;
+      this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+      remainingSeconds -= turnSeconds;
+      const step = Math.min(distance, remainingSeconds * this.playerSpeedMetersPerSecond);
       foot.x += direction.x * step;
       foot.y += direction.y * step;
       foot.z += direction.z * step;
       this.setPlayerFootPosition(foot);
-      if (!this.directionalPrediction) {
-        this.playerYaw = Math.atan2(direction.x, direction.z);
-        this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
-      }
-      remaining -= step;
+      remainingSeconds -= step / this.playerSpeedMetersPerSecond;
     }
+  }
+
+  /** 对方向输入做无碰撞本地预测；Rust的贴地移动Push负责吸收墙面和高度误差。 / Predicts directional input without collision while Rust surface-movement pushes absorb wall and height error. */
+  private advanceDirectionalPrediction(deltaTime: number): void {
+    if (this.localUnitId === 0) return;
+    const input = this.currentDirectionalInput();
+    if (input.forward === 0 && input.strafe === 0) return;
+    const forwardX = Math.sin(this.playerYaw);
+    const forwardZ = Math.cos(this.playerYaw);
+    const rightX = -Math.cos(this.playerYaw);
+    const rightZ = Math.sin(this.playerYaw);
+    let directionX = forwardX * input.forward + rightX * input.strafe;
+    let directionZ = forwardZ * input.forward + rightZ * input.strafe;
+    const length = Math.hypot(directionX, directionZ);
+    directionX /= length;
+    directionZ /= length;
+    const foot = new Vec3(
+      this.player.position.x + directionX * this.playerSpeedMetersPerSecond * Math.max(0, deltaTime),
+      this.player.position.y - PLAYER_HALF_HEIGHT,
+      this.player.position.z + directionZ * this.playerSpeedMetersPerSecond * Math.max(0, deltaTime),
+    );
+    this.setPlayerFootPosition(foot);
+  }
+
+  private hasManualFacingInput(): boolean {
+    return this.rightMouseHeld || this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.KEY_D) ||
+      this.isPressed(KeyCode.ARROW_LEFT) || this.isPressed(KeyCode.ARROW_RIGHT);
+  }
+
+  private hasActiveClickNavigation(): boolean {
+    return this.pathIndex < this.path.length;
   }
 
   /** 平滑吸收预测与权威位置的小误差；只有明显脱离路径时才立即校正。 / Smoothly absorbs small prediction errors and snaps only after a clear divergence. */
@@ -463,11 +530,23 @@ export class GameBootstrap3D extends Component {
     if (error <= 0.001) return;
     if (error >= SNAP_DISTANCE) {
       this.setPlayerFootPosition(this.authoritativeFoot);
+      this.snapFollowCamera();
       return;
     }
     const blend = 1 - Math.exp(-CORRECTION_RATE * Math.max(0, deltaTime));
     Vec3.lerp(foot, foot, this.authoritativeFoot, blend);
     this.setPlayerFootPosition(foot);
+  }
+
+  /** 权威Push只校正没有本地朝向写入者的状态，避免路径拐点由预测Yaw和旧Push反复争抢。 / Reconciles authority only when no local facing owner is active, preventing prediction and delayed pushes from fighting at path corners. */
+  private reconcileAuthoritativeFacing(deltaTime: number): void {
+    if (this.localUnitId === 0 || this.hasManualFacingInput() || this.hasActiveClickNavigation()) return;
+    this.playerYaw = approachAngle(
+      this.playerYaw,
+      this.authoritativeYaw,
+      PATH_TURN_SPEED_RADIANS * Math.max(0, deltaTime),
+    );
+    this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
   }
 
   private UpsertRemotePlayer(entity: MapEntitySnapshot): void {
@@ -516,30 +595,40 @@ export class GameBootstrap3D extends Component {
     }
   }
 
-  /** 尾随相机只读取当前可视位置和朝向，不参与权威移动或NavMesh计算。 / The trailing camera reads visual position and facing only and never participates in authority or NavMesh simulation. */
+  /** 点击转向时相机按最短圆弧追随；手动转身已同步朝向，因此不会产生额外滞后。 / Follows click-path turns over the shortest arc while manual turns keep camera and player yaw synchronized. */
   private updateFollowCamera(deltaTime: number): void {
     if (!this.player || !this.cameraNode) return;
-    const foot = new Vec3(this.player.position.x, this.player.position.y - PLAYER_HALF_HEIGHT, this.player.position.z);
-    const desired = new Vec3(
-      foot.x - Math.sin(this.playerYaw) * CAMERA_DISTANCE,
-      foot.y + CAMERA_HEIGHT,
-      foot.z - Math.cos(this.playerYaw) * CAMERA_DISTANCE,
+    const safeDeltaTime = Math.max(0, deltaTime);
+    const blend = 1 - Math.exp(-CAMERA_ZOOM_RATE * safeDeltaTime);
+    this.visibleCameraDistance += (this.cameraDistance - this.visibleCameraDistance) * blend;
+    this.cameraYaw = approachAngle(
+      this.cameraYaw,
+      this.playerYaw,
+      CAMERA_YAW_FOLLOW_SPEED_RADIANS * safeDeltaTime,
     );
-    const position = new Vec3();
-    const blend = 1 - Math.exp(-CAMERA_FOLLOW_RATE * Math.max(0, deltaTime));
-    Vec3.lerp(position, this.cameraNode.position, desired, blend);
-    this.cameraNode.setPosition(position);
+    const foot = new Vec3(this.player.position.x, this.player.position.y - PLAYER_HALF_HEIGHT, this.player.position.z);
+    this.cameraNode.setPosition(
+      foot.x - Math.sin(this.cameraYaw) * this.visibleCameraDistance,
+      foot.y + this.cameraHeight(this.visibleCameraDistance),
+      foot.z - Math.cos(this.cameraYaw) * this.visibleCameraDistance,
+    );
     this.cameraNode.lookAt(new Vec3(foot.x, foot.y + CAMERA_LOOK_HEIGHT, foot.z));
   }
 
   private snapFollowCamera(): void {
     const foot = this.authoritativeFoot;
+    this.visibleCameraDistance = this.cameraDistance;
     this.cameraNode.setPosition(
-      foot.x - Math.sin(this.playerYaw) * CAMERA_DISTANCE,
-      foot.y + CAMERA_HEIGHT,
-      foot.z - Math.cos(this.playerYaw) * CAMERA_DISTANCE,
+      foot.x - Math.sin(this.cameraYaw) * this.visibleCameraDistance,
+      foot.y + this.cameraHeight(this.visibleCameraDistance),
+      foot.z - Math.cos(this.cameraYaw) * this.visibleCameraDistance,
     );
     this.cameraNode.lookAt(new Vec3(foot.x, foot.y + CAMERA_LOOK_HEIGHT, foot.z));
+  }
+
+  private cameraHeight(distance: number): number {
+    const heightAboveLookTarget = CAMERA_HEIGHT - CAMERA_LOOK_HEIGHT;
+    return CAMERA_LOOK_HEIGHT + heightAboveLookTarget * distance / CAMERA_DISTANCE;
   }
 
   /** 用脚底NavMesh坐标摆放可视模型，避免把模型中心误当作权威坐标。 / Places the visual model from its NavMesh foot point instead of treating its center as authoritative. */
@@ -612,4 +701,10 @@ function isMovementKey(key: KeyCode): boolean {
 function normalizeRadians(value: number): number {
   const fullTurn = Math.PI * 2;
   return ((value + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
+}
+
+function approachAngle(current: number, target: number, maxDelta: number): number {
+  const delta = normalizeRadians(target - current);
+  if (Math.abs(delta) <= maxDelta) return target;
+  return normalizeRadians(current + Math.sign(delta) * maxDelta);
 }

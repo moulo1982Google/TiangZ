@@ -350,7 +350,7 @@ Cell和AOI Grid尺寸同样属于Cold配置：`MapConfig.cell_size_meters`定义
 
 创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。`Grid2D`与`NavMesh3D` Map Runtime均已可创建；NavMesh3D业务通过`MapComponent.ProjectPosition/FindPath`查询，通过`PlayerUnit.NavigateTo`提交权威移动目标，不读取Detour句柄、不逐节点跨V8，也不能捕获导航错误后回退到Grid2D。空间模式、字段结构、Agent烘焙参数和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
 
-导航源网格由制作工具导出到`navigation/maps/<map>/source`，开发者只维护冷清单并执行`npm run navigation:bake`，不得在TS Handler、Game.Update或服务器启动流程中调用烘焙。`C2M_FindPath`是无副作用查询；`C2M_NavigateTo`的Handler只调用`unit.NavigateTo(request)`，方向移动的Handler只调用`unit.NavigateInput(request)`。Rust从权威坐标寻路并保存路径，在固定Tick推进和AOI广播；零方向输入必须明确停止，不能用“当前坐标目标”模拟。客户端可以保存按键和预测路径，以`G2C_EntityNavigate`校正，但业务不得在TS复制权威路径进度或坐标。技能冲锋、AI移动等新意图应复用该Unit入口或增加同层粗粒度操作，不能在Handler手写逐Tick位移。Demo灰盒是工具与客户端回归输入，不要求程序员手工制作正式3D地图。
+导航源网格由制作工具导出到`navigation/maps/<map>/source`，开发者只维护冷清单并执行`npm run navigation:bake`，不得在TS Handler、Game.Update或服务器启动流程中调用烘焙。`C2M_FindPath`是无副作用查询；`C2M_NavigateTo`的Handler只调用`unit.NavigateTo(request)`，方向移动的Handler只调用`unit.NavigateInput(request)`。点击移动由Rust保存路径走廊，在拐点先连续转身再消费剩余Tick时间移动；方向移动由Rust保存输入、1.5秒租约和polygon引用并在固定Tick调用`moveAlongSurface`。客户端的点击预测必须使用相同转向规则，方向输入每500ms续期，零方向输入必须立即停止，断续期也会自动停止。客户端表现层应分别保存权威、可视角色和本地相机朝向；活跃路径预测期间权威Push只能更新校正目标，不能直接覆盖可视朝向，预测结束后再平滑收敛。相机只能按最短角度追随，不能写回权威状态，也不能对角色两侧的摄像机目标位置直接做XYZ插值。客户端可以保存按键和预测路径，以`G2C_EntityNavigate`校正，但业务不得在TS复制权威路径进度或坐标。业务可通过`MapComponent.Raycast/SampleHeight`做NavMesh边界和地面查询，不能把Raycast当成角色物理碰撞。技能冲锋、AI移动等新意图应复用Unit入口或增加同层粗粒度操作，不能在Handler手写逐Tick位移。Demo灰盒是工具与客户端回归输入，不要求程序员手工制作正式3D地图。
 
 详细字段、Rust所有权和客户端进入校验见[地图空间与3D坐标契约](../design/spatial-world.md)。
 

@@ -13,6 +13,8 @@ export interface NativeHostOpsApi {
   spatialCreateNavMesh3D(mapId: number, widthCells: number, depthCells: number, cellSizeMillimeters: number, assetPath: Uint8Array, expectedHash: Uint8Array): void;
   spatialProjectPosition(mapId: number, x: number, y: number, z: number, extentX: number, extentY: number, extentZ: number): Uint8Array;
   spatialFindPath(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number, maxPoints: number): Uint8Array;
+  spatialRaycast(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number): Uint8Array;
+  spatialSampleHeight(mapId: number, x: number, y: number, z: number, extentX: number, extentY: number, extentZ: number): number;
   unitSetNavigationTarget(mapId: number, handle: number, targetX: number, targetY: number, targetZ: number, sequence: number): Uint8Array;
   unitSetNavigationInput(mapId: number, handle: number, forward: number, strafe: number, yaw: number, sequence: number): Uint8Array;
   spatialRelease(mapId: number): void;
@@ -116,6 +118,14 @@ export class NativeOps {
 
   static SpatialFindPath(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number, maxPoints: number): Uint8Array {
     return nativeHostOps().spatialFindPath(mapId, startX, startY, startZ, endX, endY, endZ, extentX, extentY, extentZ, maxPoints);
+  }
+
+  static SpatialRaycast(mapId: number, startX: number, startY: number, startZ: number, endX: number, endY: number, endZ: number, extentX: number, extentY: number, extentZ: number): Uint8Array {
+    return nativeHostOps().spatialRaycast(mapId, startX, startY, startZ, endX, endY, endZ, extentX, extentY, extentZ);
+  }
+
+  static SpatialSampleHeight(mapId: number, x: number, y: number, z: number, extentX: number, extentY: number, extentZ: number): number {
+    return nativeHostOps().spatialSampleHeight(mapId, x, y, z, extentX, extentY, extentZ);
   }
 
   static UnitSetNavigationTarget(mapId: number, handle: number, targetX: number, targetY: number, targetZ: number, sequence: number): Uint8Array {

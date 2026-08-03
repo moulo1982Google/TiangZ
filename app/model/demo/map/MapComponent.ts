@@ -44,6 +44,7 @@ import { NativeUnitRef } from "../../../generated/model/native/NativeUnitRef";
 import {
   NativeData,
   type NativeAoiBatch,
+  type NativeRaycastHit,
   type NativeVec3,
 } from "../native/NativeData";
 import { NumericComponent } from "../numeric/NumericComponent";
@@ -226,6 +227,25 @@ export class MapComponent extends Component<[
   ): readonly NativeVec3[] {
     this.RequireNavMesh3D();
     return NativeData.FindPath(this.nativeMapKey, start, end, halfExtents, maxPoints);
+  }
+
+  /** 检测两点间是否越过NavMesh边界；技能物理碰撞仍应使用独立物理系统。 / Tests whether a segment crosses a NavMesh boundary; skill physics still belongs to a separate physics system. */
+  Raycast(
+    start: NativeVec3,
+    end: NativeVec3,
+    halfExtents: NativeVec3 = { x: 2, y: 4, z: 2 },
+  ): NativeRaycastHit {
+    this.RequireNavMesh3D();
+    return NativeData.Raycast(this.nativeMapKey, start, end, halfExtents);
+  }
+
+  /** 查询指定X/Z附近可行走层的地面高度；输入Y用于多层地图选层。 / Samples the walkable floor near X/Z while input Y selects among layered surfaces. */
+  SampleHeight(
+    point: NativeVec3,
+    halfExtents: NativeVec3 = { x: 2, y: 4, z: 2 },
+  ): number {
+    this.RequireNavMesh3D();
+    return NativeData.SampleHeight(this.nativeMapKey, point, halfExtents);
   }
 
   /** 创建地图内 Unit 存储、广播传输和帧尾同步源。 / Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */

@@ -80,7 +80,7 @@ Numeric权威值统一使用Rust`i64`、protobuf`int64`和TypeScript`bigint`。�
 
 地图运行时已接入Rust AOI：`MapConfig`引用冷配置`AoiConfig`，分别定义AOI Grid大小、Enter范围、Detach迟滞范围和独立同步档位。同步档位只节流已经可见的可覆盖状态，不会提前建立视野；业务只在阵营、隐身、位面改变时通过`MapAoiComponent.Invalidate*`通知重算。开发约束见[业务开发手册](docs/ai/business-development-manual.md)和[地图空间契约](docs/design/spatial-world.md)。
 
-Phase 4.2.3已经把官方Recast/Detour `v1.6.0`资产、Rust权威移动和AOI下行接入Map Runtime：Map 100启动时校验SHA-256并共享只读NavMesh，每个MapInstance独占查询、路径和AOI状态；TS通过粗粒度`ProjectPosition/FindPath/NavigateTo/NavigateInput`调用，不接触Detour句柄。`cocos_client3D`可登录Map 100，支持左键寻路、W/S前后、A/D转向、按住右键时A/D横移和尾随相机，并以同一权威Push完成本地纠偏与AOI远端插值。射线、独立高度查询和动态障碍继续按Phase 4.2推进。详见[NavMesh3D运行时与Cocos灰盒](docs/tutorials/13-navmesh3d.md)。
+Phase 4.2.4已经把官方Recast/Detour `v1.6.0`资产、Rust权威移动和AOI下行接入Map Runtime：Map 100启动时校验SHA-256并共享只读NavMesh，每个MapInstance独占查询、路径和AOI状态；TS通过粗粒度`ProjectPosition/FindPath/Raycast/SampleHeight/NavigateTo/NavigateInput`调用，不接触Detour句柄。方向输入由Rust在20Hz Tick使用`moveAlongSurface`连续贴地推进，并缓存Unit所在polygon；左键寻路仍使用路径走廊。`cocos_client3D`支持左键寻路、W/S前后、A/D转向、按住右键时A/D横移和尾随相机，并以同一权威Push完成本地纠偏与AOI远端插值。动态障碍继续按Phase 4.2推进。详见[NavMesh3D运行时与Cocos灰盒](docs/tutorials/13-navmesh3d.md)。
 
 ## 快速启动
 
