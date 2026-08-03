@@ -20,7 +20,7 @@ function testConnectionReplacementAndGrace(): void {
     mapHost: {
       name: "map-1",
       sceneType: "MapHost",
-      ip: "127.0.0.1",
+      innerIp: "127.0.0.1",
       port: 7301,
     },
     mapId: 1,
@@ -91,5 +91,5 @@ function testStickyGateDistribution(): void {
 }
 
 function scene(name: string, port: number): SceneConfig {
-  return { name, sceneType: "Gate", ip: "127.0.0.1", port };
+  return { name, sceneType: "Gate", innerIp: "127.0.0.1", port };
 }

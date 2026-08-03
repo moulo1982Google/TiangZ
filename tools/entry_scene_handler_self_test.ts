@@ -309,7 +309,7 @@ function sceneConfig() {
   return {
     name: "handler-probe-1",
     sceneType: "HandlerProbe",
-    ip: "127.0.0.1",
+    innerIp: "127.0.0.1",
     port: 0,
   };
 }
@@ -318,7 +318,7 @@ function sessionSceneConfig() {
   return {
     name: "session-handler-probe-1",
     sceneType: "SessionHandlerProbe",
-    ip: "127.0.0.1",
+    innerIp: "127.0.0.1",
     port: 0,
   };
 }

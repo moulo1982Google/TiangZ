@@ -63,7 +63,14 @@ import type { Logger } from "../logging/Logger";
 export interface SceneConfig {
   name: string;
   sceneType: string;
-  ip: string;
+  /** 服务间通信地址；旧 JSON 的 ip 字段由 Rust 兼容转换为 innerIp。 / Internal route address; Rust maps legacy JSON ip to innerIp. */
+  innerIp: string;
+  /** 本地监听地址；省略时由 Runtime 回退到 innerIp。 / Local listener address; Runtime falls back to innerIp when omitted. */
+  bindIp?: string;
+  /** 客户端连接地址；只用于 LoginMgr/Login/Gate 返回外网入口。 / Client-facing address used only by outer login endpoints. */
+  outerIp?: string;
+  /** 客户端连接端口；省略时回退到 port。 / Client-facing port; falls back to port when omitted. */
+  outerPort?: number;
   port: number;
   protocol?: "auto" | "tcp" | "websocket" | "kcp";
   audience?: "mixed" | "inner" | "outer";
@@ -377,7 +384,7 @@ export abstract class EntryScene extends Scene {
 
   /** 生成面向运维的启动摘要；子类可追加拓扑信息。 / Produces an operator-facing startup summary; subclasses may append topology details. */
   startupMessage(): string {
-    return `[${this.self.name}] ${this.self.sceneType} scene started at ${this.self.ip}:${this.self.port}`;
+    return `[${this.self.name}] ${this.self.sceneType} scene started at ${this.self.bindIp ?? this.self.innerIp}:${this.self.port}`;
   }
 
   /** 在 ready 前获取 Scene 资源；失败会中止进程启动。 / Acquires Scene resources before readiness; failure aborts process startup. */

@@ -35,7 +35,7 @@ impl IoBackend for EpollIoBackend {
             #[cfg(not(feature = "kcp"))]
             bail!("KCP endpoint requires a binary built with --features kcp");
         }
-        let bind_addr = format!("{}:{}", context.scene.ip, context.scene.port);
+        let bind_addr = format!("{}:{}", context.scene.bind_ip(), context.scene.port);
         let listener = std::net::TcpListener::bind(&bind_addr)
             .with_context(|| format!("scene {} failed to bind {bind_addr}", context.scene.name))?;
         listener.set_nonblocking(true)?;

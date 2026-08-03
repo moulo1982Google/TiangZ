@@ -18,12 +18,12 @@
   "name": "map_1",
   "sceneType": "MapHost",
   "staticMapIds": [1, 3],
-  "ip": "127.0.0.1",
+  "innerIp": "127.0.0.1",
   "port": 7301
 }
 ```
 
-MapHost启动时会为配置1和3创建MapScene，并向Location注册实例1和3。其他Process的`knownScenes`只保留MapHost的name/type/ip/port，不重复填写`staticMapIds`。
+MapHost启动时会为配置1和3创建MapScene，并向Location注册实例1和3。其他Process的`knownScenes`只保留MapHost的name/type/innerIp/port，不重复填写`staticMapIds`。
 
 ## 创建动态副本
 
@@ -61,7 +61,7 @@ const dungeonInstanceId = created.instance.mapInstanceId;
     "sceneType": "MapHost",
     "acceptDynamicMaps": true,
     "staticMapIds": [],
-    "ip": "127.0.0.1",
+    "innerIp": "127.0.0.1",
     "port": 7310,
     "protocol": "tcp",
     "audience": "inner"

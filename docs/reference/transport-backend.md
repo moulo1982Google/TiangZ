@@ -39,7 +39,7 @@
 {
   "process": { "name": "gate1" },
   "scenes": [
-    { "name": "gate_1", "sceneType": "Gate", "ip": "127.0.0.1", "port": 7201 }
+    { "name": "gate_1", "sceneType": "Gate", "innerIp": "127.0.0.1", "port": 7201 }
   ]
 }
 ```
@@ -60,7 +60,7 @@ io_uring 必须显式启用，并把本进程启动的 Scene 标记为 `tcp`：
     {
       "name": "gate_1",
       "sceneType": "Gate",
-      "ip": "127.0.0.1",
+      "innerIp": "127.0.0.1",
       "port": 7201,
       "protocol": "tcp"
     }

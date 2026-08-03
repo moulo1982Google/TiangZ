@@ -40,7 +40,7 @@ impl IoBackend for UringIoBackend {
     }
 
     fn start_endpoint(&self, context: EndpointContext) -> Result<()> {
-        let bind_addr = format!("{}:{}", context.scene.ip, context.scene.port);
+        let bind_addr = format!("{}:{}", context.scene.bind_ip(), context.scene.port);
         let listener = std::net::TcpListener::bind(&bind_addr)
             .with_context(|| format!("scene {} failed to bind {bind_addr}", context.scene.name))?;
         let entries = self.entries;

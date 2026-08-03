@@ -83,6 +83,8 @@ export class MapWorld {
         buffs: [],
         speedCellsPerSecond: playerConfig.moveSpeed,
         facing: 0,
+        entityType: 1,
+        configId: playerConfig.id,
       });
     }
     window.addEventListener("keydown", this.onKeyDown);

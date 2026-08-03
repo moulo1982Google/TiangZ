@@ -22,10 +22,10 @@ configs/experiments/    io_uring、KCP 等显式实验配置
     }
   },
   "scenes": [
-    { "name": "login_1", "sceneType": "Login", "ip": "127.0.0.1", "port": 7001 }
+    { "name": "login_1", "sceneType": "Login", "innerIp": "127.0.0.1", "port": 7001 }
   ],
   "knownScenes": [
-    { "name": "gate_1", "sceneType": "Gate", "ip": "127.0.0.1", "port": 7201 }
+    { "name": "gate_1", "sceneType": "Gate", "innerIp": "127.0.0.1", "port": 7201 }
   ]
 }
 ```
@@ -34,6 +34,24 @@ configs/experiments/    io_uring、KCP 等显式实验配置
 - `scenes` 可以有多个入口 Scene，每个 Scene 可有自己的 Listener 地址。
 - `knownScenes` 是路由目录，不表示目标一定在本进程。
 - `debug` 放在 `process` 下；一个 V8 只需要一个 Inspector 端口。
+
+## 云服务器外网演示
+
+云主机的公网 EIP 可能不会出现在 `ip addr` 中。入口 Scene 应按下面的方式填写：
+
+```json
+{
+  "name": "gate_1",
+  "sceneType": "Gate",
+  "innerIp": "10.0.0.5",
+  "bindIp": "0.0.0.0",
+  "outerIp": "203.0.113.10",
+  "port": 7201,
+  "outerPort": 7201
+}
+```
+
+`innerIp`写给其他服，`bindIp`只负责监听，`outerIp/outerPort`写给客户端。前端只配置LoginMgr公网地址；LoginMgr返回Login外网地址，Login返回Gate外网地址。`knownScenes`和MapHost路由只使用`innerIp`，不要写`0.0.0.0`。
 
 `local/all-in-one.json` 把全部 Demo Scene 放在一个进程；`local/cluster/` 是一套可整体复制的多进程部署包，由其中的 `StartMachine.json` 统一启动。`npm run test:runtime` 会验证两种部署。
 

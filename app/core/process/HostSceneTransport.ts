@@ -146,13 +146,13 @@ function allocateOperationId(): number {
 }
 
 function resolveRoute(source: SceneConfig, target: SceneConfig): number {
-  const key = `${source.name}\0${target.name}\0${target.ip}\0${target.port}`;
+  const key = `${source.name}\0${target.name}\0${target.innerIp}\0${target.port}`;
   const existing = routeIds.get(key);
   if (existing !== undefined) return existing;
   const routeId = hostRegisterSceneRoute(
     source.name,
     target.name,
-    target.ip,
+    target.innerIp,
     target.port,
   );
   routeIds.set(key, routeId);

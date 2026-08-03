@@ -38,8 +38,8 @@ export class LoginMgrScene extends EntryScene {
 
     return {
       name: selected.name,
-      ip: selected.ip,
-      port: selected.port,
+      ip: selected.outerIp ?? selected.innerIp,
+      port: selected.outerPort ?? selected.port,
     };
   }
 }

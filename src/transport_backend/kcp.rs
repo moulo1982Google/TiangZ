@@ -48,7 +48,7 @@ enum OutboundEvent {
 }
 
 pub(crate) fn start_kcp_endpoint(context: EndpointContext) -> Result<()> {
-    let bind_addr = format!("{}:{}", context.scene.ip, context.scene.port);
+    let bind_addr = format!("{}:{}", context.scene.bind_ip(), context.scene.port);
     let socket = std::net::UdpSocket::bind(&bind_addr).with_context(|| {
         format!(
             "scene {} failed to bind UDP {bind_addr}",

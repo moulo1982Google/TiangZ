@@ -193,15 +193,15 @@ npm run test:game-config
     {
       "name": "login_mgr",
       "sceneType": "LoginMgr",
-      "ip": "127.0.0.1",
+      "innerIp": "127.0.0.1",
       "port": 7000,
       "protocol": "auto",
       "audience": "mixed"
     }
   ],
   "knownScenes": [
-    { "name": "login_mgr", "sceneType": "LoginMgr", "ip": "127.0.0.1", "port": 7000 },
-    { "name": "login_1", "sceneType": "Login", "ip": "127.0.0.1", "port": 7001 }
+    { "name": "login_mgr", "sceneType": "LoginMgr", "innerIp": "127.0.0.1", "port": 7000 },
+    { "name": "login_1", "sceneType": "Login", "innerIp": "127.0.0.1", "port": 7001 }
   ]
 }
 ```
@@ -218,6 +218,9 @@ npm run test:game-config
 - `process.observability`：延迟采样等可观测性配置；不需要时可以省略。
 - `scenes`：当前进程实际创建的入口 Scene。
 - `knownScenes`：当前进程可路由的 Scene 目录，目标可以在其他进程；省略或为空时默认等于 `scenes`。
+- `scene.innerIp`：服务间通信地址；旧配置中的 `ip` 仍可读取，但新部署配置应使用 `innerIp`。
+- `scene.bindIp`：本机监听地址；云服务器通常使用 `0.0.0.0`，不能把它返回给服务或客户端。
+- `scene.outerIp/outerPort`：客户端连接地址和端口。前端初始写死 LoginMgr 的公网地址，LoginMgr 返回 Login 的外网地址，Login 返回 Gate 的外网地址。
 - `knownSceneFiles`：相对当前进程配置引用共享稳定Scene目录；本地拆分部署统一使用`configs/local/cluster/known-scenes.json`，避免每个进程复制`knownScenes`。
 - `staticMapIds`：只写在实际承载地图的`MapHost`的`scenes`项中；启动时创建这些静态地图，且静态`MapInstanceId`等于配置ID。`knownScenes`路由副本不重复填写。
 - `acceptDynamicMaps`：MapHost是否向MapManager注册并接受动态副本；默认false。空载副本Host使用空`staticMapIds`和true。
@@ -226,7 +229,7 @@ npm run test:game-config
 - `scene.audience`：`mixed`、`inner` 或 `outer`；默认 `mixed`。
 - `StartMachine.json`：按机器 IP 启动多个进程配置文件。正式环境放在 `configs/<environment>`；压测、自动测试和传输实验分别放在 `configs/bench`、`configs/tests`、`configs/experiments`。
 
-把 `all-in-one.json` 拆成多个配置时，只改变 `scenes` 的部署归属；`knownScenes` 中目标的 name/type/ip/port 保持一致，业务调用代码不改。
+把 `all-in-one.json` 拆成多个配置时，只改变 `scenes` 的部署归属；`knownScenes` 中目标的 name/type/innerIp/port 保持一致，业务调用代码不改。`bindIp` 只影响本地监听，`outerIp/outerPort` 只影响客户端登录链路。
 
 Scene 生命周期和玩家下线保存约定见 [生命周期与玩家下线](docs/reference/lifecycle.md)。
 

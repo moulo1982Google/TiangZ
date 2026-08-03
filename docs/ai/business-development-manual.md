@@ -44,6 +44,29 @@ Bench Hotfix可以通过`#tiangz/model`调用真实业务API，但Demo不得引�
 
 只有现有公共能力无法表达需求时才进入Core。只有明确的数据所有权或性能证据支持时才进入Rust或`native_data`。开始修改前必须能用一句话说明业务边界和权威状态归属。
 
+## 云部署地址怎么填写
+
+外网演示时，前端只需要配置一个LoginMgr公网IP和端口。后续地址由服务端逐级返回：LoginMgr返回Login的外网地址，Login返回Gate的外网地址。
+
+```json
+{
+  "name": "gate_1",
+  "sceneType": "Gate",
+  "innerIp": "10.0.0.5",
+  "bindIp": "0.0.0.0",
+  "outerIp": "203.0.113.10",
+  "port": 7201,
+  "outerPort": 7201
+}
+```
+
+- `bindIp`只控制本机监听；云服务器通常使用`0.0.0.0`。
+- `innerIp`只给Login、Gate、Location、MapHost等服务间通信使用。
+- `outerIp/outerPort`只给客户端登录链路使用；没有外网入口的MapHost、Location和Manager不填写。
+- `0.0.0.0`绝不能写入`knownScenes`、MapHost Endpoint或任何返回客户端的地址。
+- 同一个入口在`scenes`和共享`knownScenes`中重复时，`outerIp/outerPort`可以只写一边；如果两边都写，必须一致，否则 Runtime 会拒绝启动。
+- 旧配置的`ip`仍能读取，但新配置使用`innerIp`，避免开发者误把监听地址当成路由地址。
+
 Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#tiangz/model`取得Model类型、协议和Stable Core API；禁止深层导入`app/model`或`app/core`。其他Core路径属于Internal，即使当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
 
 ## 开始设计前
@@ -412,7 +435,7 @@ MapHost配置静态地图：
   "name": "map_1",
   "sceneType": "MapHost",
   "staticMapIds": [1, 3],
-  "ip": "127.0.0.1",
+  "innerIp": "127.0.0.1",
   "port": 7301
 }
 ```

@@ -15,7 +15,7 @@ export function MapHostEndpointFromScene(scene: SceneConfig): MapHostEndpoint {
   }
   return {
     name: scene.name,
-    ip: scene.ip,
+    ip: scene.innerIp,
     port: scene.port,
     protocol: scene.protocol ?? "",
     audience: scene.audience ?? "",
@@ -50,7 +50,7 @@ export function SceneConfigFromMapHostEndpoint(endpoint: MapHostEndpoint): Scene
   return {
     name: endpoint.name,
     sceneType: "MapHost",
-    ip: endpoint.ip,
+    innerIp: endpoint.ip,
     port: endpoint.port,
     protocol: normalizedProtocol,
     audience: endpoint.audience === "inner" || endpoint.audience === "mixed"

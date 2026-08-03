@@ -12,6 +12,11 @@ import "./Generated/Hotfix/handlers";
 import { MapMessageScope } from "./Map/MapMessageScope";
 import { MapWorld } from "./Map/MapWorld";
 
+// 外网演示时把这里替换为 LoginMgr 公网地址；LoginMgr 后续会返回 Login 和 Gate 的 outerIp/outerPort。
+// Replace this with the public LoginMgr address for an external demo; LoginMgr then returns Login/Gate outer endpoints.
+const LOGIN_MGR_HOST = "127.0.0.1";
+const LOGIN_MGR_PORT = 7000;
+
 const app = new Application();
 await app.init({ resizeTo: window, background: "#11171a", antialias: true });
 document.querySelector("#game")!.appendChild(app.canvas);
@@ -43,7 +48,7 @@ async function enterGame(): Promise<void> {
   messages?.dispose();
   world?.dispose();
   flow?.close();
-  flow = new LoginFlow({ transport: "websocket", host: location.hostname || "127.0.0.1", port: 7000 });
+  flow = new LoginFlow({ transport: "websocket", host: LOGIN_MGR_HOST, port: LOGIN_MGR_PORT });
   try {
     const result = await flow.enterGame(account.value.trim() || `pixi_${Date.now()}`, 1, (text) => {
       status.textContent = text;

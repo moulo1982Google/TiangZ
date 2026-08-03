@@ -270,7 +270,22 @@ pub struct MachineConfig {
 pub struct SceneConfig {
     pub name: String,
     pub scene_type: String,
-    pub ip: String,
+    /// 服务间路由地址；旧配置中的 `ip` 会兼容映射到这里。
+    /// Internal service route address; legacy `ip` is accepted as an alias.
+    #[serde(alias = "ip")]
+    pub inner_ip: String,
+    /// 本地监听地址；省略时沿用 innerIp。
+    /// Local listener address; defaults to innerIp when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bind_ip: Option<String>,
+    /// 客户端连接地址；仅 LoginMgr/Login/Gate 等外网入口使用。
+    /// Client-facing address; used by outer LoginMgr/Login/Gate endpoints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outer_ip: Option<String>,
+    /// 客户端连接端口；省略时沿用 port。
+    /// Client-facing port; defaults to port when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outer_port: Option<u16>,
     pub port: u16,
     #[serde(default, alias = "transport")]
     pub protocol: EndpointProtocol,
@@ -284,6 +299,26 @@ pub struct SceneConfig {
     /// Whether this MapHost accepts dynamic instances assigned by MapManager.
     #[serde(default)]
     pub accept_dynamic_maps: bool,
+}
+
+impl SceneConfig {
+    /// 返回实际监听地址；0.0.0.0 只允许出现在这里，不能作为路由地址返回。
+    /// Returns the local bind address; 0.0.0.0 is valid here only, never as a route.
+    pub fn bind_ip(&self) -> &str {
+        self.bind_ip.as_deref().unwrap_or(&self.inner_ip)
+    }
+
+    /// 返回客户端连接使用的地址；未配置时回退到内网地址。
+    /// Returns the client-facing address, falling back to the inner address.
+    pub fn outer_ip(&self) -> &str {
+        self.outer_ip.as_deref().unwrap_or(&self.inner_ip)
+    }
+
+    /// 返回客户端连接使用的端口；未配置时回退到监听端口。
+    /// Returns the client-facing port, falling back to the listener port.
+    pub fn outer_port(&self) -> u16 {
+        self.outer_port.unwrap_or(self.port)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -491,8 +526,10 @@ fn merge_known_scenes(
     source: &str,
 ) -> Result<()> {
     for addition in additions {
-        if let Some(existing) = merged.iter().find(|scene| scene.name == addition.name) {
+        if let Some(existing_index) = merged.iter().position(|scene| scene.name == addition.name) {
+            let existing = &mut merged[existing_index];
             if same_scene_route(existing, &addition) {
+                merge_scene_client_endpoint(existing, &addition, source)?;
                 continue;
             }
             bail!(
@@ -503,13 +540,13 @@ fn merge_known_scenes(
         }
         if let Some(existing) = merged
             .iter()
-            .find(|scene| scene.ip == addition.ip && scene.port == addition.port)
+            .find(|scene| scene.inner_ip == addition.inner_ip && scene.port == addition.port)
         {
             bail!(
                 "known scene {} from {} reuses endpoint {}:{} owned by {}",
                 addition.name,
                 source,
-                addition.ip,
+                addition.inner_ip,
                 addition.port,
                 existing.name
             );
@@ -522,10 +559,46 @@ fn merge_known_scenes(
 fn same_scene_route(left: &SceneConfig, right: &SceneConfig) -> bool {
     left.name == right.name
         && left.scene_type == right.scene_type
-        && left.ip == right.ip
+        && left.inner_ip == right.inner_ip
         && left.port == right.port
         && left.protocol == right.protocol
         && left.audience == right.audience
+}
+
+fn merge_scene_client_endpoint(
+    existing: &mut SceneConfig,
+    addition: &SceneConfig,
+    source: &str,
+) -> Result<()> {
+    if let (Some(left), Some(right)) = (&existing.outer_ip, &addition.outer_ip)
+        && left != right
+    {
+        bail!(
+            "known scene {} from {} conflicts on outerIp: {} vs {}",
+            addition.name,
+            source,
+            left,
+            right
+        );
+    }
+    if let (Some(left), Some(right)) = (existing.outer_port, addition.outer_port)
+        && left != right
+    {
+        bail!(
+            "known scene {} from {} conflicts on outerPort: {} vs {}",
+            addition.name,
+            source,
+            left,
+            right
+        );
+    }
+    if existing.outer_ip.is_none() {
+        existing.outer_ip = addition.outer_ip.clone();
+    }
+    if existing.outer_port.is_none() {
+        existing.outer_port = addition.outer_port;
+    }
+    Ok(())
 }
 
 fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
@@ -639,6 +712,7 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
 
     let mut scene_names = HashSet::new();
     let mut scene_endpoints = HashSet::new();
+    let mut bind_endpoints = HashSet::new();
     for scene in &config.scenes {
         if scene.name.trim().is_empty() || scene.scene_type.trim().is_empty() {
             bail!("scene name and sceneType must not be empty");
@@ -646,15 +720,39 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         if scene.port == 0 {
             bail!("scene {} port must not be 0", scene.name);
         }
-        scene
-            .ip
-            .parse::<IpAddr>()
-            .with_context(|| format!("scene {} has invalid ip: {}", scene.name, scene.ip))?;
+        scene.inner_ip.parse::<IpAddr>().with_context(|| {
+            format!(
+                "scene {} has invalid innerIp: {}",
+                scene.name, scene.inner_ip
+            )
+        })?;
+        scene.bind_ip().parse::<IpAddr>().with_context(|| {
+            format!(
+                "scene {} has invalid bindIp: {}",
+                scene.name,
+                scene.bind_ip()
+            )
+        })?;
+        if let Some(outer_ip) = &scene.outer_ip {
+            outer_ip.parse::<IpAddr>().with_context(|| {
+                format!("scene {} has invalid outerIp: {}", scene.name, outer_ip)
+            })?;
+        }
+        if scene.outer_port == Some(0) {
+            bail!("scene {} outerPort must not be 0", scene.name);
+        }
         if !scene_names.insert(scene.name.clone()) {
             bail!("duplicate scene name {}", scene.name);
         }
-        if !scene_endpoints.insert((scene.ip.clone(), scene.port)) {
-            bail!("duplicate scene endpoint {}:{}", scene.ip, scene.port);
+        if !scene_endpoints.insert((scene.inner_ip.clone(), scene.port)) {
+            bail!("duplicate scene endpoint {}:{}", scene.inner_ip, scene.port);
+        }
+        if !bind_endpoints.insert((scene.bind_ip().to_string(), scene.port)) {
+            bail!(
+                "duplicate listener endpoint {}:{}",
+                scene.bind_ip(),
+                scene.port
+            );
         }
         if scene.protocol == EndpointProtocol::Kcp {
             if scene.audience == EndpointAudience::Mixed {
@@ -798,7 +896,10 @@ mod tests {
         SceneConfig {
             name: name.to_string(),
             scene_type: "Log".to_string(),
-            ip: "127.0.0.1".to_string(),
+            inner_ip: "127.0.0.1".to_string(),
+            bind_ip: None,
+            outer_ip: None,
+            outer_port: None,
             port,
             protocol: EndpointProtocol::Auto,
             audience: EndpointAudience::Mixed,
@@ -866,6 +967,54 @@ mod tests {
         .unwrap();
         assert_eq!(config.process.network.io_backend, IoBackendKind::Epoll);
         assert_eq!(config.scenes[0].protocol, EndpointProtocol::Tcp);
+    }
+
+    #[test]
+    fn separates_listener_inner_and_outer_scene_addresses() {
+        let config: RuntimeConfig = serde_json::from_str(
+            r#"{
+                "process": { "name": "cloud-gate" },
+                "scenes": [{
+                    "name": "gate_1",
+                    "sceneType": "Gate",
+                    "innerIp": "10.0.0.5",
+                    "bindIp": "0.0.0.0",
+                    "outerIp": "203.0.113.10",
+                    "outerPort": 17201,
+                    "port": 7201
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let scene = &config.scenes[0];
+        assert_eq!(scene.inner_ip, "10.0.0.5");
+        assert_eq!(scene.bind_ip(), "0.0.0.0");
+        assert_eq!(scene.outer_ip(), "203.0.113.10");
+        assert_eq!(scene.outer_port(), 17_201);
+        assert!(validate_runtime_config(&config).is_ok());
+
+        let serialized = serde_json::to_value(scene).unwrap();
+        assert_eq!(serialized["innerIp"], "10.0.0.5");
+        assert_eq!(serialized["bindIp"], "0.0.0.0");
+        assert_eq!(serialized["outerIp"], "203.0.113.10");
+        assert_eq!(serialized["outerPort"], 17_201);
+        assert!(serialized.get("ip").is_none());
+    }
+
+    #[test]
+    fn merges_optional_outer_endpoint_metadata_for_shared_routes() {
+        let mut base = scene("login_1", 7001);
+        let mut shared = scene("login_1", 7001);
+        shared.outer_ip = Some("203.0.113.10".to_string());
+        shared.outer_port = Some(17_001);
+
+        let mut merged = vec![base.clone()];
+        merge_known_scenes(&mut merged, vec![shared], "known-scenes.json").unwrap();
+        base.outer_ip = Some("203.0.113.10".to_string());
+        base.outer_port = Some(17_001);
+        assert_eq!(merged[0].outer_ip(), base.outer_ip());
+        assert_eq!(merged[0].outer_port(), base.outer_port());
     }
 
     #[test]

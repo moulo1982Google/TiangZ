@@ -655,7 +655,7 @@ function testReconnectStormKeepsLatestLocation(): void {
   const mapScene = {
     name: "map-1",
     sceneType: "MapHost",
-    ip: "127.0.0.1",
+    innerIp: "127.0.0.1",
     port: 7301,
   };
   let previousConnectionId = 0;

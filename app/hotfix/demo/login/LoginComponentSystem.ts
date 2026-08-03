@@ -36,8 +36,8 @@ export class LoginComponentSystem extends LoginComponent {
       loginCount,
       token: `${this.processId}:${account}:${loginCount}`,
       gateName: gate.name,
-      gateIp: gate.ip,
-      gatePort: gate.port,
+      gateIp: gate.outerIp ?? gate.innerIp,
+      gatePort: gate.outerPort ?? gate.port,
     };
   }
 }

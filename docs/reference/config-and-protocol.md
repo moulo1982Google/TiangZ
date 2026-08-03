@@ -135,14 +135,61 @@ Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原�
 |---|---|---|
 | `name` | string | Scene 实例唯一名 |
 | `sceneType` | string | `@entryScene()` 注册类型 |
-| `ip` | string | 外部/Inner Listener IP |
-| `port` | u16 | Listener 端口 |
+| `innerIp` | string | 服务间通信地址；旧配置的 `ip` 仍可读取，但新配置应使用 `innerIp` |
+| `bindIp` | string? | 本机监听地址；省略时使用 `innerIp`，云服务器通常填写 `0.0.0.0` |
+| `outerIp` | string? | 客户端连接地址；LoginMgr/Login/Gate 返回该地址，省略时使用 `innerIp` |
+| `outerPort` | u16? | 客户端连接端口；省略时使用 `port` |
+| `port` | u16 | 服务监听及内网通信端口 |
 | `protocol` | `auto`、`tcp`、`websocket`、`kcp`? | Endpoint 传输协议；默认 `auto`，KCP 需使用 `--features kcp` 构建 |
 | `audience` | `mixed`、`inner`、`outer`? | Endpoint 面向的连接类型；默认 `mixed`，KCP 必须显式选择 `inner` 或 `outer` |
 | `staticMapIds` | `u32[]`? | 仅MapHost使用；启动时通过统一CreateMap创建的静态地图配置ID |
 | `acceptDynamicMaps` | bool? | 仅MapHost使用；是否注册到MapManager并接受动态实例，默认false |
 
 同一进程内 Scene name 和 endpoint 必须唯一。Inspector 和健康检查端口都不能与任何 Scene 端口冲突。
+
+监听地址、服务间地址和客户端地址是三个不同概念，不能把 `0.0.0.0` 写入 `knownScenes`、MapHost Endpoint 或登录响应。云服务器的公网 IP 通常是云厂商的 EIP/NAT，不会出现在虚机的 `ip addr` 中，因此必须通过部署配置显式填写，不要在 Runtime 中自动猜测公网 IP。
+
+外网演示的登录链路如下：
+
+```text
+前端写死 LoginMgr 公网 IP:port
+  -> LoginMgr.GetLoginServiceAddr()
+     -> 返回 Login 配置中的 outerIp/outerPort
+  -> Login.Login()
+     -> 返回 Gate 配置中的 outerIp/outerPort
+  -> Gate / MapHost
+```
+
+云服务器配置示例：
+
+```json
+{
+  "scenes": [
+    {
+      "name": "login_1",
+      "sceneType": "Login",
+      "innerIp": "10.0.0.5",
+      "bindIp": "0.0.0.0",
+      "outerIp": "203.0.113.10",
+      "port": 7001,
+      "outerPort": 7001,
+      "audience": "mixed"
+    },
+    {
+      "name": "gate_1",
+      "sceneType": "Gate",
+      "innerIp": "10.0.0.5",
+      "bindIp": "0.0.0.0",
+      "outerIp": "203.0.113.10",
+      "port": 7201,
+      "outerPort": 7201,
+      "audience": "mixed"
+    }
+  ]
+}
+```
+
+`knownScenes` 中登记 `innerIp`，用于 Login、Gate、Location、MapHost 等服务间调用；`outerIp/outerPort` 需要同时出现在 LoginMgr 能看到的 Login 路由和 Login 能看到的 Gate 路由中。若公网端口经过映射，使用 `outerPort`，内网 `port` 保持服务实际监听端口。
 
 `staticMapIds`只写在实际启动该MapHost的`scenes`条目，`knownScenes`中的路由副本不重复填写。静态地图实例号等于配置号；动态副本不进入Runtime JSON。部署一个单例`MapManager` Scene，并把它加入各MapHost的`knownScenes`；MapHost会主动注册，MapManager不需要在配置中预先列出MapHost。当前本地配置让`MapManager`与`LoginMgr`共享`mgr` Process，但两者是独立EntryScene，后续可直接拆Process。
 
@@ -155,7 +202,7 @@ Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原�
 }
 ```
 
-共享文件格式为`{"knownScenes": [...]}`。启动器按“本进程scenes、共享文件、本地knownScenes追加项”合并；同名同地址自动去重，同名异址或同地址异名直接拒绝启动。该机制只减少稳定启动目录的复制，不提供运行期服务发现。动态MapHost由MapManager注册并通过Location Endpoint路由，不应写入共享文件。
+共享文件格式为`{"knownScenes": [...]}`。启动器按“本进程scenes、共享文件、本地knownScenes追加项”合并；同名同内网路由自动去重，缺失的`outerIp/outerPort`会从另一份描述补齐，双方都填写但不一致时拒绝启动；同名异路由或同内网地址异名直接拒绝启动。该机制只减少稳定启动目录的复制，不提供运行期服务发现。动态MapHost由MapManager注册并通过Location Endpoint路由，不应写入共享文件。
 
 `auto` 用于当前同一端口兼容内部 TCP 和浏览器 WebSocket。只接受 Native/内部连接的 Scene 可以显式使用 `tcp`；只接受浏览器连接且不会承接内部 TCP 的 Endpoint 才能显式使用 `websocket`。未来支持一个 Scene 配置多个 Endpoint 后，Gate 才能分别显式暴露 Native TCP、WebSocket 和 KCP 端口，并取消生产配置对协议探测的依赖。
 

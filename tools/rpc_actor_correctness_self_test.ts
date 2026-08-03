@@ -124,7 +124,7 @@ async function testRpcIdReservation(
 }
 
 function scene(name: string, port: number) {
-  return { name, sceneType: "Correctness", ip: "127.0.0.1", port };
+  return { name, sceneType: "Correctness", innerIp: "127.0.0.1", port };
 }
 
 function rpcCodec() {

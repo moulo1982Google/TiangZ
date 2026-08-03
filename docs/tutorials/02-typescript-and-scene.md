@@ -137,8 +137,8 @@ cargo build --locked --bin TiangZ
 {
   "process": { "name": "echo-dev" },
   "scenes": [
-    { "name": "echo_1", "sceneType": "Echo", "ip": "127.0.0.1", "port": 7601 },
-    { "name": "echo_2", "sceneType": "Echo", "ip": "127.0.0.1", "port": 7602 }
+    { "name": "echo_1", "sceneType": "Echo", "innerIp": "127.0.0.1", "port": 7601 },
+    { "name": "echo_2", "sceneType": "Echo", "innerIp": "127.0.0.1", "port": 7602 }
   ],
   "knownScenes": []
 }

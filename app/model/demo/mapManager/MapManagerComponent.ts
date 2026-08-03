@@ -173,7 +173,7 @@ export class MapManagerComponent extends Component {
       }
       const returnedHost = SceneConfigFromMapInstance(created.instance);
       if (
-        returnedHost.ip !== host.endpoint.ip ||
+        returnedHost.innerIp !== host.endpoint.innerIp ||
         returnedHost.port !== host.endpoint.port ||
         returnedHost.protocol !== host.endpoint.protocol ||
         returnedHost.audience !== host.endpoint.audience

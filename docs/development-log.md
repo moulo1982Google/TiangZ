@@ -10,6 +10,12 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-08-03：云部署监听地址与外网通告地址分离
+
+- `SceneConfig`新增`bindIp`、`innerIp`、`outerIp/outerPort`语义：监听使用`bindIp`，服务间路由使用`innerIp`，LoginMgr/Login/Gate返回客户端时使用外网地址；旧`ip`配置兼容读取为`innerIp`。
+- TCP、WebSocket、KCP监听器不再把路由地址误当作绑定地址；`0.0.0.0`只允许用于监听，不能进入`knownScenes`、MapHost Endpoint或客户端响应。
+- 外网演示链路固定为“前端写死LoginMgr公网地址 -> LoginMgr返回Login外网地址 -> Login返回Gate外网地址”。云服务器公网EIP不依赖`ip addr`自动发现，必须由部署配置显式提供。
+
 ## 2026-08-03：AOI扁平Grid与双向位图索引
 
 - 新增`docs/design/aoi-architecture.md`，用分层图、数据结构图和时序图固定地图创建、入图、移动、业务过滤、Movement直达Gate、Numeric/UnitState复制、Enter/Leave和Detach的真实函数链；补充Buff公开事件、队伍私密详情、位面过滤、Item本人事件和Move自动热路径的可调用代码范例，并链接真实Demo位置。`MapComponent.PublishVisibilityChanges`成为显式Invalidate后的统一发布入口，Demo关键决策点增加中英文说明，避免开发者绕过地图生命周期或重复广播。
