@@ -3,4 +3,6 @@ import "../../hotfix/demo/item/ItemComponentSystem";
 import "../../hotfix/demo/item/ItemSystem";
 import "../../hotfix/demo/login/LoginComponentSystem";
 import "../../hotfix/demo/map/PlayerUnitSystem";
+import "../../hotfix/demo/monster/MonsterComponentSystem";
+import "../../hotfix/demo/monster/MonsterUnitSystem";
 import "../../hotfix/demo/numeric/NumericComponentSystem";

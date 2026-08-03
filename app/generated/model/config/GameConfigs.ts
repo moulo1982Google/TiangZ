@@ -46,6 +46,8 @@ export type MapConfig = game.MapConfig;
 export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
+export type MonsterConfig = game.MonsterConfig;
+export type MonsterAreaConfig = game.MonsterAreaConfig;
 
 interface GameConfigSnapshot {
   readonly dataFingerprint: string;
@@ -56,9 +58,11 @@ interface GameConfigSnapshot {
   readonly PlayerConfig: ConfigTable<game.PlayerConfig>;
   readonly AoiConfig: ConfigTable<game.AoiConfig>;
   readonly AoiSyncTierConfig: ConfigTable<game.AoiSyncTierConfig>;
+  readonly MonsterConfig: ConfigTable<game.MonsterConfig>;
+  readonly MonsterAreaConfig: ConfigTable<game.MonsterAreaConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "7c5257870e2e75a8495d71d8e18aad97e1244d8505376e87dfa2b22943681716";
+export const GameConfigSchemaFingerprint = "af6124242ff6f4b24a1c7cffc63c06dc3a5934211b85b932a5d5e6d340ad4930";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -114,6 +118,8 @@ export class GameConfigRegistry {
       PlayerConfig: new ConfigTable<game.PlayerConfig>(tables.TbPlayerConfig.getDataList()),
       AoiConfig: new ConfigTable<game.AoiConfig>(tables.TbAoiConfig.getDataList()),
       AoiSyncTierConfig: new ConfigTable<game.AoiSyncTierConfig>(tables.TbAoiSyncTierConfig.getDataList()),
+      MonsterConfig: new ConfigTable<game.MonsterConfig>(tables.TbMonsterConfig.getDataList()),
+      MonsterAreaConfig: new ConfigTable<game.MonsterAreaConfig>(tables.TbMonsterAreaConfig.getDataList()),
     });
     validateSnapshot(candidate);
 
@@ -139,6 +145,8 @@ export const GameConfigs = Object.freeze({
   get PlayerConfig() { return GameConfigRegistry.RequireCurrent().PlayerConfig; },
   get AoiConfig() { return GameConfigRegistry.RequireCurrent().AoiConfig; },
   get AoiSyncTierConfig() { return GameConfigRegistry.RequireCurrent().AoiSyncTierConfig; },
+  get MonsterConfig() { return GameConfigRegistry.RequireCurrent().MonsterConfig; },
+  get MonsterAreaConfig() { return GameConfigRegistry.RequireCurrent().MonsterAreaConfig; },
 });
 
 function validateSnapshot(snapshot: GameConfigSnapshot): void {
@@ -222,6 +230,34 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
     }
     if (player.moveSpeed <= 0 || player.initialItemCount < 0) {
       throw new Error(`player config ${player.id} has invalid movement or item values`);
+    }
+  }
+  for (const monster of snapshot.MonsterConfig.GetAll()) {
+    if (
+      monster.maxHp <= 0 ||
+      monster.attackDamage < 0 ||
+      monster.moveSpeed <= 0 ||
+      monster.attackRange <= 0 ||
+      !Number.isSafeInteger(monster.attackIntervalMs) ||
+      monster.attackIntervalMs <= 0 ||
+      (monster.attackMode !== 0 && monster.attackMode !== 1) ||
+      monster.skillId < 0
+    ) {
+      throw new Error(`monster config ${monster.id} has invalid combat values`);
+    }
+  }
+  for (const area of snapshot.MonsterAreaConfig.GetAll()) {
+    if (!area.mapConfigId_ref || !area.monsterConfigId_ref) {
+      throw new Error(`monster spawn slot ${area.id} contains a missing reference`);
+    }
+    if (
+      ![area.spawnX, area.spawnY, area.spawnZ, area.spawnYaw].every(Number.isFinite) ||
+      !Number.isSafeInteger(area.respawnSeconds) ||
+      area.respawnSeconds < 0 ||
+      !Number.isSafeInteger(area.corpseLifetimeSeconds) ||
+      area.corpseLifetimeSeconds < 0
+    ) {
+      throw new Error(`monster spawn slot ${area.id} has invalid spatial or lifecycle values`);
     }
   }
 }

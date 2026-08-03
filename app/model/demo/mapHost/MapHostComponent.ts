@@ -37,6 +37,7 @@ import { MapTransferProtocol } from "../../../generated/model/server/demo/protoc
 import { MapComponent } from "../map/MapComponent";
 import { MapScene } from "../map/MapScene";
 import { MapAoiComponent } from "../map/MapAoiComponent";
+import { MonsterComponent } from "../monster/MonsterComponent";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
@@ -988,6 +989,7 @@ export class MapHostComponent extends Component {
         this,
         aoi,
       );
+      scene.AddComponent(MonsterComponent, map, aoi);
       this.maps.set(definition.mapInstanceId, map);
       return map;
     } catch (error) {

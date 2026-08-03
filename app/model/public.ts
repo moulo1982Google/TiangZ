@@ -78,7 +78,7 @@ export { DynamicMapLifecycleComponent } from "./demo/mapHost/DynamicMapLifecycle
 export { MapHostRegistrationComponent } from "./demo/mapHost/MapHostRegistrationComponent";
 export { MapManagerComponent } from "./demo/mapManager/MapManagerComponent";
 export { DynamicMapProxy } from "./demo/mapHost/DynamicMapProxy";
-export { NumericComponent } from "./demo/numeric/NumericComponent";
+export { NumericComponent, type NumericInitialValues } from "./demo/numeric/NumericComponent";
 export {
   AllNumericTypes,
   IsDerivedNumericType,
@@ -104,7 +104,19 @@ export {
   type ItemConfig as ItemConfigData,
   type MapConfig as MapConfigData,
   type PlayerConfig as PlayerConfigData,
+  type MonsterConfig as MonsterConfigData,
+  type MonsterAreaConfig as MonsterAreaConfigData,
 } from "../generated/model/config";
+export {
+  MonsterComponent,
+  type MonsterRuntimeState,
+  type MonsterSpawnSlot,
+} from "./demo/monster/MonsterComponent";
+export {
+  MonsterUnit,
+  type AwakeMonsterUnit,
+  type MonsterSnapshot,
+} from "./demo/monster/MonsterUnit";
 export { GateScene } from "./demo/scenes/GateScene";
 export { LoginScene } from "./demo/scenes/LoginScene";
 export { LocationScene } from "./demo/scenes/LocationScene";

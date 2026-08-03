@@ -42,6 +42,14 @@
     {
       "table_name": "AoiSyncTierConfig",
       "reload_mode": 2
+    },
+    {
+      "table_name": "MonsterConfig",
+      "reload_mode": 2
+    },
+    {
+      "table_name": "MonsterAreaConfig",
+      "reload_mode": 2
     }
   ],
   "game_tbmapconfig": [
@@ -134,6 +142,70 @@
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
       "entry_players_per_tick": 1,
       "entry_queue_capacity": 10000
+    }
+  ],
+  "game_tbmonsterareaconfig": [
+    {
+      "id": 10001,
+      "map_config_id": 1,
+      "monster_config_id": 2,
+      "spawn_x": 40,
+      "spawn_y": 0,
+      "spawn_z": 40,
+      "spawn_yaw": 0,
+      "respawn_seconds": 10,
+      "corpse_lifetime_seconds": 3,
+      "initial_spawn": true
+    },
+    {
+      "id": 10002,
+      "map_config_id": 1,
+      "monster_config_id": 2,
+      "spawn_x": 20,
+      "spawn_y": 0,
+      "spawn_z": 20,
+      "spawn_yaw": 0,
+      "respawn_seconds": 10,
+      "corpse_lifetime_seconds": 3,
+      "initial_spawn": true
+    },
+    {
+      "id": 10003,
+      "map_config_id": 2,
+      "monster_config_id": 1,
+      "spawn_x": 24,
+      "spawn_y": 0,
+      "spawn_z": 22,
+      "spawn_yaw": 0,
+      "respawn_seconds": 3,
+      "corpse_lifetime_seconds": 1,
+      "initial_spawn": true
+    }
+  ],
+  "game_tbmonsterconfig": [
+    {
+      "id": 1,
+      "name": "训练木桩",
+      "model_id": "monster/dummy",
+      "max_hp": 300,
+      "attack_damage": 8,
+      "move_speed": 2.5,
+      "attack_range": 1.5,
+      "attack_interval_ms": 1500,
+      "attack_mode": 0,
+      "skill_id": 0
+    },
+    {
+      "id": 2,
+      "name": "主动野狼",
+      "model_id": "monster/wolf",
+      "max_hp": 180,
+      "attack_damage": 12,
+      "move_speed": 3.2,
+      "attack_range": 1.6,
+      "attack_interval_ms": 1200,
+      "attack_mode": 1,
+      "skill_id": 0
     }
   ]
 }

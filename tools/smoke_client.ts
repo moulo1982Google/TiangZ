@@ -1,6 +1,7 @@
 import net from "node:net";
 import {
   buildEnterMapPacket,
+  buildAttackMonsterPacket,
   buildFindPathPacket,
   buildNavigateToPacket,
   buildNavigateInputPacket,
@@ -12,6 +13,7 @@ import {
   buildMovePacket,
   buildUseItemPacket,
   decodeAoiDeltaFrame,
+  decodeAttackMonsterFrame,
   decodeEntityMoveFrame,
   decodeEntityNavigateFrame,
   decodeEnterMapFrame,
@@ -366,8 +368,68 @@ async function verifyMapTransfer(
     itemCount: itemAfter?.count,
     queuedItemCount: itemResponse.body.item.count,
   });
+  await verifyMonsterLifecycle(gate, transferred);
   const navigation = await verifyNavMeshTransfer(gate, transferred);
   return await verifyDynamicMapTransfer(gate, navigation, dynamicMap);
+}
+
+/** 验证固定刷点怪物的攻击、死亡、尸体移除和重生完整闭环。 / Verifies the full fixed-slot monster loop: attack, death, corpse removal, and respawn. */
+async function verifyMonsterLifecycle(
+  gate: TcpRpcConnection,
+  enterMap: ReturnType<typeof decodeEnterMapFrame>["body"],
+): Promise<void> {
+  const monster = enterMap.entities.find(
+    (entity) => entity.entityType === 2 && entity.configId === 1,
+  );
+  if (!monster) {
+    throw new Error(`map2 snapshot did not include the training dummy: ${stringifyForError(enterMap.entities)}`);
+  }
+  const initialHp = monster.numerics.find((numeric) => numeric.numericType === 1)?.value;
+  if (initialHp !== 300n) {
+    throw new Error(`training dummy has unexpected initial HP: ${initialHp}`);
+  }
+
+  const expectedHits = 12;
+  let last: ReturnType<typeof decodeAttackMonsterFrame>["body"] | undefined;
+  for (let hit = 1; hit <= expectedHits; hit += 1) {
+    const response = decodeAttackMonsterFrame(await gate.request(
+      buildAttackMonsterPacket(nextRpcId++, { monsterId: monster.unitId }),
+    ));
+    if (
+      response.body.error ||
+      response.body.monsterId !== monster.unitId ||
+      response.body.damage !== 25 ||
+      response.body.remainingHp !== BigInt((expectedHits - hit) * 25) ||
+      response.body.killed !== (hit === expectedHits)
+    ) {
+      throw new Error(`monster attack result mismatch: ${stringifyForError(response.body)}`);
+    }
+    last = response.body;
+  }
+
+  let observedLeave = false;
+  let respawned: typeof monster | undefined;
+  const deadline = Date.now() + 7_000;
+  while (Date.now() < deadline && !respawned) {
+    const delta = decodeAoiDeltaFrame(await gate.waitForMessage(
+      MsgCode.G2C_AoiDelta,
+      Math.max(1, deadline - Date.now()),
+    )).body;
+    observedLeave ||= delta.leaves.includes(monster.unitId);
+    respawned = delta.enters.find(
+      (entity) => entity.entityType === 2 && entity.configId === 1,
+    );
+  }
+  const respawnHp = respawned?.numerics.find((numeric) => numeric.numericType === 1)?.value;
+  if (!observedLeave || !respawned || respawnHp !== 300n) {
+    throw new Error(`monster corpse/respawn lifecycle failed: ${stringifyForError({ observedLeave, respawned, respawnHp })}`);
+  }
+  console.log("Monster lifecycle:", {
+    initialMonsterId: monster.unitId,
+    killedMonsterId: last?.monsterId,
+    respawnedMonsterId: respawned.unitId,
+    respawnHp,
+  });
 }
 
 /** 验证真实玩家可进入NavMesh3D地图，并收到与冷配置一致的空间资源契约。 / Verifies that a real player can enter a NavMesh3D map with the cold-configured spatial asset contract. */
@@ -832,7 +894,10 @@ async function verifySharedMapBroadcast(
     const snapshotIds = observer.enterMap.entities
       .map((entity) => entity.unitId)
       .sort((left, right) => left - right);
-    const expectedIds = [mover.enterMap.unitId, observer.enterMap.unitId].sort(
+    const monsterIds = mover.enterMap.entities
+      .filter((entity) => entity.entityType === 2)
+      .map((entity) => entity.unitId);
+    const expectedIds = [mover.enterMap.unitId, observer.enterMap.unitId, ...monsterIds].sort(
       (left, right) => left - right,
     );
     if (
@@ -842,7 +907,7 @@ async function verifySharedMapBroadcast(
       snapshotIds.some((unitId, index) => unitId !== expectedIds[index])
     ) {
       throw new Error(
-        `entity enter/snapshot mismatch: ${JSON.stringify({ entered, snapshotIds, expectedIds })}`,
+        `entity enter/snapshot mismatch: ${stringifyForError({ entered, snapshotIds, expectedIds })}`,
       );
     }
 

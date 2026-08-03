@@ -9,6 +9,8 @@ import {
   C2G_MapSnapshotReadyCodec,
   C2G_Ping,
   C2G_PingCodec,
+  C2M_AttackMonster,
+  C2M_AttackMonsterCodec,
   C2M_FindPath,
   C2M_FindPathCodec,
   C2M_MapProbe,
@@ -33,6 +35,8 @@ import {
   G2C_MapSnapshotReadyCodec,
   G2C_Ping,
   G2C_PingCodec,
+  M2C_AttackMonster,
+  M2C_AttackMonsterCodec,
   M2C_FindPath,
   M2C_FindPathCodec,
   M2C_MapProbe,
@@ -152,6 +156,14 @@ export const MapProtocol = {
     responseCodec: M2C_UseItemCodec,
     routing: "actor-location",
   }),
+  AttackMonster: defineRpc<C2M_AttackMonster, M2C_AttackMonster>({
+    name: "Map.AttackMonster",
+    requestCode: MsgCode.C2M_AttackMonster,
+    responseCode: MsgCode.M2C_AttackMonster,
+    requestCodec: C2M_AttackMonsterCodec,
+    responseCodec: M2C_AttackMonsterCodec,
+    routing: "actor-location",
+  }),
 };
 
 export const AllRpcDescriptors = [
@@ -166,5 +178,6 @@ export const AllRpcDescriptors = [
   MapProtocol.NavigateInput,
   MapProtocol.ToggleDemoDoor,
   MapProtocol.UseItem,
+  MapProtocol.AttackMonster,
   GateProtocol.Ping,
 ] as const;

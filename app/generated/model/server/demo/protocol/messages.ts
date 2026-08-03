@@ -17,6 +17,8 @@ export interface MapEntitySnapshot {
   speedCellsPerSecond: number;
   facing: number;
   buffs: readonly BuffPublicView[];
+  entityType: number;
+  configId: number;
 }
 
 export const MapEntitySnapshotCodec = {
@@ -37,6 +39,8 @@ export const MapEntitySnapshotCodec = {
       speedCellsPerSecond: 0,
       facing: 0,
       buffs: [],
+      entityType: 0,
+      configId: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -82,6 +86,12 @@ export const MapEntitySnapshotCodec = {
       else if (tag.fieldNo === 14 && tag.wireType === 2) {
         (value.buffs as BuffPublicView[]).push(BuffPublicViewCodec.decode(reader.bytesField()));
       }
+      else if (tag.fieldNo === 15 && tag.wireType === 0) {
+        value.entityType = reader.uint32();
+      }
+      else if (tag.fieldNo === 16 && tag.wireType === 0) {
+        value.configId = reader.uint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -105,6 +115,8 @@ export const MapEntitySnapshotCodec = {
     if (value.speedCellsPerSecond !== undefined) writer.float(11, value.speedCellsPerSecond);
     if (value.facing !== undefined) writer.uint32(12, value.facing);
     for (const item of (value.buffs ?? [])) writer.bytes(14, BuffPublicViewCodec.encode(item), true);
+    if (value.entityType !== undefined) writer.uint32(15, value.entityType);
+    if (value.configId !== undefined) writer.uint32(16, value.configId);
     return writer.finish();
   },
 };
@@ -5113,6 +5125,102 @@ export const M2C_UseItemCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.item !== undefined) writer.bytes(1, ItemSnapshotCodec.encode(value.item));
+    return writer.finish();
+  },
+};
+
+export interface C2M_AttackMonster extends IActorLocationRequest {
+  rpcId?: number;
+  monsterId: number;
+}
+
+export const C2M_AttackMonsterCodec = {
+  decode(payload: Uint8Array): C2M_AttackMonster {
+    const reader = new BinaryReader(payload);
+    const value: C2M_AttackMonster = {
+      monsterId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.monsterId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_AttackMonster): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_AttackMonster extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  monsterId: number;
+  damage: number;
+  remainingHp: bigint;
+  killed: boolean;
+}
+
+export const M2C_AttackMonsterCodec = {
+  decode(payload: Uint8Array): M2C_AttackMonster {
+    const reader = new BinaryReader(payload);
+    const value: M2C_AttackMonster = {
+      monsterId: 0,
+      damage: 0,
+      remainingHp: 0n,
+      killed: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.monsterId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.damage = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.remainingHp = reader.uint64();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.killed = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_AttackMonster): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
+    if (value.damage !== undefined) writer.uint32(2, value.damage);
+    if (value.remainingHp !== undefined) writer.uint64(3, value.remainingHp);
+    if (value.killed !== undefined) writer.bool(4, value.killed);
     return writer.finish();
   },
 };

@@ -322,6 +322,176 @@ export class MapConfig {
 
 
 export namespace game {
+export class MonsterAreaConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.map_config_id === undefined) { throw new Error() }
+        this.mapConfigId = _json_.map_config_id
+        if (_json_.monster_config_id === undefined) { throw new Error() }
+        this.monsterConfigId = _json_.monster_config_id
+        if (_json_.spawn_x === undefined) { throw new Error() }
+        this.spawnX = _json_.spawn_x
+        if (_json_.spawn_y === undefined) { throw new Error() }
+        this.spawnY = _json_.spawn_y
+        if (_json_.spawn_z === undefined) { throw new Error() }
+        this.spawnZ = _json_.spawn_z
+        if (_json_.spawn_yaw === undefined) { throw new Error() }
+        this.spawnYaw = _json_.spawn_yaw
+        if (_json_.respawn_seconds === undefined) { throw new Error() }
+        this.respawnSeconds = _json_.respawn_seconds
+        if (_json_.corpse_lifetime_seconds === undefined) { throw new Error() }
+        this.corpseLifetimeSeconds = _json_.corpse_lifetime_seconds
+        if (_json_.initial_spawn === undefined) { throw new Error() }
+        this.initialSpawn = _json_.initial_spawn
+    }
+
+    /**
+     * 固定刷怪点ID
+     */
+    readonly id: number
+    /**
+     * 地图配置ID
+     */
+    readonly mapConfigId: number
+    mapConfigId_ref: game.MapConfig | undefined
+    /**
+     * 怪物模板ID
+     */
+    readonly monsterConfigId: number
+    monsterConfigId_ref: game.MonsterConfig | undefined
+    /**
+     * 刷怪点X（米）
+     */
+    readonly spawnX: number
+    /**
+     * 刷怪点Y（米）
+     */
+    readonly spawnY: number
+    /**
+     * 刷怪点Z（米）
+     */
+    readonly spawnZ: number
+    /**
+     * 初始朝向Yaw（弧度）
+     */
+    readonly spawnYaw: number
+    /**
+     * 死亡后重生秒数
+     */
+    readonly respawnSeconds: number
+    /**
+     * 尸体保留秒数
+     */
+    readonly corpseLifetimeSeconds: number
+    /**
+     * 地图创建时是否生成
+     */
+    readonly initialSpawn: boolean
+
+    resolve(tables:Tables) {
+
+        this.mapConfigId_ref = tables.TbMapConfig.get(this.mapConfigId)
+        this.monsterConfigId_ref = tables.TbMonsterConfig.get(this.monsterConfigId)
+
+
+
+
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
+export class MonsterConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+        if (_json_.model_id === undefined) { throw new Error() }
+        this.modelId = _json_.model_id
+        if (_json_.max_hp === undefined) { throw new Error() }
+        this.maxHp = _json_.max_hp
+        if (_json_.attack_damage === undefined) { throw new Error() }
+        this.attackDamage = _json_.attack_damage
+        if (_json_.move_speed === undefined) { throw new Error() }
+        this.moveSpeed = _json_.move_speed
+        if (_json_.attack_range === undefined) { throw new Error() }
+        this.attackRange = _json_.attack_range
+        if (_json_.attack_interval_ms === undefined) { throw new Error() }
+        this.attackIntervalMs = _json_.attack_interval_ms
+        if (_json_.attack_mode === undefined) { throw new Error() }
+        this.attackMode = _json_.attack_mode
+        if (_json_.skill_id === undefined) { throw new Error() }
+        this.skillId = _json_.skill_id
+    }
+
+    /**
+     * 怪物配置ID
+     */
+    readonly id: number
+    /**
+     * 显示名称
+     */
+    readonly name: string
+    /**
+     * 客户端模型标识
+     */
+    readonly modelId: string
+    /**
+     * 基础最大生命值
+     */
+    readonly maxHp: number
+    /**
+     * 基础攻击伤害
+     */
+    readonly attackDamage: number
+    /**
+     * 每秒移动米数
+     */
+    readonly moveSpeed: number
+    /**
+     * 普通攻击距离（米）
+     */
+    readonly attackRange: number
+    /**
+     * 普通攻击间隔（毫秒）
+     */
+    readonly attackIntervalMs: number
+    /**
+     * 攻击模式：0被动，1主动
+     */
+    readonly attackMode: number
+    /**
+     * 技能配置ID：当前演示0表示普通攻击
+     */
+    readonly skillId: number
+
+    resolve(tables:Tables) {
+
+
+
+
+
+
+
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
 export class PlayerConfig {
 
     constructor(_json_: any) {
@@ -613,6 +783,74 @@ export class TbConfigTablePolicy {
 }
 
 
+export namespace game {
+/**
+ * 怪物模板配置
+ */
+export class TbMonsterConfig {
+    private _dataMap: Map<number, game.MonsterConfig>
+    private _dataList: game.MonsterConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.MonsterConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.MonsterConfig
+            _v = new game.MonsterConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.MonsterConfig> { return this._dataMap; }
+    getDataList(): game.MonsterConfig[] { return this._dataList; }
+
+    get(key: number): game.MonsterConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
+export namespace game {
+/**
+ * 怪物固定刷点配置
+ */
+export class TbMonsterAreaConfig {
+    private _dataMap: Map<number, game.MonsterAreaConfig>
+    private _dataList: game.MonsterAreaConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.MonsterAreaConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.MonsterAreaConfig
+            _v = new game.MonsterAreaConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.MonsterAreaConfig> { return this._dataMap; }
+    getDataList(): game.MonsterAreaConfig[] { return this._dataList; }
+
+    get(key: number): game.MonsterAreaConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
 
 type JsonLoader = (file: string) => any
 
@@ -647,6 +885,16 @@ export class Tables {
      * 配置表冷热策略
      */
     get TbConfigTablePolicy(): game.TbConfigTablePolicy  { return this._TbConfigTablePolicy;}
+    private _TbMonsterConfig: game.TbMonsterConfig
+    /**
+     * 怪物模板配置
+     */
+    get TbMonsterConfig(): game.TbMonsterConfig  { return this._TbMonsterConfig;}
+    private _TbMonsterAreaConfig: game.TbMonsterAreaConfig
+    /**
+     * 怪物固定刷点配置
+     */
+    get TbMonsterAreaConfig(): game.TbMonsterAreaConfig  { return this._TbMonsterAreaConfig;}
 
     constructor(loader: JsonLoader) {
         this._TbItemConfig = new game.TbItemConfig(loader('game_tbitemconfig'))
@@ -655,6 +903,8 @@ export class Tables {
         this._TbAoiConfig = new game.TbAoiConfig(loader('game_tbaoiconfig'))
         this._TbAoiSyncTierConfig = new game.TbAoiSyncTierConfig(loader('game_tbaoisynctierconfig'))
         this._TbConfigTablePolicy = new game.TbConfigTablePolicy(loader('game_tbconfigtablepolicy'))
+        this._TbMonsterConfig = new game.TbMonsterConfig(loader('game_tbmonsterconfig'))
+        this._TbMonsterAreaConfig = new game.TbMonsterAreaConfig(loader('game_tbmonsterareaconfig'))
 
         this._TbItemConfig.resolve(this)
         this._TbMapConfig.resolve(this)
@@ -662,6 +912,8 @@ export class Tables {
         this._TbAoiConfig.resolve(this)
         this._TbAoiSyncTierConfig.resolve(this)
         this._TbConfigTablePolicy.resolve(this)
+        this._TbMonsterConfig.resolve(this)
+        this._TbMonsterAreaConfig.resolve(this)
     }
 }
 

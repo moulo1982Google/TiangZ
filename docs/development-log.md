@@ -448,3 +448,11 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - Godot Demo贯通LoginMgr、Login、Gate、Map 100、`G2C_EntityNavigate`、基础AOI、5秒Gate Ping、点击寻路、W/S方向移动、A/D转身和`Map.ToggleDemoDoor`。
 - Godot与TiangZ米制Y-Up坐标直接对齐；表现层只平滑服务端权威位置，不复制Rust NavMesh、TileCache、Agent半径或动态碰撞。
 - Godot协议层已接入`codegen:godot-client-sdk`：从Proto锁文件生成`godot-3d-4.7.1/scripts/generated/tiangz_proto.gd`，客户端只手写连接流程、RPC编排和表现适配；TCP/KCP Adapter仍留作后续工作。
+
+# 2026-08-03：Phase 4.4最小怪物业务闭环
+
+- 新增Luban冷配置`MonsterConfig`和`MonsterAreaConfig`。前者描述模板、模型标识、基础数值和主动/被动模式，后者一行对应一个固定刷怪槽位，包含出生点、尸体保留时间、重生时间和初始生成开关。
+- `MapHostComponent`在静态地图和动态副本中统一挂载`MonsterComponent`；怪物使用统一`UnitComponent`里的`MonsterUnit`，不创建独立Actor、Gate连接或额外V8。AOI只登记怪物为Subject，玩家进入视野收到`entityType=2/configId`快照。
+- Map固定Tick统一处理主动怪追击、攻击间隔、玩家攻击、Numeric扣血、死亡、尸体Detach/Remove和原刷点重生；被动训练木桩只作为目标，不主动追击。没有为每个怪物创建长期Timer。
+- 新增`C2M_AttackMonster/M2C_AttackMonster`，调用链固定为`Handler -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。Handler不遍历地图、不直接操作Native句柄；掉落、技能、仇恨、持久化和角色/怪物动态避障不属于本阶段。
+- 真实Runtime smoke覆盖地图2训练木桩：初始快照、12次攻击至死亡、尸体AOI Leave、原槽位重生和重生HP恢复。详细开发入口见`docs/tutorials/16-monster-module.md`。

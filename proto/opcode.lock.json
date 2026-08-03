@@ -372,6 +372,11 @@
       "code": 10024
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_AttackMonster",
+      "name": "C2M_AttackMonster",
+      "code": 10042
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_FindPath",
       "name": "C2M_FindPath",
       "code": 10032
@@ -505,6 +510,11 @@
       "key": "proto/OuterMessage_C_10001.proto#G2C_Ping",
       "name": "G2C_Ping",
       "code": 10031
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_AttackMonster",
+      "name": "M2C_AttackMonster",
+      "code": 10043
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_FindPath",

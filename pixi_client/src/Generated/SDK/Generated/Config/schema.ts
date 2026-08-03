@@ -287,6 +287,41 @@ export class MapConfig {
 
 
 export namespace game {
+export class MonsterConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+        if (_json_.model_id === undefined) { throw new Error() }
+        this.modelId = _json_.model_id
+    }
+
+    /**
+     * 怪物配置ID
+     */
+    readonly id: number
+    /**
+     * 显示名称
+     */
+    readonly name: string
+    /**
+     * 客户端模型标识
+     */
+    readonly modelId: string
+
+    resolve(tables:Tables) {
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
 export class PlayerConfig {
 
     constructor(_json_: any) {
@@ -529,6 +564,40 @@ export class TbAoiSyncTierConfig {
 }
 
 
+export namespace game {
+/**
+ * 怪物模板配置
+ */
+export class TbMonsterConfig {
+    private _dataMap: Map<number, game.MonsterConfig>
+    private _dataList: game.MonsterConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.MonsterConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.MonsterConfig
+            _v = new game.MonsterConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.MonsterConfig> { return this._dataMap; }
+    getDataList(): game.MonsterConfig[] { return this._dataList; }
+
+    get(key: number): game.MonsterConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
 
 type JsonLoader = (file: string) => any
 
@@ -558,6 +627,11 @@ export class Tables {
      * AOI同步层级冷配置
      */
     get TbAoiSyncTierConfig(): game.TbAoiSyncTierConfig  { return this._TbAoiSyncTierConfig;}
+    private _TbMonsterConfig: game.TbMonsterConfig
+    /**
+     * 怪物模板配置
+     */
+    get TbMonsterConfig(): game.TbMonsterConfig  { return this._TbMonsterConfig;}
 
     constructor(loader: JsonLoader) {
         this._TbItemConfig = new game.TbItemConfig(loader('game_tbitemconfig'))
@@ -565,12 +639,14 @@ export class Tables {
         this._TbPlayerConfig = new game.TbPlayerConfig(loader('game_tbplayerconfig'))
         this._TbAoiConfig = new game.TbAoiConfig(loader('game_tbaoiconfig'))
         this._TbAoiSyncTierConfig = new game.TbAoiSyncTierConfig(loader('game_tbaoisynctierconfig'))
+        this._TbMonsterConfig = new game.TbMonsterConfig(loader('game_tbmonsterconfig'))
 
         this._TbItemConfig.resolve(this)
         this._TbMapConfig.resolve(this)
         this._TbPlayerConfig.resolve(this)
         this._TbAoiConfig.resolve(this)
         this._TbAoiSyncTierConfig.resolve(this)
+        this._TbMonsterConfig.resolve(this)
     }
 }
 

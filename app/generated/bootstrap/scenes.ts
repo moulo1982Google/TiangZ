@@ -13,8 +13,10 @@ import "../../model/demo/scenes/MapManagerScene";
 import { Item as SystemTarget0 } from "../../model/demo/item/Item";
 import { ItemComponent as SystemTarget1 } from "../../model/demo/item/ItemComponent";
 import { LoginComponent as SystemTarget2 } from "../../model/demo/login/LoginComponent";
-import { NumericComponent as SystemTarget3 } from "../../model/demo/numeric/NumericComponent";
-import { PlayerUnit as SystemTarget4 } from "../../model/demo/map/PlayerUnit";
+import { MonsterComponent as SystemTarget3 } from "../../model/demo/monster/MonsterComponent";
+import { MonsterUnit as SystemTarget4 } from "../../model/demo/monster/MonsterUnit";
+import { NumericComponent as SystemTarget5 } from "../../model/demo/numeric/NumericComponent";
+import { PlayerUnit as SystemTarget6 } from "../../model/demo/map/PlayerUnit";
 
 registerKnownRpcs(RpcDescriptors0);
 registerKnownMessages(MessageDescriptors0);
@@ -23,3 +25,5 @@ HotfixSystem.RequireType(SystemTarget1);
 HotfixSystem.RequireType(SystemTarget2);
 HotfixSystem.RequireType(SystemTarget3);
 HotfixSystem.RequireType(SystemTarget4);
+HotfixSystem.RequireType(SystemTarget5);
+HotfixSystem.RequireType(SystemTarget6);

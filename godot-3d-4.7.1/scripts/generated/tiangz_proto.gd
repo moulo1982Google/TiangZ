@@ -9,6 +9,7 @@ const C2G_ENTER_MAP := 10010
 const C2G_LOGIN_GATE := 10008
 const C2G_MAP_SNAPSHOT_READY := 10029
 const C2G_PING := 10024
+const C2M_ATTACK_MONSTER := 10042
 const C2M_FIND_PATH := 10032
 const C2M_MAP_PROBE := 10014
 const C2M_MOVE := 10013
@@ -35,6 +36,7 @@ const G2C_LOGIN_GATE := 10009
 const G2C_MAP_READY := 10012
 const G2C_MAP_SNAPSHOT_READY := 10030
 const G2C_PING := 10031
+const M2C_ATTACK_MONSTER := 10043
 const M2C_FIND_PATH := 10033
 const M2C_MAP_PROBE := 10015
 const M2C_NAVIGATE_INPUT := 10038
@@ -345,6 +347,32 @@ static func decode_c2g_ping(payload: PackedByteArray) -> Dictionary:
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_c2m_attack_monster(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("monster_id"):
+		varint_field(result, 1, int(value["monster_id"]))
+	return result
+
+static func decode_c2m_attack_monster(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"monster_id": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["monster_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
 			90:
 				if tag.wire == 0:
 					result["rpc_id"] = reader.uint32()
@@ -1416,6 +1444,63 @@ static func decode_item_snapshot(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_m2c_attack_monster(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("monster_id"):
+		varint_field(result, 1, int(value["monster_id"]))
+	if value.has("damage"):
+		varint_field(result, 2, int(value["damage"]))
+	if value.has("remaining_hp"):
+		varint_field(result, 3, int(value["remaining_hp"]))
+	if value.has("killed"):
+		bool_field(result, 4, bool(value["killed"]))
+	return result
+
+static func decode_m2c_attack_monster(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"monster_id": 0, "damage": 0, "remaining_hp": 0, "killed": false}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["monster_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["damage"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["remaining_hp"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["killed"] = reader.boolean()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_m2c_find_path(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	for item in value.get("points", []):
@@ -1684,11 +1769,15 @@ static func encode_map_entity_snapshot(value: Dictionary) -> PackedByteArray:
 		float_field(result, 13, float(value["y"]))
 	for item in value.get("buffs", []):
 		bytes_field(result, 14, encode_buff_public_view(item))
+	if value.has("entity_type"):
+		varint_field(result, 15, int(value["entity_type"]))
+	if value.has("config_id"):
+		varint_field(result, 16, int(value["config_id"]))
 	return result
 
 static func decode_map_entity_snapshot(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"unit_id": 0, "x": 0.0, "z": 0.0, "yaw": 0.0, "alive": false, "state": PackedByteArray(), "account": "", "cell_x": 0, "cell_z": 0, "numerics": [], "speed_cells_per_second": 0.0, "facing": 0, "y": 0.0, "buffs": []}
+	var result := {"unit_id": 0, "x": 0.0, "z": 0.0, "yaw": 0.0, "alive": false, "state": PackedByteArray(), "account": "", "cell_x": 0, "cell_z": 0, "numerics": [], "speed_cells_per_second": 0.0, "facing": 0, "y": 0.0, "buffs": [], "entity_type": 0, "config_id": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -1760,6 +1849,16 @@ static func decode_map_entity_snapshot(payload: PackedByteArray) -> Dictionary:
 			14:
 				if tag.wire == 2:
 					result["buffs"].append(decode_buff_public_view(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			15:
+				if tag.wire == 0:
+					result["entity_type"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			16:
+				if tag.wire == 0:
+					result["config_id"] = reader.uint32()
 				else:
 					reader.skip(tag.wire)
 			_:

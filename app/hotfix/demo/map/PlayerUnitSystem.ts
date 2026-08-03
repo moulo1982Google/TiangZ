@@ -10,6 +10,8 @@ import {
   PlayerPersistenceComponent,
   type PlayerSnapshot,
   type M2G_TransferPlayer,
+  type M2C_AttackMonster,
+  MonsterComponent,
   GameConfigs,
   MapComponent,
   PlayerUnit,
@@ -143,6 +145,11 @@ export class PlayerUnitSystem extends PlayerUnit {
   /** 业务只提供目标地图实例；静态地图与动态副本使用完全相同的传送调用。 / Business supplies only the target instance; static maps and dynamic dungeons share this exact transfer call. */
   TransferToMap(mapInstanceId: bigint): Promise<M2G_TransferPlayer> {
     return this.DomainScene().GetComponent(MapComponent).TransferToMap(this, mapInstanceId);
+  }
+
+  /** 把攻击意图交给地图怪物模块；PlayerUnit不保存怪物集合或战斗状态。 / Delegates attack intent to the map monster module; PlayerUnit stores no monster collection or combat state. */
+  AttackMonster(monsterId: number): M2C_AttackMonster {
+    return this.DomainScene().GetComponent(MonsterComponent).Attack(this, monsterId);
   }
 }
 

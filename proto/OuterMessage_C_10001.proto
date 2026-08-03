@@ -229,6 +229,22 @@ message M2C_UseItem // IActorLocationResponse
   ItemSnapshot item = 1;
 }
 
+//ResponseType M2C_AttackMonster
+// 简单怪物演示的攻击入口；伤害结算在地图的MonsterComponent中完成。
+// @ets.msg protocol=Map method=AttackMonster duringTransfer=queue
+message C2M_AttackMonster // IActorLocationRequest
+{
+  uint32 monster_id = 1;
+}
+
+message M2C_AttackMonster // IActorLocationResponse
+{
+  uint32 monster_id = 1;
+  uint32 damage = 2;
+  uint64 remaining_hp = 3;
+  bool killed = 4;
+}
+
 // @ets.msg protocol=Client method=ItemChanged
 // @ets.broadcast mode=event
 message G2C_ItemChanged // IMessage

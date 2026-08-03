@@ -103,5 +103,17 @@
       "navigation_version": "demo-3d-v2",
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421"
     }
+  ],
+  "game_tbmonsterconfig": [
+    {
+      "id": 1,
+      "name": "训练木桩",
+      "model_id": "monster/dummy"
+    },
+    {
+      "id": 2,
+      "name": "主动野狼",
+      "model_id": "monster/wolf"
+    }
   ]
 }

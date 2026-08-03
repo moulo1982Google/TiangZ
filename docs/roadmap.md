@@ -287,7 +287,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ## Phase 4：MMORPG 业务扩展
 
-状态：已进入`0.4.x`开发线；Phase 4.0空间契约已完成，业务主体尚未开始。
+状态：已进入`0.4.x`开发线；Phase 4.0空间契约、Phase 4.1 Rust AOI、Phase 4.2.5导航动态障碍和Phase 4.4最小怪物闭环已完成，复杂战斗与持久化仍在后续阶段。
 
 计划：
 
@@ -376,7 +376,12 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.4：怪物与战斗
 
-- 增加怪物Unit、巡逻、仇恨、技能与战斗事件，验证Component、Timer、空间查询和状态同步的完整业务体验。
+状态：最小完整流程已完成，复杂战斗仍未开始。
+
+- 已完成`MonsterConfig`和`MonsterAreaConfig`冷配置，以及`MonsterComponent + MonsterUnit`的统一Unit模型。
+- 已完成固定刷点、主动/被动模式、地图Tick追击、攻击距离、玩家攻击、Numeric扣血、死亡尸体、AOI Leave、原槽位重生和运行时冒烟验收。
+- 已完成`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`的最小业务调用链；Handler不遍历地图、不直接操作Native句柄。
+- 暂不实现随机刷怪池、巡逻路点、仇恨表、技能、掉落、战斗事件、持久化和角色/怪物动态避障；这些在最小闭环稳定后再按业务需求拆分。
 
 ### Phase 4.5：持久化基础
 

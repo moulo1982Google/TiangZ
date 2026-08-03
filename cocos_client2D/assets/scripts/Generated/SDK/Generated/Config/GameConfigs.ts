@@ -123,6 +123,18 @@ const RAW_DATA: Record<string, unknown> = {
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421"
     }
   ],
+  "game_tbmonsterconfig": [
+    {
+      "id": 1,
+      "name": "训练木桩",
+      "model_id": "monster/dummy"
+    },
+    {
+      "id": 2,
+      "name": "主动野狼",
+      "model_id": "monster/wolf"
+    }
+  ],
   "game_tbplayerconfig": [
     {
       "id": 1,
@@ -170,12 +182,14 @@ export type MapConfig = game.MapConfig;
 export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
+export type MonsterConfig = game.MonsterConfig;
 
-export const GameConfigFingerprint = "a13b88c265c10ab9ea849645aada82e3b43da9e52e1dbaaae48d117d788d4d19";
+export const GameConfigFingerprint = "1be03e67cc8ecb4ea93a8e6f9c29cf090aae54ecf022ef9ae0915ac0cf92600f";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),
   PlayerConfig: new ConfigTable<game.PlayerConfig>(tables.TbPlayerConfig.getDataList()),
   AoiConfig: new ConfigTable<game.AoiConfig>(tables.TbAoiConfig.getDataList()),
   AoiSyncTierConfig: new ConfigTable<game.AoiSyncTierConfig>(tables.TbAoiSyncTierConfig.getDataList()),
+  MonsterConfig: new ConfigTable<game.MonsterConfig>(tables.TbMonsterConfig.getDataList()),
 });

@@ -28,6 +28,8 @@ export const OuterMessage = {
   G2C_EntityState: 10018,
   C2M_UseItem: 10019,
   M2C_UseItem: 10020,
+  C2M_AttackMonster: 10042,
+  M2C_AttackMonster: 10043,
   G2C_ItemChanged: 10021,
   G2C_BuffAdded: 10026,
   G2C_BuffRemoved: 10027,

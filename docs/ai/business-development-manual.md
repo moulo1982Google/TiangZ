@@ -89,6 +89,32 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 | 高频跨帧权威数据 | 先测量，再考虑`.native` |
 | 网络、mailbox、背压 | Core/Rust维护任务，不是普通业务任务 |
 
+## 怪物模块的最小做法
+
+怪物业务默认采用“MapScene上的一个`MonsterComponent` + `UnitComponent`里的`MonsterUnit`”模型。不要为每只怪物创建一个`MonsterActor`、Gate连接或独立V8，也不要在Handler收到请求后扫描所有地图找怪物。
+
+```text
+MonsterConfig                 怪物模板：模型、数值、攻击模式
+MonsterAreaConfig             固定刷怪槽：地图、坐标、尸体和重生时间
+MapHost -> MapScene
+  -> MonsterComponent          刷怪、AI、战斗、死亡和重生的唯一拥有者
+      -> MonsterUnit            统一Unit，可被UnitComponent和AOI索引
+```
+
+开发流程：
+
+1. 在`game_config/Datas`增加或修改模板、刷点，执行`npm run build:game-config`。
+2. 需要新协议时先改`proto`，执行`npm run codegen:proto`，不要手写msgcode或Codec。
+3. 稳定身份放`app/model/demo/monster`，生命周期和行为放`app/hotfix/demo/monster`。
+4. Handler保持一层胶水，例如`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。
+5. 通过`MonsterComponent.Get/GetAll`取得怪物；删除、AOI和重生只能由MonsterComponent完成。
+
+当前最小模块的生命周期是“生成、追击、攻击、玩家攻击、死亡、尸体保留、Detach、Remove、原槽位重生”。被动怪必须明确不主动追击。掉落、技能、仇恨、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
+
+怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡状态走已有状态/Numeric同步，尸体移除走AOI Leave，重生走AOI Enter。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。角色和怪物之间的动态阻挡、动态避障当前明确不做。
+
+完整示例和文件位置见[怪物模块教程](../tutorials/16-monster-module.md)。
+
 ## 第二步：找到最接近的样例
 
 - 玩家创建和组件装配：`app/model/demo/map/MapComponent.ts::CreatePlayer`。
@@ -359,7 +385,7 @@ Cell和AOI Grid尺寸同样属于Cold配置：`MapConfig.cell_size_meters`定义
 
 创建地图前先从`GameConfigs.MapConfig`读取`spatialMode`。`Grid2D`与`NavMesh3D` Map Runtime均已可创建；NavMesh3D业务通过`MapComponent.ProjectPosition/FindPath`查询，通过`PlayerUnit.NavigateTo`提交权威移动目标，不读取Detour句柄、不逐节点跨V8，也不能捕获导航错误后回退到Grid2D。空间模式、字段结构、Agent烘焙参数和导航资源身份属于Model发布边界；改变正在运行地图的空间实现需要重启Process并重建MapInstance。
 
-动态障碍必须由Map业务使用稳定`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`，并传入门或路障的真实物理尺寸；Rust会按导航资源烘焙的`agentRadius`自动扩大X/Z占用，业务禁止手工重复增加半径。客户端只能发送业务意图并根据服务端结果更新表现。Cocos、UE或其他引擎中的门模型和碰撞体都不是权威导航数据；禁止客户端先改门状态后补发请求，也禁止用引擎本地寻路结果替代Rust TileCache。Cocos可以为本地预测增加非权威的视觉约束，UE等只插值权威位置的客户端不需要复制碰撞。Cocos 3D与UE灰盒的`E`键动态门是这一调用边界的演示。
+动态障碍必须由Map业务使用稳定`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`，并传入门或路障的真实物理尺寸；Rust会按导航资源烘焙的`agentRadius`自动扩大X/Z占用，业务禁止手工重复增加半径。这里的动态障碍只包括门、路障等业务物体，不包括玩家、怪物、NPC之间的动态阻挡和动态避让；角色之间可以在表现层重叠或由业务技能规则处理，但不进入权威NavMesh TileCache。客户端只能发送业务意图并根据服务端结果更新表现。Cocos、UE或其他引擎中的门模型和碰撞体都不是权威导航数据；禁止客户端先改门状态后补发请求，也禁止用引擎本地寻路结果替代Rust TileCache。Cocos可以为本地预测增加非权威的视觉约束，UE等只插值权威位置的客户端不需要复制碰撞。Cocos 3D与UE灰盒的`E`键动态门是这一调用边界的演示。
 
 导航源网格由制作工具导出到`navigation/maps/<map>/source`，开发者只维护冷清单并执行`npm run navigation:bake`，不得在TS Handler、Game.Update或服务器启动流程中调用烘焙。`C2M_FindPath`是无副作用查询；`C2M_NavigateTo`的Handler只调用`unit.NavigateTo(request)`，方向移动的Handler只调用`unit.NavigateInput(request)`。点击移动由Rust保存路径走廊，在拐点先连续转身再消费剩余Tick时间移动；方向移动由Rust保存输入、1.5秒租约和polygon引用并在固定Tick调用`moveAlongSurface`。客户端的点击预测必须使用相同转向规则，方向输入每500ms续期，零方向输入必须立即停止，断续期也会自动停止。客户端表现层应分别保存权威、可视角色和本地相机朝向；活跃路径预测期间权威Push只能更新校正目标，不能直接覆盖可视朝向，预测结束后再平滑收敛。相机只能按最短角度追随，不能写回权威状态，也不能对角色两侧的摄像机目标位置直接做XYZ插值。客户端可以保存按键和预测路径，以`G2C_EntityNavigate`校正，但业务不得在TS复制权威路径进度或坐标。业务可通过`MapComponent.Raycast/SampleHeight`做NavMesh边界和地面查询，不能把Raycast当成角色物理碰撞。技能冲锋、AI移动等新意图应复用Unit入口或增加同层粗粒度操作，不能在Handler手写逐Tick位移。Demo灰盒是工具与客户端回归输入，不要求程序员手工制作正式3D地图。
 

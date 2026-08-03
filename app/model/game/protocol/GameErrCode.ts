@@ -10,4 +10,7 @@ export const GameErrCode = {
   MapHostUnavailable: 10009,
   DynamicMapRequestRequired: 10010,
   DynamicMapRequestConflict: 10011,
+  MonsterNotFound: 10012,
+  MonsterDead: 10013,
+  MonsterTooFar: 10014,
 } as const;

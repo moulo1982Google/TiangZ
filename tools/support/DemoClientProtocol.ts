@@ -10,6 +10,8 @@ import {
   C2G_PingCodec,
   C2M_Move,
   C2M_MoveCodec,
+  C2M_AttackMonster,
+  C2M_AttackMonsterCodec,
   C2M_MapProbe,
   C2M_MapProbeCodec,
   C2M_FindPath,
@@ -38,6 +40,8 @@ import {
   G2C_AoiDeltaCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
+  M2C_AttackMonster,
+  M2C_AttackMonsterCodec,
   M2C_FindPath,
   M2C_FindPathCodec,
   M2C_NavigateTo,
@@ -218,6 +222,29 @@ export function decodeMapReadyFrame(
 
 export function buildMovePacket(request: C2M_Move): Uint8Array {
   return encodePacket(MsgCode.C2M_Move, C2M_MoveCodec.encode(request));
+}
+
+/** 构造玩家攻击怪物的测试包。 / Builds the smoke-test packet for a player attacking a monster. */
+export function buildAttackMonsterPacket(
+  rpcId: number,
+  request: Omit<C2M_AttackMonster, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_AttackMonster,
+    C2M_AttackMonsterCodec.encode({ ...request, rpcId }),
+  );
+}
+
+/** 解码怪物攻击响应。 / Decodes the monster-attack response. */
+export function decodeAttackMonsterFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_AttackMonster> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_AttackMonster) {
+    throw new Error(`expected M2C_AttackMonster, got ${msgcode}`);
+  }
+  const body = M2C_AttackMonsterCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
 }
 
 export function buildMapProbePacket(

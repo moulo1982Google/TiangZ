@@ -38,6 +38,7 @@ import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
 import { MapClientRouteResolver } from "../broadcast/MapClientRouteResolver";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 import { PlayerUnit, type PlayerSnapshot } from "./PlayerUnit";
+import { MonsterUnit, type MonsterSnapshot } from "../monster/MonsterUnit";
 import { MapScene } from "./MapScene";
 import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
@@ -211,7 +212,7 @@ export class MapComponent extends Component<[
   }
 
   get PlayerCount(): number {
-    return this.units.Count;
+    return this.units.GetAll(PlayerUnit).length;
   }
 
   /** 业务广播唯一入口：只接受逻辑ClientAudience，不暴露Gate与内网路由。 / Sole business broadcast entrypoint accepting logical audiences without exposing Gate routes. */
@@ -673,13 +674,13 @@ export class MapComponent extends Component<[
     } else {
       const built: MapEntitySnapshot[] = [];
       for (const unitId of visibleUnitIds) {
-        const unit = this.units.Get<PlayerUnit>(unitId);
+        const unit = this.units.Get(unitId);
         if (!unit) continue;
         let snapshot = cache.byUnit.get(unitId);
         if (snapshot) {
           this.entryMetrics.snapshotUnitReuseHits += 1;
         } else {
-          snapshot = toMapEntity(unit.Snapshot());
+          snapshot = toMapEntity(unit);
           cache.byUnit.set(unitId, snapshot);
           this.entryMetrics.snapshotMaterializedItems += 1;
         }
@@ -1338,14 +1339,14 @@ export class MapComponent extends Component<[
         leaves: [],
       };
       if (group.visible) {
-        const subject = this.units.Get<PlayerUnit>(group.subjectId);
+        const subject = this.units.Get(group.subjectId);
         if (!subject) {
           this.logger.warn("AOI enter subject disappeared before publish", {
             subjectId: group.subjectId,
           });
           continue;
         }
-        batch.enters.push(toMapEntity(subject.Snapshot()));
+        batch.enters.push(toMapEntity(subject));
       } else {
         batch.leaves.push(group.subjectId);
       }
@@ -1410,7 +1411,32 @@ export class MapComponent extends Component<[
   }
 }
 
-function toMapEntity(snapshot: PlayerSnapshot): MapEntitySnapshot {
+function toMapEntity(unit: PlayerUnit | MonsterUnit | import("../../../core/public").Unit<any[]>): MapEntitySnapshot {
+  if (unit instanceof MonsterUnit) {
+    const snapshot = unit.Snapshot();
+    return {
+      unitId: snapshot.unitId,
+      account: "",
+      x: snapshot.x,
+      y: snapshot.y,
+      z: snapshot.z,
+      yaw: snapshot.yaw,
+      state: new Uint8Array(0),
+      cellX: snapshot.cellX,
+      cellZ: snapshot.cellZ,
+      numerics: snapshot.numerics,
+      buffs: [],
+      speedCellsPerSecond: snapshot.speedCellsPerSecond,
+      facing: snapshot.facing,
+      alive: snapshot.alive,
+      entityType: 2,
+      configId: snapshot.monsterConfigId,
+    };
+  }
+  if (!(unit instanceof PlayerUnit)) {
+    throw new Error(`unsupported map snapshot Unit: ${unit.constructor.name}`);
+  }
+  const snapshot = unit.Snapshot();
   return {
     unitId: snapshot.unitId,
     account: snapshot.account,
@@ -1426,5 +1452,7 @@ function toMapEntity(snapshot: PlayerSnapshot): MapEntitySnapshot {
     speedCellsPerSecond: snapshot.speedCellsPerSecond,
     facing: snapshot.facing,
     alive: snapshot.alive,
+    entityType: 1,
+    configId: 1,
   };
 }

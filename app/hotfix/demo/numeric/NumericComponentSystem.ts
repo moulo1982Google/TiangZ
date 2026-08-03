@@ -5,9 +5,11 @@ import {
   NativeOps,
   NativeUnitRef,
   NumericComponent,
+  type NumericInitialValues,
   NumericType,
   type NumericTypeValue,
-  type PlayerUnit,
+  PlayerUnit,
+  type Unit,
   type UnitNumericDelta,
   type ITransfer,
   systemFor,
@@ -17,15 +19,18 @@ import {
 @systemFor(NumericComponent)
 export class NumericComponentSystem extends NumericComponent implements ITransfer<readonly UnitNumericDelta[]> {
   /** 挂载Rust Numeric存储并创建按方法名分发的长期Timer。 / Attaches Rust Numeric storage and creates a method-dispatched long-lived timer. */
-  protected override Awake(): void {
-    const unit = this.GetParent<PlayerUnit>();
+  protected override Awake(initial: NumericInitialValues = {}): void {
+    const unit = this.GetParent<Unit<any[]>>();
     this.unitHandle = unit.GetComponent(NativeUnitRef).Handle;
     NativeOps.NumericAttach(this.unitHandle);
     this.installIndexAccessors();
     const config = GameConfigs.PlayerConfig.Get(1);
-    this[NumericType.CurrentHp] = BigInt(config.initialHp);
-    this[NumericType.MaxHpBase] = BigInt(config.maxHp);
-    this.regenerationTimer = this.NewRepeatedTimer(100, "RegenerateHp");
+    this[NumericType.MaxHpBase] = initial.maxHpBase ?? BigInt(config.maxHp);
+    this[NumericType.MaxHpAdd] = initial.maxHpAdd ?? 0n;
+    this[NumericType.MaxHpPct] = initial.maxHpPct ?? 0n;
+    this[NumericType.CurrentHp] = initial.currentHp ?? BigInt(config.initialHp);
+    const regenerateHp = initial.regenerateHp ?? unit instanceof PlayerUnit;
+    if (regenerateHp) this.regenerationTimer = this.NewRepeatedTimer(100, "RegenerateHp");
   }
 
   /** 通过生成的fast op无损读取一个权威i64数值。 / Losslessly reads one authoritative i64 value through the generated fast op. */
@@ -40,7 +45,7 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
 
   /** 构造Numeric全量快照；常规脏同步必须使用Peek/Ack。 / Builds a full Numeric snapshot; routine dirty replication must use Peek/Ack instead. */
   Snapshot(): UnitNumericDelta[] {
-    const unitId = this.GetParent<PlayerUnit>().UnitId;
+    const unitId = this.GetParent<Unit<any[]>>().UnitId;
     return AllNumericTypes.map((numericType) => ({
       unitId,
       numericType,
