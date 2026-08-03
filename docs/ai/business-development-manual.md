@@ -611,6 +611,8 @@ Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随�
 
 ## AOI业务规则
 
+完整的数据结构、生命周期、Movement直达Gate链路和函数调用图见[AOI完整设计与函数调用关系](../design/aoi-architecture.md)。本节只保留业务开发规则。
+
 地图业务不再构造“全地图玩家列表”广播Movement、Numeric或Unit固定字段。`MapAoiComponent`拥有Rust推导的最终可见结果；Movement由Rust在帧尾直接生成按Gate路由的完整批帧，`MapComponent`只调用框架封装并提交结果，不把recipientId数组拉回TS。Rust内部使用扁平AOI Grid、紧凑`EntityIndex`、连续成员数组和双向可见位图；热点Grid会由框架自动增加成员位图。这些都是框架实现细节：业务不得读取或保存`EntityIndex/slotInGrid`，不得假设UnitId等于位图下标，不得配置热点阈值，也不得按Tick重建自己的空间索引。业务过滤仍通过`IAoiVisibilityFilter`和显式Invalidate改变最终可见位图。状态复制按Subject Grid合并相同受众，不按每名接收者复制记录索引。业务TS不得镜像全量关系表、管理delivery route、手工合并Grid受众或直接发送内网帧。开发普通移动、传送、上线或下线时不得手工调用底层Native AOI op；X/Z FastOP、`PlayerEntered`和`RemovePlayer`生命周期已经接管。
 
 普通Unit进入/离开视野也不由业务逐个发送。框架把同一帧、相同受众的不可覆盖变化合成`G2C_AoiDelta`，客户端SDK的Handler负责遍历`enters/leaves`。新增Buff、任务摘要等领域可见事件时，应先判断它属于Unit整体Snapshot、独立不可覆盖Event还是可覆盖状态；不得把业务字段塞进通用AOI Delta，也不得恢复逐关系`Publish`。
@@ -626,7 +628,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 }
 ```
 
-`CanObserve`只能读取内存中的Component并立即返回`boolean`，禁止`async`、Promise、RPC、数据库、发消息和修改Entity；异常会按不可见处理。过滤器不会每帧运行。业务状态变化后，必须按影响方向显式通知地图：只影响“我能看见谁”调用`InvalidateObserver(unit)`；只影响“谁能看见我”调用`InvalidateSubject(unit)`；双向规则调用`Invalidate(unit)`。AOI当前只筛选接收者，技能命中、组队权限等业务权威判定仍由各自领域逻辑负责。
+`CanObserve`只能读取内存中的Component并立即返回`boolean`，禁止`async`、Promise、RPC、数据库、发消息和修改Entity；异常会按不可见处理。过滤器不会每帧运行。业务状态变化后，必须按影响方向显式通知地图：只影响“我能看见谁”调用`InvalidateObserver(unit)`；只影响“谁能看见我”调用`InvalidateSubject(unit)`；双向规则调用`Invalidate(unit)`。三个Invalidate方法只返回关系变化，不自行发消息；调用方必须继续调用`await map.PublishVisibilityChanges(changes)`，由地图统一合并并发布Enter/Leave。AOI当前只筛选接收者，技能命中、组队权限等业务权威判定仍由各自领域逻辑负责。
 
 空间配置只通过Luban Cold表维护：`MapConfig.cellSizeMeters`定义米制Cell；`AoiConfig.gridSizeCells`定义一个AOI Grid包含多少个Cell；`enterRangeGrids`和`detachRangeGrids`分别控制建立与移除可见关系；`AoiSyncTierConfig`只控制已经可见关系的可覆盖状态频率。范围填写奇数边长，例如3表示3×3 Grid。同步范围可以大于Enter，但不会提前Enter；同步最大范围也可以小于Detach，迟滞外圈此时只保持可见，不接收周期可覆盖状态。Movement的开始、停止和转向不受节流；低频档由框架按Subject Grid稳定错峰。Numeric、技能、Buff等仍按自己的状态或事件语义发送。业务代码不得根据距离自行重复一套频率判断。
 

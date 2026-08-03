@@ -12,6 +12,7 @@
 
 ## 2026-08-03：AOI扁平Grid与双向位图索引
 
+- 新增`docs/design/aoi-architecture.md`，用分层图、数据结构图和时序图固定地图创建、入图、移动、业务过滤、Movement直达Gate、Numeric/UnitState复制、Enter/Leave和Detach的真实函数链；补充Buff公开事件、队伍私密详情、位面过滤、Item本人事件和Move自动热路径的可调用代码范例，并链接真实Demo位置。`MapComponent.PublishVisibilityChanges`成为显式Invalidate后的统一发布入口，Demo关键决策点增加中英文说明，避免开发者绕过地图生命周期或重复广播。
 - 后续收紧候选热路径：`UnitId -> EntityIndex`哈希只保留在API入口，实体元数据与Audience签名改为按EntityIndex连续存放；Attach合并为一次邻域扫描，跨Grid候选不再逐实体回查哈希，Detach复用索引缓冲，关系位图可直接遍历置位索引。
 - 增加稀疏Grid数组与热点Grid位图的混合策略。Release微基准在64人/Grid时位图仍慢约20%，128人起反超，256/512人时约为数组耗时的65%/53%；因此固定128人升级、96人降级并防止边界抖动。热点位图只由Rust自动维护，不增加配置或业务API；15项普通AOI测试、1项手工微基准和严格Clippy通过。
 - 连续索引后的3000人、10×10 Grid正式全链路回归得到Map CPU平均51.0%，相对上一轮同口径55.0%再降约7.3%；Probe p95/p99为47.94/71.78ms，Move 6000/s、跨Grid 309.6/s，错误、过载、超时、背压和慢连接均为0，正式证据已更新到`perf/results/map_capacity_latest.md`。

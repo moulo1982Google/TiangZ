@@ -202,7 +202,7 @@ Numeric使用`NumericType -> i64`动态字典与dirty表，TS边界是`bigint`�
 
 帧尾复制采用`Peek -> Send -> Ack`：只有发送成功才确认revision，发送失败保留Dirty，发送期间的新修改不会被旧Ack清除。Audience只决定收件人，数据Projection决定字段权限，Broadcast descriptor只决定event/latest语义。业务使用只含UnitId的`ClientAudience`；物理`BroadcastAudience`和Gate route是Core内部类型。
 
-AOI已由Rust扁平X/Z Grid接管。Cell是移动和空间数据的基础单位，AOI关系只在跨Grid边界时重算；默认一个Grid为15×15 Cell。`UnitId -> EntityIndex`哈希只在API入口使用，实体元数据与Audience签名按EntityIndex连续存放。Grid成员默认使用紧凑EntityIndex数组；128人以上的热点Grid额外建立成员位图，降到96人以下释放。空间候选和最终可见关系使用双向连续位图；Rust同时保存本帧净变化和用于共享编码的增量Audience签名，TS不得建立镜像关系表。密集迟滞Audience按`Grid + 最终受众签名 + 强制发送状态`共享一次受众计算，再按实际受众合并编码；业务不得依赖签名或管理该缓存。Prometheus提供当前迟滞与拒绝关系Gauge。`single-grid`是稳定全可见广播基线，`same-point`是高频跨Grid迟滞压力测试，两者不能混为容量曲线。
+AOI已由Rust扁平X/Z Grid接管。Cell是移动和空间数据的基础单位，AOI关系只在跨Grid边界时重算；默认一个Grid为15×15 Cell。`UnitId -> EntityIndex`哈希只在API入口使用，实体元数据与Audience签名按EntityIndex连续存放。Grid成员默认使用紧凑EntityIndex数组；128人以上的热点Grid额外建立成员位图，降到96人以下释放。空间候选和最终可见关系使用双向连续位图；Rust同时保存本帧净变化和用于共享编码的增量Audience签名，TS不得建立镜像关系表。密集迟滞Audience按`Grid + 最终受众签名 + 强制发送状态`共享一次受众计算，再按实际受众合并编码；业务不得依赖签名或管理该缓存。业务只从`MapComponent.Audience`取得`ObserversOf/VisibleSubjectsOf`；显式Invalidate返回的变化必须交给`MapComponent.PublishVisibilityChanges`统一发布。Prometheus提供当前迟滞与拒绝关系Gauge。`single-grid`是稳定全可见广播基线，`same-point`是高频跨Grid迟滞压力测试，两者不能混为容量曲线。完整分层、代码范例和Demo位置见[AOI完整设计](../design/aoi-architecture.md)。
 
 Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`BroadcastHub`把Encoded batch交给Transport，并由`SceneBroadcastTransport`在同步Game Tick内按Gate重组；Movement高频路径进一步由Rust利用Attach时登记的紧凑delivery route直接生成每个Gate的完整`S2G_ClientBroadcastBatch`帧，TS每Tick只映射至多Gate数量的routeId并原样投递，不展开recipient数组，也不重复编码内网protobuf。Gate不解码业务payload，只完成Unit到connection的路由与下行扇出。Numeric、UnitState和即时Event继续使用通用路径。业务层不得管理routeId、调用底层route-frame Native op、调用`sendFrame`，也不得直接构造内网广播协议。
 

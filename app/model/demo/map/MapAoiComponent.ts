@@ -28,6 +28,14 @@ export interface AoiVisibilityDelta {
   readonly visible: boolean;
 }
 
+/**
+ * 地图业务可见性入口。业务从 MapComponent.Audience 取得本组件，只选择逻辑受众或使关系失效；
+ * 不得直接调用 NativeData、保存 EntityIndex，或自行维护一份可见集合。
+ *
+ * Map-local business visibility entrypoint. Obtain it through MapComponent.Audience to select a
+ * logical audience or invalidate relations; never call NativeData, retain EntityIndex values, or
+ * maintain a second visibility set in business code.
+ */
 @component()
 export class MapAoiComponent extends Component<[definition: MapInstanceDefinition]> {
   private nativeMapKey = 0;
@@ -96,7 +104,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
     }
   }
 
-  /** 注册一个业务可见性过滤器。过滤器只在空间关系变化或显式失效时执行。 / Registers a business visibility filter evaluated only on spatial changes or explicit invalidation. */
+  /** 注册地图级业务过滤器，通常只在地图初始化时调用一次；不能在每个Handler中重复注册。 / Registers a map-level filter once during map setup, never once per handler call. */
   AddFilter(filter: IAoiVisibilityFilter): void {
     this.filters.add(filter);
   }
@@ -148,17 +156,17 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
     return this.CommitChanges();
   }
 
-  /** 当阵营、隐身或位面等状态改变时，重算该 Unit 作为 Observer 的关系。 / Reevaluates relations where this Unit is the observer after camp, stealth, or phase changes. */
+  /** 当“该Unit能看见谁”改变时重算关系；调用方还必须把返回值交给MapComponent.PublishVisibilityChanges。 / Reevaluates whom this Unit can see; callers must also publish the result through MapComponent.PublishVisibilityChanges. */
   InvalidateObserver(unit: Unit<any[]>): readonly AoiVisibilityDelta[] {
     return this.InvalidateRelations(unit.UnitId, 1);
   }
 
-  /** 当阵营、隐身或位面等状态改变时，重算该 Unit 作为 Subject 的关系。 / Reevaluates relations where this Unit is the subject after camp, stealth, or phase changes. */
+  /** 当“谁能看见该Unit”改变时重算关系；调用方还必须发布返回的Enter/Leave。 / Reevaluates who can see this Unit; callers must also publish the returned enters/leaves. */
   InvalidateSubject(unit: Unit<any[]>): readonly AoiVisibilityDelta[] {
     return this.InvalidateRelations(unit.UnitId, 2);
   }
 
-  /** 同时重算该 Unit 作为 Observer 与 Subject 的关系。 / Reevaluates both observer and subject relations for one Unit. */
+  /** 同时重算两个方向；返回值只描述变化，不会自行发送，必须由MapComponent发布。 / Reevaluates both directions; the returned changes are not sent until MapComponent publishes them. */
   Invalidate(unit: Unit<any[]>): readonly AoiVisibilityDelta[] {
     return this.InvalidateRelations(unit.UnitId, 3);
   }
@@ -168,7 +176,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
     return [observerId, ...NativeData.VisibleAoiSubjects(this.nativeMapKey, observerId)];
   }
 
-  /** 返回Observer当前能看见的Unit受众，可选包含自己；不会解析Gate或连接。 / Returns subjects currently visible to an observer, optionally including self, without resolving transport routes. */
+  /** 返回“Observer正在看谁”，适合权威查询或面向其视野对象的操作；不要用于广播Subject自身表现。 / Returns whom an observer sees for authoritative queries or visible-subject operations; do not use it to broadcast a subject's appearance. */
   VisibleSubjectsOf(observer: Unit<any[]>, includeSelf = true): ClientAudience {
     this.requireAttachedUnit(observer);
     return ClientAudience.ForUnits(
@@ -179,7 +187,7 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
     );
   }
 
-  /** 返回当前能看见Subject的Observer受众，可选包含自己；公开Buff、施法外观等业务广播使用此方向。 / Returns observers currently seeing a subject, optionally including self; public Buff and cast visuals use this direction. */
+  /** 返回“谁正在看Subject”，公开Buff、施法外观和头顶状态等广播通常使用这个方向。 / Returns who sees a subject; public Buff, cast-visual, and overhead-state broadcasts normally use this direction. */
   ObserversOf(subject: Unit<any[]>, includeSelf = true): ClientAudience {
     this.requireAttachedUnit(subject);
     return ClientAudience.ForUnits(

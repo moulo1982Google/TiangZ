@@ -69,6 +69,8 @@ Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Co
 
 ## Rust AOI
 
+AOI的完整分层、数据结构、生命周期和函数调用图见[AOI完整设计与函数调用关系](aoi-architecture.md)。本节只保留空间契约层面的约束。
+
 每个`MapInstanceId`拥有独立的Rust `AoiWorld`。有限地图按配置边界预建扁平连续AOI Grid，X/Z坐标直接计算数组下标，不经过坐标Hash；玩家同时是Observer和Subject，后续怪物/NPC可只作为Subject。自身权威状态始终发送给自己的客户端，但自身不产生Enter/Leave关系。超过四百万个AOI Grid的地图会被拒绝；极大或无边界世界以后应使用分块稀疏Grid，不能让普通地图路径承担两套索引。
 
 可见性与同步频率是两套独立配置：

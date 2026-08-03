@@ -45,6 +45,7 @@
 - [Entity 地图迁移](design/entity-transfer.md)
 - [运行时基础能力：ID、时间、Timer、协程锁与Scene事件](design/runtime-foundations.md)
 - [地图空间与3D坐标契约](design/spatial-world.md)
+- [AOI完整设计与函数调用关系](design/aoi-architecture.md)
 - [TypeScript 调试](typescript_debugging.md)
 - [路线图](roadmap.md)
 

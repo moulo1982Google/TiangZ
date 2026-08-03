@@ -18,7 +18,14 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
   C2M_UseItem,
   M2C_UseItem
 > {
-  /** 消耗道具、发布不可逆事件，并返回权威结果。 / Consumes an item, publishes its irreversible event, and returns the authoritative result. */
+  /**
+   * 消耗道具、修改权威数值并发布不可逆的本人背包事件。
+   * Item详情不是AOI公开状态，因此Handler不查询ObserversOf；若道具触发公开外观，应由对应领域方法另发AOI事件。
+   *
+   * Consumes an item, mutates authoritative numerics, and publishes an irreversible private
+   * inventory event. Item details are not AOI-visible; public visuals belong to a separate domain
+   * event using an explicit AOI audience.
+   */
   async handle(unit: PlayerUnit, request: C2M_UseItem): Promise<M2C_UseItem> {
     const item = unit.GetComponent(ItemComponent).UseItem(request.itemId);
     const itemConfig = GameConfigs.ItemConfig.Get(item.configId);

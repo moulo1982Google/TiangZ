@@ -199,7 +199,7 @@ export class MapComponent extends Component<[
     return this.clientBroadcast;
   }
 
-  /** 返回本地图AOI受众工厂；业务使用ObserversOf/VisibleSubjectsOf区分关系方向。 / Returns the map AOI audience factory with explicit observer/subject direction. */
+  /** 返回本地图AOI受众工厂；广播某Unit的表现使用ObserversOf，查询某Unit看见谁使用VisibleSubjectsOf。 / Returns the AOI audience factory: use ObserversOf for a Unit's presentation and VisibleSubjectsOf for what that Unit sees. */
   get Audience(): MapAoiComponent {
     return this.aoi;
   }
@@ -337,7 +337,14 @@ export class MapComponent extends Component<[
     });
   }
 
-  /** 每次固定逻辑帧推进一次当前空间模式的Rust权威移动。 / Advances Rust-authoritative movement for the current spatial mode once per fixed update. */
+  /**
+   * 每个固定逻辑帧推进Rust权威移动、刷新跨Grid关系，并直接取得按Gate编码的可覆盖移动帧。
+   * 业务Handler只提交移动意图，不应再次查询ObserversOf或手工广播EntityMove。
+   *
+   * Advances authoritative Rust movement, refreshes cross-grid relations, and takes encoded
+   * per-Gate replaceable movement frames. Business handlers submit intent only and must not query
+   * ObserversOf or publish EntityMove again.
+   */
   Update(): void {
     this.PumpPlayerEntries();
     if (this.units.Count === 0) return;
@@ -474,9 +481,14 @@ export class MapComponent extends Component<[
     return this.RemovePlayer(unit);
   }
 
-  /** 广播已提交迁移的 AOI 离开关系；失败不撤销已经完成的数据所有权切换。 / Broadcasts committed AOI leave relations without reversing completed ownership on failure. */
-  async PlayerLeft(changes: readonly AoiVisibilityDelta[]): Promise<void> {
+  /** 发布显式Invalidate、Attach或Detach产生的Enter/Leave；调用方不要逐关系自行Publish。 / Publishes enters/leaves produced by explicit invalidation, attach, or detach; callers must not publish each relation themselves. */
+  async PublishVisibilityChanges(changes: readonly AoiVisibilityDelta[]): Promise<void> {
     await this.PublishAoiChanges(changes);
+  }
+
+  /** 广播已提交迁移的AOI离开关系；失败不撤销已经完成的数据所有权切换。 / Broadcasts committed AOI leaves without reversing completed ownership on failure. */
+  async PlayerLeft(changes: readonly AoiVisibilityDelta[]): Promise<void> {
+    await this.PublishVisibilityChanges(changes);
   }
 
   private ComposePlayer(
@@ -629,7 +641,7 @@ export class MapComponent extends Component<[
     return promise;
   }
 
-  /** 立即发送不可逆背包事件；这里禁止使用 latest 合并。 / Sends an irreversible inventory event immediately; latest coalescing is forbidden here. */
+  /** 立即向玩家本人发送不可逆背包事件；背包详情不是AOI公开状态，这里禁止ObserversOf和latest合并。 / Sends an irreversible private inventory event to self; inventory details are not AOI-visible and must not use ObserversOf or latest coalescing. */
   async PublishItemChanged(unit: PlayerUnit, item: ItemSnapshot): Promise<void> {
     this.requirePlayer(unit);
     await this.clientBroadcast.Publish(
@@ -965,6 +977,7 @@ export class MapComponent extends Component<[
   }
 
   private RemovePlayer(unit: PlayerUnit): readonly AoiVisibilityDelta[] {
+    // 必须先Detach再销毁Entity，Rust才能用仍然有效的Unit句柄生成最终Leave。 / Detach before Entity disposal so Rust can produce final leaves from a valid Unit handle.
     const changes = this.aoi.Detach(unit);
     this.pendingInitialSnapshots.delete(unit.UnitId);
     this.players.Remove(unit);
@@ -1046,6 +1059,7 @@ export class MapComponent extends Component<[
           queueWaitMs,
         );
         const attachStartedAt = monotonicNow();
+        // Attach只由地图准入流程调用，业务Handler不得绕过队列直接把Unit放入AOI。 / Only map admission attaches Units; business handlers must not bypass the queue.
         const changes = this.aoi.Attach(pending.unit, this.RouteIdForGate(gateName));
         const attachMs = monotonicNow() - attachStartedAt;
         this.entryMetrics.attachMs += attachMs;
