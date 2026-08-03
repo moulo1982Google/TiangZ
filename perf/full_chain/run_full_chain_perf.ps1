@@ -126,11 +126,11 @@ function Invoke-GameplayCase {
     $handles = @()
     try {
         if ($Deployment -eq "all") {
-            $handles += Start-Runtime "configs/local/all.json" "${Deployment}_${PlayerCount}_${workload}_all"
+            $handles += Start-Runtime "configs/local/all-in-one.json" "${Deployment}_${PlayerCount}_${workload}_all"
         }
         else {
-            foreach ($name in "mgr", "login1", "login2", "gate1", "map1") {
-                $handles += Start-Runtime "configs/local/$name.json" "${Deployment}_${PlayerCount}_${workload}_$name"
+            foreach ($name in "manager", "login-1", "login-2", "gate-1", "map-1") {
+                $handles += Start-Runtime "configs/local/cluster/$name.json" "${Deployment}_${PlayerCount}_${workload}_$name"
             }
         }
         foreach ($port in 7000, 7001, 7002, 7201, 7301) { Wait-TcpPort $port }

@@ -3,7 +3,7 @@
 正式部署配置按环境分目录，例如 `configs/local`、`configs/dev-a`、`configs/prod`。同一份代码可以在不同机器采用不同进程布局。测试、压测和传输实验不属于某个部署环境，分别放在独立目录，避免 Watcher 或开发人员把互斥配置误认为同一套服：
 
 ```text
-configs/local/          本地 Demo 部署和 StartMachine
+configs/local/          本地 Demo 部署；详见目录内 README
 configs/bench/          性能与背压配置
 configs/tests/          自动化测试专用配置
 configs/experiments/    io_uring、KCP 等显式实验配置
@@ -35,7 +35,7 @@ configs/experiments/    io_uring、KCP 等显式实验配置
 - `knownScenes` 是路由目录，不表示目标一定在本进程。
 - `debug` 放在 `process` 下；一个 V8 只需要一个 Inspector 端口。
 
-`all.json` 把全部 Demo Scene 放在一个进程；`mgr.json`、`login1.json`、`gate1.json` 等把它们拆成多个进程。`npm run test:runtime` 会验证两种部署。
+`local/all-in-one.json` 把全部 Demo Scene 放在一个进程；`local/cluster/` 是一套可整体复制的多进程部署包，由其中的 `StartMachine.json` 统一启动。`npm run test:runtime` 会验证两种部署。
 
 `experiments/all.io-uring.json` 是 Linux TCP 实验配置。它使用 `network.ioBackend=io-uring` 和 `scene.protocol=tcp`，需要通过 `cargo build --features io-uring` 构建；Cocos WebSocket 客户端不能连接该配置。
 
@@ -45,7 +45,7 @@ configs/experiments/    io_uring、KCP 等显式实验配置
 cargo run --features kcp --bin TiangZ -- configs/experiments/all.kcp-native.json
 ```
 
-KCP 暂不支持 `audience=inner`。Cocos Web 不能连接此配置；Web 客户端继续使用 `all.json` 的 WebSocket/auto Endpoint。
+KCP 暂不支持 `audience=inner`。Cocos Web 不能连接此配置；Web 客户端继续使用 `local/all-in-one.json` 的 WebSocket/auto Endpoint。
 
 ## StartMachine
 

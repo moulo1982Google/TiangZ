@@ -22,7 +22,7 @@ const heapGrowthLimitBytes = 4 * 1024 * 1024;
 const rssGrowthLimitBytes = 16 * 1024 * 1024;
 const temporary = await mkdtemp(path.join(os.tmpdir(), "tiangz-hotfix-reload-"));
 
-const watcher = spawn(executable, ["configs/local/StartMachine.json"], {
+const watcher = spawn(executable, ["configs/local/cluster/StartMachine.json"], {
   cwd: root,
   env: process.env,
   stdio: ["pipe", "pipe", "pipe"],

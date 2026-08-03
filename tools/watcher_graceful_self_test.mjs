@@ -26,7 +26,7 @@ await verifyUnexpectedChildExit();
  * Verifies that operator shutdown lets every child complete its TS lifecycle and exit cleanly.
  */
 async function verifyOperatorShutdown() {
-  const watcher = startWatcher("configs/local/StartMachine.json");
+  const watcher = startWatcher("configs/local/cluster/StartMachine.json");
   try {
     await Promise.all([7000, 7001, 7002, 7201, 7301].map(waitForPort));
     watcher.child.stdin.end("shutdown\n");
@@ -54,8 +54,8 @@ async function verifyUnexpectedChildExit() {
         name: "watcher-failure-test",
         innerIp: "127.0.0.1",
         processes: [
-          path.join(root, "configs/local/mgr.json"),
-          path.join(root, "configs/local/mgr.json"),
+          path.join(root, "configs/local/cluster/manager.json"),
+          path.join(root, "configs/local/cluster/manager.json"),
         ],
       }],
     }, null, 2)}\n`,
@@ -84,7 +84,7 @@ async function verifyUnexpectedChildExit() {
  * the Watcher stops every sibling and reports failure.
  */
 async function verifyRunningChildExit() {
-  const watcher = startWatcher("configs/local/StartMachine.json");
+  const watcher = startWatcher("configs/local/cluster/StartMachine.json");
   try {
     const ports = [7000, 7001, 7002, 7201, 7301];
     await Promise.all(ports.map(waitForPort));

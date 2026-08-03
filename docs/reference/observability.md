@@ -8,13 +8,13 @@ Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这�
 
 ### 启动
 
-Watcher 拆分部署（默认读取 `configs/local/StartMachine.json`）：
+Watcher 拆分部署（默认读取 `configs/local/cluster/StartMachine.json`）：
 
 ```powershell
 npm run observability:up
 ```
 
-`all.json` 单进程调试：
+`all-in-one.json` 单进程调试：
 
 ```powershell
 npm run observability:up:single
@@ -25,7 +25,7 @@ npm run observability:up:single
 1. 新开终端启动与监控目标一致的服务端：
 
 ```powershell
-cargo run --bin TiangZ -- configs/local/StartMachine.json
+cargo run --bin TiangZ -- configs/local/cluster/StartMachine.json
 ```
 
 2. 验证一个实际 Process 健康端口（例如 Map 的 7606）：
@@ -97,7 +97,7 @@ docker compose down -v --remove-orphans
 如需监控其他启动入口，可显式生成：
 
 ```powershell
-node tools/observability/generate_prom_targets.mjs --startup configs/local/all.json --local-host host.docker.internal
+node tools/observability/generate_prom_targets.mjs --startup configs/local/all-in-one.json --local-host host.docker.internal
 ```
 
 `--local-host` 只替换 `127.*`、`localhost` 和 `::1`；远程机器仍使用 `StartMachine.json` 中的 `innerIp`。`host.docker.internal` 在 Docker Desktop 下映射宿主机。
@@ -106,7 +106,7 @@ node tools/observability/generate_prom_targets.mjs --startup configs/local/all.j
 
 机器 CPU、整机内存、磁盘和网卡不属于 TiangZ Process 指标。正式部署时应在每台机器安装一个 `node_exporter`（Linux）或 `windows_exporter`（Windows），避免把机器指标重复挂在每个游戏进程上。
 
-`all.json`、`gate1.json`和`map1.json`默认开启 `sampleRate=10` 的延迟采样，用于本地 Dashboard。性能基线配置默认不开启延迟采样；对比压测时必须保持两轮的采样设置一致。
+`all-in-one.json`、`cluster/gate-1.json`和`cluster/map-1.json`默认开启 `sampleRate=10` 的延迟采样，用于本地 Dashboard。性能基线配置默认不开启延迟采样；对比压测时必须保持两轮的采样设置一致。
 
 ## 健康检查
 
@@ -353,7 +353,7 @@ npm run profile:ts -- --port 9231 --duration 30 --out perf/results/map_150.cpupr
    ```powershell
    npm run build:debug
    cargo build --release --bin TiangZ
-   target\release\TiangZ.exe configs/local/all.json
+   target\release\TiangZ.exe configs/local/all-in-one.json
    ```
 
 2. 另开终端启动 CPU 采样：

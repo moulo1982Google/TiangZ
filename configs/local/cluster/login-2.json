@@ -17,5 +17,5 @@
       "port": 7002
     }
   ],
-  "knownSceneFiles": ["cluster.known-scenes.json"]
+  "knownSceneFiles": ["known-scenes.json"]
 }

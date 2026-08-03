@@ -33,7 +33,7 @@ ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/
 先启动服务端：
 
 ```powershell
-cargo run --bin TiangZ -- configs/local/all.json
+cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
 再用UE 5.4.4打开`TiangZClientUE.uproject`并运行。Demo会自动使用随机账号依次调用：

@@ -59,7 +59,7 @@ EntryScene是可配置、可寻址的顶层业务边界，例如`LoginMgr`、`Ma
 
 普通Scene是Process内动态创建的业务容器。一个MapHost可以创建多个MapScene，让低负载地图共享同一线程；扩容时再增加MapHost Process或EntryScene实例。静态地图与动态副本共享同一个MapHost实现和`CreateMap`入口，不拆两套服务；`staticMapIds + acceptDynamicMaps`组合出静态专用、动态专用和混合Host。动态地图由单例`MapManagerScene`调度：启用动态承载的MapHost主动注册并每5秒报告实例数与玩家数，Manager按最少动态实例、最少玩家、名称稳定排序分配宿主，并用业务`requestId`固定唯一MapInstanceId。Location保存MapInstance路由并在地图实例、玩家位置结果中携带MapHost Endpoint；Gate与MapHost缓存或直接使用该地址，动态Host不进入其他进程的静态knownScenes。
 
-部署配置允许`knownSceneFiles`引用共享稳定目录。Rust启动器把本地Scene、共享目录和本地追加项做冲突校验后合并，再把普通`knownScenes`传给TS。该文件组合是不可热更的启动能力，不是服务发现；本地示例集中在`configs/local/cluster.known-scenes.json`。新增空载副本Host只创建自身Scene并引用共享目录，不修改其他进程配置。
+部署配置允许`knownSceneFiles`引用共享稳定目录。Rust启动器把本地Scene、共享目录和本地追加项做冲突校验后合并，再把普通`knownScenes`传给TS。该文件组合是不可热更的启动能力，不是服务发现；本地示例集中在`configs/local/cluster/known-scenes.json`。新增空载副本Host只创建自身Scene并引用共享目录，不修改其他进程配置。本地人工入口只有`cluster/StartMachine.json`和`all-in-one.json`；`cluster/`是一套可整体复制的多进程部署包，包含Watcher入口、各Process和共享`known-scenes.json`，Inspector变体单独归入`debug/`。`all-in-one.json`在同一Process/V8中保留两个Gate、静态MapHost和空载动态副本Host，用于验证单进程快路不改变业务语义。
 
 ### Actor、Scene、Session、Unit与Mailbox
 
@@ -253,7 +253,7 @@ cocos_client2D/.../Generated 自动分发SDK和Handler入口
 cocos_client3D/              Cocos Creator 3D灰盒客户端；Generated/SDK自动分发，Demo脚本只做登录、查询与显示
 ue_client3D/                 UE 5.4.4 C++插件与灰盒客户端；ThirdParty SDK由codegen覆盖
 pixi_client/src/             Pixi业务及SDK验收
-configs/<environment>/       环境、Process与Scene正式部署配置
+configs/<environment>/       环境、Process与Scene正式部署配置；一个子目录对应一套可复制部署包
 configs/bench|tests|experiments/ 压测、自动测试与传输实验配置
 tests/fixtures/              不进入生产运行时的确定性回归数据
 perf/                        性能与长稳工具、历史报告
@@ -318,7 +318,7 @@ Cocos Demo完整类型检查依赖编辑器生成的`cocos_client2D/temp/tsconfi
 
 业务行为采用ET风格System表达：`@systemFor(ModelType)`类写`Awake/OnDestroy`和公开领域方法，但不创建实例、不保存字段。codegen把公开方法生成到`app/generated/bootstrap/systems/*.d.ts`并合并回Model类型，所以调用方保持`unit.Move()`的面向对象写法，Model无需手写抛错空壳。运行时仍直接安装prototype描述符，没有逐次Registry查找。System首次安装后为必需项，候选遗漏会整体拒绝；Reload不重跑现有对象Awake，新对象使用新Awake，已有对象后续方法和销毁使用当前generation。
 
-本地开发可使用`npm run dev -- configs/<环境>/StartMachine.json`：开发宿主初次完整构建并启动Watcher，随后监听`app/hotfix`和`game_config`源文件，串行构建不可变Hotfix或配置数据候选并分别执行`reload`/`reload-config`。它不改变生产模型，不监听Model源码，也不允许V8直接执行TS；正式部署仍需分发完整候选目录。Model以ESM加载一次，Hotfix以固定脚本名IIFE重复求值，避免ESM ModuleMap和每代脚本URL持续增长。Developer Tools对Model长期状态中的`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`和`as any`写入按错误处理；DTO、对象`T | null`、判别联合与显式Map/Record不受影响。
+本地开发可使用`npm run dev -- configs/<环境>/<部署包>/StartMachine.json`（当前为`configs/local/cluster/StartMachine.json`）：开发宿主初次完整构建并启动Watcher，随后监听`app/hotfix`和`game_config`源文件，串行构建不可变Hotfix或配置数据候选并分别执行`reload`/`reload-config`。它不改变生产模型，不监听Model源码，也不允许V8直接执行TS；正式部署仍需分发完整候选目录。Model以ESM加载一次，Hotfix以固定脚本名IIFE重复求值，避免ESM ModuleMap和每代脚本URL持续增长。Developer Tools对Model长期状态中的`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`和`as any`写入按错误处理；DTO、对象`T | null`、判别联合与显式Map/Record不受影响。
 
 Prometheus/Grafana 已完成多 Process 采集和核心诊断面板；正式部署仍需补 node/windows exporter、通知路由和长期存储策略，这些属于Phase 5，不阻塞`0.3.10`框架准入。
 

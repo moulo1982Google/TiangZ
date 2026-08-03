@@ -1,0 +1,32 @@
+{
+  "process": {
+    "name": "map1",
+    "identity": {
+      "originServerId": 1,
+      "workerId": 5
+    },
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 7606
+      },
+      "latency": {
+        "enabled": true,
+        "sampleRate": 10
+      }
+    }
+  },
+  "scenes": [
+    {
+      "name": "map_1",
+      "sceneType": "MapHost",
+      "acceptDynamicMaps": true,
+      "staticMapIds": [
+        1
+      ],
+      "ip": "127.0.0.1",
+      "port": 7301
+    }
+  ],
+  "knownSceneFiles": ["known-scenes.json"]
+}

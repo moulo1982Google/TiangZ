@@ -58,8 +58,8 @@
 
 ## 2026-08-01：共享启动目录与动态MapHost完整路由
 
-- Runtime进程配置增加`knownSceneFiles`，相对当前配置文件加载共享`{"knownScenes": [...]}`，再与本地Scene和追加目录去重合并；同名异址、同址异名在监听器启动前拒绝。本地拆分配置迁移到单一`cluster.known-scenes.json`。
-- MapHost增加`acceptDynamicMaps`，不再拆静态/动态两种服务实现。空`staticMapIds + true`表示纯副本Host；`dungeon1.json`作为可直接启动的空载样例。
+- Runtime进程配置增加`knownSceneFiles`，相对当前配置文件加载共享`{"knownScenes": [...]}`，再与本地Scene和追加目录去重合并；同名异址、同址异名在监听器启动前拒绝。本地拆分配置集中复用`configs/local/cluster/known-scenes.json`。
+- MapHost增加`acceptDynamicMaps`，不再拆静态/动态两种服务实现。空`staticMapIds + true`表示纯副本Host；`cluster/dungeon-1.json`作为可直接启动的空载样例。
 - MapInstance和PlayerLocation协议携带经过校验的MapHost Endpoint。Gate长期路由、首次进入、重连、下线、Actor消息，MapHost跨图传送及副本销毁全部删除对动态Host静态`byName`的依赖。
 - 拆分Runtime smoke额外启动未列入共享目录的`dungeon_1:7310`；Manager成功分配动态实例，玩家完成Map1→Map2→dungeon_1跨进程传送，证明新增副本Host无需修改其他进程配置。
 

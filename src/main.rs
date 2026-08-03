@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
         println!("{}", version::display());
         return Ok(());
     }
-    let startup_path = first_arg.unwrap_or_else(|| "configs/local/StartMachine.json".to_string());
+    let startup_path = first_arg.unwrap_or_else(|| "configs/local/cluster/StartMachine.json".to_string());
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let resolved_config = resolve_startup_path(&root, startup_path);
     if is_start_machine_path(&resolved_config) {

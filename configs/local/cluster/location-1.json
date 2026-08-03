@@ -1,14 +1,11 @@
 {
   "process": {
-    "name": "gate1",
-    "identity": {
-      "originServerId": 1,
-      "workerId": 4
-    },
+    "name": "location",
+    "identity": { "originServerId": 1, "workerId": 7 },
     "observability": {
       "health": {
         "ip": "127.0.0.1",
-        "port": 7605
+        "port": 7607
       },
       "latency": {
         "enabled": true,
@@ -18,11 +15,11 @@
   },
   "scenes": [
     {
-      "name": "gate_1",
-      "sceneType": "Gate",
+      "name": "location_1",
+      "sceneType": "Location",
       "ip": "127.0.0.1",
-      "port": 7201
+      "port": 7401
     }
   ],
-  "knownSceneFiles": ["cluster.known-scenes.json"]
+  "knownSceneFiles": ["known-scenes.json"]
 }

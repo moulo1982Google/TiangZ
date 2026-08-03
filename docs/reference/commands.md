@@ -7,13 +7,13 @@
 | 命令 | 什么时候使用 |
 | --- | --- |
 | `npm install` | 首次拉取工程或依赖变化后安装TS构建依赖 |
-| `npm run dev -- configs/local/StartMachine.json` | 推荐的日常开发入口；首次完整构建并启动Watcher，之后保存Hotfix自动构建和Reload |
+| `npm run dev -- configs/local/cluster/StartMachine.json` | 推荐的日常开发入口；首次完整构建并启动Watcher，之后保存Hotfix自动构建和Reload |
 | `npm run build:hotfix` | 只修改`app/hotfix`行为时，手工构建不可变Hotfix候选 |
 | `npm run build` | 修改Model、Core、Proto、`.native`或首次构建时，生成完整Model/Hotfix配对 |
 | `npm run codegen` | 修改Proto、`.native`、Scene、System或Handler声明后，运行全部生成器 |
 | `npm run typecheck` | 只检查服务端TS类型，不构建Rust和客户端 |
 | `npm run check:project` | 检查目录依赖、配置、Handler与Generated完整性 |
-| `cargo run --bin TiangZ -- configs/local/all.json` | 使用单Process、单V8启动本地全部Demo Scene |
+| `cargo run --bin TiangZ -- configs/local/all-in-one.json` | 使用单Process、单V8启动本地全部Demo Scene |
 | `npm run smoke:client` | 使用Node客户端验证登录、进图链路 |
 | `npm run robot:walk -- 20` | 启动20个真实SDK机器人进入地图遛弯，按`Ctrl+C`全部停止 |
 | `npm run build:debug` | 需要调试TS源码时生成带内联sourcemap的完整Bundle |
@@ -36,7 +36,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 
 | 修改内容 | 推荐命令 |
 | --- | --- |
-| 只修改Hotfix方法体或Handler | `npm run build:hotfix`，或直接使用`npm run dev -- configs/local/StartMachine.json` |
+| 只修改Hotfix方法体或Handler | `npm run build:hotfix`，或直接使用`npm run dev -- configs/local/cluster/StartMachine.json` |
 | 修改Model字段、构造、继承或System公开签名 | `npm run build`，然后重启Process |
 | 修改Proto | `npm run codegen && npm run test:protocol` |
 | 只修改Luban配置数据 | `npm run build:game-config && npm run test:game-config`，再向Watcher输入`reload-config <候选目录>` |
@@ -136,7 +136,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run clean:copy` | 进一步删除依赖和旧报告，得到适合跨机器复制的源码目录 |
 | `npm run clean:copy:dry-run` | 预览`clean:copy`将删除的路径和体积 |
 | `npm run observability:up` | 按Watcher拆分配置生成Target并启动Prometheus与Grafana |
-| `npm run observability:up:single` | 按`all.json`单Process配置启动本地监控栈 |
+| `npm run observability:up:single` | 按`all-in-one.json`单Process配置启动本地监控栈 |
 | `npm run observability:update-targets` | 重新生成Watcher拆分部署的Prometheus Target |
 | `npm run observability:dashboard` | 重新生成TiangZ Runtime Grafana Dashboard JSON |
 | `npm run verify:observability` | 验收Target、Dashboard、告警、Runtime心跳、Histogram与Native Counter |

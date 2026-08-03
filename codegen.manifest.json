@@ -310,7 +310,7 @@
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
         "native_data/demo/MapOps.native": "a467e417b57e202a9a4b345c118fb8309a87d0f90fe33c98545ad4e4b3a12eed",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
-        "package.json": "065e1978dd1b8b036182e3d79820fa8b2933cdac352a161a83c29c4683e42d90",
+        "package.json": "aff1f5dcc383add573928a6a5bb80f44d57362f9e4ddfb5a130f548bc2155b11",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },

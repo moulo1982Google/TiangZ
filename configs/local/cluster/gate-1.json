@@ -1,14 +1,14 @@
 {
   "process": {
-    "name": "map2",
+    "name": "gate1",
     "identity": {
       "originServerId": 1,
-      "workerId": 6
+      "workerId": 4
     },
     "observability": {
       "health": {
         "ip": "127.0.0.1",
-        "port": 7608
+        "port": 7605
       },
       "latency": {
         "enabled": true,
@@ -18,16 +18,11 @@
   },
   "scenes": [
     {
-      "name": "map_2",
-      "sceneType": "MapHost",
-      "acceptDynamicMaps": true,
-      "staticMapIds": [
-        2,
-        100
-      ],
+      "name": "gate_1",
+      "sceneType": "Gate",
       "ip": "127.0.0.1",
-      "port": 7302
+      "port": 7201
     }
   ],
-  "knownSceneFiles": ["cluster.known-scenes.json"]
+  "knownSceneFiles": ["known-scenes.json"]
 }

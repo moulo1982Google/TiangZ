@@ -425,20 +425,24 @@ async function verifyNavMeshTransfer(
   ) {
     throw new Error(`NavMesh3D path query failed: ${stringifyForError(pathResponse.body)}`);
   }
-  const navigationPush = gate.waitForMessage(MsgCode.G2C_EntityNavigate);
+  const navigationPush = waitForNavigationProgress(
+    gate,
+    transferred.unitId,
+    1,
+    transferred.x,
+    transferred.z,
+  );
   const navigateRpcId = nextRpcId++;
   const navigateResponse = decodeNavigateToFrame(await gate.request(buildNavigateToPacket(
     navigateRpcId,
     { targetX: 10, targetY: 0, targetZ: 10, sequence: 1 },
   )));
-  const navigation = decodeEntityNavigateFrame(await navigationPush);
-  const movement = navigation.body.movements.find((item) => item.unitId === transferred.unitId);
+  const movement = await navigationPush;
   if (
     navigateResponse.rpcId !== navigateRpcId ||
     navigateResponse.body.error ||
     navigateResponse.body.acknowledgedSequence !== 1 ||
     navigateResponse.body.points.length < 2 ||
-    !movement ||
     movement.acknowledgedSequence !== 1 ||
     !movement.moving ||
     (movement.x === transferred.x && movement.z === transferred.z)
@@ -491,6 +495,27 @@ async function verifyNavMeshTransfer(
     authoritativePosition: [movement.x, movement.y, movement.z],
   });
   return transferred;
+}
+
+/** 跳过刚接受路径时仍位于起点的合法Push，等待权威位置真正沿路径推进。 / Skips the valid path-start push and waits for authoritative position progress. */
+async function waitForNavigationProgress(
+  gate: TcpRpcConnection,
+  unitId: number,
+  sequence: number,
+  startX: number,
+  startZ: number,
+): Promise<ReturnType<typeof decodeEntityNavigateFrame>["body"]["movements"][number]> {
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const message = decodeEntityNavigateFrame(await gate.waitForMessage(MsgCode.G2C_EntityNavigate));
+    const movement = message.body.movements.find((candidate) =>
+      candidate.unitId === unitId &&
+      candidate.acknowledgedSequence >= sequence &&
+      candidate.moving &&
+      (Math.abs(candidate.x - startX) > 0.001 || Math.abs(candidate.z - startZ) > 0.001)
+    );
+    if (movement) return movement;
+  }
+  throw new Error(`navigation progress not observed: unit=${unitId} sequence=${sequence}`);
 }
 
 async function waitForNavigationState(

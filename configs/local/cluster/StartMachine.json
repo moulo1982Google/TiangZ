@@ -1,0 +1,18 @@
+{
+  "machines": [
+    {
+      "name": "local",
+      "innerIp": "127.0.0.1",
+      "processes": [
+        "manager.json",
+        "login-1.json",
+        "login-2.json",
+        "gate-1.json",
+        "map-1.json",
+        "map-2.json",
+        "dungeon-1.json",
+        "location-1.json"
+      ]
+    }
+  ]
+}

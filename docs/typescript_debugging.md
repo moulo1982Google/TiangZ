@@ -8,7 +8,7 @@
 
 ```powershell
 npm run build:debug
-cargo run --bin TiangZ -- configs/local/login1.debug.json
+cargo run --bin TiangZ -- configs/local/debug/login-1.json
 ```
 
 示例业务端口为 `17001`，Inspector 为 `127.0.0.1:9231`。`breakOnStart: true` 会在 bundle 业务代码执行前等待调试器。

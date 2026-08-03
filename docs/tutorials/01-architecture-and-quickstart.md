@@ -53,7 +53,7 @@ TS 单线程：Tick/protobuf/Handler/Scene/Actor/Component
 ```powershell
 npm install
 npm run build
-cargo run --bin TiangZ -- configs/local/all.json
+cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
 日志应出现：
@@ -69,7 +69,7 @@ starting process all with one V8 and 6 scene(s)
 npm run test:runtime
 ```
 
-该命令先验证 `all.json` 的单进程多 Scene，再验证六个拆分进程。两者都会完成登录、GateSession、地图进入、移动和多人可见性。
+该命令先验证 `all-in-one.json` 的单进程多 Scene，再验证拆分进程。两者都会完成登录、GateSession、地图进入、移动和多人可见性。
 
 ## 阅读入口
 

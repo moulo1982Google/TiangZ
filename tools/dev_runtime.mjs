@@ -10,7 +10,7 @@ const gameConfigWatchTargets = [
   { source: path.join(root, "game_config", "Defines"), recursive: true },
   { source: path.join(root, "game_config", "luban.conf"), recursive: false },
 ];
-const defaultConfig = "configs/local/StartMachine.json";
+const defaultConfig = "configs/local/cluster/StartMachine.json";
 const debounceMs = 250;
 
 if (process.argv.includes("--self-test")) {

@@ -23,5 +23,5 @@
       "port": 7100
     }
   ],
-  "knownSceneFiles": ["cluster.known-scenes.json"]
+  "knownSceneFiles": ["known-scenes.json"]
 }

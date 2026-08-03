@@ -108,7 +108,7 @@ async function capture(command, args) {
 /** 在最终制品目录中启动Runtime并完成登录、进图和协议校验。 / Starts the packaged Runtime and verifies login, map entry, and protocol flow. */
 async function smokeRelease(directory, executable) {
   console.log("[release] smoke testing packaged artifact");
-  const runtime = spawn(path.join(directory, executable), ["configs/local/all.json"], {
+  const runtime = spawn(path.join(directory, executable), ["configs/local/all-in-one.json"], {
     cwd: directory,
     env: { ...process.env, TIANGZ_WATCHER_CONTROL: "stdin" },
     stdio: ["pipe", "pipe", "pipe"],

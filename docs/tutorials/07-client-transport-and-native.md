@@ -77,7 +77,7 @@ Transport 选择和不支持平台测试：
 npm run test:client-transport
 ```
 
-通用 WebSocket SDK 全链路测试，需要先启动 `configs/local/all.json`：
+通用 WebSocket SDK 全链路测试，需要先启动 `configs/local/all-in-one.json`：
 
 ```powershell
 npm run smoke:client-sdk -- websocket 127.0.0.1 7000

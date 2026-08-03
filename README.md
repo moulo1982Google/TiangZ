@@ -90,10 +90,10 @@ Phase 4.2.4已经把官方Recast/Detour `v1.6.0`资产、Rust权威移动和AOI�
 cd E:\gitee\TiangZ
 npm install
 npm run build
-cargo run -- configs/local/all.json
+cargo run -- configs/local/all-in-one.json
 ```
 
-`all.json` 在一个 OS 进程、一个 V8 中启动八个入口 Scene，但保留各自客户端/Inner Listener：
+`all-in-one.json` 在一个 OS 进程、一个 V8 中启动十个入口 Scene，但保留各自客户端/Inner Listener：
 
 ```text
 login_mgr LoginMgr  127.0.0.1:7000
@@ -101,8 +101,10 @@ map_manager MapManager 127.0.0.1:7100
 login_1   Login     127.0.0.1:7001
 login_2   Login     127.0.0.1:7002
 gate_1    Gate      127.0.0.1:7201
+gate_2    Gate      127.0.0.1:7202
 map_1     MapHost   127.0.0.1:7301
 map_2     MapHost   127.0.0.1:7302
+dungeon_1 MapHost   127.0.0.1:7310
 location_1 Location 127.0.0.1:7401
 ```
 
@@ -215,7 +217,7 @@ npm run test:game-config
 - `process.observability`：延迟采样等可观测性配置；不需要时可以省略。
 - `scenes`：当前进程实际创建的入口 Scene。
 - `knownScenes`：当前进程可路由的 Scene 目录，目标可以在其他进程；省略或为空时默认等于 `scenes`。
-- `knownSceneFiles`：相对当前进程配置引用共享稳定Scene目录；本地拆分部署统一使用`configs/local/cluster.known-scenes.json`，避免每个进程复制`knownScenes`。
+- `knownSceneFiles`：相对当前进程配置引用共享稳定Scene目录；本地拆分部署统一使用`configs/local/cluster/known-scenes.json`，避免每个进程复制`knownScenes`。
 - `staticMapIds`：只写在实际承载地图的`MapHost`的`scenes`项中；启动时创建这些静态地图，且静态`MapInstanceId`等于配置ID。`knownScenes`路由副本不重复填写。
 - `acceptDynamicMaps`：MapHost是否向MapManager注册并接受动态副本；默认false。空载副本Host使用空`staticMapIds`和true。
 - `MapManager`：动态地图单例调度Scene。各MapHost把它加入`knownScenes`后主动注册；Manager不需要静态列出将来扩容的MapHost。
@@ -223,7 +225,7 @@ npm run test:game-config
 - `scene.audience`：`mixed`、`inner` 或 `outer`；默认 `mixed`。
 - `StartMachine.json`：按机器 IP 启动多个进程配置文件。正式环境放在 `configs/<environment>`；压测、自动测试和传输实验分别放在 `configs/bench`、`configs/tests`、`configs/experiments`。
 
-把 `all.json` 拆成多个配置时，只改变 `scenes` 的部署归属；`knownScenes` 中目标的 name/type/ip/port 保持一致，业务调用代码不改。
+把 `all-in-one.json` 拆成多个配置时，只改变 `scenes` 的部署归属；`knownScenes` 中目标的 name/type/ip/port 保持一致，业务调用代码不改。
 
 Scene 生命周期和玩家下线保存约定见 [生命周期与玩家下线](docs/reference/lifecycle.md)。
 
@@ -278,7 +280,7 @@ npm run build
 npm run build:hotfix
 
 # 开发模式：初次构建后监听Hotfix源码，保存即自动构建候选并Reload
-npm run dev -- configs/local/StartMachine.json
+npm run dev -- configs/local/cluster/StartMachine.json
 ```
 
 Hotfix只能从`#tiangz/model`导入稳定类型。`build:hotfix`会比较Model源码、协议锁、Stable Core API和Native schema指纹；任何一项变化都直接拒绝，不支持强制绕过。命令输出按内容哈希命名的`dist/hotfix-candidates/<hash>`目录，不覆盖当前Bundle。Watcher运行时输入`reload <候选目录>`会让每个Process独立预检并在安全屏障提交；失败或超时继续使用旧generation。`npm run dev`只是把codegen、类型检查、候选构建和Reload自动化，V8仍只执行生成的JavaScript；该命令只用于本地开发，正式部署必须传输完整不可变候选目录。3000玩家1Hz Reload、8秒慢RPC屏障和100代资源长稳均已有自动化或版本化报告；仍不能直接替换`dist/hotfix.js`。详见[Process级TypeScript热更设计](docs/design/typescript-hot-reload.md)。
@@ -355,7 +357,7 @@ npm run check:project -- --format json
 
 ```powershell
 npm run build:debug
-cargo run -- configs/local/login1.debug.json
+cargo run -- configs/local/debug/login-1.json
 ```
 
 一个 Process 对应一个 Inspector。详见 [TypeScript 调试](docs/typescript_debugging.md)。日常开发使用快速质量门：

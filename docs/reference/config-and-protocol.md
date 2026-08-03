@@ -150,7 +150,7 @@ Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原�
 
 ```json
 {
-  "knownSceneFiles": ["cluster.known-scenes.json"],
+  "knownSceneFiles": ["known-scenes.json"],
   "knownScenes": []
 }
 ```

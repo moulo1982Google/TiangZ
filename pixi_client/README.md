@@ -8,7 +8,7 @@
 
 ```powershell
 npm run build
-cargo run --bin TiangZ -- configs/local/all.json
+cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
 再构建并启动 Pixi 客户端：

@@ -112,7 +112,7 @@ Luban输入被拆成两部分：
 
 策略按整张表声明，不做字段级Hot/Cold混用。新增配置表必须同时在`ConfigTablePolicy.xlsx`登记，否则codegen直接失败。生成包同时包含完整、Hot、Cold三份JSON与各自指纹；Rust先验证分区确实能无重叠地还原完整数据，TS再验证Cold指纹没有变化，不能只伪造manifest绕过边界。
 
-本地使用`npm run dev -- configs/local/StartMachine.json`时，保存Hot表后开发宿主会自动生成、校验并让Watcher广播候选。Cold表变化会明确提示需要完整构建和重启。手工部署Hot候选时：
+本地使用`npm run dev -- configs/local/cluster/StartMachine.json`时，保存Hot表后开发宿主会自动生成、校验并让Watcher广播候选。Cold表变化会明确提示需要完整构建和重启。手工部署Hot候选时：
 
 ```text
 npm run build:game-config

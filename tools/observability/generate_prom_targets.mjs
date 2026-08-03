@@ -4,7 +4,7 @@ import path from "node:path";
 
 const args = parseArgs(process.argv.slice(2));
 const root = process.cwd();
-const startupPath = path.resolve(root, args.get("--startup") ?? "configs/local/StartMachine.json");
+const startupPath = path.resolve(root, args.get("--startup") ?? "configs/local/cluster/StartMachine.json");
 const outputPath = path.resolve(
   root,
   args.get("--output") ?? "tools/observability/prometheus/targets.yml",

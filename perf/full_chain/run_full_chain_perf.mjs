@@ -85,10 +85,17 @@ async function runCase(deployment, players, moveRate, round) {
   try {
     if (!options.remote) {
       const configs = deployment === "all"
-        ? ["all"]
-        : ["mgr", "login1", "login2", "gate1", "map1"];
+        ? ["configs/local/all-in-one.json"]
+        : [
+            "configs/local/cluster/manager.json",
+            "configs/local/cluster/login-1.json",
+            "configs/local/cluster/login-2.json",
+            "configs/local/cluster/gate-1.json",
+            "configs/local/cluster/map-1.json",
+          ];
       for (const config of configs) {
-        runtimes.push(startRuntime(config, `${caseName}_${config}`));
+        const configName = path.basename(config, ".json");
+        runtimes.push(startRuntime(config, `${caseName}_${configName}`));
       }
       for (const port of [7000, 7001, 7002, 7201, 7301]) {
         await waitPort("127.0.0.1", port, 20_000);
@@ -123,10 +130,10 @@ async function runCase(deployment, players, moveRate, round) {
   };
 }
 
-function startRuntime(configName, logName) {
+function startRuntime(configPath, logName) {
   const stdoutPath = path.join(logDir, `${logName}_stdout.log`);
   const stderrPath = path.join(logDir, `${logName}_stderr.log`);
-  const child = spawn(executable, [`configs/local/${configName}.json`], {
+  const child = spawn(executable, [configPath], {
     cwd: root,
     env: { ...process.env, TIANGZ_WATCHER_CONTROL: "stdin" },
     stdio: ["pipe", "pipe", "pipe"],
@@ -134,7 +141,7 @@ function startRuntime(configName, logName) {
   });
   child.stdout.pipe(createWriteStream(stdoutPath));
   child.stderr.pipe(createWriteStream(stderrPath));
-  const runtime = { child, name: configName, stdoutPath, stderrPath };
+  const runtime = { child, name: path.basename(configPath, ".json"), stdoutPath, stderrPath };
   activeRuntimes.add(runtime);
   return runtime;
 }

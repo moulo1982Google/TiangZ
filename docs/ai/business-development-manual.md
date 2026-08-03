@@ -107,6 +107,12 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 
 先复用这些形状，不重新发明Manager、ServiceLocator或事件总线。
 
+## 部署配置规则
+
+日常本地开发只选择`configs/local/cluster/StartMachine.json`或`configs/local/all-in-one.json`。前者是支持Watcher与热更的多进程默认入口，后者在单一Process/V8中同时演示多Gate、静态地图和动态副本Host。新增独立Process时，在对应部署包目录中新增一个语义明确的JSON，并把文件名加入同目录的`StartMachine.json`。
+
+`cluster/`中的`known-scenes.json`只保存多个Process共用、不可热更的稳定路由；`debug/`只保存Inspector等显式调试变体，不参与默认启动。不要在`local/`根目录再堆放临时Process JSON，不要在`all-in-one.json`中把本进程`scenes`重复写入`knownScenes`。压测、自测和传输实验分别进入`configs/bench`、`configs/tests`和`configs/experiments`。
+
 ## 游戏配置开发规则
 
 静态策划配置统一维护在`game_config/Datas`，启动部署配置继续维护在`configs/<environment>`，两者不能混用。新增或修改配置时：
@@ -380,7 +386,7 @@ MapHost配置静态地图：
 
 启动时MapHost逐个调用统一`CreateMap`并向Location注册实际实例。只有`acceptDynamicMaps=true`的Host向单例MapManager注册自身地址、generation、负载和动态创建关系；`staticMapIds`与该开关可组合为静态专用、动态专用或混合承载。Manager不在`knownScenes`中预列动态Host，租约15秒，超时Host不再获得新实例。MapHost每5秒心跳，Manager丢失注册时自动重发完整关系，因此单独重启Manager可恢复；Manager与Host同时丢失后的跨重启幂等留给持久化阶段。MapInstance与PlayerLocation响应携带MapHost Endpoint，业务不得再用`scenes.byName(dynamicHostName)`。连续无人五分钟自动销毁由MapHost本地`DynamicMapLifecycleComponent`提供，只是业务兜底策略。
 
-稳定基础Scene集中写入共享`knownSceneFiles`；新增动态副本Host只引用该文件，禁止要求所有Gate/MapHost反向追加它。共享文件不可热更，只负责启动依赖；MapManager注册才负责动态发现。完整样例见`configs/local/cluster.known-scenes.json`和`configs/local/dungeon1.json`。
+稳定基础Scene集中写入共享`knownSceneFiles`；新增动态副本Host只引用该文件，禁止要求所有Gate/MapHost反向追加它。共享文件不可热更，只负责启动依赖；MapManager注册才负责动态发现。完整样例见`configs/local/cluster/known-scenes.json`和`configs/local/cluster/dungeon-1.json`。
 
 完整开发步骤与代码示例见[地图实例与动态副本教程](../tutorials/11-map-instance-and-dungeon.md)。
 
@@ -714,7 +720,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 `0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前继续沿`0.4.x`开发线推进。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
-本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
+本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
 
 | 修改类型 | 最少验证 |
 |---|---|

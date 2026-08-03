@@ -52,7 +52,7 @@ const dungeonInstanceId = created.instance.mapInstanceId;
 | 动态副本专用 | `[]`或省略 | `true` |
 | 混合承载 | `[1, 2]` | `true` |
 
-空载副本进程参考[`configs/local/dungeon1.json`](../../configs/local/dungeon1.json)：
+空载副本进程参考[`configs/local/cluster/dungeon-1.json`](../../configs/local/cluster/dungeon-1.json)：
 
 ```json
 {
@@ -66,11 +66,11 @@ const dungeonInstanceId = created.instance.mapInstanceId;
     "protocol": "tcp",
     "audience": "inner"
   }],
-  "knownSceneFiles": ["cluster.known-scenes.json"]
+  "knownSceneFiles": ["known-scenes.json"]
 }
 ```
 
-稳定基础Scene集中写在[`cluster.known-scenes.json`](../../configs/local/cluster.known-scenes.json)。新增`dungeon_2`只需要新的进程身份、Scene名称和端口，不需要把它反向添加到Gate、Location或其他MapHost配置。MapInstance与玩家Location会携带经过校验的MapHost Endpoint；首次进图、断线重连、Actor消息、跨图传送和销毁都直接使用该动态路由。
+稳定基础Scene集中写在[`cluster/known-scenes.json`](../../configs/local/cluster/known-scenes.json)。新增`dungeon_2`只需要新的进程身份、Scene名称和端口，不需要把它反向添加到Gate、Location或其他MapHost配置。MapInstance与玩家Location会携带经过校验的MapHost Endpoint；首次进图、断线重连、Actor消息、跨图传送和销毁都直接使用该动态路由。
 
 ## 统一传送
 

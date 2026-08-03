@@ -34,7 +34,7 @@ await createCandidate(coldCandidate, (server, client) => {
 const validManifest = JSON.parse(
   await readFile(path.join(validCandidate, "game-config.manifest.json"), "utf8"),
 );
-const watcher = spawn(executable, ["configs/local/StartMachine.json"], {
+const watcher = spawn(executable, ["configs/local/cluster/StartMachine.json"], {
   cwd: root,
   env: process.env,
   stdio: ["pipe", "pipe", "pipe"],

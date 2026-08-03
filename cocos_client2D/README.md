@@ -8,7 +8,7 @@
 
 ```bash
 npm run build
-cargo run -- configs/local/all.json
+cargo run -- configs/local/all-in-one.json
 ```
 
 同一个 Service 端口同时支持：

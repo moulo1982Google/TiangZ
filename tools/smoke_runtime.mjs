@@ -17,18 +17,18 @@ const mode = options.mode;
 const client = path.join(root, "dist", "smoke_client.cjs");
 
 if (mode === "all" || mode === "both") {
-  await runCase("all-in-one", ["configs/local/all.json"], true);
+  await runCase("all-in-one", ["configs/local/all-in-one.json"], true);
 }
 if (mode === "split" || mode === "both") {
   await runCase("split-process", [
-    "configs/local/mgr.json",
-    "configs/local/login1.json",
-    "configs/local/login2.json",
-    "configs/local/gate1.json",
-    "configs/local/map1.json",
-    "configs/local/map2.json",
-    "configs/local/dungeon1.json",
-    "configs/local/location.json",
+    "configs/local/cluster/manager.json",
+    "configs/local/cluster/login-1.json",
+    "configs/local/cluster/login-2.json",
+    "configs/local/cluster/gate-1.json",
+    "configs/local/cluster/map-1.json",
+    "configs/local/cluster/map-2.json",
+    "configs/local/cluster/dungeon-1.json",
+    "configs/local/cluster/location-1.json",
   ], false);
 }
 console.log("[smoke] runtime smoke passed");
@@ -39,7 +39,10 @@ async function runCase(name, configs, checkHealth) {
   let succeeded = false;
   try {
     const ports = [7000, 7001, 7002, 7201, 7301, 7302, 7401];
-    if (configs.some((config) => config.endsWith("dungeon1.json"))) ports.push(7310);
+    if (configs.some((config) => config.endsWith("all-in-one.json"))) ports.push(7202);
+    if (configs.some((config) => config.endsWith("all-in-one.json") || config.endsWith("dungeon-1.json"))) {
+      ports.push(7310);
+    }
     await Promise.all(ports.map((port) => waitForPort(port, runtimes[0])));
     if (checkHealth) await waitForReady(7600);
     await runInherited(process.execPath, [client, ...options.clientArgs], root);

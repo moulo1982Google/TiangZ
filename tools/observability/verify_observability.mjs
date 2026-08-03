@@ -8,13 +8,13 @@ const root = process.cwd();
 const temporary = mkdtempSync(path.join(os.tmpdir(), "tiangz-observability-"));
 
 try {
-  const splitStartup = path.resolve(root, "configs/local/StartMachine.json");
+  const splitStartup = path.resolve(root, "configs/local/cluster/StartMachine.json");
   const splitTargets = path.join(temporary, "split-targets.yml");
   run("node", ["tools/observability/generate_prom_targets.mjs", "--startup", splitStartup, "--local-host", "host.docker.internal", "--output", splitTargets]);
   verifyTargets(splitTargets, countConfiguredProcesses(splitStartup));
 
   const singleTargets = path.join(temporary, "single-targets.yml");
-  run("node", ["tools/observability/generate_prom_targets.mjs", "--startup", "configs/local/all.json", "--local-host", "host.docker.internal", "--output", singleTargets]);
+  run("node", ["tools/observability/generate_prom_targets.mjs", "--startup", "configs/local/all-in-one.json", "--local-host", "host.docker.internal", "--output", singleTargets]);
   verifyTargets(singleTargets, 1);
 
   const remoteProcess = path.join(temporary, "remote-map.json");

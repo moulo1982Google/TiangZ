@@ -54,7 +54,7 @@ Phase 4.3接入真实Cocos 3D地图时，制作流程应从同一场景导出两
 1. 启动服务端：
 
 ```powershell
-cargo run --bin TiangZ -- configs/local/all.json
+cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
 2. 使用Cocos Creator 3.8.8打开`cocos_client3D`，打开`assets/scene.scene`并运行浏览器预览。

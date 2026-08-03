@@ -49,7 +49,7 @@ Map -> 清除旧移动意图 -> 返回全量权威快照
 ## Cocos 验证
 
 1. 运行 `npm run build`。
-2. 运行 `cargo run --bin TiangZ -- configs/local/all.json`。
+2. 运行 `cargo run --bin TiangZ -- configs/local/all-in-one.json`。
 3. 用 Cocos Creator 打开 `cocos_client2D`。
 4. Preview 后进入游戏，多开页面可观察玩家互见和移动；按`T`在Map1/Map2间传送。
 
