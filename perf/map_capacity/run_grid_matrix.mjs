@@ -20,35 +20,42 @@ const options = {
     "--map-entry-concurrency",
   ),
   targetMapCpu: positive(values.get("--target-map-cpu") ?? "80", "--target-map-cpu"),
+  reportRuns: values.get("--report-runs")?.split(",").filter(Boolean) ?? [],
 };
 
+if (options.reportRuns.length !== 0 && options.reportRuns.length !== 3) {
+  throw new Error("--report-runs requires three comma-separated run ids for 10x10,15x15,20x20");
+}
+
 const reports = [];
-for (const worldGrids of [10, 15, 20]) {
-  console.log(`[map-capacity-grid-matrix] running ${worldGrids}x${worldGrids}`);
-  const result = spawnSync(
-    process.execPath,
-    [
-      path.join(root, "perf", "map_capacity", "run_map_capacity_perf.mjs"),
-      "--players", String(options.players),
-      "--gates", String(options.gates),
-      "--client", "rust",
-      "--spawn-layout", "grid-uniform",
-      "--world-grids", String(worldGrids),
-      "--move-rate", "2",
-      "--probe-rate", "0.2",
-      "--setup-concurrency", String(options.setupConcurrency),
-      "--map-entry-concurrency", String(options.mapEntryConcurrency),
-      "--duration", String(options.duration),
-      "--warmup", String(options.warmup),
-      "--target-map-cpu", String(options.targetMapCpu),
-      "--skip-rust-build",
-    ],
-    { cwd: root, stdio: "inherit" },
-  );
-  if (result.status !== 0) {
-    throw new Error(`${worldGrids}x${worldGrids} capacity run failed with code ${result.status}`);
+for (const [index, worldGrids] of [10, 15, 20].entries()) {
+  if (options.reportRuns.length === 0) {
+    console.log(`[map-capacity-grid-matrix] running ${worldGrids}x${worldGrids}`);
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(root, "perf", "map_capacity", "run_map_capacity_perf.mjs"),
+        "--players", String(options.players),
+        "--gates", String(options.gates),
+        "--client", "rust",
+        "--spawn-layout", "grid-uniform",
+        "--world-grids", String(worldGrids),
+        "--move-rate", "2",
+        "--probe-rate", "0.2",
+        "--setup-concurrency", String(options.setupConcurrency),
+        "--map-entry-concurrency", String(options.mapEntryConcurrency),
+        "--duration", String(options.duration),
+        "--warmup", String(options.warmup),
+        "--target-map-cpu", String(options.targetMapCpu),
+        "--skip-rust-build",
+      ],
+      { cwd: root, stdio: "inherit" },
+    );
+    if (result.status !== 0) {
+      throw new Error(`${worldGrids}x${worldGrids} capacity run failed with code ${result.status}`);
+    }
   }
-  reports.push(summarizeLatest(worldGrids));
+  reports.push(summarizeReport(worldGrids, options.reportRuns[index]));
 }
 
 const generatedAt = new Date().toISOString();
@@ -64,15 +71,31 @@ writeFileSync(
 );
 console.log("[map-capacity-grid-matrix] report: perf/results/map_capacity_grid_matrix_latest.md");
 
-function summarizeLatest(worldGrids) {
+function summarizeReport(worldGrids, runId) {
+  const fileName = runId ? `map_capacity_${runId}.json` : "map_capacity_latest.json";
   const payload = JSON.parse(
-    readFileSync(path.join(root, "perf", "results", "map_capacity_latest.json"), "utf8"),
+    readFileSync(path.join(root, "perf", "results", fileName), "utf8"),
   );
   const round = payload.rounds?.[0];
   if (!round || round.worldGrids !== worldGrids || round.players !== options.players) {
     throw new Error(`latest report does not match ${worldGrids}x${worldGrids}`);
   }
+  const parameters = payload.parameters ?? {};
+  for (const [name, actual, expected] of [
+    ["gates", parameters.gates, options.gates],
+    ["duration", parameters.duration, options.duration],
+    ["warmup", parameters.warmup, options.warmup],
+    ["setupConcurrency", parameters.setupConcurrency, options.setupConcurrency],
+    ["mapEntryConcurrency", parameters.mapEntryConcurrency, options.mapEntryConcurrency],
+  ]) {
+    if (Number(actual) !== Number(expected)) {
+      throw new Error(`${fileName} ${name}=${actual} does not match requested ${expected}`);
+    }
+  }
   const map = round.serverResources.map;
+  const processes = round.serverResources.processes ?? [];
+  const sumProcessCounter = (name) =>
+    processes.reduce((total, process) => total + Number(process[name] ?? 0), 0);
   return {
     worldGrids,
     densityPerGrid: options.players / (worldGrids * worldGrids),
@@ -95,10 +118,10 @@ function summarizeLatest(worldGrids) {
     visibilityChangesPerSecond: map.nativeData.aoiVisibilityChangesPerSecond,
     movementErrors: round.movement.errors,
     probeErrors: round.probe.errors,
-    innerOverloads: round.serverResources.innerOverloads,
-    innerTimeouts: round.serverResources.innerTimeouts,
-    backpressure: round.serverResources.backpressure,
-    slowDisconnects: round.serverResources.slowDisconnects,
+    innerOverloads: sumProcessCounter("innerOverloads"),
+    innerTimeouts: sumProcessCounter("innerTimeouts"),
+    backpressure: sumProcessCounter("backpressure"),
+    slowDisconnects: sumProcessCounter("slowDisconnects"),
   };
 }
 

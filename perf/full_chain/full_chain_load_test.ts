@@ -360,7 +360,10 @@ async function createPlayer(index: number): Promise<PlayerResult> {
 
   const enterMapRpcId = allocateRpcId();
   const [enterMapFrame, mapReadyFrame] = await Promise.all([
-    gate.request(enterMapRpcId, buildEnterMapPacket(enterMapRpcId, { mapId: 1 })),
+    gate.request(
+      enterMapRpcId,
+      buildEnterMapPacket(enterMapRpcId, { mapId: 1, mapInstanceId: 0n }),
+    ),
     gate.waitForMessage(MsgCode.G2C_MapReady),
   ]);
   const enterMap = decodeEnterMapFrame(enterMapFrame).body;

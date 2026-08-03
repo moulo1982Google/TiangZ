@@ -2065,7 +2065,7 @@ fn append_native_data_metrics_prometheus(
         ),
         (
             "tiangz_aoi_grids",
-            "Occupied sparse AOI grids",
+            "Occupied flat AOI grids",
             "gauge",
             snapshot.aoi_grids,
         ),

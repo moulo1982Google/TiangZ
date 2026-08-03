@@ -69,7 +69,7 @@ Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Co
 
 ## Rust AOI
 
-每个`MapInstanceId`拥有独立的Rust `AoiWorld`。稀疏Hash Grid使用X/Z米制坐标做宽阶段查询；玩家同时是Observer和Subject，后续怪物/NPC可只作为Subject。自身权威状态始终发送给自己的客户端，但自身不产生Enter/Leave关系。
+每个`MapInstanceId`拥有独立的Rust `AoiWorld`。有限地图按配置边界预建扁平连续AOI Grid，X/Z坐标直接计算数组下标，不经过坐标Hash；玩家同时是Observer和Subject，后续怪物/NPC可只作为Subject。自身权威状态始终发送给自己的客户端，但自身不产生Enter/Leave关系。超过四百万个AOI Grid的地图会被拒绝；极大或无边界世界以后应使用分块稀疏Grid，不能让普通地图路径承担两套索引。
 
 可见性与同步频率是两套独立配置：
 
@@ -81,7 +81,9 @@ Rust不得回调TS读取权威空间数据。地图业务仍使用`MapScene + Co
 
 AOI Grid从每张地图的最小Cell开始编号，不从世界坐标0开始切分。地图宽高必须是`gridSizeCells`的整数倍；因此150、225、300 Cell会严格形成10×10、15×15、20×20 Grid，奇数个Grid的地图不会在零点两侧多切出一列。AOI关系只在实体跨越Grid边界时重算；Grid2D每步移动一个Cell，NavMesh3D可以在同一Cell内连续移动。
 
-`NativeUnitRef.x/z`通过FastOP修改时只标记空间脏；帧内可多次写入，帧末只在跨AOI Grid时重算邻域。Enter内默认关系由Grid即时推导，不物化全量关系边；Rust只保存处于Enter与Detach之间的迟滞关系、业务过滤拒绝项和本帧净变化。TS不保存镜像关系表。高频Movement在Rust编码protobuf并按同步档位节流；开始、停止和转向等`stateChanged`记录强制立即发送，不能被低频档漏掉。Numeric和UnitState仍由各自脏数据策略决定发送时机，AOI只负责最终受众，不能把不可覆盖事件套进Movement节流。默认关系按Subject所在Grid聚合相同受众，迟滞或业务过滤例外才计算精确受众。
+`NativeUnitRef.x/z`通过FastOP修改时只标记空间脏；帧内可多次写入，帧末只在跨AOI Grid时重算邻域。每个Grid使用连续`EntityIndex`数组，实体保存`slotInGrid`，跨Grid通过`swap-remove + push`完成O(1)成员迁移并修复被交换实体的槽位。Scene内UnitId映射为可复用的紧凑`EntityIndex`；空间候选关系和业务过滤后的最终可见关系各保存一组Observer→Subject、Subject→Observer双向稠密位图，另用一张单向位图记录迟滞关系，因此关系差分、正反向受众查询和指标计数不再扫描Hash集合或全量关系。EntityIndex释放时必须同时清除全部位图的行列，防止新实体继承旧关系。
+
+这是一项有意的“内存换吞吐”设计：位图使用单块连续`u64`矩阵并按512个实体分段扩容，避免每个Observer一块小Vec。3000个实体会预留到3072，五张矩阵约5.6 MiB；它适合单Scene数千活跃实体。当前稠密实现硬限制每MapInstance 16384个AOI实体，此时五张矩阵约160 MiB，超过限制会明确拒绝Attach，不能让异常配置无限分配。十万级Scene不能照搬完整位图，应改用分块稀疏位图或空间分片。当前不按Tick重建CSR Grid，因为AOI只在跨Grid时变更，80%的Grid内移动无需更新成员表。TS不保存镜像关系表。高频Movement仍在Rust编码protobuf并按同步档位节流；开始、停止和转向等`stateChanged`记录强制立即发送。Numeric和UnitState仍由各自脏数据策略决定发送时机，AOI只负责最终受众。默认关系按Subject所在Grid聚合相同受众，迟滞或业务过滤例外才计算精确受众。
 
 Rust输出的多个Audience batch不会逐条穿过Map到Gate的内部Transport。`BroadcastHub.SendMany`把同一逻辑作业整体提交，`SceneBroadcastTransport`再以当前同步Game Tick为聚合边界，将同Tick产生的Movement、Numeric和UnitState批次按Gate重组为一条`S2G_ClientBroadcastBatch`。批量项保持各自接收者列表和最终客户端frame，Gate不解码或重新编码业务payload。该优化只减少内部消息和Promise调度，不改变AOI可见关系、状态节流、dirty Ack或客户端消息边界。
 

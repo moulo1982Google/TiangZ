@@ -71,6 +71,9 @@ struct NavigationMovementRecord {
 
 #[derive(Clone, Copy)]
 struct Grid2DBounds {
+    width_cells: u32,
+    depth_cells: u32,
+    cell_size_millimeters: u32,
     min_x: i32,
     max_x: i32,
     min_z: i32,
@@ -98,19 +101,22 @@ impl Grid2DBounds {
         }
         let width = width_cells as i32;
         let depth = depth_cells as i32;
-        let cell_size_millimeters = i64::from(cell_size_millimeters);
+        let cell_size_millimeters_i64 = i64::from(cell_size_millimeters);
         Ok(Self {
+            width_cells,
+            depth_cells,
+            cell_size_millimeters,
             min_x: -(width / 2) + 1,
             max_x: (width - 1) / 2 - 1,
             min_z: -(depth / 2) + 1,
             max_z: (depth - 1) / 2 - 1,
-            cell_size_meters: cell_size_millimeters as f32 / 1_000.0,
+            cell_size_meters: cell_size_millimeters_i64 as f32 / 1_000.0,
             // Cell 坐标以地图中心附近的 0 为基准；AOI Grid 必须从地图最小 Cell
             // 开始分组，否则奇数个 Grid 的地图会被世界零点额外切出一列。
             // Cell coordinates remain centered around zero, while AOI grids are anchored
             // at the map's minimum cell so odd-sized worlds retain their configured grid count.
-            origin_x_millimeters: -i64::from(width / 2) * cell_size_millimeters,
-            origin_z_millimeters: -i64::from(depth / 2) * cell_size_millimeters,
+            origin_x_millimeters: -i64::from(width / 2) * cell_size_millimeters_i64,
+            origin_z_millimeters: -i64::from(depth / 2) * cell_size_millimeters_i64,
         })
     }
 
@@ -1430,10 +1436,23 @@ pub(crate) fn op_native_aoi_create(
         .ok_or_else(|| {
             JsErrorBox::generic(format!("map spatial world is not configured: {map_id}"))
         })?;
+    let width_millimeters = u64::from(bounds.width_cells) * u64::from(bounds.cell_size_millimeters);
+    let depth_millimeters = u64::from(bounds.depth_cells) * u64::from(bounds.cell_size_millimeters);
+    if width_millimeters % u64::from(grid_size_millimeters) != 0
+        || depth_millimeters % u64::from(grid_size_millimeters) != 0
+    {
+        return Err(JsErrorBox::generic(
+            "map dimensions must be divisible by the AOI grid size",
+        ));
+    }
     let world = AoiWorld::new(
         grid_size_millimeters,
         bounds.origin_x_millimeters,
         bounds.origin_z_millimeters,
+        u32::try_from(width_millimeters / u64::from(grid_size_millimeters))
+            .map_err(|_| JsErrorBox::generic("AOI grid width exceeds uint32"))?,
+        u32::try_from(depth_millimeters / u64::from(grid_size_millimeters))
+            .map_err(|_| JsErrorBox::generic("AOI grid depth exceeds uint32"))?,
         enter_radius_grids,
         detach_radius_grids,
         tiers,
@@ -3213,6 +3232,8 @@ mod tests {
             10_000,
             0,
             0,
+            100,
+            100,
             1,
             1,
             vec![SyncTier {
@@ -3240,6 +3261,8 @@ mod tests {
             10_000,
             0,
             0,
+            100,
+            100,
             1,
             1,
             vec![SyncTier {
@@ -3304,6 +3327,8 @@ mod tests {
                 10_000,
                 0,
                 0,
+                100,
+                100,
                 1,
                 1,
                 vec![SyncTier {

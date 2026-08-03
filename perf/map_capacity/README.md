@@ -203,6 +203,17 @@ npm run perf:map-capacity -- \
 npm run perf:map-capacity:grid-matrix
 ```
 
+某一档因环境抖动需要单独复测时，可用三份已经验证有效的原始报告重新生成矩阵，
+不会再次启动服务或压测客户端：
+
+```powershell
+node perf/map_capacity/run_grid_matrix.mjs `
+  --map-entry-concurrency 4 `
+  --report-runs 20260803_024727,20260803_025048,20260803_025848
+```
+
+三个Run ID固定按10×10、15×15、20×20排列；脚本会重新校验玩家数和世界Grid数。
+
 该命令依次测试10×10、15×15和20×20世界，保持3000人、16 Gate、2Hz Move、0.2Hz Probe、80/20移动画像、预热和正式窗口一致，并生成`perf/results/map_capacity_grid_matrix_latest.md`。矩阵固定Map Enter并发8，只隔离正式稳态的空间密度；不要用不同的瞬时进图洪峰解释AOI稳态性能。
 
 2026-08-01 Windows IOCP正式矩阵结果：10×10、15×15、20×20的平均密度分别为30、13.33、7.5人/Grid；Map CPU平均为`74.1%/56.7%/57.3%`，Movement Push为`218.1万/140.9万/107.3万每秒`，Probe p95为`52.81/43.90/42.78ms`。三档Move均约6000/s、跨Grid均约300/s，正式窗口错误、过载、超时、背压和慢连接均为0。15×15之后CPU不再随接收人数同比下降，说明固定Move、20Hz Update和每帧编码扫描开始占据主要成本。
