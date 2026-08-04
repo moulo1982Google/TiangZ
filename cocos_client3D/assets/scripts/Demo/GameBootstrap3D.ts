@@ -783,7 +783,10 @@ export class GameBootstrap3D extends Component {
     this.inputRefreshElapsed += Math.max(0, deltaTime);
     const left = this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT);
     const right = this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT);
-    const turnInput = Number(right) - Number(left) + this.mobileTurn;
+    // Cocos3D表现层的Yaw正方向与协议坐标的直觉方向相反：A/左必须产生正向左转，D/右产生负向右转。
+    // The Cocos3D presentation yaw uses the opposite sign from the intuitive input direction:
+    // A/left must turn left and D/right must turn right.
+    const turnInput = Number(left) - Number(right) - this.mobileTurn;
     if (!this.rightMouseHeld && turnInput !== 0) {
       const yawDelta = turnInput * TURN_SPEED_RADIANS * Math.max(0, deltaTime);
       this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
