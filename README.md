@@ -140,6 +140,20 @@ npm run serve:pixi
 npm run smoke:pixi
 ```
 
+Cocos Creator Web 构建统一使用以下命令。默认是 Release 构建；脚本会匹配工程对应的
+Creator 版本、清除 `ELECTRON_RUN_AS_NODE`、清理标准输出目录并检查完整产物：
+
+```powershell
+npm run build:cocos3d:web
+npm run build:cocos3d:mobile
+npm run check:cocos-build
+```
+
+2D 工程对应 `npm run build:cocos2d:web` 和 `npm run build:cocos2d:mobile`。编辑器预览仍使用
+本地配置，发布包再使用外网配置。需要 Debug 包时，在对应命令后增加 `:debug`，例如
+`npm run build:cocos3d:web:debug`。Cocos Native 需要先生成原生工程，然后单独使用
+CMake/Visual Studio 编译；不要把 Native 编译和 Web 包构建混成一步。
+
 RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClient`；业务不手写 msgcode、rpcId 或 codec。服务端 Push 使用独立的 `@clientMessageHandler`，由 codegen 自动生成 Handler 导入入口。详细规则见 `client_sdk/typescript/README.md` 与 `docs/client_sdk_plan.md`。
 
 ## 游戏配置

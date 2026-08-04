@@ -62,6 +62,15 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run typecheck:cocos-demo:engine` | 强制使用Cocos编辑器生成类型执行完整Demo类型检查 |
 | `npm run typecheck:cocos3d-demo` | 有Cocos编辑器类型时检查3D Demo；CI中退化为bundle检查 |
 | `npm run typecheck:cocos3d-demo:engine` | 强制使用Cocos Creator 3.8.8类型检查3D Demo |
+| `npm run build:cocos3d:web` | 使用Cocos Creator 3.8.8构建3D桌面Web Release包，输出到`client_demo/cocos_client3D_3.8.8/build/standard-web` |
+| `npm run build:cocos3d:web:debug` | 使用Cocos Creator 3.8.8构建3D桌面Web Debug包 |
+| `npm run build:cocos3d:mobile` | 使用Cocos Creator 3.8.8构建3D横屏手机Web Release包，输出到`client_demo/cocos_client3D_3.8.8/build/standard-mobile` |
+| `npm run build:cocos3d:mobile:debug` | 使用Cocos Creator 3.8.8构建3D横屏手机Web Debug包 |
+| `npm run build:cocos2d:web` | 使用Cocos Creator 3.8.6构建2D桌面Web Release包 |
+| `npm run build:cocos2d:web:debug` | 使用Cocos Creator 3.8.6构建2D桌面Web Debug包 |
+| `npm run build:cocos2d:mobile` | 使用Cocos Creator 3.8.6构建2D横屏手机Web Release包 |
+| `npm run build:cocos2d:mobile:debug` | 使用Cocos Creator 3.8.6构建2D横屏手机Web Debug包 |
+| `npm run check:cocos-build` | 不启动编辑器，预检3D Web构建路径、Creator版本和参数 |
 | `dotnet build client_sdk/csharp/TiangZ.Client.csproj` | 在不打开Unity编辑器时验证C# SDK协议、Codec和WebSocket核心 |
 
 ## 提交前检查

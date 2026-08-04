@@ -6,6 +6,14 @@
 
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
+
+## 2026-08-04：固化 Cocos Creator Web 构建流程
+
+- 新增`tools/build_cocos.mjs`，统一Cocos 2D/3D的桌面Web与横屏Mobile Web构建入口；工程版本分别固定到Creator 3.8.6和3.8.8。
+- `npm run build:cocos3d:web`和`npm run build:cocos3d:mobile`默认生成Release包；带`:debug`后缀的命令才生成Debug包。脚本会清除`ELECTRON_RUN_AS_NODE`，只清理`build/standard-*`自身输出，并检查`index.html`、`application.js`和`assets`，避免“进程退出但没有产物”或旧包残留。
+- 新增`npm run check:cocos-build`和`--dry-run`预检，不启动Creator即可确认版本、路径和最终参数；构建命令不再依赖开发者手工拼接Cocos CLI。
+- 编辑器预览、Web资源构建、Cocos Native原生工程编译明确分层；Native不复用Web命令，外网发布只复制校验过的Web产物。
+- 验证：脚本语法、无构建预检，以及Cocos3D桌面Web的Release/Debug实际构建均已通过；使用临时JSON配置后不再出现`debug`类型警告，Creator 3.8.x返回36时完整产物校验通过，其他非零码仍失败。
 - 公共 API、配置、数据所有权或业务开发方式发生变化时，同步更新对应教程以及两份 AI 文档。
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。

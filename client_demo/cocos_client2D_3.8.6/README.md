@@ -64,14 +64,24 @@ assets/scripts/Demo/                   Cocos 地图、输入和界面演示业�
 
 `EnterMap` 响应携带当前地图实体快照。客户端通过 `MapEntityManager` 创建本地和远端 Unit，并继续消费 `EntityEnter`、`EntityMove` 和 `EntityLeave`。本地 Unit 显示为黄色，远端 Unit 显示为蓝色；两个浏览器页面进入同一地图后可以看到彼此移动和离开。
 
-命令行构建 Web Desktop：
+命令行构建 Web Desktop（在主工程根目录执行）：
 
 ```powershell
-$env:ELECTRON_RUN_AS_NODE=$null
-& "E:\cocos_editer\Creator\3.8.6\CocosCreator.exe" --project "$PWD\client_demo\cocos_client2D_3.8.6" --build "platform=web-desktop;debug=true"
+npm run build:cocos2d:web
 ```
 
-构建产物位于 `build/web-desktop/`。
+构建产物位于 `build/standard-web/`。构建脚本会自动清理同名旧目录，并清除
+`ELECTRON_RUN_AS_NODE`；不要在命令行临时拼接 `CocosCreator.exe --build`。
+
+手机横屏 Web 使用：
+
+```powershell
+npm run build:cocos2d:mobile
+```
+
+默认命令生成 Release 包；需要 Debug 包时使用对应的 `:debug` 命令。第一次在新机器上
+可以先运行 `npm run check:cocos-build`，确认 Creator 和工程路径。Cocos Native 不是这条
+命令的输出，需先由 Creator 生成原生工程，再单独编译 C++ 工程。
 
 默认 LoginMgr 地址：
 

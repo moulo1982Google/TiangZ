@@ -324,7 +324,7 @@ Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tian
 
 性能回归职责必须分层：`verify:perf` 比较三轮中位数吞吐、p99与错误；`test:backpressure` 验证有界队列和生产者等待；长稳测试判断RSS/V8 Heap趋势。不要把短时RSS噪声或故意过载指标混入普通性能基线。
 
-Cocos Demo完整类型检查依赖编辑器生成的`client_demo/cocos_client2D_3.8.6/temp/tsconfig.cocos.json`和`cc`类型，不得把该缓存提交或复制到CI。`typecheck:cocos-demo`在编辑器环境执行完整tsc，在干净Linux/CI环境执行入口bundle检查；引擎无关Client SDK始终由`typecheck:cocos-net`完整检查。
+Cocos Demo完整类型检查依赖编辑器生成的`client_demo/cocos_client2D_3.8.6/temp/tsconfig.cocos.json`和`cc`类型，不得把该缓存提交或复制到CI。`typecheck:cocos-demo`在编辑器环境执行完整tsc，在干净Linux/CI环境执行入口bundle检查；引擎无关Client SDK始终由`typecheck:cocos-net`完整检查。Cocos Web构建统一使用`npm run build:cocos3d:web`、`npm run build:cocos3d:mobile`以及对应的2D命令，默认明确传入Release模式；需要调试包时只能使用带`:debug`后缀的命令。脚本匹配Creator版本、清除`ELECTRON_RUN_AS_NODE`、清理并校验标准输出目录，`check:cocos-build`可在不启动编辑器时预检参数。Creator 3.8.x本机已知的`code=36`只有在完整Web产物存在时才接受，其他非零码必须失败。不要手工拼接`CocosCreator.exe --build`，也不要把`library/temp`当作发布产物。Cocos Native必须先生成原生工程，再单独执行CMake/Visual Studio编译。
 
 热更粒度固定为整个Process的TS行为世界，而不是单个Scene，也不为每个EntryScene增加V8。TS分为绝对不可热更的Model和可热更Hotfix：Model拥有字段、构造、继承和稳定类型，Process运行中不存在Model reload API；Hotfix只提交方法与Handler。候选先在隔离V8预检，再在当前V8暂存；第一版暂停入站并等待在途任务归零后原子提交，不做字段migration或双generation长期并存。任何Model/Core/协议/Native schema变化都必须重启Process。详见[热更设计](../design/typescript-hot-reload.md)。
 

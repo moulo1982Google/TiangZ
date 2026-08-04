@@ -79,11 +79,60 @@ npm run release:linux:rebuild-image
 
 Cargo的Linux中间产物保存在Docker命名卷`tiangz-linux-builder-target`中；最终制品仍输出到`dist/release/TiangZ-<version>-linux-x64`。普通TS、Rust和Excel改动不会重建工具镜像；`package-lock.json`、`Cargo.toml/Cargo.lock`、`rust-toolchain.toml`、Luban目录或Builder Dockerfile变化会让工具指纹改变并自动重建一次。`docker:linux:ubuntu/debian`仍是跨发行版smoke，不是正式发布入口。
 
+## Cocos Web构建约定
+
+Cocos Creator命令行构建统一使用主工程的npm脚本。构建前关闭正在打开同一工程的
+Cocos Creator编辑器，避免编辑器锁住`library`或`temp`。脚本会选择与工程匹配的
+Creator版本、显式设置Debug/Release、清除`ELECTRON_RUN_AS_NODE`、只清理自己的标准输出目录，并在进程成功后
+检查`index.html`是否真的生成。Creator 3.8.x 在本机完成构建后可能返回`36`；脚本只在
+`index.html`、`application.js`和`assets`都存在时接受这个已知退出码，其他非零码仍然失败。
+不要复制下面的旧式临时命令，也不要只根据进程退出码判断构建成功。
+
+如果修改了Proto、Luban数据或客户端SDK，先执行`npm run codegen`；Cocos构建命令只负责
+把当前工程资源编译成Web包，不替代协议和配置生成。
+
+桌面Web：
+
+```powershell
+npm run build:cocos3d:web
+```
+
+上面的固定命令是Release构建；产物位于
+`client_demo/cocos_client3D_3.8.8/build/standard-web/`，发布到网站根路径。
+需要在编辑器中调试时才使用：
+
+```powershell
+npm run build:cocos3d:web:debug
+```
+
 手机演示使用Cocos Creator的`web-mobile`目标，默认横屏并部署到`/m/`：
 
 ```powershell
-$env:ELECTRON_RUN_AS_NODE=$null
-& "E:\cocos_editer\Creator\3.8.8\CocosCreator.exe" --project E:\gitee\TiangZ\client_demo/cocos_client3D_3.8.8 --build "platform=web-mobile;debug=false;orientation=landscape;buildPath=E:\gitee\TiangZ\client_demo/cocos_client3D_3.8.8\build\external-mobile"
+npm run build:cocos3d:mobile
 ```
 
-手机端当前控制方式是左下虚拟摇杆、右侧单指环视、双指捏合缩放、点击地面寻路和动态门按钮；桌面端仍使用键鼠。手机 Web和桌面 Web共用同一份协议、SDK和公网LoginMgr配置。
+上面的固定命令是横屏Release构建；产物位于
+`client_demo/cocos_client3D_3.8.8/build/standard-mobile/`，部署到Nginx的`/m/`路径。
+Mobile Debug构建对应`npm run build:cocos3d:mobile:debug`。
+手机端当前控制方式是左下虚拟摇杆、右侧单指环视、双指捏合缩放、点击地面寻路和动态门按钮；
+桌面端仍使用键鼠。手机Web和桌面Web共用同一份协议、SDK和公网LoginMgr配置。
+
+Cocos 2D使用同样的规则：`npm run build:cocos2d:web`或`npm run build:cocos2d:mobile`。
+对应的Debug命令是`build:cocos2d:web:debug`和`build:cocos2d:mobile:debug`。
+编辑器内预览仍直接打开对应工程并点击Preview；预览使用`tiangz-local.json`，发布包使用
+`tiangz-external.json`，不能通过修改发布构建命令在两种环境之间切换。
+
+首次迁移到另一台Windows机器时，先执行下面的无构建预检。它只验证工程目录、Creator版本
+和最终命令，不启动编辑器，也不会删除旧产物：
+
+```powershell
+npm run check:cocos-build
+```
+
+如果本机Creator安装路径不同，可通过`COCOS_CREATOR_386`、`COCOS_CREATOR_388`环境变量
+指定对应版本，或直接传`--creator`。不要把`ELECTRON_RUN_AS_NODE=1`带给Creator；统一脚本
+已经在子进程环境中删除这个变量。输出目录只能放在对应工程的`build/`目录下，便于脚本
+清理旧包，也避免误删源码目录。
+
+Cocos Native不是这条Web构建命令的一部分：先在Cocos Creator中生成原生工程，再使用生成工程
+的CMake/Visual Studio配置编译。这样可以区分“Creator资源构建失败”和“原生C++工程编译失败”。

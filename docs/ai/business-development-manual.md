@@ -812,7 +812,7 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 Native字段可用`@hot`和`@cold`表达Rust存储温度，但这属于Model/schema设计，不是业务Hotfix。`@hot`只用于每Tick确实会连续扫描的最小字段集；低频字段和未标记字段不应为了猜测性能全部标热。codegen负责生成类型池和冷热访问器；业务仍只通过`NativeXxxRef`与粗粒度op访问数据，不直接引用`XxxHotData`、`XxxColdData`、保存Rust池索引或管理Pool。修改冷热归属后运行`npm run perf:native-storage`与`npm run test:native-data`，并完整重启Process。
 
-Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:cocos-demo:engine`；CI中的`typecheck:cocos-demo`只保证入口及依赖可bundle，不伪造引擎类型。客户端SDK本身仍必须通过与引擎无关的`typecheck:cocos-net`。
+Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:cocos-demo:engine`；CI中的`typecheck:cocos-demo`只保证入口及依赖可bundle，不伪造引擎类型。客户端SDK本身仍必须通过与引擎无关的`typecheck:cocos-net`。Web包只使用统一命令`npm run build:cocos3d:web`、`npm run build:cocos3d:mobile`或对应的2D命令；这些命令默认是Release，Debug只能使用带`:debug`后缀的命令。命令会匹配Creator版本、清除`ELECTRON_RUN_AS_NODE`、清理并检查标准输出；`npm run check:cocos-build`可在不启动编辑器时预检。Creator 3.8.x本机的`code=36`只有在`index.html`、`application.js`和`assets`均生成时才接受，其他非零码不得忽略。不要手工调用Creator CLI，不要提交`library/temp/build`缓存，也不要把Cocos Native误当成Web构建；Native必须先生成原生工程后再走CMake/Visual Studio。
 
 ## 后续Map同步策略
 
