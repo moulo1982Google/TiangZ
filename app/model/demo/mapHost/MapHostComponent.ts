@@ -65,6 +65,7 @@ export class MapHostComponent extends Component {
   private readonly maps = new Map<bigint, MapComponent>();
   private readonly dynamicAssignments = new Map<bigint, DynamicMapAssignmentSnapshot>();
   private readonly dynamicRequestIds = new Map<string, bigint>();
+  private dynamicMapDisposedNotifier: DynamicMapDisposedNotifier | undefined;
   private readonly repository = new InMemoryPlayerRepository();
   private readonly incomingTransfers =
     new TransferStagingRegistry<PreparedIncomingPlayer>(1024);
@@ -179,10 +180,13 @@ export class MapHostComponent extends Component {
     ];
   }
 
-  /** 协调全部托管地图优雅下线，并等待所有保存完成。 / Coordinates graceful offline for every hosted map and waits for all saves. */
-  async KickAllPlayers(reason: string): Promise<void> {
+  /**
+   * 协调全部托管地图优雅下线：保存玩家、清理所有Unit，再交给ProcessHost销毁Scene。
+   * / Coordinates graceful shutdown: save players, clear every Unit, then let ProcessHost dispose Scenes.
+   */
+  async Shutdown(reason: string): Promise<void> {
     const results = await Promise.allSettled(
-      [...this.maps.values()].map((map) => map.KickAllPlayers(reason)),
+      [...this.maps.values()].map((map) => map.Shutdown(reason)),
     );
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -939,6 +943,21 @@ export class MapHostComponent extends Component {
     return [...this.dynamicAssignments.values()].map((assignment) => ({ ...assignment }));
   }
 
+  /**
+   * 安装动态地图销毁通知出口；MapHostRegistration负责可靠投递到MapManager。
+   * MapHost本身不持有通知重试状态，避免把服务发现逻辑混进地图生命周期。
+   *
+   * Installs the dynamic-map disposal notification sink. MapHostRegistration
+   * owns reliable delivery to MapManager; MapHost does not retain retry state,
+   * keeping service-discovery concerns out of map lifecycle code.
+   */
+  SetDynamicMapDisposedNotifier(notifier: DynamicMapDisposedNotifier): void {
+    if (this.dynamicMapDisposedNotifier && this.dynamicMapDisposedNotifier !== notifier) {
+      throw new Error("dynamic map disposed notifier is already installed");
+    }
+    this.dynamicMapDisposedNotifier = notifier;
+  }
+
   /** 汇总低频调度负载，不暴露玩家或地图内部状态。 / Summarizes low-frequency placement load without exposing map internals. */
   LoadSnapshot(): { staticMapCount: number; dynamicMapCount: number; playerCount: number } {
     let staticMapCount = 0;
@@ -998,8 +1017,15 @@ export class MapHostComponent extends Component {
     }
   }
 
-  /** 销毁空地图的完整Scene/Component树；不替业务踢人、保存或选择回退地图。 / Disposes an empty map Scene and Component tree without kicking, saving, or choosing fallback destinations. */
-  DisposeMap(mapInstanceId: bigint): boolean {
+  /**
+   * 统一销毁空地图的完整Scene/Component树；动态地图本地销毁成功后排队通知MapManager。
+   * 静态地图不会进入动态分配表，因此不会发送销毁通知。
+   *
+   * Disposes an empty map Scene and Component tree through the common lifecycle.
+   * A dynamic map queues a MapManager notification only after local disposal
+   * succeeds. Static maps are not in the dynamic assignment table and send none.
+   */
+  async DisposeMap(mapInstanceId: bigint): Promise<boolean> {
     const map = this.maps.get(mapInstanceId);
     if (!map) return false;
     if (!map.IsDynamic) {
@@ -1010,14 +1036,20 @@ export class MapHostComponent extends Component {
         `map ${mapInstanceId} still has ${map.PlayerCount} player(s); business must transfer them first`,
       );
     }
+    // 动态地图也可能仍有怪物；先按Map/AOI生命周期清理，再让ProcessHost销毁Scene。
+    // A dynamic map may still contain monsters; clear it through the Map/AOI lifecycle first.
+    map.PrepareForDespawn("map-disposed");
+    const assignment = map.IsDynamic ? this.dynamicAssignments.get(mapInstanceId) : undefined;
+    const disposed = this.owner.processHost.despawnScene(this.owner.childSceneId(`map:${mapInstanceId}`));
+    if (!disposed) return false;
     this.maps.delete(mapInstanceId);
-    const assignment = this.dynamicAssignments.get(mapInstanceId);
     if (assignment) {
       this.dynamicAssignments.delete(mapInstanceId);
       this.dynamicRequestIds.delete(assignment.requestId);
     }
     this.disposingMaps.delete(mapInstanceId);
-    return this.owner.processHost.despawnScene(this.owner.childSceneId(`map:${mapInstanceId}`));
+    if (assignment) this.dynamicMapDisposedNotifier?.({ ...assignment });
+    return true;
   }
 
   /** 在异步删除Location路由前阻止周期重报；失败时调用CancelMapDisposal恢复。 / Prevents periodic route recovery before asynchronous route removal; call CancelMapDisposal on failure. */
@@ -1110,3 +1142,7 @@ interface PreparedIncomingPlayer {
   readonly map: MapComponent;
   readonly player: PlayerUnit;
 }
+
+export type DynamicMapDisposedNotifier = (
+  assignment: DynamicMapAssignmentSnapshot,
+) => void;

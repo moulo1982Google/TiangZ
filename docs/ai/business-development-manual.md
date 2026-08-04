@@ -452,6 +452,8 @@ MapHost配置静态地图：
 
 启动时MapHost逐个调用统一`CreateMap`并向Location注册实际实例。只有`acceptDynamicMaps=true`的Host向单例MapManager注册自身地址、generation、负载和动态创建关系；`staticMapIds`与该开关可组合为静态专用、动态专用或混合承载。Manager不在`knownScenes`中预列动态Host，租约15秒，超时Host不再获得新实例。MapHost每5秒心跳，Manager丢失注册时自动重发完整关系，因此单独重启Manager可恢复；Manager与Host同时丢失后的跨重启幂等留给持久化阶段。MapInstance与PlayerLocation响应携带MapHost Endpoint，业务不得再用`scenes.byName(dynamicHostName)`。连续无人五分钟自动销毁由MapHost本地`DynamicMapLifecycleComponent`提供，只是业务兜底策略。
 
+地图停机和主动销毁有固定的清理顺序：`MapHostScene.onStop -> MapHostComponent.Shutdown/DisposeMap -> MapComponent.Shutdown/PrepareForDespawn`。静态、动态地图共用这套本地流程：先保存并移除玩家，再清理所有剩余Unit（包括怪物和等待进图的玩家）；每个仍在AOI中的Unit必须先`Detach`，然后才能销毁Actor，最后才由Scene组件释放AOI。动态地图的Scene本地销毁成功后，MapHost再通过`MapHostControl.DynamicMapDisposed`通知MapManager减少动态实例负载；通知是幂等的，Manager暂时不可用时由MapHostRegistration重试。`ProcessHost`是通用运行时，不知道AOI，不要在业务中直接调用底层Scene销毁来绕过这个入口；`await map.Dispose()`也不会替业务把仍在地图中的玩家强制踢到别处。
+
 稳定基础Scene集中写入共享`knownSceneFiles`；新增动态副本Host只引用该文件，禁止要求所有Gate/MapHost反向追加它。共享文件不可热更，只负责启动依赖；MapManager注册才负责动态发现。完整样例见`configs/local/cluster/known-scenes.json`和`configs/local/cluster/dungeon-1.json`。
 
 完整开发步骤与代码示例见[地图实例与动态副本教程](../tutorials/11-map-instance-and-dungeon.md)。

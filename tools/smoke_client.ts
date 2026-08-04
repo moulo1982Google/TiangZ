@@ -150,6 +150,7 @@ async function verifyDynamicMapLifecycle(): Promise<MapInstanceSnapshot> {
   }
 
   const disposed = await disposeDynamicMap(second.instance.mapHost.port, second.instance.mapInstanceId);
+  await waitForDisposedRequest(`${requestId}:second`);
   console.log("Dynamic map lifecycle:", {
     mapConfigId: created.instance.mapConfigId,
     mapInstanceId: created.instance.mapInstanceId,
@@ -157,6 +158,29 @@ async function verifyDynamicMapLifecycle(): Promise<MapInstanceSnapshot> {
     secondDisposed: disposed.disposed,
   });
   return created.instance;
+}
+
+/** 销毁完成后重试旧requestId，确认MapManager已经收到最终通知并拒绝复用。 / Retries a disposed request ID to verify MapManager received the final notification and rejects reuse. */
+async function waitForDisposedRequest(requestId: string): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const frame = await requestOneInternal(
+      "127.0.0.1",
+      7100,
+      encodePacket(
+        ServerMsgCode.S2M_CreateDynamicMap,
+        S2M_CreateDynamicMapCodec.encode({
+          rpcId: nextRpcId++,
+          mapConfigId: 1,
+          requestId,
+        }),
+      ),
+    );
+    const response = M2S_CreateDynamicMapCodec.decode(frame.subarray(2));
+    if (response.error) return;
+    await sleep(100);
+  }
+  throw new Error(`MapManager did not acknowledge disposed dynamic map: ${requestId}`);
 }
 
 async function disposeDynamicMap(mapHostPort: number, mapInstanceId: bigint) {

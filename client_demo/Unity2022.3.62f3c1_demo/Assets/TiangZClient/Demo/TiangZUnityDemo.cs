@@ -51,9 +51,9 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     private uint pathNavigationSequence;
     private bool pathNavigationActive;
     private float playerYaw;
-    private float cameraOrbitYaw;
     private float cameraPitchDegrees = 38f;
     private float cameraDistance = 12f;
+    private float lastSentYaw;
     private bool doorClosed;
     private bool doorRequestInFlight;
 
@@ -68,9 +68,9 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         if (loginFlow != null) loginFlow.Update(256);
         if (game == null) return;
 
+        UpdateInput();
         UpdateEntityPresentation();
         UpdateCamera();
-        UpdateInput();
         UpdateDoorInput();
         UpdatePing();
         UpdateClickNavigation();
@@ -138,6 +138,7 @@ public sealed class TiangZUnityDemo : MonoBehaviour
                 {
                     lastAcknowledgedInputSequence = movement.AcknowledgedSequence;
                     playerYaw = movement.Yaw;
+                    lastSentYaw = movement.Yaw;
                     localPlayer.rotation = Quaternion.Euler(0, playerYaw * Mathf.Rad2Deg, 0);
                 }
             }
@@ -171,15 +172,20 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         if (game != null && snapshot.UnitId == game.EnterMap.UnitId)
         {
             playerYaw = snapshot.Yaw;
+            lastSentYaw = snapshot.Yaw;
         }
     }
 
     private Transform EnsureEntity(uint unitId, bool isLocal)
     {
         if (entities.TryGetValue(unitId, out var existing)) return existing;
-        var value = GameObject.CreatePrimitive(isLocal ? PrimitiveType.Capsule : PrimitiveType.Cube);
+        var value = GameObject.CreatePrimitive(PrimitiveType.Cube);
         value.name = isLocal ? $"LocalPlayer_{unitId}" : $"RemoteUnit_{unitId}";
-        value.transform.localScale = isLocal ? new Vector3(1, 2, 1) : Vector3.one;
+        // 使用沿本地前方（+Z）拉长的四棱柱，让玩家朝向在镜头中清晰可见。
+        // Use a cuboid elongated along local forward (+Z), so facing changes are obvious.
+        value.transform.localScale = isLocal
+            ? new Vector3(1.2f, 1.8f, 2.4f)
+            : new Vector3(1f, 1.2f, 1.6f);
         value.GetComponent<Renderer>().material.color = isLocal ? new Color(0.15f, 0.75f, 1f) : new Color(1f, 0.55f, 0.2f);
         entities.Add(unitId, value.transform);
         return value.transform;
@@ -212,10 +218,19 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         var forward = ReadDigitalAxis(KeyCode.W, KeyCode.S);
         var horizontal = ReadDigitalAxis(KeyCode.D, KeyCode.A);
         var rightMouseHeld = Input.GetMouseButton(1);
+        var mouseX = rightMouseHeld ? Input.GetAxisRaw("Mouse X") : 0f;
         var turn = rightMouseHeld ? 0 : horizontal;
         // Rust协议正 strafe 表示角色右侧；后端必须使用与当前源码一致的新构建。
         // Positive Rust strafe means the unit's right side; the backend must be rebuilt from the current source.
         var strafe = rightMouseHeld ? horizontal : 0;
+        if (Mathf.Abs(mouseX) > 0.0001f)
+        {
+            // 右键拖动同时改变角色朝向和镜头方向，避免只转镜头而角色仍朝原方向。
+            // Right-drag changes both character facing and camera direction instead of only orbiting the camera.
+            playerYaw = NormalizeRadians(
+                playerYaw + mouseX * cameraOrbitDegreesPerMouseUnit * Mathf.Deg2Rad);
+            localPlayer.rotation = Quaternion.Euler(0, playerYaw * Mathf.Rad2Deg, 0);
+        }
         if (turn != 0)
         {
             playerYaw = NormalizeRadians(
@@ -224,9 +239,12 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         }
 
         var changed = forward != lastForward || strafe != lastStrafe || turn != lastTurn;
+        var yawChanged = Mathf.Abs(Mathf.DeltaAngle(
+            lastSentYaw * Mathf.Rad2Deg,
+            playerYaw * Mathf.Rad2Deg)) > 0.01f;
         var continuing = forward != 0 || strafe != 0 || turn != 0;
         var refreshReady = continuing && Time.time >= nextInputAt;
-        if ((!changed && !refreshReady) || inputInFlight) return;
+        if ((!changed && !yawChanged && !refreshReady) || inputInFlight) return;
         lastForward = forward;
         lastStrafe = strafe;
         lastTurn = turn;
@@ -249,6 +267,7 @@ public sealed class TiangZUnityDemo : MonoBehaviour
                 Yaw = yaw,
                 Sequence = requestSequence,
             }, CancellationToken.None);
+            lastSentYaw = yaw;
         }
         catch (Exception error)
         {
@@ -391,15 +410,10 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         if (localPlayer == null || mainCamera == null) return;
         if (Input.GetMouseButton(1))
         {
-            cameraOrbitYaw += Input.GetAxisRaw("Mouse X") * cameraOrbitDegreesPerMouseUnit;
             cameraPitchDegrees = Mathf.Clamp(
                 cameraPitchDegrees - Input.GetAxisRaw("Mouse Y") * cameraOrbitDegreesPerMouseUnit,
                 20f,
                 70f);
-        }
-        else
-        {
-            cameraOrbitYaw = Mathf.LerpAngle(cameraOrbitYaw, 0f, 1f - Mathf.Exp(-5f * Time.deltaTime));
         }
 
         var scroll = Input.mouseScrollDelta.y;
@@ -411,7 +425,7 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         var pivot = localPlayer.position + Vector3.up;
         var cameraRotation = Quaternion.Euler(
             cameraPitchDegrees,
-            playerYaw * Mathf.Rad2Deg + cameraOrbitYaw,
+            playerYaw * Mathf.Rad2Deg,
             0f);
         var wanted = pivot + cameraRotation * (Vector3.back * cameraDistance);
         mainCamera.transform.position = Vector3.Lerp(
@@ -435,7 +449,7 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         GUILayout.Label("TiangZ Unity 3D Demo / Unity 3D 示例");
         GUILayout.Label(status);
         GUILayout.Label("W/S：前进后退    A/D：转向");
-        GUILayout.Label("按住鼠标右键：A/D横移、拖动镜头    滚轮：缩放");
+        GUILayout.Label("按住鼠标右键：拖动镜头并带动角色朝向；A/D横移    滚轮：缩放");
         GUILayout.Label("鼠标左键：服务器寻路    E：开关门    F5：重连");
         if (!string.IsNullOrEmpty(lastError)) GUILayout.Label($"Error: {lastError}");
         GUILayout.EndArea();

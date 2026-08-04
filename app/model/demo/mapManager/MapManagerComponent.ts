@@ -7,9 +7,11 @@ import type {
   DynamicMapAssignmentSnapshot,
   M2MM_CreateAssignedDynamicMap,
   M2S_CreateDynamicMap,
+  MM2S_DynamicMapDisposed,
   MM2S_MapHostHeartbeat,
   MM2S_RegisterMapHost,
   S2M_CreateDynamicMap,
+  S2MM_DynamicMapDisposed,
   S2MM_MapHostHeartbeat,
   S2MM_RegisterMapHost,
 } from "../../../generated/model/server/demo/protocol/messages";
@@ -40,6 +42,7 @@ interface CreationRecord {
   mapInstanceId: bigint;
   mapHostName: string;
   active: boolean;
+  disposed: boolean;
   inFlight?: Promise<void>;
 }
 
@@ -107,6 +110,45 @@ export class MapManagerComponent extends Component {
   }
 
   /**
+   * 接收MapHost在本地Scene销毁成功后的通知，并减少宿主动态实例负载。
+   * 同一通知可重复发送；未知实例视为已处理，方便Manager重启后的补偿上报。
+   *
+   * Accepts a notification after the MapHost has locally destroyed the Scene
+   * and reduces the host's dynamic-instance load. Repeated notifications are
+   * idempotent; an unknown instance is treated as acknowledged for recovery
+   * after a Manager restart.
+   */
+  DynamicMapDisposed(request: S2MM_DynamicMapDisposed): MM2S_DynamicMapDisposed {
+    const host = this.hosts.get(request.mapHostName);
+    if (!host || host.generation !== request.generation) {
+      return response(request.rpcId, { accepted: false });
+    }
+    const creation = this.creations.get(request.requestId);
+    if (!creation) return response(request.rpcId, { accepted: true });
+    if (
+      creation.mapConfigId !== request.mapConfigId ||
+      creation.mapInstanceId !== request.mapInstanceId ||
+      creation.mapHostName !== request.mapHostName
+    ) {
+      throw new RpcError(
+        GameErrCode.DynamicMapRequestConflict,
+        `dynamic map disposal conflicts: ${request.requestId}`,
+      );
+    }
+    if (!creation.disposed) {
+      creation.active = false;
+      creation.disposed = true;
+      host.dynamicMapCount = Math.max(0, host.dynamicMapCount - 1);
+      this.owner.logger.info("dynamic map disposed", {
+        mapHostName: request.mapHostName,
+        mapInstanceId: request.mapInstanceId.toString(),
+        requestId: request.requestId,
+      });
+    }
+    return response(request.rpcId, { accepted: true });
+  }
+
+  /**
    * 同一requestId并发或重试只创建一个实例；相同ID改用其他模板会明确报冲突。
    * 创建结果不因响应丢失而改变，失败重试仍向原宿主提交同一个MapInstanceId。
    *
@@ -119,6 +161,12 @@ export class MapManagerComponent extends Component {
       throw new RpcError(GameErrCode.DynamicMapRequestRequired, "dynamic map requestId is required");
     }
     let creation = this.creations.get(requestId);
+    if (creation?.disposed) {
+      throw new RpcError(
+        GameErrCode.DynamicMapRequestConflict,
+        `dynamic map requestId was already disposed: ${requestId}`,
+      );
+    }
     if (creation && creation.mapConfigId !== request.mapConfigId) {
       throw new RpcError(
         GameErrCode.DynamicMapRequestConflict,
@@ -133,6 +181,7 @@ export class MapManagerComponent extends Component {
         mapInstanceId: GlobalIdSystem.Instance.Next(),
         mapHostName: host.endpoint.name,
         active: false,
+        disposed: false,
       };
       this.creations.set(requestId, creation);
     }
@@ -231,6 +280,12 @@ export class MapManagerComponent extends Component {
           `recovered dynamic map assignment conflicts: ${assignment.requestId}`,
         );
       }
+      if (existing?.disposed) {
+        throw new RpcError(
+          GameErrCode.DynamicMapRequestConflict,
+          `recovered disposed dynamic map assignment: ${assignment.requestId}`,
+        );
+      }
     }
     for (const assignment of assignments) {
       const existing = this.creations.get(assignment.requestId);
@@ -244,6 +299,7 @@ export class MapManagerComponent extends Component {
         mapInstanceId: assignment.mapInstanceId,
         mapHostName,
         active: true,
+        disposed: false,
       });
     }
   }

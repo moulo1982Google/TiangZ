@@ -29,6 +29,8 @@ export const InnerMessage = {
   MM2S_MapHostHeartbeat: 20057,
   MM2M_CreateAssignedDynamicMap: 20058,
   M2MM_CreateAssignedDynamicMap: 20059,
+  S2MM_DynamicMapDisposed: 20060,
+  MM2S_DynamicMapDisposed: 20061,
   M2M_PreparePlayerTransfer: 20011,
   M2M_PreparePlayerTransferResponse: 20012,
   M2M_CommitPlayerTransfer: 20013,

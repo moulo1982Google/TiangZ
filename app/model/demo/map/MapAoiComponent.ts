@@ -149,6 +149,21 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
     return this.ApplyPublishedChanges(changes, unit.UnitId);
   }
 
+  /**
+   * 查询Unit是否已经加入本地图AOI；停机清理可据此跳过仍在进图队列中的Unit。
+   * 该方法只读本组件的附着索引，不会访问Native或修改可见关系。
+   *
+   * Returns whether a Unit is attached to this map AOI. Shutdown cleanup uses
+   * it to skip Units still waiting in the admission queue. It only reads the
+   * local attachment index and never touches Native or changes visibility.
+   */
+  IsAttached(unit: Unit<any[]>): boolean {
+    if (unit.DomainScene() !== this.DomainScene()) {
+      throw new Error(`AOI Unit ${unit.UnitId} belongs to another map`);
+    }
+    return this.attachedUnitIds.has(unit.UnitId);
+  }
+
   /** 刷新 FastOP 写入造成的跨 AOI Grid 变化，并运行同步业务过滤器。 / Refreshes cross-grid FastOP writes and runs synchronous business filters. */
   Refresh(): readonly AoiVisibilityDelta[] {
     const proposed = NativeData.RefreshAoi(this.nativeMapKey);

@@ -98,7 +98,7 @@ export interface PlayerTransferCoordinator {
 }
 
 export interface MapLifecycleCoordinator {
-  DisposeMap(mapInstanceId: bigint): boolean;
+  DisposeMap(mapInstanceId: bigint): Promise<boolean>;
 }
 
 @component()
@@ -117,6 +117,8 @@ export class MapComponent extends Component<[
   private nativeMapKey = 0;
   private dynamic = false;
   private demoDoorClosed = false;
+  private stopping = false;
+  private preparedForDespawn = false;
   private players!: PlayerDirectoryComponent;
   private serverTick = 0;
   private broadcast!: BroadcastHub;
@@ -205,6 +207,11 @@ export class MapComponent extends Component<[
 
   get IsDynamic(): boolean {
     return this.dynamic;
+  }
+
+  /** 地图是否已经进入停机清理阶段；停机期间不再推进业务Tick。 / Whether shutdown cleanup has started; business ticks stop during shutdown. */
+  get IsStopping(): boolean {
+    return this.stopping;
   }
 
   get DemoDoorClosed(): boolean {
@@ -367,7 +374,7 @@ export class MapComponent extends Component<[
    * never kicking, saving, or selecting fallback maps. Business code must deal
    * with resident players before disposal.
    */
-  Dispose(): boolean {
+  async Dispose(): Promise<boolean> {
     return this.lifecycle.DisposeMap(this.mapInstanceId);
   }
 
@@ -408,6 +415,7 @@ export class MapComponent extends Component<[
    * ObserversOf or publish EntityMove again.
    */
   Update(): void {
+    if (this.stopping) return;
     this.PumpPlayerEntries();
     this.UpdateNavigationObstacles();
     if (this.units.Count === 0) return;
@@ -1051,6 +1059,98 @@ export class MapComponent extends Component<[
     }
   }
 
+  /**
+   * 地图停机入口：先保存并移除玩家，再Detach并销毁剩余所有Unit。
+   *
+   * ProcessHost不理解AOI，不能直接销毁仍挂在AOI中的Actor。这里还要处理怪物、
+   * 尚未完成进图的玩家和未来新增的Unit类型；业务层不要复制这段清理顺序。
+   * 保存失败仍会继续清理Unit，最后把失败抛给上层，让Watcher知道停机不完整。
+   *
+   * Map shutdown entrypoint: save and remove players first, then detach and
+   * destroy every remaining Unit. ProcessHost does not understand AOI and must
+   * not destroy an attached Actor directly. This also covers monsters, players
+   * still waiting for admission, and future Unit types. Save failures do not
+   * skip Unit cleanup; they are rethrown after cleanup so the Watcher can report
+   * an incomplete shutdown.
+   */
+  async Shutdown(reason: string): Promise<void> {
+    if (this.preparedForDespawn) return;
+    this.stopping = true;
+    let playerFailure: unknown;
+    try {
+      await this.KickAllPlayers(reason);
+    } catch (error) {
+      playerFailure = error;
+    }
+
+    let cleanupFailure: unknown;
+    try {
+      this.PrepareForDespawn(reason);
+    } catch (error) {
+      cleanupFailure = error;
+    }
+
+    const failures: unknown[] = [];
+    if (playerFailure !== undefined) failures.push(playerFailure);
+    if (cleanupFailure !== undefined) failures.push(cleanupFailure);
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `map ${this.mapInstanceId} shutdown failed`);
+    }
+  }
+
+  /**
+   * 在ProcessHost销毁Scene前清空本地图Unit；动态地图Dispose和进程停机共用。
+   * 这是MapHost内部生命周期接口，不是让业务绕过玩家传送/保存流程的强制踢人API。
+   *
+   * Removes all map Units before ProcessHost destroys the Scene. Dynamic map
+   * disposal and process shutdown share this hook. It is an internal MapHost
+   * lifecycle operation, not a business API for bypassing player transfer or save.
+   */
+  PrepareForDespawn(reason: string): void {
+    if (this.preparedForDespawn) return;
+    this.stopping = true;
+    const failures: unknown[] = [];
+
+    const pendingError = new Error(`map ${this.mapInstanceId} stopped before player entry: ${reason}`);
+    for (const pending of this.pendingPlayerEntries.splice(0)) pending.reject(pendingError);
+    this.pendingInitialSnapshots.clear();
+    this.pendingPlayerEnterChanges.length = 0;
+    this.pendingSpatialChanges.clear();
+    this.pendingSpatialMovement = undefined;
+
+    for (const unit of this.units.GetAll()) {
+      try {
+        if (this.aoi.IsAttached(unit)) this.aoi.Detach(unit);
+      } catch (error) {
+        failures.push(error);
+        this.logger.error("unit AOI detach failed during map shutdown", {
+          unitId: unit.UnitId,
+          unitType: unit.constructor.name,
+          reason,
+          error,
+        });
+      }
+
+      if (unit instanceof PlayerUnit) this.players.Remove(unit);
+      try {
+        this.units.Remove(unit.UnitId);
+      } catch (error) {
+        failures.push(error);
+        this.logger.error("unit destroy failed during map shutdown", {
+          unitId: unit.UnitId,
+          unitType: unit.constructor.name,
+          reason,
+          error,
+        });
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `map ${this.mapInstanceId} failed to clear Units`);
+    }
+    this.preparedForDespawn = true;
+  }
+
   private async OfflinePlayerAndBroadcast(
     unit: PlayerUnit,
     reason: string,
@@ -1082,7 +1182,7 @@ export class MapComponent extends Component<[
 
   private RemovePlayer(unit: PlayerUnit): readonly AoiVisibilityDelta[] {
     // 必须先Detach再销毁Entity，Rust才能用仍然有效的Unit句柄生成最终Leave。 / Detach before Entity disposal so Rust can produce final leaves from a valid Unit handle.
-    const changes = this.aoi.Detach(unit);
+    const changes = this.aoi.IsAttached(unit) ? this.aoi.Detach(unit) : [];
     this.pendingInitialSnapshots.delete(unit.UnitId);
     this.players.Remove(unit);
     this.units.Remove(unit.UnitId);

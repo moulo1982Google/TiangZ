@@ -73,7 +73,7 @@ export class DynamicMapLifecycleComponent extends Component {
         mapInstanceId,
         expectedMapHostName: this.owner.self.name,
       });
-      const disposed = this.mapHost.DisposeMap(mapInstanceId);
+      const disposed = await this.mapHost.DisposeMap(mapInstanceId);
       if (disposed) this.emptySince.delete(mapInstanceId);
       return disposed;
     } catch (error) {

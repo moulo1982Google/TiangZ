@@ -113,6 +113,8 @@ import {
   M2S_DisposeDynamicMapCodec,
   MM2M_CreateAssignedDynamicMap,
   MM2M_CreateAssignedDynamicMapCodec,
+  MM2S_DynamicMapDisposed,
+  MM2S_DynamicMapDisposedCodec,
   MM2S_MapHostHeartbeat,
   MM2S_MapHostHeartbeatCodec,
   MM2S_RegisterMapHost,
@@ -145,6 +147,8 @@ import {
   S2L_ResolvePlayerLocationsCodec,
   S2L_UnlockPlayerLocation,
   S2L_UnlockPlayerLocationCodec,
+  S2MM_DynamicMapDisposed,
+  S2MM_DynamicMapDisposedCodec,
   S2MM_MapHostHeartbeat,
   S2MM_MapHostHeartbeatCodec,
   S2MM_RegisterMapHost,
@@ -320,6 +324,13 @@ export const MapHostControlProtocol = {
     requestCodec: MM2M_CreateAssignedDynamicMapCodec,
     responseCodec: M2MM_CreateAssignedDynamicMapCodec,
   }),
+  DynamicMapDisposed: defineRpc<S2MM_DynamicMapDisposed, MM2S_DynamicMapDisposed>({
+    name: "MapHostControl.DynamicMapDisposed",
+    requestCode: MsgCode.S2MM_DynamicMapDisposed,
+    responseCode: MsgCode.MM2S_DynamicMapDisposed,
+    requestCodec: S2MM_DynamicMapDisposedCodec,
+    responseCodec: MM2S_DynamicMapDisposedCodec,
+  }),
 };
 
 export const MapTransferProtocol = {
@@ -477,6 +488,7 @@ export const AllRpcDescriptors = [
   MapHostControlProtocol.Register,
   MapHostControlProtocol.Heartbeat,
   MapHostControlProtocol.CreateAssigned,
+  MapHostControlProtocol.DynamicMapDisposed,
   MapTransferProtocol.Prepare,
   MapTransferProtocol.Commit,
   MapTransferProtocol.Abort,

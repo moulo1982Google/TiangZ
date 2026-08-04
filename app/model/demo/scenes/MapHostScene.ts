@@ -29,6 +29,6 @@ export class MapHostScene extends EntryScene {
   }
 
   protected override onStop(): Promise<void> {
-    return this.mapHost.KickAllPlayers("map-host-stopping");
+    return this.mapHost.Shutdown("map-host-stopping");
   }
 }

@@ -2439,6 +2439,108 @@ export const M2MM_CreateAssignedDynamicMapCodec = {
   },
 };
 
+export interface S2MM_DynamicMapDisposed extends IRequest {
+  rpcId?: number;
+  mapHostName: string;
+  generation: bigint;
+  requestId: string;
+  mapConfigId: number;
+  mapInstanceId: bigint;
+}
+
+export const S2MM_DynamicMapDisposedCodec = {
+  decode(payload: Uint8Array): S2MM_DynamicMapDisposed {
+    const reader = new BinaryReader(payload);
+    const value: S2MM_DynamicMapDisposed = {
+      mapHostName: "",
+      generation: 0n,
+      requestId: "",
+      mapConfigId: 0,
+      mapInstanceId: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.mapHostName = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.generation = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 2) {
+        value.requestId = reader.string();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.mapConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.mapInstanceId = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: S2MM_DynamicMapDisposed): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.mapHostName !== undefined) writer.string(1, value.mapHostName);
+    if (value.generation !== undefined) writer.uint64(2, value.generation);
+    if (value.requestId !== undefined) writer.string(3, value.requestId);
+    if (value.mapConfigId !== undefined) writer.uint32(4, value.mapConfigId);
+    if (value.mapInstanceId !== undefined) writer.uint64(5, value.mapInstanceId);
+    return writer.finish();
+  },
+};
+
+export interface MM2S_DynamicMapDisposed extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  accepted: boolean;
+}
+
+export const MM2S_DynamicMapDisposedCodec = {
+  decode(payload: Uint8Array): MM2S_DynamicMapDisposed {
+    const reader = new BinaryReader(payload);
+    const value: MM2S_DynamicMapDisposed = {
+      accepted: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.accepted = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: MM2S_DynamicMapDisposed): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.accepted !== undefined) writer.bool(1, value.accepted);
+    return writer.finish();
+  },
+};
+
 export interface M2M_PreparePlayerTransfer extends IRequest {
   rpcId?: number;
   snapshot: PlayerTransferSnapshot;

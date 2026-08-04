@@ -319,6 +319,22 @@ message M2MM_CreateAssignedDynamicMap // IResponse
   MapInstanceSnapshot instance = 1;
 }
 
+// ResponseType MM2S_DynamicMapDisposed
+// @ets.msg protocol=MapHostControl method=DynamicMapDisposed
+message S2MM_DynamicMapDisposed // IRequest
+{
+  string map_host_name = 1;
+  uint64 generation = 2;
+  string request_id = 3;
+  uint32 map_config_id = 4;
+  uint64 map_instance_id = 5;
+}
+
+message MM2S_DynamicMapDisposed // IResponse
+{
+  bool accepted = 1;
+}
+
 //ResponseType M2M_PreparePlayerTransferResponse
 // @ets.msg protocol=MapTransfer method=Prepare
 message M2M_PreparePlayerTransfer // IRequest

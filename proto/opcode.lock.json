@@ -252,6 +252,11 @@
       "code": 20058
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#MM2S_DynamicMapDisposed",
+      "name": "MM2S_DynamicMapDisposed",
+      "code": 20061
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#MM2S_MapHostHeartbeat",
       "name": "MM2S_MapHostHeartbeat",
       "code": 20057
@@ -340,6 +345,11 @@
       "key": "proto/InnerMessage_S_20001.proto#S2M_DisposeDynamicMap",
       "name": "S2M_DisposeDynamicMap",
       "code": 20049
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#S2MM_DynamicMapDisposed",
+      "name": "S2MM_DynamicMapDisposed",
+      "code": 20060
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#S2MM_MapHostHeartbeat",

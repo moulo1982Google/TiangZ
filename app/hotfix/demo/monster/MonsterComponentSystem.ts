@@ -67,6 +67,7 @@ export class MonsterComponentSystem extends MonsterComponent {
 
   /** 地图固定Tick驱动怪物AI；不为每只怪物创建一个长期Timer。 / Drives monster AI from the map fixed tick instead of creating one long-lived timer per monster. */
   Update(): void {
+    if (this.map.IsStopping) return;
     const now = TimeSystem.Instance.ServerNow;
     for (const slot of this.slots.values()) {
       const monster = slot.monster;
