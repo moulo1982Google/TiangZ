@@ -336,7 +336,7 @@
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
         "native_data/demo/MapOps.native": "db869f154cd0e146c06cd0f8ccb6e5f32db97359233aeb15ff1a2e2cf561b4bc",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
-        "package.json": "c0825bc4cec5bdb17be88c48f13ca56d345f366417558dfba51bc1684cc3b707",
+        "package.json": "642324e31358733c08861878ca873aa0f2ca9842479d0c299a8e4788f2a7f37c",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },

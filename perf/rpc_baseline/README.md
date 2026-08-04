@@ -9,13 +9,27 @@
 - Linux C/C++ 编译工具链。Ubuntu/Debian 可安装 `build-essential`、`pkg-config`。
 - 首次构建需要访问 Cargo 和 npm 依赖源。
 
-将整个 `TiangZ` 目录复制到 Linux 后执行：
+完整源码工程可以复制到 Linux 后执行：
 
 ```bash
 cd TiangZ
 npm ci
 npm run perf:rpc-baseline
 ```
+
+更推荐在构建机生成独立基准制品，避免把源码放到被测机器：
+
+```bash
+npm run perf:package
+```
+
+把 `dist/benchmark/TiangZ-rpc-benchmark-<版本>-<平台>-<架构>` 目录复制到目标机后，在该目录执行：
+
+```bash
+npm run perf:rpc-baseline -- --skip-build
+```
+
+独立制品只需要 Node.js 20+，不需要 npm 依赖、Rust、Cargo 或源码。制品必须在与目标机相同的操作系统和 CPU 架构上构建。
 
 不要使用 `sudo npm`。nvm 把 Node/npm 安装在当前用户目录，sudo 默认找不到该命令；Cargo 缓存和测试报告也应归当前用户所有。压测入口发现 `node_modules` 缺失、来自 Windows 或失去 Linux 执行权限时，会自动执行一次 `npm ci`。
 

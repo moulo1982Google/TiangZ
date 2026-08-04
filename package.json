@@ -130,6 +130,7 @@
     "test:watcher-graceful": "npm run build && cargo build --bin TiangZ && node tools/watcher_graceful_self_test.mjs",
     "verify": "npm run verify:quick && npm run test:runtime && npm run test:mailbox-parity && npm run test:backpressure && npm run test:watcher-graceful && npm run test:hotfix-reload && npm run test:hotfix-barrier && npm run test:game-config-reload",
     "release:package": "node tools/release/package_release.mjs",
+    "perf:package": "node tools/release/package_benchmark.mjs",
     "test:runtime": "npm run build && cargo build --locked --bin TiangZ && node tools/smoke_runtime.mjs --mode both",
     "test:gate-timeout-runtime": "npm run build && cargo build --locked --bin TiangZ && node tools/smoke_runtime.mjs --mode all --gate-timeout-only",
     "perf:runtime": "npm run build:bench && npm run build:load && cargo build --release --locked --bin TiangZ && node tools/runtime_load_test.mjs --release",

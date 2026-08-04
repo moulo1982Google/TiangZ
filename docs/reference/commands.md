@@ -122,6 +122,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run perf:child-entity -- --children 100000 --lookups 1000000` | ChildEntity创建、O(1)查询、稳定遍历、销毁与V8保留内存微基准；不包含Native、Timer、AOI和网络 |
 | `npm run perf:runtime:rust` | Rust客户端Runtime基准 |
 | `npm run perf:rpc-baseline` | Windows/Linux通用RPC Payload基线与报告 |
+| `npm run perf:package` | 构建不含源码、可复制到目标机运行的 RPC 基准制品 |
 | `npm run perf:kcp-loginmgr -- 127.0.0.1:7000 256 5 20` | KCP LoginMgr RPC基准：地址、连接数、预热秒数、测试秒数 |
 | `npm run perf:full-chain` | 单Process/拆分Process完整登录、进图、移动和Push矩阵 |
 | `npm run perf:map-capacity -- --gates 8 --players 200 --rounds 3` | 单MapHost全员可见广播、批量下行Bridge和Probe容量测试 |

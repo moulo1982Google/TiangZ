@@ -401,6 +401,22 @@ npm run perf:rpc-baseline
 
 命令会自动构建 Release、启动 `BenchScene`、完成 64B 到 16KB 的 RPC 测试、关闭 Runtime，并在 `perf/results` 生成 Markdown、JSON 和服务日志。Windows 使用同一条 `npm run perf:rpc-baseline` 命令。
 
+如果不希望把源码放到被测机器，先在本机或 CI 生成独立基准制品：
+
+```bash
+npm run perf:package
+```
+
+把 `dist/benchmark/TiangZ-rpc-benchmark-<版本>-<平台>-<架构>` 整个目录复制到目标机器后，目标机器只需要 Node.js 20+：
+
+```bash
+npm run perf:rpc-baseline -- --skip-build \\
+  --warmup 10 --duration 60 \\
+  --connections 8 --concurrency 512
+```
+
+制品不包含源码、`node_modules`、Rust 工具链或 Cargo 缓存；必须在与目标机器相同的平台和架构上构建。
+
 自定义长时间测试：
 
 ```bash

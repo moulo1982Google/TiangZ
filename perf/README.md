@@ -16,6 +16,20 @@ npm run perf:rpc-baseline
 
 它会自动构建、启动 `BenchScene`、执行 5 档 Payload、关闭 Runtime，并生成 Markdown/JSON 报告。Linux 环境准备和完整参数见 [rpc_baseline/README.md](rpc_baseline/README.md)。
 
+如果被测机器不适合安装源码和 Rust 工具链，可以先生成独立制品：
+
+```bash
+npm run perf:package
+```
+
+复制 `dist/benchmark/` 下对应平台的目录到目标机，在制品目录中执行：
+
+```bash
+npm run perf:rpc-baseline -- --skip-build
+```
+
+制品仅包含 Release Runtime、Rust 压测客户端、Bench 配置、Runtime bundle 和基准脚本，不包含源码或 `node_modules`。
+
 ## 全链路测试
 
 运行：

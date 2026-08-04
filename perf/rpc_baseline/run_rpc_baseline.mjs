@@ -19,8 +19,8 @@ const root = path.resolve(scriptDirectory, "../..");
 const options = parseOptions(process.argv.slice(2));
 const executableSuffix = process.platform === "win32" ? ".exe" : "";
 const profileDirectory = options.profile === "release" ? "release" : "debug";
-const runtimePath = path.join(root, "target", profileDirectory, `TiangZ${executableSuffix}`);
-const loadClientPath = path.join(root, "target", profileDirectory, `runtime_load${executableSuffix}`);
+const runtimePath = resolveRuntimeBinary("TiangZ");
+const loadClientPath = resolveRuntimeBinary("runtime_load");
 const configPath = path.resolve(root, options.config);
 const resultsDirectory = path.join(root, "perf", "results");
 const runId = formatRunId(new Date());
@@ -29,6 +29,17 @@ const runtimeStderrPath = path.join(resultsDirectory, `rpc_baseline_${runId}_run
 
 let runtime;
 let stopping = false;
+
+/**
+ * 独立基准包把两个 Release 二进制放在包根目录；源码工程继续使用 target/<profile>。
+ *
+ * A standalone benchmark package keeps both Release binaries at its root; the source checkout keeps using target/<profile>.
+ */
+function resolveRuntimeBinary(name) {
+  const packaged = path.join(root, `${name}${executableSuffix}`);
+  if (options.profile === "release" && existsSync(packaged)) return packaged;
+  return path.join(root, "target", profileDirectory, `${name}${executableSuffix}`);
+}
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.once(signal, async () => {
