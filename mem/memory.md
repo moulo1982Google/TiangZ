@@ -2,6 +2,7 @@
 
 ## 工程与协作约定
 
+- 每次开始 TiangZ 相关任务前，先读取本文件；它是项目协作规则和历史决策的第一入口，不先扫描外部上下文。
 - 主工程目录固定为 `E:\gitee\TiangZ`，不要误操作 `E:\VsCode\skynet`。
 - 默认使用中文交流、中文文档和中文 Git 提交信息。
 - 架构或业务语义变更必须同步更新 `docs/ai/project-context.md` 和 `docs/ai/business-development-manual.md`。
