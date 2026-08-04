@@ -63,6 +63,7 @@ const CAMERA_MAX_DISTANCE = 16;
 const CAMERA_ZOOM_STEP = 1;
 const CAMERA_YAW_FOLLOW_SPEED_RADIANS = Math.PI;
 const TURN_SPEED_RADIANS = Math.PI * 0.75;
+const MOBILE_TURN_RESPONSE = 28;
 const PATH_TURN_SPEED_RADIANS = Math.PI * 2;
 const MOUSE_YAW_RADIANS_PER_PIXEL = 0.004;
 const INPUT_REFRESH_SECONDS = 0.5;
@@ -134,8 +135,10 @@ export class GameBootstrap3D extends Component {
   private visibleCameraDistance = CAMERA_DISTANCE;
   private readonly pressedKeys = new Set<KeyCode>();
   private mobileForward = 0;
+  private mobileTurnTarget = 0;
   private mobileTurn = 0;
   private mobileJoystickPointerId: number | undefined;
+  private readonly mobileControlPointerIds = new Set<number>();
   private readonly mobileCameraPointers = new Map<number, MobilePointerState>();
   private mobilePinchDistance = 0;
   private mobileCameraMoved = false;
@@ -179,6 +182,7 @@ export class GameBootstrap3D extends Component {
     input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
     input.off(Input.EventType.MOUSE_WHEEL, this.onMouseWheel, this);
     this.mobileJoystickPointerId = undefined;
+    this.mobileControlPointerIds.clear();
     this.mobileCameraPointers.clear();
     this.loginFlow?.close();
     this.messageDispatcher?.dispose();
@@ -335,13 +339,21 @@ export class GameBootstrap3D extends Component {
     cameraSurface.setAttribute("aria-label", "拖动控制镜头，点击地面寻路");
     cameraSurface.style.position = "absolute";
     cameraSurface.style.inset = "0";
+    cameraSurface.style.zIndex = "0";
     cameraSurface.style.pointerEvents = "auto";
     cameraSurface.style.touchAction = "none";
+    cameraSurface.style.userSelect = "none";
+    cameraSurface.style.setProperty("-webkit-user-select", "none");
+    cameraSurface.style.setProperty("-webkit-touch-callout", "none");
     cameraSurface.style.background = "transparent";
     cameraSurface.addEventListener("pointerdown", (event) => this.onMobileCameraPointerDown(event));
     cameraSurface.addEventListener("pointermove", (event) => this.onMobileCameraPointerMove(event));
     cameraSurface.addEventListener("pointerup", (event) => this.onMobileCameraPointerUp(event));
     cameraSurface.addEventListener("pointercancel", (event) => this.onMobileCameraPointerUp(event));
+    cameraSurface.addEventListener("touchstart", (event) => this.onMobileTouchStart(event), { passive: false });
+    cameraSurface.addEventListener("touchmove", (event) => this.onMobileTouchMove(event), { passive: false });
+    cameraSurface.addEventListener("touchend", (event) => this.onMobileTouchEnd(event), { passive: false });
+    cameraSurface.addEventListener("touchcancel", (event) => this.onMobileTouchEnd(event), { passive: false });
     controls.appendChild(cameraSurface);
     this.mobileCameraSurface = cameraSurface;
 
@@ -349,6 +361,7 @@ export class GameBootstrap3D extends Component {
     joystick.className = "cocos3d-mobile-joystick";
     joystick.setAttribute("aria-label", "虚拟摇杆");
     joystick.style.position = "absolute";
+    joystick.style.zIndex = "2";
     joystick.style.left = "max(18px, 4vw)";
     joystick.style.bottom = "max(22px, 5vh)";
     joystick.style.width = "clamp(112px, 32vw, 156px)";
@@ -360,27 +373,72 @@ export class GameBootstrap3D extends Component {
     joystick.style.pointerEvents = "auto";
     joystick.style.touchAction = "none";
     joystick.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch") return;
       event.preventDefault();
       event.stopPropagation();
+      event.stopImmediatePropagation();
+      this.mobileControlPointerIds.add(event.pointerId);
       this.mobileJoystickPointerId = event.pointerId;
       joystick.setPointerCapture(event.pointerId);
       this.updateMobileJoystick(event);
     });
     joystick.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") return;
       if (event.pointerId !== this.mobileJoystickPointerId) return;
       event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       this.updateMobileJoystick(event);
     });
     const releaseJoystick = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
       if (event.pointerId !== this.mobileJoystickPointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      this.mobileControlPointerIds.delete(event.pointerId);
       this.mobileJoystickPointerId = undefined;
       this.mobileForward = 0;
+      this.mobileTurnTarget = 0;
       this.mobileTurn = 0;
       this.mobileJoystickKnob?.style.setProperty("transform", "translate(-50%, -50%)");
       this.markInputDirty();
     };
     joystick.addEventListener("pointerup", releaseJoystick);
     joystick.addEventListener("pointercancel", releaseJoystick);
+    joystick.addEventListener("touchstart", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const touch = event.changedTouches[0];
+      if (!touch || this.mobileJoystickPointerId !== undefined) return;
+      this.mobileControlPointerIds.add(touch.identifier);
+      this.mobileJoystickPointerId = touch.identifier;
+      this.updateMobileJoystickAt(touch.clientX, touch.clientY);
+    }, { passive: false });
+    joystick.addEventListener("touchmove", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const touch = Array.from(event.touches).find((item) => item.identifier === this.mobileJoystickPointerId);
+      if (touch) this.updateMobileJoystickAt(touch.clientX, touch.clientY);
+    }, { passive: false });
+    const releaseJoystickTouch = (event: TouchEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const touch = Array.from(event.changedTouches).find((item) => item.identifier === this.mobileJoystickPointerId);
+      if (!touch) return;
+      this.mobileControlPointerIds.delete(touch.identifier);
+      this.mobileJoystickPointerId = undefined;
+      this.mobileForward = 0;
+      this.mobileTurnTarget = 0;
+      this.mobileTurn = 0;
+      this.mobileJoystickKnob?.style.setProperty("transform", "translate(-50%, -50%)");
+      this.markInputDirty();
+    };
+    joystick.addEventListener("touchend", releaseJoystickTouch, { passive: false });
+    joystick.addEventListener("touchcancel", releaseJoystickTouch, { passive: false });
     const knob = document.createElement("div");
     knob.style.position = "absolute";
     knob.style.left = "50%";
@@ -401,6 +459,7 @@ export class GameBootstrap3D extends Component {
     actionButton.textContent = "门";
     actionButton.setAttribute("aria-label", "开关动态门");
     actionButton.style.position = "absolute";
+    actionButton.style.zIndex = "2";
     actionButton.style.right = "max(18px, 4vw)";
     actionButton.style.bottom = "max(24px, 6vh)";
     actionButton.style.width = "52px";
@@ -411,8 +470,72 @@ export class GameBootstrap3D extends Component {
     actionButton.style.background = "rgba(16, 31, 35, 0.72)";
     actionButton.style.font = "600 16px system-ui, sans-serif";
     actionButton.style.pointerEvents = "auto";
-    actionButton.style.touchAction = "manipulation";
-    actionButton.addEventListener("click", () => void this.toggleDemoDoor());
+    actionButton.style.touchAction = "none";
+    let actionPointerHandled = false;
+    actionButton.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      this.mobileControlPointerIds.add(event.pointerId);
+      actionPointerHandled = false;
+    });
+    actionButton.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    });
+    actionButton.addEventListener("pointerup", (event) => {
+      if (event.pointerType === "touch") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      this.mobileControlPointerIds.delete(event.pointerId);
+      actionPointerHandled = true;
+      void this.toggleDemoDoor();
+    });
+    actionButton.addEventListener("pointercancel", (event) => {
+      if (event.pointerType === "touch") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      this.mobileControlPointerIds.delete(event.pointerId);
+      actionPointerHandled = false;
+    });
+    actionButton.addEventListener("touchstart", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.add(touch.identifier);
+      actionPointerHandled = false;
+    }, { passive: false });
+    actionButton.addEventListener("touchmove", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }, { passive: false });
+    actionButton.addEventListener("touchend", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.delete(touch.identifier);
+      actionPointerHandled = true;
+      void this.toggleDemoDoor();
+    }, { passive: false });
+    actionButton.addEventListener("touchcancel", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.delete(touch.identifier);
+      actionPointerHandled = false;
+    }, { passive: false });
+    actionButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!actionPointerHandled) void this.toggleDemoDoor();
+      actionPointerHandled = false;
+    });
     controls.appendChild(actionButton);
     this.mobileActionButton = actionButton;
 
@@ -442,23 +565,33 @@ export class GameBootstrap3D extends Component {
     this.mobileControlsElement = controls;
   }
 
-  /** 将摇杆的模拟量压成协议需要的-1/0/1，并复用桌面输入刷新节奏。 / Quantizes joystick analog input to the protocol's -1/0/1 and reuses the desktop refresh cadence. */
+  /**
+   * 保留摇杆横轴的连续模拟量，让本地转身不会按指针事件跳变；发送协议时再量化为-1/0/1。
+   * Keeps the joystick turn axis continuous for smooth local rotation; the protocol input is quantized later.
+   */
   private updateMobileJoystick(event: PointerEvent): void {
+    this.updateMobileJoystickAt(event.clientX, event.clientY);
+  }
+
+  private updateMobileJoystickAt(clientX: number, clientY: number): void {
     const joystick = this.mobileJoystickElement;
     if (!joystick) return;
     const rect = joystick.getBoundingClientRect();
     const radius = Math.min(rect.width, rect.height) * 0.5;
     const centerX = rect.left + rect.width * 0.5;
     const centerY = rect.top + rect.height * 0.5;
-    const dx = event.clientX - centerX;
-    const dy = event.clientY - centerY;
+    const dx = clientX - centerX;
+    const dy = clientY - centerY;
     const distance = Math.hypot(dx, dy);
     const maxDistance = radius * 0.66;
     const scale = distance > maxDistance && distance > 0 ? maxDistance / distance : 1;
     const knobX = dx * scale;
     const knobY = dy * scale;
     const deadZone = radius * 0.16;
-    this.mobileTurn = Math.abs(knobX) <= deadZone ? 0 : Math.sign(knobX);
+    const turnRange = Math.max(1, maxDistance - deadZone);
+    this.mobileTurnTarget = Math.abs(knobX) <= deadZone
+      ? 0
+      : Math.sign(knobX) * Math.min(1, (Math.abs(knobX) - deadZone) / turnRange);
     this.mobileForward = Math.abs(knobY) <= deadZone ? 0 : -Math.sign(knobY);
     this.mobileJoystickKnob?.style.setProperty(
       "transform",
@@ -469,6 +602,7 @@ export class GameBootstrap3D extends Component {
 
   /** 手机右侧触摸既负责镜头拖动，也负责把轻触转换为地面寻路。 / The mobile right-side surface handles camera drag and turns a short tap into ground navigation. */
   private onMobileCameraPointerDown(event: PointerEvent): void {
+    if (event.pointerType === "touch" || this.mobileControlPointerIds.has(event.pointerId)) return;
     if (this.mobileJoystickPointerId === event.pointerId) return;
     event.preventDefault();
     this.mobileCameraSurface?.setPointerCapture(event.pointerId);
@@ -487,6 +621,7 @@ export class GameBootstrap3D extends Component {
   }
 
   private onMobileCameraPointerMove(event: PointerEvent): void {
+    if (event.pointerType === "touch" || this.mobileControlPointerIds.has(event.pointerId)) return;
     const pointer = this.mobileCameraPointers.get(event.pointerId);
     if (!pointer) return;
     event.preventDefault();
@@ -507,14 +642,12 @@ export class GameBootstrap3D extends Component {
     }
     if (Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 6) return;
     this.mobileCameraMoved = true;
-    const yawDelta = -dx * MOUSE_YAW_RADIANS_PER_PIXEL;
-    this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
-    this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
-    this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+    this.rotateMobileCamera(dx);
     this.markInputDirty(false);
   }
 
   private onMobileCameraPointerUp(event: PointerEvent): void {
+    if (event.pointerType === "touch" || this.mobileControlPointerIds.has(event.pointerId)) return;
     const pointer = this.mobileCameraPointers.get(event.pointerId);
     if (!pointer) return;
     event.preventDefault();
@@ -537,6 +670,105 @@ export class GameBootstrap3D extends Component {
     const pointers = [...this.mobileCameraPointers.values()];
     if (pointers.length < 2) return 0;
     return Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+  }
+
+  /** 手机触摸屏的双指缩放入口；Touch Events在iOS Safari上比Pointer Events更稳定。 / Native touch pinch entry, which is more reliable than Pointer Events on iOS Safari. */
+  private onMobileTouchStart(event: TouchEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (Array.from(event.changedTouches).some((touch) => this.mobileControlPointerIds.has(touch.identifier))) return;
+    for (const touch of Array.from(event.changedTouches)) {
+      this.mobileCameraPointers.set(touch.identifier, {
+        x: touch.clientX,
+        y: touch.clientY,
+        startX: touch.clientX,
+        startY: touch.clientY,
+      });
+    }
+    if (event.touches.length >= 2) {
+      this.mobilePinchDistance = this.mobileTouchDistance(event.touches);
+      this.mobileCameraMoved = true;
+    } else if (event.touches.length === 1) {
+      this.mobileCameraMoved = false;
+    }
+  }
+
+  private onMobileTouchMove(event: TouchEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (Array.from(event.touches).some((touch) => this.mobileControlPointerIds.has(touch.identifier))) return;
+    if (event.touches.length >= 2) {
+      const distance = this.mobileTouchDistance(event.touches);
+      if (this.mobilePinchDistance > 0) {
+        this.cameraDistance = Math.min(
+          CAMERA_MAX_DISTANCE,
+          Math.max(CAMERA_MIN_DISTANCE, this.cameraDistance - (distance - this.mobilePinchDistance) * 0.035),
+        );
+      }
+      this.mobilePinchDistance = distance;
+      this.mobileCameraMoved = true;
+      for (const touch of Array.from(event.touches)) {
+        const pointer = this.mobileCameraPointers.get(touch.identifier);
+        if (pointer) {
+          pointer.x = touch.clientX;
+          pointer.y = touch.clientY;
+        }
+      }
+      return;
+    }
+    const touch = event.touches[0];
+    if (!touch) return;
+    const pointer = this.mobileCameraPointers.get(touch.identifier);
+    if (!pointer) return;
+    const dx = touch.clientX - pointer.x;
+    pointer.x = touch.clientX;
+    pointer.y = touch.clientY;
+    if (Math.hypot(touch.clientX - pointer.startX, touch.clientY - pointer.startY) < 6) return;
+    this.mobileCameraMoved = true;
+    this.rotateMobileCamera(dx);
+    this.markInputDirty(false);
+  }
+
+  private onMobileTouchEnd(event: TouchEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (Array.from(event.changedTouches).some((touch) => this.mobileControlPointerIds.has(touch.identifier))) return;
+    const wasTap = event.touches.length === 0 && this.mobileCameraPointers.size === 1 && !this.mobileCameraMoved;
+    const changed = Array.from(event.changedTouches);
+    for (const touch of changed) this.mobileCameraPointers.delete(touch.identifier);
+    if (event.touches.length > 0) {
+      this.mobilePinchDistance = 0;
+      this.mobileCameraMoved = true;
+      const remaining = event.touches[0];
+      const pointer = this.mobileCameraPointers.get(remaining.identifier);
+      if (pointer) {
+        pointer.x = remaining.clientX;
+        pointer.y = remaining.clientY;
+        pointer.startX = remaining.clientX;
+        pointer.startY = remaining.clientY;
+      }
+    } else {
+      this.mobilePinchDistance = 0;
+      this.mobileCameraMoved = false;
+    }
+    if (wasTap && changed[0]) {
+      const location = this.mobileScreenPoint(changed[0].clientX, changed[0].clientY);
+      void this.queryPathAtScreen(location.x, location.y);
+    }
+  }
+
+  private mobileTouchDistance(touches: TouchList): number {
+    if (touches.length < 2) return 0;
+    const first = touches[0];
+    const second = touches[1];
+    return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+  }
+
+  private rotateMobileCamera(deltaX: number): void {
+    const yawDelta = -deltaX * MOUSE_YAW_RADIANS_PER_PIXEL;
+    this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
+    this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
+    this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
   }
 
   /** 把DOM坐标换成Cocos Canvas像素坐标，避免高DPI手机寻路落点偏移。 / Converts DOM coordinates to Cocos canvas pixels so high-DPI phones keep accurate navigation targets. */
@@ -781,6 +1013,9 @@ export class GameBootstrap3D extends Component {
   private updateDirectionalInput(deltaTime: number): void {
     this.inputSendCooldown = Math.max(0, this.inputSendCooldown - Math.max(0, deltaTime));
     this.inputRefreshElapsed += Math.max(0, deltaTime);
+    const frameDeltaTime = Math.min(Math.max(0, deltaTime), 0.05);
+    const turnBlend = 1 - Math.exp(-MOBILE_TURN_RESPONSE * frameDeltaTime);
+    this.mobileTurn += (this.mobileTurnTarget - this.mobileTurn) * turnBlend;
     const left = this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT);
     const right = this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT);
     // Cocos3D表现层的Yaw正方向与协议坐标的直觉方向相反：A/左必须产生正向左转，D/右产生负向右转。
@@ -788,7 +1023,7 @@ export class GameBootstrap3D extends Component {
     // A/left must turn left and D/right must turn right.
     const turnInput = Number(left) - Number(right) - this.mobileTurn;
     if (!this.rightMouseHeld && turnInput !== 0) {
-      const yawDelta = turnInput * TURN_SPEED_RADIANS * Math.max(0, deltaTime);
+      const yawDelta = turnInput * TURN_SPEED_RADIANS * frameDeltaTime;
       this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
       this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
       this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
@@ -984,7 +1219,10 @@ export class GameBootstrap3D extends Component {
   }
 
   private hasManualFacingInput(): boolean {
-    return this.rightMouseHeld || this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.KEY_D) ||
+    // 摇杆转向期间不能被权威朝向插值覆盖，否则会出现“转一点、拉回一点”的卡顿。
+    // Do not reconcile while the joystick is turning, or local prediction will be pulled back every frame.
+    return this.rightMouseHeld || Math.abs(this.mobileTurnTarget) > 0.01 || Math.abs(this.mobileTurn) > 0.01 ||
+      this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.KEY_D) ||
       this.isPressed(KeyCode.ARROW_LEFT) || this.isPressed(KeyCode.ARROW_RIGHT);
   }
 
