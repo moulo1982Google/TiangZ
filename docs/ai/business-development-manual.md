@@ -834,6 +834,14 @@ C2M_AttackMonsterHandler
 
 不要为每只怪物创建Actor、长期Timer或独立V8。不要在Handler里扫描地图或绕过`MonsterComponent`查找怪物。技能、Buff、复杂仇恨、巡逻路点和回出生点尚未接入，新增这些能力前先保持当前普通攻击闭环可测试、可观测。
 
+### 自动攻击与朝向
+
+普通攻击不是客户端每次点击产生一条伤害消息，而是`CombatComponent`上的持续状态：`StartAutoAttack(targetId)`只激活状态并锁定目标。Map固定Tick检查目标是否存活、是否同一MapInstance、是否在攻击距离内以及角色朝向是否有效；全部满足时才推进平A读条并在完成时结算一次伤害。
+
+距离过远或朝向不正确时，必须清零当前平A读条，但不能清除自动攻击状态。玩家重新靠近并恢复正确朝向后，从0秒重新读条。移动Handler不得调用`StopAutoAttack`。Cocos3D右键加A/D的侧移正是为了保持Yaw、围绕目标移动；右键拖动必须同步改变角色的权威Yaw，不能只改变摄像机角度。
+
+技能配置必须把以下维度分开：伤害类型（Physical/Magic/True）、执行方式（Instant/Cast/Channel）和对平A时间轴的影响（Keep/RestartAfterCast，后续可扩展PauseResume）。例如战士的压制是物理、瞬发且Keep，不得因为它是物理技能或瞬发技能就自动推断平A行为。
+
 ## AI提交前自检
 
 1. 是否只修改了需求真正涉及的目录？
