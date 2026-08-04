@@ -349,9 +349,10 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.3：Cocos 3D Demo
 
-状态：Cocos Creator 3.8.8灰盒、权威点击移动、本地纠偏和远端玩家插值已可运行。
+状态：Cocos Creator 3.8.8灰盒、权威点击移动、本地纠偏、远端玩家插值和手机Web第一版已可运行；手机包使用`web-mobile`并部署在外网演示路径`/m/`。
 
 - 已完成公共SDK、`Vec3`边界转换、Map 100登录、点击权威寻路、魔兽式方向输入、尾随相机、预测/校正和多人插值；正式角色资源继续按业务需求补充。
+- 已完成手机Web第一版：左下虚拟摇杆控制前后与转向，右侧单指拖动控制环视，双指捏合调整相机距离，点击地面继续寻路，HUD按安全区和小屏尺寸适配；手机端和桌面端共用同一套WebSocket SDK与协议。
 - 保留Cocos 2D与Pixi Grid2D回归，证明SDK协议结构不依赖具体引擎坐标类型。
 
 ### Phase 4.3.1：Unreal Engine 5.4.4客户端

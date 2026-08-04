@@ -12,7 +12,9 @@ import {
   MeshRenderer,
   Node,
   KeyCode,
+  JsonAsset,
   primitives,
+  resources,
   utils,
   Vec3,
 } from "cc";
@@ -65,12 +67,25 @@ const PATH_TURN_SPEED_RADIANS = Math.PI * 2;
 const MOUSE_YAW_RADIANS_PER_PIXEL = 0.004;
 const INPUT_REFRESH_SECONDS = 0.5;
 const INPUT_TURN_SEND_SECONDS = 0.1;
+const RUNTIME_CONFIG_RESOURCE = "Config/tiangz-external";
+
+interface Cocos3DExternalConfig {
+  readonly loginMgrHost: string;
+  readonly loginMgrPort: number;
+}
 
 interface RemotePlayer3D {
   readonly node: Node;
   readonly targetFoot: Vec3;
   /** 使用TiangZ协议Yaw；Cocos Y-Up边界当前可直接转成角度显示。 / Uses protocol-space TiangZ yaw, which the current Cocos Y-up boundary can render directly in degrees. */
   yaw: number;
+}
+
+interface MobilePointerState {
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
 }
 
 /** Phase 4.2的3D导航灰盒入口；演示权威寻路、预测纠偏和AOI多人同步。 / Phase 4.2 graybox entrypoint for authoritative pathing, prediction correction, and AOI multiplayer sync. */
@@ -89,6 +104,15 @@ export class GameBootstrap3D extends Component {
   private dynamicDoor!: Node;
   private pathRoot!: Node;
   private statusElement?: HTMLElement;
+  private mobileControlsElement?: HTMLElement;
+  private mobileJoystickElement?: HTMLElement;
+  private mobileJoystickKnob?: HTMLElement;
+  private mobileCameraSurface?: HTMLElement;
+  private mobileActionButton?: HTMLButtonElement;
+  private mobileStyleElement?: HTMLStyleElement;
+  private mobileInstructionsElement?: HTMLElement;
+  private mobilePingElement?: HTMLElement;
+  private displayedPingAtMs = -1;
   private loginFlow?: LoginFlow;
   private gateSocket?: RpcSocket;
   private mapClient?: MapClient;
@@ -109,6 +133,12 @@ export class GameBootstrap3D extends Component {
   private cameraDistance = CAMERA_DISTANCE;
   private visibleCameraDistance = CAMERA_DISTANCE;
   private readonly pressedKeys = new Set<KeyCode>();
+  private mobileForward = 0;
+  private mobileTurn = 0;
+  private mobileJoystickPointerId: number | undefined;
+  private readonly mobileCameraPointers = new Map<number, MobilePointerState>();
+  private mobilePinchDistance = 0;
+  private mobileCameraMoved = false;
   private localUnitId = 0;
   private navigationSequence = 0;
   private acknowledgedSequence = 0;
@@ -126,11 +156,12 @@ export class GameBootstrap3D extends Component {
     input.on(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
     input.on(Input.EventType.MOUSE_UP, this.onMouseUp, this);
     input.on(Input.EventType.MOUSE_WHEEL, this.onMouseWheel, this);
-    void this.loginAndEnter();
+    void this.loadRuntimeConfigAndLogin();
   }
 
   update(deltaTime: number): void {
     this.loginFlow?.update();
+    this.updateMobileHud();
     this.updateDirectionalInput(deltaTime);
     this.advanceDirectionalPrediction(deltaTime);
     this.advanceAlongPath(deltaTime);
@@ -147,6 +178,8 @@ export class GameBootstrap3D extends Component {
     input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
     input.off(Input.EventType.MOUSE_UP, this.onMouseUp, this);
     input.off(Input.EventType.MOUSE_WHEEL, this.onMouseWheel, this);
+    this.mobileJoystickPointerId = undefined;
+    this.mobileCameraPointers.clear();
     this.loginFlow?.close();
     this.messageDispatcher?.dispose();
     this.messageDispatcher = undefined;
@@ -154,6 +187,14 @@ export class GameBootstrap3D extends Component {
     this.remotePlayers.clear();
     this.statusElement?.remove();
     this.statusElement = undefined;
+    this.mobileControlsElement?.remove();
+    this.mobileControlsElement = undefined;
+    this.mobileStyleElement?.remove();
+    this.mobileStyleElement = undefined;
+    this.mobileInstructionsElement?.remove();
+    this.mobilePingElement?.remove();
+    this.mobileInstructionsElement = undefined;
+    this.mobilePingElement = undefined;
     this.loginFlow = undefined;
     this.gateSocket = undefined;
     this.mapClient = undefined;
@@ -207,6 +248,7 @@ export class GameBootstrap3D extends Component {
     const document = globalThis.document;
     if (!document?.body) return;
     const element = document.createElement("div");
+    element.className = "cocos3d-status";
     element.style.position = "fixed";
     element.style.left = "24px";
     element.style.top = "20px";
@@ -216,13 +258,335 @@ export class GameBootstrap3D extends Component {
     element.style.background = "rgba(13, 22, 25, 0.82)";
     element.style.font = "16px/1.55 system-ui, sans-serif";
     element.style.whiteSpace = "pre-line";
+    element.style.maxWidth = "min(560px, calc(100vw - 48px))";
+    element.style.boxSizing = "border-box";
     element.style.pointerEvents = "none";
     document.body.appendChild(element);
     this.statusElement = element;
+    this.buildMobileHud(document);
+    this.buildMobileControls(document);
     this.setStatus("正在连接 LoginMgr 并进入 Map 100...");
   }
 
+  /** 创建手机端固定说明和网络延迟显示；桌面端通过CSS隐藏，不污染桌面HUD。 / Creates fixed mobile instructions and latency display; CSS hides them on desktop. */
+  private buildMobileHud(document: Document): void {
+    const instructions = document.createElement("div");
+    instructions.className = "cocos3d-mobile-instructions";
+    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面：寻路";
+    instructions.style.position = "fixed";
+    instructions.style.left = "max(10px, 2vw)";
+    instructions.style.top = "max(10px, 2vh)";
+    instructions.style.zIndex = "10002";
+    instructions.style.padding = "8px 10px";
+    instructions.style.border = "1px solid rgba(225, 245, 238, 0.35)";
+    instructions.style.borderRadius = "8px";
+    instructions.style.color = "#edf7f3";
+    instructions.style.background = "rgba(13, 22, 25, 0.72)";
+    instructions.style.font = "13px/1.4 system-ui, sans-serif";
+    instructions.style.whiteSpace = "pre-line";
+    instructions.style.pointerEvents = "none";
+    document.body.appendChild(instructions);
+    this.mobileInstructionsElement = instructions;
+
+    const ping = document.createElement("div");
+    ping.className = "cocos3d-mobile-ping";
+    ping.textContent = "Gate Ping: --";
+    ping.style.position = "fixed";
+    ping.style.right = "max(10px, 2vw)";
+    ping.style.top = "max(10px, 2vh)";
+    ping.style.zIndex = "10002";
+    ping.style.padding = "8px 10px";
+    ping.style.border = "1px solid rgba(225, 245, 238, 0.35)";
+    ping.style.borderRadius = "8px";
+    ping.style.color = "#edf7f3";
+    ping.style.background = "rgba(13, 22, 25, 0.72)";
+    ping.style.font = "600 13px/1.4 system-ui, sans-serif";
+    ping.style.pointerEvents = "none";
+    document.body.appendChild(ping);
+    this.mobilePingElement = ping;
+  }
+
+  /** 使用SDK已有的Gate Ping样本刷新右上角延迟，不另发请求也不读取服务器内部指标。 / Refreshes the top-right latency from the SDK's existing Gate Ping sample without extra requests. */
+  private updateMobileHud(): void {
+    const sample = this.loginFlow?.latestGatePing;
+    if (!sample || sample.receivedAtMs === this.displayedPingAtMs) return;
+    this.displayedPingAtMs = sample.receivedAtMs;
+    if (this.mobilePingElement) this.mobilePingElement.textContent = `Gate Ping: ${sample.latencyMs} ms`;
+  }
+
+  /**
+   * 创建手机Web的轻量控制层；它只提交与桌面键鼠相同的领域输入，不直接修改权威位置。
+   * Creates the lightweight mobile-Web controls; it submits the same domain input as desktop keyboard/mouse and never edits authoritative position.
+   *
+   * 左下摇杆的纵轴是前后移动、横轴是转身；右侧单指拖动环视，双指捏合调整距离。
+   * The left joystick controls forward/backward movement and turning; one-finger right-side drag orbits, and a two-finger pinch zooms.
+   */
+  private buildMobileControls(document: Document): void {
+    const controls = document.createElement("div");
+    controls.className = "cocos3d-mobile-controls";
+    controls.style.position = "fixed";
+    controls.style.inset = "0";
+    controls.style.zIndex = "10001";
+    controls.style.pointerEvents = "none";
+    controls.style.padding = "env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)";
+    controls.style.boxSizing = "border-box";
+
+    const cameraSurface = document.createElement("div");
+    cameraSurface.setAttribute("aria-label", "拖动控制镜头，点击地面寻路");
+    cameraSurface.style.position = "absolute";
+    cameraSurface.style.inset = "0";
+    cameraSurface.style.pointerEvents = "auto";
+    cameraSurface.style.touchAction = "none";
+    cameraSurface.style.background = "transparent";
+    cameraSurface.addEventListener("pointerdown", (event) => this.onMobileCameraPointerDown(event));
+    cameraSurface.addEventListener("pointermove", (event) => this.onMobileCameraPointerMove(event));
+    cameraSurface.addEventListener("pointerup", (event) => this.onMobileCameraPointerUp(event));
+    cameraSurface.addEventListener("pointercancel", (event) => this.onMobileCameraPointerUp(event));
+    controls.appendChild(cameraSurface);
+    this.mobileCameraSurface = cameraSurface;
+
+    const joystick = document.createElement("div");
+    joystick.className = "cocos3d-mobile-joystick";
+    joystick.setAttribute("aria-label", "虚拟摇杆");
+    joystick.style.position = "absolute";
+    joystick.style.left = "max(18px, 4vw)";
+    joystick.style.bottom = "max(22px, 5vh)";
+    joystick.style.width = "clamp(112px, 32vw, 156px)";
+    joystick.style.height = "clamp(112px, 32vw, 156px)";
+    joystick.style.border = "2px solid rgba(225, 245, 238, 0.55)";
+    joystick.style.borderRadius = "50%";
+    joystick.style.background = "rgba(16, 31, 35, 0.46)";
+    joystick.style.boxShadow = "0 4px 18px rgba(0, 0, 0, 0.28)";
+    joystick.style.pointerEvents = "auto";
+    joystick.style.touchAction = "none";
+    joystick.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.mobileJoystickPointerId = event.pointerId;
+      joystick.setPointerCapture(event.pointerId);
+      this.updateMobileJoystick(event);
+    });
+    joystick.addEventListener("pointermove", (event) => {
+      if (event.pointerId !== this.mobileJoystickPointerId) return;
+      event.preventDefault();
+      this.updateMobileJoystick(event);
+    });
+    const releaseJoystick = (event: PointerEvent) => {
+      if (event.pointerId !== this.mobileJoystickPointerId) return;
+      this.mobileJoystickPointerId = undefined;
+      this.mobileForward = 0;
+      this.mobileTurn = 0;
+      this.mobileJoystickKnob?.style.setProperty("transform", "translate(-50%, -50%)");
+      this.markInputDirty();
+    };
+    joystick.addEventListener("pointerup", releaseJoystick);
+    joystick.addEventListener("pointercancel", releaseJoystick);
+    const knob = document.createElement("div");
+    knob.style.position = "absolute";
+    knob.style.left = "50%";
+    knob.style.top = "50%";
+    knob.style.width = "38%";
+    knob.style.height = "38%";
+    knob.style.borderRadius = "50%";
+    knob.style.background = "rgba(119, 215, 188, 0.88)";
+    knob.style.transform = "translate(-50%, -50%)";
+    knob.style.pointerEvents = "none";
+    joystick.appendChild(knob);
+    controls.appendChild(joystick);
+    this.mobileJoystickElement = joystick;
+    this.mobileJoystickKnob = knob;
+
+    const actionButton = document.createElement("button");
+    actionButton.type = "button";
+    actionButton.textContent = "门";
+    actionButton.setAttribute("aria-label", "开关动态门");
+    actionButton.style.position = "absolute";
+    actionButton.style.right = "max(18px, 4vw)";
+    actionButton.style.bottom = "max(24px, 6vh)";
+    actionButton.style.width = "52px";
+    actionButton.style.height = "52px";
+    actionButton.style.border = "1px solid rgba(225, 245, 238, 0.65)";
+    actionButton.style.borderRadius = "50%";
+    actionButton.style.color = "#edf7f3";
+    actionButton.style.background = "rgba(16, 31, 35, 0.72)";
+    actionButton.style.font = "600 16px system-ui, sans-serif";
+    actionButton.style.pointerEvents = "auto";
+    actionButton.style.touchAction = "manipulation";
+    actionButton.addEventListener("click", () => void this.toggleDemoDoor());
+    controls.appendChild(actionButton);
+    this.mobileActionButton = actionButton;
+
+    const style = document.createElement("style");
+    style.textContent = `
+      .cocos3d-mobile-controls { display: none; }
+      .cocos3d-mobile-instructions, .cocos3d-mobile-ping { display: none; }
+      @media (max-width: 900px), (pointer: coarse) {
+        .cocos3d-mobile-controls { display: block; }
+        .cocos3d-mobile-instructions, .cocos3d-mobile-ping { display: block; }
+        .cocos3d-status {
+          left: max(10px, 2vw) !important;
+          top: max(126px, 18vh) !important;
+          max-width: calc(100vw - 20px) !important;
+          padding: 7px 10px !important;
+          font-size: clamp(12px, 3.2vw, 15px) !important;
+          line-height: 1.35 !important;
+        }
+      }
+      @media (orientation: portrait) and (max-width: 900px) {
+        .cocos3d-mobile-joystick { transform: scale(0.88); transform-origin: bottom left; }
+      }
+    `;
+    document.head.appendChild(style);
+    this.mobileStyleElement = style;
+    document.body.appendChild(controls);
+    this.mobileControlsElement = controls;
+  }
+
+  /** 将摇杆的模拟量压成协议需要的-1/0/1，并复用桌面输入刷新节奏。 / Quantizes joystick analog input to the protocol's -1/0/1 and reuses the desktop refresh cadence. */
+  private updateMobileJoystick(event: PointerEvent): void {
+    const joystick = this.mobileJoystickElement;
+    if (!joystick) return;
+    const rect = joystick.getBoundingClientRect();
+    const radius = Math.min(rect.width, rect.height) * 0.5;
+    const centerX = rect.left + rect.width * 0.5;
+    const centerY = rect.top + rect.height * 0.5;
+    const dx = event.clientX - centerX;
+    const dy = event.clientY - centerY;
+    const distance = Math.hypot(dx, dy);
+    const maxDistance = radius * 0.66;
+    const scale = distance > maxDistance && distance > 0 ? maxDistance / distance : 1;
+    const knobX = dx * scale;
+    const knobY = dy * scale;
+    const deadZone = radius * 0.16;
+    this.mobileTurn = Math.abs(knobX) <= deadZone ? 0 : Math.sign(knobX);
+    this.mobileForward = Math.abs(knobY) <= deadZone ? 0 : -Math.sign(knobY);
+    this.mobileJoystickKnob?.style.setProperty(
+      "transform",
+      `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`,
+    );
+    this.markInputDirty(false);
+  }
+
+  /** 手机右侧触摸既负责镜头拖动，也负责把轻触转换为地面寻路。 / The mobile right-side surface handles camera drag and turns a short tap into ground navigation. */
+  private onMobileCameraPointerDown(event: PointerEvent): void {
+    if (this.mobileJoystickPointerId === event.pointerId) return;
+    event.preventDefault();
+    this.mobileCameraSurface?.setPointerCapture(event.pointerId);
+    this.mobileCameraPointers.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+    });
+    if (this.mobileCameraPointers.size === 2) {
+      this.mobilePinchDistance = this.mobileCameraPointerDistance();
+      this.mobileCameraMoved = true;
+    } else if (this.mobileCameraPointers.size === 1) {
+      this.mobileCameraMoved = false;
+    }
+  }
+
+  private onMobileCameraPointerMove(event: PointerEvent): void {
+    const pointer = this.mobileCameraPointers.get(event.pointerId);
+    if (!pointer) return;
+    event.preventDefault();
+    const dx = event.clientX - pointer.x;
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+    if (this.mobileCameraPointers.size >= 2) {
+      const distance = this.mobileCameraPointerDistance();
+      if (this.mobilePinchDistance > 0) {
+        this.cameraDistance = Math.min(
+          CAMERA_MAX_DISTANCE,
+          Math.max(CAMERA_MIN_DISTANCE, this.cameraDistance - (distance - this.mobilePinchDistance) * 0.018),
+        );
+      }
+      this.mobilePinchDistance = distance;
+      this.mobileCameraMoved = true;
+      return;
+    }
+    if (Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < 6) return;
+    this.mobileCameraMoved = true;
+    const yawDelta = -dx * MOUSE_YAW_RADIANS_PER_PIXEL;
+    this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
+    this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
+    this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+    this.markInputDirty(false);
+  }
+
+  private onMobileCameraPointerUp(event: PointerEvent): void {
+    const pointer = this.mobileCameraPointers.get(event.pointerId);
+    if (!pointer) return;
+    event.preventDefault();
+    const wasTap = this.mobileCameraPointers.size === 1 && !this.mobileCameraMoved;
+    this.mobileCameraPointers.delete(event.pointerId);
+    if (this.mobileCameraPointers.size === 1) {
+      this.mobilePinchDistance = 0;
+      this.mobileCameraMoved = true;
+    } else if (this.mobileCameraPointers.size === 0) {
+      this.mobilePinchDistance = 0;
+      this.mobileCameraMoved = false;
+    }
+    if (wasTap) {
+      const location = this.mobileScreenPoint(event.clientX, event.clientY);
+      void this.queryPathAtScreen(location.x, location.y);
+    }
+  }
+
+  private mobileCameraPointerDistance(): number {
+    const pointers = [...this.mobileCameraPointers.values()];
+    if (pointers.length < 2) return 0;
+    return Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+  }
+
+  /** 把DOM坐标换成Cocos Canvas像素坐标，避免高DPI手机寻路落点偏移。 / Converts DOM coordinates to Cocos canvas pixels so high-DPI phones keep accurate navigation targets. */
+  private mobileScreenPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const canvas = globalThis.document?.querySelector("canvas");
+    const rect = canvas?.getBoundingClientRect();
+    if (!canvas || !rect || rect.width <= 0 || rect.height <= 0) {
+      return { x: clientX, y: globalThis.innerHeight - clientY };
+    }
+    return {
+      x: (clientX - rect.left) * canvas.width / rect.width,
+      y: (rect.bottom - clientY) * canvas.height / rect.height,
+    };
+  }
+
   /** 完成通用SDK登录并核对冷配置指纹；失败后保留灰盒供编辑器检查。 / Logs in through the shared SDK and validates the cold-config fingerprint while leaving the graybox inspectable on failure. */
+  private async loadRuntimeConfigAndLogin(): Promise<void> {
+    try {
+      const config = await this.loadRuntimeConfig();
+      this.loginMgrHost = config.loginMgrHost;
+      this.loginMgrPort = config.loginMgrPort;
+    } catch (error) {
+      this.setStatus(`读取外网配置失败：${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    await this.loginAndEnter();
+  }
+
+  /** 从resources读取部署地址；部署到新机器时只需替换JSON并重新构建Web包。 / Loads the deployment endpoint from resources; replacing this JSON and rebuilding is enough for another machine. */
+  private loadRuntimeConfig(): Promise<Cocos3DExternalConfig> {
+    return new Promise((resolve, reject) => {
+      resources.load(RUNTIME_CONFIG_RESOURCE, JsonAsset, (error, asset) => {
+        if (error || !asset) {
+          reject(error ?? new Error(`资源不存在：${RUNTIME_CONFIG_RESOURCE}`));
+          return;
+        }
+        const value = asset.json as Partial<Cocos3DExternalConfig>;
+        if (typeof value.loginMgrHost !== "string" || value.loginMgrHost.length === 0) {
+          reject(new Error("loginMgrHost必须是非空字符串"));
+          return;
+        }
+        if (!Number.isInteger(value.loginMgrPort) || value.loginMgrPort < 1 || value.loginMgrPort > 65535) {
+          reject(new Error("loginMgrPort必须是1到65535之间的整数"));
+          return;
+        }
+        resolve({ loginMgrHost: value.loginMgrHost, loginMgrPort: value.loginMgrPort });
+      });
+    });
+  }
+
   private async loginAndEnter(): Promise<void> {
     const account = `guest_3d_${Math.floor(Math.random() * 100000)}`;
     this.loginFlow = new LoginFlow({
@@ -267,7 +631,10 @@ export class GameBootstrap3D extends Component {
       this.ApplyDemoDoorState(snapshotReady.demoDoorClosed);
       this.setStatus(
         `${account} / Unit ${result.enterMap.unitId} / ${config.name}\n` +
-        `NavMesh ${config.navigationVersion} 已加载\nW/S前后，A/D转向，按住右键时A/D横移；E开关动态门；左键点击地面寻路`,
+        `NavMesh ${config.navigationVersion} 已加载\n` +
+        (this.isMobileLayout()
+          ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路"
+          : "W/S前后，A/D转向，按住右键时A/D横移；E开关动态门；左键点击地面寻路"),
       );
     } catch (error) {
       this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
@@ -324,10 +691,15 @@ export class GameBootstrap3D extends Component {
       return;
     }
     if (event.getButton() !== EventMouse.BUTTON_LEFT) return;
-    if (!this.mapClient || this.queryingPath) return;
     const location = event.getLocation();
+    void this.queryPathAtScreen(location.x, location.y);
+  }
+
+  /** 统一桌面点击与手机轻触的寻路入口。 / Shares one path-query entry between desktop clicks and mobile taps. */
+  private queryPathAtScreen(screenX: number, screenY: number): void {
+    if (!this.mapClient || this.queryingPath) return;
     const ray = new geometry.Ray();
-    this.camera.screenPointToRay(location.x, location.y, ray);
+    this.camera.screenPointToRay(screenX, screenY, ray);
     if (Math.abs(ray.d.y) < 0.0001) return;
     const distance = -ray.o.y / ray.d.y;
     if (distance <= 0) return;
@@ -411,8 +783,9 @@ export class GameBootstrap3D extends Component {
     this.inputRefreshElapsed += Math.max(0, deltaTime);
     const left = this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT);
     const right = this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT);
-    if (!this.rightMouseHeld && left !== right) {
-      const yawDelta = (left ? 1 : -1) * TURN_SPEED_RADIANS * Math.max(0, deltaTime);
+    const turnInput = Number(right) - Number(left) + this.mobileTurn;
+    if (!this.rightMouseHeld && turnInput !== 0) {
+      const yawDelta = turnInput * TURN_SPEED_RADIANS * Math.max(0, deltaTime);
       this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
       this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
       this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
@@ -428,8 +801,9 @@ export class GameBootstrap3D extends Component {
   }
 
   private currentDirectionalInput(): { forward: number; strafe: number } {
-    const forward = Number(this.isPressed(KeyCode.KEY_W) || this.isPressed(KeyCode.ARROW_UP)) -
+    const keyboardForward = Number(this.isPressed(KeyCode.KEY_W) || this.isPressed(KeyCode.ARROW_UP)) -
       Number(this.isPressed(KeyCode.KEY_S) || this.isPressed(KeyCode.ARROW_DOWN));
+    const forward = keyboardForward !== 0 ? keyboardForward : this.mobileForward;
     const strafe = this.rightMouseHeld
       ? Number(this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT)) -
         Number(this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT))
@@ -755,6 +1129,11 @@ export class GameBootstrap3D extends Component {
   private setStatus(text: string): void {
     if (this.statusElement) this.statusElement.textContent = text;
     console.info(`[Cocos3D] ${text}`);
+  }
+
+  private isMobileLayout(): boolean {
+    return Boolean(globalThis.matchMedia?.("(pointer: coarse)").matches) ||
+      Math.min(globalThis.innerWidth, globalThis.innerHeight) <= 900;
   }
 }
 

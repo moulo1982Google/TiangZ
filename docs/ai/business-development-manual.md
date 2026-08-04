@@ -826,6 +826,14 @@ Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:co
 14. 故障测试是否使用确定性Fake或真实边界，而没有向生产配置加入随机故障开关？
 15. 提交标题是否使用中文，并避免把无必要的英文Conventional Commit格式带入TiangZ及配套插件仓库？
 
+## 外网演示部署
+
+业务开发不应把公网IP、云主机密码或部署机器的内网地址写进业务代码。外网入口由部署配置的`outerIp/outerPort`提供，
+客户端只配置LoginMgr公网地址；LoginMgr再返回Login公网地址，Login再返回Gate公网地址。MapHost、Location和MapManager保持内网路由。
+
+当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web、上传并重启服务，然后按页面、LoginMgr、Login、Gate的顺序验收。
+不要只看Nginx页面能打开就判断网络链路完成；云安全组必须放行实际的WebSocket入口端口。
+
 ## 可观测性边界
 
 业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。
