@@ -28,6 +28,8 @@ game_config/Datas/MonsterAreaConfig.xlsx
 
 `MonsterAreaConfig`描述“在哪里刷”：一行就是一个固定刷怪槽位，包含地图配置ID、模板ID、坐标、尸体保留时间和重生时间。当前版本没有随机刷怪池、多个候选点、掉落表和持久化。
 
+3D演示地图`MapConfig.id = 100`已经配置两个刷怪槽：`10004`生成怪A（被动），`10005`生成怪B（主动）。两个位置避开中央障碍和动态门，Cocos 3D进入`Map 100`后即可观察两种颜色。
+
 修改后执行：
 
 ```powershell
@@ -140,7 +142,7 @@ account    = ""
 position / yaw / speed / alive / numerics
 ```
 
-客户端通过`entityType`选择怪物表现资源，通过`configId`读取对应模型标识。怪物死亡时先用已有状态和Numeric同步，尸体移除时走AOI Leave，重生时走AOI Enter和完整Snapshot。
+客户端通过`entityType`选择怪物表现资源，通过`configId`读取对应模型标识。当前演示还把`attack_mode`作为客户端只读的表现提示：自己是蓝色，其他玩家是绿色，被动怪（0）是黄色，主动怪（1）是红色。这个颜色只服务于识别，不是客户端权限判断，也不改变服务端AI。怪物死亡时先用已有状态和Numeric同步，尸体移除时走AOI Leave，重生时走AOI Enter和完整Snapshot。
 
 本模块不把怪物之间的动态阻挡或动态避障塞进怪物组件。导航门等场景障碍仍由地图导航能力负责，角色和怪物的动态避让明确不属于本阶段。
 

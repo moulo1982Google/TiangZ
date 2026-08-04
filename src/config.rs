@@ -308,17 +308,6 @@ impl SceneConfig {
         self.bind_ip.as_deref().unwrap_or(&self.inner_ip)
     }
 
-    /// 返回客户端连接使用的地址；未配置时回退到内网地址。
-    /// Returns the client-facing address, falling back to the inner address.
-    pub fn outer_ip(&self) -> &str {
-        self.outer_ip.as_deref().unwrap_or(&self.inner_ip)
-    }
-
-    /// 返回客户端连接使用的端口；未配置时回退到监听端口。
-    /// Returns the client-facing port, falling back to the listener port.
-    pub fn outer_port(&self) -> u16 {
-        self.outer_port.unwrap_or(self.port)
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -990,8 +979,8 @@ mod tests {
         let scene = &config.scenes[0];
         assert_eq!(scene.inner_ip, "10.0.0.5");
         assert_eq!(scene.bind_ip(), "0.0.0.0");
-        assert_eq!(scene.outer_ip(), "203.0.113.10");
-        assert_eq!(scene.outer_port(), 17_201);
+        assert_eq!(scene.outer_ip.as_deref(), Some("203.0.113.10"));
+        assert_eq!(scene.outer_port, Some(17_201));
         assert!(validate_runtime_config(&config).is_ok());
 
         let serialized = serde_json::to_value(scene).unwrap();
@@ -1013,8 +1002,8 @@ mod tests {
         merge_known_scenes(&mut merged, vec![shared], "known-scenes.json").unwrap();
         base.outer_ip = Some("203.0.113.10".to_string());
         base.outer_port = Some(17_001);
-        assert_eq!(merged[0].outer_ip(), base.outer_ip());
-        assert_eq!(merged[0].outer_port(), base.outer_port());
+        assert_eq!(merged[0].outer_ip, base.outer_ip);
+        assert_eq!(merged[0].outer_port, base.outer_port);
     }
 
     #[test]

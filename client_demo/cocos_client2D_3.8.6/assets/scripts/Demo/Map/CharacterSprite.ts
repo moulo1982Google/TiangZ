@@ -1,4 +1,5 @@
 import {
+  Color,
   Node,
   Rect,
   resources,
@@ -29,7 +30,7 @@ export class CharacterSprite {
   private frameIndex = 0;
   private disposed = false;
 
-  constructor(parent: Node, initialFacing: number) {
+  constructor(parent: Node, initialFacing: number, tint: Color) {
     this.facing = normalizeFacing(initialFacing);
     const node = new Node("CharacterSprite");
     parent.addChild(node);
@@ -37,12 +38,13 @@ export class CharacterSprite {
     node.addComponent(UITransform).setContentSize(FRAME_WIDTH, FRAME_HEIGHT);
     this.sprite = node.addComponent(Sprite);
     this.sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    this.sprite.color = tint;
 
     void loadFrames().then((frames) => {
       if (this.disposed) return;
       this.frames = frames;
       this.applyFrame();
-    }).catch((error) => console.error("加载玩家序列帧失败", error));
+    }).catch((error) => console.error("加载角色序列帧失败", error));
   }
 
   update(deltaSeconds: number, facing: number, moving: boolean): void {

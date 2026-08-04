@@ -296,6 +296,8 @@ export class MonsterConfig {
         this.name = _json_.name
         if (_json_.model_id === undefined) { throw new Error() }
         this.modelId = _json_.model_id
+        if (_json_.attack_mode === undefined) { throw new Error() }
+        this.attackMode = _json_.attack_mode
     }
 
     /**
@@ -310,8 +312,13 @@ export class MonsterConfig {
      * 客户端模型标识
      */
     readonly modelId: string
+    /**
+     * 攻击模式：0被动，1主动
+     */
+    readonly attackMode: number
 
     resolve(tables:Tables) {
+
 
 
 

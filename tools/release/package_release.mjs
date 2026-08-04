@@ -41,6 +41,9 @@ for (const runtimeFile of [
 copyRequired(path.join(root, "dist", "smoke_client.cjs"), path.join(output, "dist", "smoke_client.cjs"));
 cpSync(path.join(root, "dist", "game-config"), path.join(output, "dist", "game-config"), { recursive: true });
 cpSync(path.join(root, "configs"), path.join(output, "configs"), { recursive: true });
+// 导航网格是运行时创建 3D 空间和动态障碍所需的发布资源，不能只在源码目录中存在。
+// Navigation meshes are runtime assets for 3D spatial scenes and dynamic obstacles; ship them with the release.
+cpSync(path.join(root, "navigation"), path.join(output, "navigation"), { recursive: true });
 copyRequired(path.join(root, "README.md"), path.join(output, "README.md"));
 copyRequired(path.join(root, "LICENSE"), path.join(output, "LICENSE"));
 

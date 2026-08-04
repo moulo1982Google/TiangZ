@@ -107,13 +107,15 @@
   "game_tbmonsterconfig": [
     {
       "id": 1,
-      "name": "训练木桩",
-      "model_id": "monster/dummy"
+      "name": "怪A",
+      "model_id": "monster/dummy",
+      "attack_mode": 0
     },
     {
       "id": 2,
-      "name": "主动野狼",
-      "model_id": "monster/wolf"
+      "name": "怪B",
+      "model_id": "monster/wolf",
+      "attack_mode": 1
     }
   ]
 }

@@ -162,7 +162,7 @@
     {
       "id": 10001,
       "map_config_id": 1,
-      "monster_config_id": 2,
+      "monster_config_id": 1,
       "spawn_x": 40,
       "spawn_y": 0,
       "spawn_z": 40,
@@ -194,12 +194,36 @@
       "respawn_seconds": 3,
       "corpse_lifetime_seconds": 1,
       "initial_spawn": true
+    },
+    {
+      "id": 10004,
+      "map_config_id": 100,
+      "monster_config_id": 1,
+      "spawn_x": -7,
+      "spawn_y": 0,
+      "spawn_z": -12,
+      "spawn_yaw": 0,
+      "respawn_seconds": 10,
+      "corpse_lifetime_seconds": 3,
+      "initial_spawn": true
+    },
+    {
+      "id": 10005,
+      "map_config_id": 100,
+      "monster_config_id": 2,
+      "spawn_x": -12,
+      "spawn_y": 0,
+      "spawn_z": -7,
+      "spawn_yaw": 0,
+      "respawn_seconds": 10,
+      "corpse_lifetime_seconds": 3,
+      "initial_spawn": true
     }
   ],
   "game_tbmonsterconfig": [
     {
       "id": 1,
-      "name": "训练木桩",
+      "name": "怪A",
       "model_id": "monster/dummy",
       "max_hp": 300,
       "attack_damage": 8,
@@ -211,7 +235,7 @@
     },
     {
       "id": 2,
-      "name": "主动野狼",
+      "name": "怪B",
       "model_id": "monster/wolf",
       "max_hp": 180,
       "attack_damage": 12,

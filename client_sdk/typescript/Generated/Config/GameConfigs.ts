@@ -126,13 +126,15 @@ const RAW_DATA: Record<string, unknown> = {
   "game_tbmonsterconfig": [
     {
       "id": 1,
-      "name": "训练木桩",
-      "model_id": "monster/dummy"
+      "name": "怪A",
+      "model_id": "monster/dummy",
+      "attack_mode": 0
     },
     {
       "id": 2,
-      "name": "主动野狼",
-      "model_id": "monster/wolf"
+      "name": "怪B",
+      "model_id": "monster/wolf",
+      "attack_mode": 1
     }
   ],
   "game_tbplayerconfig": [
@@ -184,7 +186,7 @@ export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 export type MonsterConfig = game.MonsterConfig;
 
-export const GameConfigFingerprint = "1be03e67cc8ecb4ea93a8e6f9c29cf090aae54ecf022ef9ae0915ac0cf92600f";
+export const GameConfigFingerprint = "03aa7d6e48713503cd367fe2b68c8ac5c1dfb617fdea3f27068717fd580a5b55";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),

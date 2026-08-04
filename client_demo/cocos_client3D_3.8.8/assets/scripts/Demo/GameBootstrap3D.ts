@@ -18,13 +18,14 @@ import {
   utils,
   Vec3,
 } from "cc";
-import { NATIVE } from "cc/env";
+import { NATIVE, PREVIEW } from "cc/env";
 import { LoginFlow } from "../Generated/SDK/Demo/LoginFlow";
 import { ClientMessageDispatcher } from "../Generated/SDK/Core/Net/ClientMessageDispatcher";
 import {
   GateClient,
   MapClient,
 } from "../Generated/SDK/Generated/Model/demo/protocol/clients";
+import { ClientMessages } from "../Generated/SDK/Generated/Model/demo/protocol/messageDescriptors";
 import type {
   G2C_AoiDelta,
   G2C_DemoDoorState,
@@ -43,6 +44,8 @@ import "../Generated/SDK/Core/Net/NativeTransport";
 
 const { ccclass, property } = _decorator;
 const MAP_ID = 100;
+const ENTITY_TYPE_PLAYER = 1;
+const ENTITY_TYPE_MONSTER = 2;
 const PLAYER_HALF_HEIGHT = 0.9;
 const PLAYER_VISUAL_HALF_WIDTH = 0.4;
 const DEMO_DOOR_CENTER_X = -12;
@@ -68,7 +71,11 @@ const PATH_TURN_SPEED_RADIANS = Math.PI * 2;
 const MOUSE_YAW_RADIANS_PER_PIXEL = 0.004;
 const INPUT_REFRESH_SECONDS = 0.5;
 const INPUT_TURN_SEND_SECONDS = 0.1;
-const RUNTIME_CONFIG_RESOURCE = "Config/tiangz-external";
+// 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
+// Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
+const RUNTIME_CONFIG_RESOURCE = PREVIEW
+  ? "Config/tiangz-local"
+  : "Config/tiangz-external";
 
 interface Cocos3DExternalConfig {
   readonly loginMgrHost: string;
@@ -859,11 +866,24 @@ export class GameBootstrap3D extends Component {
         this,
       );
       for (const entity of result.enterMap.entities) this.UpsertRemotePlayer(entity);
+      let visibleEntities = result.enterMap.entities;
+      const initialSnapshotPromise = visibleEntities.length === 0
+        ? result.gateSocket.waitForMessage(ClientMessages.AoiDelta, { timeoutMs: 5_000 })
+        : undefined;
       const snapshotReady = await new GateClient(result.gateSocket).mapSnapshotReady({ unitId: result.enterMap.unitId });
+      if (initialSnapshotPromise) {
+        const initialSnapshot = await initialSnapshotPromise;
+        visibleEntities = initialSnapshot.enters;
+        this.ApplyAoiDelta(initialSnapshot);
+      }
+      const monsterCount = visibleEntities.filter(
+        (entity) => entity.entityType === ENTITY_TYPE_MONSTER,
+      ).length;
       this.ApplyDemoDoorState(snapshotReady.demoDoorClosed);
       this.setStatus(
         `${account} / Unit ${result.enterMap.unitId} / ${config.name}\n` +
         `NavMesh ${config.navigationVersion} 已加载\n` +
+        `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
           ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路"
           : "W/S前后，A/D转向，按住右键时A/D横移；E开关动态门；左键点击地面寻路"),
@@ -1018,9 +1038,8 @@ export class GameBootstrap3D extends Component {
     this.mobileTurn += (this.mobileTurnTarget - this.mobileTurn) * turnBlend;
     const left = this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT);
     const right = this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT);
-    // Cocos3D表现层的Yaw正方向与协议坐标的直觉方向相反：A/左必须产生正向左转，D/右产生负向右转。
-    // The Cocos3D presentation yaw uses the opposite sign from the intuitive input direction:
-    // A/left must turn left and D/right must turn right.
+    // 这套符号已经按Cocos画面验收：A/左产生正向左转，D/右产生负向右转。
+    // This sign was verified against the Cocos visual result: A/left turns left and D/right turns right.
     const turnInput = Number(left) - Number(right) - this.mobileTurn;
     if (!this.rightMouseHeld && turnInput !== 0) {
       const yawDelta = turnInput * TURN_SPEED_RADIANS * frameDeltaTime;
@@ -1043,8 +1062,8 @@ export class GameBootstrap3D extends Component {
       Number(this.isPressed(KeyCode.KEY_S) || this.isPressed(KeyCode.ARROW_DOWN));
     const forward = keyboardForward !== 0 ? keyboardForward : this.mobileForward;
     const strafe = this.rightMouseHeld
-      ? Number(this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT)) -
-        Number(this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT))
+      ? Number(this.isPressed(KeyCode.KEY_A) || this.isPressed(KeyCode.ARROW_LEFT)) -
+        Number(this.isPressed(KeyCode.KEY_D) || this.isPressed(KeyCode.ARROW_RIGHT))
       : 0;
     return { forward, strafe };
   }
@@ -1168,8 +1187,10 @@ export class GameBootstrap3D extends Component {
     if (input.forward === 0 && input.strafe === 0) return;
     const forwardX = Math.sin(this.playerYaw);
     const forwardZ = Math.cos(this.playerYaw);
-    const rightX = -Math.cos(this.playerYaw);
-    const rightZ = Math.sin(this.playerYaw);
+    // 右键横移按Cocos画面验收：Yaw 0时A/正strafe向世界+X，D/负strafe向世界-X。
+    // Match the accepted Cocos visual result: at Yaw 0, A/positive strafe moves world +X and D/negative strafe world -X.
+    const rightX = Math.cos(this.playerYaw);
+    const rightZ = -Math.sin(this.playerYaw);
     let directionX = forwardX * input.forward + rightX * input.strafe;
     let directionZ = forwardZ * input.forward + rightZ * input.strafe;
     const length = Math.hypot(directionX, directionZ);
@@ -1270,7 +1291,7 @@ export class GameBootstrap3D extends Component {
         0.8,
         1.8,
         0.8,
-        new Color(220, 112, 142, 255),
+        this.entityColor(entity),
         entity.x,
         entity.y + PLAYER_HALF_HEIGHT,
         entity.z,
@@ -1286,6 +1307,17 @@ export class GameBootstrap3D extends Component {
       remote.targetFoot.set(entity.x, entity.y, entity.z);
       remote.yaw = entity.yaw;
     }
+  }
+
+  /** 根据实体类型和冷配置选择3D演示颜色；服务端AI仍是唯一权威。 / Resolves the 3D demo color from entity type and cold config; server AI remains authoritative. */
+  private entityColor(entity: MapEntitySnapshot): Color {
+    if (entity.entityType === ENTITY_TYPE_MONSTER) {
+      return GameConfigs.MonsterConfig.TryGet(entity.configId)?.attackMode === 1
+        ? new Color(235, 75, 75, 255)
+        : new Color(255, 215, 70, 255);
+    }
+    if (entity.entityType === ENTITY_TYPE_PLAYER) return new Color(80, 215, 125, 255);
+    return new Color(80, 215, 125, 255);
   }
 
   /** 远端角色不运行本地预测，只在权威快照之间平滑插值。 / Remote players never predict input and only interpolate between authoritative snapshots. */

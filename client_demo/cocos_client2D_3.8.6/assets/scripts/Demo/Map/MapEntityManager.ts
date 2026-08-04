@@ -12,6 +12,7 @@ import type {
   UnitStateDelta,
 } from "../../Generated/SDK/Generated/Model/demo/protocol/messages";
 import { BuffStateStore } from "../../Generated/SDK/Demo/BuffStateStore";
+import { GameConfigs } from "../../Generated/SDK/Generated/Config";
 import { DemoUi } from "../UI/DemoUi";
 import type { MoveIntent } from "./LocalPlayerController";
 import {
@@ -23,6 +24,9 @@ import {
 import { LocalMovementPredictor } from "./Movement/LocalMovementPredictor";
 import { RemoteMovementSmoother } from "./Movement/RemoteMovementSmoother";
 import { CharacterSprite } from "./CharacterSprite";
+
+const ENTITY_TYPE_PLAYER = 1;
+const ENTITY_TYPE_MONSTER = 2;
 
 interface LocalEntityVisual {
   readonly node: Node;
@@ -39,6 +43,10 @@ interface RemoteEntityVisual {
 export class MapEntityManager {
   private static readonly VIEWPORT_WIDTH = 960;
   private static readonly VIEWPORT_HEIGHT = 560;
+  private static readonly LOCAL_PLAYER_TINT = new Color(70, 145, 255, 255);
+  private static readonly REMOTE_PLAYER_TINT = new Color(80, 215, 125, 255);
+  private static readonly PASSIVE_MONSTER_TINT = new Color(255, 215, 70, 255);
+  private static readonly AGGRESSIVE_MONSTER_TINT = new Color(235, 75, 75, 255);
   private local?: LocalEntityVisual;
   private readonly remotes = new Map<number, RemoteEntityVisual>();
   private readonly numericLabels = new Map<number, Label>();
@@ -252,15 +260,14 @@ export class MapEntityManager {
       PIXELS_PER_METER * UNIT_FOOTPRINT_CELLS,
       PIXELS_PER_METER * UNIT_FOOTPRINT_CELLS,
     );
-    const appearance = new CharacterSprite(node, snapshot.facing);
+    const tint = this.resolveEntityTint(snapshot, local);
+    const appearance = new CharacterSprite(node, snapshot.facing, tint);
     this.ui.createLabel(
-      `${snapshot.account} (${snapshot.unitId})`,
+      `${this.entityDisplayName(snapshot)} (${snapshot.unitId})`,
       0,
       38,
       13,
-      local
-        ? new Color(255, 224, 112, 255)
-        : new Color(158, 225, 245, 255),
+      tint,
       node,
     );
     const hpLabel = this.ui.createLabel(
@@ -273,6 +280,26 @@ export class MapEntityManager {
     );
     this.numericLabels.set(snapshot.unitId, hpLabel);
     return { node, appearance };
+  }
+
+  /** 根据实体类型和冷配置决定演示颜色；战斗规则仍由服务端决定，客户端只做视觉提示。 / Resolves demo tint from entity type and cold config; combat rules remain server-authoritative. */
+  private resolveEntityTint(snapshot: MapEntitySnapshot, local: boolean): Color {
+    if (local) return MapEntityManager.LOCAL_PLAYER_TINT;
+    if (snapshot.entityType === ENTITY_TYPE_PLAYER) return MapEntityManager.REMOTE_PLAYER_TINT;
+    if (snapshot.entityType === ENTITY_TYPE_MONSTER) {
+      const config = GameConfigs.MonsterConfig.TryGet(snapshot.configId);
+      return config?.attackMode === 1
+        ? MapEntityManager.AGGRESSIVE_MONSTER_TINT
+        : MapEntityManager.PASSIVE_MONSTER_TINT;
+    }
+    return MapEntityManager.REMOTE_PLAYER_TINT;
+  }
+
+  /** 给怪物显示配置名，避免空账号让两类怪物无法区分。 / Uses the configured monster name so monsters are not displayed with an empty account. */
+  private entityDisplayName(snapshot: MapEntitySnapshot): string {
+    if (snapshot.entityType !== ENTITY_TYPE_MONSTER) return snapshot.account;
+    return GameConfigs.MonsterConfig.TryGet(snapshot.configId)?.name
+      ?? `怪物${snapshot.configId}`;
   }
 
   private applyNumeric(delta: UnitNumericDelta): void {

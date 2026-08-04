@@ -55,6 +55,28 @@ async function main() {
   // Process Ready不代表跨进程MapHost注册已经完成；等待一个5秒续租周期覆盖并发启动顺序。
   // Process Ready does not imply cross-process MapHost registration; wait one renewal cycle.
   await sleep(5_500);
+  if (process.argv.includes("--map100-initial-only")) {
+    const login = await requestLogin(loginAddr.ip, loginAddr.port, `smoke_map100_${Date.now()}`);
+    const client = await openGateAndEnterMap(
+      login.gateIp,
+      login.gatePort,
+      { account: login.account, token: login.token, mapId: 100 },
+    );
+    try {
+      const monsters = client.enterMap.entities.filter((entity) => entity.entityType === 2);
+      console.log("Map100 initial snapshot:", {
+        unitId: client.enterMap.unitId,
+        entityCount: client.enterMap.entities.length,
+        monsters: monsters.map((entity) => ({ unitId: entity.unitId, configId: entity.configId })),
+      });
+      if (monsters.length !== 2) {
+        throw new Error(`Map100 initial snapshot expected 2 monsters, got ${monsters.length}`);
+      }
+    } finally {
+      await client.gate.close();
+    }
+    return;
+  }
   const dynamicMap = await verifyDynamicMapLifecycle();
   if (process.argv.includes("--gate-timeout-only")) {
     await verifyGateFinalTimeout(loginAddr.ip, loginAddr.port);
@@ -470,6 +492,17 @@ async function verifyNavMeshTransfer(
   const response = decodeEnterMapFrame(responseFrame);
   const ready = decodeMapReadyFrame(await readyFrame);
   const transferred = response.body;
+  const navMeshMonsters = transferred.entities
+    .filter((entity) => entity.entityType === 2)
+    .map((entity) => ({ unitId: entity.unitId, configId: entity.configId }));
+  console.log("NavMesh3D monsters:", navMeshMonsters);
+  if (
+    navMeshMonsters.length !== 2 ||
+    !navMeshMonsters.some((monster) => monster.configId === 1) ||
+    !navMeshMonsters.some((monster) => monster.configId === 2)
+  ) {
+    throw new Error(`Map 100 monster snapshot mismatch: ${stringifyForError(navMeshMonsters)}`);
+  }
   const finitePosition = [transferred.x, transferred.y, transferred.z].every(Number.isFinite);
   const nearConfiguredSpawn =
     Math.abs(transferred.x - mapConfig.spawnX) <= 0.5 &&
