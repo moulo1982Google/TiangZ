@@ -25,7 +25,7 @@ const cocosGeneratedNames = [
 const targets = [
   "target",
   "dist",
-  ...cocosGeneratedNames.map((name) => path.join("cocos_client2D", name)),
+  ...cocosGeneratedNames.map((name) => path.join("client_demo/cocos_client2D_3.8.6", name)),
 ];
 
 for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -36,7 +36,7 @@ for (const entry of readdirSync(root, { withFileTypes: true })) {
 if (copyMode) {
   targets.push(
     "node_modules",
-    path.join("cocos_client2D", "node_modules"),
+    path.join("client_demo/cocos_client2D_3.8.6", "node_modules"),
   );
   const resultsDirectory = path.join(root, "perf", "results");
   try {

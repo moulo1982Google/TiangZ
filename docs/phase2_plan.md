@@ -215,7 +215,7 @@ Phase 2 暂不实现正式网格 AOI，而是在同一张小地图内全量广�
 
 - `npm run test:runtime`：单进程和拆分进程的登录、进图、快照、Enter、Move、Leave 全部通过。
 - `npm run check`：服务端类型检查、协议测试、Actor 测试、Cocos 网络层和完整 Demo 类型检查、Cocos Demo 打包全部通过。
-- Cocos Creator 3.8.6 Web Desktop 正式构建成功，产物位于 `cocos_client2D/build/web-desktop/`。
+- Cocos Creator 3.8.6 Web Desktop 正式构建成功，产物位于 `client_demo/cocos_client2D_3.8.6/build/web-desktop/`。
 - 背压用例改用 unordered BenchService 和 16384 并发；最终回归峰值队列为 4096、背压等待 379 次、请求错误 0、健康连接误断开 0。
 - Rust 默认 allocator 与 `--no-default-features` 两套全目标测试均通过。
 - 当前会话没有可连接的内置浏览器实例，因此未自动截图；本地构建页可用于双窗口人工视觉复核。

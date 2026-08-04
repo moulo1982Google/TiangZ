@@ -39,7 +39,7 @@ Rust 定期输出每个 EntryScene 的处理数、失败数、队列和 Handler 
 `configs/deploy/external-2process/StartMachine.json`，由一个Watcher启动两个Process：登录与Gate进程承载LoginMgr、两个Login和两个Gate；世界进程承载Map、MapManager、Location和动态副本MapHost。旧的`external-all-in-one.json`只保留为单Process回归配置。
 入口监听使用`0.0.0.0`，返回客户端的地址使用`outerIp/outerPort`。由于登录与Gate还要接收世界Process的内部调用，拆分部署中这些入口使用`protocol: auto`和`audience: mixed`，同一端口按握手类型区分浏览器WebSocket与内部TCP；地图世界仍使用纯内部TCP。
 
-Cocos3D的外网地址放在资源文件`cocos_client3D/assets/resources/Config/tiangz-external.json`，只保存LoginMgr的公网主机和端口；
+Cocos3D的外网地址放在资源文件`client_demo/cocos_client3D_3.8.8/assets/resources/Config/tiangz-external.json`，只保存LoginMgr的公网主机和端口；
 不要把云服务器内网地址写进前端，也不要把密码写入仓库。构建Web包后由Nginx托管，入口通常是：
 
 ```text
@@ -66,7 +66,7 @@ Map、MapManager、Location和副本MapHost只使用内网地址，不应对公�
 
 ```powershell
 $env:ELECTRON_RUN_AS_NODE=$null
-& "E:\cocos_editer\Creator\3.8.8\CocosCreator.exe" --project E:\gitee\TiangZ\cocos_client3D --build "platform=web-mobile;debug=false;orientation=landscape;buildPath=E:\gitee\TiangZ\cocos_client3D\build\external-mobile"
+& "E:\cocos_editer\Creator\3.8.8\CocosCreator.exe" --project E:\gitee\TiangZ\client_demo/cocos_client3D_3.8.8 --build "platform=web-mobile;debug=false;orientation=landscape;buildPath=E:\gitee\TiangZ\client_demo/cocos_client3D_3.8.8\build\external-mobile"
 ```
 
 手机端当前控制方式是左下虚拟摇杆、右侧单指环视、双指捏合缩放、点击地面寻路和动态门按钮；桌面端仍使用键鼠。手机 Web和桌面 Web共用同一份协议、SDK和公网LoginMgr配置。

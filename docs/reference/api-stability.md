@@ -68,8 +68,8 @@ Internal调整不要求业务迁移说明，但必须继续通过公共API夹具
 ```text
 app/generated/
 src/generated/
-cocos_client2D/assets/scripts/Generated/
-pixi_client/src/Generated/
+client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/
+client_demo/pixi_client_8.19.0/src/Generated/
 ```
 
 Generated不是Stable或Internal源码，禁止手工编辑。稳定契约来自proto、`.native`原型、生成器版本、opcode/schema锁和Protocol Fingerprint。

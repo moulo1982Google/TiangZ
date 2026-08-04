@@ -409,6 +409,7 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       monster.attackDamage < 0 ||
       monster.moveSpeed <= 0 ||
       monster.attackRange <= 0 ||
+      monster.attackRange > 2 ||
       !Number.isSafeInteger(monster.attackIntervalMs) ||
       monster.attackIntervalMs <= 0 ||
       (monster.attackMode !== 0 && monster.attackMode !== 1) ||

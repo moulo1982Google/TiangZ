@@ -34,8 +34,8 @@ Machine
 | `app/model` | 不可热更的Scene、Entity、Component状态、稳定类型和启动结构 | 需要新增状态或类型时；修改后必须重启Process |
 | `app/hotfix` | 可热更的Handler和领域方法实现 | 普通服务端行为需求默认修改 |
 | `proto` | 协议源文件 | 需要新消息时 |
-| `cocos_client2D/assets/scripts/Demo` | Cocos业务和表现 | 需要客户端行为时 |
-| `pixi_client/src` | Pixi/H5验收业务 | 需要跨客户端验收时 |
+| `client_demo/cocos_client2D_3.8.6/assets/scripts/Demo` | Cocos业务和表现 | 需要客户端行为时 |
+| `client_demo/pixi_client_8.19.0/src` | Pixi/H5验收业务 | 需要跨客户端验收时 |
 | `configs` | Process/Scene部署配置 | 需要新增实例或环境时 |
 | `native_data` | Rust权威数据原型与Native op声明 | 只有明确的数据下沉需求时 |
 | `src/game` | 不可热更的Rust游戏业务模块 | 用户明确选择Rust实现且收益成立时 |

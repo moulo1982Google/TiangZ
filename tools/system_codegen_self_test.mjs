@@ -11,8 +11,8 @@ const cases = [
     "UseItem(itemId: bigint): ItemSnapshot;",
   ]],
   ["NumericComponentSystem.d.ts", [
-    "Get(type: NumericTypeValue): number;",
-    "Set(type: NumericTypeValue, value: number): void;",
+    "Get(type: NumericTypeValue): bigint;",
+    "Set(type: NumericTypeValue, value: bigint): void;",
     "Snapshot(): UnitNumericDelta[];",
   ]],
 ];

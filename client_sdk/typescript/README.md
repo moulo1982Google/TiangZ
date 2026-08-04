@@ -30,8 +30,8 @@ npm run codegen
 生成器会更新协议代码和指纹，再把完整 SDK 分发到：
 
 ```text
-cocos_client2D/assets/scripts/Generated/SDK/
-pixi_client/src/Generated/SDK/
+client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK/
+client_demo/pixi_client_8.19.0/src/Generated/SDK/
 ```
 
 业务 RPC 使用生成的强类型 Client，不手写 msgcode、编解码或 rpcId：

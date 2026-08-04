@@ -386,12 +386,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 ### Phase 4.4：怪物与战斗
 
-状态：最小完整流程已完成，复杂战斗仍未开始。
+状态：最小普通攻击流程和局部行为树已完成，技能、Buff与复杂战斗仍未开始。
 
 - 已完成`MonsterConfig`和`MonsterAreaConfig`冷配置，以及`MonsterComponent + MonsterUnit`的统一Unit模型。
 - 已完成固定刷点、主动/被动模式、地图Tick追击、攻击距离、玩家攻击、Numeric扣血、死亡尸体、AOI Leave、原槽位重生和运行时冒烟验收。
 - 已完成`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`的最小业务调用链；Handler不遍历地图、不直接操作Native句柄。
-- 暂不实现随机刷怪池、巡逻路点、仇恨表、技能、掉落、战斗事件、持久化和角色/怪物动态避障；这些在最小闭环稳定后再按业务需求拆分。
+- 已完成Hotfix内部的`MonsterBehaviorTree`，只选择待机、追击、攻击和攻击冷却停留；普通攻击距离最大为2米，继续由Map Tick驱动。
+- 暂不实现随机刷怪池、巡逻路点、仇恨表、技能、Buff、掉落、战斗事件、持久化和角色/怪物动态避障；这些在最小闭环稳定后再按业务需求拆分。
 
 ### Phase 4.5：持久化基础
 

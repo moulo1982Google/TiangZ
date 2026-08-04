@@ -13,10 +13,10 @@ app/model/demo/       新增或改变状态、字段、构造、继承和稳定�
 app/hotfix/demo/      普通Handler与可热更领域行为
 proto/
 game_config/                 策划静态配置Excel；结构完整部署，纯数据可生成候选热更
-cocos_client2D/assets/scripts/Demo/
-cocos_client3D/assets/       3D客户端业务与灰盒；Generated/SDK禁止手改
-ue_client3D/                 UE客户端业务与表现；插件ThirdParty SDK禁止手改
-pixi_client/src/
+client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/
+client_demo/cocos_client3D_3.8.8/assets/       3D客户端业务与灰盒；Generated/SDK禁止手改
+client_demo/ue_client3D_5.4.4/                 UE客户端业务与表现；插件ThirdParty SDK禁止手改
+client_demo/pixi_client_8.19.0/src/
 configs/
 tests或tools中的对应业务自测
 ```
@@ -38,8 +38,8 @@ Unity业务客户端的默认边界是：
 
 ```text
 client_sdk/csharp/                         C# SDK唯一源码；协议和网络Core
-Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime  生成副本，禁止手改
-Unity2022.3.62f3c1_demo/Assets/TiangZClient/Demo     Unity场景、输入、相机和表现
+client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime  生成副本，禁止手改
+client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Demo     Unity场景、输入、相机和表现
 ```
 
 协议变化后执行`npm run codegen:csharp-client-sdk`，然后用`dotnet build client_sdk/csharp/TiangZ.Client.csproj`做引擎无关验证。Unity业务不得自己编码protobuf、分配rpcId或直接访问`RpcSocket`的内部字典；只通过生成的`LoginMgrClient/LoginClient/GateClient/MapClient`和消息描述符调用。每帧在Unity主线程调用`RpcSocket.Update()`，网络回调线程不得触碰GameObject、Transform或其他Unity API。当前SDK只提供桌面WebSocket，TCP/KCP没有Adapter时必须报错。
@@ -161,7 +161,7 @@ MapHost -> MapScene
 - 帧尾同步：`app/model/demo/map/MapComponent.ts::FrameFlush`。
 - 玩家下线保存：`app/model/demo/persistence/PlayerPersistenceComponent.ts`。
 - Model/System领域方法范例：`app/model/demo/login/LoginComponent.ts`与`app/hotfix/demo/login/LoginComponentSystem.ts`。
-- 客户端Push：`cocos_client2D/assets/scripts/Demo/Map/Handlers`。
+- 客户端Push：`client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers`。
 - Scene发现和调用：`app/core/process/SceneMessageHelper.ts`及`docs/guides/business-cookbook.md`。
 
 先复用这些形状，不重新发明Manager、ServiceLocator或事件总线。
@@ -371,7 +371,7 @@ message M2C_UseSkill // IActorLocationResponse
 5. 服务端只从`app/generated/model/server`导入；客户端、工具和压测客户端只从`client_sdk/typescript/Generated`导入。
 6. C++/UE客户端只从`client_sdk/cpp/include/tiangz/generated`使用生成协议；UE插件中的ThirdParty副本由codegen覆盖，禁止手改msgcode、Codec或rpcId。
 6. 执行`npm run test:protocol`和相关业务测试。
-7. Godot客户端只通过`godot-3d-4.7.1/scripts/tiangz_client.gd`调用登录、RPC和Push；协议Codec由`npm run codegen:godot-client-sdk`生成到`scripts/generated/tiangz_proto.gd`，`main.gd`只做节点表现。Godot当前是WebSocket演示适配，不能自行补TCP/KCP或把Godot的`Vector3`写入协议。
+7. Godot客户端只通过`client_demo/godot-3d-4.7.1/scripts/tiangz_client.gd`调用登录、RPC和Push；协议Codec由`npm run codegen:godot-client-sdk`生成到`scripts/generated/tiangz_proto.gd`，`main.gd`只做节点表现。Godot当前是WebSocket演示适配，不能自行补TCP/KCP或把Godot的`Vector3`写入协议。
 
 不得手工修改`opcode.lock.json/schema.lock.json`来绕过生成器，也不得在业务代码中硬编码msgcode、rpcId或codec。
 
@@ -817,6 +817,20 @@ Cocos业务脚本提交前应在打开过工程的Cocos环境运行`typecheck:co
 同步方式属于Map的玩法策略，不属于整个Process或Runtime。Phase 4后续允许普通大世界使用状态同步、竞技场等独立Map使用帧同步，以及少数高精度场景使用高频状态同步。同一个部署中可以同时存在这些Map，但玩家切换同步方式应通过退出旧Map、进入新Map完成。
 
 当前业务继续使用已有状态同步链路，不要提前在Handler中散落同步模式判断，也不要自行建立另一套帧号、输入队列或广播接口。后续实现应由Map创建配置选择策略，并由对应Component承接输入、模拟和广播；Handler仍只表达移动、施法等领域意图。逻辑Tick、网络同步频率与客户端渲染频率必须分别配置，提升其中一项不能隐式提高其他两项。
+
+## 怪物基础AI开发约束
+
+当前怪物只支持固定刷点、主动追击、两米内普通攻击、Numeric扣血、死亡和重生。调用链保持为：
+
+```text
+C2M_AttackMonsterHandler
+  -> PlayerUnit.AttackMonster
+  -> MonsterComponent.Attack
+```
+
+怪物主动行为由`MonsterComponent.Update`统一驱动，并在Hotfix内部调用局部`MonsterBehaviorTree`。行为树只负责从待机、追击、攻击和冷却停留中选择一个动作；它不能直接操作Native句柄、广播消息或修改其他地图的Unit。距离、伤害、死亡和Numeric变更仍由MonsterComponent负责。
+
+不要为每只怪物创建Actor、长期Timer或独立V8。不要在Handler里扫描地图或绕过`MonsterComponent`查找怪物。技能、Buff、复杂仇恨、巡逻路点和回出生点尚未接入，新增这些能力前先保持当前普通攻击闭环可测试、可观测。
 
 ## AI提交前自检
 

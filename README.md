@@ -64,12 +64,12 @@ configs/<environment>/       环境启动配置
 client_sdk/typescript/       TypeScript Client SDK 唯一源码
 client_sdk/cpp/              引擎无关C++ Client SDK与生成协议
 client_sdk/csharp/           引擎无关C# Client SDK唯一源码
-cocos_client2D/              Cocos Creator 2D Demo 客户端
-cocos_client3D/              Cocos Creator 3D NavMesh灰盒与公共SDK客户端
-ue_client3D/                 Unreal Engine 5.4.4 C++ SDK插件与3D灰盒客户端
-godot-3d-4.7.1/              Godot 4.7.1 GDScript WebSocket 3D灰盒客户端
-Unity2022.3.62f3c1_demo/     Unity 2022.3 C# SDK与3D灰盒客户端
-pixi_client/                 PixiJS/H5 SDK 通用性验收客户端
+client_demo/cocos_client2D_3.8.6/              Cocos Creator 2D Demo 客户端
+client_demo/cocos_client3D_3.8.8/              Cocos Creator 3D NavMesh灰盒与公共SDK客户端
+client_demo/ue_client3D_5.4.4/                 Unreal Engine 5.4.4 C++ SDK插件与3D灰盒客户端
+client_demo/godot-3d-4.7.1/              Godot 4.7.1 GDScript WebSocket 3D灰盒客户端
+client_demo/Unity2022.3.62f3c1_demo/     Unity 2022.3 C# SDK与3D灰盒客户端
+client_demo/pixi_client_8.19.0/                 PixiJS/H5 SDK 通用性验收客户端
 perf/                        RPC、完整链路与地图容量测试
 tools/                       codegen、冒烟测试和维护脚本
 tools-projects/              本机独立工具仓库，不属于 TiangZ 主仓库
@@ -125,7 +125,7 @@ Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“�
 
 公共 C++ SDK 位于 `client_sdk/cpp/`，Proto会生成不依赖Google protobuf runtime的结构、Codec和类型化RPC描述符；`npm run codegen:cpp-client-sdk`把完整头文件副本分发到UE插件。UE 5.4.4只负责WebSocket Adapter、游戏线程Update、坐标换算和Actor表现。当前UE Demo可自动登录Map 100、接收AOI/Numeric、5秒Gate Ping，并支持点击寻路、WASD方向移动和`E`键权威动态门，详见[UE 5.4.4客户端教程](docs/tutorials/14-unreal-engine-client.md)。Godot 4.7.1 Demo使用引擎自带`WebSocketPeer`接入同一主链，覆盖登录、Map 100、权威寻路、动态门、Ping和基础AOI，详见[Godot 4.7.1客户端教程](docs/tutorials/15-godot-client.md)。
 
-公共 C# SDK 位于 `client_sdk/csharp/`，面向 Unity 和普通 .NET 客户端，不依赖 `UnityEngine`。`npm run codegen:csharp-client-sdk`会从协议锁生成消息、Codec、RPC/Push描述符和类型化 Client，并复制到 `Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime`；Unity Demo 的 `Assets/TiangZClient/Demo/TiangZUnityDemo.cs`只负责场景、输入、相机和表现。当前 C# Adapter 只实现桌面 WebSocket，TCP/KCP 必须明确报错，不能静默降级，详见[Unity 3D客户端教程](docs/tutorials/17-unity-client.md)。
+公共 C# SDK 位于 `client_sdk/csharp/`，面向 Unity 和普通 .NET 客户端，不依赖 `UnityEngine`。`npm run codegen:csharp-client-sdk`会从协议锁生成消息、Codec、RPC/Push描述符和类型化 Client，并复制到 `client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime`；Unity Demo 的 `Assets/TiangZClient/Demo/TiangZUnityDemo.cs`只负责场景、输入、相机和表现。当前 C# Adapter 只实现桌面 WebSocket，TCP/KCP 必须明确报错，不能静默降级，详见[Unity 3D客户端教程](docs/tutorials/17-unity-client.md)。
 
 ```powershell
 # 公共 SDK 真实 WebSocket 登录到进图
@@ -339,7 +339,7 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 
 - `app/generated`：服务端协议、Native handle、Model bootstrap和Hotfix入口。
 - `src/generated`：Rust Native op 注册与 bootstrap。
-- `cocos_client2D/assets/scripts/Generated`：Cocos 客户端协议和 Handler 入口。
+- `client_demo/cocos_client2D_3.8.6/assets/scripts/Generated`：Cocos 客户端协议和 Handler 入口。
 
 所有 Generated 文件都不应手工编辑。`npm run codegen` 会同步更新根目录 `codegen.manifest.json`；Developer Tools 使用该文件检查生成结果是否过期、缺失、遗留或被修改。
 

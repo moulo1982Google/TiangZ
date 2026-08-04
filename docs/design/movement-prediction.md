@@ -7,7 +7,7 @@
 当前基础参数集中在两处同名常量文件：
 
 - 服务端：`app/model/demo/movement/CellMovement.ts`
-- 客户端：`cocos_client2D/assets/scripts/Demo/Map/Movement/CellMovement.ts`
+- 客户端：`client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Movement/CellMovement.ts`
 
 默认值：
 

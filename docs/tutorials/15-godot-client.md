@@ -1,6 +1,6 @@
 # Godot 4.7.1客户端
 
-`godot-3d-4.7.1`是TiangZ的Godot 4.7.1 GDScript灰盒客户端。它和Cocos3D、UE 5.4.4使用相同的服务端坐标、Map 100、NavMesh移动和动态门协议，目的是验证“引擎只负责表现，服务端负责权威空间状态”。
+`client_demo/godot-3d-4.7.1`是TiangZ的Godot 4.7.1 GDScript灰盒客户端。它和Cocos3D、UE 5.4.4使用相同的服务端坐标、Map 100、NavMesh移动和动态门协议，目的是验证“引擎只负责表现，服务端负责权威空间状态”。
 
 ## 运行
 
@@ -14,7 +14,7 @@ cargo run --bin TiangZ -- configs/local/all-in-one.json
 用Godot 4.7.1打开：
 
 ```text
-E:\gitee\TiangZ\godot-3d-4.7.1\project.godot
+E:\gitee\TiangZ\client_demo/godot-3d-4.7.1\project.godot
 ```
 
 运行主场景即可。Godot客户端使用`ws://127.0.0.1:7000`开始登录，再根据服务端返回的地址连接Login和Gate；不把Gate端口写死在客户端业务里。

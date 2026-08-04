@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { LocalMovementPredictor } from "../cocos_client2D/assets/scripts/Demo/Map/Movement/LocalMovementPredictor";
-import { RemoteMovementSmoother } from "../cocos_client2D/assets/scripts/Demo/Map/Movement/RemoteMovementSmoother";
+import { LocalMovementPredictor } from "../client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Movement/LocalMovementPredictor";
+import { RemoteMovementSmoother } from "../client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Movement/RemoteMovementSmoother";
 
 function assertPosition(
   actual: { readonly x: number; readonly z: number },

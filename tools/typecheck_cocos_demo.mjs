@@ -5,22 +5,22 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const cocosTypeConfig = path.join(root, "cocos_client2D", "temp", "tsconfig.cocos.json");
+const cocosTypeConfig = path.join(root, "client_demo/cocos_client2D_3.8.6", "temp", "tsconfig.cocos.json");
 
 if (existsSync(cocosTypeConfig)) {
   console.log("[cocos-check] detected Cocos editor types; running full TypeScript check");
   await run(process.execPath, [path.join(root, "node_modules", "typescript", "bin", "tsc"),
-    "-p", "cocos_client2D/tsconfig.json", "--noEmit",
+    "-p", "client_demo/cocos_client2D_3.8.6/tsconfig.json", "--noEmit",
   ]);
 } else {
   console.log("[cocos-check] Cocos editor types are absent; running engine-independent bundle check");
   await run(path.join(root, "node_modules", "esbuild", "bin", "esbuild"), [
-    "cocos_client2D/assets/scripts/Demo/GameBootstrap.ts",
+    "client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/GameBootstrap.ts",
     "--bundle",
     "--platform=browser",
     "--format=esm",
     "--target=es2022",
-    "--tsconfig=cocos_client2D/tsconfig.bundle.json",
+    "--tsconfig=client_demo/cocos_client2D_3.8.6/tsconfig.bundle.json",
     "--external:cc",
     "--external:cc/env",
     "--outfile=dist/cocos_demo_check.js",

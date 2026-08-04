@@ -3,10 +3,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const project = await readFile(path.join(root, "godot-3d-4.7.1", "project.godot"), "utf8");
-const proto = await readFile(path.join(root, "godot-3d-4.7.1", "scripts", "generated", "tiangz_proto.gd"), "utf8");
-const client = await readFile(path.join(root, "godot-3d-4.7.1", "scripts", "tiangz_client.gd"), "utf8");
-const main = await readFile(path.join(root, "godot-3d-4.7.1", "scripts", "main.gd"), "utf8");
+const project = await readFile(path.join(root, "client_demo/godot-3d-4.7.1", "project.godot"), "utf8");
+const proto = await readFile(path.join(root, "client_demo/godot-3d-4.7.1", "scripts", "generated", "tiangz_proto.gd"), "utf8");
+const client = await readFile(path.join(root, "client_demo/godot-3d-4.7.1", "scripts", "tiangz_client.gd"), "utf8");
+const main = await readFile(path.join(root, "client_demo/godot-3d-4.7.1", "scripts", "main.gd"), "utf8");
 const generated = await readFile(path.join(root, "client_sdk", "typescript", "Generated", "Model", "demo", "protocol", "msgcodes.ts"), "utf8");
 
 const requiredProjectValues = [
@@ -15,7 +15,7 @@ const requiredProjectValues = [
 ];
 for (const value of requiredProjectValues) assertIncludes(project, value, `project.godot缺少${value}`);
 for (const file of ["scripts/proto_reader.gd", "scripts/generated/tiangz_proto.gd", "scripts/tiangz_client.gd", "scripts/main.gd", "main.tscn", "README.md"]) {
-  const content = await readFile(path.join(root, "godot-3d-4.7.1", file), "utf8");
+  const content = await readFile(path.join(root, "client_demo/godot-3d-4.7.1", file), "utf8");
   if (content.trim().length === 0) throw new Error(`Godot文件为空：${file}`);
 }
 

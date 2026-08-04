@@ -63,7 +63,7 @@ Native Adapter 位于：
 
 ```powershell
 E:\cocos_editer\Creator\3.8.6\resources\tools\cmake\bin\cmake.exe `
-  --build cocos_client2D\build\tiangz-kcp-native\proj `
+  --build client_demo/cocos_client2D_3.8.6\build\tiangz-kcp-native\proj `
   --config Debug --parallel 8
 ```
 

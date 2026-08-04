@@ -20,11 +20,13 @@ import {
   type MonsterConfigData,
   systemFor,
 } from "#tiangz/model";
+import { MonsterBehaviorTree } from "./MonsterBehaviorTree";
 
 const MONSTER_AGGRO_RANGE_METERS = 12;
 const PLAYER_ATTACK_DAMAGE = 25n;
-const PLAYER_ATTACK_RANGE_METERS = 2.2;
+const BASIC_ATTACK_RANGE_METERS = 2;
 const MONSTER_ID_MAX = 0xffff_ffff;
+const monsterBehaviorTree = new MonsterBehaviorTree();
 
 /**
  * 第一版怪物业务：固定刷点、简单追击、普通攻击、死亡尸体和重生。
@@ -95,7 +97,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     const attackerPosition = attacker.GetComponent(PositionComponent);
     const monsterPosition = monster.GetComponent(PositionComponent);
     if (distanceSquared(attackerPosition.x, attackerPosition.z, monsterPosition.x, monsterPosition.z)
-      > PLAYER_ATTACK_RANGE_METERS * PLAYER_ATTACK_RANGE_METERS) {
+      > BASIC_ATTACK_RANGE_METERS * BASIC_ATTACK_RANGE_METERS) {
       throw new RpcError(GameErrCode.MonsterTooFar, `monster is too far: ${monsterId}`);
     }
 
@@ -199,50 +201,56 @@ export class MonsterComponentSystem extends MonsterComponent {
     const state = this.runtime.get(monster.UnitId);
     if (!state || now < state.nextThinkAtMs) return;
     state.nextThinkAtMs = now + 250;
-    if (config.attackMode === 0) {
-      state.targetUnitId = 0;
-      NativeData.ResetMovement(monster.GetComponent(NativeUnitRef).Handle);
-      return;
-    }
-    const target = this.FindNearestPlayer(monster, MONSTER_AGGRO_RANGE_METERS);
-    if (!target) {
-      state.targetUnitId = 0;
-      NativeData.ResetMovement(monster.GetComponent(NativeUnitRef).Handle);
-      return;
-    }
-    state.targetUnitId = target.UnitId;
+    const target = config.attackMode === 0
+      ? undefined
+      : this.FindNearestPlayer(monster, MONSTER_AGGRO_RANGE_METERS);
     const monsterPosition = monster.GetComponent(PositionComponent);
-    const targetPosition = target.GetComponent(PositionComponent);
-    const distance = Math.sqrt(distanceSquared(
-      monsterPosition.x,
-      monsterPosition.z,
-      targetPosition.x,
-      targetPosition.z,
-    ));
-    if (distance <= config.attackRange) {
-      NativeData.ResetMovement(monster.GetComponent(NativeUnitRef).Handle);
-      if (now >= state.nextAttackAtMs) {
-        this.AttackPlayer(monster, target, config.attackDamage);
-        state.nextAttackAtMs = now + config.attackIntervalMs;
-      }
-      return;
-    }
-    state.navigationSequence += 1;
+    const targetPosition = target?.GetComponent(PositionComponent);
+    const distance = targetPosition
+      ? Math.sqrt(distanceSquared(
+        monsterPosition.x,
+        monsterPosition.z,
+        targetPosition.x,
+        targetPosition.z,
+      ))
+      : Number.POSITIVE_INFINITY;
+    const attackRange = Math.min(config.attackRange, BASIC_ATTACK_RANGE_METERS);
+    const action = monsterBehaviorTree.Evaluate({
+      mayAggro: config.attackMode !== 0,
+      hasTarget: target !== undefined,
+      inAttackRange: distance <= attackRange,
+      canAttack: now >= state.nextAttackAtMs,
+    });
+    state.targetUnitId = target?.UnitId ?? 0;
     const native = monster.GetComponent(NativeUnitRef);
-    if (this.mapConfig.spatialMode === SpatialMode.Grid2D) {
-      NativeData.SetMovementInput(
-        native.Handle,
-        Math.sign(targetPosition.x - monsterPosition.x),
-        Math.sign(targetPosition.z - monsterPosition.z),
-        state.navigationSequence,
-      );
-    } else {
-      NativeData.SetNavigationTarget(
-        this.map.NativeMapKey,
-        native.Handle,
-        { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z },
-        state.navigationSequence,
-      );
+    switch (action) {
+      case "attack":
+        NativeData.ResetMovement(native.Handle);
+        this.AttackPlayer(monster, target!, config.attackDamage);
+        state.nextAttackAtMs = now + config.attackIntervalMs;
+        return;
+      case "hold":
+      case "idle":
+        NativeData.ResetMovement(native.Handle);
+        return;
+      case "chase":
+        state.navigationSequence += 1;
+        if (this.mapConfig.spatialMode === SpatialMode.Grid2D) {
+          NativeData.SetMovementInput(
+            native.Handle,
+            Math.sign(targetPosition!.x - monsterPosition.x),
+            Math.sign(targetPosition!.z - monsterPosition.z),
+            state.navigationSequence,
+          );
+        } else {
+          NativeData.SetNavigationTarget(
+            this.map.NativeMapKey,
+            native.Handle,
+            { x: targetPosition!.x, y: targetPosition!.y, z: targetPosition!.z },
+            state.navigationSequence,
+          );
+        }
+        return;
     }
   }
 

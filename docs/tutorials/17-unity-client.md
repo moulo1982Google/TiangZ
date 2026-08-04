@@ -7,7 +7,7 @@
 Unity示例工程是：
 
 ```text
-Unity2022.3.62f3c1_demo/
+client_demo/Unity2022.3.62f3c1_demo/
 ```
 
 C# SDK唯一源码在主工程：
@@ -26,7 +26,7 @@ dotnet build client_sdk/csharp/TiangZ.Client.csproj
 生成器会把可运行的C#源码复制到：
 
 ```text
-Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/
+client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/
 ```
 
 这里的文件是Generated副本，不要直接修改。Unity业务代码放在`Assets/TiangZClient/Demo`或自己的业务目录。

@@ -458,10 +458,10 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 
 # 2026-08-03：Godot 4.7.1 3D客户端演示
 
-- 在用户创建的`godot-3d-4.7.1`空工程中加入GDScript WebSocket适配层、Proto读取器和Map 100灰盒场景。
+- 在用户创建的`client_demo/godot-3d-4.7.1`空工程中加入GDScript WebSocket适配层、Proto读取器和Map 100灰盒场景。
 - Godot Demo贯通LoginMgr、Login、Gate、Map 100、`G2C_EntityNavigate`、基础AOI、5秒Gate Ping、点击寻路、W/S方向移动、A/D转身和`Map.ToggleDemoDoor`。
 - Godot与TiangZ米制Y-Up坐标直接对齐；表现层只平滑服务端权威位置，不复制Rust NavMesh、TileCache、Agent半径或动态碰撞。
-- Godot协议层已接入`codegen:godot-client-sdk`：从Proto锁文件生成`godot-3d-4.7.1/scripts/generated/tiangz_proto.gd`，客户端只手写连接流程、RPC编排和表现适配；TCP/KCP Adapter仍留作后续工作。
+- Godot协议层已接入`codegen:godot-client-sdk`：从Proto锁文件生成`client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd`，客户端只手写连接流程、RPC编排和表现适配；TCP/KCP Adapter仍留作后续工作。
 
 # 2026-08-03：Phase 4.4最小怪物业务闭环
 
@@ -477,3 +477,8 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 新增`codegen:csharp-client-sdk`，从协议/schema/opcode锁生成C#消息、Codec、RPC/Push描述符和类型化`LoginMgrClient/LoginClient/GateClient/MapClient`，并复制到Unity `Assets/TiangZClient/Runtime`；Generated文件禁止手改。
 - Unity 2022.3空工程加入`TiangZUnityDemo`，使用默认场景完成LoginMgr -> Login -> Gate -> Map 100、AOI初始快照、权威点击寻路、WASD移动、远端插值和5秒Ping；SDK本身不引用UnityEngine。
 - `dotnet build client_sdk/csharp/TiangZ.Client.csproj`已通过，0警告、0错误；Unity批处理复核受当前编辑器已占用同一工程影响，未强行关闭用户进程，需关闭编辑器后再做独占批处理验收。
+## 2026-08-04：怪物基础行为树与两米普通攻击
+
+- 怪物AI在`app/hotfix/demo/monster/MonsterBehaviorTree.ts`增加局部行为树，仅包含待机、追击、攻击和攻击冷却停留；它不提供通用AI编辑器，不创建MonsterActor、长期Timer或独立V8。
+- `MonsterComponentSystem`继续负责目标查询、导航意图、攻击间隔、Numeric扣血和死亡；行为树只选择动作。玩家与怪物普通攻击距离统一限制为最大2米，配置值可以更小但不能超过2米。
+- 没有新增技能、Buff、仇恨表、巡逻路点、战斗事件协议或Rust业务模块；新增纯逻辑自测`npm run test:monster-behavior`。

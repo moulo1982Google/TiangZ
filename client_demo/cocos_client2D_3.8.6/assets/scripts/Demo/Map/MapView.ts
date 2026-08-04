@@ -119,6 +119,8 @@ export class MapView {
             buffs: [],
             speedCellsPerSecond: playerConfig.moveSpeed,
             facing: 0,
+            entityType: 1,
+            configId: 1,
           },
         ];
     const entities = new MapEntityManager(

@@ -11,9 +11,9 @@
     "sourceRoot": "client_sdk/typescript",
     "distributionExcludes": ["Generated/Model/bench"],
     "outputRoots": [
-      "cocos_client2D/assets/scripts/Generated/SDK",
-      "cocos_client3D/assets/scripts/Generated/SDK",
-      "pixi_client/src/Generated/SDK"
+      "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/SDK",
+      "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/SDK",
+      "client_demo/pixi_client_8.19.0/src/Generated/SDK"
     ]
   },
   "cppClientSdk": {
@@ -21,21 +21,21 @@
     "protocolOutputRoot": "client_sdk/cpp/include/tiangz/generated",
     "sourceRoot": "client_sdk/cpp/include",
     "outputRoots": [
-      "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include"
+      "client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include"
     ]
   },
   "csharpClientSdk": {
     "enabled": true,
     "sourceRoot": "client_sdk/csharp",
     "outputRoots": [
-      "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime"
+      "client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime"
     ]
   },
   "godotClientSdk": {
     "enabled": true,
-    "protocolOutput": "godot-3d-4.7.1/scripts/generated/tiangz_proto.gd",
+    "protocolOutput": "client_demo/godot-3d-4.7.1/scripts/generated/tiangz_proto.gd",
     "outputRoots": [
-      "godot-3d-4.7.1/scripts/generated"
+      "client_demo/godot-3d-4.7.1/scripts/generated"
     ]
   },
   "clientHotfix": {
@@ -43,20 +43,20 @@
     "targets": [
       {
         "name": "cocos",
-        "handlerSearchRoots": ["cocos_client2D/assets/scripts"],
-        "handlerOutput": "cocos_client2D/assets/scripts/Generated/Hotfix/handlers.ts"
+        "handlerSearchRoots": ["client_demo/cocos_client2D_3.8.6/assets/scripts"],
+        "handlerOutput": "client_demo/cocos_client2D_3.8.6/assets/scripts/Generated/Hotfix/handlers.ts"
       },
       {
         "name": "pixi",
-        "handlerSearchRoots": ["pixi_client/src"],
-        "handlerOutput": "pixi_client/src/Generated/Hotfix/handlers.ts"
+        "handlerSearchRoots": ["client_demo/pixi_client_8.19.0/src"],
+        "handlerOutput": "client_demo/pixi_client_8.19.0/src/Generated/Hotfix/handlers.ts"
       },
       {
         "name": "cocos3d",
         "handlerSearchRoots": [
-          "cocos_client3D/assets/scripts"
+          "client_demo/cocos_client3D_3.8.8/assets/scripts"
         ],
-        "handlerOutput": "cocos_client3D/assets/scripts/Generated/Hotfix/handlers.ts"
+        "handlerOutput": "client_demo/cocos_client3D_3.8.8/assets/scripts/Generated/Hotfix/handlers.ts"
       }
     ]
   }

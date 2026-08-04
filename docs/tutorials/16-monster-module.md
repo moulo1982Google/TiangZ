@@ -1,6 +1,6 @@
 # 怪物模块最小闭环
 
-本教程给出一个完整但刻意保持简单的怪物模块：固定刷点、统一Unit、简单追击、玩家攻击、死亡尸体、移除和重生。它用于验证业务开发链路，不是完整商业战斗系统。
+本教程给出一个完整但刻意保持简单的怪物模块：固定刷点、统一Unit、局部行为树、简单追击、两米内普通攻击、死亡尸体、移除和重生。它用于验证业务开发链路，不是完整商业战斗系统。
 
 ## 1. 配置放在哪里
 
@@ -21,7 +21,7 @@ game_config/Datas/MonsterAreaConfig.xlsx
 | `max_hp` | 初始最大生命值 |
 | `attack_damage` | 普通攻击伤害 |
 | `move_speed` | 移动速度，米/秒 |
-| `attack_range` | 普通攻击距离 |
+| `attack_range` | 普通攻击距离，必须大于0且不超过2米 |
 | `attack_interval_ms` | 普通攻击间隔 |
 | `attack_mode` | `0`被动，`1`主动 |
 | `skill_id` | 预留技能配置ID，当前演示只支持普通攻击 |
@@ -67,21 +67,34 @@ app/model/demo/monster/MonsterUnit.ts
 app/hotfix/demo/monster/MonsterUnitSystem.ts
 app/model/demo/monster/MonsterComponent.ts
 app/hotfix/demo/monster/MonsterComponentSystem.ts
+app/hotfix/demo/monster/MonsterBehaviorTree.ts
 ```
 
-地图固定Tick统一驱动所有怪物，不为每个怪物创建一个长期Timer。最小状态机是：
+地图固定Tick统一驱动所有怪物，不为每个怪物创建一个长期Timer。当前使用怪物模块内部的轻量行为树，不是通用AI框架：
 
 ```text
 出生
-  -> 主动怪寻找范围内玩家并追击
-  -> 进入攻击距离后按配置间隔攻击
+  -> 无目标：待机
+  -> 主动怪找到范围内玩家：追击
+  -> 距离不超过2米：停止移动并按配置间隔普通攻击
   -> 玩家通过AttackMonster造成伤害
   -> HP为0，保留尸体
   -> 尸体时间到，Detach并Remove Unit
   -> 重生时间到，在原刷怪槽位重新创建
 ```
 
-被动怪只作为可攻击目标，不会主动寻找玩家。玩家死亡、掉落、技能、仇恨列表和复杂战斗结算尚未加入。
+被动怪只作为可攻击目标，不会主动寻找玩家。当前行为树只有待机、追击、攻击和攻击冷却停留四个动作；玩家死亡、掉落、技能、Buff、仇恨列表和复杂战斗结算尚未加入。
+
+行为树的调用关系保持在业务模块内部：
+
+```text
+MonsterComponent.Update
+  -> MonsterBehaviorTree.Evaluate
+  -> MonsterComponentSystem执行Idle/Chase/Hold/Attack
+  -> NumericComponent修改CurrentHp
+```
+
+不要在Handler里直接调用行为树，也不要为每只怪物创建一个Actor或Timer。行为树只负责选择动作，距离、伤害、死亡和Numeric修改仍由`MonsterComponent`负责。
 
 ## 4. 玩家如何攻击
 
@@ -138,4 +151,3 @@ position / yaw / speed / alive / numerics
 - 任务、掉落、Buff等系统通过`MonsterComponent.Get/GetAll`取得怪物，不维护第二份怪物集合。
 - 需要广播的内容先区分Snapshot、Numeric Delta和不可丢Event；不要为了一个战斗事件复制整张怪物表。
 - 只有性能证据证明TS或V8边界是瓶颈时，才讨论把怪物计算下沉Rust；不要先把普通AI写进`src/native_data.rs`。
-

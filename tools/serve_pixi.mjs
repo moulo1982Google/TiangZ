@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "pixi_client");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "client_demo/pixi_client_8.19.0");
 const port = Number(process.argv[2] ?? 7460);
 const types = new Map([
   [".html", "text/html; charset=utf-8"],

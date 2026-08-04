@@ -68,7 +68,7 @@ assets/scripts/Demo/                   Cocos 地图、输入和界面演示业�
 
 ```powershell
 $env:ELECTRON_RUN_AS_NODE=$null
-& "E:\cocos_editer\Creator\3.8.6\CocosCreator.exe" --project "$PWD\cocos_client2D" --build "platform=web-desktop;debug=true"
+& "E:\cocos_editer\Creator\3.8.6\CocosCreator.exe" --project "$PWD\client_demo\cocos_client2D_3.8.6" --build "platform=web-desktop;debug=true"
 ```
 
 构建产物位于 `build/web-desktop/`。
