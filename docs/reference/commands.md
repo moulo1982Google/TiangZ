@@ -148,5 +148,10 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run observability:reset` | 清理监控环境并移除服务端点 |
 | `npm run audit:dependencies` | 在线审计npm高危漏洞和Cargo advisory；需安装`cargo-audit` |
 | `npm run release:package` | 构建Release制品、生成版本与SHA-256，并在制品目录运行smoke |
+| `npm run release:linux` | 复用固定Ubuntu Builder，完整生成并编译Linux x64 Release制品 |
+| `npm run release:linux:image` | 只创建或校验固定Linux Builder；指纹未变化时不会重建 |
+| `npm run release:linux:rebuild-image` | 显式重建Linux Builder，用于工具镜像损坏或人工升级工具链 |
 
 `verify:quick`会执行无需Docker的观测资产检查；修改Prometheus配置后，还应使用固定镜像运行`promtool check config`。
+
+`release:linux`每次都运行Luban、全部codegen、TS构建和Rust Release编译；只缓存Node/Rust/.NET/Luban工具、npm依赖和Docker命名卷中的Cargo中间产物。正式输出位于`dist/release/TiangZ-<version>-linux-x64`。

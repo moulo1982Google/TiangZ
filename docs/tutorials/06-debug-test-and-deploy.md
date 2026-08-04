@@ -62,6 +62,23 @@ Map、MapManager、Location和副本MapHost只使用内网地址，不应对公�
 
 后端Release应在本机Docker的Ubuntu 24.04环境中构建，外网服务器只运行发布制品。发布包不包含`src/`、`Cargo.toml`、`node_modules/`和`target/`；桌面Web资源部署到`desktop/`，移动Web资源部署到`m/`，分别对应根路径和`/m/`路径。
 
+Linux发布统一使用固定Builder：
+
+```powershell
+# 日常发布；镜像不存在或工具依赖变化时会自动构建一次。
+npm run release:linux
+
+# 只准备/检查工具镜像，不编译业务代码。
+npm run release:linux:image
+
+# 工具镜像损坏时显式重建。
+npm run release:linux:rebuild-image
+```
+
+`tiangz-linux-builder:ubuntu-24.04`只包含Node、Rust、.NET Runtime、Luban、npm依赖和Cargo下载缓存，不包含TiangZ业务源码。日常构建把当前工作树复制到临时目录，过滤`node_modules`、`target`和各引擎缓存，然后完整执行`npm run build`、Rust Release编译和制品smoke。也就是说，工具不重复下载，但Excel/Luban、协议、Native Data、Scene、客户端SDK和业务代码每次都会重新生成、编译。
+
+Cargo的Linux中间产物保存在Docker命名卷`tiangz-linux-builder-target`中；最终制品仍输出到`dist/release/TiangZ-<version>-linux-x64`。普通TS、Rust和Excel改动不会重建工具镜像；`package-lock.json`、`Cargo.toml/Cargo.lock`、`rust-toolchain.toml`、Luban目录或Builder Dockerfile变化会让工具指纹改变并自动重建一次。`docker:linux:ubuntu/debian`仍是跨发行版smoke，不是正式发布入口。
+
 手机演示使用Cocos Creator的`web-mobile`目标，默认横屏并部署到`/m/`：
 
 ```powershell

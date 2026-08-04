@@ -382,6 +382,16 @@ npm run verify
 
 `verify:codegen` 根据 `codegen.manifest.json` 只读校验输入、输出哈希和生成文件集合。新增 protobuf 消息评审编号后执行 `npm run codegen:proto:update-lock`；普通 codegen 不会静默接受新 opcode。手写函数的注释要求见 [代码注释约定](docs/reference/coding-conventions.md)。
 
+## Linux Release构建
+
+本机Docker Desktop使用固定的`tiangz-linux-builder:ubuntu-24.04`工具镜像生成Linux x64发布包。首次运行会安装Node、Rust、.NET Runtime、Luban和项目依赖；后续只复制当前源码并重新执行Luban表格生成、全部codegen、TS构建和Rust Release编译：
+
+```powershell
+npm run release:linux
+```
+
+发布包输出到`dist/release/TiangZ-<version>-linux-x64`。只有依赖锁、Rust工具链、Luban或Builder Dockerfile变化时才自动重建工具镜像；Cargo构建结果保存在`tiangz-linux-builder-target`命名卷中复用。`npm run release:linux:image`只准备或检查镜像，`npm run release:linux:rebuild-image`用于显式修复工具镜像。
+
 ## 跨平台 RPC 性能基线
 
 复制前先清除所有可重新生成的编译产物、依赖和测试报告：

@@ -10,6 +10,15 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-08-04：固定Linux Release Builder
+
+- 新增`tiangz-linux-builder:ubuntu-24.04`工具镜像与`npm run release:linux`统一入口。镜像只固化Node 24、npm 11、Rust 1.97.1、.NET Runtime 8、Luban 4.10.2及项目依赖，不再把业务源码烘焙进镜像。
+- Builder使用工具指纹判断是否需要重建；普通TS、Rust、Excel和版本号变化不会触发工具下载。Linux Cargo中间产物使用`tiangz-linux-builder-target`命名卷跨构建复用。
+- 每次发布从当前工作树创建隔离源码副本，过滤Git、依赖、编译结果、性能报告和客户端引擎缓存，然后完整执行Luban表格生成、全部codegen、TS构建、Rust Release编译、发布包校验和制品smoke。
+- 正式发布输出固定为`dist/release/TiangZ-<version>-linux-x64`；Ubuntu/Debian矩阵命令继续只负责跨发行版smoke，不作为正式发布入口。
+- 本机首次初始化后，镜像展开大小约4.16GB，`tiangz-linux-builder-target`缓存卷约1.08GB；镜像工作目录为空且不包含业务源码。相同工具指纹检查耗时约1.64秒，完整缓存发布耗时约60.9秒，其中Rust Release约14.8秒；制品smoke和全部SHA-256校验通过。
+- 发布smoke原先假设Map 100下一条导航广播一定来自测试玩家，加入自主寻路怪物后会偶发先消费怪物消息。测试现按`unitId + sequence + moving`筛选目标导航状态，不改变Runtime广播语义。
+
 ## 2026-08-04：外网2C2G拆分为登录/Gate与世界两个Process
 
 - 新增`configs/deploy/external-2process/StartMachine.json`，作为外网2C2G演示的推荐启动入口。

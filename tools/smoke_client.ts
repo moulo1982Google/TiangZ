@@ -1006,23 +1006,29 @@ async function verifySharedMapBroadcast(
 
     const moverNav = await transferConnectedPlayer(mover.gate, 100);
     const observerNav = await transferConnectedPlayer(observer.gate, 100);
-    const moverNavigationFrame = mover.gate.waitForMessage(MsgCode.G2C_EntityNavigate);
-    const observerNavigationFrame = observer.gate.waitForMessage(MsgCode.G2C_EntityNavigate);
+    // Map 100中的怪物也会广播导航状态，不能假设下一帧一定属于测试玩家。
+    // Monsters on Map 100 also publish navigation, so select by player and sequence.
+    const moverNavigationState = waitForNavigationState(
+      mover.gate,
+      moverNav.unitId,
+      1,
+      true,
+    );
+    const observerNavigationState = waitForNavigationState(
+      observer.gate,
+      moverNav.unitId,
+      1,
+      true,
+    );
     const navigateRpcId = nextRpcId++;
     const navigate = decodeNavigateToFrame(await mover.gate.request(buildNavigateToPacket(
       navigateRpcId,
       { targetX: 10, targetY: 0, targetZ: 10, sequence: 1 },
     )));
-    const [moverNavigation, observerNavigation] = await Promise.all([
-      moverNavigationFrame.then(decodeEntityNavigateFrame),
-      observerNavigationFrame.then(decodeEntityNavigateFrame),
+    const [moverNavState, observerNavState] = await Promise.all([
+      moverNavigationState,
+      observerNavigationState,
     ]);
-    const moverNavState = moverNavigation.body.movements.find(
-      (movement) => movement.unitId === moverNav.unitId,
-    );
-    const observerNavState = observerNavigation.body.movements.find(
-      (movement) => movement.unitId === moverNav.unitId,
-    );
     if (
       navigate.body.error ||
       navigate.body.acknowledgedSequence !== 1 ||
