@@ -55,12 +55,14 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run build:game-config` | 生成并校验数据，输出不可变、内容寻址的服务端热更候选 |
 | `npm run codegen:client-sdk` | 生成正式协议指纹，并向Cocos/Pixi分发不含Bench的TypeScript SDK |
 | `npm run codegen:client-handlers` | 只生成客户端Handler自动导入入口 |
+| `npm run codegen:csharp-client-sdk` | 生成引擎无关C# SDK，并复制到Unity Demo的Runtime目录 |
 | `npm run build:pixi` | 生成SDK并构建PixiJS/H5客户端 |
 | `npm run serve:pixi` | 在`http://127.0.0.1:7460`启动Pixi静态服务器 |
 | `npm run typecheck:cocos-demo` | 有Cocos编辑器类型时执行完整tsc；干净CI中自动退化为引擎无关bundle检查 |
 | `npm run typecheck:cocos-demo:engine` | 强制使用Cocos编辑器生成类型执行完整Demo类型检查 |
 | `npm run typecheck:cocos3d-demo` | 有Cocos编辑器类型时检查3D Demo；CI中退化为bundle检查 |
 | `npm run typecheck:cocos3d-demo:engine` | 强制使用Cocos Creator 3.8.8类型检查3D Demo |
+| `dotnet build client_sdk/csharp/TiangZ.Client.csproj` | 在不打开Unity编辑器时验证C# SDK协议、Codec和WebSocket核心 |
 
 ## 提交前检查
 

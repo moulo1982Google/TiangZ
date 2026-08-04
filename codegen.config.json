@@ -24,6 +24,13 @@
       "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include"
     ]
   },
+  "csharpClientSdk": {
+    "enabled": true,
+    "sourceRoot": "client_sdk/csharp",
+    "outputRoots": [
+      "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime"
+    ]
+  },
   "godotClientSdk": {
     "enabled": true,
     "protocolOutput": "godot-3d-4.7.1/scripts/generated/tiangz_proto.gd",

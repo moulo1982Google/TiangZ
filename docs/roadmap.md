@@ -375,6 +375,15 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Godot只插值Rust通过`G2C_EntityNavigate`广播的权威位置，不复制NavMesh、TileCache、碰撞和Agent半径。
 - `codegen:godot-client-sdk`从Proto锁文件生成完整GDScript字段Codec和消息常量；Godot演示仍只使用其中的Map 100业务流程，但不再维护手写协议子集。
 
+### Phase 4.3.3：Unity 2022.3 C#客户端
+
+状态：C# SDK源码、协议生成、Unity 2022.3灰盒Demo已完成；当前只验收桌面WebSocket，不把Unity特定类型带入公共协议层。
+
+- `client_sdk/csharp/`是C# SDK唯一源码，`codegen:csharp-client-sdk`从Proto锁生成消息、Codec、协议描述符、类型化Client，并复制到Unity `Assets/TiangZClient/Runtime`。
+- SDK网络线程只接收并排队，Unity主线程通过`RpcSocket.Update()`分发Push和完成RPC；超时、断线、入站队列溢出和未知消息有明确错误语义。
+- Unity Demo只编排登录、进图、AOI、权威寻路、WASD、点击寻路和Ping；`UnityEngine.Vector3`只能出现在表现边界，协议继续使用米制`x/y/z/yaw`。
+- 当前C# Adapter只提供桌面WebSocket；TCP/KCP Adapter另立验收，不在Unity Demo中伪装支持。
+
 ### Phase 4.4：怪物与战斗
 
 状态：最小完整流程已完成，复杂战斗仍未开始。

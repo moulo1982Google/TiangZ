@@ -398,3 +398,11 @@ Phase 5计划：
 4. [架构与快速启动](../tutorials/01-architecture-and-quickstart.md)。
 5. 与任务相关的教程、reference和现有Demo代码。
 6. 只有维护Runtime时才阅读[运行时维护者指南](../design/maintainer-guide.md)和`src`。
+
+## C# Client SDK与Unity边界
+
+Unity客户端沿用和Cocos、Pixi相同的协议语义，但不把Unity类型带进公共SDK。C# SDK的唯一源码目录是`client_sdk/csharp/`，协议生成命令是`npm run codegen:csharp-client-sdk`；生成器从协议锁读取消息和opcode，生成C#消息、Codec、RPC/Push描述符和类型化Client，再复制到`Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime`。Unity目录中的`Runtime/Generated`和其他生成C#文件不能手工编辑，业务只改`Assets/TiangZClient/Demo`或自己的表现层目录。
+
+`RpcSocket`的网络线程只接收完整帧并放入有界队列，Unity主线程在`Update()`调用`RpcSocket.Update()`后才执行Push Handler和完成RPC；超时、断线、未知消息和队列溢出都有明确结果。业务不得在接收线程直接修改Unity对象，也不得绕过Client手写msgcode、rpcId或Codec。当前C# Adapter只支持桌面WebSocket，选择TCP/KCP必须立即报不支持，不能静默切换到WebSocket。
+
+Unity表现层使用`Vector3`、Transform和Camera，协议及服务端仍使用米制`x/y/z/yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度。坐标转换只允许出现在表现边界；不要把`Vector3`写入协议、Model或Native数据。Unity Demo的标准调用顺序是：`LoginFlow.EnterGameAsync`登录进图，注册Push，再调用`GateClient.MapSnapshotReadyAsync`请求初始AOI；运行期间每帧调用`LoginFlow.Update`，输入只调用生成的`MapClient.NavigateInputAsync/NavigateToAsync`。

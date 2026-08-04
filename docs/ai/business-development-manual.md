@@ -34,6 +34,16 @@ src/generated/
 
 测试辅助代码同样不能放进`app/core`、`app/model`或`app/hotfix`。裸帧构造、压测Codec包装、Fake和Fixture应放到`tools/support`、`perf`或对应自测文件；普通业务不得依赖这些目录。客户端正式调用统一使用`client_sdk`生成的Client和Push Handler。
 
+Unity业务客户端的默认边界是：
+
+```text
+client_sdk/csharp/                         C# SDK唯一源码；协议和网络Core
+Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime  生成副本，禁止手改
+Unity2022.3.62f3c1_demo/Assets/TiangZClient/Demo     Unity场景、输入、相机和表现
+```
+
+协议变化后执行`npm run codegen:csharp-client-sdk`，然后用`dotnet build client_sdk/csharp/TiangZ.Client.csproj`做引擎无关验证。Unity业务不得自己编码protobuf、分配rpcId或直接访问`RpcSocket`的内部字典；只通过生成的`LoginMgrClient/LoginClient/GateClient/MapClient`和消息描述符调用。每帧在Unity主线程调用`RpcSocket.Update()`，网络回调线程不得触碰GameObject、Transform或其他Unity API。当前SDK只提供桌面WebSocket，TCP/KCP没有Adapter时必须报错。
+
 需要在真人客户端中观察多人广播时，运行`npm run robot:walk -- <人数>`。这些机器人通过正式SDK进入游戏并遛弯，不是服务端业务Entity模板；业务Handler不得识别或特殊处理机器人账号。
 
 地图HUD需要显示延迟时，读取`LoginFlow.latestGatePing.latencyMs`，不要另外创建Ping定时器。`serverTimeMs`和`clockOffsetMs`用于服务器时间换算；不要直接相减本地时间与服务器时间来冒充网络RTT。

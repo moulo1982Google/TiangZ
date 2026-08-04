@@ -2287,8 +2287,10 @@ fn update_navigation_directional_input(
     if active {
         let forward_x = input.yaw.sin();
         let forward_z = input.yaw.cos();
-        let right_x = -input.yaw.cos();
-        let right_z = input.yaw.sin();
+        // Yaw 0 faces +Z; positive strafe is the Unity/world-space right (+X).
+        // Yaw 为 0 时朝向 +Z；正 strafe 必须是世界右侧（+X）。
+        let right_x = input.yaw.cos();
+        let right_z = -input.yaw.sin();
         let mut direction_x =
             forward_x * f32::from(input.forward) + right_x * f32::from(input.strafe);
         let mut direction_z =

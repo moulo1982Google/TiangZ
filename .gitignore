@@ -27,6 +27,8 @@
 /Unity2022.3.62f3c1_demo/Builds/
 /Unity2022.3.62f3c1_demo/*.csproj
 /Unity2022.3.62f3c1_demo/*.sln
+/client_sdk/csharp/bin/
+/client_sdk/csharp/obj/
 *.VC.db
 *.VC.opendb
 /perf/results/logs/

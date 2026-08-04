@@ -3,6 +3,7 @@
 ARG NODE_IMAGE=node:24-bookworm
 ARG BASE_IMAGE=ubuntu:24.04
 FROM ${NODE_IMAGE} AS node_runtime
+FROM mcr.microsoft.com/dotnet/runtime:8.0 AS dotnet_runtime
 
 FROM ${BASE_IMAGE}
 
@@ -32,6 +33,10 @@ RUN apt-get -o Acquire::Retries=3 update \
 
 # Node 官方镜像提供固定主版本；复制运行时可让 Ubuntu 与 Debian 使用同一套 Node/npm。
 COPY --from=node_runtime /usr/local/ /usr/local/
+# Luban 4.10.2 以 net8.0 发布；复制官方 Runtime，避免在构建机安装完整 SDK。
+COPY --from=dotnet_runtime /usr/share/dotnet/ /usr/share/dotnet/
+# 保留 dotnet 的真实安装路径；直接 COPY /usr/bin/dotnet 会把符号链接展开，导致 host/fxr 查找路径错误。
+RUN ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
 
 ENV CARGO_HOME=/root/.cargo \
     RUSTUP_HOME=/root/.rustup \

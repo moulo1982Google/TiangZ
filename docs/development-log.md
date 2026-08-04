@@ -470,3 +470,10 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - Map固定Tick统一处理主动怪追击、攻击间隔、玩家攻击、Numeric扣血、死亡、尸体Detach/Remove和原刷点重生；被动训练木桩只作为目标，不主动追击。没有为每个怪物创建长期Timer。
 - 新增`C2M_AttackMonster/M2C_AttackMonster`，调用链固定为`Handler -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。Handler不遍历地图、不直接操作Native句柄；掉落、技能、仇恨、持久化和角色/怪物动态避障不属于本阶段。
 - 真实Runtime smoke覆盖地图2训练木桩：初始快照、12次攻击至死亡、尸体AOI Leave、原槽位重生和重生HP恢复。详细开发入口见`docs/tutorials/16-monster-module.md`。
+
+# 2026-08-04：Unity 2022.3 C# Client SDK与3D灰盒
+
+- 增加引擎无关C# Client SDK源码目录`client_sdk/csharp`，包含二进制帧、protobuf轻量Codec、WebSocket RPC、Push注册、主线程`Update`队列、超时、断线和入站背压处理。
+- 新增`codegen:csharp-client-sdk`，从协议/schema/opcode锁生成C#消息、Codec、RPC/Push描述符和类型化`LoginMgrClient/LoginClient/GateClient/MapClient`，并复制到Unity `Assets/TiangZClient/Runtime`；Generated文件禁止手改。
+- Unity 2022.3空工程加入`TiangZUnityDemo`，使用默认场景完成LoginMgr -> Login -> Gate -> Map 100、AOI初始快照、权威点击寻路、WASD移动、远端插值和5秒Ping；SDK本身不引用UnityEngine。
+- `dotnet build client_sdk/csharp/TiangZ.Client.csproj`已通过，0警告、0错误；Unity批处理复核受当前编辑器已占用同一工程影响，未强行关闭用户进程，需关闭编辑器后再做独占批处理验收。

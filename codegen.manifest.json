@@ -5,7 +5,7 @@
     "client-handlers": {
       "command": "npm run codegen:client-handlers",
       "contentInputs": {
-        "codegen.config.json": "aee533e3765a6c0ed8f324bd992d2896f292efcc2d82f69df6e12f0fb5ed3a41",
+        "codegen.config.json": "8b9321d2e8a0357e5e10ef2aa556b507a8705b71438b09094b396f6a51324a4c",
         "tools/codegen_client_handlers.mjs": "6c0403a5fa6182ae0c6b4e52d8dd45c122106ca4063c2f297dfd3ff7b04eebb1",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -112,7 +112,7 @@
         "client_sdk/typescript/Generated/Model/demo/protocol/msgcodes.ts": "9737d70cf2b17127b532c7a35dc154f6bdc1ab605c18149105a55dd156557d93",
         "client_sdk/typescript/Generated/Model/demo/protocol/rpcs.ts": "13a686f954122f2cc87b37f4b03c1a7e624f066995be541fed68ed8245f852d3",
         "client_sdk/typescript/index.ts": "bef496ce5c014299e3cb2ff79b677325c52e7d95c26e7c0b04c7bd1e6dac3d12",
-        "codegen.config.json": "aee533e3765a6c0ed8f324bd992d2896f292efcc2d82f69df6e12f0fb5ed3a41",
+        "codegen.config.json": "8b9321d2e8a0357e5e10ef2aa556b507a8705b71438b09094b396f6a51324a4c",
         "tools/codegen_client_sdk.mjs": "9612282dd74ba1031610583ea5013961f6739c1469d2f7e36bb01cc7d5f506f0",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -223,7 +223,7 @@
         "client_sdk/cpp/include/tiangz/client/Transport.h": "ac823789d8631148072661481712d3db0fd0efc62d0203ed22fe33259639d9b4",
         "client_sdk/cpp/include/tiangz/generated/bench/Protocol.h": "8cd636e24e51702796609832cd460b88f35883529e18dffa4f82d67450bb336d",
         "client_sdk/cpp/include/tiangz/generated/demo/Protocol.h": "ecd3c22f049d60ae2334470d80495620b1d898eb2963e196a597ccc20ac05db6",
-        "codegen.config.json": "aee533e3765a6c0ed8f324bd992d2896f292efcc2d82f69df6e12f0fb5ed3a41",
+        "codegen.config.json": "8b9321d2e8a0357e5e10ef2aa556b507a8705b71438b09094b396f6a51324a4c",
         "tools/codegen_cpp_client_sdk.mjs": "56f785970b9b7144ac9aefa3b0ca7b509b675c1d531d5ae5010f0e457b9043d8",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
       },
@@ -242,6 +242,42 @@
           "path": "ue_client3D/TiangZClientUE/Plugins/TiangZClientSDK/Source/ThirdParty/TiangZClientSDK/include",
           "extensions": [
             ".h"
+          ],
+          "ignore": []
+        }
+      ]
+    },
+    "csharp-client-sdk": {
+      "command": "npm run codegen:csharp-client-sdk",
+      "contentInputs": {
+        "client_sdk/csharp/Core/Binary.cs": "e62e3dd8b4bb4b51ec425fa018e258e354d4c80ef3da0d2c0502eed5a2a96b79",
+        "client_sdk/csharp/Core/Frame.cs": "f8f068d2dd1ff91b70112be2e538c00be9f5e60ca2a7a43e8161e74b15d7a522",
+        "client_sdk/csharp/Core/Protocol.cs": "239d8654884f3aeebdea12a9b895d10f2b18eb1023c8d4b939db4efe81e61642",
+        "client_sdk/csharp/Core/RpcSocket.cs": "d813c8c6ead3fdf400c23c52e10a967cc739f07d3ee3a01815ad1c264a200ac8",
+        "client_sdk/csharp/Demo/LoginFlow.cs": "5107a12a5700c658d132f4be4fd6274e59bf1b134b032c6238eaec5d57a6c18d",
+        "client_sdk/csharp/Generated/Demo/Protocol.cs": "c6faaa0efbf66664bd23518216c41181a3f890e1ec2e5f542e63310d9db1206b",
+        "codegen.config.json": "8b9321d2e8a0357e5e10ef2aa556b507a8705b71438b09094b396f6a51324a4c",
+        "proto/DataDefine_CS_50001.proto": "231afc97ee053668d6e2d1c28c88f9729311b441159af21db89a55588893a213",
+        "proto/opcode.lock.json": "8d888eb1dbb2c83427596224d6d608926552e87a4b8a9800b1c60ec15a2063a9",
+        "proto/OuterMessage_C_10001.proto": "dfdfca96f7d620289dee15c60273b72daa3940f13c6e60501f73bb59714f32b9",
+        "proto/schema.lock.json": "538e98df5fc7d6e2b8895440552234305166e17ba3164205ace8d47f2732355f",
+        "tools/codegen_csharp_client_sdk.mjs": "480c24cdacdd59e40185dda493cca5d785ea8083573d5569de88f7934d563195",
+        "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530"
+      },
+      "selections": [],
+      "outputs": {
+        "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Core/Binary.cs": "e62e3dd8b4bb4b51ec425fa018e258e354d4c80ef3da0d2c0502eed5a2a96b79",
+        "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Core/Frame.cs": "f8f068d2dd1ff91b70112be2e538c00be9f5e60ca2a7a43e8161e74b15d7a522",
+        "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Core/Protocol.cs": "239d8654884f3aeebdea12a9b895d10f2b18eb1023c8d4b939db4efe81e61642",
+        "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Core/RpcSocket.cs": "d813c8c6ead3fdf400c23c52e10a967cc739f07d3ee3a01815ad1c264a200ac8",
+        "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Demo/LoginFlow.cs": "5107a12a5700c658d132f4be4fd6274e59bf1b134b032c6238eaec5d57a6c18d",
+        "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime/Generated/Demo/Protocol.cs": "c6faaa0efbf66664bd23518216c41181a3f890e1ec2e5f542e63310d9db1206b"
+      },
+      "outputRoots": [
+        {
+          "path": "Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime",
+          "extensions": [
+            ".cs"
           ],
           "ignore": []
         }
@@ -308,7 +344,7 @@
     "godot-client-sdk": {
       "command": "npm run codegen:godot-client-sdk",
       "contentInputs": {
-        "codegen.config.json": "aee533e3765a6c0ed8f324bd992d2896f292efcc2d82f69df6e12f0fb5ed3a41",
+        "codegen.config.json": "8b9321d2e8a0357e5e10ef2aa556b507a8705b71438b09094b396f6a51324a4c",
         "proto/opcode.lock.json": "8d888eb1dbb2c83427596224d6d608926552e87a4b8a9800b1c60ec15a2063a9",
         "proto/schema.lock.json": "538e98df5fc7d6e2b8895440552234305166e17ba3164205ace8d47f2732355f",
         "tools/codegen_godot_client_sdk.mjs": "9e3b1a0799d946904e4403d6fa6dae135e8f55336022734f226fe822a2a1abb0",
@@ -336,7 +372,7 @@
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
         "native_data/demo/MapOps.native": "db869f154cd0e146c06cd0f8ccb6e5f32db97359233aeb15ff1a2e2cf561b4bc",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
-        "package.json": "642324e31358733c08861878ca873aa0f2ca9842479d0c299a8e4788f2a7f37c",
+        "package.json": "7aee52874f0fba4ba05ae682ad7d795209cdb417037f98e2fe5dc738b5a65de0",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -372,7 +408,7 @@
     "proto": {
       "command": "npm run codegen:proto",
       "contentInputs": {
-        "codegen.config.json": "aee533e3765a6c0ed8f324bd992d2896f292efcc2d82f69df6e12f0fb5ed3a41",
+        "codegen.config.json": "8b9321d2e8a0357e5e10ef2aa556b507a8705b71438b09094b396f6a51324a4c",
         "proto/BenchInner_S_25001.proto": "ed3190c3d98c9e6b72bcdd14a8b752e041ae1195fa0f40cdd2889baabd3c1fbb",
         "proto/BenchMessage_C_15001.proto": "95708fb1f09ccaa70c2d355d70b619edb7e798ca05dc7df2f7888031827833c0",
         "proto/DataDefine_CS_50001.proto": "231afc97ee053668d6e2d1c28c88f9729311b441159af21db89a55588893a213",
@@ -492,7 +528,7 @@
         "app/model/main.bench.ts": "9c62ab5989b0b19cc9ba7642f2aa84429c006ccd641379e98d9dea7807791987",
         "app/model/main.ts": "580af9ba606e985115abf59f9b1872ab50eaa7737c9effb1df6975d05456f16a",
         "app/model/public.ts": "e52b34fe7576827b111949aea0fc9f7d41f64575e82574e6a42253137fcc9c76",
-        "codegen.config.json": "aee533e3765a6c0ed8f324bd992d2896f292efcc2d82f69df6e12f0fb5ed3a41",
+        "codegen.config.json": "8b9321d2e8a0357e5e10ef2aa556b507a8705b71438b09094b396f6a51324a4c",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_scenes.mjs": "188748ab69bdfd6f89be2a941b5dfb4620e99174cb2a609eadccdb97509730d4"
       },
