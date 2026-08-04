@@ -16,6 +16,20 @@ cocos_client2D/node_modules
 cocos_client2D/profiles
 cocos_client2D/temp
 
+cocos_client3D/build
+cocos_client3D/library
+cocos_client3D/node_modules
+cocos_client3D/profiles
+cocos_client3D/temp
+
+ue_client3D/TiangZClientUE/.vs
+ue_client3D/TiangZClientUE/Binaries
+ue_client3D/TiangZClientUE/DerivedDataCache
+ue_client3D/TiangZClientUE/Intermediate
+ue_client3D/TiangZClientUE/Saved
+
+godot-3d-4.7.1/.godot
+
 pixi_client/dist
 pixi_client/node_modules
 
@@ -27,4 +41,3 @@ perf/results/**/*.log
 perf/results/*_20*.json
 perf/results/*_20*.md
 perf/results/gate
-

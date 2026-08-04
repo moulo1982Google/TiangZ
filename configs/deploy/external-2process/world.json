@@ -1,0 +1,87 @@
+{
+  "process": {
+    "name": "external_world",
+    "identity": {
+      "originServerId": 1,
+      "workerId": 1
+    },
+    "logging": {
+      "level": "info",
+      "format": "pretty",
+      "console": true
+    },
+    "game": {
+      "fixedUpdateMs": 50,
+      "maxCatchUpSteps": 2
+    },
+    "debug": {
+      "inspectorIp": "127.0.0.1",
+      "inspectorPort": 19232,
+      "breakOnStart": false
+    },
+    "observability": {
+      "health": {
+        "ip": "127.0.0.1",
+        "port": 17602
+      },
+      "latency": {
+        "enabled": true,
+        "sampleRate": 10
+      }
+    }
+  },
+  "scenes": [
+    {
+      "name": "map_manager",
+      "sceneType": "MapManager",
+      "innerIp": "127.0.0.1",
+      "bindIp": "0.0.0.0",
+      "port": 17100,
+      "protocol": "tcp",
+      "audience": "inner"
+    },
+    {
+      "name": "map_1",
+      "sceneType": "MapHost",
+      "acceptDynamicMaps": true,
+      "staticMapIds": [1],
+      "innerIp": "127.0.0.1",
+      "bindIp": "0.0.0.0",
+      "port": 17301,
+      "protocol": "tcp",
+      "audience": "inner"
+    },
+    {
+      "name": "map_2",
+      "sceneType": "MapHost",
+      "acceptDynamicMaps": true,
+      "staticMapIds": [2, 100],
+      "innerIp": "127.0.0.1",
+      "bindIp": "0.0.0.0",
+      "port": 17302,
+      "protocol": "tcp",
+      "audience": "inner"
+    },
+    {
+      "name": "dungeon_1",
+      "sceneType": "MapHost",
+      "acceptDynamicMaps": true,
+      "staticMapIds": [],
+      "innerIp": "127.0.0.1",
+      "bindIp": "0.0.0.0",
+      "port": 17310,
+      "protocol": "tcp",
+      "audience": "inner"
+    },
+    {
+      "name": "location_1",
+      "sceneType": "Location",
+      "innerIp": "127.0.0.1",
+      "bindIp": "0.0.0.0",
+      "port": 17401,
+      "protocol": "tcp",
+      "audience": "inner"
+    }
+  ],
+  "knownSceneFiles": ["known-scenes.json"]
+}

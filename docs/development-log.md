@@ -10,6 +10,14 @@
 - 性能数字必须注明拓扑、负载和边界，微基准不得直接写成整服容量结论。
 - TiangZ主工程及配套插件仓库的提交标题默认使用中文；代码标识、命令、版本号和无法自然翻译的专有名词保留原文。
 
+## 2026-08-04：外网2C2G拆分为登录/Gate与世界两个Process
+
+- 新增`configs/deploy/external-2process/StartMachine.json`，作为外网2C2G演示的推荐启动入口。
+- `login-gate.json`承载LoginMgr、两个Login和两个Gate；`world.json`承载MapManager、静态MapHost、Location和动态副本MapHost。两组服务各自只有一个V8，服务间仍通过统一的Scene路由通信。
+- 两个Process共享`known-scenes.json`，避免每个配置文件重复维护启动拓扑；`external-all-in-one.json`继续保留为单Process回归配置。
+- 外网发布包仍只包含Linux Release可执行文件、`dist`、配置、导航资源和校验文件，不包含源码或构建目录。此次配置通过JSON、项目检查、观测配置校验和共享Scene加载测试。
+- 登录与Gate的共享路由使用`protocol: auto`和`audience: mixed`，同一监听端口同时承载浏览器WebSocket和世界Process内部TCP；若误写成纯WebSocket，地图回传Gate时会被解析为非法握手。
+
 ## 2026-08-03：云部署监听地址与外网通告地址分离
 
 - `SceneConfig`新增`bindIp`、`innerIp`、`outerIp/outerPort`语义：监听使用`bindIp`，服务间路由使用`innerIp`，LoginMgr/Login/Gate返回客户端时使用外网地址；旧`ip`配置兼容读取为`innerIp`。

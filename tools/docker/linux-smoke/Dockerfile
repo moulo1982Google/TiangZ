@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
 ARG NODE_IMAGE=node:24-bookworm
+ARG BASE_IMAGE=ubuntu:24.04
 FROM ${NODE_IMAGE} AS node_runtime
 
-ARG BASE_IMAGE=ubuntu:24.04
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -45,6 +45,7 @@ WORKDIR /workspace
 
 # 依赖清单单独成层，业务源码变化时不会重复安装 npm 与 Cargo 依赖。
 COPY package.json package-lock.json Cargo.toml Cargo.lock rust-toolchain.toml build.rs ./
+COPY src ./src
 RUN npm ci \
     && rustup toolchain install 1.97.1 --profile minimal --component clippy --component rustfmt \
     && rustup default 1.97.1 \
