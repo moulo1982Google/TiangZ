@@ -66,6 +66,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run build:cocos3d:web:debug` | 使用Cocos Creator 3.8.8构建3D桌面Web Debug包 |
 | `npm run build:cocos3d:mobile` | 使用Cocos Creator 3.8.8构建3D横屏手机Web Release包，输出到`client_demo/cocos_client3D_3.8.8/build/standard-mobile` |
 | `npm run build:cocos3d:mobile:debug` | 使用Cocos Creator 3.8.8构建3D横屏手机Web Debug包 |
+| `npm run build:cocos3d:external` | 依次构建3D桌面与横屏手机Release包，并整理到`build/external/desktop`（`/`）和`build/external/m`（`/m/`） |
 | `npm run build:cocos2d:web` | 使用Cocos Creator 3.8.6构建2D桌面Web Release包 |
 | `npm run build:cocos2d:web:debug` | 使用Cocos Creator 3.8.6构建2D桌面Web Debug包 |
 | `npm run build:cocos2d:mobile` | 使用Cocos Creator 3.8.6构建2D横屏手机Web Release包 |

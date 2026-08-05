@@ -117,6 +117,22 @@ Mobile Debug构建对应`npm run build:cocos3d:mobile:debug`。
 手机端当前控制方式是左下虚拟摇杆、右侧单指环视、双指捏合缩放、点击地面寻路和动态门按钮；
 桌面端仍使用键鼠。手机Web和桌面Web共用同一份协议、SDK和公网LoginMgr配置。
 
+正式外网发布推荐使用下面的一次性命令：
+
+```powershell
+npm run build:cocos3d:external
+```
+
+命令会重新构建两个目标并整理为：
+
+```text
+client_demo/cocos_client3D_3.8.8/build/external/desktop/  -> Nginx网站根路径 /
+client_demo/cocos_client3D_3.8.8/build/external/m/        -> Nginx网站 /m/
+```
+
+不要把`m`目录部署到根路径；根路径必须使用桌面`web-desktop`包，只有`/m/`使用
+`web-mobile + landscape`横屏包。`manifest.json`记录这两个固定映射，可作为上传前检查依据。
+
 Cocos 2D使用同样的规则：`npm run build:cocos2d:web`或`npm run build:cocos2d:mobile`。
 对应的Debug命令是`build:cocos2d:web:debug`和`build:cocos2d:mobile:debug`。
 编辑器内预览仍直接打开对应工程并点击Preview；预览使用`tiangz-local.json`，发布包使用

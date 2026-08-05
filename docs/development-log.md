@@ -7,6 +7,12 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-05：固化Cocos3D外网双入口发布
+
+- 保留桌面`web-desktop`和手机`web-mobile + landscape`两个独立构建，不让移动横屏配置污染网站根路径。
+- 新增`npm run build:cocos3d:external`：每次外网发布都重新构建两个目标，并整理为`build/external/desktop`（网站`/`）和`build/external/m`（网站`/m/`），同时生成`manifest.json`记录目标和路径。
+- 根路径必须部署桌面目录，`/m/`必须部署移动目录；两者不能互换。验证重点从“文件存在”扩展为检查两个包的`src/settings.json.engine.platform`分别为`web-desktop`和`web-mobile`。
+
 ## 2026-08-05：区分游戏配置启动包与在线候选
 
 - 定位到一个容易误用的流程：Excel和`game_config/generated`已经更新，但`npm run build:game-config`只生成`dist/game-config-candidates/<指纹>`，不会覆盖服务器启动读取的`dist/game-config`，因此重启后仍可能使用旧数值。

@@ -1,0 +1,30 @@
+# TiangZ Cocos3D 双入口示例。
+# Example Nginx layout for the TiangZ Cocos3D desktop and mobile entry points.
+#
+# 上传前先执行 npm run build:cocos3d:external，然后：
+#   build/external/desktop/* -> /var/www/tiangz-cocos3d/desktop/
+#   build/external/m/*       -> /var/www/tiangz-cocos3d/m/
+
+server {
+    listen 80;
+    server_name _;
+
+    # /m 没有尾斜杠时统一跳到 /m/，保证相对资源路径稳定。
+    # Normalize /m to /m/ so the mobile bundle keeps its relative asset paths.
+    location = /m {
+        return 301 /m/;
+    }
+
+    # Mobile Web is the only landscape entry point.
+    location ^~ /m/ {
+        rewrite ^/m/(.*)$ /$1 break;
+        root /var/www/tiangz-cocos3d/m;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Desktop Web stays at the normal root entry point.
+    location / {
+        root /var/www/tiangz-cocos3d/desktop;
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -396,7 +396,7 @@ Phase 5计划：
 10. 新业务状态写Model，生命周期和行为写`@systemFor`；不要恢复Model方法空壳，也不要在每次方法调用前查System Registry。
 11. Component拥有的子对象只能由所属Component维护集合和业务修改；不要从Handler直接操作Native Ref，也不要把每条Quest或Achievement机械地做成Entity。
 12. TiangZ主工程及配套VS Code插件仓库的提交标题默认使用中文；代码标识、命令、版本号和专有名词可保留原文。
-13. 外网演示使用`configs/deploy/external-2process/StartMachine.json`和Cocos3D资源配置；登录与Gate独立于地图世界Process，两个Process共享`known-scenes.json`。Cocos3D编辑器预览通过`PREVIEW`自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`；非预览发布包读取`tiangz-external.json`连接公网LoginMgr，不能把两种环境地址手工混用。旧的`external-all-in-one.json`只用于单Process回归。当用户说“部署到外网测试机”时，必须重新构建并上传前端、后端，更新Nginx并重启外网服务。凭据只存在运行环境，不能写入仓库。
+13. 外网演示使用`configs/deploy/external-2process/StartMachine.json`和Cocos3D资源配置；登录与Gate独立于地图世界Process，两个Process共享`known-scenes.json`。Cocos3D编辑器预览通过`PREVIEW`自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`；非预览发布包读取`tiangz-external.json`连接公网LoginMgr，不能把两种环境地址手工混用。外网Cocos3D发布使用`npm run build:cocos3d:external`：`build/external/desktop`只部署到根路径`/`，`build/external/m`只部署到`/m/`，后者是唯一横屏移动入口。旧的`external-all-in-one.json`只用于单Process回归。当用户说“部署到外网测试机”时，必须重新构建并上传前端、后端，更新Nginx并重启外网服务。凭据只存在运行环境，不能写入仓库。
 14. 外网发布只上传Linux Release发布包，不上传`src`、Cargo工程、`node_modules`或`target`。Runtime优先从当前发布目录或可执行文件邻级目录寻找`dist`与`configs`，不能依赖编译机的`CARGO_MANIFEST_DIR`。
 15. Linux正式发布统一使用`npm run release:linux`和固定镜像`tiangz-linux-builder:ubuntu-24.04`。镜像是工具/依赖底座，不含业务源码；普通TS、Rust、Excel变化只复制源码并完整运行Luban、codegen与Release编译。只有依赖锁、Rust工具链、Luban或Builder定义变化才重建镜像，Linux Cargo中间产物由`tiangz-linux-builder-target`命名卷复用。
 

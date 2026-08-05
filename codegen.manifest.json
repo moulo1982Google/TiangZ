@@ -375,7 +375,7 @@
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
         "native_data/demo/MapOps.native": "db869f154cd0e146c06cd0f8ccb6e5f32db97359233aeb15ff1a2e2cf561b4bc",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
-        "package.json": "268676dbcbbbb76f8dbd5cc0f77b6d068adb54935cb00574cc239b7120f78847",
+        "package.json": "da113ba8c825c3a294c98ec2b186bf74ffadb052b0eda726ce728aeb0f545987",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -487,7 +487,7 @@
         "app/model/bench/scenes/MailboxParityScene.ts": "a206284533535d0f98460b4cf818c772ef230dda94603bf6eaae96a60eade7ab",
         "app/model/demo/broadcast/MapClientRouteResolver.ts": "f97d5d2e4fa35f9a9b4bbc2b7bfab3e2ab2c916a683aa75f14034e56e9654a81",
         "app/model/demo/broadcast/SceneBroadcastTransport.ts": "38d1d716c59bb7e3bd01d26618f09be011d28cf8cfac94a9a88af6a3343a6fad",
-        "app/model/demo/combat/CombatComponent.ts": "56f24fb75a0c139802a8b5079c74b34465fe8c146bd1051050de934b2d2875d9",
+        "app/model/demo/combat/CombatComponent.ts": "48e9627fb5435c61823add792bd3f71723ba9bdbfd5419fc1645a13f4174607c",
         "app/model/demo/gate/GatePlayerRoute.ts": "1498b9f1143b55ef9ece615727715b68874feeeef83c535680704cfd45595ac7",
         "app/model/demo/gate/GateSession.ts": "7853f529d92e0dc8ffd611e8690114ff59dafd08f79f93545db7531638ea4cdc",
         "app/model/demo/item/Item.ts": "bf7d77f0f747b4b31f33753d8a44f43c804195317fb9ba8f230d03eb5919f01f",

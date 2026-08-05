@@ -12,3 +12,21 @@
 旧的 `external-all-in-one.json` 保留为单 Process 回归配置，不作为 2C2G 外网默认部署。
 
 systemd 托管 Watcher 时，必须保持顶层标准输入打开；Watcher 将标准输入 EOF 解释为“父进程已消失”并主动停机。外网服务使用`tail -f /dev/null | exec ... StartMachine.json`作为启动包装，并设置`KillMode=control-group`，保证停止服务时Watcher及两个子Process一起退出。
+
+## Cocos3D双入口
+
+外网前端必须把桌面版和手机横屏版当作两个独立入口。推荐在主工程根目录执行：
+
+```powershell
+npm run build:cocos3d:external
+```
+
+命令会重新构建两个目标，并整理为：
+
+```text
+client_demo/cocos_client3D_3.8.8/build/external/desktop/  -> Nginx根路径 /
+client_demo/cocos_client3D_3.8.8/build/external/m/        -> Nginx路径 /m/
+```
+
+根路径只能部署`desktop`，`/m/`只能部署`m`。前者的产物平台是`web-desktop`，后者的产物平台是
+`web-mobile`并固定横屏；命令还会生成`manifest.json`，用于上传前检查映射是否正确。

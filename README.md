@@ -146,8 +146,13 @@ Creator 版本、清除 `ELECTRON_RUN_AS_NODE`、清理标准输出目录并检�
 ```powershell
 npm run build:cocos3d:web
 npm run build:cocos3d:mobile
+npm run build:cocos3d:external
 npm run check:cocos-build
 ```
+
+外网发布使用`npm run build:cocos3d:external`，它会把桌面版整理到
+`client_demo/cocos_client3D_3.8.8/build/external/desktop`（网站根路径`/`），把横屏移动版整理到
+`build/external/m`（网站`/m/`）。根路径不能使用移动包；只有`/m/`使用`web-mobile`横屏构建。
 
 2D 工程对应 `npm run build:cocos2d:web` 和 `npm run build:cocos2d:mobile`。编辑器预览仍使用
 本地配置，发布包再使用外网配置。需要 Debug 包时，在对应命令后增加 `:debug`，例如

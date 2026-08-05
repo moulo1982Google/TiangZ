@@ -1,0 +1,158 @@
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const projectPath = path.join(root, "client_demo/cocos_client3D_3.8.8");
+const buildRoot = path.join(projectPath, "build");
+const options = parseOptions(process.argv.slice(2));
+const outputRoot = options.output
+  ? path.resolve(root, options.output)
+  : path.join(buildRoot, "external");
+
+assertInsideBuild(buildRoot, outputRoot);
+assertNotSourceOutput(outputRoot);
+if (!existsSync(projectPath)) fail(`Cocos3D工程不存在: ${projectPath}`);
+
+// 外网包必须从两个独立目标重新构建，避免把上一次的移动包误发布到根路径。
+// External packages always rebuild both targets so a stale mobile bundle cannot replace the desktop root.
+rmSync(outputRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+await runCocosBuild("web");
+await runCocosBuild("mobile");
+
+const desktopSource = path.join(buildRoot, "standard-web");
+const mobileSource = path.join(buildRoot, "standard-mobile");
+validateBundle(desktopSource, "web-desktop", "桌面根路径");
+validateBundle(mobileSource, "web-mobile", "手机 /m/ 路径");
+
+const desktopOutput = path.join(outputRoot, "desktop");
+const mobileOutput = path.join(outputRoot, "m");
+mkdirSync(outputRoot, { recursive: true });
+cpSync(desktopSource, desktopOutput, { recursive: true, force: true });
+cpSync(mobileSource, mobileOutput, { recursive: true, force: true });
+
+const manifest = {
+  version: 1,
+  mode: options.mode,
+  routes: {
+    "/": { directory: "desktop", target: "web", platform: "web-desktop" },
+    "/m/": { directory: "m", target: "mobile", platform: "web-mobile", orientation: "landscape" },
+  },
+};
+writeFileSync(path.join(outputRoot, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+console.log(`[cocos-external] root /  <- ${desktopOutput}`);
+console.log(`[cocos-external] mobile /m/ <- ${mobileOutput}`);
+console.log(`[cocos-external] manifest=${path.join(outputRoot, "manifest.json")}`);
+
+function parseOptions(args) {
+  const values = { mode: "release" };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--help" || arg === "-h") {
+      printHelp();
+      process.exit(0);
+    }
+    const [key, inlineValue] = arg.split("=", 2);
+    if (!["--mode", "--creator", "--output"].includes(key)) fail(`未知参数: ${arg}`);
+    const value = inlineValue ?? args[++index];
+    if (!value) fail(`参数缺少值: ${key}`);
+    if (key === "--mode") values.mode = value;
+    if (key === "--creator") values.creator = value;
+    if (key === "--output") values.output = value;
+  }
+  if (values.mode !== "debug" && values.mode !== "release") {
+    fail(`未知构建模式: ${values.mode}，可选值为 debug、release`);
+  }
+  return values;
+}
+
+function printHelp() {
+  console.log(`用法：
+  node tools/build_cocos_external.mjs [选项]
+
+选项：
+  --mode <debug|release>  两个入口使用同一种构建模式，默认 release
+  --creator <path>        覆盖 CocosCreator.exe 路径
+  --output <path>         外网整理包输出目录，必须位于 Cocos 工程的 build/ 下
+  --help                  显示帮助
+
+输出：
+  <output>/desktop/       根路径 /，web-desktop，桌面版
+  <output>/m/             /m/，web-mobile，横屏移动版
+  <output>/manifest.json  发布路径和目标校验信息`);
+}
+
+function runCocosBuild(target) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      path.join(root, "tools/build_cocos.mjs"),
+      "--project",
+      "3d",
+      "--target",
+      target,
+      "--mode",
+      options.mode,
+    ];
+    if (options.creator) args.push("--creator", path.resolve(root, options.creator));
+
+    const env = { ...process.env };
+    // Cocos Creator 是 Electron 应用；不能把它当成 Node CLI 启动。
+    // Cocos Creator is an Electron app; never let it inherit Node CLI mode.
+    delete env.ELECTRON_RUN_AS_NODE;
+    console.log(`[cocos-external] build target=${target} mode=${options.mode}`);
+    const child = spawn(process.execPath, args, {
+      cwd: root,
+      env,
+      stdio: "inherit",
+      windowsHide: true,
+    });
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (signal) reject(new Error(`Cocos Creator 构建被信号终止: ${signal}`));
+      else if (code === 0) resolve();
+      else reject(new Error(`Cocos Creator 构建失败 target=${target} code=${code ?? 1}`));
+    });
+  });
+}
+
+function validateBundle(directory, expectedPlatform, description) {
+  const required = ["index.html", "application.js", "assets"];
+  if (!required.every((name) => existsSync(path.join(directory, name)))) {
+    fail(`${description}产物不完整: ${directory}`);
+  }
+  const settingsPath = path.join(directory, "src/settings.json");
+  if (!existsSync(settingsPath)) fail(`${description}缺少src/settings.json: ${directory}`);
+  let settings;
+  try {
+    settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+  } catch (error) {
+    fail(`${description}的settings.json无法解析: ${error.message}`);
+  }
+  if (settings.engine?.platform !== expectedPlatform) {
+    fail(`${description}平台错误，期望${expectedPlatform}，实际${settings.engine?.platform ?? "<missing>"}`);
+  }
+}
+
+function assertInsideBuild(buildDirectory, outputDirectory) {
+  const relative = path.relative(path.resolve(buildDirectory), path.resolve(outputDirectory));
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    fail(`外网整理包必须位于Cocos工程的build子目录中: ${outputDirectory}`);
+  }
+}
+
+function assertNotSourceOutput(outputDirectory) {
+  for (const source of [path.join(buildRoot, "standard-web"), path.join(buildRoot, "standard-mobile")]) {
+    const relative = path.relative(path.resolve(source), path.resolve(outputDirectory));
+    if (!relative || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+      fail(`外网整理包不能覆盖标准构建目录: ${outputDirectory}`);
+    }
+  }
+}
+
+function fail(message) {
+  console.error(`[cocos-external] ${message}`);
+  process.exit(1);
+}

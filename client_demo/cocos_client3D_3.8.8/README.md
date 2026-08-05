@@ -18,6 +18,9 @@ npm run build:cocos3d:web
 
 # 手机横屏 Web Release
 npm run build:cocos3d:mobile
+
+# 外网双入口 Release：一次构建桌面根路径和手机 /m/ 路径
+npm run build:cocos3d:external
 ```
 
 输出分别是：
@@ -26,6 +29,20 @@ npm run build:cocos3d:mobile
 build/standard-web/
 build/standard-mobile/
 ```
+
+外网发布使用统一命令后，还会整理出不会混淆路径的目录：
+
+```text
+build/external/desktop/  -> 网站根路径 /
+build/external/m/        -> 网站 /m/，仅此入口使用横屏移动版
+build/external/manifest.json
+```
+
+`standard-web`始终是`web-desktop`，根路径保持桌面版正常布局；`standard-mobile`始终是
+`web-mobile`并传入`landscape`，不能把`build/external/m`的内容复制到网站根目录。
+
+手机包会自动加入`viewport-fit=cover`、安全区适配、PWA manifest，以及支持Fullscreen API的浏览器首次触摸沉浸模式。
+普通iOS Safari不允许网页强制隐藏地址栏；要获得真正的无浏览器抬头体验，需要在Safari中选择“添加到主屏幕”，再从主屏幕启动`/m/`。
 
 Debug 构建只使用带 `:debug` 后缀的 npm 命令。统一脚本会固定 Creator 3.8.8、清除
 `ELECTRON_RUN_AS_NODE`、清理自己的标准输出目录，并检查 `index.html`、`application.js`

@@ -877,7 +877,7 @@ C2M_AttackMonsterHandler
 业务开发不应把公网IP、云主机密码或部署机器的内网地址写进业务代码。外网2C2G演示使用`configs/deploy/external-2process/StartMachine.json`，由Watcher启动登录/Gate Process和世界Process；外网入口由部署配置的`outerIp/outerPort`提供。Cocos3D编辑器预览自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`，只有非预览发布包读取`tiangz-external.json`；不要为了本机调试修改公网配置文件。
 客户端只配置LoginMgr公网地址；LoginMgr再返回Login公网地址，Login再返回Gate公网地址。MapHost、Location和MapManager保持内网路由。
 
-当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web、上传并重启服务，然后按页面、LoginMgr、Login、Gate的顺序验收。
+当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web、上传并重启服务，然后按页面、LoginMgr、Login、Gate的顺序验收。Cocos3D前端使用`npm run build:cocos3d:external`一次生成两个入口：`build/external/desktop`部署到根路径`/`，`build/external/m`部署到`/m/`；根路径只能使用桌面`web-desktop`包，横屏`web-mobile`包只能放在`/m/`。
 不要只看Nginx页面能打开就判断网络链路完成；云安全组必须放行实际的WebSocket入口端口。
 
 后端正式发布使用本机Docker的Linux构建环境生成`linux-amd64` Release制品。外网机器只接收可执行文件、`dist`、`configs`、导航资源、版本信息和校验文件，不接收源码、Cargo工程、Node依赖或构建缓存。Runtime会从当前发布目录解析资源，因此制品可以从构建机复制到任意部署路径。

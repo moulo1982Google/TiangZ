@@ -125,6 +125,7 @@
     "build:cocos3d:web:debug": "node tools/build_cocos.mjs --project 3d --target web --mode debug",
     "build:cocos3d:mobile": "node tools/build_cocos.mjs --project 3d --target mobile",
     "build:cocos3d:mobile:debug": "node tools/build_cocos.mjs --project 3d --target mobile --mode debug",
+    "build:cocos3d:external": "node tools/build_cocos_external.mjs",
     "check:cocos-build": "node tools/build_cocos.mjs --project 3d --target web --dry-run",
     "build:pixi": "npm run codegen && esbuild client_demo/pixi_client_8.19.0/src/main.ts --bundle --platform=browser --format=esm --target=es2022 --sourcemap --outfile=client_demo/pixi_client_8.19.0/dist/app.js",
     "serve:pixi": "node tools/serve_pixi.mjs",

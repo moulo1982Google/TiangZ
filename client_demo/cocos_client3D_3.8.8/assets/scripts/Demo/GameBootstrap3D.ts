@@ -158,7 +158,9 @@ export class GameBootstrap3D extends Component {
   private mobileJoystickKnob?: HTMLElement;
   private mobileCameraSurface?: HTMLElement;
   private mobileActionButton?: HTMLButtonElement;
+  private mobileAttackButton?: HTMLButtonElement;
   private mobileStyleElement?: HTMLStyleElement;
+  private mobileLeftHudElement?: HTMLElement;
   private mobileInstructionsElement?: HTMLElement;
   private mobilePingElement?: HTMLElement;
   private selectedMonsterElement?: HTMLElement;
@@ -265,14 +267,18 @@ export class GameBootstrap3D extends Component {
     this.mobileControlsElement = undefined;
     this.mobileStyleElement?.remove();
     this.mobileStyleElement = undefined;
+    this.mobileLeftHudElement?.remove();
+    this.mobileLeftHudElement = undefined;
     this.mobileInstructionsElement?.remove();
     this.mobilePingElement?.remove();
+    this.playerStatsPanel?.remove();
     this.autoAttackPanel?.remove();
     for (const effect of this.attackSlashEffects) effect.node.destroy();
     this.attackSlashEffects.length = 0;
     this.selectedMonsterElement?.remove();
     this.mobileInstructionsElement = undefined;
     this.mobilePingElement = undefined;
+    this.playerStatsPanel = undefined;
     this.autoAttackPanel = undefined;
     this.autoAttackLabel = undefined;
     this.autoAttackProgress = undefined;
@@ -437,7 +443,7 @@ export class GameBootstrap3D extends Component {
     panel.style.pointerEvents = "none";
 
     const label = document.createElement("div");
-    label.textContent = "平A：未激活（按1开启）";
+    label.textContent = "平A：未激活（按1/点击“攻”开启）";
     panel.appendChild(label);
     this.autoAttackLabel = label;
 
@@ -483,9 +489,18 @@ export class GameBootstrap3D extends Component {
 
   /** 创建手机端固定说明和网络延迟显示；桌面端通过CSS隐藏，不污染桌面HUD。 / Creates fixed mobile instructions and latency display; CSS hides them on desktop. */
   private buildMobileHud(document: Document): void {
+    // 移动端左侧HUD使用一个真实容器统一排版，避免不同设备的CSS像素和安全区计算造成重叠。
+    // Mobile left HUD uses one real container so CSS-pixel and safe-area differences cannot make panels overlap.
+    const leftHud = document.createElement("div");
+    leftHud.className = "cocos3d-mobile-left-hud";
+    leftHud.style.display = "contents";
+    leftHud.style.pointerEvents = "none";
+    document.body.appendChild(leftHud);
+    this.mobileLeftHudElement = leftHud;
+
     const instructions = document.createElement("div");
     instructions.className = "cocos3d-mobile-instructions";
-    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面：寻路\n键盘1：切换平A";
+    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面：寻路\n点击“攻”：切换平A";
     instructions.style.position = "fixed";
     instructions.style.left = "max(10px, 2vw)";
     instructions.style.top = "max(10px, 2vh)";
@@ -498,8 +513,10 @@ export class GameBootstrap3D extends Component {
     instructions.style.font = "13px/1.4 system-ui, sans-serif";
     instructions.style.whiteSpace = "pre-line";
     instructions.style.pointerEvents = "none";
-    document.body.appendChild(instructions);
+    leftHud.appendChild(instructions);
     this.mobileInstructionsElement = instructions;
+    if (this.playerStatsPanel) leftHud.appendChild(this.playerStatsPanel);
+    if (this.autoAttackPanel) leftHud.appendChild(this.autoAttackPanel);
 
     const ping = document.createElement("div");
     ping.className = "cocos3d-mobile-ping";
@@ -527,13 +544,29 @@ export class GameBootstrap3D extends Component {
     if (this.mobilePingElement) this.mobilePingElement.textContent = `Gate Ping: ${sample.latencyMs} ms`;
   }
 
+  /** 根据服务端确认的平A状态刷新移动端按钮；按钮只是输入，不参与本地战斗判定。 / Updates the mobile button from the server-confirmed auto-attack state; the button never resolves combat locally. */
+  private updateMobileAttackButton(): void {
+    const button = this.mobileAttackButton;
+    if (!button) return;
+    button.setAttribute("aria-pressed", String(this.autoAttackEnabled));
+    button.style.background = this.autoAttackEnabled
+      ? "rgba(190, 124, 38, 0.92)"
+      : "rgba(16, 31, 35, 0.72)";
+    button.style.borderColor = this.autoAttackEnabled
+      ? "rgba(255, 221, 132, 0.95)"
+      : "rgba(225, 245, 238, 0.65)";
+    button.style.boxShadow = this.autoAttackEnabled
+      ? "0 0 0 3px rgba(255, 196, 72, 0.22)"
+      : "none";
+  }
+
   /** 根据最近一次Ping的时钟偏差绘制读条；服务器才决定命中，客户端只做平滑显示。 / Draws the swing from the latest Ping clock offset; the server still decides every hit. */
   private updateAutoAttackHud(): void {
     const label = this.autoAttackLabel;
     const progress = this.autoAttackProgress;
     if (!label || !progress) return;
     if (!this.autoAttackEnabled) {
-      label.textContent = "平A：未激活（按1开启）";
+      label.textContent = "平A：未激活（按1/点击“攻”开启）";
       progress.style.width = "0%";
       return;
     }
@@ -594,7 +627,7 @@ export class GameBootstrap3D extends Component {
     joystick.style.position = "absolute";
     joystick.style.zIndex = "2";
     joystick.style.left = "max(18px, 4vw)";
-    joystick.style.bottom = "max(22px, 5vh)";
+    joystick.style.bottom = "calc(env(safe-area-inset-bottom, 0px) + max(22px, 5vh))";
     joystick.style.width = "clamp(112px, 32vw, 156px)";
     joystick.style.height = "clamp(112px, 32vw, 156px)";
     joystick.style.border = "2px solid rgba(225, 245, 238, 0.55)";
@@ -685,105 +718,174 @@ export class GameBootstrap3D extends Component {
     this.mobileJoystickElement = joystick;
     this.mobileJoystickKnob = knob;
 
-    const actionButton = document.createElement("button");
-    actionButton.type = "button";
-    actionButton.textContent = "门";
-    actionButton.setAttribute("aria-label", "开关动态门");
-    actionButton.style.position = "absolute";
-    actionButton.style.zIndex = "2";
-    actionButton.style.right = "max(18px, 4vw)";
-    actionButton.style.bottom = "max(24px, 6vh)";
-    actionButton.style.width = "52px";
-    actionButton.style.height = "52px";
-    actionButton.style.border = "1px solid rgba(225, 245, 238, 0.65)";
-    actionButton.style.borderRadius = "50%";
-    actionButton.style.color = "#edf7f3";
-    actionButton.style.background = "rgba(16, 31, 35, 0.72)";
-    actionButton.style.font = "600 16px system-ui, sans-serif";
-    actionButton.style.pointerEvents = "auto";
-    actionButton.style.touchAction = "none";
-    let actionPointerHandled = false;
-    actionButton.addEventListener("pointerdown", (event) => {
-      if (event.pointerType === "touch") return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      this.mobileControlPointerIds.add(event.pointerId);
-      actionPointerHandled = false;
-    });
-    actionButton.addEventListener("pointermove", (event) => {
-      if (event.pointerType === "touch") return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    });
-    actionButton.addEventListener("pointerup", (event) => {
-      if (event.pointerType === "touch") return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      this.mobileControlPointerIds.delete(event.pointerId);
-      actionPointerHandled = true;
-      void this.toggleDemoDoor();
-    });
-    actionButton.addEventListener("pointercancel", (event) => {
-      if (event.pointerType === "touch") return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      this.mobileControlPointerIds.delete(event.pointerId);
-      actionPointerHandled = false;
-    });
-    actionButton.addEventListener("touchstart", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.add(touch.identifier);
-      actionPointerHandled = false;
-    }, { passive: false });
-    actionButton.addEventListener("touchmove", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    }, { passive: false });
-    actionButton.addEventListener("touchend", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.delete(touch.identifier);
-      actionPointerHandled = true;
-      void this.toggleDemoDoor();
-    }, { passive: false });
-    actionButton.addEventListener("touchcancel", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.delete(touch.identifier);
-      actionPointerHandled = false;
-    }, { passive: false });
-    actionButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!actionPointerHandled) void this.toggleDemoDoor();
-      actionPointerHandled = false;
-    });
+    const createActionButton = (label: string, ariaLabel: string, bottom: string): HTMLButtonElement => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.setAttribute("aria-label", ariaLabel);
+      button.style.position = "absolute";
+      button.style.zIndex = "2";
+      button.style.right = "max(18px, 4vw)";
+      button.style.bottom = bottom;
+      button.style.width = "52px";
+      button.style.height = "52px";
+      button.style.border = "1px solid rgba(225, 245, 238, 0.65)";
+      button.style.borderRadius = "50%";
+      button.style.color = "#edf7f3";
+      button.style.background = "rgba(16, 31, 35, 0.72)";
+      button.style.font = "600 16px system-ui, sans-serif";
+      button.style.pointerEvents = "auto";
+      button.style.touchAction = "none";
+      return button;
+    };
+
+    // 两个按钮共用同一套触摸/鼠标防重复逻辑，避免一次触摸同时触发 touchend 和 click。
+    // Both buttons share the same pointer de-duplication so one touch cannot trigger touchend and click twice.
+    const bindActionButton = (button: HTMLButtonElement, action: () => void | Promise<void>): void => {
+      let pointerHandled = false;
+      button.addEventListener("pointerdown", (event) => {
+        if (event.pointerType === "touch") return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.mobileControlPointerIds.add(event.pointerId);
+        pointerHandled = false;
+      });
+      button.addEventListener("pointermove", (event) => {
+        if (event.pointerType === "touch") return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      });
+      button.addEventListener("pointerup", (event) => {
+        if (event.pointerType === "touch") return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.mobileControlPointerIds.delete(event.pointerId);
+        pointerHandled = true;
+        void action();
+      });
+      button.addEventListener("pointercancel", (event) => {
+        if (event.pointerType === "touch") return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        this.mobileControlPointerIds.delete(event.pointerId);
+        pointerHandled = false;
+      });
+      button.addEventListener("touchstart", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.add(touch.identifier);
+        pointerHandled = false;
+      }, { passive: false });
+      button.addEventListener("touchmove", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      }, { passive: false });
+      button.addEventListener("touchend", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.delete(touch.identifier);
+        pointerHandled = true;
+        void action();
+      }, { passive: false });
+      button.addEventListener("touchcancel", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.delete(touch.identifier);
+        pointerHandled = false;
+      }, { passive: false });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!pointerHandled) void action();
+        pointerHandled = false;
+      });
+    };
+
+    const mobileActionBottom = "calc(env(safe-area-inset-bottom, 0px) + max(24px, 6vh))";
+    const attackButton = createActionButton("攻", "切换自动攻击", `calc(${mobileActionBottom} + 66px)`);
+    bindActionButton(attackButton, () => this.toggleAutoAttack());
+    controls.appendChild(attackButton);
+    this.mobileAttackButton = attackButton;
+    this.updateMobileAttackButton();
+
+    const actionButton = createActionButton("门", "开关动态门", mobileActionBottom);
+    bindActionButton(actionButton, () => this.toggleDemoDoor());
     controls.appendChild(actionButton);
     this.mobileActionButton = actionButton;
 
     const style = document.createElement("style");
     style.textContent = `
       .cocos3d-mobile-controls { display: none; }
+      .cocos3d-mobile-left-hud { display: contents; }
       .cocos3d-mobile-instructions, .cocos3d-mobile-ping { display: none; }
-      @media (max-width: 900px), (pointer: coarse) {
+      @media (max-width: 900px), (pointer: coarse), (display-mode: standalone) {
         .cocos3d-mobile-controls { display: block; }
-        .cocos3d-mobile-instructions, .cocos3d-mobile-ping { display: block; }
-        .cocos3d-status {
-          left: max(10px, 2vw) !important;
-          top: max(126px, 18vh) !important;
-          max-width: calc(100vw - 20px) !important;
-          padding: 7px 10px !important;
-          font-size: clamp(12px, 3.2vw, 15px) !important;
-          line-height: 1.35 !important;
+        .cocos3d-status { display: none !important; }
+        .cocos3d-mobile-left-hud {
+          display: flex;
+          position: fixed;
+          z-index: 10002;
+          left: calc(env(safe-area-inset-left, 0px) + 12px);
+          top: calc(env(safe-area-inset-top, 0px) + 10px);
+          width: min(330px, calc(100vw - 32px));
+          max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 180px);
+          box-sizing: border-box;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 8px;
+          overflow-y: auto;
+          pointer-events: none;
+        }
+        .cocos3d-mobile-left-hud > .cocos3d-mobile-instructions,
+        .cocos3d-mobile-left-hud > .cocos3d-player-stats-hud,
+        .cocos3d-mobile-left-hud > .cocos3d-auto-attack-hud {
+          position: static !important;
+          inset: auto !important;
+          left: auto !important;
+          top: auto !important;
+          right: auto !important;
+          bottom: auto !important;
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          box-sizing: border-box !important;
+          flex: 0 0 auto;
+        }
+        .cocos3d-mobile-instructions {
+          display: block;
+          padding: 7px 9px !important;
+          font: 12px/1.32 system-ui, sans-serif !important;
+          box-sizing: border-box !important;
+        }
+        .cocos3d-mobile-ping {
+          display: block;
+          right: calc(env(safe-area-inset-right, 0px) + 12px) !important;
+          top: calc(env(safe-area-inset-top, 0px) + 10px) !important;
+          padding: 7px 9px !important;
+          font: 600 12px/1.32 system-ui, sans-serif !important;
+        }
+        .cocos3d-selected-monster-hud {
+          right: calc(env(safe-area-inset-right, 0px) + 12px) !important;
+          top: calc(env(safe-area-inset-top, 0px) + 66px) !important;
+          width: min(260px, calc(100vw - 32px)) !important;
+          padding: 7px 9px !important;
+          font: 13px/1.3 system-ui, sans-serif !important;
+        }
+        .cocos3d-player-stats-hud {
+          padding: 7px 9px !important;
+          font: 12px/1.22 system-ui, sans-serif !important;
+        }
+        .cocos3d-auto-attack-hud {
+          padding: 7px 9px !important;
+          font: 12px/1.22 system-ui, sans-serif !important;
         }
       }
       @media (orientation: portrait) and (max-width: 900px) {
@@ -892,8 +994,7 @@ export class GameBootstrap3D extends Component {
       this.mobileCameraMoved = false;
     }
     if (wasTap) {
-      const location = this.mobileScreenPoint(event.clientX, event.clientY);
-      void this.queryPathAtScreen(location.x, location.y);
+      this.handleMobileTap(event.clientX, event.clientY);
     }
   }
 
@@ -983,8 +1084,7 @@ export class GameBootstrap3D extends Component {
       this.mobileCameraMoved = false;
     }
     if (wasTap && changed[0]) {
-      const location = this.mobileScreenPoint(changed[0].clientX, changed[0].clientY);
-      void this.queryPathAtScreen(location.x, location.y);
+      this.handleMobileTap(changed[0].clientX, changed[0].clientY);
     }
   }
 
@@ -1013,6 +1113,17 @@ export class GameBootstrap3D extends Component {
       x: (clientX - rect.left) * canvas.width / rect.width,
       y: (rect.bottom - clientY) * canvas.height / rect.height,
     };
+  }
+
+  /** 处理移动端轻触：先尝试选择可见怪物，只有未命中实体时才提交地面寻路。 / Handles a mobile tap by selecting a visible monster first, and only navigating on a ground miss. */
+  private handleMobileTap(clientX: number, clientY: number): void {
+    const location = this.mobileScreenPoint(clientX, clientY);
+    const monster = this.pickMonsterAtScreen(location.x, location.y);
+    if (monster) {
+      this.selectMonster(monster);
+      return;
+    }
+    void this.queryPathAtScreen(location.x, location.y);
   }
 
   /** 完成通用SDK登录并核对冷配置指纹；失败后保留灰盒供编辑器检查。 / Logs in through the shared SDK and validates the cold-config fingerprint while leaving the graybox inspectable on failure. */
@@ -1212,6 +1323,7 @@ export class GameBootstrap3D extends Component {
     this.autoAttackPhase = message.phase;
     this.autoAttackSwingStartAtMs = nextSwingStartAtMs;
     this.autoAttackSwingIntervalMs = Math.max(1, message.swingIntervalMs);
+    this.updateMobileAttackButton();
   }
 
   /** 创建一次纯表现刀光；命中、伤害和目标有效性仍由服务端决定。 / Creates a presentation-only slash; hit, damage, and target validity remain server-authoritative. */

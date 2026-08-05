@@ -81,6 +81,7 @@
 - 外网桌面资源部署到 `/var/www/tiangz-cocos3d/desktop`，网址为 `/`；手机资源部署到 `/var/www/tiangz-cocos3d/m`，网址为 `/m/`。
 - 外网后端只上传 Linux Release 制品，不上传源码、Cargo 工程、`node_modules` 或 `target`；运行目录为 `/opt/tiangz-external`。
 - 用户说“部署到外网测试机”时，默认重新生成代码、构建后端 Release、构建 Cocos3D Web、上传并复验 Nginx 和登录链路；凭据不能写入仓库或日志。
+- 外网Cocos3D双入口使用`npm run build:cocos3d:external`：`build/external/desktop`部署网站根路径`/`，必须保持`web-desktop`桌面布局；`build/external/m`部署`/m/`，由`web-mobile + landscape`生成，是唯一横屏移动入口。不要把移动包复制到根路径，也不要让根路径和`/m/`共用同一份构建目录。
 
 ## 当前状态与待办
 

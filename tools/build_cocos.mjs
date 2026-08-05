@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -110,6 +110,7 @@ if (exitCode !== 0 && exitCode !== 36) {
 if (exitCode === 36) {
   console.warn(`[cocos-build] Creator 返回 code=${exitCode}，但完整产物已通过校验，按构建成功处理。`);
 }
+if (options.target === "mobile") configureMobileWebOutput(outputPath, indexPath);
 console.log(`[cocos-build] complete: ${indexPath}`);
 
 function parseOptions(args) {
@@ -200,6 +201,66 @@ function normalizePlatformOutput(outputDirectory, platform) {
     renameSync(source, destination);
   }
   rmSync(nested, { recursive: true, force: true });
+}
+
+/**
+ * 补齐移动Web的安全区、PWA和可选全屏能力；普通iOS Safari仍不能被网页强制隐藏地址栏。
+ * Adds mobile-Web safe-area, PWA, and optional fullscreen support; normal iOS Safari still cannot hide its browser chrome by force.
+ */
+function configureMobileWebOutput(outputDirectory, indexPath) {
+  let html = readFileSync(indexPath, "utf8");
+  html = html.replace(
+    /<meta name="viewport"[\s\S]*?\/>/,
+    '<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">',
+  );
+  if (!html.includes('rel="manifest"')) {
+    html = html.replace(
+      "</head>",
+      [
+        '  <meta name="theme-color" content="#0d1619">',
+        '  <meta name="apple-mobile-web-app-title" content="TiangZ Cocos3D">',
+        '  <link rel="manifest" href="manifest.webmanifest">',
+        "",
+        "  <!-- 支持Fullscreen API的浏览器在首次触摸后进入沉浸式；iOS Safari会安全地忽略。 -->",
+        "  <!-- Browsers with Fullscreen API enter immersive mode after the first touch; iOS Safari safely ignores it. -->",
+        "  <script>",
+        "    (() => {",
+        "      let attempted = false;",
+        "      const requestImmersive = () => {",
+        "        if (attempted) return;",
+        "        attempted = true;",
+        "        const root = document.documentElement;",
+        "        if (document.fullscreenElement || typeof root.requestFullscreen !== 'function') return;",
+        "        try {",
+        "          const result = root.requestFullscreen({ navigationUI: 'hide' });",
+        "          if (result && typeof result.catch === 'function') result.catch(() => {});",
+        "        } catch (_) {",
+        "          // iOS Safari and embedded WebViews may reject Fullscreen API; gameplay must continue normally.",
+        "        }",
+        "      };",
+        "      window.addEventListener('pointerup', requestImmersive, { passive: true });",
+        "      window.addEventListener('touchend', requestImmersive, { passive: true });",
+        "    })();",
+        "  </script>",
+        "</head>",
+      ].join("\n"),
+    );
+  }
+  writeFileSync(indexPath, html, "utf8");
+  writeFileSync(
+    path.join(outputDirectory, "manifest.webmanifest"),
+    `${JSON.stringify({
+      name: "TiangZ Cocos3D",
+      short_name: "TiangZ",
+      start_url: "./",
+      scope: "./",
+      display: "standalone",
+      orientation: "landscape",
+      background_color: "#0d1619",
+      theme_color: "#0d1619",
+    }, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 function run(command, args, env) {
