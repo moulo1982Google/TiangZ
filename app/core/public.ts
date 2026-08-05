@@ -178,4 +178,11 @@ export type {
 } from "./runtime/types";
 export { Unit, UnitComponent } from "./runtime/Unit";
 export { Session, SessionComponent } from "./runtime/Session";
-export type { IFrameFlush, ILateUpdate, IUpdate } from "./runtime/UpdateSystem";
+export type {
+  IFrameFlush,
+  ILateUpdate,
+  IUpdate,
+  IUpdate10Hz,
+  IUpdate5Hz,
+  IUpdate1Hz,
+} from "./runtime/UpdateSystem";

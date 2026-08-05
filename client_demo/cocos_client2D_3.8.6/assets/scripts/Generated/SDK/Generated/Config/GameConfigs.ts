@@ -141,9 +141,12 @@ const RAW_DATA: Record<string, unknown> = {
     {
       "id": 1,
       "initial_map_id": 1,
-      "initial_hp": 100,
+      "initial_hp": 1000,
       "max_hp": 1000,
-      "move_speed": 10
+      "move_speed": 10,
+      "max_mp": 100,
+      "initial_mp": 100,
+      "attack_range": 2.5
     }
   ]
 };
@@ -186,7 +189,7 @@ export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 export type MonsterConfig = game.MonsterConfig;
 
-export const GameConfigFingerprint = "03aa7d6e48713503cd367fe2b68c8ac5c1dfb617fdea3f27068717fd580a5b55";
+export const GameConfigFingerprint = "9deeb04c33a0e99841c88330ab909d70a1bc15ce89b50fdeca739a359194ebd6";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),

@@ -869,12 +869,13 @@ function parseBroadcastDescriptors(messages) {
       throw new Error(`${message.name} broadcast mode must be event or latest`);
     }
     const methodName = message.method ?? defaultMessageMethodName(message.name);
-    if (mode === "event" && !message.broadcast.items) {
+    if (!message.broadcast.items) {
       descriptors.push({
         serviceName: message.protocol,
         methodName,
         messageType: message.name,
         itemType: message.name,
+        keyFields: mode === "latest" ? [] : undefined,
         mode,
       });
       continue;
@@ -1525,7 +1526,9 @@ function emitBroadcastDescriptors(protocol, outputDir, runtimeFiles) {
         : `(items) => items[0]`;
       const keyExpression = descriptor.keyFields?.length === 1
         ? `item.${descriptor.keyFields[0]}`
-        : `\`${descriptor.keyFields?.map((field) => `\${item.${field}}`).join(":")}\``;
+        : descriptor.keyFields && descriptor.keyFields.length > 1
+          ? `\`${descriptor.keyFields.map((field) => `\${item.${field}}`).join(":")}\``
+          : '"__single__"';
       const key = descriptor.mode === "latest"
         ? `\n    keyOf: (item) => ${keyExpression},`
         : "";

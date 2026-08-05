@@ -399,8 +399,13 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
     if (player.initialHp < 0 || player.maxHp <= 0 || player.initialHp > player.maxHp) {
       throw new Error(\`player config \${player.id} has invalid hp values\`);
     }
-    if (player.moveSpeed <= 0 || player.initialItemCount < 0) {
-      throw new Error(\`player config \${player.id} has invalid movement or item values\`);
+    if (
+      player.moveSpeed <= 0 ||
+      player.initialItemCount < 0 ||
+      player.attackRange <= 0 ||
+      player.attackRange > 4
+    ) {
+      throw new Error(\`player config \${player.id} has invalid movement, combat, or item values\`);
     }
   }
   for (const monster of snapshot.MonsterConfig.GetAll()) {
@@ -409,9 +414,11 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       monster.attackDamage < 0 ||
       monster.moveSpeed <= 0 ||
       monster.attackRange <= 0 ||
-      monster.attackRange > 2 ||
+      monster.attackRange > 4 ||
       !Number.isSafeInteger(monster.attackIntervalMs) ||
       monster.attackIntervalMs <= 0 ||
+      !Number.isSafeInteger(monster.respawnSeconds) ||
+      monster.respawnSeconds < 0 ||
       (monster.attackMode !== 0 && monster.attackMode !== 1) ||
       monster.skillId < 0
     ) {
@@ -424,10 +431,7 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
     }
     if (
       ![area.spawnX, area.spawnY, area.spawnZ, area.spawnYaw].every(Number.isFinite) ||
-      !Number.isSafeInteger(area.respawnSeconds) ||
-      area.respawnSeconds < 0 ||
-      !Number.isSafeInteger(area.corpseLifetimeSeconds) ||
-      area.corpseLifetimeSeconds < 0
+      typeof area.initialSpawn !== "boolean"
     ) {
       throw new Error(\`monster spawn slot \${area.id} has invalid spatial or lifecycle values\`);
     }

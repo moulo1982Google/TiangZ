@@ -7,6 +7,71 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-05：区分游戏配置启动包与在线候选
+
+- 定位到一个容易误用的流程：Excel和`game_config/generated`已经更新，但`npm run build:game-config`只生成`dist/game-config-candidates/<指纹>`，不会覆盖服务器启动读取的`dist/game-config`，因此重启后仍可能使用旧数值。
+- 新增`npm run build:game-config:startup`，它会先运行Luban，再以`--initial`原子更新`dist/game-config`；修改配置后准备重启服务器时使用这个命令。
+- 保留`npm run build:game-config`作为在线热重载流程；`npm run test:game-config`只验证生成物和指纹，不负责复制运行时启动包。构建工具输出现在会明确标记`startup`或`hot-reload-candidate`模式。
+
+## 2026-08-05：补齐主动怪战斗下的玩家HP/MP HUD
+
+- 明确演示语义：`MonsterConfig.attack_mode=1`的主动怪不仅追击，还会在攻击距离内按最终`NumericType.Attack`扣除玩家`CurrentHp`；被动怪仍不会主动寻找玩家。此前这件事没有向开发者解释清楚，现补入AI手册和怪物教程。
+- `PlayerConfig.xlsx`新增`max_mp`和`initial_mp`，玩家创建时与HP一样写入`NumericType.MaxMpBase/CurrentMp`；Numeric仍由Rust维护，TS只传入初始化字典。
+- Cocos3D新增红色HP、蓝色MP进度条；UE、Unity、Godot新增玩家HP/MP HUD。三套客户端都从进入快照和`G2C_EntityNumeric`更新，不复制服务器伤害逻辑；玩家死亡后HP保持为0，便于观察权威状态。
+- 已验证：`npm run build`、`npm run typecheck`、`npm run typecheck:cocos3d-demo`、`node tools/check_godot_demo.mjs`通过。
+
+## 2026-08-05：统一怪物仇恨和独立近战距离
+
+- 被动怪不再因为“收到攻击事件”直接追击；玩家造成的实际伤害按1:1写入该怪物的运行时仇恨表，主动怪和被动怪都由5Hz桶选择范围内仇恨最高的玩家。没有仇恨时，只有`attack_mode=1`的主动怪会自动寻找最近玩家。
+- `MonsterComponent.AddThreat`成为伤害、技能和未来嘲讽规则的统一扩展入口；当前普通攻击在扣除怪物HP后调用它，0伤害不产生仇恨，Unit死亡或离图时运行态随MonsterUnit销毁。
+- `PlayerConfig.xlsx`新增独立`attack_range`，`MonsterConfig.attack_range`统一调整为2.5米；攻击距离不属于Numeric链式属性，玩家和怪物的战斗判定分别读取各自配置。
+- Cocos3D修复初始AOI快照中本地Unit被当作远端忽略的问题，并增加玩家世界头顶HP/MP条；左侧面板和世界条都只消费服务端Numeric快照/增量。
+- 验证：`npm run build:ts`、`npm run build:game-config:initial`、`node tools/smoke_runtime.mjs --mode all`通过；冒烟确认怪物死亡后等待10秒创建新的UnitId并恢复100点HP，自动平A连续结算未因仇恨逻辑中断。
+
+## 2026-08-05：验证自动平A连续计时
+
+- 排查“平A打四五次后停止”时确认：玩家平A由地图`Update10Hz()`统一推进，不是每个玩家一个Timer；正常命中后会以当前服务器时间开启下一轮读条。
+- 修正冒烟客户端对Grid移动停止语义的误判：停止输入只阻止下一格，不取消已经开始的当前Cell移动；测试现在会等待当前Cell完成后再开启平A。
+- `node tools/smoke_runtime.mjs --mode all`真实走登录、Gate、Map、Numeric和广播链路，连续观察到怪物HP `95 -> 90 -> 85 -> 80 -> 75 -> 70`，第6次仍正常结算。若实际客户端仍停止，应优先检查目标是否死亡、离开`PlayerConfig.attack_range`、离开前方120度、玩家是否死亡或客户端是否发送了关闭/移动输入。
+- 平A状态协议改为`latest`可覆盖广播，并增加单频道覆盖回归测试；不可逆命中事实仍保持`event`语义。
+- 补充玩家死亡分支：死亡玩家不再静默跳过平A状态，而是由10Hz桶显式推送`Inactive`，避免客户端进度条冻结在最后一次读条。
+
+## 2026-08-05：Numeric创建参数改为类型字典
+
+- `NumericInitialValues`从逐字段接口收敛为`Partial<Record<NumericType, bigint>>`。`AddComponent(NumericComponent, values)`现在直接接受按`NumericType`索引的初始化字典，新增普通Numeric或`Base/Add/Pct`来源不再需要修改一组重复的参数字段。
+- `NumericComponentSystem.Awake`不再维护逐字段默认表，只遍历创建者传入的字典；玩家、怪物和NPC的默认值由各自创建流程提供，普通属性未传入时由Rust保持为`0`。普通属性和来源属性允许写入，`MaxHp`、`MaxMp`、`Attack`等Rust链式计算结果禁止直接初始化，错误NumericType、派生结果或非`bigint`会立即报错。
+- 玩家和怪物创建样例统一使用计算属性键；怪物的`MaxMpBase`和`CurrentMp`仍由配置驱动，最终`MaxMp`由Rust计算。`npm run codegen`、`npm run verify:codegen`、`npm run typecheck`、`npm run test:monster-behavior`和`npm run test:game-config`通过。
+
+## 2026-08-05：统一AttackSpeed与MoveSpeed数值单位
+
+- `NumericType`补齐`AttackSpeed`和`MoveSpeed`的`Base/Add/Pct`链，修正`CurrentHp`与`CurrentMp`的重复编号；所有Numeric仍使用Rust侧`i64`和TS侧`bigint`。
+- `MonsterConfig.attack_interval_ms`只在怪物创建/复活时写入`AttackSpeedAdd`，怪物AI读取最终`AttackSpeed`；玩家平A也从自己的Numeric读取最终攻击间隔，客户端使用服务端下发的读条间隔。
+- `MoveSpeed`统一采用米制世界速度：配置表填写米/秒，Numeric按毫米/秒整数保存。Grid2D跨Cell耗时纳入`cell_size_meters`，避免Cell大小变化偷偷改变角色实际速度；旧协议字段名暂时保留兼容。
+
+## 2026-08-05：收敛怪物Numeric、攻击与死亡复活语义
+
+- `MonsterConfig.xlsx`现在统一提供`max_hp`和`respawn_seconds`，两个演示怪物的最大生命值均为100；`MonsterAreaConfig.xlsx`只保留刷点空间信息和`initial_spawn`，移除尸体保留时间与刷点级复活时间。
+- 创建怪物时把最大生命值写入Numeric的`MaxHpBase`（Rust自动得到只读`MaxHp`），同时写入`CurrentHp`和配置攻击力的`AttackBase`；玩家创建时默认写入`NumericType.AttackBase = 5n`，由Rust推导只读`Attack=2000`。普通攻击统一读取攻击者的最终Numeric.Attack，当前不加入Armor，伤害是多少就扣多少CurrentHp。
+- 删除Numeric内置的100ms回血Timer和Bench对它的特殊停止调用。回血、Buff等周期规则必须由具体业务Component显式拥有。
+- 怪物死亡会先`Detach`并发布AOI Leave，再`Remove`旧MonsterUnit；Map只保留`AreaId`刷怪槽和复活时间。到模板复活时间后按同一刷怪槽创建新的MonsterUnit，分配新的UnitId并通过AOI Enter发送完整快照。`AreaId`代表出生位置，`UnitId`代表一次实体生命周期，二者不能混用；Cocos3D的旧表现随Leave销毁，新表现随Enter创建。
+- 验证：`npm run codegen:game-config`、`npm run codegen:scenes`、`npm run codegen:client-sdk`、`npm run codegen:client-handlers`、`npm run typecheck`、`npm run typecheck:cocos3d-demo`、`npm run check:project`、`npm run test:game-config`、`npm run test:actor`、`npm run test:monster-behavior`和`npm run build:client`通过；重建`dist/model.js`、`dist/hotfix.js`和`dist/smoke_client.cjs`后，`node tools/smoke_runtime.mjs --mode all`确认旧UnitId收到AOI Leave，新UnitId在10秒后以100 HP进入视野。
+
+## 2026-08-05：修复玩家最终下线时的 Actor 自销毁竞态
+
+- 原因：`G2M_PlayerOffline`是在`PlayerUnit`自己的ordered mailbox中执行的；旧流程在保存后立即`RemovePlayer`，同步调用`DespawnActor`销毁当前Actor。Handler返回时运行时发现当前Actor已经不存在，于是报`actor despawned during mailbox execution`，Gate因此误记录为玩家下线失败。
+- 修复：最终下线先完成玩家保存和Location移除，再返回`PlayerOffline`响应；`MapComponent`用一个共享的零延迟Timer批量完成AOI离开、Unit索引移除和Actor销毁。地图停机/批量清理仍使用原有的地图清理顺序，不为每个玩家创建长期Timer。
+- 验证：`npm run typecheck`、`npm run build:ts`、`npm run verify:comments`、`cargo build --locked --bin TiangZ`通过；`node tools/smoke_runtime.mjs --mode all --gate-timeout-only`通过，Gate超时下线后可重新创建玩家，未再出现Actor自销毁错误。完整npm冒烟包装因本机Cocos编辑器占用生成文件而未执行，已用直接Runtime smoke覆盖同一链路。
+
+## 2026-08-04：固定更新桶与玩家自动平A最小闭环
+
+- `UpdateSystem`保留已有`Update()`作为20Hz入口，新增固定的`Update10Hz()`、`Update5Hz()`和`Update1Hz()`集合。调度器按20Hz帧计数分桶，不允许业务填写任意Hz，也不为每个玩家创建更新目标；`npm run test:game-update`新增分桶频率断言并通过。
+- 新增Model `CombatComponent`和Hotfix `CombatComponentSystem`。它只保存`Inactive/Waiting/Swinging`状态，不保存不可迁移的读条Timer，也不把平A状态放进地图Transfer快照。
+- 新增`C2M_ToggleAutoAttack`、`M2C_ToggleAutoAttack`和`G2C_AutoAttackState`协议。Handler只转发到`PlayerUnit.ToggleAutoAttack`，地图10Hz桶统一检查存活、同地图、`PlayerConfig.attack_range`和前方120度；离开条件保留自动攻击意图但清零读条，重新满足后从零开始。
+- 怪物系统拆分为5Hz主动AI和1Hz尸体/重生维护；20Hz移动和帧尾Numeric同步边界不变。命中仍由`MonsterComponent.Attack`完成，Rust Numeric继续是权威数据源。
+- Cocos3D增加键盘`1`切换最近可见怪物的自动平A、独立Push Handler、状态标签和服务端时钟驱动的读条条。客户端读条只用于表现，不决定命中。
+- 协议、TypeScript、Cocos3D、Cocos2D协议SDK、Pixi、Godot、UE、Unity和C++制品均重新生成。通过`npm run typecheck`、`npm run typecheck:cocos3d-demo`、`npm run typecheck:cocos-net`、`npm run typecheck:pixi`、`npm run typecheck:cocos-demo`、`npm run check:godot-demo`、`npm run verify:codegen`、`npm run test:protocol-locks`、`npm run verify:comments`和`npm run verify:core-api`。
+- 设计细节见[固定更新桶与自动平A设计](design/auto-attack-and-fixed-update.md)和[怪物模块教程](tutorials/16-monster-module.md)。该条记录当时仍未实现技能、Buff、仇恨、掉落和角色/怪物动态避障；统一仇恨已在后续的2026-08-05记录中补齐。
+
 ## 2026-08-04：固化 Cocos Creator Web 构建流程
 
 - 新增`tools/build_cocos.mjs`，统一Cocos 2D/3D的桌面Web与横屏Mobile Web构建入口；工程版本分别固定到Creator 3.8.6和3.8.8。
@@ -497,5 +562,5 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 ## 2026-08-04：怪物基础行为树与两米普通攻击
 
 - 怪物AI在`app/hotfix/demo/monster/MonsterBehaviorTree.ts`增加局部行为树，仅包含待机、追击、攻击和攻击冷却停留；它不提供通用AI编辑器，不创建MonsterActor、长期Timer或独立V8。
-- `MonsterComponentSystem`继续负责目标查询、导航意图、攻击间隔、Numeric扣血和死亡；行为树只选择动作。玩家与怪物普通攻击距离统一限制为最大2米，配置值可以更小但不能超过2米。
+- `MonsterComponentSystem`继续负责目标查询、导航意图、攻击间隔、Numeric扣血和死亡；行为树只选择动作。该历史版本的玩家与怪物普通攻击距离统一限制为最大2米，后续已改为分别读取`PlayerConfig.attack_range`和`MonsterConfig.attack_range`。
 - 没有新增技能、Buff、仇恨表、巡逻路点、战斗事件协议或Rust业务模块；新增纯逻辑自测`npm run test:monster-behavior`。

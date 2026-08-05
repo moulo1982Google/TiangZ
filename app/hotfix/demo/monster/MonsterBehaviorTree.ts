@@ -66,9 +66,13 @@ class SelectorNode implements BehaviorNode {
 }
 
 /**
- * 怪物模块专用的小行为树：主动怪有目标时攻击或追击，否则待机。
- * This small tree is private to the monster module: an aggro monster attacks or chases a target,
- * and otherwise stays idle. It is intentionally not a general AI framework.
+ * 怪物模块专用的小行为树：只要上游按规则选出了目标，就攻击或追击，否则待机。
+ * 目标可能来自主动索敌，也可能来自仇恨表；行为树不关心“为何选中”，避免被动怪被受击事件直接绑死。
+ *
+ * This small tree is private to the monster module: once the caller has selected
+ * a target, it attacks or chases; otherwise it stays idle. The target may come
+ * from active acquisition or threat, so the tree does not hard-code a "was hit"
+ * reaction and is intentionally not a general AI framework.
  */
 export class MonsterBehaviorTree {
   private readonly root: BehaviorNode = new SelectorNode([

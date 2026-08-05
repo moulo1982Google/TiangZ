@@ -1,36 +1,35 @@
 import {
   AllNumericTypes,
-  GameConfigs,
   IsDerivedNumericType,
   NativeOps,
   NativeUnitRef,
   NumericComponent,
+  NUMERIC_MOVE_SPEED_SCALE,
+  PositionComponent,
   type NumericInitialValues,
   NumericType,
   type NumericTypeValue,
-  PlayerUnit,
   type Unit,
   type UnitNumericDelta,
   type ITransfer,
   systemFor,
 } from "#tiangz/model";
 
-/** 承载Numeric初始化、索引访问和演示回血规则；Rust句柄状态保留在Model。 / Hosts Numeric initialization, indexed access, and demo regeneration while Model retains the Rust handle state. */
+/** 承载Numeric初始化和索引访问；Rust保存权威值，业务规则只通过Numeric读写。 / Hosts Numeric initialization and indexed access; Rust owns values while business rules use Numeric reads and writes. */
 @systemFor(NumericComponent)
 export class NumericComponentSystem extends NumericComponent implements ITransfer<readonly UnitNumericDelta[]> {
-  /** 挂载Rust Numeric存储并创建按方法名分发的长期Timer。 / Attaches Rust Numeric storage and creates a method-dispatched long-lived timer. */
+  /** 挂载Rust Numeric存储并写入基础默认值；不在组件内部偷偷创建回血Timer。 / Attaches Rust Numeric storage and writes defaults without creating a hidden regeneration timer. */
   protected override Awake(initial: NumericInitialValues = {}): void {
     const unit = this.GetParent<Unit<any[]>>();
     this.unitHandle = unit.GetComponent(NativeUnitRef).Handle;
     NativeOps.NumericAttach(this.unitHandle);
     this.installIndexAccessors();
-    const config = GameConfigs.PlayerConfig.Get(1);
-    this[NumericType.MaxHpBase] = initial.maxHpBase ?? BigInt(config.maxHp);
-    this[NumericType.MaxHpAdd] = initial.maxHpAdd ?? 0n;
-    this[NumericType.MaxHpPct] = initial.maxHpPct ?? 0n;
-    this[NumericType.CurrentHp] = initial.currentHp ?? BigInt(config.initialHp);
-    const regenerateHp = initial.regenerateHp ?? unit instanceof PlayerUnit;
-    if (regenerateHp) this.regenerationTimer = this.NewRepeatedTimer(100, "RegenerateHp");
+    this.validateInitialValues(initial);
+    for (const type of AllNumericTypes) {
+      const value = initial[type];
+      if (value !== undefined) this[type] = value;
+    }
+    this.syncMoveSpeedToPosition();
   }
 
   /** 通过生成的fast op无损读取一个权威i64数值。 / Losslessly reads one authoritative i64 value through the generated fast op. */
@@ -41,6 +40,7 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
   /** 在Rust中写入数值，并将NumericType标脏供帧尾同步。 / Writes one value in Rust and marks that NumericType dirty for frame-end replication. */
   Set(type: NumericTypeValue, value: bigint): void {
     NativeOps.NumericSet(this.unitHandle, type, value);
+    if (isMoveSpeedType(type)) this.syncMoveSpeedToPosition();
   }
 
   /** 构造Numeric全量快照；常规脏同步必须使用Peek/Ack。 / Builds a full Numeric snapshot; routine dirty replication must use Peek/Ack instead. */
@@ -66,21 +66,8 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
     }
   }
 
-  /** Timer每100ms调用当前generation的方法，使热更后不重建Timer也能切换规则。 / Lets the timer invoke the current generation every 100ms so behavior changes without rebuilding the timer. */
-  protected RegenerateHp(): void {
-    this[NumericType.CurrentHp] += 1n;
-  }
-
-  /** 主动停止Demo回血Timer；幂等调用不会影响组件的其他Timer。 / Stops only the demo regeneration timer and remains idempotent. */
-  StopRegeneration(): void {
-    if (this.regenerationTimer === 0) return;
-    this.CancelTimer(this.regenerationTimer, "manual");
-    this.regenerationTimer = 0 as typeof this.regenerationTimer;
-  }
-
-  /** Core取消组件Timer后解除Numeric存储挂载。 / Detaches Numeric storage after Core cancels Component timers. */
+  /** Core销毁组件时解除Numeric存储挂载；数值规则不依赖隐藏Timer。 / Detaches Numeric storage during component destruction; numeric rules do not depend on hidden timers. */
   protected override OnDestroy(): void {
-    this.regenerationTimer = 0 as typeof this.regenerationTimer;
     NativeOps.NumericDetach(this.unitHandle);
     this.unitHandle = 0;
   }
@@ -95,4 +82,46 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
       });
     }
   }
+
+  /**
+   * 校验创建字典，尽早暴露拼写错误、错误类型和直接写派生结果的问题。
+   * Validates creation overrides so typos, wrong value types, and direct writes
+   * to derived results fail before any Numeric value is changed.
+   */
+  private validateInitialValues(initial: NumericInitialValues): void {
+    for (const [rawType, value] of Object.entries(initial)) {
+      const type = Number(rawType);
+      if (!Number.isInteger(type) || !AllNumericTypes.includes(type as NumericTypeValue)) {
+        throw new Error(`Unknown NumericType in initial values: ${rawType}`);
+      }
+      if (IsDerivedNumericType(type)) {
+        throw new Error(`Derived NumericType cannot be initialized directly: ${type}`);
+      }
+      if (typeof value !== "bigint") {
+        throw new Error(`Numeric initial value must be bigint: type=${type}`);
+      }
+    }
+  }
+
+  /** 把Numeric的毫米/秒结果同步到Rust移动字段；只有业务修改MoveSpeed时才调用，不在每个Update逐字段读取。 / Synchronizes the millimeters-per-second result into Rust movement state only after MoveSpeed changes, never by per-field reads in Update. */
+  private syncMoveSpeedToPosition(): void {
+    const unit = this.GetParent<Unit<any[]>>();
+    if (!unit.HasComponent(PositionComponent)) return;
+    const numericValue = this.Get(NumericType.MoveSpeed);
+    if (numericValue <= 0n) {
+      throw new Error(`MoveSpeed must be positive for positioned unit: ${numericValue}`);
+    }
+    const metersPerSecond = Number(numericValue) / NUMERIC_MOVE_SPEED_SCALE;
+    if (!Number.isFinite(metersPerSecond) || metersPerSecond <= 0) {
+      throw new Error(`MoveSpeed is outside the supported numeric range: ${numericValue}`);
+    }
+    unit.GetComponent(PositionComponent).SpeedMetersPerSecond = metersPerSecond;
+  }
+}
+
+function isMoveSpeedType(type: NumericTypeValue): boolean {
+  return type === NumericType.MoveSpeed ||
+    type === NumericType.MoveSpeedBase ||
+    type === NumericType.MoveSpeedAdd ||
+    type === NumericType.MoveSpeedPct;
 }

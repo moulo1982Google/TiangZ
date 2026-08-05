@@ -25,6 +25,7 @@ import type {
   G2M_PlayerOffline,
   G2M_SecondEnterMap,
   G2M_TransferPlayer,
+  G2C_AutoAttackState,
   G2C_DemoDoorState,
   ItemSnapshot,
   KickPlayerTarget,
@@ -51,7 +52,9 @@ import {
   type NativeVec3,
 } from "../native/NativeData";
 import { NumericComponent } from "../numeric/NumericComponent";
+import { MoveSpeedMetersPerSecondToNumeric, NumericType } from "../numeric/NumericType";
 import { ItemComponent } from "../item/ItemComponent";
+import { CombatComponent, type AutoAttackState } from "../combat/CombatComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import { LocationProxy } from "../location/LocationProxy";
 import type { PlayerRepository } from "../persistence/PlayerRepository";
@@ -141,6 +144,8 @@ export class MapComponent extends Component<[
   }>();
   private pendingSpatialMovement: EncodedRouteBroadcast | undefined;
   private readonly pendingPlayerEntries: PendingPlayerEntry[] = [];
+  private readonly pendingOfflineCleanup = new Map<number, PlayerUnit>();
+  private offlineCleanupScheduled = false;
   private readonly pendingInitialSnapshots = new Map<number, {
     readonly actorInstanceId: number;
     readonly entities: readonly MapEntitySnapshot[];
@@ -313,6 +318,30 @@ export class MapComponent extends Component<[
       audience,
       ClientBroadcasts.DemoDoorState,
       { closed: this.demoDoorClosed } satisfies G2C_DemoDoorState,
+      this.serverTick,
+    );
+  }
+
+  /**
+   * 向玩家本人发布平A状态；这是可覆盖状态，客户端根据服务器时间绘制当前读条。
+   * 平A不属于跨地图Transfer快照，传送或重连后的玩家默认需要重新激活。
+   *
+   * Publishes replaceable auto-attack state to the owner. The client renders
+   * progress from server time. Auto-attack is intentionally excluded from
+   * transfer snapshots, so a transfer or reconnect must activate it again.
+   */
+  async PublishAutoAttackState(unit: PlayerUnit, state: AutoAttackState): Promise<void> {
+    this.requirePlayer(unit);
+    await this.clientBroadcast.Publish(
+      ClientAudience.Self(unit.UnitId),
+      ClientBroadcasts.AutoAttackState,
+      {
+        enabled: state.enabled,
+        targetUnitId: state.targetUnitId,
+        phase: state.phase,
+        swingStartAtMs: BigInt(Math.max(0, Math.floor(state.swingStartAtMs))),
+        swingIntervalMs: state.swingIntervalMs,
+      } satisfies G2C_AutoAttackState,
       this.serverTick,
     );
   }
@@ -632,9 +661,19 @@ export class MapComponent extends Component<[
         if (!projected) throw new Error(`map ${this.mapId} spawn is outside NavMesh`);
         position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, yaw);
       }
-      position.SpeedCellsPerSecond = playerConfig.moveSpeed;
-      player.AddComponent(NumericComponent);
+      position.SpeedMetersPerSecond = playerConfig.moveSpeed;
+      player.AddComponent(NumericComponent, {
+        [NumericType.CurrentHp]: BigInt(playerConfig.initialHp),
+        [NumericType.MaxHpBase]: BigInt(playerConfig.maxHp),
+        [NumericType.CurrentMp]: BigInt(playerConfig.initialMp),
+        [NumericType.MaxMpBase]: BigInt(playerConfig.maxMp),
+        [NumericType.AttackBase]: 5n,
+        [NumericType.AttackSpeedAdd]: 2_000n,
+        [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(playerConfig.moveSpeed),
+      });
       player.AddComponent(ItemComponent);
+      // 平A状态不随地图传送恢复，目标地图创建新的默认CombatComponent。 / Auto-attack is not transferred; the target map gets a fresh default component.
+      player.AddComponent(CombatComponent);
       player.AddComponent(PlayerPersistenceComponent, this.repository);
       player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
@@ -957,7 +996,16 @@ export class MapComponent extends Component<[
     };
   }
 
-  /** Gate确认重连宽限期结束后，持久化并移除玩家，再广播AOI离开。 / Persists and removes a player after Gate confirms reconnect grace expiry, then broadcasts AOI leave. */
+  /**
+   * Gate确认重连宽限期结束后先完成保存与Location移除，再排队清理Unit。
+   * 当前调用位于PlayerUnit自己的mailbox时，不能在RPC返回前销毁自己；下一次Timer Update
+   * 会完成AOI离开和Actor销毁，避免运行时把正常下线误判为mailbox执行失败。
+   *
+   * Persists the player and removes its Location entry after Gate confirms the
+   * reconnect grace period, then queues Unit cleanup. Because this call runs in
+   * the PlayerUnit mailbox, self-destruction must wait until the RPC has returned;
+   * the next timer update performs AOI leave and Actor disposal.
+   */
   async PlayerOffline(
     unit: PlayerUnit,
     message: G2M_PlayerOffline,
@@ -983,7 +1031,8 @@ export class MapComponent extends Component<[
       };
     }
 
-    await this.OfflinePlayerAndBroadcast(unit, message.reason || "client-timeout");
+    await this.MarkPlayerOffline(unit, message.reason || "client-timeout");
+    this.ScheduleOfflineCleanup(unit);
     this.logger.info("player left map after Gate timeout", {
       account: message.account,
       unitId: message.unitId,
@@ -1155,6 +1204,16 @@ export class MapComponent extends Component<[
     unit: PlayerUnit,
     reason: string,
   ): Promise<void> {
+    await this.MarkPlayerOffline(unit, reason);
+    const changes = this.RemovePlayer(unit);
+    await this.PublishAoiChanges(changes);
+  }
+
+  /** 持久化并删除Location中的玩家记录，但不触碰当前正在执行的Unit Actor。 / Persists the player and removes its Location record without touching the currently executing Unit Actor. */
+  private async MarkPlayerOffline(
+    unit: PlayerUnit,
+    reason: string,
+  ): Promise<void> {
     this.requirePlayer(unit);
     const located = await this.location.Resolve({ unitId: unit.UnitId, account: "" });
     if (!located.found || located.location.actorInstanceId !== unit.InstanceId) {
@@ -1168,16 +1227,53 @@ export class MapComponent extends Component<[
       operationId,
       state: "removing",
     });
+    const unitId = unit.UnitId;
     try {
       await unit.Offline(reason);
+      await this.location.Remove({ unitId, operationId });
     } catch (error) {
       await this.location.Unlock({ unitId: unit.UnitId, operationId }).catch(() => undefined);
       throw error;
     }
-    const unitId = unit.UnitId;
-    await this.location.Remove({ unitId, operationId });
-    const changes = this.RemovePlayer(unit);
-    await this.PublishAoiChanges(changes);
+  }
+
+  /**
+   * 延迟销毁已完成最终下线的PlayerUnit，保证Unit RPC先返回再进入DespawnActor。
+   * 每帧只安排一个批量清理定时器，避免每个断线玩家都创建长期Timer。
+   *
+   * Defers disposal of a fully offlined PlayerUnit until its Unit RPC has
+   * returned. One batch timer is shared by all pending players, so disconnect
+   * bursts do not create one long-lived timer per player.
+   */
+  private ScheduleOfflineCleanup(unit: PlayerUnit): void {
+    this.pendingOfflineCleanup.set(unit.UnitId, unit);
+    if (this.offlineCleanupScheduled) return;
+    this.offlineCleanupScheduled = true;
+    this.NewOnceTimer(0, "FlushOfflineCleanup");
+  }
+
+  /** 定时器阶段执行AOI离开、Unit索引移除和最终广播。 / Performs AOI leave, Unit removal, and final broadcast from the timer phase. */
+  protected FlushOfflineCleanup(): void {
+    this.offlineCleanupScheduled = false;
+    for (const unit of this.pendingOfflineCleanup.values()) {
+      this.pendingOfflineCleanup.delete(unit.UnitId);
+      if (this.units.Get<PlayerUnit>(unit.UnitId) !== unit) continue;
+      try {
+        const changes = this.RemovePlayer(unit);
+        void this.PublishAoiChanges(changes).catch((error) => {
+          this.logger.error("offline player AOI publish failed", {
+            unitId: unit.UnitId,
+            error,
+          });
+        });
+      } catch (error) {
+        this.logger.error("offline player cleanup failed", {
+          unitId: unit.UnitId,
+          actorInstanceId: unit.InstanceId,
+          error,
+        });
+      }
+    }
   }
 
   private RemovePlayer(unit: PlayerUnit): readonly AoiVisibilityDelta[] {
@@ -1236,6 +1332,7 @@ export class MapComponent extends Component<[
   protected override OnDestroy(): void {
     const error = new Error(`map ${this.mapInstanceId} disposed before player entry`);
     for (const pending of this.pendingPlayerEntries.splice(0)) pending.reject(error);
+    this.pendingOfflineCleanup.clear();
     this.pendingInitialSnapshots.clear();
     this.broadcast.Dispose();
   }

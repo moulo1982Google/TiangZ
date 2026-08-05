@@ -62,7 +62,7 @@ interface GameConfigSnapshot {
   readonly MonsterAreaConfig: ConfigTable<game.MonsterAreaConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "af6124242ff6f4b24a1c7cffc63c06dc3a5934211b85b932a5d5e6d340ad4930";
+export const GameConfigSchemaFingerprint = "72e8d835e710f7db780ad6ae13d22acd0fca3f8ea9162d7deb9a9212e15037d9";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -228,8 +228,13 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
     if (player.initialHp < 0 || player.maxHp <= 0 || player.initialHp > player.maxHp) {
       throw new Error(`player config ${player.id} has invalid hp values`);
     }
-    if (player.moveSpeed <= 0 || player.initialItemCount < 0) {
-      throw new Error(`player config ${player.id} has invalid movement or item values`);
+    if (
+      player.moveSpeed <= 0 ||
+      player.initialItemCount < 0 ||
+      player.attackRange <= 0 ||
+      player.attackRange > 4
+    ) {
+      throw new Error(`player config ${player.id} has invalid movement, combat, or item values`);
     }
   }
   for (const monster of snapshot.MonsterConfig.GetAll()) {
@@ -238,9 +243,11 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       monster.attackDamage < 0 ||
       monster.moveSpeed <= 0 ||
       monster.attackRange <= 0 ||
-      monster.attackRange > 2 ||
+      monster.attackRange > 4 ||
       !Number.isSafeInteger(monster.attackIntervalMs) ||
       monster.attackIntervalMs <= 0 ||
+      !Number.isSafeInteger(monster.respawnSeconds) ||
+      monster.respawnSeconds < 0 ||
       (monster.attackMode !== 0 && monster.attackMode !== 1) ||
       monster.skillId < 0
     ) {
@@ -253,10 +260,7 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
     }
     if (
       ![area.spawnX, area.spawnY, area.spawnZ, area.spawnYaw].every(Number.isFinite) ||
-      !Number.isSafeInteger(area.respawnSeconds) ||
-      area.respawnSeconds < 0 ||
-      !Number.isSafeInteger(area.corpseLifetimeSeconds) ||
-      area.corpseLifetimeSeconds < 0
+      typeof area.initialSpawn !== "boolean"
     ) {
       throw new Error(`monster spawn slot ${area.id} has invalid spatial or lifecycle values`);
     }

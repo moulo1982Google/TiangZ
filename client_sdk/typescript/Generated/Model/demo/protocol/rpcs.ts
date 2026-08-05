@@ -19,6 +19,8 @@ import {
   C2M_NavigateInputCodec,
   C2M_NavigateTo,
   C2M_NavigateToCodec,
+  C2M_ToggleAutoAttack,
+  C2M_ToggleAutoAttackCodec,
   C2M_ToggleDemoDoor,
   C2M_ToggleDemoDoorCodec,
   C2M_UseItem,
@@ -45,6 +47,8 @@ import {
   M2C_NavigateInputCodec,
   M2C_NavigateTo,
   M2C_NavigateToCodec,
+  M2C_ToggleAutoAttack,
+  M2C_ToggleAutoAttackCodec,
   M2C_ToggleDemoDoor,
   M2C_ToggleDemoDoorCodec,
   M2C_UseItem,
@@ -164,6 +168,14 @@ export const MapProtocol = {
     responseCodec: M2C_AttackMonsterCodec,
     routing: "actor-location",
   }),
+  ToggleAutoAttack: defineRpc<C2M_ToggleAutoAttack, M2C_ToggleAutoAttack>({
+    name: "Map.ToggleAutoAttack",
+    requestCode: MsgCode.C2M_ToggleAutoAttack,
+    responseCode: MsgCode.M2C_ToggleAutoAttack,
+    requestCodec: C2M_ToggleAutoAttackCodec,
+    responseCodec: M2C_ToggleAutoAttackCodec,
+    routing: "actor-location",
+  }),
 };
 
 export const AllRpcDescriptors = [
@@ -179,5 +191,6 @@ export const AllRpcDescriptors = [
   MapProtocol.ToggleDemoDoor,
   MapProtocol.UseItem,
   MapProtocol.AttackMonster,
+  MapProtocol.ToggleAutoAttack,
   GateProtocol.Ping,
 ] as const;

@@ -28,6 +28,11 @@ private:
         TObjectPtr<AStaticMeshActor> Actor;
         FVector TargetLocation = FVector::ZeroVector;
         FRotator TargetRotation = FRotator::ZeroRotator;
+        std::uint32_t EntityType = 0;
+        std::uint32_t ConfigId = 0;
+        FVector BaseScale = FVector(0.7F, 0.7F, 1.8F);
+        bool bSelected = false;
+        TObjectPtr<UMaterialInstanceDynamic> Material;
     };
 
     void BuildGraybox();
@@ -38,8 +43,25 @@ private:
     void HandleDemoDoorState(bool bClosed);
     void HandleNavigate(tiangz::protocol::demo::G2C_EntityNavigate Message);
     void HandleNumeric(tiangz::protocol::demo::G2C_EntityNumeric Message);
+    void HandleEntityState(tiangz::protocol::demo::G2C_EntityState Message);
+    void HandleAutoAttackState(tiangz::protocol::demo::G2C_AutoAttackState Message);
     void AddOrUpdateUnit(const tiangz::protocol::demo::MapEntitySnapshot& Snapshot, bool bSnap);
     void RemoveUnit(std::uint32_t UnitId);
+    /** 选择当前AOI内的怪物并更新本地表现，不改变服务端战斗状态。 / Selects an AOI-visible monster and updates local presentation without changing server combat state. */
+    void SelectMonster(std::uint32_t UnitId);
+    /** 清除离开AOI或切换目标后的本地选中状态。 / Clears local selection after an AOI leave or target switch. */
+    void ClearMonsterSelection();
+    /** 每帧刷新选中目标HUD，避免一次性屏幕消息下一帧消失。 / Refreshes the selected-target HUD every frame so a one-frame message cannot disappear. */
+    void UpdateSelectedMonsterHud() const;
+    /** 每帧刷新玩家HP/MP HUD；只显示服务端Numeric，不在客户端推导战斗结果。 / Refreshes the player HP/MP HUD from server Numeric without deriving combat results locally. */
+    void UpdatePlayerStatsHud() const;
+    static FString MonsterName(std::uint32_t ConfigId);
+    static FString BuildAutoAttackBar(float Progress);
+    void ApplyUnitColor(std::uint32_t UnitId, FUnitVisual& Visual) const;
+    void UpdateSelectionMarker();
+    void UpdateAutoAttackHud() const;
+    std::uint32_t FindFirstMonsterUnitId() const;
+    void ToggleAutoAttack();
     void ToggleDemoDoor();
     void SetDemoDoorClosed(bool bClosed);
     void UpdateInput(float DeltaSeconds);
@@ -58,6 +80,8 @@ private:
     TObjectPtr<AStaticMeshActor> NavigationObstacle;
     TObjectPtr<AStaticMeshActor> DynamicDoor;
     TObjectPtr<UMaterialInstanceDynamic> DynamicDoorMaterial;
+    TObjectPtr<AStaticMeshActor> SelectionMarker;
+    TObjectPtr<UMaterialInstanceDynamic> SelectionMarkerMaterial;
     TObjectPtr<ACameraActor> CameraActor;
     std::uint32_t LocalUnitId = 0;
     std::uint32_t InputSequence = 0;
@@ -72,7 +96,17 @@ private:
     bool bDirectionalInputDirty = false;
     bool bManualFacingInputActive = false;
     bool bDemoDoorClosed = false;
+    std::uint32_t SelectedMonsterUnitId = 0;
+    bool bAutoAttackEnabled = false;
+    std::uint32_t AutoAttackTargetUnitId = 0;
+    std::uint32_t AutoAttackPhase = 0;
+    std::int64_t AutoAttackSwingStartAtMs = 0;
+    std::uint32_t AutoAttackSwingIntervalMs = 2000;
+    std::int64_t ServerClockOffsetMs = 0;
+    bool bAutoAttackRequestInFlight = false;
     float CameraDistance = 600.0F;
     std::int64_t CurrentHp = 0;
     std::int64_t MaxHp = 0;
+    std::int64_t CurrentMp = 0;
+    std::int64_t MaxMp = 0;
 };

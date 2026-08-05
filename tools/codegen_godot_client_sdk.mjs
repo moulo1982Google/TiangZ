@@ -188,7 +188,8 @@ function emitRuntimeHelpers(lines) {
 
 function emitCodec(lines, entry, messages) {
   const functionName = snakeCase(entry.name);
-  lines.push(`static func encode_${functionName}(value: Dictionary) -> PackedByteArray:`);
+  const encoderParameter = entry.fields.some((field) => !field.synthetic) ? "value" : "_value";
+  lines.push(`static func encode_${functionName}(${encoderParameter}: Dictionary) -> PackedByteArray:`);
   lines.push("\tvar result := PackedByteArray()");
   for (const field of entry.fields.filter((item) => !item.synthetic)) {
     emitEncoderField(lines, field, messages);

@@ -19,6 +19,9 @@
 - `Awake`、`Destroy`、`Deserialize`、`Transfer` 是可选能力；恢复后的业务加工由 Hotfix System 实现，框架只负责调用时机。
 - Model 不热更，Hotfix 可以热更；稳定数据结构、Native schema、冷热标记和类型边界属于 Model/生成边界。
 - Rust 负责权威数据、批量热路径、Native Entity/Unit/Item、AOI 和编码；TS 通过句柄/FastOP 使用，是否频繁调用由开发者决定，框架不阻止。
+- Numeric创建时直接传`NumericType -> bigint`初始化字典；`NumericInitialValues`只是类型别名，不是逐字段配置接口。NumericSystem只遍历创建者传入的值，玩家、怪物、NPC的默认值写在各自创建流程，未传入的普通属性由Rust保持为0。普通属性和Base/Add/Pct来源可以初始化，MaxHp、MaxMp、Attack等派生结果禁止直接写，避免绕过Rust链式计算。
+- 重要设计教训：接口字典化不能只替换参数外形，还要一起移除通用System中的业务默认值和身份分支；通用ComponentSystem只负责生命周期、校验、遍历和Native写入，具体初始数据必须由Unit创建者注入。
+- 游戏配置命令语义：`build:game-config:startup`负责重新生成并覆盖`dist/game-config`供Process重启读取；`build:game-config`只生成在线热重载候选；`test:game-config`只验证，不能替代启动包构建。
 
 ## 动态地图与路由
 
@@ -37,6 +40,18 @@
 - 默认同步层级：`3 x 3 Grid` 为 Enter/高频 20Hz，`5 x 5 Grid` 为 Leave 迟滞/中频 5Hz；暂不使用 7 x 7。
 - 业务通过 MapComponent 的 Audience/Publish API 广播，不能自行维护 AOI 关系表或绕过地图生命周期。
 - AOI 只筛选接收者；阵营、隐身、位面、队伍权限等业务规则由业务提供同步查询接口。
+
+## 固定更新桶与普通攻击
+
+- Game默认20Hz；`Update()`就是20Hz兼容入口，框架另外提供固定`Update10Hz()`、`Update5Hz()`和`Update1Hz()`，业务不填写任意Hz，也不为每个玩家/怪物创建Timer或Update目标。
+- 10Hz用于玩家自动平A开始/中断读条，5Hz用于主动怪AI，1Hz用于尸体清理和重生；Rust仍只通过一个Game固定帧入口处理批量移动、AOI和Native权威数据。
+- 怪物复活只复用稳定的`AreaId`刷怪槽，不复用旧`UnitId`；死亡MonsterUnit必须先Detach、发布AOI Leave再Remove，复活时重新创建Unit并通过AOI Enter发送新快照。`UnitId`代表一次实体生命周期，AreaId代表出生配置位置。
+- `CombatComponent`只保存平A意图和读条状态：`Inactive/Waiting/Swinging`。按1只是切换意图，不等于立即命中；目标存活、同Map、距离不超过`PlayerConfig.attack_range`且位于角色前方120度时才从零开始读条。
+- 离开距离或前方±60度时保留自动攻击激活状态，但必须清零当前读条；重新满足条件不能恢复旧进度。读条完成前和完成瞬间都由服务端再次校验，客户端进度条只做表现。
+- 平A状态不进入地图Transfer快照；传送后需要重新激活。Cocos3D使用独立`G2C_AutoAttackStateHandler`和键盘`1`演示，协议源仍只编辑`proto`后运行codegen。
+- `G2C_AutoAttackState`是每个玩家本人频道上的`latest`可覆盖状态，只同步当前读条；攻击命中、道具消耗等不可逆事实必须使用`event`。平A不会因广播队列达到固定次数而自动停止，只有目标死亡、距离/朝向失效、玩家死亡或主动关闭会结束/重置。
+- 玩家死亡时，10Hz平A桶要显式推送`Inactive`，不能只`continue`；否则客户端会把死亡前最后一轮读条显示成“计时器停了”。
+- 当前演示的怪物目标语义是“主动索敌 + 统一仇恨”：`MonsterConfig.attack_mode=1`没有仇恨时在5Hz范围内找最近玩家，`attack_mode=0`没有仇恨时保持待机；玩家造成1点实际伤害就通过`MonsterComponent.AddThreat`增加1点仇恨，之后两种怪都按范围内最高仇恨追击，不能在受击事件中直接设置目标。玩家创建从`PlayerConfig.initial_hp/max_hp/initial_mp/max_mp`写入HP/MP Numeric，攻击距离从`PlayerConfig.attack_range`读取，怪物攻击距离从`MonsterConfig.attack_range`读取，二者都是独立米制配置而不是Numeric链式属性。Cocos3D、UE、Unity、Godot的HUD只消费快照和`G2C_EntityNumeric`，不能由客户端自行扣血。
 
 ## 战斗时间轴约定
 

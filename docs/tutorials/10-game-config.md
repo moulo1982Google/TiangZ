@@ -57,9 +57,15 @@ int#ref=game.TbItemConfig
 仓库在`tools/third_party/luban/4.10.2/`固定收录官方CLI，首次拉取不需要另装Luban，但机器需要.NET 8或更高版本。
 
 ```powershell
-npm run build:game-config
+npm run build:game-config:startup
 npm run test:game-config
 ```
+
+这里有两个不同的打包入口：
+
+- `npm run build:game-config:startup`会先重新运行Luban，再覆盖`dist/game-config`。服务器重启时读取这个目录，适合修改后停服重启。
+- `npm run build:game-config`会生成`dist/game-config-candidates/<指纹>`，但不会改动`dist/game-config`。它只用于在线热重载，随后把输出的候选目录交给Watcher的`reload-config`。
+- `npm run test:game-config`只验证生成物和分区指纹，不会把`game_config/generated`复制到服务器启动目录。
 
 完整`npm run codegen`也会执行游戏配置生成，并把客户端配置随公共SDK分发到Cocos和Pixi。生成目录如下：
 
@@ -131,6 +137,6 @@ reload-config E:\gitee\TiangZ\dist\game-config-candidates\...
 1. 判断它是静态策划配置，还是玩家运行时/数据库数据。
 2. 设计稳定`id`，明确每个字段属于`c`、`s`还是`c,s`。
 3. 能引用其他表时使用`#ref`，不依赖业务代码事后检查。
-4. 执行`npm run build:game-config`和`npm run test:game-config`；结构有变化时改用完整`npm run build`。
+4. 如果准备重启服务器，执行`npm run build:game-config:startup`和`npm run test:game-config`；如果要在线热更，执行`npm run build:game-config`后用Watcher的`reload-config`切换候选；结构有变化时改用完整`npm run build`。
 5. 业务只调用`GameConfigs`，不缓存可变副本，不扫描Generated JSON。
 6. 配置改变了架构或业务流程时，同步更新两份AI文档。

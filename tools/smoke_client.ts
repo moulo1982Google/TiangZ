@@ -2,6 +2,7 @@ import net from "node:net";
 import {
   buildEnterMapPacket,
   buildAttackMonsterPacket,
+  buildToggleAutoAttackPacket,
   buildFindPathPacket,
   buildNavigateToPacket,
   buildNavigateInputPacket,
@@ -14,8 +15,10 @@ import {
   buildUseItemPacket,
   decodeAoiDeltaFrame,
   decodeAttackMonsterFrame,
+  decodeAutoAttackStateFrame,
   decodeEntityMoveFrame,
   decodeEntityNavigateFrame,
+  decodeEntityStateFrame,
   decodeEnterMapFrame,
   decodeFindPathFrame,
   decodeNavigateToFrame,
@@ -29,6 +32,7 @@ import {
   decodeLoginFrame,
   decodeMapReadyFrame,
   decodeMapSnapshotReadyFrame,
+  decodeToggleAutoAttackFrame,
   decodePingFrame,
   buildPingPacket,
 } from "./support/DemoClientProtocol";
@@ -37,6 +41,7 @@ import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 import type { CellMovementState } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
 import { GameConfigs, SpatialMode } from "../client_sdk/typescript/Generated/Config";
+import { NumericType } from "../app/model/demo/numeric/NumericType";
 import { encodePacket } from "../app/core/public";
 import {
   M2S_CreateDynamicMapCodec,
@@ -312,7 +317,7 @@ async function verifyGateSessionLifecycle(
   await third.gate.close();
   await sleep(150);
 
-  const afterDisconnect = await openGateAndEnterMap(ip, port, request, true);
+    const afterDisconnect = await openGateAndEnterMap(ip, port, request);
   try {
     if (afterDisconnect.enterMap.unitId !== first.enterMap.unitId) {
       throw new Error("reconnect grace did not preserve the existing map unit");
@@ -321,13 +326,12 @@ async function verifyGateSessionLifecycle(
       reboundUnitId: first.enterMap.unitId,
       resumedUnitId: afterDisconnect.enterMap.unitId,
     });
-    const currentHp = await verifyNumericTimer(
+    const currentHp = verifyNumericDefaults(
       afterDisconnect.gate,
       afterDisconnect.enterMap.unitId,
       afterDisconnect.enterMap.entities.find(
         (entity) => entity.unitId === afterDisconnect.enterMap.unitId,
       )?.numerics ?? [],
-      afterDisconnect.initialNumericFrame,
     );
     const currentState = await verifyItemChange(
       afterDisconnect.gate,
@@ -380,6 +384,7 @@ async function verifyMapTransfer(
     transferred.x !== mapConfig.spawnX ||
     transferred.y !== mapConfig.spawnY ||
     transferred.z !== mapConfig.spawnZ ||
+    !itemAfter ||
     itemAfter?.count !== expectedItem.count ||
     itemAfter?.version !== expectedItem.version
   ) {
@@ -388,7 +393,7 @@ async function verifyMapTransfer(
 
   const afterHp = transferred.entities
     .find((entity) => entity.unitId === transferred.unitId)
-    ?.numerics.find((numeric) => numeric.numericType === 1)?.value;
+    ?.numerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
   if (afterHp === undefined || afterHp < expectedMinimumHp) {
     throw new Error(
       `map transfer lost Numeric state: expected>=${expectedMinimumHp}, after=${afterHp}`,
@@ -404,6 +409,15 @@ async function verifyMapTransfer(
   ) {
     throw new Error("queued transfer-time UseItem was not executed exactly once on the target Unit");
   }
+  // 排队道具的背包事件和Numeric增量是两个独立Push；先消费权威回血，避免把合法道具恢复当成怪物伤害。
+  // The queued item's inventory event and Numeric delta are independent pushes; consume the
+  // authoritative heal first so it cannot be mistaken for monster damage.
+  const playerHpAfterQueuedItem = await waitForPlayerHpAtLeast(
+    gate,
+    transferred.unitId,
+    expectedMinimumHp + BigInt(GameConfigs.ItemConfig.Get(itemAfter.configId).restoreHp),
+    2_000,
+  );
   console.log("Map transfer:", {
     unitId: transferred.unitId,
     fromMapId: previous.mapId,
@@ -413,69 +427,260 @@ async function verifyMapTransfer(
     z: transferred.z,
     itemCount: itemAfter?.count,
     queuedItemCount: itemResponse.body.item.count,
+    currentHp: playerHpAfterQueuedItem,
   });
-  await verifyMonsterLifecycle(gate, transferred);
+  const respawnedMonsterId = await verifyMonsterLifecycle(gate, transferred, playerHpAfterQueuedItem);
+  await verifyAutoAttackTimer(gate, transferred.unitId, respawnedMonsterId);
   const navigation = await verifyNavMeshTransfer(gate, transferred);
   return await verifyDynamicMapTransfer(gate, navigation, dynamicMap);
 }
 
-/** 验证固定刷点怪物的攻击、死亡、尸体移除和重生完整闭环。 / Verifies the full fixed-slot monster loop: attack, death, corpse removal, and respawn. */
+/** 验证固定刷点怪物的攻击、AOI离开和新Unit复活闭环。 / Verifies attack, AOI removal, and respawn as a new Unit. */
 async function verifyMonsterLifecycle(
   gate: TcpRpcConnection,
   enterMap: ReturnType<typeof decodeEnterMapFrame>["body"],
-): Promise<void> {
+  playerCurrentHp?: bigint,
+): Promise<number> {
   const monster = enterMap.entities.find(
     (entity) => entity.entityType === 2 && entity.configId === 1,
   );
   if (!monster) {
     throw new Error(`map2 snapshot did not include the training dummy: ${stringifyForError(enterMap.entities)}`);
   }
-  const initialHp = monster.numerics.find((numeric) => numeric.numericType === 1)?.value;
-  if (initialHp !== 300n) {
+  const initialHp = monster.numerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
+  const initialAttack = monster.numerics.find((numeric) => numeric.numericType === NumericType.Attack)?.value;
+  if (initialHp !== 100n || initialAttack !== 8n) {
     throw new Error(`training dummy has unexpected initial HP: ${initialHp}`);
   }
 
-  const expectedHits = 12;
-  let last: ReturnType<typeof decodeAttackMonsterFrame>["body"] | undefined;
+  const playerHpBeforeThreat = playerCurrentHp ?? enterMap.entities
+    .find((entity) => entity.unitId === enterMap.unitId)
+    ?.numerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
+  if (playerHpBeforeThreat === undefined) {
+    throw new Error("map2 snapshot did not include the player's CurrentHp");
+  }
+  // 被动怪在没有仇恨时必须保持待机；不能因为收到一次攻击事件就直接扣玩家血。
+  // A passive monster must stay idle without threat; receiving an attack event alone
+  // must not make it damage the player.
+  await assertNoPlayerHpChange(gate, enterMap.unitId, playerHpBeforeThreat, 700);
+
+  const expectedHits = 20;
+  let deathLeaveFrame: Promise<Uint8Array> | undefined;
   for (let hit = 1; hit <= expectedHits; hit += 1) {
+    // 最后一击前先挂好AOI监听，避免死亡后的Leave早于测试代码等待而被漏掉。
+    // Arm the AOI listener before the final hit so the death Leave cannot be missed.
+    if (hit === expectedHits) {
+      deathLeaveFrame = gate.waitForMessage(MsgCode.G2C_AoiDelta, 5_000);
+    }
     const response = decodeAttackMonsterFrame(await gate.request(
       buildAttackMonsterPacket(nextRpcId++, { monsterId: monster.unitId }),
     ));
     if (
       response.body.error ||
       response.body.monsterId !== monster.unitId ||
-      response.body.damage !== 25 ||
-      response.body.remainingHp !== BigInt((expectedHits - hit) * 25) ||
+      response.body.damage !== 5 ||
+      response.body.remainingHp !== BigInt((expectedHits - hit) * 5) ||
       response.body.killed !== (hit === expectedHits)
     ) {
       throw new Error(`monster attack result mismatch: ${stringifyForError(response.body)}`);
     }
-    last = response.body;
+    if (hit === 1) {
+      // 第一次实际伤害写入1:1仇恨后，被动怪才可以在5Hz桶攻击当前仇恨目标。
+      // After the first resolved damage adds 1:1 threat, the passive monster may
+      // attack its threat target on the 5Hz bucket.
+      await waitForPlayerHpDecrease(gate, enterMap.unitId, playerHpBeforeThreat, 3_000);
+    }
   }
 
-  let observedLeave = false;
-  let respawned: typeof monster | undefined;
-  const deadline = Date.now() + 7_000;
-  while (Date.now() < deadline && !respawned) {
+  if (!deathLeaveFrame) {
+    throw new Error("monster death listeners were not armed");
+  }
+
+  let deathDelta = decodeAoiDeltaFrame(await deathLeaveFrame);
+  const deathDeadline = Date.now() + 5_000;
+  while (!deathDelta.body.leaves.includes(monster.unitId) && Date.now() < deathDeadline) {
+    deathDelta = decodeAoiDeltaFrame(await gate.waitForMessage(
+      MsgCode.G2C_AoiDelta,
+      Math.max(1, deathDeadline - Date.now()),
+    ));
+  }
+  if (!deathDelta.body.leaves.includes(monster.unitId)) {
+    throw new Error(`monster death did not produce an AOI Leave: ${stringifyForError(deathDelta.body)}`);
+  }
+
+  // 死亡后等待配置的复活周期，并确认刷怪槽创建了新的UnitId。
+  // Wait for the configured respawn period and confirm that the spawn slot created a new UnitId.
+  let respawnedMonster: ReturnType<typeof decodeEnterMapFrame>["body"]["entities"][number] | undefined;
+  const respawnDeadline = Date.now() + 15_000;
+  while (!respawnedMonster && Date.now() < respawnDeadline) {
     const delta = decodeAoiDeltaFrame(await gate.waitForMessage(
       MsgCode.G2C_AoiDelta,
-      Math.max(1, deadline - Date.now()),
-    )).body;
-    observedLeave ||= delta.leaves.includes(monster.unitId);
-    respawned = delta.enters.find(
-      (entity) => entity.entityType === 2 && entity.configId === 1,
+      Math.max(1, respawnDeadline - Date.now()),
+    ));
+    respawnedMonster = delta.body.enters.find((entity) =>
+      entity.entityType === 2 &&
+      entity.configId === monster.configId &&
+      entity.unitId !== monster.unitId,
     );
   }
-  const respawnHp = respawned?.numerics.find((numeric) => numeric.numericType === 1)?.value;
-  if (!observedLeave || !respawned || respawnHp !== 300n) {
-    throw new Error(`monster corpse/respawn lifecycle failed: ${stringifyForError({ observedLeave, respawned, respawnHp })}`);
+  const respawnHp = respawnedMonster?.numerics.find(
+    (numeric) => numeric.numericType === NumericType.CurrentHp,
+  )?.value;
+  if (!respawnedMonster || respawnHp !== 100n || respawnedMonster.alive !== true) {
+    throw new Error(`monster respawn did not create a fresh Unit: ${stringifyForError({
+      initialUnitId: monster.unitId,
+      respawnedUnitId: respawnedMonster?.unitId,
+      respawnHp,
+      respawnedAlive: respawnedMonster?.alive,
+    })}`);
   }
   console.log("Monster lifecycle:", {
     initialMonsterId: monster.unitId,
-    killedMonsterId: last?.monsterId,
-    respawnedMonsterId: respawned.unitId,
+    killedMonsterId: monster.unitId,
+    respawnedMonsterId: respawnedMonster.unitId,
     respawnHp,
   });
+  return respawnedMonster.unitId;
+}
+
+/** 确认一段时间内指定玩家的HP没有被被动怪误扣。 / Confirms that a player's HP is not changed by a passive monster during a quiet window. */
+async function assertNoPlayerHpChange(
+  gate: TcpRpcConnection,
+  playerUnitId: number,
+  currentHp: bigint,
+  durationMs: number,
+): Promise<void> {
+  const deadline = Date.now() + durationMs;
+  while (Date.now() < deadline) {
+    try {
+      const frame = decodeEntityNumericFrame(await gate.waitForMessage(
+        MsgCode.G2C_EntityNumeric,
+        Math.max(1, deadline - Date.now()),
+      ));
+      const changed = frame.body.numerics.find(
+        (numeric) => numeric.unitId === playerUnitId &&
+          numeric.numericType === NumericType.CurrentHp &&
+          numeric.value !== currentHp,
+      );
+      if (changed) {
+        throw new Error(`passive monster changed player HP without threat: ${changed.value}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && /timed out/i.test(error.message)) return;
+      throw error;
+    }
+  }
+}
+
+/** 等待实际仇恨产生后的玩家掉血；只接受服务端Numeric增量，不猜测AI内部状态。 / Waits for player damage after real threat is created, using only authoritative Numeric deltas. */
+async function waitForPlayerHpDecrease(
+  gate: TcpRpcConnection,
+  playerUnitId: number,
+  previousHp: bigint,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const frame = decodeEntityNumericFrame(await gate.waitForMessage(
+      MsgCode.G2C_EntityNumeric,
+      Math.max(1, deadline - Date.now()),
+    ));
+    const changed = frame.body.numerics.find(
+      (numeric) => numeric.unitId === playerUnitId &&
+        numeric.numericType === NumericType.CurrentHp &&
+        numeric.value < previousHp,
+    );
+    if (changed) return;
+  }
+  throw new Error("passive monster did not attack after threat was added");
+}
+
+/** 等待玩家收到至少目标HP的权威增量；用于先排空传送期间排队的恢复道具。 / Waits for an authoritative player HP delta at or above a target, draining queued transfer-time heals first. */
+async function waitForPlayerHpAtLeast(
+  gate: TcpRpcConnection,
+  playerUnitId: number,
+  minimumHp: bigint,
+  timeoutMs: number,
+): Promise<bigint> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const frame = decodeEntityNumericFrame(await gate.waitForMessage(
+      MsgCode.G2C_EntityNumeric,
+      Math.max(1, deadline - Date.now()),
+    ));
+    const changed = frame.body.numerics.find(
+      (numeric) => numeric.unitId === playerUnitId &&
+        numeric.numericType === NumericType.CurrentHp &&
+        numeric.value >= minimumHp,
+    );
+    if (changed) return changed.value;
+  }
+  throw new Error(`player HP update did not reach ${minimumHp}`);
+}
+
+/** 真实推进多轮平A；验证不是只收到一次状态，而是10Hz桶持续结算到Numeric。 / Advances several real auto-attack swings and verifies that the 10Hz bucket keeps resolving Numeric damage instead of stopping after one state. */
+async function verifyAutoAttackTimer(
+  gate: TcpRpcConnection,
+  playerUnitId: number,
+  monsterUnitId: number,
+): Promise<void> {
+  // Map 2的训练木桩在玩家出生点正东；先用Grid移动让权威Yaw转向+X，再停在1米距离。
+  // The map-2 dummy is one cell east after one step; turn the authoritative yaw to +X first.
+  await gate.send(buildMovePacket({ inputX: 1, inputZ: 0, sequence: 4 }));
+  await waitForMovementSequence(gate, playerUnitId, 4);
+  await gate.send(buildMovePacket({ inputX: 0, inputZ: 0, sequence: 5 }));
+  await waitForMovementStopped(gate, playerUnitId, 5);
+
+  const statePush = gate.waitForMessage(MsgCode.G2C_AutoAttackState, 5_000);
+  const enabledRpcId = nextRpcId++;
+  const enabled = decodeToggleAutoAttackFrame(await gate.request(
+    buildToggleAutoAttackPacket(enabledRpcId, {
+      enabled: true,
+      targetUnitId: monsterUnitId,
+    }),
+  ));
+  const pushedState = decodeAutoAttackStateFrame(await statePush);
+  if (
+    enabled.rpcId !== enabledRpcId ||
+    enabled.body.error ||
+    !enabled.body.enabled ||
+    !pushedState.body.enabled ||
+    pushedState.body.targetUnitId !== monsterUnitId
+  ) {
+    throw new Error(`auto attack did not activate: ${stringifyForError({ enabled: enabled.body, pushed: pushedState.body })}`);
+  }
+
+  const expectedSwings = 6;
+  const hpValues: bigint[] = [];
+  let previousHp = 100n;
+  const deadline = Date.now() + 13_500;
+  while (hpValues.length < expectedSwings && Date.now() < deadline) {
+    const frame = decodeEntityNumericFrame(await gate.waitForMessage(
+      MsgCode.G2C_EntityNumeric,
+      Math.max(1, deadline - Date.now()),
+    ));
+    const hp = frame.body.numerics.find(
+      (numeric) => numeric.unitId === monsterUnitId && numeric.numericType === NumericType.CurrentHp,
+    )?.value;
+    if (hp !== undefined && hp < previousHp) {
+      hpValues.push(hp);
+      previousHp = hp;
+    }
+  }
+
+  const disabledState = gate.waitForMessage(MsgCode.G2C_AutoAttackState, 5_000);
+  const disabledRpcId = nextRpcId++;
+  const disabled = decodeToggleAutoAttackFrame(await gate.request(
+    buildToggleAutoAttackPacket(disabledRpcId, {
+      enabled: false,
+      targetUnitId: monsterUnitId,
+    }),
+  ));
+  await disabledState;
+  if (hpValues.length < expectedSwings || disabled.rpcId !== disabledRpcId || disabled.body.error || disabled.body.enabled) {
+    throw new Error(`auto attack timer stopped before ${expectedSwings} swings: ${stringifyForError({ hpValues, disabled: disabled.body })}`);
+  }
+  console.log("Auto-attack timer:", { playerUnitId, monsterUnitId, hpValues });
 }
 
 /** 验证真实玩家可进入NavMesh3D地图，并收到与冷配置一致的空间资源契约。 / Verifies that a real player can enter a NavMesh3D map with the cold-configured spatial asset contract. */
@@ -769,7 +974,6 @@ async function verifyItemChange(
   const restoredHp = previousHp + BigInt(itemConfig.restoreHp);
   const expectedHp = restoredHp < maxHp ? restoredHp : maxHp;
   const pushed = gate.waitForMessage(MsgCode.G2C_ItemChanged);
-  let numericPushed = gate.waitForMessage(MsgCode.G2C_EntityNumeric);
   const responseFrame = await gate.request(
     buildUseItemPacket(nextRpcId++, { itemId: initial.itemId }),
   );
@@ -779,12 +983,26 @@ async function verifyItemChange(
     throw new Error("immediate item response and event are inconsistent");
   }
 
+  // 满血使用恢复道具不会修改 Numeric，也就不会产生 G2C_EntityNumeric。
+  // A full-health item use does not dirty Numeric, so no G2C_EntityNumeric is expected.
+  if (previousHp >= maxHp) {
+    console.log("Immediate item event:", {
+      itemId: event.itemId,
+      count: event.count,
+      version: event.version,
+      currentHp: previousHp,
+      numericChanged: false,
+    });
+    return { item: response, currentHp: previousHp };
+  }
+
+  let numericPushed = gate.waitForMessage(MsgCode.G2C_EntityNumeric);
   const deadline = Date.now() + 2_000;
   let currentHp: bigint | undefined;
   while (Date.now() < deadline) {
     const frame = await numericPushed;
     currentHp = decodeEntityNumericFrame(frame).body.numerics.find(
-      (numeric) => numeric.unitId === enterMap.unitId && numeric.numericType === 1,
+      (numeric) => numeric.unitId === enterMap.unitId && numeric.numericType === NumericType.CurrentHp,
     )?.value;
     if (currentHp !== undefined && currentHp >= expectedHp) break;
     numericPushed = gate.waitForMessage(
@@ -806,63 +1024,31 @@ async function verifyItemChange(
   return { item: response, currentHp };
 }
 
-async function verifyNumericTimer(
-  gate: TcpRpcConnection,
+function verifyNumericDefaults(
+  _gate: TcpRpcConnection,
   unitId: number,
   initialNumerics: readonly { numericType: number; value: bigint }[],
-  initialFrame?: Uint8Array,
-): Promise<bigint> {
-  let previous = initialNumerics.find((numeric) => numeric.numericType === 1)?.value;
-  const maxHp = initialNumerics.find((numeric) => numeric.numericType === 1_000)?.value;
-  if (previous === undefined || maxHp !== 1000n) {
+  _initialFrame?: Uint8Array,
+): bigint {
+  const playerConfig = GameConfigs.PlayerConfig.Get(1);
+  const currentHp = initialNumerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
+  const maxHp = initialNumerics.find((numeric) => numeric.numericType === NumericType.MaxHp)?.value;
+  const currentMp = initialNumerics.find((numeric) => numeric.numericType === NumericType.CurrentMp)?.value;
+  const maxMp = initialNumerics.find((numeric) => numeric.numericType === NumericType.MaxMp)?.value;
+  const attack = initialNumerics.find((numeric) => numeric.numericType === NumericType.Attack)?.value;
+  if (
+    currentHp !== BigInt(playerConfig.initialHp) ||
+    maxHp !== BigInt(playerConfig.maxHp) ||
+    currentMp !== BigInt(playerConfig.initialMp) ||
+    maxMp !== BigInt(playerConfig.maxMp) ||
+    attack !== 5n
+  ) {
     throw new Error(
       `enter-map snapshot is missing Numeric defaults: unit ${unitId}, numerics=${initialNumerics.map((numeric) => `${numeric.numericType}=${numeric.value}`).join(",")}`,
     );
   }
-  let frameCount = 0;
-  const observed = new Map<number, Map<number, bigint>>();
-  const frames: Uint8Array[] = initialFrame ? [initialFrame] : [];
-  const deadline = Date.now() + 3000;
-  while (Date.now() < deadline) {
-    let frame: Uint8Array;
-    try {
-      frame = frames.shift() ?? await gate.waitForMessage(
-          MsgCode.G2C_EntityNumeric,
-          Math.max(1, deadline - Date.now()),
-        );
-    } catch (error) {
-      if (Date.now() >= deadline) break;
-      throw error;
-    }
-    frameCount += 1;
-    const body = decodeEntityNumericFrame(frame).body;
-    for (const numeric of body.numerics) {
-      const values = observed.get(numeric.unitId) ?? new Map<number, bigint>();
-      values.set(numeric.numericType, numeric.value);
-      observed.set(numeric.unitId, values);
-      if (numeric.unitId !== unitId) continue;
-      if (numeric.numericType === 1) {
-        if (previous !== undefined && numeric.value > previous && maxHp === 1000n) {
-          console.log("Numeric timer broadcast:", {
-            unitId,
-            previousHp: previous,
-            currentHp: numeric.value,
-            serverTick: body.serverTick,
-          });
-          return numeric.value;
-        }
-        previous = numeric.value;
-      }
-    }
-  }
-  throw new Error(
-    `timed out waiting for Numeric CurrentHp growth: unit ${unitId}, frames=${frameCount}, observed=${JSON.stringify(
-      [...observed].map(([observedUnitId, values]) => ({
-        unitId: observedUnitId,
-        values: Object.fromEntries([...values].map(([type, value]) => [type, value.toString()])),
-      })),
-    )}`,
-  );
+  console.log("Numeric defaults:", { unitId, currentHp, maxHp, currentMp, maxMp, attack });
+  return currentHp;
 }
 
 async function verifyAuthoritativeMovement(
@@ -932,6 +1118,25 @@ async function waitForMovementSequence(
     }
   }
   throw new Error(`timed out waiting for movement sequence ${sequence}`);
+}
+
+/** 等待当前Cell移动完成；停止输入只阻止下一格，不会取消已经开始的这一格。 / Waits for the current Cell step to finish; a stop input prevents the next step but does not cancel the current one. */
+async function waitForMovementStopped(
+  gate: TcpRpcConnection,
+  unitId: number,
+  sequence: number,
+): Promise<TimedMovementState> {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const remaining = Math.max(1, deadline - Date.now());
+    const body = decodeEntityMoveFrame(
+      await gate.waitForMessage(MsgCode.G2C_EntityMove, remaining),
+    ).body;
+    const movement = body.movements.find((candidate) => candidate.unitId === unitId);
+    if (!movement || movement.acknowledgedSequence < sequence) continue;
+    if (!movement.moving) return { ...movement, serverTick: body.serverTick };
+  }
+  throw new Error(`timed out waiting for movement to stop at sequence ${sequence}`);
 }
 
 async function verifySharedMapBroadcast(
@@ -1155,11 +1360,9 @@ async function openGateAndEnterMap(
   ip: string,
   port: number,
   request: { account: string; token: string; mapId: number },
-  captureInitialNumeric = false,
 ): Promise<{
   gate: TcpRpcConnection;
   enterMap: ReturnType<typeof decodeEnterMapFrame>["body"];
-  initialNumericFrame?: Uint8Array;
 }> {
   const gate = new TcpRpcConnection(ip, port);
   try {
@@ -1190,13 +1393,9 @@ async function openGateAndEnterMap(
     }
 
     const enterMapRpcId = nextRpcId++;
-    const initialNumeric = captureInitialNumeric
-      ? gate.waitForMessage(MsgCode.G2C_EntityNumeric)
-      : Promise.resolve(undefined);
-    const [enterMapFrame, mapReadyFrame, initialNumericFrame] = await Promise.all([
+    const [enterMapFrame, mapReadyFrame] = await Promise.all([
       gate.request(buildEnterMapPacket(enterMapRpcId, { mapId: request.mapId, mapInstanceId: 0n })),
       gate.waitForMessage(MsgCode.G2C_MapReady),
-      initialNumeric,
     ]);
     const enterMap = decodeEnterMapFrame(enterMapFrame);
     const mapReady = decodeMapReadyFrame(mapReadyFrame);
@@ -1234,7 +1433,6 @@ async function openGateAndEnterMap(
     return {
       gate,
       enterMap: enterMap.body,
-      ...(initialNumericFrame ? { initialNumericFrame } : {}),
     };
   } catch (error) {
     await gate.close();

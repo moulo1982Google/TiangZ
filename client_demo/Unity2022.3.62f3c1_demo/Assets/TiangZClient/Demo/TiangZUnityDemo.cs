@@ -27,6 +27,8 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     private readonly Dictionary<uint, Transform> entities = new Dictionary<uint, Transform>();
     private readonly Dictionary<uint, Vector3> targetPositions = new Dictionary<uint, Vector3>();
     private readonly Dictionary<uint, float> targetYaw = new Dictionary<uint, float>();
+    private readonly Dictionary<uint, uint> entityTypes = new Dictionary<uint, uint>();
+    private readonly Dictionary<uint, uint> entityConfigIds = new Dictionary<uint, uint>();
     private LoginFlow loginFlow;
     private EnterGameResult game;
     private Transform localPlayer;
@@ -37,6 +39,8 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     private Action unsubscribeNavigate;
     private Action unsubscribeAoi;
     private Action unsubscribeDoor;
+    private Action unsubscribeNumeric;
+    private Action unsubscribeAutoAttack;
     private string status = "未连接 / Disconnected";
     private string lastError = "";
     private int sequence;
@@ -56,6 +60,19 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     private float lastSentYaw;
     private bool doorClosed;
     private bool doorRequestInFlight;
+    private uint selectedMonsterUnitId;
+    private bool autoAttackEnabled;
+    private uint autoAttackTargetUnitId;
+    private uint autoAttackPhase;
+    private long autoAttackSwingStartAtMs;
+    private uint autoAttackSwingIntervalMs = 2000;
+    private long serverClockOffsetMs;
+    private bool autoAttackRequestInFlight;
+    private GameObject selectedMonsterMarker;
+    private long currentHp;
+    private long maxHp;
+    private long currentMp;
+    private long maxMp;
 
     private void Start()
     {
@@ -115,6 +132,45 @@ public sealed class TiangZUnityDemo : MonoBehaviour
             ApplyDoorState(message.Closed);
             status = message.Closed ? "动态门：关闭 / Door: Closed" : "动态门：打开 / Door: Open";
         });
+        unsubscribeNumeric = game.GateSocket.On(ClientMessages.EntityNumeric, HandleNumeric);
+        unsubscribeAutoAttack = game.GateSocket.On(ClientMessages.AutoAttackState, HandleAutoAttackState);
+    }
+
+    /// <summary>
+    /// Applies server-authoritative local HP/MP deltas to the presentation HUD.
+    /// 将服务端权威的玩家HP/MP增量应用到表现层HUD；客户端不自行扣血或恢复资源。
+    /// </summary>
+    private void HandleNumeric(G2C_EntityNumeric message)
+    {
+        if (game == null) return;
+        foreach (var numeric in message.Numerics)
+        {
+            if (numeric.UnitId != game.EnterMap.UnitId) continue;
+            ApplyLocalNumeric(numeric.NumericType, numeric.Value);
+        }
+    }
+
+    /// <summary>
+    /// Stores one local Numeric value from either the entry snapshot or a delta push.
+    /// 保存进入快照或增量推送中的一个本地Numeric值，保证重连后HUD从完整快照重新开始。
+    /// </summary>
+    private void ApplyLocalNumeric(uint numericType, long value)
+    {
+        switch (numericType)
+        {
+            case 1:
+                currentHp = value;
+                break;
+            case 2:
+                currentMp = value;
+                break;
+            case 1000:
+                maxHp = value;
+                break;
+            case 1001:
+                maxMp = value;
+                break;
+        }
     }
 
     private void HandleEntityNavigate(G2C_EntityNavigate message)
@@ -153,10 +209,13 @@ public sealed class TiangZUnityDemo : MonoBehaviour
             if (game != null && unitId == game.EnterMap.UnitId) continue;
             if (entities.TryGetValue(unitId, out var entity))
             {
+                if (unitId == selectedMonsterUnitId) ClearMonsterSelection();
                 Destroy(entity.gameObject);
                 entities.Remove(unitId);
                 targetPositions.Remove(unitId);
                 targetYaw.Remove(unitId);
+                entityTypes.Remove(unitId);
+                entityConfigIds.Remove(unitId);
             }
         }
     }
@@ -164,6 +223,9 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     private void ApplySnapshot(MapEntitySnapshot snapshot)
     {
         var entity = EnsureEntity(snapshot.UnitId, game != null && snapshot.UnitId == game.EnterMap.UnitId);
+        entityTypes[snapshot.UnitId] = snapshot.EntityType;
+        entityConfigIds[snapshot.UnitId] = snapshot.ConfigId;
+        ApplyEntityColor(snapshot.UnitId, entity, snapshot.EntityType, snapshot.ConfigId);
         var position = new Vector3(snapshot.X, snapshot.Y, snapshot.Z);
         entity.position = position;
         entity.rotation = Quaternion.Euler(0, snapshot.Yaw * Mathf.Rad2Deg, 0);
@@ -171,6 +233,10 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         targetYaw[snapshot.UnitId] = snapshot.Yaw;
         if (game != null && snapshot.UnitId == game.EnterMap.UnitId)
         {
+            foreach (var numeric in snapshot.Numerics)
+            {
+                ApplyLocalNumeric(numeric.NumericType, numeric.Value);
+            }
             playerYaw = snapshot.Yaw;
             lastSentYaw = snapshot.Yaw;
         }
@@ -215,6 +281,7 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     private void UpdateInput()
     {
         if (localPlayer == null) return;
+        UpdateAutoAttackInput();
         var forward = ReadDigitalAxis(KeyCode.W, KeyCode.S);
         var horizontal = ReadDigitalAxis(KeyCode.D, KeyCode.A);
         var rightMouseHeld = Input.GetMouseButton(1);
@@ -318,8 +385,191 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     {
         if (!Input.GetMouseButtonDown(0) || mainCamera == null) return;
         var ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-        if (!Physics.Raycast(ray, out var hit, 500f) || hit.collider.gameObject != ground) return;
+        if (!Physics.Raycast(ray, out var hit, 500f)) return;
+        var monsterUnitId = FindMonsterUnitId(hit.transform);
+        if (monsterUnitId != 0)
+        {
+            SelectMonster(monsterUnitId);
+            return;
+        }
+        if (hit.collider.gameObject != ground) return;
         _ = SendNavigateToAsync(hit.point);
+    }
+
+    /// <summary>
+    /// Finds a monster from the clicked presentation object; a monster hit is consumed and never falls through to navigation.
+    /// 根据点击到的表现物体查找怪物；命中怪物后消费本次点击，不继续触发寻路。
+    /// </summary>
+    private uint FindMonsterUnitId(Transform hitTransform)
+    {
+        foreach (var pair in entities)
+        {
+            if (entityTypes.TryGetValue(pair.Key, out var entityType) && entityType == 2 &&
+                pair.Value == hitTransform)
+            {
+                return pair.Key;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// Selects one visible monster and creates an independent foot marker.
+    /// 选中一个当前可见怪物，并创建独立的脚下标记；不修改怪物颜色、大小或服务端战斗状态。
+    /// </summary>
+    private void SelectMonster(uint unitId)
+    {
+        if (selectedMonsterUnitId == unitId) return;
+        ClearMonsterSelection();
+        if (!entities.TryGetValue(unitId, out var entity) ||
+            !entityTypes.TryGetValue(unitId, out var entityType) || entityType != 2)
+        {
+            return;
+        }
+        selectedMonsterUnitId = unitId;
+        CreateSelectedMonsterMarker(entity);
+        ApplyEntityColor(unitId, entity, entityTypes[unitId], entityConfigIds.GetValueOrDefault(unitId));
+    }
+
+    /// <summary>
+    /// Removes the independent marker when the target leaves AOI or a new target is selected.
+    /// 目标离开AOI或切换目标时移除独立标记，不触碰怪物本体表现。
+    /// </summary>
+    private void ClearMonsterSelection()
+    {
+        if (selectedMonsterUnitId != 0 && entities.TryGetValue(selectedMonsterUnitId, out var entity))
+        {
+            ApplyEntityColor(
+                selectedMonsterUnitId,
+                entity,
+                entityTypes.GetValueOrDefault(selectedMonsterUnitId),
+                entityConfigIds.GetValueOrDefault(selectedMonsterUnitId));
+        }
+        if (selectedMonsterMarker != null) Destroy(selectedMonsterMarker);
+        selectedMonsterMarker = null;
+        selectedMonsterUnitId = 0;
+    }
+
+    private void ApplyEntityColor(uint unitId, Transform entity, uint entityType, uint configId)
+    {
+        var renderer = entity.GetComponent<Renderer>();
+        if (renderer == null) return;
+        var isLocal = game != null && unitId == game.EnterMap.UnitId;
+        renderer.material.color = isLocal
+                ? new Color(0.15f, 0.75f, 1f)
+                : entityType == 2
+                    ? (configId == 2 ? new Color(0.95f, 0.25f, 0.2f) : new Color(1f, 0.82f, 0.2f))
+                    : new Color(0.3f, 0.85f, 0.5f);
+    }
+
+    /// <summary>
+    /// Creates a lightweight ring under the selected monster instead of changing its model scale.
+    /// 在选中怪物脚下创建轻量环形线框，不改变怪物模型大小；标记跟随怪物Transform移动。
+    /// </summary>
+    private void CreateSelectedMonsterMarker(Transform target)
+    {
+        if (selectedMonsterMarker != null) Destroy(selectedMonsterMarker);
+        selectedMonsterMarker = new GameObject("SelectedMonsterMarker");
+        selectedMonsterMarker.transform.SetParent(target, false);
+        selectedMonsterMarker.transform.localPosition = new Vector3(0f, -0.61f, 0f);
+        var line = selectedMonsterMarker.AddComponent<LineRenderer>();
+        line.useWorldSpace = false;
+        line.loop = true;
+        line.positionCount = 32;
+        line.widthMultiplier = 0.05f;
+        line.numCapVertices = 2;
+        line.startColor = new Color(0.1f, 0.95f, 1f, 0.95f);
+        line.endColor = line.startColor;
+        line.material = new Material(Shader.Find("Sprites/Default"));
+        const float radius = 0.72f;
+        for (var index = 0; index < line.positionCount; index++)
+        {
+            var angle = index * Mathf.PI * 2f / line.positionCount;
+            line.SetPosition(index, new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
+        }
+    }
+
+    /// <summary>
+    /// Applies the server-pushed auto-attack state to the local HUD.
+    /// 将服务端推送的平A状态保存到本地HUD；读条时间使用服务器时钟，避免客户端时钟偏差造成进度跳动。
+    /// </summary>
+    private void HandleAutoAttackState(G2C_AutoAttackState message)
+    {
+        autoAttackEnabled = message.Enabled;
+        autoAttackTargetUnitId = message.TargetUnitId;
+        autoAttackPhase = message.Phase;
+        autoAttackSwingStartAtMs = checked((long)message.SwingStartAtMs);
+        autoAttackSwingIntervalMs = message.SwingIntervalMs == 0 ? 2000u : message.SwingIntervalMs;
+    }
+
+    private void UpdateAutoAttackInput()
+    {
+        if (!Input.GetKeyDown(KeyCode.Alpha1) || autoAttackRequestInFlight || game == null) return;
+        var targetUnitId = selectedMonsterUnitId != 0 ? selectedMonsterUnitId : FindFirstMonsterUnitId();
+        var enabled = !autoAttackEnabled;
+        if (enabled && targetUnitId == 0)
+        {
+            status = "请先选择一个可见怪物 / Select a visible monster first";
+            return;
+        }
+        _ = ToggleAutoAttackAsync(enabled, targetUnitId);
+    }
+
+    private uint FindFirstMonsterUnitId()
+    {
+        foreach (var pair in entityTypes)
+        {
+            if (pair.Value == 2 && entities.ContainsKey(pair.Key)) return pair.Key;
+        }
+        return 0;
+    }
+
+    private async Task ToggleAutoAttackAsync(bool enabled, uint targetUnitId)
+    {
+        autoAttackRequestInFlight = true;
+        try
+        {
+            var response = await game.Map.ToggleAutoAttackAsync(
+                new C2M_ToggleAutoAttack { Enabled = enabled, TargetUnitId = targetUnitId },
+                CancellationToken.None);
+            HandleAutoAttackState(new G2C_AutoAttackState
+            {
+                Enabled = response.Enabled,
+                TargetUnitId = response.TargetUnitId,
+                Phase = response.Phase,
+                SwingStartAtMs = response.SwingStartAtMs,
+                SwingIntervalMs = response.SwingIntervalMs,
+            });
+        }
+        catch (Exception error)
+        {
+            lastError = error.Message;
+        }
+        finally
+        {
+            autoAttackRequestInFlight = false;
+        }
+    }
+
+    private string AutoAttackProgressText()
+    {
+        if (!autoAttackEnabled) return "平A：未激活（按 1 开始） / Auto attack: off (press 1)";
+        if (autoAttackSwingStartAtMs <= 0 || autoAttackSwingIntervalMs == 0)
+            return $"平A：已激活，目标 {autoAttackTargetUnitId} / Auto attack: active";
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + serverClockOffsetMs;
+        var progress = Mathf.Clamp01((float)(now - autoAttackSwingStartAtMs) / autoAttackSwingIntervalMs);
+        var filled = Mathf.Clamp(Mathf.RoundToInt(progress * 20f), 0, 20);
+        return $"平A：[{new string('#', filled)}{new string('-', 20 - filled)}] {progress * 100f:0}%  目标 {autoAttackTargetUnitId}";
+    }
+
+    private static string MonsterName(uint configId)
+    {
+        return configId switch
+        {
+            1 => "怪A",
+            2 => "怪B",
+            _ => $"MonsterConfig#{configId}",
+        };
     }
 
     private async Task SendNavigateToAsync(Vector3 target)
@@ -359,6 +609,7 @@ public sealed class TiangZUnityDemo : MonoBehaviour
             var sentAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var response = await game.Gate.PingAsync(new C2G_Ping(), CancellationToken.None);
             var receivedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            serverClockOffsetMs = response.ServerTime - ((sentAt + receivedAt) / 2);
             status = $"Map {game.EnterMap.MapId}  Ping {receivedAt - sentAt}ms  Server {response.ServerTime}";
         }
         catch (Exception error)
@@ -450,7 +701,18 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         GUILayout.Label(status);
         GUILayout.Label("W/S：前进后退    A/D：转向");
         GUILayout.Label("按住鼠标右键：拖动镜头并带动角色朝向；A/D横移    滚轮：缩放");
-        GUILayout.Label("鼠标左键：服务器寻路    E：开关门    F5：重连");
+        GUILayout.Label("鼠标左键：选怪物或服务器寻路    E：开关门    F5：重连");
+        GUILayout.Label(selectedMonsterUnitId == 0
+            ? "目标：未选择怪物"
+            : $"目标：{MonsterName(entityConfigIds.GetValueOrDefault(selectedMonsterUnitId))}    实例ID：{selectedMonsterUnitId}");
+        var previousColor = GUI.color;
+        GUI.color = new Color(0.95f, 0.35f, 0.4f);
+        GUILayout.Label($"玩家 HP：{currentHp} / {maxHp}");
+        GUI.color = new Color(0.3f, 0.55f, 1f);
+        GUILayout.Label($"玩家 MP：{currentMp} / {maxMp}");
+        GUI.color = previousColor;
+        GUILayout.Label(AutoAttackProgressText());
+        GUILayout.Label("按 1：激活/取消平A；服务端控制读条与攻击节奏");
         if (!string.IsNullOrEmpty(lastError)) GUILayout.Label($"Error: {lastError}");
         GUILayout.EndArea();
         if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.F5)
@@ -467,6 +729,9 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         unsubscribeNavigate?.Invoke();
         unsubscribeAoi?.Invoke();
         unsubscribeDoor?.Invoke();
+        unsubscribeNumeric?.Invoke();
+        unsubscribeAutoAttack?.Invoke();
+        if (selectedMonsterMarker != null) Destroy(selectedMonsterMarker);
         loginFlow?.Close();
     }
 

@@ -16,7 +16,8 @@ FTiangZLoginFlow::~FTiangZLoginFlow()
 
 void FTiangZLoginFlow::SetCallbacks(FProgress InProgress, FError InError, FReady InReady,
     FAoiDelta InAoiDelta, FNavigate InNavigate, FNumeric InNumeric,
-    FDemoDoorState InDemoDoorState, FPing InPing)
+    FEntityState InEntityState, FDemoDoorState InDemoDoorState,
+    FAutoAttackState InAutoAttackState, FPing InPing)
 {
     OnProgress = MoveTemp(InProgress);
     OnError = MoveTemp(InError);
@@ -24,7 +25,9 @@ void FTiangZLoginFlow::SetCallbacks(FProgress InProgress, FError InError, FReady
     OnAoiDelta = MoveTemp(InAoiDelta);
     OnNavigate = MoveTemp(InNavigate);
     OnNumeric = MoveTemp(InNumeric);
+    OnEntityState = MoveTemp(InEntityState);
     OnDemoDoorState = MoveTemp(InDemoDoorState);
+    OnAutoAttackState = MoveTemp(InAutoAttackState);
     OnPing = MoveTemp(InPing);
 }
 
@@ -60,6 +63,7 @@ void FTiangZLoginFlow::Close()
     bNavigateToInFlight = false;
     bNavigateInputInFlight = false;
     bToggleDemoDoorInFlight = false;
+    bToggleAutoAttackInFlight = false;
 }
 
 bool FTiangZLoginFlow::NavigateTo(float X, float Y, float Z, std::uint32_t InSequence)
@@ -108,6 +112,28 @@ bool FTiangZLoginFlow::ToggleDemoDoor(bool bClosed, FToggleDemoDoor OnCompleted)
         [this](const std::string& Error)
         {
             bToggleDemoDoorInFlight = false;
+            Fail(Error);
+        });
+    return true;
+}
+
+bool FTiangZLoginFlow::ToggleAutoAttack(bool bEnabled, std::uint32_t TargetUnitId,
+    FToggleAutoAttack OnCompleted)
+{
+    if (!bReady || !GateSocket || bToggleAutoAttackInFlight) return false;
+    bToggleAutoAttackInFlight = true;
+    C2M_ToggleAutoAttack Request;
+    Request.enabled = bEnabled;
+    Request.targetUnitId = TargetUnitId;
+    GateSocket->Call(Map_ToggleAutoAttack, MoveTemp(Request),
+        [this, Completion = MoveTemp(OnCompleted)](M2C_ToggleAutoAttack Response) mutable
+        {
+            bToggleAutoAttackInFlight = false;
+            if (Completion) Completion(MoveTemp(Response));
+        },
+        [this](const std::string& Error)
+        {
+            bToggleAutoAttackInFlight = false;
             Fail(Error);
         });
     return true;
@@ -186,9 +212,17 @@ void FTiangZLoginFlow::ConnectGate(const S2C_Login& Login)
     {
         if (OnNumeric) OnNumeric(MoveTemp(Message));
     });
+    GateSocket->On(Client_EntityState, [this](G2C_EntityState Message)
+    {
+        if (OnEntityState) OnEntityState(MoveTemp(Message));
+    });
     GateSocket->On(Client_DemoDoorState, [this](G2C_DemoDoorState Message)
     {
         if (OnDemoDoorState) OnDemoDoorState(Message.closed);
+    });
+    GateSocket->On(Client_AutoAttackState, [this](G2C_AutoAttackState Message)
+    {
+        if (OnAutoAttackState) OnAutoAttackState(MoveTemp(Message));
     });
     GateSocket->SetConnectedHandler([this]
     {

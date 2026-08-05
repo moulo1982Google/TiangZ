@@ -245,6 +245,36 @@ message M2C_AttackMonster // IActorLocationResponse
   bool killed = 4;
 }
 
+//ResponseType M2C_ToggleAutoAttack
+// 平A开关只改变玩家意图；实际读条由地图的10Hz战斗桶推进，状态事件由Map广播给玩家本人。
+// @ets.msg protocol=Map method=ToggleAutoAttack duringTransfer=reject
+message C2M_ToggleAutoAttack // IActorLocationRequest
+{
+  bool enabled = 1;
+  uint32 target_unit_id = 2;
+}
+
+message M2C_ToggleAutoAttack // IActorLocationResponse
+{
+  bool enabled = 1;
+  uint32 target_unit_id = 2;
+  uint32 phase = 3;
+  uint64 swing_start_at_ms = 4;
+  uint32 swing_interval_ms = 5;
+}
+
+// 平A状态是每个玩家的一份可覆盖状态；客户端用最新状态中的服务器时间计算进度，不依赖本地计时起点。
+// @ets.msg protocol=Client method=AutoAttackState
+// @ets.broadcast mode=latest
+message G2C_AutoAttackState // IMessage
+{
+  bool enabled = 1;
+  uint32 target_unit_id = 2;
+  uint32 phase = 3;
+  uint64 swing_start_at_ms = 4;
+  uint32 swing_interval_ms = 5;
+}
+
 // @ets.msg protocol=Client method=ItemChanged
 // @ets.broadcast mode=event
 message G2C_ItemChanged // IMessage

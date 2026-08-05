@@ -2979,6 +2979,7 @@ fn update_movement(
                     unit.input_x,
                     unit.input_z,
                     unit.speed_cells_per_second,
+                    bounds.cell_size_meters,
                     fixed_update_ms,
                 );
             unit.moving = 1;
@@ -3032,18 +3033,22 @@ fn cell_to_world(cell: i32, cell_size_meters: f32) -> f32 {
     cell as f32 * cell_size_meters
 }
 
+/// 按世界米制速度计算Grid2D跨一个Cell的Tick数；Cell边长变化不会改变角色的米/秒速度。
+/// Calculates Grid2D ticks from world-meter speed so changing Cell size does not change meters per second.
 fn step_duration_ticks(
     input_x: i8,
     input_z: i8,
-    speed_cells_per_second: f32,
+    speed_meters_per_second: f32,
+    cell_size_meters: f32,
     fixed_update_ms: f32,
 ) -> u32 {
-    let distance = if input_x != 0 && input_z != 0 {
+    let distance_cells = if input_x != 0 && input_z != 0 {
         std::f32::consts::SQRT_2
     } else {
         1.0
     };
-    (1_000.0 * distance / speed_cells_per_second / fixed_update_ms)
+    let distance_meters = distance_cells * cell_size_meters;
+    (1_000.0 * distance_meters / speed_meters_per_second / fixed_update_ms)
         .ceil()
         .max(1.0) as u32
 }
@@ -3643,6 +3648,16 @@ mod tests {
 
         let encoded = native_map_peek_numeric_delta(1, 7, 10_017).unwrap();
         assert_eq!(u32::from_le_bytes(encoded[0..4].try_into().unwrap()), 4);
+
+        assert!(crate::game::set_numeric(handle, 20_001, 5).unwrap());
+        assert_eq!(numeric_value(handle, 2_000).unwrap(), 5);
+        assert!(crate::game::set_numeric(handle, 20_002, 3).unwrap());
+        assert_eq!(numeric_value(handle, 2_000).unwrap(), 8);
+        assert!(crate::game::set_numeric(handle, 20_003, 20).unwrap());
+        assert_eq!(numeric_value(handle, 2_000).unwrap(), 9);
+        let direct_attack = crate::game::set_numeric(handle, 2_000, 99).unwrap_err();
+        assert!(direct_attack.to_string().contains("derived"));
+        assert_eq!(numeric_value(handle, 2_000).unwrap(), 9);
     }
 
     #[test]
@@ -3670,6 +3685,18 @@ mod tests {
         assert_eq!(value.cell_z, 0);
         assert_eq!(value.target_cell_x, 1);
         assert_eq!(value.target_cell_z, 1);
+    }
+
+    #[test]
+    fn grid_movement_uses_cell_size_with_meter_speed() {
+        let bounds = Grid2DBounds::new(128, 128, 2_000).unwrap();
+        let mut value = unit_hot(1);
+        value.speed_cells_per_second = 2.0;
+        value.input_x = 1;
+        value.input_changed = 1;
+
+        assert!(update_movement(&mut value, 10, 50.0, bounds));
+        assert_eq!(value.move_end_tick, 30);
     }
 
     #[test]

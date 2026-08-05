@@ -5,6 +5,8 @@ import {
   C2M_MoveCodec,
   G2C_AoiDelta,
   G2C_AoiDeltaCodec,
+  G2C_AutoAttackState,
+  G2C_AutoAttackStateCodec,
   G2C_BuffAdded,
   G2C_BuffAddedCodec,
   G2C_BuffDetail,
@@ -57,6 +59,11 @@ export const ClientMessages = {
     name: "Client.EntityState",
     msgcode: MsgCode.G2C_EntityState,
     codec: G2C_EntityStateCodec,
+  }),
+  AutoAttackState: defineMessage<G2C_AutoAttackState>({
+    name: "Client.AutoAttackState",
+    msgcode: MsgCode.G2C_AutoAttackState,
+    codec: G2C_AutoAttackStateCodec,
   }),
   ItemChanged: defineMessage<G2C_ItemChanged>({
     name: "Client.ItemChanged",
@@ -116,6 +123,7 @@ export const AllMessageDescriptors = [
   ClientMessages.EntityNavigate,
   ClientMessages.EntityNumeric,
   ClientMessages.EntityState,
+  ClientMessages.AutoAttackState,
   ClientMessages.ItemChanged,
   ClientMessages.BuffAdded,
   ClientMessages.BuffRemoved,

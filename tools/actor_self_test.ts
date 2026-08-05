@@ -18,7 +18,7 @@ import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { NativeItemRef } from "../app/generated/model/native/NativeItemRef";
 import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
-import { NumericType } from "../app/model/demo/numeric/NumericType";
+import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/NumericType";
 import { Item } from "../app/model/demo/item/Item";
 import { ItemComponent } from "../app/model/demo/item/ItemComponent";
 import { TimeSystem } from "../app/core/runtime/TimeSystem";
@@ -116,13 +116,15 @@ function testGeneratedNativeHandleScalarAccess(): void {
     numericSet: (handle, numericType, value) => {
       const values = numericsByHandle.get(handle)!;
       if ((values.get(numericType) ?? 0n) === value) return false;
-      if (numericType === NumericType.MaxHp) throw new Error("MaxHp is derived");
+      if (IsDerivedNumericType(numericType)) throw new Error("derived Numeric is read-only");
       values.set(numericType, value);
-      if ([NumericType.MaxHpBase, NumericType.MaxHpAdd, NumericType.MaxHpPct].includes(numericType)) {
-        const base = values.get(NumericType.MaxHpBase) ?? 0n;
-        const addition = values.get(NumericType.MaxHpAdd) ?? 0n;
-        const percentage = values.get(NumericType.MaxHpPct) ?? 0n;
-        values.set(NumericType.MaxHp, (base + addition) * (100n + percentage) / 100n);
+      const target = Math.trunc(numericType / 10);
+      const suffix = numericType % 10;
+      if (IsDerivedNumericType(target) && suffix >= 1 && suffix <= 3) {
+        const base = values.get(target * 10 + 1) ?? 0n;
+        const addition = values.get(target * 10 + 2) ?? 0n;
+        const percentage = values.get(target * 10 + 3) ?? 0n;
+        values.set(target, (base + addition) * (100n + percentage) / 100n);
       }
       return true;
     },
@@ -428,7 +430,14 @@ async function testPlayerUnitComponents(): Promise<void> {
   await assertOrderedMailbox(host, player);
   assert.equal(player.GetComponent(NumericComponent), numeric);
   assert.equal(numeric[NumericType.CurrentHp], 100n);
+  assert.equal(numeric[NumericType.Attack], 5n);
+  assert.equal(numeric[NumericType.AttackBase], 5n);
+  assert.equal(numeric[NumericType.AttackSpeed], 2_000n);
+  assert.equal(numeric[NumericType.MoveSpeed], 10_000n);
   assert.equal(numeric[NumericType.MaxHp], 1000n);
+  numeric[NumericType.AttackAdd] += 3n;
+  numeric[NumericType.AttackPct] += 20n;
+  assert.equal(numeric[NumericType.Attack], 9n);
   numeric[NumericType.MaxHpAdd] += 100n;
   numeric[NumericType.MaxHpPct] += 20n;
   assert.equal(numeric[NumericType.MaxHp], 1320n);

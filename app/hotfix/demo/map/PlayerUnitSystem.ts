@@ -7,15 +7,21 @@ import {
   NativeData,
   NativeUnitRef,
   NumericComponent,
+  NumericType,
   PlayerPersistenceComponent,
   type PlayerSnapshot,
   type M2G_TransferPlayer,
   type M2C_AttackMonster,
+  type M2C_ToggleAutoAttack,
+  type AutoAttackState,
+  CombatComponent,
   MonsterComponent,
+  GameErrCode,
   GameConfigs,
   MapComponent,
   PlayerUnit,
   PositionComponent,
+  RpcError,
   SpatialMode,
   type MovePlayer,
   UnitGateComponent,
@@ -151,6 +157,53 @@ export class PlayerUnitSystem extends PlayerUnit {
   AttackMonster(monsterId: number): M2C_AttackMonster {
     return this.DomainScene().GetComponent(MonsterComponent).Attack(this, monsterId);
   }
+
+  /**
+   * 只激活或取消玩家的平A意图；目标必须在当前地图且存活。
+   * 10Hz战斗桶会再次校验范围和120度朝向，并从零开始推进读条。
+   *
+   * Toggles the player's auto-attack intent after validating a live target on
+   * this map. The 10Hz combat bucket rechecks range and the 120-degree facing
+   * cone, then starts every accepted swing from zero.
+   */
+  ToggleAutoAttack(targetUnitId: number, enabled: boolean): M2C_ToggleAutoAttack {
+    const monsterComponent = this.DomainScene().GetComponent(MonsterComponent);
+    if (enabled) {
+      const target = monsterComponent.Get(targetUnitId);
+      if (!target) {
+        throw new RpcError(GameErrCode.MonsterNotFound, `monster not found: ${targetUnitId}`);
+      }
+      if (target.GetComponent(NativeUnitRef).alive === 0) {
+        throw new RpcError(GameErrCode.MonsterDead, `monster is dead: ${targetUnitId}`);
+      }
+    }
+    const combat = this.GetComponent(CombatComponent);
+    combat.SetAutoAttackInterval(readAttackIntervalMs(this.GetComponent(NumericComponent)));
+    const state = combat.ToggleAutoAttack(targetUnitId, enabled);
+    const map = this.DomainScene().GetComponent(MapComponent);
+    void map.PublishAutoAttackState(this, state).catch((error) => {
+      this.DomainScene().logger.error("auto attack state publish failed", { error });
+    });
+    return toAutoAttackResponse(state);
+  }
+}
+
+function readAttackIntervalMs(numeric: NumericComponent): number {
+  const value = Number(numeric[NumericType.AttackSpeed]);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`AttackSpeed must be a positive integer in milliseconds: ${value}`);
+  }
+  return value;
+}
+
+function toAutoAttackResponse(state: AutoAttackState): M2C_ToggleAutoAttack {
+  return {
+    enabled: state.enabled,
+    targetUnitId: state.targetUnitId,
+    phase: state.phase,
+    swingStartAtMs: BigInt(Math.max(0, Math.floor(state.swingStartAtMs))),
+    swingIntervalMs: state.swingIntervalMs,
+  };
 }
 
 /** 拒绝非离散方向输入，避免无效意图进入 Rust 权威状态。 / Rejects non-discrete directions before invalid intent reaches Rust-authoritative state. */

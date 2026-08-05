@@ -7,8 +7,29 @@
 玩家创建时挂组件：
 
 ```ts
-player.AddComponent(NumericComponent);
+player.AddComponent(NumericComponent, {
+  [NumericType.CurrentHp]: BigInt(playerConfig.initialHp),
+  [NumericType.MaxHpBase]: BigInt(playerConfig.maxHp),
+  [NumericType.AttackBase]: 5n,
+  [NumericType.AttackSpeedAdd]: 2_000n,
+  [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(playerConfig.moveSpeed),
+});
 ```
+
+Numeric组件本身不猜测玩家、怪物或NPC的默认值；创建者把自己的初始值传入，未传入的普通Numeric保持Rust默认值`0`。
+
+如果创建时需要覆盖默认值，第二个参数直接使用`NumericType -> bigint`字典，不要再为每个数值扩展一组命名字段：
+
+```ts
+const values: NumericInitialValues = {};
+values[NumericType.MaxHpBase] = BigInt(config.maxHp);
+values[NumericType.CurrentHp] = BigInt(config.maxHp);
+values[NumericType.MaxMpBase] = BigInt(config.maxMp);
+values[NumericType.CurrentMp] = BigInt(config.maxMp);
+monster.AddComponent(NumericComponent, values);
+```
+
+`NumericInitialValues`只是这个字典的TypeScript类型别名，不是需要维护字段列表的结构体。`MaxHp`、`MaxMp`、`Attack`等派生结果不能直接初始化，必须写它们的`Base/Add/Pct`来源；普通属性如`CurrentHp`和`CurrentMp`可以直接写。所有值必须是`bigint`，错误的NumericType、派生结果或普通`number`会在组件创建时立即报错。
 
 业务代码保持 ET 风格：
 
@@ -22,46 +43,55 @@ numeric[NumericType.CurrentHp] += 1n;
 
 ## 派生属性与依赖传播
 
-`MaxHp`是只读派生属性，由Rust按编号约定维护：
+`MaxHp`、`Attack`、`AttackSpeed`和`MoveSpeed`都是只读派生属性，由Rust按编号约定维护：
 
 ```text
 MaxHp = (MaxHpBase + MaxHpAdd) * (100 + MaxHpPct) / 100
+Attack = (AttackBase + AttackAdd) * (100 + AttackPct) / 100
+AttackSpeed = (AttackSpeedBase + AttackSpeedAdd) * (100 + AttackSpeedPct) / 100
+MoveSpeed = (MoveSpeedBase + MoveSpeedAdd) * (100 + MoveSpeedPct) / 100
 ```
 
 编号约定如下：
 
 ```text
-1..999       普通属性，例如 CurrentHp=1
+1..999       普通属性，例如 CurrentHp=1、CurrentMp=2
 1000..9999   派生结果，只读，例如 MaxHp=1000
 Result*10+1  Base，例如 MaxHpBase=10001
 Result*10+2  Add，例如 MaxHpAdd=10002
 Result*10+3  Pct，例如 MaxHpPct=10003
 ```
 
-Rust不保存`MaxHp`等业务常量，只根据编号识别来源与目标。写入`10001/10002/10003`会重算`1000`；其他不符合该模式的编号仍是普通属性。计算使用`i128`中间值、向零截断到`i64`，溢出会拒绝整次写入，不留下部分更新。`MaxHpPct=20n`表示增加20%。业务只修改源属性：
+Rust不保存`MaxHp`、`Attack`等业务常量，只根据编号识别来源与目标。写入`10001/10002/10003`会重算`1000`，写入`20001/20002/20003`会重算`2000`，写入`20011/20012/20013`会重算`2001`，写入`30001/30002/30003`会重算`3000`；其他不符合该模式的编号仍是普通属性。计算使用`i128`中间值、向零截断到`i64`，溢出会拒绝整次写入，不留下部分更新。`MaxHpPct=20n`表示增加20%。业务只修改源属性：
 
 ```ts
 const numeric = unit.GetComponent(NumericComponent);
 numeric[NumericType.MaxHpAdd] += 100n;
 numeric[NumericType.MaxHpPct] += 20n;
 const maxHp = numeric[NumericType.MaxHp];
+
+numeric[NumericType.AttackBase] = 5n;
+numeric[NumericType.AttackAdd] += 3n;
+numeric[NumericType.AttackPct] += 20n;
+const attack = numeric[NumericType.Attack]; // 9n
 ```
 
-一次`NumericSet`会在Rust中先算出派生结果，然后原子提交源属性和结果。每个实际变化的NumericType分别标脏，因此客户端在帧尾同时收到来源和新的`MaxHp`。直接给`MaxHp`赋值会报错；初始化应写`MaxHpBase`，地图迁移恢复时忽略快照里的派生值并由源属性重新计算。
+一次`NumericSet`会在Rust中先算出派生结果，然后原子提交源属性和结果。每个实际变化的NumericType分别标脏，因此客户端在帧尾同时收到来源和新的派生值。直接给`MaxHp`或`Attack`赋值会报错；初始化应写`MaxHpBase`或`AttackBase`，地图迁移恢复时忽略快照里的派生值并由源属性重新计算。
 
 实现位于`src/game/numeric.rs`。增加`Attack`、`MoveSpeed`等同类派生属性时只需在TS声明符合约定的四个编号，不修改Rust。该约定只表达`Base/Add/Pct -> Result`，不表达`Strength -> Attack -> FinalDamage`这类任意依赖图；复杂公式应使用独立Rust领域op，避免把编号协议演变成隐藏脚本语言。
 
-当前演示每 100ms 增加一次生命值：
+`AttackSpeed`在本项目中表示“一次普通攻击的间隔”，单位是毫秒，数值越小攻击越快。`MonsterConfig.attack_interval_ms`只在创建或复活怪物时写入`AttackSpeedAdd`，战斗系统不再直接读取配置字段；玩家演示默认是`2000n`。服务端把最终`AttackSpeed`同时用于10Hz平A判定和`G2C_AutoAttackState.swingIntervalMs`，客户端只按服务器下发的间隔绘制读条。
+
+`MoveSpeed`表示米/秒，但Numeric仍然只保存i64，因此使用毫米/秒整数：例如表里的`2.5`会写成`2500n`。不要把`MoveSpeed`改成“每米耗时毫秒”：那会让加速变成倒数换算，百分比修正和链式属性都容易产生歧义。Rust Grid2D会用`Cell边长 × 移动米/秒`计算跨Cell耗时，NavMesh3D直接使用同一个米/秒单位。
+
+当前Numeric不会偷偷创建回血Timer。玩家创建时默认写入`NumericType.AttackBase = 5n`，Rust计算出`Attack(2000)=5n`；怪物由`MonsterComponent`根据`MonsterConfig.attack_damage`写入自己的`AttackBase`。战斗系统只读Numeric.Attack并按这个值扣除CurrentHp：
 
 ```ts
-this.NewRepeatedTimer(100, "RegenerateHp");
-
-protected RegenerateHp(): void {
-  this[NumericType.CurrentHp] += 1n;
-}
+const attack = unit.GetComponent(NumericComponent)[NumericType.Attack];
+target.GetComponent(NumericComponent)[NumericType.CurrentHp] -= attack;
 ```
 
-Timer触发时按方法名解析当前Hotfix实现，不会保存旧generation闭包。Unit销毁时，组件定时器自动取消，Native Numeric也从该Unit解绑。
+这段示例只用于说明数值访问，真正的怪物攻击必须经过`MonsterComponent.Attack`，由地图统一校验目标、距离、死亡和广播。需要定时回血、Buff或其他周期规则时，应由对应业务Component显式创建Timer，不能把规则藏在通用NumericComponent里。
 
 ## 帧尾 Delta
 
@@ -207,7 +237,7 @@ node perf/map_capacity/run_map_capacity_perf.mjs \
   --warmup 10 --duration 20
 ```
 
-`--state-sync-mode` 支持 `numeric`、`player`、`item` 和 `mixed`。Numeric 演示本身已有 100ms 定时器，单测定时同步时使用 `--state-sync-rate 0`，避免额外 RPC 修改数值。
+`--state-sync-mode` 支持 `numeric`、`player`、`item` 和 `mixed`。Numeric测试只通过请求显式修改数值，不依赖通用Component里的隐藏定时器。
 
 报告中的状态下行同时给出三种口径：
 

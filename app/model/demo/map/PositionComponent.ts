@@ -77,15 +77,25 @@ export class PositionComponent extends Component<[
     return this.native.cellZ;
   }
 
-  get SpeedCellsPerSecond(): number {
+  /** 统一使用米/秒；旧字段名保留给现有协议和迁移数据。 / Uses meters per second consistently; the legacy name remains for protocol and transfer compatibility. */
+  get SpeedMetersPerSecond(): number {
     return this.native.speedCellsPerSecond;
   }
 
-  set SpeedCellsPerSecond(value: number) {
+  set SpeedMetersPerSecond(value: number) {
     if (!Number.isFinite(value) || value <= 0) {
       throw new Error(`movement speed must be positive: ${value}`);
     }
     this.native.speedCellsPerSecond = value;
+  }
+
+  /** 兼容旧业务调用；新代码应使用SpeedMetersPerSecond。 / Compatibility alias; new code should use SpeedMetersPerSecond. */
+  get SpeedCellsPerSecond(): number {
+    return this.SpeedMetersPerSecond;
+  }
+
+  set SpeedCellsPerSecond(value: number) {
+    this.SpeedMetersPerSecond = value;
   }
 
   protected override Awake(

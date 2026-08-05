@@ -82,6 +82,8 @@ export { NumericComponent, type NumericInitialValues } from "./demo/numeric/Nume
 export {
   AllNumericTypes,
   IsDerivedNumericType,
+  MoveSpeedMetersPerSecondToNumeric,
+  NUMERIC_MOVE_SPEED_SCALE,
   NumericType,
   type NumericType as NumericTypeValue,
 } from "./demo/numeric/NumericType";
@@ -112,6 +114,12 @@ export {
   type MonsterRuntimeState,
   type MonsterSpawnSlot,
 } from "./demo/monster/MonsterComponent";
+export {
+  AutoAttackPhase,
+  CombatComponent,
+  type AutoAttackPhaseValue,
+  type AutoAttackState,
+} from "./demo/combat/CombatComponent";
 export {
   MonsterUnit,
   type AwakeMonsterUnit,

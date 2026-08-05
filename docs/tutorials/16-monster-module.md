@@ -1,6 +1,6 @@
 # 怪物模块最小闭环
 
-本教程给出一个完整但刻意保持简单的怪物模块：固定刷点、统一Unit、局部行为树、简单追击、两米内普通攻击、死亡尸体、移除和重生。它用于验证业务开发链路，不是完整商业战斗系统。
+本教程给出一个完整但刻意保持简单的怪物模块：固定刷点、统一Unit、局部行为树、简单追击、玩家自动平A、两米内普通攻击、死亡状态和重生。它用于验证业务开发链路，不是完整商业战斗系统。
 
 ## 1. 配置放在哪里
 
@@ -20,20 +20,21 @@ game_config/Datas/MonsterAreaConfig.xlsx
 | `model_id` | 客户端表现资源标识 |
 | `max_hp` | 初始最大生命值 |
 | `attack_damage` | 普通攻击伤害 |
-| `move_speed` | 移动速度，米/秒 |
-| `attack_range` | 普通攻击距离，必须大于0且不超过2米 |
-| `attack_interval_ms` | 普通攻击间隔 |
+| `move_speed` | 移动速度，米/秒；创建时换算为Numeric.MoveSpeed的毫米/秒整数 |
+| `attack_range` | 普通攻击距离，单位米；当前演示值为2.5，必须大于0且不超过4米 |
+| `attack_interval_ms` | 普通攻击间隔，毫秒；创建/复活时写入Numeric.AttackSpeedAdd |
 | `attack_mode` | `0`被动，`1`主动 |
 | `skill_id` | 预留技能配置ID，当前演示只支持普通攻击 |
+| `respawn_seconds` | 怪物死亡后恢复的秒数 |
 
-`MonsterAreaConfig`描述“在哪里刷”：一行就是一个固定刷怪槽位，包含地图配置ID、模板ID、坐标、尸体保留时间和重生时间。当前版本没有随机刷怪池、多个候选点、掉落表和持久化。
+`MonsterAreaConfig`描述“在哪里刷”：一行就是一个固定刷怪槽位，包含地图配置ID、模板ID、坐标和是否在地图创建时生成。复活时间属于怪物模板，不属于刷点，避免同一个怪物模板在不同地图拥有隐含的生命周期差异。当前版本没有随机刷怪池、多个候选点、掉落表和持久化。
 
 3D演示地图`MapConfig.id = 100`已经配置两个刷怪槽：`10004`生成怪A（被动），`10005`生成怪B（主动）。两个位置避开中央障碍和动态门，Cocos 3D进入`Map 100`后即可观察两种颜色。
 
 修改后执行：
 
 ```powershell
-npm run build:game-config
+npm run build:game-config:startup
 npm run test:game-config
 ```
 
@@ -70,33 +71,45 @@ app/hotfix/demo/monster/MonsterUnitSystem.ts
 app/model/demo/monster/MonsterComponent.ts
 app/hotfix/demo/monster/MonsterComponentSystem.ts
 app/hotfix/demo/monster/MonsterBehaviorTree.ts
+app/model/demo/combat/CombatComponent.ts
+app/hotfix/demo/combat/CombatComponentSystem.ts
 ```
 
-地图固定Tick统一驱动所有怪物，不为每个怪物创建一个长期Timer。当前使用怪物模块内部的轻量行为树，不是通用AI框架：
+地图固定桶统一驱动怪物和战斗，不为每个怪物或玩家创建长期Timer。当前使用怪物模块内部的轻量行为树，不是通用AI框架：
 
 ```text
 出生
   -> 无目标：待机
   -> 主动怪找到范围内玩家：追击
-  -> 距离不超过2米：停止移动并按配置间隔普通攻击
+  -> 距离不超过MonsterConfig.attack_range：停止移动并按Numeric.AttackSpeed普通攻击
   -> 玩家通过AttackMonster造成伤害
-  -> HP为0，保留尸体
-  -> 尸体时间到，Detach并Remove Unit
-  -> 重生时间到，在原刷怪槽位重新创建
+  -> HP为0，旧MonsterUnit离开AOI并销毁
+  -> MonsterConfig.respawn_seconds到期
+  -> 同一AreaId刷怪槽创建新的MonsterUnit，取得新的UnitId
 ```
 
-被动怪只作为可攻击目标，不会主动寻找玩家。当前行为树只有待机、追击、攻击和攻击冷却停留四个动作；玩家死亡、掉落、技能、Buff、仇恨列表和复杂战斗结算尚未加入。
+被动怪没有仇恨时不会主动寻找玩家；玩家对怪物造成实际伤害后，`MonsterComponent.Attack`按“1点伤害=1点仇恨”调用`MonsterComponent.AddThreat`，5Hz桶选择范围内仇恨最高的玩家，之后被动怪才会追击。主动怪没有仇恨时仍会在仇恨范围内寻找最近玩家；一旦有仇恨，主动和被动怪都优先按仇恨选目标。当前行为树只有待机、追击、攻击和攻击冷却停留四个动作；掉落、技能、Buff和复杂战斗结算尚未加入。3D演示客户端会在玩家HUD显示服务端推送的HP/MP，便于观察主动怪造成的伤害和玩家死亡，不允许客户端自行计算扣血。
 
 行为树的调用关系保持在业务模块内部：
 
 ```text
-MonsterComponent.Update
+MonsterComponent.Update5Hz
   -> MonsterBehaviorTree.Evaluate
   -> MonsterComponentSystem执行Idle/Chase/Hold/Attack
   -> NumericComponent修改CurrentHp
+  -> 实际伤害调用MonsterComponent.AddThreat
 ```
 
-不要在Handler里直接调用行为树，也不要为每只怪物创建一个Actor或Timer。行为树只负责选择动作，距离、伤害、死亡和Numeric修改仍由`MonsterComponent`负责。
+固定更新桶的语义是框架约定，不是业务可选参数：
+
+| 桶 | 入口 | 当前用途 |
+| --- | --- | --- |
+| 20Hz | `Update()` | 地图移动、AOI和帧尾前的基础逻辑 |
+| 10Hz | `Update10Hz()` | 玩家自动攻击是否能开始/中断读条 |
+| 5Hz | `Update5Hz()` | 主动怪追击、攻击决策 |
+| 1Hz | `Update1Hz()` | 空刷怪槽维护和新Unit重生 |
+
+不要在Handler里直接调用行为树，也不要为每只怪物或玩家创建一个Actor、Timer或Update目标。行为树只负责选择动作，距离、伤害、死亡和Numeric修改仍由`MonsterComponent`负责。`Update()`是默认20Hz兼容入口；需要中频逻辑时只实现固定名称的方法，不增加`hz`字段或业务频率配置。
 
 ## 4. 玩家如何攻击
 
@@ -115,7 +128,7 @@ C2M_AttackMonsterHandler
   -> PlayerUnit.AttackMonster(monsterId)
   -> MonsterComponent.Attack(player, monsterId)
   -> Monster NumericComponent.CurrentHp
-  -> 0时Kill，后续由地图Tick完成尸体移除和重生
+  -> 0时Kill，旧Unit执行Detach/Remove，后续由地图Tick创建新Unit
 ```
 
 Handler只负责把协议参数交给Unit，不查找地图、不遍历全局Unit、不直接操作Native句柄：
@@ -131,7 +144,54 @@ export class C2M_AttackMonsterHandler {
 
 实际工程中的Handler位于`app/hotfix/demo/mapHost/handlers/C2M_AttackMonsterHandler.ts`，协议和类型由`npm run codegen:proto`生成。
 
-## 5. AOI和客户端数据
+## 5. 玩家自动平A
+
+自动平A不是“每次按键立刻打一下”，而是一个持续意图加一段可被打断的读条：
+
+```text
+按1开启
+  -> 记录 enabled=true 和目标UnitId
+  -> 10Hz检查目标存活、同地图、距离<=PlayerConfig.attack_range、目标位于前方120度
+  -> 条件满足：从0开始推进swingProgress
+  -> 条件不满足：只清零当前读条，保留enabled
+  -> 再次满足：重新从0开始读，不能恢复旧进度
+  -> 读条完成：MonsterComponent.Attack，命中后开始下一轮
+按1取消
+  -> enabled=false，目标和读条清除
+```
+
+朝向范围是角色前方`±60°`，共120°。服务端使用`PositionComponent.yaw`判断，客户端不能因为画面上“看起来朝向目标”就直接造成伤害。移动、右键环绕和A/D转身只改变权威位置/朝向；它们不会偷偷取消自动攻击。
+
+调用链保持一层胶水：
+
+```text
+C2M_ToggleAutoAttackHandler
+  -> PlayerUnit.ToggleAutoAttack(targetUnitId, enabled)
+  -> CombatComponent.ToggleAutoAttack(...)
+  -> MonsterComponentSystem.Update10Hz()
+  -> MonsterComponent.Attack(player, targetUnitId)
+  -> Monster NumericComponent.CurrentHp
+```
+
+`CombatComponent`只保存状态，不实现找怪、距离、朝向和伤害。平A间隔由玩家Numeric的最终`AttackSpeed`设置，玩家攻击距离读取`PlayerConfig.attack_range`，怪物攻击距离读取`MonsterConfig.attack_range`，二者都不是Numeric链式属性。修改攻击速度不会偷偷重置已经开始的读条。平A状态不放入地图Transfer快照，传送到新地图后需要重新按`1`激活。服务端通过`G2C_AutoAttackState`通知本人，消息只在状态改变、读条开始、命中或中断时发送；客户端用最近一次`C2M_Ping`得到的服务器时钟偏差绘制进度条，进度条永远只是表现，不是命中依据。
+
+Cocos3D演示的快捷键和UI位于：
+
+```text
+client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/GameBootstrap3D.ts
+client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/Handlers/G2C_AutoAttackStateHandler.ts
+```
+
+协议增加后执行：
+
+```powershell
+npm run codegen:proto:update-lock
+npm run codegen
+npm run typecheck
+npm run typecheck:cocos3d-demo
+```
+
+## 6. AOI和客户端数据
 
 怪物加入AOI时只作为`Subject`，不作为`Observer`，因此怪物不会拥有玩家连接，也不会主动管理Gate广播。玩家进入视野时，`MapEntitySnapshot`携带：
 
@@ -142,14 +202,16 @@ account    = ""
 position / yaw / speed / alive / numerics
 ```
 
-客户端通过`entityType`选择怪物表现资源，通过`configId`读取对应模型标识。当前演示还把`attack_mode`作为客户端只读的表现提示：自己是蓝色，其他玩家是绿色，被动怪（0）是黄色，主动怪（1）是红色。这个颜色只服务于识别，不是客户端权限判断，也不改变服务端AI。怪物死亡时先用已有状态和Numeric同步，尸体移除时走AOI Leave，重生时走AOI Enter和完整Snapshot。
+客户端通过`entityType`选择怪物表现资源，通过`configId`读取对应模型标识。当前演示还把`attack_mode`作为客户端只读的表现提示：自己是蓝色，其他玩家是绿色，被动怪（0）是黄色，主动怪（1）是红色。这个颜色只服务于识别，不是客户端权限判断，也不改变服务端AI。怪物死亡时通过AOI Leave移除旧实体，复活时通过AOI Enter接收新实体快照。客户端可以清理旧表现，但不能把“隐藏”当作服务端生命周期；新实体必须使用新的`UnitId`。
+
+这里要区分两个ID：`AreaId`是固定刷怪槽位的业务配置ID，表示“在哪里刷”；`UnitId`是一次怪物实体生命周期的身份，表示“当前是哪一只实体”。复活只复用`AreaId`，绝不复用旧`UnitId`。这样可以避免客户端、任务、战斗引用把已经销毁的旧怪物误认为新怪物。
 
 本模块不把怪物之间的动态阻挡或动态避障塞进怪物组件。导航门等场景障碍仍由地图导航能力负责，角色和怪物的动态避让明确不属于本阶段。
 
-## 6. 新增怪物业务时的边界
+## 7. 新增怪物业务时的边界
 
 - 新字段和稳定身份放Model；可调整规则放Hotfix System。
-- 新模板数值放`MonsterConfig`，新刷点和时间放`MonsterAreaConfig`，不要把策划数据写死在System。
+- 新模板数值和复活规则放`MonsterConfig`，新刷点和坐标放`MonsterAreaConfig`，不要把策划数据写死在System。
 - 任务、掉落、Buff等系统通过`MonsterComponent.Get/GetAll`取得怪物，不维护第二份怪物集合。
 - 需要广播的内容先区分Snapshot、Numeric Delta和不可丢Event；不要为了一个战斗事件复制整张怪物表。
 - 只有性能证据证明TS或V8边界是瓶颈时，才讨论把怪物计算下沉Rust；不要先把普通AI写进`src/native_data.rs`。

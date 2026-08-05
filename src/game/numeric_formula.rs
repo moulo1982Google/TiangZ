@@ -36,6 +36,9 @@ mod tests {
         assert_eq!(modifier_target(10_001), Some(1_000));
         assert_eq!(modifier_target(10_002), Some(1_000));
         assert_eq!(modifier_target(10_003), Some(1_000));
+        assert_eq!(modifier_target(20_001), Some(2_000));
+        assert_eq!(modifier_target(20_002), Some(2_000));
+        assert_eq!(modifier_target(20_003), Some(2_000));
         assert_eq!(modifier_target(10_004), None);
         assert_eq!(derive_base_add_pct(1_000, 100, 20), Some(1_320));
         assert_eq!(derive_base_add_pct(i64::MAX, i64::MAX, 100), None);

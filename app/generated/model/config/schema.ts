@@ -339,10 +339,6 @@ export class MonsterAreaConfig {
         this.spawnZ = _json_.spawn_z
         if (_json_.spawn_yaw === undefined) { throw new Error() }
         this.spawnYaw = _json_.spawn_yaw
-        if (_json_.respawn_seconds === undefined) { throw new Error() }
-        this.respawnSeconds = _json_.respawn_seconds
-        if (_json_.corpse_lifetime_seconds === undefined) { throw new Error() }
-        this.corpseLifetimeSeconds = _json_.corpse_lifetime_seconds
         if (_json_.initial_spawn === undefined) { throw new Error() }
         this.initialSpawn = _json_.initial_spawn
     }
@@ -378,14 +374,6 @@ export class MonsterAreaConfig {
      */
     readonly spawnYaw: number
     /**
-     * 死亡后重生秒数
-     */
-    readonly respawnSeconds: number
-    /**
-     * 尸体保留秒数
-     */
-    readonly corpseLifetimeSeconds: number
-    /**
      * 地图创建时是否生成
      */
     readonly initialSpawn: boolean
@@ -394,8 +382,6 @@ export class MonsterAreaConfig {
 
         this.mapConfigId_ref = tables.TbMapConfig.get(this.mapConfigId)
         this.monsterConfigId_ref = tables.TbMonsterConfig.get(this.monsterConfigId)
-
-
 
 
 
@@ -419,6 +405,8 @@ export class MonsterConfig {
         this.modelId = _json_.model_id
         if (_json_.max_hp === undefined) { throw new Error() }
         this.maxHp = _json_.max_hp
+        if (_json_.max_mp === undefined) { throw new Error() }
+        this.maxMp = _json_.max_mp
         if (_json_.attack_damage === undefined) { throw new Error() }
         this.attackDamage = _json_.attack_damage
         if (_json_.move_speed === undefined) { throw new Error() }
@@ -431,6 +419,8 @@ export class MonsterConfig {
         this.attackMode = _json_.attack_mode
         if (_json_.skill_id === undefined) { throw new Error() }
         this.skillId = _json_.skill_id
+        if (_json_.respawn_seconds === undefined) { throw new Error() }
+        this.respawnSeconds = _json_.respawn_seconds
     }
 
     /**
@@ -449,6 +439,10 @@ export class MonsterConfig {
      * 基础最大生命值
      */
     readonly maxHp: number
+    /**
+     * 基础最大魔法值
+     */
+    readonly maxMp: number
     /**
      * 基础攻击伤害
      */
@@ -473,8 +467,14 @@ export class MonsterConfig {
      * 技能配置ID：当前演示0表示普通攻击
      */
     readonly skillId: number
+    /**
+     * 死亡后重生秒数
+     */
+    readonly respawnSeconds: number
 
     resolve(tables:Tables) {
+
+
 
 
 
@@ -509,6 +509,12 @@ export class PlayerConfig {
         this.initialItemConfigId = _json_.initial_item_config_id
         if (_json_.initial_item_count === undefined) { throw new Error() }
         this.initialItemCount = _json_.initial_item_count
+        if (_json_.max_mp === undefined) { throw new Error() }
+        this.maxMp = _json_.max_mp
+        if (_json_.initial_mp === undefined) { throw new Error() }
+        this.initialMp = _json_.initial_mp
+        if (_json_.attack_range === undefined) { throw new Error() }
+        this.attackRange = _json_.attack_range
     }
 
     /**
@@ -541,6 +547,18 @@ export class PlayerConfig {
      * 初始道具数量
      */
     readonly initialItemCount: number
+    /**
+     * 基础最大魔法值
+     */
+    readonly maxMp: number
+    /**
+     * 初始当前魔法值
+     */
+    readonly initialMp: number
+    /**
+     * 普通攻击距离（米）
+     */
+    readonly attackRange: number
 
     resolve(tables:Tables) {
 
@@ -549,6 +567,9 @@ export class PlayerConfig {
 
 
         this.initialItemConfigId_ref = tables.TbItemConfig.get(this.initialItemConfigId)
+
+
+
 
     }
 }

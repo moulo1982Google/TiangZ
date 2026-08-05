@@ -127,8 +127,8 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 怪物业务默认采用“MapScene上的一个`MonsterComponent` + `UnitComponent`里的`MonsterUnit`”模型。不要为每只怪物创建一个`MonsterActor`、Gate连接或独立V8，也不要在Handler收到请求后扫描所有地图找怪物。
 
 ```text
-MonsterConfig                 怪物模板：模型、数值、攻击模式
-MonsterAreaConfig             固定刷怪槽：地图、坐标、尸体和重生时间
+MonsterConfig                 怪物模板：模型、数值、攻击模式、复活时间
+MonsterAreaConfig             固定刷怪槽：地图、坐标和初始是否生成
 MapHost -> MapScene
   -> MonsterComponent          刷怪、AI、战斗、死亡和重生的唯一拥有者
       -> MonsterUnit            统一Unit，可被UnitComponent和AOI索引
@@ -140,11 +140,15 @@ MapHost -> MapScene
 2. 需要新协议时先改`proto`，执行`npm run codegen:proto`，不要手写msgcode或Codec。
 3. 稳定身份放`app/model/demo/monster`，生命周期和行为放`app/hotfix/demo/monster`。
 4. Handler保持一层胶水，例如`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。
-5. 通过`MonsterComponent.Get/GetAll`取得怪物；删除、AOI和重生只能由MonsterComponent完成。
+5. 通过`MonsterComponent.Get/GetAll`取得怪物；死亡状态、AOI和重生只能由MonsterComponent完成。
 
-当前最小模块的生命周期是“生成、追击、攻击、玩家攻击、死亡、尸体保留、Detach、Remove、原槽位重生”。被动怪必须明确不主动追击。掉落、技能、仇恨、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
+当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡移除、原槽位新Unit重生”。怪物死亡先执行`Detach`、发布AOI Leave，再执行`Remove`；`MonsterConfig.respawn_seconds`到期后只复用`AreaId`刷怪槽，重新创建MonsterUnit并分配新的UnitId。被动怪没有仇恨时不主动寻找玩家，但玩家造成实际伤害后必须通过`MonsterComponent.AddThreat`增加仇恨，5Hz桶按仇恨最高者追击；不能把“被攻击”直接等同于“追击”。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
 
-怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡状态走已有状态/Numeric同步，尸体移除走AOI Leave，重生走AOI Enter。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。演示客户端可以读取冷配置中的`attack_mode`做非权威颜色提示：自己蓝色、其他玩家绿色、被动怪黄色、主动怪红色；业务逻辑仍必须以服务端配置和System为准。角色和怪物之间的动态阻挡、动态避障当前明确不做。
+怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡通过AOI Leave移除旧Unit，复活通过AOI Enter发送新Unit的完整快照。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。演示客户端可以读取冷配置中的`attack_mode`做非权威颜色提示：自己蓝色，其他玩家绿色，被动怪黄色，主动怪红色；业务逻辑仍必须以服务端配置和System为准。角色和怪物之间的动态阻挡、动态避障当前明确不做。
+
+自动平A追加在玩家Unit上的`CombatComponent`，不新增`MonsterActor`、每玩家Timer或每玩家Update目标。固定桶分工如下：`Update()`为20Hz基础地图逻辑，`Update10Hz()`判定玩家平A是否开始/中断读条，`Update5Hz()`处理主动怪AI，`Update1Hz()`处理空刷怪槽维护和新Unit重生。业务不配置任意Hz；需要完整规则时参考[固定更新桶与自动平A设计](../design/auto-attack-and-fixed-update.md)。
+
+玩家按`1`只是发送`C2M_ToggleAutoAttack`切换攻击意图。服务端要求目标存活、同一MapScene、距离不超过`PlayerConfig.attack_range`且处于角色前方120°，否则保持激活但把当前读条清零；再次满足条件必须从零开始。`G2C_AutoAttackState`只同步状态边界，并且是每个玩家本人频道上的`latest`可覆盖状态，不是不可丢失事件；客户端可以用服务器时间绘制读条，但不能自行结算命中。目标死亡、距离/朝向失效、玩家死亡或主动关闭会结束或重置平A，广播队列不会在固定次数后自动停止。攻击命中、道具消耗等不可逆事实仍使用`event`。目标、范围、朝向、伤害和仇恨都由Map的Hotfix System掌握；怪物攻击距离读取`MonsterConfig.attack_range`。
 
 完整示例和文件位置见[怪物模块教程](../tutorials/16-monster-module.md)。
 
@@ -179,12 +183,12 @@ MapHost -> MapScene
 1. 在Excel中维护字段和值；新增整张表时同步登记`__tables__.xlsx`。
 2. 用`##group`明确字段属于客户端`c`、服务端`s`或两端`c,s`；服务端秘密和校验数据不得为了省事发给客户端。
 3. 跨表ID使用Luban `#ref`，让生成阶段拒绝悬空引用。
-4. 纯数据变化执行`npm run build:game-config`和`npm run test:game-config`；结构变化执行完整`npm run build`。
+4. 纯数据变化如果准备重启服务器，执行`npm run build:game-config:startup`和`npm run test:game-config`；如果要在线热更，执行`npm run build:game-config`并把候选目录交给Watcher的`reload-config`；结构变化执行完整`npm run build`。
 5. 服务端通过`GameConfigs`读取，客户端通过分发SDK中的同名入口读取；禁止直接读Excel/JSON、手改Generated或自行维护第二份配置缓存。
 
 `PlayerConfig`表示创建玩家时的基础模板，不表示某个玩家升级后的等级、经验、当前生命或背包结果。运行时状态属于Entity/Component和持久化记录。配置对象与数组只读；`GetAll()`只用于低频初始化和管理流程，帧内热路径应按ID查询或预先建立明确索引。
 
-游戏配置的表名、字段、类型、分组、索引和引用关系属于Model，不能热更；变化后必须完整构建、重启相关Process并同步客户端SDK。只修改数据行或字段值时，`build:game-config`会生成独立候选，可通过Watcher的`reload-config`原子切换服务端快照。Reload不重跑Awake、不修改既有Entity状态；业务不要长期缓存配置行，应在真正使用数值时通过`GameConfigs`查询。客户端数据仍随SDK发布，不能把服务端Reload当作客户端配置下发。详细格式和示例见[游戏配置教程](../tutorials/10-game-config.md)。
+游戏配置的表名、字段、类型、分组、索引和引用关系属于Model，不能热更；变化后必须完整构建、重启相关Process并同步客户端SDK。只修改数据行或字段值时，`build:game-config:startup`会重新生成并覆盖服务器重启使用的`dist/game-config`；`build:game-config`只生成独立候选，可通过Watcher的`reload-config`原子切换服务端快照。`test:game-config`只验证，不更新启动目录。Reload不重跑Awake、不修改既有Entity状态；业务不要长期缓存配置行，应在真正使用数值时通过`GameConfigs`查询。客户端数据仍随SDK发布，不能把服务端Reload当作客户端配置下发。详细格式和示例见[游戏配置教程](../tutorials/10-game-config.md)。
 
 ## 新增玩家Component
 
@@ -503,14 +507,19 @@ await this.scenes.send(
 
 ### Numeric动态字典
 
-适合开发者维护稳定整数枚举的数值：
+适合开发者维护稳定整数枚举的数值。创建时也直接传`NumericType -> bigint`字典，不要为每个数值再设计一个参数字段：
 
 ```ts
+const initial: NumericInitialValues = {};
+initial[NumericType.MaxHpBase] = BigInt(config.maxHp);
+initial[NumericType.CurrentHp] = BigInt(config.maxHp);
+monster.AddComponent(NumericComponent, initial);
+
 const numeric = unit.GetComponent(NumericComponent);
 numeric[NumericType.CurrentHp] += 1n;
 ```
 
-Rust自动维护`NumericType -> i64`值与dirty表，TS使用`bigint`，业务字面量应写`1n`。`1..999`是普通属性；`1000..9999`是只读派生结果；结果编号乘10后加`1/2/3`分别表示Base/Add/Pct。Rust只识别编号关系，不重复维护业务枚举。当前`MaxHp=1000`，`MaxHpBase/MaxHpAdd/MaxHpPct=10001/10002/10003`，公式为`(Base+Add)*(100+Pct)/100`。写来源时Rust先计算后原子提交，来源和变化后的结果分别标脏；直接写派生结果会被拒绝。新增同类属性只改TS编号，复杂跨属性公式应写独立Rust领域op。Numeric协议使用`int64`，FrameFlush按`(unitId, numericType)`合并。
+Rust自动维护`NumericType -> i64`值与dirty表，TS使用`bigint`，业务字面量应写`1n`。`NumericComponentSystem.Awake`只遍历创建者传入的初始化字典，未传入的普通属性保持Rust默认值`0`；因此玩家、怪物、NPC的默认值应写在各自的创建流程，而不是塞回通用Numeric系统。初始化字典的类型别名不会随着Numeric字段增长而修改；普通属性和Base/Add/Pct来源可以写，`MaxHp`、`Attack`等1000..9999派生结果不能写，错误的key或非`bigint`值会在创建时失败。`1..999`是普通属性；`1000..9999`是只读派生结果；结果编号乘10后加`1/2/3`分别表示Base/Add/Pct。Rust只识别编号关系，不重复维护业务枚举。当前`CurrentHp=1`、`CurrentMp=2`、`MaxHp=1000`、`Attack=2000`、`AttackSpeed=2001`、`MoveSpeed=3000`，对应来源按结果编号乘10加`1/2/3`生成，公式为`(Base+Add)*(100+Pct)/100`。`AttackSpeed`表示每次攻击间隔毫秒，`MoveSpeed`的Numeric单位是毫米/秒，配置表仍填写米/秒。写来源时Rust先计算后原子提交，来源和变化后的结果分别标脏；直接写派生结果会被拒绝。新增同类属性只改TS编号，复杂跨属性公式应写独立Rust领域op。Numeric协议使用`int64`，FrameFlush按`(unitId, numericType)`合并。
 
 用`npm run perf:numeric`评估派生计算本身。默认业务仍使用清晰的单字段写入；只有基准和真实业务Profile都证明同一逻辑点会集中修改多个来源时，才考虑新增一次提交多个来源的粗粒度op，不能为了微基准数字强迫所有业务使用批量API。
 
@@ -622,12 +631,11 @@ await Promise.all([
 Component拥有的周期任务使用组件定时器：
 
 ```ts
-this.NewRepeatedTimer(100, "RegenerateHp");
-
-protected RegenerateHp(): void {
-  this[NumericType.CurrentHp] += 1n;
-}
+const numeric = player.GetComponent(NumericComponent);
+const attack = numeric[NumericType.Attack]; // 玩家由AttackBase=5n推导得到
 ```
+
+Numeric不再内置100ms回血Timer。需要回血、Buff或其他周期规则时，由对应业务Component显式创建Timer；玩家创建时设置`AttackBase`，怪物创建时根据配置设置`AttackBase`，普通攻击统一读取最终的`NumericType.Attack`。当前不增加Armor字段，伤害是多少就扣多少CurrentHp。
 
 Component和Actor业务Timer必须传方法名，不能传匿名闭包。触发时框架从当前prototype解析方法，因此现有Timer会自然进入新Hotfix generation；Timer仍随owner销毁自动取消。
 
@@ -677,7 +685,7 @@ Update(): void {
 await player.Offline(reason);
 ```
 
-业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。普通socket断开只销毁`GateSession`，不能直接调用玩家`Offline()`；`GatePlayerRoute`在Gate继续保留30秒等待重连。宽限期结束后只能由Gate调用`MapProtocol.PlayerOffline`，Map保存、移除Unit并广播AOI离开后，Gate再删除Route。
+业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。普通socket断开只销毁`GateSession`，不能直接调用玩家`Offline()`；`GatePlayerRoute`在Gate继续保留30秒等待重连。宽限期结束后只能由Gate调用`MapProtocol.PlayerOffline`，Map先完成保存和Location移除并返回Unit RPC，再由下一轮Map Timer执行`RemovePlayer`、AOI离开和Actor销毁。`PlayerOffline`运行在PlayerUnit自己的ordered mailbox时，禁止在当前调用中同步销毁这个Unit；否则RPC返回前Actor已经消失，运行时会报告`actor despawned during mailbox execution`。停机批量清理可在不占用Unit mailbox的地图清理阶段直接完成，但仍须遵守先保存、再脱离AOI、最后销毁Actor的顺序。
 
 玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒调用`C2G_Ping -> G2C_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Session默认unordered，Ping作为普通TS Handler直接返回`TimerComponent.ServerTime()`产生的Unix毫秒且不加锁。登录按连接与账号加锁；进图、重连、传送、快照确认和最终下线按账号加锁。业务只锁会修改共享状态的事务，禁止为了省事把整个Session改回ordered。
 
@@ -830,6 +838,8 @@ C2M_AttackMonsterHandler
   -> MonsterComponent.Attack
 ```
 
+固定刷点和实体身份必须分开：`MonsterAreaConfig.id`对应稳定的`AreaId`刷怪槽位，`MonsterUnit.UnitId`只对应当前这一只实体。死亡时`MonsterComponent`先Detach并发布AOI Leave，再Remove旧Unit；复活时间到期后在同一`AreaId`重新创建MonsterUnit，分配新的UnitId，并通过AOI Enter发送新快照。业务不得通过复用旧UnitId来表示“新怪物”，也不得让客户端只隐藏旧节点而继续保留旧实体引用。
+
 怪物主动行为由`MonsterComponent.Update`统一驱动，并在Hotfix内部调用局部`MonsterBehaviorTree`。行为树只负责从待机、追击、攻击和冷却停留中选择一个动作；它不能直接操作Native句柄、广播消息或修改其他地图的Unit。距离、伤害、死亡和Numeric变更仍由MonsterComponent负责。
 
 不要为每只怪物创建Actor、长期Timer或独立V8。不要在Handler里扫描地图或绕过`MonsterComponent`查找怪物。技能、Buff、复杂仇恨、巡逻路点和回出生点尚未接入，新增这些能力前先保持当前普通攻击闭环可测试、可观测。
@@ -841,6 +851,8 @@ C2M_AttackMonsterHandler
 距离过远或朝向不正确时，必须清零当前平A读条，但不能清除自动攻击状态。玩家重新靠近并恢复正确朝向后，从0秒重新读条。移动Handler不得调用`StopAutoAttack`。Cocos3D右键加A/D的侧移正是为了保持Yaw、围绕目标移动；右键拖动必须同步改变角色的权威Yaw，不能只改变摄像机角度。
 
 技能配置必须把以下维度分开：伤害类型（Physical/Magic/True）、执行方式（Instant/Cast/Channel）和对平A时间轴的影响（Keep/RestartAfterCast，后续可扩展PauseResume）。例如战士的压制是物理、瞬发且Keep，不得因为它是物理技能或瞬发技能就自动推断平A行为。
+
+主动怪不要只写“靠近玩家”的表现逻辑：当前演示中`MonsterConfig.attack_mode=1`表示主动追击，进入攻击距离后由`MonsterComponentSystem`按最终`NumericType.Attack`扣玩家`CurrentHp`；`attack_mode=0`才是不主动寻找玩家的被动怪。因为玩家确实可能死亡，玩家创建时必须从`PlayerConfig.initial_hp/max_hp/initial_mp/max_mp`初始化Numeric，Cocos3D、UE、Unity和Godot的HUD只订阅进入快照与`G2C_EntityNumeric`，显示HP/MP，不能在客户端复制伤害规则。
 
 ## AI提交前自检
 

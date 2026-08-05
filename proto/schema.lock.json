@@ -4130,6 +4130,35 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_ToggleAutoAttack",
+      "name": "C2M_ToggleAutoAttack",
+      "base": "IActorLocationRequest",
+      "response": "M2C_ToggleAutoAttack",
+      "fields": [
+        {
+          "number": 1,
+          "name": "enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_ToggleDemoDoor",
       "name": "C2M_ToggleDemoDoor",
       "base": "IActorLocationRequest",
@@ -4235,6 +4264,49 @@
           "name": "leaves",
           "type": "uint32",
           "repeated": true,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_AutoAttackState",
+      "name": "G2C_AutoAttackState",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "phase",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "swing_start_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "swing_interval_ms",
+          "type": "uint32",
+          "repeated": false,
           "synthetic": false
         }
       ]
@@ -4928,6 +5000,70 @@
           "name": "points",
           "type": "NavigationPathPoint",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_ToggleAutoAttack",
+      "name": "M2C_ToggleAutoAttack",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "phase",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "swing_start_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "swing_interval_ms",
+          "type": "uint32",
+          "repeated": false,
           "synthetic": false
         },
         {

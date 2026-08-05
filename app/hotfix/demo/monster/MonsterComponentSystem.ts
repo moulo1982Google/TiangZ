@@ -1,6 +1,8 @@
 import {
   GameConfigs,
   GameErrCode,
+  CombatComponent,
+  AutoAttackPhase,
   MapAoiComponent,
   MapComponent,
   MonsterComponent,
@@ -9,32 +11,38 @@ import {
   NativeUnitRef,
   NumericComponent,
   NumericType,
+  MoveSpeedMetersPerSecondToNumeric,
   PlayerUnit,
   PositionComponent,
   RpcError,
   SpatialMode,
   TimeSystem,
   UnitComponent,
+  type AutoAttackState,
   type M2C_AttackMonster,
   type MonsterAreaConfigData,
   type MonsterConfigData,
+  type MonsterRuntimeState,
   systemFor,
 } from "#tiangz/model";
 import { MonsterBehaviorTree } from "./MonsterBehaviorTree";
 
 const MONSTER_AGGRO_RANGE_METERS = 12;
-const PLAYER_ATTACK_DAMAGE = 25n;
-const BASIC_ATTACK_RANGE_METERS = 2;
+const DEMO_PLAYER_CONFIG_ID = 1;
+const AUTO_ATTACK_FACING_HALF_ANGLE = Math.PI / 3;
 const MONSTER_ID_MAX = 0xffff_ffff;
 const monsterBehaviorTree = new MonsterBehaviorTree();
 
 /**
- * 第一版怪物业务：固定刷点、简单追击、普通攻击、死亡尸体和重生。
- * 怪物只作为AOI Subject，不会成为Observer，也不参与动态避障。
+ * 第一版怪物业务：固定刷点、主动索敌、仇恨追击、普通攻击、死亡生命周期和重生。
+ * 怪物只作为AOI Subject，不会成为Observer，也不参与动态避障；死亡时销毁当前Unit，
+ * 只保留刷怪槽位，等待模板配置的复活时间后在原刷点创建新的Unit。
  *
- * Version-one monster rules: fixed slots, simple chase, basic attacks, corpse
- * lifetime, and respawn. Monsters are AOI Subjects only and never participate
- * in dynamic avoidance.
+ * Version-one monster rules: fixed slots, active acquisition, threat-based
+ * chase, basic attacks, death, and respawn. Monsters are AOI Subjects only
+ * and never participate in dynamic avoidance. Death destroys the current Unit
+ * and keeps only the spawn slot; after the template delay a new Unit is
+ * created at that spawn point.
  */
 @systemFor(MonsterComponent)
 export class MonsterComponentSystem extends MonsterComponent {
@@ -52,7 +60,6 @@ export class MonsterComponentSystem extends MonsterComponent {
       const slot = {
         config,
         monster: null,
-        deadAtMs: 0,
         respawnAtMs: 0,
       };
       this.slots.set(config.id, slot);
@@ -65,25 +72,36 @@ export class MonsterComponentSystem extends MonsterComponent {
     });
   }
 
-  /** 地图固定Tick驱动怪物AI；不为每只怪物创建一个长期Timer。 / Drives monster AI from the map fixed tick instead of creating one long-lived timer per monster. */
-  Update(): void {
+  /** 10Hz推进玩家自动攻击；一个地图桶统一扫描，避免每个玩家一个Timer。 / Advances player auto-attacks at 10Hz from one map bucket instead of one Timer per player. */
+  Update10Hz(): void {
+    if (this.map.IsStopping) return;
+    const now = TimeSystem.Instance.ServerNow;
+    this.TickPlayerAutoAttacks(now);
+  }
+
+  /** 5Hz执行主动怪物AI；移动推进仍由Rust的20Hz地图更新负责。 / Runs active monster AI at 5Hz while Rust advances movement at 20Hz. */
+  Update5Hz(): void {
     if (this.map.IsStopping) return;
     const now = TimeSystem.Instance.ServerNow;
     for (const slot of this.slots.values()) {
       const monster = slot.monster;
-      if (!monster) {
-        if (slot.respawnAtMs > 0 && now >= slot.respawnAtMs) this.Spawn(slot);
-        continue;
-      }
+      if (!monster) continue;
       const native = monster.GetComponent(NativeUnitRef);
-      if (native.alive === 0) {
-        const corpseMs = slot.config.corpseLifetimeSeconds * 1_000;
-        if (now >= slot.deadAtMs + corpseMs) this.RemoveDeadMonster(slot);
-        continue;
-      }
+      if (native.alive === 0) continue;
       const config = slot.config.monsterConfigId_ref
         ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
       this.TickMonster(monster, config, now);
+    }
+  }
+
+  /** 1Hz维护空刷怪槽并按MonsterConfig创建新怪物；旧Unit已经通过AOI Leave离场。 / Maintains empty spawn slots and creates new monsters from MonsterConfig; the old Unit already left through AOI Leave. */
+  Update1Hz(): void {
+    if (this.map.IsStopping) return;
+    const now = TimeSystem.Instance.ServerNow;
+    for (const slot of this.slots.values()) {
+      if (!slot.monster && slot.respawnAtMs > 0 && now >= slot.respawnAtMs) {
+        this.Respawn(slot);
+      }
     }
   }
 
@@ -97,23 +115,50 @@ export class MonsterComponentSystem extends MonsterComponent {
 
     const attackerPosition = attacker.GetComponent(PositionComponent);
     const monsterPosition = monster.GetComponent(PositionComponent);
+    const playerConfig = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID);
+    const attackRange = playerConfig.attackRange;
     if (distanceSquared(attackerPosition.x, attackerPosition.z, monsterPosition.x, monsterPosition.z)
-      > BASIC_ATTACK_RANGE_METERS * BASIC_ATTACK_RANGE_METERS) {
+      > attackRange * attackRange) {
       throw new RpcError(GameErrCode.MonsterTooFar, `monster is too far: ${monsterId}`);
     }
 
+    const attackerNumeric = attacker.GetComponent(NumericComponent);
+    const damage = attackerNumeric[NumericType.Attack] > 0n
+      ? attackerNumeric[NumericType.Attack]
+      : 0n;
     const numeric = monster.GetComponent(NumericComponent);
     const currentHp = numeric[NumericType.CurrentHp];
-    const remainingHp = currentHp > PLAYER_ATTACK_DAMAGE
-      ? currentHp - PLAYER_ATTACK_DAMAGE
+    const remainingHp = currentHp > damage
+      ? currentHp - damage
       : 0n;
     numeric[NumericType.CurrentHp] = remainingHp;
+    this.AddThreat(monster, attacker, damage);
     const killed = remainingHp === 0n;
     if (killed) this.Kill(monster);
-    return { monsterId, damage: Number(PLAYER_ATTACK_DAMAGE), remainingHp, killed };
+    return { monsterId, damage: Number(damage), remainingHp, killed };
   }
 
-  /** 地图销毁时只释放怪物Unit，不向玩家发送额外业务事件。 / Releases monster Units during map disposal without inventing another business event. */
+  /**
+   * 给怪物增加仇恨；普通攻击、技能和未来的治疗/嘲讽都应通过这个入口扩展。
+   * 1点实际伤害默认产生1点仇恨；0伤害不产生仇恨。被动怪只会因为这里出现仇恨目标而行动，
+   * 不允许在“受击事件”里另写一条直接追击分支。
+   *
+   * Adds threat to one monster. Basic attacks, skills, and future healing or
+   * taunt rules should extend this entrypoint. One point of resolved damage
+   * produces one point of threat by default; zero damage produces none.
+   * Passive monsters act only when this table contains a target, never from a
+   * separate "was hit" chase branch.
+   */
+  AddThreat(monster: MonsterUnit, source: PlayerUnit, amount: bigint): void {
+    this.RequireMapUnit(source);
+    if (!Number.isSafeInteger(monster.UnitId) || amount <= 0n) return;
+    const state = this.runtime.get(monster.UnitId);
+    if (!state) return;
+    const previous = state.threatByUnitId.get(source.UnitId) ?? 0n;
+    state.threatByUnitId.set(source.UnitId, previous + amount);
+  }
+
+  /** 地图销毁时释放怪物Unit，不向玩家发送额外业务事件。 / Releases monster Units during map disposal without inventing another business event. */
   protected override OnDestroy(): void {
     for (const monster of this.monsters.values()) {
       try {
@@ -128,7 +173,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     this.slots.clear();
   }
 
-  private Spawn(slot: { config: MonsterAreaConfigData; monster: MonsterUnit | null; deadAtMs: number; respawnAtMs: number }): void {
+  private Spawn(slot: { config: MonsterAreaConfigData; monster: MonsterUnit | null; respawnAtMs: number }): void {
     if (slot.monster) return;
     const config = slot.config.monsterConfigId_ref ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
     const unitId = this.AllocateUnitId();
@@ -146,42 +191,29 @@ export class MonsterComponentSystem extends MonsterComponent {
         x: 0,
         y: 0,
       });
-      const mapConfig = GameConfigs.MapConfig.Get(this.map.MapId);
       const position = monster.AddComponent(
         PositionComponent,
         native,
-        mapConfig.widthCells,
-        mapConfig.depthCells,
-        mapConfig.cellSizeMeters,
+        this.mapConfig.widthCells,
+        this.mapConfig.depthCells,
+        this.mapConfig.cellSizeMeters,
       );
-      if (mapConfig.spatialMode === SpatialMode.Grid2D) {
-        position.SetGridWorldPosition(
-          slot.config.spawnX,
-          slot.config.spawnY,
-          slot.config.spawnZ,
-          slot.config.spawnYaw,
-        );
-      } else {
-        const projected = this.map.ProjectPosition({
-          x: slot.config.spawnX,
-          y: slot.config.spawnY,
-          z: slot.config.spawnZ,
-        });
-        if (!projected) throw new Error(`monster spawn outside NavMesh: ${slot.config.id}`);
-        position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, slot.config.spawnYaw);
-      }
-      position.SpeedCellsPerSecond = config.moveSpeed;
+      this.SetSpawnPosition(position, slot, config);
       monster.AddComponent(NumericComponent, {
-        currentHp: BigInt(config.maxHp),
-        maxHpBase: BigInt(config.maxHp),
-        regenerateHp: false,
+        [NumericType.CurrentHp]: BigInt(config.maxHp),
+        [NumericType.CurrentMp]: BigInt(config.maxMp),
+        [NumericType.MaxHpBase]: BigInt(config.maxHp),
+        [NumericType.MaxMpBase]: BigInt(config.maxMp),
+        [NumericType.AttackBase]: BigInt(config.attackDamage),
+        [NumericType.AttackSpeedAdd]: BigInt(config.attackIntervalMs),
+        [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(config.moveSpeed),
       });
       slot.monster = monster;
-      slot.deadAtMs = 0;
       slot.respawnAtMs = 0;
       this.monsters.set(unitId, monster);
       this.runtime.set(unitId, {
         targetUnitId: 0,
+        threatByUnitId: new Map(),
         nextThinkAtMs: 0,
         nextAttackAtMs: 0,
         navigationSequence: 0,
@@ -198,13 +230,42 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
   }
 
+  /** 把新怪物放回固定刷点；创建流程统一负责空间校验和组件初始化。 / Places a new monster at its fixed spawn; the creation path owns spatial validation and component initialization. */
+  private SetSpawnPosition(
+    position: PositionComponent,
+    slot: { config: MonsterAreaConfigData },
+    config: MonsterConfigData,
+  ): void {
+    if (this.mapConfig.spatialMode === SpatialMode.Grid2D) {
+      position.SetGridWorldPosition(
+        slot.config.spawnX,
+        slot.config.spawnY,
+        slot.config.spawnZ,
+        slot.config.spawnYaw,
+      );
+    } else {
+      const projected = this.map.ProjectPosition({
+        x: slot.config.spawnX,
+        y: slot.config.spawnY,
+        z: slot.config.spawnZ,
+      });
+      if (!projected) throw new Error(`monster spawn outside NavMesh: ${slot.config.id}`);
+      position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, slot.config.spawnYaw);
+    }
+    position.SpeedMetersPerSecond = config.moveSpeed;
+  }
+
+  /** 到期后创建新Unit完成复活；刷怪槽位稳定，UnitId和AOI身份必须更换。 / Creates a new Unit when the timer expires; the spawn slot is stable, but UnitId and AOI identity must change. */
+  private Respawn(slot: { config: MonsterAreaConfigData; monster: MonsterUnit | null; respawnAtMs: number }): void {
+    if (slot.monster) return;
+    this.Spawn(slot);
+  }
+
   private TickMonster(monster: MonsterUnit, config: MonsterConfigData, now: number): void {
     const state = this.runtime.get(monster.UnitId);
     if (!state || now < state.nextThinkAtMs) return;
     state.nextThinkAtMs = now + 250;
-    const target = config.attackMode === 0
-      ? undefined
-      : this.FindNearestPlayer(monster, MONSTER_AGGRO_RANGE_METERS);
+    const target = this.FindMonsterTarget(monster, config, state);
     const monsterPosition = monster.GetComponent(PositionComponent);
     const targetPosition = target?.GetComponent(PositionComponent);
     const distance = targetPosition
@@ -215,9 +276,11 @@ export class MonsterComponentSystem extends MonsterComponent {
         targetPosition.z,
       ))
       : Number.POSITIVE_INFINITY;
-    const attackRange = Math.min(config.attackRange, BASIC_ATTACK_RANGE_METERS);
+    const attackRange = config.attackRange;
     const action = monsterBehaviorTree.Evaluate({
-      mayAggro: config.attackMode !== 0,
+      // A target may come from active acquisition or from the threat table.
+      // 目标可能来自主动索敌，也可能来自仇恨表。
+      mayAggro: target !== undefined,
       hasTarget: target !== undefined,
       inAttackRange: distance <= attackRange,
       canAttack: now >= state.nextAttackAtMs,
@@ -227,8 +290,8 @@ export class MonsterComponentSystem extends MonsterComponent {
     switch (action) {
       case "attack":
         NativeData.ResetMovement(native.Handle);
-        this.AttackPlayer(monster, target!, config.attackDamage);
-        state.nextAttackAtMs = now + config.attackIntervalMs;
+        this.AttackPlayer(monster, target!);
+        state.nextAttackAtMs = now + this.readAttackIntervalMs(monster);
         return;
       case "hold":
       case "idle":
@@ -255,11 +318,16 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
   }
 
-  private AttackPlayer(monster: MonsterUnit, target: PlayerUnit, damage: number): void {
+  /** 怪物伤害也从自身Numeric.Attack读取；配置只负责初始化，战斗不再绕过数值系统。 / Reads monster Numeric.Attack for damage so config initializes combat without bypassing Numeric during combat. */
+  private AttackPlayer(monster: MonsterUnit, target: PlayerUnit): void {
+    const monsterNumeric = monster.GetComponent(NumericComponent);
+    const damage = monsterNumeric[NumericType.Attack] > 0n
+      ? monsterNumeric[NumericType.Attack]
+      : 0n;
     const numeric = target.GetComponent(NumericComponent);
     const currentHp = numeric[NumericType.CurrentHp];
-    numeric[NumericType.CurrentHp] = currentHp > BigInt(damage)
-      ? currentHp - BigInt(damage)
+    numeric[NumericType.CurrentHp] = currentHp > damage
+      ? currentHp - damage
       : 0n;
     if (numeric[NumericType.CurrentHp] === 0n) {
       target.GetComponent(NativeUnitRef).alive = 0;
@@ -267,34 +335,187 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
   }
 
+  /**
+   * 处理所有玩家的自动攻击状态：目标失效时关闭，条件不满足时重置读条，
+   * 条件满足且无读条时从零开始，读条完成后结算一次伤害并开始下一轮。
+   * 目标朝向使用服务端Yaw，前方有效扇形固定为120度。
+   *
+   * Processes every player's auto-attack state: invalid targets disable the
+   * intent, invalid range/facing resets the swing, a valid waiting state starts
+   * from zero, and a completed swing deals damage before starting the next one.
+   * Facing uses server yaw with a fixed 120-degree forward cone.
+   */
+  private TickPlayerAutoAttacks(now: number): void {
+    for (const player of this.units.GetAll(PlayerUnit)) {
+      const combat = player.GetComponent(CombatComponent);
+      if (player.GetComponent(NativeUnitRef).alive === 0) {
+        // 玩家死亡后不能继续保留攻击意图；显式推送关闭状态，避免客户端读条停在最后一帧。
+        // A dead player cannot keep attack intent; publish an explicit stop so the client
+        // does not leave the progress bar frozen at its last frame.
+        const state = combat.AutoAttackState();
+        if (state.enabled || state.phase !== AutoAttackPhase.Inactive) {
+          this.PublishAutoAttackState(player, combat.ToggleAutoAttack(0, false));
+        }
+        continue;
+      }
+      const previousState = combat.AutoAttackState();
+      const state = combat.SetAutoAttackInterval(
+        readAttackIntervalMs(player.GetComponent(NumericComponent)),
+      );
+      if (state.swingIntervalMs !== previousState.swingIntervalMs) {
+        this.PublishAutoAttackState(player, state);
+      }
+      if (!state.enabled) continue;
+
+      const monster = this.monsters.get(state.targetUnitId);
+      if (!monster || monster.GetComponent(NativeUnitRef).alive === 0) {
+        const stopped = combat.ToggleAutoAttack(0, false);
+        this.PublishAutoAttackState(player, stopped);
+        continue;
+      }
+
+      if (!this.CanAutoAttack(player, monster)) {
+        if (state.phase !== AutoAttackPhase.Waiting || state.swingStartAtMs !== 0) {
+          this.PublishAutoAttackState(player, combat.ResetAutoAttackSwing());
+        }
+        continue;
+      }
+
+      if (state.phase !== AutoAttackPhase.Swinging || state.swingStartAtMs === 0) {
+        this.PublishAutoAttackState(player, combat.BeginAutoAttackSwing(now));
+        continue;
+      }
+      if (now - state.swingStartAtMs < state.swingIntervalMs) continue;
+
+      // 同一10Hz桶内再次校验，防止读条完成瞬间目标已离开攻击条件。 / Recheck at completion so a target that moved away is not hit by a stale swing.
+      if (!this.CanAutoAttack(player, monster)) {
+        this.PublishAutoAttackState(player, combat.ResetAutoAttackSwing());
+        continue;
+      }
+      const result = this.Attack(player, monster.UnitId);
+      const nextState = result.killed
+        ? combat.ToggleAutoAttack(0, false)
+        : combat.BeginAutoAttackSwing(now);
+      this.PublishAutoAttackState(player, nextState);
+    }
+  }
+
+  /** AttackSpeed是每次攻击的毫秒间隔；异常值直接拒绝，避免战斗桶变成零间隔循环。 / AttackSpeed is the milliseconds per swing; invalid values are rejected so the combat bucket cannot become a zero-interval loop. */
+  private readAttackIntervalMs(monster: MonsterUnit): number {
+    return readAttackIntervalMs(monster.GetComponent(NumericComponent));
+  }
+
+  /** 校验近战距离和前方±60度；不做寻路和转身，朝向由移动/客户端输入决定。 / Validates melee range and a ±60-degree forward cone without pathing or forced turning. */
+  private CanAutoAttack(attacker: PlayerUnit, monster: MonsterUnit): boolean {
+    const attackerPosition = attacker.GetComponent(PositionComponent);
+    const monsterPosition = monster.GetComponent(PositionComponent);
+    const attackRange = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID).attackRange;
+    if (distanceSquared(attackerPosition.x, attackerPosition.z, monsterPosition.x, monsterPosition.z)
+      > attackRange * attackRange) {
+      return false;
+    }
+    const targetAngle = Math.atan2(
+      monsterPosition.x - attackerPosition.x,
+      monsterPosition.z - attackerPosition.z,
+    );
+    const angleDelta = normalizeRadians(targetAngle - attackerPosition.yaw);
+    return Math.abs(angleDelta) <= AUTO_ATTACK_FACING_HALF_ANGLE;
+  }
+
+  /** 异步发布状态但不阻塞10Hz战斗桶；广播失败只记录，不回滚已经结算的伤害。 / Publishes without blocking the 10Hz bucket; failures are logged and never roll back resolved damage. */
+  private PublishAutoAttackState(player: PlayerUnit, state: AutoAttackState): void {
+    void this.map.PublishAutoAttackState(player, state).catch((error) => {
+      this.DomainScene().logger.error("auto attack state publish failed", { error });
+    });
+  }
+
   private Kill(monster: MonsterUnit): void {
     const slot = this.slots.get(monster.AreaId);
     if (!slot || slot.monster !== monster) return;
     const now = TimeSystem.Instance.ServerNow;
-    monster.GetComponent(NativeUnitRef).alive = 0;
-    NativeData.ResetMovement(monster.GetComponent(NativeUnitRef).Handle);
-    slot.deadAtMs = now;
-    slot.respawnAtMs = now + Math.max(
-      slot.config.respawnSeconds,
-      slot.config.corpseLifetimeSeconds,
-    ) * 1_000;
-    const state = this.runtime.get(monster.UnitId);
-    if (state) state.targetUnitId = 0;
-  }
+    const config = slot.config.monsterConfigId_ref
+      ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
+    slot.respawnAtMs = now + config.respawnSeconds * 1_000;
+    const native = monster.GetComponent(NativeUnitRef);
+    native.alive = 0;
+    NativeData.ResetMovement(native.Handle);
 
-  private RemoveDeadMonster(slot: { config: MonsterAreaConfigData; monster: MonsterUnit | null; deadAtMs: number; respawnAtMs: number }): void {
-    const monster = slot.monster;
-    if (!monster) return;
-    const changes = this.aoi.Detach(monster);
+    // AreaId is the stable spawn slot. The dead MonsterUnit is a finished
+    // entity and must leave AOI before its Native handle and UnitId disappear.
+    // AreaId是稳定刷怪槽位；死亡MonsterUnit已经结束生命周期，必须先离开AOI，
+    // 再销毁Native句柄和UnitId，不能把实体身份复活成另一个怪物。
+    slot.monster = null;
     this.monsters.delete(monster.UnitId);
     this.runtime.delete(monster.UnitId);
-    slot.monster = null;
+    const changes = this.aoi.IsAttached(monster) ? this.aoi.Detach(monster) : [];
     this.units.Remove(monster.UnitId);
     if (changes.length > 0) {
       void this.map.PublishVisibilityChanges(changes).catch((error) => {
-        this.DomainScene().logger.error("monster AOI publish failed", { error });
+        this.DomainScene().logger.error("monster death AOI publish failed", {
+          unitId: monster.UnitId,
+          areaId: monster.AreaId,
+          error,
+        });
       });
     }
+  }
+
+  /**
+   * 先按仇恨最高者选目标；没有仇恨时，只有主动怪才会自动寻找最近玩家。
+   * 仇恨目标必须仍然存活且在追击范围内；超出范围后保留数值，重新进入范围仍可继续成为目标。
+   *
+   * Selects the highest-threat target first. Without threat, only an active
+   * monster may acquire the nearest player automatically. A threat entry must
+   * still point to a living player inside chase range; its value is retained
+   * after leaving range so re-entry can restore the target.
+   */
+  private FindMonsterTarget(
+    monster: MonsterUnit,
+    config: MonsterConfigData,
+    state: MonsterRuntimeState,
+  ): PlayerUnit | undefined {
+    const threatTarget = this.FindHighestThreatPlayer(monster, state);
+    if (threatTarget) return threatTarget;
+    return config.attackMode === 0
+      ? undefined
+      : this.FindNearestPlayer(monster, MONSTER_AGGRO_RANGE_METERS);
+  }
+
+  /** 选择范围内仇恨最高的存活玩家；同仇恨时取距离近者，再以UnitId稳定打破平局。 / Selects the living in-range player with highest threat, then nearest distance and UnitId for deterministic ties. */
+  private FindHighestThreatPlayer(monster: MonsterUnit, state: MonsterRuntimeState): PlayerUnit | undefined {
+    const monsterPosition = monster.GetComponent(PositionComponent);
+    const maxDistanceSquared = MONSTER_AGGRO_RANGE_METERS * MONSTER_AGGRO_RANGE_METERS;
+    let selected: PlayerUnit | undefined;
+    let selectedThreat = 0n;
+    let selectedDistanceSquared = Number.POSITIVE_INFINITY;
+    for (const [unitId, threat] of state.threatByUnitId) {
+      const player = this.units.Get<PlayerUnit>(unitId);
+      if (!player || player.GetComponent(NativeUnitRef).alive === 0) {
+        state.threatByUnitId.delete(unitId);
+        continue;
+      }
+      const playerPosition = player.GetComponent(PositionComponent);
+      const distanceSquaredValue = distanceSquared(
+        monsterPosition.x,
+        monsterPosition.z,
+        playerPosition.x,
+        playerPosition.z,
+      );
+      if (distanceSquaredValue > maxDistanceSquared) continue;
+      if (
+        selected === undefined ||
+        threat > selectedThreat ||
+        (threat === selectedThreat && (
+          distanceSquaredValue < selectedDistanceSquared ||
+          (distanceSquaredValue === selectedDistanceSquared && unitId < selected.UnitId)
+        ))
+      ) {
+        selected = player;
+        selectedThreat = threat;
+        selectedDistanceSquared = distanceSquaredValue;
+      }
+    }
+    return selected;
   }
 
   private FindNearestPlayer(monster: MonsterUnit, maxDistance: number): PlayerUnit | undefined {
@@ -342,4 +563,18 @@ function distanceSquared(ax: number, az: number, bx: number, bz: number): number
   const dx = ax - bx;
   const dz = az - bz;
   return dx * dx + dz * dz;
+}
+
+/** 读取最终AttackSpeed毫秒值，拒绝零或非整数避免战斗循环失控。 / Reads the final AttackSpeed interval and rejects zero or non-integers that could destabilize the combat loop. */
+function readAttackIntervalMs(numeric: NumericComponent): number {
+  const value = Number(numeric[NumericType.AttackSpeed]);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`AttackSpeed must be a positive integer in milliseconds: ${value}`);
+  }
+  return value;
+}
+
+function normalizeRadians(value: number): number {
+  const fullTurn = Math.PI * 2;
+  return ((value + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
 }

@@ -28,8 +28,11 @@ import {
 import { ClientMessages } from "../Generated/SDK/Generated/Model/demo/protocol/messageDescriptors";
 import type {
   G2C_AoiDelta,
+  G2C_AutoAttackState,
   G2C_DemoDoorState,
+  G2C_EntityNumeric,
   G2C_EntityNavigate,
+  G2C_EntityState,
   MapEntitySnapshot,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
 import "../Generated/Hotfix/handlers";
@@ -46,8 +49,19 @@ const { ccclass, property } = _decorator;
 const MAP_ID = 100;
 const ENTITY_TYPE_PLAYER = 1;
 const ENTITY_TYPE_MONSTER = 2;
+// NumericType来自服务端稳定协议约定；客户端只读取公开的HP/MP结果，不修改Numeric。
+// These ids follow the stable server Numeric contract; the client only reads public HP/MP results.
+const NUMERIC_CURRENT_HP = 1;
+const NUMERIC_CURRENT_MP = 2;
+const NUMERIC_MAX_HP = 1000;
+const NUMERIC_MAX_MP = 1001;
 const PLAYER_HALF_HEIGHT = 0.9;
 const PLAYER_VISUAL_HALF_WIDTH = 0.4;
+const MONSTER_HUD_WIDTH = 1.35;
+const MONSTER_HUD_BAR_HEIGHT = 0.08;
+const MONSTER_HUD_BAR_DEPTH = 0.045;
+const MONSTER_HUD_OFFSET_Y = 1.35;
+const MONSTER_HUD_ROW_GAP = 0.12;
 const DEMO_DOOR_CENTER_X = -12;
 const DEMO_DOOR_CENTER_Z = 0;
 const DEMO_DOOR_HALF_WIDTH = 4;
@@ -71,6 +85,10 @@ const PATH_TURN_SPEED_RADIANS = Math.PI * 2;
 const MOUSE_YAW_RADIANS_PER_PIXEL = 0.004;
 const INPUT_REFRESH_SECONDS = 0.5;
 const INPUT_TURN_SEND_SECONDS = 0.1;
+const AUTO_ATTACK_PHASE_SWINGING = 2;
+// Cocos 3.8.8没有导出数字键枚举；使用标准键盘主区“1”的ASCII码49。
+// Cocos 3.8.8 does not expose a digit-key enum; 49 is the standard top-row "1" key code.
+const AUTO_ATTACK_KEY = 49 as unknown as KeyCode;
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
 // Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
 const RUNTIME_CONFIG_RESOURCE = PREVIEW
@@ -82,9 +100,23 @@ interface Cocos3DExternalConfig {
   readonly loginMgrPort: number;
 }
 
+interface MonsterOverheadHud {
+  readonly root: Node;
+  readonly hpFill: Node;
+  readonly mpTrack: Node;
+  readonly mpFill: Node;
+}
+
 interface RemotePlayer3D {
   readonly node: Node;
+  readonly unitId: number;
+  readonly selectionMarker: Node;
+  readonly overheadHud?: MonsterOverheadHud;
   readonly targetFoot: Vec3;
+  readonly entityType: number;
+  readonly configId: number;
+  alive: boolean;
+  readonly numerics: Map<number, bigint>;
   /** 使用TiangZ协议Yaw；Cocos Y-Up边界当前可直接转成角度显示。 / Uses protocol-space TiangZ yaw, which the current Cocos Y-up boundary can render directly in degrees. */
   yaw: number;
 }
@@ -120,6 +152,16 @@ export class GameBootstrap3D extends Component {
   private mobileStyleElement?: HTMLStyleElement;
   private mobileInstructionsElement?: HTMLElement;
   private mobilePingElement?: HTMLElement;
+  private selectedMonsterElement?: HTMLElement;
+  private playerStatsPanel?: HTMLElement;
+  private playerHpLabel?: HTMLElement;
+  private playerHpProgress?: HTMLElement;
+  private playerMpLabel?: HTMLElement;
+  private playerMpProgress?: HTMLElement;
+  private playerOverheadHud?: MonsterOverheadHud;
+  private autoAttackPanel?: HTMLElement;
+  private autoAttackLabel?: HTMLElement;
+  private autoAttackProgress?: HTMLElement;
   private displayedPingAtMs = -1;
   private loginFlow?: LoginFlow;
   private gateSocket?: RpcSocket;
@@ -154,8 +196,16 @@ export class GameBootstrap3D extends Component {
   private acknowledgedSequence = 0;
   private playerSpeedMetersPerSecond = 4;
   private authoritativeFoot = new Vec3();
+  private overheadHudLookTarget = new Vec3();
   private messageDispatcher?: ClientMessageDispatcher<GameBootstrap3D>;
   private readonly remotePlayers = new Map<number, RemotePlayer3D>();
+  private readonly localNumerics = new Map<number, bigint>();
+  private selectedMonsterUnitId = 0;
+  private autoAttackEnabled = false;
+  private autoAttackTargetUnitId = 0;
+  private autoAttackPhase = 0;
+  private autoAttackSwingStartAtMs = 0;
+  private autoAttackSwingIntervalMs = 2_000;
 
   onLoad(): void {
     this.buildGraybox();
@@ -172,6 +222,7 @@ export class GameBootstrap3D extends Component {
   update(deltaTime: number): void {
     this.loginFlow?.update();
     this.updateMobileHud();
+    this.updateAutoAttackHud();
     this.updateDirectionalInput(deltaTime);
     this.advanceDirectionalPrediction(deltaTime);
     this.advanceAlongPath(deltaTime);
@@ -179,6 +230,7 @@ export class GameBootstrap3D extends Component {
     this.reconcileAuthoritativeFacing(deltaTime);
     this.interpolateRemotePlayers(deltaTime);
     this.updateFollowCamera(deltaTime);
+    this.updateMonsterOverheadHudBillboards();
   }
 
   onDestroy(): void {
@@ -204,8 +256,14 @@ export class GameBootstrap3D extends Component {
     this.mobileStyleElement = undefined;
     this.mobileInstructionsElement?.remove();
     this.mobilePingElement?.remove();
+    this.autoAttackPanel?.remove();
+    this.selectedMonsterElement?.remove();
     this.mobileInstructionsElement = undefined;
     this.mobilePingElement = undefined;
+    this.autoAttackPanel = undefined;
+    this.autoAttackLabel = undefined;
+    this.autoAttackProgress = undefined;
+    this.selectedMonsterElement = undefined;
     this.loginFlow = undefined;
     this.gateSocket = undefined;
     this.mapClient = undefined;
@@ -252,6 +310,8 @@ export class GameBootstrap3D extends Component {
     world.addChild(this.targetMarker);
     this.player = createBox("LocalPlayer", 0.8, 1.8, 0.8, new Color(76, 164, 235, 255), 0, PLAYER_HALF_HEIGHT, 0);
     world.addChild(this.player);
+    this.playerOverheadHud = createMonsterOverheadHud();
+    this.player.addChild(this.playerOverheadHud.root);
   }
 
   /** Web预览使用DOM状态层，避免调试HUD修改3D世界相机；Native正式UI后续使用Prefab。 / Uses a DOM status layer in web preview so debug UI cannot mutate the 3D camera; Native UI will use a prefab later. */
@@ -274,16 +334,145 @@ export class GameBootstrap3D extends Component {
     element.style.pointerEvents = "none";
     document.body.appendChild(element);
     this.statusElement = element;
+    this.buildPlayerStatsHud(document);
+    this.buildAutoAttackHud(document);
+    this.buildSelectedMonsterHud(document);
     this.buildMobileHud(document);
     this.buildMobileControls(document);
     this.setStatus("正在连接 LoginMgr 并进入 Map 100...");
+  }
+
+  /** 创建玩家自己的HP/MP HUD；数据只来自服务端Numeric，不在客户端推导伤害或资源变化。 / Creates the local HP/MP HUD; values come only from server Numeric pushes, and the client never derives damage or resource changes. */
+  private buildPlayerStatsHud(document: Document): void {
+    const panel = document.createElement("div");
+    panel.className = "cocos3d-player-stats-hud";
+    panel.style.position = "fixed";
+    panel.style.left = "24px";
+    panel.style.top = "155px";
+    panel.style.zIndex = "10000";
+    panel.style.width = "min(320px, calc(100vw - 48px))";
+    panel.style.padding = "9px 12px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#edf7f3";
+    panel.style.background = "rgba(13, 22, 25, 0.84)";
+    panel.style.border = "1px solid rgba(255, 255, 255, 0.2)";
+    panel.style.font = "14px/1.35 system-ui, sans-serif";
+    panel.style.pointerEvents = "none";
+
+    const title = document.createElement("div");
+    title.textContent = "玩家状态 / Player";
+    title.style.marginBottom = "5px";
+    title.style.fontWeight = "600";
+    panel.appendChild(title);
+
+    const hp = this.buildPlayerResourceRow(document, panel, "HP", "#e04a56");
+    const mp = this.buildPlayerResourceRow(document, panel, "MP", "#438df5");
+    this.playerHpLabel = hp.label;
+    this.playerHpProgress = hp.progress;
+    this.playerMpLabel = mp.label;
+    this.playerMpProgress = mp.progress;
+    document.body.appendChild(panel);
+    this.playerStatsPanel = panel;
+    this.updatePlayerStatsHud();
+  }
+
+  /** 创建一行资源文字和进度条；进度条只表现权威数值，不参与客户端战斗逻辑。 / Creates one resource row; the bar is presentation-only and never participates in client combat logic. */
+  private buildPlayerResourceRow(
+    document: Document,
+    panel: HTMLElement,
+    name: string,
+    color: string,
+  ): { label: HTMLElement; progress: HTMLElement } {
+    const label = document.createElement("div");
+    label.textContent = `${name}: -- / --`;
+    panel.appendChild(label);
+    const track = document.createElement("div");
+    track.style.height = "7px";
+    track.style.margin = "3px 0 6px";
+    track.style.overflow = "hidden";
+    track.style.background = "rgba(255, 255, 255, 0.18)";
+    track.style.borderRadius = "4px";
+    const progress = document.createElement("div");
+    progress.style.width = "0%";
+    progress.style.height = "100%";
+    progress.style.background = color;
+    progress.style.transition = "width 100ms linear";
+    track.appendChild(progress);
+    panel.appendChild(track);
+    return { label, progress };
+  }
+
+  /**
+   * 创建平A状态与读条HUD；进度使用服务器时间推算，只负责表现不参与战斗判定。
+   * Creates the auto-attack state and swing HUD. Progress is derived from
+   * server time and is presentation-only; it never decides whether damage lands.
+   */
+  private buildAutoAttackHud(document: Document): void {
+    const panel = document.createElement("div");
+    panel.className = "cocos3d-auto-attack-hud";
+    panel.style.position = "fixed";
+    panel.style.left = "24px";
+    panel.style.top = "270px";
+    panel.style.zIndex = "10000";
+    panel.style.width = "min(320px, calc(100vw - 48px))";
+    panel.style.padding = "10px 12px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#fff5df";
+    panel.style.background = "rgba(37, 25, 13, 0.84)";
+    panel.style.border = "1px solid rgba(255, 215, 125, 0.42)";
+    panel.style.font = "14px/1.4 system-ui, sans-serif";
+    panel.style.pointerEvents = "none";
+
+    const label = document.createElement("div");
+    label.textContent = "平A：未激活（按1开启）";
+    panel.appendChild(label);
+    this.autoAttackLabel = label;
+
+    const track = document.createElement("div");
+    track.style.height = "8px";
+    track.style.marginTop = "7px";
+    track.style.overflow = "hidden";
+    track.style.background = "rgba(255, 255, 255, 0.18)";
+    track.style.borderRadius = "4px";
+    const progress = document.createElement("div");
+    progress.style.width = "0%";
+    progress.style.height = "100%";
+    progress.style.background = "#f2bd50";
+    progress.style.transition = "width 80ms linear";
+    track.appendChild(progress);
+    panel.appendChild(track);
+    this.autoAttackProgress = progress;
+    document.body.appendChild(panel);
+    this.autoAttackPanel = panel;
+  }
+
+  /** 创建选中目标HUD；它只显示客户端已进入AOI的公开怪物信息，不查询地图全量实体。 / Creates the selected-target HUD using only public monsters already entered through AOI. */
+  private buildSelectedMonsterHud(document: Document): void {
+    const panel = document.createElement("div");
+    panel.className = "cocos3d-selected-monster-hud";
+    panel.style.position = "fixed";
+    panel.style.right = "24px";
+    panel.style.top = "20px";
+    panel.style.zIndex = "10000";
+    panel.style.width = "min(260px, calc(100vw - 48px))";
+    panel.style.padding = "10px 12px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#fff8d6";
+    panel.style.background = "rgba(30, 29, 17, 0.84)";
+    panel.style.border = "1px solid rgba(255, 226, 92, 0.58)";
+    panel.style.font = "14px/1.4 system-ui, sans-serif";
+    panel.style.pointerEvents = "none";
+    panel.style.whiteSpace = "pre-line";
+    panel.textContent = "目标：未选择怪物";
+    document.body.appendChild(panel);
+    this.selectedMonsterElement = panel;
   }
 
   /** 创建手机端固定说明和网络延迟显示；桌面端通过CSS隐藏，不污染桌面HUD。 / Creates fixed mobile instructions and latency display; CSS hides them on desktop. */
   private buildMobileHud(document: Document): void {
     const instructions = document.createElement("div");
     instructions.className = "cocos3d-mobile-instructions";
-    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面：寻路";
+    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面：寻路\n键盘1：切换平A";
     instructions.style.position = "fixed";
     instructions.style.left = "max(10px, 2vw)";
     instructions.style.top = "max(10px, 2vh)";
@@ -323,6 +512,28 @@ export class GameBootstrap3D extends Component {
     if (!sample || sample.receivedAtMs === this.displayedPingAtMs) return;
     this.displayedPingAtMs = sample.receivedAtMs;
     if (this.mobilePingElement) this.mobilePingElement.textContent = `Gate Ping: ${sample.latencyMs} ms`;
+  }
+
+  /** 根据最近一次Ping的时钟偏差绘制读条；服务器才决定命中，客户端只做平滑显示。 / Draws the swing from the latest Ping clock offset; the server still decides every hit. */
+  private updateAutoAttackHud(): void {
+    const label = this.autoAttackLabel;
+    const progress = this.autoAttackProgress;
+    if (!label || !progress) return;
+    if (!this.autoAttackEnabled) {
+      label.textContent = "平A：未激活（按1开启）";
+      progress.style.width = "0%";
+      return;
+    }
+    if (this.autoAttackPhase !== AUTO_ATTACK_PHASE_SWINGING || this.autoAttackSwingStartAtMs <= 0) {
+      label.textContent = `平A：已激活，等待距离/朝向（目标 ${this.autoAttackTargetUnitId}）`;
+      progress.style.width = "0%";
+      return;
+    }
+    const clockOffsetMs = this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0;
+    const elapsedMs = Date.now() + clockOffsetMs - this.autoAttackSwingStartAtMs;
+    const ratio = Math.min(1, Math.max(0, elapsedMs / Math.max(1, this.autoAttackSwingIntervalMs)));
+    label.textContent = `平A：读条 ${Math.round(ratio * 100)}%（目标 ${this.autoAttackTargetUnitId}）`;
+    progress.style.width = `${ratio * 100}%`;
   }
 
   /**
@@ -852,6 +1063,9 @@ export class GameBootstrap3D extends Component {
       this.mapClient = new MapClient(result.gateSocket);
       this.localUnitId = result.enterMap.unitId;
       const localEntity = result.enterMap.entities.find((entity) => entity.unitId === this.localUnitId);
+      this.localNumerics.clear();
+      if (localEntity) this.ApplyLocalSnapshotNumerics(localEntity);
+      this.updatePlayerStatsHud();
       this.playerSpeedMetersPerSecond = localEntity?.speedCellsPerSecond ?? this.playerSpeedMetersPerSecond;
       this.authoritativeFoot.set(result.enterMap.x, result.enterMap.y, result.enterMap.z);
       this.playerYaw = localEntity?.yaw ?? 0;
@@ -886,7 +1100,7 @@ export class GameBootstrap3D extends Component {
         `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
           ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路"
-          : "W/S前后，A/D转向，按住右键时A/D横移；E开关动态门；左键点击地面寻路"),
+          : "W/S前后，A/D转向，按住右键时A/D横移；1切换平A；E开关动态门；左键点击地面寻路"),
       );
     } catch (error) {
       this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
@@ -920,8 +1134,35 @@ export class GameBootstrap3D extends Component {
     for (const unitId of message.leaves) {
       const remote = this.remotePlayers.get(unitId);
       if (!remote) continue;
+      if (unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
       remote.node.destroy();
       this.remotePlayers.delete(unitId);
+    }
+  }
+
+  /** 应用帧尾Numeric变化；死亡/复活的血量由服务器推送，客户端不自行推导。 / Applies frame-end Numeric changes; death and respawn HP come from the server instead of client-side deduction. */
+  ApplyEntityNumeric(message: G2C_EntityNumeric): void {
+    for (const numeric of message.numerics) {
+      if (numeric.unitId === this.localUnitId) {
+        this.localNumerics.set(numeric.numericType, numeric.value);
+        this.updatePlayerStatsHud();
+        continue;
+      }
+      const remote = this.remotePlayers.get(numeric.unitId);
+      if (!remote) continue;
+      remote.numerics.set(numeric.numericType, numeric.value);
+      this.updateMonsterOverheadHud(remote);
+    }
+  }
+
+  /** 应用Unit alive状态；死亡只隐藏表现，不能从客户端集合删除原Unit。 / Applies Unit alive state; death hides presentation only and never deletes the original Unit client-side. */
+  ApplyEntityState(message: G2C_EntityState): void {
+    for (const state of message.states) {
+      const remote = this.remotePlayers.get(state.unitId);
+      if (!remote || (state.dirtyMaskLow & (1 << 6)) === 0) continue;
+      remote.alive = state.alive;
+      remote.node.active = state.alive;
+      if (!state.alive && state.unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
     }
   }
 
@@ -935,6 +1176,15 @@ export class GameBootstrap3D extends Component {
     this.drawPath([]);
   }
 
+  /** 消费服务端平A状态；读条起点和目标来自服务端，客户端不自行开始或结算攻击。 / Consumes server auto-attack state; the client never starts or resolves combat locally. */
+  ApplyAutoAttackState(message: G2C_AutoAttackState): void {
+    this.autoAttackEnabled = message.enabled;
+    this.autoAttackTargetUnitId = message.targetUnitId;
+    this.autoAttackPhase = message.phase;
+    this.autoAttackSwingStartAtMs = Number(message.swingStartAtMs);
+    this.autoAttackSwingIntervalMs = Math.max(1, message.swingIntervalMs);
+  }
+
   /** 将屏幕点击投射到y=0灰盒平面，并请求服务端Rust NavMesh路径。 / Projects a screen click onto the graybox plane and requests a Rust NavMesh path from the server. */
   private onMouseUp(event: EventMouse): void {
     if (event.getButton() === EventMouse.BUTTON_RIGHT) {
@@ -944,7 +1194,55 @@ export class GameBootstrap3D extends Component {
     }
     if (event.getButton() !== EventMouse.BUTTON_LEFT) return;
     const location = event.getLocation();
+    const monster = this.pickMonsterAtScreen(location.x, location.y);
+    if (monster) {
+      this.selectMonster(monster);
+      return;
+    }
     void this.queryPathAtScreen(location.x, location.y);
+  }
+
+  /** 从屏幕射线中选择最近的怪物方块；返回命中后不会继续触发地面寻路。 / Picks the nearest monster box on the screen ray; a hit never falls through to ground navigation. */
+  private pickMonsterAtScreen(screenX: number, screenY: number): RemotePlayer3D | undefined {
+    const ray = new geometry.Ray();
+    this.camera.screenPointToRay(screenX, screenY, ray);
+    let nearest: RemotePlayer3D | undefined;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const remote of this.remotePlayers.values()) {
+      if (remote.entityType !== ENTITY_TYPE_MONSTER || !remote.node.active) continue;
+      const distance = intersectRayBox(ray, remote.node.worldPosition, 0.4, PLAYER_HALF_HEIGHT, 0.4);
+      if (distance === undefined || distance >= nearestDistance) continue;
+      nearest = remote;
+      nearestDistance = distance;
+    }
+    return nearest;
+  }
+
+  /** 设置选中目标并同步方块高亮与文字；不改变服务端战斗状态。 / Sets the selected target and updates highlight and text without changing server combat state. */
+  private selectMonster(monster: RemotePlayer3D): void {
+    if (this.selectedMonsterUnitId !== monster.unitId) {
+      const previous = this.remotePlayers.get(this.selectedMonsterUnitId);
+      if (previous) previous.selectionMarker.active = false;
+    }
+    this.selectedMonsterUnitId = monster.unitId;
+    monster.selectionMarker.active = true;
+    this.updateSelectedMonsterHud(monster);
+  }
+
+  /** 清除离开AOI或销毁实体后的选中状态。 / Clears selection after the entity leaves AOI or is destroyed. */
+  private clearSelectedMonster(): void {
+    const previous = this.remotePlayers.get(this.selectedMonsterUnitId);
+    if (previous) previous.selectionMarker.active = false;
+    this.selectedMonsterUnitId = 0;
+    if (this.selectedMonsterElement) this.selectedMonsterElement.textContent = "目标：未选择怪物";
+  }
+
+  /** 显示怪物配置名和运行时UnitId；当前协议的UnitId就是演示中的怪物实例ID。 / Displays config name and runtime UnitId, which is the monster instance ID in the demo protocol. */
+  private updateSelectedMonsterHud(monster: RemotePlayer3D): void {
+    if (!this.selectedMonsterElement) return;
+    const config = GameConfigs.MonsterConfig.TryGet(monster.configId);
+    const name = config?.name ?? `MonsterConfig#${monster.configId}`;
+    this.selectedMonsterElement.textContent = `目标：${name}\n实例ID：${monster.unitId}`;
   }
 
   /** 统一桌面点击与手机轻触的寻路入口。 / Shares one path-query entry between desktop clicks and mobile taps. */
@@ -991,6 +1289,11 @@ export class GameBootstrap3D extends Component {
   }
 
   private onKeyDown(event: EventKeyboard): void {
+    if (event.keyCode === AUTO_ATTACK_KEY && !this.pressedKeys.has(event.keyCode)) {
+      this.pressedKeys.add(event.keyCode);
+      void this.toggleAutoAttack();
+      return;
+    }
     if (event.keyCode === KeyCode.KEY_E && !this.pressedKeys.has(event.keyCode)) {
       this.pressedKeys.add(event.keyCode);
       void this.toggleDemoDoor();
@@ -1006,6 +1309,41 @@ export class GameBootstrap3D extends Component {
     if (!this.pressedKeys.delete(event.keyCode)) return;
     if (event.keyCode === KeyCode.KEY_E) return;
     this.markInputDirty();
+  }
+
+  /** 选择当前可见最近怪物并切换平A；命中与重新读条均由服务端处理。 / Selects the nearest visible monster and toggles auto-attack; server owns hits and resets. */
+  private async toggleAutoAttack(): Promise<void> {
+    const mapClient = this.mapClient;
+    if (!mapClient) return;
+    const enabled = !this.autoAttackEnabled;
+    const targetUnitId = enabled ? this.findNearestMonster() : this.autoAttackTargetUnitId;
+    if (enabled && targetUnitId === 0) {
+      this.setStatus("附近没有可攻击的怪物");
+      return;
+    }
+    try {
+      const response = await mapClient.toggleAutoAttack({ enabled, targetUnitId });
+      this.ApplyAutoAttackState(response);
+    } catch (error) {
+      this.setStatus(`平A切换失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** 只从AOI已进入的怪物中选择目标，不能通过客户端自行猜测地图全量实体。 / Selects only an AOI-entered monster; the client must not guess hidden map entities. */
+  private findNearestMonster(): number {
+    let nearestUnitId = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const [unitId, remote] of this.remotePlayers) {
+      if (remote.entityType !== ENTITY_TYPE_MONSTER) continue;
+      const dx = this.player.position.x - remote.node.position.x;
+      const dz = this.player.position.z - remote.node.position.z;
+      const distance = dx * dx + dz * dz;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestUnitId = unitId;
+      }
+    }
+    return nearestUnitId;
   }
 
   /** 请求地图业务切换稳定ObstacleId；表现只在服务端接受后变化，避免客户端假门。 / Requests a stable server obstacle and changes visuals only after the authoritative response. */
@@ -1283,6 +1621,7 @@ export class GameBootstrap3D extends Component {
   }
 
   private UpsertRemotePlayer(entity: MapEntitySnapshot): void {
+    this.ApplyLocalSnapshotNumerics(entity);
     if (entity.unitId === this.localUnitId) return;
     let remote = this.remotePlayers.get(entity.unitId);
     if (!remote) {
@@ -1299,14 +1638,30 @@ export class GameBootstrap3D extends Component {
       this.player.parent?.addChild(node);
       remote = {
         node,
+        unitId: entity.unitId,
+        selectionMarker: createSelectionMarker(),
+        overheadHud: entity.entityType === ENTITY_TYPE_MONSTER
+          ? createMonsterOverheadHud()
+          : undefined,
         targetFoot: new Vec3(entity.x, entity.y, entity.z),
+        entityType: entity.entityType,
+        configId: entity.configId,
+        alive: entity.alive,
+        numerics: new Map(entity.numerics.map((numeric) => [numeric.numericType, numeric.value])),
         yaw: entity.yaw,
       };
+      node.addChild(remote.selectionMarker);
+      remote.selectionMarker.active = false;
+      if (remote.overheadHud) node.addChild(remote.overheadHud.root);
       this.remotePlayers.set(entity.unitId, remote);
     } else {
       remote.targetFoot.set(entity.x, entity.y, entity.z);
       remote.yaw = entity.yaw;
+      remote.alive = entity.alive;
+      for (const numeric of entity.numerics) remote.numerics.set(numeric.numericType, numeric.value);
+      remote.node.active = entity.alive;
     }
+    this.updateMonsterOverheadHud(remote);
   }
 
   /** 根据实体类型和冷配置选择3D演示颜色；服务端AI仍是唯一权威。 / Resolves the 3D demo color from entity type and cold config; server AI remains authoritative. */
@@ -1337,6 +1692,89 @@ export class GameBootstrap3D extends Component {
       remote.node.setPosition(foot.x, foot.y + PLAYER_HALF_HEIGHT, foot.z);
       remote.node.setRotationFromEuler(0, remote.yaw * 180 / Math.PI, 0);
     }
+  }
+
+  /** 更新怪物头顶条的数值和摄像机朝向；只做表现，不参与战斗判定。 / Updates monster overhead values and camera-facing orientation for presentation only. */
+  private updateMonsterOverheadHudBillboards(): void {
+    if (!this.cameraNode) return;
+    const cameraPosition = this.cameraNode.worldPosition;
+    if (this.playerOverheadHud && this.player.active) {
+      this.faceOverheadHudToCamera(this.playerOverheadHud.root, cameraPosition);
+    }
+    for (const remote of this.remotePlayers.values()) {
+      const hud = remote.overheadHud;
+      if (!hud || !remote.node.active) continue;
+      this.faceOverheadHudToCamera(hud.root, cameraPosition);
+    }
+  }
+
+  /** 让世界HUD始终面向当前相机；只改变表现节点，不改变Unit朝向。 / Keeps world HUDs facing the camera without changing Unit orientation. */
+  private faceOverheadHudToCamera(hud: Node, cameraPosition: Vec3): void {
+    const hudPosition = hud.worldPosition;
+    const dx = cameraPosition.x - hudPosition.x;
+    const dz = cameraPosition.z - hudPosition.z;
+    if (dx * dx + dz * dz <= 0.000001) return;
+    this.overheadHudLookTarget.set(cameraPosition.x, hudPosition.y, cameraPosition.z);
+    hud.lookAt(this.overheadHudLookTarget);
+  }
+
+  /** 按Numeric快照刷新红色HP条和可选蓝色MP条；缺少MaxMp或MaxMp为零时隐藏MP条。 / Refreshes red HP and optional blue MP bars; MP stays hidden when MaxMp is absent or zero. */
+  private updateMonsterOverheadHud(remote: RemotePlayer3D): void {
+    this.updateOverheadHud(remote.overheadHud, remote.numerics);
+  }
+
+  /** 用同一套渲染规则更新玩家和怪物头顶条；数值来源仍由各自服务端快照决定。 / Updates player and monster overhead bars with one renderer while each keeps its server-owned numeric source. */
+  private updateOverheadHud(
+    hud: MonsterOverheadHud | undefined,
+    numerics: ReadonlyMap<number, bigint>,
+  ): void {
+    if (!hud) return;
+    const currentHp = numerics.get(NUMERIC_CURRENT_HP);
+    const maxHp = numerics.get(NUMERIC_MAX_HP);
+    setProgressBar(hud.hpFill, numericRatio(currentHp, maxHp), MONSTER_HUD_WIDTH);
+
+    const maxMp = numerics.get(NUMERIC_MAX_MP) ?? 0n;
+    const hasMp = maxMp > 0n;
+    hud.mpTrack.active = hasMp;
+    hud.mpFill.active = hasMp;
+    if (hasMp) {
+      setProgressBar(
+        hud.mpFill,
+        numericRatio(numerics.get(NUMERIC_CURRENT_MP), maxMp),
+        MONSTER_HUD_WIDTH,
+      );
+    }
+  }
+
+  /** 刷新玩家自己的HP/MP；死亡时仍保留0血状态，便于观察服务端权威结果。 / Refreshes the local HP/MP and keeps 0 HP visible after death so the server-authoritative result is observable. */
+  private updatePlayerStatsHud(): void {
+    const currentHp = this.localNumerics.get(NUMERIC_CURRENT_HP);
+    const maxHp = this.localNumerics.get(NUMERIC_MAX_HP);
+    const currentMp = this.localNumerics.get(NUMERIC_CURRENT_MP);
+    const maxMp = this.localNumerics.get(NUMERIC_MAX_MP);
+    if (this.playerHpLabel && this.playerMpLabel && this.playerHpProgress && this.playerMpProgress) {
+      this.playerHpLabel.textContent = `HP: ${currentHp?.toString() ?? "--"} / ${maxHp?.toString() ?? "--"}`;
+      this.playerMpLabel.textContent = `MP: ${currentMp?.toString() ?? "--"} / ${maxMp?.toString() ?? "--"}`;
+      this.playerHpProgress.style.width = `${numericRatio(currentHp, maxHp) * 100}%`;
+      this.playerMpProgress.style.width = `${numericRatio(currentMp, maxMp) * 100}%`;
+    }
+    this.updateOverheadHud(this.playerOverheadHud, this.localNumerics);
+  }
+
+  /**
+   * 进入快照既可能走EnterMap，也可能在客户端就绪后通过AoiDelta到达；本地Unit不能走远端表现分支，
+   * 因此两条入口都必须先把完整Numeric快照写入本地HUD。
+   *
+   * The local snapshot may arrive in EnterMap or in the post-ready AoiDelta.
+   * The local Unit must not use the remote presentation branch, so both entry
+   * paths copy its complete Numeric snapshot before returning.
+   */
+  private ApplyLocalSnapshotNumerics(entity: MapEntitySnapshot): void {
+    if (entity.unitId !== this.localUnitId) return;
+    for (const numeric of entity.numerics) {
+      this.localNumerics.set(numeric.numericType, numeric.value);
+    }
+    this.updatePlayerStatsHud();
   }
 
   /** 点击转向时相机按最短圆弧追随；手动转身已同步朝向，因此不会产生额外滞后。 / Follows click-path turns over the shortest arc while manual turns keep camera and player yaw synchronized. */
@@ -1430,6 +1868,128 @@ function createBox(
   material.setProperty("mainColor", color);
   renderer.setMaterial(material, 0);
   return node;
+}
+
+/** 创建不依赖资源的方框选中标记；标记作为怪物子节点随实体移动。 / Creates a resource-free square selection marker that follows the monster as a child node. */
+function createSelectionMarker(): Node {
+  const marker = new Node("SelectionMarker");
+  const color = new Color(255, 232, 82, 255);
+  const half = 0.56;
+  const thickness = 0.07;
+  const height = 0.06;
+  const y = -PLAYER_HALF_HEIGHT + height / 2 + 0.02;
+  marker.addChild(createBox("SelectionNorth", 1.12, height, thickness, color, 0, y, half));
+  marker.addChild(createBox("SelectionSouth", 1.12, height, thickness, color, 0, y, -half));
+  marker.addChild(createBox("SelectionEast", thickness, height, 1.12, color, half, y, 0));
+  marker.addChild(createBox("SelectionWest", thickness, height, 1.12, color, -half, y, 0));
+  return marker;
+}
+
+/** 创建怪物头顶的双层世界HUD；HP默认显示，MP由MaxMp是否大于零决定。 / Creates the two-row world HUD above a monster; HP is always shown and MP follows MaxMp. */
+function createMonsterOverheadHud(): MonsterOverheadHud {
+  const root = new Node("MonsterOverheadHud");
+  root.setPosition(0, MONSTER_HUD_OFFSET_Y, 0);
+
+  const hpY = MONSTER_HUD_ROW_GAP / 2;
+  const mpY = -MONSTER_HUD_ROW_GAP / 2;
+  root.addChild(createBox(
+    "HpTrack",
+    MONSTER_HUD_WIDTH,
+    MONSTER_HUD_BAR_HEIGHT,
+    MONSTER_HUD_BAR_DEPTH,
+    new Color(45, 20, 24, 255),
+    0,
+    hpY,
+    0,
+  ));
+  const hpFill = createBox(
+    "HpFill",
+    MONSTER_HUD_WIDTH,
+    MONSTER_HUD_BAR_HEIGHT,
+    MONSTER_HUD_BAR_DEPTH + 0.01,
+    new Color(224, 52, 62, 255),
+    0,
+    hpY,
+    0,
+  );
+  root.addChild(hpFill);
+
+  const mpTrack = createBox(
+    "MpTrack",
+    MONSTER_HUD_WIDTH,
+    MONSTER_HUD_BAR_HEIGHT,
+    MONSTER_HUD_BAR_DEPTH,
+    new Color(18, 29, 55, 255),
+    0,
+    mpY,
+    0,
+  );
+  const mpFill = createBox(
+    "MpFill",
+    MONSTER_HUD_WIDTH,
+    MONSTER_HUD_BAR_HEIGHT,
+    MONSTER_HUD_BAR_DEPTH + 0.01,
+    new Color(55, 125, 245, 255),
+    0,
+    mpY,
+    0,
+  );
+  root.addChild(mpTrack);
+  root.addChild(mpFill);
+  mpTrack.active = false;
+  mpFill.active = false;
+  return { root, hpFill, mpTrack, mpFill };
+}
+
+/** 将服务端i64数值转换为0..1进度；客户端不依赖浮点精度参与战斗。 / Converts server i64 values to a 0..1 display ratio without using float math for combat. */
+function numericRatio(current: bigint | undefined, maximum: bigint | undefined): number {
+  if (current === undefined || maximum === undefined || maximum <= 0n) return 0;
+  if (current <= 0n) return 0;
+  if (current >= maximum) return 1;
+  return Math.min(1, Math.max(0, Number(current) / Number(maximum)));
+}
+
+/** 让进度条从左侧缩短，避免缩放中心变化造成视觉跳动。 / Shrinks the bar from the left so scaling around its center does not visually jump. */
+function setProgressBar(fill: Node, ratio: number, width: number): void {
+  const safeRatio = Math.min(1, Math.max(0, ratio));
+  fill.setScale(safeRatio, 1, 1);
+  fill.setPosition((safeRatio - 1) * width / 2, fill.position.y, fill.position.z);
+}
+
+/** 返回射线进入方块的距离；无物理Collider的演示灰盒也能稳定参与拾取。 / Returns the ray entry distance so resource-free graybox entities can be picked without physics colliders. */
+function intersectRayBox(
+  ray: geometry.Ray,
+  center: Readonly<Vec3>,
+  halfX: number,
+  halfY: number,
+  halfZ: number,
+): number | undefined {
+  const minX = center.x - halfX;
+  const maxX = center.x + halfX;
+  const minY = center.y - halfY;
+  const maxY = center.y + halfY;
+  const minZ = center.z - halfZ;
+  const maxZ = center.z + halfZ;
+  let near = 0;
+  let far = Number.POSITIVE_INFINITY;
+  const axes = [
+    [ray.o.x, ray.d.x, minX, maxX],
+    [ray.o.y, ray.d.y, minY, maxY],
+    [ray.o.z, ray.d.z, minZ, maxZ],
+  ] as const;
+  for (const [origin, direction, min, max] of axes) {
+    if (Math.abs(direction) < 0.000001) {
+      if (origin < min || origin > max) return undefined;
+      continue;
+    }
+    let first = (min - origin) / direction;
+    let second = (max - origin) / direction;
+    if (first > second) [first, second] = [second, first];
+    near = Math.max(near, first);
+    far = Math.min(far, second);
+    if (near > far) return undefined;
+  }
+  return far < 0 ? undefined : near;
 }
 
 /** 每6米绘制一条低矮参考线，帮助观察障碍绕行和世界米制比例。 / Draws six-meter reference lines for obstacle avoidance and world-scale inspection. */

@@ -11,13 +11,15 @@ signal navigate_push(message: Dictionary)
 signal aoi_delta(message: Dictionary)
 signal entity_enter(entity: Dictionary)
 signal entity_leave(unit_id: int)
+signal entity_numeric(message: Dictionary)
 signal door_changed(closed: bool, changed: bool)
 signal ping_result(latency_ms: int, server_time_ms: int)
+signal auto_attack_state_changed(state: Dictionary)
 
 var peer: WebSocketPeer
 var account: String
 var phase := "idle"
-var rpc_id := 1
+var next_rpc_id := 1
 var pending: Dictionary = {}
 var connect_callback: Callable
 var socket_opened := false
@@ -25,6 +27,7 @@ var last_ping_ms := 0
 var ping_sent_at := 0
 var token := ""
 var door_request_pending := false
+var auto_attack_request_pending := false
 
 func start(in_account: String, login_mgr_host := "127.0.0.1", login_mgr_port := 7000) -> void:
 	account = in_account
@@ -84,6 +87,16 @@ func toggle_demo_door(closed: bool) -> bool:
 		return false
 	door_request_pending = true
 	_send_rpc(TiangZProto.C2M_TOGGLE_DEMO_DOOR, TiangZProto.encode_c2m_toggle_demo_door({"closed": closed}), TiangZProto.M2C_TOGGLE_DEMO_DOOR, Callable(self, "_on_door_response"))
+	return true
+
+func toggle_auto_attack(enabled: bool, target_unit_id: int) -> bool:
+	if phase != "map" or auto_attack_request_pending:
+		return false
+	auto_attack_request_pending = true
+	_send_rpc(TiangZProto.C2M_TOGGLE_AUTO_ATTACK, TiangZProto.encode_c2m_toggle_auto_attack({
+		"enabled": enabled,
+		"target_unit_id": target_unit_id,
+	}), TiangZProto.M2C_TOGGLE_AUTO_ATTACK, Callable(self, "_on_auto_attack_response"))
 	return true
 
 func _connect(host: String, port: int, callback: Callable) -> void:
@@ -151,9 +164,8 @@ func _on_snapshot_ready(response: Dictionary) -> void:
 func _on_navigate_response(response: Dictionary) -> void:
 	if not _check_response(response):
 		return
-	var result := TiangZProto.decode_m2c_navigate_to(response.payload)
-	if result.error != 0:
-		_emit_status("导航请求失败：%s" % result.message, true)
+	# M2C_NavigateTo的业务字段只有路径确认；RPC错误已经在外层response中检查过。
+	# M2C_NavigateTo only acknowledges the path; RPC errors were checked in the outer response.
 
 func _on_door_response(response: Dictionary) -> void:
 	door_request_pending = false
@@ -169,11 +181,17 @@ func _on_ping(response: Dictionary) -> void:
 	var now := Time.get_ticks_msec()
 	ping_result.emit(now - ping_sent_at, result.server_time)
 
+func _on_auto_attack_response(response: Dictionary) -> void:
+	auto_attack_request_pending = false
+	if not _check_response(response):
+		return
+	auto_attack_state_changed.emit(TiangZProto.decode_m2c_toggle_auto_attack(response.payload))
+
 func _send_rpc(msg_code: int, payload: PackedByteArray, response_code: int, callback: Callable) -> void:
 	if peer == null or peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
-	var current_id := rpc_id
-	rpc_id += 1
+	var current_id := next_rpc_id
+	next_rpc_id += 1
 	var body := TiangZProto.with_rpc(current_id, payload)
 	pending[current_id] = {"expected": response_code, "callback": callback, "payload": PackedByteArray()}
 	peer.send(TiangZProto.frame(msg_code, body), WebSocketPeer.WRITE_MODE_BINARY)
@@ -194,32 +212,36 @@ func _handle_packet(packet: PackedByteArray) -> void:
 		entity_enter.emit(TiangZProto.decode_g2c_entity_enter(payload).entity)
 	elif msg_code == TiangZProto.G2C_ENTITY_LEAVE:
 		entity_leave.emit(TiangZProto.decode_g2c_entity_leave(payload).unit_id)
+	elif msg_code == TiangZProto.G2C_ENTITY_NUMERIC:
+		entity_numeric.emit(TiangZProto.decode_g2c_entity_numeric(payload))
 	elif msg_code == TiangZProto.G2C_DEMO_DOOR_STATE:
 		door_changed.emit(TiangZProto.decode_g2c_demo_door_state(payload).closed, true)
+	elif msg_code == TiangZProto.G2C_AUTO_ATTACK_STATE:
+		auto_attack_state_changed.emit(TiangZProto.decode_g2c_auto_attack_state(payload))
 	else:
 		var response_id := TiangZProto.decode_rpc_id(payload)
 		if pending.has(response_id):
 			var request: Dictionary = pending[response_id]
 			pending.erase(response_id)
-			if request.expected != msg_code:
-				_emit_status("RPC响应不匹配：%d != %d" % [msg_code, request.expected], true)
+			if int(request["expected"]) != msg_code:
+				_emit_status("RPC响应不匹配：%d != %d" % [msg_code, request["expected"]], true)
 				return
-			var callback: Callable = request.callback
+			var callback: Callable = request["callback"]
 			var response := {"rpc_id": response_id, "payload": payload, "error": 0, "message": ""}
 			var meta := TiangZProto.decode_error(payload)
-			response.error = meta.error
-			response.message = meta.message
+			response["error"] = meta.get("error", 0)
+			response["message"] = meta.get("message", "")
 			callback.call(response)
 
 func _check_response(response: Dictionary) -> bool:
-	if int(response.error) != 0:
-		_emit_status("请求失败：%s" % response.message, true)
+	if int(response.get("error", 0)) != 0:
+		_emit_status("请求失败：%s" % str(response.get("message", "")), true)
 		return false
 	return true
 
 func _has_pending_response(response_code: int) -> bool:
 	for request in pending.values():
-		if request.expected == response_code:
+		if int(request["expected"]) == response_code:
 			return true
 	return false
 

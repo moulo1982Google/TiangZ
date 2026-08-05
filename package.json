@@ -29,6 +29,7 @@
     "codegen:game-config": "node tools/codegen_game_config.mjs",
     "build:game-config": "npm run codegen:game-config && node tools/build_game_config_data.mjs",
     "build:game-config:initial": "node tools/build_game_config_data.mjs --initial",
+    "build:game-config:startup": "npm run codegen:game-config && npm run build:game-config:initial",
     "navigation:graybox": "node tools/navigation/generate_graybox.mjs",
     "navigation:bake": "npm run navigation:graybox && cargo run --locked --bin navmesh_bake -- --manifest navigation/maps/demo_3d/bake.json",
     "codegen:proto:update-lock": "node tools/codegen_proto.mjs --update-opcode-lock",

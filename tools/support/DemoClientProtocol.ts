@@ -12,6 +12,8 @@ import {
   C2M_MoveCodec,
   C2M_AttackMonster,
   C2M_AttackMonsterCodec,
+  C2M_ToggleAutoAttack,
+  C2M_ToggleAutoAttackCodec,
   C2M_MapProbe,
   C2M_MapProbeCodec,
   C2M_FindPath,
@@ -38,10 +40,14 @@ import {
   G2C_PingCodec,
   G2C_AoiDelta,
   G2C_AoiDeltaCodec,
+  G2C_AutoAttackState,
+  G2C_AutoAttackStateCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
   M2C_AttackMonster,
   M2C_AttackMonsterCodec,
+  M2C_ToggleAutoAttack,
+  M2C_ToggleAutoAttackCodec,
   M2C_FindPath,
   M2C_FindPathCodec,
   M2C_NavigateTo,
@@ -245,6 +251,41 @@ export function decodeAttackMonsterFrame(
   }
   const body = M2C_AttackMonsterCodec.decode(frame.subarray(2));
   return { msgcode, rpcId: body.rpcId, body };
+}
+
+/** 构造切换平A意图的测试包。 / Builds the auto-attack intent toggle packet for smoke tests. */
+export function buildToggleAutoAttackPacket(
+  rpcId: number,
+  request: Omit<C2M_ToggleAutoAttack, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_ToggleAutoAttack,
+    C2M_ToggleAutoAttackCodec.encode({ ...request, rpcId }),
+  );
+}
+
+/** 解码平A开关响应。 / Decodes the auto-attack toggle response. */
+export function decodeToggleAutoAttackFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_ToggleAutoAttack> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_ToggleAutoAttack) {
+    throw new Error(`expected M2C_ToggleAutoAttack, got ${msgcode}`);
+  }
+  const body = M2C_ToggleAutoAttackCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+/** 解码服务端推送的当前平A状态。 / Decodes the server push carrying the current auto-attack state. */
+export function decodeAutoAttackStateFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_AutoAttackState> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_AutoAttackState) {
+    throw new Error(`expected G2C_AutoAttackState, got ${msgcode}`);
+  }
+  const body = G2C_AutoAttackStateCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: undefined, body };
 }
 
 export function buildMapProbePacket(

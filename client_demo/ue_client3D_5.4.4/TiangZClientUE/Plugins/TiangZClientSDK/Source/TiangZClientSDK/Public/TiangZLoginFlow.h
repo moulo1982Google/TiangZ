@@ -19,9 +19,12 @@ public:
     using FAoiDelta = std::function<void(tiangz::protocol::demo::G2C_AoiDelta)>;
     using FNavigate = std::function<void(tiangz::protocol::demo::G2C_EntityNavigate)>;
     using FNumeric = std::function<void(tiangz::protocol::demo::G2C_EntityNumeric)>;
+    using FEntityState = std::function<void(tiangz::protocol::demo::G2C_EntityState)>;
     using FDemoDoorState = std::function<void(bool bClosed)>;
+    using FAutoAttackState = std::function<void(tiangz::protocol::demo::G2C_AutoAttackState)>;
     using FPing = std::function<void(std::int64_t LatencyMs, std::int64_t ServerTimeMs)>;
     using FToggleDemoDoor = std::function<void(bool bClosed, bool bChanged)>;
+    using FToggleAutoAttack = std::function<void(tiangz::protocol::demo::M2C_ToggleAutoAttack)>;
 
     explicit FTiangZLoginFlow(tiangz::client::ClientEndpoint LoginMgrEndpoint);
     ~FTiangZLoginFlow();
@@ -31,7 +34,8 @@ public:
 
     void SetCallbacks(FProgress InProgress, FError InError, FReady InReady,
         FAoiDelta InAoiDelta, FNavigate InNavigate, FNumeric InNumeric,
-        FDemoDoorState InDemoDoorState, FPing InPing);
+        FEntityState InEntityState, FDemoDoorState InDemoDoorState,
+        FAutoAttackState InAutoAttackState, FPing InPing);
     void Start(FString Account, std::uint32_t MapId);
     void Tick();
     void Close();
@@ -40,6 +44,8 @@ public:
     bool NavigateInput(std::int32_t Forward, std::int32_t Strafe, float Yaw, std::uint32_t Sequence);
     /** 切换服务端权威动态门；完成回调只在游戏线程Update中执行。 / Toggles the authoritative demo door; completion runs only from game-thread Update. */
     bool ToggleDemoDoor(bool bClosed, FToggleDemoDoor OnCompleted);
+    /** 请求切换服务端平A；状态推送和RPC回包都在游戏线程Tick中交给调用方。 / Toggles server auto attack; both push state and RPC completion run from game-thread Tick. */
+    bool ToggleAutoAttack(bool bEnabled, std::uint32_t TargetUnitId, FToggleAutoAttack OnCompleted);
     [[nodiscard]] bool IsReady() const { return bReady; }
 
 private:
@@ -72,7 +78,9 @@ private:
     FAoiDelta OnAoiDelta;
     FNavigate OnNavigate;
     FNumeric OnNumeric;
+    FEntityState OnEntityState;
     FDemoDoorState OnDemoDoorState;
+    FAutoAttackState OnAutoAttackState;
     FPing OnPing;
     std::chrono::steady_clock::time_point NextPingAt{};
     std::chrono::steady_clock::time_point PingStartedAt{};
@@ -81,4 +89,5 @@ private:
     bool bNavigateToInFlight = false;
     bool bNavigateInputInFlight = false;
     bool bToggleDemoDoorInFlight = false;
+    bool bToggleAutoAttackInFlight = false;
 };

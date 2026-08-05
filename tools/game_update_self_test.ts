@@ -14,6 +14,9 @@ import {
   type IFrameFlush,
   type ILateUpdate,
   type IUpdate,
+  type IUpdate10Hz,
+  type IUpdate5Hz,
+  type IUpdate1Hz,
 } from "../app/core/runtime/UpdateSystem";
 
 @scene({ sceneType: "GameUpdateTest" })
@@ -33,8 +36,11 @@ class TestActor extends Actor {
   }
 }
 
-class CounterComponent extends Component implements IUpdate, ILateUpdate, IFrameFlush {
+class CounterComponent extends Component implements IUpdate, IUpdate10Hz, IUpdate5Hz, IUpdate1Hz, ILateUpdate, IFrameFlush {
   updates = 0;
+  updates10Hz = 0;
+  updates5Hz = 0;
+  updates1Hz = 0;
   onceCount = 0;
   repeatedCount = 0;
   readonly phases: string[] = [];
@@ -43,6 +49,18 @@ class CounterComponent extends Component implements IUpdate, ILateUpdate, IFrame
   Update(): void {
     this.updates += 1;
     this.phases.push("update");
+  }
+
+  Update10Hz(): void {
+    this.updates10Hz += 1;
+  }
+
+  Update5Hz(): void {
+    this.updates5Hz += 1;
+  }
+
+  Update1Hz(): void {
+    this.updates1Hz += 1;
   }
 
   LateUpdate(): void {
@@ -77,6 +95,9 @@ async function main(): Promise<void> {
 
   Game.Instance.Update(base + 49, Date.now(), () => undefined);
   assert.equal(counter.updates, 0);
+  assert.equal(counter.updates10Hz, 0);
+  assert.equal(counter.updates5Hz, 0);
+  assert.equal(counter.updates1Hz, 0);
 
   Game.Instance.Update(base + 50, Date.now(), () => undefined);
   assert.equal(counter.updates, 1);
@@ -85,6 +106,8 @@ async function main(): Promise<void> {
 
   Game.Instance.Update(base + 250, Date.now(), () => undefined);
   assert.equal(counter.updates, 3, "a delayed pump must honor maxCatchUpSteps");
+  assert.equal(counter.updates10Hz, 1, "10Hz must run on every second 20Hz frame");
+  assert.equal(counter.updates5Hz, 0, "5Hz must run on every fourth 20Hz frame");
   assert.equal(Game.Instance.SkippedFixedUpdates, 2);
 
   counter.NewOnceTimer(25, "OnceTimer");
@@ -94,11 +117,17 @@ async function main(): Promise<void> {
   assert.equal(counter.repeatedCount, 1);
   assert.equal(counter.RemoveTimer(repeatedTimer), true);
 
+  Game.Instance.Update(base + 325, Date.now(), () => undefined);
+  assert.equal(counter.updates10Hz, 2);
+  assert.equal(counter.updates5Hz, 1);
+  assert.equal(counter.updates1Hz, 0);
+  assert.equal(counter.updates, 4);
+
   assert.equal(sceneInstance.RemoveComponent(CounterComponent), true);
   assert.equal(counter.destroyed, true);
   assert.equal(UpdateSystem.Instance.Count, 0);
   Game.Instance.Update(base + 350, Date.now(), () => undefined);
-  assert.equal(counter.updates, 3);
+  assert.equal(counter.updates, 4);
   assert.equal(counter.repeatedCount, 1);
 
   const actorInstance = sceneInstance.SpawnActor("player-1", TestActor);

@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "95ebbb14cedfd598326f324e73a7edef09113ac49e1806b491d1d536546b0d00";
+    public const string Value = "f46cbe168092be9f13144ea53d8f3f363f8ae2134633627730623449d49548d9";
 }
 
 public static class MsgCode
@@ -27,11 +27,13 @@ public static class MsgCode
     public const ushort C2M_Move = 10013;
     public const ushort C2M_NavigateInput = 10037;
     public const ushort C2M_NavigateTo = 10034;
+    public const ushort C2M_ToggleAutoAttack = 10044;
     public const ushort C2M_ToggleDemoDoor = 10039;
     public const ushort C2M_UseItem = 10019;
     public const ushort C2S_GetLoginServiceAddr = 10002;
     public const ushort C2S_Login = 10004;
     public const ushort G2C_AoiDelta = 10025;
+    public const ushort G2C_AutoAttackState = 10046;
     public const ushort G2C_BuffAdded = 10026;
     public const ushort G2C_BuffDetail = 10028;
     public const ushort G2C_BuffRemoved = 10027;
@@ -53,6 +55,7 @@ public static class MsgCode
     public const ushort M2C_MapProbe = 10015;
     public const ushort M2C_NavigateInput = 10038;
     public const ushort M2C_NavigateTo = 10035;
+    public const ushort M2C_ToggleAutoAttack = 10045;
     public const ushort M2C_ToggleDemoDoor = 10040;
     public const ushort M2C_UseItem = 10020;
     public const ushort S2C_GetLoginServiceAddr = 10003;
@@ -150,6 +153,13 @@ public sealed class C2M_NavigateTo : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2M_ToggleAutoAttack : IRpcRequest
+{
+    public bool Enabled { get; set; }
+    public uint TargetUnitId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2M_ToggleDemoDoor : IRpcRequest
 {
     public bool Closed { get; set; }
@@ -192,6 +202,15 @@ public sealed class G2C_AoiDelta
     public uint ServerTick { get; set; }
     public List<MapEntitySnapshot> Enters { get; set; } = new List<MapEntitySnapshot>();
     public List<uint> Leaves { get; set; } = new List<uint>();
+}
+
+public sealed class G2C_AutoAttackState
+{
+    public bool Enabled { get; set; }
+    public uint TargetUnitId { get; set; }
+    public uint Phase { get; set; }
+    public ulong SwingStartAtMs { get; set; }
+    public uint SwingIntervalMs { get; set; }
 }
 
 public sealed class G2C_BuffAdded
@@ -361,6 +380,18 @@ public sealed class M2C_NavigateTo : IRpcResponse
 {
     public uint AcknowledgedSequence { get; set; }
     public List<NavigationPathPoint> Points { get; set; } = new List<NavigationPathPoint>();
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_ToggleAutoAttack : IRpcResponse
+{
+    public bool Enabled { get; set; }
+    public uint TargetUnitId { get; set; }
+    public uint Phase { get; set; }
+    public ulong SwingStartAtMs { get; set; }
+    public uint SwingIntervalMs { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -949,6 +980,44 @@ public static class C2M_NavigateToCodec
     }
 }
 
+public static class C2M_ToggleAutoAttackCodec
+{
+    public static C2M_ToggleAutoAttack Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_ToggleAutoAttack();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Enabled = reader.ReadBool();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_ToggleAutoAttack value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Enabled) writer.WriteBool(1, value.Enabled);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(2, value.TargetUnitId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2M_ToggleDemoDoorCodec
 {
     public static C2M_ToggleDemoDoor Decode(byte[] payload)
@@ -1187,6 +1256,52 @@ public static class G2C_AoiDeltaCodec
         {
             writer.WriteUInt32(3, item, true);
         }
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_AutoAttackStateCodec
+{
+    public static G2C_AutoAttackState Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_AutoAttackState();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Enabled = reader.ReadBool();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Phase = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.SwingStartAtMs = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.SwingIntervalMs = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_AutoAttackState value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Enabled) writer.WriteBool(1, value.Enabled);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(2, value.TargetUnitId);
+        if (value.Phase != 0) writer.WriteUInt32(3, value.Phase);
+        if (value.SwingStartAtMs != 0) writer.WriteUInt64(4, value.SwingStartAtMs);
+        if (value.SwingIntervalMs != 0) writer.WriteUInt32(5, value.SwingIntervalMs);
         return writer.ToArray();
     }
 }
@@ -2129,6 +2244,64 @@ public static class M2C_NavigateToCodec
     }
 }
 
+public static class M2C_ToggleAutoAttackCodec
+{
+    public static M2C_ToggleAutoAttack Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_ToggleAutoAttack();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Enabled = reader.ReadBool();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Phase = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.SwingStartAtMs = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.SwingIntervalMs = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_ToggleAutoAttack value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Enabled) writer.WriteBool(1, value.Enabled);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(2, value.TargetUnitId);
+        if (value.Phase != 0) writer.WriteUInt32(3, value.Phase);
+        if (value.SwingStartAtMs != 0) writer.WriteUInt64(4, value.SwingStartAtMs);
+        if (value.SwingIntervalMs != 0) writer.WriteUInt32(5, value.SwingIntervalMs);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_ToggleDemoDoorCodec
 {
     public static M2C_ToggleDemoDoor Decode(byte[] payload)
@@ -2672,6 +2845,11 @@ public static class MapProtocol
         C2M_NavigateToCodec.Encode, M2C_NavigateToCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_ToggleAutoAttack, M2C_ToggleAutoAttack> ToggleAutoAttack = new(
+        "Map.ToggleAutoAttack", MsgCode.C2M_ToggleAutoAttack, MsgCode.M2C_ToggleAutoAttack,
+        C2M_ToggleAutoAttackCodec.Encode, M2C_ToggleAutoAttackCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_ToggleDemoDoor, M2C_ToggleDemoDoor> ToggleDemoDoor = new(
         "Map.ToggleDemoDoor", MsgCode.C2M_ToggleDemoDoor, MsgCode.M2C_ToggleDemoDoor,
         C2M_ToggleDemoDoorCodec.Encode, M2C_ToggleDemoDoorCodec.Decode,
@@ -2706,6 +2884,8 @@ public static class ClientMessages
 {
     public static readonly MessageDescriptor<G2C_AoiDelta> AoiDelta = new(
         "Client.AoiDelta", MsgCode.G2C_AoiDelta, G2C_AoiDeltaCodec.Encode, G2C_AoiDeltaCodec.Decode);
+    public static readonly MessageDescriptor<G2C_AutoAttackState> AutoAttackState = new(
+        "Client.AutoAttackState", MsgCode.G2C_AutoAttackState, G2C_AutoAttackStateCodec.Encode, G2C_AutoAttackStateCodec.Decode);
     public static readonly MessageDescriptor<G2C_BuffAdded> BuffAdded = new(
         "Client.BuffAdded", MsgCode.G2C_BuffAdded, G2C_BuffAddedCodec.Encode, G2C_BuffAddedCodec.Decode);
     public static readonly MessageDescriptor<G2C_BuffDetail> BuffDetail = new(
@@ -2768,6 +2948,8 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.NavigateInput, request, cancellationToken);
     public Task<M2C_NavigateTo> NavigateToAsync(C2M_NavigateTo request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.NavigateTo, request, cancellationToken);
+    public Task<M2C_ToggleAutoAttack> ToggleAutoAttackAsync(C2M_ToggleAutoAttack request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.ToggleAutoAttack, request, cancellationToken);
     public Task<M2C_ToggleDemoDoor> ToggleDemoDoorAsync(C2M_ToggleDemoDoor request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.ToggleDemoDoor, request, cancellationToken);
     public Task<M2C_UseItem> UseItemAsync(C2M_UseItem request, CancellationToken cancellationToken = default) =>

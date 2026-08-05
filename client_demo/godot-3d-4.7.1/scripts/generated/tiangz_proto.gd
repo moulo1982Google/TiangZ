@@ -15,11 +15,13 @@ const C2M_MAP_PROBE := 10014
 const C2M_MOVE := 10013
 const C2M_NAVIGATE_INPUT := 10037
 const C2M_NAVIGATE_TO := 10034
+const C2M_TOGGLE_AUTO_ATTACK := 10044
 const C2M_TOGGLE_DEMO_DOOR := 10039
 const C2M_USE_ITEM := 10019
 const C2S_GET_LOGIN_SERVICE_ADDR := 10002
 const C2S_LOGIN := 10004
 const G2C_AOI_DELTA := 10025
+const G2C_AUTO_ATTACK_STATE := 10046
 const G2C_BUFF_ADDED := 10026
 const G2C_BUFF_DETAIL := 10028
 const G2C_BUFF_REMOVED := 10027
@@ -41,6 +43,7 @@ const M2C_FIND_PATH := 10033
 const M2C_MAP_PROBE := 10015
 const M2C_NAVIGATE_INPUT := 10038
 const M2C_NAVIGATE_TO := 10035
+const M2C_TOGGLE_AUTO_ATTACK := 10045
 const M2C_TOGGLE_DEMO_DOOR := 10040
 const M2C_USE_ITEM := 10020
 const S2C_GET_LOGIN_SERVICE_ADDR := 10003
@@ -337,7 +340,7 @@ static func decode_c2g_map_snapshot_ready(payload: PackedByteArray) -> Dictionar
 				reader.skip(tag.wire)
 	return result
 
-static func encode_c2g_ping(value: Dictionary) -> PackedByteArray:
+static func encode_c2g_ping(_value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	return result
 
@@ -598,6 +601,39 @@ static func decode_c2m_navigate_to(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_c2m_toggle_auto_attack(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("enabled"):
+		bool_field(result, 1, bool(value["enabled"]))
+	if value.has("target_unit_id"):
+		varint_field(result, 2, int(value["target_unit_id"]))
+	return result
+
+static func decode_c2m_toggle_auto_attack(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"enabled": false, "target_unit_id": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["enabled"] = reader.boolean()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_c2m_toggle_demo_door(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("closed"):
@@ -650,7 +686,7 @@ static func decode_c2m_use_item(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
-static func encode_c2s_get_login_service_addr(value: Dictionary) -> PackedByteArray:
+static func encode_c2s_get_login_service_addr(_value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	return result
 
@@ -808,6 +844,55 @@ static func decode_g2c_aoi_delta(payload: PackedByteArray) -> Dictionary:
 			3:
 				if tag.wire == 0:
 					result["leaves"].append(reader.uint32())
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_g2c_auto_attack_state(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("enabled"):
+		bool_field(result, 1, bool(value["enabled"]))
+	if value.has("target_unit_id"):
+		varint_field(result, 2, int(value["target_unit_id"]))
+	if value.has("phase"):
+		varint_field(result, 3, int(value["phase"]))
+	if value.has("swing_start_at_ms"):
+		varint_field(result, 4, int(value["swing_start_at_ms"]))
+	if value.has("swing_interval_ms"):
+		varint_field(result, 5, int(value["swing_interval_ms"]))
+	return result
+
+static func decode_g2c_auto_attack_state(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"enabled": false, "target_unit_id": 0, "phase": 0, "swing_start_at_ms": 0, "swing_interval_ms": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["enabled"] = reader.boolean()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["phase"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["swing_start_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["swing_interval_ms"] = reader.uint32()
 				else:
 					reader.skip(tag.wire)
 			_:
@@ -1638,6 +1723,70 @@ static func decode_m2c_navigate_to(payload: PackedByteArray) -> Dictionary:
 			2:
 				if tag.wire == 2:
 					result["points"].append(decode_navigation_path_point(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_m2c_toggle_auto_attack(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("enabled"):
+		bool_field(result, 1, bool(value["enabled"]))
+	if value.has("target_unit_id"):
+		varint_field(result, 2, int(value["target_unit_id"]))
+	if value.has("phase"):
+		varint_field(result, 3, int(value["phase"]))
+	if value.has("swing_start_at_ms"):
+		varint_field(result, 4, int(value["swing_start_at_ms"]))
+	if value.has("swing_interval_ms"):
+		varint_field(result, 5, int(value["swing_interval_ms"]))
+	return result
+
+static func decode_m2c_toggle_auto_attack(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"enabled": false, "target_unit_id": 0, "phase": 0, "swing_start_at_ms": 0, "swing_interval_ms": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["enabled"] = reader.boolean()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["phase"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["swing_start_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["swing_interval_ms"] = reader.uint32()
 				else:
 					reader.skip(tag.wire)
 			90:

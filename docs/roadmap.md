@@ -298,7 +298,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - 从2026-08-01起，新容量基线默认采用每玩家`2Hz`（500ms）持续移动心跳与`0.2Hz`（5秒）MapProbe；按下、转向和停止仍立即发送，Gate Ping保持5秒一次。AOI Cold配置固定为3×3 Enter/20Hz与5×5 Detach/5Hz，不再使用7×7/1Hz。历史负载结果只保留原口径，不与新行为基线直接横向比较。
 - 3000人AOI密度矩阵已经覆盖10×10、15×15和20×20 Grid。扁平Grid与连续位图改造后，Map CPU平均由旧`74.1%/56.7%/57.3%`降至`55.0%/50.7%/42.9%`，正式窗口均无错误、过载、超时和背压。`perf:map-capacity:grid-matrix`支持一键回归，`--report-runs`可在单档复测后从三份有效原始报告重建矩阵；Bench后置Place RPC仍会在稀疏地图形成初始化突发，后续应并入Bench进图事务。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
-- 怪物 Actor、巡逻、仇恨和战斗。
+- 怪物巡逻、技能和更完整战斗；Phase 4.4当前已完成固定刷点、主动/被动怪、统一仇恨、普通攻击和玩家自动平A最小闭环。自动平A使用固定`Update10Hz`判定，怪物AI使用`Update5Hz`，重生/清理使用`Update1Hz`，不为每个玩家或怪物创建Timer。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
 
@@ -389,10 +389,10 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 状态：最小普通攻击流程和局部行为树已完成，技能、Buff与复杂战斗仍未开始。
 
 - 已完成`MonsterConfig`和`MonsterAreaConfig`冷配置，以及`MonsterComponent + MonsterUnit`的统一Unit模型。
-- 已完成固定刷点、主动/被动模式、地图Tick追击、攻击距离、玩家攻击、Numeric扣血、死亡尸体、AOI Leave、原槽位重生和运行时冒烟验收。
+- 已完成固定刷点、主动/被动模式、地图Tick追击、攻击距离、玩家攻击、Numeric扣血、死亡Detach/Remove、AOI Leave、原刷怪槽新Unit重生和运行时冒烟验收。
 - 已完成`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`的最小业务调用链；Handler不遍历地图、不直接操作Native句柄。
-- 已完成Hotfix内部的`MonsterBehaviorTree`，只选择待机、追击、攻击和攻击冷却停留；普通攻击距离最大为2米，继续由Map Tick驱动。
-- 暂不实现随机刷怪池、巡逻路点、仇恨表、技能、Buff、掉落、战斗事件、持久化和角色/怪物动态避障；这些在最小闭环稳定后再按业务需求拆分。
+- 已完成Hotfix内部的`MonsterBehaviorTree`，只选择待机、追击、攻击和攻击冷却停留；普通攻击距离分别读取`PlayerConfig.attack_range`和`MonsterConfig.attack_range`，继续由Map Tick驱动。
+- 已完成最小统一仇恨：实际伤害按1:1写入`MonsterComponent.AddThreat`，被动怪没有仇恨时待机，主动怪没有仇恨时按规则主动索敌；后续技能、Buff、掉落、战斗事件和更复杂仇恨仍按业务需求拆分。持久化和角色/怪物动态避障不属于本阶段。
 
 ### Phase 4.5：持久化基础
 

@@ -15,6 +15,7 @@ import {
   G2C_EntityLeaveCodec,
   G2C_EntityMoveCodec,
   G2C_EntityNumericCodec,
+  G2C_AutoAttackStateCodec,
   type CellMovementState,
 } from "../app/generated/model/server/demo/protocol/messages";
 import { MsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
@@ -71,6 +72,7 @@ async function main(): Promise<void> {
   await testBuffAudienceProjectionDoesNotLeakDetails();
   await testMapRouteResolverUsesLocalAndCachedRemoteRoutes();
   await testLatestSingleFlight();
+  await testAutoAttackStateIsLatest();
   await testNumericLatestCoverage();
   await testEncodedLatestSnapshot();
   await testEncodedAoiBatchesSingleFlight();
@@ -398,6 +400,59 @@ async function testNumericLatestCoverage(): Promise<void> {
   ]);
   transport.sends[1].resolve();
   await Promise.all([first, replaced, latest, maxHp]);
+  assert.equal(hub.Snapshot().coalescedItems, 1);
+}
+
+/** 平A读条是单个玩家的当前状态；连续更新必须覆盖排队中的旧状态。 / Auto-attack is one current state per player; repeated updates must replace queued states. */
+async function testAutoAttackStateIsLatest(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  const first = hub.Publish(
+    audience,
+    ClientBroadcasts.AutoAttackState,
+    {
+      enabled: true,
+      targetUnitId: 100,
+      phase: 2,
+      swingStartAtMs: 1_000n,
+      swingIntervalMs: 2_000,
+    },
+    1,
+  );
+  const replaced = hub.Publish(
+    audience,
+    ClientBroadcasts.AutoAttackState,
+    {
+      enabled: true,
+      targetUnitId: 100,
+      phase: 2,
+      swingStartAtMs: 3_000n,
+      swingIntervalMs: 2_000,
+    },
+    2,
+  );
+  const latest = hub.Publish(
+    audience,
+    ClientBroadcasts.AutoAttackState,
+    {
+      enabled: true,
+      targetUnitId: 100,
+      phase: 2,
+      swingStartAtMs: 5_000n,
+      swingIntervalMs: 2_000,
+    },
+    3,
+  );
+
+  assert.equal(transport.sends.length, 1, "the first auto-attack state may be in flight");
+  transport.sends[0].resolve();
+  await settlePromises();
+  assert.equal(transport.sends.length, 2, "only the latest pending auto-attack state should follow");
+  const body = G2C_AutoAttackStateCodec.decode(transport.sends[1].frame.subarray(2));
+  assert.equal(body.swingStartAtMs, 5_000n);
+  assert.equal(body.swingIntervalMs, 2_000);
+  transport.sends[1].resolve();
+  await Promise.all([first, replaced, latest]);
   assert.equal(hub.Snapshot().coalescedItems, 1);
 }
 

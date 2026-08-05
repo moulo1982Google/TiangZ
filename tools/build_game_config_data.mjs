@@ -39,9 +39,20 @@ if (initial) {
   await publish(path.join(dist, "game-config"), manifest, files, true);
 }
 
+const mode = initial ? "startup" : "hot-reload-candidate";
+const relativeCandidate = path.relative(root, candidate).replaceAll(path.sep, "/");
 process.stdout.write(
-  `[build:game-config] schema=${manifest.schemaFingerprint.slice(0, 12)} data=${manifest.dataFingerprint.slice(0, 12)} candidate=${path.relative(root, candidate).replaceAll(path.sep, "/")}\n`,
+  `[build:game-config] mode=${mode} schema=${manifest.schemaFingerprint.slice(0, 12)} data=${manifest.dataFingerprint.slice(0, 12)} candidate=${relativeCandidate}\n`,
 );
+if (initial) {
+  process.stdout.write(
+    "[build:game-config] 已更新dist/game-config，服务器重启时会读取这个启动包。\n",
+  );
+} else {
+  process.stdout.write(
+    "[build:game-config] 仅生成热重载候选，不会更新dist/game-config；重启生效请运行npm run build:game-config:startup。\n",
+  );
+}
 
 /** 原子发布完整数据包；候选按内容寻址，initial目录允许完整替换。 / Atomically publishes a complete package; candidates are content-addressed while the initial directory may be replaced. */
 async function publish(directory, value, files, replace = false) {

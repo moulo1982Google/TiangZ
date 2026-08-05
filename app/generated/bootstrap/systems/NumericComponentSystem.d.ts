@@ -9,7 +9,6 @@ declare module "../../../model/demo/numeric/NumericComponent" {
     Snapshot(): UnitNumericDelta[];
     CaptureTransfer(): UnitNumericDelta[];
     RestoreTransfer(values: readonly UnitNumericDelta[]): void;
-    StopRegeneration(): void;
   }
 }
 

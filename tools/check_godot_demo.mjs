@@ -37,6 +37,9 @@ const codes = {
   M2C_NAVIGATE_INPUT: 10038,
   C2M_TOGGLE_DEMO_DOOR: 10039,
   M2C_TOGGLE_DEMO_DOOR: 10040,
+  C2M_TOGGLE_AUTO_ATTACK: 10044,
+  M2C_TOGGLE_AUTO_ATTACK: 10045,
+  G2C_AUTO_ATTACK_STATE: 10046,
   G2C_ENTITY_NAVIGATE: 10036,
   G2C_ENTITY_ENTER: 10022,
   G2C_ENTITY_LEAVE: 10023,
@@ -54,7 +57,16 @@ for (const [name, code] of Object.entries(codes)) {
     .replace(/^./, (letter) => letter.toUpperCase());
   assertIncludes(generated, `${generatedName}: ${code}`, `正式协议msgcode缺少${name}`);
 }
-for (const value of ["TiangZClient", "G2C_ENTITY_NAVIGATE", "C2M_NAVIGATE_TO", "C2M_TOGGLE_DEMO_DOOR", "decode_g2c_demo_door_state"]) {
+for (const value of [
+  "TiangZClient",
+  "G2C_ENTITY_NAVIGATE",
+  "C2M_NAVIGATE_TO",
+  "C2M_TOGGLE_DEMO_DOOR",
+  "C2M_TOGGLE_AUTO_ATTACK",
+  "G2C_AUTO_ATTACK_STATE",
+  "decode_g2c_demo_door_state",
+  "decode_g2c_auto_attack_state",
+]) {
   assertIncludes(client, value, `Godot客户端缺少${value}`);
 }
 for (const value of [

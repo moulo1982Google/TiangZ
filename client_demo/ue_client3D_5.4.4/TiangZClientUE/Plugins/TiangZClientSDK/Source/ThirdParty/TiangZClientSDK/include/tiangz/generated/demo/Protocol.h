@@ -2675,6 +2675,222 @@ struct M2C_AttackMonsterCodec {
   }
 };
 
+struct C2M_ToggleAutoAttack {
+  std::optional<std::uint32_t> rpcId;
+  bool enabled = false;
+  std::uint32_t targetUnitId = 0;
+};
+
+struct C2M_ToggleAutoAttackCodec {
+  static C2M_ToggleAutoAttack Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_ToggleAutoAttack value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.enabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.targetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_ToggleAutoAttack& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.enabled);
+    writer.UInt32(2, value.targetUnitId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_ToggleAutoAttack {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  bool enabled = false;
+  std::uint32_t targetUnitId = 0;
+  std::uint32_t phase = 0;
+  std::uint64_t swingStartAtMs = 0;
+  std::uint32_t swingIntervalMs = 0;
+};
+
+struct M2C_ToggleAutoAttackCodec {
+  static M2C_ToggleAutoAttack Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_ToggleAutoAttack value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.enabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.targetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.phase = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.swingStartAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.swingIntervalMs = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_ToggleAutoAttack& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.Bool(1, value.enabled);
+    writer.UInt32(2, value.targetUnitId);
+    writer.UInt32(3, value.phase);
+    writer.UInt64(4, value.swingStartAtMs);
+    writer.UInt32(5, value.swingIntervalMs);
+    return writer.Finish();
+  }
+};
+
+struct G2C_AutoAttackState {
+  bool enabled = false;
+  std::uint32_t targetUnitId = 0;
+  std::uint32_t phase = 0;
+  std::uint64_t swingStartAtMs = 0;
+  std::uint32_t swingIntervalMs = 0;
+};
+
+struct G2C_AutoAttackStateCodec {
+  static G2C_AutoAttackState Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_AutoAttackState value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.enabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.targetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.phase = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.swingStartAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.swingIntervalMs = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_AutoAttackState& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.Bool(1, value.enabled);
+    writer.UInt32(2, value.targetUnitId);
+    writer.UInt32(3, value.phase);
+    writer.UInt64(4, value.swingStartAtMs);
+    writer.UInt32(5, value.swingIntervalMs);
+    return writer.Finish();
+  }
+};
+
 struct G2C_ItemChanged {
   ItemSnapshot item;
 };
@@ -3108,6 +3324,9 @@ inline constexpr std::uint16_t C2M_UseItem = 10019;
 inline constexpr std::uint16_t M2C_UseItem = 10020;
 inline constexpr std::uint16_t C2M_AttackMonster = 10042;
 inline constexpr std::uint16_t M2C_AttackMonster = 10043;
+inline constexpr std::uint16_t C2M_ToggleAutoAttack = 10044;
+inline constexpr std::uint16_t M2C_ToggleAutoAttack = 10045;
+inline constexpr std::uint16_t G2C_AutoAttackState = 10046;
 inline constexpr std::uint16_t G2C_ItemChanged = 10021;
 inline constexpr std::uint16_t G2C_BuffAdded = 10026;
 inline constexpr std::uint16_t G2C_BuffRemoved = 10027;
@@ -3168,6 +3387,10 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_AttackMonster, M2C_AttackMons
   "Map.AttackMonster", MsgCode::C2M_AttackMonster, MsgCode::M2C_AttackMonster
 };
 
+inline constexpr tiangz::client::RpcDescriptor<C2M_ToggleAutoAttack, M2C_ToggleAutoAttack, C2M_ToggleAutoAttackCodec, M2C_ToggleAutoAttackCodec> Map_ToggleAutoAttack{
+  "Map.ToggleAutoAttack", MsgCode::C2M_ToggleAutoAttack, MsgCode::M2C_ToggleAutoAttack
+};
+
 inline constexpr tiangz::client::RpcDescriptor<C2G_Ping, G2C_Ping, C2G_PingCodec, G2C_PingCodec> Gate_Ping{
   "Gate.Ping", MsgCode::C2G_Ping, MsgCode::G2C_Ping
 };
@@ -3194,6 +3417,10 @@ inline constexpr tiangz::client::MessageDescriptor<G2C_EntityNumeric, G2C_Entity
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_EntityState, G2C_EntityStateCodec> Client_EntityState{
   "Client.EntityState", MsgCode::G2C_EntityState
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_AutoAttackState, G2C_AutoAttackStateCodec> Client_AutoAttackState{
+  "Client.AutoAttackState", MsgCode::G2C_AutoAttackState
 };
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_ItemChanged, G2C_ItemChangedCodec> Client_ItemChanged{

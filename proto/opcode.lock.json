@@ -412,6 +412,11 @@
       "code": 10034
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_ToggleAutoAttack",
+      "name": "C2M_ToggleAutoAttack",
+      "code": 10044
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_ToggleDemoDoor",
       "name": "C2M_ToggleDemoDoor",
       "code": 10039
@@ -440,6 +445,11 @@
       "key": "proto/OuterMessage_C_10001.proto#G2C_AoiDelta",
       "name": "G2C_AoiDelta",
       "code": 10025
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_AutoAttackState",
+      "name": "G2C_AutoAttackState",
+      "code": 10046
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#G2C_BuffAdded",
@@ -545,6 +555,11 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_NavigateTo",
       "name": "M2C_NavigateTo",
       "code": 10035
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_ToggleAutoAttack",
+      "name": "M2C_ToggleAutoAttack",
+      "code": 10045
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_ToggleDemoDoor",

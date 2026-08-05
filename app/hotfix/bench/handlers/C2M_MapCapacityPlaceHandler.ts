@@ -1,7 +1,6 @@
 import {
   type C2M_MapCapacityPlace,
   MapCapacityBenchProtocol,
-  NumericComponent,
   type M2C_MapCapacityPlace,
   PlayerUnit,
   PositionComponent,
@@ -35,7 +34,6 @@ export class C2M_MapCapacityPlaceHandler implements UnitRpcHandler<
     const placement = MapCapacityPlacementOf(unit.MapId, request.playerIndex, request.layout);
 
     const position = unit.GetComponent(PositionComponent);
-    unit.GetComponent(NumericComponent).StopRegeneration();
     position.SetGridCell(
       placement.cellX,
       placement.cellZ,

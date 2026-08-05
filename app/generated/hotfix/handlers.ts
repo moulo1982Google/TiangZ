@@ -11,6 +11,7 @@ import "../../hotfix/demo/mapHost/handlers/C2M_MapProbeHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_MoveHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_NavigateInputHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_NavigateToHandler";
+import "../../hotfix/demo/mapHost/handlers/C2M_ToggleAutoAttackHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_ToggleDemoDoorHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_UseItemHandler";
 import "../../hotfix/demo/mapHost/handlers/DynamicMapHandlers";

@@ -342,6 +342,12 @@ export class PlayerConfig {
         this.maxHp = _json_.max_hp
         if (_json_.move_speed === undefined) { throw new Error() }
         this.moveSpeed = _json_.move_speed
+        if (_json_.max_mp === undefined) { throw new Error() }
+        this.maxMp = _json_.max_mp
+        if (_json_.initial_mp === undefined) { throw new Error() }
+        this.initialMp = _json_.initial_mp
+        if (_json_.attack_range === undefined) { throw new Error() }
+        this.attackRange = _json_.attack_range
     }
 
     /**
@@ -365,10 +371,25 @@ export class PlayerConfig {
      * 基础每秒移动Cell数量
      */
     readonly moveSpeed: number
+    /**
+     * 基础最大魔法值
+     */
+    readonly maxMp: number
+    /**
+     * 初始当前魔法值
+     */
+    readonly initialMp: number
+    /**
+     * 普通攻击距离（米）
+     */
+    readonly attackRange: number
 
     resolve(tables:Tables) {
 
         this.initialMapId_ref = tables.TbMapConfig.get(this.initialMapId)
+
+
+
 
 
 

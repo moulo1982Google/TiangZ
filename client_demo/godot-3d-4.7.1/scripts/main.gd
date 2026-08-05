@@ -38,6 +38,20 @@ var last_strafe_mode := false
 var last_server_time := 0
 var status_label: Label
 var latency_label: Label
+var selected_monster_label: Label
+var player_hp_label: Label
+var player_mp_label: Label
+var auto_attack_label: Label
+var local_numerics: Dictionary = {}
+var selected_monster_unit_id := 0
+var selected_monster_marker: MeshInstance3D
+var auto_attack_enabled := false
+var auto_attack_target_unit_id := 0
+var auto_attack_swing_start_at_ms := 0
+var auto_attack_swing_interval_ms := 2000
+var auto_attack_phase := 0
+var server_clock_offset_ms := 0
+var auto_attack_request_pending := false
 
 func _ready() -> void:
 	_build_world()
@@ -51,14 +65,17 @@ func _ready() -> void:
 	client.aoi_delta.connect(_on_aoi_delta)
 	client.entity_enter.connect(_on_entity_enter)
 	client.entity_leave.connect(_on_entity_leave)
+	client.entity_numeric.connect(_on_entity_numeric)
 	client.door_changed.connect(_on_door_changed)
 	client.ping_result.connect(_on_ping_result)
+	client.auto_attack_state_changed.connect(_on_auto_attack_state)
 	client.start("godot_%d" % Time.get_ticks_msec())
 
 func _process(delta: float) -> void:
 	_update_direction_input(delta)
 	_update_units(delta)
 	_update_camera(delta)
+	_update_auto_attack_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -78,6 +95,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		look_changed = true
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
 		client.toggle_demo_door(not door_closed)
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_1:
+		_toggle_auto_attack()
 
 func _build_world() -> void:
 	var environment_node := WorldEnvironment.new()
@@ -95,10 +114,10 @@ func _build_world() -> void:
 	light.light_energy = 1.2
 	add_child(light)
 
-	var floor := _create_box(Vector3(MAP_SIZE, 0.2, MAP_SIZE), Color("#395b59"))
-	floor.position = Vector3(0.0, -0.1, 0.0)
-	floor.name = "NavigationFloor"
-	add_child(floor)
+	var navigation_floor := _create_box(Vector3(MAP_SIZE, 0.2, MAP_SIZE), Color("#395b59"))
+	navigation_floor.position = Vector3(0.0, -0.1, 0.0)
+	navigation_floor.name = "NavigationFloor"
+	add_child(navigation_floor)
 
 	var obstacle := _create_box(Vector3(6.0, 3.0, 10.0), Color("#89725e"))
 	obstacle.position = Vector3(0.0, 1.5, 0.0)
@@ -130,19 +149,44 @@ func _build_ui() -> void:
 	latency_label.add_theme_font_size_override("font_size", 16)
 	latency_label.text = "Ping: --"
 	canvas.add_child(latency_label)
+	selected_monster_label = Label.new()
+	selected_monster_label.position = Vector2(24.0, 88.0)
+	selected_monster_label.add_theme_font_size_override("font_size", 16)
+	selected_monster_label.text = "目标：未选择怪物"
+	canvas.add_child(selected_monster_label)
+	player_hp_label = Label.new()
+	player_hp_label.position = Vector2(24.0, 156.0)
+	player_hp_label.add_theme_font_size_override("font_size", 16)
+	player_hp_label.modulate = Color("#ff5964")
+	player_hp_label.text = "玩家 HP：-- / --"
+	canvas.add_child(player_hp_label)
+	player_mp_label = Label.new()
+	player_mp_label.position = Vector2(24.0, 180.0)
+	player_mp_label.add_theme_font_size_override("font_size", 16)
+	player_mp_label.modulate = Color("#5b9cff")
+	player_mp_label.text = "玩家 MP：-- / --"
+	canvas.add_child(player_mp_label)
+	auto_attack_label = Label.new()
+	auto_attack_label.position = Vector2(24.0, 204.0)
+	auto_attack_label.add_theme_font_size_override("font_size", 16)
+	auto_attack_label.text = "平A：未激活（按 1 开始）"
+	canvas.add_child(auto_attack_label)
 	var help := Label.new()
 	help.position = Vector2(24.0, 650.0)
 	help.add_theme_font_size_override("font_size", 16)
-	help.text = "左键：服务端寻路    W/S：前后移动    A/D：转身    按住右键时 A/D：平移    E：动态门    滚轮：镜头距离"
+	help.text = "左键：选怪物或服务端寻路    W/S：前后移动    A/D：转身    按住右键时 A/D：平移    E：动态门    滚轮：镜头距离"
 	canvas.add_child(help)
 
 func _update_direction_input(delta: float) -> void:
 	if client == null or client.phase != "map":
 		return
 	var forward := int(Input.is_key_pressed(KEY_W)) - int(Input.is_key_pressed(KEY_S))
-	var horizontal := int(Input.is_key_pressed(KEY_D)) - int(Input.is_key_pressed(KEY_A))
-	var turning := 0 if right_mouse_held else horizontal
-	var strafe := horizontal if right_mouse_held else 0
+	# 转身和横移使用不同的局部坐标正方向：转身保持D为正，横移保持A为正。
+	# Turning and strafing intentionally use different local-axis signs: D is positive for turning, A is positive for strafing.
+	var turning_input := int(Input.is_key_pressed(KEY_D)) - int(Input.is_key_pressed(KEY_A))
+	var strafe_input := int(Input.is_key_pressed(KEY_A)) - int(Input.is_key_pressed(KEY_D))
+	var turning := 0 if right_mouse_held else turning_input
+	var strafe := strafe_input if right_mouse_held else 0
 	if turning != 0:
 		player_yaw -= float(turning) * 2.8 * delta
 	look_send_cooldown = maxf(0.0, look_send_cooldown - delta)
@@ -167,10 +211,122 @@ func _navigate_from_screen(screen_position: Vector2) -> void:
 		return
 	var origin := camera.project_ray_origin(screen_position)
 	var direction := camera.project_ray_normal(screen_position)
+	var monster_unit_id := _pick_monster_from_screen(origin, direction)
+	if monster_unit_id != 0:
+		_select_monster(monster_unit_id)
+		return
 	var hit = Plane(Vector3.UP, 0.0).intersects_ray(origin, direction)
 	if hit is Vector3 and absf(hit.x) <= MAP_SIZE * 0.5 and absf(hit.z) <= MAP_SIZE * 0.5:
 		client.navigate_to(hit.x, 0.0, hit.z, sequence)
 		sequence += 1
+
+## 用射线和怪物表现方块做AABB相交；命中怪物后不再进入地面寻路。
+## Uses ray/AABB intersection against monster grayboxes so a monster click never falls through to ground navigation.
+func _pick_monster_from_screen(origin: Vector3, direction: Vector3) -> int:
+	var nearest_unit_id := 0
+	var nearest_distance := INF
+	for unit_id in units:
+		var state: Dictionary = units[unit_id]
+		if int(state.get("entity_type", 0)) != 2 or not unit_nodes.has(unit_id):
+			continue
+		var node: Node3D = unit_nodes[unit_id]
+		var distance := _intersect_ray_box(origin, direction, node.position, PLAYER_HALF_WIDTH, PLAYER_HEIGHT * 0.5, PLAYER_HALF_WIDTH)
+		if distance >= 0.0 and distance < nearest_distance:
+			nearest_distance = distance
+			nearest_unit_id = int(unit_id)
+	return nearest_unit_id
+
+func _intersect_ray_box(origin: Vector3, direction: Vector3, center: Vector3, half_x: float, half_y: float, half_z: float) -> float:
+	var x_interval := _ray_axis_interval(origin.x, direction.x, center.x - half_x, center.x + half_x)
+	var y_interval := _ray_axis_interval(origin.y, direction.y, center.y - half_y, center.y + half_y)
+	var z_interval := _ray_axis_interval(origin.z, direction.z, center.z - half_z, center.z + half_z)
+	var near_distance := maxf(x_interval.x, maxf(y_interval.x, z_interval.x))
+	var far_distance := minf(x_interval.y, minf(y_interval.y, z_interval.y))
+	if near_distance > far_distance or far_distance < 0.0:
+		return -1.0
+	return maxf(0.0, near_distance)
+
+func _ray_axis_interval(origin: float, direction: float, min_value: float, max_value: float) -> Vector2:
+	if absf(direction) < 0.000001:
+		return Vector2(-INF, INF) if origin >= min_value and origin <= max_value else Vector2(INF, -INF)
+	var first := (min_value - origin) / direction
+	var second := (max_value - origin) / direction
+	if first > second:
+		var temporary := first
+		first = second
+		second = temporary
+	return Vector2(first, second)
+
+func _select_monster(unit_id: int) -> void:
+	if selected_monster_unit_id == unit_id:
+		return
+	_clear_monster_selection()
+	if not units.has(unit_id) or not unit_nodes.has(unit_id):
+		return
+	var state: Dictionary = units[unit_id]
+	if int(state.get("entity_type", 0)) != 2:
+		return
+	selected_monster_unit_id = unit_id
+	var node: Node3D = unit_nodes[unit_id]
+	_create_selection_marker(node)
+	_set_unit_color(unit_id)
+	selected_monster_label.text = "目标：%s\n实例ID：%d" % [_monster_name(int(state.get("config_id", 0))), unit_id]
+
+func _clear_monster_selection() -> void:
+	if selected_monster_unit_id != 0 and unit_nodes.has(selected_monster_unit_id):
+		_set_unit_color(selected_monster_unit_id)
+	if selected_monster_marker:
+		selected_monster_marker.queue_free()
+		selected_monster_marker = null
+	selected_monster_unit_id = 0
+	if selected_monster_label:
+		selected_monster_label.text = "目标：未选择怪物"
+
+func _monster_name(config_id: int) -> String:
+	match config_id:
+		1:
+			return "怪A"
+		2:
+			return "怪B"
+		_:
+			return "MonsterConfig#%d" % config_id
+
+func _set_unit_color(unit_id: int) -> void:
+	if not unit_nodes.has(unit_id) or not units.has(unit_id):
+		return
+	var state: Dictionary = units[unit_id]
+	var entity_type := int(state.get("entity_type", 0))
+	var config_id := int(state.get("config_id", 0))
+	var color := (
+		Color("#36b7e8") if unit_id == local_unit_id else
+		Color("#ef4d47") if entity_type == 2 and config_id == 2 else
+		Color("#ffd746") if entity_type == 2 else
+		Color("#50d77d")
+	)
+	var material := unit_nodes[unit_id].material_override as StandardMaterial3D
+	if material:
+		material.albedo_color = color
+
+func _create_selection_marker(target: Node3D) -> void:
+	if selected_monster_marker:
+		selected_monster_marker.queue_free()
+	var marker := MeshInstance3D.new()
+	marker.name = "SelectedMonsterMarker"
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.48
+	torus.outer_radius = 0.58
+	torus.rings = 32
+	torus.ring_segments = 8
+	marker.mesh = torus
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color("#27e7ff")
+	material.emission_enabled = true
+	material.emission = Color("#0b8fa8")
+	material.emission_energy_multiplier = 2.0
+	marker.material_override = material
+	marker.position = Vector3(0.0, -PLAYER_HEIGHT * 0.5 + 0.04, 0.0)
+	target.add_child(marker)
+	selected_monster_marker = marker
 
 func _update_units(delta: float) -> void:
 	for unit_id in units:
@@ -196,9 +352,14 @@ func _update_camera(delta: float) -> void:
 
 func _on_map_entered(snapshot: Dictionary) -> void:
 	local_unit_id = snapshot.unit_id
+	local_numerics.clear()
 	_upsert_unit({"unit_id": snapshot.unit_id, "x": snapshot.x, "y": snapshot.y, "z": snapshot.z, "yaw": 0.0}, true)
 	for entity in snapshot.entities:
 		_upsert_unit(entity, true)
+		if int(entity.get("unit_id", 0)) == local_unit_id:
+			for numeric in entity.get("numerics", []):
+				_apply_local_numeric(numeric)
+	_update_player_stats_hud()
 
 func _on_map_ready(snapshot: Dictionary) -> void:
 	_upsert_unit({"unit_id": snapshot.unit_id, "x": snapshot.x, "y": snapshot.y, "z": snapshot.z, "yaw": player_yaw}, false)
@@ -224,11 +385,30 @@ func _on_entity_enter(entity: Dictionary) -> void:
 func _on_entity_leave(unit_id: int) -> void:
 	_remove_unit(unit_id)
 
+func _on_entity_numeric(message: Dictionary) -> void:
+	for numeric in message.get("numerics", []):
+		if int(numeric.get("unit_id", 0)) != local_unit_id:
+			continue
+		_apply_local_numeric(numeric)
+	_update_player_stats_hud()
+
+func _apply_local_numeric(numeric: Dictionary) -> void:
+	local_numerics[int(numeric.get("numeric_type", 0))] = int(numeric.get("value", 0))
+
+func _update_player_stats_hud() -> void:
+	if player_hp_label == null or player_mp_label == null:
+		return
+	player_hp_label.text = "玩家 HP：%d / %d" % [int(local_numerics.get(1, 0)), int(local_numerics.get(1000, 0))]
+	player_mp_label.text = "玩家 MP：%d / %d" % [int(local_numerics.get(2, 0)), int(local_numerics.get(1001, 0))]
+
 func _upsert_unit(state: Dictionary, snap: bool) -> void:
 	var unit_id: int = state.unit_id
 	var created := false
 	if not units.has(unit_id):
-		var node := _create_box(Vector3(0.8, PLAYER_HEIGHT, 0.8), Color("#e6cf58") if unit_id == local_unit_id else Color("#70a7d8"))
+		var entity_type := int(state.get("entity_type", 0))
+		var config_id := int(state.get("config_id", 0))
+		var color := Color("#36b7e8") if unit_id == local_unit_id else (Color("#ef4d47") if entity_type == 2 and config_id == 2 else Color("#ffd746") if entity_type == 2 else Color("#50d77d"))
+		var node := _create_box(Vector3(0.8, PLAYER_HEIGHT, 0.8), color)
 		node.name = "Unit_%d" % unit_id
 		add_child(node)
 		unit_nodes[unit_id] = node
@@ -239,6 +419,7 @@ func _upsert_unit(state: Dictionary, snap: bool) -> void:
 	else:
 		for key in state:
 			units[unit_id][key] = state[key]
+	_set_unit_color(unit_id)
 	_accept_ground_y(unit_id, float(state.y))
 	if created or snap:
 		var current: Dictionary = units[unit_id]
@@ -269,6 +450,8 @@ func _accept_ground_y(unit_id: int, incoming_y: float) -> void:
 func _remove_unit(unit_id: int) -> void:
 	if unit_id == local_unit_id:
 		return
+	if unit_id == selected_monster_unit_id:
+		_clear_monster_selection()
 	if unit_nodes.has(unit_id):
 		unit_nodes[unit_id].queue_free()
 		unit_nodes.erase(unit_id)
@@ -283,7 +466,47 @@ func _on_door_changed(closed: bool, changed: bool) -> void:
 
 func _on_ping_result(latency_ms: int, server_time_ms: int) -> void:
 	last_server_time = server_time_ms
+	server_clock_offset_ms = server_time_ms - int(Time.get_unix_time_from_system() * 1000.0)
 	latency_label.text = "Ping: %d ms    ServerTime: %d" % [latency_ms, server_time_ms]
+
+func _on_auto_attack_state(state: Dictionary) -> void:
+	auto_attack_request_pending = false
+	auto_attack_enabled = bool(state.get("enabled", false))
+	auto_attack_target_unit_id = int(state.get("target_unit_id", 0))
+	auto_attack_phase = int(state.get("phase", 0))
+	auto_attack_swing_start_at_ms = int(state.get("swing_start_at_ms", 0))
+	auto_attack_swing_interval_ms = max(1, int(state.get("swing_interval_ms", 2000)))
+
+func _toggle_auto_attack() -> void:
+	if client == null or client.phase != "map" or auto_attack_request_pending:
+		return
+	var target_unit_id := selected_monster_unit_id if selected_monster_unit_id != 0 else _find_first_monster_unit_id()
+	var enabled := not auto_attack_enabled
+	if enabled and target_unit_id == 0:
+		_on_status("请先选择一个可见怪物 / Select a visible monster first", true)
+		return
+	if client.toggle_auto_attack(enabled, target_unit_id):
+		auto_attack_request_pending = true
+
+func _find_first_monster_unit_id() -> int:
+	for unit_id in units:
+		if int(units[unit_id].get("entity_type", 0)) == 2:
+			return int(unit_id)
+	return 0
+
+func _update_auto_attack_hud() -> void:
+	if auto_attack_label == null:
+		return
+	if not auto_attack_enabled:
+		auto_attack_label.text = "平A：未激活（按 1 开始） / Auto attack: off (press 1)"
+		return
+	var now_ms := int(Time.get_unix_time_from_system() * 1000.0) + server_clock_offset_ms
+	var progress := 0.0
+	if auto_attack_swing_start_at_ms > 0:
+		progress = clampf(float(now_ms - auto_attack_swing_start_at_ms) / float(auto_attack_swing_interval_ms), 0.0, 1.0)
+	var filled := clampi(roundi(progress * 20.0), 0, 20)
+	var bar := "[" + "#".repeat(filled) + "-".repeat(20 - filled) + "]"
+	auto_attack_label.text = "平A：%s %d%%  目标：%d" % [bar, roundi(progress * 100.0), auto_attack_target_unit_id]
 
 func _on_status(text: String, is_error: bool) -> void:
 	status_label.text = text

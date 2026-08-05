@@ -5327,6 +5327,167 @@ export const M2C_AttackMonsterCodec = {
   },
 };
 
+export interface C2M_ToggleAutoAttack extends IActorLocationRequest {
+  rpcId?: number;
+  enabled: boolean;
+  targetUnitId: number;
+}
+
+export const C2M_ToggleAutoAttackCodec = {
+  decode(payload: Uint8Array): C2M_ToggleAutoAttack {
+    const reader = new BinaryReader(payload);
+    const value: C2M_ToggleAutoAttack = {
+      enabled: false,
+      targetUnitId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.enabled = reader.bool();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_ToggleAutoAttack): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.enabled !== undefined) writer.bool(1, value.enabled);
+    if (value.targetUnitId !== undefined) writer.uint32(2, value.targetUnitId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_ToggleAutoAttack extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  enabled: boolean;
+  targetUnitId: number;
+  phase: number;
+  swingStartAtMs: bigint;
+  swingIntervalMs: number;
+}
+
+export const M2C_ToggleAutoAttackCodec = {
+  decode(payload: Uint8Array): M2C_ToggleAutoAttack {
+    const reader = new BinaryReader(payload);
+    const value: M2C_ToggleAutoAttack = {
+      enabled: false,
+      targetUnitId: 0,
+      phase: 0,
+      swingStartAtMs: 0n,
+      swingIntervalMs: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.enabled = reader.bool();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.phase = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.swingStartAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.swingIntervalMs = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_ToggleAutoAttack): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.enabled !== undefined) writer.bool(1, value.enabled);
+    if (value.targetUnitId !== undefined) writer.uint32(2, value.targetUnitId);
+    if (value.phase !== undefined) writer.uint32(3, value.phase);
+    if (value.swingStartAtMs !== undefined) writer.uint64(4, value.swingStartAtMs);
+    if (value.swingIntervalMs !== undefined) writer.uint32(5, value.swingIntervalMs);
+    return writer.finish();
+  },
+};
+
+export interface G2C_AutoAttackState extends IMessage {
+  enabled: boolean;
+  targetUnitId: number;
+  phase: number;
+  swingStartAtMs: bigint;
+  swingIntervalMs: number;
+}
+
+export const G2C_AutoAttackStateCodec = {
+  decode(payload: Uint8Array): G2C_AutoAttackState {
+    const reader = new BinaryReader(payload);
+    const value: G2C_AutoAttackState = {
+      enabled: false,
+      targetUnitId: 0,
+      phase: 0,
+      swingStartAtMs: 0n,
+      swingIntervalMs: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.enabled = reader.bool();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.phase = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.swingStartAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.swingIntervalMs = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_AutoAttackState): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.enabled !== undefined) writer.bool(1, value.enabled);
+    if (value.targetUnitId !== undefined) writer.uint32(2, value.targetUnitId);
+    if (value.phase !== undefined) writer.uint32(3, value.phase);
+    if (value.swingStartAtMs !== undefined) writer.uint64(4, value.swingStartAtMs);
+    if (value.swingIntervalMs !== undefined) writer.uint32(5, value.swingIntervalMs);
+    return writer.finish();
+  },
+};
+
 export interface G2C_ItemChanged extends IMessage {
   item: ItemSnapshot;
 }

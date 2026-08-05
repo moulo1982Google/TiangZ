@@ -177,6 +177,17 @@ export class MonsterPatrolComponent extends Component implements IUpdate {
 
 `Update()` 必须同步，不要标记为 `async`。定时器可由Component或ChildEntity持有，所有者销毁后自动取消。它们挂在Unit或Session之下时，回调会进入所属Entity的mailbox：ordered mailbox正在等待异步Handler时，定时器回调会排队，不会重入状态。高数量Buff不要各自创建常驻重复Timer，应由BuffComponent合并调度最近到期项。
 
+默认固定帧为20Hz，框架还提供三个固定中低频桶，不允许业务填写任意Hz：
+
+| 方法 | 频率 | 适合内容 |
+| --- | --- | --- |
+| `Update()` | 20Hz | 移动、地图基础逻辑 |
+| `Update10Hz()` | 10Hz | 战斗可用性、读条开始/中断 |
+| `Update5Hz()` | 5Hz | 怪物AI、追击决策 |
+| `Update1Hz()` | 1Hz | 重生、清理、低频维护 |
+
+同一个Component可以实现多个固定方法，框架会将它登记到对应集合；不要为每个玩家创建一个Timer来模拟这些频率，也不要添加`updateHz`配置。详细的平A状态机见[固定更新桶与自动平A设计](../design/auto-attack-and-fixed-update.md)。
+
 `TimerSystem.WaitAsync` 使用游戏 Pump 推进，适合业务时间；网络超时、文件 IO 等基础设施等待仍使用 Rust/Tokio 提供的 `ctx.sleep` 或对应 Host API。
 
 ## ActorLocation 直达 Unit

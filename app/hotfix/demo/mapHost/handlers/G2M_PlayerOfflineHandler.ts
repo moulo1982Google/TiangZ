@@ -15,7 +15,7 @@ export class G2M_PlayerOfflineHandler implements UnitRpcHandler<
   G2M_PlayerOffline,
   M2G_PlayerOffline
 > {
-  /** 执行Gate确认后的最终下线事务；Map完成保存、移除和AOI广播后才响应。 / Executes Gate-authorized final offline and responds after persistence, removal, and AOI leave broadcast. */
+  /** 执行Gate确认后的最终下线事务；保存和Location移除后响应，Actor清理由下一次Timer Update完成。 / Executes Gate-authorized final offline; responds after persistence and Location removal, while Actor cleanup runs in the next timer update. */
   handle(
     unit: PlayerUnit,
     message: G2M_PlayerOffline,
