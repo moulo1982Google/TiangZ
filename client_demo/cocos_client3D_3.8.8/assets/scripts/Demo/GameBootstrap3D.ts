@@ -86,6 +86,9 @@ const MOUSE_YAW_RADIANS_PER_PIXEL = 0.004;
 const INPUT_REFRESH_SECONDS = 0.5;
 const INPUT_TURN_SEND_SECONDS = 0.1;
 const AUTO_ATTACK_PHASE_SWINGING = 2;
+const ATTACK_SLASH_DURATION_SECONDS = 0.18;
+const ATTACK_SLASH_MIN_SCALE = 0.15;
+const ATTACK_SLASH_MAX_SCALE = 1.15;
 // Cocos 3.8.8没有导出数字键枚举；使用标准键盘主区“1”的ASCII码49。
 // Cocos 3.8.8 does not expose a digit-key enum; 49 is the standard top-row "1" key code.
 const AUTO_ATTACK_KEY = 49 as unknown as KeyCode;
@@ -126,6 +129,12 @@ interface MobilePointerState {
   y: number;
   startX: number;
   startY: number;
+}
+
+interface AttackSlashEffect {
+  readonly node: Node;
+  readonly sizeScale: number;
+  elapsedSeconds: number;
 }
 
 /** Phase 4.2的3D导航灰盒入口；演示权威寻路、预测纠偏和AOI多人同步。 / Phase 4.2 graybox entrypoint for authoritative pathing, prediction correction, and AOI multiplayer sync. */
@@ -206,6 +215,7 @@ export class GameBootstrap3D extends Component {
   private autoAttackPhase = 0;
   private autoAttackSwingStartAtMs = 0;
   private autoAttackSwingIntervalMs = 2_000;
+  private readonly attackSlashEffects: AttackSlashEffect[] = [];
 
   onLoad(): void {
     this.buildGraybox();
@@ -230,6 +240,7 @@ export class GameBootstrap3D extends Component {
     this.reconcileAuthoritativeFacing(deltaTime);
     this.interpolateRemotePlayers(deltaTime);
     this.updateFollowCamera(deltaTime);
+    this.updateAttackSlashEffects(deltaTime);
     this.updateMonsterOverheadHudBillboards();
   }
 
@@ -257,6 +268,8 @@ export class GameBootstrap3D extends Component {
     this.mobileInstructionsElement?.remove();
     this.mobilePingElement?.remove();
     this.autoAttackPanel?.remove();
+    for (const effect of this.attackSlashEffects) effect.node.destroy();
+    this.attackSlashEffects.length = 0;
     this.selectedMonsterElement?.remove();
     this.mobileInstructionsElement = undefined;
     this.mobilePingElement = undefined;
@@ -1144,7 +1157,14 @@ export class GameBootstrap3D extends Component {
   ApplyEntityNumeric(message: G2C_EntityNumeric): void {
     for (const numeric of message.numerics) {
       if (numeric.unitId === this.localUnitId) {
+        const previousValue = this.localNumerics.get(numeric.numericType);
         this.localNumerics.set(numeric.numericType, numeric.value);
+        // 当前Demo的唯一伤害来源是怪物普通攻击；技能/DoT以后应使用独立战斗事件，不要把所有掉血都当成刀光。
+        // The demo currently has monster melee as its only damage source; future skills/DoTs should use explicit combat events.
+        if (numeric.numericType === NUMERIC_CURRENT_HP &&
+          previousValue !== undefined && numeric.value < previousValue) {
+          this.playAttackSlashAtPlayer();
+        }
         this.updatePlayerStatsHud();
         continue;
       }
@@ -1178,11 +1198,96 @@ export class GameBootstrap3D extends Component {
 
   /** 消费服务端平A状态；读条起点和目标来自服务端，客户端不自行开始或结算攻击。 / Consumes server auto-attack state; the client never starts or resolves combat locally. */
   ApplyAutoAttackState(message: G2C_AutoAttackState): void {
+    const previousWasSwinging = this.autoAttackPhase === AUTO_ATTACK_PHASE_SWINGING &&
+      this.autoAttackSwingStartAtMs > 0 && this.autoAttackTargetUnitId > 0;
+    const nextSwingStartAtMs = Number(message.swingStartAtMs);
+    const completedSwing = previousWasSwinging &&
+      message.enabled &&
+      message.targetUnitId === this.autoAttackTargetUnitId &&
+      nextSwingStartAtMs > this.autoAttackSwingStartAtMs;
+    if (completedSwing) this.playAttackSlash(this.autoAttackTargetUnitId, 2, false);
+
     this.autoAttackEnabled = message.enabled;
     this.autoAttackTargetUnitId = message.targetUnitId;
     this.autoAttackPhase = message.phase;
-    this.autoAttackSwingStartAtMs = Number(message.swingStartAtMs);
+    this.autoAttackSwingStartAtMs = nextSwingStartAtMs;
     this.autoAttackSwingIntervalMs = Math.max(1, message.swingIntervalMs);
+  }
+
+  /** 创建一次纯表现刀光；命中、伤害和目标有效性仍由服务端决定。 / Creates a presentation-only slash; hit, damage, and target validity remain server-authoritative. */
+  private playAttackSlash(targetUnitId: number, sizeScale: number, monsterAttack: boolean): void {
+    const parent = this.player.parent;
+    if (!parent) return;
+    const target = this.remotePlayers.get(targetUnitId);
+    if (target) {
+      this.spawnAttackSlash(
+        target.node.position.x,
+        target.node.position.y,
+        target.node.position.z,
+        sizeScale,
+        monsterAttack,
+      );
+    } else {
+      const forwardX = Math.sin(this.playerYaw);
+      const forwardZ = Math.cos(this.playerYaw);
+      this.spawnAttackSlash(
+        this.player.position.x + forwardX,
+        this.player.position.y,
+        this.player.position.z + forwardZ,
+        sizeScale,
+        monsterAttack,
+      );
+    }
+  }
+
+  /** 在玩家受到权威伤害的位置播放怪物刀光；当前尺寸保持为基础大小。 / Plays the monster slash at the player's authoritative visual position at the base size. */
+  private playAttackSlashAtPlayer(): void {
+    this.spawnAttackSlash(
+      this.player.position.x,
+      this.player.position.y,
+      this.player.position.z,
+      1,
+      true,
+    );
+  }
+
+  /** 创建并登记短生命周期的刀光节点；调用者只提供表现位置和尺寸，不参与战斗结算。 / Creates and registers a short-lived slash node; callers provide presentation data only and never resolve combat. */
+  private spawnAttackSlash(
+    x: number,
+    y: number,
+    z: number,
+    sizeScale: number,
+    monsterAttack: boolean,
+  ): void {
+    const parent = this.player.parent;
+    if (!parent) return;
+    const effect = createAttackSlashEffect(sizeScale, monsterAttack);
+    parent.addChild(effect.node);
+    effect.node.setPosition(x, y, z);
+    this.attackSlashEffects.push(effect);
+  }
+
+  /** 推进短生命周期刀光并让它面向摄像机；效果结束后立即销毁节点。 / Advances short-lived slash effects, faces them to the camera, and destroys them when finished. */
+  private updateAttackSlashEffects(deltaTime: number): void {
+    if (!this.cameraNode) return;
+    const safeDeltaTime = Math.max(0, deltaTime);
+    const cameraPosition = this.cameraNode.worldPosition;
+    for (let index = this.attackSlashEffects.length - 1; index >= 0; index -= 1) {
+      const effect = this.attackSlashEffects[index];
+      effect.elapsedSeconds += safeDeltaTime;
+      if (effect.elapsedSeconds >= ATTACK_SLASH_DURATION_SECONDS) {
+        effect.node.destroy();
+        this.attackSlashEffects.splice(index, 1);
+        continue;
+      }
+      const progress = effect.elapsedSeconds / ATTACK_SLASH_DURATION_SECONDS;
+      const scale = progress < 0.3
+        ? ATTACK_SLASH_MIN_SCALE + (ATTACK_SLASH_MAX_SCALE - ATTACK_SLASH_MIN_SCALE) * (progress / 0.3)
+        : ATTACK_SLASH_MAX_SCALE - (ATTACK_SLASH_MAX_SCALE - 0.78) * ((progress - 0.3) / 0.7);
+      const scaled = scale * effect.sizeScale;
+      effect.node.setScale(scaled, scaled, scaled);
+      effect.node.lookAt(cameraPosition);
+    }
   }
 
   /** 将屏幕点击投射到y=0灰盒平面，并请求服务端Rust NavMesh路径。 / Projects a screen click onto the graybox plane and requests a Rust NavMesh path from the server. */
@@ -1883,6 +1988,42 @@ function createSelectionMarker(): Node {
   marker.addChild(createBox("SelectionEast", thickness, height, 1.12, color, half, y, 0));
   marker.addChild(createBox("SelectionWest", thickness, height, 1.12, color, -half, y, 0));
   return marker;
+}
+
+/** 创建无资源依赖的斜向刀光；外层是暖色刀身，内层是明亮刃线。 / Creates a resource-free diagonal slash with a warm body and bright edge. */
+function createAttackSlashEffect(sizeScale: number, monsterAttack: boolean): AttackSlashEffect {
+  const root = new Node("AttackSlashEffect");
+  const slash = createBox(
+    "AttackSlash",
+    1.55,
+    0.13,
+    0.055,
+    monsterAttack ? new Color(224, 55, 65, 255) : new Color(255, 180, 64, 255),
+    0,
+    0,
+    0,
+  );
+  slash.setRotationFromEuler(0, 0, -45);
+  root.addChild(slash);
+
+  const edge = createBox(
+    "AttackSlashEdge",
+    1.2,
+    0.045,
+    0.07,
+    monsterAttack ? new Color(255, 170, 175, 255) : new Color(255, 246, 190, 255),
+    0,
+    0,
+    -0.02,
+  );
+  edge.setRotationFromEuler(0, 0, -45);
+  root.addChild(edge);
+  root.setScale(
+    ATTACK_SLASH_MIN_SCALE * sizeScale,
+    ATTACK_SLASH_MIN_SCALE * sizeScale,
+    ATTACK_SLASH_MIN_SCALE * sizeScale,
+  );
+  return { node: root, sizeScale, elapsedSeconds: 0 };
 }
 
 /** 创建怪物头顶的双层世界HUD；HP默认显示，MP由MaxMp是否大于零决定。 / Creates the two-row world HUD above a monster; HP is always shown and MP follows MaxMp. */
