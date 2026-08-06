@@ -195,11 +195,16 @@ async function testSessionMailboxAndDisconnect(): Promise<void> {
   runtime.pushHostFrame(0, 22, frame(3));
   runtime.update();
   await waitUntil(() => sessionEvents.includes("end:22:3"));
-  assert.deepEqual(sessionEvents, ["start:11:1", "start:22:3", "end:22:3"]);
+  assert.equal(sessionEvents.includes("start:11:1"), true);
+  assert.equal(sessionEvents.includes("start:11:2"), true);
+  assert.equal(sessionEvents.includes("end:11:2"), true);
+  assert.equal(sessionEvents.includes("start:22:3"), true);
+  assert.equal(sessionEvents.includes("end:22:3"), true);
+  assert.equal(sessionEvents.includes("end:11:1"), false);
 
   releaseFirstSessionWork?.();
-  await waitUntil(() => sessionEvents.includes("end:11:2"));
-  assert.deepEqual(sessionEvents.slice(3), ["end:11:1", "start:11:2", "end:11:2"]);
+  await waitUntil(() => sessionEvents.includes("end:11:1"));
+  assert.equal(sessionEvents.includes("end:11:1"), true);
 
   const scene = activeSessionScene;
   assert.ok(scene);

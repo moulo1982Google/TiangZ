@@ -22,6 +22,23 @@
       "sync_hz": 5
     }
   ],
+  "game_tbbuffconfig": [
+    {
+      "id": 2001,
+      "name": "持续恢复",
+      "duration_seconds": 30,
+      "tick_interval_ms": 3000,
+      "add_action_type": 0,
+      "add_action_params": [],
+      "tick_action_type": 1,
+      "tick_action_params": [
+        1,
+        50
+      ],
+      "remove_action_type": 0,
+      "remove_action_params": []
+    }
+  ],
   "game_tbconfigtablepolicy": [
     {
       "table_name": "ItemConfig",
@@ -50,6 +67,10 @@
     {
       "table_name": "MonsterAreaConfig",
       "reload_mode": 2
+    },
+    {
+      "table_name": "BuffConfig",
+      "reload_mode": 1
     }
   ],
   "game_tbitemconfig": [
@@ -57,13 +78,20 @@
       "id": 1001,
       "name": "小型生命药水",
       "max_stack": 99,
-      "restore_hp": 50
+      "use_effect": 2,
+      "use_params": [
+        1,
+        150
+      ]
     },
     {
       "id": 1002,
       "name": "大型生命药水",
       "max_stack": 99,
-      "restore_hp": 200
+      "use_effect": 1,
+      "use_params": [
+        2001
+      ]
     }
   ],
   "game_tbmapconfig": [

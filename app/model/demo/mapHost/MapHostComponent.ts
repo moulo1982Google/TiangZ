@@ -27,6 +27,7 @@ import type {
   M2MM_CreateAssignedDynamicMap,
   MM2M_CreateAssignedDynamicMap,
   DynamicMapAssignmentSnapshot,
+  BuffTransferSnapshot,
   MapEntitySnapshot,
   MapHostEndpoint,
   MapInstanceSnapshot,
@@ -41,6 +42,7 @@ import { MonsterComponent } from "../monster/MonsterComponent";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
+import { BuffComponent } from "../buff/BuffComponent";
 import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
 import { GameConfigs } from "../../../generated/model/config";
 import { LocationProxy } from "../location/LocationProxy";
@@ -780,7 +782,7 @@ export class MapHostComponent extends Component {
   ): PlayerTransferSnapshot {
     const snapshot = player.Snapshot();
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       transferId,
       unitId: snapshot.unitId,
       account: snapshot.account,
@@ -793,6 +795,7 @@ export class MapHostComponent extends Component {
       alive: snapshot.alive,
       numerics: snapshot.numerics,
       items: player.GetComponent(ItemComponent).Snapshot(),
+      buffs: player.GetComponent(BuffComponent).CaptureTransfer().map(toProtocolBuffTransfer),
       targetMapInstanceId: targetInstance.mapInstanceId,
     };
   }
@@ -1119,7 +1122,7 @@ export class MapHostComponent extends Component {
   }
 
   private ValidateTransferSnapshot(snapshot: PlayerTransferSnapshot): void {
-    if (snapshot.schemaVersion !== 2) {
+    if (snapshot.schemaVersion !== 3) {
       throw new Error(`unsupported player transfer schema: ${snapshot.schemaVersion}`);
     }
     if (!snapshot.transferId || !snapshot.account || !snapshot.gateName) {
@@ -1146,3 +1149,18 @@ interface PreparedIncomingPlayer {
 export type DynamicMapDisposedNotifier = (
   assignment: DynamicMapAssignmentSnapshot,
 ) => void;
+
+function toProtocolBuffTransfer(
+  value: import("../buff/Buff").BuffTransferState,
+): BuffTransferSnapshot {
+  return {
+    buffInstanceId: value.buffInstanceId,
+    buffConfigId: value.configId,
+    stacks: value.stacks,
+    appliedAtMs: BigInt(Math.max(0, Math.floor(value.appliedAtMs))),
+    expireTimeMs: BigInt(Math.max(0, Math.floor(value.expireAtMs))),
+    tickIntervalMs: value.tickIntervalMs,
+    nextTickAtMs: BigInt(Math.max(0, Math.floor(value.nextTickAtMs))),
+    revision: value.revision,
+  };
+}

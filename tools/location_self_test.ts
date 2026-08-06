@@ -56,7 +56,7 @@ function testMapInstanceDirectory(): void {
 }
 
 function mapHostEndpoint(name: string, port: number) {
-  return { name, innerIp: "127.0.0.1", port, protocol: "tcp", audience: "inner" };
+  return { name, ip: "127.0.0.1", port, protocol: "tcp", audience: "inner" };
 }
 
 /** 验证Location重启后可从MapHost权威快照恢复，并且冲突批次不会部分写入。 / Verifies restart recovery from authoritative MapHost snapshots and atomic rejection of conflicting batches. */

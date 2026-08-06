@@ -58,7 +58,7 @@ http://<公网IP>/
 
 Map、MapManager、Location和副本MapHost只使用内网地址，不应对公网开放。确认安全组放行后，先验证页面，再验证LoginMgr WebSocket握手，最后验证Login返回的Gate地址；只验证80端口不能证明游戏链路可用。
 
-后续当用户说“部署到外网测试机”时，固定执行：重新生成协议与场景代码、重新构建后端Release、重新构建Cocos3D Web、上传后端和Web包、更新Nginx资源、重启`tiangz-external`并复验上述入口。部署凭据只通过运行环境提供，不进入配置文件、日志或Git。
+后续当用户说“部署到外网测试机”时，固定执行：重新生成协议与场景代码、重新构建后端Release、重新构建Cocos3D Web，确认准备上传的是本次构建产物；然后在远端停止旧服务，直接覆盖`/opt/tiangz-external`、`/var/www/tiangz-cocos3d/desktop`和`/var/www/tiangz-cocos3d/m`，重新启动服务并复验上述入口。该机器只是可从公网访问的Demo测试机，不使用`.next`目录、蓝绿切换、目录交换或自动回滚等生产发布流程。部署凭据只通过运行环境提供，不进入配置文件、日志或Git。
 
 后端Release应在本机Docker的Ubuntu 24.04环境中构建，外网服务器只运行发布制品。发布包不包含`src/`、`Cargo.toml`、`node_modules/`和`target/`；桌面Web资源部署到`desktop/`，移动Web资源部署到`m/`，分别对应根路径和`/m/`路径。
 

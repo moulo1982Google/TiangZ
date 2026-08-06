@@ -1,16 +1,18 @@
 import {
   type C2M_UseItem,
+  ActionType,
   GameConfigs,
+  GameErrCode,
   ItemComponent,
   type M2C_UseItem,
   MapComponent,
   MapProtocol,
-  NumericComponent,
-  NumericType,
   PlayerUnit,
+  RpcError,
   unitRpcHandler,
   type UnitRpcHandler,
 } from "#tiangz/model";
+import { ActionFromConfig, ExecuteAction } from "../../action/ActionExecutor";
 
 @unitRpcHandler(PlayerUnit, MapProtocol.UseItem)
 export class C2M_UseItemHandler implements UnitRpcHandler<
@@ -19,22 +21,31 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
   M2C_UseItem
 > {
   /**
-   * 消耗道具、修改权威数值并发布不可逆的本人背包事件。
+   * 校验道具效果、消耗道具、执行Action并发布不可逆的本人背包事件。
    * Item详情不是AOI公开状态，因此Handler不查询ObserversOf；若道具触发公开外观，应由对应领域方法另发AOI事件。
    *
-   * Consumes an item, mutates authoritative numerics, and publishes an irreversible private
-   * inventory event. Item details are not AOI-visible; public visuals belong to a separate domain
-   * event using an explicit AOI audience.
+   * Validates an item effect, consumes the item, executes its Action, and
+   * publishes an irreversible private inventory event. Item details are not
+   * AOI-visible; public visuals belong to a separate domain event using an
+   * explicit AOI audience.
    */
   async handle(unit: PlayerUnit, request: C2M_UseItem): Promise<M2C_UseItem> {
-    const item = unit.GetComponent(ItemComponent).UseItem(request.itemId);
-    const itemConfig = GameConfigs.ItemConfig.Get(item.configId);
-    const numeric = unit.GetComponent(NumericComponent);
-    const restoredHp = numeric[NumericType.CurrentHp] + BigInt(itemConfig.restoreHp);
-    numeric[NumericType.CurrentHp] = restoredHp < numeric[NumericType.MaxHp]
-      ? restoredHp
-      : numeric[NumericType.MaxHp];
+    const inventory = unit.GetComponent(ItemComponent);
+    const current = inventory.GetItem(request.itemId);
+    if (!current) throw new RpcError(GameErrCode.ItemNotFound, `item not found: ${request.itemId}`);
+    const itemConfig = GameConfigs.ItemConfig.Get(current.configId);
+    if (itemConfig.useEffect === 0) {
+      throw new RpcError(GameErrCode.ItemNotUsable, `item is not usable: ${current.configId}`);
+    }
+    const action = ActionFromConfig(
+      itemConfig.useEffect === 1 ? ActionType.AddBuff : ActionType.ChangeNumeric,
+      itemConfig.useParams,
+    );
+    const item = inventory.UseItem(request.itemId);
+    // 道具只声明Action；治疗、Buff和Numeric修改由统一执行器路由到对应组件。
+    // Items declare Actions only; the executor routes healing, Buff, and Numeric changes to their components.
+    const execution = ExecuteAction(unit, action, { reason: "item-use" });
     await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(unit, item);
-    return { item };
+    return execution.addedBuff ? { item, buff: execution.addedBuff } : { item };
   }
 }

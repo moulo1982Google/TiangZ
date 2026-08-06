@@ -7,6 +7,28 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-06：简化外网Demo测试机发布流程
+
+- 明确外网主机只是可公网访问的Demo测试机，不按生产环境执行蓝绿发布、`.next`目录交换或自动回滚。
+- 构建端仍必须完整生成并编译最新后端Release及Cocos3D桌面/移动Web包；远端流程固定为停止旧服务、覆盖固定目录、重新启动，再检查端口、页面和登录链路。
+- 后端固定覆盖`/opt/tiangz-external`，桌面与移动资源分别覆盖`/var/www/tiangz-cocos3d/desktop`和`/var/www/tiangz-cocos3d/m`。
+
+## 2026-08-06：Cocos3D Buff图标与服务端驱动移除
+
+- Cocos3D Web新增本地Buff栏：从Unit进入快照和`G2C_BuffAdded`恢复Buff图标，按`UI/Icons/Buff/<BuffId>`加载资源；当前Buff 2001使用`2001.png`。
+- 修复进图/事件时序导致本人Buff栏可能错过首次事件的问题：`M2C_UseItem.buff`现在作为使用者确认结果，`G2C_BuffAdded`仍作为AOI事件发送给观察者；客户端三条来源按Buff实例ID幂等合并。
+- `M2C_UseItem.buff`声明为可选嵌套消息；协议生成器补齐`optional`字段解析和嵌套消息编码，避免无Buff的道具返回伪造空Buff。
+- 倒计时使用Gate Ping估算的服务器时钟，统一显示分钟和秒，例如两小时显示`120:00`；无限Buff显示`永久`。
+- 倒计时归零后只停在`00:00`，不会因为客户端本地时间到期删除图标；收到`G2C_BuffRemoved`后才删除，AOI离开则随Unit整体清理。
+- 新增独立`G2C_BuffAddedHandler`和`G2C_BuffRemovedHandler`，复用SDK的`BuffStateStore`处理快照、事件和移除墓碑。
+
+## 2026-08-06：Cocos3D道具快捷栏与出生背包
+
+- `ItemConfig`新增客户端字段`icon`，1001/1002分别绑定`UI/Icons/Items/1001`和`UI/Icons/Items/1002`；Cocos资源缺失时快捷栏回退为道具名称文字。
+- Demo玩家出生时预置1001×50、1002×20。传送和重连仍通过Item快照恢复，不会重复发放；更新了Actor和Runtime smoke中的初始数量断言。
+- Cocos3D Web新增三格快捷栏：1切换平A，2使用1001，3使用1002，数量从进图快照和`G2C_ItemChanged`刷新。道具使用仍由服务端Action/Buff链路结算，前端不提前扣库存。
+- 验证：完成Luban/客户端配置与Handler生成，`npm run typecheck:cocos3d-demo`通过；Runtime全链路测试待本轮完整构建后复验。
+
 ## 2026-08-05：固化Cocos3D外网双入口发布
 
 - 保留桌面`web-desktop`和手机`web-mobile + landscape`两个独立构建，不让移动横屏配置污染网站根路径。
@@ -570,3 +592,20 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 怪物AI在`app/hotfix/demo/monster/MonsterBehaviorTree.ts`增加局部行为树，仅包含待机、追击、攻击和攻击冷却停留；它不提供通用AI编辑器，不创建MonsterActor、长期Timer或独立V8。
 - `MonsterComponentSystem`继续负责目标查询、导航意图、攻击间隔、Numeric扣血和死亡；行为树只选择动作。该历史版本的玩家与怪物普通攻击距离统一限制为最大2米，后续已改为分别读取`PlayerConfig.attack_range`和`MonsterConfig.attack_range`。
 - 没有新增技能、Buff、仇恨表、巡逻路点、战斗事件协议或Rust业务模块；新增纯逻辑自测`npm run test:monster-behavior`。
+
+# 2026-08-05：CombatComponent统一伤害入口
+
+- 将玩家和怪物的受伤入口统一到`CombatComponent.ApplyDamage`，治疗统一到`ApplyHealing`；`MonsterComponentSystem`和`C2M_UseItemHandler`不再直接修改`NumericType.CurrentHp`。
+- 增加数据型伤害吸收处理器注册、更新、查询和注销API。护盾、装备或技能可以注册处理器，Combat只按优先级和稳定ID消费，不知道效果来源，也不查询`BuffComponent`。
+- 怪物创建时挂载CombatComponent；普通攻击返回实际扣血结果，怪物仇恨只记录最终伤害，死亡标记和移动停止由Combat统一完成，地图业务继续负责Detach/Remove/重生。
+- 新增`docs/design/combat-damage-pipeline.md`，并同步开发手册、项目上下文、路线图和怪物教程，明确攻击者侧规则、目标侧结算、Buff生命周期和广播边界。
+- 新增`tools/combat_self_test.ts`，覆盖多护盾优先级、剩余量更新/注销、实际扣血、治疗上限、非法输入以及“没有BuffComponent也能结算”的解耦验证。
+
+# 2026-08-06：道具驱动的Action与Buff最小闭环
+
+- 新增`ActionType`和`ActionExecutor`，统一支持`None`、`ChangeNumeric`、`AddBuff`、`RemoveBuff`；道具不再直接写HP，HP变化经过`CombatComponent.ApplyHealing/ApplyDamage`。
+- 新增`BuffComponent`与`Buff` ChildEntity。单个Buff拥有Add/Tick/Remove生命周期和可追踪Timer，Component负责实例ID、集合所有权、AOI事件和跨地图纯值快照。
+- 新增Luban `BuffConfig.xlsx`，扩展`ItemConfig.use_effect/use_params`；小型生命药水立即恢复50点，大型生命药水添加30秒、每3秒恢复50点的Buff。删除旧的直接`restore_hp`业务路径。
+- PlayerTransferSnapshot升级为schema 3，Buff传送只保存配置、层数、版本和墙钟时间，不保存TimerId、Promise或Hotfix闭包；目标恢复时不重复执行AddAction。
+- 固定解耦边界：Combat不查询Buff，Buff通过生命周期注册/注销Combat修改器；Buff Tick只执行Action，广播由Map/Audience负责。Cast技能系统、复杂目标选择和Buff持久化留到后续阶段。
+- 新增`docs/design/action-buff.md`、`docs/tutorials/17-action-and-buff.md`和`tools/buff_action_self_test.ts`，覆盖立即Action、Buff Tick、幂等移除和Timer生命周期。

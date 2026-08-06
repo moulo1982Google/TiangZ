@@ -61,6 +61,14 @@
 - 移动本身不调用`StopAutoAttack`；右键加A/D用于保持角色朝向并侧移绕目标，右键拖动改变角色的权威Yaw。
 - 普通攻击、瞬发技能和施法技能分开描述：伤害类型、执行方式、是否重置平A是三个独立配置维度。
 
+## 战斗伤害与Buff解耦约定
+
+- 所有可受击玩家和怪物挂载`CombatComponent`；攻击、技能和Action只调用`target.GetComponent(CombatComponent).ApplyDamage(request)`，道具和持续治疗调用`ApplyHealing`，不能在Handler、MonsterComponent或Buff中直接写`NumericType.CurrentHp`。
+- `CombatComponent`是目标侧的统一结算边界，负责受伤处理器、护盾消耗、最终扣血、MaxHp治疗限制、死亡标记和`DamageResult`；它不负责找目标、距离、朝向、AI、重生、AOI或Gate。
+- Buff不参与伤害入口。Buff添加时调用`RegisterDamageAbsorber`并保存`modifierId`，移除/过期时调用`RemoveDamageAbsorber`；伤害流程不能查询`BuffComponent`或调用`TryAbsorbDamage`。
+- 护盾剩余量以Combat注册处理器为唯一运行时权威，Buff和Combat不能各存一份会分叉的`absorbRemaining`；处理器只存数据，不保存旧Hotfix闭包。HP是Numeric latest，命中/死亡/消耗是event。
+- 设计与实现见`docs/design/combat-damage-pipeline.md`；验证命令为`npm run test:combat`，新增业务先复用这套入口。
+
 ## 3D客户端与导航
 
 - 3D 地图使用 NavMesh3D、离线导航资源和动态门障碍；角色与怪物之间的动态避让明确不做。
@@ -80,7 +88,7 @@
 - 非 Preview 发布包使用 `tiangz-external.json`，连接公网 LoginMgr；本地和外网配置不能混用。
 - 外网桌面资源部署到 `/var/www/tiangz-cocos3d/desktop`，网址为 `/`；手机资源部署到 `/var/www/tiangz-cocos3d/m`，网址为 `/m/`。
 - 外网后端只上传 Linux Release 制品，不上传源码、Cargo 工程、`node_modules` 或 `target`；运行目录为 `/opt/tiangz-external`。
-- 用户说“部署到外网测试机”时，默认重新生成代码、构建后端 Release、构建 Cocos3D Web、上传并复验 Nginx 和登录链路；凭据不能写入仓库或日志。
+- 用户说“部署到外网测试机”时，默认重新生成代码、构建后端 Release、构建 Cocos3D Web，确认上传的是本次最新产物；远端只是可公网访问的 Demo 测试机，直接停止旧服务、覆盖 `/opt/tiangz-external` 与两个 Nginx 资源目录、重新启动，再做端口和登录链路冒烟。不要使用 `.next`、蓝绿目录、目录交换或自动回滚等生产发布流程；凭据不能写入仓库或日志。
 - 外网Cocos3D双入口使用`npm run build:cocos3d:external`：`build/external/desktop`部署网站根路径`/`，必须保持`web-desktop`桌面布局；`build/external/m`部署`/m/`，由`web-mobile + landscape`生成，是唯一横屏移动入口。不要把移动包复制到根路径，也不要让根路径和`/m/`共用同一份构建目录。
 
 ## 当前状态与待办
@@ -109,3 +117,18 @@ npm run build:cocos3d:mobile
 - 约定：按A应向视觉左侧转，按D应向视觉右侧转。
 - 手机虚拟摇杆横轴也必须遵循同一约定：摇杆向左对应A，摇杆向右对应D。
 - 修改输入映射、Yaw转换或相机跟随时，必须补一次客户端画面回归，避免引擎正方向与TiangZ正方向再次反转。
+
+## Action、Buff与道具效果
+
+- 道具使用统一走`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`不可用，`1`添加Buff，`2`执行Action；不要为小红、大红或其他同类道具复制Handler分支。
+- 当前Action类型只有`None`、`ChangeNumeric`、`AddBuff`、`RemoveBuff`。`ChangeNumeric(CurrentHp, delta)`必须通过`CombatComponent.ApplyHealing/ApplyDamage`，不能在Handler、Buff或Action里直接写CurrentHp。
+- `BuffComponent`拥有`Buff ChildEntity`；Buff负责可追踪Timer和Add/Tick/Remove生命周期，Component负责实例ID、集合、传送和AOI事件。Buff不成为Actor、不查AOI、不找Gate、不调用Location。
+- Buff传送只保存纯值和服务器墙钟时间，目标重建Timer但不重复执行AddAction；不保存TimerId、闭包、Promise或Entity引用。运行时Action覆盖当前只在本Process有效，跨Process前必须扩展协议。
+- Combat不反向查询Buff。护盾等Buff在添加/移除边界注册/注销Combat数据型modifier，剩余量由Combat单独持有；禁止新增`BuffComponent.TryAbsorbDamage`式耦合。
+- 当前最小演示：1001小型生命药水立即恢复50点，1002大型生命药水添加2001持续回血Buff；Cast技能系统、复杂目标选择、Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`和`docs/tutorials/17-action-and-buff.md`。
+
+## 道具出生与Cocos3D快捷栏
+
+- Demo新建玩家的`ItemComponentSystem.Awake`预置`1001×50`和`1002×20`；传送、重连和恢复只用`ItemSnapshot`替换默认背包，禁止重复发放。正式项目接入持久化后应移除这段Demo种子。
+- `ItemConfig.icon`是客户端字段，使用相对`assets/resources`的不带扩展名Cocos资源键；当前为`UI/Icons/Items/1001`和`UI/Icons/Items/1002`。Cocos3D Web快捷栏固定`1=平A`、`2=1001`、`3=1002`，数量来自进图快照和`G2C_ItemChanged`，客户端不预扣库存。
+- Cocos3D Buff栏从Unit快照、道具使用RPC的可选`M2C_UseItem.buff`或`G2C_BuffAdded`显示`UI/Icons/Buff/<BuffId>`图标；倒计时使用服务器结束时间，统一显示`分钟:秒`，两小时为`120:00`，无限时长显示`永久`。到`00:00`后保留图标，必须收到`G2C_BuffRemoved`才能删除，客户端不能按本地计时自行移除。三条路径按Buff实例ID幂等合并，RPC回显只给使用者，AOI事件仍给观察者。

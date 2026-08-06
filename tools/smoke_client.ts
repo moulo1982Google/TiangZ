@@ -409,15 +409,26 @@ async function verifyMapTransfer(
   ) {
     throw new Error("queued transfer-time UseItem was not executed exactly once on the target Unit");
   }
-  // 排队道具的背包事件和Numeric增量是两个独立Push；先消费权威回血，避免把合法道具恢复当成怪物伤害。
-  // The queued item's inventory event and Numeric delta are independent pushes; consume the
-  // authoritative heal first so it cannot be mistaken for monster damage.
-  const playerHpAfterQueuedItem = await waitForPlayerHpAtLeast(
-    gate,
-    transferred.unitId,
-    expectedMinimumHp + BigInt(GameConfigs.ItemConfig.Get(itemAfter.configId).restoreHp),
-    2_000,
-  );
+  // 背包事件和Numeric增量是两个独立Push；只有实际恢复了HP才等待Numeric，避免把满血不变
+  // 的合法行为误判成超时。
+  // Inventory and Numeric are independent pushes; wait for Numeric only when the heal can
+  // actually change HP, so a valid full-health use is not treated as a timeout.
+  const useConfig = GameConfigs.ItemConfig.Get(itemAfter.configId);
+  const restoreHp = useConfig.useEffect === 2
+    ? BigInt(useConfig.useParams[1] ?? 0)
+    : 0n;
+  const maxHp = BigInt(GameConfigs.PlayerConfig.Get(1).maxHp);
+  const expectedQueuedHp = expectedMinimumHp + restoreHp < maxHp
+    ? expectedMinimumHp + restoreHp
+    : maxHp;
+  const playerHpAfterQueuedItem = expectedMinimumHp >= maxHp || expectedQueuedHp === expectedMinimumHp
+    ? expectedMinimumHp
+    : await waitForPlayerHpAtLeast(
+      gate,
+      transferred.unitId,
+      expectedQueuedHp,
+      2_000,
+    );
   console.log("Map transfer:", {
     unitId: transferred.unitId,
     fromMapId: previous.mapId,
@@ -965,13 +976,15 @@ async function verifyItemChange(
   },
   previousHp: bigint,
 ) {
-  const initial = enterMap.items[0];
-  if (!initial || initial.count !== 3) {
+  const initial = enterMap.items.find((item) => item.configId === 1001);
+  if (!initial || initial.count !== 50) {
     throw new Error("enter-map snapshot did not include the initial item state");
   }
   const itemConfig = GameConfigs.ItemConfig.Get(initial.configId);
   const maxHp = BigInt(GameConfigs.PlayerConfig.Get(1).maxHp);
-  const restoredHp = previousHp + BigInt(itemConfig.restoreHp);
+  const restoredHp = itemConfig.useEffect === 2
+    ? previousHp + BigInt(itemConfig.useParams[1] ?? 0)
+    : previousHp;
   const expectedHp = restoredHp < maxHp ? restoredHp : maxHp;
   const pushed = gate.waitForMessage(MsgCode.G2C_ItemChanged);
   const responseFrame = await gate.request(
@@ -979,7 +992,7 @@ async function verifyItemChange(
   );
   const response = decodeUseItemFrame(responseFrame).body.item;
   const event = decodeItemChangedFrame(await pushed).body.item;
-  if (response.count !== 2 || event.count !== 2 || response.version !== event.version) {
+  if (response.count !== 49 || event.count !== 49 || response.version !== event.version) {
     throw new Error("immediate item response and event are inconsistent");
   }
 

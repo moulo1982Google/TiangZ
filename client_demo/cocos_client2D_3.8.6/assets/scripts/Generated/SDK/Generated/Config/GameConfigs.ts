@@ -25,20 +25,46 @@ const RAW_DATA: Record<string, unknown> = {
       "sync_hz": 5
     }
   ],
+  "game_tbbuffconfig": [
+    {
+      "id": 2001,
+      "name": "持续恢复",
+      "duration_seconds": 30,
+      "tick_interval_ms": 3000,
+      "add_action_type": 0,
+      "add_action_params": [],
+      "tick_action_type": 1,
+      "tick_action_params": [
+        1,
+        50
+      ],
+      "remove_action_type": 0,
+      "remove_action_params": []
+    }
+  ],
   "game_tbitemconfig": [
     {
       "id": 1001,
       "name": "小型生命药水",
       "description": "恢复少量生命值",
       "max_stack": 99,
-      "restore_hp": 50
+      "use_effect": 2,
+      "use_params": [
+        1,
+        150
+      ],
+      "icon": "UI/Icons/Items/1001"
     },
     {
       "id": 1002,
       "name": "大型生命药水",
       "description": "恢复大量生命值",
       "max_stack": 99,
-      "restore_hp": 200
+      "use_effect": 1,
+      "use_params": [
+        2001
+      ],
+      "icon": "UI/Icons/Items/1002"
     }
   ],
   "game_tbmapconfig": [
@@ -183,15 +209,17 @@ const tables = new Tables((file) => {
 });
 
 export type ItemConfig = game.ItemConfig;
+export type BuffConfig = game.BuffConfig;
 export type MapConfig = game.MapConfig;
 export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 export type MonsterConfig = game.MonsterConfig;
 
-export const GameConfigFingerprint = "9deeb04c33a0e99841c88330ab909d70a1bc15ce89b50fdeca739a359194ebd6";
+export const GameConfigFingerprint = "afa83bf49cc52e0aa46a3688fab545093d261884796ecdce05577a3ebbd4f222";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
+  BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),
   MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),
   PlayerConfig: new ConfigTable<game.PlayerConfig>(tables.TbPlayerConfig.getDataList()),
   AoiConfig: new ConfigTable<game.AoiConfig>(tables.TbAoiConfig.getDataList()),

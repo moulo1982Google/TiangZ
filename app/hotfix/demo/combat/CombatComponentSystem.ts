@@ -1,7 +1,15 @@
 import {
   AutoAttackPhase,
   CombatComponent,
+  NativeData,
+  NativeUnitRef,
+  NumericComponent,
+  NumericType,
   type AutoAttackState,
+  type DamageAbsorption,
+  type DamageRequest,
+  type DamageResult,
+  type HealingResult,
   systemFor,
 } from "#tiangz/model";
 
@@ -9,11 +17,12 @@ import {
 export const DEFAULT_AUTO_ATTACK_INTERVAL_MS = 2_000;
 
 /**
- * CombatComponent只托管平A状态，不负责找目标、距离、朝向或伤害。
- * 这些判定必须留在Map的战斗System中，保证同一地图的规则集中且可热更。
+ * CombatComponent托管平A状态和Unit本身的伤害/治疗入口；不负责找目标、距离、朝向或怪物生命周期。
+ * 地图System只负责选择攻击者和目标，所有目标效果统一从这里结算。
  *
- * CombatComponent only owns auto-attack state. Target lookup, range, facing,
- * and damage stay in the map combat System so one map owns one rule boundary.
+ * CombatComponent owns auto-attack state and the Unit-local damage/healing
+ * entrypoints. It does not find targets, check range/facing, or own monster
+ * lifecycle. Map Systems select the participants; target effects resolve here.
  */
 @systemFor(CombatComponent)
 export class CombatComponentSystem extends CombatComponent {
@@ -79,6 +88,147 @@ export class CombatComponentSystem extends CombatComponent {
     return this.snapshotAutoAttackState();
   }
 
+  /**
+   * 注册一个受伤前护盾；CombatComponent只保存数据，不知道这个效果来自Buff、技能还是装备。
+   * priority越大越先消耗；同优先级按modifierId排序，保证同一帧结果确定。
+   *
+   * Registers a pre-damage shield. CombatComponent stores only data and does
+   * not know whether the effect came from a Buff, skill, or equipment. Higher
+   * priorities consume first; ties use modifierId for deterministic results.
+   */
+  RegisterDamageAbsorber(amount: bigint, priority: number = 0): number {
+    validateNonNegativeBigInt(amount, "damage absorber amount");
+    validatePriority(priority);
+    if (amount === 0n) throw new Error("damage absorber amount must be positive");
+
+    const modifierId = this.allocateDamageAbsorberId();
+    this.damageAbsorbers.set(modifierId, {
+      modifierId,
+      priority,
+      remaining: amount,
+    });
+    return modifierId;
+  }
+
+  /** 更新护盾剩余量；主要供Buff恢复、天赋改写和持久化恢复使用。 / Updates remaining shield amount for Buff restore, talent changes, or persistence restore. */
+  UpdateDamageAbsorber(modifierId: number, remaining: bigint): boolean {
+    validateModifierId(modifierId);
+    validateNonNegativeBigInt(remaining, "damage absorber remaining");
+    const absorber = this.damageAbsorbers.get(modifierId);
+    if (!absorber) return false;
+    absorber.remaining = remaining;
+    return true;
+  }
+
+  /** 查询护盾剩余量；不存在的处理器返回undefined而不是伪造0。 / Reads remaining shield amount; an unknown modifier returns undefined instead of a fake zero. */
+  GetDamageAbsorberRemaining(modifierId: number): bigint | undefined {
+    validateModifierId(modifierId);
+    return this.damageAbsorbers.get(modifierId)?.remaining;
+  }
+
+  /** 注销一个受伤前处理器；Buff移除、死亡和组件销毁必须走这里。 / Unregisters a pre-damage modifier; Buff removal, death, and component disposal use this boundary. */
+  RemoveDamageAbsorber(modifierId: number): boolean {
+    validateModifierId(modifierId);
+    return this.damageAbsorbers.delete(modifierId);
+  }
+
+  /**
+   * 统一伤害入口：先执行CombatComponent已注册的吸收效果，再修改CurrentHp。
+   * 这里绝不能查询BuffComponent；Buff只能在添加/移除时注册或注销处理器。
+   *
+   * Unified damage entrypoint: registered CombatComponent modifiers absorb
+   * first, then CurrentHp is changed. This method must never query
+   * BuffComponent; Buffs only register and unregister modifiers at lifecycle boundaries.
+   */
+  ApplyDamage(request: DamageRequest): DamageResult {
+    if (!request || typeof request.amount !== "bigint") {
+      throw new Error("damage request amount must be bigint");
+    }
+    validateNonNegativeBigInt(request.amount, "damage amount");
+    const owner = this.GetParent();
+    const numeric = owner.GetComponent(NumericComponent);
+    const currentHp = numeric[NumericType.CurrentHp];
+    const native = owner.TryGetComponent(NativeUnitRef);
+    if (currentHp <= 0n || native?.alive === 0 || request.amount === 0n) {
+      return emptyDamageResult(request.amount, currentHp);
+    }
+
+    let pending = request.amount;
+    let absorbedDamage = 0n;
+    const absorptions: DamageAbsorption[] = [];
+    const modifiers = [...this.damageAbsorbers.values()]
+      .filter((modifier) => modifier.remaining > 0n)
+      .sort((left, right) => right.priority - left.priority || left.modifierId - right.modifierId);
+    for (const modifier of modifiers) {
+      if (pending === 0n) break;
+      const absorbed = pending < modifier.remaining ? pending : modifier.remaining;
+      modifier.remaining -= absorbed;
+      pending -= absorbed;
+      absorbedDamage += absorbed;
+      absorptions.push({
+        modifierId: modifier.modifierId,
+        absorbed,
+        remaining: modifier.remaining,
+      });
+    }
+
+    const finalDamage = pending < currentHp ? pending : currentHp;
+    if (finalDamage > 0n) numeric[NumericType.CurrentHp] = currentHp - finalDamage;
+    const remainingHp = numeric[NumericType.CurrentHp];
+    const killed = currentHp > 0n && remainingHp === 0n;
+    if (killed && native) {
+      native.alive = 0;
+      NativeData.ResetMovement(native.Handle);
+    }
+    return {
+      requestedDamage: request.amount,
+      absorbedDamage,
+      finalDamage,
+      remainingHp,
+      killed,
+      absorptions,
+    };
+  }
+
+  /**
+   * 统一治疗入口，自动读取MaxHp并限制溢出；道具、Buff Tick和技能都调用它。
+   * 治疗不会复活死亡Unit，复活应由单独的业务动作负责。
+   *
+   * Unified healing entrypoint. It reads MaxHp and clamps overflow; items,
+   * Buff ticks, and skills use it. Healing never revives a dead Unit; revive
+   * is a separate business action.
+   */
+  ApplyHealing(amount: bigint): HealingResult {
+    validateNonNegativeBigInt(amount, "healing amount");
+    const owner = this.GetParent();
+    const numeric = owner.GetComponent(NumericComponent);
+    const currentHp = numeric[NumericType.CurrentHp];
+    const maxHp = numeric[NumericType.MaxHp];
+    const native = owner.TryGetComponent(NativeUnitRef);
+    if (amount === 0n || currentHp >= maxHp || native?.alive === 0) {
+      return { requestedHealing: amount, restoredHealing: 0n, currentHp };
+    }
+    const nextHp = currentHp + amount < maxHp ? currentHp + amount : maxHp;
+    numeric[NumericType.CurrentHp] = nextHp;
+    return {
+      requestedHealing: amount,
+      restoredHealing: nextHp - currentHp,
+      currentHp: nextHp,
+    };
+  }
+
+  private allocateDamageAbsorberId(): number {
+    while (this.damageAbsorbers.has(this.nextDamageAbsorberId)) {
+      this.nextDamageAbsorberId += 1;
+    }
+    if (!Number.isSafeInteger(this.nextDamageAbsorberId) || this.nextDamageAbsorberId <= 0) {
+      throw new Error("damage absorber id space exhausted");
+    }
+    const id = this.nextDamageAbsorberId;
+    this.nextDamageAbsorberId += 1;
+    return id;
+  }
+
   private snapshotAutoAttackState(): AutoAttackState {
     return {
       enabled: this.autoAttackEnabled,
@@ -88,4 +238,33 @@ export class CombatComponentSystem extends CombatComponent {
       swingIntervalMs: this.autoAttackIntervalMs,
     };
   }
+}
+
+function validateNonNegativeBigInt(value: bigint, label: string): void {
+  if (typeof value !== "bigint" || value < 0n) {
+    throw new Error(`${label} must be a non-negative bigint: ${String(value)}`);
+  }
+}
+
+function validatePriority(priority: number): void {
+  if (!Number.isSafeInteger(priority)) {
+    throw new Error(`damage modifier priority must be a safe integer: ${priority}`);
+  }
+}
+
+function validateModifierId(modifierId: number): void {
+  if (!Number.isSafeInteger(modifierId) || modifierId <= 0) {
+    throw new Error(`damage modifier id must be a positive safe integer: ${modifierId}`);
+  }
+}
+
+function emptyDamageResult(requestedDamage: bigint, currentHp: bigint): DamageResult {
+  return {
+    requestedDamage,
+    absorbedDamage: 0n,
+    finalDamage: 0n,
+    remainingHp: currentHp,
+    killed: false,
+    absorptions: [],
+  };
 }

@@ -591,6 +591,70 @@
       ]
     },
     {
+      "key": "proto/DataDefine_CS_50001.proto#BuffTransferSnapshot",
+      "name": "BuffTransferSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "buff_instance_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "buff_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "stacks",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "applied_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "expire_time_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "tick_interval_ms",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "next_tick_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "revision",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/DataDefine_CS_50001.proto#CellMovementState",
       "name": "CellMovementState",
       "base": null,
@@ -3159,6 +3223,13 @@
           "type": "uint64",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 16,
+          "name": "buffs",
+          "type": "BuffTransferSnapshot",
+          "repeated": true,
+          "synthetic": false
         }
       ]
     },
@@ -5142,6 +5213,13 @@
           "number": 1,
           "name": "item",
           "type": "ItemSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "buff",
+          "type": "BuffPublicView",
           "repeated": false,
           "synthetic": false
         },

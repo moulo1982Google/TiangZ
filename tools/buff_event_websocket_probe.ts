@@ -1,0 +1,61 @@
+import {
+  ClientMessages,
+} from "../client_sdk/typescript/Generated/Model/demo/protocol/messageDescriptors";
+import {
+  G2C_BuffAdded,
+} from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
+import {
+  GateClient,
+  LoginClient,
+  LoginMgrClient,
+  MapClient,
+} from "../client_sdk/typescript/Generated/Model/demo/protocol/clients";
+import { LoginFlow } from "../client_sdk/typescript/Demo/LoginFlow";
+import "../client_sdk/typescript/Core/Net/BrowserWebSocketTransport";
+
+const HOST = process.env.TIANGZ_LOGIN_HOST ?? "14.103.24.32";
+const PORT = Number(process.env.TIANGZ_LOGIN_PORT ?? 17_000);
+
+async function main(): Promise<void> {
+  const account = `buff_ws_probe_${Date.now()}`;
+  const flow = new LoginFlow({ transport: "websocket", host: HOST, port: PORT });
+  const updates = setInterval(() => flow.update(), 1);
+  try {
+    const result = await flow.enterGame(account, 100);
+    const gate = result.gateSocket;
+    if (result.enterMap.entities.length === 0) {
+      const initial = gate.waitForMessage(ClientMessages.AoiDelta, { timeoutMs: 5_000 });
+      await new GateClient(gate).mapSnapshotReady({ unitId: result.enterMap.unitId });
+      await initial;
+    }
+
+    const item = result.enterMap.items.find((candidate) => candidate.configId === 1002 && candidate.count > 0);
+    if (!item) throw new Error("EnterMap did not provide item 1002");
+
+    const added = gate.waitForMessage<G2C_BuffAdded>(ClientMessages.BuffAdded, { timeoutMs: 5_000 });
+    const response = await new MapClient(gate).useItem({ itemId: item.itemId });
+    const message = await added;
+    if (!response.buff || response.buff.unitId !== result.enterMap.unitId || response.buff.buffConfigId !== 2001) {
+      throw new Error("UseItem response did not echo the public Buff to the owner");
+    }
+    console.log("BuffAdded WebSocket probe:", {
+      account,
+      unitId: result.enterMap.unitId,
+      responseBuffConfigId: response.buff.buffConfigId,
+      buffUnitId: message.buff.unitId,
+      buffConfigId: message.buff.buffConfigId,
+      itemCount: response.item.count,
+    });
+    if (message.buff.unitId !== result.enterMap.unitId || message.buff.buffConfigId !== 2001) {
+      throw new Error("WebSocket BuffAdded payload did not target the local player");
+    }
+  } finally {
+    clearInterval(updates);
+    flow.close();
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

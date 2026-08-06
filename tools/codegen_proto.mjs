@@ -283,7 +283,7 @@ function parseProto(source, fileInfo, opcodeLock) {
   const messagePattern =
     /((?:[ \t]*\/\/[^\n]*\n)*)[ \t]*message\s+(\w+)(?:[ \t]*\/\/[ \t]*(I\w+))?[ \t\r\n]*\{([\s\S]*?)\}/g;
   const fieldPattern =
-    /^\s*(?:(repeated)\s+)?([A-Za-z_]\w*)\s+(\w+)\s*=\s*(\d+)(?:\s*\[[^\]]*\])?\s*;/gm;
+    /^\s*(?:(repeated|optional)\s+)?([A-Za-z_]\w*)\s+(\w+)\s*=\s*(\d+)(?:\s*\[[^\]]*\])?\s*;/gm;
 
   for (const messageMatch of source.matchAll(messagePattern)) {
     const [, comments, name, trailingBase, body] = messageMatch;
@@ -291,14 +291,14 @@ function parseProto(source, fileInfo, opcodeLock) {
     const fields = [];
 
     for (const fieldMatch of body.matchAll(fieldPattern)) {
-      const [, repeated, type, protoName, fieldNo] = fieldMatch;
+      const [, label, type, protoName, fieldNo] = fieldMatch;
       fields.push({
         type,
-        repeated: Boolean(repeated),
+        repeated: label === "repeated",
         protoName,
         tsName: toCamel(protoName),
         fieldNo: Number(fieldNo),
-        optional: protoName === "rpc_id",
+        optional: label === "optional" || protoName === "rpc_id",
       });
     }
 
@@ -1003,7 +1003,9 @@ function writerCall(field) {
     return `    for (const item of (${access} ?? [])) ${writeValue}`;
   }
   if (field.optional) {
-    return `    if (${access} !== undefined) writer.${field.type}(${field.fieldNo}, ${access});`;
+    return supportedTypes.has(field.type)
+      ? `    if (${access} !== undefined) writer.${field.type}(${field.fieldNo}, ${access});`
+      : `    if (${access} !== undefined) writer.bytes(${field.fieldNo}, ${field.type}Codec.encode(${access}));`;
   }
 
   if (supportedTypes.has(field.type)) {

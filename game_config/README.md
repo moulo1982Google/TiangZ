@@ -9,6 +9,7 @@
 - `PlayerConfig.xlsx`：玩家初始基础值，包括HP/MP；不描述升级后的等级成长。
 - `MonsterConfig.xlsx`：怪物模板、最大生命值、基础攻击力、米/秒移动速度、独立普通攻击距离、攻击间隔毫秒、攻击模式和死亡复活秒数。
 - `MonsterAreaConfig.xlsx`：固定刷怪槽、地图坐标和地图创建时是否生成；不保存尸体时间或复活时间。
+- `BuffConfig.xlsx`：Buff模板、持续时间、Tick间隔，以及添加/Tick/移除时执行的Action。
 
 修改Excel后运行：
 
@@ -27,6 +28,28 @@ npm run test:game-config
 - Cocos/Pixi配置仍随Client SDK构建和发布，服务端切换不会修改已运行客户端中的数据。
 
 `MapConfig.spatial_mode`当前支持`Grid2D`与`NavMesh3D`。Grid2D必须填写`width_cells/depth_cells/cell_size_meters`；NavMesh3D必须填写`navigation_asset/navigation_version/navigation_hash`，其中哈希为小写SHA-256。`entry_players_per_tick`限制单个MapInstance每逻辑Tick完成AOI Attach的人数，`entry_queue_capacity`限制仍在Loading中的等待人数；它们属于Cold地图容量配置。坐标采用米制X/Y/Z，X/Z为地面、Y为高度；完整契约见[地图空间与3D坐标契约](../docs/design/spatial-world.md)。
+
+## Item、Action与Buff
+
+`ItemConfig.use_effect`决定道具是否可用以及使用后执行哪种最小效果：
+
+| `use_effect` | 含义 | `use_params`格式 |
+|---:|---|---|
+| `0` | 不可使用 | 空数组 |
+| `1` | 给使用者添加Buff | 一个`BuffConfig.id` |
+| `2` | 执行一个Action | `[ActionType参数...]`；当前`ChangeNumeric`为`[NumericType, delta]` |
+
+当前演示道具：小型生命药水使用`ChangeNumeric(CurrentHp, 50)`，大型生命药水使用`AddBuff(2001)`。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、创建Timer或直接广播Buff。
+
+Cocos3D演示玩家出生时预置`1001×50`和`1002×20`两个堆叠，快捷栏固定使用`1`切换平A、`2`使用1001、`3`使用1002。这个预置属于Demo的`ItemComponentSystem.Awake`，正式业务应由持久化数据恢复，不要把演示数量当成通用框架默认值。
+
+`BuffConfig`的三个Action阶段分别是：
+
+- `add_action_*`：Buff创建时执行一次。
+- `tick_action_*`：每个`tick_interval_ms`执行一次；间隔为`0`表示没有Tick。
+- `remove_action_*`：Buff主动移除、自然到期或Unit销毁时执行一次。
+
+Action当前支持`None`、`ChangeNumeric`、`AddBuff`和`RemoveBuff`。表结构和Action参数属于Model，改列或类型必须重启；只改数值行时按Hot配置流程生成候选并Reload。更完整的调用边界见[Action与Buff最小闭环](../docs/design/action-buff.md)。
 
 怪物死亡会删除当前MonsterUnit。`MonsterComponent`把`MonsterConfig.max_hp`写入Numeric的`MaxHpBase`，由Rust推导出只读`MaxHp`，把攻击力写入`AttackBase`并由Rust推导只读`Attack`，把`attack_interval_ms`写入`AttackSpeedAdd`并读取只读`AttackSpeed`；`move_speed`按米/秒转换为Numeric的毫米/秒`MoveSpeedBase`。`respawn_seconds`到期后复用同一个`AreaId`刷怪槽，但会创建新的MonsterUnit并分配新的UnitId。不要在Area表新增`corpse_lifetime_seconds`或重复配置`respawn_seconds`。
 

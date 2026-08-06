@@ -227,6 +227,9 @@ message C2M_UseItem // IActorLocationRequest
 message M2C_UseItem // IActorLocationResponse
 {
   ItemSnapshot item = 1;
+  // 对本人返回这次Action新增的公开Buff；AOI事件仍然负责向其他观察者广播。
+  // Returns the public Buff added by this Action to the owner; the AOI event still broadcasts it to observers.
+  optional BuffPublicView buff = 2;
 }
 
 //ResponseType M2C_AttackMonster

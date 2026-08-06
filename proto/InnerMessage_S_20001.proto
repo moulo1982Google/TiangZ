@@ -178,6 +178,7 @@ message PlayerTransferSnapshot
   repeated ItemSnapshot items = 13;
   uint64 source_map_instance_id = 14;
   uint64 target_map_instance_id = 15;
+  repeated BuffTransferSnapshot buffs = 16;
 }
 
 message MapInstanceSnapshot

@@ -20,6 +20,7 @@ import {
 } from "cc";
 import { NATIVE, PREVIEW } from "cc/env";
 import { LoginFlow } from "../Generated/SDK/Demo/LoginFlow";
+import { BuffStateStore } from "../Generated/SDK/Demo/BuffStateStore";
 import { ClientMessageDispatcher } from "../Generated/SDK/Core/Net/ClientMessageDispatcher";
 import {
   GateClient,
@@ -29,10 +30,14 @@ import { ClientMessages } from "../Generated/SDK/Generated/Model/demo/protocol/m
 import type {
   G2C_AoiDelta,
   G2C_AutoAttackState,
+  G2C_BuffAdded,
+  G2C_BuffRemoved,
   G2C_DemoDoorState,
   G2C_EntityNumeric,
   G2C_EntityNavigate,
   G2C_EntityState,
+  G2C_ItemChanged,
+  ItemSnapshot,
   MapEntitySnapshot,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
 import "../Generated/Hotfix/handlers";
@@ -92,6 +97,10 @@ const ATTACK_SLASH_MAX_SCALE = 1.15;
 // Cocos 3.8.8没有导出数字键枚举；使用标准键盘主区“1”的ASCII码49。
 // Cocos 3.8.8 does not expose a digit-key enum; 49 is the standard top-row "1" key code.
 const AUTO_ATTACK_KEY = 49 as unknown as KeyCode;
+const ITEM_SMALL_HEALTH_POTION = 1001;
+const ITEM_LARGE_HEALTH_POTION = 1002;
+const ITEM_SMALL_HEALTH_POTION_KEY = 50 as unknown as KeyCode;
+const ITEM_LARGE_HEALTH_POTION_KEY = 51 as unknown as KeyCode;
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
 // Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
 const RUNTIME_CONFIG_RESOURCE = PREVIEW
@@ -137,6 +146,25 @@ interface AttackSlashEffect {
   elapsedSeconds: number;
 }
 
+interface HotbarSlot {
+  readonly configId: number;
+  readonly keyLabel: string;
+  readonly root: HTMLButtonElement;
+  readonly icon: HTMLElement;
+  readonly name: HTMLElement;
+  readonly count: HTMLElement;
+  itemId?: bigint;
+  countValue: number;
+}
+
+interface BuffHudEntry {
+  readonly root: HTMLElement;
+  readonly icon: HTMLElement;
+  readonly timer: HTMLElement;
+  readonly buffInstanceId: bigint;
+  lastTimerText: string;
+}
+
 /** Phase 4.2的3D导航灰盒入口；演示权威寻路、预测纠偏和AOI多人同步。 / Phase 4.2 graybox entrypoint for authoritative pathing, prediction correction, and AOI multiplayer sync. */
 @ccclass("GameBootstrap3D")
 export class GameBootstrap3D extends Component {
@@ -173,6 +201,9 @@ export class GameBootstrap3D extends Component {
   private autoAttackPanel?: HTMLElement;
   private autoAttackLabel?: HTMLElement;
   private autoAttackProgress?: HTMLElement;
+  private hotbarElement?: HTMLElement;
+  private buffPanel?: HTMLElement;
+  private buffListElement?: HTMLElement;
   private displayedPingAtMs = -1;
   private loginFlow?: LoginFlow;
   private gateSocket?: RpcSocket;
@@ -211,6 +242,11 @@ export class GameBootstrap3D extends Component {
   private messageDispatcher?: ClientMessageDispatcher<GameBootstrap3D>;
   private readonly remotePlayers = new Map<number, RemotePlayer3D>();
   private readonly localNumerics = new Map<number, bigint>();
+  private readonly inventoryItems = new Map<string, ItemSnapshot>();
+  private readonly hotbarSlots = new Map<number, HotbarSlot>();
+  private readonly itemUseInFlight = new Set<number>();
+  private readonly buffStateStore = new BuffStateStore();
+  private readonly buffHudEntries = new Map<string, BuffHudEntry>();
   private selectedMonsterUnitId = 0;
   private autoAttackEnabled = false;
   private autoAttackTargetUnitId = 0;
@@ -235,6 +271,7 @@ export class GameBootstrap3D extends Component {
     this.loginFlow?.update();
     this.updateMobileHud();
     this.updateAutoAttackHud();
+    this.updateBuffHud();
     this.updateDirectionalInput(deltaTime);
     this.advanceDirectionalPrediction(deltaTime);
     this.advanceAlongPath(deltaTime);
@@ -263,6 +300,16 @@ export class GameBootstrap3D extends Component {
     this.remotePlayers.clear();
     this.statusElement?.remove();
     this.statusElement = undefined;
+    this.hotbarElement?.remove();
+    this.hotbarElement = undefined;
+    this.buffPanel?.remove();
+    this.buffPanel = undefined;
+    this.buffListElement = undefined;
+    this.buffHudEntries.clear();
+    this.buffStateStore.Clear();
+    this.hotbarSlots.clear();
+    this.inventoryItems.clear();
+    this.itemUseInFlight.clear();
     this.mobileControlsElement?.remove();
     this.mobileControlsElement = undefined;
     this.mobileStyleElement?.remove();
@@ -356,6 +403,8 @@ export class GameBootstrap3D extends Component {
     this.buildPlayerStatsHud(document);
     this.buildAutoAttackHud(document);
     this.buildSelectedMonsterHud(document);
+    this.buildBuffHud(document);
+    this.buildHotbarHud(document);
     this.buildMobileHud(document);
     this.buildMobileControls(document);
     this.setStatus("正在连接 LoginMgr 并进入 Map 100...");
@@ -487,6 +536,408 @@ export class GameBootstrap3D extends Component {
     this.selectedMonsterElement = panel;
   }
 
+  /**
+   * 创建快捷栏：桌面端显示1/2/3，移动端只显示2/3，平A由独立攻击按钮负责。
+   * 道具图标通过客户端ItemConfig.icon读取Cocos resources资源键；资源尚未放入时回退到文字，不影响快捷栏和数量显示。
+   *
+   * Creates the hotbar: desktop shows 1/2/3, while mobile shows only 2/3
+   * because the mobile attack button owns auto attack. Item icons are loaded
+   * by the client-side ItemConfig.icon resource key; missing assets fall back
+   * to text so the hotbar and counts remain usable.
+   */
+  private buildHotbarHud(document: Document): void {
+    const bar = document.createElement("div");
+    bar.className = "cocos3d-hotbar";
+    bar.style.position = "fixed";
+    bar.style.left = "50%";
+    bar.style.bottom = "calc(env(safe-area-inset-bottom, 0px) + max(18px, 3vh))";
+    bar.style.transform = "translateX(-50%)";
+    bar.style.zIndex = "10004";
+    bar.style.display = "flex";
+    bar.style.gap = "8px";
+    bar.style.padding = "8px";
+    bar.style.border = "1px solid rgba(225, 245, 238, 0.38)";
+    bar.style.borderRadius = "10px";
+    bar.style.background = "rgba(13, 22, 25, 0.82)";
+    bar.style.boxSizing = "border-box";
+    bar.style.pointerEvents = "auto";
+    bar.style.userSelect = "none";
+    bar.style.maxWidth = "calc(100vw - 16px)";
+    bar.style.whiteSpace = "nowrap";
+
+    if (!this.isMobileLayout()) {
+      const autoSlot = this.createHotbarSlot(document, bar, 0, "1", "平A", "攻", undefined, () => {
+        void this.toggleAutoAttack();
+      });
+      autoSlot.root.title = "1：切换自动攻击";
+    }
+
+    for (const [keyLabel, configId] of [["2", ITEM_SMALL_HEALTH_POTION], ["3", ITEM_LARGE_HEALTH_POTION]] as const) {
+      const config = GameConfigs.ItemConfig.Get(configId);
+      const slot = this.createHotbarSlot(
+        document,
+        bar,
+        configId,
+        keyLabel,
+        config.name,
+        config.name.slice(0, 2),
+        config.icon,
+        () => void this.useHotbarItem(configId),
+      );
+      slot.root.title = `${keyLabel}：使用${config.name}`;
+      this.hotbarSlots.set(configId, slot);
+    }
+
+    document.body.appendChild(bar);
+    this.hotbarElement = bar;
+    this.updateHotbarHud();
+  }
+
+  /**
+   * 创建玩家Buff栏。图标来自`UI/Icons/Buff/<BuffId>`，剩余时间只由服务端到期时间计算。
+   * 到期后只把文字停在00:00，真正移除必须等待G2C_BuffRemoved，避免客户端时钟误差提前清理表现。
+   *
+   * Creates the local player's Buff bar. Icons use `UI/Icons/Buff/<BuffId>`;
+   * remaining time is derived from the server expiry timestamp. At zero the
+   * text stays at 00:00 until G2C_BuffRemoved arrives, so client clock drift
+   * cannot remove an active server-side Buff from the UI.
+   */
+  private buildBuffHud(document: Document): void {
+    const panel = document.createElement("div");
+    panel.className = "cocos3d-buff-hud";
+    panel.style.position = "fixed";
+    panel.style.right = "24px";
+    panel.style.top = "108px";
+    panel.style.zIndex = "10004";
+    panel.style.minWidth = "72px";
+    panel.style.maxWidth = "calc(100vw - 24px)";
+    panel.style.padding = "7px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#edf7f3";
+    panel.style.background = "rgba(13, 22, 25, 0.82)";
+    panel.style.border = "1px solid rgba(225, 245, 238, 0.35)";
+    panel.style.borderRadius = "8px";
+    panel.style.font = "12px/1.2 system-ui, sans-serif";
+    panel.style.pointerEvents = "none";
+    panel.style.display = "none";
+
+    const title = document.createElement("div");
+    title.textContent = "Buff";
+    title.style.marginBottom = "5px";
+    title.style.color = "#f4d477";
+    title.style.fontWeight = "700";
+    panel.appendChild(title);
+
+    const list = document.createElement("div");
+    list.className = "cocos3d-buff-list";
+    list.style.display = "flex";
+    list.style.flexWrap = "wrap";
+    list.style.gap = "6px";
+    panel.appendChild(list);
+
+    document.body.appendChild(panel);
+    this.buffPanel = panel;
+    this.buffListElement = list;
+  }
+
+  /** 更新Buff图标和MM:SS倒计时；0时保留条目，直到服务端移除事件删除。 / Updates Buff icons and MM:SS timers; keeps zero entries until server removal. */
+  private updateBuffHud(): void {
+    const panel = this.buffPanel;
+    const list = this.buffListElement;
+    if (!panel || !list || this.localUnitId === 0) return;
+
+    const buffs = this.buffStateStore.PublicOf(this.localUnitId);
+    const activeKeys = new Set<string>();
+    const clockOffsetMs = this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0;
+    const serverNowMs = Date.now() + clockOffsetMs;
+
+    for (const buff of buffs) {
+      const key = buffHudKey(buff.buffInstanceId);
+      activeKeys.add(key);
+      let entry = this.buffHudEntries.get(key);
+      if (!entry) {
+        entry = this.createBuffHudEntry(document, list, buff);
+        this.buffHudEntries.set(key, entry);
+      }
+      const timerText = formatBuffRemaining(buff.expireTimeMs, serverNowMs);
+      if (entry.lastTimerText !== timerText) {
+        entry.lastTimerText = timerText;
+        entry.timer.textContent = timerText;
+      }
+    }
+
+    for (const [key, entry] of this.buffHudEntries) {
+      if (activeKeys.has(key)) continue;
+      entry.root.remove();
+      this.buffHudEntries.delete(key);
+    }
+    panel.style.display = buffs.length > 0 ? "block" : "none";
+  }
+
+  /** 创建单个Buff图标并异步加载资源；资源缺失时保留BuffId文字，避免展示层崩溃。 / Creates one Buff icon and loads the resource asynchronously; missing assets fall back to the BuffId. */
+  private createBuffHudEntry(
+    document: Document,
+    list: HTMLElement,
+    buff: { readonly buffInstanceId: bigint; readonly buffConfigId: number },
+  ): BuffHudEntry {
+    const root = document.createElement("div");
+    root.style.width = "54px";
+    root.style.textAlign = "center";
+    root.style.color = "#edf7f3";
+
+    const icon = document.createElement("div");
+    icon.style.width = "42px";
+    icon.style.height = "42px";
+    icon.style.margin = "0 auto 2px";
+    icon.style.display = "flex";
+    icon.style.alignItems = "center";
+    icon.style.justifyContent = "center";
+    icon.style.overflow = "hidden";
+    icon.style.border = "1px solid rgba(244, 212, 119, 0.72)";
+    icon.style.borderRadius = "5px";
+    icon.style.background = "rgba(255, 255, 255, 0.1)";
+    icon.style.fontSize = "10px";
+    icon.textContent = String(buff.buffConfigId);
+    root.appendChild(icon);
+
+    const timer = document.createElement("div");
+    timer.style.color = "#ffffff";
+    timer.style.font = "600 11px/1.1 ui-monospace, SFMono-Regular, Consolas, monospace";
+    timer.textContent = "00:00";
+    root.appendChild(timer);
+    list.appendChild(root);
+
+    const entry: BuffHudEntry = {
+      root,
+      icon,
+      timer,
+      buffInstanceId: buff.buffInstanceId,
+      lastTimerText: "",
+    };
+    const iconPath = `UI/Icons/Buff/${buff.buffConfigId}`;
+    resources.load(iconPath, (error: unknown, asset: unknown) => {
+      if (error || !asset || this.buffHudEntries.get(buffHudKey(buff.buffInstanceId)) !== entry) return;
+      const texture = asset as { nativeUrl?: string; image?: { nativeUrl?: string } };
+      const nativeUrl = texture.nativeUrl ?? texture.image?.nativeUrl;
+      if (!nativeUrl) return;
+      const image = document.createElement("img");
+      image.src = nativeUrl;
+      image.alt = `Buff ${buff.buffConfigId}`;
+      image.style.width = "100%";
+      image.style.height = "100%";
+      image.style.objectFit = "contain";
+      image.addEventListener("error", () => {
+        icon.textContent = String(buff.buffConfigId);
+      }, { once: true });
+      icon.replaceChildren(image);
+    });
+    return entry;
+  }
+
+  /** 创建一个快捷栏格子；点击行为仍通过服务端RPC，不在客户端直接改背包。 / Creates one hotbar slot; clicks still go through server RPC and never mutate inventory locally. */
+  private createHotbarSlot(
+    document: Document,
+    parent: HTMLElement,
+    configId: number,
+    keyLabel: string,
+    name: string,
+    fallbackIcon: string,
+    iconPath: string | undefined,
+    action: () => void,
+  ): HotbarSlot {
+    const root = document.createElement("button");
+    root.type = "button";
+    root.style.position = "relative";
+    root.style.width = "72px";
+    root.style.height = "72px";
+    root.style.padding = "5px";
+    root.style.border = "1px solid rgba(225, 245, 238, 0.48)";
+    root.style.borderRadius = "8px";
+    root.style.color = "#edf7f3";
+    root.style.background = "rgba(27, 43, 46, 0.9)";
+    root.style.font = "12px/1.2 system-ui, sans-serif";
+    root.style.cursor = "pointer";
+    root.style.touchAction = "manipulation";
+    // 手机端不能只依赖click：部分WebView会把触摸事件交给全屏镜头层，导致道具格看得见但点不动。
+    // Mobile WebViews cannot rely on click alone: some route the touch to the full-screen camera layer.
+    let pointerHandled = false;
+    root.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      pointerHandled = false;
+    });
+    root.addEventListener("pointerup", (event) => {
+      if (event.pointerType === "touch") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      pointerHandled = true;
+      action();
+    });
+    root.addEventListener("pointercancel", (event) => {
+      if (event.pointerType === "touch") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      pointerHandled = false;
+    });
+    root.addEventListener("touchstart", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      pointerHandled = false;
+    }, { passive: false });
+    root.addEventListener("touchend", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      pointerHandled = true;
+      action();
+    }, { passive: false });
+    root.addEventListener("touchcancel", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      pointerHandled = false;
+    }, { passive: false });
+    root.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!pointerHandled) action();
+      pointerHandled = false;
+    });
+
+    const key = document.createElement("span");
+    key.textContent = keyLabel;
+    key.style.position = "absolute";
+    key.style.left = "5px";
+    key.style.top = "3px";
+    key.style.color = "#f4d477";
+    key.style.fontWeight = "700";
+    root.appendChild(key);
+
+    const icon = document.createElement("span");
+    icon.style.display = "flex";
+    icon.style.alignItems = "center";
+    icon.style.justifyContent = "center";
+    icon.style.width = "42px";
+    icon.style.height = "42px";
+    icon.style.margin = "4px auto 1px";
+    icon.style.borderRadius = "6px";
+    icon.style.color = "#fff8d6";
+    icon.style.background = "rgba(255, 255, 255, 0.1)";
+    icon.style.fontSize = "16px";
+    icon.style.fontWeight = "700";
+    icon.textContent = fallbackIcon;
+    root.appendChild(icon);
+
+    const nameElement = document.createElement("span");
+    nameElement.textContent = name;
+    nameElement.style.display = "block";
+    nameElement.style.maxWidth = "100%";
+    nameElement.style.overflow = "hidden";
+    nameElement.style.textOverflow = "ellipsis";
+    nameElement.style.whiteSpace = "nowrap";
+    root.appendChild(nameElement);
+
+    const count = document.createElement("span");
+    count.textContent = "";
+    count.style.position = "absolute";
+    count.style.right = "5px";
+    count.style.bottom = "4px";
+    count.style.color = "#ffffff";
+    count.style.fontWeight = "700";
+    root.appendChild(count);
+
+    parent.appendChild(root);
+    const slot: HotbarSlot = {
+      configId,
+      keyLabel,
+      root,
+      icon,
+      name: nameElement,
+      count,
+      countValue: 0,
+    };
+    if (iconPath) this.loadHotbarIcon(slot, iconPath, fallbackIcon);
+    return slot;
+  }
+
+  /** 从Cocos resources加载配置图标；图标缺失时保留配置名称首字作为可用兜底。 / Loads an icon from Cocos resources and keeps a text fallback when the asset is missing. */
+  private loadHotbarIcon(slot: HotbarSlot, iconPath: string, fallbackIcon: string): void {
+    resources.load(iconPath, (error: unknown, asset: unknown) => {
+      if (error || !asset) {
+        slot.icon.textContent = fallbackIcon;
+        return;
+      }
+      const texture = asset as { nativeUrl?: string; image?: { nativeUrl?: string } };
+      const nativeUrl = texture.nativeUrl ?? texture.image?.nativeUrl;
+      if (!nativeUrl) {
+        slot.icon.textContent = fallbackIcon;
+        return;
+      }
+      const image = document.createElement("img");
+      image.src = nativeUrl;
+      image.alt = slot.name.textContent ?? "道具";
+      image.style.width = "100%";
+      image.style.height = "100%";
+      image.style.objectFit = "contain";
+      image.addEventListener("error", () => {
+        slot.icon.textContent = fallbackIcon;
+      }, { once: true });
+      slot.icon.replaceChildren(image);
+    });
+  }
+
+  /** 根据进图快照或ItemChanged刷新快捷栏；数量只使用服务端权威快照。 / Refreshes the hotbar from EnterMap or ItemChanged snapshots; counts are server-authoritative. */
+  private updateHotbarHud(): void {
+    for (const [configId, slot] of this.hotbarSlots) {
+      const summary = this.summarizeInventory(configId);
+      const count = summary.count;
+      slot.itemId = summary.usableItem?.itemId;
+      slot.countValue = count;
+      slot.count.textContent = `×${count}`;
+      slot.root.disabled = count <= 0 || this.itemUseInFlight.has(configId);
+      slot.root.style.opacity = count <= 0 ? "0.45" : "1";
+      slot.root.style.borderColor = this.itemUseInFlight.has(configId)
+        ? "rgba(244, 212, 119, 0.95)"
+        : "rgba(225, 245, 238, 0.48)";
+    }
+  }
+
+  /** 汇总指定配置的所有堆叠，并选择一个有库存的实例用于消费。 / Sums all stacks for one config and selects a non-empty instance for consumption. */
+  private summarizeInventory(configId: number): { count: number; usableItem?: ItemSnapshot } {
+    let count = 0;
+    let usableItem: ItemSnapshot | undefined;
+    for (const item of this.inventoryItems.values()) {
+      if (item.configId !== configId) continue;
+      count += item.count;
+      if (!usableItem && item.count > 0) usableItem = item;
+    }
+    return { count, usableItem };
+  }
+
+  /** 处理快捷栏道具使用RPC；失败只提示，不提前扣本地数量。 / Sends the hotbar item-use RPC; failures only report status and never pre-decrement local count. */
+  private async useHotbarItem(configId: number): Promise<void> {
+    const mapClient = this.mapClient;
+    const item = this.summarizeInventory(configId).usableItem;
+    if (!mapClient || !item || this.itemUseInFlight.has(configId)) return;
+    this.itemUseInFlight.add(configId);
+    this.updateHotbarHud();
+    try {
+      const response = await mapClient.useItem({ itemId: item.itemId });
+      this.ApplyItemSnapshot(response.item);
+      if (response.buff) this.ApplyBuffAdded({ buff: response.buff });
+    } catch (error) {
+      this.setStatus(`使用${GameConfigs.ItemConfig.Get(configId).name}失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.itemUseInFlight.delete(configId);
+      this.updateHotbarHud();
+    }
+  }
+
   /** 创建手机端固定说明和网络延迟显示；桌面端通过CSS隐藏，不污染桌面HUD。 / Creates fixed mobile instructions and latency display; CSS hides them on desktop. */
   private buildMobileHud(document: Document): void {
     // 移动端左侧HUD使用一个真实容器统一排版，避免不同设备的CSS像素和安全区计算造成重叠。
@@ -500,7 +951,7 @@ export class GameBootstrap3D extends Component {
 
     const instructions = document.createElement("div");
     instructions.className = "cocos3d-mobile-instructions";
-    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面：寻路\n点击“攻”：切换平A";
+    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面：寻路\n点击“攻”：切换平A\n点击2/3：使用道具";
     instructions.style.position = "fixed";
     instructions.style.left = "max(10px, 2vw)";
     instructions.style.top = "max(10px, 2vh)";
@@ -879,6 +1330,34 @@ export class GameBootstrap3D extends Component {
           padding: 7px 9px !important;
           font: 13px/1.3 system-ui, sans-serif !important;
         }
+        .cocos3d-hotbar {
+          left: 50% !important;
+          right: auto !important;
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+          z-index: 10004 !important;
+          gap: 4px !important;
+          padding: 5px !important;
+          max-width: calc(100vw - 16px) !important;
+          transform: translateX(-50%) !important;
+        }
+        .cocos3d-hotbar > button {
+          width: clamp(56px, 18vw, 72px) !important;
+          height: clamp(56px, 18vw, 72px) !important;
+          padding: 4px !important;
+        }
+        .cocos3d-hotbar > button > span:nth-child(2) {
+          width: clamp(32px, 11vw, 42px) !important;
+          height: clamp(32px, 11vw, 42px) !important;
+          font-size: clamp(13px, 4vw, 16px) !important;
+        }
+        .cocos3d-buff-hud {
+          right: calc(env(safe-area-inset-right, 0px) + 12px) !important;
+          top: calc(env(safe-area-inset-top, 0px) + 132px) !important;
+          z-index: 10004 !important;
+          max-width: min(260px, calc(100vw - 24px)) !important;
+          max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 210px) !important;
+          overflow-y: auto !important;
+        }
         .cocos3d-player-stats-hud {
           padding: 7px 9px !important;
           font: 12px/1.22 system-ui, sans-serif !important;
@@ -890,6 +1369,12 @@ export class GameBootstrap3D extends Component {
       }
       @media (orientation: portrait) and (max-width: 900px) {
         .cocos3d-mobile-joystick { transform: scale(0.88); transform-origin: bottom left; }
+        .cocos3d-hotbar {
+          bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(126px, 18vh, 180px)) !important;
+        }
+        .cocos3d-buff-hud {
+          top: calc(env(safe-area-inset-top, 0px) + 126px) !important;
+        }
       }
     `;
     document.head.appendChild(style);
@@ -1186,6 +1671,11 @@ export class GameBootstrap3D extends Component {
       this.gateSocket = result.gateSocket;
       this.mapClient = new MapClient(result.gateSocket);
       this.localUnitId = result.enterMap.unitId;
+      this.buffStateStore.Clear();
+      for (const entity of result.enterMap.entities) this.buffStateStore.ApplySnapshot(entity);
+      this.updateBuffHud();
+      this.inventoryItems.clear();
+      for (const item of result.enterMap.items) this.ApplyItemSnapshot(item);
       const localEntity = result.enterMap.entities.find((entity) => entity.unitId === this.localUnitId);
       this.localNumerics.clear();
       if (localEntity) this.ApplyLocalSnapshotNumerics(localEntity);
@@ -1224,7 +1714,7 @@ export class GameBootstrap3D extends Component {
         `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
           ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路"
-          : "W/S前后，A/D转向，按住右键时A/D横移；1切换平A；E开关动态门；左键点击地面寻路"),
+          : "W/S前后，A/D转向，按住右键时A/D横移；1平A，2/3使用药水；E开关动态门；左键点击地面寻路"),
       );
     } catch (error) {
       this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
@@ -1254,14 +1744,31 @@ export class GameBootstrap3D extends Component {
 
   /** 应用AOI进入离开事件；公开Snapshot足够创建远端外观，不读取其他玩家私有状态。 / Applies AOI enter/leave events using only public snapshots. */
   ApplyAoiDelta(message: G2C_AoiDelta): void {
-    for (const entity of message.enters) this.UpsertRemotePlayer(entity);
+    for (const entity of message.enters) {
+      this.buffStateStore.ApplySnapshot(entity);
+      this.UpsertRemotePlayer(entity);
+    }
     for (const unitId of message.leaves) {
+      this.buffStateStore.RemoveUnit(unitId);
       const remote = this.remotePlayers.get(unitId);
       if (!remote) continue;
       if (unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
       remote.node.destroy();
       this.remotePlayers.delete(unitId);
     }
+    this.updateBuffHud();
+  }
+
+  /** 应用Buff添加事件；图标先出现，倒计时依据服务端时间推进。 / Applies a Buff-added event; the icon appears first and follows server time. */
+  ApplyBuffAdded(message: G2C_BuffAdded): void {
+    this.buffStateStore.ApplyAdded(message);
+    this.updateBuffHud();
+  }
+
+  /** 应用Buff移除事件；只有这个事件允许客户端删除对应图标。 / Applies Buff removal; only this event is allowed to delete the icon. */
+  ApplyBuffRemoved(message: G2C_BuffRemoved): void {
+    this.buffStateStore.ApplyRemoved(message);
+    this.updateBuffHud();
   }
 
   /** 应用帧尾Numeric变化；死亡/复活的血量由服务器推送，客户端不自行推导。 / Applies frame-end Numeric changes; death and respawn HP come from the server instead of client-side deduction. */
@@ -1324,6 +1831,17 @@ export class GameBootstrap3D extends Component {
     this.autoAttackSwingStartAtMs = nextSwingStartAtMs;
     this.autoAttackSwingIntervalMs = Math.max(1, message.swingIntervalMs);
     this.updateMobileAttackButton();
+  }
+
+  /** 应用服务端背包快照；进图和ItemChanged共用同一个入口，避免数量在两个状态机中漂移。 / Applies an authoritative inventory snapshot from EnterMap or ItemChanged so both paths share one state machine. */
+  ApplyItemSnapshot(item: ItemSnapshot): void {
+    this.inventoryItems.set(item.itemId.toString(), item);
+    this.updateHotbarHud();
+  }
+
+  /** 接收背包即时变更；道具使用不等待读条或帧尾，客户端收到后立即刷新数量。 / Applies an immediate inventory change; item use is not delayed to a tick or frame-end batch. */
+  ApplyItemChanged(message: G2C_ItemChanged): void {
+    this.ApplyItemSnapshot(message.item);
   }
 
   /** 创建一次纯表现刀光；命中、伤害和目标有效性仍由服务端决定。 / Creates a presentation-only slash; hit, damage, and target validity remain server-authoritative. */
@@ -1511,6 +2029,16 @@ export class GameBootstrap3D extends Component {
       void this.toggleAutoAttack();
       return;
     }
+    if (event.keyCode === ITEM_SMALL_HEALTH_POTION_KEY && !this.pressedKeys.has(event.keyCode)) {
+      this.pressedKeys.add(event.keyCode);
+      void this.useHotbarItem(ITEM_SMALL_HEALTH_POTION);
+      return;
+    }
+    if (event.keyCode === ITEM_LARGE_HEALTH_POTION_KEY && !this.pressedKeys.has(event.keyCode)) {
+      this.pressedKeys.add(event.keyCode);
+      void this.useHotbarItem(ITEM_LARGE_HEALTH_POTION);
+      return;
+    }
     if (event.keyCode === KeyCode.KEY_E && !this.pressedKeys.has(event.keyCode)) {
       this.pressedKeys.add(event.keyCode);
       void this.toggleDemoDoor();
@@ -1524,7 +2052,7 @@ export class GameBootstrap3D extends Component {
 
   private onKeyUp(event: EventKeyboard): void {
     if (!this.pressedKeys.delete(event.keyCode)) return;
-    if (event.keyCode === KeyCode.KEY_E) return;
+    if (event.keyCode === KeyCode.KEY_E || isHotbarKey(event.keyCode)) return;
     this.markInputDirty();
   }
 
@@ -2258,6 +2786,27 @@ function isMovementKey(key: KeyCode): boolean {
   return key === KeyCode.KEY_W || key === KeyCode.KEY_S || key === KeyCode.KEY_A ||
     key === KeyCode.KEY_D || key === KeyCode.ARROW_UP || key === KeyCode.ARROW_DOWN ||
     key === KeyCode.ARROW_LEFT || key === KeyCode.ARROW_RIGHT;
+}
+
+function buffHudKey(buffInstanceId: bigint): string {
+  return buffInstanceId.toString();
+}
+
+/** 只显示分钟和秒；例如两小时显示为120:00。 / Formats minutes and seconds only; two hours becomes 120:00. */
+function formatBuffRemaining(expireTimeMs: bigint, serverNowMs: number): string {
+  if (expireTimeMs <= 0n) return "永久";
+  const expireAtMs = Number(expireTimeMs);
+  if (!Number.isFinite(expireAtMs)) return "00:00";
+  const remainingMs = Math.max(0, expireAtMs - serverNowMs);
+  const totalSeconds = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1_000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** 快捷栏按键只处理一次按下事件，不应进入移动输入刷新。 / Hotbar keys are edge-triggered and must never enter movement input refresh. */
+function isHotbarKey(key: KeyCode): boolean {
+  return key === AUTO_ATTACK_KEY || key === ITEM_SMALL_HEALTH_POTION_KEY || key === ITEM_LARGE_HEALTH_POTION_KEY;
 }
 
 function normalizeRadians(value: number): number {

@@ -593,6 +593,77 @@ export const BuffDetailViewCodec = {
   },
 };
 
+export interface BuffTransferSnapshot {
+  buffInstanceId: bigint;
+  buffConfigId: number;
+  stacks: number;
+  appliedAtMs: bigint;
+  expireTimeMs: bigint;
+  tickIntervalMs: number;
+  nextTickAtMs: bigint;
+  revision: number;
+}
+
+export const BuffTransferSnapshotCodec = {
+  decode(payload: Uint8Array): BuffTransferSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: BuffTransferSnapshot = {
+      buffInstanceId: 0n,
+      buffConfigId: 0,
+      stacks: 0,
+      appliedAtMs: 0n,
+      expireTimeMs: 0n,
+      tickIntervalMs: 0,
+      nextTickAtMs: 0n,
+      revision: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.buffInstanceId = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.buffConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.stacks = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.appliedAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.expireTimeMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.tickIntervalMs = reader.uint32();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.nextTickAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.revision = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: BuffTransferSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.buffInstanceId !== undefined) writer.uint64(1, value.buffInstanceId);
+    if (value.buffConfigId !== undefined) writer.uint32(2, value.buffConfigId);
+    if (value.stacks !== undefined) writer.uint32(3, value.stacks);
+    if (value.appliedAtMs !== undefined) writer.uint64(4, value.appliedAtMs);
+    if (value.expireTimeMs !== undefined) writer.uint64(5, value.expireTimeMs);
+    if (value.tickIntervalMs !== undefined) writer.uint32(6, value.tickIntervalMs);
+    if (value.nextTickAtMs !== undefined) writer.uint64(7, value.nextTickAtMs);
+    if (value.revision !== undefined) writer.uint32(8, value.revision);
+    return writer.finish();
+  },
+};
+
 export interface C2S_GetLoginServiceAddr extends IRequest {
   rpcId?: number;
 }
@@ -1868,6 +1939,7 @@ export interface M2C_UseItem extends IActorLocationResponse {
   error?: number;
   rpcId?: number;
   item: ItemSnapshot;
+  buff?: BuffPublicView;
 }
 
 export const M2C_UseItemCodec = {
@@ -1890,6 +1962,9 @@ export const M2C_UseItemCodec = {
       else if (tag.fieldNo === 1 && tag.wireType === 2) {
         value.item = ItemSnapshotCodec.decode(reader.bytesField());
       }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.buff = BuffPublicViewCodec.decode(reader.bytesField());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1903,6 +1978,7 @@ export const M2C_UseItemCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.item !== undefined) writer.bytes(1, ItemSnapshotCodec.encode(value.item));
+    if (value.buff !== undefined) writer.bytes(2, BuffPublicViewCodec.encode(value.buff));
     return writer.finish();
   },
 };

@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "f46cbe168092be9f13144ea53d8f3f363f8ae2134633627730623449d49548d9";
+    public const string Value = "4ecd1105c2f9621d2077756ed825dda2d6b8daf89933a89377906a46e6fa2c8c";
 }
 
 public static class MsgCode
@@ -77,6 +77,18 @@ public sealed class BuffPublicView
     public uint BuffConfigId { get; set; }
     public uint Stacks { get; set; }
     public ulong ExpireTimeMs { get; set; }
+    public uint Revision { get; set; }
+}
+
+public sealed class BuffTransferSnapshot
+{
+    public ulong BuffInstanceId { get; set; }
+    public uint BuffConfigId { get; set; }
+    public uint Stacks { get; set; }
+    public ulong AppliedAtMs { get; set; }
+    public ulong ExpireTimeMs { get; set; }
+    public uint TickIntervalMs { get; set; }
+    public ulong NextTickAtMs { get; set; }
     public uint Revision { get; set; }
 }
 
@@ -409,6 +421,7 @@ public sealed class M2C_ToggleDemoDoor : IRpcResponse
 public sealed class M2C_UseItem : IRpcResponse
 {
     public ItemSnapshot? Item { get; set; }
+    public BuffPublicView? Buff { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -584,6 +597,64 @@ public static class BuffPublicViewCodec
         if (value.Stacks != 0) writer.WriteUInt32(4, value.Stacks);
         if (value.ExpireTimeMs != 0) writer.WriteUInt64(5, value.ExpireTimeMs);
         if (value.Revision != 0) writer.WriteUInt32(6, value.Revision);
+        return writer.ToArray();
+    }
+}
+
+public static class BuffTransferSnapshotCodec
+{
+    public static BuffTransferSnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new BuffTransferSnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.BuffInstanceId = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.BuffConfigId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Stacks = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.AppliedAtMs = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.ExpireTimeMs = reader.ReadUInt64();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.TickIntervalMs = reader.ReadUInt32();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.NextTickAtMs = reader.ReadUInt64();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.Revision = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(BuffTransferSnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.BuffInstanceId != 0) writer.WriteUInt64(1, value.BuffInstanceId);
+        if (value.BuffConfigId != 0) writer.WriteUInt32(2, value.BuffConfigId);
+        if (value.Stacks != 0) writer.WriteUInt32(3, value.Stacks);
+        if (value.AppliedAtMs != 0) writer.WriteUInt64(4, value.AppliedAtMs);
+        if (value.ExpireTimeMs != 0) writer.WriteUInt64(5, value.ExpireTimeMs);
+        if (value.TickIntervalMs != 0) writer.WriteUInt32(6, value.TickIntervalMs);
+        if (value.NextTickAtMs != 0) writer.WriteUInt64(7, value.NextTickAtMs);
+        if (value.Revision != 0) writer.WriteUInt32(8, value.Revision);
         return writer.ToArray();
     }
 }
@@ -2362,6 +2433,9 @@ public static class M2C_UseItemCodec
                 case 1 when tag.WireType == 2:
                     value.Item = ItemSnapshotCodec.Decode(reader.ReadBytes());
                     break;
+                case 2 when tag.WireType == 2:
+                    value.Buff = BuffPublicViewCodec.Decode(reader.ReadBytes());
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2383,6 +2457,7 @@ public static class M2C_UseItemCodec
     {
         var writer = new BinaryWriter();
         if (value.Item != null) writer.WriteMessage(1, ItemSnapshotCodec.Encode(value.Item));
+        if (value.Buff != null) writer.WriteMessage(2, BuffPublicViewCodec.Encode(value.Buff));
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);

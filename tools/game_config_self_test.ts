@@ -92,6 +92,14 @@ function main(): void {
   assert.equal(MapCapacitySpeedCellsPerSecond(1, 0, 1), 7.5);
   assert.equal(MapCapacitySpeedCellsPerSecond(1, 100, 1), 1);
   assert.equal(serverConfigs.ItemConfig.TryGet(999_999), undefined);
+  assert.equal(serverConfigs.ItemConfig.Get(1001).useEffect, 2);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 50]);
+  assert.equal(clientConfigs.ItemConfig.Get(1001).icon, "UI/Icons/Items/1001");
+  assert.equal(serverConfigs.ItemConfig.Get(1002).useEffect, 1);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1002).useParams, [2001]);
+  assert.equal(clientConfigs.ItemConfig.Get(1002).icon, "UI/Icons/Items/1002");
+  assert.equal(serverConfigs.BuffConfig.Get(2001).tickIntervalMs, 3_000);
+  assert.deepEqual(serverConfigs.BuffConfig.Get(2001).tickActionParams, [1, 50]);
   assert.throws(
     () => serverConfigs.MapConfig.Get(999_999),
     /game config not found/,
@@ -113,13 +121,13 @@ function main(): void {
   const changed = JSON.parse(dataJson) as Record<string, Array<Record<string, unknown>>>;
   const changedItem = changed.game_tbitemconfig.find((item) => item.id === 1001);
   assert.ok(changedItem);
-  changedItem.restore_hp = 77;
+  changedItem.use_params = [1, 77];
   GameConfigRegistry.Install(
     JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "a".repeat(64) }),
     JSON.stringify(changed),
   );
-  assert.equal(oldItem.restoreHp, 50);
-  assert.equal(serverConfigs.ItemConfig.Get(1001).restoreHp, 77);
+  assert.deepEqual(oldItem.useParams, [1, 50]);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 77]);
 
   assert.throws(
     () => GameConfigRegistry.Install(
@@ -181,7 +189,7 @@ function main(): void {
     ),
     /missing reference/,
   );
-  assert.equal(serverConfigs.ItemConfig.Get(1001).restoreHp, 77);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 77]);
 
   console.log("game config self-test passed");
 }

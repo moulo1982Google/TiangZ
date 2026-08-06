@@ -50,6 +50,10 @@
     {
       "table_name": "MonsterAreaConfig",
       "reload_mode": 2
+    },
+    {
+      "table_name": "BuffConfig",
+      "reload_mode": 1
     }
   ],
   "game_tbmapconfig": [

@@ -2,6 +2,7 @@ import {
   GameConfigs,
   GameErrCode,
   CombatComponent,
+  BuffComponent,
   AutoAttackPhase,
   MapAoiComponent,
   MapComponent,
@@ -126,16 +127,18 @@ export class MonsterComponentSystem extends MonsterComponent {
     const damage = attackerNumeric[NumericType.Attack] > 0n
       ? attackerNumeric[NumericType.Attack]
       : 0n;
-    const numeric = monster.GetComponent(NumericComponent);
-    const currentHp = numeric[NumericType.CurrentHp];
-    const remainingHp = currentHp > damage
-      ? currentHp - damage
-      : 0n;
-    numeric[NumericType.CurrentHp] = remainingHp;
-    this.AddThreat(monster, attacker, damage);
-    const killed = remainingHp === 0n;
-    if (killed) this.Kill(monster);
-    return { monsterId, damage: Number(damage), remainingHp, killed };
+    const result = monster.GetComponent(CombatComponent).ApplyDamage({
+      amount: damage,
+      sourceUnitId: attacker.UnitId,
+    });
+    this.AddThreat(monster, attacker, result.finalDamage);
+    if (result.killed) this.Kill(monster);
+    return {
+      monsterId,
+      damage: Number(result.finalDamage),
+      remainingHp: result.remainingHp,
+      killed: result.killed,
+    };
   }
 
   /**
@@ -208,6 +211,10 @@ export class MonsterComponentSystem extends MonsterComponent {
         [NumericType.AttackSpeedAdd]: BigInt(config.attackIntervalMs),
         [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(config.moveSpeed),
       });
+      // 伤害入口属于每个可受击Unit；MonsterComponent不直接改目标Numeric。
+      // Every damageable Unit owns the combat entrypoint; MonsterComponent never edits target Numeric directly.
+      monster.AddComponent(CombatComponent);
+      monster.AddComponent(BuffComponent);
       slot.monster = monster;
       slot.respawnAtMs = 0;
       this.monsters.set(unitId, monster);
@@ -324,15 +331,10 @@ export class MonsterComponentSystem extends MonsterComponent {
     const damage = monsterNumeric[NumericType.Attack] > 0n
       ? monsterNumeric[NumericType.Attack]
       : 0n;
-    const numeric = target.GetComponent(NumericComponent);
-    const currentHp = numeric[NumericType.CurrentHp];
-    numeric[NumericType.CurrentHp] = currentHp > damage
-      ? currentHp - damage
-      : 0n;
-    if (numeric[NumericType.CurrentHp] === 0n) {
-      target.GetComponent(NativeUnitRef).alive = 0;
-      NativeData.ResetMovement(target.GetComponent(NativeUnitRef).Handle);
-    }
+    target.GetComponent(CombatComponent).ApplyDamage({
+      amount: damage,
+      sourceUnitId: monster.UnitId,
+    });
   }
 
   /**

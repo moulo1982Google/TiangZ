@@ -1,0 +1,110 @@
+# 教程：用道具驱动Action与Buff
+
+本教程只做两个道具：
+
+- 小型生命药水：立即恢复50点HP。
+- 大型生命药水：添加一个持续30秒、每3秒恢复50点HP的Buff。
+
+不涉及Cast技能系统。
+
+## 1. 配置表
+
+在`game_config/Datas/ItemConfig.xlsx`中：
+
+```text
+1001  小型生命药水  use_effect=2  use_params=1,50
+1002  大型生命药水  use_effect=1  use_params=2001
+```
+
+这里的`1`是`NumericType.CurrentHp`，`50`是增量；`2001`是Buff配置ID。
+
+在`game_config/Datas/BuffConfig.xlsx`中：
+
+```text
+2001  持续恢复  duration_seconds=30  tick_interval_ms=3000
+      tick_action_type=1  tick_action_params=1,50
+```
+
+`ActionType.ChangeNumeric`为`1`。添加和移除阶段在这个示例中为空。
+
+修改表后执行：
+
+```powershell
+npm run build:game-config:startup
+npm run test:game-config
+```
+
+只改数据可以走Hot配置候选；第一次接入新列、改类型或改引用关系必须完整生成并重启Process。
+
+## 2. 运行时调用链
+
+```text
+C2M_UseItem
+ -> C2M_UseItemHandler
+ -> ItemComponent.UseItem
+ -> ActionFromConfig
+ -> ExecuteAction
+    -> ChangeNumeric: Combat.ApplyHealing
+    -> AddBuff: BuffComponent.AddBuff
+       -> Buff.Awake
+       -> AddAction
+       -> Tick Timer
+       -> RemoveAction
+```
+
+Handler只做协议和基础校验。它不关心“红药应该怎样扣血”，也不创建一个临时Actor。
+
+## 3. 写一个新Buff
+
+如果效果只是在固定时间点改变HP，优先新增一行Buff配置：
+
+```ts
+player.GetComponent(BuffComponent).AddBuff(2001);
+```
+
+如果少数业务需要临时覆盖时长或Tick，可以传纯数据：
+
+```ts
+player.GetComponent(BuffComponent).AddBuff(2001, {
+  durationMs: 10_000,
+  tickIntervalMs: 500,
+  tickAction: {
+    type: ActionType.ChangeNumeric,
+    parameters: [BigInt(NumericType.CurrentHp), 5n],
+  },
+});
+```
+
+不要把闭包作为Action参数。热更、传送和销毁都需要能追踪这条生命周期。
+
+## 4. 护盾类Buff怎么接
+
+护盾不是让Combat去查Buff，而是Buff添加时注册Combat修改器：
+
+```ts
+class ShieldBuffSystem {
+  Awake(): void {
+    const combat = this.Owner.GetComponent(CombatComponent);
+    this.modifierId = combat.RegisterDamageAbsorber(5_000n, 100);
+  }
+
+  OnDestroy(): void {
+    this.Owner.GetComponent(CombatComponent).RemoveDamageAbsorber(this.modifierId);
+  }
+}
+```
+
+示例只表达边界。当前演示Buff还没有把护盾配置接入`BuffConfig`，真正接入时仍要让Combat保存唯一剩余量，Buff只保存返回的modifierId。
+
+## 5. 验收
+
+```powershell
+npm run codegen:game-config
+npm run codegen:scenes
+npm run typecheck
+npm run test:game-config
+npm run test:combat
+npm run test:buff-action
+```
+
+自测至少确认：小红立即治疗、大红添加Buff、Tick按服务器时间执行、重复Remove幂等、Buff传送不重复AddAction、Unit销毁只执行一次RemoveAction。

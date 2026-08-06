@@ -374,11 +374,14 @@ async function testItemChildEntity(): Promise<void> {
   assert.equal(item.Parent, inventory);
   assert.equal(item.instanceId, item.InstanceId);
   assert.equal(item.configId, 1001);
-  assert.equal(item.count, 3);
+  assert.equal(item.count, 50);
+  const starterItems = inventory.GetChildren(Item);
+  assert.equal(starterItems.length, 2);
+  assert.equal(starterItems.find((candidate) => candidate.configId === 1002)?.count, 20);
   assert.equal(host.Root.Get(item.InstanceId), item);
-  assert.equal(inventory.UseItem(item.id).count, 2);
-  assert.equal(inventory.AddItem(item.id, 2).count, 4);
-  assert.equal(inventory.RemoveItem(item.id, 3).count, 1);
+  assert.equal(inventory.UseItem(item.id).count, 49);
+  assert.equal(inventory.AddItem(item.id, 2).count, 51);
+  assert.equal(inventory.RemoveItem(item.id, 3).count, 48);
 
   const instanceId = item.InstanceId;
   assert.equal(host.despawnActor("map:1", "item-owner"), true);
@@ -416,7 +419,15 @@ async function testPlayerUnitComponents(): Promise<void> {
     targetCellZ: -1,
   });
   player.AddComponent(PositionComponent, native, 128, 128, 1);
-  const numeric = player.AddComponent(NumericComponent);
+  const numeric = player.AddComponent(NumericComponent, {
+    [NumericType.CurrentHp]: 100n,
+    [NumericType.MaxHpBase]: 1_000n,
+    [NumericType.CurrentMp]: 100n,
+    [NumericType.MaxMpBase]: 100n,
+    [NumericType.AttackBase]: 5n,
+    [NumericType.AttackSpeedBase]: 2_000n,
+    [NumericType.MoveSpeedBase]: 10_000n,
+  });
   player.AddComponent(UnitGateComponent, "gate-1");
   const firstInstanceId = player.InstanceId;
 
@@ -525,7 +536,9 @@ async function testPlayerUnitComponents(): Promise<void> {
     mapId: 1,
   });
   recreated.AddComponent(PositionComponent, recreatedNative);
-  recreated.AddComponent(NumericComponent);
+  recreated.AddComponent(NumericComponent, {
+    [NumericType.MoveSpeedBase]: 10_000n,
+  });
   recreated.AddComponent(UnitGateComponent, "gate-2");
   assert.notEqual(recreated.InstanceId, firstInstanceId);
   assert.equal(host.despawnActor("map:1", 1000), true);

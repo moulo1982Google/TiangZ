@@ -317,8 +317,11 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
 > {
   async handle(unit: PlayerUnit, request: C2M_UseItem): Promise<M2C_UseItem> {
     const item = unit.GetComponent(ItemComponent).UseItem(request.itemId);
+    const config = GameConfigs.ItemConfig.Get(item.configId);
+    const action = ActionFromConfig(config.useEffect, config.useParams);
+    const execution = ExecuteAction(unit, action, { reason: "item-use" });
     await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(unit, item);
-    return { item };
+    return execution.addedBuff ? { item, buff: execution.addedBuff } : { item };
   }
 }
 ```
@@ -550,7 +553,7 @@ Actor消息不能因为Handler算法位于Rust就绕过TS。正式链路保持`T
 Buff作为ChildEntity只解决身份、生命周期、热更方法和Timer归属，不负责选择网络接收者，也不使用通用dirty字段同步：
 
 ```text
-创建Buff -> 向当前AOI广播BuffAdded
+创建Buff -> 给使用者回显M2C_UseItem.buff，并向当前AOI广播BuffAdded
 Buff Tick -> 执行Action -> Numeric/Move/其他领域各自同步
 删除Buff -> 向当前AOI广播BuffRemoved
 进入AOI -> Buff列表随Unit整体Snapshot发送
@@ -568,6 +571,31 @@ Buff Tick -> 执行Action -> Numeric/Move/其他领域各自同步
 - 少量Buff允许使用`Buff.NewOnceTimer/NewRepeatedTimer`；大量Buff推荐在BuffComponent保存`nextTickAt/expireAt`，使用最小堆和一个最近到期Timer统一调度。持久化保存时间戳，不保存TimerId。
 
 如果未来出现层数刷新、图标变化等确实需要客户端立即知道的Buff元数据变化，应新增明确的`BuffUpdated`事件，或者将旧Buff Remove后重新Add；不要为了少数需求让全部Buff每帧维护dirty和Delta。
+
+### 战斗伤害与效果解耦
+
+受到伤害不能反向调用`BuffComponent`。目标Unit统一挂载`CombatComponent`，攻击者只负责选择目标并提交`DamageRequest`：
+
+```text
+Monster / Skill / Action
+  -> target.GetComponent(CombatComponent).ApplyDamage(request)
+  -> CombatComponent执行已注册的受伤处理器
+  -> 剩余伤害修改Numeric.CurrentHp
+  -> 返回DamageResult
+```
+
+`CombatComponent`负责目标本身的伤害、治疗、护盾消耗、死亡标记和结果；不负责找目标、距离、朝向、AI、重生、AOI或Gate。`MonsterComponent`、技能System和Action只负责攻击者侧规则，不能直接写`CurrentHp`。道具回血统一调用`ApplyHealing`，治疗上限和死亡限制由CombatComponent处理。
+
+护盾Buff添加时调用`RegisterDamageAbsorber`并保存返回的`modifierId`，Buff删除或过期时调用`RemoveDamageAbsorber`。伤害入口不查询Buff，也不调用`TryAbsorbDamage`。护盾剩余量以Combat注册处理器为权威，Buff不与Combat各维护一份会分叉的副本；需要持久化或投影时通过ID读取或更新。
+
+```ts
+const combat = unit.GetComponent(CombatComponent);
+const modifierId = combat.RegisterDamageAbsorber(5_000n, 100);
+const result = combat.ApplyDamage({ amount: 300n, sourceUnitId: attacker.UnitId });
+combat.RemoveDamageAbsorber(modifierId);
+```
+
+Numeric HP是可覆盖状态，走帧尾latest；技能命中、死亡、掉落和道具消耗是不可覆盖事实，走event。Combat不选择广播受众，Buff公开外观和受限详情继续沿用前面的AOI Projection规则。完整调用关系、生命周期和禁用示例见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)。
 
 ### Quest生命周期与可见范围
 
@@ -877,12 +905,28 @@ C2M_AttackMonsterHandler
 业务开发不应把公网IP、云主机密码或部署机器的内网地址写进业务代码。外网2C2G演示使用`configs/deploy/external-2process/StartMachine.json`，由Watcher启动登录/Gate Process和世界Process；外网入口由部署配置的`outerIp/outerPort`提供。Cocos3D编辑器预览自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`，只有非预览发布包读取`tiangz-external.json`；不要为了本机调试修改公网配置文件。
 客户端只配置LoginMgr公网地址；LoginMgr再返回Login公网地址，Login再返回Gate公网地址。MapHost、Location和MapManager保持内网路由。
 
-当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web、上传并重启服务，然后按页面、LoginMgr、Login、Gate的顺序验收。Cocos3D前端使用`npm run build:cocos3d:external`一次生成两个入口：`build/external/desktop`部署到根路径`/`，`build/external/m`部署到`/m/`；根路径只能使用桌面`web-desktop`包，横屏`web-mobile`包只能放在`/m/`。
+当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web，确认是本次最新产物；然后停止远端旧服务，直接覆盖后端与两个Web目录，重新启动，再按页面、LoginMgr、Login、Gate的顺序验收。该主机是Demo测试机，不做`.next`目录、蓝绿切换、目录交换和自动回滚。Cocos3D前端使用`npm run build:cocos3d:external`一次生成两个入口：`build/external/desktop`部署到根路径`/`，`build/external/m`部署到`/m/`；根路径只能使用桌面`web-desktop`包，横屏`web-mobile`包只能放在`/m/`。
 不要只看Nginx页面能打开就判断网络链路完成；云安全组必须放行实际的WebSocket入口端口。
 
 后端正式发布使用本机Docker的Linux构建环境生成`linux-amd64` Release制品。外网机器只接收可执行文件、`dist`、`configs`、导航资源、版本信息和校验文件，不接收源码、Cargo工程、Node依赖或构建缓存。Runtime会从当前发布目录解析资源，因此制品可以从构建机复制到任意部署路径。
 
 日常Linux发布执行`npm run release:linux`。固定Builder镜像只保存Node、Rust、.NET Runtime、Luban和依赖，不保存业务源码；工具指纹未变化时不得重新下载工具链。每次发布仍必须重新执行Excel/Luban生成、全部codegen、TS构建和Rust Release编译，不能因为复用镜像而复用旧生成代码。只有修改`package-lock.json`、Cargo依赖/锁、Rust工具链、Luban版本或Builder Dockerfile时，才允许自动重建一次镜像。
+
+## Action与Buff的当前最小规则
+
+道具使用统一遵循`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`表示不可用，`1`表示添加一个Buff，`2`表示执行`ChangeNumeric`等Action。开发者优先改配置，不要为了不同药水复制Handler。当前验收道具是1001立即恢复50点HP、1002添加2001持续回血Buff。
+
+`BuffComponent`拥有`Buff` ChildEntity；Component负责集合、实例ID、传送和AOI生命周期事件，BuffSystem负责Add/Tick/Remove和Timer。Buff传送只保存纯值及墙钟时间，目标重建Timer但不重复AddAction；不保存TimerId、闭包、Promise或Entity。Buff Tick只执行Action，Numeric和Combat沿用自身同步边界。
+
+Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat modifier，伤害统一进入`CombatComponent.ApplyDamage`；禁止再设计`BuffComponent.TryAbsorbDamage`作为受伤入口。Cast技能系统、复杂目标选择和Buff持久化不属于当前闭环，完整示例见[Action与Buff最小闭环](../design/action-buff.md)。
+
+## 道具出生与快捷栏
+
+Demo要观察道具链路时，`ItemComponentSystem.Awake`会创建两叠测试道具：`1001`数量50、`1002`数量20。它只属于新建Unit的演示种子；`RestoreTransfer`、重连和数据库恢复必须使用快照，不能重新调用种子逻辑，否则会重复发放。正式玩家数据接入后，应删除或替换这段Demo种子。
+
+`ItemConfig.icon`放在客户端分组，填写相对`assets/resources`的Cocos资源键，例如`UI/Icons/Items/1001`，前端通过配置解析图标。Cocos3D Web的快捷栏固定约定为`1`切换平A、`2`发送1001使用请求、`3`发送1002使用请求；显示数量先读进图`G2C_EnterMap.items`，后续只接受`G2C_ItemChanged`更新。按键或按钮不能直接修改本地数量，也不能把`itemId`写死；应先按`configId`找到服务端快照中的具体Item实例，再调用生成的`MapClient.useItem`。
+
+Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建图标，按`UI/Icons/Buff/<BuffId>`加载资源。倒计时使用服务端结束时间和客户端估算的服务器时钟，只显示`分钟:秒`，分钟不换算成小时；无限Buff显示`永久`。客户端显示到`00:00`后不得删除图标，删除只能由`G2C_BuffRemoved`驱动，不要把本地倒计时归零当成服务器已经移除。
 
 ## 可观测性边界
 

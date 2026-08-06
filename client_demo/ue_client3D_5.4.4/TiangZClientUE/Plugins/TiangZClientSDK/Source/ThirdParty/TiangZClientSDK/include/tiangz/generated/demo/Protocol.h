@@ -803,6 +803,102 @@ struct BuffDetailViewCodec {
   }
 };
 
+struct BuffTransferSnapshot {
+  std::uint64_t buffInstanceId = 0;
+  std::uint32_t buffConfigId = 0;
+  std::uint32_t stacks = 0;
+  std::uint64_t appliedAtMs = 0;
+  std::uint64_t expireTimeMs = 0;
+  std::uint32_t tickIntervalMs = 0;
+  std::uint64_t nextTickAtMs = 0;
+  std::uint32_t revision = 0;
+};
+
+struct BuffTransferSnapshotCodec {
+  static BuffTransferSnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    BuffTransferSnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.buffInstanceId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.buffConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.stacks = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.appliedAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.expireTimeMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 6:
+          if (tag.wireType == 0) {
+            value.tickIntervalMs = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 7:
+          if (tag.wireType == 0) {
+            value.nextTickAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 8:
+          if (tag.wireType == 0) {
+            value.revision = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const BuffTransferSnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt64(1, value.buffInstanceId);
+    writer.UInt32(2, value.buffConfigId);
+    writer.UInt32(3, value.stacks);
+    writer.UInt64(4, value.appliedAtMs);
+    writer.UInt64(5, value.expireTimeMs);
+    writer.UInt32(6, value.tickIntervalMs);
+    writer.UInt64(7, value.nextTickAtMs);
+    writer.UInt32(8, value.revision);
+    return writer.Finish();
+  }
+};
+
 struct C2S_GetLoginServiceAddr {
   std::optional<std::uint32_t> rpcId;
 };
@@ -2491,6 +2587,7 @@ struct M2C_UseItem {
   std::optional<std::uint32_t> error;
   std::optional<std::uint32_t> rpcId;
   ItemSnapshot item;
+  std::optional<BuffPublicView> buff;
 };
 
 struct M2C_UseItemCodec {
@@ -2528,6 +2625,13 @@ struct M2C_UseItemCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.buff = BuffPublicViewCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2542,6 +2646,7 @@ struct M2C_UseItemCodec {
     if (value.error.has_value()) writer.UInt32(91, *value.error);
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.BytesField(1, ItemSnapshotCodec::Encode(value.item));
+    if (value.buff.has_value()) writer.BytesField(2, BuffPublicViewCodec::Encode(*value.buff));
     return writer.Finish();
   }
 };

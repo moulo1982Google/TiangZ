@@ -42,6 +42,7 @@ class ConfigTable<T extends { readonly id: number }> {
 }
 
 export type ItemConfig = game.ItemConfig;
+export type BuffConfig = game.BuffConfig;
 export type MapConfig = game.MapConfig;
 export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
@@ -54,6 +55,7 @@ interface GameConfigSnapshot {
   readonly hotDataFingerprint: string;
   readonly coldDataFingerprint: string;
   readonly ItemConfig: ConfigTable<game.ItemConfig>;
+  readonly BuffConfig: ConfigTable<game.BuffConfig>;
   readonly MapConfig: ConfigTable<game.MapConfig>;
   readonly PlayerConfig: ConfigTable<game.PlayerConfig>;
   readonly AoiConfig: ConfigTable<game.AoiConfig>;
@@ -62,7 +64,7 @@ interface GameConfigSnapshot {
   readonly MonsterAreaConfig: ConfigTable<game.MonsterAreaConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "72e8d835e710f7db780ad6ae13d22acd0fca3f8ea9162d7deb9a9212e15037d9";
+export const GameConfigSchemaFingerprint = "387db50428dbca9e86fa5406acd3c3e029791cc81ca1991369c9a9ac7d3ed8df";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -114,6 +116,7 @@ export class GameConfigRegistry {
       hotDataFingerprint: manifest.hotDataFingerprint,
       coldDataFingerprint: manifest.coldDataFingerprint,
       ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
+      BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),
       MapConfig: new ConfigTable<game.MapConfig>(tables.TbMapConfig.getDataList()),
       PlayerConfig: new ConfigTable<game.PlayerConfig>(tables.TbPlayerConfig.getDataList()),
       AoiConfig: new ConfigTable<game.AoiConfig>(tables.TbAoiConfig.getDataList()),
@@ -141,6 +144,7 @@ export class GameConfigRegistry {
 
 export const GameConfigs = Object.freeze({
   get ItemConfig() { return GameConfigRegistry.RequireCurrent().ItemConfig; },
+  get BuffConfig() { return GameConfigRegistry.RequireCurrent().BuffConfig; },
   get MapConfig() { return GameConfigRegistry.RequireCurrent().MapConfig; },
   get PlayerConfig() { return GameConfigRegistry.RequireCurrent().PlayerConfig; },
   get AoiConfig() { return GameConfigRegistry.RequireCurrent().AoiConfig; },
@@ -150,6 +154,42 @@ export const GameConfigs = Object.freeze({
 });
 
 function validateSnapshot(snapshot: GameConfigSnapshot): void {
+  for (const item of snapshot.ItemConfig.GetAll()) {
+    if (!Number.isSafeInteger(item.useEffect) || item.useEffect < 0 || item.useEffect > 2) {
+      throw new Error(`item config ${item.id} has unsupported use effect ${item.useEffect}`);
+    }
+    if (!item.useParams.every(Number.isSafeInteger)) {
+      throw new Error(`item config ${item.id} contains a non-integer use parameter`);
+    }
+    if (item.useEffect === 0 && item.useParams.length !== 0) {
+      throw new Error(`item config ${item.id} cannot carry parameters when useEffect is 0`);
+    }
+    if (item.useEffect === 1) {
+      if (item.useParams.length !== 1 || !snapshot.BuffConfig.TryGet(item.useParams[0])) {
+        throw new Error(`item config ${item.id} AddBuff requires one valid BuffConfig id`);
+      }
+    }
+    if (item.useEffect === 2 && item.useParams.length !== 2) {
+      throw new Error(`item config ${item.id} ChangeNumeric requires [numericType, delta]`);
+    }
+  }
+  for (const buff of snapshot.BuffConfig.GetAll()) {
+    if (
+      !Number.isSafeInteger(buff.durationSeconds) || buff.durationSeconds < 0 ||
+      !Number.isSafeInteger(buff.tickIntervalMs) || buff.tickIntervalMs < 0
+    ) {
+      throw new Error(`buff config ${buff.id} has invalid duration or tick interval`);
+    }
+    validateActionConfig(buff.id, "add", buff.addActionType, buff.addActionParams, false);
+    validateActionConfig(buff.id, "tick", buff.tickActionType, buff.tickActionParams, false);
+    validateActionConfig(buff.id, "remove", buff.removeActionType, buff.removeActionParams, true);
+    if (buff.tickIntervalMs === 0 && buff.tickActionType !== 0) {
+      throw new Error(`buff config ${buff.id} has a Tick Action but no tick interval`);
+    }
+    if (buff.tickIntervalMs > 0 && buff.tickActionType === 0) {
+      throw new Error(`buff config ${buff.id} has a tick interval but no Tick Action`);
+    }
+  }
   const tiersByAoi = new Map<number, game.AoiSyncTierConfig[]>();
   for (const tier of snapshot.AoiSyncTierConfig.GetAll()) {
     if (!tier.aoiConfigId_ref) {
@@ -264,6 +304,34 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
     ) {
       throw new Error(`monster spawn slot ${area.id} has invalid spatial or lifecycle values`);
     }
+  }
+}
+
+function validateActionConfig(
+  buffId: number,
+  phase: string,
+  type: number,
+  parameters: readonly number[],
+  allowEmptyRemove: boolean,
+): void {
+  if (!Number.isSafeInteger(type) || type < 0 || type > 3) {
+    throw new Error(`buff config ${buffId} has unsupported ${phase} Action type`);
+  }
+  if (!parameters.every(Number.isSafeInteger)) {
+    throw new Error(`buff config ${buffId} has non-integer ${phase} Action parameters`);
+  }
+  const expected = type === 0
+    ? 0
+    : type === 1
+      ? 2
+      : type === 2
+        ? 1
+        : allowEmptyRemove ? undefined : 1;
+  if (expected !== undefined && parameters.length !== expected) {
+    throw new Error(`buff config ${buffId} ${phase} Action expects ${expected} parameters`);
+  }
+  if (expected === undefined && parameters.length > 1) {
+    throw new Error(`buff config ${buffId} ${phase} RemoveBuff expects zero or one parameter`);
   }
 }
 

@@ -1,0 +1,177 @@
+# Action与Buff最小闭环
+
+本文定义当前TiangZ的最小效果系统。它服务于道具和持续效果，暂不包含Cast、技能目标选择、施法前摇或技能队列。
+
+## 一、先看世界观
+
+```text
+客户端 C2M_UseItem
+        |
+        v
+PlayerUnit上的UseItem Handler
+        |
+        +--> ItemComponent消费一个道具
+        |
+        +--> ActionExecutor.ExecuteAction(player, action)
+                    |
+                    +--> ChangeNumeric -> Numeric/Combat
+                    +--> AddBuff      -> BuffComponent.AddBuff
+                    +--> RemoveBuff   -> BuffComponent.RemoveBuff
+
+BuffComponent
+  +-- Buff ChildEntity
+        +-- AddAction（创建时一次）
+        +-- TickAction（按墙钟间隔）
+        +-- RemoveAction（移除/到期/销毁时一次）
+```
+
+核心原则只有三条：
+
+1. **Item只声明效果，不实现效果。** 道具表提供Action类型和整数参数，Handler负责校验和消费，执行器负责路由。
+2. **Buff只拥有自己的生命周期。** Buff是`BuffComponent`拥有的ChildEntity，不是Actor，不接收网络消息；Timer属于Buff，Timer触发时执行Action。
+3. **Action不负责目标选择和广播。** Action只操作传入的Owner。HP通过`CombatComponent.ApplyDamage/ApplyHealing`，Buff通过`BuffComponent`，广播由Map/Audience完成。
+
+这样做以后，“小红药”和“每3秒回血，持续30秒”只是配置不同：前者是一条立即Action，后者是一个带TickAction的Buff。
+
+## 二、目录对应关系
+
+```text
+app/model/demo/action/ActionType.ts       # 稳定Action类型和参数形状
+app/model/demo/buff/Buff.ts               # Buff数据形状、传送值快照、ChildEntity
+app/model/demo/buff/BuffComponent.ts      # Buff集合能力边界
+app/hotfix/demo/action/ActionExecutor.ts  # Action解释与组件路由
+app/hotfix/demo/buff/BuffSystem.ts         # 单个Buff的Awake、Tick、Destroy
+app/hotfix/demo/buff/BuffComponentSystem.ts# 添加、移除、传送、AOI事件
+game_config/Datas/ItemConfig.xlsx          # 道具使用效果
+game_config/Datas/BuffConfig.xlsx          # Buff生命周期和Action配置
+```
+
+Model只冻结字段和生命周期；Action解释、配置读取、Timer安排和业务规则都在Hotfix，所以调整回血数值或Tick行为不需要改Rust，也不需要新增一个`XxxActor`。
+
+## 三、道具使用范例
+
+业务代码不需要自己拼Buff字段，也不应该直接改HP：
+
+```ts
+const item = unit.GetComponent(ItemComponent).GetItem(itemId);
+if (!item) throw new RpcError(GameErrCode.ItemNotFound, "item not found");
+
+const config = GameConfigs.ItemConfig.Get(item.configId);
+const actionType = config.useEffect === 1
+  ? ActionType.AddBuff
+  : ActionType.ChangeNumeric;
+const action = ActionFromConfig(actionType, config.useParams);
+
+unit.GetComponent(ItemComponent).UseItem(itemId);
+ExecuteAction(unit, action, { reason: "item-use" });
+```
+
+正式入口使用`app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts`，上面的片段只是说明调用关系。道具消耗是不可覆盖事实，使用后的HP/Numeric是可覆盖状态，Buff添加/删除是不可覆盖生命周期事件。
+
+## 四、Buff创建、Tick和移除
+
+```ts
+const buffs = player.GetComponent(BuffComponent);
+const buff = buffs.AddBuff(2001);
+
+// 2001由配置提供：持续30秒，每3秒执行一次 ChangeNumeric(CurrentHp, 50)。
+// BuffSystem会创建自己的到期Timer和Tick Timer。
+
+buffs.RemoveBuff(buff.Id as bigint, "manual");
+```
+
+`AddBuff`可以用`BuffAddOptions`覆盖时长、Tick间隔或Action：
+
+```ts
+buffs.AddBuff(2001, {
+  durationMs: 10_000,
+  tickIntervalMs: 1_000,
+  tickAction: {
+    type: ActionType.ChangeNumeric,
+    parameters: [BigInt(NumericType.CurrentHp), 10n],
+  },
+});
+```
+
+覆盖值必须是纯数据，不能放闭包、Promise、TimerId或Entity引用。当前最小传送快照保存配置ID、层数、开始/结束时间、Tick时间和版本；运行时Action覆盖不会跨Process传送。如果业务需要这种能力跨图或跨服，必须先为它增加可验证的协议字段，不能偷偷把Hotfix对象塞进传送快照。
+
+## 五、和Combat的关系
+
+受到伤害不能这样写：
+
+```ts
+// 错误：Combat入口反向寻找Buff，领域边界互相依赖。
+target.GetComponent(BuffComponent).TryAbsorbDamage(damage);
+```
+
+正确做法是Buff在添加/移除阶段向Combat注册数据型修改器：
+
+```text
+Buff AddAction
+  -> target.Combat.RegisterDamageAbsorber(amount, priority)
+  -> Buff保存modifierId
+
+受到伤害
+  -> target.Combat.ApplyDamage(request)
+  -> Combat按优先级消费modifierId对应的数据
+  -> 剩余伤害扣CurrentHp
+
+Buff RemoveAction
+  -> target.Combat.RemoveDamageAbsorber(modifierId)
+```
+
+Combat不认识Buff；Buff也不保存一份会和Combat分叉的护盾剩余量。公开的Buff外观走`BuffAdded/BuffRemoved`和Unit Snapshot，受限的吸收量以后走明确的Detail Projection，不能用字段值`0`冒充没有权限。道具使用的RPC响应会额外回显本次给使用者新增的公开Buff，避免“Action已成功但客户端刚好错过事件”造成自己的HUD缺项；AOI事件仍然是其他观察者的广播来源。
+
+### 客户端Buff图标与倒计时
+
+Cocos3D Web的本地Buff栏只消费公开的`BuffPublicView`，不读取Buff内部Action或自定义状态：
+
+```text
+MapEntitySnapshot.buffs / M2C_UseItem.buff / G2C_BuffAdded
+        -> BuffStateStore
+        -> UI/Icons/Buff/<BuffId>
+        -> 服务端结束时间 - 服务器时钟偏差
+        -> MM:SS
+G2C_BuffRemoved
+        -> 删除图标
+```
+
+倒计时只显示分钟和秒，分钟可以超过99；例如两小时显示`120:00`。`expireTimeMs=0`表示无限时长，客户端显示`永久`。倒计时到`00:00`时只停止递减并保留图标，不能因为本地时钟到期就删除；只有收到`G2C_BuffRemoved`，或Unit因AOI离开整体移除时，才能清理对应表现。这样可以避免网络延迟、客户端与服务端时钟误差造成“图标先消失、服务器仍认为Buff存在”的状态分叉。
+
+## 六、传送和销毁
+
+- 传送只复制`BuffTransferState`，目标Unit先恢复`BuffComponent`，再由生命周期完成Timer重建。
+- 快照使用服务器墙钟时间，不保存TimerId；目标Process根据`expireAtMs/nextTickAtMs`判断剩余时间。
+- 已经过期的Buff不在目标创建；未过期Buff不会重新执行AddAction，避免传送一次重复加血或重复注册护盾。
+- `Unit.Dispose()`通过ChildEntity所有权链销毁Buff，Buff的RemoveAction只执行一次。RemoveAction必须幂等，不能假设Unit仍然连接客户端。
+- Buff添加/移除由BuffComponent调用Map的公开事件；Buff自身不找Gate、不扫描AOI、不调用Location。
+
+## 七、暂不放进这个系统的内容
+
+- Cast、技能目标选择、施法读条、打断、公共冷却。
+- 技能是否重置普通攻击的时间轴。
+- 跨Unit目标、范围伤害、队伍权限和复杂Action图。
+- 生产级Buff持久化策略。当前传送快照已经支持生命周期恢复，但是否下线计时、是否写数据库要由后续持久化域设计决定。
+
+这些内容以后可以复用Action执行器，但不能提前把ActionExecutor变成一个知道所有游戏规则的巨型分支。
+
+## 八、开发检查表
+
+新增一个道具或Buff时，按顺序检查：
+
+1. 是否能用已有Action表达；能表达就只改Excel，不新写Handler分支。
+2. 是否需要一个新的稳定ActionType；需要时先改Model枚举、配置校验和执行器，再生成代码。
+3. HP/伤害是否经过Combat；不要在Action、Handler或Buff里直接写`CurrentHp`。
+4. Buff是否需要AOI公开；公开外观走Map事件，私有数值另定义受众。
+5. 是否需要跨地图；需要就确保状态是纯值、时间戳可恢复，不能传Timer或闭包。
+6. 是否需要下线保存；这属于后续持久化策略，不要在Buff里直接连接Redis或数据库。
+
+生成命令：
+
+```powershell
+npm run codegen:game-config
+npm run codegen:proto
+npm run codegen:scenes
+npm run typecheck
+npm run test:buff-action
+```

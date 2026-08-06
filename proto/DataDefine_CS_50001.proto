@@ -107,3 +107,16 @@ message BuffDetailView
   uint32 absorb_remaining = 3;
   uint32 revision = 4;
 }
+
+// 地图传送使用的Buff纯值快照；目标进程会按墙钟剩余时间重新创建Timer。
+message BuffTransferSnapshot
+{
+  uint64 buff_instance_id = 1;
+  uint32 buff_config_id = 2;
+  uint32 stacks = 3;
+  uint64 applied_at_ms = 4;
+  uint64 expire_time_ms = 5;
+  uint32 tick_interval_ms = 6;
+  uint64 next_tick_at_ms = 7;
+  uint32 revision = 8;
+}

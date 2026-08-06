@@ -53,6 +53,19 @@ export {
 export { ItemComponent } from "./demo/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
+export {
+  ActionType,
+  type ActionDefinition,
+  type ActionExecutionContext,
+  type ActionTypeValue,
+} from "./demo/action/ActionType";
+export {
+  Buff,
+  type AwakeBuff,
+  type BuffPublicState,
+  type BuffTransferState,
+} from "./demo/buff/Buff";
+export { BuffComponent, type BuffAddOptions } from "./demo/buff/BuffComponent";
 export { MapComponent } from "./demo/map/MapComponent";
 export { MapAoiComponent } from "./demo/map/MapAoiComponent";
 export { MapScene } from "./demo/map/MapScene";
@@ -119,6 +132,11 @@ export {
   CombatComponent,
   type AutoAttackPhaseValue,
   type AutoAttackState,
+  type DamageAbsorberState,
+  type DamageAbsorption,
+  type DamageRequest,
+  type DamageResult,
+  type HealingResult,
 } from "./demo/combat/CombatComponent";
 export {
   MonsterUnit,

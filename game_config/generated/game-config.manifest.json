@@ -1,12 +1,13 @@
 {
   "formatVersion": 2,
-  "schemaFingerprint": "72e8d835e710f7db780ad6ae13d22acd0fca3f8ea9162d7deb9a9212e15037d9",
-  "clientSchemaFingerprint": "b36caed0dc264b1a41625774d42beb5f4cb0947af9527d5d796811f3306c8ee3",
-  "dataFingerprint": "9deeb04c33a0e99841c88330ab909d70a1bc15ce89b50fdeca739a359194ebd6",
-  "hotDataFingerprint": "8c7f446bcb5fcd3149c5ce913681d2d91125ad0a0641c822c69e17541340ab1f",
-  "coldDataFingerprint": "60df63da21158b34bc9c56f77a2c34d7acca4f1a5df905e1cf63b1097df883a7",
+  "schemaFingerprint": "387db50428dbca9e86fa5406acd3c3e029791cc81ca1991369c9a9ac7d3ed8df",
+  "clientSchemaFingerprint": "19ba400067d60ec879b4d457f3314b289b1719fd045192b0a1a2d11917e64959",
+  "dataFingerprint": "afa83bf49cc52e0aa46a3688fab545093d261884796ecdce05577a3ebbd4f222",
+  "hotDataFingerprint": "499969e1ffd654be4383b0c6be4646a2ea52921d9a0498e94f33edd05cfc9cab",
+  "coldDataFingerprint": "d62bf924289ebf7741fecb577981c24965cb866b6b603f51bef5c5de8ad7b662",
   "reloadPolicies": {
     "hot": [
+      "game_tbbuffconfig",
       "game_tbitemconfig",
       "game_tbplayerconfig"
     ],
@@ -20,15 +21,15 @@
     ]
   },
   "serverFile": "server.json",
-  "serverHash": "a5d803c37a72bf8b3aec32d06ccd09c68e9e8f7eac3383353ecbd7e58eda1c3a",
+  "serverHash": "661df298bba1153f7ffc502e1a8651b0c5fa5ed4940faedab93824279dc31b47",
   "serverHotFile": "server.hot.json",
-  "serverHotHash": "5b21954a1a8348333539d5047c3260d4d34e98fe95bc760815ca6e9df8a0829d",
+  "serverHotHash": "98d0ba723b8a66fb625f97c5fd1bd3154a098548bd06053394e12793c1d7c2f8",
   "serverColdFile": "server.cold.json",
-  "serverColdHash": "e1f9bfa999085a7464f0a9034767ef97011aa114467a2eec0df3dbec44de10c5",
+  "serverColdHash": "45d19e78b1338868a55be52ea79dab96564410ce3b67d7d847eb0619eb14a496",
   "clientFile": "client.json",
-  "clientHash": "332845acdfa2004ef71a945a2558ee8937fee41424139292479cfe55eee6403f",
+  "clientHash": "7382a176554f7ffefb7d3d67a946fc714c29a5037dac25778af963448720686f",
   "clientHotFile": "client.hot.json",
-  "clientHotHash": "83fbb249e818ba932e6a7e37d8af98ea30bd519ce83fc8efcf0f94b4eaf99a25",
+  "clientHotHash": "2115880c321a8e86f8ad56c24187e5b62b20d90a06cb96bc204183873ab62e28",
   "clientColdFile": "client.cold.json",
   "clientColdHash": "2f4b6880234fed6f3954b022dec2df2ac42879cbb46cfb5aa5de463830819fe8"
 }

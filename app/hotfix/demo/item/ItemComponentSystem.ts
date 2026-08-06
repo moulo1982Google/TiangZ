@@ -1,6 +1,5 @@
 import {
   GameErrCode,
-  GameConfigs,
   GlobalIdSystem,
   Item,
   ItemComponent,
@@ -12,16 +11,29 @@ import {
   systemFor,
 } from "#tiangz/model";
 
+const DEMO_STARTER_ITEMS = [
+  { configId: 1001, count: 50 },
+  { configId: 1002, count: 20 },
+] as const;
+
 /** 承载背包集合的可热更规则；子 Item Entity 和 Native handle 的销毁由 Core 所有权链保证。 / Hosts hot-reloadable inventory collection rules; Core ownership disposes child Item entities and Native handles. */
 @systemFor(ItemComponent)
 export class ItemComponentSystem extends ItemComponent implements ITransfer<readonly ItemSnapshot[]> {
-  /** 创建一件演示道具；生产加载应从持久化数据组合背包。 / Seeds one demo item; production loading should compose inventory from persisted data. */
+  /**
+   * 创建演示玩家的初始背包；生产加载应从持久化数据组合背包。
+   * 这里只在Unit第一次创建时执行，传送/重连会通过RestoreTransfer替换默认数据，不能在RestoreTransfer中再次发放。
+   *
+   * Seeds the demo player's starter inventory; production loading should compose
+   * the inventory from persisted data. This runs only for a newly created Unit.
+   * Transfer/reconnect replaces these defaults in RestoreTransfer, so that method
+   * must never call this seeding logic again.
+   */
   protected override Awake(): void {
-    const playerConfig = GameConfigs.PlayerConfig.Get(1);
-    this.CreateItem(
-      playerConfig.initialItemConfigId,
-      playerConfig.initialItemCount,
-    );
+    // 初始道具数量属于演示业务，不放进Entity构造流程；后续正式项目应从玩家数据恢复。
+    // Starter quantities are demo business data, not an Entity-construction rule; production should restore them from player data.
+    for (const starter of DEMO_STARTER_ITEMS) {
+      this.CreateItem(starter.configId, starter.count);
+    }
   }
 
   /** 返回短期只读视图；不得跨 await 或玩家生命周期保存。 / Returns a short-lived read-only view that must not cross await or player lifetime boundaries. */

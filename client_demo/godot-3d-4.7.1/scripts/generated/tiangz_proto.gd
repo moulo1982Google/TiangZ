@@ -248,6 +248,76 @@ static func decode_buff_public_view(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_buff_transfer_snapshot(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("buff_instance_id"):
+		varint_field(result, 1, int(value["buff_instance_id"]))
+	if value.has("buff_config_id"):
+		varint_field(result, 2, int(value["buff_config_id"]))
+	if value.has("stacks"):
+		varint_field(result, 3, int(value["stacks"]))
+	if value.has("applied_at_ms"):
+		varint_field(result, 4, int(value["applied_at_ms"]))
+	if value.has("expire_time_ms"):
+		varint_field(result, 5, int(value["expire_time_ms"]))
+	if value.has("tick_interval_ms"):
+		varint_field(result, 6, int(value["tick_interval_ms"]))
+	if value.has("next_tick_at_ms"):
+		varint_field(result, 7, int(value["next_tick_at_ms"]))
+	if value.has("revision"):
+		varint_field(result, 8, int(value["revision"]))
+	return result
+
+static func decode_buff_transfer_snapshot(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"buff_instance_id": 0, "buff_config_id": 0, "stacks": 0, "applied_at_ms": 0, "expire_time_ms": 0, "tick_interval_ms": 0, "next_tick_at_ms": 0, "revision": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["buff_instance_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["buff_config_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["stacks"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["applied_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["expire_time_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			6:
+				if tag.wire == 0:
+					result["tick_interval_ms"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			7:
+				if tag.wire == 0:
+					result["next_tick_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			8:
+				if tag.wire == 0:
+					result["revision"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_c2g_enter_map(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("map_id"):
@@ -1856,17 +1926,25 @@ static func encode_m2c_use_item(value: Dictionary) -> PackedByteArray:
 	if value.has("item"):
 		if value["item"] != null:
 			bytes_field(result, 1, encode_item_snapshot(value["item"]))
+	if value.has("buff"):
+		if value["buff"] != null:
+			bytes_field(result, 2, encode_buff_public_view(value["buff"]))
 	return result
 
 static func decode_m2c_use_item(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"item": null}
+	var result := {"item": null, "buff": null}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
 			1:
 				if tag.wire == 2:
 					result["item"] = decode_item_snapshot(reader.bytes_value())
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 2:
+					result["buff"] = decode_buff_public_view(reader.bytes_value())
 				else:
 					reader.skip(tag.wire)
 			90:

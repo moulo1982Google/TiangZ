@@ -125,6 +125,8 @@ ChildEntity拥有稳定`Id/InstanceId`并进入EntityRoot，但没有mailbox、�
 
 Buff需要被AOI玩家看到，不代表Buff需要mailbox，也不需要通用dirty Delta。Buff创建/删除分别使用不可覆盖的`BuffAdded/BuffRemoved`事件；进入AOI时公开Buff随Unit整体Snapshot发送，离开只移除Unit。公开`BuffPublicView`与受限`BuffDetailView`是两套Projection：前者发给AOI观察者与队伍，后者只发给自己与队伍，不能用字段值`0`表达无权限。详情以`(unitId,buffInstanceId)`为latest key，同帧可覆盖。业务只组合逻辑`ClientAudience`，`ClientBroadcast`负责UnitId到Gate及跨地图Location解析。Buff Tick只执行Action，不同步Buff本身：Numeric、Move及其他效果走各自领域协议。少量Buff可使用ChildEntity Timer；大量Buff应由BuffComponent使用到期时间堆和一个最近到期Timer合并调度。
 
+战斗伤害入口已经统一到Unit上的`CombatComponent`：Monster、Skill和Action只提交`DamageRequest`，CombatComponent依次执行已注册的护盾/受伤处理器、修改`NumericType.CurrentHp`并返回`DamageResult`；治疗使用`ApplyHealing`并由CombatComponent限制`MaxHp`。伤害入口严禁查询或调用`BuffComponent`，Buff只能在添加/移除生命周期中注册或注销`DamageAbsorber`，保存`modifierId`而不是让Buff和Combat各维护一份护盾剩余量。MonsterComponent负责找目标、距离、AI、仇恨和重生，不能直接写目标HP；Combat不负责AOI、Gate、目标选择或Unit销毁。完整规则见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)。
+
 Quest默认是玩家私有状态。接受任务时创建Quest子Entity，进度变化默认只通知拥有者客户端；只有任务规则明确要求共享时，才向`PartyAudience`发送队友所需的进度摘要。完成任务时，QuestComponent在一个领域操作中结算奖励、记录已完成配置ID、RemoveChild并发送完成通知。登录或重连时向本人发送活动Quest与已完成摘要的全量快照；队友进入AOI时，可在Unit整体Snapshot中携带允许共享的任务摘要，普通观察者不包含Quest数据；离开AOI时仍只移除Unit。
 
 ### 领域设计规则与开发助手
@@ -351,6 +353,8 @@ Phase 4计划：
 - 怪物基础AI进一步收敛为Hotfix内部的`MonsterBehaviorTree`：只包含待机、追击、攻击和攻击冷却停留，不建立通用AI框架，不创建MonsterActor或每怪物Timer。普通攻击距离由各自配置控制，行为树只选择动作，伤害、仇恨、死亡和Numeric修改仍由`MonsterComponentSystem`执行。
 - 战斗时间轴语义已冻结：玩家或怪物按下普通攻击后只激活`AutoAttack`状态；靠近目标且满足距离、存活、同MapInstance和朝向条件时才推进平A读条。距离过远或朝向失效会清零当前读条，但不取消AutoAttack状态，重新满足条件后从0秒重新开始。移动不停止AutoAttack，右键加A/D的侧移用于保持朝向绕目标移动。`G2C_AutoAttackState`是每个玩家本人频道上的`latest`可覆盖状态，只表达当前读条，不承载命中事实；命中、道具消耗等不可逆事实必须使用事件广播。技能配置把伤害类型、瞬发/施法方式和是否重置平A分成独立维度；例如压制是Physical + Instant + Keep，不应按“物理技能”或“瞬发技能”分支猜测平A行为。
 - 主动怪没有仇恨时会在范围内寻找最近玩家；被动怪没有仇恨时保持待机，玩家造成实际伤害后才会因仇恨进入追击。玩家创建时由`PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`初始化四个Numeric，Cocos3D、UE、Unity、Godot的玩家HUD只消费进入快照和`G2C_EntityNumeric`增量，显示当前/最大HP与MP。客户端不能根据怪物攻击自行扣血，也不能把HUD数值当作战斗权威。
+
+- 标准Demo的战斗结算已收口到`CombatComponent.ApplyDamage/ApplyHealing`。玩家和怪物都挂载Combat；MonsterComponent只选择目标并提交请求，Item Handler通过ActionExecutor提交治疗或Buff，Combat内部按优先级消耗注册的伤害吸收器后再修改CurrentHp。Buff通过`RegisterDamageAbsorber/RemoveDamageAbsorber`在生命周期边界挂载能力，伤害流程不能反向查询BuffComponent；护盾处理器的数据是唯一运行时剩余量。HP使用Numeric latest，Buff添加/删除、命中/死亡/消耗等事实使用event。详见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)和[Action与Buff最小闭环](../design/action-buff.md)。
 - 2026-08-03连续EntityIndex元数据与热点Grid位图完成后，3000人10×10同口径全链路回归的Map CPU平均为51.0%，较前一版55.0%再降约7.3%；Probe p95/p99为47.94/71.78ms，Move 6000/s、跨Grid 309.6/s且全部丢工作指标为0，正式证据在`perf/results/map_capacity_latest.md`。1000人单Grid热点验收得到精确999000条candidate/visible关系，说明混合成员结构不改变可见语义；该热点样本只作专项诊断，不替代正式均匀基线。
 - AOI范围与频率全部由Cold配置驱动：`AoiConfig`定义Enter/Detach，`AoiSyncTierConfig`可定义任意数量的奇数范围与同步Hz，Map通过`aoiConfigId`选择配置。当前默认不启用7×7，但停服增加`7×7/1Hz`不需要修改框架代码。最外层同步范围必须等于Detach，TS生成期与Rust运行时都会拒绝未覆盖迟滞圈的配置；外层频率不能高于内层，且Hz必须整除Process逻辑Tick。
 - Cell与Grid尺寸也是Cold配置：`MapConfig.cellSizeMeters`定义Cell米制边长，`AoiConfig.gridSizeCells`定义每个Grid每边Cell数。地图物理边界由制作流程决定并记录为`widthCells/depthCells × cellSizeMeters`；Grid数量只由宽深Cell数除以`gridSizeCells`推导，不增加独立`gridCount`。Grid2D必须整除，NavMesh3D在Phase 4.2由资源导出器按相同契约对齐或补边。
@@ -396,7 +400,7 @@ Phase 5计划：
 10. 新业务状态写Model，生命周期和行为写`@systemFor`；不要恢复Model方法空壳，也不要在每次方法调用前查System Registry。
 11. Component拥有的子对象只能由所属Component维护集合和业务修改；不要从Handler直接操作Native Ref，也不要把每条Quest或Achievement机械地做成Entity。
 12. TiangZ主工程及配套VS Code插件仓库的提交标题默认使用中文；代码标识、命令、版本号和专有名词可保留原文。
-13. 外网演示使用`configs/deploy/external-2process/StartMachine.json`和Cocos3D资源配置；登录与Gate独立于地图世界Process，两个Process共享`known-scenes.json`。Cocos3D编辑器预览通过`PREVIEW`自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`；非预览发布包读取`tiangz-external.json`连接公网LoginMgr，不能把两种环境地址手工混用。外网Cocos3D发布使用`npm run build:cocos3d:external`：`build/external/desktop`只部署到根路径`/`，`build/external/m`只部署到`/m/`，后者是唯一横屏移动入口。旧的`external-all-in-one.json`只用于单Process回归。当用户说“部署到外网测试机”时，必须重新构建并上传前端、后端，更新Nginx并重启外网服务。凭据只存在运行环境，不能写入仓库。
+13. 外网演示使用`configs/deploy/external-2process/StartMachine.json`和Cocos3D资源配置；登录与Gate独立于地图世界Process，两个Process共享`known-scenes.json`。Cocos3D编辑器预览通过`PREVIEW`自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`；非预览发布包读取`tiangz-external.json`连接公网LoginMgr，不能把两种环境地址手工混用。外网Cocos3D发布使用`npm run build:cocos3d:external`：`build/external/desktop`只部署到根路径`/`，`build/external/m`只部署到`/m/`，后者是唯一横屏移动入口。旧的`external-all-in-one.json`只用于单Process回归。当用户说“部署到外网测试机”时，必须重新构建前端和后端并确认上传的是本次最新产物；远端直接停止旧服务、覆盖固定发布目录、重新启动并做冒烟。该主机只是Demo测试机，不使用`.next`、蓝绿目录、目录交换或自动回滚。凭据只存在运行环境，不能写入仓库。
 14. 外网发布只上传Linux Release发布包，不上传`src`、Cargo工程、`node_modules`或`target`。Runtime优先从当前发布目录或可执行文件邻级目录寻找`dist`与`configs`，不能依赖编译机的`CARGO_MANIFEST_DIR`。
 15. Linux正式发布统一使用`npm run release:linux`和固定镜像`tiangz-linux-builder:ubuntu-24.04`。镜像是工具/依赖底座，不含业务源码；普通TS、Rust、Excel变化只复制源码并完整运行Luban、codegen与Release编译。只有依赖锁、Rust工具链、Luban或Builder定义变化才重建镜像，Linux Cargo中间产物由`tiangz-linux-builder-target`命名卷复用。
 
@@ -409,6 +413,10 @@ Phase 5计划：
 5. 与任务相关的教程、reference和现有Demo代码。
 6. 只有维护Runtime时才阅读[运行时维护者指南](../design/maintainer-guide.md)和`src`。
 
+## 最新效果系统校准
+
+Phase 4.4现在已经包含道具驱动的最小Action/Buff闭环，后文早期“Buff尚未开始”的历史描述以本节和[Action与Buff最小闭环](../design/action-buff.md)为准：`ItemConfig.use_effect/use_params`生成Action，`BuffComponent`拥有Buff ChildEntity，Buff按墙钟恢复Timer并通过Map投影AOI事件；当前不包含Cast技能系统。开发人员应先尝试配置已有Action，不要为每个道具新写Handler或把Buff效果反向塞进Combat入口。
+
 ## C# Client SDK与Unity边界
 
 Unity客户端沿用和Cocos、Pixi相同的协议语义，但不把Unity类型带进公共SDK。C# SDK的唯一源码目录是`client_sdk/csharp/`，协议生成命令是`npm run codegen:csharp-client-sdk`；生成器从协议锁读取消息和opcode，生成C#消息、Codec、RPC/Push描述符和类型化Client，再复制到`client_demo/Unity2022.3.62f3c1_demo/Assets/TiangZClient/Runtime`。Unity目录中的`Runtime/Generated`和其他生成C#文件不能手工编辑，业务只改`Assets/TiangZClient/Demo`或自己的表现层目录。
@@ -416,3 +424,11 @@ Unity客户端沿用和Cocos、Pixi相同的协议语义，但不把Unity类型�
 `RpcSocket`的网络线程只接收完整帧并放入有界队列，Unity主线程在`Update()`调用`RpcSocket.Update()`后才执行Push Handler和完成RPC；超时、断线、未知消息和队列溢出都有明确结果。业务不得在接收线程直接修改Unity对象，也不得绕过Client手写msgcode、rpcId或Codec。当前C# Adapter只支持桌面WebSocket，选择TCP/KCP必须立即报不支持，不能静默切换到WebSocket。
 
 Unity表现层使用`Vector3`、Transform和Camera，协议及服务端仍使用米制`x/y/z/yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度。坐标转换只允许出现在表现边界；不要把`Vector3`写入协议、Model或Native数据。Unity Demo的标准调用顺序是：`LoginFlow.EnterGameAsync`登录进图，注册Push，再调用`GateClient.MapSnapshotReadyAsync`请求初始AOI；运行期间每帧调用`LoginFlow.Update`，输入只调用生成的`MapClient.NavigateInputAsync/NavigateToAsync`。
+
+## 道具出生数据与Cocos3D快捷栏
+
+当前Demo的`ItemComponentSystem.Awake`只为新建玩家预置`1001×50`和`1002×20`；传送、断线重连和反序列化都以`ItemSnapshot`替换默认背包，不会再次发放。生产业务应把这个预置替换为持久化加载，不要把演示数量理解成框架规则。道具使用RPC成功时，`M2C_UseItem.buff`会回显本次新增的公开Buff给使用者；AOI仍通过`G2C_BuffAdded`给其他观察者广播，客户端两条路径按实例ID幂等合并。
+
+`ItemConfig.icon`是客户端字段，值是相对Cocos `assets/resources`且不含扩展名的资源键，例如`UI/Icons/Items/1001`。Cocos3D Web快捷栏固定为`1=平A`、`2=1001`、`3=1002`，初始数量来自`G2C_EnterMap.items`，使用后的数量来自不可覆盖的`G2C_ItemChanged`；客户端不得在按键时先行扣数量。以后增加快捷栏时继续按`configId -> ItemConfig -> icon`解析，不能把道具图片路径硬编码到表现脚本。
+
+Cocos3D的本地Buff栏从`MapEntitySnapshot.buffs`、`M2C_UseItem.buff`和`G2C_BuffAdded`建立图标，资源键固定为`UI/Icons/Buff/<BuffId>`，例如Buff 2001使用`UI/Icons/Buff/2001`。剩余时间使用最近一次Gate Ping得到的服务器时钟偏差计算，显示为`分钟:秒`，两小时显示`120:00`；无限时长显示`永久`。本地倒计时到`00:00`只冻结文字和保留图标，必须等`G2C_BuffRemoved`才删除，不能用客户端本地计时器提前清理Buff。

@@ -13,4 +13,5 @@ export const GameErrCode = {
   MonsterNotFound: 10012,
   MonsterDead: 10013,
   MonsterTooFar: 10014,
+  ItemNotUsable: 10015,
 } as const;

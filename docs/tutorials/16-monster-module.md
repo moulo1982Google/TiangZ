@@ -83,7 +83,7 @@ app/hotfix/demo/combat/CombatComponentSystem.ts
   -> 主动怪找到范围内玩家：追击
   -> 距离不超过MonsterConfig.attack_range：停止移动并按Numeric.AttackSpeed普通攻击
   -> 玩家通过AttackMonster造成伤害
-  -> HP为0，旧MonsterUnit离开AOI并销毁
+  -> CombatComponent结算伤害；HP为0，旧MonsterUnit离开AOI并销毁
   -> MonsterConfig.respawn_seconds到期
   -> 同一AreaId刷怪槽创建新的MonsterUnit，取得新的UnitId
 ```
@@ -96,7 +96,7 @@ app/hotfix/demo/combat/CombatComponentSystem.ts
 MonsterComponent.Update5Hz
   -> MonsterBehaviorTree.Evaluate
   -> MonsterComponentSystem执行Idle/Chase/Hold/Attack
-  -> NumericComponent修改CurrentHp
+  -> target.GetComponent(CombatComponent).ApplyDamage(...)
   -> 实际伤害调用MonsterComponent.AddThreat
 ```
 
@@ -127,7 +127,7 @@ message C2M_AttackMonster {
 C2M_AttackMonsterHandler
   -> PlayerUnit.AttackMonster(monsterId)
   -> MonsterComponent.Attack(player, monsterId)
-  -> Monster NumericComponent.CurrentHp
+  -> monster.GetComponent(CombatComponent).ApplyDamage(...)
   -> 0时Kill，旧Unit执行Detach/Remove，后续由地图Tick创建新Unit
 ```
 
@@ -143,6 +143,26 @@ export class C2M_AttackMonsterHandler {
 ```
 
 实际工程中的Handler位于`app/hotfix/demo/mapHost/handlers/C2M_AttackMonsterHandler.ts`，协议和类型由`npm run codegen:proto`生成。
+
+### 4.1 伤害和治疗为什么经过CombatComponent
+
+`MonsterComponent`不直接修改目标Numeric，Item Handler也不直接写CurrentHp。所有可受击Unit都挂载`CombatComponent`：
+
+```ts
+const result = target.GetComponent(CombatComponent).ApplyDamage({
+  amount: attacker.GetComponent(NumericComponent)[NumericType.Attack],
+  sourceUnitId: attacker.UnitId,
+});
+```
+
+如果未来加入真言术·盾，Buff添加时注册处理器：
+
+```ts
+const modifierId = target.GetComponent(CombatComponent)
+  .RegisterDamageAbsorber(5_000n, 100);
+```
+
+伤害入口只执行Combat中已有的处理器，不查询`BuffComponent`。Buff移除时用保存的`modifierId`调用`RemoveDamageAbsorber`。这样护盾、护甲和减伤可以逐步加入Combat规则，攻击者和Buff之间不会互相知道实现细节。完整规则、返回值和错误示例见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)。
 
 ## 5. 玩家自动平A
 
@@ -170,7 +190,7 @@ C2M_ToggleAutoAttackHandler
   -> CombatComponent.ToggleAutoAttack(...)
   -> MonsterComponentSystem.Update10Hz()
   -> MonsterComponent.Attack(player, targetUnitId)
-  -> Monster NumericComponent.CurrentHp
+  -> target.GetComponent(CombatComponent).ApplyDamage(...)
 ```
 
 `CombatComponent`只保存状态，不实现找怪、距离、朝向和伤害。平A间隔由玩家Numeric的最终`AttackSpeed`设置，玩家攻击距离读取`PlayerConfig.attack_range`，怪物攻击距离读取`MonsterConfig.attack_range`，二者都不是Numeric链式属性。修改攻击速度不会偷偷重置已经开始的读条。平A状态不放入地图Transfer快照，传送到新地图后需要重新按`1`激活。服务端通过`G2C_AutoAttackState`通知本人，消息只在状态改变、读条开始、命中或中断时发送；客户端用最近一次`C2M_Ping`得到的服务器时钟偏差绘制进度条，进度条永远只是表现，不是命中依据。

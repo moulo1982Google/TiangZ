@@ -125,6 +125,90 @@ export class AoiSyncTierConfig {
 
 
 export namespace game {
+export class BuffConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+        if (_json_.duration_seconds === undefined) { throw new Error() }
+        this.durationSeconds = _json_.duration_seconds
+        if (_json_.tick_interval_ms === undefined) { throw new Error() }
+        this.tickIntervalMs = _json_.tick_interval_ms
+        if (_json_.add_action_type === undefined) { throw new Error() }
+        this.addActionType = _json_.add_action_type
+        if (_json_.add_action_params === undefined) { throw new Error() }
+        { this.addActionParams = []; for(let _ele0 of _json_.add_action_params) { let _e0; _e0 = _ele0; this.addActionParams.push(_e0);}}
+        if (_json_.tick_action_type === undefined) { throw new Error() }
+        this.tickActionType = _json_.tick_action_type
+        if (_json_.tick_action_params === undefined) { throw new Error() }
+        { this.tickActionParams = []; for(let _ele0 of _json_.tick_action_params) { let _e0; _e0 = _ele0; this.tickActionParams.push(_e0);}}
+        if (_json_.remove_action_type === undefined) { throw new Error() }
+        this.removeActionType = _json_.remove_action_type
+        if (_json_.remove_action_params === undefined) { throw new Error() }
+        { this.removeActionParams = []; for(let _ele0 of _json_.remove_action_params) { let _e0; _e0 = _ele0; this.removeActionParams.push(_e0);}}
+    }
+
+    /**
+     * Buff配置ID
+     */
+    readonly id: number
+    /**
+     * 显示名称
+     */
+    readonly name: string
+    /**
+     * 总时长（秒，0为无限）
+     */
+    readonly durationSeconds: number
+    /**
+     * Tick间隔（毫秒，0为无Tick）
+     */
+    readonly tickIntervalMs: number
+    /**
+     * 添加Action类型
+     */
+    readonly addActionType: number
+    /**
+     * 添加Action参数
+     */
+    readonly addActionParams: number[]
+    /**
+     * Tick Action类型
+     */
+    readonly tickActionType: number
+    /**
+     * Tick Action参数
+     */
+    readonly tickActionParams: number[]
+    /**
+     * 移除Action类型
+     */
+    readonly removeActionType: number
+    /**
+     * 移除Action参数
+     */
+    readonly removeActionParams: number[]
+
+    resolve(tables:Tables) {
+
+
+
+
+
+
+
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
 export class ConfigTablePolicy {
 
     constructor(_json_: any) {
@@ -162,8 +246,10 @@ export class ItemConfig {
         this.name = _json_.name
         if (_json_.max_stack === undefined) { throw new Error() }
         this.maxStack = _json_.max_stack
-        if (_json_.restore_hp === undefined) { throw new Error() }
-        this.restoreHp = _json_.restore_hp
+        if (_json_.use_effect === undefined) { throw new Error() }
+        this.useEffect = _json_.use_effect
+        if (_json_.use_params === undefined) { throw new Error() }
+        { this.useParams = []; for(let _ele0 of _json_.use_params) { let _e0; _e0 = _ele0; this.useParams.push(_e0);}}
     }
 
     /**
@@ -179,11 +265,16 @@ export class ItemConfig {
      */
     readonly maxStack: number
     /**
-     * 使用后恢复生命值
+     * 使用效果：0不可用，1添加Buff，2执行Action
      */
-    readonly restoreHp: number
+    readonly useEffect: number
+    /**
+     * 使用参数：按效果读取整数列表
+     */
+    readonly useParams: number[]
 
     resolve(tables:Tables) {
+
 
 
 
@@ -872,6 +963,40 @@ export class TbMonsterAreaConfig {
 }
 
 
+export namespace game {
+/**
+ * Buff配置
+ */
+export class TbBuffConfig {
+    private _dataMap: Map<number, game.BuffConfig>
+    private _dataList: game.BuffConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.BuffConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.BuffConfig
+            _v = new game.BuffConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.BuffConfig> { return this._dataMap; }
+    getDataList(): game.BuffConfig[] { return this._dataList; }
+
+    get(key: number): game.BuffConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
 
 type JsonLoader = (file: string) => any
 
@@ -916,6 +1041,11 @@ export class Tables {
      * 怪物固定刷点配置
      */
     get TbMonsterAreaConfig(): game.TbMonsterAreaConfig  { return this._TbMonsterAreaConfig;}
+    private _TbBuffConfig: game.TbBuffConfig
+    /**
+     * Buff配置
+     */
+    get TbBuffConfig(): game.TbBuffConfig  { return this._TbBuffConfig;}
 
     constructor(loader: JsonLoader) {
         this._TbItemConfig = new game.TbItemConfig(loader('game_tbitemconfig'))
@@ -926,6 +1056,7 @@ export class Tables {
         this._TbConfigTablePolicy = new game.TbConfigTablePolicy(loader('game_tbconfigtablepolicy'))
         this._TbMonsterConfig = new game.TbMonsterConfig(loader('game_tbmonsterconfig'))
         this._TbMonsterAreaConfig = new game.TbMonsterAreaConfig(loader('game_tbmonsterareaconfig'))
+        this._TbBuffConfig = new game.TbBuffConfig(loader('game_tbbuffconfig'))
 
         this._TbItemConfig.resolve(this)
         this._TbMapConfig.resolve(this)
@@ -935,6 +1066,7 @@ export class Tables {
         this._TbConfigTablePolicy.resolve(this)
         this._TbMonsterConfig.resolve(this)
         this._TbMonsterAreaConfig.resolve(this)
+        this._TbBuffConfig.resolve(this)
     }
 }
 

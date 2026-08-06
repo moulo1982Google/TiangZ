@@ -26,6 +26,8 @@ import type {
   G2M_SecondEnterMap,
   G2M_TransferPlayer,
   G2C_AutoAttackState,
+  BuffPublicView,
+  BuffTransferSnapshot,
   G2C_DemoDoorState,
   ItemSnapshot,
   KickPlayerTarget,
@@ -54,6 +56,8 @@ import {
 import { NumericComponent } from "../numeric/NumericComponent";
 import { MoveSpeedMetersPerSecondToNumeric, NumericType } from "../numeric/NumericType";
 import { ItemComponent } from "../item/ItemComponent";
+import { BuffComponent } from "../buff/BuffComponent";
+import type { BuffTransferState } from "../buff/Buff";
 import { CombatComponent, type AutoAttackState } from "../combat/CombatComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import { LocationProxy } from "../location/LocationProxy";
@@ -574,6 +578,7 @@ export class MapComponent extends Component<[
         }],
         [NumericComponent, snapshot.numerics],
         [ItemComponent, snapshot.items],
+        [BuffComponent, snapshot.buffs.map(fromProtocolBuffTransfer)],
       ]),
     };
     return this.PrepareTransferredPlayer(
@@ -674,6 +679,7 @@ export class MapComponent extends Component<[
       player.AddComponent(ItemComponent);
       // 平A状态不随地图传送恢复，目标地图创建新的默认CombatComponent。 / Auto-attack is not transferred; the target map gets a fresh default component.
       player.AddComponent(CombatComponent);
+      player.AddComponent(BuffComponent);
       player.AddComponent(PlayerPersistenceComponent, this.repository);
       player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
@@ -786,6 +792,48 @@ export class MapComponent extends Component<[
       ClientAudience.Self(unit.UnitId),
       ClientBroadcasts.ItemChanged,
       { item },
+      this.serverTick,
+    );
+  }
+
+  /**
+   * 向正在观察Subject的AOI玩家发送Buff添加事件。BuffComponent不直接知道Gate，避免业务重复维护受众路由。
+   *
+   * Publishes a Buff-added event to AOI observers of the subject. BuffComponent
+   * does not know Gate routes, so business code keeps one audience boundary.
+   */
+  async PublishBuffAdded(
+    unit: import("../../../core/public").Unit<any[]>,
+    buff: BuffPublicView,
+  ): Promise<void> {
+    this.requireMapUnit(unit);
+    await this.clientBroadcast.Publish(
+      this.aoi.ObserversOf(unit),
+      ClientBroadcasts.BuffAdded,
+      { buff },
+      this.serverTick,
+    );
+  }
+
+  /**
+   * 向同一AOI受众发送Buff移除事件；这是不可覆盖事件，不能塞进Numeric或latest批次。
+   *
+   * Publishes a non-coalescing Buff removal event to the same AOI audience;
+   * it must not be folded into Numeric or a latest-state batch.
+   */
+  async PublishBuffRemoved(
+    unit: import("../../../core/public").Unit<any[]>,
+    buff: BuffPublicView,
+  ): Promise<void> {
+    this.requireMapUnit(unit);
+    await this.clientBroadcast.Publish(
+      this.aoi.ObserversOf(unit),
+      ClientBroadcasts.BuffRemoved,
+      {
+        unitId: buff.unitId,
+        buffInstanceId: buff.buffInstanceId,
+        revision: buff.revision + 1,
+      },
       this.serverTick,
     );
   }
@@ -1603,6 +1651,17 @@ export class MapComponent extends Component<[
     }
   }
 
+  private requireMapUnit(unit: import("../../../core/public").Unit<any[]>): void {
+    if (
+      unit.DomainScene() !== this.DomainScene() ||
+      this.units.Get(unit.UnitId) !== unit
+    ) {
+      throw new Error(
+        `unit ${unit.UnitId}@${unit.InstanceId} does not belong to map instance ${this.mapInstanceId}`,
+      );
+    }
+  }
+
   private get units(): UnitComponent {
     return this.DomainScene().GetComponent(UnitComponent);
   }
@@ -1622,7 +1681,7 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | import("../../../core/publ
       cellX: snapshot.cellX,
       cellZ: snapshot.cellZ,
       numerics: snapshot.numerics,
-      buffs: [],
+      buffs: unit.GetComponent(BuffComponent).SnapshotPublic(),
       speedCellsPerSecond: snapshot.speedCellsPerSecond,
       facing: snapshot.facing,
       alive: snapshot.alive,
@@ -1645,11 +1704,24 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | import("../../../core/publ
     cellX: snapshot.cellX,
     cellZ: snapshot.cellZ,
     numerics: snapshot.numerics,
-    buffs: [],
+    buffs: unit.GetComponent(BuffComponent).SnapshotPublic(),
     speedCellsPerSecond: snapshot.speedCellsPerSecond,
     facing: snapshot.facing,
     alive: snapshot.alive,
     entityType: 1,
     configId: 1,
+  };
+}
+
+function fromProtocolBuffTransfer(value: BuffTransferSnapshot): BuffTransferState {
+  return {
+    buffInstanceId: value.buffInstanceId,
+    configId: value.buffConfigId,
+    stacks: value.stacks,
+    appliedAtMs: Number(value.appliedAtMs),
+    expireAtMs: Number(value.expireTimeMs),
+    tickIntervalMs: value.tickIntervalMs,
+    nextTickAtMs: Number(value.nextTickAtMs),
+    revision: value.revision,
   };
 }

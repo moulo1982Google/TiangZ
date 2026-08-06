@@ -384,15 +384,20 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 - Unity Demo只编排登录、进图、AOI、权威寻路、WASD、点击寻路和Ping；`UnityEngine.Vector3`只能出现在表现边界，协议继续使用米制`x/y/z/yaw`。
 - 当前C# Adapter只提供桌面WebSocket；TCP/KCP Adapter另立验收，不在Unity Demo中伪装支持。
 
-### Phase 4.4：怪物与战斗
+### Phase 4.4：怪物、战斗与最小效果系统
 
-状态：最小普通攻击流程和局部行为树已完成，技能、Buff与复杂战斗仍未开始。
+状态：最小普通攻击、局部行为树、统一Combat入口以及道具驱动的Action/Buff闭环已完成；Cast技能系统和复杂战斗仍未开始。
+
+- 已完成最小`ActionExecutor`：道具通过`use_effect/use_params`统一表达立即数值变化或添加Buff，`ChangeNumeric`的HP变化经过Combat，`AddBuff/RemoveBuff`经过BuffComponent；不引入每个道具一个Handler的分支。
+- 已完成`BuffComponent -> Buff ChildEntity`：BuffConfig提供Add/Tick/Remove Action和持续时间，Buff按服务器墙钟创建可追踪Timer，传送复制纯值时间戳并重建Timer，过期、手动移除和Unit销毁共用一次RemoveAction边界；Buff添加/删除通过Map AOI事件投影。当前验收为小红立即回血、大红持续回血，Cast技能系统、跨Unit目标Action、Buff持久化策略仍暂缓。完整规则见[Action与Buff最小闭环](design/action-buff.md)。
 
 - 已完成`MonsterConfig`和`MonsterAreaConfig`冷配置，以及`MonsterComponent + MonsterUnit`的统一Unit模型。
 - 已完成固定刷点、主动/被动模式、地图Tick追击、攻击距离、玩家攻击、Numeric扣血、死亡Detach/Remove、AOI Leave、原刷怪槽新Unit重生和运行时冒烟验收。
 - 已完成`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`的最小业务调用链；Handler不遍历地图、不直接操作Native句柄。
 - 已完成Hotfix内部的`MonsterBehaviorTree`，只选择待机、追击、攻击和攻击冷却停留；普通攻击距离分别读取`PlayerConfig.attack_range`和`MonsterConfig.attack_range`，继续由Map Tick驱动。
 - 已完成最小统一仇恨：实际伤害按1:1写入`MonsterComponent.AddThreat`，被动怪没有仇恨时待机，主动怪没有仇恨时按规则主动索敌；后续技能、Buff、掉落、战斗事件和更复杂仇恨仍按业务需求拆分。持久化和角色/怪物动态避障不属于本阶段。
+- 已完成标准伤害/治疗入口：所有玩家和怪物挂载`CombatComponent`，攻击、怪物AI和道具不再直接改`CurrentHp`；护盾使用Combat内部注册的受伤处理器，Buff只在生命周期边界注册/注销，不被伤害入口反向调用。Action和Buff已经复用这套入口，后续Cast技能也必须沿用，不新增`BuffComponent.TryAbsorbDamage`式反向依赖。
+- 已增加`tools/combat_self_test.ts`，覆盖多护盾优先级、剩余量更新/注销、实际扣血、治疗上限和非法输入；完整规则见`docs/design/combat-damage-pipeline.md`。
 
 ### Phase 4.5：持久化基础
 
