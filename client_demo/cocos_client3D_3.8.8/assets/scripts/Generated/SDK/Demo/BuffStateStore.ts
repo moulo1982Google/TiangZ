@@ -56,7 +56,13 @@ export class BuffStateStore {
 
   /** 返回一个Unit当前公开Buff的副本；调用方不得修改Store内部状态。 / Returns a copy of one Unit's public Buff views. */
   PublicOf(unitId: number): readonly BuffPublicView[] {
-    return [...this.publicViews.values()].filter((buff) => buff.unitId === unitId);
+    const result: BuffPublicView[] = [];
+    // Cocos Creator 3.8的Web构建不能可靠降级`[...map.values()]`，显式遍历也避免先复制整个Map再筛选。
+    // Cocos Creator 3.8 cannot reliably downlevel `[...map.values()]`; an explicit loop also avoids copying unrelated units.
+    for (const buff of this.publicViews.values()) {
+      if (buff.unitId === unitId) result.push(buff);
+    }
+    return result;
   }
 
   /** 返回当前客户端有权看到的Buff详情；无权限与尚未收到都返回undefined。 / Returns visible detail, or undefined when unauthorized or not received. */

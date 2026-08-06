@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -33,9 +33,14 @@ mkdirSync(outputRoot, { recursive: true });
 cpSync(desktopSource, desktopOutput, { recursive: true, force: true });
 cpSync(mobileSource, mobileOutput, { recursive: true, force: true });
 
+const build = createBuildIdentity();
+injectBuildBadge(desktopOutput, build, "desktop");
+injectBuildBadge(mobileOutput, build, "mobile");
+
 const manifest = {
   version: 1,
   mode: options.mode,
+  build,
   routes: {
     "/": { directory: "desktop", target: "web", platform: "web-desktop" },
     "/m/": { directory: "m", target: "mobile", platform: "web-mobile", orientation: "landscape" },
@@ -45,7 +50,54 @@ writeFileSync(path.join(outputRoot, "manifest.json"), `${JSON.stringify(manifest
 
 console.log(`[cocos-external] root /  <- ${desktopOutput}`);
 console.log(`[cocos-external] mobile /m/ <- ${mobileOutput}`);
+console.log(`[cocos-external] build=${build.label}`);
 console.log(`[cocos-external] manifest=${path.join(outputRoot, "manifest.json")}`);
+
+/**
+ * 为每次外网Demo构建生成可见且可追溯的标识；它只进入发布产物，不改写Cocos源资源。
+ * Creates a visible traceable identity for each external Demo build without
+ * modifying source assets inside the Cocos project.
+ */
+function createBuildIdentity() {
+  const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+  const generatedAt = new Date().toISOString();
+  let revision = "unknown";
+  try {
+    revision = execFileSync("git", ["rev-parse", "--short=8", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+    }).trim();
+  } catch {
+    // 导出的源码包可能没有.git；时间仍能唯一识别当前Demo构建。
+    // Exported source packages may omit .git; the timestamp still identifies the build.
+  }
+  const timestamp = generatedAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  return {
+    label: `v${packageJson.version}-${timestamp}-${revision}`,
+    version: String(packageJson.version),
+    revision,
+    generatedAt,
+  };
+}
+
+/**
+ * 把Build标识直接写入最终HTML，确保登录失败时也能确认浏览器实际加载的发布包。
+ * Injects the build badge into final HTML so the loaded package remains visible
+ * even when the game cannot complete login.
+ */
+function injectBuildBadge(directory, build, target) {
+  const indexPath = path.join(directory, "index.html");
+  const html = readFileSync(indexPath, "utf8");
+  const badge = `<div id="tiangz-build-version" aria-label="TiangZ build version">Build ${build.label} · ${target}</div>
+<style>
+#tiangz-build-version{position:fixed;z-index:11000;left:50%;top:calc(env(safe-area-inset-top,0px) + 4px);transform:translateX(-50%);padding:3px 7px;border-radius:4px;color:rgba(238,247,243,.86);background:rgba(13,22,25,.68);font:10px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;pointer-events:none;user-select:none}
+</style>`;
+  const nextHtml = html.includes("</body>")
+    ? html.replace("</body>", `${badge}\n</body>`)
+    : `${html}\n${badge}\n`;
+  writeFileSync(indexPath, nextHtml, "utf8");
+}
 
 function parseOptions(args) {
   const values = { mode: "release" };

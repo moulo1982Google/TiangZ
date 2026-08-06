@@ -12,10 +12,12 @@
 - 明确外网主机只是可公网访问的Demo测试机，不按生产环境执行蓝绿发布、`.next`目录交换或自动回滚。
 - 构建端仍必须完整生成并编译最新后端Release及Cocos3D桌面/移动Web包；远端流程固定为停止旧服务、覆盖固定目录、重新启动，再检查端口、页面和登录链路。
 - 后端固定覆盖`/opt/tiangz-external`，桌面与移动资源分别覆盖`/var/www/tiangz-cocos3d/desktop`和`/var/www/tiangz-cocos3d/m`。
+- 外网构建产物顶部新增可见Build标识，包含项目版本、UTC构建时间和Git短提交号；Nginx Demo配置改为每次使用前重新校验资源，便于确认iOS桌面Web App没有继续加载旧包。
 
 ## 2026-08-06：Cocos3D Buff图标与服务端驱动移除
 
 - Cocos3D Web新增本地Buff栏：从Unit进入快照和`G2C_BuffAdded`恢复Buff图标，按`UI/Icons/Buff/<BuffId>`加载资源；当前Buff 2001使用`2001.png`。
+- 修复Cocos Creator 3.8把`[...Map.values()]`错误降级为`[].concat(MapIterator)`，导致Buff Store明明收到数据但`PublicOf`始终返回空数组的问题；SDK改为显式遍历，同时清理客户端另外两处相同的迭代器展开写法。
 - 修复进图/事件时序导致本人Buff栏可能错过首次事件的问题：`M2C_UseItem.buff`现在作为使用者确认结果，`G2C_BuffAdded`仍作为AOI事件发送给观察者；客户端三条来源按Buff实例ID幂等合并。
 - `M2C_UseItem.buff`声明为可选嵌套消息；协议生成器补齐`optional`字段解析和嵌套消息编码，避免无Buff的道具返回伪造空Buff。
 - 倒计时使用Gate Ping估算的服务器时钟，统一显示分钟和秒，例如两小时显示`120:00`；无限Buff显示`永久`。

@@ -906,6 +906,7 @@ C2M_AttackMonsterHandler
 客户端只配置LoginMgr公网地址；LoginMgr再返回Login公网地址，Login再返回Gate公网地址。MapHost、Location和MapManager保持内网路由。
 
 当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web，确认是本次最新产物；然后停止远端旧服务，直接覆盖后端与两个Web目录，重新启动，再按页面、LoginMgr、Login、Gate的顺序验收。该主机是Demo测试机，不做`.next`目录、蓝绿切换、目录交换和自动回滚。Cocos3D前端使用`npm run build:cocos3d:external`一次生成两个入口：`build/external/desktop`部署到根路径`/`，`build/external/m`部署到`/m/`；根路径只能使用桌面`web-desktop`包，横屏`web-mobile`包只能放在`/m/`。
+外网构建会在页面顶部显示`Build <版本>-<UTC构建时间>-<Git短提交号>`，Nginx对两个Demo入口发送`Cache-Control: no-cache, must-revalidate`。验收时应先确认Build标识已经变化，再检查Buff、快捷栏等业务表现；这样可以明确区分客户端缺陷和旧包缓存。
 不要只看Nginx页面能打开就判断网络链路完成；云安全组必须放行实际的WebSocket入口端口。
 
 后端正式发布使用本机Docker的Linux构建环境生成`linux-amd64` Release制品。外网机器只接收可执行文件、`dist`、`configs`、导航资源、版本信息和校验文件，不接收源码、Cargo工程、Node依赖或构建缓存。Runtime会从当前发布目录解析资源，因此制品可以从构建机复制到任意部署路径。

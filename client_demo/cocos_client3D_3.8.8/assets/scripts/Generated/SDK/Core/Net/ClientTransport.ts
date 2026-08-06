@@ -47,7 +47,7 @@ export function registerClientTransport(
 }
 
 export function supportedClientTransports(): readonly ClientTransportKind[] {
-  return [...factories.keys()].sort();
+  return Array.from(factories.keys()).sort();
 }
 
 export function createClientTransport(endpoint: ClientEndpoint): ClientTransport {

@@ -6,8 +6,12 @@
 #   build/external/m/*       -> /var/www/tiangz-cocos3d/m/
 
 server {
-    listen 80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     server_name _;
+
+    root /var/www/tiangz-cocos3d/desktop;
+    index index.html;
 
     # /m 没有尾斜杠时统一跳到 /m/，保证相对资源路径稳定。
     # Normalize /m to /m/ so the mobile bundle keeps its relative asset paths.
@@ -17,14 +21,20 @@ server {
 
     # Mobile Web is the only landscape entry point.
     location ^~ /m/ {
-        rewrite ^/m/(.*)$ /$1 break;
-        root /var/www/tiangz-cocos3d/m;
-        try_files $uri $uri/ /index.html;
+        root /var/www/tiangz-cocos3d;
+        try_files $uri $uri/ /m/index.html;
+        # 外网机仅用于Demo，所有资源每次使用前都向服务器确认版本，避免iOS桌面Web App长期保留旧包。
+        # The public host is a Demo server; always revalidate assets so an iOS Home Screen app cannot retain an old build.
+        expires -1;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;
+        add_header Pragma "no-cache" always;
     }
 
     # Desktop Web stays at the normal root entry point.
     location / {
-        root /var/www/tiangz-cocos3d/desktop;
         try_files $uri $uri/ /index.html;
+        expires -1;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;
+        add_header Pragma "no-cache" always;
     }
 }

@@ -1484,7 +1484,7 @@ export class GameBootstrap3D extends Component {
   }
 
   private mobileCameraPointerDistance(): number {
-    const pointers = [...this.mobileCameraPointers.values()];
+    const pointers = Array.from(this.mobileCameraPointers.values());
     if (pointers.length < 2) return 0;
     return Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
   }

@@ -90,6 +90,7 @@
 - 外网后端只上传 Linux Release 制品，不上传源码、Cargo 工程、`node_modules` 或 `target`；运行目录为 `/opt/tiangz-external`。
 - 用户说“部署到外网测试机”时，默认重新生成代码、构建后端 Release、构建 Cocos3D Web，确认上传的是本次最新产物；远端只是可公网访问的 Demo 测试机，直接停止旧服务、覆盖 `/opt/tiangz-external` 与两个 Nginx 资源目录、重新启动，再做端口和登录链路冒烟。不要使用 `.next`、蓝绿目录、目录交换或自动回滚等生产发布流程；凭据不能写入仓库或日志。
 - 外网Cocos3D双入口使用`npm run build:cocos3d:external`：`build/external/desktop`部署网站根路径`/`，必须保持`web-desktop`桌面布局；`build/external/m`部署`/m/`，由`web-mobile + landscape`生成，是唯一横屏移动入口。不要把移动包复制到根路径，也不要让根路径和`/m/`共用同一份构建目录。
+- 外网Demo的Nginx对桌面与`/m/`资源发送`Cache-Control: no-cache, must-revalidate`；外网构建脚本在页面顶部注入`版本+UTC构建时间+Git短提交号`，排查问题时先核对页面Build标识，再判断是否加载了最新包。
 
 ## 当前状态与待办
 

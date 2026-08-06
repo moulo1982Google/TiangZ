@@ -3,6 +3,7 @@ import {
 } from "../client_sdk/typescript/Generated/Model/demo/protocol/messageDescriptors";
 import {
   G2C_BuffAdded,
+  G2C_BuffRemoved,
 } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
 import {
   GateClient,
@@ -32,6 +33,10 @@ async function main(): Promise<void> {
     const item = result.enterMap.items.find((candidate) => candidate.configId === 1002 && candidate.count > 0);
     if (!item) throw new Error("EnterMap did not provide item 1002");
 
+    let removed: G2C_BuffRemoved | undefined;
+    const unsubscribeRemoved = gate.on<G2C_BuffRemoved>(ClientMessages.BuffRemoved, (message) => {
+      removed = message;
+    });
     const added = gate.waitForMessage<G2C_BuffAdded>(ClientMessages.BuffAdded, { timeoutMs: 5_000 });
     const response = await new MapClient(gate).useItem({ itemId: item.itemId });
     const message = await added;
@@ -48,6 +53,11 @@ async function main(): Promise<void> {
     });
     if (message.buff.unitId !== result.enterMap.unitId || message.buff.buffConfigId !== 2001) {
       throw new Error("WebSocket BuffAdded payload did not target the local player");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    unsubscribeRemoved();
+    if (removed?.buffInstanceId === message.buff.buffInstanceId) {
+      throw new Error("Buff 2001 was removed within one second after creation");
     }
   } finally {
     clearInterval(updates);
