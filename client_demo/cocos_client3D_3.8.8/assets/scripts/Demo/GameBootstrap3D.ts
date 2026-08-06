@@ -89,6 +89,7 @@ const TURN_SPEED_RADIANS = Math.PI * 0.75;
 const MOBILE_TURN_RESPONSE = 28;
 const PATH_TURN_SPEED_RADIANS = Math.PI * 2;
 const MOUSE_YAW_RADIANS_PER_PIXEL = 0.004;
+const MOUSE_ORBIT_DRAG_THRESHOLD_PIXELS = 5;
 const INPUT_REFRESH_SECONDS = 0.5;
 const INPUT_TURN_SEND_SECONDS = 0.1;
 const AUTO_ATTACK_PHASE_SWINGING = 2;
@@ -220,11 +221,14 @@ export class GameBootstrap3D extends Component {
   private inputDirty = false;
   private inputSendCooldown = 0;
   private inputRefreshElapsed = 0;
+  private leftMouseHeld = false;
+  private leftMouseDragDistance = 0;
   private rightMouseHeld = false;
   /** 三个Yaw都采用TiangZ语义：0朝+Z、前向量为(sin,0,cos)；它们只承担不同的权威/表现职责。 / All three yaw values use TiangZ semantics while serving authoritative and presentation roles. */
   private playerYaw = 0;
   private authoritativeYaw = 0;
   private cameraYaw = 0;
+  private cameraYawOffset = 0;
   private cameraDistance = CAMERA_DISTANCE;
   private visibleCameraDistance = CAMERA_DISTANCE;
   private readonly pressedKeys = new Set<KeyCode>();
@@ -1726,7 +1730,7 @@ export class GameBootstrap3D extends Component {
         `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
           ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路"
-          : "W/S前后，A/D转向，按住右键时A/D横移；1平A，2/3使用药水；E开关动态门；左键点击地面寻路"),
+          : "W/S前后，A/D转向；左键拖动环视、短按地面寻路；按住右键时A/D横移；1平A，2/3使用药水；E开关动态门"),
       );
     } catch (error) {
       this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
@@ -1933,7 +1937,7 @@ export class GameBootstrap3D extends Component {
     }
   }
 
-  /** 将屏幕点击投射到y=0灰盒平面，并请求服务端Rust NavMesh路径。 / Projects a screen click onto the graybox plane and requests a Rust NavMesh path from the server. */
+  /** 左键短按负责选择或寻路；一旦形成拖动手势，抬起事件必须被镜头环绕消费。 / A short left click selects or paths, while an orbit drag must consume its mouse-up event. */
   private onMouseUp(event: EventMouse): void {
     if (event.getButton() === EventMouse.BUTTON_RIGHT) {
       this.rightMouseHeld = false;
@@ -1941,6 +1945,10 @@ export class GameBootstrap3D extends Component {
       return;
     }
     if (event.getButton() !== EventMouse.BUTTON_LEFT) return;
+    const wasOrbitDrag = this.leftMouseDragDistance >= MOUSE_ORBIT_DRAG_THRESHOLD_PIXELS;
+    this.leftMouseHeld = false;
+    this.leftMouseDragDistance = 0;
+    if (wasOrbitDrag) return;
     const location = event.getLocation();
     const monster = this.pickMonsterAtScreen(location.x, location.y);
     if (monster) {
@@ -2011,6 +2019,14 @@ export class GameBootstrap3D extends Component {
   }
 
   private onMouseDown(event: EventMouse): void {
+    if (event.getButton() === EventMouse.BUTTON_LEFT) {
+      this.leftMouseHeld = true;
+      this.leftMouseDragDistance = 0;
+      // 捕获当前实际观察角，避免路径跟随尚未收敛时按下左键造成镜头跳变。
+      // Capture the visible angle so pressing left during a follow blend cannot make the camera jump.
+      this.cameraYawOffset = normalizeRadians(this.cameraYaw - this.playerYaw);
+      return;
+    }
     if (event.getButton() !== EventMouse.BUTTON_RIGHT) return;
     this.rightMouseHeld = true;
     this.interruptClickNavigation();
@@ -2018,12 +2034,22 @@ export class GameBootstrap3D extends Component {
   }
 
   private onMouseMove(event: EventMouse): void {
-    if (!this.rightMouseHeld) return;
-    const yawDelta = -event.getDeltaX() * MOUSE_YAW_RADIANS_PER_PIXEL;
-    this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
+    const deltaX = event.getDeltaX();
+    const deltaY = event.getDeltaY();
+    if (this.leftMouseHeld) this.leftMouseDragDistance += Math.hypot(deltaX, deltaY);
+    const yawDelta = -deltaX * MOUSE_YAW_RADIANS_PER_PIXEL;
+    if (this.rightMouseHeld) {
+      this.playerYaw = normalizeRadians(this.playerYaw + yawDelta);
+      this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
+      this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+      this.markInputDirty(false);
+      return;
+    }
+    if (!this.leftMouseHeld || this.leftMouseDragDistance < MOUSE_ORBIT_DRAG_THRESHOLD_PIXELS) return;
+    // 左键只改变观察偏移；角色朝向、输入协议和权威Yaw都不能被写入。
+    // Left orbit changes presentation offset only and never writes facing, input, or authoritative yaw.
+    this.cameraYawOffset = normalizeRadians(this.cameraYawOffset + yawDelta);
     this.cameraYaw = normalizeRadians(this.cameraYaw + yawDelta);
-    this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
-    this.markInputDirty(false);
   }
 
   /** 滚轮只调整本地尾随距离；向前拉近、向后拉远，并限制在可用观察范围内。 / Mouse wheel only changes local follow distance, zooming in forward and out backward within safe bounds. */
@@ -2554,7 +2580,7 @@ export class GameBootstrap3D extends Component {
     this.updatePlayerStatsHud();
   }
 
-  /** 点击转向时相机按最短圆弧追随；手动转身已同步朝向，因此不会产生额外滞后。 / Follows click-path turns over the shortest arc while manual turns keep camera and player yaw synchronized. */
+  /** 相机追随角色朝向与左键观察偏移之和；观察偏移只属于本地表现。 / Follows player yaw plus the local-only left-orbit offset. */
   private updateFollowCamera(deltaTime: number): void {
     if (!this.player || !this.cameraNode) return;
     const safeDeltaTime = Math.max(0, deltaTime);
@@ -2562,7 +2588,7 @@ export class GameBootstrap3D extends Component {
     this.visibleCameraDistance += (this.cameraDistance - this.visibleCameraDistance) * blend;
     this.cameraYaw = approachAngle(
       this.cameraYaw,
-      this.playerYaw,
+      normalizeRadians(this.playerYaw + this.cameraYawOffset),
       CAMERA_YAW_FOLLOW_SPEED_RADIANS * safeDeltaTime,
     );
     const foot = new Vec3(this.player.position.x, this.player.position.y - PLAYER_HALF_HEIGHT, this.player.position.z);

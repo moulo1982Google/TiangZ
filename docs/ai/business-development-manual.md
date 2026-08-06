@@ -929,6 +929,8 @@ Demo要观察道具链路时，`ItemComponentSystem.Awake`会创建两叠测试�
 
 玩家3D模型必须挂在Unit表现根节点下，禁止直接用骨骼Prefab充当权威Unit节点。当前Cocos3D示例由`PlayerCharacterVisual3D`加载`BlueChibi`骨骼Prefab，模型原点在脚底，Unit根节点继续沿用身体中心和既有碰撞尺寸。业务只向表现控制器提交`moving/idle`等状态；`Idle/Walk/Attack`动画不能写坐标、参与寻路、决定命中或启用Root Motion。换模型时优先替换Visual资源，不复制或改写Map移动链路。
 
+镜头环绕同样属于纯表现：Cocos3D左键拖动只维护本地`cameraYawOffset`，不能修改Unit朝向或发送移动协议。输入手势必须有拖动阈值；环绕手势结束后要消费鼠标抬起，避免一次操作同时触发地面寻路。短点击的怪物选择与寻路仍走原有射线入口。
+
 Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建图标，按`UI/Icons/Buff/<BuffId>`加载资源。倒计时使用服务端结束时间和客户端估算的服务器时钟，只显示`分钟:秒`，分钟不换算成小时；无限Buff显示`永久`。客户端显示到`00:00`后不得删除图标，删除只能由`G2C_BuffRemoved`驱动，不要把本地倒计时归零当成服务器已经移除。
 
 ## 可观测性边界

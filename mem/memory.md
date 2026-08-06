@@ -77,6 +77,7 @@
 - Cocos3D玩家使用“中心点Unit根节点 + 可替换Visual子树”：`BlueChibi.glb`是脚底原点的低模骨骼Prefab，挂载时下移0.9米；`Idle/Walk`只消费移动表现状态，不得写坐标、参与碰撞/AOI或启用Root Motion。使用`npm run asset:cocos3d:blue-chibi`通过Blender 5.2 LTS重复生成。
 - Cocos3D、UE、Godot 的 A/D 方向必须以实际画面验收：A 向视觉左侧转，D 向视觉右侧转。
 - Cocos3D 按住鼠标右键时：A 向左平移，D 向右平移。不能只依据代码中的正负号判断，必须验证最终画面。
+- Cocos3D桌面左键拖动只环绕角色并维护本地`cameraYawOffset`，不能改变角色朝向或发协议；拖动超过5像素后必须吞掉鼠标抬起，不能误触发地面寻路，短点击仍可选择怪物或寻路。
 
 ## Cocos构建与发布
 
