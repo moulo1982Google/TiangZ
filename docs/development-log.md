@@ -7,6 +7,12 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-06：升级Deno Runtime依赖
+
+- `deno_core`从`0.409.0`升级到`0.410.0`，`deno_inspector_server`从`0.30.0`升级到`0.31.0`；锁文件同步采用`deno_ops 0.286.0`、`serde_v8 0.319.0`和新版`deno_v8/v8x`绑定。
+- 现有`op2`、V8 GC回调、Inspector和Hotfix宿主接口无需修改；`cargo check --locked --all-targets`及Rust库测试通过。
+- 完整`npm run test:runtime`通过单进程与拆分进程冒烟，确认TypeScript Bundle、Inspector/V8初始化、登录进图、动态地图、AOI、战斗与NavMesh3D链路均可真实运行。
+
 ## 2026-08-06：Cocos3D左键独立环绕镜头
 
 - 桌面端左键拖动新增本地观察偏移，不修改玩家朝向、移动协议或服务端权威Yaw；角色移动、碰撞和AOI链路保持不变。
