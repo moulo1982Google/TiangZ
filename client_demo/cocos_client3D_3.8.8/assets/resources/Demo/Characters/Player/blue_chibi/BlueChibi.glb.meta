@@ -1,0 +1,479 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1",
+  "files": [
+    "__original-animation-0.bin",
+    "__original-animation-1.bin"
+  ],
+  "subMetas": {
+    "46085": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@46085",
+      "displayName": "",
+      "id": "46085",
+      "name": "ClothBlack.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "57146": {
+      "importer": "gltf-animation",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@57146",
+      "displayName": "",
+      "id": "57146",
+      "name": "Walk.animation",
+      "userData": {
+        "gltfIndex": 1,
+        "wrapMode": 2,
+        "sample": 30,
+        "span": {
+          "from": 0,
+          "to": 1.0666667222976685
+        },
+        "events": []
+      },
+      "ver": "1.0.18",
+      "imported": true,
+      "files": [
+        ".bin"
+      ],
+      "subMetas": {}
+    },
+    "91806": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@91806",
+      "displayName": "",
+      "id": "91806",
+      "name": "HairHighlight.material",
+      "userData": {
+        "gltfIndex": 5
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "c244a": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@c244a",
+      "displayName": "",
+      "id": "c244a",
+      "name": "Cylinder.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 744
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7869b": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@7869b",
+      "displayName": "",
+      "id": "7869b",
+      "name": "Sphere.025.mesh",
+      "userData": {
+        "gltfIndex": 1,
+        "triangleCount": 336
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a5a1f": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@a5a1f",
+      "displayName": "",
+      "id": "a5a1f",
+      "name": "Sphere.026.mesh",
+      "userData": {
+        "gltfIndex": 2,
+        "triangleCount": 228
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "12b8b": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@12b8b",
+      "displayName": "",
+      "id": "12b8b",
+      "name": "Torus.mesh",
+      "userData": {
+        "gltfIndex": 3,
+        "triangleCount": 508
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "4b41b": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@4b41b",
+      "displayName": "",
+      "id": "4b41b",
+      "name": "Sphere.004.mesh",
+      "userData": {
+        "gltfIndex": 4,
+        "triangleCount": 2940
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ed2e1": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@ed2e1",
+      "displayName": "",
+      "id": "ed2e1",
+      "name": "Sphere.010.mesh",
+      "userData": {
+        "gltfIndex": 5,
+        "triangleCount": 280
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "2f6d1": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@2f6d1",
+      "displayName": "",
+      "id": "2f6d1",
+      "name": "Cube.mesh",
+      "userData": {
+        "gltfIndex": 6,
+        "triangleCount": 1120
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "fd4a2": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@fd4a2",
+      "displayName": "",
+      "id": "fd4a2",
+      "name": "Cube.004.mesh",
+      "userData": {
+        "gltfIndex": 7,
+        "triangleCount": 216
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ed341": {
+      "importer": "gltf-mesh",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@ed341",
+      "displayName": "",
+      "id": "ed341",
+      "name": "Sphere.001.mesh",
+      "userData": {
+        "gltfIndex": 8,
+        "triangleCount": 960
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "c2696": {
+      "importer": "gltf-animation",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@c2696",
+      "displayName": "",
+      "id": "c2696",
+      "name": "Idle.animation",
+      "userData": {
+        "gltfIndex": 0,
+        "wrapMode": 2,
+        "sample": 30,
+        "span": {
+          "from": 0,
+          "to": 2
+        },
+        "events": []
+      },
+      "ver": "1.0.18",
+      "imported": true,
+      "files": [
+        ".bin"
+      ],
+      "subMetas": {}
+    },
+    "a579d": {
+      "importer": "gltf-skeleton",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@a579d",
+      "displayName": "",
+      "id": "a579d",
+      "name": "BlueChibiArmature.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 18
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "0b84e": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@0b84e",
+      "displayName": "",
+      "id": "0b84e",
+      "name": "EyeBlue.material",
+      "userData": {
+        "gltfIndex": 1
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "1552b": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@1552b",
+      "displayName": "",
+      "id": "1552b",
+      "name": "EyeDark.material",
+      "userData": {
+        "gltfIndex": 2
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "4c263": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@4c263",
+      "displayName": "",
+      "id": "4c263",
+      "name": "Glasses.material",
+      "userData": {
+        "gltfIndex": 3
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8a430": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@8a430",
+      "displayName": "",
+      "id": "8a430",
+      "name": "HairBlue.material",
+      "userData": {
+        "gltfIndex": 4
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "564f0": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@564f0",
+      "displayName": "",
+      "id": "564f0",
+      "name": "HoodieWhite.material",
+      "userData": {
+        "gltfIndex": 6
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "87e15": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@87e15",
+      "displayName": "",
+      "id": "87e15",
+      "name": "ShoeWhite.material",
+      "userData": {
+        "gltfIndex": 7
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "0b4b1": {
+      "importer": "gltf-material",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@0b4b1",
+      "displayName": "",
+      "id": "0b4b1",
+      "name": "Skin.material",
+      "userData": {
+        "gltfIndex": 8
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "05c94": {
+      "importer": "gltf-scene",
+      "uuid": "ddf9d8d7-2586-467b-a952-32a7dfa413e1@05c94",
+      "displayName": "",
+      "id": "05c94",
+      "name": "BlueChibi.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "animationImportSettings": [
+      {
+        "name": "Idle",
+        "duration": 2,
+        "fps": 30,
+        "splits": [
+          {
+            "name": "Idle",
+            "from": 0,
+            "to": 2,
+            "wrapMode": 2,
+            "previousId": "c2696"
+          }
+        ]
+      },
+      {
+        "name": "Walk",
+        "duration": 1.0666667222976685,
+        "fps": 30,
+        "splits": [
+          {
+            "name": "Walk",
+            "from": 0,
+            "to": 1.0666667222976685,
+            "wrapMode": 2,
+            "previousId": "57146"
+          }
+        ]
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@c244a",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@7869b",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@a5a1f",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@12b8b",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@4b41b",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@ed2e1",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@2f6d1",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@fd4a2",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@ed341"
+      ],
+      "skeletons": [
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@a579d"
+      ],
+      "textures": [],
+      "materials": [
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@46085",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@0b84e",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@1552b",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@4c263",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@8a430",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@91806",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@564f0",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@87e15",
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@0b4b1"
+      ],
+      "scenes": [
+        "ddf9d8d7-2586-467b-a952-32a7dfa413e1@05c94"
+      ]
+    }
+  }
+}

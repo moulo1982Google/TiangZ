@@ -32,6 +32,7 @@
     "build:game-config:startup": "npm run codegen:game-config && npm run build:game-config:initial",
     "navigation:graybox": "node tools/navigation/generate_graybox.mjs",
     "navigation:bake": "npm run navigation:graybox && cargo run --locked --bin navmesh_bake -- --manifest navigation/maps/demo_3d/bake.json",
+    "asset:cocos3d:blue-chibi": "node tools/assets/generate_blue_chibi.mjs",
     "codegen:proto:update-lock": "node tools/codegen_proto.mjs --update-opcode-lock",
     "codegen:proto:replace-schema-lock": "node tools/codegen_proto.mjs --update-opcode-lock --replace-schema-lock",
     "codegen:client-sdk": "node tools/codegen_client_sdk.mjs",

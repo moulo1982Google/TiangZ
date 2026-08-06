@@ -49,6 +49,7 @@ import {
 import type { RpcSocket } from "../Generated/SDK/Core/Net/RpcSocket";
 import "../Generated/SDK/Core/Net/BrowserWebSocketTransport";
 import "../Generated/SDK/Core/Net/NativeTransport";
+import { PlayerCharacterVisual3D } from "./PlayerCharacterVisual3D";
 
 const { ccclass, property } = _decorator;
 const MAP_ID = 100;
@@ -121,6 +122,7 @@ interface MonsterOverheadHud {
 
 interface RemotePlayer3D {
   readonly node: Node;
+  readonly visual?: PlayerCharacterVisual3D;
   readonly unitId: number;
   readonly selectionMarker: Node;
   readonly overheadHud?: MonsterOverheadHud;
@@ -177,6 +179,7 @@ export class GameBootstrap3D extends Component {
   private camera!: Camera;
   private cameraNode!: Node;
   private player!: Node;
+  private playerVisual?: PlayerCharacterVisual3D;
   private targetMarker!: Node;
   private dynamicDoor!: Node;
   private pathRoot!: Node;
@@ -275,6 +278,7 @@ export class GameBootstrap3D extends Component {
     this.updateDirectionalInput(deltaTime);
     this.advanceDirectionalPrediction(deltaTime);
     this.advanceAlongPath(deltaTime);
+    this.updateLocalPlayerAnimation();
     this.reconcileAuthoritativePosition(deltaTime);
     this.reconcileAuthoritativeFacing(deltaTime);
     this.interpolateRemotePlayers(deltaTime);
@@ -296,7 +300,12 @@ export class GameBootstrap3D extends Component {
     this.loginFlow?.close();
     this.messageDispatcher?.dispose();
     this.messageDispatcher = undefined;
-    for (const remote of this.remotePlayers.values()) remote.node.destroy();
+    this.playerVisual?.Dispose();
+    this.playerVisual = undefined;
+    for (const remote of this.remotePlayers.values()) {
+      remote.visual?.Dispose();
+      remote.node.destroy();
+    }
     this.remotePlayers.clear();
     this.statusElement?.remove();
     this.statusElement = undefined;
@@ -374,7 +383,10 @@ export class GameBootstrap3D extends Component {
     this.targetMarker = createBox("Target", 0.45, 0.08, 0.45, new Color(235, 190, 72, 255), 0, 0.05, 0);
     this.targetMarker.active = false;
     world.addChild(this.targetMarker);
-    this.player = createBox("LocalPlayer", 0.8, 1.8, 0.8, new Color(76, 164, 235, 255), 0, PLAYER_HALF_HEIGHT, 0);
+    this.player = createPlayerEntityRoot("LocalPlayer", 0, PLAYER_HALF_HEIGHT, 0);
+    const fallback = createBox("LocalPlayerFallback", 0.8, 1.8, 0.8, new Color(76, 164, 235, 255), 0, 0, 0);
+    this.player.addChild(fallback);
+    this.playerVisual = new PlayerCharacterVisual3D(this.player, fallback);
     world.addChild(this.player);
     this.playerOverheadHud = createMonsterOverheadHud();
     this.player.addChild(this.playerOverheadHud.root);
@@ -1753,6 +1765,7 @@ export class GameBootstrap3D extends Component {
       const remote = this.remotePlayers.get(unitId);
       if (!remote) continue;
       if (unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
+      remote.visual?.Dispose();
       remote.node.destroy();
       this.remotePlayers.delete(unitId);
     }
@@ -2370,19 +2383,28 @@ export class GameBootstrap3D extends Component {
     if (entity.unitId === this.localUnitId) return;
     let remote = this.remotePlayers.get(entity.unitId);
     if (!remote) {
-      const node = createBox(
-        `RemotePlayer_${entity.unitId}`,
-        0.8,
-        1.8,
-        0.8,
-        this.entityColor(entity),
-        entity.x,
-        entity.y + PLAYER_HALF_HEIGHT,
-        entity.z,
-      );
+      const node = entity.entityType === ENTITY_TYPE_PLAYER
+        ? createPlayerEntityRoot(`RemotePlayer_${entity.unitId}`, entity.x, entity.y + PLAYER_HALF_HEIGHT, entity.z)
+        : createBox(
+          `RemotePlayer_${entity.unitId}`,
+          0.8,
+          1.8,
+          0.8,
+          this.entityColor(entity),
+          entity.x,
+          entity.y + PLAYER_HALF_HEIGHT,
+          entity.z,
+        );
+      let visual: PlayerCharacterVisual3D | undefined;
+      if (entity.entityType === ENTITY_TYPE_PLAYER) {
+        const fallback = createBox("RemotePlayerFallback", 0.8, 1.8, 0.8, this.entityColor(entity), 0, 0, 0);
+        node.addChild(fallback);
+        visual = new PlayerCharacterVisual3D(node, fallback);
+      }
       this.player.parent?.addChild(node);
       remote = {
         node,
+        visual,
         unitId: entity.unitId,
         selectionMarker: createSelectionMarker(),
         overheadHud: entity.entityType === ENTITY_TYPE_MONSTER
@@ -2405,6 +2427,7 @@ export class GameBootstrap3D extends Component {
       remote.alive = entity.alive;
       for (const numeric of entity.numerics) remote.numerics.set(numeric.numericType, numeric.value);
       remote.node.active = entity.alive;
+      if (!entity.alive) remote.visual?.SetMoving(false);
     }
     this.updateMonsterOverheadHud(remote);
   }
@@ -2429,7 +2452,9 @@ export class GameBootstrap3D extends Component {
         remote.node.position.y - PLAYER_HALF_HEIGHT,
         remote.node.position.z,
       );
-      if (Vec3.distance(foot, remote.targetFoot) >= REMOTE_SNAP_DISTANCE) {
+      const remainingDistance = Vec3.distance(foot, remote.targetFoot);
+      remote.visual?.SetMoving(remote.alive && remainingDistance > ARRIVAL_DISTANCE);
+      if (remainingDistance >= REMOTE_SNAP_DISTANCE) {
         foot.set(remote.targetFoot);
       } else {
         Vec3.lerp(foot, foot, remote.targetFoot, blend);
@@ -2437,6 +2462,13 @@ export class GameBootstrap3D extends Component {
       remote.node.setPosition(foot.x, foot.y + PLAYER_HALF_HEIGHT, foot.z);
       remote.node.setRotationFromEuler(0, remote.yaw * 180 / Math.PI, 0);
     }
+  }
+
+  /** 根据本地预测是否实际推进切换Idle/Walk；动画只消费表现状态，不修改坐标。 / Switches Idle/Walk from local prediction without allowing animation to mutate coordinates. */
+  private updateLocalPlayerAnimation(): void {
+    const directional = this.currentDirectionalInput();
+    const moving = directional.forward !== 0 || directional.strafe !== 0 || this.pathIndex < this.path.length;
+    this.playerVisual?.SetMoving(this.localUnitId !== 0 && moving);
   }
 
   /** 更新怪物头顶条的数值和摄像机朝向；只做表现，不参与战斗判定。 / Updates monster overhead values and camera-facing orientation for presentation only. */
@@ -2612,6 +2644,13 @@ function createBox(
   material.initialize({ effectName: "builtin-unlit" });
   material.setProperty("mainColor", color);
   renderer.setMaterial(material, 0);
+  return node;
+}
+
+/** 创建保持旧版中心点/脚底换算的玩家实体根节点；模型与占位都只能挂在其下。 / Creates a player entity root that preserves the legacy center/foot conversion for visual children. */
+function createPlayerEntityRoot(name: string, x: number, y: number, z: number): Node {
+  const node = new Node(name);
+  node.setPosition(x, y, z);
   return node;
 }
 

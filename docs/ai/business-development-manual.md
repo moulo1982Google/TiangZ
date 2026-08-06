@@ -927,6 +927,8 @@ Demo要观察道具链路时，`ItemComponentSystem.Awake`会创建两叠测试�
 
 `ItemConfig.icon`放在客户端分组，填写相对`assets/resources`的Cocos资源键，例如`UI/Icons/Items/1001`，前端通过配置解析图标。Cocos3D Web的快捷栏固定约定为`1`切换平A、`2`发送1001使用请求、`3`发送1002使用请求；显示数量先读进图`G2C_EnterMap.items`，后续只接受`G2C_ItemChanged`更新。按键或按钮不能直接修改本地数量，也不能把`itemId`写死；应先按`configId`找到服务端快照中的具体Item实例，再调用生成的`MapClient.useItem`。
 
+玩家3D模型必须挂在Unit表现根节点下，禁止直接用骨骼Prefab充当权威Unit节点。当前Cocos3D示例由`PlayerCharacterVisual3D`加载`BlueChibi`骨骼Prefab，模型原点在脚底，Unit根节点继续沿用身体中心和既有碰撞尺寸。业务只向表现控制器提交`moving/idle`等状态；`Idle/Walk/Attack`动画不能写坐标、参与寻路、决定命中或启用Root Motion。换模型时优先替换Visual资源，不复制或改写Map移动链路。
+
 Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建图标，按`UI/Icons/Buff/<BuffId>`加载资源。倒计时使用服务端结束时间和客户端估算的服务器时钟，只显示`分钟:秒`，分钟不换算成小时；无限Buff显示`永久`。客户端显示到`00:00`后不得删除图标，删除只能由`G2C_BuffRemoved`驱动，不要把本地倒计时归零当成服务器已经移除。
 
 ## 可观测性边界

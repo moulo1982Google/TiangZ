@@ -431,4 +431,6 @@ Unity表现层使用`Vector3`、Transform和Camera，协议及服务端仍使用
 
 `ItemConfig.icon`是客户端字段，值是相对Cocos `assets/resources`且不含扩展名的资源键，例如`UI/Icons/Items/1001`。Cocos3D Web快捷栏固定为`1=平A`、`2=1001`、`3=1002`，初始数量来自`G2C_EnterMap.items`，使用后的数量来自不可覆盖的`G2C_ItemChanged`；客户端不得在按键时先行扣数量。以后增加快捷栏时继续按`configId -> ItemConfig -> icon`解析，不能把道具图片路径硬编码到表现脚本。
 
+Cocos3D玩家Unit保持“中心点实体根节点 + 可替换Visual子树”的边界。当前`BlueChibi.glb`由Blender脚本生成，导入后是包含`Idle/Walk`的骨骼Prefab；`PlayerCharacterVisual3D`只消费是否移动的表现状态，并将脚底原点相对实体中心下移0.9米。动画、模型和方块加载占位都不得修改Unit坐标、碰撞、AOI或权威Yaw。生成命令是`npm run asset:cocos3d:blue-chibi`，攻击动画仍属后续表现工作。
+
 Cocos3D的本地Buff栏从`MapEntitySnapshot.buffs`、`M2C_UseItem.buff`和`G2C_BuffAdded`建立图标，资源键固定为`UI/Icons/Buff/<BuffId>`，例如Buff 2001使用`UI/Icons/Buff/2001`。剩余时间使用最近一次Gate Ping得到的服务器时钟偏差计算，显示为`分钟:秒`，两小时显示`120:00`；无限时长显示`永久`。本地倒计时到`00:00`只冻结文字和保留图标，必须等`G2C_BuffRemoved`才删除，不能用客户端本地计时器提前清理Buff。

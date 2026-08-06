@@ -74,6 +74,7 @@
 - 3D 地图使用 NavMesh3D、离线导航资源和动态门障碍；角色与怪物之间的动态避让明确不做。
 - 后端坐标统一为 `x/y/z: float32`，前端转换为各引擎自己的 `Vec3/Vector3/float3`，引擎类型不能进入协议。
 - Cocos3D、UE、Godot 共享协议和 SDK，但各自负责输入、摄像机和表现层坐标转换。
+- Cocos3D玩家使用“中心点Unit根节点 + 可替换Visual子树”：`BlueChibi.glb`是脚底原点的低模骨骼Prefab，挂载时下移0.9米；`Idle/Walk`只消费移动表现状态，不得写坐标、参与碰撞/AOI或启用Root Motion。使用`npm run asset:cocos3d:blue-chibi`通过Blender 5.2 LTS重复生成。
 - Cocos3D、UE、Godot 的 A/D 方向必须以实际画面验收：A 向视觉左侧转，D 向视觉右侧转。
 - Cocos3D 按住鼠标右键时：A 向左平移，D 向右平移。不能只依据代码中的正负号判断，必须验证最终画面。
 

@@ -58,9 +58,23 @@ cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
 2. 使用Cocos Creator 3.8.8打开`client_demo/cocos_client3D_3.8.8`，打开`assets/scene.scene`并运行浏览器预览。
-3. Demo会自动登录并进入Map 100。看到绿色地面、中央障碍和蓝色玩家后，点击地面请求服务端路径；按`E`关闭红色动态门，再点击门后方可以观察绕行，再按`E`开门后恢复直线路径。
+3. Demo会自动登录并进入Map 100。看到绿色地面、中央障碍和蓝发玩家角色后，点击地面请求服务端路径；按`E`关闭红色动态门，再点击门后方可以观察绕行，再按`E`开门后恢复直线路径。
 
 浏览器预览使用WebSocket；Native构建使用KCP。状态栏会显示Map和导航版本，资源Hash不一致时拒绝进入。灰盒几何由客户端代码绘制，只负责展示；服务端仍以`navigation.bin`为权威导航资源。
+
+## 玩家角色Prefab与动画
+
+Cocos导入`assets/resources/Demo/Characters/Player/blue_chibi/BlueChibi.glb`后，会把同名Scene子资源作为可实例化Prefab。`PlayerCharacterVisual3D`异步加载该Prefab；加载期间保留旧方块占位，成功实例化并取得`SkeletalAnimation`后隐藏占位。模型原点在脚底，挂到仍以身体中心定位的Unit根节点时只做`-0.9m`表现偏移，不改变现有碰撞、寻路、AOI或头顶UI坐标。
+
+当前模型包含`Idle`与`Walk`两个原地动画。方向移动和点击寻路只把“是否正在移动”传给表现控制器；动画绝不能写Unit坐标，也不能启用Root Motion。远端玩家根据权威目标与当前插值位置的剩余距离切换动画。怪物继续使用红/黄方块，角色模型只替换玩家表现。
+
+角色资产可重复生成：
+
+```powershell
+npm run asset:cocos3d:blue-chibi
+```
+
+命令需要Blender 5.2 LTS，或通过`BLENDER_PATH`指定兼容版本。可编辑源文件位于`client_demo/cocos_client3D_3.8.8/art/BlueChibi.blend`，生成脚本是`tools/assets/generate_blue_chibi.py`。攻击动画尚未加入；后续应在同一骨架增加`Attack`片段，并由服务端平A状态驱动表现，不能让动画关键帧直接结算伤害。
 
 服务端业务查询保持简单：
 
