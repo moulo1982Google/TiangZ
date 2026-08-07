@@ -94,7 +94,7 @@ export class GameBootstrap extends Component {
     ui.clear();
     ui.createBackground(new Color(24, 28, 36, 255));
     ui.createLabel(
-      "ets_runtime 2D Demo",
+      "TiangZ 2D Demo",
       0,
       150,
       32,

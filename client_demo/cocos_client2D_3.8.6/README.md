@@ -4,7 +4,7 @@
 
 ## 启动服务器
 
-在 `ets_runtime/` 目录执行：
+在 `TiangZ/` 目录执行：
 
 ```bash
 npm run build

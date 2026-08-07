@@ -51,7 +51,7 @@ app/generated/model/native/NativeOps.ts
 app/generated/model/native/NativeItemRef.ts
 ```
 
-扫描到的源码先交给 `@tiangz/native-language-core` 解析和校验，再由 `@tiangz/native-language-core/codegen` 生成内存中的 Rust/TS 文件。语法错误会包含文件、行号、列号和稳定的诊断编号；TiangZ 内的脚本只负责输出路径校验、落盘和 `rustfmt`。对应的 VS Code 扩展、语言核心与生成核心位于 [tiangz-native-language](https://gitee.com/eblard_admin/tiangz-native-language)。
+扫描到的源码先交给 `@tiangz/native-language-core` 解析和校验，再由 `@tiangz/native-language-core/codegen` 生成内存中的 Rust/TS 文件。语法错误会包含文件、行号、列号和稳定的诊断编号；TiangZ 内的脚本只负责输出路径校验、落盘和 `rustfmt`。对应的 VS Code 扩展、语言核心与生成核心位于 [tiangz-native-language](https://github.com/moulo1982Google/tiangz-native-language)。
 
 不要手工编辑 Generated 文件。
 

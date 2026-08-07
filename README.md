@@ -5,7 +5,7 @@
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
-## 当前开发分支：`ets_runtime`
+## 当前开发分支：`main`
 
 TiangZ 使用 Rust + deno_core + TypeScript。Rust/Tokio 负责网络、分帧、背压、跨进程连接和 Native Entity 权威数据；一个操作系统进程只创建一个 V8，TypeScript 业务线程在其中承载多个 Scene、Actor 和 Component。
 
@@ -366,8 +366,8 @@ Rust 去除 length-prefix 后把 `Uint8Array` 批量交给 TS；TS 完成 msgcod
 
 TiangZ 目前有两个职责独立的 VS Code 插件，均尚未发布到 Marketplace：
 
-- [TiangZ Native Language](https://gitee.com/eblard_admin/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；主工程当前使用 `v0.12.0`。
-- [TiangZ Developer Tools](https://gitee.com/eblard_admin/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component、System与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成。主工程固定使用`v0.14.0`，并通过`verify:design-rules`确保设计核心与`docs/patterns`规则ID、归属文档保持一致。
+- [TiangZ Native Language](https://github.com/moulo1982Google/tiangz-native-language)：为 `.native` 提供高亮、诊断、补全、Hover、跳转、格式化与 codegen 命令。语言核心和无文件系统依赖的 codegen-core 也由该仓库提供；主工程当前使用 `v0.15.0`。
+- [TiangZ Developer Tools](https://github.com/moulo1982Google/tiangz-developer-tools)：索引Environment、Machine、Process、Scene、Session、Unit、Component、System与Handler，在资源管理器显示“TiangZ工程”，提供源码跳转、Problems诊断、CI工程检查和定向代码生成。主工程固定使用`v0.15.0`，并通过`verify:design-rules`确保设计核心与`docs/patterns`规则ID、归属文档保持一致。
 
 两个插件分开维护，未来可以通过 Extension Pack 一键安装。当前需分别克隆仓库，执行 `npm install`、`npm run check` 和 `npm run package:extension`，再从各仓库 `dist` 目录安装 VSIX。
 
