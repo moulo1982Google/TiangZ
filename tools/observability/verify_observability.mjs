@@ -34,8 +34,8 @@ try {
   const dashboardOutput = path.join(temporary, "dashboard.json");
   run("node", ["tools/observability/generate_dashboard.mjs", "--output", dashboardOutput]);
   const committedDashboard = path.resolve(root, "tools/observability/grafana/provisioning/dashboards/files/tiangz-process-overview.json");
-  const generated = readFileSync(dashboardOutput, "utf8");
-  const committed = readFileSync(committedDashboard, "utf8");
+  const generated = normalizeLineEndings(readFileSync(dashboardOutput, "utf8"));
+  const committed = normalizeLineEndings(readFileSync(committedDashboard, "utf8"));
   if (generated !== committed) {
     throw new Error("Grafana Dashboard 与生成器不一致，请运行 npm run observability:dashboard");
   }
@@ -44,6 +44,11 @@ try {
   console.log("[observability] assets verified");
 } finally {
   rmSync(temporary, { recursive: true, force: true });
+}
+
+/** 统一文本换行，避免Windows Git检出策略制造伪生成漂移。 / Normalizes text line endings so Windows Git checkout policy cannot create false generated drift. */
+function normalizeLineEndings(value) {
+  return value.replaceAll("\r\n", "\n");
 }
 
 /** 执行仓库内生成器并保留失败输出。 / Runs a repository generator and preserves failure output. */
