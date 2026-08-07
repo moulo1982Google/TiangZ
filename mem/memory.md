@@ -138,6 +138,7 @@ npm run build:cocos3d:mobile
 - 可扩展施法前置条件统一走同步只读`SkillEvents.BeforeCast` Veto；底层SkillMap与BuffComponent仍必须保留最终不变量，不能只信Veto。
 - 读条技能接受时立即清除Rust旧移动租约；后续非零移动输入打断施法，不能让玩家在旧输入租约期间继续滑行。
 - Buff冲突已支持Target/Source作用域与Stack/Refresh/Replace/Reject/HigherWins；运行时Add/Tick/Remove Action和护盾剩余量必须随传送快照恢复，普通Refresh不重复执行AddAction。
+- 玩家跨MapHost快照的生成和目标校验必须共同引用`PLAYER_TRANSFER_SCHEMA_VERSION`；新增可传送Component或字段时升级一次常量，并跑真实跨图Runtime smoke，禁止两端手写不同schema数字。
 - 当前五技能数值暂存Hotfix `SkillCatalog.ts`。后续迁入Luban只能替换数据来源，不能改变SkillComponent、Handler、Action或Combat边界。
 
 ## 3D客户端左右输入约定

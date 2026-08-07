@@ -224,6 +224,8 @@ Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`Broa
 
 `0.4.0`冻结服务端地图局部坐标为米制`X/Y/Z + Yaw`：X/Z是地面平面，Y是高度，Yaw是绕Y轴弧度，Yaw=0朝+Z，前向量固定为`(sin(Yaw),0,cos(Yaw))`。坐标必须和`MapInstanceId`一起解释，不建立跨大陆的巨大浮点世界坐标。protobuf与Native schema使用普通`float/f32`，客户端适配层再转换为具体引擎坐标。UE边界使用`(X,Z,Y)×100`和`90°-TiangZYaw`转换；协议状态不能保存或回传UE原生`FVector/FRotator`。
 
+玩家跨MapHost使用稳定protobuf `PlayerTransferSnapshot`。生成端和目标校验端统一引用`PLAYER_TRANSFER_SCHEMA_VERSION`；新增Buff、Skill等可传送Component或修改传送字段时必须显式升级该常量，并通过真实跨图Runtime smoke，不能在两处手写不同版本号。
+
 `MapConfig.SpatialMode`区分`Grid2D`与`NavMesh3D`。Grid2D运行在X/Z Cell上；NavMesh3D固定官方Recast/Detour `v1.6.0`，具备确定性灰盒、v2压缩高度层资源、SHA-256元数据、Map启动装载、Rust投影/寻路/射线/高度和动态障碍。相同资源的MapInstance共享不可变高度层模板，各自独占`dtNavMesh + dtTileCache + Query`、路径、AOI和Unit空间状态；Scene销毁通过`SpatialRelease`幂等释放。动态障碍只表示门、路障等业务物体，不包含角色或怪物之间的动态阻挡与动态避让。业务用稳定地图内`ObstacleId`调用`MapComponent.UpsertNavigationBoxObstacle/RemoveNavigationObstacle`并提交真实物理盒体，Rust按烘焙`agentRadius`扩张X/Z导航占用、合并目标状态并按Tick限制命令和Tile重建；业务不得重复增加半径。提交完成后未结束的点击路径自动重算。`C2M_FindPath`只查询，`C2M_NavigateTo`提交路径目标，`C2M_NavigateInput`提交相对朝向的离散方向；点击路径由Rust先连续转向再前进，方向状态由Rust每个20Hz Tick通过`moveAlongSurface`贴地推进，并缓存Unit当前polygon引用。客户端采用相同的路径转向预测，并每500ms续期1.5秒方向输入租约；断续期后Rust自动停止。Cocos 3D与UE 5.4.4均以`E`键调用同一个动态门RPC，并且只在服务端响应后更新红门表现；Cocos为本地预测增加表现约束，UE只插值权威位置，客户端门Actor均不参与权威导航计算。权威位置以`G2C_EntityNavigate`按AOI批量广播。完整约束见[地图空间与3D坐标契约](../design/spatial-world.md)。
 
 动态障碍的可见状态不能只放在请求者的RPC响应里。地图状态变化时，业务必须向当前地图所有在线客户端广播状态事件；客户端完成`MapSnapshotReady`时还必须从响应读取当前状态，避免“后来进入的玩家看不到门，但服务端仍然阻挡”的分叉。`G2C_DemoDoorState`是灰盒演示的具体例子，正式门系统应沿用“进图全量状态 + 变化事件”的模式。

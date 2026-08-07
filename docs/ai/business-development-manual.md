@@ -480,6 +480,8 @@ Component迁移遵循显式选择：默认不迁移，只有稳定Model类型加
 
 Entity迁移快照只用于一次进程内迁移，不能长期缓存、写数据库或当作跨进程协议。跨MapHost使用稳定protobuf `PlayerTransferSnapshot`和`MapTransfer.Prepare/Commit/Abort`；Location以revision和operationId保护唯一权威地址，Gate的有界屏障按Proto `duringTransfer`处理并发Actor消息。必须执行一次的RPC标记`queue`，查询类可标记`reject`，可覆盖单向状态使用`drop/latest`。业务代码不得扫描所有MapHost、不得把本地`PlayerDirectoryComponent`当全局目录，也不得手写msgcode分支控制迁移。完整语义见[Entity地图迁移](../design/entity-transfer.md)和[Location路由](../design/location-routing.md)。
 
+给PlayerUnit新增需要跨图保留的Component时，除了实现`CaptureTransfer/RestoreTransfer`，还必须扩展`PlayerTransferSnapshot`并升级`PLAYER_TRANSFER_SCHEMA_VERSION`。快照生成和目标校验只能引用这个共同常量，不得各写一个数字；验收至少包含Map1到Map2的真实跨MapHost传送，否则同进程内普通玩法测试发现不了版本不一致。
+
 只知道UnitId的服务端业务使用`new MessageHelper(this.scenes).CallUnit/SendUnit`。已经持有PlayerUnit或明确Actor地址时直接调用；普通Gate转发使用连接路由缓存，不查询Location。公会等批量扇出先`ResolveUnits`，再按MapHost/Gate聚合，禁止循环调用单Unit Location RPC。
 
 ## Scene调用规则

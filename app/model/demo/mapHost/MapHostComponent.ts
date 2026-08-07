@@ -66,6 +66,11 @@ import {
 
 const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 
+// 玩家跨MapHost快照的生成端与校验端必须引用同一版本，新增可传送Component时只修改这里。
+// The producer and validator of player transfer snapshots must share one version;
+// bump only this constant when a transferable Component changes the wire shape.
+const PLAYER_TRANSFER_SCHEMA_VERSION = 4;
+
 export class MapHostComponent extends Component {
   private readonly maps = new Map<bigint, MapComponent>();
   private readonly dynamicAssignments = new Map<bigint, DynamicMapAssignmentSnapshot>();
@@ -785,7 +790,7 @@ export class MapHostComponent extends Component {
   ): PlayerTransferSnapshot {
     const snapshot = player.Snapshot();
     return {
-      schemaVersion: 4,
+      schemaVersion: PLAYER_TRANSFER_SCHEMA_VERSION,
       transferId,
       unitId: snapshot.unitId,
       account: snapshot.account,
@@ -1127,7 +1132,7 @@ export class MapHostComponent extends Component {
   }
 
   private ValidateTransferSnapshot(snapshot: PlayerTransferSnapshot): void {
-    if (snapshot.schemaVersion !== 3) {
+    if (snapshot.schemaVersion !== PLAYER_TRANSFER_SCHEMA_VERSION) {
       throw new Error(`unsupported player transfer schema: ${snapshot.schemaVersion}`);
     }
     if (!snapshot.transferId || !snapshot.account || !snapshot.gateName) {

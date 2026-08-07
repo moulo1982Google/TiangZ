@@ -524,7 +524,7 @@
         "app/model/demo/map/UnitGateComponent.ts": "ca1273d2c392e85355be794c1c6573657f681cdd0ce1300aee1c538aaeb7bce0",
         "app/model/demo/mapHost/DynamicMapLifecycleComponent.ts": "bafca92d506875320749317a064ddfa0f76c3bfb255cc3f79c184ced86665f7e",
         "app/model/demo/mapHost/DynamicMapProxy.ts": "bb902647725d323d596c9b3890251906770edd712d5eb085c8e8534279cdc64b",
-        "app/model/demo/mapHost/MapHostComponent.ts": "20189a6d314062ef9f6597b4be22db99dce33e8f79cfc3e1f2ff9ea38830fa8d",
+        "app/model/demo/mapHost/MapHostComponent.ts": "2ce9e1de557e0be5a4e152c47db2596aed6139731c671d5e4df6d33eedbe7d6f",
         "app/model/demo/mapHost/MapHostEndpoint.ts": "57d7e03e00cb76782cf70eb422e7db4674ca7191763a149ba9d1775c7f4932c2",
         "app/model/demo/mapHost/MapHostRegistrationComponent.ts": "ae106c7b2f5ee97aa509e938a4e445fa9be4f86a16a265207ac18e24b99ebf0a",
         "app/model/demo/mapHost/PlayerDirectoryComponent.ts": "802f5442d2eb7b1842acf567658e761467d12162da8d49979a9aa706b51fcf32",
