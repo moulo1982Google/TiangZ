@@ -1,0 +1,130 @@
+import {
+  SkillCastPhase,
+  SkillComponent,
+  SkillMapComponent,
+  PlayerUnit,
+  type ActiveSkillCast,
+  type SkillCastCommand,
+  type SkillCastState,
+  type SkillTransferState,
+  TimeSystem,
+  type Unit,
+  type ITransfer,
+  systemFor,
+} from "#tiangz/model";
+
+/** Unit级技能状态实现；目标查找、距离与效果结算交给地图级调度器。 / Unit-local skill state; target resolution, range, and effects belong to the map scheduler. */
+@systemFor(SkillComponent)
+export class SkillComponentSystem extends SkillComponent implements ITransfer<SkillTransferState> {
+  /** Unit销毁时清空瞬态技能状态；不发布网络事件。 / Clears transient skill state on Unit disposal without publishing network events. */
+  protected override OnDestroy(): void {
+    this.activeCast = null;
+    this.cooldownEndBySkillId.clear();
+  }
+
+  Cast(command: SkillCastCommand): SkillCastState {
+    return this.DomainScene().GetComponent(SkillMapComponent).Cast(this.owner, command);
+  }
+
+  InterruptByMovement(): boolean {
+    return this.DomainScene().GetComponent(SkillMapComponent).InterruptByMovement(this.owner);
+  }
+
+  IsCasting(): boolean {
+    return this.activeCast !== null;
+  }
+
+  State(skillId: number = this.activeCast?.skillId ?? 0): SkillCastState {
+    return {
+      phase: this.activeCast ? SkillCastPhase.Casting : SkillCastPhase.Idle,
+      castId: this.activeCast?.castId ?? 0n,
+      skillId: this.activeCast?.skillId ?? skillId,
+      targetUnitId: this.activeCast?.targetUnitId ?? 0,
+      startedAtMs: this.activeCast?.startedAtMs ?? 0,
+      finishAtMs: this.activeCast?.finishAtMs ?? 0,
+      globalCooldownEndAtMs: this.globalCooldownEndAtMs,
+      skillCooldownEndAtMs: this.cooldownEndBySkillId.get(skillId) ?? 0,
+      interruptReason: this.lastInterruptReason,
+    };
+  }
+
+  /** 地图调度器在所有校验通过后原子提交读条和冷却。 / Atomically commits cast and cooldown state after map-level validation succeeds. */
+  Accept(
+    cast: ActiveSkillCast,
+    cooldownMs: number,
+    globalCooldownMs: number,
+  ): SkillCastState {
+    if (this.activeCast) throw new Error(`Unit ${this.owner.UnitId} is already casting`);
+    this.activeCast = cast;
+    this.lastInterruptReason = "";
+    this.globalCooldownEndAtMs = cast.startedAtMs + globalCooldownMs;
+    this.cooldownEndBySkillId.set(cast.skillId, cast.startedAtMs + cooldownMs);
+    return this.State(cast.skillId);
+  }
+
+  /** 返回当前技能与公共冷却是否可用；不修改状态。 / Checks skill and global cooldown deadlines without mutation. */
+  ReadyAt(skillId: number): number {
+    return Math.max(
+      this.globalCooldownEndAtMs,
+      this.cooldownEndBySkillId.get(skillId) ?? 0,
+    );
+  }
+
+  /** 读条完成后清空活动Cast，保留已经提交的冷却。 / Clears a completed cast while preserving committed cooldowns. */
+  Complete(castId: bigint): SkillCastState {
+    if (this.activeCast?.castId !== castId) return this.State();
+    const skillId = this.activeCast.skillId;
+    this.activeCast = null;
+    this.lastInterruptReason = "";
+    return this.State(skillId);
+  }
+
+  /** 打断只清除读条，不回退GCD和技能CD；所有法术已经在接受时消耗这些状态。 / Interrupts the cast without refunding GCD or skill cooldown committed at acceptance. */
+  Interrupt(reason: string): SkillCastState | undefined {
+    if (!this.activeCast) return undefined;
+    const skillId = this.activeCast.skillId;
+    this.activeCast = null;
+    this.lastInterruptReason = reason;
+    return this.State(skillId);
+  }
+
+  ActiveCast(): ActiveSkillCast | undefined {
+    return this.activeCast ?? undefined;
+  }
+
+  /** 复制仍有效的冷却截止时间；活动读条不跨地图恢复。 / Copies live cooldown deadlines while intentionally excluding active casts. */
+  CaptureTransfer(): SkillTransferState {
+    const now = TimeSystem.Instance.ServerNow;
+    return {
+      globalCooldownEndAtMs: this.globalCooldownEndAtMs > now ? this.globalCooldownEndAtMs : 0,
+      cooldowns: [...this.cooldownEndBySkillId.entries()]
+        .filter(([, endAtMs]) => endAtMs > now)
+        .map(([skillId, cooldownEndAtMs]) => ({ skillId, cooldownEndAtMs })),
+    };
+  }
+
+  /** 恢复冷却并清除源地图读条；不得把传送当成刷新技能的手段。 / Restores cooldowns and clears source-map casting so transfer cannot refresh abilities. */
+  RestoreTransfer(state: SkillTransferState): void {
+    this.activeCast = null;
+    this.lastInterruptReason = "map-transfer";
+    this.globalCooldownEndAtMs = Math.max(0, state.globalCooldownEndAtMs);
+    this.cooldownEndBySkillId.clear();
+    const now = TimeSystem.Instance.ServerNow;
+    for (const cooldown of state.cooldowns) {
+      if (!Number.isSafeInteger(cooldown.skillId) || cooldown.skillId <= 0) {
+        throw new Error(`invalid transferred skill id: ${cooldown.skillId}`);
+      }
+      if (cooldown.cooldownEndAtMs > now) {
+        this.cooldownEndBySkillId.set(cooldown.skillId, cooldown.cooldownEndAtMs);
+      }
+    }
+  }
+
+  private get owner(): PlayerUnit {
+    const owner = this.GetParent<Unit<any[]>>();
+    if (!(owner instanceof PlayerUnit)) {
+      throw new Error(`skill command owner must be PlayerUnit: ${owner.constructor.name}`);
+    }
+    return owner;
+  }
+}

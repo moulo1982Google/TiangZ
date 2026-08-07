@@ -16,6 +16,36 @@ export interface BuffAddOptions {
   readonly addAction?: ActionDefinition;
   readonly tickAction?: ActionDefinition;
   readonly removeAction?: ActionDefinition;
+  /** Buff来源Unit；Source作用域与持续伤害归属都使用它。 / Source Unit used by source-scoped conflicts and periodic damage attribution. */
+  readonly sourceUnitId?: number;
+  /** 产生Buff的技能；只保存稳定配置ID，不保存Cast对象。 / Stable skill config id that produced the Buff; never stores a Cast object. */
+  readonly sourceAbilityId?: number;
+  /** 覆盖配置中的冲突强度，供技能等级、天赋和运行时参数使用。 / Overrides configured conflict strength for ranks, talents, and runtime parameters. */
+  readonly conflictPriority?: number;
+}
+
+export const BuffApplyStatus = {
+  Applied: "applied",
+  Refreshed: "refreshed",
+  Replaced: "replaced",
+  Rejected: "rejected",
+} as const;
+
+export type BuffApplyStatusValue = (typeof BuffApplyStatus)[keyof typeof BuffApplyStatus];
+
+/** 同步Buff冲突决策的结果；调用者可在同一业务栈中决定回滚或返回错误。 / Result of synchronous Buff conflict resolution for immediate rollback or error handling. */
+export interface BuffApplyResult {
+  readonly status: BuffApplyStatusValue;
+  readonly buff?: import("./Buff").Buff;
+  readonly replacedBuffInstanceId?: bigint;
+  readonly reason?: "conflict-rejected" | "lower-priority";
+}
+
+export interface BuffComponent {
+  ApplyBuff(configId: number, options?: BuffAddOptions): BuffApplyResult;
+  AddBuff(configId: number, options?: BuffAddOptions): import("./Buff").Buff;
+  HasBuffConfig(configId: number): boolean;
+  GetBuffs(): readonly import("./Buff").Buff[];
 }
 
 /**

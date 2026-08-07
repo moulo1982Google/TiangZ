@@ -49,7 +49,7 @@
 
 - Game默认20Hz；`Update()`就是20Hz兼容入口，框架另外提供固定`Update10Hz()`、`Update5Hz()`和`Update1Hz()`，业务不填写任意Hz，也不为每个玩家/怪物创建Timer或Update目标。
 - 10Hz用于玩家自动平A开始/中断读条，5Hz用于主动怪AI，1Hz用于尸体清理和重生；Rust仍只通过一个Game固定帧入口处理批量移动、AOI和Native权威数据。
-- 怪物复活只复用稳定的`AreaId`刷怪槽，不复用旧`UnitId`；死亡MonsterUnit必须先Detach、发布AOI Leave再Remove，复活时重新创建Unit并通过AOI Enter发送新快照。`UnitId`代表一次实体生命周期，AreaId代表出生配置位置。
+- 怪物复活只复用稳定的`AreaId`刷怪槽，不复用旧`UnitId`。死亡MonsterUnit先以`alive=false`作为不可交互尸体保留在AOI中，当前Demo到`respawn_seconds`到期后才Detach、发布Leave并Remove，再创建新UnitId并通过AOI Enter发送新快照；`UnitId`代表一次实体生命周期，AreaId代表出生配置位置。
 - `CombatComponent`只保存平A意图和读条状态：`Inactive/Waiting/Swinging`。按1只是切换意图，不等于立即命中；目标存活、同Map、距离不超过`PlayerConfig.attack_range`且位于角色前方120度时才从零开始读条。
 - 离开距离或前方±60度时保留自动攻击激活状态，但必须清零当前读条；重新满足条件不能恢复旧进度。读条完成前和完成瞬间都由服务端再次校验，客户端进度条只做表现。
 - 平A状态不进入地图Transfer快照；传送后需要重新激活。Cocos3D使用独立`G2C_AutoAttackStateHandler`和键盘`1`演示，协议源仍只编辑`proto`后运行codegen。
@@ -118,6 +118,28 @@ npm run build:cocos3d:web
 npm run build:cocos3d:mobile
 ```
 
+## DBProxy独立项目决定
+
+- DBProxy后续新建独立Rust仓库，不作为TiangZ仓库中的模块，也不依赖TiangZ。
+- DBProxy不认识Scene、Entity、Component、Buff、Hotfix或`.native`，独立维护通用线协议、Rust/TypeScript SDK、Redis/PostgreSQL适配、Docker部署和可观测性。
+- TiangZ的`.native`与codegen负责生成领域Payload、快照codec和Repository适配层；业务Handler只调用Repository，不直接连接Redis或永久数据库。
+- 第一阶段实现`snapshot`：Revision、幂等、短窗口合并、批量写Redis、异步落PostgreSQL、登录恢复和下线Flush；第二阶段再实现Wallet、Inventory、Trade使用的`transactional`。
+- 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。第一版不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
+
+## 技能系统第一阶段决定
+
+- `SkillConfig`描述施法规则，`SkillEffectConfig`按阶段和顺序描述Action；不要把多Action参数硬塞进SkillConfig单元格。
+- Unit统一挂`SkillComponent`，玩家Handler和怪物AI复用同一API。已学技能第一版只按SkillConfigId存Set，不创建Skill子Entity。
+- `ActiveCast`是SkillComponent中的瞬时纯数据，不是Actor、Entity、Timer或持久化记录；普通读条由10Hz服务器deadline推进，冷却和GCD也只保存deadline。
+- 技能只负责目标和时间线，完成时执行Action；伤害/治疗必须进入Combat，Buff进入BuffComponent，广播仍由Map/Audience负责。
+- 伤害类型、Instant/Cast、移动中断和`Keep/ResetOnStart/ResetOnComplete/Cancel`平A策略是独立字段，不能互相推导。
+- 第一版演示使用寒冰箭、火焰冲击、惩击、真言术·盾和真言术·韧；它们全部属于法术，接受时清零平A进度，读条期间暂停，成功或中断后都从0重新计时。寒冰箭需要最小抛射物，其他技能暂不扩展地面AOE、引导、技能队列和持久化。
+- 五技能闭环已实现为`PlayerUnit.CastSkill -> SkillComponent -> 地图唯一SkillMapComponent.Update10Hz -> Action -> Combat/Buff`。不为Unit或Cast创建独立Timer/Update；冷却跨地图保留，活动读条在传送时终止。
+- 可扩展施法前置条件统一走同步只读`SkillEvents.BeforeCast` Veto；底层SkillMap与BuffComponent仍必须保留最终不变量，不能只信Veto。
+- 读条技能接受时立即清除Rust旧移动租约；后续非零移动输入打断施法，不能让玩家在旧输入租约期间继续滑行。
+- Buff冲突已支持Target/Source作用域与Stack/Refresh/Replace/Reject/HigherWins；运行时Add/Tick/Remove Action和护盾剩余量必须随传送快照恢复，普通Refresh不重复执行AddAction。
+- 当前五技能数值暂存Hotfix `SkillCatalog.ts`。后续迁入Luban只能替换数据来源，不能改变SkillComponent、Handler、Action或Combat边界。
+
 ## 3D客户端左右输入约定
 
 - TiangZ当前3D坐标和Yaw约定下，Cocos3D、UE、Godot等客户端的A/D左右转向必须以实际画面验收，不能只看代码表达式。
@@ -132,6 +154,7 @@ npm run build:cocos3d:mobile
 - `BuffComponent`拥有`Buff ChildEntity`；Buff负责可追踪Timer和Add/Tick/Remove生命周期，Component负责实例ID、集合、传送和AOI事件。Buff不成为Actor、不查AOI、不找Gate、不调用Location。
 - Buff传送只保存纯值和服务器墙钟时间，目标重建Timer但不重复执行AddAction；不保存TimerId、闭包、Promise或Entity引用。运行时Action覆盖当前只在本Process有效，跨Process前必须扩展协议。
 - Combat不反向查询Buff。护盾等Buff在添加/移除边界注册/注销Combat数据型modifier，剩余量由Combat单独持有；禁止新增`BuffComponent.TryAbsorbDamage`式耦合。
+- Buff叠加语义拆成冲突域、冲突决策和刷新行为：`stack_group + stack_scope + sourceUnitId`形成冲突键，策略支持Stack、Refresh、Replace、Reject和HigherWins；HigherWins比较显式priority，不比较ConfigId。Refresh默认不重复执行AddAction，来源、Tick节奏和运行状态分别配置。`BuffConfig.description`只进入服务端配置，不在客户端展示。
 - 当前最小演示：1001小型生命药水立即恢复50点，1002大型生命药水添加2001持续回血Buff；Cast技能系统、复杂目标选择、Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`和`docs/tutorials/17-action-and-buff.md`。
 
 ## 道具出生与Cocos3D快捷栏

@@ -3,6 +3,7 @@ import {
   buildEnterMapPacket,
   buildAttackMonsterPacket,
   buildToggleAutoAttackPacket,
+  buildCastSkillPacket,
   buildFindPathPacket,
   buildNavigateToPacket,
   buildNavigateInputPacket,
@@ -33,6 +34,10 @@ import {
   decodeMapReadyFrame,
   decodeMapSnapshotReadyFrame,
   decodeToggleAutoAttackFrame,
+  decodeCastSkillFrame,
+  decodeSkillCastStateFrame,
+  decodeSkillImpactFrame,
+  decodeSkillProjectileFrame,
   decodePingFrame,
   buildPingPacket,
 } from "./support/DemoClientProtocol";
@@ -60,7 +65,7 @@ async function main() {
   // Process Ready不代表跨进程MapHost注册已经完成；等待一个5秒续租周期覆盖并发启动顺序。
   // Process Ready does not imply cross-process MapHost registration; wait one renewal cycle.
   await sleep(5_500);
-  if (process.argv.includes("--map100-initial-only")) {
+  if (process.argv.includes("--map100-initial-only") || process.argv.includes("--skill-only")) {
     const login = await requestLogin(loginAddr.ip, loginAddr.port, `smoke_map100_${Date.now()}`);
     const client = await openGateAndEnterMap(
       login.gateIp,
@@ -76,6 +81,9 @@ async function main() {
       });
       if (monsters.length !== 2) {
         throw new Error(`Map100 initial snapshot expected 2 monsters, got ${monsters.length}`);
+      }
+      if (process.argv.includes("--skill-only")) {
+        await verifyFiveSkillMechanics(client.gate, client.enterMap);
       }
     } finally {
       await client.gate.close();
@@ -120,6 +128,137 @@ async function main() {
     { account: mover.account, token: mover.token, mapId: 1 },
     { account: peer.account, token: peer.token, mapId: 1 },
   );
+}
+
+/** 验证五技能共用状态机的关键路径；复杂Buff冲突矩阵由buff-action自测覆盖。 / Verifies key paths of the shared five-skill state machine; buff-action tests cover the detailed conflict matrix. */
+async function verifyFiveSkillMechanics(
+  gate: TcpRpcConnection,
+  enterMap: ReturnType<typeof decodeEnterMapFrame>["body"],
+): Promise<void> {
+  const targets = enterMap.entities
+    .filter((entity) => entity.entityType === 2)
+    .sort((left, right) => {
+      const leftDistance = Math.hypot(left.x - enterMap.x, left.y - enterMap.y, left.z - enterMap.z);
+      const rightDistance = Math.hypot(right.x - enterMap.x, right.y - enterMap.y, right.z - enterMap.z);
+      return leftDistance - rightDistance;
+    });
+  const target = targets[0];
+  const smiteTarget = targets[1];
+  if (!target || !smiteTarget) throw new Error("skill smoke requires two AOI-visible monsters");
+
+  const shieldRpcId = nextRpcId++;
+  const shield = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(shieldRpcId, {
+    skillId: 3004,
+    targetUnitId: enterMap.unitId,
+  })));
+  if (shield.rpcId !== shieldRpcId || shield.body.error || shield.body.skillId !== 3004) {
+    throw new Error(`Power Word: Shield failed: ${stringifyForError(shield.body)}`);
+  }
+  // 盾自身8秒CD先于15秒虚弱灵魂；等技能CD结束后才能验证Buff否决兜底。
+  // Shield's 8-second cooldown precedes the 15-second Weakened Soul veto.
+  await sleep(8_100);
+  const blocked = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(nextRpcId++, {
+    skillId: 3004,
+    targetUnitId: enterMap.unitId,
+  })));
+  if (blocked.body.error !== 10022) {
+    throw new Error(`Weakened Soul did not veto a second shield: ${stringifyForError(blocked.body)}`);
+  }
+
+  const fortitude = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(nextRpcId++, {
+    skillId: 3005,
+    targetUnitId: enterMap.unitId,
+  })));
+  if (fortitude.body.error || fortitude.body.skillId !== 3005) {
+    throw new Error(`Power Word: Fortitude failed: ${stringifyForError(fortitude.body)}`);
+  }
+  await sleep(1_100);
+
+  const projectilePush = gate.waitForMessage(MsgCode.G2C_SkillProjectile, 4_000);
+  const frostbolt = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(nextRpcId++, {
+    skillId: 3001,
+    targetUnitId: target.unitId,
+  })));
+  if (frostbolt.body.error || frostbolt.body.phase !== 1) {
+    throw new Error(`Frostbolt did not begin casting: ${stringifyForError(frostbolt.body)}`);
+  }
+  const projectile = decodeSkillProjectileFrame(await projectilePush).body;
+  const impact = await waitForSkillImpact(gate, 3001, 4_000);
+  if (projectile.skillId !== 3001 || impact.skillId !== 3001 || impact.damage !== 50n || impact.damageSchool !== 2) {
+    throw new Error(`Frostbolt result mismatch: ${stringifyForError({ projectile, impact })}`);
+  }
+
+  const fireBlast = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(nextRpcId++, {
+    skillId: 3002,
+    targetUnitId: target.unitId,
+  })));
+  if (fireBlast.body.error) {
+    throw new Error(`Fire Blast failed: ${stringifyForError(fireBlast.body)}`);
+  }
+  const fireImpact = await waitForSkillImpact(gate, 3002, 3_000);
+  if (fireImpact.damage !== 50n || fireImpact.damageSchool !== 3) {
+    throw new Error(`Fire Blast result mismatch: ${stringifyForError(fireImpact)}`);
+  }
+  await sleep(1_100);
+
+  const castStatePush = gate.waitForMessage(MsgCode.G2C_SkillCastState, 3_000);
+  const smite = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(nextRpcId++, {
+    skillId: 3003,
+    targetUnitId: smiteTarget.unitId,
+  })));
+  if (smite.body.error || smite.body.phase !== 1) {
+    throw new Error(`Smite did not begin casting: ${stringifyForError(smite.body)}`);
+  }
+  await gate.request(buildNavigateInputPacket(nextRpcId++, {
+    forward: 1,
+    strafe: 0,
+    yaw: 0,
+    sequence: 99,
+  }));
+  let interrupted = decodeSkillCastStateFrame(await castStatePush).body;
+  const interruptDeadline = Date.now() + 3_000;
+  while (interrupted.interruptReason !== "movement" && Date.now() < interruptDeadline) {
+    interrupted = decodeSkillCastStateFrame(await gate.waitForMessage(
+      MsgCode.G2C_SkillCastState,
+      Math.max(1, interruptDeadline - Date.now()),
+    )).body;
+  }
+  if (interrupted.phase !== 0 || interrupted.interruptReason !== "movement") {
+    throw new Error(`movement did not interrupt Smite: ${stringifyForError(interrupted)}`);
+  }
+  await gate.request(buildNavigateInputPacket(nextRpcId++, {
+    forward: 0,
+    strafe: 0,
+    yaw: 0,
+    sequence: 100,
+  }));
+
+  console.log("Five-skill mechanics:", {
+    shield: "accepted",
+    weakenedSoul: "vetoed",
+    fortitude: "accepted",
+    frostboltDamage: impact.damage,
+    frostboltSchool: impact.damageSchool,
+    fireBlastFinalDamage: fireImpact.damage,
+    fireBlastSchool: fireImpact.damageSchool,
+    smiteInterrupt: interrupted.interruptReason,
+  });
+}
+
+async function waitForSkillImpact(
+  gate: TcpRpcConnection,
+  skillId: number,
+  timeoutMs: number,
+): Promise<ReturnType<typeof decodeSkillImpactFrame>["body"]> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const impact = decodeSkillImpactFrame(await gate.waitForMessage(
+      MsgCode.G2C_SkillImpact,
+      Math.max(1, deadline - Date.now()),
+    )).body;
+    if (impact.skillId === skillId) return impact;
+  }
+  throw new Error(`skill ${skillId} impact timed out`);
 }
 
 /** 通过正式Inner握手验证动态副本创建和空地图销毁。 / Verifies dynamic-map creation and empty-map disposal through the real Inner handshake. */
@@ -446,7 +585,7 @@ async function verifyMapTransfer(
   return await verifyDynamicMapTransfer(gate, navigation, dynamicMap);
 }
 
-/** 验证固定刷点怪物的攻击、AOI离开和新Unit复活闭环。 / Verifies attack, AOI removal, and respawn as a new Unit. */
+/** 验证固定刷点怪物的攻击、尸体状态、AOI离开和新Unit复活闭环。 / Verifies attack, corpse state, AOI removal, and respawn as a new Unit. */
 async function verifyMonsterLifecycle(
   gate: TcpRpcConnection,
   enterMap: ReturnType<typeof decodeEnterMapFrame>["body"],
@@ -476,12 +615,14 @@ async function verifyMonsterLifecycle(
   await assertNoPlayerHpChange(gate, enterMap.unitId, playerHpBeforeThreat, 700);
 
   const expectedHits = 20;
+  let deathStateFrame: Promise<Uint8Array> | undefined;
   let deathLeaveFrame: Promise<Uint8Array> | undefined;
   for (let hit = 1; hit <= expectedHits; hit += 1) {
-    // 最后一击前先挂好AOI监听，避免死亡后的Leave早于测试代码等待而被漏掉。
-    // Arm the AOI listener before the final hit so the death Leave cannot be missed.
+    // 最后一击前同时监听死亡状态与最终Leave；尸体必须先以alive=false留在AOI，复活时才离场。
+    // Arm both listeners before the final hit: the corpse must remain in AOI as alive=false and leave only at respawn.
     if (hit === expectedHits) {
-      deathLeaveFrame = gate.waitForMessage(MsgCode.G2C_AoiDelta, 5_000);
+      deathStateFrame = gate.waitForMessage(MsgCode.G2C_EntityState, 5_000);
+      deathLeaveFrame = gate.waitForMessage(MsgCode.G2C_AoiDelta, 15_000);
     }
     const response = decodeAttackMonsterFrame(await gate.request(
       buildAttackMonsterPacket(nextRpcId++, { monsterId: monster.unitId }),
@@ -503,12 +644,26 @@ async function verifyMonsterLifecycle(
     }
   }
 
-  if (!deathLeaveFrame) {
+  if (!deathStateFrame || !deathLeaveFrame) {
     throw new Error("monster death listeners were not armed");
   }
 
+  let deathState = decodeEntityStateFrame(await deathStateFrame);
+  const stateDeadline = Date.now() + 5_000;
+  let corpseState = deathState.body.states.find((state) => state.unitId === monster.unitId);
+  while ((!corpseState || corpseState.alive) && Date.now() < stateDeadline) {
+    deathState = decodeEntityStateFrame(await gate.waitForMessage(
+      MsgCode.G2C_EntityState,
+      Math.max(1, stateDeadline - Date.now()),
+    ));
+    corpseState = deathState.body.states.find((state) => state.unitId === monster.unitId);
+  }
+  if (!corpseState || corpseState.alive) {
+    throw new Error(`monster death did not retain an alive=false corpse: ${stringifyForError(deathState.body)}`);
+  }
+
   let deathDelta = decodeAoiDeltaFrame(await deathLeaveFrame);
-  const deathDeadline = Date.now() + 5_000;
+  const deathDeadline = Date.now() + 15_000;
   while (!deathDelta.body.leaves.includes(monster.unitId) && Date.now() < deathDeadline) {
     deathDelta = decodeAoiDeltaFrame(await gate.waitForMessage(
       MsgCode.G2C_AoiDelta,
@@ -548,6 +703,7 @@ async function verifyMonsterLifecycle(
   console.log("Monster lifecycle:", {
     initialMonsterId: monster.unitId,
     killedMonsterId: monster.unitId,
+    corpseAlive: corpseState.alive,
     respawnedMonsterId: respawnedMonster.unitId,
     respawnHp,
   });

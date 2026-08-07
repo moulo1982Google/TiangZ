@@ -20,6 +20,8 @@ import { MonsterComponent as SystemTarget6 } from "../../model/demo/monster/Mons
 import { MonsterUnit as SystemTarget7 } from "../../model/demo/monster/MonsterUnit";
 import { NumericComponent as SystemTarget8 } from "../../model/demo/numeric/NumericComponent";
 import { PlayerUnit as SystemTarget9 } from "../../model/demo/map/PlayerUnit";
+import { SkillComponent as SystemTarget10 } from "../../model/demo/skill/SkillComponent";
+import { SkillMapComponent as SystemTarget11 } from "../../model/demo/skill/SkillMapComponent";
 
 registerKnownRpcs(RpcDescriptors0);
 registerKnownMessages(MessageDescriptors0);
@@ -33,3 +35,5 @@ HotfixSystem.RequireType(SystemTarget6);
 HotfixSystem.RequireType(SystemTarget7);
 HotfixSystem.RequireType(SystemTarget8);
 HotfixSystem.RequireType(SystemTarget9);
+HotfixSystem.RequireType(SystemTarget10);
+HotfixSystem.RequireType(SystemTarget11);

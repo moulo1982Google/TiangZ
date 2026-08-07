@@ -14,6 +14,8 @@ import {
   C2M_AttackMonsterCodec,
   C2M_ToggleAutoAttack,
   C2M_ToggleAutoAttackCodec,
+  C2M_CastSkill,
+  C2M_CastSkillCodec,
   C2M_MapProbe,
   C2M_MapProbeCodec,
   C2M_FindPath,
@@ -42,12 +44,20 @@ import {
   G2C_AoiDeltaCodec,
   G2C_AutoAttackState,
   G2C_AutoAttackStateCodec,
+  G2C_SkillCastState,
+  G2C_SkillCastStateCodec,
+  G2C_SkillImpact,
+  G2C_SkillImpactCodec,
+  G2C_SkillProjectile,
+  G2C_SkillProjectileCodec,
   M2C_MapProbe,
   M2C_MapProbeCodec,
   M2C_AttackMonster,
   M2C_AttackMonsterCodec,
   M2C_ToggleAutoAttack,
   M2C_ToggleAutoAttackCodec,
+  M2C_CastSkill,
+  M2C_CastSkillCodec,
   M2C_FindPath,
   M2C_FindPathCodec,
   M2C_NavigateTo,
@@ -286,6 +296,42 @@ export function decodeAutoAttackStateFrame(
   }
   const body = G2C_AutoAttackStateCodec.decode(frame.subarray(2));
   return { msgcode, rpcId: undefined, body };
+}
+
+/** 构造权威施法请求。 / Builds an authoritative skill-cast request. */
+export function buildCastSkillPacket(
+  rpcId: number,
+  request: Omit<C2M_CastSkill, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_CastSkill,
+    C2M_CastSkillCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeCastSkillFrame(frame: Uint8Array): DecodedFrame<M2C_CastSkill> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_CastSkill) throw new Error(`expected M2C_CastSkill, got ${msgcode}`);
+  const body = M2C_CastSkillCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+export function decodeSkillCastStateFrame(frame: Uint8Array): DecodedFrame<G2C_SkillCastState> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_SkillCastState) throw new Error(`expected G2C_SkillCastState, got ${msgcode}`);
+  return { msgcode, rpcId: undefined, body: G2C_SkillCastStateCodec.decode(frame.subarray(2)) };
+}
+
+export function decodeSkillProjectileFrame(frame: Uint8Array): DecodedFrame<G2C_SkillProjectile> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_SkillProjectile) throw new Error(`expected G2C_SkillProjectile, got ${msgcode}`);
+  return { msgcode, rpcId: undefined, body: G2C_SkillProjectileCodec.decode(frame.subarray(2)) };
+}
+
+export function decodeSkillImpactFrame(frame: Uint8Array): DecodedFrame<G2C_SkillImpact> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_SkillImpact) throw new Error(`expected G2C_SkillImpact, got ${msgcode}`);
+  return { msgcode, rpcId: undefined, body: G2C_SkillImpactCodec.decode(frame.subarray(2)) };
 }
 
 export function buildMapProbePacket(

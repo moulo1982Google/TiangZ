@@ -13,6 +13,7 @@ import {
   type M2G_TransferPlayer,
   type M2C_AttackMonster,
   type M2C_ToggleAutoAttack,
+  type M2C_CastSkill,
   type AutoAttackState,
   CombatComponent,
   MonsterComponent,
@@ -23,6 +24,8 @@ import {
   PositionComponent,
   RpcError,
   SpatialMode,
+  SkillComponent,
+  type SkillCastState,
   type MovePlayer,
   UnitGateComponent,
   systemFor,
@@ -86,6 +89,9 @@ export class PlayerUnitSystem extends PlayerUnit {
       );
     }
     validateMoveInput(request);
+    if (request.inputX !== 0 || request.inputZ !== 0) {
+      this.GetComponent(SkillComponent).InterruptByMovement();
+    }
     return NativeData.SetMovementInput(
       this.GetComponent(NativeUnitRef).Handle,
       request.inputX,
@@ -116,6 +122,7 @@ export class PlayerUnitSystem extends PlayerUnit {
     if (!Number.isSafeInteger(request.sequence) || request.sequence <= 0) {
       throw new Error(`invalid navigation sequence: ${request.sequence}`);
     }
+    this.GetComponent(SkillComponent).InterruptByMovement();
     return NativeData.SetNavigationTarget(
       this.DomainScene().GetComponent(MapComponent).NativeMapKey,
       this.GetComponent(NativeUnitRef).Handle,
@@ -143,6 +150,9 @@ export class PlayerUnitSystem extends PlayerUnit {
     ) {
       throw new Error("invalid NavMesh direction input");
     }
+    if (request.forward !== 0 || request.strafe !== 0) {
+      this.GetComponent(SkillComponent).InterruptByMovement();
+    }
     return NativeData.SetNavigationInput(
       this.DomainScene().GetComponent(MapComponent).NativeMapKey,
       this.GetComponent(NativeUnitRef).Handle,
@@ -155,7 +165,14 @@ export class PlayerUnitSystem extends PlayerUnit {
 
   /** 业务只提供目标地图实例；静态地图与动态副本使用完全相同的传送调用。 / Business supplies only the target instance; static maps and dynamic dungeons share this exact transfer call. */
   TransferToMap(mapInstanceId: bigint): Promise<M2G_TransferPlayer> {
-    return this.DomainScene().GetComponent(MapComponent).TransferToMap(this, mapInstanceId);
+    const map = this.DomainScene().GetComponent(MapComponent);
+    const interrupted = this.GetComponent(SkillComponent).Interrupt("map-transfer");
+    if (interrupted) {
+      this.DomainScene().Tasks.Spawn("publish-transfer-cast-interrupt", async () => {
+        await map.PublishSkillCastState(this, interrupted);
+      });
+    }
+    return map.TransferToMap(this, mapInstanceId);
   }
 
   /** 把攻击意图交给地图怪物模块；PlayerUnit不保存怪物集合或战斗状态。 / Delegates attack intent to the map monster module; PlayerUnit stores no monster collection or combat state. */
@@ -191,6 +208,11 @@ export class PlayerUnitSystem extends PlayerUnit {
     });
     return toAutoAttackResponse(state);
   }
+
+  /** 提交一次权威施法；目标、距离、GCD和CD都由地图技能桶同步校验。 / Submits an authoritative cast validated synchronously by the map skill scheduler. */
+  CastSkill(skillId: number, targetUnitId: number): M2C_CastSkill {
+    return toCastSkillResponse(this.GetComponent(SkillComponent).Cast({ skillId, targetUnitId }));
+  }
 }
 
 function readAttackIntervalMs(numeric: NumericComponent): number {
@@ -208,6 +230,20 @@ function toAutoAttackResponse(state: AutoAttackState): M2C_ToggleAutoAttack {
     phase: state.phase,
     swingStartAtMs: BigInt(Math.max(0, Math.floor(state.swingStartAtMs))),
     swingIntervalMs: state.swingIntervalMs,
+  };
+}
+
+function toCastSkillResponse(state: SkillCastState): M2C_CastSkill {
+  return {
+    phase: state.phase,
+    castId: state.castId,
+    skillId: state.skillId,
+    targetUnitId: state.targetUnitId,
+    startedAtMs: BigInt(Math.max(0, Math.floor(state.startedAtMs))),
+    finishAtMs: BigInt(Math.max(0, Math.floor(state.finishAtMs))),
+    globalCooldownEndAtMs: BigInt(Math.max(0, Math.floor(state.globalCooldownEndAtMs))),
+    skillCooldownEndAtMs: BigInt(Math.max(0, Math.floor(state.skillCooldownEndAtMs))),
+    interruptReason: state.interruptReason,
   };
 }
 

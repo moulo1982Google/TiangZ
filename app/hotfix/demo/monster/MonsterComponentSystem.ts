@@ -17,9 +17,12 @@ import {
   PositionComponent,
   RpcError,
   SpatialMode,
+  SkillComponent,
   TimeSystem,
   UnitComponent,
   type AutoAttackState,
+  type DamageRequest,
+  type DamageResult,
   type M2C_AttackMonster,
   type MonsterAreaConfigData,
   type MonsterConfigData,
@@ -35,15 +38,15 @@ const MONSTER_ID_MAX = 0xffff_ffff;
 const monsterBehaviorTree = new MonsterBehaviorTree();
 
 /**
- * 第一版怪物业务：固定刷点、主动索敌、仇恨追击、普通攻击、死亡生命周期和重生。
- * 怪物只作为AOI Subject，不会成为Observer，也不参与动态避障；死亡时销毁当前Unit，
- * 只保留刷怪槽位，等待模板配置的复活时间后在原刷点创建新的Unit。
+ * 第一版怪物业务：固定刷点、主动索敌、仇恨追击、普通攻击、尸体生命周期和重生。
+ * 怪物只作为AOI Subject，不会成为Observer，也不参与动态避障；死亡时停止逻辑但保留Unit和AOI身份，
+ * 等待模板配置的复活时间后先清理尸体，再在原刷点创建新的Unit。
  *
  * Version-one monster rules: fixed slots, active acquisition, threat-based
  * chase, basic attacks, death, and respawn. Monsters are AOI Subjects only
- * and never participate in dynamic avoidance. Death destroys the current Unit
- * and keeps only the spawn slot; after the template delay a new Unit is
- * created at that spawn point.
+ * and never participate in dynamic avoidance. Death retains a non-interactive
+ * corpse Unit in AOI; after the template delay that corpse is removed and a
+ * new Unit is created at the spawn point.
  */
 @systemFor(MonsterComponent)
 export class MonsterComponentSystem extends MonsterComponent {
@@ -95,13 +98,13 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
   }
 
-  /** 1Hz维护空刷怪槽并按MonsterConfig创建新怪物；旧Unit已经通过AOI Leave离场。 / Maintains empty spawn slots and creates new monsters from MonsterConfig; the old Unit already left through AOI Leave. */
+  /** 1Hz清理到期尸体并创建新怪物；死亡到清理期间原Unit仍可承接表现事件。 / Removes expired corpses and creates replacement monsters at 1 Hz while retaining the dead Unit for visual events until cleanup. */
   Update1Hz(): void {
     if (this.map.IsStopping) return;
     const now = TimeSystem.Instance.ServerNow;
     for (const slot of this.slots.values()) {
-      if (!slot.monster && slot.respawnAtMs > 0 && now >= slot.respawnAtMs) {
-        this.Respawn(slot);
+      if (slot.monster && slot.respawnAtMs > 0 && now >= slot.respawnAtMs) {
+        void this.Respawn(slot);
       }
     }
   }
@@ -127,18 +130,32 @@ export class MonsterComponentSystem extends MonsterComponent {
     const damage = attackerNumeric[NumericType.Attack] > 0n
       ? attackerNumeric[NumericType.Attack]
       : 0n;
-    const result = monster.GetComponent(CombatComponent).ApplyDamage({
+    const result = this.ApplyPlayerDamage(attacker, monster, {
       amount: damage,
       sourceUnitId: attacker.UnitId,
     });
-    this.AddThreat(monster, attacker, result.finalDamage);
-    if (result.killed) this.Kill(monster);
     return {
       monsterId,
       damage: Number(result.finalDamage),
       remainingHp: result.remainingHp,
       killed: result.killed,
     };
+  }
+
+  /** 技能和平A共享怪物受伤后的仇恨与死亡边界；调用者不得只改Combat后忘记移除死亡怪。 / Skills and auto-attacks share threat and death handling so callers cannot damage Combat and forget monster removal. */
+  ApplyPlayerDamage(
+    attacker: PlayerUnit,
+    monster: MonsterUnit,
+    request: DamageRequest,
+  ): DamageResult {
+    this.RequireMapUnit(attacker);
+    if (this.monsters.get(monster.UnitId) !== monster) {
+      throw new RpcError(GameErrCode.MonsterNotFound, `monster not found: ${monster.UnitId}`);
+    }
+    const result = monster.GetComponent(CombatComponent).ApplyDamage(request);
+    this.AddThreat(monster, attacker, result.finalDamage);
+    if (result.killed) this.Kill(monster);
+    return result;
   }
 
   /**
@@ -215,6 +232,7 @@ export class MonsterComponentSystem extends MonsterComponent {
       // Every damageable Unit owns the combat entrypoint; MonsterComponent never edits target Numeric directly.
       monster.AddComponent(CombatComponent);
       monster.AddComponent(BuffComponent);
+      monster.AddComponent(SkillComponent);
       slot.monster = monster;
       slot.respawnAtMs = 0;
       this.monsters.set(unitId, monster);
@@ -262,10 +280,28 @@ export class MonsterComponentSystem extends MonsterComponent {
     position.SpeedMetersPerSecond = config.moveSpeed;
   }
 
-  /** 到期后创建新Unit完成复活；刷怪槽位稳定，UnitId和AOI身份必须更换。 / Creates a new Unit when the timer expires; the spawn slot is stable, but UnitId and AOI identity must change. */
-  private Respawn(slot: { config: MonsterAreaConfigData; monster: MonsterUnit | null; respawnAtMs: number }): void {
-    if (slot.monster) return;
-    this.Spawn(slot);
+  /** 到期后先发布旧尸体Leave，再创建新Unit；不能把死亡Unit原地复活或让Enter抢在Leave之前。 / Publishes the corpse Leave before creating a new Unit; never resurrects the dead identity or lets Enter overtake Leave. */
+  private async Respawn(slot: { config: MonsterAreaConfigData; monster: MonsterUnit | null; respawnAtMs: number }): Promise<void> {
+    const corpse = slot.monster;
+    if (!corpse || corpse.GetComponent(NativeUnitRef).alive !== 0) return;
+    slot.respawnAtMs = 0;
+    slot.monster = null;
+    this.monsters.delete(corpse.UnitId);
+    this.runtime.delete(corpse.UnitId);
+    const changes = this.aoi.IsAttached(corpse) ? this.aoi.Detach(corpse) : [];
+    this.units.Remove(corpse.UnitId);
+    if (changes.length > 0) {
+      try {
+        await this.map.PublishVisibilityChanges(changes);
+      } catch (error) {
+        this.DomainScene().logger.error("monster corpse AOI leave failed", {
+          unitId: corpse.UnitId,
+          areaId: corpse.AreaId,
+          error,
+        });
+      }
+    }
+    if (!this.map.IsStopping) this.Spawn(slot);
   }
 
   private TickMonster(monster: MonsterUnit, config: MonsterConfigData, now: number): void {
@@ -367,6 +403,12 @@ export class MonsterComponentSystem extends MonsterComponent {
       if (state.swingIntervalMs !== previousState.swingIntervalMs) {
         this.PublishAutoAttackState(player, state);
       }
+      if (player.GetComponent(SkillComponent).IsCasting()) {
+        if (state.phase !== AutoAttackPhase.Waiting || state.swingStartAtMs !== 0) {
+          this.PublishAutoAttackState(player, combat.ResetAutoAttackSwing());
+        }
+        continue;
+      }
       if (!state.enabled) continue;
 
       const monster = this.monsters.get(state.targetUnitId);
@@ -442,24 +484,11 @@ export class MonsterComponentSystem extends MonsterComponent {
     native.alive = 0;
     NativeData.ResetMovement(native.Handle);
 
-    // AreaId is the stable spawn slot. The dead MonsterUnit is a finished
-    // entity and must leave AOI before its Native handle and UnitId disappear.
-    // AreaId是稳定刷怪槽位；死亡MonsterUnit已经结束生命周期，必须先离开AOI，
-    // 再销毁Native句柄和UnitId，不能把实体身份复活成另一个怪物。
-    slot.monster = null;
-    this.monsters.delete(monster.UnitId);
+    // 死亡Unit在复活等待期内就是尸体：保留AOI身份给命中、倒地、Buff清理和未来掉落表现使用，
+    // 但删除AI运行态并依靠alive=0拒绝新的攻击。到期后Respawn先Leave并销毁，再创建新UnitId。
+    // The dead Unit remains as a corpse for impact, death, Buff cleanup, and future loot visuals.
+    // Runtime AI is removed and alive=0 rejects new attacks; Respawn later publishes Leave before creating a new UnitId.
     this.runtime.delete(monster.UnitId);
-    const changes = this.aoi.IsAttached(monster) ? this.aoi.Detach(monster) : [];
-    this.units.Remove(monster.UnitId);
-    if (changes.length > 0) {
-      void this.map.PublishVisibilityChanges(changes).catch((error) => {
-        this.DomainScene().logger.error("monster death AOI publish failed", {
-          unitId: monster.UnitId,
-          areaId: monster.AreaId,
-          error,
-        });
-      });
-    }
   }
 
   /**

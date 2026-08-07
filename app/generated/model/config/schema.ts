@@ -10,6 +10,49 @@
 
 
 /**
+ * 命中同一Buff冲突键时的决策
+ */
+export enum BuffConflictPolicy {
+    Stack = 1,
+    Refresh = 2,
+    Replace = 3,
+    Reject = 4,
+    HigherWins = 5,
+}
+
+
+
+/**
+ * 刷新Buff时的运行状态处理
+ */
+export enum BuffRefreshStatePolicy {
+    Keep = 1,
+    Reset = 2,
+}
+
+
+
+/**
+ * 刷新Buff时的Tick时间轴处理
+ */
+export enum BuffRefreshTickPolicy {
+    KeepCadence = 1,
+    ResetCadence = 2,
+}
+
+
+
+/**
+ * Buff冲突键的来源范围
+ */
+export enum BuffStackScope {
+    Target = 1,
+    Source = 2,
+}
+
+
+
+/**
  * 配置表运行时重载策略
  */
 export enum ConfigReloadMode {
@@ -132,10 +175,26 @@ export class BuffConfig {
         this.id = _json_.id
         if (_json_.name === undefined) { throw new Error() }
         this.name = _json_.name
+        if (_json_.description === undefined) { throw new Error() }
+        this.description = _json_.description
         if (_json_.duration_seconds === undefined) { throw new Error() }
         this.durationSeconds = _json_.duration_seconds
         if (_json_.tick_interval_ms === undefined) { throw new Error() }
         this.tickIntervalMs = _json_.tick_interval_ms
+        if (_json_.stack_group === undefined) { throw new Error() }
+        this.stackGroup = _json_.stack_group
+        if (_json_.stack_scope === undefined) { throw new Error() }
+        this.stackScope = _json_.stack_scope
+        if (_json_.conflict_policy === undefined) { throw new Error() }
+        this.conflictPolicy = _json_.conflict_policy
+        if (_json_.conflict_priority === undefined) { throw new Error() }
+        this.conflictPriority = _json_.conflict_priority
+        if (_json_.refresh_source === undefined) { throw new Error() }
+        this.refreshSource = _json_.refresh_source
+        if (_json_.refresh_tick_policy === undefined) { throw new Error() }
+        this.refreshTickPolicy = _json_.refresh_tick_policy
+        if (_json_.refresh_runtime_state === undefined) { throw new Error() }
+        this.refreshRuntimeState = _json_.refresh_runtime_state
         if (_json_.add_action_type === undefined) { throw new Error() }
         this.addActionType = _json_.add_action_type
         if (_json_.add_action_params === undefined) { throw new Error() }
@@ -159,6 +218,10 @@ export class BuffConfig {
      */
     readonly name: string
     /**
+     * 详细说明（仅策划/服务端参考，不用于客户端展示）
+     */
+    readonly description: string
+    /**
      * 总时长（秒，0为无限）
      */
     readonly durationSeconds: number
@@ -166,6 +229,34 @@ export class BuffConfig {
      * Tick间隔（毫秒，0为无Tick）
      */
     readonly tickIntervalMs: number
+    /**
+     * 冲突分组ID；相同分组才参与冲突决策
+     */
+    readonly stackGroup: number
+    /**
+     * 冲突作用域：Target全来源共享，Source按施法者独立
+     */
+    readonly stackScope: BuffStackScope
+    /**
+     * 冲突决策：叠加、刷新、替换、拒绝或高强度覆盖
+     */
+    readonly conflictPolicy: BuffConflictPolicy
+    /**
+     * HigherWins比较值；其他策略填0
+     */
+    readonly conflictPriority: number
+    /**
+     * 刷新时是否更新Buff来源
+     */
+    readonly refreshSource: boolean
+    /**
+     * 刷新时保留或重置下一次Tick时间
+     */
+    readonly refreshTickPolicy: BuffRefreshTickPolicy
+    /**
+     * 刷新时保留或重置运行状态
+     */
+    readonly refreshRuntimeState: BuffRefreshStatePolicy
     /**
      * 添加Action类型
      */
@@ -192,6 +283,14 @@ export class BuffConfig {
     readonly removeActionParams: number[]
 
     resolve(tables:Tables) {
+
+
+
+
+
+
+
+
 
 
 

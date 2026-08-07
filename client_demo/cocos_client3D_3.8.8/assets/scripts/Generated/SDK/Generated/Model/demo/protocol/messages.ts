@@ -602,6 +602,16 @@ export interface BuffTransferSnapshot {
   tickIntervalMs: number;
   nextTickAtMs: bigint;
   revision: number;
+  sourceUnitId: number;
+  sourceAbilityId: number;
+  conflictPriority: number;
+  damageAbsorberRemaining: bigint;
+  addActionType: number;
+  addActionParams: readonly bigint[];
+  tickActionType: number;
+  tickActionParams: readonly bigint[];
+  removeActionType: number;
+  removeActionParams: readonly bigint[];
 }
 
 export const BuffTransferSnapshotCodec = {
@@ -616,6 +626,16 @@ export const BuffTransferSnapshotCodec = {
       tickIntervalMs: 0,
       nextTickAtMs: 0n,
       revision: 0,
+      sourceUnitId: 0,
+      sourceAbilityId: 0,
+      conflictPriority: 0,
+      damageAbsorberRemaining: 0n,
+      addActionType: 0,
+      addActionParams: [],
+      tickActionType: 0,
+      tickActionParams: [],
+      removeActionType: 0,
+      removeActionParams: [],
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -643,6 +663,36 @@ export const BuffTransferSnapshotCodec = {
       else if (tag.fieldNo === 8 && tag.wireType === 0) {
         value.revision = reader.uint32();
       }
+      else if (tag.fieldNo === 9 && tag.wireType === 0) {
+        value.sourceUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 10 && tag.wireType === 0) {
+        value.sourceAbilityId = reader.uint32();
+      }
+      else if (tag.fieldNo === 11 && tag.wireType === 0) {
+        value.conflictPriority = reader.uint32();
+      }
+      else if (tag.fieldNo === 12 && tag.wireType === 0) {
+        value.damageAbsorberRemaining = reader.uint64();
+      }
+      else if (tag.fieldNo === 13 && tag.wireType === 0) {
+        value.addActionType = reader.int32();
+      }
+      else if (tag.fieldNo === 14 && tag.wireType === 0) {
+        (value.addActionParams as bigint[]).push(reader.int64());
+      }
+      else if (tag.fieldNo === 15 && tag.wireType === 0) {
+        value.tickActionType = reader.int32();
+      }
+      else if (tag.fieldNo === 16 && tag.wireType === 0) {
+        (value.tickActionParams as bigint[]).push(reader.int64());
+      }
+      else if (tag.fieldNo === 17 && tag.wireType === 0) {
+        value.removeActionType = reader.int32();
+      }
+      else if (tag.fieldNo === 18 && tag.wireType === 0) {
+        (value.removeActionParams as bigint[]).push(reader.int64());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -660,6 +710,86 @@ export const BuffTransferSnapshotCodec = {
     if (value.tickIntervalMs !== undefined) writer.uint32(6, value.tickIntervalMs);
     if (value.nextTickAtMs !== undefined) writer.uint64(7, value.nextTickAtMs);
     if (value.revision !== undefined) writer.uint32(8, value.revision);
+    if (value.sourceUnitId !== undefined) writer.uint32(9, value.sourceUnitId);
+    if (value.sourceAbilityId !== undefined) writer.uint32(10, value.sourceAbilityId);
+    if (value.conflictPriority !== undefined) writer.uint32(11, value.conflictPriority);
+    if (value.damageAbsorberRemaining !== undefined) writer.uint64(12, value.damageAbsorberRemaining);
+    if (value.addActionType !== undefined) writer.int32(13, value.addActionType);
+    for (const item of (value.addActionParams ?? [])) writer.int64(14, item, true);
+    if (value.tickActionType !== undefined) writer.int32(15, value.tickActionType);
+    for (const item of (value.tickActionParams ?? [])) writer.int64(16, item, true);
+    if (value.removeActionType !== undefined) writer.int32(17, value.removeActionType);
+    for (const item of (value.removeActionParams ?? [])) writer.int64(18, item, true);
+    return writer.finish();
+  },
+};
+
+export interface SkillCooldownSnapshot {
+  skillId: number;
+  cooldownEndAtMs: bigint;
+}
+
+export const SkillCooldownSnapshotCodec = {
+  decode(payload: Uint8Array): SkillCooldownSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: SkillCooldownSnapshot = {
+      skillId: 0,
+      cooldownEndAtMs: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.skillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.cooldownEndAtMs = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: SkillCooldownSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.skillId !== undefined) writer.uint32(1, value.skillId);
+    if (value.cooldownEndAtMs !== undefined) writer.uint64(2, value.cooldownEndAtMs);
+    return writer.finish();
+  },
+};
+
+export interface SkillTransferSnapshot {
+  globalCooldownEndAtMs: bigint;
+  cooldowns: readonly SkillCooldownSnapshot[];
+}
+
+export const SkillTransferSnapshotCodec = {
+  decode(payload: Uint8Array): SkillTransferSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: SkillTransferSnapshot = {
+      globalCooldownEndAtMs: 0n,
+      cooldowns: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.globalCooldownEndAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.cooldowns as SkillCooldownSnapshot[]).push(SkillCooldownSnapshotCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: SkillTransferSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.globalCooldownEndAtMs !== undefined) writer.uint64(1, value.globalCooldownEndAtMs);
+    for (const item of (value.cooldowns ?? [])) writer.bytes(2, SkillCooldownSnapshotCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -2498,6 +2628,339 @@ export const G2C_DemoDoorStateCodec = {
   encode(value: G2C_DemoDoorState): Uint8Array {
     const writer = new BinaryWriter();
     if (value.closed !== undefined) writer.bool(1, value.closed);
+    return writer.finish();
+  },
+};
+
+export interface C2M_CastSkill extends IActorLocationRequest {
+  rpcId?: number;
+  skillId: number;
+  targetUnitId: number;
+}
+
+export const C2M_CastSkillCodec = {
+  decode(payload: Uint8Array): C2M_CastSkill {
+    const reader = new BinaryReader(payload);
+    const value: C2M_CastSkill = {
+      skillId: 0,
+      targetUnitId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.skillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_CastSkill): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.skillId !== undefined) writer.uint32(1, value.skillId);
+    if (value.targetUnitId !== undefined) writer.uint32(2, value.targetUnitId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_CastSkill extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  phase: number;
+  castId: bigint;
+  skillId: number;
+  targetUnitId: number;
+  startedAtMs: bigint;
+  finishAtMs: bigint;
+  globalCooldownEndAtMs: bigint;
+  skillCooldownEndAtMs: bigint;
+  interruptReason: string;
+}
+
+export const M2C_CastSkillCodec = {
+  decode(payload: Uint8Array): M2C_CastSkill {
+    const reader = new BinaryReader(payload);
+    const value: M2C_CastSkill = {
+      phase: 0,
+      castId: 0n,
+      skillId: 0,
+      targetUnitId: 0,
+      startedAtMs: 0n,
+      finishAtMs: 0n,
+      globalCooldownEndAtMs: 0n,
+      skillCooldownEndAtMs: 0n,
+      interruptReason: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.phase = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.castId = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.skillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.startedAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.finishAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.globalCooldownEndAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.skillCooldownEndAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 9 && tag.wireType === 2) {
+        value.interruptReason = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_CastSkill): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.phase !== undefined) writer.uint32(1, value.phase);
+    if (value.castId !== undefined) writer.uint64(2, value.castId);
+    if (value.skillId !== undefined) writer.uint32(3, value.skillId);
+    if (value.targetUnitId !== undefined) writer.uint32(4, value.targetUnitId);
+    if (value.startedAtMs !== undefined) writer.uint64(5, value.startedAtMs);
+    if (value.finishAtMs !== undefined) writer.uint64(6, value.finishAtMs);
+    if (value.globalCooldownEndAtMs !== undefined) writer.uint64(7, value.globalCooldownEndAtMs);
+    if (value.skillCooldownEndAtMs !== undefined) writer.uint64(8, value.skillCooldownEndAtMs);
+    if (value.interruptReason !== undefined) writer.string(9, value.interruptReason);
+    return writer.finish();
+  },
+};
+
+export interface G2C_SkillCastState extends IMessage {
+  phase: number;
+  castId: bigint;
+  skillId: number;
+  targetUnitId: number;
+  startedAtMs: bigint;
+  finishAtMs: bigint;
+  globalCooldownEndAtMs: bigint;
+  skillCooldownEndAtMs: bigint;
+  interruptReason: string;
+}
+
+export const G2C_SkillCastStateCodec = {
+  decode(payload: Uint8Array): G2C_SkillCastState {
+    const reader = new BinaryReader(payload);
+    const value: G2C_SkillCastState = {
+      phase: 0,
+      castId: 0n,
+      skillId: 0,
+      targetUnitId: 0,
+      startedAtMs: 0n,
+      finishAtMs: 0n,
+      globalCooldownEndAtMs: 0n,
+      skillCooldownEndAtMs: 0n,
+      interruptReason: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.phase = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.castId = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.skillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.startedAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.finishAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.globalCooldownEndAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.skillCooldownEndAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 9 && tag.wireType === 2) {
+        value.interruptReason = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_SkillCastState): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.phase !== undefined) writer.uint32(1, value.phase);
+    if (value.castId !== undefined) writer.uint64(2, value.castId);
+    if (value.skillId !== undefined) writer.uint32(3, value.skillId);
+    if (value.targetUnitId !== undefined) writer.uint32(4, value.targetUnitId);
+    if (value.startedAtMs !== undefined) writer.uint64(5, value.startedAtMs);
+    if (value.finishAtMs !== undefined) writer.uint64(6, value.finishAtMs);
+    if (value.globalCooldownEndAtMs !== undefined) writer.uint64(7, value.globalCooldownEndAtMs);
+    if (value.skillCooldownEndAtMs !== undefined) writer.uint64(8, value.skillCooldownEndAtMs);
+    if (value.interruptReason !== undefined) writer.string(9, value.interruptReason);
+    return writer.finish();
+  },
+};
+
+export interface G2C_SkillProjectile extends IMessage {
+  castId: bigint;
+  skillId: number;
+  sourceUnitId: number;
+  targetUnitId: number;
+  launchedAtMs: bigint;
+  impactAtMs: bigint;
+}
+
+export const G2C_SkillProjectileCodec = {
+  decode(payload: Uint8Array): G2C_SkillProjectile {
+    const reader = new BinaryReader(payload);
+    const value: G2C_SkillProjectile = {
+      castId: 0n,
+      skillId: 0,
+      sourceUnitId: 0,
+      targetUnitId: 0,
+      launchedAtMs: 0n,
+      impactAtMs: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.castId = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.skillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.sourceUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.launchedAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.impactAtMs = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_SkillProjectile): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.castId !== undefined) writer.uint64(1, value.castId);
+    if (value.skillId !== undefined) writer.uint32(2, value.skillId);
+    if (value.sourceUnitId !== undefined) writer.uint32(3, value.sourceUnitId);
+    if (value.targetUnitId !== undefined) writer.uint32(4, value.targetUnitId);
+    if (value.launchedAtMs !== undefined) writer.uint64(5, value.launchedAtMs);
+    if (value.impactAtMs !== undefined) writer.uint64(6, value.impactAtMs);
+    return writer.finish();
+  },
+};
+
+export interface G2C_SkillImpact extends IMessage {
+  castId: bigint;
+  skillId: number;
+  sourceUnitId: number;
+  targetUnitId: number;
+  damage: bigint;
+  damageSchool: number;
+  killed: boolean;
+}
+
+export const G2C_SkillImpactCodec = {
+  decode(payload: Uint8Array): G2C_SkillImpact {
+    const reader = new BinaryReader(payload);
+    const value: G2C_SkillImpact = {
+      castId: 0n,
+      skillId: 0,
+      sourceUnitId: 0,
+      targetUnitId: 0,
+      damage: 0n,
+      damageSchool: 0,
+      killed: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.castId = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.skillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.sourceUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.damage = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.damageSchool = reader.uint32();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.killed = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_SkillImpact): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.castId !== undefined) writer.uint64(1, value.castId);
+    if (value.skillId !== undefined) writer.uint32(2, value.skillId);
+    if (value.sourceUnitId !== undefined) writer.uint32(3, value.sourceUnitId);
+    if (value.targetUnitId !== undefined) writer.uint32(4, value.targetUnitId);
+    if (value.damage !== undefined) writer.uint64(5, value.damage);
+    if (value.damageSchool !== undefined) writer.uint32(6, value.damageSchool);
+    if (value.killed !== undefined) writer.bool(7, value.killed);
     return writer.finish();
   },
 };

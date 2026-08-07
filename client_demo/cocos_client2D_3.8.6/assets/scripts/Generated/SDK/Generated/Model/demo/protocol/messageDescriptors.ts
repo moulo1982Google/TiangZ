@@ -31,6 +31,12 @@ import {
   G2C_ItemChangedCodec,
   G2C_MapReady,
   G2C_MapReadyCodec,
+  G2C_SkillCastState,
+  G2C_SkillCastStateCodec,
+  G2C_SkillImpact,
+  G2C_SkillImpactCodec,
+  G2C_SkillProjectile,
+  G2C_SkillProjectileCodec,
 } from "./messages";
 import { MsgCode } from "./msgcodes";
 
@@ -105,6 +111,21 @@ export const ClientMessages = {
     msgcode: MsgCode.G2C_DemoDoorState,
     codec: G2C_DemoDoorStateCodec,
   }),
+  SkillCastState: defineMessage<G2C_SkillCastState>({
+    name: "Client.SkillCastState",
+    msgcode: MsgCode.G2C_SkillCastState,
+    codec: G2C_SkillCastStateCodec,
+  }),
+  SkillProjectile: defineMessage<G2C_SkillProjectile>({
+    name: "Client.SkillProjectile",
+    msgcode: MsgCode.G2C_SkillProjectile,
+    codec: G2C_SkillProjectileCodec,
+  }),
+  SkillImpact: defineMessage<G2C_SkillImpact>({
+    name: "Client.SkillImpact",
+    msgcode: MsgCode.G2C_SkillImpact,
+    codec: G2C_SkillImpactCodec,
+  }),
 };
 
 export const MapMessages = {
@@ -132,4 +153,7 @@ export const AllMessageDescriptors = [
   ClientMessages.EntityLeave,
   ClientMessages.AoiDelta,
   ClientMessages.DemoDoorState,
+  ClientMessages.SkillCastState,
+  ClientMessages.SkillProjectile,
+  ClientMessages.SkillImpact,
 ] as const;

@@ -32,6 +32,7 @@ import type {
   MapHostEndpoint,
   MapInstanceSnapshot,
   PlayerTransferSnapshot,
+  SkillTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
 import { MAP_ENTRY_ADMISSION_TIMEOUT_MS } from "../map/MapEntryAdmission";
 import { MapTransferProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
@@ -39,10 +40,12 @@ import { MapComponent } from "../map/MapComponent";
 import { MapScene } from "../map/MapScene";
 import { MapAoiComponent } from "../map/MapAoiComponent";
 import { MonsterComponent } from "../monster/MonsterComponent";
+import { SkillMapComponent } from "../skill/SkillMapComponent";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import { BuffComponent } from "../buff/BuffComponent";
+import { SkillComponent, type SkillTransferState } from "../skill/SkillComponent";
 import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
 import { GameConfigs } from "../../../generated/model/config";
 import { LocationProxy } from "../location/LocationProxy";
@@ -782,7 +785,7 @@ export class MapHostComponent extends Component {
   ): PlayerTransferSnapshot {
     const snapshot = player.Snapshot();
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       transferId,
       unitId: snapshot.unitId,
       account: snapshot.account,
@@ -796,6 +799,7 @@ export class MapHostComponent extends Component {
       numerics: snapshot.numerics,
       items: player.GetComponent(ItemComponent).Snapshot(),
       buffs: player.GetComponent(BuffComponent).CaptureTransfer().map(toProtocolBuffTransfer),
+      skill: toProtocolSkillTransfer(player.GetComponent(SkillComponent).CaptureTransfer()),
       targetMapInstanceId: targetInstance.mapInstanceId,
     };
   }
@@ -1012,6 +1016,7 @@ export class MapHostComponent extends Component {
         aoi,
       );
       scene.AddComponent(MonsterComponent, map, aoi);
+      scene.AddComponent(SkillMapComponent, map);
       this.maps.set(definition.mapInstanceId, map);
       return map;
     } catch (error) {
@@ -1141,6 +1146,16 @@ export class MapHostComponent extends Component {
   }
 }
 
+function toProtocolSkillTransfer(value: SkillTransferState): SkillTransferSnapshot {
+  return {
+    globalCooldownEndAtMs: BigInt(Math.max(0, Math.floor(value.globalCooldownEndAtMs))),
+    cooldowns: value.cooldowns.map((cooldown) => ({
+      skillId: cooldown.skillId,
+      cooldownEndAtMs: BigInt(Math.max(0, Math.floor(cooldown.cooldownEndAtMs))),
+    })),
+  };
+}
+
 interface PreparedIncomingPlayer {
   readonly map: MapComponent;
   readonly player: PlayerUnit;
@@ -1162,5 +1177,15 @@ function toProtocolBuffTransfer(
     tickIntervalMs: value.tickIntervalMs,
     nextTickAtMs: BigInt(Math.max(0, Math.floor(value.nextTickAtMs))),
     revision: value.revision,
+    sourceUnitId: value.sourceUnitId,
+    sourceAbilityId: value.sourceAbilityId,
+    conflictPriority: value.conflictPriority,
+    damageAbsorberRemaining: value.damageAbsorberRemaining,
+    addActionType: value.addAction?.type ?? 0,
+    addActionParams: value.addAction?.parameters ?? [],
+    tickActionType: value.tickAction?.type ?? 0,
+    tickActionParams: value.tickAction?.parameters ?? [],
+    removeActionType: value.removeAction?.type ?? 0,
+    removeActionParams: value.removeAction?.parameters ?? [],
   };
 }

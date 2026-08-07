@@ -11,6 +11,8 @@ import {
   C2G_PingCodec,
   C2M_AttackMonster,
   C2M_AttackMonsterCodec,
+  C2M_CastSkill,
+  C2M_CastSkillCodec,
   C2M_FindPath,
   C2M_FindPathCodec,
   C2M_MapProbe,
@@ -39,6 +41,8 @@ import {
   G2C_PingCodec,
   M2C_AttackMonster,
   M2C_AttackMonsterCodec,
+  M2C_CastSkill,
+  M2C_CastSkillCodec,
   M2C_FindPath,
   M2C_FindPathCodec,
   M2C_MapProbe,
@@ -176,6 +180,14 @@ export const MapProtocol = {
     responseCodec: M2C_ToggleAutoAttackCodec,
     routing: "actor-location",
   }),
+  CastSkill: defineRpc<C2M_CastSkill, M2C_CastSkill>({
+    name: "Map.CastSkill",
+    requestCode: MsgCode.C2M_CastSkill,
+    responseCode: MsgCode.M2C_CastSkill,
+    requestCodec: C2M_CastSkillCodec,
+    responseCodec: M2C_CastSkillCodec,
+    routing: "actor-location",
+  }),
 };
 
 export const AllRpcDescriptors = [
@@ -192,5 +204,6 @@ export const AllRpcDescriptors = [
   MapProtocol.UseItem,
   MapProtocol.AttackMonster,
   MapProtocol.ToggleAutoAttack,
+  MapProtocol.CastSkill,
   GateProtocol.Ping,
 ] as const;

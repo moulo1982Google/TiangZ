@@ -64,9 +64,41 @@ export {
   Buff,
   type AwakeBuff,
   type BuffPublicState,
+  type BuffRefreshRequest,
   type BuffTransferState,
 } from "./demo/buff/Buff";
-export { BuffComponent, type BuffAddOptions } from "./demo/buff/BuffComponent";
+export {
+  BuffApplyStatus,
+  BuffComponent,
+  type BuffAddOptions,
+  type BuffApplyResult,
+  type BuffApplyStatusValue,
+} from "./demo/buff/BuffComponent";
+export {
+  SkillCastPhase,
+  SkillComponent,
+  type ActiveSkillCast,
+  type SkillCastCommand,
+  type SkillCastPhaseValue,
+  type SkillCastState,
+  type SkillCooldownTransferState,
+  type SkillTransferState,
+} from "./demo/skill/SkillComponent";
+export {
+  SkillMapComponent,
+  type SkillProjectile,
+} from "./demo/skill/SkillMapComponent";
+export {
+  SkillDelivery,
+  SkillEffectTarget,
+  SkillTargetRelation,
+  type SkillDefinition,
+  type SkillDeliveryValue,
+  type SkillEffectDefinition,
+  type SkillEffectTargetValue,
+  type SkillTargetRelationValue,
+} from "./demo/skill/SkillDefinition";
+export { SkillEvents, type BeforeCastSkillEvent } from "./demo/skill/SkillEvents";
 export { MapComponent } from "./demo/map/MapComponent";
 export { MapAoiComponent } from "./demo/map/MapAoiComponent";
 export { MapScene } from "./demo/map/MapScene";
@@ -116,8 +148,13 @@ export {
   GameConfigRegistry,
   GameConfigSchemaFingerprint,
   GameConfigs,
+  BuffConflictPolicy,
+  BuffRefreshStatePolicy,
+  BuffRefreshTickPolicy,
+  BuffStackScope,
   SpatialMode,
   type ItemConfig as ItemConfigData,
+  type BuffConfig as BuffConfigData,
   type MapConfig as MapConfigData,
   type PlayerConfig as PlayerConfigData,
   type MonsterConfig as MonsterConfigData,
@@ -131,12 +168,14 @@ export {
 export {
   AutoAttackPhase,
   CombatComponent,
+  DamageSchool,
   type AutoAttackPhaseValue,
   type AutoAttackState,
   type DamageAbsorberState,
   type DamageAbsorption,
   type DamageRequest,
   type DamageResult,
+  type DamageSchoolValue,
   type HealingResult,
 } from "./demo/combat/CombatComponent";
 export {

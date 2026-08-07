@@ -4,6 +4,7 @@ import type { BuffPublicState, BuffTransferState } from "../../../model/public";
 
 declare module "../../../model/demo/buff/Buff" {
   interface Buff {
+    Refresh(request: import("#tiangz/model").BuffRefreshRequest): void;
     Snapshot(): BuffTransferState;
     PublicState(unitId: number): BuffPublicState;
     readonly ConfigId: number;
@@ -12,6 +13,9 @@ declare module "../../../model/demo/buff/Buff" {
     readonly ExpireAtMs: number;
     readonly NextTickAtMs: number;
     readonly Revision: number;
+    readonly SourceUnitId: number;
+    readonly SourceAbilityId: number;
+    readonly ConflictPriority: number;
   }
 }
 

@@ -52,6 +52,7 @@
 - [Unit与ActorUnit边界](design/unit-actor-boundary.md)
 - [地图空间与3D坐标契约](design/spatial-world.md)
 - [AOI完整设计与函数调用关系](design/aoi-architecture.md)
+- [技能与施法系统设计](design/skill-system.md)
 - [TypeScript 调试](typescript_debugging.md)
 - [路线图](roadmap.md)
 

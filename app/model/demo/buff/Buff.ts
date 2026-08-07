@@ -14,6 +14,10 @@ export interface AwakeBuff {
   readonly addAction?: ActionDefinition;
   readonly tickAction?: ActionDefinition;
   readonly removeAction?: ActionDefinition;
+  readonly sourceUnitId?: number;
+  readonly sourceAbilityId?: number;
+  readonly conflictPriority?: number;
+  readonly restoringDamageAbsorberRemaining?: bigint;
 }
 
 /** 跨地图传输的纯值快照；不得携带Entity、Native handle、Timer或Promise。 / Pure-value cross-map state; never include an Entity, Native handle, Timer, or Promise. */
@@ -26,6 +30,13 @@ export interface BuffTransferState {
   readonly tickIntervalMs: number;
   readonly nextTickAtMs: number;
   readonly revision: number;
+  readonly sourceUnitId: number;
+  readonly sourceAbilityId: number;
+  readonly conflictPriority: number;
+  readonly damageAbsorberRemaining: bigint;
+  readonly addAction?: ActionDefinition;
+  readonly tickAction?: ActionDefinition;
+  readonly removeAction?: ActionDefinition;
 }
 
 /** AOI公开的Buff外观；私有自定义状态不放进这个视图。 / AOI-public Buff appearance; private custom state does not belong in this view. */
@@ -36,6 +47,28 @@ export interface BuffPublicState {
   readonly stacks: number;
   readonly expireTimeMs: bigint;
   readonly revision: number;
+}
+
+/** Buff刷新时已经由集合拥有者解析出的确定参数。 / Fully resolved refresh parameters supplied by the owning collection. */
+export interface BuffRefreshRequest {
+  readonly nowMs: number;
+  readonly expireAtMs: number;
+  readonly tickIntervalMs: number;
+  readonly resetTickCadence: boolean;
+  readonly updateSource: boolean;
+  readonly sourceUnitId: number;
+  readonly sourceAbilityId: number;
+  readonly conflictPriority: number;
+}
+
+export interface Buff {
+  readonly ConfigId: number;
+  readonly SourceUnitId: number;
+  readonly SourceAbilityId: number;
+  readonly ConflictPriority: number;
+  Refresh(request: BuffRefreshRequest): void;
+  Snapshot(): BuffTransferState;
+  PublicState(unitId: number): BuffPublicState;
 }
 
 /**
@@ -55,6 +88,10 @@ export class Buff extends ChildEntity<[request: AwakeBuff]> {
   protected tickIntervalOverrideMs = 0;
   protected nextTickAtMs = 0;
   protected revision = 0;
+  protected sourceUnitId = 0;
+  protected sourceAbilityId = 0;
+  protected conflictPriority = 0;
+  protected damageAbsorberModifierId = 0;
   protected addAction: ActionDefinition | undefined;
   protected tickAction: ActionDefinition | undefined;
   protected removeAction: ActionDefinition | undefined;

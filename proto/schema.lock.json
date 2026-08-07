@@ -651,6 +651,76 @@
           "type": "uint32",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "source_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "source_ability_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "conflict_priority",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 12,
+          "name": "damage_absorber_remaining",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 13,
+          "name": "add_action_type",
+          "type": "int32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 14,
+          "name": "add_action_params",
+          "type": "int64",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 15,
+          "name": "tick_action_type",
+          "type": "int32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 16,
+          "name": "tick_action_params",
+          "type": "int64",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 17,
+          "name": "remove_action_type",
+          "type": "int32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 18,
+          "name": "remove_action_params",
+          "type": "int64",
+          "repeated": true,
+          "synthetic": false
         }
       ]
     },
@@ -984,6 +1054,50 @@
           "name": "z",
           "type": "float",
           "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#SkillCooldownSnapshot",
+      "name": "SkillCooldownSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#SkillTransferSnapshot",
+      "name": "SkillTransferSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "global_cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cooldowns",
+          "type": "SkillCooldownSnapshot",
+          "repeated": true,
           "synthetic": false
         }
       ]
@@ -3230,6 +3344,13 @@
           "type": "BuffTransferSnapshot",
           "repeated": true,
           "synthetic": false
+        },
+        {
+          "number": 17,
+          "name": "skill",
+          "type": "SkillTransferSnapshot",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -3993,6 +4114,35 @@
         {
           "number": 1,
           "name": "monster_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_CastSkill",
+      "name": "C2M_CastSkill",
+      "base": "IActorLocationRequest",
+      "response": "M2C_CastSkill",
+      "fields": [
+        {
+          "number": 1,
+          "name": "skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "target_unit_id",
           "type": "uint32",
           "repeated": false,
           "synthetic": false
@@ -4882,6 +5032,184 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_SkillCastState",
+      "name": "G2C_SkillCastState",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "phase",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cast_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "started_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "finish_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "global_cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "skill_cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "interrupt_reason",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_SkillImpact",
+      "name": "G2C_SkillImpact",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "cast_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "source_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "damage",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "damage_school",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "killed",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_SkillProjectile",
+      "name": "G2C_SkillProjectile",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "cast_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "source_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "launched_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "impact_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_AttackMonster",
       "name": "M2C_AttackMonster",
       "base": "IActorLocationResponse",
@@ -4912,6 +5240,98 @@
           "number": 4,
           "name": "killed",
           "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_CastSkill",
+      "name": "M2C_CastSkill",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "phase",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cast_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "started_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "finish_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "global_cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "skill_cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "interrupt_reason",
+          "type": "string",
           "repeated": false,
           "synthetic": false
         },

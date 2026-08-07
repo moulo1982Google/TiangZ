@@ -7,6 +7,13 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-07：怪物尸体生命周期与技能表现修正
+
+- 怪物死亡不再立即AOI Leave和销毁。原MonsterUnit以`alive=false`保留到`respawn_seconds`到期，期间停止AI、移动和受击，但仍可作为弹道命中、倒地、Buff清理和未来掉落表现的稳定目标。
+- 1Hz桶到期时先Detach尸体、发布AOI Leave并Remove旧Unit，再在同一AreaId创建新UnitId；Leave发布完成前不创建替代怪物，避免客户端短暂同时看到尸体与新怪。
+- Cocos3D把死亡怪物方块放倒并隐藏头顶条，最终删除只认AOI Leave；寒冰箭新增可见弹道，距离不足按服务端错误码显示中文提示，死亡目标命中特效不再错误回退到玩家身上。
+- 当前最小Demo复用`respawn_seconds`作为尸体存在时间；只有掉落玩法要求两个时间轴独立时，才在MonsterConfig新增尸体时间字段。
+
 ## 2026-08-07：Unit与Actor能力解耦
 
 - `Unit`收敛为普通地图Entity，默认不创建mailbox、不注册Actor路由；新增`ActorUnit extends Unit`作为显式可寻址能力，`PlayerUnit`迁移为ordered ActorUnit，`MonsterUnit`保持普通Unit并继续由地图固定桶驱动。
@@ -645,3 +652,13 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - PlayerTransferSnapshot升级为schema 3，Buff传送只保存配置、层数、版本和墙钟时间，不保存TimerId、Promise或Hotfix闭包；目标恢复时不重复执行AddAction。
 - 固定解耦边界：Combat不查询Buff，Buff通过生命周期注册/注销Combat修改器；Buff Tick只执行Action，广播由Map/Audience负责。Cast技能系统、复杂目标选择和Buff持久化留到后续阶段。
 - 新增`docs/design/action-buff.md`、`docs/tutorials/17-action-and-buff.md`和`tools/buff_action_self_test.ts`，覆盖立即Action、Buff Tick、幂等移除和Timer生命周期。
+
+# 2026-08-07：五技能与Buff冲突机制
+
+- 新增Unit级`SkillComponent`和地图级`SkillMapComponent.Update10Hz`，统一推进寒冰箭、火焰冲击、惩击、真言术·盾和真言术·韧；不创建每Unit Update或每Cast Timer。
+- 新增施法RPC、latest读条/CD状态、弹道与命中事件；Cocos3D增加4至8号技能快捷键、点击按钮、服务器时间读条和GCD/CD遮罩。
+- Buff冲突支持Target/Source作用域与Stack/Refresh/Replace/Reject/HigherWins，覆盖冰冷共享刷新、灼烧按来源并存、虚弱灵魂拒绝、韧高等级覆盖。
+- Combat新增数据型伤害吸收器；盾Buff只保存modifierId，传送以纯值恢复运行时Action和剩余吸收量，不让Combat反向依赖Buff。
+- 玩家移动中断读条，所有五个法术在接受时重置平A读条但保留攻击意图；GCD和技能CD按deadline保存并跨地图恢复，活动Cast不跨地图。
+- 增加`SkillEvents.BeforeCast`同步Veto；虚弱灵魂监听器只读拒绝真言术·盾，SkillMap和Buff冲突仍保留最终不变量，检查与提交之间没有await。
+- 新增Buff策略矩阵与真实Runtime五技能冒烟；技能数值当前留在Hotfix SkillCatalog，Luban表格化和技能压力A/B后续进行。

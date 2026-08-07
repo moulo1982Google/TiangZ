@@ -1,6 +1,7 @@
 import {
   AutoAttackPhase,
   CombatComponent,
+  DamageSchool,
   NativeData,
   NativeUnitRef,
   NumericComponent,
@@ -9,6 +10,7 @@ import {
   type DamageAbsorption,
   type DamageRequest,
   type DamageResult,
+  type DamageSchoolValue,
   type HealingResult,
   systemFor,
 } from "#tiangz/model";
@@ -150,7 +152,11 @@ export class CombatComponentSystem extends CombatComponent {
     const currentHp = numeric[NumericType.CurrentHp];
     const native = owner.TryGetComponent(NativeUnitRef);
     if (currentHp <= 0n || native?.alive === 0 || request.amount === 0n) {
-      return emptyDamageResult(request.amount, currentHp);
+      return emptyDamageResult(
+        request.amount,
+        currentHp,
+        request.damageSchool ?? DamageSchool.Physical,
+      );
     }
 
     let pending = request.amount;
@@ -187,6 +193,7 @@ export class CombatComponentSystem extends CombatComponent {
       remainingHp,
       killed,
       absorptions,
+      damageSchool: request.damageSchool ?? DamageSchool.Physical,
     };
   }
 
@@ -258,7 +265,11 @@ function validateModifierId(modifierId: number): void {
   }
 }
 
-function emptyDamageResult(requestedDamage: bigint, currentHp: bigint): DamageResult {
+function emptyDamageResult(
+  requestedDamage: bigint,
+  currentHp: bigint,
+  damageSchool: DamageSchoolValue,
+): DamageResult {
   return {
     requestedDamage,
     absorbedDamage: 0n,
@@ -266,5 +277,6 @@ function emptyDamageResult(requestedDamage: bigint, currentHp: bigint): DamageRe
     remainingHp: currentHp,
     killed: false,
     absorptions: [],
+    damageSchool,
   };
 }

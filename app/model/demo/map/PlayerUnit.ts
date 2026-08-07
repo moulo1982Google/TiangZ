@@ -1,5 +1,6 @@
 import { ActorUnit, actor, lifecycle } from "../../../core/public";
 import type { UnitNumericDelta } from "../../../generated/model/server/demo/protocol/messages";
+import type { M2C_CastSkill } from "../../../generated/model/server/demo/protocol/messages";
 
 export interface AwakePlayerUnit {
   account: string;
@@ -56,6 +57,10 @@ export interface NavigatePlayerInput {
   strafe: number;
   yaw: number;
   sequence: number;
+}
+
+export interface PlayerUnit {
+  CastSkill(skillId: number, targetUnitId: number): M2C_CastSkill;
 }
 
 /** 玩家权威业务跨await保持串行；Gate连接和无状态入口不继承这个边界。 / Keeps authoritative player work serialized across awaits without imposing this boundary on Gate sessions or stateless entry scenes. */

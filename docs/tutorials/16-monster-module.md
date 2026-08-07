@@ -25,7 +25,7 @@ game_config/Datas/MonsterAreaConfig.xlsx
 | `attack_interval_ms` | 普通攻击间隔，毫秒；创建/复活时写入Numeric.AttackSpeedAdd |
 | `attack_mode` | `0`被动，`1`主动 |
 | `skill_id` | 预留技能配置ID，当前演示只支持普通攻击 |
-| `respawn_seconds` | 怪物死亡后恢复的秒数 |
+| `respawn_seconds` | 怪物死亡后的尸体保留及重新刷新的秒数（当前最小Demo共用） |
 
 `MonsterAreaConfig`描述“在哪里刷”：一行就是一个固定刷怪槽位，包含地图配置ID、模板ID、坐标和是否在地图创建时生成。复活时间属于怪物模板，不属于刷点，避免同一个怪物模板在不同地图拥有隐含的生命周期差异。当前版本没有随机刷怪池、多个候选点、掉落表和持久化。
 
@@ -83,12 +83,13 @@ app/hotfix/demo/combat/CombatComponentSystem.ts
   -> 主动怪找到范围内玩家：追击
   -> 距离不超过MonsterConfig.attack_range：停止移动并按Numeric.AttackSpeed普通攻击
   -> 玩家通过AttackMonster造成伤害
-  -> CombatComponent结算伤害；HP为0，旧MonsterUnit离开AOI并销毁
+  -> CombatComponent结算伤害；HP为0，旧MonsterUnit以alive=false留在AOI
   -> MonsterConfig.respawn_seconds到期
+  -> 旧尸体离开AOI并销毁
   -> 同一AreaId刷怪槽创建新的MonsterUnit，取得新的UnitId
 ```
 
-被动怪没有仇恨时不会主动寻找玩家；玩家对怪物造成实际伤害后，`MonsterComponent.Attack`按“1点伤害=1点仇恨”调用`MonsterComponent.AddThreat`，5Hz桶选择范围内仇恨最高的玩家，之后被动怪才会追击。主动怪没有仇恨时仍会在仇恨范围内寻找最近玩家；一旦有仇恨，主动和被动怪都优先按仇恨选目标。当前行为树只有待机、追击、攻击和攻击冷却停留四个动作；掉落、技能、Buff和复杂战斗结算尚未加入。3D演示客户端会在玩家HUD显示服务端推送的HP/MP，便于观察主动怪造成的伤害和玩家死亡，不允许客户端自行计算扣血。
+被动怪没有仇恨时不会主动寻找玩家；玩家对怪物造成实际伤害后，`MonsterComponent.ApplyPlayerDamage`按“1点实际伤害=1点仇恨”调用`MonsterComponent.AddThreat`，5Hz桶选择范围内仇恨最高的玩家，之后被动怪才会追击。主动怪没有仇恨时仍会在仇恨范围内寻找最近玩家；一旦有仇恨，主动和被动怪都优先按仇恨选目标。当前行为树只有待机、追击、攻击和攻击冷却停留四个动作；玩家技能与Buff已复用统一Combat入口，掉落和复杂战斗结算尚未加入。3D演示客户端会在HUD显示服务端推送的HP/MP、施法和Buff状态，不允许客户端自行计算扣血。
 
 行为树的调用关系保持在业务模块内部：
 
@@ -107,7 +108,7 @@ MonsterComponent.Update5Hz
 | 20Hz | `Update()` | 地图移动、AOI和帧尾前的基础逻辑 |
 | 10Hz | `Update10Hz()` | 玩家自动攻击是否能开始/中断读条 |
 | 5Hz | `Update5Hz()` | 主动怪追击、攻击决策 |
-| 1Hz | `Update1Hz()` | 空刷怪槽维护和新Unit重生 |
+| 1Hz | `Update1Hz()` | 尸体清理和新Unit重生 |
 
 不要在Handler里直接调用行为树，也不要为每只怪物或玩家创建一个Actor、Timer或Update目标。行为树只负责选择动作，距离、伤害、死亡和Numeric修改仍由`MonsterComponent`负责。`Update()`是默认20Hz兼容入口；需要中频逻辑时只实现固定名称的方法，不增加`hz`字段或业务频率配置。
 

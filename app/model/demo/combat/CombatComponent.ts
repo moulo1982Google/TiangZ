@@ -9,6 +9,16 @@ export const AutoAttackPhase = {
 
 export type AutoAttackPhaseValue = (typeof AutoAttackPhase)[keyof typeof AutoAttackPhase];
 
+/** 伤害学校用于日志、抗性和视觉，不改变统一伤害入口。 / Damage school metadata for logs, resistance, and visuals; it does not bypass the unified damage entrypoint. */
+export const DamageSchool = {
+  Physical: 1,
+  Frost: 2,
+  Fire: 3,
+  Holy: 4,
+} as const;
+
+export type DamageSchoolValue = (typeof DamageSchool)[keyof typeof DamageSchool];
+
 /**
  * 给Hotfix和客户端广播使用的平A状态快照。
  * swingStartAtMs 为0表示当前没有正在进行的读条；它不是持久化字段。
@@ -35,6 +45,7 @@ export interface DamageRequest {
   readonly sourceUnitId?: number;
   readonly abilityId?: number;
   readonly actionId?: number;
+  readonly damageSchool?: DamageSchoolValue;
 }
 
 /** 伤害处理器消耗的护盾明细；用于战斗结果和后续Buff详情投影。 / Shield details consumed by the damage pipeline for results and future Buff projections. */
@@ -57,6 +68,7 @@ export interface DamageResult {
   readonly remainingHp: bigint;
   readonly killed: boolean;
   readonly absorptions: readonly DamageAbsorption[];
+  readonly damageSchool: DamageSchoolValue;
 }
 
 /** 治疗结算结果；治疗自动受MaxHp限制。 / Healing resolution result; healing is clamped by MaxHp. */

@@ -342,6 +342,71 @@ message G2C_DemoDoorState // IMessage
   bool closed = 1;
 }
 
+//ResponseType M2C_CastSkill
+// 技能请求进入PlayerUnit有序mailbox；读条完成与弹道命中由地图10Hz技能桶推进。
+// @ets.msg protocol=Map method=CastSkill duringTransfer=reject
+message C2M_CastSkill // IActorLocationRequest
+{
+  uint32 skill_id = 1;
+  uint32 target_unit_id = 2;
+}
+
+message M2C_CastSkill // IActorLocationResponse
+{
+  uint32 phase = 1;
+  uint64 cast_id = 2;
+  uint32 skill_id = 3;
+  uint32 target_unit_id = 4;
+  uint64 started_at_ms = 5;
+  uint64 finish_at_ms = 6;
+  uint64 global_cooldown_end_at_ms = 7;
+  uint64 skill_cooldown_end_at_ms = 8;
+  string interrupt_reason = 9;
+}
+
+// 施法状态只发给本人；移动打断、完成和失败都用新状态覆盖旧读条。
+// @ets.msg protocol=Client method=SkillCastState
+// @ets.broadcast mode=latest
+message G2C_SkillCastState // IMessage
+{
+  uint32 phase = 1;
+  uint64 cast_id = 2;
+  uint32 skill_id = 3;
+  uint32 target_unit_id = 4;
+  uint64 started_at_ms = 5;
+  uint64 finish_at_ms = 6;
+  uint64 global_cooldown_end_at_ms = 7;
+  uint64 skill_cooldown_end_at_ms = 8;
+  string interrupt_reason = 9;
+}
+
+// 弹道创建是不可覆盖事件；客户端只负责表现，伤害仍由服务端到点结算。
+// @ets.msg protocol=Client method=SkillProjectile
+// @ets.broadcast mode=event
+message G2C_SkillProjectile // IMessage
+{
+  uint64 cast_id = 1;
+  uint32 skill_id = 2;
+  uint32 source_unit_id = 3;
+  uint32 target_unit_id = 4;
+  uint64 launched_at_ms = 5;
+  uint64 impact_at_ms = 6;
+}
+
+// 一次技能命中的公开结果；详细Buff仍由BuffAdded/BuffRemoved维护。
+// @ets.msg protocol=Client method=SkillImpact
+// @ets.broadcast mode=event
+message G2C_SkillImpact // IMessage
+{
+  uint64 cast_id = 1;
+  uint32 skill_id = 2;
+  uint32 source_unit_id = 3;
+  uint32 target_unit_id = 4;
+  uint64 damage = 5;
+  uint32 damage_school = 6;
+  bool killed = 7;
+}
+
 //ResponseType G2C_Ping
 // @ets.msg protocol=Gate method=Ping
 message C2G_Ping // IRequest

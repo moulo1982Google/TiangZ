@@ -142,11 +142,11 @@ MapHost -> MapScene
 4. Handler保持一层胶水，例如`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。
 5. 通过`MonsterComponent.Get/GetAll`取得怪物；死亡状态、AOI和重生只能由MonsterComponent完成。
 
-当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡移除、原槽位新Unit重生”。怪物死亡先执行`Detach`、发布AOI Leave，再执行`Remove`；`MonsterConfig.respawn_seconds`到期后只复用`AreaId`刷怪槽，重新创建MonsterUnit并分配新的UnitId。被动怪没有仇恨时不主动寻找玩家，但玩家造成实际伤害后必须通过`MonsterComponent.AddThreat`增加仇恨，5Hz桶按仇恨最高者追击；不能把“被攻击”直接等同于“追击”。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
+当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡尸体、尸体清理、原槽位新Unit重生”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；当前Demo在`MonsterConfig.respawn_seconds`到期时执行`Detach`、发布AOI Leave并`Remove`旧尸体，然后只复用`AreaId`刷怪槽创建新的MonsterUnit和UnitId。被动怪没有仇恨时不主动寻找玩家，但玩家造成实际伤害后必须通过`MonsterComponent.AddThreat`增加仇恨，5Hz桶按仇恨最高者追击；不能把“被攻击”直接等同于“追击”。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
 
-怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡通过AOI Leave移除旧Unit，复活通过AOI Enter发送新Unit的完整快照。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。演示客户端可以读取冷配置中的`attack_mode`做非权威颜色提示：自己蓝色，其他玩家绿色，被动怪黄色，主动怪红色；业务逻辑仍必须以服务端配置和System为准。角色和怪物之间的动态阻挡、动态避障当前明确不做。
+怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡先通过`EntityState.alive=false`表现为尸体，尸体清理才通过AOI Leave移除旧Unit，复活通过AOI Enter发送新Unit的完整快照。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。演示客户端可以读取冷配置中的`attack_mode`做非权威颜色提示：自己蓝色，其他玩家绿色，被动怪黄色，主动怪红色；业务逻辑仍必须以服务端配置和System为准。角色和怪物之间的动态阻挡、动态避障当前明确不做。
 
-自动平A追加在玩家Unit上的`CombatComponent`，不新增`MonsterActor`、每玩家Timer或每玩家Update目标。固定桶分工如下：`Update()`为20Hz基础地图逻辑，`Update10Hz()`判定玩家平A是否开始/中断读条，`Update5Hz()`处理主动怪AI，`Update1Hz()`处理空刷怪槽维护和新Unit重生。业务不配置任意Hz；需要完整规则时参考[固定更新桶与自动平A设计](../design/auto-attack-and-fixed-update.md)。
+自动平A追加在玩家Unit上的`CombatComponent`，不新增`MonsterActor`、每玩家Timer或每玩家Update目标。固定桶分工如下：`Update()`为20Hz基础地图逻辑，`Update10Hz()`判定玩家平A是否开始/中断读条，`Update5Hz()`处理主动怪AI，`Update1Hz()`处理尸体清理和新Unit重生。业务不配置任意Hz；需要完整规则时参考[固定更新桶与自动平A设计](../design/auto-attack-and-fixed-update.md)。
 
 玩家按`1`只是发送`C2M_ToggleAutoAttack`切换攻击意图。服务端要求目标存活、同一MapScene、距离不超过`PlayerConfig.attack_range`且处于角色前方120°，否则保持激活但把当前读条清零；再次满足条件必须从零开始。`G2C_AutoAttackState`只同步状态边界，并且是每个玩家本人频道上的`latest`可覆盖状态，不是不可丢失事件；客户端可以用服务器时间绘制读条，但不能自行结算命中。目标死亡、距离/朝向失效、玩家死亡或主动关闭会结束或重置平A，广播队列不会在固定次数后自动停止。攻击命中、道具消耗等不可逆事实仍使用`event`。目标、范围、朝向、伤害和仇恨都由Map的Hotfix System掌握；怪物攻击距离读取`MonsterConfig.attack_range`。
 
@@ -187,6 +187,8 @@ MapHost -> MapScene
 5. 服务端通过`GameConfigs`读取，客户端通过分发SDK中的同名入口读取；禁止直接读Excel/JSON、手改Generated或自行维护第二份配置缓存。
 
 `PlayerConfig`表示创建玩家时的基础模板，不表示某个玩家升级后的等级、经验、当前生命或背包结果。运行时状态属于Entity/Component和持久化记录。配置对象与数组只读；`GetAll()`只用于低频初始化和管理流程，帧内热路径应按ID查询或预先建立明确索引。
+
+技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。读条接受时框架清除旧移动租约，后续非零移动输入中断施法。目标选择、Cast时间线和Action效果必须分层：Skill解析目标并按顺序执行Action，伤害进入Combat、Buff进入BuffComponent。新技能不能用`ChangeNumeric(CurrentHp, -damage)`绕过Combat。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)。
 
 游戏配置的表名、字段、类型、分组、索引和引用关系属于Model，不能热更；变化后必须完整构建、重启相关Process并同步客户端SDK。只修改数据行或字段值时，`build:game-config:startup`会重新生成并覆盖服务器重启使用的`dist/game-config`；`build:game-config`只生成独立候选，可通过Watcher的`reload-config`原子切换服务端快照。`test:game-config`只验证，不更新启动目录。Reload不重跑Awake、不修改既有Entity状态；业务不要长期缓存配置行，应在真正使用数值时通过`GameConfigs`查询。客户端数据仍随SDK发布，不能把服务端Reload当作客户端配置下发。详细格式和示例见[游戏配置教程](../tutorials/10-game-config.md)。
 
@@ -572,6 +574,7 @@ Buff Tick -> 执行Action -> Numeric/Move/其他领域各自同步
 - 公开事件发送给`AOI观察者 ∪ 队伍`，详情状态发送给`自己 ∪ 队伍`；`ClientAudience.Union`按UnitId去重，同一玩家不会收到两份。
 - `G2C_BuffDetail`是以`(unitId,buffInstanceId)`为key的latest状态，同帧多次扣盾只保留最终吸收量；Add/Remove绝不能改成latest。
 - Tick不修改或广播Buff本身，只执行Action；Action修改哪个领域，就复用哪个领域已有的同步机制。
+- Buff冲突由`stack_group + stack_scope + sourceUnitId`形成稳定冲突键，再由`conflict_policy`决定Stack、Refresh、Replace、Reject或HigherWins。不要用`unique`布尔值或ConfigId大小硬编码。Refresh默认不重复执行AddAction；是否更新来源、Tick节奏和运行状态只读对应配置列。
 - 客户端从BuffAdded或Unit Snapshot携带的开始/结束时间自行计算剩余时间，服务端不逐Tick同步倒计时。
 - 进入AOI时Buff列表包含在Unit整体Snapshot中；离开AOI时Unit整体消失，不逐个发送BuffRemoved。
 - 不扫描EntityRoot收集Buff，也不让每个Buff成为Actor。未来AOI直接从目标Unit的BuffComponent取得快照。
@@ -769,6 +772,8 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
+持久化基础设施将放在独立DBProxy仓库中实现，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy只接受命名空间、实体类型、实体ID、存储域、schema版本、revision和编码后的Payload，不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型。TiangZ codegen负责把领域对象转换为通用请求，业务代码只调用生成Repository。第一阶段只开放`snapshot`，经济事务接口在第二阶段经过独立故障矩阵后再开放。
+
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
 - `transactional`：Wallet、Inventory、Trade等经济数据；不能直接赋值，只通过领域事务方法修改，永久DB提交成功后才更新Redis缓存和内存状态。
@@ -875,11 +880,11 @@ C2M_AttackMonsterHandler
   -> MonsterComponent.Attack
 ```
 
-固定刷点和实体身份必须分开：`MonsterAreaConfig.id`对应稳定的`AreaId`刷怪槽位，`MonsterUnit.UnitId`只对应当前这一只实体。死亡时`MonsterComponent`先Detach并发布AOI Leave，再Remove旧Unit；复活时间到期后在同一`AreaId`重新创建MonsterUnit，分配新的UnitId，并通过AOI Enter发送新快照。业务不得通过复用旧UnitId来表示“新怪物”，也不得让客户端只隐藏旧节点而继续保留旧实体引用。
+固定刷点和实体身份必须分开：`MonsterAreaConfig.id`对应稳定的`AreaId`刷怪槽位，`MonsterUnit.UnitId`只对应当前这一只实体。死亡时`MonsterComponent`保留`alive=false`的旧Unit作为尸体；复活时间到期后先Detach并发布AOI Leave，再Remove旧尸体，随后在同一`AreaId`创建新的MonsterUnit、分配新的UnitId并通过AOI Enter发送新快照。业务不得复用旧UnitId表示“新怪物”；客户端可以保留旧节点表现尸体，但必须以AOI Leave作为最终删除信号。
 
 怪物主动行为由`MonsterComponent.Update`统一驱动，并在Hotfix内部调用局部`MonsterBehaviorTree`。行为树只负责从待机、追击、攻击和冷却停留中选择一个动作；它不能直接操作Native句柄、广播消息或修改其他地图的Unit。距离、伤害、死亡和Numeric变更仍由MonsterComponent负责。
 
-不要为每只怪物创建Actor、长期Timer或独立V8。不要在Handler里扫描地图或绕过`MonsterComponent`查找怪物。技能、Buff、复杂仇恨、巡逻路点和回出生点尚未接入，新增这些能力前先保持当前普通攻击闭环可测试、可观测。
+不要为每只怪物创建Actor、长期Timer或独立V8。不要在Handler里扫描地图或绕过`MonsterComponent`查找怪物。技能和Buff已经接入统一Component/Action边界；复杂仇恨、巡逻路点和回出生点尚未接入，新增这些能力前先保持当前普通攻击与五技能闭环可测试、可观测。
 
 ### 自动攻击与朝向
 
@@ -928,7 +933,7 @@ C2M_AttackMonsterHandler
 
 `BuffComponent`拥有`Buff` ChildEntity；Component负责集合、实例ID、传送和AOI生命周期事件，BuffSystem负责Add/Tick/Remove和Timer。Buff传送只保存纯值及墙钟时间，目标重建Timer但不重复AddAction；不保存TimerId、闭包、Promise或Entity。Buff Tick只执行Action，Numeric和Combat沿用自身同步边界。
 
-Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat modifier，伤害统一进入`CombatComponent.ApplyDamage`；禁止再设计`BuffComponent.TryAbsorbDamage`作为受伤入口。Cast技能系统、复杂目标选择和Buff持久化不属于当前闭环，完整示例见[Action与Buff最小闭环](../design/action-buff.md)。
+Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat modifier，伤害统一进入`CombatComponent.ApplyDamage`；禁止再设计`BuffComponent.TryAbsorbDamage`作为受伤入口。运行时Action和护盾剩余量会以纯值跨地图恢复。五技能Cast已接入，复杂地面目标、引导和Buff持久化仍不属于当前闭环。
 
 ## 道具出生与快捷栏
 

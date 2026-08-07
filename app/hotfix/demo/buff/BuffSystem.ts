@@ -1,6 +1,7 @@
 import {
   ActionType,
   Buff,
+  CombatComponent,
   GameConfigs,
   TimeSystem,
   type ActionDefinition,
@@ -37,6 +38,9 @@ export class BuffSystem extends Buff {
     this.tickIntervalOverrideMs = request.tickIntervalMs;
     this.nextTickAtMs = request.nextTickAtMs;
     this.revision = request.revision;
+    this.sourceUnitId = request.sourceUnitId ?? 0;
+    this.sourceAbilityId = request.sourceAbilityId ?? 0;
+    this.conflictPriority = request.conflictPriority ?? this.requireConfig().conflictPriority;
     this.addAction = request.addAction;
     this.tickAction = request.tickAction;
     this.removeAction = request.removeAction;
@@ -45,7 +49,18 @@ export class BuffSystem extends Buff {
       throw new Error(`buff stacks must be positive: ${this.stacks}`);
     }
     this.requireConfig();
-    if (!restoring) this.executePhase(this.resolveAction("add"), "add");
+    const addAction = this.resolveAction("add");
+    if (!restoring) {
+      this.captureLifecycleHandle(this.executePhase(addAction, "add"));
+    } else if (
+      addAction.type === ActionType.RegisterDamageAbsorber &&
+      request.restoringDamageAbsorberRemaining !== undefined &&
+      request.restoringDamageAbsorberRemaining > 0n
+    ) {
+      this.captureLifecycleHandle(this.executePhase(addAction, "restore", {
+        damageAbsorberAmountOverride: request.restoringDamageAbsorberRemaining,
+      }));
+    }
     this.scheduleTimers();
   }
 
@@ -55,6 +70,32 @@ export class BuffSystem extends Buff {
   get ExpireAtMs(): number { return this.expireAtMs; }
   get NextTickAtMs(): number { return this.nextTickAtMs; }
   get Revision(): number { return this.revision; }
+  get SourceUnitId(): number { return this.sourceUnitId; }
+  get SourceAbilityId(): number { return this.sourceAbilityId; }
+  get ConflictPriority(): number { return this.conflictPriority; }
+
+  /** 刷新期限与可选来源，不重复执行AddAction；该方法必须由BuffComponent同步调用。 / Refreshes deadlines and optional source without replaying AddAction; only BuffComponent calls this synchronously. */
+  Refresh(request: import("#tiangz/model").BuffRefreshRequest): void {
+    this.appliedAtMs = request.nowMs;
+    this.expireAtMs = request.expireAtMs;
+    this.tickIntervalOverrideMs = request.tickIntervalMs;
+    this.conflictPriority = request.conflictPriority;
+    if (request.updateSource) {
+      this.sourceUnitId = request.sourceUnitId;
+      this.sourceAbilityId = request.sourceAbilityId;
+    }
+    if (request.resetTickCadence) {
+      this.nextTickAtMs = request.tickIntervalMs > 0
+        ? request.nowMs + request.tickIntervalMs
+        : 0;
+    }
+    this.revision += 1;
+    if (this.tickTimerId !== undefined) this.CancelTimer(this.tickTimerId, "buff-refresh");
+    if (this.expireTimerId !== undefined) this.CancelTimer(this.expireTimerId, "buff-refresh");
+    this.tickTimerId = undefined;
+    this.expireTimerId = undefined;
+    this.scheduleTimers();
+  }
 
   /** 复制跨地图传输状态，不把TimerId或运行时引用带出当前Process。 / Copies transfer state without leaking TimerIds or runtime references. */
   Snapshot(): BuffTransferState {
@@ -67,6 +108,15 @@ export class BuffSystem extends Buff {
       tickIntervalMs: this.tickIntervalMs(),
       nextTickAtMs: this.nextTickAtMs,
       revision: this.revision,
+      sourceUnitId: this.sourceUnitId,
+      sourceAbilityId: this.sourceAbilityId,
+      conflictPriority: this.conflictPriority,
+      damageAbsorberRemaining: this.damageAbsorberModifierId > 0
+        ? (this.owner.GetComponent(CombatComponent).GetDamageAbsorberRemaining(this.damageAbsorberModifierId) ?? 0n)
+        : 0n,
+      addAction: cloneAction(this.addAction),
+      tickAction: cloneAction(this.tickAction),
+      removeAction: cloneAction(this.removeAction),
     };
   }
 
@@ -85,12 +135,12 @@ export class BuffSystem extends Buff {
   /** Timer入口：先检查墙钟到期，再执行一跳并重新安排下一次。 / Timer entrypoint: checks the wall-clock deadline, applies one tick, then reschedules. */
   protected OnTick(): void {
     const now = TimeSystem.Instance.ServerNow;
+    const action = this.resolveAction("tick");
+    if (action.type !== ActionType.None) this.executePhase(action, "tick");
     if (this.expireAtMs > 0 && now >= this.expireAtMs) {
       this.ownerBuffComponent.RemoveBuff(this.Id as bigint, "expired");
       return;
     }
-    const action = this.resolveAction("tick");
-    if (action.type !== ActionType.None) this.executePhase(action, "tick");
     const intervalMs = this.tickIntervalMs();
     this.nextTickAtMs = intervalMs > 0 ? now + intervalMs : 0;
     this.scheduleTick(intervalMs);
@@ -105,17 +155,24 @@ export class BuffSystem extends Buff {
   protected override OnDestroy(): void {
     if (this.removeActionExecuted) return;
     this.removeActionExecuted = true;
+    if (this.damageAbsorberModifierId > 0) {
+      this.owner.GetComponent(CombatComponent).RemoveDamageAbsorber(this.damageAbsorberModifierId);
+      this.damageAbsorberModifierId = 0;
+    }
     const action = this.resolveAction("remove");
     if (action.type !== ActionType.None) this.executePhase(action, "remove");
   }
 
   private scheduleTimers(): void {
     const now = TimeSystem.Instance.ServerNow;
-    if (this.expireAtMs > 0) {
+    const intervalMs = this.tickIntervalMs();
+    // 有Tick的Buff由最后一跳负责到期，避免同一截止时间的Expire Timer先于Tick删除实例。
+    // Ticking Buffs expire from their final tick so a same-deadline expiry timer
+    // cannot delete the instance before its last periodic effect.
+    if (this.expireAtMs > 0 && intervalMs === 0) {
       const remaining = Math.max(1, this.expireAtMs - now);
       this.expireTimerId = this.NewOnceTimer(remaining, "OnExpire");
     }
-    const intervalMs = this.tickIntervalMs();
     if (intervalMs > 0) {
       const delay = this.nextTickAtMs > 0 ? Math.max(1, this.nextTickAtMs - now) : intervalMs;
       this.scheduleTick(delay);
@@ -157,11 +214,24 @@ export class BuffSystem extends Buff {
     return ActionFromConfig(type, parameters);
   }
 
-  private executePhase(action: ActionDefinition, phase: string): void {
-    ExecuteAction(this.owner, action, {
+  private executePhase(
+    action: ActionDefinition,
+    phase: string,
+    overrides: Partial<import("#tiangz/model").ActionExecutionContext> = {},
+  ): ReturnType<typeof ExecuteAction> {
+    return ExecuteAction(this.owner, action, {
       sourceBuffInstanceId: this.Id as bigint,
+      sourceUnitId: this.sourceUnitId,
+      sourceAbilityId: this.sourceAbilityId,
       reason: `buff-${phase}`,
+      ...overrides,
     });
+  }
+
+  private captureLifecycleHandle(result: ReturnType<typeof ExecuteAction>): void {
+    if (result.damageAbsorberModifierId !== undefined) {
+      this.damageAbsorberModifierId = result.damageAbsorberModifierId;
+    }
   }
 
   private requireConfig() {
@@ -175,4 +245,8 @@ export class BuffSystem extends Buff {
   private get ownerBuffComponent(): import("#tiangz/model").BuffComponent {
     return this.Parent as import("#tiangz/model").BuffComponent;
   }
+}
+
+function cloneAction(action: ActionDefinition | undefined): ActionDefinition | undefined {
+  return action ? { type: action.type, parameters: [...action.parameters] } : undefined;
 }

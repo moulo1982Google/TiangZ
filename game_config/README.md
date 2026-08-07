@@ -9,7 +9,7 @@
 - `PlayerConfig.xlsx`：玩家初始基础值，包括HP/MP；不描述升级后的等级成长。
 - `MonsterConfig.xlsx`：怪物模板、最大生命值、基础攻击力、米/秒移动速度、独立普通攻击距离、攻击间隔毫秒、攻击模式和死亡复活秒数。
 - `MonsterAreaConfig.xlsx`：固定刷怪槽、地图坐标和地图创建时是否生成；不保存尸体时间或复活时间。
-- `BuffConfig.xlsx`：Buff模板、持续时间、Tick间隔，以及添加/Tick/移除时执行的Action。
+- `BuffConfig.xlsx`：Buff模板、持续时间、Tick间隔、冲突/刷新策略、仅服务端使用的详细策划说明，以及添加/Tick/移除时执行的Action。
 
 修改Excel后运行：
 
@@ -49,9 +49,13 @@ Cocos3D演示玩家出生时预置`1001×50`和`1002×20`两个堆叠，快捷�
 - `tick_action_*`：每个`tick_interval_ms`执行一次；间隔为`0`表示没有Tick。
 - `remove_action_*`：Buff主动移除、自然到期或Unit销毁时执行一次。
 
+Buff冲突不能只用一个`Unique`布尔值表达。`stack_group`决定哪些Buff互相冲突，`stack_scope=Target`表示所有来源共享一个冲突键，`Source`表示不同施法者可以各自拥有一个实例；`conflict_policy`决定叠加、刷新、替换、拒绝或高强度覆盖。`HigherWins`比较`conflict_priority`，禁止用ConfigId大小代表等级。刷新时是否更新来源、保留Tick节奏或重置运行状态分别由`refresh_source`、`refresh_tick_policy`和`refresh_runtime_state`决定。`description`只进入服务端包，供策划、日志和工具参考，不进入客户端配置，也不直接展示在游戏UI。
+
+当前预置语义为：冰冷按目标共享并刷新；灼烧按来源独立、同来源刷新；真言术·盾按目标替换且重置吸收状态；虚弱灵魂重复添加拒绝；真言术·韧使用`HigherWins`，高等级替换、同等级刷新、低等级拒绝。刷新不得默认重复执行AddAction。
+
 Action当前支持`None`、`ChangeNumeric`、`AddBuff`和`RemoveBuff`。表结构和Action参数属于Model，改列或类型必须重启；只改数值行时按Hot配置流程生成候选并Reload。更完整的调用边界见[Action与Buff最小闭环](../docs/design/action-buff.md)。
 
-怪物死亡会删除当前MonsterUnit。`MonsterComponent`把`MonsterConfig.max_hp`写入Numeric的`MaxHpBase`，由Rust推导出只读`MaxHp`，把攻击力写入`AttackBase`并由Rust推导只读`Attack`，把`attack_interval_ms`写入`AttackSpeedAdd`并读取只读`AttackSpeed`；`move_speed`按米/秒转换为Numeric的毫米/秒`MoveSpeedBase`。`respawn_seconds`到期后复用同一个`AreaId`刷怪槽，但会创建新的MonsterUnit并分配新的UnitId。不要在Area表新增`corpse_lifetime_seconds`或重复配置`respawn_seconds`。
+怪物死亡后，当前MonsterUnit会以`alive=false`的尸体状态继续保留在AOI中；当前最小Demo复用`respawn_seconds`作为尸体存在时间，到期后先发布旧尸体Leave并销毁，再复用同一个`AreaId`刷怪槽创建新的MonsterUnit和UnitId。`MonsterComponent`把`MonsterConfig.max_hp`写入Numeric的`MaxHpBase`，由Rust推导出只读`MaxHp`，把攻击力写入`AttackBase`并由Rust推导只读`Attack`，把`attack_interval_ms`写入`AttackSpeedAdd`并读取只读`AttackSpeed`；`move_speed`按米/秒转换为Numeric的毫米/秒`MoveSpeedBase`。只有掉落设计确实要求尸体消失与复活分离时，才在MonsterConfig新增独立尸体时间；不要放入MonsterAreaConfig。
 
 `PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`分别初始化玩家的当前/最大HP与MP；`attack_range`是独立的普通攻击距离，不属于Numeric链式属性。它们会在创建Unit时写入Numeric，客户端HUD只显示服务端快照和增量。`PlayerConfig.move_speed`同样填写米/秒。Grid2D的移动实现会把一个Cell的米制边长纳入单步耗时，因此不能再把它理解成“每秒几个Cell”；底层协议里的历史字段名`speedCellsPerSecond`暂时保留兼容，但它承载的是米/秒值。
 

@@ -7,6 +7,10 @@ import {
   GameConfigs as clientConfigs,
 } from "../client_sdk/typescript/Generated/Config";
 import {
+  BuffConflictPolicy,
+  BuffRefreshStatePolicy,
+  BuffRefreshTickPolicy,
+  BuffStackScope,
   GameConfigRegistry,
   GameConfigs as serverConfigs,
 } from "../app/generated/model/config";
@@ -100,6 +104,25 @@ function main(): void {
   assert.equal(clientConfigs.ItemConfig.Get(1002).icon, "UI/Icons/Items/1002");
   assert.equal(serverConfigs.BuffConfig.Get(2001).tickIntervalMs, 3_000);
   assert.deepEqual(serverConfigs.BuffConfig.Get(2001).tickActionParams, [1, 50]);
+  const chilled = serverConfigs.BuffConfig.Get(4001);
+  assert.equal(chilled.stackScope, BuffStackScope.Target);
+  assert.equal(chilled.conflictPolicy, BuffConflictPolicy.Refresh);
+  assert.equal(chilled.refreshSource, true);
+  assert.equal(chilled.refreshTickPolicy, BuffRefreshTickPolicy.KeepCadence);
+  assert.deepEqual(chilled.addActionParams, [30_003, -40]);
+  const burning = serverConfigs.BuffConfig.Get(4002);
+  assert.equal(burning.stackScope, BuffStackScope.Source);
+  assert.equal(burning.conflictPolicy, BuffConflictPolicy.Refresh);
+  assert.equal(burning.tickIntervalMs, 1_000);
+  assert.deepEqual(burning.tickActionParams, [1, -5]);
+  const shield = serverConfigs.BuffConfig.Get(4003);
+  assert.equal(shield.conflictPolicy, BuffConflictPolicy.Replace);
+  assert.equal(shield.refreshRuntimeState, BuffRefreshStatePolicy.Reset);
+  assert.equal(serverConfigs.BuffConfig.Get(4004).conflictPolicy, BuffConflictPolicy.Reject);
+  const fortitude = serverConfigs.BuffConfig.Get(4005);
+  assert.equal(fortitude.conflictPolicy, BuffConflictPolicy.HigherWins);
+  assert.equal(fortitude.conflictPriority, 1);
+  assert.deepEqual(fortitude.addActionParams, [10_002, 500]);
   assert.throws(
     () => serverConfigs.MapConfig.Get(999_999),
     /game config not found/,
@@ -114,6 +137,8 @@ function main(): void {
   assert.equal("initialItemCount" in clientPlayer, false);
   assert.equal("description" in serverConfigs.ItemConfig.Get(1001), false);
   assert.equal(clientConfigs.ItemConfig.Get(1001).description.length > 0, true);
+  assert.equal("description" in clientConfigs.BuffConfig.Get(4001), false);
+  assert.equal("stackGroup" in clientConfigs.BuffConfig.Get(4001), false);
   assert.equal(Object.isFrozen(player), true);
   assert.equal(Object.isFrozen(serverConfigs.PlayerConfig.GetAll()), true);
 
@@ -190,6 +215,18 @@ function main(): void {
     /missing reference/,
   );
   assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 77]);
+
+  const invalidBuffPriority = structuredClone(changed);
+  const fortitudeRow = invalidBuffPriority.game_tbbuffconfig.find((buff) => buff.id === 4005);
+  assert.ok(fortitudeRow);
+  fortitudeRow.conflict_priority = 0;
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "7".repeat(64) }),
+      JSON.stringify(invalidBuffPriority),
+    ),
+    /HigherWins requires a positive conflict priority/,
+  );
 
   console.log("game config self-test passed");
 }

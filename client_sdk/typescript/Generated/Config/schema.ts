@@ -10,6 +10,49 @@
 
 
 /**
+ * 命中同一Buff冲突键时的决策
+ */
+export enum BuffConflictPolicy {
+    Stack = 1,
+    Refresh = 2,
+    Replace = 3,
+    Reject = 4,
+    HigherWins = 5,
+}
+
+
+
+/**
+ * 刷新Buff时的运行状态处理
+ */
+export enum BuffRefreshStatePolicy {
+    Keep = 1,
+    Reset = 2,
+}
+
+
+
+/**
+ * 刷新Buff时的Tick时间轴处理
+ */
+export enum BuffRefreshTickPolicy {
+    KeepCadence = 1,
+    ResetCadence = 2,
+}
+
+
+
+/**
+ * Buff冲突键的来源范围
+ */
+export enum BuffStackScope {
+    Target = 1,
+    Source = 2,
+}
+
+
+
+/**
  * 配置表运行时重载策略
  */
 export enum ConfigReloadMode {

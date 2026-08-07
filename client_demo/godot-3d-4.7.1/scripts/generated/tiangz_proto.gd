@@ -10,6 +10,7 @@ const C2G_LOGIN_GATE := 10008
 const C2G_MAP_SNAPSHOT_READY := 10029
 const C2G_PING := 10024
 const C2M_ATTACK_MONSTER := 10042
+const C2M_CAST_SKILL := 10047
 const C2M_FIND_PATH := 10032
 const C2M_MAP_PROBE := 10014
 const C2M_MOVE := 10013
@@ -38,7 +39,11 @@ const G2C_LOGIN_GATE := 10009
 const G2C_MAP_READY := 10012
 const G2C_MAP_SNAPSHOT_READY := 10030
 const G2C_PING := 10031
+const G2C_SKILL_CAST_STATE := 10049
+const G2C_SKILL_IMPACT := 10051
+const G2C_SKILL_PROJECTILE := 10050
 const M2C_ATTACK_MONSTER := 10043
+const M2C_CAST_SKILL := 10048
 const M2C_FIND_PATH := 10033
 const M2C_MAP_PROBE := 10015
 const M2C_NAVIGATE_INPUT := 10038
@@ -266,11 +271,31 @@ static func encode_buff_transfer_snapshot(value: Dictionary) -> PackedByteArray:
 		varint_field(result, 7, int(value["next_tick_at_ms"]))
 	if value.has("revision"):
 		varint_field(result, 8, int(value["revision"]))
+	if value.has("source_unit_id"):
+		varint_field(result, 9, int(value["source_unit_id"]))
+	if value.has("source_ability_id"):
+		varint_field(result, 10, int(value["source_ability_id"]))
+	if value.has("conflict_priority"):
+		varint_field(result, 11, int(value["conflict_priority"]))
+	if value.has("damage_absorber_remaining"):
+		varint_field(result, 12, int(value["damage_absorber_remaining"]))
+	if value.has("add_action_type"):
+		int32_field(result, 13, int(value["add_action_type"]))
+	for item in value.get("add_action_params", []):
+		varint_field(result, 14, int(item), true)
+	if value.has("tick_action_type"):
+		int32_field(result, 15, int(value["tick_action_type"]))
+	for item in value.get("tick_action_params", []):
+		varint_field(result, 16, int(item), true)
+	if value.has("remove_action_type"):
+		int32_field(result, 17, int(value["remove_action_type"]))
+	for item in value.get("remove_action_params", []):
+		varint_field(result, 18, int(item), true)
 	return result
 
 static func decode_buff_transfer_snapshot(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"buff_instance_id": 0, "buff_config_id": 0, "stacks": 0, "applied_at_ms": 0, "expire_time_ms": 0, "tick_interval_ms": 0, "next_tick_at_ms": 0, "revision": 0}
+	var result := {"buff_instance_id": 0, "buff_config_id": 0, "stacks": 0, "applied_at_ms": 0, "expire_time_ms": 0, "tick_interval_ms": 0, "next_tick_at_ms": 0, "revision": 0, "source_unit_id": 0, "source_ability_id": 0, "conflict_priority": 0, "damage_absorber_remaining": 0, "add_action_type": 0, "add_action_params": [], "tick_action_type": 0, "tick_action_params": [], "remove_action_type": 0, "remove_action_params": []}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -312,6 +337,56 @@ static func decode_buff_transfer_snapshot(payload: PackedByteArray) -> Dictionar
 			8:
 				if tag.wire == 0:
 					result["revision"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			9:
+				if tag.wire == 0:
+					result["source_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			10:
+				if tag.wire == 0:
+					result["source_ability_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			11:
+				if tag.wire == 0:
+					result["conflict_priority"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			12:
+				if tag.wire == 0:
+					result["damage_absorber_remaining"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			13:
+				if tag.wire == 0:
+					result["add_action_type"] = reader.int32()
+				else:
+					reader.skip(tag.wire)
+			14:
+				if tag.wire == 0:
+					result["add_action_params"].append(reader.int64())
+				else:
+					reader.skip(tag.wire)
+			15:
+				if tag.wire == 0:
+					result["tick_action_type"] = reader.int32()
+				else:
+					reader.skip(tag.wire)
+			16:
+				if tag.wire == 0:
+					result["tick_action_params"].append(reader.int64())
+				else:
+					reader.skip(tag.wire)
+			17:
+				if tag.wire == 0:
+					result["remove_action_type"] = reader.int32()
+				else:
+					reader.skip(tag.wire)
+			18:
+				if tag.wire == 0:
+					result["remove_action_params"].append(reader.int64())
 				else:
 					reader.skip(tag.wire)
 			_:
@@ -444,6 +519,39 @@ static func decode_c2m_attack_monster(payload: PackedByteArray) -> Dictionary:
 			1:
 				if tag.wire == 0:
 					result["monster_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_c2m_cast_skill(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("skill_id"):
+		varint_field(result, 1, int(value["skill_id"]))
+	if value.has("target_unit_id"):
+		varint_field(result, 2, int(value["target_unit_id"]))
+	return result
+
+static func decode_c2m_cast_skill(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"skill_id": 0, "target_unit_id": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["target_unit_id"] = reader.uint32()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -1543,6 +1651,202 @@ static func decode_g2c_ping(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_g2c_skill_cast_state(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("phase"):
+		varint_field(result, 1, int(value["phase"]))
+	if value.has("cast_id"):
+		varint_field(result, 2, int(value["cast_id"]))
+	if value.has("skill_id"):
+		varint_field(result, 3, int(value["skill_id"]))
+	if value.has("target_unit_id"):
+		varint_field(result, 4, int(value["target_unit_id"]))
+	if value.has("started_at_ms"):
+		varint_field(result, 5, int(value["started_at_ms"]))
+	if value.has("finish_at_ms"):
+		varint_field(result, 6, int(value["finish_at_ms"]))
+	if value.has("global_cooldown_end_at_ms"):
+		varint_field(result, 7, int(value["global_cooldown_end_at_ms"]))
+	if value.has("skill_cooldown_end_at_ms"):
+		varint_field(result, 8, int(value["skill_cooldown_end_at_ms"]))
+	if value.has("interrupt_reason"):
+		string_field(result, 9, String(value["interrupt_reason"]))
+	return result
+
+static func decode_g2c_skill_cast_state(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"phase": 0, "cast_id": 0, "skill_id": 0, "target_unit_id": 0, "started_at_ms": 0, "finish_at_ms": 0, "global_cooldown_end_at_ms": 0, "skill_cooldown_end_at_ms": 0, "interrupt_reason": ""}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["phase"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["cast_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["started_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			6:
+				if tag.wire == 0:
+					result["finish_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			7:
+				if tag.wire == 0:
+					result["global_cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			8:
+				if tag.wire == 0:
+					result["skill_cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			9:
+				if tag.wire == 2:
+					result["interrupt_reason"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_g2c_skill_impact(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("cast_id"):
+		varint_field(result, 1, int(value["cast_id"]))
+	if value.has("skill_id"):
+		varint_field(result, 2, int(value["skill_id"]))
+	if value.has("source_unit_id"):
+		varint_field(result, 3, int(value["source_unit_id"]))
+	if value.has("target_unit_id"):
+		varint_field(result, 4, int(value["target_unit_id"]))
+	if value.has("damage"):
+		varint_field(result, 5, int(value["damage"]))
+	if value.has("damage_school"):
+		varint_field(result, 6, int(value["damage_school"]))
+	if value.has("killed"):
+		bool_field(result, 7, bool(value["killed"]))
+	return result
+
+static func decode_g2c_skill_impact(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"cast_id": 0, "skill_id": 0, "source_unit_id": 0, "target_unit_id": 0, "damage": 0, "damage_school": 0, "killed": false}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["cast_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["source_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["damage"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			6:
+				if tag.wire == 0:
+					result["damage_school"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			7:
+				if tag.wire == 0:
+					result["killed"] = reader.boolean()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_g2c_skill_projectile(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("cast_id"):
+		varint_field(result, 1, int(value["cast_id"]))
+	if value.has("skill_id"):
+		varint_field(result, 2, int(value["skill_id"]))
+	if value.has("source_unit_id"):
+		varint_field(result, 3, int(value["source_unit_id"]))
+	if value.has("target_unit_id"):
+		varint_field(result, 4, int(value["target_unit_id"]))
+	if value.has("launched_at_ms"):
+		varint_field(result, 5, int(value["launched_at_ms"]))
+	if value.has("impact_at_ms"):
+		varint_field(result, 6, int(value["impact_at_ms"]))
+	return result
+
+static func decode_g2c_skill_projectile(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"cast_id": 0, "skill_id": 0, "source_unit_id": 0, "target_unit_id": 0, "launched_at_ms": 0, "impact_at_ms": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["cast_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["source_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["launched_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			6:
+				if tag.wire == 0:
+					result["impact_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_item_snapshot(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("item_id"):
@@ -1635,6 +1939,98 @@ static func decode_m2c_attack_monster(payload: PackedByteArray) -> Dictionary:
 			4:
 				if tag.wire == 0:
 					result["killed"] = reader.boolean()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_m2c_cast_skill(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("phase"):
+		varint_field(result, 1, int(value["phase"]))
+	if value.has("cast_id"):
+		varint_field(result, 2, int(value["cast_id"]))
+	if value.has("skill_id"):
+		varint_field(result, 3, int(value["skill_id"]))
+	if value.has("target_unit_id"):
+		varint_field(result, 4, int(value["target_unit_id"]))
+	if value.has("started_at_ms"):
+		varint_field(result, 5, int(value["started_at_ms"]))
+	if value.has("finish_at_ms"):
+		varint_field(result, 6, int(value["finish_at_ms"]))
+	if value.has("global_cooldown_end_at_ms"):
+		varint_field(result, 7, int(value["global_cooldown_end_at_ms"]))
+	if value.has("skill_cooldown_end_at_ms"):
+		varint_field(result, 8, int(value["skill_cooldown_end_at_ms"]))
+	if value.has("interrupt_reason"):
+		string_field(result, 9, String(value["interrupt_reason"]))
+	return result
+
+static func decode_m2c_cast_skill(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"phase": 0, "cast_id": 0, "skill_id": 0, "target_unit_id": 0, "started_at_ms": 0, "finish_at_ms": 0, "global_cooldown_end_at_ms": 0, "skill_cooldown_end_at_ms": 0, "interrupt_reason": ""}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["phase"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["cast_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["started_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			6:
+				if tag.wire == 0:
+					result["finish_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			7:
+				if tag.wire == 0:
+					result["global_cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			8:
+				if tag.wire == 0:
+					result["skill_cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			9:
+				if tag.wire == 2:
+					result["interrupt_reason"] = reader.string_value()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -2312,6 +2708,62 @@ static func decode_s2c_login(payload: PackedByteArray) -> Dictionary:
 			92:
 				if tag.wire == 2:
 					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_skill_cooldown_snapshot(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("skill_id"):
+		varint_field(result, 1, int(value["skill_id"]))
+	if value.has("cooldown_end_at_ms"):
+		varint_field(result, 2, int(value["cooldown_end_at_ms"]))
+	return result
+
+static func decode_skill_cooldown_snapshot(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"skill_id": 0, "cooldown_end_at_ms": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_skill_transfer_snapshot(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("global_cooldown_end_at_ms"):
+		varint_field(result, 1, int(value["global_cooldown_end_at_ms"]))
+	for item in value.get("cooldowns", []):
+		bytes_field(result, 2, encode_skill_cooldown_snapshot(item))
+	return result
+
+static func decode_skill_transfer_snapshot(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"global_cooldown_end_at_ms": 0, "cooldowns": []}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["global_cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 2:
+					result["cooldowns"].append(decode_skill_cooldown_snapshot(reader.bytes_value()))
 				else:
 					reader.skip(tag.wire)
 			_:

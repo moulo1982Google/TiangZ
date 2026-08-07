@@ -4,6 +4,9 @@ import {
   type ActionExecutionContext,
   BuffComponent,
   CombatComponent,
+  DamageSchool,
+  type DamageSchoolValue,
+  type DamageResult,
   IsDerivedNumericType,
   NumericComponent,
   NumericType,
@@ -15,6 +18,8 @@ export interface ActionExecutionResult {
   readonly changed: boolean;
   readonly value?: bigint;
   readonly addedBuff?: BuffPublicState;
+  readonly damageAbsorberModifierId?: number;
+  readonly damage?: DamageResult;
 }
 
 /**
@@ -24,7 +29,7 @@ export interface ActionExecutionResult {
  * bigint here and are never passed around as unknown afterward.
  */
 export function ActionFromConfig(type: number, parameters: readonly number[]): ActionDefinition {
-  if (!Number.isSafeInteger(type) || type < ActionType.None || type > ActionType.RemoveBuff) {
+  if (!Number.isSafeInteger(type) || type < ActionType.None || type > ActionType.RegisterDamageAbsorber) {
     throw new Error(`unsupported action type: ${type}`);
   }
   if (!parameters.every(Number.isSafeInteger)) {
@@ -55,11 +60,14 @@ export function ExecuteAction(
       requireParameterCount(action, 0);
       return { changed: false };
     case ActionType.ChangeNumeric:
-      return executeChangeNumeric(owner, action);
+      return executeChangeNumeric(owner, action, context);
     case ActionType.AddBuff:
       requireParameterCount(action, 1);
       {
-        const buff = owner.GetComponent(BuffComponent).AddBuff(toConfigId(action.parameters[0]));
+        const buff = owner.GetComponent(BuffComponent).AddBuff(toConfigId(action.parameters[0]), {
+          sourceUnitId: context.sourceUnitId,
+          sourceAbilityId: context.sourceAbilityId,
+        });
         return { changed: true, addedBuff: buff.PublicState(owner.UnitId) };
       }
     case ActionType.RemoveBuff:
@@ -78,12 +86,45 @@ export function ExecuteAction(
           context.reason ?? "action",
         ),
       };
+    case ActionType.DealDamage:
+      requireParameterCount(action, 2);
+      {
+        const amount = action.parameters[0];
+        if (amount < 0n) throw new Error(`DealDamage amount must be non-negative: ${amount}`);
+        const result = owner.GetComponent(CombatComponent).ApplyDamage({
+          amount,
+          sourceUnitId: context.sourceUnitId,
+          abilityId: context.sourceAbilityId,
+          damageSchool: toDamageSchool(action.parameters[1]),
+        });
+        return {
+          changed: result.finalDamage > 0n || result.absorbedDamage > 0n,
+          value: result.remainingHp,
+          damage: result,
+        };
+      }
+    case ActionType.RegisterDamageAbsorber:
+      if (action.parameters.length < 1 || action.parameters.length > 2) {
+        throw new Error(`RegisterDamageAbsorber expects 1 or 2 parameters, received ${action.parameters.length}`);
+      }
+      {
+        const configuredAmount = action.parameters[0];
+        const amount = context.damageAbsorberAmountOverride ?? configuredAmount;
+        const priority = action.parameters.length === 2 ? toSafeNumber(action.parameters[1], "absorber priority") : 0;
+        if (amount <= 0n) throw new Error(`damage absorber amount must be positive: ${amount}`);
+        const modifierId = owner.GetComponent(CombatComponent).RegisterDamageAbsorber(amount, priority);
+        return { changed: true, value: amount, damageAbsorberModifierId: modifierId };
+      }
     default:
       return assertNever(action.type);
   }
 }
 
-function executeChangeNumeric(owner: Unit<any[]>, action: ActionDefinition): ActionExecutionResult {
+function executeChangeNumeric(
+  owner: Unit<any[]>,
+  action: ActionDefinition,
+  context: ActionExecutionContext,
+): ActionExecutionResult {
   requireParameterCount(action, 2);
   const numericType = toNumericType(action.parameters[0]);
   const delta = action.parameters[1];
@@ -96,7 +137,8 @@ function executeChangeNumeric(owner: Unit<any[]>, action: ActionDefinition): Act
     if (delta < 0n) {
       const result = combat.ApplyDamage({
         amount: -delta,
-        sourceUnitId: owner.UnitId,
+        sourceUnitId: context.sourceUnitId ?? owner.UnitId,
+        abilityId: context.sourceAbilityId,
       });
       return { changed: result.finalDamage > 0n, value: result.remainingHp };
     }
@@ -110,6 +152,21 @@ function executeChangeNumeric(owner: Unit<any[]>, action: ActionDefinition): Act
   const next = numeric[numericType] + delta;
   numeric[numericType] = next;
   return { changed: delta !== 0n, value: next };
+}
+
+function toDamageSchool(value: bigint): DamageSchoolValue {
+  const school = toSafeNumber(value, "damage school");
+  if (!Object.values(DamageSchool).includes(school as DamageSchoolValue)) {
+    throw new Error(`unsupported damage school: ${school}`);
+  }
+  return school as DamageSchoolValue;
+}
+
+function toSafeNumber(value: bigint, name: string): number {
+  if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`${name} must be a non-negative safe integer: ${value}`);
+  }
+  return Number(value);
 }
 
 function toConfigId(value: bigint): number {

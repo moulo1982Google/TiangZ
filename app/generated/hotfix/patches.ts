@@ -9,3 +9,5 @@ import "../../hotfix/demo/map/PlayerUnitSystem";
 import "../../hotfix/demo/monster/MonsterComponentSystem";
 import "../../hotfix/demo/monster/MonsterUnitSystem";
 import "../../hotfix/demo/numeric/NumericComponentSystem";
+import "../../hotfix/demo/skill/SkillComponentSystem";
+import "../../hotfix/demo/skill/SkillMapComponentSystem";

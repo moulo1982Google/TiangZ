@@ -64,7 +64,7 @@ interface GameConfigSnapshot {
   readonly MonsterAreaConfig: ConfigTable<game.MonsterAreaConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "387db50428dbca9e86fa5406acd3c3e029791cc81ca1991369c9a9ac7d3ed8df";
+export const GameConfigSchemaFingerprint = "860eeb1499d7e1783afde66304d5ea540caffe6edf93751278874f8028085d60";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -174,11 +174,35 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
     }
   }
   for (const buff of snapshot.BuffConfig.GetAll()) {
+    if (buff.description.trim().length === 0) {
+      throw new Error(`buff config ${buff.id} needs a non-empty server description`);
+    }
     if (
       !Number.isSafeInteger(buff.durationSeconds) || buff.durationSeconds < 0 ||
       !Number.isSafeInteger(buff.tickIntervalMs) || buff.tickIntervalMs < 0
     ) {
       throw new Error(`buff config ${buff.id} has invalid duration or tick interval`);
+    }
+    if (!Number.isSafeInteger(buff.stackGroup) || buff.stackGroup <= 0) {
+      throw new Error(`buff config ${buff.id} needs a positive stack group`);
+    }
+    if (buff.stackScope < 1 || buff.stackScope > 2) {
+      throw new Error(`buff config ${buff.id} has unsupported stack scope ${buff.stackScope}`);
+    }
+    if (buff.conflictPolicy < 1 || buff.conflictPolicy > 5) {
+      throw new Error(`buff config ${buff.id} has unsupported conflict policy ${buff.conflictPolicy}`);
+    }
+    if (!Number.isSafeInteger(buff.conflictPriority) || buff.conflictPriority < 0) {
+      throw new Error(`buff config ${buff.id} has invalid conflict priority`);
+    }
+    if (buff.conflictPolicy === 5 && buff.conflictPriority <= 0) {
+      throw new Error(`buff config ${buff.id} HigherWins requires a positive conflict priority`);
+    }
+    if (buff.refreshTickPolicy < 1 || buff.refreshTickPolicy > 2) {
+      throw new Error(`buff config ${buff.id} has unsupported refresh Tick policy`);
+    }
+    if (buff.refreshRuntimeState < 1 || buff.refreshRuntimeState > 2) {
+      throw new Error(`buff config ${buff.id} has unsupported refresh runtime-state policy`);
     }
     validateActionConfig(buff.id, "add", buff.addActionType, buff.addActionParams, false);
     validateActionConfig(buff.id, "tick", buff.tickActionType, buff.tickActionParams, false);
@@ -314,7 +338,7 @@ function validateActionConfig(
   parameters: readonly number[],
   allowEmptyRemove: boolean,
 ): void {
-  if (!Number.isSafeInteger(type) || type < 0 || type > 3) {
+  if (!Number.isSafeInteger(type) || type < 0 || type > 5) {
     throw new Error(`buff config ${buffId} has unsupported ${phase} Action type`);
   }
   if (!parameters.every(Number.isSafeInteger)) {
@@ -326,12 +350,19 @@ function validateActionConfig(
       ? 2
       : type === 2
         ? 1
-        : allowEmptyRemove ? undefined : 1;
+        : type === 3
+          ? allowEmptyRemove ? undefined : 1
+          : type === 4
+            ? 2
+            : undefined;
   if (expected !== undefined && parameters.length !== expected) {
     throw new Error(`buff config ${buffId} ${phase} Action expects ${expected} parameters`);
   }
-  if (expected === undefined && parameters.length > 1) {
+  if (type === 3 && expected === undefined && parameters.length > 1) {
     throw new Error(`buff config ${buffId} ${phase} RemoveBuff expects zero or one parameter`);
+  }
+  if (type === 5 && (parameters.length < 1 || parameters.length > 2)) {
+    throw new Error(`buff config ${buffId} ${phase} RegisterDamageAbsorber expects one or two parameters`);
   }
 }
 

@@ -41,6 +41,11 @@ export const OuterMessage = {
   G2C_EntityLeave: 10023,
   G2C_AoiDelta: 10025,
   G2C_DemoDoorState: 10041,
+  C2M_CastSkill: 10047,
+  M2C_CastSkill: 10048,
+  G2C_SkillCastState: 10049,
+  G2C_SkillProjectile: 10050,
+  G2C_SkillImpact: 10051,
   C2G_Ping: 10024,
   G2C_Ping: 10031,
 } as const;

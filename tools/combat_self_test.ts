@@ -4,6 +4,7 @@ import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
 import type { HotfixManifest } from "../app/core/hotReload/contracts";
 import { NumericType } from "../app/model/demo/numeric/NumericType";
 import type { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
+import { DamageSchool } from "../app/model/demo/combat/CombatComponent";
 
 /**
  * 这个测试只验证CombatComponent的领域契约，不启动网络和地图Runtime。
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
     finalDamage: 0n,
     remainingHp: 100n,
     killed: false,
+    damageSchool: DamageSchool.Physical,
     absorptions: [
       { modifierId: highPriority, absorbed: 20n, remaining: 0n },
       { modifierId: lowPriority, absorbed: 25n, remaining: 5n },

@@ -37,6 +37,9 @@ import type {
   G2C_EntityNavigate,
   G2C_EntityState,
   G2C_ItemChanged,
+  G2C_SkillCastState,
+  G2C_SkillImpact,
+  G2C_SkillProjectile,
   ItemSnapshot,
   MapEntitySnapshot,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
@@ -96,6 +99,8 @@ const AUTO_ATTACK_PHASE_SWINGING = 2;
 const ATTACK_SLASH_DURATION_SECONDS = 0.18;
 const ATTACK_SLASH_MIN_SCALE = 0.15;
 const ATTACK_SLASH_MAX_SCALE = 1.15;
+const SKILL_TARGET_TOO_FAR_ERROR_CODE = 10021;
+const PROJECTILE_MIN_VISIBLE_DURATION_MS = 250;
 // Cocos 3.8.8没有导出数字键枚举；使用标准键盘主区“1”的ASCII码49。
 // Cocos 3.8.8 does not expose a digit-key enum; 49 is the standard top-row "1" key code.
 const AUTO_ATTACK_KEY = 49 as unknown as KeyCode;
@@ -103,6 +108,14 @@ const ITEM_SMALL_HEALTH_POTION = 1001;
 const ITEM_LARGE_HEALTH_POTION = 1002;
 const ITEM_SMALL_HEALTH_POTION_KEY = 50 as unknown as KeyCode;
 const ITEM_LARGE_HEALTH_POTION_KEY = 51 as unknown as KeyCode;
+const SKILL_CAST_PHASE_CASTING = 1;
+const DEMO_SKILLS = [
+  { id: 3001, key: 52 as unknown as KeyCode, keyLabel: "4", name: "寒冰箭", enemy: true, rangeMeters: 15 },
+  { id: 3002, key: 53 as unknown as KeyCode, keyLabel: "5", name: "火焰冲击", enemy: true, rangeMeters: 5 },
+  { id: 3003, key: 54 as unknown as KeyCode, keyLabel: "6", name: "惩击", enemy: true, rangeMeters: 15 },
+  { id: 3004, key: 55 as unknown as KeyCode, keyLabel: "7", name: "真言术·盾", enemy: false, rangeMeters: 15 },
+  { id: 3005, key: 56 as unknown as KeyCode, keyLabel: "8", name: "真言术·韧", enemy: false, rangeMeters: 15 },
+] as const;
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
 // Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
 const RUNTIME_CONFIG_RESOURCE = PREVIEW
@@ -149,6 +162,14 @@ interface AttackSlashEffect {
   elapsedSeconds: number;
 }
 
+interface SkillProjectileEffect {
+  readonly node: Node;
+  readonly targetUnitId: number;
+  readonly start: Vec3;
+  readonly displayStartedAtMs: number;
+  readonly displayDurationMs: number;
+}
+
 interface HotbarSlot {
   readonly configId: number;
   readonly keyLabel: string;
@@ -166,6 +187,13 @@ interface BuffHudEntry {
   readonly timer: HTMLElement;
   readonly buffInstanceId: bigint;
   lastTimerText: string;
+}
+
+interface SkillHudSlot {
+  readonly root: HTMLButtonElement;
+  readonly cooldown: HTMLElement;
+  readonly skillId: number;
+  readonly name: string;
 }
 
 /** Phase 4.2的3D导航灰盒入口；演示权威寻路、预测纠偏和AOI多人同步。 / Phase 4.2 graybox entrypoint for authoritative pathing, prediction correction, and AOI multiplayer sync. */
@@ -206,6 +234,10 @@ export class GameBootstrap3D extends Component {
   private autoAttackLabel?: HTMLElement;
   private autoAttackProgress?: HTMLElement;
   private hotbarElement?: HTMLElement;
+  private skillBarElement?: HTMLElement;
+  private skillCastPanel?: HTMLElement;
+  private skillCastLabel?: HTMLElement;
+  private skillCastProgress?: HTMLElement;
   private buffPanel?: HTMLElement;
   private buffListElement?: HTMLElement;
   private displayedPingAtMs = -1;
@@ -254,6 +286,8 @@ export class GameBootstrap3D extends Component {
   private readonly itemUseInFlight = new Set<number>();
   private readonly buffStateStore = new BuffStateStore();
   private readonly buffHudEntries = new Map<string, BuffHudEntry>();
+  private readonly skillHudSlots = new Map<number, SkillHudSlot>();
+  private readonly skillCooldownEnds = new Map<number, number>();
   private selectedMonsterUnitId = 0;
   private autoAttackEnabled = false;
   private autoAttackTargetUnitId = 0;
@@ -261,6 +295,15 @@ export class GameBootstrap3D extends Component {
   private autoAttackSwingStartAtMs = 0;
   private autoAttackSwingIntervalMs = 2_000;
   private readonly attackSlashEffects: AttackSlashEffect[] = [];
+  private readonly skillProjectileEffects: SkillProjectileEffect[] = [];
+  private skillCastPhase = 0;
+  private skillCastId = 0n;
+  private skillCastSkillId = 0;
+  private skillCastTargetUnitId = 0;
+  private skillCastStartedAtMs = 0;
+  private skillCastFinishAtMs = 0;
+  private skillGlobalCooldownEndAtMs = 0;
+  private skillRequestInFlight = false;
 
   onLoad(): void {
     this.buildGraybox();
@@ -278,6 +321,7 @@ export class GameBootstrap3D extends Component {
     this.loginFlow?.update();
     this.updateMobileHud();
     this.updateAutoAttackHud();
+    this.updateSkillHud();
     this.updateBuffHud();
     this.updateDirectionalInput(deltaTime);
     this.advanceDirectionalPrediction(deltaTime);
@@ -288,6 +332,7 @@ export class GameBootstrap3D extends Component {
     this.interpolateRemotePlayers(deltaTime);
     this.updateFollowCamera(deltaTime);
     this.updateAttackSlashEffects(deltaTime);
+    this.updateSkillProjectileEffects();
     this.updateMonsterOverheadHudBillboards();
   }
 
@@ -315,6 +360,14 @@ export class GameBootstrap3D extends Component {
     this.statusElement = undefined;
     this.hotbarElement?.remove();
     this.hotbarElement = undefined;
+    this.skillBarElement?.remove();
+    this.skillCastPanel?.remove();
+    this.skillBarElement = undefined;
+    this.skillCastPanel = undefined;
+    this.skillCastLabel = undefined;
+    this.skillCastProgress = undefined;
+    this.skillHudSlots.clear();
+    this.skillCooldownEnds.clear();
     this.buffPanel?.remove();
     this.buffPanel = undefined;
     this.buffListElement = undefined;
@@ -335,6 +388,8 @@ export class GameBootstrap3D extends Component {
     this.autoAttackPanel?.remove();
     for (const effect of this.attackSlashEffects) effect.node.destroy();
     this.attackSlashEffects.length = 0;
+    for (const effect of this.skillProjectileEffects) effect.node.destroy();
+    this.skillProjectileEffects.length = 0;
     this.selectedMonsterElement?.remove();
     this.mobileInstructionsElement = undefined;
     this.mobilePingElement = undefined;
@@ -418,9 +473,11 @@ export class GameBootstrap3D extends Component {
     this.statusElement = element;
     this.buildPlayerStatsHud(document);
     this.buildAutoAttackHud(document);
+    this.buildSkillCastHud(document);
     this.buildSelectedMonsterHud(document);
     this.buildBuffHud(document);
     this.buildHotbarHud(document);
+    this.buildSkillBarHud(document);
     this.buildMobileHud(document);
     this.buildMobileControls(document);
     this.setStatus("正在连接 LoginMgr 并进入 Map 100...");
@@ -528,6 +585,99 @@ export class GameBootstrap3D extends Component {
     this.autoAttackProgress = progress;
     document.body.appendChild(panel);
     this.autoAttackPanel = panel;
+  }
+
+  /** 创建服务器权威施法条；瞬发技能只显示CD，不制造本地读条。 / Creates a server-authoritative cast bar; instant skills show cooldown only and never invent a local cast. */
+  private buildSkillCastHud(document: Document): void {
+    const panel = document.createElement("div");
+    panel.className = "cocos3d-skill-cast-hud";
+    panel.style.position = "fixed";
+    panel.style.left = "24px";
+    panel.style.top = "345px";
+    panel.style.zIndex = "10000";
+    panel.style.width = "min(320px, calc(100vw - 48px))";
+    panel.style.padding = "10px 12px";
+    panel.style.boxSizing = "border-box";
+    panel.style.color = "#e8f2ff";
+    panel.style.background = "rgba(14, 24, 38, 0.84)";
+    panel.style.border = "1px solid rgba(115, 176, 255, 0.48)";
+    panel.style.font = "14px/1.4 system-ui, sans-serif";
+    panel.style.pointerEvents = "none";
+
+    const label = document.createElement("div");
+    label.textContent = "施法：空闲";
+    panel.appendChild(label);
+    const track = document.createElement("div");
+    track.style.height = "8px";
+    track.style.marginTop = "7px";
+    track.style.overflow = "hidden";
+    track.style.background = "rgba(255, 255, 255, 0.18)";
+    track.style.borderRadius = "4px";
+    const progress = document.createElement("div");
+    progress.style.width = "0%";
+    progress.style.height = "100%";
+    progress.style.background = "#72aef7";
+    progress.style.transition = "width 80ms linear";
+    track.appendChild(progress);
+    panel.appendChild(track);
+    document.body.appendChild(panel);
+    this.skillCastPanel = panel;
+    this.skillCastLabel = label;
+    this.skillCastProgress = progress;
+  }
+
+  /** 创建五技能快捷栏；移动端可直接点击，桌面端同时支持4到8。 / Creates five clickable skill slots with desktop keys 4 through 8. */
+  private buildSkillBarHud(document: Document): void {
+    const bar = document.createElement("div");
+    bar.className = "cocos3d-skillbar";
+    bar.style.position = "fixed";
+    bar.style.left = "50%";
+    bar.style.bottom = this.isMobileLayout()
+      ? "calc(env(safe-area-inset-bottom, 0px) + 158px)"
+      : "calc(env(safe-area-inset-bottom, 0px) + 112px)";
+    bar.style.transform = "translateX(-50%)";
+    bar.style.zIndex = "10004";
+    bar.style.display = "flex";
+    bar.style.gap = "5px";
+    bar.style.padding = "6px";
+    bar.style.maxWidth = "calc(100vw - 16px)";
+    bar.style.background = "rgba(13, 22, 25, 0.82)";
+    bar.style.border = "1px solid rgba(115, 176, 255, 0.48)";
+    bar.style.borderRadius = "8px";
+    for (const skill of DEMO_SKILLS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.style.position = "relative";
+      button.style.width = this.isMobileLayout() ? "62px" : "82px";
+      button.style.height = "54px";
+      button.style.padding = "5px";
+      button.style.color = "#edf7ff";
+      button.style.background = "rgba(25, 42, 58, 0.92)";
+      button.style.border = "1px solid rgba(180, 218, 255, 0.55)";
+      button.style.borderRadius = "6px";
+      button.style.font = "12px/1.2 system-ui, sans-serif";
+      button.style.cursor = "pointer";
+      button.textContent = `${skill.keyLabel} ${skill.name}`;
+      const cooldown = document.createElement("span");
+      cooldown.style.position = "absolute";
+      cooldown.style.inset = "0";
+      cooldown.style.display = "grid";
+      cooldown.style.placeItems = "center";
+      cooldown.style.font = "700 18px/1 system-ui, sans-serif";
+      cooldown.style.color = "#fff2b5";
+      cooldown.style.background = "rgba(5, 10, 15, 0.64)";
+      cooldown.style.visibility = "hidden";
+      button.appendChild(cooldown);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void this.castSkill(skill.id);
+      });
+      bar.appendChild(button);
+      this.skillHudSlots.set(skill.id, { root: button, cooldown, skillId: skill.id, name: skill.name });
+    }
+    document.body.appendChild(bar);
+    this.skillBarElement = bar;
   }
 
   /** 创建选中目标HUD；它只显示客户端已进入AOI的公开怪物信息，不查询地图全量实体。 / Creates the selected-target HUD using only public monsters already entered through AOI. */
@@ -1047,6 +1197,35 @@ export class GameBootstrap3D extends Component {
     const ratio = Math.min(1, Math.max(0, elapsedMs / Math.max(1, this.autoAttackSwingIntervalMs)));
     label.textContent = `平A：读条 ${Math.round(ratio * 100)}%（目标 ${this.autoAttackTargetUnitId}）`;
     progress.style.width = `${ratio * 100}%`;
+  }
+
+  /** 以Gate校时结果绘制施法、技能CD和公共CD；按钮状态不是服务端判定依据。 / Renders cast, skill cooldown, and GCD from Gate clock sync; button state is never authoritative. */
+  private updateSkillHud(): void {
+    const serverNow = Date.now() + (this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0);
+    const label = this.skillCastLabel;
+    const progress = this.skillCastProgress;
+    if (label && progress) {
+      if (this.skillCastPhase !== SKILL_CAST_PHASE_CASTING || this.skillCastFinishAtMs <= this.skillCastStartedAtMs) {
+        label.textContent = "施法：空闲";
+        progress.style.width = "0%";
+      } else {
+        const duration = this.skillCastFinishAtMs - this.skillCastStartedAtMs;
+        const ratio = Math.min(1, Math.max(0, (serverNow - this.skillCastStartedAtMs) / duration));
+        const name = DEMO_SKILLS.find((skill) => skill.id === this.skillCastSkillId)?.name ?? `技能${this.skillCastSkillId}`;
+        label.textContent = `施法：${name} ${Math.round(ratio * 100)}%`;
+        progress.style.width = `${ratio * 100}%`;
+      }
+    }
+    for (const slot of this.skillHudSlots.values()) {
+      const readyAt = Math.max(
+        this.skillGlobalCooldownEndAtMs,
+        this.skillCooldownEnds.get(slot.skillId) ?? 0,
+      );
+      const remainingMs = Math.max(0, readyAt - serverNow);
+      slot.cooldown.style.visibility = remainingMs > 0 ? "visible" : "hidden";
+      slot.cooldown.textContent = remainingMs > 0 ? (remainingMs / 1_000).toFixed(1) : "";
+      slot.root.disabled = this.skillRequestInFlight;
+    }
   }
 
   /**
@@ -1730,7 +1909,7 @@ export class GameBootstrap3D extends Component {
         `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
           ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路"
-          : "W/S前后，A/D转向；左键拖动环视、短按地面寻路；按住右键时A/D横移；1平A，2/3使用药水；E开关动态门"),
+          : "W/S前后，A/D转向；左键拖动环视、短按地面寻路；按住右键时A/D横移；1平A，2/3药水，4-8技能；E开关动态门"),
       );
     } catch (error) {
       this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
@@ -1810,13 +1989,13 @@ export class GameBootstrap3D extends Component {
     }
   }
 
-  /** 应用Unit alive状态；死亡只隐藏表现，不能从客户端集合删除原Unit。 / Applies Unit alive state; death hides presentation only and never deletes the original Unit client-side. */
+  /** 应用Unit alive状态；怪物死亡后保留尸体，直到服务端AOI Leave才删除。 / Applies Unit alive state and retains monster corpses until the server sends AOI Leave. */
   ApplyEntityState(message: G2C_EntityState): void {
     for (const state of message.states) {
       const remote = this.remotePlayers.get(state.unitId);
       if (!remote || (state.dirtyMaskLow & (1 << 6)) === 0) continue;
       remote.alive = state.alive;
-      remote.node.active = state.alive;
+      this.applyRemoteAlivePresentation(remote);
       if (!state.alive && state.unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
     }
   }
@@ -1850,6 +2029,55 @@ export class GameBootstrap3D extends Component {
     this.updateMobileAttackButton();
   }
 
+  /** 应用服务器施法状态；移动打断后的Idle消息会立即清空读条。 / Applies authoritative cast state; an interrupted Idle state clears the bar immediately. */
+  ApplySkillCastState(message: G2C_SkillCastState): void {
+    this.skillCastPhase = message.phase;
+    this.skillCastId = message.castId;
+    this.skillCastSkillId = message.skillId;
+    this.skillCastTargetUnitId = message.targetUnitId;
+    this.skillCastStartedAtMs = Number(message.startedAtMs);
+    this.skillCastFinishAtMs = Number(message.finishAtMs);
+    this.skillGlobalCooldownEndAtMs = Number(message.globalCooldownEndAtMs);
+    if (message.skillId > 0) {
+      this.skillCooldownEnds.set(message.skillId, Number(message.skillCooldownEndAtMs));
+    }
+    if (message.interruptReason) this.setStatus(`施法中断：${message.interruptReason}`);
+    this.updateSkillHud();
+  }
+
+  /** 创建纯表现弹道；至少显示250ms以避免高延迟下消息刚到便消失，命中仍只认服务端。 / Creates a visual-only projectile and keeps it visible for at least 250 ms under network delay; only the server resolves impact. */
+  ApplySkillProjectile(message: G2C_SkillProjectile): void {
+    const name = DEMO_SKILLS.find((skill) => skill.id === message.skillId)?.name ?? `技能${message.skillId}`;
+    const parent = this.player.parent;
+    const source = this.unitVisualNode(message.sourceUnitId);
+    const target = this.unitVisualNode(message.targetUnitId);
+    if (parent && source && target) {
+      const serverNowMs = Date.now() + (this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0);
+      const remainingServerMs = Number(message.impactAtMs) - serverNowMs;
+      const node = createSkillProjectileEffect(message.skillId);
+      parent.addChild(node);
+      const start = new Vec3(source.position.x, source.position.y + 0.45, source.position.z);
+      node.setPosition(start);
+      this.skillProjectileEffects.push({
+        node,
+        targetUnitId: message.targetUnitId,
+        start,
+        displayStartedAtMs: Date.now(),
+        displayDurationMs: Math.max(PROJECTILE_MIN_VISIBLE_DURATION_MS, remainingServerMs),
+      });
+    }
+    this.setStatus(`${name} 弹道飞向目标 ${message.targetUnitId}`);
+  }
+
+  /** 命中消息播放表现并显示权威伤害；Numeric和Buff仍由各自消息更新。 / Plays impact presentation and reports authoritative damage while Numeric and Buff remain separately replicated. */
+  ApplySkillImpact(message: G2C_SkillImpact): void {
+    if (message.targetUnitId !== this.localUnitId) {
+      this.playAttackSlash(message.targetUnitId, 2.4, false);
+    }
+    const name = DEMO_SKILLS.find((skill) => skill.id === message.skillId)?.name ?? `技能${message.skillId}`;
+    this.setStatus(`${name} 命中 ${message.targetUnitId}，伤害 ${message.damage}${message.killed ? "，目标死亡" : ""}`);
+  }
+
   /** 应用服务端背包快照；进图和ItemChanged共用同一个入口，避免数量在两个状态机中漂移。 / Applies an authoritative inventory snapshot from EnterMap or ItemChanged so both paths share one state machine. */
   ApplyItemSnapshot(item: ItemSnapshot): void {
     this.inventoryItems.set(item.itemId.toString(), item);
@@ -1866,25 +2094,16 @@ export class GameBootstrap3D extends Component {
     const parent = this.player.parent;
     if (!parent) return;
     const target = this.remotePlayers.get(targetUnitId);
-    if (target) {
-      this.spawnAttackSlash(
-        target.node.position.x,
-        target.node.position.y,
-        target.node.position.z,
-        sizeScale,
-        monsterAttack,
-      );
-    } else {
-      const forwardX = Math.sin(this.playerYaw);
-      const forwardZ = Math.cos(this.playerYaw);
-      this.spawnAttackSlash(
-        this.player.position.x + forwardX,
-        this.player.position.y,
-        this.player.position.z + forwardZ,
-        sizeScale,
-        monsterAttack,
-      );
-    }
+    // 死亡目标可能先被AOI移除、命中事件随后到达；此时必须放弃表现，不能回退到本地玩家。
+    // A dead target may leave AOI before its impact event arrives; drop the visual instead of redirecting it to the local player.
+    if (!target) return;
+    this.spawnAttackSlash(
+      target.node.position.x,
+      target.node.position.y,
+      target.node.position.z,
+      sizeScale,
+      monsterAttack,
+    );
   }
 
   /** 在玩家受到权威伤害的位置播放怪物刀光；当前尺寸保持为基础大小。 / Plays the monster slash at the player's authoritative visual position at the base size. */
@@ -1935,6 +2154,41 @@ export class GameBootstrap3D extends Component {
       effect.node.setScale(scaled, scaled, scaled);
       effect.node.lookAt(cameraPosition);
     }
+  }
+
+  /** 只推进客户端弹道外观；目标消失或动画抵达时立即销毁，绝不在这里造成伤害。 / Advances projectile visuals only, destroying them on arrival or target loss without applying damage. */
+  private updateSkillProjectileEffects(): void {
+    const nowMs = Date.now();
+    for (let index = this.skillProjectileEffects.length - 1; index >= 0; index -= 1) {
+      const effect = this.skillProjectileEffects[index];
+      const target = this.unitVisualNode(effect.targetUnitId);
+      if (!target) {
+        effect.node.destroy();
+        this.skillProjectileEffects.splice(index, 1);
+        continue;
+      }
+      const progress = Math.min(1, Math.max(0,
+        (nowMs - effect.displayStartedAtMs) / Math.max(1, effect.displayDurationMs),
+      ));
+      const targetPosition = target.position;
+      const arcHeight = Math.sin(progress * Math.PI) * 0.65;
+      effect.node.setPosition(
+        effect.start.x + (targetPosition.x - effect.start.x) * progress,
+        effect.start.y + (targetPosition.y + 0.45 - effect.start.y) * progress + arcHeight,
+        effect.start.z + (targetPosition.z - effect.start.z) * progress,
+      );
+      effect.node.setRotationFromEuler(progress * 540, progress * 720, 0);
+      if (progress >= 1) {
+        effect.node.destroy();
+        this.skillProjectileEffects.splice(index, 1);
+      }
+    }
+  }
+
+  /** 将UnitId解析为当前可见节点；AOI外实体不存在时表现应直接放弃。 / Resolves a currently visible node by UnitId and abandons presentation for entities outside AOI. */
+  private unitVisualNode(unitId: number): Node | undefined {
+    if (unitId === this.localUnitId) return this.player;
+    return this.remotePlayers.get(unitId)?.node;
   }
 
   /** 左键短按负责选择或寻路；一旦形成拖动手势，抬起事件必须被镜头环绕消费。 / A short left click selects or paths, while an orbit drag must consume its mouse-up event. */
@@ -2063,6 +2317,12 @@ export class GameBootstrap3D extends Component {
   }
 
   private onKeyDown(event: EventKeyboard): void {
+    const skill = DEMO_SKILLS.find((item) => item.key === event.keyCode);
+    if (skill && !this.pressedKeys.has(event.keyCode)) {
+      this.pressedKeys.add(event.keyCode);
+      void this.castSkill(skill.id);
+      return;
+    }
     if (event.keyCode === AUTO_ATTACK_KEY && !this.pressedKeys.has(event.keyCode)) {
       this.pressedKeys.add(event.keyCode);
       void this.toggleAutoAttack();
@@ -2110,6 +2370,34 @@ export class GameBootstrap3D extends Component {
       this.ApplyAutoAttackState(response);
     } catch (error) {
       this.setStatus(`平A切换失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** 提交技能快捷栏命令；敌对技能使用选中怪，友方演示技能默认对自己。 / Submits a skill command using the selected monster for hostile spells and self for friendly demo spells. */
+  private async castSkill(skillId: number): Promise<void> {
+    const mapClient = this.mapClient;
+    const definition = DEMO_SKILLS.find((skill) => skill.id === skillId);
+    if (!mapClient || !definition || this.skillRequestInFlight) return;
+    const targetUnitId = definition.enemy
+      ? (this.selectedMonsterUnitId || this.findNearestMonster())
+      : this.localUnitId;
+    if (definition.enemy && targetUnitId === 0) {
+      this.setStatus(`${definition.name}需要先选择一个怪物`);
+      return;
+    }
+    this.skillRequestInFlight = true;
+    try {
+      const response = await mapClient.castSkill({ skillId, targetUnitId });
+      this.ApplySkillCastState(response);
+    } catch (error) {
+      if (rpcErrorCode(error) === SKILL_TARGET_TOO_FAR_ERROR_CODE) {
+        this.setStatus(`${definition.name}施放失败：距离不足（最远 ${definition.rangeMeters} 米）`);
+      } else {
+        this.setStatus(`${definition.name}施放失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+    } finally {
+      this.skillRequestInFlight = false;
+      this.updateSkillHud();
     }
   }
 
@@ -2452,10 +2740,31 @@ export class GameBootstrap3D extends Component {
       remote.yaw = entity.yaw;
       remote.alive = entity.alive;
       for (const numeric of entity.numerics) remote.numerics.set(numeric.numericType, numeric.value);
-      remote.node.active = entity.alive;
       if (!entity.alive) remote.visual?.SetMoving(false);
     }
+    this.applyRemoteAlivePresentation(remote);
     this.updateMonsterOverheadHud(remote);
+  }
+
+  /** 把死亡怪物表现为留在原地的倒地尸体；该状态不删除实体，也不参与服务端判定。 / Presents dead monsters as grounded corpses without deleting entities or affecting server authority. */
+  private applyRemoteAlivePresentation(remote: RemotePlayer3D): void {
+    remote.node.active = true;
+    if (remote.entityType !== ENTITY_TYPE_MONSTER) {
+      remote.node.active = remote.alive;
+      return;
+    }
+    if (remote.overheadHud) remote.overheadHud.root.active = remote.alive;
+    remote.selectionMarker.active = remote.alive && remote.unitId === this.selectedMonsterUnitId;
+    remote.node.setPosition(
+      remote.targetFoot.x,
+      remote.targetFoot.y + (remote.alive ? PLAYER_HALF_HEIGHT : PLAYER_VISUAL_HALF_WIDTH),
+      remote.targetFoot.z,
+    );
+    remote.node.setRotationFromEuler(
+      0,
+      remote.yaw * 180 / Math.PI,
+      remote.alive ? 0 : 90,
+    );
   }
 
   /** 根据实体类型和冷配置选择3D演示颜色；服务端AI仍是唯一权威。 / Resolves the 3D demo color from entity type and cold config; server AI remains authoritative. */
@@ -2473,6 +2782,10 @@ export class GameBootstrap3D extends Component {
   private interpolateRemotePlayers(deltaTime: number): void {
     const blend = 1 - Math.exp(-CORRECTION_RATE * Math.max(0, deltaTime));
     for (const remote of this.remotePlayers.values()) {
+      if (!remote.alive) {
+        this.applyRemoteAlivePresentation(remote);
+        continue;
+      }
       const foot = new Vec3(
         remote.node.position.x,
         remote.node.position.y - PLAYER_HALF_HEIGHT,
@@ -2673,6 +2986,24 @@ function createBox(
   return node;
 }
 
+/** 创建醒目的无资源弹道；双层方块在Web与Native均可见，不依赖粒子或透明材质。 / Creates a conspicuous resource-free projectile using two solid layers that render consistently on Web and Native. */
+function createSkillProjectileEffect(skillId: number): Node {
+  const root = new Node(`SkillProjectile_${skillId}`);
+  const outerColor = skillId === 3001
+    ? new Color(68, 188, 255, 255)
+    : new Color(255, 205, 92, 255);
+  root.addChild(createBox("ProjectileGlow", 0.48, 0.48, 0.48, outerColor, 0, 0, 0));
+  root.addChild(createBox("ProjectileCore", 0.22, 0.22, 0.22, new Color(235, 252, 255, 255), 0, 0, 0));
+  return root;
+}
+
+/** 读取SDK RpcError的稳定错误码，同时兼容跨Bundle导致的instanceof失效。 / Reads the stable SDK error code without relying on instanceof across bundles. */
+function rpcErrorCode(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  const code = (error as { readonly code?: unknown }).code;
+  return typeof code === "number" ? code : undefined;
+}
+
 /** 创建保持旧版中心点/脚底换算的玩家实体根节点；模型与占位都只能挂在其下。 / Creates a player entity root that preserves the legacy center/foot conversion for visual children. */
 function createPlayerEntityRoot(name: string, x: number, y: number, z: number): Node {
   const node = new Node(name);
@@ -2871,7 +3202,8 @@ function formatBuffRemaining(expireTimeMs: bigint, serverNowMs: number): string 
 
 /** 快捷栏按键只处理一次按下事件，不应进入移动输入刷新。 / Hotbar keys are edge-triggered and must never enter movement input refresh. */
 function isHotbarKey(key: KeyCode): boolean {
-  return key === AUTO_ATTACK_KEY || key === ITEM_SMALL_HEALTH_POTION_KEY || key === ITEM_LARGE_HEALTH_POTION_KEY;
+  return key === AUTO_ATTACK_KEY || key === ITEM_SMALL_HEALTH_POTION_KEY ||
+    key === ITEM_LARGE_HEALTH_POTION_KEY || DEMO_SKILLS.some((skill) => skill.key === key);
 }
 
 function normalizeRadians(value: number): number {

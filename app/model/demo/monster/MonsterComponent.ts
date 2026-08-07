@@ -5,6 +5,8 @@ import {
   type Unit,
 } from "../../../core/public";
 import type { MonsterAreaConfig } from "../../../generated/model/config";
+import type { DamageRequest, DamageResult } from "../combat/CombatComponent";
+import type { PlayerUnit } from "../map/PlayerUnit";
 import { MapAoiComponent } from "../map/MapAoiComponent";
 import { MapComponent } from "../map/MapComponent";
 import { MonsterUnit } from "./MonsterUnit";
@@ -24,15 +26,23 @@ export interface MonsterRuntimeState {
   navigationSequence: number;
 }
 
+export interface MonsterComponent {
+  ApplyPlayerDamage(
+    attacker: PlayerUnit,
+    monster: MonsterUnit,
+    request: DamageRequest,
+  ): DamageResult;
+}
+
 /**
- * 地图级刷怪总管：读取冷刷点、创建统一Unit、维护死亡和重生。
+ * 地图级刷怪总管：读取冷刷点、创建统一Unit、维护尸体和重生。
  * 第一版一条配置记录就是一个固定刷怪点，不引入随机区域和刷怪池。
- * 刷怪槽位长期存在，怪物Unit只代表一次实体生命周期；死亡后Unit被移除，
- * 到期时在同一槽位创建新的Unit。
+ * 刷怪槽位长期存在，怪物Unit只代表一次实体生命周期；死亡后Unit作为不可交互尸体保留，
+ * 到期时先移除尸体，再在同一槽位创建新的Unit。
  *
  * Map-level monster owner. It reads cold spawn points, creates regular Units,
- * and owns death/respawn. The spawn slot remains stable, while each monster
- * Unit represents one entity lifetime and is replaced after death.
+ * and owns corpse/respawn state. The spawn slot remains stable, while each
+ * monster Unit represents one lifetime and remains visible until corpse cleanup.
  */
 @component()
 @lifecycle({ awake: true, destroy: true })
@@ -52,7 +62,7 @@ export class MonsterComponent extends Component<[
     return this.monsters.get(monsterId);
   }
 
-  /** 返回当前存活怪物的稳定数组快照；调用者不得保存到下一帧。 / Returns a stable current-monster snapshot that callers must not retain across ticks. */
+  /** 返回当前怪物与尸体的稳定数组快照；调用者需按alive过滤且不得保存到下一帧。 / Returns a stable snapshot including corpses; callers must filter by alive and never retain it across ticks. */
   GetAll(): readonly MonsterUnit[] {
     return [...this.monsters.values()];
   }

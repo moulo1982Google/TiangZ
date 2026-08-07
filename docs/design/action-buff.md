@@ -93,7 +93,21 @@ buffs.AddBuff(2001, {
 });
 ```
 
-覆盖值必须是纯数据，不能放闭包、Promise、TimerId或Entity引用。当前最小传送快照保存配置ID、层数、开始/结束时间、Tick时间和版本；运行时Action覆盖不会跨Process传送。如果业务需要这种能力跨图或跨服，必须先为它增加可验证的协议字段，不能偷偷把Hotfix对象塞进传送快照。
+覆盖值必须是纯数据，不能放闭包、Promise、TimerId或Entity引用。传送快照保存配置ID、层数、开始/结束时间、Tick时间、来源、冲突优先级、运行时Add/Tick/Remove Action及护盾剩余量；目标Process按纯值重建Timer和Combat修改器，不会重新执行普通AddAction。协议只携带Action类型和i64参数，绝不传Hotfix函数或对象引用。
+
+### Buff冲突域与刷新
+
+Buff的“不可叠加”必须拆成冲突域、冲突决策和刷新行为，不能只增加一个`unique`布尔值：
+
+```text
+stack_group + stack_scope + sourceUnitId -> 冲突键
+conflict_policy                         -> Stack/Refresh/Replace/Reject/HigherWins
+refresh_source/tick/runtime_state       -> 刷新哪些运行数据
+```
+
+`Target`作用域让任意来源共享一个实例，例如冰冷；`Source`把施法者放进冲突键，例如每名法师各自拥有一份灼烧。`HigherWins`显式比较`conflict_priority`：高值替换、相同值刷新、低值拒绝，不能拿ConfigId推断等级。Refresh只修改配置允许的数据，默认不重复执行AddAction；Replace必须先清理旧Buff注册的Modifier，再创建新Buff。Reject是正常业务结果，不应抛成未知服务器异常。
+
+`BuffComponent.AddBuff`实现这些策略时必须保持同步且不在判断与提交之间`await`。同一Map V8内的目标状态因此能原子决策；真言术·盾还应在一个目标侧业务方法中完成“检查虚弱灵魂、替换盾、添加虚弱灵魂”，底层Shield唯一键和WeakSoul Reject作为第二层兜底。
 
 ## 五、和Combat的关系
 
@@ -141,6 +155,7 @@ G2C_BuffRemoved
 ## 六、传送和销毁
 
 - 传送只复制`BuffTransferState`，目标Unit先恢复`BuffComponent`，再由生命周期完成Timer重建。
+- 运行时Action覆盖会随快照传输；护盾只按`damageAbsorberRemaining`恢复剩余吸收量，不会重新填满。
 - 快照使用服务器墙钟时间，不保存TimerId；目标Process根据`expireAtMs/nextTickAtMs`判断剩余时间。
 - 已经过期的Buff不在目标创建；未过期Buff不会重新执行AddAction，避免传送一次重复加血或重复注册护盾。
 - `Unit.Dispose()`通过ChildEntity所有权链销毁Buff，Buff的RemoveAction只执行一次。RemoveAction必须幂等，不能假设Unit仍然连接客户端。

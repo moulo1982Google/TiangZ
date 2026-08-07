@@ -1,9 +1,9 @@
 {
   "formatVersion": 2,
-  "schemaFingerprint": "387db50428dbca9e86fa5406acd3c3e029791cc81ca1991369c9a9ac7d3ed8df",
-  "clientSchemaFingerprint": "19ba400067d60ec879b4d457f3314b289b1719fd045192b0a1a2d11917e64959",
-  "dataFingerprint": "afa83bf49cc52e0aa46a3688fab545093d261884796ecdce05577a3ebbd4f222",
-  "hotDataFingerprint": "499969e1ffd654be4383b0c6be4646a2ea52921d9a0498e94f33edd05cfc9cab",
+  "schemaFingerprint": "860eeb1499d7e1783afde66304d5ea540caffe6edf93751278874f8028085d60",
+  "clientSchemaFingerprint": "79274e69e4f46b2e0124bc74cd998fbe6f1247428ce0bbb7081774c74bc48650",
+  "dataFingerprint": "14445d3231dd904a2018ceaa15d2344054c89d61ad9225235ab8ade447832432",
+  "hotDataFingerprint": "eeb37ea6746fdaf2dc0aae794dc0fa02c5b061dc81377bf322bcee3b7f28b489",
   "coldDataFingerprint": "d62bf924289ebf7741fecb577981c24965cb866b6b603f51bef5c5de8ad7b662",
   "reloadPolicies": {
     "hot": [
@@ -21,15 +21,15 @@
     ]
   },
   "serverFile": "server.json",
-  "serverHash": "661df298bba1153f7ffc502e1a8651b0c5fa5ed4940faedab93824279dc31b47",
+  "serverHash": "0a8d1b10d190a9c7f0f5edb015777a1c8a22ebc26df34af824f6d333f5904ee2",
   "serverHotFile": "server.hot.json",
-  "serverHotHash": "98d0ba723b8a66fb625f97c5fd1bd3154a098548bd06053394e12793c1d7c2f8",
+  "serverHotHash": "79676505652c0c33f4a34852f87cf83ba71a04263cdc7e724c73c41eb8d0ea1a",
   "serverColdFile": "server.cold.json",
   "serverColdHash": "45d19e78b1338868a55be52ea79dab96564410ce3b67d7d847eb0619eb14a496",
   "clientFile": "client.json",
-  "clientHash": "7382a176554f7ffefb7d3d67a946fc714c29a5037dac25778af963448720686f",
+  "clientHash": "2292769e450681a8e5eef4e351aedb59a5b7dad238f2d8c06806531f60502c27",
   "clientHotFile": "client.hot.json",
-  "clientHotHash": "2115880c321a8e86f8ad56c24187e5b62b20d90a06cb96bc204183873ab62e28",
+  "clientHotHash": "6658a47429654b01dd8dcd5b6985edd0df396603be1763ac2b794362ec9bcb9d",
   "clientColdFile": "client.cold.json",
   "clientColdHash": "2f4b6880234fed6f3954b022dec2df2ac42879cbb46cfb5aa5de463830819fe8"
 }

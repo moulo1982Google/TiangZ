@@ -26,6 +26,9 @@ import type {
   G2M_SecondEnterMap,
   G2M_TransferPlayer,
   G2C_AutoAttackState,
+  G2C_SkillCastState,
+  G2C_SkillImpact,
+  G2C_SkillProjectile,
   BuffPublicView,
   BuffTransferSnapshot,
   G2C_DemoDoorState,
@@ -36,6 +39,7 @@ import type {
   M2G_SecondEnterMap,
   M2G_TransferPlayer,
   PlayerTransferSnapshot,
+  SkillTransferSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
 import { MapClientRouteResolver } from "../broadcast/MapClientRouteResolver";
@@ -59,6 +63,9 @@ import { ItemComponent } from "../item/ItemComponent";
 import { BuffComponent } from "../buff/BuffComponent";
 import type { BuffTransferState } from "../buff/Buff";
 import { CombatComponent, type AutoAttackState } from "../combat/CombatComponent";
+import type { SkillCastState, SkillTransferState } from "../skill/SkillComponent";
+import { SkillComponent } from "../skill/SkillComponent";
+import type { SkillProjectile } from "../skill/SkillMapComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import { LocationProxy } from "../location/LocationProxy";
 import type { PlayerRepository } from "../persistence/PlayerRepository";
@@ -350,6 +357,58 @@ export class MapComponent extends Component<[
     );
   }
 
+  /** 向施法者本人发布可覆盖读条状态；客户端只按服务器时间渲染。 / Publishes replaceable cast state to its owner for server-time rendering only. */
+  async PublishSkillCastState(unit: PlayerUnit, state: SkillCastState): Promise<void> {
+    this.requirePlayer(unit);
+    await this.clientBroadcast.Publish(
+      ClientAudience.Self(unit.UnitId),
+      ClientBroadcasts.SkillCastState,
+      toSkillCastProtocol(state),
+      this.serverTick,
+    );
+  }
+
+  /** 向施法者与目标的AOI观察者发布弹道表现；服务端仍持有唯一命中时间。 / Publishes projectile visuals to observers while the server retains the sole impact deadline. */
+  async PublishSkillProjectile(
+    source: PlayerUnit,
+    target: import("../../../core/public").Unit<any[]>,
+    projectile: SkillProjectile,
+  ): Promise<void> {
+    this.requirePlayer(source);
+    this.requireMapUnit(target);
+    await this.clientBroadcast.Publish(
+      ClientAudience.Union(
+        this.aoi.ObserversOf(source),
+        this.aoi.ObserversOf(target, target instanceof PlayerUnit),
+      ),
+      ClientBroadcasts.SkillProjectile,
+      {
+        castId: projectile.castId,
+        skillId: projectile.skillId,
+        sourceUnitId: projectile.sourceUnitId,
+        targetUnitId: projectile.targetUnitId,
+        launchedAtMs: BigInt(projectile.launchedAtMs),
+        impactAtMs: BigInt(projectile.impactAtMs),
+      } satisfies G2C_SkillProjectile,
+      this.serverTick,
+    );
+  }
+
+  /** 命中事件只携带公开结果；Buff外观由独立Buff事件维护。 / Publishes public impact results while Buff appearance stays in dedicated Buff events. */
+  async PublishSkillImpact(
+    source: PlayerUnit,
+    _target: import("../../../core/public").Unit<any[]>,
+    impact: G2C_SkillImpact,
+  ): Promise<void> {
+    this.requirePlayer(source);
+    await this.clientBroadcast.Publish(
+      this.aoi.ObserversOf(source),
+      ClientBroadcasts.SkillImpact,
+      impact,
+      this.serverTick,
+    );
+  }
+
   /** 创建地图内 Unit 存储、广播传输和帧尾同步源。 / Creates map-local Unit storage, broadcast transport, and frame-end replication sources. */
   protected override Awake(
     definition: MapInstanceDefinition,
@@ -579,6 +638,7 @@ export class MapComponent extends Component<[
         [NumericComponent, snapshot.numerics],
         [ItemComponent, snapshot.items],
         [BuffComponent, snapshot.buffs.map(fromProtocolBuffTransfer)],
+        [SkillComponent, fromProtocolSkillTransfer(snapshot.skill)],
       ]),
     };
     return this.PrepareTransferredPlayer(
@@ -680,6 +740,8 @@ export class MapComponent extends Component<[
       // 平A状态不随地图传送恢复，目标地图创建新的默认CombatComponent。 / Auto-attack is not transferred; the target map gets a fresh default component.
       player.AddComponent(CombatComponent);
       player.AddComponent(BuffComponent);
+      // Unit只持有技能状态；地图上的SkillMapComponent统一以10Hz推进。 / The Unit owns skill state while one map SkillMapComponent advances it at 10 Hz.
+      player.AddComponent(SkillComponent);
       player.AddComponent(PlayerPersistenceComponent, this.repository);
       player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
@@ -808,7 +870,7 @@ export class MapComponent extends Component<[
   ): Promise<void> {
     this.requireMapUnit(unit);
     await this.clientBroadcast.Publish(
-      this.aoi.ObserversOf(unit),
+      this.aoi.ObserversOf(unit, unit instanceof PlayerUnit),
       ClientBroadcasts.BuffAdded,
       { buff },
       this.serverTick,
@@ -827,7 +889,7 @@ export class MapComponent extends Component<[
   ): Promise<void> {
     this.requireMapUnit(unit);
     await this.clientBroadcast.Publish(
-      this.aoi.ObserversOf(unit),
+      this.aoi.ObserversOf(unit, unit instanceof PlayerUnit),
       ClientBroadcasts.BuffRemoved,
       {
         unitId: buff.unitId,
@@ -1667,6 +1729,16 @@ export class MapComponent extends Component<[
   }
 }
 
+function fromProtocolSkillTransfer(value: SkillTransferSnapshot): SkillTransferState {
+  return {
+    globalCooldownEndAtMs: Number(value.globalCooldownEndAtMs),
+    cooldowns: value.cooldowns.map((cooldown) => ({
+      skillId: cooldown.skillId,
+      cooldownEndAtMs: Number(cooldown.cooldownEndAtMs),
+    })),
+  };
+}
+
 function toMapEntity(unit: PlayerUnit | MonsterUnit | import("../../../core/public").Unit<any[]>): MapEntitySnapshot {
   if (unit instanceof MonsterUnit) {
     const snapshot = unit.Snapshot();
@@ -1723,5 +1795,36 @@ function fromProtocolBuffTransfer(value: BuffTransferSnapshot): BuffTransferStat
     tickIntervalMs: value.tickIntervalMs,
     nextTickAtMs: Number(value.nextTickAtMs),
     revision: value.revision,
+    sourceUnitId: value.sourceUnitId,
+    sourceAbilityId: value.sourceAbilityId,
+    conflictPriority: value.conflictPriority,
+    damageAbsorberRemaining: value.damageAbsorberRemaining,
+    addAction: protocolAction(value.addActionType, value.addActionParams),
+    tickAction: protocolAction(value.tickActionType, value.tickActionParams),
+    removeAction: protocolAction(value.removeActionType, value.removeActionParams),
+  };
+}
+
+function protocolAction(
+  type: number,
+  parameters: readonly bigint[],
+): import("../action/ActionType").ActionDefinition | undefined {
+  return type === 0 ? undefined : {
+    type: type as import("../action/ActionType").ActionTypeValue,
+    parameters: [...parameters],
+  };
+}
+
+function toSkillCastProtocol(state: SkillCastState): G2C_SkillCastState {
+  return {
+    phase: state.phase,
+    castId: state.castId,
+    skillId: state.skillId,
+    targetUnitId: state.targetUnitId,
+    startedAtMs: BigInt(Math.max(0, Math.floor(state.startedAtMs))),
+    finishAtMs: BigInt(Math.max(0, Math.floor(state.finishAtMs))),
+    globalCooldownEndAtMs: BigInt(Math.max(0, Math.floor(state.globalCooldownEndAtMs))),
+    skillCooldownEndAtMs: BigInt(Math.max(0, Math.floor(state.skillCooldownEndAtMs))),
+    interruptReason: state.interruptReason,
   };
 }

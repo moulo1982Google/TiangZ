@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "4ecd1105c2f9621d2077756ed825dda2d6b8daf89933a89377906a46e6fa2c8c";
+    public const string Value = "1c564593654a62b248112804d0d10172703096ba78da6646d768da6a184f190d";
 }
 
 public static class MsgCode
@@ -22,6 +22,7 @@ public static class MsgCode
     public const ushort C2G_MapSnapshotReady = 10029;
     public const ushort C2G_Ping = 10024;
     public const ushort C2M_AttackMonster = 10042;
+    public const ushort C2M_CastSkill = 10047;
     public const ushort C2M_FindPath = 10032;
     public const ushort C2M_MapProbe = 10014;
     public const ushort C2M_Move = 10013;
@@ -50,7 +51,11 @@ public static class MsgCode
     public const ushort G2C_MapReady = 10012;
     public const ushort G2C_MapSnapshotReady = 10030;
     public const ushort G2C_Ping = 10031;
+    public const ushort G2C_SkillCastState = 10049;
+    public const ushort G2C_SkillImpact = 10051;
+    public const ushort G2C_SkillProjectile = 10050;
     public const ushort M2C_AttackMonster = 10043;
+    public const ushort M2C_CastSkill = 10048;
     public const ushort M2C_FindPath = 10033;
     public const ushort M2C_MapProbe = 10015;
     public const ushort M2C_NavigateInput = 10038;
@@ -90,6 +95,16 @@ public sealed class BuffTransferSnapshot
     public uint TickIntervalMs { get; set; }
     public ulong NextTickAtMs { get; set; }
     public uint Revision { get; set; }
+    public uint SourceUnitId { get; set; }
+    public uint SourceAbilityId { get; set; }
+    public uint ConflictPriority { get; set; }
+    public ulong DamageAbsorberRemaining { get; set; }
+    public int AddActionType { get; set; }
+    public List<long> AddActionParams { get; set; } = new List<long>();
+    public int TickActionType { get; set; }
+    public List<long> TickActionParams { get; set; } = new List<long>();
+    public int RemoveActionType { get; set; }
+    public List<long> RemoveActionParams { get; set; } = new List<long>();
 }
 
 public sealed class C2G_EnterMap : IRpcRequest
@@ -120,6 +135,13 @@ public sealed class C2G_Ping : IRpcRequest
 public sealed class C2M_AttackMonster : IRpcRequest
 {
     public uint MonsterId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_CastSkill : IRpcRequest
+{
+    public uint SkillId { get; set; }
+    public uint TargetUnitId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -342,6 +364,40 @@ public sealed class G2C_Ping : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class G2C_SkillCastState
+{
+    public uint Phase { get; set; }
+    public ulong CastId { get; set; }
+    public uint SkillId { get; set; }
+    public uint TargetUnitId { get; set; }
+    public ulong StartedAtMs { get; set; }
+    public ulong FinishAtMs { get; set; }
+    public ulong GlobalCooldownEndAtMs { get; set; }
+    public ulong SkillCooldownEndAtMs { get; set; }
+    public string? InterruptReason { get; set; }
+}
+
+public sealed class G2C_SkillImpact
+{
+    public ulong CastId { get; set; }
+    public uint SkillId { get; set; }
+    public uint SourceUnitId { get; set; }
+    public uint TargetUnitId { get; set; }
+    public ulong Damage { get; set; }
+    public uint DamageSchool { get; set; }
+    public bool Killed { get; set; }
+}
+
+public sealed class G2C_SkillProjectile
+{
+    public ulong CastId { get; set; }
+    public uint SkillId { get; set; }
+    public uint SourceUnitId { get; set; }
+    public uint TargetUnitId { get; set; }
+    public ulong LaunchedAtMs { get; set; }
+    public ulong ImpactAtMs { get; set; }
+}
+
 public sealed class ItemSnapshot
 {
     public ulong ItemId { get; set; }
@@ -358,6 +414,22 @@ public sealed class M2C_AttackMonster : IRpcResponse
     public uint Damage { get; set; }
     public ulong RemainingHp { get; set; }
     public bool Killed { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_CastSkill : IRpcResponse
+{
+    public uint Phase { get; set; }
+    public ulong CastId { get; set; }
+    public uint SkillId { get; set; }
+    public uint TargetUnitId { get; set; }
+    public ulong StartedAtMs { get; set; }
+    public ulong FinishAtMs { get; set; }
+    public ulong GlobalCooldownEndAtMs { get; set; }
+    public ulong SkillCooldownEndAtMs { get; set; }
+    public string? InterruptReason { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -487,6 +559,18 @@ public sealed class S2C_Login : IRpcResponse
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
+}
+
+public sealed class SkillCooldownSnapshot
+{
+    public uint SkillId { get; set; }
+    public ulong CooldownEndAtMs { get; set; }
+}
+
+public sealed class SkillTransferSnapshot
+{
+    public ulong GlobalCooldownEndAtMs { get; set; }
+    public List<SkillCooldownSnapshot> Cooldowns { get; set; } = new List<SkillCooldownSnapshot>();
 }
 
 public sealed class UnitNumericDelta
@@ -636,6 +720,36 @@ public static class BuffTransferSnapshotCodec
                 case 8 when tag.WireType == 0:
                     value.Revision = reader.ReadUInt32();
                     break;
+                case 9 when tag.WireType == 0:
+                    value.SourceUnitId = reader.ReadUInt32();
+                    break;
+                case 10 when tag.WireType == 0:
+                    value.SourceAbilityId = reader.ReadUInt32();
+                    break;
+                case 11 when tag.WireType == 0:
+                    value.ConflictPriority = reader.ReadUInt32();
+                    break;
+                case 12 when tag.WireType == 0:
+                    value.DamageAbsorberRemaining = reader.ReadUInt64();
+                    break;
+                case 13 when tag.WireType == 0:
+                    value.AddActionType = reader.ReadInt32();
+                    break;
+                case 14 when tag.WireType == 0:
+                    value.AddActionParams.Add(reader.ReadInt64());
+                    break;
+                case 15 when tag.WireType == 0:
+                    value.TickActionType = reader.ReadInt32();
+                    break;
+                case 16 when tag.WireType == 0:
+                    value.TickActionParams.Add(reader.ReadInt64());
+                    break;
+                case 17 when tag.WireType == 0:
+                    value.RemoveActionType = reader.ReadInt32();
+                    break;
+                case 18 when tag.WireType == 0:
+                    value.RemoveActionParams.Add(reader.ReadInt64());
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -655,6 +769,25 @@ public static class BuffTransferSnapshotCodec
         if (value.TickIntervalMs != 0) writer.WriteUInt32(6, value.TickIntervalMs);
         if (value.NextTickAtMs != 0) writer.WriteUInt64(7, value.NextTickAtMs);
         if (value.Revision != 0) writer.WriteUInt32(8, value.Revision);
+        if (value.SourceUnitId != 0) writer.WriteUInt32(9, value.SourceUnitId);
+        if (value.SourceAbilityId != 0) writer.WriteUInt32(10, value.SourceAbilityId);
+        if (value.ConflictPriority != 0) writer.WriteUInt32(11, value.ConflictPriority);
+        if (value.DamageAbsorberRemaining != 0) writer.WriteUInt64(12, value.DamageAbsorberRemaining);
+        if (value.AddActionType != 0) writer.WriteInt32(13, value.AddActionType);
+        foreach (var item in value.AddActionParams)
+        {
+            writer.WriteInt64(14, item, true);
+        }
+        if (value.TickActionType != 0) writer.WriteInt32(15, value.TickActionType);
+        foreach (var item in value.TickActionParams)
+        {
+            writer.WriteInt64(16, item, true);
+        }
+        if (value.RemoveActionType != 0) writer.WriteInt32(17, value.RemoveActionType);
+        foreach (var item in value.RemoveActionParams)
+        {
+            writer.WriteInt64(18, item, true);
+        }
         return writer.ToArray();
     }
 }
@@ -828,6 +961,44 @@ public static class C2M_AttackMonsterCodec
     {
         var writer = new BinaryWriter();
         if (value.MonsterId != 0) writer.WriteUInt32(1, value.MonsterId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_CastSkillCodec
+{
+    public static C2M_CastSkill Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_CastSkill();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.SkillId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_CastSkill value)
+    {
+        var writer = new BinaryWriter();
+        if (value.SkillId != 0) writer.WriteUInt32(1, value.SkillId);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(2, value.TargetUnitId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -2026,6 +2197,172 @@ public static class G2C_PingCodec
     }
 }
 
+public static class G2C_SkillCastStateCodec
+{
+    public static G2C_SkillCastState Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_SkillCastState();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Phase = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.CastId = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.SkillId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.StartedAtMs = reader.ReadUInt64();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.FinishAtMs = reader.ReadUInt64();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.GlobalCooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.SkillCooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                case 9 when tag.WireType == 2:
+                    value.InterruptReason = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_SkillCastState value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Phase != 0) writer.WriteUInt32(1, value.Phase);
+        if (value.CastId != 0) writer.WriteUInt64(2, value.CastId);
+        if (value.SkillId != 0) writer.WriteUInt32(3, value.SkillId);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(4, value.TargetUnitId);
+        if (value.StartedAtMs != 0) writer.WriteUInt64(5, value.StartedAtMs);
+        if (value.FinishAtMs != 0) writer.WriteUInt64(6, value.FinishAtMs);
+        if (value.GlobalCooldownEndAtMs != 0) writer.WriteUInt64(7, value.GlobalCooldownEndAtMs);
+        if (value.SkillCooldownEndAtMs != 0) writer.WriteUInt64(8, value.SkillCooldownEndAtMs);
+        if (!string.IsNullOrEmpty(value.InterruptReason)) writer.WriteString(9, value.InterruptReason);
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_SkillImpactCodec
+{
+    public static G2C_SkillImpact Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_SkillImpact();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.CastId = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.SkillId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.SourceUnitId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.Damage = reader.ReadUInt64();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.DamageSchool = reader.ReadUInt32();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.Killed = reader.ReadBool();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_SkillImpact value)
+    {
+        var writer = new BinaryWriter();
+        if (value.CastId != 0) writer.WriteUInt64(1, value.CastId);
+        if (value.SkillId != 0) writer.WriteUInt32(2, value.SkillId);
+        if (value.SourceUnitId != 0) writer.WriteUInt32(3, value.SourceUnitId);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(4, value.TargetUnitId);
+        if (value.Damage != 0) writer.WriteUInt64(5, value.Damage);
+        if (value.DamageSchool != 0) writer.WriteUInt32(6, value.DamageSchool);
+        if (value.Killed) writer.WriteBool(7, value.Killed);
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_SkillProjectileCodec
+{
+    public static G2C_SkillProjectile Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_SkillProjectile();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.CastId = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.SkillId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.SourceUnitId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.LaunchedAtMs = reader.ReadUInt64();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.ImpactAtMs = reader.ReadUInt64();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_SkillProjectile value)
+    {
+        var writer = new BinaryWriter();
+        if (value.CastId != 0) writer.WriteUInt64(1, value.CastId);
+        if (value.SkillId != 0) writer.WriteUInt32(2, value.SkillId);
+        if (value.SourceUnitId != 0) writer.WriteUInt32(3, value.SourceUnitId);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(4, value.TargetUnitId);
+        if (value.LaunchedAtMs != 0) writer.WriteUInt64(5, value.LaunchedAtMs);
+        if (value.ImpactAtMs != 0) writer.WriteUInt64(6, value.ImpactAtMs);
+        return writer.ToArray();
+    }
+}
+
 public static class ItemSnapshotCodec
 {
     public static ItemSnapshot Decode(byte[] payload)
@@ -2123,6 +2460,80 @@ public static class M2C_AttackMonsterCodec
         if (value.Damage != 0) writer.WriteUInt32(2, value.Damage);
         if (value.RemainingHp != 0) writer.WriteUInt64(3, value.RemainingHp);
         if (value.Killed) writer.WriteBool(4, value.Killed);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_CastSkillCodec
+{
+    public static M2C_CastSkill Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_CastSkill();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Phase = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.CastId = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.SkillId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.StartedAtMs = reader.ReadUInt64();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.FinishAtMs = reader.ReadUInt64();
+                    break;
+                case 7 when tag.WireType == 0:
+                    value.GlobalCooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                case 8 when tag.WireType == 0:
+                    value.SkillCooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                case 9 when tag.WireType == 2:
+                    value.InterruptReason = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_CastSkill value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Phase != 0) writer.WriteUInt32(1, value.Phase);
+        if (value.CastId != 0) writer.WriteUInt64(2, value.CastId);
+        if (value.SkillId != 0) writer.WriteUInt32(3, value.SkillId);
+        if (value.TargetUnitId != 0) writer.WriteUInt32(4, value.TargetUnitId);
+        if (value.StartedAtMs != 0) writer.WriteUInt64(5, value.StartedAtMs);
+        if (value.FinishAtMs != 0) writer.WriteUInt64(6, value.FinishAtMs);
+        if (value.GlobalCooldownEndAtMs != 0) writer.WriteUInt64(7, value.GlobalCooldownEndAtMs);
+        if (value.SkillCooldownEndAtMs != 0) writer.WriteUInt64(8, value.SkillCooldownEndAtMs);
+        if (!string.IsNullOrEmpty(value.InterruptReason)) writer.WriteString(9, value.InterruptReason);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -2769,6 +3180,77 @@ public static class S2C_LoginCodec
     }
 }
 
+public static class SkillCooldownSnapshotCodec
+{
+    public static SkillCooldownSnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new SkillCooldownSnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.SkillId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.CooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(SkillCooldownSnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.SkillId != 0) writer.WriteUInt32(1, value.SkillId);
+        if (value.CooldownEndAtMs != 0) writer.WriteUInt64(2, value.CooldownEndAtMs);
+        return writer.ToArray();
+    }
+}
+
+public static class SkillTransferSnapshotCodec
+{
+    public static SkillTransferSnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new SkillTransferSnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.GlobalCooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Cooldowns.Add(SkillCooldownSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(SkillTransferSnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.GlobalCooldownEndAtMs != 0) writer.WriteUInt64(1, value.GlobalCooldownEndAtMs);
+        foreach (var item in value.Cooldowns)
+        {
+            writer.WriteMessage(2, item == null ? null : SkillCooldownSnapshotCodec.Encode(item));
+        }
+        return writer.ToArray();
+    }
+}
+
 public static class UnitNumericDeltaCodec
 {
     public static UnitNumericDelta Decode(byte[] payload)
@@ -2900,6 +3382,11 @@ public static class MapProtocol
         C2M_AttackMonsterCodec.Encode, M2C_AttackMonsterCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_CastSkill, M2C_CastSkill> CastSkill = new(
+        "Map.CastSkill", MsgCode.C2M_CastSkill, MsgCode.M2C_CastSkill,
+        C2M_CastSkillCodec.Encode, M2C_CastSkillCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_FindPath, M2C_FindPath> FindPath = new(
         "Map.FindPath", MsgCode.C2M_FindPath, MsgCode.M2C_FindPath,
         C2M_FindPathCodec.Encode, M2C_FindPathCodec.Decode,
@@ -2985,6 +3472,12 @@ public static class ClientMessages
         "Client.ItemChanged", MsgCode.G2C_ItemChanged, G2C_ItemChangedCodec.Encode, G2C_ItemChangedCodec.Decode);
     public static readonly MessageDescriptor<G2C_MapReady> MapReady = new(
         "Client.MapReady", MsgCode.G2C_MapReady, G2C_MapReadyCodec.Encode, G2C_MapReadyCodec.Decode);
+    public static readonly MessageDescriptor<G2C_SkillCastState> SkillCastState = new(
+        "Client.SkillCastState", MsgCode.G2C_SkillCastState, G2C_SkillCastStateCodec.Encode, G2C_SkillCastStateCodec.Decode);
+    public static readonly MessageDescriptor<G2C_SkillImpact> SkillImpact = new(
+        "Client.SkillImpact", MsgCode.G2C_SkillImpact, G2C_SkillImpactCodec.Encode, G2C_SkillImpactCodec.Decode);
+    public static readonly MessageDescriptor<G2C_SkillProjectile> SkillProjectile = new(
+        "Client.SkillProjectile", MsgCode.G2C_SkillProjectile, G2C_SkillProjectileCodec.Encode, G2C_SkillProjectileCodec.Decode);
 }
 
 public static class MapMessages
@@ -3015,6 +3508,8 @@ public sealed class MapClient
 
     public Task<M2C_AttackMonster> AttackMonsterAsync(C2M_AttackMonster request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.AttackMonster, request, cancellationToken);
+    public Task<M2C_CastSkill> CastSkillAsync(C2M_CastSkill request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.CastSkill, request, cancellationToken);
     public Task<M2C_FindPath> FindPathAsync(C2M_FindPath request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.FindPath, request, cancellationToken);
     public Task<M2C_MapProbe> ProbeAsync(C2M_MapProbe request, CancellationToken cancellationToken = default) =>

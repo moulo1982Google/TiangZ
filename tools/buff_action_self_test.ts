@@ -15,10 +15,11 @@ import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { GameConfigRegistry, GameConfigs } from "../app/generated/model/config";
 import { ActionType } from "../app/model/demo/action/ActionType";
-import { BuffComponent } from "../app/model/demo/buff/BuffComponent";
+import { BuffApplyStatus, BuffComponent } from "../app/model/demo/buff/BuffComponent";
 import { CombatComponent } from "../app/model/demo/combat/CombatComponent";
 import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/NumericType";
+import { SkillCastPhase, SkillComponent } from "../app/model/demo/skill/SkillComponent";
 import { ActorUnit } from "../app/core/runtime/Unit";
 
 @scene({ sceneType: "BuffTest" })
@@ -46,6 +47,7 @@ async function main(): Promise<void> {
   await import("../app/hotfix/demo/combat/CombatComponentSystem");
   await import("../app/hotfix/demo/buff/BuffSystem");
   await import("../app/hotfix/demo/buff/BuffComponentSystem");
+  await import("../app/hotfix/demo/skill/SkillComponentSystem");
   HotfixSystem.Commit();
 
   const host = new ProcessHost("buff-action-self-test");
@@ -100,6 +102,91 @@ async function main(): Promise<void> {
   assert.equal(buffs.RemoveBuff(buff.Id as bigint), false);
   assert.equal(targetBuffs.RemoveBuff(buff.Id as bigint, "target-test"), true);
   assert.equal(targetBuffs.RemoveBuff(buff.Id as bigint), false);
+
+  // 冰冷按Target唯一：第二个施法者只刷新同一实例，不重复执行-40% AddAction。
+  // Chilled is target-scoped: another caster refreshes the same instance without replaying -40%.
+  const chilled = buffs.ApplyBuff(4001, { sourceUnitId: 10, sourceAbilityId: 3001 });
+  const chilledRefresh = buffs.ApplyBuff(4001, { sourceUnitId: 11, sourceAbilityId: 3001 });
+  assert.equal(chilled.status, BuffApplyStatus.Applied);
+  assert.equal(chilledRefresh.status, BuffApplyStatus.Refreshed);
+  assert.equal(chilledRefresh.buff?.Id, chilled.buff?.Id);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MoveSpeedPct], -40n);
+  assert.equal(buffs.RemoveBuff(chilled.buff!.Id as bigint, "test-chilled"), true);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MoveSpeedPct], 0n);
+
+  // 灼烧按Source唯一：同一施法者刷新，不同施法者创建独立实例。
+  // Burn is source-scoped: one caster refreshes its instance while another owns a separate DoT.
+  const burn1 = buffs.ApplyBuff(4002, { sourceUnitId: 10, sourceAbilityId: 3002 });
+  const burn1Refresh = buffs.ApplyBuff(4002, { sourceUnitId: 10, sourceAbilityId: 3002 });
+  const burn2 = buffs.ApplyBuff(4002, { sourceUnitId: 11, sourceAbilityId: 3002 });
+  assert.equal(burn1Refresh.status, BuffApplyStatus.Refreshed);
+  assert.equal(burn1Refresh.buff?.Id, burn1.buff?.Id);
+  assert.equal(burn2.status, BuffApplyStatus.Applied);
+  assert.equal(buffs.GetBuffs().filter((value) => value.ConfigId === 4002).length, 2);
+  const burnFrame = TimeSystem.Instance.FrameTime + 1_000;
+  const burnServer = TimeSystem.Instance.ServerNow + 1_000;
+  TimeSystem.Instance.__update(burnFrame, burnServer);
+  TimerSystem.Instance.__update(burnFrame);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentHp], 41n);
+  for (const value of buffs.GetBuffs().filter((item) => item.ConfigId === 4002)) {
+    buffs.RemoveBuff(value.Id as bigint, "test-burn");
+  }
+
+  const weakSoul = buffs.ApplyBuff(4004, { sourceUnitId: 10, sourceAbilityId: 3004 });
+  const weakSoulRejected = buffs.ApplyBuff(4004, { sourceUnitId: 11, sourceAbilityId: 3004 });
+  assert.equal(weakSoul.status, BuffApplyStatus.Applied);
+  assert.equal(weakSoulRejected.status, BuffApplyStatus.Rejected);
+  buffs.RemoveBuff(weakSoul.buff!.Id as bigint, "test-weak-soul");
+
+  // 韧同等级刷新、低等级拒绝、高等级替换；MaxHpAdd始终只增加一次。
+  // Fortitude refreshes equal rank, rejects lower rank, and replaces with higher rank without double-adding MaxHp.
+  const fortitude = buffs.ApplyBuff(4005, { sourceUnitId: 10, sourceAbilityId: 3005, conflictPriority: 1 });
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MaxHp], 700n);
+  assert.equal(buffs.ApplyBuff(4005, { sourceUnitId: 11, sourceAbilityId: 3005, conflictPriority: 1 }).status, BuffApplyStatus.Refreshed);
+  assert.equal(buffs.ApplyBuff(4005, { sourceUnitId: 12, sourceAbilityId: 3005, conflictPriority: 0 }).status, BuffApplyStatus.Rejected);
+  assert.equal(buffs.ApplyBuff(4005, { sourceUnitId: 13, sourceAbilityId: 3005, conflictPriority: 2 }).status, BuffApplyStatus.Replaced);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MaxHp], 700n);
+  const activeFortitude = buffs.GetBuffs().find((value) => value.ConfigId === 4005)!;
+  buffs.RemoveBuff(activeFortitude.Id as bigint, "test-fortitude");
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MaxHp], 200n);
+
+  // 盾向Combat注册吸收器，传送只恢复剩余150而不是重新填满200。
+  // Shield registers a Combat absorber; transfer restores the remaining 150 instead of refilling 200.
+  const shield = buffs.ApplyBuff(4003, {
+    sourceUnitId: unit.UnitId,
+    sourceAbilityId: 3004,
+    addAction: { type: ActionType.RegisterDamageAbsorber, parameters: [200n] },
+  });
+  assert.equal(shield.status, BuffApplyStatus.Applied);
+  const absorbed = unit.GetComponent(CombatComponent).ApplyDamage({ amount: 50n, sourceUnitId: 99 });
+  assert.equal(absorbed.absorbedDamage, 50n);
+  const shieldTransfer = buffs.CaptureTransfer().find((value) => value.configId === 4003)!;
+  assert.equal(shieldTransfer.damageAbsorberRemaining, 150n);
+  targetBuffs.RestoreTransfer([shieldTransfer]);
+  const restoredShield = targetBuffs.CaptureTransfer()[0];
+  assert.equal(restoredShield.damageAbsorberRemaining, 150n);
+  const fullyAbsorbed = target.GetComponent(CombatComponent).ApplyDamage({ amount: 150n, sourceUnitId: 99 });
+  assert.equal(fullyAbsorbed.absorbedDamage, 150n);
+  assert.equal(fullyAbsorbed.finalDamage, 0n);
+
+  // 跨地图保留已提交GCD/CD，但不恢复源地图活动读条。
+  // Cross-map transfer keeps committed GCD/CD without restoring the source-map active cast.
+  const sourceSkill = unit.AddComponent(SkillComponent);
+  const skillNow = TimeSystem.Instance.ServerNow;
+  sourceSkill.Accept({
+    castId: 90001n,
+    skillId: 3002,
+    targetUnitId: 123,
+    startedAtMs: skillNow,
+    finishAtMs: skillNow + 1_500,
+  }, 12_000, 1_000);
+  const skillTransfer = sourceSkill.CaptureTransfer();
+  const targetSkill = target.AddComponent(SkillComponent);
+  targetSkill.RestoreTransfer(skillTransfer);
+  assert.equal(targetSkill.State(3002).phase, SkillCastPhase.Idle);
+  assert.equal(targetSkill.ReadyAt(3002), skillNow + 12_000);
 
   host.Dispose();
   SingletonRegistry.DestroyAll();

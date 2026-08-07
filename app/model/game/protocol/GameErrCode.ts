@@ -15,4 +15,10 @@ export const GameErrCode = {
   MonsterTooFar: 10014,
   ItemNotUsable: 10015,
   PlayerDead: 10016,
+  SkillNotFound: 10017,
+  SkillBusy: 10018,
+  SkillCooldown: 10019,
+  SkillTargetInvalid: 10020,
+  SkillTargetTooFar: 10021,
+  SkillBlockedByBuff: 10022,
 } as const;

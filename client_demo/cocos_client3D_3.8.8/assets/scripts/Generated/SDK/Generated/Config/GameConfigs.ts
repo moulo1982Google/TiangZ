@@ -40,6 +40,81 @@ const RAW_DATA: Record<string, unknown> = {
       ],
       "remove_action_type": 0,
       "remove_action_params": []
+    },
+    {
+      "id": 4001,
+      "name": "冰冷",
+      "duration_seconds": 5,
+      "tick_interval_ms": 0,
+      "add_action_type": 1,
+      "add_action_params": [
+        30003,
+        -40
+      ],
+      "tick_action_type": 0,
+      "tick_action_params": [],
+      "remove_action_type": 1,
+      "remove_action_params": [
+        30003,
+        40
+      ]
+    },
+    {
+      "id": 4002,
+      "name": "灼烧",
+      "duration_seconds": 6,
+      "tick_interval_ms": 1000,
+      "add_action_type": 0,
+      "add_action_params": [],
+      "tick_action_type": 1,
+      "tick_action_params": [
+        1,
+        -5
+      ],
+      "remove_action_type": 0,
+      "remove_action_params": []
+    },
+    {
+      "id": 4003,
+      "name": "真言术·盾",
+      "duration_seconds": 30,
+      "tick_interval_ms": 0,
+      "add_action_type": 0,
+      "add_action_params": [],
+      "tick_action_type": 0,
+      "tick_action_params": [],
+      "remove_action_type": 0,
+      "remove_action_params": []
+    },
+    {
+      "id": 4004,
+      "name": "虚弱灵魂",
+      "duration_seconds": 15,
+      "tick_interval_ms": 0,
+      "add_action_type": 0,
+      "add_action_params": [],
+      "tick_action_type": 0,
+      "tick_action_params": [],
+      "remove_action_type": 0,
+      "remove_action_params": []
+    },
+    {
+      "id": 4005,
+      "name": "真言术·韧",
+      "duration_seconds": 1800,
+      "tick_interval_ms": 0,
+      "add_action_type": 1,
+      "add_action_params": [
+        10002,
+        500
+      ],
+      "tick_action_type": 0,
+      "tick_action_params": [],
+      "remove_action_type": 1,
+      "remove_action_params": [
+        10002,
+        -500
+      ]
     }
   ],
   "game_tbitemconfig": [
@@ -216,7 +291,7 @@ export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 export type MonsterConfig = game.MonsterConfig;
 
-export const GameConfigFingerprint = "afa83bf49cc52e0aa46a3688fab545093d261884796ecdce05577a3ebbd4f222";
+export const GameConfigFingerprint = "14445d3231dd904a2018ceaa15d2344054c89d61ad9225235ab8ade447832432";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

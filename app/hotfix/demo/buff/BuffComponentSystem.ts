@@ -1,9 +1,15 @@
 import {
   Buff,
+  BuffApplyStatus,
+  BuffConflictPolicy,
   BuffComponent,
+  BuffRefreshStatePolicy,
+  BuffRefreshTickPolicy,
+  BuffStackScope,
   GameConfigs,
   GlobalIdSystem,
   type BuffAddOptions,
+  type BuffApplyResult,
   type BuffPublicState,
   type BuffTransferState,
   type ITransfer,
@@ -36,8 +42,93 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
     // Child Buff OnDestroy runs through the ownership chain; do not remove children twice here.
   }
 
-  /** 添加一个Buff并立即执行AddAction；实例ID由全局生成器保证跨服不冲突。 / Adds a Buff, executes AddAction immediately, and allocates a merge-safe ID. */
+  /**
+   * 应用Buff并同步完成冲突决策。该方法不包含await，所以同一Map V8内的检查与提交不可被另一条业务消息插入。
+   * 刷新不会重复执行AddAction；Replace会完整移除旧实例后再创建新实例。
+   *
+   * Applies a Buff and resolves conflicts synchronously. No await exists, so
+   * another business message cannot interleave the check and commit in one Map
+   * V8. Refresh never replays AddAction; Replace fully removes the old instance.
+   */
+  ApplyBuff(configId: number, options: BuffAddOptions = {}): BuffApplyResult {
+    const config = GameConfigs.BuffConfig.Get(configId);
+    const sourceUnitId = options.sourceUnitId ?? 0;
+    const sourceAbilityId = options.sourceAbilityId ?? 0;
+    const priority = options.conflictPriority ?? config.conflictPriority;
+    validateSourceUnitId(sourceUnitId);
+    validateConfigId(sourceAbilityId, "sourceAbilityId", true);
+    validatePriority(priority);
+
+    const conflicts = this.GetChildren(Buff).filter((buff) => {
+      const current = GameConfigs.BuffConfig.Get(buff.ConfigId);
+      if (current.stackGroup !== config.stackGroup) return false;
+      return config.stackScope !== BuffStackScope.Source || buff.SourceUnitId === sourceUnitId;
+    });
+
+    if (config.conflictPolicy === BuffConflictPolicy.Stack || conflicts.length === 0) {
+      return { status: BuffApplyStatus.Applied, buff: this.createBuff(configId, options) };
+    }
+
+    const current = conflicts.reduce((selected, item) => (
+      item.ConflictPriority > selected.ConflictPriority ? item : selected
+    ));
+    if (config.conflictPolicy === BuffConflictPolicy.Reject) {
+      return { status: BuffApplyStatus.Rejected, buff: current, reason: "conflict-rejected" };
+    }
+    if (
+      config.conflictPolicy === BuffConflictPolicy.HigherWins &&
+      priority < current.ConflictPriority
+    ) {
+      return { status: BuffApplyStatus.Rejected, buff: current, reason: "lower-priority" };
+    }
+
+    const shouldReplace = config.conflictPolicy === BuffConflictPolicy.Replace || (
+      config.conflictPolicy === BuffConflictPolicy.HigherWins && priority > current.ConflictPriority
+    );
+    if (shouldReplace) {
+      const replacedBuffInstanceId = current.Id as bigint;
+      this.RemoveBuff(replacedBuffInstanceId, "conflict-replaced");
+      return {
+        status: BuffApplyStatus.Replaced,
+        buff: this.createBuff(configId, options),
+        replacedBuffInstanceId,
+      };
+    }
+
+    if (config.refreshRuntimeState === BuffRefreshStatePolicy.Reset) {
+      throw new Error(
+        `BuffConfig ${configId} requests refresh runtime reset; use Replace policy for lifecycle-owned state`,
+      );
+    }
+    const now = TimeSystem.Instance.ServerNow;
+    const durationMs = options.durationMs ?? config.durationSeconds * 1_000;
+    const tickIntervalMs = options.tickIntervalMs ?? config.tickIntervalMs;
+    validateDuration(durationMs, "durationMs");
+    validateDuration(tickIntervalMs, "tickIntervalMs");
+    current.Refresh({
+      nowMs: now,
+      expireAtMs: durationMs > 0 ? now + durationMs : 0,
+      tickIntervalMs,
+      resetTickCadence: config.refreshTickPolicy === BuffRefreshTickPolicy.ResetCadence,
+      updateSource: config.refreshSource,
+      sourceUnitId,
+      sourceAbilityId,
+      conflictPriority: priority,
+    });
+    this.publishAdded(current);
+    return { status: BuffApplyStatus.Refreshed, buff: current };
+  }
+
+  /** 添加Buff的简便接口；需要处理“拒绝”结果的技能必须改用ApplyBuff。 / Convenience API; skills that need rejected results must call ApplyBuff instead. */
   AddBuff(configId: number, options: BuffAddOptions = {}): Buff {
+    const result = this.ApplyBuff(configId, options);
+    if (result.status === BuffApplyStatus.Rejected || !result.buff) {
+      throw new Error(`BuffConfig ${configId} rejected: ${result.reason ?? "unknown"}`);
+    }
+    return result.buff;
+  }
+
+  private createBuff(configId: number, options: BuffAddOptions): Buff {
     const config = GameConfigs.BuffConfig.Get(configId);
     const now = TimeSystem.Instance.ServerNow;
     const durationMs = options.durationMs ?? config.durationSeconds * 1_000;
@@ -55,6 +146,9 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
       addAction: options.addAction,
       tickAction: options.tickAction,
       removeAction: options.removeAction,
+      sourceUnitId: options.sourceUnitId ?? 0,
+      sourceAbilityId: options.sourceAbilityId ?? 0,
+      conflictPriority: options.conflictPriority ?? config.conflictPriority,
     });
     this.publishAdded(buff);
     return buff;
@@ -63,6 +157,11 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
   /** 查询一个Buff实例；调用者不得跨await长期保存返回的子Entity。 / Finds one Buff; callers must not retain the child Entity across await or its owner lifetime. */
   GetBuff(buffInstanceId: bigint): Buff | undefined {
     return this.TryGetChild(Buff, buffInstanceId);
+  }
+
+  /** 查询目标是否拥有某配置Buff；只用于同步规则判断，不要跨await保存返回实例。 / Tests for a configured Buff during synchronous rule checks; never retain the instance across await. */
+  HasBuffConfig(configId: number): boolean {
+    return this.GetChildren(Buff).some((buff) => buff.ConfigId === configId);
   }
 
   /** 移除Buff并触发RemoveAction和AOI移除事件；不存在时保持幂等。 / Removes a Buff, runs RemoveAction, and publishes its AOI removal; missing IDs are idempotent. */
@@ -104,6 +203,13 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
         tickIntervalMs: state.tickIntervalMs,
         nextTickAtMs: state.nextTickAtMs,
         revision: state.revision,
+        sourceUnitId: state.sourceUnitId,
+        sourceAbilityId: state.sourceAbilityId,
+        conflictPriority: state.conflictPriority,
+        restoringDamageAbsorberRemaining: state.damageAbsorberRemaining,
+        addAction: state.addAction,
+        tickAction: state.tickAction,
+        removeAction: state.removeAction,
         restoring: true,
       });
     }
@@ -155,5 +261,21 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
 function validateDuration(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`buff ${name} must be a non-negative integer: ${value}`);
+  }
+}
+
+function validateSourceUnitId(value: number): void {
+  validateConfigId(value, "sourceUnitId", true);
+}
+
+function validateConfigId(value: number, name: string, allowZero: boolean): void {
+  if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1)) {
+    throw new Error(`buff ${name} must be ${allowZero ? "a non-negative" : "a positive"} safe integer: ${value}`);
+  }
+}
+
+function validatePriority(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`buff conflictPriority must be a non-negative safe integer: ${value}`);
   }
 }

@@ -9,6 +9,8 @@ export const ActionType = {
   ChangeNumeric: 1,
   AddBuff: 2,
   RemoveBuff: 3,
+  DealDamage: 4,
+  RegisterDamageAbsorber: 5,
 } as const;
 
 export type ActionTypeValue = (typeof ActionType)[keyof typeof ActionType];
@@ -24,8 +26,11 @@ export interface ActionDefinition {
   readonly parameters: readonly bigint[];
 }
 
-/** Action执行时的来源信息；当前只保留Buff来源，未来Cast可复用。 / Source metadata for execution; Buff uses it now and Cast can reuse it later. */
+/** Action执行时的来源信息；Buff Tick和技能结算共享，禁止把Entity或Cast引用放入上下文。 / Shared source metadata for Buff ticks and skill resolution; Entity and Cast references are forbidden. */
 export interface ActionExecutionContext {
   readonly sourceBuffInstanceId?: bigint;
+  readonly sourceUnitId?: number;
+  readonly sourceAbilityId?: number;
+  readonly damageAbsorberAmountOverride?: bigint;
   readonly reason?: string;
 }
