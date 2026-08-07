@@ -7,7 +7,8 @@
 当前统一世界观：
 
 ```text
-Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) -> Component
+Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Component
+                                                               -> ActorUnit(mailbox, optional)
 ```
 
 ## Phase 0：工程与配置基础
@@ -241,7 +242,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit(Actor) 
 
 状态：完成（2026-07）。
 
-- Actor收口为Scene、Session、Unit三类mailbox目标的统称，业务不再继承泛化Actor基类。
+- Actor收口为Scene、Session、ActorUnit三类mailbox目标的统称；普通Unit不再默认创建mailbox，业务不创建泛化Actor包装类。
 - Login删除永久`LoginActor`；Login与Gate的客户端消息进入连接Session mailbox。
 - GateSession成为Entity，由SessionComponent统一创建、索引、断线销毁和停机清理。
 - Unit Handler公共API改为`unitRpcHandler/unitMessageHandler`，与Session Handler、Scene Handler形成三种明确入口。

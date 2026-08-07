@@ -1,4 +1,4 @@
-import { Unit, actor, lifecycle } from "../../../core/public";
+import { Unit, lifecycle } from "../../../core/public";
 import type { UnitNumericDelta } from "../../../generated/model/server/demo/protocol/messages";
 
 export interface AwakeMonsterUnit {
@@ -31,7 +31,6 @@ export interface MonsterSnapshot {
  * A monster is a regular map Unit without an account or Gate ownership.
  * Hotfix MonsterUnitSystem owns its AI, attack, and lifecycle rules.
  */
-@actor({ mailbox: "ordered" })
 @lifecycle({ awake: true, destroy: true })
 export class MonsterUnit extends Unit<[request: AwakeMonsterUnit]> {
   protected mapId = 0;

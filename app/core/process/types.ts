@@ -631,6 +631,7 @@ export abstract class EntryScene extends Scene {
     return this.ingressLength === 0 &&
       this.unorderedTasks.size === 0 &&
       this.orderedTask === undefined &&
+      this.Tasks.InFlightCount === 0 &&
       !this.mailboxBusy &&
       this.mailboxTasks.length === 0;
   }
@@ -712,6 +713,14 @@ export abstract class EntryScene extends Scene {
 
   /** 返回当前时点快照，不重置累计计数器。 / Returns a point-in-time snapshot without resetting cumulative counters. */
   metricsSnapshot(): SceneMetricsSnapshot {
+    const asyncInFlight = this.unorderedTasks.size +
+      (this.orderedTask ? 1 : 0) +
+      this.Tasks.InFlightCount;
+    this.metrics.maxAsyncInFlight = Math.max(
+      this.metrics.maxAsyncInFlight,
+      asyncInFlight,
+      this.Tasks.MaxInFlightCount,
+    );
     return {
       scene: this.self.name,
       sceneType: this.self.sceneType,
@@ -729,7 +738,7 @@ export abstract class EntryScene extends Scene {
       lastHandlerCostMs: this.metrics.lastHandlerCostMs,
       maxHandlerCostMs: this.metrics.maxHandlerCostMs,
       totalHandlerCostMs: this.metrics.totalHandlerCostMs,
-      asyncInFlight: this.unorderedTasks.size,
+      asyncInFlight,
       maxAsyncInFlight: this.metrics.maxAsyncInFlight,
       latencies: this.latencies.snapshot(),
       customMetrics: [],
@@ -766,7 +775,9 @@ export abstract class EntryScene extends Scene {
     return {
       outbound: this.drainOutbound(),
       metrics: includeMetrics ? this.metricsSnapshot() : undefined,
-      pendingAsync: this.orderedTask !== undefined || this.unorderedTasks.size > 0,
+      pendingAsync: this.orderedTask !== undefined ||
+        this.unorderedTasks.size > 0 ||
+        this.Tasks.InFlightCount > 0,
     };
   }
 
@@ -1429,7 +1440,7 @@ export abstract class EntryScene extends Scene {
               binding.handlerCtor = binding.binding.handlerCtor;
               binding.handler = new binding.handlerCtor();
             }
-            return binding.handler.handle(actor as Unit<any[]>, request, context);
+            return binding.handler.handle(actor as unknown as Unit<any[]>, request, context);
           });
         },
       });
@@ -1482,7 +1493,7 @@ export abstract class EntryScene extends Scene {
               binding.handlerCtor = binding.binding.handlerCtor;
               binding.handler = new binding.handlerCtor();
             }
-            return binding.handler.handle(actor as Unit<any[]>, message, context);
+            return binding.handler.handle(actor as unknown as Unit<any[]>, message, context);
           });
         },
       });

@@ -14,4 +14,5 @@ export const GameErrCode = {
   MonsterDead: 10013,
   MonsterTooFar: 10014,
   ItemNotUsable: 10015,
+  PlayerDead: 10016,
 } as const;

@@ -3,6 +3,7 @@ import "../../hotfix/demo/gate/handlers/C2G_EnterMapHandler";
 import "../../hotfix/demo/gate/handlers/C2G_LoginGateHandler";
 import "../../hotfix/demo/gate/handlers/C2G_MapSnapshotReadyHandler";
 import "../../hotfix/demo/gate/handlers/C2G_PingHandler";
+import "../../hotfix/demo/item/handlers/BeforeUseItemVetoHandlers";
 import "../../hotfix/demo/location/handlers/LocationHandlers";
 import "../../hotfix/demo/login/handlers/C2S_LoginHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_AttackMonsterHandler";

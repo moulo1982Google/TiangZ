@@ -4,6 +4,7 @@ import type { FindNavigationPath, M2C_AttackMonster, M2C_ToggleAutoAttack, M2G_T
 
 declare module "../../../model/demo/map/PlayerUnit" {
   interface PlayerUnit {
+    IsAlive(): boolean;
     Offline(reason: string): Promise<void>;
     SecondEnterMap(): PlayerSnapshot;
     Snapshot(): PlayerSnapshot;

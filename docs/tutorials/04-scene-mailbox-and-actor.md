@@ -29,7 +29,7 @@ await this.scenes.send(
 
 ## ordered 与 unordered
 
-配置 Scene、动态 Scene、Session、Unit 都可以是 mailbox owner：
+配置Scene、动态Scene、Session以及显式ActorUnit可以是mailbox owner；普通Unit不是：
 
 - `ordered`：当前 Handler 完成前不开始下一条消息，包括跨越 `await`。
 - `unordered`：异步 Handler 可以重叠；同步 CPU 代码仍串行执行。
@@ -40,9 +40,9 @@ await this.scenes.send(
 
 - Scene Handler：处理发给业务 Scene 的消息。
 - Session Handler：处理客户端连接消息，直接取得该连接 Session。
-- Unit Handler：处理发给玩家、怪物、NPC 的消息，直接取得目标 Unit。
+- Unit Handler：只处理发给可路由ActorUnit的消息，直接取得目标玩家等Unit；普通怪物/NPC由所属地图Component调用。
 
-Actor只是这三类 mailbox 目标的统称和底层路由术语，不是业务必须继承的第四种类型。
+Actor是“拥有mailbox并可被InstanceId路由”的能力。业务使用Scene、Session或ActorUnit表达它，不为普通身份创建第四种`XxxActor`包装类型。
 
 ## 为什么 send 不等待 Handler
 
@@ -76,7 +76,7 @@ player.DomainScene<MapScene>();
 units.Remove(unitId);
 ```
 
-Unit 同时也是 Actor：Unit 决定身份、生命周期和 mailbox；Component 承载状态与领域能力；Handler 可以组合多个 Component。
+Unit决定地图身份和生命周期，但不天然拥有mailbox。需要直接接收Unit Handler的玩家继承`ActorUnit`；由地图固定桶统一驱动的MonsterUnit直接继承`Unit`。Component继续承载状态与领域能力，Handler可以组合多个Component。
 
 Item、Buff、动态Quest等需要独立身份和生命周期、但不需要接收网络消息的对象继承`ChildEntity`。它们由Component创建和拥有：
 
@@ -175,7 +175,7 @@ export class MonsterPatrolComponent extends Component implements IUpdate {
 }
 ```
 
-`Update()` 必须同步，不要标记为 `async`。定时器可由Component或ChildEntity持有，所有者销毁后自动取消。它们挂在Unit或Session之下时，回调会进入所属Entity的mailbox：ordered mailbox正在等待异步Handler时，定时器回调会排队，不会重入状态。高数量Buff不要各自创建常驻重复Timer，应由BuffComponent合并调度最近到期项。
+`Update()`必须同步，不要标记为`async`。定时器可由Component或ChildEntity持有，所有者销毁后自动取消。它们挂在ActorUnit或Session之下时进入所属mailbox；挂在普通Unit下时使用本地Timer，不获得Actor串行保证。高数量Buff不要各自创建常驻重复Timer，应由BuffComponent合并调度最近到期项。
 
 默认固定帧为20Hz，框架还提供三个固定中低频桶，不允许业务填写任意Hz：
 

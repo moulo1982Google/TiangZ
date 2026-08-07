@@ -103,24 +103,55 @@ Prometheus暴露`tiangz_coroutine_lock_waiters`和`tiangz_coroutine_lock_timeout
 
 ## Scene内Event
 
-Event只用于同一Scene中彼此解耦的功能通知。API绑定当前Scene，不接受目标Scene，因此不能意外跨Scene。
+Event只用于同一Scene中彼此解耦的同步协作。API绑定当前Scene，不接受目标Scene，因此不能意外跨Scene。框架区分两种语义：
+
+- `SyncEvent`是已经发生的通知；监听器失败会记录日志，但不会改变发布方结果。
+- `VetoEvent`是尚未执行操作前的只读检查；按`order/id`稳定排序，第一个非放行码立即终止检查。
 
 ```ts
 export const PlayerEvents = {
   LevelChanged: defineSyncEvent<LevelChanged>("Player.LevelChanged"),
-  SaveRequested: defineAsyncEvent<SaveRequested>("Player.SaveRequested"),
+  BeforeUseItem: defineVetoEvent<BeforeUseItem, number>("Item.BeforeUse", 0),
 };
 
-@syncEventHandler(MapScene, PlayerEvents.LevelChanged)
+@syncEventHandler(MapScene, PlayerEvents.LevelChanged, { id: "player.level-changed.ui" })
 export class LevelChangedHandler implements SyncSceneEventHandler<MapScene, LevelChanged> {
   Handle(scene: MapScene, event: LevelChanged): void {}
 }
 
+@vetoEventHandler(MapScene, PlayerEvents.BeforeUseItem, {
+  id: "item.before-use.cooldown",
+  order: 200,
+})
+export class ItemCooldownVeto implements VetoSceneEventHandler<MapScene, BeforeUseItem, number> {
+  Handle(scene: MapScene, event: BeforeUseItem): number {
+    return event.cooldownActive ? GameErrCode.ItemNotUsable : 0;
+  }
+}
+
 scene.Events.Publish(PlayerEvents.LevelChanged, event);
-await scene.Events.PublishAsync(PlayerEvents.SaveRequested, event);
+const reason = scene.Events.Check(PlayerEvents.BeforeUseItem, event);
+if (reason !== 0) throw new RpcError(reason, "item use vetoed");
 ```
 
-同步Handler必须返回`void`，用于立即完成且不能等待I/O的通知。异步Handler返回`Promise<void>`，发布方必须`await`；多个异步监听器并发执行，单个失败会被记录并汇总到`failedCount`，不会阻止其他监听器。跨Scene、跨Process或需要目标mailbox顺序时使用类型化Message/RPC，而不是Event。
+两类Handler都禁止`async`、Promise和I/O。Veto Handler还必须只读，不能在检查过程中扣道具、加Buff或改Numeric，否则后续监听器否决时会留下半完成状态。监听器使用跨generation稳定的`id`，Hotfix原子替换实现；不要让每个玩家动态注册闭包。模块是否生效由监听器读取事件中的Unit/Component状态决定。
+
+## Scene后台任务
+
+调用方明确不等待结果、也不依赖完成时间的短异步工作使用`scene.Tasks.Spawn`：
+
+```ts
+scene.Tasks.Spawn("publish-auto-attack-state", async ({ signal }) => {
+  if (signal.aborted) return;
+  await publisher.Publish(state);
+});
+```
+
+`Spawn`不返回任务Promise，只返回可选的本地任务ID；框架统一捕获异常，并把任务计入Scene异步在途和Hotfix切换屏障。Scene销毁或主动`Cancel(id)`只更新TiangZ自带的轻量`signal.aborted/reason`，不依赖浏览器`AbortController`；JavaScript不能强制终止一个不配合的Promise。
+
+`Spawn`只适合有界短任务。否决检查、事务、玩家有序状态修改、需要响应的RPC不能放进去；永久循环会永久阻塞Hotfix。精确时间点和周期逻辑使用Entity Timer，需要Actor顺序的异步工作使用Message/RPC或Actor Timer。
+
+跨Scene、跨Process或需要目标mailbox顺序时使用类型化Message/RPC，而不是Event或`Spawn`。
 
 ## 验收
 
@@ -129,4 +160,4 @@ npm run test:runtime-foundation
 cargo test --locked watcher::tests::
 ```
 
-该自测覆盖合服ID、Timer参数与取消、所有权清理、按键串行锁和Scene事件隔离。
+该自测覆盖合服ID、Timer参数与取消、所有权清理、按键串行锁、Scene事件隔离、Veto首错终止和Spawn生命周期。

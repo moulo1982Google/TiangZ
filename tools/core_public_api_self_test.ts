@@ -4,10 +4,11 @@ import {
   EntryScene,
   ProcessHost,
   Scene,
-  Unit,
+  ActorUnit,
   UnitComponent,
   unitMessageHandler,
   component,
+  actor,
   lifecycle,
   transferable,
   entryScene,
@@ -71,7 +72,8 @@ class FixtureComponent extends Component<[initialValue: number]> implements ITra
   }
 }
 
-class FixtureUnit extends Unit {}
+@actor({ mailbox: "ordered" })
+class FixtureUnit extends ActorUnit {}
 
 @scene({ sceneType: "CoreTransferFixture" })
 class FixtureRuntimeScene extends Scene {}

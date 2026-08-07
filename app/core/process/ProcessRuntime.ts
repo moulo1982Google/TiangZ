@@ -98,6 +98,7 @@ export class ProcessRuntime implements LocalSceneRouter {
   /** 仅在没有待处理帧和异步业务任务时开放 Hotfix 提交屏障。 / Opens the Hotfix commit barrier only when no queued frame or asynchronous business task remains. */
   get CanCommitHotfix(): boolean {
     return this.lifecycleState === "ready" &&
+      this.processHost.SceneTaskInFlightCount === 0 &&
       this.entryScenes.every((scene) => scene.__canCommitHotfix());
   }
 
@@ -160,11 +161,14 @@ export class ProcessRuntime implements LocalSceneRouter {
     Game.Instance.Update(monotonicNow(), Date.now(), () => {
       for (const scene of this.entryScenes) startedAt.push(scene.__pumpMailbox(512));
     });
-    return mergeResults(
+    const result = mergeResults(
       this.entryScenes.map((scene, index) =>
         scene.__completeUpdate(startedAt[index] ?? monotonicNow(), includeMetrics)
       ),
     );
+    return this.processHost.SceneTaskInFlightCount === 0
+      ? result
+      : { ...result, pendingAsync: true };
   }
 
   hasLocalScene(name: string): boolean { return this.scenesByName.has(name); }

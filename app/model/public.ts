@@ -52,6 +52,7 @@ export {
 } from "./demo/gate/GatePlayerRoute";
 export { ItemComponent } from "./demo/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";
+export { ItemEvents, type BeforeUseItemEvent } from "./demo/item/ItemEvents";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
 export {
   ActionType,

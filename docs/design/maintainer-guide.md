@@ -43,7 +43,7 @@ EntryScene 同样是 Component 容器。入口 Scene class 负责声明业务边
 
 `ProcessHost.Root` 维护进程级 `InstanceId -> Entity` 索引。动态 Scene/Actor 创建后注册，销毁前移除。ActorRef 必须同时校验 sceneId、业务 actorId 和 InstanceId，禁止只凭可复用业务 ID 调度旧引用。
 
-地图实体统一使用 `Unit`，连接统一使用`Session`。二者在Core内部复用mailbox实体实现，但泛化`Actor`不是Stable业务基类。MapScene的UnitComponent是UnitId业务集合；SessionComponent是connectionId集合；Root是InstanceId生命周期集合，三者职责不能混用。
+地图实体统一使用`Unit`，连接统一使用`Session`。普通Unit由UnitComponent本地拥有，不进入Actor路由；需要直接消息寻址的Unit显式继承`ActorUnit`并声明`@actor`。MapScene的UnitComponent统一索引两类Unit，SessionComponent是connectionId集合，Root是全部InstanceId生命周期集合，三者职责不能混用。
 
 ## 批量下行 Bridge
 
@@ -97,7 +97,7 @@ ActorLocation 外层不是 protobuf，固定为：
 
 EntryScene 和 Actor mailbox scheduler 都保留同步快路径。ordered Handler 返回 Promise 后保持 busy，后续任务排队；同步 Actor Handler 在 mailbox 空闲时直接返回，不强制创建 Promise；unordered 直接启动。单向 send 不向发送方等待。
 
-方法级`@rpc/@message`与class级`@rpcHandler/@messageHandler`注册到Scene ProtocolRegistry。`@sessionRpcHandler/@sessionMessageHandler`先按connectionId取得Session，再进入Session MailBoxComponent。`@unitRpcHandler/@unitMessageHandler`注册到内部ActorLocation ProtocolRegistry，先由Root按InstanceId定位Unit，再进入Unit MailBoxComponent。业务API不暴露泛化Actor Handler。
+方法级`@rpc/@message`与class级`@rpcHandler/@messageHandler`注册到Scene ProtocolRegistry。`@sessionRpcHandler/@sessionMessageHandler`先按connectionId取得Session，再进入Session MailBoxComponent。`@unitRpcHandler/@unitMessageHandler`只能绑定ActorUnit，先由Root按InstanceId定位，再进入其MailBoxComponent；绑定普通Unit会在启动前报错。
 
 动态 Scene/Actor mailbox 位于 `app/core/runtime`。修改任一层时必须运行 mailbox parity 测试。
 

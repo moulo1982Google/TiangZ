@@ -1,4 +1,4 @@
-import { Unit, actor, lifecycle } from "../../../core/public";
+import { ActorUnit, actor, lifecycle } from "../../../core/public";
 import type { UnitNumericDelta } from "../../../generated/model/server/demo/protocol/messages";
 
 export interface AwakePlayerUnit {
@@ -61,7 +61,7 @@ export interface NavigatePlayerInput {
 /** 玩家权威业务跨await保持串行；Gate连接和无状态入口不继承这个边界。 / Keeps authoritative player work serialized across awaits without imposing this boundary on Gate sessions or stateless entry scenes. */
 @actor({ mailbox: "ordered" })
 @lifecycle({ awake: true })
-export class PlayerUnit extends Unit<[request: AwakePlayerUnit]> {
+export class PlayerUnit extends ActorUnit<[request: AwakePlayerUnit]> {
   protected account = "";
   protected mapId = 0;
   protected mapInstanceId = 0n;

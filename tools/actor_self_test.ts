@@ -1,16 +1,22 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { Actor, ChildEntity, Component } from "../app/core/runtime/entities";
+import {
+  Actor,
+  ChildEntity,
+  Component,
+  type ActorRuntimeEntity,
+} from "../app/core/runtime/entities";
 import { Game, InitializeGameSingletons } from "../app/core/runtime/Game";
 import { ProcessHost } from "../app/core/runtime/host";
 import { MailBoxComponent } from "../app/core/runtime/MailBoxComponent";
 import { Session } from "../app/core/runtime/Session";
 import { actor, component } from "../app/core/runtime/metadata";
 import { SingletonRegistry } from "../app/core/runtime/Singleton";
-import { UnitComponent } from "../app/core/runtime/Unit";
+import { ActorUnit, Unit, UnitComponent } from "../app/core/runtime/Unit";
 import { MapScene } from "../app/model/demo/map/MapScene";
 import { PlayerUnit } from "../app/model/demo/map/PlayerUnit";
+import { MonsterUnit } from "../app/model/demo/monster/MonsterUnit";
 import { GateSession } from "../app/model/demo/gate/GateSession";
 import { PositionComponent } from "../app/model/demo/map/PositionComponent";
 import { UnitGateComponent } from "../app/model/demo/map/UnitGateComponent";
@@ -47,6 +53,7 @@ async function main(): Promise<void> {
   try {
     HotfixSystem.Begin(testHotfixManifest("actor-normal"));
     await import("../app/hotfix/demo/map/PlayerUnitSystem");
+    await import("../app/hotfix/demo/monster/MonsterUnitSystem");
     await import("../app/hotfix/demo/numeric/NumericComponentSystem");
     await import("../app/hotfix/demo/item/ItemSystem");
     await import("../app/hotfix/demo/item/ItemComponentSystem");
@@ -402,6 +409,44 @@ async function testPlayerUnitComponents(): Promise<void> {
   await assertUnorderedMailbox(host, gateSession);
   assert.equal(map.DespawnActor(99_001), true);
   const units = map.AddComponent(UnitComponent);
+  const localUnit = units.Create(900, LocalProbeUnit);
+  assert.equal(localUnit.Parent, units);
+  assert.equal(localUnit.HasComponent(MailBoxComponent), false);
+  assert.equal(host.Root.Get(localUnit.InstanceId), localUnit);
+  await assert.rejects(
+    host.runActorMailbox(localUnit.InstanceId, () => undefined),
+    /actor instance not found/,
+  );
+  assert.throws(
+    () => units.Create(901, InvalidDecoratedUnit),
+    /@actor Unit must extend ActorUnit/,
+  );
+  assert.throws(
+    () => units.Create(902, MissingDecoratorActorUnit),
+    /ActorUnit must declare @actor/,
+  );
+  assert.throws(
+    () => map.SpawnActor(903, MissingDecoratorActorUnit),
+    /ActorUnit must declare @actor/,
+  );
+  assert.equal(units.Remove(900), localUnit);
+  assert.equal(localUnit.IsDisposed, true);
+
+  const monster = units.Create(910, MonsterUnit, {
+    mapId: 1,
+    mapInstanceId: 1n,
+    areaId: 7,
+    monsterConfigId: 1,
+  });
+  assert.equal(monster.AreaId, 7);
+  assert.equal(monster.HasComponent(MailBoxComponent), false);
+  await assert.rejects(
+    host.runActorMailbox(monster.InstanceId, () => undefined),
+    /actor instance not found/,
+  );
+  assert.equal(units.Remove(910), monster);
+  assert.equal(monster.IsDisposed, true);
+
   const player = units.Create(1000, PlayerUnit, {
     account: "tester",
     mapId: 1,
@@ -507,9 +552,13 @@ async function testPlayerUnitComponents(): Promise<void> {
   const { ItemComponentSystem } = await import(
     "../app/hotfix/demo/item/ItemComponentSystem"
   );
+  const { MonsterUnitSystem } = await import(
+    "../app/hotfix/demo/monster/MonsterUnitSystem"
+  );
   systemFor(NumericComponent)(NumericComponentSystem);
   systemFor(Item)(ItemSystem);
   systemFor(ItemComponent)(ItemComponentSystem);
+  systemFor(MonsterUnit)(MonsterUnitSystem);
   HotfixSystem.Commit();
   assert.equal(
     player.Move({ inputX: 0, inputZ: 1, sequence: 6 }),
@@ -546,7 +595,10 @@ async function testPlayerUnitComponents(): Promise<void> {
 }
 
 /** 验证unordered Actor不会让一个等待中的RPC阻塞后续无关调用。 / Verifies that an awaiting unordered Actor does not block a later unrelated call. */
-async function assertUnorderedMailbox(host: ProcessHost, actor: Actor<any[]>): Promise<void> {
+async function assertUnorderedMailbox(
+  host: ProcessHost,
+  actor: ActorRuntimeEntity<any[]>,
+): Promise<void> {
   let release!: () => void;
   const blocker = new Promise<void>((resolve) => release = resolve);
   const first = Promise.resolve(host.runActorMailbox(actor.InstanceId, () => blocker));
@@ -557,7 +609,10 @@ async function assertUnorderedMailbox(host: ProcessHost, actor: Actor<any[]>): P
 }
 
 /** 验证ordered PlayerUnit会把后续调用保留到前一个异步事务完成。 / Verifies that an ordered PlayerUnit retains a later call until the previous async transaction completes. */
-async function assertOrderedMailbox(host: ProcessHost, actor: Actor<any[]>): Promise<void> {
+async function assertOrderedMailbox(
+  host: ProcessHost,
+  actor: ActorRuntimeEntity<any[]>,
+): Promise<void> {
   let release!: () => void;
   const blocker = new Promise<void>((resolve) => release = resolve);
   const first = Promise.resolve(host.runActorMailbox(actor.InstanceId, () => blocker));
@@ -571,6 +626,13 @@ async function assertOrderedMailbox(host: ProcessHost, actor: Actor<any[]>): Pro
   await Promise.all([first, second]);
   assert.equal(secondRan, true);
 }
+
+class LocalProbeUnit extends Unit {}
+
+@actor({ mailbox: "ordered" })
+class InvalidDecoratedUnit extends Unit {}
+
+class MissingDecoratorActorUnit extends ActorUnit {}
 
 @actor({ mailbox: "ordered" })
 class OrderedProbeActor extends Actor {

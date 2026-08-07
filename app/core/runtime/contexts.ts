@@ -6,12 +6,15 @@ import type {
   ActorRef,
   SceneRef,
 } from "./types";
-import type { Actor } from "./entities";
+import type { ActorRuntimeEntity } from "./entities";
 import type {
   ChildEntity,
   ChildEntityAwakeArgs,
   ChildEntityCtor,
   Component,
+  OwnedEntity,
+  OwnedEntityAwakeArgs,
+  OwnedEntityCtor,
 } from "./entities";
 import type { MaybePromise } from "../async";
 import type { TimerId } from "./TimerSystem";
@@ -36,7 +39,7 @@ export class SceneContext {
   }
 
   /** 在本 Scene 内创建并挂载 Actor。 / Creates and attaches an Actor inside this Scene. */
-  spawnActor<T extends Actor<any[]>>(
+  spawnActor<T extends ActorRuntimeEntity<any[]>>(
     actorId: ActorId,
     ctor: ActorCtor<T>,
     ...awakeArgs: ActorAwakeArgs<T>
@@ -71,6 +74,30 @@ export class SceneContext {
     child: ChildEntity<any[]>,
   ): boolean {
     return this.host.despawnChild(this.self.sceneId, parent, child);
+  }
+
+  /** 创建由框架容器拥有且没有mailbox的本地Entity。 / Creates a local Entity owned by a framework container and without a mailbox. */
+  spawnOwned<T extends OwnedEntity<any[]>>(
+    parent: Component<any[]>,
+    id: import("./types").EntityId,
+    ctor: OwnedEntityCtor<T>,
+    ...awakeArgs: OwnedEntityAwakeArgs<T>
+  ): T {
+    return this.host.spawnOwned(
+      this.self.sceneId,
+      parent,
+      id,
+      ctor,
+      ...awakeArgs,
+    );
+  }
+
+  /** 销毁框架容器拥有的本地Entity。 / Destroys a local Entity owned by a framework container. */
+  despawnOwned(
+    parent: Component<any[]>,
+    entity: OwnedEntity<any[]>,
+  ): boolean {
+    return this.host.despawnOwned(this.self.sceneId, parent, entity);
   }
 
   /** 解析当前上下文所属的 Scene Entity。 / Resolves this context's owning Scene Entity. */
@@ -113,9 +140,9 @@ export class ActorContext {
   /** 通过当前 Actor mailbox 调度一次性回调。 / Schedules a one-shot callback through this Actor's mailbox. */
   newOnceTimer(
     delayMs: number,
-    callback: (actor: Actor<any[]>) => MaybePromise<void>,
+    callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
     onCancelled?: (
-      actor: Actor<any[]>,
+      actor: ActorRuntimeEntity<any[]>,
       context: TimerCancelledContext,
     ) => MaybePromise<void>,
   ): TimerId {
@@ -130,9 +157,9 @@ export class ActorContext {
   /** 通过当前 Actor mailbox 调度重复回调。 / Schedules repeated callbacks through this Actor's mailbox. */
   newRepeatedTimer(
     intervalMs: number,
-    callback: (actor: Actor<any[]>) => MaybePromise<void>,
+    callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
     onCancelled?: (
-      actor: Actor<any[]>,
+      actor: ActorRuntimeEntity<any[]>,
       context: TimerCancelledContext,
     ) => MaybePromise<void>,
   ): TimerId {

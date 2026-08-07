@@ -17,7 +17,7 @@ Developer Tools 的设计助手使用相同的稳定规则ID生成建议。文�
 
 ```text
 需要独立部署或跨进程寻址？ -> EntryScene
-需要独立mailbox和消息串行？ -> Scene、Session或Unit
+需要独立mailbox和消息串行？ -> Scene、Session或ActorUnit
 有稳定身份和独立生命周期，但不接收网络消息？ -> ChildEntity
 只是宿主的一组状态或能力？ -> Component字段、Map、数组或Numeric
 ```

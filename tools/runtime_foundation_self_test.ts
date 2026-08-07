@@ -12,12 +12,12 @@ import {
 } from "../app/core/runtime/IdSystem";
 import { scene } from "../app/core/runtime/metadata";
 import {
-  asyncEventHandler,
-  defineAsyncEvent,
   defineSyncEvent,
+  defineVetoEvent,
   syncEventHandler,
-  type AsyncSceneEventHandler,
+  vetoEventHandler,
   type SyncSceneEventHandler,
+  type VetoSceneEventHandler,
 } from "../app/core/runtime/SceneEventSystem";
 import { SingletonRegistry } from "../app/core/runtime/Singleton";
 import type { TimerCancelledContext } from "../app/core/runtime/TimerSystem";
@@ -25,30 +25,44 @@ import { TimeSystem } from "../app/core/runtime/TimeSystem";
 import { TimerSystem } from "../app/core/runtime/TimerSystem";
 
 interface FoundationSyncEvent { readonly value: number }
-interface FoundationAsyncEvent { readonly value: number }
+interface FoundationVetoEvent { readonly blocked: boolean }
 const FoundationEvents = {
   Sync: defineSyncEvent<FoundationSyncEvent>("Foundation.Sync"),
-  Async: defineAsyncEvent<FoundationAsyncEvent>("Foundation.Async"),
+  Veto: defineVetoEvent<FoundationVetoEvent, number>("Foundation.Veto", 0),
 } as const;
 
 @scene({ sceneType: "Foundation" })
 class FoundationScene extends Scene {
   syncTotal = 0;
-  asyncTotal = 0;
+  vetoChecks: string[] = [];
 }
 
-@syncEventHandler(FoundationScene, FoundationEvents.Sync)
+@syncEventHandler(FoundationScene, FoundationEvents.Sync, { id: "foundation.sync" })
 class FoundationSyncHandler implements SyncSceneEventHandler<FoundationScene, FoundationSyncEvent> {
   Handle(scene: FoundationScene, event: FoundationSyncEvent): void {
     scene.syncTotal += event.value;
   }
 }
 
-@asyncEventHandler(FoundationScene, FoundationEvents.Async)
-class FoundationAsyncHandler implements AsyncSceneEventHandler<FoundationScene, FoundationAsyncEvent> {
-  async Handle(scene: FoundationScene, event: FoundationAsyncEvent): Promise<void> {
-    await Promise.resolve();
-    scene.asyncTotal += event.value;
+@vetoEventHandler(FoundationScene, FoundationEvents.Veto, {
+  id: "foundation.veto.first",
+  order: 10,
+})
+class FoundationFirstVetoHandler implements VetoSceneEventHandler<FoundationScene, FoundationVetoEvent, number> {
+  Handle(scene: FoundationScene, event: FoundationVetoEvent): number {
+    scene.vetoChecks.push("first");
+    return event.blocked ? 7001 : 0;
+  }
+}
+
+@vetoEventHandler(FoundationScene, FoundationEvents.Veto, {
+  id: "foundation.veto.second",
+  order: 20,
+})
+class FoundationSecondVetoHandler implements VetoSceneEventHandler<FoundationScene, FoundationVetoEvent, number> {
+  Handle(scene: FoundationScene, _event: FoundationVetoEvent): number {
+    scene.vetoChecks.push("second");
+    return 0;
   }
 }
 
@@ -81,7 +95,7 @@ async function main(): Promise<void> {
     testTimeSemantics();
     testTimerArgumentsAndCancellation();
     await testCoroutineLockIsolation();
-    await testSceneEvents();
+    await testSceneEventsAndTasks();
     console.log("runtime foundation self-test passed");
   } finally {
     SingletonRegistry.DestroyAll();
@@ -191,7 +205,7 @@ async function testCoroutineLockIsolation(): Promise<void> {
   );
 }
 
-async function testSceneEvents(): Promise<void> {
+async function testSceneEventsAndTasks(): Promise<void> {
   const host = new ProcessHost("foundation-event");
   const first = host.spawnScene("first", FoundationScene);
   const second = host.spawnScene("second", FoundationScene);
@@ -200,12 +214,39 @@ async function testSceneEvents(): Promise<void> {
   assert.equal(first.syncTotal, 2);
   assert.equal(second.syncTotal, 0);
 
-  const asyncResult = await first.Events.PublishAsync(FoundationEvents.Async, { value: 3 });
-  assert.deepEqual(asyncResult, { handlerCount: 1, failedCount: 0 });
-  assert.equal(first.asyncTotal, 3);
-  assert.equal(second.asyncTotal, 0);
+  assert.equal(first.Events.Check(FoundationEvents.Veto, { blocked: false }), 0);
+  assert.deepEqual(first.vetoChecks, ["first", "second"]);
+  first.vetoChecks.length = 0;
+  assert.equal(first.Events.Check(FoundationEvents.Veto, { blocked: true }), 7001);
+  assert.deepEqual(first.vetoChecks, ["first"]);
+
+  let releaseTask!: () => void;
+  const taskGate = new Promise<void>((resolve) => releaseTask = resolve);
+  let taskSignal: { readonly aborted: boolean } | undefined;
+  const taskId = first.Tasks.Spawn("foundation-task", async ({ signal }) => {
+    taskSignal = signal;
+    await taskGate;
+  });
+  assert.ok(taskId > 0);
+  assert.equal(first.Tasks.InFlightCount, 1);
+  assert.equal(host.SceneTaskInFlightCount, 1);
+  await Promise.resolve();
+  assert.equal(taskSignal?.aborted, false);
+  releaseTask();
+  await taskGate;
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  assert.equal(first.Tasks.InFlightCount, 0);
+  assert.equal(host.SceneTaskInFlightCount, 0);
+
+  let disposedSignal: { readonly aborted: boolean } | undefined;
+  first.Tasks.Spawn("dispose-task", async ({ signal }) => {
+    disposedSignal = signal;
+    await new Promise<void>(() => undefined);
+  });
+  await Promise.resolve();
   const staleEvents = first.Events;
   host.Dispose();
+  assert.equal(disposedSignal?.aborted, true);
   assert.throws(
     () => staleEvents.Publish(FoundationEvents.Sync, { value: 1 }),
     /disposed Scene/,

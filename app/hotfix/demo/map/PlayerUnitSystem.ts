@@ -38,6 +38,11 @@ export class PlayerUnitSystem extends PlayerUnit {
     this.mapInstanceId = request.mapInstanceId;
   }
 
+  /** 返回Rust权威存活状态的业务只读投影；外部规则不得直接读取NativeUnitRef。 / Returns the business read-only projection of Rust-authoritative liveness so external rules never read NativeUnitRef directly. */
+  IsAlive(): boolean {
+    return this.GetComponent(NativeUnitRef).alive !== 0;
+  }
+
   /** 只持久化本玩家一次；重复断线或停机路径共享同一个保存 Promise。 / Persists this player once; repeated disconnect and stop paths share the same save Promise. */
   Offline(reason: string): Promise<void> {
     return this.GetComponent(PlayerPersistenceComponent).SaveOnOffline(reason);
@@ -181,8 +186,8 @@ export class PlayerUnitSystem extends PlayerUnit {
     combat.SetAutoAttackInterval(readAttackIntervalMs(this.GetComponent(NumericComponent)));
     const state = combat.ToggleAutoAttack(targetUnitId, enabled);
     const map = this.DomainScene().GetComponent(MapComponent);
-    void map.PublishAutoAttackState(this, state).catch((error) => {
-      this.DomainScene().logger.error("auto attack state publish failed", { error });
+    this.DomainScene().Tasks.Spawn("publish-auto-attack-state", async () => {
+      await map.PublishAutoAttackState(this, state);
     });
     return toAutoAttackResponse(state);
   }

@@ -4,11 +4,13 @@ import {
   GameConfigs,
   GameErrCode,
   ItemComponent,
+  ItemEvents,
   type M2C_UseItem,
   MapComponent,
   MapProtocol,
   PlayerUnit,
   RpcError,
+  SystemErrCode,
   unitRpcHandler,
   type UnitRpcHandler,
 } from "#tiangz/model";
@@ -34,8 +36,13 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
     const current = inventory.GetItem(request.itemId);
     if (!current) throw new RpcError(GameErrCode.ItemNotFound, `item not found: ${request.itemId}`);
     const itemConfig = GameConfigs.ItemConfig.Get(current.configId);
-    if (itemConfig.useEffect === 0) {
-      throw new RpcError(GameErrCode.ItemNotUsable, `item is not usable: ${current.configId}`);
+    const vetoReason = unit.DomainScene().Events.Check(ItemEvents.BeforeUse, {
+      unit,
+      item: current,
+      config: itemConfig,
+    });
+    if (vetoReason !== SystemErrCode.Success) {
+      throw new RpcError(vetoReason, `item use vetoed: ${current.configId}`);
     }
     const action = ActionFromConfig(
       itemConfig.useEffect === 1 ? ActionType.AddBuff : ActionType.ChangeNumeric,

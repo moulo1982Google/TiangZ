@@ -101,7 +101,7 @@ await dynamicMaps.Dispose(dungeonInstanceId);
 
 销毁非空地图会失败。框架不会暗中踢人、保存玩家或选择入口地图。MapHost本地`DynamicMapLifecycleComponent`会在地图连续无人五分钟后兜底销毁，但业务不能依赖该延时完成正常副本流程。
 
-静态地图和动态副本的本地销毁顺序完全相同：地图先清理玩家和其他Unit，再让仍在AOI中的Unit执行`Detach`，随后销毁Actor和Scene。只有动态副本在本地Scene销毁成功后，MapHost才向MapManager发送`MapHostControl.DynamicMapDisposed`，让Manager减少动态实例负载；通知失败会由MapHostRegistration在后续注册/心跳中重试。业务不需要手写这条通知。
+静态地图和动态副本的本地销毁顺序完全相同：地图先清理玩家和其他Unit，再让仍在AOI中的Unit执行`Detach`，随后统一通过`UnitComponent.Remove`销毁普通Unit或ActorUnit，最后销毁Scene。只有动态副本在本地Scene销毁成功后，MapHost才向MapManager发送`MapHostControl.DynamicMapDisposed`，让Manager减少动态实例负载；通知失败会由MapHostRegistration在后续注册/心跳中重试。业务不需要手写这条通知。
 
 ## 玩家重新上线
 

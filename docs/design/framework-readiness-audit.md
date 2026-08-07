@@ -70,7 +70,7 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 
 ### 0.3.10-alpha.5至alpha.7进展
 
-已完成：`app/model`与`app/hotfix`分层、`model.js/hotfix.js`双Bundle及manifest、实际文件SHA-256校验、隔离V8预检、staging registry、prototype与Scene/Session/Unit Handler事务提交、失败回滚和边界自测。Runtime启动时先安装Hotfix generation 1，再开放服务。
+已完成：`app/model`与`app/hotfix`分层、`model.js/hotfix.js`双Bundle及manifest、实际文件SHA-256校验、隔离V8预检、staging registry、prototype与Scene/Session/ActorUnit Handler事务提交、失败回滚和边界自测。Runtime启动时先安装Hotfix generation 1，再开放服务。
 
 已完成Watcher触发、Rust有界投递屏障、30秒默认排空超时、失败保留旧generation、Prometheus分段指标和3000玩家1Hz Reload A/B。`0.3.10-alpha.7`进一步使用固定脚本名IIFE执行Hotfix，避免ESM ModuleMap和每代脚本URL积累；8秒慢RPC屏障等待约7.7秒后正常提交；Component/Actor一次性与重复Timer均按方法名解析当前prototype；5个拆分Process连续切换100次至generation 101并拒绝损坏候选。预热10代后的90代测量中，Timer、Native实体和pending无漂移，V8 Heap/RSS增长通过4MB/16MB硬门槛。R2闭环完成。
 

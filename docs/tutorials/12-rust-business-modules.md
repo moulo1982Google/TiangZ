@@ -46,13 +46,13 @@ src/game/
 
 ```text
 网络帧
-  -> TS Scene/Session/Unit路由
+  -> TS Scene/Session/ActorUnit路由
   -> Actor mailbox
   -> 生成或手写的薄Native适配器
   -> src/game领域模块
 ```
 
-Rust算法不能绕过Location、地图传送屏障、RPC错误处理或mailbox。未来Native Handler codegen可以消除手写TS适配器，但不能改变这条顺序。只有Ping、握手等不访问业务Actor的基础设施控制帧可以在Rust网络入口直接消费。
+Rust算法不能绕过Location、地图传送屏障、RPC错误处理或mailbox。普通Unit没有这条Actor路由，由所属地图Component调用Rust批处理。未来Native Handler codegen可以消除手写TS适配器，但不能改变ActorUnit链路。只有Ping、握手等不访问业务Actor的基础设施控制帧可以在Rust网络入口直接消费。
 
 ## Buff建议形态
 

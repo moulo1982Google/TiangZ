@@ -35,14 +35,15 @@
 
 `IUpdate.Update()` 不允许返回 Promise。需要异步串行语义时使用消息或 Actor 定时器，让它进入 mailbox；不要在每帧 Update 内堆积未完成的异步任务。
 
-## ID、协程锁与Scene事件
+## ID、协程锁、Scene事件与后台任务
 
 - 每个Entity都有业务`Id`和本次生命周期`InstanceId`；只持久化需要长期存在的`Id`，永远不保存`InstanceId`。
 - `GlobalIdSystem.Next()`生成可合服的63位`bigint`持久ID；JSON边界转十进制字符串，protobuf使用`uint64`。
 - `scene.Locks.RunExclusive(domain, key, callback)`只在当前Scene/Process内按业务键串行；无竞争时同步进入回调，已占用时才异步等待。跨Process先路由到唯一所有者。
-- `scene.Events.Publish(syncDescriptor, event)`同步发布当前Scene事件。
-- `await scene.Events.PublishAsync(asyncDescriptor, event)`并发执行当前Scene的异步监听器。
-- `defineSyncEvent/defineAsyncEvent`定义稳定事件描述；`@syncEventHandler/@asyncEventHandler`注册Hotfix监听器。
+- `scene.Events.Publish(syncDescriptor, event)`同步发布当前Scene的事后通知；失败监听器会记录并继续。
+- `scene.Events.Check(vetoDescriptor, event)`同步运行操作前否决链并返回第一个非放行错误码。
+- `defineSyncEvent/defineVetoEvent`定义稳定事件描述；`@syncEventHandler/@vetoEventHandler`按稳定`id`注册Hotfix监听器。所有Event Handler都禁止异步。
+- `scene.Tasks.Spawn(name, body)`启动调用方不等待的短任务，异常统一记录并纳入Hotfix排空；`Cancel(id)`只发送协作取消信号。
 
 完整约束和示例见[运行时基础能力](../design/runtime-foundations.md)。
 
@@ -75,12 +76,12 @@
 - `@rpcHandler(SceneType, descriptor)`：把独立 Handler class 绑定到指定 EntryScene 的 RPC。
 - `@messageHandler(SceneType, descriptor)`：把独立 Handler class 绑定到指定 EntryScene 的单向消息。
 - `@sessionRpcHandler(SceneType, descriptor)` / `@sessionMessageHandler(...)`：绑定客户端连接消息，Handler 直接取得 Session。
-- `@unitRpcHandler(UnitType, descriptor)` / `@unitMessageHandler(...)`：绑定 Unit 消息，Handler 直接取得 Unit。
+- `@unitRpcHandler(ActorUnitType, descriptor)` / `@unitMessageHandler(...)`：绑定可路由ActorUnit消息，Handler直接取得目标ActorUnit；普通Unit不能注册。
 - `@scene/@actor/@component`：注册Scene、Actor与Component元数据。Session基类声明unordered，PlayerUnit等权威Actor显式声明ordered；Actor子类继承最近的基类mailbox声明。
 - `@systemFor(ModelType)`：声明必需的Hotfix业务System；公开方法由codegen合并到Model类型，受保护的`Awake/OnDestroy`参与生命周期。System不能声明字段、构造或静态成员。
 - `@hotfixFor(ModelType)`：兼容旧版可选方法补丁；新业务默认使用`@systemFor`，因为它会校验每个generation都提供完整System。
 
-`@rpc/@message` 方法装饰器继续兼容小型 Scene。业务增长后优先使用独立 Handler class；Scene、Session、Unit 三类 Handler 分别表达目标身份，不要求开发者理解内部 Actor 基类。相同目标类型、相同 msgcode 重复绑定会在启动前抛错。
+`@rpc/@message`方法装饰器继续兼容小型Scene。业务增长后优先使用独立Handler class；Scene、Session、ActorUnit三类Handler分别表达目标身份。相同目标类型、相同msgcode重复绑定会在启动前抛错。
 
 ## SceneMessageHelper
 
@@ -97,18 +98,19 @@
 - `spawnScene/despawnScene`。
 - `spawnActor(sceneId, actorId, Type, ...awakeArgs)/despawnActor`；Actor 参数由其 `Actor<[...args]>` 类型约束，并由框架同步调用一次 `Awake`。
 - `Root.Get(instanceId)`：O(1) 获取当前生命周期 Entity。
-- `runActorMailbox(instanceId, callback)`：Session/Unit Handler 与 Actor 定时器共用的类型化 mailbox 底层入口。
+- `runActorMailbox(instanceId, callback)`：Session/ActorUnit Handler与Actor定时器共用的类型化mailbox底层入口。
 
-普通业务不直接调用 `ProcessHost`。内部 Scene 通讯使用 `SceneMessageHelper` 和生成 descriptor；Session/Unit 消息由类型化 Handler 自动进入目标 mailbox。Runtime 不再提供 `@handler("字符串")`、`ProcessHost.call/send` 这条旁路。
+普通业务不直接调用`ProcessHost`。内部Scene通讯使用`SceneMessageHelper`和生成descriptor；Session/ActorUnit消息由类型化Handler自动进入目标mailbox。普通Unit由所属Component直接调用，不存在消息旁路。Runtime不再提供`@handler("字符串")`、`ProcessHost.call/send`。
 
 ## Unit 与 UnitComponent
 
-- `Unit` 继承 Actor，玩家、怪物和 NPC 使用同一实体基类。
-- `Unit.Id/UnitId` 是业务 ID；`Unit.InstanceId` 是本次生命周期 Actor 地址。
+- `Unit`是统一地图实体基类，默认没有Mailbox和Actor路由；怪物、NPC和批量更新对象直接继承它。
+- `ActorUnit extends Unit`显式增加Mailbox能力；PlayerUnit继承ActorUnit并声明`@actor({ mailbox: "ordered" })`。
+- `Unit.Id/UnitId`是业务ID；所有Unit都有生命周期`InstanceId`，但只有ActorUnit的InstanceId可以作为Actor地址。
 - `Unit.Parent` 指向所在地图的 `UnitComponent`。
 - `Unit.DomainScene()` 直接取得所在动态 MapScene。
 - `UnitComponent.Create/Get/Remove/GetAll` 按 UnitId 管理地图全部 Unit。
-- Unit 销毁必须经过 UnitComponent/ProcessHost，保证 Unit 集合、Root 和 mailbox 同步移除。
+- Unit销毁必须经过UnitComponent：普通Unit同步移除所有权和Root，ActorUnit还会同步移除Actor路由与Mailbox。
 - `MailBoxComponent` 挂在每个 Actor 上，当前支持 ordered/unordered。
 
 ## Entity 与 Component

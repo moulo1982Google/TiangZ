@@ -137,7 +137,7 @@ npm run verify:core-api
 
 ### 0.3.10-alpha.3
 
-- Actor明确收敛为Scene、Session、Unit三类mailbox目标的统称，不再作为业务需要继承的Stable基类。
+- 当时Actor收敛为Scene、Session、Unit三类mailbox目标的统称；`0.4.0`随后把普通Unit与Actor能力继续拆开，当前只有ActorUnit拥有Unit mailbox。
 - 删除`Actor`、`@actor`、`@handler`、`actorRpcHandler/actorMessageHandler`等旧Stable入口；Unit协议迁移到`unitRpcHandler/unitMessageHandler`。
 - 新增`Session`、`SessionComponent`与`sessionRpcHandler/sessionMessageHandler`。客户端连接消息直接进入unordered Session mailbox；需要一致性的业务按稳定Key显式使用协程锁，PlayerUnit等权威Actor独立声明ordered。
 - 删除只为登录串行而存在的`LoginActor`；Login和Gate均使用独立Session Handler，Gate会话状态统一保存在GateSession Entity。
@@ -145,7 +145,7 @@ npm run verify:core-api
 
 ### 0.3.10-alpha.4
 
-- Runtime彻底删除字符串`@handler`、动态组件Handler hooks与`ProcessHost.call/send`旁路，Scene/Session/Unit统一使用生成descriptor和类型化Handler。
+- Runtime彻底删除字符串`@handler`、动态组件Handler hooks与`ProcessHost.call/send`旁路，Scene/Session/ActorUnit统一使用生成descriptor和类型化Handler。
 - Stable入口移除不再承载可调用语义的`MessageTarget`，同时删除未使用的`ISocial*`与`IRank*`预设协议基类。
 - `app/generated`只生成服务端协议；客户端生成物以`client_sdk/typescript/Generated`为唯一来源。
 - 正常bundle不再包含Bench Scene和压测Handler；测试与性能脚本迁移到`build:bench`。

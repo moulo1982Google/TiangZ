@@ -6,7 +6,8 @@ import type {
 } from "../protocol/message";
 import type { ProtocolContext } from "../protocol/registry";
 import type { AnyRpcDescriptor, RpcDescriptor } from "../protocol/rpc";
-import type { Unit } from "../runtime/Unit";
+import { ActorUnit, type Unit } from "../runtime/Unit";
+import { getActorOptions } from "../runtime/metadata";
 import { HotfixBindingStore } from "../hotReload/HotfixSystem";
 
 type AnyUnit = Unit<any[]>;
@@ -57,6 +58,7 @@ export function unitMessageHandler<
   unitCtor: UnitClass<TUnit>,
   descriptor: MessageDescriptor<TMessage>,
 ): (handlerCtor: new () => UnitMessageHandler<TUnit, TMessage>) => void {
+  requireRoutableUnit(unitCtor);
   return (handlerCtor) => {
     messageHandlers.Register(bindingKey(unitCtor, descriptor.msgcode), {
       unitCtor: unitCtor as UnitClass<AnyUnit>,
@@ -71,6 +73,7 @@ export function unitRpcHandler<TUnit extends AnyUnit, TReq, TResp>(
   unitCtor: UnitClass<TUnit>,
   descriptor: RpcDescriptor<TReq, TResp>,
 ): (handlerCtor: new () => UnitRpcHandler<TUnit, TReq, TResp>) => void {
+  requireRoutableUnit(unitCtor);
   return (handlerCtor) => {
     rpcHandlers.Register(bindingKey(unitCtor, descriptor.requestCode), {
       unitCtor: unitCtor as UnitClass<AnyUnit>,
@@ -92,4 +95,13 @@ export function getUnitRpcHandlerBindings(): readonly UnitRpcHandlerBinding[] {
 
 function bindingKey(unitCtor: UnitClass<AnyUnit>, msgcode: number): string {
   return `${unitCtor.name}:${msgcode}`;
+}
+
+/** Unit Handler只能绑定显式ActorUnit；普通Unit没有InstanceId路由入口。 / Unit Handlers may bind only explicit ActorUnits because plain Units have no InstanceId route. */
+function requireRoutableUnit(unitCtor: UnitClass<AnyUnit>): void {
+  if (!(unitCtor.prototype instanceof ActorUnit) || !getActorOptions(unitCtor)) {
+    throw new Error(
+      `Unit Handler target must extend ActorUnit and declare @actor: ${unitCtor.name}`,
+    );
+  }
 }

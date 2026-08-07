@@ -1,19 +1,23 @@
 import { ActorContext, SceneContext } from "./contexts";
 import { isPromiseLike, type MaybePromise } from "../async";
+import { isActorRuntimeEntity } from "./entities";
 import type {
-  Actor,
+  ActorRuntimeEntity,
   ChildEntity,
   Component,
   Entity,
+  OwnedEntity,
   Scene,
 } from "./entities";
 import type {
   ChildEntityAwakeArgs,
   ChildEntityCtor,
+  OwnedEntityAwakeArgs,
+  OwnedEntityCtor,
 } from "./entities";
 import { MailBoxComponent } from "./MailBoxComponent";
 import { EntityRoot } from "./root";
-import { Unit, UnitComponent } from "./Unit";
+import { ActorUnit, Unit, UnitComponent } from "./Unit";
 import { Session, SessionComponent } from "./Session";
 import {
   TimerSystem,
@@ -51,7 +55,7 @@ interface SceneRuntime {
 
 interface ActorRuntime {
   ref: ActorRef;
-  instance: Actor<any[]>;
+  instance: ActorRuntimeEntity<any[]>;
   mailBox: MailBoxComponent;
   queue: PendingActorCall[];
   running: boolean;
@@ -59,7 +63,7 @@ interface ActorRuntime {
 }
 
 interface PendingActorCall {
-  run: (actor: Actor<any[]>) => MaybePromise<unknown>;
+  run: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<unknown>;
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
 }
@@ -70,6 +74,15 @@ export class ProcessHost {
   private readonly actorsByInstanceId = new Map<InstanceId, ActorRuntime>();
 
   constructor(public readonly processId = "process-1") {}
+
+  /** 聚合本Process全部入口Scene和动态子Scene的Spawn任务，供Hotfix屏障与Runtime Pump使用。 / Aggregates Spawn tasks from every entry and dynamic child Scene for the Hotfix barrier and Runtime Pump. */
+  get SceneTaskInFlightCount(): number {
+    let count = 0;
+    for (const scene of this.scenes.values()) {
+      count += scene.instance.__taskInFlightCount();
+    }
+    return count;
+  }
 
   Dispose(): void {
     for (const sceneId of [...this.scenes.keys()].reverse()) {
@@ -136,7 +149,7 @@ export class ProcessHost {
     }
   }
 
-  spawnActor<T extends Actor<any[]>>(
+  spawnActor<T extends ActorRuntimeEntity<any[]>>(
     sceneId: SceneId,
     actorId: ActorId,
     ctor: ActorCtor<T>,
@@ -147,7 +160,8 @@ export class ProcessHost {
       throw new Error(`actor already exists: ${sceneId}/${actorId}`);
     }
 
-    const options = getActorOptions(ctor) ?? {};
+    const declaredOptions = getActorOptions(ctor);
+    const options = declaredOptions ?? {};
     const ref: ActorRef = {
       ...scene.ref,
       actorId,
@@ -155,6 +169,14 @@ export class ProcessHost {
     };
     const actorCtx = new ActorContext(this, ref);
     const instance = new ctor(actorCtx);
+    if (!isActorRuntimeEntity(instance)) {
+      throw new Error(
+        `@actor type must extend Actor or ActorUnit: ${ctor.name}`,
+      );
+    }
+    if (instance instanceof ActorUnit && !declaredOptions) {
+      throw new Error(`ActorUnit must declare @actor: ${ctor.name}`);
+    }
 
     try {
       instance.__attach(actorId, ref.instanceId, scene.instance, scene.instance);
@@ -200,9 +222,20 @@ export class ProcessHost {
     ctor: ChildEntityCtor<T>,
     ...awakeArgs: ChildEntityAwakeArgs<T>
   ): T {
+    return this.spawnOwned(sceneId, parent, id, ctor, ...awakeArgs);
+  }
+
+  /** 创建并注册由框架容器拥有的本地Entity，不进入Actor路由也不分配Mailbox。 / Creates and registers a container-owned local Entity without Actor routing or a mailbox. */
+  spawnOwned<T extends OwnedEntity<any[]>>(
+    sceneId: SceneId,
+    parent: Component<any[]>,
+    id: EntityId,
+    ctor: OwnedEntityCtor<T>,
+    ...awakeArgs: OwnedEntityAwakeArgs<T>
+  ): T {
     const scene = this.getLocalScene(sceneId);
     if (parent.DomainScene() !== scene.instance) {
-      throw new Error(`child owner belongs to another domain scene: ${String(id)}`);
+      throw new Error(`entity owner belongs to another domain scene: ${String(id)}`);
     }
 
     const instanceId = this.allocateInstanceId();
@@ -214,7 +247,7 @@ export class ProcessHost {
       return instance;
     } catch (error) {
       this.Root.Remove(instanceId);
-      this.disposeFailedEntity(instance, `child ${sceneId}/${String(id)}`);
+      this.disposeFailedEntity(instance, `owned entity ${sceneId}/${String(id)}`);
       throw error;
     }
   }
@@ -225,24 +258,33 @@ export class ProcessHost {
     parent: Component<any[]>,
     child: ChildEntity<any[]>,
   ): boolean {
+    return this.despawnOwned(sceneId, parent, child);
+  }
+
+  /** 从EntityRoot移除并销毁一个本地Entity；只有当前拥有者可以执行。 / Removes and disposes a local Entity; only its current owner may do so. */
+  despawnOwned(
+    sceneId: SceneId,
+    parent: Component<any[]>,
+    entity: OwnedEntity<any[]>,
+  ): boolean {
     const scene = this.getLocalScene(sceneId);
     if (
-      child.Parent !== parent ||
-      child.DomainScene() !== scene.instance ||
-      this.Root.Get(child.InstanceId) !== child
+      entity.Parent !== parent ||
+      entity.DomainScene() !== scene.instance ||
+      this.Root.Get(entity.InstanceId) !== entity
     ) {
       return false;
     }
 
-    const entityId = child.Id;
-    const instanceId = child.InstanceId;
+    const entityId = entity.Id;
+    const instanceId = entity.InstanceId;
     this.Root.Remove(instanceId);
     try {
-      child.__dispose();
+      entity.__dispose();
     } catch (disposeError) {
-      CoreLogger.error("child entity destroy failed", {
+      CoreLogger.error("owned entity destroy failed", {
         scene: sceneId,
-        entity: child.constructor.name,
+        entity: entity.constructor.name,
         entityId,
         instanceId,
         error: disposeError,
@@ -314,9 +356,9 @@ export class ProcessHost {
   newActorOnceTimer(
     instanceId: InstanceId,
     delayMs: number,
-    callback: (actor: Actor<any[]>) => MaybePromise<void>,
+    callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
     onCancelled?: (
-      actor: Actor<any[]>,
+      actor: ActorRuntimeEntity<any[]>,
       context: TimerCancelledContext,
     ) => MaybePromise<void>,
   ): TimerId {
@@ -344,9 +386,9 @@ export class ProcessHost {
   newActorRepeatedTimer(
     instanceId: InstanceId,
     intervalMs: number,
-    callback: (actor: Actor<any[]>) => MaybePromise<void>,
+    callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
     onCancelled?: (
-      actor: Actor<any[]>,
+      actor: ActorRuntimeEntity<any[]>,
       context: TimerCancelledContext,
     ) => MaybePromise<void>,
   ): TimerId {
@@ -394,7 +436,7 @@ export class ProcessHost {
    */
   runActorMailbox<T>(
     instanceId: InstanceId,
-    run: (actor: Actor<any[]>) => MaybePromise<T>,
+    run: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<T>,
   ): MaybePromise<T> {
     const actor = this.actorsByInstanceId.get(instanceId);
     if (!actor || this.Root.Get(instanceId) !== actor.instance) {
@@ -431,7 +473,7 @@ export class ProcessHost {
 
     return new Promise<T>((resolve, reject) => {
       actor.queue.push({
-        run: run as (actor: Actor<any[]>) => MaybePromise<unknown>,
+        run: run as (actor: ActorRuntimeEntity<any[]>) => MaybePromise<unknown>,
         resolve: resolve as (value: unknown) => void,
         reject,
       });
@@ -448,7 +490,7 @@ export class ProcessHost {
 
   private executeActorCall<T>(
     actor: ActorRuntime,
-    run: (instance: Actor<any[]>) => MaybePromise<T>,
+    run: (instance: ActorRuntimeEntity<any[]>) => MaybePromise<T>,
   ): MaybePromise<T> {
     const result = run(actor.instance);
     if (isPromiseLike(result)) {

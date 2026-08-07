@@ -10,7 +10,7 @@ import { Scene } from "../app/core/runtime/entities";
 import { SingletonRegistry } from "../app/core/runtime/Singleton";
 import { TimeSystem } from "../app/core/runtime/TimeSystem";
 import { TimerSystem } from "../app/core/runtime/TimerSystem";
-import { scene } from "../app/core/runtime/metadata";
+import { actor, scene } from "../app/core/runtime/metadata";
 import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { GameConfigRegistry, GameConfigs } from "../app/generated/model/config";
@@ -19,13 +19,13 @@ import { BuffComponent } from "../app/model/demo/buff/BuffComponent";
 import { CombatComponent } from "../app/model/demo/combat/CombatComponent";
 import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/NumericType";
-import { Unit } from "../app/core/runtime/Unit";
+import { ActorUnit } from "../app/core/runtime/Unit";
 
 @scene({ sceneType: "BuffTest" })
 class BuffTestScene extends Scene {}
 
-class BuffTestUnit extends Unit {
-}
+@actor({ mailbox: "ordered" })
+class BuffTestUnit extends ActorUnit {}
 
 void main();
 

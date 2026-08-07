@@ -7,6 +7,21 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-07：Unit与Actor能力解耦
+
+- `Unit`收敛为普通地图Entity，默认不创建mailbox、不注册Actor路由；新增`ActorUnit extends Unit`作为显式可寻址能力，`PlayerUnit`迁移为ordered ActorUnit，`MonsterUnit`保持普通Unit并继续由地图固定桶驱动。
+- `UnitComponent.Create/Get/Remove`继续作为业务唯一入口。Create根据`ActorUnit + @actor`选择Actor或本地所有权路径，禁止普通Unit声明`@actor`，也禁止ActorUnit遗漏装饰器；销毁时同步清理统一Unit索引和各自真实所有权。
+- Unit Handler只允许绑定ActorUnit。Developer Tools增加错误继承和遗漏装饰器诊断，Actor自测覆盖普通MonsterUnit无mailbox、PlayerUnit有序mailbox、非法组合启动前失败。
+- `codegen:scenes`、TypeScript类型检查、Actor/Runtime Foundation/Buff Action/Monster Behavior/Hotfix自测、Core API锁、生成物、双语注释、设计规则、工程检查、协议锁与Developer Tools Core/Server测试全部通过。真实Runtime同时通过单进程和拆分进程冒烟，覆盖怪物死亡复活、连续平A、AOI、跨图、动态副本和NavMesh3D；停机后没有残留TiangZ进程。
+
+## 2026-08-06：同步Veto Event与可观测Spawn任务
+
+- Scene Event删除异步分支，保留同步事后通知并新增同步否决链。Veto Handler按稳定`id`和`order`排序，第一个非0错误码立即停止；Promise、非法返回和异常均不会放行业务。
+- 采用“Hotfix静态注册规则、运行时读取Component/Native状态”，不为每个玩家、Buff或控制状态动态注册闭包，避免高基数订阅和旧generation残留。
+- 道具使用新增`Item.BeforeUse`，玩家存活、道具配置可用和堆叠数量由三个独立Handler检查；全部放行后才扣道具并执行Action，`ItemComponent`仍保留最终数量不变量。
+- 新增`scene.Tasks.Spawn`短后台任务：不向调用方暴露Promise，统一记录异常，计入Scene异步指标和Hotfix排空，Scene销毁/主动取消更新TiangZ轻量`signal.aborted/reason`，不依赖嵌入式V8未提供的浏览器`AbortController`。平A状态广播已作为演示迁移到该入口。
+- `npm run codegen`、`npm run typecheck`、`npm run test:runtime-foundation`、Core API校验和Developer Tools自测通过；真实Runtime smoke同时通过单进程与拆分进程，覆盖道具、平A、跨图、动态副本、AOI和NavMesh3D链路。
+
 ## 2026-08-06：升级Deno Runtime依赖
 
 - `deno_core`从`0.409.0`升级到`0.410.0`，`deno_inspector_server`从`0.30.0`升级到`0.31.0`；锁文件同步采用`deno_ops 0.286.0`、`serde_v8 0.319.0`和新版`deno_v8/v8x`绑定。

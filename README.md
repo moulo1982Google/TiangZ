@@ -27,7 +27,7 @@ Machine
 - `Process` 是部署、V8、线程、Inspector 和故障隔离边界。
 - 配置 Scene 是顶层业务边界，例如 `LoginMgr`、`Login`、`Gate`、`MapHost`；代码中的 `EntryScene` 只是这类 Scene 的运行时基类。
 - 动态 Scene 是进程内业务容器，例如 `map:1`、副本实例。
-- `Session` 表示一条网络连接，`Unit` 表示玩家、怪物、NPC。它们和 Scene 都可拥有 MailBoxComponent，因此都属于 Actor 消息目标；业务不创建泛化的 `XxxActor` 类。
+- `Session`表示一条网络连接，`Unit`表示玩家、怪物、NPC。普通`Unit`默认没有Mailbox；需要InstanceId路由和跨`await`串行的玩家等类型继承`ActorUnit`并显式声明`@actor`。Scene、Session和ActorUnit才是Actor消息目标，业务不创建泛化的`XxxActor`包装类。
 - Gate中的`GatePlayerRoute`不是Actor：它把跨重连的玩家位置与一次性`GateSession`分离。普通socket断开保留Map Unit，30秒宽限结束后才由Gate请求Map执行最终下线。
 - `ProcessHost.Root` 按 InstanceId 定位当前生命周期 Entity，MapScene.UnitComponent 按 UnitId 管理地图实体。
 - `Component` 组织状态与能力，不要求 Handler 绑定到单一 Component。

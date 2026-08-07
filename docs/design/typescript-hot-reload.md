@@ -90,10 +90,10 @@ System在第一代安装后成为必需项。后续候选漏掉任意必需Syste
 
 ## Handler切换
 
-Scene、Session和Unit的外置Handler保存在身份稳定的绑定槽中。路由不会永久捕获启动时的Handler函数，而是在调用时读取当前槽：
+Scene、Session和ActorUnit的外置Handler保存在身份稳定的绑定槽中。路由不会永久捕获启动时的Handler函数，而是在调用时读取当前槽：
 
 - 新Hotfix可以替换Handler构造器；
-- 现有Scene、Session和Unit不重建；
+- 现有Scene、Session、普通Unit和ActorUnit都不重建；
 - 提交失败时槽对象恢复旧描述符；
 - `rpcId`和RPC多路复用不受generation影响。
 

@@ -123,19 +123,27 @@ export type {
   CoroutineLockOptions,
 } from "./runtime/CoroutineLockSystem";
 export {
-  asyncEventHandler,
-  defineAsyncEvent,
   defineSyncEvent,
+  defineVetoEvent,
   SceneEventScope,
   syncEventHandler,
+  vetoEventHandler,
 } from "./runtime/SceneEventSystem";
 export type {
-  AsyncEventDescriptor,
-  AsyncSceneEventHandler,
   EventPublishResult,
+  SceneEventHandlerOptions,
   SyncEventDescriptor,
   SyncSceneEventHandler,
+  VetoEventDescriptor,
+  VetoSceneEventHandler,
 } from "./runtime/SceneEventSystem";
+export { SceneTaskScope } from "./runtime/SceneTaskSystem";
+export type {
+  SpawnTaskBody,
+  SpawnTaskContext,
+  SpawnTaskId,
+  SceneTaskSignal,
+} from "./runtime/SceneTaskSystem";
 export {
   CommitPreparedTransfer,
   TransferStagingRegistry,
@@ -176,7 +184,8 @@ export type {
   SceneRef,
   SceneType,
 } from "./runtime/types";
-export { Unit, UnitComponent } from "./runtime/Unit";
+export { ActorUnit, Unit, UnitComponent } from "./runtime/Unit";
+export type { UnitAwakeArgs, UnitCtor } from "./runtime/Unit";
 export { Session, SessionComponent } from "./runtime/Session";
 export type {
   IFrameFlush,

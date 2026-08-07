@@ -13,7 +13,11 @@
 
 - 运行时主层次为 `Process -> Scene -> Component -> Entity/Unit`。
 - 一个 Process 对应一个 V8；Process 是部署和 V8 隔离边界，Scene 是业务上下文和消息范围。
+- `Unit`默认是UnitComponent本地拥有的地图Entity，没有mailbox和Actor路由；需要按InstanceId直接寻址和跨`await`串行时才继承`ActorUnit`并显式声明`@actor`。PlayerUnit是ordered ActorUnit，MonsterUnit是由地图固定桶驱动的普通Unit。
+- 普通Unit与ActorUnit统一使用`UnitComponent.Create/Get/Remove`；框架根据类型选择本地所有权或Actor路由。`@unitRpcHandler/@unitMessageHandler`只能绑定ActorUnit，不要给批量怪物机械增加mailbox。
 - Scene Event 不能跨 Scene；跨 Scene、跨 Process 或需要 mailbox 顺序时使用 Message/RPC。
+- Scene Event只保留同步语义：`SyncEvent`用于事后通知，`VetoEvent`用于操作前只读检查并返回第一个非0错误码。监听器按稳定`id`注册到Hotfix槽，不给每个Entity动态保存业务闭包。
+- 不关心完成时点的有界短异步工作使用`scene.Tasks.Spawn`；它统一记录错误并进入Hotfix排空。否决、事务、有序玩家状态、精确定时和永久循环不能使用Spawn。
 - 业务优先使用 `AddComponent`、`GetComponent`、`RemoveComponent`，不要为简单功能增加额外胶水层。
 - Unit、Item、Buff、Quest 等子对象遵循 Entity 生命周期语义。
 - `Awake`、`Destroy`、`Deserialize`、`Transfer` 是可选能力；恢复后的业务加工由 Hotfix System 实现，框架只负责调用时机。

@@ -88,13 +88,14 @@ Audience 与广播语义互相独立。同一个技能事件可以发给地图 A
 
 - 共享强一致状态：ordered Scene。
 - 连接消息默认并发：入口Scene与Session均为unordered；共享状态事务按账号、队伍等稳定Key显式加协程锁。
-- 不同玩家独立：入口 Scene unordered，玩家 Unit ordered。
+- 不同玩家独立：入口Scene unordered，玩家继承ActorUnit并显式ordered。
+- 地图批量实体：怪物、NPC等直接继承Unit，不声明`@actor`，由所属Component的固定更新桶驱动。
 - CPU 密集任务：拆分 Process 或下沉专用 worker，unordered 不会产生多线程 CPU 并行。
 
 ## 管理 Component
 
 - 在 Scene、Session 或 Unit Factory 中显式调用 `AddComponent(Type, ...awakeArgs)`，由创建位置决定实体具备哪些能力。
-- Unit 由 `UnitComponent.Create(unitId, UnitType, ...awakeArgs)` 创建；Session 由网络连接和 Session Handler 按需创建。不要为初始化定义一次性的 mailbox Handler。
+- 普通Unit和ActorUnit都由`UnitComponent.Create(unitId, UnitType, ...awakeArgs)`创建；框架根据`ActorUnit + @actor`决定是否建立Mailbox，业务不得分叉创建流程。Session由网络连接和Session Handler按需创建。
 - `Awake` 只初始化同步状态；需要数据库或 RPC 时，由 Factory 在发布 Entity 前显式等待。
 - 运行期能力同样使用 `AddComponent` 与 `RemoveComponent` 动态开关。
 - 必需依赖使用 `GetComponent(Type)`，可选依赖使用 `TryGetComponent(Type)`。
@@ -132,6 +133,19 @@ UseItem(itemId: number): void {
 ```
 
 不要为这条调用链增加 `UseItemSink`、`SkillEventDelegate` 或只转发一次调用的 Component。只有跨 mailbox、跨进程、协议编解码、Location 路由等真实边界才需要框架适配层。
+
+当“是否允许使用”会被死亡、控制、道具CD、公共CD等多个独立模块扩展时，使用同步Veto Event，而不是让Handler依赖所有模块：
+
+```ts
+const reason = unit.DomainScene().Events.Check(ItemEvents.BeforeUse, {
+  unit,
+  item,
+  config,
+});
+if (reason !== SystemErrCode.Success) throw new RpcError(reason, "item use vetoed");
+```
+
+每个规则在Hotfix中实现独立`@vetoEventHandler`，只读状态并返回错误码；全部放行后才执行扣除和Action。不要为每个玩家动态注册闭包，也不要在Veto Handler中修改状态。完整设计见[Veto Event与后台任务设计](../design/veto-events-and-spawn.md)。
 
 推荐的 EntryScene 业务结构：
 

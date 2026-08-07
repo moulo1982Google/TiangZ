@@ -1,5 +1,5 @@
 import type {
-  Actor,
+  ActorRuntimeEntity,
   Scene,
 } from "./entities";
 import type {
@@ -37,8 +37,10 @@ export interface ActorOptions {
 }
 
 export type SceneCtor<T extends Scene = Scene> = new (ctx: SceneContext) => T;
-export type ActorCtor<T extends Actor<any[]> = Actor<any[]>> = new (
+export type ActorCtor<
+  T extends ActorRuntimeEntity<any[]> = ActorRuntimeEntity<any[]>,
+> = new (
   ctx: ActorContext,
 ) => T;
-export type ActorAwakeArgs<T extends Actor<any[]>> =
-  T extends Actor<infer TAwakeArgs> ? TAwakeArgs : never;
+export type ActorAwakeArgs<T extends ActorRuntimeEntity<any[]>> =
+  T extends ActorRuntimeEntity<infer TAwakeArgs> ? TAwakeArgs : never;

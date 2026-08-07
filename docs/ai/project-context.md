@@ -39,8 +39,9 @@ Machine
       -> 配置 Scene / EntryScene（Login、Gate、MapHost、Social等业务入口）
           -> Session（网络连接）
           -> 动态 Scene（map:1、副本实例等业务容器）
-              -> UnitComponent（地图Unit集合）
-                  -> Unit（玩家、怪物、NPC）
+              -> UnitComponent（地图Unit统一集合与创建入口）
+                  -> Unit（普通地图实体，无mailbox，例如怪物、NPC）
+                  -> ActorUnit（可寻址Unit，有mailbox，例如玩家）
                       -> Component（Numeric、Item、Buff等状态与能力）
                           -> ChildEntity（Item、Buff、动态Quest等本地子实例）
 ```
@@ -67,21 +68,21 @@ Scene配置把三个地址语义分开：`bindIp`是本机监听地址，`innerI
 
 部署配置允许`knownSceneFiles`引用共享稳定目录。Rust启动器把本地Scene、共享目录和本地追加项做冲突校验后合并，再把普通`knownScenes`传给TS。该文件组合是不可热更的启动能力，不是服务发现；本地示例集中在`configs/local/cluster/known-scenes.json`。新增空载副本Host只创建自身Scene并引用共享目录，不修改其他进程配置。本地人工入口只有`cluster/StartMachine.json`和`all-in-one.json`；`cluster/`是一套可整体复制的多进程部署包，包含Watcher入口、各Process和共享`known-scenes.json`，Inspector变体单独归入`debug/`。`all-in-one.json`在同一Process/V8中保留两个Gate、静态MapHost和空载动态副本Host，用于验证单进程快路不改变业务语义。
 
-MapHost停机和动态地图`Dispose`都必须先经过`MapComponent`的业务清理入口：先完成玩家保存/下线，再让所有剩余Unit（包括Monster和仍在进图队列中的Unit）脱离AOI，最后销毁Actor，Scene组件随后才释放AOI世界。通用`ProcessHost`不理解AOI，不能直接销毁仍附着的Native Unit；业务也不得在`OnDestroy`里补救已经错误的销毁顺序。`MapComponent.Shutdown`还会停止地图Tick，避免停机等待期间继续创建或移动实体。静态和动态地图共用这套本地销毁流程；只有动态地图在Scene销毁成功后通过`MapHostControl.DynamicMapDisposed`通知MapManager，通知失败会由MapHostRegistration保留并重试。
+MapHost停机和动态地图`Dispose`都必须先经过`MapComponent`的业务清理入口：先完成玩家保存/下线，再让所有剩余Unit（包括Monster和仍在进图队列中的Unit）脱离AOI，最后通过`UnitComponent.Remove`按真实所有权销毁普通Unit或ActorUnit，Scene组件随后才释放AOI世界。通用`ProcessHost`不理解AOI，不能直接销毁仍附着的Native Unit；业务也不得在`OnDestroy`里补救已经错误的销毁顺序。`MapComponent.Shutdown`还会停止地图Tick，避免停机等待期间继续创建或移动实体。静态和动态地图共用这套本地销毁流程；只有动态地图在Scene销毁成功后通过`MapHostControl.DynamicMapDisposed`通知MapManager，通知失败会由MapHostRegistration保留并重试。
 
-### Actor、Scene、Session、Unit与Mailbox
+### Actor、Scene、Session、Unit、ActorUnit与Mailbox
 
-Actor是运行时路由概念，不是要求业务继承并随意创建的第四种实体。Scene、Session、Unit拥有`MailBoxComponent`后都是Actor消息目标：Scene表示业务边界，Session表示网络连接，Unit表示玩家、怪物、NPC。业务代码直接选择这三种明确类型，不创建`LoginActor`之类只为获得mailbox而存在的包装类。
+Actor是“拥有mailbox并能按InstanceId路由”的运行时能力，不是所有Entity或Unit的默认属性。Scene和Session天然是Actor消息目标；地图实体只有显式继承`ActorUnit`并声明`@actor`时才获得该能力。普通`Unit`只表示玩家、怪物、NPC等地图身份与生命周期，不创建mailbox，也不进入Actor路由。业务不创建`LoginActor`之类只为获得mailbox而存在的包装类。
 
 - `Id/UnitId`是业务身份。
 - `InstanceId`是本次生命周期地址，Entity重建后旧值失效。
-- Session和Unit消息根据InstanceId在EntityRoot中O(1)定位。
+- Session和ActorUnit消息根据InstanceId在EntityRoot中O(1)定位；普通Unit虽然也有生命周期InstanceId，但不能把它当Actor地址。
 - `ordered`保证同一mailbox的消息跨越`await`仍然串行。
 - `unordered`允许异步调用重叠，但所有CPU代码仍在同一TS线程执行。
 
-怪物的`AreaId`和`UnitId`不是同一个概念：`AreaId`是长期存在的固定刷怪槽位，`UnitId`是一次MonsterUnit实体生命周期的身份。怪物死亡必须先从AOI Detach、发布Leave，再从UnitComponent Remove；`respawn_seconds`到期后只复用AreaId并重新创建MonsterUnit，拿到新的UnitId和新的Native句柄。任何战斗、任务或客户端引用都不能把旧UnitId当成复活后的实体。
+怪物的`AreaId`和`UnitId`不是同一个概念：`AreaId`是长期存在的固定刷怪槽位，`UnitId`是一次MonsterUnit实体生命周期的身份。`MonsterUnit extends Unit`，由地图固定更新桶驱动，不声明`@actor`，没有每怪物mailbox。怪物死亡必须先从AOI Detach、发布Leave，再从UnitComponent Remove；`respawn_seconds`到期后只复用AreaId并重新创建MonsterUnit，拿到新的UnitId和新的Native句柄。任何战斗、任务或客户端引用都不能把旧UnitId当成复活后的实体。
 
-这解决了Skynet协程在`call`让出时可能处理后续消息而造成逻辑重入的问题，但不能把所有对象都设为ordered。Session默认使用unordered，允许同一连接的无关RPC跨`await`重叠；PlayerUnit显式使用ordered，保持单玩家权威业务串行。Login/Gate入口Scene同样使用unordered。Gate的登录、进图、重连、传送、快照确认和最终下线按连接或账号使用`Scene.Locks`，Ping不加锁。账号级并发只有真实业务需要时才使用账号Location或领域锁，不能用永久`LoginActor`伪装账号状态。
+这解决了Skynet协程在`call`让出时可能处理后续消息而造成逻辑重入的问题，但不能把所有对象都设为ordered。Session默认使用unordered，允许同一连接的无关RPC跨`await`重叠；`PlayerUnit extends ActorUnit`并显式使用ordered，保持单玩家权威业务串行。MonsterUnit等批量实体保持普通Unit，由所属Component的固定桶推进。Login/Gate入口Scene同样使用unordered。Gate的登录、进图、重连、传送、快照确认和最终下线按连接或账号使用`Scene.Locks`，Ping不加锁。账号级并发只有真实业务需要时才使用账号Location或领域锁，不能用永久`LoginActor`伪装账号状态。
 
 Gate连接状态分成两层：`GateSession`只代表一次物理连接，断开即销毁；`GatePlayerRoute`按账号保存`UnitId -> MapHost/Map/ActorInstanceId`和当前`connectionId`，在30秒重连宽限期内继续存在。客户端每5秒调用`C2G_Ping -> G2C_Ping`，响应携带Gate生成响应时的Unix毫秒`serverTime`；Gate收到任意客户端帧都会先刷新`lastReceiveTime`，出站排队只更新`lastSendTime`，绝不能延长存活期限。Ping是无锁的普通TS RPC Handler；Session为unordered，所以它不会排在长时间EnterMap之后。会修改Route的操作按账号进入协程锁，断线和超时下线取得锁后必须重新校验连接所有权或超时条件。Gate使用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
 
@@ -157,8 +158,9 @@ TiangZ Developer Tools `v0.15.0`把可机械判断的部分固化到不依赖VS 
 - 所有者Timer返回唯一`TimerId`，支持原样业务参数和主动取消方法；取消至多通知一次，Owner销毁时静默清理。
 - `FrameTime`是不可持久化单调时间；活动时间和跨重启截止时间使用`ServerNow`及deadline helper。业务需要协议时间戳时可调用`TimerComponent.ServerTime()`取得当前Unix毫秒；它与`TimerSystem`是同一单例类型的公开别名，不是第二套定时器。
 - `Scene.Locks`提供`Scene InstanceId + domain + key`的本Process FIFO协程锁，不是分布式锁；跨Process先路由到唯一所有者。无竞争锁必须同步进入回调，保证第一个`await`前建立的传送屏障等状态不会被后续unordered消息抢跑。
-- Developer Tools会检查StartMachine实际部署集合中的`process.identity`、Timer方法名与取消回调、Scene Event同步/异步契约，以及`InstanceId/TimerId`误入持久化结构；这些规则与Runtime Foundation自测共同守住业务侧用法。
-- `Scene.Events`只发布当前Scene的同步/异步Event；跨Scene必须使用Message/RPC。
+- Developer Tools会检查StartMachine实际部署集合中的`process.identity`、Timer方法名与取消回调、同步/Veto Scene Event契约，以及`InstanceId/TimerId`误入持久化结构；这些规则与Runtime Foundation自测共同守住业务侧用法。
+- `Scene.Events`只处理当前Scene的同步通知和同步否决链；框架不提供异步Event。`SyncEvent`用于事后通知，失败只记录；`VetoEvent`用于操作前只读检查，按`order/id`稳定排序并返回第一个非零错误码。监听器是Hotfix稳定绑定，不为每个Entity动态注册闭包。跨Scene必须使用Message/RPC。
+- `Scene.Tasks.Spawn`只承载调用方明确不等待的有界短任务：错误统一记录，ProcessHost聚合入口Scene和动态MapScene的在途任务并阻止Hotfix提交，Scene销毁更新TiangZ轻量`signal.aborted/reason`。它不依赖浏览器`AbortController`，也不能替代Veto、Timer、事务、ordered mailbox或需要结果的RPC；永久任务会永久阻塞Hotfix。
 
 `await`只释放当前异步调用，不会让JavaScript获得多线程并行。是否允许同一业务目标重入，由目标mailbox决定。
 
@@ -291,7 +293,7 @@ Generated目录禁止手工编辑。新建平级游戏目录时，codegen通过`
 
 Bench Hotfix可以通过`#tiangz/model`调用稳定业务API来测量生产路径，普通Demo不得反向依赖Bench。`app/model/main*.ts`与`app/hotfix/main*.ts`分别是两层组合入口；根`app/main*.ts`只保留源码兼容入口。Developer Tools与`tiangz-check-project`共同强制依赖方向。
 
-Actor Runtime只保留Scene、Session、Unit的生命周期、InstanceId与mailbox。旧式`@handler("字符串")`、动态组件Handler hooks和`ProcessHost.call/send`已移除；业务入口只能使用生成descriptor绑定的Scene/Session/Unit类型化Handler。
+Actor Runtime只负责Scene、Session、ActorUnit的InstanceId路由与mailbox；普通Unit由`UnitComponent`本地拥有。旧式`@handler("字符串")`、动态组件Handler hooks和`ProcessHost.call/send`已移除；`@unitRpcHandler/@unitMessageHandler`只能绑定`ActorUnit + @actor`，批量MonsterUnit的业务入口由Map Handler转入其所属Component。
 
 测试和压测专用的裸帧构造、响应解码、Fake与Fixture必须放在`tools/support`、`perf`或对应测试文件中，禁止放入`app/core`或`app/<game>`。正式客户端能力只能进入`client_sdk`及其Generated分发目录。
 
@@ -396,7 +398,7 @@ Phase 5计划：
 6. 不把AOI收件人选择写进BroadcastHub；AOI拥有Audience。通用路径由Core排队、编码和投递，Movement专用Rust热路径可在AOI内部把Audience直接投影为Gate route frame，但业务层不能看到或管理routeId。
 7. 不为未来Wasm/Rhai设计当前用不到的多语言抽象。
 8. 修改架构事实、目录所有权、协议语义或Phase状态时，同步更新本文、`README.md`和`docs/roadmap.md`。
-9. Actor只作为Scene、Session、Unit的统称和底层路由术语；不要为普通业务身份新增泛化`XxxActor`。
+9. Actor只表示Scene、Session、ActorUnit拥有的mailbox与路由能力；普通Unit没有mailbox。不要为普通业务身份新增泛化`XxxActor`，也不要给每只怪物机械增加`@actor`。
 10. 新业务状态写Model，生命周期和行为写`@systemFor`；不要恢复Model方法空壳，也不要在每次方法调用前查System Registry。
 11. Component拥有的子对象只能由所属Component维护集合和业务修改；不要从Handler直接操作Native Ref，也不要把每条Quest或Achievement机械地做成Entity。
 12. TiangZ主工程及配套VS Code插件仓库的提交标题默认使用中文；代码标识、命令、版本号和专有名词可保留原文。

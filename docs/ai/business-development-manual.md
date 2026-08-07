@@ -124,14 +124,14 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 
 ## 怪物模块的最小做法
 
-怪物业务默认采用“MapScene上的一个`MonsterComponent` + `UnitComponent`里的`MonsterUnit`”模型。不要为每只怪物创建一个`MonsterActor`、Gate连接或独立V8，也不要在Handler收到请求后扫描所有地图找怪物。
+怪物业务默认采用“MapScene上的一个`MonsterComponent` + `UnitComponent`里的普通`MonsterUnit`”模型。`MonsterUnit extends Unit`，不声明`@actor`，不拥有mailbox；不要为每只怪物创建一个`MonsterActor`、Gate连接或独立V8，也不要在Handler收到请求后扫描所有地图找怪物。
 
 ```text
 MonsterConfig                 怪物模板：模型、数值、攻击模式、复活时间
 MonsterAreaConfig             固定刷怪槽：地图、坐标和初始是否生成
 MapHost -> MapScene
   -> MonsterComponent          刷怪、AI、战斗、死亡和重生的唯一拥有者
-      -> MonsterUnit            统一Unit，可被UnitComponent和AOI索引
+      -> MonsterUnit            普通Unit，可被UnitComponent和AOI索引，无mailbox
 ```
 
 开发流程：
@@ -302,9 +302,9 @@ Handler只负责协议适配、基础校验和调用领域能力。先按消息�
 |---|---|---|
 | 配置Scene | `@rpcHandler/@messageHandler` | Scene |
 | 客户端连接 | `@sessionRpcHandler/@sessionMessageHandler` | Scene、Session |
-| 玩家/怪物/NPC | `@unitRpcHandler/@unitMessageHandler` | Unit |
+| 可直接寻址的玩家等ActorUnit | `@unitRpcHandler/@unitMessageHandler` | ActorUnit |
 
-不要新增泛化`XxxActor`来承接普通业务请求。连接状态放Session，地图实体状态放Unit，全局业务状态放Scene或其Component。Unit消息直接拿到目标Unit：
+不要新增泛化`XxxActor`来承接普通业务请求。连接状态放Session，地图实体状态放Unit，全局业务状态放Scene或其Component。只有`ActorUnit + @actor`能注册Unit Handler并直接拿到目标Unit；普通MonsterUnit没有消息入口，客户端攻击请求先进入PlayerUnit，再调用地图`MonsterComponent`按UnitId取得怪物：
 
 不要使用字符串`@handler`、`ProcessHost.call/send`或给Component动态注册网络入口；这些旧旁路已从Runtime移除。Scene间调用使用`SceneMessageHelper`，Session/Unit入口使用上表中的类型化Handler。
 
@@ -382,7 +382,7 @@ message M2C_UseSkill // IActorLocationResponse
 
 不得手工修改`opcode.lock.json/schema.lock.json`来绕过生成器，也不得在业务代码中硬编码msgcode、rpcId或codec。
 
-## EntryScene、动态Scene和Actor怎么选
+## EntryScene、动态Scene、Unit和ActorUnit怎么选
 
 使用EntryScene的情况：
 
@@ -395,10 +395,17 @@ message M2C_UseSkill // IActorLocationResponse
 - 地图实例、副本实例等进程内业务容器。
 - 大量低负载实例需要共享一个Process/V8。
 
-使用Actor/Unit的情况：
+使用普通Unit的情况：
+
+- 对象属于地图，需要UnitId、Component、AOI和完整生命周期。
+- 它由地图Component批量更新，不需要其他Scene按InstanceId直接投递消息。
+- 典型对象是MonsterUnit和批量NPC。
+
+使用ActorUnit的情况：
 
 - 消息需要以某个Entity为串行和生命周期边界。
-- 玩家、怪物、NPC等具体地图实体。
+- 其他Scene或Gate需要按InstanceId直接投递类型化Unit消息。
+- 典型对象是`PlayerUnit extends ActorUnit`并声明`@actor({ mailbox: "ordered" })`。
 
 使用Component的情况：
 
@@ -459,7 +466,7 @@ MapHost配置静态地图：
 
 启动时MapHost逐个调用统一`CreateMap`并向Location注册实际实例。只有`acceptDynamicMaps=true`的Host向单例MapManager注册自身地址、generation、负载和动态创建关系；`staticMapIds`与该开关可组合为静态专用、动态专用或混合承载。Manager不在`knownScenes`中预列动态Host，租约15秒，超时Host不再获得新实例。MapHost每5秒心跳，Manager丢失注册时自动重发完整关系，因此单独重启Manager可恢复；Manager与Host同时丢失后的跨重启幂等留给持久化阶段。MapInstance与PlayerLocation响应携带MapHost Endpoint，业务不得再用`scenes.byName(dynamicHostName)`。连续无人五分钟自动销毁由MapHost本地`DynamicMapLifecycleComponent`提供，只是业务兜底策略。
 
-地图停机和主动销毁有固定的清理顺序：`MapHostScene.onStop -> MapHostComponent.Shutdown/DisposeMap -> MapComponent.Shutdown/PrepareForDespawn`。静态、动态地图共用这套本地流程：先保存并移除玩家，再清理所有剩余Unit（包括怪物和等待进图的玩家）；每个仍在AOI中的Unit必须先`Detach`，然后才能销毁Actor，最后才由Scene组件释放AOI。动态地图的Scene本地销毁成功后，MapHost再通过`MapHostControl.DynamicMapDisposed`通知MapManager减少动态实例负载；通知是幂等的，Manager暂时不可用时由MapHostRegistration重试。`ProcessHost`是通用运行时，不知道AOI，不要在业务中直接调用底层Scene销毁来绕过这个入口；`await map.Dispose()`也不会替业务把仍在地图中的玩家强制踢到别处。
+地图停机和主动销毁有固定的清理顺序：`MapHostScene.onStop -> MapHostComponent.Shutdown/DisposeMap -> MapComponent.Shutdown/PrepareForDespawn`。静态、动态地图共用这套本地流程：先保存并移除玩家，再清理所有剩余Unit（包括怪物和等待进图的玩家）；每个仍在AOI中的Unit必须先`Detach`，然后通过`UnitComponent.Remove`销毁。该入口会为普通Unit清理本地所有权，为ActorUnit额外清理Actor路由和mailbox，最后才由Scene组件释放AOI。动态地图的Scene本地销毁成功后，MapHost再通过`MapHostControl.DynamicMapDisposed`通知MapManager减少动态实例负载；通知是幂等的，Manager暂时不可用时由MapHostRegistration重试。`ProcessHost`是通用运行时，不知道AOI，不要在业务中直接调用底层Scene销毁来绕过这个入口；`await map.Dispose()`也不会替业务把仍在地图中的玩家强制踢到别处。
 
 稳定基础Scene集中写入共享`knownSceneFiles`；新增动态副本Host只引用该文件，禁止要求所有Gate/MapHost反向追加它。共享文件不可热更，只负责启动依赖；MapManager注册才负责动态发现。完整样例见`configs/local/cluster/known-scenes.json`和`configs/local/cluster/dungeon-1.json`。
 
@@ -540,7 +547,7 @@ Rust自动维护`NumericType -> i64`值与dirty表，TS使用`bigint`，业务�
 
 Rust模块随Process编译，不能Hotfix。选择它必须同时满足：状态或算法有明确性能收益、规则相对稳定、能够接受重新构建和重启。活动、任务编排和频繁调整的规则仍优先使用TS Hotfix。
 
-Actor消息不能因为Handler算法位于Rust就绕过TS。正式链路保持`TS定位Unit/Session/Scene -> Actor mailbox -> Native op -> Rust领域模块`；薄适配层可以由codegen生成，但Location、传送屏障、RPC错误和mailbox顺序仍由TS框架拥有。只有Ping、握手等不访问业务Actor的基础设施控制帧允许在Rust网络入口直接消费。
+Actor消息不能因为Handler算法位于Rust就绕过TS。正式链路保持`TS定位ActorUnit/Session/Scene -> Actor mailbox -> Native op -> Rust领域模块`；薄适配层可以由codegen生成，但Location、传送屏障、RPC错误和mailbox顺序仍由TS框架拥有。普通MonsterUnit没有Actor入口，它由Map Handler或所属MonsterComponent进入Rust批处理。只有Ping、握手等不访问业务Actor的基础设施控制帧允许在Rust网络入口直接消费。
 
 ### Item等即时Event
 
@@ -682,7 +689,7 @@ this.CancelTimer(this.castTimerId, "player-moved");
 
 正常到期只调用`FinishCast(args)`；主动取消只调用一次`CancelCast(args, context)`。Owner销毁属于生命周期清理，不回调业务取消方法。不要把`TimerId`写入数据库。
 
-Developer Tools会检查Timer方法名和取消回调是否存在、取消回调是否接收`(args, context)`、异步Scene Event是否遗漏`await`，以及持久化Snapshot是否错误声明`InstanceId/TimerId`。命令面板可执行“TiangZ：运行 Runtime Foundation 自测”，其结果与`npm run test:runtime-foundation`一致。
+Developer Tools会检查Timer方法名和取消回调是否存在、取消回调是否接收`(args, context)`、同步/Veto Event Handler是否错误声明`async`，以及持久化Snapshot是否错误声明`InstanceId/TimerId`。命令面板可执行“TiangZ：运行 Runtime Foundation 自测”，其结果与`npm run test:runtime-foundation`一致。
 
 逐固定帧逻辑实现同步`Update()`，帧末复制实现`FrameFlush()`。不要在Update中创建未等待的异步任务：
 
@@ -700,10 +707,12 @@ Update(): void {
 - 玩家、Item、动态副本等长期实体保存稳定`Id`；`InstanceId`只用于当前Process中的EntityRoot和Actor路由，禁止持久化。
 - 新Item由`GlobalIdSystem`生成ID；数据库恢复使用`CreateItemById`保留原ID并获得新的InstanceId。
 - 同一Scene内按门派、队伍、交易单等业务键防重入时使用`await scene.Locks.RunExclusive(domain, key, callback)`。它不跨Process，不替代数据库事务。无竞争时回调会同步开始，因此需要阻止后续消息抢跑的标记必须放在回调第一个`await`之前。
-- 同一Scene的功能解耦使用`defineSyncEvent/defineAsyncEvent`和`scene.Events`。同步事件不能I/O；异步事件必须await。
+- 同一Scene已经发生的功能通知使用`defineSyncEvent + scene.Events.Publish`；可扩展的操作前置条件使用`defineVetoEvent + scene.Events.Check`。两类Handler都必须同步，不能I/O或返回Promise。
+- Veto Handler返回`0`放行，返回第一个非零业务错误码时立即停止。它只能读取上下文，不能在检查中扣道具、加Buff、改Numeric或启动任务。监听器在Hotfix中按稳定`id`注册，不为每个Unit动态保存闭包；模块是否激活由Handler读取Component/Native状态判断。
+- 明确不等待结果且完成时间不影响当前业务的短任务使用`scene.Tasks.Spawn(name, body)`。框架捕获错误并纳入Hotfix排空；永久循环、事务、玩家有序状态修改、精确定时和需要响应的RPC禁止使用Spawn，任何Update/FrameFlush中也禁止逐帧Spawn。
 - 跨Scene、跨Process、需要mailbox顺序或需要响应的交互仍使用生成的Message/RPC，不能拿Event代替。
 
-详细API和错误边界见[运行时基础能力](../design/runtime-foundations.md)。
+详细API和错误边界见[运行时基础能力](../design/runtime-foundations.md)与[Veto Event和后台任务设计](../design/veto-events-and-spawn.md)。
 
 ## 玩家下线和持久化
 

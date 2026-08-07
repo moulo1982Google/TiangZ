@@ -19,6 +19,7 @@ import type {
 import { isTransferableComponent } from "./metadata";
 import { SceneLockScope } from "./CoroutineLockSystem";
 import { SceneEventScope } from "./SceneEventSystem";
+import { SceneTaskScope } from "./SceneTaskSystem";
 
 /** Component自行定义的同步迁移契约；TState必须是脱离原实例的值快照。 / Synchronous Component-owned transfer contract whose state must not retain the source instance. */
 export interface ITransfer<TState = unknown> {
@@ -110,7 +111,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
           }
         }
       : undefined;
-    timerId = this.Parent instanceof Actor
+    timerId = isActorRuntimeEntity(this.Parent)
       ? this.Parent.__newOnceTimer(
           delayMs,
           run,
@@ -148,7 +149,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
           }
         }
       : undefined;
-    timerId = this.Parent instanceof Actor
+    timerId = isActorRuntimeEntity(this.Parent)
       ? this.Parent.__newRepeatedTimer(
           intervalMs,
           run,
@@ -162,7 +163,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
   /** 取消本组件拥有的定时器，并返回它此前是否仍有效。 / Cancels a timer owned by this component and returns whether it was still active. */
   CancelTimer(timerId: TimerId, reason: TimerCancelReason = "manual"): boolean {
     if (!this.timers.delete(timerId)) return false;
-    return this.parent instanceof Actor
+    return isActorRuntimeEntity(this.parent)
       ? this.parent.CancelTimer(timerId, reason)
       : TimerSystem.Instance.Cancel(timerId, reason);
   }
@@ -316,7 +317,7 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
     UpdateSystem.TryUnregister(this);
     for (const timerId of [...this.timers]) {
       this.timers.delete(timerId);
-      if (this.parent instanceof Actor) {
+      if (isActorRuntimeEntity(this.parent)) {
         this.parent.__cancelTimer(timerId, "owner-disposed", false);
       } else {
         TimerSystem.Instance.Cancel(timerId, "owner-disposed", false);
@@ -341,7 +342,7 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 }
 
 /** 按名字调用所有者当前prototype上的Timer方法，使长期Timer跟随Hotfix切换。 / Invokes the named timer method from the owner's current prototype so long-lived timers follow Hotfix switches. */
-function invokeTimerMethod<TArgs>(
+export function invokeTimerMethod<TArgs>(
   owner: object,
   methodName: string,
   args: TArgs,
@@ -355,7 +356,7 @@ function invokeTimerMethod<TArgs>(
 }
 
 /** 按名字调用取消方法并传回创建时参数和取消原因。 / Invokes a named cancellation method with the original arguments and cancellation context. */
-function invokeTimerCancelledMethod<TArgs>(
+export function invokeTimerCancelledMethod<TArgs>(
   owner: object,
   methodName: string,
   args: TArgs,
@@ -611,6 +612,48 @@ export abstract class Entity {
   }
 }
 
+/** Actor运行时能力标记；只有显式Actor类型才会进入路由表并拥有Mailbox。 / Runtime Actor capability marker; only explicit Actor types enter routing and own a mailbox. */
+export const ACTOR_RUNTIME_ENTITY = Symbol("tiangz.actor-runtime-entity");
+
+/**
+ * ProcessHost可路由实体的最小结构契约。
+ * 普通Unit和ChildEntity不实现该契约；Actor与ActorUnit实现它。
+ *
+ * Minimal structural contract for entities routable by ProcessHost. Plain
+ * Units and ChildEntities do not implement it; Actor and ActorUnit do.
+ */
+export interface ActorRuntimeEntity<
+  TAwakeArgs extends unknown[] = [],
+> extends Entity {
+  readonly [ACTOR_RUNTIME_ENTITY]: true;
+  readonly logger: Logger;
+  __awake(...args: TAwakeArgs): void;
+  __newOnceTimer(
+    delayMs: number,
+    callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
+    onCancelled?: (
+      actor: ActorRuntimeEntity<any[]>,
+      context: TimerCancelledContext,
+    ) => MaybePromise<void>,
+  ): TimerId;
+  __newRepeatedTimer(
+    intervalMs: number,
+    callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
+    onCancelled?: (
+      actor: ActorRuntimeEntity<any[]>,
+      context: TimerCancelledContext,
+    ) => MaybePromise<void>,
+  ): TimerId;
+  CancelTimer(timerId: TimerId, reason?: TimerCancelReason): boolean;
+  __cancelTimer(timerId: TimerId, reason: TimerCancelReason, notify: boolean): boolean;
+}
+
+/** 判断Entity是否真正拥有Actor路由与Mailbox能力。 / Reports whether an Entity truly owns Actor routing and mailbox capability. */
+export function isActorRuntimeEntity(value: unknown): value is ActorRuntimeEntity<any[]> {
+  return value instanceof Entity &&
+    (value as Partial<ActorRuntimeEntity<any[]>>)[ACTOR_RUNTIME_ENTITY] === true;
+}
+
 function requireTransferContract(component: Component<any[]>): ITransfer {
   const candidate = component as Partial<ITransfer>;
   if (
@@ -629,20 +672,23 @@ export type ChildEntityCtor<
 > = new () => TEntity;
 export type ChildEntityAwakeArgs<TEntity> =
   TEntity extends ChildEntity<infer TAwakeArgs> ? TAwakeArgs : never;
+export type OwnedEntityCtor<
+  TEntity extends OwnedEntity<any[]> = OwnedEntity<any[]>,
+> = new () => TEntity;
+export type OwnedEntityAwakeArgs<TEntity> =
+  TEntity extends OwnedEntity<infer TAwakeArgs> ? TAwakeArgs : never;
 
 /**
- * 由 Component 拥有、没有独立 mailbox 的本地 Entity。
+ * 由框架容器拥有、默认没有独立mailbox的本地Entity基础。
  *
- * Item、Buff、Quest 等独立实例使用该类型；它们拥有稳定 Id/InstanceId、组件
- * 和 Timer 生命周期，但不能直接成为跨进程消息目标。挂在 Actor 下的子 Entity
- * Timer 会进入所属 Actor mailbox，从而与玩家消息保持同一串行边界。
+ * ChildEntity和普通Unit共享稳定Id/InstanceId、组件与Timer生命周期；挂在Actor
+ * 下方时Timer进入所属mailbox。ActorUnit会显式覆盖Timer入口并增加Actor路由。
  *
- * A local Entity owned by a Component and without its own mailbox. Item, Buff,
- * and Quest instances use this type. They have stable identity, Components,
- * and timers, but are not cross-process message targets. Timers below an Actor
- * enter that Actor's mailbox and share its serialization boundary.
+ * Base for locally owned Entities without a mailbox by default. ChildEntities
+ * and plain Units share stable identity, Components, and Timer lifecycle. An
+ * ActorUnit explicitly overrides Timer routing and adds Actor addressability.
  */
-export abstract class ChildEntity<
+export abstract class OwnedEntity<
   TAwakeArgs extends unknown[] = [],
 > extends Entity {
   private awoken = false;
@@ -730,21 +776,21 @@ export abstract class ChildEntity<
 
   __awake(...args: TAwakeArgs): void {
     if (this.awoken) {
-      throw new Error(`child entity is already awake: ${this.constructor.name}`);
+      throw new Error(`owned entity is already awake: ${this.constructor.name}`);
     }
     if (this.IsDisposed) {
-      throw new Error(`child entity is disposed: ${this.constructor.name}`);
+      throw new Error(`owned entity is disposed: ${this.constructor.name}`);
     }
     this.awoken = true;
     const result = this.Awake(...args) as unknown;
     if (isPromiseLike(result)) {
       void Promise.resolve(result).catch((error) => {
-        CoreLogger.error("async child entity Awake failed", {
+        CoreLogger.error("async owned entity Awake failed", {
           entity: this.constructor.name,
           error,
         });
       });
-      throw new Error(`child entity Awake must be synchronous: ${this.constructor.name}`);
+      throw new Error(`owned entity Awake must be synchronous: ${this.constructor.name}`);
     }
   }
 
@@ -759,20 +805,26 @@ export abstract class ChildEntity<
     super.__dispose();
   }
 
-  private OwnerActor(): Actor<any[]> | undefined {
+  private OwnerActor(): ActorRuntimeEntity<any[]> | undefined {
     let owner: Entity | Component<any[]> | undefined = this.Parent;
     while (owner) {
-      if (owner instanceof Actor) return owner;
+      if (isActorRuntimeEntity(owner)) return owner;
       owner = owner instanceof Component ? owner.Parent : owner.Parent;
     }
     return undefined;
   }
 }
 
+/** Component集合拥有的Item、Buff、Quest等子Entity；不能直接成为Actor消息目标。 / Component-owned child Entity for Item, Buff, Quest, and similar instances; it is not directly Actor-addressable. */
+export abstract class ChildEntity<
+  TAwakeArgs extends unknown[] = [],
+> extends OwnedEntity<TAwakeArgs> {}
+
 export abstract class Scene extends Entity {
   protected readonly sceneContext: SceneContext;
   private lockScope: SceneLockScope | undefined;
   private eventScope: SceneEventScope | undefined;
+  private taskScope: SceneTaskScope | undefined;
 
   constructor(ctx: SceneContext) {
     super();
@@ -789,14 +841,25 @@ export abstract class Scene extends Entity {
     return this.lockScope;
   }
 
-  /** 返回只能发布到当前Scene实例的同步/异步Event门面。 / Returns the synchronous/asynchronous Event facade bound exclusively to this Scene instance. */
+  /** 返回只能发布到当前Scene实例的同步通知/否决Event门面。 / Returns the synchronous notification/veto Event facade bound exclusively to this Scene instance. */
   get Events(): SceneEventScope {
     if (!this.eventScope) this.eventScope = new SceneEventScope(this);
     return this.eventScope;
   }
 
+  /** 返回当前Scene拥有的短后台任务门面；任务会参与Hotfix排空并统一记录异常。 / Returns this Scene's short background-task facade; tasks participate in Hotfix draining and centralized error reporting. */
+  get Tasks(): SceneTaskScope {
+    if (!this.taskScope) this.taskScope = new SceneTaskScope(this);
+    return this.taskScope;
+  }
+
+  /** 供ProcessHost聚合所有入口与动态Scene的后台任务，不为无任务Scene创建门面。 / Lets ProcessHost aggregate tasks across entry and dynamic Scenes without allocating empty scopes. */
+  __taskInFlightCount(): number {
+    return this.taskScope?.InFlightCount ?? 0;
+  }
+
   /** 在本 Scene 创建 Actor，并在 Awake 前注册其 InstanceId。 / Creates an Actor in this Scene and registers its InstanceId before Awake runs. */
-  SpawnActor<T extends Actor<any[]>>(
+  SpawnActor<T extends ActorRuntimeEntity<any[]>>(
     actorId: ActorId,
     ctor: ActorCtor<T>,
     ...awakeArgs: ActorAwakeArgs<T>
@@ -819,15 +882,38 @@ export abstract class Scene extends Entity {
     return this.sceneContext.spawnChild(parent, id, ctor, ...awakeArgs);
   }
 
+  /** 仅供UnitComponent等框架容器创建无mailbox的本地Entity。 / Internal container entry for creating a local Entity without a mailbox. */
+  __spawnOwned<T extends OwnedEntity<any[]>>(
+    parent: Component<any[]>,
+    id: EntityId,
+    ctor: OwnedEntityCtor<T>,
+    ...awakeArgs: OwnedEntityAwakeArgs<T>
+  ): T {
+    return this.sceneContext.spawnOwned(parent, id, ctor, ...awakeArgs);
+  }
+
   /** 仅供拥有者 Component 销毁其本地子 Entity。 / Internal owner entry for destroying a local child Entity. */
   __despawnChild(parent: Component<any[]>, child: ChildEntity<any[]>): boolean {
     return this.sceneContext.despawnChild(parent, child);
+  }
+
+  /** 仅供真实拥有者销毁无mailbox的本地Entity。 / Internal owner entry for destroying a local Entity without a mailbox. */
+  __despawnOwned(parent: Component<any[]>, entity: OwnedEntity<any[]>): boolean {
+    return this.sceneContext.despawnOwned(parent, entity);
+  }
+
+  /** Scene销毁先通知后台任务协作取消，再级联释放组件和Entity。 / Scene disposal first requests cooperative task cancellation, then cascades through Components and Entities. */
+  override __dispose(): void {
+    if (this.IsDisposed) return;
+    this.taskScope?.Dispose();
+    super.__dispose();
   }
 }
 
 export abstract class Actor<
   TAwakeArgs extends unknown[] = [],
-> extends Entity {
+> extends Entity implements ActorRuntimeEntity<TAwakeArgs> {
+  readonly [ACTOR_RUNTIME_ENTITY] = true as const;
   private awoken = false;
   protected readonly ctx: ActorContext;
 
@@ -875,9 +961,9 @@ export abstract class Actor<
   ): TimerId {
     return this.ctx.newOnceTimer(
       delayMs,
-      callback as (actor: Actor<any[]>) => MaybePromise<void>,
+      callback as (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
       onCancelled as ((
-        actor: Actor<any[]>,
+        actor: ActorRuntimeEntity<any[]>,
         context: TimerCancelledContext,
       ) => MaybePromise<void>) | undefined,
     );
@@ -919,9 +1005,9 @@ export abstract class Actor<
   ): TimerId {
     return this.ctx.newRepeatedTimer(
       intervalMs,
-      callback as (actor: Actor<any[]>) => MaybePromise<void>,
+      callback as (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
       onCancelled as ((
-        actor: Actor<any[]>,
+        actor: ActorRuntimeEntity<any[]>,
         context: TimerCancelledContext,
       ) => MaybePromise<void>) | undefined,
     );
