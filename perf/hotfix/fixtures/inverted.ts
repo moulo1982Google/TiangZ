@@ -1,7 +1,12 @@
 import "../../../app/generated/hotfix/handlers";
+import "../../../app/hotfix/demo/buff/BuffComponentSystem";
+import "../../../app/hotfix/demo/buff/BuffSystem";
+import "../../../app/hotfix/demo/combat/CombatComponentSystem";
 import "../../../app/hotfix/demo/item/ItemComponentSystem";
 import "../../../app/hotfix/demo/item/ItemSystem";
 import "../../../app/hotfix/demo/login/LoginComponentSystem";
+import "../../../app/hotfix/demo/monster/MonsterComponentSystem";
+import "../../../app/hotfix/demo/monster/MonsterUnitSystem";
 import "../../../app/hotfix/demo/numeric/NumericComponentSystem";
 
 import {
