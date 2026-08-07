@@ -15,7 +15,8 @@ if (existsSync(cocosTypeConfig)) {
   ]);
 } else {
   console.log("[cocos3d-check] Cocos editor types are absent; running engine-independent bundle check");
-  await run(path.join(root, "node_modules", "esbuild", "bin", "esbuild"), [
+  await run(process.execPath, [
+    path.join(root, "node_modules", "esbuild", "bin", "esbuild"),
     "client_demo/cocos_client3D_3.8.8/assets/scripts/Demo/GameBootstrap3D.ts",
     "--bundle",
     "--platform=browser",
