@@ -464,3 +464,7 @@ npm run perf:rpc-baseline -- \
 学习顺序从 [文档入口](docs/README.md) 开始。已经完成的版本变更、验证结果和设计取舍记录在 [开发日志](docs/development-log.md)，未来计划仍以 [路线图](docs/roadmap.md) 为准。
 
 使用 AI 协作开发时，先阅读根目录 [AGENTS.md](AGENTS.md)、[AI 项目上下文](docs/ai/project-context.md)和[AI 业务开发手册](docs/ai/business-development-manual.md)。三份文档分别保存高优先级规则、可迁移的架构记忆和业务层默认开发方式，避免新的 AI 从 Rust Runtime 或 TypeScript Core 开始实现普通业务需求。
+
+## 开源协议
+
+TiangZ 使用 [Apache License 2.0](LICENSE) 开源，版权归 2025-2026 郑昕 所有。分发或修改本项目时，请同时保留 [NOTICE](NOTICE) 中的版权与归属声明。
