@@ -1,4 +1,4 @@
-import { ChildEntity, lifecycle } from "../../../core/public";
+import { ChildEntity, lifecycle, type TimerId } from "../../../core/public";
 import type { ActionDefinition } from "../action/ActionType";
 
 /** Buff创建时需要的运行时状态；墙钟时间用于传送、下线恢复，不保存TimerId。 / Runtime state required to create a Buff; wall-clock times survive transfer and offline restore, while TimerIds do not. */
@@ -58,4 +58,7 @@ export class Buff extends ChildEntity<[request: AwakeBuff]> {
   protected addAction: ActionDefinition | undefined;
   protected tickAction: ActionDefinition | undefined;
   protected removeAction: ActionDefinition | undefined;
+  protected tickTimerId: TimerId | undefined;
+  protected expireTimerId: TimerId | undefined;
+  protected removeActionExecuted = false;
 }

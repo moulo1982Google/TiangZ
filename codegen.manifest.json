@@ -379,7 +379,7 @@
         "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
         "native_data/demo/MapOps.native": "db869f154cd0e146c06cd0f8ccb6e5f32db97359233aeb15ff1a2e2cf561b4bc",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
-        "package.json": "27c5a0a5720374b51d3a5c385dc37ff32a42f842202ba380c97b6e2e1218549c",
+        "package.json": "fccf9d96d4fcd4af868dc7a18e696e124cf6d0fd06f302e470fa873f965c850d",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
@@ -479,7 +479,7 @@
       "command": "npm run codegen:scenes",
       "contentInputs": {
         "app/hotfix/demo/buff/BuffComponentSystem.ts": "58d45ecd1e2bc3e915886042352ff34512855b7f45737499bdd2bc9cecf30aa3",
-        "app/hotfix/demo/buff/BuffSystem.ts": "ffadec669f259bb3acf21eb4a43bd480803b7388265d28f1d9b354b3775e1c9d",
+        "app/hotfix/demo/buff/BuffSystem.ts": "945371d3f233abf41ddc7d88b170119690b6cd8345c1451ccb0aadc8b1a4caa9",
         "app/hotfix/demo/combat/CombatComponentSystem.ts": "0ef2cc266e2bbb074c70cf3222a92c873ee622aa90bca9408309102e378c73c0",
         "app/hotfix/demo/item/ItemComponentSystem.ts": "afb31e041797fc1abbc4499cf045cf02aadbe929b24cc38d4612afbe57c57746",
         "app/hotfix/demo/item/ItemSystem.ts": "9ff1e4b74b645d5b0fe721bde05e3dacacb8fbc2c3272a067cdae1f718e91fbf",
@@ -494,7 +494,7 @@
         "app/model/demo/action/ActionType.ts": "666aa2d2006e3e34232a80fe100cf471976042a9dc6c4aa5b0582a99440b5d71",
         "app/model/demo/broadcast/MapClientRouteResolver.ts": "f97d5d2e4fa35f9a9b4bbc2b7bfab3e2ab2c916a683aa75f14034e56e9654a81",
         "app/model/demo/broadcast/SceneBroadcastTransport.ts": "38d1d716c59bb7e3bd01d26618f09be011d28cf8cfac94a9a88af6a3343a6fad",
-        "app/model/demo/buff/Buff.ts": "62d20eb35a40678d26af1f374ff72908dcd98ae4233d86908be2d6ffd6ddf749",
+        "app/model/demo/buff/Buff.ts": "d68511fde6373e7f4308cb9b86839cf48c887b29e9529d5fa1cc13d3203d577f",
         "app/model/demo/buff/BuffComponent.ts": "40def8e9ec4ad92a83d293e3a6773e2b7067ab32abe65b005b493088e7aa4d05",
         "app/model/demo/combat/CombatComponent.ts": "56a220c368da9c45fb5d64679e885611a270e63402e689fdd353e93c285e363a",
         "app/model/demo/gate/GatePlayerRoute.ts": "1498b9f1143b55ef9ece615727715b68874feeeef83c535680704cfd45595ac7",

@@ -93,7 +93,7 @@ function main(): void {
   assert.equal(MapCapacitySpeedCellsPerSecond(1, 100, 1), 1);
   assert.equal(serverConfigs.ItemConfig.TryGet(999_999), undefined);
   assert.equal(serverConfigs.ItemConfig.Get(1001).useEffect, 2);
-  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 50]);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 150]);
   assert.equal(clientConfigs.ItemConfig.Get(1001).icon, "UI/Icons/Items/1001");
   assert.equal(serverConfigs.ItemConfig.Get(1002).useEffect, 1);
   assert.deepEqual(serverConfigs.ItemConfig.Get(1002).useParams, [2001]);
@@ -126,7 +126,7 @@ function main(): void {
     JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "a".repeat(64) }),
     JSON.stringify(changed),
   );
-  assert.deepEqual(oldItem.useParams, [1, 50]);
+  assert.deepEqual(oldItem.useParams, [1, 150]);
   assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 77]);
 
   assert.throws(

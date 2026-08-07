@@ -7,7 +7,6 @@ import {
   type AwakeBuff,
   type BuffPublicState,
   type BuffTransferState,
-  type TimerId,
   Unit,
   systemFor,
 } from "#tiangz/model";
@@ -24,11 +23,6 @@ import { ActionFromConfig, ExecuteAction } from "../action/ActionExecutor";
  */
 @systemFor(Buff)
 export class BuffSystem extends Buff {
-  private tickTimerId: TimerId | undefined;
-  private expireTimerId: TimerId | undefined;
-  private removeActionExecuted = false;
-  private restoring = false;
-
   protected override Awake(request: AwakeBuff): void {
     if (!Number.isSafeInteger(request.configId) || request.configId <= 0) {
       throw new Error(`buff config id must be positive: ${request.configId}`);
@@ -46,12 +40,12 @@ export class BuffSystem extends Buff {
     this.addAction = request.addAction;
     this.tickAction = request.tickAction;
     this.removeAction = request.removeAction;
-    this.restoring = request.restoring ?? false;
+    const restoring = request.restoring ?? false;
     if (!Number.isSafeInteger(this.stacks) || this.stacks <= 0) {
       throw new Error(`buff stacks must be positive: ${this.stacks}`);
     }
     this.requireConfig();
-    if (!this.restoring) this.executePhase(this.resolveAction("add"), "add");
+    if (!restoring) this.executePhase(this.resolveAction("add"), "add");
     this.scheduleTimers();
   }
 

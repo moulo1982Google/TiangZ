@@ -307,7 +307,6 @@ impl SceneConfig {
     pub fn bind_ip(&self) -> &str {
         self.bind_ip.as_deref().unwrap_or(&self.inner_ip)
     }
-
 }
 
 #[derive(Debug, Deserialize)]
