@@ -89,13 +89,17 @@ export {
   type SkillProjectile,
 } from "./demo/skill/SkillMapComponent";
 export {
+  SkillAutoAttackPolicy,
   SkillDelivery,
   SkillEffectTarget,
+  SkillMovementPolicy,
   SkillTargetRelation,
+  type SkillAutoAttackPolicyValue,
   type SkillDefinition,
   type SkillDeliveryValue,
   type SkillEffectDefinition,
   type SkillEffectTargetValue,
+  type SkillMovementPolicyValue,
   type SkillTargetRelationValue,
 } from "./demo/skill/SkillDefinition";
 export { SkillEvents, type BeforeCastSkillEvent } from "./demo/skill/SkillEvents";
@@ -159,6 +163,8 @@ export {
   type PlayerConfig as PlayerConfigData,
   type MonsterConfig as MonsterConfigData,
   type MonsterAreaConfig as MonsterAreaConfigData,
+  type SkillConfig as SkillConfigData,
+  type SkillEffectConfig as SkillEffectConfigData,
 } from "../generated/model/config";
 export {
   MonsterComponent,

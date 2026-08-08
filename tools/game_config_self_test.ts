@@ -13,6 +13,11 @@ import {
   BuffStackScope,
   GameConfigRegistry,
   GameConfigs as serverConfigs,
+  SkillAutoAttackPolicy,
+  SkillDelivery,
+  SkillEffectTarget,
+  SkillMovementPolicy,
+  SkillTargetRelation,
 } from "../app/generated/model/config";
 import {
   IsMapCapacityGridCrossingPlayer,
@@ -97,13 +102,14 @@ function main(): void {
   assert.equal(MapCapacitySpeedCellsPerSecond(1, 100, 1), 1);
   assert.equal(serverConfigs.ItemConfig.TryGet(999_999), undefined);
   assert.equal(serverConfigs.ItemConfig.Get(1001).useEffect, 2);
-  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 150]);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [6, 150]);
   assert.equal(clientConfigs.ItemConfig.Get(1001).icon, "UI/Icons/Items/1001");
   assert.equal(serverConfigs.ItemConfig.Get(1002).useEffect, 1);
   assert.deepEqual(serverConfigs.ItemConfig.Get(1002).useParams, [2001]);
   assert.equal(clientConfigs.ItemConfig.Get(1002).icon, "UI/Icons/Items/1002");
   assert.equal(serverConfigs.BuffConfig.Get(2001).tickIntervalMs, 3_000);
-  assert.deepEqual(serverConfigs.BuffConfig.Get(2001).tickActionParams, [1, 50]);
+  assert.equal(serverConfigs.BuffConfig.Get(2001).tickActionType, 6);
+  assert.deepEqual(serverConfigs.BuffConfig.Get(2001).tickActionParams, [50]);
   const chilled = serverConfigs.BuffConfig.Get(4001);
   assert.equal(chilled.stackScope, BuffStackScope.Target);
   assert.equal(chilled.conflictPolicy, BuffConflictPolicy.Refresh);
@@ -114,15 +120,31 @@ function main(): void {
   assert.equal(burning.stackScope, BuffStackScope.Source);
   assert.equal(burning.conflictPolicy, BuffConflictPolicy.Refresh);
   assert.equal(burning.tickIntervalMs, 1_000);
-  assert.deepEqual(burning.tickActionParams, [1, -5]);
   const shield = serverConfigs.BuffConfig.Get(4003);
   assert.equal(shield.conflictPolicy, BuffConflictPolicy.Replace);
   assert.equal(shield.refreshRuntimeState, BuffRefreshStatePolicy.Reset);
+  assert.equal(shield.addActionType, 5);
+  assert.deepEqual(shield.addActionParams, [200]);
   assert.equal(serverConfigs.BuffConfig.Get(4004).conflictPolicy, BuffConflictPolicy.Reject);
   const fortitude = serverConfigs.BuffConfig.Get(4005);
   assert.equal(fortitude.conflictPolicy, BuffConflictPolicy.HigherWins);
   assert.equal(fortitude.conflictPriority, 1);
   assert.deepEqual(fortitude.addActionParams, [10_002, 500]);
+  const frostbolt = serverConfigs.SkillConfig.Get(3001);
+  assert.equal(frostbolt.targetRelation, SkillTargetRelation.Enemy);
+  assert.equal(frostbolt.delivery, SkillDelivery.Projectile);
+  assert.equal(frostbolt.movementPolicy, SkillMovementPolicy.InterruptWhileCasting);
+  assert.equal(frostbolt.autoAttackPolicy, SkillAutoAttackPolicy.ResetOnStart);
+  assert.equal(frostbolt.projectileSpeedMetersPerSecond, 20);
+  const frostboltEffects = serverConfigs.SkillEffectConfig.GetAll()
+    .filter((effect) => effect.skillId === frostbolt.id)
+    .sort((left, right) => left.order - right.order);
+  assert.equal(frostboltEffects.length, 2);
+  assert.equal(frostboltEffects[0].target, SkillEffectTarget.PrimaryTarget);
+  assert.deepEqual(frostboltEffects[0].actionParams, [50, 2]);
+  assert.deepEqual(frostboltEffects[1].actionParams, [4001]);
+  assert.equal(serverConfigs.BuffConfig.Get(4002).tickActionType, 4);
+  assert.deepEqual(serverConfigs.BuffConfig.Get(4002).tickActionParams, [5, 3]);
   assert.throws(
     () => serverConfigs.MapConfig.Get(999_999),
     /game config not found/,
@@ -139,6 +161,9 @@ function main(): void {
   assert.equal(clientConfigs.ItemConfig.Get(1001).description.length > 0, true);
   assert.equal("description" in clientConfigs.BuffConfig.Get(4001), false);
   assert.equal("stackGroup" in clientConfigs.BuffConfig.Get(4001), false);
+  assert.equal(clientConfigs.SkillConfig.Get(3004).name, "真言术·盾");
+  assert.equal("movementPolicy" in clientConfigs.SkillConfig.Get(3004), false);
+  assert.equal("SkillEffectConfig" in clientConfigs, false);
   assert.equal(Object.isFrozen(player), true);
   assert.equal(Object.isFrozen(serverConfigs.PlayerConfig.GetAll()), true);
 
@@ -146,13 +171,13 @@ function main(): void {
   const changed = JSON.parse(dataJson) as Record<string, Array<Record<string, unknown>>>;
   const changedItem = changed.game_tbitemconfig.find((item) => item.id === 1001);
   assert.ok(changedItem);
-  changedItem.use_params = [1, 77];
+  changedItem.use_params = [6, 77];
   GameConfigRegistry.Install(
     JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "a".repeat(64) }),
     JSON.stringify(changed),
   );
-  assert.deepEqual(oldItem.useParams, [1, 150]);
-  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 77]);
+  assert.deepEqual(oldItem.useParams, [6, 150]);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [6, 77]);
 
   assert.throws(
     () => GameConfigRegistry.Install(
@@ -214,7 +239,7 @@ function main(): void {
     ),
     /missing reference/,
   );
-  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [1, 77]);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [6, 77]);
 
   const invalidBuffPriority = structuredClone(changed);
   const fortitudeRow = invalidBuffPriority.game_tbbuffconfig.find((buff) => buff.id === 4005);
@@ -226,6 +251,40 @@ function main(): void {
       JSON.stringify(invalidBuffPriority),
     ),
     /HigherWins requires a positive conflict priority/,
+  );
+
+  const duplicateSkillOrder = structuredClone(changed);
+  const frostboltRows = duplicateSkillOrder.game_tbskilleffectconfig
+    .filter((effect) => effect.skill_id === 3001);
+  assert.equal(frostboltRows.length, 2);
+  frostboltRows[1].order = frostboltRows[0].order;
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "6".repeat(64) }),
+      JSON.stringify(duplicateSkillOrder),
+    ),
+    /duplicate effect order/,
+  );
+
+  const invalidSkillAction = structuredClone(changed);
+  invalidSkillAction.game_tbskilleffectconfig[0].action_type = 6;
+  invalidSkillAction.game_tbskilleffectconfig[0].action_params = [-1];
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "5".repeat(64) }),
+      JSON.stringify(invalidSkillAction),
+    ),
+    /Heal needs a non-negative amount/,
+  );
+
+  const invalidItemAction = structuredClone(changed);
+  invalidItemAction.game_tbitemconfig[0].use_params = [6, -1];
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "4".repeat(64) }),
+      JSON.stringify(invalidItemAction),
+    ),
+    /Heal needs a non-negative amount/,
   );
 
   console.log("game config self-test passed");

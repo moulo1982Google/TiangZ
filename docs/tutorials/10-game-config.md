@@ -11,9 +11,13 @@ TiangZ把配置分成两类：
 
 | 表 | 用途 | 当前关键字段 |
 | --- | --- | --- |
-| `ItemConfig.xlsx` | 道具静态定义 | 名称、客户端描述、最大堆叠、使用后回血 |
+| `ItemConfig.xlsx` | 道具静态定义 | 名称、客户端描述、最大堆叠、使用效果与Action参数 |
 | `MapConfig.xlsx` | 地图静态定义 | 空间模式、米制尺寸、三维出生点、AOI引用、入图节流、导航资源身份 |
 | `PlayerConfig.xlsx` | 玩家初始模板 | 初始地图、初始/最大HP、移动速度、初始道具 |
+| `MonsterConfig/MonsterAreaConfig.xlsx` | 怪物模板与固定刷怪槽 | 数值、行为、重生时间、地图位置 |
+| `BuffConfig.xlsx` | Buff生命周期 | 冲突/刷新、持续时间与Add/Tick/Remove Action |
+| `SkillConfig.xlsx` | 前后端技能基础规则 | 目标关系、读条、CD/GCD、距离、弹道和策略 |
+| `SkillEffectConfig.xlsx` | 服务端技能效果 | 按顺序执行的目标、Action和参数 |
 | `AoiConfig.xlsx` | AOI冷配置 | AOI Grid包含的Cell数、Enter与Detach范围 |
 | `AoiSyncTierConfig.xlsx` | AOI同步冷配置 | 独立同步范围与最高同步Hz |
 | `ConfigTablePolicy.xlsx` | 表级重载策略 | 每张配置表是Hot还是Cold |
@@ -74,6 +78,7 @@ app/generated/model/config/                    服务端
 client_sdk/typescript/Generated/Config/        客户端SDK唯一源码
 game_config/generated/                         完整JSON数据包与schema/data指纹
 client_demo/cocos_client2D_3.8.6/.../Generated/SDK/Generated/Config/  自动分发副本
+client_demo/cocos_client3D_3.8.8/.../Generated/SDK/Generated/Config/  自动分发副本
 client_demo/pixi_client_8.19.0/.../Generated/SDK/Generated/Config/     自动分发副本
 ```
 

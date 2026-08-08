@@ -1,4 +1,5 @@
 import { Component, component, lifecycle, transferable } from "../../../core/public";
+import type { SkillDefinition } from "./SkillDefinition";
 
 export const SkillCastPhase = {
   Idle: 0,
@@ -14,6 +15,8 @@ export interface ActiveSkillCast {
   readonly targetUnitId: number;
   readonly startedAtMs: number;
   readonly finishAtMs: number;
+  /** 接受请求时冻结的纯数据规则；配置Reload只影响之后的新Cast。 / Pure rules frozen at acceptance; config reload affects only later Casts. */
+  readonly definition: SkillDefinition;
 }
 
 /** 客户端只依赖服务器时间绘制读条，不在本地自行判定技能完成。 / Client-facing cast state rendered from server time without local completion authority. */

@@ -128,8 +128,8 @@ npm run build:cocos3d:mobile
 
 ## 技能系统第一阶段决定
 
-- `SkillConfig`描述施法规则，`SkillEffectConfig`按阶段和顺序描述Action；不要把多Action参数硬塞进SkillConfig单元格。
-- Unit统一挂`SkillComponent`，玩家Handler和怪物AI复用同一API。已学技能第一版只按SkillConfigId存Set，不创建Skill子Entity。
+- `SkillConfig.xlsx`描述目标关系和施法时间线，服务端专有的`SkillEffectConfig.xlsx`按顺序描述Action；不要把多Action参数硬塞进SkillConfig单元格。客户端只生成SkillConfig。
+- Unit统一挂`SkillComponent`，玩家Handler和怪物AI复用同一API。当前Demo尚未实现已学技能持久化，也不创建Skill子Entity；以后需要时优先按SkillConfigId保存集合。
 - `ActiveCast`是SkillComponent中的瞬时纯数据，不是Actor、Entity、Timer或持久化记录；普通读条由10Hz服务器deadline推进，冷却和GCD也只保存deadline。
 - 技能只负责目标和时间线，完成时执行Action；伤害/治疗必须进入Combat，Buff进入BuffComponent，广播仍由Map/Audience负责。
 - 伤害类型、Instant/Cast、移动中断和`Keep/ResetOnStart/ResetOnComplete/Cancel`平A策略是独立字段，不能互相推导。
@@ -139,7 +139,7 @@ npm run build:cocos3d:mobile
 - 读条技能接受时立即清除Rust旧移动租约；后续非零移动输入打断施法，不能让玩家在旧输入租约期间继续滑行。
 - Buff冲突已支持Target/Source作用域与Stack/Refresh/Replace/Reject/HigherWins；运行时Add/Tick/Remove Action和护盾剩余量必须随传送快照恢复，普通Refresh不重复执行AddAction。
 - 玩家跨MapHost快照的生成和目标校验必须共同引用`PLAYER_TRANSFER_SCHEMA_VERSION`；新增可传送Component或字段时升级一次常量，并跑真实跨图Runtime smoke，禁止两端手写不同schema数字。
-- 当前五技能数值暂存Hotfix `SkillCatalog.ts`。后续迁入Luban只能替换数据来源，不能改变SkillComponent、Handler、Action或Combat边界。
+- 当前五技能数值已经迁入Luban；`SkillCatalog.ts`只按配置指纹组合只读定义。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast；不得在Unit或Component长期缓存定义。
 
 ## 3D客户端左右输入约定
 
@@ -151,12 +151,12 @@ npm run build:cocos3d:mobile
 ## Action、Buff与道具效果
 
 - 道具使用统一走`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`不可用，`1`添加Buff，`2`执行Action；不要为小红、大红或其他同类道具复制Handler分支。
-- 当前Action类型只有`None`、`ChangeNumeric`、`AddBuff`、`RemoveBuff`。`ChangeNumeric(CurrentHp, delta)`必须通过`CombatComponent.ApplyHealing/ApplyDamage`，不能在Handler、Buff或Action里直接写CurrentHp。
+- 当前Action类型为`None`、`ChangeNumeric`、`AddBuff`、`RemoveBuff`、`DealDamage`、`RegisterDamageAbsorber`和`Heal`。`ChangeNumeric`不能表达伤害或治疗，HP必须通过`DealDamage/Heal -> CombatComponent`。
 - `BuffComponent`拥有`Buff ChildEntity`；Buff负责可追踪Timer和Add/Tick/Remove生命周期，Component负责实例ID、集合、传送和AOI事件。Buff不成为Actor、不查AOI、不找Gate、不调用Location。
-- Buff传送只保存纯值和服务器墙钟时间，目标重建Timer但不重复执行AddAction；不保存TimerId、闭包、Promise或Entity引用。运行时Action覆盖当前只在本Process有效，跨Process前必须扩展协议。
+- Buff传送只保存纯值和服务器墙钟时间，目标重建Timer但不重复执行AddAction；不保存TimerId、闭包、Promise或Entity引用。运行时Action覆盖和护盾剩余量已经随跨Process快照恢复。
 - Combat不反向查询Buff。护盾等Buff在添加/移除边界注册/注销Combat数据型modifier，剩余量由Combat单独持有；禁止新增`BuffComponent.TryAbsorbDamage`式耦合。
 - Buff叠加语义拆成冲突域、冲突决策和刷新行为：`stack_group + stack_scope + sourceUnitId`形成冲突键，策略支持Stack、Refresh、Replace、Reject和HigherWins；HigherWins比较显式priority，不比较ConfigId。Refresh默认不重复执行AddAction，来源、Tick节奏和运行状态分别配置。`BuffConfig.description`只进入服务端配置，不在客户端展示。
-- 当前最小演示：1001小型生命药水立即恢复50点，1002大型生命药水添加2001持续回血Buff；Cast技能系统、复杂目标选择、Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`和`docs/tutorials/17-action-and-buff.md`。
+- 当前演示：1001小型生命药水执行`Heal(150)`，1002大型生命药水添加2001持续回血Buff，2001每3秒执行`Heal(50)`；五技能Cast与Luban SkillConfig/SkillEffectConfig已完成，复杂地面目标、引导和Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`、`docs/design/skill-system.md`和`docs/tutorials/18-configured-skill.md`。
 
 ## 道具出生与Cocos3D快捷栏
 

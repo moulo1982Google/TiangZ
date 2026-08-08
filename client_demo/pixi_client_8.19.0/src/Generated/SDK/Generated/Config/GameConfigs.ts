@@ -33,9 +33,8 @@ const RAW_DATA: Record<string, unknown> = {
       "tick_interval_ms": 3000,
       "add_action_type": 0,
       "add_action_params": [],
-      "tick_action_type": 1,
+      "tick_action_type": 6,
       "tick_action_params": [
-        1,
         50
       ],
       "remove_action_type": 0,
@@ -66,10 +65,10 @@ const RAW_DATA: Record<string, unknown> = {
       "tick_interval_ms": 1000,
       "add_action_type": 0,
       "add_action_params": [],
-      "tick_action_type": 1,
+      "tick_action_type": 4,
       "tick_action_params": [
-        1,
-        -5
+        5,
+        3
       ],
       "remove_action_type": 0,
       "remove_action_params": []
@@ -79,8 +78,10 @@ const RAW_DATA: Record<string, unknown> = {
       "name": "真言术·盾",
       "duration_seconds": 30,
       "tick_interval_ms": 0,
-      "add_action_type": 0,
-      "add_action_params": [],
+      "add_action_type": 5,
+      "add_action_params": [
+        200
+      ],
       "tick_action_type": 0,
       "tick_action_params": [],
       "remove_action_type": 0,
@@ -125,7 +126,7 @@ const RAW_DATA: Record<string, unknown> = {
       "max_stack": 99,
       "use_effect": 2,
       "use_params": [
-        1,
+        6,
         150
       ],
       "icon": "UI/Icons/Items/1001"
@@ -249,6 +250,68 @@ const RAW_DATA: Record<string, unknown> = {
       "initial_mp": 100,
       "attack_range": 2.5
     }
+  ],
+  "game_tbskillconfig": [
+    {
+      "id": 3001,
+      "name": "寒冰箭",
+      "description": "读条1.5秒，15米弹道法术，造成50点冰霜伤害并刷新5秒冰冷。",
+      "target_relation": 1,
+      "cast_time_ms": 1500,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 2,
+      "projectile_speed_meters_per_second": 20
+    },
+    {
+      "id": 3002,
+      "name": "火焰冲击",
+      "description": "瞬发，5米，12秒冷却；造成100点火焰伤害，并按施法者刷新6秒灼烧。",
+      "target_relation": 1,
+      "cast_time_ms": 0,
+      "cooldown_ms": 12000,
+      "global_cooldown_ms": 1000,
+      "range_meters": 5,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0
+    },
+    {
+      "id": 3003,
+      "name": "惩击",
+      "description": "读条1.5秒，15米直接命中，造成60点神圣伤害。",
+      "target_relation": 1,
+      "cast_time_ms": 1500,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0
+    },
+    {
+      "id": 3004,
+      "name": "真言术·盾",
+      "description": "瞬发，8秒冷却；吸收200点伤害并施加15秒虚弱灵魂。",
+      "target_relation": 2,
+      "cast_time_ms": 0,
+      "cooldown_ms": 8000,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0
+    },
+    {
+      "id": 3005,
+      "name": "真言术·韧",
+      "description": "瞬发，持续30分钟，使MaxHp增加500；高等级覆盖低等级。",
+      "target_relation": 2,
+      "cast_time_ms": 0,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0
+    }
   ]
 };
 
@@ -290,8 +353,9 @@ export type PlayerConfig = game.PlayerConfig;
 export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 export type MonsterConfig = game.MonsterConfig;
+export type SkillConfig = game.SkillConfig;
 
-export const GameConfigFingerprint = "14445d3231dd904a2018ceaa15d2344054c89d61ad9225235ab8ade447832432";
+export const GameConfigFingerprint = "93e1a5f5f47f66ebe65e15c13016cbdc8f1150e050f614934bf621d01516e72a";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),
@@ -300,4 +364,5 @@ export const GameConfigs = Object.freeze({
   AoiConfig: new ConfigTable<game.AoiConfig>(tables.TbAoiConfig.getDataList()),
   AoiSyncTierConfig: new ConfigTable<game.AoiSyncTierConfig>(tables.TbAoiSyncTierConfig.getDataList()),
   MonsterConfig: new ConfigTable<game.MonsterConfig>(tables.TbMonsterConfig.getDataList()),
+  SkillConfig: new ConfigTable<game.SkillConfig>(tables.TbSkillConfig.getDataList()),
 });

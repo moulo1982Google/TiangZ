@@ -2,30 +2,30 @@
 
 本教程只做两个道具：
 
-- 小型生命药水：立即恢复50点HP。
+- 小型生命药水：立即恢复150点HP。
 - 大型生命药水：添加一个持续30秒、每3秒恢复50点HP的Buff。
 
-不涉及Cast技能系统。
+本教程聚焦效果层；技能如何复用Action见[新增一个配置化技能](18-configured-skill.md)。
 
 ## 1. 配置表
 
 在`game_config/Datas/ItemConfig.xlsx`中：
 
 ```text
-1001  小型生命药水  use_effect=2  use_params=1,50
+1001  小型生命药水  use_effect=2  use_params=6,150
 1002  大型生命药水  use_effect=1  use_params=2001
 ```
 
-这里的`1`是`NumericType.CurrentHp`，`50`是增量；`2001`是Buff配置ID。
+`use_effect=2`时，`use_params`的第一个值是ActionType，所以`6,150`表示`Heal(150)`；`2001`是Buff配置ID。
 
 在`game_config/Datas/BuffConfig.xlsx`中：
 
 ```text
 2001  持续恢复  duration_seconds=30  tick_interval_ms=3000
-      tick_action_type=1  tick_action_params=1,50
+      tick_action_type=6  tick_action_params=50
 ```
 
-`ActionType.ChangeNumeric`为`1`。添加和移除阶段在这个示例中为空。
+`ActionType.Heal`为`6`。添加和移除阶段在这个示例中为空。
 
 修改表后执行：
 
@@ -44,7 +44,7 @@ C2M_UseItem
  -> ItemComponent.UseItem
  -> ActionFromConfig
  -> ExecuteAction
-    -> ChangeNumeric: Combat.ApplyHealing
+    -> Heal: Combat.ApplyHealing
     -> AddBuff: BuffComponent.AddBuff
        -> Buff.Awake
        -> AddAction
@@ -68,10 +68,7 @@ player.GetComponent(BuffComponent).AddBuff(2001);
 player.GetComponent(BuffComponent).AddBuff(2001, {
   durationMs: 10_000,
   tickIntervalMs: 500,
-  tickAction: {
-    type: ActionType.ChangeNumeric,
-    parameters: [BigInt(NumericType.CurrentHp), 5n],
-  },
+  tickAction: { type: ActionType.Heal, parameters: [5n] },
 });
 ```
 
@@ -79,22 +76,14 @@ player.GetComponent(BuffComponent).AddBuff(2001, {
 
 ## 4. 护盾类Buff怎么接
 
-护盾不是让Combat去查Buff，而是Buff添加时注册Combat修改器：
+护盾不是让Combat去查Buff，而是Buff的AddAction注册Combat修改器。当前`BuffConfig 4003`已经配置：
 
-```ts
-class ShieldBuffSystem {
-  Awake(): void {
-    const combat = this.Owner.GetComponent(CombatComponent);
-    this.modifierId = combat.RegisterDamageAbsorber(5_000n, 100);
-  }
-
-  OnDestroy(): void {
-    this.Owner.GetComponent(CombatComponent).RemoveDamageAbsorber(this.modifierId);
-  }
-}
+```text
+add_action_type=5
+add_action_params=200
 ```
 
-示例只表达边界。当前演示Buff还没有把护盾配置接入`BuffConfig`，真正接入时仍要让Combat保存唯一剩余量，Buff只保存返回的modifierId。
+`ActionType.RegisterDamageAbsorber`为`5`。Buff保存注册结果，Combat保存并消费唯一剩余量；Buff到期或被替换时注销修改器，受伤入口始终不反向查询Buff。
 
 ## 5. 验收
 

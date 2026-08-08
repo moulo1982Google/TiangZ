@@ -1,111 +1,75 @@
 import {
-  ActionType,
-  DamageSchool,
-  SkillDelivery,
-  SkillEffectTarget,
-  SkillTargetRelation,
+  GameConfigRegistry,
+  GameConfigs,
   type SkillDefinition,
+  type SkillEffectDefinition,
 } from "#tiangz/model";
+import { ActionFromConfig } from "../action/ActionExecutor";
 
-const skills = new Map<number, SkillDefinition>([
-  [3001, {
-    id: 3001,
-    name: "寒冰箭",
-    description: "读条1.5秒，15米弹道法术，造成50点冰霜伤害并刷新5秒冰冷。",
-    relation: SkillTargetRelation.Enemy,
-    castTimeMs: 1_500,
-    cooldownMs: 0,
-    globalCooldownMs: 1_000,
-    rangeMeters: 15,
-    delivery: SkillDelivery.Projectile,
-    projectileSpeedMetersPerSecond: 20,
-    requiredAbsentBuffConfigId: 0,
-    effects: [
-      { target: SkillEffectTarget.PrimaryTarget, action: { type: ActionType.DealDamage, parameters: [50n, BigInt(DamageSchool.Frost)] } },
-      { target: SkillEffectTarget.PrimaryTarget, action: { type: ActionType.AddBuff, parameters: [4001n] } },
-    ],
-  }],
-  [3002, {
-    id: 3002,
-    name: "火焰冲击",
-    description: "瞬发，5米，12秒冷却；造成100点火焰伤害，并按施法者刷新6秒灼烧。",
-    relation: SkillTargetRelation.Enemy,
-    castTimeMs: 0,
-    cooldownMs: 12_000,
-    globalCooldownMs: 1_000,
-    rangeMeters: 5,
-    delivery: SkillDelivery.Direct,
-    projectileSpeedMetersPerSecond: 0,
-    requiredAbsentBuffConfigId: 0,
-    effects: [
-      { target: SkillEffectTarget.PrimaryTarget, action: { type: ActionType.DealDamage, parameters: [100n, BigInt(DamageSchool.Fire)] } },
-      {
-        target: SkillEffectTarget.PrimaryTarget,
-        action: { type: ActionType.AddBuff, parameters: [4002n] },
-        buffOptions: {
-          tickAction: { type: ActionType.DealDamage, parameters: [5n, BigInt(DamageSchool.Fire)] },
-        },
-      },
-    ],
-  }],
-  [3003, {
-    id: 3003,
-    name: "惩击",
-    description: "读条1.5秒，15米直接命中，造成60点神圣伤害。",
-    relation: SkillTargetRelation.Enemy,
-    castTimeMs: 1_500,
-    cooldownMs: 0,
-    globalCooldownMs: 1_000,
-    rangeMeters: 15,
-    delivery: SkillDelivery.Direct,
-    projectileSpeedMetersPerSecond: 0,
-    requiredAbsentBuffConfigId: 0,
-    effects: [
-      { target: SkillEffectTarget.PrimaryTarget, action: { type: ActionType.DealDamage, parameters: [60n, BigInt(DamageSchool.Holy)] } },
-    ],
-  }],
-  [3004, {
-    id: 3004,
-    name: "真言术·盾",
-    description: "瞬发，8秒冷却；吸收200点伤害并施加15秒虚弱灵魂。",
-    relation: SkillTargetRelation.Friendly,
-    castTimeMs: 0,
-    cooldownMs: 8_000,
-    globalCooldownMs: 1_000,
-    rangeMeters: 15,
-    delivery: SkillDelivery.Direct,
-    projectileSpeedMetersPerSecond: 0,
-    requiredAbsentBuffConfigId: 4004,
-    effects: [
-      {
-        target: SkillEffectTarget.PrimaryTarget,
-        action: { type: ActionType.AddBuff, parameters: [4003n] },
-        buffOptions: { addAction: { type: ActionType.RegisterDamageAbsorber, parameters: [200n] } },
-      },
-      { target: SkillEffectTarget.PrimaryTarget, action: { type: ActionType.AddBuff, parameters: [4004n] } },
-    ],
-  }],
-  [3005, {
-    id: 3005,
-    name: "真言术·韧",
-    description: "瞬发，持续30分钟，使MaxHp增加500；高等级覆盖低等级。",
-    relation: SkillTargetRelation.Friendly,
-    castTimeMs: 0,
-    cooldownMs: 0,
-    globalCooldownMs: 1_000,
-    rangeMeters: 15,
-    delivery: SkillDelivery.Direct,
-    projectileSpeedMetersPerSecond: 0,
-    requiredAbsentBuffConfigId: 0,
-    effects: [
-      { target: SkillEffectTarget.PrimaryTarget, action: { type: ActionType.AddBuff, parameters: [4005n] } },
-    ],
-  }],
-]);
+let cachedFingerprint = "";
+let cachedDefinitions: ReadonlyMap<number, SkillDefinition> = new Map();
+type SkillEffectConfigRow = ReturnType<typeof GameConfigs.SkillEffectConfig.GetAll>[number];
 
-/** Demo数值目录；读取方只保留当前调用栈内引用，热更后重新解析。 / Demo value catalog; callers retain definitions for the current stack only and resolve again after hot reload. */
+/**
+ * 返回当前配置代的技能定义。缓存按游戏配置指纹整体重建，保证一次Cast只看到同一份规则，
+ * Reload之后的新Cast自动使用新数据；不得把返回对象长期存入Unit或Component。
+ *
+ * Returns the skill definition for the active config generation. The index is
+ * rebuilt atomically when the game-config fingerprint changes, so one Cast
+ * observes one rule set while later Casts use reloaded data. Unit and Component
+ * state must never retain the returned object long-term.
+ */
 export function GetSkillDefinition(skillId: number): SkillDefinition {
-  const definition = skills.get(skillId);
+  const fingerprint = GameConfigRegistry.CurrentFingerprint;
+  if (!fingerprint) throw new Error("game config data is not installed");
+  if (fingerprint !== cachedFingerprint) rebuildCatalog(fingerprint);
+  const definition = cachedDefinitions.get(skillId);
   if (!definition) throw new Error(`skill config not found: ${skillId}`);
   return definition;
+}
+
+/** 将Luban两张表合并为运行时只读索引；这是数据适配，不承担施法或效果结算。 / Merges the two Luban tables into a read-only runtime index without owning cast or effect resolution. */
+function rebuildCatalog(fingerprint: string): void {
+  const effectsBySkill = new Map<number, SkillEffectConfigRow[]>();
+  for (const effect of GameConfigs.SkillEffectConfig.GetAll()) {
+    const rows = effectsBySkill.get(effect.skillId) ?? [];
+    effectsBySkill.set(effect.skillId, [...rows, effect]);
+  }
+
+  const definitions = new Map<number, SkillDefinition>();
+  for (const config of GameConfigs.SkillConfig.GetAll()) {
+    const effects = (effectsBySkill.get(config.id) ?? [])
+      .slice()
+      .sort((left, right) => left.order - right.order || left.id - right.id)
+      .map((effect): SkillEffectDefinition => {
+        const action = ActionFromConfig(effect.actionType, effect.actionParams);
+        return Object.freeze({
+          target: effect.target as SkillEffectDefinition["target"],
+          action: Object.freeze({
+            type: action.type,
+            parameters: Object.freeze([...action.parameters]),
+          }),
+        });
+      });
+    if (effects.length === 0) throw new Error(`skill config ${config.id} has no effects`);
+    definitions.set(config.id, Object.freeze({
+      id: config.id,
+      name: config.name,
+      description: config.description,
+      relation: config.targetRelation as SkillDefinition["relation"],
+      castTimeMs: config.castTimeMs,
+      cooldownMs: config.cooldownMs,
+      globalCooldownMs: config.globalCooldownMs,
+      rangeMeters: config.rangeMeters,
+      delivery: config.delivery as SkillDefinition["delivery"],
+      projectileSpeedMetersPerSecond: config.projectileSpeedMetersPerSecond,
+      movementPolicy: config.movementPolicy as SkillDefinition["movementPolicy"],
+      autoAttackPolicy: config.autoAttackPolicy as SkillDefinition["autoAttackPolicy"],
+      revalidateOnComplete: config.revalidateOnComplete,
+      requiredAbsentBuffConfigId: config.requiredAbsentBuffConfigId,
+      effects: Object.freeze(effects),
+    }));
+  }
+  cachedDefinitions = definitions;
+  cachedFingerprint = fingerprint;
 }

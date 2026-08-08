@@ -380,6 +380,8 @@ npm run check:project -- --format json
 
 设计Item、Buff、Quest、Achievement、Numeric或自定义业务系统时，先阅读[`docs/patterns`](docs/patterns/README.md)，也可以在Developer Tools执行“TiangZ：设计业务系统”或输入`@tiangz /design buff`。规则库先确定所有权、Entity形态、生命周期、Audience和同步语义，AI只负责解释；最终仍以当前代码、项目检查和测试为准。
 
+新增技能优先维护`game_config/Datas/SkillConfig.xlsx`与服务端专有的`SkillEffectConfig.xlsx`，用现有Action和Buff组合效果，不为每个技能复制Handler。完整步骤见[配置化技能教程](docs/tutorials/18-configured-skill.md)。
+
 ## 调试与验证
 
 ```powershell

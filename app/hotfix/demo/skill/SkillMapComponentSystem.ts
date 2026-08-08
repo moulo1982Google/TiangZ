@@ -16,10 +16,12 @@ import {
   RpcError,
   SkillCastPhase,
   SkillComponent,
+  SkillAutoAttackPolicy,
   SkillDelivery,
   SkillEffectTarget,
   SkillEvents,
   SkillMapComponent,
+  SkillMovementPolicy,
   SkillTargetRelation,
   TimeSystem,
   SystemErrCode,
@@ -88,26 +90,26 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       targetUnitId: target.UnitId,
       startedAtMs: now,
       finishAtMs: now + definition.castTimeMs,
+      definition,
     };
     let state = skill.Accept(cast, definition.cooldownMs, definition.globalCooldownMs);
 
-    if (definition.castTimeMs > 0) {
+    if (
+      definition.castTimeMs > 0 &&
+      definition.movementPolicy === SkillMovementPolicy.InterruptWhileCasting
+    ) {
       // 读条开始必须立即终止旧的移动租约；之后新的非零输入会走InterruptByMovement。
       // Starting a cast must stop the previous movement lease immediately;
       // any later non-zero input interrupts through InterruptByMovement.
       NativeData.ResetMovement(caster.GetComponent(NativeUnitRef).Handle);
     }
 
-    // 所有五个演示技能都是“施法”，接受时立即重置平A进度；攻击意图和目标仍保留。
-    // All five demo abilities are spells. Acceptance resets swing progress but
-    // preserves auto-attack intent and target.
-    const combat = caster.GetComponent(CombatComponent);
-    const autoAttack = combat.ResetAutoAttackSwing();
-    this.spawnPublish("publish-spell-auto-attack-reset", () => this.map.PublishAutoAttackState(caster, autoAttack));
+    this.applyAutoAttackPolicy(caster, definition, "start");
     this.publishCastState(caster, state);
 
     if (definition.castTimeMs === 0) {
       this.launchOrResolve(caster, target, definition, cast.castId, now);
+      this.applyAutoAttackPolicy(caster, definition, "complete");
       state = skill.Complete(cast.castId);
       this.publishCastState(caster, state);
     } else {
@@ -118,10 +120,14 @@ export class SkillMapComponentSystem extends SkillMapComponent {
 
   InterruptByMovement(caster: PlayerUnit): boolean {
     this.requireCaster(caster);
-    const state = caster.GetComponent(SkillComponent).Interrupt("movement");
+    const skill = caster.GetComponent(SkillComponent);
+    const active = skill.ActiveCast();
+    if (!active) return false;
+    const definition = active.definition;
+    if (definition.movementPolicy !== SkillMovementPolicy.InterruptWhileCasting) return false;
+    const state = skill.Interrupt("movement");
     if (!state) return false;
     this.activeCasterUnitIds.delete(caster.UnitId);
-    caster.GetComponent(CombatComponent).ResetAutoAttackSwing();
     this.publishCastState(caster, state);
     return true;
   }
@@ -145,11 +151,13 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       if (now < cast.finishAtMs) continue;
       this.activeCasterUnitIds.delete(unitId);
       try {
-        const definition = this.getDefinition(cast.skillId);
+        const definition = cast.definition;
         const target = this.resolveTarget(caster, cast.targetUnitId, definition);
-        this.validateTarget(caster, target, definition);
+        this.validateTargetAlive(target);
+        if (definition.revalidateOnComplete) this.validateTargetRange(caster, target, definition);
         this.validateRequiredAbsentBuff(target, definition);
         this.launchOrResolve(caster, target, definition, cast.castId, now);
+        this.applyAutoAttackPolicy(caster, definition, "complete");
         this.publishCastState(caster, skill.Complete(cast.castId));
       } catch (error) {
         const state = skill.Interrupt(error instanceof RpcError ? "cast-invalid" : "cast-error");
@@ -168,8 +176,9 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       const caster = this.units.Get<PlayerUnit>(projectile.sourceUnitId);
       if (!caster) continue;
       try {
-        const definition = this.getDefinition(projectile.skillId);
+        const definition = projectile.definition;
         const target = this.resolveTarget(caster, projectile.targetUnitId, definition);
+        this.validateTargetAlive(target);
         this.resolveEffects(caster, target, definition, projectile.castId);
       } catch (error) {
         this.DomainScene().logger.debug("skill projectile lost target", {
@@ -204,6 +213,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       targetUnitId: target.UnitId,
       launchedAtMs: now,
       impactAtMs: now + travelMs,
+      definition,
     };
     this.projectiles.set(castId, projectile);
     this.spawnPublish("publish-skill-projectile", () => this.map.PublishSkillProjectile(caster, target, projectile));
@@ -295,12 +305,42 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   private validateTarget(caster: PlayerUnit, target: Unit<any[]>, definition: SkillDefinition): void {
+    this.validateTargetAlive(target);
+    this.validateTargetRange(caster, target, definition);
+  }
+
+  private validateTargetAlive(target: Unit<any[]>): void {
     if (target.GetComponent(NativeUnitRef).alive === 0) {
       throw new RpcError(GameErrCode.SkillTargetInvalid, `target is dead: ${target.UnitId}`);
     }
+  }
+
+  private validateTargetRange(caster: PlayerUnit, target: Unit<any[]>, definition: SkillDefinition): void {
     if (this.distance(caster, target) > definition.rangeMeters) {
       throw new RpcError(GameErrCode.SkillTargetTooFar, `target is outside ${definition.rangeMeters}m`);
     }
+  }
+
+  /**
+   * 按配置处理技能与平A时间线；只在策略真正改变状态时发布一次，不把“法术/物理”当隐式规则。
+   * Applies the configured skill/auto-attack relation and publishes only when
+   * the selected policy changes state; damage school never implies this rule.
+   */
+  private applyAutoAttackPolicy(
+    caster: PlayerUnit,
+    definition: SkillDefinition,
+    phase: "start" | "complete",
+  ): void {
+    const combat = caster.GetComponent(CombatComponent);
+    const shouldReset =
+      (phase === "start" && definition.autoAttackPolicy === SkillAutoAttackPolicy.ResetOnStart) ||
+      (phase === "complete" && definition.autoAttackPolicy === SkillAutoAttackPolicy.ResetOnComplete);
+    const shouldCancel = phase === "start" && definition.autoAttackPolicy === SkillAutoAttackPolicy.Cancel;
+    if (!shouldReset && !shouldCancel) return;
+    const state = shouldCancel
+      ? combat.ToggleAutoAttack(0, false)
+      : combat.ResetAutoAttackSwing();
+    this.spawnPublish("publish-skill-auto-attack-policy", () => this.map.PublishAutoAttackState(caster, state));
   }
 
   /** Veto负责可扩展的提前错误，结算前仍保留同一不变量，避免未来入口绕过事件链。 / Veto reports extensible errors early while this invariant remains before resolution so future entrypoints cannot bypass it. */

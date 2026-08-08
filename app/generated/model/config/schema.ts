@@ -10,6 +10,21 @@
 
 
 /**
+ * 道具、Buff和技能共用的原子效果类型
+ */
+export enum ActionType {
+    None = 0,
+    ChangeNumeric = 1,
+    AddBuff = 2,
+    RemoveBuff = 3,
+    DealDamage = 4,
+    RegisterDamageAbsorber = 5,
+    Heal = 6,
+}
+
+
+
+/**
  * 命中同一Buff冲突键时的决策
  */
 export enum BuffConflictPolicy {
@@ -58,6 +73,58 @@ export enum BuffStackScope {
 export enum ConfigReloadMode {
     Hot = 1,
     Cold = 2,
+}
+
+
+
+/**
+ * 技能与普通攻击时间线的关系
+ */
+export enum SkillAutoAttackPolicy {
+    Keep = 1,
+    ResetOnStart = 2,
+    ResetOnComplete = 3,
+    Cancel = 4,
+}
+
+
+
+/**
+ * 技能命中方式
+ */
+export enum SkillDelivery {
+    Direct = 1,
+    Projectile = 2,
+}
+
+
+
+/**
+ * 技能效果目标
+ */
+export enum SkillEffectTarget {
+    Caster = 1,
+    PrimaryTarget = 2,
+}
+
+
+
+/**
+ * 施法期间的移动规则
+ */
+export enum SkillMovementPolicy {
+    Allow = 1,
+    InterruptWhileCasting = 2,
+}
+
+
+
+/**
+ * 技能目标关系
+ */
+export enum SkillTargetRelation {
+    Enemy = 1,
+    Friendly = 2,
 }
 
 
@@ -260,7 +327,7 @@ export class BuffConfig {
     /**
      * 添加Action类型
      */
-    readonly addActionType: number
+    readonly addActionType: ActionType
     /**
      * 添加Action参数
      */
@@ -268,7 +335,7 @@ export class BuffConfig {
     /**
      * Tick Action类型
      */
-    readonly tickActionType: number
+    readonly tickActionType: ActionType
     /**
      * Tick Action参数
      */
@@ -276,7 +343,7 @@ export class BuffConfig {
     /**
      * 移除Action类型
      */
-    readonly removeActionType: number
+    readonly removeActionType: ActionType
     /**
      * 移除Action参数
      */
@@ -767,6 +834,182 @@ export class PlayerConfig {
 }
 
 
+export namespace game {
+export class SkillConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+        if (_json_.description === undefined) { throw new Error() }
+        this.description = _json_.description
+        if (_json_.target_relation === undefined) { throw new Error() }
+        this.targetRelation = _json_.target_relation
+        if (_json_.cast_time_ms === undefined) { throw new Error() }
+        this.castTimeMs = _json_.cast_time_ms
+        if (_json_.cooldown_ms === undefined) { throw new Error() }
+        this.cooldownMs = _json_.cooldown_ms
+        if (_json_.global_cooldown_ms === undefined) { throw new Error() }
+        this.globalCooldownMs = _json_.global_cooldown_ms
+        if (_json_.range_meters === undefined) { throw new Error() }
+        this.rangeMeters = _json_.range_meters
+        if (_json_.delivery === undefined) { throw new Error() }
+        this.delivery = _json_.delivery
+        if (_json_.projectile_speed_meters_per_second === undefined) { throw new Error() }
+        this.projectileSpeedMetersPerSecond = _json_.projectile_speed_meters_per_second
+        if (_json_.movement_policy === undefined) { throw new Error() }
+        this.movementPolicy = _json_.movement_policy
+        if (_json_.auto_attack_policy === undefined) { throw new Error() }
+        this.autoAttackPolicy = _json_.auto_attack_policy
+        if (_json_.revalidate_on_complete === undefined) { throw new Error() }
+        this.revalidateOnComplete = _json_.revalidate_on_complete
+        if (_json_.required_absent_buff_config_id === undefined) { throw new Error() }
+        this.requiredAbsentBuffConfigId = _json_.required_absent_buff_config_id
+    }
+
+    /**
+     * 技能配置ID
+     */
+    readonly id: number
+    /**
+     * 显示名称
+     */
+    readonly name: string
+    /**
+     * 技能说明
+     */
+    readonly description: string
+    /**
+     * 目标关系
+     */
+    readonly targetRelation: SkillTargetRelation
+    /**
+     * 读条时间（毫秒）
+     */
+    readonly castTimeMs: number
+    /**
+     * 技能冷却（毫秒）
+     */
+    readonly cooldownMs: number
+    /**
+     * 公共冷却（毫秒）
+     */
+    readonly globalCooldownMs: number
+    /**
+     * 施法距离（米）
+     */
+    readonly rangeMeters: number
+    /**
+     * 命中方式
+     */
+    readonly delivery: SkillDelivery
+    /**
+     * 弹道速度（米/秒；直接命中填0）
+     */
+    readonly projectileSpeedMetersPerSecond: number
+    /**
+     * 移动策略
+     */
+    readonly movementPolicy: SkillMovementPolicy
+    /**
+     * 平A关系策略
+     */
+    readonly autoAttackPolicy: SkillAutoAttackPolicy
+    /**
+     * 完成/发射前是否重校验目标
+     */
+    readonly revalidateOnComplete: boolean
+    /**
+     * 目标必须不存在的BuffConfigId；0表示无
+     */
+    readonly requiredAbsentBuffConfigId: number
+
+    resolve(tables:Tables) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
+export class SkillEffectConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.skill_id === undefined) { throw new Error() }
+        this.skillId = _json_.skill_id
+        if (_json_.order === undefined) { throw new Error() }
+        this.order = _json_.order
+        if (_json_.target === undefined) { throw new Error() }
+        this.target = _json_.target
+        if (_json_.action_type === undefined) { throw new Error() }
+        this.actionType = _json_.action_type
+        if (_json_.action_params === undefined) { throw new Error() }
+        { this.actionParams = []; for(let _ele0 of _json_.action_params) { let _e0; _e0 = _ele0; this.actionParams.push(_e0);}}
+        if (_json_.description === undefined) { throw new Error() }
+        this.description = _json_.description
+    }
+
+    /**
+     * 效果行ID
+     */
+    readonly id: number
+    /**
+     * 所属技能ID
+     */
+    readonly skillId: number
+    skillId_ref: game.SkillConfig | undefined
+    /**
+     * 同技能内执行顺序
+     */
+    readonly order: number
+    /**
+     * 效果目标
+     */
+    readonly target: SkillEffectTarget
+    /**
+     * Action类型
+     */
+    readonly actionType: ActionType
+    /**
+     * Action参数
+     */
+    readonly actionParams: number[]
+    /**
+     * 效果说明
+     */
+    readonly description: string
+
+    resolve(tables:Tables) {
+
+        this.skillId_ref = tables.TbSkillConfig.get(this.skillId)
+
+
+
+
+
+    }
+}
+
+}
+
+
 
 export class vector2 {
 
@@ -1096,6 +1339,74 @@ export class TbBuffConfig {
 }
 
 
+export namespace game {
+/**
+ * 技能施法规则配置
+ */
+export class TbSkillConfig {
+    private _dataMap: Map<number, game.SkillConfig>
+    private _dataList: game.SkillConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.SkillConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.SkillConfig
+            _v = new game.SkillConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.SkillConfig> { return this._dataMap; }
+    getDataList(): game.SkillConfig[] { return this._dataList; }
+
+    get(key: number): game.SkillConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
+export namespace game {
+/**
+ * 技能有序效果配置
+ */
+export class TbSkillEffectConfig {
+    private _dataMap: Map<number, game.SkillEffectConfig>
+    private _dataList: game.SkillEffectConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.SkillEffectConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.SkillEffectConfig
+            _v = new game.SkillEffectConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.SkillEffectConfig> { return this._dataMap; }
+    getDataList(): game.SkillEffectConfig[] { return this._dataList; }
+
+    get(key: number): game.SkillEffectConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
 
 type JsonLoader = (file: string) => any
 
@@ -1145,6 +1456,16 @@ export class Tables {
      * Buff配置
      */
     get TbBuffConfig(): game.TbBuffConfig  { return this._TbBuffConfig;}
+    private _TbSkillConfig: game.TbSkillConfig
+    /**
+     * 技能施法规则配置
+     */
+    get TbSkillConfig(): game.TbSkillConfig  { return this._TbSkillConfig;}
+    private _TbSkillEffectConfig: game.TbSkillEffectConfig
+    /**
+     * 技能有序效果配置
+     */
+    get TbSkillEffectConfig(): game.TbSkillEffectConfig  { return this._TbSkillEffectConfig;}
 
     constructor(loader: JsonLoader) {
         this._TbItemConfig = new game.TbItemConfig(loader('game_tbitemconfig'))
@@ -1156,6 +1477,8 @@ export class Tables {
         this._TbMonsterConfig = new game.TbMonsterConfig(loader('game_tbmonsterconfig'))
         this._TbMonsterAreaConfig = new game.TbMonsterAreaConfig(loader('game_tbmonsterareaconfig'))
         this._TbBuffConfig = new game.TbBuffConfig(loader('game_tbbuffconfig'))
+        this._TbSkillConfig = new game.TbSkillConfig(loader('game_tbskillconfig'))
+        this._TbSkillEffectConfig = new game.TbSkillEffectConfig(loader('game_tbskilleffectconfig'))
 
         this._TbItemConfig.resolve(this)
         this._TbMapConfig.resolve(this)
@@ -1166,6 +1489,8 @@ export class Tables {
         this._TbMonsterConfig.resolve(this)
         this._TbMonsterAreaConfig.resolve(this)
         this._TbBuffConfig.resolve(this)
+        this._TbSkillConfig.resolve(this)
+        this._TbSkillEffectConfig.resolve(this)
     }
 }
 

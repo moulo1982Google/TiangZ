@@ -54,6 +54,14 @@
     {
       "table_name": "BuffConfig",
       "reload_mode": 1
+    },
+    {
+      "table_name": "SkillConfig",
+      "reload_mode": 1
+    },
+    {
+      "table_name": "SkillEffectConfig",
+      "reload_mode": 1
     }
   ],
   "game_tbmapconfig": [

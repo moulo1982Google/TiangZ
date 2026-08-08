@@ -2,8 +2,9 @@ import { Component, component, lifecycle } from "../../../core/public";
 import type { MapComponent } from "../map/MapComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
 import type { SkillCastCommand, SkillCastState } from "./SkillComponent";
+import type { SkillDefinition } from "./SkillDefinition";
 
-/** 地图级飞行法术只保存ID与截止时间；每次Tick重新解析Unit。 / Map-level projectiles retain ids and deadlines only, resolving Units on every tick. */
+/** 飞行法术保存ID、截止时间和发射时冻结的纯规则；Unit仍按ID重取。 / Projectiles retain ids, deadlines, and pure launch-time rules while resolving Units by id. */
 export interface SkillProjectile {
   readonly castId: bigint;
   readonly skillId: number;
@@ -11,6 +12,7 @@ export interface SkillProjectile {
   readonly targetUnitId: number;
   readonly launchedAtMs: number;
   readonly impactAtMs: number;
+  readonly definition: SkillDefinition;
 }
 
 export interface SkillMapComponent {

@@ -1,6 +1,6 @@
-# Action与Buff最小闭环
+# Action与Buff设计
 
-本文定义当前TiangZ的最小效果系统。它服务于道具和持续效果，暂不包含Cast、技能目标选择、施法前摇或技能队列。
+本文定义TiangZ的通用效果层。道具、Buff Tick和技能命中都复用Action；Cast只负责目标与时间线，不把伤害、治疗或Buff生命周期再实现一遍。
 
 ## 一、先看世界观
 
@@ -14,9 +14,11 @@ PlayerUnit上的UseItem Handler
         |
         +--> ActionExecutor.ExecuteAction(player, action)
                     |
-                    +--> ChangeNumeric -> Numeric/Combat
+                    +--> ChangeNumeric -> Numeric
+                    +--> Heal/DealDamage -> Combat
                     +--> AddBuff      -> BuffComponent.AddBuff
                     +--> RemoveBuff   -> BuffComponent.RemoveBuff
+                    +--> RegisterDamageAbsorber -> Combat modifier
 
 BuffComponent
   +-- Buff ChildEntity
@@ -29,7 +31,7 @@ BuffComponent
 
 1. **Item只声明效果，不实现效果。** 道具表提供Action类型和整数参数，Handler负责校验和消费，执行器负责路由。
 2. **Buff只拥有自己的生命周期。** Buff是`BuffComponent`拥有的ChildEntity，不是Actor，不接收网络消息；Timer属于Buff，Timer触发时执行Action。
-3. **Action不负责目标选择和广播。** Action只操作传入的Owner。HP通过`CombatComponent.ApplyDamage/ApplyHealing`，Buff通过`BuffComponent`，广播由Map/Audience完成。
+3. **Action不负责目标选择和广播。** Action只操作调用方已经解析出的目标。HP通过`CombatComponent.ApplyDamage/ApplyHealing`，Buff通过`BuffComponent`，广播由Map/Audience完成。
 
 这样做以后，“小红药”和“每3秒回血，持续30秒”只是配置不同：前者是一条立即Action，后者是一个带TickAction的Buff。
 
@@ -44,6 +46,8 @@ app/hotfix/demo/buff/BuffSystem.ts         # 单个Buff的Awake、Tick、Destroy
 app/hotfix/demo/buff/BuffComponentSystem.ts# 添加、移除、传送、AOI事件
 game_config/Datas/ItemConfig.xlsx          # 道具使用效果
 game_config/Datas/BuffConfig.xlsx          # Buff生命周期和Action配置
+game_config/Datas/SkillConfig.xlsx         # 技能时间线和目标关系
+game_config/Datas/SkillEffectConfig.xlsx   # 服务端有序Action列表
 ```
 
 Model只冻结字段和生命周期；Action解释、配置读取、Timer安排和业务规则都在Hotfix，所以调整回血数值或Tick行为不需要改Rust，也不需要新增一个`XxxActor`。
@@ -57,10 +61,9 @@ const item = unit.GetComponent(ItemComponent).GetItem(itemId);
 if (!item) throw new RpcError(GameErrCode.ItemNotFound, "item not found");
 
 const config = GameConfigs.ItemConfig.Get(item.configId);
-const actionType = config.useEffect === 1
-  ? ActionType.AddBuff
-  : ActionType.ChangeNumeric;
-const action = ActionFromConfig(actionType, config.useParams);
+const action = config.useEffect === 1
+  ? ActionFromConfig(ActionType.AddBuff, config.useParams)
+  : ActionFromConfig(config.useParams[0], config.useParams.slice(1));
 
 unit.GetComponent(ItemComponent).UseItem(itemId);
 ExecuteAction(unit, action, { reason: "item-use" });
@@ -74,7 +77,7 @@ ExecuteAction(unit, action, { reason: "item-use" });
 const buffs = player.GetComponent(BuffComponent);
 const buff = buffs.AddBuff(2001);
 
-// 2001由配置提供：持续30秒，每3秒执行一次 ChangeNumeric(CurrentHp, 50)。
+// 2001由配置提供：持续30秒，每3秒执行一次 Heal(50)。
 // BuffSystem会创建自己的到期Timer和Tick Timer。
 
 buffs.RemoveBuff(buff.Id as bigint, "manual");
@@ -86,10 +89,7 @@ buffs.RemoveBuff(buff.Id as bigint, "manual");
 buffs.AddBuff(2001, {
   durationMs: 10_000,
   tickIntervalMs: 1_000,
-  tickAction: {
-    type: ActionType.ChangeNumeric,
-    parameters: [BigInt(NumericType.CurrentHp), 10n],
-  },
+  tickAction: { type: ActionType.Heal, parameters: [10n] },
 });
 ```
 
@@ -161,18 +161,17 @@ G2C_BuffRemoved
 - `Unit.Dispose()`通过ChildEntity所有权链销毁Buff，Buff的RemoveAction只执行一次。RemoveAction必须幂等，不能假设Unit仍然连接客户端。
 - Buff添加/移除由BuffComponent调用Map的公开事件；Buff自身不找Gate、不扫描AOI、不调用Location。
 
-## 七、暂不放进这个系统的内容
+## 七、Action明确不拥有的内容
 
-- Cast、技能目标选择、施法读条、打断、公共冷却。
-- 技能是否重置普通攻击的时间轴。
+- Cast、技能目标选择、施法读条、打断、公共冷却和平A策略；这些属于SkillComponent。
 - 跨Unit目标、范围伤害、队伍权限和复杂Action图。
 - 生产级Buff持久化策略。当前传送快照已经支持生命周期恢复，但是否下线计时、是否写数据库要由后续持久化域设计决定。
 
-这些内容以后可以复用Action执行器，但不能提前把ActionExecutor变成一个知道所有游戏规则的巨型分支。
+当前SkillEffect已经复用Action执行器，但目标仍由SkillComponent解析。以后增加地面AOE或多目标时，也应先在技能领域得到明确目标列表，再逐个执行Action，不能把ActionExecutor变成一个知道所有游戏规则的巨型分支。
 
 ## 八、开发检查表
 
-新增一个道具或Buff时，按顺序检查：
+新增一个道具、Buff或技能效果时，按顺序检查：
 
 1. 是否能用已有Action表达；能表达就只改Excel，不新写Handler分支。
 2. 是否需要一个新的稳定ActionType；需要时先改Model枚举、配置校验和执行器，再生成代码。

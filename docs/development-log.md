@@ -668,3 +668,12 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 玩家移动中断读条，所有五个法术在接受时重置平A读条但保留攻击意图；GCD和技能CD按deadline保存并跨地图恢复，活动Cast不跨地图。
 - 增加`SkillEvents.BeforeCast`同步Veto；虚弱灵魂监听器只读拒绝真言术·盾，SkillMap和Buff冲突仍保留最终不变量，检查与提交之间没有await。
 - 新增Buff策略矩阵与真实Runtime五技能冒烟；技能数值当前留在Hotfix SkillCatalog，Luban表格化和技能压力A/B后续进行。
+
+# 2026-08-07：Luban技能、Buff与Action配置闭环
+
+- 新增`SkillConfig.xlsx`与服务端专有的`SkillEffectConfig.xlsx`。前者描述目标关系、读条、CD/GCD、距离、弹道、移动和平A策略，后者按稳定顺序组合Action；五个演示技能不再把数值硬编码在Hotfix。
+- `SkillCatalog.ts`收敛为配置适配器，按游戏配置指纹整体重建只读索引。ActiveCast和在途Projectile冻结接受请求时的定义，配置Reload只影响后续新Cast，避免一次技能混用两代规则。
+- 游戏配置生成器增加Item/Buff/Skill跨表和Action参数校验：悬空Buff、重复效果顺序、非法伤害类型、派生Numeric写入、错误弹道速度等会在覆盖Generated输出前失败。
+- Action补充`Heal`，1001小型生命药水改为`Heal(150)`，2001持续恢复的Tick改为`Heal(50)`；两条治疗路径都进入Combat，不再直接写CurrentHp。灼烧Tick使用`DealDamage(5, Fire)`，盾的吸收器由Buff 4003的AddAction配置。
+- Cocos 3D只保留快捷键到SkillId的Demo映射，技能名称、目标关系和距离改读生成的客户端SkillConfig；服务端效果表不会下发客户端。
+- 新增[配置化技能教程](tutorials/18-configured-skill.md)，并同步项目上下文、业务开发手册、游戏配置说明、Action/Buff设计和路线图。

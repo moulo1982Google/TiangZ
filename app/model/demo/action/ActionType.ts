@@ -1,19 +1,15 @@
-/**
- * 业务效果的最小分类。Action不是技能系统；道具和Buff可以直接执行它，Cast留到后续阶段。
- *
- * Minimal business-effect kinds. Action is not the skill system: items and
- * Buffs can execute it directly, while Cast is intentionally deferred.
- */
-export const ActionType = {
-  None: 0,
-  ChangeNumeric: 1,
-  AddBuff: 2,
-  RemoveBuff: 3,
-  DealDamage: 4,
-  RegisterDamageAbsorber: 5,
-} as const;
+import { ActionType } from "../../../generated/model/config";
 
-export type ActionTypeValue = (typeof ActionType)[keyof typeof ActionType];
+/**
+ * 业务效果的最小分类。Action不选择目标、不处理施法时间线，也不负责网络广播；
+ * 道具、Buff和技能都通过同一执行入口复用这些原子效果。
+ *
+ * Minimal business-effect kinds. Actions never choose targets, own cast
+ * timelines, or publish network messages. Items, Buffs, and skills all reuse
+ * the same execution entrypoint for these atomic effects.
+ */
+export { ActionType };
+export type ActionTypeValue = ActionType;
 
 /**
  * 配置和运行时都使用同一种参数形状；数值统一为bigint，避免i64在TS边界丢精度。

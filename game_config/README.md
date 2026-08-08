@@ -10,6 +10,8 @@
 - `MonsterConfig.xlsx`：怪物模板、最大生命值、基础攻击力、米/秒移动速度、独立普通攻击距离、攻击间隔毫秒、攻击模式和死亡复活秒数。
 - `MonsterAreaConfig.xlsx`：固定刷怪槽、地图坐标和地图创建时是否生成；不保存尸体时间或复活时间。
 - `BuffConfig.xlsx`：Buff模板、持续时间、Tick间隔、冲突/刷新策略、仅服务端使用的详细策划说明，以及添加/Tick/移除时执行的Action。
+- `SkillConfig.xlsx`：技能目标关系、读条、CD/GCD、距离、弹道、移动和平A策略；客户端与服务端共享。
+- `SkillEffectConfig.xlsx`：技能命中后按顺序执行的Action；仅服务端生成，客户端不能读取伤害和Buff结算规则。
 
 修改Excel后运行：
 
@@ -29,7 +31,7 @@ npm run test:game-config
 
 `MapConfig.spatial_mode`当前支持`Grid2D`与`NavMesh3D`。Grid2D必须填写`width_cells/depth_cells/cell_size_meters`；NavMesh3D必须填写`navigation_asset/navigation_version/navigation_hash`，其中哈希为小写SHA-256。`entry_players_per_tick`限制单个MapInstance每逻辑Tick完成AOI Attach的人数，`entry_queue_capacity`限制仍在Loading中的等待人数；它们属于Cold地图容量配置。坐标采用米制X/Y/Z，X/Z为地面、Y为高度；完整契约见[地图空间与3D坐标契约](../docs/design/spatial-world.md)。
 
-## Item、Action与Buff
+## Item、Action、Buff与Skill
 
 `ItemConfig.use_effect`决定道具是否可用以及使用后执行哪种最小效果：
 
@@ -37,9 +39,9 @@ npm run test:game-config
 |---:|---|---|
 | `0` | 不可使用 | 空数组 |
 | `1` | 给使用者添加Buff | 一个`BuffConfig.id` |
-| `2` | 执行一个Action | `[ActionType参数...]`；当前`ChangeNumeric`为`[NumericType, delta]` |
+| `2` | 执行一个Action | `[ActionType参数...]`；例如`Heal(50)`写作`6,50` |
 
-当前演示道具：小型生命药水使用`ChangeNumeric(CurrentHp, 50)`，大型生命药水使用`AddBuff(2001)`。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、创建Timer或直接广播Buff。
+当前演示道具：小型生命药水使用`Heal(150)`，大型生命药水使用`AddBuff(2001)`。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、创建Timer或直接广播Buff。
 
 Cocos3D演示玩家出生时预置`1001×50`和`1002×20`两个堆叠，快捷栏固定使用`1`切换平A、`2`使用1001、`3`使用1002。这个预置属于Demo的`ItemComponentSystem.Awake`，正式业务应由持久化数据恢复，不要把演示数量当成通用框架默认值。
 
@@ -53,7 +55,25 @@ Buff冲突不能只用一个`Unique`布尔值表达。`stack_group`决定哪些B
 
 当前预置语义为：冰冷按目标共享并刷新；灼烧按来源独立、同来源刷新；真言术·盾按目标替换且重置吸收状态；虚弱灵魂重复添加拒绝；真言术·韧使用`HigherWins`，高等级替换、同等级刷新、低等级拒绝。刷新不得默认重复执行AddAction。
 
-Action当前支持`None`、`ChangeNumeric`、`AddBuff`和`RemoveBuff`。表结构和Action参数属于Model，改列或类型必须重启；只改数值行时按Hot配置流程生成候选并Reload。更完整的调用边界见[Action与Buff最小闭环](../docs/design/action-buff.md)。
+Action当前支持：
+
+| ID | Action | 参数 | 边界 |
+|---:|---|---|---|
+| `0` | `None` | 空 | 仅表示没有Action |
+| `1` | `ChangeNumeric` | `NumericType, delta` | 修改非派生普通数值；不能表达伤害或治疗 |
+| `2` | `AddBuff` | `BuffConfigId` | 交给目标的`BuffComponent`处理冲突和生命周期 |
+| `3` | `RemoveBuff` | `BuffInstanceId`；Buff移除阶段可留空表示自身 | 删除一个运行时Buff实例 |
+| `4` | `DealDamage` | `amount, DamageSchool` | 统一进入`CombatComponent.ApplyDamage` |
+| `5` | `RegisterDamageAbsorber` | `amount[, priority]` | Buff添加阶段注册护盾数据 |
+| `6` | `Heal` | `amount` | 统一进入`CombatComponent.ApplyHealing` |
+
+表结构、Action ID和参数形状属于Model，改列或类型必须完整生成并重启；只改数值行时按Hot配置流程生成候选并Reload。生成器会校验参数数量、Buff外键、伤害类型、派生Numeric写入和重复技能效果顺序，不要依赖运行到战斗时才发现坏数据。更完整的调用边界见[Action与Buff设计](../docs/design/action-buff.md)。
+
+### Skill配置
+
+`SkillConfig`只回答“能否施放以及如何推进时间线”，`SkillEffectConfig`只回答“成功命中后依次执行哪些Action”。一项技能可以有多行效果，按`order`、再按效果行`id`稳定排序；同技能不能填写重复`order`。例如寒冰箭由两行组成：先`DealDamage(50, Frost)`，再`AddBuff(4001)`。
+
+服务端的`SkillCatalog.ts`按当前游戏配置指纹把两张表组合成只读定义。配置Reload后，新Cast使用新定义；已开始读条和已经发射的弹道继续持有接受请求时冻结的旧定义，避免半次技能混用两代数值。客户端SDK只生成`SkillConfig`，用于名称、距离、读条和CD表现；`SkillEffectConfig`保持服务端专有。完整开发流程见[新增一个配置化技能](../docs/tutorials/18-configured-skill.md)。
 
 怪物死亡后，当前MonsterUnit会以`alive=false`的尸体状态继续保留在AOI中；当前最小Demo复用`respawn_seconds`作为尸体存在时间，到期后先发布旧尸体Leave并销毁，再复用同一个`AreaId`刷怪槽创建新的MonsterUnit和UnitId。`MonsterComponent`把`MonsterConfig.max_hp`写入Numeric的`MaxHpBase`，由Rust推导出只读`MaxHp`，把攻击力写入`AttackBase`并由Rust推导只读`Attack`，把`attack_interval_ms`写入`AttackSpeedAdd`并读取只读`AttackSpeed`；`move_speed`按米/秒转换为Numeric的毫米/秒`MoveSpeedBase`。只有掉落设计确实要求尸体消失与复活分离时，才在MonsterConfig新增独立尸体时间；不要放入MonsterAreaConfig。
 

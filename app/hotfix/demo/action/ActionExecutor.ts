@@ -29,7 +29,7 @@ export interface ActionExecutionResult {
  * bigint here and are never passed around as unknown afterward.
  */
 export function ActionFromConfig(type: number, parameters: readonly number[]): ActionDefinition {
-  if (!Number.isSafeInteger(type) || type < ActionType.None || type > ActionType.RegisterDamageAbsorber) {
+  if (!Number.isSafeInteger(type) || type < ActionType.None || type > ActionType.Heal) {
     throw new Error(`unsupported action type: ${type}`);
   }
   if (!parameters.every(Number.isSafeInteger)) {
@@ -42,16 +42,16 @@ export function ActionFromConfig(type: number, parameters: readonly number[]): A
 }
 
 /**
- * 执行一个最小业务Action。它只操作Owner的组件，不负责选目标、不负责Cast，也不负责网络广播。
+ * 执行一个最小业务Action。它只操作调用方已经解析出的Target，不负责选目标、不负责Cast，也不负责网络广播。
  * 伤害和治疗继续走CombatComponent，Buff只通过AddBuff/RemoveBuff改变生命周期。
  *
- * Executes one minimal business Action. It only operates on the Owner's
+ * Executes one minimal business Action. It only operates on the caller-resolved Target's
  * Components: no target selection, Cast logic, or network broadcast belongs
  * here. Damage and healing stay in CombatComponent; Buff lifetime changes go
  * through AddBuff/RemoveBuff.
  */
 export function ExecuteAction(
-  owner: Unit<any[]>,
+  target: Unit<any[]>,
   action: ActionDefinition,
   context: ActionExecutionContext = {},
 ): ActionExecutionResult {
@@ -60,20 +60,20 @@ export function ExecuteAction(
       requireParameterCount(action, 0);
       return { changed: false };
     case ActionType.ChangeNumeric:
-      return executeChangeNumeric(owner, action, context);
+      return executeChangeNumeric(target, action, context);
     case ActionType.AddBuff:
       requireParameterCount(action, 1);
       {
-        const buff = owner.GetComponent(BuffComponent).AddBuff(toConfigId(action.parameters[0]), {
+        const buff = target.GetComponent(BuffComponent).AddBuff(toConfigId(action.parameters[0]), {
           sourceUnitId: context.sourceUnitId,
           sourceAbilityId: context.sourceAbilityId,
         });
-        return { changed: true, addedBuff: buff.PublicState(owner.UnitId) };
+        return { changed: true, addedBuff: buff.PublicState(target.UnitId) };
       }
     case ActionType.RemoveBuff:
       if (action.parameters.length === 0 && context.sourceBuffInstanceId !== undefined) {
         return {
-          changed: owner.GetComponent(BuffComponent).RemoveBuff(
+          changed: target.GetComponent(BuffComponent).RemoveBuff(
             context.sourceBuffInstanceId,
             context.reason ?? "action",
           ),
@@ -81,7 +81,7 @@ export function ExecuteAction(
       }
       requireParameterCount(action, 1);
       return {
-        changed: owner.GetComponent(BuffComponent).RemoveBuff(
+        changed: target.GetComponent(BuffComponent).RemoveBuff(
           action.parameters[0],
           context.reason ?? "action",
         ),
@@ -91,7 +91,7 @@ export function ExecuteAction(
       {
         const amount = action.parameters[0];
         if (amount < 0n) throw new Error(`DealDamage amount must be non-negative: ${amount}`);
-        const result = owner.GetComponent(CombatComponent).ApplyDamage({
+        const result = target.GetComponent(CombatComponent).ApplyDamage({
           amount,
           sourceUnitId: context.sourceUnitId,
           abilityId: context.sourceAbilityId,
@@ -103,6 +103,17 @@ export function ExecuteAction(
           damage: result,
         };
       }
+    case ActionType.Heal:
+      requireParameterCount(action, 1);
+      {
+        const amount = action.parameters[0];
+        if (amount < 0n) throw new Error(`Heal amount must be non-negative: ${amount}`);
+        const result = target.GetComponent(CombatComponent).ApplyHealing(amount);
+        return {
+          changed: result.restoredHealing > 0n,
+          value: result.currentHp,
+        };
+      }
     case ActionType.RegisterDamageAbsorber:
       if (action.parameters.length < 1 || action.parameters.length > 2) {
         throw new Error(`RegisterDamageAbsorber expects 1 or 2 parameters, received ${action.parameters.length}`);
@@ -112,7 +123,7 @@ export function ExecuteAction(
         const amount = context.damageAbsorberAmountOverride ?? configuredAmount;
         const priority = action.parameters.length === 2 ? toSafeNumber(action.parameters[1], "absorber priority") : 0;
         if (amount <= 0n) throw new Error(`damage absorber amount must be positive: ${amount}`);
-        const modifierId = owner.GetComponent(CombatComponent).RegisterDamageAbsorber(amount, priority);
+        const modifierId = target.GetComponent(CombatComponent).RegisterDamageAbsorber(amount, priority);
         return { changed: true, value: amount, damageAbsorberModifierId: modifierId };
       }
     default:
@@ -121,7 +132,7 @@ export function ExecuteAction(
 }
 
 function executeChangeNumeric(
-  owner: Unit<any[]>,
+  target: Unit<any[]>,
   action: ActionDefinition,
   context: ActionExecutionContext,
 ): ActionExecutionResult {
@@ -129,7 +140,7 @@ function executeChangeNumeric(
   const numericType = toNumericType(action.parameters[0]);
   const delta = action.parameters[1];
   if (numericType === NumericType.CurrentHp) {
-    const combat = owner.GetComponent(CombatComponent);
+    const combat = target.GetComponent(CombatComponent);
     if (delta > 0n) {
       const result = combat.ApplyHealing(delta);
       return { changed: result.restoredHealing > 0n, value: result.currentHp };
@@ -137,7 +148,7 @@ function executeChangeNumeric(
     if (delta < 0n) {
       const result = combat.ApplyDamage({
         amount: -delta,
-        sourceUnitId: context.sourceUnitId ?? owner.UnitId,
+        sourceUnitId: context.sourceUnitId ?? target.UnitId,
         abilityId: context.sourceAbilityId,
       });
       return { changed: result.finalDamage > 0n, value: result.remainingHp };
@@ -148,7 +159,7 @@ function executeChangeNumeric(
   if (IsDerivedNumericType(numericType)) {
     throw new Error(`ChangeNumeric cannot write derived NumericType: ${numericType}`);
   }
-  const numeric = owner.GetComponent(NumericComponent);
+  const numeric = target.GetComponent(NumericComponent);
   const next = numeric[numericType] + delta;
   numeric[numericType] = next;
   return { changed: delta !== 0n, value: next };

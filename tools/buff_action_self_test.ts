@@ -15,6 +15,8 @@ import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { GameConfigRegistry, GameConfigs } from "../app/generated/model/config";
 import { ActionType } from "../app/model/demo/action/ActionType";
+import { ExecuteAction } from "../app/hotfix/demo/action/ActionExecutor";
+import { GetSkillDefinition } from "../app/hotfix/demo/skill/SkillCatalog";
 import { BuffApplyStatus, BuffComponent } from "../app/model/demo/buff/BuffComponent";
 import { CombatComponent } from "../app/model/demo/combat/CombatComponent";
 import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
@@ -37,9 +39,33 @@ async function main(): Promise<void> {
   );
   const manifestPath = path.resolve("game_config/generated/game-config.manifest.json");
   const dataPath = path.resolve("game_config/generated/server.json");
+  const manifestJson = readFileSync(manifestPath, "utf8");
+  const dataJson = readFileSync(dataPath, "utf8");
   GameConfigRegistry.Install(
-    readFileSync(manifestPath, "utf8"),
-    readFileSync(dataPath, "utf8"),
+    manifestJson,
+    dataJson,
+  );
+  const frostboltDefinition = GetSkillDefinition(3001);
+  assert.equal(frostboltDefinition.name, "寒冰箭");
+  assert.equal(frostboltDefinition.effects.length, 2);
+  assert.deepEqual(frostboltDefinition.effects[0].action.parameters, [50n, 2n]);
+  assert.deepEqual(frostboltDefinition.effects[1].action.parameters, [4001n]);
+
+  // Reload只替换之后查询到的定义；旧对象保持不可变，供已接受的Cast/Projectile安全完成。
+  // Reload replaces definitions returned by later lookups only; the old immutable object remains safe for accepted casts/projectiles.
+  const changedSkillData = JSON.parse(dataJson) as Record<string, Array<Record<string, unknown>>>;
+  const frostboltDamage = changedSkillData.game_tbskilleffectconfig.find((row) => row.id === 300101);
+  assert.ok(frostboltDamage);
+  frostboltDamage.action_params = [75, 2];
+  GameConfigRegistry.Install(
+    JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "a".repeat(64) }),
+    JSON.stringify(changedSkillData),
+  );
+  assert.deepEqual(GetSkillDefinition(3001).effects[0].action.parameters, [75n, 2n]);
+  assert.deepEqual(frostboltDefinition.effects[0].action.parameters, [50n, 2n]);
+  GameConfigRegistry.Install(
+    JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "b".repeat(64) }),
+    dataJson,
   );
 
   HotfixSystem.Begin(testHotfixManifest());
@@ -65,6 +91,7 @@ async function main(): Promise<void> {
   const buffs = unit.AddComponent(BuffComponent);
 
   assert.equal(GameConfigs.BuffConfig.Get(2001).tickIntervalMs, 3_000);
+  assert.equal(GameConfigs.BuffConfig.Get(2001).tickActionType, ActionType.Heal);
   const buff = buffs.AddBuff(2001);
   assert.equal(buffs.GetBuff(buff.Id as bigint), buff);
   assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentHp], 1n);
@@ -122,6 +149,7 @@ async function main(): Promise<void> {
   assert.equal(burn1Refresh.status, BuffApplyStatus.Refreshed);
   assert.equal(burn1Refresh.buff?.Id, burn1.buff?.Id);
   assert.equal(burn2.status, BuffApplyStatus.Applied);
+  assert.equal(GameConfigs.BuffConfig.Get(4002).tickActionType, ActionType.DealDamage);
   assert.equal(buffs.GetBuffs().filter((value) => value.ConfigId === 4002).length, 2);
   const burnFrame = TimeSystem.Instance.FrameTime + 1_000;
   const burnServer = TimeSystem.Instance.ServerNow + 1_000;
@@ -133,6 +161,12 @@ async function main(): Promise<void> {
   for (const value of buffs.GetBuffs().filter((item) => item.ConfigId === 4002)) {
     buffs.RemoveBuff(value.Id as bigint, "test-burn");
   }
+
+  const healed = ExecuteAction(unit, { type: ActionType.Heal, parameters: [9n] }, {
+    sourceAbilityId: 3005,
+  });
+  assert.equal(healed.changed, true);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentHp], 50n);
 
   const weakSoul = buffs.ApplyBuff(4004, { sourceUnitId: 10, sourceAbilityId: 3004 });
   const weakSoulRejected = buffs.ApplyBuff(4004, { sourceUnitId: 11, sourceAbilityId: 3004 });
@@ -157,9 +191,9 @@ async function main(): Promise<void> {
   const shield = buffs.ApplyBuff(4003, {
     sourceUnitId: unit.UnitId,
     sourceAbilityId: 3004,
-    addAction: { type: ActionType.RegisterDamageAbsorber, parameters: [200n] },
   });
   assert.equal(shield.status, BuffApplyStatus.Applied);
+  assert.equal(GameConfigs.BuffConfig.Get(4003).addActionType, ActionType.RegisterDamageAbsorber);
   const absorbed = unit.GetComponent(CombatComponent).ApplyDamage({ amount: 50n, sourceUnitId: 99 });
   assert.equal(absorbed.absorbedDamage, 50n);
   const shieldTransfer = buffs.CaptureTransfer().find((value) => value.configId === 4003)!;
@@ -181,6 +215,7 @@ async function main(): Promise<void> {
     targetUnitId: 123,
     startedAtMs: skillNow,
     finishAtMs: skillNow + 1_500,
+    definition: GetSkillDefinition(3002),
   }, 12_000, 1_000);
   const skillTransfer = sourceSkill.CaptureTransfer();
   const targetSkill = target.AddComponent(SkillComponent);

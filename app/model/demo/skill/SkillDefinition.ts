@@ -1,14 +1,25 @@
 import type { ActionDefinition } from "../action/ActionType";
 import type { BuffAddOptions } from "../buff/BuffComponent";
+import {
+  SkillAutoAttackPolicy,
+  SkillDelivery,
+  SkillEffectTarget,
+  SkillMovementPolicy,
+  SkillTargetRelation,
+} from "../../../generated/model/config";
 
-export const SkillTargetRelation = { Enemy: 1, Friendly: 2 } as const;
-export type SkillTargetRelationValue = (typeof SkillTargetRelation)[keyof typeof SkillTargetRelation];
-
-export const SkillDelivery = { Direct: 1, Projectile: 2 } as const;
-export type SkillDeliveryValue = (typeof SkillDelivery)[keyof typeof SkillDelivery];
-
-export const SkillEffectTarget = { Caster: 1, PrimaryTarget: 2 } as const;
-export type SkillEffectTargetValue = (typeof SkillEffectTarget)[keyof typeof SkillEffectTarget];
+export {
+  SkillAutoAttackPolicy,
+  SkillDelivery,
+  SkillEffectTarget,
+  SkillMovementPolicy,
+  SkillTargetRelation,
+};
+export type SkillTargetRelationValue = SkillTargetRelation;
+export type SkillDeliveryValue = SkillDelivery;
+export type SkillEffectTargetValue = SkillEffectTarget;
+export type SkillMovementPolicyValue = SkillMovementPolicy;
+export type SkillAutoAttackPolicyValue = SkillAutoAttackPolicy;
 
 /** 技能的一条有序效果；Buff覆盖参数仍然是纯数据，允许Hotfix替换。 / One ordered skill effect; Buff overrides remain pure data and hot-reloadable. */
 export interface SkillEffectDefinition {
@@ -17,7 +28,7 @@ export interface SkillEffectDefinition {
   readonly buffOptions?: BuffAddOptions;
 }
 
-/** 第一阶段的稳定技能描述形状；数值来源以后可直接换成Luban生成表。 / Stable phase-one skill shape whose values can later be supplied directly by Luban. */
+/** 将Luban技能与效果表组合后的稳定运行时形状；只在当前Cast内冻结，不能当作Unit长期状态。 / Stable runtime shape composed from Luban skill/effect tables; freeze it only for the current Cast, never as long-lived Unit state. */
 export interface SkillDefinition {
   readonly id: number;
   readonly name: string;
@@ -29,6 +40,9 @@ export interface SkillDefinition {
   readonly rangeMeters: number;
   readonly delivery: SkillDeliveryValue;
   readonly projectileSpeedMetersPerSecond: number;
+  readonly movementPolicy: SkillMovementPolicyValue;
+  readonly autoAttackPolicy: SkillAutoAttackPolicyValue;
+  readonly revalidateOnComplete: boolean;
   readonly requiredAbsentBuffConfigId: number;
   readonly effects: readonly SkillEffectDefinition[];
 }

@@ -15,9 +15,8 @@
       "refresh_runtime_state": 1,
       "add_action_type": 0,
       "add_action_params": [],
-      "tick_action_type": 1,
+      "tick_action_type": 6,
       "tick_action_params": [
-        1,
         50
       ],
       "remove_action_type": 0,
@@ -64,10 +63,10 @@
       "refresh_runtime_state": 1,
       "add_action_type": 0,
       "add_action_params": [],
-      "tick_action_type": 1,
+      "tick_action_type": 4,
       "tick_action_params": [
-        1,
-        -5
+        5,
+        3
       ],
       "remove_action_type": 0,
       "remove_action_params": []
@@ -85,8 +84,10 @@
       "refresh_source": true,
       "refresh_tick_policy": 1,
       "refresh_runtime_state": 2,
-      "add_action_type": 0,
-      "add_action_params": [],
+      "add_action_type": 5,
+      "add_action_params": [
+        200
+      ],
       "tick_action_type": 0,
       "tick_action_params": [],
       "remove_action_type": 0,
@@ -146,7 +147,7 @@
       "max_stack": 99,
       "use_effect": 2,
       "use_params": [
-        1,
+        6,
         150
       ]
     },
@@ -172,6 +173,181 @@
       "max_mp": 100,
       "initial_mp": 100,
       "attack_range": 2.5
+    }
+  ],
+  "game_tbskillconfig": [
+    {
+      "id": 3001,
+      "name": "寒冰箭",
+      "description": "读条1.5秒，15米弹道法术，造成50点冰霜伤害并刷新5秒冰冷。",
+      "target_relation": 1,
+      "cast_time_ms": 1500,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 2,
+      "projectile_speed_meters_per_second": 20,
+      "movement_policy": 2,
+      "auto_attack_policy": 2,
+      "revalidate_on_complete": true,
+      "required_absent_buff_config_id": 0
+    },
+    {
+      "id": 3002,
+      "name": "火焰冲击",
+      "description": "瞬发，5米，12秒冷却；造成100点火焰伤害，并按施法者刷新6秒灼烧。",
+      "target_relation": 1,
+      "cast_time_ms": 0,
+      "cooldown_ms": 12000,
+      "global_cooldown_ms": 1000,
+      "range_meters": 5,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0,
+      "movement_policy": 1,
+      "auto_attack_policy": 2,
+      "revalidate_on_complete": true,
+      "required_absent_buff_config_id": 0
+    },
+    {
+      "id": 3003,
+      "name": "惩击",
+      "description": "读条1.5秒，15米直接命中，造成60点神圣伤害。",
+      "target_relation": 1,
+      "cast_time_ms": 1500,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0,
+      "movement_policy": 2,
+      "auto_attack_policy": 2,
+      "revalidate_on_complete": true,
+      "required_absent_buff_config_id": 0
+    },
+    {
+      "id": 3004,
+      "name": "真言术·盾",
+      "description": "瞬发，8秒冷却；吸收200点伤害并施加15秒虚弱灵魂。",
+      "target_relation": 2,
+      "cast_time_ms": 0,
+      "cooldown_ms": 8000,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0,
+      "movement_policy": 1,
+      "auto_attack_policy": 2,
+      "revalidate_on_complete": true,
+      "required_absent_buff_config_id": 4004
+    },
+    {
+      "id": 3005,
+      "name": "真言术·韧",
+      "description": "瞬发，持续30分钟，使MaxHp增加500；高等级覆盖低等级。",
+      "target_relation": 2,
+      "cast_time_ms": 0,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0,
+      "movement_policy": 1,
+      "auto_attack_policy": 2,
+      "revalidate_on_complete": true,
+      "required_absent_buff_config_id": 0
+    }
+  ],
+  "game_tbskilleffectconfig": [
+    {
+      "id": 300101,
+      "skill_id": 3001,
+      "order": 1,
+      "target": 2,
+      "action_type": 4,
+      "action_params": [
+        50,
+        2
+      ],
+      "description": "对主目标造成50点冰霜伤害"
+    },
+    {
+      "id": 300102,
+      "skill_id": 3001,
+      "order": 2,
+      "target": 2,
+      "action_type": 2,
+      "action_params": [
+        4001
+      ],
+      "description": "给主目标添加冰冷"
+    },
+    {
+      "id": 300201,
+      "skill_id": 3002,
+      "order": 1,
+      "target": 2,
+      "action_type": 4,
+      "action_params": [
+        100,
+        3
+      ],
+      "description": "对主目标造成100点火焰伤害"
+    },
+    {
+      "id": 300202,
+      "skill_id": 3002,
+      "order": 2,
+      "target": 2,
+      "action_type": 2,
+      "action_params": [
+        4002
+      ],
+      "description": "给主目标添加灼烧"
+    },
+    {
+      "id": 300301,
+      "skill_id": 3003,
+      "order": 1,
+      "target": 2,
+      "action_type": 4,
+      "action_params": [
+        60,
+        4
+      ],
+      "description": "对主目标造成60点神圣伤害"
+    },
+    {
+      "id": 300401,
+      "skill_id": 3004,
+      "order": 1,
+      "target": 2,
+      "action_type": 2,
+      "action_params": [
+        4003
+      ],
+      "description": "给主目标添加真言术·盾"
+    },
+    {
+      "id": 300402,
+      "skill_id": 3004,
+      "order": 2,
+      "target": 2,
+      "action_type": 2,
+      "action_params": [
+        4004
+      ],
+      "description": "给主目标添加虚弱灵魂"
+    },
+    {
+      "id": 300501,
+      "skill_id": 3005,
+      "order": 1,
+      "target": 2,
+      "action_type": 2,
+      "action_params": [
+        4005
+      ],
+      "description": "给主目标添加真言术·韧"
     }
   ]
 }

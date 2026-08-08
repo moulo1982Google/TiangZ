@@ -47,6 +47,7 @@ import "../Generated/Hotfix/handlers";
 import { MapMessageScope3D } from "./MapMessageScope3D";
 import {
   GameConfigs,
+  SkillTargetRelation,
   SpatialMode,
 } from "../Generated/SDK/Generated/Config";
 import type { RpcSocket } from "../Generated/SDK/Core/Net/RpcSocket";
@@ -109,12 +110,12 @@ const ITEM_LARGE_HEALTH_POTION = 1002;
 const ITEM_SMALL_HEALTH_POTION_KEY = 50 as unknown as KeyCode;
 const ITEM_LARGE_HEALTH_POTION_KEY = 51 as unknown as KeyCode;
 const SKILL_CAST_PHASE_CASTING = 1;
-const DEMO_SKILLS = [
-  { id: 3001, key: 52 as unknown as KeyCode, keyLabel: "4", name: "寒冰箭", enemy: true, rangeMeters: 15 },
-  { id: 3002, key: 53 as unknown as KeyCode, keyLabel: "5", name: "火焰冲击", enemy: true, rangeMeters: 5 },
-  { id: 3003, key: 54 as unknown as KeyCode, keyLabel: "6", name: "惩击", enemy: true, rangeMeters: 15 },
-  { id: 3004, key: 55 as unknown as KeyCode, keyLabel: "7", name: "真言术·盾", enemy: false, rangeMeters: 15 },
-  { id: 3005, key: 56 as unknown as KeyCode, keyLabel: "8", name: "真言术·韧", enemy: false, rangeMeters: 15 },
+const DEMO_SKILL_KEYS = [
+  { id: 3001, key: 52 as unknown as KeyCode, keyLabel: "4" },
+  { id: 3002, key: 53 as unknown as KeyCode, keyLabel: "5" },
+  { id: 3003, key: 54 as unknown as KeyCode, keyLabel: "6" },
+  { id: 3004, key: 55 as unknown as KeyCode, keyLabel: "7" },
+  { id: 3005, key: 56 as unknown as KeyCode, keyLabel: "8" },
 ] as const;
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
 // Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
@@ -633,7 +634,7 @@ export class GameBootstrap3D extends Component {
     bar.style.position = "fixed";
     bar.style.left = "50%";
     bar.style.bottom = this.isMobileLayout()
-      ? "calc(env(safe-area-inset-bottom, 0px) + 158px)"
+      ? "calc(env(safe-area-inset-bottom, 0px) + 96px)"
       : "calc(env(safe-area-inset-bottom, 0px) + 112px)";
     bar.style.transform = "translateX(-50%)";
     bar.style.zIndex = "10004";
@@ -644,7 +645,8 @@ export class GameBootstrap3D extends Component {
     bar.style.background = "rgba(13, 22, 25, 0.82)";
     bar.style.border = "1px solid rgba(115, 176, 255, 0.48)";
     bar.style.borderRadius = "8px";
-    for (const skill of DEMO_SKILLS) {
+    for (const skill of DEMO_SKILL_KEYS) {
+      const config = GameConfigs.SkillConfig.Get(skill.id);
       const button = document.createElement("button");
       button.type = "button";
       button.style.position = "relative";
@@ -657,7 +659,9 @@ export class GameBootstrap3D extends Component {
       button.style.borderRadius = "6px";
       button.style.font = "12px/1.2 system-ui, sans-serif";
       button.style.cursor = "pointer";
-      button.textContent = `${skill.keyLabel} ${skill.name}`;
+      button.style.touchAction = "none";
+      button.style.userSelect = "none";
+      button.textContent = `${skill.keyLabel} ${config.name}`;
       const cooldown = document.createElement("span");
       cooldown.style.position = "absolute";
       cooldown.style.inset = "0";
@@ -668,16 +672,77 @@ export class GameBootstrap3D extends Component {
       cooldown.style.background = "rgba(5, 10, 15, 0.64)";
       cooldown.style.visibility = "hidden";
       button.appendChild(cooldown);
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void this.castSkill(skill.id);
-      });
+      this.bindTouchSafeHudButton(button, () => this.castSkill(skill.id));
       bar.appendChild(button);
-      this.skillHudSlots.set(skill.id, { root: button, cooldown, skillId: skill.id, name: skill.name });
+      this.skillHudSlots.set(skill.id, { root: button, cooldown, skillId: skill.id, name: config.name });
     }
     document.body.appendChild(bar);
     this.skillBarElement = bar;
+  }
+
+  /**
+   * 绑定不会穿透到全屏镜头层的HUD按钮；触摸开始即登记控制区ID，并阻止浏览器合成地面点击。
+   * 副作用是消费该按钮手势，业务回调只执行一次；不要在这里保存长期Promise或权威状态。
+   *
+   * Binds a HUD button that cannot fall through to the full-screen camera layer. The touch ID is
+   * claimed on start and synthetic ground clicks are suppressed. The gesture is consumed and the
+   * action runs once; this helper must not retain long-lived promises or authoritative state.
+   */
+  private bindTouchSafeHudButton(button: HTMLButtonElement, action: () => void | Promise<void>): void {
+    let activationHandled = false;
+    const consume = (event: Event): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const releaseTouchIdsAfterDispatch = (ids: readonly number[]): void => {
+      globalThis.setTimeout(() => {
+        for (const id of ids) this.mobileControlPointerIds.delete(id);
+      }, 0);
+    };
+
+    button.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch") return;
+      consume(event);
+      this.mobileControlPointerIds.add(event.pointerId);
+      activationHandled = false;
+    });
+    button.addEventListener("pointerup", (event) => {
+      if (event.pointerType === "touch") return;
+      consume(event);
+      this.mobileControlPointerIds.delete(event.pointerId);
+      activationHandled = true;
+      void action();
+    });
+    button.addEventListener("pointercancel", (event) => {
+      if (event.pointerType === "touch") return;
+      consume(event);
+      this.mobileControlPointerIds.delete(event.pointerId);
+      activationHandled = false;
+    });
+    button.addEventListener("touchstart", (event) => {
+      consume(event);
+      for (const touch of Array.from(event.changedTouches)) this.mobileControlPointerIds.add(touch.identifier);
+      activationHandled = false;
+    }, { passive: false });
+    button.addEventListener("touchmove", consume, { passive: false });
+    button.addEventListener("touchend", (event) => {
+      consume(event);
+      const ids = Array.from(event.changedTouches, (touch) => touch.identifier);
+      releaseTouchIdsAfterDispatch(ids);
+      activationHandled = true;
+      void action();
+    }, { passive: false });
+    button.addEventListener("touchcancel", (event) => {
+      consume(event);
+      releaseTouchIdsAfterDispatch(Array.from(event.changedTouches, (touch) => touch.identifier));
+      activationHandled = false;
+    }, { passive: false });
+    button.addEventListener("click", (event) => {
+      consume(event);
+      if (!activationHandled) void action();
+      activationHandled = false;
+    });
   }
 
   /** 创建选中目标HUD；它只显示客户端已进入AOI的公开怪物信息，不查询地图全量实体。 / Creates the selected-target HUD using only public monsters already entered through AOI. */
@@ -1211,7 +1276,7 @@ export class GameBootstrap3D extends Component {
       } else {
         const duration = this.skillCastFinishAtMs - this.skillCastStartedAtMs;
         const ratio = Math.min(1, Math.max(0, (serverNow - this.skillCastStartedAtMs) / duration));
-        const name = DEMO_SKILLS.find((skill) => skill.id === this.skillCastSkillId)?.name ?? `技能${this.skillCastSkillId}`;
+        const name = skillName(this.skillCastSkillId);
         label.textContent = `施法：${name} ${Math.round(ratio * 100)}%`;
         progress.style.width = `${ratio * 100}%`;
       }
@@ -1545,6 +1610,25 @@ export class GameBootstrap3D extends Component {
           height: clamp(32px, 11vw, 42px) !important;
           font-size: clamp(13px, 4vw, 16px) !important;
         }
+        .cocos3d-skillbar {
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 96px) !important;
+          gap: 4px !important;
+          padding: 5px !important;
+        }
+        .cocos3d-skillbar > button {
+          width: clamp(56px, 16vw, 62px) !important;
+          height: 54px !important;
+          padding: 4px !important;
+        }
+        .cocos3d-skill-cast-hud {
+          left: 50% !important;
+          top: auto !important;
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 162px) !important;
+          width: min(320px, calc(100vw - 32px)) !important;
+          padding: 7px 9px !important;
+          transform: translateX(-50%) !important;
+          font: 12px/1.3 system-ui, sans-serif !important;
+        }
         .cocos3d-buff-hud {
           right: calc(env(safe-area-inset-right, 0px) + 12px) !important;
           top: calc(env(safe-area-inset-top, 0px) + 132px) !important;
@@ -1566,6 +1650,12 @@ export class GameBootstrap3D extends Component {
         .cocos3d-mobile-joystick { transform: scale(0.88); transform-origin: bottom left; }
         .cocos3d-hotbar {
           bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(126px, 18vh, 180px)) !important;
+        }
+        .cocos3d-skillbar {
+          bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(212px, 28vh, 266px)) !important;
+        }
+        .cocos3d-skill-cast-hud {
+          bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(278px, 36vh, 336px)) !important;
         }
         .cocos3d-buff-hud {
           top: calc(env(safe-area-inset-top, 0px) + 126px) !important;
@@ -1973,8 +2063,9 @@ export class GameBootstrap3D extends Component {
       if (numeric.unitId === this.localUnitId) {
         const previousValue = this.localNumerics.get(numeric.numericType);
         this.localNumerics.set(numeric.numericType, numeric.value);
-        // 当前Demo的唯一伤害来源是怪物普通攻击；技能/DoT以后应使用独立战斗事件，不要把所有掉血都当成刀光。
-        // The demo currently has monster melee as its only damage source; future skills/DoTs should use explicit combat events.
+        // 本地玩家受伤仍用刀光作灰盒兜底；技能命中和弹道另由显式事件表现，正式客户端应按伤害事件区分资源。
+        // Local damage keeps a slash as a gray-box fallback. Skill impacts and projectiles use explicit events;
+        // a production client should select visuals from typed combat events.
         if (numeric.numericType === NUMERIC_CURRENT_HP &&
           previousValue !== undefined && numeric.value < previousValue) {
           this.playAttackSlashAtPlayer();
@@ -2047,7 +2138,7 @@ export class GameBootstrap3D extends Component {
 
   /** 创建纯表现弹道；至少显示250ms以避免高延迟下消息刚到便消失，命中仍只认服务端。 / Creates a visual-only projectile and keeps it visible for at least 250 ms under network delay; only the server resolves impact. */
   ApplySkillProjectile(message: G2C_SkillProjectile): void {
-    const name = DEMO_SKILLS.find((skill) => skill.id === message.skillId)?.name ?? `技能${message.skillId}`;
+    const name = skillName(message.skillId);
     const parent = this.player.parent;
     const source = this.unitVisualNode(message.sourceUnitId);
     const target = this.unitVisualNode(message.targetUnitId);
@@ -2074,7 +2165,7 @@ export class GameBootstrap3D extends Component {
     if (message.targetUnitId !== this.localUnitId) {
       this.playAttackSlash(message.targetUnitId, 2.4, false);
     }
-    const name = DEMO_SKILLS.find((skill) => skill.id === message.skillId)?.name ?? `技能${message.skillId}`;
+    const name = skillName(message.skillId);
     this.setStatus(`${name} 命中 ${message.targetUnitId}，伤害 ${message.damage}${message.killed ? "，目标死亡" : ""}`);
   }
 
@@ -2317,7 +2408,7 @@ export class GameBootstrap3D extends Component {
   }
 
   private onKeyDown(event: EventKeyboard): void {
-    const skill = DEMO_SKILLS.find((item) => item.key === event.keyCode);
+    const skill = DEMO_SKILL_KEYS.find((item) => item.key === event.keyCode);
     if (skill && !this.pressedKeys.has(event.keyCode)) {
       this.pressedKeys.add(event.keyCode);
       void this.castSkill(skill.id);
@@ -2376,12 +2467,13 @@ export class GameBootstrap3D extends Component {
   /** 提交技能快捷栏命令；敌对技能使用选中怪，友方演示技能默认对自己。 / Submits a skill command using the selected monster for hostile spells and self for friendly demo spells. */
   private async castSkill(skillId: number): Promise<void> {
     const mapClient = this.mapClient;
-    const definition = DEMO_SKILLS.find((skill) => skill.id === skillId);
-    if (!mapClient || !definition || this.skillRequestInFlight) return;
-    const targetUnitId = definition.enemy
+    const binding = DEMO_SKILL_KEYS.find((skill) => skill.id === skillId);
+    const definition = GameConfigs.SkillConfig.TryGet(skillId);
+    if (!mapClient || !binding || !definition || this.skillRequestInFlight) return;
+    const targetUnitId = definition.targetRelation === SkillTargetRelation.Enemy
       ? (this.selectedMonsterUnitId || this.findNearestMonster())
       : this.localUnitId;
-    if (definition.enemy && targetUnitId === 0) {
+    if (definition.targetRelation === SkillTargetRelation.Enemy && targetUnitId === 0) {
       this.setStatus(`${definition.name}需要先选择一个怪物`);
       return;
     }
@@ -3203,7 +3295,12 @@ function formatBuffRemaining(expireTimeMs: bigint, serverNowMs: number): string 
 /** 快捷栏按键只处理一次按下事件，不应进入移动输入刷新。 / Hotbar keys are edge-triggered and must never enter movement input refresh. */
 function isHotbarKey(key: KeyCode): boolean {
   return key === AUTO_ATTACK_KEY || key === ITEM_SMALL_HEALTH_POTION_KEY ||
-    key === ITEM_LARGE_HEALTH_POTION_KEY || DEMO_SKILLS.some((skill) => skill.key === key);
+    key === ITEM_LARGE_HEALTH_POTION_KEY || DEMO_SKILL_KEYS.some((skill) => skill.key === key);
+}
+
+/** 技能显示名只读取客户端Luban表；快捷键不再复制技能名称或规则。 / Reads skill display names only from client Luban data so key bindings never duplicate skill rules. */
+function skillName(skillId: number): string {
+  return GameConfigs.SkillConfig.TryGet(skillId)?.name ?? `技能${skillId}`;
 }
 
 function normalizeRadians(value: number): number {

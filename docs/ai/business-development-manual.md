@@ -188,7 +188,7 @@ MapHost -> MapScene
 
 `PlayerConfig`表示创建玩家时的基础模板，不表示某个玩家升级后的等级、经验、当前生命或背包结果。运行时状态属于Entity/Component和持久化记录。配置对象与数组只读；`GetAll()`只用于低频初始化和管理流程，帧内热路径应按ID查询或预先建立明确索引。
 
-技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。读条接受时框架清除旧移动租约，后续非零移动输入中断施法。目标选择、Cast时间线和Action效果必须分层：Skill解析目标并按顺序执行Action，伤害进入Combat、Buff进入BuffComponent。新技能不能用`ChangeNumeric(CurrentHp, -damage)`绕过Combat。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)。
+技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。是否允许移动、何时重置平A均读取`SkillConfig`显式策略，不按技能名称或伤害类型猜测。目标选择、Cast时间线和Action效果必须分层：`SkillConfig.xlsx`描述施法规则，服务端`SkillEffectConfig.xlsx`描述有序Action，伤害/治疗进入Combat、Buff进入BuffComponent。新技能不能用`ChangeNumeric(CurrentHp, delta)`绕过Combat。配置Reload后，已接受的ActiveCast和Projectile继续使用冻结旧定义，新Cast读取新配置。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
 
 游戏配置的表名、字段、类型、分组、索引和引用关系属于Model，不能热更；变化后必须完整构建、重启相关Process并同步客户端SDK。只修改数据行或字段值时，`build:game-config:startup`会重新生成并覆盖服务器重启使用的`dist/game-config`；`build:game-config`只生成独立候选，可通过Watcher的`reload-config`原子切换服务端快照。`test:game-config`只验证，不更新启动目录。Reload不重跑Awake、不修改既有Entity状态；业务不要长期缓存配置行，应在真正使用数值时通过`GameConfigs`查询。客户端数据仍随SDK发布，不能把服务端Reload当作客户端配置下发。详细格式和示例见[游戏配置教程](../tutorials/10-game-config.md)。
 
@@ -929,13 +929,15 @@ C2M_AttackMonsterHandler
 
 日常Linux发布执行`npm run release:linux`。固定Builder镜像只保存Node、Rust、.NET Runtime、Luban和依赖，不保存业务源码；工具指纹未变化时不得重新下载工具链。每次发布仍必须重新执行Excel/Luban生成、全部codegen、TS构建和Rust Release编译，不能因为复用镜像而复用旧生成代码。只有修改`package-lock.json`、Cargo依赖/锁、Rust工具链、Luban版本或Builder Dockerfile时，才允许自动重建一次镜像。
 
-## Action与Buff的当前最小规则
+## Action、Buff与Skill的当前规则
 
-道具使用统一遵循`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`表示不可用，`1`表示添加一个Buff，`2`表示执行`ChangeNumeric`等Action。开发者优先改配置，不要为了不同药水复制Handler。当前验收道具是1001立即恢复50点HP、1002添加2001持续回血Buff。
+道具使用统一遵循`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`表示不可用，`1`表示直接添加一个Buff，`2`表示把`use_params`解释为`[ActionType, ...parameters]`。开发者优先改配置，不要为了不同药水复制Handler。当前验收道具是1001执行`Heal(150)`、1002添加2001持续回血Buff；2001的Tick同样执行`Heal(50)`，两者都不能直接写CurrentHp。
 
 `BuffComponent`拥有`Buff` ChildEntity；Component负责集合、实例ID、传送和AOI生命周期事件，BuffSystem负责Add/Tick/Remove和Timer。Buff传送只保存纯值及墙钟时间，目标重建Timer但不重复AddAction；不保存TimerId、闭包、Promise或Entity。Buff Tick只执行Action，Numeric和Combat沿用自身同步边界。
 
 Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat modifier，伤害统一进入`CombatComponent.ApplyDamage`；禁止再设计`BuffComponent.TryAbsorbDamage`作为受伤入口。运行时Action和护盾剩余量会以纯值跨地图恢复。五技能Cast已接入，复杂地面目标、引导和Buff持久化仍不属于当前闭环。
+
+技能只在`SkillConfig.xlsx`填写目标与时间线，在服务端专有的`SkillEffectConfig.xlsx`按顺序组合Action；客户端只生成SkillConfig用于名称、距离、读条和CD表现。若一个新技能可由现有Action与Buff组合完成，只改Excel并重新生成，禁止新增专用Handler或把伤害数值写回Hotfix目录。普通业务不得长期缓存`GetSkillDefinition()`结果；配置索引由`SkillCatalog.ts`按指纹统一维护。
 
 ## 道具出生与快捷栏
 

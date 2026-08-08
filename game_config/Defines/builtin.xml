@@ -26,6 +26,37 @@
         <var name="Keep" value="1"/>
         <var name="Reset" value="2"/>
     </enum>
+    <enum name="ActionType" comment="道具、Buff和技能共用的原子效果类型">
+        <var name="None" value="0"/>
+        <var name="ChangeNumeric" value="1"/>
+        <var name="AddBuff" value="2"/>
+        <var name="RemoveBuff" value="3"/>
+        <var name="DealDamage" value="4"/>
+        <var name="RegisterDamageAbsorber" value="5"/>
+        <var name="Heal" value="6"/>
+    </enum>
+    <enum name="SkillTargetRelation" comment="技能目标关系">
+        <var name="Enemy" value="1"/>
+        <var name="Friendly" value="2"/>
+    </enum>
+    <enum name="SkillDelivery" comment="技能命中方式">
+        <var name="Direct" value="1"/>
+        <var name="Projectile" value="2"/>
+    </enum>
+    <enum name="SkillEffectTarget" comment="技能效果目标">
+        <var name="Caster" value="1"/>
+        <var name="PrimaryTarget" value="2"/>
+    </enum>
+    <enum name="SkillMovementPolicy" comment="施法期间的移动规则">
+        <var name="Allow" value="1"/>
+        <var name="InterruptWhileCasting" value="2"/>
+    </enum>
+    <enum name="SkillAutoAttackPolicy" comment="技能与普通攻击时间线的关系">
+        <var name="Keep" value="1"/>
+        <var name="ResetOnStart" value="2"/>
+        <var name="ResetOnComplete" value="3"/>
+        <var name="Cancel" value="4"/>
+    </enum>
     <bean name="vector2" valueType="1" sep=",">
         <var name="x" type="float"/>
         <var name="y" type="float"/>

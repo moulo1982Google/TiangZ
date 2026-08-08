@@ -1,6 +1,6 @@
 # 技能与施法系统设计
 
-> 当前实现状态：五技能演示闭环已落地。稳定数据形状位于`app/model/demo/skill/`，可热更规则位于`app/hotfix/demo/skill/`，玩家协议入口为`C2M_CastSkillHandler`，地图统一由一个`SkillMapComponent.Update10Hz()`推进读条和弹道。首批数值暂存于Hotfix `SkillCatalog.ts`；后续接入Luban时只替换数值来源，不改变Component、Handler或Action调用面。
+> 当前实现状态：五技能演示闭环与Luban配置链路均已落地。`SkillConfig.xlsx`描述施法规则，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只负责把当前配置代组合成运行时只读定义。玩家协议入口为`C2M_CastSkillHandler`，地图统一由一个`SkillMapComponent.Update10Hz()`推进读条和弹道。
 
 ## 1. 目标与边界
 
@@ -29,56 +29,53 @@ SkillComponent
 
 ### 2.1 SkillConfig
 
-`SkillConfig`是计划接入Luban的技能模板，描述一次技能如何发起，不保存某个玩家的运行状态。当前五技能由`SkillCatalog.ts`提供同形状纯数据，建议字段：
+`game_config/Datas/SkillConfig.xlsx`描述一次技能如何发起，不保存某个玩家的运行状态。它生成到客户端和服务端；当前字段是：
 
 | 字段 | 作用 |
 |---|---|
-| `id/name/icon` | 稳定配置ID、显示名和客户端资源键 |
-| `target_type` | Self、Unit；Ground和Direction留到后续 |
-| `target_relation` | Self、Ally、Enemy或Any；只描述合法关系，不用AOI可见性代替阵营判断 |
-| `cast_mode` | Instant、Cast；Channel留到后续 |
-| `cast_time_ms` | 普通读条时间，Instant必须为0 |
-| `range_meters` | 权威技能距离，Self忽略 |
-| `front_angle_degrees` | 权威朝向角；120表示左右各60度 |
-| `requires_line_of_sight` | 是否进行NavMesh/空间遮挡检查 |
-| `movement_policy` | Allow、RejectOnStart、InterruptWhileCasting |
-| `cooldown_ms` | 技能自身冷却 |
-| `cooldown_start` | Accepted或Completed |
-| `gcd_group/gcd_ms` | 公共冷却分组和时长；0表示不触发GCD |
-| `cost_numeric_type/cost_amount` | 从施法者Numeric扣除的资源及数量；0表示无消耗 |
+| `id/name/description` | 稳定配置ID、显示名和说明 |
+| `target_relation` | Enemy或Friendly；只描述合法关系，不用AOI可见性代替阵营判断 |
+| `cast_time_ms` | 读条时间；`0`表示瞬发 |
+| `cooldown_ms/global_cooldown_ms` | 技能CD和公共CD，均使用服务器deadline |
+| `range_meters` | 权威施法距离 |
+| `delivery` | Direct或Projectile |
+| `projectile_speed_meters_per_second` | 弹道速度；Direct必须为`0` |
+| `movement_policy` | Allow或InterruptWhileCasting |
 | `auto_attack_policy` | Keep、ResetOnStart、ResetOnComplete、Cancel |
-| `revalidate_on_complete` | 完成时是否重新检查目标、距离、朝向和视线 |
+| `revalidate_on_complete` | 完成/发射前是否重新检查目标距离 |
+| `required_absent_buff_config_id` | 目标必须不存在的Buff；`0`表示没有该限制 |
+
+地面目标、方向目标、资源消耗、朝向角、视线、引导和CD分组尚未进入当前表。新增这些能力时应增加明确字段和验收，不允许通过名称或伤害类型推导。
 
 伤害类型、是否瞬发、是否重置平A必须是独立维度。不能用“物理技能”推导不重置，也不能用“法术技能”推导一定读条。压制可以是物理、瞬发、`Keep`；火球术可以是法术、读条、`ResetOnComplete`。
 
 ### 2.2 SkillEffectConfig
 
-技能可能同时造成伤害、添加Buff或修改多个目标，不把可变长度Action硬塞进`SkillConfig`的一格Excel。正式表格化时使用独立`SkillEffectConfig`表；当前由`SkillDefinition.effects`按数组顺序表达：
+技能可能同时造成伤害、添加Buff或修改多个目标，不把可变长度Action硬塞进`SkillConfig`的一格Excel。`game_config/Datas/SkillEffectConfig.xlsx`仅生成到服务端，当前字段是：
 
 | 字段 | 作用 |
 |---|---|
 | `id` | 效果行稳定ID |
 | `skill_id` | 外键指向SkillConfig |
-| `phase` | Start、Complete；Tick留给Channel |
-| `order` | 同阶段确定性执行顺序 |
+| `order` | 同技能确定性执行顺序；必须为正整数且不能重复 |
 | `target` | Caster或PrimaryTarget |
 | `action_type` | 复用ActionType |
-| `action_params` | 当前Action的i64参数列表 |
+| `action_params` | 当前Action的整数参数列表 |
+| `description` | 策划和诊断用的服务端说明 |
 
-加载配置时按`skill_id + phase + order + id`建立只读索引。第一版最多支持Caster和PrimaryTarget，不在ActionExecutor里做AOI查询或随机选目标。
+加载配置时按`skill_id + order + id`建立只读索引。第一版最多支持Caster和PrimaryTarget，不在ActionExecutor里做AOI查询或随机选目标。客户端只拿到SkillConfig，不能读取伤害、Buff或服务端效果顺序。
 
 ### 2.3 SkillComponent
 
 每个可以使用技能的Unit挂一个`SkillComponent`。它拥有：
 
 ```ts
-knownSkills: Set<number>;              // SkillConfigId
-skillCooldowns: Map<number, number>;  // skillId -> deadlineMs
-groupCooldowns: Map<number, number>;  // gcdGroup -> deadlineMs
+globalCooldownEndAtMs: number;
+cooldownEndBySkillId: Map<number, number>; // skillId -> deadlineMs
 activeCast: ActiveCastState | null;
 ```
 
-第一版不为每个已学技能创建Skill子Entity，原因是同一Unit不能重复学习同一SkillConfig，配置ID已经是稳定身份，而且它没有独立生命周期、Timer或Actor消息。如果以后出现独立符文、词缀、耐久或可交易技能实例，再引入子Entity，不提前支付复杂度。
+当前Demo没有“已学习技能”持久化，任意存在的SkillConfig都可进入后续校验。正式接入时优先保存SkillConfigId集合，不为每个已学技能创建Skill子Entity；只有出现独立符文、词缀、耐久或可交易技能实例时，才引入有独立身份的子Entity。
 
 玩家和怪物复用同一个`SkillComponent`。玩家通过Handler发起，怪物AI直接调用同一方法；不能再写一套MonsterSkill。
 
@@ -90,12 +87,10 @@ activeCast: ActiveCastState | null;
 interface ActiveCastState {
   castId: bigint;
   skillId: number;
-  sourceUnitId: number;
   targetUnitId: number;
-  acceptedAtMs: number;
+  startedAtMs: number;
   finishAtMs: number;
-  configFingerprint: string;
-  resolvedRules: ResolvedSkillCast;
+  definition: SkillDefinition;
 }
 ```
 
@@ -110,7 +105,7 @@ Idle
   -> TryCast
   -> Validate
   -> Veto BeforeCast
-  -> PayCost + StartGCD
+  -> Commit CD/GCD
   -> Instant: Resolve -> Cooldown -> Idle
   -> Cast: Casting
 
@@ -118,9 +113,8 @@ Casting
   -> 10Hz检查移动/死亡/目标有效性
   -> Interrupted: 清除ActiveCast -> 通知客户端 -> Idle
   -> finishAtMs到达
-       -> 可选重新校验距离/朝向/视线
+       -> 校验目标仍存活；按配置可选重新校验距离
        -> Resolve Actions
-       -> StartCooldown（若配置为Completed）
        -> 清除ActiveCast -> Idle
 ```
 
@@ -130,12 +124,11 @@ Casting
 
 固定不变量由`SkillComponent.TryCast`直接检查：
 
-1. Skill已学习、配置存在。
+1. Skill配置存在；正式接入已学技能后再增加集合校验。
 2. 当前没有互斥Cast。
 3. 技能冷却和GCD已结束。
-4. Numeric资源足够。
-5. 目标存在、存活、属于同一MapInstance，并满足Self、Ally、Enemy或Any关系。
-6. 距离、朝向、视线和移动条件满足。
+4. 目标存在、存活、属于同一MapInstance，并满足Enemy或Friendly关系。
+5. 距离满足，且目标不存在配置指定的阻断Buff。
 
 可由其他模块扩展的规则走同步Veto：
 
@@ -148,11 +141,11 @@ SkillEvents.BeforeCast
   -> 特殊Buff限制
 ```
 
-Veto Handler只能同步、只读、返回错误码，不动态为每个Buff注册闭包。通过后才扣资源、启动GCD或执行Action。
+Veto Handler只能同步、只读、返回错误码，不动态为每个Buff注册闭包。通过后才提交CD/GCD、创建ActiveCast或执行瞬发Action。
 
 目标关系通过稳定的Unit关系查询接口判断，不能用“目标当前在AOI可见集合中”推导敌我。AOI决定谁能收到表现，技能规则决定谁可以成为目标，两者必须分开。
 
-第一版资源和GCD在请求被接受时扣除/启动；读条随后被中断不退款、不返还GCD。技能自身冷却仍按`cooldown_start`选择Accepted或Completed。以后若个别技能需要退款，必须增加显式退款策略，不能在中断Handler里私自补数值。
+当前技能CD和GCD都在请求被接受时提交；读条随后被中断不返还。资源消耗和可选CD起点尚未实现，未来加入时必须增加显式策略，不能在中断Handler里私自补数值或冷却。
 
 死亡、下线、传送和Scene销毁属于确定的生命周期中断，不走Veto。中断已发生后发布普通同步Event，不能用Veto回滚。
 
@@ -179,23 +172,25 @@ Veto Handler只能同步、只读、返回错误码，不动态为每个Buff注�
 
 “清零”沿用现有`ResetAutoAttackSwing`语义：仍处于自动攻击激活状态，重新满足条件后从0开始，不能恢复旧进度。
 
-## 7. Action改造
+## 7. Action结算
 
-当前`ExecuteAction(owner, action)`只适合道具和Buff对Owner生效。技能接入前必须把来源和目标明确分开：
+技能把已经解析出的明确目标传给统一Action执行器，并携带纯值来源信息：
 
 ```ts
 ExecuteAction(target, action, {
   sourceUnitId: caster.UnitId,
-  abilityId: skillId,
-  castId,
+  sourceAbilityId: skillId,
   reason: "skill-complete",
 });
 ```
 
-增加稳定Action：
+当前稳定Action包括：
 
-- `DealDamage(amount)`：调用目标Combat的`ApplyDamage`，正确携带sourceUnitId、abilityId和castId。
+- `ChangeNumeric(type, delta)`：只修改非派生普通数值，不能表达伤害或治疗。
+- `AddBuff(buffConfigId)`和`RemoveBuff(buffInstanceId)`：进入目标BuffComponent。
+- `DealDamage(amount, school)`：调用目标Combat的`ApplyDamage`，正确携带sourceUnitId和abilityId。
 - `Heal(amount)`：调用目标Combat的`ApplyHealing`。
+- `RegisterDamageAbsorber(amount[, priority])`：只供Buff添加阶段注册Combat护盾。
 
 `ChangeNumeric(CurrentHp, delta)`保留兼容，但新技能不得用它表达伤害或治疗。Action只执行明确目标上的效果，绝不在内部寻找Unit、遍历AOI或决定敌我。
 
@@ -279,7 +274,7 @@ SkillConfig/SkillEffectConfig的表结构、枚举和字段类型属于Model冷�
 1. 同时请求两个技能只能接受一个。
 2. 五个法术被接受时都清零平A；读条技能中断不触发命中效果。
 3. 寒冰箭只在抛射物命中时结算，惩击在读条完成时直接结算。
-4. 距离、朝向、移动、死亡和目标重生均不会命中旧Unit。
+4. 距离、移动、死亡和目标重生均不会命中旧Unit。
 5. 重复请求、迟到客户端状态和配置Reload不造成重复结算。
 6. 3000个无ActiveCast Unit不会显著增加Map CPU；活跃Cast压力测试无队列积压和丢工作。
 
@@ -309,11 +304,12 @@ C2M_CastSkillHandler
 - `G2C_SkillCastState`是latest状态，包含读条、GCD和技能CD截止时间；`G2C_SkillProjectile/G2C_SkillImpact`是不可覆盖事件。
 - 冷却随玩家跨地图传输；活动读条不恢复，并记录`map-transfer`中断原因。
 - Buff运行时Action覆盖、来源、冲突优先级和护盾剩余量均为纯值传输；普通Refresh不重放AddAction。
-- 当前五技能数值位于`app/hotfix/demo/skill/SkillCatalog.ts`。Luban接入是后续的数据源替换，不允许修改上述业务调用链。
+- 当前五技能数值来自`SkillConfig.xlsx`和`SkillEffectConfig.xlsx`；`SkillCatalog.ts`不再保存业务数值，只做配置代索引和Action转换。
+- ActiveCast与在途Projectile保存接受请求时的`SkillDefinition`，配置Reload只影响后续新Cast，不会让半次技能混用两代规则。
 
 ## 13. 后续实施顺序
 
-1. 把Hotfix `SkillCatalog.ts`迁入Luban SkillConfig/SkillEffectConfig，并增加引用和Action参数校验。
+1. 已完成：Luban SkillConfig/SkillEffectConfig、客户端裁剪、引用与Action参数校验、配置代冻结。
 2. 按需求同步UE、Unity和Godot的技能表现；公共SDK协议已经生成。
 3. 增加SkillComponent语义自测和3000人空载/活跃Cast性能A/B。
 4. 业务确实需要时再扩展已学技能、资源消耗、朝向/视线、地面目标和引导。

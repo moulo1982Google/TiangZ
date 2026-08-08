@@ -44,10 +44,9 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
     if (vetoReason !== SystemErrCode.Success) {
       throw new RpcError(vetoReason, `item use vetoed: ${current.configId}`);
     }
-    const action = ActionFromConfig(
-      itemConfig.useEffect === 1 ? ActionType.AddBuff : ActionType.ChangeNumeric,
-      itemConfig.useParams,
-    );
+    const action = itemConfig.useEffect === 1
+      ? ActionFromConfig(ActionType.AddBuff, itemConfig.useParams)
+      : ActionFromConfig(itemConfig.useParams[0], itemConfig.useParams.slice(1));
     const item = inventory.UseItem(request.itemId);
     // 道具只声明Action；治疗、Buff和Numeric修改由统一执行器路由到对应组件。
     // Items declare Actions only; the executor routes healing, Buff, and Numeric changes to their components.
