@@ -23,8 +23,20 @@ public:
     using FDemoDoorState = std::function<void(bool bClosed)>;
     using FAutoAttackState = std::function<void(tiangz::protocol::demo::G2C_AutoAttackState)>;
     using FPing = std::function<void(std::int64_t LatencyMs, std::int64_t ServerTimeMs)>;
+    using FItemChanged = std::function<void(tiangz::protocol::demo::G2C_ItemChanged)>;
+    using FBuffAdded = std::function<void(tiangz::protocol::demo::G2C_BuffAdded)>;
+    using FBuffRemoved = std::function<void(tiangz::protocol::demo::G2C_BuffRemoved)>;
+    using FBuffDetail = std::function<void(tiangz::protocol::demo::G2C_BuffDetail)>;
+    using FQuestProgress = std::function<void(tiangz::protocol::demo::G2C_QuestProgress)>;
+    using FSkillCastState = std::function<void(tiangz::protocol::demo::G2C_SkillCastState)>;
+    using FSkillProjectile = std::function<void(tiangz::protocol::demo::G2C_SkillProjectile)>;
+    using FSkillImpact = std::function<void(tiangz::protocol::demo::G2C_SkillImpact)>;
     using FToggleDemoDoor = std::function<void(bool bClosed, bool bChanged)>;
     using FToggleAutoAttack = std::function<void(tiangz::protocol::demo::M2C_ToggleAutoAttack)>;
+    using FUseItem = std::function<void(tiangz::protocol::demo::M2C_UseItem)>;
+    using FCastSkill = std::function<void(tiangz::protocol::demo::M2C_CastSkill)>;
+    using FAcceptQuest = std::function<void(tiangz::protocol::demo::M2C_AcceptQuest)>;
+    using FCompleteQuest = std::function<void(tiangz::protocol::demo::M2C_CompleteQuest)>;
 
     explicit FTiangZLoginFlow(tiangz::client::ClientEndpoint LoginMgrEndpoint);
     ~FTiangZLoginFlow();
@@ -36,6 +48,11 @@ public:
         FAoiDelta InAoiDelta, FNavigate InNavigate, FNumeric InNumeric,
         FEntityState InEntityState, FDemoDoorState InDemoDoorState,
         FAutoAttackState InAutoAttackState, FPing InPing);
+    /** 注册业务表现事件；事件只在SDK Tick所在的游戏线程回调。 / Registers feature events; callbacks run on the game thread from SDK Tick. */
+    void SetFeatureCallbacks(FItemChanged InItemChanged, FBuffAdded InBuffAdded,
+        FBuffRemoved InBuffRemoved, FBuffDetail InBuffDetail,
+        FQuestProgress InQuestProgress, FSkillCastState InSkillCastState,
+        FSkillProjectile InSkillProjectile, FSkillImpact InSkillImpact);
     void Start(FString Account, std::uint32_t MapId);
     void Tick();
     void Close();
@@ -46,6 +63,12 @@ public:
     bool ToggleDemoDoor(bool bClosed, FToggleDemoDoor OnCompleted);
     /** 请求切换服务端平A；状态推送和RPC回包都在游戏线程Tick中交给调用方。 / Toggles server auto attack; both push state and RPC completion run from game-thread Tick. */
     bool ToggleAutoAttack(bool bEnabled, std::uint32_t TargetUnitId, FToggleAutoAttack OnCompleted);
+    /** 发送道具请求；数量、CD和效果由服务端判断。 / Sends an item request; count, cooldown and effects are server-authoritative. */
+    bool UseItem(std::uint64_t ItemId, FUseItem OnCompleted);
+    /** 发送技能请求；客户端只传技能和目标，不在本地结算。 / Sends a skill request without resolving combat locally. */
+    bool CastSkill(std::uint32_t SkillId, std::uint32_t TargetUnitId, FCastSkill OnCompleted);
+    bool AcceptQuest(std::uint32_t QuestConfigId, FAcceptQuest OnCompleted);
+    bool CompleteQuest(std::uint32_t QuestConfigId, FCompleteQuest OnCompleted);
     [[nodiscard]] bool IsReady() const { return bReady; }
 
 private:
@@ -82,6 +105,14 @@ private:
     FDemoDoorState OnDemoDoorState;
     FAutoAttackState OnAutoAttackState;
     FPing OnPing;
+    FItemChanged OnItemChanged;
+    FBuffAdded OnBuffAdded;
+    FBuffRemoved OnBuffRemoved;
+    FBuffDetail OnBuffDetail;
+    FQuestProgress OnQuestProgress;
+    FSkillCastState OnSkillCastState;
+    FSkillProjectile OnSkillProjectile;
+    FSkillImpact OnSkillImpact;
     std::chrono::steady_clock::time_point NextPingAt{};
     std::chrono::steady_clock::time_point PingStartedAt{};
     bool bReady = false;
@@ -90,4 +121,8 @@ private:
     bool bNavigateInputInFlight = false;
     bool bToggleDemoDoorInFlight = false;
     bool bToggleAutoAttackInFlight = false;
+    bool bUseItemInFlight = false;
+    bool bCastSkillInFlight = false;
+    bool bAcceptQuestInFlight = false;
+    bool bCompleteQuestInFlight = false;
 };

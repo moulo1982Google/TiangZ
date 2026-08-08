@@ -12,9 +12,18 @@ signal aoi_delta(message: Dictionary)
 signal entity_enter(entity: Dictionary)
 signal entity_leave(unit_id: int)
 signal entity_numeric(message: Dictionary)
+signal entity_state(message: Dictionary)
 signal door_changed(closed: bool, changed: bool)
 signal ping_result(latency_ms: int, server_time_ms: int)
 signal auto_attack_state_changed(state: Dictionary)
+signal item_changed(item: Dictionary)
+signal buff_added(buff: Dictionary)
+signal buff_removed(message: Dictionary)
+signal buff_detail(message: Dictionary)
+signal quest_progress(message: Dictionary)
+signal skill_cast_state(message: Dictionary)
+signal skill_projectile(message: Dictionary)
+signal skill_impact(message: Dictionary)
 
 var peer: WebSocketPeer
 var account: String
@@ -28,6 +37,9 @@ var ping_sent_at := 0
 var token := ""
 var door_request_pending := false
 var auto_attack_request_pending := false
+var item_request_pending := false
+var skill_request_pending := false
+var quest_request_pending := false
 
 func start(in_account: String, login_mgr_host := "127.0.0.1", login_mgr_port := 7000) -> void:
 	account = in_account
@@ -97,6 +109,42 @@ func toggle_auto_attack(enabled: bool, target_unit_id: int) -> bool:
 		"enabled": enabled,
 		"target_unit_id": target_unit_id,
 	}), TiangZProto.M2C_TOGGLE_AUTO_ATTACK, Callable(self, "_on_auto_attack_response"))
+	return true
+
+## 发送使用道具请求；道具数量、公共CD和具体效果仍由服务端决定。
+## Sends an item-use request; count, cooldowns, and effects remain server-authoritative.
+func use_item(item_id: int) -> bool:
+	if phase != "map" or item_request_pending:
+		return false
+	item_request_pending = true
+	_send_rpc(TiangZProto.C2M_USE_ITEM, TiangZProto.encode_c2m_use_item({"item_id": item_id}), TiangZProto.M2C_USE_ITEM, Callable(self, "_on_use_item_response"))
+	return true
+
+## 发送施法请求；客户端只负责选择目标和展示读条，不在本地结算伤害。
+## Sends a cast request; the client only selects a target and renders the cast, never resolves damage locally.
+func cast_skill(skill_id: int, target_unit_id: int) -> bool:
+	if phase != "map" or skill_request_pending:
+		return false
+	skill_request_pending = true
+	_send_rpc(TiangZProto.C2M_CAST_SKILL, TiangZProto.encode_c2m_cast_skill({"skill_id": skill_id, "target_unit_id": target_unit_id}), TiangZProto.M2C_CAST_SKILL, Callable(self, "_on_cast_skill_response"))
+	return true
+
+## 接取任务；是否满足条件由服务端任务系统判断。
+## Accepts a quest; eligibility is checked by the server quest system.
+func accept_quest(quest_config_id: int) -> bool:
+	if phase != "map" or quest_request_pending:
+		return false
+	quest_request_pending = true
+	_send_rpc(TiangZProto.C2M_ACCEPT_QUEST, TiangZProto.encode_c2m_accept_quest({"quest_config_id": quest_config_id}), TiangZProto.M2C_ACCEPT_QUEST, Callable(self, "_on_accept_quest_response"))
+	return true
+
+## 交付任务；奖励和任务完成状态由服务端返回。
+## Completes a quest; rewards and completion state come from the server response.
+func complete_quest(quest_config_id: int) -> bool:
+	if phase != "map" or quest_request_pending:
+		return false
+	quest_request_pending = true
+	_send_rpc(TiangZProto.C2M_COMPLETE_QUEST, TiangZProto.encode_c2m_complete_quest({"quest_config_id": quest_config_id}), TiangZProto.M2C_COMPLETE_QUEST, Callable(self, "_on_complete_quest_response"))
 	return true
 
 func _connect(host: String, port: int, callback: Callable) -> void:
@@ -187,6 +235,39 @@ func _on_auto_attack_response(response: Dictionary) -> void:
 		return
 	auto_attack_state_changed.emit(TiangZProto.decode_m2c_toggle_auto_attack(response.payload))
 
+func _on_use_item_response(response: Dictionary) -> void:
+	item_request_pending = false
+	if not _check_response(response):
+		return
+	var result := TiangZProto.decode_m2c_use_item(response.payload)
+	if result.get("item") != null:
+		item_changed.emit(result.item)
+	if result.get("buff") != null:
+		buff_added.emit(result.buff)
+
+func _on_cast_skill_response(response: Dictionary) -> void:
+	skill_request_pending = false
+	if not _check_response(response):
+		return
+	# M2C_CastSkill与G2C_SkillCastState共用施法字段，直接交给同一套表现状态机。
+	# M2C_CastSkill and G2C_SkillCastState share cast fields, so both use one presentation state machine.
+	skill_cast_state.emit(TiangZProto.decode_m2c_cast_skill(response.payload))
+
+func _on_accept_quest_response(response: Dictionary) -> void:
+	quest_request_pending = false
+	if not _check_response(response):
+		return
+	var result := TiangZProto.decode_m2c_accept_quest(response.payload)
+	quest_progress.emit({"quests": [result.quest]})
+
+func _on_complete_quest_response(response: Dictionary) -> void:
+	quest_request_pending = false
+	if not _check_response(response):
+		return
+	var result := TiangZProto.decode_m2c_complete_quest(response.payload)
+	quest_progress.emit({"quests": [], "completed": [result.get("quest_config_id", 0)]})
+	_emit_status("任务完成，获得奖励 %d 件" % result.get("reward_items", []).size(), false)
+
 func _send_rpc(msg_code: int, payload: PackedByteArray, response_code: int, callback: Callable) -> void:
 	if peer == null or peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
@@ -214,10 +295,30 @@ func _handle_packet(packet: PackedByteArray) -> void:
 		entity_leave.emit(TiangZProto.decode_g2c_entity_leave(payload).unit_id)
 	elif msg_code == TiangZProto.G2C_ENTITY_NUMERIC:
 		entity_numeric.emit(TiangZProto.decode_g2c_entity_numeric(payload))
+	elif msg_code == TiangZProto.G2C_ENTITY_STATE:
+		entity_state.emit(TiangZProto.decode_g2c_entity_state(payload))
 	elif msg_code == TiangZProto.G2C_DEMO_DOOR_STATE:
 		door_changed.emit(TiangZProto.decode_g2c_demo_door_state(payload).closed, true)
 	elif msg_code == TiangZProto.G2C_AUTO_ATTACK_STATE:
 		auto_attack_state_changed.emit(TiangZProto.decode_g2c_auto_attack_state(payload))
+	elif msg_code == TiangZProto.G2C_ITEM_CHANGED:
+		var item_message := TiangZProto.decode_g2c_item_changed(payload)
+		if item_message.get("item") != null:
+			item_changed.emit(item_message.item)
+	elif msg_code == TiangZProto.G2C_BUFF_ADDED:
+		buff_added.emit(TiangZProto.decode_g2c_buff_added(payload).buff)
+	elif msg_code == TiangZProto.G2C_BUFF_REMOVED:
+		buff_removed.emit(TiangZProto.decode_g2c_buff_removed(payload))
+	elif msg_code == TiangZProto.G2C_BUFF_DETAIL:
+		buff_detail.emit(TiangZProto.decode_g2c_buff_detail(payload))
+	elif msg_code == TiangZProto.G2C_QUEST_PROGRESS:
+		quest_progress.emit(TiangZProto.decode_g2c_quest_progress(payload))
+	elif msg_code == TiangZProto.G2C_SKILL_CAST_STATE:
+		skill_cast_state.emit(TiangZProto.decode_g2c_skill_cast_state(payload))
+	elif msg_code == TiangZProto.G2C_SKILL_PROJECTILE:
+		skill_projectile.emit(TiangZProto.decode_g2c_skill_projectile(payload))
+	elif msg_code == TiangZProto.G2C_SKILL_IMPACT:
+		skill_impact.emit(TiangZProto.decode_g2c_skill_impact(payload))
 	else:
 		var response_id := TiangZProto.decode_rpc_id(payload)
 		if pending.has(response_id):

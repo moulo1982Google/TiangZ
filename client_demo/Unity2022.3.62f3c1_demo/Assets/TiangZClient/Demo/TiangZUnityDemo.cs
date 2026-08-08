@@ -41,6 +41,15 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     private Action unsubscribeDoor;
     private Action unsubscribeNumeric;
     private Action unsubscribeAutoAttack;
+    private Action unsubscribeEntityState;
+    private Action unsubscribeItemChanged;
+    private Action unsubscribeBuffAdded;
+    private Action unsubscribeBuffRemoved;
+    private Action unsubscribeBuffDetail;
+    private Action unsubscribeQuestProgress;
+    private Action unsubscribeSkillCastState;
+    private Action unsubscribeSkillProjectile;
+    private Action unsubscribeSkillImpact;
     private string status = "未连接 / Disconnected";
     private string lastError = "";
     private int sequence;
@@ -73,6 +82,22 @@ public sealed class TiangZUnityDemo : MonoBehaviour
     private long maxHp;
     private long currentMp;
     private long maxMp;
+    private readonly Dictionary<uint, long> entityCurrentHp = new Dictionary<uint, long>();
+    private readonly Dictionary<uint, long> entityMaxHp = new Dictionary<uint, long>();
+    private readonly Dictionary<ulong, BuffPublicView> activeBuffs = new Dictionary<ulong, BuffPublicView>();
+    private readonly Dictionary<uint, QuestSnapshot> activeQuests = new Dictionary<uint, QuestSnapshot>();
+    private readonly HashSet<uint> completedQuestConfigIds = new HashSet<uint>();
+    private readonly Dictionary<uint, ItemSnapshot> inventoryItems = new Dictionary<uint, ItemSnapshot>();
+    private readonly Dictionary<ulong, GameObject> skillProjectiles = new Dictionary<ulong, GameObject>();
+    private readonly Dictionary<ulong, uint> skillProjectileTargets = new Dictionary<ulong, uint>();
+    private uint castingSkillId;
+    private uint castingTargetUnitId;
+    private ulong castingStartedAtMs;
+    private ulong castingFinishAtMs;
+    private ulong globalCooldownEndAtMs;
+    private ulong skillCooldownEndAtMs;
+    private bool skillRequestInFlight;
+    private uint questRequestInFlight;
 
     private void Start()
     {
@@ -86,11 +111,13 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         if (game == null) return;
 
         UpdateInput();
+        UpdateFeatureInput();
         UpdateEntityPresentation();
         UpdateCamera();
         UpdateDoorInput();
         UpdatePing();
         UpdateClickNavigation();
+        UpdateSkillProjectiles();
     }
 
     private async Task ConnectAsync()
@@ -103,6 +130,9 @@ public sealed class TiangZUnityDemo : MonoBehaviour
             AttachHandlers();
 
             foreach (var entity in game.EnterMap.Entities) ApplySnapshot(entity);
+            foreach (var item in game.EnterMap.Items) inventoryItems[item.ConfigId] = item;
+            foreach (var quest in game.EnterMap.Quests) activeQuests[quest.QuestConfigId] = quest;
+            foreach (var questConfigId in game.EnterMap.CompletedQuestConfigIds) completedQuestConfigIds.Add(questConfigId);
             EnsureEntity(game.EnterMap.UnitId, true).position = new Vector3(game.EnterMap.X, game.EnterMap.Y, game.EnterMap.Z);
             localPlayer = entities[game.EnterMap.UnitId];
 
@@ -134,6 +164,15 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         });
         unsubscribeNumeric = game.GateSocket.On(ClientMessages.EntityNumeric, HandleNumeric);
         unsubscribeAutoAttack = game.GateSocket.On(ClientMessages.AutoAttackState, HandleAutoAttackState);
+        unsubscribeEntityState = game.GateSocket.On(ClientMessages.EntityState, HandleEntityState);
+        unsubscribeItemChanged = game.GateSocket.On(ClientMessages.ItemChanged, HandleItemChanged);
+        unsubscribeBuffAdded = game.GateSocket.On(ClientMessages.BuffAdded, HandleBuffAdded);
+        unsubscribeBuffRemoved = game.GateSocket.On(ClientMessages.BuffRemoved, HandleBuffRemoved);
+        unsubscribeBuffDetail = game.GateSocket.On(ClientMessages.BuffDetail, HandleBuffDetail);
+        unsubscribeQuestProgress = game.GateSocket.On(ClientMessages.QuestProgress, HandleQuestProgress);
+        unsubscribeSkillCastState = game.GateSocket.On(ClientMessages.SkillCastState, HandleSkillCastState);
+        unsubscribeSkillProjectile = game.GateSocket.On(ClientMessages.SkillProjectile, HandleSkillProjectile);
+        unsubscribeSkillImpact = game.GateSocket.On(ClientMessages.SkillImpact, HandleSkillImpact);
     }
 
     /// <summary>
@@ -145,8 +184,7 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         if (game == null) return;
         foreach (var numeric in message.Numerics)
         {
-            if (numeric.UnitId != game.EnterMap.UnitId) continue;
-            ApplyLocalNumeric(numeric.NumericType, numeric.Value);
+            ApplyEntityNumeric(numeric.UnitId, numeric.NumericType, numeric.Value);
         }
     }
 
@@ -231,6 +269,14 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         entity.rotation = Quaternion.Euler(0, snapshot.Yaw * Mathf.Rad2Deg, 0);
         targetPositions[snapshot.UnitId] = position;
         targetYaw[snapshot.UnitId] = snapshot.Yaw;
+        foreach (var numeric in snapshot.Numerics)
+        {
+            ApplyEntityNumeric(snapshot.UnitId, numeric.NumericType, numeric.Value);
+        }
+        foreach (var buff in snapshot.Buffs)
+        {
+            activeBuffs[buff.BuffInstanceId] = buff;
+        }
         if (game != null && snapshot.UnitId == game.EnterMap.UnitId)
         {
             foreach (var numeric in snapshot.Numerics)
@@ -240,6 +286,99 @@ public sealed class TiangZUnityDemo : MonoBehaviour
             playerYaw = snapshot.Yaw;
             lastSentYaw = snapshot.Yaw;
         }
+    }
+
+    /// <summary>
+    /// Applies a public Numeric delta to the matching presentation entity.
+    /// 将公开Numeric增量应用到对应表现实体；客户端只保存显示值，不参与战斗计算。
+    /// </summary>
+    private void ApplyEntityNumeric(uint unitId, uint numericType, long value)
+    {
+        if (numericType == 1) entityCurrentHp[unitId] = value;
+        if (numericType == 1000) entityMaxHp[unitId] = value;
+        if (game != null && unitId == game.EnterMap.UnitId) ApplyLocalNumeric(numericType, value);
+    }
+
+    private void HandleEntityState(G2C_EntityState message)
+    {
+        foreach (var state in message.States)
+        {
+            if (!entities.TryGetValue(state.UnitId, out var entity)) continue;
+            entity.gameObject.SetActive(state.Alive);
+            if (state.UnitId == selectedMonsterUnitId && !state.Alive) ClearMonsterSelection();
+        }
+    }
+
+    private void HandleItemChanged(G2C_ItemChanged message)
+    {
+        if (message.Item == null) return;
+        inventoryItems[message.Item.ConfigId] = message.Item;
+    }
+
+    private void HandleBuffAdded(G2C_BuffAdded message)
+    {
+        if (message.Buff == null) return;
+        activeBuffs[message.Buff.BuffInstanceId] = message.Buff;
+    }
+
+    private void HandleBuffRemoved(G2C_BuffRemoved message)
+    {
+        activeBuffs.Remove(message.BuffInstanceId);
+    }
+
+    private void HandleBuffDetail(G2C_BuffDetail message)
+    {
+        // BuffDetail carries private fields such as shield absorption. The demo keeps
+        // the public Buff row authoritative and only reports the private value in HUD.
+        // BuffDetail包含护盾吸收量等私有字段；演示保留公开Buff行作为权威，只在HUD展示私有值。
+        if (message.Buffs.Count > 0) status = $"Buff私有状态已同步：{message.Buffs.Count}项";
+    }
+
+    private void HandleQuestProgress(G2C_QuestProgress message)
+    {
+        activeQuests.Clear();
+        foreach (var quest in message.Quests) activeQuests[quest.QuestConfigId] = quest;
+    }
+
+    private void HandleSkillCastState(G2C_SkillCastState message)
+    {
+        castingSkillId = message.SkillId;
+        castingTargetUnitId = message.TargetUnitId;
+        castingStartedAtMs = message.StartedAtMs;
+        castingFinishAtMs = message.FinishAtMs;
+        globalCooldownEndAtMs = message.GlobalCooldownEndAtMs;
+        skillCooldownEndAtMs = message.SkillCooldownEndAtMs;
+        if (message.Phase == 0 && !string.IsNullOrEmpty(message.InterruptReason))
+        {
+            status = $"施法被打断：{message.InterruptReason}";
+        }
+    }
+
+    private void HandleSkillProjectile(G2C_SkillProjectile message)
+    {
+        if (!entities.TryGetValue(message.SourceUnitId, out var source) ||
+            !entities.TryGetValue(message.TargetUnitId, out var target)) return;
+        var projectile = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        projectile.name = $"SkillProjectile_{message.CastId}";
+        projectile.transform.localScale = Vector3.one * 0.35f;
+        projectile.GetComponent<Renderer>().material.color = message.SkillId == 3001
+            ? new Color(0.2f, 0.75f, 1f)
+            : new Color(1f, 0.65f, 0.15f);
+        projectile.transform.position = source.position + Vector3.up * 0.8f;
+        skillProjectiles[message.CastId] = projectile;
+        skillProjectileTargets[message.CastId] = message.TargetUnitId;
+    }
+
+    private void HandleSkillImpact(G2C_SkillImpact message)
+    {
+        if (skillProjectiles.TryGetValue(message.CastId, out var projectile))
+        {
+            Destroy(projectile);
+            skillProjectiles.Remove(message.CastId);
+            skillProjectileTargets.Remove(message.CastId);
+        }
+        status = $"{SkillName(message.SkillId)} 命中 {message.TargetUnitId}，伤害 {message.Damage}";
+        if (message.Killed && entities.TryGetValue(message.TargetUnitId, out var target)) target.gameObject.SetActive(false);
     }
 
     private Transform EnsureEntity(uint unitId, bool isLocal)
@@ -515,6 +654,170 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         _ = ToggleAutoAttackAsync(enabled, targetUnitId);
     }
 
+    /// <summary>
+    /// Handles the non-movement demo controls: 2/3 items, 4-8 skills, Q accept and R turn in.
+    /// 处理非移动演示输入：2/3使用道具，4-8施放技能，Q接取任务，R领取奖励。
+    /// </summary>
+    private void UpdateFeatureInput()
+    {
+        if (game == null) return;
+        if (Input.GetKeyDown(KeyCode.Alpha2)) _ = UseItemAsync(1001);
+        if (Input.GetKeyDown(KeyCode.Alpha3)) _ = UseItemAsync(1002);
+        if (Input.GetKeyDown(KeyCode.Alpha4)) _ = CastSkillAsync(3001);
+        if (Input.GetKeyDown(KeyCode.Alpha5)) _ = CastSkillAsync(3002);
+        if (Input.GetKeyDown(KeyCode.Alpha6)) _ = CastSkillAsync(3003);
+        if (Input.GetKeyDown(KeyCode.Alpha7)) _ = CastSkillAsync(3004);
+        if (Input.GetKeyDown(KeyCode.Alpha8)) _ = CastSkillAsync(3005);
+        if (Input.GetKeyDown(KeyCode.Q))
+        {
+            var quest = FindQuestToAccept();
+            if (quest != 0) _ = AcceptQuestAsync(quest);
+        }
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            var quest = FindQuestToComplete();
+            if (quest != 0) _ = CompleteQuestAsync(quest);
+        }
+    }
+
+    private async Task UseItemAsync(uint itemConfigId)
+    {
+        if (game == null || !inventoryItems.TryGetValue(itemConfigId, out var item) || item.Count == 0) return;
+        try
+        {
+            var response = await game.Map.UseItemAsync(new C2M_UseItem { ItemId = item.ItemId }, CancellationToken.None);
+            if (response.Item != null) inventoryItems[response.Item.ConfigId] = response.Item;
+            if (response.Buff != null) activeBuffs[response.Buff.BuffInstanceId] = response.Buff;
+            status = $"使用道具：{ItemName(itemConfigId)}";
+        }
+        catch (Exception error)
+        {
+            lastError = $"使用{ItemName(itemConfigId)}失败：{error.Message}";
+        }
+    }
+
+    private async Task CastSkillAsync(uint skillId)
+    {
+        if (game == null || skillRequestInFlight) return;
+        var targetUnitId = IsSelfSkill(skillId)
+            ? game.EnterMap.UnitId
+            : selectedMonsterUnitId != 0 ? selectedMonsterUnitId : FindFirstMonsterUnitId();
+        if (targetUnitId == 0)
+        {
+            status = "请先选择一个可见怪物 / Select a visible monster first";
+            return;
+        }
+        skillRequestInFlight = true;
+        try
+        {
+            var response = await game.Map.CastSkillAsync(
+                new C2M_CastSkill { SkillId = skillId, TargetUnitId = targetUnitId },
+                CancellationToken.None);
+            ApplySkillCastState(new G2C_SkillCastState
+            {
+                Phase = response.Phase,
+                CastId = response.CastId,
+                SkillId = response.SkillId,
+                TargetUnitId = response.TargetUnitId,
+                StartedAtMs = response.StartedAtMs,
+                FinishAtMs = response.FinishAtMs,
+                GlobalCooldownEndAtMs = response.GlobalCooldownEndAtMs,
+                SkillCooldownEndAtMs = response.SkillCooldownEndAtMs,
+                InterruptReason = response.InterruptReason,
+            });
+            status = $"开始施法：{SkillName(skillId)}";
+        }
+        catch (Exception error)
+        {
+            lastError = $"施放{SkillName(skillId)}失败：{error.Message}";
+        }
+        finally
+        {
+            skillRequestInFlight = false;
+        }
+    }
+
+    private async Task AcceptQuestAsync(uint questConfigId)
+    {
+        if (game == null || questRequestInFlight != 0) return;
+        questRequestInFlight = questConfigId;
+        try
+        {
+            var response = await game.Map.AcceptQuestAsync(new C2M_AcceptQuest { QuestConfigId = questConfigId }, CancellationToken.None);
+            if (response.Quest != null) activeQuests[response.Quest.QuestConfigId] = response.Quest;
+            status = $"已接取任务：{QuestName(questConfigId)}";
+        }
+        catch (Exception error)
+        {
+            lastError = $"接取任务失败：{error.Message}";
+        }
+        finally
+        {
+            questRequestInFlight = 0;
+        }
+    }
+
+    private async Task CompleteQuestAsync(uint questConfigId)
+    {
+        if (game == null || questRequestInFlight != 0) return;
+        questRequestInFlight = questConfigId;
+        try
+        {
+            var response = await game.Map.CompleteQuestAsync(new C2M_CompleteQuest { QuestConfigId = questConfigId }, CancellationToken.None);
+            activeQuests.Remove(questConfigId);
+            completedQuestConfigIds.Add(response.QuestConfigId);
+            status = $"任务完成：{QuestName(questConfigId)}";
+        }
+        catch (Exception error)
+        {
+            lastError = $"领取任务奖励失败：{error.Message}";
+        }
+        finally
+        {
+            questRequestInFlight = 0;
+        }
+    }
+
+    private uint FindQuestToAccept()
+    {
+        foreach (var questConfigId in new[] { 5001u, 5002u, 5003u, 5004u })
+        {
+            if (!activeQuests.ContainsKey(questConfigId) && !completedQuestConfigIds.Contains(questConfigId)) return questConfigId;
+        }
+        return 0;
+    }
+
+    private uint FindQuestToComplete()
+    {
+        foreach (var quest in activeQuests.Values)
+        {
+            if (quest.ReadyToComplete || quest.Status == 2) return quest.QuestConfigId;
+        }
+        return 0;
+    }
+
+    private void ApplySkillCastState(G2C_SkillCastState message)
+    {
+        castingSkillId = message.SkillId;
+        castingTargetUnitId = message.TargetUnitId;
+        castingStartedAtMs = message.StartedAtMs;
+        castingFinishAtMs = message.FinishAtMs;
+        globalCooldownEndAtMs = message.GlobalCooldownEndAtMs;
+        skillCooldownEndAtMs = message.SkillCooldownEndAtMs;
+        if (!string.IsNullOrEmpty(message.InterruptReason)) status = $"施法被打断：{message.InterruptReason}";
+    }
+
+    private void UpdateSkillProjectiles()
+    {
+        foreach (var pair in skillProjectiles)
+        {
+            if (!pair.Value || !skillProjectileTargets.TryGetValue(pair.Key, out var targetUnitId) ||
+                !entities.TryGetValue(targetUnitId, out var target)) continue;
+            pair.Value.transform.position = Vector3.MoveTowards(
+                pair.Value.transform.position, target.position + Vector3.up * 0.8f, 10f * Time.deltaTime);
+        }
+    }
+
     private uint FindFirstMonsterUnitId()
     {
         foreach (var pair in entityTypes)
@@ -570,6 +873,66 @@ public sealed class TiangZUnityDemo : MonoBehaviour
             2 => "怪B",
             _ => $"MonsterConfig#{configId}",
         };
+    }
+
+    private static string SkillName(uint skillId)
+    {
+        return skillId switch
+        {
+            3001 => "寒冰箭",
+            3002 => "火焰冲击",
+            3003 => "惩击",
+            3004 => "真言术·盾",
+            3005 => "真言术·韧",
+            _ => $"技能#{skillId}",
+        };
+    }
+
+    private static string ItemName(uint itemConfigId)
+    {
+        return itemConfigId switch
+        {
+            1001 => "小型生命药水",
+            1002 => "大型生命药水",
+            _ => $"道具#{itemConfigId}",
+        };
+    }
+
+    private static string BuffName(uint buffConfigId)
+    {
+        return buffConfigId switch
+        {
+            2001 => "持续恢复",
+            4001 => "冰冷",
+            4002 => "灼烧",
+            4003 => "真言术·盾",
+            4004 => "虚弱灵魂",
+            4005 => "真言术·韧",
+            _ => $"Buff#{buffConfigId}",
+        };
+    }
+
+    private static string QuestName(uint questConfigId)
+    {
+        return questConfigId switch
+        {
+            5001 => "清理怪物",
+            5002 => "试用药水",
+            5003 => "前往地图2",
+            5004 => "进阶试炼",
+            _ => $"任务#{questConfigId}",
+        };
+    }
+
+    private static bool IsSelfSkill(uint skillId) => skillId == 3004 || skillId == 3005;
+
+    private long ServerNowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + serverClockOffsetMs;
+
+    private static string FormatRemaining(ulong expireTimeMs, long serverNowMs)
+    {
+        if (expireTimeMs == 0) return "永久";
+        var seconds = Math.Max(0L, ((long)expireTimeMs - serverNowMs + 999) / 1000);
+        return $"{seconds / 60:00}:{seconds % 60:00}";
     }
 
     private async Task SendNavigateToAsync(Vector3 target)
@@ -704,7 +1067,7 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         GUILayout.Label("鼠标左键：选怪物或服务器寻路    E：开关门    F5：重连");
         GUILayout.Label(selectedMonsterUnitId == 0
             ? "目标：未选择怪物"
-            : $"目标：{MonsterName(entityConfigIds.GetValueOrDefault(selectedMonsterUnitId))}    实例ID：{selectedMonsterUnitId}");
+            : $"目标：{MonsterName(entityConfigIds.GetValueOrDefault(selectedMonsterUnitId))}    实例ID：{selectedMonsterUnitId}    HP：{entityCurrentHp.GetValueOrDefault(selectedMonsterUnitId)}/{entityMaxHp.GetValueOrDefault(selectedMonsterUnitId)}");
         var previousColor = GUI.color;
         GUI.color = new Color(0.95f, 0.35f, 0.4f);
         GUILayout.Label($"玩家 HP：{currentHp} / {maxHp}");
@@ -713,6 +1076,21 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         GUI.color = previousColor;
         GUILayout.Label(AutoAttackProgressText());
         GUILayout.Label("按 1：激活/取消平A；服务端控制读条与攻击节奏");
+        GUILayout.Label(SkillCastText());
+        GUILayout.Label("技能：4寒冰箭 5火焰冲击 6惩击 7真言术·盾 8真言术·韧");
+        GUILayout.Label(SkillCooldownText());
+        GUILayout.Label(BuffText());
+        GUILayout.Label(QuestText());
+        if (GUILayout.Button("Q 接取下一个任务"))
+        {
+            var quest = FindQuestToAccept();
+            if (quest != 0) _ = AcceptQuestAsync(quest);
+        }
+        if (GUILayout.Button("R 领取已完成任务奖励"))
+        {
+            var quest = FindQuestToComplete();
+            if (quest != 0) _ = CompleteQuestAsync(quest);
+        }
         if (!string.IsNullOrEmpty(lastError)) GUILayout.Label($"Error: {lastError}");
         GUILayout.EndArea();
         if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.F5)
@@ -724,6 +1102,48 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         }
     }
 
+    private string SkillCastText()
+    {
+        if (castingSkillId == 0) return "施法：空闲 / Cast: idle";
+        if (castingFinishAtMs <= castingStartedAtMs) return $"施法：{SkillName(castingSkillId)}（瞬发）";
+        var progress = Mathf.Clamp01((float)(ServerNowMs() - (long)castingStartedAtMs) /
+            Math.Max(1L, (long)castingFinishAtMs - (long)castingStartedAtMs));
+        return $"施法：{SkillName(castingSkillId)} [{progress * 100f:0}%] 目标：{castingTargetUnitId}";
+    }
+
+    private string SkillCooldownText()
+    {
+        var now = (ulong)Math.Max(0L, ServerNowMs());
+        var global = globalCooldownEndAtMs > now ? (globalCooldownEndAtMs - now + 999) / 1000 : 0;
+        var skill = skillCooldownEndAtMs > now ? (skillCooldownEndAtMs - now + 999) / 1000 : 0;
+        return $"公共CD：{global}s  当前技能CD：{skill}s";
+    }
+
+    private string BuffText()
+    {
+        if (game == null) return "Buff：--";
+        var visible = new List<string>();
+        foreach (var buff in activeBuffs.Values)
+        {
+            if (buff.UnitId != game.EnterMap.UnitId) continue;
+            visible.Add($"{BuffName(buff.BuffConfigId)} {FormatRemaining(buff.ExpireTimeMs, ServerNowMs())}");
+        }
+        return visible.Count == 0 ? "Buff：无" : $"Buff：{string.Join(" | ", visible)}";
+    }
+
+    private string QuestText()
+    {
+        if (activeQuests.Count == 0) return "任务：无（Q接取）";
+        var lines = new List<string>();
+        foreach (var quest in activeQuests.Values)
+        {
+            var objective = quest.Objectives.Count == 0 ? null : quest.Objectives[0];
+            var progress = objective == null ? "-" : $"{objective.Current}/{objective.Required}";
+            lines.Add($"{QuestName(quest.QuestConfigId)} {progress}{(quest.ReadyToComplete || quest.Status == 2 ? " 可领取" : "")}");
+        }
+        return $"任务：{string.Join(" | ", lines)}";
+    }
+
     private void OnDestroy()
     {
         unsubscribeNavigate?.Invoke();
@@ -731,6 +1151,21 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         unsubscribeDoor?.Invoke();
         unsubscribeNumeric?.Invoke();
         unsubscribeAutoAttack?.Invoke();
+        unsubscribeEntityState?.Invoke();
+        unsubscribeItemChanged?.Invoke();
+        unsubscribeBuffAdded?.Invoke();
+        unsubscribeBuffRemoved?.Invoke();
+        unsubscribeBuffDetail?.Invoke();
+        unsubscribeQuestProgress?.Invoke();
+        unsubscribeSkillCastState?.Invoke();
+        unsubscribeSkillProjectile?.Invoke();
+        unsubscribeSkillImpact?.Invoke();
+        foreach (var projectile in skillProjectiles.Values)
+        {
+            if (projectile != null) Destroy(projectile);
+        }
+        skillProjectiles.Clear();
+        skillProjectileTargets.Clear();
         if (selectedMonsterMarker != null) Destroy(selectedMonsterMarker);
         loginFlow?.Close();
     }

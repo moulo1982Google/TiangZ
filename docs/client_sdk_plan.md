@@ -46,6 +46,19 @@ Android、iOS、macOS 等 Native 平台以后分别作为独立验收项加入�
 
 ## 通用性规则
 
+## 3D客户端收口结果
+
+Cocos3D仍是最完整的交互参考，但Unity、UE和Godot已经补齐同一套业务验证链路：
+
+| 能力 | Unity C# | UE C++ | Godot GDScript |
+| --- | --- | --- | --- |
+| 技能请求、读条、GCD/CD、弹道、命中 | 已接入 | 已接入 | 已接入 |
+| Buff增删、详细状态、剩余时间 | 已接入 | 已接入 | 已接入 |
+| 任务快照、目标进度、接取、交付 | 已接入 | 已接入 | 已接入 |
+| 怪物颜色、HP、死亡/隐藏表现 | 已接入 | 已接入 | 已接入 |
+
+三套客户端都遵循同一边界：生成协议和配置只通过codegen更新；SDK负责编解码、RPC和Push；引擎Demo负责输入、节点、HUD和弹道表现；客户端不结算伤害、Buff效果、任务奖励或怪物死亡。Unity、UE、Godot的显示形式可以不同，但不能改变服务端状态语义。
+
 - Cocos、PixiJS 和后续小游戏必须消费同一版本、同一协议指纹的 SDK 产物。
 - SDK 通过 Transport 接口隔离 `WebSocket`、`wx.connectSocket`、`tt.connectSocket` 等平台差异。
 - SDK 通过手动 `update(maxMessages)` 模式把网络回调与游戏业务分开，游戏引擎负责在主循环调用。

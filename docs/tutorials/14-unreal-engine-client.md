@@ -46,7 +46,9 @@ LoginMgr.GetLoginServiceAddr
 -> Gate.MapSnapshotReady
 ```
 
-进入地图后会消费`G2C_AoiDelta`、`G2C_EntityNavigate`和`G2C_EntityNumeric`，并每5秒调用一次`Gate.Ping`维持Gate在线状态。操作为：左键点击地面寻路，W/S前后，A/D转向，按住右键时A/D横移，右键水平移动调整角色朝向，滚轮调整相机距离，`E`键开关红色动态门。
+进入地图后会消费`G2C_AoiDelta`、`G2C_EntityNavigate`、`G2C_EntityNumeric`和完整的技能/Buff/任务/实体状态Push，并每5秒调用一次`Gate.Ping`维持Gate在线状态。操作为：左键点击地面寻路，W/S前后，A/D转向，按住右键时A/D横移，右键水平移动调整角色朝向，滚轮调整相机距离，`E`键开关红色动态门；`1`切换平A，`2/3`使用药水，`4-8`施法，`Q/R`接取或交付任务。
+
+UE演示的技能、Buff、任务和怪物表现统一由`FTiangZLoginFlow::SetFeatureCallbacks`分发：技能读条和公共CD显示在HUD，抛射技能创建简单球体弹道，命中事件销毁弹道；Buff显示中文名和剩余时间，任务显示当前状态，怪物读取服务端HP并在死亡状态隐藏。所有伤害、Buff增删、任务奖励和怪物死亡仍以服务端Push为准。
 
 动态门与Cocos 3D使用相同的地图局部坐标、物理尺寸和`Map.ToggleDemoDoor`协议。按`E`后，UE等待服务端响应再显示或隐藏门；关闭后点击门后地面会得到绕行路径，重新打开后恢复直线路径。Rust会按烘焙`agentRadius`扩大动态障碍的导航占用，UE不得把半径再次加到门尺寸中。红门Actor关闭本地碰撞，只负责显示；UE没有本地位置预测，继续插值服务端权威位置即可，不能用UE碰撞结果代替Rust TileCache状态。
 

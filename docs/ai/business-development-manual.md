@@ -957,6 +957,10 @@ Demo要观察道具链路时，`ItemComponentSystem.Awake`会创建两叠测试�
 
 Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建图标，按`UI/Icons/Buff/<BuffId>`加载资源，文字读取`BuffConfig.name`显示中文名，不把BuffId暴露给玩家。倒计时使用服务端结束时间和客户端估算的服务器时钟，只显示`分钟:秒`，分钟不换算成小时；无限Buff显示`永久`。客户端显示到`00:00`后不得删除图标，删除只能由`G2C_BuffRemoved`驱动，不要把本地倒计时归零当成服务器已经移除。
 
+## 多引擎客户端开发边界
+
+当前Cocos3D、Unity、UE和Godot都可以作为技能、Buff、任务、道具和怪物协议的演示客户端。新增客户端表现时，先复用生成SDK的消息和配置，再实现该引擎的输入、状态缓存、HUD和视觉对象：Unity接入`LoginFlow`，UE接入`FTiangZLoginFlow`，Godot接入`TiangZClient`。不要在客户端重新计算伤害、Buff叠加、任务奖励、怪物死亡或技能距离；客户端只根据服务端的Cast、Impact、Buff、Quest、Numeric和EntityState消息更新表现。协议字段、msgcode和Codec变更必须回到Proto/codegen链路，不能直接改各引擎的Generated副本。
+
 ## 可观测性边界
 
 业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。

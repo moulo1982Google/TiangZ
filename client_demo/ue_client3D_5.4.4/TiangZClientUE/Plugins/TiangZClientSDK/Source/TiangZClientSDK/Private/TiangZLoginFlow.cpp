@@ -31,6 +31,21 @@ void FTiangZLoginFlow::SetCallbacks(FProgress InProgress, FError InError, FReady
     OnPing = MoveTemp(InPing);
 }
 
+void FTiangZLoginFlow::SetFeatureCallbacks(FItemChanged InItemChanged, FBuffAdded InBuffAdded,
+    FBuffRemoved InBuffRemoved, FBuffDetail InBuffDetail,
+    FQuestProgress InQuestProgress, FSkillCastState InSkillCastState,
+    FSkillProjectile InSkillProjectile, FSkillImpact InSkillImpact)
+{
+    OnItemChanged = MoveTemp(InItemChanged);
+    OnBuffAdded = MoveTemp(InBuffAdded);
+    OnBuffRemoved = MoveTemp(InBuffRemoved);
+    OnBuffDetail = MoveTemp(InBuffDetail);
+    OnQuestProgress = MoveTemp(InQuestProgress);
+    OnSkillCastState = MoveTemp(InSkillCastState);
+    OnSkillProjectile = MoveTemp(InSkillProjectile);
+    OnSkillImpact = MoveTemp(InSkillImpact);
+}
+
 void FTiangZLoginFlow::Start(FString InAccount, std::uint32_t InMapId)
 {
     Close();
@@ -64,6 +79,10 @@ void FTiangZLoginFlow::Close()
     bNavigateInputInFlight = false;
     bToggleDemoDoorInFlight = false;
     bToggleAutoAttackInFlight = false;
+    bUseItemInFlight = false;
+    bCastSkillInFlight = false;
+    bAcceptQuestInFlight = false;
+    bCompleteQuestInFlight = false;
 }
 
 bool FTiangZLoginFlow::NavigateTo(float X, float Y, float Z, std::uint32_t InSequence)
@@ -134,6 +153,87 @@ bool FTiangZLoginFlow::ToggleAutoAttack(bool bEnabled, std::uint32_t TargetUnitI
         [this](const std::string& Error)
         {
             bToggleAutoAttackInFlight = false;
+            Fail(Error);
+        });
+    return true;
+}
+
+bool FTiangZLoginFlow::UseItem(std::uint64_t ItemId, FUseItem OnCompleted)
+{
+    if (!bReady || !GateSocket || bUseItemInFlight) return false;
+    bUseItemInFlight = true;
+    C2M_UseItem Request;
+    Request.itemId = ItemId;
+    GateSocket->Call(Map_UseItem, MoveTemp(Request),
+        [this, Completion = MoveTemp(OnCompleted)](M2C_UseItem Response) mutable
+        {
+            bUseItemInFlight = false;
+            if (Completion) Completion(MoveTemp(Response));
+        },
+        [this](const std::string& Error)
+        {
+            bUseItemInFlight = false;
+            Fail(Error);
+        });
+    return true;
+}
+
+bool FTiangZLoginFlow::CastSkill(std::uint32_t SkillId, std::uint32_t TargetUnitId, FCastSkill OnCompleted)
+{
+    if (!bReady || !GateSocket || bCastSkillInFlight) return false;
+    bCastSkillInFlight = true;
+    C2M_CastSkill Request;
+    Request.skillId = SkillId;
+    Request.targetUnitId = TargetUnitId;
+    GateSocket->Call(Map_CastSkill, MoveTemp(Request),
+        [this, Completion = MoveTemp(OnCompleted)](M2C_CastSkill Response) mutable
+        {
+            bCastSkillInFlight = false;
+            if (Completion) Completion(MoveTemp(Response));
+        },
+        [this](const std::string& Error)
+        {
+            bCastSkillInFlight = false;
+            Fail(Error);
+        });
+    return true;
+}
+
+bool FTiangZLoginFlow::AcceptQuest(std::uint32_t QuestConfigId, FAcceptQuest OnCompleted)
+{
+    if (!bReady || !GateSocket || bAcceptQuestInFlight) return false;
+    bAcceptQuestInFlight = true;
+    C2M_AcceptQuest Request;
+    Request.questConfigId = QuestConfigId;
+    GateSocket->Call(Map_AcceptQuest, MoveTemp(Request),
+        [this, Completion = MoveTemp(OnCompleted)](M2C_AcceptQuest Response) mutable
+        {
+            bAcceptQuestInFlight = false;
+            if (Completion) Completion(MoveTemp(Response));
+        },
+        [this](const std::string& Error)
+        {
+            bAcceptQuestInFlight = false;
+            Fail(Error);
+        });
+    return true;
+}
+
+bool FTiangZLoginFlow::CompleteQuest(std::uint32_t QuestConfigId, FCompleteQuest OnCompleted)
+{
+    if (!bReady || !GateSocket || bCompleteQuestInFlight) return false;
+    bCompleteQuestInFlight = true;
+    C2M_CompleteQuest Request;
+    Request.questConfigId = QuestConfigId;
+    GateSocket->Call(Map_CompleteQuest, MoveTemp(Request),
+        [this, Completion = MoveTemp(OnCompleted)](M2C_CompleteQuest Response) mutable
+        {
+            bCompleteQuestInFlight = false;
+            if (Completion) Completion(MoveTemp(Response));
+        },
+        [this](const std::string& Error)
+        {
+            bCompleteQuestInFlight = false;
             Fail(Error);
         });
     return true;
@@ -223,6 +323,38 @@ void FTiangZLoginFlow::ConnectGate(const S2C_Login& Login)
     GateSocket->On(Client_AutoAttackState, [this](G2C_AutoAttackState Message)
     {
         if (OnAutoAttackState) OnAutoAttackState(MoveTemp(Message));
+    });
+    GateSocket->On(Client_ItemChanged, [this](G2C_ItemChanged Message)
+    {
+        if (OnItemChanged) OnItemChanged(MoveTemp(Message));
+    });
+    GateSocket->On(Client_BuffAdded, [this](G2C_BuffAdded Message)
+    {
+        if (OnBuffAdded) OnBuffAdded(MoveTemp(Message));
+    });
+    GateSocket->On(Client_BuffRemoved, [this](G2C_BuffRemoved Message)
+    {
+        if (OnBuffRemoved) OnBuffRemoved(MoveTemp(Message));
+    });
+    GateSocket->On(Client_BuffDetail, [this](G2C_BuffDetail Message)
+    {
+        if (OnBuffDetail) OnBuffDetail(MoveTemp(Message));
+    });
+    GateSocket->On(Client_QuestProgress, [this](G2C_QuestProgress Message)
+    {
+        if (OnQuestProgress) OnQuestProgress(MoveTemp(Message));
+    });
+    GateSocket->On(Client_SkillCastState, [this](G2C_SkillCastState Message)
+    {
+        if (OnSkillCastState) OnSkillCastState(MoveTemp(Message));
+    });
+    GateSocket->On(Client_SkillProjectile, [this](G2C_SkillProjectile Message)
+    {
+        if (OnSkillProjectile) OnSkillProjectile(MoveTemp(Message));
+    });
+    GateSocket->On(Client_SkillImpact, [this](G2C_SkillImpact Message)
+    {
+        if (OnSkillImpact) OnSkillImpact(MoveTemp(Message));
     });
     GateSocket->SetConnectedHandler([this]
     {

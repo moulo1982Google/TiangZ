@@ -720,3 +720,11 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - Action补充`Heal`，1001小型生命药水改为`Heal(150)`，2001持续恢复的Tick改为`Heal(50)`；两条治疗路径都进入Combat，不再直接写CurrentHp。灼烧Tick使用`DealDamage(5, Fire)`，盾的吸收器由Buff 4003的AddAction配置。
 - Cocos 3D只保留快捷键到SkillId的Demo映射，技能名称、目标关系和距离改读生成的客户端SkillConfig；服务端效果表不会下发客户端。
 - 新增[配置化技能教程](tutorials/18-configured-skill.md)，并同步项目上下文、业务开发手册、游戏配置说明、Action/Buff设计和路线图。
+
+# 2026-08-08：Unity、UE、Godot客户端SDK收口
+
+- Unity Demo补齐技能4-8、Buff增删与倒计时、任务接取/交付、道具状态、怪物Numeric与死亡表现；C# SDK仍只通过生成Client和Push订阅使用。
+- UE `FTiangZLoginFlow`增加技能、道具、任务请求和技能/Buff/任务Push回调；UE灰盒增加读条、公共CD、Buff/任务HUD、弹道、命中和怪物死亡表现。
+- Godot `TiangZClient`增加同一组RPC和Push信号；Godot灰盒增加技能快捷键、弹道、Buff/任务状态、道具状态和怪物Alive表现。
+- 三套客户端都保持服务端权威：客户端只显示服务端时间戳、Numeric、Cast、Impact、Buff、Quest和EntityState，不本地结算伤害、Buff、任务奖励或怪物死亡。
+- Unity `dotnet build Assembly-CSharp.csproj --no-restore`通过；UE 5.4.4 Editor目标通过；Godot机器未安装命令行可执行文件，已完成生成协议字段静态对照，需在安装Godot的环境执行编辑器冒烟。

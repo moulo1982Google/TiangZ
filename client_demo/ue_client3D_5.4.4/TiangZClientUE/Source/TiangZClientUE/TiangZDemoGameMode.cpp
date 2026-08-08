@@ -62,6 +62,8 @@ void ATiangZDemoGameMode::Tick(float DeltaSeconds)
     UpdateSelectedMonsterHud();
     UpdatePlayerStatsHud();
     UpdateAutoAttackHud();
+    UpdateFeatureHud();
+    UpdateSkillProjectiles();
 }
 
 void ATiangZDemoGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -167,6 +169,15 @@ void ATiangZDemoGameMode::StartLogin()
                     FString::Printf(TEXT("Gate Ping: %lld ms"), LatencyMs));
             }
         });
+    LoginFlow->SetFeatureCallbacks(
+        [this](G2C_ItemChanged Message) { HandleItemChanged(MoveTemp(Message)); },
+        [this](G2C_BuffAdded Message) { HandleBuffAdded(MoveTemp(Message)); },
+        [this](G2C_BuffRemoved Message) { HandleBuffRemoved(MoveTemp(Message)); },
+        [this](G2C_BuffDetail Message) { HandleBuffDetail(MoveTemp(Message)); },
+        [this](G2C_QuestProgress Message) { HandleQuestProgress(MoveTemp(Message)); },
+        [this](G2C_SkillCastState Message) { HandleSkillCastState(MoveTemp(Message)); },
+        [this](G2C_SkillProjectile Message) { HandleSkillProjectile(MoveTemp(Message)); },
+        [this](G2C_SkillImpact Message) { HandleSkillImpact(MoveTemp(Message)); });
     const FString Account = FString::Printf(TEXT("ue_%lld"), FDateTime::UtcNow().GetTicks());
     LoginFlow->Start(Account, DemoMapId);
 }
@@ -174,22 +185,38 @@ void ATiangZDemoGameMode::StartLogin()
 void ATiangZDemoGameMode::HandleReady(const G2C_EnterMap& Enter, const G2C_MapReady&)
 {
     LocalUnitId = Enter.unitId;
+    InventoryItems.Empty();
+    for (const auto& Item : Enter.items) InventoryItems.Add(Item.configId, Item);
+    ActiveQuests.Empty();
+    for (const auto& Quest : Enter.quests) ActiveQuests.Add(Quest.questConfigId, Quest);
+    CompletedQuestConfigIds.Empty();
+    for (const auto QuestId : Enter.completedQuestConfigIds) CompletedQuestConfigIds.Add(QuestId);
     MapEntitySnapshot Self;
     Self.unitId = Enter.unitId;
     Self.x = Enter.x;
     Self.y = Enter.y;
     Self.z = Enter.z;
+    Self.alive = true;
+    Self.entityType = 1;
     AddOrUpdateUnit(Self, true);
     for (const auto& Entity : Enter.entities)
     {
         AddOrUpdateUnit(Entity, true);
-        if (Entity.unitId != LocalUnitId) continue;
         for (const auto& Numeric : Entity.numerics)
         {
-            if (Numeric.numericType == CurrentHpNumericType) CurrentHp = Numeric.value;
-            else if (Numeric.numericType == MaxHpNumericType) MaxHp = Numeric.value;
-            else if (Numeric.numericType == CurrentMpNumericType) CurrentMp = Numeric.value;
-            else if (Numeric.numericType == MaxMpNumericType) MaxMp = Numeric.value;
+            if (Numeric.numericType == CurrentHpNumericType) EntityCurrentHp.Add(Entity.unitId, Numeric.value);
+            else if (Numeric.numericType == MaxHpNumericType) EntityMaxHp.Add(Entity.unitId, Numeric.value);
+            if (Entity.unitId == LocalUnitId)
+            {
+                if (Numeric.numericType == CurrentHpNumericType) CurrentHp = Numeric.value;
+                else if (Numeric.numericType == MaxHpNumericType) MaxHp = Numeric.value;
+                else if (Numeric.numericType == CurrentMpNumericType) CurrentMp = Numeric.value;
+                else if (Numeric.numericType == MaxMpNumericType) MaxMp = Numeric.value;
+            }
+        }
+        if (Entity.unitId == LocalUnitId)
+        {
+            for (const auto& Buff : Entity.buffs) ActiveBuffs.Add(Buff.buffInstanceId, Buff);
         }
     }
     ShowStatus(FString::Printf(TEXT("已进入 Map %u，Unit %u"), Enter.mapId, Enter.unitId), FColor::Green);
@@ -240,6 +267,8 @@ void ATiangZDemoGameMode::HandleNumeric(G2C_EntityNumeric Message)
 {
     for (const auto& Numeric : Message.numerics)
     {
+        if (Numeric.numericType == CurrentHpNumericType) EntityCurrentHp.Add(Numeric.unitId, Numeric.value);
+        else if (Numeric.numericType == MaxHpNumericType) EntityMaxHp.Add(Numeric.unitId, Numeric.value);
         if (Numeric.unitId != LocalUnitId) continue;
         if (Numeric.numericType == CurrentHpNumericType)
         {
@@ -301,6 +330,13 @@ void ATiangZDemoGameMode::HandleEntityState(G2C_EntityState Message)
             }
         }
 
+        if ((Dirty & UnitStateDirtyAlive) != 0U)
+        {
+            Visual->bAlive = State.alive;
+            Visual->Actor->SetActorHiddenInGame(!State.alive);
+            if (!State.alive && State.unitId == SelectedMonsterUnitId) ClearMonsterSelection();
+        }
+
         // 当前灰盒没有速度/死亡专用表现，但必须消费这些字段，避免状态推送变成未处理消息。
         // The graybox has no dedicated speed/death visuals yet, but these fields are consumed as part of the state contract.
         (void)UnitStateDirtySpeed;
@@ -313,6 +349,7 @@ void ATiangZDemoGameMode::AddOrUpdateUnit(const MapEntitySnapshot& Snapshot, boo
     auto& Visual = Units.FindOrAdd(Snapshot.unitId);
     Visual.EntityType = Snapshot.entityType;
     Visual.ConfigId = Snapshot.configId;
+    Visual.bAlive = Snapshot.alive;
     Visual.TargetRotation = TiangZYawToUnrealRotation(Snapshot.yaw);
     Visual.EntityType = Snapshot.entityType;
     Visual.ConfigId = Snapshot.configId;
@@ -339,6 +376,7 @@ void ATiangZDemoGameMode::AddOrUpdateUnit(const MapEntitySnapshot& Snapshot, boo
     Visual.TargetLocation = ToUnreal(Snapshot.x, Snapshot.y, Snapshot.z) +
         FVector(0.0F, 0.0F, Visual.BaseScale.Z * 50.0F);
     ApplyUnitColor(Snapshot.unitId, Visual);
+    Visual.Actor->SetActorHiddenInGame(!Visual.bAlive);
     if (bSnap)
     {
         Visual.Actor->SetActorLocation(Visual.TargetLocation);
@@ -412,6 +450,242 @@ void ATiangZDemoGameMode::HandleAutoAttackState(G2C_AutoAttackState Message)
     AutoAttackSwingStartAtMs = static_cast<std::int64_t>(Message.swingStartAtMs);
     AutoAttackSwingIntervalMs = Message.swingIntervalMs == 0 ? 2'000 : Message.swingIntervalMs;
     UpdateAutoAttackHud();
+}
+
+void ATiangZDemoGameMode::HandleItemChanged(G2C_ItemChanged Message)
+{
+    InventoryItems.Add(Message.item.configId, Message.item);
+}
+
+void ATiangZDemoGameMode::HandleBuffAdded(G2C_BuffAdded Message)
+{
+    if (Message.buff.unitId == LocalUnitId)
+    {
+        ActiveBuffs.Add(Message.buff.buffInstanceId, Message.buff);
+        BuffAbsorbRemaining.Remove(Message.buff.buffInstanceId);
+    }
+}
+
+void ATiangZDemoGameMode::HandleBuffRemoved(G2C_BuffRemoved Message)
+{
+    if (Message.unitId == LocalUnitId)
+    {
+        ActiveBuffs.Remove(Message.buffInstanceId);
+        BuffAbsorbRemaining.Remove(Message.buffInstanceId);
+    }
+}
+
+void ATiangZDemoGameMode::HandleBuffDetail(G2C_BuffDetail Message)
+{
+    for (const auto& Detail : Message.buffs)
+    {
+        if (auto* Buff = ActiveBuffs.Find(Detail.buffInstanceId))
+        {
+            // 详细数据只补充护盾吸收量等私有字段，不改变公共Buff生命周期。
+            // Detail packets enrich private fields such as shield absorption without changing public lifetime state.
+            (void)Buff;
+            if (Detail.unitId == LocalUnitId)
+            {
+                BuffAbsorbRemaining.Add(Detail.buffInstanceId, Detail.absorbRemaining);
+            }
+        }
+    }
+}
+
+void ATiangZDemoGameMode::HandleQuestProgress(G2C_QuestProgress Message)
+{
+    for (const auto& Quest : Message.quests) ActiveQuests.Add(Quest.questConfigId, Quest);
+}
+
+void ATiangZDemoGameMode::HandleSkillCastState(G2C_SkillCastState Message)
+{
+    SkillCastState = MoveTemp(Message);
+    if (!SkillCastState.interruptReason.empty())
+    {
+        ShowStatus(FString::Printf(TEXT("施法被打断：%s"), UTF8_TO_TCHAR(SkillCastState.interruptReason.c_str())), FColor::Orange);
+    }
+}
+
+void ATiangZDemoGameMode::HandleSkillProjectile(G2C_SkillProjectile Message)
+{
+    if (SkillProjectiles.Contains(Message.castId)) return;
+    const auto* Source = Units.Find(Message.sourceUnitId);
+    if (!Source || !Source->Actor) return;
+    if (!ProjectileMesh) ProjectileMesh = CubeMesh;
+    auto* Projectile = GetWorld()->SpawnActor<AStaticMeshActor>();
+    if (!Projectile) return;
+    Projectile->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+    Projectile->GetStaticMeshComponent()->SetStaticMesh(ProjectileMesh);
+    Projectile->GetStaticMeshComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    Projectile->SetActorLocation(Source->Actor->GetActorLocation() + FVector(0.0F, 0.0F, 70.0F));
+    Projectile->SetActorScale3D(FVector(0.22F));
+    if (auto* Material = LoadObject<UMaterialInterface>(nullptr,
+        TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+    {
+        auto* DynamicMaterial = UMaterialInstanceDynamic::Create(Material, this);
+        DynamicMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.35F, 0.8F, 1.0F));
+        Projectile->GetStaticMeshComponent()->SetMaterial(0, DynamicMaterial);
+    }
+    FProjectileVisual Visual;
+    Visual.Actor = Projectile;
+    Visual.TargetUnitId = Message.targetUnitId;
+    Visual.ImpactAtMs = static_cast<std::int64_t>(Message.impactAtMs);
+    SkillProjectiles.Add(Message.castId, MoveTemp(Visual));
+}
+
+void ATiangZDemoGameMode::HandleSkillImpact(G2C_SkillImpact Message)
+{
+    if (auto* Projectile = SkillProjectiles.Find(Message.castId))
+    {
+        if (Projectile->Actor) Projectile->Actor->Destroy();
+        SkillProjectiles.Remove(Message.castId);
+    }
+    ShowStatus(FString::Printf(TEXT("技能命中：%s，伤害 %llu"),
+        *SkillName(Message.skillId), static_cast<unsigned long long>(Message.damage)), FColor::White);
+    if (Message.killed)
+    {
+        if (auto* Target = Units.Find(Message.targetUnitId); Target && Target->Actor)
+        {
+            Target->bAlive = false;
+            Target->Actor->SetActorHiddenInGame(true);
+            if (Message.targetUnitId == SelectedMonsterUnitId) ClearMonsterSelection();
+        }
+    }
+}
+
+FString ATiangZDemoGameMode::SkillName(std::uint32_t SkillId)
+{
+    switch (SkillId)
+    {
+    case 3001: return TEXT("寒冰箭");
+    case 3002: return TEXT("火焰冲击");
+    case 3003: return TEXT("惩击");
+    case 3004: return TEXT("真言术·盾");
+    case 3005: return TEXT("真言术·韧");
+    case 3006: return TEXT("引导治疗");
+    default: return FString::Printf(TEXT("Skill#%u"), SkillId);
+    }
+}
+
+FString ATiangZDemoGameMode::ItemName(std::uint32_t ConfigId)
+{
+    return ConfigId == 1001 ? TEXT("小型生命药水") : ConfigId == 1002 ? TEXT("大型生命药水") : FString::Printf(TEXT("Item#%u"), ConfigId);
+}
+
+FString ATiangZDemoGameMode::BuffName(std::uint32_t ConfigId)
+{
+    switch (ConfigId)
+    {
+    case 2001: return TEXT("持续恢复");
+    case 4001: return TEXT("冰冷");
+    case 4002: return TEXT("灼烧");
+    case 4003: return TEXT("真言术·盾");
+    case 4004: return TEXT("虚弱灵魂");
+    case 4005: return TEXT("真言术·韧");
+    default: return FString::Printf(TEXT("Buff#%u"), ConfigId);
+    }
+}
+
+FString ATiangZDemoGameMode::QuestName(std::uint32_t ConfigId)
+{
+    switch (ConfigId)
+    {
+    case 5001: return TEXT("清理怪物");
+    case 5002: return TEXT("试用药水");
+    case 5003: return TEXT("前往地图2");
+    case 5004: return TEXT("进阶试炼");
+    default: return FString::Printf(TEXT("Quest#%u"), ConfigId);
+    }
+}
+
+void ATiangZDemoGameMode::UpdateFeatureHud() const
+{
+    if (!GEngine) return;
+    FString SkillText(TEXT("技能：空闲（4-8施法）"));
+    const auto Now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count() + ServerClockOffsetMs;
+    if (!SkillCastState.interruptReason.empty())
+    {
+        SkillText = TEXT("技能：已打断");
+    }
+    else if (SkillCastState.skillId != 0 && static_cast<int64>(SkillCastState.finishAtMs) > Now)
+    {
+        const auto Duration = FMath::Max<int64>(1, static_cast<int64>(SkillCastState.finishAtMs - SkillCastState.startedAtMs));
+        const auto Elapsed = FMath::Clamp<int64>(Now - static_cast<int64>(SkillCastState.startedAtMs), 0, Duration);
+        SkillText = FString::Printf(TEXT("技能：%s 读条 %d%%"), *SkillName(SkillCastState.skillId),
+            FMath::RoundToInt(static_cast<float>(Elapsed) / static_cast<float>(Duration) * 100.0F));
+    }
+    GEngine->AddOnScreenDebugMessage(7012, 0.0F, FColor::Cyan, SkillText);
+
+    FString BuffText(TEXT("Buff：无"));
+    if (ActiveBuffs.Num() > 0)
+    {
+        BuffText = TEXT("Buff：");
+        bool bFirst = true;
+        for (const auto& Pair : ActiveBuffs)
+        {
+            const auto RemainingMs = Pair.Value.expireTimeMs == 0
+                ? 0LL
+                : FMath::Max<int64>(0, static_cast<int64>(Pair.Value.expireTimeMs) - Now);
+            const auto Remaining = Pair.Value.expireTimeMs == 0
+                ? FString(TEXT("∞"))
+                : FString::Printf(TEXT("%02lld:%02lld"),
+                    (RemainingMs / 1000) / 60,
+                    (RemainingMs / 1000) % 60);
+            if (!bFirst) BuffText += TEXT(" | ");
+            const auto Absorb = BuffAbsorbRemaining.Find(Pair.Key);
+            const FString AbsorbText = Absorb != nullptr && *Absorb > 0
+                ? FString::Printf(TEXT(" 吸收%d"), *Absorb)
+                : FString();
+            BuffText += FString::Printf(TEXT("%s %s%s"), *BuffName(Pair.Value.buffConfigId), *Remaining, *AbsorbText);
+            bFirst = false;
+        }
+    }
+    GEngine->AddOnScreenDebugMessage(7013, 0.0F, FColor::Green, BuffText);
+
+    FString QuestText(TEXT("任务：无（Q接取，R交付）"));
+    if (ActiveQuests.Num() > 0)
+    {
+        QuestText = TEXT("任务：");
+        bool bFirst = true;
+        for (const auto& Pair : ActiveQuests)
+        {
+            if (!bFirst) QuestText += TEXT(" | ");
+            QuestText += FString::Printf(TEXT("%s%s"), *QuestName(Pair.Key),
+                Pair.Value.readyToComplete ? TEXT("（可交付）") : TEXT(""));
+            bFirst = false;
+        }
+    }
+    GEngine->AddOnScreenDebugMessage(7014, 0.0F, FColor::White, QuestText);
+}
+
+void ATiangZDemoGameMode::UpdateSkillProjectiles()
+{
+    const auto Now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count() + ServerClockOffsetMs;
+    TArray<std::uint64_t> RemoveIds;
+    for (auto& Pair : SkillProjectiles)
+    {
+        auto& Projectile = Pair.Value;
+        const auto* Target = Units.Find(Projectile.TargetUnitId);
+        if (!Projectile.Actor || !Target || !Target->Actor)
+        {
+            RemoveIds.Add(Pair.Key);
+            continue;
+        }
+        Projectile.Actor->SetActorLocation(FMath::VInterpTo(
+            Projectile.Actor->GetActorLocation(), Target->Actor->GetActorLocation() + FVector(0.0F, 0.0F, 70.0F),
+            GetWorld()->GetDeltaSeconds(), 12.0F));
+        if (Now >= Projectile.ImpactAtMs) RemoveIds.Add(Pair.Key);
+    }
+    for (const auto Id : RemoveIds)
+    {
+        if (auto* Projectile = SkillProjectiles.Find(Id))
+        {
+            if (Projectile->Actor) Projectile->Actor->Destroy();
+        }
+        SkillProjectiles.Remove(Id);
+    }
 }
 
 void ATiangZDemoGameMode::ApplyUnitColor(std::uint32_t UnitId, FUnitVisual& Visual) const
@@ -523,6 +797,116 @@ void ATiangZDemoGameMode::ToggleAutoAttack()
     }
 }
 
+void ATiangZDemoGameMode::UseItemSlot(std::uint32_t Slot)
+{
+    const std::uint32_t ConfigId = Slot == 2 ? 1001 : 1002;
+    const auto* Item = InventoryItems.Find(ConfigId);
+    if (!Item || Item->count == 0)
+    {
+        ShowStatus(FString::Printf(TEXT("%s数量不足"), *ItemName(ConfigId)), FColor::Orange);
+        return;
+    }
+    if (!LoginFlow || !LoginFlow->UseItem(Item->itemId,
+        [this](M2C_UseItem Response)
+        {
+            if (Response.error.has_value() && Response.error.value() != 0)
+            {
+                ShowStatus(FString::Printf(TEXT("使用道具失败：%s"),
+                    Response.message.has_value() ? UTF8_TO_TCHAR(Response.message->c_str()) : TEXT("服务端拒绝")), FColor::Red);
+                return;
+            }
+            HandleItemChanged(G2C_ItemChanged{Response.item});
+        }))
+    {
+        ShowStatus(TEXT("道具请求尚未就绪或仍在处理中"), FColor::Orange);
+    }
+}
+
+void ATiangZDemoGameMode::CastSkillSlot(std::uint32_t Slot)
+{
+    const std::uint32_t SkillId = Slot == 4 ? 3001 : Slot == 5 ? 3002 : Slot == 6 ? 3003 : Slot == 7 ? 3004 : 3005;
+    if (SelectedMonsterUnitId == 0)
+    {
+        ShowStatus(TEXT("请先选择一个可见怪物"), FColor::Orange);
+        return;
+    }
+    if (!LoginFlow || !LoginFlow->CastSkill(SkillId, SelectedMonsterUnitId,
+        [this](M2C_CastSkill Response)
+        {
+            if (Response.error.has_value() && Response.error.value() != 0)
+            {
+                ShowStatus(FString::Printf(TEXT("施法失败：%s"),
+                    Response.message.has_value() ? UTF8_TO_TCHAR(Response.message->c_str()) : TEXT("服务端拒绝")), FColor::Red);
+                return;
+            }
+            G2C_SkillCastState State;
+            State.phase = Response.phase;
+            State.castId = Response.castId;
+            State.skillId = Response.skillId;
+            State.targetUnitId = Response.targetUnitId;
+            State.startedAtMs = Response.startedAtMs;
+            State.finishAtMs = Response.finishAtMs;
+            State.globalCooldownEndAtMs = Response.globalCooldownEndAtMs;
+            State.skillCooldownEndAtMs = Response.skillCooldownEndAtMs;
+            State.interruptReason = Response.interruptReason;
+            HandleSkillCastState(MoveTemp(State));
+        }))
+    {
+        ShowStatus(TEXT("技能请求尚未就绪或仍在处理中"), FColor::Orange);
+    }
+}
+
+void ATiangZDemoGameMode::AcceptFirstQuest()
+{
+    for (const std::uint32_t QuestId : {5001U, 5002U, 5003U, 5004U})
+    {
+        if (ActiveQuests.Contains(QuestId) || CompletedQuestConfigIds.Contains(QuestId)) continue;
+        if (LoginFlow && LoginFlow->AcceptQuest(QuestId,
+            [this](M2C_AcceptQuest Response)
+            {
+                if (Response.error.has_value() && Response.error.value() != 0)
+                {
+                    ShowStatus(TEXT("接取任务失败 / Accept quest failed"), FColor::Red);
+                    return;
+                }
+                G2C_QuestProgress Progress;
+                Progress.quests.push_back(MoveTemp(Response.quest));
+                HandleQuestProgress(MoveTemp(Progress));
+            }))
+        {
+            ShowStatus(FString::Printf(TEXT("正在接取任务：%s"), *QuestName(QuestId)), FColor::White);
+        }
+        return;
+    }
+    ShowStatus(TEXT("没有可接取的任务"), FColor::White);
+}
+
+void ATiangZDemoGameMode::CompleteFirstQuest()
+{
+    for (const auto& Pair : ActiveQuests)
+    {
+        if (!Pair.Value.readyToComplete) continue;
+        const auto QuestId = Pair.Key;
+        if (LoginFlow && LoginFlow->CompleteQuest(QuestId,
+            [this, QuestId](M2C_CompleteQuest Response)
+            {
+                if (Response.error.has_value() && Response.error.value() != 0)
+                {
+                    ShowStatus(TEXT("交付任务失败 / Complete quest failed"), FColor::Red);
+                    return;
+                }
+                ActiveQuests.Remove(QuestId);
+                CompletedQuestConfigIds.Add(QuestId);
+                ShowStatus(FString::Printf(TEXT("任务完成：%s，奖励 %d 件"), *QuestName(QuestId), Response.rewardItems.size()), FColor::Green);
+            }))
+        {
+            ShowStatus(FString::Printf(TEXT("正在交付任务：%s"), *QuestName(QuestId)), FColor::White);
+        }
+        return;
+    }
+    ShowStatus(TEXT("没有可交付的任务"), FColor::White);
+}
+
 void ATiangZDemoGameMode::ToggleDemoDoor()
 {
     const bool bRequestedClosed = !bDemoDoorClosed;
@@ -556,6 +940,15 @@ void ATiangZDemoGameMode::UpdateInput(float DeltaSeconds)
 
     if (Controller->WasInputKeyJustPressed(EKeys::E)) ToggleDemoDoor();
     if (Controller->WasInputKeyJustPressed(EKeys::One)) ToggleAutoAttack();
+    if (Controller->WasInputKeyJustPressed(EKeys::Two)) UseItemSlot(2);
+    if (Controller->WasInputKeyJustPressed(EKeys::Three)) UseItemSlot(3);
+    if (Controller->WasInputKeyJustPressed(EKeys::Four)) CastSkillSlot(4);
+    if (Controller->WasInputKeyJustPressed(EKeys::Five)) CastSkillSlot(5);
+    if (Controller->WasInputKeyJustPressed(EKeys::Six)) CastSkillSlot(6);
+    if (Controller->WasInputKeyJustPressed(EKeys::Seven)) CastSkillSlot(7);
+    if (Controller->WasInputKeyJustPressed(EKeys::Eight)) CastSkillSlot(8);
+    if (Controller->WasInputKeyJustPressed(EKeys::Q)) AcceptFirstQuest();
+    if (Controller->WasInputKeyJustPressed(EKeys::R)) CompleteFirstQuest();
 
     if (Controller->WasInputKeyJustPressed(EKeys::RightMouseButton))
     {

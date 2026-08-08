@@ -443,3 +443,7 @@ Cocos3D玩家Unit保持“中心点实体根节点 + 可替换Visual子树”的
 Cocos3D桌面输入区分角色朝向与本地观察：右键拖动继续同时修改`playerYaw/cameraYaw`并上报朝向，左键拖动只修改`cameraYawOffset`，不得写协议或权威状态。左键按下到抬起超过5像素视为环绕手势并吞掉寻路；未超过阈值仍按短点击处理怪物选择或地面寻路。
 
 Cocos3D的本地Buff栏从`MapEntitySnapshot.buffs`、`M2C_UseItem.buff`和`G2C_BuffAdded`建立图标，资源键固定为`UI/Icons/Buff/<BuffId>`，例如Buff 2001使用`UI/Icons/Buff/2001`；界面文字读取客户端`BuffConfig.name`显示中文名，不展示BuffId。剩余时间使用最近一次Gate Ping得到的服务器时钟偏差计算，显示为`分钟:秒`，两小时显示`120:00`；无限时长显示`永久`。本地倒计时到`00:00`只冻结文字和保留图标，必须等`G2C_BuffRemoved`才删除，不能用客户端本地计时器提前清理Buff。
+
+## Unity、UE、Godot客户端收口
+
+Cocos3D是业务表现参考，但不是唯一客户端实现。Unity C#、UE C++、Godot GDScript已经接入同一组生成协议：技能请求和读条/CD、Buff增删与详情、任务进度/接取/交付、怪物Numeric/Alive/死亡表现。三套客户端可以使用不同的HUD、节点和弹道样式，但都必须遵守“服务端结算，客户端表现”的边界。Unity使用`LoginFlow`，UE使用`FTiangZLoginFlow::SetFeatureCallbacks`，Godot使用`TiangZClient`信号；生成协议、msgcode和Codec禁止在客户端手工复制。

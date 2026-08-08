@@ -61,6 +61,13 @@ Auto Connect：进入Play后自动登录
 - 每5秒：通过Gate Ping显示网络往返耗时和服务器时间。
 - F5：关闭当前连接并重新登录。
 
+技能、Buff、任务和怪物表现：
+
+- `1`：切换平A；`2/3`：使用出生时的两种生命药水；`4-8`：选择目标后施放五个演示技能；`Q/R`：接取第一个可接任务、交付第一个可交任务。
+- 技能读条、公共CD、技能CD和施法中断只显示服务端推送的时间戳，不在Unity本地结算伤害或Buff。
+- Buff以中文名和剩余时间显示；任务以目标进度和“可交付”状态显示；怪物使用配置颜色、服务端HP和死亡状态。
+- `G2C_SkillProjectile`只创建演示弹道对象，`G2C_SkillImpact`到达时销毁弹道并应用服务端死亡表现。
+
 ## 客户端调用边界
 
 Unity表现代码不手写协议数字。登录和进图由`LoginFlow`编排，业务调用生成Client：
@@ -79,6 +86,13 @@ await game.Map.NavigateToAsync(new C2M_NavigateTo
     TargetZ = 6f,
     Sequence = 1,
 }, cancellationToken);
+
+// 业务只调用生成的Client，不手写msgcode；结果和Push都会回到主线程Update。
+// Business code calls generated clients instead of msgcodes; results and pushes are handled by main-thread Update.
+await game.Map.UseItemAsync(new C2M_UseItem { ItemId = itemId }, cancellationToken);
+await game.Map.CastSkillAsync(new C2M_CastSkill { SkillId = 3001, TargetUnitId = targetUnitId }, cancellationToken);
+await game.Map.AcceptQuestAsync(new C2M_AcceptQuest { QuestConfigId = 5001 }, cancellationToken);
+await game.Map.CompleteQuestAsync(new C2M_CompleteQuest { QuestConfigId = 5001 }, cancellationToken);
 ```
 
 `RpcSocket`的网络线程只入队，不能从网络线程修改Unity对象。`Vector3`、Transform和Camera只存在于Unity表现层；协议继续使用米制`x/y/z/yaw`，不要把Unity厘米或`Quaternion`写回协议。当前C# Adapter只支持桌面WebSocket，TCP/KCP未实现时必须显式报错。

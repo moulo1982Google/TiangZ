@@ -28,6 +28,9 @@ E:\gitee\TiangZ\client_demo/godot-3d-4.7.1\project.godot
 - 按住鼠标右键拖动：摄像机围绕玩家水平旋转，并限频提交新的朝向。
 - `E`：调用`Map.ToggleDemoDoor`，只有服务端响应后才显示或隐藏红门。
 - 鼠标滚轮：调整跟随相机距离。
+- `1`：切换平A；`2/3`：使用生命药水；`4-8`：选择怪物后施放五个演示技能；`Q/R`：接取或交付任务。
+
+进入地图后，`TiangZClient`会把`G2C_SkillCastState`、`G2C_SkillProjectile`、`G2C_SkillImpact`、`G2C_BuffAdded/Removed/Detail`、`G2C_QuestProgress`、`G2C_ItemChanged`和`G2C_EntityState`转换成信号，`main.gd`只维护状态和表现：技能显示读条并创建简单弹道，Buff显示中文名和剩余时间，任务显示目标进度，怪物根据Numeric和Alive状态显示HP与死亡。客户端不本地结算技能伤害、Buff效果或任务奖励。
 
 ## 文件职责
 

@@ -52,6 +52,15 @@ var auto_attack_swing_interval_ms := 2000
 var auto_attack_phase := 0
 var server_clock_offset_ms := 0
 var auto_attack_request_pending := false
+var inventory_items: Dictionary = {}
+var active_buffs: Dictionary = {}
+var quests: Dictionary = {}
+var completed_quest_config_ids: Dictionary = {}
+var skill_cast_state: Dictionary = {}
+var skill_projectiles: Dictionary = {}
+var skill_label: Label
+var buff_label: Label
+var quest_label: Label
 
 func _ready() -> void:
 	_build_world()
@@ -66,9 +75,18 @@ func _ready() -> void:
 	client.entity_enter.connect(_on_entity_enter)
 	client.entity_leave.connect(_on_entity_leave)
 	client.entity_numeric.connect(_on_entity_numeric)
+	client.entity_state.connect(_on_entity_state)
 	client.door_changed.connect(_on_door_changed)
 	client.ping_result.connect(_on_ping_result)
 	client.auto_attack_state_changed.connect(_on_auto_attack_state)
+	client.item_changed.connect(_on_item_changed)
+	client.buff_added.connect(_on_buff_added)
+	client.buff_removed.connect(_on_buff_removed)
+	client.buff_detail.connect(_on_buff_detail)
+	client.quest_progress.connect(_on_quest_progress)
+	client.skill_cast_state.connect(_on_skill_cast_state)
+	client.skill_projectile.connect(_on_skill_projectile)
+	client.skill_impact.connect(_on_skill_impact)
 	client.start("godot_%d" % Time.get_ticks_msec())
 
 func _process(delta: float) -> void:
@@ -76,6 +94,10 @@ func _process(delta: float) -> void:
 	_update_units(delta)
 	_update_camera(delta)
 	_update_auto_attack_hud()
+	_update_skill_hud()
+	_update_buff_hud()
+	_update_quest_hud()
+	_update_skill_projectiles(delta)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -97,6 +119,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		client.toggle_demo_door(not door_closed)
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_1:
 		_toggle_auto_attack()
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_2 or event.keycode == KEY_3:
+			_use_item_slot(event.keycode - KEY_0)
+		elif event.keycode >= KEY_4 and event.keycode <= KEY_8:
+			_cast_skill_slot(event.keycode - KEY_0)
+		elif event.keycode == KEY_Q:
+			_accept_first_quest()
+		elif event.keycode == KEY_R:
+			_complete_first_quest()
 
 func _build_world() -> void:
 	var environment_node := WorldEnvironment.new()
@@ -171,10 +202,25 @@ func _build_ui() -> void:
 	auto_attack_label.add_theme_font_size_override("font_size", 16)
 	auto_attack_label.text = "平A：未激活（按 1 开始）"
 	canvas.add_child(auto_attack_label)
+	skill_label = Label.new()
+	skill_label.position = Vector2(24.0, 238.0)
+	skill_label.add_theme_font_size_override("font_size", 15)
+	skill_label.text = "技能：空闲（4-8施法）"
+	canvas.add_child(skill_label)
+	buff_label = Label.new()
+	buff_label.position = Vector2(24.0, 282.0)
+	buff_label.add_theme_font_size_override("font_size", 15)
+	buff_label.text = "Buff：无"
+	canvas.add_child(buff_label)
+	quest_label = Label.new()
+	quest_label.position = Vector2(24.0, 350.0)
+	quest_label.add_theme_font_size_override("font_size", 15)
+	quest_label.text = "任务：无（Q接取，R交付）"
+	canvas.add_child(quest_label)
 	var help := Label.new()
 	help.position = Vector2(24.0, 650.0)
 	help.add_theme_font_size_override("font_size", 16)
-	help.text = "左键：选怪物或服务端寻路    W/S：前后移动    A/D：转身    按住右键时 A/D：平移    E：动态门    滚轮：镜头距离"
+	help.text = "左键：选怪物或服务端寻路    W/S：前后移动    A/D：转身    按住右键时 A/D：平移    1平A  2/3道具  4-8技能  Q/R任务    E：动态门    滚轮：镜头距离"
 	canvas.add_child(help)
 
 func _update_direction_input(delta: float) -> void:
@@ -353,13 +399,24 @@ func _update_camera(delta: float) -> void:
 func _on_map_entered(snapshot: Dictionary) -> void:
 	local_unit_id = snapshot.unit_id
 	local_numerics.clear()
-	_upsert_unit({"unit_id": snapshot.unit_id, "x": snapshot.x, "y": snapshot.y, "z": snapshot.z, "yaw": 0.0}, true)
+	inventory_items.clear()
+	for item in snapshot.get("items", []):
+		inventory_items[int(item.get("config_id", 0))] = item
+	quests.clear()
+	for quest in snapshot.get("quests", []):
+		quests[int(quest.get("quest_config_id", 0))] = quest
+	completed_quest_config_ids.clear()
+	for quest_id in snapshot.get("completed_quest_config_ids", []):
+		completed_quest_config_ids[int(quest_id)] = true
+	_upsert_unit({"unit_id": snapshot.unit_id, "x": snapshot.x, "y": snapshot.y, "z": snapshot.z, "yaw": 0.0, "alive": true, "entity_type": 1, "config_id": 0}, true)
 	for entity in snapshot.entities:
 		_upsert_unit(entity, true)
-		if int(entity.get("unit_id", 0)) == local_unit_id:
-			for numeric in entity.get("numerics", []):
-				_apply_local_numeric(numeric)
+		for numeric in entity.get("numerics", []):
+			_apply_entity_numeric(numeric)
+		for buff in entity.get("buffs", []):
+			_on_buff_added(buff)
 	_update_player_stats_hud()
+	_update_quest_hud()
 
 func _on_map_ready(snapshot: Dictionary) -> void:
 	_upsert_unit({"unit_id": snapshot.unit_id, "x": snapshot.x, "y": snapshot.y, "z": snapshot.z, "yaw": player_yaw}, false)
@@ -387,13 +444,40 @@ func _on_entity_leave(unit_id: int) -> void:
 
 func _on_entity_numeric(message: Dictionary) -> void:
 	for numeric in message.get("numerics", []):
-		if int(numeric.get("unit_id", 0)) != local_unit_id:
-			continue
-		_apply_local_numeric(numeric)
+		_apply_entity_numeric(numeric)
 	_update_player_stats_hud()
 
 func _apply_local_numeric(numeric: Dictionary) -> void:
 	local_numerics[int(numeric.get("numeric_type", 0))] = int(numeric.get("value", 0))
+
+func _apply_entity_numeric(numeric: Dictionary) -> void:
+	var unit_id := int(numeric.get("unit_id", 0))
+	var numeric_type := int(numeric.get("numeric_type", 0))
+	var value := int(numeric.get("value", 0))
+	if unit_id == local_unit_id:
+		_apply_local_numeric(numeric)
+	if units.has(unit_id):
+		var state: Dictionary = units[unit_id]
+		var numerics: Dictionary = state.get("numeric_values", {})
+		numerics[numeric_type] = value
+		state["numeric_values"] = numerics
+		if numeric_type == 1:
+			state["current_hp"] = value
+		elif numeric_type == 1000:
+			state["max_hp"] = value
+
+func _on_entity_state(message: Dictionary) -> void:
+	for state_delta in message.get("states", []):
+		var unit_id := int(state_delta.get("unit_id", 0))
+		if not units.has(unit_id):
+			continue
+		var state: Dictionary = units[unit_id]
+		var dirty := int(state_delta.get("dirty_mask_low", 0))
+		if dirty & (1 << 6):
+			state["alive"] = bool(state_delta.get("alive", false))
+			unit_nodes[unit_id].visible = bool(state.get("alive", true))
+			if not bool(state.get("alive", true)) and unit_id == selected_monster_unit_id:
+				_clear_monster_selection()
 
 func _update_player_stats_hud() -> void:
 	if player_hp_label == null or player_mp_label == null:
@@ -413,12 +497,14 @@ func _upsert_unit(state: Dictionary, snap: bool) -> void:
 		add_child(node)
 		unit_nodes[unit_id] = node
 		units[unit_id] = state.duplicate()
+		units[unit_id]["alive"] = bool(state.get("alive", true))
 		stable_ground_y[unit_id] = float(state.y)
 		pending_ground_y.erase(unit_id)
 		created = true
 	else:
 		for key in state:
 			units[unit_id][key] = state[key]
+	unit_nodes[unit_id].visible = bool(units[unit_id].get("alive", true))
 	_set_unit_color(unit_id)
 	_accept_ground_y(unit_id, float(state.y))
 	if created or snap:
@@ -477,6 +563,204 @@ func _on_auto_attack_state(state: Dictionary) -> void:
 	auto_attack_swing_start_at_ms = int(state.get("swing_start_at_ms", 0))
 	auto_attack_swing_interval_ms = max(1, int(state.get("swing_interval_ms", 2000)))
 
+func _on_item_changed(item: Dictionary) -> void:
+	if item == null:
+		return
+	inventory_items[int(item.get("config_id", 0))] = item
+	_on_status("道具数量已更新：%s x%d" % [_item_name(int(item.get("config_id", 0))), int(item.get("count", 0))], false)
+
+func _on_buff_added(buff: Dictionary) -> void:
+	if buff == null or int(buff.get("unit_id", 0)) != local_unit_id:
+		return
+	active_buffs[int(buff.get("buff_instance_id", 0))] = buff.duplicate()
+
+func _on_buff_removed(message: Dictionary) -> void:
+	if int(message.get("unit_id", 0)) == local_unit_id:
+		active_buffs.erase(int(message.get("buff_instance_id", 0)))
+
+func _on_buff_detail(message: Dictionary) -> void:
+	for detail in message.get("buffs", []):
+		var instance_id := int(detail.get("buff_instance_id", 0))
+		if active_buffs.has(instance_id):
+			var buff: Dictionary = active_buffs[instance_id]
+			buff["absorb_remaining"] = int(detail.get("absorb_remaining", 0))
+			buff["revision"] = int(detail.get("revision", buff.get("revision", 0)))
+
+func _on_quest_progress(message: Dictionary) -> void:
+	for quest in message.get("quests", []):
+		if quest == null:
+			continue
+		quests[int(quest.get("quest_config_id", 0))] = quest
+	for quest_id in message.get("completed", []):
+		quests.erase(int(quest_id))
+		completed_quest_config_ids[int(quest_id)] = true
+	_update_quest_hud()
+
+func _on_skill_cast_state(state: Dictionary) -> void:
+	skill_cast_state = state.duplicate()
+	if not String(state.get("interrupt_reason", "")).is_empty():
+		_on_status("施法被打断：%s" % String(state.get("interrupt_reason", "")), true)
+
+func _on_skill_projectile(message: Dictionary) -> void:
+	var cast_id := int(message.get("cast_id", 0))
+	if cast_id == 0 or skill_projectiles.has(cast_id):
+		return
+	var source_id := int(message.get("source_unit_id", 0))
+	var target_id := int(message.get("target_unit_id", 0))
+	if not unit_nodes.has(source_id):
+		return
+	var projectile := _create_sphere(0.22, Color("#8fd8ff"))
+	projectile.name = "SkillProjectile_%d" % cast_id
+	projectile.position = unit_nodes[source_id].position + Vector3.UP * 0.7
+	add_child(projectile)
+	skill_projectiles[cast_id] = {
+		"node": projectile,
+		"target_unit_id": target_id,
+		"impact_at_ms": int(message.get("impact_at_ms", 0)),
+	}
+
+func _on_skill_impact(message: Dictionary) -> void:
+	var cast_id := int(message.get("cast_id", 0))
+	if skill_projectiles.has(cast_id):
+		var flight: Dictionary = skill_projectiles[cast_id]
+		var projectile: Node3D = flight.get("node")
+		if is_instance_valid(projectile):
+			projectile.queue_free()
+		skill_projectiles.erase(cast_id)
+	var target_id := int(message.get("target_unit_id", 0))
+	_on_status("技能命中：%s，伤害 %d" % [_skill_name(int(message.get("skill_id", 0))), int(message.get("damage", 0))], false)
+	if bool(message.get("killed", false)) and unit_nodes.has(target_id):
+		unit_nodes[target_id].visible = false
+
+func _use_item_slot(slot: int) -> void:
+	var config_id := 1001 if slot == 2 else 1002
+	if not inventory_items.has(config_id):
+		_on_status("没有可用的%s" % _item_name(config_id), true)
+		return
+	var item: Dictionary = inventory_items[config_id]
+	if int(item.get("count", 0)) <= 0:
+		_on_status("%s数量不足" % _item_name(config_id), true)
+		return
+	if client.use_item(int(item.get("item_id", 0))):
+		_on_status("正在使用%s" % _item_name(config_id), false)
+
+func _cast_skill_slot(slot: int) -> void:
+	# Dictionary.get() returns Variant in Godot; convert explicitly so strict warnings do not stop the demo.
+	# Godot 的 Dictionary.get() 返回 Variant，这里显式转成 int，避免严格警告被当成错误。
+	var skill_id: int = int({4: 3001, 5: 3002, 6: 3003, 7: 3004, 8: 3005}.get(slot, 0))
+	if skill_id == 0:
+		return
+	var target_id := selected_monster_unit_id
+	if target_id == 0:
+		_on_status("请先选择一个可见怪物", true)
+		return
+	if client.cast_skill(skill_id, target_id):
+		_on_status("请求施放%s" % _skill_name(skill_id), false)
+
+func _accept_first_quest() -> void:
+	for quest_id in [5001, 5002, 5003, 5004]:
+		if not quests.has(quest_id) and not completed_quest_config_ids.has(quest_id):
+			if client.accept_quest(quest_id):
+				_on_status("正在接取任务：%s" % _quest_name(quest_id), false)
+			return
+	_on_status("没有可接取的任务", false)
+
+func _complete_first_quest() -> void:
+	for quest_id in quests:
+		var quest: Dictionary = quests[quest_id]
+		if bool(quest.get("ready_to_complete", false)):
+			if client.complete_quest(int(quest_id)):
+				_on_status("正在交付任务：%s" % _quest_name(int(quest_id)), false)
+			return
+	_on_status("没有可交付的任务", false)
+
+func _update_skill_hud() -> void:
+	if skill_label == null:
+		return
+	var now_ms := _server_now_ms()
+	var finish_at := int(skill_cast_state.get("finish_at_ms", 0))
+	var skill_id := int(skill_cast_state.get("skill_id", 0))
+	var text := "技能：空闲（4-8施法）"
+	if not String(skill_cast_state.get("interrupt_reason", "")).is_empty():
+		text = "技能：已打断"
+	elif skill_id != 0 and finish_at > now_ms:
+		var started_at := int(skill_cast_state.get("started_at_ms", now_ms))
+		var progress := clampf(float(now_ms - started_at) / float(max(1, finish_at - started_at)), 0.0, 1.0)
+		text = "技能：%s 读条 %d%%" % [_skill_name(skill_id), roundi(progress * 100.0)]
+	else:
+		var gcd_end := int(skill_cast_state.get("global_cooldown_end_at_ms", 0))
+		if gcd_end > now_ms:
+			text = "技能：公共CD %.1fs" % (float(gcd_end - now_ms) / 1000.0)
+	skill_label.text = text
+
+func _update_buff_hud() -> void:
+	if buff_label == null:
+		return
+	if active_buffs.is_empty():
+		buff_label.text = "Buff：无"
+		return
+	var entries: Array[String] = []
+	var now_ms := _server_now_ms()
+	for buff_id in active_buffs:
+		var buff: Dictionary = active_buffs[buff_id]
+		var expire_at := int(buff.get("expire_time_ms", 0))
+		var remaining := "∞"
+		if expire_at > 0:
+			var total_seconds := maxi(0, ceili(float(expire_at - now_ms) / 1000.0))
+			remaining = "%02d:%02d" % [total_seconds / 60, total_seconds % 60]
+		entries.append("%s %s" % [_buff_name(int(buff.get("buff_config_id", 0))), remaining])
+	buff_label.text = "Buff：" + " | ".join(entries)
+
+func _update_quest_hud() -> void:
+	if quest_label == null:
+		return
+	if quests.is_empty():
+		quest_label.text = "任务：无（Q接取，R交付）"
+		return
+	var entries: Array[String] = []
+	for quest_id in quests:
+		var quest: Dictionary = quests[quest_id]
+		var progress: Array[String] = []
+		for objective in quest.get("objectives", []):
+			progress.append("%d/%d" % [int(objective.get("current", 0)), int(objective.get("required", 0))])
+		entries.append("%s %s%s" % [_quest_name(int(quest_id)), ",".join(progress), "（可交付）" if bool(quest.get("ready_to_complete", false)) else ""])
+	quest_label.text = "任务：" + " | ".join(entries)
+
+func _update_skill_projectiles(_delta: float) -> void:
+	var remove_ids: Array[int] = []
+	for cast_id in skill_projectiles:
+		var flight: Dictionary = skill_projectiles[cast_id]
+		var projectile: Node3D = flight.get("node")
+		var target_id := int(flight.get("target_unit_id", 0))
+		if not is_instance_valid(projectile) or not unit_nodes.has(target_id):
+			remove_ids.append(int(cast_id))
+			continue
+		var target: Node3D = unit_nodes[target_id]
+		projectile.position = projectile.position.lerp(target.position + Vector3.UP * 0.7, 0.25)
+		if _server_now_ms() >= int(flight.get("impact_at_ms", 0)):
+			remove_ids.append(int(cast_id))
+	for cast_id in remove_ids:
+		var flight: Dictionary = skill_projectiles[cast_id]
+		var projectile: Node3D = flight.get("node")
+		if is_instance_valid(projectile):
+			projectile.queue_free()
+		skill_projectiles.erase(cast_id)
+
+func _server_now_ms() -> int:
+	return int(Time.get_unix_time_from_system() * 1000.0) + server_clock_offset_ms
+
+func _skill_name(skill_id: int) -> String:
+	return {3001: "寒冰箭", 3002: "火焰冲击", 3003: "惩击", 3004: "真言术·盾", 3005: "真言术·韧", 3006: "引导治疗"}.get(skill_id, "Skill#%d" % skill_id)
+
+func _item_name(config_id: int) -> String:
+	return {1001: "小型生命药水", 1002: "大型生命药水"}.get(config_id, "Item#%d" % config_id)
+
+func _buff_name(buff_id: int) -> String:
+	return {2001: "持续恢复", 4001: "冰冷", 4002: "灼烧", 4003: "真言术·盾", 4004: "虚弱灵魂", 4005: "真言术·韧"}.get(buff_id, "Buff#%d" % buff_id)
+
+func _quest_name(quest_id: int) -> String:
+	return {5001: "清理怪物", 5002: "试用药水", 5003: "前往地图2", 5004: "进阶试炼"}.get(quest_id, "Quest#%d" % quest_id)
+
 func _toggle_auto_attack() -> void:
 	if client == null or client.phase != "map" or auto_attack_request_pending:
 		return
@@ -519,5 +803,19 @@ func _create_box(size: Vector3, color: Color) -> MeshInstance3D:
 	node.mesh = mesh
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
+	node.material_override = material
+	return node
+
+func _create_sphere(radius: float, color: Color) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	var mesh := SphereMesh.new()
+	mesh.radius = radius
+	mesh.height = radius * 2.0
+	node.mesh = mesh
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.emission_enabled = true
+	material.emission = color
+	material.emission_energy_multiplier = 1.5
 	node.material_override = material
 	return node

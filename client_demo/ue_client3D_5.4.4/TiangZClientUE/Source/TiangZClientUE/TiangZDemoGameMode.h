@@ -32,7 +32,15 @@ private:
         std::uint32_t ConfigId = 0;
         FVector BaseScale = FVector(0.7F, 0.7F, 1.8F);
         bool bSelected = false;
+        bool bAlive = true;
         TObjectPtr<UMaterialInstanceDynamic> Material;
+    };
+
+    struct FProjectileVisual
+    {
+        TObjectPtr<AStaticMeshActor> Actor;
+        std::uint32_t TargetUnitId = 0;
+        std::int64_t ImpactAtMs = 0;
     };
 
     void BuildGraybox();
@@ -45,6 +53,14 @@ private:
     void HandleNumeric(tiangz::protocol::demo::G2C_EntityNumeric Message);
     void HandleEntityState(tiangz::protocol::demo::G2C_EntityState Message);
     void HandleAutoAttackState(tiangz::protocol::demo::G2C_AutoAttackState Message);
+    void HandleItemChanged(tiangz::protocol::demo::G2C_ItemChanged Message);
+    void HandleBuffAdded(tiangz::protocol::demo::G2C_BuffAdded Message);
+    void HandleBuffRemoved(tiangz::protocol::demo::G2C_BuffRemoved Message);
+    void HandleBuffDetail(tiangz::protocol::demo::G2C_BuffDetail Message);
+    void HandleQuestProgress(tiangz::protocol::demo::G2C_QuestProgress Message);
+    void HandleSkillCastState(tiangz::protocol::demo::G2C_SkillCastState Message);
+    void HandleSkillProjectile(tiangz::protocol::demo::G2C_SkillProjectile Message);
+    void HandleSkillImpact(tiangz::protocol::demo::G2C_SkillImpact Message);
     void AddOrUpdateUnit(const tiangz::protocol::demo::MapEntitySnapshot& Snapshot, bool bSnap);
     void RemoveUnit(std::uint32_t UnitId);
     /** 选择当前AOI内的怪物并更新本地表现，不改变服务端战斗状态。 / Selects an AOI-visible monster and updates local presentation without changing server combat state. */
@@ -56,12 +72,22 @@ private:
     /** 每帧刷新玩家HP/MP HUD；只显示服务端Numeric，不在客户端推导战斗结果。 / Refreshes the player HP/MP HUD from server Numeric without deriving combat results locally. */
     void UpdatePlayerStatsHud() const;
     static FString MonsterName(std::uint32_t ConfigId);
+    static FString SkillName(std::uint32_t SkillId);
+    static FString ItemName(std::uint32_t ConfigId);
+    static FString BuffName(std::uint32_t ConfigId);
+    static FString QuestName(std::uint32_t ConfigId);
     static FString BuildAutoAttackBar(float Progress);
     void ApplyUnitColor(std::uint32_t UnitId, FUnitVisual& Visual) const;
     void UpdateSelectionMarker();
     void UpdateAutoAttackHud() const;
+    void UpdateFeatureHud() const;
+    void UpdateSkillProjectiles();
     std::uint32_t FindFirstMonsterUnitId() const;
     void ToggleAutoAttack();
+    void UseItemSlot(std::uint32_t Slot);
+    void CastSkillSlot(std::uint32_t Slot);
+    void AcceptFirstQuest();
+    void CompleteFirstQuest();
     void ToggleDemoDoor();
     void SetDemoDoorClosed(bool bClosed);
     void UpdateInput(float DeltaSeconds);
@@ -83,6 +109,7 @@ private:
     TObjectPtr<AStaticMeshActor> SelectionMarker;
     TObjectPtr<UMaterialInstanceDynamic> SelectionMarkerMaterial;
     TObjectPtr<ACameraActor> CameraActor;
+    TObjectPtr<UStaticMesh> ProjectileMesh;
     std::uint32_t LocalUnitId = 0;
     std::uint32_t InputSequence = 0;
     /** 始终保存TiangZ协议Yaw，绝不能写入FRotator::Yaw。 / Always stores protocol-space TiangZ yaw, never FRotator::Yaw. */
@@ -109,4 +136,13 @@ private:
     std::int64_t MaxHp = 0;
     std::int64_t CurrentMp = 0;
     std::int64_t MaxMp = 0;
+    TMap<std::uint32_t, std::int64_t> EntityCurrentHp;
+    TMap<std::uint32_t, std::int64_t> EntityMaxHp;
+    TMap<std::uint32_t, tiangz::protocol::demo::ItemSnapshot> InventoryItems;
+    TMap<std::uint64_t, tiangz::protocol::demo::BuffPublicView> ActiveBuffs;
+    TMap<std::uint64_t, std::uint32_t> BuffAbsorbRemaining;
+    TMap<std::uint32_t, tiangz::protocol::demo::QuestSnapshot> ActiveQuests;
+    TSet<std::uint32_t> CompletedQuestConfigIds;
+    TMap<std::uint64_t, FProjectileVisual> SkillProjectiles;
+    tiangz::protocol::demo::G2C_SkillCastState SkillCastState;
 };
