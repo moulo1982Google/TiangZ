@@ -803,6 +803,28 @@
       ]
     },
     {
+      "key": "proto/DataDefine_CS_50001.proto#ItemCooldownSnapshot",
+      "name": "ItemCooldownSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "item_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/DataDefine_CS_50001.proto#ItemSnapshot",
       "name": "ItemSnapshot",
       "base": null,
@@ -1097,6 +1119,13 @@
           "number": 2,
           "name": "cooldowns",
           "type": "SkillCooldownSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "item_cooldowns",
+          "type": "ItemCooldownSnapshot",
           "repeated": true,
           "synthetic": false
         }
@@ -5640,6 +5669,20 @@
           "number": 2,
           "name": "buff",
           "type": "BuffPublicView",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "global_cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "item_cooldown_end_at_ms",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },

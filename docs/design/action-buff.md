@@ -61,6 +61,12 @@ const item = unit.GetComponent(ItemComponent).GetItem(itemId);
 if (!item) throw new RpcError(GameErrCode.ItemNotFound, "item not found");
 
 const config = GameConfigs.ItemConfig.Get(item.configId);
+const cooldown = unit.GetComponent(SkillComponent).TryCommitItemCooldown(
+  config.id,
+  config.cooldownMs,
+  config.globalCooldownMs,
+);
+if (!cooldown.accepted) throw new RpcError(GameErrCode.ItemCooldown, "item cooldown");
 const action = config.useEffect === 1
   ? ActionFromConfig(ActionType.AddBuff, config.useParams)
   : ActionFromConfig(config.useParams[0], config.useParams.slice(1));
@@ -70,6 +76,8 @@ ExecuteAction(unit, action, { reason: "item-use" });
 ```
 
 正式入口使用`app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts`，上面的片段只是说明调用关系。道具消耗是不可覆盖事实，使用后的HP/Numeric是可覆盖状态，Buff添加/删除是不可覆盖生命周期事件。
+
+当前药品和技能共享玩家GCD；药品自身CD按`ItemConfigId`存储。Handler必须在扣除道具前通过`TryCommitItemCooldown`一次性完成检查和写入，不能拆成“先查、稍后再写”两个步骤。GCD和药品CD都会进入跨地图快照，客户端快捷栏只根据服务端返回的deadline绘制倒计时，不能作为权威判定。
 
 ## 四、Buff创建、Tick和移除
 

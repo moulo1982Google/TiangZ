@@ -209,6 +209,9 @@ async function main(): Promise<void> {
   // Cross-map transfer keeps committed GCD/CD without restoring the source-map active cast.
   const sourceSkill = unit.AddComponent(SkillComponent);
   const skillNow = TimeSystem.Instance.ServerNow;
+  const itemCooldown = sourceSkill.TryCommitItemCooldown(1001, 30_000, 1_000);
+  assert.equal(itemCooldown.accepted, true);
+  assert.equal(sourceSkill.TryCommitItemCooldown(1002, 30_000, 1_000).accepted, false);
   sourceSkill.Accept({
     castId: 90001n,
     skillId: 3002,
@@ -222,6 +225,7 @@ async function main(): Promise<void> {
   targetSkill.RestoreTransfer(skillTransfer);
   assert.equal(targetSkill.State(3002).phase, SkillCastPhase.Idle);
   assert.equal(targetSkill.ReadyAt(3002), skillNow + 12_000);
+  assert.equal(targetSkill.ItemReadyAt(1001), itemCooldown.itemCooldownEndAtMs);
 
   host.Dispose();
   SingletonRegistry.DestroyAll();

@@ -335,6 +335,12 @@ export const GameConfigs = Object.freeze({
 
 function validateSnapshot(snapshot: GameConfigSnapshot): void {
   for (const item of snapshot.ItemConfig.GetAll()) {
+    if (
+      !Number.isSafeInteger(item.cooldownMs) || item.cooldownMs < 0 ||
+      !Number.isSafeInteger(item.globalCooldownMs) || item.globalCooldownMs < 0
+    ) {
+      throw new Error(\`item config \${item.id} has invalid cooldown values\`);
+    }
     if (!Number.isSafeInteger(item.useEffect) || item.useEffect < 0 || item.useEffect > 2) {
       throw new Error(\`item config \${item.id} has unsupported use effect \${item.useEffect}\`);
     }

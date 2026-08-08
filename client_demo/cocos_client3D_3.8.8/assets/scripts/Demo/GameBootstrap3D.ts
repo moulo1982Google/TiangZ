@@ -178,6 +178,7 @@ interface HotbarSlot {
   readonly icon: HTMLElement;
   readonly name: HTMLElement;
   readonly count: HTMLElement;
+  readonly cooldown: HTMLElement;
   itemId?: bigint;
   countValue: number;
 }
@@ -285,6 +286,7 @@ export class GameBootstrap3D extends Component {
   private readonly inventoryItems = new Map<string, ItemSnapshot>();
   private readonly hotbarSlots = new Map<number, HotbarSlot>();
   private readonly itemUseInFlight = new Set<number>();
+  private readonly itemCooldownEnds = new Map<number, number>();
   private readonly buffStateStore = new BuffStateStore();
   private readonly buffHudEntries = new Map<string, BuffHudEntry>();
   private readonly skillHudSlots = new Map<number, SkillHudSlot>();
@@ -324,6 +326,7 @@ export class GameBootstrap3D extends Component {
     this.updateAutoAttackHud();
     this.updateSkillHud();
     this.updateBuffHud();
+    this.updateHotbarHud();
     this.updateDirectionalInput(deltaTime);
     this.advanceDirectionalPrediction(deltaTime);
     this.advanceAlongPath(deltaTime);
@@ -377,6 +380,7 @@ export class GameBootstrap3D extends Component {
     this.hotbarSlots.clear();
     this.inventoryItems.clear();
     this.itemUseInFlight.clear();
+    this.itemCooldownEnds.clear();
     this.mobileControlsElement?.remove();
     this.mobileControlsElement = undefined;
     this.mobileStyleElement?.remove();
@@ -905,14 +909,15 @@ export class GameBootstrap3D extends Component {
     panel.style.display = buffs.length > 0 ? "block" : "none";
   }
 
-  /** 创建单个Buff图标并异步加载资源；资源缺失时保留BuffId文字，避免展示层崩溃。 / Creates one Buff icon and loads the resource asynchronously; missing assets fall back to the BuffId. */
+  /** 创建单个Buff图标、中文名并异步加载资源；资源缺失时用中文名缩写兜底。 / Creates one Buff icon and Chinese name, falling back to a name abbreviation when the asset is missing. */
   private createBuffHudEntry(
     document: Document,
     list: HTMLElement,
     buff: { readonly buffInstanceId: bigint; readonly buffConfigId: number },
   ): BuffHudEntry {
+    const buffName = GameConfigs.BuffConfig.TryGet(buff.buffConfigId)?.name ?? "未知Buff";
     const root = document.createElement("div");
-    root.style.width = "54px";
+    root.style.width = "76px";
     root.style.textAlign = "center";
     root.style.color = "#edf7f3";
 
@@ -928,8 +933,17 @@ export class GameBootstrap3D extends Component {
     icon.style.borderRadius = "5px";
     icon.style.background = "rgba(255, 255, 255, 0.1)";
     icon.style.fontSize = "10px";
-    icon.textContent = String(buff.buffConfigId);
+    icon.textContent = buffName.slice(0, 2);
     root.appendChild(icon);
+
+    const name = document.createElement("div");
+    name.textContent = buffName;
+    name.style.overflow = "hidden";
+    name.style.textOverflow = "ellipsis";
+    name.style.whiteSpace = "nowrap";
+    name.style.font = "600 11px/1.2 system-ui, sans-serif";
+    name.title = buffName;
+    root.appendChild(name);
 
     const timer = document.createElement("div");
     timer.style.color = "#ffffff";
@@ -953,12 +967,12 @@ export class GameBootstrap3D extends Component {
       if (!nativeUrl) return;
       const image = document.createElement("img");
       image.src = nativeUrl;
-      image.alt = `Buff ${buff.buffConfigId}`;
+      image.alt = buffName;
       image.style.width = "100%";
       image.style.height = "100%";
       image.style.objectFit = "contain";
       image.addEventListener("error", () => {
-        icon.textContent = String(buff.buffConfigId);
+        icon.textContent = buffName.slice(0, 2);
       }, { once: true });
       icon.replaceChildren(image);
     });
@@ -1082,6 +1096,19 @@ export class GameBootstrap3D extends Component {
     count.style.fontWeight = "700";
     root.appendChild(count);
 
+    const cooldown = document.createElement("span");
+    cooldown.style.position = "absolute";
+    cooldown.style.inset = "0";
+    cooldown.style.display = "grid";
+    cooldown.style.placeItems = "center";
+    cooldown.style.borderRadius = "8px";
+    cooldown.style.color = "#fff2b5";
+    cooldown.style.background = "rgba(5, 10, 15, 0.68)";
+    cooldown.style.font = "700 18px/1 system-ui, sans-serif";
+    cooldown.style.visibility = "hidden";
+    cooldown.style.pointerEvents = "none";
+    root.appendChild(cooldown);
+
     parent.appendChild(root);
     const slot: HotbarSlot = {
       configId,
@@ -1090,6 +1117,7 @@ export class GameBootstrap3D extends Component {
       icon,
       name: nameElement,
       count,
+      cooldown,
       countValue: 0,
     };
     if (iconPath) this.loadHotbarIcon(slot, iconPath, fallbackIcon);
@@ -1124,13 +1152,23 @@ export class GameBootstrap3D extends Component {
 
   /** 根据进图快照或ItemChanged刷新快捷栏；数量只使用服务端权威快照。 / Refreshes the hotbar from EnterMap or ItemChanged snapshots; counts are server-authoritative. */
   private updateHotbarHud(): void {
+    const serverNow = Date.now() + (this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0);
     for (const [configId, slot] of this.hotbarSlots) {
       const summary = this.summarizeInventory(configId);
       const count = summary.count;
       slot.itemId = summary.usableItem?.itemId;
       slot.countValue = count;
       slot.count.textContent = `×${count}`;
-      slot.root.disabled = count <= 0 || this.itemUseInFlight.has(configId);
+      const readyAt = Math.max(
+        this.skillGlobalCooldownEndAtMs,
+        this.itemCooldownEnds.get(configId) ?? 0,
+      );
+      const remainingMs = Math.max(0, readyAt - serverNow);
+      slot.cooldown.style.visibility = remainingMs > 0 ? "visible" : "hidden";
+      slot.cooldown.textContent = remainingMs > 0
+        ? (remainingMs >= 10_000 ? Math.ceil(remainingMs / 1_000).toString() : (remainingMs / 1_000).toFixed(1))
+        : "";
+      slot.root.disabled = count <= 0 || remainingMs > 0 || this.itemUseInFlight.has(configId);
       slot.root.style.opacity = count <= 0 ? "0.45" : "1";
       slot.root.style.borderColor = this.itemUseInFlight.has(configId)
         ? "rgba(244, 212, 119, 0.95)"
@@ -1161,6 +1199,11 @@ export class GameBootstrap3D extends Component {
       const response = await mapClient.useItem({ itemId: item.itemId });
       this.ApplyItemSnapshot(response.item);
       if (response.buff) this.ApplyBuffAdded({ buff: response.buff });
+      this.skillGlobalCooldownEndAtMs = Math.max(
+        this.skillGlobalCooldownEndAtMs,
+        Number(response.globalCooldownEndAtMs),
+      );
+      this.itemCooldownEnds.set(configId, Number(response.itemCooldownEndAtMs));
     } catch (error) {
       this.setStatus(`使用${GameConfigs.ItemConfig.Get(configId).name}失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -1956,6 +1999,8 @@ export class GameBootstrap3D extends Component {
       this.gateSocket = result.gateSocket;
       this.mapClient = new MapClient(result.gateSocket);
       this.localUnitId = result.enterMap.unitId;
+      this.itemCooldownEnds.clear();
+      this.skillGlobalCooldownEndAtMs = 0;
       this.buffStateStore.Clear();
       for (const entity of result.enterMap.entities) this.buffStateStore.ApplySnapshot(entity);
       this.updateBuffHud();

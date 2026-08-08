@@ -137,9 +137,16 @@ message SkillCooldownSnapshot
   uint64 cooldown_end_at_ms = 2;
 }
 
-// 地图传送只保留冷却；活动读条不会跨地图恢复。
+message ItemCooldownSnapshot
+{
+  uint32 item_config_id = 1;
+  uint64 cooldown_end_at_ms = 2;
+}
+
+// 地图传送保留技能、道具和共享GCD；活动读条不会跨地图恢复。
 message SkillTransferSnapshot
 {
   uint64 global_cooldown_end_at_ms = 1;
   repeated SkillCooldownSnapshot cooldowns = 2;
+  repeated ItemCooldownSnapshot item_cooldowns = 3;
 }

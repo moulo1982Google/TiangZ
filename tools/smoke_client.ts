@@ -498,13 +498,21 @@ async function verifyMapTransfer(
   expectedMinimumHp: bigint,
   dynamicMap: MapInstanceSnapshot,
 ): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
+  const queuedItem = previous.items.find((item) => item.configId === 1002);
+  if (!queuedItem || queuedItem.count <= 0) {
+    throw new Error("map transfer smoke requires the untouched large health potion stack");
+  }
+  // 前一步已经使用小红并提交共享GCD；等待GCD自然结束后改用未进入自身CD的大红。
+  // The previous step committed the shared GCD with the small potion. Wait for
+  // that GCD, then use the untouched large-potion cooldown domain during transfer.
+  await sleep(1_100);
   const rpcId = nextRpcId++;
   const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
   const responsePromise = gate.request(buildEnterMapPacket(rpcId, { mapId: 2, mapInstanceId: 0n }));
   const queuedItemRpcId = nextRpcId++;
   const queuedItemEvent = gate.waitForMessage(MsgCode.G2C_ItemChanged);
   const queuedItemResponse = gate.request(
-    buildUseItemPacket(queuedItemRpcId, { itemId: expectedItem.itemId }),
+    buildUseItemPacket(queuedItemRpcId, { itemId: queuedItem.itemId }),
   );
   const responseFrame = await responsePromise;
   const response = decodeEnterMapFrame(responseFrame);
@@ -539,11 +547,14 @@ async function verifyMapTransfer(
     );
   }
   const itemResponse = decodeUseItemFrame(await queuedItemResponse);
+  if (itemResponse.rpcId !== queuedItemRpcId || itemResponse.body.error) {
+    throw new Error(`queued transfer-time UseItem failed: ${stringifyForError(itemResponse.body)}`);
+  }
   const itemEvent = decodeItemChangedFrame(await queuedItemEvent);
   if (
-    itemResponse.rpcId !== queuedItemRpcId ||
-    itemResponse.body.error ||
-    itemResponse.body.item.count !== expectedItem.count - 1 ||
+    itemResponse.body.item.count !== queuedItem.count - 1 ||
+    itemResponse.body.globalCooldownEndAtMs <= 0n ||
+    itemResponse.body.itemCooldownEndAtMs <= itemResponse.body.globalCooldownEndAtMs ||
     itemEvent.body.item.version !== itemResponse.body.item.version
   ) {
     throw new Error("queued transfer-time UseItem was not executed exactly once on the target Unit");
@@ -552,7 +563,7 @@ async function verifyMapTransfer(
   // 的合法行为误判成超时。
   // Inventory and Numeric are independent pushes; wait for Numeric only when the heal can
   // actually change HP, so a valid full-health use is not treated as a timeout.
-  const useConfig = GameConfigs.ItemConfig.Get(itemAfter.configId);
+  const useConfig = GameConfigs.ItemConfig.Get(queuedItem.configId);
   const restoreHp = useConfig.useEffect === 2
     ? BigInt(useConfig.useParams[1] ?? 0)
     : 0n;
@@ -1146,10 +1157,17 @@ async function verifyItemChange(
   const responseFrame = await gate.request(
     buildUseItemPacket(nextRpcId++, { itemId: initial.itemId }),
   );
-  const response = decodeUseItemFrame(responseFrame).body.item;
+  const useItemResponse = decodeUseItemFrame(responseFrame).body;
+  const response = useItemResponse.item;
   const event = decodeItemChangedFrame(await pushed).body.item;
   if (response.count !== 49 || event.count !== 49 || response.version !== event.version) {
     throw new Error("immediate item response and event are inconsistent");
+  }
+  if (
+    useItemResponse.globalCooldownEndAtMs <= 0n ||
+    useItemResponse.itemCooldownEndAtMs <= useItemResponse.globalCooldownEndAtMs
+  ) {
+    throw new Error("item use response did not return authoritative GCD/CD deadlines");
   }
 
   // 满血使用恢复道具不会修改 Numeric，也就不会产生 G2C_EntityNumeric。

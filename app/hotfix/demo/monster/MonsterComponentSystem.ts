@@ -31,7 +31,7 @@ import {
 } from "#tiangz/model";
 import { MonsterBehaviorTree } from "./MonsterBehaviorTree";
 
-const MONSTER_AGGRO_RANGE_METERS = 12;
+const MONSTER_ACTIVE_ACQUIRE_RANGE_METERS = 12;
 const DEMO_PLAYER_CONFIG_ID = 1;
 const AUTO_ATTACK_FACING_HALF_ANGLE = Math.PI / 3;
 const MONSTER_ID_MAX = 0xffff_ffff;
@@ -492,13 +492,13 @@ export class MonsterComponentSystem extends MonsterComponent {
   }
 
   /**
-   * 先按仇恨最高者选目标；没有仇恨时，只有主动怪才会自动寻找最近玩家。
-   * 仇恨目标必须仍然存活且在追击范围内；超出范围后保留数值，重新进入范围仍可继续成为目标。
+   * 先按仇恨最高者选目标；没有仇恨时，只有主动怪才会在主动索敌范围内寻找最近玩家。
+   * 已有仇恨不再受主动索敌距离限制，否则远程技能虽然产生仇恨，怪物仍会错误地保持待机。
    *
    * Selects the highest-threat target first. Without threat, only an active
-   * monster may acquire the nearest player automatically. A threat entry must
-   * still point to a living player inside chase range; its value is retained
-   * after leaving range so re-entry can restore the target.
+   * monster may acquire the nearest player inside the active-acquisition
+   * range. Existing threat is not filtered by that range; otherwise a ranged
+   * hit could create threat while leaving the monster incorrectly idle.
    */
   private FindMonsterTarget(
     monster: MonsterUnit,
@@ -509,13 +509,12 @@ export class MonsterComponentSystem extends MonsterComponent {
     if (threatTarget) return threatTarget;
     return config.attackMode === 0
       ? undefined
-      : this.FindNearestPlayer(monster, MONSTER_AGGRO_RANGE_METERS);
+      : this.FindNearestPlayer(monster, MONSTER_ACTIVE_ACQUIRE_RANGE_METERS);
   }
 
-  /** 选择范围内仇恨最高的存活玩家；同仇恨时取距离近者，再以UnitId稳定打破平局。 / Selects the living in-range player with highest threat, then nearest distance and UnitId for deterministic ties. */
+  /** 选择本地图存活玩家中的最高仇恨目标；同仇恨时取距离近者，再以UnitId稳定打破平局。 / Selects the highest-threat living player on this map, then nearest distance and UnitId for deterministic ties. */
   private FindHighestThreatPlayer(monster: MonsterUnit, state: MonsterRuntimeState): PlayerUnit | undefined {
     const monsterPosition = monster.GetComponent(PositionComponent);
-    const maxDistanceSquared = MONSTER_AGGRO_RANGE_METERS * MONSTER_AGGRO_RANGE_METERS;
     let selected: PlayerUnit | undefined;
     let selectedThreat = 0n;
     let selectedDistanceSquared = Number.POSITIVE_INFINITY;
@@ -532,7 +531,6 @@ export class MonsterComponentSystem extends MonsterComponent {
         playerPosition.x,
         playerPosition.z,
       );
-      if (distanceSquaredValue > maxDistanceSquared) continue;
       if (
         selected === undefined ||
         threat > selectedThreat ||

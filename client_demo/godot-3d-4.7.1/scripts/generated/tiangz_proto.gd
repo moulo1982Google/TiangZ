@@ -1847,6 +1847,34 @@ static func decode_g2c_skill_projectile(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_item_cooldown_snapshot(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("item_config_id"):
+		varint_field(result, 1, int(value["item_config_id"]))
+	if value.has("cooldown_end_at_ms"):
+		varint_field(result, 2, int(value["cooldown_end_at_ms"]))
+	return result
+
+static func decode_item_cooldown_snapshot(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"item_config_id": 0, "cooldown_end_at_ms": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["item_config_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_item_snapshot(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("item_id"):
@@ -2325,11 +2353,15 @@ static func encode_m2c_use_item(value: Dictionary) -> PackedByteArray:
 	if value.has("buff"):
 		if value["buff"] != null:
 			bytes_field(result, 2, encode_buff_public_view(value["buff"]))
+	if value.has("global_cooldown_end_at_ms"):
+		varint_field(result, 3, int(value["global_cooldown_end_at_ms"]))
+	if value.has("item_cooldown_end_at_ms"):
+		varint_field(result, 4, int(value["item_cooldown_end_at_ms"]))
 	return result
 
 static func decode_m2c_use_item(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"item": null, "buff": null}
+	var result := {"item": null, "buff": null, "global_cooldown_end_at_ms": 0, "item_cooldown_end_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -2341,6 +2373,16 @@ static func decode_m2c_use_item(payload: PackedByteArray) -> Dictionary:
 			2:
 				if tag.wire == 2:
 					result["buff"] = decode_buff_public_view(reader.bytes_value())
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["global_cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["item_cooldown_end_at_ms"] = reader.uint64()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -2748,11 +2790,13 @@ static func encode_skill_transfer_snapshot(value: Dictionary) -> PackedByteArray
 		varint_field(result, 1, int(value["global_cooldown_end_at_ms"]))
 	for item in value.get("cooldowns", []):
 		bytes_field(result, 2, encode_skill_cooldown_snapshot(item))
+	for item in value.get("item_cooldowns", []):
+		bytes_field(result, 3, encode_item_cooldown_snapshot(item))
 	return result
 
 static func decode_skill_transfer_snapshot(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"global_cooldown_end_at_ms": 0, "cooldowns": []}
+	var result := {"global_cooldown_end_at_ms": 0, "cooldowns": [], "item_cooldowns": []}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -2764,6 +2808,11 @@ static func decode_skill_transfer_snapshot(payload: PackedByteArray) -> Dictiona
 			2:
 				if tag.wire == 2:
 					result["cooldowns"].append(decode_skill_cooldown_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 2:
+					result["item_cooldowns"].append(decode_item_cooldown_snapshot(reader.bytes_value()))
 				else:
 					reader.skip(tag.wire)
 			_:

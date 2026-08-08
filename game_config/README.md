@@ -41,7 +41,7 @@ npm run test:game-config
 | `1` | 给使用者添加Buff | 一个`BuffConfig.id` |
 | `2` | 执行一个Action | `[ActionType参数...]`；例如`Heal(50)`写作`6,50` |
 
-当前演示道具：小型生命药水使用`Heal(150)`，大型生命药水使用`AddBuff(2001)`。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、创建Timer或直接广播Buff。
+当前演示道具：小型生命药水使用`Heal(150)`，大型生命药水使用`AddBuff(2001)`。两者的`cooldown_ms`均为30000，`global_cooldown_ms`均为1000；药品自身CD按`ItemConfigId`独立，公共CD与技能共享并由服务端原子提交。冷却截止时间随玩家跨地图传送，不能通过换图刷新。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、创建Timer或直接广播Buff。
 
 Cocos3D演示玩家出生时预置`1001×50`和`1002×20`两个堆叠，快捷栏固定使用`1`切换平A、`2`使用1001、`3`使用1002。这个预置属于Demo的`ItemComponentSystem.Awake`，正式业务应由持久化数据恢复，不要把演示数量当成通用框架默认值。
 

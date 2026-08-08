@@ -759,9 +759,45 @@ export const SkillCooldownSnapshotCodec = {
   },
 };
 
+export interface ItemCooldownSnapshot {
+  itemConfigId: number;
+  cooldownEndAtMs: bigint;
+}
+
+export const ItemCooldownSnapshotCodec = {
+  decode(payload: Uint8Array): ItemCooldownSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: ItemCooldownSnapshot = {
+      itemConfigId: 0,
+      cooldownEndAtMs: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.itemConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.cooldownEndAtMs = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: ItemCooldownSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.itemConfigId !== undefined) writer.uint32(1, value.itemConfigId);
+    if (value.cooldownEndAtMs !== undefined) writer.uint64(2, value.cooldownEndAtMs);
+    return writer.finish();
+  },
+};
+
 export interface SkillTransferSnapshot {
   globalCooldownEndAtMs: bigint;
   cooldowns: readonly SkillCooldownSnapshot[];
+  itemCooldowns: readonly ItemCooldownSnapshot[];
 }
 
 export const SkillTransferSnapshotCodec = {
@@ -770,6 +806,7 @@ export const SkillTransferSnapshotCodec = {
     const value: SkillTransferSnapshot = {
       globalCooldownEndAtMs: 0n,
       cooldowns: [],
+      itemCooldowns: [],
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -778,6 +815,9 @@ export const SkillTransferSnapshotCodec = {
       }
       else if (tag.fieldNo === 2 && tag.wireType === 2) {
         (value.cooldowns as SkillCooldownSnapshot[]).push(SkillCooldownSnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 2) {
+        (value.itemCooldowns as ItemCooldownSnapshot[]).push(ItemCooldownSnapshotCodec.decode(reader.bytesField()));
       }
       else {
         reader.skip(tag.wireType);
@@ -790,6 +830,7 @@ export const SkillTransferSnapshotCodec = {
     const writer = new BinaryWriter();
     if (value.globalCooldownEndAtMs !== undefined) writer.uint64(1, value.globalCooldownEndAtMs);
     for (const item of (value.cooldowns ?? [])) writer.bytes(2, SkillCooldownSnapshotCodec.encode(item), true);
+    for (const item of (value.itemCooldowns ?? [])) writer.bytes(3, ItemCooldownSnapshotCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -5406,6 +5447,8 @@ export interface M2C_UseItem extends IActorLocationResponse {
   rpcId?: number;
   item: ItemSnapshot;
   buff?: BuffPublicView;
+  globalCooldownEndAtMs: bigint;
+  itemCooldownEndAtMs: bigint;
 }
 
 export const M2C_UseItemCodec = {
@@ -5413,6 +5456,8 @@ export const M2C_UseItemCodec = {
     const reader = new BinaryReader(payload);
     const value: M2C_UseItem = {
       item: ItemSnapshotCodec.decode(new Uint8Array(0)),
+      globalCooldownEndAtMs: 0n,
+      itemCooldownEndAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -5431,6 +5476,12 @@ export const M2C_UseItemCodec = {
       else if (tag.fieldNo === 2 && tag.wireType === 2) {
         value.buff = BuffPublicViewCodec.decode(reader.bytesField());
       }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.globalCooldownEndAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.itemCooldownEndAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -5445,6 +5496,8 @@ export const M2C_UseItemCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.item !== undefined) writer.bytes(1, ItemSnapshotCodec.encode(value.item));
     if (value.buff !== undefined) writer.bytes(2, BuffPublicViewCodec.encode(value.buff));
+    if (value.globalCooldownEndAtMs !== undefined) writer.uint64(3, value.globalCooldownEndAtMs);
+    if (value.itemCooldownEndAtMs !== undefined) writer.uint64(4, value.itemCooldownEndAtMs);
     return writer.finish();
   },
 };

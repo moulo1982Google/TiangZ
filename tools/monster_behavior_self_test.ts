@@ -2,6 +2,12 @@ import {
   MonsterBehaviorTree,
   type MonsterBehaviorAction,
 } from "../app/hotfix/demo/monster/MonsterBehaviorTree";
+import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
+import type { HotfixManifest } from "../app/core/hotReload/contracts";
+import {
+  NativeUnitRef,
+  type MonsterRuntimeState,
+} from "../app/model/public";
 
 const tree = new MonsterBehaviorTree();
 
@@ -36,8 +42,82 @@ assertAction("attack cooldown holds position", "hold", tree.Evaluate({
   canAttack: false,
 }));
 
-console.log("[monster-behavior] self-test passed");
+void main();
 
 function assertAction(name: string, expected: MonsterBehaviorAction, actual: MonsterBehaviorAction): void {
   if (actual !== expected) throw new Error(`${name}: expected ${expected}, got ${actual}`);
+}
+
+interface FakePositionUnit {
+  readonly UnitId: number;
+  GetComponent(componentType: unknown): { alive: number } | { x: number; z: number };
+}
+
+async function main(): Promise<void> {
+  await verifyThreatRatioAndLongRangeSelection();
+  console.log("[monster-behavior] self-test passed");
+}
+
+/** 验证伤害仇恨1:1，并防止主动索敌距离再次错误过滤远程攻击产生的仇恨。 / Verifies 1:1 damage threat and keeps active-acquisition range from filtering ranged-hit threat. */
+async function verifyThreatRatioAndLongRangeSelection(): Promise<void> {
+  HotfixSystem.Begin(testHotfixManifest());
+  const { MonsterComponentSystem } = await import(
+    "../app/hotfix/demo/monster/MonsterComponentSystem"
+  );
+  const monster = fakePositionUnit(2_147_483_648, 0, 0);
+  const player = fakePositionUnit(1_001, 30, 0);
+  const state: MonsterRuntimeState = {
+    targetUnitId: 0,
+    threatByUnitId: new Map(),
+    nextThinkAtMs: 0,
+    nextAttackAtMs: 0,
+    navigationSequence: 0,
+  };
+  const fakeSystem = {
+    runtime: new Map([[monster.UnitId, state]]),
+    units: {
+      Get(unitId: number): FakePositionUnit | undefined {
+        return unitId === player.UnitId ? player : undefined;
+      },
+    },
+    RequireMapUnit(): void {},
+  };
+  const methods = MonsterComponentSystem.prototype as unknown as {
+    AddThreat(monsterUnit: FakePositionUnit, source: FakePositionUnit, amount: bigint): void;
+    FindHighestThreatPlayer(monsterUnit: FakePositionUnit, runtime: MonsterRuntimeState): FakePositionUnit | undefined;
+  };
+
+  methods.AddThreat.call(fakeSystem, monster, player, 50n);
+  methods.AddThreat.call(fakeSystem, monster, player, 5n);
+  methods.AddThreat.call(fakeSystem, monster, player, 0n);
+  if (state.threatByUnitId.get(player.UnitId) !== 55n) {
+    throw new Error(`resolved damage must create 1:1 threat: ${state.threatByUnitId.get(player.UnitId)}`);
+  }
+  if (methods.FindHighestThreatPlayer.call(fakeSystem, monster, state) !== player) {
+    throw new Error("a living 30m threat target must be selected for chase");
+  }
+  HotfixSystem.Abort("monster behavior self-test complete");
+}
+
+function fakePositionUnit(unitId: number, x: number, z: number): FakePositionUnit {
+  return {
+    UnitId: unitId,
+    GetComponent(componentType: unknown): { alive: number } | { x: number; z: number } {
+      return componentType === NativeUnitRef ? { alive: 1 } : { x, z };
+    },
+  };
+}
+
+function testHotfixManifest(): HotfixManifest {
+  return {
+    formatVersion: 1,
+    bundleVersion: "monster-behavior-self-test",
+    modelFingerprint: "monster-behavior-self-test",
+    modelSourceHash: "monster-behavior-self-test",
+    protocolFingerprint: "monster-behavior-self-test",
+    stableCoreApiHash: "monster-behavior-self-test",
+    nativeSchemaHash: "monster-behavior-self-test",
+    hotfixHash: "monster-behavior-self-test",
+    buildMode: "demo",
+  };
 }

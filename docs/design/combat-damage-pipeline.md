@@ -66,6 +66,8 @@ CombatComponent.ApplyDamage(DamageRequest)
 `MonsterComponent`是地图级业务组件，负责刷怪、AI、目标选择、攻击距离、仇恨、死亡和重生。
 它选择目标后调用目标的`CombatComponent`，不再直接改目标的`CurrentHp`。
 
+玩家平A和技能伤害怪物时统一经过`MonsterComponent.ApplyPlayerDamage`：先由Combat结算护盾和实际扣血，再按`DamageResult.finalDamage`以1:1写入仇恨。主动怪无仇恨时的12米索敌只是“发现新目标”的规则，不能过滤已经由远程伤害建立的仇恨目标；否则伤害与AI会出现“记了仇但不追”的矛盾状态。脱战及返回出生点属于另一条规则，应使用独立冷配置，不能复用主动索敌距离。
+
 ### BuffComponent
 
 未来的`BuffComponent`负责Buff实例的创建、删除、持续时间、Tick和配置效果。

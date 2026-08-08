@@ -68,7 +68,7 @@ interface GameConfigSnapshot {
   readonly SkillEffectConfig: ConfigTable<game.SkillEffectConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "78edeedd6664fa33d0dc5927351918b9822908b41c145d00c541ed188ed2aac6";
+export const GameConfigSchemaFingerprint = "d81dc8821bae9cecb359a8817d02d3068afa08172405ebcd38e435e9ecdb726b";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -163,6 +163,12 @@ export const GameConfigs = Object.freeze({
 
 function validateSnapshot(snapshot: GameConfigSnapshot): void {
   for (const item of snapshot.ItemConfig.GetAll()) {
+    if (
+      !Number.isSafeInteger(item.cooldownMs) || item.cooldownMs < 0 ||
+      !Number.isSafeInteger(item.globalCooldownMs) || item.globalCooldownMs < 0
+    ) {
+      throw new Error(`item config ${item.id} has invalid cooldown values`);
+    }
     if (!Number.isSafeInteger(item.useEffect) || item.useEffect < 0 || item.useEffect > 2) {
       throw new Error(`item config ${item.id} has unsupported use effect ${item.useEffect}`);
     }

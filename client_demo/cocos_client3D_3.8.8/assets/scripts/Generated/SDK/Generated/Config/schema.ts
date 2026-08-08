@@ -336,6 +336,10 @@ export class ItemConfig {
         { this.useParams = []; for(let _ele0 of _json_.use_params) { let _e0; _e0 = _ele0; this.useParams.push(_e0);}}
         if (_json_.icon === undefined) { throw new Error() }
         this.icon = _json_.icon
+        if (_json_.cooldown_ms === undefined) { throw new Error() }
+        this.cooldownMs = _json_.cooldown_ms
+        if (_json_.global_cooldown_ms === undefined) { throw new Error() }
+        this.globalCooldownMs = _json_.global_cooldown_ms
     }
 
     /**
@@ -366,8 +370,18 @@ export class ItemConfig {
      * 客户端资源键；相对assets/resources，不含扩展名
      */
     readonly icon: string
+    /**
+     * 道具自身冷却（毫秒）
+     */
+    readonly cooldownMs: number
+    /**
+     * 与技能共享的公共冷却（毫秒）
+     */
+    readonly globalCooldownMs: number
 
     resolve(tables:Tables) {
+
+
 
 
 

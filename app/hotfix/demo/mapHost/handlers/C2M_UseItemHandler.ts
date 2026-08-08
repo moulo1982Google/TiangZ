@@ -10,6 +10,7 @@ import {
   MapProtocol,
   PlayerUnit,
   RpcError,
+  SkillComponent,
   SystemErrCode,
   unitRpcHandler,
   type UnitRpcHandler,
@@ -35,6 +36,7 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
     const inventory = unit.GetComponent(ItemComponent);
     const current = inventory.GetItem(request.itemId);
     if (!current) throw new RpcError(GameErrCode.ItemNotFound, `item not found: ${request.itemId}`);
+    if (current.count <= 0) throw new RpcError(GameErrCode.ItemNotEnough, `item ${request.itemId} is empty`);
     const itemConfig = GameConfigs.ItemConfig.Get(current.configId);
     const vetoReason = unit.DomainScene().Events.Check(ItemEvents.BeforeUse, {
       unit,
@@ -44,6 +46,14 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
     if (vetoReason !== SystemErrCode.Success) {
       throw new RpcError(vetoReason, `item use vetoed: ${current.configId}`);
     }
+    const cooldown = unit.GetComponent(SkillComponent).TryCommitItemCooldown(
+      itemConfig.id,
+      itemConfig.cooldownMs,
+      itemConfig.globalCooldownMs,
+    );
+    if (!cooldown.accepted) {
+      throw new RpcError(GameErrCode.ItemCooldown, `item ${itemConfig.id} ready at ${cooldown.readyAtMs}`);
+    }
     const action = itemConfig.useEffect === 1
       ? ActionFromConfig(ActionType.AddBuff, itemConfig.useParams)
       : ActionFromConfig(itemConfig.useParams[0], itemConfig.useParams.slice(1));
@@ -52,6 +62,11 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
     // Items declare Actions only; the executor routes healing, Buff, and Numeric changes to their components.
     const execution = ExecuteAction(unit, action, { reason: "item-use" });
     await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(unit, item);
-    return execution.addedBuff ? { item, buff: execution.addedBuff } : { item };
+    const response = {
+      item,
+      globalCooldownEndAtMs: BigInt(Math.max(0, Math.floor(cooldown.globalCooldownEndAtMs))),
+      itemCooldownEndAtMs: BigInt(Math.max(0, Math.floor(cooldown.itemCooldownEndAtMs))),
+    };
+    return execution.addedBuff ? { ...response, buff: execution.addedBuff } : response;
   }
 }

@@ -416,6 +416,10 @@ export class ItemConfig {
         this.useEffect = _json_.use_effect
         if (_json_.use_params === undefined) { throw new Error() }
         { this.useParams = []; for(let _ele0 of _json_.use_params) { let _e0; _e0 = _ele0; this.useParams.push(_e0);}}
+        if (_json_.cooldown_ms === undefined) { throw new Error() }
+        this.cooldownMs = _json_.cooldown_ms
+        if (_json_.global_cooldown_ms === undefined) { throw new Error() }
+        this.globalCooldownMs = _json_.global_cooldown_ms
     }
 
     /**
@@ -438,8 +442,18 @@ export class ItemConfig {
      * 使用参数：按效果读取整数列表
      */
     readonly useParams: number[]
+    /**
+     * 道具自身冷却（毫秒）
+     */
+    readonly cooldownMs: number
+    /**
+     * 与技能共享的公共冷却（毫秒）
+     */
+    readonly globalCooldownMs: number
 
     resolve(tables:Tables) {
+
+
 
 
 

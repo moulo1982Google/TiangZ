@@ -1736,6 +1736,10 @@ function fromProtocolSkillTransfer(value: SkillTransferSnapshot): SkillTransferS
       skillId: cooldown.skillId,
       cooldownEndAtMs: Number(cooldown.cooldownEndAtMs),
     })),
+    itemCooldowns: value.itemCooldowns.map((cooldown) => ({
+      itemConfigId: cooldown.itemConfigId,
+      cooldownEndAtMs: Number(cooldown.cooldownEndAtMs),
+    })),
   };
 }
 

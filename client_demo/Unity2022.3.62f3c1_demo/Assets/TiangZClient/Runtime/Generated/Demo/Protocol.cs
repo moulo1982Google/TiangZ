@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "1c564593654a62b248112804d0d10172703096ba78da6646d768da6a184f190d";
+    public const string Value = "aaf5a992dffff0c46b7b739c86b37ed6d6bc6b21d878d575b55a4f2a4967d3ce";
 }
 
 public static class MsgCode
@@ -398,6 +398,12 @@ public sealed class G2C_SkillProjectile
     public ulong ImpactAtMs { get; set; }
 }
 
+public sealed class ItemCooldownSnapshot
+{
+    public uint ItemConfigId { get; set; }
+    public ulong CooldownEndAtMs { get; set; }
+}
+
 public sealed class ItemSnapshot
 {
     public ulong ItemId { get; set; }
@@ -494,6 +500,8 @@ public sealed class M2C_UseItem : IRpcResponse
 {
     public ItemSnapshot? Item { get; set; }
     public BuffPublicView? Buff { get; set; }
+    public ulong GlobalCooldownEndAtMs { get; set; }
+    public ulong ItemCooldownEndAtMs { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -571,6 +579,7 @@ public sealed class SkillTransferSnapshot
 {
     public ulong GlobalCooldownEndAtMs { get; set; }
     public List<SkillCooldownSnapshot> Cooldowns { get; set; } = new List<SkillCooldownSnapshot>();
+    public List<ItemCooldownSnapshot> ItemCooldowns { get; set; } = new List<ItemCooldownSnapshot>();
 }
 
 public sealed class UnitNumericDelta
@@ -2363,6 +2372,40 @@ public static class G2C_SkillProjectileCodec
     }
 }
 
+public static class ItemCooldownSnapshotCodec
+{
+    public static ItemCooldownSnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new ItemCooldownSnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.ItemConfigId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.CooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(ItemCooldownSnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.ItemConfigId != 0) writer.WriteUInt32(1, value.ItemConfigId);
+        if (value.CooldownEndAtMs != 0) writer.WriteUInt64(2, value.CooldownEndAtMs);
+        return writer.ToArray();
+    }
+}
+
 public static class ItemSnapshotCodec
 {
     public static ItemSnapshot Decode(byte[] payload)
@@ -2847,6 +2890,12 @@ public static class M2C_UseItemCodec
                 case 2 when tag.WireType == 2:
                     value.Buff = BuffPublicViewCodec.Decode(reader.ReadBytes());
                     break;
+                case 3 when tag.WireType == 0:
+                    value.GlobalCooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.ItemCooldownEndAtMs = reader.ReadUInt64();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2869,6 +2918,8 @@ public static class M2C_UseItemCodec
         var writer = new BinaryWriter();
         if (value.Item != null) writer.WriteMessage(1, ItemSnapshotCodec.Encode(value.Item));
         if (value.Buff != null) writer.WriteMessage(2, BuffPublicViewCodec.Encode(value.Buff));
+        if (value.GlobalCooldownEndAtMs != 0) writer.WriteUInt64(3, value.GlobalCooldownEndAtMs);
+        if (value.ItemCooldownEndAtMs != 0) writer.WriteUInt64(4, value.ItemCooldownEndAtMs);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -3231,6 +3282,9 @@ public static class SkillTransferSnapshotCodec
                 case 2 when tag.WireType == 2:
                     value.Cooldowns.Add(SkillCooldownSnapshotCodec.Decode(reader.ReadBytes()));
                     break;
+                case 3 when tag.WireType == 2:
+                    value.ItemCooldowns.Add(ItemCooldownSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -3246,6 +3300,10 @@ public static class SkillTransferSnapshotCodec
         foreach (var item in value.Cooldowns)
         {
             writer.WriteMessage(2, item == null ? null : SkillCooldownSnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.ItemCooldowns)
+        {
+            writer.WriteMessage(3, item == null ? null : ItemCooldownSnapshotCodec.Encode(item));
         }
         return writer.ToArray();
     }

@@ -1031,9 +1031,52 @@ struct SkillCooldownSnapshotCodec {
   }
 };
 
+struct ItemCooldownSnapshot {
+  std::uint32_t itemConfigId = 0;
+  std::uint64_t cooldownEndAtMs = 0;
+};
+
+struct ItemCooldownSnapshotCodec {
+  static ItemCooldownSnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    ItemCooldownSnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.itemConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.cooldownEndAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const ItemCooldownSnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.itemConfigId);
+    writer.UInt64(2, value.cooldownEndAtMs);
+    return writer.Finish();
+  }
+};
+
 struct SkillTransferSnapshot {
   std::uint64_t globalCooldownEndAtMs = 0;
   std::vector<SkillCooldownSnapshot> cooldowns;
+  std::vector<ItemCooldownSnapshot> itemCooldowns;
 };
 
 struct SkillTransferSnapshotCodec {
@@ -1057,6 +1100,13 @@ struct SkillTransferSnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.itemCooldowns.push_back(ItemCooldownSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1069,6 +1119,7 @@ struct SkillTransferSnapshotCodec {
     tiangz::client::BinaryWriter writer;
     writer.UInt64(1, value.globalCooldownEndAtMs);
     for (const auto& item : value.cooldowns) writer.BytesField(2, SkillCooldownSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.itemCooldowns) writer.BytesField(3, ItemCooldownSnapshotCodec::Encode(item), true);
     return writer.Finish();
   }
 };
@@ -2762,6 +2813,8 @@ struct M2C_UseItem {
   std::optional<std::uint32_t> rpcId;
   ItemSnapshot item;
   std::optional<BuffPublicView> buff;
+  std::uint64_t globalCooldownEndAtMs = 0;
+  std::uint64_t itemCooldownEndAtMs = 0;
 };
 
 struct M2C_UseItemCodec {
@@ -2806,6 +2859,20 @@ struct M2C_UseItemCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.globalCooldownEndAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.itemCooldownEndAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2821,6 +2888,8 @@ struct M2C_UseItemCodec {
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.BytesField(1, ItemSnapshotCodec::Encode(value.item));
     if (value.buff.has_value()) writer.BytesField(2, BuffPublicViewCodec::Encode(*value.buff));
+    writer.UInt64(3, value.globalCooldownEndAtMs);
+    writer.UInt64(4, value.itemCooldownEndAtMs);
     return writer.Finish();
   }
 };

@@ -42,10 +42,24 @@ export interface SkillCooldownTransferState {
   readonly cooldownEndAtMs: number;
 }
 
+export interface ItemCooldownTransferState {
+  readonly itemConfigId: number;
+  readonly cooldownEndAtMs: number;
+}
+
+/** 道具冷却提交结果；Handler用accepted区分拒绝，不需要先检查再写入。 / Atomic item-cooldown commit result so handlers do not split readiness checks from mutation. */
+export interface ItemCooldownCommitResult {
+  readonly accepted: boolean;
+  readonly readyAtMs: number;
+  readonly globalCooldownEndAtMs: number;
+  readonly itemCooldownEndAtMs: number;
+}
+
 /** 传送只保留已提交冷却；活动读条在离开源地图时终止。 / Transfer keeps committed cooldowns only; an active cast ends when leaving the source map. */
 export interface SkillTransferState {
   readonly globalCooldownEndAtMs: number;
   readonly cooldowns: readonly SkillCooldownTransferState[];
+  readonly itemCooldowns: readonly ItemCooldownTransferState[];
 }
 
 export interface SkillComponent {
@@ -55,6 +69,8 @@ export interface SkillComponent {
   State(skillId?: number): SkillCastState;
   Accept(cast: ActiveSkillCast, cooldownMs: number, globalCooldownMs: number): SkillCastState;
   ReadyAt(skillId: number): number;
+  ItemReadyAt(itemConfigId: number): number;
+  TryCommitItemCooldown(itemConfigId: number, cooldownMs: number, globalCooldownMs: number): ItemCooldownCommitResult;
   Complete(castId: bigint): SkillCastState;
   Interrupt(reason: string): SkillCastState | undefined;
   ActiveCast(): ActiveSkillCast | undefined;
@@ -77,6 +93,7 @@ export class SkillComponent extends Component {
   protected activeCast: ActiveSkillCast | null = null;
   protected globalCooldownEndAtMs = 0;
   protected readonly cooldownEndBySkillId = new Map<number, number>();
+  protected readonly cooldownEndByItemConfigId = new Map<number, number>();
   protected lastInterruptReason = "";
 
 }

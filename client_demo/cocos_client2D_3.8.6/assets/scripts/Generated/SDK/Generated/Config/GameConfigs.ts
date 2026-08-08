@@ -129,7 +129,9 @@ const RAW_DATA: Record<string, unknown> = {
         6,
         150
       ],
-      "icon": "UI/Icons/Items/1001"
+      "icon": "UI/Icons/Items/1001",
+      "cooldown_ms": 30000,
+      "global_cooldown_ms": 1000
     },
     {
       "id": 1002,
@@ -140,7 +142,9 @@ const RAW_DATA: Record<string, unknown> = {
       "use_params": [
         2001
       ],
-      "icon": "UI/Icons/Items/1002"
+      "icon": "UI/Icons/Items/1002",
+      "cooldown_ms": 30000,
+      "global_cooldown_ms": 1000
     }
   ],
   "game_tbmapconfig": [
@@ -255,36 +259,36 @@ const RAW_DATA: Record<string, unknown> = {
     {
       "id": 3001,
       "name": "寒冰箭",
-      "description": "读条1.5秒，15米弹道法术，造成50点冰霜伤害并刷新5秒冰冷。",
+      "description": "读条1.5秒，30米弹道法术，造成50点冰霜伤害并刷新5秒冰冷。",
       "target_relation": 1,
       "cast_time_ms": 1500,
       "cooldown_ms": 0,
       "global_cooldown_ms": 1000,
-      "range_meters": 15,
+      "range_meters": 30,
       "delivery": 2,
       "projectile_speed_meters_per_second": 20
     },
     {
       "id": 3002,
       "name": "火焰冲击",
-      "description": "瞬发，5米，12秒冷却；造成100点火焰伤害，并按施法者刷新6秒灼烧。",
+      "description": "瞬发，10米，12秒冷却；造成100点火焰伤害，并按施法者刷新6秒灼烧。",
       "target_relation": 1,
       "cast_time_ms": 0,
       "cooldown_ms": 12000,
       "global_cooldown_ms": 1000,
-      "range_meters": 5,
+      "range_meters": 10,
       "delivery": 1,
       "projectile_speed_meters_per_second": 0
     },
     {
       "id": 3003,
       "name": "惩击",
-      "description": "读条1.5秒，15米直接命中，造成60点神圣伤害。",
+      "description": "读条1.5秒，30米直接命中，造成60点神圣伤害。",
       "target_relation": 1,
       "cast_time_ms": 1500,
       "cooldown_ms": 0,
       "global_cooldown_ms": 1000,
-      "range_meters": 15,
+      "range_meters": 30,
       "delivery": 1,
       "projectile_speed_meters_per_second": 0
     },
@@ -355,7 +359,7 @@ export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 export type MonsterConfig = game.MonsterConfig;
 export type SkillConfig = game.SkillConfig;
 
-export const GameConfigFingerprint = "93e1a5f5f47f66ebe65e15c13016cbdc8f1150e050f614934bf621d01516e72a";
+export const GameConfigFingerprint = "f0c88392ba2b880d57c0f1c6ff4da4a967c7b739cb4c3f717a95b589f325f426";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

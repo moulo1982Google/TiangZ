@@ -103,9 +103,13 @@ function main(): void {
   assert.equal(serverConfigs.ItemConfig.TryGet(999_999), undefined);
   assert.equal(serverConfigs.ItemConfig.Get(1001).useEffect, 2);
   assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [6, 150]);
+  assert.equal(serverConfigs.ItemConfig.Get(1001).cooldownMs, 30_000);
+  assert.equal(serverConfigs.ItemConfig.Get(1001).globalCooldownMs, 1_000);
   assert.equal(clientConfigs.ItemConfig.Get(1001).icon, "UI/Icons/Items/1001");
   assert.equal(serverConfigs.ItemConfig.Get(1002).useEffect, 1);
   assert.deepEqual(serverConfigs.ItemConfig.Get(1002).useParams, [2001]);
+  assert.equal(serverConfigs.ItemConfig.Get(1002).cooldownMs, 30_000);
+  assert.equal(serverConfigs.ItemConfig.Get(1002).globalCooldownMs, 1_000);
   assert.equal(clientConfigs.ItemConfig.Get(1002).icon, "UI/Icons/Items/1002");
   assert.equal(serverConfigs.BuffConfig.Get(2001).tickIntervalMs, 3_000);
   assert.equal(serverConfigs.BuffConfig.Get(2001).tickActionType, 6);
@@ -136,6 +140,9 @@ function main(): void {
   assert.equal(frostbolt.movementPolicy, SkillMovementPolicy.InterruptWhileCasting);
   assert.equal(frostbolt.autoAttackPolicy, SkillAutoAttackPolicy.ResetOnStart);
   assert.equal(frostbolt.projectileSpeedMetersPerSecond, 20);
+  assert.equal(frostbolt.rangeMeters, 30);
+  assert.equal(serverConfigs.SkillConfig.Get(3002).rangeMeters, 10);
+  assert.equal(serverConfigs.SkillConfig.Get(3003).rangeMeters, 30);
   const frostboltEffects = serverConfigs.SkillEffectConfig.GetAll()
     .filter((effect) => effect.skillId === frostbolt.id)
     .sort((left, right) => left.order - right.order);
@@ -240,6 +247,16 @@ function main(): void {
     /missing reference/,
   );
   assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [6, 77]);
+
+  const invalidItemCooldown = structuredClone(changed);
+  invalidItemCooldown.game_tbitemconfig[0].cooldown_ms = -1;
+  assert.throws(
+    () => GameConfigRegistry.Install(
+      JSON.stringify({ ...JSON.parse(manifestJson), dataFingerprint: "0".repeat(64) }),
+      JSON.stringify(invalidItemCooldown),
+    ),
+    /invalid cooldown values/,
+  );
 
   const invalidBuffPriority = structuredClone(changed);
   const fortitudeRow = invalidBuffPriority.game_tbbuffconfig.find((buff) => buff.id === 4005);

@@ -12,11 +12,13 @@
 在`game_config/Datas/ItemConfig.xlsx`中：
 
 ```text
-1001  小型生命药水  use_effect=2  use_params=6,150
-1002  大型生命药水  use_effect=1  use_params=2001
+1001  小型生命药水  use_effect=2  use_params=6,150  cooldown_ms=30000  global_cooldown_ms=1000
+1002  大型生命药水  use_effect=1  use_params=2001   cooldown_ms=30000  global_cooldown_ms=1000
 ```
 
 `use_effect=2`时，`use_params`的第一个值是ActionType，所以`6,150`表示`Heal(150)`；`2001`是Buff配置ID。
+
+`cooldown_ms`是同配置药品的自身CD，`global_cooldown_ms`进入玩家与技能共享的GCD。服务端在扣除道具前原子提交两条deadline，并通过`M2C_UseItem`返回给客户端绘制；客户端按钮变灰不能代替服务端校验。
 
 在`game_config/Datas/BuffConfig.xlsx`中：
 

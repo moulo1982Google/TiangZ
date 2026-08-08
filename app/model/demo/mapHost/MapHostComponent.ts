@@ -1158,6 +1158,10 @@ function toProtocolSkillTransfer(value: SkillTransferState): SkillTransferSnapsh
       skillId: cooldown.skillId,
       cooldownEndAtMs: BigInt(Math.max(0, Math.floor(cooldown.cooldownEndAtMs))),
     })),
+    itemCooldowns: value.itemCooldowns.map((cooldown) => ({
+      itemConfigId: cooldown.itemConfigId,
+      cooldownEndAtMs: BigInt(Math.max(0, Math.floor(cooldown.cooldownEndAtMs))),
+    })),
   };
 }
 

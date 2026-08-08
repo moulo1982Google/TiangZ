@@ -142,7 +142,7 @@ MapHost -> MapScene
 4. Handler保持一层胶水，例如`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。
 5. 通过`MonsterComponent.Get/GetAll`取得怪物；死亡状态、AOI和重生只能由MonsterComponent完成。
 
-当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡尸体、尸体清理、原槽位新Unit重生”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；当前Demo在`MonsterConfig.respawn_seconds`到期时执行`Detach`、发布AOI Leave并`Remove`旧尸体，然后只复用`AreaId`刷怪槽创建新的MonsterUnit和UnitId。被动怪没有仇恨时不主动寻找玩家，但玩家造成实际伤害后必须通过`MonsterComponent.AddThreat`增加仇恨，5Hz桶按仇恨最高者追击；不能把“被攻击”直接等同于“追击”。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
+当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡尸体、尸体清理、原槽位新Unit重生”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；当前Demo在`MonsterConfig.respawn_seconds`到期时执行`Detach`、发布AOI Leave并`Remove`旧尸体，然后只复用`AreaId`刷怪槽创建新的MonsterUnit和UnitId。被动怪没有仇恨时不主动寻找玩家；平A和技能造成最终实际伤害后都必须通过`MonsterComponent.AddThreat`按1:1增加仇恨，5Hz桶按本地图最高仇恨者追击。12米只负责主动怪在无仇恨时索敌，不能过滤已有仇恨；脱战回出生点应另设冷配置，不能复用主动索敌距离。不能把“被攻击”直接等同于“追击”，也不能绕过`ApplyPlayerDamage`只调用Combat，否则会漏掉仇恨和死亡边界。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
 
 怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡先通过`EntityState.alive=false`表现为尸体，尸体清理才通过AOI Leave移除旧Unit，复活通过AOI Enter发送新Unit的完整快照。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。演示客户端可以读取冷配置中的`attack_mode`做非权威颜色提示：自己蓝色，其他玩家绿色，被动怪黄色，主动怪红色；业务逻辑仍必须以服务端配置和System为准。角色和怪物之间的动态阻挡、动态避障当前明确不做。
 
@@ -931,7 +931,7 @@ C2M_AttackMonsterHandler
 
 ## Action、Buff与Skill的当前规则
 
-道具使用统一遵循`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`表示不可用，`1`表示直接添加一个Buff，`2`表示把`use_params`解释为`[ActionType, ...parameters]`。开发者优先改配置，不要为了不同药水复制Handler。当前验收道具是1001执行`Heal(150)`、1002添加2001持续回血Buff；2001的Tick同样执行`Heal(50)`，两者都不能直接写CurrentHp。
+道具使用统一遵循`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`表示不可用，`1`表示直接添加一个Buff，`2`表示把`use_params`解释为`[ActionType, ...parameters]`。开发者优先改配置，不要为了不同药水复制Handler。`cooldown_ms`表示按ItemConfigId隔离的自身CD，`global_cooldown_ms`进入与技能共享的玩家GCD；Handler必须先用`SkillComponent.TryCommitItemCooldown`原子检查和提交，再扣道具并执行Action。当前验收道具是1001执行`Heal(150)`、1002添加2001持续回血Buff；两者自身CD均为30秒、共享GCD均为1秒，2001的Tick执行`Heal(50)`，这些路径都不能直接写CurrentHp。
 
 `BuffComponent`拥有`Buff` ChildEntity；Component负责集合、实例ID、传送和AOI生命周期事件，BuffSystem负责Add/Tick/Remove和Timer。Buff传送只保存纯值及墙钟时间，目标重建Timer但不重复AddAction；不保存TimerId、闭包、Promise或Entity。Buff Tick只执行Action，Numeric和Combat沿用自身同步边界。
 
@@ -949,7 +949,7 @@ Demo要观察道具链路时，`ItemComponentSystem.Awake`会创建两叠测试�
 
 镜头环绕同样属于纯表现：Cocos3D左键拖动只维护本地`cameraYawOffset`，不能修改Unit朝向或发送移动协议。输入手势必须有拖动阈值；环绕手势结束后要消费鼠标抬起，避免一次操作同时触发地面寻路。短点击的怪物选择与寻路仍走原有射线入口。
 
-Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建图标，按`UI/Icons/Buff/<BuffId>`加载资源。倒计时使用服务端结束时间和客户端估算的服务器时钟，只显示`分钟:秒`，分钟不换算成小时；无限Buff显示`永久`。客户端显示到`00:00`后不得删除图标，删除只能由`G2C_BuffRemoved`驱动，不要把本地倒计时归零当成服务器已经移除。
+Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建图标，按`UI/Icons/Buff/<BuffId>`加载资源，文字读取`BuffConfig.name`显示中文名，不把BuffId暴露给玩家。倒计时使用服务端结束时间和客户端估算的服务器时钟，只显示`分钟:秒`，分钟不换算成小时；无限Buff显示`永久`。客户端显示到`00:00`后不得删除图标，删除只能由`G2C_BuffRemoved`驱动，不要把本地倒计时归零当成服务器已经移除。
 
 ## 可观测性边界
 

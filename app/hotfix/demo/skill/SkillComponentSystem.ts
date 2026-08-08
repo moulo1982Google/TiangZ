@@ -4,6 +4,7 @@ import {
   SkillMapComponent,
   PlayerUnit,
   type ActiveSkillCast,
+  type ItemCooldownCommitResult,
   type SkillCastCommand,
   type SkillCastState,
   type SkillTransferState,
@@ -20,6 +21,7 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
   protected override OnDestroy(): void {
     this.activeCast = null;
     this.cooldownEndBySkillId.clear();
+    this.cooldownEndByItemConfigId.clear();
   }
 
   Cast(command: SkillCastCommand): SkillCastState {
@@ -70,6 +72,50 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     );
   }
 
+  /** 返回指定道具与玩家公共冷却的最晚截止时间；道具和技能共享同一条GCD。 / Returns the later item or shared-player GCD deadline; items and skills participate in the same GCD. */
+  ItemReadyAt(itemConfigId: number): number {
+    return Math.max(
+      this.globalCooldownEndAtMs,
+      this.cooldownEndByItemConfigId.get(itemConfigId) ?? 0,
+    );
+  }
+
+  /** 原子检查并提交道具自身CD与共享GCD；调用失败时不修改任何冷却。 / Atomically checks and commits the item CD plus shared GCD, leaving all state unchanged on rejection. */
+  TryCommitItemCooldown(
+    itemConfigId: number,
+    cooldownMs: number,
+    globalCooldownMs: number,
+  ): ItemCooldownCommitResult {
+    if (!Number.isSafeInteger(itemConfigId) || itemConfigId <= 0) {
+      throw new Error(`invalid item config id: ${itemConfigId}`);
+    }
+    if (
+      !Number.isSafeInteger(cooldownMs) || cooldownMs < 0 ||
+      !Number.isSafeInteger(globalCooldownMs) || globalCooldownMs < 0
+    ) {
+      throw new Error(`invalid item cooldown: item=${itemConfigId}, cooldown=${cooldownMs}, gcd=${globalCooldownMs}`);
+    }
+    const now = TimeSystem.Instance.ServerNow;
+    const readyAtMs = this.ItemReadyAt(itemConfigId);
+    if (readyAtMs > now) {
+      return {
+        accepted: false,
+        readyAtMs,
+        globalCooldownEndAtMs: this.globalCooldownEndAtMs,
+        itemCooldownEndAtMs: this.cooldownEndByItemConfigId.get(itemConfigId) ?? 0,
+      };
+    }
+    this.globalCooldownEndAtMs = now + globalCooldownMs;
+    const itemCooldownEndAtMs = now + cooldownMs;
+    this.cooldownEndByItemConfigId.set(itemConfigId, itemCooldownEndAtMs);
+    return {
+      accepted: true,
+      readyAtMs: now,
+      globalCooldownEndAtMs: this.globalCooldownEndAtMs,
+      itemCooldownEndAtMs,
+    };
+  }
+
   /** 读条完成后清空活动Cast，保留已经提交的冷却。 / Clears a completed cast while preserving committed cooldowns. */
   Complete(castId: bigint): SkillCastState {
     if (this.activeCast?.castId !== castId) return this.State();
@@ -100,6 +146,9 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
       cooldowns: [...this.cooldownEndBySkillId.entries()]
         .filter(([, endAtMs]) => endAtMs > now)
         .map(([skillId, cooldownEndAtMs]) => ({ skillId, cooldownEndAtMs })),
+      itemCooldowns: [...this.cooldownEndByItemConfigId.entries()]
+        .filter(([, endAtMs]) => endAtMs > now)
+        .map(([itemConfigId, cooldownEndAtMs]) => ({ itemConfigId, cooldownEndAtMs })),
     };
   }
 
@@ -109,6 +158,7 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     this.lastInterruptReason = "map-transfer";
     this.globalCooldownEndAtMs = Math.max(0, state.globalCooldownEndAtMs);
     this.cooldownEndBySkillId.clear();
+    this.cooldownEndByItemConfigId.clear();
     const now = TimeSystem.Instance.ServerNow;
     for (const cooldown of state.cooldowns) {
       if (!Number.isSafeInteger(cooldown.skillId) || cooldown.skillId <= 0) {
@@ -116,6 +166,14 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
       }
       if (cooldown.cooldownEndAtMs > now) {
         this.cooldownEndBySkillId.set(cooldown.skillId, cooldown.cooldownEndAtMs);
+      }
+    }
+    for (const cooldown of state.itemCooldowns) {
+      if (!Number.isSafeInteger(cooldown.itemConfigId) || cooldown.itemConfigId <= 0) {
+        throw new Error(`invalid transferred item config id: ${cooldown.itemConfigId}`);
+      }
+      if (cooldown.cooldownEndAtMs > now) {
+        this.cooldownEndByItemConfigId.set(cooldown.itemConfigId, cooldown.cooldownEndAtMs);
       }
     }
   }

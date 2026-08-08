@@ -78,6 +78,8 @@ export {
   SkillCastPhase,
   SkillComponent,
   type ActiveSkillCast,
+  type ItemCooldownCommitResult,
+  type ItemCooldownTransferState,
   type SkillCastCommand,
   type SkillCastPhaseValue,
   type SkillCastState,

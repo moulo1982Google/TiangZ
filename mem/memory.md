@@ -55,7 +55,7 @@
 - 平A状态不进入地图Transfer快照；传送后需要重新激活。Cocos3D使用独立`G2C_AutoAttackStateHandler`和键盘`1`演示，协议源仍只编辑`proto`后运行codegen。
 - `G2C_AutoAttackState`是每个玩家本人频道上的`latest`可覆盖状态，只同步当前读条；攻击命中、道具消耗等不可逆事实必须使用`event`。平A不会因广播队列达到固定次数而自动停止，只有目标死亡、距离/朝向失效、玩家死亡或主动关闭会结束/重置。
 - 玩家死亡时，10Hz平A桶要显式推送`Inactive`，不能只`continue`；否则客户端会把死亡前最后一轮读条显示成“计时器停了”。
-- 当前演示的怪物目标语义是“主动索敌 + 统一仇恨”：`MonsterConfig.attack_mode=1`没有仇恨时在5Hz范围内找最近玩家，`attack_mode=0`没有仇恨时保持待机；玩家造成1点实际伤害就通过`MonsterComponent.AddThreat`增加1点仇恨，之后两种怪都按范围内最高仇恨追击，不能在受击事件中直接设置目标。玩家创建从`PlayerConfig.initial_hp/max_hp/initial_mp/max_mp`写入HP/MP Numeric，攻击距离从`PlayerConfig.attack_range`读取，怪物攻击距离从`MonsterConfig.attack_range`读取，二者都是独立米制配置而不是Numeric链式属性。Cocos3D、UE、Unity、Godot的HUD只消费快照和`G2C_EntityNumeric`，不能由客户端自行扣血。
+- 当前演示的怪物目标语义是“主动索敌 + 统一仇恨”：`MonsterConfig.attack_mode=1`没有仇恨时在12米主动索敌范围内找最近玩家，`attack_mode=0`没有仇恨时保持待机；平A和技能每造成1点最终实际伤害都通过`MonsterComponent.AddThreat`增加1点仇恨，之后两种怪都按本地图最高仇恨追击，不能再用12米主动索敌距离过滤已有仇恨，也不能在受击事件中直接设置目标。当前未定义脱战回出生点距离，后续必须使用独立冷配置。玩家创建从`PlayerConfig.initial_hp/max_hp/initial_mp/max_mp`写入HP/MP Numeric，攻击距离从`PlayerConfig.attack_range`读取，怪物攻击距离从`MonsterConfig.attack_range`读取，二者都是独立米制配置而不是Numeric链式属性。Cocos3D、UE、Unity、Godot的HUD只消费快照和`G2C_EntityNumeric`，不能由客户端自行扣血。
 
 ## 战斗时间轴约定
 
@@ -156,10 +156,10 @@ npm run build:cocos3d:mobile
 - Buff传送只保存纯值和服务器墙钟时间，目标重建Timer但不重复执行AddAction；不保存TimerId、闭包、Promise或Entity引用。运行时Action覆盖和护盾剩余量已经随跨Process快照恢复。
 - Combat不反向查询Buff。护盾等Buff在添加/移除边界注册/注销Combat数据型modifier，剩余量由Combat单独持有；禁止新增`BuffComponent.TryAbsorbDamage`式耦合。
 - Buff叠加语义拆成冲突域、冲突决策和刷新行为：`stack_group + stack_scope + sourceUnitId`形成冲突键，策略支持Stack、Refresh、Replace、Reject和HigherWins；HigherWins比较显式priority，不比较ConfigId。Refresh默认不重复执行AddAction，来源、Tick节奏和运行状态分别配置。`BuffConfig.description`只进入服务端配置，不在客户端展示。
-- 当前演示：1001小型生命药水执行`Heal(150)`，1002大型生命药水添加2001持续回血Buff，2001每3秒执行`Heal(50)`；五技能Cast与Luban SkillConfig/SkillEffectConfig已完成，复杂地面目标、引导和Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`、`docs/design/skill-system.md`和`docs/tutorials/18-configured-skill.md`。
+- 当前演示：1001小型生命药水执行`Heal(150)`，1002大型生命药水添加2001持续回血Buff，2001每3秒执行`Heal(50)`。两种药品各有30秒配置CD，并和技能共享1秒玩家GCD；服务端原子提交、跨地图保留，Cocos3D只按返回deadline绘制。五技能Cast与Luban SkillConfig/SkillEffectConfig已完成，寒冰箭/惩击30米、火焰冲击10米；复杂地面目标、引导和Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`、`docs/design/skill-system.md`和`docs/tutorials/18-configured-skill.md`。
 
 ## 道具出生与Cocos3D快捷栏
 
 - Demo新建玩家的`ItemComponentSystem.Awake`预置`1001×50`和`1002×20`；传送、重连和恢复只用`ItemSnapshot`替换默认背包，禁止重复发放。正式项目接入持久化后应移除这段Demo种子。
 - `ItemConfig.icon`是客户端字段，使用相对`assets/resources`的不带扩展名Cocos资源键；当前为`UI/Icons/Items/1001`和`UI/Icons/Items/1002`。Cocos3D Web快捷栏固定`1=平A`、`2=1001`、`3=1002`，数量来自进图快照和`G2C_ItemChanged`，客户端不预扣库存。
-- Cocos3D Buff栏从Unit快照、道具使用RPC的可选`M2C_UseItem.buff`或`G2C_BuffAdded`显示`UI/Icons/Buff/<BuffId>`图标；倒计时使用服务器结束时间，统一显示`分钟:秒`，两小时为`120:00`，无限时长显示`永久`。到`00:00`后保留图标，必须收到`G2C_BuffRemoved`才能删除，客户端不能按本地计时自行移除。三条路径按Buff实例ID幂等合并，RPC回显只给使用者，AOI事件仍给观察者。
+- Cocos3D Buff栏从Unit快照、道具使用RPC的可选`M2C_UseItem.buff`或`G2C_BuffAdded`显示`UI/Icons/Buff/<BuffId>`图标，界面文字读取`BuffConfig.name`显示中文名，不显示BuffId；倒计时使用服务器结束时间，统一显示`分钟:秒`，两小时为`120:00`，无限时长显示`永久`。到`00:00`后保留图标，必须收到`G2C_BuffRemoved`才能删除，客户端不能按本地计时自行移除。三条路径按Buff实例ID幂等合并，RPC回显只给使用者，AOI事件仍给观察者。

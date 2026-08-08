@@ -21,4 +21,5 @@ export const GameErrCode = {
   SkillTargetInvalid: 10020,
   SkillTargetTooFar: 10021,
   SkillBlockedByBuff: 10022,
+  ItemCooldown: 10023,
 } as const;
