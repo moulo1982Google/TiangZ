@@ -1,4 +1,5 @@
 import { ChildEntity, lifecycle } from "../../../core/public";
+import type { QuestStatus } from "../../../generated/model/config";
 
 export interface QuestObjectiveState {
   readonly objectiveId: number;
@@ -9,14 +10,15 @@ export interface QuestObjectiveState {
 export interface AwakeQuest {
   readonly configId: number;
   readonly objectives: readonly QuestObjectiveState[];
+  readonly status?: QuestStatus;
   readonly revision?: number;
 }
 
 export interface QuestState {
   readonly questConfigId: number;
   readonly objectives: readonly QuestObjectiveState[];
+  readonly status: QuestStatus;
   readonly revision: number;
-  readonly readyToComplete: boolean;
 }
 
 export interface Quest {
@@ -37,5 +39,6 @@ export interface Quest {
 export class Quest extends ChildEntity<[request: AwakeQuest]> {
   protected configId = 0;
   protected objectives: QuestObjectiveState[] = [];
+  protected status: QuestStatus = 1;
   protected revision = 0;
 }

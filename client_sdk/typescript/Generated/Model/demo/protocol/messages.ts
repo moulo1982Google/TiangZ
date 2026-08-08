@@ -881,6 +881,7 @@ export interface QuestSnapshot {
   objectives: readonly QuestObjectiveSnapshot[];
   revision: number;
   readyToComplete: boolean;
+  status: number;
 }
 
 export const QuestSnapshotCodec = {
@@ -891,6 +892,7 @@ export const QuestSnapshotCodec = {
       objectives: [],
       revision: 0,
       readyToComplete: false,
+      status: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -906,6 +908,9 @@ export const QuestSnapshotCodec = {
       else if (tag.fieldNo === 4 && tag.wireType === 0) {
         value.readyToComplete = reader.bool();
       }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.status = reader.uint32();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -919,6 +924,7 @@ export const QuestSnapshotCodec = {
     for (const item of (value.objectives ?? [])) writer.bytes(2, QuestObjectiveSnapshotCodec.encode(item), true);
     if (value.revision !== undefined) writer.uint32(3, value.revision);
     if (value.readyToComplete !== undefined) writer.bool(4, value.readyToComplete);
+    if (value.status !== undefined) writer.uint32(5, value.status);
     return writer.finish();
   },
 };

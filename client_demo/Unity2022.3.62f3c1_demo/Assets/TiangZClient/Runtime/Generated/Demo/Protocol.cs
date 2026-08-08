@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "0e62a2335f3eb0f64a69f1c5977546eaeae7fba31c448798abede31e4c747adc";
+    public const string Value = "9d9c9938c27cd3244c1c6a1fd4f0e96d317c0cf7fc2852ff229923d6a667a6f1";
 }
 
 public static class MsgCode
@@ -599,6 +599,7 @@ public sealed class QuestSnapshot
     public List<QuestObjectiveSnapshot> Objectives { get; set; } = new List<QuestObjectiveSnapshot>();
     public uint Revision { get; set; }
     public bool ReadyToComplete { get; set; }
+    public uint Status { get; set; }
 }
 
 public sealed class S2C_GetLoginServiceAddr : IRpcResponse
@@ -3438,6 +3439,9 @@ public static class QuestSnapshotCodec
                 case 4 when tag.WireType == 0:
                     value.ReadyToComplete = reader.ReadBool();
                     break;
+                case 5 when tag.WireType == 0:
+                    value.Status = reader.ReadUInt32();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -3456,6 +3460,7 @@ public static class QuestSnapshotCodec
         }
         if (value.Revision != 0) writer.WriteUInt32(3, value.Revision);
         if (value.ReadyToComplete) writer.WriteBool(4, value.ReadyToComplete);
+        if (value.Status != 0) writer.WriteUInt32(5, value.Status);
         return writer.ToArray();
     }
 }

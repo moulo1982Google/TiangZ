@@ -24,7 +24,7 @@ import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/Num
 import { SkillCastPhase, SkillComponent } from "../app/model/demo/skill/SkillComponent";
 import { ItemComponent } from "../app/model/demo/item/ItemComponent";
 import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
-import { QuestObjectiveType } from "../app/generated/model/config";
+import { QuestObjectiveType, QuestStatus } from "../app/generated/model/config";
 import { ActorUnit } from "../app/core/runtime/Unit";
 
 @scene({ sceneType: "BuffTest" })
@@ -93,6 +93,7 @@ async function main(): Promise<void> {
     [NumericType.MaxHpBase]: 200n,
     [NumericType.CurrentMp]: 0n,
     [NumericType.MaxMpBase]: 100n,
+    [NumericType.Level]: 1n,
   });
   unit.AddComponent(CombatComponent);
   const buffs = unit.AddComponent(BuffComponent);
@@ -100,17 +101,36 @@ async function main(): Promise<void> {
   const quests = unit.AddComponent(QuestComponent);
 
   assert.deepEqual(quests.Snapshot().map((quest) => quest.questConfigId), [5001, 5002, 5003]);
+  assert.deepEqual(quests.ApplyProgress({
+    player: unit as never,
+    objectiveType: QuestObjectiveType.KillMonster,
+    targetConfigId: 999,
+    count: 1,
+  }), []);
+  assert.throws(() => quests.AcceptQuest(5004), /requires completed quest 5001/);
   const killProgress = quests.ApplyProgress({
     player: unit as never,
     objectiveType: QuestObjectiveType.KillMonster,
     targetConfigId: 1,
     count: 1,
   });
-  assert.equal(killProgress[0]?.readyToComplete, true);
+  assert.equal(killProgress[0]?.status, QuestStatus.ReadyToTurnIn);
   const reward = quests.CompleteQuest(5001);
   assert.equal(reward.rewardItems[0]?.configId, 1001);
   assert.equal(reward.rewardItems[0]?.count, 2);
   assert.throws(() => quests.CompleteQuest(5001));
+  assert.throws(() => quests.AcceptQuest(5004), /requires level 2/);
+  unit.GetComponent(NumericComponent)[NumericType.Level] = 2n;
+  const advancedQuest = quests.AcceptQuest(5004);
+  assert.equal(advancedQuest.status, QuestStatus.InProgress);
+  const advancedProgress = quests.ApplyProgress({
+    player: unit as never,
+    objectiveType: QuestObjectiveType.UseItem,
+    targetConfigId: 1002,
+    count: 1,
+  });
+  assert.equal(advancedProgress[0]?.questConfigId, 5004);
+  assert.equal(advancedProgress[0]?.status, QuestStatus.ReadyToTurnIn);
 
   assert.equal(GameConfigs.BuffConfig.Get(2001).tickIntervalMs, 3_000);
   assert.equal(GameConfigs.BuffConfig.Get(2001).tickActionType, ActionType.Heal);
@@ -139,6 +159,7 @@ async function main(): Promise<void> {
     [NumericType.MaxHpBase]: 200n,
     [NumericType.CurrentMp]: 0n,
     [NumericType.MaxMpBase]: 100n,
+    [NumericType.Level]: 1n,
   });
   target.AddComponent(CombatComponent);
   const targetBuffs = target.AddComponent(BuffComponent);
@@ -148,7 +169,8 @@ async function main(): Promise<void> {
   assert.equal(target.GetComponent(NumericComponent)[NumericType.CurrentHp], 51n);
   assert.equal(targetBuffs.GetBuff(buff.Id as bigint)?.Id, buff.Id);
   assert.deepEqual(targetQuests.CompletedQuestConfigIds(), [5001]);
-  assert.deepEqual(targetQuests.Snapshot().map((quest) => quest.questConfigId), [5002, 5003]);
+  assert.deepEqual(targetQuests.Snapshot().map((quest) => quest.questConfigId), [5002, 5003, 5004]);
+  assert.equal(targetQuests.Snapshot().find((quest) => quest.questConfigId === 5004)?.status, QuestStatus.ReadyToTurnIn);
 
   assert.equal(buffs.RemoveBuff(buff.Id as bigint, "test"), true);
   assert.equal(buffs.GetBuff(buff.Id as bigint), undefined);

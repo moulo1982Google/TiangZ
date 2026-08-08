@@ -4,6 +4,7 @@ import {
   MapProtocol,
   PlayerUnit,
   QuestComponent,
+  QuestStatus,
   unitRpcHandler,
   type UnitRpcHandler,
 } from "#tiangz/model";
@@ -19,7 +20,8 @@ function toProtocolQuest(value: import("#tiangz/model").QuestState): M2C_AcceptQ
   return {
     questConfigId: value.questConfigId,
     objectives: value.objectives.map((item) => ({ ...item })),
+    status: value.status,
     revision: value.revision,
-    readyToComplete: value.readyToComplete,
+    readyToComplete: value.status === QuestStatus.ReadyToTurnIn,
   };
 }

@@ -76,6 +76,7 @@ import {
   GameConfigs,
   SpatialMode,
   QuestObjectiveType,
+  QuestStatus,
   type MapConfig as MapConfigData,
 } from "../../../generated/model/config";
 import type { MapInstanceDefinition } from "./MapInstance";
@@ -740,6 +741,7 @@ export class MapComponent extends Component<[
         [NumericType.MaxHpBase]: BigInt(playerConfig.maxHp),
         [NumericType.CurrentMp]: BigInt(playerConfig.initialMp),
         [NumericType.MaxMpBase]: BigInt(playerConfig.maxMp),
+        [NumericType.Level]: 1n,
         [NumericType.AttackBase]: 5n,
         [NumericType.AttackSpeedAdd]: 2_000n,
         [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(playerConfig.moveSpeed),
@@ -1776,7 +1778,8 @@ function toProtocolQuest(value: import("../quest/Quest").QuestState): QuestSnaps
     questConfigId: value.questConfigId,
     objectives: value.objectives.map((item) => ({ ...item })),
     revision: value.revision,
-    readyToComplete: value.readyToComplete,
+    status: value.status,
+    readyToComplete: value.status === QuestStatus.ReadyToTurnIn,
   };
 }
 
@@ -1785,7 +1788,7 @@ function fromProtocolQuest(value: QuestSnapshot): import("../quest/Quest").Quest
     questConfigId: value.questConfigId,
     objectives: value.objectives.map((item) => ({ ...item })),
     revision: value.revision,
-    readyToComplete: value.readyToComplete,
+    status: value.status || (value.readyToComplete ? QuestStatus.ReadyToTurnIn : QuestStatus.InProgress),
   };
 }
 

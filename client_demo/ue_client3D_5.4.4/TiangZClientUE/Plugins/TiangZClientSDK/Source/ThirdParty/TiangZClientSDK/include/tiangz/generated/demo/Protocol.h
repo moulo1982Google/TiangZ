@@ -1180,6 +1180,7 @@ struct QuestSnapshot {
   std::vector<QuestObjectiveSnapshot> objectives;
   std::uint32_t revision = 0;
   bool readyToComplete = false;
+  std::uint32_t status = 0;
 };
 
 struct QuestSnapshotCodec {
@@ -1217,6 +1218,13 @@ struct QuestSnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.status = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1231,6 +1239,7 @@ struct QuestSnapshotCodec {
     for (const auto& item : value.objectives) writer.BytesField(2, QuestObjectiveSnapshotCodec::Encode(item), true);
     writer.UInt32(3, value.revision);
     writer.Bool(4, value.readyToComplete);
+    writer.UInt32(5, value.status);
     return writer.Finish();
   }
 };

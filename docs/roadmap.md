@@ -303,7 +303,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 技能系统先按[技能与施法系统设计](design/skill-system.md)实现单位目标瞬发和普通读条：SkillComponent统一服务玩家与怪物，ActiveCast是瞬时纯数据而不是Actor/Entity，10Hz按服务器deadline推进；技能完成只执行Action，目标伤害继续进入Combat。压制用于验收`Keep`平A，火球术用于验收移动中断和`ResetOnComplete`。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
-- 首版任务系统已完成：`QuestComponent -> Quest ChildEntity`保存活动任务，击杀/用道具/进图以同步领域事件解耦进度来源，owner-only latest同步进度，Action发奖，跨地图保留活动与完成状态。后续再增加NPC接取、可重复任务、组队共享投影、持久化与多Action事务奖励。
+- 任务系统基础已完成：`QuestComponent -> Quest ChildEntity`保存活动任务，显式区分进行中/待交付状态；击杀/用道具/进图以同步领域事件解耦进度来源，并按目标类型与配置ID索引定位相关任务；接取支持同步Veto、前置任务和最低等级最终校验。owner-only latest同步进度，Action发奖，跨地图重建目标索引并保留活动/完成状态。后续再增加NPC接取、可重复任务、组队共享投影、持久化与多Action事务奖励。
 
 ### Phase 4.0：3D空间契约冻结
 

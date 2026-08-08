@@ -90,6 +90,16 @@ export enum QuestObjectiveType {
 
 
 /**
+ * 进行中任务的状态
+ */
+export enum QuestStatus {
+    InProgress = 1,
+    ReadyToTurnIn = 2,
+}
+
+
+
+/**
  * 技能与普通攻击时间线的关系
  */
 export enum SkillAutoAttackPolicy {

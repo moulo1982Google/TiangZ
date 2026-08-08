@@ -1142,6 +1142,13 @@
           "type": "bool",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "status",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },

@@ -621,8 +621,10 @@ QuestComponent
 
 - 玩家没有进行中任务时，QuestComponent可以不包含任何Quest子Entity。
 - 接受任务时通过`QuestComponent.AcceptQuest(questConfigId)`创建进行中实例；当前不可重复任务直接以`BigInt(questConfigId)`作为Child ID。
+- 活动Quest状态只有`InProgress`和`ReadyToTurnIn`；达到要求只切换为待交付，领取奖励成功后才写完成集合并移除ChildEntity。
 - 接取时冻结`objectiveId/current/required`。热配置切换只影响新接取任务，不能让进行中的要求数量漂移。
-- 怪物、道具和地图只在事实成功提交后同步发布`QuestEvents.Progress`；稳定事件Handler负责调用`ApplyProgress`。来源模块禁止遍历Quest或直接改进度。
+- 怪物、道具和地图只在事实成功提交后同步发布`QuestEvents.Progress`；稳定事件Handler负责调用`ApplyProgress`。`QuestComponent`按`(objectiveType,targetConfigId)`运行时索引定位目标，来源模块禁止遍历Quest或直接改进度。索引只保存稳定ID并在接取、领奖、Deserialize和RestoreTransfer时维护，不能进入持久化快照。
+- 接取前统一执行同步`QuestEvents.BeforeAccept` Veto；前置任务和最低等级是配置最终不变量，阵营、职业、NPC关系等扩展条件注册独立监听器。Veto只能读内存和返回错误码，禁止Promise、RPC、数据库、修改Entity或Spawn后台任务。
 - 进度变化通过owner-only `G2C_QuestProgress`通知拥有者客户端，并按QuestConfigId在同帧latest合并，不广播给普通地图观察者。
 - 只有组队共享任务明确需要时，才向`PartyAudience`发送必要的进度摘要；不要把完整Quest对象发送给队友。
 - 完成时由`QuestComponent.CompleteQuest`在PlayerUnit有序mailbox内同步执行奖励Action、写入已完成Quest配置ID和`RemoveChild`；Handler只负责RPC与提交后的奖励同步，不能把这三步拆开await。
@@ -630,7 +632,7 @@ QuestComponent
 
 如果同一配置任务不会同时存在多个活动实例，可以直接用配置ID作为ChildEntity Id；可重复任务、限时活动任务等允许并存时，必须使用独立Quest实例ID，并单独保存`configId`。已完成集合始终记录稳定配置ID，不保存已经销毁的InstanceId。
 
-当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；演示目标覆盖击杀怪物、使用道具和进入地图。`GrantItem(ItemConfigId, Count)`当前创建一个新Item堆叠，堆叠合并属于Inventory策略。多Action奖励要在引入事务批次后再开放，不能让中途失败留下“已发一半但任务未完成”的状态。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
+当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；`required_quest_ids`和`minimum_level`声明基础接取条件。演示目标覆盖击杀怪物、使用道具和进入地图，5004验证“完成5001且达到2级”。`GrantItem(ItemConfigId, Count)`当前创建一个新Item堆叠，堆叠合并属于Inventory策略。多Action奖励要在引入事务批次后再开放，不能让中途失败留下“已发一半但任务未完成”的状态。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
 
 ## 广播给谁与如何广播
 

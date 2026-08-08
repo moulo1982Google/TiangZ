@@ -47,7 +47,7 @@ npm run test:game-config
 
 Cocos3D演示玩家出生时预置`1001×50`和`1002×20`两个堆叠，快捷栏固定使用`1`切换平A、`2`使用1001、`3`使用1002。这个预置属于Demo的`ItemComponentSystem.Awake`，正式业务应由持久化数据恢复，不要把演示数量当成通用框架默认值。
 
-`QuestConfig`引用`QuestObjectiveConfig`组成活动任务，奖励复用Action。当前演示包含击杀怪物、使用道具和进入地图三种目标，并使用`GrantItem(ItemConfigId, Count)`发放奖励。两张Quest表标记为Hot，但已经接取的Quest会冻结目标与要求数量；Reload只影响之后新接取的任务，不能隐式改写玩家正在进行的任务。完整语义和调用示例见[任务系统设计](../docs/design/quest-system.md)。
+`QuestConfig`引用`QuestObjectiveConfig`组成活动任务，奖励复用Action。`required_quest_ids`声明必须已经领取奖励的前置任务，`minimum_level`读取`NumericType.Level`；生成阶段会拒绝缺失、重复、自引用和循环前置关系。当前演示包含击杀怪物、使用道具和进入地图三种目标，并用5004验证“完成5001且达到2级”后手工接取。两张Quest表标记为Hot，但已经接取的Quest会冻结目标与要求数量；Reload只影响之后新接取的任务，不能隐式改写玩家正在进行的任务。完整语义和调用示例见[任务系统设计](../docs/design/quest-system.md)。
 
 `BuffConfig`的三个Action阶段分别是：
 

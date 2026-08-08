@@ -165,6 +165,9 @@ npm run build:cocos3d:mobile
 - 接取时冻结目标ID与required，热配置Reload只影响新接取任务。领取必须在PlayerUnit有序mailbox中同步提交奖励Action、完成ID和RemoveChild，异步广播只能发生在提交后。
 - 进度使用owner-only latest消息；登录、重连和跨地图携带活动Quest及已完成ID全量快照。组队共享、可重复任务和持久化暂未实现。
 - 当前框架待改：`codegen_game_config.mjs`不应手工枚举新Luban表；多Action奖励需要事务批次；`GrantItem`奖励的堆叠合并应由Inventory统一提供。
+- 活动Quest显式使用`InProgress/ReadyToTurnIn`；目标达成只进入待交付，领奖成功后才写完成集合并移除Quest。协议status是新权威字段，旧`ready_to_complete`仅为SDK兼容镜像。
+- `QuestComponent`按`objectiveType:targetConfigId`维护只含稳定ID的运行时目标索引；索引不传送、不持久化，接取/领奖时维护，Deserialize/RestoreTransfer时重建。
+- 接取统一走同步`QuestEvents.BeforeAccept` Veto，配置内置`required_quest_ids/minimum_level`最终不变量；Veto只读且不可异步。`NumericType.Level=3`，Demo玩家默认1级，5004要求完成5001且达到2级。
 - 设计变更继续同步`docs/ai/project-context.md`、`docs/ai/business-development-manual.md`、`docs/development-log.md`和本文件。
 
 ## 道具出生与Cocos3D快捷栏

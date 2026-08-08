@@ -41,6 +41,10 @@
         <var name="UseItem" value="2"/>
         <var name="EnterMap" value="3"/>
     </enum>
+    <enum name="QuestStatus" comment="进行中任务的状态">
+        <var name="InProgress" value="1"/>
+        <var name="ReadyToTurnIn" value="2"/>
+    </enum>
     <enum name="SkillTargetRelation" comment="技能目标关系">
         <var name="Enemy" value="1"/>
         <var name="Friendly" value="2"/>

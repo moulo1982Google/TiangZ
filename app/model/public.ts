@@ -56,10 +56,11 @@ export { ItemEvents, type BeforeUseItemEvent } from "./demo/item/ItemEvents";
 export { Quest, type AwakeQuest, type QuestObjectiveState, type QuestState } from "./demo/quest/Quest";
 export {
   QuestComponent,
+  type QuestObjectiveIndexEntry,
   type QuestRewardResult,
   type QuestTransferState,
 } from "./demo/quest/QuestComponent";
-export { QuestEvents, type QuestProgressEvent } from "./demo/quest/QuestEvents";
+export { QuestEvents, type BeforeAcceptQuestEvent, type QuestProgressEvent } from "./demo/quest/QuestEvents";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
 export {
   ActionType,
@@ -175,6 +176,7 @@ export {
   type SkillConfig as SkillConfigData,
   type SkillEffectConfig as SkillEffectConfigData,
   QuestObjectiveType,
+  QuestStatus,
   type QuestConfig as QuestConfigData,
   type QuestObjectiveConfig as QuestObjectiveConfigData,
 } from "../generated/model/config";

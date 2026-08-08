@@ -279,6 +279,14 @@ const RAW_DATA: Record<string, unknown> = {
       "objective_ids": [
         5103
       ]
+    },
+    {
+      "id": 5004,
+      "name": "进阶试炼",
+      "description": "达到2级并完成清理怪物后，使用1次大型生命药水。",
+      "objective_ids": [
+        5104
+      ]
     }
   ],
   "game_tbquestobjectiveconfig": [
@@ -299,6 +307,12 @@ const RAW_DATA: Record<string, unknown> = {
       "quest_config_id": 5003,
       "required_count": 1,
       "description": "进入地图2"
+    },
+    {
+      "id": 5104,
+      "quest_config_id": 5004,
+      "required_count": 1,
+      "description": "使用1次大型生命药水"
     }
   ],
   "game_tbskillconfig": [
@@ -407,7 +421,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "c8627d79439d107f4084f9dcfb3ad73df5fa995cb86625c3816f7aa00d13adeb";
+export const GameConfigFingerprint = "00e00684998fe60da0e79f20e68d69ba924c8dd3decc4ac0bab5596c5bc4b057";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

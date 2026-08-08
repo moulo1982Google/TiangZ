@@ -438,7 +438,9 @@
         1001,
         2
       ],
-      "auto_accept": true
+      "auto_accept": true,
+      "required_quest_ids": [],
+      "minimum_level": 1
     },
     {
       "id": 5002,
@@ -451,7 +453,9 @@
         1002,
         1
       ],
-      "auto_accept": true
+      "auto_accept": true,
+      "required_quest_ids": [],
+      "minimum_level": 1
     },
     {
       "id": 5003,
@@ -464,7 +468,26 @@
         1001,
         3
       ],
-      "auto_accept": true
+      "auto_accept": true,
+      "required_quest_ids": [],
+      "minimum_level": 1
+    },
+    {
+      "id": 5004,
+      "name": "进阶试炼",
+      "objective_ids": [
+        5104
+      ],
+      "reward_action_type": 7,
+      "reward_action_params": [
+        1001,
+        1
+      ],
+      "auto_accept": false,
+      "required_quest_ids": [
+        5001
+      ],
+      "minimum_level": 2
     }
   ],
   "game_tbquestobjectiveconfig": [
@@ -487,6 +510,13 @@
       "quest_config_id": 5003,
       "objective_type": 3,
       "target_config_id": 2,
+      "required_count": 1
+    },
+    {
+      "id": 5104,
+      "quest_config_id": 5004,
+      "objective_type": 2,
+      "target_config_id": 1002,
       "required_count": 1
     }
   ],

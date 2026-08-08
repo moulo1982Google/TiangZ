@@ -28,5 +28,6 @@ import "../../hotfix/demo/mapHost/handlers/M2M_AbortPlayerTransferHandler";
 import "../../hotfix/demo/mapHost/handlers/M2M_CommitPlayerTransferHandler";
 import "../../hotfix/demo/mapHost/handlers/M2M_PreparePlayerTransferHandler";
 import "../../hotfix/demo/mapManager/handlers/MapHostControlHandlers";
+import "../../hotfix/demo/quest/handlers/BeforeAcceptQuestVetoHandlers";
 import "../../hotfix/demo/quest/handlers/QuestProgressEventHandler";
 import "../../hotfix/demo/skill/handlers/BeforeCastVetoHandlers";

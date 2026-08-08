@@ -48,7 +48,7 @@ import { BuffComponent } from "../buff/BuffComponent";
 import { SkillComponent, type SkillTransferState } from "../skill/SkillComponent";
 import { QuestComponent } from "../quest/QuestComponent";
 import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
-import { GameConfigs } from "../../../generated/model/config";
+import { GameConfigs, QuestStatus } from "../../../generated/model/config";
 import { LocationProxy } from "../location/LocationProxy";
 import { UnitGateComponent } from "../map/UnitGateComponent";
 import {
@@ -70,7 +70,7 @@ const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 // 玩家跨MapHost快照的生成端与校验端必须引用同一版本，新增可传送Component时只修改这里。
 // The producer and validator of player transfer snapshots must share one version;
 // bump only this constant when a transferable Component changes the wire shape.
-const PLAYER_TRANSFER_SCHEMA_VERSION = 5;
+const PLAYER_TRANSFER_SCHEMA_VERSION = 6;
 
 export class MapHostComponent extends Component {
   private readonly maps = new Map<bigint, MapComponent>();
@@ -1181,7 +1181,8 @@ function toProtocolQuest(value: import("../quest/Quest").QuestState): import("..
     questConfigId: value.questConfigId,
     objectives: value.objectives.map((item) => ({ ...item })),
     revision: value.revision,
-    readyToComplete: value.readyToComplete,
+    status: value.status,
+    readyToComplete: value.status === QuestStatus.ReadyToTurnIn,
   };
 }
 

@@ -2845,11 +2845,13 @@ static func encode_quest_snapshot(value: Dictionary) -> PackedByteArray:
 		varint_field(result, 3, int(value["revision"]))
 	if value.has("ready_to_complete"):
 		bool_field(result, 4, bool(value["ready_to_complete"]))
+	if value.has("status"):
+		varint_field(result, 5, int(value["status"]))
 	return result
 
 static func decode_quest_snapshot(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"quest_config_id": 0, "objectives": [], "revision": 0, "ready_to_complete": false}
+	var result := {"quest_config_id": 0, "objectives": [], "revision": 0, "ready_to_complete": false, "status": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -2871,6 +2873,11 @@ static func decode_quest_snapshot(payload: PackedByteArray) -> Dictionary:
 			4:
 				if tag.wire == 0:
 					result["ready_to_complete"] = reader.boolean()
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["status"] = reader.uint32()
 				else:
 					reader.skip(tag.wire)
 			_:

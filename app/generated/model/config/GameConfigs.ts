@@ -72,7 +72,7 @@ interface GameConfigSnapshot {
   readonly QuestObjectiveConfig: ConfigTable<game.QuestObjectiveConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "3cd3e0b2d5b3d184ca7609080d73059981ae4c44c74db5b6375302b67047e8f9";
+export const GameConfigSchemaFingerprint = "5d42f027a7452449e658b62e172cbc349cb724cdcaaea73e43940dbada98f9c1";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -215,8 +215,33 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
         throw new Error(`quest config ${quest.id} references invalid objective ${objectiveId}`);
       }
     }
+    if (!Number.isSafeInteger(quest.minimumLevel) || quest.minimumLevel < 1) {
+      throw new Error(`quest config ${quest.id} has invalid minimum level ${quest.minimumLevel}`);
+    }
+    if (new Set(quest.requiredQuestIds).size !== quest.requiredQuestIds.length) {
+      throw new Error(`quest config ${quest.id} has duplicate prerequisites`);
+    }
+    for (const requiredQuestId of quest.requiredQuestIds) {
+      if (requiredQuestId === quest.id || !snapshot.QuestConfig.TryGet(requiredQuestId)) {
+        throw new Error(`quest config ${quest.id} references invalid prerequisite ${requiredQuestId}`);
+      }
+    }
+    if (quest.autoAccept && quest.requiredQuestIds.length !== 0) {
+      throw new Error(`auto-accept quest ${quest.id} cannot require completed quests`);
+    }
     validateActionConfig(`QuestConfig ${quest.id}`, "reward", quest.rewardActionType, quest.rewardActionParams, false, snapshot);
   }
+  const visitingQuests = new Set<number>();
+  const visitedQuests = new Set<number>();
+  const visitQuest = (questId: number): void => {
+    if (visitedQuests.has(questId)) return;
+    if (visitingQuests.has(questId)) throw new Error(`quest prerequisite cycle contains ${questId}`);
+    visitingQuests.add(questId);
+    for (const requiredQuestId of snapshot.QuestConfig.Get(questId).requiredQuestIds) visitQuest(requiredQuestId);
+    visitingQuests.delete(questId);
+    visitedQuests.add(questId);
+  };
+  for (const quest of snapshot.QuestConfig.GetAll()) visitQuest(quest.id);
   for (const objective of snapshot.QuestObjectiveConfig.GetAll()) {
     if (!snapshot.QuestConfig.TryGet(objective.questConfigId) || objective.objectiveType < 1 || objective.objectiveType > 3 || objective.targetConfigId <= 0 || objective.requiredCount <= 0) {
       throw new Error(`quest objective ${objective.id} has invalid owner, type, target, or count`);

@@ -25,4 +25,6 @@ export const GameErrCode = {
   QuestAlreadyAccepted: 10024,
   QuestNotFound: 10025,
   QuestNotComplete: 10026,
+  QuestPrerequisiteNotMet: 10027,
+  QuestLevelTooLow: 10028,
 } as const;

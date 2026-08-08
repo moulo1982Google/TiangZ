@@ -90,6 +90,16 @@ export enum QuestObjectiveType {
 
 
 /**
+ * 进行中任务的状态
+ */
+export enum QuestStatus {
+    InProgress = 1,
+    ReadyToTurnIn = 2,
+}
+
+
+
+/**
  * 技能与普通攻击时间线的关系
  */
 export enum SkillAutoAttackPolicy {
@@ -876,6 +886,10 @@ export class QuestConfig {
         { this.rewardActionParams = []; for(let _ele0 of _json_.reward_action_params) { let _e0; _e0 = _ele0; this.rewardActionParams.push(_e0);}}
         if (_json_.auto_accept === undefined) { throw new Error() }
         this.autoAccept = _json_.auto_accept
+        if (_json_.required_quest_ids === undefined) { throw new Error() }
+        { this.requiredQuestIds = []; for(let _ele0 of _json_.required_quest_ids) { let _e0; _e0 = _ele0; this.requiredQuestIds.push(_e0);}}
+        if (_json_.minimum_level === undefined) { throw new Error() }
+        this.minimumLevel = _json_.minimum_level
     }
 
     /**
@@ -902,8 +916,18 @@ export class QuestConfig {
      * 演示玩家首次创建时自动接取
      */
     readonly autoAccept: boolean
+    /**
+     * 前置任务配置ID列表
+     */
+    readonly requiredQuestIds: number[]
+    /**
+     * 最低玩家等级
+     */
+    readonly minimumLevel: number
 
     resolve(tables:Tables) {
+
+
 
 
 

@@ -49,6 +49,7 @@ import "../Generated/Hotfix/handlers";
 import { MapMessageScope3D } from "./MapMessageScope3D";
 import {
   GameConfigs,
+  QuestStatus,
   SkillTargetRelation,
   SpatialMode,
 } from "../Generated/SDK/Generated/Config";
@@ -533,7 +534,7 @@ export class GameBootstrap3D extends Component {
     const signature = `quests|${quests.map((quest) => [
       quest.questConfigId,
       quest.revision,
-      quest.readyToComplete ? 1 : 0,
+      quest.status,
       this.questCompleteInFlight.has(quest.questConfigId) ? 1 : 0,
       ...quest.objectives.flatMap((objective) => [objective.objectiveId, objective.current, objective.required]),
     ].join(":")).join("|")}`;
@@ -551,7 +552,7 @@ export class GameBootstrap3D extends Component {
       });
       row.textContent = `${config.name}\n${lines.join("；")}`;
       row.style.whiteSpace = "pre-line";
-      if (quest.readyToComplete) {
+      if (quest.status === QuestStatus.ReadyToTurnIn) {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = this.questCompleteInFlight.has(quest.questConfigId) ? "领取中" : "领取奖励";

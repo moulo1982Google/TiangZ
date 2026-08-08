@@ -9,6 +9,7 @@ declare module "../../../model/demo/quest/QuestComponent" {
     CompleteQuest(questConfigId: number): QuestRewardResult;
     Snapshot(): readonly QuestState[];
     CompletedQuestConfigIds(): readonly number[];
+    HasCompletedQuest(questConfigId: number): boolean;
     CaptureTransfer(): QuestTransferState;
     RestoreTransfer(state: QuestTransferState): void;
     Deserialize(): void;

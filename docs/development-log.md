@@ -7,6 +7,13 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-08：任务状态、目标索引与接取条件
+
+- 活动Quest新增`InProgress/ReadyToTurnIn`显式状态；协议新增status字段并保留旧`ready_to_complete`兼容镜像，跨MapHost传送schema升级为6。
+- `QuestComponent`新增`(objectiveType,targetConfigId)`运行时索引，进度事实只访问相关Quest/Objective；领奖、反序列化和跨地图恢复会删除或重建索引。
+- 新增`QuestEvents.BeforeAccept`同步Veto，配置表增加`required_quest_ids/minimum_level`，生成阶段校验前置任务缺失、重复、自引用和循环。
+- 新增5004“进阶试炼”演示：完成5001且等级达到2后才能接取；任务自测覆盖两阶段拒绝、成功接取、状态切换及传送恢复。
+
 ## 2026-08-08：Quest ChildEntity与领域事实任务闭环
 
 - 新增Luban热配置`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，演示击杀怪物、使用道具、进入地图三类目标；接取时冻结目标ID与要求数量，配置Reload只影响后续新任务。

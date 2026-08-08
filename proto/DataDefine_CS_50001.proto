@@ -165,5 +165,8 @@ message QuestSnapshot
   uint32 quest_config_id = 1;
   repeated QuestObjectiveSnapshot objectives = 2;
   uint32 revision = 3;
+  // 兼容旧SDK；新业务只读取status，生成快照时保持两者一致。
   bool ready_to_complete = 4;
+  // 1=InProgress, 2=ReadyToTurnIn；领奖后任务从活动快照移除。
+  uint32 status = 5;
 }

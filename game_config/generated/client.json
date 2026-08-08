@@ -276,6 +276,14 @@
       "objective_ids": [
         5103
       ]
+    },
+    {
+      "id": 5004,
+      "name": "进阶试炼",
+      "description": "达到2级并完成清理怪物后，使用1次大型生命药水。",
+      "objective_ids": [
+        5104
+      ]
     }
   ],
   "game_tbquestobjectiveconfig": [
@@ -296,6 +304,12 @@
       "quest_config_id": 5003,
       "required_count": 1,
       "description": "进入地图2"
+    },
+    {
+      "id": 5104,
+      "quest_config_id": 5004,
+      "required_count": 1,
+      "description": "使用1次大型生命药水"
     }
   ],
   "game_tbskillconfig": [
