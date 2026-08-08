@@ -9,8 +9,10 @@ const C2G_ENTER_MAP := 10010
 const C2G_LOGIN_GATE := 10008
 const C2G_MAP_SNAPSHOT_READY := 10029
 const C2G_PING := 10024
+const C2M_ACCEPT_QUEST := 10052
 const C2M_ATTACK_MONSTER := 10042
 const C2M_CAST_SKILL := 10047
+const C2M_COMPLETE_QUEST := 10054
 const C2M_FIND_PATH := 10032
 const C2M_MAP_PROBE := 10014
 const C2M_MOVE := 10013
@@ -39,11 +41,14 @@ const G2C_LOGIN_GATE := 10009
 const G2C_MAP_READY := 10012
 const G2C_MAP_SNAPSHOT_READY := 10030
 const G2C_PING := 10031
+const G2C_QUEST_PROGRESS := 10056
 const G2C_SKILL_CAST_STATE := 10049
 const G2C_SKILL_IMPACT := 10051
 const G2C_SKILL_PROJECTILE := 10050
+const M2C_ACCEPT_QUEST := 10053
 const M2C_ATTACK_MONSTER := 10043
 const M2C_CAST_SKILL := 10048
+const M2C_COMPLETE_QUEST := 10055
 const M2C_FIND_PATH := 10033
 const M2C_MAP_PROBE := 10015
 const M2C_NAVIGATE_INPUT := 10038
@@ -504,6 +509,32 @@ static func decode_c2g_ping(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_c2m_accept_quest(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("quest_config_id"):
+		varint_field(result, 1, int(value["quest_config_id"]))
+	return result
+
+static func decode_c2m_accept_quest(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"quest_config_id": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["quest_config_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_c2m_attack_monster(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("monster_id"):
@@ -552,6 +583,32 @@ static func decode_c2m_cast_skill(payload: PackedByteArray) -> Dictionary:
 			2:
 				if tag.wire == 0:
 					result["target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_c2m_complete_quest(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("quest_config_id"):
+		varint_field(result, 1, int(value["quest_config_id"]))
+	return result
+
+static func decode_c2m_complete_quest(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"quest_config_id": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["quest_config_id"] = reader.uint32()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -1213,11 +1270,15 @@ static func encode_g2c_enter_map(value: Dictionary) -> PackedByteArray:
 		string_field(result, 13, String(value["navigation_version"]))
 	if value.has("navigation_hash"):
 		string_field(result, 14, String(value["navigation_hash"]))
+	for item in value.get("quests", []):
+		bytes_field(result, 15, encode_quest_snapshot(item))
+	for item in value.get("completed_quest_config_ids", []):
+		varint_field(result, 16, int(item), true)
 	return result
 
 static func decode_g2c_enter_map(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"account": "", "map_service": "", "map_id": 0, "unit_id": 0, "x": 0.0, "z": 0.0, "entities": [], "fixed_update_ms": 0, "items": [], "y": 0.0, "map_instance_id": 0, "spatial_mode": 0, "navigation_version": "", "navigation_hash": ""}
+	var result := {"account": "", "map_service": "", "map_id": 0, "unit_id": 0, "x": 0.0, "z": 0.0, "entities": [], "fixed_update_ms": 0, "items": [], "y": 0.0, "map_instance_id": 0, "spatial_mode": 0, "navigation_version": "", "navigation_hash": "", "quests": [], "completed_quest_config_ids": []}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -1289,6 +1350,16 @@ static func decode_g2c_enter_map(payload: PackedByteArray) -> Dictionary:
 			14:
 				if tag.wire == 2:
 					result["navigation_hash"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			15:
+				if tag.wire == 2:
+					result["quests"].append(decode_quest_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			16:
+				if tag.wire == 0:
+					result["completed_quest_config_ids"].append(reader.uint32())
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -1651,6 +1722,27 @@ static func decode_g2c_ping(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_g2c_quest_progress(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	for item in value.get("quests", []):
+		bytes_field(result, 1, encode_quest_snapshot(item))
+	return result
+
+static func decode_g2c_quest_progress(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"quests": []}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 2:
+					result["quests"].append(decode_quest_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_g2c_skill_cast_state(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("phase"):
@@ -1931,6 +2023,43 @@ static func decode_item_snapshot(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_m2c_accept_quest(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("quest"):
+		if value["quest"] != null:
+			bytes_field(result, 1, encode_quest_snapshot(value["quest"]))
+	return result
+
+static func decode_m2c_accept_quest(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"quest": null}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 2:
+					result["quest"] = decode_quest_snapshot(reader.bytes_value())
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_m2c_attack_monster(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("monster_id"):
@@ -2059,6 +2188,49 @@ static func decode_m2c_cast_skill(payload: PackedByteArray) -> Dictionary:
 			9:
 				if tag.wire == 2:
 					result["interrupt_reason"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_m2c_complete_quest(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("quest_config_id"):
+		varint_field(result, 1, int(value["quest_config_id"]))
+	for item in value.get("reward_items", []):
+		bytes_field(result, 2, encode_item_snapshot(item))
+	return result
+
+static func decode_m2c_complete_quest(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"quest_config_id": 0, "reward_items": []}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["quest_config_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 2:
+					result["reward_items"].append(decode_item_snapshot(reader.bytes_value()))
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -2622,6 +2794,83 @@ static func decode_navigation_path_point(payload: PackedByteArray) -> Dictionary
 			3:
 				if tag.wire == 5:
 					result["z"] = reader.float32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_quest_objective_snapshot(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("objective_id"):
+		varint_field(result, 1, int(value["objective_id"]))
+	if value.has("current"):
+		varint_field(result, 2, int(value["current"]))
+	if value.has("required"):
+		varint_field(result, 3, int(value["required"]))
+	return result
+
+static func decode_quest_objective_snapshot(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"objective_id": 0, "current": 0, "required": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["objective_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["current"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["required"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_quest_snapshot(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("quest_config_id"):
+		varint_field(result, 1, int(value["quest_config_id"]))
+	for item in value.get("objectives", []):
+		bytes_field(result, 2, encode_quest_objective_snapshot(item))
+	if value.has("revision"):
+		varint_field(result, 3, int(value["revision"]))
+	if value.has("ready_to_complete"):
+		bool_field(result, 4, bool(value["ready_to_complete"]))
+	return result
+
+static func decode_quest_snapshot(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"quest_config_id": 0, "objectives": [], "revision": 0, "ready_to_complete": false}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["quest_config_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 2:
+					result["objectives"].append(decode_quest_objective_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["revision"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["ready_to_complete"] = reader.boolean()
 				else:
 					reader.skip(tag.wire)
 			_:

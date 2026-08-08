@@ -51,6 +51,8 @@ export type MonsterConfig = game.MonsterConfig;
 export type MonsterAreaConfig = game.MonsterAreaConfig;
 export type SkillConfig = game.SkillConfig;
 export type SkillEffectConfig = game.SkillEffectConfig;
+export type QuestConfig = game.QuestConfig;
+export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
 interface GameConfigSnapshot {
   readonly dataFingerprint: string;
@@ -66,9 +68,11 @@ interface GameConfigSnapshot {
   readonly MonsterAreaConfig: ConfigTable<game.MonsterAreaConfig>;
   readonly SkillConfig: ConfigTable<game.SkillConfig>;
   readonly SkillEffectConfig: ConfigTable<game.SkillEffectConfig>;
+  readonly QuestConfig: ConfigTable<game.QuestConfig>;
+  readonly QuestObjectiveConfig: ConfigTable<game.QuestObjectiveConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "d81dc8821bae9cecb359a8817d02d3068afa08172405ebcd38e435e9ecdb726b";
+export const GameConfigSchemaFingerprint = "3cd3e0b2d5b3d184ca7609080d73059981ae4c44c74db5b6375302b67047e8f9";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -129,6 +133,8 @@ export class GameConfigRegistry {
       MonsterAreaConfig: new ConfigTable<game.MonsterAreaConfig>(tables.TbMonsterAreaConfig.getDataList()),
       SkillConfig: new ConfigTable<game.SkillConfig>(tables.TbSkillConfig.getDataList()),
       SkillEffectConfig: new ConfigTable<game.SkillEffectConfig>(tables.TbSkillEffectConfig.getDataList()),
+      QuestConfig: new ConfigTable<game.QuestConfig>(tables.TbQuestConfig.getDataList()),
+      QuestObjectiveConfig: new ConfigTable<game.QuestObjectiveConfig>(tables.TbQuestObjectiveConfig.getDataList()),
     });
     validateSnapshot(candidate);
 
@@ -159,6 +165,8 @@ export const GameConfigs = Object.freeze({
   get MonsterAreaConfig() { return GameConfigRegistry.RequireCurrent().MonsterAreaConfig; },
   get SkillConfig() { return GameConfigRegistry.RequireCurrent().SkillConfig; },
   get SkillEffectConfig() { return GameConfigRegistry.RequireCurrent().SkillEffectConfig; },
+  get QuestConfig() { return GameConfigRegistry.RequireCurrent().QuestConfig; },
+  get QuestObjectiveConfig() { return GameConfigRegistry.RequireCurrent().QuestObjectiveConfig; },
 });
 
 function validateSnapshot(snapshot: GameConfigSnapshot): void {
@@ -195,6 +203,23 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
         false,
         snapshot,
       );
+    }
+  }
+  for (const quest of snapshot.QuestConfig.GetAll()) {
+    if (quest.objectiveIds.length === 0 || new Set(quest.objectiveIds).size !== quest.objectiveIds.length) {
+      throw new Error(`quest config ${quest.id} needs unique objectives`);
+    }
+    for (const objectiveId of quest.objectiveIds) {
+      const objective = snapshot.QuestObjectiveConfig.TryGet(objectiveId);
+      if (!objective || objective.questConfigId !== quest.id) {
+        throw new Error(`quest config ${quest.id} references invalid objective ${objectiveId}`);
+      }
+    }
+    validateActionConfig(`QuestConfig ${quest.id}`, "reward", quest.rewardActionType, quest.rewardActionParams, false, snapshot);
+  }
+  for (const objective of snapshot.QuestObjectiveConfig.GetAll()) {
+    if (!snapshot.QuestConfig.TryGet(objective.questConfigId) || objective.objectiveType < 1 || objective.objectiveType > 3 || objective.targetConfigId <= 0 || objective.requiredCount <= 0) {
+      throw new Error(`quest objective ${objective.id} has invalid owner, type, target, or count`);
     }
   }
   for (const buff of snapshot.BuffConfig.GetAll()) {
@@ -458,7 +483,7 @@ function validateActionConfig(
   allowEmptyRemove: boolean,
   snapshot: GameConfigSnapshot,
 ): void {
-  if (!Number.isSafeInteger(type) || type < 0 || type > 6) {
+  if (!Number.isSafeInteger(type) || type < 0 || type > 7) {
     throw new Error(`${owner} has unsupported ${phase} Action type ${type}`);
   }
   if (!parameters.every(Number.isSafeInteger)) {
@@ -476,7 +501,9 @@ function validateActionConfig(
             ? 2
             : type === 6
               ? 1
-              : undefined;
+              : type === 7
+                ? 2
+                : undefined;
   if (expected !== undefined && parameters.length !== expected) {
     throw new Error(`${owner} ${phase} Action expects ${expected} parameters`);
   }
@@ -508,6 +535,9 @@ function validateActionConfig(
   }
   if (type === 6 && parameters[0] < 0) {
     throw new Error(`${owner} ${phase} Heal needs a non-negative amount`);
+  }
+  if (type === 7 && (!snapshot.ItemConfig.TryGet(parameters[0]) || parameters[1] <= 0)) {
+    throw new Error(`${owner} ${phase} GrantItem needs [valid ItemConfig, positive count]`);
   }
 }
 

@@ -620,13 +620,17 @@ QuestComponent
 ```
 
 - 玩家没有进行中任务时，QuestComponent可以不包含任何Quest子Entity。
-- 接受任务时通过`AddChild(Quest, questInstanceId, ...)`创建进行中实例。
-- 进度变化默认立即通知任务拥有者客户端，不广播给普通地图观察者。
+- 接受任务时通过`QuestComponent.AcceptQuest(questConfigId)`创建进行中实例；当前不可重复任务直接以`BigInt(questConfigId)`作为Child ID。
+- 接取时冻结`objectiveId/current/required`。热配置切换只影响新接取任务，不能让进行中的要求数量漂移。
+- 怪物、道具和地图只在事实成功提交后同步发布`QuestEvents.Progress`；稳定事件Handler负责调用`ApplyProgress`。来源模块禁止遍历Quest或直接改进度。
+- 进度变化通过owner-only `G2C_QuestProgress`通知拥有者客户端，并按QuestConfigId在同帧latest合并，不广播给普通地图观察者。
 - 只有组队共享任务明确需要时，才向`PartyAudience`发送必要的进度摘要；不要把完整Quest对象发送给队友。
-- 完成时由QuestComponent统一执行奖励结算、写入已完成Quest配置ID、`RemoveChild`和客户端完成通知，Handler不应分别修改这几处状态。
+- 完成时由`QuestComponent.CompleteQuest`在PlayerUnit有序mailbox内同步执行奖励Action、写入已完成Quest配置ID和`RemoveChild`；Handler只负责RPC与提交后的奖励同步，不能把这三步拆开await。
 - 登录或重连时向本人发送活动Quest和已完成摘要的全量快照。队友进入AOI时，可随Unit整体Snapshot取得允许共享的任务摘要；普通观察者的Unit快照不包含Quest。离开AOI时只移除Unit。
 
 如果同一配置任务不会同时存在多个活动实例，可以直接用配置ID作为ChildEntity Id；可重复任务、限时活动任务等允许并存时，必须使用独立Quest实例ID，并单独保存`configId`。已完成集合始终记录稳定配置ID，不保存已经销毁的InstanceId。
+
+当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；演示目标覆盖击杀怪物、使用道具和进入地图。`GrantItem(ItemConfigId, Count)`当前创建一个新Item堆叠，堆叠合并属于Inventory策略。多Action奖励要在引入事务批次后再开放，不能让中途失败留下“已发一半但任务未完成”的状态。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
 
 ## 广播给谁与如何广播
 

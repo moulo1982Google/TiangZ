@@ -255,6 +255,52 @@ const RAW_DATA: Record<string, unknown> = {
       "attack_range": 2.5
     }
   ],
+  "game_tbquestconfig": [
+    {
+      "id": 5001,
+      "name": "清理怪物",
+      "description": "击败1只怪A。",
+      "objective_ids": [
+        5101
+      ]
+    },
+    {
+      "id": 5002,
+      "name": "试用药水",
+      "description": "使用1次小型生命药水。",
+      "objective_ids": [
+        5102
+      ]
+    },
+    {
+      "id": 5003,
+      "name": "前往地图2",
+      "description": "进入地图2。",
+      "objective_ids": [
+        5103
+      ]
+    }
+  ],
+  "game_tbquestobjectiveconfig": [
+    {
+      "id": 5101,
+      "quest_config_id": 5001,
+      "required_count": 1,
+      "description": "击败怪A"
+    },
+    {
+      "id": 5102,
+      "quest_config_id": 5002,
+      "required_count": 1,
+      "description": "使用小型生命药水"
+    },
+    {
+      "id": 5103,
+      "quest_config_id": 5003,
+      "required_count": 1,
+      "description": "进入地图2"
+    }
+  ],
   "game_tbskillconfig": [
     {
       "id": 3001,
@@ -358,8 +404,10 @@ export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 export type MonsterConfig = game.MonsterConfig;
 export type SkillConfig = game.SkillConfig;
+export type QuestConfig = game.QuestConfig;
+export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "f0c88392ba2b880d57c0f1c6ff4da4a967c7b739cb4c3f717a95b589f325f426";
+export const GameConfigFingerprint = "c8627d79439d107f4084f9dcfb3ad73df5fa995cb86625c3816f7aa00d13adeb";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),
@@ -369,4 +417,6 @@ export const GameConfigs = Object.freeze({
   AoiSyncTierConfig: new ConfigTable<game.AoiSyncTierConfig>(tables.TbAoiSyncTierConfig.getDataList()),
   MonsterConfig: new ConfigTable<game.MonsterConfig>(tables.TbMonsterConfig.getDataList()),
   SkillConfig: new ConfigTable<game.SkillConfig>(tables.TbSkillConfig.getDataList()),
+  QuestConfig: new ConfigTable<game.QuestConfig>(tables.TbQuestConfig.getDataList()),
+  QuestObjectiveConfig: new ConfigTable<game.QuestObjectiveConfig>(tables.TbQuestObjectiveConfig.getDataList()),
 });

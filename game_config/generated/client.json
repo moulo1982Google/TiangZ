@@ -252,6 +252,52 @@
       "attack_range": 2.5
     }
   ],
+  "game_tbquestconfig": [
+    {
+      "id": 5001,
+      "name": "清理怪物",
+      "description": "击败1只怪A。",
+      "objective_ids": [
+        5101
+      ]
+    },
+    {
+      "id": 5002,
+      "name": "试用药水",
+      "description": "使用1次小型生命药水。",
+      "objective_ids": [
+        5102
+      ]
+    },
+    {
+      "id": 5003,
+      "name": "前往地图2",
+      "description": "进入地图2。",
+      "objective_ids": [
+        5103
+      ]
+    }
+  ],
+  "game_tbquestobjectiveconfig": [
+    {
+      "id": 5101,
+      "quest_config_id": 5001,
+      "required_count": 1,
+      "description": "击败怪A"
+    },
+    {
+      "id": 5102,
+      "quest_config_id": 5002,
+      "required_count": 1,
+      "description": "使用小型生命药水"
+    },
+    {
+      "id": 5103,
+      "quest_config_id": 5003,
+      "required_count": 1,
+      "description": "进入地图2"
+    }
+  ],
   "game_tbskillconfig": [
     {
       "id": 3001,

@@ -179,6 +179,70 @@
       "attack_range": 2.5
     }
   ],
+  "game_tbquestconfig": [
+    {
+      "id": 5001,
+      "name": "清理怪物",
+      "objective_ids": [
+        5101
+      ],
+      "reward_action_type": 7,
+      "reward_action_params": [
+        1001,
+        2
+      ],
+      "auto_accept": true
+    },
+    {
+      "id": 5002,
+      "name": "试用药水",
+      "objective_ids": [
+        5102
+      ],
+      "reward_action_type": 7,
+      "reward_action_params": [
+        1002,
+        1
+      ],
+      "auto_accept": true
+    },
+    {
+      "id": 5003,
+      "name": "前往地图2",
+      "objective_ids": [
+        5103
+      ],
+      "reward_action_type": 7,
+      "reward_action_params": [
+        1001,
+        3
+      ],
+      "auto_accept": true
+    }
+  ],
+  "game_tbquestobjectiveconfig": [
+    {
+      "id": 5101,
+      "quest_config_id": 5001,
+      "objective_type": 1,
+      "target_config_id": 1,
+      "required_count": 1
+    },
+    {
+      "id": 5102,
+      "quest_config_id": 5002,
+      "objective_type": 2,
+      "target_config_id": 1001,
+      "required_count": 1
+    },
+    {
+      "id": 5103,
+      "quest_config_id": 5003,
+      "objective_type": 3,
+      "target_config_id": 2,
+      "required_count": 1
+    }
+  ],
   "game_tbskillconfig": [
     {
       "id": 3001,

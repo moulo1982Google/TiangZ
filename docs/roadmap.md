@@ -288,7 +288,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ## Phase 4：MMORPG 业务扩展
 
-状态：已进入`0.4.x`开发线；Phase 4.0空间契约、Phase 4.1 Rust AOI、Phase 4.2.5导航动态障碍和Phase 4.4最小怪物闭环已完成，复杂战斗与持久化仍在后续阶段。
+状态：已进入`0.4.x`开发线；Phase 4.0空间契约、Phase 4.1 Rust AOI、Phase 4.2.5导航动态障碍、Phase 4.4怪物/战斗/技能闭环和首版任务系统已完成，持久化仍在后续阶段。
 
 计划：
 
@@ -299,10 +299,11 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 从2026-08-01起，新容量基线默认采用每玩家`2Hz`（500ms）持续移动心跳与`0.2Hz`（5秒）MapProbe；按下、转向和停止仍立即发送，Gate Ping保持5秒一次。AOI Cold配置固定为3×3 Enter/20Hz与5×5 Detach/5Hz，不再使用7×7/1Hz。历史负载结果只保留原口径，不与新行为基线直接横向比较。
 - 3000人AOI密度矩阵已经覆盖10×10、15×15和20×20 Grid。扁平Grid与连续位图改造后，Map CPU平均由旧`74.1%/56.7%/57.3%`降至`55.0%/50.7%/42.9%`，正式窗口均无错误、过载、超时和背压。`perf:map-capacity:grid-matrix`支持一键回归，`--report-runs`可在单档复测后从三份有效原始报告重建矩阵；Bench后置Place RPC仍会在稀疏地图形成初始化突发，后续应并入Bench进图事务。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
-- 怪物巡逻、技能和更完整战斗；Phase 4.4当前已完成固定刷点、主动/被动怪、统一仇恨、普通攻击和玩家自动平A最小闭环。自动平A使用固定`Update10Hz`判定，怪物AI使用`Update5Hz`，重生/清理使用`Update1Hz`，不为每个玩家或怪物创建Timer。
+- 怪物与战斗：Phase 4.4已完成固定刷点、主动/被动怪、统一仇恨、普通攻击、玩家自动平A、Action/Buff和首批五技能闭环。自动平A与施法使用固定`Update10Hz`，怪物AI使用`Update5Hz`，重生/清理使用`Update1Hz`，不为每个玩家、怪物或Cast创建独立Update/Timer。
 - 技能系统先按[技能与施法系统设计](design/skill-system.md)实现单位目标瞬发和普通读条：SkillComponent统一服务玩家与怪物，ActiveCast是瞬时纯数据而不是Actor/Entity，10Hz按服务器deadline推进；技能完成只执行Action，目标伤害继续进入Combat。压制用于验收`Keep`平A，火球术用于验收移动中断和`ResetOnComplete`。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
+- 首版任务系统已完成：`QuestComponent -> Quest ChildEntity`保存活动任务，击杀/用道具/进图以同步领域事件解耦进度来源，owner-only latest同步进度，Action发奖，跨地图保留活动与完成状态。后续再增加NPC接取、可重复任务、组队共享投影、持久化与多Action事务奖励。
 
 ### Phase 4.0：3D空间契约冻结
 

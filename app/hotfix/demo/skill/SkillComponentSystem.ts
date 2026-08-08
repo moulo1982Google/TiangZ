@@ -29,6 +29,7 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
   }
 
   InterruptByMovement(): boolean {
+    if (!this.activeCast) return false;
     return this.DomainScene().GetComponent(SkillMapComponent).InterruptByMovement(this.owner);
   }
 

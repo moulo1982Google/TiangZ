@@ -20,6 +20,7 @@ export enum ActionType {
     DealDamage = 4,
     RegisterDamageAbsorber = 5,
     Heal = 6,
+    GrantItem = 7,
 }
 
 
@@ -73,6 +74,17 @@ export enum BuffStackScope {
 export enum ConfigReloadMode {
     Hot = 1,
     Cold = 2,
+}
+
+
+
+/**
+ * 任务目标类型
+ */
+export enum QuestObjectiveType {
+    KillMonster = 1,
+    UseItem = 2,
+    EnterMap = 3,
 }
 
 
@@ -622,6 +634,90 @@ export class PlayerConfig {
 
 
 export namespace game {
+export class QuestConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.name === undefined) { throw new Error() }
+        this.name = _json_.name
+        if (_json_.description === undefined) { throw new Error() }
+        this.description = _json_.description
+        if (_json_.objective_ids === undefined) { throw new Error() }
+        { this.objectiveIds = []; for(let _ele0 of _json_.objective_ids) { let _e0; _e0 = _ele0; this.objectiveIds.push(_e0);}}
+    }
+
+    /**
+     * 任务配置ID
+     */
+    readonly id: number
+    /**
+     * 显示名称
+     */
+    readonly name: string
+    /**
+     * 任务说明
+     */
+    readonly description: string
+    /**
+     * 目标配置ID列表
+     */
+    readonly objectiveIds: number[]
+
+    resolve(tables:Tables) {
+
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
+export class QuestObjectiveConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.quest_config_id === undefined) { throw new Error() }
+        this.questConfigId = _json_.quest_config_id
+        if (_json_.required_count === undefined) { throw new Error() }
+        this.requiredCount = _json_.required_count
+        if (_json_.description === undefined) { throw new Error() }
+        this.description = _json_.description
+    }
+
+    /**
+     * 目标ID
+     */
+    readonly id: number
+    /**
+     * 所属任务ID
+     */
+    readonly questConfigId: number
+    /**
+     * 需求数量
+     */
+    readonly requiredCount: number
+    /**
+     * 目标说明
+     */
+    readonly description: string
+
+    resolve(tables:Tables) {
+
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
 export class SkillConfig {
 
     constructor(_json_: any) {
@@ -1000,6 +1096,74 @@ export class TbSkillConfig {
 }
 
 
+export namespace game {
+/**
+ * 任务配置
+ */
+export class TbQuestConfig {
+    private _dataMap: Map<number, game.QuestConfig>
+    private _dataList: game.QuestConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.QuestConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.QuestConfig
+            _v = new game.QuestConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.QuestConfig> { return this._dataMap; }
+    getDataList(): game.QuestConfig[] { return this._dataList; }
+
+    get(key: number): game.QuestConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
+export namespace game {
+/**
+ * 任务目标配置
+ */
+export class TbQuestObjectiveConfig {
+    private _dataMap: Map<number, game.QuestObjectiveConfig>
+    private _dataList: game.QuestObjectiveConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.QuestObjectiveConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.QuestObjectiveConfig
+            _v = new game.QuestObjectiveConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.QuestObjectiveConfig> { return this._dataMap; }
+    getDataList(): game.QuestObjectiveConfig[] { return this._dataList; }
+
+    get(key: number): game.QuestObjectiveConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
 
 type JsonLoader = (file: string) => any
 
@@ -1044,6 +1208,16 @@ export class Tables {
      * 技能施法规则配置
      */
     get TbSkillConfig(): game.TbSkillConfig  { return this._TbSkillConfig;}
+    private _TbQuestConfig: game.TbQuestConfig
+    /**
+     * 任务配置
+     */
+    get TbQuestConfig(): game.TbQuestConfig  { return this._TbQuestConfig;}
+    private _TbQuestObjectiveConfig: game.TbQuestObjectiveConfig
+    /**
+     * 任务目标配置
+     */
+    get TbQuestObjectiveConfig(): game.TbQuestObjectiveConfig  { return this._TbQuestObjectiveConfig;}
 
     constructor(loader: JsonLoader) {
         this._TbItemConfig = new game.TbItemConfig(loader('game_tbitemconfig'))
@@ -1054,6 +1228,8 @@ export class Tables {
         this._TbMonsterConfig = new game.TbMonsterConfig(loader('game_tbmonsterconfig'))
         this._TbBuffConfig = new game.TbBuffConfig(loader('game_tbbuffconfig'))
         this._TbSkillConfig = new game.TbSkillConfig(loader('game_tbskillconfig'))
+        this._TbQuestConfig = new game.TbQuestConfig(loader('game_tbquestconfig'))
+        this._TbQuestObjectiveConfig = new game.TbQuestObjectiveConfig(loader('game_tbquestobjectiveconfig'))
 
         this._TbItemConfig.resolve(this)
         this._TbMapConfig.resolve(this)
@@ -1063,6 +1239,8 @@ export class Tables {
         this._TbMonsterConfig.resolve(this)
         this._TbBuffConfig.resolve(this)
         this._TbSkillConfig.resolve(this)
+        this._TbQuestConfig.resolve(this)
+        this._TbQuestObjectiveConfig.resolve(this)
     }
 }
 

@@ -31,6 +31,8 @@ import {
   G2C_ItemChangedCodec,
   G2C_MapReady,
   G2C_MapReadyCodec,
+  G2C_QuestProgress,
+  G2C_QuestProgressCodec,
   G2C_SkillCastState,
   G2C_SkillCastStateCodec,
   G2C_SkillImpact,
@@ -107,6 +109,11 @@ export const ClientMessages = {
     msgcode: MsgCode.G2C_ItemChanged,
     codec: G2C_ItemChangedCodec,
   }),
+  QuestProgress: defineMessage<G2C_QuestProgress>({
+    name: "Client.QuestProgress",
+    msgcode: MsgCode.G2C_QuestProgress,
+    codec: G2C_QuestProgressCodec,
+  }),
   BuffAdded: defineMessage<G2C_BuffAdded>({
     name: "Client.BuffAdded",
     msgcode: MsgCode.G2C_BuffAdded,
@@ -182,6 +189,7 @@ export const AllMessageDescriptors = [
   ClientMessages.EntityState,
   ClientMessages.AutoAttackState,
   ClientMessages.ItemChanged,
+  ClientMessages.QuestProgress,
   ClientMessages.BuffAdded,
   ClientMessages.BuffRemoved,
   ClientMessages.BuffDetail,

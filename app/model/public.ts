@@ -53,6 +53,13 @@ export {
 export { ItemComponent } from "./demo/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";
 export { ItemEvents, type BeforeUseItemEvent } from "./demo/item/ItemEvents";
+export { Quest, type AwakeQuest, type QuestObjectiveState, type QuestState } from "./demo/quest/Quest";
+export {
+  QuestComponent,
+  type QuestRewardResult,
+  type QuestTransferState,
+} from "./demo/quest/QuestComponent";
+export { QuestEvents, type QuestProgressEvent } from "./demo/quest/QuestEvents";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
 export {
   ActionType,
@@ -167,6 +174,9 @@ export {
   type MonsterAreaConfig as MonsterAreaConfigData,
   type SkillConfig as SkillConfigData,
   type SkillEffectConfig as SkillEffectConfigData,
+  QuestObjectiveType,
+  type QuestConfig as QuestConfigData,
+  type QuestObjectiveConfig as QuestObjectiveConfigData,
 } from "../generated/model/config";
 export {
   MonsterComponent,

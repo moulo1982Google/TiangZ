@@ -27,6 +27,7 @@ import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/NumericType";
 import { Item } from "../app/model/demo/item/Item";
 import { ItemComponent } from "../app/model/demo/item/ItemComponent";
+import { SkillComponent } from "../app/model/demo/skill/SkillComponent";
 import { TimeSystem } from "../app/core/runtime/TimeSystem";
 import { BinaryWriter } from "../app/core/protocol/binary";
 import { packFrame } from "../app/core/protocol/registry";
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
     await import("../app/hotfix/demo/numeric/NumericComponentSystem");
     await import("../app/hotfix/demo/item/ItemSystem");
     await import("../app/hotfix/demo/item/ItemComponentSystem");
+    await import("../app/hotfix/demo/skill/SkillComponentSystem");
     HotfixSystem.Commit();
     await Promise.resolve();
     testGeneratedNativeHandleScalarAccess();
@@ -474,6 +476,7 @@ async function testPlayerUnitComponents(): Promise<void> {
     [NumericType.MoveSpeedBase]: 10_000n,
   });
   player.AddComponent(UnitGateComponent, "gate-1");
+  player.AddComponent(SkillComponent);
   const firstInstanceId = player.InstanceId;
 
   assert.equal(player.Id, 1000);
@@ -555,10 +558,14 @@ async function testPlayerUnitComponents(): Promise<void> {
   const { MonsterUnitSystem } = await import(
     "../app/hotfix/demo/monster/MonsterUnitSystem"
   );
+  const { SkillComponentSystem } = await import(
+    "../app/hotfix/demo/skill/SkillComponentSystem"
+  );
   systemFor(NumericComponent)(NumericComponentSystem);
   systemFor(Item)(ItemSystem);
   systemFor(ItemComponent)(ItemComponentSystem);
   systemFor(MonsterUnit)(MonsterUnitSystem);
+  systemFor(SkillComponent)(SkillComponentSystem);
   HotfixSystem.Commit();
   assert.equal(
     player.Move({ inputX: 0, inputZ: 1, sequence: 6 }),

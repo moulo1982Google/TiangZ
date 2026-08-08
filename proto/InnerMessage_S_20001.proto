@@ -46,6 +46,8 @@ message M2G_SecondEnterMap // IActorResponse
   repeated ItemSnapshot items = 8;
   float y = 9;
   uint64 map_instance_id = 10;
+  repeated QuestSnapshot quests = 11;
+  repeated uint32 completed_quest_config_ids = 12;
 }
 
 message M2G_EnterMap // IResponse
@@ -62,6 +64,8 @@ message M2G_EnterMap // IResponse
   uint64 map_instance_id = 10;
   uint64 location_revision = 11;
   float y = 12;
+  repeated QuestSnapshot quests = 13;
+  repeated uint32 completed_quest_config_ids = 14;
 }
 
 //ResponseType M2G_TransferPlayer
@@ -92,6 +96,8 @@ message M2G_TransferPlayer // IActorResponse
   repeated ItemSnapshot items = 12;
   float y = 13;
   MapHostEndpoint map_host = 14;
+  repeated QuestSnapshot quests = 15;
+  repeated uint32 completed_quest_config_ids = 16;
 }
 
 // @ets.msg protocol=Gate method=MapReady
@@ -180,6 +186,8 @@ message PlayerTransferSnapshot
   uint64 target_map_instance_id = 15;
   repeated BuffTransferSnapshot buffs = 16;
   SkillTransferSnapshot skill = 17;
+  repeated QuestSnapshot quests = 18;
+  repeated uint32 completed_quest_config_ids = 19;
 }
 
 message MapInstanceSnapshot
@@ -373,6 +381,8 @@ message M2M_CommitPlayerTransferResponse // IResponse
   string map_host_name = 11;
   uint64 map_instance_id = 12;
   float y = 13;
+  repeated QuestSnapshot quests = 14;
+  repeated uint32 completed_quest_config_ids = 15;
 }
 
 //ResponseType M2M_AbortPlayerTransferResponse

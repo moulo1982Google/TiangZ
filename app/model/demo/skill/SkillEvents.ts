@@ -1,6 +1,5 @@
-import { defineVetoEvent, SystemErrCode } from "../../../core/public";
+import { defineVetoEvent, SystemErrCode, type Unit } from "../../../core/public";
 import type { PlayerUnit } from "../map/PlayerUnit";
-import type { Unit } from "../../../core/runtime/Unit";
 import type { SkillDefinition } from "./SkillDefinition";
 
 /** 施法提交前的同步只读上下文；监听器不得改冷却、Buff、Numeric或目标。 / Synchronous read-only context before cast commit; listeners must not mutate cooldowns, Buffs, Numerics, or targets. */

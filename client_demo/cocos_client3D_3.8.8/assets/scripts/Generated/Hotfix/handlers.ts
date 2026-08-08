@@ -8,6 +8,7 @@ import "../../Demo/Handlers/G2C_EntityNavigateHandler";
 import "../../Demo/Handlers/G2C_EntityNumericHandler";
 import "../../Demo/Handlers/G2C_EntityStateHandler";
 import "../../Demo/Handlers/G2C_ItemChangedHandler";
+import "../../Demo/Handlers/G2C_QuestProgressHandler";
 import "../../Demo/Handlers/G2C_SkillCastStateHandler";
 import "../../Demo/Handlers/G2C_SkillImpactHandler";
 import "../../Demo/Handlers/G2C_SkillProjectileHandler";

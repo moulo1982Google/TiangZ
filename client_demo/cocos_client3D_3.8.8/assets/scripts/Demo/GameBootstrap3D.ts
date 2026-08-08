@@ -40,8 +40,10 @@ import type {
   G2C_SkillCastState,
   G2C_SkillImpact,
   G2C_SkillProjectile,
+  G2C_QuestProgress,
   ItemSnapshot,
   MapEntitySnapshot,
+  QuestSnapshot,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
 import "../Generated/Hotfix/handlers";
 import { MapMessageScope3D } from "./MapMessageScope3D";
@@ -242,6 +244,8 @@ export class GameBootstrap3D extends Component {
   private skillCastProgress?: HTMLElement;
   private buffPanel?: HTMLElement;
   private buffListElement?: HTMLElement;
+  private questPanel?: HTMLElement;
+  private questListElement?: HTMLElement;
   private displayedPingAtMs = -1;
   private loginFlow?: LoginFlow;
   private gateSocket?: RpcSocket;
@@ -257,6 +261,7 @@ export class GameBootstrap3D extends Component {
   private inputRefreshElapsed = 0;
   private leftMouseHeld = false;
   private leftMouseDragDistance = 0;
+  private leftMouseForwardChordUsed = false;
   private rightMouseHeld = false;
   /** 三个Yaw都采用TiangZ语义：0朝+Z、前向量为(sin,0,cos)；它们只承担不同的权威/表现职责。 / All three yaw values use TiangZ semantics while serving authoritative and presentation roles. */
   private playerYaw = 0;
@@ -291,6 +296,10 @@ export class GameBootstrap3D extends Component {
   private readonly buffHudEntries = new Map<string, BuffHudEntry>();
   private readonly skillHudSlots = new Map<number, SkillHudSlot>();
   private readonly skillCooldownEnds = new Map<number, number>();
+  private readonly quests = new Map<number, QuestSnapshot>();
+  private readonly completedQuestConfigIds = new Set<number>();
+  private readonly questCompleteInFlight = new Set<number>();
+  private questHudSignature = "";
   private selectedMonsterUnitId = 0;
   private autoAttackEnabled = false;
   private autoAttackTargetUnitId = 0;
@@ -327,6 +336,7 @@ export class GameBootstrap3D extends Component {
     this.updateSkillHud();
     this.updateBuffHud();
     this.updateHotbarHud();
+    this.updateQuestHud();
     this.updateDirectionalInput(deltaTime);
     this.advanceDirectionalPrediction(deltaTime);
     this.advanceAlongPath(deltaTime);
@@ -373,6 +383,10 @@ export class GameBootstrap3D extends Component {
     this.skillHudSlots.clear();
     this.skillCooldownEnds.clear();
     this.buffPanel?.remove();
+    this.questPanel?.remove();
+    this.questPanel = undefined;
+    this.questListElement = undefined;
+    this.questHudSignature = "";
     this.buffPanel = undefined;
     this.buffListElement = undefined;
     this.buffHudEntries.clear();
@@ -483,9 +497,91 @@ export class GameBootstrap3D extends Component {
     this.buildBuffHud(document);
     this.buildHotbarHud(document);
     this.buildSkillBarHud(document);
+    this.buildQuestHud(document);
     this.buildMobileHud(document);
     this.buildMobileControls(document);
     this.setStatus("正在连接 LoginMgr 并进入 Map 100...");
+  }
+
+  /** 创建本人任务追踪栏；进度来自服务端latest状态，领奖必须再次请求服务端。 / Creates an owner-only quest tracker; progress comes from server latest state and rewards require a server RPC. */
+  private buildQuestHud(document: Document): void {
+    const panel = document.createElement("section");
+    panel.className = "cocos3d-quest-hud";
+    Object.assign(panel.style, {
+      position: "fixed", right: "24px", top: "300px", zIndex: "10020",
+      width: "min(340px, calc(100vw - 48px))", padding: "10px 12px",
+      color: "#eef7f3", background: "rgba(13, 22, 25, 0.86)", border: "1px solid #6b8793",
+      font: "14px/1.45 system-ui, sans-serif", boxSizing: "border-box", pointerEvents: "auto",
+    });
+    const title = document.createElement("div");
+    title.textContent = "任务追踪";
+    title.style.fontWeight = "700";
+    title.style.marginBottom = "6px";
+    const list = document.createElement("div");
+    panel.append(title, list);
+    document.body.appendChild(panel);
+    this.questPanel = panel;
+    this.questListElement = list;
+  }
+
+  /** 仅在任务状态变化时重建短列表，避免每帧替换按钮导致按下与抬起落在不同DOM节点。 / Rebuilds the short list only when quest state changes so pointer down/up cannot land on different DOM nodes. */
+  private updateQuestHud(): void {
+    const list = this.questListElement;
+    const document = globalThis.document;
+    if (!list || !document) return;
+    const quests = [...this.quests.values()].sort((a, b) => a.questConfigId - b.questConfigId);
+    const signature = `quests|${quests.map((quest) => [
+      quest.questConfigId,
+      quest.revision,
+      quest.readyToComplete ? 1 : 0,
+      this.questCompleteInFlight.has(quest.questConfigId) ? 1 : 0,
+      ...quest.objectives.flatMap((objective) => [objective.objectiveId, objective.current, objective.required]),
+    ].join(":")).join("|")}`;
+    if (signature === this.questHudSignature) return;
+    this.questHudSignature = signature;
+    list.replaceChildren();
+    for (const quest of quests) {
+      const config = GameConfigs.QuestConfig.Get(quest.questConfigId);
+      const row = document.createElement("div");
+      row.style.padding = "5px 0";
+      row.style.borderTop = "1px solid rgba(255,255,255,0.12)";
+      const lines = quest.objectives.map((objective) => {
+        const objectiveConfig = GameConfigs.QuestObjectiveConfig.Get(objective.objectiveId);
+        return `${objectiveConfig.description} ${objective.current}/${objective.required}`;
+      });
+      row.textContent = `${config.name}\n${lines.join("；")}`;
+      row.style.whiteSpace = "pre-line";
+      if (quest.readyToComplete) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = this.questCompleteInFlight.has(quest.questConfigId) ? "领取中" : "领取奖励";
+        button.disabled = this.questCompleteInFlight.has(quest.questConfigId);
+        button.style.marginLeft = "8px";
+        button.style.touchAction = "manipulation";
+        this.bindTouchSafeHudButton(button, () => this.completeQuest(quest.questConfigId));
+        row.appendChild(button);
+      }
+      list.appendChild(row);
+    }
+    if (this.quests.size === 0) list.textContent = "暂无进行中任务";
+  }
+
+  private async completeQuest(questConfigId: number): Promise<void> {
+    if (!this.mapClient || this.questCompleteInFlight.has(questConfigId)) return;
+    this.questCompleteInFlight.add(questConfigId);
+    this.updateQuestHud();
+    try {
+      const response = await this.mapClient.completeQuest({ questConfigId });
+      this.quests.delete(response.questConfigId);
+      this.completedQuestConfigIds.add(response.questConfigId);
+      for (const item of response.rewardItems) this.ApplyItemSnapshot(item);
+      this.setStatus(`任务完成：${GameConfigs.QuestConfig.Get(response.questConfigId).name}`);
+    } catch (error) {
+      this.setStatus(`领取任务奖励失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.questCompleteInFlight.delete(questConfigId);
+      this.updateQuestHud();
+    }
   }
 
   /** 创建玩家自己的HP/MP HUD；数据只来自服务端Numeric，不在客户端推导伤害或资源变化。 / Creates the local HP/MP HUD; values come only from server Numeric pushes, and the client never derives damage or resource changes. */
@@ -2006,6 +2102,11 @@ export class GameBootstrap3D extends Component {
       this.updateBuffHud();
       this.inventoryItems.clear();
       for (const item of result.enterMap.items) this.ApplyItemSnapshot(item);
+      this.quests.clear();
+      for (const quest of result.enterMap.quests) this.quests.set(quest.questConfigId, quest);
+      this.completedQuestConfigIds.clear();
+      for (const id of result.enterMap.completedQuestConfigIds) this.completedQuestConfigIds.add(id);
+      this.updateQuestHud();
       const localEntity = result.enterMap.entities.find((entity) => entity.unitId === this.localUnitId);
       this.localNumerics.clear();
       if (localEntity) this.ApplyLocalSnapshotNumerics(localEntity);
@@ -2044,7 +2145,7 @@ export class GameBootstrap3D extends Component {
         `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
           ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路"
-          : "W/S前后，A/D转向；左键拖动环视、短按地面寻路；按住右键时A/D横移；1平A，2/3药水，4-8技能；E开关动态门"),
+          : "W/S前后，A/D转向；左右鼠标同按前进；左键拖动环视、短按地面寻路；按住右键时A/D横移；1平A，2/3药水，4-8技能；E开关动态门"),
       );
     } catch (error) {
       this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
@@ -2225,6 +2326,15 @@ export class GameBootstrap3D extends Component {
     this.ApplyItemSnapshot(message.item);
   }
 
+  /** 合并服务端可覆盖任务进度；客户端不自行从击杀或用药表现推导任务状态。 / Merges replaceable server quest state without deriving progress from local visuals. */
+  ApplyQuestProgress(message: G2C_QuestProgress): void {
+    for (const quest of message.quests) {
+      const current = this.quests.get(quest.questConfigId);
+      if (!current || quest.revision >= current.revision) this.quests.set(quest.questConfigId, quest);
+    }
+    this.updateQuestHud();
+  }
+
   /** 创建一次纯表现刀光；命中、伤害和目标有效性仍由服务端决定。 / Creates a presentation-only slash; hit, damage, and target validity remain server-authoritative. */
   private playAttackSlash(targetUnitId: number, sizeScale: number, monsterAttack: boolean): void {
     const parent = this.player.parent;
@@ -2336,9 +2446,12 @@ export class GameBootstrap3D extends Component {
     }
     if (event.getButton() !== EventMouse.BUTTON_LEFT) return;
     const wasOrbitDrag = this.leftMouseDragDistance >= MOUSE_ORBIT_DRAG_THRESHOLD_PIXELS;
+    const usedForwardChord = this.leftMouseForwardChordUsed;
     this.leftMouseHeld = false;
     this.leftMouseDragDistance = 0;
-    if (wasOrbitDrag) return;
+    this.leftMouseForwardChordUsed = false;
+    if (usedForwardChord) this.markInputDirty();
+    if (wasOrbitDrag || usedForwardChord) return;
     const location = event.getLocation();
     const monster = this.pickMonsterAtScreen(location.x, location.y);
     if (monster) {
@@ -2412,13 +2525,19 @@ export class GameBootstrap3D extends Component {
     if (event.getButton() === EventMouse.BUTTON_LEFT) {
       this.leftMouseHeld = true;
       this.leftMouseDragDistance = 0;
+      this.leftMouseForwardChordUsed = this.rightMouseHeld;
       // 捕获当前实际观察角，避免路径跟随尚未收敛时按下左键造成镜头跳变。
       // Capture the visible angle so pressing left during a follow blend cannot make the camera jump.
       this.cameraYawOffset = normalizeRadians(this.cameraYaw - this.playerYaw);
+      if (this.rightMouseHeld) {
+        this.interruptClickNavigation();
+        this.markInputDirty();
+      }
       return;
     }
     if (event.getButton() !== EventMouse.BUTTON_RIGHT) return;
     this.rightMouseHeld = true;
+    if (this.leftMouseHeld) this.leftMouseForwardChordUsed = true;
     this.interruptClickNavigation();
     this.markInputDirty();
   }
@@ -2605,7 +2724,10 @@ export class GameBootstrap3D extends Component {
   }
 
   private currentDirectionalInput(): { forward: number; strafe: number } {
-    const keyboardForward = Number(this.isPressed(KeyCode.KEY_W) || this.isPressed(KeyCode.ARROW_UP)) -
+    // 左右鼠标同时按住等同W；任一键松开后立即回到键盘/摇杆输入，并且不会生成地面点击。
+    // Holding both mouse buttons acts as W; releasing either returns to keyboard/mobile input without a ground click.
+    const mouseForward = this.leftMouseHeld && this.rightMouseHeld;
+    const keyboardForward = Number(mouseForward || this.isPressed(KeyCode.KEY_W) || this.isPressed(KeyCode.ARROW_UP)) -
       Number(this.isPressed(KeyCode.KEY_S) || this.isPressed(KeyCode.ARROW_DOWN));
     const forward = keyboardForward !== 0 ? keyboardForward : this.mobileForward;
     const strafe = this.rightMouseHeld

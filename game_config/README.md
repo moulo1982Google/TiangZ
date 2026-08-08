@@ -12,6 +12,8 @@
 - `BuffConfig.xlsx`：Buff模板、持续时间、Tick间隔、冲突/刷新策略、仅服务端使用的详细策划说明，以及添加/Tick/移除时执行的Action。
 - `SkillConfig.xlsx`：技能目标关系、读条、CD/GCD、距离、弹道、移动和平A策略；客户端与服务端共享。
 - `SkillEffectConfig.xlsx`：技能命中后按顺序执行的Action；仅服务端生成，客户端不能读取伤害和Buff结算规则。
+- `QuestConfig.xlsx`：任务名称、说明、目标列表、奖励Action和Demo自动接取开关。
+- `QuestObjectiveConfig.xlsx`：任务目标类型、目标配置ID和要求数量；目标与任务分表，避免把变长结构塞进一个单元格。
 
 修改Excel后运行：
 
@@ -31,7 +33,7 @@ npm run test:game-config
 
 `MapConfig.spatial_mode`当前支持`Grid2D`与`NavMesh3D`。Grid2D必须填写`width_cells/depth_cells/cell_size_meters`；NavMesh3D必须填写`navigation_asset/navigation_version/navigation_hash`，其中哈希为小写SHA-256。`entry_players_per_tick`限制单个MapInstance每逻辑Tick完成AOI Attach的人数，`entry_queue_capacity`限制仍在Loading中的等待人数；它们属于Cold地图容量配置。坐标采用米制X/Y/Z，X/Z为地面、Y为高度；完整契约见[地图空间与3D坐标契约](../docs/design/spatial-world.md)。
 
-## Item、Action、Buff与Skill
+## Item、Action、Buff、Skill与Quest
 
 `ItemConfig.use_effect`决定道具是否可用以及使用后执行哪种最小效果：
 
@@ -44,6 +46,8 @@ npm run test:game-config
 当前演示道具：小型生命药水使用`Heal(150)`，大型生命药水使用`AddBuff(2001)`。两者的`cooldown_ms`均为30000，`global_cooldown_ms`均为1000；药品自身CD按`ItemConfigId`独立，公共CD与技能共享并由服务端原子提交。冷却截止时间随玩家跨地图传送，不能通过换图刷新。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、创建Timer或直接广播Buff。
 
 Cocos3D演示玩家出生时预置`1001×50`和`1002×20`两个堆叠，快捷栏固定使用`1`切换平A、`2`使用1001、`3`使用1002。这个预置属于Demo的`ItemComponentSystem.Awake`，正式业务应由持久化数据恢复，不要把演示数量当成通用框架默认值。
+
+`QuestConfig`引用`QuestObjectiveConfig`组成活动任务，奖励复用Action。当前演示包含击杀怪物、使用道具和进入地图三种目标，并使用`GrantItem(ItemConfigId, Count)`发放奖励。两张Quest表标记为Hot，但已经接取的Quest会冻结目标与要求数量；Reload只影响之后新接取的任务，不能隐式改写玩家正在进行的任务。完整语义和调用示例见[任务系统设计](../docs/design/quest-system.md)。
 
 `BuffConfig`的三个Action阶段分别是：
 

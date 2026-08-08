@@ -599,6 +599,8 @@ export class GateScene extends EntryScene {
         entities: response.entities,
         fixedUpdateMs: response.fixedUpdateMs,
         items: response.items,
+        quests: response.quests,
+        completedQuestConfigIds: response.completedQuestConfigIds,
         mapInstanceId: response.mapInstanceId,
         ...this.ClientSpatialMetadata(response.mapId),
       };
@@ -682,6 +684,8 @@ export class GateScene extends EntryScene {
       entities: response.entities,
       fixedUpdateMs: response.fixedUpdateMs,
       items: response.items,
+      quests: response.quests,
+      completedQuestConfigIds: response.completedQuestConfigIds,
       mapInstanceId: location.mapInstanceId,
       ...this.ClientSpatialMetadata(response.mapId),
     };
@@ -843,6 +847,8 @@ export class GateScene extends EntryScene {
       entities: response.entities,
       fixedUpdateMs: response.fixedUpdateMs,
       items: response.items,
+      quests: response.quests,
+      completedQuestConfigIds: response.completedQuestConfigIds,
       mapInstanceId: response.mapInstanceId,
       ...this.ClientSpatialMetadata(response.mapId),
     };

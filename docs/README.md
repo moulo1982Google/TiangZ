@@ -25,6 +25,7 @@
 15. [Godot 4.7.1客户端](tutorials/15-godot-client.md)
 16. [怪物模块](tutorials/16-monster-module.md)
 17. [Unity 2022.3客户端](tutorials/17-unity-client.md)
+18. [配置化技能](tutorials/18-configured-skill.md)
 
 ## 开发参考
 
@@ -53,6 +54,7 @@
 - [地图空间与3D坐标契约](design/spatial-world.md)
 - [AOI完整设计与函数调用关系](design/aoi-architecture.md)
 - [技能与施法系统设计](design/skill-system.md)
+- [任务系统设计](design/quest-system.md)
 - [TypeScript 调试](typescript_debugging.md)
 - [路线图](roadmap.md)
 

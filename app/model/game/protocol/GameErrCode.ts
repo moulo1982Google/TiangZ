@@ -22,4 +22,7 @@ export const GameErrCode = {
   SkillTargetTooFar: 10021,
   SkillBlockedByBuff: 10022,
   ItemCooldown: 10023,
+  QuestAlreadyAccepted: 10024,
+  QuestNotFound: 10025,
+  QuestNotComplete: 10026,
 } as const;

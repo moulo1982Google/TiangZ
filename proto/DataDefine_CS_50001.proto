@@ -150,3 +150,20 @@ message SkillTransferSnapshot
   repeated SkillCooldownSnapshot cooldowns = 2;
   repeated ItemCooldownSnapshot item_cooldowns = 3;
 }
+
+// 单个任务目标的权威进度；required由接取时快照固定，不随在线热配置追溯变化。
+message QuestObjectiveSnapshot
+{
+  uint32 objective_id = 1;
+  uint32 current = 2;
+  uint32 required = 3;
+}
+
+// 一个进行中任务的可覆盖状态；接取和领奖是RPC事实，不使用latest表达。
+message QuestSnapshot
+{
+  uint32 quest_config_id = 1;
+  repeated QuestObjectiveSnapshot objectives = 2;
+  uint32 revision = 3;
+  bool ready_to_complete = 4;
+}

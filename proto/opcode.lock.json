@@ -382,6 +382,11 @@
       "code": 10024
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_AcceptQuest",
+      "name": "C2M_AcceptQuest",
+      "code": 10052
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_AttackMonster",
       "name": "C2M_AttackMonster",
       "code": 10042
@@ -390,6 +395,11 @@
       "key": "proto/OuterMessage_C_10001.proto#C2M_CastSkill",
       "name": "C2M_CastSkill",
       "code": 10047
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_CompleteQuest",
+      "name": "C2M_CompleteQuest",
+      "code": 10054
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2M_FindPath",
@@ -537,6 +547,11 @@
       "code": 10031
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_QuestProgress",
+      "name": "G2C_QuestProgress",
+      "code": 10056
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_SkillCastState",
       "name": "G2C_SkillCastState",
       "code": 10049
@@ -552,6 +567,11 @@
       "code": 10050
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_AcceptQuest",
+      "name": "M2C_AcceptQuest",
+      "code": 10053
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_AttackMonster",
       "name": "M2C_AttackMonster",
       "code": 10043
@@ -560,6 +580,11 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_CastSkill",
       "name": "M2C_CastSkill",
       "code": 10048
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_CompleteQuest",
+      "name": "M2C_CompleteQuest",
+      "code": 10055
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_FindPath",

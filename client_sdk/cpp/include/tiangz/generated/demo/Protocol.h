@@ -1124,6 +1124,117 @@ struct SkillTransferSnapshotCodec {
   }
 };
 
+struct QuestObjectiveSnapshot {
+  std::uint32_t objectiveId = 0;
+  std::uint32_t current = 0;
+  std::uint32_t required = 0;
+};
+
+struct QuestObjectiveSnapshotCodec {
+  static QuestObjectiveSnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    QuestObjectiveSnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.objectiveId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.current = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.required = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const QuestObjectiveSnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.objectiveId);
+    writer.UInt32(2, value.current);
+    writer.UInt32(3, value.required);
+    return writer.Finish();
+  }
+};
+
+struct QuestSnapshot {
+  std::uint32_t questConfigId = 0;
+  std::vector<QuestObjectiveSnapshot> objectives;
+  std::uint32_t revision = 0;
+  bool readyToComplete = false;
+};
+
+struct QuestSnapshotCodec {
+  static QuestSnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    QuestSnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.questConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.objectives.push_back(QuestObjectiveSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.revision = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.readyToComplete = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const QuestSnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.questConfigId);
+    for (const auto& item : value.objectives) writer.BytesField(2, QuestObjectiveSnapshotCodec::Encode(item), true);
+    writer.UInt32(3, value.revision);
+    writer.Bool(4, value.readyToComplete);
+    return writer.Finish();
+  }
+};
+
 struct C2S_GetLoginServiceAddr {
   std::optional<std::uint32_t> rpcId;
 };
@@ -1571,6 +1682,8 @@ struct G2C_EnterMap {
   std::uint32_t spatialMode = 0;
   std::string navigationVersion;
   std::string navigationHash;
+  std::vector<QuestSnapshot> quests;
+  std::vector<std::uint32_t> completedQuestConfigIds;
 };
 
 struct G2C_EnterMapCodec {
@@ -1699,6 +1812,20 @@ struct G2C_EnterMapCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 15:
+          if (tag.wireType == 2) {
+            value.quests.push_back(QuestSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 16:
+          if (tag.wireType == 0) {
+            value.completedQuestConfigIds.push_back(reader.UInt32());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1726,6 +1853,8 @@ struct G2C_EnterMapCodec {
     writer.UInt32(12, value.spatialMode);
     writer.String(13, value.navigationVersion);
     writer.String(14, value.navigationHash);
+    for (const auto& item : value.quests) writer.BytesField(15, QuestSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.completedQuestConfigIds) writer.UInt32(16, item, true);
     return writer.Finish();
   }
 };
@@ -3272,6 +3401,252 @@ struct G2C_ItemChangedCodec {
   }
 };
 
+struct C2M_AcceptQuest {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t questConfigId = 0;
+};
+
+struct C2M_AcceptQuestCodec {
+  static C2M_AcceptQuest Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_AcceptQuest value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.questConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_AcceptQuest& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.questConfigId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_AcceptQuest {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  QuestSnapshot quest;
+};
+
+struct M2C_AcceptQuestCodec {
+  static M2C_AcceptQuest Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_AcceptQuest value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.quest = QuestSnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_AcceptQuest& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, QuestSnapshotCodec::Encode(value.quest));
+    return writer.Finish();
+  }
+};
+
+struct C2M_CompleteQuest {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t questConfigId = 0;
+};
+
+struct C2M_CompleteQuestCodec {
+  static C2M_CompleteQuest Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_CompleteQuest value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.questConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_CompleteQuest& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.questConfigId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_CompleteQuest {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t questConfigId = 0;
+  std::vector<ItemSnapshot> rewardItems;
+};
+
+struct M2C_CompleteQuestCodec {
+  static M2C_CompleteQuest Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_CompleteQuest value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.questConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.rewardItems.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_CompleteQuest& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.questConfigId);
+    for (const auto& item : value.rewardItems) writer.BytesField(2, ItemSnapshotCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
+struct G2C_QuestProgress {
+  std::vector<QuestSnapshot> quests;
+};
+
+struct G2C_QuestProgressCodec {
+  static G2C_QuestProgress Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_QuestProgress value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 2) {
+            value.quests.push_back(QuestSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_QuestProgress& value) {
+    tiangz::client::BinaryWriter writer;
+    for (const auto& item : value.quests) writer.BytesField(1, QuestSnapshotCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
 struct G2C_BuffAdded {
   BuffPublicView buff;
 };
@@ -4129,6 +4504,11 @@ inline constexpr std::uint16_t C2M_ToggleAutoAttack = 10044;
 inline constexpr std::uint16_t M2C_ToggleAutoAttack = 10045;
 inline constexpr std::uint16_t G2C_AutoAttackState = 10046;
 inline constexpr std::uint16_t G2C_ItemChanged = 10021;
+inline constexpr std::uint16_t C2M_AcceptQuest = 10052;
+inline constexpr std::uint16_t M2C_AcceptQuest = 10053;
+inline constexpr std::uint16_t C2M_CompleteQuest = 10054;
+inline constexpr std::uint16_t M2C_CompleteQuest = 10055;
+inline constexpr std::uint16_t G2C_QuestProgress = 10056;
 inline constexpr std::uint16_t G2C_BuffAdded = 10026;
 inline constexpr std::uint16_t G2C_BuffRemoved = 10027;
 inline constexpr std::uint16_t G2C_BuffDetail = 10028;
@@ -4197,6 +4577,14 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_ToggleAutoAttack, M2C_ToggleA
   "Map.ToggleAutoAttack", MsgCode::C2M_ToggleAutoAttack, MsgCode::M2C_ToggleAutoAttack
 };
 
+inline constexpr tiangz::client::RpcDescriptor<C2M_AcceptQuest, M2C_AcceptQuest, C2M_AcceptQuestCodec, M2C_AcceptQuestCodec> Map_AcceptQuest{
+  "Map.AcceptQuest", MsgCode::C2M_AcceptQuest, MsgCode::M2C_AcceptQuest
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_CompleteQuest, M2C_CompleteQuest, C2M_CompleteQuestCodec, M2C_CompleteQuestCodec> Map_CompleteQuest{
+  "Map.CompleteQuest", MsgCode::C2M_CompleteQuest, MsgCode::M2C_CompleteQuest
+};
+
 inline constexpr tiangz::client::RpcDescriptor<C2M_CastSkill, M2C_CastSkill, C2M_CastSkillCodec, M2C_CastSkillCodec> Map_CastSkill{
   "Map.CastSkill", MsgCode::C2M_CastSkill, MsgCode::M2C_CastSkill
 };
@@ -4235,6 +4623,10 @@ inline constexpr tiangz::client::MessageDescriptor<G2C_AutoAttackState, G2C_Auto
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_ItemChanged, G2C_ItemChangedCodec> Client_ItemChanged{
   "Client.ItemChanged", MsgCode::G2C_ItemChanged
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_QuestProgress, G2C_QuestProgressCodec> Client_QuestProgress{
+  "Client.QuestProgress", MsgCode::G2C_QuestProgress
 };
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_BuffAdded, G2C_BuffAddedCodec> Client_BuffAdded{

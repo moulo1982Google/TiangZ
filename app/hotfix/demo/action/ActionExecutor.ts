@@ -7,6 +7,8 @@ import {
   DamageSchool,
   type DamageSchoolValue,
   type DamageResult,
+  ItemComponent,
+  type ItemSnapshot,
   IsDerivedNumericType,
   NumericComponent,
   NumericType,
@@ -20,6 +22,7 @@ export interface ActionExecutionResult {
   readonly addedBuff?: BuffPublicState;
   readonly damageAbsorberModifierId?: number;
   readonly damage?: DamageResult;
+  readonly grantedItem?: ItemSnapshot;
 }
 
 /**
@@ -29,7 +32,7 @@ export interface ActionExecutionResult {
  * bigint here and are never passed around as unknown afterward.
  */
 export function ActionFromConfig(type: number, parameters: readonly number[]): ActionDefinition {
-  if (!Number.isSafeInteger(type) || type < ActionType.None || type > ActionType.Heal) {
+  if (!Number.isSafeInteger(type) || type < ActionType.None || type > ActionType.GrantItem) {
     throw new Error(`unsupported action type: ${type}`);
   }
   if (!parameters.every(Number.isSafeInteger)) {
@@ -113,6 +116,15 @@ export function ExecuteAction(
           changed: result.restoredHealing > 0n,
           value: result.currentHp,
         };
+      }
+    case ActionType.GrantItem:
+      requireParameterCount(action, 2);
+      {
+        const configId = toConfigId(action.parameters[0]);
+        const count = toSafeNumber(action.parameters[1], "grant item count");
+        if (count <= 0) throw new Error(`grant item count must be positive: ${count}`);
+        const item = target.GetComponent(ItemComponent).CreateItem(configId, count).Snapshot();
+        return { changed: true, grantedItem: item };
       }
     case ActionType.RegisterDamageAbsorber:
       if (action.parameters.length < 1 || action.parameters.length > 2) {

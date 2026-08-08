@@ -165,7 +165,7 @@ RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClie
 
 `game_config/`是策划数值的唯一源目录，使用固定版本的[Luban](https://github.com/focus-creative-games/luban)从Excel生成服务端与客户端强类型配置。它和`configs/<environment>/`的Process、Scene、端口部署配置是两套完全不同的东西。
 
-第一批表包括`ItemConfig`、`MapConfig`、`PlayerConfig`、`MonsterConfig`和`MonsterAreaConfig`。修改Excel后，如果准备重启服务器使配置生效，执行：
+当前业务表包括`ItemConfig`、`MapConfig`、`PlayerConfig`、`MonsterConfig`、`MonsterAreaConfig`、`BuffConfig`、`SkillConfig`、`SkillEffectConfig`、`QuestConfig`和`QuestObjectiveConfig`。修改Excel后，如果准备重启服务器使配置生效，执行：
 
 ```powershell
 npm run build:game-config:startup
@@ -381,6 +381,8 @@ npm run check:project -- --format json
 设计Item、Buff、Quest、Achievement、Numeric或自定义业务系统时，先阅读[`docs/patterns`](docs/patterns/README.md)，也可以在Developer Tools执行“TiangZ：设计业务系统”或输入`@tiangz /design buff`。规则库先确定所有权、Entity形态、生命周期、Audience和同步语义，AI只负责解释；最终仍以当前代码、项目检查和测试为准。
 
 新增技能优先维护`game_config/Datas/SkillConfig.xlsx`与服务端专有的`SkillEffectConfig.xlsx`，用现有Action和Buff组合效果，不为每个技能复制Handler。完整步骤见[配置化技能教程](docs/tutorials/18-configured-skill.md)。
+
+任务使用`QuestComponent -> Quest ChildEntity`保存活动状态；击杀、用道具和进图模块只同步发布领域事实，稳定事件Handler负责投影进度。任务默认仅同步给拥有者，领取奖励复用Action，不把背包逻辑写进任务Handler。完整设计与代码示例见[任务系统设计](docs/design/quest-system.md)。
 
 ## 调试与验证
 

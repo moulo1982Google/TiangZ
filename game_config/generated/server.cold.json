@@ -62,6 +62,14 @@
     {
       "table_name": "SkillEffectConfig",
       "reload_mode": 1
+    },
+    {
+      "table_name": "QuestConfig",
+      "reload_mode": 1
+    },
+    {
+      "table_name": "QuestObjectiveConfig",
+      "reload_mode": 1
     }
   ],
   "game_tbmapconfig": [

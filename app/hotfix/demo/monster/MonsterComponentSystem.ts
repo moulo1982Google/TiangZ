@@ -28,6 +28,8 @@ import {
   type MonsterConfigData,
   type MonsterRuntimeState,
   systemFor,
+  QuestEvents,
+  QuestObjectiveType,
 } from "#tiangz/model";
 import { MonsterBehaviorTree } from "./MonsterBehaviorTree";
 
@@ -154,7 +156,15 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
     const result = monster.GetComponent(CombatComponent).ApplyDamage(request);
     this.AddThreat(monster, attacker, result.finalDamage);
-    if (result.killed) this.Kill(monster);
+    if (result.killed) {
+      this.Kill(monster);
+      this.DomainScene().Events.Publish(QuestEvents.Progress, {
+        player: attacker,
+        objectiveType: QuestObjectiveType.KillMonster,
+        targetConfigId: monster.MonsterConfigId,
+        count: 1,
+      });
+    }
     return result;
   }
 

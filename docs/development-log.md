@@ -7,6 +7,20 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-08：Quest ChildEntity与领域事实任务闭环
+
+- 新增Luban热配置`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，演示击杀怪物、使用道具、进入地图三类目标；接取时冻结目标ID与要求数量，配置Reload只影响后续新任务。
+- 玩家新增`QuestComponent`，活动任务使用`Quest ChildEntity`，已完成任务只保存稳定配置ID；自动接取、手工接取、进度推进、领取奖励和重复领取拒绝均有明确入口。
+- 怪物、道具和地图不再直接依赖任务集合，只在事实成功提交后同步发布`QuestEvents.Progress`；稳定Hotfix事件Handler把事实投影到任务进度，进度以owner-only latest消息同步。
+- 奖励复用统一Action并新增`GrantItem(ItemConfigId, Count)`；领取在PlayerUnit有序mailbox内同步提交奖励、完成记录和Quest移除，提交后的网络广播不参与事务。
+- `PlayerTransferSnapshot`升级到schema 5，活动Quest和已完成ID可跨静态地图、NavMesh3D地图和动态MapHost恢复；登录、重连和进图返回全量任务快照。
+- Cocos3D增加任务追踪面板、中文配置显示和领取奖励按钮；SDK仍使用生成RPC与Push Handler，不在构造函数堆叠协议监听。
+- 修复任务HUD每帧重建DOM导致领取按钮在按下与抬起之间失效的问题；列表现在只在任务revision、进度或领取状态变化时重建，领取按钮复用统一触摸安全绑定并阻止地面寻路穿透。
+- Cocos3D桌面输入增加左右鼠标同时按住等同`W`前进；任一鼠标键松开即立即提交停止，参与过组合键的左键手势不会在松开后误触地面寻路。
+- 新增[任务系统设计](design/quest-system.md)并同步README、配置说明、AI上下文、业务开发手册和路线图。
+- 验证通过：完整`npm run build`、任务自测、配置/协议自测、Cocos3D类型与bundle检查、codegen/comment/design/project质量门，以及43秒真实all-in-one Runtime smoke。
+- 本轮发现的框架问题：游戏配置Facade仍手工枚举表，后续应从Luban元数据自动生成；多Action奖励缺少事务批次；`GrantItem`尚未接入背包自动堆叠。这三项没有用任务系统私有分支掩盖。
+
 ## 2026-08-08：修复远程伤害产生仇恨后怪物不追击
 
 - 确认平A和技能原本已经统一经`MonsterComponent.ApplyPlayerDamage`按最终实际伤害1:1写入仇恨；问题来自12米常量同时承担主动索敌和已有仇恨过滤，30米寒冰箭虽然造成伤害并写入仇恨，AI仍取不到目标。

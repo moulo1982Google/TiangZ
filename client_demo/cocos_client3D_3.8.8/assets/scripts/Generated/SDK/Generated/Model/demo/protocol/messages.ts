@@ -835,6 +835,94 @@ export const SkillTransferSnapshotCodec = {
   },
 };
 
+export interface QuestObjectiveSnapshot {
+  objectiveId: number;
+  current: number;
+  required: number;
+}
+
+export const QuestObjectiveSnapshotCodec = {
+  decode(payload: Uint8Array): QuestObjectiveSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: QuestObjectiveSnapshot = {
+      objectiveId: 0,
+      current: 0,
+      required: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.objectiveId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.current = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.required = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: QuestObjectiveSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.objectiveId !== undefined) writer.uint32(1, value.objectiveId);
+    if (value.current !== undefined) writer.uint32(2, value.current);
+    if (value.required !== undefined) writer.uint32(3, value.required);
+    return writer.finish();
+  },
+};
+
+export interface QuestSnapshot {
+  questConfigId: number;
+  objectives: readonly QuestObjectiveSnapshot[];
+  revision: number;
+  readyToComplete: boolean;
+}
+
+export const QuestSnapshotCodec = {
+  decode(payload: Uint8Array): QuestSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: QuestSnapshot = {
+      questConfigId: 0,
+      objectives: [],
+      revision: 0,
+      readyToComplete: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.questConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.objectives as QuestObjectiveSnapshot[]).push(QuestObjectiveSnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.revision = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.readyToComplete = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: QuestSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.questConfigId !== undefined) writer.uint32(1, value.questConfigId);
+    for (const item of (value.objectives ?? [])) writer.bytes(2, QuestObjectiveSnapshotCodec.encode(item), true);
+    if (value.revision !== undefined) writer.uint32(3, value.revision);
+    if (value.readyToComplete !== undefined) writer.bool(4, value.readyToComplete);
+    return writer.finish();
+  },
+};
+
 export interface C2S_GetLoginServiceAddr extends IRequest {
   rpcId?: number;
 }
@@ -1175,6 +1263,8 @@ export interface G2C_EnterMap extends IResponse {
   spatialMode: number;
   navigationVersion: string;
   navigationHash: string;
+  quests: readonly QuestSnapshot[];
+  completedQuestConfigIds: readonly number[];
 }
 
 export const G2C_EnterMapCodec = {
@@ -1195,6 +1285,8 @@ export const G2C_EnterMapCodec = {
       spatialMode: 0,
       navigationVersion: "",
       navigationHash: "",
+      quests: [],
+      completedQuestConfigIds: [],
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1249,6 +1341,12 @@ export const G2C_EnterMapCodec = {
       else if (tag.fieldNo === 14 && tag.wireType === 2) {
         value.navigationHash = reader.string();
       }
+      else if (tag.fieldNo === 15 && tag.wireType === 2) {
+        (value.quests as QuestSnapshot[]).push(QuestSnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 16 && tag.wireType === 0) {
+        (value.completedQuestConfigIds as number[]).push(reader.uint32());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1275,6 +1373,8 @@ export const G2C_EnterMapCodec = {
     if (value.spatialMode !== undefined) writer.uint32(12, value.spatialMode);
     if (value.navigationVersion !== undefined) writer.string(13, value.navigationVersion);
     if (value.navigationHash !== undefined) writer.string(14, value.navigationHash);
+    for (const item of (value.quests ?? [])) writer.bytes(15, QuestSnapshotCodec.encode(item), true);
+    for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(16, item, true);
     return writer.finish();
   },
 };
@@ -2448,6 +2548,197 @@ export const G2C_ItemChangedCodec = {
   encode(value: G2C_ItemChanged): Uint8Array {
     const writer = new BinaryWriter();
     if (value.item !== undefined) writer.bytes(1, ItemSnapshotCodec.encode(value.item));
+    return writer.finish();
+  },
+};
+
+export interface C2M_AcceptQuest extends IActorLocationRequest {
+  rpcId?: number;
+  questConfigId: number;
+}
+
+export const C2M_AcceptQuestCodec = {
+  decode(payload: Uint8Array): C2M_AcceptQuest {
+    const reader = new BinaryReader(payload);
+    const value: C2M_AcceptQuest = {
+      questConfigId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.questConfigId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_AcceptQuest): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.questConfigId !== undefined) writer.uint32(1, value.questConfigId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_AcceptQuest extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  quest: QuestSnapshot;
+}
+
+export const M2C_AcceptQuestCodec = {
+  decode(payload: Uint8Array): M2C_AcceptQuest {
+    const reader = new BinaryReader(payload);
+    const value: M2C_AcceptQuest = {
+      quest: QuestSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.quest = QuestSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_AcceptQuest): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.quest !== undefined) writer.bytes(1, QuestSnapshotCodec.encode(value.quest));
+    return writer.finish();
+  },
+};
+
+export interface C2M_CompleteQuest extends IActorLocationRequest {
+  rpcId?: number;
+  questConfigId: number;
+}
+
+export const C2M_CompleteQuestCodec = {
+  decode(payload: Uint8Array): C2M_CompleteQuest {
+    const reader = new BinaryReader(payload);
+    const value: C2M_CompleteQuest = {
+      questConfigId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.questConfigId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_CompleteQuest): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.questConfigId !== undefined) writer.uint32(1, value.questConfigId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_CompleteQuest extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  questConfigId: number;
+  rewardItems: readonly ItemSnapshot[];
+}
+
+export const M2C_CompleteQuestCodec = {
+  decode(payload: Uint8Array): M2C_CompleteQuest {
+    const reader = new BinaryReader(payload);
+    const value: M2C_CompleteQuest = {
+      questConfigId: 0,
+      rewardItems: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.questConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.rewardItems as ItemSnapshot[]).push(ItemSnapshotCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_CompleteQuest): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.questConfigId !== undefined) writer.uint32(1, value.questConfigId);
+    for (const item of (value.rewardItems ?? [])) writer.bytes(2, ItemSnapshotCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface G2C_QuestProgress extends IMessage {
+  quests: readonly QuestSnapshot[];
+}
+
+export const G2C_QuestProgressCodec = {
+  decode(payload: Uint8Array): G2C_QuestProgress {
+    const reader = new BinaryReader(payload);
+    const value: G2C_QuestProgress = {
+      quests: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        (value.quests as QuestSnapshot[]).push(QuestSnapshotCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_QuestProgress): Uint8Array {
+    const writer = new BinaryWriter();
+    for (const item of (value.quests ?? [])) writer.bytes(1, QuestSnapshotCodec.encode(item), true);
     return writer.finish();
   },
 };

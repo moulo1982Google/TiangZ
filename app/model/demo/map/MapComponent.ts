@@ -40,6 +40,7 @@ import type {
   M2G_TransferPlayer,
   PlayerTransferSnapshot,
   SkillTransferSnapshot,
+  QuestSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
 import { SceneBroadcastTransport } from "../broadcast/SceneBroadcastTransport";
 import { MapClientRouteResolver } from "../broadcast/MapClientRouteResolver";
@@ -65,6 +66,8 @@ import type { BuffTransferState } from "../buff/Buff";
 import { CombatComponent, type AutoAttackState } from "../combat/CombatComponent";
 import type { SkillCastState, SkillTransferState } from "../skill/SkillComponent";
 import { SkillComponent } from "../skill/SkillComponent";
+import { QuestComponent, type QuestTransferState } from "../quest/QuestComponent";
+import { QuestEvents } from "../quest/QuestEvents";
 import type { SkillProjectile } from "../skill/SkillMapComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import { LocationProxy } from "../location/LocationProxy";
@@ -72,6 +75,7 @@ import type { PlayerRepository } from "../persistence/PlayerRepository";
 import {
   GameConfigs,
   SpatialMode,
+  QuestObjectiveType,
   type MapConfig as MapConfigData,
 } from "../../../generated/model/config";
 import type { MapInstanceDefinition } from "./MapInstance";
@@ -639,6 +643,10 @@ export class MapComponent extends Component<[
         [ItemComponent, snapshot.items],
         [BuffComponent, snapshot.buffs.map(fromProtocolBuffTransfer)],
         [SkillComponent, fromProtocolSkillTransfer(snapshot.skill)],
+        [QuestComponent, {
+          active: snapshot.quests.map(fromProtocolQuest),
+          completedQuestConfigIds: snapshot.completedQuestConfigIds,
+        } satisfies QuestTransferState],
       ]),
     };
     return this.PrepareTransferredPlayer(
@@ -742,6 +750,7 @@ export class MapComponent extends Component<[
       player.AddComponent(BuffComponent);
       // Unit只持有技能状态；地图上的SkillMapComponent统一以10Hz推进。 / The Unit owns skill state while one map SkillMapComponent advances it at 10 Hz.
       player.AddComponent(SkillComponent);
+      player.AddComponent(QuestComponent);
       player.AddComponent(PlayerPersistenceComponent, this.repository);
       player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
@@ -854,6 +863,17 @@ export class MapComponent extends Component<[
       ClientAudience.Self(unit.UnitId),
       ClientBroadcasts.ItemChanged,
       { item },
+      this.serverTick,
+    );
+  }
+
+  /** 向玩家本人发布可覆盖任务状态；接取和领奖仍由RPC确认，不使用latest冒充事实。 / Publishes replaceable owner-only quest state while accept and reward remain RPC-confirmed facts. */
+  async PublishQuestProgress(unit: PlayerUnit, quests: readonly import("../quest/Quest").QuestState[]): Promise<void> {
+    this.requirePlayer(unit);
+    await this.clientBroadcast.PublishMany(
+      ClientAudience.Self(unit.UnitId),
+      ClientBroadcasts.QuestProgress,
+      quests.map(toProtocolQuest),
       this.serverTick,
     );
   }
@@ -1102,6 +1122,8 @@ export class MapComponent extends Component<[
       entities: this.EntitySnapshots(unit),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: unit.GetComponent(ItemComponent).Snapshot(),
+      quests: unit.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
+      completedQuestConfigIds: unit.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       mapInstanceId: snapshot.mapInstanceId,
     };
   }
@@ -1472,6 +1494,12 @@ export class MapComponent extends Component<[
         const attachStartedAt = monotonicNow();
         // Attach只由地图准入流程调用，业务Handler不得绕过队列直接把Unit放入AOI。 / Only map admission attaches Units; business handlers must not bypass the queue.
         const changes = this.aoi.Attach(pending.unit, this.RouteIdForGate(gateName));
+        this.DomainScene().Events.Publish(QuestEvents.Progress, {
+          player: pending.unit,
+          objectiveType: QuestObjectiveType.EnterMap,
+          targetConfigId: this.mapId,
+          count: 1,
+        });
         const attachMs = monotonicNow() - attachStartedAt;
         this.entryMetrics.attachMs += attachMs;
         this.entryMetrics.maxAttachMs = Math.max(this.entryMetrics.maxAttachMs, attachMs);
@@ -1740,6 +1768,24 @@ function fromProtocolSkillTransfer(value: SkillTransferSnapshot): SkillTransferS
       itemConfigId: cooldown.itemConfigId,
       cooldownEndAtMs: Number(cooldown.cooldownEndAtMs),
     })),
+  };
+}
+
+function toProtocolQuest(value: import("../quest/Quest").QuestState): QuestSnapshot {
+  return {
+    questConfigId: value.questConfigId,
+    objectives: value.objectives.map((item) => ({ ...item })),
+    revision: value.revision,
+    readyToComplete: value.readyToComplete,
+  };
+}
+
+function fromProtocolQuest(value: QuestSnapshot): import("../quest/Quest").QuestState {
+  return {
+    questConfigId: value.questConfigId,
+    objectives: value.objectives.map((item) => ({ ...item })),
+    revision: value.revision,
+    readyToComplete: value.readyToComplete,
   };
 }
 

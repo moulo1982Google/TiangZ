@@ -73,6 +73,8 @@ message G2C_EnterMap // IResponse
   uint32 spatial_mode = 12;
   string navigation_version = 13;
   string navigation_hash = 14;
+  repeated QuestSnapshot quests = 15;
+  repeated uint32 completed_quest_config_ids = 16;
 }
 
 // @ets.msg protocol=Client method=MapReady
@@ -285,6 +287,41 @@ message G2C_AutoAttackState // IMessage
 message G2C_ItemChanged // IMessage
 {
   ItemSnapshot item = 1;
+}
+
+//ResponseType M2C_AcceptQuest
+// 接取属于不可重复的玩家事实，进入PlayerUnit有序mailbox。
+// @ets.msg protocol=Map method=AcceptQuest duringTransfer=queue
+message C2M_AcceptQuest // IActorLocationRequest
+{
+  uint32 quest_config_id = 1;
+}
+
+message M2C_AcceptQuest // IActorLocationResponse
+{
+  QuestSnapshot quest = 1;
+}
+
+//ResponseType M2C_CompleteQuest
+// 领奖与移除进行中任务在同一同步调用栈提交，重复请求必须失败且不得重复发奖。
+// @ets.msg protocol=Map method=CompleteQuest duringTransfer=queue
+message C2M_CompleteQuest // IActorLocationRequest
+{
+  uint32 quest_config_id = 1;
+}
+
+message M2C_CompleteQuest // IActorLocationResponse
+{
+  uint32 quest_config_id = 1;
+  repeated ItemSnapshot reward_items = 2;
+}
+
+// 任务进度是本人可见的可覆盖状态；同一任务只保留队列中的最新revision。
+// @ets.msg protocol=Client method=QuestProgress
+// @ets.broadcast mode=latest item=QuestSnapshot items=quests key=quest_config_id
+message G2C_QuestProgress // IMessage
+{
+  repeated QuestSnapshot quests = 1;
 }
 
 // Buff创建是不可覆盖事件；普通AOI玩家、自己和队伍成员都只从这里获得公开外观。

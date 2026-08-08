@@ -22,6 +22,9 @@ import { CombatComponent } from "../app/model/demo/combat/CombatComponent";
 import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/NumericType";
 import { SkillCastPhase, SkillComponent } from "../app/model/demo/skill/SkillComponent";
+import { ItemComponent } from "../app/model/demo/item/ItemComponent";
+import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
+import { QuestObjectiveType } from "../app/generated/model/config";
 import { ActorUnit } from "../app/core/runtime/Unit";
 
 @scene({ sceneType: "BuffTest" })
@@ -74,6 +77,10 @@ async function main(): Promise<void> {
   await import("../app/hotfix/demo/buff/BuffSystem");
   await import("../app/hotfix/demo/buff/BuffComponentSystem");
   await import("../app/hotfix/demo/skill/SkillComponentSystem");
+  await import("../app/hotfix/demo/item/ItemSystem");
+  await import("../app/hotfix/demo/item/ItemComponentSystem");
+  await import("../app/hotfix/demo/quest/QuestSystem");
+  await import("../app/hotfix/demo/quest/QuestComponentSystem");
   HotfixSystem.Commit();
 
   const host = new ProcessHost("buff-action-self-test");
@@ -89,6 +96,21 @@ async function main(): Promise<void> {
   });
   unit.AddComponent(CombatComponent);
   const buffs = unit.AddComponent(BuffComponent);
+  unit.AddComponent(ItemComponent);
+  const quests = unit.AddComponent(QuestComponent);
+
+  assert.deepEqual(quests.Snapshot().map((quest) => quest.questConfigId), [5001, 5002, 5003]);
+  const killProgress = quests.ApplyProgress({
+    player: unit as never,
+    objectiveType: QuestObjectiveType.KillMonster,
+    targetConfigId: 1,
+    count: 1,
+  });
+  assert.equal(killProgress[0]?.readyToComplete, true);
+  const reward = quests.CompleteQuest(5001);
+  assert.equal(reward.rewardItems[0]?.configId, 1001);
+  assert.equal(reward.rewardItems[0]?.count, 2);
+  assert.throws(() => quests.CompleteQuest(5001));
 
   assert.equal(GameConfigs.BuffConfig.Get(2001).tickIntervalMs, 3_000);
   assert.equal(GameConfigs.BuffConfig.Get(2001).tickActionType, ActionType.Heal);
@@ -120,9 +142,13 @@ async function main(): Promise<void> {
   });
   target.AddComponent(CombatComponent);
   const targetBuffs = target.AddComponent(BuffComponent);
+  target.AddComponent(ItemComponent);
+  const targetQuests = target.AddComponent(QuestComponent);
   target.RestoreTransfer(transfer);
   assert.equal(target.GetComponent(NumericComponent)[NumericType.CurrentHp], 51n);
   assert.equal(targetBuffs.GetBuff(buff.Id as bigint)?.Id, buff.Id);
+  assert.deepEqual(targetQuests.CompletedQuestConfigIds(), [5001]);
+  assert.deepEqual(targetQuests.Snapshot().map((quest) => quest.questConfigId), [5002, 5003]);
 
   assert.equal(buffs.RemoveBuff(buff.Id as bigint, "test"), true);
   assert.equal(buffs.GetBuff(buff.Id as bigint), undefined);

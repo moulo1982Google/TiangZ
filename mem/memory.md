@@ -158,6 +158,15 @@ npm run build:cocos3d:mobile
 - Buff叠加语义拆成冲突域、冲突决策和刷新行为：`stack_group + stack_scope + sourceUnitId`形成冲突键，策略支持Stack、Refresh、Replace、Reject和HigherWins；HigherWins比较显式priority，不比较ConfigId。Refresh默认不重复执行AddAction，来源、Tick节奏和运行状态分别配置。`BuffConfig.description`只进入服务端配置，不在客户端展示。
 - 当前演示：1001小型生命药水执行`Heal(150)`，1002大型生命药水添加2001持续回血Buff，2001每3秒执行`Heal(50)`。两种药品各有30秒配置CD，并和技能共享1秒玩家GCD；服务端原子提交、跨地图保留，Cocos3D只按返回deadline绘制。五技能Cast与Luban SkillConfig/SkillEffectConfig已完成，寒冰箭/惩击30米、火焰冲击10米；复杂地面目标、引导和Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`、`docs/design/skill-system.md`和`docs/tutorials/18-configured-skill.md`。
 
+## 任务系统当前语义
+
+- 玩家任务状态固定为`QuestComponent -> Quest ChildEntity`：活动任务是子实体，已完成任务只保存QuestConfigId；Quest默认没有mailbox且只对拥有者同步。
+- 击杀、使用道具和进入地图模块只在事实成功提交后同步发布`QuestEvents.Progress`，稳定Hotfix事件Handler负责投影进度；来源模块不得查询QuestComponent或直接改任务。
+- 接取时冻结目标ID与required，热配置Reload只影响新接取任务。领取必须在PlayerUnit有序mailbox中同步提交奖励Action、完成ID和RemoveChild，异步广播只能发生在提交后。
+- 进度使用owner-only latest消息；登录、重连和跨地图携带活动Quest及已完成ID全量快照。组队共享、可重复任务和持久化暂未实现。
+- 当前框架待改：`codegen_game_config.mjs`不应手工枚举新Luban表；多Action奖励需要事务批次；`GrantItem`奖励的堆叠合并应由Inventory统一提供。
+- 设计变更继续同步`docs/ai/project-context.md`、`docs/ai/business-development-manual.md`、`docs/development-log.md`和本文件。
+
 ## 道具出生与Cocos3D快捷栏
 
 - Demo新建玩家的`ItemComponentSystem.Awake`预置`1001×50`和`1002×20`；传送、重连和恢复只用`ItemSnapshot`替换默认背包，禁止重复发放。正式项目接入持久化后应移除这段Demo种子。

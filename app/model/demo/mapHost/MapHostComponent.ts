@@ -46,6 +46,7 @@ import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import { BuffComponent } from "../buff/BuffComponent";
 import { SkillComponent, type SkillTransferState } from "../skill/SkillComponent";
+import { QuestComponent } from "../quest/QuestComponent";
 import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
 import { GameConfigs } from "../../../generated/model/config";
 import { LocationProxy } from "../location/LocationProxy";
@@ -69,7 +70,7 @@ const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 // 玩家跨MapHost快照的生成端与校验端必须引用同一版本，新增可传送Component时只修改这里。
 // The producer and validator of player transfer snapshots must share one version;
 // bump only this constant when a transferable Component changes the wire shape.
-const PLAYER_TRANSFER_SCHEMA_VERSION = 4;
+const PLAYER_TRANSFER_SCHEMA_VERSION = 5;
 
 export class MapHostComponent extends Component {
   private readonly maps = new Map<bigint, MapComponent>();
@@ -398,6 +399,8 @@ export class MapHostComponent extends Component {
           ? playerMap.EntitySnapshots(player)
           : [],
       items: player.GetComponent(ItemComponent).Snapshot(),
+      quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
+      completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       mapInstanceId: located.location.mapInstanceId,
       locationRevision: located.location.revision,
     };
@@ -603,6 +606,8 @@ export class MapHostComponent extends Component {
         entities: target.entities,
         fixedUpdateMs: target.fixedUpdateMs,
         items: target.items,
+        quests: target.quests,
+        completedQuestConfigIds: target.completedQuestConfigIds,
         mapHost: targetInstance.mapHost,
       };
     } catch (error) {
@@ -654,6 +659,8 @@ export class MapHostComponent extends Component {
       entities: entryEntities ?? map.EntitySnapshots(player),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: player.GetComponent(ItemComponent).Snapshot(),
+      quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
+      completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       mapHost: this.EndpointSnapshot(),
     };
   }
@@ -764,6 +771,8 @@ export class MapHostComponent extends Component {
       entities: entryEntities ?? committed.target.map.EntitySnapshots(committed.target.player),
       fixedUpdateMs: Game.Instance.FixedUpdateMs,
       items: committed.target.player.GetComponent(ItemComponent).Snapshot(),
+      quests: committed.target.player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
+      completedQuestConfigIds: committed.target.player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       mapHostName: this.owner.self.name,
       mapInstanceId: committed.result.mapInstanceId,
     };
@@ -805,6 +814,8 @@ export class MapHostComponent extends Component {
       items: player.GetComponent(ItemComponent).Snapshot(),
       buffs: player.GetComponent(BuffComponent).CaptureTransfer().map(toProtocolBuffTransfer),
       skill: toProtocolSkillTransfer(player.GetComponent(SkillComponent).CaptureTransfer()),
+      quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
+      completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       targetMapInstanceId: targetInstance.mapInstanceId,
     };
   }
@@ -1162,6 +1173,15 @@ function toProtocolSkillTransfer(value: SkillTransferState): SkillTransferSnapsh
       itemConfigId: cooldown.itemConfigId,
       cooldownEndAtMs: BigInt(Math.max(0, Math.floor(cooldown.cooldownEndAtMs))),
     })),
+  };
+}
+
+function toProtocolQuest(value: import("../quest/Quest").QuestState): import("../../../generated/model/server/demo/protocol/messages").QuestSnapshot {
+  return {
+    questConfigId: value.questConfigId,
+    objectives: value.objectives.map((item) => ({ ...item })),
+    revision: value.revision,
+    readyToComplete: value.readyToComplete,
   };
 }
 

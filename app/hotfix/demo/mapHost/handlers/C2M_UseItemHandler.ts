@@ -11,6 +11,8 @@ import {
   PlayerUnit,
   RpcError,
   SkillComponent,
+  QuestEvents,
+  QuestObjectiveType,
   SystemErrCode,
   unitRpcHandler,
   type UnitRpcHandler,
@@ -61,6 +63,12 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
     // 道具只声明Action；治疗、Buff和Numeric修改由统一执行器路由到对应组件。
     // Items declare Actions only; the executor routes healing, Buff, and Numeric changes to their components.
     const execution = ExecuteAction(unit, action, { reason: "item-use" });
+    unit.DomainScene().Events.Publish(QuestEvents.Progress, {
+      player: unit,
+      objectiveType: QuestObjectiveType.UseItem,
+      targetConfigId: itemConfig.id,
+      count: 1,
+    });
     await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(unit, item);
     const response = {
       item,
