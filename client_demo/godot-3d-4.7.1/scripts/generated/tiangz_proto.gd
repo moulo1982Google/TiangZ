@@ -1763,11 +1763,21 @@ static func encode_g2c_skill_cast_state(value: Dictionary) -> PackedByteArray:
 		varint_field(result, 8, int(value["skill_cooldown_end_at_ms"]))
 	if value.has("interrupt_reason"):
 		string_field(result, 9, String(value["interrupt_reason"]))
+	if value.has("channel_tick_index"):
+		varint_field(result, 10, int(value["channel_tick_index"]))
+	if value.has("channel_tick_count"):
+		varint_field(result, 11, int(value["channel_tick_count"]))
+	if value.has("queued_skill_id"):
+		varint_field(result, 12, int(value["queued_skill_id"]))
+	if value.has("queued_target_unit_id"):
+		varint_field(result, 13, int(value["queued_target_unit_id"]))
+	if value.has("queue_deadline_at_ms"):
+		varint_field(result, 14, int(value["queue_deadline_at_ms"]))
 	return result
 
 static func decode_g2c_skill_cast_state(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"phase": 0, "cast_id": 0, "skill_id": 0, "target_unit_id": 0, "started_at_ms": 0, "finish_at_ms": 0, "global_cooldown_end_at_ms": 0, "skill_cooldown_end_at_ms": 0, "interrupt_reason": ""}
+	var result := {"phase": 0, "cast_id": 0, "skill_id": 0, "target_unit_id": 0, "started_at_ms": 0, "finish_at_ms": 0, "global_cooldown_end_at_ms": 0, "skill_cooldown_end_at_ms": 0, "interrupt_reason": "", "channel_tick_index": 0, "channel_tick_count": 0, "queued_skill_id": 0, "queued_target_unit_id": 0, "queue_deadline_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -1814,6 +1824,31 @@ static func decode_g2c_skill_cast_state(payload: PackedByteArray) -> Dictionary:
 			9:
 				if tag.wire == 2:
 					result["interrupt_reason"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			10:
+				if tag.wire == 0:
+					result["channel_tick_index"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			11:
+				if tag.wire == 0:
+					result["channel_tick_count"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			12:
+				if tag.wire == 0:
+					result["queued_skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			13:
+				if tag.wire == 0:
+					result["queued_target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			14:
+				if tag.wire == 0:
+					result["queue_deadline_at_ms"] = reader.uint64()
 				else:
 					reader.skip(tag.wire)
 			_:
@@ -2137,11 +2172,21 @@ static func encode_m2c_cast_skill(value: Dictionary) -> PackedByteArray:
 		varint_field(result, 8, int(value["skill_cooldown_end_at_ms"]))
 	if value.has("interrupt_reason"):
 		string_field(result, 9, String(value["interrupt_reason"]))
+	if value.has("channel_tick_index"):
+		varint_field(result, 10, int(value["channel_tick_index"]))
+	if value.has("channel_tick_count"):
+		varint_field(result, 11, int(value["channel_tick_count"]))
+	if value.has("queued_skill_id"):
+		varint_field(result, 12, int(value["queued_skill_id"]))
+	if value.has("queued_target_unit_id"):
+		varint_field(result, 13, int(value["queued_target_unit_id"]))
+	if value.has("queue_deadline_at_ms"):
+		varint_field(result, 14, int(value["queue_deadline_at_ms"]))
 	return result
 
 static func decode_m2c_cast_skill(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"phase": 0, "cast_id": 0, "skill_id": 0, "target_unit_id": 0, "started_at_ms": 0, "finish_at_ms": 0, "global_cooldown_end_at_ms": 0, "skill_cooldown_end_at_ms": 0, "interrupt_reason": ""}
+	var result := {"phase": 0, "cast_id": 0, "skill_id": 0, "target_unit_id": 0, "started_at_ms": 0, "finish_at_ms": 0, "global_cooldown_end_at_ms": 0, "skill_cooldown_end_at_ms": 0, "interrupt_reason": "", "channel_tick_index": 0, "channel_tick_count": 0, "queued_skill_id": 0, "queued_target_unit_id": 0, "queue_deadline_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -2188,6 +2233,31 @@ static func decode_m2c_cast_skill(payload: PackedByteArray) -> Dictionary:
 			9:
 				if tag.wire == 2:
 					result["interrupt_reason"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			10:
+				if tag.wire == 0:
+					result["channel_tick_index"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			11:
+				if tag.wire == 0:
+					result["channel_tick_count"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			12:
+				if tag.wire == 0:
+					result["queued_skill_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			13:
+				if tag.wire == 0:
+					result["queued_target_unit_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			14:
+				if tag.wire == 0:
+					result["queue_deadline_at_ms"] = reader.uint64()
 				else:
 					reader.skip(tag.wire)
 			90:

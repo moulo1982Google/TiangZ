@@ -19,7 +19,8 @@ import {
   type ITransfer,
   systemFor,
 } from "#tiangz/model";
-import { ActionFromConfig, ExecuteAction } from "../action/ActionExecutor";
+import { ActionFromConfig } from "../action/ActionExecutor";
+import { ExecuteReward } from "../reward/RewardExecutor";
 
 @systemFor(QuestComponent)
 export class QuestComponentSystem extends QuestComponent implements ITransfer<QuestTransferState> {
@@ -79,13 +80,13 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
       throw new RpcError(GameErrCode.QuestNotComplete, `quest is not complete: ${questConfigId}`);
     }
     const config = GameConfigs.QuestConfig.Get(questConfigId);
-    const result = ExecuteAction(this.GetParent(), ActionFromConfig(config.rewardActionType, config.rewardActionParams), {
-      reason: "quest-reward",
-    });
+    const result = ExecuteReward(this.GetParent(), {
+      actions: [ActionFromConfig(config.rewardActionType, config.rewardActionParams)],
+    }, { reason: "quest-reward" });
     this.completedQuestConfigIds.add(questConfigId);
     this.UnindexQuest(quest);
     this.RemoveChild(Quest, BigInt(questConfigId));
-    return { questConfigId, rewardItems: result.grantedItem ? [result.grantedItem] : [] };
+    return { questConfigId, rewardItems: [...result.items] };
   }
 
   Snapshot(): readonly QuestState[] { return this.GetChildren(Quest).map((quest) => quest.Snapshot()); }

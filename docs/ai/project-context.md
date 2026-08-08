@@ -128,7 +128,9 @@ Buff需要被AOI玩家看到，不代表Buff需要mailbox，也不需要通用di
 
 战斗伤害入口已经统一到Unit上的`CombatComponent`：Monster、Skill和Action只提交`DamageRequest`，CombatComponent依次执行已注册的护盾/受伤处理器、修改`NumericType.CurrentHp`并返回`DamageResult`；治疗使用`ApplyHealing`并由CombatComponent限制`MaxHp`。伤害入口严禁查询或调用`BuffComponent`，Buff只能在添加/移除生命周期中注册或注销`DamageAbsorber`，保存`modifierId`而不是让Buff和Combat各维护一份护盾剩余量。MonsterComponent负责找目标、距离、AI、仇恨和重生，不能直接写目标HP；Combat不负责AOI、Gate、目标选择或Unit销毁。完整规则见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)。
 
-Quest默认是玩家私有状态。`QuestComponent`拥有进行中的`Quest ChildEntity`和已完成配置ID集合；活动任务显式区分`InProgress/ReadyToTurnIn`，接取时冻结目标ID与要求数量，配置Reload只影响后续新任务。怪物击杀、道具成功使用和AOI Attach完成后只同步发布`QuestEvents.Progress`领域事实，稳定Hotfix事件Handler再调用`QuestComponent.ApplyProgress`；组件按`(ObjectiveType,TargetConfigId)`运行时索引定位目标，索引不传送、不持久化并从Quest快照重建。接取统一经过`QuestEvents.BeforeAccept`同步Veto，配置内置前置任务与最低等级最终校验。进度使用以QuestConfigId为key的owner-only latest消息；登录、重连和跨地图传送携带活动Quest与已完成ID全量快照。领取必须在PlayerUnit有序mailbox内同步完成奖励Action、写完成记录和RemoveChild，广播在提交之后执行。当前`GrantItem`奖励创建新Item堆叠，多Action原子奖励与自动堆叠仍待独立能力。完整设计见[任务系统设计](../design/quest-system.md)。
+Quest默认是玩家私有状态。`QuestComponent`拥有进行中的`Quest ChildEntity`和已完成配置ID集合；活动任务显式区分`InProgress/ReadyToTurnIn`，接取时冻结目标ID与要求数量，配置Reload只影响后续新任务。怪物击杀、道具成功使用和AOI Attach完成后只同步发布`QuestEvents.Progress`领域事实，稳定Hotfix事件Handler再调用`QuestComponent.ApplyProgress`；组件按`(ObjectiveType,TargetConfigId)`运行时索引定位目标，索引不传送、不持久化并从Quest快照重建。接取统一经过`QuestEvents.BeforeAccept`同步Veto，配置内置前置任务与最低等级最终校验。进度使用以QuestConfigId为key的owner-only latest消息；登录、重连和跨地图传送携带活动Quest与已完成ID全量快照。领取必须在PlayerUnit有序mailbox内同步完成奖励Action、写完成记录和RemoveChild，广播在提交之后执行。当前奖励通过`ExecuteReward -> ExecuteActionBatch`执行，`GrantItem/GrantItems`由Inventory负责堆叠合并与拆分；批次不提供失败回滚或数据库事务，组队共享任务等待Party系统。完整设计见[任务系统设计](../design/quest-system.md)。
+
+补充：当前奖励实现已经由`ExecuteReward -> ExecuteActionBatch`统一执行，Inventory负责`GrantItem/GrantItems`的堆叠合并与拆分。Action批次在PlayerUnit有序mailbox内同步完成，但不提供失败回滚或数据库事务；DBProxy仍是后续独立仓库。组队共享任务等待Party系统，不在Quest层提前模拟。上方任务段落中关于“GrantItem创建新堆叠、自动堆叠待实现”的句子是历史记录，以本条为准。
 
 ### 领域设计规则与开发助手
 
@@ -420,7 +422,7 @@ Phase 5计划：
 
 ## 最新效果系统校准
 
-Phase 4.4现在已经包含Action/Buff、Luban SkillConfig/SkillEffectConfig和五技能Cast闭环；后文“Buff、Cast或技能表尚未开始”的历史描述均以本节、[Action与Buff设计](../design/action-buff.md)和[技能系统设计](../design/skill-system.md)为准。开发人员应先组合现有Action、Buff策略和SkillEffect，不要为每个技能新写Handler，也不要把Buff效果反向塞进Combat入口。
+Phase 4.4现在已经包含Action/Buff、Luban SkillConfig/SkillEffectConfig、六技能Cast和3006引导闭环；后文“Buff、Cast或技能表尚未开始”的历史描述均以本节、[Action与Buff设计](../design/action-buff.md)和[技能系统设计](../design/skill-system.md)为准。开发人员应先组合现有Action、Buff策略和SkillEffect，不要为每个技能新写Handler，也不要把Buff效果反向塞进Combat入口。
 
 ## C# Client SDK与Unity边界
 

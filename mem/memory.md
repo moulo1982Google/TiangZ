@@ -134,12 +134,12 @@ npm run build:cocos3d:mobile
 - 技能只负责目标和时间线，完成时执行Action；伤害/治疗必须进入Combat，Buff进入BuffComponent，广播仍由Map/Audience负责。
 - 伤害类型、Instant/Cast、移动中断和`Keep/ResetOnStart/ResetOnComplete/Cancel`平A策略是独立字段，不能互相推导。
 - 第一版演示使用寒冰箭、火焰冲击、惩击、真言术·盾和真言术·韧；它们全部属于法术，接受时清零平A进度，读条期间暂停，成功或中断后都从0重新计时。寒冰箭需要最小抛射物，其他技能暂不扩展地面AOE、引导、技能队列和持久化。
-- 五技能闭环已实现为`PlayerUnit.CastSkill -> SkillComponent -> 地图唯一SkillMapComponent.Update10Hz -> Action -> Combat/Buff`。不为Unit或Cast创建独立Timer/Update；冷却跨地图保留，活动读条在传送时终止。
+- 六技能闭环已实现为`PlayerUnit.CastSkill -> SkillComponent -> 地图唯一SkillMapComponent.Update10Hz -> Action -> Combat/Buff`；3006额外验证引导Tick和单技能排队。不为Unit或Cast创建独立Timer/Update；冷却跨地图保留，活动读条在传送时终止。
 - 可扩展施法前置条件统一走同步只读`SkillEvents.BeforeCast` Veto；底层SkillMap与BuffComponent仍必须保留最终不变量，不能只信Veto。
 - 读条技能接受时立即清除Rust旧移动租约；后续非零移动输入打断施法，不能让玩家在旧输入租约期间继续滑行。
 - Buff冲突已支持Target/Source作用域与Stack/Refresh/Replace/Reject/HigherWins；运行时Add/Tick/Remove Action和护盾剩余量必须随传送快照恢复，普通Refresh不重复执行AddAction。
 - 玩家跨MapHost快照的生成和目标校验必须共同引用`PLAYER_TRANSFER_SCHEMA_VERSION`；新增可传送Component或字段时升级一次常量，并跑真实跨图Runtime smoke，禁止两端手写不同schema数字。
-- 当前五技能数值已经迁入Luban；`SkillCatalog.ts`只按配置指纹组合只读定义。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast；不得在Unit或Component长期缓存定义。
+- 当前六技能数值已经迁入Luban；`SkillCatalog.ts`只按配置指纹组合只读定义。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast；不得在Unit或Component长期缓存定义。
 
 ## 3D客户端左右输入约定
 
@@ -156,7 +156,17 @@ npm run build:cocos3d:mobile
 - Buff传送只保存纯值和服务器墙钟时间，目标重建Timer但不重复执行AddAction；不保存TimerId、闭包、Promise或Entity引用。运行时Action覆盖和护盾剩余量已经随跨Process快照恢复。
 - Combat不反向查询Buff。护盾等Buff在添加/移除边界注册/注销Combat数据型modifier，剩余量由Combat单独持有；禁止新增`BuffComponent.TryAbsorbDamage`式耦合。
 - Buff叠加语义拆成冲突域、冲突决策和刷新行为：`stack_group + stack_scope + sourceUnitId`形成冲突键，策略支持Stack、Refresh、Replace、Reject和HigherWins；HigherWins比较显式priority，不比较ConfigId。Refresh默认不重复执行AddAction，来源、Tick节奏和运行状态分别配置。`BuffConfig.description`只进入服务端配置，不在客户端展示。
-- 当前演示：1001小型生命药水执行`Heal(150)`，1002大型生命药水添加2001持续回血Buff，2001每3秒执行`Heal(50)`。两种药品各有30秒配置CD，并和技能共享1秒玩家GCD；服务端原子提交、跨地图保留，Cocos3D只按返回deadline绘制。五技能Cast与Luban SkillConfig/SkillEffectConfig已完成，寒冰箭/惩击30米、火焰冲击10米；复杂地面目标、引导和Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`、`docs/design/skill-system.md`和`docs/tutorials/18-configured-skill.md`。
+- 当前演示：1001小型生命药水执行`Heal(150)`，1002大型生命药水添加2001持续回血Buff，2001每3秒执行`Heal(50)`。两种药品各有30秒配置CD，并和技能共享1秒玩家GCD；服务端原子提交、跨地图保留，Cocos3D只按返回deadline绘制。六技能Cast与Luban SkillConfig/SkillEffectConfig已完成，3006验证引导Tick和单技能排队，寒冰箭/惩击30米、火焰冲击10米；复杂地面目标和Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`、`docs/design/skill-system.md`和`docs/tutorials/18-configured-skill.md`。
+
+## 本轮业务推进边界
+
+- 当前优先顺序是Inventory与奖励、任务收口、技能扩展、真实业务链路压测；DBProxy不插入本轮，仍保持独立Rust仓库设计。
+- 真实业务压测入口是`npm run perf:business-chain`，正式CPU或长时间窗口前必须告知用户并等待空闲机器；未获得机器确认时只做编译、自测和小规模非压力验证。
+- 业务链路压测默认交替UseItem与友方CastSkill，报告必须区分业务拒绝、传输错误、p50/p95/p99和服务端队列，不能把规则拒绝当丢包。
+- 组队任务依赖Party/PartyAudience，Party完成前不在Quest中增加队员共享逻辑。
+- 未来部署与基准制品继续按“本机/CI编译 -> 上传Linux Release制品 -> 外网测试机只运行制品”的边界推进；外网不上传源码和开发依赖。
+
+技能扩展补充：当前已经加入3006引导治疗，用于验证10Hz分段Tick、读条期间停止平A、移动打断、公共CD和单技能排队。`ActiveCast`仍是SkillComponent纯数据，不创建每Cast Timer或Update；复杂AOE、真实技能压测和技能持久化暂缓。
 
 ## 任务系统当前语义
 
@@ -164,7 +174,7 @@ npm run build:cocos3d:mobile
 - 击杀、使用道具和进入地图模块只在事实成功提交后同步发布`QuestEvents.Progress`，稳定Hotfix事件Handler负责投影进度；来源模块不得查询QuestComponent或直接改任务。
 - 接取时冻结目标ID与required，热配置Reload只影响新接取任务。领取必须在PlayerUnit有序mailbox中同步提交奖励Action、完成ID和RemoveChild，异步广播只能发生在提交后。
 - 进度使用owner-only latest消息；登录、重连和跨地图携带活动Quest及已完成ID全量快照。组队共享、可重复任务和持久化暂未实现。
-- 当前框架待改：`codegen_game_config.mjs`不应手工枚举新Luban表；多Action奖励需要事务批次；`GrantItem`奖励的堆叠合并应由Inventory统一提供。
+- 当前框架待改：`codegen_game_config.mjs`不应手工枚举新Luban表；`ExecuteActionBatch/ExecuteReward`已经提供同步Action边界，但不提供失败回滚或DB事务；`GrantItem/GrantItems`已经由Inventory统一完成已有堆叠合并和按最大堆叠拆分。组队共享任务等待Party系统，不在Quest里提前模拟。
 - 活动Quest显式使用`InProgress/ReadyToTurnIn`；目标达成只进入待交付，领奖成功后才写完成集合并移除Quest。协议status是新权威字段，旧`ready_to_complete`仅为SDK兼容镜像。
 - `QuestComponent`按`objectiveType:targetConfigId`维护只含稳定ID的运行时目标索引；索引不传送、不持久化，接取/领奖时维护，Deserialize/RestoreTransfer时重建。
 - 接取统一走同步`QuestEvents.BeforeAccept` Veto，配置内置`required_quest_ids/minimum_level`最终不变量；Veto只读且不可异步。`NumericType.Level=3`，Demo玩家默认1级，5004要求完成5001且达到2级。

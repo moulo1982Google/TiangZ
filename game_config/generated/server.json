@@ -535,7 +535,10 @@
       "movement_policy": 2,
       "auto_attack_policy": 2,
       "revalidate_on_complete": true,
-      "required_absent_buff_config_id": 0
+      "required_absent_buff_config_id": 0,
+      "queue_window_ms": 500,
+      "channel_tick_ms": 0,
+      "channel_ticks": 0
     },
     {
       "id": 3002,
@@ -551,7 +554,10 @@
       "movement_policy": 1,
       "auto_attack_policy": 2,
       "revalidate_on_complete": true,
-      "required_absent_buff_config_id": 0
+      "required_absent_buff_config_id": 0,
+      "queue_window_ms": 0,
+      "channel_tick_ms": 0,
+      "channel_ticks": 0
     },
     {
       "id": 3003,
@@ -567,7 +573,10 @@
       "movement_policy": 2,
       "auto_attack_policy": 2,
       "revalidate_on_complete": true,
-      "required_absent_buff_config_id": 0
+      "required_absent_buff_config_id": 0,
+      "queue_window_ms": 500,
+      "channel_tick_ms": 0,
+      "channel_ticks": 0
     },
     {
       "id": 3004,
@@ -583,7 +592,10 @@
       "movement_policy": 1,
       "auto_attack_policy": 2,
       "revalidate_on_complete": true,
-      "required_absent_buff_config_id": 4004
+      "required_absent_buff_config_id": 4004,
+      "queue_window_ms": 0,
+      "channel_tick_ms": 0,
+      "channel_ticks": 0
     },
     {
       "id": 3005,
@@ -599,7 +611,29 @@
       "movement_policy": 1,
       "auto_attack_policy": 2,
       "revalidate_on_complete": true,
-      "required_absent_buff_config_id": 0
+      "required_absent_buff_config_id": 0,
+      "queue_window_ms": 0,
+      "channel_tick_ms": 0,
+      "channel_ticks": 0
+    },
+    {
+      "id": 3006,
+      "name": "引导治疗",
+      "description": "引导3秒，每秒恢复30点生命；移动会打断引导。",
+      "target_relation": 2,
+      "cast_time_ms": 3000,
+      "cooldown_ms": 6000,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0,
+      "movement_policy": 2,
+      "auto_attack_policy": 2,
+      "revalidate_on_complete": true,
+      "required_absent_buff_config_id": 0,
+      "queue_window_ms": 0,
+      "channel_tick_ms": 1000,
+      "channel_ticks": 3
     }
   ],
   "game_tbskilleffectconfig": [
@@ -693,6 +727,17 @@
         4005
       ],
       "description": "给主目标添加真言术·韧"
+    },
+    {
+      "id": 300601,
+      "skill_id": 3006,
+      "order": 1,
+      "target": 2,
+      "action_type": 6,
+      "action_params": [
+        30
+      ],
+      "description": "每跳为主目标恢复30点生命"
     }
   ]
 }

@@ -299,8 +299,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 从2026-08-01起，新容量基线默认采用每玩家`2Hz`（500ms）持续移动心跳与`0.2Hz`（5秒）MapProbe；按下、转向和停止仍立即发送，Gate Ping保持5秒一次。AOI Cold配置固定为3×3 Enter/20Hz与5×5 Detach/5Hz，不再使用7×7/1Hz。历史负载结果只保留原口径，不与新行为基线直接横向比较。
 - 3000人AOI密度矩阵已经覆盖10×10、15×15和20×20 Grid。扁平Grid与连续位图改造后，Map CPU平均由旧`74.1%/56.7%/57.3%`降至`55.0%/50.7%/42.9%`，正式窗口均无错误、过载、超时和背压。`perf:map-capacity:grid-matrix`支持一键回归，`--report-runs`可在单档复测后从三份有效原始报告重建矩阵；Bench后置Place RPC仍会在稀疏地图形成初始化突发，后续应并入Bench进图事务。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
-- 怪物与战斗：Phase 4.4已完成固定刷点、主动/被动怪、统一仇恨、普通攻击、玩家自动平A、Action/Buff和首批五技能闭环。自动平A与施法使用固定`Update10Hz`，怪物AI使用`Update5Hz`，重生/清理使用`Update1Hz`，不为每个玩家、怪物或Cast创建独立Update/Timer。
-- 技能系统先按[技能与施法系统设计](design/skill-system.md)实现单位目标瞬发和普通读条：SkillComponent统一服务玩家与怪物，ActiveCast是瞬时纯数据而不是Actor/Entity，10Hz按服务器deadline推进；技能完成只执行Action，目标伤害继续进入Combat。压制用于验收`Keep`平A，火球术用于验收移动中断和`ResetOnComplete`。
+- 怪物与战斗：Phase 4.4已完成固定刷点、主动/被动怪、统一仇恨、普通攻击、玩家自动平A、Action/Buff和六技能闭环。自动平A与施法使用固定`Update10Hz`，怪物AI使用`Update5Hz`，重生/清理使用`Update1Hz`，不为每个玩家、怪物或Cast创建独立Update/Timer。
+- 技能系统已完成六个单位目标技能的第一版闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧和3006引导治疗。`SkillComponent`统一保存纯Cast状态、GCD/CD、移动打断和单技能队列，`SkillMapComponent.Update10Hz`按服务器deadline推进引导Tick；技能完成只执行Action，目标伤害和治疗继续进入Combat。复杂AOE、地面目标、技能持久化和正式技能压测后续再做，具体边界见[技能与施法系统设计](design/skill-system.md)。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
 - 任务系统基础已完成：`QuestComponent -> Quest ChildEntity`保存活动任务，显式区分进行中/待交付状态；击杀/用道具/进图以同步领域事件解耦进度来源，并按目标类型与配置ID索引定位相关任务；接取支持同步Veto、前置任务和最低等级最终校验。owner-only latest同步进度，Action发奖，跨地图重建目标索引并保留活动/完成状态。后续再增加NPC接取、可重复任务、组队共享投影、持久化与多Action事务奖励。
@@ -389,11 +389,11 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ### Phase 4.4：怪物、战斗与最小效果系统
 
-状态：普通攻击、局部行为树、统一Combat入口、Action/Buff闭环和首批五技能施法闭环已完成；复杂目标、引导、AOE和技能配置表生成仍在后续。
+状态：普通攻击、局部行为树、统一Combat入口、Action/Buff闭环和六技能施法闭环已完成；复杂目标、AOE和技能性能压测仍在后续。
 
 - 已完成最小`ActionExecutor`：道具通过`use_effect/use_params`统一表达立即数值变化或添加Buff，`ChangeNumeric`的HP变化经过Combat，`AddBuff/RemoveBuff`经过BuffComponent；不引入每个道具一个Handler的分支。
 - 已完成`BuffComponent -> Buff ChildEntity`：支持Target/Source冲突域和Stack/Refresh/Replace/Reject/HigherWins策略；运行时Action、来源、优先级和护盾剩余量可跨地图恢复。完整规则见[Action与Buff设计](design/action-buff.md)。
-- 已完成`SkillComponent + SkillMapComponent.Update10Hz`五技能闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧共用GCD/CD、配置化移动/平A策略、直接/弹道命中和Action结算；冷却跨地图保留，活动读条不恢复。`SkillConfig/SkillEffectConfig`已接入Luban，客户端只获得基础技能表，服务端效果表按配置指纹组合并为在途Cast冻结；活跃Cast性能A/B待后续。
+- 已完成`SkillComponent + SkillMapComponent.Update10Hz`六技能闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧和3006引导治疗共用GCD/CD、配置化移动/平A策略、直接/弹道命中和Action结算；引导治疗额外验证分段Tick、移动打断和单技能排队。冷却跨地图保留，活动读条不恢复。`SkillConfig/SkillEffectConfig`已接入Luban，客户端只获得基础技能表，服务端效果表按配置指纹组合并为在途Cast冻结；活跃Cast性能A/B待机器确认后进行。
 
 - 已完成`MonsterConfig`和`MonsterAreaConfig`冷配置，以及`MonsterComponent + MonsterUnit`的统一Unit模型。
 - 已完成固定刷点、主动/被动模式、地图Tick追击、攻击距离、玩家攻击、Numeric扣血、死亡Detach/Remove、AOI Leave、原刷怪槽新Unit重生和运行时冒烟验收。
@@ -402,6 +402,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 已完成最小统一仇恨：实际伤害按1:1写入`MonsterComponent.AddThreat`，被动怪没有仇恨时待机，主动怪没有仇恨时按规则主动索敌；后续技能、Buff、掉落、战斗事件和更复杂仇恨仍按业务需求拆分。持久化和角色/怪物动态避障不属于本阶段。
 - 已完成标准伤害/治疗入口：所有玩家和怪物挂载`CombatComponent`，攻击、怪物AI和道具不再直接改`CurrentHp`；护盾使用Combat内部注册的受伤处理器，Buff只在生命周期边界注册/注销，不被伤害入口反向调用。Action和Buff已经复用这套入口，后续Cast技能也必须沿用，不新增`BuffComponent.TryAbsorbDamage`式反向依赖。
 - 已增加`tools/combat_self_test.ts`，覆盖多护盾优先级、剩余量更新/注销、实际扣血、治疗上限和非法输入；完整规则见`docs/design/combat-damage-pipeline.md`。
+
+#### Phase 4.4当前收口：Inventory、奖励、任务与技能
+
+- `InventoryComponent`已经提供`GrantItem/GrantItems`，统一完成已有堆叠合并和按`ItemConfig.max_stack`拆分；奖励通过`ExecuteReward -> ExecuteActionBatch`同步执行。这个边界不跨`await`，但不提供失败回滚或数据库事务，跨域持久化等待独立DBProxy。
+- 任务领奖已经在PlayerUnit有序mailbox内同步完成奖励、完成记录和Quest ChildEntity移除；组队共享任务等待Party系统，不在Quest里提前模拟。
+- 技能系统增加3006引导治疗，验证10Hz分段Tick、移动打断、停止平A、公共CD和单技能排队；复杂目标、AOE和技能性能A/B仍待后续机器验收。
+- `npm run perf:business-chain`已准备真实业务链路压测，交替发送UseItem与友方CastSkill并区分业务拒绝和传输错误。正式CPU压力测试需用户提供空闲机器，当前只做编译验证。
 
 ### Phase 4.5：持久化基础
 

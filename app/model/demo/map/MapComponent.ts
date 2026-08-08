@@ -1879,5 +1879,10 @@ function toSkillCastProtocol(state: SkillCastState): G2C_SkillCastState {
     globalCooldownEndAtMs: BigInt(Math.max(0, Math.floor(state.globalCooldownEndAtMs))),
     skillCooldownEndAtMs: BigInt(Math.max(0, Math.floor(state.skillCooldownEndAtMs))),
     interruptReason: state.interruptReason,
+    channelTickIndex: state.channelTickIndex,
+    channelTickCount: state.channelTickCount,
+    queuedSkillId: state.queuedSkillId,
+    queuedTargetUnitId: state.queuedTargetUnitId,
+    queueDeadlineAtMs: BigInt(Math.max(0, Math.floor(state.queueDeadlineAtMs))),
   };
 }

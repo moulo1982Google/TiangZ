@@ -72,7 +72,7 @@ interface GameConfigSnapshot {
   readonly QuestObjectiveConfig: ConfigTable<game.QuestObjectiveConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "5d42f027a7452449e658b62e172cbc349cb724cdcaaea73e43940dbada98f9c1";
+export const GameConfigSchemaFingerprint = "b4421d70a9751629164229237beeb4bf400d7206fde19cdc02204e21d8614486";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -349,9 +349,12 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       !Number.isSafeInteger(skill.castTimeMs) || skill.castTimeMs < 0 ||
       !Number.isSafeInteger(skill.cooldownMs) || skill.cooldownMs < 0 ||
       !Number.isSafeInteger(skill.globalCooldownMs) || skill.globalCooldownMs < 0 ||
-      !Number.isFinite(skill.rangeMeters) || skill.rangeMeters <= 0
+      !Number.isFinite(skill.rangeMeters) || skill.rangeMeters <= 0 ||
+      !Number.isSafeInteger(skill.queueWindowMs) || skill.queueWindowMs < 0 ||
+      !Number.isSafeInteger(skill.channelTickMs) || skill.channelTickMs < 0 ||
+      !Number.isSafeInteger(skill.channelTicks) || skill.channelTicks < 0
     ) {
-      throw new Error(`skill config ${skill.id} has invalid cast, cooldown, or range values`);
+      throw new Error(`skill config ${skill.id} has invalid cast, cooldown, range, queue, or channel values`);
     }
     if (skill.targetRelation < SkillTargetRelation.Enemy || skill.targetRelation > SkillTargetRelation.Friendly) {
       throw new Error(`skill config ${skill.id} has unsupported target relation`);
@@ -372,6 +375,12 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       }
     } else {
       throw new Error(`skill config ${skill.id} has unsupported delivery ${skill.delivery}`);
+    }
+    if ((skill.channelTickMs === 0) !== (skill.channelTicks === 0)) {
+      throw new Error(`skill config ${skill.id} must configure channel tick interval and count together`);
+    }
+    if (skill.channelTicks > 0 && (skill.delivery !== SkillDelivery.Direct || skill.castTimeMs < skill.channelTickMs * skill.channelTicks)) {
+      throw new Error(`skill config ${skill.id} channel must be direct and fit inside cast time`);
     }
     if (
       skill.requiredAbsentBuffConfigId > 0 &&

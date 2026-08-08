@@ -125,8 +125,8 @@ const reward = player.GetComponent(QuestComponent).CompleteQuest(5001);
 ## 当前限制与框架改进
 
 1. **配置Facade仍需手工登记。** Luban能发现新表，但`tools/codegen_game_config.mjs`仍手工列出生成到服务端和客户端的表。新增Quest表因此修改了生成器。后续应从Luban表元数据生成Facade，开发者只维护Excel与分组。
-2. **多Action奖励尚无事务。** 当前每个任务只有一个同步Action，`GrantItem`成功后再写完成记录。未来多奖励若允许部分成功，需要Action批次预检与回滚，或交给独立事务系统。
-3. **奖励道具暂不合并堆叠。** `GrantItem`当前创建一个新Item ChildEntity；背包的最大堆叠与自动合并应由Inventory策略统一实现，不能塞进任务系统。
+2. **多Action奖励不是数据库事务。** 当前奖励通过`ExecuteActionBatch`在同一个有序PlayerUnit调用栈内同步执行，Action之间不`await`，并在进入执行前检查参数形状；它保证业务调用边界连续，但不提供失败回滚或数据库事务。需要跨域持久化一致性时，交给独立DBProxy事务能力。
+3. **奖励道具由Inventory统一合并。** `GrantItem/GrantItems`先填充已有堆叠，再按`ItemConfig.max_stack`拆分创建新的Item ChildEntity，返回受影响Item快照。任务系统不能自行遍历或拼接背包。
 4. **任务定义热更采用实例冻结。** 这是刻意的语义：活动任务不会随配置变更。若运营需要迁移进行中任务，必须提供显式版本和迁移工具，不能在读取时偷偷套用新配置。
 5. **完成记录当前为Set。** 少量Demo足够；大规模任务可在持久化层使用分段位图或索引，但不能改变业务API。
 

@@ -113,6 +113,7 @@ async function runCase(deployment, players, moveRate, round) {
       "--duration", String(options.duration),
       "--warmup", String(options.warmup),
       "--move-rate", String(moveRate),
+      "--business-rate", String(options.businessRate),
       "--label", deployment,
     ]);
     process.stdout.write(output);
@@ -241,6 +242,13 @@ function aggregateCases(rounds) {
       moveP95Ms: median(group.map((item) => item.movement.p95Ms)),
       moveP99Ms: median(group.map((item) => item.movement.p99Ms)),
       stalled: median(group.map((item) => item.movement.errors)),
+      businessPerSecond: median(group.map((item) => item.business?.perSecond ?? 0)),
+      businessAccepted: median(group.map((item) => item.business?.accepted ?? 0)),
+      businessRejected: median(group.map((item) => item.business?.rejected ?? 0)),
+      businessTransportErrors: median(group.map((item) => item.business?.transportErrors ?? 0)),
+      businessP50Ms: median(group.map((item) => item.business?.p50Ms ?? 0)),
+      businessP95Ms: median(group.map((item) => item.business?.p95Ms ?? 0)),
+      businessP99Ms: median(group.map((item) => item.business?.p99Ms ?? 0)),
       serverPeakCpuPercentSum: median(group.map((item) => item.serverResources?.peakCpuPercentSum ?? 0)),
       serverPeakRssBytesSum: median(group.map((item) => item.serverResources?.peakRssBytesSum ?? 0)),
       serverGcCount: median(group.map((item) => item.serverResources?.v8GcCountSum ?? 0)),
@@ -266,12 +274,12 @@ function renderMarkdown(report) {
     "",
     `## ${options.rounds} 轮中位数`,
     "",
-    "| 部署 | 负载 | 玩家 | move/s | push/s | 确认数 | 延迟样本 | p50 ms | p95 ms | p99 ms | stalled | Server CPU% | Server RSS | Server GC ms | Load CPU ms | Load RSS |",
-    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| 部署 | 负载 | 玩家 | move/s | push/s | 确认数 | move p95 | business/s | business成功 | business拒绝 | business传输错 | business p95 | stalled | Server CPU% | Server RSS | Server GC ms | Load CPU ms | Load RSS |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
   ];
   for (const item of report.cases) {
     const value = item.median;
-    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${value.moveAcknowledged} | ${value.moveLatencySamples} | ${round(value.moveP50Ms, 2)} | ${round(value.moveP95Ms, 2)} | ${round(value.moveP99Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : round(value.serverGcMs, 2)} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
+    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${value.moveAcknowledged} | ${round(value.moveP95Ms, 2)} | ${round(value.businessPerSecond)} | ${value.businessAccepted} | ${value.businessRejected} | ${value.businessTransportErrors} | ${round(value.businessP95Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : round(value.serverGcMs, 2)} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
   }
   if (options.outputPrefix === "soak") {
     lines.push(
@@ -303,6 +311,8 @@ function renderMarkdown(report) {
     "## 指标口径",
     "",
     "- `move/s` 是客户端发送移动到收到自身权威位置 Push 的闭环吞吐。",
+    "- `business/s` 是真实 UseItem 与 CastSkill 请求的响应吞吐；`business成功/拒绝`按服务端业务响应分类，`business传输错`才表示连接、超时或协议层异常。",
+    "- 业务负载默认交替使用1001道具和3005友方技能；压测客户端从EnterMap快照读取1001的ItemId，服务端仍是唯一权威。",
     "- `确认数` 统计所有匹配 `acknowledgedSequence` 的权威 Push；延迟分位数使用每玩家最多约 1024 个均匀样本，避免长稳工具自身内存线性增长。",
     "- `push/s` 是所有客户端实际收到的 EntityMove 数；当前仍为同地图全量可见，尚未启用 AOI。",
     "- Server CPU/RSS/GC 来自各 Runtime 的 `[process-metrics]`；split 模式按进程汇总。",
@@ -330,6 +340,7 @@ function parseOptions(args) {
     mode,
     players: csvNumbers(values.get("--players") ?? "10,50,100"),
     moveRates: csvNumbers(values.get("--move-rates") ?? "2,0"),
+    businessRate: nonNegative(values.get("--business-rate") ?? "0", "--business-rate"),
     duration: positive(values.get("--duration") ?? "60", "--duration"),
     warmup: nonNegative(values.get("--warmup") ?? "10", "--warmup"),
     rounds: positive(values.get("--rounds") ?? "3", "--rounds"),

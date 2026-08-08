@@ -1,8 +1,10 @@
 import {
   GameErrCode,
+  GameConfigs,
   GlobalIdSystem,
   Item,
   ItemComponent,
+  type InventoryGrant,
   type ItemSnapshot,
   type ItemView,
   type ITransfer,
@@ -32,7 +34,7 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     // 初始道具数量属于演示业务，不放进Entity构造流程；后续正式项目应从玩家数据恢复。
     // Starter quantities are demo business data, not an Entity-construction rule; production should restore them from player data.
     for (const starter of DEMO_STARTER_ITEMS) {
-      this.CreateItem(starter.configId, starter.count);
+      this.GrantItem(starter.configId, starter.count);
     }
   }
 
@@ -70,12 +72,19 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
 
   /** 增加已有堆叠并返回权威快照。 / Adds to an existing stack and returns its authoritative snapshot. */
   AddItem(itemId: bigint, count: number): ItemSnapshot {
-    return this.requireItem(itemId).AddCount(count);
+    const item = this.requireItem(itemId);
+    const config = this.getItemConfig(item.configId);
+    requirePositiveCount(count);
+    if (item.count + count > config.maxStack) {
+      throw new RpcError(GameErrCode.ItemStackFull, `item ${itemId} exceeds max stack ${config.maxStack}`);
+    }
+    return item.AddCount(count);
   }
 
   /** 原子扣除已校验数量；失败时不改变堆叠。 / Atomically removes a validated count or leaves the stack unchanged. */
   RemoveItem(itemId: bigint, count: number): ItemSnapshot {
     const item = this.requireItem(itemId);
+    requirePositiveCount(count);
     if (item.count < count) {
       throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is not enough`);
     }
@@ -84,6 +93,8 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
 
   /** 生成全新的永久ItemId并创建道具；发放、掉落和拆分堆叠必须走此入口。 / Creates an item with a fresh persistent ID; grants, drops, and stack splits must use this entry. */
   CreateItem(configId: number, count: number): Item {
+    const config = this.getItemConfig(configId);
+    requireStackCount(count, config.maxStack, configId);
     const itemId = GlobalIdSystem.Instance.Next();
     return this.CreateItemById(itemId, {
       itemId,
@@ -104,6 +115,8 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     if (this.TryGetChild(Item, itemId)) {
       throw new Error(`duplicate item id: ${itemId}`);
     }
+    const config = this.getItemConfig(snapshot.configId);
+    requireStackCount(snapshot.count, config.maxStack, snapshot.configId);
     return this.AddChild(Item, snapshot.itemId, {
       configId: snapshot.configId,
       count: snapshot.count,
@@ -111,6 +124,61 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
       level: snapshot.level,
       version: snapshot.version,
     });
+  }
+
+  /**
+   * 按配置发放道具；优先填充已有堆叠，剩余数量才创建新Item子实体。
+   * 这是奖励、掉落和GM发放的统一入口，调用方不能自行遍历Item并拼接堆叠。
+   *
+   * Grants by ItemConfig. Existing stacks are filled before new child Items are
+   * created. Rewards, drops, and GM grants must use this entry instead of
+   * implementing their own stack merge rules.
+   */
+  GrantItem(configId: number, count: number): readonly ItemSnapshot[] {
+    return this.GrantItems([{ configId, count }]);
+  }
+
+  /**
+   * 预检全部配置和数量后，按稳定顺序合并/拆堆；返回受影响堆叠的最终快照。
+   * 当前背包没有容量上限，所以预检成功后不会因“格子不足”失败；未来加入格子限制时，
+   * 必须扩展这里的预检，而不是让任务系统处理背包容量。
+   *
+   * Validates every grant before applying deterministic merge/split operations
+   * and returns final snapshots for affected stacks. The demo inventory has no
+   * slot limit; a future slot rule belongs in this preflight, never in Quest.
+   */
+  GrantItems(grants: readonly InventoryGrant[]): readonly ItemSnapshot[] {
+    if (grants.length === 0) return [];
+    for (const grant of grants) {
+      this.getItemConfig(grant.configId);
+      requirePositiveCount(grant.count);
+    }
+
+    const affected = new Map<bigint, ItemSnapshot>();
+    for (const grant of grants) {
+      const config = this.getItemConfig(grant.configId);
+      let remaining = grant.count;
+      const stacks = this.GetChildren(Item)
+        .filter((item) => item.configId === grant.configId && item.count < config.maxStack)
+        .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+
+      for (const item of stacks) {
+        if (remaining === 0) break;
+        const capacity = config.maxStack - item.count;
+        const amount = Math.min(capacity, remaining);
+        if (amount <= 0) continue;
+        remaining -= amount;
+        affected.set(item.id, item.AddCount(amount));
+      }
+
+      while (remaining > 0) {
+        const amount = Math.min(config.maxStack, remaining);
+        remaining -= amount;
+        const item = this.CreateItem(grant.configId, amount);
+        affected.set(item.id, item.Snapshot());
+      }
+    }
+    return [...affected.values()].sort((left, right) => left.itemId < right.itemId ? -1 : left.itemId > right.itemId ? 1 : 0);
   }
 
   private requireItem(itemId: bigint): Item {
@@ -122,5 +190,28 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     const item = this.TryGetChild(Item, itemId);
     if (!item) throw new RpcError(GameErrCode.ItemNotFound, `item not found: ${itemId}`);
     return item;
+  }
+
+  private getItemConfig(configId: number): import("#tiangz/model").ItemConfigData {
+    if (!Number.isSafeInteger(configId) || configId <= 0) {
+      throw new Error(`invalid item config id: ${configId}`);
+    }
+    return GameConfigs.ItemConfig.Get(configId);
+  }
+}
+
+function requireStackCount(count: number, maxStack: number, configId: number): void {
+  requirePositiveCount(count);
+  if (!Number.isSafeInteger(maxStack) || maxStack <= 0) {
+    throw new Error(`invalid max stack for item config ${configId}: ${maxStack}`);
+  }
+  if (count > maxStack) {
+    throw new Error(`item ${configId} count ${count} exceeds max stack ${maxStack}`);
+  }
+}
+
+function requirePositiveCount(count: number): void {
+  if (!Number.isSafeInteger(count) || count <= 0) {
+    throw new Error(`item count must be a positive safe integer: ${count}`);
   }
 }

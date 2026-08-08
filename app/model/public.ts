@@ -50,7 +50,11 @@ export {
   type GatePlayerMapLocation,
   type GatePlayerRouteState,
 } from "./demo/gate/GatePlayerRoute";
-export { ItemComponent } from "./demo/item/ItemComponent";
+export {
+  ItemComponent,
+  type InventoryGrant,
+  type InventoryGrantResult,
+} from "./demo/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";
 export { ItemEvents, type BeforeUseItemEvent } from "./demo/item/ItemEvents";
 export { Quest, type AwakeQuest, type QuestObjectiveState, type QuestState } from "./demo/quest/Quest";
@@ -61,6 +65,7 @@ export {
   type QuestTransferState,
 } from "./demo/quest/QuestComponent";
 export { QuestEvents, type BeforeAcceptQuestEvent, type QuestProgressEvent } from "./demo/quest/QuestEvents";
+export type { RewardDefinition, RewardResult } from "./demo/reward/Reward";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
 export {
   ActionType,

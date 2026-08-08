@@ -1021,6 +1021,12 @@ export class SkillConfig {
         this.revalidateOnComplete = _json_.revalidate_on_complete
         if (_json_.required_absent_buff_config_id === undefined) { throw new Error() }
         this.requiredAbsentBuffConfigId = _json_.required_absent_buff_config_id
+        if (_json_.queue_window_ms === undefined) { throw new Error() }
+        this.queueWindowMs = _json_.queue_window_ms
+        if (_json_.channel_tick_ms === undefined) { throw new Error() }
+        this.channelTickMs = _json_.channel_tick_ms
+        if (_json_.channel_ticks === undefined) { throw new Error() }
+        this.channelTicks = _json_.channel_ticks
     }
 
     /**
@@ -1079,8 +1085,23 @@ export class SkillConfig {
      * 目标必须不存在的BuffConfigId；0表示无
      */
     readonly requiredAbsentBuffConfigId: number
+    /**
+     * 施法完成前允许缓存下一个技能的窗口（毫秒）
+     */
+    readonly queueWindowMs: number
+    /**
+     * 引导每跳间隔（毫秒；非引导填0）
+     */
+    readonly channelTickMs: number
+    /**
+     * 引导总跳数（非引导填0）
+     */
+    readonly channelTicks: number
 
     resolve(tables:Tables) {
+
+
+
 
 
 

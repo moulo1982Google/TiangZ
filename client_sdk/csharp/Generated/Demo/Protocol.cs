@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "9d9c9938c27cd3244c1c6a1fd4f0e96d317c0cf7fc2852ff229923d6a667a6f1";
+    public const string Value = "8f687370a4ca2395a8c518758ccc2f83f2cef15c75295bb982bbe9251bc56c3c";
 }
 
 public static class MsgCode
@@ -399,6 +399,11 @@ public sealed class G2C_SkillCastState
     public ulong GlobalCooldownEndAtMs { get; set; }
     public ulong SkillCooldownEndAtMs { get; set; }
     public string? InterruptReason { get; set; }
+    public uint ChannelTickIndex { get; set; }
+    public uint ChannelTickCount { get; set; }
+    public uint QueuedSkillId { get; set; }
+    public uint QueuedTargetUnitId { get; set; }
+    public ulong QueueDeadlineAtMs { get; set; }
 }
 
 public sealed class G2C_SkillImpact
@@ -468,6 +473,11 @@ public sealed class M2C_CastSkill : IRpcResponse
     public ulong GlobalCooldownEndAtMs { get; set; }
     public ulong SkillCooldownEndAtMs { get; set; }
     public string? InterruptReason { get; set; }
+    public uint ChannelTickIndex { get; set; }
+    public uint ChannelTickCount { get; set; }
+    public uint QueuedSkillId { get; set; }
+    public uint QueuedTargetUnitId { get; set; }
+    public ulong QueueDeadlineAtMs { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -2416,6 +2426,21 @@ public static class G2C_SkillCastStateCodec
                 case 9 when tag.WireType == 2:
                     value.InterruptReason = reader.ReadString();
                     break;
+                case 10 when tag.WireType == 0:
+                    value.ChannelTickIndex = reader.ReadUInt32();
+                    break;
+                case 11 when tag.WireType == 0:
+                    value.ChannelTickCount = reader.ReadUInt32();
+                    break;
+                case 12 when tag.WireType == 0:
+                    value.QueuedSkillId = reader.ReadUInt32();
+                    break;
+                case 13 when tag.WireType == 0:
+                    value.QueuedTargetUnitId = reader.ReadUInt32();
+                    break;
+                case 14 when tag.WireType == 0:
+                    value.QueueDeadlineAtMs = reader.ReadUInt64();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -2436,6 +2461,11 @@ public static class G2C_SkillCastStateCodec
         if (value.GlobalCooldownEndAtMs != 0) writer.WriteUInt64(7, value.GlobalCooldownEndAtMs);
         if (value.SkillCooldownEndAtMs != 0) writer.WriteUInt64(8, value.SkillCooldownEndAtMs);
         if (!string.IsNullOrEmpty(value.InterruptReason)) writer.WriteString(9, value.InterruptReason);
+        if (value.ChannelTickIndex != 0) writer.WriteUInt32(10, value.ChannelTickIndex);
+        if (value.ChannelTickCount != 0) writer.WriteUInt32(11, value.ChannelTickCount);
+        if (value.QueuedSkillId != 0) writer.WriteUInt32(12, value.QueuedSkillId);
+        if (value.QueuedTargetUnitId != 0) writer.WriteUInt32(13, value.QueuedTargetUnitId);
+        if (value.QueueDeadlineAtMs != 0) writer.WriteUInt64(14, value.QueueDeadlineAtMs);
         return writer.ToArray();
     }
 }
@@ -2762,6 +2792,21 @@ public static class M2C_CastSkillCodec
                 case 9 when tag.WireType == 2:
                     value.InterruptReason = reader.ReadString();
                     break;
+                case 10 when tag.WireType == 0:
+                    value.ChannelTickIndex = reader.ReadUInt32();
+                    break;
+                case 11 when tag.WireType == 0:
+                    value.ChannelTickCount = reader.ReadUInt32();
+                    break;
+                case 12 when tag.WireType == 0:
+                    value.QueuedSkillId = reader.ReadUInt32();
+                    break;
+                case 13 when tag.WireType == 0:
+                    value.QueuedTargetUnitId = reader.ReadUInt32();
+                    break;
+                case 14 when tag.WireType == 0:
+                    value.QueueDeadlineAtMs = reader.ReadUInt64();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2791,6 +2836,11 @@ public static class M2C_CastSkillCodec
         if (value.GlobalCooldownEndAtMs != 0) writer.WriteUInt64(7, value.GlobalCooldownEndAtMs);
         if (value.SkillCooldownEndAtMs != 0) writer.WriteUInt64(8, value.SkillCooldownEndAtMs);
         if (!string.IsNullOrEmpty(value.InterruptReason)) writer.WriteString(9, value.InterruptReason);
+        if (value.ChannelTickIndex != 0) writer.WriteUInt32(10, value.ChannelTickIndex);
+        if (value.ChannelTickCount != 0) writer.WriteUInt32(11, value.ChannelTickCount);
+        if (value.QueuedSkillId != 0) writer.WriteUInt32(12, value.QueuedSkillId);
+        if (value.QueuedTargetUnitId != 0) writer.WriteUInt32(13, value.QueuedTargetUnitId);
+        if (value.QueueDeadlineAtMs != 0) writer.WriteUInt64(14, value.QueueDeadlineAtMs);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);

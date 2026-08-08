@@ -1,9 +1,9 @@
 {
   "formatVersion": 2,
-  "schemaFingerprint": "5d42f027a7452449e658b62e172cbc349cb724cdcaaea73e43940dbada98f9c1",
+  "schemaFingerprint": "b4421d70a9751629164229237beeb4bf400d7206fde19cdc02204e21d8614486",
   "clientSchemaFingerprint": "646efb2c90d05bb19150addb04a1f1576725d1dbe1b72df538f85110f1de1d01",
-  "dataFingerprint": "00e00684998fe60da0e79f20e68d69ba924c8dd3decc4ac0bab5596c5bc4b057",
-  "hotDataFingerprint": "8cf9502fa974807f2794fe225a5951b93e9fcc3b6700caddc899de849397657f",
+  "dataFingerprint": "755b6d054e5dbdfc3d25c087dac75bb3ad1efc14b6e0b07c5305367df633d4aa",
+  "hotDataFingerprint": "2d7fccd4f7503068145ae9a1eb17af5b2973b323715f8574b3848d66fea10572",
   "coldDataFingerprint": "ac47cd3750090682a7342bdd35f642e17e924414fe5fde5698e23b3668a66589",
   "reloadPolicies": {
     "hot": [
@@ -25,15 +25,15 @@
     ]
   },
   "serverFile": "server.json",
-  "serverHash": "62becd2c6b82713963a244fb091e16faef2ac12845ddc0e5dea11d52c08af10d",
+  "serverHash": "ae159b74aa551535aee8b93401da202e6b6dcd5e17b2a711f14aec61d75b1944",
   "serverHotFile": "server.hot.json",
-  "serverHotHash": "229ee609cfba548943d5480884cb0fe72a802e5be7a24342d7bcb23748ffdd88",
+  "serverHotHash": "cf0cc564aec8f80387c3daaacaaaabdda85b7b2115ec6e252e9b9de1b95663f8",
   "serverColdFile": "server.cold.json",
   "serverColdHash": "b6e05187fe4250b12c663a6495433c5cbc3c8ff2506b516ea9ee2689fb7e1efd",
   "clientFile": "client.json",
-  "clientHash": "a8fe4445e1ad2375c540d434e520903530bce2806e5789f636a25bd522b77f07",
+  "clientHash": "3dc20bd9009e8e5675967b997dc2afea9cb94699119147a9f63d3d37203a8279",
   "clientHotFile": "client.hot.json",
-  "clientHotHash": "984aa2e65093e80e1be4ddd906fdadcfe12c22bd33ea9aa0d327110a3c41e364",
+  "clientHotHash": "56f21bf69390d8f5ecf5aea36061d425b7d19b550b8473d3040ae4fcf76c5c66",
   "clientColdFile": "client.cold.json",
   "clientColdHash": "2f4b6880234fed6f3954b022dec2df2ac42879cbb46cfb5aa5de463830819fe8"
 }

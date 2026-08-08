@@ -5343,6 +5343,41 @@
           "type": "string",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "channel_tick_index",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "channel_tick_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 12,
+          "name": "queued_skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 13,
+          "name": "queued_target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 14,
+          "name": "queue_deadline_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -5612,6 +5647,41 @@
           "number": 9,
           "name": "interrupt_reason",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 10,
+          "name": "channel_tick_index",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "channel_tick_count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 12,
+          "name": "queued_skill_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 13,
+          "name": "queued_target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 14,
+          "name": "queue_deadline_at_ms",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },

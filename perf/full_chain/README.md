@@ -49,6 +49,20 @@ npm run perf:full-chain -- \
 
 旧 PowerShell 调度器暂时保留为 `npm run perf:full-chain:legacy`，只用于历史结果复现。
 
+## 真实业务链路
+
+在普通移动链路之外，可以给每个玩家增加低频业务操作，验证背包、奖励/Action边界和技能施法是否在真实网络链路上工作：
+
+```bash
+npm run perf:business-chain -- \
+  --mode all --players 50,100 --move-rates 2 \
+  --business-rate 0.1 --warmup 10 --duration 60 --rounds 3
+```
+
+`business-rate`是每个玩家每秒的业务请求数。压测客户端交替发送1001道具使用和以自己为目标的3005技能施法；业务拒绝（例如公共CD或道具CD）计入`businessRejected`，只有超时、连接断开和协议解码失败计入`businessTransportErrors`。这保证“规则拒绝”不会被误判成框架丢包。
+
+该命令会构建Bench、业务链路客户端和Release Runtime，并在本机启动Runtime；远程机器可先执行`npm run build:perf:full-chain`与Release构建，再使用调度脚本的`--remote`。它会占用CPU和内存，正式运行前必须准备独立、无其他负载的测试机；当前只完成了入口和编译验证，尚未运行正式压力窗口。组队任务不在本测试范围内，因为Party系统尚未实现。
+
 ## 独立压测机
 
 先在服务端机器启动对应配置，并确保配置返回给客户端的 Login/Gate IP 是压测机可访问的地址。随后在压测机执行：
@@ -74,6 +88,7 @@ node perf/full_chain/run_full_chain_perf.mjs \
 - `overloads`：内部 TCP transport 有界队列拒绝的消息数，可在对应 Runtime 日志的 `[metrics:inner_transport]` 中查看。
 - `Server CPU/RSS/GC`：Runtime 周期输出的进程 CPU、RSS、V8 Heap、V8 GC 次数与累计暂停时间；split 模式按进程汇总。
 - `Load CPU/RSS/GC`：Node 压测客户端自身资源，仅用于判断压测机是否先成为瓶颈。
+- 业务链路报告额外输出`business/s`、成功数、拒绝数、传输错误数和业务响应p50/p95/p99；必须同时检查错误和服务端队列，不能只看延迟分位数。
 
 目标 10Hz 是客户端调度目标；Windows 定时器、Node 事件循环和 AOI Push 解码都会影响实际 `move/s`，报告以实际完成数为准。
 

@@ -49,6 +49,8 @@ Cocos3D演示玩家出生时预置`1001×50`和`1002×20`两个堆叠，快捷�
 
 `QuestConfig`引用`QuestObjectiveConfig`组成活动任务，奖励复用Action。`required_quest_ids`声明必须已经领取奖励的前置任务，`minimum_level`读取`NumericType.Level`；生成阶段会拒绝缺失、重复、自引用和循环前置关系。当前演示包含击杀怪物、使用道具和进入地图三种目标，并用5004验证“完成5001且达到2级”后手工接取。两张Quest表标记为Hot，但已经接取的Quest会冻结目标与要求数量；Reload只影响之后新接取的任务，不能隐式改写玩家正在进行的任务。完整语义和调用示例见[任务系统设计](../docs/design/quest-system.md)。
 
+任务奖励由`ExecuteReward -> ExecuteActionBatch`在PlayerUnit有序mailbox内同步执行；`GrantItem(ItemConfigId, Count)`和批量Grant必须交给Inventory，由Inventory合并已有堆叠并按`max_stack`拆分。当前批次不提供失败回滚或数据库事务，跨域持久化留给独立DBProxy；组队共享任务等待Party系统，不在Quest里提前模拟。
+
 `BuffConfig`的三个Action阶段分别是：
 
 - `add_action_*`：Buff创建时执行一次。
@@ -70,12 +72,13 @@ Action当前支持：
 | `4` | `DealDamage` | `amount, DamageSchool` | 统一进入`CombatComponent.ApplyDamage` |
 | `5` | `RegisterDamageAbsorber` | `amount[, priority]` | Buff添加阶段注册护盾数据 |
 | `6` | `Heal` | `amount` | 统一进入`CombatComponent.ApplyHealing` |
+| `7` | `GrantItem` | `ItemConfigId, count` | 交给Inventory合并堆叠或拆分新Item |
 
 表结构、Action ID和参数形状属于Model，改列或类型必须完整生成并重启；只改数值行时按Hot配置流程生成候选并Reload。生成器会校验参数数量、Buff外键、伤害类型、派生Numeric写入和重复技能效果顺序，不要依赖运行到战斗时才发现坏数据。更完整的调用边界见[Action与Buff设计](../docs/design/action-buff.md)。
 
 ### Skill配置
 
-`SkillConfig`只回答“能否施放以及如何推进时间线”，`SkillEffectConfig`只回答“成功命中后依次执行哪些Action”。一项技能可以有多行效果，按`order`、再按效果行`id`稳定排序；同技能不能填写重复`order`。例如寒冰箭由两行组成：先`DealDamage(50, Frost)`，再`AddBuff(4001)`。
+`SkillConfig`只回答“能否施放以及如何推进时间线”，`SkillEffectConfig`只回答“成功命中后依次执行哪些Action”。一项技能可以有多行效果，按`order`、再按效果行`id`稳定排序；同技能不能填写重复`order`。`queue_window_ms`控制读条结束前是否允许缓存一个下一技能，`channel_tick_ms/channel_ticks`控制引导跳数，二者都属于冷结构字段。当前3006“引导治疗”每1000ms执行一次`Heal(30)`，共3跳；服务端10Hz桶推进，移动会打断，客户端只显示服务端状态。
 
 服务端的`SkillCatalog.ts`按当前游戏配置指纹把两张表组合成只读定义。配置Reload后，新Cast使用新定义；已开始读条和已经发射的弹道继续持有接受请求时冻结的旧定义，避免半次技能混用两代数值。客户端SDK只生成`SkillConfig`，用于名称、距离、读条和CD表现；`SkillEffectConfig`保持服务端专有。完整开发流程见[新增一个配置化技能](../docs/tutorials/18-configured-skill.md)。
 

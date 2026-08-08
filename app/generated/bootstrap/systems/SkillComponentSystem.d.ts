@@ -9,6 +9,10 @@ declare module "../../../model/demo/skill/SkillComponent" {
     IsCasting(): boolean;
     State(skillId?: number): SkillCastState;
     Accept(cast: ActiveSkillCast, cooldownMs: number, globalCooldownMs: number): SkillCastState;
+    Queue(command: SkillCastCommand, deadlineAtMs: number): SkillCastState;
+    TakeQueued(): SkillCastCommand | undefined;
+    ClearQueued(): SkillCastState;
+    UpdateChannel(castId: bigint, nextTickAtMs: number, channelTicksCompleted: number): SkillCastState;
     ReadyAt(skillId: number): number;
     ItemReadyAt(itemConfigId: number): number;
     TryCommitItemCooldown(itemConfigId: number, cooldownMs: number, globalCooldownMs: number): ItemCooldownCommitResult;

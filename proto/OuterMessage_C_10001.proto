@@ -401,6 +401,11 @@ message M2C_CastSkill // IActorLocationResponse
   uint64 global_cooldown_end_at_ms = 7;
   uint64 skill_cooldown_end_at_ms = 8;
   string interrupt_reason = 9;
+  uint32 channel_tick_index = 10;
+  uint32 channel_tick_count = 11;
+  uint32 queued_skill_id = 12;
+  uint32 queued_target_unit_id = 13;
+  uint64 queue_deadline_at_ms = 14;
 }
 
 // 施法状态只发给本人；移动打断、完成和失败都用新状态覆盖旧读条。
@@ -417,6 +422,11 @@ message G2C_SkillCastState // IMessage
   uint64 global_cooldown_end_at_ms = 7;
   uint64 skill_cooldown_end_at_ms = 8;
   string interrupt_reason = 9;
+  uint32 channel_tick_index = 10;
+  uint32 channel_tick_count = 11;
+  uint32 queued_skill_id = 12;
+  uint32 queued_target_unit_id = 13;
+  uint64 queue_deadline_at_ms = 14;
 }
 
 // 弹道创建是不可覆盖事件；客户端只负责表现，伤害仍由服务端到点结算。

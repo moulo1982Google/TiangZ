@@ -15,7 +15,7 @@ import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { GameConfigRegistry, GameConfigs } from "../app/generated/model/config";
 import { ActionType } from "../app/model/demo/action/ActionType";
-import { ExecuteAction } from "../app/hotfix/demo/action/ActionExecutor";
+import { ExecuteAction, ExecuteActionBatch } from "../app/hotfix/demo/action/ActionExecutor";
 import { GetSkillDefinition } from "../app/hotfix/demo/skill/SkillCatalog";
 import { BuffApplyStatus, BuffComponent } from "../app/model/demo/buff/BuffComponent";
 import { CombatComponent } from "../app/model/demo/combat/CombatComponent";
@@ -25,13 +25,13 @@ import { SkillCastPhase, SkillComponent } from "../app/model/demo/skill/SkillCom
 import { ItemComponent } from "../app/model/demo/item/ItemComponent";
 import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
 import { QuestObjectiveType, QuestStatus } from "../app/generated/model/config";
-import { ActorUnit } from "../app/core/runtime/Unit";
+import { PlayerUnit } from "../app/model/demo/map/PlayerUnit";
 
 @scene({ sceneType: "BuffTest" })
 class BuffTestScene extends Scene {}
 
 @actor({ mailbox: "ordered" })
-class BuffTestUnit extends ActorUnit {}
+class BuffTestUnit extends PlayerUnit {}
 
 void main();
 
@@ -53,6 +53,12 @@ async function main(): Promise<void> {
   assert.equal(frostboltDefinition.effects.length, 2);
   assert.deepEqual(frostboltDefinition.effects[0].action.parameters, [50n, 2n]);
   assert.deepEqual(frostboltDefinition.effects[1].action.parameters, [4001n]);
+  const channelHealDefinition = GetSkillDefinition(3006);
+  assert.equal(channelHealDefinition.channelTickMs, 1_000);
+  assert.equal(channelHealDefinition.channelTicks, 3);
+  assert.equal(channelHealDefinition.queueWindowMs, 0);
+  assert.equal(channelHealDefinition.effects[0]?.action.type, ActionType.Heal);
+  assert.deepEqual(channelHealDefinition.effects[0]?.action.parameters, [30n]);
 
   // Reload只替换之后查询到的定义；旧对象保持不可变，供已接受的Cast/Projectile安全完成。
   // Reload replaces definitions returned by later lookups only; the old immutable object remains safe for accepted casts/projectiles.
@@ -85,7 +91,11 @@ async function main(): Promise<void> {
 
   const host = new ProcessHost("buff-action-self-test");
   const scene = host.spawnScene("buff", BuffTestScene);
-  const unit = scene.SpawnActor(1, BuffTestUnit);
+  const unit = scene.SpawnActor(1, BuffTestUnit, {
+    account: "buff-test-1",
+    mapId: 1,
+    mapInstanceId: 1n,
+  });
   installNativeHostOps();
   unit.AddComponent(NativeUnitRef, { id: 1, instanceId: unit.InstanceId, mapId: 1 });
   unit.AddComponent(NumericComponent, {
@@ -97,7 +107,7 @@ async function main(): Promise<void> {
   });
   unit.AddComponent(CombatComponent);
   const buffs = unit.AddComponent(BuffComponent);
-  unit.AddComponent(ItemComponent);
+  const items = unit.AddComponent(ItemComponent);
   const quests = unit.AddComponent(QuestComponent);
 
   assert.deepEqual(quests.Snapshot().map((quest) => quest.questConfigId), [5001, 5002, 5003]);
@@ -117,7 +127,18 @@ async function main(): Promise<void> {
   assert.equal(killProgress[0]?.status, QuestStatus.ReadyToTurnIn);
   const reward = quests.CompleteQuest(5001);
   assert.equal(reward.rewardItems[0]?.configId, 1001);
-  assert.equal(reward.rewardItems[0]?.count, 2);
+  assert.equal(reward.rewardItems[0]?.count, 52);
+  assert.equal(items.Snapshot().filter((item) => item.configId === 1001).length, 1);
+  const splitStacks = items.GrantItem(1001, 60);
+  assert.deepEqual(splitStacks.map((item) => item.count), [99, 13]);
+  assert.throws(() => items.RemoveItem(splitStacks[0]!.itemId, -1), /positive safe integer/);
+  const batchGrant = ExecuteActionBatch(unit, [
+    { type: ActionType.GrantItem, parameters: [1002n, 1n] },
+    { type: ActionType.GrantItem, parameters: [1002n, 2n] },
+  ], { reason: "inventory-test" });
+  assert.equal(batchGrant.grantedItems.length, 1);
+  assert.equal(batchGrant.grantedItems[0]?.configId, 1002);
+  assert.equal(batchGrant.grantedItems[0]?.count, 23);
   assert.throws(() => quests.CompleteQuest(5001));
   assert.throws(() => quests.AcceptQuest(5004), /requires level 2/);
   unit.GetComponent(NumericComponent)[NumericType.Level] = 2n;
@@ -152,7 +173,11 @@ async function main(): Promise<void> {
   // 传送只恢复纯值和时间戳，不重复执行Buff的AddAction；目标HP应从Numeric快照恢复为51，而不是再次加50。
   // Transfer restores value state and wall-clock deadlines without replaying AddAction; the target HP must be 51, not 101.
   const transfer = unit.CaptureTransfer();
-  const target = scene.SpawnActor(2, BuffTestUnit);
+  const target = scene.SpawnActor(2, BuffTestUnit, {
+    account: "buff-test-2",
+    mapId: 1,
+    mapInstanceId: 1n,
+  });
   target.AddComponent(NativeUnitRef, { id: 2, instanceId: target.InstanceId, mapId: 1 });
   target.AddComponent(NumericComponent, {
     [NumericType.CurrentHp]: 1n,
@@ -266,6 +291,8 @@ async function main(): Promise<void> {
     targetUnitId: 123,
     startedAtMs: skillNow,
     finishAtMs: skillNow + 1_500,
+    nextTickAtMs: 0,
+    channelTicksCompleted: 0,
     definition: GetSkillDefinition(3002),
   }, 12_000, 1_000);
   const skillTransfer = sourceSkill.CaptureTransfer();
@@ -274,6 +301,40 @@ async function main(): Promise<void> {
   assert.equal(targetSkill.State(3002).phase, SkillCastPhase.Idle);
   assert.equal(targetSkill.ReadyAt(3002), skillNow + 12_000);
   assert.equal(targetSkill.ItemReadyAt(1001), itemCooldown.itemCooldownEndAtMs);
+  sourceSkill.Interrupt("test-transfer");
+
+  // 引导状态和单技能排队只保存纯值；推进/取出不保存目标Entity或闭包。
+  // Channel progress and one-skill queue are pure values; no target Entity or closure is retained.
+  const channelCastId = 90002n;
+  sourceSkill.Accept({
+    castId: channelCastId,
+    skillId: 3006,
+    targetUnitId: unit.UnitId,
+    startedAtMs: skillNow,
+    finishAtMs: skillNow + 3_000,
+    nextTickAtMs: skillNow + 1_000,
+    channelTicksCompleted: 0,
+    definition: channelHealDefinition,
+  }, 6_000, 1_000);
+  assert.equal(sourceSkill.State(3006).channelTickCount, 3);
+  sourceSkill.UpdateChannel(channelCastId, skillNow + 2_000, 2);
+  assert.equal(sourceSkill.State(3006).channelTickIndex, 2);
+  sourceSkill.Interrupt("test-channel");
+  const queueCastId = 90003n;
+  sourceSkill.Accept({
+    castId: queueCastId,
+    skillId: 3001,
+    targetUnitId: 123,
+    startedAtMs: skillNow,
+    finishAtMs: skillNow + 1_500,
+    nextTickAtMs: 0,
+    channelTicksCompleted: 0,
+    definition: frostboltDefinition,
+  }, 0, 1_000);
+  sourceSkill.Queue({ skillId: 3001, targetUnitId: 123 }, skillNow + 1_500);
+  assert.equal(sourceSkill.State(3001).queuedSkillId, 3001);
+  assert.deepEqual(sourceSkill.TakeQueued(), { skillId: 3001, targetUnitId: 123 });
+  sourceSkill.Interrupt("test-queue");
 
   host.Dispose();
   SingletonRegistry.DestroyAll();

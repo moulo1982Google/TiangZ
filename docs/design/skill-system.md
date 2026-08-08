@@ -1,6 +1,6 @@
 # 技能与施法系统设计
 
-> 当前实现状态：五技能演示闭环与Luban配置链路均已落地。`SkillConfig.xlsx`描述施法规则，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只负责把当前配置代组合成运行时只读定义。玩家协议入口为`C2M_CastSkillHandler`，地图统一由一个`SkillMapComponent.Update10Hz()`推进读条和弹道。
+> 当前实现状态：六个技能演示闭环（包含3006引导治疗）和Luban配置链路均已落地。`SkillConfig.xlsx`描述施法规则，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只负责把当前配置代组合成运行时只读定义。玩家协议入口为`C2M_CastSkillHandler`，地图统一由一个`SkillMapComponent.Update10Hz()`推进读条、引导和弹道。
 
 ## 1. 目标与边界
 
@@ -36,6 +36,8 @@ SkillComponent
 | `id/name/description` | 稳定配置ID、显示名和说明 |
 | `target_relation` | Enemy或Friendly；只描述合法关系，不用AOI可见性代替阵营判断 |
 | `cast_time_ms` | 读条时间；`0`表示瞬发 |
+| `queue_window_ms` | 读条结束前允许缓存下一个技能的时间窗口；`0`表示不允许排队 |
+| `channel_tick_ms/channel_ticks` | 引导Tick间隔和总跳数；必须同时为`0`或同时大于`0` |
 | `cooldown_ms/global_cooldown_ms` | 技能CD和公共CD，均使用服务器deadline |
 | `range_meters` | 权威施法距离 |
 | `delivery` | Direct或Projectile |
@@ -45,7 +47,7 @@ SkillComponent
 | `revalidate_on_complete` | 完成/发射前是否重新检查目标距离 |
 | `required_absent_buff_config_id` | 目标必须不存在的Buff；`0`表示没有该限制 |
 
-地面目标、方向目标、资源消耗、朝向角、视线、引导和CD分组尚未进入当前表。新增这些能力时应增加明确字段和验收，不允许通过名称或伤害类型推导。
+地面目标、方向目标、资源消耗、朝向角、视线和CD分组尚未进入当前表；引导间隔、跳数和单技能排队窗口已经是显式字段。新增能力时应增加明确字段和验收，不允许通过名称或伤害类型推导。
 
 伤害类型、是否瞬发、是否重置平A必须是独立维度。不能用“物理技能”推导不重置，也不能用“法术技能”推导一定读条。压制可以是物理、瞬发、`Keep`；火球术可以是法术、读条、`ResetOnComplete`。
 
@@ -73,6 +75,7 @@ SkillComponent
 globalCooldownEndAtMs: number;
 cooldownEndBySkillId: Map<number, number>; // skillId -> deadlineMs
 activeCast: ActiveCastState | null;
+queuedCast: QueuedSkillCast | null; // 最多缓存一个，不提前消耗CD
 ```
 
 当前Demo没有“已学习技能”持久化，任意存在的SkillConfig都可进入后续校验。正式接入时优先保存SkillConfigId集合，不为每个已学技能创建Skill子Entity；只有出现独立符文、词缀、耐久或可交易技能实例时，才引入有独立身份的子Entity。
@@ -90,6 +93,8 @@ interface ActiveCastState {
   targetUnitId: number;
   startedAtMs: number;
   finishAtMs: number;
+  nextTickAtMs: number;
+  channelTicksCompleted: number;
   definition: SkillDefinition;
 }
 ```
@@ -110,7 +115,7 @@ Idle
   -> Cast: Casting
 
 Casting
-  -> 10Hz检查移动/死亡/目标有效性
+  -> 10Hz检查移动/死亡/目标有效性并推进channel Tick
   -> Interrupted: 清除ActiveCast -> 通知客户端 -> Idle
   -> finishAtMs到达
        -> 校验目标仍存活；按配置可选重新校验距离
@@ -118,7 +123,7 @@ Casting
        -> 清除ActiveCast -> Idle
 ```
 
-第一版一个Unit同一时间只能有一个ActiveCast；只要已有普通读条，新的瞬发和读条请求都直接拒绝。以后确实需要“读条期间允许特定瞬发”时，再增加显式冲突策略和验收矩阵，不能靠“瞬发”二字猜测。Channel和技能队列后续扩展，不在第一版伪实现。
+一个Unit同一时间只能有一个ActiveCast；配置`queue_window_ms`大于0时，当前Cast结束前最多缓存一个下一技能。排队不消耗CD，真正开始时重新执行目标、距离、Veto和Buff校验；窗口为0或队列已有技能时明确拒绝。Channel使用ActiveCast中的`nextTickAtMs/channelTicksCompleted`推进，不创建独立Timer。
 
 ## 4. 校验与Veto
 
@@ -155,7 +160,8 @@ Veto Handler只能同步、只读、返回错误码，不动态为每个Buff注�
 - Cast由`SkillComponent`保存deadline并登记到地图唯一`SkillMapComponent`，统一在10Hz检查；客户端最多只看到约100ms的完成抖动，命中仍以服务器时间为准。
 - 没有每Unit空Update。地图只遍历活动Cast和在途弹道集合；3000个无施法Unit不会产生3万次技能空检查/秒。
 - 技能和GCD冷却只保存deadline，不为每个冷却创建Timer。
-- Channel后续使用同一10Hz桶和`nextTickAtMs`，不创建每技能Timer。
+- Channel使用同一10Hz桶和`nextTickAtMs`，不创建每技能Timer；单次停顿最多补8跳，避免宿主卡顿造成无界结算洪峰。
+- 排队只保存一个纯值`SkillCastCommand + deadline`，不保存目标Entity、Promise或Hotfix闭包；当前Cast完成后立即取出并重新走完整Cast入口。
 
 如果实测空检查成为问题，再把活跃SkillComponent登记到Map的连续ActiveCast集合；该优化不得改变业务API。
 
@@ -230,7 +236,7 @@ Handler只负责协议转换和调用PlayerUnit，不查目标集合、不扣蓝
 第一版协议分开“可覆盖状态”和“不可丢事实”：
 
 - `C2M_CastSkill/M2C_CastSkill`：发起请求和明确错误码。
-- `G2C_SkillCastState`：`latest`状态，包含castId、skillId、目标、开始/结束服务器时间、GCD/CD截止时间和phase；客户端据Ping时间绘制读条与冷却。
+- `G2C_SkillCastState`：`latest`状态，包含castId、skillId、目标、开始/结束服务器时间、GCD/CD截止时间、phase、channel进度和排队技能；客户端据Ping时间绘制读条与冷却。
 - `G2C_SkillProjectile/G2C_SkillImpact`：不可覆盖事件，分别表达弹道开始与权威命中结果。
 - 伤害、治疗、Buff添加/删除继续走各自既有事件或状态同步，不塞进CastState。
 
@@ -257,13 +263,14 @@ SkillConfig/SkillEffectConfig的表结构、枚举和字段类型属于Model冷�
 
 ## 11. 首个演示闭环
 
-第一版演示五个法术，全部触发1秒公共冷却，并在技能被接受时清零平A进度；读条期间暂停平A，成功或中断后都从0重新计时，但不关闭平A激活状态或清除目标。
+第一版演示六个法术，全部触发1秒公共冷却，并在技能被接受时清零平A进度；读条期间暂停平A，成功或中断后都从0重新计时，但不关闭平A激活状态或清除目标。
 
 1. `3001 寒冰箭`：敌方Unit目标、1.5秒读条、30米、20米/秒抛射物；命中造成50点冰霜伤害并添加5秒冰冷。
 2. `3002 火焰冲击`：敌方Unit目标、瞬发、10米、12秒冷却；造成100点火焰伤害并添加6秒灼烧。
 3. `3003 惩击`：敌方Unit目标、1.5秒读条、30米、直接命中；演示伤害暂定60点神圣伤害。
 4. `3004 真言术·盾`：自己或友方Unit目标、瞬发、15米、8秒冷却；添加30秒200点护盾和15秒虚弱灵魂。
 5. `3005 真言术·韧`：自己或友方Unit目标、瞬发、15米；添加30分钟MaxHpAdd+500的真言术·韧。
+6. `3006 引导治疗`：自己或友方Unit目标、3秒引导、每1秒恢复30点、共3跳；用于验收引导进度、读条期间停止平A和移动打断。
 
 对应Buff的冲突语义由BuffConfig表达：冰冷按目标共享并刷新；灼烧按`目标+来源`独立，同来源刷新；盾按目标替换并重置吸收状态；虚弱灵魂重复添加拒绝；韧以HigherWins比较显式优先级。Refresh默认不重复执行AddAction。
 
@@ -274,11 +281,13 @@ SkillConfig/SkillEffectConfig的表结构、枚举和字段类型属于Model冷�
 验收至少覆盖：
 
 1. 同时请求两个技能只能接受一个。
-2. 五个法术被接受时都清零平A；读条技能中断不触发命中效果。
+2. 六个法术被接受时都清零平A；读条技能中断不触发命中效果。
 3. 寒冰箭只在抛射物命中时结算，惩击在读条完成时直接结算。
 4. 距离、移动、死亡和目标重生均不会命中旧Unit。
 5. 重复请求、迟到客户端状态和配置Reload不造成重复结算。
-6. 3000个无ActiveCast Unit不会显著增加Map CPU；活跃Cast压力测试无队列积压和丢工作。
+6. 3006每次只执行到期Tick，目标死亡或移动打断后不再继续结算。
+7. 配置排队窗口内最多缓存一个技能；缓存技能开始时重新校验，失败只丢弃缓存，不回滚前一个完成的技能。
+8. 3000个无ActiveCast Unit不会显著增加Map CPU；活跃Cast压力测试无队列积压和丢工作。
 
 ## 12. 当前代码权威
 
@@ -303,10 +312,10 @@ C2M_CastSkillHandler
 - Unit没有独立技能Update，Cast没有独立Timer。
 - 普通读条被接受时立即清除Rust旧移动租约；后续任意非零移动输入中断读条，转身输入本身不算移动。
 - 可扩展施法限制使用同步只读`SkillEvents.BeforeCast`；当前虚弱灵魂由Hotfix Veto返回`SkillBlockedByBuff`，Buff冲突策略仍保留最终兜底。
-- `G2C_SkillCastState`是latest状态，包含读条、GCD和技能CD截止时间；`G2C_SkillProjectile/G2C_SkillImpact`是不可覆盖事件。
+- `G2C_SkillCastState`是latest状态，包含读条、GCD、技能CD、channel进度和排队技能；`G2C_SkillProjectile/G2C_SkillImpact`是不可覆盖事件。
 - 冷却随玩家跨地图传输；活动读条不恢复，并记录`map-transfer`中断原因。
 - Buff运行时Action覆盖、来源、冲突优先级和护盾剩余量均为纯值传输；普通Refresh不重放AddAction。
-- 当前五技能数值来自`SkillConfig.xlsx`和`SkillEffectConfig.xlsx`；`SkillCatalog.ts`不再保存业务数值，只做配置代索引和Action转换。
+- 当前六技能数值来自`SkillConfig.xlsx`和`SkillEffectConfig.xlsx`；`SkillCatalog.ts`不再保存业务数值，只做配置代索引和Action转换。
 - ActiveCast与在途Projectile保存接受请求时的`SkillDefinition`，配置Reload只影响后续新Cast，不会让半次技能混用两代规则。
 
 ## 13. 后续实施顺序
@@ -314,6 +323,6 @@ C2M_CastSkillHandler
 1. 已完成：Luban SkillConfig/SkillEffectConfig、客户端裁剪、引用与Action参数校验、配置代冻结。
 2. 按需求同步UE、Unity和Godot的技能表现；公共SDK协议已经生成。
 3. 增加SkillComponent语义自测和3000人空载/活跃Cast性能A/B。
-4. 业务确实需要时再扩展已学技能、资源消耗、朝向/视线、地面目标和引导。
+4. 业务确实需要时再扩展已学技能、资源消耗、朝向/视线和地面目标。
 
-第一版明确不做：地面AOE、引导、多段选目标、技能队列、连招、复杂公式、技能持久化和客户端预测命中。寒冰箭的最小弹道已经实现；后续能力应沿已冻结边界逐项增加，而不是提前塞进一个万能Cast对象。
+当前明确不做：地面AOE、多段选目标、连招、复杂公式、技能持久化和客户端预测命中。寒冰箭的最小弹道与3006引导已经实现；后续能力应沿已冻结边界逐项增加，而不是提前塞进一个万能Cast对象。

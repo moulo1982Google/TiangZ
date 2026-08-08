@@ -3035,6 +3035,11 @@ export interface M2C_CastSkill extends IActorLocationResponse {
   globalCooldownEndAtMs: bigint;
   skillCooldownEndAtMs: bigint;
   interruptReason: string;
+  channelTickIndex: number;
+  channelTickCount: number;
+  queuedSkillId: number;
+  queuedTargetUnitId: number;
+  queueDeadlineAtMs: bigint;
 }
 
 export const M2C_CastSkillCodec = {
@@ -3050,6 +3055,11 @@ export const M2C_CastSkillCodec = {
       globalCooldownEndAtMs: 0n,
       skillCooldownEndAtMs: 0n,
       interruptReason: "",
+      channelTickIndex: 0,
+      channelTickCount: 0,
+      queuedSkillId: 0,
+      queuedTargetUnitId: 0,
+      queueDeadlineAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3089,6 +3099,21 @@ export const M2C_CastSkillCodec = {
       else if (tag.fieldNo === 9 && tag.wireType === 2) {
         value.interruptReason = reader.string();
       }
+      else if (tag.fieldNo === 10 && tag.wireType === 0) {
+        value.channelTickIndex = reader.uint32();
+      }
+      else if (tag.fieldNo === 11 && tag.wireType === 0) {
+        value.channelTickCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 12 && tag.wireType === 0) {
+        value.queuedSkillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 13 && tag.wireType === 0) {
+        value.queuedTargetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 14 && tag.wireType === 0) {
+        value.queueDeadlineAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3110,6 +3135,11 @@ export const M2C_CastSkillCodec = {
     if (value.globalCooldownEndAtMs !== undefined) writer.uint64(7, value.globalCooldownEndAtMs);
     if (value.skillCooldownEndAtMs !== undefined) writer.uint64(8, value.skillCooldownEndAtMs);
     if (value.interruptReason !== undefined) writer.string(9, value.interruptReason);
+    if (value.channelTickIndex !== undefined) writer.uint32(10, value.channelTickIndex);
+    if (value.channelTickCount !== undefined) writer.uint32(11, value.channelTickCount);
+    if (value.queuedSkillId !== undefined) writer.uint32(12, value.queuedSkillId);
+    if (value.queuedTargetUnitId !== undefined) writer.uint32(13, value.queuedTargetUnitId);
+    if (value.queueDeadlineAtMs !== undefined) writer.uint64(14, value.queueDeadlineAtMs);
     return writer.finish();
   },
 };
@@ -3124,6 +3154,11 @@ export interface G2C_SkillCastState extends IMessage {
   globalCooldownEndAtMs: bigint;
   skillCooldownEndAtMs: bigint;
   interruptReason: string;
+  channelTickIndex: number;
+  channelTickCount: number;
+  queuedSkillId: number;
+  queuedTargetUnitId: number;
+  queueDeadlineAtMs: bigint;
 }
 
 export const G2C_SkillCastStateCodec = {
@@ -3139,6 +3174,11 @@ export const G2C_SkillCastStateCodec = {
       globalCooldownEndAtMs: 0n,
       skillCooldownEndAtMs: 0n,
       interruptReason: "",
+      channelTickIndex: 0,
+      channelTickCount: 0,
+      queuedSkillId: 0,
+      queuedTargetUnitId: 0,
+      queueDeadlineAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3169,6 +3209,21 @@ export const G2C_SkillCastStateCodec = {
       else if (tag.fieldNo === 9 && tag.wireType === 2) {
         value.interruptReason = reader.string();
       }
+      else if (tag.fieldNo === 10 && tag.wireType === 0) {
+        value.channelTickIndex = reader.uint32();
+      }
+      else if (tag.fieldNo === 11 && tag.wireType === 0) {
+        value.channelTickCount = reader.uint32();
+      }
+      else if (tag.fieldNo === 12 && tag.wireType === 0) {
+        value.queuedSkillId = reader.uint32();
+      }
+      else if (tag.fieldNo === 13 && tag.wireType === 0) {
+        value.queuedTargetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 14 && tag.wireType === 0) {
+        value.queueDeadlineAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3187,6 +3242,11 @@ export const G2C_SkillCastStateCodec = {
     if (value.globalCooldownEndAtMs !== undefined) writer.uint64(7, value.globalCooldownEndAtMs);
     if (value.skillCooldownEndAtMs !== undefined) writer.uint64(8, value.skillCooldownEndAtMs);
     if (value.interruptReason !== undefined) writer.string(9, value.interruptReason);
+    if (value.channelTickIndex !== undefined) writer.uint32(10, value.channelTickIndex);
+    if (value.channelTickCount !== undefined) writer.uint32(11, value.channelTickCount);
+    if (value.queuedSkillId !== undefined) writer.uint32(12, value.queuedSkillId);
+    if (value.queuedTargetUnitId !== undefined) writer.uint32(13, value.queuedTargetUnitId);
+    if (value.queueDeadlineAtMs !== undefined) writer.uint64(14, value.queueDeadlineAtMs);
     return writer.finish();
   },
 };

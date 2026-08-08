@@ -44,5 +44,11 @@ export interface SkillDefinition {
   readonly autoAttackPolicy: SkillAutoAttackPolicyValue;
   readonly revalidateOnComplete: boolean;
   readonly requiredAbsentBuffConfigId: number;
+  /** 当前读条完成前允许缓存下一个技能的时间；0表示不允许队列。 / Queue window before the current cast finishes; 0 disables queuing. */
+  readonly queueWindowMs: number;
+  /** 引导每跳间隔；0表示普通技能。 / Channel tick interval; 0 means a regular one-shot skill. */
+  readonly channelTickMs: number;
+  /** 引导总跳数；0表示普通技能。 / Total channel ticks; 0 means a regular one-shot skill. */
+  readonly channelTicks: number;
   readonly effects: readonly SkillEffectDefinition[];
 }

@@ -632,7 +632,7 @@ QuestComponent
 
 如果同一配置任务不会同时存在多个活动实例，可以直接用配置ID作为ChildEntity Id；可重复任务、限时活动任务等允许并存时，必须使用独立Quest实例ID，并单独保存`configId`。已完成集合始终记录稳定配置ID，不保存已经销毁的InstanceId。
 
-当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；`required_quest_ids`和`minimum_level`声明基础接取条件。演示目标覆盖击杀怪物、使用道具和进入地图，5004验证“完成5001且达到2级”。`GrantItem(ItemConfigId, Count)`当前创建一个新Item堆叠，堆叠合并属于Inventory策略。多Action奖励要在引入事务批次后再开放，不能让中途失败留下“已发一半但任务未完成”的状态。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
+当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；`required_quest_ids`和`minimum_level`声明基础接取条件。演示目标覆盖击杀怪物、使用道具和进入地图，5004验证“完成5001且达到2级”。`GrantItem(ItemConfigId, Count)`和`GrantItems(...)`必须通过Inventory，由Inventory填充已有堆叠并按`max_stack`拆分新Item。`ExecuteReward`在PlayerUnit有序mailbox内同步执行Action批次，Action之间不能`await`；这不是数据库事务，不提供失败回滚，跨域持久化留给独立DBProxy。组队任务需要Party与PartyAudience，当前不要在Quest里提前实现队员共享。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
 
 ## 广播给谁与如何广播
 
@@ -892,7 +892,7 @@ C2M_AttackMonsterHandler
 
 怪物主动行为由`MonsterComponent.Update`统一驱动，并在Hotfix内部调用局部`MonsterBehaviorTree`。行为树只负责从待机、追击、攻击和冷却停留中选择一个动作；它不能直接操作Native句柄、广播消息或修改其他地图的Unit。距离、伤害、死亡和Numeric变更仍由MonsterComponent负责。
 
-不要为每只怪物创建Actor、长期Timer或独立V8。不要在Handler里扫描地图或绕过`MonsterComponent`查找怪物。技能和Buff已经接入统一Component/Action边界；复杂仇恨、巡逻路点和回出生点尚未接入，新增这些能力前先保持当前普通攻击与五技能闭环可测试、可观测。
+不要为每只怪物创建Actor、长期Timer或独立V8。不要在Handler里扫描地图或绕过`MonsterComponent`查找怪物。技能和Buff已经接入统一Component/Action边界；复杂仇恨、巡逻路点和回出生点尚未接入，新增这些能力前先保持当前普通攻击、六技能和引导闭环可测试、可观测。
 
 ### 自动攻击与朝向
 
@@ -941,7 +941,7 @@ C2M_AttackMonsterHandler
 
 `BuffComponent`拥有`Buff` ChildEntity；Component负责集合、实例ID、传送和AOI生命周期事件，BuffSystem负责Add/Tick/Remove和Timer。Buff传送只保存纯值及墙钟时间，目标重建Timer但不重复AddAction；不保存TimerId、闭包、Promise或Entity。Buff Tick只执行Action，Numeric和Combat沿用自身同步边界。
 
-Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat modifier，伤害统一进入`CombatComponent.ApplyDamage`；禁止再设计`BuffComponent.TryAbsorbDamage`作为受伤入口。运行时Action和护盾剩余量会以纯值跨地图恢复。五技能Cast已接入，复杂地面目标、引导和Buff持久化仍不属于当前闭环。
+Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat modifier，伤害统一进入`CombatComponent.ApplyDamage`；禁止再设计`BuffComponent.TryAbsorbDamage`作为受伤入口。运行时Action和护盾剩余量会以纯值跨地图恢复。六技能Cast与3006引导已接入，复杂地面目标、技能持久化和AOE仍不属于当前闭环。
 
 技能只在`SkillConfig.xlsx`填写目标与时间线，在服务端专有的`SkillEffectConfig.xlsx`按顺序组合Action；客户端只生成SkillConfig用于名称、距离、读条和CD表现。若一个新技能可由现有Action与Buff组合完成，只改Excel并重新生成，禁止新增专用Handler或把伤害数值写回Hotfix目录。普通业务不得长期缓存`GetSkillDefinition()`结果；配置索引由`SkillCatalog.ts`按指纹统一维护。
 

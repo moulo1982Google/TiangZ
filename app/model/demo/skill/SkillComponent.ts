@@ -15,6 +15,8 @@ export interface ActiveSkillCast {
   readonly targetUnitId: number;
   readonly startedAtMs: number;
   readonly finishAtMs: number;
+  readonly nextTickAtMs: number;
+  readonly channelTicksCompleted: number;
   /** 接受请求时冻结的纯数据规则；配置Reload只影响之后的新Cast。 / Pure rules frozen at acceptance; config reload affects only later Casts. */
   readonly definition: SkillDefinition;
 }
@@ -29,12 +31,23 @@ export interface SkillCastState {
   readonly finishAtMs: number;
   readonly globalCooldownEndAtMs: number;
   readonly skillCooldownEndAtMs: number;
+  readonly channelTickIndex: number;
+  readonly channelTickCount: number;
+  readonly queuedSkillId: number;
+  readonly queuedTargetUnitId: number;
+  readonly queueDeadlineAtMs: number;
   readonly interruptReason: string;
 }
 
 export interface SkillCastCommand {
   readonly skillId: number;
   readonly targetUnitId: number;
+}
+
+/** 已缓存但尚未提交冷却的下一个技能；真正Cast时重新做全部目标与Veto校验。 / A queued next skill without committed cooldown; the real Cast repeats all target and veto checks. */
+export interface QueuedSkillCast {
+  readonly command: SkillCastCommand;
+  readonly deadlineAtMs: number;
 }
 
 export interface SkillCooldownTransferState {
@@ -68,6 +81,10 @@ export interface SkillComponent {
   IsCasting(): boolean;
   State(skillId?: number): SkillCastState;
   Accept(cast: ActiveSkillCast, cooldownMs: number, globalCooldownMs: number): SkillCastState;
+  Queue(command: SkillCastCommand, deadlineAtMs: number): SkillCastState;
+  TakeQueued(): SkillCastCommand | undefined;
+  ClearQueued(): SkillCastState;
+  UpdateChannel(castId: bigint, nextTickAtMs: number, channelTicksCompleted: number): SkillCastState;
   ReadyAt(skillId: number): number;
   ItemReadyAt(itemConfigId: number): number;
   TryCommitItemCooldown(itemConfigId: number, cooldownMs: number, globalCooldownMs: number): ItemCooldownCommitResult;
@@ -91,6 +108,7 @@ export interface SkillComponent {
 @lifecycle({ destroy: true })
 export class SkillComponent extends Component {
   protected activeCast: ActiveSkillCast | null = null;
+  protected queuedCast: QueuedSkillCast | null = null;
   protected globalCooldownEndAtMs = 0;
   protected readonly cooldownEndBySkillId = new Map<number, number>();
   protected readonly cooldownEndByItemConfigId = new Map<number, number>();

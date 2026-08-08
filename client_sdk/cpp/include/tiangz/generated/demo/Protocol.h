@@ -3996,6 +3996,11 @@ struct M2C_CastSkill {
   std::uint64_t globalCooldownEndAtMs = 0;
   std::uint64_t skillCooldownEndAtMs = 0;
   std::string interruptReason;
+  std::uint32_t channelTickIndex = 0;
+  std::uint32_t channelTickCount = 0;
+  std::uint32_t queuedSkillId = 0;
+  std::uint32_t queuedTargetUnitId = 0;
+  std::uint64_t queueDeadlineAtMs = 0;
 };
 
 struct M2C_CastSkillCodec {
@@ -4089,6 +4094,41 @@ struct M2C_CastSkillCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 10:
+          if (tag.wireType == 0) {
+            value.channelTickIndex = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 11:
+          if (tag.wireType == 0) {
+            value.channelTickCount = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 12:
+          if (tag.wireType == 0) {
+            value.queuedSkillId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 13:
+          if (tag.wireType == 0) {
+            value.queuedTargetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 14:
+          if (tag.wireType == 0) {
+            value.queueDeadlineAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -4111,6 +4151,11 @@ struct M2C_CastSkillCodec {
     writer.UInt64(7, value.globalCooldownEndAtMs);
     writer.UInt64(8, value.skillCooldownEndAtMs);
     writer.String(9, value.interruptReason);
+    writer.UInt32(10, value.channelTickIndex);
+    writer.UInt32(11, value.channelTickCount);
+    writer.UInt32(12, value.queuedSkillId);
+    writer.UInt32(13, value.queuedTargetUnitId);
+    writer.UInt64(14, value.queueDeadlineAtMs);
     return writer.Finish();
   }
 };
@@ -4125,6 +4170,11 @@ struct G2C_SkillCastState {
   std::uint64_t globalCooldownEndAtMs = 0;
   std::uint64_t skillCooldownEndAtMs = 0;
   std::string interruptReason;
+  std::uint32_t channelTickIndex = 0;
+  std::uint32_t channelTickCount = 0;
+  std::uint32_t queuedSkillId = 0;
+  std::uint32_t queuedTargetUnitId = 0;
+  std::uint64_t queueDeadlineAtMs = 0;
 };
 
 struct G2C_SkillCastStateCodec {
@@ -4197,6 +4247,41 @@ struct G2C_SkillCastStateCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 10:
+          if (tag.wireType == 0) {
+            value.channelTickIndex = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 11:
+          if (tag.wireType == 0) {
+            value.channelTickCount = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 12:
+          if (tag.wireType == 0) {
+            value.queuedSkillId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 13:
+          if (tag.wireType == 0) {
+            value.queuedTargetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 14:
+          if (tag.wireType == 0) {
+            value.queueDeadlineAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -4216,6 +4301,11 @@ struct G2C_SkillCastStateCodec {
     writer.UInt64(7, value.globalCooldownEndAtMs);
     writer.UInt64(8, value.skillCooldownEndAtMs);
     writer.String(9, value.interruptReason);
+    writer.UInt32(10, value.channelTickIndex);
+    writer.UInt32(11, value.channelTickCount);
+    writer.UInt32(12, value.queuedSkillId);
+    writer.UInt32(13, value.queuedTargetUnitId);
+    writer.UInt64(14, value.queueDeadlineAtMs);
     return writer.Finish();
   }
 };

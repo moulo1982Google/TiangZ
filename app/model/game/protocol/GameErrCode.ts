@@ -27,4 +27,5 @@ export const GameErrCode = {
   QuestNotComplete: 10026,
   QuestPrerequisiteNotMet: 10027,
   QuestLevelTooLow: 10028,
+  ItemStackFull: 10029,
 } as const;

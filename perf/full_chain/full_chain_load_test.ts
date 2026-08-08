@@ -8,9 +8,11 @@ import {
   buildGetLoginServiceAddrPacket,
   buildLoginGatePacket,
   buildLoginPacket,
+  buildCastSkillPacket,
   buildMapProbePacket,
   buildMovePacket,
   buildPingPacket,
+  buildUseItemPacket,
   decodeEnterMapFrame,
   decodeEntityMoveFrame,
   decodeGetLoginServiceAddrFrame,
@@ -18,6 +20,8 @@ import {
   decodeLoginGateFrame,
   decodeMapProbeFrame,
   decodeMapReadyFrame,
+  decodeCastSkillFrame,
+  decodeUseItemFrame,
 } from "../../tools/support/DemoClientProtocol";
 import { MsgCode } from "../../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 
@@ -33,6 +37,7 @@ interface Options {
   moveRate: number;
   probeRate: number;
   probeConcurrency: number;
+  businessRate: number;
   disableMove: boolean;
   label: string;
   barrierPort: number;
@@ -59,6 +64,14 @@ interface MovementResult {
   skippedTicks: number;
   latenciesMs: number[];
   errors: number;
+}
+
+interface BusinessResult {
+  sent: number;
+  accepted: number;
+  rejected: number;
+  transportErrors: number;
+  latenciesMs: number[];
 }
 
 const options = parseOptions(process.argv.slice(2));
@@ -96,7 +109,7 @@ async function main(): Promise<void> {
   const memorySampler = setInterval(sampleLoadMemory, 5_000);
   const workloadPromise = Promise.all(
     players.map(async ({ player }, index) => {
-      const [movement, probe] = await Promise.all([
+      const [movement, probe, business] = await Promise.all([
         options.disableMove
           ? Promise.resolve({
             sent: 0,
@@ -112,8 +125,14 @@ async function main(): Promise<void> {
           options.probeRate,
           options.probeConcurrency,
         ),
+        player.runBusiness(
+          measurementStart,
+          sendDeadline,
+          options.businessRate,
+          index,
+        ),
       ]);
-      return { movement, probe };
+      return { movement, probe, business };
     }),
   );
   let workloads: Awaited<typeof workloadPromise>;
@@ -141,6 +160,16 @@ async function main(): Promise<void> {
     0,
   );
   const probeErrors = workloads.reduce((sum, item) => sum + item.probe.errors, 0);
+  const businessLatencies = workloads
+    .flatMap((item) => item.business.latenciesMs)
+    .sort(numberOrder);
+  const businessSent = workloads.reduce((sum, item) => sum + item.business.sent, 0);
+  const businessAccepted = workloads.reduce((sum, item) => sum + item.business.accepted, 0);
+  const businessRejected = workloads.reduce((sum, item) => sum + item.business.rejected, 0);
+  const businessTransportErrors = workloads.reduce(
+    (sum, item) => sum + item.business.transportErrors,
+    0,
+  );
   const pushes = players.reduce((sum, item) => sum + item.player.entityMovePushes, 0);
   await closePlayersInBatches(players);
   gcObserver.disconnect();
@@ -159,12 +188,14 @@ async function main(): Promise<void> {
     durationSeconds: options.durationSeconds,
     targetMoveRatePerPlayer: options.moveRate,
     targetProbeRatePerPlayer: options.probeRate,
+    targetBusinessRatePerPlayer: options.businessRate,
     measurementStartedAtUnixMs,
     measurementEndedAtUnixMs:
       measurementStartedAtUnixMs + options.durationSeconds * 1000,
-    workload: options.disableMove
-      ? `probe-only-${options.probeRate}hz`
-      : options.moveRate > 0 ? `steady-${options.moveRate}hz` : "saturation",
+    workload: [
+      options.disableMove ? `probe-only-${options.probeRate}hz` : options.moveRate > 0 ? `steady-${options.moveRate}hz` : "saturation",
+      options.businessRate > 0 ? `business-${options.businessRate}hz` : "",
+    ].filter(Boolean).join("+") || "idle",
     setup: {
       ...timing(setupLatencies, setupElapsedSeconds),
       elapsedSeconds: setupElapsedSeconds,
@@ -183,6 +214,14 @@ async function main(): Promise<void> {
     probe: {
       ...timing(probeLatencies, options.durationSeconds),
       errors: probeErrors,
+    },
+    business: {
+      ...timing(businessLatencies, options.durationSeconds),
+      count: businessSent,
+      perSecond: businessSent / options.durationSeconds,
+      accepted: businessAccepted,
+      rejected: businessRejected,
+      transportErrors: businessTransportErrors,
     },
     loadGenerator: {
       cpuUserMs:
@@ -218,7 +257,8 @@ async function main(): Promise<void> {
       `moves=${result.movement.perSecond.toFixed(1)}/s pushes=${result.movement.pushesPerSecond.toFixed(1)}/s ` +
       `move_skipped=${result.movement.skippedTicks} errors=${errors} ` +
       `probe=${result.probe.perSecond.toFixed(1)}/s p90=${result.probe.p90Ms.toFixed(2)}ms ` +
-      `p95=${result.probe.p95Ms.toFixed(2)}ms p99=${result.probe.p99Ms.toFixed(2)}ms errors=${probeErrors}`,
+      `p95=${result.probe.p95Ms.toFixed(2)}ms p99=${result.probe.p99Ms.toFixed(2)}ms errors=${probeErrors} ` +
+      `business=${result.business.perSecond.toFixed(1)}/s accepted=${businessAccepted} rejected=${businessRejected} transport_errors=${businessTransportErrors}`,
   );
   console.log(`RESULT_JSON ${JSON.stringify(result)}`);
 }
@@ -374,13 +414,21 @@ async function createPlayer(index: number): Promise<PlayerResult> {
   }
   gate.setUnitId(enterMap.unitId);
   return {
-    player: new GamePlayer(gate),
+    player: new GamePlayer(
+      gate,
+      enterMap.items.find((item) => item.configId === 1001)?.itemId ?? 0n,
+    ),
     setupLatencyMs: performance.now() - startedAt,
   };
 }
 
 class GamePlayer {
-  constructor(private readonly gate: GateConnection) {}
+  constructor(
+    private readonly gate: GateConnection,
+    starterItemId: bigint,
+  ) {
+    this.gate.setBusinessItemId(starterItemId);
+  }
 
   get entityMovePushes(): number { return this.gate.entityMovePushes; }
 
@@ -402,6 +450,15 @@ class GamePlayer {
     return this.gate.runProbes(measurementStart, sendDeadline, probeRate, probeConcurrency);
   }
 
+  runBusiness(
+    measurementStart: number,
+    sendDeadline: number,
+    businessRate: number,
+    operationSeed: number,
+  ): Promise<BusinessResult> {
+    return this.gate.runBusiness(measurementStart, sendDeadline, businessRate, operationSeed);
+  }
+
   close(): Promise<void> { return this.gate.close(); }
 }
 
@@ -416,6 +473,7 @@ class GateConnection {
   private unitId = 0;
   private moveHandler?: (frame: Uint8Array) => void;
   private heartbeat?: ReturnType<typeof setInterval>;
+  private businessItemId = 0n;
   entityMovePushes = 0;
 
   constructor(
@@ -440,6 +498,7 @@ class GateConnection {
 
   connect(): Promise<void> { return this.connected; }
   setUnitId(unitId: number): void { this.unitId = unitId; }
+  setBusinessItemId(itemId: bigint): void { this.businessItemId = itemId; }
 
   startHeartbeat(): void {
     if (this.heartbeat) return;
@@ -749,6 +808,67 @@ class GateConnection {
     return { latenciesMs, errors };
   }
 
+  /**
+   * 发送低频真实业务请求，交替覆盖UseItem与友方技能Cast；业务拒绝不算传输失败。
+   * The low-rate gameplay workload alternates UseItem and a friendly skill Cast;
+   * an application rejection is reported separately from a transport failure.
+   */
+  async runBusiness(
+    measurementStart: number,
+    sendDeadline: number,
+    businessRate: number,
+    operationSeed: number,
+  ): Promise<BusinessResult> {
+    const result: BusinessResult = {
+      sent: 0,
+      accepted: 0,
+      rejected: 0,
+      transportErrors: 0,
+      latenciesMs: [],
+    };
+    if (businessRate <= 0) return result;
+    await sleep(Math.max(0, measurementStart - performance.now()));
+    const intervalMs = 1_000 / businessRate;
+    let nextSendAt = measurementStart;
+    let operation = Math.max(0, operationSeed);
+    while (performance.now() < sendDeadline) {
+      await sleep(Math.max(0, nextSendAt - performance.now()));
+      if (performance.now() >= sendDeadline) break;
+      const startedAt = performance.now();
+      const rpcId = allocateRpcId();
+      const useItem = operation % 2 === 0;
+      operation += 1;
+      result.sent += 1;
+      try {
+        const frame = useItem
+          ? await this.request(
+            rpcId,
+            buildUseItemPacket(rpcId, { itemId: this.businessItemId }),
+          )
+          : await this.request(
+            rpcId,
+            buildCastSkillPacket(rpcId, {
+              skillId: 3005,
+              targetUnitId: this.unitId,
+            }),
+          );
+        const response = useItem
+          ? decodeUseItemFrame(frame).body
+          : decodeCastSkillFrame(frame).body;
+        if (response.rpcId !== rpcId) {
+          throw new Error(`${useItem ? "UseItem" : "CastSkill"} rpcId mismatch`);
+        }
+        result.latenciesMs.push(performance.now() - startedAt);
+        if (response.error) result.rejected += 1;
+        else result.accepted += 1;
+      } catch {
+        result.transportErrors += 1;
+      }
+      nextSendAt += intervalMs;
+    }
+    return result;
+  }
+
   async close(): Promise<void> {
     this.stopHeartbeat();
     if (this.socket.destroyed) return;
@@ -950,6 +1070,7 @@ function parseOptions(args: string[]): Options {
     moveRate: nonNegativeNumber(values, "move-rate", 0),
     probeRate: nonNegativeNumber(values, "probe-rate", 0),
     probeConcurrency: Math.floor(number("probe-concurrency", 1)),
+    businessRate: nonNegativeNumber(values, "business-rate", 0),
     disableMove: flags.has("disable-move"),
     label: values.get("label") ?? "manual",
     barrierPort: Math.floor(nonNegativeNumber(values, "barrier-port", 0)),

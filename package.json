@@ -164,6 +164,7 @@
     "perf:network-backend": "node perf/network_backend/run_network_backend.mjs",
     "perf:kcp-loginmgr": "cargo run --release --features kcp --bin kcp_load --",
     "perf:full-chain": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --bin TiangZ && node perf/full_chain/run_full_chain_perf.mjs",
+    "perf:business-chain": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --bin TiangZ && node perf/full_chain/run_full_chain_perf.mjs --business-rate 0.1 --output-prefix business_chain",
     "perf:soak": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --bin TiangZ && node perf/soak/run_soak.mjs",
     "perf:map-capacity": "npm run build:bench && npm run build:perf:full-chain && node perf/map_capacity/run_map_capacity_perf.mjs",
     "perf:map-capacity:grid-matrix": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --locked --bin TiangZ --bin map_probe_load && node perf/map_capacity/run_grid_matrix.mjs",

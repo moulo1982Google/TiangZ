@@ -66,7 +66,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     const skill = caster.GetComponent(SkillComponent);
     const now = TimeSystem.Instance.ServerNow;
     if (skill.IsCasting()) {
-      throw new RpcError(GameErrCode.SkillBusy, `Unit ${caster.UnitId} is already casting`);
+      return this.queueCast(caster, skill, command, definition, now);
     }
     const readyAt = skill.ReadyAt(definition.id);
     if (now < readyAt) {
@@ -90,6 +90,8 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       targetUnitId: target.UnitId,
       startedAtMs: now,
       finishAtMs: now + definition.castTimeMs,
+      nextTickAtMs: definition.channelTickMs > 0 ? now + definition.channelTickMs : 0,
+      channelTicksCompleted: 0,
       definition,
     };
     let state = skill.Accept(cast, definition.cooldownMs, definition.globalCooldownMs);
@@ -148,17 +150,31 @@ export class SkillMapComponentSystem extends SkillMapComponent {
         this.activeCasterUnitIds.delete(unitId);
         continue;
       }
-      if (now < cast.finishAtMs) continue;
-      this.activeCasterUnitIds.delete(unitId);
       try {
         const definition = cast.definition;
+        if (definition.channelTicks > 0) {
+          this.advanceChannel(caster, skill, cast, now);
+        }
+        const currentCast = skill.ActiveCast();
+        if (!currentCast || now < currentCast.finishAtMs) continue;
+        if (
+          definition.channelTicks > 0 &&
+          currentCast.channelTicksCompleted < definition.channelTicks
+        ) {
+          continue;
+        }
+        this.activeCasterUnitIds.delete(unitId);
+        const queued = skill.TakeQueued();
         const target = this.resolveTarget(caster, cast.targetUnitId, definition);
         this.validateTargetAlive(target);
         if (definition.revalidateOnComplete) this.validateTargetRange(caster, target, definition);
         this.validateRequiredAbsentBuff(target, definition);
-        this.launchOrResolve(caster, target, definition, cast.castId, now);
+        if (definition.channelTicks === 0) {
+          this.launchOrResolve(caster, target, definition, cast.castId, now);
+        }
         this.applyAutoAttackPolicy(caster, definition, "complete");
         this.publishCastState(caster, skill.Complete(cast.castId));
+        this.startQueuedCast(caster, queued);
       } catch (error) {
         const state = skill.Interrupt(error instanceof RpcError ? "cast-invalid" : "cast-error");
         if (state) this.publishCastState(caster, state);
@@ -188,6 +204,73 @@ export class SkillMapComponentSystem extends SkillMapComponent {
           error,
         });
       }
+    }
+  }
+
+  /**
+   * 施法者进入队列窗口后只缓存一个下一技能；缓存不消耗CD，真正开始时会重新校验目标、距离、Veto和Buff条件。
+   *
+   * Once a caster enters the configured queue window, only one next skill is
+   * buffered. Buffering consumes no cooldown; target, range, veto, and Buff
+   * conditions are checked again when the queued cast actually starts.
+   */
+  private queueCast(
+    caster: PlayerUnit,
+    skill: SkillComponent,
+    command: SkillCastCommand,
+    definition: SkillDefinition,
+    now: number,
+  ): SkillCastState {
+    const active = skill.ActiveCast();
+    if (!active || definition.queueWindowMs <= 0 || active.finishAtMs - now > definition.queueWindowMs) {
+      throw new RpcError(GameErrCode.SkillBusy, `Unit ${caster.UnitId} is already casting`);
+    }
+    if (skill.ReadyAt(definition.id) > active.finishAtMs) {
+      throw new RpcError(GameErrCode.SkillCooldown, `skill ${definition.id} is not ready after the current cast`);
+    }
+    const target = this.resolveTarget(caster, command.targetUnitId, definition);
+    this.validateTarget(caster, target, definition);
+    const state = skill.Queue(command, active.finishAtMs);
+    this.publishCastState(caster, state);
+    return state;
+  }
+
+  /** 推进所有已经到点的引导跳数；单次最多补8跳，避免长时间停顿造成无界结算洪峰。 / Resolves due channel ticks with an eight-tick cap to avoid an unbounded catch-up burst after a stall. */
+  private advanceChannel(
+    caster: PlayerUnit,
+    skill: SkillComponent,
+    cast: import("#tiangz/model").ActiveSkillCast,
+    now: number,
+  ): void {
+    const { definition } = cast;
+    let nextTickAtMs = cast.nextTickAtMs;
+    let completed = cast.channelTicksCompleted;
+    let processed = 0;
+    while (completed < definition.channelTicks && now >= nextTickAtMs && processed < 8) {
+      const target = this.resolveTarget(caster, cast.targetUnitId, definition);
+      this.validateTargetAlive(target);
+      if (definition.revalidateOnComplete) this.validateTargetRange(caster, target, definition);
+      this.resolveEffects(caster, target, definition, cast.castId);
+      completed += 1;
+      processed += 1;
+      nextTickAtMs += definition.channelTickMs;
+      this.publishCastState(caster, skill.UpdateChannel(cast.castId, nextTickAtMs, completed));
+    }
+  }
+
+  /** 当前Cast完成后立即尝试启动缓存技能；失败只丢弃缓存，不回滚已经完成的技能。 / Starts the buffered skill after the current cast; a failure only drops the buffer and never rolls back the completed skill. */
+  private startQueuedCast(caster: PlayerUnit, command: SkillCastCommand | undefined): void {
+    if (!command) return;
+    try {
+      this.Cast(caster, command);
+    } catch (error) {
+      this.DomainScene().logger.debug("queued skill rejected at start", {
+        unitId: caster.UnitId,
+        skillId: command.skillId,
+        targetUnitId: command.targetUnitId,
+        error,
+      });
+      this.publishCastState(caster, caster.GetComponent(SkillComponent).State(command.skillId));
     }
   }
 

@@ -23,6 +23,13 @@ export interface ActionExecutionResult {
   readonly damageAbsorberModifierId?: number;
   readonly damage?: DamageResult;
   readonly grantedItem?: ItemSnapshot;
+  readonly grantedItems?: readonly ItemSnapshot[];
+}
+
+export interface ActionBatchExecutionResult {
+  readonly changed: boolean;
+  readonly results: readonly ActionExecutionResult[];
+  readonly grantedItems: readonly ItemSnapshot[];
 }
 
 /**
@@ -123,8 +130,12 @@ export function ExecuteAction(
         const configId = toConfigId(action.parameters[0]);
         const count = toSafeNumber(action.parameters[1], "grant item count");
         if (count <= 0) throw new Error(`grant item count must be positive: ${count}`);
-        const item = target.GetComponent(ItemComponent).CreateItem(configId, count).Snapshot();
-        return { changed: true, grantedItem: item };
+        const items = target.GetComponent(ItemComponent).GrantItem(configId, count);
+        return {
+          changed: true,
+          grantedItem: items[0],
+          grantedItems: items,
+        };
       }
     case ActionType.RegisterDamageAbsorber:
       if (action.parameters.length < 1 || action.parameters.length > 2) {
@@ -141,6 +152,33 @@ export function ExecuteAction(
     default:
       return assertNever(action.type);
   }
+}
+
+/**
+ * 在同一同步业务栈中预检并执行一组Action；不会在Action之间await。
+ * 这是当前任务奖励的统一执行边界，但不提供失败回滚或DB事务语义；跨域持久化一致性留给DBProxy。
+ *
+ * Preflights and executes an Action batch in one synchronous business stack
+ * with no await between actions. This is the current quest-reward execution
+ * boundary, not rollback or a database transaction; cross-domain durability
+ * belongs to DBProxy.
+ */
+export function ExecuteActionBatch(
+  target: Unit<any[]>,
+  actions: readonly ActionDefinition[],
+  context: ActionExecutionContext = {},
+): ActionBatchExecutionResult {
+  for (const action of actions) validateActionShape(action);
+  const results = actions.map((action) => ExecuteAction(target, action, context));
+  const itemById = new Map<bigint, ItemSnapshot>();
+  for (const result of results) {
+    for (const item of result.grantedItems ?? []) itemById.set(item.itemId, item);
+  }
+  return {
+    changed: results.some((result) => result.changed),
+    results,
+    grantedItems: [...itemById.values()].sort((left, right) => left.itemId < right.itemId ? -1 : left.itemId > right.itemId ? 1 : 0),
+  };
 }
 
 function executeChangeNumeric(
@@ -211,6 +249,33 @@ function requireParameterCount(action: ActionDefinition, count: number): void {
     throw new Error(
       `action ${action.type} expects ${count} parameters, received ${action.parameters.length}`,
     );
+  }
+}
+
+function validateActionShape(action: ActionDefinition): void {
+  switch (action.type) {
+    case ActionType.None:
+      requireParameterCount(action, 0);
+      return;
+    case ActionType.ChangeNumeric:
+    case ActionType.DealDamage:
+      requireParameterCount(action, 2);
+      return;
+    case ActionType.AddBuff:
+    case ActionType.RemoveBuff:
+    case ActionType.Heal:
+      requireParameterCount(action, 1);
+      return;
+    case ActionType.GrantItem:
+      requireParameterCount(action, 2);
+      return;
+    case ActionType.RegisterDamageAbsorber:
+      if (action.parameters.length < 1 || action.parameters.length > 2) {
+        throw new Error(`RegisterDamageAbsorber expects 1 or 2 parameters, received ${action.parameters.length}`);
+      }
+      return;
+    default:
+      return assertNever(action.type);
   }
 }
 

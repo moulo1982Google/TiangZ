@@ -521,9 +521,12 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       !Number.isSafeInteger(skill.castTimeMs) || skill.castTimeMs < 0 ||
       !Number.isSafeInteger(skill.cooldownMs) || skill.cooldownMs < 0 ||
       !Number.isSafeInteger(skill.globalCooldownMs) || skill.globalCooldownMs < 0 ||
-      !Number.isFinite(skill.rangeMeters) || skill.rangeMeters <= 0
+      !Number.isFinite(skill.rangeMeters) || skill.rangeMeters <= 0 ||
+      !Number.isSafeInteger(skill.queueWindowMs) || skill.queueWindowMs < 0 ||
+      !Number.isSafeInteger(skill.channelTickMs) || skill.channelTickMs < 0 ||
+      !Number.isSafeInteger(skill.channelTicks) || skill.channelTicks < 0
     ) {
-      throw new Error(\`skill config \${skill.id} has invalid cast, cooldown, or range values\`);
+      throw new Error(\`skill config \${skill.id} has invalid cast, cooldown, range, queue, or channel values\`);
     }
     if (skill.targetRelation < SkillTargetRelation.Enemy || skill.targetRelation > SkillTargetRelation.Friendly) {
       throw new Error(\`skill config \${skill.id} has unsupported target relation\`);
@@ -544,6 +547,12 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       }
     } else {
       throw new Error(\`skill config \${skill.id} has unsupported delivery \${skill.delivery}\`);
+    }
+    if ((skill.channelTickMs === 0) !== (skill.channelTicks === 0)) {
+      throw new Error(\`skill config \${skill.id} must configure channel tick interval and count together\`);
+    }
+    if (skill.channelTicks > 0 && (skill.delivery !== SkillDelivery.Direct || skill.castTimeMs < skill.channelTickMs * skill.channelTicks)) {
+      throw new Error(\`skill config \${skill.id} channel must be direct and fit inside cast time\`);
     }
     if (
       skill.requiredAbsentBuffConfigId > 0 &&
@@ -848,9 +857,12 @@ function validateGeneratedActionAndSkillData(data) {
       !Number.isSafeInteger(skill.cast_time_ms) || skill.cast_time_ms < 0 ||
       !Number.isSafeInteger(skill.cooldown_ms) || skill.cooldown_ms < 0 ||
       !Number.isSafeInteger(skill.global_cooldown_ms) || skill.global_cooldown_ms < 0 ||
-      !Number.isFinite(skill.range_meters) || skill.range_meters <= 0
+      !Number.isFinite(skill.range_meters) || skill.range_meters <= 0 ||
+      !Number.isSafeInteger(skill.queue_window_ms) || skill.queue_window_ms < 0 ||
+      !Number.isSafeInteger(skill.channel_tick_ms) || skill.channel_tick_ms < 0 ||
+      !Number.isSafeInteger(skill.channel_ticks) || skill.channel_ticks < 0
     ) {
-      throw new Error(`SkillConfig ${skill.id} has invalid cast, cooldown, or range values`);
+      throw new Error(`SkillConfig ${skill.id} has invalid cast, cooldown, range, queue, or channel values`);
     }
     if (skill.target_relation !== 1 && skill.target_relation !== 2) {
       throw new Error(`SkillConfig ${skill.id} has unsupported target relation`);
@@ -867,6 +879,12 @@ function validateGeneratedActionAndSkillData(data) {
       (skill.delivery !== 1 && skill.delivery !== 2)
     ) {
       throw new Error(`SkillConfig ${skill.id} has invalid delivery or projectile speed`);
+    }
+    if ((skill.channel_tick_ms === 0) !== (skill.channel_ticks === 0)) {
+      throw new Error(`SkillConfig ${skill.id} must configure channel tick interval and count together`);
+    }
+    if (skill.channel_ticks > 0 && (skill.delivery !== 1 || skill.cast_time_ms < skill.channel_tick_ms * skill.channel_ticks)) {
+      throw new Error(`SkillConfig ${skill.id} channel must be direct and fit inside cast time`);
     }
     if (skill.required_absent_buff_config_id > 0 && !buffIds.has(skill.required_absent_buff_config_id)) {
       throw new Error(`SkillConfig ${skill.id} references missing blocking BuffConfig`);

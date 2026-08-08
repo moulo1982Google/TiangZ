@@ -375,6 +375,18 @@ const RAW_DATA: Record<string, unknown> = {
       "range_meters": 15,
       "delivery": 1,
       "projectile_speed_meters_per_second": 0
+    },
+    {
+      "id": 3006,
+      "name": "引导治疗",
+      "description": "引导3秒，每秒恢复30点生命；移动会打断引导。",
+      "target_relation": 2,
+      "cast_time_ms": 3000,
+      "cooldown_ms": 6000,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0
     }
   ]
 };
@@ -421,7 +433,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "00e00684998fe60da0e79f20e68d69ba924c8dd3decc4ac0bab5596c5bc4b057";
+export const GameConfigFingerprint = "755b6d054e5dbdfc3d25c087dac75bb3ad1efc14b6e0b07c5305367df633d4aa";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

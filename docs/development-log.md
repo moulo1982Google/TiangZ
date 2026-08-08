@@ -7,6 +7,16 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-08：Inventory、奖励、任务收口与技能扩展
+
+- Inventory补齐`GrantItem/GrantItems`：先填充同配置已有堆叠，再按`ItemConfig.max_stack`拆分创建Item子Entity；返回受影响堆叠的权威快照。新增玩家种子背包、奖励和后续掉落都必须经过Inventory，不允许任务系统私自拼接Item。
+- 新增`RewardDefinition -> ExecuteReward -> ExecuteActionBatch`边界。任务奖励、GM奖励和后续掉落共享Action执行器；PlayerUnit有序mailbox内同步执行，Action之间不`await`，但当前不提供失败回滚或数据库事务，跨域持久化留给独立DBProxy。
+- 任务领奖现在同步完成奖励Action、写入已完成配置ID和删除Quest ChildEntity，再发布奖励道具同步。任务状态、目标索引和接取条件继续沿用既有语义；组队共享任务明确等待Party系统，不在Quest层提前做伪组队。
+- 技能系统增加3006引导治疗，用来验证引导Tick、读条时停止平A、移动打断、公共CD和单技能排队；`SkillMapComponent.Update10Hz`负责推进，不为每个Cast创建独立Timer或Update目标。
+- 新增`perf:business-chain`真实业务链路压测入口，交替覆盖UseItem与友方CastSkill，并分开记录业务拒绝和传输错误。入口及客户端已完成编译验证；高CPU/长时正式测试尚未执行，等待用户提供空闲机器。
+
+本轮收口验证目标：`npm run typecheck`、`npm run build:perf:full-chain`、`npm run test:buff-action`、协议锁、生成物、注释、设计规则和`git diff --check`全部通过。
+
 ## 2026-08-08：任务状态、目标索引与接取条件
 
 - 活动Quest新增`InProgress/ReadyToTurnIn`显式状态；协议新增status字段并保留旧`ready_to_complete`兼容镜像，跨MapHost传送schema升级为6。

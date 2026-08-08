@@ -67,6 +67,9 @@ function rebuildCatalog(fingerprint: string): void {
       autoAttackPolicy: config.autoAttackPolicy as SkillDefinition["autoAttackPolicy"],
       revalidateOnComplete: config.revalidateOnComplete,
       requiredAbsentBuffConfigId: config.requiredAbsentBuffConfigId,
+      queueWindowMs: config.queueWindowMs,
+      channelTickMs: config.channelTickMs,
+      channelTicks: config.channelTicks,
       effects: Object.freeze(effects),
     }));
   }

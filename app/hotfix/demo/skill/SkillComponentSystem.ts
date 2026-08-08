@@ -20,6 +20,7 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
   /** Unit销毁时清空瞬态技能状态；不发布网络事件。 / Clears transient skill state on Unit disposal without publishing network events. */
   protected override OnDestroy(): void {
     this.activeCast = null;
+    this.queuedCast = null;
     this.cooldownEndBySkillId.clear();
     this.cooldownEndByItemConfigId.clear();
   }
@@ -47,6 +48,11 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
       finishAtMs: this.activeCast?.finishAtMs ?? 0,
       globalCooldownEndAtMs: this.globalCooldownEndAtMs,
       skillCooldownEndAtMs: this.cooldownEndBySkillId.get(skillId) ?? 0,
+      channelTickIndex: this.activeCast?.channelTicksCompleted ?? 0,
+      channelTickCount: this.activeCast?.definition.channelTicks ?? 0,
+      queuedSkillId: this.queuedCast?.command.skillId ?? 0,
+      queuedTargetUnitId: this.queuedCast?.command.targetUnitId ?? 0,
+      queueDeadlineAtMs: this.queuedCast?.deadlineAtMs ?? 0,
       interruptReason: this.lastInterruptReason,
     };
   }
@@ -58,11 +64,51 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     globalCooldownMs: number,
   ): SkillCastState {
     if (this.activeCast) throw new Error(`Unit ${this.owner.UnitId} is already casting`);
+    this.queuedCast = null;
     this.activeCast = cast;
     this.lastInterruptReason = "";
     this.globalCooldownEndAtMs = cast.startedAtMs + globalCooldownMs;
     this.cooldownEndBySkillId.set(cast.skillId, cast.startedAtMs + cooldownMs);
     return this.State(cast.skillId);
+  }
+
+  /** 在当前读条结束前缓存一个技能请求；不提前消耗CD，真正开始时重新走地图校验。 / Queues one skill before the current cast ends without consuming cooldown; map validation runs again when it starts. */
+  Queue(command: SkillCastCommand, deadlineAtMs: number): SkillCastState {
+    if (!this.activeCast) throw new Error(`Unit ${this.owner.UnitId} has no active cast to queue behind`);
+    if (this.queuedCast) throw new Error(`Unit ${this.owner.UnitId} already has a queued skill`);
+    if (!Number.isSafeInteger(deadlineAtMs) || deadlineAtMs < this.activeCast.startedAtMs) {
+      throw new Error(`invalid skill queue deadline: ${deadlineAtMs}`);
+    }
+    this.queuedCast = { command: { ...command }, deadlineAtMs };
+    return this.State();
+  }
+
+  /** 取出并清空缓存技能；调用方必须立即调用Cast，让所有规则重新生效。 / Takes and clears the queued skill; the caller must immediately invoke Cast so all rules run again. */
+  TakeQueued(): SkillCastCommand | undefined {
+    const queued = this.queuedCast?.command;
+    this.queuedCast = null;
+    return queued;
+  }
+
+  /** 清除缓存技能而不影响当前读条或已提交冷却。 / Clears the queued skill without affecting the active cast or committed cooldowns. */
+  ClearQueued(): SkillCastState {
+    this.queuedCast = null;
+    return this.State();
+  }
+
+  /** 更新引导进度；只允许地图调度器按当前CastId推进，避免旧Cast写入新状态。 / Updates channel progress only for the active CastId so an old cast cannot mutate a new state. */
+  UpdateChannel(castId: bigint, nextTickAtMs: number, channelTicksCompleted: number): SkillCastState {
+    const active = this.activeCast;
+    if (active?.castId !== castId) return this.State();
+    if (!Number.isSafeInteger(nextTickAtMs) || !Number.isSafeInteger(channelTicksCompleted) || channelTicksCompleted < 0) {
+      throw new Error(`invalid channel progress: ${nextTickAtMs}, ${channelTicksCompleted}`);
+    }
+    this.activeCast = {
+      ...active,
+      nextTickAtMs,
+      channelTicksCompleted,
+    };
+    return this.State();
   }
 
   /** 返回当前技能与公共冷却是否可用；不修改状态。 / Checks skill and global cooldown deadlines without mutation. */
@@ -122,6 +168,7 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     if (this.activeCast?.castId !== castId) return this.State();
     const skillId = this.activeCast.skillId;
     this.activeCast = null;
+    this.queuedCast = null;
     this.lastInterruptReason = "";
     return this.State(skillId);
   }
@@ -131,6 +178,7 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     if (!this.activeCast) return undefined;
     const skillId = this.activeCast.skillId;
     this.activeCast = null;
+    this.queuedCast = null;
     this.lastInterruptReason = reason;
     return this.State(skillId);
   }
@@ -156,6 +204,7 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
   /** 恢复冷却并清除源地图读条；不得把传送当成刷新技能的手段。 / Restores cooldowns and clears source-map casting so transfer cannot refresh abilities. */
   RestoreTransfer(state: SkillTransferState): void {
     this.activeCast = null;
+    this.queuedCast = null;
     this.lastInterruptReason = "map-transfer";
     this.globalCooldownEndAtMs = Math.max(0, state.globalCooldownEndAtMs);
     this.cooldownEndBySkillId.clear();

@@ -372,6 +372,18 @@
       "range_meters": 15,
       "delivery": 1,
       "projectile_speed_meters_per_second": 0
+    },
+    {
+      "id": 3006,
+      "name": "引导治疗",
+      "description": "引导3秒，每秒恢复30点生命；移动会打断引导。",
+      "target_relation": 2,
+      "cast_time_ms": 3000,
+      "cooldown_ms": 6000,
+      "global_cooldown_ms": 1000,
+      "range_meters": 15,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0
     }
   ]
 }
