@@ -168,11 +168,6 @@ export abstract class Component<TAwakeArgs extends unknown[] = []> {
       : TimerSystem.Instance.Cancel(timerId, reason);
   }
 
-  /** 旧名称保留一个版本；语义等同业务主动取消。 / Retained for one compatibility cycle and equivalent to business cancellation. */
-  RemoveTimer(timerId: TimerId): boolean {
-    return this.CancelTimer(timerId);
-  }
-
   /**
    * 创建并拥有一个没有 mailbox 的本地子 Entity。
    *
@@ -769,11 +764,6 @@ export abstract class OwnedEntity<
       : TimerSystem.Instance.Cancel(timerId, reason);
   }
 
-  /** 旧名称保留一个版本；语义等同业务主动取消。 / Retained for one compatibility cycle and equivalent to business cancellation. */
-  RemoveTimer(timerId: TimerId): boolean {
-    return this.CancelTimer(timerId);
-  }
-
   __awake(...args: TAwakeArgs): void {
     if (this.awoken) {
       throw new Error(`owned entity is already awake: ${this.constructor.name}`);
@@ -818,7 +808,10 @@ export abstract class OwnedEntity<
 /** Component集合拥有的Item、Buff、Quest等子Entity；不能直接成为Actor消息目标。 / Component-owned child Entity for Item, Buff, Quest, and similar instances; it is not directly Actor-addressable. */
 export abstract class ChildEntity<
   TAwakeArgs extends unknown[] = [],
-> extends OwnedEntity<TAwakeArgs> {}
+> extends OwnedEntity<TAwakeArgs> {
+  /** 仅用于TypeScript名义类型隔离，不生成运行时字段。 / Type-only nominal brand that emits no runtime field. */
+  declare private readonly __childEntityBrand: void;
+}
 
 export abstract class Scene extends Entity {
   protected readonly sceneContext: SceneContext;
@@ -1021,11 +1014,6 @@ export abstract class Actor<
   /** 仅供所有权清理选择是否通知业务取消方法。 / Internal ownership cleanup with explicit cancellation-notification policy. */
   __cancelTimer(timerId: TimerId, reason: TimerCancelReason, notify: boolean): boolean {
     return this.ctx.cancelTimer(timerId, reason, notify);
-  }
-
-  /** 旧名称保留一个版本；语义等同业务主动取消。 / Retained for one compatibility cycle and equivalent to business cancellation. */
-  RemoveTimer(timerId: TimerId): boolean {
-    return this.CancelTimer(timerId);
   }
 
   __awake(...args: TAwakeArgs): void {

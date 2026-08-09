@@ -61,12 +61,16 @@ native.x += 1;
 
 ## 配置与观测
 
-`process.nativeData` 只包含可选的诊断配置：
+`process.observability.nativeData` 只包含由Rust Core校验的可选诊断配置：
 
 ```json
 {
-  "debugScalarAccess": true,
-  "scalarAccessWarnThreshold": 10000
+  "observability": {
+    "nativeData": {
+      "debugScalarAccess": true,
+      "scalarAccessWarnThreshold": 10000
+    }
+  }
 }
 ```
 

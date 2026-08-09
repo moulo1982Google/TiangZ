@@ -123,4 +123,4 @@ npm run verify
 - TypeScript是默认主业务语言；性能敏感且规则稳定的领域可显式选择`src/game`中的Rust模块，但修改后必须重新编译并重启Process。
 - Wasm只作为未来重计算模块的候选，例如确定性战斗核心；当前不接入。
 - Rhai只作为未来脚本后端候选；当前不为它增加兼容层。
-- `v0.3.10`质量门已经完成，当前进入`0.4.x` Phase 4开发线；地图空间遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)，Rust AOI与NavMesh3D运行时尚未实现。
+- `v0.3.10`质量门已经完成，当前进入`0.4.x` Phase 4开发线；Rust AOI、NavMesh3D运行时和Cocos3D/UE/Unity/Godot演示均已落地，地图空间继续遵循[地图空间与3D坐标契约](docs/design/spatial-world.md)。

@@ -95,11 +95,6 @@ export class TimerSystem extends Singleton {
     return true;
   }
 
-  /** 兼容旧调用的静默清理入口；新业务使用Cancel。 / Legacy silent-cleanup alias; new business code should use Cancel. */
-  Remove(timerId: TimerId): boolean {
-    return this.Cancel(timerId, "manual", false);
-  }
-
   /** 返回按游戏时间完成的 Promise；不可用于墙钟 I/O 超时。 / Returns a Promise completed by game time; do not use it for wall-clock I/O deadlines. */
   WaitAsync(delayMs: number): Promise<void> {
     return new Promise((resolve) => {

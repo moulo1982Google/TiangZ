@@ -115,7 +115,7 @@ async function main(): Promise<void> {
   Game.Instance.Update(base + 275, Date.now(), () => undefined);
   assert.equal(counter.onceCount, 1);
   assert.equal(counter.repeatedCount, 1);
-  assert.equal(counter.RemoveTimer(repeatedTimer), true);
+  assert.equal(counter.CancelTimer(repeatedTimer), true);
 
   Game.Instance.Update(base + 325, Date.now(), () => undefined);
   assert.equal(counter.updates10Hz, 2);

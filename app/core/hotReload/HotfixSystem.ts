@@ -56,6 +56,12 @@ export class HotfixSystem {
   private static lastError: string | undefined;
   private static readonly requiredTypes = new Set<AnyCtor>();
   private static readonly installedTypes = new Map<AnyCtor, InstalledType>();
+  private static readonly bindingStores = new Set<HotfixBindingStore<object>>();
+
+  /** 记录参与完整generation校验的稳定Handler槽；仅由HotfixBindingStore构造时调用。 / Tracks stable Handler slots that participate in complete-generation validation; called only by HotfixBindingStore construction. */
+  static RegisterBindingStore<T extends object>(store: HotfixBindingStore<T>): void {
+    this.bindingStores.add(store as unknown as HotfixBindingStore<object>);
+  }
 
   /** 注册Model要求的业务System；Generated Bootstrap通常在首个候选前调用，暂存期间禁止修改。 / Registers a Model-required business System, normally before the first candidate; registration is forbidden while staging. */
   static RequireType(target: AnyCtor): void {
@@ -136,6 +142,7 @@ export class HotfixSystem {
     const bindingUndo: BindingUndo<object>[] = [];
 
     try {
+      validateCompleteBindings(staging, this.bindingStores, this.generation > 0);
       const requiredTargets = new Set(this.requiredTypes);
       for (const [target, installed] of this.installedTypes) {
         if (installed.required) requiredTargets.add(target);
@@ -259,7 +266,9 @@ export function systemFor<TTarget extends AnyCtor>(
 export class HotfixBindingStore<T extends object> {
   private readonly active = new Map<string, T>();
 
-  constructor(readonly Name: string) {}
+  constructor(readonly Name: string) {
+    HotfixSystem.RegisterBindingStore(this);
+  }
 
   /** 在候选加载期进入事务暂存；框架单元测试可在无候选时安装一次基线。 / Stages during candidate loading; framework unit tests may install a one-time baseline outside staging. */
   Register(key: string, value: T): void {
@@ -275,6 +284,11 @@ export class HotfixBindingStore<T extends object> {
 
   Values(): readonly T[] {
     return [...this.active.values()];
+  }
+
+  /** 仅供Hotfix事务在修改任何活动行为前校验候选是否包含完整旧绑定集合。 / Lets the Hotfix transaction validate the complete active key set before mutating serving behavior. */
+  __activeKeys(): readonly string[] {
+    return [...this.active.keys()];
   }
 
   __commit(key: string, value: T): BindingUndo<T> {
@@ -300,6 +314,47 @@ export class HotfixBindingStore<T extends object> {
     }
     replaceObjectProperties(undo.previous, undo.previousSnapshot ?? {});
     this.active.set(undo.key, undo.previous);
+  }
+}
+
+/**
+ * 第一代建立Handler key基线，后续拒绝任何集合增减。当前稳定路由持有binding槽对象，
+ * 因此新增、删除或重命名Handler都属于Model/协议变更，必须完整重启。
+ *
+ * Establishes Handler keys in generation one and rejects any later key-set
+ * change. Stable routes retain binding slots, so add/remove/rename requires a
+ * full Model restart rather than a partial Hotfix update.
+ */
+function validateCompleteBindings(
+  staging: StagingGeneration,
+  stores: ReadonlySet<HotfixBindingStore<object>>,
+  frozen: boolean,
+): void {
+  const stagedKeys = new Map<HotfixBindingStore<object>, Set<string>>();
+  for (const candidate of staging.bindings) {
+    let keys = stagedKeys.get(candidate.store);
+    if (!keys) {
+      keys = new Set<string>();
+      stagedKeys.set(candidate.store, keys);
+    }
+    keys.add(candidate.key);
+  }
+
+  if (!frozen) return;
+
+  for (const store of stores) {
+    const keys = stagedKeys.get(store);
+    const activeKeys = new Set(store.__activeKeys());
+    for (const activeKey of activeKeys) {
+      if (!keys?.has(activeKey)) {
+        throw new Error(`active Hotfix binding is missing: ${store.Name}:${activeKey}`);
+      }
+    }
+    for (const stagedKey of keys ?? []) {
+      if (!activeKeys.has(stagedKey)) {
+        throw new Error(`new Hotfix binding requires restart: ${store.Name}:${stagedKey}`);
+      }
+    }
   }
 }
 

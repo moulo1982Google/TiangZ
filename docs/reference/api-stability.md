@@ -47,7 +47,7 @@ import {
 - 破坏性变化必须显式更新API锁和迁移记录；
 - Demo和新游戏目录只能依赖该入口，不能深层import Core实现文件。
 
-`app/core/public-api.lock.json`锁定稳定导出符号集合。普通构建只验证，不会自动接受变化。
+`app/core/public-api.lock.json`同时锁定稳定导出符号集合、顶层声明签名，以及从`public.ts`可达的完整编译器`.d.ts`声明图。参数、返回值、接口字段、继承成员、传递引用类型和泛型约束变化都会触发；函数体不会触发。完整声明图是有意采用的保守门禁，少量只影响内部声明形状的变化也可能需要人工复核并更新锁。
 
 ### Experimental
 
@@ -82,9 +82,9 @@ npm run verify:core-api
 
 该命令执行三项检查：
 
-1. 使用TypeScript类型系统解析`app/core/public.ts`的真实导出，并与`public-api.lock.json`比较；
+1. 使用TypeScript类型系统解析`app/core/public.ts`的真实导出，并比较规范化顶层签名与完整可达`.d.ts`声明图；
 2. 拒绝Model对Core实现文件的深层import、Hotfix绕过`#tiangz/model`深层import，也拒绝Core/Model反向依赖业务Hotfix；
-3. 编译并运行`tools/core_public_api_self_test.ts`，证明一个独立业务模块只依赖Stable入口即可定义EntryScene、Unit、Component和Handler。
+3. 编译并运行只依赖Stable入口的`tools/core_public_api_self_test.ts`，再独立运行允许深层导入的`core_internal_runtime_self_test.ts`验证宿主内部生命周期，两类测试不再混用依赖边界。
 
 新增非破坏性公共API或完成破坏性变更评审后，显式执行：
 
@@ -111,6 +111,9 @@ npm run verify:core-api
 
 ### 开发中
 
+- `ProcessHost`、`Singleton/SingletonRegistry`和`InstanceIdSystem`移出Stable入口。EntryScene公开子Scene生命周期和显式命名的本地Actor mailbox窄接口；不再开放整个Process的任意Entity查询。
+- 删除`TimerSystem.Remove`、Entity/Component/Actor上的`RemoveTimer`兼容名以及仅转发类型名称的`TimerComponent`别名；统一使用`TimerSystem`和`Cancel/CancelTimer`，并显式给出取消原因和是否通知。
+- API锁升级到schema 3，在顶层声明签名之外锁定完整可达`.d.ts`图，覆盖继承和传递类型。
 - 新增`CommitPreparedTransfer`与`TransferStagingRegistry`，统一同进程迁移提交前回滚和跨进程目标端Prepare/Commit/Abort幂等语义。
 - 旧业务无需迁移；普通Component不直接依赖这两个协调API。
 

@@ -24,7 +24,6 @@ class StableCounter {
 }
 
 const instance = new StableCounter();
-const slots = new HotfixBindingStore<{ handler: () => number }>("test-handler");
 
 HotfixSystem.Begin(manifest("v1"));
 class CounterV1 extends StableCounter {
@@ -33,11 +32,8 @@ class CounterV1 extends StableCounter {
   }
 }
 hotfixFor(StableCounter)(CounterV1);
-slots.Register("rpc:1", { handler: () => 1 });
 HotfixSystem.Commit();
 assert(instance.Read() === 11, "existing instance did not receive v1 prototype");
-const stableSlot = slots.Values()[0];
-assert(stableSlot.handler() === 1, "initial handler slot was not committed");
 
 HotfixSystem.Begin(manifest("v2"));
 class CounterV2 extends StableCounter {
@@ -46,38 +42,8 @@ class CounterV2 extends StableCounter {
   }
 }
 hotfixFor(StableCounter)(CounterV2);
-slots.Register("rpc:1", { handler: () => 2 });
 HotfixSystem.Commit();
 assert(instance.Read() === 12, "existing instance did not receive v2 prototype");
-assert(slots.Values()[0] === stableSlot, "handler slot identity changed");
-assert(stableSlot.handler() === 2, "stable handler slot did not switch implementation");
-
-Object.defineProperty(stableSlot, "locked", {
-  value: 1,
-  configurable: false,
-  writable: false,
-});
-HotfixSystem.Begin(manifest("broken"));
-class BrokenCounter extends StableCounter {
-  override Read(): number {
-    return 999;
-  }
-}
-hotfixFor(StableCounter)(BrokenCounter);
-slots.Register("rpc:1", Object.defineProperty(
-  { handler: () => 999 },
-  "locked",
-  { value: 2, configurable: false },
-));
-let rejected = false;
-try {
-  HotfixSystem.Commit();
-} catch {
-  rejected = true;
-}
-assert(rejected, "broken candidate was accepted");
-assert(instance.Read() === 12, "prototype rollback did not restore v2");
-assert(stableSlot.handler() === 2, "handler rollback changed active slot");
 
 HotfixSystem.Begin(manifest("baseline"));
 HotfixSystem.Commit();
@@ -217,6 +183,76 @@ assert(
   HotfixSystem.Status().activeVersion === "system-v2",
   "missing System candidate changed the active generation",
 );
+
+const slots = new HotfixBindingStore<{ handler: () => number }>("test-handler");
+slots.Register("rpc:1", { handler: () => 1 });
+const stableSlot = slots.Values()[0];
+HotfixSystem.Begin(manifest("binding-v1"));
+systemFor(LifecycleComponent)(LifecycleSystemV2);
+slots.Register("rpc:1", { handler: () => 1 });
+HotfixSystem.Commit();
+assert(stableSlot.handler() === 1, "initial handler slot was not committed");
+
+HotfixSystem.Begin(manifest("binding-v2"));
+systemFor(LifecycleComponent)(LifecycleSystemV2);
+slots.Register("rpc:1", { handler: () => 2 });
+HotfixSystem.Commit();
+assert(slots.Values()[0] === stableSlot, "handler slot identity changed");
+assert(stableSlot.handler() === 2, "stable handler slot did not switch implementation");
+
+HotfixSystem.Begin(manifest("missing-binding"));
+systemFor(LifecycleComponent)(LifecycleSystemV2);
+let missingBindingRejected = false;
+try {
+  HotfixSystem.Commit();
+} catch (error) {
+  missingBindingRejected = String(error).includes("test-handler:rpc:1");
+}
+assert(missingBindingRejected, "candidate missing an active Handler binding was accepted");
+assert(stableSlot.handler() === 2, "missing Handler candidate changed the active slot");
+assert(
+  HotfixSystem.Status().activeVersion === "binding-v2",
+  "missing Handler candidate changed the active generation",
+);
+
+HotfixSystem.Begin(manifest("extra-binding"));
+systemFor(LifecycleComponent)(LifecycleSystemV2);
+slots.Register("rpc:1", { handler: () => 3 });
+slots.Register("rpc:2", { handler: () => 4 });
+let extraBindingRejected = false;
+try {
+  HotfixSystem.Commit();
+} catch (error) {
+  extraBindingRejected = String(error).includes("test-handler:rpc:2");
+}
+assert(extraBindingRejected, "candidate adding a new Handler binding was accepted");
+assert(slots.Values().length === 1, "extra Handler candidate changed the active key set");
+assert(stableSlot.handler() === 2, "extra Handler candidate changed the active slot");
+assert(
+  HotfixSystem.Status().activeVersion === "binding-v2",
+  "extra Handler candidate changed the active generation",
+);
+
+Object.defineProperty(stableSlot, "locked", {
+  value: 1,
+  configurable: false,
+  writable: false,
+});
+HotfixSystem.Begin(manifest("broken-binding"));
+systemFor(LifecycleComponent)(LifecycleSystemV2);
+slots.Register("rpc:1", Object.defineProperty(
+  { handler: () => 999 },
+  "locked",
+  { value: 2, configurable: false },
+));
+let brokenBindingRejected = false;
+try {
+  HotfixSystem.Commit();
+} catch {
+  brokenBindingRejected = true;
+}
+assert(brokenBindingRejected, "broken Handler candidate was accepted");
+assert(stableSlot.handler() === 2, "Handler rollback changed the active slot");
 SingletonRegistry.DestroyAll();
 
 process.stdout.write("hotfix system self-test passed\n");

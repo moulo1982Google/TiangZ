@@ -221,4 +221,4 @@ export class C2M_MoveHandler {
 
 这里的 `MapComponent` 直接实现单张地图的 Unit 管理、AOI 与广播，不再回调 `MapUnitEventSink`。`MapHostComponent` 只负责创建多张地图和协调玩家跨图，不承载单张地图内部行为。
 
-多个同类型 EntryScene 共享一个 ProcessHost。使用 `this.childSceneId("map:1")` 为子 Scene 加上入口 Scene 命名空间，避免不同 MapHost 创建同名子 Scene。
+多个同类型 EntryScene 共享一个 ProcessHost。业务直接调用`SpawnChildScene("map:1", MapScene)`；框架会自动加上入口Scene命名空间，业务不接触子Scene ID的分隔符约定。

@@ -50,7 +50,7 @@ Watcher会在启动任何子进程前检查整套`StartMachine`，重复的`orig
 
 - `FrameTime`：宿主提供的单调毫秒时间，用于游戏Timer、耗时与逻辑调度；不可写入数据库。
 - `ServerNow`：Unix毫秒墙钟，用于活动开放时间、日志和持久化截止时间。
-- `TimerComponent.ServerTime()`：`ServerNow`的业务友好静态入口；`TimerComponent`是`TimerSystem`的同类型别名，不创建第二套时钟或定时器。
+- `TimerSystem.ServerTime()`：`ServerNow`的业务静态入口；不另外提供名为`TimerComponent`的类型别名，避免与真正挂载在Entity上的Component混淆。
 - `ServerDeadlineAfter/RemainingServerTime/IsServerDeadlineReached`：处理可持久化截止时间。
 - `FixedTime/FixedDeltaTime/FrameCount`：当前固定逻辑帧。
 
@@ -79,7 +79,7 @@ protected CancelCast(args: CastArgs, context: TimerCancelledContext): void {
 this.CancelTimer(timerId, "player-moved");
 ```
 
-`CancelTimer`立即使Timer失效，并且取消方法至多执行一次。Actor及其所有权链下的Timer取消方法仍进入Actor mailbox，以保持顺序。Owner销毁时框架静默清理Timer，不再回调已经失效的业务对象。`RemoveTimer`仅保留一个兼容版本，新代码使用`CancelTimer`。
+`CancelTimer`立即使Timer失效，并且取消方法至多执行一次。Actor及其所有权链下的Timer取消方法仍进入Actor mailbox，以保持顺序。Owner销毁时框架静默清理Timer，不再回调已经失效的业务对象。旧`RemoveTimer`兼容名已经删除，业务统一使用`CancelTimer`。
 
 `TimerSystem`闭包API供Core和稳定Model使用；Hotfix业务使用拥有者的方法名API。大量Buff不要每个创建永久重复Timer，应由`BuffComponent`维护最近到期堆并使用一个合并Timer。
 
@@ -149,7 +149,7 @@ scene.Tasks.Spawn("publish-auto-attack-state", async ({ signal }) => {
 
 `Spawn`不返回任务Promise，只返回可选的本地任务ID；框架统一捕获异常，并把任务计入Scene异步在途和Hotfix切换屏障。Scene销毁或主动`Cancel(id)`只更新TiangZ自带的轻量`signal.aborted/reason`，不依赖浏览器`AbortController`；JavaScript不能强制终止一个不配合的Promise。
 
-`Spawn`只适合有界短任务。否决检查、事务、玩家有序状态修改、需要响应的RPC不能放进去；永久循环会永久阻塞Hotfix。精确时间点和周期逻辑使用Entity Timer，需要Actor顺序的异步工作使用Message/RPC或Actor Timer。
+`Spawn`只适合有界短任务。每个Scene最多允许256个在途任务，第257个会立即失败；单个任务超过10秒会记录一次包含Scene、任务名和耗时的告警，但框架不会强杀Promise。否决检查、事务、玩家有序状态修改、需要响应的RPC不能放进去；永久循环会持续占用容量并永久阻塞Hotfix。精确时间点和周期逻辑使用Entity Timer，需要Actor顺序的异步工作使用Message/RPC或Actor Timer。
 
 跨Scene、跨Process或需要目标mailbox顺序时使用类型化Message/RPC，而不是Event或`Spawn`。
 

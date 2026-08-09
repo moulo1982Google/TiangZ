@@ -280,7 +280,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - Core提供Component拥有的ChildEntity生命周期语义，Item迁移为真实子Entity，并增加独立性能基准。
 - 固化Buff生命周期事件、Quest活动实例与完成配置ID、Audience和同步语义，避免把“需要被看见”错误等价为Actor或通用Dirty Delta。
 - `docs/patterns`成为领域设计原则入口；Developer Tools `v0.13.0`提供确定性设计核心、VS Code向导、聊天解释、CLI与只读MCP服务。
-- 设计助手不生成业务代码，不覆盖工程检查、Generated锁和测试；主工程已固定`v0.13.0`并用`verify:design-rules`阻止规则与文档漂移。
+- 设计助手不生成业务代码，不覆盖工程检查、Generated锁和测试；主工程已固定版本并用`verify:design-rule-sync`阻止规则与文档漂移，源码规则仍由工程检查和专项门禁执行。
 
 ### 2026-07-26成熟度审计
 

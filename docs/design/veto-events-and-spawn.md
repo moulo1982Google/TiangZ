@@ -77,6 +77,7 @@ ApplyItemUseTransaction(unit, plan.receipt, plan.inventory);
 - 任务异常由Scene Logger统一记录，不产生未处理Promise。
 - ProcessHost聚合入口Scene和动态MapScene的在途任务并进入Hotfix排空屏障；旧任务完成前不会提交新generation。
 - `Cancel`和Scene销毁会更新TiangZ轻量`signal.aborted/reason`，任务必须主动配合取消；该令牌不依赖浏览器`AbortController`。
+- 每个Scene最多保留256个在途任务，第257个立即失败；任务超过10秒会记录一次告警，帮助定位阻塞Hotfix的调用点。
 - 永久循环、无限重试和长时间订阅禁止使用Spawn，否则Hotfix永远无法排空。
 
 下面这些情况不能使用Spawn：

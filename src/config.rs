@@ -1,6 +1,6 @@
 //! 加载部署 JSON，并在任何监听器或 V8 启动前校验运行时不变量。 / Loads deployment JSON and enforces runtime invariants before any listener or V8 starts.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,7 @@ pub struct RuntimeConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessConfig {
     pub name: String,
     #[serde(default)]
@@ -40,12 +40,10 @@ pub struct ProcessConfig {
     pub debug: Option<ProcessDebugConfig>,
     #[serde(default)]
     pub observability: Option<ProcessObservabilityConfig>,
-    #[serde(default, flatten)]
-    pub extensions: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessPersistenceConfig {
     /// 省略时当前Process使用业务提供的非DBProxy Repository。
     /// When omitted, this Process uses the non-DBProxy Repository selected by business code.
@@ -54,7 +52,7 @@ pub struct ProcessPersistenceConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessDbProxyConfig {
     pub endpoint: String,
     /// 配置只保存环境变量名，令牌本身不得进入JSON、V8或日志。
@@ -72,7 +70,7 @@ pub struct ProcessDbProxyConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessIdentityConfig {
     #[serde(default = "default_origin_server_id")]
     pub origin_server_id: u16,
@@ -90,7 +88,7 @@ impl Default for ProcessIdentityConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessLoggingConfig {
     #[serde(default)]
     pub level: ProcessLogLevel,
@@ -105,7 +103,7 @@ pub struct ProcessLoggingConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessLifecycleConfig {
     #[serde(default = "default_stop_timeout_ms")]
     pub stop_timeout_ms: u64,
@@ -166,7 +164,7 @@ pub enum ProcessLogFormat {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessLogFileConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -194,7 +192,7 @@ pub enum IoBackendKind {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessNetworkConfig {
     #[serde(default, alias = "backend")]
     pub io_backend: IoBackendKind,
@@ -215,7 +213,7 @@ impl Default for ProcessNetworkConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessGameConfig {
     #[serde(default = "default_fixed_update_ms")]
     pub fixed_update_ms: u64,
@@ -242,7 +240,7 @@ pub enum ProcessSchedulingMode {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessSchedulingConfig {
     #[serde(default)]
     pub mode: ProcessSchedulingMode,
@@ -253,16 +251,27 @@ pub struct ProcessSchedulingConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessObservabilityConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latency: Option<LatencyObservabilityConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health: Option<HealthObservabilityConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_data: Option<NativeDataObservabilityConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NativeDataObservabilityConfig {
+    #[serde(default)]
+    pub debug_scalar_access: bool,
+    #[serde(default = "default_native_scalar_access_warn_threshold")]
+    pub scalar_access_warn_threshold: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HealthObservabilityConfig {
     #[serde(default = "default_health_ip")]
     pub ip: String,
@@ -272,7 +281,7 @@ pub struct HealthObservabilityConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LatencyObservabilityConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -281,13 +290,13 @@ pub struct LatencyObservabilityConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StartMachineConfig {
     pub machines: Vec<MachineConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MachineConfig {
     pub name: Option<String>,
     pub inner_ip: String,
@@ -295,7 +304,7 @@ pub struct MachineConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SceneConfig {
     pub name: String,
     pub scene_type: String,
@@ -339,7 +348,7 @@ impl SceneConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KnownSceneFile {
     known_scenes: Vec<SceneConfig>,
 }
@@ -366,7 +375,7 @@ pub enum EndpointProtocol {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessDebugConfig {
     #[serde(default = "default_inspector_ip")]
     pub inspector_ip: String,
@@ -391,6 +400,10 @@ fn default_health_ip() -> String {
 
 fn default_health_stale_after_ms() -> u64 {
     15_000
+}
+
+fn default_native_scalar_access_warn_threshold() -> u32 {
+    10_000
 }
 
 fn default_true() -> bool {
@@ -494,10 +507,14 @@ pub fn is_start_machine_path(path: &Path) -> bool {
 pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
     let config_text = std::fs::read_to_string(resolved_config)
         .with_context(|| format!("failed to read {}", resolved_config.display()))?;
-    let mut config: RuntimeConfig = serde_json::from_str(&config_text)
-        .with_context(|| format!("failed to parse {}", resolved_config.display()))?;
-
     let raw_config: serde_json::Value = serde_json::from_str(&config_text)
+        .with_context(|| format!("failed to parse {}", resolved_config.display()))?;
+    reject_unknown_object_fields(
+        &raw_config,
+        &["process", "scenes", "knownScenes", "knownSceneFiles"],
+        "process config root",
+    )?;
+    let mut config: RuntimeConfig = serde_json::from_value(raw_config.clone())
         .with_context(|| format!("failed to parse {}", resolved_config.display()))?;
     let known_scene_files = parse_known_scene_files(&raw_config, resolved_config)?;
 
@@ -525,6 +542,29 @@ pub fn load_runtime_config(resolved_config: &Path) -> Result<RuntimeConfig> {
     config.known_scenes = merged_known_scenes;
     validate_runtime_config(&config)?;
     Ok(config)
+}
+
+fn reject_unknown_object_fields(
+    value: &serde_json::Value,
+    allowed: &[&str],
+    context: &str,
+) -> Result<()> {
+    let object = value
+        .as_object()
+        .with_context(|| format!("{context} must be a JSON object"))?;
+    let mut unknown = object
+        .keys()
+        .filter(|key| !allowed.contains(&key.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    unknown.sort();
+    if !unknown.is_empty() {
+        bail!(
+            "{context} contains unknown field(s): {}",
+            unknown.join(", ")
+        );
+    }
+    Ok(())
 }
 
 fn parse_known_scene_files(
@@ -766,6 +806,15 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     {
         bail!("process observability.latency.sampleRate must not be 0");
     }
+    if config
+        .process
+        .observability
+        .as_ref()
+        .and_then(|observability| observability.native_data.as_ref())
+        .is_some_and(|native_data| native_data.scalar_access_warn_threshold == 0)
+    {
+        bail!("process observability.nativeData.scalarAccessWarnThreshold must be greater than 0");
+    }
 
     let mut scene_names = HashSet::new();
     let mut scene_endpoints = HashSet::new();
@@ -982,8 +1031,24 @@ mod tests {
                 allow_remote: false,
             }),
             observability: None,
-            extensions: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn rejects_unknown_process_and_nested_fields() {
+        let process_error = serde_json::from_str::<ProcessConfig>(
+            r#"{ "name": "map", "hotfixReloadTimoutMs": 1000 }"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(process_error.contains("hotfixReloadTimoutMs"));
+
+        let lifecycle_error = serde_json::from_str::<ProcessConfig>(
+            r#"{ "name": "map", "lifecycle": { "stopTimoutMs": 1000 } }"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(lifecycle_error.contains("stopTimoutMs"));
     }
 
     #[test]
@@ -1302,20 +1367,64 @@ mod tests {
     }
 
     #[test]
-    fn preserves_application_specific_process_config() {
+    fn parses_native_data_observability_config() {
         let process: ProcessConfig = serde_json::from_str(
             r#"{
                 "name": "map1",
-                "nativeData": {
-                    "debugScalarAccess": true,
-                    "scalarAccessWarnThreshold": 2048
+                "observability": {
+                    "nativeData": {
+                        "debugScalarAccess": true,
+                        "scalarAccessWarnThreshold": 2048
+                    }
                 }
             }"#,
         )
         .unwrap();
         let serialized = serde_json::to_value(process).unwrap();
-        assert_eq!(serialized["nativeData"]["debugScalarAccess"], true);
-        assert_eq!(serialized["nativeData"]["scalarAccessWarnThreshold"], 2048);
+        assert_eq!(
+            serialized["observability"]["nativeData"]["debugScalarAccess"],
+            true
+        );
+        assert_eq!(
+            serialized["observability"]["nativeData"]["scalarAccessWarnThreshold"],
+            2048
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_root_native_data_config() {
+        let error = serde_json::from_str::<ProcessConfig>(
+            r#"{
+                "name": "map1",
+                "nativeData": {
+                    "debugScalarAccess": true
+                }
+            }"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("nativeData"));
+    }
+
+    #[test]
+    fn rejects_zero_native_data_warn_threshold() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "observability": {
+                    "nativeData": {
+                        "scalarAccessWarnThreshold": 0
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let config = RuntimeConfig {
+            process,
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&config).is_err());
     }
 
     #[test]

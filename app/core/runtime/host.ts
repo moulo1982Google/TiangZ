@@ -1,9 +1,8 @@
 import { ActorContext, SceneContext } from "./contexts";
 import { isPromiseLike, type MaybePromise } from "../async";
-import { isActorRuntimeEntity } from "./entities";
+import { ChildEntity, isActorRuntimeEntity } from "./entities";
 import type {
   ActorRuntimeEntity,
-  ChildEntity,
   Component,
   Entity,
   OwnedEntity,
@@ -222,7 +221,16 @@ export class ProcessHost {
     ctor: ChildEntityCtor<T>,
     ...awakeArgs: ChildEntityAwakeArgs<T>
   ): T {
-    return this.spawnOwned(sceneId, parent, id, ctor, ...awakeArgs);
+    if (!(ctor.prototype instanceof ChildEntity)) {
+      throw new Error(`child Entity type must extend ChildEntity: ${ctor.name}`);
+    }
+    return this.spawnOwned(
+      sceneId,
+      parent,
+      id,
+      ctor as unknown as OwnedEntityCtor<T>,
+      ...(awakeArgs as unknown as OwnedEntityAwakeArgs<T>),
+    );
   }
 
   /** 创建并注册由框架容器拥有的本地Entity，不进入Actor路由也不分配Mailbox。 / Creates and registers a container-owned local Entity without Actor routing or a mailbox. */
@@ -323,7 +331,9 @@ export class ProcessHost {
     scene.actors.delete(actorId);
     this.actorsByInstanceId.delete(actor.ref.instanceId);
     this.Root.Remove(actor.ref.instanceId);
-    for (const timerId of actor.timers) TimerSystem.Instance.Remove(timerId);
+    for (const timerId of actor.timers) {
+      TimerSystem.Instance.Cancel(timerId, "owner-disposed", false);
+    }
     actor.timers.clear();
     if (
       actor.instance instanceof Unit &&

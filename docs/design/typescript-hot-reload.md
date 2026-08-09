@@ -97,6 +97,10 @@ Scene、Session和ActorUnit的外置Handler保存在身份稳定的绑定槽中�
 - 提交失败时槽对象恢复旧描述符；
 - `rpcId`和RPC多路复用不受generation影响。
 
+第一代候选负责建立Handler key基线；从第二代开始，提交前会双向比较当前generation与暂存候选的完整key集合。漏掉、删除、重命名或新增任意Handler都会在修改prototype和绑定槽之前拒绝，旧generation继续服务。运行中的Scene不会重建Registry，因此Handler路由集合变化属于Model/协议注册变化，必须完整构建并重启Process；Hotfix只允许替换既有key的实现。
+
+Handler实例可能在一个Scene内被复用，Event Handler还可能被多个Scene复用。因此所有`@messageHandler/@rpcHandler`、Session/Unit Handler和同步/Veto Event Handler类都必须无实例字段、无构造函数、无静态初始化块和可变静态成员。状态归属于Scene、Session、Unit或Component；`verify:hotfix-boundary`通过TypeScript符号解析识别直接名、import别名与namespace写法，不能用重命名导入绕过约束。
+
 方法装饰器形式的Scene内Handler也在每次调用时解析当前方法，因此prototype提交后会进入新实现。
 
 ## 加载、提交与回滚

@@ -86,7 +86,8 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run test:gate-timeout-runtime` | 等待真实30秒宽限并验收Map最终下线；不进入快速质量门 |
 | `npm run verify` | 在快速门上追加真实Runtime、拆分进程、mailbox、背压、Watcher和Hotfix屏障验收 |
 | `npm run verify:comments` | 检查Core、Model、Hotfix与Rust手写函数的中英文注释 |
-| `npm run verify:design-rules` | 检查Developer Tools设计规则与`docs/patterns`的规则ID和归属文档完全一致 |
+| `npm run verify:design-rule-sync` | 检查Developer Tools设计规则与`docs/patterns`的规则ID和归属文档完全一致；不代表已经执行源码规则 |
+| `npm run verify:design-rules` | 上述同步检查的兼容命令名 |
 | `npm run verify:hotfix-boundary` | 检查Model/Hotfix依赖方向及Hotfix类没有字段、构造和静态初始化 |
 | `npm run verify:dependency-policy` | 校验依赖漏洞例外的负责人、原因和到期日期 |
 

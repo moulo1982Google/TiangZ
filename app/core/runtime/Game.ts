@@ -1,4 +1,8 @@
-import { Singleton, SingletonRegistry } from "./Singleton";
+import {
+  Singleton,
+  type SingletonCtor,
+  SingletonRegistry,
+} from "./Singleton";
 import { TimeSystem } from "./TimeSystem";
 import { TimerSystem } from "./TimerSystem";
 import { UpdateSystem } from "./UpdateSystem";
@@ -96,15 +100,27 @@ export function InitializeGameSingletons(
   if (SingletonRegistry.TryGet(Game)) {
     throw new Error("game runtime singletons are already initialized");
   }
-  SingletonRegistry.Add(TimeSystem).__update(monotonicNow(), Date.now());
-  if (!SingletonRegistry.TryGet(InstanceIdSystem)) {
-    SingletonRegistry.Add(InstanceIdSystem);
+  const added: SingletonCtor[] = [];
+  const add = <T extends Singleton>(ctor: SingletonCtor<T>): T => {
+    const instance = SingletonRegistry.Add(ctor);
+    added.push(ctor);
+    return instance;
+  };
+
+  try {
+    add(TimeSystem).__update(monotonicNow(), Date.now());
+    if (!SingletonRegistry.TryGet(InstanceIdSystem)) {
+      add(InstanceIdSystem);
+    }
+    add(GlobalIdSystem).Configure(idConfig);
+    add(TimerSystem);
+    add(CoroutineLockSystem);
+    add(UpdateSystem);
+    add(Game).Configure(config);
+  } catch (error) {
+    for (const ctor of added.reverse()) SingletonRegistry.Remove(ctor);
+    throw error;
   }
-  SingletonRegistry.Add(GlobalIdSystem).Configure(idConfig);
-  SingletonRegistry.Add(TimerSystem);
-  SingletonRegistry.Add(CoroutineLockSystem);
-  SingletonRegistry.Add(UpdateSystem);
-  SingletonRegistry.Add(Game).Configure(config);
 }
 
 /** 返回单调时长时钟；不可作为墙钟时间戳持久化。 / Returns a monotonic duration clock; do not persist it as a wall-clock timestamp. */

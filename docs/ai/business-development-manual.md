@@ -79,6 +79,8 @@ Bench Hotfix可以通过`#tiangz/model`调用真实业务API，但Demo不得引�
 
 Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#tiangz/model`取得Model类型、协议和Stable Core API；禁止深层导入`app/model`或`app/core`。其他Core路径属于Internal，即使当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
 
+`ProcessHost`、`Singleton/SingletonRegistry`和`InstanceIdSystem`属于Core Internal，不从业务入口导出。动态地图等业务通过`EntryScene.SpawnChildScene/DespawnChildScene`管理子Scene；只有已经解析出的本地Actor操作才使用`RunLocalActorMailbox`，跨进程仍走Location与消息路由。业务不得任意查询整个Process Entity目录或取得进程销毁权；长期索引由所属Scene Component显式持有并在销毁时清理。配置JSON同样是强契约：未知根字段、Process字段和嵌套字段都会让Rust拒绝启动，不能依赖拼错字段被静默忽略。Native Store诊断使用Rust正式配置`process.observability.nativeData`，不得恢复旧的根级Demo扩展。
+
 ## 开始设计前
 
 新增Item、Buff、Quest、Achievement、Numeric或其他业务系统前，先阅读[领域设计模式](../patterns/README.md)，按下面七个问题写清楚设计：
@@ -91,7 +93,7 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 6. 变化频率和持久化频率分别是多少。
 7. TypeScript是否已经足够；只有明确性能或权威所有权收益时才进入Native。
 
-安装TiangZ Developer Tools `v0.15.0`后，可执行“TiangZ：设计业务系统”、输入`@tiangz /design quest`，运行`tiangz-design`，或执行“TiangZ：运行 Runtime Foundation 自测”。CLI和向导使用确定性规则；聊天模型只负责解释。输出是设计起点，不会自动创建代码，也不能绕过目录依赖、Generated锁和验证命令。修改`docs/patterns`稳定规则时必须同步修改design-core并升级固定Tag；`npm run verify:design-rules`会拒绝缺失、重复、归属错误或只改一侧的规则。
+安装TiangZ Developer Tools `v0.15.0`后，可执行“TiangZ：设计业务系统”、输入`@tiangz /design quest`，运行`tiangz-design`，或执行“TiangZ：运行 Runtime Foundation 自测”。CLI和向导使用确定性规则；聊天模型只负责解释。输出是设计起点，不会自动创建代码，也不能绕过目录依赖、Generated锁和验证命令。修改`docs/patterns`稳定规则时必须同步修改design-core并升级固定Tag；`npm run verify:design-rule-sync`只检查插件规则与文档登记是否同步，源码约束另外由`check:project`、`verify:hotfix-boundary`和各专项自测执行。
 
 ## Model与Hotfix怎么选
 
@@ -104,6 +106,7 @@ Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#t
 - `@transferable()`是迁移能力的唯一声明，同时要求Model自身或对应System提供同步`CaptureTransfer/RestoreTransfer`，不再重复写`transfer: true`。codegen缺方法会直接失败，Hotfix候选缺少Model已声明的方法会整包拒绝并保留旧generation。
 - Model绝对不能在线热更，不设计字段migration。`npm run build:hotfix`拒绝时，说明这次改动已经越过行为边界，不能规避检查。
 - `npm run build:hotfix`生成`dist/hotfix-candidates/<hash>`不可变候选，不覆盖当前Bundle。在Watcher终端输入`reload <候选目录>`才会触发每个Process独立校验和提交；禁止手工覆盖`dist/hotfix.js`。
+- Hotfix候选必须重新注册当前generation的完整Handler集合；删除或重命名Handler必须完整构建并重启，不能通过“候选里省略”继续沿用旧入口。所有Scene/Session/Unit/Event Handler类都禁止字段、构造、静态初始化块和可变静态成员；状态写入目标Scene、Session、Unit或Component。
 
 ## 第一步：给需求分类
 
@@ -242,7 +245,7 @@ PlayerUnit
 └── AchievementComponent   -> AchievementState或动态Achievement ChildEntity
 ```
 
-`XXXComponent`拥有集合并负责集合级操作。Core用`AddChild/GetChild/TryGetChild/GetChildren/RemoveChild`统一维护所有权、EntityRoot和销毁，不需要每个业务Component再写生命周期Map。Entity不等于Actor：Item和Buff即使是Entity，也没有mailbox，不能作为跨Process消息目标。
+`XXXComponent`拥有集合并负责集合级操作。Core用`AddChild/GetChild/TryGetChild/GetChildren/RemoveChild`统一维护所有权、EntityRoot和销毁，不需要每个业务Component再写生命周期Map。`ChildEntity`带名义类型标记，编译期和Runtime都会拒绝把普通Unit传给`AddChild`。Entity不等于Actor：Item和Buff即使是Entity，也没有mailbox，不能作为跨Process消息目标。
 
 ```ts
 const item = items.AddChild(Item, itemId, { configId, count });
@@ -720,7 +723,7 @@ Update(): void {
 - 同一Scene内按门派、队伍、交易单等业务键防重入时使用`await scene.Locks.RunExclusive(domain, key, callback)`。它不跨Process，不替代数据库事务。无竞争时回调会同步开始，因此需要阻止后续消息抢跑的标记必须放在回调第一个`await`之前。
 - 同一Scene已经发生的功能通知使用`defineSyncEvent + scene.Events.Publish`；可扩展的操作前置条件使用`defineVetoEvent + scene.Events.Check`。两类Handler都必须同步，不能I/O或返回Promise。
 - Veto Handler返回`0`放行，返回第一个非零业务错误码时立即停止。它只能读取上下文，不能在检查中扣道具、加Buff、改Numeric或启动任务。监听器在Hotfix中按稳定`id`注册，不为每个Unit动态保存闭包；模块是否激活由Handler读取Component/Native状态判断。
-- 明确不等待结果且完成时间不影响当前业务的短任务使用`scene.Tasks.Spawn(name, body)`。框架捕获错误并纳入Hotfix排空；永久循环、事务、玩家有序状态修改、精确定时和需要响应的RPC禁止使用Spawn，任何Update/FrameFlush中也禁止逐帧Spawn。
+- 明确不等待结果且完成时间不影响当前业务的短任务使用`scene.Tasks.Spawn(name, body)`。框架捕获错误并纳入Hotfix排空；每个Scene最多256个在途任务，超过10秒记录告警。永久循环、事务、玩家有序状态修改、精确定时和需要响应的RPC禁止使用Spawn，任何Update/FrameFlush中也禁止逐帧Spawn。
 - 跨Scene、跨Process、需要mailbox顺序或需要响应的交互仍使用生成的Message/RPC，不能拿Event代替。
 
 详细API和错误边界见[运行时基础能力](../design/runtime-foundations.md)与[Veto Event和后台任务设计](../design/veto-events-and-spawn.md)。
@@ -735,7 +738,7 @@ await player.Offline(reason);
 
 业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。普通socket断开只销毁`GateSession`，不能直接调用玩家`Offline()`；`GatePlayerRoute`在Gate继续保留30秒等待重连。宽限期结束后只能由Gate调用`MapProtocol.PlayerOffline`，Map先完成保存和Location移除并返回Unit RPC，再由下一轮Map Timer执行`RemovePlayer`、AOI离开和Actor销毁。`PlayerOffline`运行在PlayerUnit自己的ordered mailbox时，禁止在当前调用中同步销毁这个Unit；否则RPC返回前Actor已经消失，运行时会报告`actor despawned during mailbox execution`。停机批量清理可在不占用Unit mailbox的地图清理阶段直接完成，但仍须遵守先保存、再脱离AOI、最后销毁Actor的顺序。
 
-玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒调用`C2G_Ping -> G2C_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Session默认unordered，Ping作为普通TS Handler直接返回`TimerComponent.ServerTime()`产生的Unix毫秒且不加锁。登录按连接与账号加锁；进图、重连、传送、快照确认和最终下线按账号加锁。业务只锁会修改共享状态的事务，禁止为了省事把整个Session改回ordered。
+玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒调用`C2G_Ping -> G2C_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Session默认unordered，Ping作为普通TS Handler直接返回`TimerSystem.ServerTime()`产生的Unix毫秒且不加锁。登录按连接与账号加锁；进图、重连、传送、快照确认和最终下线按账号加锁。业务只锁会修改共享状态的事务，禁止为了省事把整个Session改回ordered。
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
@@ -780,7 +783,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
-持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。当前DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`和进程内`SnapshotFlushQueue`，存储crate使用PostgreSQL作为权威端、Redis作为已提交快照缓存和AOF持久积压区，并已通过本机Docker集成、Redis重启恢复和短暂停机故障矩阵；普通快照入队成功后可以在DBProxy重启后重新领取，但业务仍不能把Redis backlog当成PostgreSQL事务或Redis高可用。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型。网络服务、backlog指标、Redis高可用、TiangZ生成Repository尚未接入，业务代码仍不得直接连接Redis/数据库。未来由TiangZ codegen负责把领域对象转换为通用请求，业务代码只调用生成Repository；网络服务收口后，再接入生成Repository。
+持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。当前DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。TiangZ Rust Host已经通过连接池接入DBProxy，Demo的`PlayerRepository`覆盖玩家快照恢复，UseItem和任务奖励演示覆盖单玩家关键事务与ACK丢失后的幂等回执恢复。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型，业务代码也不得直接连接Redis/数据库。仍未完成的是通用Repository codegen、Wallet/Trade/跨玩家事务、周期快照、Redis高可用、自动节点接管和生产部署收口，不能把当前单玩家演示解释为完整持久化方案。
 
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。

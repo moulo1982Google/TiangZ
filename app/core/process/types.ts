@@ -24,12 +24,16 @@ import { Scene } from "../runtime/entities";
 import { SceneContext } from "../runtime/contexts";
 import { ProcessHost } from "../runtime/host";
 import { Session, SessionComponent } from "../runtime/Session";
-import { Unit } from "../runtime/Unit";
+import { ActorUnit, Unit } from "../runtime/Unit";
 import type { GameUpdateConfig } from "../runtime/Game";
 import { readU16BE } from "../protocol/binary";
 import { SystemErrCode } from "../protocol/SystemErrCode";
 import { RpcError } from "../protocol/RpcError";
-import type { ActorAwakeArgs, ActorCtor } from "../runtime/types";
+import type {
+  ActorAwakeArgs,
+  ActorCtor,
+  SceneCtor,
+} from "../runtime/types";
 import {
   LatencyRecorder,
   nowMs,
@@ -80,6 +84,15 @@ export interface SceneConfig {
   acceptDynamicMaps?: boolean;
 }
 
+/**
+ * Rust宿主传给业务V8的只读配置投影，只包含TS业务会消费的字段。
+ * 监听、健康检查、Hotfix超时和宿主队列等字段由Rust独占，不应为了与JSON逐字段
+ * 对称而暴露给业务；完整启动契约以`src/config.rs`和配置Schema为准。
+ *
+ * Read-only process configuration projected by the Rust host into the business
+ * V8. Host-only listener, health, Hotfix timeout, and queue fields are omitted
+ * intentionally; `src/config.rs` and the config schema own the full startup contract.
+ */
 export interface ProcessConfig {
   name: string;
   identity?: ProcessIdentityConfig;
@@ -134,6 +147,12 @@ export interface ProcessSchedulingConfig {
 
 export interface ProcessObservabilityConfig {
   latency?: LatencyRecorderOptions;
+  nativeData?: ProcessNativeDataObservabilityConfig;
+}
+
+export interface ProcessNativeDataObservabilityConfig {
+  debugScalarAccess?: boolean;
+  scalarAccessWarnThreshold?: number;
 }
 
 export interface RuntimeEntrySceneConfig {
@@ -246,7 +265,7 @@ export abstract class EntryScene extends Scene {
   private readonly actorRegistry: ProtocolRegistry;
   protected readonly ctx: SceneCallContext;
   readonly scenes: SceneMessageHelper;
-  readonly processHost: ProcessHost;
+  private readonly processHost: ProcessHost;
   protected readonly actorLocations = new ActorLocationDirectory();
   protected readonly mailbox: SceneMailboxType = "ordered";
   private readonly ingress: QueuedEvent[] = [];
@@ -657,8 +676,39 @@ export abstract class EntryScene extends Scene {
   protected registerHandlers(): void {}
 
   /** 构造进程内唯一的子 Scene id，不向业务暴露分隔符约定。 / Builds a process-unique child Scene id without exposing the separator contract. */
-  childSceneId(localId: string): string {
+  private childSceneId(localId: string): string {
     return `${this.self.name}/${localId}`;
+  }
+
+  /**
+   * 在当前EntryScene命名空间创建动态子Scene；业务不接触ProcessHost全局容器。
+   * Creates a dynamic child Scene inside this EntryScene namespace without
+   * exposing the process-wide ProcessHost container to business code.
+   */
+  SpawnChildScene<T extends Scene>(localId: string, ctor: SceneCtor<T>): T {
+    return this.processHost.spawnScene(this.childSceneId(localId), ctor);
+  }
+
+  /** 销毁当前EntryScene拥有的动态子Scene；调用前仍须完成领域清理。 / Despawns an owned child Scene after domain cleanup has completed. */
+  DespawnChildScene(localId: string): boolean {
+    return this.processHost.despawnScene(this.childSceneId(localId));
+  }
+
+  /**
+   * 让已经解析出的本地Actor操作进入其真实mailbox；不能替代Location或跨进程路由。
+   * Runs an operation for an already resolved local Actor through its actual
+   * mailbox; this cannot replace Location or cross-process routing.
+   */
+  RunLocalActorMailbox<TActor extends ActorUnit<any[]>, TResult>(
+    actor: TActor,
+    body: (current: TActor) => MaybePromise<TResult>,
+  ): MaybePromise<TResult> {
+    return this.processHost.runActorMailbox(actor.InstanceId, (current) => {
+      if (current !== actor) {
+        throw new Error(`actor instance changed: ${actor.InstanceId}`);
+      }
+      return body(actor);
+    });
   }
 
   /** 在本 Scene mailbox 内处理断线；这里禁止无上限重试。 / Handles connection loss inside this Scene's mailbox; avoid unbounded retries here. */

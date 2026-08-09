@@ -5,6 +5,7 @@ import {
   Scene,
 } from "../app/core/runtime/entities";
 import { InitializeGameSingletons } from "../app/core/runtime/Game";
+import { ProcessRuntime } from "../app/core/process/ProcessRuntime";
 import {
   GlobalIdSystem,
   InstanceIdSystem,
@@ -86,6 +87,7 @@ class TimerProbeComponent extends Component {
 void main();
 
 async function main(): Promise<void> {
+  testFailedBootstrapRollback();
   InitializeGameSingletons(
     { fixedUpdateMs: 50, maxCatchUpSteps: 2 },
     { originServerId: 7, workerId: 3 },
@@ -100,6 +102,25 @@ async function main(): Promise<void> {
   } finally {
     SingletonRegistry.DestroyAll();
   }
+}
+
+function testFailedBootstrapRollback(): void {
+  assert.throws(
+    () => new ProcessRuntime({
+      process: {
+        name: "invalid-bootstrap",
+        identity: { originServerId: 0, workerId: 0 },
+      },
+      scenes: [],
+      knownScenes: [],
+      tickMs: 50,
+    }),
+    /originServerId/,
+  );
+  assert.equal(SingletonRegistry.TryGet(TimeSystem), undefined);
+  assert.equal(SingletonRegistry.TryGet(InstanceIdSystem), undefined);
+  assert.equal(SingletonRegistry.TryGet(GlobalIdSystem), undefined);
+  assert.equal(SingletonRegistry.TryGet(TimerSystem), undefined);
 }
 
 function testGlobalAndInstanceIds(): void {
@@ -237,6 +258,19 @@ async function testSceneEventsAndTasks(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
   assert.equal(first.Tasks.InFlightCount, 0);
   assert.equal(host.SceneTaskInFlightCount, 0);
+
+  let releaseCapacityTasks!: () => void;
+  const capacityGate = new Promise<void>((resolve) => releaseCapacityTasks = resolve);
+  for (let index = 0; index < 256; index += 1) {
+    first.Tasks.Spawn(`capacity-${index}`, async () => capacityGate);
+  }
+  assert.throws(
+    () => first.Tasks.Spawn("capacity-overflow", () => undefined),
+    /scene task capacity exceeded/,
+  );
+  releaseCapacityTasks();
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  assert.equal(first.Tasks.InFlightCount, 0);
 
   let disposedSignal: { readonly aborted: boolean } | undefined;
   first.Tasks.Spawn("dispose-task", async ({ signal }) => {

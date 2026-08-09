@@ -44,10 +44,12 @@ export class ProcessRuntime implements LocalSceneRouter {
   private stopPromise: Promise<void> | undefined;
 
   constructor(private readonly config: ProcessRuntimeConfig) {
-    InitializeGameSingletons(config.process.game, config.process.identity);
-    this.processHost = new ProcessHost(config.process.name);
     this.entryScenes = [];
+    let processHost: ProcessHost | undefined;
     try {
+      InitializeGameSingletons(config.process.game, config.process.identity);
+      processHost = new ProcessHost(config.process.name);
+      this.processHost = processHost;
       for (const scene of config.scenes) {
         const ctor = getEntrySceneCtor(scene.sceneType);
         if (!ctor) {
@@ -78,7 +80,7 @@ export class ProcessRuntime implements LocalSceneRouter {
       }
     } catch (error) {
       try {
-        this.processHost.Dispose();
+        processHost?.Dispose();
       } catch (cleanupError) {
         CoreLogger.error("process constructor cleanup failed", { cleanupError });
       }

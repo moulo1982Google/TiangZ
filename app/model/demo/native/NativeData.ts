@@ -1,12 +1,13 @@
-import { Logger } from "../../../core/public";
+import {
+  Logger,
+  type ProcessConfig,
+  type ProcessNativeDataObservabilityConfig,
+} from "../../../core/public";
 import { NativeOps } from "../../../generated/model/native/NativeOps";
 
 const logger = new Logger("native-data", { category: "framework" });
 
-export interface NativeDataConfig {
-  debugScalarAccess?: boolean;
-  scalarAccessWarnThreshold?: number;
-}
+export type NativeDataConfig = ProcessNativeDataObservabilityConfig;
 
 export interface NativeVec3 {
   readonly x: number;
@@ -38,10 +39,6 @@ export interface NativeObstacleUpdate {
   readonly pendingCommands: number;
   readonly obstacleCount: number;
   readonly upToDate: boolean;
-}
-
-interface DemoProcessConfig {
-  nativeData?: NativeDataConfig;
 }
 
 export interface NativeDataMetrics {
@@ -135,14 +132,14 @@ export class NativeData {
     const debugScalarAccess = config.debugScalarAccess ?? false;
     const scalarAccessWarnThreshold = config.scalarAccessWarnThreshold ?? 10_000;
     if (typeof debugScalarAccess !== "boolean") {
-      throw new Error("nativeData.debugScalarAccess must be a boolean");
+      throw new Error("observability.nativeData.debugScalarAccess must be a boolean");
     }
     if (
       !Number.isSafeInteger(scalarAccessWarnThreshold) ||
       scalarAccessWarnThreshold <= 0
     ) {
       throw new Error(
-        "nativeData.scalarAccessWarnThreshold must be a positive integer",
+        "observability.nativeData.scalarAccessWarnThreshold must be a positive integer",
       );
     }
     this.debugScalarAccess = debugScalarAccess;
@@ -150,12 +147,8 @@ export class NativeData {
   }
 
   /** 启动时应用进程业务配置中的可选 NativeData 设置。 / Applies optional NativeData settings from process application config during startup. */
-  static ConfigureProcess(process: object): void {
-    const config = (process as DemoProcessConfig).nativeData;
-    if (config !== undefined && (typeof config !== "object" || config === null)) {
-      throw new Error("process.nativeData must be an object");
-    }
-    this.Configure(config);
+  static ConfigureProcess(process: ProcessConfig): void {
+    this.Configure(process.observability?.nativeData);
   }
 
   /** 将已校验方向和序列写入 Rust Unit，并返回意图是否变化。 / Writes validated direction/sequence into the Rust Unit and returns whether intent changed. */

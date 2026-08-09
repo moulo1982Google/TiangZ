@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "stableExports": [
     "ActorId",
     "ActorRef",
@@ -61,7 +61,6 @@
     "IUpdate1Hz",
     "IUpdate5Hz",
     "InstanceId",
-    "InstanceIdSystem",
     "LatestBroadcastDescriptor",
     "LifecycleOptions",
     "LocationDirectory",
@@ -80,8 +79,8 @@
     "PreparedTransferOptions",
     "ProcessConfig",
     "ProcessDbProxyConfig",
-    "ProcessHost",
     "ProcessLifecycleConfig",
+    "ProcessNativeDataObservabilityConfig",
     "ProcessNetworkConfig",
     "ProcessObservabilityConfig",
     "ProcessPersistenceConfig",
@@ -111,8 +110,6 @@
     "SessionComponent",
     "SessionMessageHandler",
     "SessionRpcHandler",
-    "Singleton",
-    "SingletonRegistry",
     "SpawnTaskBody",
     "SpawnTaskContext",
     "SpawnTaskId",
@@ -124,7 +121,6 @@
     "TimeSystem",
     "TimerCancelReason",
     "TimerCancelledContext",
-    "TimerComponent",
     "TimerId",
     "TimerOptions",
     "TimerSystem",
@@ -170,5 +166,1198 @@
     "utf8Decode",
     "utf8Encode",
     "vetoEventHandler"
+  ],
+  "apiSurfaceHash": "ae23a930daf027451fc54b03a2bddf5968c1f5f2fe1f2b7f359c746f39defc29",
+  "apiSurface": [
+    {
+      "name": "ActorId",
+      "declarations": [
+        "export type ActorId = EntityId;"
+      ]
+    },
+    {
+      "name": "ActorRef",
+      "declarations": [
+        "export interface ActorRef extends SceneRef {\nactorId: ActorId;\ninstanceId: InstanceId;\n}"
+      ]
+    },
+    {
+      "name": "ActorUnit",
+      "declarations": [
+        "export declare abstract class ActorUnit<TAwakeArgs extends unknown[] = [\n]> extends Unit<TAwakeArgs> implements ActorRuntimeEntity<TAwakeArgs> {\nreadonly [ACTOR_RUNTIME_ENTITY]: true;\nprotected readonly ctx: ActorContext;\nconstructor(ctx: ActorContext);\nget logger(): Logger;\nNewOnceTimer<TArgs = undefined>(delayMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\nNewRepeatedTimer<TArgs = undefined>(intervalMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\nCancelTimer(timerId: TimerId, reason?: TimerCancelReason): boolean;\n}"
+      ]
+    },
+    {
+      "name": "BroadcastAudience",
+      "declarations": [
+        "export interface BroadcastAudience {\nreadonly key: string;\nreadonly routes: readonly BroadcastRoute[];\n}"
+      ]
+    },
+    {
+      "name": "BroadcastDescriptor",
+      "declarations": [
+        "export type BroadcastDescriptor<TItem, TMessage extends IMessage> = EventBroadcastDescriptor<TItem, TMessage> | LatestBroadcastDescriptor<TItem, TMessage>;"
+      ]
+    },
+    {
+      "name": "BroadcastHub",
+      "declarations": [
+        "export declare class BroadcastHub {\nconstructor(transport: BroadcastTransport, options?: BroadcastHubOptions);\nPublish<TItem, TMessage extends IMessage>(audience: BroadcastAudience, descriptor: BroadcastDescriptor<TItem, TMessage>, item: TItem, tick?: number): Promise<void>;\nPublishMany<TItem, TMessage extends IMessage>(audience: BroadcastAudience, descriptor: BroadcastDescriptor<TItem, TMessage>, items: readonly TItem[], tick?: number): Promise<void>;\nPublishEncodedLatestSnapshot(audience: BroadcastAudience, descriptorName: string, frame: Uint8Array, itemCount: number): Promise<void>;\nPublishEncodedLatestBatches(audienceKey: string, descriptorName: string, batches: readonly EncodedAudienceBatch[]): Promise<void>;\nPublishEncodedLatestRouteFrames(audienceKey: string, descriptorName: string, routeFrames: readonly EncodedRouteFrame[], itemCount: number): Promise<void>;\nSnapshot(): BroadcastMetricsSnapshot;\nDispose(): void;\n}"
+      ]
+    },
+    {
+      "name": "BroadcastHubOptions",
+      "declarations": [
+        "export interface BroadcastHubOptions {\nreadonly maxEventQueuePerChannel?: number;\nreadonly onError?: (descriptorName: string, error: unknown) => void;\n}"
+      ]
+    },
+    {
+      "name": "BroadcastKey",
+      "declarations": [
+        "export type BroadcastKey = string | number;"
+      ]
+    },
+    {
+      "name": "BroadcastMetricsSnapshot",
+      "declarations": [
+        "export interface BroadcastMetricsSnapshot {\nreadonly inFlight: number;\nreadonly inFlightItems: number;\nreadonly pendingItems: number;\nreadonly maxPendingItems: number;\nreadonly maxInFlightItems: number;\nreadonly queuedItems: number;\nreadonly coalescedItems: number;\nreadonly sentItems: number;\nreadonly broadcastsStarted: number;\nreadonly broadcastsCompleted: number;\nreadonly broadcastFailures: number;\nreadonly lastDurationMs: number;\nreadonly maxDurationMs: number;\nreadonly totalDurationMs: number;\nreadonly lastQueueWaitMs: number;\nreadonly maxQueueWaitMs: number;\nreadonly totalQueueWaitMs: number;\nreadonly lastDispatchMs: number;\nreadonly maxDispatchMs: number;\nreadonly totalDispatchMs: number;\n}"
+      ]
+    },
+    {
+      "name": "BroadcastRoute",
+      "declarations": [
+        "export interface BroadcastRoute {\nreadonly route: string;\nreadonly recipientId: number;\n}"
+      ]
+    },
+    {
+      "name": "BroadcastTransport",
+      "declarations": [
+        "export interface BroadcastTransport {\nSend(audience: BroadcastAudience, frame: Uint8Array): Promise<void>;\nSendMany?(batches: readonly EncodedAudienceBatch[]): Promise<void>;\nSendRouteFrames?(frames: readonly EncodedRouteFrame[]): Promise<void>;\n}"
+      ]
+    },
+    {
+      "name": "ChildEntity",
+      "declarations": [
+        "export declare abstract class ChildEntity<TAwakeArgs extends unknown[] = [\n]> extends OwnedEntity<TAwakeArgs> {\n}"
+      ]
+    },
+    {
+      "name": "ChildEntityAwakeArgs",
+      "declarations": [
+        "export type ChildEntityAwakeArgs<TEntity> = TEntity extends ChildEntity<infer TAwakeArgs> ? TAwakeArgs : never;"
+      ]
+    },
+    {
+      "name": "ChildEntityCtor",
+      "declarations": [
+        "export type ChildEntityCtor<TEntity extends ChildEntity<any[]> = ChildEntity<any[]>> = new () => TEntity;"
+      ]
+    },
+    {
+      "name": "ClientAudience",
+      "declarations": [
+        "export declare class ClientAudience {\nreadonly key: string;\nstatic readonly Empty: ClientAudience;\nstatic Self(unitId: number): ClientAudience;\nstatic ForUnits(key: string, unitIds: Iterable<number>): ClientAudience;\nstatic Union(...audiences: readonly ClientAudience[]): ClientAudience;\nstatic Intersect(left: ClientAudience, right: ClientAudience): ClientAudience;\nstatic Except(source: ClientAudience, excluded: ClientAudience): ClientAudience;\nget UnitIds(): readonly number[];\nget Count(): number;\nget IsEmpty(): boolean;\n}"
+      ]
+    },
+    {
+      "name": "ClientBroadcast",
+      "declarations": [
+        "export declare class ClientBroadcast {\nconstructor(hub: BroadcastHub, routes: ClientRouteResolver);\nPublish<TItem, TMessage extends IMessage>(audience: ClientAudience, descriptor: BroadcastDescriptor<TItem, TMessage>, item: TItem, tick?: number): Promise<void>;\nPublishMany<TItem, TMessage extends IMessage>(audience: ClientAudience, descriptor: BroadcastDescriptor<TItem, TMessage>, items: readonly TItem[], tick?: number): Promise<void>;\n}"
+      ]
+    },
+    {
+      "name": "ClientRouteResolver",
+      "declarations": [
+        "export interface ClientRouteResolver {\nResolve(unitIds: readonly number[]): MaybePromise<readonly BroadcastRoute[]>;\n}"
+      ]
+    },
+    {
+      "name": "Codec",
+      "declarations": [
+        "export interface Codec<T> {\nencode(value: T): Uint8Array;\ndecode(payload: Uint8Array): T;\n}"
+      ]
+    },
+    {
+      "name": "CommitPreparedTransfer",
+      "declarations": [
+        "export declare function CommitPreparedTransfer<TSnapshot, TTarget>(options: PreparedTransferOptions<TSnapshot, TTarget>): TTarget;"
+      ]
+    },
+    {
+      "name": "Component",
+      "declarations": [
+        "export declare abstract class Component<TAwakeArgs extends unknown[] = [\n]> {\nget IsDisposed(): boolean;\nget Parent(): Entity;\nGetParent<T extends Entity>(): T;\nDomainScene<T extends Scene = Scene>(): T;\nprotected Awake(..._args: TAwakeArgs): void;\nprotected OnDestroy(): void;\nNewOnceTimer<TArgs = undefined>(delayMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\nNewRepeatedTimer<TArgs = undefined>(intervalMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\nCancelTimer(timerId: TimerId, reason?: TimerCancelReason): boolean;\nAddChild<T extends ChildEntity<any[]>>(ctor: ChildEntityCtor<T>, id: EntityId, ...args: ChildEntityAwakeArgs<T>): T;\nGetChild<T extends ChildEntity<any[]>>(ctor: ChildEntityCtor<T>, id: EntityId): T;\nTryGetChild<T extends ChildEntity<any[]>>(ctor: ChildEntityCtor<T>, id: EntityId): T | undefined;\nGetChildren<T extends ChildEntity<any[]> = ChildEntity<any[]>>(ctor?: ChildEntityCtor<T>): readonly T[];\nRemoveChild<T extends ChildEntity<any[]>>(ctor: ChildEntityCtor<T>, id: EntityId): T | undefined;\nget ChildCount(): number;\n}"
+      ]
+    },
+    {
+      "name": "ComponentCtor",
+      "declarations": [
+        "export type ComponentCtor<TComponent extends Component<any[]> = Component<any[]>> = new () => TComponent;"
+      ]
+    },
+    {
+      "name": "CoroutineLockDomain",
+      "declarations": [
+        "export type CoroutineLockDomain = string;"
+      ]
+    },
+    {
+      "name": "CoroutineLockKey",
+      "declarations": [
+        "export type CoroutineLockKey = string | number | bigint;"
+      ]
+    },
+    {
+      "name": "CoroutineLockOptions",
+      "declarations": [
+        "export interface CoroutineLockOptions {\nreadonly timeoutMs?: number;\nreadonly signal?: AbortSignal;\nreadonly maxQueueLength?: number;\n}"
+      ]
+    },
+    {
+      "name": "CoroutineLockSystem",
+      "declarations": [
+        "export declare class CoroutineLockSystem extends Singleton {\nstatic get Instance(): CoroutineLockSystem;\nRunExclusive<T>(sceneInstanceId: InstanceId, domain: CoroutineLockDomain, key: CoroutineLockKey, callback: () => MaybePromise<T>, options?: CoroutineLockOptions): Promise<T>;\nCancelScene(sceneInstanceId: InstanceId): void;\nget WaitingCount(): number;\nget TimeoutCount(): number;\nprotected OnDestroy(): void;\n}"
+      ]
+    },
+    {
+      "name": "CustomMetricKind",
+      "declarations": [
+        "export type CustomMetricKind = \"counter\" | \"gauge\";"
+      ]
+    },
+    {
+      "name": "CustomMetricSnapshot",
+      "declarations": [
+        "export interface CustomMetricSnapshot {\nname: string;\nvalues: Readonly<Record<string, number>>;\nkinds?: Readonly<Record<string, CustomMetricKind>>;\n}"
+      ]
+    },
+    {
+      "name": "EncodedAudienceBatch",
+      "declarations": [
+        "export interface EncodedAudienceBatch {\nreadonly audience: BroadcastAudience;\nreadonly frame: Uint8Array;\nreadonly itemCount: number;\n}"
+      ]
+    },
+    {
+      "name": "EncodedRouteFrame",
+      "declarations": [
+        "export interface EncodedRouteFrame {\nreadonly route: string;\nreadonly frame: Uint8Array;\n}"
+      ]
+    },
+    {
+      "name": "EncodedStateDelta",
+      "declarations": [
+        "export type EncodedStateDelta = EncodedSingleStateDelta | EncodedBatchedStateDelta;"
+      ]
+    },
+    {
+      "name": "Entity",
+      "declarations": [
+        "export declare abstract class Entity {\nget IsDisposed(): boolean;\nget Id(): EntityId;\nget InstanceId(): InstanceId;\nget Parent(): Entity | Component<any[]> | undefined;\nDomainScene<T extends Scene = Scene>(): T;\nAddComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>, ...args: ComponentAwakeArgs<T>): T;\nGetComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>): T;\nTryGetComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>): T | undefined;\nHasComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>): boolean;\nRemoveComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>): boolean;\nCaptureTransfer(): EntityTransferSnapshot;\nRestoreTransfer(snapshot: EntityTransferSnapshot): void;\nCompleteDeserialize(): void;\nprotected OnDestroy(): void;\n}"
+      ]
+    },
+    {
+      "name": "EntityId",
+      "declarations": [
+        "export type EntityId = string | number | bigint;"
+      ]
+    },
+    {
+      "name": "EntityTransferSnapshot",
+      "declarations": [
+        "export interface EntityTransferSnapshot {\nreadonly components: ReadonlyMap<ComponentCtor, unknown>;\n}"
+      ]
+    },
+    {
+      "name": "EntryScene",
+      "declarations": [
+        "export declare abstract class EntryScene extends Scene {\nprotected readonly config: RuntimeEntrySceneConfig;\nprotected readonly registry: ProtocolRegistry;\nprotected readonly ctx: SceneCallContext;\nreadonly scenes: SceneMessageHelper;\nprotected readonly actorLocations: ActorLocationDirectory;\nprotected readonly mailbox: SceneMailboxType;\nconstructor(config: RuntimeEntrySceneConfig, knownRpcs?: readonly AnyRpcDescriptor[], knownMessages?: readonly AnyMessageDescriptor[]);\nprotected createSession(connectionId: number): Session<any[]>;\nprotected addSession<T extends Session<any[]>>(connectionId: number, ctor: ActorCtor<T>, ...awakeArgs: ActorAwakeArgs<T>): T;\nprotected getSession<T extends Session<any[]> = Session<any[]>>(connectionId: number): T | undefined;\nprotected getSessions<T extends Session<any[]> = Session<any[]>>(): readonly T[];\nget self(): SceneConfig;\nget logger(): Logger;\nstartupMessage(): string;\nprotected onStart(): MaybePromise<void>;\nprotected onClientReceive(_connectionId: number): void;\nprotected consumeClientControlFrame(_connectionId: number, _frame: Uint8Array): boolean;\nprotected onClientSendQueued(_connectionIds: readonly number[]): void;\nprotected actorTransferMetricSnapshot(): CustomMetricSnapshot;\nprotected beginActorTransfer(connectionId: number): void;\nprotected finishActorTransfer(connectionId: number): void;\nprotected cancelActorTransfer(connectionId: number): void;\nprotected onReady(): MaybePromise<void>;\nprotected onStop(): MaybePromise<void>;\npushHostFrame(connectionId: number, frame: Uint8Array): void;\npushHostDisconnect(connectionId: number): void;\nupdate(maxFrames?: number, includeMetrics?: boolean): SceneUpdateResult;\nprotected registerHandlers(): void;\nSpawnChildScene<T extends Scene>(localId: string, ctor: SceneCtor<T>): T;\nDespawnChildScene(localId: string): boolean;\nRunLocalActorMailbox<TActor extends ActorUnit<any[]>, TResult>(actor: TActor, body: (current: TActor) => MaybePromise<TResult>): MaybePromise<TResult>;\nprotected onDisconnect(_connectionId: number): MaybePromise<void>;\nprotected disconnectClient(connectionId: number): void;\nprotected sendClient<TMessage extends IMessage>(connectionId: number, descriptor: MessageDescriptor<TMessage>, message: TMessage): void;\nprotected sendClientMany<TMessage extends IMessage>(connectionIds: readonly number[], descriptor: MessageDescriptor<TMessage>, message: TMessage): void;\nprotected sendClientFrameMany(connectionIds: readonly number[], frame: Uint8Array): void;\ndispatchLocalCall(frame: Uint8Array): Promise<Uint8Array>;\ndispatchLocalSend(frame: Uint8Array): Promise<void>;\nmetricsSnapshot(): SceneMetricsSnapshot;\n}"
+      ]
+    },
+    {
+      "name": "EventBroadcastDescriptor",
+      "declarations": [
+        "export interface EventBroadcastDescriptor<TItem, TMessage extends IMessage> extends BroadcastDescriptorBase<TItem, TMessage> {\nreadonly mode: \"event\";\n}"
+      ]
+    },
+    {
+      "name": "EventPublishResult",
+      "declarations": [
+        "export interface EventPublishResult {\nreadonly handlerCount: number;\nreadonly failedCount: number;\n}"
+      ]
+    },
+    {
+      "name": "Game",
+      "declarations": [
+        "export declare class Game extends Singleton {\nstatic get Instance(): Game;\nConfigure(config?: GameUpdateConfig): void;\nUpdate(frameTime: number, serverNow: number, pumpMessages: () => void): void;\nget FixedUpdateMs(): number;\nget SkippedFixedUpdates(): number;\n}"
+      ]
+    },
+    {
+      "name": "GameUpdateConfig",
+      "declarations": [
+        "export interface GameUpdateConfig {\nfixedUpdateMs?: number;\nmaxCatchUpSteps?: number;\n}"
+      ]
+    },
+    {
+      "name": "GlobalId",
+      "declarations": [
+        "export type GlobalId = bigint;"
+      ]
+    },
+    {
+      "name": "GlobalIdConfig",
+      "declarations": [
+        "export interface GlobalIdConfig {\noriginServerId?: number;\nworkerId?: number;\n}"
+      ]
+    },
+    {
+      "name": "GlobalIdSystem",
+      "declarations": [
+        "export declare class GlobalIdSystem extends Singleton {\nConfigure(config?: GlobalIdConfig): void;\nstatic get Instance(): GlobalIdSystem;\nNext(): GlobalId;\nstatic OriginServerId(id: GlobalId): number;\n}"
+      ]
+    },
+    {
+      "name": "HostDbProxyTransport",
+      "declarations": [
+        "export declare class HostDbProxyTransport implements DbProxyTransport {\nconstructor(host?: HostDbProxyApi);\nload(record: DbProxyRecordKey): Promise<DbProxySnapshotEnvelope | undefined>;\nsave(write: DbProxySnapshotWrite): Promise<DbProxySnapshotWriteResult>;\nenqueueSnapshot(write: DbProxySnapshotWrite): Promise<void>;\napplyTransaction(write: DbProxyTransactionalWrite): Promise<DbProxyTransactionalWriteResult>;\nloadTransaction(operationId: string, record: DbProxyRecordKey): Promise<DbProxyTransactionReceipt | undefined>;\n}"
+      ]
+    },
+    {
+      "name": "IActorLocationMessage",
+      "declarations": [
+        "export interface IActorLocationMessage extends IActorMessage {\n}"
+      ]
+    },
+    {
+      "name": "IActorLocationRequest",
+      "declarations": [
+        "export interface IActorLocationRequest extends IActorRequest {\n}"
+      ]
+    },
+    {
+      "name": "IActorLocationResponse",
+      "declarations": [
+        "export interface IActorLocationResponse extends IActorResponse {\n}"
+      ]
+    },
+    {
+      "name": "IActorMessage",
+      "declarations": [
+        "export interface IActorMessage extends IMessage {\n}"
+      ]
+    },
+    {
+      "name": "IActorRequest",
+      "declarations": [
+        "export interface IActorRequest extends IRequest {\n}"
+      ]
+    },
+    {
+      "name": "IActorResponse",
+      "declarations": [
+        "export interface IActorResponse extends IResponse {\n}"
+      ]
+    },
+    {
+      "name": "IDeserialize",
+      "declarations": [
+        "export interface IDeserialize {\nDeserialize(): void;\n}"
+      ]
+    },
+    {
+      "name": "IFrameFlush",
+      "declarations": [
+        "export interface IFrameFlush {\nFrameFlush(): void;\n}"
+      ]
+    },
+    {
+      "name": "ILateUpdate",
+      "declarations": [
+        "export interface ILateUpdate {\nLateUpdate(): void;\n}"
+      ]
+    },
+    {
+      "name": "IMessage",
+      "declarations": [
+        "export interface IMessage {\n}"
+      ]
+    },
+    {
+      "name": "IRequest",
+      "declarations": [
+        "export interface IRequest extends IMessage {\nrpcId?: number;\n}"
+      ]
+    },
+    {
+      "name": "IResponse",
+      "declarations": [
+        "export interface IResponse extends IMessage {\nrpcId?: number;\nerror?: number;\nmessage?: string;\n}"
+      ]
+    },
+    {
+      "name": "ITransfer",
+      "declarations": [
+        "export interface ITransfer<TState = unknown> {\nCaptureTransfer(): TState;\nRestoreTransfer(state: TState): void;\n}"
+      ]
+    },
+    {
+      "name": "IUpdate",
+      "declarations": [
+        "export interface IUpdate {\nUpdate(): void;\n}"
+      ]
+    },
+    {
+      "name": "IUpdate10Hz",
+      "declarations": [
+        "export interface IUpdate10Hz {\nUpdate10Hz(): void;\n}"
+      ]
+    },
+    {
+      "name": "IUpdate1Hz",
+      "declarations": [
+        "export interface IUpdate1Hz {\nUpdate1Hz(): void;\n}"
+      ]
+    },
+    {
+      "name": "IUpdate5Hz",
+      "declarations": [
+        "export interface IUpdate5Hz {\nUpdate5Hz(): void;\n}"
+      ]
+    },
+    {
+      "name": "InstanceId",
+      "declarations": [
+        "export type InstanceId = number;"
+      ]
+    },
+    {
+      "name": "LatestBroadcastDescriptor",
+      "declarations": [
+        "export interface LatestBroadcastDescriptor<TItem, TMessage extends IMessage> extends BroadcastDescriptorBase<TItem, TMessage> {\nreadonly mode: \"latest\";\nreadonly keyOf: (item: TItem) => BroadcastKey;\n}"
+      ]
+    },
+    {
+      "name": "LifecycleOptions",
+      "declarations": [
+        "export interface LifecycleOptions {\nreadonly awake?: boolean;\nreadonly destroy?: boolean;\nreadonly deserialize?: boolean;\n}"
+      ]
+    },
+    {
+      "name": "LocationDirectory",
+      "declarations": [
+        "export declare class LocationDirectory<TKey, TValue> {\nRegister(key: TKey, value: TValue): LocationRecord<TKey, TValue>;\nResolve(key: TKey): LocationRecord<TKey, TValue> | undefined;\nLock(key: TKey, expectedRevision: bigint, operationId: string, state: LocationMutationState): LocationRecord<TKey, TValue>;\nCommit(key: TKey, operationId: string, value: TValue): LocationRecord<TKey, TValue>;\nUnlock(key: TKey, operationId: string): LocationRecord<TKey, TValue>;\nRemove(key: TKey, operationId: string): LocationRecord<TKey, TValue>;\nSnapshot(): readonly LocationRecord<TKey, TValue>[];\nget Count(): number;\n}"
+      ]
+    },
+    {
+      "name": "LocationMutationState",
+      "declarations": [
+        "export type LocationMutationState = \"moving\" | \"removing\";"
+      ]
+    },
+    {
+      "name": "LocationRecord",
+      "declarations": [
+        "export interface LocationRecord<TKey, TValue> {\nreadonly key: TKey;\nreadonly value: TValue;\nreadonly revision: bigint;\nreadonly state: \"active\" | LocationMutationState;\nreadonly operationId?: string;\n}"
+      ]
+    },
+    {
+      "name": "LogCategory",
+      "declarations": [
+        "export type LogCategory = \"framework\" | \"business\" | \"application\";"
+      ]
+    },
+    {
+      "name": "LogFields",
+      "declarations": [
+        "export interface LogFields {\nreadonly category?: LogCategory;\nreadonly process?: string;\nreadonly scene?: string;\nreadonly sceneType?: string;\nreadonly actorId?: number | string | bigint;\nreadonly connectionId?: number;\nreadonly rpcId?: number;\nreadonly msgcode?: number;\nreadonly traceId?: string;\nreadonly requestId?: string;\nreadonly unitId?: number | string | bigint;\nreadonly [key: string]: unknown;\n}"
+      ]
+    },
+    {
+      "name": "LogLevel",
+      "declarations": [
+        "export type LogLevel = \"trace\" | \"debug\" | \"info\" | \"warn\" | \"error\";"
+      ]
+    },
+    {
+      "name": "Logger",
+      "declarations": [
+        "export declare class Logger {\nconstructor(target: string, boundFields?: LogFields);\nchild(fields: LogFields): Logger;\ntrace(message: string, fields?: LogFields): void;\ndebug(message: string, fields?: LogFields): void;\ninfo(message: string, fields?: LogFields): void;\nwarn(message: string, fields?: LogFields): void;\nerror(message: string, fields?: LogFields): void;\n}"
+      ]
+    },
+    {
+      "name": "MailboxType",
+      "declarations": [
+        "export type MailboxType = \"ordered\" | \"unordered\";"
+      ]
+    },
+    {
+      "name": "MaybePromise",
+      "declarations": [
+        "export type MaybePromise<T> = T | Promise<T>;"
+      ]
+    },
+    {
+      "name": "MessageDescriptor",
+      "declarations": [
+        "export interface MessageDescriptor<TMessage extends IMessage> {\nname: string;\nmsgcode: number;\ncodec: Codec<TMessage>;\nrouting?: MessageRouting;\nduringTransfer?: TransferRoutingPolicy;\n}"
+      ]
+    },
+    {
+      "name": "MessageRouting",
+      "declarations": [
+        "export type MessageRouting = \"direct\" | \"actor-location\";"
+      ]
+    },
+    {
+      "name": "OwnedTimerOptions",
+      "declarations": [
+        "export interface OwnedTimerOptions {\nreadonly onCancelled?: string;\n}"
+      ]
+    },
+    {
+      "name": "PersistentEntityId",
+      "declarations": [
+        "export type PersistentEntityId = GlobalId;"
+      ]
+    },
+    {
+      "name": "PreparedTransferOptions",
+      "declarations": [
+        "export interface PreparedTransferOptions<TSnapshot, TTarget> {\nCapture(): TSnapshot;\nPrepare(snapshot: TSnapshot): TTarget;\nCommit(target: TTarget): void;\nRollback(target: TTarget): void;\n}"
+      ]
+    },
+    {
+      "name": "ProcessConfig",
+      "declarations": [
+        "export interface ProcessConfig {\nname: string;\nidentity?: ProcessIdentityConfig;\nlogging?: ProcessLoggingConfig;\nnetwork?: ProcessNetworkConfig;\ngame?: GameUpdateConfig;\nscheduling?: ProcessSchedulingConfig;\nlifecycle?: ProcessLifecycleConfig;\npersistence?: ProcessPersistenceConfig;\nobservability?: ProcessObservabilityConfig;\n}"
+      ]
+    },
+    {
+      "name": "ProcessDbProxyConfig",
+      "declarations": [
+        "export interface ProcessDbProxyConfig {\nendpoint: string;\nauthTokenEnv?: string;\nclientPoolSize?: number;\nconnectTimeoutMs?: number;\nrequestTimeoutMs?: number;\nmaxFrameBytes?: number;\n}"
+      ]
+    },
+    {
+      "name": "ProcessLifecycleConfig",
+      "declarations": [
+        "export interface ProcessLifecycleConfig {\nstopTimeoutMs?: number;\n}"
+      ]
+    },
+    {
+      "name": "ProcessNativeDataObservabilityConfig",
+      "declarations": [
+        "export interface ProcessNativeDataObservabilityConfig {\ndebugScalarAccess?: boolean;\nscalarAccessWarnThreshold?: number;\n}"
+      ]
+    },
+    {
+      "name": "ProcessNetworkConfig",
+      "declarations": [
+        "export interface ProcessNetworkConfig {\nioBackend?: \"epoll\" | \"io-uring\";\nuringEntries?: number;\nuringReadBufferBytes?: number;\n}"
+      ]
+    },
+    {
+      "name": "ProcessObservabilityConfig",
+      "declarations": [
+        "export interface ProcessObservabilityConfig {\nlatency?: LatencyRecorderOptions;\nnativeData?: ProcessNativeDataObservabilityConfig;\n}"
+      ]
+    },
+    {
+      "name": "ProcessPersistenceConfig",
+      "declarations": [
+        "export interface ProcessPersistenceConfig {\ndbProxy?: ProcessDbProxyConfig;\n}"
+      ]
+    },
+    {
+      "name": "ProcessRuntimeConfig",
+      "declarations": [
+        "export interface ProcessRuntimeConfig {\nprocess: ProcessConfig;\nscenes: SceneConfig[];\nknownScenes: SceneConfig[];\ntickMs: number;\n}"
+      ]
+    },
+    {
+      "name": "ProcessSchedulingConfig",
+      "declarations": [
+        "export interface ProcessSchedulingConfig {\nmode?: \"low-latency\" | \"throughput\" | \"adaptive\";\nidleTickMs?: number;\nmaxEventsPerUpdate?: number;\ncoalesceMicros?: number;\n}"
+      ]
+    },
+    {
+      "name": "ProtocolContext",
+      "declarations": [
+        "export interface ProtocolContext {\nconnectionId?: number;\nactorInstanceId?: number;\nmsgcode?: number;\nrpcId?: number;\nrequestId?: string;\nlogger?: Logger;\n}"
+      ]
+    },
+    {
+      "name": "RpcDescriptor",
+      "declarations": [
+        "export interface RpcDescriptor<TReq, TResp> {\nname: string;\nrequestCode: number;\nresponseCode: number;\nrequestCodec: Codec<TReq>;\nresponseCodec: Codec<TResp>;\nrouting?: RpcRouting;\nduringTransfer?: TransferRoutingPolicy;\n}"
+      ]
+    },
+    {
+      "name": "RpcError",
+      "declarations": [
+        "export declare class RpcError extends Error {\nreadonly code: number;\nconstructor(code: number, message: string);\n}"
+      ]
+    },
+    {
+      "name": "RpcRouting",
+      "declarations": [
+        "export type RpcRouting = \"direct\" | \"actor-location\";"
+      ]
+    },
+    {
+      "name": "RuntimeEntrySceneConfig",
+      "declarations": [
+        "export interface RuntimeEntrySceneConfig {\nprocess: ProcessConfig;\nself: SceneConfig;\nknownScenes: SceneConfig[];\ntickMs: number;\nprocessHost: ProcessHost;\nlocalRouter: LocalSceneRouter;\n}"
+      ]
+    },
+    {
+      "name": "Scene",
+      "declarations": [
+        "export declare abstract class Scene extends Entity {\nprotected readonly sceneContext: SceneContext;\nconstructor(ctx: SceneContext);\nget logger(): Logger;\nget Locks(): SceneLockScope;\nget Events(): SceneEventScope;\nget Tasks(): SceneTaskScope;\nSpawnActor<T extends ActorRuntimeEntity<any[]>>(actorId: ActorId, ctor: ActorCtor<T>, ...awakeArgs: ActorAwakeArgs<T>): T;\nDespawnActor(actorId: ActorId): boolean;\n}"
+      ]
+    },
+    {
+      "name": "SceneConfig",
+      "declarations": [
+        "export interface SceneConfig {\nname: string;\nsceneType: string;\ninnerIp: string;\nbindIp?: string;\nouterIp?: string;\nouterPort?: number;\nport: number;\nprotocol?: \"auto\" | \"tcp\" | \"websocket\" | \"kcp\";\naudience?: \"mixed\" | \"inner\" | \"outer\";\nstaticMapIds?: number[];\nacceptDynamicMaps?: boolean;\n}"
+      ]
+    },
+    {
+      "name": "SceneEventHandlerOptions",
+      "declarations": [
+        "export interface SceneEventHandlerOptions {\nreadonly id: string;\nreadonly order?: number;\n}"
+      ]
+    },
+    {
+      "name": "SceneEventScope",
+      "declarations": [
+        "export declare class SceneEventScope {\nconstructor(scene: Scene);\nPublish<TEvent>(descriptor: SyncEventDescriptor<TEvent>, event: TEvent): EventPublishResult;\nCheck<TEvent, TReason extends number>(descriptor: VetoEventDescriptor<TEvent, TReason>, event: TEvent): TReason;\n}"
+      ]
+    },
+    {
+      "name": "SceneId",
+      "declarations": [
+        "export type SceneId = string;"
+      ]
+    },
+    {
+      "name": "SceneLockScope",
+      "declarations": [
+        "export declare class SceneLockScope {\nconstructor(scene: Scene);\nRunExclusive<T>(domain: CoroutineLockDomain, key: CoroutineLockKey, callback: () => MaybePromise<T>, options?: CoroutineLockOptions): Promise<T>;\n}"
+      ]
+    },
+    {
+      "name": "SceneMailboxType",
+      "declarations": [
+        "export type SceneMailboxType = \"ordered\" | \"unordered\";"
+      ]
+    },
+    {
+      "name": "SceneMessageHandler",
+      "declarations": [
+        "export interface SceneMessageHandler<TScene extends EntryScene, TMessage extends IMessage> {\nhandle(scene: TScene, message: TMessage, context: ProtocolContext): MaybePromise<void>;\n}"
+      ]
+    },
+    {
+      "name": "SceneMessageHelper",
+      "declarations": [
+        "export declare class SceneMessageHelper {\nconstructor(ctx: SceneCallContext);\none(sceneType: string): SceneConfig;\noptionalOne(sceneType: string): SceneConfig | undefined;\nmany(sceneType: string): SceneConfig[];\nbyName(name: string): SceneConfig;\ncall<TReq extends IRequest, TResp extends IResponse>(target: SceneConfig, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp>;\ncallOne<TReq extends IRequest, TResp extends IResponse>(sceneType: string, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp>;\ncallOptionalOne<TReq extends IRequest, TResp extends IResponse>(sceneType: string, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp | undefined>;\ncallActor<TReq extends IRequest, TResp extends IResponse>(target: ActorLocationTarget, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp>;\nsend<TMessage extends IMessage>(target: SceneConfig, descriptor: MessageDescriptor<TMessage>, message: TMessage, options?: SceneSendOptions): Promise<void>;\nsendFrame(target: SceneConfig, frame: Uint8Array, options?: SceneSendOptions): Promise<void>;\nsendOne<TMessage extends IMessage>(sceneType: string, descriptor: MessageDescriptor<TMessage>, message: TMessage, options?: SceneSendOptions): Promise<void>;\nsendActor<TMessage extends IMessage>(target: ActorLocationTarget, descriptor: MessageDescriptor<TMessage>, message: TMessage, options?: SceneSendOptions): Promise<void>;\n}"
+      ]
+    },
+    {
+      "name": "SceneMetricsSnapshot",
+      "declarations": [
+        "export interface SceneMetricsSnapshot {\nscene: string;\nsceneType: string;\nprocessedFrames: number;\nfailedFrames: number;\nprotocolSuccesses: number;\nbusinessErrors: number;\nsystemErrors: number;\ndecodeErrors: number;\nhandlerNotFound: number;\nmessageHandlerFailures: number;\ningressQueueLength: number;\nmaxIngressQueueLength: number;\nlastUpdateCostMs: number;\nlastHandlerCostMs: number;\nmaxHandlerCostMs: number;\ntotalHandlerCostMs: number;\nasyncInFlight: number;\nmaxAsyncInFlight: number;\nlatencies: LatencyMetricSnapshot[];\ncustomMetrics: CustomMetricSnapshot[];\n}"
+      ]
+    },
+    {
+      "name": "SceneRef",
+      "declarations": [
+        "export interface SceneRef {\nprocessId: string;\nsceneId: SceneId;\nsceneType: SceneType;\n}"
+      ]
+    },
+    {
+      "name": "SceneRpcHandler",
+      "declarations": [
+        "export interface SceneRpcHandler<TScene extends EntryScene, TReq, TResp> {\nhandle(scene: TScene, request: TReq, context: ProtocolContext): MaybePromise<TResp>;\n}"
+      ]
+    },
+    {
+      "name": "SceneTaskScope",
+      "declarations": [
+        "export declare class SceneTaskScope {\nconstructor(scene: Scene);\nget InFlightCount(): number;\nget MaxInFlightCount(): number;\nSpawn(name: string, body: SpawnTaskBody): SpawnTaskId;\nCancel(id: SpawnTaskId, reason?: unknown): boolean;\nDispose(reason?: unknown): void;\n}"
+      ]
+    },
+    {
+      "name": "SceneTaskSignal",
+      "declarations": [
+        "export interface SceneTaskSignal {\nreadonly aborted: boolean;\nreadonly reason: unknown;\n}"
+      ]
+    },
+    {
+      "name": "SceneType",
+      "declarations": [
+        "export type SceneType = string;"
+      ]
+    },
+    {
+      "name": "Session",
+      "declarations": [
+        "export declare class Session<TAwakeArgs extends unknown[] = [\n]> extends Actor<TAwakeArgs> {\nget ConnectionId(): number;\n}"
+      ]
+    },
+    {
+      "name": "SessionComponent",
+      "declarations": [
+        "export declare class SessionComponent extends Component {\nCreate<T extends Session<any[]>>(connectionId: number, ctor: ActorCtor<T>, ...awakeArgs: ActorAwakeArgs<T>): T;\nGet<T extends Session<any[]> = Session<any[]>>(connectionId: number): T | undefined;\nGetAll<T extends Session<any[]> = Session<any[]>>(): readonly T[];\nRemove(connectionId: number): Session<any[]> | undefined;\nget Count(): number;\nprotected OnDestroy(): void;\n}"
+      ]
+    },
+    {
+      "name": "SessionMessageHandler",
+      "declarations": [
+        "export interface SessionMessageHandler<TScene extends EntryScene, TSession extends Session<any[]>, TMessage extends IMessage> {\nhandle(scene: TScene, session: TSession, message: TMessage, context: ProtocolContext): MaybePromise<void>;\n}"
+      ]
+    },
+    {
+      "name": "SessionRpcHandler",
+      "declarations": [
+        "export interface SessionRpcHandler<TScene extends EntryScene, TSession extends Session<any[]>, TReq, TResp> {\nhandle(scene: TScene, session: TSession, request: TReq, context: ProtocolContext): MaybePromise<TResp>;\n}"
+      ]
+    },
+    {
+      "name": "SpawnTaskBody",
+      "declarations": [
+        "export type SpawnTaskBody = (context: SpawnTaskContext) => MaybePromise<void>;"
+      ]
+    },
+    {
+      "name": "SpawnTaskContext",
+      "declarations": [
+        "export interface SpawnTaskContext {\nreadonly id: SpawnTaskId;\nreadonly signal: SceneTaskSignal;\n}"
+      ]
+    },
+    {
+      "name": "SpawnTaskId",
+      "declarations": [
+        "export type SpawnTaskId = number & {\nreadonly __spawnTaskId: unique symbol;\n};"
+      ]
+    },
+    {
+      "name": "StateReplicationSource",
+      "declarations": [
+        "export interface StateReplicationSource {\nreadonly name: string;\nPeek(): EncodedStateDelta;\n}"
+      ]
+    },
+    {
+      "name": "StateReplicationSystem",
+      "declarations": [
+        "export declare class StateReplicationSystem {\nconstructor(broadcast: BroadcastHub, audience: () => BroadcastAudience, onError?: (sourceName: string, error: unknown) => void, beforePublish?: (() => Promise<void> | undefined) | undefined);\nAdd(source: StateReplicationSource): void;\nRemove(name: string): boolean;\nFrameFlush(): void;\n}"
+      ]
+    },
+    {
+      "name": "SyncEventDescriptor",
+      "declarations": [
+        "export interface SyncEventDescriptor<TEvent> {\nreadonly name: string;\nreadonly mode: \"sync\";\nreadonly __event?: TEvent;\n}"
+      ]
+    },
+    {
+      "name": "SyncSceneEventHandler",
+      "declarations": [
+        "export interface SyncSceneEventHandler<TScene extends Scene, TEvent> {\nHandle(scene: TScene, event: TEvent): void;\n}"
+      ]
+    },
+    {
+      "name": "SystemErrCode",
+      "declarations": [
+        "export declare const SystemErrCode: {\nreadonly Success: 0;\nreadonly MalformedFrame: 1001;\nreadonly UnknownMsgCode: 1002;\nreadonly HandlerNotFound: 1003;\nreadonly DecodeFailed: 1004;\nreadonly HandlerFailed: 1005;\nreadonly SceneCallFailed: 1006;\nreadonly UnexpectedResponseCode: 1007;\nreadonly SceneNotFound: 1008;\nreadonly AmbiguousScene: 1009;\nreadonly RpcIdMismatch: 1010;\nreadonly SceneOverloaded: 1011;\nreadonly ActorLocationNotFound: 1012;\nreadonly SessionNotFound: 1013;\nreadonly ActorTransferring: 1014;\nreadonly LocationConflict: 1015;\nreadonly LocationUnavailable: 1016;\n};"
+      ]
+    },
+    {
+      "name": "TimeSystem",
+      "declarations": [
+        "export declare class TimeSystem extends Singleton {\nstatic get Instance(): TimeSystem;\nget FrameTime(): number;\nget ServerNow(): number;\nget ServerNowSeconds(): number;\nget DeltaTime(): number;\nget FixedTime(): number;\nget FixedDeltaTime(): number;\nget FrameCount(): number;\nServerDeadlineAfter(delayMs: number): number;\nRemainingServerTime(deadlineMs: number): number;\nIsServerDeadlineReached(deadlineMs: number): boolean;\n}"
+      ]
+    },
+    {
+      "name": "TimerCancelReason",
+      "declarations": [
+        "export type TimerCancelReason = \"manual\" | \"replaced\" | \"owner-disposed\" | \"process-stopped\" | (string & {});"
+      ]
+    },
+    {
+      "name": "TimerCancelledContext",
+      "declarations": [
+        "export interface TimerCancelledContext {\nreadonly timerId: TimerId;\nreadonly reason: TimerCancelReason;\nreadonly cancelledAt: number;\n}"
+      ]
+    },
+    {
+      "name": "TimerId",
+      "declarations": [
+        "export type TimerId = number & {\nreadonly __timerId: unique symbol;\n};"
+      ]
+    },
+    {
+      "name": "TimerOptions",
+      "declarations": [
+        "export interface TimerOptions {\nreadonly onCancelled?: (context: TimerCancelledContext) => MaybePromise<void>;\n}"
+      ]
+    },
+    {
+      "name": "TimerSystem",
+      "declarations": [
+        "export declare class TimerSystem extends Singleton {\nstatic get Instance(): TimerSystem;\nstatic ServerTime(): number;\nNewOnceTimer(delayMs: number, callback: TimerCallback, options?: TimerOptions): TimerId;\nNewRepeatedTimer(intervalMs: number, callback: TimerCallback, options?: TimerOptions): TimerId;\nCancel(timerId: TimerId, reason?: TimerCancelReason, notify?: boolean): boolean;\nWaitAsync(delayMs: number): Promise<void>;\nget Count(): number;\nprotected OnDestroy(): void;\n}"
+      ]
+    },
+    {
+      "name": "TransferCommitResult",
+      "declarations": [
+        "export interface TransferCommitResult<TTarget, TResult> {\nreadonly target: TTarget;\nreadonly result: TResult;\nreadonly newlyCommitted: boolean;\n}"
+      ]
+    },
+    {
+      "name": "TransferPrepareResult",
+      "declarations": [
+        "export interface TransferPrepareResult<TTarget> {\nreadonly stage: \"prepared\" | \"committed\";\nreadonly target: TTarget;\nreadonly reused: boolean;\n}"
+      ]
+    },
+    {
+      "name": "TransferRoutingPolicy",
+      "declarations": [
+        "export type TransferRoutingPolicy = \"queue\" | \"reject\" | \"drop\" | \"latest\";"
+      ]
+    },
+    {
+      "name": "TransferStage",
+      "declarations": [
+        "export type TransferStage = \"prepared\" | \"committed\" | \"aborted\";"
+      ]
+    },
+    {
+      "name": "TransferStagingRegistry",
+      "declarations": [
+        "export declare class TransferStagingRegistry<TTarget> {\nconstructor(capacity?: number, now?: () => number);\nPrepare(transferId: string, fingerprint: string, prepare: () => TTarget, rollback: (target: TTarget) => void): TransferPrepareResult<TTarget>;\nCommit<TResult>(transferId: string, commit: (target: TTarget) => TResult): TransferCommitResult<TTarget, TResult>;\nAbort(transferId: string): boolean;\nSweepExpired(preparedTtlMs: number, completedTtlMs: number): number;\nForget(transferId: string): boolean;\nStage(transferId: string): TransferStage | undefined;\nSnapshot(): TransferStagingSnapshot;\nDispose(): void;\n}"
+      ]
+    },
+    {
+      "name": "TransferStagingSnapshot",
+      "declarations": [
+        "export interface TransferStagingSnapshot {\nreadonly prepared: number;\nreadonly committed: number;\nreadonly aborted: number;\nreadonly total: number;\nreadonly capacity: number;\n}"
+      ]
+    },
+    {
+      "name": "Unit",
+      "declarations": [
+        "export declare abstract class Unit<TAwakeArgs extends unknown[] = [\n]> extends OwnedEntity<TAwakeArgs> {\nget UnitId(): number;\n}"
+      ]
+    },
+    {
+      "name": "UnitAwakeArgs",
+      "declarations": [
+        "export type UnitAwakeArgs<T extends Unit<any[]>> = T extends Unit<infer TAwakeArgs> ? TAwakeArgs : never;"
+      ]
+    },
+    {
+      "name": "UnitComponent",
+      "declarations": [
+        "export declare class UnitComponent extends Component {\nCreate<T extends Unit<any[]>>(unitId: number, ctor: UnitCtor<T>, ...awakeArgs: UnitAwakeArgs<T>): T;\nAdd<T extends Unit<any[]>>(unit: T): T;\nGet<T extends Unit<any[]> = Unit<any[]>>(unitId: number): T | undefined;\nGetAll<T extends Unit<any[]> = Unit<any[]>>(ctor?: abstract new (...args: any[]) => T): readonly T[];\nRemove(unitId: number): Unit<any[]> | undefined;\nget Count(): number;\nprotected OnDestroy(): void;\n}"
+      ]
+    },
+    {
+      "name": "UnitCtor",
+      "declarations": [
+        "export type UnitCtor<T extends Unit<any[]> = Unit<any[]>> = new (...args: any[]) => T;"
+      ]
+    },
+    {
+      "name": "UnitMessageHandler",
+      "declarations": [
+        "export interface UnitMessageHandler<TUnit extends AnyUnit, TMessage extends IMessage> {\nhandle(unit: TUnit, message: TMessage, context: ProtocolContext): MaybePromise<void>;\n}"
+      ]
+    },
+    {
+      "name": "UnitRpcHandler",
+      "declarations": [
+        "export interface UnitRpcHandler<TUnit extends AnyUnit, TReq, TResp> {\nhandle(unit: TUnit, request: TReq, context: ProtocolContext): MaybePromise<TResp>;\n}"
+      ]
+    },
+    {
+      "name": "VetoEventDescriptor",
+      "declarations": [
+        "export interface VetoEventDescriptor<TEvent, TReason extends number> {\nreadonly name: string;\nreadonly mode: \"veto\";\nreadonly allow: TReason;\nreadonly __event?: TEvent;\nreadonly __reason?: TReason;\n}"
+      ]
+    },
+    {
+      "name": "VetoSceneEventHandler",
+      "declarations": [
+        "export interface VetoSceneEventHandler<TScene extends Scene, TEvent, TReason extends number> {\nHandle(scene: TScene, event: TEvent): TReason;\n}"
+      ]
+    },
+    {
+      "name": "actor",
+      "declarations": [
+        "export declare function actor(options?: ActorOptions): ClassDecorator;"
+      ]
+    },
+    {
+      "name": "component",
+      "declarations": [
+        "export declare function component(): ClassDecorator;"
+      ]
+    },
+    {
+      "name": "defineEventBroadcast",
+      "declarations": [
+        "export declare function defineEventBroadcast<TItem, TMessage extends IMessage>(descriptor: Omit<EventBroadcastDescriptor<TItem, TMessage>, \"mode\">): EventBroadcastDescriptor<TItem, TMessage>;"
+      ]
+    },
+    {
+      "name": "defineLatestBroadcast",
+      "declarations": [
+        "export declare function defineLatestBroadcast<TItem, TMessage extends IMessage>(descriptor: Omit<LatestBroadcastDescriptor<TItem, TMessage>, \"mode\">): LatestBroadcastDescriptor<TItem, TMessage>;"
+      ]
+    },
+    {
+      "name": "defineSyncEvent",
+      "declarations": [
+        "export declare function defineSyncEvent<TEvent>(name: string): SyncEventDescriptor<TEvent>;"
+      ]
+    },
+    {
+      "name": "defineVetoEvent",
+      "declarations": [
+        "export declare function defineVetoEvent<TEvent, TReason extends number>(name: string, allow: TReason): VetoEventDescriptor<TEvent, TReason>;"
+      ]
+    },
+    {
+      "name": "encodePacket",
+      "declarations": [
+        "export declare function encodePacket(msgcode: number, payload: Uint8Array): Uint8Array;"
+      ]
+    },
+    {
+      "name": "entryScene",
+      "declarations": [
+        "export declare function entryScene(sceneType?: string): ClassDecorator;",
+        "export declare function entryScene(target: Function): void;"
+      ]
+    },
+    {
+      "name": "hotfixFor",
+      "declarations": [
+        "export declare function hotfixFor<TTarget extends AnyCtor>(target: TTarget): <TImplementation extends ConcreteCtor>(implementation: TImplementation) => void;"
+      ]
+    },
+    {
+      "name": "isPromiseLike",
+      "declarations": [
+        "export declare function isPromiseLike<T>(value: MaybePromise<T>): value is Promise<T>;"
+      ]
+    },
+    {
+      "name": "lifecycle",
+      "declarations": [
+        "export declare function lifecycle(options: LifecycleOptions): ClassDecorator;"
+      ]
+    },
+    {
+      "name": "message",
+      "declarations": [
+        "export declare function message<TMessage extends IMessage>(descriptor: MessageDescriptor<TMessage>): MethodDecorator;"
+      ]
+    },
+    {
+      "name": "messageHandler",
+      "declarations": [
+        "export declare function messageHandler<TScene extends EntryScene, TMessage extends IMessage>(sceneCtor: SceneClass<TScene>, descriptor: MessageDescriptor<TMessage>): (handlerCtor: new () => SceneMessageHandler<TScene, TMessage>) => void;"
+      ]
+    },
+    {
+      "name": "readU16BE",
+      "declarations": [
+        "export declare function readU16BE(bytes: Uint8Array, offset?: number): number;"
+      ]
+    },
+    {
+      "name": "requireGlobalId",
+      "declarations": [
+        "export declare function requireGlobalId(id: bigint, name?: string): asserts id is GlobalId;"
+      ]
+    },
+    {
+      "name": "rpc",
+      "declarations": [
+        "export declare function rpc<TReq, TResp>(descriptor: RpcDescriptor<TReq, TResp>): MethodDecorator;"
+      ]
+    },
+    {
+      "name": "rpcHandler",
+      "declarations": [
+        "export declare function rpcHandler<TScene extends EntryScene, TReq, TResp>(sceneCtor: SceneClass<TScene>, descriptor: RpcDescriptor<TReq, TResp>): (handlerCtor: new () => SceneRpcHandler<TScene, TReq, TResp>) => void;"
+      ]
+    },
+    {
+      "name": "scene",
+      "declarations": [
+        "export declare function scene(options: SceneOptions): ClassDecorator;"
+      ]
+    },
+    {
+      "name": "sessionMessageHandler",
+      "declarations": [
+        "export declare function sessionMessageHandler<TScene extends EntryScene, TSession extends Session<any[]>, TMessage extends IMessage>(sceneCtor: SceneClass<TScene>, descriptor: MessageDescriptor<TMessage>): (handlerCtor: new () => SessionMessageHandler<TScene, TSession, TMessage>) => void;"
+      ]
+    },
+    {
+      "name": "sessionRpcHandler",
+      "declarations": [
+        "export declare function sessionRpcHandler<TScene extends EntryScene, TSession extends Session<any[]>, TReq, TResp>(sceneCtor: SceneClass<TScene>, descriptor: RpcDescriptor<TReq, TResp>): (handlerCtor: new () => SessionRpcHandler<TScene, TSession, TReq, TResp>) => void;"
+      ]
+    },
+    {
+      "name": "syncEventHandler",
+      "declarations": [
+        "export declare function syncEventHandler<TScene extends Scene, TEvent>(sceneCtor: SceneClass<TScene>, descriptor: SyncEventDescriptor<TEvent>, options: SceneEventHandlerOptions): (handlerCtor: new () => SyncSceneEventHandler<TScene, TEvent>) => void;"
+      ]
+    },
+    {
+      "name": "systemFor",
+      "declarations": [
+        "export declare function systemFor<TTarget extends AnyCtor>(target: TTarget): <TImplementation extends ConcreteCtor>(implementation: TImplementation) => void;"
+      ]
+    },
+    {
+      "name": "transferable",
+      "declarations": [
+        "export declare function transferable(): ClassDecorator;"
+      ]
+    },
+    {
+      "name": "unitMessageHandler",
+      "declarations": [
+        "export declare function unitMessageHandler<TUnit extends AnyUnit, TMessage extends IMessage>(unitCtor: UnitClass<TUnit>, descriptor: MessageDescriptor<TMessage>): (handlerCtor: new () => UnitMessageHandler<TUnit, TMessage>) => void;"
+      ]
+    },
+    {
+      "name": "unitRpcHandler",
+      "declarations": [
+        "export declare function unitRpcHandler<TUnit extends AnyUnit, TReq, TResp>(unitCtor: UnitClass<TUnit>, descriptor: RpcDescriptor<TReq, TResp>): (handlerCtor: new () => UnitRpcHandler<TUnit, TReq, TResp>) => void;"
+      ]
+    },
+    {
+      "name": "utf8Decode",
+      "declarations": [
+        "export declare function utf8Decode(value: Uint8Array): string;"
+      ]
+    },
+    {
+      "name": "utf8Encode",
+      "declarations": [
+        "export declare function utf8Encode(value: string): Uint8Array;"
+      ]
+    },
+    {
+      "name": "vetoEventHandler",
+      "declarations": [
+        "export declare function vetoEventHandler<TScene extends Scene, TEvent, TReason extends number>(sceneCtor: SceneClass<TScene>, descriptor: VetoEventDescriptor<TEvent, TReason>, options: SceneEventHandlerOptions): (handlerCtor: new () => VetoSceneEventHandler<TScene, TEvent, TReason>) => void;"
+      ]
+    }
+  ],
+  "declarationGraphHash": "760e4e3cefacdf826e65afa84537a086102d20ca55fa862106d6f59d7fe5384c",
+  "declarationGraph": [
+    {
+      "path": "core/async.d.ts",
+      "declaration": "export type MaybePromise<T> = T | Promise<T>;\nexport declare function isPromiseLike<T>(value: MaybePromise<T>): value is Promise<T>;"
+    },
+    {
+      "path": "core/broadcast/BroadcastHub.d.ts",
+      "declaration": "import type { IMessage } from \"../protocol/message\";\nimport type { BroadcastAudience, BroadcastDescriptor, EncodedAudienceBatch, BroadcastHubOptions, BroadcastMetricsSnapshot, BroadcastTransport, EncodedRouteFrame } from \"./types\";\nexport declare class BroadcastHub {\nprivate readonly transport;\nprivate readonly channels;\nprivate readonly maxEventQueuePerChannel;\nprivate readonly onError;\nprivate disposed;\nprivate pendingItemCount;\nprivate readonly metrics;\nconstructor(transport: BroadcastTransport, options?: BroadcastHubOptions);\nPublish<TItem, TMessage extends IMessage>(audience: BroadcastAudience, descriptor: BroadcastDescriptor<TItem, TMessage>, item: TItem, tick?: number): Promise<void>;\nPublishMany<TItem, TMessage extends IMessage>(audience: BroadcastAudience, descriptor: BroadcastDescriptor<TItem, TMessage>, items: readonly TItem[], tick?: number): Promise<void>;\nPublishEncodedLatestSnapshot(audience: BroadcastAudience, descriptorName: string, frame: Uint8Array, itemCount: number): Promise<void>;\nPublishEncodedLatestBatches(audienceKey: string, descriptorName: string, batches: readonly EncodedAudienceBatch[]): Promise<void>;\nPublishEncodedLatestRouteFrames(audienceKey: string, descriptorName: string, routeFrames: readonly EncodedRouteFrame[], itemCount: number): Promise<void>;\nSnapshot(): BroadcastMetricsSnapshot;\nDispose(): void;\nprivate enqueueEvent;\nprivate enqueueLatest;\nprivate pump;\nprivate complete;\nprivate pumpEncodedSnapshot;\nprivate completeEncodedSnapshot;\nprivate createChannel;\nprivate recordDispatch;\nprivate recordPending;\nprivate validateAudience;\n}"
+    },
+    {
+      "path": "core/broadcast/ClientAudience.d.ts",
+      "declaration": "export declare class ClientAudience {\nreadonly key: string;\nprivate readonly ids;\nstatic readonly Empty: ClientAudience;\nprivate constructor();\nstatic Self(unitId: number): ClientAudience;\nstatic ForUnits(key: string, unitIds: Iterable<number>): ClientAudience;\nstatic Union(...audiences: readonly ClientAudience[]): ClientAudience;\nstatic Intersect(left: ClientAudience, right: ClientAudience): ClientAudience;\nstatic Except(source: ClientAudience, excluded: ClientAudience): ClientAudience;\nget UnitIds(): readonly number[];\nget Count(): number;\nget IsEmpty(): boolean;\n}"
+    },
+    {
+      "path": "core/broadcast/ClientBroadcast.d.ts",
+      "declaration": "import { type MaybePromise } from \"../async\";\nimport type { IMessage } from \"../protocol/message\";\nimport { BroadcastHub } from \"./BroadcastHub\";\nimport { ClientAudience } from \"./ClientAudience\";\nimport type { BroadcastDescriptor, BroadcastRoute } from \"./types\";\nexport interface ClientRouteResolver {\nResolve(unitIds: readonly number[]): MaybePromise<readonly BroadcastRoute[]>;\n}\nexport declare class ClientBroadcast {\nprivate readonly hub;\nprivate readonly routes;\nconstructor(hub: BroadcastHub, routes: ClientRouteResolver);\nPublish<TItem, TMessage extends IMessage>(audience: ClientAudience, descriptor: BroadcastDescriptor<TItem, TMessage>, item: TItem, tick?: number): Promise<void>;\nPublishMany<TItem, TMessage extends IMessage>(audience: ClientAudience, descriptor: BroadcastDescriptor<TItem, TMessage>, items: readonly TItem[], tick?: number): Promise<void>;\nprivate publishResolved;\n}"
+    },
+    {
+      "path": "core/broadcast/types.d.ts",
+      "declaration": "import type { IMessage, MessageDescriptor } from \"../protocol/message\";\nexport type BroadcastKey = string | number;\nexport interface BroadcastRoute {\nreadonly route: string;\nreadonly recipientId: number;\n}\nexport interface BroadcastAudience {\nreadonly key: string;\nreadonly routes: readonly BroadcastRoute[];\n}\nexport interface EncodedAudienceBatch {\nreadonly audience: BroadcastAudience;\nreadonly frame: Uint8Array;\nreadonly itemCount: number;\n}\nexport interface EncodedRouteFrame {\nreadonly route: string;\nreadonly frame: Uint8Array;\n}\ninterface BroadcastDescriptorBase<TItem, TMessage extends IMessage> {\nreadonly name: string;\nreadonly message: MessageDescriptor<TMessage>;\nreadonly batchItems: boolean;\nreadonly makeMessage: (items: readonly TItem[], tick: number) => TMessage;\n}\nexport interface EventBroadcastDescriptor<TItem, TMessage extends IMessage> extends BroadcastDescriptorBase<TItem, TMessage> {\nreadonly mode: \"event\";\n}\nexport interface LatestBroadcastDescriptor<TItem, TMessage extends IMessage> extends BroadcastDescriptorBase<TItem, TMessage> {\nreadonly mode: \"latest\";\nreadonly keyOf: (item: TItem) => BroadcastKey;\n}\nexport type BroadcastDescriptor<TItem, TMessage extends IMessage> = EventBroadcastDescriptor<TItem, TMessage> | LatestBroadcastDescriptor<TItem, TMessage>;\nexport interface BroadcastTransport {\nSend(audience: BroadcastAudience, frame: Uint8Array): Promise<void>;\nSendMany?(batches: readonly EncodedAudienceBatch[]): Promise<void>;\nSendRouteFrames?(frames: readonly EncodedRouteFrame[]): Promise<void>;\n}\nexport interface BroadcastMetricsSnapshot {\nreadonly inFlight: number;\nreadonly inFlightItems: number;\nreadonly pendingItems: number;\nreadonly maxPendingItems: number;\nreadonly maxInFlightItems: number;\nreadonly queuedItems: number;\nreadonly coalescedItems: number;\nreadonly sentItems: number;\nreadonly broadcastsStarted: number;\nreadonly broadcastsCompleted: number;\nreadonly broadcastFailures: number;\nreadonly lastDurationMs: number;\nreadonly maxDurationMs: number;\nreadonly totalDurationMs: number;\nreadonly lastQueueWaitMs: number;\nreadonly maxQueueWaitMs: number;\nreadonly totalQueueWaitMs: number;\nreadonly lastDispatchMs: number;\nreadonly maxDispatchMs: number;\nreadonly totalDispatchMs: number;\n}\nexport interface BroadcastHubOptions {\nreadonly maxEventQueuePerChannel?: number;\nreadonly onError?: (descriptorName: string, error: unknown) => void;\n}\nexport declare function defineEventBroadcast<TItem, TMessage extends IMessage>(descriptor: Omit<EventBroadcastDescriptor<TItem, TMessage>, \"mode\">): EventBroadcastDescriptor<TItem, TMessage>;\nexport declare function defineLatestBroadcast<TItem, TMessage extends IMessage>(descriptor: Omit<LatestBroadcastDescriptor<TItem, TMessage>, \"mode\">): LatestBroadcastDescriptor<TItem, TMessage>;\nexport {};"
+    },
+    {
+      "path": "core/hotReload/HotfixSystem.d.ts",
+      "declaration": "import type { HotfixManifest, HotfixStatus } from \"./contracts\";\ntype AnyCtor = abstract new (...args: any[]) => object;\ntype ConcreteCtor = new (...args: any[]) => object;\ninterface BindingUndo<T extends object> {\nreadonly store: HotfixBindingStore<T>;\nreadonly key: string;\nreadonly previous?: T;\nreadonly previousSnapshot?: PropertyDescriptorMap;\n}\nexport declare class HotfixSystem {\nprivate static staging;\nprivate static activeManifest;\nprivate static generation;\nprivate static phase;\nprivate static lastError;\nprivate static readonly requiredTypes;\nprivate static readonly installedTypes;\nprivate static readonly bindingStores;\nstatic RegisterBindingStore<T extends object>(store: HotfixBindingStore<T>): void;\nstatic RequireType(target: AnyCtor): void;\nstatic Begin(manifest: HotfixManifest): void;\nstatic Abort(reason: unknown): void;\nstatic StageType(target: AnyCtor, implementation: ConcreteCtor, required?: boolean): void;\nstatic StageBinding<T extends object>(store: HotfixBindingStore<T>, key: string, value: T): void;\nstatic Commit(): HotfixStatus;\nstatic Status(): HotfixStatus;\nstatic get IsStaging(): boolean;\nprivate static requireStaging;\n}\nexport declare function hotfixFor<TTarget extends AnyCtor>(target: TTarget): <TImplementation extends ConcreteCtor>(implementation: TImplementation) => void;\nexport declare function systemFor<TTarget extends AnyCtor>(target: TTarget): <TImplementation extends ConcreteCtor>(implementation: TImplementation) => void;\nexport declare class HotfixBindingStore<T extends object> {\nreadonly Name: string;\nprivate readonly active;\nconstructor(Name: string);\nRegister(key: string, value: T): void;\nValues(): readonly T[];\n__activeKeys(): readonly string[];\n__commit(key: string, value: T): BindingUndo<T>;\n__rollback(undo: BindingUndo<T>): void;\n}\nexport {};"
+    },
+    {
+      "path": "core/hotReload/contracts.d.ts",
+      "declaration": "export interface HotfixManifest {\nformatVersion: 1;\nbundleVersion: string;\nmodelFingerprint: string;\nmodelSourceHash: string;\nprotocolFingerprint: string;\nstableCoreApiHash: string;\nnativeSchemaHash: string;\nhotfixHash: string;\nbuildMode: \"demo\" | \"bench\";\n}\nexport interface HotfixStatus {\nactiveVersion?: string;\nactiveGeneration: number;\nstagingVersion?: string;\nphase: \"idle\" | \"staging\" | \"committing\" | \"rolling-back\";\nlastError?: string;\n}"
+    },
+    {
+      "path": "core/location/LocationDirectory.d.ts",
+      "declaration": "export type LocationMutationState = \"moving\" | \"removing\";\nexport interface LocationRecord<TKey, TValue> {\nreadonly key: TKey;\nreadonly value: TValue;\nreadonly revision: bigint;\nreadonly state: \"active\" | LocationMutationState;\nreadonly operationId?: string;\n}\nexport declare class LocationDirectory<TKey, TValue> {\nprivate readonly records;\nRegister(key: TKey, value: TValue): LocationRecord<TKey, TValue>;\nResolve(key: TKey): LocationRecord<TKey, TValue> | undefined;\nLock(key: TKey, expectedRevision: bigint, operationId: string, state: LocationMutationState): LocationRecord<TKey, TValue>;\nCommit(key: TKey, operationId: string, value: TValue): LocationRecord<TKey, TValue>;\nUnlock(key: TKey, operationId: string): LocationRecord<TKey, TValue>;\nRemove(key: TKey, operationId: string): LocationRecord<TKey, TValue>;\nSnapshot(): readonly LocationRecord<TKey, TValue>[];\nget Count(): number;\nprivate require;\n}"
+    },
+    {
+      "path": "core/logging/Logger.d.ts",
+      "declaration": "export type LogLevel = \"trace\" | \"debug\" | \"info\" | \"warn\" | \"error\";\nexport type LogCategory = \"framework\" | \"business\" | \"application\";\nexport interface LogFields {\nreadonly category?: LogCategory;\nreadonly process?: string;\nreadonly scene?: string;\nreadonly sceneType?: string;\nreadonly actorId?: number | string | bigint;\nreadonly connectionId?: number;\nreadonly rpcId?: number;\nreadonly msgcode?: number;\nreadonly traceId?: string;\nreadonly requestId?: string;\nreadonly unitId?: number | string | bigint;\nreadonly [key: string]: unknown;\n}\nexport declare class Logger {\nprivate readonly target;\nprivate readonly boundFields;\nconstructor(target: string, boundFields?: LogFields);\nchild(fields: LogFields): Logger;\ntrace(message: string, fields?: LogFields): void;\ndebug(message: string, fields?: LogFields): void;\ninfo(message: string, fields?: LogFields): void;\nwarn(message: string, fields?: LogFields): void;\nerror(message: string, fields?: LogFields): void;\nprivate write;\n}\nexport declare const CoreLogger: Logger;"
+    },
+    {
+      "path": "core/logging/types.d.ts",
+      "declaration": "export interface ProcessLoggingConfig {\nlevel?: \"trace\" | \"debug\" | \"info\" | \"warn\" | \"error\";\nformat?: \"pretty\" | \"json\";\nconsole?: boolean;\nfilter?: string;\nfile?: ProcessLogFileConfig;\n}\nexport interface ProcessLogFileConfig {\nenabled?: boolean;\ndirectory?: string;\nrotation?: \"hourly\" | \"daily\" | \"never\";\n}"
+    },
+    {
+      "path": "core/metrics/latency.d.ts",
+      "declaration": "export interface LatencyMetricSnapshot {\nname: string;\nmsgcode?: number;\ncount: number;\navgMs: number;\np50Ms: number;\np95Ms: number;\np99Ms: number;\nmaxMs: number;\nsumMs: number;\nboundsMs: readonly number[];\nbucketCounts: number[];\n}\nexport interface LatencyRecorderOptions {\nenabled?: boolean;\nsampleRate?: number;\n}\nexport declare class LatencyRecorder {\nprivate readonly metrics;\nreadonly enabled: boolean;\nprivate readonly sampleRate;\nprivate sampleCounter;\nconstructor(options?: LatencyRecorderOptions);\nrecord(name: string, elapsedMs: number, msgcode?: number): void;\nsnapshot(): LatencyMetricSnapshot[];\n}\nexport declare function nowMs(): number;"
+    },
+    {
+      "path": "core/persistence/HostDbProxyTransport.d.ts",
+      "declaration": "import { type DbProxyRecordKey, type DbProxySnapshotEnvelope, type DbProxySnapshotWrite, type DbProxySnapshotWriteResult, type DbProxyTransactionalWrite, type DbProxyTransactionalWriteResult, type DbProxyTransactionReceipt, type DbProxyTransport, type DbProxyWriteDisposition } from \"@tiangz/dbproxy-sdk\";\ninterface HostDbProxyError {\nreadonly code: number;\nreadonly message: string;\nreadonly actualRevision?: string;\n}\ninterface HostSnapshot {\nreadonly namespace: string;\nreadonly key: string;\nreadonly schema: string;\nreadonly schemaVersion: number;\nreadonly revision: string;\nreadonly payload: readonly number[] | Uint8Array;\nreadonly updatedAtUnixMs: string;\n}\ninterface HostLoadResponse {\nreadonly snapshot?: HostSnapshot;\nreadonly error?: HostDbProxyError;\n}\ninterface HostWriteResponse {\nreadonly disposition?: DbProxyWriteDisposition;\nreadonly revision?: string;\nreadonly error?: HostDbProxyError;\n}\ninterface HostEnqueueResponse {\nreadonly accepted: boolean;\nreadonly error?: HostDbProxyError;\n}\ninterface HostTransactionResponse {\nreadonly disposition?: DbProxyWriteDisposition;\nreadonly newRevision?: string;\nreadonly result: readonly number[] | Uint8Array;\nreadonly error?: HostDbProxyError;\n}\ninterface HostTransactionReceipt {\nreadonly operationId: string;\nreadonly namespace: string;\nreadonly key: string;\nreadonly newRevision: string;\nreadonly result: readonly number[] | Uint8Array;\n}\ninterface HostLoadTransactionResponse {\nreadonly receipt?: HostTransactionReceipt;\nreadonly error?: HostDbProxyError;\n}\ninterface HostDbProxyApi {\nload(namespace: string, key: string): Promise<HostLoadResponse>;\nsave(request: {\nreadonly requestId: string;\nreadonly namespace: string;\nreadonly key: string;\nreadonly schema: string;\nreadonly schemaVersion: number;\nreadonly payload: Uint8Array;\nreadonly expectedRevision?: string;\nreadonly updatedAtUnixMs: string;\n}): Promise<HostWriteResponse>;\nenqueueSnapshot(request: {\nreadonly requestId: string;\nreadonly namespace: string;\nreadonly key: string;\nreadonly schema: string;\nreadonly schemaVersion: number;\nreadonly payload: Uint8Array;\nreadonly updatedAtUnixMs: string;\n}): Promise<HostEnqueueResponse>;\napplyTransaction(request: {\nreadonly operationId: string;\nreadonly namespace: string;\nreadonly key: string;\nreadonly schema: string;\nreadonly schemaVersion: number;\nreadonly expectedRevision: string;\nreadonly payload: Uint8Array;\nreadonly result: Uint8Array;\nreadonly updatedAtUnixMs: string;\n}): Promise<HostTransactionResponse>;\nloadTransaction(operationId: string, namespace: string, key: string): Promise<HostLoadTransactionResponse>;\n}\nexport declare class HostDbProxyTransport implements DbProxyTransport {\nprivate readonly host;\nconstructor(host?: HostDbProxyApi);\nload(record: DbProxyRecordKey): Promise<DbProxySnapshotEnvelope | undefined>;\nsave(write: DbProxySnapshotWrite): Promise<DbProxySnapshotWriteResult>;\nenqueueSnapshot(write: DbProxySnapshotWrite): Promise<void>;\napplyTransaction(write: DbProxyTransactionalWrite): Promise<DbProxyTransactionalWriteResult>;\nloadTransaction(operationId: string, record: DbProxyRecordKey): Promise<DbProxyTransactionReceipt | undefined>;\n}\nexport {};"
+    },
+    {
+      "path": "core/process/ActorLocation.d.ts",
+      "declaration": "import type { SceneConfig } from \"./types\";\nexport declare const ActorLocationEnvelopeMsgCode = 29999;\nexport declare const ActorLocationEnvelopeHeaderBytes = 14;\nexport interface ActorLocationTarget {\ninstanceId: number;\nscene: SceneConfig;\n}\nexport interface ActorLocationEnvelope {\ninstanceId: number;\nframe: Uint8Array;\nrpcId?: number;\n}\nexport declare class ActorLocationDirectory {\nprivate readonly targetsByConnection;\nbindConnection(connectionId: number, target: ActorLocationTarget): void;\nunbindConnection(connectionId: number): void;\nresolveConnection(connectionId: number): ActorLocationTarget | undefined;\n}\nexport declare function encodeActorLocationEnvelope(envelope: ActorLocationEnvelope): Uint8Array;\nexport declare function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnvelope;\nexport declare function readActorLocationInstanceId(frame: Uint8Array): number;\nexport declare function extractFrameRpcId(frame: Uint8Array): number | undefined;\nexport declare function rewriteFrameRpcId(frame: Uint8Array, rpcId: number): Uint8Array;"
+    },
+    {
+      "path": "core/process/HostSceneTransport.d.ts",
+      "declaration": "import type { SceneConfig } from \"./types\";\nexport declare function callRemoteScene(source: SceneConfig, target: SceneConfig, frame: Uint8Array, timeoutMs: number): Promise<Uint8Array>;\nexport declare function sendRemoteScene(source: SceneConfig, target: SceneConfig, frame: Uint8Array, timeoutMs: number): Promise<void>;\nexport declare function sleepHost(ms: number): Promise<void>;\nexport declare function flushHostSceneOperations(): void;\nexport declare function completeHostSceneOperation(id: number, succeeded: boolean, payload: Uint8Array): void;\nexport declare function cancelHostSceneOperations(reason?: string): void;"
+    },
+    {
+      "path": "core/process/SceneMessageHelper.d.ts",
+      "declaration": "import type { IMessage, IRequest, IResponse, MessageDescriptor } from \"../protocol/message\";\nimport type { RpcDescriptor } from \"../protocol/rpc\";\nimport type { SceneCallContext, SceneCallOptions, SceneSendOptions } from \"./context\";\nimport type { SceneConfig } from \"./types\";\nimport type { ActorLocationTarget } from \"./ActorLocation\";\nexport declare class SceneMessageHelper {\nprivate readonly ctx;\nconstructor(ctx: SceneCallContext);\none(sceneType: string): SceneConfig;\noptionalOne(sceneType: string): SceneConfig | undefined;\nmany(sceneType: string): SceneConfig[];\nbyName(name: string): SceneConfig;\ncall<TReq extends IRequest, TResp extends IResponse>(target: SceneConfig, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp>;\ncallOne<TReq extends IRequest, TResp extends IResponse>(sceneType: string, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp>;\ncallOptionalOne<TReq extends IRequest, TResp extends IResponse>(sceneType: string, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp | undefined>;\ncallActor<TReq extends IRequest, TResp extends IResponse>(target: ActorLocationTarget, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp>;\nsend<TMessage extends IMessage>(target: SceneConfig, descriptor: MessageDescriptor<TMessage>, message: TMessage, options?: SceneSendOptions): Promise<void>;\nsendFrame(target: SceneConfig, frame: Uint8Array, options?: SceneSendOptions): Promise<void>;\nsendOne<TMessage extends IMessage>(sceneType: string, descriptor: MessageDescriptor<TMessage>, message: TMessage, options?: SceneSendOptions): Promise<void>;\nsendActor<TMessage extends IMessage>(target: ActorLocationTarget, descriptor: MessageDescriptor<TMessage>, message: TMessage, options?: SceneSendOptions): Promise<void>;\n}"
+    },
+    {
+      "path": "core/process/context.d.ts",
+      "declaration": "import type { IMessage, IRequest, IResponse, MessageDescriptor } from \"../protocol/message\";\nimport type { RpcDescriptor } from \"../protocol/rpc\";\nimport { type LatencyRecorder } from \"../metrics/latency\";\nimport type { LocalSceneRouter, RuntimeEntrySceneConfig, SceneConfig } from \"./types\";\nimport { type ActorLocationTarget } from \"./ActorLocation\";\nimport { Logger } from \"../logging/Logger\";\nexport interface SceneCallOptions {\ntimeoutMs?: number;\n}\nexport type SceneSendOptions = SceneCallOptions;\nexport declare class SceneCallContext {\nprivate readonly config;\nprivate readonly localRouter;\nprivate readonly latencies?;\nprivate nextRpcId;\nprivate readonly inFlightRpcIds;\nreadonly logger: Logger;\nconstructor(config: RuntimeEntrySceneConfig, localRouter: LocalSceneRouter, latencies?: LatencyRecorder | undefined);\nget self(): SceneConfig;\nget knownScenes(): readonly SceneConfig[];\nref(nameOrType: string): SceneConfig | undefined;\nrefs(sceneType: string): SceneConfig[];\ncall<TReq extends IRequest, TResp extends IResponse>(target: SceneConfig, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp>;\ncallActor<TReq extends IRequest, TResp extends IResponse>(target: ActorLocationTarget, descriptor: RpcDescriptor<TReq, TResp>, request: TReq, options?: SceneCallOptions): Promise<TResp>;\ncallActorFrame(target: ActorLocationTarget, frame: Uint8Array, expectedResponseCode: number, options?: SceneCallOptions): Promise<Uint8Array>;\nprivate decodeRpcResponse;\ncallFrame(target: SceneConfig, frame: Uint8Array, options?: SceneCallOptions): Promise<Uint8Array>;\nsend<TMessage extends IMessage>(target: SceneConfig, descriptor: MessageDescriptor<TMessage>, message: TMessage, options?: SceneSendOptions): Promise<void>;\nsendActor<TMessage extends IMessage>(target: ActorLocationTarget, descriptor: MessageDescriptor<TMessage>, message: TMessage, options?: SceneSendOptions): Promise<void>;\nsendFrame(target: SceneConfig, frame: Uint8Array, options?: SceneSendOptions): Promise<void>;\nprivate reserveRpcId;\n}"
+    },
+    {
+      "path": "core/process/registry.d.ts",
+      "declaration": "import type { EntrySceneCtor } from \"./types\";\nexport declare function entryScene(target: Function): void;\nexport declare function entryScene(sceneType?: string): ClassDecorator;\nexport declare function getEntrySceneCtor(sceneType: string): EntrySceneCtor | undefined;\nexport declare function listEntrySceneTypes(): string[];"
+    },
+    {
+      "path": "core/process/sceneHandlers.d.ts",
+      "declaration": "import type { MaybePromise } from \"../async\";\nimport type { AnyMessageDescriptor, IMessage, MessageDescriptor } from \"../protocol/message\";\nimport type { ProtocolContext } from \"../protocol/registry\";\nimport type { AnyRpcDescriptor, RpcDescriptor } from \"../protocol/rpc\";\nimport type { EntryScene } from \"./types\";\ntype SceneClass<TScene extends EntryScene> = new (...args: any[]) => TScene;\nexport interface SceneMessageHandler<TScene extends EntryScene, TMessage extends IMessage> {\nhandle(scene: TScene, message: TMessage, context: ProtocolContext): MaybePromise<void>;\n}\nexport interface SceneRpcHandler<TScene extends EntryScene, TReq, TResp> {\nhandle(scene: TScene, request: TReq, context: ProtocolContext): MaybePromise<TResp>;\n}\ntype AnySceneMessageHandlerCtor = new () => SceneMessageHandler<EntryScene, IMessage>;\ntype AnySceneRpcHandlerCtor = new () => SceneRpcHandler<EntryScene, unknown, unknown>;\nexport interface SceneMessageHandlerBinding {\nsceneCtor: Function;\ndescriptor: AnyMessageDescriptor;\nhandlerCtor: AnySceneMessageHandlerCtor;\n}\nexport interface SceneRpcHandlerBinding {\nsceneCtor: Function;\ndescriptor: AnyRpcDescriptor;\nhandlerCtor: AnySceneRpcHandlerCtor;\n}\nexport declare function messageHandler<TScene extends EntryScene, TMessage extends IMessage>(sceneCtor: SceneClass<TScene>, descriptor: MessageDescriptor<TMessage>): (handlerCtor: new () => SceneMessageHandler<TScene, TMessage>) => void;\nexport declare function rpcHandler<TScene extends EntryScene, TReq, TResp>(sceneCtor: SceneClass<TScene>, descriptor: RpcDescriptor<TReq, TResp>): (handlerCtor: new () => SceneRpcHandler<TScene, TReq, TResp>) => void;\nexport declare function getSceneMessageHandlerBindings(sceneCtor: Function): readonly SceneMessageHandlerBinding[];\nexport declare function getSceneRpcHandlerBindings(sceneCtor: Function): readonly SceneRpcHandlerBinding[];\nexport {};"
+    },
+    {
+      "path": "core/process/sessionHandlers.d.ts",
+      "declaration": "import type { MaybePromise } from \"../async\";\nimport type { IMessage, MessageDescriptor } from \"../protocol/message\";\nimport type { ProtocolContext } from \"../protocol/registry\";\nimport type { AnyRpcDescriptor, RpcDescriptor } from \"../protocol/rpc\";\nimport type { AnyMessageDescriptor } from \"../protocol/message\";\nimport type { Session } from \"../runtime/Session\";\nimport type { EntryScene } from \"./types\";\ntype SceneClass<TScene extends EntryScene> = new (...args: any[]) => TScene;\nexport interface SessionMessageHandler<TScene extends EntryScene, TSession extends Session<any[]>, TMessage extends IMessage> {\nhandle(scene: TScene, session: TSession, message: TMessage, context: ProtocolContext): MaybePromise<void>;\n}\nexport interface SessionRpcHandler<TScene extends EntryScene, TSession extends Session<any[]>, TReq, TResp> {\nhandle(scene: TScene, session: TSession, request: TReq, context: ProtocolContext): MaybePromise<TResp>;\n}\ntype AnySessionMessageHandlerCtor = new () => SessionMessageHandler<EntryScene, Session<any[]>, IMessage>;\ntype AnySessionRpcHandlerCtor = new () => SessionRpcHandler<EntryScene, Session<any[]>, unknown, unknown>;\nexport interface SessionMessageHandlerBinding {\nsceneCtor: Function;\ndescriptor: AnyMessageDescriptor;\nhandlerCtor: AnySessionMessageHandlerCtor;\n}\nexport interface SessionRpcHandlerBinding {\nsceneCtor: Function;\ndescriptor: AnyRpcDescriptor;\nhandlerCtor: AnySessionRpcHandlerCtor;\n}\nexport declare function sessionMessageHandler<TScene extends EntryScene, TSession extends Session<any[]>, TMessage extends IMessage>(sceneCtor: SceneClass<TScene>, descriptor: MessageDescriptor<TMessage>): (handlerCtor: new () => SessionMessageHandler<TScene, TSession, TMessage>) => void;\nexport declare function sessionRpcHandler<TScene extends EntryScene, TSession extends Session<any[]>, TReq, TResp>(sceneCtor: SceneClass<TScene>, descriptor: RpcDescriptor<TReq, TResp>): (handlerCtor: new () => SessionRpcHandler<TScene, TSession, TReq, TResp>) => void;\nexport declare function getSessionMessageHandlerBindings(sceneCtor: Function): readonly SessionMessageHandlerBinding[];\nexport declare function getSessionRpcHandlerBindings(sceneCtor: Function): readonly SessionRpcHandlerBinding[];\nexport {};"
+    },
+    {
+      "path": "core/process/types.d.ts",
+      "declaration": "import { type AnyMessageDescriptor, type IMessage, type MessageDescriptor } from \"../protocol/message\";\nimport { type MaybePromise } from \"../async\";\nimport { ProtocolRegistry } from \"../protocol/registry\";\nimport { AnyRpcDescriptor } from \"../protocol/rpc\";\nimport { Scene } from \"../runtime/entities\";\nimport { ProcessHost } from \"../runtime/host\";\nimport { Session } from \"../runtime/Session\";\nimport { ActorUnit } from \"../runtime/Unit\";\nimport type { GameUpdateConfig } from \"../runtime/Game\";\nimport type { ActorAwakeArgs, ActorCtor, SceneCtor } from \"../runtime/types\";\nimport { type LatencyMetricSnapshot, type LatencyRecorderOptions } from \"../metrics/latency\";\nimport { SceneCallContext } from \"./context\";\nimport { SceneMessageHelper } from \"./SceneMessageHelper\";\nimport { ActorLocationDirectory } from \"./ActorLocation\";\nimport type { ProcessLoggingConfig } from \"../logging/types\";\nimport type { Logger } from \"../logging/Logger\";\nexport interface SceneConfig {\nname: string;\nsceneType: string;\ninnerIp: string;\nbindIp?: string;\nouterIp?: string;\nouterPort?: number;\nport: number;\nprotocol?: \"auto\" | \"tcp\" | \"websocket\" | \"kcp\";\naudience?: \"mixed\" | \"inner\" | \"outer\";\nstaticMapIds?: number[];\nacceptDynamicMaps?: boolean;\n}\nexport interface ProcessConfig {\nname: string;\nidentity?: ProcessIdentityConfig;\nlogging?: ProcessLoggingConfig;\nnetwork?: ProcessNetworkConfig;\ngame?: GameUpdateConfig;\nscheduling?: ProcessSchedulingConfig;\nlifecycle?: ProcessLifecycleConfig;\npersistence?: ProcessPersistenceConfig;\nobservability?: ProcessObservabilityConfig;\n}\nexport interface ProcessPersistenceConfig {\ndbProxy?: ProcessDbProxyConfig;\n}\nexport interface ProcessDbProxyConfig {\nendpoint: string;\nauthTokenEnv?: string;\nclientPoolSize?: number;\nconnectTimeoutMs?: number;\nrequestTimeoutMs?: number;\nmaxFrameBytes?: number;\n}\nexport interface ProcessIdentityConfig {\noriginServerId?: number;\nworkerId?: number;\n}\nexport interface ProcessLifecycleConfig {\nstopTimeoutMs?: number;\n}\nexport interface ProcessNetworkConfig {\nioBackend?: \"epoll\" | \"io-uring\";\nuringEntries?: number;\nuringReadBufferBytes?: number;\n}\nexport interface ProcessSchedulingConfig {\nmode?: \"low-latency\" | \"throughput\" | \"adaptive\";\nidleTickMs?: number;\nmaxEventsPerUpdate?: number;\ncoalesceMicros?: number;\n}\nexport interface ProcessObservabilityConfig {\nlatency?: LatencyRecorderOptions;\nnativeData?: ProcessNativeDataObservabilityConfig;\n}\nexport interface ProcessNativeDataObservabilityConfig {\ndebugScalarAccess?: boolean;\nscalarAccessWarnThreshold?: number;\n}\nexport interface RuntimeEntrySceneConfig {\nprocess: ProcessConfig;\nself: SceneConfig;\nknownScenes: SceneConfig[];\ntickMs: number;\nprocessHost: ProcessHost;\nlocalRouter: LocalSceneRouter;\n}\nexport interface ProcessRuntimeConfig {\nprocess: ProcessConfig;\nscenes: SceneConfig[];\nknownScenes: SceneConfig[];\ntickMs: number;\n}\nexport interface LocalSceneRouter {\nhasLocalScene(name: string): boolean;\ncallLocalScene(sourceName: string, targetName: string, frame: Uint8Array): Promise<Uint8Array>;\nsendLocalScene(sourceName: string, targetName: string, frame: Uint8Array): Promise<void>;\n}\nexport interface OutboundBatch {\nconnectionIdBytes: Uint8Array;\nframe: Uint8Array;\n}\nexport interface SceneUpdateResult {\noutbound: OutboundBatch[];\nmetrics?: SceneMetricsSnapshot;\npendingAsync: boolean;\n}\nexport interface SceneMetricsSnapshot {\nscene: string;\nsceneType: string;\nprocessedFrames: number;\nfailedFrames: number;\nprotocolSuccesses: number;\nbusinessErrors: number;\nsystemErrors: number;\ndecodeErrors: number;\nhandlerNotFound: number;\nmessageHandlerFailures: number;\ningressQueueLength: number;\nmaxIngressQueueLength: number;\nlastUpdateCostMs: number;\nlastHandlerCostMs: number;\nmaxHandlerCostMs: number;\ntotalHandlerCostMs: number;\nasyncInFlight: number;\nmaxAsyncInFlight: number;\nlatencies: LatencyMetricSnapshot[];\ncustomMetrics: CustomMetricSnapshot[];\n}\nexport interface CustomMetricSnapshot {\nname: string;\nvalues: Readonly<Record<string, number>>;\nkinds?: Readonly<Record<string, CustomMetricKind>>;\n}\nexport type CustomMetricKind = \"counter\" | \"gauge\";\nexport type SceneMailboxType = \"ordered\" | \"unordered\";\nexport declare abstract class EntryScene extends Scene {\nprotected readonly config: RuntimeEntrySceneConfig;\nprivate static readonly MAX_UNORDERED_IN_FLIGHT;\nprivate static readonly MAX_TRANSFER_FRAMES_PER_CONNECTION;\nprivate static readonly MAX_TRANSFER_BYTES_PER_CONNECTION;\nprivate static readonly MAX_TRANSFER_WAIT_MS;\nprotected readonly registry: ProtocolRegistry;\nprivate readonly actorRegistry;\nprotected readonly ctx: SceneCallContext;\nreadonly scenes: SceneMessageHelper;\nprivate readonly processHost;\nprotected readonly actorLocations: ActorLocationDirectory;\nprotected readonly mailbox: SceneMailboxType;\nprivate readonly ingress;\nprivate ingressHead;\nprivate readonly outbound;\nprivate readonly connectionIdBytes;\nprivate readonly actorTransferBuffers;\nprivate readonly actorTransferMetrics;\nprivate readonly unorderedTasks;\nprivate orderedTask;\nprivate mailboxBusy;\nprivate readonly mailboxTasks;\nprivate readonly metrics;\nprivate readonly latencies;\nprivate readonly knownRpcsByCode;\nprivate readonly knownMessagesByCode;\nprivate readonly registeredRpcHandlers;\nprivate readonly registeredMessageHandlers;\nprivate lifecycleState;\nprivate stopPromise;\nprivate sessionComponent;\nconstructor(config: RuntimeEntrySceneConfig, knownRpcs?: readonly AnyRpcDescriptor[], knownMessages?: readonly AnyMessageDescriptor[]);\n__initializeRuntime(): void;\n__mailboxType(): SceneMailboxType;\nprotected createSession(connectionId: number): Session<any[]>;\nprotected addSession<T extends Session<any[]>>(connectionId: number, ctor: ActorCtor<T>, ...awakeArgs: ActorAwakeArgs<T>): T;\nprotected getSession<T extends Session<any[]> = Session<any[]>>(connectionId: number): T | undefined;\nprotected getSessions<T extends Session<any[]> = Session<any[]>>(): readonly T[];\nprivate getOrCreateSession;\nprivate requireSessionComponent;\nget self(): SceneConfig;\nget logger(): Logger;\nstartupMessage(): string;\nprotected onStart(): MaybePromise<void>;\nprotected onClientReceive(_connectionId: number): void;\nprotected consumeClientControlFrame(_connectionId: number, _frame: Uint8Array): boolean;\nprotected onClientSendQueued(_connectionIds: readonly number[]): void;\nprotected actorTransferMetricSnapshot(): CustomMetricSnapshot;\nprotected beginActorTransfer(connectionId: number): void;\nprotected finishActorTransfer(connectionId: number): void;\nprotected cancelActorTransfer(connectionId: number): void;\nprotected onReady(): MaybePromise<void>;\nprotected onStop(): MaybePromise<void>;\n__startLifecycle(): Promise<void>;\n__readyLifecycle(): Promise<void>;\n__stopLifecycle(): Promise<void>;\nprivate stopLifecycle;\n__disposeRuntime(): void;\npushHostFrame(connectionId: number, frame: Uint8Array): void;\npushHostDisconnect(connectionId: number): void;\nprivate enqueueIngress;\nupdate(maxFrames?: number, includeMetrics?: boolean): SceneUpdateResult;\n__pumpMailbox(maxFrames?: number): number;\n__completeUpdate(startedAt: number, includeMetrics?: boolean): SceneUpdateResult;\n__canCommitHotfix(): boolean;\nprotected registerHandlers(): void;\nprivate childSceneId;\nSpawnChildScene<T extends Scene>(localId: string, ctor: SceneCtor<T>): T;\nDespawnChildScene(localId: string): boolean;\nRunLocalActorMailbox<TActor extends ActorUnit<any[]>, TResult>(actor: TActor, body: (current: TActor) => MaybePromise<TResult>): MaybePromise<TResult>;\nprotected onDisconnect(_connectionId: number): MaybePromise<void>;\nprotected disconnectClient(connectionId: number): void;\nprotected sendClient<TMessage extends IMessage>(connectionId: number, descriptor: MessageDescriptor<TMessage>, message: TMessage): void;\nprotected sendClientMany<TMessage extends IMessage>(connectionIds: readonly number[], descriptor: MessageDescriptor<TMessage>, message: TMessage): void;\nprotected sendClientFrameMany(connectionIds: readonly number[], frame: Uint8Array): void;\ndispatchLocalCall(frame: Uint8Array): Promise<Uint8Array>;\ndispatchLocalSend(frame: Uint8Array): Promise<void>;\nmetricsSnapshot(): SceneMetricsSnapshot;\nprivate drainOutbound;\nprivate get ingressLength();\nprivate dequeueIngress;\nprivate completeUpdate;\nprivate drainOrdered;\nprivate drainUnordered;\nprivate dispatchMailbox;\nprivate runMailboxTask;\nprivate finishMailboxTask;\nprivate processIngress;\nprivate enqueueResponse;\nprivate packConnectionId;\nprivate handleFrame;\nprivate routeOrHandleFrame;\nprivate dispatchActorLocationFrame;\nprivate tryReserveTransferFrame;\nprivate expireActorTransfers;\nprivate completeHandler;\nprivate recordProtocolOutcome;\nprivate registerDecoratedRpcHandlers;\nprivate registerDecoratedMessageHandlers;\nprivate registerExternalRpcHandlers;\nprivate registerExternalMessageHandlers;\nprivate registerSessionRpcHandlers;\nprivate registerSessionMessageHandlers;\nprivate registerUnitRpcHandlers;\nprivate registerUnitMessageHandlers;\nprivate claimRpcHandler;\nprivate claimMessageHandler;\n}\nexport type EntrySceneCtor = new (config: RuntimeEntrySceneConfig) => EntryScene;"
+    },
+    {
+      "path": "core/process/unitHandlers.d.ts",
+      "declaration": "import type { MaybePromise } from \"../async\";\nimport type { AnyMessageDescriptor, IMessage, MessageDescriptor } from \"../protocol/message\";\nimport type { ProtocolContext } from \"../protocol/registry\";\nimport type { AnyRpcDescriptor, RpcDescriptor } from \"../protocol/rpc\";\nimport { type Unit } from \"../runtime/Unit\";\ntype AnyUnit = Unit<any[]>;\ntype UnitClass<TUnit extends AnyUnit> = abstract new (...args: any[]) => TUnit;\nexport interface UnitMessageHandler<TUnit extends AnyUnit, TMessage extends IMessage> {\nhandle(unit: TUnit, message: TMessage, context: ProtocolContext): MaybePromise<void>;\n}\nexport interface UnitRpcHandler<TUnit extends AnyUnit, TReq, TResp> {\nhandle(unit: TUnit, request: TReq, context: ProtocolContext): MaybePromise<TResp>;\n}\ntype AnyUnitMessageHandlerCtor = new () => UnitMessageHandler<AnyUnit, IMessage>;\ntype AnyUnitRpcHandlerCtor = new () => UnitRpcHandler<AnyUnit, unknown, unknown>;\nexport interface UnitMessageHandlerBinding {\nunitCtor: UnitClass<AnyUnit>;\ndescriptor: AnyMessageDescriptor;\nhandlerCtor: AnyUnitMessageHandlerCtor;\n}\nexport interface UnitRpcHandlerBinding {\nunitCtor: UnitClass<AnyUnit>;\ndescriptor: AnyRpcDescriptor;\nhandlerCtor: AnyUnitRpcHandlerCtor;\n}\nexport declare function unitMessageHandler<TUnit extends AnyUnit, TMessage extends IMessage>(unitCtor: UnitClass<TUnit>, descriptor: MessageDescriptor<TMessage>): (handlerCtor: new () => UnitMessageHandler<TUnit, TMessage>) => void;\nexport declare function unitRpcHandler<TUnit extends AnyUnit, TReq, TResp>(unitCtor: UnitClass<TUnit>, descriptor: RpcDescriptor<TReq, TResp>): (handlerCtor: new () => UnitRpcHandler<TUnit, TReq, TResp>) => void;\nexport declare function getUnitMessageHandlerBindings(): readonly UnitMessageHandlerBinding[];\nexport declare function getUnitRpcHandlerBindings(): readonly UnitRpcHandlerBinding[];\nexport {};"
+    },
+    {
+      "path": "core/protocol/RpcError.d.ts",
+      "declaration": "export declare class RpcError extends Error {\nreadonly code: number;\nconstructor(code: number, message: string);\n}"
+    },
+    {
+      "path": "core/protocol/SystemErrCode.d.ts",
+      "declaration": "export declare const SystemErrCode: {\nreadonly Success: 0;\nreadonly MalformedFrame: 1001;\nreadonly UnknownMsgCode: 1002;\nreadonly HandlerNotFound: 1003;\nreadonly DecodeFailed: 1004;\nreadonly HandlerFailed: 1005;\nreadonly SceneCallFailed: 1006;\nreadonly UnexpectedResponseCode: 1007;\nreadonly SceneNotFound: 1008;\nreadonly AmbiguousScene: 1009;\nreadonly RpcIdMismatch: 1010;\nreadonly SceneOverloaded: 1011;\nreadonly ActorLocationNotFound: 1012;\nreadonly SessionNotFound: 1013;\nreadonly ActorTransferring: 1014;\nreadonly LocationConflict: 1015;\nreadonly LocationUnavailable: 1016;\n};"
+    },
+    {
+      "path": "core/protocol/binary.d.ts",
+      "declaration": "export declare class BinaryWriter {\nprivate buffer;\nprivate length;\nconstructor(initialCapacity?: number);\nstring(fieldNo: number, value: string, writeDefault?: boolean): void;\nuint32(fieldNo: number, value: number | undefined, writeDefault?: boolean): void;\nint32(fieldNo: number, value: number | undefined, writeDefault?: boolean): void;\nuint64(fieldNo: number, value: bigint | undefined, writeDefault?: boolean): void;\nint64(fieldNo: number, value: bigint | undefined, writeDefault?: boolean): void;\nsint32(fieldNo: number, value: number | undefined, writeDefault?: boolean): void;\nbool(fieldNo: number, value: boolean | undefined, writeDefault?: boolean): void;\nfloat(fieldNo: number, value: number | undefined, writeDefault?: boolean): void;\ndouble(fieldNo: number, value: number | undefined, writeDefault?: boolean): void;\nbytes(fieldNo: number, value: Uint8Array | undefined, writeDefault?: boolean): void;\nfinish(): Uint8Array;\nprivate tag;\nprivate varint;\nprivate varint64;\nprivate varintBigInt;\nprivate fixed;\nprivate rawBytes;\nprivate byte;\nprivate ensure;\n}\nexport declare class BinaryReader {\nprivate readonly bytes;\nprivate offset;\nconstructor(bytes: Uint8Array);\neof(): boolean;\ntag(): {\nfieldNo: number;\nwireType: number;\n};\nstring(): string;\nbytesField(): Uint8Array;\nuint32(): number;\nint32(): number;\nuint64(): bigint;\nint64(): bigint;\nsint32(): number;\nbool(): boolean;\nfloat(): number;\ndouble(): number;\nskip(wireType: number): void;\nprivate varint;\nprivate varintBigInt;\nprivate fixed;\nprivate advance;\n}\nexport declare function utf8Encode(value: string): Uint8Array;\nexport declare function utf8Decode(value: Uint8Array): string;\nexport declare function writeU16BE(value: number): Uint8Array;\nexport declare function readU16BE(bytes: Uint8Array, offset?: number): number;\nexport declare function writeU32BE(value: number): Uint8Array;\nexport declare function readU32BE(bytes: Uint8Array, offset?: number): number;\nexport declare function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array;\nexport declare function bytesToBase64(bytes: Uint8Array): string;\nexport declare function base64ToBytes(base64: string): Uint8Array;"
+    },
+    {
+      "path": "core/protocol/frame.d.ts",
+      "declaration": "export declare function encodeFrameWithLength(frame: Uint8Array): Uint8Array;\nexport declare function encodePacket(msgcode: number, payload: Uint8Array): Uint8Array;\nexport declare class LengthPrefixedFrameDecoder {\nprivate buffer;\npush(chunk: Uint8Array): Uint8Array[];\n}"
+    },
+    {
+      "path": "core/protocol/message.d.ts",
+      "declaration": "export interface IMessage {\n}\nexport interface Codec<T> {\nencode(value: T): Uint8Array;\ndecode(payload: Uint8Array): T;\n}\nexport interface MessageDescriptor<TMessage extends IMessage> {\nname: string;\nmsgcode: number;\ncodec: Codec<TMessage>;\nrouting?: MessageRouting;\nduringTransfer?: TransferRoutingPolicy;\n}\nexport type MessageRouting = \"direct\" | \"actor-location\";\nexport type TransferRoutingPolicy = \"queue\" | \"reject\" | \"drop\" | \"latest\";\nexport type AnyMessageDescriptor = MessageDescriptor<any>;\nexport interface MessageBinding {\nmethod: string;\ndescriptor: AnyMessageDescriptor;\n}\nexport declare function defineMessage<TMessage extends IMessage>(descriptor: MessageDescriptor<TMessage>): MessageDescriptor<TMessage>;\nexport declare function message<TMessage extends IMessage>(descriptor: MessageDescriptor<TMessage>): MethodDecorator;\nexport declare function getMessageBindings(ctor: Function): MessageBinding[];\nexport declare function registerKnownMessages(descriptors: readonly AnyMessageDescriptor[]): void;\nexport declare function getKnownMessageDescriptors(): readonly AnyMessageDescriptor[];\nexport interface IRequest extends IMessage {\nrpcId?: number;\n}\nexport interface IResponse extends IMessage {\nrpcId?: number;\nerror?: number;\nmessage?: string;\n}\nexport interface IActorMessage extends IMessage {\n}\nexport interface IActorRequest extends IRequest {\n}\nexport interface IActorResponse extends IResponse {\n}\nexport interface IActorLocationMessage extends IActorMessage {\n}\nexport interface IActorLocationRequest extends IActorRequest {\n}\nexport interface IActorLocationResponse extends IActorResponse {\n}"
+    },
+    {
+      "path": "core/protocol/registry.d.ts",
+      "declaration": "import { type MaybePromise } from \"../async\";\nimport type { AnyMessageDescriptor } from \"./message\";\nimport { AnyRpcDescriptor } from \"./rpc\";\nimport type { Logger } from \"../logging/Logger\";\nexport interface Route<TReq, TResp> {\nresponseCode: number;\ndecode(payload: Uint8Array): TReq;\nencode(response: TResp): Uint8Array;\ncreateResponse?: () => TResp;\nhandle?: (request: TReq, context: ProtocolContext) => MaybePromise<TResp>;\n}\nexport interface ProtocolContext {\nconnectionId?: number;\nactorInstanceId?: number;\nmsgcode?: number;\nrpcId?: number;\nrequestId?: string;\nlogger?: Logger;\n}\nexport type ProtocolOutcomeKind = \"success\" | \"business-error\" | \"system-error\" | \"decode-error\" | \"handler-not-found\" | \"message-handler-failed\";\nexport interface ProtocolOutcome {\nkind: ProtocolOutcomeKind;\ncode: number;\ncontext: ProtocolContext;\n}\nexport interface ProtocolMetrics {\nrecord(name: string, elapsedMs: number, msgcode?: number): void;\n}\ninterface MessageRoute<TMessage> {\ndecode(payload: Uint8Array): TMessage;\nhandle?: (message: TMessage, context: ProtocolContext) => MaybePromise<void>;\n}\nexport declare class ProtocolRegistry {\nprivate readonly log;\nprivate readonly metrics?;\nprivate readonly outcome?;\nprivate readonly routes;\nprivate readonly messageRoutes;\nconstructor(log?: (message: string) => void, metrics?: ProtocolMetrics | undefined, outcome?: ((outcome: ProtocolOutcome) => void) | undefined);\nregisterKnownRpc(descriptor: AnyRpcDescriptor): void;\nregisterKnownMessage(descriptor: AnyMessageDescriptor): void;\nregister<TReq, TResp>(requestCode: number, route: Route<TReq, TResp>): void;\nregisterMessage<TMessage>(msgcode: number, route: MessageRoute<TMessage>): void;\nhandle(frame: Uint8Array, context?: ProtocolContext): MaybePromise<Uint8Array | undefined>;\nroutingErrorResponse(frame: Uint8Array, code: number, message: string, context?: ProtocolContext): Uint8Array | undefined;\nreportSystemError(code: number, message: string, context?: ProtocolContext): void;\nprivate handleMessage;\nprivate logMessageHandlerError;\nprivate rpcSuccessResponse;\nprivate handlerErrorResponse;\nprivate rpcErrorResponse;\nprivate logSystemError;\nprivate bindContext;\nprivate recordOutcome;\n}\nexport declare function packFrame(msgcode: number, payload: Uint8Array): Uint8Array;\nexport {};"
+    },
+    {
+      "path": "core/protocol/rpc.d.ts",
+      "declaration": "import type { Codec, TransferRoutingPolicy } from \"./message\";\nexport interface RpcDescriptor<TReq, TResp> {\nname: string;\nrequestCode: number;\nresponseCode: number;\nrequestCodec: Codec<TReq>;\nresponseCodec: Codec<TResp>;\nrouting?: RpcRouting;\nduringTransfer?: TransferRoutingPolicy;\n}\nexport type RpcRouting = \"direct\" | \"actor-location\";\nexport type AnyRpcDescriptor = RpcDescriptor<any, any>;\nexport interface RpcBinding {\nmethod: string;\ndescriptor: AnyRpcDescriptor;\n}\nexport declare function defineRpc<TReq, TResp>(descriptor: RpcDescriptor<TReq, TResp>): RpcDescriptor<TReq, TResp>;\nexport declare function rpc<TReq, TResp>(descriptor: RpcDescriptor<TReq, TResp>): MethodDecorator;\nexport declare function getRpcBindings(ctor: Function): RpcBinding[];\nexport declare function registerKnownRpcs(descriptors: readonly AnyRpcDescriptor[]): void;\nexport declare function getKnownRpcDescriptors(): readonly AnyRpcDescriptor[];"
+    },
+    {
+      "path": "core/public.d.ts",
+      "declaration": "export { isPromiseLike } from \"./async\";\nexport type { MaybePromise } from \"./async\";\nexport { BroadcastHub } from \"./broadcast/BroadcastHub\";\nexport { ClientAudience } from \"./broadcast/ClientAudience\";\nexport { ClientBroadcast } from \"./broadcast/ClientBroadcast\";\nexport type { ClientRouteResolver } from \"./broadcast/ClientBroadcast\";\nexport { defineEventBroadcast, defineLatestBroadcast } from \"./broadcast/types\";\nexport type { BroadcastAudience, BroadcastDescriptor, BroadcastHubOptions, BroadcastKey, BroadcastMetricsSnapshot, BroadcastRoute, BroadcastTransport, EventBroadcastDescriptor, EncodedAudienceBatch, EncodedRouteFrame, LatestBroadcastDescriptor, } from \"./broadcast/types\";\nexport { Logger } from \"./logging/Logger\";\nexport type { LogCategory, LogFields, LogLevel } from \"./logging/Logger\";\nexport { readU16BE, utf8Decode, utf8Encode } from \"./protocol/binary\";\nexport { encodePacket } from \"./protocol/frame\";\nexport { message } from \"./protocol/message\";\nexport type { Codec, IActorLocationMessage, IActorLocationRequest, IActorLocationResponse, IActorMessage, IActorRequest, IActorResponse, IMessage, IRequest, IResponse, MessageDescriptor, MessageRouting, TransferRoutingPolicy, } from \"./protocol/message\";\nexport type { ProtocolContext } from \"./protocol/registry\";\nexport { RpcError } from \"./protocol/RpcError\";\nexport { rpc } from \"./protocol/rpc\";\nexport type { RpcDescriptor, RpcRouting } from \"./protocol/rpc\";\nexport { SystemErrCode } from \"./protocol/SystemErrCode\";\nexport { LocationDirectory } from \"./location/LocationDirectory\";\nexport type { LocationMutationState, LocationRecord, } from \"./location/LocationDirectory\";\nexport { unitMessageHandler, unitRpcHandler } from \"./process/unitHandlers\";\nexport type { UnitMessageHandler, UnitRpcHandler } from \"./process/unitHandlers\";\nexport { entryScene } from \"./process/registry\";\nexport { messageHandler, rpcHandler } from \"./process/sceneHandlers\";\nexport type { SceneMessageHandler, SceneRpcHandler } from \"./process/sceneHandlers\";\nexport { sessionMessageHandler, sessionRpcHandler, } from \"./process/sessionHandlers\";\nexport type { SessionMessageHandler, SessionRpcHandler, } from \"./process/sessionHandlers\";\nexport { SceneMessageHelper } from \"./process/SceneMessageHelper\";\nexport { EntryScene } from \"./process/types\";\nexport type { CustomMetricSnapshot, CustomMetricKind, ProcessConfig, ProcessDbProxyConfig, ProcessLifecycleConfig, ProcessNetworkConfig, ProcessNativeDataObservabilityConfig, ProcessObservabilityConfig, ProcessPersistenceConfig, ProcessRuntimeConfig, ProcessSchedulingConfig, RuntimeEntrySceneConfig, SceneConfig, SceneMailboxType, SceneMetricsSnapshot, } from \"./process/types\";\nexport { HostDbProxyTransport } from \"./persistence/HostDbProxyTransport\";\nexport { StateReplicationSystem } from \"./replication/StateReplicationSystem\";\nexport type { EncodedStateDelta, StateReplicationSource, } from \"./replication/StateReplicationSystem\";\nexport { ChildEntity, Component, Entity, Scene } from \"./runtime/entities\";\nexport type { ChildEntityAwakeArgs, ChildEntityCtor, ComponentCtor, EntityTransferSnapshot, IDeserialize, ITransfer, OwnedTimerOptions, } from \"./runtime/entities\";\nexport { GlobalIdSystem, requireGlobalId, } from \"./runtime/IdSystem\";\nexport type { GlobalId, GlobalIdConfig, } from \"./runtime/IdSystem\";\nexport { CoroutineLockSystem, SceneLockScope } from \"./runtime/CoroutineLockSystem\";\nexport type { CoroutineLockDomain, CoroutineLockKey, CoroutineLockOptions, } from \"./runtime/CoroutineLockSystem\";\nexport { defineSyncEvent, defineVetoEvent, SceneEventScope, syncEventHandler, vetoEventHandler, } from \"./runtime/SceneEventSystem\";\nexport type { EventPublishResult, SceneEventHandlerOptions, SyncEventDescriptor, SyncSceneEventHandler, VetoEventDescriptor, VetoSceneEventHandler, } from \"./runtime/SceneEventSystem\";\nexport { SceneTaskScope } from \"./runtime/SceneTaskSystem\";\nexport type { SpawnTaskBody, SpawnTaskContext, SpawnTaskId, SceneTaskSignal, } from \"./runtime/SceneTaskSystem\";\nexport { CommitPreparedTransfer, TransferStagingRegistry, } from \"./runtime/EntityTransfer\";\nexport type { PreparedTransferOptions, TransferCommitResult, TransferPrepareResult, TransferStagingSnapshot, TransferStage, } from \"./runtime/EntityTransfer\";\nexport { Game } from \"./runtime/Game\";\nexport type { GameUpdateConfig } from \"./runtime/Game\";\nexport { hotfixFor, systemFor } from \"./hotReload/HotfixSystem\";\nexport { actor, component, lifecycle, scene, transferable } from \"./runtime/metadata\";\nexport type { LifecycleOptions } from \"./runtime/metadata\";\nexport { TimerSystem } from \"./runtime/TimerSystem\";\nexport type { TimerCancelledContext, TimerCancelReason, TimerId, TimerOptions, } from \"./runtime/TimerSystem\";\nexport { TimeSystem } from \"./runtime/TimeSystem\";\nexport type { ActorId, ActorRef, EntityId, InstanceId, PersistentEntityId, MailboxType, SceneId, SceneRef, SceneType, } from \"./runtime/types\";\nexport { ActorUnit, Unit, UnitComponent } from \"./runtime/Unit\";\nexport type { UnitAwakeArgs, UnitCtor } from \"./runtime/Unit\";\nexport { Session, SessionComponent } from \"./runtime/Session\";\nexport type { IFrameFlush, ILateUpdate, IUpdate, IUpdate10Hz, IUpdate5Hz, IUpdate1Hz, } from \"./runtime/UpdateSystem\";"
+    },
+    {
+      "path": "core/replication/StateReplicationSystem.d.ts",
+      "declaration": "import type { BroadcastHub } from \"../broadcast/BroadcastHub\";\nimport type { BroadcastAudience, EncodedAudienceBatch } from \"../broadcast/types\";\ninterface EncodedStateDeltaBase {\nreadonly itemCount: number;\nAck(): void;\n}\nexport interface EncodedSingleStateDelta extends EncodedStateDeltaBase {\nreadonly frame: Uint8Array;\nreadonly batches?: never;\nreadonly audienceKey?: never;\n}\nexport interface EncodedBatchedStateDelta extends EncodedStateDeltaBase {\nreadonly frame?: never;\nreadonly batches: readonly EncodedAudienceBatch[];\nreadonly audienceKey: string;\n}\nexport type EncodedStateDelta = EncodedSingleStateDelta | EncodedBatchedStateDelta;\nexport interface StateReplicationSource {\nreadonly name: string;\nPeek(): EncodedStateDelta;\n}\nexport declare class StateReplicationSystem {\nprivate readonly broadcast;\nprivate readonly audience;\nprivate readonly onError;\nprivate readonly beforePublish?;\nprivate readonly sources;\nprivate readonly inFlight;\nconstructor(broadcast: BroadcastHub, audience: () => BroadcastAudience, onError?: (sourceName: string, error: unknown) => void, beforePublish?: (() => Promise<void> | undefined) | undefined);\nAdd(source: StateReplicationSource): void;\nRemove(name: string): boolean;\nFrameFlush(): void;\n}\nexport {};"
+    },
+    {
+      "path": "core/runtime/CoroutineLockSystem.d.ts",
+      "declaration": "import type { MaybePromise } from \"../async\";\nimport { Singleton } from \"./Singleton\";\nimport type { InstanceId } from \"./IdSystem\";\nimport type { Scene } from \"./entities\";\nexport type CoroutineLockDomain = string;\nexport type CoroutineLockKey = string | number | bigint;\nexport interface CoroutineLockOptions {\nreadonly timeoutMs?: number;\nreadonly signal?: AbortSignal;\nreadonly maxQueueLength?: number;\n}\nexport declare class CoroutineLockSystem extends Singleton {\nprivate readonly queues;\nprivate waitingCount;\nprivate timeoutCount;\nstatic get Instance(): CoroutineLockSystem;\nRunExclusive<T>(sceneInstanceId: InstanceId, domain: CoroutineLockDomain, key: CoroutineLockKey, callback: () => MaybePromise<T>, options?: CoroutineLockOptions): Promise<T>;\nprivate runAcquired;\nCancelScene(sceneInstanceId: InstanceId): void;\nget WaitingCount(): number;\nget TimeoutCount(): number;\nprotected OnDestroy(): void;\nprivate acquire;\nprivate release;\nprivate rejectWaiter;\nprivate cleanupWaiter;\nprivate removeWaiter;\nprivate getOrCreateQueue;\nprivate deleteQueue;\n}\nexport declare class SceneLockScope {\nprivate readonly scene;\nconstructor(scene: Scene);\nRunExclusive<T>(domain: CoroutineLockDomain, key: CoroutineLockKey, callback: () => MaybePromise<T>, options?: CoroutineLockOptions): Promise<T>;\n}"
+    },
+    {
+      "path": "core/runtime/EntityTransfer.d.ts",
+      "declaration": "export interface PreparedTransferOptions<TSnapshot, TTarget> {\nCapture(): TSnapshot;\nPrepare(snapshot: TSnapshot): TTarget;\nCommit(target: TTarget): void;\nRollback(target: TTarget): void;\n}\nexport declare function CommitPreparedTransfer<TSnapshot, TTarget>(options: PreparedTransferOptions<TSnapshot, TTarget>): TTarget;\nexport type TransferStage = \"prepared\" | \"committed\" | \"aborted\";\nexport interface TransferPrepareResult<TTarget> {\nreadonly stage: \"prepared\" | \"committed\";\nreadonly target: TTarget;\nreadonly reused: boolean;\n}\nexport interface TransferCommitResult<TTarget, TResult> {\nreadonly target: TTarget;\nreadonly result: TResult;\nreadonly newlyCommitted: boolean;\n}\nexport interface TransferStagingSnapshot {\nreadonly prepared: number;\nreadonly committed: number;\nreadonly aborted: number;\nreadonly total: number;\nreadonly capacity: number;\n}\nexport declare class TransferStagingRegistry<TTarget> {\nprivate readonly capacity;\nprivate readonly now;\nprivate readonly records;\nconstructor(capacity?: number, now?: () => number);\nPrepare(transferId: string, fingerprint: string, prepare: () => TTarget, rollback: (target: TTarget) => void): TransferPrepareResult<TTarget>;\nCommit<TResult>(transferId: string, commit: (target: TTarget) => TResult): TransferCommitResult<TTarget, TResult>;\nAbort(transferId: string): boolean;\nSweepExpired(preparedTtlMs: number, completedTtlMs: number): number;\nForget(transferId: string): boolean;\nStage(transferId: string): TransferStage | undefined;\nSnapshot(): TransferStagingSnapshot;\nDispose(): void;\nprivate ValidateIdentity;\nprivate Require;\n}"
+    },
+    {
+      "path": "core/runtime/Game.d.ts",
+      "declaration": "import { Singleton } from \"./Singleton\";\nimport { type GlobalIdConfig } from \"./IdSystem\";\nexport declare const DEFAULT_FIXED_UPDATE_MS = 50;\nexport interface GameUpdateConfig {\nfixedUpdateMs?: number;\nmaxCatchUpSteps?: number;\n}\nexport declare class Game extends Singleton {\nprivate fixedUpdateMs;\nprivate maxCatchUpSteps;\nprivate nextFixedUpdateAt;\nprivate skippedFixedUpdates;\nstatic get Instance(): Game;\nConfigure(config?: GameUpdateConfig): void;\nUpdate(frameTime: number, serverNow: number, pumpMessages: () => void): void;\nget FixedUpdateMs(): number;\nget SkippedFixedUpdates(): number;\nprivate updateFixedFrames;\n}\nexport declare function InitializeGameSingletons(config?: GameUpdateConfig, idConfig?: GlobalIdConfig): void;\nexport declare function monotonicNow(): number;"
+    },
+    {
+      "path": "core/runtime/IdSystem.d.ts",
+      "declaration": "import { Singleton } from \"./Singleton\";\nexport type GlobalId = bigint;\nexport type InstanceId = number;\nexport type TimerId = number & {\nreadonly __timerId: unique symbol;\n};\nexport interface GlobalIdConfig {\noriginServerId?: number;\nworkerId?: number;\n}\nexport declare class GlobalIdSystem extends Singleton {\nprivate originServerId;\nprivate workerId;\nprivate lastSecond;\nprivate sequence;\nprivate configured;\nprivate generated;\nConfigure(config?: GlobalIdConfig): void;\nstatic get Instance(): GlobalIdSystem;\nNext(): GlobalId;\nstatic OriginServerId(id: GlobalId): number;\n}\nexport declare class InstanceIdSystem extends Singleton {\nprivate nextInstanceId;\nprivate nextTimerId;\nstatic get Instance(): InstanceIdSystem;\nNext(): InstanceId;\nNextTimerId(): TimerId;\n}\nexport declare function requireGlobalId(id: bigint, name?: string): asserts id is GlobalId;"
+    },
+    {
+      "path": "core/runtime/MailBoxComponent.d.ts",
+      "declaration": "import { Component } from \"./entities\";\nimport type { MailboxType } from \"./types\";\nexport declare class MailBoxComponent extends Component<[\nMailboxType\n]> {\nprivate mailboxType;\nget MailboxType(): MailboxType;\nprotected Awake(mailboxType: MailboxType): void;\n}"
+    },
+    {
+      "path": "core/runtime/SceneEventSystem.d.ts",
+      "declaration": "import type { Scene } from \"./entities\";\nexport interface SyncEventDescriptor<TEvent> {\nreadonly name: string;\nreadonly mode: \"sync\";\nreadonly __event?: TEvent;\n}\nexport interface VetoEventDescriptor<TEvent, TReason extends number> {\nreadonly name: string;\nreadonly mode: \"veto\";\nreadonly allow: TReason;\nreadonly __event?: TEvent;\nreadonly __reason?: TReason;\n}\nexport interface EventPublishResult {\nreadonly handlerCount: number;\nreadonly failedCount: number;\n}\nexport interface SyncSceneEventHandler<TScene extends Scene, TEvent> {\nHandle(scene: TScene, event: TEvent): void;\n}\nexport interface VetoSceneEventHandler<TScene extends Scene, TEvent, TReason extends number> {\nHandle(scene: TScene, event: TEvent): TReason;\n}\nexport interface SceneEventHandlerOptions {\nreadonly id: string;\nreadonly order?: number;\n}\ntype SceneClass<TScene extends Scene> = new (...args: any[]) => TScene;\nexport declare function defineSyncEvent<TEvent>(name: string): SyncEventDescriptor<TEvent>;\nexport declare function defineVetoEvent<TEvent, TReason extends number>(name: string, allow: TReason): VetoEventDescriptor<TEvent, TReason>;\nexport declare function syncEventHandler<TScene extends Scene, TEvent>(sceneCtor: SceneClass<TScene>, descriptor: SyncEventDescriptor<TEvent>, options: SceneEventHandlerOptions): (handlerCtor: new () => SyncSceneEventHandler<TScene, TEvent>) => void;\nexport declare function vetoEventHandler<TScene extends Scene, TEvent, TReason extends number>(sceneCtor: SceneClass<TScene>, descriptor: VetoEventDescriptor<TEvent, TReason>, options: SceneEventHandlerOptions): (handlerCtor: new () => VetoSceneEventHandler<TScene, TEvent, TReason>) => void;\nexport declare class SceneEventScope {\nprivate readonly scene;\nconstructor(scene: Scene);\nPublish<TEvent>(descriptor: SyncEventDescriptor<TEvent>, event: TEvent): EventPublishResult;\nCheck<TEvent, TReason extends number>(descriptor: VetoEventDescriptor<TEvent, TReason>, event: TEvent): TReason;\nprivate requireAlive;\n}\nexport {};"
+    },
+    {
+      "path": "core/runtime/SceneTaskSystem.d.ts",
+      "declaration": "import { type MaybePromise } from \"../async\";\nimport type { Scene } from \"./entities\";\nexport type SpawnTaskId = number & {\nreadonly __spawnTaskId: unique symbol;\n};\nexport interface SceneTaskSignal {\nreadonly aborted: boolean;\nreadonly reason: unknown;\n}\nexport interface SpawnTaskContext {\nreadonly id: SpawnTaskId;\nreadonly signal: SceneTaskSignal;\n}\nexport type SpawnTaskBody = (context: SpawnTaskContext) => MaybePromise<void>;\nexport declare class SceneTaskScope {\nprivate readonly scene;\nprivate readonly tasks;\nprivate nextId;\nprivate maxInFlightCount;\nprivate watchdogTimer;\nprivate disposed;\nconstructor(scene: Scene);\nget InFlightCount(): number;\nget MaxInFlightCount(): number;\nSpawn(name: string, body: SpawnTaskBody): SpawnTaskId;\nCancel(id: SpawnTaskId, reason?: unknown): boolean;\nDispose(reason?: unknown): void;\nprivate allocateId;\nprivate scheduleWatchdog;\nprivate requireAlive;\n}"
+    },
+    {
+      "path": "core/runtime/Session.d.ts",
+      "declaration": "import { Actor, Component } from \"./entities\";\nimport type { ActorAwakeArgs, ActorCtor } from \"./types\";\nexport declare class Session<TAwakeArgs extends unknown[] = [\n]> extends Actor<TAwakeArgs> {\nget ConnectionId(): number;\n}\nexport declare class SessionComponent extends Component {\nprivate readonly sessions;\nCreate<T extends Session<any[]>>(connectionId: number, ctor: ActorCtor<T>, ...awakeArgs: ActorAwakeArgs<T>): T;\nGet<T extends Session<any[]> = Session<any[]>>(connectionId: number): T | undefined;\nGetAll<T extends Session<any[]> = Session<any[]>>(): readonly T[];\nRemove(connectionId: number): Session<any[]> | undefined;\n__detach(connectionId: number): void;\nget Count(): number;\nprotected OnDestroy(): void;\n}"
+    },
+    {
+      "path": "core/runtime/Singleton.d.ts",
+      "declaration": "export type SingletonCtor<T extends Singleton = Singleton> = new () => T;\nexport declare abstract class Singleton {\nprotected OnDestroy(): void;\n__destroy(): void;\n}\nexport declare class SingletonRegistry {\nprivate static readonly instances;\nstatic Add<T extends Singleton>(ctor: SingletonCtor<T>): T;\nstatic Get<T extends Singleton>(ctor: SingletonCtor<T>): T;\nstatic TryGet<T extends Singleton>(ctor: SingletonCtor<T>): T | undefined;\nstatic Remove<T extends Singleton>(ctor: SingletonCtor<T>): boolean;\nstatic DestroyAll(): void;\n}"
+    },
+    {
+      "path": "core/runtime/TimeSystem.d.ts",
+      "declaration": "import { Singleton } from \"./Singleton\";\nexport declare class TimeSystem extends Singleton {\nprivate initialized;\nprivate frameTime;\nprivate serverNow;\nprivate deltaTime;\nprivate fixedTime;\nprivate fixedDeltaTime;\nprivate frameCount;\nstatic get Instance(): TimeSystem;\nget FrameTime(): number;\nget ServerNow(): number;\nget ServerNowSeconds(): number;\nget DeltaTime(): number;\nget FixedTime(): number;\nget FixedDeltaTime(): number;\nget FrameCount(): number;\nServerDeadlineAfter(delayMs: number): number;\nRemainingServerTime(deadlineMs: number): number;\nIsServerDeadlineReached(deadlineMs: number): boolean;\n__update(frameTime: number, serverNow: number): void;\n__beginFixedUpdate(fixedTime: number, fixedDeltaTime: number): void;\n}"
+    },
+    {
+      "path": "core/runtime/TimerSystem.d.ts",
+      "declaration": "import type { MaybePromise } from \"../async\";\nimport { Singleton } from \"./Singleton\";\nimport { type TimerId } from \"./IdSystem\";\nexport type TimerCallback = () => MaybePromise<void>;\nexport type { TimerId } from \"./IdSystem\";\nexport type TimerCancelReason = \"manual\" | \"replaced\" | \"owner-disposed\" | \"process-stopped\" | (string & {});\nexport interface TimerCancelledContext {\nreadonly timerId: TimerId;\nreadonly reason: TimerCancelReason;\nreadonly cancelledAt: number;\n}\nexport interface TimerOptions {\nreadonly onCancelled?: (context: TimerCancelledContext) => MaybePromise<void>;\n}\nexport declare class TimerSystem extends Singleton {\nprivate readonly timers;\nprivate readonly heap;\nstatic get Instance(): TimerSystem;\nstatic ServerTime(): number;\nNewOnceTimer(delayMs: number, callback: TimerCallback, options?: TimerOptions): TimerId;\nNewRepeatedTimer(intervalMs: number, callback: TimerCallback, options?: TimerOptions): TimerId;\nCancel(timerId: TimerId, reason?: TimerCancelReason, notify?: boolean): boolean;\nWaitAsync(delayMs: number): Promise<void>;\nget Count(): number;\n__update(now: number): void;\nprotected OnDestroy(): void;\nprivate add;\nprivate invoke;\nprivate invokeCancellation;\nprivate push;\nprivate pop;\n}"
+    },
+    {
+      "path": "core/runtime/Unit.d.ts",
+      "declaration": "import type { MaybePromise } from \"../async\";\nimport type { Logger } from \"../logging/Logger\";\nimport type { ActorContext } from \"./contexts\";\nimport { ACTOR_RUNTIME_ENTITY, Component, type ActorRuntimeEntity, OwnedEntity, type OwnedTimerOptions } from \"./entities\";\nimport type { TimerCancelledContext, TimerCancelReason, TimerId } from \"./TimerSystem\";\nexport type UnitCtor<T extends Unit<any[]> = Unit<any[]>> = new (...args: any[]) => T;\nexport type UnitAwakeArgs<T extends Unit<any[]>> = T extends Unit<infer TAwakeArgs> ? TAwakeArgs : never;\nexport declare abstract class Unit<TAwakeArgs extends unknown[] = [\n]> extends OwnedEntity<TAwakeArgs> {\nget UnitId(): number;\n}\nexport declare abstract class ActorUnit<TAwakeArgs extends unknown[] = [\n]> extends Unit<TAwakeArgs> implements ActorRuntimeEntity<TAwakeArgs> {\nreadonly [ACTOR_RUNTIME_ENTITY]: true;\nprotected readonly ctx: ActorContext;\nconstructor(ctx: ActorContext);\nget logger(): Logger;\nNewOnceTimer<TArgs = undefined>(delayMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\n__newOnceTimer(delayMs: number, callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>, onCancelled?: (actor: ActorRuntimeEntity<any[]>, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\nNewRepeatedTimer<TArgs = undefined>(intervalMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\n__newRepeatedTimer(intervalMs: number, callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>, onCancelled?: (actor: ActorRuntimeEntity<any[]>, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\nCancelTimer(timerId: TimerId, reason?: TimerCancelReason): boolean;\n__cancelTimer(timerId: TimerId, reason: TimerCancelReason, notify: boolean): boolean;\n}\nexport declare class UnitComponent extends Component {\nprivate readonly units;\nCreate<T extends Unit<any[]>>(unitId: number, ctor: UnitCtor<T>, ...awakeArgs: UnitAwakeArgs<T>): T;\nAdd<T extends Unit<any[]>>(unit: T): T;\nGet<T extends Unit<any[]> = Unit<any[]>>(unitId: number): T | undefined;\nGetAll<T extends Unit<any[]> = Unit<any[]>>(ctor?: abstract new (...args: any[]) => T): readonly T[];\nRemove(unitId: number): Unit<any[]> | undefined;\n__detach(unitId: number): void;\nget Count(): number;\nprotected OnDestroy(): void;\n}"
+    },
+    {
+      "path": "core/runtime/UpdateSystem.d.ts",
+      "declaration": "import { Singleton } from \"./Singleton\";\nexport interface IUpdate {\nUpdate(): void;\n}\nexport interface IUpdate10Hz {\nUpdate10Hz(): void;\n}\nexport interface IUpdate5Hz {\nUpdate5Hz(): void;\n}\nexport interface IUpdate1Hz {\nUpdate1Hz(): void;\n}\nexport interface ILateUpdate {\nLateUpdate(): void;\n}\nexport interface IFrameFlush {\nFrameFlush(): void;\n}\ntype UpdateTarget = IUpdate | IUpdate10Hz | IUpdate5Hz | IUpdate1Hz | ILateUpdate | IFrameFlush;\nexport declare class UpdateSystem extends Singleton {\nprivate readonly targets;\nprivate readonly update10Targets;\nprivate readonly update5Targets;\nprivate readonly update1Targets;\nprivate readonly updateTargets;\nprivate readonly lateTargets;\nprivate readonly frameFlushTargets;\nprivate readonly pendingAdds;\nprivate updating;\nprivate updateCount;\nprivate failedCount;\nstatic get Instance(): UpdateSystem;\nstatic TryRegister(value: object): void;\nstatic TryUnregister(value: object): void;\nAdd(target: UpdateTarget): void;\nRemove(target: UpdateTarget): boolean;\nget Count(): number;\nget UpdateCount(): number;\nget FailedCount(): number;\n__update(): void;\nprivate registerTarget;\nprivate runPhase;\nprotected OnDestroy(): void;\n}\nexport {};"
+    },
+    {
+      "path": "core/runtime/contexts.d.ts",
+      "declaration": "import type { ProcessHost } from \"./host\";\nimport type { ActorCtor, ActorAwakeArgs, ActorId, ActorRef, SceneRef } from \"./types\";\nimport type { ActorRuntimeEntity } from \"./entities\";\nimport type { ChildEntity, ChildEntityAwakeArgs, ChildEntityCtor, Component, OwnedEntity, OwnedEntityAwakeArgs, OwnedEntityCtor } from \"./entities\";\nimport type { MaybePromise } from \"../async\";\nimport type { TimerId } from \"./TimerSystem\";\nimport type { TimerCancelledContext, TimerCancelReason } from \"./TimerSystem\";\nimport { Logger } from \"../logging/Logger\";\nexport declare class SceneContext {\nprivate readonly host;\nreadonly self: SceneRef;\nreadonly logger: Logger;\nconstructor(host: ProcessHost, self: SceneRef);\nspawnActor<T extends ActorRuntimeEntity<any[]>>(actorId: ActorId, ctor: ActorCtor<T>, ...awakeArgs: ActorAwakeArgs<T>): T;\ndespawnActor(actorId: ActorId): boolean;\nspawnChild<T extends ChildEntity<any[]>>(parent: Component<any[]>, id: import(\"./types\").EntityId, ctor: ChildEntityCtor<T>, ...awakeArgs: ChildEntityAwakeArgs<T>): T;\ndespawnChild(parent: Component<any[]>, child: ChildEntity<any[]>): boolean;\nspawnOwned<T extends OwnedEntity<any[]>>(parent: Component<any[]>, id: import(\"./types\").EntityId, ctor: OwnedEntityCtor<T>, ...awakeArgs: OwnedEntityAwakeArgs<T>): T;\ndespawnOwned(parent: Component<any[]>, entity: OwnedEntity<any[]>): boolean;\nDomainScene<T extends import(\"./entities\").Scene = import(\"./entities\").Scene>(): T;\nsleep(ms: number): Promise<void>;\n}\nexport declare class ActorContext {\nprivate readonly host;\nreadonly self: ActorRef;\nreadonly logger: Logger;\nconstructor(host: ProcessHost, self: ActorRef);\nDomainScene<T extends import(\"./entities\").Scene = import(\"./entities\").Scene>(): T;\nsleep(ms: number): Promise<void>;\nnewOnceTimer(delayMs: number, callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>, onCancelled?: (actor: ActorRuntimeEntity<any[]>, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\nnewRepeatedTimer(intervalMs: number, callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>, onCancelled?: (actor: ActorRuntimeEntity<any[]>, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\ncancelTimer(timerId: TimerId, reason: TimerCancelReason, notify: boolean): boolean;\n}\nexport declare function hostSleep(ms: number): Promise<void>;"
+    },
+    {
+      "path": "core/runtime/entities.d.ts",
+      "declaration": "import type { ActorContext, SceneContext } from \"./contexts\";\nimport type { MaybePromise } from \"../async\";\nimport type { Logger } from \"../logging/Logger\";\nimport { type TimerCancelledContext, type TimerCancelReason, type TimerId } from \"./TimerSystem\";\nimport type { ActorAwakeArgs, ActorCtor, ActorId, EntityId, InstanceId } from \"./types\";\nimport { SceneLockScope } from \"./CoroutineLockSystem\";\nimport { SceneEventScope } from \"./SceneEventSystem\";\nimport { SceneTaskScope } from \"./SceneTaskSystem\";\nexport interface ITransfer<TState = unknown> {\nCaptureTransfer(): TState;\nRestoreTransfer(state: TState): void;\n}\nexport interface IDeserialize {\nDeserialize(): void;\n}\nexport interface OwnedTimerOptions {\nreadonly onCancelled?: string;\n}\nexport interface EntityTransferSnapshot {\nreadonly components: ReadonlyMap<ComponentCtor, unknown>;\n}\nexport declare abstract class Component<TAwakeArgs extends unknown[] = [\n]> {\nprivate awoken;\nprivate deserialized;\nprivate disposed;\nprivate parent;\nprivate readonly timers;\nprivate readonly children;\nget IsDisposed(): boolean;\nget Parent(): Entity;\nGetParent<T extends Entity>(): T;\nDomainScene<T extends Scene = Scene>(): T;\nprotected Awake(..._args: TAwakeArgs): void;\nprotected OnDestroy(): void;\nNewOnceTimer<TArgs = undefined>(delayMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\nNewRepeatedTimer<TArgs = undefined>(intervalMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\nCancelTimer(timerId: TimerId, reason?: TimerCancelReason): boolean;\nAddChild<T extends ChildEntity<any[]>>(ctor: ChildEntityCtor<T>, id: EntityId, ...args: ChildEntityAwakeArgs<T>): T;\nGetChild<T extends ChildEntity<any[]>>(ctor: ChildEntityCtor<T>, id: EntityId): T;\nTryGetChild<T extends ChildEntity<any[]>>(ctor: ChildEntityCtor<T>, id: EntityId): T | undefined;\nGetChildren<T extends ChildEntity<any[]> = ChildEntity<any[]>>(ctor?: ChildEntityCtor<T>): readonly T[];\nRemoveChild<T extends ChildEntity<any[]>>(ctor: ChildEntityCtor<T>, id: EntityId): T | undefined;\nget ChildCount(): number;\n__attach(parent: Entity): void;\n__awake(...args: TAwakeArgs): void;\n__deserialize(): void;\n__dispose(): void;\n}\nexport declare function invokeTimerMethod<TArgs>(owner: object, methodName: string, args: TArgs): MaybePromise<void>;\nexport declare function invokeTimerCancelledMethod<TArgs>(owner: object, methodName: string, args: TArgs, context: TimerCancelledContext): MaybePromise<void>;\nexport type ComponentCtor<TComponent extends Component<any[]> = Component<any[]>> = new () => TComponent;\ntype ComponentAwakeArgs<TComponent> = TComponent extends Component<infer TAwakeArgs> ? TAwakeArgs : never;\nexport declare abstract class Entity {\nprivate readonly components;\nprivate disposed;\nprivate entityId;\nprivate entityInstanceId;\nprivate parent;\nprivate domainScene;\nget IsDisposed(): boolean;\nget Id(): EntityId;\nget InstanceId(): InstanceId;\nget Parent(): Entity | Component<any[]> | undefined;\nDomainScene<T extends Scene = Scene>(): T;\nAddComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>, ...args: ComponentAwakeArgs<T>): T;\nGetComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>): T;\nTryGetComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>): T | undefined;\nHasComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>): boolean;\nRemoveComponent<T extends Component<any[]>>(ctor: ComponentCtor<T>): boolean;\nCaptureTransfer(): EntityTransferSnapshot;\nRestoreTransfer(snapshot: EntityTransferSnapshot): void;\nCompleteDeserialize(): void;\nprotected OnDestroy(): void;\n__attach(id: EntityId, instanceId: InstanceId, parent: Entity | Component<any[]> | undefined, domainScene: Scene): void;\n__setParent(parent: Entity | Component<any[]>): void;\n__dispose(): void;\nprivate requireAlive;\n}\nexport declare const ACTOR_RUNTIME_ENTITY: unique symbol;\nexport interface ActorRuntimeEntity<TAwakeArgs extends unknown[] = [\n]> extends Entity {\nreadonly [ACTOR_RUNTIME_ENTITY]: true;\nreadonly logger: Logger;\n__awake(...args: TAwakeArgs): void;\n__newOnceTimer(delayMs: number, callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>, onCancelled?: (actor: ActorRuntimeEntity<any[]>, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\n__newRepeatedTimer(intervalMs: number, callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>, onCancelled?: (actor: ActorRuntimeEntity<any[]>, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\nCancelTimer(timerId: TimerId, reason?: TimerCancelReason): boolean;\n__cancelTimer(timerId: TimerId, reason: TimerCancelReason, notify: boolean): boolean;\n}\nexport declare function isActorRuntimeEntity(value: unknown): value is ActorRuntimeEntity<any[]>;\nexport type ChildEntityCtor<TEntity extends ChildEntity<any[]> = ChildEntity<any[]>> = new () => TEntity;\nexport type ChildEntityAwakeArgs<TEntity> = TEntity extends ChildEntity<infer TAwakeArgs> ? TAwakeArgs : never;\nexport type OwnedEntityCtor<TEntity extends OwnedEntity<any[]> = OwnedEntity<any[]>> = new () => TEntity;\nexport type OwnedEntityAwakeArgs<TEntity> = TEntity extends OwnedEntity<infer TAwakeArgs> ? TAwakeArgs : never;\nexport declare abstract class OwnedEntity<TAwakeArgs extends unknown[] = [\n]> extends Entity {\nprivate awoken;\nprivate readonly timers;\nprotected Awake(..._args: TAwakeArgs): void;\nNewOnceTimer<TArgs = undefined>(delayMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\nNewRepeatedTimer<TArgs = undefined>(intervalMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\nCancelTimer(timerId: TimerId, reason?: TimerCancelReason): boolean;\n__awake(...args: TAwakeArgs): void;\n__dispose(): void;\nprivate OwnerActor;\n}\nexport declare abstract class ChildEntity<TAwakeArgs extends unknown[] = [\n]> extends OwnedEntity<TAwakeArgs> {\nprivate readonly __childEntityBrand;\n}\nexport declare abstract class Scene extends Entity {\nprotected readonly sceneContext: SceneContext;\nprivate lockScope;\nprivate eventScope;\nprivate taskScope;\nconstructor(ctx: SceneContext);\nget logger(): Logger;\nget Locks(): SceneLockScope;\nget Events(): SceneEventScope;\nget Tasks(): SceneTaskScope;\n__taskInFlightCount(): number;\nSpawnActor<T extends ActorRuntimeEntity<any[]>>(actorId: ActorId, ctor: ActorCtor<T>, ...awakeArgs: ActorAwakeArgs<T>): T;\nDespawnActor(actorId: ActorId): boolean;\n__spawnChild<T extends ChildEntity<any[]>>(parent: Component<any[]>, id: EntityId, ctor: ChildEntityCtor<T>, ...awakeArgs: ChildEntityAwakeArgs<T>): T;\n__spawnOwned<T extends OwnedEntity<any[]>>(parent: Component<any[]>, id: EntityId, ctor: OwnedEntityCtor<T>, ...awakeArgs: OwnedEntityAwakeArgs<T>): T;\n__despawnChild(parent: Component<any[]>, child: ChildEntity<any[]>): boolean;\n__despawnOwned(parent: Component<any[]>, entity: OwnedEntity<any[]>): boolean;\n__dispose(): void;\n}\nexport declare abstract class Actor<TAwakeArgs extends unknown[] = [\n]> extends Entity implements ActorRuntimeEntity<TAwakeArgs> {\nreadonly [ACTOR_RUNTIME_ENTITY]: true;\nprivate awoken;\nprotected readonly ctx: ActorContext;\nconstructor(ctx: ActorContext);\nget logger(): Logger;\nprotected Awake(..._args: TAwakeArgs): void;\nNewOnceTimer<TArgs = undefined>(delayMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\n__newOnceTimer(delayMs: number, callback: (actor: this) => MaybePromise<void>, onCancelled?: (actor: this, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\nNewRepeatedTimer<TArgs = undefined>(intervalMs: number, methodName: string, args?: TArgs, options?: OwnedTimerOptions): TimerId;\n__newRepeatedTimer(intervalMs: number, callback: (actor: this) => MaybePromise<void>, onCancelled?: (actor: this, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\nCancelTimer(timerId: TimerId, reason?: TimerCancelReason): boolean;\n__cancelTimer(timerId: TimerId, reason: TimerCancelReason, notify: boolean): boolean;\n__awake(...args: TAwakeArgs): void;\n}\nexport {};"
+    },
+    {
+      "path": "core/runtime/host.d.ts",
+      "declaration": "import { type MaybePromise } from \"../async\";\nimport { ChildEntity } from \"./entities\";\nimport type { ActorRuntimeEntity, Component, OwnedEntity, Scene } from \"./entities\";\nimport type { ChildEntityAwakeArgs, ChildEntityCtor, OwnedEntityAwakeArgs, OwnedEntityCtor } from \"./entities\";\nimport { EntityRoot } from \"./root\";\nimport { type TimerCancelledContext, type TimerCancelReason, type TimerId } from \"./TimerSystem\";\nimport type { ActorCtor, ActorAwakeArgs, ActorId, EntityId, MailboxType, SceneCtor, SceneId, SceneOptions, InstanceId } from \"./types\";\nexport declare class ProcessHost {\nreadonly processId: string;\nreadonly Root: EntityRoot;\nprivate readonly scenes;\nprivate readonly actorsByInstanceId;\nconstructor(processId?: string);\nget SceneTaskInFlightCount(): number;\nDispose(): void;\nspawnScene<T extends Scene>(sceneId: SceneId, ctor: SceneCtor<T>, overrideOptions?: Partial<SceneOptions>): T;\nattachScene<T extends Scene>(sceneId: SceneId, sceneType: string, instance: T, mailbox?: MailboxType): T;\nspawnActor<T extends ActorRuntimeEntity<any[]>>(sceneId: SceneId, actorId: ActorId, ctor: ActorCtor<T>, ...awakeArgs: ActorAwakeArgs<T>): T;\nspawnChild<T extends ChildEntity<any[]>>(sceneId: SceneId, parent: Component<any[]>, id: EntityId, ctor: ChildEntityCtor<T>, ...awakeArgs: ChildEntityAwakeArgs<T>): T;\nspawnOwned<T extends OwnedEntity<any[]>>(sceneId: SceneId, parent: Component<any[]>, id: EntityId, ctor: OwnedEntityCtor<T>, ...awakeArgs: OwnedEntityAwakeArgs<T>): T;\ndespawnChild(sceneId: SceneId, parent: Component<any[]>, child: ChildEntity<any[]>): boolean;\ndespawnOwned(sceneId: SceneId, parent: Component<any[]>, entity: OwnedEntity<any[]>): boolean;\ndespawnScene(sceneId: SceneId): boolean;\nsceneById<T extends Scene = Scene>(sceneId: SceneId): T;\ndespawnActor(sceneId: SceneId, actorId: ActorId): boolean;\nnewActorOnceTimer(instanceId: InstanceId, delayMs: number, callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>, onCancelled?: (actor: ActorRuntimeEntity<any[]>, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\nnewActorRepeatedTimer(instanceId: InstanceId, intervalMs: number, callback: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>, onCancelled?: (actor: ActorRuntimeEntity<any[]>, context: TimerCancelledContext) => MaybePromise<void>): TimerId;\ncancelActorTimer(instanceId: InstanceId, timerId: TimerId, reason: TimerCancelReason, notify: boolean): boolean;\nrunActorMailbox<T>(instanceId: InstanceId, run: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<T>): MaybePromise<T>;\nprivate requireActorRuntime;\nprivate executeActorCall;\nprivate requireCurrentActor;\nprivate finishActorCall;\nprivate drainOrdered;\nprivate disposeFailedEntity;\nprivate getLocalScene;\nprivate allocateInstanceId;\n}"
+    },
+    {
+      "path": "core/runtime/metadata.d.ts",
+      "declaration": "import type { ActorOptions, SceneOptions } from \"./types\";\nexport interface LifecycleOptions {\nreadonly awake?: boolean;\nreadonly destroy?: boolean;\nreadonly deserialize?: boolean;\n}\nexport declare function scene(options: SceneOptions): ClassDecorator;\nexport declare function actor(options?: ActorOptions): ClassDecorator;\nexport declare function component(): ClassDecorator;\nexport declare function lifecycle(options: LifecycleOptions): ClassDecorator;\nexport declare function transferable(): ClassDecorator;\nexport declare function getSceneOptions(ctor: Function): SceneOptions | undefined;\nexport declare function getActorOptions(ctor: Function): ActorOptions | undefined;\nexport declare function isTransferableComponent(ctor: Function): boolean;\nexport declare function getRequiredLifecycleMethods(ctor: Function): readonly string[];\nexport declare function getRequiredTransferMethods(ctor: Function): readonly string[];"
+    },
+    {
+      "path": "core/runtime/root.d.ts",
+      "declaration": "import type { Entity } from \"./entities\";\nimport type { InstanceId } from \"./types\";\nexport declare class EntityRoot {\nprivate readonly allEntities;\nAdd(entity: Entity): void;\nGet<T extends Entity = Entity>(instanceId: InstanceId): T | undefined;\nRemove(instanceId: InstanceId): boolean;\nHas(instanceId: InstanceId): boolean;\nget Count(): number;\n}"
+    },
+    {
+      "path": "core/runtime/types.d.ts",
+      "declaration": "import type { ActorRuntimeEntity, Scene } from \"./entities\";\nimport type { ActorContext, SceneContext } from \"./contexts\";\nimport type { GlobalId, InstanceId } from \"./IdSystem\";\nexport type SceneId = string;\nexport type SceneType = string;\nexport type EntityId = string | number | bigint;\nexport type PersistentEntityId = GlobalId;\nexport type { GlobalId, InstanceId } from \"./IdSystem\";\nexport type ActorId = EntityId;\nexport type MailboxType = \"ordered\" | \"unordered\";\nexport interface SceneRef {\nprocessId: string;\nsceneId: SceneId;\nsceneType: SceneType;\n}\nexport interface ActorRef extends SceneRef {\nactorId: ActorId;\ninstanceId: InstanceId;\n}\nexport interface SceneOptions {\nsceneType: SceneType;\nmailbox?: MailboxType;\n}\nexport interface ActorOptions {\nmailbox?: MailboxType;\n}\nexport type SceneCtor<T extends Scene = Scene> = new (ctx: SceneContext) => T;\nexport type ActorCtor<T extends ActorRuntimeEntity<any[]> = ActorRuntimeEntity<any[]>> = new (ctx: ActorContext) => T;\nexport type ActorAwakeArgs<T extends ActorRuntimeEntity<any[]>> = T extends ActorRuntimeEntity<infer TAwakeArgs> ? TAwakeArgs : never;"
+    }
   ]
 }

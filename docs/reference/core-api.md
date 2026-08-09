@@ -13,22 +13,21 @@
 
 ## Singleton 与时间系统
 
-- `SingletonRegistry.Add/Get/TryGet/Remove/DestroyAll`：进程级单例容器；同一类型只允许一个实例。
 - Core 单例通过强类型静态属性访问，例如 `TimeSystem.Instance`、`TimerSystem.Instance`、`Game.Instance`。
 - `TimeSystem.FrameTime/DeltaTime`：V8 单调时钟及本次 Runtime Pump 间隔，适合耗时和游戏定时。
 - `TimeSystem.ServerNow`：Unix 毫秒墙上时间，适合日期、活动开放时间和日志。
 - `TimeSystem.ServerDeadlineAfter/RemainingServerTime/IsServerDeadlineReached`：处理需要持久化的Unix截止时间。
 - `TimeSystem.FixedTime/FixedDeltaTime/FrameCount`：当前固定游戏帧时间、固定步长和累计帧数。
 
-业务单例可以继承 `Singleton`，在 Process 启动阶段注册。不要在模块加载阶段偷偷创建单例，也不要用单例替代应归属 Scene、Actor 或 Component 的业务状态。
+`Singleton/SingletonRegistry`是Core管理`TimeSystem/Game`等进程基础设施的内部机制，不向普通业务开放注册和销毁入口。业务状态应归属Scene、Actor或Component；未来若出现确实跨全部EntryScene共享的业务状态，再单独设计不暴露宿主销毁权的窄API。
 
 ## TimerSystem 与 IUpdate
 
 - `TimerSystem.NewOnceTimer(delayMs, callback)`：创建一次性游戏定时器。
 - `TimerSystem.NewRepeatedTimer(intervalMs, callback)`：创建重复游戏定时器；Process 卡顿时只触发一次并跳过过期周期，不突发补齐。
 - `TimerSystem.Cancel(timerId, reason)`：立即取消定时器并至多通知一次取消回调。
-- `TimerSystem.Remove(timerId)`：兼容旧版的静默清理入口；新业务不再使用。
 - `TimerSystem.WaitAsync(delayMs)`：等待游戏时钟推进；它不是 Rust/Tokio IO 超时。
+- `TimerSystem.ServerTime()`：返回当前Unix毫秒；框架不提供`TimerComponent`同类型别名。
 - Component 实现同步 `Update(): void`、`LateUpdate(): void` 或 `FrameFlush(): void` 后，会在 `AddComponent` 成功时自动注册，在 `RemoveComponent`/销毁时自动注销。每个固定逻辑帧严格按 `Update -> LateUpdate -> FrameFlush` 执行，三个阶段都禁止返回 Promise。
 - `Component.NewOnceTimer(delayMs, methodName, args, { onCancelled })` / `NewRepeatedTimer(...)`：参数原样传回；业务主动取消时以`(args, context)`调用取消方法。定时器随组件销毁静默清理，触发时按方法名解析当前Hotfix prototype。
 - `Actor.NewOnceTimer(delayMs, methodName)` / `NewRepeatedTimer(intervalMs, methodName)`：触发后先进入Actor自己的mailbox并解析当前方法；ordered Actor忙碌时排队，Actor销毁时自动取消。
@@ -59,13 +58,13 @@
 
 - `self: SceneConfig`：当前入口 Scene 地址。
 - `scenes: SceneMessageHelper`：Scene 发现与 call/send。
-- `processHost: ProcessHost`：创建动态 Scene、Actor、Component。
+- `SpawnChildScene/DespawnChildScene`：只管理当前EntryScene命名空间下的动态子Scene；销毁前仍由业务完成AOI、玩家和Unit清理。
+- `RunLocalActorMailbox(actor, body)`：让已经解析出的本地ActorUnit操作进入其真实mailbox，实例被替换时明确失败；不能代替Location或跨进程路由。
 - `mailbox`：`ordered` 或 `unordered`，默认 ordered。
 - `sendClient(connectionId, descriptor, message)`：向客户端连接推送消息。
 - `onClientReceive(connectionId)`：客户端帧进入Scene mailbox时的轻量连接活动钩子；禁止I/O和业务分发。
 - `onClientSendQueued(connectionIds)`：出站帧进入宿主队列时的观测钩子；不代表写入成功，也不能用于存活续期。
 - `consumeClientControlFrame(connectionId, frame)`：在协议Handler和Session mailbox之前同步消费连接控制帧；只允许心跳等O(1)连接状态更新，返回`true`会跳过Registry，禁止承载业务消息或异步逻辑。
-- `childSceneId(localId)`：生成入口 Scene 范围内唯一的子 Scene ID。
 - EntryScene 也继承 `Entity`，可使用 `AddComponent/GetComponent/RemoveComponent` 组织业务能力。
 
 ## 装饰器
@@ -93,14 +92,7 @@
 - `send/sendOne`：单向消息。
 - `callActor/sendActor`：已知目标 EntryScene 与 InstanceId 时直接发送 Actor 消息。
 
-## ProcessHost
-
-- `spawnScene/despawnScene`。
-- `spawnActor(sceneId, actorId, Type, ...awakeArgs)/despawnActor`；Actor 参数由其 `Actor<[...args]>` 类型约束，并由框架同步调用一次 `Awake`。
-- `Root.Get(instanceId)`：O(1) 获取当前生命周期 Entity。
-- `runActorMailbox(instanceId, callback)`：Session/ActorUnit Handler与Actor定时器共用的类型化mailbox底层入口。
-
-普通业务不直接调用`ProcessHost`。内部Scene通讯使用`SceneMessageHelper`和生成descriptor；Session/ActorUnit消息由类型化Handler自动进入目标mailbox。普通Unit由所属Component直接调用，不存在消息旁路。Runtime不再提供`@handler("字符串")`、`ProcessHost.call/send`。
+`ProcessHost`、`Singleton/SingletonRegistry`与`InstanceIdSystem`属于Core Internal，不再从稳定入口导出。内部Scene通讯使用`SceneMessageHelper`和生成descriptor；Session/ActorUnit消息由类型化Handler自动进入目标mailbox。普通Unit由所属Component直接调用，不存在消息旁路。Runtime不再提供`@handler("字符串")`、`ProcessHost.call/send`。
 
 ## Unit 与 UnitComponent
 

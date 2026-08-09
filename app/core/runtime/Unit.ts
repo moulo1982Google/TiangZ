@@ -154,10 +154,6 @@ export abstract class ActorUnit<
     return this.ctx.cancelTimer(timerId, reason, notify);
   }
 
-  /** 旧名称保留一个版本；语义等同业务主动取消。 / Retained for one compatibility cycle and equivalent to business cancellation. */
-  override RemoveTimer(timerId: TimerId): boolean {
-    return this.CancelTimer(timerId);
-  }
 }
 
 @component()

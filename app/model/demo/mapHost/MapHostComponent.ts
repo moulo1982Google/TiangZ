@@ -251,15 +251,15 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     for (;;) {
       player = this.players.Get(request.account);
       if (player?.MapInstanceId === request.mapInstanceId) {
+        const reconnectingPlayer = player;
         try {
-          snapshot = await this.owner.processHost.runActorMailbox(
-            player.InstanceId,
-            (actor) => {
-              if (actor !== player) throw new Error("player instance changed");
-              if (!player.MatchesGate({ gateName: request.gateName })) {
+          snapshot = await this.owner.RunLocalActorMailbox(
+            reconnectingPlayer,
+            () => {
+              if (!reconnectingPlayer.MatchesGate({ gateName: request.gateName })) {
                 throw new Error(`player Gate mismatch: ${request.account}`);
               }
-              return player.SecondEnterMap();
+              return reconnectingPlayer.SecondEnterMap();
             },
           );
           break;
@@ -1019,8 +1019,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       );
     }
 
-    const sceneId = this.owner.childSceneId(`map:${definition.mapInstanceId}`);
-    const scene = this.owner.processHost.spawnScene(sceneId, MapScene);
+    const localSceneId = `map:${definition.mapInstanceId}`;
+    const scene = this.owner.SpawnChildScene(localSceneId, MapScene);
     try {
       scene.AddComponent(UnitComponent);
       const aoi = scene.AddComponent(MapAoiComponent, definition);
@@ -1040,7 +1040,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       this.maps.set(definition.mapInstanceId, map);
       return map;
     } catch (error) {
-      this.owner.processHost.despawnScene(sceneId);
+      this.owner.DespawnChildScene(localSceneId);
       throw error;
     }
   }
@@ -1068,7 +1068,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     // A dynamic map may still contain monsters; clear it through the Map/AOI lifecycle first.
     map.PrepareForDespawn("map-disposed");
     const assignment = map.IsDynamic ? this.dynamicAssignments.get(mapInstanceId) : undefined;
-    const disposed = this.owner.processHost.despawnScene(this.owner.childSceneId(`map:${mapInstanceId}`));
+    const disposed = this.owner.DespawnChildScene(`map:${mapInstanceId}`);
     if (!disposed) return false;
     this.maps.delete(mapInstanceId);
     if (assignment) {

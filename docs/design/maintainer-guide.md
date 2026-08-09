@@ -150,7 +150,7 @@ Scene metrics 只在 5 秒日志采样点创建并 JSON 序列化；普通 updat
 
 `tools/build_runtime_bundles.mjs`把两层构建为`dist/model.js`与`dist/hotfix.js`，并写入各自manifest。Model ESM由Rust正式V8加载一次，并以只读全局桥暴露`app/model/public.ts`；Hotfix构建为IIFE脚本，经固定脚本名重复求值，不进入ESM ModuleMap。`--hotfix-only`必须复用现有Model manifest，并在Model源码指纹变化时失败。不得恢复执行`dist/main.js`、为每代脚本制造新URL，或把两层重新合并。
 
-Model启动后没有重载入口。Hotfix安装由Rust先验证实际SHA-256和四类兼容指纹，再在隔离V8预检，最后通过`HotfixSystem`暂存和提交。生产在线触发完成前，维护脚本不得通过覆盖文件并重复执行模块来模拟热更。
+Model启动后没有重载入口。Hotfix安装由Rust先验证实际SHA-256和四类兼容指纹，再在隔离V8预检，最后通过`HotfixSystem`暂存和提交。Watcher已经提供单机不可变候选的`reload`入口，但同服跨机器Prepare/Commit协调器尚未完成；维护脚本不得通过覆盖文件并重复执行模块来模拟热更。
 
 ## Inspector
 

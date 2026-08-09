@@ -9,6 +9,9 @@
 | `process` | `ProcessConfig` | 当前 OS 进程/V8 |
 | `scenes` | `SceneConfig[]` | 当前进程实际启动的入口 Scene，至少一个 |
 | `knownScenes` | `SceneConfig[]` | 路由目录；省略或为空时默认等于 `scenes` |
+| `knownSceneFiles` | `string[]` | 相对当前配置文件的共享稳定路由目录；Rust启动时合并并校验冲突 |
+
+Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置出现未知字段时会拒绝启动，因此`hotfixReloadTimoutMs`一类拼写错误不会静默退回默认值。TS业务看到的`ProcessConfig`只是宿主投影；完整JSON契约以本页、配置Schema和`src/config.rs`为准。
 
 ## ProcessConfig
 
@@ -19,11 +22,10 @@
 | `logging` | object? | 日志级别、格式和输出目标；默认 INFO 文本控制台 |
 | `network` | object? | 操作系统 I/O Backend；默认 `epoll`，Linux 可实验性选择 `io-uring` |
 | `game` | object? | 固定 Game.Update 与掉帧补偿策略，默认 20Hz |
-| `nativeData` | object? | Demo 应用扩展：Rust 权威实体数据的诊断配置 |
 | `scheduling` | object? | Process 事件批处理与空闲 Tick 策略，默认 `adaptive` |
 | `lifecycle` | object? | 进程优雅停机配置；默认最多等待 10000ms |
 | `persistence` | object? | Process持久化连接；当前可选配置独立DBProxy |
-| `observability` | object? | 延迟采样等运行时观测配置 |
+| `observability` | object? | 延迟采样、健康检查和Native Store诊断配置 |
 | `debug` | object? | 该 V8 的 Inspector 配置 |
 
 `debug` 支持 `inspectorIp`、`inspectorPort`、`breakOnStart`、`allowRemote`。
@@ -121,19 +123,23 @@
 
 `lifecycle.hotfixReloadTimeoutMs`控制Reload等待Scene入口和异步Handler排空的最长时间，默认`30000`，范围同样为`100`到`120000`。超时只拒绝候选并保留旧generation，不会关闭Process或断开客户端。
 
-`nativeData` 只控制 Rust 权威实体数据的诊断输出：
+`observability.nativeData` 只控制 Rust 权威实体数据的诊断输出：
 
 ```json
 {
-  "debugScalarAccess": true,
-  "scalarAccessWarnThreshold": 10000
+  "observability": {
+    "nativeData": {
+      "debugScalarAccess": true,
+      "scalarAccessWarnThreshold": 10000
+    }
+  }
 }
 ```
 
 - `debugScalarAccess`：采样窗口内标量 Get/Set 达到阈值时输出警告。
 - `scalarAccessWarnThreshold`：标量访问日志提醒阈值，必须大于 0；仅在开启 `debugScalarAccess` 时观测，不会限流或阻止 fast op。
 
-Rust 的通用 `ProcessConfig` 不解释该字段，只会通过扩展字段原样保留并传给 TS；字段含义和校验由 Demo 的 `NativeData` 负责。Unit 始终存放在 Rust Arena，Handler、Actor mailbox、Audience 决策和业务 Component 组合仍留在 TS。
+Rust Core使用强类型`NativeDataObservabilityConfig`负责字段默认值、未知字段拒绝和阈值校验，再把只读配置投影交给TS记录告警。旧的根级`process.nativeData`会被明确拒绝，不能与新路径并存。Unit 始终存放在 Rust Arena，Handler、Actor mailbox、Audience 决策和业务 Component 组合仍留在 TS。
 
 `scheduling` 支持：
 

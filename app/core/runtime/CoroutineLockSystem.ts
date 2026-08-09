@@ -219,7 +219,7 @@ export class CoroutineLockSystem extends Singleton {
 
   private cleanupWaiter(waiter: Waiter): void {
     if (waiter.timerId !== undefined) {
-      TimerSystem.Instance.Remove(waiter.timerId);
+      TimerSystem.Instance.Cancel(waiter.timerId, "lock-wait-completed", false);
       waiter.timerId = undefined;
     }
     if (waiter.signal && waiter.abortListener) {

@@ -68,6 +68,8 @@ Scene配置把三个地址语义分开：`bindIp`是本机监听地址，`innerI
 
 部署配置允许`knownSceneFiles`引用共享稳定目录。Rust启动器把本地Scene、共享目录和本地追加项做冲突校验后合并，再把普通`knownScenes`传给TS。该文件组合是不可热更的启动能力，不是服务发现；本地示例集中在`configs/local/cluster/known-scenes.json`。新增空载副本Host只创建自身Scene并引用共享目录，不修改其他进程配置。本地人工入口只有`cluster/StartMachine.json`和`all-in-one.json`；`cluster/`是一套可整体复制的多进程部署包，包含Watcher入口、各Process和共享`known-scenes.json`，Inspector变体单独归入`debug/`。`all-in-one.json`在同一Process/V8中保留两个Gate、静态MapHost和空载动态副本Host，用于验证单进程快路不改变业务语义。
 
+Rust配置加载器对根对象、Process及所有嵌套配置执行未知字段拒绝；字段拼写错误必须在启动期失败。TS中的`ProcessConfig`只是Rust宿主传给业务V8的只读投影，监听、健康检查、Hotfix超时和宿主队列等Rust专有字段有意不暴露，不能用两侧字段数量不同判断配置遗漏。
+
 MapHost停机和动态地图`Dispose`都必须先经过`MapComponent`的业务清理入口：先完成玩家保存/下线，再让所有剩余Unit（包括Monster和仍在进图队列中的Unit）脱离AOI，最后通过`UnitComponent.Remove`按真实所有权销毁普通Unit或ActorUnit，Scene组件随后才释放AOI世界。通用`ProcessHost`不理解AOI，不能直接销毁仍附着的Native Unit；业务也不得在`OnDestroy`里补救已经错误的销毁顺序。`MapComponent.Shutdown`还会停止地图Tick，避免停机等待期间继续创建或移动实体。静态和动态地图共用这套本地销毁流程；只有动态地图在Scene销毁成功后通过`MapHostControl.DynamicMapDisposed`通知MapManager，通知失败会由MapHostRegistration保留并重试。
 
 ### Actor、Scene、Session、Unit、ActorUnit与Mailbox
@@ -120,7 +122,7 @@ Component既是能力组合点，也是某类子对象集合的唯一所有者�
 
 运行时对象、协议快照和持久化记录必须分开命名：`Item`/`NativeItemRef`表示运行时权威对象或句柄，`ItemSnapshot`表示跨边界副本，`ItemRecord`表示数据库记录。不要用`ItemDB`同时承担三种语义。
 
-ChildEntity拥有稳定`Id/InstanceId`并进入EntityRoot，但没有mailbox、网络地址和跨Process路由能力。它的Parent是所属Component，DomainScene仍是玩家所在地图。其Awake必须同步；Component删除或玩家下线时，Core按所有权链自动取消Timer、销毁子Entity并移除Root。
+ChildEntity拥有稳定`Id/InstanceId`并进入EntityRoot，但没有mailbox、网络地址和跨Process路由能力。它带有独立名义类型标记，`AddChild`在TypeScript编译期和Runtime创建边界都会拒绝普通Unit伪装成ChildEntity。它的Parent是所属Component，DomainScene仍是玩家所在地图。其Awake必须同步；Component删除或玩家下线时，Core按所有权链自动取消Timer、销毁子Entity并移除Root。
 
 领域边界采用“可以读取对象，集合变化经过拥有它的Component”：单个Item/Buff的局部规则写在自身Hotfix System，新增、删除、转移、堆叠合并和对外同步由所属Component协调。Native可变句柄只在对应System内部使用，不得跨`await`或所有者生命周期长期保存。
 
@@ -134,7 +136,7 @@ Quest默认是玩家私有状态。`QuestComponent`拥有进行中的`Quest Chil
 
 业务系统设计先查[`docs/patterns`](../patterns/README.md)。其中用稳定规则编号描述所有权、Entity形态、Audience、状态复制、生命周期、Timer和数据位置；这些文档是人类可读的设计依据，不是自动生成的业务代码。
 
-TiangZ Developer Tools `v0.15.0`把可机械判断的部分固化到不依赖VS Code的共享核心，并向上提供设计向导、`@tiangz`聊天解释、`tiangz-design` CLI、只读`tiangz-design-mcp`和Runtime Foundation诊断。相同结构化输入必须得到相同确定性结论；AI模型只在用户主动聊天时解释报告，不能改变规则结论、虚构API，或把普通业务引向Core、Rust Runtime和Generated。主工程固定依赖该Tag，`verify:design-rules`要求design-core与`docs/patterns`规则ID集合、归属文档和文件路径完全一致。
+TiangZ Developer Tools `v0.15.0`把可机械判断的部分固化到不依赖VS Code的共享核心，并向上提供设计向导、`@tiangz`聊天解释、`tiangz-design` CLI、只读`tiangz-design-mcp`和Runtime Foundation诊断。相同结构化输入必须得到相同确定性结论；AI模型只在用户主动聊天时解释报告，不能改变规则结论、虚构API，或把普通业务引向Core、Rust Runtime和Generated。主工程固定依赖该Tag，`verify:design-rule-sync`只要求design-core与`docs/patterns`规则ID集合、归属文档和文件路径完全一致；源码规则执行由`check:project`、`verify:hotfix-boundary`和专项自测负责。
 
 这套助手用于降低开始设计时的心智负担，不取代工程事实。权威顺序仍是：当前代码与测试、项目检查和生成锁，高于设计报告；发现规则与真实实现冲突时，应修正规则库和对应测试，而不是让AI临时圆回来。
 
@@ -156,11 +158,11 @@ TiangZ Developer Tools `v0.15.0`把可机械判断的部分固化到不依赖VS 
 - 需要异步顺序的工作应通过消息或Actor定时器重新进入mailbox。
 - Component和ChildEntity定时器在所有者销毁时自动取消；挂在Actor下时回调遵循该Actor mailbox。
 - 所有者Timer返回唯一`TimerId`，支持原样业务参数和主动取消方法；取消至多通知一次，Owner销毁时静默清理。
-- `FrameTime`是不可持久化单调时间；活动时间和跨重启截止时间使用`ServerNow`及deadline helper。业务需要协议时间戳时可调用`TimerComponent.ServerTime()`取得当前Unix毫秒；它与`TimerSystem`是同一单例类型的公开别名，不是第二套定时器。
+- `FrameTime`是不可持久化单调时间；活动时间和跨重启截止时间使用`ServerNow`及deadline helper。业务需要协议时间戳时调用`TimerSystem.ServerTime()`取得当前Unix毫秒；框架不再提供容易被误解为Entity Component的`TimerComponent`别名。
 - `Scene.Locks`提供`Scene InstanceId + domain + key`的本Process FIFO协程锁，不是分布式锁；跨Process先路由到唯一所有者。无竞争锁必须同步进入回调，保证第一个`await`前建立的传送屏障等状态不会被后续unordered消息抢跑。
 - Developer Tools会检查StartMachine实际部署集合中的`process.identity`、Timer方法名与取消回调、同步/Veto Scene Event契约，以及`InstanceId/TimerId`误入持久化结构；这些规则与Runtime Foundation自测共同守住业务侧用法。
 - `Scene.Events`只处理当前Scene的同步通知和同步否决链；框架不提供异步Event。`SyncEvent`用于事后通知，失败只记录；`VetoEvent`用于操作前只读检查，按`order/id`稳定排序并返回第一个非零错误码。监听器是Hotfix稳定绑定，不为每个Entity动态注册闭包。跨Scene必须使用Message/RPC。
-- `Scene.Tasks.Spawn`只承载调用方明确不等待的有界短任务：错误统一记录，ProcessHost聚合入口Scene和动态MapScene的在途任务并阻止Hotfix提交，Scene销毁更新TiangZ轻量`signal.aborted/reason`。它不依赖浏览器`AbortController`，也不能替代Veto、Timer、事务、ordered mailbox或需要结果的RPC；永久任务会永久阻塞Hotfix。
+- `Scene.Tasks.Spawn`只承载调用方明确不等待的有界短任务：每个Scene最多256个在途任务，超过10秒仍未结束会记录一次告警；错误统一记录，ProcessHost聚合入口Scene和动态MapScene的在途任务并阻止Hotfix提交，Scene销毁更新TiangZ轻量`signal.aborted/reason`。它不依赖浏览器`AbortController`，也不能替代Veto、Timer、事务、ordered mailbox或需要结果的RPC；永久任务会持续占用容量并永久阻塞Hotfix。
 
 `await`只释放当前异步调用，不会让JavaScript获得多线程并行。是否允许同一业务目标重入，由目标mailbox决定。
 
@@ -299,7 +301,7 @@ Actor Runtime只负责Scene、Session、ActorUnit的InstanceId路由与mailbox�
 
 测试和压测专用的裸帧构造、响应解码、Fake与Fixture必须放在`tools/support`、`perf`或对应测试文件中，禁止放入`app/core`或`app/<game>`。正式客户端能力只能进入`client_sdk`及其Generated分发目录。
 
-Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tiangz/model`取得Model与Stable Core API，不得深层导入。`public-api.lock.json`锁定Stable导出；其余Core实现默认Internal。NativeData、io_uring和部分KCP能力仍按专项文档视为Experimental或平台限定。公共API变化必须提供迁移记录，并同步更新本文和AI业务开发手册。
+Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tiangz/model`取得Model与Stable Core API，不得深层导入。`public-api.lock.json`以schema 3锁定Stable导出、顶层签名和完整可达`.d.ts`声明图，继承成员与传递类型变化也必须显式评审；其余Core实现默认Internal。Hotfix第一代冻结Handler key集合，后续只能替换既有实现，新增、删除或重命名Handler必须重启。Native Store诊断是Rust Core正式配置`process.observability.nativeData`，由Rust负责默认值和校验；Native数据原型本身、io_uring和部分KCP能力仍按专项文档视为Experimental或平台限定。公共API变化必须提供迁移记录，并同步更新本文和AI业务开发手册。
 
 ## 已完成阶段
 
@@ -336,7 +338,7 @@ Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tian
 
 Cocos Demo完整类型检查依赖编辑器生成的`client_demo/cocos_client2D_3.8.6/temp/tsconfig.cocos.json`和`cc`类型，不得把该缓存提交或复制到CI。`typecheck:cocos-demo`在编辑器环境执行完整tsc，在干净Linux/CI环境执行入口bundle检查；引擎无关Client SDK始终由`typecheck:cocos-net`完整检查。Cocos Web构建统一使用`npm run build:cocos3d:web`、`npm run build:cocos3d:mobile`以及对应的2D命令，默认明确传入Release模式；需要调试包时只能使用带`:debug`后缀的命令。脚本匹配Creator版本、清除`ELECTRON_RUN_AS_NODE`、清理并校验标准输出目录，`check:cocos-build`可在不启动编辑器时预检参数。Creator 3.8.x本机已知的`code=36`只有在完整Web产物存在时才接受，其他非零码必须失败。不要手工拼接`CocosCreator.exe --build`，也不要把`library/temp`当作发布产物。Cocos Native必须先生成原生工程，再单独执行CMake/Visual Studio编译。
 
-热更粒度固定为整个Process的TS行为世界，而不是单个Scene，也不为每个EntryScene增加V8。TS分为绝对不可热更的Model和可热更Hotfix：Model拥有字段、构造、继承和稳定类型，Process运行中不存在Model reload API；Hotfix只提交方法与Handler。候选先在隔离V8预检，再在当前V8暂存；第一版暂停入站并等待在途任务归零后原子提交，不做字段migration或双generation长期并存。任何Model/Core/协议/Native schema变化都必须重启Process。详见[热更设计](../design/typescript-hot-reload.md)。
+热更粒度固定为整个Process的TS行为世界，而不是单个Scene，也不为每个EntryScene增加V8。TS分为绝对不可热更的Model和可热更Hotfix：Model拥有字段、构造、继承和稳定类型，Process运行中不存在Model reload API；Hotfix只提交方法与Handler。候选先在隔离V8预检，再在当前V8暂存；第一版暂停入站并等待在途任务归零后原子提交，不做字段migration或双generation长期并存。候选必须包含当前generation已有的完整Handler绑定集合，删除或重命名Handler属于Model/协议路由变化，必须重启；所有Scene/Session/Unit/Event Handler类都禁止字段、构造和可变静态成员，避免实例复用时泄漏共享状态。任何Model/Core/协议/Native schema变化都必须重启Process。详见[热更设计](../design/typescript-hot-reload.md)。
 
 业务行为采用ET风格System表达：`@systemFor(ModelType)`类写`Awake/OnDestroy`和公开领域方法，但不创建实例、不保存字段。codegen把公开方法生成到`app/generated/bootstrap/systems/*.d.ts`并合并回Model类型，所以调用方保持`unit.Move()`的面向对象写法，Model无需手写抛错空壳。运行时仍直接安装prototype描述符，没有逐次Registry查找。System首次安装后为必需项，候选遗漏会整体拒绝；Reload不重跑现有对象Awake，新对象使用新Awake，已有对象后续方法和销毁使用当前generation。
 

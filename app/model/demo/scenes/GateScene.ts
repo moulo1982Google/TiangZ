@@ -3,7 +3,6 @@ import {
   RpcError,
   SystemErrCode,
   TimeSystem,
-  TimerComponent,
   TimerSystem,
   entryScene,
   message,
@@ -158,7 +157,7 @@ export class GateScene extends EntryScene {
   /** Gate停机只关闭自身连接；MapHost的优雅停机负责保存权威玩家数据。 / Gate shutdown closes owned connections while MapHost graceful shutdown persists authoritative player data. */
   protected override onStop(): void {
     if (this.timeoutSweepTimer !== 0) {
-      TimerSystem.Instance.Remove(this.timeoutSweepTimer);
+      TimerSystem.Instance.Cancel(this.timeoutSweepTimer, "scene-stopped", false);
       this.timeoutSweepTimer = 0 as TimerId;
     }
     for (const route of [...this.routesByAccount.values()]) {
@@ -253,7 +252,7 @@ export class GateScene extends EntryScene {
    */
   Ping(session: GateSession): G2C_Ping {
     this.RequireCurrentRoute(session);
-    return { serverTime: BigInt(TimerComponent.ServerTime()) };
+    return { serverTime: BigInt(TimerSystem.ServerTime()) };
   }
 
   @message(GateMessages.MapReady)

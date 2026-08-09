@@ -7,6 +7,16 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-09：运行时约束门禁与公共API收口
+
+- Hotfix第一代建立完整Handler key基线，后续候选双向比较集合：新增、删除或重命名都会在任何prototype/绑定槽修改前拒绝，运行中的Scene Registry不会出现新旧路由不一致；回归测试覆盖缺失、额外绑定、正常替换和失败回滚。
+- `verify:hotfix-boundary`扩展到Scene、Session、Unit、同步Event和Veto Handler，统一禁止字段、构造、静态初始化块与可变静态成员；门禁通过TypeChecker解析直接名、import别名和namespace成员，不能靠重命名导入绕过。
+- ProcessRuntime把单例初始化、ProcessHost和EntryScene创建纳入同一回滚边界；单例初始化自身也按逆序回滚。ChildEntity增加名义类型标记和运行时构造校验，普通Unit不能再靠TS结构类型误入子Entity容器。
+- Rust启动配置拒绝未知根字段、Process字段和嵌套配置字段，配置拼写错误不再静默忽略。Native Store诊断从混合所有权的根级`process.nativeData: Value`迁移到强类型`process.observability.nativeData`；Rust负责默认值、未知字段和阈值校验，TS只消费只读投影并输出告警。旧根级字段明确拒绝，不保留两套入口。
+- Scene后台任务增加每Scene 256在途上限和10秒单次告警，继续参与Hotfix排空；使用一个Scope级watchdog，避免每个任务各建Timer。
+- Stable Core API锁升级到schema 3，同时保存规范化顶层签名和完整可达`.d.ts`图，继承成员及传递类型变化也会触发。Stable-only编译夹具与Internal Runtime自测分离，不再用深层导入证明公共入口。`ProcessHost`、`Singleton/SingletonRegistry`和`InstanceIdSystem`退出业务入口，EntryScene只保留子Scene生命周期与显式本地Actor mailbox能力；玩家目录直接持有所属Unit，不再开放任意Process Entity查询。旧`RemoveTimer`兼容入口和仅作为`TimerSystem`类型别名的`TimerComponent`删除，统一使用`TimerSystem`与`Cancel/CancelTimer`。
+- 三套Handler注册文件与Actor/ActorUnit Timer仍有少量实现重复，但当前代码短且分别表达Scene、Session、ActorUnit类型边界；本轮没有为了减少行数增加业务可见抽象。`process/types.ts`和`native_data.rs`物理拆分继续作为独立低风险维护任务。
+
 ## 2026-08-09：UseItem关键事务与回执恢复
 
 - `C2M_UseItem`新增客户端稳定`operation_id`。TypeScript SDK提供`CreateOperationId("item")`，Cocos3D、Pixi、Cocos2D、Unity、UE和Godot演示均在每次新使用时生成一次；同一逻辑请求重试复用，下一次点击必须换新ID。
@@ -312,11 +322,11 @@
 
 ## 2026-08-01：Gate Ping返回服务器时间
 
-- Gate保活由单向`C2G_Ping`升级为TS RPC `C2G_Ping -> G2C_Ping`，响应返回`TimerComponent.ServerTime()`产生的Unix毫秒。
+- Gate保活由单向`C2G_Ping`升级为TS RPC `C2G_Ping -> G2C_Ping`，响应返回`TimerSystem.ServerTime()`产生的Unix毫秒。
 - Session与GateSession改为unordered，PlayerUnit显式保持ordered。Ping是无锁的普通TS Handler，不再使用控制帧快速路径；客户端SDK限制同一连接最多一个在途Ping，并在EnterMap等待期间继续保活。
 - Gate认证使用连接与账号两级协程锁；进图、重连、传送、快照确认、Map踢人、断线和最终下线按账号锁串行。超时任务取得锁后重新检查条件，避免旧任务覆盖刚完成的重连。
 - 修正`RunExclusive`的无竞争路径：空闲锁同步进入回调，只有竞争时才异步等待，避免unordered Session中紧随EnterMap的Actor消息在传送屏障建立前抢跑。
-- `TimerComponent`是`TimerSystem`的同类型公开别名，共享现有`TimeSystem.ServerNow`，没有引入第二套时钟或定时器。
+- 当时`TimerComponent`曾作为`TimerSystem`的同类型公开别名，共享现有`TimeSystem.ServerNow`；该别名随后在公共API收口中删除，当前统一使用`TimerSystem`。
 
 ## 2026-08-01：增加可见遛弯机器人
 

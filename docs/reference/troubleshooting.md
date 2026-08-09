@@ -14,7 +14,7 @@
 
 ## scene already exists
 
-同一 ProcessHost 中动态 Scene ID 冲突。入口 Scene 创建子 Scene 时使用 `childSceneId(localId)`。
+同一 ProcessHost 中动态 Scene ID 冲突。入口 Scene 应使用`SpawnChildScene(localId, ctor)`创建子Scene，让框架自动生成命名空间；不要绕过EntryScene直接操作ProcessHost。
 
 ## JS did not set a result
 
