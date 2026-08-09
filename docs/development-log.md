@@ -7,6 +7,15 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-09：DBProxy v0.2.0 首版网络服务
+
+- 独立DBProxy新增`dbproxy-protocol`、`dbproxy-client`和`dbproxy-server`。协议使用Protobuf、显式版本、`dbproxy.proto` SHA-256指纹、大端四字节长度前缀和默认8 MiB帧上限；连接在RPC前校验内部共享令牌，错误令牌和旧协议都明确拒绝。
+- 首版RPC冻结为`LoadSnapshot/SaveSnapshot/EnqueueSnapshot/ApplyTransaction`。前两类同步快照和关键事务只有PostgreSQL提交后才返回成功；Enqueue成功只表示Redis AOF backlog接收，禁止用于经济确认。
+- Rust SDK提供单连接客户端与`DbProxyClientPool`。单连接一次只有一个在途请求；超时后标记不可复用，避免迟到响应污染下一次RPC。连接池按RecordKey稳定分片；服务端也用独立`TieredSnapshotStore`分片，避免全服务共享一个PostgreSQL事务锁。
+- 服务端后台消费者使用现有lease/ACK语义排空Redis backlog，Ctrl+C停止领取并给连接有限退出窗口。新增`run_local.ps1`和`network_smoke.ps1`；真实TCP -> DBProxy -> PostgreSQL/Redis冒烟覆盖Applied/Duplicate、Revision冲突、原事务结果和backlog最终落库。
+- 验证通过：workspace fmt/check/test、Clippy `-D warnings`、协议鉴权/兼容测试和本机PostgreSQL 18.4/Redis 8.8.1网络集成测试。当前仍没有TypeScript SDK、批量RPC、Prometheus、TiangZ Repository、自动重连或生产部署。
+- 独立仓库版本升至`v0.2.0`；TiangZ主工程只同步持久化边界文档，不引入DBProxy代码或数据库依赖。
+
 ## 2026-08-09：DBProxy v0.1.6 Redis AOF 持久积压
 
 - `dbproxy-storage`新增独立的`RedisSnapshotBacklog`，普通快照入队使用Redis AOF持久化；它与只读加速用的`RedisSnapshotCache`分开，不能把缓存键当成积压数据。

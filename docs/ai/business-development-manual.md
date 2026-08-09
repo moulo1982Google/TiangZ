@@ -739,7 +739,7 @@ await player.Offline(reason);
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy已在独立仓库完成PostgreSQL权威快照、Revision/CAS、幂等、单记录`TransactionalWrite`、Redis已提交快照缓存、缓存回源、缓存修复、进程内`SnapshotFlushQueue`和Redis AOF 持久`SnapshotBacklog`的本机适配验收；普通快照支持按记录合并、有限轮停机排空、lease/ACK和DBProxy重启后重新领取，但Redis高可用、长时间故障监控、网络服务、TiangZ生成Repository和生产故障恢复尚未实现。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端；主工程不得直接引入DBProxy存储crate。
+DBProxy独立仓库的`v0.2.0`已完成PostgreSQL权威快照、Revision/CAS、幂等事务、Redis缓存与持久Backlog，并提供带协议指纹和Token握手的TCP服务、Rust客户端连接池及`LoadSnapshot`、`SaveSnapshot`、`EnqueueSnapshot`、`ApplyTransaction`四类RPC；普通快照支持按记录合并、有限时间停机排空、lease/ACK和DBProxy重启后重新领取。Redis高可用、长时间故障监控、TLS、TiangZ生成的TypeScript SDK/Repository适配器和生产故障恢复仍未实现。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端；主工程不得直接引入DBProxy存储crate。
 
 ## AOI业务规则
 
@@ -903,6 +903,31 @@ C2M_AttackMonsterHandler
 技能配置必须把以下维度分开：伤害类型（Physical/Magic/True）、执行方式（Instant/Cast/Channel）和对平A时间轴的影响（Keep/RestartAfterCast，后续可扩展PauseResume）。例如战士的压制是物理、瞬发且Keep，不得因为它是物理技能或瞬发技能就自动推断平A行为。
 
 主动怪不要只写“靠近玩家”的表现逻辑：当前演示中`MonsterConfig.attack_mode=1`表示主动追击，进入攻击距离后由`MonsterComponentSystem`按最终`NumericType.Attack`扣玩家`CurrentHp`；`attack_mode=0`才是不主动寻找玩家的被动怪。因为玩家确实可能死亡，玩家创建时必须从`PlayerConfig.initial_hp/max_hp/initial_mp/max_mp`初始化Numeric，Cocos3D、UE、Unity和Godot的HUD只订阅进入快照与`G2C_EntityNumeric`，显示HP/MP，不能在客户端复制伤害规则。
+
+## DBProxy持久化接入边界
+
+独立DBProxy当前为`v0.2.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池和真实PostgreSQL/Redis闭环，但TiangZ主工程尚未生成Repository或TypeScript SDK。业务开发者当前仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
+
+正式接入后的固定调用层次应是：
+
+```text
+Handler
+  -> PlayerUnit / DomainComponent
+  -> 领域Repository
+  -> 生成的DBProxy SDK
+  -> 独立DBProxy
+```
+
+接口必须按数据等级选择：
+
+- `LoadSnapshot`：登录、恢复或接管时读取权威记录；`None`表示记录不存在。
+- `SaveSnapshot`：调用方需要等待PostgreSQL提交的普通快照；网络失败时保留原`request_id`重试。
+- `EnqueueSnapshot`：只用于位置、普通任务进度等允许小范围回退的数据；成功只表示Redis AOF backlog接收，不代表PostgreSQL已落库。
+- `ApplyTransaction`：用于Wallet、Inventory、Reward、Trade等关键单记录事务；必须携带原`operation_id`、期望Revision、提交后的完整Payload和可重试业务结果。
+
+同一个`DbProxyClient`连接只允许一个在途RPC；高并发服务使用`DbProxyClientPool`按RecordKey稳定分片。业务不能为了躲开PlayerUnit ordered mailbox而改用`Spawn`异步确认关键经济操作：关键事务必须在可靠提交成功后才向客户端确认。普通快照可以帧尾合并并进入backlog，但不得把关键事务降级成“稍后保存”。
+
+当前尚未生成具体Repository，因此上面是已经冻结的接入契约，不是可在TiangZ业务代码中直接调用的现成API。下一阶段先生成TypeScript SDK、批量Load和Player Repository，再做登录恢复、正常下线Flush与崩溃接管。
 
 ## AI提交前自检
 
