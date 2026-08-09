@@ -4,15 +4,35 @@ import {
   GlobalIdSystem,
   Item,
   ItemComponent,
+  ItemEvents,
   type InventoryGrant,
   type InventoryGrantPlan,
+  type InventoryConsumePlan,
   type ItemSnapshot,
   type ItemView,
   type ITransfer,
+  type M2C_UseItem,
+  MapComponent,
+  PlayerPersistenceComponent,
+  PlayerUnit,
+  QuestEvents,
+  QuestObjectiveType,
   RpcError,
+  SystemErrCode,
   requireGlobalId,
   systemFor,
+  utf8Encode,
 } from "#tiangz/model";
+import {
+  ApplyItemUseTransaction,
+  DecodeItemUseReceipt,
+  EncodeItemUseReceipt,
+  PlanItemUseTransaction,
+  type ItemUseCommitResult,
+  type ItemUseTransactionReceipt,
+} from "./ItemUseTransaction";
+
+const CLIENT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 
 const DEMO_STARTER_ITEMS = [
   { configId: 1001, count: 50 },
@@ -64,11 +84,195 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
 
   /** 消耗一件道具并返回不可覆盖事件所需快照。 / Consumes one item and returns the snapshot required by a non-coalescing event. */
   UseItem(itemId: bigint): ItemSnapshot {
-    const item = this.requireItem(itemId);
-    if (item.count === 0) {
-      throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is empty`);
+    return this.CommitConsumePlan(this.PlanConsumeItem(itemId));
+  }
+
+  /**
+   * 先规划道具扣除、CD和效果，再把操作后玩家快照与业务回执原子提交给DBProxy。
+   * DBProxy确认前不修改Entity；ACK丢失或客户端重试时读取原回执补齐内存，绝不重新执行效果。
+   *
+   * Plans inventory, cooldowns, and effects before atomically committing the
+   * post-operation player snapshot plus receipt through DBProxy. Entities stay
+   * unchanged before confirmation. Lost ACKs and retries recover the original
+   * receipt instead of executing effects again.
+   */
+  async UseItemTransactional(itemId: bigint, clientOperationId: string): Promise<M2C_UseItem> {
+    const unit = this.GetParent<PlayerUnit>();
+    const operationId = itemUseOperationId(unit.Account, clientOperationId);
+    const persistence = unit.GetComponent(PlayerPersistenceComponent);
+
+    if (persistence.IsTransactionUncertain(operationId)) {
+      const recovered = await this.tryRecoverUseItem(unit, itemId, operationId);
+      if (recovered) return recovered;
     }
-    return item.RemoveCount(1);
+
+    let plan: ReturnType<typeof PlanItemUseTransaction>;
+    try {
+      const current = this.GetItem(itemId);
+      if (!current) throw new RpcError(GameErrCode.ItemNotFound, `item not found: ${itemId}`);
+      if (current.count <= 0) {
+        throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is empty`);
+      }
+      const itemConfig = GameConfigs.ItemConfig.Get(current.configId);
+      const vetoReason = unit.DomainScene().Events.Check(ItemEvents.BeforeUse, {
+        unit,
+        item: current,
+        config: itemConfig,
+      });
+      if (vetoReason !== SystemErrCode.Success) {
+        throw new RpcError(vetoReason, `item use vetoed: ${current.configId}`);
+      }
+      plan = PlanItemUseTransaction(unit, itemId, itemConfig.id);
+    } catch (error) {
+      // 同一operationId重试可能被首次提交形成的CD或库存变化拒绝，因此先查原回执。
+      // A retry may be rejected by cooldown or inventory changes from the first
+      // commit, so recover the original receipt before returning the error.
+      const recovered = await this.tryRecoverUseItem(unit, itemId, operationId);
+      if (recovered) return recovered;
+      throw error;
+    }
+
+    const encodedReceipt = EncodeItemUseReceipt(plan.receipt);
+    let committed;
+    try {
+      committed = await persistence.ApplyTransaction(operationId, plan.data, encodedReceipt);
+    } catch (error) {
+      const recovered = await this.tryRecoverUseItem(unit, itemId, operationId);
+      if (recovered) return recovered;
+      throw error;
+    }
+
+    const durable = DecodeItemUseReceipt(committed.result);
+    validateReceipt(durable, itemId);
+    const result = bytesEqual(committed.result, encodedReceipt)
+      ? ApplyItemUseTransaction(unit, durable, plan.inventory)
+      : ApplyItemUseTransaction(unit, durable);
+    await this.publishCommittedUseItem(unit, durable, result);
+    return result.response;
+  }
+
+  private async tryRecoverUseItem(
+    unit: PlayerUnit,
+    itemId: bigint,
+    operationId: string,
+  ): Promise<M2C_UseItem | undefined> {
+    const receipt = await unit.GetComponent(PlayerPersistenceComponent).LoadTransaction(operationId);
+    if (!receipt) return undefined;
+    const durable = DecodeItemUseReceipt(receipt.result);
+    validateReceipt(durable, itemId);
+    const result = ApplyItemUseTransaction(unit, durable);
+    await this.publishCommittedUseItem(unit, durable, result);
+    return result.response;
+  }
+
+  private async publishCommittedUseItem(
+    unit: PlayerUnit,
+    receipt: ItemUseTransactionReceipt,
+    result: ItemUseCommitResult,
+  ): Promise<void> {
+    if (!result.inventoryChanged) return;
+    unit.DomainScene().Events.Publish(QuestEvents.Progress, {
+      player: unit,
+      objectiveType: QuestObjectiveType.UseItem,
+      targetConfigId: receipt.itemConfigId,
+      count: 1,
+    });
+    await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(
+      unit,
+      receipt.consumedItem,
+    );
+  }
+
+  /**
+   * 在纯快照上规划一次道具扣除；DBProxy等待期间不会提前改变背包。
+   * Plans one item consumption on value snapshots so inventory remains
+   * unchanged while DBProxy is pending.
+   */
+  PlanConsumeItem(itemId: bigint, count: number = 1): InventoryConsumePlan {
+    const item = this.requireItem(itemId);
+    requirePositiveCount(count);
+    if (item.count < count) {
+      throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is not enough`);
+    }
+    const baseItems = this.Snapshot();
+    const consumedItem: ItemSnapshot = {
+      ...item.Snapshot(),
+      count: item.count - count,
+      version: item.version + 1,
+    };
+    return {
+      baseItems,
+      nextItems: sortSnapshots(baseItems.map((value) => (
+        value.itemId === itemId ? consumedItem : value
+      ))),
+      consumedItem,
+    };
+  }
+
+  /**
+   * 无await提交已经持久化的扣除计划；完整base快照不一致时拒绝覆盖新背包状态。
+   * Commits a persisted consume plan without await and rejects it when the
+   * complete base snapshot no longer matches current inventory.
+   */
+  CommitConsumePlan(plan: InventoryConsumePlan): ItemSnapshot {
+    if (!snapshotArraysEqual(this.Snapshot(), plan.baseItems)) {
+      throw new Error("inventory consume plan is stale");
+    }
+    const current = this.requireItem(plan.consumedItem.itemId);
+    const before = current.Snapshot();
+    if (
+      before.configId !== plan.consumedItem.configId ||
+      before.quality !== plan.consumedItem.quality ||
+      before.level !== plan.consumedItem.level ||
+      plan.consumedItem.count >= before.count ||
+      plan.consumedItem.version !== before.version + 1
+    ) {
+      throw new Error(`inventory consume plan has invalid transition: ${before.itemId}`);
+    }
+    const committed = current.RemoveCount(before.count - plan.consumedItem.count);
+    if (!snapshotEqual(committed, plan.consumedItem)) {
+      throw new Error(`inventory consume plan commit mismatch: ${before.itemId}`);
+    }
+    if (!snapshotArraysEqual(this.Snapshot(), plan.nextItems)) {
+      throw new Error("inventory consume plan final snapshot mismatch");
+    }
+    return { ...committed };
+  }
+
+  /**
+   * 根据DBProxy回执补做已提交扣除；只接受相同值或恰好减少一次且version前进一的转换。
+   * Reconciles a committed consumption receipt and accepts only an equal value
+   * or one exact decrement with a single version advance.
+   */
+  ApplyCommittedConsumeItem(expected: ItemSnapshot): ItemSnapshot {
+    const current = this.requireItem(expected.itemId);
+    const snapshot = current.Snapshot();
+    if (snapshotEqual(snapshot, expected)) return { ...snapshot };
+    if (
+      snapshot.configId === expected.configId &&
+      snapshot.quality === expected.quality &&
+      snapshot.level === expected.level &&
+      snapshot.version > expected.version
+    ) {
+      // 后续背包操作已经覆盖这次扣除；事务回执只用于返回原结果，不能回退当前堆叠。
+      // Later inventory writes already superseded this consumption; the receipt
+      // returns the original result and must never roll the stack backward.
+      return { ...expected };
+    }
+    if (
+      snapshot.configId !== expected.configId ||
+      snapshot.quality !== expected.quality ||
+      snapshot.level !== expected.level ||
+      expected.count >= snapshot.count ||
+      expected.version !== snapshot.version + 1
+    ) {
+      throw new Error(`committed inventory consumption conflicts with local item: ${expected.itemId}`);
+    }
+    const committed = current.RemoveCount(snapshot.count - expected.count);
+    if (!snapshotEqual(committed, expected)) {
+      throw new Error(`committed inventory consumption mismatch: ${expected.itemId}`);
+    }
+    return { ...committed };
   }
 
   /** 增加已有堆叠并返回权威快照。 / Adds to an existing stack and returns its authoritative snapshot. */
@@ -324,6 +528,36 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     }
     return GameConfigs.ItemConfig.Get(configId);
   }
+}
+
+function itemUseOperationId(account: string, clientOperationId: string): string {
+  if (!CLIENT_OPERATION_ID_PATTERN.test(clientOperationId)) {
+    throw new Error("UseItem operationId must be 1-96 ASCII letters, digits, dot, underscore, colon, or dash");
+  }
+  const operationId = `item-use:${account}:${clientOperationId}`;
+  if (utf8Encode(operationId).byteLength > 256) {
+    throw new Error("UseItem operationId exceeds DBProxy's 256-byte limit");
+  }
+  return operationId;
+}
+
+function validateReceipt(receipt: ItemUseTransactionReceipt, itemId: bigint): void {
+  if (receipt.consumedItem.itemId !== itemId) {
+    throw new Error(
+      `UseItem operationId conflicts with item ${itemId}; original item=${receipt.consumedItem.itemId}`,
+    );
+  }
+  if (receipt.consumedItem.configId !== receipt.itemConfigId) {
+    throw new Error(`UseItem receipt config mismatch: ${receipt.itemConfigId}`);
+  }
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 function sortSnapshots(items: readonly ItemSnapshot[]): ItemSnapshot[] {

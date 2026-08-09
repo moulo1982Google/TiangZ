@@ -3,7 +3,7 @@
 
 当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；Phase 4将继续建设Rust AOI、3D导航、持久化和MMORPG业务样例。
 
-持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。当前`v0.4.0`已经通过Rust Host连接池接入Player Snapshot Repository、事务提交和回执查询，并完成TiangZ重启恢复及任务GrantItem奖励幂等验收；主工程只依赖协议、客户端SDK和业务Repository，不直接连接Redis/PostgreSQL。UseItem、Wallet、Trade、周期快照、批量恢复和生产高可用仍属于Phase 4.5后续工作，运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
+持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。当前`v0.4.0`已经通过Rust Host连接池接入Player Snapshot Repository、事务提交和回执查询，并完成TiangZ重启恢复、任务GrantItem奖励与UseItem消费幂等验收；主工程只依赖协议、客户端SDK和业务Repository，不直接连接Redis/PostgreSQL。Wallet、Trade、周期快照、批量恢复和生产高可用仍属于Phase 4.5后续工作，运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 

@@ -13,6 +13,7 @@ declare module "../../../model/demo/buff/BuffComponent" {
     SnapshotPublic(): readonly BuffPublicState[];
     CaptureTransfer(): readonly BuffTransferState[];
     RestoreTransfer(states: readonly BuffTransferState[]): void;
+    ApplyCommittedBuff(state: BuffTransferState): BuffPublicState | undefined;
     Deserialize(): void;
   }
 }

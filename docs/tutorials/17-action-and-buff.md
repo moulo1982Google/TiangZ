@@ -43,18 +43,18 @@ npm run test:game-config
 ```text
 C2M_UseItem
  -> C2M_UseItemHandler
- -> ItemComponent.UseItem
- -> ActionFromConfig
- -> ExecuteAction
-    -> Heal: Combat.ApplyHealing
-    -> AddBuff: BuffComponent.AddBuff
-       -> Buff.Awake
-       -> AddAction
+ -> ItemComponent.UseItemTransactional
+ -> Inventory/CD/Effect纯数据Planner
+ -> DBProxy ApplyTransaction
+ -> 确认后无await提交
+    -> Heal: Combat.CommitHealingPlan
+    -> AddBuff: BuffComponent.ApplyCommittedBuff
+       -> Buff.Awake（restoring模式，不重复AddAction）
        -> Tick Timer
        -> RemoveAction
 ```
 
-Handler只做协议和基础校验。它不关心“红药应该怎样扣血”，也不创建一个临时Actor。
+Handler只转发`itemId + operationId`。它不关心“红药应该怎样回血”，不编排DBProxy，也不创建一个临时Actor。客户端每次新使用生成新的`CreateOperationId("item")`，只有同一次网络重试才复用。
 
 ## 3. 写一个新Buff
 

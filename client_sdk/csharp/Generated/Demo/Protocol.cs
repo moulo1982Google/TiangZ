@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "8f687370a4ca2395a8c518758ccc2f83f2cef15c75295bb982bbe9251bc56c3c";
+    public const string Value = "1d85b062963971ac66363b27f9fdc079e022d2d27f353842c03ec8e2a53948ad";
 }
 
 public static class MsgCode
@@ -220,6 +220,7 @@ public sealed class C2M_ToggleDemoDoor : IRpcRequest
 public sealed class C2M_UseItem : IRpcRequest
 {
     public ulong ItemId { get; set; }
+    public string? OperationId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -1452,6 +1453,9 @@ public static class C2M_UseItemCodec
                 case 1 when tag.WireType == 0:
                     value.ItemId = reader.ReadUInt64();
                     break;
+                case 2 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -1467,6 +1471,7 @@ public static class C2M_UseItemCodec
     {
         var writer = new BinaryWriter();
         if (value.ItemId != 0) writer.WriteUInt64(1, value.ItemId);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(2, value.OperationId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }

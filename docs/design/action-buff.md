@@ -8,16 +8,20 @@
 客户端 C2M_UseItem
         |
         v
-PlayerUnit上的UseItem Handler
+PlayerUnit上的UseItem Handler（只转发itemId + operationId）
         |
-        +--> ItemComponent消费一个道具
-        |
+        v
+ItemComponent.UseItemTransactional
+        +--> Veto同步检查
+        +--> Inventory/CD/效果纯数据Planner
+        +--> DBProxy提交操作后Player快照和原始回执
+        +--> 无await提交Entity并发布领域通知
+
+普通非事务效果
         +--> ActionExecutor.ExecuteAction(player, action)
-                    |
                     +--> ChangeNumeric -> Numeric
                     +--> Heal/DealDamage -> Combat
-                    +--> AddBuff      -> BuffComponent.AddBuff
-                    +--> RemoveBuff   -> BuffComponent.RemoveBuff
+                    +--> AddBuff/RemoveBuff -> BuffComponent
                     +--> RegisterDamageAbsorber -> Combat modifier
 
 BuffComponent
@@ -29,7 +33,7 @@ BuffComponent
 
 核心原则只有三条：
 
-1. **Item只声明效果，不实现效果。** 道具表提供Action类型和整数参数，Handler负责校验和消费，执行器负责路由。
+1. **Item只声明效果，不实现效果。** 道具表提供Action类型和整数参数；Handler只适配协议，ItemComponent负责事务编排，执行器负责普通非事务效果路由。
 2. **Buff只拥有自己的生命周期。** Buff是`BuffComponent`拥有的ChildEntity，不是Actor，不接收网络消息；Timer属于Buff，Timer触发时执行Action。
 3. **Action不负责目标选择和广播。** Action只操作调用方已经解析出的目标。HP通过`CombatComponent.ApplyDamage/ApplyHealing`，Buff通过`BuffComponent`，广播由Map/Audience完成。
 
@@ -42,6 +46,7 @@ app/model/demo/action/ActionType.ts       # 稳定Action类型和参数形状
 app/model/demo/buff/Buff.ts               # Buff数据形状、传送值快照、ChildEntity
 app/model/demo/buff/BuffComponent.ts      # Buff集合能力边界
 app/hotfix/demo/action/ActionExecutor.ts  # Action解释与组件路由
+app/hotfix/demo/item/ItemUseTransaction.ts# UseItem纯数据计划、回执和恢复
 app/hotfix/demo/buff/BuffSystem.ts         # 单个Buff的Awake、Tick、Destroy
 app/hotfix/demo/buff/BuffComponentSystem.ts# 添加、移除、传送、AOI事件
 game_config/Datas/ItemConfig.xlsx          # 道具使用效果
@@ -54,30 +59,20 @@ Model只冻结字段和生命周期；Action解释、配置读取、Timer安排�
 
 ## 三、道具使用范例
 
-业务代码不需要自己拼Buff字段，也不应该直接改HP：
+业务入口不需要自己拼Buff字段，也不应该直接改HP。Handler只保留这一层：
 
 ```ts
-const item = unit.GetComponent(ItemComponent).GetItem(itemId);
-if (!item) throw new RpcError(GameErrCode.ItemNotFound, "item not found");
-
-const config = GameConfigs.ItemConfig.Get(item.configId);
-const cooldown = unit.GetComponent(SkillComponent).TryCommitItemCooldown(
-  config.id,
-  config.cooldownMs,
-  config.globalCooldownMs,
+return unit.GetComponent(ItemComponent).UseItemTransactional(
+  request.itemId,
+  request.operationId,
 );
-if (!cooldown.accepted) throw new RpcError(GameErrCode.ItemCooldown, "item cooldown");
-const action = config.useEffect === 1
-  ? ActionFromConfig(ActionType.AddBuff, config.useParams)
-  : ActionFromConfig(config.useParams[0], config.useParams.slice(1));
-
-unit.GetComponent(ItemComponent).UseItem(itemId);
-ExecuteAction(unit, action, { reason: "item-use" });
 ```
 
-正式入口使用`app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts`，上面的片段只是说明调用关系。道具消耗是不可覆盖事实，使用后的HP/Numeric是可覆盖状态，Buff添加/删除是不可覆盖生命周期事件。
+正式入口位于`app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts`，事务计划与回执位于`app/hotfix/demo/item/ItemUseTransaction.ts`。道具消耗是不可覆盖事实，使用后的HP/Numeric是可覆盖状态，Buff添加/删除是不可覆盖生命周期事件。
 
-当前药品和技能共享玩家GCD；药品自身CD按`ItemConfigId`存储。Handler必须在扣除道具前通过`TryCommitItemCooldown`一次性完成检查和写入，不能拆成“先查、稍后再写”两个步骤。GCD和药品CD都会进入跨地图快照，客户端快捷栏只根据服务端返回的deadline绘制倒计时，不能作为权威判定。
+当前药品和技能共享玩家GCD；药品自身CD按`ItemConfigId`存储。`ItemComponent`先规划Inventory、CD和效果，DBProxy确认后再无await统一提交，不能拆成“先扣除、稍后保存”或“先执行Action、失败再补偿”。GCD和药品CD都会进入跨地图快照，客户端快捷栏只根据服务端返回的deadline绘制倒计时，不能作为权威判定。
+
+客户端每次新使用调用`CreateOperationId("item")`，同一次网络重试复用该值。当前Planner只允许Heal和无AddAction的Stack Buff；新增事务Action必须先补纯数据Planner和回执恢复语义。普通技能命中、Buff Tick等非经济效果仍可直接进入`ActionExecutor`，不要把所有Action误解成必须访问DBProxy。
 
 ## 四、Buff创建、Tick和移除
 

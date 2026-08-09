@@ -5,6 +5,7 @@ import {
   PlayerUnit,
   type ActiveSkillCast,
   type ItemCooldownCommitResult,
+  type ItemCooldownPlan,
   type SkillCastCommand,
   type SkillCastState,
   type SkillTransferState,
@@ -133,6 +134,21 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     cooldownMs: number,
     globalCooldownMs: number,
   ): ItemCooldownCommitResult {
+    const plan = this.PlanItemCooldown(itemConfigId, cooldownMs, globalCooldownMs);
+    if (!plan.result.accepted) return plan.result;
+    return this.CommitItemCooldownPlan(plan);
+  }
+
+  /**
+   * 只计算道具CD和共享GCD的操作后状态，不修改当前技能组件。
+   * Computes the post-use item and shared cooldown state without mutating the
+   * current SkillComponent.
+   */
+  PlanItemCooldown(
+    itemConfigId: number,
+    cooldownMs: number,
+    globalCooldownMs: number,
+  ): ItemCooldownPlan {
     if (!Number.isSafeInteger(itemConfigId) || itemConfigId <= 0) {
       throw new Error(`invalid item config id: ${itemConfigId}`);
     }
@@ -144,23 +160,74 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     }
     const now = TimeSystem.Instance.ServerNow;
     const readyAtMs = this.ItemReadyAt(itemConfigId);
+    const baseState = this.captureCooldownState(false);
     if (readyAtMs > now) {
       return {
-        accepted: false,
-        readyAtMs,
-        globalCooldownEndAtMs: this.globalCooldownEndAtMs,
-        itemCooldownEndAtMs: this.cooldownEndByItemConfigId.get(itemConfigId) ?? 0,
+        itemConfigId,
+        baseState,
+        nextState: cloneSkillState(baseState),
+        result: {
+          accepted: false,
+          readyAtMs,
+          globalCooldownEndAtMs: this.globalCooldownEndAtMs,
+          itemCooldownEndAtMs: this.cooldownEndByItemConfigId.get(itemConfigId) ?? 0,
+        },
       };
     }
-    this.globalCooldownEndAtMs = now + globalCooldownMs;
+    const globalCooldownEndAtMs = now + globalCooldownMs;
     const itemCooldownEndAtMs = now + cooldownMs;
-    this.cooldownEndByItemConfigId.set(itemConfigId, itemCooldownEndAtMs);
+    const nextItemCooldowns = new Map(
+      baseState.itemCooldowns.map((entry) => [entry.itemConfigId, entry.cooldownEndAtMs]),
+    );
+    nextItemCooldowns.set(itemConfigId, itemCooldownEndAtMs);
     return {
-      accepted: true,
-      readyAtMs: now,
-      globalCooldownEndAtMs: this.globalCooldownEndAtMs,
-      itemCooldownEndAtMs,
+      itemConfigId,
+      baseState,
+      nextState: {
+        globalCooldownEndAtMs,
+        cooldowns: baseState.cooldowns.map((entry) => ({ ...entry })),
+        itemCooldowns: [...nextItemCooldowns.entries()]
+          .sort(([left], [right]) => left - right)
+          .map(([configId, cooldownEndAtMs]) => ({ itemConfigId: configId, cooldownEndAtMs })),
+      },
+      result: {
+        accepted: true,
+        readyAtMs: now,
+        globalCooldownEndAtMs,
+        itemCooldownEndAtMs,
+      },
     };
+  }
+
+  /** 无await提交已持久化冷却计划；规划后发生任何冷却写入都会使提交失败。 / Commits a persisted cooldown plan without await and rejects any intervening cooldown write. */
+  CommitItemCooldownPlan(plan: ItemCooldownPlan): ItemCooldownCommitResult {
+    if (!plan.result.accepted) return plan.result;
+    if (!skillStatesEqual(this.captureCooldownState(false), plan.baseState)) {
+      throw new Error("item cooldown plan is stale");
+    }
+    this.applyCooldownState(plan.nextState);
+    return { ...plan.result };
+  }
+
+  /**
+   * 根据事务回执补做冷却，只接受当前状态等于base或next；进程重启后已经过期的截止时间按墙钟忽略。
+   * Reconciles committed cooldowns only from base or next state. Expired
+   * deadlines are ignored after process restart according to wall-clock time.
+   */
+  ApplyCommittedItemCooldown(plan: ItemCooldownPlan): ItemCooldownCommitResult {
+    if (!plan.result.accepted) return plan.result;
+    const current = normalizeLiveSkillState(this.captureCooldownState(false));
+    const base = normalizeLiveSkillState(plan.baseState);
+    const next = normalizeLiveSkillState(plan.nextState);
+    if (skillStatesEqual(current, next)) return { ...plan.result };
+    if (!skillStatesEqual(current, base)) {
+      // 更晚的技能或道具冷却已经覆盖该事务；旧回执不能把截止时间回退。
+      // A later ability or item cooldown superseded this transaction; an old
+      // receipt must not move current deadlines backward.
+      return { ...plan.result };
+    }
+    this.applyCooldownState(plan.nextState);
+    return { ...plan.result };
   }
 
   /** 读条完成后清空活动Cast，保留已经提交的冷却。 / Clears a completed cast while preserving committed cooldowns. */
@@ -189,16 +256,7 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
 
   /** 复制仍有效的冷却截止时间；活动读条不跨地图恢复。 / Copies live cooldown deadlines while intentionally excluding active casts. */
   CaptureTransfer(): SkillTransferState {
-    const now = TimeSystem.Instance.ServerNow;
-    return {
-      globalCooldownEndAtMs: this.globalCooldownEndAtMs > now ? this.globalCooldownEndAtMs : 0,
-      cooldowns: [...this.cooldownEndBySkillId.entries()]
-        .filter(([, endAtMs]) => endAtMs > now)
-        .map(([skillId, cooldownEndAtMs]) => ({ skillId, cooldownEndAtMs })),
-      itemCooldowns: [...this.cooldownEndByItemConfigId.entries()]
-        .filter(([, endAtMs]) => endAtMs > now)
-        .map(([itemConfigId, cooldownEndAtMs]) => ({ itemConfigId, cooldownEndAtMs })),
-    };
+    return this.captureCooldownState(true);
   }
 
   /** 恢复冷却并清除源地图读条；不得把传送当成刷新技能的手段。 / Restores cooldowns and clears source-map casting so transfer cannot refresh abilities. */
@@ -228,6 +286,34 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     }
   }
 
+  private captureCooldownState(onlyLive: boolean): SkillTransferState {
+    const now = TimeSystem.Instance.ServerNow;
+    const include = (endAtMs: number) => !onlyLive || endAtMs > now;
+    return {
+      globalCooldownEndAtMs: include(this.globalCooldownEndAtMs) ? this.globalCooldownEndAtMs : 0,
+      cooldowns: [...this.cooldownEndBySkillId.entries()]
+        .filter(([, endAtMs]) => include(endAtMs))
+        .sort(([left], [right]) => left - right)
+        .map(([skillId, cooldownEndAtMs]) => ({ skillId, cooldownEndAtMs })),
+      itemCooldowns: [...this.cooldownEndByItemConfigId.entries()]
+        .filter(([, endAtMs]) => include(endAtMs))
+        .sort(([left], [right]) => left - right)
+        .map(([itemConfigId, cooldownEndAtMs]) => ({ itemConfigId, cooldownEndAtMs })),
+    };
+  }
+
+  private applyCooldownState(state: SkillTransferState): void {
+    this.globalCooldownEndAtMs = state.globalCooldownEndAtMs;
+    this.cooldownEndBySkillId.clear();
+    this.cooldownEndByItemConfigId.clear();
+    for (const cooldown of state.cooldowns) {
+      this.cooldownEndBySkillId.set(cooldown.skillId, cooldown.cooldownEndAtMs);
+    }
+    for (const cooldown of state.itemCooldowns) {
+      this.cooldownEndByItemConfigId.set(cooldown.itemConfigId, cooldown.cooldownEndAtMs);
+    }
+  }
+
   private get owner(): PlayerUnit {
     const owner = this.GetParent<Unit<any[]>>();
     if (!(owner instanceof PlayerUnit)) {
@@ -235,4 +321,31 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     }
     return owner;
   }
+}
+
+function cloneSkillState(state: SkillTransferState): SkillTransferState {
+  return {
+    globalCooldownEndAtMs: state.globalCooldownEndAtMs,
+    cooldowns: state.cooldowns.map((entry) => ({ ...entry })),
+    itemCooldowns: state.itemCooldowns.map((entry) => ({ ...entry })),
+  };
+}
+
+function normalizeLiveSkillState(state: SkillTransferState): SkillTransferState {
+  const now = TimeSystem.Instance.ServerNow;
+  return {
+    globalCooldownEndAtMs: state.globalCooldownEndAtMs > now ? state.globalCooldownEndAtMs : 0,
+    cooldowns: state.cooldowns
+      .filter((entry) => entry.cooldownEndAtMs > now)
+      .map((entry) => ({ ...entry })),
+    itemCooldowns: state.itemCooldowns
+      .filter((entry) => entry.cooldownEndAtMs > now)
+      .map((entry) => ({ ...entry })),
+  };
+}
+
+function skillStatesEqual(left: SkillTransferState, right: SkillTransferState): boolean {
+  return left.globalCooldownEndAtMs === right.globalCooldownEndAtMs &&
+    JSON.stringify(left.cooldowns) === JSON.stringify(right.cooldowns) &&
+    JSON.stringify(left.itemCooldowns) === JSON.stringify(right.itemCooldowns);
 }

@@ -1,5 +1,6 @@
 import { Color, Label, Node, UITransform } from "cc";
 import type { RpcSocket } from "../../Generated/SDK/Core/Net/RpcSocket";
+import { CreateOperationId } from "../../Generated/SDK/Core/Protocol/OperationId";
 import { MapClient } from "../../Generated/SDK/Generated/Model/demo/protocol/clients";
 import type {
   G2C_BuffAdded,
@@ -140,7 +141,10 @@ export class MapEntityManager {
     const itemId = this.items.keys().next().value as bigint | undefined;
     if (itemId === undefined) return;
     try {
-      const response = await this.mapClient.useItem({ itemId });
+      const response = await this.mapClient.useItem({
+        itemId,
+        operationId: CreateOperationId("item"),
+      });
       this.applyItem(response.item);
     } catch (error) {
       console.error("使用道具失败", error);

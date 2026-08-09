@@ -2180,6 +2180,7 @@ export const G2C_EntityStateCodec = {
 export interface C2M_UseItem extends IActorLocationRequest {
   rpcId?: number;
   itemId: bigint;
+  operationId: string;
 }
 
 export const C2M_UseItemCodec = {
@@ -2187,6 +2188,7 @@ export const C2M_UseItemCodec = {
     const reader = new BinaryReader(payload);
     const value: C2M_UseItem = {
       itemId: 0n,
+      operationId: "",
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -2195,6 +2197,9 @@ export const C2M_UseItemCodec = {
       }
       else if (tag.fieldNo === 1 && tag.wireType === 0) {
         value.itemId = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.operationId = reader.string();
       }
       else {
         reader.skip(tag.wireType);
@@ -2207,6 +2212,7 @@ export const C2M_UseItemCodec = {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.itemId !== undefined) writer.uint64(1, value.itemId);
+    if (value.operationId !== undefined) writer.string(2, value.operationId);
     return writer.finish();
   },
 };

@@ -68,6 +68,18 @@ export interface ItemCooldownCommitResult {
   readonly itemCooldownEndAtMs: number;
 }
 
+/**
+ * 道具自身CD与共享GCD的纯数据计划。baseState用于阻止陈旧事务覆盖后续冷却，nextState可进入玩家持久化快照。
+ * Pure-value plan for item and shared cooldowns. baseState rejects stale
+ * commits, while nextState can be persisted with the player transaction.
+ */
+export interface ItemCooldownPlan {
+  readonly itemConfigId: number;
+  readonly baseState: SkillTransferState;
+  readonly nextState: SkillTransferState;
+  readonly result: ItemCooldownCommitResult;
+}
+
 /** 传送只保留已提交冷却；活动读条在离开源地图时终止。 / Transfer keeps committed cooldowns only; an active cast ends when leaving the source map. */
 export interface SkillTransferState {
   readonly globalCooldownEndAtMs: number;
@@ -88,6 +100,9 @@ export interface SkillComponent {
   ReadyAt(skillId: number): number;
   ItemReadyAt(itemConfigId: number): number;
   TryCommitItemCooldown(itemConfigId: number, cooldownMs: number, globalCooldownMs: number): ItemCooldownCommitResult;
+  PlanItemCooldown(itemConfigId: number, cooldownMs: number, globalCooldownMs: number): ItemCooldownPlan;
+  CommitItemCooldownPlan(plan: ItemCooldownPlan): ItemCooldownCommitResult;
+  ApplyCommittedItemCooldown(plan: ItemCooldownPlan): ItemCooldownCommitResult;
   Complete(castId: bigint): SkillCastState;
   Interrupt(reason: string): SkillCastState | undefined;
   ActiveCast(): ActiveSkillCast | undefined;

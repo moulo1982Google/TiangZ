@@ -46,6 +46,7 @@ export interface BuffComponent {
   AddBuff(configId: number, options?: BuffAddOptions): import("./Buff").Buff;
   HasBuffConfig(configId: number): boolean;
   GetBuffs(): readonly import("./Buff").Buff[];
+  ApplyCommittedBuff(state: import("./Buff").BuffTransferState): import("./Buff").BuffPublicState | undefined;
 }
 
 /**

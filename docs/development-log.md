@@ -7,6 +7,15 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-09：UseItem关键事务与回执恢复
+
+- `C2M_UseItem`新增客户端稳定`operation_id`。TypeScript SDK提供`CreateOperationId("item")`，Cocos3D、Pixi、Cocos2D、Unity、UE和Godot演示均在每次新使用时生成一次；同一逻辑请求重试复用，下一次点击必须换新ID。
+- Handler收敛为协议薄适配，只调用`ItemComponent.UseItemTransactional(itemId, operationId)`。Veto、Inventory扣除、道具/GCD、Heal/Buff效果、DBProxy提交、回执恢复和提交后领域通知全部由ItemComponent拥有，避免把业务编排重新堆到Handler。
+- Inventory、Skill cooldown、Combat healing和Buff新增纯数据Plan/Commit/ApplyCommitted能力。DBProxy确认前不修改Entity；确认后在ordered PlayerUnit mailbox内无await提交。ACK丢失或重复请求通过`LoadTransaction`取得首次回执，只补齐未应用状态，拒绝用旧回执回滚后来变化。
+- `ItemUseTransaction`把操作后Player Payload与原始`M2C_UseItem`回执一起提交。首批Planner支持1001的Heal和1002的无AddAction Stack Buff；新增Action必须先给出纯数据计划及恢复语义。Quest UseItem进度仍是提交后的领域投影，不伪装成跨域原子提交。
+- 裸V8真实链路发现`TextEncoder`并非宿主保证，回执Codec改用框架UTF-8工具。纯逻辑自测覆盖提交前失败、提交后ACK丢失、重复回执、后续状态防回滚、Buff Tick后重放；真实PostgreSQL/Redis验收使用同ID只扣一次，并在只重启TiangZ后恢复同一ItemId、`count=49/version=2`和首次回执。
+- 仍未完成Wallet、Trade、跨玩家事务、领域revision拆分、周期快照和自动节点接管；当前单Player记录只是Phase 4.5验证载体。
+
 ## 2026-08-09：TiangZ接入DBProxy玩家快照
 
 - 独立DBProxy发布`v0.3.0`运行时无关TypeScript SDK和协议锁，随后以`v0.3.1`移除对`TextEncoder`等浏览器全局对象的隐式依赖，保证SDK可直接运行在TiangZ裸V8。DBProxy继续不依赖TiangZ，也不认识游戏领域Payload。

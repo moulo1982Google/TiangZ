@@ -418,7 +418,8 @@ Demo中的参考位置：
 
 - [`MapComponent.Broadcast/Audience`](../../app/model/demo/map/MapComponent.ts)：业务广播和AOI受众的公开入口。
 - [`MapAoiComponent.ObserversOf/VisibleSubjectsOf`](../../app/model/demo/map/MapAoiComponent.ts)：两个明确方向的Audience工厂。
-- [`C2M_UseItemHandler`](../../app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts)：Handler只定位Unit并调用Component，随后发送立即事件。
+- [`C2M_UseItemHandler`](../../app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts)：Handler只把协议值交给ItemComponent。
+- [`ItemComponent.UseItemTransactional`](../../app/hotfix/demo/item/ItemComponentSystem.ts)：事务确认后发布只通知自己的立即道具事件。
 - [`MapComponent.PublishItemChanged`](../../app/model/demo/map/MapComponent.ts)：现有“只通知自己、不可覆盖”的完整Demo。
 
 业务不要从Handler直接导入`NativeData`或`NativeOps`。这些入口属于Map框架层，不是“更快的业务API”。
@@ -557,7 +558,8 @@ await map.PublishVisibilityChanges(changes);
 
 ```text
 C2M_UseItemHandler.Handle
-  -> unit.GetComponent(ItemComponent).UseItem(itemId)
+  -> unit.GetComponent(ItemComponent).UseItemTransactional(itemId, operationId)
+  -> DBProxy确认且Inventory确实前进
   -> MapComponent.PublishItemChanged(unit, item)
   -> ClientAudience.Self(unit.UnitId)
   -> ClientBroadcasts.ItemChanged（event，不可覆盖）
@@ -566,10 +568,10 @@ C2M_UseItemHandler.Handle
 对应代码：
 
 ```ts
-const item = unit.GetComponent(ItemComponent).UseItem(request.itemId);
-await unit.DomainScene()
-  .GetComponent(MapComponent)
-  .PublishItemChanged(unit, item);
+return unit.GetComponent(ItemComponent).UseItemTransactional(
+  request.itemId,
+  request.operationId,
+);
 ```
 
 这个Demo刻意说明：不是所有地图消息都要经过AOI。背包是玩家私有数据，直接使用`Self`比先查AOI再排除其他人更清晰。

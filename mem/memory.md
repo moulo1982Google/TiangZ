@@ -126,7 +126,8 @@ npm run build:cocos3d:mobile
 - 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。DBProxy当前为`v0.4.0`，Redis使用AOF和命名卷；除进程内`SnapshotFlushQueue`外，`RedisSnapshotBacklog`通过lease/ACK和过期回收支持DBProxy重启后重新领取，PostgreSQL恢复后继续按原`request_id`写入。
 - DBProxy独立协议固定为LoadSnapshot、SaveSnapshot、EnqueueSnapshot、ApplyTransaction和LoadTransaction；Save/Transaction成功表示PostgreSQL提交，Enqueue成功只表示Redis AOF backlog接收。`v0.4.0`提供运行时无关TypeScript SDK；客户端和服务端均按RecordKey做多连接分片，请求超时后连接不可复用，必须重新连接并保留原幂等ID。
 - TiangZ已经接入首个`HostDbProxyTransport -> DbProxyPlayerRepository`：只有配置`process.persistence.dbProxy`才启用，Rust Host Runtime负责网络I/O，业务V8只等待Promise。玩家快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态，最终下线保存后重启TiangZ可以从PostgreSQL恢复；普通all-in-one仍使用内存Repository。
-- 当前没有周期快照、批量RPC、Prometheus、TLS、Redis高可用和生产部署。任务GrantItem奖励已经成为首个`ApplyTransaction`业务：Inventory纯数据规划，DBProxy保存操作后Player记录与原始结果，成功后才修改Item/Quest；事务前失败和提交后ACK丢失均有自测。UseItem、Wallet、Trade、领域revision拆分和崩溃接管仍未完成，不得把单条任务链路描述成全部经济数据生产级不丢。
+- 当前没有周期快照、批量RPC、Prometheus、TLS、Redis高可用和生产部署。任务GrantItem奖励与UseItem已经接入`ApplyTransaction`：领域Component先生成纯数据计划，DBProxy保存操作后Player记录与原始结果，成功后才无await修改Entity；事务前失败和提交后ACK丢失均有自测。UseItem真实PostgreSQL验收已证明同ID只扣一次，并在只重启TiangZ后恢复原回执。Wallet、Trade、领域revision拆分和崩溃接管仍未完成，不得把两条Demo链路描述成全部经济数据生产级不丢。
+- 客户端每次新的道具使用调用`CreateOperationId("item")`一次；只有同一逻辑请求的网络重试才复用。不得按ItemId或配置ID生成固定operationId。外部请求固定走`Handler -> ItemComponent.UseItemTransactional -> Planner -> DBProxy -> Commit`，Handler不编排Veto、Action、持久化或广播。
 - 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。当前不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
 
 ## 技能系统第一阶段决定
@@ -153,7 +154,7 @@ npm run build:cocos3d:mobile
 
 ## Action、Buff与道具效果
 
-- 道具使用统一走`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`不可用，`1`添加Buff，`2`执行Action；不要为小红、大红或其他同类道具复制Handler分支。
+- 外部道具使用统一走`ItemComponent.UseItemTransactional`：Inventory、CD和效果先规划纯数据，DBProxy确认后才提交。当前事务Planner支持Heal和无AddAction的Stack Buff；普通技能命中与Buff Tick仍走`ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`不可用，`1`添加Buff，`2`执行Action；不要为小红、大红或其他同类道具复制Handler分支。
 - 当前Action类型为`None`、`ChangeNumeric`、`AddBuff`、`RemoveBuff`、`DealDamage`、`RegisterDamageAbsorber`和`Heal`。`ChangeNumeric`不能表达伤害或治疗，HP必须通过`DealDamage/Heal -> CombatComponent`。
 - `BuffComponent`拥有`Buff ChildEntity`；Buff负责可追踪Timer和Add/Tick/Remove生命周期，Component负责实例ID、集合、传送和AOI事件。Buff不成为Actor、不查AOI、不找Gate、不调用Location。
 - Buff传送只保存纯值和服务器墙钟时间，目标重建Timer但不重复执行AddAction；不保存TimerId、闭包、Promise或Entity引用。运行时Action覆盖和护盾剩余量已经随跨Process快照恢复。

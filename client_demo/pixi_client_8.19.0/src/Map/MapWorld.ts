@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 
 import type { RpcSocket } from "../Generated/SDK/Core/Net/RpcSocket";
+import { CreateOperationId } from "../Generated/SDK/Core/Protocol/OperationId";
 import { MapClient } from "../Generated/SDK/Generated/Model/demo/protocol/clients";
 import type {
   G2C_BuffAdded,
@@ -286,7 +287,7 @@ export class MapWorld {
     if (event.code === "KeyU" && !event.repeat) {
       const itemId = this.items.keys().next().value as bigint | undefined;
       if (itemId === undefined) return;
-      void this.mapClient.useItem({ itemId }).then(
+      void this.mapClient.useItem({ itemId, operationId: CreateOperationId("item") }).then(
         (response) => this.applyItem(response.item),
         (error) => console.error("使用道具失败", error),
       );

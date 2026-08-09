@@ -107,10 +107,13 @@ Audience 与广播语义互相独立。同一个技能事件可以发给地图 A
 推荐结构是“Handler 薄适配，Entity 做功能胶水，Component 实现领域能力”：
 
 ```ts
-@unitMessageHandler(PlayerUnit, ItemMessages.UseItem)
+@unitRpcHandler(PlayerUnit, MapProtocol.UseItem)
 export class C2M_UseItemHandler {
-  handle(unit: PlayerUnit, message: C2M_UseItem): void {
-    unit.UseItem(message.itemId);
+  handle(unit: PlayerUnit, message: C2M_UseItem): Promise<M2C_UseItem> {
+    return unit.GetComponent(ItemComponent).UseItemTransactional(
+      message.itemId,
+      message.operationId,
+    );
   }
 }
 
@@ -134,7 +137,7 @@ UseItem(itemId: number): void {
 
 不要为这条调用链增加 `UseItemSink`、`SkillEventDelegate` 或只转发一次调用的 Component。只有跨 mailbox、跨进程、协议编解码、Location 路由等真实边界才需要框架适配层。
 
-当“是否允许使用”会被死亡、控制、道具CD、公共CD等多个独立模块扩展时，使用同步Veto Event，而不是让Handler依赖所有模块：
+当“是否允许使用”会被死亡、控制、道具CD、公共CD等多个独立模块扩展时，领域Component使用同步Veto Event，而不是让Handler依赖所有模块：
 
 ```ts
 const reason = unit.DomainScene().Events.Check(ItemEvents.BeforeUse, {

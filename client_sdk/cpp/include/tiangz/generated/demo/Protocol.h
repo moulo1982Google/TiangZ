@@ -2906,6 +2906,7 @@ struct G2C_EntityStateCodec {
 struct C2M_UseItem {
   std::optional<std::uint32_t> rpcId;
   std::uint64_t itemId = 0;
+  std::string operationId;
 };
 
 struct C2M_UseItemCodec {
@@ -2929,6 +2930,13 @@ struct C2M_UseItemCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2941,6 +2949,7 @@ struct C2M_UseItemCodec {
     tiangz::client::BinaryWriter writer;
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.UInt64(1, value.itemId);
+    writer.String(2, value.operationId);
     return writer.Finish();
   }
 };

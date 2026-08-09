@@ -17,7 +17,10 @@ import type {
 } from "./PlayerRepository";
 
 export interface PlayerSaveOverrides {
+  readonly numerics?: PlayerSaveData["player"]["numerics"];
   readonly items?: PlayerSaveData["items"];
+  readonly buffs?: PlayerSaveData["buffs"];
+  readonly skill?: PlayerSaveData["skill"];
   readonly quests?: PlayerSaveData["quests"];
 }
 
@@ -73,17 +76,17 @@ export class PlayerPersistenceComponent extends Component<[
     return {
       player: {
         ...persistent,
-        numerics: numerics.map(({ numericType, value }) => ({ numericType, value })),
+        numerics: overrides.numerics ?? numerics.map(({ numericType, value }) => ({ numericType, value })),
       },
       items: overrides.items ?? player.GetComponent(ItemComponent).Snapshot(),
-      buffs: player.GetComponent(BuffComponent).CaptureTransfer().map(({
+      buffs: overrides.buffs ?? player.GetComponent(BuffComponent).CaptureTransfer().map(({
         sourceUnitId,
         ...buff
       }) => ({
         ...buff,
         source: sourceUnitId === player.UnitId ? "self" as const : "detached" as const,
       })),
-      skill: player.GetComponent(SkillComponent).CaptureTransfer(),
+      skill: overrides.skill ?? player.GetComponent(SkillComponent).CaptureTransfer(),
       quests: overrides.quests ?? player.GetComponent(QuestComponent).CaptureTransfer(),
       reason,
     };

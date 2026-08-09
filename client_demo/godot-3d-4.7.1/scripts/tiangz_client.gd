@@ -117,7 +117,11 @@ func use_item(item_id: int) -> bool:
 	if phase != "map" or item_request_pending:
 		return false
 	item_request_pending = true
-	_send_rpc(TiangZProto.C2M_USE_ITEM, TiangZProto.encode_c2m_use_item({"item_id": item_id}), TiangZProto.M2C_USE_ITEM, Callable(self, "_on_use_item_response"))
+	var operation_id := "item-%d-%d" % [Time.get_ticks_usec(), randi()]
+	_send_rpc(TiangZProto.C2M_USE_ITEM, TiangZProto.encode_c2m_use_item({
+		"item_id": item_id,
+		"operation_id": operation_id,
+	}), TiangZProto.M2C_USE_ITEM, Callable(self, "_on_use_item_response"))
 	return true
 
 ## 发送施法请求；客户端只负责选择目标和展示读条，不在本地结算伤害。

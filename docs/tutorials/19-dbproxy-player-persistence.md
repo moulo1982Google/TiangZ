@@ -1,6 +1,6 @@
 # DBProxy玩家快照持久化
 
-本教程演示TiangZ如何通过独立DBProxy保存玩家快照、在TiangZ重启后恢复，并以任务道具奖励验证第一条关键经济事务。当前实现仍是Phase 4.5基础：它不等于Wallet、Trade、UseItem和故障接管都已生产化。
+本教程演示TiangZ如何通过独立DBProxy保存玩家快照、在TiangZ重启后恢复，并以任务道具奖励和UseItem验证关键单玩家事务。当前实现仍是Phase 4.5基础：它不等于Wallet、Trade、跨玩家事务和故障接管都已生产化。
 
 ## 固定边界
 
@@ -113,7 +113,39 @@ DBProxy确认前，Item和Quest Entity都保持原状。operationId使用`quest-
 
 如果PostgreSQL已经提交但ACK丢失，`PlayerPersistenceComponent`会标记该操作结果不确定。下一次相同请求先调用`LoadTransaction`读取首次回执；Inventory只接受“已经相同”或“恰好推进一个Item version”的恢复，其他本地漂移拒绝自动覆盖并要求重新加载完整玩家数据。
 
-当前事务Planner只支持`GrantItem`。把Heal、Buff或跨玩家奖励写进Quest配置会被明确拒绝；新增事务Action前必须实现纯数据Planner、持久Payload和回执恢复规则，不能先改Entity再补一次Save。
+## UseItem关键事务
+
+外部道具请求不再执行“先扣道具、稍后保存”。完整链路是：
+
+```text
+C2M_UseItem（PlayerUnit ordered mailbox）
+  -> ItemComponent.UseItemTransactional(itemId, operationId)
+  -> Item.BeforeUse同步Veto
+  -> PlanConsumeItem + PlanItemCooldown + PlanHealing/Plan Buff
+  -> PlayerPersistenceComponent.Capture(操作后纯数据)
+  -> PlayerRepository.ApplyTransaction()
+      -> DBProxy/PostgreSQL原子保存Payload、revision和原始M2C_UseItem回执
+  -> CommitConsumePlan + CommitItemCooldownPlan + Commit效果
+  -> 发布Quest UseItem事实和自己的ItemChanged
+```
+
+DBProxy确认前，背包、冷却、HP和Buff Entity全部不变。提交后应用阶段不再`await`，因此同一个ordered PlayerUnit mailbox内不会暴露半完成状态。PostgreSQL已经提交但响应丢失时，服务端用`LoadTransaction`取得首次回执，只补做尚未应用的状态；旧回执不能把后来发生的背包、HP或冷却变化回滚。
+
+客户端必须为每次**新的逻辑使用**生成一次稳定ID：
+
+```ts
+import { CreateOperationId } from "../Generated/SDK";
+
+const operationId = CreateOperationId("item");
+await mapClient.useItem({ itemId, operationId });
+// 网络超时重试同一次使用时复用operationId；下一次点击必须生成新ID。
+```
+
+不能按`itemId`或`ItemConfigId`生成固定operationId，否则后续正常使用会被DBProxy识别成第一次操作的重复请求。
+
+当前事务Planner只支持`Heal`和“`Stack`策略且没有`AddAction`”的Buff；演示道具1001和1002覆盖这两条路径。新增事务Action时，必须同时提供纯数据Planner、操作后持久化Payload、业务回执编码和ACK丢失后的恢复规则，不能直接在`ActionExecutor`里产生副作用后再补保存。Quest的UseItem进度目前是事务成功后的领域投影，不与经济记录伪装成跨域原子提交。
+
+任务奖励事务的Planner当前仍只支持`GrantItem`。把Heal、Buff或跨玩家奖励写进Quest配置会被明确拒绝；新增事务Action前必须实现纯数据Planner、持久Payload和回执恢复规则，不能先改Entity再补一次Save。
 
 ## 当前快照内容
 
@@ -164,11 +196,25 @@ node dist/smoke_client.cjs --dbproxy-persistence-read dbproxy_smoke_001
 npm run test:player-persistence
 ```
 
+UseItem真实事务验收先启动DBProxy和`configs/local/all-in-one-dbproxy.json`，然后执行：
+
+```powershell
+node dist/smoke_client.cjs --dbproxy-item-use dbproxy_item_use_001
+```
+
+它会使用同一个operationId重复请求并确认1001道具只从50减少到49。随后只重启TiangZ，保持DBProxy、PostgreSQL和Redis运行，再执行：
+
+```powershell
+node dist/smoke_client.cjs --dbproxy-item-use-read dbproxy_item_use_001
+```
+
+通过标准是仍恢复同一ItemId、`count=49, version=2`及首次事务回执，而不是再次扣除或重新治疗。
+
 ## 当前限制
 
 - 当前只在最终下线和停机保存，没有周期快照；TiangZ在保存前崩溃仍可能丢失最近运行状态。
-- 任务`GrantItem`奖励已接入`ApplyTransaction`，但UseItem消耗、Wallet、Trade和跨玩家事务尚未接入；普通道具操作仍可能依赖稍后快照，不能把单条任务链路描述为全部经济数据生产级不丢。
+- 任务`GrantItem`奖励和UseItem已接入`ApplyTransaction`，但Wallet、Trade和跨玩家事务尚未接入；UseItem Planner也只覆盖Heal及受限Buff，不能把两条Demo链路描述为全部经济数据生产级不丢。
 - 尚无批量Load/Save、Prometheus DBProxy指标、TLS、令牌轮换、Redis高可用和自动节点接管。
 - 玩家账号暂时就是快照RecordKey；正式账号/角色拆分后需要稳定CharacterId和明确的数据域Revision。
 
-下一步应扩展UseItem/Wallet等关键经济边界并拆分领域revision，再做周期快照、批量登录恢复和故障接管，不能继续扩大一个巨型Player Snapshot来替代领域一致性设计。
+下一步应拆分领域revision并扩展Wallet等关键经济边界，再做周期快照、批量登录恢复和故障接管，不能继续扩大一个巨型Player Snapshot来替代领域一致性设计。

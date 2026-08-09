@@ -164,6 +164,7 @@ bool FTiangZLoginFlow::UseItem(std::uint64_t ItemId, FUseItem OnCompleted)
     bUseItemInFlight = true;
     C2M_UseItem Request;
     Request.itemId = ItemId;
+    Request.operationId = TCHAR_TO_UTF8(*FString::Printf(TEXT("item-%s"), *FGuid::NewGuid().ToString(EGuidFormats::Digits)));
     GateSocket->Call(Map_UseItem, MoveTemp(Request),
         [this, Completion = MoveTemp(OnCompleted)](M2C_UseItem Response) mutable
         {

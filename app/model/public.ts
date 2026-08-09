@@ -52,6 +52,7 @@ export {
 } from "./demo/gate/GatePlayerRoute";
 export {
   ItemComponent,
+  type InventoryConsumePlan,
   type InventoryGrant,
   type InventoryGrantPlan,
   type InventoryGrantResult,
@@ -93,6 +94,7 @@ export {
   SkillComponent,
   type ActiveSkillCast,
   type ItemCooldownCommitResult,
+  type ItemCooldownPlan,
   type ItemCooldownTransferState,
   type SkillCastCommand,
   type SkillCastPhaseValue,
@@ -157,6 +159,7 @@ export { NativeOps } from "../generated/model/native/NativeOps";
 export { LoginComponent } from "./demo/login/LoginComponent";
 export { SelectStickyGate } from "./demo/login/GateSelector";
 export { PlayerPersistenceComponent } from "./demo/persistence/PlayerPersistenceComponent";
+export type { PlayerSaveData } from "./demo/persistence/PlayerRepository";
 export {
   NativeData,
   type NativeRaycastHit,
@@ -203,6 +206,7 @@ export {
   type DamageResult,
   type DamageSchoolValue,
   type HealingResult,
+  type HealingPlan,
 } from "./demo/combat/CombatComponent";
 export {
   MonsterUnit,

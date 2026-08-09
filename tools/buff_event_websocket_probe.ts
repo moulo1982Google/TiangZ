@@ -12,6 +12,7 @@ import {
   MapClient,
 } from "../client_sdk/typescript/Generated/Model/demo/protocol/clients";
 import { LoginFlow } from "../client_sdk/typescript/Demo/LoginFlow";
+import { CreateOperationId } from "../client_sdk/typescript/Core/Protocol/OperationId";
 import "../client_sdk/typescript/Core/Net/BrowserWebSocketTransport";
 
 const HOST = process.env.TIANGZ_LOGIN_HOST ?? "14.103.24.32";
@@ -38,7 +39,10 @@ async function main(): Promise<void> {
       removed = message;
     });
     const added = gate.waitForMessage<G2C_BuffAdded>(ClientMessages.BuffAdded, { timeoutMs: 5_000 });
-    const response = await new MapClient(gate).useItem({ itemId: item.itemId });
+    const response = await new MapClient(gate).useItem({
+      itemId: item.itemId,
+      operationId: CreateOperationId("buff-probe"),
+    });
     const message = await added;
     if (!response.buff || response.buff.unitId !== result.enterMap.unitId || response.buff.buffConfigId !== 2001) {
       throw new Error("UseItem response did not echo the public Buff to the owner");

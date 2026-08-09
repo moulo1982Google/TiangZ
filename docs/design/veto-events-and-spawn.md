@@ -13,7 +13,7 @@ TiangZ把“现在能不能做”和“做完后通知别人”分成不同能�
   -> SyncEvent / Broadcast / RPC通知结果
 ```
 
-以使用红药为例，死亡、控制、道具CD、公共CD和Buff叠加上限分别属于不同模块。`C2M_UseItemHandler`不需要知道这些模块的数量，只发布`ItemEvents.BeforeUse`检查；新增限制只需新增一个Hotfix Veto Handler。
+以使用红药为例，死亡、控制、道具CD、公共CD和Buff叠加上限分别属于不同模块。`C2M_UseItemHandler`只把协议值交给`ItemComponent.UseItemTransactional`，领域方法发布`ItemEvents.BeforeUse`检查；新增限制只需新增一个Hotfix Veto Handler。
 
 ## 为什么不是普通Event
 
@@ -50,7 +50,7 @@ export class GlobalCooldownVeto
 
 ## BeforeUseItem调用范例
 
-定义位于`app/model/demo/item/ItemEvents.ts`，监听示例位于`app/hotfix/demo/item/handlers/BeforeUseItemVetoHandlers.ts`，调用位于`app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts`：
+定义位于`app/model/demo/item/ItemEvents.ts`，监听示例位于`app/hotfix/demo/item/handlers/BeforeUseItemVetoHandlers.ts`，调用位于`app/hotfix/demo/item/ItemComponentSystem.ts`：
 
 ```ts
 const reason = unit.DomainScene().Events.Check(ItemEvents.BeforeUse, {
@@ -62,11 +62,12 @@ if (reason !== SystemErrCode.Success) {
   throw new RpcError(reason, "item use vetoed");
 }
 
-const changed = inventory.UseItem(item.Id);
-ExecuteAction(unit, action, { reason: "item-use" });
+const plan = PlanItemUseTransaction(unit, item.Id, item.configId);
+await persistence.ApplyTransaction(operationId, plan.data, EncodeItemUseReceipt(plan.receipt));
+ApplyItemUseTransaction(unit, plan.receipt, plan.inventory);
 ```
 
-`ItemNotFound`等构造检查仍可在Handler直接完成；真正会被其他模块持续扩展的策略才进入Veto链。`ItemComponent.UseItem`仍保留数量不变量，不能因为前面检查过就删除领域对象自己的最终校验。
+`ItemNotFound`等构造检查由ItemComponent完成；真正会被其他模块持续扩展的策略才进入Veto链。Planner和Commit仍保留数量、版本、CD与回执不变量，不能因为前面检查过就删除领域对象自己的最终校验。Veto只读且同步，DBProxy等待发生在全部Veto通过之后。
 
 ## Spawn语义
 

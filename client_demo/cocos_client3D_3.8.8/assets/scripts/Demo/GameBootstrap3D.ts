@@ -22,6 +22,7 @@ import { NATIVE, PREVIEW } from "cc/env";
 import { LoginFlow } from "../Generated/SDK/Demo/LoginFlow";
 import { BuffStateStore } from "../Generated/SDK/Demo/BuffStateStore";
 import { ClientMessageDispatcher } from "../Generated/SDK/Core/Net/ClientMessageDispatcher";
+import { CreateOperationId } from "../Generated/SDK/Core/Protocol/OperationId";
 import {
   GateClient,
   MapClient,
@@ -1293,7 +1294,10 @@ export class GameBootstrap3D extends Component {
     this.itemUseInFlight.add(configId);
     this.updateHotbarHud();
     try {
-      const response = await mapClient.useItem({ itemId: item.itemId });
+      const response = await mapClient.useItem({
+        itemId: item.itemId,
+        operationId: CreateOperationId("item"),
+      });
       this.ApplyItemSnapshot(response.item);
       if (response.buff) this.ApplyBuffAdded({ buff: response.buff });
       this.skillGlobalCooldownEndAtMs = Math.max(

@@ -23,6 +23,12 @@ import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/NumericType";
 import { SkillCastPhase, SkillComponent } from "../app/model/demo/skill/SkillComponent";
 import { ItemComponent } from "../app/model/demo/item/ItemComponent";
+import {
+  ApplyItemUseTransaction,
+  DecodeItemUseReceipt,
+  EncodeItemUseReceipt,
+  PlanItemUseTransaction,
+} from "../app/hotfix/demo/item/ItemUseTransaction";
 import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
 import { QuestObjectiveType, QuestStatus } from "../app/generated/model/config";
 import { PlayerUnit } from "../app/model/demo/map/PlayerUnit";
@@ -123,7 +129,91 @@ async function main(): Promise<void> {
   const sourceSkill = unit.AddComponent(SkillComponent);
   const quests = unit.AddComponent(QuestComponent);
   const repository = new ControllablePlayerRepository();
-  unit.AddComponent(PlayerPersistenceComponent, repository, 0n);
+  const persistence = unit.AddComponent(PlayerPersistenceComponent, repository, 0n);
+
+  // 道具关键事务在DBProxy确认前不修改背包、CD或效果；失败可以原样重试。
+  // Critical item transactions do not mutate inventory, cooldowns, or effects before DBProxy confirms; failures remain retryable.
+  const smallPotion = items.Snapshot().find((item) => item.configId === 1001)!;
+  const failedPlan = PlanItemUseTransaction(unit, smallPotion.itemId, smallPotion.configId);
+  repository.failTransactions = true;
+  await assert.rejects(
+    persistence.ApplyTransaction(
+      "item-use:buff-test-1:failure",
+      failedPlan.data,
+      EncodeItemUseReceipt(failedPlan.receipt),
+    ),
+    /injected transaction failure/,
+  );
+  assert.equal(items.GetItem(smallPotion.itemId)?.count, 50);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentHp], 1n);
+  assert.equal(sourceSkill.ItemReadyAt(1001), 0);
+
+  // 模拟PostgreSQL已提交但ACK丢失：按operationId读取原回执后只补做一次内存效果。
+  // Simulate a committed PostgreSQL transaction with a lost ACK: the original receipt reconciles in-memory state exactly once.
+  repository.failTransactions = false;
+  repository.loseNextTransactionAck = true;
+  const lostAckPlan = PlanItemUseTransaction(unit, smallPotion.itemId, smallPotion.configId);
+  const lostAckResult = EncodeItemUseReceipt(lostAckPlan.receipt);
+  await assert.rejects(
+    persistence.ApplyTransaction(
+      "item-use:buff-test-1:lost-ack",
+      lostAckPlan.data,
+      lostAckResult,
+    ),
+    /injected lost transaction ack/,
+  );
+  assert.equal(items.GetItem(smallPotion.itemId)?.count, 50);
+  const lostAckReceipt = await persistence.LoadTransaction("item-use:buff-test-1:lost-ack");
+  assert.ok(lostAckReceipt);
+  const durablePotion = DecodeItemUseReceipt(lostAckReceipt.result);
+  const firstApply = ApplyItemUseTransaction(unit, durablePotion);
+  assert.equal(firstApply.inventoryChanged, true);
+  assert.equal(items.GetItem(smallPotion.itemId)?.count, 49);
+  const healedHp = unit.GetComponent(NumericComponent)[NumericType.CurrentHp];
+  assert.ok(healedHp > 1n);
+  const duplicateApply = ApplyItemUseTransaction(unit, durablePotion);
+  assert.equal(duplicateApply.inventoryChanged, false);
+  assert.equal(items.GetItem(smallPotion.itemId)?.count, 49);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentHp], healedHp);
+
+  // 后续背包写入已使version前进时，旧回执只能返回原结果，不能把当前堆叠回退。
+  // Once a later inventory write advances version, an old receipt may return its original result but cannot roll the current stack backward.
+  items.GrantItem(1001, 1);
+  const countAfterLaterWrite = items.GetItem(smallPotion.itemId)!.count;
+  ApplyItemUseTransaction(unit, durablePotion);
+  assert.equal(items.GetItem(smallPotion.itemId)?.count, countAfterLaterWrite);
+
+  // 等待共享GCD后验证Buff道具也使用确定实例回执，重复应用不会创建第二个Buff。
+  // After shared GCD expires, verify a Buff item uses an exact instance receipt and replay cannot create a second Buff.
+  const itemFrame = TimeSystem.Instance.FrameTime + 1_100;
+  const itemServer = TimeSystem.Instance.ServerNow + 1_100;
+  TimeSystem.Instance.__update(itemFrame, itemServer);
+  TimerSystem.Instance.__update(itemFrame);
+  const largePotion = items.Snapshot().find((item) => item.configId === 1002)!;
+  const buffPlan = PlanItemUseTransaction(unit, largePotion.itemId, largePotion.configId);
+  const buffReceiptBytes = EncodeItemUseReceipt(buffPlan.receipt);
+  const buffTransaction = await persistence.ApplyTransaction(
+    "item-use:buff-test-1:buff",
+    buffPlan.data,
+    buffReceiptBytes,
+  );
+  const durableBuff = DecodeItemUseReceipt(buffTransaction.result);
+  const buffApply = ApplyItemUseTransaction(unit, durableBuff, buffPlan.inventory);
+  assert.equal(buffApply.inventoryChanged, true);
+  assert.equal(buffs.GetBuffs().filter((value) => value.ConfigId === 2001).length, 1);
+  const transactionTickFrame = TimeSystem.Instance.FrameTime + 3_100;
+  const transactionTickServer = TimeSystem.Instance.ServerNow + 3_100;
+  TimeSystem.Instance.__update(transactionTickFrame, transactionTickServer);
+  TimerSystem.Instance.__update(transactionTickFrame);
+  await Promise.resolve();
+  await Promise.resolve();
+  ApplyItemUseTransaction(unit, durableBuff);
+  assert.equal(buffs.GetBuffs().filter((value) => value.ConfigId === 2001).length, 1);
+  const transactionBuff = buffs.GetBuffs().find((value) => value.ConfigId === 2001)!;
+  buffs.RemoveBuff(transactionBuff.Id as bigint, "transaction-test-cleanup");
+  items.GrantItem(1002, 1);
+  unit.GetComponent(NumericComponent)[NumericType.CurrentHp] = 1n;
+  sourceSkill.RestoreTransfer({ globalCooldownEndAtMs: 0, cooldowns: [], itemCooldowns: [] });
 
   assert.deepEqual(quests.Snapshot().map((quest) => quest.questConfigId), [5001, 5002, 5003]);
   assert.deepEqual(quests.ApplyProgress({

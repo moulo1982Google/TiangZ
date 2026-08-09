@@ -224,6 +224,9 @@ message G2C_EntityState // IMessage
 message C2M_UseItem // IActorLocationRequest
 {
   uint64 item_id = 1;
+  // 一次逻辑使用操作的稳定ID；客户端重试必须复用，新操作必须重新生成。
+  // Stable ID for one logical use operation; retries reuse it and new uses generate another.
+  string operation_id = 2;
 }
 
 message M2C_UseItem // IActorLocationResponse

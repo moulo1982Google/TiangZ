@@ -87,6 +87,16 @@ async function main() {
     await verifyDbProxyQuestRewardRecovery(loginAddr, questRewardReadAccount);
     return;
   }
+  const itemUseAccount = namedArgument("--dbproxy-item-use");
+  if (itemUseAccount) {
+    await verifyDbProxyItemUse(loginAddr, itemUseAccount);
+    return;
+  }
+  const itemUseReadAccount = namedArgument("--dbproxy-item-use-read");
+  if (itemUseReadAccount) {
+    await verifyDbProxyItemUseRecovery(loginAddr, itemUseReadAccount);
+    return;
+  }
   if (process.argv.includes("--map100-initial-only") || process.argv.includes("--skill-only")) {
     const login = await requestLogin(loginAddr.ip, loginAddr.port, `smoke_map100_${Date.now()}`);
     const client = await openGateAndEnterMap(
@@ -175,7 +185,10 @@ async function writeDbProxyPersistenceFixture(
   let changed: ReturnType<typeof decodeUseItemFrame>["body"];
   try {
     changed = decodeUseItemFrame(await client.gate.request(
-      buildUseItemPacket(nextRpcId++, { itemId: initial.itemId }),
+      buildUseItemPacket(nextRpcId++, {
+        itemId: initial.itemId,
+        operationId: nextOperationId("persistence"),
+      }),
     )).body;
     if (changed.error || changed.item.count !== 49) {
       throw new Error(`DBProxy write fixture item use failed: ${stringifyForError(changed)}`);
@@ -284,6 +297,90 @@ async function verifyDbProxyQuestRewardRecovery(
       questConfigId: receipt.questConfigId,
       itemId: item.itemId.toString(),
       count: item.count,
+    });
+  } finally {
+    await client.gate.close();
+  }
+}
+
+/** 验证道具扣除、治疗/CD效果和原始响应由同一玩家事务提交，同operationId重试不会再次扣除。 / Verifies item consumption, heal/cooldown effects, and the original response share one player transaction and the same operationId cannot consume twice. */
+async function verifyDbProxyItemUse(
+  loginAddr: { ip: string; port: number },
+  account: string,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 100 },
+  );
+  try {
+    const initial = client.enterMap.items.find((item) => item.configId === 1001);
+    if (!initial || initial.count !== 50) {
+      throw new Error(`item transaction fixture expected 50 small potions, got ${initial?.count}`);
+    }
+    const request = {
+      itemId: initial.itemId,
+      operationId: "dbproxy-item-use-1",
+    };
+    const first = decodeUseItemFrame(await client.gate.request(
+      buildUseItemPacket(nextRpcId++, request),
+    )).body;
+    const duplicate = decodeUseItemFrame(await client.gate.request(
+      buildUseItemPacket(nextRpcId++, request),
+    )).body;
+    if (
+      first.error || duplicate.error ||
+      first.item.count !== 49 || duplicate.item.count !== 49 ||
+      first.item.itemId !== duplicate.item.itemId ||
+      first.item.version !== duplicate.item.version ||
+      first.globalCooldownEndAtMs !== duplicate.globalCooldownEndAtMs ||
+      first.itemCooldownEndAtMs !== duplicate.itemCooldownEndAtMs
+    ) {
+      throw new Error(`item transaction was not idempotent: ${stringifyForError({ first, duplicate })}`);
+    }
+    console.log("DBProxy item-use transaction passed:", {
+      account,
+      itemId: first.item.itemId.toString(),
+      count: first.item.count,
+      version: first.item.version,
+    });
+  } finally {
+    await client.gate.close();
+  }
+}
+
+/** TiangZ重启后从事务快照恢复背包，并用原operationId取回首次结果而不再次扣除。 / Restores inventory from the transaction snapshot after restart and returns the first result for the original operationId without consuming again. */
+async function verifyDbProxyItemUseRecovery(
+  loginAddr: { ip: string; port: number },
+  account: string,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 100 },
+  );
+  try {
+    const restored = client.enterMap.items.find((item) => item.configId === 1001);
+    if (!restored || restored.count !== 49 || restored.version !== 2) {
+      throw new Error(`item transaction recovery snapshot mismatch: ${stringifyForError(restored)}`);
+    }
+    const receipt = decodeUseItemFrame(await client.gate.request(buildUseItemPacket(
+      nextRpcId++,
+      { itemId: restored.itemId, operationId: "dbproxy-item-use-1" },
+    ))).body;
+    if (
+      receipt.error || receipt.item.count !== 49 ||
+      receipt.item.itemId !== restored.itemId || receipt.item.version !== 2
+    ) {
+      throw new Error(`item transaction recovery receipt mismatch: ${stringifyForError(receipt)}`);
+    }
+    console.log("DBProxy item-use restart recovery passed:", {
+      account,
+      itemId: restored.itemId.toString(),
+      count: restored.count,
+      version: restored.version,
     });
   } finally {
     await client.gate.close();
@@ -601,6 +698,11 @@ async function verifyGateFinalTimeout(loginIp: string, loginPort: number): Promi
 }
 
 let nextRpcId = 1;
+let nextOperationSequence = 1;
+
+function nextOperationId(scope: string): string {
+  return `smoke-${scope}-${Date.now().toString(36)}-${nextOperationSequence++}`;
+}
 
 function requestLoginServiceAddr(ip: string, port: number) {
   const rpcId = nextRpcId++;
@@ -710,7 +812,10 @@ async function verifyMapTransfer(
   const queuedItemRpcId = nextRpcId++;
   const queuedItemEvent = gate.waitForMessage(MsgCode.G2C_ItemChanged);
   const queuedItemResponse = gate.request(
-    buildUseItemPacket(queuedItemRpcId, { itemId: queuedItem.itemId }),
+    buildUseItemPacket(queuedItemRpcId, {
+      itemId: queuedItem.itemId,
+      operationId: nextOperationId("transfer"),
+    }),
   );
   const responseFrame = await responsePromise;
   const response = decodeEnterMapFrame(responseFrame);
@@ -1353,7 +1458,10 @@ async function verifyItemChange(
   const expectedHp = restoredHp < maxHp ? restoredHp : maxHp;
   const pushed = gate.waitForMessage(MsgCode.G2C_ItemChanged);
   const responseFrame = await gate.request(
-    buildUseItemPacket(nextRpcId++, { itemId: initial.itemId }),
+    buildUseItemPacket(nextRpcId++, {
+      itemId: initial.itemId,
+      operationId: nextOperationId("buff"),
+    }),
   );
   const useItemResponse = decodeUseItemFrame(responseFrame).body;
   const response = useItemResponse.item;

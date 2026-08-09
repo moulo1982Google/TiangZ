@@ -317,16 +317,16 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
   C2M_UseItem,
   M2C_UseItem
 > {
-  async handle(unit: PlayerUnit, request: C2M_UseItem): Promise<M2C_UseItem> {
-    const item = unit.GetComponent(ItemComponent).UseItem(request.itemId);
-    const config = GameConfigs.ItemConfig.Get(item.configId);
-    const action = ActionFromConfig(config.useEffect, config.useParams);
-    const execution = ExecuteAction(unit, action, { reason: "item-use" });
-    await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(unit, item);
-    return execution.addedBuff ? { item, buff: execution.addedBuff } : { item };
+  handle(unit: PlayerUnit, request: C2M_UseItem): Promise<M2C_UseItem> {
+    return unit.GetComponent(ItemComponent).UseItemTransactional(
+      request.itemId,
+      request.operationId,
+    );
   }
 }
 ```
+
+这里的Handler不发布Veto、不调用DBProxy、不解释Action，也不手工广播。`ItemComponent`拥有道具使用这一条领域用例，负责同步Veto、纯数据事务计划、持久化确认、Entity提交和领域通知；以后增加同类校验或效果时不要把编排重新堆回Handler。
 
 不要这样做：
 
@@ -739,7 +739,7 @@ await player.Offline(reason);
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy独立仓库的`v0.4.0`已提供PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励已成为首个关键事务；Wallet、Trade、UseItem消费事务、周期快照和崩溃接管尚未完成。
+DBProxy独立仓库的`v0.4.0`已提供PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励与UseItem消费已成为关键单玩家事务；Wallet、Trade、周期快照和崩溃接管尚未完成。
 
 ## AOI业务规则
 
@@ -906,7 +906,7 @@ C2M_AttackMonsterHandler
 
 ## DBProxy持久化接入边界
 
-独立DBProxy当前为`v0.4.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK、事务回执查询和真实PostgreSQL/Redis闭环。TiangZ主工程已经实现Player Snapshot与首个任务奖励事务，但业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
+独立DBProxy当前为`v0.4.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK、事务回执查询和真实PostgreSQL/Redis闭环。TiangZ主工程已经实现Player Snapshot、任务奖励事务和UseItem消费事务，但业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
 
 正式接入后的固定调用层次应是：
 
@@ -930,7 +930,7 @@ Handler
 
 当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成；断线、踢下线和停机只调用`player.Offline(reason)`，由`PlayerPersistenceComponent.SaveOnOffline`采集Numeric、Item、Buff、Skill冷却、Quest和地图状态，并以当前Revision提交。Handler不得直接调用Repository。
 
-当前普通玩家快照已验证重启恢复，任务GrantItem奖励已接入`ApplyTransaction`：稳定operationId、expectedRevision、奖励后的完整Payload和原始响应在PostgreSQL同一事务提交，确认后才修改内存；ACK丢失时查询回执并按首次结果恢复。它仍没有周期快照、UseItem/Wallet/Trade事务或按领域拆分revision；崩溃发生在普通最终保存之前仍可能丢失最近运行状态。下一阶段先扩展关键经济领域，再做批量Load/Save、周期Flush和节点接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+当前普通玩家快照已验证重启恢复，任务GrantItem奖励和UseItem都已接入`ApplyTransaction`：稳定operationId、expectedRevision、操作后的完整Payload和原始响应在PostgreSQL同一事务提交，确认后才修改内存；ACK丢失时查询回执并按首次结果恢复。`C2M_UseItemHandler`只把`itemId + operationId`交给`ItemComponent.UseItemTransactional`，事务编排不能堆回Handler。客户端每次新使用调用`CreateOperationId("item")`一次，只有同一逻辑请求重试才复用；不能按ItemId或配置ID生成固定键。当前UseItem Planner只允许Heal及无AddAction的Stack Buff，并同时规划Inventory、道具/GCD和HP/Buff；任意新Action必须先提供纯数据Planner与回执恢复语义。Quest UseItem进度是提交成功后的领域投影，尚未和经济事务伪装成跨域原子提交。系统仍没有周期快照、Wallet/Trade事务或按领域拆分revision；崩溃发生在普通最终保存之前仍可能丢失最近运行状态。下一阶段先拆领域revision并扩展Wallet等经济域，再做批量Load/Save、周期Flush和节点接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 
@@ -965,7 +965,7 @@ Handler
 
 ## Action、Buff与Skill的当前规则
 
-道具使用统一遵循`ItemComponent.UseItem -> ActionFromConfig -> ExecuteAction`。`ItemConfig.use_effect=0`表示不可用，`1`表示直接添加一个Buff，`2`表示把`use_params`解释为`[ActionType, ...parameters]`。开发者优先改配置，不要为了不同药水复制Handler。`cooldown_ms`表示按ItemConfigId隔离的自身CD，`global_cooldown_ms`进入与技能共享的玩家GCD；Handler必须先用`SkillComponent.TryCommitItemCooldown`原子检查和提交，再扣道具并执行Action。当前验收道具是1001执行`Heal(150)`、1002添加2001持续回血Buff；两者自身CD均为30秒、共享GCD均为1秒，2001的Tick执行`Heal(50)`，这些路径都不能直接写CurrentHp。
+外部道具使用统一遵循`C2M_UseItemHandler -> ItemComponent.UseItemTransactional -> Planner -> DBProxy -> Commit`。`ItemConfig.use_effect=0`表示不可用，`1`表示添加Buff，`2`表示把`use_params`解释为`[ActionType, ...parameters]`。开发者优先改配置，不要为了不同药水复制Handler。`cooldown_ms`表示按ItemConfigId隔离的自身CD，`global_cooldown_ms`进入与技能共享的玩家GCD；Inventory、CD和效果必须先生成纯数据计划，DBProxy确认后才无await提交。当前事务Planner支持1001的`Heal(150)`和1002添加无AddAction的Stack Buff 2001；两者自身CD均为30秒、共享GCD均为1秒，2001后续Tick仍通过普通`ActionExecutor -> Heal(50)`执行。新增事务Action必须先定义操作后Payload和回执恢复，不能在执行副作用后再补保存。
 
 `BuffComponent`拥有`Buff` ChildEntity；Component负责集合、实例ID、传送和AOI生命周期事件，BuffSystem负责Add/Tick/Remove和Timer。Buff传送只保存纯值及墙钟时间，目标重建Timer但不重复AddAction；不保存TimerId、闭包、Promise或Entity。Buff Tick只执行Action，Numeric和Combat沿用自身同步边界。
 

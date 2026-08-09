@@ -79,6 +79,18 @@ export interface HealingResult {
 }
 
 /**
+ * 治疗Action的纯数据计划。它允许DBProxy先保存操作后HP，再由当前Unit同步应用。
+ * Pure-value healing plan that lets DBProxy persist post-operation HP before
+ * the current Unit applies it synchronously.
+ */
+export interface HealingPlan {
+  readonly amount: bigint;
+  readonly baseCurrentHp: bigint;
+  readonly nextCurrentHp: bigint;
+  readonly result: HealingResult;
+}
+
+/**
  * CombatComponent内部的伤害吸收状态；Buff只需保存modifierId，不需要成为受伤入口。
  *
  * Internal damage-absorber state. A Buff only needs the modifierId and never
@@ -103,6 +115,9 @@ export interface CombatComponent {
   RemoveDamageAbsorber(modifierId: number): boolean;
   ApplyDamage(request: DamageRequest): DamageResult;
   ApplyHealing(amount: bigint): HealingResult;
+  PlanHealing(amount: bigint): HealingPlan;
+  CommitHealingPlan(plan: HealingPlan): HealingResult;
+  ApplyCommittedHealing(plan: HealingPlan): HealingResult;
 }
 
 /**

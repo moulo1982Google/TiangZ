@@ -12,6 +12,7 @@ import {
   type DamageResult,
   type DamageSchoolValue,
   type HealingResult,
+  type HealingPlan,
   systemFor,
 } from "#tiangz/model";
 
@@ -206,6 +207,11 @@ export class CombatComponentSystem extends CombatComponent {
    * is a separate business action.
    */
   ApplyHealing(amount: bigint): HealingResult {
+    return this.CommitHealingPlan(this.PlanHealing(amount));
+  }
+
+  /** 计算治疗后的HP但不修改Numeric；事务规划只能调用本方法。 / Computes post-heal HP without mutating Numeric; transactional planning must use this method. */
+  PlanHealing(amount: bigint): HealingPlan {
     validateNonNegativeBigInt(amount, "healing amount");
     const owner = this.GetParent();
     const numeric = owner.GetComponent(NumericComponent);
@@ -213,15 +219,54 @@ export class CombatComponentSystem extends CombatComponent {
     const maxHp = numeric[NumericType.MaxHp];
     const native = owner.TryGetComponent(NativeUnitRef);
     if (amount === 0n || currentHp >= maxHp || native?.alive === 0) {
-      return { requestedHealing: amount, restoredHealing: 0n, currentHp };
+      return {
+        amount,
+        baseCurrentHp: currentHp,
+        nextCurrentHp: currentHp,
+        result: { requestedHealing: amount, restoredHealing: 0n, currentHp },
+      };
     }
     const nextHp = currentHp + amount < maxHp ? currentHp + amount : maxHp;
-    numeric[NumericType.CurrentHp] = nextHp;
     return {
-      requestedHealing: amount,
-      restoredHealing: nextHp - currentHp,
-      currentHp: nextHp,
+      amount,
+      baseCurrentHp: currentHp,
+      nextCurrentHp: nextHp,
+      result: {
+        requestedHealing: amount,
+        restoredHealing: nextHp - currentHp,
+        currentHp: nextHp,
+      },
     };
+  }
+
+  /**
+   * 提交刚创建的治疗计划。若DB等待期间HP被Timer改变，则按当前HP重新结算一次治疗，
+   * 不覆盖这段时间产生的战斗结果。
+   * Commits a freshly planned heal. If a Timer changed HP while DBProxy was
+   * pending, healing is recalculated from current HP instead of overwriting it.
+   */
+  CommitHealingPlan(plan: HealingPlan): HealingResult {
+    const numeric = this.GetParent().GetComponent(NumericComponent);
+    const currentHp = numeric[NumericType.CurrentHp];
+    if (currentHp !== plan.baseCurrentHp) return this.ApplyHealing(plan.amount);
+    if (plan.nextCurrentHp !== currentHp) numeric[NumericType.CurrentHp] = plan.nextCurrentHp;
+    return { ...plan.result };
+  }
+
+  /**
+   * 重放已提交治疗时只接受base到next或已经等于next；其他HP表示后续战斗已覆盖该效果，不重复加血。
+   * Replays a committed heal only from base to next or as an already-applied
+   * no-op. Any other HP means later combat superseded the effect.
+   */
+  ApplyCommittedHealing(plan: HealingPlan): HealingResult {
+    const numeric = this.GetParent().GetComponent(NumericComponent);
+    const currentHp = numeric[NumericType.CurrentHp];
+    if (currentHp === plan.baseCurrentHp) {
+      if (plan.nextCurrentHp !== currentHp) numeric[NumericType.CurrentHp] = plan.nextCurrentHp;
+      return { ...plan.result };
+    }
+    if (currentHp === plan.nextCurrentHp) return { ...plan.result, restoredHealing: 0n };
+    return { requestedHealing: plan.amount, restoredHealing: 0n, currentHp };
   }
 
   private allocateDamageAbsorberId(): number {

@@ -3,6 +3,7 @@ export * from "./Core/Net/ClientMessageDispatcher";
 export * from "./Core/Net/ClientTransport";
 export * from "./Core/Net/RpcSocket";
 export * from "./Core/Protocol/Message";
+export * from "./Core/Protocol/OperationId";
 export * from "./Core/Protocol/Rpc";
 export * from "./Core/Protocol/RpcError";
 export * from "./Demo/LoginFlow";

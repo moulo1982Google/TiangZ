@@ -60,7 +60,10 @@ async function main(): Promise<void> {
     const largePotion = enter.items.find((item) => item.configId === 1002 && item.count > 0);
     if (!largePotion) throw new Error("EnterMap did not provide a usable item 1002");
     const added = gate.wait(MsgCode.G2C_BuffAdded, 5_000);
-    const response = await gate.request(buildUseItemPacket(6, { itemId: largePotion.itemId }));
+    const response = await gate.request(buildUseItemPacket(6, {
+      itemId: largePotion.itemId,
+      operationId: `buff-probe-${Date.now().toString(36)}`,
+    }));
     const responseCode = readU16BE(response, 0);
     if (responseCode !== MsgCode.M2C_UseItem) {
       throw new Error(`UseItem response msgcode mismatch: ${responseCode}`);

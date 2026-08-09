@@ -215,6 +215,48 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
     }
   }
 
+  /**
+   * 应用DBProxy已提交的确定Buff实例。相同实例保持幂等；已过期结果不重新创建。
+   * 该入口以restoring模式创建，因此事务Planner必须拒绝带AddAction副作用的Buff。
+   * Applies one exact Buff instance committed by DBProxy. Existing instances
+   * are idempotent and expired results are not recreated. Creation uses restore
+   * mode, so the planner must reject Buffs whose AddAction has side effects.
+   */
+  ApplyCommittedBuff(state: BuffTransferState): BuffPublicState | undefined {
+    const existing = this.TryGetChild(Buff, state.buffInstanceId);
+    if (existing) {
+      const current = existing.Snapshot();
+      if (current.configId !== state.configId) {
+        throw new Error(`committed Buff conflicts with local instance: ${state.buffInstanceId}`);
+      }
+      // Tick、刷新或后续业务可能已经推进nextTick/revision；旧回执只确认实例身份，不能回退运行状态。
+      // Ticks, refreshes, or later gameplay may have advanced nextTick/revision;
+      // an old receipt confirms instance identity and must not roll runtime state back.
+      return existing.PublicState(this.owner.UnitId);
+    }
+    const now = TimeSystem.Instance.ServerNow;
+    if (state.expireAtMs > 0 && state.expireAtMs <= now) return undefined;
+    const buff = this.AddChild(Buff, state.buffInstanceId, {
+      configId: state.configId,
+      stacks: state.stacks,
+      appliedAtMs: state.appliedAtMs,
+      expireAtMs: state.expireAtMs,
+      tickIntervalMs: state.tickIntervalMs,
+      nextTickAtMs: state.nextTickAtMs,
+      revision: state.revision,
+      sourceUnitId: state.sourceUnitId,
+      sourceAbilityId: state.sourceAbilityId,
+      conflictPriority: state.conflictPriority,
+      restoringDamageAbsorberRemaining: state.damageAbsorberRemaining,
+      addAction: state.addAction,
+      tickAction: state.tickAction,
+      removeAction: state.removeAction,
+      restoring: true,
+    });
+    this.publishAdded(buff);
+    return buff.PublicState(this.owner.UnitId);
+  }
+
   /** 反序列化后确认每个Buff仍有合法配置；业务恢复逻辑留在BuffSystem，而不是Core。 / Validates Buff configs after deserialization; business restoration stays in BuffSystem, not Core. */
   Deserialize(): void {
     for (const buff of this.GetChildren(Buff)) GameConfigs.BuffConfig.Get(buff.ConfigId);

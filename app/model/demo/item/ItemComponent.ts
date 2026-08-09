@@ -1,5 +1,8 @@
 import { Component, component, lifecycle, transferable } from "../../../core/public";
-import type { ItemSnapshot } from "../../../generated/model/server/demo/protocol/messages";
+import type {
+  ItemSnapshot,
+  M2C_UseItem,
+} from "../../../generated/model/server/demo/protocol/messages";
 
 /** 一次背包发放请求；数量按ItemConfig.maxStack自动合并或拆成多个Item。 / One inventory grant request; maxStack decides merging and splitting. */
 export interface InventoryGrant {
@@ -26,6 +29,17 @@ export interface InventoryGrantPlan {
   readonly affectedItems: readonly ItemSnapshot[];
 }
 
+/**
+ * 单个堆叠扣除的纯数据计划。事务提交前只把nextItems写入持久快照，不能提前修改Item Entity。
+ * Pure-value plan for consuming one stack. Only nextItems enters persistence
+ * before the transaction commits; Item Entities must remain untouched.
+ */
+export interface InventoryConsumePlan {
+  readonly baseItems: readonly ItemSnapshot[];
+  readonly nextItems: readonly ItemSnapshot[];
+  readonly consumedItem: ItemSnapshot;
+}
+
 export interface ItemComponent {
   Snapshot(): ItemSnapshot[];
   CaptureTransfer(): ItemSnapshot[];
@@ -35,6 +49,10 @@ export interface ItemComponent {
   PlanGrantItems(grants: readonly InventoryGrant[]): InventoryGrantPlan;
   CommitGrantPlan(plan: InventoryGrantPlan): readonly ItemSnapshot[];
   ApplyCommittedGrantItems(items: readonly ItemSnapshot[]): readonly ItemSnapshot[];
+  PlanConsumeItem(itemId: bigint, count?: number): InventoryConsumePlan;
+  CommitConsumePlan(plan: InventoryConsumePlan): ItemSnapshot;
+  ApplyCommittedConsumeItem(item: ItemSnapshot): ItemSnapshot;
+  UseItemTransactional(itemId: bigint, clientOperationId: string): Promise<M2C_UseItem>;
 }
 
 @component()

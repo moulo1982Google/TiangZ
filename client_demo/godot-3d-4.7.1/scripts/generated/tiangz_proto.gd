@@ -899,17 +899,24 @@ static func encode_c2m_use_item(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("item_id"):
 		varint_field(result, 1, int(value["item_id"]))
+	if value.has("operation_id"):
+		string_field(result, 2, String(value["operation_id"]))
 	return result
 
 static func decode_c2m_use_item(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"item_id": 0}
+	var result := {"item_id": 0, "operation_id": ""}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
 			1:
 				if tag.wire == 0:
 					result["item_id"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 2:
+					result["operation_id"] = reader.string_value()
 				else:
 					reader.skip(tag.wire)
 			90:

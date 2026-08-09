@@ -685,7 +685,11 @@ public sealed class TiangZUnityDemo : MonoBehaviour
         if (game == null || !inventoryItems.TryGetValue(itemConfigId, out var item) || item.Count == 0) return;
         try
         {
-            var response = await game.Map.UseItemAsync(new C2M_UseItem { ItemId = item.ItemId }, CancellationToken.None);
+            var response = await game.Map.UseItemAsync(new C2M_UseItem
+            {
+                ItemId = item.ItemId,
+                OperationId = $"item-{Guid.NewGuid():N}",
+            }, CancellationToken.None);
             if (response.Item != null) inventoryItems[response.Item.ConfigId] = response.Item;
             if (response.Buff != null) activeBuffs[response.Buff.BuffInstanceId] = response.Buff;
             status = $"使用道具：{ItemName(itemConfigId)}";

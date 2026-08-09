@@ -4637,6 +4637,13 @@
           "synthetic": false
         },
         {
+          "number": 2,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",

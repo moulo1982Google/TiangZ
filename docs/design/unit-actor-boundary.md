@@ -48,8 +48,11 @@ export class C2M_UseItemHandler implements UnitRpcHandler<
   C2M_UseItem,
   M2C_UseItem
 > {
-  handle(player: PlayerUnit, request: C2M_UseItem): M2C_UseItem {
-    return player.UseItem(request.itemId);
+  handle(player: PlayerUnit, request: C2M_UseItem): Promise<M2C_UseItem> {
+    return player.GetComponent(ItemComponent).UseItemTransactional(
+      request.itemId,
+      request.operationId,
+    );
   }
 }
 ```
