@@ -412,10 +412,10 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ### Phase 4.5：持久化基础
 
-状态：已启动，独立仓库 `TiangZ-DBProxy` 的 `v0.1.0` 核心契约已提交；调整为`0.4.x`最后一个基础阶段，在正式账号、角色和经济业务前实施。
+状态：已启动，独立仓库 `TiangZ-DBProxy` 已完成核心契约和本地 PostgreSQL/Redis 适配验收；调整为`0.4.x`最后一个基础阶段，在正式账号、角色和经济业务前实施。
 
-- 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，当前只包含独立Rust workspace、`dbproxy-core`、`RecordKey`、快照Envelope/Write、Revision/CAS、幂等写入、内存参考实现、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
-- 下一步才是`snapshot`适配：选择一个永久数据库、定义Redis缓存与异步落库顺序、加载恢复和下线Flush，并完成故障矩阵；随后再加入批量协议和`transactional`，不为了抢进度制作临时存档服务。
+- 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，包含独立Rust workspace、`dbproxy-core`、`dbproxy-storage`、PostgreSQL快照/幂等事务、Redis已提交快照缓存、本地Compose、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
+- 当前适配器固定为PostgreSQL -> Redis：PostgreSQL提交成功后才更新缓存；缓存失败可以用原`request_id`重试修复。已完成本机容器集成测试，下一步是Redis/数据库故障、缓存修复、积压恢复和下线Flush矩阵；随后再加入网络协议、生成Repository和`transactional`，不制作临时存档服务。
 - 扩展`.native`持久化元数据，按Entity/Component声明`transient`、`snapshot`或`transactional`存储域；codegen生成稳定MemberId、快照codec、dirty收集、schema版本和恢复入口。存储结构属于Model，不能热更。
 - `snapshot`字段保持普通属性写法；Rust setter只标脏，框架按短窗口合并并批量写Redis，再异步批量落永久数据库，禁止一次属性赋值对应一次网络请求。
 - `transactional`存储域用于Wallet、Inventory、Trade等经济数据；字段不开放普通setter，只能通过领域事务方法修改。永久数据库提交是权威写入，Redis只接收带revision的事务结果缓存，不能成为第二个独立写入口。

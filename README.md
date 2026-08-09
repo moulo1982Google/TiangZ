@@ -3,7 +3,7 @@
 
 当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；Phase 4将继续建设Rust AOI、3D导航、持久化和MMORPG业务样例。
 
-持久化边界已单独建立为 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。当前只冻结快照、Revision/CAS 和幂等核心契约，尚未接入真实 Redis、数据库或 TiangZ 业务；主工程仍不得直接连接持久化设施。
+持久化边界已单独建立为 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。当前已完成 PostgreSQL 权威快照、Revision/CAS、幂等和 Redis 缓存适配的本地验收，但尚未接入DBProxy网络服务或TiangZ业务；主工程仍不得直接连接持久化设施。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 

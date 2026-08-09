@@ -121,10 +121,11 @@ npm run build:cocos3d:mobile
 ## DBProxy独立项目决定
 
 - DBProxy已经建立为独立Rust仓库：[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，不作为TiangZ仓库中的模块，也不依赖TiangZ。
-- `v0.1.0`只冻结通用`RecordKey`、快照Payload、Revision/CAS、幂等写入和内存参考实现；DBProxy不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
-- Redis/PostgreSQL适配、网络服务、Rust/TypeScript SDK、Docker部署和可观测性仍未实现。TiangZ的`.native`与codegen未来负责生成领域Payload、快照codec和Repository适配层；业务Handler只调用Repository，不直接连接Redis或永久数据库。
-- 下一阶段先实现`snapshot`适配、缓存/落库顺序、加载恢复、下线Flush和故障矩阵；第二阶段再实现Wallet、Inventory、Trade使用的`transactional`。
-- 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。第一版不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
+- `v0.1.0`冻结通用`RecordKey`、快照Payload、Revision/CAS、幂等写入和内存参考实现；DBProxy不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
+- 当前已增加`dbproxy-storage`：PostgreSQL是权威快照、Revision/CAS和幂等记录，Redis只缓存PostgreSQL已提交结果；写入顺序固定为PostgreSQL成功后再更新Redis，缓存失败可以复用原`request_id`修复。
+- 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。网络服务、鉴权、Rust/TypeScript SDK、生产部署和故障矩阵仍未实现。TiangZ的`.native`与codegen未来负责生成领域Payload、快照codec和Repository适配层；业务Handler只调用Repository，不直接连接Redis或永久数据库。
+- 下一阶段先做`snapshot`的Redis/数据库故障、缓存修复、积压恢复和下线Flush矩阵，再实现网络协议与TiangZ生成Repository；第二阶段再实现Wallet、Inventory、Trade使用的`transactional`。
+- 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。当前不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
 
 ## 技能系统第一阶段决定
 
@@ -160,7 +161,7 @@ npm run build:cocos3d:mobile
 
 ## 本轮业务推进边界
 
-- 当前优先顺序是Inventory与奖励、任务收口、技能扩展、真实业务链路压测；DBProxy不插入本轮，仍保持独立Rust仓库设计。
+- 当前优先顺序仍是Inventory与奖励、任务收口、技能扩展、真实业务链路压测；DBProxy已经进入独立仓库的真实存储适配阶段，但不把数据库客户端带回TiangZ主工程。
 - 真实业务压测入口是`npm run perf:business-chain`，正式CPU或长时间窗口前必须告知用户并等待空闲机器；未获得机器确认时只做编译、自测和小规模非压力验证。
 - 业务链路压测默认交替UseItem与友方CastSkill，报告必须区分业务拒绝、传输错误、p50/p95/p99和服务端队列，不能把规则拒绝当丢包。
 - 组队任务依赖Party/PartyAudience，Party完成前不在Quest中增加队员共享逻辑。

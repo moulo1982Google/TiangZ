@@ -735,3 +735,12 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - `v0.1.0`冻结`RecordKey`、快照Envelope/Write、Revision/CAS、幂等请求和内存参考实现；同一`request_id`重复请求不会重复递增Revision，复用不同Payload会被拒绝。
 - 增加Apache-2.0许可证、NOTICE和Rust CI；`cargo fmt`、`cargo test --workspace --locked`、`cargo clippy --workspace --all-targets --locked -- -D warnings`和`cargo check --workspace --locked`均通过。
 - 暂不接入Redis、PostgreSQL、网络服务或TiangZ业务；后续先选一个永久数据库完成`snapshot`适配、恢复/Flush和故障矩阵，再设计`transactional`。
+
+# 2026-08-09：DBProxy PostgreSQL/Redis真实存储适配
+
+- DBProxy workspace增加`dbproxy-storage`，实现异步`PostgresSnapshotStore`、`RedisSnapshotCache`和`TieredSnapshotStore`；`dbproxy-core`增加真实I/O使用的`AsyncSnapshotStore`契约，同步内存实现继续只用于单元测试。
+- PostgreSQL使用`dbproxy_snapshots`保存权威快照，使用`dbproxy_idempotency`保存请求回执；一次事务内完成request claim、Revision/CAS写入和回执提交，重复`request_id`不会重复推进版本，改变Payload重试会返回幂等冲突。
+- Redis只缓存PostgreSQL已经提交的`SnapshotEnvelope`。读取先查Redis，未命中回源PostgreSQL并回填；写入若缓存同步失败，不回滚已经提交的PostgreSQL，调用方必须用原request_id重试修复缓存。
+- 新增`deploy/local/docker-compose.yml`，固定PostgreSQL 18.4 Bookworm和Redis 8.8.1 Trixie，仅暴露到本机回环地址；本地账号统一为`tiangz/tiangz_dev`，线上不得复用。
+- 通过`cargo fmt`、workspace check/test、`cargo clippy --workspace --all-targets --locked -- -D warnings`和本机容器集成测试，覆盖Applied、Duplicate、幂等冲突、Revision冲突和Redis已提交快照读取。
+- 当前仍未实现DBProxy网络服务、鉴权、TiangZ生成Repository、生产部署、故障注入矩阵和transactional多记录事务；这些保持在独立仓库后续阶段。
