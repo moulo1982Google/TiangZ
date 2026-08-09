@@ -7,6 +7,15 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-09：DBProxy v0.1.3 单记录关键事务
+
+- `dbproxy-core`新增`TransactionalWrite`、`TransactionalWriteOutcome`和异步事务存储接口。关键操作必须携带稳定`operation_id`、`expected_revision`、完整快照Payload和可重试的业务结果；DBProxy不解释货币、背包或奖励字段。
+- 内存参考实现验证四条语义：首次提交同时保存快照与结果；相同`operation_id`只返回第一次结果；改写已提交操作会返回冲突；CAS失败不写入操作收据，业务修正版本后可以继续使用同一个操作ID。
+- `dbproxy-storage`新增`dbproxy_transactions`迁移。PostgreSQL在同一事务内占用操作ID、锁定并比较快照版本、写入新Revision、保存操作结果后提交；Redis只在PostgreSQL提交后回填。缓存失败时，复用原`operation_id`会返回`Duplicate`并再次修复缓存。
+- 启动迁移增加PostgreSQL事务级advisory lock，多个DBProxy进程可以同时启动而不竞争DDL。集成测试并行创建连接，已覆盖快照和事务两套语义。
+- `v0.1.3`验证通过：`cargo fmt --all -- --check`、`cargo test --workspace --locked`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo check --workspace`以及本机PostgreSQL 18.4/Redis 8.8.1忽略标记集成测试。
+- 暂不实现网络服务、TiangZ生成Repository、故障注入矩阵和多记录事务；这些是下一阶段，主工程仍不得直接连接DBProxy存储crate或数据库。
+
 ## 2026-08-08：Inventory、奖励、任务收口与技能扩展
 
 - Inventory补齐`GrantItem/GrantItems`：先填充同配置已有堆叠，再按`ItemConfig.max_stack`拆分创建Item子Entity；返回受影响堆叠的权威快照。新增玩家种子背包、奖励和后续掉落都必须经过Inventory，不允许任务系统私自拼接Item。
