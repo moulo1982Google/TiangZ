@@ -168,6 +168,10 @@ export class MapComponent extends Component<[
   }>();
   private readonly gateRouteIds = new Map<string, number>();
   private readonly gateNamesByRouteId = new Map<number, string>();
+  // AOI脏状态批次已经带着UnitId；缓存稳定的本地Gate归属，避免每个批次再次查Unit和组件。
+  // AOI dirty batches already contain UnitIds; cache stable local Gate affinity
+  // so each batch does not walk the Unit and Component stores again.
+  private readonly gateNamesByUnitId = new Map<number, string>();
   private nextGateRouteId = 1;
   private playerEntryQueuePeak = 0;
   private playerEntriesAdmitted = 0;
@@ -447,8 +451,9 @@ export class MapComponent extends Component<[
       },
     });
     const clientRoutes = new MapClientRouteResolver(
-      (unitId) => this.units.Get<PlayerUnit>(unitId)
-        ?.GetComponent(UnitGateComponent).gateName,
+      (unitId) => this.gateNamesByUnitId.get(unitId)
+        ?? this.units.Get<PlayerUnit>(unitId)
+          ?.GetComponent(UnitGateComponent).gateName,
       location,
     );
     this.clientBroadcast = new ClientBroadcast(this.broadcast, clientRoutes);
@@ -1414,6 +1419,7 @@ export class MapComponent extends Component<[
     // 必须先Detach再销毁Entity，Rust才能用仍然有效的Unit句柄生成最终Leave。 / Detach before Entity disposal so Rust can produce final leaves from a valid Unit handle.
     const changes = this.aoi.IsAttached(unit) ? this.aoi.Detach(unit) : [];
     this.pendingInitialSnapshots.delete(unit.UnitId);
+    this.gateNamesByUnitId.delete(unit.UnitId);
     this.players.Remove(unit);
     this.units.Remove(unit.UnitId);
     return changes;
@@ -1487,6 +1493,7 @@ export class MapComponent extends Component<[
       try {
         this.requirePlayer(pending.unit);
         const gateName = pending.unit.GetComponent(UnitGateComponent).gateName;
+        this.gateNamesByUnitId.set(pending.unit.UnitId, gateName);
         const queueWaitMs = monotonicNow() - pending.enqueuedAtMs;
         this.entryMetrics.queueWaitMs += queueWaitMs;
         this.entryMetrics.maxQueueWaitMs = Math.max(
@@ -1722,12 +1729,21 @@ export class MapComponent extends Component<[
     recipientIds: readonly number[],
     key: string,
   ): BroadcastAudience {
-    const routes = recipientIds.flatMap((unitId) => {
+    const routes: { route: string; recipientId: number }[] = [];
+    for (const unitId of recipientIds) {
+      const gateName = this.gateNamesByUnitId.get(unitId);
+      if (gateName) {
+        routes.push({ route: gateName, recipientId: unitId });
+        continue;
+      }
+      // 仅作为迁移/旧数据的兜底路径；正常已Attach玩家都命中上面的缓存。
+      // Fallback for transfer/legacy states; normally every attached player hits the cache above.
       const unit = this.units.Get<PlayerUnit>(unitId);
-      if (!unit) return [];
-      const gate = unit.GetComponent(UnitGateComponent);
-      return [{ route: gate.gateName, recipientId: unitId }];
-    });
+      if (!unit) continue;
+      const fallbackGateName = unit.GetComponent(UnitGateComponent).gateName;
+      this.gateNamesByUnitId.set(unitId, fallbackGateName);
+      routes.push({ route: fallbackGateName, recipientId: unitId });
+    }
     return { key, routes };
   }
 

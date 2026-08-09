@@ -59,6 +59,8 @@ export class BroadcastHub {
   private readonly maxEventQueuePerChannel: number;
   private readonly onError: (descriptorName: string, error: unknown) => void;
   private disposed = false;
+  // 维护待发送项计数，避免每次入队都扫描全部频道。 / Keep a running pending-item count instead of scanning every channel on each enqueue.
+  private pendingItemCount = 0;
   private readonly metrics = {
     queuedItems: 0,
     coalescedItems: 0,
@@ -206,6 +208,7 @@ export class BroadcastHub {
         throw new Error(`encoded audience and route frames share channel ${channelKey}`);
       }
       this.metrics.coalescedItems += existing.itemCount;
+      this.pendingItemCount += itemCount - existing.itemCount;
       existing.batches = activeBatches;
       existing.itemCount = itemCount;
       existing.deferred.push({ resolve, reject });
@@ -216,6 +219,7 @@ export class BroadcastHub {
         queuedAt: monotonicNow(),
         deferred: [{ resolve, reject }],
       };
+      this.pendingItemCount += itemCount;
     }
     this.metrics.queuedItems += itemCount;
     this.recordPending();
@@ -266,6 +270,7 @@ export class BroadcastHub {
         throw new Error(`encoded audience and route frames share channel ${channelKey}`);
       }
       this.metrics.coalescedItems += existing.itemCount;
+      this.pendingItemCount += itemCount - existing.itemCount;
       existing.routeFrames = activeFrames;
       existing.itemCount = itemCount;
       existing.deferred.push({ resolve, reject });
@@ -276,6 +281,7 @@ export class BroadcastHub {
         queuedAt: monotonicNow(),
         deferred: [{ resolve, reject }],
       };
+      this.pendingItemCount += itemCount;
     }
     this.metrics.queuedItems += itemCount;
     this.recordPending();
@@ -287,18 +293,14 @@ export class BroadcastHub {
   Snapshot(): BroadcastMetricsSnapshot {
     let inFlight = 0;
     let inFlightItems = 0;
-    let pendingItems = 0;
     for (const channel of this.channels.values()) {
       if (channel.inFlight) inFlight += 1;
       inFlightItems += channel.inFlightItems;
-      if (channel.latest) pendingItems += channel.latest.items.size;
-      if (channel.encodedLatest) pendingItems += channel.encodedLatest.itemCount;
-      for (const job of channel.eventQueue) pendingItems += job.items.length;
     }
     return {
       inFlight,
       inFlightItems,
-      pendingItems,
+      pendingItems: this.pendingItemCount,
       maxPendingItems: this.metrics.maxPendingItems,
       maxInFlightItems: this.metrics.maxInFlightItems,
       queuedItems: this.metrics.queuedItems,
@@ -332,6 +334,7 @@ export class BroadcastHub {
       channel.latest = undefined;
       channel.encodedLatest = undefined;
     }
+    this.pendingItemCount = 0;
   }
 
   private enqueueEvent<TItem, TMessage extends IMessage>(
@@ -355,6 +358,7 @@ export class BroadcastHub {
         deferred: { resolve, reject },
       } as EventJob<unknown>);
     });
+    this.pendingItemCount += items.length;
     this.metrics.queuedItems += items.length;
     this.recordPending();
     this.pump(channel, descriptor);
@@ -393,6 +397,7 @@ export class BroadcastHub {
     for (const item of items) {
       const key = descriptor.keyOf(item);
       if (job.items.has(key)) this.metrics.coalescedItems += 1;
+      else this.pendingItemCount += 1;
       job.items.set(key, item);
     }
     this.recordPending();
@@ -420,6 +425,7 @@ export class BroadcastHub {
       tick = job.tick;
       queuedAt = job.queuedAt;
       deferred = job.deferred;
+      this.pendingItemCount -= items.length;
     } else {
       const job = channel.eventQueue.shift() as EventJob<TItem> | undefined;
       if (!job) return;
@@ -428,6 +434,7 @@ export class BroadcastHub {
       tick = job.tick;
       queuedAt = job.queuedAt;
       deferred = [job.deferred];
+      this.pendingItemCount -= items.length;
     }
 
     const startedAt = monotonicNow();
@@ -498,6 +505,7 @@ export class BroadcastHub {
     const job = channel.encodedLatest;
     if (!job) return;
     channel.encodedLatest = undefined;
+    this.pendingItemCount -= job.itemCount;
 
     const startedAt = monotonicNow();
     const queueWaitMs = Math.max(0, startedAt - job.queuedAt);
@@ -594,13 +602,10 @@ export class BroadcastHub {
   }
 
   private recordPending(): void {
-    let pending = 0;
-    for (const channel of this.channels.values()) {
-      if (channel.latest) pending += channel.latest.items.size;
-      if (channel.encodedLatest) pending += channel.encodedLatest.itemCount;
-      for (const job of channel.eventQueue) pending += job.items.length;
-    }
-    this.metrics.maxPendingItems = Math.max(this.metrics.maxPendingItems, pending);
+    this.metrics.maxPendingItems = Math.max(
+      this.metrics.maxPendingItems,
+      this.pendingItemCount,
+    );
   }
 
   private validateAudience(audience: BroadcastAudience): void {

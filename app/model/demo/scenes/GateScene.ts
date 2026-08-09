@@ -75,6 +75,9 @@ export class GateScene extends EntryScene {
   private readonly routesByAccount = new Map<string, GatePlayerRoute>();
   private readonly routesByConnection = new Map<number, GatePlayerRoute>();
   private readonly routesByUnitId = new Map<number, GatePlayerRoute>();
+  // 下行广播只需要当前连接号；保留独立索引，避免每个广播批次再次解引用长期路由对象。
+  // Downstream broadcast only needs the connection id; keep a direct index so hot batches do not dereference the long-lived route object.
+  private readonly connectionIdsByUnitId = new Map<number, number>();
   private readonly disconnecting = new Set<number>();
   private readonly finalOfflinePending = new Set<string>();
   private readonly location: LocationProxy;
@@ -139,6 +142,10 @@ export class GateScene extends EntryScene {
       this.routesByConnection.delete(connectionId);
     }
     if (!route.Detach(connectionId, TimeSystem.Instance.FrameTime)) return;
+    const unitId = route.map?.unitId;
+    if (unitId !== undefined && this.connectionIdsByUnitId.get(unitId) === connectionId) {
+      this.connectionIdsByUnitId.delete(unitId);
+    }
 
     this.logger.info("client connection entered reconnect grace", {
       account: route.account,
@@ -272,7 +279,7 @@ export class GateScene extends EntryScene {
   private ClientBroadcast(message: S2G_ClientBroadcast): void {
     const connectionIds: number[] = [];
     for (const unitId of message.targetUnitIds) {
-      const connectionId = this.routesByUnitId.get(unitId)?.connectionId;
+      const connectionId = this.connectionIdsByUnitId.get(unitId);
       if (connectionId !== undefined) connectionIds.push(connectionId);
     }
     this.sendClientFrameMany(connectionIds, message.frame);
@@ -291,7 +298,7 @@ export class GateScene extends EntryScene {
     for (const batch of message.batches) {
       const connectionIds: number[] = [];
       for (const unitId of batch.targetUnitIds) {
-        const connectionId = this.routesByUnitId.get(unitId)?.connectionId;
+        const connectionId = this.connectionIdsByUnitId.get(unitId);
         if (connectionId !== undefined) connectionIds.push(connectionId);
       }
       this.sendClientFrameMany(connectionIds, batch.frame);
@@ -808,6 +815,7 @@ export class GateScene extends EntryScene {
     const location = route.map;
     if (!location) return;
     this.routesByUnitId.set(location.unitId, route);
+    this.connectionIdsByUnitId.set(location.unitId, connectionId);
     this.actorLocations.bindConnection(connectionId, {
       instanceId: location.actorInstanceId,
       scene: location.mapHost,
@@ -829,6 +837,7 @@ export class GateScene extends EntryScene {
     const unitId = route.map?.unitId;
     if (unitId !== undefined && this.routesByUnitId.get(unitId) === route) {
       this.routesByUnitId.delete(unitId);
+      this.connectionIdsByUnitId.delete(unitId);
     }
   }
 

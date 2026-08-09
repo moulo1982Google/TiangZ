@@ -176,6 +176,18 @@ struct NumericData {
     dirty: HashMap<u32, u64>,
 }
 
+/// AOI 路由帧编码的线程内暂存区；只服务当前 V8 业务线程，不跨调用共享。
+/// Per-thread scratch for AOI route-frame encoding; it is owned by one V8 business thread and never shared across calls.
+#[derive(Default)]
+struct AoiRouteFrameScratch {
+    subject_ids: Vec<u32>,
+    force: Vec<bool>,
+    payloads_by_route: Vec<Vec<u8>>,
+    recipients_by_route: Vec<Vec<u32>>,
+    touched_routes: Vec<usize>,
+    client_frame: Vec<u8>,
+}
+
 fn take_scratch<T>(slot: &mut Vec<T>) -> Vec<T> {
     let mut scratch = std::mem::take(slot);
     scratch.clear();
@@ -204,6 +216,7 @@ struct NativeEntityStore {
     pending_navigation_records: HashMap<u32, Vec<NavigationMovementRecord>>,
     scratch_numeric_records: Vec<(u32, u32, i64)>,
     scratch_unit_delta_records: Vec<UnitDeltaRecord>,
+    route_frame_scratch: AoiRouteFrameScratch,
     numeric_revision: u64,
     metrics: NativeDataMetrics,
 }
@@ -2052,7 +2065,12 @@ pub(crate) fn op_native_map_take_movement_aoi_route_frames(
             .remove(&map_id)
             .unwrap_or_default();
         let result = {
-            let world = store.aoi_worlds.get(&map_id).ok_or_else(|| {
+            let NativeEntityStore {
+                aoi_worlds,
+                route_frame_scratch,
+                ..
+            } = &mut *store;
+            let world = aoi_worlds.get(&map_id).ok_or_else(|| {
                 JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
             })?;
             encode_tiered_aoi_route_frames(
@@ -2061,6 +2079,7 @@ pub(crate) fn op_native_map_take_movement_aoi_route_frames(
                 server_tick,
                 client_message_code,
                 route_message_code,
+                route_frame_scratch,
             )?
         };
         record_aoi_encoding_metrics(&mut store.metrics, &result);
@@ -2092,7 +2111,12 @@ pub(crate) fn op_native_map_take_navigation_aoi_route_frames(
             .remove(&map_id)
             .unwrap_or_default();
         let result = {
-            let world = store.aoi_worlds.get(&map_id).ok_or_else(|| {
+            let NativeEntityStore {
+                aoi_worlds,
+                route_frame_scratch,
+                ..
+            } = &mut *store;
+            let world = aoi_worlds.get(&map_id).ok_or_else(|| {
                 JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
             })?;
             encode_tiered_navigation_aoi_route_frames(
@@ -2101,6 +2125,7 @@ pub(crate) fn op_native_map_take_navigation_aoi_route_frames(
                 server_tick,
                 client_message_code,
                 route_message_code,
+                route_frame_scratch,
             )?
         };
         record_aoi_encoding_metrics(&mut store.metrics, &result);
@@ -2376,13 +2401,18 @@ fn encode_tiered_aoi_route_frames(
     server_tick: u32,
     client_message_code: u16,
     route_message_code: u16,
+    scratch: &mut AoiRouteFrameScratch,
 ) -> Result<Vec<u8>, JsErrorBox> {
-    let subject_ids: Vec<_> = records
-        .iter()
-        .map(|record| read_record_u32(record, 0))
-        .collect();
-    let force: Vec<_> = records.iter().map(|record| record[16] != 0).collect();
-    let delivery_groups = world.tiered_delivery_groups(&subject_ids, &force, server_tick);
+    scratch.subject_ids.clear();
+    scratch
+        .subject_ids
+        .extend(records.iter().map(|record| read_record_u32(record, 0)));
+    scratch.force.clear();
+    scratch
+        .force
+        .extend(records.iter().map(|record| record[16] != 0));
+    let delivery_groups =
+        world.tiered_delivery_groups(&scratch.subject_ids, &scratch.force, server_tick);
     let total_items = delivery_groups
         .iter()
         .map(|(_, indices)| indices.len() as u32)
@@ -2391,63 +2421,71 @@ fn encode_tiered_aoi_route_frames(
         .map_err(|_| JsErrorBox::generic("AOI delivery route id exceeds usize"))?
         .checked_add(1)
         .ok_or_else(|| JsErrorBox::generic("AOI delivery route capacity overflow"))?;
-    let mut payloads_by_route: Vec<Vec<u8>> = (0..route_capacity).map(|_| Vec::new()).collect();
-    let mut recipients_by_route: Vec<Vec<u32>> = (0..route_capacity).map(|_| Vec::new()).collect();
-    let mut client_frame = Vec::with_capacity(256);
+    prepare_route_frame_scratch(scratch, route_capacity);
 
     for (recipients, indices) in delivery_groups {
-        client_frame.clear();
+        scratch.client_frame.clear();
         encode_entity_move_frame_indices_into(
-            &mut client_frame,
+            &mut scratch.client_frame,
             client_message_code,
             server_tick,
             records,
             &indices,
         );
-        for recipients in &mut recipients_by_route {
-            recipients.clear();
+        for route_id in scratch.touched_routes.iter().copied() {
+            scratch.recipients_by_route[route_id].clear();
         }
+        scratch.touched_routes.clear();
         for recipient_id in recipients {
             let route_id = world.delivery_route_id(recipient_id).ok_or_else(|| {
                 JsErrorBox::generic(format!(
                     "AOI observer {recipient_id} has no native delivery route"
                 ))
             })?;
-            recipients_by_route[route_id as usize].push(recipient_id);
-        }
-        for (route_id, route_recipients) in recipients_by_route.iter().enumerate().skip(1) {
-            if route_recipients.is_empty() {
-                continue;
+            let route_index = route_id as usize;
+            if scratch.recipients_by_route[route_index].is_empty() {
+                scratch.touched_routes.push(route_index);
             }
+            scratch.recipients_by_route[route_index].push(recipient_id);
+        }
+        for route_id in scratch.touched_routes.iter().copied() {
+            let route_recipients = &scratch.recipients_by_route[route_id];
             encode_client_broadcast_batch_item(
-                &mut payloads_by_route[route_id],
+                &mut scratch.payloads_by_route[route_id],
                 route_recipients,
-                &client_frame,
+                &scratch.client_frame,
             );
         }
     }
 
-    let route_count = payloads_by_route
+    for route_id in scratch.touched_routes.iter().copied() {
+        scratch.recipients_by_route[route_id].clear();
+    }
+    scratch.touched_routes.clear();
+
+    let route_count = scratch
+        .payloads_by_route
         .iter()
         .skip(1)
         .filter(|payload| !payload.is_empty())
         .count();
     let mut bytes = Vec::with_capacity(
-        8 + payloads_by_route
+        8 + scratch
+            .payloads_by_route
             .iter()
             .map(|payload| 10 + payload.len())
             .sum::<usize>(),
     );
     bytes.extend_from_slice(&total_items.to_le_bytes());
     bytes.extend_from_slice(&(route_count as u32).to_le_bytes());
-    for (route_id, payload) in payloads_by_route.into_iter().enumerate().skip(1) {
+    for (route_id, payload) in scratch.payloads_by_route.iter().enumerate().skip(1) {
         if payload.is_empty() {
             continue;
         }
         bytes.extend_from_slice(&(route_id as u32).to_le_bytes());
         bytes.extend_from_slice(&((payload.len() + 2) as u32).to_le_bytes());
         bytes.extend_from_slice(&route_message_code.to_be_bytes());
-        bytes.extend_from_slice(&payload);
+        bytes.extend_from_slice(payload);
     }
     Ok(bytes)
 }
@@ -2458,10 +2496,18 @@ fn encode_tiered_navigation_aoi_route_frames(
     server_tick: u32,
     client_message_code: u16,
     route_message_code: u16,
+    scratch: &mut AoiRouteFrameScratch,
 ) -> Result<Vec<u8>, JsErrorBox> {
-    let subject_ids: Vec<_> = records.iter().map(|record| record.unit_id).collect();
-    let force: Vec<_> = records.iter().map(|record| record.state_changed).collect();
-    let delivery_groups = world.tiered_delivery_groups(&subject_ids, &force, server_tick);
+    scratch.subject_ids.clear();
+    scratch
+        .subject_ids
+        .extend(records.iter().map(|record| record.unit_id));
+    scratch.force.clear();
+    scratch
+        .force
+        .extend(records.iter().map(|record| record.state_changed));
+    let delivery_groups =
+        world.tiered_delivery_groups(&scratch.subject_ids, &scratch.force, server_tick);
     let total_items = delivery_groups
         .iter()
         .map(|(_, indices)| indices.len() as u32)
@@ -2470,64 +2516,96 @@ fn encode_tiered_navigation_aoi_route_frames(
         .map_err(|_| JsErrorBox::generic("AOI delivery route id exceeds usize"))?
         .checked_add(1)
         .ok_or_else(|| JsErrorBox::generic("AOI delivery route capacity overflow"))?;
-    let mut payloads_by_route: Vec<Vec<u8>> = (0..route_capacity).map(|_| Vec::new()).collect();
-    let mut recipients_by_route: Vec<Vec<u32>> = (0..route_capacity).map(|_| Vec::new()).collect();
-    let mut client_frame = Vec::with_capacity(256);
+    prepare_route_frame_scratch(scratch, route_capacity);
 
     for (recipients, indices) in delivery_groups {
-        client_frame.clear();
+        scratch.client_frame.clear();
         encode_entity_navigate_frame_indices_into(
-            &mut client_frame,
+            &mut scratch.client_frame,
             client_message_code,
             server_tick,
             records,
             &indices,
         );
-        for route_recipients in &mut recipients_by_route {
-            route_recipients.clear();
+        for route_id in scratch.touched_routes.iter().copied() {
+            scratch.recipients_by_route[route_id].clear();
         }
+        scratch.touched_routes.clear();
         for recipient_id in recipients {
             let route_id = world.delivery_route_id(recipient_id).ok_or_else(|| {
                 JsErrorBox::generic(format!(
                     "AOI observer {recipient_id} has no native delivery route"
                 ))
             })?;
-            recipients_by_route[route_id as usize].push(recipient_id);
-        }
-        for (route_id, route_recipients) in recipients_by_route.iter().enumerate().skip(1) {
-            if !route_recipients.is_empty() {
-                encode_client_broadcast_batch_item(
-                    &mut payloads_by_route[route_id],
-                    route_recipients,
-                    &client_frame,
-                );
+            let route_index = route_id as usize;
+            if scratch.recipients_by_route[route_index].is_empty() {
+                scratch.touched_routes.push(route_index);
             }
+            scratch.recipients_by_route[route_index].push(recipient_id);
+        }
+        for route_id in scratch.touched_routes.iter().copied() {
+            let route_recipients = &scratch.recipients_by_route[route_id];
+            encode_client_broadcast_batch_item(
+                &mut scratch.payloads_by_route[route_id],
+                route_recipients,
+                &scratch.client_frame,
+            );
         }
     }
 
-    let route_count = payloads_by_route
+    for route_id in scratch.touched_routes.iter().copied() {
+        scratch.recipients_by_route[route_id].clear();
+    }
+    scratch.touched_routes.clear();
+
+    let route_count = scratch
+        .payloads_by_route
         .iter()
         .skip(1)
         .filter(|payload| !payload.is_empty())
         .count();
     let mut bytes = Vec::with_capacity(
-        8 + payloads_by_route
+        8 + scratch
+            .payloads_by_route
             .iter()
             .map(|payload| 10 + payload.len())
             .sum::<usize>(),
     );
     bytes.extend_from_slice(&total_items.to_le_bytes());
     bytes.extend_from_slice(&(route_count as u32).to_le_bytes());
-    for (route_id, payload) in payloads_by_route.into_iter().enumerate().skip(1) {
+    for (route_id, payload) in scratch.payloads_by_route.iter().enumerate().skip(1) {
         if payload.is_empty() {
             continue;
         }
         bytes.extend_from_slice(&(route_id as u32).to_le_bytes());
         bytes.extend_from_slice(&((payload.len() + 2) as u32).to_le_bytes());
         bytes.extend_from_slice(&route_message_code.to_be_bytes());
-        bytes.extend_from_slice(&payload);
+        bytes.extend_from_slice(payload);
     }
     Ok(bytes)
+}
+
+/// 准备并复用路由编码容器；只有路由数量增长时才扩容，调用间保留容量。
+/// Prepares reusable route containers; capacity grows only when route count increases and is retained between calls.
+fn prepare_route_frame_scratch(scratch: &mut AoiRouteFrameScratch, route_capacity: usize) {
+    if scratch.payloads_by_route.len() < route_capacity {
+        scratch
+            .payloads_by_route
+            .resize_with(route_capacity, Vec::new);
+    }
+    if scratch.recipients_by_route.len() < route_capacity {
+        scratch
+            .recipients_by_route
+            .resize_with(route_capacity, Vec::new);
+    }
+    for payload in &mut scratch.payloads_by_route {
+        payload.clear();
+    }
+    for recipients in &mut scratch.recipients_by_route {
+        recipients.clear();
+    }
+    scratch.touched_routes.clear();
+    scratch.client_frame.clear();
 }
 
 /// 编码 S2G_ClientBroadcastBatch.batches 中的一个元素，保持与 TS 生成 Codec 相同的非 packed uint32 表示。
@@ -3483,7 +3561,14 @@ mod tests {
             encode_snapshot(&unit_hot(2), true),
         ];
         let expected_client_frame = encode_entity_move_frame(10_016, 1, &records);
-        let bytes = encode_tiered_aoi_route_frames(&world, &records, 1, 10_016, 20_010).unwrap();
+        let mut scratch = AoiRouteFrameScratch::default();
+        let bytes =
+            encode_tiered_aoi_route_frames(&world, &records, 1, 10_016, 20_010, &mut scratch)
+                .unwrap();
+        let repeated_bytes =
+            encode_tiered_aoi_route_frames(&world, &records, 1, 10_016, 20_010, &mut scratch)
+                .unwrap();
+        assert_eq!(bytes, repeated_bytes);
 
         assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), 2);
         assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 2);
