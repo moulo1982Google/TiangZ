@@ -122,9 +122,9 @@ npm run build:cocos3d:mobile
 
 - DBProxy已经建立为独立Rust仓库：[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，不作为TiangZ仓库中的模块，也不依赖TiangZ。
 - `v0.1.0`冻结通用`RecordKey`、快照Payload、Revision/CAS、幂等写入和内存参考实现；DBProxy不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
-- 当前已增加`dbproxy-storage`：PostgreSQL是权威快照、Revision/CAS、幂等记录和单记录关键事务，Redis只缓存PostgreSQL已提交结果；写入顺序固定为PostgreSQL成功后再更新Redis，缓存失败可以复用原`request_id`或`operation_id`修复。
-- 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。网络服务、鉴权、Rust/TypeScript SDK、生产部署和故障矩阵仍未实现。TiangZ的`.native`与codegen未来负责生成领域Payload、快照codec和Repository适配层；业务Handler只调用Repository，不直接连接Redis或永久数据库。
-- 下一阶段先做`snapshot/transactional`的Redis/数据库故障、缓存修复、积压恢复和下线Flush矩阵，再实现网络协议与TiangZ生成Repository；多记录事务、Outbox和跨域一致性另行设计。
+- 当前已增加`dbproxy-storage`：PostgreSQL是权威快照、Revision/CAS、幂等记录和单记录关键事务，Redis只缓存PostgreSQL已提交结果；Redis读取失败自动回源PostgreSQL，缓存失败可以复用原`request_id`或`operation_id`修复。
+- 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。Redis/PostgreSQL短暂停机矩阵已通过，网络服务、鉴权、Rust/TypeScript SDK、积压/Flush恢复和生产部署仍未实现。TiangZ的`.native`与codegen未来负责生成领域Payload、快照codec和Repository适配层；业务Handler只调用Repository，不直接连接Redis或永久数据库。
+- 下一阶段先做积压恢复、下线Flush和长时间故障矩阵，再实现网络协议与TiangZ生成Repository；多记录事务、Outbox和跨域一致性另行设计。
 - 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。当前不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
 
 ## 技能系统第一阶段决定

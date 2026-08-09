@@ -16,6 +16,14 @@
 - `v0.1.3`验证通过：`cargo fmt --all -- --check`、`cargo test --workspace --locked`、`cargo clippy --workspace --all-targets --locked -- -D warnings`、`cargo check --workspace`以及本机PostgreSQL 18.4/Redis 8.8.1忽略标记集成测试。
 - 暂不实现网络服务、TiangZ生成Repository、故障注入矩阵和多记录事务；这些是下一阶段，主工程仍不得直接连接DBProxy存储crate或数据库。
 
+## 2026-08-09：DBProxy v0.1.4 故障回源与修复矩阵
+
+- `TieredSnapshotStore::load`现在把Redis视为加速层：Redis连接失败或缓存编码损坏时自动回源PostgreSQL，缓存故障不会直接变成数据不可用。
+- 新增`TieredSnapshotStore::repair_cache(record)`：从PostgreSQL按权威Revision重建缓存；权威记录不存在时删除对应Redis键。该入口不产生新Revision、不执行业务操作。
+- 新增`tools/fault_matrix.ps1`和独立集成测试：短暂停止Redis，验证事务已经提交到PostgreSQL、读请求回源、恢复后原`operation_id`返回Duplicate并修复缓存；短暂停止PostgreSQL，验证已提交缓存仍可读、写请求不会返回成功。
+- 故障测试结束自动恢复本机容器，不删除Docker数据卷。`cargo fmt`、workspace check/test、Clippy和本机故障矩阵均通过。
+- 当前遗留：积压恢复、下线Flush、长时间数据库故障和网络服务仍未实现；主工程继续禁止直接连接DBProxy存储crate。
+
 ## 2026-08-08：Inventory、奖励、任务收口与技能扩展
 
 - Inventory补齐`GrantItem/GrantItems`：先填充同配置已有堆叠，再按`ItemConfig.max_stack`拆分创建Item子Entity；返回受影响堆叠的权威快照。新增玩家种子背包、奖励和后续掉落都必须经过Inventory，不允许任务系统私自拼接Item。
