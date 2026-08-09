@@ -7,6 +7,14 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-09：DBProxy v0.1.5 快照积压与有限轮停机排空
+
+- `dbproxy-core`新增`SnapshotFlushQueue`：普通快照按`RecordKey`合并，只保留同一记录的最新Payload；带`expected_revision`的CAS快照和关键事务不能进入该队列，避免把版本顺序和`operation_id`语义吞掉。
+- 新增`flush(max_items)`与`flush_until_empty(store, max_items_per_round, max_rounds)`。每轮写入量和停机轮数都有限；成功、Duplicate、失败和剩余积压都通过`SnapshotFlushReport`返回，失败请求放回队首等待重试。
+- 这是一套进程内协调器，不是重启持久队列。PostgreSQL短暂停机而DBProxy仍存活时，队列会保留请求，恢复并重新连接后可以继续写入；DBProxy自身崩溃会丢失内存队列，Redis-backed durable backlog留到网络服务与高可用阶段。
+- 故障矩阵新增`postgres_outage`下的快照队列恢复测试，并补充有限轮排空单元测试；`tools/fault_matrix.ps1`现在共执行三项故障用例。验证通过：`cargo fmt --all -- --check`、`cargo test --workspace --locked`、`cargo clippy --workspace --all-targets --locked -- -D warnings`和本机Docker故障矩阵。
+- 版本升至`v0.1.5`并打Tag；主工程只同步架构边界和开发手册，不引入DBProxy代码或数据库客户端。
+
 ## 2026-08-09：DBProxy v0.1.3 单记录关键事务
 
 - `dbproxy-core`新增`TransactionalWrite`、`TransactionalWriteOutcome`和异步事务存储接口。关键操作必须携带稳定`operation_id`、`expected_revision`、完整快照Payload和可重试的业务结果；DBProxy不解释货币、背包或奖励字段。
@@ -22,7 +30,7 @@
 - 新增`TieredSnapshotStore::repair_cache(record)`：从PostgreSQL按权威Revision重建缓存；权威记录不存在时删除对应Redis键。该入口不产生新Revision、不执行业务操作。
 - 新增`tools/fault_matrix.ps1`和独立集成测试：短暂停止Redis，验证事务已经提交到PostgreSQL、读请求回源、恢复后原`operation_id`返回Duplicate并修复缓存；短暂停止PostgreSQL，验证已提交缓存仍可读、写请求不会返回成功。
 - 故障测试结束自动恢复本机容器，不删除Docker数据卷。`cargo fmt`、workspace check/test、Clippy和本机故障矩阵均通过。
-- 当前遗留：积压恢复、下线Flush、长时间数据库故障和网络服务仍未实现；主工程继续禁止直接连接DBProxy存储crate。
+- 当时遗留：积压恢复、下线Flush、长时间数据库故障和网络服务仍未实现；后续版本已先补进程内积压与有限轮Flush，主工程继续禁止直接连接DBProxy存储crate。
 
 ## 2026-08-08：Inventory、奖励、任务收口与技能扩展
 
