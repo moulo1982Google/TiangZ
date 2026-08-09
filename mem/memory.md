@@ -120,10 +120,10 @@ npm run build:cocos3d:mobile
 
 ## DBProxy独立项目决定
 
-- DBProxy后续新建独立Rust仓库，不作为TiangZ仓库中的模块，也不依赖TiangZ。
-- DBProxy不认识Scene、Entity、Component、Buff、Hotfix或`.native`，独立维护通用线协议、Rust/TypeScript SDK、Redis/PostgreSQL适配、Docker部署和可观测性。
-- TiangZ的`.native`与codegen负责生成领域Payload、快照codec和Repository适配层；业务Handler只调用Repository，不直接连接Redis或永久数据库。
-- 第一阶段实现`snapshot`：Revision、幂等、短窗口合并、批量写Redis、异步落PostgreSQL、登录恢复和下线Flush；第二阶段再实现Wallet、Inventory、Trade使用的`transactional`。
+- DBProxy已经建立为独立Rust仓库：[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，不作为TiangZ仓库中的模块，也不依赖TiangZ。
+- `v0.1.0`只冻结通用`RecordKey`、快照Payload、Revision/CAS、幂等写入和内存参考实现；DBProxy不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
+- Redis/PostgreSQL适配、网络服务、Rust/TypeScript SDK、Docker部署和可观测性仍未实现。TiangZ的`.native`与codegen未来负责生成领域Payload、快照codec和Repository适配层；业务Handler只调用Repository，不直接连接Redis或永久数据库。
+- 下一阶段先实现`snapshot`适配、缓存/落库顺序、加载恢复、下线Flush和故障矩阵；第二阶段再实现Wallet、Inventory、Trade使用的`transactional`。
 - 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。第一版不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
 
 ## 技能系统第一阶段决定

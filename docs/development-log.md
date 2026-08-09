@@ -728,3 +728,10 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - Godot `TiangZClient`增加同一组RPC和Push信号；Godot灰盒增加技能快捷键、弹道、Buff/任务状态、道具状态和怪物Alive表现。
 - 三套客户端都保持服务端权威：客户端只显示服务端时间戳、Numeric、Cast、Impact、Buff、Quest和EntityState，不本地结算伤害、Buff、任务奖励或怪物死亡。
 - Unity `dotnet build Assembly-CSharp.csproj --no-restore`通过；UE 5.4.4 Editor目标通过；Godot机器未安装命令行可执行文件，已完成生成协议字段静态对照，需在安装Godot的环境执行编辑器冒烟。
+
+# 2026-08-09：DBProxy独立仓库启动
+
+- 新建公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，与TiangZ主工程无代码依赖。
+- `v0.1.0`冻结`RecordKey`、快照Envelope/Write、Revision/CAS、幂等请求和内存参考实现；同一`request_id`重复请求不会重复递增Revision，复用不同Payload会被拒绝。
+- 增加Apache-2.0许可证、NOTICE和Rust CI；`cargo fmt`、`cargo test --workspace --locked`、`cargo clippy --workspace --all-targets --locked -- -D warnings`和`cargo check --workspace --locked`均通过。
+- 暂不接入Redis、PostgreSQL、网络服务或TiangZ业务；后续先选一个永久数据库完成`snapshot`适配、恢复/Flush和故障矩阵，再设计`transactional`。
