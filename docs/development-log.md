@@ -7,6 +7,14 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-09：DBProxy v0.1.6 Redis AOF 持久积压
+
+- `dbproxy-storage`新增独立的`RedisSnapshotBacklog`，普通快照入队使用Redis AOF持久化；它与只读加速用的`RedisSnapshotCache`分开，不能把缓存键当成积压数据。
+- backlog按`RecordKey`合并最新快照，领取时建立processing lease；数据库写入成功后才ACK。ACK前如果有更新快照，旧ACK只回收旧lease并保留新pending；消费者崩溃后lease过期自动回收，数据库写入失败可主动release或等待回收。
+- `SnapshotWrite`增加serde编码能力，Redis backlog保存完整请求，重启后重新领取仍复用原`request_id`，PostgreSQL已经提交时返回Duplicate，不重复递增Revision。
+- 故障矩阵新增Redis重启后AOF backlog恢复和in-flight新快照替代测试；五项故障用例全部通过，容器最终恢复健康。当前不声称Redis高可用、跨机复制、死信处理或网络服务已完成。
+- 版本升至`v0.1.6`并打Tag；主工程只同步边界文档，不引入DBProxy代码或数据库客户端。
+
 ## 2026-08-09：DBProxy v0.1.5 快照积压与有限轮停机排空
 
 - `dbproxy-core`新增`SnapshotFlushQueue`：普通快照按`RecordKey`合并，只保留同一记录的最新Payload；带`expected_revision`的CAS快照和关键事务不能进入该队列，避免把版本顺序和`operation_id`语义吞掉。

@@ -739,7 +739,7 @@ await player.Offline(reason);
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy已在独立仓库完成PostgreSQL权威快照、Revision/CAS、幂等、单记录`TransactionalWrite`、Redis已提交快照缓存、缓存回源、缓存修复和进程内`SnapshotFlushQueue`的本机适配验收；普通快照队列支持按记录合并和有限轮停机排空，但DBProxy自身重启后的持久积压、网络服务、TiangZ生成Repository和生产故障恢复尚未实现。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端；主工程不得直接引入DBProxy存储crate。
+DBProxy已在独立仓库完成PostgreSQL权威快照、Revision/CAS、幂等、单记录`TransactionalWrite`、Redis已提交快照缓存、缓存回源、缓存修复、进程内`SnapshotFlushQueue`和Redis AOF 持久`SnapshotBacklog`的本机适配验收；普通快照支持按记录合并、有限轮停机排空、lease/ACK和DBProxy重启后重新领取，但Redis高可用、长时间故障监控、网络服务、TiangZ生成Repository和生产故障恢复尚未实现。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端；主工程不得直接引入DBProxy存储crate。
 
 ## AOI业务规则
 
@@ -780,7 +780,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
-持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。当前DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`和进程内`SnapshotFlushQueue`，存储crate使用PostgreSQL作为权威端、Redis作为已提交快照缓存，并已通过本机Docker集成和短暂停机故障矩阵；普通快照只能在进程仍存活时排空，业务不能把它当成DBProxy重启后的可靠队列。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型。网络服务、Redis-backed durable backlog、TiangZ生成Repository尚未接入，业务代码仍不得直接连接Redis/数据库。未来由TiangZ codegen负责把领域对象转换为通用请求，业务代码只调用生成Repository；持久积压和故障矩阵收口后，再接入网络服务与生成Repository。
+持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。当前DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`和进程内`SnapshotFlushQueue`，存储crate使用PostgreSQL作为权威端、Redis作为已提交快照缓存和AOF持久积压区，并已通过本机Docker集成、Redis重启恢复和短暂停机故障矩阵；普通快照入队成功后可以在DBProxy重启后重新领取，但业务仍不能把Redis backlog当成PostgreSQL事务或Redis高可用。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型。网络服务、backlog指标、Redis高可用、TiangZ生成Repository尚未接入，业务代码仍不得直接连接Redis/数据库。未来由TiangZ codegen负责把领域对象转换为通用请求，业务代码只调用生成Repository；网络服务收口后，再接入生成Repository。
 
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
