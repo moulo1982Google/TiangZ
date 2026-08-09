@@ -31,7 +31,7 @@ export type {
 export { Logger } from "./logging/Logger";
 export type { LogCategory, LogFields, LogLevel } from "./logging/Logger";
 
-export { readU16BE } from "./protocol/binary";
+export { readU16BE, utf8Decode, utf8Encode } from "./protocol/binary";
 export { encodePacket } from "./protocol/frame";
 export { message } from "./protocol/message";
 export type {
@@ -80,9 +80,11 @@ export type {
   CustomMetricSnapshot,
   CustomMetricKind,
   ProcessConfig,
+  ProcessDbProxyConfig,
   ProcessLifecycleConfig,
   ProcessNetworkConfig,
   ProcessObservabilityConfig,
+  ProcessPersistenceConfig,
   ProcessRuntimeConfig,
   ProcessSchedulingConfig,
   RuntimeEntrySceneConfig,
@@ -90,6 +92,8 @@ export type {
   SceneMailboxType,
   SceneMetricsSnapshot,
 } from "./process/types";
+
+export { HostDbProxyTransport } from "./persistence/HostDbProxyTransport";
 
 export { StateReplicationSystem } from "./replication/StateReplicationSystem";
 export type {

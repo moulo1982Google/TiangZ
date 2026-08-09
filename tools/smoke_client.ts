@@ -65,6 +65,16 @@ async function main() {
   // Process Ready不代表跨进程MapHost注册已经完成；等待一个5秒续租周期覆盖并发启动顺序。
   // Process Ready does not imply cross-process MapHost registration; wait one renewal cycle.
   await sleep(5_500);
+  const persistenceWriteAccount = namedArgument("--dbproxy-persistence-write");
+  if (persistenceWriteAccount) {
+    await writeDbProxyPersistenceFixture(loginAddr, persistenceWriteAccount);
+    return;
+  }
+  const persistenceReadAccount = namedArgument("--dbproxy-persistence-read");
+  if (persistenceReadAccount) {
+    await verifyDbProxyPersistenceFixture(loginAddr, persistenceReadAccount);
+    return;
+  }
   if (process.argv.includes("--map100-initial-only") || process.argv.includes("--skill-only")) {
     const login = await requestLogin(loginAddr.ip, loginAddr.port, `smoke_map100_${Date.now()}`);
     const client = await openGateAndEnterMap(
@@ -128,6 +138,84 @@ async function main() {
     { account: mover.account, token: mover.token, mapId: 1 },
     { account: peer.account, token: peer.token, mapId: 1 },
   );
+}
+
+/** 消耗一件道具后主动断开，并等待Gate宽限期完成可靠下线保存。 / Consumes one item, disconnects, and waits for the Gate grace period to complete a durable offline save. */
+async function writeDbProxyPersistenceFixture(
+  loginAddr: { ip: string; port: number },
+  account: string,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 100 },
+  );
+  const initial = client.enterMap.items.find((item) => item.configId === 1001);
+  if (!initial || initial.count !== 50) {
+    throw new Error(`DBProxy write fixture expected 50 small potions, got ${initial?.count}`);
+  }
+  console.log("DBProxy persistence player entered:", {
+    account,
+    unitId: client.enterMap.unitId,
+    initialCount: initial.count,
+  });
+  let changed: ReturnType<typeof decodeUseItemFrame>["body"];
+  try {
+    changed = decodeUseItemFrame(await client.gate.request(
+      buildUseItemPacket(nextRpcId++, { itemId: initial.itemId }),
+    )).body;
+    if (changed.error || changed.item.count !== 49) {
+      throw new Error(`DBProxy write fixture item use failed: ${stringifyForError(changed)}`);
+    }
+  } finally {
+    await client.gate.disconnect();
+  }
+  console.log("DBProxy persistence write staged:", {
+    account,
+    itemId: initial.itemId.toString(),
+    count: changed.item.count,
+    waitingForGateOfflineMs: 32_000,
+  });
+  await sleep(32_000);
+}
+
+/** 服务重启后读取同账号，确认没有重新发放默认背包。 / Reads the same account after a server restart and verifies starter inventory was not seeded again. */
+async function verifyDbProxyPersistenceFixture(
+  loginAddr: { ip: string; port: number },
+  account: string,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 100 },
+  );
+  try {
+    const restored = client.enterMap.items.find((item) => item.configId === 1001);
+    if (!restored || restored.count !== 49 || restored.version !== 2) {
+      throw new Error(
+        `DBProxy restore expected count=49/version=2, got ${stringifyForError(restored)}`,
+      );
+    }
+    console.log("DBProxy persistence restored:", {
+      account,
+      unitId: client.enterMap.unitId,
+      itemId: restored.itemId.toString(),
+      count: restored.count,
+      version: restored.version,
+    });
+  } finally {
+    await client.gate.disconnect();
+  }
+}
+
+function namedArgument(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  const value = index < 0 ? undefined : process.argv[index + 1];
+  if (value === undefined) return undefined;
+  if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
+  return value;
 }
 
 /** 验证五技能共用状态机的关键路径；复杂Buff冲突矩阵由buff-action自测覆盖。 / Verifies key paths of the shared five-skill state machine; buff-action tests cover the detailed conflict matrix. */
@@ -1580,15 +1668,17 @@ async function openGateAndEnterMap(
     }
 
     const enterMapRpcId = nextRpcId++;
-    const [enterMapFrame, mapReadyFrame] = await Promise.all([
-      gate.request(buildEnterMapPacket(enterMapRpcId, { mapId: request.mapId, mapInstanceId: 0n })),
-      gate.waitForMessage(MsgCode.G2C_MapReady),
-    ]);
-    const enterMap = decodeEnterMapFrame(enterMapFrame);
-    const mapReady = decodeMapReadyFrame(mapReadyFrame);
+    const mapReadyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
+    // 先注册推送监听，再立即检查RPC结果；否则Promise.all会用MapReady超时遮住真正的业务错误。
+    // Subscribe first, then inspect the RPC immediately so a MapReady timeout cannot hide its error.
+    void mapReadyFrame.catch(() => undefined);
+    const enterMap = decodeEnterMapFrame(await gate.request(
+      buildEnterMapPacket(enterMapRpcId, { mapId: request.mapId, mapInstanceId: 0n }),
+    ));
     if (enterMap.rpcId !== enterMapRpcId || enterMap.body.error) {
       throw new Error(`EnterMap failed: ${JSON.stringify(enterMap.body)}`);
     }
+    const mapReady = decodeMapReadyFrame(await mapReadyFrame);
     if (enterMap.body.entities.length === 0) {
       const snapshotReadyRpcId = nextRpcId++;
       const snapshotFrame = gate.waitForMessage(MsgCode.G2C_AoiDelta);
@@ -1702,6 +1792,7 @@ class TcpRpcConnection {
   private readonly pending = new Map<number, {
     resolve: (frame: Uint8Array) => void;
     reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
   }>();
   private readonly messageWaiters = new Map<
     number,
@@ -1728,6 +1819,7 @@ class TcpRpcConnection {
           if (rpcId !== undefined) {
             const pending = this.pending.get(rpcId);
             this.pending.delete(rpcId);
+            if (pending) clearTimeout(pending.timer);
             pending?.resolve(frame);
             continue;
           }
@@ -1743,7 +1835,7 @@ class TcpRpcConnection {
     });
   }
 
-  async request(packet: Uint8Array): Promise<Uint8Array> {
+  async request(packet: Uint8Array, timeoutMs = 5000): Promise<Uint8Array> {
     await this.connected;
     // request()接收的是带4字节length-prefix的网络包，响应分帧后则不带前缀。
     // request() receives a four-byte length-prefixed packet, while decoded responses do not.
@@ -1751,8 +1843,19 @@ class TcpRpcConnection {
     if (rpcId === undefined) throw new Error("RPC request packet has no rpcId");
     if (this.pending.has(rpcId)) throw new Error(`duplicate pending rpcId: ${rpcId}`);
     return new Promise((resolve, reject) => {
-      this.pending.set(rpcId, { resolve, reject });
-      this.socket.write(Buffer.from(packet));
+      const timer = setTimeout(() => {
+        if (!this.pending.delete(rpcId)) return;
+        reject(new Error(`RPC ${rpcId} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.pending.set(rpcId, { resolve, reject, timer });
+      this.socket.write(Buffer.from(packet), (error) => {
+        if (!error) return;
+        const pending = this.pending.get(rpcId);
+        if (!pending) return;
+        this.pending.delete(rpcId);
+        clearTimeout(pending.timer);
+        reject(error);
+      });
     });
   }
 
@@ -1795,8 +1898,18 @@ class TcpRpcConnection {
     await this.closed;
   }
 
+  /** 立即模拟客户端进程消失，供Gate断线宽限与恢复测试使用。 / Immediately simulates a vanished client process for Gate grace and recovery tests. */
+  async disconnect(): Promise<void> {
+    if (this.socket.destroyed) return;
+    this.socket.destroy();
+    await this.closed;
+  }
+
   private rejectAll(error: Error): void {
-    for (const pending of this.pending.values()) pending.reject(error);
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
     this.pending.clear();
     for (const waiters of this.messageWaiters.values()) {
       for (const waiter of waiters) {

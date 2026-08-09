@@ -1856,6 +1856,7 @@ export interface PlayerTransferSnapshot {
   skill: SkillTransferSnapshot;
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
+  persistenceRevision: bigint;
 }
 
 export const PlayerTransferSnapshotCodec = {
@@ -1880,6 +1881,7 @@ export const PlayerTransferSnapshotCodec = {
       skill: SkillTransferSnapshotCodec.decode(new Uint8Array(0)),
       quests: [],
       completedQuestConfigIds: [],
+      persistenceRevision: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1937,6 +1939,9 @@ export const PlayerTransferSnapshotCodec = {
       else if (tag.fieldNo === 19 && tag.wireType === 0) {
         (value.completedQuestConfigIds as number[]).push(reader.uint32());
       }
+      else if (tag.fieldNo === 20 && tag.wireType === 0) {
+        value.persistenceRevision = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1964,6 +1969,7 @@ export const PlayerTransferSnapshotCodec = {
     if (value.skill !== undefined) writer.bytes(17, SkillTransferSnapshotCodec.encode(value.skill));
     for (const item of (value.quests ?? [])) writer.bytes(18, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(19, item, true);
+    if (value.persistenceRevision !== undefined) writer.uint64(20, value.persistenceRevision);
     return writer.finish();
   },
 };

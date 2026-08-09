@@ -123,9 +123,10 @@ npm run build:cocos3d:mobile
 - DBProxy已经建立为独立Rust仓库：[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，不作为TiangZ仓库中的模块，也不依赖TiangZ。
 - `v0.1.0`冻结通用`RecordKey`、快照Payload、Revision/CAS、幂等写入和内存参考实现；DBProxy不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
 - 当前已增加`dbproxy-storage`：PostgreSQL是权威快照、Revision/CAS、幂等记录和单记录关键事务，Redis只缓存PostgreSQL已提交结果；Redis读取失败自动回源PostgreSQL，缓存失败可以复用原`request_id`或`operation_id`修复。
-- 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。DBProxy当前为`v0.2.0`，Redis使用AOF和命名卷；除进程内`SnapshotFlushQueue`外，`RedisSnapshotBacklog`通过lease/ACK和过期回收支持DBProxy重启后重新领取，PostgreSQL恢复后继续按原`request_id`写入。
-- `v0.2.0`已增加独立Protobuf协议、SHA-256指纹、内部令牌、有界TCP服务和Rust客户端池。RPC固定为LoadSnapshot、SaveSnapshot、EnqueueSnapshot、ApplyTransaction；Save/Transaction成功表示PostgreSQL提交，Enqueue成功只表示Redis AOF backlog接收。客户端和服务端均按RecordKey做多连接分片；请求超时后连接不可复用，必须重新连接并保留原幂等ID。
-- TypeScript SDK、批量RPC、Prometheus、TiangZ生成Repository、自动重连、Redis高可用和生产部署仍未实现。下一阶段先做TypeScript SDK与协议锁、批量Load/Save和Player Repository；多记录事务、Outbox和跨域一致性另行设计。
+- 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。DBProxy当前为`v0.3.1`，Redis使用AOF和命名卷；除进程内`SnapshotFlushQueue`外，`RedisSnapshotBacklog`通过lease/ACK和过期回收支持DBProxy重启后重新领取，PostgreSQL恢复后继续按原`request_id`写入。
+- DBProxy独立协议固定为LoadSnapshot、SaveSnapshot、EnqueueSnapshot、ApplyTransaction；Save/Transaction成功表示PostgreSQL提交，Enqueue成功只表示Redis AOF backlog接收。`v0.3.1`提供不依赖Node、Deno或浏览器全局的TypeScript SDK；客户端和服务端均按RecordKey做多连接分片，请求超时后连接不可复用，必须重新连接并保留原幂等ID。
+- TiangZ已经接入首个`HostDbProxyTransport -> DbProxyPlayerRepository`：只有配置`process.persistence.dbProxy`才启用，Rust Host Runtime负责网络I/O，业务V8只等待Promise。玩家快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态，最终下线保存后重启TiangZ可以从PostgreSQL恢复；普通all-in-one仍使用内存Repository。
+- 当前没有周期快照、批量RPC、Prometheus、TLS、Redis高可用和生产部署；Inventory、Wallet、Reward、Trade也尚未接入`ApplyTransaction`。下一阶段先做关键经济事务，再做批量Load/Save、周期Flush和崩溃接管；不得把快照恢复成功描述成经济数据已经生产级不丢。
 - 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。当前不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
 
 ## 技能系统第一阶段决定

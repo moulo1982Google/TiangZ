@@ -3,15 +3,26 @@ import type { Entity } from "../app/core/runtime/entities";
 import { PlayerPersistenceComponent } from "../app/model/demo/persistence/PlayerPersistenceComponent";
 import { InMemoryPlayerRepository } from "../app/model/demo/persistence/PlayerRepository";
 import type {
+  PlayerLoadResult,
   PlayerRepository,
   PlayerSaveData,
+  PlayerSaveResult,
 } from "../app/model/demo/persistence/PlayerRepository";
+import {
+  DecodePlayerSaveData,
+  EncodePlayerSaveData,
+} from "../app/model/demo/persistence/PlayerPersistenceCodec";
+import { BuffComponent } from "../app/model/demo/buff/BuffComponent";
+import { ItemComponent } from "../app/model/demo/item/ItemComponent";
+import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
+import { SkillComponent } from "../app/model/demo/skill/SkillComponent";
 
 void main();
 
 async function main(): Promise<void> {
   await testSuccessfulSaveIsIdempotent();
   await testSaveFailureIsVisibleAndIdempotent();
+  testCodecPreservesBigIntAndRepositoryRejectsStaleRevision();
   console.log("player persistence self-test passed");
 }
 
@@ -19,7 +30,7 @@ async function testSuccessfulSaveIsIdempotent(): Promise<void> {
   const repository = new InMemoryPlayerRepository();
   const component = new PlayerPersistenceComponent();
   component.__attach(createPlayer() as unknown as Entity);
-  component.__awake(repository);
+  component.__awake(repository, 0n);
 
   const first = component.SaveOnOffline("disconnect");
   const second = component.SaveOnOffline("duplicate-disconnect");
@@ -27,13 +38,14 @@ async function testSuccessfulSaveIsIdempotent(): Promise<void> {
   await Promise.all([first, second]);
   assert.equal(repository.SaveCount("persistence-test"), 1);
   assert.equal(repository.Get("persistence-test")?.reason, "disconnect");
+  assert.equal(component.Revision, 1n);
 }
 
 async function testSaveFailureIsVisibleAndIdempotent(): Promise<void> {
   const repository = new FailingPlayerRepository();
   const component = new PlayerPersistenceComponent();
   component.__attach(createPlayer() as unknown as Entity);
-  component.__awake(repository);
+  component.__awake(repository, 0n);
 
   const first = component.SaveOnOffline("shutdown");
   const second = component.SaveOnOffline("duplicate-shutdown");
@@ -51,6 +63,7 @@ function createPlayer(): object {
     Snapshot: () => ({
       account: "persistence-test",
       mapId: 1,
+      mapInstanceId: 1n,
       unitId: 1001,
       gateName: "gate_1",
       x: 0,
@@ -64,15 +77,78 @@ function createPlayer(): object {
       alive: true,
       numerics: [],
     }),
-    GetComponent: () => ({ Snapshot: () => [] }),
+    GetComponent: (ctor: Function) => {
+      if (ctor === ItemComponent) return { Snapshot: () => [] };
+      if (ctor === BuffComponent) return { CaptureTransfer: () => [] };
+      if (ctor === SkillComponent) {
+        return {
+          CaptureTransfer: () => ({
+            globalCooldownEndAtMs: 0,
+            cooldowns: [],
+            itemCooldowns: [],
+          }),
+        };
+      }
+      if (ctor === QuestComponent) {
+        return {
+          CaptureTransfer: () => ({ active: [], completedQuestConfigIds: [] }),
+        };
+      }
+      throw new Error(`unexpected component: ${ctor.name}`);
+    },
   };
 }
 
 class FailingPlayerRepository implements PlayerRepository {
   saveCount = 0;
 
-  Save(_data: PlayerSaveData): Promise<void> {
+  Load(_account: string): PlayerLoadResult | undefined {
+    return undefined;
+  }
+
+  Save(_data: PlayerSaveData, _expectedRevision: bigint): Promise<PlayerSaveResult> {
     this.saveCount += 1;
     return Promise.reject(new Error("injected repository failure"));
   }
+}
+
+function testCodecPreservesBigIntAndRepositoryRejectsStaleRevision(): void {
+  const data: PlayerSaveData = {
+    player: {
+      account: "codec-test",
+      mapId: 100,
+      mapInstanceId: 100n,
+      x: 1,
+      y: 2,
+      z: 3,
+      yaw: 0.5,
+      cellX: 1,
+      cellZ: 3,
+      speedCellsPerSecond: 6,
+      facing: 2,
+      alive: true,
+      numerics: [{ numericType: 1, value: 9_007_199_254_740_993n }],
+    },
+    items: [{
+      itemId: 1n,
+      configId: 1001,
+      count: 2,
+      quality: 0,
+      level: 1,
+      version: 1,
+    }],
+    buffs: [],
+    skill: { globalCooldownEndAtMs: 0, cooldowns: [], itemCooldowns: [] },
+    quests: { active: [], completedQuestConfigIds: [] },
+    reason: "codec",
+  };
+  const decoded = DecodePlayerSaveData(EncodePlayerSaveData(data));
+  assert.equal(decoded.player.numerics[0]?.value, 9_007_199_254_740_993n);
+
+  const repository = new InMemoryPlayerRepository();
+  assert.equal(repository.Save(data, 0n).revision, 1n);
+  assert.throws(
+    () => repository.Save(data, 0n),
+    /player snapshot revision conflict/,
+  );
 }

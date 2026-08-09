@@ -3522,6 +3522,13 @@
           "type": "uint32",
           "repeated": true,
           "synthetic": false
+        },
+        {
+          "number": 20,
+          "name": "persistence_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },

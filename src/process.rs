@@ -876,7 +876,8 @@ fn run_process_runtime(
         .enable_all()
         .build()
         .context("failed to create JS event loop runtime")?;
-    configure_host_scene_bridge(host_runtime, completion_sink);
+    configure_host_scene_bridge(host_runtime.clone(), completion_sink);
+    crate::dbproxy::configure(&process, host_runtime)?;
     {
         let mut preflight_runtime = {
             let _guard = js_event_loop.enter();

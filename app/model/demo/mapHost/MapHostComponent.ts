@@ -47,7 +47,8 @@ import { ItemComponent } from "../item/ItemComponent";
 import { BuffComponent } from "../buff/BuffComponent";
 import { SkillComponent, type SkillTransferState } from "../skill/SkillComponent";
 import { QuestComponent } from "../quest/QuestComponent";
-import { InMemoryPlayerRepository } from "../persistence/PlayerRepository";
+import type { PlayerRepository } from "../persistence/PlayerRepository";
+import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import { GameConfigs, QuestStatus } from "../../../generated/model/config";
 import { LocationProxy } from "../location/LocationProxy";
 import { UnitGateComponent } from "../map/UnitGateComponent";
@@ -70,14 +71,14 @@ const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 // 玩家跨MapHost快照的生成端与校验端必须引用同一版本，新增可传送Component时只修改这里。
 // The producer and validator of player transfer snapshots must share one version;
 // bump only this constant when a transferable Component changes the wire shape.
-const PLAYER_TRANSFER_SCHEMA_VERSION = 6;
+const PLAYER_TRANSFER_SCHEMA_VERSION = 7;
 
-export class MapHostComponent extends Component {
+export class MapHostComponent extends Component<[repository: PlayerRepository]> {
   private readonly maps = new Map<bigint, MapComponent>();
   private readonly dynamicAssignments = new Map<bigint, DynamicMapAssignmentSnapshot>();
   private readonly dynamicRequestIds = new Map<string, bigint>();
   private dynamicMapDisposedNotifier: DynamicMapDisposedNotifier | undefined;
-  private readonly repository = new InMemoryPlayerRepository();
+  private repository!: PlayerRepository;
   private readonly incomingTransfers =
     new TransferStagingRegistry<PreparedIncomingPlayer>(1024);
   private location!: LocationProxy;
@@ -115,7 +116,8 @@ export class MapHostComponent extends Component {
   };
 
   /** 定期回收源进程宕机遗留的Prepare，以及已完成事务的短期幂等记录。 / Periodically reclaims prepares orphaned by a crashed source and short-lived completed idempotency records. */
-  protected override Awake(): void {
+  protected override Awake(repository: PlayerRepository): void {
+    this.repository = repository;
     this.location = new LocationProxy(this.owner.scenes);
     for (const mapConfigId of this.owner.self.staticMapIds ?? []) {
       this.CreateMap({
@@ -284,8 +286,9 @@ export class MapHostComponent extends Component {
           this.entryMetrics.maxIdAllocationMs,
           stageElapsedMs,
         );
+        const loaded = await this.repository.Load(request.account);
         stageStartedAt = monotonicNow();
-        player = map.CreatePlayer(allocated.unitId, request);
+        player = map.CreatePlayer(allocated.unitId, request, loaded);
         stageElapsedMs = monotonicNow() - stageStartedAt;
         this.entryMetrics.playerCreates += 1;
         this.entryMetrics.playerCreateMs += stageElapsedMs;
@@ -817,6 +820,7 @@ export class MapHostComponent extends Component {
       quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       targetMapInstanceId: targetInstance.mapInstanceId,
+      persistenceRevision: player.GetComponent(PlayerPersistenceComponent).Revision,
     };
   }
 

@@ -739,7 +739,7 @@ await player.Offline(reason);
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy独立仓库的`v0.2.0`已完成PostgreSQL权威快照、Revision/CAS、幂等事务、Redis缓存与持久Backlog，并提供带协议指纹和Token握手的TCP服务、Rust客户端连接池及`LoadSnapshot`、`SaveSnapshot`、`EnqueueSnapshot`、`ApplyTransaction`四类RPC；普通快照支持按记录合并、有限时间停机排空、lease/ACK和DBProxy重启后重新领取。Redis高可用、长时间故障监控、TLS、TiangZ生成的TypeScript SDK/Repository适配器和生产故障恢复仍未实现。业务开发暂时继续依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端；主工程不得直接引入DBProxy存储crate。
+DBProxy独立仓库的`v0.3.1`已提供PostgreSQL权威快照、Revision/CAS、幂等事务、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK。TiangZ首个`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。当前保存发生在最终下线和停机阶段，关键经济事务、周期快照和崩溃接管尚未完成。
 
 ## AOI业务规则
 
@@ -906,7 +906,7 @@ C2M_AttackMonsterHandler
 
 ## DBProxy持久化接入边界
 
-独立DBProxy当前为`v0.2.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池和真实PostgreSQL/Redis闭环，但TiangZ主工程尚未生成Repository或TypeScript SDK。业务开发者当前仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
+独立DBProxy当前为`v0.3.1`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK和真实PostgreSQL/Redis闭环。TiangZ主工程已经实现首个Player Snapshot Repository，但业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
 
 正式接入后的固定调用层次应是：
 
@@ -914,7 +914,8 @@ C2M_AttackMonsterHandler
 Handler
   -> PlayerUnit / DomainComponent
   -> 领域Repository
-  -> 生成的DBProxy SDK
+  -> @tiangz/dbproxy-sdk
+  -> HostDbProxyTransport
   -> 独立DBProxy
 ```
 
@@ -925,9 +926,11 @@ Handler
 - `EnqueueSnapshot`：只用于位置、普通任务进度等允许小范围回退的数据；成功只表示Redis AOF backlog接收，不代表PostgreSQL已落库。
 - `ApplyTransaction`：用于Wallet、Inventory、Reward、Trade等关键单记录事务；必须携带原`operation_id`、期望Revision、提交后的完整Payload和可重试业务结果。
 
-同一个`DbProxyClient`连接只允许一个在途RPC；高并发服务使用`DbProxyClientPool`按RecordKey稳定分片。业务不能为了躲开PlayerUnit ordered mailbox而改用`Spawn`异步确认关键经济操作：关键事务必须在可靠提交成功后才向客户端确认。普通快照可以帧尾合并并进入backlog，但不得把关键事务降级成“稍后保存”。
+同一个`DbProxyClient`连接只允许一个在途RPC；高并发服务使用Rust`DbProxyClientPool`按RecordKey稳定分片。DBProxy网络工作运行在多线程Rust Host Runtime，业务V8只等待Promise；不得在TS中自行打开Socket或实现第二套连接池。业务不能为了躲开PlayerUnit ordered mailbox而改用`Spawn`异步确认关键经济操作：关键事务必须在可靠提交成功后才向客户端确认。普通快照可以合并并进入backlog，但不得把关键事务降级成“稍后保存”。
 
-当前尚未生成具体Repository，因此上面是已经冻结的接入契约，不是可在TiangZ业务代码中直接调用的现成API。下一阶段先生成TypeScript SDK、批量Load和Player Repository，再做登录恢复、正常下线Flush与崩溃接管。
+当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成；断线、踢下线和停机只调用`player.Offline(reason)`，由`PlayerPersistenceComponent.SaveOnOffline`采集Numeric、Item、Buff、Skill冷却、Quest和地图状态，并以当前Revision提交。Handler不得直接调用Repository。
+
+当前首版只验证普通玩家快照：最终下线保存后，TiangZ重启可以从PostgreSQL恢复。它没有周期快照，也没有把UseItem、Reward或Wallet接入`ApplyTransaction`；崩溃发生在最终保存之前仍可能丢失最近变化。下一阶段先给关键经济领域增加提交前事务确认，再做批量Load/Save、周期Flush和节点接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 

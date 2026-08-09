@@ -313,7 +313,8 @@ export class BinaryReader {
   }
 }
 
-function utf8Encode(value: string): Uint8Array {
+/** 在neutral V8中编码UTF-8，不依赖浏览器TextEncoder全局对象。 / Encodes UTF-8 in neutral V8 without requiring the browser TextEncoder global. */
+export function utf8Encode(value: string): Uint8Array {
   const bytes = new Uint8Array(value.length * 3);
   let offset = 0;
   for (let i = 0; i < value.length; i += 1) {

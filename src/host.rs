@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::task::Poll;
 use std::time::Duration;
 
 use crate::transport::{call_remote_scene, send_remote_scene};
@@ -16,10 +15,11 @@ use deno_core::{
     op2, v8,
 };
 use deno_error::JsErrorBox;
-use futures_util::{StreamExt, future::poll_fn, stream};
+use futures_util::{StreamExt, stream};
 use tokio::runtime::Handle;
 
 const HOST_CALL_MAX_FRAME_LEN: usize = 1024 * 1024;
+const HOST_EVENT_LOOP_PUMP_BUDGET: Duration = Duration::from_millis(1);
 const HOST_OUTBOUND_MAX_TARGETS: usize = 4096;
 const HOST_OUTBOUND_MAX_BATCHES: usize = 65_536;
 const HOST_OUTBOUND_MAX_PACKED_LEN: usize = 64 * 1024 * 1024;
@@ -482,6 +482,7 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     let mut runtime = JsRuntime::new(RuntimeOptions {
         extensions: vec![
             ets_runtime_host::init(),
+            crate::dbproxy::init(),
             crate::generated::native_ops::init(),
         ],
         inspector,
@@ -554,6 +555,10 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
     runtime.execute_script(
         "ets-runtime:logging-config.js",
         format!("globalThis.__hostLogMinLevel = {host_log_min_level};"),
+    )?;
+    runtime.execute_script(
+        "ets-runtime:dbproxy-ops.js",
+        crate::dbproxy::BOOTSTRAP_SOURCE,
     )?;
     runtime.execute_script(
         "ets-runtime:native-ops.js",
@@ -758,21 +763,26 @@ pub fn call_js_update_binary(
     Ok((metrics_json, outbound))
 }
 
-/// 轮询一次待完成 JS Promise；生命周期任务未完成时，调用方必须持续驱动。 / Polls pending JS promises once; callers must keep pumping while lifecycle work is unresolved.
+/// 用有界预算推进待完成JS Promise；超过预算的任务留到下个游戏Tick，禁止在V8线程等待完整I/O。
+/// Advances pending JS promises within a bounded budget; unfinished work stays pending for the next game tick.
 pub fn pump_js_event_loop_once(
     js_event_loop: &tokio::runtime::Runtime,
     runtime: &mut JsRuntime,
 ) -> Result<()> {
     let _guard = js_event_loop.enter();
-    let result = js_event_loop.block_on(poll_fn(|cx| {
-        let result = runtime.poll_event_loop(cx, PollEventLoopOptions::default());
-        Poll::Ready(match result {
-            Poll::Ready(Err(error)) => {
+    let result = js_event_loop.block_on(async {
+        match tokio::time::timeout(
+            HOST_EVENT_LOOP_PUMP_BUDGET,
+            runtime.run_event_loop(PollEventLoopOptions::default()),
+        )
+        .await
+        {
+            Ok(Ok(())) | Err(_) => Ok(()),
+            Ok(Err(error)) => {
                 Err(anyhow::Error::from(error).context("failed to pump JS event loop"))
             }
-            Poll::Ready(Ok(())) | Poll::Pending => Ok(()),
-        })
-    }));
+        }
+    });
     runtime.v8_isolate().perform_microtask_checkpoint();
     result
 }
@@ -834,6 +844,40 @@ mod tests {
                 console.debug("disabled", expensive);
                 if (formatted !== 0) throw new Error("disabled console log was formatted");
                 "#,
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn incremental_event_loop_pump_completes_async_host_ops() {
+        let event_loop = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut runtime = {
+            let _guard = event_loop.enter();
+            create_runtime(false, 0).unwrap()
+        };
+        {
+            let _guard = event_loop.enter();
+            runtime
+                .execute_script(
+                    "test:async-host-op.js",
+                    r#"
+                    globalThis.__asyncHostOpDone = false;
+                    __hostSleep(1).then(() => { globalThis.__asyncHostOpDone = true; });
+                    "#,
+                )
+                .unwrap();
+        }
+        for _ in 0..20 {
+            pump_js_event_loop_once(&event_loop, &mut runtime).unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        runtime
+            .execute_script(
+                "test:async-host-op-result.js",
+                r#"if (!globalThis.__asyncHostOpDone) throw new Error("async host op was not pumped");"#,
             )
             .unwrap();
     }

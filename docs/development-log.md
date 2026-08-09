@@ -7,6 +7,16 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-09：TiangZ接入DBProxy玩家快照
+
+- 独立DBProxy发布`v0.3.0`运行时无关TypeScript SDK和协议锁，随后以`v0.3.1`移除对`TextEncoder`等浏览器全局对象的隐式依赖，保证SDK可直接运行在TiangZ裸V8。DBProxy继续不依赖TiangZ，也不认识游戏领域Payload。
+- Rust Host新增可选DBProxy连接池和`Load/Save/EnqueueSnapshot/ApplyTransaction`op。认证配置只保存环境变量名，令牌不进入JSON、V8或日志；网络工作提交到多线程Host Runtime，业务V8不直接打开Socket。
+- 修复通用异步Host op事件循环缺陷：旧单次pump把`Poll::Pending`错误当作完成，导致Promise永远不继续。现在每个游戏Tick最多投入1ms推进Deno事件循环，未完成I/O保留到后续Tick；新增回归测试证明异步Host op能够最终完成且不会在V8线程等待完整网络请求。
+- Demo新增`PlayerRepository`、`DbProxyPlayerRepository`、有版本的UTF-8 Payload Codec和`PlayerPersistenceComponent`。加载发生在玩家Unit发布到目录、Location和AOI前；断线、踢人和停机共用一个保存Promise。跨MapHost快照携带持久Revision，防止目标Host用旧版本覆盖权威记录。
+- 首版`tiangz.demo.player@1`保存地图/位置、Numeric、Item、Buff、Skill与道具冷却、活动/完成Quest；不保存Gate/Session、UnitId、Actor InstanceId、Timer、AOI关系、移动意图和活动Cast。Buff自身来源恢复到新UnitId，其他临时Unit来源脱离；只在同一MapInstance恢复坐标。
+- 新增`configs/local/all-in-one-dbproxy.json`和smoke client写入/读取模式。真实链路把1001道具从50消耗到49，等待30秒重连宽限完成下线保存；停止并重启TiangZ后，同账号从PostgreSQL恢复为`count=49/version=2`。PostgreSQL记录Schema为`tiangz.demo.player@1`、revision为1。
+- 当前仍是普通快照阶段：没有周期快照、批量Load/Save、DBProxy指标、TLS或节点接管；Inventory、Wallet、Reward和Trade尚未接入`ApplyTransaction`，因此不能把重启恢复冒烟解释为关键经济数据已经生产级不丢。
+
 ## 2026-08-09：DBProxy v0.2.0 首版网络服务
 
 - 独立DBProxy新增`dbproxy-protocol`、`dbproxy-client`和`dbproxy-server`。协议使用Protobuf、显式版本、`dbproxy.proto` SHA-256指纹、大端四字节长度前缀和默认8 MiB帧上限；连接在RPC前校验内部共享令牌，错误令牌和旧协议都明确拒绝。

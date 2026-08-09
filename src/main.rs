@@ -12,6 +12,7 @@ use crate::watcher::run_start_machine;
 mod allocator;
 mod aoi;
 mod config;
+mod dbproxy;
 mod game;
 mod game_config;
 mod generated;

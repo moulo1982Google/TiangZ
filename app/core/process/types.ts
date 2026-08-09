@@ -88,7 +88,24 @@ export interface ProcessConfig {
   game?: GameUpdateConfig;
   scheduling?: ProcessSchedulingConfig;
   lifecycle?: ProcessLifecycleConfig;
+  persistence?: ProcessPersistenceConfig;
   observability?: ProcessObservabilityConfig;
+}
+
+export interface ProcessPersistenceConfig {
+  /** 省略时业务继续使用自己选择的非DBProxy Repository。 / When omitted, business keeps using its selected non-DBProxy Repository. */
+  dbProxy?: ProcessDbProxyConfig;
+}
+
+export interface ProcessDbProxyConfig {
+  /** DBProxy监听地址，例如127.0.0.1:7800。 / DBProxy listener endpoint, for example 127.0.0.1:7800. */
+  endpoint: string;
+  /** 只填写令牌环境变量名，绝不能把令牌值写入JSON。 / Names the token environment variable; never put the token value in JSON. */
+  authTokenEnv?: string;
+  clientPoolSize?: number;
+  connectTimeoutMs?: number;
+  requestTimeoutMs?: number;
+  maxFrameBytes?: number;
 }
 
 export interface ProcessIdentityConfig {

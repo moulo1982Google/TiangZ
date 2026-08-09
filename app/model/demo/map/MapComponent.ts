@@ -71,7 +71,10 @@ import { QuestEvents } from "../quest/QuestEvents";
 import type { SkillProjectile } from "../skill/SkillMapComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
 import { LocationProxy } from "../location/LocationProxy";
-import type { PlayerRepository } from "../persistence/PlayerRepository";
+import type {
+  PlayerLoadResult,
+  PlayerRepository,
+} from "../persistence/PlayerRepository";
 import {
   GameConfigs,
   SpatialMode,
@@ -615,9 +618,9 @@ export class MapComponent extends Component<[
   CreatePlayer(
     unitId: number,
     request: G2M_EnterMap,
-    transfer?: EntityTransferSnapshot,
+    loaded?: PlayerLoadResult,
   ): PlayerUnit {
-    const player = this.ComposePlayer(unitId, request, transfer);
+    const player = this.ComposePlayer(unitId, request, undefined, loaded);
     try {
       this.players.Add(player);
       return player;
@@ -653,6 +656,7 @@ export class MapComponent extends Component<[
           active: snapshot.quests.map(fromProtocolQuest),
           completedQuestConfigIds: snapshot.completedQuestConfigIds,
         } satisfies QuestTransferState],
+        [PlayerPersistenceComponent, snapshot.persistenceRevision],
       ]),
     };
     return this.PrepareTransferredPlayer(
@@ -702,7 +706,14 @@ export class MapComponent extends Component<[
     unitId: number,
     request: G2M_EnterMap,
     transfer?: EntityTransferSnapshot,
+    loaded?: PlayerLoadResult,
   ): PlayerUnit {
+    if (transfer && loaded) throw new Error("player creation cannot combine transfer and persistence restore");
+    if (loaded && loaded.data.player.account !== request.account) {
+      throw new Error(
+        `loaded player account mismatch: ${loaded.data.player.account} != ${request.account}`,
+      );
+    }
     const playerConfig = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID);
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
@@ -758,13 +769,92 @@ export class MapComponent extends Component<[
       // Unit只持有技能状态；地图上的SkillMapComponent统一以10Hz推进。 / The Unit owns skill state while one map SkillMapComponent advances it at 10 Hz.
       player.AddComponent(SkillComponent);
       player.AddComponent(QuestComponent);
-      player.AddComponent(PlayerPersistenceComponent, this.repository);
+      player.AddComponent(PlayerPersistenceComponent, this.repository, loaded?.revision ?? 0n);
       player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
+      if (loaded) this.RestorePersistedPlayer(player, position, loaded);
       return player;
     } catch (error) {
       this.units.Remove(unitId);
       throw error;
+    }
+  }
+
+  /**
+   * 在Unit发布到目录和AOI前恢复全部持久组件。只有回到同一地图实例才恢复坐标；
+   * 副本失效后的落点选择属于业务，当前请求地图的出生点保持权威。
+   *
+   * Restores all persisted Components before the Unit is published to the
+   * directory or AOI. Position is restored only for the same map instance;
+   * choosing a fallback after an expired dungeon remains a business decision,
+   * so the requested map spawn stays authoritative otherwise.
+   */
+  private RestorePersistedPlayer(
+    player: PlayerUnit,
+    position: PositionComponent,
+    loaded: PlayerLoadResult,
+  ): void {
+    const data = loaded.data;
+    const transfer: EntityTransferSnapshot = {
+      components: new Map<ComponentCtor, unknown>([
+        [PositionComponent, {
+          speedCellsPerSecond: data.player.speedCellsPerSecond,
+          facing: data.player.facing,
+          alive: data.player.alive,
+        }],
+        [NumericComponent, data.player.numerics.map((numeric) => ({
+          unitId: player.UnitId,
+          numericType: numeric.numericType,
+          value: numeric.value,
+        }))],
+        [ItemComponent, data.items],
+        [BuffComponent, data.buffs.map(({ source, ...buff }) => ({
+          ...buff,
+          sourceUnitId: source === "self" ? player.UnitId : 0,
+        }))],
+        [SkillComponent, data.skill],
+        [QuestComponent, data.quests],
+      ]),
+    };
+    player.RestoreTransfer(transfer);
+
+    if (
+      data.player.mapId !== this.mapId ||
+      data.player.mapInstanceId !== this.mapInstanceId
+    ) {
+      this.logger.info("player state restored at requested map spawn", {
+        account: player.Account,
+        savedMapId: data.player.mapId,
+        savedMapInstanceId: data.player.mapInstanceId.toString(),
+        targetMapId: this.mapId,
+        targetMapInstanceId: this.mapInstanceId.toString(),
+      });
+      return;
+    }
+
+    if (this.config.spatialMode === SpatialMode.Grid2D) {
+      position.SetGridWorldPosition(
+        data.player.x,
+        data.player.y,
+        data.player.z,
+        data.player.yaw,
+      );
+    } else {
+      const projected = this.ProjectPosition({
+        x: data.player.x,
+        y: data.player.y,
+        z: data.player.z,
+      });
+      if (!projected) {
+        this.logger.warn("persisted player position is outside NavMesh; using spawn", {
+          account: player.Account,
+          x: data.player.x,
+          y: data.player.y,
+          z: data.player.z,
+        });
+        return;
+      }
+      position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, data.player.yaw);
     }
   }
 

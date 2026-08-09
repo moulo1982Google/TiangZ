@@ -8,6 +8,7 @@ import { MapHostComponent } from "../mapHost/MapHostComponent";
 import { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 import { DynamicMapLifecycleComponent } from "../mapHost/DynamicMapLifecycleComponent";
 import { MapHostRegistrationComponent } from "../mapHost/MapHostRegistrationComponent";
+import { CreatePlayerRepository } from "../persistence/DbProxyPlayerRepository";
 
 @entryScene()
 export class MapHostScene extends EntryScene {
@@ -17,7 +18,10 @@ export class MapHostScene extends EntryScene {
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
     this.AddComponent(PlayerDirectoryComponent);
-    this.mapHost = this.AddComponent(MapHostComponent);
+    this.mapHost = this.AddComponent(
+      MapHostComponent,
+      CreatePlayerRepository(config.process),
+    );
     this.AddComponent(DynamicMapLifecycleComponent);
     this.AddComponent(MapHostRegistrationComponent);
   }

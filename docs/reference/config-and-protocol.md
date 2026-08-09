@@ -22,10 +22,36 @@
 | `nativeData` | object? | Demo 应用扩展：Rust 权威实体数据的诊断配置 |
 | `scheduling` | object? | Process 事件批处理与空闲 Tick 策略，默认 `adaptive` |
 | `lifecycle` | object? | 进程优雅停机配置；默认最多等待 10000ms |
+| `persistence` | object? | Process持久化连接；当前可选配置独立DBProxy |
 | `observability` | object? | 延迟采样等运行时观测配置 |
 | `debug` | object? | 该 V8 的 Inspector 配置 |
 
 `debug` 支持 `inspectorIp`、`inspectorPort`、`breakOnStart`、`allowRemote`。
+
+`persistence.dbProxy`显式启用独立DBProxy：
+
+```json
+{
+  "persistence": {
+    "dbProxy": {
+      "endpoint": "127.0.0.1:7800",
+      "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
+      "clientPoolSize": 4,
+      "connectTimeoutMs": 5000,
+      "requestTimeoutMs": 5000,
+      "maxFrameBytes": 8388608
+    }
+  }
+}
+```
+
+- `endpoint`：DBProxy内网TCP地址，不应填写客户端公网地址。
+- `authTokenEnv`：保存令牌的环境变量名；JSON中禁止填写令牌值，默认`TIANGZ_DBPROXY_AUTH_TOKEN`。
+- `clientPoolSize`：当前Process的Rust连接池大小，范围1到64。
+- `connectTimeoutMs/requestTimeoutMs`：连接和单RPC超时，范围100到120000毫秒。
+- `maxFrameBytes`：协议帧上限，范围1 KiB到64 MiB，必须与DBProxy一致。
+
+省略该配置时，Demo使用内存Repository并保持日常开发无数据库依赖。该配置不可热更；启用后缺少令牌、握手失败或连接失败都会明确阻止持久化调用，不会静默回退到内存。完整运行和恢复流程见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 `identity.originServerId`范围为1到16383，表示永久来源服；上线后不得修改或复用。`identity.workerId`范围为0到127，表示同一来源服内生成持久ID的Process。Watcher会加载整套`StartMachine`并拒绝重复组合；直接启动单进程配置时由运维保证唯一。详细布局见[运行时基础能力](../design/runtime-foundations.md)。
 

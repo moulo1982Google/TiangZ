@@ -188,6 +188,8 @@ message PlayerTransferSnapshot
   SkillTransferSnapshot skill = 17;
   repeated QuestSnapshot quests = 18;
   repeated uint32 completed_quest_config_ids = 19;
+  // DBProxy乐观并发版本；随玩家迁移，防止目标MapHost用旧快照覆盖新数据。
+  uint64 persistence_revision = 20;
 }
 
 message MapInstanceSnapshot

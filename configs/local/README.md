@@ -6,6 +6,7 @@
 |---|---|
 | `cluster/StartMachine.json` | 推荐入口。由 Watcher 启动同目录的多进程部署，支持开发期 Hotfix 与 Hot 配置重载。 |
 | `all-in-one.json` | 单进程、单 V8 调试入口，包含两个 Gate、静态地图和空载动态副本 Host。 |
+| `all-in-one-dbproxy.json` | DBProxy重启恢复演示；先启动本地DBProxy，并把`TIANGZ_DBPROXY_AUTH_TOKEN`设为DBProxy使用的同一令牌。完整步骤见[DBProxy玩家快照持久化](../../docs/tutorials/19-dbproxy-player-persistence.md)。 |
 
 其余目录由入口引用，通常不需要直接操作：
 

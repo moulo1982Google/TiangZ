@@ -35,11 +35,40 @@ pub struct ProcessConfig {
     #[serde(default)]
     pub lifecycle: ProcessLifecycleConfig,
     #[serde(default)]
+    pub persistence: ProcessPersistenceConfig,
+    #[serde(default)]
     pub debug: Option<ProcessDebugConfig>,
     #[serde(default)]
     pub observability: Option<ProcessObservabilityConfig>,
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessPersistenceConfig {
+    /// 省略时当前Process使用业务提供的非DBProxy Repository。
+    /// When omitted, this Process uses the non-DBProxy Repository selected by business code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub db_proxy: Option<ProcessDbProxyConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessDbProxyConfig {
+    pub endpoint: String,
+    /// 配置只保存环境变量名，令牌本身不得进入JSON、V8或日志。
+    /// Only the environment-variable name is configured; the token never enters JSON, V8, or logs.
+    #[serde(default = "default_dbproxy_auth_token_env")]
+    pub auth_token_env: String,
+    #[serde(default = "default_dbproxy_client_pool_size")]
+    pub client_pool_size: usize,
+    #[serde(default = "default_dbproxy_connect_timeout_ms")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_dbproxy_request_timeout_ms")]
+    pub request_timeout_ms: u64,
+    #[serde(default = "default_dbproxy_max_frame_bytes")]
+    pub max_frame_bytes: usize,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -397,6 +426,26 @@ fn default_hotfix_reload_timeout_ms() -> u64 {
     30_000
 }
 
+fn default_dbproxy_auth_token_env() -> String {
+    "TIANGZ_DBPROXY_AUTH_TOKEN".to_string()
+}
+
+fn default_dbproxy_client_pool_size() -> usize {
+    4
+}
+
+fn default_dbproxy_connect_timeout_ms() -> u64 {
+    5_000
+}
+
+fn default_dbproxy_request_timeout_ms() -> u64 {
+    5_000
+}
+
+fn default_dbproxy_max_frame_bytes() -> usize {
+    8 * 1024 * 1024
+}
+
 fn default_max_catch_up_steps() -> usize {
     2
 }
@@ -688,6 +737,26 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     {
         bail!("process scheduling.eventQueueCapacity must be between 64 and 65536");
     }
+    if let Some(db_proxy) = &config.process.persistence.db_proxy {
+        if db_proxy.endpoint.trim().is_empty() || db_proxy.endpoint.len() > 512 {
+            bail!("process persistence.dbProxy.endpoint must contain 1..=512 bytes");
+        }
+        if db_proxy.auth_token_env.trim().is_empty() || db_proxy.auth_token_env.len() > 128 {
+            bail!("process persistence.dbProxy.authTokenEnv must contain 1..=128 bytes");
+        }
+        if !(1..=64).contains(&db_proxy.client_pool_size) {
+            bail!("process persistence.dbProxy.clientPoolSize must be between 1 and 64");
+        }
+        if !(100..=120_000).contains(&db_proxy.connect_timeout_ms) {
+            bail!("process persistence.dbProxy.connectTimeoutMs must be between 100 and 120000");
+        }
+        if !(100..=120_000).contains(&db_proxy.request_timeout_ms) {
+            bail!("process persistence.dbProxy.requestTimeoutMs must be between 100 and 120000");
+        }
+        if !(1024..=64 * 1024 * 1024).contains(&db_proxy.max_frame_bytes) {
+            bail!("process persistence.dbProxy.maxFrameBytes must be between 1024 and 67108864");
+        }
+    }
     if let Some(latency) = config
         .process
         .observability
@@ -905,6 +974,7 @@ mod tests {
             game: ProcessGameConfig::default(),
             scheduling: ProcessSchedulingConfig::default(),
             lifecycle: ProcessLifecycleConfig::default(),
+            persistence: ProcessPersistenceConfig::default(),
             debug: inspector_port.map(|inspector_port| ProcessDebugConfig {
                 inspector_ip: default_inspector_ip(),
                 inspector_port,
@@ -939,6 +1009,31 @@ mod tests {
             known_scenes: vec![],
         };
         assert!(validate_runtime_config(&config).is_err());
+    }
+
+    #[test]
+    fn parses_dbproxy_without_exposing_token_value() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "persistence": {
+                    "dbProxy": {
+                        "endpoint": "127.0.0.1:7800",
+                        "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
+                        "clientPoolSize": 8,
+                        "requestTimeoutMs": 9000
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let db_proxy = process.persistence.db_proxy.unwrap();
+        assert_eq!(db_proxy.endpoint, "127.0.0.1:7800");
+        assert_eq!(db_proxy.auth_token_env, "TIANGZ_DBPROXY_AUTH_TOKEN");
+        assert_eq!(db_proxy.client_pool_size, 8);
+        assert_eq!(db_proxy.connect_timeout_ms, 5_000);
+        assert_eq!(db_proxy.request_timeout_ms, 9_000);
+        assert_eq!(db_proxy.max_frame_bytes, 8 * 1024 * 1024);
     }
 
     #[test]

@@ -26,6 +26,7 @@
 16. [怪物模块](tutorials/16-monster-module.md)
 17. [Unity 2022.3客户端](tutorials/17-unity-client.md)
 18. [配置化技能](tutorials/18-configured-skill.md)
+19. [DBProxy玩家快照持久化](tutorials/19-dbproxy-player-persistence.md)
 
 ## 开发参考
 

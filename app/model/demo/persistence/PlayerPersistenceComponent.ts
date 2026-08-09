@@ -1,18 +1,44 @@
-import { Component, component } from "../../../core/public";
+import {
+  Component,
+  component,
+  transferable,
+  type ITransfer,
+} from "../../../core/public";
+import { BuffComponent } from "../buff/BuffComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
+import { QuestComponent } from "../quest/QuestComponent";
+import { SkillComponent } from "../skill/SkillComponent";
 import type { PlayerRepository } from "./PlayerRepository";
 
 @component()
+@transferable()
 export class PlayerPersistenceComponent extends Component<[
   repository: PlayerRepository,
-]> {
+  revision: bigint,
+]> implements ITransfer<bigint> {
   private repository!: PlayerRepository;
+  private revision = 0n;
   private savePromise: Promise<void> | undefined;
 
-  /** 保存地图工厂选定、由进程拥有的 Repository 引用。 / Captures the process-owned repository selected by the map factory. */
-  protected override Awake(repository: PlayerRepository): void {
+  /** 保存地图工厂选定的Repository及已加载revision；revision随Unit迁移而Repository引用不迁移。 / Captures the factory-selected Repository and loaded revision; the revision transfers with the Unit while the Repository reference does not. */
+  protected override Awake(repository: PlayerRepository, revision: bigint): void {
+    if (revision < 0n) throw new Error(`player persistence revision must be non-negative: ${revision}`);
     this.repository = repository;
+    this.revision = revision;
+  }
+
+  get Revision(): bigint {
+    return this.revision;
+  }
+
+  CaptureTransfer(): bigint {
+    return this.revision;
+  }
+
+  RestoreTransfer(revision: bigint): void {
+    if (revision < 0n) throw new Error(`transferred persistence revision must be non-negative: ${revision}`);
+    this.revision = revision;
   }
 
   /**
@@ -33,19 +59,38 @@ export class PlayerPersistenceComponent extends Component<[
         const snapshot = player.Snapshot();
         const {
           gateName: _gateName,
+          unitId: _unitId,
+          numerics,
           ...persistent
         } = snapshot;
-        return this.repository.Save({
-          player: persistent,
+        const data = {
+          player: {
+            ...persistent,
+            numerics: numerics.map(({ numericType, value }) => ({ numericType, value })),
+          },
           items: player.GetComponent(ItemComponent).Snapshot(),
+          buffs: player.GetComponent(BuffComponent).CaptureTransfer().map(({
+            sourceUnitId,
+            ...buff
+          }) => ({
+            ...buff,
+            source: sourceUnitId === player.UnitId ? "self" as const : "detached" as const,
+          })),
+          skill: player.GetComponent(SkillComponent).CaptureTransfer(),
+          quests: player.GetComponent(QuestComponent).CaptureTransfer(),
           reason,
-        });
+        };
+        return Promise.resolve(this.repository.Save(data, this.revision));
+      })
+      .then((result) => {
+        this.revision = result.revision;
       })
       .then(() => {
         player.logger.info("player data saved", {
           account: player.Account,
           unitId: player.UnitId,
           reason,
+          revision: this.revision.toString(),
         });
       });
     return this.savePromise;

@@ -42,6 +42,7 @@
     "GlobalId",
     "GlobalIdConfig",
     "GlobalIdSystem",
+    "HostDbProxyTransport",
     "IActorLocationMessage",
     "IActorLocationRequest",
     "IActorLocationResponse",
@@ -78,10 +79,12 @@
     "PersistentEntityId",
     "PreparedTransferOptions",
     "ProcessConfig",
+    "ProcessDbProxyConfig",
     "ProcessHost",
     "ProcessLifecycleConfig",
     "ProcessNetworkConfig",
     "ProcessObservabilityConfig",
+    "ProcessPersistenceConfig",
     "ProcessRuntimeConfig",
     "ProcessSchedulingConfig",
     "ProtocolContext",
@@ -164,6 +167,8 @@
     "transferable",
     "unitMessageHandler",
     "unitRpcHandler",
+    "utf8Decode",
+    "utf8Encode",
     "vetoEventHandler"
   ]
 }
