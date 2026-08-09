@@ -123,10 +123,10 @@ npm run build:cocos3d:mobile
 - DBProxy已经建立为独立Rust仓库：[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，不作为TiangZ仓库中的模块，也不依赖TiangZ。
 - `v0.1.0`冻结通用`RecordKey`、快照Payload、Revision/CAS、幂等写入和内存参考实现；DBProxy不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
 - 当前已增加`dbproxy-storage`：PostgreSQL是权威快照、Revision/CAS、幂等记录和单记录关键事务，Redis只缓存PostgreSQL已提交结果；Redis读取失败自动回源PostgreSQL，缓存失败可以复用原`request_id`或`operation_id`修复。
-- 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。DBProxy当前为`v0.3.1`，Redis使用AOF和命名卷；除进程内`SnapshotFlushQueue`外，`RedisSnapshotBacklog`通过lease/ACK和过期回收支持DBProxy重启后重新领取，PostgreSQL恢复后继续按原`request_id`写入。
-- DBProxy独立协议固定为LoadSnapshot、SaveSnapshot、EnqueueSnapshot、ApplyTransaction；Save/Transaction成功表示PostgreSQL提交，Enqueue成功只表示Redis AOF backlog接收。`v0.3.1`提供不依赖Node、Deno或浏览器全局的TypeScript SDK；客户端和服务端均按RecordKey做多连接分片，请求超时后连接不可复用，必须重新连接并保留原幂等ID。
+- 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。DBProxy当前为`v0.4.0`，Redis使用AOF和命名卷；除进程内`SnapshotFlushQueue`外，`RedisSnapshotBacklog`通过lease/ACK和过期回收支持DBProxy重启后重新领取，PostgreSQL恢复后继续按原`request_id`写入。
+- DBProxy独立协议固定为LoadSnapshot、SaveSnapshot、EnqueueSnapshot、ApplyTransaction和LoadTransaction；Save/Transaction成功表示PostgreSQL提交，Enqueue成功只表示Redis AOF backlog接收。`v0.4.0`提供运行时无关TypeScript SDK；客户端和服务端均按RecordKey做多连接分片，请求超时后连接不可复用，必须重新连接并保留原幂等ID。
 - TiangZ已经接入首个`HostDbProxyTransport -> DbProxyPlayerRepository`：只有配置`process.persistence.dbProxy`才启用，Rust Host Runtime负责网络I/O，业务V8只等待Promise。玩家快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态，最终下线保存后重启TiangZ可以从PostgreSQL恢复；普通all-in-one仍使用内存Repository。
-- 当前没有周期快照、批量RPC、Prometheus、TLS、Redis高可用和生产部署；Inventory、Wallet、Reward、Trade也尚未接入`ApplyTransaction`。下一阶段先做关键经济事务，再做批量Load/Save、周期Flush和崩溃接管；不得把快照恢复成功描述成经济数据已经生产级不丢。
+- 当前没有周期快照、批量RPC、Prometheus、TLS、Redis高可用和生产部署。任务GrantItem奖励已经成为首个`ApplyTransaction`业务：Inventory纯数据规划，DBProxy保存操作后Player记录与原始结果，成功后才修改Item/Quest；事务前失败和提交后ACK丢失均有自测。UseItem、Wallet、Trade、领域revision拆分和崩溃接管仍未完成，不得把单条任务链路描述成全部经济数据生产级不丢。
 - 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。当前不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
 
 ## 技能系统第一阶段决定
@@ -175,9 +175,9 @@ npm run build:cocos3d:mobile
 
 - 玩家任务状态固定为`QuestComponent -> Quest ChildEntity`：活动任务是子实体，已完成任务只保存QuestConfigId；Quest默认没有mailbox且只对拥有者同步。
 - 击杀、使用道具和进入地图模块只在事实成功提交后同步发布`QuestEvents.Progress`，稳定Hotfix事件Handler负责投影进度；来源模块不得查询QuestComponent或直接改任务。
-- 接取时冻结目标ID与required，热配置Reload只影响新接取任务。领取必须在PlayerUnit有序mailbox中同步提交奖励Action、完成ID和RemoveChild，异步广播只能发生在提交后。
-- 进度使用owner-only latest消息；登录、重连和跨地图携带活动Quest及已完成ID全量快照。组队共享、可重复任务和持久化暂未实现。
-- 当前框架待改：`codegen_game_config.mjs`不应手工枚举新Luban表；`ExecuteActionBatch/ExecuteReward`已经提供同步Action边界，但不提供失败回滚或DB事务；`GrantItem/GrantItems`已经由Inventory统一完成已有堆叠合并和按最大堆叠拆分。组队共享任务等待Party系统，不在Quest里提前模拟。
+- 接取时冻结目标ID与required，热配置Reload只影响新接取任务。领取必须在PlayerUnit有序mailbox中等待DBProxy事务，确认后才提交Item计划、完成ID和RemoveChild；广播只能发生在提交后。
+- 进度使用owner-only latest消息；登录、重连和跨地图携带活动Quest及已完成ID全量快照。任务状态已经进入玩家持久化记录；组队共享和可重复任务暂未实现。
+- `PlanTransactionalReward`当前只支持GrantItem；`ItemComponent.PlanGrantItems`不改Entity，`CommitGrantPlan`只在DB确认后无await提交。故障前失败保持内存原状，ACK丢失按operationId回执恢复首次结果。新增Heal/Buff或跨玩家事务奖励前必须先提供纯数据Planner，组队共享任务等待Party系统。
 - 活动Quest显式使用`InProgress/ReadyToTurnIn`；目标达成只进入待交付，领奖成功后才写完成集合并移除Quest。协议status是新权威字段，旧`ready_to_complete`仅为SDK兼容镜像。
 - `QuestComponent`按`objectiveType:targetConfigId`维护只含稳定ID的运行时目标索引；索引不传送、不持久化，接取/领奖时维护，Deserialize/RestoreTransfer时重建。
 - 接取统一走同步`QuestEvents.BeforeAccept` Veto，配置内置`required_quest_ids/minimum_level`最终不变量；Veto只读且不可异步。`NumericType.Level=3`，Demo玩家默认1级，5004要求完成5001且达到2级。

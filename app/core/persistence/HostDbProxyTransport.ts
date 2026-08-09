@@ -7,6 +7,7 @@ import {
   type DbProxySnapshotWriteResult,
   type DbProxyTransactionalWrite,
   type DbProxyTransactionalWriteResult,
+  type DbProxyTransactionReceipt,
   type DbProxyTransport,
   type DbProxyWriteDisposition,
 } from "@tiangz/dbproxy-sdk";
@@ -50,6 +51,19 @@ interface HostTransactionResponse {
   readonly error?: HostDbProxyError;
 }
 
+interface HostTransactionReceipt {
+  readonly operationId: string;
+  readonly namespace: string;
+  readonly key: string;
+  readonly newRevision: string;
+  readonly result: readonly number[] | Uint8Array;
+}
+
+interface HostLoadTransactionResponse {
+  readonly receipt?: HostTransactionReceipt;
+  readonly error?: HostDbProxyError;
+}
+
 interface HostDbProxyApi {
   load(namespace: string, key: string): Promise<HostLoadResponse>;
   save(request: {
@@ -82,6 +96,11 @@ interface HostDbProxyApi {
     readonly result: Uint8Array;
     readonly updatedAtUnixMs: string;
   }): Promise<HostTransactionResponse>;
+  loadTransaction(
+    operationId: string,
+    namespace: string,
+    key: string,
+  ): Promise<HostLoadTransactionResponse>;
 }
 
 /**
@@ -168,6 +187,26 @@ export class HostDbProxyTransport implements DbProxyTransport {
       disposition: requireDisposition(response.disposition),
       newRevision: parseUint64(response.newRevision, "transaction.newRevision"),
       result: Uint8Array.from(response.result),
+    };
+  }
+
+  async loadTransaction(
+    operationId: string,
+    record: DbProxyRecordKey,
+  ): Promise<DbProxyTransactionReceipt | undefined> {
+    const response = await this.host.loadTransaction(
+      operationId,
+      record.namespace,
+      record.key,
+    );
+    throwRemoteError(response.error);
+    const receipt = response.receipt;
+    if (!receipt) return undefined;
+    return {
+      operationId: receipt.operationId,
+      record: { namespace: receipt.namespace, key: receipt.key },
+      newRevision: parseUint64(receipt.newRevision, "transactionReceipt.newRevision"),
+      result: Uint8Array.from(receipt.result),
     };
   }
 }

@@ -7,6 +7,9 @@ import type {
   PlayerRepository,
   PlayerSaveData,
   PlayerSaveResult,
+  PlayerTransactionReceipt,
+  PlayerTransactionResult,
+  PlayerTransactionWrite,
 } from "../app/model/demo/persistence/PlayerRepository";
 import {
   DecodePlayerSaveData,
@@ -23,6 +26,7 @@ async function main(): Promise<void> {
   await testSuccessfulSaveIsIdempotent();
   await testSaveFailureIsVisibleAndIdempotent();
   testCodecPreservesBigIntAndRepositoryRejectsStaleRevision();
+  testTransactionReceiptIsIdempotent();
   console.log("player persistence self-test passed");
 }
 
@@ -110,12 +114,63 @@ class FailingPlayerRepository implements PlayerRepository {
     this.saveCount += 1;
     return Promise.reject(new Error("injected repository failure"));
   }
+
+  ApplyTransaction(
+    _write: PlayerTransactionWrite,
+    _expectedRevision: bigint,
+  ): Promise<PlayerTransactionResult> {
+    return Promise.reject(new Error("injected repository failure"));
+  }
+
+  LoadTransaction(
+    _account: string,
+    _operationId: string,
+  ): PlayerTransactionReceipt | undefined {
+    return undefined;
+  }
 }
 
 function testCodecPreservesBigIntAndRepositoryRejectsStaleRevision(): void {
-  const data: PlayerSaveData = {
+  const data = createSaveData("codec-test");
+  const decoded = DecodePlayerSaveData(EncodePlayerSaveData(data));
+  assert.equal(decoded.player.numerics[0]?.value, 9_007_199_254_740_993n);
+
+  const repository = new InMemoryPlayerRepository();
+  assert.equal(repository.Save(data, 0n).revision, 1n);
+  assert.throws(
+    () => repository.Save(data, 0n),
+    /player snapshot revision conflict/,
+  );
+}
+
+function testTransactionReceiptIsIdempotent(): void {
+  const repository = new InMemoryPlayerRepository();
+  const data = createSaveData("transaction-test");
+  const write: PlayerTransactionWrite = {
+    operationId: "quest-reward:transaction-test:5001",
+    data,
+    result: new Uint8Array([1, 2, 3]),
+  };
+  const applied = repository.ApplyTransaction(write, 0n);
+  const duplicate = repository.ApplyTransaction(write, 0n);
+  assert.equal(applied.disposition, "applied");
+  assert.equal(duplicate.disposition, "duplicate");
+  assert.equal(duplicate.revision, applied.revision);
+  assert.deepEqual(duplicate.result, write.result);
+  assert.deepEqual(
+    repository.LoadTransaction("transaction-test", write.operationId)?.result,
+    write.result,
+  );
+  assert.throws(
+    () => repository.ApplyTransaction({ ...write, result: new Uint8Array([9]) }, 0n),
+    /operation conflict/,
+  );
+}
+
+function createSaveData(account: string): PlayerSaveData {
+  return {
     player: {
-      account: "codec-test",
+      account,
       mapId: 100,
       mapInstanceId: 100n,
       x: 1,
@@ -142,13 +197,4 @@ function testCodecPreservesBigIntAndRepositoryRejectsStaleRevision(): void {
     quests: { active: [], completedQuestConfigIds: [] },
     reason: "codec",
   };
-  const decoded = DecodePlayerSaveData(EncodePlayerSaveData(data));
-  assert.equal(decoded.player.numerics[0]?.value, 9_007_199_254_740_993n);
-
-  const repository = new InMemoryPlayerRepository();
-  assert.equal(repository.Save(data, 0n).revision, 1n);
-  assert.throws(
-    () => repository.Save(data, 0n),
-    /player snapshot revision conflict/,
-  );
 }

@@ -1,6 +1,6 @@
 # DBProxy玩家快照持久化
 
-本教程演示TiangZ如何通过独立DBProxy保存玩家快照，并在TiangZ重启后恢复。当前实现是Phase 4.5的第一步：它验证Repository、版本、幂等、Rust Host传输和恢复顺序，不等于关键经济事务已经完成。
+本教程演示TiangZ如何通过独立DBProxy保存玩家快照、在TiangZ重启后恢复，并以任务道具奖励验证第一条关键经济事务。当前实现仍是Phase 4.5基础：它不等于Wallet、Trade、UseItem和故障接管都已生产化。
 
 ## 固定边界
 
@@ -94,6 +94,27 @@ await player.Offline(reason);
 
 DBProxy保存使用一个固定`requestId`。如果PostgreSQL已经提交、但Redis同步失败导致结果不确定，Repository会使用完全相同的请求重试；不得换ID，否则可能把一次逻辑保存变成两次提交。
 
+## 任务奖励关键事务
+
+当前第一条关键事务是不可重复任务领取`GrantItem`奖励：
+
+```text
+C2M_CompleteQuest（PlayerUnit ordered mailbox）
+  -> ItemComponent.PlanGrantItems()       只计算base/next/affected快照
+  -> PlayerPersistenceComponent.Capture() 用next items和next quests组合操作后记录
+  -> PlayerRepository.ApplyTransaction()
+      -> DBProxy/PostgreSQL原子保存Payload、revision和原始响应
+  -> ItemComponent.CommitGrantPlan()      无await修改Item Entity
+  -> QuestComponent.RestoreTransfer()     写完成集合并移除活动Quest
+  -> Handler发布奖励道具变化并响应客户端
+```
+
+DBProxy确认前，Item和Quest Entity都保持原状。operationId使用`quest-reward:<account>:<questConfigId>`；当前任务不可重复，因此该键稳定。以后支持可重复任务时必须改用稳定Quest实例ID，不能继续只用配置ID。
+
+如果PostgreSQL已经提交但ACK丢失，`PlayerPersistenceComponent`会标记该操作结果不确定。下一次相同请求先调用`LoadTransaction`读取首次回执；Inventory只接受“已经相同”或“恰好推进一个Item version”的恢复，其他本地漂移拒绝自动覆盖并要求重新加载完整玩家数据。
+
+当前事务Planner只支持`GrantItem`。把Heal、Buff或跨玩家奖励写进Quest配置会被明确拒绝；新增事务Action前必须实现纯数据Planner、持久Payload和回执恢复规则，不能先改Entity再补一次Save。
+
 ## 当前快照内容
 
 | 数据 | 当前行为 |
@@ -146,8 +167,8 @@ npm run test:player-persistence
 ## 当前限制
 
 - 当前只在最终下线和停机保存，没有周期快照；TiangZ在保存前崩溃仍可能丢失最近运行状态。
-- Inventory、Wallet、Reward和Trade尚未接入`ApplyTransaction`。现在的道具操作仍是先修改运行态、稍后保存，不能宣称关键经济数据已经具备生产级不丢保证。
+- 任务`GrantItem`奖励已接入`ApplyTransaction`，但UseItem消耗、Wallet、Trade和跨玩家事务尚未接入；普通道具操作仍可能依赖稍后快照，不能把单条任务链路描述为全部经济数据生产级不丢。
 - 尚无批量Load/Save、Prometheus DBProxy指标、TLS、令牌轮换、Redis高可用和自动节点接管。
 - 玩家账号暂时就是快照RecordKey；正式账号/角色拆分后需要稳定CharacterId和明确的数据域Revision。
 
-下一步应先接入单记录关键经济事务，再做周期快照、批量登录恢复和故障接管，不能继续扩大一个巨型Player Snapshot来替代领域一致性设计。
+下一步应扩展UseItem/Wallet等关键经济边界并拆分领域revision，再做周期快照、批量登录恢复和故障接管，不能继续扩大一个巨型Player Snapshot来替代领域一致性设计。

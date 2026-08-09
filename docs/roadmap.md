@@ -405,16 +405,16 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 #### Phase 4.4当前收口：Inventory、奖励、任务与技能
 
-- `InventoryComponent`已经提供`GrantItem/GrantItems`，统一完成已有堆叠合并和按`ItemConfig.max_stack`拆分；奖励通过`ExecuteReward -> ExecuteActionBatch`同步执行。这个边界不跨`await`，但不提供失败回滚或数据库事务，跨域持久化等待独立DBProxy。
+- `ItemComponent`已经提供`GrantItem/GrantItems`以及纯数据`PlanGrantItems/CommitGrantPlan`。普通奖励继续同步执行；任务GrantItem奖励先规划奖励后快照，DBProxy确认关键事务后再无await提交Entity，失败不改变背包，ACK丢失按回执恢复且不重复发奖。
 - 任务领奖已经在PlayerUnit有序mailbox内同步完成奖励、完成记录和Quest ChildEntity移除；组队共享任务等待Party系统，不在Quest里提前模拟。
 - 技能系统增加3006引导治疗，验证10Hz分段Tick、移动打断、停止平A、公共CD和单技能排队；复杂目标、AOE和技能性能A/B仍待后续机器验收。
 - `npm run perf:business-chain`已准备真实业务链路压测，交替发送UseItem与友方CastSkill并区分业务拒绝和传输错误。正式CPU压力测试需用户提供空闲机器，当前只做编译验证。
 
 ### Phase 4.5：持久化基础
 
-状态：进行中。独立仓库`TiangZ-DBProxy v0.3.1`、运行时无关TypeScript SDK、TiangZ Rust Host Transport和首个Player Snapshot Repository已经接通；真实测试已验证下线保存、TiangZ重启和PostgreSQL恢复。该阶段仍是`0.4.x`最后一个基础阶段，关键经济事务与故障接管完成前不能宣称生产可用。
+状态：进行中。独立仓库`TiangZ-DBProxy v0.4.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport、Player Snapshot Repository和首个任务奖励关键事务已经接通；真实测试已验证下线保存、TiangZ重启和PostgreSQL恢复，纯逻辑故障注入已覆盖事务前失败与提交后ACK丢失。该阶段仍是`0.4.x`最后一个基础阶段，更多经济域与故障接管完成前不能宣称生产可用。
 
-- 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，当前版本为`v0.3.1`，包含独立Rust workspace、`dbproxy-core/storage/protocol/client/server`、PostgreSQL快照/单记录事务、Redis已提交快照缓存、Redis AOF持久普通快照积压、Rust客户端池、运行时无关TypeScript SDK、本地Compose、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
+- 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，当前版本为`v0.4.0`，包含独立Rust workspace、`dbproxy-core/storage/protocol/client/server`、PostgreSQL快照/单记录事务与回执查询、Redis已提交快照缓存、Redis AOF持久普通快照积压、Rust客户端池、运行时无关TypeScript SDK、本地Compose、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
 - 首版服务协议使用版本化Protobuf、SHA-256协议指纹、内部共享令牌和默认8 MiB有界TCP帧，暴露`LoadSnapshot/SaveSnapshot/EnqueueSnapshot/ApplyTransaction`。客户端和服务端都按RecordKey使用多连接分片；超时连接不再复用，调用方通过原幂等ID重新连接重试。真实网络冒烟已经覆盖同步快照、Duplicate、Revision冲突、关键事务原结果和Redis backlog落PostgreSQL。
 - 当前适配器固定为PostgreSQL -> Redis：PostgreSQL提交成功后才更新缓存；快照使用`request_id`，关键事务使用`operation_id + expected_revision`并保存原始业务结果；Redis读取失败自动回源PostgreSQL，缓存失败可以用原ID重试修复。普通快照可按记录合并，Redis backlog用lease/ACK和过期回收支持DBProxy重启后的重新领取。Redis高可用、长时间故障指标、批量RPC、Prometheus、生产TLS与部署仍在后续，不制作临时存档服务。
 - TiangZ新增`HostDbProxyTransport -> DbProxyClient -> PlayerRepository`调用层。网络I/O在多线程Rust Host Runtime中执行，V8只等待有界Promise；事件循环每次最多投入1ms推进异步Host op，未完成任务留到下一游戏Tick。普通all-in-one仍使用内存Repository，只有`process.persistence.dbProxy`显式启用网络持久化。
@@ -423,10 +423,10 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 扩展`.native`持久化元数据，按Entity/Component声明`transient`、`snapshot`或`transactional`存储域；codegen生成稳定MemberId、快照codec、dirty收集、schema版本和恢复入口。存储结构属于Model，不能热更。
 - `snapshot`字段保持普通属性写法；Rust setter只标脏，框架按短窗口合并并批量写Redis，再异步批量落永久数据库，禁止一次属性赋值对应一次网络请求。
 - `transactional`存储域用于Wallet、Inventory、Trade等经济数据；字段不开放普通setter，只能通过领域事务方法生成`operation_id`、期望版本、完整Payload和业务结果。DBProxy在同一PostgreSQL事务内提交快照与操作收据，Redis只接收带revision的已提交快照，不能成为第二个独立写入口。
-- 下一步顺序固定为：Inventory/Wallet/Reward单记录`ApplyTransaction`适配 -> 周期快照与有限Flush -> 批量Load/Save -> 崩溃窗口与节点接管验收 -> Prometheus、TLS与生产部署。主工程始终不引入数据库客户端或`dbproxy-storage`。
+- 任务GrantItem奖励已经完成首个单记录`ApplyTransaction`适配。下一步顺序为：UseItem/Wallet等关键经济边界与领域revision拆分 -> 周期快照与有限Flush -> 批量Load/Save -> 崩溃窗口与节点接管验收 -> Prometheus、TLS与生产部署。主工程始终不引入数据库客户端或`dbproxy-storage`。
 - 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
 - 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
-- 当前验收覆盖Redis短暂不可用、Redis重启后的AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、进程内积压背压、有限轮Flush、PostgreSQL恢复重试、真实TCP网络闭环和TiangZ重启恢复；进程崩溃前未保存窗口、完整玩家接管、Redis高可用、Prometheus积压指标、批量RPC和关键经济事务仍留在后续阶段。
+- 当前验收覆盖Redis短暂不可用、Redis重启后的AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、进程内积压背压、有限轮Flush、PostgreSQL恢复重试、真实TCP网络闭环、TiangZ重启恢复，以及任务奖励事务前失败与提交后ACK丢失；进程崩溃接管、Redis高可用、Prometheus积压指标、批量RPC和更多关键经济事务仍留在后续阶段。
 
 ## Phase 5：生产工程化
 

@@ -796,3 +796,12 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 新增`deploy/local/docker-compose.yml`，固定PostgreSQL 18.4 Bookworm和Redis 8.8.1 Trixie，仅暴露到本机回环地址；本地账号统一为`tiangz/tiangz_dev`，线上不得复用。
 - 通过`cargo fmt`、workspace check/test、`cargo clippy --workspace --all-targets --locked -- -D warnings`和本机容器集成测试，覆盖Applied、Duplicate、幂等冲突、Revision冲突和Redis已提交快照读取。
 - 当前仍未实现DBProxy网络服务、鉴权、TiangZ生成Repository、生产部署、故障注入矩阵和transactional多记录事务；这些保持在独立仓库后续阶段。
+
+# 2026-08-09：任务奖励接入首个关键经济事务
+
+- 独立DBProxy升级到`v0.4.0`，协议、Rust客户端和TypeScript SDK增加`LoadTransaction`，可按`operationId + RecordKey`读取PostgreSQL持久事务回执；DBProxy仍不认识Quest、Item或任何TiangZ业务类型。
+- TiangZ Rust Host和`HostDbProxyTransport`接入回执查询；`PlayerRepository`增加通用`ApplyTransaction/LoadTransaction`，`PlayerPersistenceComponent`继续作为业务唯一持久化所有者并维护revision与不确定操作状态。
+- Inventory增加`PlanGrantItems/CommitGrantPlan`：规划阶段只生成base/next/affected纯快照，DBProxy确认前不修改Item Entity；提交阶段先校验完整base快照，再无await应用精确version转换。
+- `QuestComponent.CompleteQuest`改为异步关键事务。稳定operationId提交奖励后的完整玩家记录和原始Protobuf结果，成功后才提交背包、写完成集合并移除Quest；Handler只在事务完成后广播。
+- 增加故障注入验证：事务提交前失败时Quest和Item保持原状；PostgreSQL已提交但ACK丢失时，重试查询首次回执并只发放一次。普通同步奖励仍可使用`ExecuteReward`，事务Planner暂只允许`GrantItem`。
+- 当前仍未完成UseItem消费事务、Wallet/Trade、按领域拆分revision、周期快照、批量RPC和节点故障接管；本次单玩家记录事务是开发模型验证，不是最终数据域设计。

@@ -28,6 +28,8 @@ import {
   C2M_ToggleDemoDoorCodec,
   C2M_UseItem,
   C2M_UseItemCodec,
+  C2M_CompleteQuest,
+  C2M_CompleteQuestCodec,
   C2S_Login,
   C2S_LoginCodec,
   G2C_EnterMap,
@@ -82,6 +84,8 @@ import {
   G2C_ItemChangedCodec,
   M2C_UseItem,
   M2C_UseItemCodec,
+  M2C_CompleteQuest,
+  M2C_CompleteQuestCodec,
   S2C_GetLoginServiceAddr,
   S2C_GetLoginServiceAddrCodec,
   S2C_Login,
@@ -459,6 +463,28 @@ export function decodeUseItemFrame(frame: Uint8Array): DecodedFrame<M2C_UseItem>
     throw new Error(`expected M2C_UseItem, got ${msgcode}`);
   }
   const body = M2C_UseItemCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+/** 构造任务领奖请求；关键事务的幂等语义由服务端operationId保证。 / Builds a quest claim request whose critical idempotency is owned by the server operationId. */
+export function buildCompleteQuestPacket(
+  rpcId: number,
+  request: Omit<C2M_CompleteQuest, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_CompleteQuest,
+    C2M_CompleteQuestCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeCompleteQuestFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_CompleteQuest> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_CompleteQuest) {
+    throw new Error(`expected M2C_CompleteQuest, got ${msgcode}`);
+  }
+  const body = M2C_CompleteQuestCodec.decode(frame.subarray(2));
   return { msgcode, rpcId: body.rpcId, body };
 }
 

@@ -53,6 +53,7 @@ export {
 export {
   ItemComponent,
   type InventoryGrant,
+  type InventoryGrantPlan,
   type InventoryGrantResult,
 } from "./demo/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";

@@ -6,7 +6,7 @@ declare module "../../../model/demo/quest/QuestComponent" {
   interface QuestComponent {
     AcceptQuest(questConfigId: number): QuestState;
     ApplyProgress(event: QuestProgressEvent): readonly QuestState[];
-    CompleteQuest(questConfigId: number): QuestRewardResult;
+    CompleteQuest(questConfigId: number): Promise<QuestRewardResult>;
     Snapshot(): readonly QuestState[];
     CompletedQuestConfigIds(): readonly number[];
     HasCompletedQuest(questConfigId: number): boolean;

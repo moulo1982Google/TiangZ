@@ -3,9 +3,11 @@ import {
   GameConfigs,
   GameErrCode,
   ItemComponent,
+  M2C_CompleteQuestCodec,
   NumericComponent,
   NumericType,
   PlayerUnit,
+  PlayerPersistenceComponent,
   Quest,
   QuestComponent,
   QuestEvents,
@@ -20,7 +22,7 @@ import {
   systemFor,
 } from "#tiangz/model";
 import { ActionFromConfig } from "../action/ActionExecutor";
-import { ExecuteReward } from "../reward/RewardExecutor";
+import { PlanTransactionalReward } from "../reward/RewardExecutor";
 
 @systemFor(QuestComponent)
 export class QuestComponentSystem extends QuestComponent implements ITransfer<QuestTransferState> {
@@ -73,20 +75,62 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
       .map((id) => this.GetChild(Quest, BigInt(id)).Snapshot());
   }
 
-  CompleteQuest(questConfigId: number): QuestRewardResult {
+  /**
+   * 领取任务奖励使用稳定operationId提交完整玩家事务；DBProxy确认前不修改Quest或Item Entity。
+   * 上一次ACK不确定时先查回执，并按首次持久化结果补齐内存，绝不重新计算或重复发奖。
+   *
+   * Claims a quest reward through one full-player transaction with a stable
+   * operationId. Quest and Item Entities remain unchanged until DBProxy confirms
+   * the commit. An uncertain retry recovers the original receipt and never grants twice.
+   */
+  async CompleteQuest(questConfigId: number): Promise<QuestRewardResult> {
+    const player = this.GetParent() as PlayerUnit;
+    const persistence = player.GetComponent(PlayerPersistenceComponent);
+    const operationId = questRewardOperationId(player.Account, questConfigId);
     const quest = this.TryGetChild(Quest, BigInt(questConfigId));
-    if (!quest) throw new RpcError(GameErrCode.QuestNotFound, `active quest not found: ${questConfigId}`);
+    if (!quest || persistence.IsTransactionUncertain(operationId)) {
+      const receipt = await persistence.LoadTransaction(operationId);
+      if (receipt) {
+        const recovered = decodeQuestReward(receipt.result, questConfigId);
+        if (quest) {
+          player.GetComponent(ItemComponent).ApplyCommittedGrantItems(recovered.rewardItems);
+          this.RestoreTransfer(this.completionState(questConfigId));
+        }
+        return recovered;
+      }
+    }
+    if (!quest) {
+      throw new RpcError(GameErrCode.QuestNotFound, `active quest not found: ${questConfigId}`);
+    }
     if (quest.Snapshot().status !== QuestStatus.ReadyToTurnIn) {
       throw new RpcError(GameErrCode.QuestNotComplete, `quest is not complete: ${questConfigId}`);
     }
     const config = GameConfigs.QuestConfig.Get(questConfigId);
-    const result = ExecuteReward(this.GetParent(), {
+    const inventoryPlan = PlanTransactionalReward(player, {
       actions: [ActionFromConfig(config.rewardActionType, config.rewardActionParams)],
-    }, { reason: "quest-reward" });
-    this.completedQuestConfigIds.add(questConfigId);
-    this.UnindexQuest(quest);
-    this.RemoveChild(Quest, BigInt(questConfigId));
-    return { questConfigId, rewardItems: [...result.items] };
+    });
+    const nextQuests = this.completionState(questConfigId);
+    const proposed: QuestRewardResult = {
+      questConfigId,
+      rewardItems: [...inventoryPlan.affectedItems],
+    };
+    const encodedResult = M2C_CompleteQuestCodec.encode(proposed);
+    const committed = await persistence.ApplyTransaction(
+      operationId,
+      persistence.Capture("quest-reward", {
+        items: inventoryPlan.nextItems,
+        quests: nextQuests,
+      }),
+      encodedResult,
+    );
+    const durable = decodeQuestReward(committed.result, questConfigId);
+    if (bytesEqual(committed.result, encodedResult)) {
+      player.GetComponent(ItemComponent).CommitGrantPlan(inventoryPlan);
+    } else {
+      player.GetComponent(ItemComponent).ApplyCommittedGrantItems(durable.rewardItems);
+    }
+    this.RestoreTransfer(nextQuests);
+    return durable;
   }
 
   Snapshot(): readonly QuestState[] { return this.GetChildren(Quest).map((quest) => quest.Snapshot()); }
@@ -111,6 +155,19 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
       });
       this.IndexQuest(quest);
     }
+  }
+
+  private completionState(questConfigId: number): QuestTransferState {
+    if (!this.TryGetChild(Quest, BigInt(questConfigId))) {
+      throw new Error(`cannot complete missing quest locally: ${questConfigId}`);
+    }
+    return {
+      active: this.Snapshot().filter((state) => state.questConfigId !== questConfigId),
+      completedQuestConfigIds: [...new Set([
+        ...this.CompletedQuestConfigIds(),
+        questConfigId,
+      ])].sort((left, right) => left - right),
+    };
   }
 
   Deserialize(): void {
@@ -159,4 +216,26 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
 
 function objectiveIndexKey(objectiveType: number, targetConfigId: number): string {
   return `${objectiveType}:${targetConfigId}`;
+}
+
+function questRewardOperationId(account: string, questConfigId: number): string {
+  return `quest-reward:${account}:${questConfigId}`;
+}
+
+function decodeQuestReward(payload: Uint8Array, questConfigId: number): QuestRewardResult {
+  const result = M2C_CompleteQuestCodec.decode(payload);
+  if (result.questConfigId !== questConfigId) {
+    throw new Error(
+      `quest reward receipt mismatch: ${result.questConfigId} != ${questConfigId}`,
+    );
+  }
+  return { questConfigId, rewardItems: result.rewardItems.map((item) => ({ ...item })) };
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }

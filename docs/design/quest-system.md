@@ -14,9 +14,10 @@
 C2M_CompleteQuest
   -> PlayerUnit有序mailbox
   -> QuestComponent.CompleteQuest()
-      -> ActionExecutor发放奖励
-      -> 记录completedQuestConfigIds
-      -> RemoveChild(Quest)
+      -> Inventory规划奖励后的纯快照，不修改Entity
+      -> DBProxy提交Player记录与原始业务结果
+      -> 确认后提交Item计划
+      -> 记录completedQuestConfigIds并RemoveChild(Quest)
   -> RPC响应与奖励道具推送
 ```
 
@@ -42,7 +43,7 @@ PlayerUnit
 - `ReadyToTurnIn`表示目标已经达成但奖励尚未领取；领奖成功后Quest才从活动集合移入完成集合。客户端不能用进度自行删除任务。
 - 接取任务时会把目标ID和要求数量冻结到Quest实例。热更配置只影响之后新接取的任务，不会让进行中的任务突然改变要求。
 - `objectiveIndex`只保存稳定ID，是由活动Quest重建的运行时缓存，不进入协议、传送或未来持久化快照。接取、领奖、反序列化和跨地图恢复必须同步维护或重建索引。
-- 当前Demo尚未持久化；跨地图会传输活动任务与已完成ID，未来DBProxy只需要保存同样的纯值快照。
+- 当前Demo会把活动任务与已完成ID保存进玩家快照；任务GrantItem奖励使用DBProxy单记录关键事务。跨地图继续传输相同纯值并重建运行时索引。
 
 ## 配置表
 
@@ -109,10 +110,10 @@ const quest = player.GetComponent(QuestComponent).AcceptQuest(5001);
 ### 领取奖励
 
 ```ts
-const reward = player.GetComponent(QuestComponent).CompleteQuest(5001);
+const reward = await player.GetComponent(QuestComponent).CompleteQuest(5001);
 ```
 
-该调用必须位于PlayerUnit的有序mailbox内。奖励、完成记录和活动Quest移除同步提交；客户端广播在提交后执行，不能参与事务。
+该调用必须位于PlayerUnit的有序mailbox内。`PlanTransactionalReward`和`PlanGrantItems`先计算奖励后的纯数据；`PlayerPersistenceComponent.ApplyTransaction`等待DBProxy把完整操作后记录和Protobuf结果一起提交，随后才修改Item/Quest Entity。客户端广播在提交后执行，不能参与事务。连接结果不确定时，同一Actor会先查询operationId回执；DBProxy返回首次结果，Inventory只补做一次精确version转换。
 
 ## 同步与传送
 
@@ -125,8 +126,8 @@ const reward = player.GetComponent(QuestComponent).CompleteQuest(5001);
 ## 当前限制与框架改进
 
 1. **配置Facade仍需手工登记。** Luban能发现新表，但`tools/codegen_game_config.mjs`仍手工列出生成到服务端和客户端的表。新增Quest表因此修改了生成器。后续应从Luban表元数据生成Facade，开发者只维护Excel与分组。
-2. **多Action奖励不是数据库事务。** 当前奖励通过`ExecuteActionBatch`在同一个有序PlayerUnit调用栈内同步执行，Action之间不`await`，并在进入执行前检查参数形状；它保证业务调用边界连续，但不提供失败回滚或数据库事务。需要跨域持久化一致性时，交给独立DBProxy事务能力。
-3. **奖励道具由Inventory统一合并。** `GrantItem/GrantItems`先填充已有堆叠，再按`ItemConfig.max_stack`拆分创建新的Item ChildEntity，返回受影响Item快照。任务系统不能自行遍历或拼接背包。
+2. **事务奖励当前只支持GrantItem。** 普通Action批次仍由`ExecuteActionBatch`同步执行；任务关键事务只接受能生成纯数据计划的`GrantItem`。Heal、Buff或跨玩家奖励不能塞进当前事务假装原子，必须先增加领域Planner，跨记录操作则需要新的DBProxy协议。
+3. **奖励道具由Inventory统一规划和提交。** `PlanGrantItems`只在快照上填充已有堆叠、拆分新Item并分配稳定ID，不修改Entity；DBProxy确认后`CommitGrantPlan`校验完整base快照并无await提交。任务系统不能自行遍历或拼接背包。
 4. **任务定义热更采用实例冻结。** 这是刻意的语义：活动任务不会随配置变更。若运营需要迁移进行中任务，必须提供显式版本和迁移工具，不能在读取时偷偷套用新配置。
 5. **完成记录当前为Set。** 少量Demo足够；大规模任务可在持久化层使用分段位图或索引，但不能改变业务API。
 
@@ -139,4 +140,4 @@ npm run test:runtime
 npm run verify:codegen
 ```
 
-`test:quest`覆盖自动接取、无关目标不命中、状态切换、前置任务拒绝、等级拒绝、条件满足后接取、领取奖励、重复领取拒绝、ChildEntity移除和跨地图索引恢复；真实Runtime冒烟覆盖击杀、用道具、进图三个事实来源以及动态MapHost传送。
+`test:quest`覆盖自动接取、无关目标不命中、状态切换、前置任务拒绝、等级拒绝、条件满足后接取、事务前失败不改内存、提交后ACK丢失回执恢复、重复领取返回首次结果、ChildEntity移除和跨地图索引恢复；真实Runtime冒烟覆盖击杀、用道具、进图三个事实来源以及动态MapHost传送。

@@ -3,6 +3,7 @@ import {
   DbProxyErrorCode,
   DbProxyRemoteError,
   type DbProxySnapshotWrite,
+  type DbProxyTransactionalWrite,
 } from "@tiangz/dbproxy-sdk";
 import {
   HostDbProxyTransport,
@@ -20,6 +21,9 @@ import {
   type PlayerRepository,
   type PlayerSaveData,
   type PlayerSaveResult,
+  type PlayerTransactionReceipt,
+  type PlayerTransactionResult,
+  type PlayerTransactionWrite,
 } from "./PlayerRepository";
 
 const PLAYER_NAMESPACE = "player";
@@ -96,6 +100,64 @@ export class DbProxyPlayerRepository implements PlayerRepository {
       }
     }
     throw new Error("unreachable DBProxy save retry state");
+  }
+
+  /**
+   * 关键业务只提交一次完整的操作后快照；网络重试始终复用业务提供的operationId。
+   * DBProxy在PostgreSQL事务中同时保存快照和结果回执，Redis只负责提交后的缓存同步。
+   *
+   * Critical business operations commit one complete post-operation snapshot.
+   * Network retries always reuse the business operationId. DBProxy stores the
+   * snapshot and receipt in one PostgreSQL transaction; Redis is updated later.
+   */
+  async ApplyTransaction(
+    write: PlayerTransactionWrite,
+    expectedRevision: bigint,
+  ): Promise<PlayerTransactionResult> {
+    const request: DbProxyTransactionalWrite = {
+      operationId: write.operationId,
+      record: { namespace: PLAYER_NAMESPACE, key: write.data.player.account },
+      schema: PLAYER_PERSISTENCE_SCHEMA,
+      schemaVersion: PLAYER_PERSISTENCE_SCHEMA_VERSION,
+      expectedRevision,
+      payload: EncodePlayerSaveData(write.data),
+      result: write.result.slice(),
+      updatedAtUnixMs: BigInt(Date.now()),
+    };
+    for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
+      try {
+        const result = await this.client.ApplyTransaction(request);
+        return {
+          disposition: result.disposition,
+          revision: result.newRevision,
+          result: result.result.slice(),
+        };
+      } catch (error) {
+        if (
+          attempt === SAVE_ATTEMPTS ||
+          !(error instanceof DbProxyRemoteError) ||
+          error.code !== DbProxyErrorCode.StorageUnavailable
+        ) {
+          throw error;
+        }
+        // 事务可能已经提交但ACK丢失；只能复用相同operationId重试。
+        // The transaction may have committed before its ACK was lost; retry only with the same operationId.
+      }
+    }
+    throw new Error("unreachable DBProxy transaction retry state");
+  }
+
+  async LoadTransaction(
+    account: string,
+    operationId: string,
+  ): Promise<PlayerTransactionReceipt | undefined> {
+    const receipt = await this.client.LoadTransaction(operationId, {
+      namespace: PLAYER_NAMESPACE,
+      key: account,
+    });
+    return receipt
+      ? { revision: receipt.newRevision, result: receipt.result.slice() }
+      : undefined;
   }
 }
 

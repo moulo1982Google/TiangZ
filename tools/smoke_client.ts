@@ -14,6 +14,7 @@ import {
   buildMapSnapshotReadyPacket,
   buildMovePacket,
   buildUseItemPacket,
+  buildCompleteQuestPacket,
   decodeAoiDeltaFrame,
   decodeAttackMonsterFrame,
   decodeAutoAttackStateFrame,
@@ -28,6 +29,7 @@ import {
   decodeEntityNumericFrame,
   decodeItemChangedFrame,
   decodeUseItemFrame,
+  decodeCompleteQuestFrame,
   decodeGetLoginServiceAddrFrame,
   decodeLoginGateFrame,
   decodeLoginFrame,
@@ -45,7 +47,7 @@ import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 import type { CellMovementState } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
-import { GameConfigs, SpatialMode } from "../client_sdk/typescript/Generated/Config";
+import { GameConfigs, QuestStatus, SpatialMode } from "../client_sdk/typescript/Generated/Config";
 import { NumericType } from "../app/model/demo/numeric/NumericType";
 import { encodePacket } from "../app/core/public";
 import {
@@ -73,6 +75,16 @@ async function main() {
   const persistenceReadAccount = namedArgument("--dbproxy-persistence-read");
   if (persistenceReadAccount) {
     await verifyDbProxyPersistenceFixture(loginAddr, persistenceReadAccount);
+    return;
+  }
+  const questRewardAccount = namedArgument("--dbproxy-quest-reward");
+  if (questRewardAccount) {
+    await verifyDbProxyQuestReward(loginAddr, questRewardAccount);
+    return;
+  }
+  const questRewardReadAccount = namedArgument("--dbproxy-quest-reward-read");
+  if (questRewardReadAccount) {
+    await verifyDbProxyQuestRewardRecovery(loginAddr, questRewardReadAccount);
     return;
   }
   if (process.argv.includes("--map100-initial-only") || process.argv.includes("--skill-only")) {
@@ -178,6 +190,104 @@ async function writeDbProxyPersistenceFixture(
     waitingForGateOfflineMs: 32_000,
   });
   await sleep(32_000);
+}
+
+/** 验证任务奖励经PostgreSQL事务提交，并且客户端重复请求只得到首次结果。 / Verifies a quest reward commits through PostgreSQL and a repeated client request returns the original result once. */
+async function verifyDbProxyQuestReward(
+  loginAddr: { ip: string; port: number },
+  account: string,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 2 },
+  );
+  try {
+    const initial = client.enterMap.items.find((item) => item.configId === 1001);
+    const quest = client.enterMap.quests.find((value) => value.questConfigId === 5003);
+    if (!initial || initial.count !== 50) {
+      throw new Error(`quest transaction fixture expected 50 small potions, got ${initial?.count}`);
+    }
+    if (!quest || quest.status !== QuestStatus.ReadyToTurnIn) {
+      throw new Error(`quest transaction fixture expected quest 5003 ready, got ${quest?.status}`);
+    }
+    const first = decodeCompleteQuestFrame(await client.gate.request(
+      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003 }),
+    )).body;
+    const duplicate = decodeCompleteQuestFrame(await client.gate.request(
+      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003 }),
+    )).body;
+    if (first.error || duplicate.error) {
+      throw new Error(
+        `quest transaction fixture failed: ${stringifyForError({ first, duplicate })}`,
+      );
+    }
+    const rewarded = first.rewardItems.find((item) => item.configId === 1001);
+    const duplicateReward = duplicate.rewardItems.find((item) => item.configId === 1001);
+    if (
+      !rewarded ||
+      rewarded.count !== 53 ||
+      first.questConfigId !== duplicate.questConfigId ||
+      stringifyForError(first.rewardItems) !== stringifyForError(duplicate.rewardItems)
+    ) {
+      throw new Error(
+        `quest transaction fixture was not idempotent: ${stringifyForError({ first, duplicate })}`,
+      );
+    }
+    if (duplicateReward?.itemId !== rewarded.itemId) {
+      throw new Error("quest transaction duplicate returned a different item identity");
+    }
+    console.log("DBProxy quest reward transaction passed:", {
+      account,
+      questConfigId: first.questConfigId,
+      itemId: rewarded.itemId.toString(),
+      count: rewarded.count,
+    });
+  } finally {
+    await client.gate.close();
+  }
+}
+
+/** 在TiangZ重启后只依赖事务后的持久快照恢复，并验证重复领奖仍读取原回执。 / Recovers only from the committed transaction snapshot after a TiangZ restart and verifies a repeated claim still reads the original receipt. */
+async function verifyDbProxyQuestRewardRecovery(
+  loginAddr: { ip: string; port: number },
+  account: string,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 2 },
+  );
+  try {
+    const item = client.enterMap.items.find((value) => value.configId === 1001);
+    if (
+      !item ||
+      item.count !== 53 ||
+      !client.enterMap.completedQuestConfigIds.includes(5003) ||
+      client.enterMap.quests.some((quest) => quest.questConfigId === 5003)
+    ) {
+      throw new Error(
+        `quest transaction recovery snapshot mismatch: ${stringifyForError(client.enterMap)}`,
+      );
+    }
+    const receipt = decodeCompleteQuestFrame(await client.gate.request(
+      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003 }),
+    )).body;
+    const rewarded = receipt.rewardItems.find((value) => value.configId === 1001);
+    if (receipt.error || rewarded?.itemId !== item.itemId || rewarded.count !== 53) {
+      throw new Error(`quest transaction recovery receipt mismatch: ${stringifyForError(receipt)}`);
+    }
+    console.log("DBProxy quest reward restart recovery passed:", {
+      account,
+      questConfigId: receipt.questConfigId,
+      itemId: item.itemId.toString(),
+      count: item.count,
+    });
+  } finally {
+    await client.gate.close();
+  }
 }
 
 /** 服务重启后读取同账号，确认没有重新发放默认背包。 / Reads the same account after a server restart and verifies starter inventory was not seeded again. */

@@ -5,6 +5,7 @@ import {
   Item,
   ItemComponent,
   type InventoryGrant,
+  type InventoryGrantPlan,
   type ItemSnapshot,
   type ItemView,
   type ITransfer,
@@ -45,7 +46,7 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
 
   /** 复制当前背包用于全量同步或持久化，不暴露子 Entity 或 Native handle。 / Copies inventory for full sync or persistence without exposing child entities or Native handles. */
   Snapshot(): ItemSnapshot[] {
-    return this.GetChildren(Item).map((item) => item.Snapshot());
+    return sortSnapshots(this.GetChildren(Item).map((item) => item.Snapshot()));
   }
 
   /** 导出不包含子Entity引用和Native handle的背包快照。 / Exports an inventory snapshot without child Entity references or Native handles. */
@@ -148,19 +149,43 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
    * slot limit; a future slot rule belongs in this preflight, never in Quest.
    */
   GrantItems(grants: readonly InventoryGrant[]): readonly ItemSnapshot[] {
-    if (grants.length === 0) return [];
+    return this.CommitGrantPlan(this.PlanGrantItems(grants));
+  }
+
+  /**
+   * 只在纯快照上规划合堆与拆堆，不修改Item Entity。相同configId的输入先合并，
+   * 因此一个提交批次内同一堆叠的version最多推进一次。
+   *
+   * Plans stack merging and splitting on value snapshots only. Inputs with the
+   * same configId are consolidated, so one stack advances version at most once
+   * in one committed batch.
+   */
+  PlanGrantItems(grants: readonly InventoryGrant[]): InventoryGrantPlan {
+    const baseItems = this.Snapshot();
+    if (grants.length === 0) {
+      return { baseItems, nextItems: baseItems, affectedItems: [] };
+    }
+    const consolidated = new Map<number, number>();
     for (const grant of grants) {
       this.getItemConfig(grant.configId);
       requirePositiveCount(grant.count);
+      const total = (consolidated.get(grant.configId) ?? 0) + grant.count;
+      if (!Number.isSafeInteger(total)) {
+        throw new Error(`item grant count exceeds safe integer: ${grant.configId}`);
+      }
+      consolidated.set(grant.configId, total);
     }
 
+    const working = new Map<bigint, ItemSnapshot>(
+      baseItems.map((item) => [item.itemId, { ...item }]),
+    );
     const affected = new Map<bigint, ItemSnapshot>();
-    for (const grant of grants) {
-      const config = this.getItemConfig(grant.configId);
-      let remaining = grant.count;
-      const stacks = this.GetChildren(Item)
-        .filter((item) => item.configId === grant.configId && item.count < config.maxStack)
-        .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+    for (const [configId, count] of [...consolidated].sort(([left], [right]) => left - right)) {
+      const config = this.getItemConfig(configId);
+      let remaining = count;
+      const stacks = [...working.values()]
+        .filter((item) => item.configId === configId && item.count < config.maxStack)
+        .sort(compareSnapshots);
 
       for (const item of stacks) {
         if (remaining === 0) break;
@@ -168,17 +193,118 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
         const amount = Math.min(capacity, remaining);
         if (amount <= 0) continue;
         remaining -= amount;
-        affected.set(item.id, item.AddCount(amount));
+        const next = { ...item, count: item.count + amount, version: item.version + 1 };
+        working.set(item.itemId, next);
+        affected.set(item.itemId, next);
       }
 
       while (remaining > 0) {
         const amount = Math.min(config.maxStack, remaining);
         remaining -= amount;
-        const item = this.CreateItem(grant.configId, amount);
-        affected.set(item.id, item.Snapshot());
+        const itemId = GlobalIdSystem.Instance.Next();
+        const next: ItemSnapshot = {
+          itemId,
+          configId,
+          count: amount,
+          quality: 0,
+          level: 1,
+          version: 1,
+        };
+        working.set(itemId, next);
+        affected.set(itemId, next);
       }
     }
-    return [...affected.values()].sort((left, right) => left.itemId < right.itemId ? -1 : left.itemId > right.itemId ? 1 : 0);
+    return {
+      baseItems,
+      nextItems: sortSnapshots([...working.values()]),
+      affectedItems: sortSnapshots([...affected.values()]),
+    };
+  }
+
+  /**
+   * 无await提交已持久化的发放计划。先比较完整base快照，保证规划期间没有其他背包写入；
+   * 校验成功后的操作只调用已预检过的Item规则，不得在这里访问网络或数据库。
+   *
+   * Commits a persisted grant plan without await. It first compares the full
+   * base snapshot so no intervening inventory write can be overwritten. After
+   * validation it only invokes preflighted Item rules and performs no I/O.
+   */
+  CommitGrantPlan(plan: InventoryGrantPlan): readonly ItemSnapshot[] {
+    const current = this.Snapshot();
+    if (!snapshotArraysEqual(current, plan.baseItems)) {
+      throw new Error("inventory grant plan is stale");
+    }
+    const currentById = new Map(this.GetChildren(Item).map((item) => [item.id, item]));
+    for (const expected of plan.affectedItems) {
+      const item = currentById.get(expected.itemId);
+      if (!item) {
+        this.CreateItemById(expected.itemId, expected);
+        continue;
+      }
+      if (
+        item.configId !== expected.configId ||
+        item.quality !== expected.quality ||
+        item.level !== expected.level
+      ) {
+        throw new Error(`inventory grant plan changed immutable item data: ${expected.itemId}`);
+      }
+      const added = expected.count - item.count;
+      if (added <= 0 || expected.version !== item.version + 1) {
+        throw new Error(`inventory grant plan has invalid stack transition: ${expected.itemId}`);
+      }
+      const committed = item.AddCount(added);
+      if (!snapshotEqual(committed, expected)) {
+        throw new Error(`inventory grant plan commit mismatch: ${expected.itemId}`);
+      }
+    }
+    if (!snapshotArraysEqual(this.Snapshot(), plan.nextItems)) {
+      throw new Error("inventory grant plan final snapshot mismatch");
+    }
+    return plan.affectedItems.map((item) => ({ ...item }));
+  }
+
+  /**
+   * 根据DBProxy回执补做一次已提交发放。它只接受“当前值已经等于结果”或“恰好前进一个version”的转换，
+   * 任何其他差异都拒绝自动覆盖，并要求上层重新加载完整玩家快照。
+   *
+   * Reconciles a grant already committed by DBProxy. It accepts only an
+   * already-equal value or an exact one-version transition. Any other drift is
+   * rejected so the caller can reload the complete player snapshot.
+   */
+  ApplyCommittedGrantItems(items: readonly ItemSnapshot[]): readonly ItemSnapshot[] {
+    const expectedItems = sortSnapshots(items);
+    const currentById = new Map(this.GetChildren(Item).map((item) => [item.id, item]));
+    for (const expected of expectedItems) {
+      const config = this.getItemConfig(expected.configId);
+      requireStackCount(expected.count, config.maxStack, expected.configId);
+      const current = currentById.get(expected.itemId);
+      if (!current) {
+        if (expected.version !== 1) {
+          throw new Error(`cannot recover missing item at version ${expected.version}: ${expected.itemId}`);
+        }
+        continue;
+      }
+      const snapshot = current.Snapshot();
+      if (snapshotEqual(snapshot, expected)) continue;
+      if (
+        snapshot.configId !== expected.configId ||
+        snapshot.quality !== expected.quality ||
+        snapshot.level !== expected.level ||
+        expected.version !== snapshot.version + 1 ||
+        expected.count <= snapshot.count
+      ) {
+        throw new Error(`committed inventory result conflicts with local item: ${expected.itemId}`);
+      }
+    }
+    for (const expected of expectedItems) {
+      const current = currentById.get(expected.itemId);
+      if (!current) {
+        this.CreateItemById(expected.itemId, expected);
+      } else if (!snapshotEqual(current.Snapshot(), expected)) {
+        current.AddCount(expected.count - current.count);
+      }
+    }
+    return expectedItems;
   }
 
   private requireItem(itemId: bigint): Item {
@@ -198,6 +324,33 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     }
     return GameConfigs.ItemConfig.Get(configId);
   }
+}
+
+function sortSnapshots(items: readonly ItemSnapshot[]): ItemSnapshot[] {
+  return items.map((item) => ({ ...item })).sort(compareSnapshots);
+}
+
+function compareSnapshots(left: ItemSnapshot, right: ItemSnapshot): number {
+  return left.itemId < right.itemId ? -1 : left.itemId > right.itemId ? 1 : 0;
+}
+
+function snapshotArraysEqual(
+  left: readonly ItemSnapshot[],
+  right: readonly ItemSnapshot[],
+): boolean {
+  if (left.length !== right.length) return false;
+  const sortedLeft = sortSnapshots(left);
+  const sortedRight = sortSnapshots(right);
+  return sortedLeft.every((item, index) => snapshotEqual(item, sortedRight[index]!));
+}
+
+function snapshotEqual(left: ItemSnapshot, right: ItemSnapshot): boolean {
+  return left.itemId === right.itemId &&
+    left.configId === right.configId &&
+    left.count === right.count &&
+    left.quality === right.quality &&
+    left.level === right.level &&
+    left.version === right.version;
 }
 
 function requireStackCount(count: number, maxStack: number, configId: number): void {

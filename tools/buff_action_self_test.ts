@@ -26,6 +26,14 @@ import { ItemComponent } from "../app/model/demo/item/ItemComponent";
 import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
 import { QuestObjectiveType, QuestStatus } from "../app/generated/model/config";
 import { PlayerUnit } from "../app/model/demo/map/PlayerUnit";
+import { PositionComponent } from "../app/model/demo/map/PositionComponent";
+import { UnitGateComponent } from "../app/model/demo/map/UnitGateComponent";
+import { PlayerPersistenceComponent } from "../app/model/demo/persistence/PlayerPersistenceComponent";
+import {
+  InMemoryPlayerRepository,
+  type PlayerTransactionResult,
+  type PlayerTransactionWrite,
+} from "../app/model/demo/persistence/PlayerRepository";
 
 @scene({ sceneType: "BuffTest" })
 class BuffTestScene extends Scene {}
@@ -87,6 +95,7 @@ async function main(): Promise<void> {
   await import("../app/hotfix/demo/item/ItemComponentSystem");
   await import("../app/hotfix/demo/quest/QuestSystem");
   await import("../app/hotfix/demo/quest/QuestComponentSystem");
+  await import("../app/hotfix/demo/map/PlayerUnitSystem");
   HotfixSystem.Commit();
 
   const host = new ProcessHost("buff-action-self-test");
@@ -97,18 +106,24 @@ async function main(): Promise<void> {
     mapInstanceId: 1n,
   });
   installNativeHostOps();
-  unit.AddComponent(NativeUnitRef, { id: 1, instanceId: unit.InstanceId, mapId: 1 });
+  const native = unit.AddComponent(NativeUnitRef, { id: 1, instanceId: unit.InstanceId, mapId: 1 });
+  unit.AddComponent(PositionComponent, native, 100, 100, 1);
+  unit.AddComponent(UnitGateComponent, "gate_test");
   unit.AddComponent(NumericComponent, {
     [NumericType.CurrentHp]: 1n,
     [NumericType.MaxHpBase]: 200n,
     [NumericType.CurrentMp]: 0n,
     [NumericType.MaxMpBase]: 100n,
     [NumericType.Level]: 1n,
+    [NumericType.MoveSpeedBase]: 6_000n,
   });
   unit.AddComponent(CombatComponent);
   const buffs = unit.AddComponent(BuffComponent);
   const items = unit.AddComponent(ItemComponent);
+  const sourceSkill = unit.AddComponent(SkillComponent);
   const quests = unit.AddComponent(QuestComponent);
+  const repository = new ControllablePlayerRepository();
+  unit.AddComponent(PlayerPersistenceComponent, repository, 0n);
 
   assert.deepEqual(quests.Snapshot().map((quest) => quest.questConfigId), [5001, 5002, 5003]);
   assert.deepEqual(quests.ApplyProgress({
@@ -125,10 +140,22 @@ async function main(): Promise<void> {
     count: 1,
   });
   assert.equal(killProgress[0]?.status, QuestStatus.ReadyToTurnIn);
-  const reward = quests.CompleteQuest(5001);
+  repository.failTransactions = true;
+  await assert.rejects(quests.CompleteQuest(5001), /injected transaction failure/);
+  assert.equal(quests.Snapshot().find((quest) => quest.questConfigId === 5001)?.status, QuestStatus.ReadyToTurnIn);
+  assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 50);
+  repository.failTransactions = false;
+  repository.loseNextTransactionAck = true;
+  await assert.rejects(quests.CompleteQuest(5001), /injected lost transaction ack/);
+  assert.equal(quests.Snapshot().find((quest) => quest.questConfigId === 5001)?.status, QuestStatus.ReadyToTurnIn);
+  assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 50);
+  const reward = await quests.CompleteQuest(5001);
   assert.equal(reward.rewardItems[0]?.configId, 1001);
   assert.equal(reward.rewardItems[0]?.count, 52);
   assert.equal(items.Snapshot().filter((item) => item.configId === 1001).length, 1);
+  const duplicateReward = await quests.CompleteQuest(5001);
+  assert.deepEqual(duplicateReward, reward);
+  assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 52);
   const splitStacks = items.GrantItem(1001, 60);
   assert.deepEqual(splitStacks.map((item) => item.count), [99, 13]);
   assert.throws(() => items.RemoveItem(splitStacks[0]!.itemId, -1), /positive safe integer/);
@@ -139,7 +166,6 @@ async function main(): Promise<void> {
   assert.equal(batchGrant.grantedItems.length, 1);
   assert.equal(batchGrant.grantedItems[0]?.configId, 1002);
   assert.equal(batchGrant.grantedItems[0]?.count, 23);
-  assert.throws(() => quests.CompleteQuest(5001));
   assert.throws(() => quests.AcceptQuest(5004), /requires level 2/);
   unit.GetComponent(NumericComponent)[NumericType.Level] = 2n;
   const advancedQuest = quests.AcceptQuest(5004);
@@ -178,18 +204,23 @@ async function main(): Promise<void> {
     mapId: 1,
     mapInstanceId: 1n,
   });
-  target.AddComponent(NativeUnitRef, { id: 2, instanceId: target.InstanceId, mapId: 1 });
+  const targetNative = target.AddComponent(NativeUnitRef, { id: 2, instanceId: target.InstanceId, mapId: 1 });
+  target.AddComponent(PositionComponent, targetNative, 100, 100, 1);
+  target.AddComponent(UnitGateComponent, "gate_test");
   target.AddComponent(NumericComponent, {
     [NumericType.CurrentHp]: 1n,
     [NumericType.MaxHpBase]: 200n,
     [NumericType.CurrentMp]: 0n,
     [NumericType.MaxMpBase]: 100n,
     [NumericType.Level]: 1n,
+    [NumericType.MoveSpeedBase]: 6_000n,
   });
   target.AddComponent(CombatComponent);
   const targetBuffs = target.AddComponent(BuffComponent);
   target.AddComponent(ItemComponent);
+  const targetSkill = target.AddComponent(SkillComponent);
   const targetQuests = target.AddComponent(QuestComponent);
+  target.AddComponent(PlayerPersistenceComponent, repository, 0n);
   target.RestoreTransfer(transfer);
   assert.equal(target.GetComponent(NumericComponent)[NumericType.CurrentHp], 51n);
   assert.equal(targetBuffs.GetBuff(buff.Id as bigint)?.Id, buff.Id);
@@ -280,7 +311,6 @@ async function main(): Promise<void> {
 
   // 跨地图保留已提交GCD/CD，但不恢复源地图活动读条。
   // Cross-map transfer keeps committed GCD/CD without restoring the source-map active cast.
-  const sourceSkill = unit.AddComponent(SkillComponent);
   const skillNow = TimeSystem.Instance.ServerNow;
   const itemCooldown = sourceSkill.TryCommitItemCooldown(1001, 30_000, 1_000);
   assert.equal(itemCooldown.accepted, true);
@@ -296,7 +326,6 @@ async function main(): Promise<void> {
     definition: GetSkillDefinition(3002),
   }, 12_000, 1_000);
   const skillTransfer = sourceSkill.CaptureTransfer();
-  const targetSkill = target.AddComponent(SkillComponent);
   targetSkill.RestoreTransfer(skillTransfer);
   assert.equal(targetSkill.State(3002).phase, SkillCastPhase.Idle);
   assert.equal(targetSkill.ReadyAt(3002), skillNow + 12_000);
@@ -339,6 +368,24 @@ async function main(): Promise<void> {
   host.Dispose();
   SingletonRegistry.DestroyAll();
   console.log("buff action self-test passed", { actionTypes: ActionType });
+}
+
+class ControllablePlayerRepository extends InMemoryPlayerRepository {
+  failTransactions = false;
+  loseNextTransactionAck = false;
+
+  override ApplyTransaction(
+    write: PlayerTransactionWrite,
+    expectedRevision: bigint,
+  ): PlayerTransactionResult {
+    if (this.failTransactions) throw new Error("injected transaction failure");
+    const result = super.ApplyTransaction(write, expectedRevision);
+    if (this.loseNextTransactionAck) {
+      this.loseNextTransactionAck = false;
+      throw new Error("injected lost transaction ack");
+    }
+    return result;
+  }
 }
 
 function installNativeHostOps(): void {

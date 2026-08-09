@@ -18,7 +18,7 @@ export interface QuestRewardResult {
 
 export interface QuestComponent {
   AcceptQuest(questConfigId: number): QuestState;
-  CompleteQuest(questConfigId: number): QuestRewardResult;
+  CompleteQuest(questConfigId: number): Promise<QuestRewardResult>;
   Snapshot(): readonly QuestState[];
   CompletedQuestConfigIds(): readonly number[];
   HasCompletedQuest(questConfigId: number): boolean;

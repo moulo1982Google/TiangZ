@@ -627,12 +627,12 @@ QuestComponent
 - 接取前统一执行同步`QuestEvents.BeforeAccept` Veto；前置任务和最低等级是配置最终不变量，阵营、职业、NPC关系等扩展条件注册独立监听器。Veto只能读内存和返回错误码，禁止Promise、RPC、数据库、修改Entity或Spawn后台任务。
 - 进度变化通过owner-only `G2C_QuestProgress`通知拥有者客户端，并按QuestConfigId在同帧latest合并，不广播给普通地图观察者。
 - 只有组队共享任务明确需要时，才向`PartyAudience`发送必要的进度摘要；不要把完整Quest对象发送给队友。
-- 完成时由`QuestComponent.CompleteQuest`在PlayerUnit有序mailbox内同步执行奖励Action、写入已完成Quest配置ID和`RemoveChild`；Handler只负责RPC与提交后的奖励同步，不能把这三步拆开await。
+- 完成时由`QuestComponent.CompleteQuest`在PlayerUnit有序mailbox内等待一次关键事务：Inventory先生成纯数据计划，DBProxy提交奖励后的玩家记录和业务结果，成功后再写入Item/已完成Quest并`RemoveChild`；Handler只负责RPC与提交后的奖励同步，不能直接访问Repository或把步骤拆散。
 - 登录或重连时向本人发送活动Quest和已完成摘要的全量快照。队友进入AOI时，可随Unit整体Snapshot取得允许共享的任务摘要；普通观察者的Unit快照不包含Quest。离开AOI时只移除Unit。
 
 如果同一配置任务不会同时存在多个活动实例，可以直接用配置ID作为ChildEntity Id；可重复任务、限时活动任务等允许并存时，必须使用独立Quest实例ID，并单独保存`configId`。已完成集合始终记录稳定配置ID，不保存已经销毁的InstanceId。
 
-当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；`required_quest_ids`和`minimum_level`声明基础接取条件。演示目标覆盖击杀怪物、使用道具和进入地图，5004验证“完成5001且达到2级”。`GrantItem(ItemConfigId, Count)`和`GrantItems(...)`必须通过Inventory，由Inventory填充已有堆叠并按`max_stack`拆分新Item。`ExecuteReward`在PlayerUnit有序mailbox内同步执行Action批次，Action之间不能`await`；这不是数据库事务，不提供失败回滚，跨域持久化留给独立DBProxy。组队任务需要Party与PartyAudience，当前不要在Quest里提前实现队员共享。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
+当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；`required_quest_ids`和`minimum_level`声明基础接取条件。演示目标覆盖击杀怪物、使用道具和进入地图，5004验证“完成5001且达到2级”。`GrantItem(ItemConfigId, Count)`和`GrantItems(...)`必须通过Inventory，由Inventory填充已有堆叠并按`max_stack`拆分新Item。普通同步奖励仍可使用`ExecuteReward`；关键任务奖励使用`PlanTransactionalReward -> ItemComponent.PlanGrantItems -> PlayerPersistenceComponent.ApplyTransaction -> CommitGrantPlan`。规划阶段不能修改Entity，提交成功前不能响应客户端。当前事务Planner只支持GrantItem，新增其他Action必须先实现纯数据规划和恢复规则。组队任务需要Party与PartyAudience，当前不要在Quest里提前实现队员共享。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
 
 ## 广播给谁与如何广播
 
@@ -739,7 +739,7 @@ await player.Offline(reason);
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy独立仓库的`v0.3.1`已提供PostgreSQL权威快照、Revision/CAS、幂等事务、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK。TiangZ首个`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。当前保存发生在最终下线和停机阶段，关键经济事务、周期快照和崩溃接管尚未完成。
+DBProxy独立仓库的`v0.4.0`已提供PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励已成为首个关键事务；Wallet、Trade、UseItem消费事务、周期快照和崩溃接管尚未完成。
 
 ## AOI业务规则
 
@@ -906,7 +906,7 @@ C2M_AttackMonsterHandler
 
 ## DBProxy持久化接入边界
 
-独立DBProxy当前为`v0.3.1`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK和真实PostgreSQL/Redis闭环。TiangZ主工程已经实现首个Player Snapshot Repository，但业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
+独立DBProxy当前为`v0.4.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK、事务回执查询和真实PostgreSQL/Redis闭环。TiangZ主工程已经实现Player Snapshot与首个任务奖励事务，但业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
 
 正式接入后的固定调用层次应是：
 
@@ -930,7 +930,7 @@ Handler
 
 当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成；断线、踢下线和停机只调用`player.Offline(reason)`，由`PlayerPersistenceComponent.SaveOnOffline`采集Numeric、Item、Buff、Skill冷却、Quest和地图状态，并以当前Revision提交。Handler不得直接调用Repository。
 
-当前首版只验证普通玩家快照：最终下线保存后，TiangZ重启可以从PostgreSQL恢复。它没有周期快照，也没有把UseItem、Reward或Wallet接入`ApplyTransaction`；崩溃发生在最终保存之前仍可能丢失最近变化。下一阶段先给关键经济领域增加提交前事务确认，再做批量Load/Save、周期Flush和节点接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+当前普通玩家快照已验证重启恢复，任务GrantItem奖励已接入`ApplyTransaction`：稳定operationId、expectedRevision、奖励后的完整Payload和原始响应在PostgreSQL同一事务提交，确认后才修改内存；ACK丢失时查询回执并按首次结果恢复。它仍没有周期快照、UseItem/Wallet/Trade事务或按领域拆分revision；崩溃发生在普通最终保存之前仍可能丢失最近运行状态。下一阶段先扩展关键经济领域，再做批量Load/Save、周期Flush和节点接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 

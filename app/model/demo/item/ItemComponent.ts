@@ -12,9 +12,29 @@ export interface InventoryGrantResult {
   readonly items: readonly ItemSnapshot[];
 }
 
+/**
+ * 背包发放的纯数据计划。baseItems用于提交前防止陈旧计划覆盖新状态；nextItems可直接进入持久化快照。
+ * 计划不持有Item Entity或Native handle，可以安全跨DBProxy调用保存，但只能由创建它的ItemComponent提交。
+ *
+ * Pure-value inventory grant plan. baseItems prevents a stale plan from
+ * overwriting newer state, while nextItems can enter persistence directly. It
+ * owns no Item Entity or Native handle and must be committed by its creator.
+ */
+export interface InventoryGrantPlan {
+  readonly baseItems: readonly ItemSnapshot[];
+  readonly nextItems: readonly ItemSnapshot[];
+  readonly affectedItems: readonly ItemSnapshot[];
+}
+
 export interface ItemComponent {
+  Snapshot(): ItemSnapshot[];
+  CaptureTransfer(): ItemSnapshot[];
+  RestoreTransfer(items: readonly ItemSnapshot[]): void;
   GrantItem(configId: number, count: number): readonly ItemSnapshot[];
   GrantItems(grants: readonly InventoryGrant[]): readonly ItemSnapshot[];
+  PlanGrantItems(grants: readonly InventoryGrant[]): InventoryGrantPlan;
+  CommitGrantPlan(plan: InventoryGrantPlan): readonly ItemSnapshot[];
+  ApplyCommittedGrantItems(items: readonly ItemSnapshot[]): readonly ItemSnapshot[];
 }
 
 @component()

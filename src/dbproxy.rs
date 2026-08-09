@@ -221,6 +221,23 @@ struct HostTransactionResponse {
     error: Option<HostDbProxyError>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostTransactionReceipt {
+    operation_id: String,
+    namespace: String,
+    key: String,
+    new_revision: String,
+    result: Vec<u8>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostLoadTransactionResponse {
+    receipt: Option<HostTransactionReceipt>,
+    error: Option<HostDbProxyError>,
+}
+
 #[op2]
 #[serde]
 async fn op_host_dbproxy_load(
@@ -384,6 +401,40 @@ async fn op_host_dbproxy_apply_transaction(
     })
 }
 
+#[op2]
+#[serde]
+async fn op_host_dbproxy_load_transaction(
+    #[string] operation_id: String,
+    #[string] namespace: String,
+    #[string] key: String,
+) -> std::result::Result<HostLoadTransactionResponse, JsErrorBox> {
+    let record =
+        RecordKey::new(namespace, key).map_err(|error| JsErrorBox::generic(error.to_string()))?;
+    let result = bridge()?
+        .execute(move |pool| {
+            let operation_id = operation_id.clone();
+            let record = record.clone();
+            async move { pool.load_transaction(&operation_id, &record).await }
+        })
+        .await;
+    Ok(match result {
+        Ok(receipt) => HostLoadTransactionResponse {
+            receipt: receipt.map(|receipt| HostTransactionReceipt {
+                operation_id: receipt.operation_id,
+                namespace: receipt.record.namespace,
+                key: receipt.record.key,
+                new_revision: receipt.new_revision.0.to_string(),
+                result: receipt.result,
+            }),
+            error: None,
+        },
+        Err(error) => HostLoadTransactionResponse {
+            receipt: None,
+            error: Some(error.into()),
+        },
+    })
+}
+
 fn write_response(disposition: &'static str, revision: Revision) -> HostWriteResponse {
     HostWriteResponse {
         disposition: Some(disposition),
@@ -425,6 +476,7 @@ deno_core::extension!(
         op_host_dbproxy_save,
         op_host_dbproxy_enqueue_snapshot,
         op_host_dbproxy_apply_transaction,
+        op_host_dbproxy_load_transaction,
     ],
 );
 
@@ -464,6 +516,9 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
       text(request.schema, "schema"), u32(request.schemaVersion, "schemaVersion"),
       text(String(request.expectedRevision), "expectedRevision"), bytes(request.payload, "payload"),
       bytes(request.result, "result"), text(String(request.updatedAtUnixMs), "updatedAtUnixMs"),
+    ),
+    loadTransaction: (operationId, namespace, key) => core.ops.op_host_dbproxy_load_transaction(
+      text(operationId, "operationId"), text(namespace, "namespace"), text(key, "key"),
     ),
   });
 })();
