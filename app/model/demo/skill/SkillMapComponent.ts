@@ -18,6 +18,7 @@ export interface SkillProjectile {
 export interface SkillMapComponent {
   Cast(caster: PlayerUnit, command: SkillCastCommand): SkillCastState;
   InterruptByMovement(caster: PlayerUnit): boolean;
+  ExtendCastOnDamage(target: PlayerUnit, extensionMs?: number): boolean;
 }
 
 /** 一张地图只有一个技能调度桶；业务Unit持状态，但不成为Update目标。 / One skill scheduler exists per map; Units own state without becoming Update targets. */

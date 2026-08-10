@@ -47,7 +47,7 @@ npm run test:game-config
 
 Cocos3D演示玩家出生时预置`1001×50`和`1002×20`两个堆叠，快捷栏固定使用`1`切换平A、`2`使用1001、`3`使用1002。这个预置属于Demo的`ItemComponentSystem.Awake`，正式业务应由持久化数据恢复，不要把演示数量当成通用框架默认值。
 
-`QuestConfig`引用`QuestObjectiveConfig`组成活动任务，奖励复用Action。`required_quest_ids`声明必须已经领取奖励的前置任务，`minimum_level`读取`NumericType.Level`；生成阶段会拒绝缺失、重复、自引用和循环前置关系。当前演示包含击杀怪物、使用道具和进入地图三种目标，并用5004验证“完成5001且达到2级”后手工接取。两张Quest表标记为Hot，但已经接取的Quest会冻结目标与要求数量；Reload只影响之后新接取的任务，不能隐式改写玩家正在进行的任务。完整语义和调用示例见[任务系统设计](../docs/design/quest-system.md)。
+`QuestConfig`引用`QuestObjectiveConfig`组成活动任务，奖励复用Action。`required_quest_ids`声明必须已经领取奖励的前置任务，`minimum_level`读取`NumericType.Level`；生成阶段会拒绝缺失、重复、自引用和循环前置关系。当前演示包含击杀怪物、使用道具和进入地图三种目标；Starter任务链是5001击败5只怪A，回NPC交付后解锁5005击败5只怪B；5004继续验证“完成5001且达到2级”后手工接取。两张Quest表标记为Hot，但已经接取的Quest会冻结目标与要求数量；Reload只影响之后新接取的任务，不能隐式改写玩家正在进行的任务。任务达到`ReadyToTurnIn`后必须携带NPC实例ID在交互范围内完成，不能从任务追踪面板直接领奖。完整语义和调用示例见[任务系统设计](../docs/design/quest-system.md)。
 
 任务奖励由`ExecuteReward -> ExecuteActionBatch`在PlayerUnit有序mailbox内同步执行；`GrantItem(ItemConfigId, Count)`和批量Grant必须交给Inventory，由Inventory合并已有堆叠并按`max_stack`拆分。当前批次不提供失败回滚或数据库事务，跨域持久化留给独立DBProxy；组队共享任务等待Party系统，不在Quest里提前模拟。
 
@@ -96,6 +96,8 @@ Action当前支持：
 - `AoiConfig.grid_size_cells`：一个AOI Grid每条边包含的Cell数量。
 - `AoiSyncTierConfig.range_grids`：本档同步范围，必须是正奇数、唯一并逐档扩大。
 - `AoiSyncTierConfig.sync_hz`：本档可覆盖状态的最高同步频率，外层不得高于内层，并且必须整除服务端20Hz逻辑Tick。
+
+Demo Map 100 当前选择`MapConfig.aoi_config_id=2`作为宽视野演示：7×7 Grid建立可见关系、9×9 Grid作为Detach迟滞边界。它只用于让出生点观察远端怪物，不是全局默认值；新地图应按实际空间和玩家密度选择自己的Cold配置。
 
 Grid数量不单独配置，而是由`MapConfig.width_cells/depth_cells ÷ AoiConfig.grid_size_cells`推导；地图米制尺寸等于`width_cells/depth_cells × cell_size_meters`。地图制作流程决定物理边界并把结果写入MapConfig，运行时只接受能完整切成AOI Grid的尺寸，避免边缘出现半个Grid或多份尺寸配置互相冲突。
 

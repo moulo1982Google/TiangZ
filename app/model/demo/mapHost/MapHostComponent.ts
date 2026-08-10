@@ -40,6 +40,7 @@ import { MapComponent } from "../map/MapComponent";
 import { MapScene } from "../map/MapScene";
 import { MapAoiComponent } from "../map/MapAoiComponent";
 import { MonsterComponent } from "../monster/MonsterComponent";
+import { NpcComponent } from "../npc/NpcComponent";
 import { SkillMapComponent } from "../skill/SkillMapComponent";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
@@ -249,7 +250,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     let entryEntities: readonly MapEntitySnapshot[] | undefined;
 
     for (;;) {
-      player = this.players.Get(request.account);
+      player = this.players.Get(request.characterId);
       if (player?.MapInstanceId === request.mapInstanceId) {
         const reconnectingPlayer = player;
         try {
@@ -266,7 +267,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         } catch (error) {
           // 断线下线与重进可能交叠。仅当目录已确认旧实例消失时重试，
           // 其他业务异常必须原样抛出，不能被误判成一次普通重连。
-          if (this.players.Get(request.account) === player) throw error;
+          if (this.players.Get(request.characterId) === player) throw error;
           continue;
         }
       }
@@ -278,7 +279,10 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         );
       } else {
         let stageStartedAt = monotonicNow();
-        const allocated = await this.location.AllocateUnitId({ account: request.account });
+        const allocated = await this.location.AllocateUnitId({
+          account: request.account,
+          characterId: request.characterId,
+        });
         let stageElapsedMs = monotonicNow() - stageStartedAt;
         this.entryMetrics.idAllocations += 1;
         this.entryMetrics.idAllocationMs += stageElapsedMs;
@@ -286,7 +290,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
           this.entryMetrics.maxIdAllocationMs,
           stageElapsedMs,
         );
-        const loaded = await this.repository.Load(request.account);
+        const loaded = await this.repository.Load(request.characterId);
         stageStartedAt = monotonicNow();
         player = map.CreatePlayer(allocated.unitId, request, loaded);
         stageElapsedMs = monotonicNow() - stageStartedAt;
@@ -302,6 +306,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
             await this.location.Register({
               unitId: player.UnitId,
               account: player.Account,
+              characterId: player.CharacterId,
               gateName: request.gateName,
               mapHostName: this.owner.self.name,
               mapId,
@@ -344,6 +349,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
 
     const mapReady: M2G_MapReady = {
       account: snapshot.account,
+      characterId: snapshot.characterId,
       mapId: snapshot.mapId,
       unitId: snapshot.unitId,
       x: snapshot.x,
@@ -370,7 +376,11 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     stageStartedAt = monotonicNow();
     let located;
     try {
-      located = await this.location.Resolve({ unitId: player.UnitId, account: "" });
+      located = await this.location.Resolve({
+        unitId: player.UnitId,
+        account: "",
+        characterId: player.CharacterId,
+      });
     } finally {
       const elapsedMs = monotonicNow() - stageStartedAt;
       this.entryMetrics.locationResolves += 1;
@@ -389,6 +399,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
 
     return {
       account: snapshot.account,
+      characterId: snapshot.characterId,
       mapId: snapshot.mapId,
       unitId: snapshot.unitId,
       actorInstanceId: player.InstanceId,
@@ -417,8 +428,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
    * The snapshot stays available after a failed delivery and is released after success.
    */
   async PublishInitialSnapshot(request: G2M_InitialSnapshot): Promise<M2G_InitialSnapshot> {
-    const player = this.players.Get(request.account);
-    if (!player || player.UnitId !== request.unitId) {
+    const player = this.players.Get(request.characterId);
+    if (!player || player.UnitId !== request.unitId || player.Account !== request.account) {
       throw new RpcError(GameErrCode.MapNotFound, `initial snapshot player not found: ${request.account}`);
     }
     const map = this.mapOf(player);
@@ -445,6 +456,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
   ): Promise<M2G_TransferPlayer> {
     if (
       source.Account !== request.account ||
+      source.CharacterId !== request.characterId ||
       !source.MatchesGate({ gateName: request.gateName })
     ) {
       throw new RpcError(GameErrCode.GateSessionRequired, "player transfer identity mismatch");
@@ -497,6 +509,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         source.UnitId,
         {
           account: source.Account,
+          characterId: source.CharacterId,
           token: "map-transfer",
           gateName: request.gateName,
           mapInstanceId: targetInstance.mapInstanceId,
@@ -521,6 +534,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         mapId: targetInstance.mapConfigId,
         mapInstanceId: targetInstance.mapInstanceId,
         actorInstanceId: target.InstanceId,
+        characterId: target.CharacterId,
       });
       locationCommitted = true;
       const snapshot = target.Snapshot();
@@ -590,6 +604,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         mapId: target.mapId,
         mapInstanceId: target.mapInstanceId,
         actorInstanceId: target.actorInstanceId,
+        characterId: source.CharacterId,
       });
       this.ScheduleSourceCleanup(sourceMap, source);
       return {
@@ -597,6 +612,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         error: 0,
         message: "",
         account: source.Account,
+        characterId: source.CharacterId,
         mapHostName: target.mapHostName,
         mapId: target.mapId,
         mapInstanceId: target.mapInstanceId,
@@ -650,6 +666,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       error: 0,
       message: "",
       account: snapshot.account,
+      characterId: snapshot.characterId,
       mapHostName: this.owner.self.name,
       mapId: snapshot.mapId,
       mapInstanceId: snapshot.mapInstanceId,
@@ -768,6 +785,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       mapId: committed.result.mapId,
       unitId: committed.result.unitId,
       actorInstanceId: committed.target.player.InstanceId,
+      characterId: committed.result.characterId,
       x: committed.result.x,
       y: committed.result.y,
       z: committed.result.z,
@@ -806,6 +824,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       transferId,
       unitId: snapshot.unitId,
       account: snapshot.account,
+      characterId: snapshot.characterId,
       sourceMapId: snapshot.mapId,
       targetMapId: targetInstance.mapConfigId,
       gateName: snapshot.gateName,
@@ -847,6 +866,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       const locations = this.players.GetAll().map((player) => ({
         unitId: player.UnitId,
         account: player.Account,
+        characterId: player.CharacterId,
         gateName: player.GetComponent(UnitGateComponent).gateName,
         mapHostName: this.owner.self.name,
         mapId: player.MapId,
@@ -1035,6 +1055,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         this,
         aoi,
       );
+      scene.AddComponent(NpcComponent, map, aoi);
       scene.AddComponent(MonsterComponent, map, aoi);
       scene.AddComponent(SkillMapComponent, map);
       this.maps.set(definition.mapInstanceId, map);
@@ -1138,10 +1159,10 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (!request.token) {
       throw new RpcError(GameErrCode.TokenRequired, "token is required");
     }
-    if (!request.gateName) {
+    if (!request.gateName || request.characterId <= 0n) {
       throw new RpcError(
         GameErrCode.GateSessionRequired,
-        "gate binding is required",
+        "gate binding and character identity are required",
       );
     }
   }
@@ -1150,7 +1171,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (snapshot.schemaVersion !== PLAYER_TRANSFER_SCHEMA_VERSION) {
       throw new Error(`unsupported player transfer schema: ${snapshot.schemaVersion}`);
     }
-    if (!snapshot.transferId || !snapshot.account || !snapshot.gateName) {
+    if (!snapshot.transferId || !snapshot.account || !snapshot.gateName || snapshot.characterId <= 0n) {
       throw new Error("incomplete player transfer identity");
     }
     if (!GameConfigs.MapConfig.TryGet(snapshot.targetMapId)) {

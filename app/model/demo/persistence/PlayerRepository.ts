@@ -77,7 +77,7 @@ export interface PlayerTransactionReceipt {
 
 export interface PlayerRepository {
   /** 读取一份自包含快照；不存在时返回undefined，调用方才创建业务默认值。 / Loads one self-contained snapshot; undefined means business defaults should be created. */
-  Load(account: string): MaybePromise<PlayerLoadResult | undefined>;
+  Load(characterId: bigint): MaybePromise<PlayerLoadResult | undefined>;
   /** 以期望revision提交完整快照；实现必须在返回前取得可靠提交结果。 / Commits a full snapshot with expected revision and returns only after a reliable commit result. */
   Save(data: PlayerSaveData, expectedRevision: bigint): MaybePromise<PlayerSaveResult>;
   /** 原子提交关键业务后的完整玩家记录，并保存可恢复结果。 / Atomically commits the post-operation player record and its recoverable result. */
@@ -87,9 +87,11 @@ export interface PlayerRepository {
   ): MaybePromise<PlayerTransactionResult>;
   /** 按稳定operationId查询既有事务；不得根据当前快照猜测是否提交。 / Loads a committed transaction by stable operationId instead of inferring from the current snapshot. */
   LoadTransaction(
-    account: string,
+    characterId: bigint,
     operationId: string,
   ): MaybePromise<PlayerTransactionReceipt | undefined>;
+  /** 仅用于无DBProxy的跨进程迁移，把迁移快照交给目标进程的内存Repository；持久化Repository不得用它覆盖权威数据。 / Used only for no-DBProxy process transfer to hand a snapshot to the target in-memory Repository; durable repositories must not use it to overwrite authority. */
+  AdoptTransfer?(data: PlayerSaveData, revision: bigint): void;
 }
 
 interface InMemoryRecord {
@@ -99,7 +101,7 @@ interface InMemoryRecord {
 }
 
 interface InMemoryTransactionRecord {
-  readonly account: string;
+  readonly characterId: bigint;
   readonly expectedRevision: bigint;
   readonly payload: Uint8Array;
   readonly result: Uint8Array;
@@ -112,8 +114,8 @@ export class InMemoryPlayerRepository implements PlayerRepository {
   private readonly saveCounts = new Map<string, number>();
   private readonly transactions = new Map<string, InMemoryTransactionRecord>();
 
-  Load(account: string): PlayerLoadResult | undefined {
-    const record = this.players.get(account);
+  Load(characterId: bigint): PlayerLoadResult | undefined {
+    const record = this.players.get(keyOf(characterId));
     return record
       ? {
         data: ClonePlayerSaveData(record.data),
@@ -125,7 +127,7 @@ export class InMemoryPlayerRepository implements PlayerRepository {
 
   /** 采用与DBProxy相同的CAS语义，避免本地模式掩盖陈旧快照覆盖问题。 / Uses DBProxy-equivalent CAS semantics so local mode cannot hide stale-snapshot overwrites. */
   Save(data: PlayerSaveData, expectedRevision: bigint): PlayerSaveResult {
-    const current = this.players.get(data.player.account);
+    const current = this.players.get(keyOf(data.player.characterId));
     const actualRevision = current?.revision ?? 0n;
     if (actualRevision !== expectedRevision) {
       throw new Error(
@@ -133,14 +135,14 @@ export class InMemoryPlayerRepository implements PlayerRepository {
       );
     }
     const revision = actualRevision + 1n;
-    this.players.set(data.player.account, {
+    this.players.set(keyOf(data.player.characterId), {
       data: ClonePlayerSaveData(data),
       revision,
       updatedAtUnixMs: BigInt(Date.now()),
     });
     this.saveCounts.set(
-      data.player.account,
-      (this.saveCounts.get(data.player.account) ?? 0) + 1,
+      keyOf(data.player.characterId),
+      (this.saveCounts.get(keyOf(data.player.characterId)) ?? 0) + 1,
     );
     return { disposition: "applied", revision };
   }
@@ -151,12 +153,12 @@ export class InMemoryPlayerRepository implements PlayerRepository {
     expectedRevision: bigint,
   ): PlayerTransactionResult {
     requireOperationId(write.operationId);
-    const account = write.data.player.account;
+    const characterId = write.data.player.characterId;
     const payload = EncodePlayerSaveData(write.data);
     const existing = this.transactions.get(write.operationId);
     if (existing) {
       if (
-        existing.account !== account ||
+        existing.characterId !== characterId ||
         existing.expectedRevision !== expectedRevision ||
         !bytesEqual(existing.payload, payload) ||
         !bytesEqual(existing.result, write.result)
@@ -170,7 +172,7 @@ export class InMemoryPlayerRepository implements PlayerRepository {
       };
     }
 
-    const current = this.players.get(account);
+    const current = this.players.get(keyOf(characterId));
     const actualRevision = current?.revision ?? 0n;
     if (actualRevision !== expectedRevision) {
       throw new Error(
@@ -178,13 +180,13 @@ export class InMemoryPlayerRepository implements PlayerRepository {
       );
     }
     const revision = actualRevision + 1n;
-    this.players.set(account, {
+    this.players.set(keyOf(characterId), {
       data: ClonePlayerSaveData(write.data),
       revision,
       updatedAtUnixMs: BigInt(Date.now()),
     });
     this.transactions.set(write.operationId, {
-      account,
+      characterId,
       expectedRevision,
       payload: payload.slice(),
       result: write.result.slice(),
@@ -193,23 +195,42 @@ export class InMemoryPlayerRepository implements PlayerRepository {
     return { disposition: "applied", revision, result: write.result.slice() };
   }
 
-  LoadTransaction(account: string, operationId: string): PlayerTransactionReceipt | undefined {
+  LoadTransaction(characterId: bigint, operationId: string): PlayerTransactionReceipt | undefined {
     requireOperationId(operationId);
     const transaction = this.transactions.get(operationId);
-    if (!transaction || transaction.account !== account) return undefined;
+    if (!transaction || transaction.characterId !== characterId) return undefined;
     return { revision: transaction.revision, result: transaction.result.slice() };
   }
 
   /** 返回防御性副本，防止测试修改Repository权威数据。 / Returns a defensive copy so tests cannot mutate repository authority. */
-  Get(account: string): PlayerSaveData | undefined {
-    const data = this.players.get(account)?.data;
+  Get(characterId: bigint): PlayerSaveData | undefined {
+    const data = this.players.get(keyOf(characterId))?.data;
     return data ? ClonePlayerSaveData(data) : undefined;
   }
 
   /** 返回保存次数，主要用于生命周期幂等测试。 / Reports save count, primarily for lifecycle idempotency tests. */
-  SaveCount(account: string): number {
-    return this.saveCounts.get(account) ?? 0;
+  SaveCount(characterId: bigint): number {
+    return this.saveCounts.get(keyOf(characterId)) ?? 0;
   }
+
+  /** 接收跨进程迁移的运行时交接；只在目标没有更高revision时写入。 / Accepts a runtime transfer handoff and writes only when the target has no newer revision. */
+  AdoptTransfer(data: PlayerSaveData, revision: bigint): void {
+    const characterId = data.player.characterId;
+    const key = keyOf(characterId);
+    const current = this.players.get(key);
+    if (current && current.revision > revision) return;
+    if (current && current.revision === revision) return;
+    this.players.set(key, {
+      data: ClonePlayerSaveData(data),
+      revision,
+      updatedAtUnixMs: BigInt(Date.now()),
+    });
+  }
+}
+
+function keyOf(characterId: bigint): string {
+  if (characterId <= 0n) throw new Error(`player characterId must be positive: ${characterId}`);
+  return characterId.toString(10);
 }
 
 function requireOperationId(operationId: string): void {

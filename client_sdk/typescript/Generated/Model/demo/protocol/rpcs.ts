@@ -31,10 +31,14 @@ import {
   C2M_ToggleDemoDoorCodec,
   C2M_UseItem,
   C2M_UseItemCodec,
+  C2S_CreateCharacter,
+  C2S_CreateCharacterCodec,
   C2S_GetLoginServiceAddr,
   C2S_GetLoginServiceAddrCodec,
   C2S_Login,
   C2S_LoginCodec,
+  C2S_Register,
+  C2S_RegisterCodec,
   G2C_EnterMap,
   G2C_EnterMapCodec,
   G2C_LoginGate,
@@ -65,10 +69,14 @@ import {
   M2C_ToggleDemoDoorCodec,
   M2C_UseItem,
   M2C_UseItemCodec,
+  S2C_CreateCharacter,
+  S2C_CreateCharacterCodec,
   S2C_GetLoginServiceAddr,
   S2C_GetLoginServiceAddrCodec,
   S2C_Login,
   S2C_LoginCodec,
+  S2C_Register,
+  S2C_RegisterCodec,
 } from "./messages";
 import { MsgCode } from "./msgcodes";
 
@@ -89,6 +97,20 @@ export const LoginProtocol = {
     responseCode: MsgCode.S2C_Login,
     requestCodec: C2S_LoginCodec,
     responseCodec: S2C_LoginCodec,
+  }),
+  Register: defineRpc<C2S_Register, S2C_Register>({
+    name: "Login.Register",
+    requestCode: MsgCode.C2S_Register,
+    responseCode: MsgCode.S2C_Register,
+    requestCodec: C2S_RegisterCodec,
+    responseCodec: S2C_RegisterCodec,
+  }),
+  CreateCharacter: defineRpc<C2S_CreateCharacter, S2C_CreateCharacter>({
+    name: "Login.CreateCharacter",
+    requestCode: MsgCode.C2S_CreateCharacter,
+    responseCode: MsgCode.S2C_CreateCharacter,
+    requestCodec: C2S_CreateCharacterCodec,
+    responseCodec: S2C_CreateCharacterCodec,
   }),
 };
 
@@ -217,6 +239,8 @@ export const MapProtocol = {
 export const AllRpcDescriptors = [
   LoginMgrProtocol.GetLoginServiceAddr,
   LoginProtocol.Login,
+  LoginProtocol.Register,
+  LoginProtocol.CreateCharacter,
   GateProtocol.LoginGate,
   GateProtocol.EnterMap,
   GateProtocol.MapSnapshotReady,

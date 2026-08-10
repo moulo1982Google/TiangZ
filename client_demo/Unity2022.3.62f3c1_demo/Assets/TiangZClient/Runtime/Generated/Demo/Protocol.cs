@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "1d85b062963971ac66363b27f9fdc079e022d2d27f353842c03ec8e2a53948ad";
+    public const string Value = "83d62b117061c527e8991cc198e607b652185fcf636923fb8e537db827847e05";
 }
 
 public static class MsgCode
@@ -33,8 +33,10 @@ public static class MsgCode
     public const ushort C2M_ToggleAutoAttack = 10044;
     public const ushort C2M_ToggleDemoDoor = 10039;
     public const ushort C2M_UseItem = 10019;
+    public const ushort C2S_CreateCharacter = 10057;
     public const ushort C2S_GetLoginServiceAddr = 10002;
     public const ushort C2S_Login = 10004;
+    public const ushort C2S_Register = 10059;
     public const ushort G2C_AoiDelta = 10025;
     public const ushort G2C_AutoAttackState = 10046;
     public const ushort G2C_BuffAdded = 10026;
@@ -54,6 +56,7 @@ public static class MsgCode
     public const ushort G2C_MapSnapshotReady = 10030;
     public const ushort G2C_Ping = 10031;
     public const ushort G2C_QuestProgress = 10056;
+    public const ushort G2C_SessionReplaced = 10061;
     public const ushort G2C_SkillCastState = 10049;
     public const ushort G2C_SkillImpact = 10051;
     public const ushort G2C_SkillProjectile = 10050;
@@ -68,8 +71,10 @@ public static class MsgCode
     public const ushort M2C_ToggleAutoAttack = 10045;
     public const ushort M2C_ToggleDemoDoor = 10040;
     public const ushort M2C_UseItem = 10020;
+    public const ushort S2C_CreateCharacter = 10058;
     public const ushort S2C_GetLoginServiceAddr = 10003;
     public const ushort S2C_Login = 10005;
+    public const ushort S2C_Register = 10060;
 }
 
 public sealed class BuffDetailView
@@ -123,6 +128,7 @@ public sealed class C2G_LoginGate : IRpcRequest
 {
     public string? Account { get; set; }
     public string? Token { get; set; }
+    public ulong CharacterId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -140,6 +146,7 @@ public sealed class C2G_Ping : IRpcRequest
 public sealed class C2M_AcceptQuest : IRpcRequest
 {
     public uint QuestConfigId { get; set; }
+    public uint NpcUnitId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -159,6 +166,7 @@ public sealed class C2M_CastSkill : IRpcRequest
 public sealed class C2M_CompleteQuest : IRpcRequest
 {
     public uint QuestConfigId { get; set; }
+    public uint NpcUnitId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -224,14 +232,32 @@ public sealed class C2M_UseItem : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2S_CreateCharacter : IRpcRequest
+{
+    public string? Account { get; set; }
+    public string? Name { get; set; }
+    public uint PlayerConfigId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2S_GetLoginServiceAddr : IRpcRequest
 {
+    public string? Account { get; set; }
     public uint RpcId { get; set; }
 }
 
 public sealed class C2S_Login : IRpcRequest
 {
     public string? Account { get; set; }
+    public ulong CharacterId { get; set; }
+    public string? Password { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2S_Register : IRpcRequest
+{
+    public string? Account { get; set; }
+    public string? Password { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -247,6 +273,14 @@ public sealed class CellMovementState
     public uint MoveEndTick { get; set; }
     public bool Moving { get; set; }
     public uint Facing { get; set; }
+}
+
+public sealed class CharacterSummary
+{
+    public ulong CharacterId { get; set; }
+    public string? Name { get; set; }
+    public uint PlayerConfigId { get; set; }
+    public uint Level { get; set; }
 }
 
 public sealed class G2C_AoiDelta
@@ -353,6 +387,7 @@ public sealed class G2C_ItemChanged
 public sealed class G2C_LoginGate : IRpcResponse
 {
     public string? Account { get; set; }
+    public ulong CharacterId { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -387,6 +422,12 @@ public sealed class G2C_Ping : IRpcResponse
 public sealed class G2C_QuestProgress
 {
     public List<QuestSnapshot> Quests { get; set; } = new List<QuestSnapshot>();
+}
+
+public sealed class G2C_SessionReplaced
+{
+    public uint ReasonCode { get; set; }
+    public string? Reason { get; set; }
 }
 
 public sealed class G2C_SkillCastState
@@ -613,6 +654,15 @@ public sealed class QuestSnapshot
     public uint Status { get; set; }
 }
 
+public sealed class S2C_CreateCharacter : IRpcResponse
+{
+    public CharacterSummary? Character { get; set; }
+    public List<CharacterSummary> Characters { get; set; } = new List<CharacterSummary>();
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class S2C_GetLoginServiceAddr : IRpcResponse
 {
     public string? Name { get; set; }
@@ -632,6 +682,17 @@ public sealed class S2C_Login : IRpcResponse
     public string? GateName { get; set; }
     public string? GateIp { get; set; }
     public uint GatePort { get; set; }
+    public List<CharacterSummary> Characters { get; set; } = new List<CharacterSummary>();
+    public ulong SelectedCharacterId { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class S2C_Register : IRpcResponse
+{
+    public string? Account { get; set; }
+    public CharacterSummary? Character { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -924,6 +985,9 @@ public static class C2G_LoginGateCodec
                 case 2 when tag.WireType == 2:
                     value.Token = reader.ReadString();
                     break;
+                case 3 when tag.WireType == 0:
+                    value.CharacterId = reader.ReadUInt64();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -940,6 +1004,7 @@ public static class C2G_LoginGateCodec
         var writer = new BinaryWriter();
         if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
         if (!string.IsNullOrEmpty(value.Token)) writer.WriteString(2, value.Token);
+        if (value.CharacterId != 0) writer.WriteUInt64(3, value.CharacterId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -1023,6 +1088,9 @@ public static class C2M_AcceptQuestCodec
                 case 1 when tag.WireType == 0:
                     value.QuestConfigId = reader.ReadUInt32();
                     break;
+                case 2 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -1038,6 +1106,7 @@ public static class C2M_AcceptQuestCodec
     {
         var writer = new BinaryWriter();
         if (value.QuestConfigId != 0) writer.WriteUInt32(1, value.QuestConfigId);
+        if (value.NpcUnitId != 0) writer.WriteUInt32(2, value.NpcUnitId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -1129,6 +1198,9 @@ public static class C2M_CompleteQuestCodec
                 case 1 when tag.WireType == 0:
                     value.QuestConfigId = reader.ReadUInt32();
                     break;
+                case 2 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -1144,6 +1216,7 @@ public static class C2M_CompleteQuestCodec
     {
         var writer = new BinaryWriter();
         if (value.QuestConfigId != 0) writer.WriteUInt32(1, value.QuestConfigId);
+        if (value.NpcUnitId != 0) writer.WriteUInt32(2, value.NpcUnitId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -1477,17 +1550,26 @@ public static class C2M_UseItemCodec
     }
 }
 
-public static class C2S_GetLoginServiceAddrCodec
+public static class C2S_CreateCharacterCodec
 {
-    public static C2S_GetLoginServiceAddr Decode(byte[] payload)
+    public static C2S_CreateCharacter Decode(byte[] payload)
     {
         var reader = new BinaryReader(payload);
-        var value = new C2S_GetLoginServiceAddr();
+        var value = new C2S_CreateCharacter();
         while (!reader.EndOfMessage)
         {
             var tag = reader.ReadTag();
             switch (tag.FieldNumber)
             {
+                case 1 when tag.WireType == 2:
+                    value.Account = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Name = reader.ReadString();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.PlayerConfigId = reader.ReadUInt32();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -1499,20 +1581,23 @@ public static class C2S_GetLoginServiceAddrCodec
         return value;
     }
 
-    public static byte[] Encode(C2S_GetLoginServiceAddr value)
+    public static byte[] Encode(C2S_CreateCharacter value)
     {
         var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
+        if (!string.IsNullOrEmpty(value.Name)) writer.WriteString(2, value.Name);
+        if (value.PlayerConfigId != 0) writer.WriteUInt32(3, value.PlayerConfigId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
 }
 
-public static class C2S_LoginCodec
+public static class C2S_GetLoginServiceAddrCodec
 {
-    public static C2S_Login Decode(byte[] payload)
+    public static C2S_GetLoginServiceAddr Decode(byte[] payload)
     {
         var reader = new BinaryReader(payload);
-        var value = new C2S_Login();
+        var value = new C2S_GetLoginServiceAddr();
         while (!reader.EndOfMessage)
         {
             var tag = reader.ReadTag();
@@ -1532,10 +1617,90 @@ public static class C2S_LoginCodec
         return value;
     }
 
+    public static byte[] Encode(C2S_GetLoginServiceAddr value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2S_LoginCodec
+{
+    public static C2S_Login Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2S_Login();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Account = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.CharacterId = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.Password = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
     public static byte[] Encode(C2S_Login value)
     {
         var writer = new BinaryWriter();
         if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
+        if (value.CharacterId != 0) writer.WriteUInt64(2, value.CharacterId);
+        if (!string.IsNullOrEmpty(value.Password)) writer.WriteString(3, value.Password);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2S_RegisterCodec
+{
+    public static C2S_Register Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2S_Register();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Account = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Password = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2S_Register value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
+        if (!string.IsNullOrEmpty(value.Password)) writer.WriteString(2, value.Password);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -1603,6 +1768,48 @@ public static class CellMovementStateCodec
         if (value.MoveEndTick != 0) writer.WriteUInt32(8, value.MoveEndTick);
         if (value.Moving) writer.WriteBool(9, value.Moving);
         if (value.Facing != 0) writer.WriteUInt32(10, value.Facing);
+        return writer.ToArray();
+    }
+}
+
+public static class CharacterSummaryCodec
+{
+    public static CharacterSummary Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new CharacterSummary();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.CharacterId = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Name = reader.ReadString();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.PlayerConfigId = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.Level = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(CharacterSummary value)
+    {
+        var writer = new BinaryWriter();
+        if (value.CharacterId != 0) writer.WriteUInt64(1, value.CharacterId);
+        if (!string.IsNullOrEmpty(value.Name)) writer.WriteString(2, value.Name);
+        if (value.PlayerConfigId != 0) writer.WriteUInt32(3, value.PlayerConfigId);
+        if (value.Level != 0) writer.WriteUInt32(4, value.Level);
         return writer.ToArray();
     }
 }
@@ -2198,6 +2405,9 @@ public static class G2C_LoginGateCodec
                 case 1 when tag.WireType == 2:
                     value.Account = reader.ReadString();
                     break;
+                case 2 when tag.WireType == 0:
+                    value.CharacterId = reader.ReadUInt64();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2219,6 +2429,7 @@ public static class G2C_LoginGateCodec
     {
         var writer = new BinaryWriter();
         if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
+        if (value.CharacterId != 0) writer.WriteUInt64(2, value.CharacterId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -2389,6 +2600,40 @@ public static class G2C_QuestProgressCodec
         {
             writer.WriteMessage(1, item == null ? null : QuestSnapshotCodec.Encode(item));
         }
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_SessionReplacedCodec
+{
+    public static G2C_SessionReplaced Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_SessionReplaced();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.ReasonCode = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Reason = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_SessionReplaced value)
+    {
+        var writer = new BinaryWriter();
+        if (value.ReasonCode != 0) writer.WriteUInt32(1, value.ReasonCode);
+        if (!string.IsNullOrEmpty(value.Reason)) writer.WriteString(2, value.Reason);
         return writer.ToArray();
     }
 }
@@ -3520,6 +3765,55 @@ public static class QuestSnapshotCodec
     }
 }
 
+public static class S2C_CreateCharacterCodec
+{
+    public static S2C_CreateCharacter Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new S2C_CreateCharacter();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Character = CharacterSummaryCodec.Decode(reader.ReadBytes());
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Characters.Add(CharacterSummaryCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(S2C_CreateCharacter value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Character != null) writer.WriteMessage(1, CharacterSummaryCodec.Encode(value.Character));
+        foreach (var item in value.Characters)
+        {
+            writer.WriteMessage(2, item == null ? null : CharacterSummaryCodec.Encode(item));
+        }
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class S2C_GetLoginServiceAddrCodec
 {
     public static S2C_GetLoginServiceAddr Decode(byte[] payload)
@@ -3602,6 +3896,12 @@ public static class S2C_LoginCodec
                 case 7 when tag.WireType == 0:
                     value.GatePort = reader.ReadUInt32();
                     break;
+                case 8 when tag.WireType == 2:
+                    value.Characters.Add(CharacterSummaryCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 9 when tag.WireType == 0:
+                    value.SelectedCharacterId = reader.ReadUInt64();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -3629,6 +3929,57 @@ public static class S2C_LoginCodec
         if (!string.IsNullOrEmpty(value.GateName)) writer.WriteString(5, value.GateName);
         if (!string.IsNullOrEmpty(value.GateIp)) writer.WriteString(6, value.GateIp);
         if (value.GatePort != 0) writer.WriteUInt32(7, value.GatePort);
+        foreach (var item in value.Characters)
+        {
+            writer.WriteMessage(8, item == null ? null : CharacterSummaryCodec.Encode(item));
+        }
+        if (value.SelectedCharacterId != 0) writer.WriteUInt64(9, value.SelectedCharacterId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class S2C_RegisterCodec
+{
+    public static S2C_Register Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new S2C_Register();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Account = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Character = CharacterSummaryCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(S2C_Register value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.Account)) writer.WriteString(1, value.Account);
+        if (value.Character != null) writer.WriteMessage(2, CharacterSummaryCodec.Encode(value.Character));
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -3897,20 +4248,30 @@ public static class MapProtocol
         static response => response.RpcId, static response => response.Error, static response => response.Message);
 }
 
+public static class LoginProtocol
+{
+    public static readonly RpcDescriptor<C2S_CreateCharacter, S2C_CreateCharacter> CreateCharacter = new(
+        "Login.CreateCharacter", MsgCode.C2S_CreateCharacter, MsgCode.S2C_CreateCharacter,
+        C2S_CreateCharacterCodec.Encode, S2C_CreateCharacterCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2S_Login, S2C_Login> Login = new(
+        "Login.Login", MsgCode.C2S_Login, MsgCode.S2C_Login,
+        C2S_LoginCodec.Encode, S2C_LoginCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2S_Register, S2C_Register> Register = new(
+        "Login.Register", MsgCode.C2S_Register, MsgCode.S2C_Register,
+        C2S_RegisterCodec.Encode, S2C_RegisterCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+}
+
 public static class LoginMgrProtocol
 {
     public static readonly RpcDescriptor<C2S_GetLoginServiceAddr, S2C_GetLoginServiceAddr> GetLoginServiceAddr = new(
         "LoginMgr.GetLoginServiceAddr", MsgCode.C2S_GetLoginServiceAddr, MsgCode.S2C_GetLoginServiceAddr,
         C2S_GetLoginServiceAddrCodec.Encode, S2C_GetLoginServiceAddrCodec.Decode,
-        static (request, rpcId) => request.RpcId = rpcId,
-        static response => response.RpcId, static response => response.Error, static response => response.Message);
-}
-
-public static class LoginProtocol
-{
-    public static readonly RpcDescriptor<C2S_Login, S2C_Login> Login = new(
-        "Login.Login", MsgCode.C2S_Login, MsgCode.S2C_Login,
-        C2S_LoginCodec.Encode, S2C_LoginCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
 }
@@ -3947,6 +4308,8 @@ public static class ClientMessages
         "Client.MapReady", MsgCode.G2C_MapReady, G2C_MapReadyCodec.Encode, G2C_MapReadyCodec.Decode);
     public static readonly MessageDescriptor<G2C_QuestProgress> QuestProgress = new(
         "Client.QuestProgress", MsgCode.G2C_QuestProgress, G2C_QuestProgressCodec.Encode, G2C_QuestProgressCodec.Decode);
+    public static readonly MessageDescriptor<G2C_SessionReplaced> SessionReplaced = new(
+        "Client.SessionReplaced", MsgCode.G2C_SessionReplaced, G2C_SessionReplacedCodec.Encode, G2C_SessionReplacedCodec.Decode);
     public static readonly MessageDescriptor<G2C_SkillCastState> SkillCastState = new(
         "Client.SkillCastState", MsgCode.G2C_SkillCastState, G2C_SkillCastStateCodec.Encode, G2C_SkillCastStateCodec.Decode);
     public static readonly MessageDescriptor<G2C_SkillImpact> SkillImpact = new(
@@ -4007,6 +4370,19 @@ public sealed class MapClient
         socket.SendAsync(MapMessages.Move, message, cancellationToken);
 }
 
+public sealed class LoginClient
+{
+    private readonly RpcSocket socket;
+    public LoginClient(RpcSocket socket) => this.socket = socket;
+
+    public Task<S2C_CreateCharacter> CreateCharacterAsync(C2S_CreateCharacter request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(LoginProtocol.CreateCharacter, request, cancellationToken);
+    public Task<S2C_Login> LoginAsync(C2S_Login request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(LoginProtocol.Login, request, cancellationToken);
+    public Task<S2C_Register> RegisterAsync(C2S_Register request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(LoginProtocol.Register, request, cancellationToken);
+}
+
 public sealed class LoginMgrClient
 {
     private readonly RpcSocket socket;
@@ -4014,15 +4390,6 @@ public sealed class LoginMgrClient
 
     public Task<S2C_GetLoginServiceAddr> GetLoginServiceAddrAsync(C2S_GetLoginServiceAddr request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(LoginMgrProtocol.GetLoginServiceAddr, request, cancellationToken);
-}
-
-public sealed class LoginClient
-{
-    private readonly RpcSocket socket;
-    public LoginClient(RpcSocket socket) => this.socket = socket;
-
-    public Task<S2C_Login> LoginAsync(C2S_Login request, CancellationToken cancellationToken = default) =>
-        socket.CallAsync(LoginProtocol.Login, request, cancellationToken);
 }
 
 // C2M_Move is a one-way actor message, not an RPC.

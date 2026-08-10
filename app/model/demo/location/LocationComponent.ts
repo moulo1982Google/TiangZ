@@ -34,6 +34,7 @@ import { MapInstanceDirectoryComponent } from "./MapInstanceDirectoryComponent";
 
 interface PlayerLocationValue {
   readonly account: string;
+  readonly characterId: bigint;
   readonly gateName: string;
   readonly mapHostName: string;
   readonly mapId: number;
@@ -51,8 +52,9 @@ interface PlayerLocationValue {
  */
 export class LocationComponent extends Component {
   private readonly directory = new LocationDirectory<number, PlayerLocationValue>();
-  private readonly unitIdByAccount = new Map<string, number>();
-  private readonly reservedUnitIdByAccount = new Map<string, number>();
+  private readonly unitIdByCharacterId = new Map<bigint, number>();
+  private readonly reservedUnitIdByCharacterId = new Map<bigint, number>();
+  private readonly unitIdsByAccount = new Map<string, Set<number>>();
   private nextUnitId = 1000;
   private conflicts = 0;
   private resolves = 0;
@@ -64,28 +66,31 @@ export class LocationComponent extends Component {
     this.mapInstances = mapInstances;
   }
 
-  /** Demo无账号数据库时集中分配稳定UnitId；正式数据库接入后该入口由持久化ID替代。 / Centrally allocates Demo UnitIds until the account database becomes the persistent ID authority. */
+  /** Demo无账号数据库时集中分配运行时UnitId；分配键是稳定characterId。 / Allocates runtime UnitIds centrally while using stable characterId as the allocation key. */
   AllocateUnitId(request: S2L_AllocatePlayerUnitId): L2S_AllocatePlayerUnitId {
     if (!request.account) this.fail("account is required for UnitId allocation");
-    const existing = this.unitIdByAccount.get(request.account) ??
-      this.reservedUnitIdByAccount.get(request.account);
-    if (existing !== undefined) return response(request.rpcId, { unitId: existing });
+    if (request.characterId <= 0n) this.fail("characterId is required for UnitId allocation");
+    const existing = this.unitIdByCharacterId.get(request.characterId) ??
+      this.reservedUnitIdByCharacterId.get(request.characterId);
+    if (existing !== undefined) {
+      return response(request.rpcId, { unitId: existing, characterId: request.characterId });
+    }
     while (this.directory.Resolve(this.nextUnitId)) this.nextUnitId += 1;
     const unitId = this.nextUnitId++;
-    this.reservedUnitIdByAccount.set(request.account, unitId);
-    return response(request.rpcId, { unitId });
+    this.reservedUnitIdByCharacterId.set(request.characterId, unitId);
+    return response(request.rpcId, { unitId, characterId: request.characterId });
   }
 
   /** 发布完整创建后的Unit；相同Unit和地址的网络重试是幂等的。 / Publishes a fully created Unit; network retries with the same Unit and route are idempotent. */
   Register(request: S2L_RegisterPlayerLocation): L2S_RegisterPlayerLocation {
     validateRoute(request);
-    const byAccount = this.unitIdByAccount.get(request.account);
-    if (byAccount !== undefined && byAccount !== request.unitId) {
-      this.fail(`account ${request.account} already belongs to unit ${byAccount}`);
+    const byCharacter = this.unitIdByCharacterId.get(request.characterId);
+    if (byCharacter !== undefined && byCharacter !== request.unitId) {
+      this.fail(`character ${request.characterId} already belongs to unit ${byCharacter}`);
     }
-    const reserved = this.reservedUnitIdByAccount.get(request.account);
+    const reserved = this.reservedUnitIdByCharacterId.get(request.characterId);
     if (reserved !== undefined && reserved !== request.unitId) {
-      this.fail(`account ${request.account} reserved unit ${reserved}`);
+      this.fail(`character ${request.characterId} reserved unit ${reserved}`);
     }
     const existing = this.directory.Resolve(request.unitId);
     const value = valueOf(request);
@@ -99,8 +104,9 @@ export class LocationComponent extends Component {
       });
     }
     const created = this.directory.Register(request.unitId, value);
-    this.unitIdByAccount.set(request.account, request.unitId);
-    this.reservedUnitIdByAccount.delete(request.account);
+    this.unitIdByCharacterId.set(request.characterId, request.unitId);
+    this.reservedUnitIdByCharacterId.delete(request.characterId);
+    this.addAccountIndex(request.account, request.unitId);
     this.mutations += 1;
     return response(request.rpcId, {
       location: this.toSnapshot(created),
@@ -112,13 +118,21 @@ export class LocationComponent extends Component {
   Resolve(request: S2L_ResolvePlayerLocation): L2S_ResolvePlayerLocation {
     this.resolves += 1;
     let unitId = request.unitId || undefined;
-    const accountUnitId = request.account
-      ? this.unitIdByAccount.get(request.account)
+    const characterUnitId = request.characterId > 0n
+      ? this.unitIdByCharacterId.get(request.characterId)
       : undefined;
-    if (unitId !== undefined && accountUnitId !== undefined && unitId !== accountUnitId) {
+    const accountUnitIds = request.account ? this.unitIdsByAccount.get(request.account) : undefined;
+    const accountUnitId = accountUnitIds?.size === 1 ? [...accountUnitIds][0] : undefined;
+    if (request.account && accountUnitIds && accountUnitIds.size > 1 && request.characterId <= 0n && unitId === undefined) {
+      this.fail(`account ${request.account} has multiple characters; characterId is required`);
+    }
+    if (unitId !== undefined && characterUnitId !== undefined && unitId !== characterUnitId) {
       this.fail("location unit/account identity mismatch");
     }
-    unitId ??= accountUnitId;
+    if (unitId !== undefined && accountUnitId !== undefined && request.characterId <= 0n && unitId !== accountUnitId) {
+      this.fail("location unit/account identity mismatch");
+    }
+    unitId ??= characterUnitId ?? accountUnitId;
     const record = unitId === undefined ? undefined : this.directory.Resolve(unitId);
     return response(request.rpcId, {
       found: record !== undefined,
@@ -172,6 +186,7 @@ export class LocationComponent extends Component {
       mapId: request.mapId,
       mapInstanceId: request.mapInstanceId,
       actorInstanceId: request.actorInstanceId,
+      characterId: request.characterId,
     };
     try {
       const committed = this.directory.Commit(request.unitId, request.operationId, value);
@@ -197,9 +212,8 @@ export class LocationComponent extends Component {
   Remove(request: S2L_RemovePlayerLocation): L2S_RemovePlayerLocation {
     try {
       const removed = this.directory.Remove(request.unitId, request.operationId);
-      if (this.unitIdByAccount.get(removed.value.account) === request.unitId) {
-        this.unitIdByAccount.delete(removed.value.account);
-      }
+      this.unitIdByCharacterId.delete(removed.value.characterId);
+      this.removeAccountIndex(removed.value.account, request.unitId);
       this.mutations += 1;
       return response(request.rpcId, { removed: true });
     } catch (error) {
@@ -220,7 +234,7 @@ export class LocationComponent extends Component {
 
     const pending: PlayerLocationRecovery[] = [];
     const unitIds = new Set<number>();
-    const accounts = new Set<string>();
+    const characterIds = new Set<bigint>();
     let unchanged = 0;
 
     // 先完整校验，再写入，避免一个坏条目造成半批恢复。
@@ -234,13 +248,13 @@ export class LocationComponent extends Component {
       if (!unitIds.add(location.unitId)) {
         this.fail(`duplicate recovery unit: ${location.unitId}`);
       }
-      if (!accounts.add(location.account)) {
-        this.fail(`duplicate recovery account: ${location.account}`);
+      if (!characterIds.add(location.characterId)) {
+        this.fail(`duplicate recovery character: ${location.characterId}`);
       }
 
-      const accountUnitId = this.unitIdByAccount.get(location.account);
-      if (accountUnitId !== undefined && accountUnitId !== location.unitId) {
-        this.fail(`account ${location.account} already belongs to unit ${accountUnitId}`);
+      const characterUnitId = this.unitIdByCharacterId.get(location.characterId);
+      if (characterUnitId !== undefined && characterUnitId !== location.unitId) {
+        this.fail(`character ${location.characterId} already belongs to unit ${characterUnitId}`);
       }
       const existing = this.directory.Resolve(location.unitId);
       const value = valueOf(location);
@@ -255,8 +269,9 @@ export class LocationComponent extends Component {
 
     for (const location of pending) {
       this.directory.Register(location.unitId, valueOf(location));
-      this.unitIdByAccount.set(location.account, location.unitId);
-      this.reservedUnitIdByAccount.delete(location.account);
+      this.unitIdByCharacterId.set(location.characterId, location.unitId);
+      this.reservedUnitIdByCharacterId.delete(location.characterId);
+      this.addAccountIndex(location.account, location.unitId);
     }
     this.mutations += pending.length;
     return response(request.rpcId, {
@@ -292,8 +307,9 @@ export class LocationComponent extends Component {
   }
 
   protected override OnDestroy(): void {
-    this.unitIdByAccount.clear();
-    this.reservedUnitIdByAccount.clear();
+    this.unitIdByCharacterId.clear();
+    this.reservedUnitIdByCharacterId.clear();
+    this.unitIdsByAccount.clear();
   }
 
   private require(unitId: number): LocationRecord<number, PlayerLocationValue> {
@@ -314,6 +330,22 @@ export class LocationComponent extends Component {
     throw new RpcError(SystemErrCode.LocationConflict, message);
   }
 
+  private addAccountIndex(account: string, unitId: number): void {
+    let unitIds = this.unitIdsByAccount.get(account);
+    if (!unitIds) {
+      unitIds = new Set<number>();
+      this.unitIdsByAccount.set(account, unitIds);
+    }
+    unitIds.add(unitId);
+  }
+
+  private removeAccountIndex(account: string, unitId: number): void {
+    const unitIds = this.unitIdsByAccount.get(account);
+    if (!unitIds) return;
+    unitIds.delete(unitId);
+    if (unitIds.size === 0) this.unitIdsByAccount.delete(account);
+  }
+
   private rethrow(error: unknown): never {
     if (error instanceof RpcError) throw error;
     this.fail(error instanceof Error ? error.message : String(error));
@@ -323,6 +355,7 @@ export class LocationComponent extends Component {
 function valueOf(request: S2L_RegisterPlayerLocation | PlayerLocationRecovery): PlayerLocationValue {
   return {
     account: request.account,
+    characterId: request.characterId,
     gateName: request.gateName,
     mapHostName: request.mapHostName,
     mapId: request.mapId,
@@ -338,6 +371,7 @@ function toSnapshot(
   return {
     unitId: record.key,
     account: record.value.account,
+    characterId: record.value.characterId,
     gateName: record.value.gateName,
     mapHostName: record.value.mapHostName,
     mapId: record.value.mapId,
@@ -350,7 +384,8 @@ function toSnapshot(
 }
 
 function sameValue(left: PlayerLocationValue, right: PlayerLocationValue): boolean {
-  return left.account === right.account &&
+    return left.account === right.account &&
+    left.characterId === right.characterId &&
     left.gateName === right.gateName &&
     left.mapHostName === right.mapHostName &&
     left.mapId === right.mapId &&
@@ -362,6 +397,7 @@ function emptySnapshot(): PlayerLocationSnapshot {
   return {
     unitId: 0,
     account: "",
+    characterId: 0n,
     gateName: "",
     mapHostName: "",
     mapId: 0,
@@ -384,8 +420,9 @@ function validateRoute(request: {
   mapId: number;
   mapInstanceId: bigint;
   actorInstanceId: number;
+  characterId: bigint;
 }): void {
-  if (request.unitId <= 0 || request.mapId <= 0 || request.mapInstanceId <= 0n || request.actorInstanceId <= 0) {
+  if (request.unitId <= 0 || request.characterId <= 0n || request.mapId <= 0 || request.mapInstanceId <= 0n || request.actorInstanceId <= 0) {
     throw new RpcError(SystemErrCode.LocationConflict, "location route contains invalid IDs");
   }
   if (!request.gateName || !request.mapHostName) {

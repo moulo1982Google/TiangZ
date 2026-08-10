@@ -645,6 +645,7 @@ struct G2C_MapCapacityEnter {
   std::uint32_t unitId = 0;
   std::int32_t cellX = 0;
   std::int32_t cellZ = 0;
+  std::uint64_t starterItemId = 0;
 };
 
 struct G2C_MapCapacityEnterCodec {
@@ -696,6 +697,13 @@ struct G2C_MapCapacityEnterCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.starterItemId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -712,6 +720,7 @@ struct G2C_MapCapacityEnterCodec {
     writer.UInt32(1, value.unitId);
     writer.SInt32(2, value.cellX);
     writer.SInt32(3, value.cellZ);
+    writer.UInt64(4, value.starterItemId);
     return writer.Finish();
   }
 };

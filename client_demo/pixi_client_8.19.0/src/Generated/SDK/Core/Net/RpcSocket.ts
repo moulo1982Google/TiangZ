@@ -312,8 +312,9 @@ export class RpcSocket {
   private handleClosed(cause: unknown): void {
     if (this.stateValue === "closed") return;
     this.setState("closed");
-    this.inbound.length = 0;
-    this.inboundHead = 0;
+    // 连接关闭不等于丢弃已经收到的单向消息；例如顶号通知会先入队、随后才收到 onclose。
+    // A closed transport must not discard already-received one-way messages;
+    // takeover notices can be queued before the following onclose event.
     this.rejectAll(this.closedError(cause));
   }
 

@@ -37,6 +37,8 @@ export class PlayerUnitSystem extends PlayerUnit {
   /** 初始化稳定身份；组件组合仍由 MapComponent 工厂负责。 / Initializes stable identity while MapComponent remains responsible for Component composition. */
   protected override Awake(request: AwakePlayerUnit): void {
     this.account = request.account;
+    if (request.characterId <= 0n) throw new Error("player characterId must be positive");
+    this.characterId = request.characterId;
     this.mapId = request.mapId;
     this.mapInstanceId = request.mapInstanceId;
   }
@@ -64,6 +66,7 @@ export class PlayerUnitSystem extends PlayerUnit {
     const native = this.GetComponent(NativeUnitRef);
     return {
       account: this.account,
+      characterId: this.characterId,
       mapId: this.mapId,
       mapInstanceId: this.mapInstanceId,
       unitId: this.UnitId,

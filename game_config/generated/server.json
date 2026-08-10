@@ -6,6 +6,13 @@
       "grid_size_cells": 15,
       "enter_range_grids": 3,
       "detach_range_grids": 5
+    },
+    {
+      "id": 2,
+      "name": "3D Demo宽视野AOI",
+      "grid_size_cells": 15,
+      "enter_range_grids": 7,
+      "detach_range_grids": 9
     }
   ],
   "game_tbaoisynctierconfig": [
@@ -19,6 +26,18 @@
       "id": 2,
       "aoi_config_id": 1,
       "range_grids": 5,
+      "sync_hz": 5
+    },
+    {
+      "id": 3,
+      "aoi_config_id": 2,
+      "range_grids": 7,
+      "sync_hz": 20
+    },
+    {
+      "id": 4,
+      "aoi_config_id": 2,
+      "range_grids": 9,
       "sync_hz": 5
     }
   ],
@@ -318,11 +337,11 @@
       "width_cells": 60,
       "depth_cells": 60,
       "cell_size_meters": 1,
-      "spawn_x": -12,
+      "spawn_x": -3,
       "spawn_y": 1,
-      "spawn_z": -12,
+      "spawn_z": -18,
       "spawn_yaw": 0,
-      "aoi_config_id": 1,
+      "aoi_config_id": 2,
       "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
       "navigation_version": "demo-3d-v2",
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
@@ -365,19 +384,49 @@
       "id": 10004,
       "map_config_id": 100,
       "monster_config_id": 1,
-      "spawn_x": -7,
+      "spawn_x": -18,
       "spawn_y": 0,
-      "spawn_z": -12,
+      "spawn_z": 18,
       "spawn_yaw": 0,
       "initial_spawn": true
     },
     {
       "id": 10005,
       "map_config_id": 100,
-      "monster_config_id": 2,
-      "spawn_x": -12,
+      "monster_config_id": 1,
+      "spawn_x": 18,
       "spawn_y": 0,
-      "spawn_z": -7,
+      "spawn_z": 18,
+      "spawn_yaw": 0,
+      "initial_spawn": true
+    },
+    {
+      "id": 10006,
+      "map_config_id": 100,
+      "monster_config_id": 2,
+      "spawn_x": -18,
+      "spawn_y": 0,
+      "spawn_z": -18,
+      "spawn_yaw": 0,
+      "initial_spawn": true
+    },
+    {
+      "id": 10007,
+      "map_config_id": 100,
+      "monster_config_id": 2,
+      "spawn_x": 18,
+      "spawn_y": 0,
+      "spawn_z": -18,
+      "spawn_yaw": 0,
+      "initial_spawn": true
+    },
+    {
+      "id": 10008,
+      "map_config_id": 100,
+      "monster_config_id": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 18,
       "spawn_yaw": 0,
       "initial_spawn": true
     }
@@ -438,7 +487,7 @@
         1001,
         2
       ],
-      "auto_accept": true,
+      "auto_accept": false,
       "required_quest_ids": [],
       "minimum_level": 1
     },
@@ -453,7 +502,7 @@
         1002,
         1
       ],
-      "auto_accept": true,
+      "auto_accept": false,
       "required_quest_ids": [],
       "minimum_level": 1
     },
@@ -468,7 +517,7 @@
         1001,
         3
       ],
-      "auto_accept": true,
+      "auto_accept": false,
       "required_quest_ids": [],
       "minimum_level": 1
     },
@@ -488,6 +537,23 @@
         5001
       ],
       "minimum_level": 2
+    },
+    {
+      "id": 5005,
+      "name": "清理怪B",
+      "objective_ids": [
+        5105
+      ],
+      "reward_action_type": 7,
+      "reward_action_params": [
+        1002,
+        1
+      ],
+      "auto_accept": false,
+      "required_quest_ids": [
+        5001
+      ],
+      "minimum_level": 1
     }
   ],
   "game_tbquestobjectiveconfig": [
@@ -496,7 +562,7 @@
       "quest_config_id": 5001,
       "objective_type": 1,
       "target_config_id": 1,
-      "required_count": 1
+      "required_count": 5
     },
     {
       "id": 5102,
@@ -518,6 +584,13 @@
       "objective_type": 2,
       "target_config_id": 1002,
       "required_count": 1
+    },
+    {
+      "id": 5105,
+      "quest_config_id": 5005,
+      "objective_type": 1,
+      "target_config_id": 2,
+      "required_count": 5
     }
   ],
   "game_tbskillconfig": [

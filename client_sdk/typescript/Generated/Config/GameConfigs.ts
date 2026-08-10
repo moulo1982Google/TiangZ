@@ -9,6 +9,13 @@ const RAW_DATA: Record<string, unknown> = {
       "grid_size_cells": 15,
       "enter_range_grids": 3,
       "detach_range_grids": 5
+    },
+    {
+      "id": 2,
+      "name": "3D Demo宽视野AOI",
+      "grid_size_cells": 15,
+      "enter_range_grids": 7,
+      "detach_range_grids": 9
     }
   ],
   "game_tbaoisynctierconfig": [
@@ -22,6 +29,18 @@ const RAW_DATA: Record<string, unknown> = {
       "id": 2,
       "aoi_config_id": 1,
       "range_grids": 5,
+      "sync_hz": 5
+    },
+    {
+      "id": 3,
+      "aoi_config_id": 2,
+      "range_grids": 7,
+      "sync_hz": 20
+    },
+    {
+      "id": 4,
+      "aoi_config_id": 2,
+      "range_grids": 9,
       "sync_hz": 5
     }
   ],
@@ -219,11 +238,11 @@ const RAW_DATA: Record<string, unknown> = {
       "width_cells": 60,
       "depth_cells": 60,
       "cell_size_meters": 1,
-      "spawn_x": -12,
+      "spawn_x": -3,
       "spawn_y": 1,
-      "spawn_z": -12,
+      "spawn_z": -18,
       "spawn_yaw": 0,
-      "aoi_config_id": 1,
+      "aoi_config_id": 2,
       "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
       "navigation_version": "demo-3d-v2",
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421"
@@ -259,7 +278,7 @@ const RAW_DATA: Record<string, unknown> = {
     {
       "id": 5001,
       "name": "清理怪物",
-      "description": "击败1只怪A。",
+      "description": "击败5只怪A。",
       "objective_ids": [
         5101
       ]
@@ -287,14 +306,22 @@ const RAW_DATA: Record<string, unknown> = {
       "objective_ids": [
         5104
       ]
+    },
+    {
+      "id": 5005,
+      "name": "清理怪B",
+      "description": "击败5只怪B。",
+      "objective_ids": [
+        5105
+      ]
     }
   ],
   "game_tbquestobjectiveconfig": [
     {
       "id": 5101,
       "quest_config_id": 5001,
-      "required_count": 1,
-      "description": "击败怪A"
+      "required_count": 5,
+      "description": "击败5只怪A"
     },
     {
       "id": 5102,
@@ -313,6 +340,12 @@ const RAW_DATA: Record<string, unknown> = {
       "quest_config_id": 5004,
       "required_count": 1,
       "description": "使用1次大型生命药水"
+    },
+    {
+      "id": 5105,
+      "quest_config_id": 5005,
+      "required_count": 5,
+      "description": "击败5只怪B"
     }
   ],
   "game_tbskillconfig": [
@@ -433,7 +466,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "755b6d054e5dbdfc3d25c087dac75bb3ad1efc14b6e0b07c5305367df633d4aa";
+export const GameConfigFingerprint = "094a120296c85211557e9757555797bed3ee66890132c7cfdc6dd9ed6898ceb0";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

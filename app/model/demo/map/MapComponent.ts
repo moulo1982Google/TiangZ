@@ -47,6 +47,7 @@ import { MapClientRouteResolver } from "../broadcast/MapClientRouteResolver";
 import type { PlayerDirectoryComponent } from "../mapHost/PlayerDirectoryComponent";
 import { PlayerUnit, type PlayerSnapshot } from "./PlayerUnit";
 import { MonsterUnit, type MonsterSnapshot } from "../monster/MonsterUnit";
+import { NpcUnit } from "../npc/NpcUnit";
 import { MapScene } from "./MapScene";
 import { PositionComponent } from "./PositionComponent";
 import { UnitGateComponent } from "./UnitGateComponent";
@@ -499,12 +500,13 @@ export class MapComponent extends Component<[
    */
   async TransferToMap(unit: PlayerUnit, targetMapInstanceId: bigint): Promise<M2G_TransferPlayer> {
     this.requirePlayer(unit);
-    const located = await this.location.Resolve({ unitId: unit.UnitId, account: unit.Account });
+    const located = await this.location.Resolve({ unitId: unit.UnitId, account: "", characterId: unit.CharacterId });
     if (!located.found || located.location.actorInstanceId !== unit.InstanceId) {
       throw new Error(`cannot transfer non-authoritative unit ${unit.UnitId}@${unit.InstanceId}`);
     }
     return this.transferCoordinator.TransferPlayer(unit, {
       account: unit.Account,
+      characterId: unit.CharacterId,
       gateName: unit.GetComponent(UnitGateComponent).gateName,
       targetMapInstanceId,
       expectedLocationRevision: located.location.revision,
@@ -663,6 +665,7 @@ export class MapComponent extends Component<[
       snapshot.unitId,
       {
         account: snapshot.account,
+        characterId: snapshot.characterId,
         token: "cross-process-transfer",
         gateName: snapshot.gateName,
         mapInstanceId: snapshot.targetMapInstanceId,
@@ -680,7 +683,7 @@ export class MapComponent extends Component<[
   /** 销毁提交前失败的候选Unit；不得用于已经发布到目录的玩家。 / Disposes a candidate Unit after a pre-commit failure; never use it for a player already published in the directory. */
   DiscardPreparedPlayer(unit: PlayerUnit): void {
     this.requirePlayer(unit);
-    if (this.players.Get(unit.Account) === unit) {
+    if (this.players.Get(unit.CharacterId) === unit) {
       throw new Error(`cannot discard published player: ${unit.Account}`);
     }
     this.units.Remove(unit.UnitId);
@@ -709,14 +712,15 @@ export class MapComponent extends Component<[
     loaded?: PlayerLoadResult,
   ): PlayerUnit {
     if (transfer && loaded) throw new Error("player creation cannot combine transfer and persistence restore");
-    if (loaded && loaded.data.player.account !== request.account) {
+    if (loaded && (loaded.data.player.account !== request.account || loaded.data.player.characterId !== request.characterId)) {
       throw new Error(
-        `loaded player account mismatch: ${loaded.data.player.account} != ${request.account}`,
+        `loaded player identity mismatch: ${loaded.data.player.account}/${loaded.data.player.characterId} != ${request.account}/${request.characterId}`,
       );
     }
     const playerConfig = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID);
     const player = this.units.Create(unitId, PlayerUnit, {
       account: request.account,
+      characterId: request.characterId,
       mapId: this.mapId,
       mapInstanceId: this.mapInstanceId,
     });
@@ -773,6 +777,7 @@ export class MapComponent extends Component<[
       player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
       if (loaded) this.RestorePersistedPlayer(player, position, loaded);
+      if (transfer) player.GetComponent(PlayerPersistenceComponent).AdoptTransfer();
       return player;
     } catch (error) {
       this.units.Remove(unitId);
@@ -1199,6 +1204,7 @@ export class MapComponent extends Component<[
     if (
       unit.UnitId !== message.unitId ||
       unit.Account !== message.account ||
+      unit.CharacterId !== message.characterId ||
       unit.MapId !== message.mapId ||
       !unit.MatchesGate({ gateName: message.gateName })
     ) {
@@ -1211,6 +1217,7 @@ export class MapComponent extends Component<[
       error: 0,
       message: "",
       account: snapshot.account,
+      characterId: snapshot.characterId,
       mapId: snapshot.mapId,
       unitId: snapshot.unitId,
       x: snapshot.x,
@@ -1243,6 +1250,7 @@ export class MapComponent extends Component<[
     if (
       unit.UnitId !== message.unitId ||
       unit.Account !== message.account ||
+      unit.CharacterId !== message.characterId ||
       unit.MapId !== message.mapId ||
       !unit.MatchesGate({ gateName: message.gateName })
     ) {
@@ -1444,7 +1452,7 @@ export class MapComponent extends Component<[
     reason: string,
   ): Promise<void> {
     this.requirePlayer(unit);
-    const located = await this.location.Resolve({ unitId: unit.UnitId, account: "" });
+    const located = await this.location.Resolve({ unitId: unit.UnitId, account: "", characterId: unit.CharacterId });
     if (!located.found || located.location.actorInstanceId !== unit.InstanceId) {
       throw new Error(`cannot offline non-authoritative unit ${unit.UnitId}@${unit.InstanceId}`);
     }
@@ -1898,7 +1906,7 @@ function fromProtocolQuest(value: QuestSnapshot): import("../quest/Quest").Quest
   };
 }
 
-function toMapEntity(unit: PlayerUnit | MonsterUnit | import("../../../core/public").Unit<any[]>): MapEntitySnapshot {
+function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../../core/public").Unit<any[]>): MapEntitySnapshot {
   if (unit instanceof MonsterUnit) {
     const snapshot = unit.Snapshot();
     return {
@@ -1918,6 +1926,27 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | import("../../../core/publ
       alive: snapshot.alive,
       entityType: 2,
       configId: snapshot.monsterConfigId,
+    };
+  }
+  if (unit instanceof NpcUnit) {
+    const snapshot = unit.Snapshot();
+    return {
+      unitId: snapshot.unitId,
+      account: "",
+      x: snapshot.x,
+      y: snapshot.y,
+      z: snapshot.z,
+      yaw: snapshot.yaw,
+      state: new Uint8Array(0),
+      cellX: snapshot.cellX,
+      cellZ: snapshot.cellZ,
+      numerics: [],
+      buffs: [],
+      speedCellsPerSecond: snapshot.speedCellsPerSecond,
+      facing: snapshot.facing,
+      alive: snapshot.alive,
+      entityType: 3,
+      configId: snapshot.npcConfigId,
     };
   }
   if (!(unit instanceof PlayerUnit)) {

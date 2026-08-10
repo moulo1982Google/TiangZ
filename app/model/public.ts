@@ -157,7 +157,21 @@ export {
 } from "./demo/numeric/NumericType";
 export { NativeOps } from "../generated/model/native/NativeOps";
 export { LoginComponent } from "./demo/login/LoginComponent";
-export { SelectStickyGate } from "./demo/login/GateSelector";
+export {
+  CreateCharacterRepository,
+  CharacterAccountAlreadyExistsError,
+  type AccountCredential,
+  type CharacterCatalog,
+  type CharacterRecord,
+  type CharacterRepository,
+} from "./demo/login/CharacterRepository";
+export {
+  CreatePasswordCredential,
+  VerifyPassword,
+  type PasswordCredential,
+} from "./demo/login/PasswordHash";
+export { DecodeLoginToken, EncodeLoginToken, type LoginTokenClaims } from "./demo/login/LoginToken";
+export { SelectStickyGate, SelectStickyScene } from "./demo/login/GateSelector";
 export { PlayerPersistenceComponent } from "./demo/persistence/PlayerPersistenceComponent";
 export type { PlayerSaveData } from "./demo/persistence/PlayerRepository";
 export {
@@ -213,6 +227,19 @@ export {
   type AwakeMonsterUnit,
   type MonsterSnapshot,
 } from "./demo/monster/MonsterUnit";
+export {
+  NpcUnit,
+  type AwakeNpcUnit,
+  type NpcSnapshot,
+} from "./demo/npc/NpcUnit";
+export {
+  NpcComponent,
+  STARTER_NPC_CONFIG_ID,
+  STARTER_NPC_INTERACT_RANGE_METERS,
+  STARTER_NPC_NAME,
+  STARTER_NPC_QUEST_CONFIG_IDS,
+  STARTER_NPC_UNIT_ID,
+} from "./demo/npc/NpcComponent";
 export { GateScene } from "./demo/scenes/GateScene";
 export { LoginScene } from "./demo/scenes/LoginScene";
 export { LocationScene } from "./demo/scenes/LocationScene";

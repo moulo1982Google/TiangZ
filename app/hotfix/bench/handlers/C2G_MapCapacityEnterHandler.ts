@@ -29,6 +29,11 @@ export class C2G_MapCapacityEnterHandler implements SessionRpcHandler<
       placement,
       request.entrySyncMode,
     );
-    return { unitId: entered.unitId, cellX: placement.cellX, cellZ: placement.cellZ };
+    return {
+      unitId: entered.unitId,
+      cellX: placement.cellX,
+      cellZ: placement.cellZ,
+      starterItemId: entered.items.find((item) => item.configId === 1001)?.itemId ?? 0n,
+    };
   }
 }

@@ -13,6 +13,7 @@ declare module "../../../model/demo/skill/SkillComponent" {
     TakeQueued(): SkillCastCommand | undefined;
     ClearQueued(): SkillCastState;
     UpdateChannel(castId: bigint, nextTickAtMs: number, channelTicksCompleted: number): SkillCastState;
+    ExtendActiveCast(castId: bigint, extensionMs: number): SkillCastState | undefined;
     ReadyAt(skillId: number): number;
     ItemReadyAt(itemConfigId: number): number;
     TryCommitItemCooldown(itemConfigId: number, cooldownMs: number, globalCooldownMs: number): ItemCooldownCommitResult;

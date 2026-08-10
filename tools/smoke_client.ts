@@ -11,9 +11,11 @@ import {
   buildGetLoginServiceAddrPacket,
   buildLoginGatePacket,
   buildLoginPacket,
+  buildRegisterPacket,
   buildMapSnapshotReadyPacket,
   buildMovePacket,
   buildUseItemPacket,
+  buildAcceptQuestPacket,
   buildCompleteQuestPacket,
   decodeAoiDeltaFrame,
   decodeAttackMonsterFrame,
@@ -29,10 +31,12 @@ import {
   decodeEntityNumericFrame,
   decodeItemChangedFrame,
   decodeUseItemFrame,
+  decodeAcceptQuestFrame,
   decodeCompleteQuestFrame,
   decodeGetLoginServiceAddrFrame,
   decodeLoginGateFrame,
   decodeLoginFrame,
+  decodeRegisterFrame,
   decodeMapReadyFrame,
   decodeMapSnapshotReadyFrame,
   decodeToggleAutoAttackFrame,
@@ -57,6 +61,7 @@ import {
   S2M_DisposeDynamicMapCodec,
   type MapInstanceSnapshot,
 } from "../app/generated/model/server/demo/protocol/messages";
+import { G2C_SessionReplacedCodec } from "../app/generated/model/server/demo/protocol/messages";
 import { MsgCode as ServerMsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
 
 type TimedMovementState = CellMovementState & { serverTick: number };
@@ -111,8 +116,8 @@ async function main() {
         entityCount: client.enterMap.entities.length,
         monsters: monsters.map((entity) => ({ unitId: entity.unitId, configId: entity.configId })),
       });
-      if (monsters.length !== 2) {
-        throw new Error(`Map100 initial snapshot expected 2 monsters, got ${monsters.length}`);
+      if (monsters.length !== 5) {
+        throw new Error(`Map100 initial snapshot expected 5 monsters, got ${monsters.length}`);
       }
       if (process.argv.includes("--skill-only")) {
         await verifyFiveSkillMechanics(client.gate, client.enterMap);
@@ -214,22 +219,49 @@ async function verifyDbProxyQuestReward(
   const client = await openGateAndEnterMap(
     login.gateIp,
     login.gatePort,
-    { account: login.account, token: login.token, mapId: 2 },
+    { account: login.account, token: login.token, mapId: 100 },
   );
   try {
-    const initial = client.enterMap.items.find((item) => item.configId === 1001);
-    const quest = client.enterMap.quests.find((value) => value.questConfigId === 5003);
+    const starterNpc = client.enterMap.entities.find(
+      (entity) => entity.entityType === 3 && entity.configId === 9001,
+    );
+    if (!starterNpc) {
+      throw new Error(`quest transaction fixture did not see the Starter NPC: ${stringifyForError(client.enterMap.entities)}`);
+    }
+    const accepted = decodeAcceptQuestFrame(await client.gate.request(buildAcceptQuestPacket(
+      nextRpcId++,
+      { questConfigId: 5003, npcUnitId: starterNpc.unitId },
+    ))).body;
+    if (accepted.error || accepted.quest.questConfigId !== 5003) {
+      throw new Error(`quest transaction fixture could not accept quest 5003 from NPC: ${stringifyForError(accepted)}`);
+    }
+    const mapReady = client.gate.waitForMessage(MsgCode.G2C_MapReady);
+    const map2 = decodeEnterMapFrame(await client.gate.request(
+      buildEnterMapPacket(nextRpcId++, { mapId: 2, mapInstanceId: 0n }),
+    )).body;
+    await mapReady;
+    const initial = map2.items.find((item) => item.configId === 1001);
+    const quest = map2.quests.find((value) => value.questConfigId === 5003);
     if (!initial || initial.count !== 50) {
       throw new Error(`quest transaction fixture expected 50 small potions, got ${initial?.count}`);
     }
     if (!quest || quest.status !== QuestStatus.ReadyToTurnIn) {
       throw new Error(`quest transaction fixture expected quest 5003 ready, got ${quest?.status}`);
     }
+    // 领奖必须回到任务使者处；任务完成状态可以跨地图传送，但奖励交付仍由NPC交互完成。
+    // The quest state may become ready in Map 2, but reward delivery still happens at the NPC.
+    const map100 = await transferConnectedPlayer(client.gate, 100);
+    const map100Npc = map100.entities.find(
+      (entity) => entity.entityType === 3 && entity.configId === 9001,
+    );
+    if (!map100Npc) {
+      throw new Error(`quest transaction fixture did not find the NPC after returning to Map 100: ${stringifyForError(map100.entities)}`);
+    }
     const first = decodeCompleteQuestFrame(await client.gate.request(
-      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003 }),
+      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003, npcUnitId: map100Npc.unitId }),
     )).body;
     const duplicate = decodeCompleteQuestFrame(await client.gate.request(
-      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003 }),
+      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003, npcUnitId: map100Npc.unitId }),
     )).body;
     if (first.error || duplicate.error) {
       throw new Error(
@@ -285,8 +317,15 @@ async function verifyDbProxyQuestRewardRecovery(
         `quest transaction recovery snapshot mismatch: ${stringifyForError(client.enterMap)}`,
       );
     }
+    const map100 = await transferConnectedPlayer(client.gate, 100);
+    const map100Npc = map100.entities.find(
+      (entity) => entity.entityType === 3 && entity.configId === 9001,
+    );
+    if (!map100Npc) {
+      throw new Error(`quest transaction recovery did not find the NPC after returning to Map 100: ${stringifyForError(map100.entities)}`);
+    }
     const receipt = decodeCompleteQuestFrame(await client.gate.request(
-      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003 }),
+      buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003, npcUnitId: map100Npc.unitId }),
     )).body;
     const rewarded = receipt.rewardItems.find((value) => value.configId === 1001);
     if (receipt.error || rewarded?.itemId !== item.itemId || rewarded.count !== 53) {
@@ -719,8 +758,13 @@ function requestLoginServiceAddr(ip: string, port: number) {
 }
 
 function requestLogin(ip: string, port: number, account: string) {
-  const rpcId = nextRpcId++;
-  return requestOne(ip, port, buildLoginPacket(rpcId, { account })).then((frame) => {
+  const password = `smoke_password_${account}`;
+  return requestRegister(ip, port, account, password).then((registered) => {
+    if (registered.body.error && registered.body.error !== 10037) {
+      throw new Error(`Register failed: ${registered.body.error} ${registered.body.message ?? ""}`);
+    }
+    const rpcId = nextRpcId++;
+    return requestOne(ip, port, buildLoginPacket(rpcId, { account, password })).then((frame) => {
     const response = decodeLoginFrame(frame);
     if (response.rpcId !== rpcId) {
       throw new Error(`Login rpcId mismatch: ${response.rpcId}`);
@@ -729,6 +773,18 @@ function requestLogin(ip: string, port: number, account: string) {
       throw new Error(`Login failed: ${response.body.error} ${response.body.message ?? ""}`);
     }
     return response.body;
+  });
+  });
+}
+
+function requestRegister(ip: string, port: number, account: string, password: string) {
+  const rpcId = nextRpcId++;
+  return requestOne(ip, port, buildRegisterPacket(rpcId, { account, password })).then((frame) => {
+    const response = decodeRegisterFrame(frame);
+    if (response.rpcId !== rpcId) {
+      throw new Error(`Register rpcId mismatch: ${response.rpcId}`);
+    }
+    return response;
   });
 }
 
@@ -739,10 +795,24 @@ async function verifyGateSessionLifecycle(
   dynamicMap: MapInstanceSnapshot,
 ) {
   const first = await openGateAndEnterMap(ip, port, request);
+  const replacementFrame = first.gate.waitForMessage(MsgCode.G2C_SessionReplaced, 5_000);
   const second = await openGateAndEnterMap(ip, port, request);
+  const replacement = G2C_SessionReplacedCodec.decode((await replacementFrame).subarray(2));
+  if (
+    replacement.reasonCode !== 10040 ||
+    replacement.reason !== "账号已在其他设备登录"
+  ) {
+    throw new Error(`account takeover notice mismatch: ${stringifyForError(replacement)}`);
+  }
   if (second.enterMap.unitId !== first.enterMap.unitId) {
     throw new Error("reconnected account did not reuse its existing map unit");
   }
+  console.log("Gate account takeover:", {
+    oldUnitId: first.enterMap.unitId,
+    replacementReasonCode: replacement.reasonCode,
+    replacementReason: replacement.reason,
+    newUnitId: second.enterMap.unitId,
+  });
 
   await first.gate.close();
   await sleep(150);
@@ -1181,13 +1251,37 @@ async function verifyNavMeshTransfer(
   const navMeshMonsters = transferred.entities
     .filter((entity) => entity.entityType === 2)
     .map((entity) => ({ unitId: entity.unitId, configId: entity.configId }));
+  const starterNpcs = transferred.entities
+    .filter((entity) => entity.entityType === 3)
+    .map((entity) => ({ unitId: entity.unitId, configId: entity.configId }));
   console.log("NavMesh3D monsters:", navMeshMonsters);
+  console.log("Starter NPCs:", starterNpcs);
+  // Demo地图100使用宽视野，出生点会收到五个初始怪物；配置完整性仍由game_config_self_test校验。
+  // Demo Map 100 uses the wider view and receives all five initial monsters; game_config_self_test verifies the slots.
   if (
-    navMeshMonsters.length !== 2 ||
-    !navMeshMonsters.some((monster) => monster.configId === 1) ||
-    !navMeshMonsters.some((monster) => monster.configId === 2)
+    navMeshMonsters.length === 0 ||
+    navMeshMonsters.some((monster) => monster.configId !== 1 && monster.configId !== 2)
   ) {
     throw new Error(`Map 100 monster snapshot mismatch: ${stringifyForError(navMeshMonsters)}`);
+  }
+  const starterNpc = starterNpcs.find((npc) => npc.configId === 9001);
+  if (!starterNpc || starterNpcs.length !== 1) {
+    throw new Error(`Map 100 Starter NPC snapshot mismatch: ${stringifyForError(starterNpcs)}`);
+  }
+  if (transferred.quests.length !== 0) {
+    throw new Error(`Map 100 player should have no default quests before NPC interaction: ${stringifyForError(transferred.quests)}`);
+  }
+  const acceptQuestRpcId = nextRpcId++;
+  const acceptedQuest = decodeAcceptQuestFrame(await gate.request(buildAcceptQuestPacket(
+    acceptQuestRpcId,
+    { questConfigId: 5001, npcUnitId: starterNpc.unitId },
+  )));
+  if (
+    acceptedQuest.rpcId !== acceptQuestRpcId ||
+    acceptedQuest.body.error ||
+    acceptedQuest.body.quest.questConfigId !== 5001
+  ) {
+    throw new Error(`Starter NPC quest acceptance failed: ${stringifyForError(acceptedQuest.body)}`);
   }
   const finitePosition = [transferred.x, transferred.y, transferred.z].every(Number.isFinite);
   const nearConfiguredSpawn =

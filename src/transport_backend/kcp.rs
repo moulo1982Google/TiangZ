@@ -339,7 +339,21 @@ fn spawn_outbound_forwarder(
         loop {
             let frame = tokio::select! {
                 changed = shutdown_rx.changed() => {
-                    if changed.is_err() || *shutdown_rx.borrow() { break; }
+                    if changed.is_err() || *shutdown_rx.borrow() {
+                        // 关闭前转发已经入队的帧；Closed 事件必须排在这些帧之后。
+                        // Forward queued frames before Closed so the close event
+                        // cannot overtake a final business notice.
+                        while let Ok(frame) = write_rx.try_recv() {
+                            if outbound_tx
+                                .send(OutboundEvent::Frame { local_conn, frame })
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        break;
+                    }
                     continue;
                 }
                 frame = write_rx.recv() => {

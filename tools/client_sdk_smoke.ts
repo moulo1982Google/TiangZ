@@ -12,10 +12,25 @@ async function main(): Promise<void> {
     port: Number(process.argv[4] ?? 7000),
   });
   const mapId = Number(process.argv[5] ?? 1);
+  const account = `sdk_smoke_${Date.now()}`;
+  const password = "sdk_smoke_password";
   const updateTimer = setInterval(() => flow.update(), 5);
 
   try {
-    const result = await flow.enterGame(`sdk_smoke_${Date.now()}`, mapId);
+    const registered = await flow.register(account, password);
+    if (!registered.character) {
+      throw new Error("registration returned an incomplete character");
+    }
+    const result = await flow.enterGame(
+      account,
+      password,
+      mapId,
+      undefined,
+      registered.character.characterId,
+    );
+    if (result.login.selectedCharacterId !== created.character.characterId) {
+      throw new Error("Login did not keep the explicitly selected character");
+    }
     const snapshotPromise = result.gateSocket.waitForMessage(ClientMessages.AoiDelta);
     await new GateClient(result.gateSocket).mapSnapshotReady({ unitId: result.enterMap.unitId });
     const snapshot = await snapshotPromise;

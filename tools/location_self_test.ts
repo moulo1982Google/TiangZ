@@ -65,6 +65,7 @@ function testOwnerRecovery(): void {
   const route = {
     unitId: 1001,
     account: "recovery-a",
+    characterId: 9001n,
     gateName: "gate_1",
     mapHostName: "map_1",
     mapId: 1,
@@ -81,7 +82,7 @@ function testOwnerRecovery(): void {
     recovered: 1,
     unchanged: 0,
   });
-  assert.equal(location.Resolve({ unitId: 1001, account: "" }).location.account, "recovery-a");
+  assert.equal(location.Resolve({ unitId: 1001, account: "", characterId: 9001n }).location.account, "recovery-a");
   assert.equal(location.RecoverOwner({ ownerName: "map_1", locations: [route] }).unchanged, 1);
 
   assert.throws(() => location.RecoverOwner({
@@ -91,7 +92,7 @@ function testOwnerRecovery(): void {
       { ...route, actorInstanceId: 99 },
     ],
   }), /conflicts/);
-  assert.equal(location.Resolve({ unitId: 1002, account: "" }).found, false);
+  assert.equal(location.Resolve({ unitId: 1002, account: "", characterId: 0n }).found, false);
 }
 
 /** 验证旧revision、错误operation和重复Commit都不能破坏最新位置。 / Verifies stale revisions, foreign operations, and duplicate commits cannot corrupt the latest location. */

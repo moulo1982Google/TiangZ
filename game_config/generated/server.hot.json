@@ -191,7 +191,7 @@
         1001,
         2
       ],
-      "auto_accept": true,
+      "auto_accept": false,
       "required_quest_ids": [],
       "minimum_level": 1
     },
@@ -206,7 +206,7 @@
         1002,
         1
       ],
-      "auto_accept": true,
+      "auto_accept": false,
       "required_quest_ids": [],
       "minimum_level": 1
     },
@@ -221,7 +221,7 @@
         1001,
         3
       ],
-      "auto_accept": true,
+      "auto_accept": false,
       "required_quest_ids": [],
       "minimum_level": 1
     },
@@ -241,6 +241,23 @@
         5001
       ],
       "minimum_level": 2
+    },
+    {
+      "id": 5005,
+      "name": "清理怪B",
+      "objective_ids": [
+        5105
+      ],
+      "reward_action_type": 7,
+      "reward_action_params": [
+        1002,
+        1
+      ],
+      "auto_accept": false,
+      "required_quest_ids": [
+        5001
+      ],
+      "minimum_level": 1
     }
   ],
   "game_tbquestobjectiveconfig": [
@@ -249,7 +266,7 @@
       "quest_config_id": 5001,
       "objective_type": 1,
       "target_config_id": 1,
-      "required_count": 1
+      "required_count": 5
     },
     {
       "id": 5102,
@@ -271,6 +288,13 @@
       "objective_type": 2,
       "target_config_id": 1002,
       "required_count": 1
+    },
+    {
+      "id": 5105,
+      "quest_config_id": 5005,
+      "objective_type": 1,
+      "target_config_id": 2,
+      "required_count": 5
     }
   ],
   "game_tbskillconfig": [

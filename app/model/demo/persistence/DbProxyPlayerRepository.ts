@@ -40,8 +40,9 @@ export class DbProxyPlayerRepository implements PlayerRepository {
     this.requestPrefix = `${processName}:player:${Date.now().toString(36)}`;
   }
 
-  async Load(account: string): Promise<PlayerLoadResult | undefined> {
-    const snapshot = await this.client.Load({ namespace: PLAYER_NAMESPACE, key: account });
+  async Load(characterId: bigint): Promise<PlayerLoadResult | undefined> {
+    const key = keyOf(characterId);
+    const snapshot = await this.client.Load({ namespace: PLAYER_NAMESPACE, key });
     if (!snapshot) return undefined;
     if (
       snapshot.schema !== PLAYER_PERSISTENCE_SCHEMA ||
@@ -52,8 +53,8 @@ export class DbProxyPlayerRepository implements PlayerRepository {
       );
     }
     const data = DecodePlayerSaveData(snapshot.payload);
-    if (data.player.account !== account) {
-      throw new Error(`player snapshot key mismatch: key=${account}, payload=${data.player.account}`);
+    if (data.player.characterId !== characterId) {
+      throw new Error(`player snapshot key mismatch: key=${key}, payload=${data.player.characterId}`);
     }
     return {
       data,
@@ -77,7 +78,7 @@ export class DbProxyPlayerRepository implements PlayerRepository {
     }
     const write: DbProxySnapshotWrite = {
       requestId: `${this.requestPrefix}:${this.requestSequence.toString(36)}`,
-      record: { namespace: PLAYER_NAMESPACE, key: data.player.account },
+      record: { namespace: PLAYER_NAMESPACE, key: keyOf(data.player.characterId) },
       schema: PLAYER_PERSISTENCE_SCHEMA,
       schemaVersion: PLAYER_PERSISTENCE_SCHEMA_VERSION,
       payload: EncodePlayerSaveData(data),
@@ -116,7 +117,7 @@ export class DbProxyPlayerRepository implements PlayerRepository {
   ): Promise<PlayerTransactionResult> {
     const request: DbProxyTransactionalWrite = {
       operationId: write.operationId,
-      record: { namespace: PLAYER_NAMESPACE, key: write.data.player.account },
+      record: { namespace: PLAYER_NAMESPACE, key: keyOf(write.data.player.characterId) },
       schema: PLAYER_PERSISTENCE_SCHEMA,
       schemaVersion: PLAYER_PERSISTENCE_SCHEMA_VERSION,
       expectedRevision,
@@ -148,12 +149,12 @@ export class DbProxyPlayerRepository implements PlayerRepository {
   }
 
   async LoadTransaction(
-    account: string,
+    characterId: bigint,
     operationId: string,
   ): Promise<PlayerTransactionReceipt | undefined> {
     const receipt = await this.client.LoadTransaction(operationId, {
       namespace: PLAYER_NAMESPACE,
-      key: account,
+      key: keyOf(characterId),
     });
     return receipt
       ? { revision: receipt.newRevision, result: receipt.result.slice() }
@@ -162,8 +163,22 @@ export class DbProxyPlayerRepository implements PlayerRepository {
 }
 
 /** MapHost工厂的唯一Repository选择点；业务代码不得到处判断DBProxy配置。 / Sole Repository selection point for MapHost factories; gameplay code must not branch on DBProxy configuration. */
+const inMemoryRepositories = new Map<string, InMemoryPlayerRepository>();
+
 export function CreatePlayerRepository(process: ProcessConfig): PlayerRepository {
-  return process.persistence?.dbProxy
-    ? new DbProxyPlayerRepository(process.name)
-    : new InMemoryPlayerRepository();
+  if (process.persistence?.dbProxy) return new DbProxyPlayerRepository(process.name);
+  // 同一V8内的多个MapHost共享内存Repository；跨V8迁移由PlayerPersistenceComponent交接快照。
+  // MapHosts in one V8 share the in-memory Repository; cross-V8 transfer uses
+  // the snapshot handoff owned by PlayerPersistenceComponent.
+  let repository = inMemoryRepositories.get(process.name);
+  if (!repository) {
+    repository = new InMemoryPlayerRepository();
+    inMemoryRepositories.set(process.name, repository);
+  }
+  return repository;
+}
+
+function keyOf(characterId: bigint): string {
+  if (characterId <= 0n) throw new Error(`player characterId must be positive: ${characterId}`);
+  return characterId.toString(10);
 }

@@ -8,6 +8,8 @@ import "../../hotfix/demo/login/LoginComponentSystem";
 import "../../hotfix/demo/map/PlayerUnitSystem";
 import "../../hotfix/demo/monster/MonsterComponentSystem";
 import "../../hotfix/demo/monster/MonsterUnitSystem";
+import "../../hotfix/demo/npc/NpcComponentSystem";
+import "../../hotfix/demo/npc/NpcUnitSystem";
 import "../../hotfix/demo/numeric/NumericComponentSystem";
 import "../../hotfix/demo/quest/QuestComponentSystem";
 import "../../hotfix/demo/quest/QuestSystem";

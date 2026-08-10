@@ -20,6 +20,7 @@ import {
   type G2C_LoginGate,
   type G2C_Ping,
   type G2C_MapReady,
+  type G2C_SessionReplaced,
   type G2M_EnterMap,
   type G2M_InitialSnapshot,
   type G2M_PlayerOffline,
@@ -42,6 +43,7 @@ import { MapProtocol } from "../../../generated/model/server/demo/protocol/rpcs"
 import { GameConfigs } from "../../../generated/model/config";
 import { GatePlayerRoute } from "../gate/GatePlayerRoute";
 import { GateSession } from "../gate/GateSession";
+import { DecodeLoginToken } from "../login/LoginToken";
 import { LocationProxy } from "../location/LocationProxy";
 import {
   EntrySyncMode,
@@ -209,10 +211,26 @@ export class GateScene extends EntryScene {
     }
 
     const connectionId = session.ConnectionId;
+    let tokenClaims;
+    try {
+      tokenClaims = DecodeLoginToken(request.token);
+    } catch {
+      throw new RpcError(GameErrCode.TokenRequired, "invalid login token");
+    }
+    if (tokenClaims.account !== request.account) {
+      throw new RpcError(GameErrCode.TokenRequired, "login token account mismatch");
+    }
+    const characterId = request.characterId ?? tokenClaims.characterId;
+    if (characterId !== tokenClaims.characterId || characterId <= 0n) {
+      throw new RpcError(GameErrCode.CharacterNotFound, "login token character mismatch");
+    }
     const now = TimeSystem.Instance.FrameTime;
     let route = this.routesByAccount.get(request.account);
     let previousConnectionId: number | undefined;
     if (route) {
+      if (route.characterId !== characterId) {
+        throw new RpcError(GameErrCode.GateSessionRequired, "account already has another character online");
+      }
       try {
         previousConnectionId = route.Attach(connectionId, now);
       } catch {
@@ -222,7 +240,7 @@ export class GateScene extends EntryScene {
         );
       }
     } else {
-      route = new GatePlayerRoute(request.account, this.self.name, connectionId, now);
+      route = new GatePlayerRoute(request.account, characterId, this.self.name, connectionId, now);
       this.routesByAccount.set(request.account, route);
     }
 
@@ -234,15 +252,45 @@ export class GateScene extends EntryScene {
       previousConnectionId !== undefined &&
       previousConnectionId !== connectionId
     ) {
-      this.routesByConnection.delete(previousConnectionId);
-      this.actorLocations.unbindConnection(previousConnectionId);
-      if (!this.disconnecting.has(previousConnectionId)) {
-        this.disconnecting.add(previousConnectionId);
-        this.disconnectClient(previousConnectionId);
-      }
+      this.ReplaceConnection(route, previousConnectionId, connectionId);
     }
 
-    return { account: request.account };
+    return { account: request.account, characterId };
+  }
+
+  /**
+   * 原子完成顶号：撤销旧Session、发送可识别原因、再请求关闭旧连接。
+   * 新连接已经绑定到同一个Route，旧连接的迟到断线和在途请求都不能影响它。
+   *
+   * Atomically completes account takeover: invalidate the old Session, enqueue
+   * a visible reason, then close the old connection. The new connection already
+   * owns the same Route, so stale close events and in-flight requests cannot
+   * affect it.
+   */
+  private ReplaceConnection(
+    route: GatePlayerRoute,
+    previousConnectionId: number,
+    newConnectionId: number,
+  ): void {
+    if (this.routesByConnection.get(previousConnectionId) === route) {
+      this.routesByConnection.delete(previousConnectionId);
+    }
+    this.actorLocations.unbindConnection(previousConnectionId);
+    this.getSession<GateSession>(previousConnectionId)?.Invalidate();
+
+    if (this.disconnecting.has(previousConnectionId)) return;
+    this.disconnecting.add(previousConnectionId);
+    const notice: G2C_SessionReplaced = {
+      reasonCode: GameErrCode.SessionReplaced,
+      reason: "账号已在其他设备登录",
+    };
+    this.sendClient(previousConnectionId, ClientMessages.SessionReplaced, notice);
+    this.logger.info("replaced previous Gate connection", {
+      account: route.account,
+      previousConnectionId,
+      newConnectionId,
+    });
+    this.disconnectClient(previousConnectionId);
   }
 
   /**
@@ -403,7 +451,7 @@ export class GateScene extends EntryScene {
       const response = await this.scenes.call<G2M_InitialSnapshot, M2G_InitialSnapshot>(
         map.mapHost,
         MapProtocol.InitialSnapshot,
-        { account: route.account, unitId: map.unitId },
+        { account: route.account, characterId: route.characterId, unitId: map.unitId },
         { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
       );
       this.AssertCurrentRoute(session, route);
@@ -434,7 +482,7 @@ export class GateScene extends EntryScene {
     const defaultMapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
     const targetMapInstanceId = request.mapInstanceId || BigInt(defaultMapId);
     if (!route.map) {
-      const resolved = await this.location.Resolve({ unitId: 0, account: route.account });
+      const resolved = await this.location.Resolve({ unitId: 0, account: "", characterId: route.characterId });
       this.AssertCurrentRoute(session, route);
       if (resolved.found) {
         if (resolved.location.gateName !== this.self.name) {
@@ -478,6 +526,7 @@ export class GateScene extends EntryScene {
         account: session.account,
         token: session.token,
         gateName: this.self.name,
+        characterId: session.characterId,
         mapInstanceId: target.instance.mapInstanceId,
         hasInitialSpawnOverride: spawnOverride !== undefined,
         initialSpawnX: spawnOverride?.x ?? 0,
@@ -540,7 +589,8 @@ export class GateScene extends EntryScene {
       // never on the ordinary per-message routing hot path.
       const resolved = await this.location.Resolve({
         unitId: source.unitId,
-        account: route.account,
+        account: "",
+        characterId: route.characterId,
       });
       this.AssertCurrentRoute(session, route);
       if (!resolved.found) {
@@ -568,6 +618,7 @@ export class GateScene extends EntryScene {
         MapProtocol.TransferPlayer,
         {
           account: route.account,
+          characterId: route.characterId,
           gateName: this.self.name,
           targetMapInstanceId,
           expectedLocationRevision: source.revision,
@@ -655,6 +706,7 @@ export class GateScene extends EntryScene {
       MapProtocol.SecondEnterMap,
       {
         account: route.account,
+        characterId: route.characterId,
         mapId: location.mapId,
         unitId: location.unitId,
         gateName: this.self.name,
@@ -736,6 +788,7 @@ export class GateScene extends EntryScene {
       if (location) {
         const request: G2M_PlayerOffline = {
           account: route.account,
+          characterId: route.characterId,
           mapId: location.mapId,
           unitId: location.unitId,
           gateName: this.self.name,

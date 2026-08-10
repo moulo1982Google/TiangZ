@@ -4,7 +4,7 @@
 
 维护契约：任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须同时更新本文和[AI业务开发手册](business-development-manual.md)。设计改动未同步这两份文档，视为尚未完成。
 
-更新时间：2026-08-09。
+更新时间：2026-08-10。
 
 ## 普通Entity持久化生成
 
@@ -12,6 +12,32 @@
 - codegen生成`NativeXxxPersistenceSnapshot`、严格Codec、schema/version和`CreateNativeXxxRepository(processName)`；通用Repository负责Revision CAS和同`requestId`重试。
 - DBProxy继续只维护固定通用表并把Payload视为不透明字节，不得认识TiangZ Entity。普通Entity无需手工设计数据库表；复杂查询、二级索引和跨玩家事务仍需领域Repository与专门存储设计。
 - 当前`Item.native`是最小示范。Player是跨Numeric、Item、Buff、Skill、Quest的聚合快照，仍保留手写`PlayerRepository`，不能机械替换成单Entity Repository。
+
+## Starter MMORPG 纵向切片
+
+TiangZ的业务参考目标是一个小而完整的Starter MMORPG，而不是内容庞大的商业游戏。唯一验收主线为：登录/选角、主城、野外战斗、掉落、背包、任务、动态副本/Boss、断线重连和重启恢复。完整矩阵见[Starter验收矩阵](../starter/acceptance-matrix.md)，开发教程见[Starter MMORPG教程](../tutorials/20-starter-mmorpg.md)。
+
+- 框架能力案例负责解释单项能力；Starter负责证明这些能力能组合成真实业务，不能维护两套重复的网络、Actor、持久化或战斗入口。
+- Starter固定一个职业、一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss和少量技能。社交、商城、运营活动和大量美术资源留在后续示例。
+- 新功能只有同时具备Stable API调用、正式配置/协议来源、状态所有者、失败语义和可重复验收，才算进入Starter。
+- 账号注册、登录和角色目录已经完成运行时闭环：`C2S_Register`通过`CharacterRepository`写入账号密码盐值/摘要并创建同名初始角色，`C2S_Login`必须携带密码且不会再自动创建游客账号；`C2S_Login.characterId`明确选择角色，`characterId`贯穿Gate、Location、Map和Player持久化。配置DBProxy时账号目录与角色记录写入版本化快照，未配置时仅用于当前进程调试。`LoginMgr`对带账号请求使用稳定哈希保持同一账号落到同一Login。`npm run starter:character-smoke`已覆盖all-in-one和split-process。
+- Starter第一版已接入固定任务NPC：Map 100由`NpcComponent`创建`NpcUnit`（`npcConfigId=9001`、`unitId=0x40000001`），NPC作为普通Unit的Subject进入AOI，Cocos3D以紫色方块展示。玩家出生点为`(-3, 1, -18)`，NPC位于出生点东侧约3米；Demo专用`AoiConfig=2`把Enter/Detach扩大为7×7/9×9 Grid，确保出生点能观察到远端刷怪区。10004、10005、10008是三只被动黄色怪，10006、10007是两只主动红色怪，仍分布在远端刷怪区；Cocos3D怪物头顶HUD显示`MonsterConfig.name`和HP。当前所有Starter `QuestConfig`都关闭自动接取；客户端靠近NPC 5米内显示统一“交互”按钮，点击后打开NPC对话框，再点击对话框中的接取/交付按钮才调用`Map.AcceptQuest({ questConfigId, npcUnitId })`或`Map.CompleteQuest({ questConfigId, npcUnitId })`。任务5001由NPC提供，目标是击败5只怪A；在NPC交付5001后，配置前置解锁任务5005，目标是击败5只怪B。服务端在PlayerUnit有序mailbox内校验NPC存在、任务提供关系和5米交互距离，再由`QuestComponent`创建或完成Quest ChildEntity。`npm run starter:smoke`已覆盖NPC快照和接取。
+- 当前业务缺口按掉落串联、Boss副本奖励、完整重启恢复和正式Hotfix入口排序；无DBProxy时角色目录只保证进程生命周期内一致，重启恢复必须使用DBProxy；DBProxy多Endpoint和双实例故障切换仍按独立阶段处理。
+- Starter入口固定为`npm run starter:verify`、`npm run starter:dev`、`npm run starter:smoke`和`npm run starter:character-smoke`；这些命令只负责完整性、开发启动和短时运行时验收，不代替容量压测。
+
+### Starter身份约束
+
+- `account`是登录与LoginMgr路由粘性的账号身份，不是角色存储主键。
+- `characterId`是角色长期身份，角色目录、Player快照、Location和跨地图传送都以它为稳定键。
+- `unitId`是当前Map中的运行时Unit路由ID，可以随着重建或迁移变化，禁止作为持久化角色ID。
+- `mapInstanceId`只表示当前地图实例；静态地图和动态副本统一使用同一`TransferToMap`语义。
+- 无DBProxy时，跨MapHost传送会用快照接管目标进程的内存目录；这不是重启持久化，重启恢复验收必须启动DBProxy。
+
+### Starter NPC与任务接取
+
+- NPC不是特殊的网络入口，也不是`QuestComponent`的替代品。它是`MapScene.UnitComponent`拥有的普通`Unit`，由`NpcComponent`维护地图内索引并以Subject身份挂入AOI；NPC不创建mailbox、不持有玩家状态。
+- 客户端只能从AOI快照得到可见NPC的`unitId/configId`。当前Starter的所有QuestConfig都关闭`auto_accept`，玩家出生时没有默认任务；靠近NPC 5米内才显示交互按钮，按钮打开对话框，接取或交付按钮才发起请求。任务达到`ReadyToTurnIn`后不能从任务追踪面板直接领奖，完成请求必须携带NPC实例ID。点击或选中NPC本身不能改变任务状态，不能把“看见NPC”当作任务已接取。桌面端的`F`只是交互按钮快捷键，移动端和桌面端走同一套对话框流程；服务端仍以PlayerUnit有序mailbox内的`NpcComponent.ValidateQuestInteraction`为最终校验。
+- NPC的静态位置、提供哪些任务和显示名属于业务配置/创建流程；Starter固定值只用于第一版演示，未来扩展NPC配置时保持同一Unit和协议语义。任务状态仍由`QuestComponent`拥有，NPC销毁或离开AOI不能删除玩家任务。
 
 ## 一句话定位
 
@@ -95,7 +121,9 @@ Actor是“拥有mailbox并能按InstanceId路由”的运行时能力，不是�
 
 Gate连接状态分成两层：`GateSession`只代表一次物理连接，断开即销毁；`GatePlayerRoute`按账号保存`UnitId -> MapHost/Map/ActorInstanceId`和当前`connectionId`，在30秒重连宽限期内继续存在。客户端每5秒调用`C2G_Ping -> G2C_Ping`，响应携带Gate生成响应时的Unix毫秒`serverTime`；Gate收到任意客户端帧都会先刷新`lastReceiveTime`，出站排队只更新`lastSendTime`，绝不能延长存活期限。Ping是无锁的普通TS RPC Handler；Session为unordered，所以它不会排在长时间EnterMap之后。会修改Route的操作按账号进入协程锁，断线和超时下线取得锁后必须重新校验连接所有权或超时条件。Gate使用一个1秒合并扫描器检查全部Route，不为每名玩家创建Timer。
 
-同账号新连接会在Gate内原子替换旧`connectionId`。旧socket迟到的disconnect只销毁旧Session，不能清理新连接或Map Unit。重连后Gate以现有Actor路由调用`SecondEnterMap`，Map只清除旧移动意图并返回权威全量快照，不创建Unit、不重新广播AOI进入、不改绑Gate。宽限期结束后Gate才调用`PlayerOffline`；Map完成保存和Location移除后先响应Unit RPC，再由下一轮Map Timer完成AOI离开和Actor销毁，不能在PlayerUnit自己的mailbox中同步`DespawnActor`自己，否则运行时会把正常下线误判为Actor在mailbox执行期间消失。Map不拥有断线Timer，也不保存`gateSessionId`。
+同账号新连接会在Gate内原子替换旧`connectionId`。旧Session会先失去账号、角色、Token和Route所有权，再收到`G2C_SessionReplaced`（错误码`10040`），最后请求关闭旧Socket；旧socket迟到的disconnect和在途Handler只会失败，不能清理新连接或Map Unit。服务端传输层在关闭前会排空已入队的下行帧，客户端`RpcSocket`也会保留关闭前已经收到但尚未由`update()`分发的单向消息，因此Cocos/Web/Pixi可以可靠显示“账号已在其他设备登录”。客户端SDK通过`LoginFlow.onSessionReplaced`暴露通知，业务回调负责清理本地场景并回到登录界面。该机制是Gate本地的连接代次替换，不是跨Gate全局会话服务；稳定Gate归属仍由Login的Rendezvous Hash保证。
+
+重连后Gate以现有Actor路由调用`SecondEnterMap`，Map只清除旧移动意图并返回权威全量快照，不创建Unit、不重新广播AOI进入、不改绑Gate。宽限期结束后Gate才调用`PlayerOffline`；Map完成保存和Location移除后先响应Unit RPC，再由下一轮Map Timer完成AOI离开和Actor销毁，不能在PlayerUnit自己的mailbox中同步`DespawnActor`自己，否则运行时会把正常下线误判为Actor在mailbox执行期间消失。Map不拥有断线Timer，也不保存`gateSessionId`。
 
 Login使用带最终avalanche混合的Rendezvous Hash按账号稳定选择Gate。所有Login实例对同一Gate拓扑必须给出相同结果；公共前缀账号的批量分配也必须通过分布自测，不能用原始弱哈希分数造成少数Gate热点。该策略只负责稳定初始归属，运行时位置仍以Gate Route和Location为准。
 
@@ -358,14 +386,14 @@ Phase 4计划：
 - Phase 4.0已完成：Native Unit、protobuf、MapConfig、Cocos 2D和Pixi统一采用米制`X/Y/Z + Yaw`契约；Grid2D使用X/Z Cell，MapScene按实例创建和释放Rust空间状态。此次为显式破坏性协议升级，旧`0.3.10`客户端不能混连。
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
 - Phase 4.5正在建设持久化基础。独立仓库[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)当前为`v0.4.0`：DBProxy继续独立拥有快照、Revision/CAS、幂等、单记录`TransactionalWrite`、可查询事务回执、PostgreSQL权威存储、Redis已提交缓存与AOF backlog，并提供版本化Protobuf、协议指纹、内部令牌、Rust客户端池和运行时无关TypeScript SDK。TiangZ已经接入`HostDbProxyTransport -> DbProxyClient -> DbProxyPlayerRepository`真实链路；Rust Host Runtime负责多线程网络I/O，V8只等待Promise，主工程仍不得连接Redis/PostgreSQL或导入`dbproxy-storage`。`tiangz.demo.player@1`快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态。普通快照已通过重启恢复；任务领奖和UseItem已经成为关键单玩家事务：领域Component先规划操作后纯数据，DBProxy原子保存玩家记录与原始业务回执，成功后才无await修改Entity，ACK丢失后按operationId恢复。UseItem同时提交Inventory扣除、道具/GCD截止时间以及Heal或受限Buff效果；客户端为每次逻辑使用生成稳定operationId，重试复用。后续DBProxy服务层集群只实现多Endpoint Rust客户端、两个对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用由云厂商托管，不在框架内实现。当前仍没有周期快照、Wallet/Trade事务、按领域拆分revision、自动节点接管、Prometheus和生产部署；UseItem事务Planner也只支持Heal和无AddAction的Stack Buff，Quest进度仍是提交后的可恢复投影。单玩家巨型记录只是Phase 4.5验证载体，不能替代最终领域一致性设计。完整步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
-- 技能系统第一阶段已经实现：Unit上的`SkillComponent`只保存技能/GCD deadline和唯一ActiveCast，地图唯一`SkillMapComponent.Update10Hz`推进活跃读条与弹道；不创建每Unit Update、每Cast Timer、Actor或Entity。瞬发在ordered PlayerUnit调用内完成，移动策略和平A策略均由配置显式决定。冷却随玩家跨地图传输，活动读条在传送时终止。`SkillConfig.xlsx`描述目标关系与施法时间线并生成给前后端，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只按配置指纹组合只读定义，不再保存技能数值。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast。技能只选择目标并执行Action，伤害/治疗进入Combat，Buff生命周期进入BuffComponent。Buff冲突使用`stack_group + stack_scope`和Stack/Refresh/Replace/Reject/HigherWins；运行时Action覆盖和护盾剩余量可跨地图恢复。完整方案见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
+- 技能系统第一阶段已经实现：Unit上的`SkillComponent`只保存技能/GCD deadline和唯一ActiveCast，地图唯一`SkillMapComponent.Update10Hz`推进活跃读条与弹道；不创建每Unit Update、每Cast Timer、Actor或Entity。瞬发在ordered PlayerUnit调用内完成，移动策略和平A策略均由配置显式决定。施法期间平A意图仍保留，但平A读条被冻结，不能继续累计；玩家受到了真实HP伤害且读条仍有效时，Demo战斗规则只把`finishAtMs`向后延长500ms，不重置起点、不清除施法、不改变CD，并立即广播新的`G2C_SkillCastState`，客户端依据新的权威结束时间把进度条后移。护盾完全吸收或致死伤害不延长读条。冷却随玩家跨地图传输，活动读条在传送时终止。`SkillConfig.xlsx`描述目标关系与施法时间线并生成给前后端，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只按配置指纹组合只读定义，不再保存技能数值。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast。技能只选择目标并执行Action，伤害/治疗进入Combat，Buff生命周期进入BuffComponent。Buff冲突使用`stack_group + stack_scope`和Stack/Refresh/Replace/Reject/HigherWins；运行时Action覆盖和护盾剩余量可跨地图恢复。完整方案见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
 - 账号与角色选择、正式持久化业务接入。
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
 - Phase 4.1 Rust AOI功能链和Windows正式容量回归已完成：每个MapInstance按有限地图边界创建扁平连续X/Z AOI Grid，Grid成员使用紧凑`EntityIndex`连续数组和`slotInGrid`做O(1)迁移；`UnitId -> EntityIndex`哈希只在API入口定位，实体元数据与Audience签名连续存放，候选循环不再逐实体查Hash。单Grid达到128人会额外建立成员位图，降至96人以下释放；微基准显示128人起优于数组去重。空间候选与业务过滤后的最终可见关系使用四张双向稠密位图，迟滞关系另用一张单向位图维持O(1)指标。位图使用单块连续`u64`矩阵并按512实体分段扩容，有意用内存换关系差分、正反向查询和缓存局部性；3000实体预留到3072时五张矩阵约5.6 MiB。当前每MapInstance硬限制16384个AOI实体，对应五张矩阵约160 MiB；更大Scene必须使用分块位图或空间分片。`Cell`是可配置米制空间单位；默认15×15 Cell组成一个Grid，3×3同时作为Enter和20Hz高频区，已可见关系进入5×5外圈后降为5Hz，5×5也是Detach边界，越界立即Leave；不再配置7×7和1Hz档位。TS不镜像关系。FastOP X/Z写入自动标脏，只有跨AOI Grid才更新索引；当前不做每Tick CSR重建。Movement按同步档位节流，开始/停止/转向强制立即发送；Numeric、UnitState和不可覆盖事件保留各自同步语义。进入/离开同帧相同受众合并为`G2C_AoiDelta`。阵营/隐身/位面由同步`IAoiVisibilityFilter`查询并显式Invalidate。3000人正式基线固定80% Grid内移动、20%每2秒跨Grid，理论跨Grid约300次/s。新旧同口径10×10、15×15、20×20 A/B中，Map CPU平均由`74.1%/56.7%/57.3%`降为`55.0%/50.7%/42.9%`，分别下降约`25.8%/10.6%/25.1%`；新30秒Probe p95/p99为`62.18/100.18ms`、`41.34/53.39ms`、`35.59/42.26ms`。三档正式窗口均零错误、过载、超时、背压和慢连接，跨Grid达到理论值的99.8%/101.2%/100.5%。第一次20×20尾延迟异常已通过同参数复测确认是不可重复的环境抖动；10×10另以60秒窗口复测得到CPU 56.2%、p95/p99 50.60/75.17ms，说明CPU收益稳定，但密集场景短窗口p99仍存在调度波动，不能宣称所有延迟分位同比下降。Phase 4.2接入NavMesh3D；Phase 4.3完成Cocos 3D Demo；Phase 4.4进入怪物与战斗；Phase 4.5最后完成持久化基础。Cocos3D手机Web第一版使用`web-mobile`构建，`/m/`部署路径只改变页面模板与输入表现，不改变服务端空间协议。
 - Phase 4.2.5已完成导航主链：`tools/navigation`生成固定灰盒，`navmesh_bake`通过官方Recast离线烘焙v2压缩高度层并立即回读，输出稳定小端资源与SHA-256元数据；Rust提供投影、寻路、连续贴地移动、射线、高度、实例TileCache和动态障碍。开发者不手工烘焙，也不接触Detour句柄；真实地图仍需补展示模型与导航碰撞源的制作期一致性检查。
 - Phase 4.4已接入首版完整怪物业务闭环：`MonsterConfig`描述模板、血量、攻击力、独立攻击距离和复活秒数，`MonsterAreaConfig`只描述固定刷怪槽位、坐标和初始是否生成，二者都是冷配置；`MapHost`创建每个MapScene时自动挂载`MonsterComponent`。怪物是`UnitComponent`中的普通`MonsterUnit`，AOI只把它作为Subject，不拥有Gate连接，也不作为Observer。Map固定桶统一处理主动索敌、仇恨追击、攻击间隔、玩家自动平A、死亡尸体和新Unit重生：20Hz保留既有地图移动，10Hz处理玩家平A读条，5Hz处理怪物AI/仇恨目标，1Hz处理尸体清理与重生。玩家和怪物的攻击力都使用链式Numeric：玩家默认写入`AttackBase=5n`，怪物写入配置攻击力到`AttackBase`，Rust推导只读`Attack`；攻击直接读取最终Attack扣除CurrentHp，当前不增加Armor。玩家实际伤害按1:1调用`MonsterComponent.AddThreat`写入仇恨表，攻击距离分别读取`PlayerConfig.attack_range`和`MonsterConfig.attack_range`，不混入Numeric。怪物死亡后以`alive=false`保留原Unit和AOI身份；当前Demo在`respawn_seconds`到期时先Detach尸体并发布AOI Leave，再Remove旧Unit，只复用`AreaId`创建新的MonsterUnit、UnitId、InstanceId和Native句柄，通过AOI Enter发送新快照。NumericComponent不再内置100ms回血Timer；周期规则由具体业务Component显式拥有。玩家的`CombatComponent`只保存平A意图和读条，不创建每玩家Timer；目标必须在前方120°和玩家配置攻击距离内，离开条件只清零读条，重新满足后从零开始。业务Handler只调用`PlayerUnit.AttackMonster/ToggleAutoAttack`，不遍历地图或直接操作Native句柄。技能、掉落、Buff、任务和复杂仇恨扩展仍由业务层继续追加，完整开发示例见[怪物模块教程](../tutorials/16-monster-module.md)和[固定更新桶与自动平A设计](../design/auto-attack-and-fixed-update.md)。演示客户端读取`MonsterConfig.attack_mode`做表现提示：自己蓝色、其他玩家绿色、被动怪黄色、主动怪红色；这个字段只用于客户端识别，不承担服务端权威判断。
 - 怪物基础AI进一步收敛为Hotfix内部的`MonsterBehaviorTree`：只包含待机、追击、攻击和攻击冷却停留，不建立通用AI框架，不创建MonsterActor或每怪物Timer。普通攻击距离由各自配置控制，行为树只选择动作，伤害、仇恨、死亡和Numeric修改仍由`MonsterComponentSystem`执行。
-- 战斗时间轴语义已冻结：玩家或怪物按下普通攻击后只激活`AutoAttack`状态；靠近目标且满足距离、存活、同MapInstance和朝向条件时才推进平A读条。距离过远或朝向失效会清零当前读条，但不取消AutoAttack状态，重新满足条件后从0秒重新开始。移动不停止AutoAttack，右键加A/D的侧移用于保持朝向绕目标移动。`G2C_AutoAttackState`是每个玩家本人频道上的`latest`可覆盖状态，只表达当前读条，不承载命中事实；命中、道具消耗等不可逆事实必须使用事件广播。技能配置把伤害类型、瞬发/施法方式和是否重置平A分成独立维度；例如压制是Physical + Instant + Keep，不应按“物理技能”或“瞬发技能”分支猜测平A行为。
+- 战斗时间轴语义已冻结：玩家或怪物按下普通攻击后只激活`AutoAttack`状态；靠近目标且满足距离、存活、同MapInstance和朝向条件时才推进平A读条。距离过远或朝向失效会清零当前读条，但不取消AutoAttack状态，重新满足条件后从0秒重新开始。移动不停止AutoAttack，右键加A/D的侧移用于保持朝向绕目标移动。施法期间由`SkillComponent.IsCasting()`冻结平A累计，施法完成或中断后才允许重新开始平A读条；受击延长只由地图技能调度器在Combat确认真实扣血后调用，不能由客户端或通用Combat反向查询Buff。`G2C_AutoAttackState`是每个玩家本人频道上的`latest`可覆盖状态，只表达当前读条，不承载命中事实；命中、道具消耗等不可逆事实必须使用事件广播。技能配置把伤害类型、瞬发/施法方式和是否重置平A分成独立维度；例如压制是Physical + Instant + Keep，不应按“物理技能”或“瞬发技能”分支猜测平A行为。
 - 主动怪没有仇恨时只在12米主动索敌范围内寻找最近玩家；被动怪没有仇恨时保持待机。平A和技能都必须经`MonsterComponent.ApplyPlayerDamage`按“1点最终实际伤害=1点仇恨”累计，产生仇恨后两类怪都选择本地图存活玩家中的最高仇恨目标，已有仇恨不能再被12米主动索敌距离过滤，因此30米远程命中也会触发追击。当前Demo未定义脱战回出生点范围，未来必须使用独立冷配置，不能复用主动索敌距离。玩家创建时由`PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`初始化四个Numeric，Cocos3D、UE、Unity、Godot的玩家HUD只消费进入快照和`G2C_EntityNumeric`增量，显示当前/最大HP与MP。客户端不能根据怪物攻击自行扣血，也不能把HUD数值当作战斗权威。
 
 - 标准Demo的战斗结算已收口到`CombatComponent.ApplyDamage/ApplyHealing`。玩家和怪物都挂载Combat；MonsterComponent只选择目标并提交请求，Item Handler通过ActionExecutor提交治疗或Buff，Combat内部按优先级消耗注册的伤害吸收器后再修改CurrentHp。Buff通过`RegisterDamageAbsorber/RemoveDamageAbsorber`在生命周期边界挂载能力，伤害流程不能反向查询BuffComponent；护盾处理器的数据是唯一运行时剩余量。HP使用Numeric latest，Buff添加/删除、命中/死亡/消耗等事实使用event。详见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)和[Action与Buff设计](../design/action-buff.md)。

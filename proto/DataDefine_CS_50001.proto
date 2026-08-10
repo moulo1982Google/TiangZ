@@ -18,7 +18,7 @@ message MapEntitySnapshot
   float speed_cells_per_second = 11;
   uint32 facing = 12;
   repeated BuffPublicView buffs = 14;
-  // 1玩家，2怪物；客户端据此选择展示模板。 / 1=player, 2=monster; clients use this to select a presentation template.
+  // 1玩家，2怪物，3 NPC；客户端据此选择展示模板。 / 1=player, 2=monster, 3=NPC; clients use this to select a presentation template.
   uint32 entity_type = 15;
   // 玩家配置ID或怪物配置ID；不承载运行时状态。 / PlayerConfigId or MonsterConfigId; this is not runtime state.
   uint32 config_id = 16;

@@ -6,6 +6,7 @@ declare module "../../../model/demo/skill/SkillMapComponent" {
   interface SkillMapComponent {
     Cast(caster: PlayerUnit, command: SkillCastCommand): SkillCastState;
     InterruptByMovement(caster: PlayerUnit): boolean;
+    ExtendCastOnDamage(target: PlayerUnit, extensionMs?: number): boolean;
     Update10Hz(): void;
   }
 }

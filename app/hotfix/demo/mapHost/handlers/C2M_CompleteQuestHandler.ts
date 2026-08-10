@@ -3,6 +3,7 @@ import {
   type M2C_CompleteQuest,
   MapComponent,
   MapProtocol,
+  NpcComponent,
   PlayerUnit,
   QuestComponent,
   unitRpcHandler,
@@ -12,6 +13,11 @@ import {
 @unitRpcHandler(PlayerUnit, MapProtocol.CompleteQuest)
 export class C2M_CompleteQuestHandler implements UnitRpcHandler<PlayerUnit, C2M_CompleteQuest, M2C_CompleteQuest> {
   async handle(unit: PlayerUnit, request: C2M_CompleteQuest): Promise<M2C_CompleteQuest> {
+    unit.DomainScene().GetComponent(NpcComponent).ValidateQuestInteraction(
+      unit,
+      request.npcUnitId,
+      request.questConfigId,
+    );
     const result = await unit.GetComponent(QuestComponent).CompleteQuest(request.questConfigId);
     const map = unit.DomainScene().GetComponent(MapComponent);
     for (const item of result.rewardItems) await map.PublishItemChanged(unit, item);

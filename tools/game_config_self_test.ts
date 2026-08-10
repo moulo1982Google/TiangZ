@@ -71,7 +71,12 @@ function main(): void {
   assert.match(navigationMap.navigationHash, /^[0-9a-f]{64}$/);
   assert.deepEqual(
     [navigationMap.spawnX, navigationMap.spawnY, navigationMap.spawnZ],
-    [-12, 1, -12],
+    [-3, 1, -18],
+  );
+  assert.equal(navigationMap.aoiConfigId, 2);
+  assert.deepEqual(
+    [navigationMap.aoiConfigId_ref?.enterRangeGrids, navigationMap.aoiConfigId_ref?.detachRangeGrids],
+    [7, 9],
   );
   assert.equal(
     Math.abs(navigationMap.spawnX) <= 3
@@ -79,6 +84,29 @@ function main(): void {
       && navigationMap.spawnY < 3,
     false,
     "Map 100 spawn must not overlap the central graybox obstacle",
+  );
+  const starterMonsterAreas = serverConfigs.MonsterAreaConfig.GetAll()
+    .filter((area) => area.mapConfigId === 100)
+    .sort((left, right) => left.id - right.id);
+  assert.deepEqual(
+    starterMonsterAreas.map((area) => [area.id, area.monsterConfigId, area.spawnX, area.spawnZ]),
+    [
+      [10004, 1, -18, 18],
+      [10005, 1, 18, 18],
+      [10006, 2, -18, -18],
+      [10007, 2, 18, -18],
+      [10008, 1, 0, 18],
+    ],
+  );
+  assert.equal(serverConfigs.QuestObjectiveConfig.Get(5101).requiredCount, 5);
+  assert.equal(serverConfigs.QuestObjectiveConfig.Get(5105).targetConfigId, 2);
+  assert.equal(serverConfigs.QuestObjectiveConfig.Get(5105).requiredCount, 5);
+  assert.deepEqual(serverConfigs.QuestConfig.Get(5005).requiredQuestIds, [5001]);
+  assert.deepEqual(
+    [...serverConfigs.QuestConfig.GetAll()]
+      .sort((left, right) => left.id - right.id)
+      .map((quest) => [quest.id, quest.autoAccept]),
+    [[5001, false], [5002, false], [5003, false], [5004, false], [5005, false]],
   );
   const defaultAoi = serverConfigs.AoiConfig.Get(1);
   const defaultSyncTiers = serverConfigs.AoiSyncTierConfig.GetAll()

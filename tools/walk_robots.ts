@@ -57,7 +57,9 @@ class WalkingRobot {
 
   /** 完成正式登录和进图，并安装最小Push消费器，防止长期遛弯积压未处理消息。 / Enters through the production login flow and installs minimal push consumers so long-running walks do not accumulate messages. */
   async start(): Promise<void> {
-    const result = await this.flow.enterGame(this.account, this.options.mapId);
+    const password = "robot_walk_password";
+    await this.flow.register(this.account, password);
+    const result = await this.flow.enterGame(this.account, password, this.options.mapId);
     if (this.closed) return;
 
     this.unitId = result.enterMap.unitId;

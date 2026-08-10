@@ -79,6 +79,41 @@ Bench Hotfix可以通过`#tiangz/model`调用真实业务API，但Demo不得引�
 
 Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#tiangz/model`取得Model类型、协议和Stable Core API；禁止深层导入`app/model`或`app/core`。其他Core路径属于Internal，即使当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
 
+## Starter MMORPG 开发目标
+
+TiangZ的完整业务参考是一个小而完整的Starter MMORPG，不是把Demo扩展成商业游戏。开发主线固定为：登录/选角 -> 主城 -> 野外战斗 -> 掉落/背包 -> 任务/奖励 -> 动态副本/Boss -> 断线重连 -> 重启恢复。执行细节见[Starter MMORPG教程](../tutorials/20-starter-mmorpg.md)，验收标准见[Starter验收矩阵](../starter/acceptance-matrix.md)。
+
+开发Starter时遵循四条硬规则：
+
+- 框架案例可以很小，但Starter必须调用正式Stable API，不得绕过Mailbox、Component、协议生成或DBProxy边界。
+- 一个业务状态只能有一个权威所有者；Handler只做协议适配，不能保存玩家状态、编排持久化或直接操作数据库。
+- 配置、Model结构、协议和`.native`契约走生成链路；可热更规则放Hotfix，Model和存储结构不能在线修改。
+- 新功能必须能在all-in-one和split-process运行，并有失败、重试、重连或重启后的明确结果；只有代码存在不能算Starter完成。
+
+Starter阶段只保留一个职业、一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss和少量技能。组队、社交、商城、活动和大量客户端美术不是当前框架验收前提。
+
+本地入口固定为：`npm run starter:verify`检查目录和生成物，`npm run starter:dev`编译并启动all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`验证创建角色、选角和稳定身份。不要把长时间压测塞进Starter命令；压测必须使用`perf/`的独立入口，并在开始前确认机器资源。
+
+### 账号、角色和运行时Unit
+
+Starter中三种ID必须严格分开：
+
+- `account`只用于登录认证和LoginMgr的稳定路由选择；不要用账号字符串在Map中查找玩家。
+- `characterId`是角色长期身份，作为CharacterRepository、Player快照、Location和跨地图传送的稳定键。客户端通过`S2C_Login.characters`显示目录，并把用户选择的ID放进`C2S_Login`。
+- 首次账号必须走`C2S_Register`，注册时把用户名作为初始角色名；`C2S_Login`必须携带密码。账号不存在时返回“用户未注册”，服务端禁止用登录请求隐式创建游客账号。客户端确认密码只做表单校验，不发送到服务端。
+- `CharacterCatalog`保存密码盐值和摘要，不保存明文；配置`process.persistence.dbProxy`时目录可跨TiangZ重启恢复，未配置时是进程内调试目录，不能用于上线或重启恢复验收。
+- `unitId`是当前MapHost里的运行时Unit ID，只用于当前进程的Actor/mailbox/AOI路由；角色迁移或重建后它可能改变，禁止保存到数据库。
+- `mapInstanceId`描述地图实例，静态地图和动态副本都通过同一个`TransferToMap`入口处理；业务不根据部署方式分叉。
+
+创建和选角的客户端调用示例：
+
+```ts
+const created = await flow.createCharacter(account, "法师一号", 1);
+await flow.enterGame(account, 1, () => {}, created.character.characterId);
+```
+
+`CharacterRepository`配置DBProxy时负责版本和幂等重试；未配置DBProxy时只是进程内Demo目录，不能宣称支持重启恢复。跨MapHost传送可以把角色快照交给目标内存仓库接管，但这不是把内存数据写回永久存储。业务Handler不得读取或记录密码，只能把认证结果交给LoginScene和后续Gate链路。
+
 `ProcessHost`、`Singleton/SingletonRegistry`和`InstanceIdSystem`属于Core Internal，不从业务入口导出。动态地图等业务通过`EntryScene.SpawnChildScene/DespawnChildScene`管理子Scene；只有已经解析出的本地Actor操作才使用`RunLocalActorMailbox`，跨进程仍走Location与消息路由。业务不得任意查询整个Process Entity目录或取得进程销毁权；长期索引由所属Scene Component显式持有并在销毁时清理。配置JSON同样是强契约：未知根字段、Process字段和嵌套字段都会让Rust拒绝启动，不能依赖拼错字段被静默忽略。Native Store诊断使用Rust正式配置`process.observability.nativeData`，不得恢复旧的根级Demo扩展。
 
 ## 开始设计前
@@ -191,7 +226,7 @@ MapHost -> MapScene
 
 `PlayerConfig`表示创建玩家时的基础模板，不表示某个玩家升级后的等级、经验、当前生命或背包结果。运行时状态属于Entity/Component和持久化记录。配置对象与数组只读；`GetAll()`只用于低频初始化和管理流程，帧内热路径应按ID查询或预先建立明确索引。
 
-技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。是否允许移动、何时重置平A均读取`SkillConfig`显式策略，不按技能名称或伤害类型猜测。目标选择、Cast时间线和Action效果必须分层：`SkillConfig.xlsx`描述施法规则，服务端`SkillEffectConfig.xlsx`描述有序Action，伤害/治疗进入Combat、Buff进入BuffComponent。新技能不能用`ChangeNumeric(CurrentHp, delta)`绕过Combat。配置Reload后，已接受的ActiveCast和Projectile继续使用冻结旧定义，新Cast读取新配置。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
+技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。施法期间`SkillComponent.IsCasting()`为真，平A只能保留攻击意图，不能继续推进读条；移动仍按技能配置决定是否中断。Demo中玩家受到怪物的真实HP伤害时，地图技能调度器把当前施法`finishAtMs`延后500ms，并广播新的`G2C_SkillCastState`；这不是通用Combat副作用，不能在Combat里查询Skill或Buff。是否允许移动、何时重置平A均读取`SkillConfig`显式策略，不按技能名称或伤害类型猜测。目标选择、Cast时间线和Action效果必须分层：`SkillConfig.xlsx`描述施法规则，服务端`SkillEffectConfig.xlsx`描述有序Action，伤害/治疗进入Combat、Buff进入BuffComponent。新技能不能用`ChangeNumeric(CurrentHp, delta)`绕过Combat。配置Reload后，已接受的ActiveCast和Projectile继续使用冻结旧定义，新Cast读取新配置。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
 
 游戏配置的表名、字段、类型、分组、索引和引用关系属于Model，不能热更；变化后必须完整构建、重启相关Process并同步客户端SDK。只修改数据行或字段值时，`build:game-config:startup`会重新生成并覆盖服务器重启使用的`dist/game-config`；`build:game-config`只生成独立候选，可通过Watcher的`reload-config`原子切换服务端快照。`test:game-config`只验证，不更新启动目录。Reload不重跑Awake、不修改既有Entity状态；业务不要长期缓存配置行，应在真正使用数值时通过`GameConfigs`查询。客户端数据仍随SDK发布，不能把服务端Reload当作客户端配置下发。详细格式和示例见[游戏配置教程](../tutorials/10-game-config.md)。
 
@@ -624,7 +659,7 @@ QuestComponent
 
 - 玩家没有进行中任务时，QuestComponent可以不包含任何Quest子Entity。
 - 接受任务时通过`QuestComponent.AcceptQuest(questConfigId)`创建进行中实例；当前不可重复任务直接以`BigInt(questConfigId)`作为Child ID。
-- 活动Quest状态只有`InProgress`和`ReadyToTurnIn`；达到要求只切换为待交付，领取奖励成功后才写完成集合并移除ChildEntity。
+- 活动Quest状态只有`InProgress`和`ReadyToTurnIn`；达到要求只切换为待交付，领取奖励成功后才写完成集合并移除ChildEntity。`ReadyToTurnIn`不能从任务追踪面板直接领奖，必须在NPC交互范围内提交NPC实例ID，由服务端再次校验。
 - 接取时冻结`objectiveId/current/required`。热配置切换只影响新接取任务，不能让进行中的要求数量漂移。
 - 怪物、道具和地图只在事实成功提交后同步发布`QuestEvents.Progress`；稳定事件Handler负责调用`ApplyProgress`。`QuestComponent`按`(objectiveType,targetConfigId)`运行时索引定位目标，来源模块禁止遍历Quest或直接改进度。索引只保存稳定ID并在接取、领奖、Deserialize和RestoreTransfer时维护，不能进入持久化快照。
 - 接取前统一执行同步`QuestEvents.BeforeAccept` Veto；前置任务和最低等级是配置最终不变量，阵营、职业、NPC关系等扩展条件注册独立监听器。Veto只能读内存和返回错误码，禁止Promise、RPC、数据库、修改Entity或Spawn后台任务。
@@ -635,7 +670,44 @@ QuestComponent
 
 如果同一配置任务不会同时存在多个活动实例，可以直接用配置ID作为ChildEntity Id；可重复任务、限时活动任务等允许并存时，必须使用独立Quest实例ID，并单独保存`configId`。已完成集合始终记录稳定配置ID，不保存已经销毁的InstanceId。
 
-当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；`required_quest_ids`和`minimum_level`声明基础接取条件。演示目标覆盖击杀怪物、使用道具和进入地图，5004验证“完成5001且达到2级”。`GrantItem(ItemConfigId, Count)`和`GrantItems(...)`必须通过Inventory，由Inventory填充已有堆叠并按`max_stack`拆分新Item。普通同步奖励仍可使用`ExecuteReward`；关键任务奖励使用`PlanTransactionalReward -> ItemComponent.PlanGrantItems -> PlayerPersistenceComponent.ApplyTransaction -> CommitGrantPlan`。规划阶段不能修改Entity，提交成功前不能响应客户端。当前事务Planner只支持GrantItem，新增其他Action必须先实现纯数据规划和恢复规则。组队任务需要Party与PartyAudience，当前不要在Quest里提前实现队员共享。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
+当前配置入口为`QuestConfig.xlsx`和`QuestObjectiveConfig.xlsx`，奖励复用Action；`required_quest_ids`和`minimum_level`声明基础接取条件。演示目标覆盖击杀怪物、使用道具和进入地图；Starter任务链为5001击杀5只怪A，NPC交付后按`required_quest_ids=[5001]`解锁5005击杀5只怪B。5004继续验证“完成5001且达到2级”。`GrantItem(ItemConfigId, Count)`和`GrantItems(...)`必须通过Inventory，由Inventory填充已有堆叠并按`max_stack`拆分新Item。普通同步奖励仍可使用`ExecuteReward`；关键任务奖励使用`PlanTransactionalReward -> ItemComponent.PlanGrantItems -> PlayerPersistenceComponent.ApplyTransaction -> CommitGrantPlan`。规划阶段不能修改Entity，提交成功前不能响应客户端。当前事务Planner只支持GrantItem，新增其他Action必须先实现纯数据规划和恢复规则。组队任务需要Party与PartyAudience，当前不要在Quest里提前实现队员共享。完整代码和协议调用见[任务系统设计](../design/quest-system.md)。
+
+### NPC接取任务
+
+Starter第一版的任务使者遵循“普通Unit + QuestComponent”的最小边界：
+
+```text
+MapHostScene
+  -> UnitComponent.Create(NpcUnit)
+  -> NpcComponent维护地图内NPC索引
+  -> MapAoiComponent.Attach(npc, observer=false, subject=true)
+  -> 客户端收到MapEntitySnapshot(entityType=3)
+  -> 玩家选择NPC
+  -> C2M_AcceptQuest / C2M_CompleteQuest(questConfigId, npcUnitId)
+  -> PlayerUnit ordered mailbox
+  -> NpcComponent.ValidateQuestInteraction
+  -> QuestComponent.AcceptQuest
+```
+
+客户端调用只使用可见快照中的NPC UnitId：
+
+```ts
+const npc = visibleEntities.find((entity) => entity.entityType === 3);
+if (npc) {
+  await mapClient.acceptQuest({
+    questConfigId: 5001,
+    npcUnitId: npc.unitId,
+  });
+  await mapClient.completeQuest({
+    questConfigId: 5001,
+    npcUnitId: npc.unitId,
+  });
+}
+```
+
+- NPC UnitId只是当前地图实例的运行时实体地址，不能保存为任务归属或玩家数据；任务保存的是`questConfigId`和Quest状态。
+- Handler只转换协议，不能直接判断距离、修改Quest状态或绕过mailbox。服务端必须同时检查NPC仍在当前Map、确实提供该任务、玩家在交互范围内以及Quest自身的Veto/前置条件。
+- Starter的Map 100固定创建`npcConfigId=9001`的紫色方块任务使者，交互范围为5米；Map 100使用Demo专用宽视野`AoiConfig=2`，7×7 Grid建立可见关系、9×9 Grid作为Detach边界，远端刷怪区放置三只被动黄色怪和两只主动红色怪，任务5001要求击败5只怪A，任务5005要求交付5001后击败5只怪B，避免新玩家出生即进入战斗。怪物头顶表现读取`MonsterConfig.name`，不把名字复制进运行时协议。Starter当前所有QuestConfig都关闭自动接取，任务只能由NPC/剧情等明确业务入口发起。Cocos3D的桌面端和移动端都遵循“靠近5米显示交互按钮 -> 打开NPC对话 -> 点击接取/交付任务”流程；选中NPC、看到NPC或打开对话框都不能直接改变任务状态。后续对话、多个NPC和可重复任务只扩展配置与领域行为，不复制第二套NPC网络系统。
 
 ## 广播给谁与如何广播
 
@@ -739,6 +811,18 @@ await player.Offline(reason);
 业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。普通socket断开只销毁`GateSession`，不能直接调用玩家`Offline()`；`GatePlayerRoute`在Gate继续保留30秒等待重连。宽限期结束后只能由Gate调用`MapProtocol.PlayerOffline`，Map先完成保存和Location移除并返回Unit RPC，再由下一轮Map Timer执行`RemovePlayer`、AOI离开和Actor销毁。`PlayerOffline`运行在PlayerUnit自己的ordered mailbox时，禁止在当前调用中同步销毁这个Unit；否则RPC返回前Actor已经消失，运行时会报告`actor despawned during mailbox execution`。停机批量清理可在不占用Unit mailbox的地图清理阶段直接完成，但仍须遵守先保存、再脱离AOI、最后销毁Actor的顺序。
 
 玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒调用`C2G_Ping -> G2C_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Session默认unordered，Ping作为普通TS Handler直接返回`TimerSystem.ServerTime()`产生的Unix毫秒且不加锁。登录按连接与账号加锁；进图、重连、传送、快照确认和最终下线按账号加锁。业务只锁会修改共享状态的事务，禁止为了省事把整个Session改回ordered。
+
+同一账号在同一Gate再次登录时属于“顶号”，不是一次普通断线重连。Gate必须在账号锁内先把旧`GateSession`失效，再发送`G2C_SessionReplaced`，最后关闭旧连接；旧连接的迟到断线、在途请求和旧Promise都不能影响新`GatePlayerRoute`。客户端只需要订阅SDK事件，不要把顶号当成普通网络错误自动重试：
+
+```ts
+const stop = loginFlow.onSessionReplaced((message) => {
+  message.reasonCode; // 10040
+  clearLocalGameState();
+  showLoginPanel(`连接已被顶号：${message.reason}`);
+});
+```
+
+服务端关闭连接前会排空已经入队的通知；SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。该机制只解决同Gate连接代次替换，不能替代跨Gate会话服务或Gate故障转移。
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 

@@ -941,6 +941,7 @@ export interface G2M_EnterMap extends IRequest {
   initialSpawnZ: number;
   initialSpawnYaw: number;
   entrySyncMode: number;
+  characterId: bigint;
 }
 
 export const G2M_EnterMapCodec = {
@@ -957,6 +958,7 @@ export const G2M_EnterMapCodec = {
       initialSpawnZ: 0,
       initialSpawnYaw: 0,
       entrySyncMode: 0,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -993,6 +995,9 @@ export const G2M_EnterMapCodec = {
       else if (tag.fieldNo === 12 && tag.wireType === 0) {
         value.entrySyncMode = reader.uint32();
       }
+      else if (tag.fieldNo === 13 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1013,6 +1018,7 @@ export const G2M_EnterMapCodec = {
     if (value.initialSpawnZ !== undefined) writer.float(10, value.initialSpawnZ);
     if (value.initialSpawnYaw !== undefined) writer.float(11, value.initialSpawnYaw);
     if (value.entrySyncMode !== undefined) writer.uint32(12, value.entrySyncMode);
+    if (value.characterId !== undefined) writer.uint64(13, value.characterId);
     return writer.finish();
   },
 };
@@ -1023,6 +1029,7 @@ export interface G2M_SecondEnterMap extends IActorRequest {
   mapId: number;
   unitId: number;
   gateName: string;
+  characterId: bigint;
 }
 
 export const G2M_SecondEnterMapCodec = {
@@ -1033,6 +1040,7 @@ export const G2M_SecondEnterMapCodec = {
       mapId: 0,
       unitId: 0,
       gateName: "",
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1051,6 +1059,9 @@ export const G2M_SecondEnterMapCodec = {
       else if (tag.fieldNo === 4 && tag.wireType === 2) {
         value.gateName = reader.string();
       }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1065,6 +1076,7 @@ export const G2M_SecondEnterMapCodec = {
     if (value.mapId !== undefined) writer.uint32(2, value.mapId);
     if (value.unitId !== undefined) writer.uint32(3, value.unitId);
     if (value.gateName !== undefined) writer.string(4, value.gateName);
+    if (value.characterId !== undefined) writer.uint64(5, value.characterId);
     return writer.finish();
   },
 };
@@ -1085,6 +1097,7 @@ export interface M2G_SecondEnterMap extends IActorResponse {
   mapInstanceId: bigint;
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
+  characterId: bigint;
 }
 
 export const M2G_SecondEnterMapCodec = {
@@ -1103,6 +1116,7 @@ export const M2G_SecondEnterMapCodec = {
       mapInstanceId: 0n,
       quests: [],
       completedQuestConfigIds: [],
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1151,6 +1165,9 @@ export const M2G_SecondEnterMapCodec = {
       else if (tag.fieldNo === 12 && tag.wireType === 0) {
         (value.completedQuestConfigIds as number[]).push(reader.uint32());
       }
+      else if (tag.fieldNo === 13 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1175,6 +1192,7 @@ export const M2G_SecondEnterMapCodec = {
     if (value.mapInstanceId !== undefined) writer.uint64(10, value.mapInstanceId);
     for (const item of (value.quests ?? [])) writer.bytes(11, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(12, item, true);
+    if (value.characterId !== undefined) writer.uint64(13, value.characterId);
     return writer.finish();
   },
 };
@@ -1197,6 +1215,7 @@ export interface M2G_EnterMap extends IResponse {
   y: number;
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
+  characterId: bigint;
 }
 
 export const M2G_EnterMapCodec = {
@@ -1217,6 +1236,7 @@ export const M2G_EnterMapCodec = {
       y: 0,
       quests: [],
       completedQuestConfigIds: [],
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1271,6 +1291,9 @@ export const M2G_EnterMapCodec = {
       else if (tag.fieldNo === 14 && tag.wireType === 0) {
         (value.completedQuestConfigIds as number[]).push(reader.uint32());
       }
+      else if (tag.fieldNo === 15 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1297,6 +1320,7 @@ export const M2G_EnterMapCodec = {
     if (value.y !== undefined) writer.float(12, value.y);
     for (const item of (value.quests ?? [])) writer.bytes(13, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(14, item, true);
+    if (value.characterId !== undefined) writer.uint64(15, value.characterId);
     return writer.finish();
   },
 };
@@ -1307,6 +1331,7 @@ export interface G2M_TransferPlayer extends IActorRequest {
   gateName: string;
   expectedLocationRevision: bigint;
   targetMapInstanceId: bigint;
+  characterId: bigint;
 }
 
 export const G2M_TransferPlayerCodec = {
@@ -1317,6 +1342,7 @@ export const G2M_TransferPlayerCodec = {
       gateName: "",
       expectedLocationRevision: 0n,
       targetMapInstanceId: 0n,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1335,6 +1361,9 @@ export const G2M_TransferPlayerCodec = {
       else if (tag.fieldNo === 6 && tag.wireType === 0) {
         value.targetMapInstanceId = reader.uint64();
       }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1349,6 +1378,7 @@ export const G2M_TransferPlayerCodec = {
     if (value.gateName !== undefined) writer.string(2, value.gateName);
     if (value.expectedLocationRevision !== undefined) writer.uint64(5, value.expectedLocationRevision);
     if (value.targetMapInstanceId !== undefined) writer.uint64(6, value.targetMapInstanceId);
+    if (value.characterId !== undefined) writer.uint64(7, value.characterId);
     return writer.finish();
   },
 };
@@ -1373,6 +1403,7 @@ export interface M2G_TransferPlayer extends IActorResponse {
   mapHost: MapHostEndpoint;
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
+  characterId: bigint;
 }
 
 export const M2G_TransferPlayerCodec = {
@@ -1395,6 +1426,7 @@ export const M2G_TransferPlayerCodec = {
       mapHost: MapHostEndpointCodec.decode(new Uint8Array(0)),
       quests: [],
       completedQuestConfigIds: [],
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1455,6 +1487,9 @@ export const M2G_TransferPlayerCodec = {
       else if (tag.fieldNo === 16 && tag.wireType === 0) {
         (value.completedQuestConfigIds as number[]).push(reader.uint32());
       }
+      else if (tag.fieldNo === 17 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1483,6 +1518,7 @@ export const M2G_TransferPlayerCodec = {
     if (value.mapHost !== undefined) writer.bytes(14, MapHostEndpointCodec.encode(value.mapHost));
     for (const item of (value.quests ?? [])) writer.bytes(15, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(16, item, true);
+    if (value.characterId !== undefined) writer.uint64(17, value.characterId);
     return writer.finish();
   },
 };
@@ -1494,6 +1530,7 @@ export interface M2G_MapReady extends IActorMessage {
   x: number;
   z: number;
   y: number;
+  characterId: bigint;
 }
 
 export const M2G_MapReadyCodec = {
@@ -1506,6 +1543,7 @@ export const M2G_MapReadyCodec = {
       x: 0,
       z: 0,
       y: 0,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1527,6 +1565,9 @@ export const M2G_MapReadyCodec = {
       else if (tag.fieldNo === 6 && tag.wireType === 5) {
         value.y = reader.float();
       }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1542,6 +1583,7 @@ export const M2G_MapReadyCodec = {
     if (value.x !== undefined) writer.float(4, value.x);
     if (value.z !== undefined) writer.float(5, value.z);
     if (value.y !== undefined) writer.float(6, value.y);
+    if (value.characterId !== undefined) writer.uint64(7, value.characterId);
     return writer.finish();
   },
 };
@@ -1550,6 +1592,7 @@ export interface G2M_InitialSnapshot extends IRequest {
   rpcId?: number;
   account: string;
   unitId: number;
+  characterId: bigint;
 }
 
 export const G2M_InitialSnapshotCodec = {
@@ -1558,6 +1601,7 @@ export const G2M_InitialSnapshotCodec = {
     const value: G2M_InitialSnapshot = {
       account: "",
       unitId: 0,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1569,6 +1613,9 @@ export const G2M_InitialSnapshotCodec = {
       }
       else if (tag.fieldNo === 2 && tag.wireType === 0) {
         value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -1582,6 +1629,7 @@ export const G2M_InitialSnapshotCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.account !== undefined) writer.string(1, value.account);
     if (value.unitId !== undefined) writer.uint32(2, value.unitId);
+    if (value.characterId !== undefined) writer.uint64(3, value.characterId);
     return writer.finish();
   },
 };
@@ -1637,6 +1685,7 @@ export interface G2M_PlayerOffline extends IActorRequest {
   unitId: number;
   gateName: string;
   reason: string;
+  characterId: bigint;
 }
 
 export const G2M_PlayerOfflineCodec = {
@@ -1648,6 +1697,7 @@ export const G2M_PlayerOfflineCodec = {
       unitId: 0,
       gateName: "",
       reason: "",
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1669,6 +1719,9 @@ export const G2M_PlayerOfflineCodec = {
       else if (tag.fieldNo === 5 && tag.wireType === 2) {
         value.reason = reader.string();
       }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1684,6 +1737,7 @@ export const G2M_PlayerOfflineCodec = {
     if (value.unitId !== undefined) writer.uint32(3, value.unitId);
     if (value.gateName !== undefined) writer.string(4, value.gateName);
     if (value.reason !== undefined) writer.string(5, value.reason);
+    if (value.characterId !== undefined) writer.uint64(6, value.characterId);
     return writer.finish();
   },
 };
@@ -1857,6 +1911,7 @@ export interface PlayerTransferSnapshot {
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
   persistenceRevision: bigint;
+  characterId: bigint;
 }
 
 export const PlayerTransferSnapshotCodec = {
@@ -1882,6 +1937,7 @@ export const PlayerTransferSnapshotCodec = {
       quests: [],
       completedQuestConfigIds: [],
       persistenceRevision: 0n,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1942,6 +1998,9 @@ export const PlayerTransferSnapshotCodec = {
       else if (tag.fieldNo === 20 && tag.wireType === 0) {
         value.persistenceRevision = reader.uint64();
       }
+      else if (tag.fieldNo === 21 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1970,6 +2029,7 @@ export const PlayerTransferSnapshotCodec = {
     for (const item of (value.quests ?? [])) writer.bytes(18, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(19, item, true);
     if (value.persistenceRevision !== undefined) writer.uint64(20, value.persistenceRevision);
+    if (value.characterId !== undefined) writer.uint64(21, value.characterId);
     return writer.finish();
   },
 };
@@ -3086,6 +3146,7 @@ export interface M2M_CommitPlayerTransferResponse extends IResponse {
   y: number;
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
+  characterId: bigint;
 }
 
 export const M2M_CommitPlayerTransferResponseCodec = {
@@ -3107,6 +3168,7 @@ export const M2M_CommitPlayerTransferResponseCodec = {
       y: 0,
       quests: [],
       completedQuestConfigIds: [],
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3164,6 +3226,9 @@ export const M2M_CommitPlayerTransferResponseCodec = {
       else if (tag.fieldNo === 15 && tag.wireType === 0) {
         (value.completedQuestConfigIds as number[]).push(reader.uint32());
       }
+      else if (tag.fieldNo === 16 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3191,6 +3256,7 @@ export const M2M_CommitPlayerTransferResponseCodec = {
     if (value.y !== undefined) writer.float(13, value.y);
     for (const item of (value.quests ?? [])) writer.bytes(14, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(15, item, true);
+    if (value.characterId !== undefined) writer.uint64(16, value.characterId);
     return writer.finish();
   },
 };
@@ -3290,6 +3356,7 @@ export interface PlayerLocationSnapshot {
   revision: bigint;
   state: string;
   mapHost: MapHostEndpoint;
+  characterId: bigint;
 }
 
 export const PlayerLocationSnapshotCodec = {
@@ -3306,6 +3373,7 @@ export const PlayerLocationSnapshotCodec = {
       revision: 0n,
       state: "",
       mapHost: MapHostEndpointCodec.decode(new Uint8Array(0)),
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3339,6 +3407,9 @@ export const PlayerLocationSnapshotCodec = {
       else if (tag.fieldNo === 10 && tag.wireType === 2) {
         value.mapHost = MapHostEndpointCodec.decode(reader.bytesField());
       }
+      else if (tag.fieldNo === 11 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3358,6 +3429,7 @@ export const PlayerLocationSnapshotCodec = {
     if (value.revision !== undefined) writer.uint64(8, value.revision);
     if (value.state !== undefined) writer.string(9, value.state);
     if (value.mapHost !== undefined) writer.bytes(10, MapHostEndpointCodec.encode(value.mapHost));
+    if (value.characterId !== undefined) writer.uint64(11, value.characterId);
     return writer.finish();
   },
 };
@@ -3365,6 +3437,7 @@ export const PlayerLocationSnapshotCodec = {
 export interface S2L_AllocatePlayerUnitId extends IRequest {
   rpcId?: number;
   account: string;
+  characterId: bigint;
 }
 
 export const S2L_AllocatePlayerUnitIdCodec = {
@@ -3372,6 +3445,7 @@ export const S2L_AllocatePlayerUnitIdCodec = {
     const reader = new BinaryReader(payload);
     const value: S2L_AllocatePlayerUnitId = {
       account: "",
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3380,6 +3454,9 @@ export const S2L_AllocatePlayerUnitIdCodec = {
       }
       else if (tag.fieldNo === 1 && tag.wireType === 2) {
         value.account = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -3392,6 +3469,7 @@ export const S2L_AllocatePlayerUnitIdCodec = {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.account !== undefined) writer.string(1, value.account);
+    if (value.characterId !== undefined) writer.uint64(2, value.characterId);
     return writer.finish();
   },
 };
@@ -3401,6 +3479,7 @@ export interface L2S_AllocatePlayerUnitId extends IResponse {
   error?: number;
   rpcId?: number;
   unitId: number;
+  characterId: bigint;
 }
 
 export const L2S_AllocatePlayerUnitIdCodec = {
@@ -3408,6 +3487,7 @@ export const L2S_AllocatePlayerUnitIdCodec = {
     const reader = new BinaryReader(payload);
     const value: L2S_AllocatePlayerUnitId = {
       unitId: 0,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3423,6 +3503,9 @@ export const L2S_AllocatePlayerUnitIdCodec = {
       else if (tag.fieldNo === 1 && tag.wireType === 0) {
         value.unitId = reader.uint32();
       }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3436,6 +3519,7 @@ export const L2S_AllocatePlayerUnitIdCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.characterId !== undefined) writer.uint64(2, value.characterId);
     return writer.finish();
   },
 };
@@ -3449,6 +3533,7 @@ export interface S2L_RegisterPlayerLocation extends IRequest {
   mapId: number;
   mapInstanceId: bigint;
   actorInstanceId: number;
+  characterId: bigint;
 }
 
 export const S2L_RegisterPlayerLocationCodec = {
@@ -3462,6 +3547,7 @@ export const S2L_RegisterPlayerLocationCodec = {
       mapId: 0,
       mapInstanceId: 0n,
       actorInstanceId: 0,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3489,6 +3575,9 @@ export const S2L_RegisterPlayerLocationCodec = {
       else if (tag.fieldNo === 7 && tag.wireType === 0) {
         value.actorInstanceId = reader.uint32();
       }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3506,6 +3595,7 @@ export const S2L_RegisterPlayerLocationCodec = {
     if (value.mapId !== undefined) writer.uint32(5, value.mapId);
     if (value.mapInstanceId !== undefined) writer.uint64(6, value.mapInstanceId);
     if (value.actorInstanceId !== undefined) writer.uint32(7, value.actorInstanceId);
+    if (value.characterId !== undefined) writer.uint64(8, value.characterId);
     return writer.finish();
   },
 };
@@ -3564,6 +3654,7 @@ export interface S2L_ResolvePlayerLocation extends IRequest {
   rpcId?: number;
   unitId: number;
   account: string;
+  characterId: bigint;
 }
 
 export const S2L_ResolvePlayerLocationCodec = {
@@ -3572,6 +3663,7 @@ export const S2L_ResolvePlayerLocationCodec = {
     const value: S2L_ResolvePlayerLocation = {
       unitId: 0,
       account: "",
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3583,6 +3675,9 @@ export const S2L_ResolvePlayerLocationCodec = {
       }
       else if (tag.fieldNo === 2 && tag.wireType === 2) {
         value.account = reader.string();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -3596,6 +3691,7 @@ export const S2L_ResolvePlayerLocationCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.unitId !== undefined) writer.uint32(1, value.unitId);
     if (value.account !== undefined) writer.string(2, value.account);
+    if (value.characterId !== undefined) writer.uint64(3, value.characterId);
     return writer.finish();
   },
 };
@@ -3839,6 +3935,7 @@ export interface S2L_CommitPlayerLocation extends IRequest {
   mapId: number;
   mapInstanceId: bigint;
   actorInstanceId: number;
+  characterId: bigint;
 }
 
 export const S2L_CommitPlayerLocationCodec = {
@@ -3852,6 +3949,7 @@ export const S2L_CommitPlayerLocationCodec = {
       mapId: 0,
       mapInstanceId: 0n,
       actorInstanceId: 0,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3879,6 +3977,9 @@ export const S2L_CommitPlayerLocationCodec = {
       else if (tag.fieldNo === 7 && tag.wireType === 0) {
         value.actorInstanceId = reader.uint32();
       }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3896,6 +3997,7 @@ export const S2L_CommitPlayerLocationCodec = {
     if (value.mapId !== undefined) writer.uint32(5, value.mapId);
     if (value.mapInstanceId !== undefined) writer.uint64(6, value.mapInstanceId);
     if (value.actorInstanceId !== undefined) writer.uint32(7, value.actorInstanceId);
+    if (value.characterId !== undefined) writer.uint64(8, value.characterId);
     return writer.finish();
   },
 };
@@ -4120,6 +4222,7 @@ export interface PlayerLocationRecovery {
   mapId: number;
   mapInstanceId: bigint;
   actorInstanceId: number;
+  characterId: bigint;
 }
 
 export const PlayerLocationRecoveryCodec = {
@@ -4133,6 +4236,7 @@ export const PlayerLocationRecoveryCodec = {
       mapId: 0,
       mapInstanceId: 0n,
       actorInstanceId: 0,
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -4157,6 +4261,9 @@ export const PlayerLocationRecoveryCodec = {
       else if (tag.fieldNo === 7 && tag.wireType === 0) {
         value.actorInstanceId = reader.uint32();
       }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -4173,6 +4280,7 @@ export const PlayerLocationRecoveryCodec = {
     if (value.mapId !== undefined) writer.uint32(5, value.mapId);
     if (value.mapInstanceId !== undefined) writer.uint64(6, value.mapInstanceId);
     if (value.actorInstanceId !== undefined) writer.uint32(7, value.actorInstanceId);
+    if (value.characterId !== undefined) writer.uint64(8, value.characterId);
     return writer.finish();
   },
 };
@@ -4333,6 +4441,7 @@ export const S2G_ClientBroadcastBatchCodec = {
 
 export interface C2S_GetLoginServiceAddr extends IRequest {
   rpcId?: number;
+  account?: string;
 }
 
 export const C2S_GetLoginServiceAddrCodec = {
@@ -4345,6 +4454,9 @@ export const C2S_GetLoginServiceAddrCodec = {
       if (tag.fieldNo === 90 && tag.wireType === 0) {
         value.rpcId = reader.uint32();
       }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.account = reader.string();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -4355,6 +4467,7 @@ export const C2S_GetLoginServiceAddrCodec = {
   encode(value: C2S_GetLoginServiceAddr): Uint8Array {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.account !== undefined) writer.string(1, value.account);
     return writer.finish();
   },
 };
@@ -4418,6 +4531,8 @@ export const S2C_GetLoginServiceAddrCodec = {
 export interface C2S_Login extends IRequest {
   rpcId?: number;
   account: string;
+  characterId?: bigint;
+  password?: string;
 }
 
 export const C2S_LoginCodec = {
@@ -4434,6 +4549,12 @@ export const C2S_LoginCodec = {
       else if (tag.fieldNo === 1 && tag.wireType === 2) {
         value.account = reader.string();
       }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 2) {
+        value.password = reader.string();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -4445,6 +4566,55 @@ export const C2S_LoginCodec = {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.account !== undefined) writer.string(1, value.account);
+    if (value.characterId !== undefined) writer.uint64(2, value.characterId);
+    if (value.password !== undefined) writer.string(3, value.password);
+    return writer.finish();
+  },
+};
+
+export interface CharacterSummary {
+  characterId: bigint;
+  name: string;
+  playerConfigId: number;
+  level: number;
+}
+
+export const CharacterSummaryCodec = {
+  decode(payload: Uint8Array): CharacterSummary {
+    const reader = new BinaryReader(payload);
+    const value: CharacterSummary = {
+      characterId: 0n,
+      name: "",
+      playerConfigId: 0,
+      level: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.name = reader.string();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.playerConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.level = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: CharacterSummary): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.characterId !== undefined) writer.uint64(1, value.characterId);
+    if (value.name !== undefined) writer.string(2, value.name);
+    if (value.playerConfigId !== undefined) writer.uint32(3, value.playerConfigId);
+    if (value.level !== undefined) writer.uint32(4, value.level);
     return writer.finish();
   },
 };
@@ -4460,6 +4630,8 @@ export interface S2C_Login extends IResponse {
   gateName: string;
   gateIp: string;
   gatePort: number;
+  characters: readonly CharacterSummary[];
+  selectedCharacterId: bigint;
 }
 
 export const S2C_LoginCodec = {
@@ -4473,6 +4645,8 @@ export const S2C_LoginCodec = {
       gateName: "",
       gateIp: "",
       gatePort: 0,
+      characters: [],
+      selectedCharacterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -4506,6 +4680,12 @@ export const S2C_LoginCodec = {
       else if (tag.fieldNo === 7 && tag.wireType === 0) {
         value.gatePort = reader.uint32();
       }
+      else if (tag.fieldNo === 8 && tag.wireType === 2) {
+        (value.characters as CharacterSummary[]).push(CharacterSummaryCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 9 && tag.wireType === 0) {
+        value.selectedCharacterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -4525,6 +4705,194 @@ export const S2C_LoginCodec = {
     if (value.gateName !== undefined) writer.string(5, value.gateName);
     if (value.gateIp !== undefined) writer.string(6, value.gateIp);
     if (value.gatePort !== undefined) writer.uint32(7, value.gatePort);
+    for (const item of (value.characters ?? [])) writer.bytes(8, CharacterSummaryCodec.encode(item), true);
+    if (value.selectedCharacterId !== undefined) writer.uint64(9, value.selectedCharacterId);
+    return writer.finish();
+  },
+};
+
+export interface C2S_Register extends IRequest {
+  rpcId?: number;
+  account: string;
+  password: string;
+}
+
+export const C2S_RegisterCodec = {
+  decode(payload: Uint8Array): C2S_Register {
+    const reader = new BinaryReader(payload);
+    const value: C2S_Register = {
+      account: "",
+      password: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.account = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.password = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2S_Register): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.password !== undefined) writer.string(2, value.password);
+    return writer.finish();
+  },
+};
+
+export interface S2C_Register extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  account: string;
+  character: CharacterSummary;
+}
+
+export const S2C_RegisterCodec = {
+  decode(payload: Uint8Array): S2C_Register {
+    const reader = new BinaryReader(payload);
+    const value: S2C_Register = {
+      account: "",
+      character: CharacterSummaryCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.account = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.character = CharacterSummaryCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: S2C_Register): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.character !== undefined) writer.bytes(2, CharacterSummaryCodec.encode(value.character));
+    return writer.finish();
+  },
+};
+
+export interface C2S_CreateCharacter extends IRequest {
+  rpcId?: number;
+  account: string;
+  name: string;
+  playerConfigId: number;
+}
+
+export const C2S_CreateCharacterCodec = {
+  decode(payload: Uint8Array): C2S_CreateCharacter {
+    const reader = new BinaryReader(payload);
+    const value: C2S_CreateCharacter = {
+      account: "",
+      name: "",
+      playerConfigId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.account = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.name = reader.string();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.playerConfigId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2S_CreateCharacter): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.account !== undefined) writer.string(1, value.account);
+    if (value.name !== undefined) writer.string(2, value.name);
+    if (value.playerConfigId !== undefined) writer.uint32(3, value.playerConfigId);
+    return writer.finish();
+  },
+};
+
+export interface S2C_CreateCharacter extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  character: CharacterSummary;
+  characters: readonly CharacterSummary[];
+}
+
+export const S2C_CreateCharacterCodec = {
+  decode(payload: Uint8Array): S2C_CreateCharacter {
+    const reader = new BinaryReader(payload);
+    const value: S2C_CreateCharacter = {
+      character: CharacterSummaryCodec.decode(new Uint8Array(0)),
+      characters: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.character = CharacterSummaryCodec.decode(reader.bytesField());
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.characters as CharacterSummary[]).push(CharacterSummaryCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: S2C_CreateCharacter): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.character !== undefined) writer.bytes(1, CharacterSummaryCodec.encode(value.character));
+    for (const item of (value.characters ?? [])) writer.bytes(2, CharacterSummaryCodec.encode(item), true);
     return writer.finish();
   },
 };
@@ -4533,6 +4901,7 @@ export interface C2G_LoginGate extends IRequest {
   rpcId?: number;
   account: string;
   token: string;
+  characterId?: bigint;
 }
 
 export const C2G_LoginGateCodec = {
@@ -4553,6 +4922,9 @@ export const C2G_LoginGateCodec = {
       else if (tag.fieldNo === 2 && tag.wireType === 2) {
         value.token = reader.string();
       }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -4565,6 +4937,7 @@ export const C2G_LoginGateCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.account !== undefined) writer.string(1, value.account);
     if (value.token !== undefined) writer.string(2, value.token);
+    if (value.characterId !== undefined) writer.uint64(3, value.characterId);
     return writer.finish();
   },
 };
@@ -4574,6 +4947,7 @@ export interface G2C_LoginGate extends IResponse {
   error?: number;
   rpcId?: number;
   account: string;
+  characterId: bigint;
 }
 
 export const G2C_LoginGateCodec = {
@@ -4581,6 +4955,7 @@ export const G2C_LoginGateCodec = {
     const reader = new BinaryReader(payload);
     const value: G2C_LoginGate = {
       account: "",
+      characterId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -4596,6 +4971,9 @@ export const G2C_LoginGateCodec = {
       else if (tag.fieldNo === 1 && tag.wireType === 2) {
         value.account = reader.string();
       }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.characterId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -4609,6 +4987,7 @@ export const G2C_LoginGateCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.account !== undefined) writer.string(1, value.account);
+    if (value.characterId !== undefined) writer.uint64(2, value.characterId);
     return writer.finish();
   },
 };
@@ -4842,6 +5221,41 @@ export const G2C_MapReadyCodec = {
     if (value.x !== undefined) writer.float(4, value.x);
     if (value.z !== undefined) writer.float(5, value.z);
     if (value.y !== undefined) writer.float(6, value.y);
+    return writer.finish();
+  },
+};
+
+export interface G2C_SessionReplaced extends IMessage {
+  reasonCode: number;
+  reason: string;
+}
+
+export const G2C_SessionReplacedCodec = {
+  decode(payload: Uint8Array): G2C_SessionReplaced {
+    const reader = new BinaryReader(payload);
+    const value: G2C_SessionReplaced = {
+      reasonCode: 0,
+      reason: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.reasonCode = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.reason = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_SessionReplaced): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.reasonCode !== undefined) writer.uint32(1, value.reasonCode);
+    if (value.reason !== undefined) writer.string(2, value.reason);
     return writer.finish();
   },
 };
@@ -5969,6 +6383,7 @@ export const G2C_ItemChangedCodec = {
 export interface C2M_AcceptQuest extends IActorLocationRequest {
   rpcId?: number;
   questConfigId: number;
+  npcUnitId: number;
 }
 
 export const C2M_AcceptQuestCodec = {
@@ -5976,6 +6391,7 @@ export const C2M_AcceptQuestCodec = {
     const reader = new BinaryReader(payload);
     const value: C2M_AcceptQuest = {
       questConfigId: 0,
+      npcUnitId: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -5984,6 +6400,9 @@ export const C2M_AcceptQuestCodec = {
       }
       else if (tag.fieldNo === 1 && tag.wireType === 0) {
         value.questConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.npcUnitId = reader.uint32();
       }
       else {
         reader.skip(tag.wireType);
@@ -5996,6 +6415,7 @@ export const C2M_AcceptQuestCodec = {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.questConfigId !== undefined) writer.uint32(1, value.questConfigId);
+    if (value.npcUnitId !== undefined) writer.uint32(2, value.npcUnitId);
     return writer.finish();
   },
 };
@@ -6047,6 +6467,7 @@ export const M2C_AcceptQuestCodec = {
 export interface C2M_CompleteQuest extends IActorLocationRequest {
   rpcId?: number;
   questConfigId: number;
+  npcUnitId: number;
 }
 
 export const C2M_CompleteQuestCodec = {
@@ -6054,6 +6475,7 @@ export const C2M_CompleteQuestCodec = {
     const reader = new BinaryReader(payload);
     const value: C2M_CompleteQuest = {
       questConfigId: 0,
+      npcUnitId: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -6062,6 +6484,9 @@ export const C2M_CompleteQuestCodec = {
       }
       else if (tag.fieldNo === 1 && tag.wireType === 0) {
         value.questConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.npcUnitId = reader.uint32();
       }
       else {
         reader.skip(tag.wireType);
@@ -6074,6 +6499,7 @@ export const C2M_CompleteQuestCodec = {
     const writer = new BinaryWriter();
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.questConfigId !== undefined) writer.uint32(1, value.questConfigId);
+    if (value.npcUnitId !== undefined) writer.uint32(2, value.npcUnitId);
     return writer.finish();
   },
 };

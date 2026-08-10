@@ -50,7 +50,10 @@ async function enterGame(): Promise<void> {
   flow?.close();
   flow = new LoginFlow({ transport: "websocket", host: LOGIN_MGR_HOST, port: LOGIN_MGR_PORT });
   try {
-    const result = await flow.enterGame(account.value.trim() || `pixi_${Date.now()}`, 1, (text) => {
+    const loginAccount = account.value.trim() || `pixi_${Date.now()}`;
+    const password = "pixi_demo_password";
+    await flow.register(loginAccount, password);
+    const result = await flow.enterGame(loginAccount, password, 1, (text) => {
       status.textContent = text;
     });
     gateSocket = result.gateSocket;

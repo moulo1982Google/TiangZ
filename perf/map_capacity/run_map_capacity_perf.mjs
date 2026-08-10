@@ -19,6 +19,7 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --entry-sync-mode full      full|attach-only|new-observer-only|existing-observers-only；仅Bench诊断
   --world-grids 10            Grid世界边长；当前支持10|15|20
   --probe-rate 0.2            每玩家每秒 Probe RPC 次数（默认5秒一次）
+  --business-rate 0          每玩家每秒真实道具/技能请求次数；默认关闭
   --state-sync-mode off       off|numeric|player|item|mixed
   --state-sync-rate 0         每玩家每秒状态同步触发 RPC 次数
   --state-sync-concurrency 4  每玩家状态同步最大 in-flight
@@ -133,6 +134,8 @@ async function main() {
       item.median.moveErrors === 0 &&
       item.median.probeErrors === 0 &&
       item.median.stateSyncErrors === 0 &&
+      item.median.businessTargetPercent >= 95 &&
+      item.median.businessTransportErrors === 0 &&
       item.median.innerOverloads === 0 &&
       item.median.innerTimeouts === 0 &&
       item.median.backpressure === 0 &&
@@ -311,6 +314,7 @@ async function runLoadClients(players, managerPort, round, measurementSignal) {
         ...(useRustClient ? ["--entry-sync-mode", options.entrySyncMode] : []),
         "--probe-rate", String(options.probeRate),
         "--probe-concurrency", String(options.probeConcurrency),
+        "--business-rate", String(options.businessRate),
         "--state-sync-mode", options.stateSyncMode,
         "--state-sync-rate", String(options.stateSyncRate),
         "--state-sync-concurrency", String(options.stateSyncConcurrency),
@@ -385,8 +389,26 @@ function combineClientResults(results, players) {
     },
     movement: combineWorkload(results, "movement"),
     probe: combineWorkload(results, "probe"),
+    business: combineBusiness(results),
     stateSync: combineStateSync(results),
     loadGenerator: combineLoadGenerators(results),
+  };
+}
+
+function combineBusiness(results) {
+  const values = results.map((item) => item.business ?? {});
+  return {
+    targetRatePerPlayer: options.businessRate,
+    count: sum(values.map((item) => item.count ?? 0)),
+    perSecond: sum(values.map((item) => item.perSecond ?? 0)),
+    accepted: sum(values.map((item) => item.accepted ?? 0)),
+    rejected: sum(values.map((item) => item.rejected ?? 0)),
+    transportErrors: sum(values.map((item) => item.transportErrors ?? 0)),
+    p50Ms: max(values.map((item) => item.p50Ms ?? 0)),
+    p90Ms: max(values.map((item) => item.p90Ms ?? 0)),
+    p95Ms: max(values.map((item) => item.p95Ms ?? 0)),
+    p99Ms: max(values.map((item) => item.p99Ms ?? 0)),
+    maxMs: max(values.map((item) => item.maxMs ?? 0)),
   };
 }
 
@@ -1776,6 +1798,22 @@ function aggregateCases(rounds) {
       stateSyncP99Ms: median(group.map((item) => item.stateSync?.p99Ms ?? 0)),
       stateSyncMaxMs: median(group.map((item) => item.stateSync?.maxMs ?? 0)),
       stateSyncErrors: median(group.map((item) => item.stateSync?.errors ?? 0)),
+      businessPerSecond: median(group.map((item) => item.business?.perSecond ?? 0)),
+      businessTargetPercent: options.businessRate === 0
+        ? 100
+        : median(group.map((item) =>
+          (item.business?.perSecond ?? 0) / (item.players * options.businessRate) * 100,
+        )),
+      businessAccepted: median(group.map((item) => item.business?.accepted ?? 0)),
+      businessRejected: median(group.map((item) => item.business?.rejected ?? 0)),
+      businessTransportErrors: median(group.map(
+        (item) => item.business?.transportErrors ?? 0,
+      )),
+      businessP50Ms: median(group.map((item) => item.business?.p50Ms ?? 0)),
+      businessP90Ms: median(group.map((item) => item.business?.p90Ms ?? 0)),
+      businessP95Ms: median(group.map((item) => item.business?.p95Ms ?? 0)),
+      businessP99Ms: median(group.map((item) => item.business?.p99Ms ?? 0)),
+      businessMaxMs: median(group.map((item) => item.business?.maxMs ?? 0)),
       numericPushesPerSecond: median(group.map(
         (item) => item.stateSync?.numericPushesPerSecond ?? 0,
       )),
@@ -1857,7 +1895,8 @@ function renderMarkdown(report) {
          ? "固定单个AOI Grid内的安全轨迹（不跨Grid）"
          : "统一出生点（最坏同屏）"}`,
     `- 进图同步模式：${options.entrySyncMode}${options.entrySyncMode === "full" ? "（正式完整语义）" : "（仅Bench诊断，不代表可上线语义）"}`,
-    `- 负载：${options.probeOnly ? "Probe Only，" : `每玩家 ${options.moveRate}Hz Move + `}每玩家 ${options.probeRate}Hz MapProbe`,
+    `- 负载：${options.probeOnly ? "Probe Only，" : `每玩家 ${options.moveRate}Hz Move + `}每玩家 ${options.probeRate}Hz MapProbe` +
+      (options.businessRate > 0 ? ` + ${options.businessRate}Hz真实道具/技能` : ""),
     ...(options.stateSyncMode !== "off"
       ? [`- 状态同步：${options.stateSyncMode}，每玩家 ${options.stateSyncRate}Hz，in-flight ${options.stateSyncConcurrency}`]
       : []),
@@ -1915,6 +1954,24 @@ function renderMarkdown(report) {
         `${round(value.numericPushesPerSecond)}/${round(value.numericItemsPerSecond)}/${round(value.numericBytesPerSecond / 1024 / 1024, 2)} | ` +
         `${round(value.playerInfoPushesPerSecond)}/${round(value.playerInfoItemsPerSecond)}/${round(value.playerInfoBytesPerSecond / 1024 / 1024, 2)} | ` +
         `${round(value.itemPushesPerSecond)}/${round(value.itemItemsPerSecond)}/${round(value.itemBytesPerSecond / 1024 / 1024, 2)} | ${value.stateSyncErrors} |`,
+      );
+    }
+  }
+  if (options.businessRate > 0) {
+    lines.push(
+      "",
+      "## 真实业务闭环",
+      "",
+      "| 玩家 | business/s | 达标率 | 成功 | 业务拒绝 | 传输错误 | p50/p90/p95/p99/max |",
+      "|---:|---:|---:|---:|---:|---:|---:|",
+    );
+    for (const item of report.cases) {
+      const value = item.median;
+      lines.push(
+        `| ${item.players} | ${round(value.businessPerSecond)} | ${round(value.businessTargetPercent, 1)}% | ` +
+        `${value.businessAccepted} | ${value.businessRejected} | ${value.businessTransportErrors} | ` +
+        `${round(value.businessP50Ms, 2)}/${round(value.businessP90Ms, 2)}/${round(value.businessP95Ms, 2)}/` +
+        `${round(value.businessP99Ms, 2)}/${round(value.businessMaxMs, 2)}ms |`,
       );
     }
   }
@@ -2163,6 +2220,7 @@ function parseOptions(args) {
     ),
     worldGrids: positive(values.get("--world-grids") ?? "10", "--world-grids"),
     probeRate: nonNegative(values.get("--probe-rate") ?? "0.2", "--probe-rate"),
+    businessRate: nonNegative(values.get("--business-rate") ?? "0", "--business-rate"),
     probeConcurrency: positive(values.get("--probe-concurrency") ?? "1", "--probe-concurrency"),
     stateSyncMode: enumValue(
       values.get("--state-sync-mode") ?? "off",

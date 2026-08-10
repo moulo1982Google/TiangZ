@@ -6,6 +6,9 @@ import {
 import type {
   G2C_EnterMap,
   G2C_MapReady,
+  G2C_SessionReplaced,
+  S2C_CreateCharacter,
+  S2C_Register,
   S2C_Login,
 } from "../Generated/Model/demo/protocol/messages";
 import {
@@ -28,6 +31,7 @@ export interface EnterGameResult {
 }
 
 export type LoginProgress = (message: string) => void;
+export type SessionReplacedHandler = (message: G2C_SessionReplaced) => void;
 
 export interface GatePingSample {
   /** Ping请求的完整往返时间，是地图HUD显示的延迟。 / Full Ping round-trip time displayed by the map HUD. */
@@ -47,6 +51,8 @@ export class LoginFlow {
   private gatePingTimer?: ReturnType<typeof setInterval>;
   private gatePingInFlight = false;
   private gatePingSample: GatePingSample | null = null;
+  private readonly sessionReplacedHandlers = new Set<SessionReplacedHandler>();
+  private gateSessionReplacedUnsubscribe?: () => void;
 
   constructor(private readonly loginMgrEndpoint: ClientEndpoint) {}
 
@@ -55,10 +61,22 @@ export class LoginFlow {
     return this.gatePingSample;
   }
 
+  /**
+   * 监听账号被新连接接管；回调只负责通知上层，UI/场景清理由客户端自行决定。
+   * Listens for account takeover; the callback only reports the event, while
+   * each client decides how to clear its UI and gameplay state.
+   */
+  onSessionReplaced(handler: SessionReplacedHandler): () => void {
+    this.sessionReplacedHandlers.add(handler);
+    return () => this.sessionReplacedHandlers.delete(handler);
+  }
+
   async enterGame(
     account: string,
+    password: string,
     mapId: number,
     onProgress: LoginProgress = () => {},
+    characterId?: bigint,
   ): Promise<EnterGameResult> {
     this.close();
 
@@ -66,7 +84,7 @@ export class LoginFlow {
     const manager = this.createSocket(this.loginMgrEndpoint);
     let loginAddress;
     try {
-      loginAddress = await new LoginMgrClient(manager).getLoginServiceAddr({});
+      loginAddress = await new LoginMgrClient(manager).getLoginServiceAddr({ account });
     } finally {
       this.closeSocket(manager);
     }
@@ -79,7 +97,10 @@ export class LoginFlow {
     );
     let login;
     try {
-      login = await new LoginClient(loginSocket).login({ account });
+      const loginClient = new LoginClient(loginSocket);
+      login = await loginClient.login(
+        characterId === undefined ? { account, password } : { account, password, characterId },
+      );
     } finally {
       this.closeSocket(loginSocket);
     }
@@ -90,14 +111,20 @@ export class LoginFlow {
     const gateSocket = this.createSocket(
       endpointWithAddress(this.loginMgrEndpoint, login.gateIp, login.gatePort),
     );
+    const unsubscribeSessionReplaced = gateSocket.on(
+      ClientMessages.SessionReplaced,
+      (message) => this.notifySessionReplaced(message),
+    );
     try {
       const gate = new GateClient(gateSocket);
       await gate.loginGate({
         account: login.account,
         token: login.token,
+        characterId: login.selectedCharacterId,
       });
       this.gateSocket = gateSocket;
       this.gateClient = gate;
+      this.gateSessionReplacedUnsubscribe = unsubscribeSessionReplaced;
       this.startGatePing();
       const [enterMap, mapReady] = await Promise.all([
         gate.enterMap({ mapId, mapInstanceId: 0n }),
@@ -105,13 +132,68 @@ export class LoginFlow {
       ]);
       return { login, enterMap, mapReady, gateSocket };
     } catch (error) {
+      unsubscribeSessionReplaced();
       if (this.gateSocket === gateSocket) this.close();
       else gateSocket.close();
       throw error;
     }
   }
 
+  /** 注册账号并创建同名初始角色；注册不会建立Gate连接，成功后仍需调用enterGame。 / Registers an account and same-name starter character without opening Gate. */
+  async register(account: string, password: string): Promise<S2C_Register> {
+    const manager = this.createSocket(this.loginMgrEndpoint);
+    let loginAddress;
+    try {
+      loginAddress = await new LoginMgrClient(manager).getLoginServiceAddr({ account });
+    } finally {
+      this.closeSocket(manager);
+    }
+
+    const loginSocket = this.createSocket(
+      endpointWithAddress(this.loginMgrEndpoint, loginAddress.ip, loginAddress.port),
+    );
+    try {
+      return await new LoginClient(loginSocket).register({ account, password });
+    } finally {
+      this.closeSocket(loginSocket);
+    }
+  }
+
+  /**
+   * 在进入地图前创建角色；服务端只写入Login目录，不会提前创建Map Unit。
+   * Creates a character before map entry; the server updates only the Login catalog
+   * and does not create a Map Unit prematurely.
+   */
+  async createCharacter(
+    account: string,
+    name: string,
+    playerConfigId = 1,
+  ): Promise<S2C_CreateCharacter> {
+    const manager = this.createSocket(this.loginMgrEndpoint);
+    let loginAddress;
+    try {
+      loginAddress = await new LoginMgrClient(manager).getLoginServiceAddr({ account });
+    } finally {
+      this.closeSocket(manager);
+    }
+
+    const loginSocket = this.createSocket(
+      endpointWithAddress(this.loginMgrEndpoint, loginAddress.ip, loginAddress.port),
+    );
+    try {
+      return await new LoginClient(loginSocket).createCharacter({
+        account,
+        name,
+        playerConfigId,
+      });
+    } finally {
+      this.closeSocket(loginSocket);
+    }
+  }
+
   close(): void {
+    this.gateSessionReplacedUnsubscribe?.();
+    this.gateSessionReplacedUnsubscribe = undefined;
     if (this.gatePingTimer !== undefined) {
       clearInterval(this.gatePingTimer);
       this.gatePingTimer = undefined;
@@ -122,6 +204,16 @@ export class LoginFlow {
     this.gateClient = undefined;
     this.gatePingInFlight = false;
     this.gatePingSample = null;
+  }
+
+  private notifySessionReplaced(message: G2C_SessionReplaced): void {
+    for (const handler of [...this.sessionReplacedHandlers]) {
+      try {
+        handler(message);
+      } catch (error) {
+        console.error("顶号通知处理失败", error);
+      }
+    }
   }
 
   update(maxMessagesPerSocket = 256): number {

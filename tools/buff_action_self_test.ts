@@ -108,6 +108,7 @@ async function main(): Promise<void> {
   const scene = host.spawnScene("buff", BuffTestScene);
   const unit = scene.SpawnActor(1, BuffTestUnit, {
     account: "buff-test-1",
+    characterId: 1n,
     mapId: 1,
     mapInstanceId: 1n,
   });
@@ -215,7 +216,12 @@ async function main(): Promise<void> {
   unit.GetComponent(NumericComponent)[NumericType.CurrentHp] = 1n;
   sourceSkill.RestoreTransfer({ globalCooldownEndAtMs: 0, cooldowns: [], itemCooldowns: [] });
 
-  assert.deepEqual(quests.Snapshot().map((quest) => quest.questConfigId), [5001, 5002, 5003]);
+  // 5001是Starter的NPC接取任务；自测显式模拟玩家从任务使者处接取，不能再依赖自动接取。
+  // Starter quest 5001 is accepted from the NPC; the self-test models that explicit step.
+  assert.deepEqual(quests.Snapshot().map((quest) => quest.questConfigId), []);
+  quests.AcceptQuest(5002);
+  quests.AcceptQuest(5003);
+  quests.AcceptQuest(5001);
   assert.deepEqual(quests.ApplyProgress({
     player: unit as never,
     objectiveType: QuestObjectiveType.KillMonster,
@@ -227,7 +233,7 @@ async function main(): Promise<void> {
     player: unit as never,
     objectiveType: QuestObjectiveType.KillMonster,
     targetConfigId: 1,
-    count: 1,
+    count: 5,
   });
   assert.equal(killProgress[0]?.status, QuestStatus.ReadyToTurnIn);
   repository.failTransactions = true;
@@ -243,6 +249,16 @@ async function main(): Promise<void> {
   assert.equal(reward.rewardItems[0]?.configId, 1001);
   assert.equal(reward.rewardItems[0]?.count, 52);
   assert.equal(items.Snapshot().filter((item) => item.configId === 1001).length, 1);
+  const followUpQuest = quests.AcceptQuest(5005);
+  assert.equal(followUpQuest.status, QuestStatus.InProgress);
+  const followUpProgress = quests.ApplyProgress({
+    player: unit as never,
+    objectiveType: QuestObjectiveType.KillMonster,
+    targetConfigId: 2,
+    count: 5,
+  });
+  assert.equal(followUpProgress[0]?.questConfigId, 5005);
+  assert.equal(followUpProgress[0]?.status, QuestStatus.ReadyToTurnIn);
   const duplicateReward = await quests.CompleteQuest(5001);
   assert.deepEqual(duplicateReward, reward);
   assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 52);
@@ -291,6 +307,7 @@ async function main(): Promise<void> {
   const transfer = unit.CaptureTransfer();
   const target = scene.SpawnActor(2, BuffTestUnit, {
     account: "buff-test-2",
+    characterId: 2n,
     mapId: 1,
     mapInstanceId: 1n,
   });
@@ -315,7 +332,10 @@ async function main(): Promise<void> {
   assert.equal(target.GetComponent(NumericComponent)[NumericType.CurrentHp], 51n);
   assert.equal(targetBuffs.GetBuff(buff.Id as bigint)?.Id, buff.Id);
   assert.deepEqual(targetQuests.CompletedQuestConfigIds(), [5001]);
-  assert.deepEqual(targetQuests.Snapshot().map((quest) => quest.questConfigId), [5002, 5003, 5004]);
+  assert.deepEqual(
+    targetQuests.Snapshot().map((quest) => quest.questConfigId).sort((left, right) => left - right),
+    [5002, 5003, 5004, 5005],
+  );
   assert.equal(targetQuests.Snapshot().find((quest) => quest.questConfigId === 5004)?.status, QuestStatus.ReadyToTurnIn);
 
   assert.equal(buffs.RemoveBuff(buff.Id as bigint, "test"), true);

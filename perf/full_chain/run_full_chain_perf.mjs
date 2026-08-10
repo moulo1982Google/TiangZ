@@ -82,6 +82,8 @@ async function runCase(deployment, players, moveRate, round) {
   console.log(`[full-chain] ${caseName}`);
   const runtimes = [];
   let clientResult;
+  let healthSampler;
+  let healthSamples = new Map();
   try {
     if (!options.remote) {
       const configs = deployment === "all"
@@ -97,13 +99,27 @@ async function runCase(deployment, players, moveRate, round) {
         const configName = path.basename(config, ".json");
         runtimes.push(startRuntime(config, `${caseName}_${configName}`));
       }
-      for (const port of [7000, 7001, 7002, 7201, 7301]) {
+      const ports = new Set([
+        7000,
+        7001,
+        7002,
+        7201,
+        7301,
+        ...runtimes.map((runtime) => runtime.healthPort).filter((port) => port > 0),
+      ]);
+      for (const port of ports) {
         await waitPort("127.0.0.1", port, 20_000);
       }
+      await Promise.all(runtimes
+        .filter((runtime) => runtime.healthPort > 0)
+        .map((runtime) => waitReady(runtime.healthHost, runtime.healthPort, 20_000)));
     } else {
       await waitPort(options.host, options.managerPort, 20_000);
     }
 
+    // 通过健康端点采集资源和队列；日志只作为旧配置/旧 Runtime 的后备来源。
+    // Sample resources and queues through the health endpoint; logs remain a fallback for older runtimes.
+    if (!options.remote) healthSampler = startHealthSampler(runtimes);
     const output = await runCommand(process.execPath, [
       gameClient,
       "--host", options.host,
@@ -121,12 +137,20 @@ async function runCase(deployment, players, moveRate, round) {
     if (!line) throw new Error("gameplay client did not return RESULT_JSON");
     clientResult = JSON.parse(line.slice("RESULT_JSON ".length));
   } finally {
+    if (healthSampler) healthSamples = await healthSampler.stop();
     await stopRuntimes(runtimes);
   }
   return {
     ...clientResult,
     round,
-    serverResources: options.remote ? undefined : collectRuntimeResources(runtimes),
+    serverResources: options.remote
+      ? undefined
+      : collectRuntimeResources(
+        runtimes,
+        clientResult?.measurementStartedAtUnixMs,
+        clientResult?.measurementEndedAtUnixMs,
+        healthSamples,
+      ),
     logDirectory: logDir,
   };
 }
@@ -142,7 +166,16 @@ function startRuntime(configPath, logName) {
   });
   child.stdout.pipe(createWriteStream(stdoutPath));
   child.stderr.pipe(createWriteStream(stderrPath));
-  const runtime = { child, name: path.basename(configPath, ".json"), stdoutPath, stderrPath };
+  const config = JSON.parse(readFileSync(configPath, "utf8"));
+  const health = config.process?.observability?.health;
+  const runtime = {
+    child,
+    name: config.process?.name ?? path.basename(configPath, ".json"),
+    healthHost: health?.ip ?? "127.0.0.1",
+    healthPort: health?.port ?? 0,
+    stdoutPath,
+    stderrPath,
+  };
   activeRuntimes.add(runtime);
   return runtime;
 }
@@ -160,11 +193,11 @@ async function stopRuntimes(runtimes) {
   for (const runtime of runtimes) activeRuntimes.delete(runtime);
 }
 
-function collectRuntimeResources(runtimes) {
+function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = new Map()) {
   const processes = runtimes.map((runtime) => {
     let text = "";
     try { text = readFileSync(runtime.stdoutPath, "utf8"); } catch {}
-    const samples = [...text.matchAll(
+    const logSamples = [...text.matchAll(
       /\[process-metrics\] process=(\S+) cpu_percent=([0-9.]+) cpu_time_ms=(\d+) rss_bytes=(\d+) v8_heap_used_bytes=(\d+) v8_heap_total_bytes=(\d+) v8_gc_count=(\d+) v8_gc_ms=([0-9.]+) timestamp_ms=(\d+)/g,
     )].map((match) => ({
       process: match[1],
@@ -177,6 +210,16 @@ function collectRuntimeResources(runtimes) {
       v8GcMs: Number(match[8]),
       timestampMs: Number(match[9]),
     }));
+    const endpointSamples = healthSamples.get(runtime.name) ?? [];
+    const allSamples = endpointSamples.length > 0 ? endpointSamples : logSamples;
+    const formalSamples = allSamples.filter((sample) =>
+      startedAt && endedAt &&
+      sample.timestampMs >= startedAt + 4_000 &&
+      sample.timestampMs <= endedAt + 1_000
+    );
+    const samples = formalSamples.length > 0
+      ? formalSamples
+      : allSamples.slice(-Math.max(1, Math.floor(options.duration / 5)));
     const last = samples.at(-1);
     const rssTrend = resourceTrend(samples, "rssBytes");
     const heapTrend = resourceTrend(samples, "v8HeapUsedBytes");
@@ -189,6 +232,13 @@ function collectRuntimeResources(runtimes) {
       cpuTimeMs: last?.cpuTimeMs ?? 0,
       v8GcCount: last?.v8GcCount ?? 0,
       v8GcMs: last?.v8GcMs ?? 0,
+      queueDepth: last?.queueDepth ?? 0,
+      queueCapacity: last?.queueCapacity ?? 0,
+      queueMaxDepth: max(samples.map((item) => item.queueMaxDepth ?? 0)),
+      backpressureWaits: last?.backpressureWaits ?? 0,
+      slowDisconnects: last?.slowDisconnects ?? 0,
+      innerOverloads: last?.innerOverloads ?? 0,
+      innerTimeouts: last?.innerTimeouts ?? 0,
       rssStartBytes: rssTrend.start,
       rssEndBytes: rssTrend.end,
       rssGrowthBytes: rssTrend.growth,
@@ -215,7 +265,77 @@ function collectRuntimeResources(runtimes) {
     rssGrowthBytesPerHourSum: sum(processes.map((item) => item.rssGrowthBytesPerHour)),
     v8HeapGrowthBytesSum: sum(processes.map((item) => item.v8HeapGrowthBytes)),
     v8HeapGrowthBytesPerHourSum: sum(processes.map((item) => item.v8HeapGrowthBytesPerHour)),
+    queueDepthSum: sum(processes.map((item) => item.queueDepth)),
+    queueCapacitySum: sum(processes.map((item) => item.queueCapacity)),
+    queueMaxDepthSum: sum(processes.map((item) => item.queueMaxDepth)),
+    backpressureWaitsSum: sum(processes.map((item) => item.backpressureWaits)),
+    slowDisconnectsSum: sum(processes.map((item) => item.slowDisconnects)),
+    innerOverloadsSum: sum(processes.map((item) => item.innerOverloads)),
+    innerTimeoutsSum: sum(processes.map((item) => item.innerTimeouts)),
   };
+}
+
+function startHealthSampler(runtimes) {
+  let active = true;
+  const samples = new Map(runtimes.map((runtime) => [runtime.name, []]));
+  const task = (async () => {
+    while (active) {
+      const snapshots = await Promise.all(runtimes.map(readProcessHealthMetrics));
+      for (const snapshot of snapshots) {
+        if (!snapshot.timestampMs) continue;
+        const processSamples = samples.get(snapshot.process);
+        if (processSamples && processSamples.at(-1)?.timestampMs !== snapshot.timestampMs) {
+          processSamples.push(snapshot);
+        }
+      }
+      await sleep(1_000);
+    }
+  })();
+  return {
+    stop: async () => {
+      active = false;
+      await task;
+      return samples;
+    },
+  };
+}
+
+async function readProcessHealthMetrics(runtime) {
+  if (!runtime.healthPort) return { process: runtime.name };
+  try {
+    const response = await fetch(
+      `http://${runtime.healthHost}:${runtime.healthPort}/metrics`,
+      { signal: AbortSignal.timeout(1_000) },
+    );
+    if (!response.ok) return { process: runtime.name };
+    const body = await response.text();
+    const metric = (name) => prometheusMetric(body, name);
+    return {
+      process: runtime.name,
+      cpuPercent: metric("tiangz_process_cpu_percent"),
+      cpuTimeMs: metric("tiangz_process_cpu_time_ms"),
+      rssBytes: metric("tiangz_process_rss_bytes"),
+      v8HeapUsedBytes: metric("tiangz_process_v8_heap_used_bytes"),
+      v8HeapTotalBytes: metric("tiangz_process_v8_heap_total_bytes"),
+      v8GcCount: metric("tiangz_process_v8_gc_count_total"),
+      v8GcMs: metric("tiangz_process_v8_gc_ms_total"),
+      timestampMs: metric("tiangz_process_metrics_timestamp_ms"),
+      queueDepth: metric("tiangz_process_rust_queue_depth"),
+      queueCapacity: metric("tiangz_process_rust_queue_capacity"),
+      queueMaxDepth: metric("tiangz_process_rust_queue_max_depth"),
+      backpressureWaits: metric("tiangz_process_backpressure_waits_total"),
+      slowDisconnects: metric("tiangz_process_slow_disconnects_total"),
+      innerOverloads: metric("tiangz_transport_inner_overload_rejections"),
+      innerTimeouts: metric("tiangz_transport_inner_timed_out_calls"),
+    };
+  } catch {
+    return { process: runtime.name };
+  }
+}
+
+function prometheusMetric(body, name) {
+  const line = body.split(/\r?\n/).find((value) => value.startsWith(`${name}{`));
+  return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
 }
 
 function aggregateCases(rounds) {
@@ -253,6 +373,10 @@ function aggregateCases(rounds) {
       serverPeakRssBytesSum: median(group.map((item) => item.serverResources?.peakRssBytesSum ?? 0)),
       serverGcCount: median(group.map((item) => item.serverResources?.v8GcCountSum ?? 0)),
       serverGcMs: median(group.map((item) => item.serverResources?.v8GcMsSum ?? 0)),
+      serverQueueMaxDepthSum: median(group.map((item) => item.serverResources?.queueMaxDepthSum ?? 0)),
+      serverBackpressureWaitsSum: median(group.map((item) => item.serverResources?.backpressureWaitsSum ?? 0)),
+      serverInnerOverloadsSum: median(group.map((item) => item.serverResources?.innerOverloadsSum ?? 0)),
+      serverInnerTimeoutsSum: median(group.map((item) => item.serverResources?.innerTimeoutsSum ?? 0)),
       serverRssGrowthBytesPerHour: median(group.map((item) => item.serverResources?.rssGrowthBytesPerHourSum ?? 0)),
       serverV8HeapGrowthBytesPerHour: median(group.map((item) => item.serverResources?.v8HeapGrowthBytesPerHourSum ?? 0)),
       loadCpuMs: median(group.map((item) => item.loadGenerator.cpuUserMs + item.loadGenerator.cpuSystemMs)),
@@ -274,12 +398,12 @@ function renderMarkdown(report) {
     "",
     `## ${options.rounds} 轮中位数`,
     "",
-    "| 部署 | 负载 | 玩家 | move/s | push/s | 确认数 | move p95 | business/s | business成功 | business拒绝 | business传输错 | business p95 | stalled | Server CPU% | Server RSS | Server GC ms | Load CPU ms | Load RSS |",
-    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| 部署 | 负载 | 玩家 | move/s | push/s | 确认数 | move p95 | business/s | business成功 | business拒绝 | business传输错 | business p95 | stalled | Server CPU% | Server RSS | Queue峰值(启动至今) | Backpressure | Inner超载 | Inner超时 | Load CPU ms | Load RSS |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
   ];
   for (const item of report.cases) {
     const value = item.median;
-    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${value.moveAcknowledged} | ${round(value.moveP95Ms, 2)} | ${round(value.businessPerSecond)} | ${value.businessAccepted} | ${value.businessRejected} | ${value.businessTransportErrors} | ${round(value.businessP95Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : round(value.serverGcMs, 2)} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
+    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${value.moveAcknowledged} | ${round(value.moveP95Ms, 2)} | ${round(value.businessPerSecond)} | ${value.businessAccepted} | ${value.businessRejected} | ${value.businessTransportErrors} | ${round(value.businessP95Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : value.serverQueueMaxDepthSum} | ${options.remote ? "N/A" : value.serverBackpressureWaitsSum} | ${options.remote ? "N/A" : value.serverInnerOverloadsSum} | ${options.remote ? "N/A" : value.serverInnerTimeoutsSum} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
   }
   if (options.outputPrefix === "soak") {
     lines.push(
@@ -315,7 +439,8 @@ function renderMarkdown(report) {
     "- 业务负载默认交替使用1001道具和3005友方技能；压测客户端从EnterMap快照读取1001的ItemId，服务端仍是唯一权威。",
     "- `确认数` 统计所有匹配 `acknowledgedSequence` 的权威 Push；延迟分位数使用每玩家最多约 1024 个均匀样本，避免长稳工具自身内存线性增长。",
     "- `push/s` 是所有客户端实际收到的 EntityMove 数；当前仍为同地图全量可见，尚未启用 AOI。",
-    "- Server CPU/RSS/GC 来自各 Runtime 的 `[process-metrics]`；split 模式按进程汇总。",
+    "- Server CPU/RSS/GC/队列来自各 Runtime 的 `/metrics` 采样；若旧 Runtime 没有健康端点才回退到 `[process-metrics]` 日志，split 模式按进程汇总。",
+    "- `Queue峰值(启动至今)` 是进程启动以来的 Rust 队列 max_depth；当前队列深度另保存在 raw JSON，Backpressure/Inner超载/Inner超时为正式采样窗口内的累计事件。",
     "- Load CPU/RSS/GC 只代表压测客户端，独立压测机模式用于排除它与服务端争抢资源。",
     "- MapHost 发布 latest 移动状态；BroadcastHub 通过通用 `S2G_ClientBroadcast` 按 UnitId 聚合下行。",
     "",
@@ -391,6 +516,20 @@ async function waitPort(host, port, timeoutMs) {
     await sleep(50);
   }
   throw new Error(`timed out waiting for ${host}:${port}`);
+}
+
+async function waitReady(host, port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://${host}:${port}/ready`, {
+        signal: AbortSignal.timeout(1_000),
+      });
+      if (response.status === 200) return;
+    } catch {}
+    await sleep(50);
+  }
+  throw new Error(`timed out waiting for http://${host}:${port}/ready`);
 }
 
 function canConnect(host, port) {

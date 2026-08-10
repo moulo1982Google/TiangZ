@@ -33,6 +33,8 @@ import {
   G2C_MapReadyCodec,
   G2C_QuestProgress,
   G2C_QuestProgressCodec,
+  G2C_SessionReplaced,
+  G2C_SessionReplacedCodec,
   G2C_SkillCastState,
   G2C_SkillCastStateCodec,
   G2C_SkillImpact,
@@ -47,6 +49,11 @@ export const ClientMessages = {
     name: "Client.MapReady",
     msgcode: MsgCode.G2C_MapReady,
     codec: G2C_MapReadyCodec,
+  }),
+  SessionReplaced: defineMessage<G2C_SessionReplaced>({
+    name: "Client.SessionReplaced",
+    msgcode: MsgCode.G2C_SessionReplaced,
+    codec: G2C_SessionReplacedCodec,
   }),
   EntityMove: defineMessage<G2C_EntityMove>({
     name: "Client.EntityMove",
@@ -146,6 +153,7 @@ export const MapMessages = {
 
 export const AllMessageDescriptors = [
   ClientMessages.MapReady,
+  ClientMessages.SessionReplaced,
   MapMessages.Move,
   ClientMessages.EntityMove,
   ClientMessages.EntityNavigate,

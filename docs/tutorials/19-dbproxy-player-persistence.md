@@ -20,6 +20,8 @@ MapHostScene
 - TypeScript业务V8不打开Socket；Rust Host Runtime驱动连接、握手、超时和重连。
 - 普通`configs/local/all-in-one.json`继续使用内存Repository，不要求数据库。
 - 只有显式配置`process.persistence.dbProxy`的Process才连接DBProxy。
+- 登录注册使用同一个`character_catalog`快照：快照保存账号、密码盐值/摘要和同名初始角色；明文密码不进入快照、日志或Token。
+- 未配置DBProxy时注册仍可用于界面和协议调试，但只存在当前Process内存；不能把这种模式当作“已落盘”。
 
 ## 本地启动
 
@@ -39,6 +41,8 @@ $env:TIANGZ_DBPROXY_AUTH_TOKEN = "tiangz-dbproxy-local-token-2026"
 npm run build
 cargo run --locked --bin TiangZ -- configs/local/all-in-one-dbproxy.json
 ```
+
+启动后打开Cocos3D，在登录遮罩中点击“注册”。用户名会同时成为角色名；停止并重新启动TiangZ后，用同一用户名和密码点击“登录”，即可验证账号目录和角色ID仍由DBProxy恢复。若账号不存在，登录会明确返回“用户未注册”，不会再隐式创建游客账号。
 
 本机演示账号只绑定`127.0.0.1`，不能复制到生产环境。令牌只进入环境变量，禁止写入Runtime JSON、日志或业务Payload。
 

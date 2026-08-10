@@ -480,6 +480,7 @@ export interface G2C_MapCapacityEnter extends IResponse {
   unitId: number;
   cellX: number;
   cellZ: number;
+  starterItemId: bigint;
 }
 
 export const G2C_MapCapacityEnterCodec = {
@@ -489,6 +490,7 @@ export const G2C_MapCapacityEnterCodec = {
       unitId: 0,
       cellX: 0,
       cellZ: 0,
+      starterItemId: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -510,6 +512,9 @@ export const G2C_MapCapacityEnterCodec = {
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.cellZ = reader.sint32();
       }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.starterItemId = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -525,6 +530,7 @@ export const G2C_MapCapacityEnterCodec = {
     if (value.unitId !== undefined) writer.uint32(1, value.unitId);
     if (value.cellX !== undefined) writer.sint32(2, value.cellX);
     if (value.cellZ !== undefined) writer.sint32(3, value.cellZ);
+    if (value.starterItemId !== undefined) writer.uint64(4, value.starterItemId);
     return writer.finish();
   },
 };

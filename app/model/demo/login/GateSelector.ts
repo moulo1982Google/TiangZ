@@ -12,11 +12,20 @@ export function SelectStickyGate(
   account: string,
   gates: readonly SceneConfig[],
 ): SceneConfig {
-  if (gates.length === 0) throw new Error("cannot select Gate from an empty list");
-  let selected = gates[0];
+  return SelectStickyScene(account, gates, "Gate");
+}
+
+/** 使用同一Rendezvous Hash策略选择稳定业务节点；用于Login等需要账号粘滞的入口。 / Selects a stable business node with the same rendezvous-hash policy for account-sticky entry points such as Login. */
+export function SelectStickyScene(
+  account: string,
+  scenes: readonly SceneConfig[],
+  sceneLabel = "Scene",
+): SceneConfig {
+  if (scenes.length === 0) throw new Error(`cannot select ${sceneLabel} from an empty list`);
+  let selected = scenes[0];
   let selectedScore = Hash32(`${account}\0${selected.name}`);
-  for (let index = 1; index < gates.length; index += 1) {
-    const candidate = gates[index];
+  for (let index = 1; index < scenes.length; index += 1) {
+    const candidate = scenes[index];
     const score = Hash32(`${account}\0${candidate.name}`);
     if (score > selectedScore || (score === selectedScore && candidate.name < selected.name)) {
       selected = candidate;

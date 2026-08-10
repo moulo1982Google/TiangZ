@@ -2,6 +2,7 @@ import {
   type C2M_AcceptQuest,
   type M2C_AcceptQuest,
   MapProtocol,
+  NpcComponent,
   PlayerUnit,
   QuestComponent,
   QuestStatus,
@@ -12,6 +13,11 @@ import {
 @unitRpcHandler(PlayerUnit, MapProtocol.AcceptQuest)
 export class C2M_AcceptQuestHandler implements UnitRpcHandler<PlayerUnit, C2M_AcceptQuest, M2C_AcceptQuest> {
   handle(unit: PlayerUnit, request: C2M_AcceptQuest): M2C_AcceptQuest {
+    unit.DomainScene().GetComponent(NpcComponent).ValidateQuestInteraction(
+      unit,
+      request.npcUnitId,
+      request.questConfigId,
+    );
     return { quest: toProtocolQuest(unit.GetComponent(QuestComponent).AcceptQuest(request.questConfigId)) };
   }
 }

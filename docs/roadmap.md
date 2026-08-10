@@ -303,7 +303,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 技能系统已完成六个单位目标技能的第一版闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧和3006引导治疗。`SkillComponent`统一保存纯Cast状态、GCD/CD、移动打断和单技能队列，`SkillMapComponent.Update10Hz`按服务器deadline推进引导Tick；技能完成只执行Action，目标伤害和治疗继续进入Combat。复杂AOE、地面目标、技能持久化和正式技能压测后续再做，具体边界见[技能与施法系统设计](design/skill-system.md)。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
-- 任务系统基础已完成：`QuestComponent -> Quest ChildEntity`保存活动任务，显式区分进行中/待交付状态；击杀/用道具/进图以同步领域事件解耦进度来源，并按目标类型与配置ID索引定位相关任务；接取支持同步Veto、前置任务和最低等级最终校验。owner-only latest同步进度，Action发奖，跨地图重建目标索引并保留活动/完成状态。后续再增加NPC接取、可重复任务、组队共享投影、持久化与多Action事务奖励。
+- 任务系统基础已完成：`QuestComponent -> Quest ChildEntity`保存活动任务，显式区分进行中/待交付状态；击杀/用道具/进图以同步领域事件解耦进度来源，并按目标类型与配置ID索引定位相关任务；接取支持同步Veto、前置任务和最低等级最终校验。Starter第一版已增加Map 100固定NPC接取5001，NPC沿普通Unit/AOI路径创建，`C2M_AcceptQuest`携带`npcUnitId`并由服务端校验距离和任务提供关系。Cocos3D的PC与移动端统一走“5米交互按钮 -> NPC对话 -> 接取任务”，选中NPC不自动接取；Map 100玩家出生点靠近NPC，四角分布两个被动黄色怪和两个主动红色怪。owner-only latest同步进度，Action发奖，跨地图重建目标索引并保留活动/完成状态；后续再增加NPC配置化、多NPC对话、可重复任务、组队共享投影、持久化与多Action事务奖励。
 
 ### Phase 4.0：3D空间契约冻结
 
@@ -429,6 +429,16 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
 - 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
 - 当前验收覆盖Redis短暂不可用、Redis重启后的AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、进程内积压背压、有限轮Flush、PostgreSQL恢复重试、真实TCP网络闭环、TiangZ重启恢复，以及任务奖励/UseItem事务前失败与提交后ACK丢失；UseItem另有真实PostgreSQL同ID重试和TiangZ重启回执恢复。DBProxy多Endpoint、双实例故障切换、进程崩溃接管、Prometheus积压指标、批量RPC和更多关键经济事务仍留在后续阶段；Redis/PostgreSQL高可用直接使用云厂商能力。
+
+### Phase 4.6：Starter MMORPG 纵向切片
+
+状态：进行中。目标不是继续堆叠玩法，而是用一个小而完整的 MMORPG 参考工程证明框架、客户端 SDK、配置生成、持久化和部署可以被新团队复制。唯一主线为：登录/选角 -> 主城 -> 野外战斗 -> 掉落/背包 -> 任务/奖励 -> 动态副本/Boss -> 重连 -> 重启恢复。
+
+- 验收矩阵固定在[Starter MMORPG验收矩阵](starter/acceptance-matrix.md)，教程固定在[Starter MMORPG教程](tutorials/20-starter-mmorpg.md)。
+- 框架能力案例与Starter业务分层；Starter只能使用Stable API、生成协议、Component/Entity、Mailbox和DBProxy边界，不能为演示旁路Runtime。
+- 独立的创建/选择角色流程已经完成运行时闭环：`C2S_CreateCharacter -> CharacterRepository -> C2S_Login.characterId -> Gate/Location/Map`，并通过 `npm run starter:character-smoke` 覆盖 all-in-one 与 split-process。无 DBProxy 时角色目录只在进程生命周期内有效；重启后恢复仍归 ST-09，随后继续收口怪物掉落、Boss副本奖励、完整重启恢复和正式Hotfix操作入口。
+- Starter固定使用一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss、一个玩家职业和少量技能。额外职业、社交、商城和活动不得在本阶段进入核心样例。
+- 每个完成项必须同时通过all-in-one、split-process、客户端操作和对应的失败/恢复验收；业务压测等Starter链路稳定后再执行。
 
 ## Phase 5：生产工程化
 

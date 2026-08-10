@@ -1,14 +1,18 @@
 # TiangZ开发记忆
 
+- Starter Map 100 当前使用 Demo 专用`AoiConfig=2`：7×7 Grid Enter、9×9 Grid Detach；10004/10005/10008为三只被动黄色怪，10006/10007为两只主动红色怪，Quest 5001要求击败5只怪A。NPC交付5001后解锁Quest 5005，目标是击败5只怪B；`C2M_CompleteQuest`必须带NPC实例ID并在5米内完成，任务面板不能直接领奖。Cocos3D怪物头顶HUD读取`MonsterConfig.name`显示名称和HP。技能施法期间平A读条冻结；玩家受到真实HP伤害时，Demo地图技能调度器只把当前施法结束时间延后500ms并广播权威读条状态，客户端不自行推导。
+
 ## 工程与协作约定
 
 - 每次开始 TiangZ 相关任务前，先读取本文件；它是项目协作规则和历史决策的第一入口，不先扫描外部上下文。
 - 主工程目录固定为 `E:\gitee\TiangZ`，不要误操作 `E:\VsCode\skynet`。
 - 默认使用中文交流、中文文档和中文 Git 提交信息。
 - 架构或业务语义变更必须同步更新 `docs/ai/project-context.md` 和 `docs/ai/business-development-manual.md`。
+- TiangZ的下一阶段目标是唯一的Starter MMORPG纵向切片：登录/选角、主城、野外战斗、掉落背包、任务奖励、动态副本/Boss、重连和重启恢复；框架案例与Starter业务分开，Starter必须使用Stable API和正式持久化边界。
 - 普通单Entity持久化使用`.native`的`@persistent(version)`，字段默认进入Snapshot，`@transient`排除`instanceId`等运行时字段；codegen生成Codec和`CreateNativeXxxRepository`。DBProxy只维护固定通用表，不理解Entity。Player等聚合根、复杂查询、索引和跨玩家事务仍需手写领域Repository。
 - Core、Demo 和 Rust 层的函数注释使用中英文对照，说明作用、副作用、禁止用法和设计原因。
 - 需要高 CPU 或长时间压测前先告知；验收以真实运行结果、构建产物、服务器状态或客户端画面为准。
+- Starter第一版任务NPC：Map 100固定创建紫色`NpcUnit`（`npcConfigId=9001`、`unitId=0x40000001`），NPC是普通Unit/Subject，不是Actor或新的网络入口；当前所有QuestConfig都关闭自动接取。玩家出生点为`(-3,1,-18)`，NPC位于东侧约3米；10004/10005为远端被动黄色怪，10006/10007为远端主动红色怪。客户端从AOI快照拿`npcUnitId`，靠近5米显示交互按钮，打开对话框后再调用`C2M_AcceptQuest(questConfigId,npcUnitId)`或`C2M_CompleteQuest(questConfigId,npcUnitId)`；服务端在PlayerUnit ordered mailbox中由`NpcComponent`校验NPC、任务提供关系和5米距离，再调用QuestComponent。PC与移动端必须共用“交互按钮 -> 对话框 -> 接取/交付”语义，HUD按钮不能穿透为地面寻路。设计/业务变更同步到project-context、business-development-manual、development-log和本文件。
 
 ## TiangZ架构
 
@@ -191,3 +195,12 @@ npm run build:cocos3d:mobile
 - Demo新建玩家的`ItemComponentSystem.Awake`预置`1001×50`和`1002×20`；传送、重连和恢复只用`ItemSnapshot`替换默认背包，禁止重复发放。正式项目接入持久化后应移除这段Demo种子。
 - `ItemConfig.icon`是客户端字段，使用相对`assets/resources`的不带扩展名Cocos资源键；当前为`UI/Icons/Items/1001`和`UI/Icons/Items/1002`。Cocos3D Web快捷栏固定`1=平A`、`2=1001`、`3=1002`，数量来自进图快照和`G2C_ItemChanged`，客户端不预扣库存。
 - Cocos3D Buff栏从Unit快照、道具使用RPC的可选`M2C_UseItem.buff`或`G2C_BuffAdded`显示`UI/Icons/Buff/<BuffId>`图标，界面文字读取`BuffConfig.name`显示中文名，不显示BuffId；倒计时使用服务器结束时间，统一显示`分钟:秒`，两小时为`120:00`，无限时长显示`永久`。到`00:00`后保留图标，必须收到`G2C_BuffRemoved`才能删除，客户端不能按本地计时自行移除。三条路径按Buff实例ID幂等合并，RPC回显只给使用者，AOI事件仍给观察者。
+
+## 2026-08-10 Starter角色目录与稳定身份
+
+- Starter已加入`CharacterRepository`和`C2S_CreateCharacter`：一个账号可以创建多个角色，`S2C_Login.characters`返回角色目录，`C2S_Login.characterId`明确选择角色。
+- `account`只负责登录认证和LoginMgr稳定路由；`characterId`是角色长期身份，用于Player快照、Location、跨地图和持久化；`unitId`只是当前MapHost的运行时Unit路由ID，禁止当作数据库角色主键；`mapInstanceId`只表示地图实例。
+- LoginMgr收到带账号的地址请求时使用稳定哈希，同一账号在多个Login进程间不会随机漂移；旧的空账号请求仍保留轮询兼容。
+- TypeScript SDK新增`LoginFlow.createCharacter`，`enterGame`接收可选`characterId`；`npm run starter:character-smoke`在all-in-one和split-process都验证创建、选角、Gate登录和进图。
+- 无DBProxy时角色目录和跨MapHost接管只属于进程内Demo状态；重启后的角色恢复必须使用DBProxy，不得把内存目录当持久化。
+- 设计变更继续同步`docs/ai/project-context.md`、`docs/ai/business-development-manual.md`、`docs/development-log.md`和本文件。

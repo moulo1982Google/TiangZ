@@ -7,6 +7,44 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-10：Starter任务链与怪物名称HUD
+
+- Cocos3D怪物头顶HUD增加`MonsterConfig.name`文字，和HP条一起作为远端怪物的世界空间表现；名字来自冷配置，不新增网络字段，也不参与战斗判定。
+- 新增任务配置5005/目标5105：完成NPC任务5001并领取奖励后，才可在同一NPC处接取击杀5只怪B的任务；原有5002“试用药水”保持不变。
+- `C2M_CompleteQuest`增加`npcUnitId`，服务端在PlayerUnit有序mailbox中复用`NpcComponent.ValidateQuestInteraction`校验交付NPC、任务提供关系和5米距离；任务追踪面板不再直接发放奖励，Cocos3D必须通过NPC对话框交付。
+- Cocos3D NPC对话框根据任务链自动切换“领取/交付”动作，5001交付成功后显示5005领取入口；移动端和桌面端共用同一套对话语义。
+- 已运行协议、配置、C++/C#/Godot SDK和场景生成；`npm run typecheck`、`npm run typecheck:cocos3d-demo`、`npm run test:game-config`、`npm run test:quest`、`npm run build:client`、`npm run verify:codegen`、`npm run test:protocol-locks`、`npm run check:project`和`npm run verify:comments`通过。`npm run test:runtime`的all-in-one/split-process冒烟通过并覆盖NPC快照与接取；完整击杀5只怪后的客户端交付流程留给Cocos3D画面验收，DBProxy专用夹具已改为返回Map 100找NPC再交付。
+
+## 2026-08-10：Starter AOI与施法受击时序调整
+
+- Map 100切换到独立宽视野冷配置`AoiConfig=2`：7×7 Grid建立可见关系、9×9 Grid作为Detach边界；怪物刷怪槽调整为三只被动怪A（10004、10005、10008）和两只主动怪B（10006、10007）。
+- Starter任务5001的击杀目标改为5只怪A；生成配置和游戏配置自测已同步。
+- 施法期间平A保留意图但冻结读条；怪物对玩家造成真实HP伤害时，当前施法结束时间延后500ms，不重置起点、不清除施法、不修改CD，并通过新的`G2C_SkillCastState`让客户端读条向后移动。护盾完全吸收或致死伤害不触发延长。
+- Cocos3D施法条调整到界面中下方，平A HUD在施法期间明确显示“施法中暂停计时”。
+- 已验证：`npm run codegen:game-config`、`npm run codegen:scenes`、`npm run typecheck`、`npm run typecheck:cocos3d-demo`、`npm run test:game-config`通过；本轮尚未进行高负载压测。
+
+## 2026-08-10：Starter第一版接入任务NPC
+
+- Map 100新增固定`NpcUnit`任务使者：`npcConfigId=9001`、`unitId=0x40000001`，由`NpcComponent`创建并通过统一`UnitComponent -> PositionComponent -> MapAoiComponent`路径进入AOI；Cocos3D以紫色方块显示。
+- `QuestConfig`中的Starter任务统一改为非自动接取；`C2M_AcceptQuest`增加`npcUnitId`，服务端在PlayerUnit有序mailbox内校验NPC存在、任务提供关系和5米交互距离后，才调用`QuestComponent.AcceptQuest`。
+- Cocos3D支持点击/选择NPC、目标面板显示任务使者和实例ID、按钮或`F`键接取任务；实体命中会阻止点击穿透到地面寻路。
+- 冒烟客户端新增Map 100 NPC快照和任务接取验收；`npm run starter:smoke`已在all-in-one和split-process通过。`npm run starter:verify`、`npm run typecheck`、`npm run typecheck:cocos3d-demo`、`npm run verify:codegen`、`npm run check:project`和`npm run test:quest`通过。未进行压力测试。
+- 设计取舍：NPC不是新的网络入口或Actor，任务状态仍由QuestComponent拥有；NPC UnitId只作为当前地图交互地址，不能写入持久化任务数据。未来再做NPC配置化、对话和多个任务使者。
+
+## 2026-08-10：Starter角色目录、创建角色与显式选角
+
+- 新增`CharacterRepository`和`C2S_CreateCharacter`，账号可以创建多个角色并由`S2C_Login.characters`返回目录；`C2S_Login.characterId`负责显式选择，不再把首次进图创建Unit当作选角流程。
+- 明确三种身份：`account`用于登录和LoginMgr稳定路由，`characterId`用于角色持久化、Location和跨地图，`unitId`只用于当前Map的运行时路由；静态地图和动态副本继续共用`TransferToMap`。
+- LoginMgr对带账号请求使用稳定哈希，避免同一账号在多个Login进程间漂移。没有DBProxy时角色目录是进程内Demo状态；跨MapHost传送使用快照接管，重启后的角色恢复仍必须通过DBProxy验收。
+- TypeScript SDK新增`createCharacter`和带`characterId`的`enterGame`；新增`npm run starter:character-smoke`，已验证all-in-one和split-process的创建、选角、Gate登录和进图。
+- `npm run typecheck`、`npm run check:project`、`npm run verify:codegen`、`npm run starter:character-smoke`、`npm run build:ts`、`npm run build:client`和运行时冒烟均通过。完整`npm run build`若Godot编辑器仍占用生成的`tiangz_proto.gd`，需要先关闭编辑器或释放文件锁；这不影响已通过的服务端构建和运行时验证。
+
+## 2026-08-10 Starter MMORPG纵向切片目标
+
+- 固定唯一Starter业务主线：登录/选角、主城、野外战斗、掉落/背包、任务/奖励、动态副本/Boss、断线重连和重启恢复。
+- 新增验收矩阵和开发教程；框架能力案例只解释单项能力，Starter负责验证正式Stable API、all-in-one/split-process一致性和恢复路径。
+- 当前优先缺口为独立选角、怪物掉落串联、Boss副本奖励、完整重启验收和正式Hotfix操作入口；不在本阶段扩展社交、商城和大量玩法。
+
 ## 2026-08-09 DBProxy配置与普通Entity持久化生成
 
 - DBProxy新增严格`configs/local.json`，普通参数与密钥分离；JSON只引用`DBPROXY_*`环境变量名，未知字段和危险零值在联网前失败。
@@ -831,3 +869,24 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - `QuestComponent.CompleteQuest`改为异步关键事务。稳定operationId提交奖励后的完整玩家记录和原始Protobuf结果，成功后才提交背包、写完成集合并移除Quest；Handler只在事务完成后广播。
 - 增加故障注入验证：事务提交前失败时Quest和Item保持原状；PostgreSQL已提交但ACK丢失时，重试查询首次回执并只发放一次。普通同步奖励仍可使用`ExecuteReward`，事务Planner暂只允许`GrantItem`。
 - 当前仍未完成UseItem消费事务、Wallet/Trade、按领域拆分revision、周期快照、批量RPC和节点故障接管；本次单玩家记录事务是开发模型验证，不是最终数据域设计。
+
+# 2026-08-10：Starter NPC交互与Map 100演示布局
+
+- Map 100玩家出生点调整为`(-3, 1, -18)`，固定任务NPC位于出生点东侧约3米；Starter当前所有QuestConfig都关闭自动接取，玩家不会再出生时自动拥有任务。
+- Map 100四个远端角落固定放置四个怪物刷点：10004/10005为被动黄色怪，10006/10007为主动红色怪，Starter演示同时覆盖两种索敌行为。
+- NPC交互范围统一为5米，服务端仍在PlayerUnit有序mailbox内做最终距离、NPC归属和任务提供关系校验。
+- Cocos3D PC与移动端统一改为“靠近5米显示交互按钮 -> 打开NPC对话框 -> 点击接取任务”；选中NPC、点击NPC模型和打开对话框都不会自动接取，HUD按钮使用事件隔离避免穿透触发地面寻路。
+- 已重新生成场景注册和客户端SDK，并通过Cocos3D类型检查、游戏配置自测和双语注释门禁；本轮未执行压力测试。
+
+# 2026-08-10：同账号顶号与连接关闭排空
+
+- Gate补齐同账号顶号语义：账号锁内原子替换旧`connectionId`，旧`GateSession`立即失效，旧连接收到`G2C_SessionReplaced`（错误码`10040`）后再关闭；旧disconnect、旧在途Handler和旧Promise不能删除或覆盖新Route/Unit。
+- TypeScript Client SDK增加`LoginFlow.onSessionReplaced`，Cocos3D在收到通知后清理本地地图状态并回到登录界面；消息不是普通网络错误，客户端不得自动重试旧请求。
+- 修复TCP、WebSocket和io_uring关闭路径的下行排空语义：已取出的写批次完整发送，已入队帧在关闭前排空；KCP forwarder保证`Closed`事件排在已入队帧之后。
+- 修复客户端`RpcSocket`在远端关闭时清空入站队列的问题，保留关闭前已收到但尚未由`update()`分发的单向消息，覆盖“通知先到、连接随后关闭”的浏览器时序。
+- 验证：`npm run typecheck`、`cargo check --locked --bin TiangZ`、完整`node tools/smoke_runtime.mjs --mode all`和新增`npm run test:session-takeover-websocket`均通过；TCP/WebSocket均确认旧连接收到顶号通知且新旧连接复用同一`UnitId`。
+## 2026-08-10
+
+- 登录链路改为显式注册/登录：新增`C2S_Register`，`C2S_Login`增加密码字段；未注册账号返回“用户未注册”，不再自动创建游客账号。
+- `CharacterRepository`快照升级到v2，保存密码盐值/摘要与同名初始角色；DBProxy继续兼容读取v1角色目录，写入统一升级到v2。新增`starter:dev:persistent`用于本地DBProxy重启恢复演示。
+- Cocos3D增加登录/注册遮罩、确认密码校验和认证错误提示；SDK及测试客户端统一先注册再登录。

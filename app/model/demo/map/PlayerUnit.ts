@@ -4,6 +4,7 @@ import type { M2C_CastSkill } from "../../../generated/model/server/demo/protoco
 
 export interface AwakePlayerUnit {
   account: string;
+  characterId: bigint;
   mapId: number;
   mapInstanceId: bigint;
 }
@@ -14,6 +15,7 @@ export interface MatchPlayerGate {
 
 export interface PlayerSnapshot {
   account: string;
+  characterId: bigint;
   mapId: number;
   mapInstanceId: bigint;
   unitId: number;
@@ -68,11 +70,16 @@ export interface PlayerUnit {
 @lifecycle({ awake: true })
 export class PlayerUnit extends ActorUnit<[request: AwakePlayerUnit]> {
   protected account = "";
+  protected characterId = 0n;
   protected mapId = 0;
   protected mapInstanceId = 0n;
 
   get Account(): string {
     return this.account;
+  }
+
+  get CharacterId(): bigint {
+    return this.characterId;
   }
 
   get MapId(): number {

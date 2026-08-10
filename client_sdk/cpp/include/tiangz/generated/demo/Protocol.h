@@ -1246,6 +1246,7 @@ struct QuestSnapshotCodec {
 
 struct C2S_GetLoginServiceAddr {
   std::optional<std::uint32_t> rpcId;
+  std::optional<std::string> account;
 };
 
 struct C2S_GetLoginServiceAddrCodec {
@@ -1262,6 +1263,13 @@ struct C2S_GetLoginServiceAddrCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.account = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1273,6 +1281,7 @@ struct C2S_GetLoginServiceAddrCodec {
   static tiangz::client::Bytes Encode(const C2S_GetLoginServiceAddr& value) {
     tiangz::client::BinaryWriter writer;
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    if (value.account.has_value()) writer.String(1, *value.account);
     return writer.Finish();
   }
 };
@@ -1358,6 +1367,8 @@ struct S2C_GetLoginServiceAddrCodec {
 struct C2S_Login {
   std::optional<std::uint32_t> rpcId;
   std::string account;
+  std::optional<std::uint64_t> characterId;
+  std::optional<std::string> password;
 };
 
 struct C2S_LoginCodec {
@@ -1381,6 +1392,20 @@ struct C2S_LoginCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.characterId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.password = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1393,6 +1418,68 @@ struct C2S_LoginCodec {
     tiangz::client::BinaryWriter writer;
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.String(1, value.account);
+    if (value.characterId.has_value()) writer.UInt64(2, *value.characterId);
+    if (value.password.has_value()) writer.String(3, *value.password);
+    return writer.Finish();
+  }
+};
+
+struct CharacterSummary {
+  std::uint64_t characterId = 0;
+  std::string name;
+  std::uint32_t playerConfigId = 0;
+  std::uint32_t level = 0;
+};
+
+struct CharacterSummaryCodec {
+  static CharacterSummary Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    CharacterSummary value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.characterId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.name = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.playerConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.level = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const CharacterSummary& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt64(1, value.characterId);
+    writer.String(2, value.name);
+    writer.UInt32(3, value.playerConfigId);
+    writer.UInt32(4, value.level);
     return writer.Finish();
   }
 };
@@ -1408,6 +1495,8 @@ struct S2C_Login {
   std::string gateName;
   std::string gateIp;
   std::uint32_t gatePort = 0;
+  std::vector<CharacterSummary> characters;
+  std::uint64_t selectedCharacterId = 0;
 };
 
 struct S2C_LoginCodec {
@@ -1487,6 +1576,20 @@ struct S2C_LoginCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 8:
+          if (tag.wireType == 2) {
+            value.characters.push_back(CharacterSummaryCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 9:
+          if (tag.wireType == 0) {
+            value.selectedCharacterId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1507,6 +1610,257 @@ struct S2C_LoginCodec {
     writer.String(5, value.gateName);
     writer.String(6, value.gateIp);
     writer.UInt32(7, value.gatePort);
+    for (const auto& item : value.characters) writer.BytesField(8, CharacterSummaryCodec::Encode(item), true);
+    writer.UInt64(9, value.selectedCharacterId);
+    return writer.Finish();
+  }
+};
+
+struct C2S_Register {
+  std::optional<std::uint32_t> rpcId;
+  std::string account;
+  std::string password;
+};
+
+struct C2S_RegisterCodec {
+  static C2S_Register Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2S_Register value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.account = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.password = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2S_Register& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.account);
+    writer.String(2, value.password);
+    return writer.Finish();
+  }
+};
+
+struct S2C_Register {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::string account;
+  CharacterSummary character;
+};
+
+struct S2C_RegisterCodec {
+  static S2C_Register Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    S2C_Register value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.account = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.character = CharacterSummaryCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const S2C_Register& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.account);
+    writer.BytesField(2, CharacterSummaryCodec::Encode(value.character));
+    return writer.Finish();
+  }
+};
+
+struct C2S_CreateCharacter {
+  std::optional<std::uint32_t> rpcId;
+  std::string account;
+  std::string name;
+  std::uint32_t playerConfigId = 0;
+};
+
+struct C2S_CreateCharacterCodec {
+  static C2S_CreateCharacter Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2S_CreateCharacter value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.account = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.name = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.playerConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2S_CreateCharacter& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.account);
+    writer.String(2, value.name);
+    writer.UInt32(3, value.playerConfigId);
+    return writer.Finish();
+  }
+};
+
+struct S2C_CreateCharacter {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  CharacterSummary character;
+  std::vector<CharacterSummary> characters;
+};
+
+struct S2C_CreateCharacterCodec {
+  static S2C_CreateCharacter Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    S2C_CreateCharacter value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.character = CharacterSummaryCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.characters.push_back(CharacterSummaryCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const S2C_CreateCharacter& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, CharacterSummaryCodec::Encode(value.character));
+    for (const auto& item : value.characters) writer.BytesField(2, CharacterSummaryCodec::Encode(item), true);
     return writer.Finish();
   }
 };
@@ -1515,6 +1869,7 @@ struct C2G_LoginGate {
   std::optional<std::uint32_t> rpcId;
   std::string account;
   std::string token;
+  std::optional<std::uint64_t> characterId;
 };
 
 struct C2G_LoginGateCodec {
@@ -1545,6 +1900,13 @@ struct C2G_LoginGateCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.characterId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1558,6 +1920,7 @@ struct C2G_LoginGateCodec {
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.String(1, value.account);
     writer.String(2, value.token);
+    if (value.characterId.has_value()) writer.UInt64(3, *value.characterId);
     return writer.Finish();
   }
 };
@@ -1567,6 +1930,7 @@ struct G2C_LoginGate {
   std::optional<std::uint32_t> error;
   std::optional<std::uint32_t> rpcId;
   std::string account;
+  std::uint64_t characterId = 0;
 };
 
 struct G2C_LoginGateCodec {
@@ -1604,6 +1968,13 @@ struct G2C_LoginGateCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.characterId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1618,6 +1989,7 @@ struct G2C_LoginGateCodec {
     if (value.error.has_value()) writer.UInt32(91, *value.error);
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.String(1, value.account);
+    writer.UInt64(2, value.characterId);
     return writer.Finish();
   }
 };
@@ -1942,6 +2314,48 @@ struct G2C_MapReadyCodec {
     writer.Float(4, value.x);
     writer.Float(5, value.z);
     writer.Float(6, value.y);
+    return writer.Finish();
+  }
+};
+
+struct G2C_SessionReplaced {
+  std::uint32_t reasonCode = 0;
+  std::string reason;
+};
+
+struct G2C_SessionReplacedCodec {
+  static G2C_SessionReplaced Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_SessionReplaced value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.reasonCode = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.reason = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_SessionReplaced& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.reasonCode);
+    writer.String(2, value.reason);
     return writer.Finish();
   }
 };
@@ -3422,6 +3836,7 @@ struct G2C_ItemChangedCodec {
 struct C2M_AcceptQuest {
   std::optional<std::uint32_t> rpcId;
   std::uint32_t questConfigId = 0;
+  std::uint32_t npcUnitId = 0;
 };
 
 struct C2M_AcceptQuestCodec {
@@ -3445,6 +3860,13 @@ struct C2M_AcceptQuestCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -3457,6 +3879,7 @@ struct C2M_AcceptQuestCodec {
     tiangz::client::BinaryWriter writer;
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.UInt32(1, value.questConfigId);
+    writer.UInt32(2, value.npcUnitId);
     return writer.Finish();
   }
 };
@@ -3524,6 +3947,7 @@ struct M2C_AcceptQuestCodec {
 struct C2M_CompleteQuest {
   std::optional<std::uint32_t> rpcId;
   std::uint32_t questConfigId = 0;
+  std::uint32_t npcUnitId = 0;
 };
 
 struct C2M_CompleteQuestCodec {
@@ -3547,6 +3971,13 @@ struct C2M_CompleteQuestCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -3559,6 +3990,7 @@ struct C2M_CompleteQuestCodec {
     tiangz::client::BinaryWriter writer;
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.UInt32(1, value.questConfigId);
+    writer.UInt32(2, value.npcUnitId);
     return writer.Finish();
   }
 };
@@ -4582,11 +5014,16 @@ inline constexpr std::uint16_t C2S_GetLoginServiceAddr = 10002;
 inline constexpr std::uint16_t S2C_GetLoginServiceAddr = 10003;
 inline constexpr std::uint16_t C2S_Login = 10004;
 inline constexpr std::uint16_t S2C_Login = 10005;
+inline constexpr std::uint16_t C2S_Register = 10059;
+inline constexpr std::uint16_t S2C_Register = 10060;
+inline constexpr std::uint16_t C2S_CreateCharacter = 10057;
+inline constexpr std::uint16_t S2C_CreateCharacter = 10058;
 inline constexpr std::uint16_t C2G_LoginGate = 10008;
 inline constexpr std::uint16_t G2C_LoginGate = 10009;
 inline constexpr std::uint16_t C2G_EnterMap = 10010;
 inline constexpr std::uint16_t G2C_EnterMap = 10011;
 inline constexpr std::uint16_t G2C_MapReady = 10012;
+inline constexpr std::uint16_t G2C_SessionReplaced = 10061;
 inline constexpr std::uint16_t C2G_MapSnapshotReady = 10029;
 inline constexpr std::uint16_t G2C_MapSnapshotReady = 10030;
 inline constexpr std::uint16_t C2M_Move = 10013;
@@ -4639,6 +5076,14 @@ inline constexpr tiangz::client::RpcDescriptor<C2S_GetLoginServiceAddr, S2C_GetL
 
 inline constexpr tiangz::client::RpcDescriptor<C2S_Login, S2C_Login, C2S_LoginCodec, S2C_LoginCodec> Login_Login{
   "Login.Login", MsgCode::C2S_Login, MsgCode::S2C_Login
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2S_Register, S2C_Register, C2S_RegisterCodec, S2C_RegisterCodec> Login_Register{
+  "Login.Register", MsgCode::C2S_Register, MsgCode::S2C_Register
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2S_CreateCharacter, S2C_CreateCharacter, C2S_CreateCharacterCodec, S2C_CreateCharacterCodec> Login_CreateCharacter{
+  "Login.CreateCharacter", MsgCode::C2S_CreateCharacter, MsgCode::S2C_CreateCharacter
 };
 
 inline constexpr tiangz::client::RpcDescriptor<C2G_LoginGate, G2C_LoginGate, C2G_LoginGateCodec, G2C_LoginGateCodec> Gate_LoginGate{
@@ -4703,6 +5148,10 @@ inline constexpr tiangz::client::RpcDescriptor<C2G_Ping, G2C_Ping, C2G_PingCodec
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_MapReady, G2C_MapReadyCodec> Client_MapReady{
   "Client.MapReady", MsgCode::G2C_MapReady
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_SessionReplaced, G2C_SessionReplacedCodec> Client_SessionReplaced{
+  "Client.SessionReplaced", MsgCode::G2C_SessionReplaced
 };
 
 inline constexpr tiangz::client::MessageDescriptor<C2M_Move, C2M_MoveCodec> Map_Move{

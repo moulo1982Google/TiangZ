@@ -39,6 +39,10 @@ const MAP_CAPACITY_PLACE_REQ: u16 = 15008;
 const MAP_CAPACITY_PLACE_RESP: u16 = 15009;
 const MAP_CAPACITY_ENTER_REQ: u16 = 15010;
 const MAP_CAPACITY_ENTER_RESP: u16 = 15011;
+const USE_ITEM_REQ: u16 = 10019;
+const USE_ITEM_RESP: u16 = 10020;
+const CAST_SKILL_REQ: u16 = 10047;
+const CAST_SKILL_RESP: u16 = 10048;
 const CLIENT_PING_INTERVAL: Duration = Duration::from_secs(5);
 const GRID_CROSSING_PLAYER_MODULUS: u32 = 5;
 const GRID_CROSSING_SECONDS: u64 = 2;
@@ -181,6 +185,7 @@ struct Options {
     entry_sync_mode: EntrySyncMode,
     probe_rate: f64,
     probe_concurrency: usize,
+    business_rate: f64,
     state_sync_mode: StateSyncMode,
     state_sync_rate: u64,
     state_sync_concurrency: usize,
@@ -219,6 +224,7 @@ struct PlayerConnection {
     next_rpc_id: u32,
     unit_id: u32,
     player_index: u32,
+    business_item_id: u64,
 }
 
 #[derive(Clone)]
@@ -309,6 +315,7 @@ struct Timing {
 enum PendingKind {
     Probe,
     StateSync { mode: u32 },
+    Business { response_code: u16 },
 }
 
 struct PendingRequest {
@@ -338,6 +345,11 @@ struct PlayerResult {
     item_pushes: u64,
     item_items: u64,
     item_bytes: u64,
+    business_latencies_micros: Vec<u64>,
+    business_sent: u64,
+    business_accepted: u64,
+    business_rejected: u64,
+    business_transport_errors: u64,
 }
 
 #[tokio::main]
@@ -521,16 +533,39 @@ async fn main() -> Result<()> {
     let item_pushes = results.iter().map(|result| result.item_pushes).sum::<u64>();
     let item_items = results.iter().map(|result| result.item_items).sum::<u64>();
     let item_bytes = results.iter().map(|result| result.item_bytes).sum::<u64>();
+    let business_sent = results
+        .iter()
+        .map(|result| result.business_sent)
+        .sum::<u64>();
+    let business_accepted = results
+        .iter()
+        .map(|result| result.business_accepted)
+        .sum::<u64>();
+    let business_rejected = results
+        .iter()
+        .map(|result| result.business_rejected)
+        .sum::<u64>();
+    let business_transport_errors = results
+        .iter()
+        .map(|result| result.business_transport_errors)
+        .sum::<u64>();
     let mut latencies = results
         .iter()
         .flat_map(|result| result.latencies_micros.iter().copied())
         .collect::<Vec<_>>();
     latencies.sort_unstable();
     let mut state_sync_latencies = results
-        .into_iter()
-        .flat_map(|result| result.state_sync_latencies_micros)
+        .iter()
+        .flat_map(|result| result.state_sync_latencies_micros.iter().copied())
         .collect::<Vec<_>>();
     state_sync_latencies.sort_unstable();
+    // 业务延迟只统计已经收到响应的请求；业务拒绝仍然属于正常闭环响应。
+    // Business latency includes only requests with a response; an application rejection is still a valid closed-loop response.
+    let mut business_latencies = results
+        .iter()
+        .flat_map(|result| result.business_latencies_micros.iter().copied())
+        .collect::<Vec<_>>();
+    business_latencies.sort_unstable();
     let requests = latencies.len();
     let requests_per_second = requests as f64 / options.duration.as_secs_f64();
     let setup_per_second = options.players as f64 / setup_elapsed.as_secs_f64();
@@ -588,6 +623,19 @@ async fn main() -> Result<()> {
         "itemItemsPerSecond": item_items as f64 / options.duration.as_secs_f64(),
         "itemBytesPerSecond": item_bytes as f64 / options.duration.as_secs_f64(),
     });
+    let business_json = json!({
+        "targetRatePerPlayer": options.business_rate,
+        "count": business_sent,
+        "perSecond": business_sent as f64 / options.duration.as_secs_f64(),
+        "accepted": business_accepted,
+        "rejected": business_rejected,
+        "transportErrors": business_transport_errors,
+        "p50Ms": percentile(&business_latencies, 0.50) as f64 / 1000.0,
+        "p90Ms": percentile(&business_latencies, 0.90) as f64 / 1000.0,
+        "p95Ms": percentile(&business_latencies, 0.95) as f64 / 1000.0,
+        "p99Ms": percentile(&business_latencies, 0.99) as f64 / 1000.0,
+        "maxMs": business_latencies.last().copied().unwrap_or_default() as f64 / 1000.0,
+    });
     let result = json!({
         "scenario": "gameplay-full-chain-rust",
         "label": options.label,
@@ -616,13 +664,23 @@ async fn main() -> Result<()> {
         "entrySyncMode": options.entry_sync_mode.name(),
         "mapId": options.map_id,
         "targetProbeRatePerPlayer": options.probe_rate,
+        "targetBusinessRatePerPlayer": options.business_rate,
         "measurementStartedAtUnixMs": started_at_unix_ms,
         "measurementEndedAtUnixMs": started_at_unix_ms + options.duration.as_millis() as u64,
-        "workload": if options.move_rate > 0 {
-            format!("steady-{}hz-rust", options.move_rate)
-        } else {
-            format!("probe-only-{}hz-rust", options.probe_rate)
-        },
+        "workload": format!(
+            "{}{}{}",
+            if options.move_rate > 0 {
+                format!("steady-{}hz-rust", options.move_rate)
+            } else {
+                format!("probe-only-{}hz-rust", options.probe_rate)
+            },
+            if options.business_rate > 0.0 { "+" } else { "" },
+            if options.business_rate > 0.0 {
+                format!("business-{}hz", options.business_rate)
+            } else {
+                String::new()
+            },
+        ),
         "setup": {
             "count": options.players,
             "perSecond": setup_per_second,
@@ -650,6 +708,7 @@ async fn main() -> Result<()> {
             "errors": move_errors,
         },
         "probe": timing_json,
+        "business": business_json,
         "stateSync": state_sync_json,
         "loadGenerator": {
             "kind": "rust-tokio",
@@ -659,7 +718,7 @@ async fn main() -> Result<()> {
     });
 
     println!(
-        "[full-chain-rust:{}/{}] players={} setup={:.1} users/s move={:.1}/s skipped={} pushes={:.1}/s probe={:.1}/s p50={:.2}ms p95={:.2}ms p99={:.2}ms state={}:{:.1}/s p95={:.2}ms pushes={}/{}/{} errors={}/{}/{}",
+        "[full-chain-rust:{}/{}] players={} setup={:.1} users/s move={:.1}/s skipped={} pushes={:.1}/s probe={:.1}/s p50={:.2}ms p95={:.2}ms p99={:.2}ms business={:.1}/s accepted={} rejected={} transport_errors={} p95={:.2}ms state={}:{:.1}/s p95={:.2}ms pushes={}/{}/{} errors={}/{}/{}/{}",
         options.label,
         if options.move_rate > 0 {
             format!("steady-{}hz", options.move_rate)
@@ -675,6 +734,11 @@ async fn main() -> Result<()> {
         percentile(&latencies, 0.50) as f64 / 1000.0,
         percentile(&latencies, 0.95) as f64 / 1000.0,
         percentile(&latencies, 0.99) as f64 / 1000.0,
+        business_sent as f64 / options.duration.as_secs_f64(),
+        business_accepted,
+        business_rejected,
+        business_transport_errors,
+        percentile(&business_latencies, 0.95) as f64 / 1000.0,
         options.state_sync_mode.name(),
         state_sync_sent as f64 / options.duration.as_secs_f64(),
         percentile(&state_sync_latencies, 0.95) as f64 / 1000.0,
@@ -684,6 +748,7 @@ async fn main() -> Result<()> {
         move_errors,
         probe_errors,
         state_sync_errors,
+        business_transport_errors,
     );
     println!("RESULT_JSON {result}");
     Ok(())
@@ -806,6 +871,7 @@ async fn enter_player(
     let mut received_ready = false;
     let mut inline_snapshot = false;
     let mut unit_id = 0;
+    let mut business_item_id = 0_u64;
     while !received_response || !received_ready {
         let frame = receive_gate_frame(&mut frame_rx, options.timeout, "EnterMap").await?;
         let msgcode = frame_msgcode(&frame)?;
@@ -814,6 +880,9 @@ async fn enter_player(
                 let response = decode_message(&frame, enter_response_code, Some(3))
                     .context("EnterMap RPC failed")?;
                 unit_id = response.u32(unit_id_field)?;
+                if placement_layout.is_some() {
+                    business_item_id = response.u64(4);
+                }
                 inline_snapshot =
                     placement_layout.is_none() && count_length_delimited_field(&frame, 7)? > 0;
                 received_response = true;
@@ -881,6 +950,7 @@ async fn enter_player(
         next_rpc_id,
         unit_id,
         player_index,
+        business_item_id,
     })
 }
 
@@ -957,6 +1027,8 @@ fn start_gate_connection(
                     | Ok(MAP_SNAPSHOT_READY_RESP)
                     | Ok(MAP_CAPACITY_PLACE_RESP)
                     | Ok(MAP_PROBE_RESP)
+                    | Ok(USE_ITEM_RESP)
+                    | Ok(CAST_SKILL_RESP)
                     | Ok(STATE_SYNC_BENCH_RESP) => {
                         if frame_tx.send(Ok(frame)).is_err() {
                             break;
@@ -1015,6 +1087,7 @@ async fn run_player(
         mut next_rpc_id,
         unit_id,
         player_index,
+        business_item_id,
     } = player;
     let mut pushes_at_measurement_start = None;
     let mut state_pushes_at_measurement_start = None;
@@ -1023,6 +1096,8 @@ async fn run_player(
     );
     let mut probe_sequence = 0_u32;
     let mut state_sync_sequence = 0_u32;
+    let mut business_sequence = 0_u32;
+    let mut business_operation = player_index;
     let mut move_sequence = 0_u32;
     let probe_interval =
         (options.probe_rate > 0.0).then(|| Duration::from_secs_f64(1.0 / options.probe_rate));
@@ -1031,6 +1106,8 @@ async fn run_player(
     let state_sync_interval = (options.state_sync_mode != StateSyncMode::Off
         && options.state_sync_rate > 0)
         .then(|| Duration::from_secs_f64(1.0 / options.state_sync_rate as f64));
+    let business_interval =
+        (options.business_rate > 0.0).then(|| Duration::from_secs_f64(1.0 / options.business_rate));
     // 每名虚拟玩家使用稳定相位错开周期请求。总QPS保持不变，但不会在每个周期边界
     // 同时向Map注入全部玩家消息，从而避免把压测器的人造脉冲误判为服务器容量。
     // Give every virtual player a stable phase. Aggregate QPS is unchanged, while periodic
@@ -1040,6 +1117,7 @@ async fn run_player(
     let mut next_move = schedule_origin + phase_offset(move_interval, unit_id, 0x85eb_ca6b);
     let mut next_state_sync =
         schedule_origin + phase_offset(state_sync_interval, unit_id, 0xc2b2_ae35);
+    let mut next_business = schedule_origin + phase_offset(business_interval, unit_id, 0x27d4_eb2f);
 
     loop {
         let now = Instant::now();
@@ -1110,11 +1188,32 @@ async fn run_player(
             continue;
         }
 
+        if now < timing.send_deadline
+            && pending_business_count(&pending) == 0
+            && business_interval.is_some_and(|_| now >= next_business)
+        {
+            send_business(
+                &writer_tx,
+                &mut next_rpc_id,
+                &mut pending,
+                &mut business_sequence,
+                &mut business_operation,
+                unit_id,
+                business_item_id,
+                timing,
+                &mut result,
+            )
+            .await?;
+            next_business += business_interval.expect("checked above");
+            continue;
+        }
+
         if pending.is_empty() {
             let wake_at = [
                 move_interval.map(|_| next_move),
                 probe_interval.map(|_| next_probe),
                 state_sync_interval.map(|_| next_state_sync),
+                business_interval.map(|_| next_business),
                 Some(timing.send_deadline),
             ]
             .into_iter()
@@ -1137,6 +1236,10 @@ async fn run_player(
                     .then_some(state_sync_interval)
                     .flatten()
                     .map(|_| next_state_sync),
+                (pending_business_count(&pending) == 0)
+                    .then_some(business_interval)
+                    .flatten()
+                    .map(|_| next_business),
                 Some(timing.send_deadline),
             ]
             .into_iter()
@@ -1152,24 +1255,58 @@ async fn run_player(
         };
         let Some(frame) = frame else { continue };
         let msgcode = frame_msgcode(&frame)?;
-        if msgcode != MAP_PROBE_RESP && msgcode != STATE_SYNC_BENCH_RESP {
+        if msgcode != MAP_PROBE_RESP
+            && msgcode != STATE_SYNC_BENCH_RESP
+            && msgcode != USE_ITEM_RESP
+            && msgcode != CAST_SKILL_RESP
+        {
             continue;
         }
-        let response = decode_message(&frame, msgcode, None)?;
+        let response = decode_message_allow_error(&frame, msgcode, None)?;
         let rpc_id = response.u32(90)?;
-        let response_sequence = if msgcode == STATE_SYNC_BENCH_RESP {
-            response.u32(2)?
-        } else {
-            response.u32(1)?
+        let response_sequence = match msgcode {
+            STATE_SYNC_BENCH_RESP => Some(response.u32(2)?),
+            MAP_PROBE_RESP => Some(response.u32(1)?),
+            _ => None,
         };
         let request = pending
             .remove(&rpc_id)
             .with_context(|| format!("unknown response rpcId {rpc_id}"))?;
-        if request.sequence != response_sequence {
-            bail!(
-                "response sequence mismatch: {response_sequence} != {}",
-                request.sequence
-            );
+        let response_error = response.u32(91)?;
+        if response_error != 0 {
+            // 错误响应可能没有业务序号，必须先按错误码分类再做正常响应校验。
+            // Error responses may omit the business sequence, so classify them before normal response validation.
+            match request.kind {
+                PendingKind::Probe => {
+                    result.probe_errors += 1;
+                }
+                PendingKind::StateSync { .. } => {
+                    result.state_sync_errors += 1;
+                }
+                PendingKind::Business { response_code } => {
+                    if msgcode != response_code {
+                        result.business_transport_errors += 1;
+                    } else if request.measured {
+                        result
+                            .business_latencies_micros
+                            .push(request.started_at.elapsed().as_micros() as u64);
+                        if response_error >= 10_000 {
+                            result.business_rejected += 1;
+                        } else {
+                            result.business_transport_errors += 1;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+        if let Some(response_sequence) = response_sequence {
+            if request.sequence != response_sequence {
+                bail!(
+                    "response sequence mismatch: {response_sequence} != {}",
+                    request.sequence
+                );
+            }
         }
         match request.kind {
             PendingKind::Probe => {
@@ -1189,6 +1326,20 @@ async fn run_player(
                     result
                         .state_sync_latencies_micros
                         .push(request.started_at.elapsed().as_micros() as u64);
+                }
+            }
+            PendingKind::Business { response_code } => {
+                if msgcode != response_code {
+                    result.business_transport_errors += 1;
+                } else if request.measured {
+                    result
+                        .business_latencies_micros
+                        .push(request.started_at.elapsed().as_micros() as u64);
+                    if response.u32(91)? == 0 {
+                        result.business_accepted += 1;
+                    } else {
+                        result.business_rejected += 1;
+                    }
                 }
             }
         }
@@ -1353,6 +1504,54 @@ async fn send_state_sync(
     Ok(())
 }
 
+/// 交替发送真实道具与技能请求，保留PlayerUnit有序mailbox的单飞语义。
+/// Alternates real item and skill requests while preserving one in-flight request per PlayerUnit mailbox.
+async fn send_business(
+    writer_tx: &mpsc::Sender<Vec<u8>>,
+    next_rpc_id: &mut u32,
+    pending: &mut HashMap<u32, PendingRequest>,
+    sequence: &mut u32,
+    operation: &mut u32,
+    unit_id: u32,
+    item_id: u64,
+    timing: Timing,
+    result: &mut PlayerResult,
+) -> Result<()> {
+    let rpc_id = *next_rpc_id;
+    *next_rpc_id = next_rpc_id.wrapping_add(1).max(1);
+    *sequence = sequence.wrapping_add(1).max(1);
+    let use_item = *operation % 2 == 0;
+    *operation = operation.wrapping_add(1);
+    let (request_code, response_code, fields) = if use_item {
+        let mut fields = Vec::with_capacity(16);
+        push_uint64(&mut fields, 1, item_id);
+        (USE_ITEM_REQ, USE_ITEM_RESP, fields)
+    } else {
+        let mut fields = Vec::with_capacity(16);
+        // 3005是真言术·韧，使用自身作为目标，避免把AOI目标查找混入此基准。
+        // 3005 is Power Word: Fortitude; self-targeting keeps target lookup out of this baseline.
+        push_uint32(&mut fields, 1, 3005);
+        push_uint32(&mut fields, 2, unit_id);
+        (CAST_SKILL_REQ, CAST_SKILL_RESP, fields)
+    };
+    let started_at = Instant::now();
+    let measured = started_at >= timing.measurement_start && started_at < timing.send_deadline;
+    send_client_frame(writer_tx, encode_rpc(request_code, rpc_id, &fields)?).await?;
+    if measured {
+        result.business_sent += 1;
+    }
+    pending.insert(
+        rpc_id,
+        PendingRequest {
+            started_at,
+            sequence: *sequence,
+            measured,
+            kind: PendingKind::Business { response_code },
+        },
+    );
+    Ok(())
+}
+
 fn pending_probe_count(pending: &HashMap<u32, PendingRequest>) -> usize {
     pending
         .values()
@@ -1364,6 +1563,13 @@ fn pending_state_sync_count(pending: &HashMap<u32, PendingRequest>) -> usize {
     pending
         .values()
         .filter(|request| matches!(request.kind, PendingKind::StateSync { .. }))
+        .count()
+}
+
+fn pending_business_count(pending: &HashMap<u32, PendingRequest>) -> usize {
+    pending
+        .values()
+        .filter(|request| matches!(request.kind, PendingKind::Business { .. }))
         .count()
 }
 
@@ -1526,6 +1732,14 @@ fn push_uint32(buffer: &mut Vec<u8>, field: u32, value: u32) {
     push_varint(buffer, u64::from(value));
 }
 
+fn push_uint64(buffer: &mut Vec<u8>, field: u32, value: u64) {
+    if value == 0 {
+        return;
+    }
+    push_varint(buffer, u64::from(field << 3));
+    push_varint(buffer, value);
+}
+
 fn push_sint32(buffer: &mut Vec<u8>, field: u32, value: i32) {
     let zigzag = ((value << 1) ^ (value >> 31)) as u32;
     push_uint32(buffer, field, zigzag);
@@ -1558,6 +1772,9 @@ impl DecodedMessage {
     fn u16(&self, field: u32) -> Result<u16> {
         u16::try_from(self.u32(field)?).with_context(|| format!("field {field} exceeds uint16"))
     }
+    fn u64(&self, field: u32) -> u64 {
+        *self.varints.get(&field).unwrap_or(&0)
+    }
     fn string(&self, field: u32) -> Result<String> {
         self.strings
             .get(&field)
@@ -1567,6 +1784,22 @@ impl DecodedMessage {
 }
 
 fn decode_message(
+    frame: &[u8],
+    expected_msgcode: u16,
+    expected_rpc: Option<u32>,
+) -> Result<DecodedMessage> {
+    let message = decode_message_allow_error(frame, expected_msgcode, expected_rpc)?;
+    let error = message.u32(91)?;
+    if error != 0 {
+        let detail = message.string(92).unwrap_or_default();
+        bail!("RPC returned error {error}: {detail}");
+    }
+    Ok(message)
+}
+
+/// 解码RPC但保留业务错误字段，供业务压测区分“业务拒绝”和“传输失败”。
+/// Decodes an RPC while retaining its business error fields so the load test can distinguish application rejection from transport failure.
+fn decode_message_allow_error(
     frame: &[u8],
     expected_msgcode: u16,
     expected_rpc: Option<u32>,
@@ -1606,11 +1839,6 @@ fn decode_message(
             5 => advance(frame, &mut offset, 4)?,
             wire => bail!("unsupported protobuf wire type {wire}"),
         }
-    }
-    let error = message.u32(91)?;
-    if error != 0 {
-        let detail = message.string(92).unwrap_or_default();
-        bail!("RPC returned error {error}: {detail}");
     }
     if let Some(expected) = expected_rpc {
         let actual = message.u32(90)?;
@@ -1778,6 +2006,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         )?,
         probe_rate: rate("probe-rate", 0.2)?,
         probe_concurrency,
+        business_rate: rate("business-rate", 0.0)?,
         state_sync_mode: StateSyncMode::parse(
             values
                 .get("state-sync-mode")

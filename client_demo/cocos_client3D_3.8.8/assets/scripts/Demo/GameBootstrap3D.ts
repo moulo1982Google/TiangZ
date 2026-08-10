@@ -8,6 +8,7 @@ import {
   geometry,
   input,
   Input,
+  Label,
   Material,
   MeshRenderer,
   Node,
@@ -15,6 +16,7 @@ import {
   JsonAsset,
   primitives,
   resources,
+  UITransform,
   utils,
   Vec3,
 } from "cc";
@@ -42,6 +44,7 @@ import type {
   G2C_SkillImpact,
   G2C_SkillProjectile,
   G2C_QuestProgress,
+  G2C_SessionReplaced,
   ItemSnapshot,
   MapEntitySnapshot,
   QuestSnapshot,
@@ -63,6 +66,10 @@ const { ccclass, property } = _decorator;
 const MAP_ID = 100;
 const ENTITY_TYPE_PLAYER = 1;
 const ENTITY_TYPE_MONSTER = 2;
+const ENTITY_TYPE_NPC = 3;
+const STARTER_NPC_QUEST_ID = 5001;
+const STARTER_NPC_SECOND_QUEST_ID = 5005;
+const STARTER_NPC_INTERACT_RANGE_METERS = 5;
 // NumericType来自服务端稳定协议约定；客户端只读取公开的HP/MP结果，不修改Numeric。
 // These ids follow the stable server Numeric contract; the client only reads public HP/MP results.
 const NUMERIC_CURRENT_HP = 1;
@@ -105,6 +112,10 @@ const ATTACK_SLASH_DURATION_SECONDS = 0.18;
 const ATTACK_SLASH_MIN_SCALE = 0.15;
 const ATTACK_SLASH_MAX_SCALE = 1.15;
 const SKILL_TARGET_TOO_FAR_ERROR_CODE = 10021;
+const ACCOUNT_NOT_REGISTERED_ERROR_CODE = 10036;
+const ACCOUNT_ALREADY_EXISTS_ERROR_CODE = 10037;
+const PASSWORD_REQUIRED_ERROR_CODE = 10038;
+const PASSWORD_INVALID_ERROR_CODE = 10039;
 const PROJECTILE_MIN_VISIBLE_DURATION_MS = 250;
 // Cocos 3.8.8没有导出数字键枚举；使用标准键盘主区“1”的ASCII码49。
 // Cocos 3.8.8 does not expose a digit-key enum; 49 is the standard top-row "1" key code.
@@ -134,6 +145,7 @@ interface Cocos3DExternalConfig {
 
 interface MonsterOverheadHud {
   readonly root: Node;
+  readonly nameLabel?: Label;
   readonly hpFill: Node;
   readonly mpTrack: Node;
   readonly mpFill: Node;
@@ -219,6 +231,18 @@ export class GameBootstrap3D extends Component {
   private dynamicDoor!: Node;
   private pathRoot!: Node;
   private statusElement?: HTMLElement;
+  private loginPanel?: HTMLElement;
+  private loginStatusElement?: HTMLElement;
+  private loginAccountInput?: HTMLInputElement;
+  private loginPasswordInput?: HTMLInputElement;
+  private loginConfirmPasswordInput?: HTMLInputElement;
+  private loginConfirmPasswordLabel?: HTMLLabelElement;
+  private loginTitleElement?: HTMLElement;
+  private loginSubtitleElement?: HTMLElement;
+  private loginSubmitButton?: HTMLButtonElement;
+  private loginModeButton?: HTMLButtonElement;
+  private loginMode: "login" | "register" = "login";
+  private loginBusy = false;
   private mobileControlsElement?: HTMLElement;
   private mobileJoystickElement?: HTMLElement;
   private mobileJoystickKnob?: HTMLElement;
@@ -230,6 +254,11 @@ export class GameBootstrap3D extends Component {
   private mobileInstructionsElement?: HTMLElement;
   private mobilePingElement?: HTMLElement;
   private selectedMonsterElement?: HTMLElement;
+  private npcInteractionButton?: HTMLButtonElement;
+  private npcDialogPanel?: HTMLElement;
+  private npcDialogText?: HTMLElement;
+  private npcDialogQuestButton?: HTMLButtonElement;
+  private npcDialogCloseButton?: HTMLButtonElement;
   private playerStatsPanel?: HTMLElement;
   private playerHpLabel?: HTMLElement;
   private playerHpProgress?: HTMLElement;
@@ -244,12 +273,14 @@ export class GameBootstrap3D extends Component {
   private skillCastPanel?: HTMLElement;
   private skillCastLabel?: HTMLElement;
   private skillCastProgress?: HTMLElement;
+  private skillCastErrorElement?: HTMLElement;
   private buffPanel?: HTMLElement;
   private buffListElement?: HTMLElement;
   private questPanel?: HTMLElement;
   private questListElement?: HTMLElement;
   private displayedPingAtMs = -1;
   private loginFlow?: LoginFlow;
+  private stopSessionReplacedListening?: () => void;
   private gateSocket?: RpcSocket;
   private mapClient?: MapClient;
   private path: Vec3[] = [];
@@ -303,6 +334,10 @@ export class GameBootstrap3D extends Component {
   private readonly questCompleteInFlight = new Set<number>();
   private questHudSignature = "";
   private selectedMonsterUnitId = 0;
+  private selectedNpcUnitId = 0;
+  private nearbyNpcUnitId = 0;
+  private npcDialogUnitId = 0;
+  private npcQuestInFlight = false;
   private autoAttackEnabled = false;
   private autoAttackTargetUnitId = 0;
   private autoAttackPhase = 0;
@@ -316,6 +351,8 @@ export class GameBootstrap3D extends Component {
   private skillCastTargetUnitId = 0;
   private skillCastStartedAtMs = 0;
   private skillCastFinishAtMs = 0;
+  private skillCastErrorText = "";
+  private skillCastErrorUntilMs = 0;
   private skillGlobalCooldownEndAtMs = 0;
   private skillRequestInFlight = false;
 
@@ -346,6 +383,7 @@ export class GameBootstrap3D extends Component {
     this.reconcileAuthoritativePosition(deltaTime);
     this.reconcileAuthoritativeFacing(deltaTime);
     this.interpolateRemotePlayers(deltaTime);
+    this.updateNpcInteractionHud();
     this.updateFollowCamera(deltaTime);
     this.updateAttackSlashEffects(deltaTime);
     this.updateSkillProjectileEffects();
@@ -362,6 +400,8 @@ export class GameBootstrap3D extends Component {
     this.mobileJoystickPointerId = undefined;
     this.mobileControlPointerIds.clear();
     this.mobileCameraPointers.clear();
+    this.stopSessionReplacedListening?.();
+    this.stopSessionReplacedListening = undefined;
     this.loginFlow?.close();
     this.messageDispatcher?.dispose();
     this.messageDispatcher = undefined;
@@ -374,6 +414,13 @@ export class GameBootstrap3D extends Component {
     this.remotePlayers.clear();
     this.statusElement?.remove();
     this.statusElement = undefined;
+    this.loginPanel?.remove();
+    this.loginPanel = undefined;
+    this.loginStatusElement = undefined;
+    this.loginAccountInput = undefined;
+    this.loginPasswordInput = undefined;
+    this.loginConfirmPasswordInput = undefined;
+    this.loginBusy = false;
     this.hotbarElement?.remove();
     this.hotbarElement = undefined;
     this.skillBarElement?.remove();
@@ -382,6 +429,9 @@ export class GameBootstrap3D extends Component {
     this.skillCastPanel = undefined;
     this.skillCastLabel = undefined;
     this.skillCastProgress = undefined;
+    this.skillCastErrorElement = undefined;
+    this.skillCastErrorText = "";
+    this.skillCastErrorUntilMs = 0;
     this.skillHudSlots.clear();
     this.skillCooldownEnds.clear();
     this.buffPanel?.remove();
@@ -412,6 +462,8 @@ export class GameBootstrap3D extends Component {
     for (const effect of this.skillProjectileEffects) effect.node.destroy();
     this.skillProjectileEffects.length = 0;
     this.selectedMonsterElement?.remove();
+    this.npcInteractionButton?.remove();
+    this.npcDialogPanel?.remove();
     this.mobileInstructionsElement = undefined;
     this.mobilePingElement = undefined;
     this.playerStatsPanel = undefined;
@@ -419,6 +471,13 @@ export class GameBootstrap3D extends Component {
     this.autoAttackLabel = undefined;
     this.autoAttackProgress = undefined;
     this.selectedMonsterElement = undefined;
+    this.npcInteractionButton = undefined;
+    this.npcDialogPanel = undefined;
+    this.npcDialogText = undefined;
+    this.npcDialogQuestButton = undefined;
+    this.npcDialogCloseButton = undefined;
+    this.nearbyNpcUnitId = 0;
+    this.npcDialogUnitId = 0;
     this.loginFlow = undefined;
     this.gateSocket = undefined;
     this.mapClient = undefined;
@@ -492,17 +551,231 @@ export class GameBootstrap3D extends Component {
     element.style.pointerEvents = "none";
     document.body.appendChild(element);
     this.statusElement = element;
+    this.buildLoginHud(document);
     this.buildPlayerStatsHud(document);
     this.buildAutoAttackHud(document);
     this.buildSkillCastHud(document);
     this.buildSelectedMonsterHud(document);
+    this.buildNpcInteractionHud(document);
     this.buildBuffHud(document);
     this.buildHotbarHud(document);
     this.buildSkillBarHud(document);
     this.buildQuestHud(document);
     this.buildMobileHud(document);
     this.buildMobileControls(document);
-    this.setStatus("正在连接 LoginMgr 并进入 Map 100...");
+    this.setStatus("请先登录或注册账号");
+  }
+
+  /** 创建默认登录遮罩；注册只是显式切换的第二态。 / Creates the login-first overlay; registration is an explicit secondary mode. */
+  private buildLoginHud(document: Document): void {
+    const panel = document.createElement("section");
+    Object.assign(panel.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "12000",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "20px",
+      boxSizing: "border-box",
+      background: "rgba(7, 12, 16, 0.82)",
+      color: "#eef7f3",
+      font: "16px/1.45 system-ui, sans-serif",
+      pointerEvents: "auto",
+    });
+    const card = document.createElement("section");
+    Object.assign(card.style, {
+      width: "min(380px, 100%)",
+      padding: "26px",
+      boxSizing: "border-box",
+      border: "1px solid rgba(125, 188, 255, 0.62)",
+      borderRadius: "10px",
+      background: "rgba(17, 31, 43, 0.96)",
+      boxShadow: "0 18px 60px rgba(0,0,0,0.38)",
+    });
+    const title = document.createElement("h1");
+    title.textContent = "TiangZ 3D Demo";
+    Object.assign(title.style, { margin: "0 0 5px", fontSize: "26px", color: "#dff5ff" });
+    const subtitle = document.createElement("div");
+    subtitle.textContent = "请输入账号密码登录；新用户请点击注册";
+    Object.assign(subtitle.style, { marginBottom: "20px", color: "#9fb5bf", fontSize: "14px" });
+    const form = document.createElement("form");
+    form.style.display = "grid";
+    form.style.gap = "11px";
+    const account = this.createLoginInput(document, "用户名（同时作为角色名）", "text", "username");
+    const password = this.createLoginInput(document, "密码（6-64个字符）", "password", "current-password");
+    const confirmPassword = this.createLoginInput(document, "确认密码（仅注册时校验）", "password", "new-password");
+    confirmPassword.style.display = "none";
+    const status = document.createElement("div");
+    status.textContent = "正在读取本地配置...";
+    Object.assign(status.style, { minHeight: "22px", color: "#9fe3bf", fontSize: "14px" });
+    const actions = document.createElement("div");
+    Object.assign(actions.style, { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "4px" });
+    const loginButton = document.createElement("button");
+    loginButton.type = "submit";
+    loginButton.textContent = "登录";
+    const registerButton = document.createElement("button");
+    registerButton.type = "button";
+    registerButton.textContent = "注册";
+    this.styleLoginButton(loginButton, true);
+    this.styleLoginButton(registerButton, false);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (this.loginMode === "register") {
+        void this.registerFromPanel();
+      } else {
+        void this.loginFromPanel();
+      }
+    });
+    registerButton.addEventListener("click", () => {
+      this.setLoginMode(this.loginMode === "login" ? "register" : "login");
+    });
+    actions.append(loginButton, registerButton);
+    form.append(account, password, confirmPassword, status, actions);
+    card.append(title, subtitle, form);
+    panel.appendChild(card);
+    document.body.appendChild(panel);
+    this.loginPanel = panel;
+    this.loginStatusElement = status;
+    this.loginAccountInput = account.querySelector("input") ?? undefined;
+    this.loginPasswordInput = password.querySelector("input") ?? undefined;
+    this.loginConfirmPasswordInput = confirmPassword.querySelector("input") ?? undefined;
+    this.loginConfirmPasswordLabel = confirmPassword;
+    this.loginTitleElement = title;
+    this.loginSubtitleElement = subtitle;
+    this.loginSubmitButton = loginButton;
+    this.loginModeButton = registerButton;
+    this.setLoginMode("login");
+  }
+
+  private createLoginInput(
+    document: Document,
+    placeholder: string,
+    type: string,
+    autocomplete: HTMLInputElement["autocomplete"],
+  ): HTMLLabelElement {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = type;
+    input.placeholder = placeholder;
+    input.autocomplete = autocomplete;
+    Object.assign(input.style, {
+      width: "100%",
+      padding: "10px 11px",
+      boxSizing: "border-box",
+      border: "1px solid #577384",
+      borderRadius: "5px",
+      background: "#0b171f",
+      color: "#eef7f3",
+      font: "inherit",
+      outline: "none",
+    });
+    label.appendChild(input);
+    return label;
+  }
+
+  private styleLoginButton(button: HTMLButtonElement, primary: boolean): void {
+    Object.assign(button.style, {
+      padding: "10px 12px",
+      border: `1px solid ${primary ? "#6dbdff" : "#718892"}`,
+      borderRadius: "5px",
+      background: primary ? "#1a5f8c" : "#263b46",
+      color: "#f2fbff",
+      font: "600 16px/1.2 system-ui, sans-serif",
+      cursor: "pointer",
+    });
+  }
+
+  /** 切换登录/注册表单，不自动发请求，避免打开页面就进入注册流程。 / Switches form mode without sending a request, so opening the page never starts registration. */
+  private setLoginMode(mode: "login" | "register"): void {
+    this.loginMode = mode;
+    const registering = mode === "register";
+    if (this.loginTitleElement) {
+      this.loginTitleElement.textContent = registering ? "注册 TiangZ 3D Demo" : "TiangZ 3D Demo";
+    }
+    if (this.loginSubtitleElement) {
+      this.loginSubtitleElement.textContent = registering
+        ? "创建账号；用户名同时作为角色名"
+        : "请输入账号密码登录；新用户请点击注册";
+    }
+    if (this.loginConfirmPasswordLabel) {
+      this.loginConfirmPasswordLabel.style.display = registering ? "block" : "none";
+    }
+    if (this.loginSubmitButton) {
+      this.loginSubmitButton.textContent = registering ? "注册并进入游戏" : "登录";
+    }
+    if (this.loginModeButton) {
+      this.loginModeButton.textContent = registering ? "返回登录" : "注册";
+    }
+    if (!this.loginBusy) {
+      this.setLoginStatus(registering ? "请输入新账号信息" : "请输入账号和密码");
+    }
+  }
+
+  private async loginFromPanel(): Promise<void> {
+    if (this.loginBusy) return;
+    const credentials = this.readLoginCredentials(false);
+    if (!credentials) return;
+    this.loginBusy = true;
+    this.setLoginBusy(true);
+    try {
+      await this.loginAndEnter(credentials.account, credentials.password);
+    } finally {
+      this.loginBusy = false;
+      this.setLoginBusy(false);
+    }
+  }
+
+  private async registerFromPanel(): Promise<void> {
+    if (this.loginBusy) return;
+    const credentials = this.readLoginCredentials(true);
+    if (!credentials || !this.loginFlow) return;
+    this.loginBusy = true;
+    this.setLoginBusy(true);
+    this.setLoginStatus("正在创建账号...");
+    try {
+      await this.loginFlow.register(credentials.account, credentials.password);
+      this.setLoginStatus("注册成功，正在登录...");
+      await this.loginAndEnter(credentials.account, credentials.password);
+    } catch (error) {
+      this.setLoginStatus(this.formatLoginError(error), true);
+    } finally {
+      this.loginBusy = false;
+      this.setLoginBusy(false);
+    }
+  }
+
+  private readLoginCredentials(requireConfirmation: boolean): { account: string; password: string } | undefined {
+    const account = this.loginAccountInput?.value.trim() ?? "";
+    const password = this.loginPasswordInput?.value ?? "";
+    const confirmation = this.loginConfirmPasswordInput?.value ?? "";
+    if (account.length === 0) {
+      this.setLoginStatus("请输入用户名", true);
+      return undefined;
+    }
+    if (password.length < 6 || password.length > 64) {
+      this.setLoginStatus("密码长度需为6-64个字符", true);
+      return undefined;
+    }
+    if (requireConfirmation && password !== confirmation) {
+      this.setLoginStatus("两次输入的密码不一致", true);
+      return undefined;
+    }
+    return { account, password };
+  }
+
+  private setLoginBusy(busy: boolean): void {
+    if (this.loginAccountInput) this.loginAccountInput.disabled = busy;
+    if (this.loginPasswordInput) this.loginPasswordInput.disabled = busy;
+    if (this.loginConfirmPasswordInput) this.loginConfirmPasswordInput.disabled = busy;
+    const buttons = this.loginPanel?.querySelectorAll("button");
+    buttons?.forEach((button) => { button.disabled = busy; });
+  }
+
+  private setLoginStatus(text: string, error = false): void {
+    if (!this.loginStatusElement) return;
+    this.loginStatusElement.textContent = text;
+    this.loginStatusElement.style.color = error ? "#ff9c9c" : "#9fe3bf";
   }
 
   /** 创建本人任务追踪栏；进度来自服务端latest状态，领奖必须再次请求服务端。 / Creates an owner-only quest tracker; progress comes from server latest state and rewards require a server RPC. */
@@ -554,26 +827,28 @@ export class GameBootstrap3D extends Component {
       row.textContent = `${config.name}\n${lines.join("；")}`;
       row.style.whiteSpace = "pre-line";
       if (quest.status === QuestStatus.ReadyToTurnIn) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = this.questCompleteInFlight.has(quest.questConfigId) ? "领取中" : "领取奖励";
-        button.disabled = this.questCompleteInFlight.has(quest.questConfigId);
-        button.style.marginLeft = "8px";
-        button.style.touchAction = "manipulation";
-        this.bindTouchSafeHudButton(button, () => this.completeQuest(quest.questConfigId));
-        row.appendChild(button);
+        const hint = document.createElement("div");
+        hint.textContent = "请到任务使者处交任务";
+        hint.style.color = "#f2d37c";
+        hint.style.marginTop = "3px";
+        row.appendChild(hint);
       }
       list.appendChild(row);
     }
     if (this.quests.size === 0) list.textContent = "暂无进行中任务";
+    this.refreshSelectedTargetHud();
   }
 
-  private async completeQuest(questConfigId: number): Promise<void> {
+  private async completeQuest(questConfigId: number, npcUnitId: number): Promise<void> {
     if (!this.mapClient || this.questCompleteInFlight.has(questConfigId)) return;
+    if (npcUnitId === 0) {
+      this.setStatus("请先靠近任务使者");
+      return;
+    }
     this.questCompleteInFlight.add(questConfigId);
     this.updateQuestHud();
     try {
-      const response = await this.mapClient.completeQuest({ questConfigId });
+      const response = await this.mapClient.completeQuest({ questConfigId, npcUnitId });
       this.quests.delete(response.questConfigId);
       this.completedQuestConfigIds.add(response.questConfigId);
       for (const item of response.rewardItems) this.ApplyItemSnapshot(item);
@@ -695,10 +970,12 @@ export class GameBootstrap3D extends Component {
     const panel = document.createElement("div");
     panel.className = "cocos3d-skill-cast-hud";
     panel.style.position = "fixed";
-    panel.style.left = "24px";
-    panel.style.top = "345px";
+    panel.style.left = "50%";
+    panel.style.top = "auto";
+    panel.style.bottom = "clamp(172px, 24vh, 220px)";
+    panel.style.transform = "translateX(-50%)";
     panel.style.zIndex = "10000";
-    panel.style.width = "min(320px, calc(100vw - 48px))";
+    panel.style.width = "min(440px, calc(100vw - 48px))";
     panel.style.padding = "10px 12px";
     panel.style.boxSizing = "border-box";
     panel.style.color = "#e8f2ff";
@@ -723,10 +1000,21 @@ export class GameBootstrap3D extends Component {
     progress.style.transition = "width 80ms linear";
     track.appendChild(progress);
     panel.appendChild(track);
+
+    const error = document.createElement("div");
+    error.style.display = "none";
+    error.style.minHeight = "1.3em";
+    error.style.marginTop = "7px";
+    error.style.color = "#ffb3b3";
+    error.style.fontSize = "13px";
+    error.style.textAlign = "center";
+    panel.appendChild(error);
+
     document.body.appendChild(panel);
     this.skillCastPanel = panel;
     this.skillCastLabel = label;
     this.skillCastProgress = progress;
+    this.skillCastErrorElement = error;
   }
 
   /** 创建五技能快捷栏；移动端可直接点击，桌面端同时支持4到8。 / Creates five clickable skill slots with desktop keys 4 through 8. */
@@ -847,7 +1135,7 @@ export class GameBootstrap3D extends Component {
     });
   }
 
-  /** 创建选中目标HUD；它只显示客户端已进入AOI的公开怪物信息，不查询地图全量实体。 / Creates the selected-target HUD using only public monsters already entered through AOI. */
+  /** 创建选中目标HUD；它只显示AOI公开实体信息，不负责NPC交互。 / Creates the selected-target HUD from AOI-visible entities and never owns NPC interaction. */
   private buildSelectedMonsterHud(document: Document): void {
     const panel = document.createElement("div");
     panel.className = "cocos3d-selected-monster-hud";
@@ -867,6 +1155,94 @@ export class GameBootstrap3D extends Component {
     panel.textContent = "目标：未选择怪物";
     document.body.appendChild(panel);
     this.selectedMonsterElement = panel;
+  }
+
+  /**
+   * 创建统一的NPC交互按钮和对话框；按钮只在玩家进入5米范围时出现，任务按钮只存在于对话框中。
+   * Creates one shared NPC interaction button and dialog. The interaction button appears within
+   * five meters, while the quest action exists only inside the dialog for desktop and mobile.
+   */
+  private buildNpcInteractionHud(document: Document): void {
+    const interaction = document.createElement("button");
+    interaction.type = "button";
+    interaction.style.position = "fixed";
+    interaction.style.left = "50%";
+    interaction.style.top = "22%";
+    interaction.style.transform = "translateX(-50%)";
+    interaction.style.zIndex = "10006";
+    interaction.style.display = "none";
+    interaction.style.width = "min(240px, calc(100vw - 32px))";
+    interaction.style.padding = "10px 18px";
+    interaction.style.border = "1px solid rgba(210, 150, 255, 0.9)";
+    interaction.style.borderRadius = "8px";
+    interaction.style.color = "#fff4ff";
+    interaction.style.background = "rgba(74, 30, 92, 0.94)";
+    interaction.style.font = "700 15px/1.3 system-ui, sans-serif";
+    interaction.style.touchAction = "manipulation";
+    interaction.style.pointerEvents = "auto";
+    this.bindTouchSafeHudButton(interaction, () => this.openNpcDialog());
+    document.body.appendChild(interaction);
+    this.npcInteractionButton = interaction;
+
+    const dialog = document.createElement("section");
+    dialog.className = "cocos3d-npc-dialog";
+    Object.assign(dialog.style, {
+      position: "fixed",
+      left: "50%",
+      top: "50%",
+      transform: "translate(-50%, -50%)",
+      zIndex: "10007",
+      display: "none",
+      width: "min(380px, calc(100vw - 32px))",
+      padding: "18px",
+      boxSizing: "border-box",
+      color: "#fff4ff",
+      background: "rgba(35, 23, 43, 0.96)",
+      border: "1px solid rgba(210, 150, 255, 0.82)",
+      borderRadius: "10px",
+      boxShadow: "0 10px 36px rgba(0, 0, 0, 0.4)",
+      font: "14px/1.5 system-ui, sans-serif",
+      pointerEvents: "auto",
+    });
+    const title = document.createElement("div");
+    title.textContent = "任务使者";
+    title.style.marginBottom = "10px";
+    title.style.color = "#e0a9ff";
+    title.style.font = "700 18px/1.3 system-ui, sans-serif";
+    const body = document.createElement("div");
+    body.style.marginBottom = "14px";
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    const questButton = document.createElement("button");
+    questButton.type = "button";
+    questButton.style.flex = "1";
+    questButton.style.padding = "9px 10px";
+    questButton.style.border = "1px solid rgba(210, 150, 255, 0.85)";
+    questButton.style.borderRadius = "6px";
+    questButton.style.color = "#fff4ff";
+    questButton.style.background = "rgba(115, 49, 143, 0.94)";
+    questButton.style.font = "700 14px/1.2 system-ui, sans-serif";
+    questButton.style.touchAction = "manipulation";
+    this.bindTouchSafeHudButton(questButton, () => this.acceptQuestFromNpc());
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.textContent = "关闭";
+    closeButton.style.padding = "9px 14px";
+    closeButton.style.border = "1px solid rgba(255, 255, 255, 0.35)";
+    closeButton.style.borderRadius = "6px";
+    closeButton.style.color = "#f4eafa";
+    closeButton.style.background = "rgba(255, 255, 255, 0.1)";
+    closeButton.style.font = "14px/1.2 system-ui, sans-serif";
+    closeButton.style.touchAction = "manipulation";
+    this.bindTouchSafeHudButton(closeButton, () => this.closeNpcDialog());
+    actions.append(questButton, closeButton);
+    dialog.append(title, body, actions);
+    document.body.appendChild(dialog);
+    this.npcDialogPanel = dialog;
+    this.npcDialogText = body;
+    this.npcDialogQuestButton = questButton;
+    this.npcDialogCloseButton = closeButton;
   }
 
   /**
@@ -1396,6 +1772,11 @@ export class GameBootstrap3D extends Component {
       progress.style.width = "0%";
       return;
     }
+    if (this.skillCastPhase === SKILL_CAST_PHASE_CASTING) {
+      label.textContent = "平A：施法中暂停计时";
+      progress.style.width = "0%";
+      return;
+    }
     if (this.autoAttackPhase !== AUTO_ATTACK_PHASE_SWINGING || this.autoAttackSwingStartAtMs <= 0) {
       label.textContent = `平A：已激活，等待距离/朝向（目标 ${this.autoAttackTargetUnitId}）`;
       progress.style.width = "0%";
@@ -1424,6 +1805,12 @@ export class GameBootstrap3D extends Component {
         label.textContent = `施法：${name} ${Math.round(ratio * 100)}%`;
         progress.style.width = `${ratio * 100}%`;
       }
+    }
+    if (this.skillCastErrorElement) {
+      const visible = this.skillCastErrorUntilMs > Date.now();
+      this.skillCastErrorElement.style.display = visible ? "block" : "none";
+      this.skillCastErrorElement.textContent = visible ? this.skillCastErrorText : "";
+      if (!visible) this.skillCastErrorText = "";
     }
     for (const slot of this.skillHudSlots.values()) {
       const readyAt = Math.max(
@@ -2032,9 +2419,10 @@ export class GameBootstrap3D extends Component {
   /** 处理移动端轻触：先尝试选择可见怪物，只有未命中实体时才提交地面寻路。 / Handles a mobile tap by selecting a visible monster first, and only navigating on a ground miss. */
   private handleMobileTap(clientX: number, clientY: number): void {
     const location = this.mobileScreenPoint(clientX, clientY);
-    const monster = this.pickMonsterAtScreen(location.x, location.y);
-    if (monster) {
-      this.selectMonster(monster);
+    const entity = this.pickSelectableAtScreen(location.x, location.y);
+    if (entity) {
+      if (entity.entityType === ENTITY_TYPE_NPC) this.selectNpc(entity);
+      else this.selectMonster(entity);
       return;
     }
     void this.queryPathAtScreen(location.x, location.y);
@@ -2046,11 +2434,21 @@ export class GameBootstrap3D extends Component {
       const config = await this.loadRuntimeConfig();
       this.loginMgrHost = config.loginMgrHost;
       this.loginMgrPort = config.loginMgrPort;
+      this.loginFlow = new LoginFlow({
+        transport: NATIVE ? "kcp" : "websocket",
+        host: this.loginMgrHost,
+        port: this.loginMgrPort,
+      });
+      this.stopSessionReplacedListening = this.loginFlow.onSessionReplaced(
+        (message) => this.handleSessionReplaced(message),
+      );
+      this.setLoginStatus("请输入用户名和密码");
     } catch (error) {
-      this.setStatus(`读取外网配置失败：${error instanceof Error ? error.message : String(error)}`);
+      const message = `读取服务器配置失败：${error instanceof Error ? error.message : String(error)}`;
+      this.setStatus(message);
+      this.setLoginStatus(message, true);
       return;
     }
-    await this.loginAndEnter();
   }
 
   /** 从resources读取部署地址；部署到新机器时只需替换JSON并重新构建Web包。 / Loads the deployment endpoint from resources; replacing this JSON and rebuilding is enough for another machine. */
@@ -2075,16 +2473,69 @@ export class GameBootstrap3D extends Component {
     });
   }
 
-  private async loginAndEnter(): Promise<void> {
-    const account = `guest_3d_${Math.floor(Math.random() * 100000)}`;
-    this.loginFlow = new LoginFlow({
-      transport: NATIVE ? "kcp" : "websocket",
-      host: this.loginMgrHost,
-      port: this.loginMgrPort,
-    });
+  /**
+   * 旧连接被顶下后清理客户端会话状态并回到登录面板；不能让旧Map对象和快捷栏残留在新账号前。
+   * Clears the client session and returns to login after takeover; stale map
+   * objects and hotbar state must not be shown as the next login's state.
+   */
+  private handleSessionReplaced(message: G2C_SessionReplaced): void {
+    const reason = message.reason || "账号已在其他设备登录";
+    this.messageDispatcher?.dispose();
+    this.messageDispatcher = undefined;
+    this.gateSocket = undefined;
+    this.mapClient = undefined;
+    this.localUnitId = 0;
+    this.path.length = 0;
+    this.pathIndex = 0;
+    this.targetMarker.active = false;
+    this.autoAttackEnabled = false;
+    this.autoAttackTargetUnitId = 0;
+    this.autoAttackPhase = 0;
+    this.skillCastPhase = 0;
+    this.skillCastErrorText = "";
+    this.skillCastErrorUntilMs = 0;
+    this.skillRequestInFlight = false;
+    this.selectedMonsterUnitId = 0;
+    this.selectedNpcUnitId = 0;
+    this.nearbyNpcUnitId = 0;
+    this.npcDialogUnitId = 0;
+    if (this.npcDialogPanel) this.npcDialogPanel.style.display = "none";
+    for (const remote of this.remotePlayers.values()) {
+      remote.visual?.Dispose();
+      remote.node.destroy();
+    }
+    this.remotePlayers.clear();
+    for (const effect of this.attackSlashEffects) effect.node.destroy();
+    this.attackSlashEffects.length = 0;
+    for (const effect of this.skillProjectileEffects) effect.node.destroy();
+    this.skillProjectileEffects.length = 0;
+    this.localNumerics.clear();
+    this.buffStateStore.Clear();
+    this.inventoryItems.clear();
+    this.quests.clear();
+    this.completedQuestConfigIds.clear();
+    this.refreshSelectedTargetHud();
+    this.updatePlayerStatsHud();
+    this.updateBuffHud();
+    this.updateHotbarHud();
+    this.updateQuestHud();
+    this.loginFlow?.close();
+    if (this.loginPanel) this.loginPanel.style.display = "flex";
+    this.setStatus(`连接已被顶号：${reason}`);
+    this.setLoginStatus(reason, true);
+  }
+
+  private async loginAndEnter(account: string, password: string): Promise<boolean> {
+    const flow = this.loginFlow;
+    if (!flow) {
+      this.setLoginStatus("登录服务尚未准备好，请稍候", true);
+      return false;
+    }
+    this.setLoginStatus("正在登录...");
     try {
-      const result = await this.loginFlow.enterGame(
+      const result = await flow.enterGame(
         account,
+        password,
         MAP_ID,
         (message) => this.setStatus(message),
       );
@@ -2149,12 +2600,27 @@ export class GameBootstrap3D extends Component {
         `NavMesh ${config.navigationVersion} 已加载\n` +
         `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
-          ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路"
-          : "W/S前后，A/D转向；左右鼠标同按前进；左键拖动环视、短按地面寻路；按住右键时A/D横移；1平A，2/3药水，4-8技能；E开关动态门"),
+          ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路；靠近紫色NPC点交互"
+          : "W/S前后，A/D转向；左右鼠标同按前进；左键拖动环视、短按地面寻路；按住右键时A/D横移；1平A，2/3药水，4-8技能；靠近紫色NPC点交互；E开关动态门"),
       );
+      this.setLoginStatus("登录成功");
+      if (this.loginPanel) this.loginPanel.style.display = "none";
+      return true;
     } catch (error) {
-      this.setStatus(`进入Map 100失败：${error instanceof Error ? error.message : String(error)}`);
+      const message = this.formatLoginError(error);
+      this.setStatus(`进入Map 100失败：${message}`);
+      this.setLoginStatus(message, true);
+      return false;
     }
+  }
+
+  private formatLoginError(error: unknown): string {
+    const code = rpcErrorCode(error);
+    if (code === ACCOUNT_NOT_REGISTERED_ERROR_CODE) return "用户未注册，请先点击注册";
+    if (code === ACCOUNT_ALREADY_EXISTS_ERROR_CODE) return "用户已注册，请直接登录";
+    if (code === PASSWORD_REQUIRED_ERROR_CODE) return "请输入密码";
+    if (code === PASSWORD_INVALID_ERROR_CODE) return "密码错误或密码长度无效";
+    return error instanceof Error ? error.message : String(error);
   }
 
   /** 消费独立Handler转发的3D权威状态；本地用于纠偏，远端只做插值。 / Consumes authoritative 3D state from a dedicated handler for local correction and remote interpolation. */
@@ -2187,8 +2653,10 @@ export class GameBootstrap3D extends Component {
     for (const unitId of message.leaves) {
       this.buffStateStore.RemoveUnit(unitId);
       const remote = this.remotePlayers.get(unitId);
-      if (!remote) continue;
       if (unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
+      if (unitId === this.selectedNpcUnitId) this.clearSelectedNpc();
+      if (unitId === this.nearbyNpcUnitId || unitId === this.npcDialogUnitId) this.closeNpcDialog();
+      if (!remote) continue;
       remote.visual?.Dispose();
       remote.node.destroy();
       this.remotePlayers.delete(unitId);
@@ -2458,23 +2926,30 @@ export class GameBootstrap3D extends Component {
     if (usedForwardChord) this.markInputDirty();
     if (wasOrbitDrag || usedForwardChord) return;
     const location = event.getLocation();
-    const monster = this.pickMonsterAtScreen(location.x, location.y);
-    if (monster) {
-      this.selectMonster(monster);
+    const entity = this.pickSelectableAtScreen(location.x, location.y);
+    if (entity) {
+      if (entity.entityType === ENTITY_TYPE_NPC) this.selectNpc(entity);
+      else this.selectMonster(entity);
       return;
     }
     void this.queryPathAtScreen(location.x, location.y);
   }
 
-  /** 从屏幕射线中选择最近的怪物方块；返回命中后不会继续触发地面寻路。 / Picks the nearest monster box on the screen ray; a hit never falls through to ground navigation. */
-  private pickMonsterAtScreen(screenX: number, screenY: number): RemotePlayer3D | undefined {
+  /** 从屏幕射线中选择最近的怪物或NPC方块；命中实体后不会穿透到地面寻路。 / Picks the nearest monster or NPC box; an entity hit never falls through to ground navigation. */
+  private pickSelectableAtScreen(screenX: number, screenY: number): RemotePlayer3D | undefined {
     const ray = new geometry.Ray();
     this.camera.screenPointToRay(screenX, screenY, ray);
     let nearest: RemotePlayer3D | undefined;
     let nearestDistance = Number.POSITIVE_INFINITY;
     for (const remote of this.remotePlayers.values()) {
-      if (remote.entityType !== ENTITY_TYPE_MONSTER || !remote.node.active) continue;
-      const distance = intersectRayBox(ray, remote.node.worldPosition, 0.4, PLAYER_HALF_HEIGHT, 0.4);
+      if ((remote.entityType !== ENTITY_TYPE_MONSTER && remote.entityType !== ENTITY_TYPE_NPC) || !remote.node.active) continue;
+      const distance = intersectRayBox(
+        ray,
+        remote.node.worldPosition,
+        remote.entityType === ENTITY_TYPE_NPC ? 0.55 : 0.4,
+        PLAYER_HALF_HEIGHT,
+        remote.entityType === ENTITY_TYPE_NPC ? 0.55 : 0.4,
+      );
       if (distance === undefined || distance >= nearestDistance) continue;
       nearest = remote;
       nearestDistance = distance;
@@ -2484,29 +2959,198 @@ export class GameBootstrap3D extends Component {
 
   /** 设置选中目标并同步方块高亮与文字；不改变服务端战斗状态。 / Sets the selected target and updates highlight and text without changing server combat state. */
   private selectMonster(monster: RemotePlayer3D): void {
+    const previousNpc = this.remotePlayers.get(this.selectedNpcUnitId);
+    if (previousNpc) previousNpc.selectionMarker.active = false;
+    this.selectedNpcUnitId = 0;
     if (this.selectedMonsterUnitId !== monster.unitId) {
       const previous = this.remotePlayers.get(this.selectedMonsterUnitId);
       if (previous) previous.selectionMarker.active = false;
     }
     this.selectedMonsterUnitId = monster.unitId;
     monster.selectionMarker.active = true;
-    this.updateSelectedMonsterHud(monster);
+    this.refreshSelectedTargetHud();
+  }
+
+  /** 选中任务NPC只改变客户端目标，不会在选中时自动接取任务。 / Selecting a quest NPC changes only the client target and never accepts a quest implicitly. */
+  private selectNpc(npc: RemotePlayer3D): void {
+    const previousMonster = this.remotePlayers.get(this.selectedMonsterUnitId);
+    if (previousMonster) previousMonster.selectionMarker.active = false;
+    this.selectedMonsterUnitId = 0;
+    if (this.selectedNpcUnitId !== npc.unitId) {
+      const previousNpc = this.remotePlayers.get(this.selectedNpcUnitId);
+      if (previousNpc) previousNpc.selectionMarker.active = false;
+    }
+    this.selectedNpcUnitId = npc.unitId;
+    npc.selectionMarker.active = true;
+    this.refreshSelectedTargetHud();
   }
 
   /** 清除离开AOI或销毁实体后的选中状态。 / Clears selection after the entity leaves AOI or is destroyed. */
   private clearSelectedMonster(): void {
+    if (this.selectedMonsterUnitId === 0) return;
     const previous = this.remotePlayers.get(this.selectedMonsterUnitId);
     if (previous) previous.selectionMarker.active = false;
     this.selectedMonsterUnitId = 0;
-    if (this.selectedMonsterElement) this.selectedMonsterElement.textContent = "目标：未选择怪物";
+    this.refreshSelectedTargetHud();
   }
 
-  /** 显示怪物配置名和运行时UnitId；当前协议的UnitId就是演示中的怪物实例ID。 / Displays config name and runtime UnitId, which is the monster instance ID in the demo protocol. */
-  private updateSelectedMonsterHud(monster: RemotePlayer3D): void {
+  /** 清除离开AOI或销毁实体后的NPC选择；任务状态不因AOI离开而改变。 / Clears an NPC selection after AOI leave without changing quest state. */
+  private clearSelectedNpc(): void {
+    if (this.selectedNpcUnitId === 0) return;
+    const previous = this.remotePlayers.get(this.selectedNpcUnitId);
+    if (previous) previous.selectionMarker.active = false;
+    this.selectedNpcUnitId = 0;
+    this.refreshSelectedTargetHud();
+  }
+
+  /** 刷新怪物/NPC目标信息；靠近交互和任务接取由独立对话框负责。 / Refreshes target text; proximity interaction and quest acceptance live in the separate dialog. */
+  private refreshSelectedTargetHud(): void {
     if (!this.selectedMonsterElement) return;
-    const config = GameConfigs.MonsterConfig.TryGet(monster.configId);
-    const name = config?.name ?? `MonsterConfig#${monster.configId}`;
-    this.selectedMonsterElement.textContent = `目标：${name}\n实例ID：${monster.unitId}`;
+    const selected = this.remotePlayers.get(this.selectedMonsterUnitId || this.selectedNpcUnitId);
+    if (!selected) {
+      this.selectedMonsterElement.textContent = "目标：未选择怪物";
+      return;
+    }
+    if (selected.entityType === ENTITY_TYPE_NPC) {
+      this.selectedMonsterElement.textContent = `NPC：${npcName(selected.configId)}\n实例ID：${selected.unitId}`;
+      return;
+    }
+    const config = GameConfigs.MonsterConfig.TryGet(selected.configId);
+    const name = config?.name ?? `MonsterConfig#${selected.configId}`;
+    this.selectedMonsterElement.textContent = `目标：${name}\n实例ID：${selected.unitId}`;
+  }
+
+  /** 查找5米内最近的AOI可见NPC；客户端只负责显示按钮，最终距离由服务端再次校验。 / Finds the nearest AOI-visible NPC within five meters; the server rechecks the final distance. */
+  private findNearbyNpc(): RemotePlayer3D | undefined {
+    let nearest: RemotePlayer3D | undefined;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const remote of this.remotePlayers.values()) {
+      if (remote.entityType !== ENTITY_TYPE_NPC || !remote.alive || !remote.node.active) continue;
+      const dx = this.player.position.x - remote.node.position.x;
+      const dz = this.player.position.z - remote.node.position.z;
+      const distance = dx * dx + dz * dz;
+      if (distance > STARTER_NPC_INTERACT_RANGE_METERS ** 2 || distance >= nearestDistance) continue;
+      nearest = remote;
+      nearestDistance = distance;
+    }
+    return nearest;
+  }
+
+  /** 更新靠近NPC交互按钮；状态变化只切换现有DOM，不在每帧创建节点。 / Updates the proximity button by toggling existing DOM instead of creating nodes per frame. */
+  private updateNpcInteractionHud(): void {
+    const nearby = this.findNearbyNpc();
+    this.nearbyNpcUnitId = nearby?.unitId ?? 0;
+    if (!nearby) {
+      if (this.npcInteractionButton) this.npcInteractionButton.style.display = "none";
+      if (this.npcDialogUnitId !== 0) this.closeNpcDialog();
+      return;
+    }
+    if (this.npcInteractionButton) {
+      this.npcInteractionButton.style.display = "block";
+      this.npcInteractionButton.textContent = `交互：${npcName(nearby.configId)}（按F键）`;
+    }
+    if (this.npcDialogUnitId !== 0 && this.npcDialogUnitId !== nearby.unitId) {
+      this.closeNpcDialog();
+    } else if (this.npcDialogUnitId !== 0) {
+      this.refreshNpcDialog();
+    }
+  }
+
+  /** 打开NPC对话框；选中NPC只更新目标表现，真正接取仍需点击对话框按钮。 / Opens the NPC dialog; selecting an NPC only changes presentation and acceptance still needs the dialog button. */
+  private openNpcDialog(): void {
+    const npc = this.findNearbyNpc();
+    if (!npc || !this.npcDialogPanel) return;
+    this.nearbyNpcUnitId = npc.unitId;
+    this.selectNpc(npc);
+    this.npcDialogUnitId = npc.unitId;
+    this.npcDialogPanel.style.display = "block";
+    this.refreshNpcDialog();
+  }
+
+  /** 关闭NPC对话框并清除对话目标；关闭不会改变任务状态。 / Closes the NPC dialog and clears its target without changing quest state. */
+  private closeNpcDialog(): void {
+    if (this.npcDialogPanel) this.npcDialogPanel.style.display = "none";
+    this.npcDialogCloseButton?.blur();
+    this.npcDialogUnitId = 0;
+  }
+
+  /** 刷新NPC文字与任务按钮；任务状态来自服务端快照，不由对话框本地猜测。 / Refreshes NPC text and quest action from server-owned quest state. */
+  private refreshNpcDialog(): void {
+    const npc = this.remotePlayers.get(this.npcDialogUnitId);
+    if (!npc || npc.entityType !== ENTITY_TYPE_NPC) {
+      this.closeNpcDialog();
+      return;
+    }
+    const action = this.getNpcQuestAction();
+    const activeQuest = this.quests.get(STARTER_NPC_QUEST_ID) ?? this.quests.get(STARTER_NPC_SECOND_QUEST_ID);
+    const quest = GameConfigs.QuestConfig.TryGet(action?.questConfigId ?? activeQuest?.questConfigId ?? 0);
+    if (this.npcDialogText) {
+      this.npcDialogText.textContent = action?.mode === "complete"
+        ? `${npcName(npc.configId)}：辛苦了，请把任务交给我。\n任务：${quest?.name ?? "任务"}`
+        : activeQuest
+          ? `${npcName(npc.configId)}：任务进行中，请继续完成目标。\n任务：${quest?.name ?? "任务"}`
+          : quest
+            ? `${npcName(npc.configId)}：${quest.description}`
+        : `${npcName(npc.configId)}：你暂时没有新的任务。`;
+    }
+    if (this.npcDialogQuestButton) {
+      this.npcDialogQuestButton.disabled = this.npcQuestInFlight
+        || this.questCompleteInFlight.has(action?.questConfigId ?? 0)
+        || !action;
+      this.npcDialogQuestButton.textContent = this.npcQuestInFlight
+        ? action?.mode === "complete" ? "交付中" : "接取中"
+        : !action
+          ? activeQuest ? "任务进行中" : "暂无任务"
+          : action.mode === "complete"
+            ? `交付任务：${quest?.name ?? "任务"}`
+            : `领取任务：${quest?.name ?? "任务"}`;
+    }
+  }
+
+  /** 根据任务链决定接取还是交付；最终距离、归属、前置和重复状态由服务端校验。 / Chooses accept or turn-in from the quest chain; the server validates distance, ownership, prerequisites, and duplicates. */
+  private getNpcQuestAction(): { questConfigId: number; mode: "accept" | "complete" } | undefined {
+    for (const questConfigId of [STARTER_NPC_QUEST_ID, STARTER_NPC_SECOND_QUEST_ID]) {
+      const active = this.quests.get(questConfigId);
+      if (active) {
+        return active.status === QuestStatus.ReadyToTurnIn
+          ? { questConfigId, mode: "complete" }
+          : undefined;
+      }
+      if (!this.completedQuestConfigIds.has(questConfigId)) return { questConfigId, mode: "accept" };
+    }
+    return undefined;
+  }
+
+  /** 由当前NPC完成或接取链上的下一项任务；不会在远离NPC时直接发奖励。 / Accepts or turns in the next quest at the current NPC; rewards are never claimed from a remote task panel. */
+  private async acceptQuestFromNpc(): Promise<void> {
+    const mapClient = this.mapClient;
+    const npcUnitId = this.npcDialogUnitId;
+    if (!mapClient || npcUnitId === 0 || this.npcQuestInFlight) return;
+    const action = this.getNpcQuestAction();
+    if (!action) {
+      this.refreshNpcDialog();
+      return;
+    }
+    this.npcQuestInFlight = true;
+    this.refreshNpcDialog();
+    try {
+      if (action.mode === "complete") {
+        await this.completeQuest(action.questConfigId, npcUnitId);
+      } else {
+        const response = await mapClient.acceptQuest({
+          questConfigId: action.questConfigId,
+          npcUnitId,
+        });
+        this.quests.set(response.quest.questConfigId, response.quest);
+        this.setStatus(`已从${npcName(this.remotePlayers.get(npcUnitId)?.configId ?? 0)}接取：${GameConfigs.QuestConfig.Get(response.quest.questConfigId).name}`);
+        this.updateQuestHud();
+      }
+    } catch (error) {
+      this.setStatus(`接取任务失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.npcQuestInFlight = false;
+      this.refreshNpcDialog();
+    }
   }
 
   /** 统一桌面点击与手机轻触的寻路入口。 / Shares one path-query entry between desktop clicks and mobile taps. */
@@ -2603,6 +3247,11 @@ export class GameBootstrap3D extends Component {
       void this.toggleDemoDoor();
       return;
     }
+    if (event.keyCode === KeyCode.KEY_F && !this.pressedKeys.has(event.keyCode)) {
+      this.pressedKeys.add(event.keyCode);
+      this.openNpcDialog();
+      return;
+    }
     if (!isMovementKey(event.keyCode) || this.pressedKeys.has(event.keyCode)) return;
     this.pressedKeys.add(event.keyCode);
     this.interruptClickNavigation();
@@ -2611,7 +3260,11 @@ export class GameBootstrap3D extends Component {
 
   private onKeyUp(event: EventKeyboard): void {
     if (!this.pressedKeys.delete(event.keyCode)) return;
-    if (event.keyCode === KeyCode.KEY_E || isHotbarKey(event.keyCode)) return;
+    if (
+      event.keyCode === KeyCode.KEY_E
+      || event.keyCode === KeyCode.KEY_F
+      || isHotbarKey(event.keyCode)
+    ) return;
     this.markInputDirty();
   }
 
@@ -2652,7 +3305,7 @@ export class GameBootstrap3D extends Component {
       this.ApplySkillCastState(response);
     } catch (error) {
       if (rpcErrorCode(error) === SKILL_TARGET_TOO_FAR_ERROR_CODE) {
-        this.setStatus(`${definition.name}施放失败：距离不足（最远 ${definition.rangeMeters} 米）`);
+        this.showSkillCastError(`${definition.name}施放失败：距离不足（最远 ${definition.rangeMeters} 米）`);
       } else {
         this.setStatus(`${definition.name}施放失败：${error instanceof Error ? error.message : String(error)}`);
       }
@@ -2986,7 +3639,7 @@ export class GameBootstrap3D extends Component {
         unitId: entity.unitId,
         selectionMarker: createSelectionMarker(),
         overheadHud: entity.entityType === ENTITY_TYPE_MONSTER
-          ? createMonsterOverheadHud()
+          ? createMonsterOverheadHud(monsterName(entity.configId))
           : undefined,
         targetFoot: new Vec3(entity.x, entity.y, entity.z),
         entityType: entity.entityType,
@@ -3015,6 +3668,17 @@ export class GameBootstrap3D extends Component {
     remote.node.active = true;
     if (remote.entityType !== ENTITY_TYPE_MONSTER) {
       remote.node.active = remote.alive;
+      remote.selectionMarker.active = remote.alive && (
+        remote.unitId === this.selectedMonsterUnitId || remote.unitId === this.selectedNpcUnitId
+      );
+      if (remote.entityType === ENTITY_TYPE_NPC) {
+        remote.node.setPosition(
+          remote.targetFoot.x,
+          remote.targetFoot.y + PLAYER_HALF_HEIGHT,
+          remote.targetFoot.z,
+        );
+        remote.node.setRotationFromEuler(0, remote.yaw * 180 / Math.PI, 0);
+      }
       return;
     }
     if (remote.overheadHud) remote.overheadHud.root.active = remote.alive;
@@ -3039,6 +3703,7 @@ export class GameBootstrap3D extends Component {
         : new Color(255, 215, 70, 255);
     }
     if (entity.entityType === ENTITY_TYPE_PLAYER) return new Color(80, 215, 125, 255);
+    if (entity.entityType === ENTITY_TYPE_NPC) return new Color(175, 80, 230, 255);
     return new Color(80, 215, 125, 255);
   }
 
@@ -3222,6 +3887,17 @@ export class GameBootstrap3D extends Component {
     console.info(`[Cocos3D] ${text}`);
   }
 
+  /** 将施法距离错误显示在施法条下方；不会覆盖左上角的通用状态。 / Shows range errors below the cast bar without overwriting the general status HUD. */
+  private showSkillCastError(text: string): void {
+    if (!this.skillCastErrorElement) {
+      this.setStatus(text);
+      return;
+    }
+    this.skillCastErrorText = text;
+    this.skillCastErrorUntilMs = Date.now() + 2_500;
+    this.updateSkillHud();
+  }
+
   private isMobileLayout(): boolean {
     return Boolean(globalThis.matchMedia?.("(pointer: coarse)").matches) ||
       Math.min(globalThis.innerWidth, globalThis.innerHeight) <= 900;
@@ -3290,6 +3966,14 @@ function createSelectionMarker(): Node {
   return marker;
 }
 
+function npcName(configId: number): string {
+  return configId === 9001 ? "任务使者" : `NPCConfig#${configId}`;
+}
+
+function monsterName(configId: number): string {
+  return GameConfigs.MonsterConfig.TryGet(configId)?.name ?? `MonsterConfig#${configId}`;
+}
+
 /** 创建无资源依赖的斜向刀光；外层是暖色刀身，内层是明亮刃线。 / Creates a resource-free diagonal slash with a warm body and bright edge. */
 function createAttackSlashEffect(sizeScale: number, monsterAttack: boolean): AttackSlashEffect {
   const root = new Node("AttackSlashEffect");
@@ -3327,9 +4011,26 @@ function createAttackSlashEffect(sizeScale: number, monsterAttack: boolean): Att
 }
 
 /** 创建怪物头顶的双层世界HUD；HP默认显示，MP由MaxMp是否大于零决定。 / Creates the two-row world HUD above a monster; HP is always shown and MP follows MaxMp. */
-function createMonsterOverheadHud(): MonsterOverheadHud {
+function createMonsterOverheadHud(name?: string): MonsterOverheadHud {
   const root = new Node("MonsterOverheadHud");
   root.setPosition(0, MONSTER_HUD_OFFSET_Y, 0);
+
+  let nameLabel: Label | undefined;
+  if (name) {
+    const labelNode = new Node("MonsterName");
+    root.addChild(labelNode);
+    labelNode.setPosition(0, 0.28, 0);
+    const transform = labelNode.addComponent(UITransform);
+    transform.setContentSize(240, 42);
+    nameLabel = labelNode.addComponent(Label);
+    nameLabel.string = name;
+    nameLabel.fontSize = 32;
+    nameLabel.lineHeight = 36;
+    nameLabel.color = new Color(255, 248, 224, 255);
+    nameLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+    nameLabel.verticalAlign = Label.VerticalAlign.CENTER;
+    labelNode.setScale(0.006, 0.006, 0.006);
+  }
 
   const hpY = MONSTER_HUD_ROW_GAP / 2;
   const mpY = -MONSTER_HUD_ROW_GAP / 2;
@@ -3379,7 +4080,7 @@ function createMonsterOverheadHud(): MonsterOverheadHud {
   root.addChild(mpFill);
   mpTrack.active = false;
   mpFill.active = false;
-  return { root, hpFill, mpTrack, mpFill };
+  return { root, nameLabel, hpFill, mpTrack, mpFill };
 }
 
 /** 将服务端i64数值转换为0..1进度；客户端不依赖浮点精度参与战斗。 / Converts server i64 values to a 0..1 display ratio without using float math for combat. */

@@ -442,6 +442,11 @@
       "code": 10019
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2S_CreateCharacter",
+      "name": "C2S_CreateCharacter",
+      "code": 10057
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2S_GetLoginServiceAddr",
       "name": "C2S_GetLoginServiceAddr",
       "code": 10002
@@ -455,6 +460,11 @@
       "key": "proto/OuterMessage_C_10001.proto#C2S_Login",
       "name": "C2S_Login",
       "code": 10004
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2S_Register",
+      "name": "C2S_Register",
+      "code": 10059
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#G2C_AoiDelta",
@@ -552,6 +562,11 @@
       "code": 10056
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_SessionReplaced",
+      "name": "G2C_SessionReplaced",
+      "code": 10061
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_SkillCastState",
       "name": "G2C_SkillCastState",
       "code": 10049
@@ -622,6 +637,11 @@
       "code": 10020
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#S2C_CreateCharacter",
+      "name": "S2C_CreateCharacter",
+      "code": 10058
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#S2C_GetLoginServiceAddr",
       "name": "S2C_GetLoginServiceAddr",
       "code": 10003
@@ -635,6 +655,11 @@
       "key": "proto/OuterMessage_C_10001.proto#S2C_Login",
       "name": "S2C_Login",
       "code": 10005
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#S2C_Register",
+      "name": "S2C_Register",
+      "code": 10060
     }
   ]
 }

@@ -156,7 +156,18 @@ async fn handle_raw_tcp_connection(
         loop {
             let frame = tokio::select! {
                 changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() { break; }
+                    if changed.is_err() || *writer_shutdown.borrow() {
+                        // 关闭请求不能抢在已入队的通知之前；这里排空快照后再释放Socket。
+                        // A close request must not overtake queued notices; drain
+                        // the queue before releasing the socket.
+                        while let Ok(frame) = write_rx.try_recv() {
+                            let frame_bytes = frame.len();
+                            write_raw_frames_vectored(&mut writer, std::slice::from_ref(&frame)).await?;
+                            writer_queued_bytes.fetch_sub(frame_bytes, Ordering::Relaxed);
+                            writer_stats.transport_write_completed(1, 4 + frame_bytes);
+                        }
+                        break;
+                    }
                     continue;
                 }
                 frame = write_rx.recv() => {
@@ -178,13 +189,10 @@ async fn handle_raw_tcp_connection(
                 packet_bytes += 4 + frame.len();
                 frames.push(frame);
             }
-            let result = tokio::select! {
-                changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() { break; }
-                    continue;
-                }
-                result = write_raw_frames_vectored(&mut writer, &frames) => result,
-            };
+            // 已经取出的批次必须完整写出；关闭信号只影响下一批，避免丢失最后一条业务通知。
+            // Once a batch is taken, write it completely; shutdown only affects
+            // the next batch so the final business notice cannot be dropped.
+            let result = write_raw_frames_vectored(&mut writer, &frames).await;
             writer_queued_bytes.fetch_sub(queued_frame_bytes, Ordering::Relaxed);
             if let Err(error) = result {
                 let _ = writer_shutdown_tx.send(true);
@@ -268,7 +276,19 @@ async fn handle_websocket_connection(
         loop {
             let frame = tokio::select! {
                 changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() { break; }
+                    if changed.is_err() || *writer_shutdown.borrow() {
+                        // 关闭前排空已经入队的WebSocket消息，保证顶号/踢人通知可见。
+                        // Drain queued WebSocket messages before close so
+                        // takeover/kick notices remain visible to the client.
+                        while let Ok(frame) = write_rx.try_recv() {
+                            let frame_bytes = frame.len();
+                            writer.feed(Message::Binary(frame.clone())).await?;
+                            writer.flush().await?;
+                            writer_queued_bytes.fetch_sub(frame_bytes, Ordering::Relaxed);
+                            writer_stats.transport_write_completed(1, frame_bytes);
+                        }
+                        break;
+                    }
                     continue;
                 }
                 frame = write_rx.recv() => {
@@ -288,18 +308,16 @@ async fn handle_websocket_connection(
                 frame_bytes += frame.len();
                 frames.push(frame);
             }
-            let result = tokio::select! {
-                changed = writer_shutdown.changed() => {
-                    if changed.is_err() || *writer_shutdown.borrow() { break; }
-                    continue;
+            // 已经取出的批次必须完整写出；关闭信号只影响下一批。
+            // Once taken, the batch is written completely; shutdown only
+            // affects the next batch.
+            let result = async {
+                for frame in &frames {
+                    writer.feed(Message::Binary(frame.clone())).await?;
                 }
-                result = async {
-                    for frame in &frames {
-                        writer.feed(Message::Binary(frame.clone())).await?;
-                    }
-                    writer.flush().await
-                } => result,
-            };
+                writer.flush().await
+            }
+            .await;
             writer_queued_bytes.fetch_sub(frame_bytes, Ordering::Relaxed);
             if let Err(error) = result {
                 let _ = writer_shutdown_tx.send(true);

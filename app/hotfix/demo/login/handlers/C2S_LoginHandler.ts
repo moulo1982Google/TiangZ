@@ -15,12 +15,12 @@ export class C2S_LoginHandler implements SessionRpcHandler<
   C2S_Login,
   S2C_Login
 > {
-  /** Login当前为无await的同步事务；未来增加异步账号状态时必须按账号显式加协程锁。 / Login is currently a synchronous transaction without awaits; future asynchronous account state must use an explicit account lock. */
-  handle(
+  /** 登录会等待账号目录与密码校验；LoginScene按账号串行化注册和登录，避免并发写入目录。 / Login awaits catalog and password verification; LoginScene serializes registration and login per account. */
+  async handle(
     scene: LoginScene,
     _session: Session,
     request: C2S_Login,
-  ): S2C_Login {
+  ): Promise<S2C_Login> {
     return scene.Login(request);
   }
 }

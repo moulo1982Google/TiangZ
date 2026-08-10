@@ -68,7 +68,7 @@ export class MessageHelper {
   }
 
   private async ResolveUnit(unitId: number): Promise<PlayerLocationSnapshot> {
-    const response = await this.location.Resolve({ unitId, account: "" });
+    const response = await this.location.Resolve({ unitId, account: "", characterId: 0n });
     if (!response.found) {
       throw new RpcError(SystemErrCode.ActorLocationNotFound, `location not found: ${unitId}`);
     }

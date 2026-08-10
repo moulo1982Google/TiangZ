@@ -141,23 +141,16 @@ async fn handle_raw_connection(
         );
 
     let writer_stream = Rc::clone(&stream);
-    let writer_shutdown_tx = shutdown_tx.clone();
     let writer_stats = Arc::clone(&stats);
     let writer_task = tokio_uring::spawn(async move {
-        let result = run_writer(writer_stream, write_rx, queued_bytes, writer_stats).await;
-        let _ = writer_shutdown_tx.send(true);
-        result
-    });
-
-    let shutdown_stream = Rc::clone(&stream);
-    let mut shutdown_rx = shutdown_rx;
-    tokio_uring::spawn(async move {
-        while shutdown_rx.changed().await.is_ok() {
-            if *shutdown_rx.borrow() {
-                let _ = shutdown_stream.shutdown(Shutdown::Both);
-                break;
-            }
-        }
+        run_writer(
+            writer_stream,
+            write_rx,
+            shutdown_rx,
+            queued_bytes,
+            writer_stats,
+        )
+        .await
     });
 
     let read_result = run_reader(
@@ -236,12 +229,55 @@ async fn run_reader(
 async fn run_writer(
     stream: Rc<TcpStream>,
     mut write_rx: mpsc::Receiver<Bytes>,
+    mut shutdown_rx: watch::Receiver<bool>,
     queued_bytes: Arc<AtomicUsize>,
     stats: Arc<crate::process::ProcessQueueStats>,
 ) -> Result<()> {
     let mut frames = Vec::<Bytes>::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
     let mut packet = Vec::<u8>::with_capacity(WRITE_BATCH_BYTE_CAPACITY);
-    while let Some(frame) = write_rx.recv().await {
+    loop {
+        let frame = tokio::select! {
+            changed = shutdown_rx.changed() => {
+                if changed.is_err() || *shutdown_rx.borrow() {
+                    // 关闭请求不能越过已入队的通知；先排空队列，再关闭 io_uring Socket。
+                    // A close request must not overtake queued notices; drain the
+                    // queue before shutting down the io_uring socket.
+                    while let Ok(frame) = write_rx.try_recv() {
+                        frames.clear();
+                        let mut queued_frame_bytes = frame.len();
+                        let mut packet_bytes = 4 + frame.len();
+                        frames.push(frame);
+                        while frames.len() < WRITE_BATCH_FRAME_CAPACITY
+                            && packet_bytes < WRITE_BATCH_BYTE_CAPACITY
+                        {
+                            let Ok(frame) = write_rx.try_recv() else {
+                                break;
+                            };
+                            queued_frame_bytes += frame.len();
+                            packet_bytes += 4 + frame.len();
+                            frames.push(frame);
+                        }
+                        packet.clear();
+                        packet.reserve(packet_bytes);
+                        for frame in &frames {
+                            packet.extend_from_slice(&(frame.len() as u32).to_be_bytes());
+                            packet.extend_from_slice(frame);
+                        }
+                        let (result, returned_packet) = stream.write_all(packet).await;
+                        packet = returned_packet;
+                        queued_bytes.fetch_sub(queued_frame_bytes, Ordering::Relaxed);
+                        result?;
+                        stats.transport_write_completed(frames.len(), packet_bytes);
+                    }
+                    break;
+                }
+                continue;
+            }
+            frame = write_rx.recv() => {
+                let Some(frame) = frame else { break; };
+                frame
+            }
+        };
         frames.clear();
         let mut queued_frame_bytes = frame.len();
         let mut packet_bytes = 4 + frame.len();
@@ -268,6 +304,10 @@ async fn run_writer(
         result?;
         stats.transport_write_completed(frames.len(), packet_bytes);
     }
+    // 只有写队列完成后才关闭连接；否则最后一条业务通知可能还在内核队列之外。
+    // Close only after the write queue is drained; otherwise the final business
+    // notice may still be outside the kernel queue.
+    let _ = stream.shutdown(Shutdown::Both);
     Ok(())
 }
 

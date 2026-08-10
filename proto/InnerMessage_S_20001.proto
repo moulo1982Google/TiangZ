@@ -21,6 +21,7 @@ message G2M_EnterMap // IRequest
   float initial_spawn_yaw = 11;
   // Trusted diagnostic value from the Bench Gate handler. Production entry always uses 0=full.
   uint32 entry_sync_mode = 12;
+  uint64 character_id = 13;
 }
 
 //ResponseType M2G_SecondEnterMap
@@ -32,6 +33,7 @@ message G2M_SecondEnterMap // IActorRequest
   uint32 map_id = 2;
   uint32 unit_id = 3;
   string gate_name = 4;
+  uint64 character_id = 5;
 }
 
 message M2G_SecondEnterMap // IActorResponse
@@ -48,6 +50,7 @@ message M2G_SecondEnterMap // IActorResponse
   uint64 map_instance_id = 10;
   repeated QuestSnapshot quests = 11;
   repeated uint32 completed_quest_config_ids = 12;
+  uint64 character_id = 13;
 }
 
 message M2G_EnterMap // IResponse
@@ -66,6 +69,7 @@ message M2G_EnterMap // IResponse
   float y = 12;
   repeated QuestSnapshot quests = 13;
   repeated uint32 completed_quest_config_ids = 14;
+  uint64 character_id = 15;
 }
 
 //ResponseType M2G_TransferPlayer
@@ -78,6 +82,7 @@ message G2M_TransferPlayer // IActorRequest
   reserved 3, 4;
   uint64 expected_location_revision = 5;
   uint64 target_map_instance_id = 6;
+  uint64 character_id = 7;
 }
 
 message M2G_TransferPlayer // IActorResponse
@@ -98,6 +103,7 @@ message M2G_TransferPlayer // IActorResponse
   MapHostEndpoint map_host = 14;
   repeated QuestSnapshot quests = 15;
   repeated uint32 completed_quest_config_ids = 16;
+  uint64 character_id = 17;
 }
 
 // @ets.msg protocol=Gate method=MapReady
@@ -109,6 +115,7 @@ message M2G_MapReady // IActorMessage
   float x = 4;
   float z = 5;
   float y = 6;
+  uint64 character_id = 7;
 }
 
 //ResponseType M2G_InitialSnapshot
@@ -118,6 +125,7 @@ message G2M_InitialSnapshot // IRequest
 {
   string account = 1;
   uint32 unit_id = 2;
+  uint64 character_id = 3;
 }
 
 message M2G_InitialSnapshot // IResponse
@@ -135,6 +143,7 @@ message G2M_PlayerOffline // IActorRequest
   uint32 unit_id = 3;
   string gate_name = 4;
   string reason = 5;
+  uint64 character_id = 6;
 }
 
 message M2G_PlayerOffline // IActorResponse
@@ -190,6 +199,7 @@ message PlayerTransferSnapshot
   repeated uint32 completed_quest_config_ids = 19;
   // DBProxy乐观并发版本；随玩家迁移，防止目标MapHost用旧快照覆盖新数据。
   uint64 persistence_revision = 20;
+  uint64 character_id = 21;
 }
 
 message MapInstanceSnapshot
@@ -385,6 +395,7 @@ message M2M_CommitPlayerTransferResponse // IResponse
   float y = 13;
   repeated QuestSnapshot quests = 14;
   repeated uint32 completed_quest_config_ids = 15;
+  uint64 character_id = 16;
 }
 
 //ResponseType M2M_AbortPlayerTransferResponse
@@ -413,6 +424,7 @@ message PlayerLocationSnapshot
   uint64 revision = 8;
   string state = 9;
   MapHostEndpoint map_host = 10;
+  uint64 character_id = 11;
 }
 
 //ResponseType L2S_AllocatePlayerUnitId
@@ -421,11 +433,13 @@ message PlayerLocationSnapshot
 message S2L_AllocatePlayerUnitId // IRequest
 {
   string account = 1;
+  uint64 character_id = 2;
 }
 
 message L2S_AllocatePlayerUnitId // IResponse
 {
   uint32 unit_id = 1;
+  uint64 character_id = 2;
 }
 
 //ResponseType L2S_RegisterPlayerLocation
@@ -439,6 +453,7 @@ message S2L_RegisterPlayerLocation // IRequest
   uint32 map_id = 5;
   uint64 map_instance_id = 6;
   uint32 actor_instance_id = 7;
+  uint64 character_id = 8;
 }
 
 message L2S_RegisterPlayerLocation // IResponse
@@ -453,6 +468,7 @@ message S2L_ResolvePlayerLocation // IRequest
 {
   uint32 unit_id = 1;
   string account = 2;
+  uint64 character_id = 3;
 }
 
 message L2S_ResolvePlayerLocation // IResponse
@@ -500,6 +516,7 @@ message S2L_CommitPlayerLocation // IRequest
   uint32 map_id = 5;
   uint64 map_instance_id = 6;
   uint32 actor_instance_id = 7;
+  uint64 character_id = 8;
 }
 
 message L2S_CommitPlayerLocation // IResponse
@@ -542,6 +559,7 @@ message PlayerLocationRecovery
   uint32 map_id = 5;
   uint64 map_instance_id = 6;
   uint32 actor_instance_id = 7;
+  uint64 character_id = 8;
 }
 
 //ResponseType L2S_RecoverPlayerLocations

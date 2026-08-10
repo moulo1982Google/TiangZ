@@ -137,7 +137,7 @@
     {
       "id": 5001,
       "name": "清理怪物",
-      "description": "击败1只怪A。",
+      "description": "击败5只怪A。",
       "objective_ids": [
         5101
       ]
@@ -165,14 +165,22 @@
       "objective_ids": [
         5104
       ]
+    },
+    {
+      "id": 5005,
+      "name": "清理怪B",
+      "description": "击败5只怪B。",
+      "objective_ids": [
+        5105
+      ]
     }
   ],
   "game_tbquestobjectiveconfig": [
     {
       "id": 5101,
       "quest_config_id": 5001,
-      "required_count": 1,
-      "description": "击败怪A"
+      "required_count": 5,
+      "description": "击败5只怪A"
     },
     {
       "id": 5102,
@@ -191,6 +199,12 @@
       "quest_config_id": 5004,
       "required_count": 1,
       "description": "使用1次大型生命药水"
+    },
+    {
+      "id": 5105,
+      "quest_config_id": 5005,
+      "required_count": 5,
+      "description": "击败5只怪B"
     }
   ],
   "game_tbskillconfig": [

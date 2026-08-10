@@ -28,10 +28,14 @@ import {
   C2M_ToggleDemoDoorCodec,
   C2M_UseItem,
   C2M_UseItemCodec,
+  C2M_AcceptQuest,
+  C2M_AcceptQuestCodec,
   C2M_CompleteQuest,
   C2M_CompleteQuestCodec,
   C2S_Login,
   C2S_LoginCodec,
+  C2S_Register,
+  C2S_RegisterCodec,
   G2C_EnterMap,
   G2C_EnterMapCodec,
   G2C_LoginGate,
@@ -84,12 +88,16 @@ import {
   G2C_ItemChangedCodec,
   M2C_UseItem,
   M2C_UseItemCodec,
+  M2C_AcceptQuest,
+  M2C_AcceptQuestCodec,
   M2C_CompleteQuest,
   M2C_CompleteQuestCodec,
   S2C_GetLoginServiceAddr,
   S2C_GetLoginServiceAddrCodec,
   S2C_Login,
   S2C_LoginCodec,
+  S2C_Register,
+  S2C_RegisterCodec,
 } from "../../client_sdk/typescript/Generated/Model/demo/protocol/messages";
 import { MsgCode } from "../../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 
@@ -134,6 +142,26 @@ export function decodeLoginFrame(frame: Uint8Array): DecodedFrame<S2C_Login> {
     throw new Error(`expected S2C_Login, got ${msgcode}`);
   }
   const body = S2C_LoginCodec.decode(frame.subarray(2));
+  return {
+    msgcode,
+    rpcId: body.rpcId,
+    body,
+  };
+}
+
+export function buildRegisterPacket(rpcId: number, request: C2S_Register): Uint8Array {
+  return encodePacket(
+    MsgCode.C2S_Register,
+    C2S_RegisterCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeRegisterFrame(frame: Uint8Array): DecodedFrame<S2C_Register> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.S2C_Register) {
+    throw new Error(`expected S2C_Register, got ${msgcode}`);
+  }
+  const body = S2C_RegisterCodec.decode(frame.subarray(2));
   return {
     msgcode,
     rpcId: body.rpcId,
@@ -466,7 +494,7 @@ export function decodeUseItemFrame(frame: Uint8Array): DecodedFrame<M2C_UseItem>
   return { msgcode, rpcId: body.rpcId, body };
 }
 
-/** 构造任务领奖请求；关键事务的幂等语义由服务端operationId保证。 / Builds a quest claim request whose critical idempotency is owned by the server operationId. */
+/** 构造NPC任务交付请求；npcUnitId来自当前地图快照，关键事务的幂等语义由服务端operationId保证。 / Builds an NPC quest turn-in request; npcUnitId comes from the current map snapshot and operationId owns reward idempotency. */
 export function buildCompleteQuestPacket(
   rpcId: number,
   request: Omit<C2M_CompleteQuest, "rpcId">,
@@ -485,6 +513,28 @@ export function decodeCompleteQuestFrame(
     throw new Error(`expected M2C_CompleteQuest, got ${msgcode}`);
   }
   const body = M2C_CompleteQuestCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+/** 构造从NPC接取任务的请求；npcUnitId由地图快照提供，服务端仍会校验距离和任务归属。 / Builds an NPC quest-accept request; the server still validates distance and quest ownership. */
+export function buildAcceptQuestPacket(
+  rpcId: number,
+  request: Omit<C2M_AcceptQuest, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_AcceptQuest,
+    C2M_AcceptQuestCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeAcceptQuestFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_AcceptQuest> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_AcceptQuest) {
+    throw new Error(`expected M2C_AcceptQuest, got ${msgcode}`);
+  }
+  const body = M2C_AcceptQuestCodec.decode(frame.subarray(2));
   return { msgcode, rpcId: body.rpcId, body };
 }
 

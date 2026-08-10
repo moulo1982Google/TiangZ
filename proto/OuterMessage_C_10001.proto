@@ -8,6 +8,7 @@ import "./DataDefine_CS_50001.proto";
 // @ets.msg protocol=LoginMgr
 message C2S_GetLoginServiceAddr // IRequest
 {
+  optional string account = 1;
 }
 
 message S2C_GetLoginServiceAddr // IResponse
@@ -22,6 +23,16 @@ message S2C_GetLoginServiceAddr // IResponse
 message C2S_Login // IRequest
 {
   string account = 1;
+  optional uint64 character_id = 2;
+  optional string password = 3;
+}
+
+message CharacterSummary
+{
+  uint64 character_id = 1;
+  string name = 2;
+  uint32 player_config_id = 3;
+  uint32 level = 4;
 }
 
 message S2C_Login // IResponse
@@ -33,6 +44,37 @@ message S2C_Login // IResponse
   string gate_name = 5;
   string gate_ip = 6;
   uint32 gate_port = 7;
+  repeated CharacterSummary characters = 8;
+  uint64 selected_character_id = 9;
+}
+
+//ResponseType S2C_Register
+// @ets.msg protocol=Login method=Register
+message C2S_Register // IRequest
+{
+  string account = 1;
+  string password = 2;
+}
+
+message S2C_Register // IResponse
+{
+  string account = 1;
+  CharacterSummary character = 2;
+}
+
+//ResponseType S2C_CreateCharacter
+// @ets.msg protocol=Login method=CreateCharacter
+message C2S_CreateCharacter // IRequest
+{
+  string account = 1;
+  string name = 2;
+  uint32 player_config_id = 3;
+}
+
+message S2C_CreateCharacter // IResponse
+{
+  CharacterSummary character = 1;
+  repeated CharacterSummary characters = 2;
 }
 
 //ResponseType G2C_LoginGate
@@ -41,11 +83,13 @@ message C2G_LoginGate // IRequest
 {
   string account = 1;
   string token = 2;
+  optional uint64 character_id = 3;
 }
 
 message G2C_LoginGate // IResponse
 {
   string account = 1;
+  uint64 character_id = 2;
 }
 
 //ResponseType G2C_EnterMap
@@ -86,6 +130,16 @@ message G2C_MapReady // IMessage
   float x = 4;
   float z = 5;
   float y = 6;
+}
+
+// 账号在新连接登录后，旧连接收到该通知并随后断开；客户端不得把它当作普通网络错误重试原请求。
+// The old connection receives this notice before it is closed after a newer
+// login takes over; clients must not retry the old request as a normal error.
+// @ets.msg protocol=Client method=SessionReplaced
+message G2C_SessionReplaced // IMessage
+{
+  uint32 reason_code = 1;
+  string reason = 2;
 }
 
 //ResponseType G2C_MapSnapshotReady
@@ -298,6 +352,7 @@ message G2C_ItemChanged // IMessage
 message C2M_AcceptQuest // IActorLocationRequest
 {
   uint32 quest_config_id = 1;
+  uint32 npc_unit_id = 2;
 }
 
 message M2C_AcceptQuest // IActorLocationResponse
@@ -311,6 +366,7 @@ message M2C_AcceptQuest // IActorLocationResponse
 message C2M_CompleteQuest // IActorLocationRequest
 {
   uint32 quest_config_id = 1;
+  uint32 npc_unit_id = 2;
 }
 
 message M2C_CompleteQuest // IActorLocationResponse

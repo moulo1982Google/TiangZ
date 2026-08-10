@@ -89,4 +89,7 @@ message G2C_MapCapacityEnter // IResponse
   uint32 unit_id = 1;
   sint32 cell_x = 2;
   sint32 cell_z = 3;
+  // Bench业务叠加负载使用的真实1001道具实例ID；正式客户端不能依赖此字段。
+  // Real 1001 item instance used by the benchmark business overlay; production clients must not depend on this field.
+  uint64 starter_item_id = 4;
 }

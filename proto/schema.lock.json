@@ -267,6 +267,13 @@
           "synthetic": false
         },
         {
+          "number": 4,
+          "name": "starter_item_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -1431,6 +1438,13 @@
           "synthetic": false
         },
         {
+          "number": 13,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -1456,6 +1470,13 @@
           "number": 2,
           "name": "unit_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "character_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -1510,6 +1531,13 @@
           "synthetic": false
         },
         {
+          "number": 6,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -1549,6 +1577,13 @@
           "number": 4,
           "name": "gate_name",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "character_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -1596,6 +1631,13 @@
           "synthetic": false
         },
         {
+          "number": 7,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -1629,6 +1671,13 @@
           "number": 1,
           "name": "unit_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -2191,6 +2240,13 @@
           "synthetic": false
         },
         {
+          "number": 15,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -2316,6 +2372,13 @@
           "number": 6,
           "name": "y",
           "type": "float",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 7,
+          "name": "character_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         }
@@ -2452,6 +2515,13 @@
           "name": "completed_quest_config_ids",
           "type": "uint32",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 13,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
           "synthetic": false
         },
         {
@@ -2593,6 +2663,13 @@
           "name": "completed_quest_config_ids",
           "type": "uint32",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 17,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
           "synthetic": false
         },
         {
@@ -2814,6 +2891,13 @@
           "name": "completed_quest_config_ids",
           "type": "uint32",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 16,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
           "synthetic": false
         },
         {
@@ -3310,6 +3394,13 @@
           "type": "uint32",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -3386,6 +3477,13 @@
           "number": 10,
           "name": "map_host",
           "type": "MapHostEndpoint",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 11,
+          "name": "character_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         }
@@ -3529,6 +3627,13 @@
           "type": "uint64",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 21,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -3579,6 +3684,13 @@
           "number": 1,
           "name": "account",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -3643,6 +3755,13 @@
           "number": 7,
           "name": "actor_instance_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "character_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -3812,6 +3931,13 @@
           "synthetic": false
         },
         {
+          "number": 8,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -3917,6 +4043,13 @@
           "number": 2,
           "name": "account",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "character_id",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -4238,6 +4371,13 @@
           "synthetic": false
         },
         {
+          "number": 3,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -4292,6 +4432,13 @@
         {
           "number": 1,
           "name": "quest_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "npc_unit_id",
           "type": "uint32",
           "repeated": false,
           "synthetic": false
@@ -4365,6 +4512,13 @@
         {
           "number": 1,
           "name": "quest_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "npc_unit_id",
           "type": "uint32",
           "repeated": false,
           "synthetic": false
@@ -4653,11 +4807,54 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2S_CreateCharacter",
+      "name": "C2S_CreateCharacter",
+      "base": "IRequest",
+      "response": "S2C_CreateCharacter",
+      "fields": [
+        {
+          "number": 1,
+          "name": "account",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "player_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2S_GetLoginServiceAddr",
       "name": "C2S_GetLoginServiceAddr",
       "base": "IRequest",
       "response": "S2C_GetLoginServiceAddr",
       "fields": [
+        {
+          "number": 1,
+          "name": "account",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
         {
           "number": 90,
           "name": "rpc_id",
@@ -4681,11 +4878,90 @@
           "synthetic": false
         },
         {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "password",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
           "repeated": false,
           "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2S_Register",
+      "name": "C2S_Register",
+      "base": "IRequest",
+      "response": "S2C_Register",
+      "fields": [
+        {
+          "number": 1,
+          "name": "account",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "password",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#CharacterSummary",
+      "name": "CharacterSummary",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "player_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "level",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -5130,6 +5406,13 @@
           "synthetic": false
         },
         {
+          "number": 2,
+          "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -5285,6 +5568,28 @@
           "name": "quests",
           "type": "QuestSnapshot",
           "repeated": true,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_SessionReplaced",
+      "name": "G2C_SessionReplaced",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "reason_code",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "reason",
+          "type": "string",
+          "repeated": false,
           "synthetic": false
         }
       ]
@@ -6088,6 +6393,49 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#S2C_CreateCharacter",
+      "name": "S2C_CreateCharacter",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "character",
+          "type": "CharacterSummary",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "characters",
+          "type": "CharacterSummary",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#S2C_GetLoginServiceAddr",
       "name": "S2C_GetLoginServiceAddr",
       "base": "IResponse",
@@ -6189,6 +6537,63 @@
           "number": 7,
           "name": "gate_port",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 8,
+          "name": "characters",
+          "type": "CharacterSummary",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "selected_character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#S2C_Register",
+      "name": "S2C_Register",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "account",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "character",
+          "type": "CharacterSummary",
           "repeated": false,
           "synthetic": false
         },

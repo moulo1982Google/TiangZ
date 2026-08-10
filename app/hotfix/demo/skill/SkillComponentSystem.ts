@@ -112,6 +112,32 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     return this.State();
   }
 
+  /**
+   * 受击延长当前读条，但不清除Cast、不重置起点，也不改变技能和公共CD。
+   * 只有地图技能调度器可以调用这个入口，避免任意Action伪造施法延迟。
+   *
+   * Extends the active cast after damage without interrupting it, moving only
+   * the finish deadline. Skill and global cooldowns remain unchanged. Only
+   * the map skill scheduler may call this boundary, so arbitrary Actions
+   * cannot forge cast pushback.
+   */
+  ExtendActiveCast(castId: bigint, extensionMs: number): SkillCastState | undefined {
+    const active = this.activeCast;
+    if (active?.castId !== castId) return undefined;
+    if (!Number.isSafeInteger(extensionMs) || extensionMs <= 0) {
+      throw new Error(`cast extension must be a positive safe integer: ${extensionMs}`);
+    }
+    const finishAtMs = active.finishAtMs + extensionMs;
+    if (!Number.isSafeInteger(finishAtMs)) {
+      throw new Error(`cast finish time exceeds safe integer range: ${finishAtMs}`);
+    }
+    this.activeCast = {
+      ...active,
+      finishAtMs,
+    };
+    return this.State();
+  }
+
   /** 返回当前技能与公共冷却是否可用；不修改状态。 / Checks skill and global cooldown deadlines without mutation. */
   ReadyAt(skillId: number): number {
     return Math.max(

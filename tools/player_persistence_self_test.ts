@@ -118,8 +118,8 @@ async function testSuccessfulSaveIsIdempotent(): Promise<void> {
   const second = component.SaveOnOffline("duplicate-disconnect");
   assert.equal(first, second);
   await Promise.all([first, second]);
-  assert.equal(repository.SaveCount("persistence-test"), 1);
-  assert.equal(repository.Get("persistence-test")?.reason, "disconnect");
+  assert.equal(repository.SaveCount(7001n), 1);
+  assert.equal(repository.Get(7001n)?.reason, "disconnect");
   assert.equal(component.Revision, 1n);
 }
 
@@ -140,10 +140,12 @@ async function testSaveFailureIsVisibleAndIdempotent(): Promise<void> {
 function createPlayer(): object {
   return {
     Account: "persistence-test",
+    CharacterId: 7001n,
     UnitId: 1001,
     logger: { info: () => undefined },
     Snapshot: () => ({
       account: "persistence-test",
+      characterId: 7001n,
       mapId: 1,
       mapInstanceId: 1n,
       unitId: 1001,
@@ -184,7 +186,7 @@ function createPlayer(): object {
 class FailingPlayerRepository implements PlayerRepository {
   saveCount = 0;
 
-  Load(_account: string): PlayerLoadResult | undefined {
+  Load(_characterId: bigint): PlayerLoadResult | undefined {
     return undefined;
   }
 
@@ -201,7 +203,7 @@ class FailingPlayerRepository implements PlayerRepository {
   }
 
   LoadTransaction(
-    _account: string,
+    _characterId: bigint,
     _operationId: string,
   ): PlayerTransactionReceipt | undefined {
     return undefined;
@@ -236,7 +238,7 @@ function testTransactionReceiptIsIdempotent(): void {
   assert.equal(duplicate.revision, applied.revision);
   assert.deepEqual(duplicate.result, write.result);
   assert.deepEqual(
-    repository.LoadTransaction("transaction-test", write.operationId)?.result,
+    repository.LoadTransaction(7001n, write.operationId)?.result,
     write.result,
   );
   assert.throws(
@@ -249,6 +251,7 @@ function createSaveData(account: string): PlayerSaveData {
   return {
     player: {
       account,
+      characterId: 7001n,
       mapId: 100,
       mapInstanceId: 100n,
       x: 1,

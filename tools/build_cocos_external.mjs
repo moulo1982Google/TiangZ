@@ -89,9 +89,17 @@ function createBuildIdentity() {
 function injectBuildBadge(directory, build, target) {
   const indexPath = path.join(directory, "index.html");
   const html = readFileSync(indexPath, "utf8");
-  const badge = `<div id="tiangz-build-version" aria-label="TiangZ build version">Build ${build.label} · ${target}</div>
+  // 手机竖屏给Ping预留右上角空间；完整标识仍保存在title和manifest中用于排查缓存。
+  // Mobile portrait leaves the top-right corner for Ping; the full identity remains in title and manifest.
+  const mobileTimestamp = build.generatedAt.slice(5, 19).replace(/-/g, "").replace("T", "-").replace(/:/g, "");
+  const visibleLabel = target === "mobile"
+    ? `Build ${mobileTimestamp} ${build.revision}`
+    : `Build ${build.label} · ${target}`;
+  const fullLabel = `Build ${build.label} · ${target}`;
+  const badge = `<div id="tiangz-build-version" aria-label="TiangZ build version" title="${fullLabel}">${visibleLabel}</div>
 <style>
 #tiangz-build-version{position:fixed;z-index:11000;left:50%;top:calc(env(safe-area-inset-top,0px) + 4px);transform:translateX(-50%);padding:3px 7px;border-radius:4px;color:rgba(238,247,243,.86);background:rgba(13,22,25,.68);font:10px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;pointer-events:none;user-select:none}
+@media (orientation:portrait) and (max-width:900px){#tiangz-build-version{left:calc(env(safe-area-inset-left,0px) + 8px);transform:none}}
 </style>`;
   const nextHtml = html.includes("</body>")
     ? html.replace("</body>", `${badge}\n</body>`)

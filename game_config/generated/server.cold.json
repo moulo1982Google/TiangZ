@@ -6,6 +6,13 @@
       "grid_size_cells": 15,
       "enter_range_grids": 3,
       "detach_range_grids": 5
+    },
+    {
+      "id": 2,
+      "name": "3D Demo宽视野AOI",
+      "grid_size_cells": 15,
+      "enter_range_grids": 7,
+      "detach_range_grids": 9
     }
   ],
   "game_tbaoisynctierconfig": [
@@ -19,6 +26,18 @@
       "id": 2,
       "aoi_config_id": 1,
       "range_grids": 5,
+      "sync_hz": 5
+    },
+    {
+      "id": 3,
+      "aoi_config_id": 2,
+      "range_grids": 7,
+      "sync_hz": 20
+    },
+    {
+      "id": 4,
+      "aoi_config_id": 2,
+      "range_grids": 9,
       "sync_hz": 5
     }
   ],
@@ -152,11 +171,11 @@
       "width_cells": 60,
       "depth_cells": 60,
       "cell_size_meters": 1,
-      "spawn_x": -12,
+      "spawn_x": -3,
       "spawn_y": 1,
-      "spawn_z": -12,
+      "spawn_z": -18,
       "spawn_yaw": 0,
-      "aoi_config_id": 1,
+      "aoi_config_id": 2,
       "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
       "navigation_version": "demo-3d-v2",
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
@@ -199,19 +218,49 @@
       "id": 10004,
       "map_config_id": 100,
       "monster_config_id": 1,
-      "spawn_x": -7,
+      "spawn_x": -18,
       "spawn_y": 0,
-      "spawn_z": -12,
+      "spawn_z": 18,
       "spawn_yaw": 0,
       "initial_spawn": true
     },
     {
       "id": 10005,
       "map_config_id": 100,
-      "monster_config_id": 2,
-      "spawn_x": -12,
+      "monster_config_id": 1,
+      "spawn_x": 18,
       "spawn_y": 0,
-      "spawn_z": -7,
+      "spawn_z": 18,
+      "spawn_yaw": 0,
+      "initial_spawn": true
+    },
+    {
+      "id": 10006,
+      "map_config_id": 100,
+      "monster_config_id": 2,
+      "spawn_x": -18,
+      "spawn_y": 0,
+      "spawn_z": -18,
+      "spawn_yaw": 0,
+      "initial_spawn": true
+    },
+    {
+      "id": 10007,
+      "map_config_id": 100,
+      "monster_config_id": 2,
+      "spawn_x": 18,
+      "spawn_y": 0,
+      "spawn_z": -18,
+      "spawn_yaw": 0,
+      "initial_spawn": true
+    },
+    {
+      "id": 10008,
+      "map_config_id": 100,
+      "monster_config_id": 1,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 18,
       "spawn_yaw": 0,
       "initial_spawn": true
     }

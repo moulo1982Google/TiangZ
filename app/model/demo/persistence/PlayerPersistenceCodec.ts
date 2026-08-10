@@ -54,6 +54,7 @@ export function ValidatePlayerSaveData(value: unknown): asserts value is PlayerS
   const data = requireRecord(value, "playerSaveData");
   const player = requireRecord(data.player, "playerSaveData.player");
   requireText(player.account, "player.account");
+  requirePositiveBigInt(player.characterId, "player.characterId");
   requirePositiveInteger(player.mapId, "player.mapId");
   requirePositiveBigInt(player.mapInstanceId, "player.mapInstanceId");
   requireFinite(player.x, "player.x");

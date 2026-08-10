@@ -24,6 +24,7 @@ export type GateActorRouteState = "active" | "moving";
  */
 export class GatePlayerRoute {
   readonly account: string;
+  readonly characterId: bigint;
   readonly gateName: string;
   connectionId?: number;
   lastReceiveTimeMs: number;
@@ -35,11 +36,13 @@ export class GatePlayerRoute {
 
   constructor(
     account: string,
+    characterId: bigint,
     gateName: string,
     connectionId: number,
     nowMs: number,
   ) {
     this.account = account;
+    this.characterId = characterId;
     this.gateName = gateName;
     this.connectionId = connectionId;
     this.lastReceiveTimeMs = nowMs;

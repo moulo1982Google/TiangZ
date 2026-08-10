@@ -56,6 +56,20 @@ export class PlayerPersistenceComponent extends Component<[
   }
 
   /**
+   * 把已恢复的Unit纯数据交给无DBProxy目标进程的内存Repository，保证跨进程迁移后仍能继续CAS。
+   * 配置了DBProxy时该方法不产生写入，数据库中的权威快照不会被迁移过程覆盖。
+   *
+   * Hands restored Unit values to an in-memory Repository in a no-DBProxy target
+   * so CAS can continue after cross-process transfer. With DBProxy configured it
+   * performs no write and never overwrites durable authority during transfer.
+   */
+  AdoptTransfer(): void {
+    const adopt = this.repository.AdoptTransfer;
+    if (!adopt) return;
+    adopt.call(this.repository, this.Capture("map-transfer"), this.revision);
+  }
+
+  /**
    * 捕获完整玩家纯数据，可用经过预检但尚未应用的items/quests覆盖当前值。
    * 本函数不修改Entity，也不跨await；事务业务必须先在同一同步栈中完成全部规划。
    *
@@ -106,9 +120,9 @@ export class PlayerPersistenceComponent extends Component<[
     result: Uint8Array,
   ): Promise<PlayerTransactionResult> {
     const player = this.GetParent<PlayerUnit>();
-    if (data.player.account !== player.Account) {
+    if (data.player.account !== player.Account || data.player.characterId !== player.CharacterId) {
       throw new Error(
-        `player transaction account mismatch: ${data.player.account} != ${player.Account}`,
+        `player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`,
       );
     }
     try {
@@ -136,7 +150,7 @@ export class PlayerPersistenceComponent extends Component<[
   async LoadTransaction(operationId: string): Promise<PlayerTransactionReceipt | undefined> {
     const player = this.GetParent<PlayerUnit>();
     const receipt = await Promise.resolve(
-      this.repository.LoadTransaction(player.Account, operationId),
+      this.repository.LoadTransaction(player.CharacterId, operationId),
     );
     if (!receipt) return undefined;
     this.uncertainOperations.delete(operationId);

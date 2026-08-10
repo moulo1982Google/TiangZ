@@ -134,6 +134,25 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     return true;
   }
 
+  /**
+   * 受击时给正在读条的玩家增加固定硬直时间；只延长结束时间，不重置读条起点。
+   * 这是Demo战斗规则，不是CombatComponent对所有项目的强制语义；伤害入口必须在结算后调用它。
+   *
+   * Adds fixed hit-stun time to a player's active cast without resetting its
+   * start time. This is a Demo combat rule, not a universal CombatComponent
+   * rule; damage owners must call it after authoritative damage resolves.
+   */
+  ExtendCastOnDamage(target: PlayerUnit, extensionMs: number = 500): boolean {
+    if (this.units.Get<PlayerUnit>(target.UnitId) !== target) return false;
+    const skill = target.GetComponent(SkillComponent);
+    const active = skill.ActiveCast();
+    if (!active || active.definition.castTimeMs <= 0) return false;
+    const state = skill.ExtendActiveCast(active.castId, extensionMs);
+    if (!state) return false;
+    this.publishCastState(target, state);
+    return true;
+  }
+
   /** 10Hz桶只扫描活动施法者ID和本地图弹道；空闲Unit不进入循环，也不创建Timer。 / The 10 Hz bucket scans active caster ids and map projectiles only; idle Units never enter the loop and no per-cast timers exist. */
   Update10Hz(): void {
     if (this.map.IsStopping) return;

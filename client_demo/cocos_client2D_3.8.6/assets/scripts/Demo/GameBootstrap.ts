@@ -131,8 +131,11 @@ export class GameBootstrap extends Component {
       port: this.loginMgrPort,
     });
     try {
+      const password = "cocos2d_demo_password";
+      await this.loginFlow.register(this.account, password);
       const result = await this.loginFlow.enterGame(
         this.account,
+        password,
         1,
         (message) => this.setStatus(message),
       );

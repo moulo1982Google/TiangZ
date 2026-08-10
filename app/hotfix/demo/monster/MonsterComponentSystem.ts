@@ -18,6 +18,7 @@ import {
   RpcError,
   SpatialMode,
   SkillComponent,
+  SkillMapComponent,
   TimeSystem,
   UnitComponent,
   type AutoAttackState,
@@ -377,10 +378,16 @@ export class MonsterComponentSystem extends MonsterComponent {
     const damage = monsterNumeric[NumericType.Attack] > 0n
       ? monsterNumeric[NumericType.Attack]
       : 0n;
-    target.GetComponent(CombatComponent).ApplyDamage({
+    const result = target.GetComponent(CombatComponent).ApplyDamage({
       amount: damage,
       sourceUnitId: monster.UnitId,
     });
+    if (result.finalDamage > 0n && !result.killed) {
+      // 实际扣血后才触发施法硬直；护盾完全吸收或致死不延长一个已经无效的读条。
+      // Push back only after real HP damage; a fully absorbed hit or lethal hit
+      // does not extend a cast that is no longer useful.
+      this.DomainScene().GetComponent(SkillMapComponent).ExtendCastOnDamage(target, 500);
+    }
   }
 
   /**

@@ -20,10 +20,12 @@ const PORT = Number(process.env.TIANGZ_LOGIN_PORT ?? 17_000);
 
 async function main(): Promise<void> {
   const account = `buff_ws_probe_${Date.now()}`;
+  const password = "buff_probe_password";
   const flow = new LoginFlow({ transport: "websocket", host: HOST, port: PORT });
   const updates = setInterval(() => flow.update(), 1);
   try {
-    const result = await flow.enterGame(account, 100);
+    await flow.register(account, password);
+    const result = await flow.enterGame(account, password, 100);
     const gate = result.gateSocket;
     if (result.enterMap.entities.length === 0) {
       const initial = gate.waitForMessage(ClientMessages.AoiDelta, { timeoutMs: 5_000 });

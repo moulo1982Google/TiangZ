@@ -18,12 +18,14 @@ import { ItemComponent as SystemTarget4 } from "../../model/demo/item/ItemCompon
 import { LoginComponent as SystemTarget5 } from "../../model/demo/login/LoginComponent";
 import { MonsterComponent as SystemTarget6 } from "../../model/demo/monster/MonsterComponent";
 import { MonsterUnit as SystemTarget7 } from "../../model/demo/monster/MonsterUnit";
-import { NumericComponent as SystemTarget8 } from "../../model/demo/numeric/NumericComponent";
-import { PlayerUnit as SystemTarget9 } from "../../model/demo/map/PlayerUnit";
-import { Quest as SystemTarget10 } from "../../model/demo/quest/Quest";
-import { QuestComponent as SystemTarget11 } from "../../model/demo/quest/QuestComponent";
-import { SkillComponent as SystemTarget12 } from "../../model/demo/skill/SkillComponent";
-import { SkillMapComponent as SystemTarget13 } from "../../model/demo/skill/SkillMapComponent";
+import { NpcComponent as SystemTarget8 } from "../../model/demo/npc/NpcComponent";
+import { NpcUnit as SystemTarget9 } from "../../model/demo/npc/NpcUnit";
+import { NumericComponent as SystemTarget10 } from "../../model/demo/numeric/NumericComponent";
+import { PlayerUnit as SystemTarget11 } from "../../model/demo/map/PlayerUnit";
+import { Quest as SystemTarget12 } from "../../model/demo/quest/Quest";
+import { QuestComponent as SystemTarget13 } from "../../model/demo/quest/QuestComponent";
+import { SkillComponent as SystemTarget14 } from "../../model/demo/skill/SkillComponent";
+import { SkillMapComponent as SystemTarget15 } from "../../model/demo/skill/SkillMapComponent";
 
 registerKnownRpcs(RpcDescriptors0);
 registerKnownMessages(MessageDescriptors0);
@@ -41,3 +43,5 @@ HotfixSystem.RequireType(SystemTarget10);
 HotfixSystem.RequireType(SystemTarget11);
 HotfixSystem.RequireType(SystemTarget12);
 HotfixSystem.RequireType(SystemTarget13);
+HotfixSystem.RequireType(SystemTarget14);
+HotfixSystem.RequireType(SystemTarget15);
