@@ -95,6 +95,12 @@ export type {
 } from "./process/types";
 
 export { HostDbProxyTransport } from "./persistence/HostDbProxyTransport";
+export { DbProxyEntityRepository } from "./persistence/VersionedEntityRepository";
+export type {
+  VersionedEntityCodec,
+  VersionedEntityLoadResult,
+  VersionedEntitySaveResult,
+} from "./persistence/VersionedEntityRepository";
 
 export { StateReplicationSystem } from "./replication/StateReplicationSystem";
 export type {

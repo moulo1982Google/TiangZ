@@ -1,6 +1,7 @@
 namespace demo;
 
 @typeId(2)
+@persistent(1)
 entity Item extends Entity {
   @cold
   readonly configId: u32;

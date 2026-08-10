@@ -387,16 +387,17 @@
       "command": "npm run codegen:native-data",
       "contentInputs": {
         "native_data/core/EntityOps.native": "71cbf421bc2fe8f48696536d0f977b4274612a942d50544ebd1323b5e59fb16d",
-        "native_data/demo/Entity.native": "9cdd2c4b7d54d6fcf4b63c132cef25b43bd786247a766fec9798513bd32b1336",
-        "native_data/demo/Item.native": "07f0f3f7000668121c963aad755c18ef87a4b10bb1623d4fae1b5ff97b5c7d70",
+        "native_data/demo/Entity.native": "26ae40cac52bcf385f635c3d13e3b867f33e23060d167918c43b9bbd6f7bc507",
+        "native_data/demo/Item.native": "dc436cf8ae1f1f4cb92edc3a7db6a723131f01f9c822a8e0fc4fd63ce325b1e8",
         "native_data/demo/MapOps.native": "db869f154cd0e146c06cd0f8ccb6e5f32db97359233aeb15ff1a2e2cf561b4bc",
         "native_data/demo/Unit.native": "540381c62f2def5bb504b2959a2d9773e97b1a7f9a2e45faaa6f2f33abe52f07",
-        "package.json": "8ff12848fe748f38528c5db83d85173b91b62b8099bf6b01edd5b07ee1097d37",
+        "package.json": "2cf1b91717d784ac925efcf987041fb164fb7c9cfcf9988fc2c7d026e963388f",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "71b9f1f6cdb021c1914e7d2a5fe369937b832d64cb53dd6fece59700b13c0dd4"
       },
       "selections": [],
       "outputs": {
+        "app/generated/model/native/NativeItemPersistence.ts": "dfd1162936149b92e20734f9beb98a4f41e238ed5ebd550c2b28009d46a47caf",
         "app/generated/model/native/NativeItemRef.ts": "47abb3166b30399b6503b9bc095ef08421cdde887f2f13bf9e3012ab535f1697",
         "app/generated/model/native/NativeOps.ts": "02c25dff935463dfc0be618d2ddae43d882dd754213b7a33634e38529878603b",
         "app/generated/model/native/NativeUnitRef.ts": "84eab60839d861fad9942de401d606289b510e94dd13f74ec795a2ad4cff3e14",

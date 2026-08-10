@@ -7,8 +7,15 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-09 DBProxy配置与普通Entity持久化生成
+
+- DBProxy新增严格`configs/local.json`，普通参数与密钥分离；JSON只引用`DBPROXY_*`环境变量名，未知字段和危险零值在联网前失败。
+- `.native`新增`@persistent(version)`与`@transient`，`Item.native`生成强类型Snapshot、严格Codec、schema/version和通用Repository工厂。
+- Core新增`DbProxyEntityRepository`，统一Revision CAS、同`requestId`重试和schema校验；聚合Player、复杂查询及跨玩家事务继续使用领域Repository。
+
 ## 2026-08-09：运行时约束门禁与公共API收口
 
+- 冻结后续DBProxy集群边界：TiangZ Rust客户端支持多个内网Endpoint，两个对等DBProxy共享云Redis/PostgreSQL，并用故障注入验证连接中断、提交后丢响应、Backlog lease接管和全部实例不可用；切换必须保留原幂等ID。DBProxy实例之间不选主或同步业务状态，Redis/PostgreSQL高可用由云厂商提供，不进入自研范围。本轮只记录设计，尚未实现。
 - Hotfix第一代建立完整Handler key基线，后续候选双向比较集合：新增、删除或重命名都会在任何prototype/绑定槽修改前拒绝，运行中的Scene Registry不会出现新旧路由不一致；回归测试覆盖缺失、额外绑定、正常替换和失败回滚。
 - `verify:hotfix-boundary`扩展到Scene、Session、Unit、同步Event和Veto Handler，统一禁止字段、构造、静态初始化块与可变静态成员；门禁通过TypeChecker解析直接名、import别名和namespace成员，不能靠重命名导入绕过。
 - ProcessRuntime把单例初始化、ProcessHost和EntryScene创建纳入同一回滚边界；单例初始化自身也按逆序回滚。ChildEntity增加名义类型标记和运行时构造校验，普通Unit不能再靠TS结构类型误入子Entity容器。

@@ -4,5 +4,6 @@ abstract entity Entity {
   @hot
   readonly id: u32;
   @cold
+  @transient
   readonly instanceId: u32;
 }

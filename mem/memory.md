@@ -6,6 +6,7 @@
 - 主工程目录固定为 `E:\gitee\TiangZ`，不要误操作 `E:\VsCode\skynet`。
 - 默认使用中文交流、中文文档和中文 Git 提交信息。
 - 架构或业务语义变更必须同步更新 `docs/ai/project-context.md` 和 `docs/ai/business-development-manual.md`。
+- 普通单Entity持久化使用`.native`的`@persistent(version)`，字段默认进入Snapshot，`@transient`排除`instanceId`等运行时字段；codegen生成Codec和`CreateNativeXxxRepository`。DBProxy只维护固定通用表，不理解Entity。Player等聚合根、复杂查询、索引和跨玩家事务仍需手写领域Repository。
 - Core、Demo 和 Rust 层的函数注释使用中英文对照，说明作用、副作用、禁止用法和设计原因。
 - 需要高 CPU 或长时间压测前先告知；验收以真实运行结果、构建产物、服务器状态或客户端画面为准。
 
@@ -126,7 +127,8 @@ npm run build:cocos3d:mobile
 - 本机Docker开发使用PostgreSQL 18.4和Redis 8.8.1，仅绑定`127.0.0.1`；用户名和数据库为`tiangz`，密码为`tiangz_dev`，Redis密码也是`tiangz_dev`。DBProxy当前为`v0.4.0`，Redis使用AOF和命名卷；除进程内`SnapshotFlushQueue`外，`RedisSnapshotBacklog`通过lease/ACK和过期回收支持DBProxy重启后重新领取，PostgreSQL恢复后继续按原`request_id`写入。
 - DBProxy独立协议固定为LoadSnapshot、SaveSnapshot、EnqueueSnapshot、ApplyTransaction和LoadTransaction；Save/Transaction成功表示PostgreSQL提交，Enqueue成功只表示Redis AOF backlog接收。`v0.4.0`提供运行时无关TypeScript SDK；客户端和服务端均按RecordKey做多连接分片，请求超时后连接不可复用，必须重新连接并保留原幂等ID。
 - TiangZ已经接入首个`HostDbProxyTransport -> DbProxyPlayerRepository`：只有配置`process.persistence.dbProxy`才启用，Rust Host Runtime负责网络I/O，业务V8只等待Promise。玩家快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态，最终下线保存后重启TiangZ可以从PostgreSQL恢复；普通all-in-one仍使用内存Repository。
-- 当前没有周期快照、批量RPC、Prometheus、TLS、Redis高可用和生产部署。任务GrantItem奖励与UseItem已经接入`ApplyTransaction`：领域Component先生成纯数据计划，DBProxy保存操作后Player记录与原始结果，成功后才无await修改Entity；事务前失败和提交后ACK丢失均有自测。UseItem真实PostgreSQL验收已证明同ID只扣一次，并在只重启TiangZ后恢复原回执。Wallet、Trade、领域revision拆分和崩溃接管仍未完成，不得把两条Demo链路描述成全部经济数据生产级不丢。
+- 当前没有周期快照、批量RPC、Prometheus、TLS和生产部署。任务GrantItem奖励与UseItem已经接入`ApplyTransaction`：领域Component先生成纯数据计划，DBProxy保存操作后Player记录与原始结果，成功后才无await修改Entity；事务前失败和提交后ACK丢失均有自测。UseItem真实PostgreSQL验收已证明同ID只扣一次，并在只重启TiangZ后恢复原回执。Wallet、Trade、领域revision拆分和崩溃接管仍未完成，不得把两条Demo链路描述成全部经济数据生产级不丢。
+- DBProxy服务层后续只做三项集群能力：多Endpoint Rust客户端、两个共享云Redis/PostgreSQL的对等DBProxy实例、完整故障切换测试。切换时必须保留原`request_id/operation_id`，只对连接失败、超时和连接中断等基础设施错误换节点；业务错误不得重试到其他实例。DBProxy实例之间不选主、不同步业务状态。Redis/PostgreSQL高可用由云厂商提供，不在TiangZ或DBProxy中自行实现。
 - 客户端每次新的道具使用调用`CreateOperationId("item")`一次；只有同一逻辑请求的网络重试才复用。不得按ItemId或配置ID生成固定operationId。外部请求固定走`Handler -> ItemComponent.UseItemTransactional -> Planner -> DBProxy -> Commit`，Handler不编排Veto、Action、持久化或广播。
 - 同一字段只能属于一个存储域；事务数据以PostgreSQL提交为权威，Redis只缓存带revision的提交结果。当前不同时实现MongoDB、MySQL和PostgreSQL三套Adapter。
 

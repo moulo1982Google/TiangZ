@@ -1,5 +1,19 @@
 import assert from "node:assert/strict";
+import {
+  DbProxyClient,
+  DbProxyErrorCode,
+  DbProxyRemoteError,
+  type DbProxySnapshotEnvelope,
+  type DbProxySnapshotWrite,
+  type DbProxySnapshotWriteResult,
+  type DbProxyTransport,
+  type DbProxyTransactionalWrite,
+  type DbProxyTransactionalWriteResult,
+  type DbProxyTransactionReceipt,
+  type DbProxyRecordKey,
+} from "@tiangz/dbproxy-sdk";
 import type { Entity } from "../app/core/runtime/entities";
+import { DbProxyEntityRepository } from "../app/core/persistence/VersionedEntityRepository";
 import { PlayerPersistenceComponent } from "../app/model/demo/persistence/PlayerPersistenceComponent";
 import { InMemoryPlayerRepository } from "../app/model/demo/persistence/PlayerRepository";
 import type {
@@ -19,15 +33,79 @@ import { BuffComponent } from "../app/model/demo/buff/BuffComponent";
 import { ItemComponent } from "../app/model/demo/item/ItemComponent";
 import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
 import { SkillComponent } from "../app/model/demo/skill/SkillComponent";
+import { NativeItemPersistenceCodec } from "../app/generated/model/native/NativeItemPersistence";
 
 void main();
 
 async function main(): Promise<void> {
   await testSuccessfulSaveIsIdempotent();
   await testSaveFailureIsVisibleAndIdempotent();
+  await testGeneratedRepositoryRetriesTheSameRequest();
   testCodecPreservesBigIntAndRepositoryRejectsStaleRevision();
   testTransactionReceiptIsIdempotent();
+  testGeneratedNativeItemCodec();
   console.log("player persistence self-test passed");
+}
+
+async function testGeneratedRepositoryRetriesTheSameRequest(): Promise<void> {
+  const transport = new RetryEntityTransport();
+  const repository = new DbProxyEntityRepository(
+    NativeItemPersistenceCodec,
+    "persistence-test",
+    new DbProxyClient(transport),
+  );
+  const result = await repository.SaveSnapshot("10001", {
+    id: 10001,
+    configId: 1001,
+    count: 50,
+    quality: 0,
+    level: 1,
+    version: 1,
+  }, 0n);
+  assert.equal(result.revision, 1n);
+  assert.equal(transport.requests.length, 2);
+  assert.equal(transport.requests[0]?.requestId, transport.requests[1]?.requestId);
+}
+
+class RetryEntityTransport implements DbProxyTransport {
+  readonly requests: DbProxySnapshotWrite[] = [];
+
+  load(_record: DbProxyRecordKey): Promise<DbProxySnapshotEnvelope | undefined> { return Promise.resolve(undefined); }
+
+  save(write: DbProxySnapshotWrite): Promise<DbProxySnapshotWriteResult> {
+    this.requests.push(write);
+    if (this.requests.length === 1) return Promise.reject(new DbProxyRemoteError(DbProxyErrorCode.StorageUnavailable, "injected"));
+    return Promise.resolve({ disposition: "applied", revision: 1n });
+  }
+
+  enqueueSnapshot(_write: DbProxySnapshotWrite): Promise<void> { return Promise.resolve(); }
+
+  applyTransaction(_write: DbProxyTransactionalWrite): Promise<DbProxyTransactionalWriteResult> {
+    return Promise.reject(new Error("not used"));
+  }
+
+  loadTransaction(_operationId: string, _record: DbProxyRecordKey): Promise<DbProxyTransactionReceipt | undefined> {
+    return Promise.resolve(undefined);
+  }
+}
+
+function testGeneratedNativeItemCodec(): void {
+  const snapshot = {
+    id: 10001,
+    configId: 1001,
+    count: 50,
+    quality: 2,
+    level: 7,
+    version: 3,
+  };
+  assert.deepEqual(
+    NativeItemPersistenceCodec.Decode(NativeItemPersistenceCodec.Encode(snapshot)),
+    snapshot,
+  );
+  assert.throws(
+    () => NativeItemPersistenceCodec.Decode(new TextEncoder().encode('{"version":1,"data":{"id":1}}')),
+    /fields are incomplete/,
+  );
 }
 
 async function testSuccessfulSaveIsIdempotent(): Promise<void> {

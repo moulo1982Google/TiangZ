@@ -4,7 +4,14 @@
 
 维护契约：任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须同时更新本文和[AI业务开发手册](business-development-manual.md)。设计改动未同步这两份文档，视为尚未完成。
 
-更新时间：2026-08-05。
+更新时间：2026-08-09。
+
+## 普通Entity持久化生成
+
+- `.native`中的具体Entity可用`@persistent(version)`声明稳定存储结构；字段默认进入快照，`@transient`排除`instanceId`等运行时字段。
+- codegen生成`NativeXxxPersistenceSnapshot`、严格Codec、schema/version和`CreateNativeXxxRepository(processName)`；通用Repository负责Revision CAS和同`requestId`重试。
+- DBProxy继续只维护固定通用表并把Payload视为不透明字节，不得认识TiangZ Entity。普通Entity无需手工设计数据库表；复杂查询、二级索引和跨玩家事务仍需领域Repository与专门存储设计。
+- 当前`Item.native`是最小示范。Player是跨Numeric、Item、Buff、Skill、Quest的聚合快照，仍保留手写`PlayerRepository`，不能机械替换成单Entity Repository。
 
 ## 一句话定位
 
@@ -350,7 +357,7 @@ Phase 4计划：
 
 - Phase 4.0已完成：Native Unit、protobuf、MapConfig、Cocos 2D和Pixi统一采用米制`X/Y/Z + Yaw`契约；Grid2D使用X/Z Cell，MapScene按实例创建和释放Rust空间状态。此次为显式破坏性协议升级，旧`0.3.10`客户端不能混连。
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
-- Phase 4.5正在建设持久化基础。独立仓库[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)当前为`v0.4.0`：DBProxy继续独立拥有快照、Revision/CAS、幂等、单记录`TransactionalWrite`、可查询事务回执、PostgreSQL权威存储、Redis已提交缓存与AOF backlog，并提供版本化Protobuf、协议指纹、内部令牌、Rust客户端池和运行时无关TypeScript SDK。TiangZ已经接入`HostDbProxyTransport -> DbProxyClient -> DbProxyPlayerRepository`真实链路；Rust Host Runtime负责多线程网络I/O，V8只等待Promise，主工程仍不得连接Redis/PostgreSQL或导入`dbproxy-storage`。`tiangz.demo.player@1`快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态。普通快照已通过重启恢复；任务领奖和UseItem已经成为关键单玩家事务：领域Component先规划操作后纯数据，DBProxy原子保存玩家记录与原始业务回执，成功后才无await修改Entity，ACK丢失后按operationId恢复。UseItem同时提交Inventory扣除、道具/GCD截止时间以及Heal或受限Buff效果；客户端为每次逻辑使用生成稳定operationId，重试复用。当前仍没有周期快照、Wallet/Trade事务、按领域拆分revision、自动节点接管、Prometheus和生产部署；UseItem事务Planner也只支持Heal和无AddAction的Stack Buff，Quest进度仍是提交后的可恢复投影。单玩家巨型记录只是Phase 4.5验证载体，不能替代最终领域一致性设计。完整步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+- Phase 4.5正在建设持久化基础。独立仓库[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)当前为`v0.4.0`：DBProxy继续独立拥有快照、Revision/CAS、幂等、单记录`TransactionalWrite`、可查询事务回执、PostgreSQL权威存储、Redis已提交缓存与AOF backlog，并提供版本化Protobuf、协议指纹、内部令牌、Rust客户端池和运行时无关TypeScript SDK。TiangZ已经接入`HostDbProxyTransport -> DbProxyClient -> DbProxyPlayerRepository`真实链路；Rust Host Runtime负责多线程网络I/O，V8只等待Promise，主工程仍不得连接Redis/PostgreSQL或导入`dbproxy-storage`。`tiangz.demo.player@1`快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态。普通快照已通过重启恢复；任务领奖和UseItem已经成为关键单玩家事务：领域Component先规划操作后纯数据，DBProxy原子保存玩家记录与原始业务回执，成功后才无await修改Entity，ACK丢失后按operationId恢复。UseItem同时提交Inventory扣除、道具/GCD截止时间以及Heal或受限Buff效果；客户端为每次逻辑使用生成稳定operationId，重试复用。后续DBProxy服务层集群只实现多Endpoint Rust客户端、两个对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用由云厂商托管，不在框架内实现。当前仍没有周期快照、Wallet/Trade事务、按领域拆分revision、自动节点接管、Prometheus和生产部署；UseItem事务Planner也只支持Heal和无AddAction的Stack Buff，Quest进度仍是提交后的可恢复投影。单玩家巨型记录只是Phase 4.5验证载体，不能替代最终领域一致性设计。完整步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 - 技能系统第一阶段已经实现：Unit上的`SkillComponent`只保存技能/GCD deadline和唯一ActiveCast，地图唯一`SkillMapComponent.Update10Hz`推进活跃读条与弹道；不创建每Unit Update、每Cast Timer、Actor或Entity。瞬发在ordered PlayerUnit调用内完成，移动策略和平A策略均由配置显式决定。冷却随玩家跨地图传输，活动读条在传送时终止。`SkillConfig.xlsx`描述目标关系与施法时间线并生成给前后端，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只按配置指纹组合只读定义，不再保存技能数值。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast。技能只选择目标并执行Action，伤害/治疗进入Combat，Buff生命周期进入BuffComponent。Buff冲突使用`stack_group + stack_scope`和Stack/Refresh/Replace/Reject/HigherWins；运行时Action覆盖和护盾剩余量可跨地图恢复。完整方案见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
 - 账号与角色选择、正式持久化业务接入。
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
