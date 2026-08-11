@@ -1,5 +1,6 @@
 /target/
 /node_modules/
+/tools/node_modules/
 /dist/
 /codegen.manifest.json.tmp*
 /codegen.manifest.json.lock/
