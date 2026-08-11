@@ -73,6 +73,12 @@ async function main(): Promise<void> {
   assert.equal(channelHealDefinition.queueWindowMs, 0);
   assert.equal(channelHealDefinition.effects[0]?.action.type, ActionType.Heal);
   assert.deepEqual(channelHealDefinition.effects[0]?.action.parameters, [30n]);
+  const channelWhipDefinition = GetSkillDefinition(3007);
+  assert.equal(channelWhipDefinition.name, "精神鞭笞");
+  assert.equal(channelWhipDefinition.channelTickMs, 1_000);
+  assert.equal(channelWhipDefinition.channelTicks, 5);
+  assert.equal(channelWhipDefinition.effects[0]?.action.type, ActionType.DealDamage);
+  assert.deepEqual(channelWhipDefinition.effects[0]?.action.parameters, [20n, 5n]);
 
   // Reload只替换之后查询到的定义；旧对象保持不可变，供已接受的Cast/Projectile安全完成。
   // Reload replaces definitions returned by later lookups only; the old immutable object remains safe for accepted casts/projectiles.
@@ -462,6 +468,35 @@ async function main(): Promise<void> {
   sourceSkill.UpdateChannel(channelCastId, skillNow + 2_000, 2);
   assert.equal(sourceSkill.State(3006).channelTickIndex, 2);
   sourceSkill.Interrupt("test-channel");
+  const whipCastId = 90004n;
+  sourceSkill.Accept({
+    castId: whipCastId,
+    skillId: 3007,
+    targetUnitId: 123,
+    startedAtMs: skillNow,
+    finishAtMs: skillNow + 5_000,
+    nextTickAtMs: skillNow + 1_000,
+    channelTicksCompleted: 0,
+    definition: channelWhipDefinition,
+  }, 0, 1_000);
+  const shortened = sourceSkill.ReduceActiveCast(whipCastId, 800, skillNow + 500);
+  assert.equal(shortened?.finishAtMs, skillNow + 4_200);
+  assert.equal(shortened?.phase, SkillCastPhase.Casting);
+  sourceSkill.Interrupt("test-channel-damage");
+  const pushedCastId = 90005n;
+  sourceSkill.Accept({
+    castId: pushedCastId,
+    skillId: 3001,
+    targetUnitId: 123,
+    startedAtMs: skillNow,
+    finishAtMs: skillNow + 1_500,
+    nextTickAtMs: 0,
+    channelTicksCompleted: 0,
+    definition: frostboltDefinition,
+  }, 0, 1_000);
+  const pushed = sourceSkill.ExtendActiveCast(pushedCastId, 800);
+  assert.equal(pushed?.finishAtMs, skillNow + 2_300);
+  sourceSkill.Interrupt("test-cast-pushback");
   const queueCastId = 90003n;
   sourceSkill.Accept({
     castId: queueCastId,

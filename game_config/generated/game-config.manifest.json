@@ -2,9 +2,9 @@
   "formatVersion": 2,
   "schemaFingerprint": "b4421d70a9751629164229237beeb4bf400d7206fde19cdc02204e21d8614486",
   "clientSchemaFingerprint": "646efb2c90d05bb19150addb04a1f1576725d1dbe1b72df538f85110f1de1d01",
-  "dataFingerprint": "40c0c1a96ef8fc9389efc050e7dd96ace9857fcd3b0250df5f12d9cdf587d774",
-  "hotDataFingerprint": "8d52e51685f774bedbb68cbf695123a5fe799a53a67b5ad8af4c0e6ba1280135",
-  "coldDataFingerprint": "9015d0bcac1f77a2265117731fb7d18d6d734c168f06eaba492de4e7de3d0bca",
+  "dataFingerprint": "520b88aecf7f70cf54a1a5ad419f176281c8f2067a973f98b7f839e5c03fc990",
+  "hotDataFingerprint": "0246b6fea3c85c2e1d1eca763d5977bfac5d98201e2b1a216eaaadf60fde0b27",
+  "coldDataFingerprint": "635a55b2e54050d9e8a1527bc4034c21af3f4221159d66ee56506099fcc2794d",
   "reloadPolicies": {
     "hot": [
       "game_tbbuffconfig",
@@ -25,15 +25,15 @@
     ]
   },
   "serverFile": "server.json",
-  "serverHash": "4b1c22c9a9ee4a332aafcb139d10fba22669ad0613805af5d147b7b1f6a59db8",
+  "serverHash": "cd543be4d2d8b22e9110b1b87e69e99171abee3711a5dc41d909e82431aea02e",
   "serverHotFile": "server.hot.json",
-  "serverHotHash": "f195235f84039806418bc4269884f18e1ad97a161f09de2356da5a570930ae45",
+  "serverHotHash": "b8ee89f8f39a56754b4093851516593c12c8e2eec46216a410f713dee1df6dd2",
   "serverColdFile": "server.cold.json",
-  "serverColdHash": "30bbc45985a225decf0ecb900e372bc5356948e488a0091a7bbcd55e016233e5",
+  "serverColdHash": "3da6bf4b90514b4059540e57f2569aca20eac461b9b51740901b703264447247",
   "clientFile": "client.json",
-  "clientHash": "d5b257ab0f91e5e024b7a744d2bedd6e7adef117bbada22a9f0fae51d9a7232f",
+  "clientHash": "6c6c0617a9c98bdb4858047b5cfbf633f98b9a430a16ea992b54860e3b03bafa",
   "clientHotFile": "client.hot.json",
-  "clientHotHash": "2be0ecd493b1ec103bc89e244075f9d549a32f4e607608d73bfbbf9225d65cc1",
+  "clientHotHash": "7fb6d45f91a9e61f74c37228a0688add8e456cac23a419234f1e8d348c4d3a1d",
   "clientColdFile": "client.cold.json",
   "clientColdHash": "49ddf721a0a405e605bfc55c1125dabc337c676e154b8137ddec676e4a8a6044"
 }

@@ -382,11 +382,11 @@ export class MonsterComponentSystem extends MonsterComponent {
       amount: damage,
       sourceUnitId: monster.UnitId,
     });
-    if (result.finalDamage > 0n && !result.killed) {
-      // 实际扣血后才触发施法硬直；护盾完全吸收或致死不延长一个已经无效的读条。
-      // Push back only after real HP damage; a fully absorbed hit or lethal hit
-      // does not extend a cast that is no longer useful.
-      this.DomainScene().GetComponent(SkillMapComponent).ExtendCastOnDamage(target);
+    if (result.requestedDamage > 0n && !result.killed) {
+      // 攻击命中且玩家尚未死亡就调整施法；护盾可以吸收生命伤害，但不能把引导当作没有受到攻击。
+      // A landed non-lethal attack adjusts casting even when a shield absorbs the HP damage;
+      // a shield must not make a channel pretend that it was never hit.
+      this.DomainScene().GetComponent(SkillMapComponent).HandleDamageDuringCast(target);
     }
   }
 

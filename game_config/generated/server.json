@@ -436,7 +436,7 @@
       "id": 1,
       "name": "怪A",
       "model_id": "monster/dummy",
-      "max_hp": 100,
+      "max_hp": 300,
       "max_mp": 100,
       "attack_damage": 8,
       "move_speed": 5,
@@ -450,7 +450,7 @@
       "id": 2,
       "name": "怪B",
       "model_id": "monster/wolf",
-      "max_hp": 100,
+      "max_hp": 300,
       "max_mp": 0,
       "attack_damage": 12,
       "move_speed": 6.4,
@@ -707,6 +707,25 @@
       "queue_window_ms": 0,
       "channel_tick_ms": 1000,
       "channel_ticks": 3
+    },
+    {
+      "id": 3007,
+      "name": "精神鞭笞",
+      "description": "引导5秒，每秒对目标造成20点暗影伤害；移动会取消引导，受到一次攻击时引导时间减少1秒。",
+      "target_relation": 1,
+      "cast_time_ms": 5000,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 30,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0,
+      "movement_policy": 2,
+      "auto_attack_policy": 2,
+      "revalidate_on_complete": true,
+      "required_absent_buff_config_id": 0,
+      "queue_window_ms": 0,
+      "channel_tick_ms": 1000,
+      "channel_ticks": 5
     }
   ],
   "game_tbskilleffectconfig": [
@@ -811,6 +830,18 @@
         30
       ],
       "description": "每跳为主目标恢复30点生命"
+    },
+    {
+      "id": 300701,
+      "skill_id": 3007,
+      "order": 1,
+      "target": 2,
+      "action_type": 4,
+      "action_params": [
+        20,
+        5
+      ],
+      "description": "每跳对主目标造成20点暗影伤害"
     }
   ]
 }

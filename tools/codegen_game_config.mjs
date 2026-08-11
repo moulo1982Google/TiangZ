@@ -732,7 +732,7 @@ function validateActionConfig(
     throw new Error(\`\${owner} \${phase} RemoveBuff needs a positive runtime Buff instance id\`);
   }
   if (type === 4) {
-    if (parameters[0] < 0 || parameters[1] < 1 || parameters[1] > 4) {
+    if (parameters[0] < 0 || parameters[1] < 1 || parameters[1] > 5) {
       throw new Error(\`\${owner} \${phase} DealDamage needs [non-negative amount, valid DamageSchool]\`);
     }
   }
@@ -925,7 +925,7 @@ function validateRawAction(owner, type, parameters, buffIds, allowEmptyRemove) {
   if (type === 2 && !buffIds.has(parameters[0])) {
     throw new Error(`${owner} AddBuff references missing BuffConfig ${parameters[0]}`);
   }
-  if (type === 4 && (parameters[0] < 0 || parameters[1] < 1 || parameters[1] > 4)) {
+  if (type === 4 && (parameters[0] < 0 || parameters[1] < 1 || parameters[1] > 5)) {
     throw new Error(`${owner} DealDamage needs [non-negative amount, valid DamageSchool]`);
   }
   if (type === 5 && (parameters[0] <= 0 || (parameters[1] ?? 0) < 0)) {

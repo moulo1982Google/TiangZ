@@ -145,13 +145,13 @@ npm run build:cocos3d:mobile
 - `ActiveCast`是SkillComponent中的瞬时纯数据，不是Actor、Entity、Timer或持久化记录；普通读条由10Hz服务器deadline推进，冷却和GCD也只保存deadline。
 - 技能只负责目标和时间线，完成时执行Action；伤害/治疗必须进入Combat，Buff进入BuffComponent，广播仍由Map/Audience负责。
 - 伤害类型、Instant/Cast、移动中断和`Keep/ResetOnStart/ResetOnComplete/Cancel`平A策略是独立字段，不能互相推导。
-- 第一版演示使用寒冰箭、火焰冲击、惩击、真言术·盾和真言术·韧；它们全部属于法术，接受时清零平A进度，读条期间暂停，成功或中断后都从0重新计时。寒冰箭需要最小抛射物，其他技能暂不扩展地面AOE、引导、技能队列和持久化。
-- 六技能闭环已实现为`PlayerUnit.CastSkill -> SkillComponent -> 地图唯一SkillMapComponent.Update10Hz -> Action -> Combat/Buff`；3006额外验证引导Tick和单技能排队。不为Unit或Cast创建独立Timer/Update；冷却跨地图保留，活动读条在传送时终止。
+- 第一版演示使用寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、3006引导治疗和3007精神鞭笞；它们全部属于法术，接受时清零平A进度，读条期间暂停，成功或中断后都从0重新计时。寒冰箭使用最小抛射物，3007使用5秒/5跳伤害引导。
+- 七技能闭环已实现为`PlayerUnit.CastSkill -> SkillComponent -> 地图唯一SkillMapComponent.Update10Hz -> Action -> Combat/Buff`；3006验证引导Tick和单技能排队，3007验证移动取消和受击将结束时间提前800毫秒。不为Unit或Cast创建独立Timer/Update；冷却跨地图保留，活动读条在传送时终止。
 - 可扩展施法前置条件统一走同步只读`SkillEvents.BeforeCast` Veto；底层SkillMap与BuffComponent仍必须保留最终不变量，不能只信Veto。
 - 读条技能接受时立即清除Rust旧移动租约；后续非零移动输入打断施法，不能让玩家在旧输入租约期间继续滑行。
 - Buff冲突已支持Target/Source作用域与Stack/Refresh/Replace/Reject/HigherWins；运行时Add/Tick/Remove Action和护盾剩余量必须随传送快照恢复，普通Refresh不重复执行AddAction。
 - 玩家跨MapHost快照的生成和目标校验必须共同引用`PLAYER_TRANSFER_SCHEMA_VERSION`；新增可传送Component或字段时升级一次常量，并跑真实跨图Runtime smoke，禁止两端手写不同schema数字。
-- 当前六技能数值已经迁入Luban；`SkillCatalog.ts`只按配置指纹组合只读定义。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast；不得在Unit或Component长期缓存定义。
+- 当前七技能数值已经迁入Luban；`SkillCatalog.ts`只按配置指纹组合只读定义。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast；不得在Unit或Component长期缓存定义。
 
 ## 3D客户端左右输入约定
 
@@ -168,7 +168,7 @@ npm run build:cocos3d:mobile
 - Buff传送只保存纯值和服务器墙钟时间，目标重建Timer但不重复执行AddAction；不保存TimerId、闭包、Promise或Entity引用。运行时Action覆盖和护盾剩余量已经随跨Process快照恢复。
 - Combat不反向查询Buff。护盾等Buff在添加/移除边界注册/注销Combat数据型modifier，剩余量由Combat单独持有；禁止新增`BuffComponent.TryAbsorbDamage`式耦合。
 - Buff叠加语义拆成冲突域、冲突决策和刷新行为：`stack_group + stack_scope + sourceUnitId`形成冲突键，策略支持Stack、Refresh、Replace、Reject和HigherWins；HigherWins比较显式priority，不比较ConfigId。Refresh默认不重复执行AddAction，来源、Tick节奏和运行状态分别配置。`BuffConfig.description`只进入服务端配置，不在客户端展示。
-- 当前演示：1001小型生命药水执行`Heal(150)`，1002大型生命药水添加2001持续回血Buff，2001每3秒执行`Heal(50)`。两种药品各有30秒配置CD，并和技能共享1秒玩家GCD；服务端原子提交、跨地图保留，Cocos3D只按返回deadline绘制。六技能Cast与Luban SkillConfig/SkillEffectConfig已完成，3006验证引导Tick和单技能排队，寒冰箭/惩击30米、火焰冲击10米；复杂地面目标和Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`、`docs/design/skill-system.md`和`docs/tutorials/18-configured-skill.md`。
+- 当前演示：1001小型生命药水执行`Heal(150)`，1002大型生命药水添加2001持续回血Buff，2001每3秒执行`Heal(50)`。两种药品各有30秒配置CD，并和技能共享1秒玩家GCD；服务端原子提交、跨地图保留，Cocos3D只按返回deadline绘制。七技能Cast与Luban SkillConfig/SkillEffectConfig已完成，3006验证引导Tick和单技能排队，3007验证受击缩短800毫秒，寒冰箭/惩击30米、火焰冲击10米；Cocos3D对3007本地目标绘制表现连线；复杂地面目标和Buff持久化暂不做。设计与调用示例见`docs/design/action-buff.md`、`docs/design/skill-system.md`和`docs/tutorials/18-configured-skill.md`。
 
 ## 本轮业务推进边界
 
@@ -178,7 +178,7 @@ npm run build:cocos3d:mobile
 - 组队任务依赖Party/PartyAudience，Party完成前不在Quest中增加队员共享逻辑。
 - 未来部署与基准制品继续按“本机/CI编译 -> 上传Linux Release制品 -> 外网测试机只运行制品”的边界推进；外网不上传源码和开发依赖。
 
-技能扩展补充：当前已经加入3006引导治疗，用于验证10Hz分段Tick、读条期间停止平A、移动打断、公共CD和单技能排队。`ActiveCast`仍是SkillComponent纯数据，不创建每Cast Timer或Update；复杂AOE、真实技能压测和技能持久化暂缓。
+技能扩展补充：当前已经加入3006引导治疗和3007精神鞭笞，用于验证10Hz分段Tick、读条期间停止平A、移动打断、3007受击缩短800毫秒、公共CD和单技能排队。`ActiveCast`仍是SkillComponent纯数据，不创建每Cast Timer或Update；Cocos3D引导条从满条向左收缩，并显示本地玩家到目标怪物的纯表现连线；复杂AOE、真实技能压测和技能持久化暂缓。
 
 ## 任务系统当前语义
 
@@ -206,3 +206,10 @@ npm run build:cocos3d:mobile
 - TypeScript SDK新增`LoginFlow.createCharacter`，`enterGame`接收可选`characterId`；`npm run starter:character-smoke`在all-in-one和split-process都验证创建、选角、Gate登录和进图。
 - 无DBProxy时角色目录和跨MapHost接管只属于进程内Demo状态；重启后的角色恢复必须使用DBProxy，不得把内存目录当持久化。
 - 设计变更继续同步`docs/ai/project-context.md`、`docs/ai/business-development-manual.md`、`docs/development-log.md`和本文件。
+
+## 2026-08-11 精神鞭笞引导技能
+
+- 新增技能配置`3007 精神鞭笞`：敌方30米、5秒引导、每秒20点暗影伤害、共5跳、1秒公共CD、无技能CD。
+- 引导由地图`SkillMapComponent.Update10Hz`推进，不创建逐Cast Timer；移动取消。玩家受到一次有效攻击时，服务端将当前`finishAtMs`提前800ms，不重置起点和已完成Tick，也不立刻打断引导；提前后的结束时间早于下一跳时不强行补发剩余伤害。
+- 当前Demo的受击缩短入口由怪物普通攻击调用`HandleDamageDuringCast`，未来其他伤害来源必须复用这个边界；Cocos3D快捷栏使用9号键/移动端按钮，依据`G2C_SkillCastState`显示`x/5`引导进度。
+- 技能扩展仍需同步`docs/ai/project-context.md`、`docs/ai/business-development-manual.md`、`docs/development-log.md`和本文件；不运行高负载压测，除非先通知用户并得到空闲机器确认。

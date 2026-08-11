@@ -417,6 +417,18 @@
       "range_meters": 15,
       "delivery": 1,
       "projectile_speed_meters_per_second": 0
+    },
+    {
+      "id": 3007,
+      "name": "精神鞭笞",
+      "description": "引导5秒，每秒对目标造成20点暗影伤害；移动会取消引导，受到一次攻击时引导时间减少1秒。",
+      "target_relation": 1,
+      "cast_time_ms": 5000,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 30,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0
     }
   ]
 }

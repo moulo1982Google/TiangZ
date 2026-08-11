@@ -48,7 +48,7 @@ export interface SkillDefinition {
   readonly queueWindowMs: number;
   /** 引导每跳间隔；0表示普通技能。 / Channel tick interval; 0 means a regular one-shot skill. */
   readonly channelTickMs: number;
-  /** 引导总跳数；0表示普通技能。 / Total channel ticks; 0 means a regular one-shot skill. */
+  /** 引导总跳数；0表示普通技能。受到攻击时只缩短结束时间，不补发或重置已完成的Tick。 / Total channel ticks; 0 means a regular one-shot skill. Hits shorten the deadline without replaying or resetting completed ticks. */
   readonly channelTicks: number;
   readonly effects: readonly SkillEffectDefinition[];
 }

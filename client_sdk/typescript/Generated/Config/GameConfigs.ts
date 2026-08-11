@@ -420,6 +420,18 @@ const RAW_DATA: Record<string, unknown> = {
       "range_meters": 15,
       "delivery": 1,
       "projectile_speed_meters_per_second": 0
+    },
+    {
+      "id": 3007,
+      "name": "精神鞭笞",
+      "description": "引导5秒，每秒对目标造成20点暗影伤害；移动会取消引导，受到一次攻击时引导时间减少1秒。",
+      "target_relation": 1,
+      "cast_time_ms": 5000,
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 1000,
+      "range_meters": 30,
+      "delivery": 1,
+      "projectile_speed_meters_per_second": 0
     }
   ]
 };
@@ -466,7 +478,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "40c0c1a96ef8fc9389efc050e7dd96ace9857fcd3b0250df5f12d9cdf587d774";
+export const GameConfigFingerprint = "520b88aecf7f70cf54a1a5ad419f176281c8f2067a973f98b7f839e5c03fc990";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

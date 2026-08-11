@@ -15,6 +15,7 @@ export const DamageSchool = {
   Frost: 2,
   Fire: 3,
   Holy: 4,
+  Shadow: 5,
 } as const;
 
 export type DamageSchoolValue = (typeof DamageSchool)[keyof typeof DamageSchool];

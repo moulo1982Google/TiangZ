@@ -114,6 +114,7 @@ const ATTACK_SLASH_DURATION_SECONDS = 0.18;
 const ATTACK_SLASH_MIN_SCALE = 0.15;
 const ATTACK_SLASH_MAX_SCALE = 1.15;
 const SKILL_TARGET_TOO_FAR_ERROR_CODE = 10021;
+const MIND_FLAY_SKILL_ID = 3007;
 const ACCOUNT_NOT_REGISTERED_ERROR_CODE = 10036;
 const ACCOUNT_ALREADY_EXISTS_ERROR_CODE = 10037;
 const PASSWORD_REQUIRED_ERROR_CODE = 10038;
@@ -133,6 +134,7 @@ const DEMO_SKILL_KEYS = [
   { id: 3003, key: 54 as unknown as KeyCode, keyLabel: "6" },
   { id: 3004, key: 55 as unknown as KeyCode, keyLabel: "7" },
   { id: 3005, key: 56 as unknown as KeyCode, keyLabel: "8" },
+  { id: 3007, key: 57 as unknown as KeyCode, keyLabel: "9" },
 ] as const;
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
 // Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
@@ -350,12 +352,15 @@ export class GameBootstrap3D extends Component {
   private autoAttackSwingIntervalMs = 2_000;
   private readonly attackSlashEffects: AttackSlashEffect[] = [];
   private readonly skillProjectileEffects: SkillProjectileEffect[] = [];
+  private mindFlayBeam?: Node;
   private skillCastPhase = 0;
   private skillCastId = 0n;
   private skillCastSkillId = 0;
   private skillCastTargetUnitId = 0;
   private skillCastStartedAtMs = 0;
   private skillCastFinishAtMs = 0;
+  private skillCastChannelTickIndex = 0;
+  private skillCastChannelTickCount = 0;
   private skillCastErrorText = "";
   private skillCastErrorUntilMs = 0;
   private skillGlobalCooldownEndAtMs = 0;
@@ -395,6 +400,7 @@ export class GameBootstrap3D extends Component {
     this.updateFollowCamera(deltaTime);
     this.updateAttackSlashEffects(deltaTime);
     this.updateSkillProjectileEffects();
+    this.updateMindFlayBeam();
     this.updateEntityOverheadHudBillboards();
   }
 
@@ -476,6 +482,8 @@ export class GameBootstrap3D extends Component {
     this.attackSlashEffects.length = 0;
     for (const effect of this.skillProjectileEffects) effect.node.destroy();
     this.skillProjectileEffects.length = 0;
+    this.mindFlayBeam?.destroy();
+    this.mindFlayBeam = undefined;
     this.selectedMonsterElement?.remove();
     this.npcInteractionButton?.remove();
     this.npcDialogPanel?.remove();
@@ -1089,7 +1097,7 @@ export class GameBootstrap3D extends Component {
     this.skillCastErrorElement = error;
   }
 
-  /** 创建五技能快捷栏；移动端可直接点击，桌面端同时支持4到8。 / Creates five clickable skill slots with desktop keys 4 through 8. */
+  /** 创建六技能快捷栏；移动端可直接点击，桌面端同时支持4到9。 / Creates six clickable skill slots with desktop keys 4 through 9. */
   private buildSkillBarHud(document: Document): void {
     const bar = document.createElement("div");
     bar.className = "cocos3d-skillbar";
@@ -1101,9 +1109,12 @@ export class GameBootstrap3D extends Component {
     bar.style.transform = "translateX(-50%)";
     bar.style.zIndex = "10004";
     bar.style.display = "flex";
+    bar.style.flexWrap = "wrap";
+    bar.style.justifyContent = "center";
     bar.style.gap = "5px";
     bar.style.padding = "6px";
     bar.style.maxWidth = "calc(100vw - 16px)";
+    bar.style.width = this.isMobileLayout() ? "min(380px, calc(100vw - 16px))" : "auto";
     bar.style.background = "rgba(13, 22, 25, 0.82)";
     bar.style.border = "1px solid rgba(115, 176, 255, 0.48)";
     bar.style.borderRadius = "8px";
@@ -1112,7 +1123,7 @@ export class GameBootstrap3D extends Component {
       const button = document.createElement("button");
       button.type = "button";
       button.style.position = "relative";
-      button.style.width = this.isMobileLayout() ? "62px" : "82px";
+      button.style.width = this.isMobileLayout() ? "58px" : "82px";
       button.style.height = "54px";
       button.style.padding = "5px";
       button.style.color = "#edf7ff";
@@ -1873,7 +1884,7 @@ export class GameBootstrap3D extends Component {
     progress.style.width = `${ratio * 100}%`;
   }
 
-  /** 以Gate校时结果绘制施法、技能CD和公共CD；按钮状态不是服务端判定依据。 / Renders cast, skill cooldown, and GCD from Gate clock sync; button state is never authoritative. */
+  /** 以Gate校时结果绘制施法/引导、技能CD和公共CD；按钮状态不是服务端判定依据。 / Renders casts/channels, skill cooldowns, and GCD from Gate clock sync; button state is never authoritative. */
   private updateSkillHud(): void {
     const serverNow = Date.now() + (this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0);
     const label = this.skillCastLabel;
@@ -1882,12 +1893,23 @@ export class GameBootstrap3D extends Component {
       if (this.skillCastPhase !== SKILL_CAST_PHASE_CASTING || this.skillCastFinishAtMs <= this.skillCastStartedAtMs) {
         label.textContent = "施法：空闲";
         progress.style.width = "0%";
+        progress.style.background = "#72aef7";
       } else {
         const duration = this.skillCastFinishAtMs - this.skillCastStartedAtMs;
         const ratio = Math.min(1, Math.max(0, (serverNow - this.skillCastStartedAtMs) / duration));
         const name = skillName(this.skillCastSkillId);
-        label.textContent = `施法：${name} ${Math.round(ratio * 100)}%`;
-        progress.style.width = `${ratio * 100}%`;
+        if (this.skillCastChannelTickCount > 0) {
+          const remainingRatio = 1 - ratio;
+          label.textContent = `引导：${name} ${this.skillCastChannelTickIndex}/${this.skillCastChannelTickCount} 剩余 ${Math.round(remainingRatio * 100)}%`;
+          progress.style.background = "#c084fc";
+          // 引导条从满条开始，右端随剩余时间向左收缩；普通读条仍从左向右增长。
+          // Channels start full and shrink from right to left; regular casts still fill left to right.
+          progress.style.width = `${remainingRatio * 100}%`;
+        } else {
+          label.textContent = `施法：${name} ${Math.round(ratio * 100)}%`;
+          progress.style.background = "#72aef7";
+          progress.style.width = `${ratio * 100}%`;
+        }
       }
     }
     if (this.skillCastErrorElement) {
@@ -2870,6 +2892,8 @@ export class GameBootstrap3D extends Component {
     this.autoAttackTargetUnitId = 0;
     this.autoAttackPhase = 0;
     this.skillCastPhase = 0;
+    this.skillCastChannelTickIndex = 0;
+    this.skillCastChannelTickCount = 0;
     this.skillCastErrorText = "";
     this.skillCastErrorUntilMs = 0;
     this.skillRequestInFlight = false;
@@ -2887,6 +2911,8 @@ export class GameBootstrap3D extends Component {
     this.attackSlashEffects.length = 0;
     for (const effect of this.skillProjectileEffects) effect.node.destroy();
     this.skillProjectileEffects.length = 0;
+    this.mindFlayBeam?.destroy();
+    this.mindFlayBeam = undefined;
     this.localNumerics.clear();
     this.buffStateStore.Clear();
     this.inventoryItems.clear();
@@ -3148,7 +3174,7 @@ export class GameBootstrap3D extends Component {
     this.updateMobileAttackButton();
   }
 
-  /** 应用服务器施法状态；移动打断后的Idle消息会立即清空读条。 / Applies authoritative cast state; an interrupted Idle state clears the bar immediately. */
+  /** 应用服务器施法状态；引导显示已完成Tick/总Tick，移动或受击后的结束时间也只接受服务器状态。 / Applies authoritative cast state; channel progress and hit-adjusted deadlines come only from the server. */
   ApplySkillCastState(message: G2C_SkillCastState): void {
     this.skillCastPhase = message.phase;
     this.skillCastId = message.castId;
@@ -3156,6 +3182,8 @@ export class GameBootstrap3D extends Component {
     this.skillCastTargetUnitId = message.targetUnitId;
     this.skillCastStartedAtMs = Number(message.startedAtMs);
     this.skillCastFinishAtMs = Number(message.finishAtMs);
+    this.skillCastChannelTickIndex = message.channelTickIndex;
+    this.skillCastChannelTickCount = message.channelTickCount;
     this.skillGlobalCooldownEndAtMs = Number(message.globalCooldownEndAtMs);
     if (message.skillId > 0) {
       this.skillCooldownEnds.set(message.skillId, Number(message.skillCooldownEndAtMs));
@@ -3318,6 +3346,52 @@ export class GameBootstrap3D extends Component {
         this.skillProjectileEffects.splice(index, 1);
       }
     }
+  }
+
+  /**
+   * 为本地精神鞭笞绘制纯表现连线；服务端仍只通过CastState和Action决定引导、命中与伤害。
+   * Draws a presentation-only Mind Flay beam for the local caster; CastState
+   * and server Actions remain the only authority for channeling, impact, and damage.
+   */
+  private updateMindFlayBeam(): void {
+    const target = this.skillCastPhase === SKILL_CAST_PHASE_CASTING &&
+      this.skillCastSkillId === MIND_FLAY_SKILL_ID
+      ? this.unitVisualNode(this.skillCastTargetUnitId)
+      : undefined;
+    const parent = this.player.parent;
+    if (!target || !target.active || !parent) {
+      this.mindFlayBeam?.destroy();
+      this.mindFlayBeam = undefined;
+      return;
+    }
+    if (!this.mindFlayBeam) {
+      this.mindFlayBeam = createMindFlayBeamEffect();
+      parent.addChild(this.mindFlayBeam);
+    }
+
+    const start = new Vec3(
+      this.player.position.x,
+      this.player.position.y + PLAYER_HALF_HEIGHT * 0.65,
+      this.player.position.z,
+    );
+    const end = new Vec3(
+      target.position.x,
+      target.position.y + PLAYER_HALF_HEIGHT * 0.65,
+      target.position.z,
+    );
+    const distance = Vec3.distance(start, end);
+    if (distance <= 0.05) {
+      this.mindFlayBeam.active = false;
+      return;
+    }
+    this.mindFlayBeam.active = true;
+    this.mindFlayBeam.setPosition(
+      (start.x + end.x) * 0.5,
+      (start.y + end.y) * 0.5,
+      (start.z + end.z) * 0.5,
+    );
+    this.mindFlayBeam.lookAt(end);
+    this.mindFlayBeam.setScale(1, 1, distance);
   }
 
   /** 将UnitId解析为当前可见节点；AOI外实体不存在时表现应直接放弃。 / Resolves a currently visible node by UnitId and abandons presentation for entities outside AOI. */
@@ -4369,6 +4443,32 @@ function createSkillProjectileEffect(skillId: number): Node {
     : new Color(255, 205, 92, 255);
   root.addChild(createBox("ProjectileGlow", 0.48, 0.48, 0.48, outerColor, 0, 0, 0));
   root.addChild(createBox("ProjectileCore", 0.22, 0.22, 0.22, new Color(235, 252, 255, 255), 0, 0, 0));
+  return root;
+}
+
+/** 创建无资源依赖的精神鞭笞连线；外层紫色、内层白色，Web和Native都能看到。 / Creates a resource-free Mind Flay beam with a purple shell and white core for Web and Native. */
+function createMindFlayBeamEffect(): Node {
+  const root = new Node("MindFlayBeam");
+  root.addChild(createBox(
+    "MindFlayBeamOuter",
+    0.16,
+    0.16,
+    1,
+    new Color(176, 104, 255, 255),
+    0,
+    0,
+    0,
+  ));
+  root.addChild(createBox(
+    "MindFlayBeamCore",
+    0.07,
+    0.07,
+    1,
+    new Color(246, 228, 255, 255),
+    0,
+    0,
+    0,
+  ));
   return root;
 }
 

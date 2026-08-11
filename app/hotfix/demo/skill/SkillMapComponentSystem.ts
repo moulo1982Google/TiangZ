@@ -39,9 +39,10 @@ import {
 import { ExecuteAction } from "../action/ActionExecutor";
 import { GetSkillDefinition } from "./SkillCatalog";
 
-// 受击延长Demo读条的统一规则；业务入口不应散落硬编码的毫秒数。
-// Shared Demo rule for hit-induced cast delay; business entry points must not scatter magic durations.
-const CAST_DAMAGE_PUSHBACK_MS = 1_000;
+// 受击调整Demo施法时间线的统一规则；业务入口不应散落硬编码的毫秒数。
+// Shared Demo rule for hit-induced cast timing; business entry points must not scatter magic durations.
+const CAST_DAMAGE_PUSHBACK_MS = 800;
+const CHANNEL_DAMAGE_REDUCTION_MS = 800;
 
 /**
  * 地图级技能状态机。Handler只提交Cast命令；这里统一校验目标/距离/冷却，10Hz推进读条与弹道，
@@ -139,19 +140,26 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   /**
-   * 受击时给正在读条的玩家增加固定1秒硬直时间；只延长结束时间，不重置读条起点。
-   * 这是Demo战斗规则，不是CombatComponent对所有项目的强制语义；伤害入口必须在结算后调用它。
+   * 处理玩家在施法期间受到一次攻击：普通读条后移800毫秒，引导技能缩短剩余时间800毫秒。
+   * 只调整结束时间，不重置起点、Tick计数、技能CD或公共CD；处理后立即发布新的权威状态。
    *
-   * Adds fixed hit-stun time to a player's active cast without resetting its
-   * start time. This is a Demo combat rule, not a universal CombatComponent
-   * rule; damage owners must call it after authoritative damage resolves.
+   * Handles one hit received during casting: a regular cast is pushed back by
+   * 800 ms, while a channel loses 800 ms of remaining time. The start
+   * time, completed ticks, skill cooldown, and GCD stay unchanged; the new
+   * authoritative state is published immediately.
    */
-  ExtendCastOnDamage(target: PlayerUnit, extensionMs: number = CAST_DAMAGE_PUSHBACK_MS): boolean {
+  HandleDamageDuringCast(target: PlayerUnit): boolean {
     if (this.units.Get<PlayerUnit>(target.UnitId) !== target) return false;
     const skill = target.GetComponent(SkillComponent);
     const active = skill.ActiveCast();
     if (!active || active.definition.castTimeMs <= 0) return false;
-    const state = skill.ExtendActiveCast(active.castId, extensionMs);
+    const state = active.definition.channelTicks > 0
+      ? skill.ReduceActiveCast(
+        active.castId,
+        CHANNEL_DAMAGE_REDUCTION_MS,
+        TimeSystem.Instance.ServerNow,
+      )
+      : skill.ExtendActiveCast(active.castId, CAST_DAMAGE_PUSHBACK_MS);
     if (!state) return false;
     this.publishCastState(target, state);
     return true;
@@ -182,17 +190,18 @@ export class SkillMapComponentSystem extends SkillMapComponent {
         if (!currentCast || now < currentCast.finishAtMs) continue;
         if (
           definition.channelTicks > 0 &&
-          currentCast.channelTicksCompleted < definition.channelTicks
+          currentCast.channelTicksCompleted < definition.channelTicks &&
+          now < currentCast.finishAtMs
         ) {
           continue;
         }
         this.activeCasterUnitIds.delete(unitId);
         const queued = skill.TakeQueued();
-        const target = this.resolveTarget(caster, cast.targetUnitId, definition);
-        this.validateTargetAlive(target);
-        if (definition.revalidateOnComplete) this.validateTargetRange(caster, target, definition);
-        this.validateRequiredAbsentBuff(target, definition);
         if (definition.channelTicks === 0) {
+          const target = this.resolveTarget(caster, cast.targetUnitId, definition);
+          this.validateTargetAlive(target);
+          if (definition.revalidateOnComplete) this.validateTargetRange(caster, target, definition);
+          this.validateRequiredAbsentBuff(target, definition);
           this.launchOrResolve(caster, target, definition, cast.castId, now);
         }
         this.applyAutoAttackPolicy(caster, definition, "complete");
@@ -269,7 +278,12 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     let nextTickAtMs = cast.nextTickAtMs;
     let completed = cast.channelTicksCompleted;
     let processed = 0;
-    while (completed < definition.channelTicks && now >= nextTickAtMs && processed < 8) {
+    while (
+      completed < definition.channelTicks &&
+      now >= nextTickAtMs &&
+      nextTickAtMs <= cast.finishAtMs &&
+      processed < 8
+    ) {
       const target = this.resolveTarget(caster, cast.targetUnitId, definition);
       this.validateTargetAlive(target);
       if (definition.revalidateOnComplete) this.validateTargetRange(caster, target, definition);

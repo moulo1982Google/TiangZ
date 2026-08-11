@@ -465,7 +465,7 @@ function namedArgument(name: string): string | undefined {
   return value;
 }
 
-/** 验证五技能共用状态机的关键路径；复杂Buff冲突矩阵由buff-action自测覆盖。 / Verifies key paths of the shared five-skill state machine; buff-action tests cover the detailed conflict matrix. */
+/** 验证七技能共用状态机的关键路径；复杂Buff冲突矩阵由buff-action自测覆盖。 / Verifies key paths of the shared seven-skill state machine; buff-action tests cover the detailed conflict matrix. */
 async function verifyFiveSkillMechanics(
   gate: TcpRpcConnection,
   enterMap: ReturnType<typeof decodeEnterMapFrame>["body"],
@@ -480,6 +480,20 @@ async function verifyFiveSkillMechanics(
   const target = targets[0];
   const smiteTarget = targets[1];
   if (!target || !smiteTarget) throw new Error("skill smoke requires two AOI-visible monsters");
+
+  const approachPoint = (
+    fromX: number,
+    fromZ: number,
+    destination: { x: number; z: number },
+    stopDistance: number,
+  ): { targetX: number; targetZ: number } => {
+    const dx = destination.x - fromX;
+    const dz = destination.z - fromZ;
+    const distance = Math.hypot(dx, dz);
+    if (distance <= stopDistance || distance === 0) return { targetX: fromX, targetZ: fromZ };
+    const scale = (distance - stopDistance) / distance;
+    return { targetX: fromX + dx * scale, targetZ: fromZ + dz * scale };
+  };
 
   const shieldRpcId = nextRpcId++;
   const shield = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(shieldRpcId, {
@@ -523,6 +537,20 @@ async function verifyFiveSkillMechanics(
     throw new Error(`Frostbolt result mismatch: ${stringifyForError({ projectile, impact })}`);
   }
 
+  // 火焰冲击是10米技能；先把测试角色移动到目标5米内，避免用15米出生距离误测业务拒绝。
+  // Fire Blast has a 10-meter range; approach within five meters so the smoke
+  // test does not mistake the 15-meter spawn distance for a skill failure.
+  const firePoint = approachPoint(enterMap.x, enterMap.z, target, 5);
+  const fireApproach = decodeNavigateToFrame(await gate.request(buildNavigateToPacket(nextRpcId++, {
+    ...firePoint,
+    targetY: 0,
+    sequence: 10,
+  })));
+  if (fireApproach.body.error) {
+    throw new Error(`could not approach Fire Blast target: ${stringifyForError(fireApproach.body)}`);
+  }
+  await sleep(2_000);
+
   const fireBlast = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(nextRpcId++, {
     skillId: 3002,
     targetUnitId: target.unitId,
@@ -534,6 +562,16 @@ async function verifyFiveSkillMechanics(
   if (fireImpact.damage !== 50n || fireImpact.damageSchool !== 3) {
     throw new Error(`Fire Blast result mismatch: ${stringifyForError(fireImpact)}`);
   }
+  const smitePoint = approachPoint(firePoint.targetX, firePoint.targetZ, smiteTarget, 5);
+  const smiteApproach = decodeNavigateToFrame(await gate.request(buildNavigateToPacket(nextRpcId++, {
+    ...smitePoint,
+    targetY: 0,
+    sequence: 11,
+  })));
+  if (smiteApproach.body.error) {
+    throw new Error(`could not approach Smite target: ${stringifyForError(smiteApproach.body)}`);
+  }
+  await sleep(5_000);
   await sleep(1_100);
 
   const castStatePush = gate.waitForMessage(MsgCode.G2C_SkillCastState, 3_000);
@@ -568,7 +606,47 @@ async function verifyFiveSkillMechanics(
     sequence: 100,
   }));
 
-  console.log("Five-skill mechanics:", {
+  // 精神鞭笞先验证真实引导Tick，再用移动验证引导中断；客户端收到的状态同样来自这条协议链。
+  // Mind Flay first verifies a real channel tick, then movement interruption;
+  // the client-visible state comes from the same protocol path.
+  await sleep(1_100);
+  const channel = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(nextRpcId++, {
+    skillId: 3007,
+    targetUnitId: smiteTarget.unitId,
+  })));
+  if (channel.body.error || channel.body.phase !== 1) {
+    throw new Error(`Mind Flay did not begin channeling: ${stringifyForError(channel.body)}`);
+  }
+  const channelImpact = await waitForSkillImpact(gate, 3007, 2_500);
+  if (channelImpact.damage !== 20n || channelImpact.damageSchool !== 5) {
+    throw new Error(`Mind Flay tick mismatch: ${stringifyForError(channelImpact)}`);
+  }
+  const channelStatePush = gate.waitForMessage(MsgCode.G2C_SkillCastState, 3_000);
+  await gate.request(buildNavigateInputPacket(nextRpcId++, {
+    forward: 1,
+    strafe: 0,
+    yaw: 0,
+    sequence: 101,
+  }));
+  let channelInterrupted = decodeSkillCastStateFrame(await channelStatePush).body;
+  const channelInterruptDeadline = Date.now() + 3_000;
+  while (channelInterrupted.interruptReason !== "movement" && Date.now() < channelInterruptDeadline) {
+    channelInterrupted = decodeSkillCastStateFrame(await gate.waitForMessage(
+      MsgCode.G2C_SkillCastState,
+      Math.max(1, channelInterruptDeadline - Date.now()),
+    )).body;
+  }
+  if (channelInterrupted.phase !== 0 || channelInterrupted.interruptReason !== "movement") {
+    throw new Error(`movement did not interrupt Mind Flay: ${stringifyForError(channelInterrupted)}`);
+  }
+  await gate.request(buildNavigateInputPacket(nextRpcId++, {
+    forward: 0,
+    strafe: 0,
+    yaw: 0,
+    sequence: 102,
+  }));
+
+  console.log("Seven-skill mechanics:", {
     shield: "accepted",
     weakenedSoul: "vetoed",
     fortitude: "accepted",
@@ -577,6 +655,9 @@ async function verifyFiveSkillMechanics(
     fireBlastFinalDamage: fireImpact.damage,
     fireBlastSchool: fireImpact.damageSchool,
     smiteInterrupt: interrupted.interruptReason,
+    mindFlayTickDamage: channelImpact.damage,
+    mindFlaySchool: channelImpact.damageSchool,
+    mindFlayInterrupt: channelInterrupted.interruptReason,
   });
 }
 
@@ -988,7 +1069,8 @@ async function verifyMonsterLifecycle(
   }
   const initialHp = monster.numerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
   const initialAttack = monster.numerics.find((numeric) => numeric.numericType === NumericType.Attack)?.value;
-  if (initialHp !== 100n || initialAttack !== 8n) {
+  const trainingDummyMaxHp = BigInt(GameConfigs.MonsterConfig.Get(monster.configId).maxHp);
+  if (initialHp !== trainingDummyMaxHp || initialAttack !== 8n) {
     throw new Error(`training dummy has unexpected initial HP: ${initialHp}`);
   }
 
@@ -1081,7 +1163,7 @@ async function verifyMonsterLifecycle(
   const respawnHp = respawnedMonster?.numerics.find(
     (numeric) => numeric.numericType === NumericType.CurrentHp,
   )?.value;
-  if (!respawnedMonster || respawnHp !== 100n || respawnedMonster.alive !== true) {
+  if (!respawnedMonster || respawnHp !== trainingDummyMaxHp || respawnedMonster.alive !== true) {
     throw new Error(`monster respawn did not create a fresh Unit: ${stringifyForError({
       initialUnitId: monster.unitId,
       respawnedUnitId: respawnedMonster?.unitId,
@@ -1208,7 +1290,8 @@ async function verifyAutoAttackTimer(
 
   const expectedSwings = 6;
   const hpValues: bigint[] = [];
-  let previousHp = 100n;
+  const trainingDummyMaxHp = BigInt(GameConfigs.MonsterConfig.Get(1).maxHp);
+  let previousHp = trainingDummyMaxHp;
   const deadline = Date.now() + 13_500;
   while (hpValues.length < expectedSwings && Date.now() < deadline) {
     const frame = decodeEntityNumericFrame(await gate.waitForMessage(

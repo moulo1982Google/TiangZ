@@ -560,7 +560,7 @@ function validateActionConfig(
     throw new Error(`${owner} ${phase} RemoveBuff needs a positive runtime Buff instance id`);
   }
   if (type === 4) {
-    if (parameters[0] < 0 || parameters[1] < 1 || parameters[1] > 4) {
+    if (parameters[0] < 0 || parameters[1] < 1 || parameters[1] > 5) {
       throw new Error(`${owner} ${phase} DealDamage needs [non-negative amount, valid DamageSchool]`);
     }
   }

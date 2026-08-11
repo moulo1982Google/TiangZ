@@ -56,8 +56,8 @@ function main(): void {
   assert.equal(serverConfigs.MapConfig.Get(1020).widthCells, 300);
   const monsterA = serverConfigs.MonsterConfig.Get(1);
   const monsterB = serverConfigs.MonsterConfig.Get(2);
-  assert.equal(monsterA.maxHp, 100);
-  assert.equal(monsterB.maxHp, 100);
+  assert.equal(monsterA.maxHp, 300);
+  assert.equal(monsterB.maxHp, 300);
   assert.equal(monsterA.attackRange, 2.5);
   assert.equal(monsterB.attackRange, 2.5);
   assert.equal(monsterA.respawnSeconds, 10);

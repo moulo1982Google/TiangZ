@@ -138,6 +138,34 @@ export class SkillComponentSystem extends SkillComponent implements ITransfer<Sk
     return this.State();
   }
 
+  /**
+   * 缩短当前引导的结束时间；最早只缩到当前服务器时间，不修改已完成的Tick。
+   * 该入口只给地图技能调度器使用，受击规则不能由任意Action随意改写。
+   *
+   * Shortens the active channel deadline, clamping it to the current server
+   * time without rewriting completed ticks. Only the map skill scheduler may
+   * call this boundary; arbitrary Actions must not forge hit reactions.
+   */
+  ReduceActiveCast(castId: bigint, reductionMs: number, nowMs: number): SkillCastState | undefined {
+    const active = this.activeCast;
+    if (active?.castId !== castId) return undefined;
+    if (
+      !Number.isSafeInteger(reductionMs) || reductionMs <= 0 ||
+      !Number.isSafeInteger(nowMs) || nowMs < active.startedAtMs
+    ) {
+      throw new Error(`invalid cast reduction: ${reductionMs}, now=${nowMs}`);
+    }
+    const finishAtMs = Math.max(nowMs, active.finishAtMs - reductionMs);
+    if (!Number.isSafeInteger(finishAtMs)) {
+      throw new Error(`cast finish time exceeds safe integer range: ${finishAtMs}`);
+    }
+    this.activeCast = {
+      ...active,
+      finishAtMs,
+    };
+    return this.State();
+  }
+
   /** 返回当前技能与公共冷却是否可用；不修改状态。 / Checks skill and global cooldown deadlines without mutation. */
   ReadyAt(skillId: number): number {
     return Math.max(
