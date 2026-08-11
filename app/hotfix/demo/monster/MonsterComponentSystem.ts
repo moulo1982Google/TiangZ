@@ -491,10 +491,10 @@ export class MonsterComponentSystem extends MonsterComponent {
       amount: damage,
       sourceUnitId: monster.UnitId,
     });
-    if (result.requestedDamage > 0n && !result.killed) {
-      // 攻击命中且玩家尚未死亡就调整施法；护盾可以吸收生命伤害，但不能把引导当作没有受到攻击。
-      // A landed non-lethal attack adjusts casting even when a shield absorbs the HP damage;
-      // a shield must not make a channel pretend that it was never hit.
+    if (result.requestedDamage > 0n && !result.killed && result.absorbedDamage === 0n) {
+      // 本次没有护盾吸收时才产生施法惩罚；Combat已经给出结果，这里不查询BuffComponent。
+      // Only an unabsorbed hit causes cast pushback/reduction; Combat already
+      // produced the result, so this path never queries BuffComponent.
       this.DomainScene().GetComponent(SkillMapComponent).HandleDamageDuringCast(target);
     }
   }

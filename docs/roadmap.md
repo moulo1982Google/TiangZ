@@ -393,7 +393,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 - 已完成最小`ActionExecutor`：道具通过`use_effect/use_params`统一表达立即数值变化或添加Buff，`ChangeNumeric`的HP变化经过Combat，`AddBuff/RemoveBuff`经过BuffComponent；不引入每个道具一个Handler的分支。
 - 已完成`BuffComponent -> Buff ChildEntity`：支持Target/Source冲突域和Stack/Refresh/Replace/Reject/HigherWins策略；运行时Action、来源、优先级和护盾剩余量可跨地图恢复。完整规则见[Action与Buff设计](design/action-buff.md)。
-- 已完成`SkillComponent + SkillMapComponent.Update10Hz`七技能闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、3006引导治疗和3007精神鞭笞共用GCD/CD、配置化移动/平A策略、直接/弹道命中和Action结算；引导技能验证分段Tick、移动打断、3007受击缩短800毫秒和单技能排队。冷却跨地图保留，活动读条不恢复。`SkillConfig/SkillEffectConfig`已接入Luban，客户端只获得基础技能表，服务端效果表按配置指纹组合并为在途Cast冻结；Cocos3D对本地精神鞭笞绘制纯表现连线；活跃Cast性能A/B待机器确认后进行。
+- 已完成`SkillComponent + SkillMapComponent.Update10Hz`七技能闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、3006引导治疗和3007精神鞭笞共用GCD/CD、配置化移动/平A策略、直接/弹道命中和Action结算；引导技能验证分段Tick、移动打断、无护盾受击缩短800毫秒和单技能排队，真言术·盾吸收期间不后移读条也不缩短引导。冷却跨地图保留，活动读条不恢复。`SkillConfig/SkillEffectConfig`已接入Luban，客户端只获得基础技能表，服务端效果表按配置指纹组合并为在途Cast冻结；Cocos3D对本地精神鞭笞绘制纯表现连线；活跃Cast性能A/B待机器确认后进行。
 
 - 已完成`MonsterConfig`和`MonsterAreaConfig`冷配置，以及`MonsterComponent + MonsterUnit`的统一Unit模型。
 - 已完成固定刷点、主动/被动模式、地图Tick追击、攻击距离、玩家攻击、Numeric扣血、死亡Detach/Remove、AOI Leave、原刷怪槽新Unit重生和运行时冒烟验收。

@@ -930,3 +930,16 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 未接任务或任务数量已满时，任务掉落行留在尸体上；任务掉落按账号领取，普通掉落全局一次性领取。
 - 拾取使用`Inventory/Quest Plan -> DBProxy ApplyTransaction -> Commit`，以`operationId`保证重试不重复增加Item或任务进度；Cocos3D增加选中尸体、距离提示和拾取按钮。
 - Starter新增任务5006“收集怪物徽记”，完成并交付5005后接取，收集5个1101；本轮通过`npm run codegen:game-config`、`npm run codegen:proto:update-lock`、`npm run codegen:client-sdk`、`npm run typecheck`和`npm run typecheck:cocos3d-demo`，未执行压力测试。
+
+# 2026-08-11：Cocos3D背包面板
+
+- Cocos3D增加完整背包面板：桌面端支持“背包”按钮和`B`键，移动端增加“包”按钮；面板可触摸关闭，不会穿透触发地面寻路。
+- 背包按服务端`ItemSnapshot`展示实例、数量、配置名称、说明和图标；数量变为0时移除格子，不在客户端预扣或创建Item。
+- 背包和快捷栏统一调用实例级`MapClient.useItem`，共享公共CD、道具CD、请求中状态和`operationId`；不可使用的任务道具只展示，不生成使用按钮。
+- 通过`npm run typecheck:cocos3d-demo`、`npm run typecheck:cocos3d-demo:engine`和`npm run check:cocos3d-demo`；本轮未执行压力测试。
+
+# 2026-08-11：真言术·盾保护施法时间轴
+
+- 修复怪物攻击路径：真言术·盾吸收本次伤害时，不再让普通读条后移800毫秒，也不再让引导技能提前结束。
+- 施法惩罚仍由`Combat.ApplyDamage`结果驱动；只有`absorbedDamage=0`且玩家未死亡时，地图技能调度器才调整Cast结束时间。
+- Combat不查询BuffComponent，护盾仍通过Combat modifier注册，保持战斗与Buff解耦。

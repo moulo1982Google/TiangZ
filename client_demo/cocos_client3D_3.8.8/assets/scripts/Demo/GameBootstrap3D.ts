@@ -130,6 +130,7 @@ const PROJECTILE_MIN_VISIBLE_DURATION_MS = 250;
 // Cocos 3.8.8没有导出数字键枚举；使用标准键盘主区“1”的ASCII码49。
 // Cocos 3.8.8 does not expose a digit-key enum; 49 is the standard top-row "1" key code.
 const AUTO_ATTACK_KEY = 49 as unknown as KeyCode;
+const INVENTORY_KEY = 66 as unknown as KeyCode;
 const ITEM_SMALL_HEALTH_POTION = 1001;
 const ITEM_LARGE_HEALTH_POTION = 1002;
 const ITEM_SMALL_HEALTH_POTION_KEY = 50 as unknown as KeyCode;
@@ -225,6 +226,17 @@ interface SkillHudSlot {
   readonly name: string;
 }
 
+interface InventoryHudEntry {
+  readonly root: HTMLElement;
+  readonly icon: HTMLElement;
+  readonly name: HTMLElement;
+  readonly description: HTMLElement;
+  readonly count: HTMLElement;
+  readonly cooldown: HTMLElement;
+  readonly useButton?: HTMLButtonElement;
+  readonly itemId: bigint;
+}
+
 /** Phase 4.2的3D导航灰盒入口；演示权威寻路、预测纠偏和AOI多人同步。 / Phase 4.2 graybox entrypoint for authoritative pathing, prediction correction, and AOI multiplayer sync. */
 @ccclass("GameBootstrap3D")
 export class GameBootstrap3D extends Component {
@@ -261,6 +273,7 @@ export class GameBootstrap3D extends Component {
   private mobileActionButton?: HTMLButtonElement;
   private mobileAttackButton?: HTMLButtonElement;
   private mobileNpcInteractButton?: HTMLButtonElement;
+  private mobileInventoryButton?: HTMLButtonElement;
   private mobileStyleElement?: HTMLStyleElement;
   private mobileViewportCleanup?: () => void;
   private mobileLeftHudElement?: HTMLElement;
@@ -285,6 +298,13 @@ export class GameBootstrap3D extends Component {
   private autoAttackLabel?: HTMLElement;
   private autoAttackProgress?: HTMLElement;
   private hotbarElement?: HTMLElement;
+  private inventoryToggleButton?: HTMLButtonElement;
+  private inventoryPanel?: HTMLElement;
+  private inventoryListElement?: HTMLElement;
+  private inventoryEmptyElement?: HTMLElement;
+  private inventoryOpen = false;
+  private inventoryHudSignature = "";
+  private readonly inventoryHudEntries = new Map<string, InventoryHudEntry>();
   private skillBarElement?: HTMLElement;
   private skillCastPanel?: HTMLElement;
   private skillCastLabel?: HTMLElement;
@@ -398,6 +418,7 @@ export class GameBootstrap3D extends Component {
     this.updateSkillHud();
     this.updateBuffHud();
     this.updateHotbarHud();
+    if (this.inventoryOpen) this.updateInventoryItemStates();
     this.updateQuestHud();
     this.updateDirectionalInput(deltaTime);
     this.advanceDirectionalPrediction(deltaTime);
@@ -448,6 +469,15 @@ export class GameBootstrap3D extends Component {
     this.loginBusy = false;
     this.hotbarElement?.remove();
     this.hotbarElement = undefined;
+    this.inventoryToggleButton?.remove();
+    this.inventoryToggleButton = undefined;
+    this.inventoryPanel?.remove();
+    this.inventoryPanel = undefined;
+    this.inventoryListElement = undefined;
+    this.inventoryEmptyElement = undefined;
+    this.inventoryOpen = false;
+    this.inventoryHudSignature = "";
+    this.inventoryHudEntries.clear();
     this.skillBarElement?.remove();
     this.skillCastPanel?.remove();
     this.skillBarElement = undefined;
@@ -477,6 +507,7 @@ export class GameBootstrap3D extends Component {
     this.mobileActionButton = undefined;
     this.mobileAttackButton = undefined;
     this.mobileNpcInteractButton = undefined;
+    this.mobileInventoryButton = undefined;
     this.mobileViewportCleanup?.();
     this.mobileViewportCleanup = undefined;
     this.mobileStyleElement?.remove();
@@ -596,6 +627,7 @@ export class GameBootstrap3D extends Component {
     this.buildNpcInteractionHud(document);
     this.buildBuffHud(document);
     this.buildHotbarHud(document);
+    this.buildInventoryHud(document);
     this.buildSkillBarHud(document);
     this.buildQuestHud(document);
     this.buildMobileHud(document);
@@ -1417,6 +1449,357 @@ export class GameBootstrap3D extends Component {
   }
 
   /**
+   * 创建完整背包面板；面板只消费服务端ItemSnapshot，不在客户端创建、删除或预扣Item。
+   * 桌面端提供B键和按钮，移动端由“包”按钮打开；可使用道具仍统一走C2M_UseItem。
+   *
+   * Creates the full inventory panel from authoritative ItemSnapshot values.
+   * The client never creates, deletes, or pre-consumes Items. Desktop provides
+   * the B key and a button, while mobile uses the "包" button; usable items
+   * still go through the single C2M_UseItem path.
+   */
+  private buildInventoryHud(document: Document): void {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "cocos3d-inventory-toggle";
+    toggle.textContent = "背包 (B)";
+    toggle.setAttribute("aria-label", "打开背包");
+    toggle.setAttribute("aria-expanded", "false");
+    Object.assign(toggle.style, {
+      position: "fixed",
+      right: "24px",
+      top: "168px",
+      zIndex: "10005",
+      padding: "8px 13px",
+      border: "1px solid rgba(225, 245, 238, 0.62)",
+      borderRadius: "7px",
+      color: "#edf7f3",
+      background: "rgba(16, 31, 35, 0.86)",
+      font: "600 13px/1.2 system-ui, sans-serif",
+      cursor: "pointer",
+      touchAction: "manipulation",
+      userSelect: "none",
+    });
+    this.bindTouchSafeHudButton(toggle, () => this.toggleInventoryPanel());
+    document.body.appendChild(toggle);
+    this.inventoryToggleButton = toggle;
+
+    const panel = document.createElement("section");
+    panel.className = "cocos3d-inventory-panel";
+    Object.assign(panel.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "11500",
+      display: "none",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "clamp(12px, 4vw, 36px)",
+      boxSizing: "border-box",
+      background: "rgba(4, 10, 14, 0.68)",
+      pointerEvents: "auto",
+      touchAction: "auto",
+    });
+    panel.addEventListener("pointerdown", (event) => event.stopPropagation());
+    panel.addEventListener("touchstart", (event) => event.stopPropagation(), { passive: true });
+    panel.addEventListener("click", (event) => {
+      if (event.target === panel) this.setInventoryOpen(false);
+    });
+
+    const card = document.createElement("section");
+    card.className = "cocos3d-inventory-card";
+    Object.assign(card.style, {
+      width: "min(680px, 100%)",
+      maxHeight: "min(640px, 100%)",
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+      padding: "16px",
+      boxSizing: "border-box",
+      border: "1px solid rgba(125, 188, 255, 0.62)",
+      borderRadius: "10px",
+      background: "rgba(14, 27, 38, 0.97)",
+      boxShadow: "0 18px 60px rgba(0,0,0,0.42)",
+      color: "#edf7f3",
+      font: "14px/1.35 system-ui, sans-serif",
+    });
+
+    const header = document.createElement("header");
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.justifyContent = "space-between";
+    header.style.gap = "12px";
+    const title = document.createElement("div");
+    title.textContent = "背包 / Inventory";
+    title.style.font = "700 20px/1.2 system-ui, sans-serif";
+    title.style.color = "#dff5ff";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "关闭";
+    Object.assign(close.style, {
+      padding: "7px 12px",
+      border: "1px solid rgba(255, 255, 255, 0.35)",
+      borderRadius: "6px",
+      color: "#f4eafa",
+      background: "rgba(255, 255, 255, 0.1)",
+      font: "14px/1.2 system-ui, sans-serif",
+      cursor: "pointer",
+      touchAction: "manipulation",
+    });
+    this.bindTouchSafeHudButton(close, () => this.setInventoryOpen(false));
+    header.append(title, close);
+    card.appendChild(header);
+
+    const list = document.createElement("div");
+    list.className = "cocos3d-inventory-list";
+    Object.assign(list.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))",
+      gap: "8px",
+      minHeight: "0",
+      overflowY: "auto",
+      padding: "2px",
+    });
+    card.appendChild(list);
+
+    const empty = document.createElement("div");
+    empty.textContent = "背包是空的";
+    empty.style.padding = "34px 12px";
+    empty.style.textAlign = "center";
+    empty.style.color = "#9fb5bf";
+    card.appendChild(empty);
+
+    panel.appendChild(card);
+    document.body.appendChild(panel);
+    this.inventoryPanel = panel;
+    this.inventoryListElement = list;
+    this.inventoryEmptyElement = empty;
+    this.updateInventoryHud();
+  }
+
+  /** 根据权威ItemSnapshot重绘背包格子；只有库存结构变化时才重建DOM。 / Rebuilds inventory slots only when the authoritative inventory shape changes. */
+  private updateInventoryHud(): void {
+    const list = this.inventoryListElement;
+    const empty = this.inventoryEmptyElement;
+    if (!list || !empty) return;
+    const items = [...this.inventoryItems.values()]
+      .filter((item) => item.count > 0)
+      .sort((left, right) => left.configId - right.configId || compareBigInt(left.itemId, right.itemId));
+    const signature = items.map((item) => [
+      item.itemId.toString(),
+      item.configId,
+      item.count,
+      item.quality,
+      item.level,
+      item.version,
+    ].join(":")).join("|");
+    if (signature !== this.inventoryHudSignature) {
+      list.replaceChildren();
+      this.inventoryHudEntries.clear();
+      for (const item of items) {
+        const entry = this.createInventoryHudEntry(document, list, item);
+        this.inventoryHudEntries.set(item.itemId.toString(), entry);
+      }
+      this.inventoryHudSignature = signature;
+    }
+    empty.style.display = items.length > 0 ? "none" : "block";
+    this.updateInventoryItemStates();
+  }
+
+  /** 创建一个背包格子；点击“使用”仍进入服务端事务，不在客户端修改快照。 / Creates one inventory slot; Use still enters the server transaction and never mutates the local snapshot. */
+  private createInventoryHudEntry(
+    document: Document,
+    list: HTMLElement,
+    item: ItemSnapshot,
+  ): InventoryHudEntry {
+    const config = GameConfigs.ItemConfig.TryGet(item.configId);
+    const root = document.createElement("article");
+    Object.assign(root.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "5px",
+      minHeight: "142px",
+      padding: "8px",
+      boxSizing: "border-box",
+      border: "1px solid rgba(180, 218, 255, 0.34)",
+      borderRadius: "7px",
+      background: "rgba(25, 42, 58, 0.82)",
+    });
+
+    const icon = document.createElement("div");
+    Object.assign(icon.style, {
+      width: "54px",
+      height: "54px",
+      margin: "0 auto",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: "6px",
+      color: "#fff8d6",
+      background: "rgba(255, 255, 255, 0.1)",
+      font: "700 15px/1.1 system-ui, sans-serif",
+      textAlign: "center",
+    });
+    icon.textContent = (config?.name ?? `道具#${item.configId}`).slice(0, 2);
+    root.appendChild(icon);
+    if (config?.icon) this.loadInventoryIcon(icon, config.icon, config.name);
+
+    const name = document.createElement("div");
+    name.textContent = config?.name ?? `道具#${item.configId}`;
+    name.title = config?.name ?? `道具#${item.configId}`;
+    Object.assign(name.style, {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      fontWeight: "600",
+    });
+    root.appendChild(name);
+
+    const description = document.createElement("div");
+    description.textContent = config?.description ?? "暂无说明";
+    description.title = description.textContent;
+    Object.assign(description.style, {
+      minHeight: "2.4em",
+      overflow: "hidden",
+      color: "#a9c0cc",
+      fontSize: "11px",
+      lineHeight: "1.2",
+      textAlign: "center",
+    });
+    root.appendChild(description);
+
+    const count = document.createElement("div");
+    count.style.color = "#f4d477";
+    count.style.fontWeight = "700";
+    count.style.textAlign = "center";
+    root.appendChild(count);
+
+    const cooldown = document.createElement("div");
+    cooldown.style.minHeight = "1.2em";
+    cooldown.style.color = "#9fb5bf";
+    cooldown.style.fontSize = "11px";
+    cooldown.style.textAlign = "center";
+    root.appendChild(cooldown);
+
+    let useButton: HTMLButtonElement | undefined;
+    if ((config?.useEffect ?? 0) !== 0) {
+      useButton = document.createElement("button");
+      useButton.type = "button";
+      useButton.textContent = "使用";
+      Object.assign(useButton.style, {
+        width: "100%",
+        padding: "5px 6px",
+        border: "1px solid rgba(125, 188, 255, 0.62)",
+        borderRadius: "5px",
+        color: "#edf7ff",
+        background: "rgba(36, 102, 151, 0.9)",
+        font: "600 12px/1.2 system-ui, sans-serif",
+        cursor: "pointer",
+        touchAction: "manipulation",
+      });
+      this.bindTouchSafeHudButton(useButton, () => void this.useInventoryItem(item.itemId));
+      root.appendChild(useButton);
+    }
+
+    list.appendChild(root);
+    const entry: InventoryHudEntry = {
+      root,
+      icon,
+      name,
+      description,
+      count,
+      cooldown,
+      ...(useButton ? { useButton } : {}),
+      itemId: item.itemId,
+    };
+    this.updateInventoryEntryState(entry, item);
+    return entry;
+  }
+
+  /** 每帧只刷新数量/CD文字和按钮状态，不重建背包DOM。 / Refreshes count, cooldown text, and button state without rebuilding the inventory DOM. */
+  private updateInventoryItemStates(): void {
+    if (!this.inventoryOpen && this.inventoryHudEntries.size === 0) return;
+    for (const [key, entry] of this.inventoryHudEntries) {
+      const item = this.inventoryItems.get(key);
+      if (!item || item.count <= 0) {
+        entry.root.remove();
+        this.inventoryHudEntries.delete(key);
+        continue;
+      }
+      this.updateInventoryEntryState(entry, item);
+    }
+  }
+
+  private updateInventoryEntryState(entry: InventoryHudEntry, item: ItemSnapshot): void {
+    const config = GameConfigs.ItemConfig.TryGet(item.configId);
+    const serverNow = Date.now() + (this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0);
+    const readyAt = Math.max(
+      this.skillGlobalCooldownEndAtMs,
+      this.itemCooldownEnds.get(item.configId) ?? 0,
+    );
+    const remainingMs = Math.max(0, readyAt - serverNow);
+    const usable = (config?.useEffect ?? 0) !== 0;
+    const inFlight = this.itemUseInFlight.has(item.configId);
+    entry.count.textContent = `数量 ×${item.count}`;
+    entry.cooldown.textContent = !usable
+      ? "不可使用"
+      : inFlight
+        ? "使用中..."
+        : remainingMs > 0
+          ? `冷却 ${formatCooldown(remainingMs)}`
+          : "可使用";
+    entry.cooldown.style.color = !usable ? "#83959e" : remainingMs > 0 || inFlight ? "#f2d37c" : "#9fe3bf";
+    if (entry.useButton) {
+      entry.useButton.disabled = !usable || remainingMs > 0 || inFlight;
+      entry.useButton.style.opacity = entry.useButton.disabled ? "0.5" : "1";
+    }
+  }
+
+  private loadInventoryIcon(icon: HTMLElement, iconPath: string, fallbackName: string): void {
+    resources.load(iconPath, (error: unknown, asset: unknown) => {
+      if (error || !asset) return;
+      const texture = asset as { nativeUrl?: string; image?: { nativeUrl?: string } };
+      const nativeUrl = texture.nativeUrl ?? texture.image?.nativeUrl;
+      if (!nativeUrl) return;
+      const image = document.createElement("img");
+      image.src = nativeUrl;
+      image.alt = fallbackName;
+      image.style.width = "100%";
+      image.style.height = "100%";
+      image.style.objectFit = "contain";
+      image.addEventListener("error", () => {
+        icon.textContent = fallbackName.slice(0, 2);
+      }, { once: true });
+      icon.replaceChildren(image);
+    });
+  }
+
+  private toggleInventoryPanel(): void {
+    if (this.localUnitId === 0) {
+      this.setStatus("请先登录并进入地图");
+      return;
+    }
+    this.setInventoryOpen(!this.inventoryOpen);
+  }
+
+  private setInventoryOpen(open: boolean): void {
+    this.inventoryOpen = open && this.localUnitId !== 0;
+    if (this.inventoryOpen) this.updateInventoryHud();
+    if (this.inventoryPanel) {
+      this.inventoryPanel.style.display = this.inventoryOpen ? "flex" : "none";
+    }
+    if (this.inventoryToggleButton) {
+      this.inventoryToggleButton.textContent = this.inventoryOpen ? "关闭背包" : "背包 (B)";
+      this.inventoryToggleButton.setAttribute("aria-expanded", String(this.inventoryOpen));
+    }
+    if (this.mobileInventoryButton) {
+      this.mobileInventoryButton.setAttribute("aria-pressed", String(this.inventoryOpen));
+      this.mobileInventoryButton.style.background = this.inventoryOpen
+        ? "rgba(36, 102, 151, 0.94)"
+        : "rgba(16, 31, 35, 0.72)";
+    }
+  }
+
+  /**
    * 创建玩家Buff栏。图标来自`UI/Icons/Buff/<BuffId>`，剩余时间只由服务端到期时间计算。
    * 到期后只把文字停在00:00，真正移除必须等待G2C_BuffRemoved，避免客户端时钟误差提前清理表现。
    *
@@ -1776,13 +2159,30 @@ export class GameBootstrap3D extends Component {
     return { count, usableItem };
   }
 
-  /** 处理快捷栏道具使用RPC；失败只提示，不提前扣本地数量。 / Sends the hotbar item-use RPC; failures only report status and never pre-decrement local count. */
-  private async useHotbarItem(configId: number): Promise<void> {
+  /**
+   * 通过道具实例ID提交使用请求；快捷栏和背包都必须走同一个入口，避免两套冷却、幂等和错误处理。
+   * Submits item use by instance ID. The hotbar and inventory must share this
+   * path so cooldowns, idempotency, and errors cannot drift between UIs.
+   */
+  private async useInventoryItem(itemId: bigint): Promise<void> {
     const mapClient = this.mapClient;
-    const item = this.summarizeInventory(configId).usableItem;
-    if (!mapClient || !item || this.itemUseInFlight.has(configId)) return;
+    const item = this.inventoryItems.get(itemId.toString());
+    if (!mapClient || !item || item.count <= 0) return;
+    const configId = item.configId;
+    if (this.itemUseInFlight.has(configId)) return;
+    const serverNow = Date.now() + (this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0);
+    const readyAt = Math.max(
+      this.skillGlobalCooldownEndAtMs,
+      this.itemCooldownEnds.get(configId) ?? 0,
+    );
+    if (readyAt > serverNow) {
+      const config = GameConfigs.ItemConfig.TryGet(configId);
+      this.setStatus(`${config?.name ?? `道具#${configId}`}冷却中`);
+      return;
+    }
     this.itemUseInFlight.add(configId);
     this.updateHotbarHud();
+    this.updateInventoryItemStates();
     try {
       const response = await mapClient.useItem({
         itemId: item.itemId,
@@ -1796,11 +2196,20 @@ export class GameBootstrap3D extends Component {
       );
       this.itemCooldownEnds.set(configId, Number(response.itemCooldownEndAtMs));
     } catch (error) {
-      this.setStatus(`使用${GameConfigs.ItemConfig.Get(configId).name}失败：${error instanceof Error ? error.message : String(error)}`);
+      const config = GameConfigs.ItemConfig.TryGet(configId);
+      this.setStatus(`使用${config?.name ?? `道具#${configId}`}失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
       this.itemUseInFlight.delete(configId);
       this.updateHotbarHud();
+      this.updateInventoryItemStates();
     }
+  }
+
+  /** 处理快捷栏道具使用RPC；失败只提示，不提前扣本地数量。 / Sends hotbar item use without pre-decrementing local count. */
+  private async useHotbarItem(configId: number): Promise<void> {
+    const item = this.summarizeInventory(configId).usableItem;
+    if (!item) return;
+    await this.useInventoryItem(item.itemId);
   }
 
   /** 创建手机端固定说明和网络延迟显示；桌面端通过CSS隐藏，不污染桌面HUD。 / Creates fixed mobile instructions and latency display; CSS hides them on desktop. */
@@ -2207,6 +2616,12 @@ export class GameBootstrap3D extends Component {
     controls.appendChild(npcButton);
     this.mobileNpcInteractButton = npcButton;
 
+    const inventoryButton = createActionButton("包", "打开背包", `calc(${mobileActionBottom} + 168px)`);
+    bindActionButton(inventoryButton, () => this.toggleInventoryPanel());
+    controls.appendChild(inventoryButton);
+    this.mobileInventoryButton = inventoryButton;
+    this.setInventoryOpen(this.inventoryOpen);
+
     const style = document.createElement("style");
     style.textContent = `
       .cocos3d-mobile-controls { display: none; }
@@ -2305,6 +2720,24 @@ export class GameBootstrap3D extends Component {
           padding: 5px !important;
           max-width: calc(100vw - 16px) !important;
           transform: translateX(-50%) !important;
+        }
+        .cocos3d-inventory-toggle {
+          display: none !important;
+        }
+        .cocos3d-inventory-card {
+          width: min(420px, 100%) !important;
+          max-height: calc(100dvh - 24px) !important;
+          padding: 10px !important;
+          gap: 7px !important;
+          font-size: 12px !important;
+        }
+        .cocos3d-inventory-list {
+          grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)) !important;
+          gap: 6px !important;
+        }
+        .cocos3d-inventory-card article {
+          min-height: 132px !important;
+          padding: 6px !important;
         }
         .cocos3d-hotbar > button {
           width: clamp(56px, 18vw, 72px) !important;
@@ -2954,6 +3387,8 @@ export class GameBootstrap3D extends Component {
     this.updatePlayerStatsHud();
     this.updateBuffHud();
     this.updateHotbarHud();
+    this.setInventoryOpen(false);
+    this.updateInventoryHud();
     this.updateQuestHud();
     this.loginFlow?.close();
     if (this.loginPanel) this.loginPanel.style.display = "flex";
@@ -2993,6 +3428,9 @@ export class GameBootstrap3D extends Component {
       for (const entity of result.enterMap.entities) this.buffStateStore.ApplySnapshot(entity);
       this.updateBuffHud();
       this.inventoryItems.clear();
+      this.inventoryHudSignature = "";
+      this.inventoryHudEntries.clear();
+      this.updateInventoryHud();
       for (const item of result.enterMap.items) this.ApplyItemSnapshot(item);
       this.quests.clear();
       this.questHudSignature = "";
@@ -3264,8 +3702,14 @@ export class GameBootstrap3D extends Component {
 
   /** 应用服务端背包快照；进图和ItemChanged共用同一个入口，避免数量在两个状态机中漂移。 / Applies an authoritative inventory snapshot from EnterMap or ItemChanged so both paths share one state machine. */
   ApplyItemSnapshot(item: ItemSnapshot): void {
-    this.inventoryItems.set(item.itemId.toString(), item);
+    const key = item.itemId.toString();
+    if (item.count <= 0) {
+      this.inventoryItems.delete(key);
+    } else {
+      this.inventoryItems.set(key, item);
+    }
     this.updateHotbarHud();
+    this.updateInventoryHud();
   }
 
   /** 接收背包即时变更；道具使用不等待读条或帧尾，客户端收到后立即刷新数量。 / Applies an immediate inventory change; item use is not delayed to a tick or frame-end batch. */
@@ -3852,6 +4296,11 @@ export class GameBootstrap3D extends Component {
       this.openNpcDialog();
       return;
     }
+    if (event.keyCode === INVENTORY_KEY && !this.pressedKeys.has(event.keyCode)) {
+      this.pressedKeys.add(event.keyCode);
+      this.toggleInventoryPanel();
+      return;
+    }
     if (!isMovementKey(event.keyCode) || this.pressedKeys.has(event.keyCode)) return;
     this.pressedKeys.add(event.keyCode);
     this.interruptClickNavigation();
@@ -3863,6 +4312,7 @@ export class GameBootstrap3D extends Component {
     if (
       event.keyCode === KeyCode.KEY_E
       || event.keyCode === KeyCode.KEY_F
+      || event.keyCode === INVENTORY_KEY
       || isHotbarKey(event.keyCode)
     ) return;
     this.markInputDirty();
@@ -4889,6 +5339,18 @@ function isMovementKey(key: KeyCode): boolean {
 
 function buffHudKey(buffInstanceId: bigint): string {
   return buffInstanceId.toString();
+}
+
+/** 稳定比较两个Item实例ID，避免把BigInt转换为可能失真的Number。 / Compares Item instance IDs without lossy BigInt-to-Number conversion. */
+function compareBigInt(left: bigint, right: bigint): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** 背包冷却只显示短而稳定的文本，避免小数位导致格子宽度抖动。 / Formats inventory cooldowns without width-changing precision noise. */
+function formatCooldown(remainingMs: number): string {
+  return remainingMs >= 10_000
+    ? `${Math.ceil(remainingMs / 1_000)}s`
+    : `${(remainingMs / 1_000).toFixed(1)}s`;
 }
 
 /** 只显示分钟和秒；例如两小时显示为120:00。 / Formats minutes and seconds only; two hours becomes 120:00. */

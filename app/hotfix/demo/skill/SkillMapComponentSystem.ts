@@ -140,13 +140,16 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   /**
-   * 处理玩家在施法期间受到一次攻击：普通读条后移800毫秒，引导技能缩短剩余时间800毫秒。
-   * 只调整结束时间，不重置起点、Tick计数、技能CD或公共CD；处理后立即发布新的权威状态。
+   * 处理Combat确认的“没有被护盾吸收”的施法受击：普通读条后移800毫秒，
+   * 引导技能缩短剩余时间800毫秒。调用方必须先完成Combat结算；护盾吸收的攻击
+   * 不应进入此入口。这里只调整结束时间，不重置起点、Tick计数、技能CD或公共CD，
+   * 处理后立即发布新的权威状态。
    *
-   * Handles one hit received during casting: a regular cast is pushed back by
-   * 800 ms, while a channel loses 800 ms of remaining time. The start
-   * time, completed ticks, skill cooldown, and GCD stay unchanged; the new
-   * authoritative state is published immediately.
+   * Handles a casting hit that Combat confirmed was not absorbed by a shield: a
+   * regular cast is pushed back by 800 ms, while a channel loses 800 ms of
+   * remaining time. Callers must resolve Combat first; shield-absorbed hits must
+   * not enter this boundary. The start time, completed ticks, skill cooldown,
+   * and GCD stay unchanged; the new authoritative state is published immediately.
    */
   HandleDamageDuringCast(target: PlayerUnit): boolean {
     if (this.units.Get<PlayerUnit>(target.UnitId) !== target) return false;
