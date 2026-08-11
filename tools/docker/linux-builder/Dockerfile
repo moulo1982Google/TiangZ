@@ -56,7 +56,9 @@ WORKDIR /opt/tiangz-deps
 # npm依赖和Cargo下载缓存只受依赖清单影响，普通业务代码变化不会重建这些层。
 # npm dependencies and Cargo downloads are keyed only by dependency manifests.
 COPY package-lock.json ./
-RUN node -e "const fs=require('fs');const lock=require('./package-lock.json');const root=lock.packages[''];fs.writeFileSync('package.json',JSON.stringify({name:root.name,private:true,devDependencies:root.devDependencies,engines:root.engines},null,2));" \
+# 发布依赖和开发依赖都必须进入固定缓存层；DBProxy SDK属于运行时正式依赖，不能只复制devDependencies。
+# Both production and development dependencies belong in the pinned cache layer; the DBProxy SDK is a runtime dependency.
+RUN node -e "const fs=require('fs');const lock=require('./package-lock.json');const root=lock.packages[''];fs.writeFileSync('package.json',JSON.stringify({name:root.name,private:true,dependencies:root.dependencies,devDependencies:root.devDependencies,engines:root.engines},null,2));" \
     && npm ci
 
 COPY Cargo.toml Cargo.lock rust-toolchain.toml build.rs ./

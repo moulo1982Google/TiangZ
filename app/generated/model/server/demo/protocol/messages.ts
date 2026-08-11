@@ -19,6 +19,7 @@ export interface MapEntitySnapshot {
   buffs: readonly BuffPublicView[];
   entityType: number;
   configId: number;
+  displayName: string;
 }
 
 export const MapEntitySnapshotCodec = {
@@ -41,6 +42,7 @@ export const MapEntitySnapshotCodec = {
       buffs: [],
       entityType: 0,
       configId: 0,
+      displayName: "",
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -92,6 +94,9 @@ export const MapEntitySnapshotCodec = {
       else if (tag.fieldNo === 16 && tag.wireType === 0) {
         value.configId = reader.uint32();
       }
+      else if (tag.fieldNo === 17 && tag.wireType === 2) {
+        value.displayName = reader.string();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -117,6 +122,7 @@ export const MapEntitySnapshotCodec = {
     for (const item of (value.buffs ?? [])) writer.bytes(14, BuffPublicViewCodec.encode(item), true);
     if (value.entityType !== undefined) writer.uint32(15, value.entityType);
     if (value.configId !== undefined) writer.uint32(16, value.configId);
+    if (value.displayName !== undefined) writer.string(17, value.displayName);
     return writer.finish();
   },
 };

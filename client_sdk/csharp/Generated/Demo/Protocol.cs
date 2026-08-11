@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "83d62b117061c527e8991cc198e607b652185fcf636923fb8e537db827847e05";
+    public const string Value = "50bb37d4fb9759d287203e71a7a8722c2d29b319266bf18839b239bfba61ee7a";
 }
 
 public static class MsgCode
@@ -618,6 +618,7 @@ public sealed class MapEntitySnapshot
     public List<BuffPublicView> Buffs { get; set; } = new List<BuffPublicView>();
     public uint EntityType { get; set; }
     public uint ConfigId { get; set; }
+    public string? DisplayName { get; set; }
 }
 
 public sealed class NavigationMovementState
@@ -3549,6 +3550,9 @@ public static class MapEntitySnapshotCodec
                 case 16 when tag.WireType == 0:
                     value.ConfigId = reader.ReadUInt32();
                     break;
+                case 17 when tag.WireType == 2:
+                    value.DisplayName = reader.ReadString();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -3582,6 +3586,7 @@ public static class MapEntitySnapshotCodec
         }
         if (value.EntityType != 0) writer.WriteUInt32(15, value.EntityType);
         if (value.ConfigId != 0) writer.WriteUInt32(16, value.ConfigId);
+        if (!string.IsNullOrEmpty(value.DisplayName)) writer.WriteString(17, value.DisplayName);
         return writer.ToArray();
     }
 }

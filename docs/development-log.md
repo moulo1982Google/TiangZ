@@ -7,9 +7,22 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-11：统一实体头顶名称HUD
+
+- `MapEntitySnapshot`新增服务端权威的`display_name`：玩家使用角色名，NPC和怪物使用各自配置中的公开名称；移动、Numeric和其他增量消息不重复携带名称。
+- Cocos3D把玩家、NPC、怪物统一接入世界空间头顶HUD；玩家和NPC显示名称，怪物显示名称与HP/MP条。旧服务端没有该字段时，客户端只做兼容回退，不把配置名称硬编码为新的协议来源。
+- 已验证：协议自测、主工程类型检查、Cocos3D类型与bundle检查、Pixi类型检查、Godot静态检查、代码生成清单、双语注释和项目门禁通过。
+
+## 2026-08-11：Starter药品来源与施法受击延长调整
+
+- 新建玩家不再由`ItemComponentSystem.Awake`预置药水，初始背包为空；快捷栏没有对应Item时只显示空槽，不由客户端或框架偷偷创建道具。
+- Starter任务5001完成奖励改为`1001×10`，后续任务5005完成奖励改为`1002×10`；奖励仍走Quest -> Action -> Inventory链路，生成配置和自测已同步。
+- 施法期间受到怪物真实HP伤害时，当前施法结束时间延后1000ms；不重置读条起点、不清除施法、不修改技能CD和公共CD。护盾完全吸收或致死伤害仍不触发延长。
+- 本轮只做配置、逻辑和针对性回归，没有运行高负载压测。
+
 ## 2026-08-10：Starter任务链与怪物名称HUD
 
-- Cocos3D怪物头顶HUD增加`MonsterConfig.name`文字，和HP条一起作为远端怪物的世界空间表现；名字来自冷配置，不新增网络字段，也不参与战斗判定。
+- Cocos3D早期先以`MonsterConfig.name`在客户端显示怪物头顶HUD；后续已统一升级为`MapEntitySnapshot.display_name`，避免玩家、NPC和怪物各自维护一套名称来源。
 - 新增任务配置5005/目标5105：完成NPC任务5001并领取奖励后，才可在同一NPC处接取击杀5只怪B的任务；原有5002“试用药水”保持不变。
 - `C2M_CompleteQuest`增加`npcUnitId`，服务端在PlayerUnit有序mailbox中复用`NpcComponent.ValidateQuestInteraction`校验交付NPC、任务提供关系和5米距离；任务追踪面板不再直接发放奖励，Cocos3D必须通过NPC对话框交付。
 - Cocos3D NPC对话框根据任务链自动切换“领取/交付”动作，5001交付成功后显示5005领取入口；移动端和桌面端共用同一套对话语义。
@@ -19,7 +32,7 @@
 
 - Map 100切换到独立宽视野冷配置`AoiConfig=2`：7×7 Grid建立可见关系、9×9 Grid作为Detach边界；怪物刷怪槽调整为三只被动怪A（10004、10005、10008）和两只主动怪B（10006、10007）。
 - Starter任务5001的击杀目标改为5只怪A；生成配置和游戏配置自测已同步。
-- 施法期间平A保留意图但冻结读条；怪物对玩家造成真实HP伤害时，当前施法结束时间延后500ms，不重置起点、不清除施法、不修改CD，并通过新的`G2C_SkillCastState`让客户端读条向后移动。护盾完全吸收或致死伤害不触发延长。
+- 施法期间平A保留意图但冻结读条；怪物对玩家造成真实HP伤害时，当前施法结束时间延后1000ms，不重置起点、不清除施法、不修改CD，并通过新的`G2C_SkillCastState`让客户端读条向后移动。护盾完全吸收或致死伤害不触发延长。
 - Cocos3D施法条调整到界面中下方，平A HUD在施法期间明确显示“施法中暂停计时”。
 - 已验证：`npm run codegen:game-config`、`npm run codegen:scenes`、`npm run typecheck`、`npm run typecheck:cocos3d-demo`、`npm run test:game-config`通过；本轮尚未进行高负载压测。
 

@@ -72,6 +72,7 @@ export class MapWorld {
       this.enter({
         unitId: localUnitId,
         account: enterMap.account,
+        displayName: enterMap.account,
         x: enterMap.x,
         y: enterMap.y,
         z: enterMap.z,

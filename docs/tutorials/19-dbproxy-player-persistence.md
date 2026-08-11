@@ -46,6 +46,25 @@ cargo run --locked --bin TiangZ -- configs/local/all-in-one-dbproxy.json
 
 本机演示账号只绑定`127.0.0.1`，不能复制到生产环境。令牌只进入环境变量，禁止写入Runtime JSON、日志或业务Payload。
 
+## 外网2C2G部署
+
+外网两Process配置已经包含`process.persistence.dbProxy`，默认访问同机的`127.0.0.1:7800`。部署机先安装Docker：
+
+```bash
+apt-get update
+apt-get install -y docker.io docker-compose-v2
+systemctl enable --now docker
+```
+
+然后将DBProxy仓库的`deploy/local/docker-compose.yml`复制到服务器，使用单独生成的强密码创建`/opt/tiangz-dbproxy/.env`，并启动Redis/PostgreSQL：
+
+```bash
+docker compose --env-file /opt/tiangz-dbproxy/.env \
+  -f /opt/tiangz-dbproxy/docker-compose.yml up -d
+```
+
+数据库端口必须只绑定`127.0.0.1`。DBProxy本身作为独立systemd服务监听`127.0.0.1:7800`，`TIANGZ_DBPROXY_AUTH_TOKEN`通过systemd环境文件同时注入DBProxy和TiangZ两个Process。只启动数据库容器不等于TiangZ已经接入持久化；应检查DBProxy、Login/Gate、World三类服务都为active，并用同一账号重启后重新登录验收。
+
 ## Process配置
 
 ```json
@@ -181,20 +200,20 @@ await mapClient.useItem({ itemId, operationId });
 
 ## 重启恢复验收
 
-先构建客户端工具，然后使用一个全新的账号写入：
+先构建客户端工具，然后使用一个已经拥有1001道具的测试账号写入。新账号不会自动获得药水，请先在NPC处完成可奖励1001的任务，或使用已有持久化账号：
 
 ```powershell
 npm run build:client
 node dist/smoke_client.cjs --dbproxy-persistence-write dbproxy_smoke_001
 ```
 
-该命令进入地图、把1001道具从50个消耗到49个，立即断开，并等待Gate的30秒重连宽限结束后保存。看到写入完成后，只停止并重新启动TiangZ，保持DBProxy、PostgreSQL和Redis运行，再执行：
+该命令进入地图、把1001道具消耗1个，立即断开，并等待Gate的30秒重连宽限结束后保存。命令会按当前快照校验扣除结果；看到写入完成后，只停止并重新启动TiangZ，保持DBProxy、PostgreSQL和Redis运行，再执行：
 
 ```powershell
 node dist/smoke_client.cjs --dbproxy-persistence-read dbproxy_smoke_001
 ```
 
-通过标准是重新进入后同一Item仍为`count=49, version=2`，而不是再次发放默认50个。快速纯逻辑回归使用：
+通过标准是重新进入后同一Item的数量减少1、版本增加1，且没有重新发放物品。快速纯逻辑回归使用：
 
 ```powershell
 npm run test:player-persistence
@@ -206,13 +225,13 @@ UseItem真实事务验收先启动DBProxy和`configs/local/all-in-one-dbproxy.js
 node dist/smoke_client.cjs --dbproxy-item-use dbproxy_item_use_001
 ```
 
-它会使用同一个operationId重复请求并确认1001道具只从50减少到49。随后只重启TiangZ，保持DBProxy、PostgreSQL和Redis运行，再执行：
+它会使用同一个operationId重复请求并确认1001道具只减少1次。随后只重启TiangZ，保持DBProxy、PostgreSQL和Redis运行，再执行：
 
 ```powershell
 node dist/smoke_client.cjs --dbproxy-item-use-read dbproxy_item_use_001
 ```
 
-通过标准是仍恢复同一ItemId、`count=49, version=2`及首次事务回执，而不是再次扣除或重新治疗。
+通过标准是仍恢复同一ItemId、扣除后的数量和首次事务回执，而不是再次扣除或重新治疗。
 
 ## 当前限制
 

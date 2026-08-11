@@ -11,6 +11,7 @@ export interface AwakeMonsterUnit {
 export interface MonsterSnapshot {
   readonly unitId: number;
   readonly monsterConfigId: number;
+  readonly name: string;
   readonly modelId: string;
   readonly x: number;
   readonly y: number;

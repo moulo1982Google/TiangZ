@@ -157,6 +157,7 @@ struct MapEntitySnapshot {
   std::vector<BuffPublicView> buffs;
   std::uint32_t entityType = 0;
   std::uint32_t configId = 0;
+  std::string displayName;
 };
 
 struct MapEntitySnapshotCodec {
@@ -278,6 +279,13 @@ struct MapEntitySnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 17:
+          if (tag.wireType == 2) {
+            value.displayName = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -304,6 +312,7 @@ struct MapEntitySnapshotCodec {
     for (const auto& item : value.buffs) writer.BytesField(14, BuffPublicViewCodec::Encode(item), true);
     writer.UInt32(15, value.entityType);
     writer.UInt32(16, value.configId);
+    writer.String(17, value.displayName);
     return writer.Finish();
   }
 };

@@ -143,7 +143,7 @@ interface Cocos3DExternalConfig {
   readonly loginMgrPort: number;
 }
 
-interface MonsterOverheadHud {
+interface EntityOverheadHud {
   readonly root: Node;
   readonly nameLabel?: Label;
   readonly hpFill: Node;
@@ -156,7 +156,7 @@ interface RemotePlayer3D {
   readonly visual?: PlayerCharacterVisual3D;
   readonly unitId: number;
   readonly selectionMarker: Node;
-  readonly overheadHud?: MonsterOverheadHud;
+  readonly overheadHud?: EntityOverheadHud;
   readonly targetFoot: Vec3;
   readonly entityType: number;
   readonly configId: number;
@@ -264,7 +264,7 @@ export class GameBootstrap3D extends Component {
   private playerHpProgress?: HTMLElement;
   private playerMpLabel?: HTMLElement;
   private playerMpProgress?: HTMLElement;
-  private playerOverheadHud?: MonsterOverheadHud;
+  private playerOverheadHud?: EntityOverheadHud;
   private autoAttackPanel?: HTMLElement;
   private autoAttackLabel?: HTMLElement;
   private autoAttackProgress?: HTMLElement;
@@ -387,7 +387,7 @@ export class GameBootstrap3D extends Component {
     this.updateFollowCamera(deltaTime);
     this.updateAttackSlashEffects(deltaTime);
     this.updateSkillProjectileEffects();
-    this.updateMonsterOverheadHudBillboards();
+    this.updateEntityOverheadHudBillboards();
   }
 
   onDestroy(): void {
@@ -527,7 +527,7 @@ export class GameBootstrap3D extends Component {
     this.player.addChild(fallback);
     this.playerVisual = new PlayerCharacterVisual3D(this.player, fallback);
     world.addChild(this.player);
-    this.playerOverheadHud = createMonsterOverheadHud();
+    this.playerOverheadHud = createEntityOverheadHud("玩家");
     this.player.addChild(this.playerOverheadHud.root);
   }
 
@@ -804,39 +804,83 @@ export class GameBootstrap3D extends Component {
     const list = this.questListElement;
     const document = globalThis.document;
     if (!list || !document) return;
-    const quests = [...this.quests.values()].sort((a, b) => a.questConfigId - b.questConfigId);
+    const quests = this.activeQuestSnapshots();
     const signature = `quests|${quests.map((quest) => [
       quest.questConfigId,
       quest.revision,
       quest.status,
       this.questCompleteInFlight.has(quest.questConfigId) ? 1 : 0,
-      ...quest.objectives.flatMap((objective) => [objective.objectiveId, objective.current, objective.required]),
+      // 协议对象来自不同SDK版本时，数组字段可能暂时缺省；渲染层必须把缺省值当成空数组。
+      // Older SDK bundles may omit repeated fields; the renderer must treat a missing array as empty.
+      ...(Array.isArray(quest.objectives) ? quest.objectives : []).flatMap((objective) => [
+        objective.objectiveId,
+        objective.current,
+        objective.required,
+      ]),
     ].join(":")).join("|")}`;
-    if (signature === this.questHudSignature) return;
-    this.questHudSignature = signature;
+    const rendered = quests.length === 0
+      ? list.textContent === "暂无进行中任务"
+      : list.childElementCount === quests.length;
+    // 任务状态与DOM可能被登录切换、旧版本热替换或其他HUD清理逻辑打断；签名相同但内容不完整时仍要修复。
+    // A login transition, hot replacement, or another HUD cleanup can leave stale DOM behind; repair incomplete content even when the state signature is unchanged.
+    if (signature === this.questHudSignature && rendered) return;
     list.replaceChildren();
-    for (const quest of quests) {
-      const config = GameConfigs.QuestConfig.Get(quest.questConfigId);
-      const row = document.createElement("div");
-      row.style.padding = "5px 0";
-      row.style.borderTop = "1px solid rgba(255,255,255,0.12)";
-      const lines = quest.objectives.map((objective) => {
-        const objectiveConfig = GameConfigs.QuestObjectiveConfig.Get(objective.objectiveId);
-        return `${objectiveConfig.description} ${objective.current}/${objective.required}`;
-      });
-      row.textContent = `${config.name}\n${lines.join("；")}`;
-      row.style.whiteSpace = "pre-line";
-      if (quest.status === QuestStatus.ReadyToTurnIn) {
-        const hint = document.createElement("div");
-        hint.textContent = "请到任务使者处交任务";
-        hint.style.color = "#f2d37c";
-        hint.style.marginTop = "3px";
-        row.appendChild(hint);
+    list.style.display = "block";
+    try {
+      for (const quest of quests) {
+        // 使用TryGet而不是Get，避免冷配置尚未完成切换时把整个任务栏清空。
+        // Use TryGet so a cold-config transition cannot blank the entire tracker.
+        const config = GameConfigs.QuestConfig.TryGet(quest.questConfigId);
+        const row = document.createElement("div");
+        row.style.padding = "5px 0";
+        row.style.borderTop = "1px solid rgba(255,255,255,0.12)";
+        const objectives = Array.isArray(quest.objectives) ? quest.objectives : [];
+        const lines = objectives.map((objective) => {
+          const objectiveConfig = GameConfigs.QuestObjectiveConfig.TryGet(objective.objectiveId);
+          return objectiveConfig
+            ? `${objectiveConfig.description} ${objective.current}/${objective.required}`
+            : `目标#${objective.objectiveId} ${objective.current}/${objective.required}`;
+        });
+        row.textContent = `${config?.name ?? `任务#${quest.questConfigId}`}\n${
+          lines.length > 0 ? lines.join("；") : "任务目标同步中..."
+        }`;
+        row.style.whiteSpace = "pre-line";
+        if (quest.status === QuestStatus.ReadyToTurnIn) {
+          const hint = document.createElement("div");
+          hint.textContent = "请到任务使者处交任务";
+          hint.style.color = "#f2d37c";
+          hint.style.marginTop = "3px";
+          row.appendChild(hint);
+        }
+        list.appendChild(row);
       }
-      list.appendChild(row);
+      if (quests.length === 0) list.textContent = "暂无进行中任务";
+      // 只有DOM完整渲染后才提交签名；渲染中断时下一帧必须重试。
+      // Commit the signature only after the DOM is complete so a failed render retries next frame.
+      this.questHudSignature = signature;
+    } catch (error) {
+      this.questHudSignature = "";
+      list.replaceChildren();
+      list.textContent = "任务数据同步中...";
+      console.warn("[Cocos3D] quest tracker render failed", error);
     }
-    if (this.quests.size === 0) list.textContent = "暂无进行中任务";
     this.refreshSelectedTargetHud();
+  }
+
+  /** 返回唯一、已规范化的活动任务；NPC对话和右侧任务栏必须共用这一份视图。 / Returns one normalized active-quest view; the NPC dialog and tracker must consume the same view. */
+  private activeQuestSnapshots(): QuestSnapshot[] {
+    const normalized = new Map<number, QuestSnapshot>();
+    for (const [mapQuestConfigId, value] of this.quests.entries()) {
+      const quest = normalizeQuestSnapshot(value, mapQuestConfigId);
+      if (quest) normalized.set(quest.questConfigId, quest);
+    }
+    // Cocos/Babel可能把Map迭代器的展开错误转换为concat(iterator)；Array.from明确物化值列表。
+    // Cocos/Babel can lower a spread Map iterator to concat(iterator); Array.from materializes the values explicitly.
+    return Array.from(normalized.values()).sort((left, right) => left.questConfigId - right.questConfigId);
+  }
+
+  private activeQuestSnapshot(questConfigId: number): QuestSnapshot | undefined {
+    return this.activeQuestSnapshots().find((quest) => quest.questConfigId === questConfigId);
   }
 
   private async completeQuest(questConfigId: number, npcUnitId: number): Promise<void> {
@@ -1702,7 +1746,7 @@ export class GameBootstrap3D extends Component {
 
     const instructions = document.createElement("div");
     instructions.className = "cocos3d-mobile-instructions";
-    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面：寻路\n点击“攻”：切换平A\n点击2/3：使用道具";
+    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面寻路：暂时关闭\n点击“攻”：切换平A\n点击2/3：使用道具";
     instructions.style.position = "fixed";
     instructions.style.left = "max(10px, 2vw)";
     instructions.style.top = "max(10px, 2vh)";
@@ -1842,7 +1886,7 @@ export class GameBootstrap3D extends Component {
     controls.style.boxSizing = "border-box";
 
     const cameraSurface = document.createElement("div");
-    cameraSurface.setAttribute("aria-label", "拖动控制镜头，点击地面寻路");
+    cameraSurface.setAttribute("aria-label", "拖动控制镜头，地面寻路暂时关闭");
     cameraSurface.style.position = "absolute";
     cameraSurface.style.inset = "0";
     cameraSurface.style.zIndex = "0";
@@ -2425,7 +2469,9 @@ export class GameBootstrap3D extends Component {
       else this.selectMonster(entity);
       return;
     }
-    void this.queryPathAtScreen(location.x, location.y);
+    // 暂时关闭移动端点击地面寻路；保留原调用，后续恢复时只需取消注释。
+    // Temporarily disable mobile ground-click navigation; keep the call for a one-line future restore.
+    // void this.queryPathAtScreen(location.x, location.y);
   }
 
   /** 完成通用SDK登录并核对冷配置指纹；失败后保留灰盒供编辑器检查。 / Logs in through the shared SDK and validates the cold-config fingerprint while leaving the graybox inspectable on failure. */
@@ -2485,6 +2531,7 @@ export class GameBootstrap3D extends Component {
     this.gateSocket = undefined;
     this.mapClient = undefined;
     this.localUnitId = 0;
+    if (this.playerOverheadHud?.nameLabel) this.playerOverheadHud.nameLabel.string = "玩家";
     this.path.length = 0;
     this.pathIndex = 0;
     this.targetMarker.active = false;
@@ -2559,11 +2606,18 @@ export class GameBootstrap3D extends Component {
       this.inventoryItems.clear();
       for (const item of result.enterMap.items) this.ApplyItemSnapshot(item);
       this.quests.clear();
-      for (const quest of result.enterMap.quests) this.quests.set(quest.questConfigId, quest);
+      this.questHudSignature = "";
+      for (const quest of result.enterMap.quests) {
+        const normalized = normalizeQuestSnapshot(quest);
+        if (normalized) this.quests.set(normalized.questConfigId, normalized);
+      }
       this.completedQuestConfigIds.clear();
       for (const id of result.enterMap.completedQuestConfigIds) this.completedQuestConfigIds.add(id);
       this.updateQuestHud();
       const localEntity = result.enterMap.entities.find((entity) => entity.unitId === this.localUnitId);
+      if (this.playerOverheadHud?.nameLabel) {
+        this.playerOverheadHud.nameLabel.string = localEntity?.displayName || account;
+      }
       this.localNumerics.clear();
       if (localEntity) this.ApplyLocalSnapshotNumerics(localEntity);
       this.updatePlayerStatsHud();
@@ -2600,8 +2654,8 @@ export class GameBootstrap3D extends Component {
         `NavMesh ${config.navigationVersion} 已加载\n` +
         `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
-          ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；点击地面寻路；靠近紫色NPC点交互"
-          : "W/S前后，A/D转向；左右鼠标同按前进；左键拖动环视、短按地面寻路；按住右键时A/D横移；1平A，2/3药水，4-8技能；靠近紫色NPC点交互；E开关动态门"),
+          ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；地面寻路暂时关闭；靠近紫色NPC点交互"
+          : "W/S前后，A/D转向；左右鼠标同按前进；左键拖动环视；地面寻路暂时关闭；按住右键时A/D横移；1平A，2/3药水，4-8技能；靠近紫色NPC点交互；E开关动态门"),
       );
       this.setLoginStatus("登录成功");
       if (this.loginPanel) this.loginPanel.style.display = "none";
@@ -2695,7 +2749,7 @@ export class GameBootstrap3D extends Component {
       const remote = this.remotePlayers.get(numeric.unitId);
       if (!remote) continue;
       remote.numerics.set(numeric.numericType, numeric.value);
-      this.updateMonsterOverheadHud(remote);
+      this.updateEntityOverheadHud(remote);
     }
   }
 
@@ -2802,8 +2856,15 @@ export class GameBootstrap3D extends Component {
   /** 合并服务端可覆盖任务进度；客户端不自行从击杀或用药表现推导任务状态。 / Merges replaceable server quest state without deriving progress from local visuals. */
   ApplyQuestProgress(message: G2C_QuestProgress): void {
     for (const quest of message.quests) {
-      const current = this.quests.get(quest.questConfigId);
-      if (!current || quest.revision >= current.revision) this.quests.set(quest.questConfigId, quest);
+      const normalized = normalizeQuestSnapshot(quest);
+      if (!normalized) {
+        console.warn("[Cocos3D] ignored invalid quest progress snapshot", quest);
+        continue;
+      }
+      const current = this.quests.get(normalized.questConfigId);
+      if (!current || normalized.revision >= current.revision) {
+        this.quests.set(normalized.questConfigId, normalized);
+      }
     }
     this.updateQuestHud();
   }
@@ -2932,7 +2993,9 @@ export class GameBootstrap3D extends Component {
       else this.selectMonster(entity);
       return;
     }
-    void this.queryPathAtScreen(location.x, location.y);
+    // 暂时关闭桌面端点击地面寻路；保留原调用，后续恢复时只需取消注释。
+    // Temporarily disable desktop ground-click navigation; keep the call for a one-line future restore.
+    // void this.queryPathAtScreen(location.x, location.y);
   }
 
   /** 从屏幕射线中选择最近的怪物或NPC方块；命中实体后不会穿透到地面寻路。 / Picks the nearest monster or NPC box; an entity hit never falls through to ground navigation. */
@@ -3082,7 +3145,8 @@ export class GameBootstrap3D extends Component {
       return;
     }
     const action = this.getNpcQuestAction();
-    const activeQuest = this.quests.get(STARTER_NPC_QUEST_ID) ?? this.quests.get(STARTER_NPC_SECOND_QUEST_ID);
+    const activeQuest = this.activeQuestSnapshot(STARTER_NPC_QUEST_ID)
+      ?? this.activeQuestSnapshot(STARTER_NPC_SECOND_QUEST_ID);
     const quest = GameConfigs.QuestConfig.TryGet(action?.questConfigId ?? activeQuest?.questConfigId ?? 0);
     if (this.npcDialogText) {
       this.npcDialogText.textContent = action?.mode === "complete"
@@ -3110,7 +3174,7 @@ export class GameBootstrap3D extends Component {
   /** 根据任务链决定接取还是交付；最终距离、归属、前置和重复状态由服务端校验。 / Chooses accept or turn-in from the quest chain; the server validates distance, ownership, prerequisites, and duplicates. */
   private getNpcQuestAction(): { questConfigId: number; mode: "accept" | "complete" } | undefined {
     for (const questConfigId of [STARTER_NPC_QUEST_ID, STARTER_NPC_SECOND_QUEST_ID]) {
-      const active = this.quests.get(questConfigId);
+      const active = this.activeQuestSnapshot(questConfigId);
       if (active) {
         return active.status === QuestStatus.ReadyToTurnIn
           ? { questConfigId, mode: "complete" }
@@ -3141,8 +3205,10 @@ export class GameBootstrap3D extends Component {
           questConfigId: action.questConfigId,
           npcUnitId,
         });
-        this.quests.set(response.quest.questConfigId, response.quest);
-        this.setStatus(`已从${npcName(this.remotePlayers.get(npcUnitId)?.configId ?? 0)}接取：${GameConfigs.QuestConfig.Get(response.quest.questConfigId).name}`);
+        const quest = normalizeQuestSnapshot(response.quest);
+        if (!quest) throw new Error("服务端返回的任务快照缺少合法任务ID");
+        this.quests.set(quest.questConfigId, quest);
+        this.setStatus(`已从${npcName(this.remotePlayers.get(npcUnitId)?.configId ?? 0)}接取：${GameConfigs.QuestConfig.Get(quest.questConfigId).name}`);
         this.updateQuestHud();
       }
     } catch (error) {
@@ -3638,8 +3704,13 @@ export class GameBootstrap3D extends Component {
         visual,
         unitId: entity.unitId,
         selectionMarker: createSelectionMarker(),
-        overheadHud: entity.entityType === ENTITY_TYPE_MONSTER
-          ? createMonsterOverheadHud(monsterName(entity.configId))
+        overheadHud: entity.entityType === ENTITY_TYPE_PLAYER ||
+          entity.entityType === ENTITY_TYPE_MONSTER ||
+          entity.entityType === ENTITY_TYPE_NPC
+          ? createEntityOverheadHud(
+            entityDisplayName(entity),
+            entity.entityType === ENTITY_TYPE_MONSTER,
+          )
           : undefined,
         targetFoot: new Vec3(entity.x, entity.y, entity.z),
         entityType: entity.entityType,
@@ -3656,11 +3727,12 @@ export class GameBootstrap3D extends Component {
       remote.targetFoot.set(entity.x, entity.y, entity.z);
       remote.yaw = entity.yaw;
       remote.alive = entity.alive;
+      if (remote.overheadHud?.nameLabel) remote.overheadHud.nameLabel.string = entityDisplayName(entity);
       for (const numeric of entity.numerics) remote.numerics.set(numeric.numericType, numeric.value);
       if (!entity.alive) remote.visual?.SetMoving(false);
     }
     this.applyRemoteAlivePresentation(remote);
-    this.updateMonsterOverheadHud(remote);
+    this.updateEntityOverheadHud(remote);
   }
 
   /** 把死亡怪物表现为留在原地的倒地尸体；该状态不删除实体，也不参与服务端判定。 / Presents dead monsters as grounded corpses without deleting entities or affecting server authority. */
@@ -3668,6 +3740,7 @@ export class GameBootstrap3D extends Component {
     remote.node.active = true;
     if (remote.entityType !== ENTITY_TYPE_MONSTER) {
       remote.node.active = remote.alive;
+      if (remote.overheadHud) remote.overheadHud.root.active = remote.alive;
       remote.selectionMarker.active = remote.alive && (
         remote.unitId === this.selectedMonsterUnitId || remote.unitId === this.selectedNpcUnitId
       );
@@ -3739,8 +3812,8 @@ export class GameBootstrap3D extends Component {
     this.playerVisual?.SetMoving(this.localUnitId !== 0 && moving);
   }
 
-  /** 更新怪物头顶条的数值和摄像机朝向；只做表现，不参与战斗判定。 / Updates monster overhead values and camera-facing orientation for presentation only. */
-  private updateMonsterOverheadHudBillboards(): void {
+  /** 更新所有实体头顶HUD的数值和摄像机朝向；只做表现，不参与战斗判定。 / Updates all entity overhead HUD values and camera-facing orientation for presentation only. */
+  private updateEntityOverheadHudBillboards(): void {
     if (!this.cameraNode) return;
     const cameraPosition = this.cameraNode.worldPosition;
     if (this.playerOverheadHud && this.player.active) {
@@ -3764,13 +3837,13 @@ export class GameBootstrap3D extends Component {
   }
 
   /** 按Numeric快照刷新红色HP条和可选蓝色MP条；缺少MaxMp或MaxMp为零时隐藏MP条。 / Refreshes red HP and optional blue MP bars; MP stays hidden when MaxMp is absent or zero. */
-  private updateMonsterOverheadHud(remote: RemotePlayer3D): void {
+  private updateEntityOverheadHud(remote: RemotePlayer3D): void {
     this.updateOverheadHud(remote.overheadHud, remote.numerics);
   }
 
   /** 用同一套渲染规则更新玩家和怪物头顶条；数值来源仍由各自服务端快照决定。 / Updates player and monster overhead bars with one renderer while each keeps its server-owned numeric source. */
   private updateOverheadHud(
-    hud: MonsterOverheadHud | undefined,
+    hud: EntityOverheadHud | undefined,
     numerics: ReadonlyMap<number, bigint>,
   ): void {
     if (!hud) return;
@@ -3937,6 +4010,87 @@ function createSkillProjectileEffect(skillId: number): Node {
   return root;
 }
 
+/**
+ * 在客户端协议边界把任务快照整理成稳定形状；不允许未识别的数据进入任务Map或HUD。
+ * Normalizes task snapshots at the client protocol boundary; malformed data never enters the task map or HUD.
+ *
+ * 兼容旧Demo/直传对象的字段名，但不猜测任务ID：没有合法ID时返回undefined。
+ * It accepts legacy/direct-object field aliases but never guesses a task ID; invalid IDs return undefined.
+ */
+function normalizeQuestSnapshot(value: unknown, fallbackQuestConfigId?: number): QuestSnapshot | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const questConfigId = positiveInteger(
+    record.questConfigId ?? record.quest_config_id ?? record.configId ?? record.config_id,
+  ) ?? positiveInteger(fallbackQuestConfigId);
+  if (questConfigId === undefined) return undefined;
+
+  const rawObjectives = record.objectives ?? record.objectiveStates ?? record.objective_states;
+  const objectives = Array.isArray(rawObjectives)
+    ? rawObjectives
+      .map((item) => normalizeQuestObjective(item))
+      .filter((item): item is QuestSnapshot["objectives"][number] => item !== undefined)
+    : [];
+  const revision = nonNegativeInteger(record.revision ?? record.version) ?? 0;
+  const rawStatus = nonNegativeInteger(record.status);
+  const readyToComplete = record.readyToComplete === true
+    || record.ready_to_complete === true
+    || rawStatus === QuestStatus.ReadyToTurnIn
+    || objectives.length > 0 && objectives.every((objective) => objective.current >= objective.required);
+
+  return {
+    questConfigId,
+    objectives,
+    revision,
+    readyToComplete,
+    status: readyToComplete ? QuestStatus.ReadyToTurnIn : QuestStatus.InProgress,
+  };
+}
+
+function normalizeQuestObjective(value: unknown): QuestSnapshot["objectives"][number] | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const objectiveId = positiveInteger(
+    record.objectiveId ?? record.objective_id ?? record.id,
+  );
+  const required = positiveInteger(
+    record.required ?? record.requiredCount ?? record.required_count ?? record.target,
+  );
+  if (objectiveId === undefined || required === undefined) return undefined;
+  return {
+    objectiveId,
+    current: nonNegativeInteger(record.current ?? record.progress ?? record.count) ?? 0,
+    required,
+  };
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  const integer = safeInteger(value);
+  return integer !== undefined && integer > 0 ? integer : undefined;
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+  const integer = safeInteger(value);
+  return integer !== undefined && integer >= 0 ? integer : undefined;
+}
+
+/** 读取协议边界可能出现的安全整数；只接受不会损失精度的数值。 / Reads safe integers at a protocol boundary without accepting precision loss. */
+function safeInteger(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) ? value : undefined;
+  }
+  if (typeof value === "bigint") {
+    const max = BigInt(Number.MAX_SAFE_INTEGER);
+    const min = BigInt(Number.MIN_SAFE_INTEGER);
+    return value >= min && value <= max ? Number(value) : undefined;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 /** 读取SDK RpcError的稳定错误码，同时兼容跨Bundle导致的instanceof失效。 / Reads the stable SDK error code without relying on instanceof across bundles. */
 function rpcErrorCode(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
@@ -3972,6 +4126,16 @@ function npcName(configId: number): string {
 
 function monsterName(configId: number): string {
   return GameConfigs.MonsterConfig.TryGet(configId)?.name ?? `MonsterConfig#${configId}`;
+}
+
+/** 解析服务端公开实体名；旧服务端没有displayName时才使用兼容回退。 / Resolves the server-owned public entity name and only falls back for older servers without displayName. */
+function entityDisplayName(entity: MapEntitySnapshot): string {
+  const displayName = entity.displayName?.trim();
+  if (displayName) return displayName;
+  if (entity.entityType === ENTITY_TYPE_PLAYER) return entity.account || `玩家#${entity.unitId}`;
+  if (entity.entityType === ENTITY_TYPE_MONSTER) return monsterName(entity.configId);
+  if (entity.entityType === ENTITY_TYPE_NPC) return npcName(entity.configId);
+  return `实体#${entity.unitId}`;
 }
 
 /** 创建无资源依赖的斜向刀光；外层是暖色刀身，内层是明亮刃线。 / Creates a resource-free diagonal slash with a warm body and bright edge. */
@@ -4010,13 +4174,16 @@ function createAttackSlashEffect(sizeScale: number, monsterAttack: boolean): Att
   return { node: root, sizeScale, elapsedSeconds: 0 };
 }
 
-/** 创建怪物头顶的双层世界HUD；HP默认显示，MP由MaxMp是否大于零决定。 / Creates the two-row world HUD above a monster; HP is always shown and MP follows MaxMp. */
-function createMonsterOverheadHud(name?: string): MonsterOverheadHud {
-  const root = new Node("MonsterOverheadHud");
+/**
+ * 创建实体头顶的世界HUD；怪物显示名字和HP/MP，玩家/NPC只显示名字。
+ * Creates a world HUD above an entity; monsters show name plus HP/MP, while players and NPCs show only their name.
+ */
+function createEntityOverheadHud(name: string, showHealthBars = true): EntityOverheadHud {
+  const root = new Node("EntityOverheadHud");
   root.setPosition(0, MONSTER_HUD_OFFSET_Y, 0);
 
   let nameLabel: Label | undefined;
-  if (name) {
+  if (name.length > 0) {
     const labelNode = new Node("MonsterName");
     root.addChild(labelNode);
     labelNode.setPosition(0, 0.28, 0);
@@ -4029,12 +4196,15 @@ function createMonsterOverheadHud(name?: string): MonsterOverheadHud {
     nameLabel.color = new Color(255, 248, 224, 255);
     nameLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
     nameLabel.verticalAlign = Label.VerticalAlign.CENTER;
+    // Label的正面与世界HUD的lookAt方向相反时会被背面剔除；翻转子节点保持名字始终可见。
+    // The UI label can face opposite to the world HUD's lookAt direction and be back-face culled; flip the child so the name remains visible.
+    labelNode.setRotationFromEuler(0, 180, 0);
     labelNode.setScale(0.006, 0.006, 0.006);
   }
 
   const hpY = MONSTER_HUD_ROW_GAP / 2;
   const mpY = -MONSTER_HUD_ROW_GAP / 2;
-  root.addChild(createBox(
+  const hpTrack = createBox(
     "HpTrack",
     MONSTER_HUD_WIDTH,
     MONSTER_HUD_BAR_HEIGHT,
@@ -4043,7 +4213,8 @@ function createMonsterOverheadHud(name?: string): MonsterOverheadHud {
     0,
     hpY,
     0,
-  ));
+  );
+  root.addChild(hpTrack);
   const hpFill = createBox(
     "HpFill",
     MONSTER_HUD_WIDTH,
@@ -4078,6 +4249,8 @@ function createMonsterOverheadHud(name?: string): MonsterOverheadHud {
   );
   root.addChild(mpTrack);
   root.addChild(mpFill);
+  hpTrack.active = showHealthBars;
+  hpFill.active = showHealthBars;
   mpTrack.active = false;
   mpFill.active = false;
   return { root, nameLabel, hpFill, mpTrack, mpFill };

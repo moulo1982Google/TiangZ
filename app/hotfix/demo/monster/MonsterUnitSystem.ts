@@ -28,6 +28,7 @@ export class MonsterUnitSystem extends MonsterUnit {
     return {
       unitId: this.UnitId,
       monsterConfigId: this.monsterConfigId,
+      name: config.name,
       modelId: config.modelId,
       ...position,
       speedCellsPerSecond: native.speedCellsPerSecond,

@@ -39,6 +39,10 @@ import {
 import { ExecuteAction } from "../action/ActionExecutor";
 import { GetSkillDefinition } from "./SkillCatalog";
 
+// 受击延长Demo读条的统一规则；业务入口不应散落硬编码的毫秒数。
+// Shared Demo rule for hit-induced cast delay; business entry points must not scatter magic durations.
+const CAST_DAMAGE_PUSHBACK_MS = 1_000;
+
 /**
  * 地图级技能状态机。Handler只提交Cast命令；这里统一校验目标/距离/冷却，10Hz推进读条与弹道，
  * 并通过Action和Buff入口结算。整个判定与提交路径同步执行，不在中间await。
@@ -135,14 +139,14 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   /**
-   * 受击时给正在读条的玩家增加固定硬直时间；只延长结束时间，不重置读条起点。
+   * 受击时给正在读条的玩家增加固定1秒硬直时间；只延长结束时间，不重置读条起点。
    * 这是Demo战斗规则，不是CombatComponent对所有项目的强制语义；伤害入口必须在结算后调用它。
    *
    * Adds fixed hit-stun time to a player's active cast without resetting its
    * start time. This is a Demo combat rule, not a universal CombatComponent
    * rule; damage owners must call it after authoritative damage resolves.
    */
-  ExtendCastOnDamage(target: PlayerUnit, extensionMs: number = 500): boolean {
+  ExtendCastOnDamage(target: PlayerUnit, extensionMs: number = CAST_DAMAGE_PUSHBACK_MS): boolean {
     if (this.units.Get<PlayerUnit>(target.UnitId) !== target) return false;
     const skill = target.GetComponent(SkillComponent);
     const active = skill.ActiveCast();

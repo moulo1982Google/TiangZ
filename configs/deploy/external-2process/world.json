@@ -14,6 +14,16 @@
       "fixedUpdateMs": 50,
       "maxCatchUpSteps": 2
     },
+    "persistence": {
+      "dbProxy": {
+        "endpoint": "127.0.0.1:7800",
+        "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
+        "clientPoolSize": 2,
+        "connectTimeoutMs": 5000,
+        "requestTimeoutMs": 5000,
+        "maxFrameBytes": 8388608
+      }
+    },
     "debug": {
       "inspectorIp": "127.0.0.1",
       "inspectorPort": 19232,

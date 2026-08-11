@@ -377,6 +377,9 @@ async function testItemChildEntity(): Promise<void> {
   host.spawnScene("map:1", MapScene);
   const actor = host.spawnActor("map:1", "item-owner", ComponentProbeActor);
   const inventory = actor.AddComponent(ItemComponent);
+  assert.deepEqual(inventory.GetChildren(Item), []);
+  inventory.GrantItem(1001, 50);
+  inventory.GrantItem(1002, 20);
   const item = inventory.GetChildren(Item)[0];
   assert.ok(item);
 

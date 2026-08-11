@@ -189,7 +189,7 @@
       "reward_action_type": 7,
       "reward_action_params": [
         1001,
-        2
+        10
       ],
       "auto_accept": false,
       "required_quest_ids": [],
@@ -251,7 +251,7 @@
       "reward_action_type": 7,
       "reward_action_params": [
         1002,
-        1
+        10
       ],
       "auto_accept": false,
       "required_quest_ids": [

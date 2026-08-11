@@ -1912,6 +1912,7 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../..
     return {
       unitId: snapshot.unitId,
       account: "",
+      displayName: snapshot.name,
       x: snapshot.x,
       y: snapshot.y,
       z: snapshot.z,
@@ -1933,6 +1934,7 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../..
     return {
       unitId: snapshot.unitId,
       account: "",
+      displayName: snapshot.name,
       x: snapshot.x,
       y: snapshot.y,
       z: snapshot.z,
@@ -1956,6 +1958,7 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../..
   return {
     unitId: snapshot.unitId,
     account: snapshot.account,
+    displayName: snapshot.account,
     x: snapshot.x,
     y: snapshot.y,
     z: snapshot.z,

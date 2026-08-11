@@ -156,6 +156,7 @@ function testGeneratedScalarCodec(): void {
     alive: true,
     state: new Uint8Array([0, 1, 127, 128, 255]),
     account: "tester",
+    displayName: "测试实体",
     cellX: -1,
     cellZ: 2,
     numerics: [{ unitId: 42, numericType: 1, value: 9_007_199_254_740_993n }],

@@ -2884,11 +2884,13 @@ static func encode_map_entity_snapshot(value: Dictionary) -> PackedByteArray:
 		varint_field(result, 15, int(value["entity_type"]))
 	if value.has("config_id"):
 		varint_field(result, 16, int(value["config_id"]))
+	if value.has("display_name"):
+		string_field(result, 17, String(value["display_name"]))
 	return result
 
 static func decode_map_entity_snapshot(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"unit_id": 0, "x": 0.0, "z": 0.0, "yaw": 0.0, "alive": false, "state": PackedByteArray(), "account": "", "cell_x": 0, "cell_z": 0, "numerics": [], "speed_cells_per_second": 0.0, "facing": 0, "y": 0.0, "buffs": [], "entity_type": 0, "config_id": 0}
+	var result := {"unit_id": 0, "x": 0.0, "z": 0.0, "yaw": 0.0, "alive": false, "state": PackedByteArray(), "account": "", "cell_x": 0, "cell_z": 0, "numerics": [], "speed_cells_per_second": 0.0, "facing": 0, "y": 0.0, "buffs": [], "entity_type": 0, "config_id": 0, "display_name": ""}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -2970,6 +2972,11 @@ static func decode_map_entity_snapshot(payload: PackedByteArray) -> Dictionary:
 			16:
 				if tag.wire == 0:
 					result["config_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			17:
+				if tag.wire == 2:
+					result["display_name"] = reader.string_value()
 				else:
 					reader.skip(tag.wire)
 			_:

@@ -127,6 +127,9 @@ async function main(): Promise<void> {
   unit.AddComponent(CombatComponent);
   const buffs = unit.AddComponent(BuffComponent);
   const items = unit.AddComponent(ItemComponent);
+  assert.deepEqual(items.Snapshot(), []);
+  items.GrantItem(1001, 50);
+  items.GrantItem(1002, 20);
   const sourceSkill = unit.AddComponent(SkillComponent);
   const quests = unit.AddComponent(QuestComponent);
   const repository = new ControllablePlayerRepository();
@@ -247,7 +250,7 @@ async function main(): Promise<void> {
   assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 50);
   const reward = await quests.CompleteQuest(5001);
   assert.equal(reward.rewardItems[0]?.configId, 1001);
-  assert.equal(reward.rewardItems[0]?.count, 52);
+  assert.equal(reward.rewardItems[0]?.count, 60);
   assert.equal(items.Snapshot().filter((item) => item.configId === 1001).length, 1);
   const followUpQuest = quests.AcceptQuest(5005);
   assert.equal(followUpQuest.status, QuestStatus.InProgress);
@@ -261,9 +264,9 @@ async function main(): Promise<void> {
   assert.equal(followUpProgress[0]?.status, QuestStatus.ReadyToTurnIn);
   const duplicateReward = await quests.CompleteQuest(5001);
   assert.deepEqual(duplicateReward, reward);
-  assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 52);
+  assert.equal(items.Snapshot().find((item) => item.configId === 1001)?.count, 60);
   const splitStacks = items.GrantItem(1001, 60);
-  assert.deepEqual(splitStacks.map((item) => item.count), [99, 13]);
+  assert.deepEqual(splitStacks.map((item) => item.count), [99, 21]);
   assert.throws(() => items.RemoveItem(splitStacks[0]!.itemId, -1), /positive safe integer/);
   const batchGrant = ExecuteActionBatch(unit, [
     { type: ActionType.GrantItem, parameters: [1002n, 1n] },

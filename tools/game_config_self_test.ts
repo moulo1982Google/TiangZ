@@ -101,6 +101,8 @@ function main(): void {
   assert.equal(serverConfigs.QuestObjectiveConfig.Get(5101).requiredCount, 5);
   assert.equal(serverConfigs.QuestObjectiveConfig.Get(5105).targetConfigId, 2);
   assert.equal(serverConfigs.QuestObjectiveConfig.Get(5105).requiredCount, 5);
+  assert.deepEqual(serverConfigs.QuestConfig.Get(5001).rewardActionParams, [1001, 10]);
+  assert.deepEqual(serverConfigs.QuestConfig.Get(5005).rewardActionParams, [1002, 10]);
   assert.deepEqual(serverConfigs.QuestConfig.Get(5005).requiredQuestIds, [5001]);
   assert.deepEqual(
     [...serverConfigs.QuestConfig.GetAll()]

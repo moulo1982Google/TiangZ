@@ -226,7 +226,7 @@ MapHost -> MapScene
 
 `PlayerConfig`表示创建玩家时的基础模板，不表示某个玩家升级后的等级、经验、当前生命或背包结果。运行时状态属于Entity/Component和持久化记录。配置对象与数组只读；`GetAll()`只用于低频初始化和管理流程，帧内热路径应按ID查询或预先建立明确索引。
 
-技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。施法期间`SkillComponent.IsCasting()`为真，平A只能保留攻击意图，不能继续推进读条；移动仍按技能配置决定是否中断。Demo中玩家受到怪物的真实HP伤害时，地图技能调度器把当前施法`finishAtMs`延后500ms，并广播新的`G2C_SkillCastState`；这不是通用Combat副作用，不能在Combat里查询Skill或Buff。是否允许移动、何时重置平A均读取`SkillConfig`显式策略，不按技能名称或伤害类型猜测。目标选择、Cast时间线和Action效果必须分层：`SkillConfig.xlsx`描述施法规则，服务端`SkillEffectConfig.xlsx`描述有序Action，伤害/治疗进入Combat、Buff进入BuffComponent。新技能不能用`ChangeNumeric(CurrentHp, delta)`绕过Combat。配置Reload后，已接受的ActiveCast和Projectile继续使用冻结旧定义，新Cast读取新配置。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
+技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。施法期间`SkillComponent.IsCasting()`为真，平A只能保留攻击意图，不能继续推进读条；移动仍按技能配置决定是否中断。Demo中玩家受到怪物的真实HP伤害时，地图技能调度器把当前施法`finishAtMs`延后1000ms，并广播新的`G2C_SkillCastState`；这不是通用Combat副作用，不能在Combat里查询Skill或Buff。是否允许移动、何时重置平A均读取`SkillConfig`显式策略，不按技能名称或伤害类型猜测。目标选择、Cast时间线和Action效果必须分层：`SkillConfig.xlsx`描述施法规则，服务端`SkillEffectConfig.xlsx`描述有序Action，伤害/治疗进入Combat、Buff进入BuffComponent。新技能不能用`ChangeNumeric(CurrentHp, delta)`绕过Combat。配置Reload后，已接受的ActiveCast和Projectile继续使用冻结旧定义，新Cast读取新配置。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
 
 游戏配置的表名、字段、类型、分组、索引和引用关系属于Model，不能热更；变化后必须完整构建、重启相关Process并同步客户端SDK。只修改数据行或字段值时，`build:game-config:startup`会重新生成并覆盖服务器重启使用的`dist/game-config`；`build:game-config`只生成独立候选，可通过Watcher的`reload-config`原子切换服务端快照。`test:game-config`只验证，不更新启动目录。Reload不重跑Awake、不修改既有Entity状态；业务不要长期缓存配置行，应在真正使用数值时通过`GameConfigs`查询。客户端数据仍随SDK发布，不能把服务端Reload当作客户端配置下发。详细格式和示例见[游戏配置教程](../tutorials/10-game-config.md)。
 
@@ -707,7 +707,7 @@ if (npc) {
 
 - NPC UnitId只是当前地图实例的运行时实体地址，不能保存为任务归属或玩家数据；任务保存的是`questConfigId`和Quest状态。
 - Handler只转换协议，不能直接判断距离、修改Quest状态或绕过mailbox。服务端必须同时检查NPC仍在当前Map、确实提供该任务、玩家在交互范围内以及Quest自身的Veto/前置条件。
-- Starter的Map 100固定创建`npcConfigId=9001`的紫色方块任务使者，交互范围为5米；Map 100使用Demo专用宽视野`AoiConfig=2`，7×7 Grid建立可见关系、9×9 Grid作为Detach边界，远端刷怪区放置三只被动黄色怪和两只主动红色怪，任务5001要求击败5只怪A，任务5005要求交付5001后击败5只怪B，避免新玩家出生即进入战斗。怪物头顶表现读取`MonsterConfig.name`，不把名字复制进运行时协议。Starter当前所有QuestConfig都关闭自动接取，任务只能由NPC/剧情等明确业务入口发起。Cocos3D的桌面端和移动端都遵循“靠近5米显示交互按钮 -> 打开NPC对话 -> 点击接取/交付任务”流程；选中NPC、看到NPC或打开对话框都不能直接改变任务状态。后续对话、多个NPC和可重复任务只扩展配置与领域行为，不复制第二套NPC网络系统。
+- Starter的Map 100固定创建`npcConfigId=9001`的紫色方块任务使者，交互范围为5米；Map 100使用Demo专用宽视野`AoiConfig=2`，7×7 Grid建立可见关系、9×9 Grid作为Detach边界，远端刷怪区放置三只被动黄色怪和两只主动红色怪，任务5001要求击败5只怪A，任务5005要求交付5001后击败5只怪B，避免新玩家出生即进入战斗。`MapEntitySnapshot.displayName`是服务端提供的公开名称：玩家使用角色名，NPC和怪物使用各自冷配置名称；客户端只负责显示，不能通过`configId`猜测或硬编码业务名称。Starter当前所有QuestConfig都关闭自动接取，任务只能由NPC/剧情等明确业务入口发起。Cocos3D的桌面端和移动端都遵循“靠近5米显示交互按钮 -> 打开NPC对话 -> 点击接取/交付任务”流程；选中NPC、看到NPC或打开对话框都不能直接改变任务状态。后续对话、多个NPC和可重复任务只扩展配置与领域行为，不复制第二套NPC网络系统。
 
 ## 广播给谁与如何广播
 
@@ -1063,6 +1063,8 @@ entity Item extends Entity {
 
 后端正式发布使用本机Docker的Linux构建环境生成`linux-amd64` Release制品。外网机器只接收可执行文件、`dist`、`configs`、导航资源、版本信息和校验文件，不接收源码、Cargo工程、Node依赖或构建缓存。Runtime会从当前发布目录解析资源，因此制品可以从构建机复制到任意部署路径。
 
+外网2C2G要验证账号和玩家数据重启恢复时，还要部署独立DBProxy。Ubuntu 24.04安装`docker.io`和`docker-compose-v2`后，使用DBProxy仓库的Compose文件启动Redis/PostgreSQL；两个容器只绑定`127.0.0.1`。DBProxy服务监听`127.0.0.1:7800`，两个TiangZ Process的`persistence.dbProxy`都必须启用，令牌放进systemd环境文件。不要把本机开发`.env`、数据库密码或公网凭据复制进仓库，也不要让业务Handler直接访问Redis/PostgreSQL。
+
 日常Linux发布执行`npm run release:linux`。固定Builder镜像只保存Node、Rust、.NET Runtime、Luban和依赖，不保存业务源码；工具指纹未变化时不得重新下载工具链。每次发布仍必须重新执行Excel/Luban生成、全部codegen、TS构建和Rust Release编译，不能因为复用镜像而复用旧生成代码。只有修改`package-lock.json`、Cargo依赖/锁、Rust工具链、Luban版本或Builder Dockerfile时，才允许自动重建一次镜像。
 
 ## Action、Buff与Skill的当前规则
@@ -1077,7 +1079,7 @@ Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat mod
 
 ## 道具出生与快捷栏
 
-Demo要观察道具链路时，`ItemComponentSystem.Awake`会创建两叠测试道具：`1001`数量50、`1002`数量20。它只属于新建Unit的演示种子；`RestoreTransfer`、重连和数据库恢复必须使用快照，不能重新调用种子逻辑，否则会重复发放。正式玩家数据接入后，应删除或替换这段Demo种子。
+Demo新玩家不再由`ItemComponentSystem.Awake`创建测试道具，初始背包为空。Starter任务5001完成后奖励`1001×10`，后续任务5005完成后奖励`1002×10`；`RestoreTransfer`、重连和数据库恢复必须使用快照，不能在创建Unit时再次发放。快捷栏可以固定绑定1001/1002，但空背包必须显示为空槽并拒绝使用，不能把快捷键映射误当作赠送道具。
 
 `ItemConfig.icon`放在客户端分组，填写相对`assets/resources`的Cocos资源键，例如`UI/Icons/Items/1001`，前端通过配置解析图标。Cocos3D Web的快捷栏固定约定为`1`切换平A、`2`发送1001使用请求、`3`发送1002使用请求；显示数量先读进图`G2C_EnterMap.items`，后续只接受`G2C_ItemChanged`更新。按键或按钮不能直接修改本地数量，也不能把`itemId`写死；应先按`configId`找到服务端快照中的具体Item实例，再调用生成的`MapClient.useItem`。
 

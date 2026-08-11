@@ -22,6 +22,8 @@ message MapEntitySnapshot
   uint32 entity_type = 15;
   // 玩家配置ID或怪物配置ID；不承载运行时状态。 / PlayerConfigId or MonsterConfigId; this is not runtime state.
   uint32 config_id = 16;
+  // 世界空间头顶HUD使用的公开名称；不把账号、配置ID或本地化逻辑交给客户端猜测。 / Public world-space display name for overhead HUDs; clients must not infer it from account or config IDs.
+  string display_name = 17;
 }
 
 message CellMovementState
