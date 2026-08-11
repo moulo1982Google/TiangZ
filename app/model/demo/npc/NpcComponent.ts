@@ -7,7 +7,7 @@ import { NpcUnit } from "./NpcUnit";
 export const STARTER_NPC_UNIT_ID = 0x4000_0001;
 export const STARTER_NPC_CONFIG_ID = 9001;
 export const STARTER_NPC_NAME = "任务使者";
-export const STARTER_NPC_QUEST_CONFIG_IDS = [5001, 5002, 5003, 5004, 5005] as const;
+export const STARTER_NPC_QUEST_CONFIG_IDS = [5001, 5002, 5003, 5004, 5005, 5006] as const;
 export const STARTER_NPC_INTERACT_RANGE_METERS = 5;
 
 export interface NpcComponent {

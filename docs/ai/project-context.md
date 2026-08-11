@@ -487,3 +487,7 @@ Cocos3D的本地Buff栏从`MapEntitySnapshot.buffs`、`M2C_UseItem.buff`和`G2C_
 ## Unity、UE、Godot客户端收口
 
 Cocos3D是业务表现参考，但不是唯一客户端实现。Unity C#、UE C++、Godot GDScript已经接入同一组生成协议：技能请求和读条/CD、Buff增删与详情、任务进度/接取/交付、怪物Numeric/Alive/死亡表现。三套客户端可以使用不同的HUD、节点和弹道样式，但都必须遵守“服务端结算，客户端表现”的边界。Unity使用`LoginFlow`，UE使用`FTiangZLoginFlow::SetFeatureCallbacks`，Godot使用`TiangZClient`信号；生成协议、msgcode和Codec禁止在客户端手工复制。
+
+## 任务掉落与尸体拾取
+
+Starter的掉落链是`MonsterConfig.drop_table_id -> DropTableConfig -> LootContainer -> C2M_LootMonster`。`quest_objective_id=0`表示普通全局一次性掉落，非零表示按账号筛选的任务掉落；玩家必须先接取匹配的`CollectItem`任务，剩余数量为0时任务行继续留在尸体上，不会再生成Item。拾取在PlayerUnit有序mailbox中完成距离、资格、数量和operationId检查，Inventory/Quest先生成纯数据计划，DBProxy确认后才提交Entity和私有结果。当前1101是静态任务道具，动态ItemInstance必须保存实例数据，不能套用“尸体只保存配置ID、拾取时生成ItemId”的快捷路径。完整规则见`docs/design/loot-and-task-items.md`。

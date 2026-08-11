@@ -25,12 +25,23 @@ import {
   type DamageRequest,
   type DamageResult,
   type M2C_AttackMonster,
+  type M2C_LootMonster,
+  M2C_LootMonsterCodec,
   type MonsterAreaConfigData,
   type MonsterConfigData,
   type MonsterRuntimeState,
+  ItemComponent,
+  PlayerPersistenceComponent,
+  QuestComponent,
+  type QuestState,
+  type QuestSnapshot,
+  QuestStatus,
+  QuestObjectiveType,
+  type LootContainer,
+  type LootDrop,
+  ToInventoryGrants,
   systemFor,
   QuestEvents,
-  QuestObjectiveType,
 } from "#tiangz/model";
 import { MonsterBehaviorTree } from "./MonsterBehaviorTree";
 
@@ -38,6 +49,8 @@ const MONSTER_ACTIVE_ACQUIRE_RANGE_METERS = 12;
 const DEMO_PLAYER_CONFIG_ID = 1;
 const AUTO_ATTACK_FACING_HALF_ANGLE = Math.PI / 3;
 const MONSTER_ID_MAX = 0xffff_ffff;
+const MONSTER_LOOT_RANGE_METERS = 4;
+const LOOT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 const monsterBehaviorTree = new MonsterBehaviorTree();
 
 /**
@@ -145,6 +158,100 @@ export class MonsterComponentSystem extends MonsterComponent {
     };
   }
 
+  /**
+   * 拾取尸体的完整事务边界：先同步锁定掉落行，再规划背包和任务快照，最后一次提交Player事务。
+   * 未接任务的任务掉落不会进入计划；任务已经达到需求数量时，该行仍留在尸体上，等待其他有资格的玩家。
+   *
+   * Resolves corpse loot as one transaction: reserve rows synchronously,
+   * plan inventory and quest snapshots, then commit one Player transaction.
+   * Quest-gated rows are invisible to players without the quest, and stay on
+   * the corpse after this player has already reached the required count.
+   */
+  async LootMonster(player: PlayerUnit, monsterId: number, operationId: string): Promise<M2C_LootMonster> {
+    this.RequireMapUnit(player);
+    if (!LOOT_OPERATION_ID_PATTERN.test(operationId)) {
+      throw new RpcError(GameErrCode.LootNotAvailable, "invalid loot operation id");
+    }
+    const container = this.lootContainers.get(monsterId);
+    const monster = this.monsters.get(monsterId);
+    if (!container || !monster || TimeSystem.Instance.ServerNow >= container.expiresAtMs) {
+      throw new RpcError(GameErrCode.LootNotAvailable, `loot is not available: ${monsterId}`);
+    }
+    if (monster.GetComponent(NativeUnitRef).alive !== 0) {
+      throw new RpcError(GameErrCode.LootNotAvailable, `monster is still alive: ${monsterId}`);
+    }
+    const playerPosition = player.GetComponent(PositionComponent);
+    const monsterPosition = monster.GetComponent(PositionComponent);
+    if (distanceSquared(playerPosition.x, playerPosition.z, monsterPosition.x, monsterPosition.z)
+      > MONSTER_LOOT_RANGE_METERS * MONSTER_LOOT_RANGE_METERS) {
+      throw new RpcError(GameErrCode.LootTooFar, `loot is too far: ${monsterId}`);
+    }
+
+    const scopedOperationId = `loot:${player.Account}:${operationId}`;
+    const committed = container.committedResponses.get(scopedOperationId);
+    if (committed) return cloneLootResponse(committed);
+    if (container.inFlightOperations.has(scopedOperationId)) {
+      throw new RpcError(GameErrCode.LootAlreadyClaimed, `loot operation is already running: ${operationId}`);
+    }
+
+    const selected = this.SelectLootDrops(container, player);
+    if (selected.length === 0) {
+      throw new RpcError(GameErrCode.LootNotAvailable, `no eligible loot remains: ${monsterId}`);
+    }
+    const quest = player.GetComponent(QuestComponent);
+    const questProgress = this.PlanLootQuestProgress(player, selected);
+    const inventory = player.GetComponent(ItemComponent);
+    const inventoryPlan = inventory.PlanGrantItems(ToInventoryGrants(selected));
+    const persistence = player.GetComponent(PlayerPersistenceComponent);
+    const baseData = persistence.Capture("monster-loot", { items: inventoryPlan.nextItems });
+    const data = {
+      ...baseData,
+      quests: mergeQuestProgress(baseData.quests, questProgress),
+    };
+    const response: M2C_LootMonster = {
+      monsterId,
+      items: inventoryPlan.affectedItems.map((item) => ({ ...item })),
+      quests: questProgress.map(toProtocolQuest),
+    };
+    const encodedResponse = M2C_LootMonsterCodec.encode(response);
+    this.ReserveLoot(container, player.Account, scopedOperationId, selected);
+    let durableCommitted = false;
+    try {
+      let committedResult: { result: Uint8Array };
+      try {
+        committedResult = await persistence.ApplyTransaction(scopedOperationId, data, encodedResponse);
+      } catch (error) {
+        const receipt = await persistence.LoadTransaction(scopedOperationId);
+        if (!receipt) throw error;
+        committedResult = receipt;
+      }
+      // DBProxy一旦返回提交结果，掉落行就不能再释放；本地提交或推送失败时也必须保留回执供重试读取。
+      // Once DBProxy returns a committed result, loot rows must stay claimed; cache the receipt before local apply or publish.
+      durableCommitted = true;
+      const durable = decodeLootResponse(committedResult.result, monsterId);
+      this.CommitLoot(container, player.Account, scopedOperationId, selected);
+      container.committedResponses.set(scopedOperationId, cloneLootResponse(durable));
+      if (bytesEqual(committedResult.result, encodedResponse)) {
+        inventory.CommitGrantPlan(inventoryPlan);
+        quest.ApplyCommittedProgress(questProgress);
+      } else {
+        inventory.ApplyCommittedGrantItems(durable.items);
+        quest.ApplyCommittedProgress(fromProtocolQuest(durable.quests));
+      }
+      await this.PublishLootResult(player, durable);
+      return cloneLootResponse(durable);
+    } catch (error) {
+      // DBProxy已经确认后不能释放保留行，否则另一个玩家可能再次领取同一份普通掉落。
+      // Once DBProxy confirms, reservations must stay claimed; releasing them could duplicate a regular drop.
+      if (!durableCommitted && !container.committedResponses.has(scopedOperationId)) {
+        this.ReleaseLoot(container, player.Account, scopedOperationId, selected);
+      }
+      throw error;
+    } finally {
+      container.inFlightOperations.delete(scopedOperationId);
+    }
+  }
+
   /** 技能和平A共享怪物受伤后的仇恨与死亡边界；调用者不得只改Combat后忘记移除死亡怪。 / Skills and auto-attacks share threat and death handling so callers cannot damage Combat and forget monster removal. */
   ApplyPlayerDamage(
     attacker: PlayerUnit,
@@ -201,6 +308,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
     this.monsters.clear();
     this.runtime.clear();
+    this.lootContainers.clear();
     this.slots.clear();
   }
 
@@ -299,6 +407,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     slot.monster = null;
     this.monsters.delete(corpse.UnitId);
     this.runtime.delete(corpse.UnitId);
+    this.lootContainers.delete(corpse.UnitId);
     const changes = this.aoi.IsAttached(corpse) ? this.aoi.Detach(corpse) : [];
     this.units.Remove(corpse.UnitId);
     if (changes.length > 0) {
@@ -497,6 +606,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     const config = slot.config.monsterConfigId_ref
       ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
     slot.respawnAtMs = now + config.respawnSeconds * 1_000;
+    this.CreateLootContainer(monster, config, slot.respawnAtMs);
     const native = monster.GetComponent(NativeUnitRef);
     native.alive = 0;
     NativeData.ResetMovement(native.Handle);
@@ -506,6 +616,133 @@ export class MonsterComponentSystem extends MonsterComponent {
     // The dead Unit remains as a corpse for impact, death, Buff cleanup, and future loot visuals.
     // Runtime AI is removed and alive=0 rejects new attacks; Respawn later publishes Leave before creating a new UnitId.
     this.runtime.delete(monster.UnitId);
+  }
+
+  /** 根据冷掉落表创建尸体容器；任务行先落在尸体上，是否能拿由拾取者的任务状态决定。 / Creates a corpse container from cold drop rows; quest rows stay on the corpse and eligibility is checked at pickup time. */
+  private CreateLootContainer(monster: MonsterUnit, config: MonsterConfigData, expiresAtMs: number): void {
+    if (config.dropTableId <= 0) return;
+    const drops = GameConfigs.DropTableConfig.GetAll()
+      .filter((drop) => drop.dropTableId === config.dropTableId)
+      .filter((drop) => drop.chancePermille > deterministicDropRoll(monster.UnitId, monster.InstanceId, drop.id))
+      .map((drop): LootDrop => ({
+        dropId: drop.id,
+        configId: drop.itemConfigId,
+        count: deterministicDropCount(drop.minCount, drop.maxCount, monster.UnitId, drop.id),
+        questObjectiveId: drop.questObjectiveId,
+      }));
+    if (drops.length === 0) return;
+    this.lootContainers.set(monster.UnitId, {
+      monsterUnitId: monster.UnitId,
+      corpseGeneration: monster.InstanceId,
+      drops,
+      expiresAtMs,
+      reservedGlobalDropIds: new Set(),
+      reservedTaskDropIdsByAccount: new Map(),
+      claimedGlobalDropIds: new Set(),
+      claimedTaskDropIdsByAccount: new Map(),
+      inFlightOperations: new Set(),
+      committedResponses: new Map(),
+    });
+  }
+
+  /** 选择当前玩家有资格且尚未被预留的掉落；任务目标已完成时跳过该行而不是删掉尸体内容。 / Selects eligible, unreserved rows and leaves completed quest rows on the corpse. */
+  private SelectLootDrops(container: LootContainer, player: PlayerUnit): LootDrop[] {
+    const quest = player.GetComponent(QuestComponent);
+    const taskReserved = container.reservedTaskDropIdsByAccount.get(player.Account);
+    const taskClaimed = container.claimedTaskDropIdsByAccount.get(player.Account);
+    const selected: LootDrop[] = [];
+    for (const drop of container.drops) {
+      if (drop.questObjectiveId === 0) {
+        if (container.claimedGlobalDropIds.has(drop.dropId) || container.reservedGlobalDropIds.has(drop.dropId)) continue;
+        selected.push(drop);
+        continue;
+      }
+      if (taskClaimed?.has(drop.dropId) || taskReserved?.has(drop.dropId)) continue;
+      const objective = GameConfigs.QuestObjectiveConfig.Get(drop.questObjectiveId);
+      const remaining = quest.RemainingProgress(objective.objectiveType, objective.targetConfigId);
+      if (remaining <= 0) continue;
+      selected.push({ ...drop, count: Math.min(drop.count, remaining) });
+    }
+    return selected;
+  }
+
+  /** 把一次拾取中的多个任务掉落合并为任务事实，避免同一物品重复触发多次状态更新。 / Merges task drops into one quest fact so one pickup does not emit repeated state updates. */
+  private PlanLootQuestProgress(player: PlayerUnit, drops: readonly LootDrop[]): readonly QuestState[] {
+    const counts = new Map<number, number>();
+    for (const drop of drops) {
+      if (drop.questObjectiveId === 0) continue;
+      const objective = GameConfigs.QuestObjectiveConfig.Get(drop.questObjectiveId);
+      counts.set(objective.targetConfigId, (counts.get(objective.targetConfigId) ?? 0) + drop.count);
+    }
+    const quest = player.GetComponent(QuestComponent);
+    const planned = new Map<number, QuestState>();
+    for (const [targetConfigId, count] of counts) {
+      for (const state of quest.PlanProgress({
+        player,
+        objectiveType: QuestObjectiveType.CollectItem,
+        targetConfigId,
+        count,
+      })) {
+        planned.set(state.questConfigId, state);
+      }
+    }
+    return [...planned.values()].sort((left, right) => left.questConfigId - right.questConfigId);
+  }
+
+  /** 在跨DBProxy await前同步预留行，阻止不同玩家并发重复领取同一普通掉落。 / Reserves rows before the DBProxy await to prevent cross-player duplicate claims. */
+  private ReserveLoot(container: LootContainer, account: string, operationId: string, drops: readonly LootDrop[]): void {
+    container.inFlightOperations.add(operationId);
+    const taskRows = new Set<number>();
+    for (const drop of drops) {
+      if (drop.questObjectiveId === 0) container.reservedGlobalDropIds.add(drop.dropId);
+      else taskRows.add(drop.dropId);
+    }
+    if (taskRows.size > 0) {
+      const rows = container.reservedTaskDropIdsByAccount.get(account) ?? new Set<number>();
+      for (const dropId of taskRows) rows.add(dropId);
+      container.reservedTaskDropIdsByAccount.set(account, rows);
+    }
+  }
+
+  /** DBProxy确认后把预留移动为已领取；普通行全局生效，任务行只对当前账号生效。 / Moves reservations to committed claims after DBProxy confirmation. */
+  private CommitLoot(container: LootContainer, account: string, operationId: string, drops: readonly LootDrop[]): void {
+    for (const drop of drops) {
+      if (drop.questObjectiveId === 0) {
+        container.reservedGlobalDropIds.delete(drop.dropId);
+        container.claimedGlobalDropIds.add(drop.dropId);
+      }
+    }
+    const reserved = container.reservedTaskDropIdsByAccount.get(account);
+    const claimed = container.claimedTaskDropIdsByAccount.get(account) ?? new Set<number>();
+    for (const drop of drops) {
+      if (drop.questObjectiveId === 0) continue;
+      reserved?.delete(drop.dropId);
+      claimed.add(drop.dropId);
+    }
+    if (reserved && reserved.size === 0) container.reservedTaskDropIdsByAccount.delete(account);
+    if (claimed.size > 0) container.claimedTaskDropIdsByAccount.set(account, claimed);
+    container.inFlightOperations.delete(operationId);
+  }
+
+  /** 事务失败且没有持久化回执时释放预留；已确认事务永远不走这里。 / Releases reservations only when no durable transaction receipt exists. */
+  private ReleaseLoot(container: LootContainer, account: string, operationId: string, drops: readonly LootDrop[]): void {
+    for (const drop of drops) {
+      if (drop.questObjectiveId === 0) container.reservedGlobalDropIds.delete(drop.dropId);
+    }
+    const reserved = container.reservedTaskDropIdsByAccount.get(account);
+    for (const drop of drops) {
+      if (drop.questObjectiveId !== 0) reserved?.delete(drop.dropId);
+    }
+    if (reserved && reserved.size === 0) container.reservedTaskDropIdsByAccount.delete(account);
+    container.inFlightOperations.delete(operationId);
+  }
+
+  /** 私有掉落结果同时刷新背包和任务栏；广播失败不回滚已经提交的事务。 / Publishes private inventory and quest results without rolling back a committed transaction on delivery failure. */
+  private async PublishLootResult(player: PlayerUnit, response: M2C_LootMonster): Promise<void> {
+    for (const item of response.items) await this.map.PublishItemChanged(player, item);
+    if (response.quests.length > 0) {
+      await this.map.PublishQuestProgress(player, fromProtocolQuest(response.quests));
+    }
   }
 
   /**
@@ -623,4 +860,79 @@ function readAttackIntervalMs(numeric: NumericComponent): number {
 function normalizeRadians(value: number): number {
   const fullTurn = Math.PI * 2;
   return ((value + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
+}
+
+function deterministicDropRoll(monsterId: number, corpseGeneration: number, dropId: number): number {
+  let value = Math.imul(monsterId, 0x9e3779b1);
+  value = Math.imul(value ^ corpseGeneration, 0x85ebca6b);
+  value = Math.imul(value ^ dropId, 0xc2b2ae35) >>> 0;
+  return value % 1000;
+}
+
+function deterministicDropCount(minCount: number, maxCount: number, monsterId: number, dropId: number): number {
+  if (minCount === maxCount) return minCount;
+  const width = maxCount - minCount + 1;
+  return minCount + (deterministicDropRoll(monsterId, 0, dropId) % width);
+}
+
+function mergeQuestProgress(
+  base: { readonly active: readonly QuestState[]; readonly completedQuestConfigIds: readonly number[] },
+  changed: readonly QuestState[],
+): { active: QuestState[]; completedQuestConfigIds: number[] } {
+  const states = new Map(base.active.map((quest) => [quest.questConfigId, quest]));
+  for (const quest of changed) states.set(quest.questConfigId, quest);
+  return {
+    active: [...states.values()].sort((left, right) => left.questConfigId - right.questConfigId),
+    completedQuestConfigIds: [...base.completedQuestConfigIds],
+  };
+}
+
+function toProtocolQuest(value: QuestState): QuestSnapshot {
+  return {
+    questConfigId: value.questConfigId,
+    objectives: value.objectives.map((objective) => ({ ...objective })),
+    readyToComplete: value.status === QuestStatus.ReadyToTurnIn,
+    status: value.status,
+    revision: value.revision,
+  };
+}
+
+function fromProtocolQuest(values: readonly QuestSnapshot[]): QuestState[] {
+  return values.map((value) => ({
+    questConfigId: value.questConfigId,
+    objectives: value.objectives.map((objective) => ({ ...objective })),
+    readyToComplete: value.readyToComplete,
+    status: value.status,
+    revision: value.revision,
+  }));
+}
+
+function cloneLootResponse(value: M2C_LootMonster): M2C_LootMonster {
+  return {
+    monsterId: value.monsterId,
+    items: value.items.map((item) => ({ ...item })),
+    quests: value.quests.map((quest) => ({
+      questConfigId: quest.questConfigId,
+      objectives: quest.objectives.map((objective) => ({ ...objective })),
+      readyToComplete: quest.readyToComplete,
+      status: quest.status,
+      revision: quest.revision,
+    })),
+  };
+}
+
+function decodeLootResponse(payload: Uint8Array, monsterId: number): M2C_LootMonster {
+  const value = M2C_LootMonsterCodec.decode(payload);
+  if (value.monsterId !== monsterId || !Array.isArray(value.items) || !Array.isArray(value.quests)) {
+    throw new Error(`loot receipt mismatch: ${value.monsterId} != ${monsterId}`);
+  }
+  return cloneLootResponse(value);
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }

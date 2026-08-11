@@ -25,6 +25,7 @@ export interface Quest {
   readonly ConfigId: number;
   Snapshot(): QuestState;
   Advance(objectiveId: number, count: number): boolean;
+  Restore(state: QuestState): void;
 }
 
 /**

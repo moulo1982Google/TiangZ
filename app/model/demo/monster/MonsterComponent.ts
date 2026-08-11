@@ -7,6 +7,8 @@ import {
 import type { MonsterAreaConfig } from "../../../generated/model/config";
 import type { DamageRequest, DamageResult } from "../combat/CombatComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
+import type { M2C_LootMonster } from "../../../generated/model/server/demo/protocol/messages";
+import type { LootContainer } from "../loot/LootContainer";
 import { MapAoiComponent } from "../map/MapAoiComponent";
 import { MapComponent } from "../map/MapComponent";
 import { MonsterUnit } from "./MonsterUnit";
@@ -32,6 +34,7 @@ export interface MonsterComponent {
     monster: MonsterUnit,
     request: DamageRequest,
   ): DamageResult;
+  LootMonster(player: PlayerUnit, monsterId: number, operationId: string): Promise<M2C_LootMonster>;
 }
 
 /**
@@ -55,6 +58,8 @@ export class MonsterComponent extends Component<[
   protected readonly slots = new Map<number, MonsterSpawnSlot>();
   protected readonly monsters = new Map<number, MonsterUnit>();
   protected readonly runtime = new Map<number, MonsterRuntimeState>();
+  /** 尸体掉落归Map所有；它不能挂到MonsterUnit上，也不能随玩家迁移。 / Corpse loot belongs to the Map; it must not attach to MonsterUnit or migrate with a player. */
+  protected readonly lootContainers = new Map<number, LootContainer>();
   protected nextMonsterUnitId = 0x8000_0000;
 
   /** 查询本地图怪物；业务攻击、任务和掉落只通过这个入口取Unit。 / Looks up a map monster for attacks, quests, and drops. */

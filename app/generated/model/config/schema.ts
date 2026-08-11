@@ -85,6 +85,7 @@ export enum QuestObjectiveType {
     KillMonster = 1,
     UseItem = 2,
     EnterMap = 3,
+    CollectItem = 4,
 }
 
 
@@ -425,6 +426,69 @@ export class ConfigTablePolicy {
 
 
 export namespace game {
+export class DropTableConfig {
+
+    constructor(_json_: any) {
+        if (_json_.id === undefined) { throw new Error() }
+        this.id = _json_.id
+        if (_json_.drop_table_id === undefined) { throw new Error() }
+        this.dropTableId = _json_.drop_table_id
+        if (_json_.item_config_id === undefined) { throw new Error() }
+        this.itemConfigId = _json_.item_config_id
+        if (_json_.min_count === undefined) { throw new Error() }
+        this.minCount = _json_.min_count
+        if (_json_.max_count === undefined) { throw new Error() }
+        this.maxCount = _json_.max_count
+        if (_json_.chance_permille === undefined) { throw new Error() }
+        this.chancePermille = _json_.chance_permille
+        if (_json_.quest_objective_id === undefined) { throw new Error() }
+        this.questObjectiveId = _json_.quest_objective_id
+    }
+
+    /**
+     * 掉落记录ID
+     */
+    readonly id: number
+    /**
+     * 掉落表ID
+     */
+    readonly dropTableId: number
+    /**
+     * 道具配置ID
+     */
+    readonly itemConfigId: number
+    /**
+     * 最小数量
+     */
+    readonly minCount: number
+    /**
+     * 最大数量
+     */
+    readonly maxCount: number
+    /**
+     * 掉落概率（千分比）
+     */
+    readonly chancePermille: number
+    /**
+     * 任务目标ID；0表示普通掉落
+     */
+    readonly questObjectiveId: number
+
+    resolve(tables:Tables) {
+
+
+
+
+
+
+
+    }
+}
+
+}
+
+
+export namespace game {
 export class ItemConfig {
 
     constructor(_json_: any) {
@@ -714,6 +778,8 @@ export class MonsterConfig {
         this.skillId = _json_.skill_id
         if (_json_.respawn_seconds === undefined) { throw new Error() }
         this.respawnSeconds = _json_.respawn_seconds
+        if (_json_.drop_table_id === undefined) { throw new Error() }
+        this.dropTableId = _json_.drop_table_id
     }
 
     /**
@@ -764,8 +830,13 @@ export class MonsterConfig {
      * 死亡后重生秒数
      */
     readonly respawnSeconds: number
+    /**
+     * 掉落表配置ID；0表示不生成掉落
+     */
+    readonly dropTableId: number
 
     resolve(tables:Tables) {
+
 
 
 
@@ -1651,6 +1722,40 @@ export class TbQuestObjectiveConfig {
 }
 
 
+export namespace game {
+/**
+ * 掉落表配置
+ */
+export class TbDropTableConfig {
+    private _dataMap: Map<number, game.DropTableConfig>
+    private _dataList: game.DropTableConfig[]
+    constructor(_json_: any) {
+        this._dataMap = new Map<number, game.DropTableConfig>()
+        this._dataList = []
+        for(var _json2_ of _json_) {
+            let _v: game.DropTableConfig
+            _v = new game.DropTableConfig(_json2_)
+            this._dataList.push(_v)
+            this._dataMap.set(_v.id, _v)
+        }
+    }
+
+    getDataMap(): Map<number, game.DropTableConfig> { return this._dataMap; }
+    getDataList(): game.DropTableConfig[] { return this._dataList; }
+
+    get(key: number): game.DropTableConfig | undefined { return this._dataMap.get(key); }
+
+    resolve(tables:Tables) {
+        for(let  data of this._dataList)
+        {
+            data.resolve(tables)
+        }
+    }
+
+}
+}
+
+
 
 type JsonLoader = (file: string) => any
 
@@ -1720,6 +1825,11 @@ export class Tables {
      * 任务目标配置
      */
     get TbQuestObjectiveConfig(): game.TbQuestObjectiveConfig  { return this._TbQuestObjectiveConfig;}
+    private _TbDropTableConfig: game.TbDropTableConfig
+    /**
+     * 掉落表配置
+     */
+    get TbDropTableConfig(): game.TbDropTableConfig  { return this._TbDropTableConfig;}
 
     constructor(loader: JsonLoader) {
         this._TbItemConfig = new game.TbItemConfig(loader('game_tbitemconfig'))
@@ -1735,6 +1845,7 @@ export class Tables {
         this._TbSkillEffectConfig = new game.TbSkillEffectConfig(loader('game_tbskilleffectconfig'))
         this._TbQuestConfig = new game.TbQuestConfig(loader('game_tbquestconfig'))
         this._TbQuestObjectiveConfig = new game.TbQuestObjectiveConfig(loader('game_tbquestobjectiveconfig'))
+        this._TbDropTableConfig = new game.TbDropTableConfig(loader('game_tbdroptableconfig'))
 
         this._TbItemConfig.resolve(this)
         this._TbMapConfig.resolve(this)
@@ -1749,6 +1860,7 @@ export class Tables {
         this._TbSkillEffectConfig.resolve(this)
         this._TbQuestConfig.resolve(this)
         this._TbQuestObjectiveConfig.resolve(this)
+        this._TbDropTableConfig.resolve(this)
     }
 }
 

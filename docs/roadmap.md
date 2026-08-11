@@ -407,6 +407,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 - `ItemComponent`已经提供`GrantItem/GrantItems`以及纯数据`PlanGrantItems/CommitGrantPlan`。普通奖励继续同步执行；任务GrantItem奖励先规划奖励后快照，DBProxy确认关键事务后再无await提交Entity，失败不改变背包，ACK丢失按回执恢复且不重复发奖。
 - 任务领奖已经在PlayerUnit有序mailbox内同步完成奖励、完成记录和Quest ChildEntity移除；组队共享任务等待Party系统，不在Quest里提前模拟。
+- 已完成最小怪物掉落与任务物品链：`MonsterConfig.drop_table_id`引用`DropTableConfig`，尸体保留`LootContainer`，`C2M_LootMonster`按账号的活动`CollectItem`任务和剩余数量筛选任务行；未接任务或需求已满时任务行留在尸体，普通掉落仍是全局一次性领取。Inventory/Quest规划、DBProxy提交、operationId幂等和Cocos3D尸体拾取入口已接通。动态ItemInstance掉落、队伍分配和Boss专属奖励留在后续业务切片。
 - 技能系统增加3006引导治疗和3007精神鞭笞，验证10Hz分段Tick、移动打断、停止平A、公共CD、受击800毫秒施法惩罚和单技能排队；复杂目标、AOE和技能性能A/B仍待后续机器验收。
 - `npm run perf:business-chain`已准备真实业务链路压测，交替发送UseItem与友方CastSkill并区分业务拒绝和传输错误。正式CPU压力测试需用户提供空闲机器，当前只做编译验证。
 

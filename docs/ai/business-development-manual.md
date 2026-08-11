@@ -1098,3 +1098,9 @@ Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建�
 ## 可观测性边界
 
 业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。
+
+## 怪物掉落与任务物品
+
+任务掉落不能写成“怪物死亡时给附近所有玩家发一件物品”。开发者在`DropTableConfig`中用`quest_objective_id`声明它对应的`CollectItem`目标；`MonsterComponent`在尸体上保存掉落行，玩家调用`LootMonster`时再根据自己的Quest状态筛选。未接任务或已经达到要求数量时，拾取结果为无可用掉落，尸体行保留，不能删除或消耗别人的任务资格。普通掉落和任务掉落的领取范围不同，必须在配置/代码中明确，不能用一个全局`claimed`集合代替。
+
+拾取属于一次关键玩家事务：先规划Inventory/Quest纯数据，再使用稳定`operationId`提交DBProxy，成功后才创建静态Item、推进任务和广播。Handler只转发`monsterId + operationId`，不查询Quest、不扣库存、不手工发消息。动态词条、耐久、绑定等ItemInstance必须保存实例数据，不能把“拾取时生成静态ItemId”的Starter快捷路径误当成通用规则。完整流程见[`docs/design/loot-and-task-items.md`](../design/loot-and-task-items.md)。

@@ -13,6 +13,7 @@ import "../../hotfix/demo/mapHost/handlers/C2M_AttackMonsterHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_CastSkillHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_CompleteQuestHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_FindPathHandler";
+import "../../hotfix/demo/mapHost/handlers/C2M_LootMonsterHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_MapProbeHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_MoveHandler";
 import "../../hotfix/demo/mapHost/handlers/C2M_NavigateInputHandler";

@@ -5,6 +5,7 @@ import type { QuestState } from "../../../model/public";
 declare module "../../../model/demo/quest/Quest" {
   interface Quest {
     Advance(objectiveId: number, count: number): boolean;
+    Restore(state: QuestState): void;
     Snapshot(): QuestState;
     readonly ConfigId: number;
   }

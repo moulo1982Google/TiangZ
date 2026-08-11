@@ -22,7 +22,10 @@ export interface QuestComponent {
   Snapshot(): readonly QuestState[];
   CompletedQuestConfigIds(): readonly number[];
   HasCompletedQuest(questConfigId: number): boolean;
+  RemainingProgress(objectiveType: number, targetConfigId: number): number;
+  PlanProgress(event: import("./QuestEvents").QuestProgressEvent): readonly QuestState[];
   ApplyProgress(event: import("./QuestEvents").QuestProgressEvent): readonly QuestState[];
+  ApplyCommittedProgress(states: readonly QuestState[]): void;
 }
 
 /** 玩家任务集合；活动任务为ChildEntity，完成记录只保存配置ID。 / Player quest collection: active quests are ChildEntities and completed history stores config IDs only. */

@@ -39,4 +39,7 @@ export const GameErrCode = {
   PasswordRequired: 10038,
   PasswordInvalid: 10039,
   SessionReplaced: 10040,
+  LootNotAvailable: 10041,
+  LootTooFar: 10042,
+  LootAlreadyClaimed: 10043,
 } as const;

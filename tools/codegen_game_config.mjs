@@ -221,6 +221,7 @@ export type AoiConfig = game.AoiConfig;
 export type AoiSyncTierConfig = game.AoiSyncTierConfig;
 export type MonsterConfig = game.MonsterConfig;
 export type MonsterAreaConfig = game.MonsterAreaConfig;
+export type DropTableConfig = game.DropTableConfig;
 export type SkillConfig = game.SkillConfig;
 export type SkillEffectConfig = game.SkillEffectConfig;
 export type QuestConfig = game.QuestConfig;
@@ -238,6 +239,7 @@ interface GameConfigSnapshot {
   readonly AoiSyncTierConfig: ConfigTable<game.AoiSyncTierConfig>;
   readonly MonsterConfig: ConfigTable<game.MonsterConfig>;
   readonly MonsterAreaConfig: ConfigTable<game.MonsterAreaConfig>;
+  readonly DropTableConfig: ConfigTable<game.DropTableConfig>;
   readonly SkillConfig: ConfigTable<game.SkillConfig>;
   readonly SkillEffectConfig: ConfigTable<game.SkillEffectConfig>;
   readonly QuestConfig: ConfigTable<game.QuestConfig>;
@@ -303,6 +305,7 @@ export class GameConfigRegistry {
       AoiSyncTierConfig: new ConfigTable<game.AoiSyncTierConfig>(tables.TbAoiSyncTierConfig.getDataList()),
       MonsterConfig: new ConfigTable<game.MonsterConfig>(tables.TbMonsterConfig.getDataList()),
       MonsterAreaConfig: new ConfigTable<game.MonsterAreaConfig>(tables.TbMonsterAreaConfig.getDataList()),
+      DropTableConfig: new ConfigTable<game.DropTableConfig>(tables.TbDropTableConfig.getDataList()),
       SkillConfig: new ConfigTable<game.SkillConfig>(tables.TbSkillConfig.getDataList()),
       SkillEffectConfig: new ConfigTable<game.SkillEffectConfig>(tables.TbSkillEffectConfig.getDataList()),
       QuestConfig: new ConfigTable<game.QuestConfig>(tables.TbQuestConfig.getDataList()),
@@ -335,6 +338,7 @@ export const GameConfigs = Object.freeze({
   get AoiSyncTierConfig() { return GameConfigRegistry.RequireCurrent().AoiSyncTierConfig; },
   get MonsterConfig() { return GameConfigRegistry.RequireCurrent().MonsterConfig; },
   get MonsterAreaConfig() { return GameConfigRegistry.RequireCurrent().MonsterAreaConfig; },
+  get DropTableConfig() { return GameConfigRegistry.RequireCurrent().DropTableConfig; },
   get SkillConfig() { return GameConfigRegistry.RequireCurrent().SkillConfig; },
   get SkillEffectConfig() { return GameConfigRegistry.RequireCurrent().SkillEffectConfig; },
   get QuestConfig() { return GameConfigRegistry.RequireCurrent().QuestConfig; },
@@ -415,7 +419,7 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
   };
   for (const quest of snapshot.QuestConfig.GetAll()) visitQuest(quest.id);
   for (const objective of snapshot.QuestObjectiveConfig.GetAll()) {
-    if (!snapshot.QuestConfig.TryGet(objective.questConfigId) || objective.objectiveType < 1 || objective.objectiveType > 3 || objective.targetConfigId <= 0 || objective.requiredCount <= 0) {
+    if (!snapshot.QuestConfig.TryGet(objective.questConfigId) || objective.objectiveType < 1 || objective.objectiveType > 4 || objective.targetConfigId <= 0 || objective.requiredCount <= 0) {
       throw new Error(\`quest objective \${objective.id} has invalid owner, type, target, or count\`);
     }
   }
@@ -668,6 +672,31 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
       throw new Error(\`monster config \${monster.id} has invalid combat values\`);
     }
   }
+  const dropTableIds = new Set(snapshot.DropTableConfig.GetAll().map((drop) => drop.dropTableId));
+  for (const drop of snapshot.DropTableConfig.GetAll()) {
+    if (
+      !Number.isSafeInteger(drop.dropTableId) || drop.dropTableId <= 0 ||
+      !Number.isSafeInteger(drop.itemConfigId) || drop.itemConfigId <= 0 ||
+      !snapshot.ItemConfig.TryGet(drop.itemConfigId) ||
+      !Number.isSafeInteger(drop.minCount) || drop.minCount <= 0 ||
+      !Number.isSafeInteger(drop.maxCount) || drop.maxCount < drop.minCount ||
+      !Number.isSafeInteger(drop.chancePermille) || drop.chancePermille < 0 || drop.chancePermille > 1000 ||
+      !Number.isSafeInteger(drop.questObjectiveId) || drop.questObjectiveId < 0
+    ) {
+      throw new Error(\`drop table row \${drop.id} has invalid item, count, chance, or objective values\`);
+    }
+    if (drop.questObjectiveId > 0) {
+      const objective = snapshot.QuestObjectiveConfig.TryGet(drop.questObjectiveId);
+      if (!objective || objective.objectiveType !== 4 || objective.targetConfigId !== drop.itemConfigId) {
+        throw new Error(\`drop table row \${drop.id} references an incompatible CollectItem objective\`);
+      }
+    }
+  }
+  for (const monster of snapshot.MonsterConfig.GetAll()) {
+    if (monster.dropTableId > 0 && !dropTableIds.has(monster.dropTableId)) {
+      throw new Error(\`monster config \${monster.id} references missing drop table \${monster.dropTableId}\`);
+    }
+  }
   for (const area of snapshot.MonsterAreaConfig.GetAll()) {
     if (!area.mapConfigId_ref || !area.monsterConfigId_ref) {
       throw new Error(\`monster spawn slot \${area.id} contains a missing reference\`);
@@ -785,8 +814,37 @@ function validateGeneratedActionAndSkillData(data) {
   const buffs = data.game_tbbuffconfig;
   const skills = data.game_tbskillconfig;
   const effects = data.game_tbskilleffectconfig;
-  if (!Array.isArray(items) || !Array.isArray(buffs) || !Array.isArray(skills) || !Array.isArray(effects)) {
+  const drops = data.game_tbdroptableconfig;
+  const monsters = data.game_tbmonsterconfig;
+  const objectives = data.game_tbquestobjectiveconfig;
+  if (!Array.isArray(items) || !Array.isArray(buffs) || !Array.isArray(skills) || !Array.isArray(effects) || !Array.isArray(drops) || !Array.isArray(monsters) || !Array.isArray(objectives)) {
     throw new Error("Luban Item/Buff/Skill config tables are missing");
+  }
+  const itemIds = new Set(items.map((row) => row.id));
+  const objectiveById = new Map(objectives.map((row) => [row.id, row]));
+  const dropTableIds = new Set(drops.map((row) => row.drop_table_id));
+  for (const drop of drops) {
+    if (
+      !Number.isSafeInteger(drop.drop_table_id) || drop.drop_table_id <= 0 ||
+      !Number.isSafeInteger(drop.item_config_id) || drop.item_config_id <= 0 || !itemIds.has(drop.item_config_id) ||
+      !Number.isSafeInteger(drop.min_count) || drop.min_count <= 0 ||
+      !Number.isSafeInteger(drop.max_count) || drop.max_count < drop.min_count ||
+      !Number.isSafeInteger(drop.chance_permille) || drop.chance_permille < 0 || drop.chance_permille > 1000 ||
+      !Number.isSafeInteger(drop.quest_objective_id) || drop.quest_objective_id < 0
+    ) {
+      throw new Error(`DropTableConfig ${drop.id} has invalid item, count, chance, or objective values`);
+    }
+    if (drop.quest_objective_id > 0) {
+      const objective = objectiveById.get(drop.quest_objective_id);
+      if (!objective || objective.objective_type !== 4 || objective.target_config_id !== drop.item_config_id) {
+        throw new Error(`DropTableConfig ${drop.id} references an incompatible CollectItem objective`);
+      }
+    }
+  }
+  for (const monster of monsters) {
+    if (monster.drop_table_id > 0 && !dropTableIds.has(monster.drop_table_id)) {
+      throw new Error(`MonsterConfig ${monster.id} references missing DropTableConfig group ${monster.drop_table_id}`);
+    }
   }
   const buffIds = new Set(buffs.map((row) => row.id));
   for (const item of items) {

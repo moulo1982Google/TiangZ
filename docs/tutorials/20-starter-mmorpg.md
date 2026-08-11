@@ -102,6 +102,38 @@ await mapClient.completeQuest({
 
 不要在客户端直接把任务写入本地列表，也不要在Handler里复制距离判断。任务状态归`QuestComponent`，NPC的运行时地址只用于本次交互；NPC离开AOI、地图销毁或Unit重建都不应删除已接取任务。移动端的交互按钮必须使用客户端HUD的事件隔离方式，不能让点击按钮穿透成地面寻路。
 
+## 任务物品与尸体拾取
+
+Starter用任务5006演示“任务资格决定拾取资格”，它位于任务链5005之后：完成并交付5005后，再次和NPC对话接取5006，目标是收集5个怪物徽记。怪物A的`MonsterConfig.drop_table_id`指向掉落表，其中`quest_objective_id=5106`的行是任务掉落。
+
+流程不是“击杀后立刻给所有人发道具”，而是：
+
+```text
+击杀怪物
+  -> 尸体保存掉落配置ID和数量
+  -> 玩家选中尸体并靠近
+  -> C2M_LootMonster(monsterId, operationId)
+  -> 服务端检查已接任务和剩余需求
+  -> Inventory/Quest纯数据规划
+  -> DBProxy事务提交
+  -> 提交成功后生成Item、推进Quest、私有推送结果
+```
+
+业务代码只提交“拾取哪具尸体”，不能在客户端或Handler里判断任务数量：
+
+```ts
+const result = await mapClient.lootMonster({
+  monsterId: corpseUnitId,
+  operationId: CreateOperationId("loot"),
+});
+applyItemSnapshots(result.items);
+applyQuestSnapshots(result.quests);
+```
+
+任务掉落行只对已经接取且仍有剩余数量的`CollectItem`任务可见。没有接任务、已经达到要求数量、或同一账号已经拾取过该行时，服务端返回“没有可拾取掉落”，但不删除尸体上的任务掉落；其他有资格的玩家仍可拾取。普通掉落在本Demo中是全局一次性领取，任务掉落按账号记录领取状态。Cocos3D中选中死亡怪物后会显示尸体状态和拾取按钮，按钮距离、资格、幂等和持久化仍以服务端为准。
+
+本例的1101是静态任务道具，因此尸体只保存配置ID和数量，永久ItemId在拾取事务确认后生成。带随机词条、耐久或绑定状态的动态道具必须改用ItemInstance数据，不能把它们错误地压缩成一个静态配置ID。
+
 ## 角色目录与选角
 
 Starter 把账号和角色拆成两个身份：`account` 只负责登录与路由粘性，`characterId` 才是角色数据、Location、跨地图和持久化的稳定键。`unitId` 只是当前地图里的运行时实体 ID，不能保存到角色表，也不能作为重连后的角色主键。

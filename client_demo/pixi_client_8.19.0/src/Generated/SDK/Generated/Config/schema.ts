@@ -85,6 +85,7 @@ export enum QuestObjectiveType {
     KillMonster = 1,
     UseItem = 2,
     EnterMap = 3,
+    CollectItem = 4,
 }
 
 

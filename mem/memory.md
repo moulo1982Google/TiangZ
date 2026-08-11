@@ -213,3 +213,11 @@ npm run build:cocos3d:mobile
 - 引导由地图`SkillMapComponent.Update10Hz`推进，不创建逐Cast Timer；移动取消。玩家受到一次有效攻击时，服务端将当前`finishAtMs`提前800ms，不重置起点和已完成Tick，也不立刻打断引导；提前后的结束时间早于下一跳时不强行补发剩余伤害。
 - 当前Demo的受击缩短入口由怪物普通攻击调用`HandleDamageDuringCast`，未来其他伤害来源必须复用这个边界；Cocos3D快捷栏使用9号键/移动端按钮，依据`G2C_SkillCastState`显示`x/5`引导进度。
 - 技能扩展仍需同步`docs/ai/project-context.md`、`docs/ai/business-development-manual.md`、`docs/development-log.md`和本文件；不运行高负载压测，除非先通知用户并得到空闲机器确认。
+
+## 任务物品掉落当前语义
+
+- `MonsterConfig.drop_table_id`引用`DropTableConfig`；`quest_objective_id=0`是普通全局一次性掉落，非零是任务资格掉落。
+- 怪物死亡创建地图级`LootContainer`，尸体保留到复活。任务掉落在拾取时按账号检查活动`CollectItem`任务和剩余数量；未接任务或已经拾取够数量时，不能继续领取，任务行留在尸体上。
+- `C2M_LootMonster`由PlayerUnit有序mailbox转交MonsterComponent，先规划Inventory/Quest，再用稳定`operationId`提交DBProxy；确认后才创建静态Item、推进任务并私有推送，重复请求返回原回执。
+- Starter任务5006在完成并交付5005后解锁，收集5个1101“任务怪物徽记”；Cocos3D选中死亡怪物后显示尸体状态和拾取入口。
+- 当前1101是静态道具；随机词条、耐久、绑定等动态ItemInstance必须保留实例数据，不能使用静态配置ID延迟创建的快捷路径。

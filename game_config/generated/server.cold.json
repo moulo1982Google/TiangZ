@@ -89,6 +89,39 @@
     {
       "table_name": "QuestObjectiveConfig",
       "reload_mode": 1
+    },
+    {
+      "table_name": "DropTableConfig",
+      "reload_mode": 2
+    }
+  ],
+  "game_tbdroptableconfig": [
+    {
+      "id": 1001,
+      "drop_table_id": 1,
+      "item_config_id": 1001,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 1000,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 1002,
+      "drop_table_id": 1,
+      "item_config_id": 1101,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 1000,
+      "quest_objective_id": 5106
+    },
+    {
+      "id": 2001,
+      "drop_table_id": 2,
+      "item_config_id": 1002,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 1000,
+      "quest_objective_id": 0
     }
   ],
   "game_tbmapconfig": [
@@ -278,7 +311,8 @@
       "attack_interval_ms": 1500,
       "attack_mode": 0,
       "skill_id": 0,
-      "respawn_seconds": 10
+      "respawn_seconds": 10,
+      "drop_table_id": 1
     },
     {
       "id": 2,
@@ -292,7 +326,8 @@
       "attack_interval_ms": 1200,
       "attack_mode": 1,
       "skill_id": 0,
-      "respawn_seconds": 10
+      "respawn_seconds": 10,
+      "drop_table_id": 2
     }
   ]
 }

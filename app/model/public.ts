@@ -59,6 +59,12 @@ export {
 } from "./demo/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";
 export { ItemEvents, type BeforeUseItemEvent } from "./demo/item/ItemEvents";
+export {
+  CopyLootItems,
+  ToInventoryGrants,
+  type LootContainer,
+  type LootDrop,
+} from "./demo/loot/LootContainer";
 export { Quest, type AwakeQuest, type QuestObjectiveState, type QuestState } from "./demo/quest/Quest";
 export {
   QuestComponent,
@@ -196,6 +202,7 @@ export {
   type PlayerConfig as PlayerConfigData,
   type MonsterConfig as MonsterConfigData,
   type MonsterAreaConfig as MonsterAreaConfigData,
+  type DropTableConfig as DropTableConfigData,
   type SkillConfig as SkillConfigData,
   type SkillEffectConfig as SkillEffectConfigData,
   QuestObjectiveType,

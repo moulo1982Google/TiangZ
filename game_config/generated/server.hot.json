@@ -163,6 +163,15 @@
       ],
       "cooldown_ms": 30000,
       "global_cooldown_ms": 1000
+    },
+    {
+      "id": 1101,
+      "name": "任务怪物徽记",
+      "max_stack": 99,
+      "use_effect": 0,
+      "use_params": [],
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 0
     }
   ],
   "game_tbplayerconfig": [
@@ -258,6 +267,23 @@
         5001
       ],
       "minimum_level": 1
+    },
+    {
+      "id": 5006,
+      "name": "收集怪物徽记",
+      "objective_ids": [
+        5106
+      ],
+      "reward_action_type": 7,
+      "reward_action_params": [
+        1001,
+        5
+      ],
+      "auto_accept": false,
+      "required_quest_ids": [
+        5005
+      ],
+      "minimum_level": 1
     }
   ],
   "game_tbquestobjectiveconfig": [
@@ -294,6 +320,13 @@
       "quest_config_id": 5005,
       "objective_type": 1,
       "target_config_id": 2,
+      "required_count": 5
+    },
+    {
+      "id": 5106,
+      "quest_config_id": 5006,
+      "objective_type": 4,
+      "target_config_id": 1101,
       "required_count": 5
     }
   ],

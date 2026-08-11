@@ -101,14 +101,27 @@ function main(): void {
   assert.equal(serverConfigs.QuestObjectiveConfig.Get(5101).requiredCount, 5);
   assert.equal(serverConfigs.QuestObjectiveConfig.Get(5105).targetConfigId, 2);
   assert.equal(serverConfigs.QuestObjectiveConfig.Get(5105).requiredCount, 5);
+  assert.equal(serverConfigs.QuestObjectiveConfig.Get(5106).targetConfigId, 1101);
+  assert.equal(serverConfigs.QuestObjectiveConfig.Get(5106).requiredCount, 5);
   assert.deepEqual(serverConfigs.QuestConfig.Get(5001).rewardActionParams, [1001, 10]);
   assert.deepEqual(serverConfigs.QuestConfig.Get(5005).rewardActionParams, [1002, 10]);
   assert.deepEqual(serverConfigs.QuestConfig.Get(5005).requiredQuestIds, [5001]);
+  assert.deepEqual(serverConfigs.QuestConfig.Get(5006).requiredQuestIds, [5005]);
+  assert.deepEqual(serverConfigs.QuestConfig.Get(5006).rewardActionParams, [1001, 5]);
+  assert.deepEqual(
+    serverConfigs.DropTableConfig.GetAll().map((drop) => [
+      drop.id,
+      drop.dropTableId,
+      drop.itemConfigId,
+      drop.questObjectiveId,
+    ]),
+    [[1001, 1, 1001, 0], [1002, 1, 1101, 5106], [2001, 2, 1002, 0]],
+  );
   assert.deepEqual(
     [...serverConfigs.QuestConfig.GetAll()]
       .sort((left, right) => left.id - right.id)
       .map((quest) => [quest.id, quest.autoAccept]),
-    [[5001, false], [5002, false], [5003, false], [5004, false], [5005, false]],
+    [[5001, false], [5002, false], [5003, false], [5004, false], [5005, false], [5006, false]],
   );
   const defaultAoi = serverConfigs.AoiConfig.Get(1);
   const defaultSyncTiers = serverConfigs.AoiSyncTierConfig.GetAll()

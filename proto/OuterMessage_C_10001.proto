@@ -309,6 +309,25 @@ message M2C_AttackMonster // IActorLocationResponse
   bool killed = 4;
 }
 
+//ResponseType M2C_LootMonster
+// 摸取已经死亡的怪物尸体；服务端先提交背包事务，再返回受影响的堆叠。
+// Loots a dead monster corpse. The server commits the inventory transaction before returning affected stacks.
+// @ets.msg protocol=Map method=LootMonster duringTransfer=queue
+message C2M_LootMonster // IActorLocationRequest
+{
+  uint32 monster_id = 1;
+  // 同一轮拾取重试必须复用此ID，不能因为ACK丢失而再次生成奖励。
+  // Retries of one loot attempt must reuse this ID so a lost ACK cannot duplicate rewards.
+  string operation_id = 2;
+}
+
+message M2C_LootMonster // IActorLocationResponse
+{
+  uint32 monster_id = 1;
+  repeated ItemSnapshot items = 2;
+  repeated QuestSnapshot quests = 3;
+}
+
 //ResponseType M2C_ToggleAutoAttack
 // 平A开关只改变玩家意图；实际读条由地图的10Hz战斗桶推进，状态事件由Map广播给玩家本人。
 // @ets.msg protocol=Map method=ToggleAutoAttack duringTransfer=reject

@@ -31,6 +31,18 @@ export class QuestSystem extends Quest {
     return true;
   }
 
+  /** 用DBProxy回执恢复已提交的任务状态；只允许同一任务版本前进，不回滚后续进度。 / Restores a committed quest state and never rolls back a newer local revision. */
+  Restore(state: QuestState): void {
+    if (state.questConfigId !== this.configId) {
+      throw new Error(`quest restore owner mismatch: ${state.questConfigId} != ${this.configId}`);
+    }
+    if (state.revision < this.revision) return;
+    if (state.revision === this.revision) return;
+    this.objectives = state.objectives.map((objective) => ({ ...objective }));
+    this.status = state.status;
+    this.revision = state.revision;
+  }
+
   Snapshot(): QuestState {
     return {
       questConfigId: this.configId,

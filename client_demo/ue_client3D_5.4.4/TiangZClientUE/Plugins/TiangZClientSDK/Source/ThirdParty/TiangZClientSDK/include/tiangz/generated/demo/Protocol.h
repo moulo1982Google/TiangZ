@@ -3593,6 +3593,135 @@ struct M2C_AttackMonsterCodec {
   }
 };
 
+struct C2M_LootMonster {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t monsterId = 0;
+  std::string operationId;
+};
+
+struct C2M_LootMonsterCodec {
+  static C2M_LootMonster Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_LootMonster value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.monsterId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_LootMonster& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.monsterId);
+    writer.String(2, value.operationId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_LootMonster {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t monsterId = 0;
+  std::vector<ItemSnapshot> items;
+  std::vector<QuestSnapshot> quests;
+};
+
+struct M2C_LootMonsterCodec {
+  static M2C_LootMonster Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_LootMonster value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.monsterId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.items.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.quests.push_back(QuestSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_LootMonster& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.monsterId);
+    for (const auto& item : value.items) writer.BytesField(2, ItemSnapshotCodec::Encode(item), true);
+    for (const auto& item : value.quests) writer.BytesField(3, QuestSnapshotCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
 struct C2M_ToggleAutoAttack {
   std::optional<std::uint32_t> rpcId;
   bool enabled = false;
@@ -5054,6 +5183,8 @@ inline constexpr std::uint16_t C2M_UseItem = 10019;
 inline constexpr std::uint16_t M2C_UseItem = 10020;
 inline constexpr std::uint16_t C2M_AttackMonster = 10042;
 inline constexpr std::uint16_t M2C_AttackMonster = 10043;
+inline constexpr std::uint16_t C2M_LootMonster = 10062;
+inline constexpr std::uint16_t M2C_LootMonster = 10063;
 inline constexpr std::uint16_t C2M_ToggleAutoAttack = 10044;
 inline constexpr std::uint16_t M2C_ToggleAutoAttack = 10045;
 inline constexpr std::uint16_t G2C_AutoAttackState = 10046;
@@ -5133,6 +5264,10 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_UseItem, M2C_UseItem, C2M_Use
 
 inline constexpr tiangz::client::RpcDescriptor<C2M_AttackMonster, M2C_AttackMonster, C2M_AttackMonsterCodec, M2C_AttackMonsterCodec> Map_AttackMonster{
   "Map.AttackMonster", MsgCode::C2M_AttackMonster, MsgCode::M2C_AttackMonster
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_LootMonster, M2C_LootMonster, C2M_LootMonsterCodec, M2C_LootMonsterCodec> Map_LootMonster{
+  "Map.LootMonster", MsgCode::C2M_LootMonster, MsgCode::M2C_LootMonster
 };
 
 inline constexpr tiangz::client::RpcDescriptor<C2M_ToggleAutoAttack, M2C_ToggleAutoAttack, C2M_ToggleAutoAttackCodec, M2C_ToggleAutoAttackCodec> Map_ToggleAutoAttack{

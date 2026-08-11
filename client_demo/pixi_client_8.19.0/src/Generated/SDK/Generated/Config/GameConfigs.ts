@@ -164,6 +164,17 @@ const RAW_DATA: Record<string, unknown> = {
       "icon": "UI/Icons/Items/1002",
       "cooldown_ms": 30000,
       "global_cooldown_ms": 1000
+    },
+    {
+      "id": 1101,
+      "name": "任务怪物徽记",
+      "description": "击败任务怪物后从尸体拾取",
+      "max_stack": 99,
+      "use_effect": 0,
+      "use_params": [],
+      "icon": "",
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 0
     }
   ],
   "game_tbmapconfig": [
@@ -314,6 +325,14 @@ const RAW_DATA: Record<string, unknown> = {
       "objective_ids": [
         5105
       ]
+    },
+    {
+      "id": 5006,
+      "name": "收集怪物徽记",
+      "description": "从怪物尸体中拾取5个怪物徽记。",
+      "objective_ids": [
+        5106
+      ]
     }
   ],
   "game_tbquestobjectiveconfig": [
@@ -346,6 +365,12 @@ const RAW_DATA: Record<string, unknown> = {
       "quest_config_id": 5005,
       "required_count": 5,
       "description": "击败5只怪B"
+    },
+    {
+      "id": 5106,
+      "quest_config_id": 5006,
+      "required_count": 5,
+      "description": "收集5个怪物徽记"
     }
   ],
   "game_tbskillconfig": [
@@ -478,7 +503,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "520b88aecf7f70cf54a1a5ad419f176281c8f2067a973f98b7f839e5c03fc990";
+export const GameConfigFingerprint = "55f67df0eee7985695cd92263cbdc529543444cbf88e59fad3931be6698ca7ce";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

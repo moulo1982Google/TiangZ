@@ -14,6 +14,7 @@
 - `SkillEffectConfig.xlsx`：技能命中后按顺序执行的Action；仅服务端生成，客户端不能读取伤害和Buff结算规则。
 - `QuestConfig.xlsx`：任务名称、说明、目标列表、奖励Action和Demo自动接取开关。
 - `QuestObjectiveConfig.xlsx`：任务目标类型、目标配置ID和要求数量；目标与任务分表，避免把变长结构塞进一个单元格。
+- `DropTableConfig.xlsx`：怪物尸体掉落行；普通掉落和任务资格掉落共用一张表。
 
 修改Excel后运行：
 
@@ -48,6 +49,14 @@ npm run test:game-config
 Cocos3D演示玩家出生时背包为空，快捷栏仍固定使用`1`切换平A、`2`使用1001、`3`使用1002；新玩家先从NPC领取任务，完成Starter任务5001奖励`1001×10`，完成后续任务5005奖励`1002×10`。快捷栏没有对应道具时只显示空槽，不应由`ItemComponentSystem.Awake`偷偷发放测试物品；传送、重连和持久化恢复仍只使用`ItemSnapshot`。
 
 `QuestConfig`引用`QuestObjectiveConfig`组成活动任务，奖励复用Action。`required_quest_ids`声明必须已经领取奖励的前置任务，`minimum_level`读取`NumericType.Level`；生成阶段会拒绝缺失、重复、自引用和循环前置关系。当前演示包含击杀怪物、使用道具和进入地图三种目标；Starter任务链是5001击败5只怪A，回NPC交付后解锁5005击败5只怪B；5004继续验证“完成5001且达到2级”后手工接取。两张Quest表标记为Hot，但已经接取的Quest会冻结目标与要求数量；Reload只影响之后新接取的任务，不能隐式改写玩家正在进行的任务。任务达到`ReadyToTurnIn`后必须携带NPC实例ID在交互范围内完成，不能从任务追踪面板直接领奖。完整语义和调用示例见[任务系统设计](../docs/design/quest-system.md)。
+
+### 怪物掉落与任务道具
+
+`MonsterConfig.drop_table_id`指向`DropTableConfig.drop_table_id`。每一行是一个掉落行：`item_config_id`是道具配置ID，`min_count/max_count`是数量范围，`chance_permille`是千分比概率，`quest_objective_id=0`表示普通掉落，非零表示只服务于指定`CollectItem`目标的任务掉落。当前Starter的任务5006在完成并交付5005后解锁，要求收集5个道具1101“任务怪物徽记”；怪物A的掉落表包含这条任务掉落。
+
+死亡时，地图只在尸体容器中保存配置ID和数量，尸体继续保留到复活时间；当前静态任务徽记不会提前创建永久`ItemId`。玩家必须先从NPC接取5006，靠近尸体后发送`C2M_LootMonster`，服务端在拾取时检查任务是否存在且还需要数量。未接任务、任务已经达到要求数量，或该账号已经领取过同一行时，都不会生成背包Item；这条任务掉落仍留在尸体上，不会因为其他玩家或本玩家无资格而全局消失。不同账号各自按任务资格领取，普通掉落则是全局一次性领取。
+
+拾取不是“先改内存再保存”：`MonsterComponent.LootMonster`先规划Inventory和Quest快照，使用稳定`operationId`提交DBProxy事务，确认后才提交Item/Quest Entity并推送结果。重复请求返回第一次回执，不会重复加道具或推进任务。动态词条、耐久等真正的ItemInstance掉落不能直接套用“尸体只存配置ID”的静态快捷方式，应在后续ItemInstance方案中保存实例数据。
 
 任务奖励由`ExecuteReward -> ExecuteActionBatch`在PlayerUnit有序mailbox内同步执行；`GrantItem(ItemConfigId, Count)`和批量Grant必须交给Inventory，由Inventory合并已有堆叠并按`max_stack`拆分。当前批次不提供失败回滚或数据库事务，跨域持久化留给独立DBProxy；组队共享任务等待Party系统，不在Quest里提前模拟。
 

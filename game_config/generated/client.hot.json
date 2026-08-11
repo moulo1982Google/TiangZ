@@ -119,6 +119,17 @@
       "icon": "UI/Icons/Items/1002",
       "cooldown_ms": 30000,
       "global_cooldown_ms": 1000
+    },
+    {
+      "id": 1101,
+      "name": "任务怪物徽记",
+      "description": "击败任务怪物后从尸体拾取",
+      "max_stack": 99,
+      "use_effect": 0,
+      "use_params": [],
+      "icon": "",
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 0
     }
   ],
   "game_tbplayerconfig": [
@@ -173,6 +184,14 @@
       "objective_ids": [
         5105
       ]
+    },
+    {
+      "id": 5006,
+      "name": "收集怪物徽记",
+      "description": "从怪物尸体中拾取5个怪物徽记。",
+      "objective_ids": [
+        5106
+      ]
     }
   ],
   "game_tbquestobjectiveconfig": [
@@ -205,6 +224,12 @@
       "quest_config_id": 5005,
       "required_count": 5,
       "description": "击败5只怪B"
+    },
+    {
+      "id": 5106,
+      "quest_config_id": 5006,
+      "required_count": 5,
+      "description": "收集5个怪物徽记"
     }
   ],
   "game_tbskillconfig": [

@@ -5,11 +5,14 @@ import type { QuestProgressEvent, QuestRewardResult, QuestState, QuestTransferSt
 declare module "../../../model/demo/quest/QuestComponent" {
   interface QuestComponent {
     AcceptQuest(questConfigId: number): QuestState;
+    PlanProgress(event: QuestProgressEvent): readonly QuestState[];
     ApplyProgress(event: QuestProgressEvent): readonly QuestState[];
+    ApplyCommittedProgress(states: readonly QuestState[]): void;
     CompleteQuest(questConfigId: number): Promise<QuestRewardResult>;
     Snapshot(): readonly QuestState[];
     CompletedQuestConfigIds(): readonly number[];
     HasCompletedQuest(questConfigId: number): boolean;
+    RemainingProgress(objectiveType: number, targetConfigId: number): number;
     CaptureTransfer(): QuestTransferState;
     RestoreTransfer(state: QuestTransferState): void;
     Deserialize(): void;

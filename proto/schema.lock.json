@@ -4597,6 +4597,35 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_LootMonster",
+      "name": "C2M_LootMonster",
+      "base": "IActorLocationRequest",
+      "response": "M2C_LootMonster",
+      "fields": [
+        {
+          "number": 1,
+          "name": "monster_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_MapProbe",
       "name": "C2M_MapProbe",
       "base": "IActorLocationRequest",
@@ -6087,6 +6116,56 @@
           "number": 1,
           "name": "points",
           "type": "NavigationPathPoint",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_LootMonster",
+      "name": "M2C_LootMonster",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "monster_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "quests",
+          "type": "QuestSnapshot",
           "repeated": true,
           "synthetic": false
         },

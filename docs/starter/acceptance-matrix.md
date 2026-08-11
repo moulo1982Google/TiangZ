@@ -28,9 +28,9 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | FW-01 | 登录、LoginMgr、Login、Gate、Map | `docs/tutorials/01-architecture-and-quickstart.md`、`npm run test:runtime` | 已有 | 纳入 Starter 总验收 |
 | FW-02 | all-in-one 与 split-process | `tools/smoke_runtime.mjs` | 已有 | 同一业务脚本跑两种部署 |
 | FW-03 | Scene、Actor、Mailbox、Component、ChildEntity | `tools/actor_self_test.ts`、`docs/design/unit-actor-boundary.md` | 已有 | Starter 不得绕过 mailbox |
-| FW-04 | AOI 与状态同步 | `tools/map_broadcast_self_test.ts`、Rust AOI | 已有 | 用 Starter 的怪物和掉落广播验收 |
+| FW-04 | AOI 与状态同步 | `tools/map_broadcast_self_test.ts`、Rust AOI | 已有 | 用 Starter 的怪物尸体和掉落拾取验收 |
 | FW-05 | 3D 移动、寻路、动态障碍 | `docs/tutorials/13-navmesh3d.md`、Cocos3D/UE/Godot Demo | 已有 | 只补入 Starter 的地图流程 |
-| FW-06 | 怪物、战斗、技能、Buff | `tools/combat_self_test.ts`、`tools/buff_action_self_test.ts` | 已有演示 | 补完整掉落和 Boss 规则 |
+| FW-06 | 怪物、战斗、技能、Buff | `tools/combat_self_test.ts`、`tools/buff_action_self_test.ts` | 已有演示 | 补Boss规则和更复杂掉落 |
 | FW-07 | 协议生成与多客户端 SDK | `client_sdk/`、各客户端 Demo | 已有 | Starter 只指定 Cocos3D 为完整 UI 客户端 |
 | FW-08 | Hotfix、失败回滚 | `tools/hotfix_system_self_test.ts`、`tools/hotfix_reload_self_test.mjs` | 底层已有 | 补正式操作入口和 Starter 验收 |
 
@@ -42,8 +42,8 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | ST-02 | 进入主城 | MapHost 和玩家快照已有 | 新角色加载快照后进入主城，并收到完整初始状态 |
 | ST-03 | 主城进入野外 | 跨地图和 MapInstance 路由已有 | 使用统一 `TransferToMap`，业务不区分静态地图和动态地图 |
 | ST-04 | 野外战斗 | 怪物、普通攻击、技能和 Buff 已有 | 击杀普通怪、死亡、尸体和仇恨状态可重复验证 |
-| ST-05 | 掉落、拾取、背包 | Inventory、Reward 和道具使用已有；怪物掉落尚需串入主线 | 击杀后产生掉落，拾取后背包增加，重复请求不重复增加 |
-| ST-06 | 任务接取、进度和奖励 | Starter第一版已在Map 100放置紫色任务NPC；玩家出生点靠近NPC，远端四角放置2个被动黄色怪和2个主动红色怪；靠近NPC 5米内显示交互按钮，按钮打开对话框后通过`C2M_AcceptQuest(questConfigId, npcUnitId)`接取，服务端校验5米范围；Quest状态、目标索引、条件和奖励已有 | PC与移动端都按“交互按钮 -> NPC对话 -> 接取任务”操作，击杀/使用道具推进、提交任务、领取奖励形成闭环；选中NPC或点击模型不能自动接取 |
+| ST-05 | 掉落、拾取、背包 | 已完成：`MonsterConfig -> DropTableConfig -> LootContainer -> C2M_LootMonster -> Inventory`；任务掉落按账号和剩余需求判定，普通掉落全局一次性领取，DBProxy事务和operationId幂等已接通 | 击杀后尸体保留掉落；未接任务或需求已满时任务行留在尸体；有资格拾取后背包增加，重复请求不重复增加 |
+| ST-06 | 任务接取、进度和奖励 | Starter第一版已在Map 100放置紫色任务NPC；玩家出生点靠近NPC，远端四角放置2个被动黄色怪和2个主动红色怪；靠近NPC 5米内显示交互按钮，按钮打开对话框后通过`C2M_AcceptQuest(questConfigId, npcUnitId)`接取，服务端校验5米范围；Quest状态、目标索引、条件和奖励已有；完成5005后可接取收集5个1101的5006 | PC与移动端都按“交互按钮 -> NPC对话 -> 接取任务”操作，击杀/拾取/使用道具推进、提交任务、领取奖励形成闭环；选中NPC或点击模型不能自动接取 |
 | ST-07 | 动态副本与 Boss | 动态 MapHost/MapManager 已有；Starter Boss 流程尚未固定 | 请求幂等创建副本、进入、击杀 Boss、领取副本奖励、返回入口 |
 | ST-08 | 断线重连和跨地图 | Gate 重连、Location、MapInstance 路由已有 | 断线宽限内恢复原 Unit；传送中请求有明确状态和幂等结果 |
 | ST-09 | 重启恢复 | Player Snapshot、任务奖励和 UseItem 事务已有 | 重启后恢复背包、任务、Buff、技能冷却和安全位置；关键奖励不重复 |
@@ -67,7 +67,11 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
   -> 进入主城
   -> 接取“清理野外怪物”任务
   -> 进入野外地图
-  -> 击杀怪物并拾取掉落
+  -> 接取5001并击杀怪物
+  -> 回NPC交付5001，再接取5005
+  -> 击杀怪物并拾取普通掉落
+  -> 回NPC交付5005，再接取5006
+  -> 拾取任务徽记，直到5个后再回NPC交付
   -> 使用恢复道具
   -> 提交任务并领取奖励
   -> 请求创建动态副本

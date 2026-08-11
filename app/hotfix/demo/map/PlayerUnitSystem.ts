@@ -12,6 +12,7 @@ import {
   type PlayerSnapshot,
   type M2G_TransferPlayer,
   type M2C_AttackMonster,
+  type M2C_LootMonster,
   type M2C_ToggleAutoAttack,
   type M2C_CastSkill,
   type AutoAttackState,
@@ -181,6 +182,11 @@ export class PlayerUnitSystem extends PlayerUnit {
   /** 把攻击意图交给地图怪物模块；PlayerUnit不保存怪物集合或战斗状态。 / Delegates attack intent to the map monster module; PlayerUnit stores no monster collection or combat state. */
   AttackMonster(monsterId: number): M2C_AttackMonster {
     return this.DomainScene().GetComponent(MonsterComponent).Attack(this, monsterId);
+  }
+
+  /** 拾取尸体只把意图交给地图掉落模块；资格、数量、幂等和DBProxy提交都在那里完成。 / Delegates corpse loot so the map module owns eligibility, limits, idempotency, and DBProxy commit. */
+  LootMonster(monsterId: number, operationId: string): Promise<M2C_LootMonster> {
+    return this.DomainScene().GetComponent(MonsterComponent).LootMonster(this, monsterId, operationId);
   }
 
   /**

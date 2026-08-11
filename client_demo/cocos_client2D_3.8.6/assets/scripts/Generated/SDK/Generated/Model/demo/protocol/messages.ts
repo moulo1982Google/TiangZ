@@ -2686,6 +2686,102 @@ export const M2C_AttackMonsterCodec = {
   },
 };
 
+export interface C2M_LootMonster extends IActorLocationRequest {
+  rpcId?: number;
+  monsterId: number;
+  operationId: string;
+}
+
+export const C2M_LootMonsterCodec = {
+  decode(payload: Uint8Array): C2M_LootMonster {
+    const reader = new BinaryReader(payload);
+    const value: C2M_LootMonster = {
+      monsterId: 0,
+      operationId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.monsterId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_LootMonster): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
+    if (value.operationId !== undefined) writer.string(2, value.operationId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_LootMonster extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  monsterId: number;
+  items: readonly ItemSnapshot[];
+  quests: readonly QuestSnapshot[];
+}
+
+export const M2C_LootMonsterCodec = {
+  decode(payload: Uint8Array): M2C_LootMonster {
+    const reader = new BinaryReader(payload);
+    const value: M2C_LootMonster = {
+      monsterId: 0,
+      items: [],
+      quests: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.monsterId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.items as ItemSnapshot[]).push(ItemSnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 2) {
+        (value.quests as QuestSnapshot[]).push(QuestSnapshotCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_LootMonster): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
+    for (const item of (value.items ?? [])) writer.bytes(2, ItemSnapshotCodec.encode(item), true);
+    for (const item of (value.quests ?? [])) writer.bytes(3, QuestSnapshotCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
 export interface C2M_ToggleAutoAttack extends IActorLocationRequest {
   rpcId?: number;
   enabled: boolean;

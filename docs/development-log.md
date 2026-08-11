@@ -922,3 +922,11 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 登录链路改为显式注册/登录：新增`C2S_Register`，`C2S_Login`增加密码字段；未注册账号返回“用户未注册”，不再自动创建游客账号。
 - `CharacterRepository`快照升级到v2，保存密码盐值/摘要与同名初始角色；DBProxy继续兼容读取v1角色目录，写入统一升级到v2。新增`starter:dev:persistent`用于本地DBProxy重启恢复演示。
 - Cocos3D增加登录/注册遮罩、确认密码校验和认证错误提示；SDK及测试客户端统一先注册再登录。
+
+# 2026-08-11：任务物品掉落与尸体拾取
+
+- 新增`DropTableConfig`，由`MonsterConfig.drop_table_id`引用；普通掉落使用`quest_objective_id=0`，任务掉落引用`CollectItem`目标。
+- 怪物死亡后创建地图级`LootContainer`，尸体保留到复活；任务掉落不会在击杀时向所有玩家发放，而是在`C2M_LootMonster`拾取时按账号检查已接任务和剩余数量。
+- 未接任务或任务数量已满时，任务掉落行留在尸体上；任务掉落按账号领取，普通掉落全局一次性领取。
+- 拾取使用`Inventory/Quest Plan -> DBProxy ApplyTransaction -> Commit`，以`operationId`保证重试不重复增加Item或任务进度；Cocos3D增加选中尸体、距离提示和拾取按钮。
+- Starter新增任务5006“收集怪物徽记”，完成并交付5005后接取，收集5个1101；本轮通过`npm run codegen:game-config`、`npm run codegen:proto:update-lock`、`npm run codegen:client-sdk`、`npm run typecheck`和`npm run typecheck:cocos3d-demo`，未执行压力测试。

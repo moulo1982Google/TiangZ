@@ -48,6 +48,7 @@ import type {
   G2C_QuestProgress,
   G2C_SessionReplaced,
   ItemSnapshot,
+  M2C_LootMonster,
   MapEntitySnapshot,
   QuestSnapshot,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
@@ -71,6 +72,12 @@ const ENTITY_TYPE_MONSTER = 2;
 const ENTITY_TYPE_NPC = 3;
 const STARTER_NPC_QUEST_ID = 5001;
 const STARTER_NPC_SECOND_QUEST_ID = 5005;
+const STARTER_NPC_THIRD_QUEST_ID = 5006;
+const STARTER_NPC_QUEST_CHAIN = [
+  STARTER_NPC_QUEST_ID,
+  STARTER_NPC_SECOND_QUEST_ID,
+  STARTER_NPC_THIRD_QUEST_ID,
+] as const;
 const STARTER_NPC_INTERACT_RANGE_METERS = 5;
 // NumericType来自服务端稳定协议约定；客户端只读取公开的HP/MP结果，不修改Numeric。
 // These ids follow the stable server Numeric contract; the client only reads public HP/MP results.
@@ -261,6 +268,8 @@ export class GameBootstrap3D extends Component {
   private mobileInstructionsElement?: HTMLElement;
   private mobilePingElement?: HTMLElement;
   private selectedMonsterElement?: HTMLElement;
+  private selectedMonsterLabel?: HTMLElement;
+  private lootInteractionButton?: HTMLButtonElement;
   private npcInteractionButton?: HTMLButtonElement;
   private npcDialogPanel?: HTMLElement;
   private npcDialogText?: HTMLElement;
@@ -345,6 +354,7 @@ export class GameBootstrap3D extends Component {
   private nearbyNpcUnitId = 0;
   private npcDialogUnitId = 0;
   private npcQuestInFlight = false;
+  private lootRequestInFlight = false;
   private autoAttackEnabled = false;
   private autoAttackTargetUnitId = 0;
   private autoAttackPhase = 0;
@@ -397,6 +407,7 @@ export class GameBootstrap3D extends Component {
     this.reconcileAuthoritativeFacing(deltaTime);
     this.interpolateRemotePlayers(deltaTime);
     this.updateNpcInteractionHud();
+    this.updateLootInteractionHud();
     this.updateFollowCamera(deltaTime);
     this.updateAttackSlashEffects(deltaTime);
     this.updateSkillProjectileEffects();
@@ -1234,10 +1245,30 @@ export class GameBootstrap3D extends Component {
     panel.style.border = "1px solid rgba(255, 226, 92, 0.58)";
     panel.style.font = "14px/1.4 system-ui, sans-serif";
     panel.style.pointerEvents = "none";
-    panel.style.whiteSpace = "pre-line";
-    panel.textContent = "目标：未选择怪物";
+    panel.style.display = "flex";
+    panel.style.flexDirection = "column";
+    panel.style.gap = "8px";
+    const label = document.createElement("div");
+    label.style.whiteSpace = "pre-line";
+    label.textContent = "目标：未选择怪物";
+    panel.appendChild(label);
+    const lootButton = document.createElement("button");
+    lootButton.type = "button";
+    lootButton.style.display = "none";
+    lootButton.style.padding = "7px 10px";
+    lootButton.style.border = "1px solid rgba(255, 224, 132, 0.8)";
+    lootButton.style.borderRadius = "6px";
+    lootButton.style.color = "#fff8d6";
+    lootButton.style.background = "rgba(112, 78, 24, 0.92)";
+    lootButton.style.font = "700 13px/1.2 system-ui, sans-serif";
+    lootButton.style.pointerEvents = "auto";
+    lootButton.style.touchAction = "manipulation";
+    this.bindTouchSafeHudButton(lootButton, () => this.lootSelectedMonster());
+    panel.appendChild(lootButton);
     document.body.appendChild(panel);
     this.selectedMonsterElement = panel;
+    this.selectedMonsterLabel = label;
+    this.lootInteractionButton = lootButton;
   }
 
   /**
@@ -2897,6 +2928,7 @@ export class GameBootstrap3D extends Component {
     this.skillCastErrorText = "";
     this.skillCastErrorUntilMs = 0;
     this.skillRequestInFlight = false;
+    this.lootRequestInFlight = false;
     this.selectedMonsterUnitId = 0;
     this.selectedNpcUnitId = 0;
     this.nearbyNpcUnitId = 0;
@@ -3141,7 +3173,12 @@ export class GameBootstrap3D extends Component {
       if (!remote || (state.dirtyMaskLow & (1 << 6)) === 0) continue;
       remote.alive = state.alive;
       this.applyRemoteAlivePresentation(remote);
-      if (!state.alive && state.unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
+      // 死亡怪物仍是可拾取的尸体；只清理表现，不清理选中目标。
+      // A dead monster remains a lootable corpse, so update presentation without clearing selection.
+      if (!state.alive && state.unitId === this.selectedMonsterUnitId) {
+        this.refreshSelectedTargetHud();
+        this.updateLootInteractionHud();
+      }
     }
   }
 
@@ -3497,19 +3534,79 @@ export class GameBootstrap3D extends Component {
 
   /** 刷新怪物/NPC目标信息；靠近交互和任务接取由独立对话框负责。 / Refreshes target text; proximity interaction and quest acceptance live in the separate dialog. */
   private refreshSelectedTargetHud(): void {
-    if (!this.selectedMonsterElement) return;
+    const label = this.selectedMonsterLabel;
+    if (!label) return;
     const selected = this.remotePlayers.get(this.selectedMonsterUnitId || this.selectedNpcUnitId);
     if (!selected) {
-      this.selectedMonsterElement.textContent = "目标：未选择怪物";
+      label.textContent = "目标：未选择怪物";
       return;
     }
     if (selected.entityType === ENTITY_TYPE_NPC) {
-      this.selectedMonsterElement.textContent = `NPC：${npcName(selected.configId)}\n实例ID：${selected.unitId}`;
+      label.textContent = `NPC：${npcName(selected.configId)}\n实例ID：${selected.unitId}`;
       return;
     }
     const config = GameConfigs.MonsterConfig.TryGet(selected.configId);
     const name = config?.name ?? `MonsterConfig#${selected.configId}`;
-    this.selectedMonsterElement.textContent = `目标：${name}\n实例ID：${selected.unitId}`;
+    label.textContent = `目标：${name}${selected.alive ? "" : "（尸体）"}\n实例ID：${selected.unitId}`;
+  }
+
+  /** 更新尸体拾取入口；客户端只负责显示，是否有资格和是否仍有掉落由服务端决定。 / Updates the corpse-loot entry; the server decides eligibility and remaining drops. */
+  private updateLootInteractionHud(): void {
+    const button = this.lootInteractionButton;
+    if (!button) return;
+    const monster = this.remotePlayers.get(this.selectedMonsterUnitId);
+    if (!monster || monster.entityType !== ENTITY_TYPE_MONSTER || monster.alive) {
+      button.style.display = "none";
+      return;
+    }
+    const dx = this.player.position.x - monster.node.position.x;
+    const dz = this.player.position.z - monster.node.position.z;
+    const inRange = dx * dx + dz * dz <= 4 * 4;
+    button.style.display = "block";
+    button.disabled = this.lootRequestInFlight || !inRange;
+    button.textContent = this.lootRequestInFlight
+      ? "拾取中..."
+      : inRange
+        ? "拾取尸体"
+        : "靠近尸体后拾取";
+    button.style.opacity = inRange && !this.lootRequestInFlight ? "1" : "0.62";
+  }
+
+  /** 请求一次尸体拾取，并把道具与任务进度合并到权威客户端状态。 / Requests one corpse loot and merges authoritative items and quest progress. */
+  private async lootSelectedMonster(): Promise<void> {
+    const mapClient = this.mapClient;
+    const monster = this.remotePlayers.get(this.selectedMonsterUnitId);
+    if (!mapClient || !monster || monster.entityType !== ENTITY_TYPE_MONSTER || monster.alive || this.lootRequestInFlight) return;
+    this.lootRequestInFlight = true;
+    this.updateLootInteractionHud();
+    try {
+      const response = await mapClient.lootMonster({
+        monsterId: monster.unitId,
+        operationId: CreateOperationId("loot"),
+      });
+      this.ApplyLootResult(response);
+      const names = response.items
+        .map((item) => `${GameConfigs.ItemConfig.TryGet(item.configId)?.name ?? `道具#${item.configId}`}×${item.count}`)
+        .join("、");
+      this.setStatus(names.length > 0 ? `拾取成功：${names}` : "尸体上没有你可以拾取的掉落");
+    } catch (error) {
+      this.setStatus(`拾取失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.lootRequestInFlight = false;
+      this.updateLootInteractionHud();
+    }
+  }
+
+  /** 应用拾取RPC返回的道具和任务增量；不从本地击杀表现推导任务进度。 / Applies item and quest deltas from the loot RPC without deriving progress from local visuals. */
+  private ApplyLootResult(message: M2C_LootMonster): void {
+    for (const item of message.items) this.ApplyItemSnapshot(item);
+    for (const quest of message.quests) {
+      const normalized = normalizeQuestSnapshot(quest);
+      if (!normalized) continue;
+      const current = this.quests.get(normalized.questConfigId);
+      if (!current || normalized.revision >= current.revision) this.quests.set(normalized.questConfigId, normalized);
+    }
+    this.updateQuestHud();
   }
 
   /** 查找5米内最近的AOI可见NPC；客户端只负责显示按钮，最终距离由服务端再次校验。 / Finds the nearest AOI-visible NPC within five meters; the server rechecks the final distance. */
@@ -3581,8 +3678,9 @@ export class GameBootstrap3D extends Component {
       return;
     }
     const action = this.getNpcQuestAction();
-    const activeQuest = this.activeQuestSnapshot(STARTER_NPC_QUEST_ID)
-      ?? this.activeQuestSnapshot(STARTER_NPC_SECOND_QUEST_ID);
+    const activeQuest = STARTER_NPC_QUEST_CHAIN
+      .map((questConfigId) => this.activeQuestSnapshot(questConfigId))
+      .find((quest): quest is QuestSnapshot => quest !== undefined);
     const quest = GameConfigs.QuestConfig.TryGet(action?.questConfigId ?? activeQuest?.questConfigId ?? 0);
     if (this.npcDialogText) {
       this.npcDialogText.textContent = action?.mode === "complete"
@@ -3609,7 +3707,7 @@ export class GameBootstrap3D extends Component {
 
   /** 根据任务链决定接取还是交付；最终距离、归属、前置和重复状态由服务端校验。 / Chooses accept or turn-in from the quest chain; the server validates distance, ownership, prerequisites, and duplicates. */
   private getNpcQuestAction(): { questConfigId: number; mode: "accept" | "complete" } | undefined {
-    for (const questConfigId of [STARTER_NPC_QUEST_ID, STARTER_NPC_SECOND_QUEST_ID]) {
+    for (const questConfigId of STARTER_NPC_QUEST_CHAIN) {
       const active = this.activeQuestSnapshot(questConfigId);
       if (active) {
         return active.status === QuestStatus.ReadyToTurnIn

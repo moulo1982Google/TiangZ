@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "50bb37d4fb9759d287203e71a7a8722c2d29b319266bf18839b239bfba61ee7a";
+    public const string Value = "264784c346c042f4d742a4e42b6219f6d9c00dc060600dc6d06e9d0f23bce409";
 }
 
 public static class MsgCode
@@ -26,6 +26,7 @@ public static class MsgCode
     public const ushort C2M_CastSkill = 10047;
     public const ushort C2M_CompleteQuest = 10054;
     public const ushort C2M_FindPath = 10032;
+    public const ushort C2M_LootMonster = 10062;
     public const ushort C2M_MapProbe = 10014;
     public const ushort C2M_Move = 10013;
     public const ushort C2M_NavigateInput = 10037;
@@ -65,6 +66,7 @@ public static class MsgCode
     public const ushort M2C_CastSkill = 10048;
     public const ushort M2C_CompleteQuest = 10055;
     public const ushort M2C_FindPath = 10033;
+    public const ushort M2C_LootMonster = 10063;
     public const ushort M2C_MapProbe = 10015;
     public const ushort M2C_NavigateInput = 10038;
     public const ushort M2C_NavigateTo = 10035;
@@ -178,6 +180,13 @@ public sealed class C2M_FindPath : IRpcRequest
     public float TargetX { get; set; }
     public float TargetY { get; set; }
     public float TargetZ { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_LootMonster : IRpcRequest
+{
+    public uint MonsterId { get; set; }
+    public string? OperationId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -537,6 +546,16 @@ public sealed class M2C_CompleteQuest : IRpcResponse
 public sealed class M2C_FindPath : IRpcResponse
 {
     public List<NavigationPathPoint> Points { get; set; } = new List<NavigationPathPoint>();
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_LootMonster : IRpcResponse
+{
+    public uint MonsterId { get; set; }
+    public List<ItemSnapshot> Items { get; set; } = new List<ItemSnapshot>();
+    public List<QuestSnapshot> Quests { get; set; } = new List<QuestSnapshot>();
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -1272,6 +1291,44 @@ public static class C2M_FindPathCodec
         if (value.TargetX != 0) writer.WriteFloat(4, value.TargetX);
         if (value.TargetY != 0) writer.WriteFloat(5, value.TargetY);
         if (value.TargetZ != 0) writer.WriteFloat(6, value.TargetZ);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_LootMonsterCodec
+{
+    public static C2M_LootMonster Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_LootMonster();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.MonsterId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_LootMonster value)
+    {
+        var writer = new BinaryWriter();
+        if (value.MonsterId != 0) writer.WriteUInt32(1, value.MonsterId);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(2, value.OperationId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -3193,6 +3250,62 @@ public static class M2C_FindPathCodec
     }
 }
 
+public static class M2C_LootMonsterCodec
+{
+    public static M2C_LootMonster Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_LootMonster();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.MonsterId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Items.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.Quests.Add(QuestSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_LootMonster value)
+    {
+        var writer = new BinaryWriter();
+        if (value.MonsterId != 0) writer.WriteUInt32(1, value.MonsterId);
+        foreach (var item in value.Items)
+        {
+            writer.WriteMessage(2, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        foreach (var item in value.Quests)
+        {
+            writer.WriteMessage(3, item == null ? null : QuestSnapshotCodec.Encode(item));
+        }
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_MapProbeCodec
 {
     public static M2C_MapProbe Decode(byte[] payload)
@@ -4221,6 +4334,11 @@ public static class MapProtocol
         C2M_FindPathCodec.Encode, M2C_FindPathCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_LootMonster, M2C_LootMonster> LootMonster = new(
+        "Map.LootMonster", MsgCode.C2M_LootMonster, MsgCode.M2C_LootMonster,
+        C2M_LootMonsterCodec.Encode, M2C_LootMonsterCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_MapProbe, M2C_MapProbe> Probe = new(
         "Map.Probe", MsgCode.C2M_MapProbe, MsgCode.M2C_MapProbe,
         C2M_MapProbeCodec.Encode, M2C_MapProbeCodec.Decode,
@@ -4359,6 +4477,8 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.CompleteQuest, request, cancellationToken);
     public Task<M2C_FindPath> FindPathAsync(C2M_FindPath request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.FindPath, request, cancellationToken);
+    public Task<M2C_LootMonster> LootMonsterAsync(C2M_LootMonster request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.LootMonster, request, cancellationToken);
     public Task<M2C_MapProbe> ProbeAsync(C2M_MapProbe request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.Probe, request, cancellationToken);
     public Task<M2C_NavigateInput> NavigateInputAsync(C2M_NavigateInput request, CancellationToken cancellationToken = default) =>

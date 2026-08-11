@@ -60,6 +60,32 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
     return quest.Snapshot();
   }
 
+  /** 在不改变Entity的情况下计算拾取/击杀将产生的任务快照，供持久化事务预检使用。 / Plans quest progress without mutating Entities so the result can join a persistence transaction. */
+  PlanProgress(event: QuestProgressEvent): readonly QuestState[] {
+    const entries = this.objectiveIndex.get(objectiveIndexKey(event.objectiveType, event.targetConfigId));
+    if (!entries || !Number.isSafeInteger(event.count) || event.count <= 0) return [];
+    const planned = new Map<number, QuestState>();
+    for (const entry of entries) {
+      const quest = this.TryGetChild(Quest, BigInt(entry.questConfigId));
+      if (!quest) throw new Error(`quest objective index points to missing quest ${entry.questConfigId}`);
+      const current = planned.get(entry.questConfigId) ?? quest.Snapshot();
+      if (current.status !== QuestStatus.InProgress) continue;
+      const objectives = current.objectives.map((objective) => ({ ...objective }));
+      const objective = objectives.find((value) => value.objectiveId === entry.objectiveId);
+      if (!objective || objective.current >= objective.required) continue;
+      objective.current = Math.min(objective.required, objective.current + event.count);
+      planned.set(entry.questConfigId, {
+        ...current,
+        objectives,
+        status: objectives.every((value) => value.current >= value.required)
+          ? QuestStatus.ReadyToTurnIn
+          : QuestStatus.InProgress,
+        revision: current.revision + 1,
+      });
+    }
+    return [...planned.values()].sort((left, right) => left.questConfigId - right.questConfigId);
+  }
+
   /** 处理本Scene内的业务事实；只修改匹配目标，并把广播交给MapComponent。 / Applies a Scene-local fact to matching objectives and delegates owner sync to MapComponent. */
   ApplyProgress(event: QuestProgressEvent): readonly QuestState[] {
     const entries = this.objectiveIndex.get(objectiveIndexKey(event.objectiveType, event.targetConfigId));
@@ -73,6 +99,15 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
     return [...changedQuestIds]
       .sort((a, b) => a - b)
       .map((id) => this.GetChild(Quest, BigInt(id)).Snapshot());
+  }
+
+  /** 将持久化回执中的任务状态应用到内存；业务回执只能前进，不能覆盖更高版本。 / Applies quest states from a durable receipt and never overwrites a newer local revision. */
+  ApplyCommittedProgress(states: readonly QuestState[]): void {
+    for (const state of states) {
+      const quest = this.TryGetChild(Quest, BigInt(state.questConfigId));
+      if (!quest) continue;
+      quest.Restore(state);
+    }
   }
 
   /**
@@ -136,6 +171,22 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
   Snapshot(): readonly QuestState[] { return this.GetChildren(Quest).map((quest) => quest.Snapshot()); }
   CompletedQuestConfigIds(): readonly number[] { return [...this.completedQuestConfigIds].sort((a, b) => a - b); }
   HasCompletedQuest(questConfigId: number): boolean { return this.completedQuestConfigIds.has(questConfigId); }
+
+  /** 返回当前所有已接取任务对同一目标还需要的最大数量；一件物品可同时推进多个相同目标。 / Returns the maximum remaining count across accepted matching objectives; one item can advance several matching quests. */
+  RemainingProgress(objectiveType: number, targetConfigId: number): number {
+    const entries = this.objectiveIndex.get(objectiveIndexKey(objectiveType, targetConfigId));
+    if (!entries) return 0;
+    let remaining = 0;
+    for (const entry of entries) {
+      const quest = this.TryGetChild(Quest, BigInt(entry.questConfigId));
+      if (!quest) continue;
+      const state = quest.Snapshot();
+      if (state.status !== QuestStatus.InProgress) continue;
+      const objective = state.objectives.find((value) => value.objectiveId === entry.objectiveId);
+      if (objective) remaining = Math.max(remaining, objective.required - objective.current);
+    }
+    return Math.max(0, remaining);
+  }
 
   CaptureTransfer(): QuestTransferState {
     return { active: this.Snapshot(), completedQuestConfigIds: this.CompletedQuestConfigIds() };

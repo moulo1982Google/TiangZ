@@ -173,7 +173,7 @@ RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClie
 
 `game_config/`是策划数值的唯一源目录，使用固定版本的[Luban](https://github.com/focus-creative-games/luban)从Excel生成服务端与客户端强类型配置。它和`configs/<environment>/`的Process、Scene、端口部署配置是两套完全不同的东西。
 
-当前业务表包括`ItemConfig`、`MapConfig`、`PlayerConfig`、`MonsterConfig`、`MonsterAreaConfig`、`BuffConfig`、`SkillConfig`、`SkillEffectConfig`、`QuestConfig`和`QuestObjectiveConfig`。修改Excel后，如果准备重启服务器使配置生效，执行：
+当前业务表包括`ItemConfig`、`MapConfig`、`PlayerConfig`、`MonsterConfig`、`MonsterAreaConfig`、`DropTableConfig`、`BuffConfig`、`SkillConfig`、`SkillEffectConfig`、`QuestConfig`和`QuestObjectiveConfig`。修改Excel后，如果准备重启服务器使配置生效，执行：
 
 ```powershell
 npm run build:game-config:startup
