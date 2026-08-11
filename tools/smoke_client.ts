@@ -865,29 +865,30 @@ async function verifyGateSessionLifecycle(
 async function verifyMapTransfer(
   gate: TcpRpcConnection,
   previous: ReturnType<typeof decodeEnterMapFrame>["body"],
-  expectedItem: { itemId: bigint; count: number; version: number },
+  expectedItem: { itemId: bigint; count: number; version: number } | undefined,
   expectedMinimumHp: bigint,
   dynamicMap: MapInstanceSnapshot,
 ): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
   const queuedItem = previous.items.find((item) => item.configId === 1002);
-  if (!queuedItem || queuedItem.count <= 0) {
-    throw new Error("map transfer smoke requires the untouched large health potion stack");
-  }
-  // 前一步已经使用小红并提交共享GCD；等待GCD自然结束后改用未进入自身CD的大红。
-  // The previous step committed the shared GCD with the small potion. Wait for
-  // that GCD, then use the untouched large-potion cooldown domain during transfer.
-  await sleep(1_100);
+  // 旧Demo出生自带药品时继续覆盖跨图并发UseItem；Starter现在由任务奖励发药，
+  // 新账号没有背包种子时只验证地图状态迁移，不伪造业务道具。
+  // Keep the transfer-time UseItem coverage for legacy seeded fixtures. The
+  // Starter grants potions through quests, so a fresh unseeded account verifies
+  // map-state transfer without inventing inventory state.
+  if (queuedItem && expectedItem) await sleep(1_100);
   const rpcId = nextRpcId++;
   const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
   const responsePromise = gate.request(buildEnterMapPacket(rpcId, { mapId: 2, mapInstanceId: 0n }));
-  const queuedItemRpcId = nextRpcId++;
-  const queuedItemEvent = gate.waitForMessage(MsgCode.G2C_ItemChanged);
-  const queuedItemResponse = gate.request(
-    buildUseItemPacket(queuedItemRpcId, {
+  const queuedItemRpcId = queuedItem && expectedItem ? nextRpcId++ : undefined;
+  const queuedItemEvent = queuedItemRpcId === undefined
+    ? undefined
+    : gate.waitForMessage(MsgCode.G2C_ItemChanged);
+  const queuedItemResponse = queuedItemRpcId === undefined || !queuedItem
+    ? undefined
+    : gate.request(buildUseItemPacket(queuedItemRpcId, {
       itemId: queuedItem.itemId,
       operationId: nextOperationId("transfer"),
-    }),
-  );
+    }));
   const responseFrame = await responsePromise;
   const response = decodeEnterMapFrame(responseFrame);
   const ready = decodeMapReadyFrame(await readyFrame);
@@ -896,7 +897,9 @@ async function verifyMapTransfer(
   }
   const transferred = response.body;
   const mapConfig = GameConfigs.MapConfig.Get(2);
-  const itemAfter = transferred.items.find((item) => item.itemId === expectedItem.itemId);
+  const itemAfter = expectedItem
+    ? transferred.items.find((item) => item.itemId === expectedItem.itemId)
+    : undefined;
   if (
     transferred.mapId !== 2 ||
     transferred.unitId !== previous.unitId ||
@@ -905,9 +908,11 @@ async function verifyMapTransfer(
     transferred.x !== mapConfig.spawnX ||
     transferred.y !== mapConfig.spawnY ||
     transferred.z !== mapConfig.spawnZ ||
-    !itemAfter ||
-    itemAfter?.count !== expectedItem.count ||
-    itemAfter?.version !== expectedItem.version
+    (expectedItem !== undefined && (
+      !itemAfter ||
+      itemAfter.count !== expectedItem.count ||
+      itemAfter.version !== expectedItem.version
+    ))
   ) {
     throw new Error(`map transfer did not preserve player state: ${stringifyForError({ previous, transferred, ready: ready.body })}`);
   }
@@ -920,32 +925,31 @@ async function verifyMapTransfer(
       `map transfer lost Numeric state: expected>=${expectedMinimumHp}, after=${afterHp}`,
     );
   }
-  const itemResponse = decodeUseItemFrame(await queuedItemResponse);
-  if (itemResponse.rpcId !== queuedItemRpcId || itemResponse.body.error) {
-    throw new Error(`queued transfer-time UseItem failed: ${stringifyForError(itemResponse.body)}`);
-  }
-  const itemEvent = decodeItemChangedFrame(await queuedItemEvent);
-  if (
+  const itemResponse = queuedItemResponse ? decodeUseItemFrame(await queuedItemResponse) : undefined;
+  const itemEvent = queuedItemEvent ? decodeItemChangedFrame(await queuedItemEvent) : undefined;
+  if (itemResponse && queuedItem && queuedItemRpcId !== undefined && itemEvent && (
+    itemResponse.rpcId !== queuedItemRpcId ||
+    itemResponse.body.error ||
     itemResponse.body.item.count !== queuedItem.count - 1 ||
     itemResponse.body.globalCooldownEndAtMs <= 0n ||
     itemResponse.body.itemCooldownEndAtMs <= itemResponse.body.globalCooldownEndAtMs ||
     itemEvent.body.item.version !== itemResponse.body.item.version
-  ) {
+  )) {
     throw new Error("queued transfer-time UseItem was not executed exactly once on the target Unit");
   }
   // 背包事件和Numeric增量是两个独立Push；只有实际恢复了HP才等待Numeric，避免把满血不变
   // 的合法行为误判成超时。
   // Inventory and Numeric are independent pushes; wait for Numeric only when the heal can
   // actually change HP, so a valid full-health use is not treated as a timeout.
-  const useConfig = GameConfigs.ItemConfig.Get(queuedItem.configId);
-  const restoreHp = useConfig.useEffect === 2
+  const useConfig = queuedItem ? GameConfigs.ItemConfig.Get(queuedItem.configId) : undefined;
+  const restoreHp = useConfig?.useEffect === 2
     ? BigInt(useConfig.useParams[1] ?? 0)
     : 0n;
   const maxHp = BigInt(GameConfigs.PlayerConfig.Get(1).maxHp);
   const expectedQueuedHp = expectedMinimumHp + restoreHp < maxHp
     ? expectedMinimumHp + restoreHp
     : maxHp;
-  const playerHpAfterQueuedItem = expectedMinimumHp >= maxHp || expectedQueuedHp === expectedMinimumHp
+  const playerHpAfterQueuedItem = !itemResponse || expectedMinimumHp >= maxHp || expectedQueuedHp === expectedMinimumHp
     ? expectedMinimumHp
     : await waitForPlayerHpAtLeast(
       gate,
@@ -961,7 +965,7 @@ async function verifyMapTransfer(
     y: transferred.y,
     z: transferred.z,
     itemCount: itemAfter?.count,
-    queuedItemCount: itemResponse.body.item.count,
+    queuedItemCount: itemResponse?.body.item.count ?? "not-seeded",
     currentHp: playerHpAfterQueuedItem,
   });
   const respawnedMonsterId = await verifyMonsterLifecycle(gate, transferred, playerHpAfterQueuedItem);
@@ -1542,8 +1546,9 @@ async function verifyItemChange(
   previousHp: bigint,
 ) {
   const initial = enterMap.items.find((item) => item.configId === 1001);
-  if (!initial || initial.count !== 50) {
-    throw new Error("enter-map snapshot did not include the initial item state");
+  if (!initial) {
+    console.log("Immediate item event: skipped (Starter grants items from quests)");
+    return { item: undefined, currentHp: previousHp };
   }
   const itemConfig = GameConfigs.ItemConfig.Get(initial.configId);
   const maxHp = BigInt(GameConfigs.PlayerConfig.Get(1).maxHp);

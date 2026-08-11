@@ -99,7 +99,7 @@ function injectBuildBadge(directory, build, target) {
   const badge = `<div id="tiangz-build-version" aria-label="TiangZ build version" title="${fullLabel}">${visibleLabel}</div>
 <style>
 #tiangz-build-version{position:fixed;z-index:11000;left:50%;top:calc(env(safe-area-inset-top,0px) + 4px);transform:translateX(-50%);padding:3px 7px;border-radius:4px;color:rgba(238,247,243,.86);background:rgba(13,22,25,.68);font:10px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;pointer-events:none;user-select:none}
-@media (orientation:portrait) and (max-width:900px){#tiangz-build-version{left:calc(env(safe-area-inset-left,0px) + 8px);transform:none}}
+@media (max-width:900px),(pointer:coarse){#tiangz-build-version{left:50%;top:calc(env(safe-area-inset-top,0px) + 3px);transform:translateX(-50%);padding:2px 5px;font-size:8px;opacity:.72}}
 </style>`;
   const nextHtml = html.includes("</body>")
     ? html.replace("</body>", `${badge}\n</body>`)

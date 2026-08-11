@@ -823,6 +823,29 @@ export class MapComponent extends Component<[
     };
     player.RestoreTransfer(transfer);
 
+    // Starter尚未提供墓地、灵魂或玩家复活流程。持久化死亡状态如果原样恢复，会让该角色
+    // 永久无法移动、施法或重新吸引怪物；因此只在“重新创建PlayerUnit”的进图边界满血复活，
+    // 并保留出生点作为权威位置。正式项目应以独立Revive业务替换这条Demo策略。
+    // The Starter has no graveyard or player-revive flow yet. Restoring a dead
+    // snapshot verbatim would permanently brick the character, so only the
+    // new-PlayerUnit admission boundary revives it at full HP and keeps the map
+    // spawn authoritative. Production games should replace this Demo policy
+    // with an explicit Revive domain operation.
+    if (!data.player.alive) {
+      const native = player.GetComponent(NativeUnitRef);
+      const numeric = player.GetComponent(NumericComponent);
+      native.alive = 1;
+      NativeData.ResetMovement(native.Handle);
+      numeric[NumericType.CurrentHp] = numeric[NumericType.MaxHp];
+      this.logger.info("dead persisted player revived at map spawn", {
+        account: player.Account,
+        characterId: player.CharacterId.toString(),
+        mapId: this.mapId,
+        mapInstanceId: this.mapInstanceId.toString(),
+      });
+      return;
+    }
+
     if (
       data.player.mapId !== this.mapId ||
       data.player.mapInstanceId !== this.mapInstanceId

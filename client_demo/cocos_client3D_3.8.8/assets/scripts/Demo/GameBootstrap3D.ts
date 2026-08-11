@@ -251,8 +251,11 @@ export class GameBootstrap3D extends Component {
   private mobileCameraSurface?: HTMLElement;
   private mobileActionButton?: HTMLButtonElement;
   private mobileAttackButton?: HTMLButtonElement;
+  private mobileNpcInteractButton?: HTMLButtonElement;
   private mobileStyleElement?: HTMLStyleElement;
+  private mobileViewportCleanup?: () => void;
   private mobileLeftHudElement?: HTMLElement;
+  private mobileRightHudElement?: HTMLElement;
   private mobileInstructionsElement?: HTMLElement;
   private mobilePingElement?: HTMLElement;
   private selectedMonsterElement?: HTMLElement;
@@ -372,6 +375,9 @@ export class GameBootstrap3D extends Component {
 
   update(deltaTime: number): void {
     this.loginFlow?.update();
+    if (this.localUnitId !== 0 && this.gateSocket?.state === "closed") {
+      this.returnToLogin("Gate连接已断开，请重新登录", "连接已断开");
+    }
     this.updateMobileHud();
     this.updateAutoAttackHud();
     this.updateSkillHud();
@@ -451,10 +457,17 @@ export class GameBootstrap3D extends Component {
     this.itemCooldownEnds.clear();
     this.mobileControlsElement?.remove();
     this.mobileControlsElement = undefined;
+    this.mobileActionButton = undefined;
+    this.mobileAttackButton = undefined;
+    this.mobileNpcInteractButton = undefined;
+    this.mobileViewportCleanup?.();
+    this.mobileViewportCleanup = undefined;
     this.mobileStyleElement?.remove();
     this.mobileStyleElement = undefined;
     this.mobileLeftHudElement?.remove();
     this.mobileLeftHudElement = undefined;
+    this.mobileRightHudElement?.remove();
+    this.mobileRightHudElement = undefined;
     this.mobileInstructionsElement?.remove();
     this.mobilePingElement?.remove();
     this.playerStatsPanel?.remove();
@@ -605,11 +618,14 @@ export class GameBootstrap3D extends Component {
     subtitle.textContent = "请输入账号密码登录；新用户请点击注册";
     Object.assign(subtitle.style, { marginBottom: "20px", color: "#9fb5bf", fontSize: "14px" });
     const form = document.createElement("form");
+    form.autocomplete = "on";
+    form.method = "post";
+    form.action = window.location.href;
     form.style.display = "grid";
     form.style.gap = "11px";
-    const account = this.createLoginInput(document, "用户名（同时作为角色名）", "text", "username");
-    const password = this.createLoginInput(document, "密码（6-64个字符）", "password", "current-password");
-    const confirmPassword = this.createLoginInput(document, "确认密码（仅注册时校验）", "password", "new-password");
+    const account = this.createLoginInput(document, "用户名（同时作为角色名）", "text", "username", "username");
+    const password = this.createLoginInput(document, "密码（6-64个字符）", "password", "current-password", "password");
+    const confirmPassword = this.createLoginInput(document, "确认密码（仅注册时校验）", "password", "new-password", "password-confirmation");
     confirmPassword.style.display = "none";
     const status = document.createElement("div");
     status.textContent = "正在读取本地配置...";
@@ -658,10 +674,12 @@ export class GameBootstrap3D extends Component {
     placeholder: string,
     type: string,
     autocomplete: HTMLInputElement["autocomplete"],
+    name: string,
   ): HTMLLabelElement {
     const label = document.createElement("label");
     const input = document.createElement("input");
     input.type = type;
+    input.name = name;
     input.placeholder = placeholder;
     input.autocomplete = autocomplete;
     Object.assign(input.style, {
@@ -705,6 +723,9 @@ export class GameBootstrap3D extends Component {
     }
     if (this.loginConfirmPasswordLabel) {
       this.loginConfirmPasswordLabel.style.display = registering ? "block" : "none";
+    }
+    if (this.loginPasswordInput) {
+      this.loginPasswordInput.autocomplete = registering ? "new-password" : "current-password";
     }
     if (this.loginSubmitButton) {
       this.loginSubmitButton.textContent = registering ? "注册并进入游戏" : "登录";
@@ -955,6 +976,7 @@ export class GameBootstrap3D extends Component {
     label.textContent = `${name}: -- / --`;
     panel.appendChild(label);
     const track = document.createElement("div");
+    track.className = "cocos3d-resource-track";
     track.style.height = "7px";
     track.style.margin = "3px 0 6px";
     track.style.overflow = "hidden";
@@ -997,6 +1019,7 @@ export class GameBootstrap3D extends Component {
     this.autoAttackLabel = label;
 
     const track = document.createElement("div");
+    track.className = "cocos3d-auto-attack-track";
     track.style.height = "8px";
     track.style.marginTop = "7px";
     track.style.overflow = "hidden";
@@ -1751,7 +1774,7 @@ export class GameBootstrap3D extends Component {
 
     const instructions = document.createElement("div");
     instructions.className = "cocos3d-mobile-instructions";
-    instructions.textContent = "操作\n摇杆上下：前后移动\n摇杆左右：左右转向\n右侧拖动：环绕镜头\n双指捏合：缩放\n点击地面寻路：暂时关闭\n点击“攻”：切换平A\n点击2/3：使用道具";
+    instructions.textContent = "摇杆移动/转向 · 右侧拖动镜头 · 双指缩放 · 攻/2/3快捷操作";
     instructions.style.position = "fixed";
     instructions.style.left = "max(10px, 2vw)";
     instructions.style.top = "max(10px, 2vh)";
@@ -1769,6 +1792,15 @@ export class GameBootstrap3D extends Component {
     if (this.playerStatsPanel) leftHud.appendChild(this.playerStatsPanel);
     if (this.autoAttackPanel) leftHud.appendChild(this.autoAttackPanel);
 
+    // Ping、目标、Buff和任务共享右侧容器，避免业务面板按固定top值互相覆盖。
+    // Ping, target, Buffs, and quests share one right-side flow so fixed top offsets cannot overlap.
+    const rightHud = document.createElement("div");
+    rightHud.className = "cocos3d-mobile-right-hud";
+    rightHud.style.display = "contents";
+    rightHud.style.pointerEvents = "none";
+    document.body.appendChild(rightHud);
+    this.mobileRightHudElement = rightHud;
+
     const ping = document.createElement("div");
     ping.className = "cocos3d-mobile-ping";
     ping.textContent = "Gate Ping: --";
@@ -1783,8 +1815,11 @@ export class GameBootstrap3D extends Component {
     ping.style.background = "rgba(13, 22, 25, 0.72)";
     ping.style.font = "600 13px/1.4 system-ui, sans-serif";
     ping.style.pointerEvents = "none";
-    document.body.appendChild(ping);
+    rightHud.appendChild(ping);
     this.mobilePingElement = ping;
+    if (this.selectedMonsterElement) rightHud.appendChild(this.selectedMonsterElement);
+    if (this.buffPanel) rightHud.appendChild(this.buffPanel);
+    if (this.questPanel) rightHud.appendChild(this.questPanel);
   }
 
   /** 使用SDK已有的Gate Ping样本刷新右上角延迟，不另发请求也不读取服务器内部指标。 / Refreshes the top-right latency from the SDK's existing Gate Ping sample without extra requests. */
@@ -2012,6 +2047,7 @@ export class GameBootstrap3D extends Component {
     const createActionButton = (label: string, ariaLabel: string, bottom: string): HTMLButtonElement => {
       const button = document.createElement("button");
       button.type = "button";
+      button.className = "cocos3d-mobile-action-button";
       button.textContent = label;
       button.setAttribute("aria-label", ariaLabel);
       button.style.position = "absolute";
@@ -2100,38 +2136,59 @@ export class GameBootstrap3D extends Component {
       });
     };
 
-    const mobileActionBottom = "calc(env(safe-area-inset-bottom, 0px) + max(24px, 6vh))";
-    const attackButton = createActionButton("攻", "切换自动攻击", `calc(${mobileActionBottom} + 66px)`);
+    const mobileActionBottom = "calc(env(safe-area-inset-bottom, 0px) + max(18px, 4vh))";
+    const attackButton = createActionButton("攻", "切换自动攻击", `calc(${mobileActionBottom} + 112px)`);
     bindActionButton(attackButton, () => this.toggleAutoAttack());
     controls.appendChild(attackButton);
     this.mobileAttackButton = attackButton;
     this.updateMobileAttackButton();
 
-    const actionButton = createActionButton("门", "开关动态门", mobileActionBottom);
+    const actionButton = createActionButton("门", "开关动态门", `calc(${mobileActionBottom} + 56px)`);
     bindActionButton(actionButton, () => this.toggleDemoDoor());
     controls.appendChild(actionButton);
     this.mobileActionButton = actionButton;
 
+    const npcButton = createActionButton("交", "与附近NPC交互", mobileActionBottom);
+    npcButton.style.display = "none";
+    bindActionButton(npcButton, () => this.openNpcDialog());
+    controls.appendChild(npcButton);
+    this.mobileNpcInteractButton = npcButton;
+
     const style = document.createElement("style");
     style.textContent = `
       .cocos3d-mobile-controls { display: none; }
-      .cocos3d-mobile-left-hud { display: contents; }
+      .cocos3d-mobile-left-hud, .cocos3d-mobile-right-hud { display: contents; }
       .cocos3d-mobile-instructions, .cocos3d-mobile-ping { display: none; }
       @media (max-width: 900px), (pointer: coarse), (display-mode: standalone) {
         .cocos3d-mobile-controls { display: block; }
         .cocos3d-status { display: none !important; }
         .cocos3d-mobile-left-hud {
-          display: flex;
+          display: flex !important;
           position: fixed;
           z-index: 10002;
           left: calc(env(safe-area-inset-left, 0px) + 12px);
           top: calc(env(safe-area-inset-top, 0px) + 10px);
-          width: min(330px, calc(100vw - 32px));
+          width: min(280px, calc(100vw - 28px));
           max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 180px);
           box-sizing: border-box;
           flex-direction: column;
           align-items: stretch;
           gap: 8px;
+          overflow-y: auto;
+          pointer-events: none;
+        }
+        .cocos3d-mobile-right-hud {
+          display: flex !important;
+          position: fixed;
+          z-index: 10002;
+          right: calc(env(safe-area-inset-right, 0px) + 12px);
+          top: calc(env(safe-area-inset-top, 0px) + 10px);
+          width: min(240px, calc(100vw - 28px));
+          max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 150px);
+          box-sizing: border-box;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 6px;
           overflow-y: auto;
           pointer-events: none;
         }
@@ -2150,10 +2207,26 @@ export class GameBootstrap3D extends Component {
           box-sizing: border-box !important;
           flex: 0 0 auto;
         }
+        .cocos3d-mobile-right-hud > .cocos3d-mobile-ping,
+        .cocos3d-mobile-right-hud > .cocos3d-selected-monster-hud,
+        .cocos3d-mobile-right-hud > .cocos3d-buff-hud,
+        .cocos3d-mobile-right-hud > .cocos3d-quest-hud {
+          position: static !important;
+          inset: auto !important;
+          left: auto !important;
+          top: auto !important;
+          right: auto !important;
+          bottom: auto !important;
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          box-sizing: border-box !important;
+          flex: 0 0 auto;
+        }
         .cocos3d-mobile-instructions {
           display: block;
           padding: 7px 9px !important;
-          font: 12px/1.32 system-ui, sans-serif !important;
+          font: 11px/1.28 system-ui, sans-serif !important;
           box-sizing: border-box !important;
         }
         .cocos3d-mobile-ping {
@@ -2173,7 +2246,7 @@ export class GameBootstrap3D extends Component {
         .cocos3d-hotbar {
           left: 50% !important;
           right: auto !important;
-          bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+          bottom: var(--tiangz-mobile-hotbar-bottom, calc(env(safe-area-inset-bottom, 0px) + 12px)) !important;
           z-index: 10004 !important;
           gap: 4px !important;
           padding: 5px !important;
@@ -2191,9 +2264,11 @@ export class GameBootstrap3D extends Component {
           font-size: clamp(13px, 4vw, 16px) !important;
         }
         .cocos3d-skillbar {
-          bottom: calc(env(safe-area-inset-bottom, 0px) + 96px) !important;
+          bottom: var(--tiangz-mobile-skillbar-bottom, calc(env(safe-area-inset-bottom, 0px) + 96px)) !important;
           gap: 4px !important;
           padding: 5px !important;
+          transform: translateX(-50%) scale(var(--tiangz-mobile-bar-scale, 1)) !important;
+          transform-origin: bottom center !important;
         }
         .cocos3d-skillbar > button {
           width: clamp(56px, 16vw, 62px) !important;
@@ -2203,10 +2278,11 @@ export class GameBootstrap3D extends Component {
         .cocos3d-skill-cast-hud {
           left: 50% !important;
           top: auto !important;
-          bottom: calc(env(safe-area-inset-bottom, 0px) + 162px) !important;
+          bottom: var(--tiangz-mobile-castbar-bottom, calc(env(safe-area-inset-bottom, 0px) + 162px)) !important;
           width: min(320px, calc(100vw - 32px)) !important;
           padding: 7px 9px !important;
-          transform: translateX(-50%) !important;
+          transform: translateX(-50%) scale(var(--tiangz-mobile-castbar-scale, 1)) !important;
+          transform-origin: bottom center !important;
           font: 12px/1.3 system-ui, sans-serif !important;
         }
         .cocos3d-buff-hud {
@@ -2225,20 +2301,190 @@ export class GameBootstrap3D extends Component {
           padding: 7px 9px !important;
           font: 12px/1.22 system-ui, sans-serif !important;
         }
+        .cocos3d-quest-hud {
+          right: calc(env(safe-area-inset-right, 0px) + 12px) !important;
+          top: var(--tiangz-mobile-quest-top, calc(env(safe-area-inset-top, 0px) + 300px)) !important;
+          width: min(260px, calc(100vw - 32px)) !important;
+          max-height: min(180px, calc(100dvh - 220px)) !important;
+          overflow-y: auto !important;
+          padding: 7px 9px !important;
+          font: 12px/1.3 system-ui, sans-serif !important;
+        }
+        .cocos3d-npc-dialog {
+          width: min(320px, calc(100vw - 24px)) !important;
+          max-height: calc(100dvh - 32px) !important;
+          overflow-y: auto !important;
+          padding: 12px !important;
+          font-size: 13px !important;
+        }
+      }
+      :root.tiangz-phone-browser {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      :root.tiangz-phone-browser .cocos3d-mobile-left-hud,
+      :root.tiangz-phone-browser .cocos3d-mobile-right-hud {
+        top: calc(env(safe-area-inset-top, 0px) + 24px);
+        width: min(190px, 44vw);
+        gap: 4px;
+      }
+      :root.tiangz-phone-browser .cocos3d-mobile-instructions {
+        max-height: 30px;
+        overflow: hidden;
+        padding: 4px 6px !important;
+        font: 9px/1.18 system-ui, sans-serif !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-player-stats-hud,
+      :root.tiangz-phone-browser .cocos3d-auto-attack-hud {
+        padding: 5px 6px !important;
+        font: 9px/1.16 system-ui, sans-serif !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-resource-track,
+      :root.tiangz-phone-browser .cocos3d-auto-attack-track {
+        height: 4px !important;
+        margin: 2px 0 3px !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-mobile-ping,
+      :root.tiangz-phone-browser .cocos3d-selected-monster-hud,
+      :root.tiangz-phone-browser .cocos3d-buff-hud,
+      :root.tiangz-phone-browser .cocos3d-quest-hud {
+        padding: 5px 6px !important;
+        font: 9px/1.18 system-ui, sans-serif !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-buff-hud,
+      :root.tiangz-phone-browser .cocos3d-quest-hud {
+        max-height: 112px !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-hotbar > button {
+        width: 54px !important;
+        height: 54px !important;
+        padding: 3px !important;
+        font-size: 9px !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-hotbar > button > span:nth-child(2) {
+        width: 30px !important;
+        height: 30px !important;
+        font-size: 11px !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-hotbar,
+      :root.tiangz-phone-browser .cocos3d-skillbar,
+      :root.tiangz-phone-browser .cocos3d-skill-cast-hud {
+        transform: translateX(-50%) scale(1) !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-skillbar > button {
+        width: 46px !important;
+        height: 42px !important;
+        padding: 3px !important;
+        font-size: 9px !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-skill-cast-hud {
+        width: min(224px, calc(100vw - 24px)) !important;
+        padding: 5px 6px !important;
+        font: 9px/1.18 system-ui, sans-serif !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-mobile-joystick {
+        width: min(96px, 25vw) !important;
+        height: min(96px, 25vw) !important;
+        left: max(10px, env(safe-area-inset-left, 0px)) !important;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 10px) !important;
+      }
+      :root.tiangz-phone-browser .cocos3d-mobile-action-button {
+        width: 46px !important;
+        height: 46px !important;
+        right: max(10px, env(safe-area-inset-right, 0px)) !important;
+        font-size: 14px !important;
       }
       @media (orientation: portrait) and (max-width: 900px) {
-        .cocos3d-mobile-joystick { transform: scale(0.88); transform-origin: bottom left; }
-        .cocos3d-hotbar {
-          bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(126px, 18vh, 180px)) !important;
+        .cocos3d-mobile-left-hud {
+          width: min(220px, 48vw);
+          max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 170px);
+          gap: 5px;
         }
-        .cocos3d-skillbar {
-          bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(212px, 28vh, 266px)) !important;
+        .cocos3d-mobile-instructions {
+          max-height: 48px;
+          overflow: hidden;
+          padding: 5px 7px !important;
+          font: 10px/1.2 system-ui, sans-serif !important;
         }
-        .cocos3d-skill-cast-hud {
-          bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(278px, 36vh, 336px)) !important;
+        .cocos3d-player-stats-hud,
+        .cocos3d-auto-attack-hud {
+          padding: 6px 7px !important;
+          font: 10px/1.18 system-ui, sans-serif !important;
+        }
+        .cocos3d-mobile-ping {
+          max-width: 132px;
+          padding: 6px 7px !important;
+          font: 600 11px/1.2 system-ui, sans-serif !important;
+        }
+        .cocos3d-selected-monster-hud {
+          top: calc(env(safe-area-inset-top, 0px) + 58px) !important;
+          width: min(204px, calc(100vw - 24px)) !important;
+          padding: 6px 7px !important;
+          font: 11px/1.22 system-ui, sans-serif !important;
         }
         .cocos3d-buff-hud {
-          top: calc(env(safe-area-inset-top, 0px) + 126px) !important;
+          top: calc(env(safe-area-inset-top, 0px) + 122px) !important;
+          max-width: min(204px, calc(100vw - 24px)) !important;
+          padding: 5px !important;
+        }
+        .cocos3d-quest-hud {
+          width: min(204px, calc(100vw - 24px)) !important;
+          max-height: 132px !important;
+          font-size: 10px !important;
+        }
+        .cocos3d-hotbar > button {
+          width: 64px !important;
+          height: 64px !important;
+          padding: 3px !important;
+        }
+        .cocos3d-hotbar > button > span:nth-child(2) {
+          width: 36px !important;
+          height: 36px !important;
+          font-size: 13px !important;
+        }
+        .cocos3d-skillbar > button {
+          width: 54px !important;
+          height: 48px !important;
+          padding: 3px !important;
+          font-size: 10px !important;
+        }
+        .cocos3d-skill-cast-hud {
+          width: min(280px, calc(100vw - 28px)) !important;
+          padding: 6px 7px !important;
+          font-size: 11px !important;
+        }
+        .cocos3d-mobile-joystick {
+          width: min(108px, 27vw) !important;
+          height: min(108px, 27vw) !important;
+          left: max(10px, env(safe-area-inset-left, 0px)) !important;
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+          transform: none !important;
+        }
+        .cocos3d-hotbar {
+          transform: translateX(-50%) scale(0.84) !important;
+        }
+        .cocos3d-skillbar {
+          transform: translateX(-50%) scale(0.78) !important;
+        }
+        .cocos3d-skill-cast-hud {
+          transform: translateX(-50%) scale(0.86) !important;
+        }
+        .cocos3d-buff-hud {
+          top: calc(env(safe-area-inset-top, 0px) + 122px) !important;
+        }
+      }
+      @media (orientation: landscape) and (max-height: 560px) and (max-width: 900px) {
+        .cocos3d-mobile-left-hud {
+          max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 72px);
+          width: min(250px, 38vw);
+        }
+        .cocos3d-mobile-instructions {
+          max-height: 42px;
+          overflow: hidden;
+          font-size: 10px !important;
+        }
+        .cocos3d-quest-hud {
+          max-height: calc(100dvh - 130px) !important;
         }
       }
     `;
@@ -2246,6 +2492,77 @@ export class GameBootstrap3D extends Component {
     this.mobileStyleElement = style;
     document.body.appendChild(controls);
     this.mobileControlsElement = controls;
+    this.installMobileViewportLayout(document);
+  }
+
+  /**
+   * 根据手机真实可视高度安排底部三层HUD，并处理地址栏收起、旋转和PWA安全区变化。
+   * Arrange the three bottom HUD rows from the real mobile viewport and react to browser chrome,
+   * orientation, and PWA safe-area changes.
+   *
+   * 这里调整的是DOM布局，不修改游戏世界单位或服务端分辨率；这样桌面浏览器模拟手机尺寸时
+   * 也能得到同一套结果，而不会让移动逻辑和后端坐标产生分叉。
+   * This only changes DOM layout, never world units or server resolution, so desktop mobile emulation
+   * follows the same result without creating a separate movement or coordinate contract.
+   */
+  private installMobileViewportLayout(document: Document): void {
+    const root = document.documentElement;
+    const navigatorValue = (globalThis as typeof globalThis & {
+      navigator?: Navigator & {
+        userAgentData?: { readonly mobile?: boolean };
+      };
+    }).navigator;
+    const phoneUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigatorValue?.userAgent ?? "");
+    const phoneBrowser = navigatorValue?.userAgentData?.mobile === true || phoneUserAgent;
+    const viewport = (globalThis as typeof globalThis & {
+      visualViewport?: VisualViewport;
+    }).visualViewport;
+
+    const clamp = (value: number, minimum: number, maximum: number): number =>
+      Math.min(maximum, Math.max(minimum, value));
+    const sync = (): void => {
+      const width = Math.max(1, viewport?.width ?? globalThis.innerWidth);
+      const height = Math.max(1, viewport?.height ?? globalThis.innerHeight);
+      const portrait = height >= width;
+      const shortSide = Math.min(width, height);
+      // 手机窄屏使用轻微缩放，优先保证五个技能按钮在一行内；大屏手机和桌面模拟不再缩小。
+      // Narrow phones use a small compact scale so all five skills remain on one row.
+      const barScale = clamp(shortSide / 440, 0.76, 1);
+      const hotbarBottom = portrait ? clamp(height * 0.13, 94, 118) : 10;
+      const skillbarBottom = portrait ? hotbarBottom + 64 : 72;
+      const castbarBottom = portrait ? skillbarBottom + 58 : 126;
+
+      root.classList.toggle("tiangz-phone-browser", phoneBrowser);
+      root.style.setProperty("--tiangz-mobile-bar-scale", barScale.toFixed(3));
+      root.style.setProperty(
+        "--tiangz-mobile-hotbar-bottom",
+        `calc(env(safe-area-inset-bottom, 0px) + ${Math.round(hotbarBottom)}px)`,
+      );
+      root.style.setProperty(
+        "--tiangz-mobile-skillbar-bottom",
+        `calc(env(safe-area-inset-bottom, 0px) + ${Math.round(skillbarBottom)}px)`,
+      );
+      root.style.setProperty(
+        "--tiangz-mobile-castbar-bottom",
+        `calc(env(safe-area-inset-bottom, 0px) + ${Math.round(castbarBottom)}px)`,
+      );
+    };
+
+    const resizeTarget = globalThis;
+    resizeTarget.addEventListener("resize", sync);
+    resizeTarget.addEventListener("orientationchange", sync);
+    viewport?.addEventListener("resize", sync);
+    sync();
+    this.mobileViewportCleanup = () => {
+      resizeTarget.removeEventListener("resize", sync);
+      resizeTarget.removeEventListener("orientationchange", sync);
+      viewport?.removeEventListener("resize", sync);
+      root.classList.remove("tiangz-phone-browser");
+      root.style.removeProperty("--tiangz-mobile-bar-scale");
+      root.style.removeProperty("--tiangz-mobile-hotbar-bottom");
+      root.style.removeProperty("--tiangz-mobile-skillbar-bottom");
+      root.style.removeProperty("--tiangz-mobile-castbar-bottom");
+    };
   }
 
   /**
@@ -2531,6 +2848,15 @@ export class GameBootstrap3D extends Component {
    */
   private handleSessionReplaced(message: G2C_SessionReplaced): void {
     const reason = message.reason || "账号已在其他设备登录";
+    this.returnToLogin(reason, "连接已被顶号");
+  }
+
+  /**
+   * 清理失效Gate会话并回到登录界面；连接关闭后绝不能继续保留旧UnitId发送地图请求。
+   * Clears an invalid Gate session and returns to login. A closed connection
+   * must never retain its stale UnitId for subsequent map requests.
+   */
+  private returnToLogin(reason: string, statusPrefix: string): void {
     this.messageDispatcher?.dispose();
     this.messageDispatcher = undefined;
     this.gateSocket = undefined;
@@ -2573,7 +2899,7 @@ export class GameBootstrap3D extends Component {
     this.updateQuestHud();
     this.loginFlow?.close();
     if (this.loginPanel) this.loginPanel.style.display = "flex";
-    this.setStatus(`连接已被顶号：${reason}`);
+    this.setStatus(`${statusPrefix}：${reason}`);
     this.setLoginStatus(reason, true);
   }
 
@@ -2663,6 +2989,7 @@ export class GameBootstrap3D extends Component {
           : "W/S前后，A/D转向；左右鼠标同按前进；左键拖动环视；地面寻路暂时关闭；按住右键时A/D横移；1平A，2/3药水，4-8技能；靠近紫色NPC点交互；E开关动态门"),
       );
       this.setLoginStatus("登录成功");
+      await this.offerCredentialSave(account, password);
       if (this.loginPanel) this.loginPanel.style.display = "none";
       return true;
     } catch (error) {
@@ -2670,6 +2997,29 @@ export class GameBootstrap3D extends Component {
       this.setStatus(`进入Map 100失败：${message}`);
       this.setLoginStatus(message, true);
       return false;
+    }
+  }
+
+  /**
+   * 将成功登录的凭据交给浏览器密码管理器；不支持该API时仍依赖标准form/autocomplete语义。
+   * Offers successful credentials to the browser password manager; unsupported browsers fall back to standard form/autocomplete semantics.
+   * 副作用 / Side effect: Chromium等浏览器可能显示“保存密码”提示；失败不能影响登录结果。
+   * 禁止 / Do not: 不得把明文密码写入localStorage、日志或游戏配置。
+   */
+  private async offerCredentialSave(account: string, password: string): Promise<void> {
+    const passwordCredential = (globalThis as typeof globalThis & {
+      PasswordCredential?: new (data: { id: string; name: string; password: string }) => Credential;
+    }).PasswordCredential;
+    if (!passwordCredential || !navigator.credentials) return;
+    try {
+      await navigator.credentials.store(new passwordCredential({
+        id: account,
+        name: account,
+        password,
+      }));
+    } catch {
+      // 密码管理器可能被策略、隐私模式或用户设置禁用；不能因此把成功登录改成失败。
+      // Password managers may be disabled by policy, private browsing, or user settings; login must remain successful.
     }
   }
 
@@ -3110,12 +3460,19 @@ export class GameBootstrap3D extends Component {
     this.nearbyNpcUnitId = nearby?.unitId ?? 0;
     if (!nearby) {
       if (this.npcInteractionButton) this.npcInteractionButton.style.display = "none";
+      if (this.mobileNpcInteractButton) this.mobileNpcInteractButton.style.display = "none";
       if (this.npcDialogUnitId !== 0) this.closeNpcDialog();
       return;
     }
     if (this.npcInteractionButton) {
       this.npcInteractionButton.style.display = "block";
-      this.npcInteractionButton.textContent = `交互：${npcName(nearby.configId)}（按F键）`;
+      this.npcInteractionButton.textContent = this.isMobileLayout()
+        ? `交互：${npcName(nearby.configId)}`
+        : `交互：${npcName(nearby.configId)}（按F键）`;
+    }
+    if (this.mobileNpcInteractButton) {
+      this.mobileNpcInteractButton.style.display = "block";
+      this.mobileNpcInteractButton.title = `与${npcName(nearby.configId)}交互`;
     }
     if (this.npcDialogUnitId !== 0 && this.npcDialogUnitId !== nearby.unitId) {
       this.closeNpcDialog();

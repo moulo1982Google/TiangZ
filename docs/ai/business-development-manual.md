@@ -991,6 +991,8 @@ C2M_AttackMonsterHandler
 
 主动怪不要只写“靠近玩家”的表现逻辑：当前演示中`MonsterConfig.attack_mode=1`表示主动追击，进入攻击距离后由`MonsterComponentSystem`按最终`NumericType.Attack`扣玩家`CurrentHp`；`attack_mode=0`才是不主动寻找玩家的被动怪。因为玩家确实可能死亡，玩家创建时必须从`PlayerConfig.initial_hp/max_hp/initial_mp/max_mp`初始化Numeric，Cocos3D、UE、Unity和Godot的HUD只订阅进入快照与`G2C_EntityNumeric`，显示HP/MP，不能在客户端复制伤害规则。
 
+客户端发现Gate连接已经关闭时必须退出旧世界并清除旧`UnitId`，不能让断线画面继续向Map发送请求。当前Starter没有正式玩家复活玩法，因此持久化死亡角色重新创建PlayerUnit时会在地图出生点满血恢复；正式项目应新增显式Revive流程，并决定墓地、复活时间、Buff和持久化规则，不要把Demo恢复策略扩散进Combat Core。
+
 ## DBProxy持久化接入边界
 
 独立DBProxy当前为`v0.4.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK、事务回执查询和真实PostgreSQL/Redis闭环。TiangZ主工程已经实现Player Snapshot、任务奖励事务和UseItem消费事务，但业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。

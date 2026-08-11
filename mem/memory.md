@@ -1,5 +1,7 @@
 # TiangZ开发记忆
 
+- 外网Demo若Gate连接在重连宽限期后关闭，Cocos3D必须清空旧地图和旧`UnitId`并回登录页；否则服务端已移除玩家、客户端仍会得到`invalid caster`，主动怪也因地图没有存活玩家而待机。Starter暂未实现正式玩家复活，DBProxy恢复死亡快照时只在新PlayerUnit进图边界于出生点满血恢复；正式项目应替换为独立Revive业务。
+
 - Starter Map 100 当前使用 Demo 专用`AoiConfig=2`：7×7 Grid Enter、9×9 Grid Detach；10004/10005/10008为三只被动黄色怪，10006/10007为两只主动红色怪，Quest 5001要求击败5只怪A。NPC交付5001后解锁Quest 5005，目标是击败5只怪B；`C2M_CompleteQuest`必须带NPC实例ID并在5米内完成，任务面板不能直接领奖。Cocos3D怪物头顶HUD读取`MonsterConfig.name`显示名称和HP。技能施法期间平A读条冻结；玩家受到真实HP伤害时，Demo地图技能调度器只把当前施法结束时间延后500ms并广播权威读条状态，客户端不自行推导。
 
 ## 工程与协作约定
