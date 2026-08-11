@@ -14,7 +14,9 @@ import {
   Node,
   KeyCode,
   JsonAsset,
+  Layers,
   primitives,
+  RenderRoot2D,
   resources,
   UITransform,
   utils,
@@ -496,6 +498,9 @@ export class GameBootstrap3D extends Component {
     camera.fov = 50;
     camera.near = 0.1;
     camera.clearColor = new Color(20, 28, 32, 255);
+    // 世界空间Label必须使用UI_3D可见层；普通3D网格仍继续使用默认层。
+    // World-space Labels require the UI_3D camera layer; ordinary 3D meshes remain on the default layer.
+    camera.visibility |= Layers.Enum.UI_3D;
     cameraNode.setPosition(0, CAMERA_HEIGHT, -CAMERA_DISTANCE);
     cameraNode.lookAt(new Vec3(0, CAMERA_LOOK_HEIGHT, 0));
 
@@ -4180,12 +4185,17 @@ function createAttackSlashEffect(sizeScale: number, monsterAttack: boolean): Att
  */
 function createEntityOverheadHud(name: string, showHealthBars = true): EntityOverheadHud {
   const root = new Node("EntityOverheadHud");
+  // Cocos的Label属于2D渲染对象，必须挂在RenderRoot2D下才能进入渲染管线。
+  // Cocos Labels are 2D render objects and must be attached below RenderRoot2D to reach the render pipeline.
+  root.addComponent(RenderRoot2D);
+  root.layer = Layers.Enum.UI_3D;
   root.setPosition(0, MONSTER_HUD_OFFSET_Y, 0);
 
   let nameLabel: Label | undefined;
   if (name.length > 0) {
     const labelNode = new Node("MonsterName");
     root.addChild(labelNode);
+    labelNode.layer = Layers.Enum.UI_3D;
     labelNode.setPosition(0, 0.28, 0);
     const transform = labelNode.addComponent(UITransform);
     transform.setContentSize(240, 42);
