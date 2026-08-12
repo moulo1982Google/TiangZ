@@ -18,6 +18,9 @@ const GET_LOGIN_ADDR_REQ: u16 = 10002;
 const GET_LOGIN_ADDR_RESP: u16 = 10003;
 const LOGIN_REQ: u16 = 10004;
 const LOGIN_RESP: u16 = 10005;
+const REGISTER_REQ: u16 = 10059;
+const REGISTER_RESP: u16 = 10060;
+const PERF_PASSWORD: &str = "PerfPass123";
 const LOGIN_GATE_REQ: u16 = 10008;
 const LOGIN_GATE_RESP: u16 = 10009;
 const ENTER_MAP_REQ: u16 = 10010;
@@ -380,7 +383,7 @@ async fn main() -> Result<()> {
             prepare_tasks.spawn(async move {
                 let permit = semaphore.acquire_owned().await?;
                 let account = format!(
-                    "rust_perf_{}_{}_{}",
+                    "rp{}_{}_{}",
                     std::process::id(),
                     account_seed,
                     index
@@ -426,7 +429,7 @@ async fn main() -> Result<()> {
             setup_tasks.spawn(async move {
                 let permit = semaphore.acquire_owned().await?;
                 let account = format!(
-                    "rust_perf_{}_{}_{}",
+                    "rp{}_{}_{}",
                     std::process::id(),
                     account_seed,
                     index
@@ -788,8 +791,10 @@ async fn prepare_player(
     account: &str,
     index: usize,
 ) -> Result<PreparedPlayerConnection> {
+    register_player(options, login, account, index).await?;
     let mut login_payload = Vec::with_capacity(account.len() + 16);
     push_string(&mut login_payload, 1, account);
+    push_string(&mut login_payload, 3, PERF_PASSWORD);
     let response = request_one(
         &login.ip,
         login.port,
@@ -838,6 +843,28 @@ async fn prepare_player(
         player_index,
         placement_layout,
     ))
+}
+
+async fn register_player(
+    options: &Options,
+    login: &Address,
+    account: &str,
+    index: usize,
+) -> Result<()> {
+    let mut register_payload = Vec::with_capacity(account.len() + PERF_PASSWORD.len() + 16);
+    push_string(&mut register_payload, 1, account);
+    push_string(&mut register_payload, 2, PERF_PASSWORD);
+    let response = request_one(
+        &login.ip,
+        login.port,
+        encode_rpc(REGISTER_REQ, 1, &register_payload)?,
+        options.timeout,
+        options.source_ip,
+        source_port(options.source_ip, 16_000, index)?,
+    )
+    .await?;
+    decode_message(&response, REGISTER_RESP, Some(1)).context("Register RPC failed")?;
+    Ok(())
 }
 
 async fn enter_player(
@@ -1290,11 +1317,7 @@ async fn run_player(
                         result
                             .business_latencies_micros
                             .push(request.started_at.elapsed().as_micros() as u64);
-                        if response_error >= 10_000 {
-                            result.business_rejected += 1;
-                        } else {
-                            result.business_transport_errors += 1;
-                        }
+                        result.business_rejected += 1;
                     }
                 }
             }
