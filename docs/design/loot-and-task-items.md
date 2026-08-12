@@ -17,6 +17,16 @@ MonsterUnit死亡
 
 掉落属于尸体和地图，不属于玩家，也不是`MonsterUnit`上的可传送子Entity。尸体复活或销毁时，容器一起清理。玩家不能因为看到尸体快照就本地增加Item或Quest进度。
 
+## 尸体生命周期
+
+尸体显示时间和怪物重生时间是两个时间轴：
+
+- 有掉落的尸体最多保留5分钟；无掉落的尸体保留10秒。
+- `MonsterConfig.respawn_seconds`从死亡时刻开始计时，只表示下一只怪物的最短重生时刻，不再直接决定尸体何时消失。
+- 普通掉落全部领取后，尸体可以立即离开AOI；新怪物在尸体窗口结束且达到`respawn_seconds`最短时刻后生成。
+- 任务掉落按账号判定资格，不能因为一个玩家领取完就删除尸体，否则其他后来接任务的玩家无法领取；这类尸体保留到5分钟窗口结束。
+- 客户端收到尸体的AOI Leave后关闭掉落窗口，不能继续使用旧`UnitId`请求拾取。
+
 ## 配置
 
 `MonsterConfig.drop_table_id`指向一组`DropTableConfig`行：
@@ -47,7 +57,7 @@ MonsterUnit死亡
 
 ## 持久化与幂等
 
-`C2M_LootMonster`只包含`monster_id`和调用方为本次逻辑操作生成的`operation_id`。服务端先同步预留掉落行，避免同一个账号或多个账号的并发请求重复消费普通行；随后规划Inventory和Quest快照。DBProxy确认前，不修改Item Entity、Quest ChildEntity或任务索引。
+客户端先调用`C2M_InspectLootMonster`查看尸体，只返回当前账号有资格领取的`LootDropSnapshot`，不会预留、消耗掉落，也不会创建ItemId。真正领取时调用带`drop_id`、`loot_all`和`operation_id`的`C2M_LootMonster`。服务端先同步预留掉落行，避免同一个账号或多个账号的并发请求重复消费普通行；随后规划Inventory和Quest快照。DBProxy确认前，不修改Item Entity、Quest ChildEntity或任务索引。
 
 提交成功后：
 
@@ -55,8 +65,9 @@ MonsterUnit死亡
 - 任务进度应用到QuestComponent；
 - 通过`M2C_LootMonster`只给拾取者返回道具和任务快照；
 - 相同`operation_id`再次请求返回第一次回执，不重复发放。
+- 单项拾取只提交被点击的`drop_id`；全部拾取提交`loot_all=true`。回执中的`remaining_drops`是服务端确认后的最新列表，客户端必须用它刷新窗口，不能根据本地按钮推测剩余内容。
 
-事务失败且没有持久回执时释放预留；如果数据库已经提交但响应丢失，则按原`operation_id`读取回执，不能重新计算第二份掉落。客户端的尸体按钮只展示意图，距离、任务资格、剩余数量和数据库结果都以服务端为准。
+事务失败且没有持久回执时释放预留；如果数据库已经提交但响应丢失，即使尸体已经因普通掉落领取完成而离开地图，也必须按原`operation_id`读取回执，不能重新计算第二份掉落。客户端的尸体按钮只展示意图，距离、任务资格、剩余数量和数据库结果都以服务端为准。
 
 ## 静态掉落与动态ItemInstance
 
@@ -64,16 +75,30 @@ MonsterUnit死亡
 
 ## 业务调用
 
-Handler保持扁平，只转交给玩家和地图掉落模块：
+Handler保持扁平，只转交给玩家和地图掉落模块。查看与领取是两个明确动作：
 
 ```ts
+@unitRpcHandler(PlayerUnit, MapProtocol.InspectLootMonster)
+export class C2M_InspectLootMonsterHandler {
+  handle(unit: PlayerUnit, request: C2M_InspectLootMonster) {
+    return unit.InspectLootMonster(request.monsterId);
+  }
+}
+
 @unitRpcHandler(PlayerUnit, MapProtocol.LootMonster)
 export class C2M_LootMonsterHandler {
   handle(unit: PlayerUnit, request: C2M_LootMonster) {
-    return unit.LootMonster(request.monsterId, request.operationId);
+    return unit.LootMonster(
+      request.monsterId,
+      request.operationId,
+      request.dropId,
+      request.lootAll,
+    );
   }
 }
 ```
+
+Cocos3D的尸体窗口保持打开，普通点击一行只领取该行；Shift+点击、鼠标右键、F键或“全部拾取”按钮领取全部。领取结果和剩余行同时显示，窗口必须由玩家关闭，不能只用短暂状态提示代替。若全部普通掉落领取后服务端立即发送AOI Leave，客户端应关闭绑定旧`UnitId`的窗口；请求超时重试仍复用原`operationId`，由服务端回执恢复结果。
 
 业务模块不要：
 

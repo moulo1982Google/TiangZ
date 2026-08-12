@@ -47,7 +47,9 @@ import type {
   G2C_SkillProjectile,
   G2C_QuestProgress,
   G2C_SessionReplaced,
+  LootDropSnapshot,
   ItemSnapshot,
+  M2C_InspectLootMonster,
   M2C_LootMonster,
   MapEntitySnapshot,
   QuestSnapshot,
@@ -283,6 +285,17 @@ export class GameBootstrap3D extends Component {
   private selectedMonsterElement?: HTMLElement;
   private selectedMonsterLabel?: HTMLElement;
   private lootInteractionButton?: HTMLButtonElement;
+  private lootPanel?: HTMLElement;
+  private lootPanelTitle?: HTMLElement;
+  private lootPanelList?: HTMLElement;
+  private lootPanelResult?: HTMLElement;
+  private lootPanelAllButton?: HTMLButtonElement;
+  private lootPanelMonsterId = 0;
+  private lootPreviewDrops: readonly LootDropSnapshot[] = [];
+  private lootInspectInFlight = false;
+  private readonly lootResultLines: string[] = [];
+  private lootOperationKey = "";
+  private lootOperationId = "";
   private npcInteractionButton?: HTMLButtonElement;
   private npcDialogPanel?: HTMLElement;
   private npcDialogText?: HTMLElement;
@@ -624,6 +637,7 @@ export class GameBootstrap3D extends Component {
     this.buildAutoAttackHud(document);
     this.buildSkillCastHud(document);
     this.buildSelectedMonsterHud(document);
+    this.buildLootPanel(document);
     this.buildNpcInteractionHud(document);
     this.buildBuffHud(document);
     this.buildHotbarHud(document);
@@ -1204,7 +1218,7 @@ export class GameBootstrap3D extends Component {
    * claimed on start and synthetic ground clicks are suppressed. The gesture is consumed and the
    * action runs once; this helper must not retain long-lived promises or authoritative state.
    */
-  private bindTouchSafeHudButton(button: HTMLButtonElement, action: () => void | Promise<void>): void {
+  private bindTouchSafeHudButton(button: HTMLButtonElement, action: (event?: Event) => void | Promise<void>): void {
     let activationHandled = false;
     const consume = (event: Event): void => {
       event.preventDefault();
@@ -1227,8 +1241,9 @@ export class GameBootstrap3D extends Component {
       if (event.pointerType === "touch") return;
       consume(event);
       this.mobileControlPointerIds.delete(event.pointerId);
+      if (event.button === 2) return;
       activationHandled = true;
-      void action();
+      void action(event);
     });
     button.addEventListener("pointercancel", (event) => {
       if (event.pointerType === "touch") return;
@@ -1247,7 +1262,7 @@ export class GameBootstrap3D extends Component {
       const ids = Array.from(event.changedTouches, (touch) => touch.identifier);
       releaseTouchIdsAfterDispatch(ids);
       activationHandled = true;
-      void action();
+      void action(event);
     }, { passive: false });
     button.addEventListener("touchcancel", (event) => {
       consume(event);
@@ -1256,7 +1271,7 @@ export class GameBootstrap3D extends Component {
     }, { passive: false });
     button.addEventListener("click", (event) => {
       consume(event);
-      if (!activationHandled) void action();
+      if (!activationHandled) void action(event);
       activationHandled = false;
     });
   }
@@ -1295,12 +1310,99 @@ export class GameBootstrap3D extends Component {
     lootButton.style.font = "700 13px/1.2 system-ui, sans-serif";
     lootButton.style.pointerEvents = "auto";
     lootButton.style.touchAction = "manipulation";
-    this.bindTouchSafeHudButton(lootButton, () => this.lootSelectedMonster());
+    this.bindTouchSafeHudButton(lootButton, (event) => {
+      if (isAllLootGesture(event)) void this.lootSelectedMonster(0, true);
+      else void this.inspectSelectedMonsterLoot();
+    });
+    lootButton.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      void this.lootSelectedMonster(0, true);
+    });
     panel.appendChild(lootButton);
     document.body.appendChild(panel);
     this.selectedMonsterElement = panel;
     this.selectedMonsterLabel = label;
     this.lootInteractionButton = lootButton;
+  }
+
+  /** 创建持久尸体掉落窗口；普通点击领取一行，Shift/右键/F领取全部，窗口由关闭按钮明确结束。 / Creates a persistent corpse-loot window: normal click claims one row, Shift/right-click/F claims all, and only the close button ends it. */
+  private buildLootPanel(document: Document): void {
+    const panel = document.createElement("section");
+    panel.className = "cocos3d-loot-panel";
+    Object.assign(panel.style, {
+      position: "fixed",
+      left: "50%",
+      top: "50%",
+      transform: "translate(-50%, -50%)",
+      zIndex: "10010",
+      display: "none",
+      width: "min(420px, calc(100vw - 28px))",
+      maxHeight: "min(560px, calc(100vh - 40px))",
+      overflow: "auto",
+      boxSizing: "border-box",
+      padding: "16px",
+      color: "#f3f7ff",
+      background: "rgba(13, 25, 32, 0.97)",
+      border: "1px solid rgba(140, 192, 230, 0.72)",
+      borderRadius: "10px",
+      boxShadow: "0 12px 40px rgba(0, 0, 0, 0.48)",
+      font: "14px/1.45 system-ui, sans-serif",
+      pointerEvents: "auto",
+    });
+    const title = document.createElement("div");
+    title.style.font = "700 18px/1.3 system-ui, sans-serif";
+    title.style.marginBottom = "4px";
+    const hint = document.createElement("div");
+    hint.textContent = "点击一行拾取；Shift+点击、右键或按F全部拾取";
+    hint.style.color = "rgba(232, 241, 250, 0.72)";
+    hint.style.marginBottom = "10px";
+    const list = document.createElement("div");
+    list.style.display = "flex";
+    list.style.flexDirection = "column";
+    list.style.gap = "6px";
+    const result = document.createElement("div");
+    result.style.marginTop = "10px";
+    result.style.paddingTop = "8px";
+    result.style.borderTop = "1px solid rgba(255,255,255,0.14)";
+    result.style.color = "#bfe7c5";
+    result.style.whiteSpace = "pre-line";
+    const all = document.createElement("button");
+    all.type = "button";
+    all.textContent = "全部拾取";
+    Object.assign(all.style, {
+      width: "100%",
+      marginTop: "10px",
+      padding: "9px 12px",
+      border: "1px solid rgba(140, 192, 230, 0.72)",
+      borderRadius: "6px",
+      color: "#edf4ff",
+      background: "rgba(46, 112, 160, 0.78)",
+      font: "700 14px/1.2 system-ui, sans-serif",
+      touchAction: "manipulation",
+    });
+    this.bindTouchSafeHudButton(all, () => void this.lootSelectedMonster(0, true));
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "关闭";
+    Object.assign(close.style, {
+      width: "100%",
+      marginTop: "12px",
+      padding: "9px 12px",
+      border: "1px solid rgba(255,255,255,0.3)",
+      borderRadius: "6px",
+      color: "#edf4ff",
+      background: "rgba(255,255,255,0.1)",
+      font: "700 14px/1.2 system-ui, sans-serif",
+      touchAction: "manipulation",
+    });
+    this.bindTouchSafeHudButton(close, () => this.closeLootPanel());
+    panel.append(title, hint, list, all, result, close);
+    document.body.appendChild(panel);
+    this.lootPanel = panel;
+    this.lootPanelTitle = title;
+    this.lootPanelList = list;
+    this.lootPanelResult = result;
+    this.lootPanelAllButton = all;
   }
 
   /**
@@ -3362,6 +3464,11 @@ export class GameBootstrap3D extends Component {
     this.skillCastErrorUntilMs = 0;
     this.skillRequestInFlight = false;
     this.lootRequestInFlight = false;
+    this.lootInspectInFlight = false;
+    this.lootOperationKey = "";
+    this.lootOperationId = "";
+    this.closeLootPanel();
+    this.lootResultLines.length = 0;
     this.selectedMonsterUnitId = 0;
     this.selectedNpcUnitId = 0;
     this.nearbyNpcUnitId = 0;
@@ -3561,6 +3668,7 @@ export class GameBootstrap3D extends Component {
       if (unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
       if (unitId === this.selectedNpcUnitId) this.clearSelectedNpc();
       if (unitId === this.nearbyNpcUnitId || unitId === this.npcDialogUnitId) this.closeNpcDialog();
+      if (unitId === this.lootPanelMonsterId) this.closeLootPanel();
       if (!remote) continue;
       remote.visual?.Dispose();
       remote.node.destroy();
@@ -3940,6 +4048,7 @@ export class GameBootstrap3D extends Component {
       if (previous) previous.selectionMarker.active = false;
     }
     this.selectedMonsterUnitId = monster.unitId;
+    if (this.lootPanelMonsterId !== 0 && this.lootPanelMonsterId !== monster.unitId) this.closeLootPanel();
     monster.selectionMarker.active = true;
     this.refreshSelectedTargetHud();
   }
@@ -3964,6 +4073,7 @@ export class GameBootstrap3D extends Component {
     const previous = this.remotePlayers.get(this.selectedMonsterUnitId);
     if (previous) previous.selectionMarker.active = false;
     this.selectedMonsterUnitId = 0;
+    this.closeLootPanel();
     this.refreshSelectedTargetHud();
   }
 
@@ -4007,38 +4117,179 @@ export class GameBootstrap3D extends Component {
     const dz = this.player.position.z - monster.node.position.z;
     const inRange = dx * dx + dz * dz <= 4 * 4;
     button.style.display = "block";
-    button.disabled = this.lootRequestInFlight || !inRange;
+    button.disabled = this.lootRequestInFlight || this.lootInspectInFlight || !inRange;
     button.textContent = this.lootRequestInFlight
       ? "拾取中..."
+      : this.lootInspectInFlight
+        ? "查看中..."
       : inRange
-        ? "拾取尸体"
+        ? "查看掉落"
         : "靠近尸体后拾取";
-    button.style.opacity = inRange && !this.lootRequestInFlight ? "1" : "0.62";
+    button.style.opacity = inRange && !this.lootRequestInFlight && !this.lootInspectInFlight ? "1" : "0.62";
   }
 
-  /** 请求一次尸体拾取，并把道具与任务进度合并到权威客户端状态。 / Requests one corpse loot and merges authoritative items and quest progress. */
-  private async lootSelectedMonster(): Promise<void> {
+  /** 只查看尸体掉落并打开持久窗口；查看不会消耗掉落。 / Inspects corpse rows and opens the persistent window without consuming loot. */
+  private async inspectSelectedMonsterLoot(): Promise<void> {
     const mapClient = this.mapClient;
     const monster = this.remotePlayers.get(this.selectedMonsterUnitId);
-    if (!mapClient || !monster || monster.entityType !== ENTITY_TYPE_MONSTER || monster.alive || this.lootRequestInFlight) return;
+    if (!mapClient || !monster || monster.entityType !== ENTITY_TYPE_MONSTER || monster.alive || this.lootInspectInFlight || this.lootRequestInFlight) return;
+    this.lootInspectInFlight = true;
+    this.updateLootInteractionHud();
+    this.renderLootPanel();
+    try {
+      const response = await mapClient.inspectLootMonster({ monsterId: monster.unitId });
+      this.ApplyLootPreview(response);
+      if (this.remotePlayers.has(monster.unitId)) {
+        this.openLootPanel(monster.unitId, response.drops);
+      } else {
+        // 尸体可能在查看响应返回前已经离开AOI；不要重新打开已经失效的尸体窗口。
+        // The corpse may leave AOI before the inspect response returns; never reopen a stale window.
+        this.closeLootPanel();
+      }
+    } catch (error) {
+      this.setStatus(`查看掉落失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.lootInspectInFlight = false;
+      this.updateLootInteractionHud();
+      this.renderLootPanel();
+    }
+  }
+
+  /** 请求单行或全部尸体拾取；结果窗口保留，并以remainingDrops刷新。 / Claims one row or all corpse rows, keeps the result window, and refreshes it from remainingDrops. */
+  private async lootSelectedMonster(dropId = 0, lootAll = false): Promise<void> {
+    const mapClient = this.mapClient;
+    const monster = this.remotePlayers.get(this.selectedMonsterUnitId);
+    if (!mapClient || !monster || monster.entityType !== ENTITY_TYPE_MONSTER || monster.alive || this.lootRequestInFlight || this.lootInspectInFlight) return;
+    const dx = this.player.position.x - monster.node.position.x;
+    const dz = this.player.position.z - monster.node.position.z;
+    if (dx * dx + dz * dz > 4 * 4) return;
     this.lootRequestInFlight = true;
     this.updateLootInteractionHud();
+    this.renderLootPanel();
+    const operationKey = `${monster.unitId}:${dropId}:${lootAll ? 1 : 0}`;
+    if (this.lootOperationKey !== operationKey || this.lootOperationId.length === 0) {
+      this.lootOperationKey = operationKey;
+      this.lootOperationId = CreateOperationId("loot");
+    }
     try {
       const response = await mapClient.lootMonster({
         monsterId: monster.unitId,
-        operationId: CreateOperationId("loot"),
+        // 网络超时后重试必须复用同一个操作ID，否则服务端无法返回已经提交的回执。
+        // A retry after a network timeout must reuse the same operation ID so the server can recover its receipt.
+        operationId: this.lootOperationId,
+        dropId,
+        lootAll,
       });
       this.ApplyLootResult(response);
       const names = response.items
         .map((item) => `${GameConfigs.ItemConfig.TryGet(item.configId)?.name ?? `道具#${item.configId}`}×${item.count}`)
         .join("、");
-      this.setStatus(names.length > 0 ? `拾取成功：${names}` : "尸体上没有你可以拾取的掉落");
+      this.appendLootResult(names.length > 0 ? `拾取成功：${names}` : "本次没有拾取到可用掉落");
+      this.ApplyLootPreview({ monsterId: monster.unitId, drops: response.remainingDrops });
+      if (this.remotePlayers.has(monster.unitId)) {
+        this.openLootPanel(monster.unitId, response.remainingDrops);
+      } else {
+        // 全部普通掉落领取后服务端可以立即发送AOI Leave；客户端不保留旧UnitId窗口。
+        // After all global drops are claimed the server may send AOI Leave immediately;
+        // do not keep a window bound to the old UnitId.
+        this.closeLootPanel();
+      }
+      this.lootOperationKey = "";
+      this.lootOperationId = "";
     } catch (error) {
-      this.setStatus(`拾取失败：${error instanceof Error ? error.message : String(error)}`);
+      this.appendLootResult(`拾取失败：${error instanceof Error ? error.message : String(error)}`);
+      if (this.remotePlayers.has(monster.unitId)) {
+        this.openLootPanel(monster.unitId, this.lootPreviewDrops);
+      } else {
+        this.closeLootPanel();
+      }
     } finally {
       this.lootRequestInFlight = false;
       this.updateLootInteractionHud();
+      this.renderLootPanel();
     }
+  }
+
+  /** 记录不会随状态栏消失的拾取结果。 / Records loot results in the persistent window instead of transient status text. */
+  private appendLootResult(line: string): void {
+    this.lootResultLines.push(line);
+    if (this.lootResultLines.length > 8) this.lootResultLines.splice(0, this.lootResultLines.length - 8);
+    if (this.lootPanelResult) this.lootPanelResult.textContent = this.lootResultLines.join("\n");
+  }
+
+  /** 将服务端掉落预览写入弹窗；列表为空也保留“已领取完”状态。 / Stores the server preview and keeps an explicit empty state after all rows are claimed. */
+  private ApplyLootPreview(message: M2C_InspectLootMonster | { monsterId: number; drops: readonly LootDropSnapshot[] }): void {
+    this.lootPanelMonsterId = message.monsterId;
+    this.lootPreviewDrops = message.drops.map((drop) => ({ ...drop }));
+    this.renderLootPanel();
+  }
+
+  /** 打开尸体窗口并渲染当前列表；单项按钮支持Shift与右键全部领取。 / Opens the corpse window and renders current rows; row buttons support Shift and right-click to claim all. */
+  private openLootPanel(monsterId: number, drops: readonly LootDropSnapshot[]): void {
+    const monster = this.remotePlayers.get(monsterId);
+    this.lootPanelMonsterId = monsterId;
+    this.lootPreviewDrops = drops.map((drop) => ({ ...drop }));
+    this.lootPanelResult ??= undefined;
+    if (this.lootPanelTitle) this.lootPanelTitle.textContent = `尸体掉落：${monster ? this.monsterName(monster.configId) : "怪物"}`;
+    if (this.lootPanel) this.lootPanel.style.display = "block";
+    this.renderLootPanel();
+  }
+
+  /** 只负责渲染已有列表，不在每帧创建DOM。 / Renders the existing loot rows without creating DOM every frame. */
+  private renderLootPanel(): void {
+    const list = this.lootPanelList;
+    if (!list) return;
+    list.replaceChildren();
+    if (this.lootPreviewDrops.length === 0) {
+      const empty = document.createElement("div");
+      empty.textContent = "尸体上已经没有你可以拾取的掉落";
+      empty.style.padding = "12px 0";
+      empty.style.color = "rgba(232, 241, 250, 0.72)";
+      list.appendChild(empty);
+    } else {
+      for (const drop of this.lootPreviewDrops) {
+        const row = document.createElement("button");
+        row.type = "button";
+        const item = GameConfigs.ItemConfig.TryGet(drop.itemConfigId);
+        row.textContent = `${item?.name ?? `道具#${drop.itemConfigId}`} × ${drop.count}`;
+        Object.assign(row.style, {
+          width: "100%",
+          padding: "10px 12px",
+          textAlign: "left",
+          border: "1px solid rgba(140, 192, 230, 0.4)",
+          borderRadius: "6px",
+          color: "#f3f7ff",
+          background: "rgba(43, 67, 82, 0.92)",
+          font: "600 14px/1.2 system-ui, sans-serif",
+          touchAction: "manipulation",
+        });
+        this.bindTouchSafeHudButton(row, (event) => {
+          void this.lootSelectedMonster(drop.dropId, isAllLootGesture(event));
+        });
+        row.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          void this.lootSelectedMonster(0, true);
+        });
+        list.appendChild(row);
+      }
+    }
+    if (this.lootPanelResult) this.lootPanelResult.textContent = this.lootResultLines.join("\n");
+    if (this.lootPanelAllButton) {
+      this.lootPanelAllButton.disabled =
+        this.lootPreviewDrops.length === 0 || this.lootRequestInFlight || this.lootInspectInFlight;
+      this.lootPanelAllButton.style.opacity = this.lootPanelAllButton.disabled ? "0.55" : "1";
+    }
+  }
+
+  /** 关闭窗口但不改变尸体；重新点击查看按钮即可再次打开。 / Closes the window without changing the corpse; the inspect button can reopen it. */
+  private closeLootPanel(): void {
+    if (this.lootPanel) this.lootPanel.style.display = "none";
+    this.lootPanelMonsterId = 0;
+    this.lootPreviewDrops = [];
+  }
+
+  private monsterName(configId: number): string {
+    return GameConfigs.MonsterConfig.TryGet(configId)?.name ?? `怪物#${configId}`;
   }
 
   /** 应用拾取RPC返回的道具和任务增量；不从本地击杀表现推导任务进度。 / Applies item and quest deltas from the loot RPC without deriving progress from local visuals. */
@@ -4293,7 +4544,12 @@ export class GameBootstrap3D extends Component {
     }
     if (event.keyCode === KeyCode.KEY_F && !this.pressedKeys.has(event.keyCode)) {
       this.pressedKeys.add(event.keyCode);
-      this.openNpcDialog();
+      const corpse = this.remotePlayers.get(this.selectedMonsterUnitId);
+      if (corpse && corpse.entityType === ENTITY_TYPE_MONSTER && !corpse.alive) {
+        void this.lootSelectedMonster(0, true);
+      } else {
+        this.openNpcDialog();
+      }
       return;
     }
     if (event.keyCode === INVENTORY_KEY && !this.pressedKeys.has(event.keyCode)) {
@@ -5136,6 +5392,12 @@ function npcName(configId: number): string {
 
 function monsterName(configId: number): string {
   return GameConfigs.MonsterConfig.TryGet(configId)?.name ?? `MonsterConfig#${configId}`;
+}
+
+function isAllLootGesture(event?: Event): boolean {
+  if (!event) return false;
+  const value = event as Event & { readonly shiftKey?: boolean; readonly button?: number };
+  return value.shiftKey === true || value.button === 2;
 }
 
 /** 解析服务端公开实体名；旧服务端没有displayName时才使用兼容回退。 / Resolves the server-owned public entity name and only falls back for older servers without displayName. */

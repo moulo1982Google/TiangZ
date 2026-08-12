@@ -15,6 +15,11 @@ export class C2M_LootMonsterHandler implements UnitRpcHandler<
   M2C_LootMonster
 > {
   handle(unit: PlayerUnit, request: C2M_LootMonster): Promise<M2C_LootMonster> {
-    return unit.LootMonster(request.monsterId, request.operationId);
+    return unit.LootMonster(
+      request.monsterId,
+      request.operationId,
+      request.dropId ?? 0,
+      request.lootAll ?? false,
+    );
   }
 }

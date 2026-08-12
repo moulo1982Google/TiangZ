@@ -2,6 +2,7 @@ import {
   BroadcastHub,
   ClientBroadcast,
   ClientAudience,
+  isPromiseLike,
   StateReplicationSystem,
   type BroadcastAudience,
   type EncodedAudienceBatch,
@@ -1329,17 +1330,20 @@ export class MapComponent extends Component<[
     }
     for (const [gateName, targets] of byGate) {
       try {
-        void this.scenes.send(
+        const delivery = this.scenes.send(
           this.scenes.byName(gateName),
           GateMessages.KickPlayers,
           { players: targets, reason },
-        ).catch((error) => {
-          logger.error("failed to notify gate to kick players", {
-            gateName,
-            playerCount: targets.length,
-            error,
+        );
+        if (isPromiseLike(delivery)) {
+          void delivery.catch((error) => {
+            logger.error("failed to notify gate to kick players", {
+              gateName,
+              playerCount: targets.length,
+              error,
+            });
           });
-        });
+        }
       } catch (error) {
         logger.error("failed to notify gate to kick players", {
           gateName,

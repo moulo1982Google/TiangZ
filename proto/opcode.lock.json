@@ -407,6 +407,11 @@
       "code": 10032
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_InspectLootMonster",
+      "name": "C2M_InspectLootMonster",
+      "code": 10064
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_LootMonster",
       "name": "C2M_LootMonster",
       "code": 10062
@@ -610,6 +615,11 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_FindPath",
       "name": "M2C_FindPath",
       "code": 10033
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_InspectLootMonster",
+      "name": "M2C_InspectLootMonster",
+      "code": 10065
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_LootMonster",

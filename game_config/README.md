@@ -54,7 +54,7 @@ Cocos3D演示玩家出生时背包为空，快捷栏仍固定使用`1`切换平A
 
 `MonsterConfig.drop_table_id`指向`DropTableConfig.drop_table_id`。每一行是一个掉落行：`item_config_id`是道具配置ID，`min_count/max_count`是数量范围，`chance_permille`是千分比概率，`quest_objective_id=0`表示普通掉落，非零表示只服务于指定`CollectItem`目标的任务掉落。当前Starter的任务5006在完成并交付5005后解锁，要求收集5个道具1101“任务怪物徽记”；怪物A的掉落表包含这条任务掉落。
 
-死亡时，地图只在尸体容器中保存配置ID和数量，尸体继续保留到复活时间；当前静态任务徽记不会提前创建永久`ItemId`。玩家必须先从NPC接取5006，靠近尸体后发送`C2M_LootMonster`，服务端在拾取时检查任务是否存在且还需要数量。未接任务、任务已经达到要求数量，或该账号已经领取过同一行时，都不会生成背包Item；这条任务掉落仍留在尸体上，不会因为其他玩家或本玩家无资格而全局消失。不同账号各自按任务资格领取，普通掉落则是全局一次性领取。
+死亡时，地图只在尸体容器中保存配置ID和数量，尸体有掉落时保留5分钟、没有掉落时保留10秒；全部普通掉落领取后可以立即清理尸体。`respawn_seconds`从死亡时刻开始计时，只表示新怪物的最短重生时刻；实际生成取尸体窗口结束与该时刻两者较晚值，不再单独决定尸体显示时间。当前静态任务徽记不会提前创建永久`ItemId`。玩家必须先从NPC接取5006，靠近尸体后发送`C2M_LootMonster`，服务端在拾取时检查任务是否存在且还需要数量。未接任务、任务已经达到要求数量，或该账号已经领取过同一行时，都不会生成背包Item；这条任务掉落仍留在尸体上，不会因为其他玩家或本玩家无资格而全局消失。不同账号各自按任务资格领取，普通掉落则是全局一次性领取。
 
 拾取不是“先改内存再保存”：`MonsterComponent.LootMonster`先规划Inventory和Quest快照，使用稳定`operationId`提交DBProxy事务，确认后才提交Item/Quest Entity并推送结果。重复请求返回第一次回执，不会重复加道具或推进任务。动态词条、耐久等真正的ItemInstance掉落不能直接套用“尸体只存配置ID”的静态快捷方式，应在后续ItemInstance方案中保存实例数据。
 
@@ -91,7 +91,7 @@ Action当前支持：
 
 服务端的`SkillCatalog.ts`按当前游戏配置指纹把两张表组合成只读定义。配置Reload后，新Cast使用新定义；已开始读条和已经发射的弹道继续持有接受请求时冻结的旧定义，避免半次技能混用两代数值。客户端SDK只生成`SkillConfig`，用于名称、距离、读条和CD表现；`SkillEffectConfig`保持服务端专有。完整开发流程见[新增一个配置化技能](../docs/tutorials/18-configured-skill.md)。
 
-怪物死亡后，当前MonsterUnit会以`alive=false`的尸体状态继续保留在AOI中；当前最小Demo复用`respawn_seconds`作为尸体存在时间，到期后先发布旧尸体Leave并销毁，再复用同一个`AreaId`刷怪槽创建新的MonsterUnit和UnitId。`MonsterComponent`把`MonsterConfig.max_hp`写入Numeric的`MaxHpBase`，由Rust推导出只读`MaxHp`，把攻击力写入`AttackBase`并由Rust推导只读`Attack`，把`attack_interval_ms`写入`AttackSpeedAdd`并读取只读`AttackSpeed`；`move_speed`按米/秒转换为Numeric的毫米/秒`MoveSpeedBase`。只有掉落设计确实要求尸体消失与复活分离时，才在MonsterConfig新增独立尸体时间；不要放入MonsterAreaConfig。
+怪物死亡后，当前MonsterUnit会以`alive=false`的尸体状态继续保留在AOI中；有掉落尸体保留5分钟、无掉落尸体保留10秒，全部普通掉落领取后可提前清理。`respawn_seconds`从死亡时刻计时，尸体窗口结束且达到最短重生时刻后，再发布旧尸体Leave并销毁，复用同一个`AreaId`刷怪槽创建新的MonsterUnit和UnitId。`MonsterComponent`把`MonsterConfig.max_hp`写入Numeric的`MaxHpBase`，由Rust推导出只读`MaxHp`，把攻击力写入`AttackBase`并由Rust推导只读`Attack`，把`attack_interval_ms`写入`AttackSpeedAdd`并读取只读`AttackSpeed`；`move_speed`按米/秒转换为Numeric的毫米/秒`MoveSpeedBase`。
 
 `PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`分别初始化玩家的当前/最大HP与MP；`attack_range`是独立的普通攻击距离，不属于Numeric链式属性。它们会在创建Unit时写入Numeric，客户端HUD只显示服务端快照和增量。`PlayerConfig.move_speed`同样填写米/秒。Grid2D的移动实现会把一个Cell的米制边长纳入单步耗时，因此不能再把它理解成“每秒几个Cell”；底层协议里的历史字段名`speedCellsPerSecond`暂时保留兼容，但它承载的是米/秒值。
 

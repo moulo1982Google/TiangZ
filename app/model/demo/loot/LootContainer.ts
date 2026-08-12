@@ -1,5 +1,6 @@
 import type {
   ItemSnapshot,
+  LootDropSnapshot,
   M2C_LootMonster,
 } from "../../../generated/model/server/demo/protocol/messages";
 import type { InventoryGrant } from "../item/ItemComponent";
@@ -44,4 +45,13 @@ export function ToInventoryGrants(drops: readonly LootDrop[]): InventoryGrant[] 
 /** 返回拾取后可安全发给客户端的道具快照副本。 / Copies item snapshots safe for client delivery after pickup. */
 export function CopyLootItems(items: readonly ItemSnapshot[]): ItemSnapshot[] {
   return items.map((item) => ({ ...item }));
+}
+
+/** 将内部掉落行转换成客户端预览；不把任务资格、预留状态或永久ItemId泄露给客户端。 / Converts internal rows into client previews without exposing eligibility state, reservations, or permanent ItemIds. */
+export function ToLootDropSnapshots(drops: readonly LootDrop[]): LootDropSnapshot[] {
+  return drops.map((drop) => ({
+    dropId: drop.dropId,
+    itemConfigId: drop.configId,
+    count: drop.count,
+  }));
 }

@@ -14,6 +14,7 @@ const C2M_ATTACK_MONSTER := 10042
 const C2M_CAST_SKILL := 10047
 const C2M_COMPLETE_QUEST := 10054
 const C2M_FIND_PATH := 10032
+const C2M_INSPECT_LOOT_MONSTER := 10064
 const C2M_LOOT_MONSTER := 10062
 const C2M_MAP_PROBE := 10014
 const C2M_MOVE := 10013
@@ -54,6 +55,7 @@ const M2C_ATTACK_MONSTER := 10043
 const M2C_CAST_SKILL := 10048
 const M2C_COMPLETE_QUEST := 10055
 const M2C_FIND_PATH := 10033
+const M2C_INSPECT_LOOT_MONSTER := 10065
 const M2C_LOOT_MONSTER := 10063
 const M2C_MAP_PROBE := 10015
 const M2C_NAVIGATE_INPUT := 10038
@@ -709,17 +711,47 @@ static func decode_c2m_find_path(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_c2m_inspect_loot_monster(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("monster_id"):
+		varint_field(result, 1, int(value["monster_id"]))
+	return result
+
+static func decode_c2m_inspect_loot_monster(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"monster_id": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["monster_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_c2m_loot_monster(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("monster_id"):
 		varint_field(result, 1, int(value["monster_id"]))
 	if value.has("operation_id"):
 		string_field(result, 2, String(value["operation_id"]))
+	if value.has("drop_id"):
+		varint_field(result, 3, int(value["drop_id"]))
+	if value.has("loot_all"):
+		bool_field(result, 4, bool(value["loot_all"]))
 	return result
 
 static func decode_c2m_loot_monster(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"monster_id": 0, "operation_id": ""}
+	var result := {"monster_id": 0, "operation_id": "", "drop_id": 0, "loot_all": false}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -731,6 +763,16 @@ static func decode_c2m_loot_monster(payload: PackedByteArray) -> Dictionary:
 			2:
 				if tag.wire == 2:
 					result["operation_id"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["drop_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["loot_all"] = reader.boolean()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -2297,6 +2339,41 @@ static func decode_item_snapshot(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_loot_drop_snapshot(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("drop_id"):
+		varint_field(result, 1, int(value["drop_id"]))
+	if value.has("item_config_id"):
+		varint_field(result, 2, int(value["item_config_id"]))
+	if value.has("count"):
+		varint_field(result, 3, int(value["count"]))
+	return result
+
+static func decode_loot_drop_snapshot(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"drop_id": 0, "item_config_id": 0, "count": 0}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["drop_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["item_config_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			3:
+				if tag.wire == 0:
+					result["count"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_m2c_accept_quest(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("quest"):
@@ -2597,6 +2674,49 @@ static func decode_m2c_find_path(payload: PackedByteArray) -> Dictionary:
 				reader.skip(tag.wire)
 	return result
 
+static func encode_m2c_inspect_loot_monster(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("monster_id"):
+		varint_field(result, 1, int(value["monster_id"]))
+	for item in value.get("drops", []):
+		bytes_field(result, 2, encode_loot_drop_snapshot(item))
+	return result
+
+static func decode_m2c_inspect_loot_monster(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"monster_id": 0, "drops": []}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["monster_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 2:
+					result["drops"].append(decode_loot_drop_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			90:
+				if tag.wire == 0:
+					result["rpc_id"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			91:
+				if tag.wire == 0:
+					result["error"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			92:
+				if tag.wire == 2:
+					result["message"] = reader.string_value()
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
 static func encode_m2c_loot_monster(value: Dictionary) -> PackedByteArray:
 	var result := PackedByteArray()
 	if value.has("monster_id"):
@@ -2605,11 +2725,13 @@ static func encode_m2c_loot_monster(value: Dictionary) -> PackedByteArray:
 		bytes_field(result, 2, encode_item_snapshot(item))
 	for item in value.get("quests", []):
 		bytes_field(result, 3, encode_quest_snapshot(item))
+	for item in value.get("remaining_drops", []):
+		bytes_field(result, 4, encode_loot_drop_snapshot(item))
 	return result
 
 static func decode_m2c_loot_monster(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"monster_id": 0, "items": [], "quests": []}
+	var result := {"monster_id": 0, "items": [], "quests": [], "remaining_drops": []}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -2626,6 +2748,11 @@ static func decode_m2c_loot_monster(payload: PackedByteArray) -> Dictionary:
 			3:
 				if tag.wire == 2:
 					result["quests"].append(decode_quest_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 2:
+					result["remaining_drops"].append(decode_loot_drop_snapshot(reader.bytes_value()))
 				else:
 					reader.skip(tag.wire)
 			90:

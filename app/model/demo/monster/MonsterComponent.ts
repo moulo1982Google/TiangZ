@@ -7,7 +7,10 @@ import {
 import type { MonsterAreaConfig } from "../../../generated/model/config";
 import type { DamageRequest, DamageResult } from "../combat/CombatComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
-import type { M2C_LootMonster } from "../../../generated/model/server/demo/protocol/messages";
+import type {
+  M2C_InspectLootMonster,
+  M2C_LootMonster,
+} from "../../../generated/model/server/demo/protocol/messages";
 import type { LootContainer } from "../loot/LootContainer";
 import { MapAoiComponent } from "../map/MapAoiComponent";
 import { MapComponent } from "../map/MapComponent";
@@ -17,6 +20,8 @@ export interface MonsterSpawnSlot {
   readonly config: MonsterAreaConfig;
   monster: MonsterUnit | null;
   respawnAtMs: number;
+  corpseExpiresAtMs: number;
+  corpseCleanupInFlight: boolean;
 }
 
 export interface MonsterRuntimeState {
@@ -34,18 +39,20 @@ export interface MonsterComponent {
     monster: MonsterUnit,
     request: DamageRequest,
   ): DamageResult;
-  LootMonster(player: PlayerUnit, monsterId: number, operationId: string): Promise<M2C_LootMonster>;
+  InspectLootMonster(player: PlayerUnit, monsterId: number): M2C_InspectLootMonster;
+  LootMonster(player: PlayerUnit, monsterId: number, operationId: string, dropId: number, lootAll: boolean): Promise<M2C_LootMonster>;
 }
 
 /**
  * 地图级刷怪总管：读取冷刷点、创建统一Unit、维护尸体和重生。
  * 第一版一条配置记录就是一个固定刷怪点，不引入随机区域和刷怪池。
- * 刷怪槽位长期存在，怪物Unit只代表一次实体生命周期；死亡后Unit作为不可交互尸体保留，
- * 到期时先移除尸体，再在同一槽位创建新的Unit。
+ * 刷怪槽位长期存在，怪物Unit只代表一次实体生命周期；死亡后Unit作为不可交互尸体保留在AOI中，
+ * 尸体窗口结束或普通掉落领取完成后清理，再按重生等待在同一槽位创建新的Unit。
  *
  * Map-level monster owner. It reads cold spawn points, creates regular Units,
  * and owns corpse/respawn state. The spawn slot remains stable, while each
- * monster Unit represents one lifetime and remains visible until corpse cleanup.
+ * monster Unit represents one lifetime and remains visible until its corpse
+ * window closes; the next Unit waits for the configured respawn delay.
  */
 @component()
 @lifecycle({ awake: true, destroy: true })

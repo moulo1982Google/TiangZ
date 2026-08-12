@@ -93,7 +93,7 @@ export class SceneBroadcastTransport implements BroadcastTransport {
       }
     }
 
-    const sendsByGate = new Map<string, Promise<void>>();
+    const sendsByGate = new Map<string, Promise<void> | void>();
     for (const [gateName, batches] of deliveriesByGate) {
       try {
         sendsByGate.set(gateName, this.scenes.send(

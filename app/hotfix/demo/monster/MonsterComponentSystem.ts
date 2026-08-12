@@ -25,10 +25,12 @@ import {
   type DamageRequest,
   type DamageResult,
   type M2C_AttackMonster,
+  type M2C_InspectLootMonster,
   type M2C_LootMonster,
   M2C_LootMonsterCodec,
   type MonsterAreaConfigData,
   type MonsterConfigData,
+  type MonsterSpawnSlot,
   type MonsterRuntimeState,
   ItemComponent,
   PlayerPersistenceComponent,
@@ -40,6 +42,7 @@ import {
   type LootContainer,
   type LootDrop,
   ToInventoryGrants,
+  ToLootDropSnapshots,
   systemFor,
   QuestEvents,
 } from "#tiangz/model";
@@ -50,6 +53,8 @@ const DEMO_PLAYER_CONFIG_ID = 1;
 const AUTO_ATTACK_FACING_HALF_ANGLE = Math.PI / 3;
 const MONSTER_ID_MAX = 0xffff_ffff;
 const MONSTER_LOOT_RANGE_METERS = 4;
+const CORPSE_WITH_LOOT_LIFETIME_MS = 5 * 60 * 1_000;
+const EMPTY_CORPSE_LIFETIME_MS = 10 * 1_000;
 const LOOT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 const monsterBehaviorTree = new MonsterBehaviorTree();
 
@@ -61,8 +66,8 @@ const monsterBehaviorTree = new MonsterBehaviorTree();
  * Version-one monster rules: fixed slots, active acquisition, threat-based
  * chase, basic attacks, death, and respawn. Monsters are AOI Subjects only
  * and never participate in dynamic avoidance. Death retains a non-interactive
- * corpse Unit in AOI; after the template delay that corpse is removed and a
- * new Unit is created at the spawn point.
+ * corpse Unit in AOI for its loot window; after cleanup and the configured
+ * respawn delay, a new Unit is created at the spawn point.
  */
 @systemFor(MonsterComponent)
 export class MonsterComponentSystem extends MonsterComponent {
@@ -81,6 +86,8 @@ export class MonsterComponentSystem extends MonsterComponent {
         config,
         monster: null,
         respawnAtMs: 0,
+        corpseExpiresAtMs: 0,
+        corpseCleanupInFlight: false,
       };
       this.slots.set(config.id, slot);
       if (config.initialSpawn) this.Spawn(slot);
@@ -114,13 +121,25 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
   }
 
-  /** 1Hz清理到期尸体并创建新怪物；死亡到清理期间原Unit仍可承接表现事件。 / Removes expired corpses and creates replacement monsters at 1 Hz while retaining the dead Unit for visual events until cleanup. */
+  /** 1Hz清理尸体或到期刷怪；死亡到清理期间原Unit仍可承接表现事件。 / Cleans corpses or creates due replacements at 1 Hz while retaining the dead Unit for visual events until cleanup. */
   Update1Hz(): void {
     if (this.map.IsStopping) return;
     const now = TimeSystem.Instance.ServerNow;
     for (const slot of this.slots.values()) {
-      if (slot.monster && slot.respawnAtMs > 0 && now >= slot.respawnAtMs) {
-        void this.Respawn(slot);
+      if (
+        slot.monster &&
+        !slot.corpseCleanupInFlight &&
+        slot.corpseExpiresAtMs > 0 &&
+        now >= slot.corpseExpiresAtMs
+      ) {
+        this.BeginCorpseCleanup(slot, "window-expired");
+      } else if (
+        !slot.monster &&
+        !slot.corpseCleanupInFlight &&
+        slot.respawnAtMs > 0 &&
+        now >= slot.respawnAtMs
+      ) {
+        this.Spawn(slot);
       }
     }
   }
@@ -167,34 +186,51 @@ export class MonsterComponentSystem extends MonsterComponent {
    * Quest-gated rows are invisible to players without the quest, and stay on
    * the corpse after this player has already reached the required count.
    */
-  async LootMonster(player: PlayerUnit, monsterId: number, operationId: string): Promise<M2C_LootMonster> {
+  InspectLootMonster(player: PlayerUnit, monsterId: number): M2C_InspectLootMonster {
+    const { container } = this.RequireLootContainer(player, monsterId);
+    return {
+      monsterId,
+      drops: ToLootDropSnapshots(this.SelectLootDrops(container, player, 0, true)),
+    };
+  }
+
+  async LootMonster(
+    player: PlayerUnit,
+    monsterId: number,
+    operationId: string,
+    dropId: number,
+    lootAll: boolean,
+  ): Promise<M2C_LootMonster> {
     this.RequireMapUnit(player);
     if (!LOOT_OPERATION_ID_PATTERN.test(operationId)) {
       throw new RpcError(GameErrCode.LootNotAvailable, "invalid loot operation id");
     }
-    const container = this.lootContainers.get(monsterId);
-    const monster = this.monsters.get(monsterId);
-    if (!container || !monster || TimeSystem.Instance.ServerNow >= container.expiresAtMs) {
-      throw new RpcError(GameErrCode.LootNotAvailable, `loot is not available: ${monsterId}`);
-    }
-    if (monster.GetComponent(NativeUnitRef).alive !== 0) {
-      throw new RpcError(GameErrCode.LootNotAvailable, `monster is still alive: ${monsterId}`);
-    }
-    const playerPosition = player.GetComponent(PositionComponent);
-    const monsterPosition = monster.GetComponent(PositionComponent);
-    if (distanceSquared(playerPosition.x, playerPosition.z, monsterPosition.x, monsterPosition.z)
-      > MONSTER_LOOT_RANGE_METERS * MONSTER_LOOT_RANGE_METERS) {
-      throw new RpcError(GameErrCode.LootTooFar, `loot is too far: ${monsterId}`);
-    }
-
     const scopedOperationId = `loot:${player.Account}:${operationId}`;
+    const persistence = player.GetComponent(PlayerPersistenceComponent);
+    let container: LootContainer;
+    try {
+      ({ container } = this.RequireLootContainer(player, monsterId));
+    } catch (error) {
+      // 尸体可能已经因“全部普通掉落领取完成”而离开AOI；此时只允许用同一
+      // operationId读取已提交回执，不能重新计算掉落，也不能把未知请求伪装成成功。
+      // The corpse may already have left AOI after all global drops were claimed.
+      // Only the same operationId may recover a durable receipt; never recalculate loot.
+      const receipt = await persistence.LoadTransaction(scopedOperationId);
+      if (!receipt) throw error;
+      return cloneLootResponse(decodeLootResponse(receipt.result, monsterId));
+    }
     const committed = container.committedResponses.get(scopedOperationId);
-    if (committed) return cloneLootResponse(committed);
+    if (committed) {
+      this.TryRemoveLootedCorpse(monsterId, container);
+      return cloneLootResponse(committed);
+    }
     if (container.inFlightOperations.has(scopedOperationId)) {
       throw new RpcError(GameErrCode.LootAlreadyClaimed, `loot operation is already running: ${operationId}`);
     }
 
-    const selected = this.SelectLootDrops(container, player);
+    // drop_id=0 keeps old clients working as “全部领取”；新客户端普通点击只传一个drop_id。
+    // drop_id=0 preserves legacy “loot all” behavior; current clients send one row for a normal click.
+    const selected = this.SelectLootDrops(container, player, dropId, lootAll || dropId === 0);
     if (selected.length === 0) {
       throw new RpcError(GameErrCode.LootNotAvailable, `no eligible loot remains: ${monsterId}`);
     }
@@ -202,21 +238,21 @@ export class MonsterComponentSystem extends MonsterComponent {
     const questProgress = this.PlanLootQuestProgress(player, selected);
     const inventory = player.GetComponent(ItemComponent);
     const inventoryPlan = inventory.PlanGrantItems(ToInventoryGrants(selected));
-    const persistence = player.GetComponent(PlayerPersistenceComponent);
     const baseData = persistence.Capture("monster-loot", { items: inventoryPlan.nextItems });
     const data = {
       ...baseData,
       quests: mergeQuestProgress(baseData.quests, questProgress),
     };
-    const response: M2C_LootMonster = {
-      monsterId,
-      items: inventoryPlan.affectedItems.map((item) => ({ ...item })),
-      quests: questProgress.map(toProtocolQuest),
-    };
-    const encodedResponse = M2C_LootMonsterCodec.encode(response);
     this.ReserveLoot(container, player.Account, scopedOperationId, selected);
     let durableCommitted = false;
     try {
+      const response: M2C_LootMonster = {
+        monsterId,
+        items: inventoryPlan.affectedItems.map((item) => ({ ...item })),
+        quests: questProgress.map(toProtocolQuest),
+        remainingDrops: ToLootDropSnapshots(this.SelectLootDrops(container, player, 0, true)),
+      };
+      const encodedResponse = M2C_LootMonsterCodec.encode(response);
       let committedResult: { result: Uint8Array };
       try {
         committedResult = await persistence.ApplyTransaction(scopedOperationId, data, encodedResponse);
@@ -239,6 +275,7 @@ export class MonsterComponentSystem extends MonsterComponent {
         quest.ApplyCommittedProgress(fromProtocolQuest(durable.quests));
       }
       await this.PublishLootResult(player, durable);
+      this.TryRemoveLootedCorpse(monsterId, container);
       return cloneLootResponse(durable);
     } catch (error) {
       // DBProxy已经确认后不能释放保留行，否则另一个玩家可能再次领取同一份普通掉落。
@@ -250,6 +287,26 @@ export class MonsterComponentSystem extends MonsterComponent {
     } finally {
       container.inFlightOperations.delete(scopedOperationId);
     }
+  }
+
+  /** 校验尸体存在、死亡且在交互距离内；查看与领取必须共享这条规则。 / Validates corpse existence, death, and range for both inspect and claim. */
+  private RequireLootContainer(player: PlayerUnit, monsterId: number): { container: LootContainer; monster: MonsterUnit } {
+    this.RequireMapUnit(player);
+    const container = this.lootContainers.get(monsterId);
+    const monster = this.monsters.get(monsterId);
+    if (!container || !monster || TimeSystem.Instance.ServerNow >= container.expiresAtMs) {
+      throw new RpcError(GameErrCode.LootNotAvailable, `loot is not available: ${monsterId}`);
+    }
+    if (monster.GetComponent(NativeUnitRef).alive !== 0) {
+      throw new RpcError(GameErrCode.LootNotAvailable, `monster is still alive: ${monsterId}`);
+    }
+    const playerPosition = player.GetComponent(PositionComponent);
+    const monsterPosition = monster.GetComponent(PositionComponent);
+    if (distanceSquared(playerPosition.x, playerPosition.z, monsterPosition.x, monsterPosition.z)
+      > MONSTER_LOOT_RANGE_METERS * MONSTER_LOOT_RANGE_METERS) {
+      throw new RpcError(GameErrCode.LootTooFar, `loot is too far: ${monsterId}`);
+    }
+    return { container, monster };
   }
 
   /** 技能和平A共享怪物受伤后的仇恨与死亡边界；调用者不得只改Combat后忘记移除死亡怪。 / Skills and auto-attacks share threat and death handling so callers cannot damage Combat and forget monster removal. */
@@ -312,7 +369,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     this.slots.clear();
   }
 
-  private Spawn(slot: { config: MonsterAreaConfigData; monster: MonsterUnit | null; respawnAtMs: number }): void {
+  private Spawn(slot: MonsterSpawnSlot): void {
     if (slot.monster) return;
     const config = slot.config.monsterConfigId_ref ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
     const unitId = this.AllocateUnitId();
@@ -354,6 +411,8 @@ export class MonsterComponentSystem extends MonsterComponent {
       monster.AddComponent(SkillComponent);
       slot.monster = monster;
       slot.respawnAtMs = 0;
+      slot.corpseExpiresAtMs = 0;
+      slot.corpseCleanupInFlight = false;
       this.monsters.set(unitId, monster);
       this.runtime.set(unitId, {
         targetUnitId: 0,
@@ -399,29 +458,51 @@ export class MonsterComponentSystem extends MonsterComponent {
     position.SpeedMetersPerSecond = config.moveSpeed;
   }
 
-  /** 到期后先发布旧尸体Leave，再创建新Unit；不能把死亡Unit原地复活或让Enter抢在Leave之前。 / Publishes the corpse Leave before creating a new Unit; never resurrects the dead identity or lets Enter overtake Leave. */
-  private async Respawn(slot: { config: MonsterAreaConfigData; monster: MonsterUnit | null; respawnAtMs: number }): Promise<void> {
+  /** 清理前先发布旧尸体Leave，再按重生时间创建新Unit；不能让Enter抢在Leave之前。 / Publishes the corpse Leave before creating a replacement Unit; Enter must not overtake Leave. */
+  private async Respawn(slot: MonsterSpawnSlot): Promise<void> {
     const corpse = slot.monster;
-    if (!corpse || corpse.GetComponent(NativeUnitRef).alive !== 0) return;
-    slot.respawnAtMs = 0;
-    slot.monster = null;
-    this.monsters.delete(corpse.UnitId);
-    this.runtime.delete(corpse.UnitId);
-    this.lootContainers.delete(corpse.UnitId);
-    const changes = this.aoi.IsAttached(corpse) ? this.aoi.Detach(corpse) : [];
-    this.units.Remove(corpse.UnitId);
-    if (changes.length > 0) {
-      try {
-        await this.map.PublishVisibilityChanges(changes);
-      } catch (error) {
-        this.DomainScene().logger.error("monster corpse AOI leave failed", {
-          unitId: corpse.UnitId,
-          areaId: corpse.AreaId,
-          error,
-        });
-      }
+    if (!corpse || corpse.GetComponent(NativeUnitRef).alive !== 0) {
+      slot.corpseCleanupInFlight = false;
+      return;
     }
-    if (!this.map.IsStopping) this.Spawn(slot);
+    try {
+      slot.corpseExpiresAtMs = 0;
+      slot.monster = null;
+      this.monsters.delete(corpse.UnitId);
+      this.runtime.delete(corpse.UnitId);
+      this.lootContainers.delete(corpse.UnitId);
+      const changes = this.aoi.IsAttached(corpse) ? this.aoi.Detach(corpse) : [];
+      this.units.Remove(corpse.UnitId);
+      if (changes.length > 0) {
+        try {
+          await this.map.PublishVisibilityChanges(changes);
+        } catch (error) {
+          this.DomainScene().logger.error("monster corpse AOI leave failed", {
+            unitId: corpse.UnitId,
+            areaId: corpse.AreaId,
+            error,
+          });
+        }
+      }
+      if (!this.map.IsStopping && TimeSystem.Instance.ServerNow >= slot.respawnAtMs) this.Spawn(slot);
+    } finally {
+      slot.corpseCleanupInFlight = false;
+    }
+  }
+
+  /** 启动唯一的尸体清理任务，防止1Hz扫描与拾取完成同时重复Remove同一Unit。 / Starts the single corpse cleanup task so the 1 Hz scan and loot completion cannot remove one Unit twice. */
+  private BeginCorpseCleanup(slot: MonsterSpawnSlot, reason: string): void {
+    if (slot.corpseCleanupInFlight || !slot.monster) return;
+    slot.corpseCleanupInFlight = true;
+    slot.corpseExpiresAtMs = TimeSystem.Instance.ServerNow;
+    void this.Respawn(slot).catch((error) => {
+      slot.corpseCleanupInFlight = false;
+      this.DomainScene().logger.error("monster corpse cleanup failed", {
+        areaId: slot.config.id,
+        reason,
+        error,
+      });
+    });
   }
 
   private TickMonster(monster: MonsterUnit, config: MonsterConfigData, now: number): void {
@@ -605,8 +686,18 @@ export class MonsterComponentSystem extends MonsterComponent {
     const now = TimeSystem.Instance.ServerNow;
     const config = slot.config.monsterConfigId_ref
       ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
+    const drops = this.RollLootDrops(monster, config);
+    const corpseLifetimeMs = drops.length > 0
+      ? CORPSE_WITH_LOOT_LIFETIME_MS
+      : EMPTY_CORPSE_LIFETIME_MS;
+    const corpseExpiresAtMs = now + corpseLifetimeMs;
+    // respawn_seconds is the earliest re-spawn delay; a corpse with loot must
+    // remain visible until its loot window closes, even when the template uses
+    // a shorter respawn delay.
+    // respawn_seconds表示最短重生等待；有掉落的尸体必须先保留完整拾取窗口，不能被更短的重生配置提前删除。
     slot.respawnAtMs = now + config.respawnSeconds * 1_000;
-    this.CreateLootContainer(monster, config, slot.respawnAtMs);
+    slot.corpseExpiresAtMs = corpseExpiresAtMs;
+    this.CreateLootContainer(monster, drops, corpseExpiresAtMs);
     const native = monster.GetComponent(NativeUnitRef);
     native.alive = 0;
     NativeData.ResetMovement(native.Handle);
@@ -619,8 +710,8 @@ export class MonsterComponentSystem extends MonsterComponent {
   }
 
   /** 根据冷掉落表创建尸体容器；任务行先落在尸体上，是否能拿由拾取者的任务状态决定。 / Creates a corpse container from cold drop rows; quest rows stay on the corpse and eligibility is checked at pickup time. */
-  private CreateLootContainer(monster: MonsterUnit, config: MonsterConfigData, expiresAtMs: number): void {
-    if (config.dropTableId <= 0) return;
+  private RollLootDrops(monster: MonsterUnit, config: MonsterConfigData): LootDrop[] {
+    if (config.dropTableId <= 0) return [];
     const drops = GameConfigs.DropTableConfig.GetAll()
       .filter((drop) => drop.dropTableId === config.dropTableId)
       .filter((drop) => drop.chancePermille > deterministicDropRoll(monster.UnitId, monster.InstanceId, drop.id))
@@ -630,6 +721,11 @@ export class MonsterComponentSystem extends MonsterComponent {
         count: deterministicDropCount(drop.minCount, drop.maxCount, monster.UnitId, drop.id),
         questObjectiveId: drop.questObjectiveId,
       }));
+    return drops;
+  }
+
+  /** 创建尸体容器；空掉落尸体不需要容器，但仍会按10秒尸体窗口等待清理。 / Creates a corpse container; an empty corpse needs no container but still follows the ten-second corpse window. */
+  private CreateLootContainer(monster: MonsterUnit, drops: readonly LootDrop[], expiresAtMs: number): void {
     if (drops.length === 0) return;
     this.lootContainers.set(monster.UnitId, {
       monsterUnitId: monster.UnitId,
@@ -645,13 +741,45 @@ export class MonsterComponentSystem extends MonsterComponent {
     });
   }
 
+  /**
+   * 只有所有掉落都是全局掉落且已经全部领取，才能立即清理尸体。
+   * 任务掉落按账号保留，服务端不能因为一个玩家领取完成就删除其他玩家未来仍有资格领取的任务行。
+   *
+   * A corpse can disappear immediately only when every drop is global and all
+   * global rows are claimed. Quest rows remain personal and therefore keep the
+   * corpse alive until the five-minute loot window expires.
+   */
+  private CanRemoveLootedCorpse(container: LootContainer): boolean {
+    for (const drop of container.drops) {
+      if (drop.questObjectiveId !== 0) return false;
+      if (container.reservedGlobalDropIds.has(drop.dropId) || !container.claimedGlobalDropIds.has(drop.dropId)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** 全部可共享掉落领取完成后立即移除尸体；任务掉落仍按五分钟窗口保留。 / Removes a corpse immediately after all globally shareable rows are claimed; quest rows keep the five-minute window. */
+  private TryRemoveLootedCorpse(monsterId: number, container: LootContainer): void {
+    if (!this.CanRemoveLootedCorpse(container)) return;
+    const slot = this.slots.get(monsterId);
+    if (!slot || slot.monster?.UnitId !== monsterId) return;
+    this.BeginCorpseCleanup(slot, "loot-complete");
+  }
+
   /** 选择当前玩家有资格且尚未被预留的掉落；任务目标已完成时跳过该行而不是删掉尸体内容。 / Selects eligible, unreserved rows and leaves completed quest rows on the corpse. */
-  private SelectLootDrops(container: LootContainer, player: PlayerUnit): LootDrop[] {
+  private SelectLootDrops(
+    container: LootContainer,
+    player: PlayerUnit,
+    requestedDropId = 0,
+    lootAll = true,
+  ): LootDrop[] {
     const quest = player.GetComponent(QuestComponent);
     const taskReserved = container.reservedTaskDropIdsByAccount.get(player.Account);
     const taskClaimed = container.claimedTaskDropIdsByAccount.get(player.Account);
     const selected: LootDrop[] = [];
     for (const drop of container.drops) {
+      if (!lootAll && requestedDropId !== drop.dropId) continue;
       if (drop.questObjectiveId === 0) {
         if (container.claimedGlobalDropIds.has(drop.dropId) || container.reservedGlobalDropIds.has(drop.dropId)) continue;
         selected.push(drop);
@@ -918,12 +1046,18 @@ function cloneLootResponse(value: M2C_LootMonster): M2C_LootMonster {
       status: quest.status,
       revision: quest.revision,
     })),
+    remainingDrops: value.remainingDrops.map((drop) => ({ ...drop })),
   };
 }
 
 function decodeLootResponse(payload: Uint8Array, monsterId: number): M2C_LootMonster {
   const value = M2C_LootMonsterCodec.decode(payload);
-  if (value.monsterId !== monsterId || !Array.isArray(value.items) || !Array.isArray(value.quests)) {
+  if (
+    value.monsterId !== monsterId
+    || !Array.isArray(value.items)
+    || !Array.isArray(value.quests)
+    || !Array.isArray(value.remainingDrops)
+  ) {
     throw new Error(`loot receipt mismatch: ${value.monsterId} != ${monsterId}`);
   }
   return cloneLootResponse(value);

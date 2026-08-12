@@ -25,7 +25,7 @@ game_config/Datas/MonsterAreaConfig.xlsx
 | `attack_interval_ms` | 普通攻击间隔，毫秒；创建/复活时写入Numeric.AttackSpeedAdd |
 | `attack_mode` | `0`被动，`1`主动 |
 | `skill_id` | 预留技能配置ID，当前演示只支持普通攻击 |
-| `respawn_seconds` | 怪物死亡后的尸体保留及重新刷新的秒数（当前最小Demo共用） |
+| `respawn_seconds` | 从死亡时刻计时的最短重生秒数；实际生成取尸体窗口结束与该时刻两者较晚值 |
 
 `MonsterAreaConfig`描述“在哪里刷”：一行就是一个固定刷怪槽位，包含地图配置ID、模板ID、坐标和是否在地图创建时生成。复活时间属于怪物模板，不属于刷点，避免同一个怪物模板在不同地图拥有隐含的生命周期差异。当前版本没有随机刷怪池、多个候选点、掉落表和持久化。
 
@@ -84,8 +84,10 @@ app/hotfix/demo/combat/CombatComponentSystem.ts
   -> 距离不超过MonsterConfig.attack_range：停止移动并按Numeric.AttackSpeed普通攻击
   -> 玩家通过AttackMonster造成伤害
   -> CombatComponent结算伤害；HP为0，旧MonsterUnit以alive=false留在AOI
-  -> MonsterConfig.respawn_seconds到期
-  -> 旧尸体离开AOI并销毁
+  -> 有掉落尸体最多保留5分钟，无掉落尸体保留10秒
+  -> 普通掉落全部领取后也可提前触发尸体离开AOI
+  -> 尸体离开AOI并销毁
+  -> 等待尸体窗口结束且MonsterConfig.respawn_seconds最短时刻已满足
   -> 同一AreaId刷怪槽创建新的MonsterUnit，取得新的UnitId
 ```
 

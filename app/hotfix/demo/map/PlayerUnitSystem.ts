@@ -12,6 +12,7 @@ import {
   type PlayerSnapshot,
   type M2G_TransferPlayer,
   type M2C_AttackMonster,
+  type M2C_InspectLootMonster,
   type M2C_LootMonster,
   type M2C_ToggleAutoAttack,
   type M2C_CastSkill,
@@ -184,9 +185,14 @@ export class PlayerUnitSystem extends PlayerUnit {
     return this.DomainScene().GetComponent(MonsterComponent).Attack(this, monsterId);
   }
 
+  /** 只查看当前玩家有资格领取的尸体行；不会创建ItemId或提交持久化事务。 / Inspects eligible corpse rows without creating ItemIds or committing persistence. */
+  InspectLootMonster(monsterId: number): M2C_InspectLootMonster {
+    return this.DomainScene().GetComponent(MonsterComponent).InspectLootMonster(this, monsterId);
+  }
+
   /** 拾取尸体只把意图交给地图掉落模块；资格、数量、幂等和DBProxy提交都在那里完成。 / Delegates corpse loot so the map module owns eligibility, limits, idempotency, and DBProxy commit. */
-  LootMonster(monsterId: number, operationId: string): Promise<M2C_LootMonster> {
-    return this.DomainScene().GetComponent(MonsterComponent).LootMonster(this, monsterId, operationId);
+  LootMonster(monsterId: number, operationId: string, dropId: number, lootAll: boolean): Promise<M2C_LootMonster> {
+    return this.DomainScene().GetComponent(MonsterComponent).LootMonster(this, monsterId, operationId, dropId, lootAll);
   }
 
   /**

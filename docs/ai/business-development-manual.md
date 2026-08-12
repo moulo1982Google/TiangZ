@@ -180,7 +180,7 @@ MapHost -> MapScene
 4. Handler保持一层胶水，例如`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。
 5. 通过`MonsterComponent.Get/GetAll`取得怪物；死亡状态、AOI和重生只能由MonsterComponent完成。
 
-当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡尸体、尸体清理、原槽位新Unit重生”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；当前Demo在`MonsterConfig.respawn_seconds`到期时执行`Detach`、发布AOI Leave并`Remove`旧尸体，然后只复用`AreaId`刷怪槽创建新的MonsterUnit和UnitId。被动怪没有仇恨时不主动寻找玩家；平A和技能造成最终实际伤害后都必须通过`MonsterComponent.AddThreat`按1:1增加仇恨，5Hz桶按本地图最高仇恨者追击。12米只负责主动怪在无仇恨时索敌，不能过滤已有仇恨；脱战回出生点应另设冷配置，不能复用主动索敌距离。不能把“被攻击”直接等同于“追击”，也不能绕过`ApplyPlayerDamage`只调用Combat，否则会漏掉仇恨和死亡边界。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
+当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡尸体、尸体清理、原槽位新Unit重生”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；有掉落的尸体保留5分钟，无掉落的尸体保留10秒，全部普通掉落领取完成后可以提前清理。`MonsterConfig.respawn_seconds`从死亡时刻开始计时，实际新怪物生成取尸体窗口结束与最短重生时刻两者较晚值。尸体清理时才执行`Detach`、发布AOI Leave并`Remove`旧尸体，然后只复用`AreaId`刷怪槽创建新的MonsterUnit和UnitId；同一个掉落操作重试时由DBProxy回执恢复，不重新计算掉落。被动怪没有仇恨时不主动寻找玩家；平A和技能造成最终实际伤害后都必须通过`MonsterComponent.AddThreat`按1:1增加仇恨，5Hz桶按本地图最高仇恨者追击。12米只负责主动怪在无仇恨时索敌，不能过滤已有仇恨；脱战回出生点应另设冷配置，不能复用主动索敌距离。不能把“被攻击”直接等同于“追击”，也不能绕过`ApplyPlayerDamage`只调用Combat，否则会漏掉仇恨和死亡边界。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
 
 怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡先通过`EntityState.alive=false`表现为尸体，尸体清理才通过AOI Leave移除旧Unit，复活通过AOI Enter发送新Unit的完整快照。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。演示客户端可以读取冷配置中的`attack_mode`做非权威颜色提示：自己蓝色，其他玩家绿色，被动怪黄色，主动怪红色；业务逻辑仍必须以服务端配置和System为准。角色和怪物之间的动态阻挡、动态避障当前明确不做。
 
@@ -977,7 +977,7 @@ C2M_AttackMonsterHandler
   -> MonsterComponent.Attack
 ```
 
-固定刷点和实体身份必须分开：`MonsterAreaConfig.id`对应稳定的`AreaId`刷怪槽位，`MonsterUnit.UnitId`只对应当前这一只实体。死亡时`MonsterComponent`保留`alive=false`的旧Unit作为尸体；复活时间到期后先Detach并发布AOI Leave，再Remove旧尸体，随后在同一`AreaId`创建新的MonsterUnit、分配新的UnitId并通过AOI Enter发送新快照。业务不得复用旧UnitId表示“新怪物”；客户端可以保留旧节点表现尸体，但必须以AOI Leave作为最终删除信号。
+固定刷点和实体身份必须分开：`MonsterAreaConfig.id`对应稳定的`AreaId`刷怪槽位，`MonsterUnit.UnitId`只对应当前这一只实体。死亡时`MonsterComponent`保留`alive=false`的旧Unit作为尸体；尸体窗口结束或全部普通掉落领取完成后先Detach并发布AOI Leave，`respawn_seconds`从死亡时刻计时，达到尸体窗口结束与最短重生时刻后再Remove旧尸体，随后在同一`AreaId`创建新的MonsterUnit、分配新的UnitId并通过AOI Enter发送新快照。业务不得复用旧UnitId表示“新怪物”；客户端可以保留旧节点表现尸体，但必须以AOI Leave作为最终删除信号。拾取响应丢失时，客户端必须用原`operationId`重试，由持久化回执返回第一次结果。
 
 怪物主动行为由`MonsterComponent.Update`统一驱动，并在Hotfix内部调用局部`MonsterBehaviorTree`。行为树只负责从待机、追击、攻击和冷却停留中选择一个动作；它不能直接操作Native句柄、广播消息或修改其他地图的Unit。距离、伤害、死亡和Numeric变更仍由MonsterComponent负责。
 
@@ -1101,8 +1101,56 @@ Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建�
 
 业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。
 
+## 框架热路径与低分配约定
+
+“0 GC”不是业务可以依赖的运行时承诺。开发目标是稳态下框架热路径少制造临时对象，并通过mailbox、队列和延迟指标验证收益；不要为了追求一个宣传数字把所有业务代码改成难以维护的手写循环。
+
+### 业务开发者应遵守
+
+1. 有结果要等待时使用RPC；无结果只通知时使用Message。不要为了“看起来统一”给单向消息增加`await`或人为回执。
+2. 单向消息的Handler不能假设发送方知道处理完成时间。需要确认时改成RPC或显式业务事件，不要读取mailbox内部队列。
+3. `SceneMessageHelper.send/sendActor/sendFrame`的返回类型是`MaybePromise<void>`。本地同步mailbox或远程入队通常直接返回`void`，`await`只为兼容确实异步的Transport；它永远不是目标Handler完成通知。
+4. `LengthPrefixedFrameDecoder.pushEach`的回调只在当前调用内同步消费帧；不得缓存传入的帧视图、跨异步边界持有它，若要长期保存必须复制。
+5. 广播状态选择`latest`或`event`必须先看语义：可覆盖状态用latest，不可逆事实用event。业务只提供Audience和数据，不维护Gate路由表。
+6. 不在每个Unit、每个Cast或每条消息上创建框架Timer、Promise或长期闭包。高频状态使用已有Update桶、批量Snapshot和Component索引；真正需要等待结果的业务流程再使用Promise。
+7. 不把`map/filter/spread`列为绝对禁用语法。只有性能报告证明它位于热路径时，才局部改为复用数组、循环或批处理，并补自测说明副作用。
+
+### 框架已经提供
+
+- ordered Actor/Scene mailbox忙时的队列节点回收与单向Message无完成Promise路径；RPC仍保留正常Promise语义。
+- 协议流解码的回调消费路径，以及跨分片时才发生的必要复制。
+- 编码latest广播的单批次路径和多批次空受众过滤。
+- `/metrics`中的mailbox快路径、排队、异步、单向消息、当前深度和峰值指标。出现尾延迟时先比较这些指标、Handler耗时、Rust队列和网络下行，再决定是否优化。
+
+### 压测前准备与低分配 A/B
+
+框架热路径或Runtime改动后，先执行`npm run perf:hotpath:prepare`。它负责构建`build:bench`、`build:perf:full-chain`和Release Runtime，随后执行`verify:codegen`、`verify:comments`、`verify:hotfix-boundary`，检查生成物、Manifest哈希和本机测试端口；它不会启动服务、连接客户端或制造压测负载。
+
+前后版本必须使用同一组参数，例如：
+
+```powershell
+npm run perf:full-chain -- --mode all --players 200,1000,3000 --move-rates 2 --warmup 10 --duration 60 --rounds 3 --output-prefix hotpath_before
+npm run perf:full-chain -- --mode all --players 200,1000,3000 --move-rates 2 --warmup 10 --duration 60 --rounds 3 --output-prefix hotpath_after
+npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.json --after perf/results/hotpath_after_<时间>.json
+```
+
+`full-chain`报告中的Mailbox指标是所有Scene序列的聚合值：单向消息排队应与尾延迟、Transport队列和错误一起判断；如果排队为零但p99上升，应继续看Handler耗时、编码、连接写出和客户端消费速度。该流程还不能给出“每条消息分配多少字节”，精确分配量需要独立的V8 heap/profile实验，不能用GC次数替代。
+
 ## 怪物掉落与任务物品
 
 任务掉落不能写成“怪物死亡时给附近所有玩家发一件物品”。开发者在`DropTableConfig`中用`quest_objective_id`声明它对应的`CollectItem`目标；`MonsterComponent`在尸体上保存掉落行，玩家调用`LootMonster`时再根据自己的Quest状态筛选。未接任务或已经达到要求数量时，拾取结果为无可用掉落，尸体行保留，不能删除或消耗别人的任务资格。普通掉落和任务掉落的领取范围不同，必须在配置/代码中明确，不能用一个全局`claimed`集合代替。
 
 拾取属于一次关键玩家事务：先规划Inventory/Quest纯数据，再使用稳定`operationId`提交DBProxy，成功后才创建静态Item、推进任务和广播。Handler只转发`monsterId + operationId`，不查询Quest、不扣库存、不手工发消息。动态词条、耐久、绑定等ItemInstance必须保存实例数据，不能把“拾取时生成静态ItemId”的Starter快捷路径误当成通用规则。完整流程见[`docs/design/loot-and-task-items.md`](../design/loot-and-task-items.md)。
+
+### 尸体窗口调用约定
+
+尸体拾取不是一次性按钮事件，而是一个可持续操作的窗口：
+
+1. 点击尸体交互按钮只调用`inspectLootMonster`，打开服务端返回的掉落列表。
+2. 点击某一行时调用`lootMonster({ monsterId, operationId, dropId, lootAll: false })`，只领取该行。
+3. Shift+点击、鼠标右键、F键或移动端的“全部拾取”按钮调用`lootAll: true`。
+4. 使用回执的`remainingDrops`重绘列表，并把本次获得的道具追加到窗口结果区；窗口由玩家主动关闭。
+
+列表显示的是服务端资格筛选后的预览，不代表客户端已经拥有道具。不要在点击前修改背包数量，也不要用短暂Toast替代回执中的掉落结果。
+
+尸体的显示时长和下一只怪物的重生间隔必须分开理解：有掉落的尸体默认保留5分钟，无掉落的尸体保留10秒；全部普通掉落领取完成后可以立即清理尸体。`MonsterConfig.respawn_seconds`从死亡时刻计时，刷怪时间取尸体窗口结束与最短重生时刻两者较晚值。任务掉落属于按账号判定的资格，不能因为一个玩家领取完成就删除尸体。客户端收到AOI Leave后关闭拾取窗口，不能继续用旧UnitId重试。

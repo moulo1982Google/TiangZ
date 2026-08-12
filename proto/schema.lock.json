@@ -882,6 +882,35 @@
       ]
     },
     {
+      "key": "proto/DataDefine_CS_50001.proto#LootDropSnapshot",
+      "name": "LootDropSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "drop_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "item_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/DataDefine_CS_50001.proto#MapEntitySnapshot",
       "name": "MapEntitySnapshot",
       "base": null,
@@ -4597,6 +4626,28 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_InspectLootMonster",
+      "name": "C2M_InspectLootMonster",
+      "base": "IActorLocationRequest",
+      "response": "M2C_InspectLootMonster",
+      "fields": [
+        {
+          "number": 1,
+          "name": "monster_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_LootMonster",
       "name": "C2M_LootMonster",
       "base": "IActorLocationRequest",
@@ -4613,6 +4664,20 @@
           "number": 2,
           "name": "operation_id",
           "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "drop_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "loot_all",
+          "type": "bool",
           "repeated": false,
           "synthetic": false
         },
@@ -6143,6 +6208,49 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_InspectLootMonster",
+      "name": "M2C_InspectLootMonster",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "monster_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "drops",
+          "type": "LootDropSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_LootMonster",
       "name": "M2C_LootMonster",
       "base": "IActorLocationResponse",
@@ -6166,6 +6274,13 @@
           "number": 3,
           "name": "quests",
           "type": "QuestSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "remaining_drops",
+          "type": "LootDropSnapshot",
           "repeated": true,
           "synthetic": false
         },

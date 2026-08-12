@@ -96,6 +96,8 @@ export const OuterMessage = {
   M2C_AttackMonster: 10043,
   C2M_LootMonster: 10062,
   M2C_LootMonster: 10063,
+  C2M_InspectLootMonster: 10064,
+  M2C_InspectLootMonster: 10065,
   C2M_ToggleAutoAttack: 10044,
   M2C_ToggleAutoAttack: 10045,
   G2C_AutoAttackState: 10046,

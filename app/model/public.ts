@@ -62,6 +62,7 @@ export { ItemEvents, type BeforeUseItemEvent } from "./demo/item/ItemEvents";
 export {
   CopyLootItems,
   ToInventoryGrants,
+  ToLootDropSnapshots,
   type LootContainer,
   type LootDrop,
 } from "./demo/loot/LootContainer";

@@ -90,6 +90,15 @@ message ItemSnapshot
   uint32 version = 6;
 }
 
+// 一行尸体掉落预览；只公开当前玩家有资格领取的配置和数量，不提前创建ItemId。
+// One corpse-loot preview row. It exposes only eligible config/count data and never allocates an ItemId early.
+message LootDropSnapshot
+{
+  uint32 drop_id = 1;
+  uint32 item_config_id = 2;
+  uint32 count = 3;
+}
+
 // 周围玩家可见的Buff外观数据；不得包含吸收量等私有战斗细节。
 message BuffPublicView
 {

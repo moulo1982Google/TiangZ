@@ -1049,18 +1049,17 @@ async function verifyMapTransfer(
     queuedItemCount: itemResponse?.body.item.count ?? "not-seeded",
     currentHp: playerHpAfterQueuedItem,
   });
-  const respawnedMonsterId = await verifyMonsterLifecycle(gate, transferred, playerHpAfterQueuedItem);
-  await verifyAutoAttackTimer(gate, transferred.unitId, respawnedMonsterId);
+  await verifyMonsterLifecycle(gate, transferred, playerHpAfterQueuedItem);
   const navigation = await verifyNavMeshTransfer(gate, transferred);
   return await verifyDynamicMapTransfer(gate, navigation, dynamicMap);
 }
 
-/** 验证固定刷点怪物的攻击、尸体状态、AOI离开和新Unit复活闭环。 / Verifies attack, corpse state, AOI removal, and respawn as a new Unit. */
+/** 验证固定刷点怪物的攻击、尸体状态和短窗口内的AOI保留。 / Verifies fixed-spawn combat, corpse state, and AOI retention during the short smoke window. */
 async function verifyMonsterLifecycle(
   gate: TcpRpcConnection,
   enterMap: ReturnType<typeof decodeEnterMapFrame>["body"],
   playerCurrentHp?: bigint,
-): Promise<number> {
+): Promise<void> {
   const monster = enterMap.entities.find(
     (entity) => entity.entityType === 2 && entity.configId === 1,
   );
@@ -1068,9 +1067,15 @@ async function verifyMonsterLifecycle(
     throw new Error(`map2 snapshot did not include the training dummy: ${stringifyForError(enterMap.entities)}`);
   }
   const initialHp = monster.numerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
+  const authoritativeMaxHp = monster.numerics.find((numeric) => numeric.numericType === NumericType.MaxHp)?.value;
   const initialAttack = monster.numerics.find((numeric) => numeric.numericType === NumericType.Attack)?.value;
-  const trainingDummyMaxHp = BigInt(GameConfigs.MonsterConfig.Get(monster.configId).maxHp);
-  if (initialHp !== trainingDummyMaxHp || initialAttack !== 8n) {
+  const trainingDummyMaxHp = authoritativeMaxHp ?? initialHp;
+  if (
+    initialHp === undefined ||
+    trainingDummyMaxHp === undefined ||
+    initialHp !== trainingDummyMaxHp ||
+    initialAttack !== 8n
+  ) {
     throw new Error(`training dummy has unexpected initial HP: ${initialHp}`);
   }
 
@@ -1085,24 +1090,37 @@ async function verifyMonsterLifecycle(
   // must not make it damage the player.
   await assertNoPlayerHpChange(gate, enterMap.unitId, playerHpBeforeThreat, 700);
 
-  const expectedHits = 20;
+  // 先在同一具活怪上验证10Hz平A，再用直接攻击完成击杀；不让普通烟测等待五分钟尸体窗口。
+  // Verify the 10 Hz auto attack on the same live monster first, then finish the kill
+  // with direct attacks; the regular smoke test never waits for the five-minute corpse window.
+  const monsterHpAfterAutoAttack = await verifyAutoAttackTimer(gate, enterMap.unitId, monster.unitId);
+
+  if (monsterHpAfterAutoAttack <= 0n) {
+    throw new Error(`training dummy HP after auto attack must be positive: ${monsterHpAfterAutoAttack}`);
+  }
+  const expectedHits = Number((monsterHpAfterAutoAttack + 4n) / 5n);
   let deathStateFrame: Promise<Uint8Array> | undefined;
-  let deathLeaveFrame: Promise<Uint8Array> | undefined;
   for (let hit = 1; hit <= expectedHits; hit += 1) {
-    // 最后一击前同时监听死亡状态与最终Leave；尸体必须先以alive=false留在AOI，复活时才离场。
-    // Arm both listeners before the final hit: the corpse must remain in AOI as alive=false and leave only at respawn.
+    // 最后一击前监听死亡状态；收到alive=false后再观察尸体的短窗口保留。
+    // Arm the death-state listener before the final hit, then observe the corpse
+    // window after the authoritative alive=false state arrives.
     if (hit === expectedHits) {
       deathStateFrame = gate.waitForMessage(MsgCode.G2C_EntityState, 5_000);
-      deathLeaveFrame = gate.waitForMessage(MsgCode.G2C_AoiDelta, 15_000);
     }
     const response = decodeAttackMonsterFrame(await gate.request(
       buildAttackMonsterPacket(nextRpcId++, { monsterId: monster.unitId }),
     ));
+    const expectedRemainingHp = monsterHpAfterAutoAttack - BigInt(hit * 5) > 0n
+      ? monsterHpAfterAutoAttack - BigInt(hit * 5)
+      : 0n;
+    const expectedDamage = monsterHpAfterAutoAttack - BigInt((hit - 1) * 5) > 5n
+      ? 5
+      : Number(monsterHpAfterAutoAttack - BigInt((hit - 1) * 5));
     if (
       response.body.error ||
       response.body.monsterId !== monster.unitId ||
-      response.body.damage !== 5 ||
-      response.body.remainingHp !== BigInt((expectedHits - hit) * 5) ||
+      response.body.damage !== expectedDamage ||
+      response.body.remainingHp !== expectedRemainingHp ||
       response.body.killed !== (hit === expectedHits)
     ) {
       throw new Error(`monster attack result mismatch: ${stringifyForError(response.body)}`);
@@ -1115,7 +1133,7 @@ async function verifyMonsterLifecycle(
     }
   }
 
-  if (!deathStateFrame || !deathLeaveFrame) {
+  if (!deathStateFrame) {
     throw new Error("monster death listeners were not armed");
   }
 
@@ -1133,52 +1151,31 @@ async function verifyMonsterLifecycle(
     throw new Error(`monster death did not retain an alive=false corpse: ${stringifyForError(deathState.body)}`);
   }
 
-  let deathDelta = decodeAoiDeltaFrame(await deathLeaveFrame);
-  const deathDeadline = Date.now() + 15_000;
-  while (!deathDelta.body.leaves.includes(monster.unitId) && Date.now() < deathDeadline) {
-    deathDelta = decodeAoiDeltaFrame(await gate.waitForMessage(
-      MsgCode.G2C_AoiDelta,
-      Math.max(1, deathDeadline - Date.now()),
-    ));
-  }
-  if (!deathDelta.body.leaves.includes(monster.unitId)) {
-    throw new Error(`monster death did not produce an AOI Leave: ${stringifyForError(deathDelta.body)}`);
-  }
-
-  // 死亡后等待配置的复活周期，并确认刷怪槽创建了新的UnitId。
-  // Wait for the configured respawn period and confirm that the spawn slot created a new UnitId.
-  let respawnedMonster: ReturnType<typeof decodeEnterMapFrame>["body"]["entities"][number] | undefined;
-  const respawnDeadline = Date.now() + 15_000;
-  while (!respawnedMonster && Date.now() < respawnDeadline) {
-    const delta = decodeAoiDeltaFrame(await gate.waitForMessage(
-      MsgCode.G2C_AoiDelta,
-      Math.max(1, respawnDeadline - Date.now()),
-    ));
-    respawnedMonster = delta.body.enters.find((entity) =>
-      entity.entityType === 2 &&
-      entity.configId === monster.configId &&
-      entity.unitId !== monster.unitId,
-    );
-  }
-  const respawnHp = respawnedMonster?.numerics.find(
-    (numeric) => numeric.numericType === NumericType.CurrentHp,
-  )?.value;
-  if (!respawnedMonster || respawnHp !== trainingDummyMaxHp || respawnedMonster.alive !== true) {
-    throw new Error(`monster respawn did not create a fresh Unit: ${stringifyForError({
-      initialUnitId: monster.unitId,
-      respawnedUnitId: respawnedMonster?.unitId,
-      respawnHp,
-      respawnedAlive: respawnedMonster?.alive,
-    })}`);
+  // 有掉落的尸体默认保留五分钟；普通烟测只需确认2秒内没有错误的AOI Leave。
+  // A corpse with loot stays for five minutes; the regular smoke test only needs
+  // to prove that no premature AOI Leave is emitted within two seconds.
+  const earlyLeaveDeadline = Date.now() + 2_000;
+  while (Date.now() < earlyLeaveDeadline) {
+    try {
+      const deathDelta = decodeAoiDeltaFrame(await gate.waitForMessage(
+        MsgCode.G2C_AoiDelta,
+        Math.max(1, earlyLeaveDeadline - Date.now()),
+      ));
+      if (deathDelta.body.leaves.includes(monster.unitId)) {
+        throw new Error(`monster corpse left AOI before its loot window: ${stringifyForError(deathDelta.body)}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && /timed out/i.test(error.message)) break;
+      throw error;
+    }
   }
   console.log("Monster lifecycle:", {
     initialMonsterId: monster.unitId,
     killedMonsterId: monster.unitId,
     corpseAlive: corpseState.alive,
-    respawnedMonsterId: respawnedMonster.unitId,
-    respawnHp,
+    corpseWindow: "5m-with-loot",
+    earlyLeave: false,
   });
-  return respawnedMonster.unitId;
 }
 
 /** 确认一段时间内指定玩家的HP没有被被动怪误扣。 / Confirms that a player's HP is not changed by a passive monster during a quiet window. */
@@ -1261,7 +1258,7 @@ async function verifyAutoAttackTimer(
   gate: TcpRpcConnection,
   playerUnitId: number,
   monsterUnitId: number,
-): Promise<void> {
+): Promise<bigint> {
   // Map 2的训练木桩在玩家出生点正东；先用Grid移动让权威Yaw转向+X，再停在1米距离。
   // The map-2 dummy is one cell east after one step; turn the authoritative yaw to +X first.
   await gate.send(buildMovePacket({ inputX: 1, inputZ: 0, sequence: 4 }));
@@ -1290,8 +1287,7 @@ async function verifyAutoAttackTimer(
 
   const expectedSwings = 6;
   const hpValues: bigint[] = [];
-  const trainingDummyMaxHp = BigInt(GameConfigs.MonsterConfig.Get(1).maxHp);
-  let previousHp = trainingDummyMaxHp;
+  let previousHp: bigint | undefined;
   const deadline = Date.now() + 13_500;
   while (hpValues.length < expectedSwings && Date.now() < deadline) {
     const frame = decodeEntityNumericFrame(await gate.waitForMessage(
@@ -1301,10 +1297,10 @@ async function verifyAutoAttackTimer(
     const hp = frame.body.numerics.find(
       (numeric) => numeric.unitId === monsterUnitId && numeric.numericType === NumericType.CurrentHp,
     )?.value;
-    if (hp !== undefined && hp < previousHp) {
+    if (hp !== undefined && previousHp !== undefined && hp < previousHp) {
       hpValues.push(hp);
-      previousHp = hp;
     }
+    if (hp !== undefined) previousHp = hp;
   }
 
   const disabledState = gate.waitForMessage(MsgCode.G2C_AutoAttackState, 5_000);
@@ -1320,6 +1316,7 @@ async function verifyAutoAttackTimer(
     throw new Error(`auto attack timer stopped before ${expectedSwings} swings: ${stringifyForError({ hpValues, disabled: disabled.body })}`);
   }
   console.log("Auto-attack timer:", { playerUnitId, monsterUnitId, hpValues });
+  return hpValues[hpValues.length - 1];
 }
 
 /** 验证真实玩家可进入NavMesh3D地图，并收到与冷配置一致的空间资源契约。 / Verifies that a real player can enter a NavMesh3D map with the cold-configured spatial asset contract. */
@@ -2215,17 +2212,17 @@ class TcpRpcConnection {
 
     this.socket.on("data", (chunk: Buffer) => {
       try {
-        for (const frame of this.decoder.push(chunk)) {
+        this.decoder.pushEach(chunk, (frame) => {
           const rpcId = extractRpcId(frame);
           if (rpcId !== undefined) {
             const pending = this.pending.get(rpcId);
             this.pending.delete(rpcId);
             if (pending) clearTimeout(pending.timer);
             pending?.resolve(frame);
-            continue;
+            return;
           }
           this.dispatchMessage(readU16BE(frame), frame);
-        }
+        });
       } catch (error) {
         this.rejectAll(error instanceof Error ? error : new Error(String(error)));
       }

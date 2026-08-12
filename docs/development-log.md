@@ -7,6 +7,23 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-12：低分配压测前准备入口
+
+- 新增`npm run perf:hotpath:prepare`，统一执行Bench、完整链路客户端和Release Runtime构建，并检查生成物、Manifest哈希、测试端口以及`verify:codegen`、`verify:comments`、`verify:hotfix-boundary`门禁。
+- 扩展完整链路报告，汇总所有Scene的Mailbox快路径、排队、异步、单向排队和峰值队列深度，避免只读取第一个Scene系列导致观测失真。
+- 新增`npm run perf:hotpath:compare`，按玩家数和业务场景比较前后JSON结果，固定比较吞吐、p50/p95/p99、CPU、RSS、V8 GC、Rust队列和Mailbox指标。
+- 本阶段只做构建和自检，没有启动高CPU或长时间压测；精确每消息分配字节仍需单独的V8 heap/profile实验。
+
+## 2026-08-12：框架热路径低分配第一轮
+
+- 明确目标为“稳态下框架热路径重复分配趋近于零”，不宣称V8绝对0 GC；RPC、跨分片帧复制和业务异步对象仍按语义保留。
+- ordered Actor/Scene mailbox增加回收队列节点；单向Message忙时只入队，不创建完成Promise，异步Handler仍按顺序排空并记录异常。RPC继续保留等待结果的Promise语义。
+- Scene间单向`send/sendActor/sendFrame`改为`MaybePromise<void>`：同步本地mailbox和远程入队不再包装无意义的完成Promise；业务仍可`await`，但语义只是接受/入队，不是Handler完成。
+- `LengthPrefixedFrameDecoder.pushEach`支持回调消费完整帧；单分片帧直接返回输入视图，跨分片帧才分配副本。网络调用方改为同步消费回调，避免每次读取额外创建帧数组。
+- `BroadcastHub`的encoded latest单批次不再创建包装数组，多批次只有存在空受众时才过滤；latest/event的业务语义不变。
+- Scene/Actor mailbox新增快路径、排队、异步、单向消息、当前深度和峰值指标，并接入Rust日志与Prometheus。
+- 已通过：TypeScript类型检查、协议自测、Actor自测、Core API锁与内部运行时自测、Rust all-targets check。未运行长时间或高CPU压力测试，需后续在空闲机器上做新旧版本对照。
+
 ## 2026-08-11：统一技能受击惩罚与精神鞭笞表现
 
 - 寒冰箭、惩击和精神鞭笞统一使用`800ms`受击施法惩罚；普通读条结束时间后移800毫秒，精神鞭笞引导结束时间提前800毫秒。
@@ -943,3 +960,19 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 修复怪物攻击路径：真言术·盾吸收本次伤害时，不再让普通读条后移800毫秒，也不再让引导技能提前结束。
 - 施法惩罚仍由`Combat.ApplyDamage`结果驱动；只有`absorbedDamage=0`且玩家未死亡时，地图技能调度器才调整Cast结束时间。
 - Combat不查询BuffComponent，护盾仍通过Combat modifier注册，保持战斗与Buff解耦。
+
+# 2026-08-12：尸体掉落列表与单项拾取
+
+- 新增只读`C2M_InspectLootMonster`，查看尸体只返回当前账号有资格领取的掉落行，不预留、不创建ItemId、不提交数据库事务。
+- `C2M_LootMonster`增加`drop_id`和`loot_all`；普通点击只领取一行，Shift/右键/F或移动端“全部拾取”按钮领取全部。
+- `M2C_LootMonster`返回`remaining_drops`，Cocos3D持续保留拾取窗口并显示服务端确认后的剩余掉落和结果，避免拾取提示一闪而过。
+- 通过协议锁、客户端SDK生成、场景代码生成、TypeScript和Cocos3D类型检查；本轮未执行压力测试。
+
+# 2026-08-12：尸体与拾取生命周期修正
+
+- 修复尸体使用`respawn_seconds`作为唯一计时导致的拾取竞态：有掉落尸体保留5分钟，无掉落尸体保留10秒。
+- 拆分尸体清理时间与新怪物重生时间；普通掉落全部领取后立即清理尸体，但新怪仍等待`respawn_seconds`。
+- 任务掉落尸体按账号资格保留，不能因为一个玩家领取完成就删除其他玩家可领取的任务行。
+- 尸体清理增加在途防重入；1Hz清理与“全部普通掉落领取完成”同时触发时只允许一个任务移除旧Unit，并先完成AOI Leave再创建新Unit。
+- 客户端拾取重试复用同一`operationId`；即使旧尸体已经离开，也只能读取已提交回执，不能重新生成掉落。
+- 修正普通运行时烟测：平A验证提前到活怪阶段，击杀后只验证`alive=false`尸体在短窗口内继续留在AOI，不再错误等待15秒内复活有掉落的尸体。

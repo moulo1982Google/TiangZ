@@ -493,6 +493,47 @@ export const ItemSnapshotCodec = {
   },
 };
 
+export interface LootDropSnapshot {
+  dropId: number;
+  itemConfigId: number;
+  count: number;
+}
+
+export const LootDropSnapshotCodec = {
+  decode(payload: Uint8Array): LootDropSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: LootDropSnapshot = {
+      dropId: 0,
+      itemConfigId: 0,
+      count: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.dropId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.itemConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.count = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: LootDropSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.dropId !== undefined) writer.uint32(1, value.dropId);
+    if (value.itemConfigId !== undefined) writer.uint32(2, value.itemConfigId);
+    if (value.count !== undefined) writer.uint32(3, value.count);
+    return writer.finish();
+  },
+};
+
 export interface BuffPublicView {
   unitId: number;
   buffInstanceId: bigint;
@@ -2690,6 +2731,8 @@ export interface C2M_LootMonster extends IActorLocationRequest {
   rpcId?: number;
   monsterId: number;
   operationId: string;
+  dropId: number;
+  lootAll: boolean;
 }
 
 export const C2M_LootMonsterCodec = {
@@ -2698,6 +2741,8 @@ export const C2M_LootMonsterCodec = {
     const value: C2M_LootMonster = {
       monsterId: 0,
       operationId: "",
+      dropId: 0,
+      lootAll: false,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -2709,6 +2754,12 @@ export const C2M_LootMonsterCodec = {
       }
       else if (tag.fieldNo === 2 && tag.wireType === 2) {
         value.operationId = reader.string();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.dropId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.lootAll = reader.bool();
       }
       else {
         reader.skip(tag.wireType);
@@ -2722,6 +2773,8 @@ export const C2M_LootMonsterCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
     if (value.operationId !== undefined) writer.string(2, value.operationId);
+    if (value.dropId !== undefined) writer.uint32(3, value.dropId);
+    if (value.lootAll !== undefined) writer.bool(4, value.lootAll);
     return writer.finish();
   },
 };
@@ -2733,6 +2786,7 @@ export interface M2C_LootMonster extends IActorLocationResponse {
   monsterId: number;
   items: readonly ItemSnapshot[];
   quests: readonly QuestSnapshot[];
+  remainingDrops: readonly LootDropSnapshot[];
 }
 
 export const M2C_LootMonsterCodec = {
@@ -2742,6 +2796,7 @@ export const M2C_LootMonsterCodec = {
       monsterId: 0,
       items: [],
       quests: [],
+      remainingDrops: [],
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -2763,6 +2818,9 @@ export const M2C_LootMonsterCodec = {
       else if (tag.fieldNo === 3 && tag.wireType === 2) {
         (value.quests as QuestSnapshot[]).push(QuestSnapshotCodec.decode(reader.bytesField()));
       }
+      else if (tag.fieldNo === 4 && tag.wireType === 2) {
+        (value.remainingDrops as LootDropSnapshot[]).push(LootDropSnapshotCodec.decode(reader.bytesField()));
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -2778,6 +2836,91 @@ export const M2C_LootMonsterCodec = {
     if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
     for (const item of (value.items ?? [])) writer.bytes(2, ItemSnapshotCodec.encode(item), true);
     for (const item of (value.quests ?? [])) writer.bytes(3, QuestSnapshotCodec.encode(item), true);
+    for (const item of (value.remainingDrops ?? [])) writer.bytes(4, LootDropSnapshotCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface C2M_InspectLootMonster extends IActorLocationRequest {
+  rpcId?: number;
+  monsterId: number;
+}
+
+export const C2M_InspectLootMonsterCodec = {
+  decode(payload: Uint8Array): C2M_InspectLootMonster {
+    const reader = new BinaryReader(payload);
+    const value: C2M_InspectLootMonster = {
+      monsterId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.monsterId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_InspectLootMonster): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_InspectLootMonster extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  monsterId: number;
+  drops: readonly LootDropSnapshot[];
+}
+
+export const M2C_InspectLootMonsterCodec = {
+  decode(payload: Uint8Array): M2C_InspectLootMonster {
+    const reader = new BinaryReader(payload);
+    const value: M2C_InspectLootMonster = {
+      monsterId: 0,
+      drops: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.monsterId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.drops as LootDropSnapshot[]).push(LootDropSnapshotCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_InspectLootMonster): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
+    for (const item of (value.drops ?? [])) writer.bytes(2, LootDropSnapshotCodec.encode(item), true);
     return writer.finish();
   },
 };

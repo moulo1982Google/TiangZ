@@ -8,6 +8,7 @@
 
 - 每次开始 TiangZ 相关任务前，先读取本文件；它是项目协作规则和历史决策的第一入口，不先扫描外部上下文。
 - 主工程目录固定为 `E:\gitee\TiangZ`，不要误操作 `E:\VsCode\skynet`。
+- 框架低分配目标不是关闭V8 GC：RPC需要结果时保留Promise；单向Message走`runActorMailboxVoid`/Scene单向mailbox，ordered忙时复用队列节点而不创建完成Promise；协议`LengthPrefixedFrameDecoder.pushEach`回调只同步消费帧；encoded latest单批次不创建包装数组。以mailbox队列深度、Handler耗时、Rust队列和压测结果判断收益，不把`map/filter/spread`列为业务绝对禁用语法。
 - 默认使用中文交流、中文文档和中文 Git 提交信息。
 - 架构或业务语义变更必须同步更新 `docs/ai/project-context.md` 和 `docs/ai/business-development-manual.md`。
 - TiangZ的下一阶段目标是唯一的Starter MMORPG纵向切片：登录/选角、主城、野外战斗、掉落背包、任务奖励、动态副本/Boss、重连和重启恢复；框架案例与Starter业务分开，Starter必须使用Stable API和正式持久化边界。
@@ -56,7 +57,7 @@
 
 - Game默认20Hz；`Update()`就是20Hz兼容入口，框架另外提供固定`Update10Hz()`、`Update5Hz()`和`Update1Hz()`，业务不填写任意Hz，也不为每个玩家/怪物创建Timer或Update目标。
 - 10Hz用于玩家自动平A开始/中断读条，5Hz用于主动怪AI，1Hz用于尸体清理和重生；Rust仍只通过一个Game固定帧入口处理批量移动、AOI和Native权威数据。
-- 怪物复活只复用稳定的`AreaId`刷怪槽，不复用旧`UnitId`。死亡MonsterUnit先以`alive=false`作为不可交互尸体保留在AOI中，当前Demo到`respawn_seconds`到期后才Detach、发布Leave并Remove，再创建新UnitId并通过AOI Enter发送新快照；`UnitId`代表一次实体生命周期，AreaId代表出生配置位置。
+- 怪物复活只复用稳定的`AreaId`刷怪槽，不复用旧`UnitId`。死亡MonsterUnit先以`alive=false`作为不可交互尸体保留在AOI中；有掉落保留5分钟、无掉落保留10秒，普通掉落全部领取后可以提前Detach。尸体清理后仍等待`respawn_seconds`，再发布Leave并Remove，创建新UnitId并通过AOI Enter发送新快照；`UnitId`代表一次实体生命周期，AreaId代表出生配置位置。
 - `CombatComponent`只保存平A意图和读条状态：`Inactive/Waiting/Swinging`。按1只是切换意图，不等于立即命中；目标存活、同Map、距离不超过`PlayerConfig.attack_range`且位于角色前方120度时才从零开始读条。
 - 离开距离或前方±60度时保留自动攻击激活状态，但必须清零当前读条；重新满足条件不能恢复旧进度。读条完成前和完成瞬间都由服务端再次校验，客户端进度条只做表现。
 - 平A状态不进入地图Transfer快照；传送后需要重新激活。Cocos3D使用独立`G2C_AutoAttackStateHandler`和键盘`1`演示，协议源仍只编辑`proto`后运行codegen。
@@ -217,7 +218,7 @@ npm run build:cocos3d:mobile
 ## 任务物品掉落当前语义
 
 - `MonsterConfig.drop_table_id`引用`DropTableConfig`；`quest_objective_id=0`是普通全局一次性掉落，非零是任务资格掉落。
-- 怪物死亡创建地图级`LootContainer`，尸体保留到复活。任务掉落在拾取时按账号检查活动`CollectItem`任务和剩余数量；未接任务或已经拾取够数量时，不能继续领取，任务行留在尸体上。
+- 怪物死亡创建地图级`LootContainer`，有掉落的尸体默认保留5分钟，无掉落的尸体保留10秒；普通掉落全部领取后可以提前清理，但任务掉落会继续保留到拾取窗口结束。任务掉落在拾取时按账号检查活动`CollectItem`任务和剩余数量；未接任务或已经拾取够数量时，不能继续领取，任务行留在尸体上。
 - `C2M_LootMonster`由PlayerUnit有序mailbox转交MonsterComponent，先规划Inventory/Quest，再用稳定`operationId`提交DBProxy；确认后才创建静态Item、推进任务并私有推送，重复请求返回原回执。
 - Starter任务5006在完成并交付5005后解锁，收集5个1101“任务怪物徽记”；Cocos3D选中死亡怪物后显示尸体状态和拾取入口。
 - 当前1101是静态道具；随机词条、耐久、绑定等动态ItemInstance必须保留实例数据，不能使用静态配置ID延迟创建的快捷路径。

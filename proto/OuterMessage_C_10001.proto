@@ -319,6 +319,12 @@ message C2M_LootMonster // IActorLocationRequest
   // 同一轮拾取重试必须复用此ID，不能因为ACK丢失而再次生成奖励。
   // Retries of one loot attempt must reuse this ID so a lost ACK cannot duplicate rewards.
   string operation_id = 2;
+  // 普通拾取只提交一行；drop_id为0时兼容旧客户端的“全部拾取”语义。
+  // Normal pickup submits one row; drop_id=0 preserves legacy "loot all" behavior.
+  uint32 drop_id = 3;
+  // Shift/右键/F使用全部拾取；服务端仍按玩家资格过滤掉落。
+  // Shift/right-click/F requests all eligible rows; the server still filters by player eligibility.
+  bool loot_all = 4;
 }
 
 message M2C_LootMonster // IActorLocationResponse
@@ -326,6 +332,24 @@ message M2C_LootMonster // IActorLocationResponse
   uint32 monster_id = 1;
   repeated ItemSnapshot items = 2;
   repeated QuestSnapshot quests = 3;
+  // 领取后该玩家还能看到的掉落；客户端据此保持尸体窗口，不靠本地猜测。
+  // Rows still visible to this player after pickup; clients keep the corpse window from this authoritative list.
+  repeated LootDropSnapshot remaining_drops = 4;
+}
+
+//ResponseType M2C_InspectLootMonster
+// 只查看死亡尸体，不改变掉落归属、不创建ItemId，也不提交数据库事务。
+// Inspecting a dead corpse changes no ownership, creates no ItemId, and commits no database transaction.
+// @ets.msg protocol=Map method=InspectLootMonster duringTransfer=queue
+message C2M_InspectLootMonster // IActorLocationRequest
+{
+  uint32 monster_id = 1;
+}
+
+message M2C_InspectLootMonster // IActorLocationResponse
+{
+  uint32 monster_id = 1;
+  repeated LootDropSnapshot drops = 2;
 }
 
 //ResponseType M2C_ToggleAutoAttack
