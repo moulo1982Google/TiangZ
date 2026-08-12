@@ -6,6 +6,7 @@ import { LengthPrefixedFrameDecoder } from "../../app/core/protocol/frame";
 import {
   buildEnterMapPacket,
   buildGetLoginServiceAddrPacket,
+  buildRegisterPacket,
   buildLoginGatePacket,
   buildLoginPacket,
   buildCastSkillPacket,
@@ -16,6 +17,7 @@ import {
   decodeEnterMapFrame,
   decodeEntityMoveFrame,
   decodeGetLoginServiceAddrFrame,
+  decodeRegisterFrame,
   decodeLoginFrame,
   decodeLoginGateFrame,
   decodeMapProbeFrame,
@@ -75,6 +77,7 @@ interface BusinessResult {
 }
 
 const options = parseOptions(process.argv.slice(2));
+const PERF_PASSWORD = "PerfPass123";
 let nextRpcId = 1;
 const initialResourceUsage = process.resourceUsage();
 let gcCount = 0;
@@ -105,6 +108,12 @@ async function main(): Promise<void> {
   const measurementStart = performance.now() + options.warmupSeconds * 1000;
   const sendDeadline = measurementStart + options.durationSeconds * 1000;
   const measurementStartedAtUnixMs = Date.now() + options.warmupSeconds * 1000;
+  // Capture the client GC baseline at the formal window boundary.
+  // 在正式窗口边界采集压测端 GC 基线，避免把建连和预热阶段混入本轮结果。
+  const gcMeasurementStartPromise = (async () => {
+    await sleep(Math.max(0, measurementStart - performance.now()));
+    return { count: gcCount, durationMs: gcDurationMs };
+  })();
   sampleLoadMemory();
   const memorySampler = setInterval(sampleLoadMemory, 5_000);
   const workloadPromise = Promise.all(
@@ -142,6 +151,9 @@ async function main(): Promise<void> {
     clearInterval(memorySampler);
     sampleLoadMemory();
   }
+  const gcMeasurementStart = await gcMeasurementStartPromise;
+  const gcCountDelta = Math.max(0, gcCount - gcMeasurementStart.count);
+  const gcDurationDeltaMs = Math.max(0, gcDurationMs - gcMeasurementStart.durationMs);
 
   const movementLatencies = workloads
     .flatMap((item) => item.movement.latenciesMs)
@@ -233,8 +245,14 @@ async function main(): Promise<void> {
       heapUsedBytes: memory.heapUsed,
       heapTotalBytes: memory.heapTotal,
       v8HeapLimitBytes: heap.heap_size_limit,
-      gcCount,
-      gcDurationMs,
+      gcCount: gcCountDelta,
+      gcCountStart: gcMeasurementStart.count,
+      gcCountEnd: gcCount,
+      gcDurationMs: gcDurationDeltaMs,
+      gcDurationStartMs: gcMeasurementStart.durationMs,
+      gcDurationEndMs: gcDurationMs,
+      gcDurationDeltaMs,
+      gcDurationMsPerSecond: gcDurationDeltaMs / options.durationSeconds,
       memorySamples: loadMemorySamples.length,
       rssStartBytes: rssTrend.start,
       rssEndBytes: rssTrend.end,
@@ -358,7 +376,9 @@ async function closePlayersInBatches(players: PlayerResult[]): Promise<void> {
 async function createPlayer(index: number): Promise<PlayerResult> {
   const startedAt = performance.now();
   const localAddress = localAddressForPlayer(index);
-  const account = `perf_${options.label}_${options.moveRate}_${options.players}_${index}_${Date.now()}`;
+  // 每轮创建短生命周期的唯一测试账号，避免旧账号数据和本轮结果互相污染。
+  // Register a short-lived unique account per case so old data cannot affect this run.
+  const account = `perf${Date.now().toString(36)}${process.pid.toString(36)}${index.toString(36)}`;
   const managerRpcId = allocateRpcId();
   const managerFrame = await requestOne(
     options.host,
@@ -370,11 +390,22 @@ async function createPlayer(index: number): Promise<PlayerResult> {
   const loginAddress = decodeGetLoginServiceAddrFrame(managerFrame).body;
   checkResponse(loginAddress, managerRpcId, "GetLoginServiceAddr");
 
+  const registerRpcId = allocateRpcId();
+  const registerFrame = await requestOne(
+    loginAddress.ip,
+    loginAddress.port,
+    buildRegisterPacket(registerRpcId, { account, password: PERF_PASSWORD }),
+    options.timeoutMs,
+    localAddress,
+  );
+  const registered = decodeRegisterFrame(registerFrame).body;
+  checkResponse(registered, registerRpcId, "Register");
+
   const loginRpcId = allocateRpcId();
   const loginFrame = await requestOne(
     loginAddress.ip,
     loginAddress.port,
-    buildLoginPacket(loginRpcId, { account }),
+    buildLoginPacket(loginRpcId, { account, password: PERF_PASSWORD }),
     options.timeoutMs,
     localAddress,
   );
@@ -843,7 +874,10 @@ class GateConnection {
         const frame = useItem
           ? await this.request(
             rpcId,
-            buildUseItemPacket(rpcId, { itemId: this.businessItemId }),
+            buildUseItemPacket(rpcId, {
+              itemId: this.businessItemId,
+              operationId: `perf-business:${this.unitId}:${operation}`,
+            }),
           )
           : await this.request(
             rpcId,
@@ -885,28 +919,28 @@ class GateConnection {
 
   private onData(chunk: Buffer): void {
     try {
-      for (const frame of this.decoder.push(chunk)) {
+      this.decoder.pushEach(chunk, (frame) => {
         const msgcode = readU16BE(frame);
         if (msgcode === MsgCode.G2C_EntityMove) {
           this.entityMovePushes += 1;
           this.moveHandler?.(frame);
-          continue;
+          return;
         }
         const rpcId = extractRpcId(frame);
         if (rpcId !== undefined) {
           const pending = this.pendingRpc.get(rpcId);
-          if (!pending) continue;
+          if (!pending) return;
           this.pendingRpc.delete(rpcId);
           clearTimeout(pending.timer);
           pending.resolve(frame);
-          continue;
+          return;
         }
         const waiter = this.messageWaiters.get(msgcode)?.shift();
         if (waiter) {
           clearTimeout(waiter.timer);
           waiter.resolve(frame);
         }
-      }
+      });
     } catch (error) {
       this.rejectAll(error instanceof Error ? error : new Error(String(error)));
     }

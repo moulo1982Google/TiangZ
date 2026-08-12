@@ -223,6 +223,12 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     const last = samples.at(-1);
     const rssTrend = resourceTrend(samples, "rssBytes");
     const heapTrend = resourceTrend(samples, "v8HeapUsedBytes");
+    // GC counters are cumulative for the Runtime lifetime. Report the delta
+    // across the formal window instead of treating the final lifetime total as
+    // work performed by this case.
+    // GC 计数器是 Runtime 生命周期累计值；正式窗口必须记录首尾增量，不能把最终累计值当成本轮开销。
+    const gcCountWindow = cumulativeWindow(allSamples, "v8GcCount", startedAt, endedAt);
+    const gcMsWindow = cumulativeWindow(allSamples, "v8GcMs", startedAt, endedAt);
     return {
       process: last?.process ?? runtime.name,
       samples: samples.length,
@@ -232,6 +238,14 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
       cpuTimeMs: last?.cpuTimeMs ?? 0,
       v8GcCount: last?.v8GcCount ?? 0,
       v8GcMs: last?.v8GcMs ?? 0,
+      v8GcCountStart: gcCountWindow.start,
+      v8GcCountEnd: gcCountWindow.end,
+      v8GcCountDelta: gcCountWindow.delta,
+      v8GcMsStart: gcMsWindow.start,
+      v8GcMsEnd: gcMsWindow.end,
+      v8GcMsDelta: gcMsWindow.delta,
+      v8GcWindowDurationMs: gcMsWindow.durationMs,
+      v8GcMsPerSecond: gcMsWindow.perSecond,
       queueDepth: last?.queueDepth ?? 0,
       queueCapacity: last?.queueCapacity ?? 0,
       queueMaxDepth: max(samples.map((item) => item.queueMaxDepth ?? 0)),
@@ -239,6 +253,14 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
       slowDisconnects: last?.slowDisconnects ?? 0,
       innerOverloads: last?.innerOverloads ?? 0,
       innerTimeouts: last?.innerTimeouts ?? 0,
+      mailboxFastPathCalls: last?.mailboxFastPathCalls ?? 0,
+      mailboxQueuedCalls: last?.mailboxQueuedCalls ?? 0,
+      mailboxAsyncCalls: last?.mailboxAsyncCalls ?? 0,
+      mailboxOneWayFastPathCalls: last?.mailboxOneWayFastPathCalls ?? 0,
+      mailboxOneWayQueuedCalls: last?.mailboxOneWayQueuedCalls ?? 0,
+      mailboxOneWayAsyncCalls: last?.mailboxOneWayAsyncCalls ?? 0,
+      mailboxQueuedDepth: last?.mailboxQueuedDepth ?? 0,
+      mailboxMaxQueuedDepth: max(samples.map((item) => item.mailboxMaxQueuedDepth ?? 0)),
       rssStartBytes: rssTrend.start,
       rssEndBytes: rssTrend.end,
       rssGrowthBytes: rssTrend.growth,
@@ -261,6 +283,9 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     cpuTimeMsSum: sum(processes.map((item) => item.cpuTimeMs)),
     v8GcCountSum: sum(processes.map((item) => item.v8GcCount)),
     v8GcMsSum: sum(processes.map((item) => item.v8GcMs)),
+    v8GcCountDeltaSum: sum(processes.map((item) => item.v8GcCountDelta)),
+    v8GcMsDeltaSum: sum(processes.map((item) => item.v8GcMsDelta)),
+    v8GcMsPerSecondSum: sum(processes.map((item) => item.v8GcMsPerSecond)),
     rssGrowthBytesSum: sum(processes.map((item) => item.rssGrowthBytes)),
     rssGrowthBytesPerHourSum: sum(processes.map((item) => item.rssGrowthBytesPerHour)),
     v8HeapGrowthBytesSum: sum(processes.map((item) => item.v8HeapGrowthBytes)),
@@ -272,6 +297,14 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     slowDisconnectsSum: sum(processes.map((item) => item.slowDisconnects)),
     innerOverloadsSum: sum(processes.map((item) => item.innerOverloads)),
     innerTimeoutsSum: sum(processes.map((item) => item.innerTimeouts)),
+    mailboxFastPathCallsSum: sum(processes.map((item) => item.mailboxFastPathCalls)),
+    mailboxQueuedCallsSum: sum(processes.map((item) => item.mailboxQueuedCalls)),
+    mailboxAsyncCallsSum: sum(processes.map((item) => item.mailboxAsyncCalls)),
+    mailboxOneWayFastPathCallsSum: sum(processes.map((item) => item.mailboxOneWayFastPathCalls)),
+    mailboxOneWayQueuedCallsSum: sum(processes.map((item) => item.mailboxOneWayQueuedCalls)),
+    mailboxOneWayAsyncCallsSum: sum(processes.map((item) => item.mailboxOneWayAsyncCalls)),
+    mailboxQueuedDepthSum: sum(processes.map((item) => item.mailboxQueuedDepth)),
+    mailboxMaxQueuedDepthSum: sum(processes.map((item) => item.mailboxMaxQueuedDepth)),
   };
 }
 
@@ -327,6 +360,14 @@ async function readProcessHealthMetrics(runtime) {
       slowDisconnects: metric("tiangz_process_slow_disconnects_total"),
       innerOverloads: metric("tiangz_transport_inner_overload_rejections"),
       innerTimeouts: metric("tiangz_transport_inner_timed_out_calls"),
+      mailboxFastPathCalls: prometheusMetricSum(body, "tiangz_scene_mailbox_fast_path_calls_total"),
+      mailboxQueuedCalls: prometheusMetricSum(body, "tiangz_scene_mailbox_queued_calls_total"),
+      mailboxAsyncCalls: prometheusMetricSum(body, "tiangz_scene_mailbox_async_calls_total"),
+      mailboxOneWayFastPathCalls: prometheusMetricSum(body, "tiangz_scene_mailbox_one_way_fast_path_calls_total"),
+      mailboxOneWayQueuedCalls: prometheusMetricSum(body, "tiangz_scene_mailbox_one_way_queued_calls_total"),
+      mailboxOneWayAsyncCalls: prometheusMetricSum(body, "tiangz_scene_mailbox_one_way_async_calls_total"),
+      mailboxQueuedDepth: prometheusMetricMax(body, "tiangz_scene_mailbox_queued_depth"),
+      mailboxMaxQueuedDepth: prometheusMetricMax(body, "tiangz_scene_mailbox_max_queued_depth"),
     };
   } catch {
     return { process: runtime.name };
@@ -336,6 +377,25 @@ async function readProcessHealthMetrics(runtime) {
 function prometheusMetric(body, name) {
   const line = body.split(/\r?\n/).find((value) => value.startsWith(`${name}{`));
   return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
+}
+
+// Scene metrics carry a scene label, so process-level reports must aggregate
+// all matching series instead of reading the first scene only.
+// Scene 指标带有 scene 标签，进程级报告必须聚合全部序列，不能只读取第一个 Scene。
+function prometheusMetricValues(body, name) {
+  return body
+    .split(/\r?\n/)
+    .filter((value) => value.startsWith(`${name}{`))
+    .map((value) => Number(value.slice(value.lastIndexOf(" ") + 1)))
+    .filter((value) => Number.isFinite(value));
+}
+
+function prometheusMetricSum(body, name) {
+  return sum(prometheusMetricValues(body, name));
+}
+
+function prometheusMetricMax(body, name) {
+  return max(prometheusMetricValues(body, name));
 }
 
 function aggregateCases(rounds) {
@@ -373,16 +433,24 @@ function aggregateCases(rounds) {
       serverPeakRssBytesSum: median(group.map((item) => item.serverResources?.peakRssBytesSum ?? 0)),
       serverGcCount: median(group.map((item) => item.serverResources?.v8GcCountSum ?? 0)),
       serverGcMs: median(group.map((item) => item.serverResources?.v8GcMsSum ?? 0)),
+      serverGcCountDelta: median(group.map((item) => item.serverResources?.v8GcCountDeltaSum ?? 0)),
+      serverGcMsDelta: median(group.map((item) => item.serverResources?.v8GcMsDeltaSum ?? 0)),
+      serverGcMsPerSecond: median(group.map((item) => item.serverResources?.v8GcMsPerSecondSum ?? 0)),
       serverQueueMaxDepthSum: median(group.map((item) => item.serverResources?.queueMaxDepthSum ?? 0)),
       serverBackpressureWaitsSum: median(group.map((item) => item.serverResources?.backpressureWaitsSum ?? 0)),
       serverInnerOverloadsSum: median(group.map((item) => item.serverResources?.innerOverloadsSum ?? 0)),
       serverInnerTimeoutsSum: median(group.map((item) => item.serverResources?.innerTimeoutsSum ?? 0)),
+      serverMailboxQueuedCallsSum: median(group.map((item) => item.serverResources?.mailboxQueuedCallsSum ?? 0)),
+      serverMailboxOneWayQueuedCallsSum: median(group.map((item) => item.serverResources?.mailboxOneWayQueuedCallsSum ?? 0)),
+      serverMailboxOneWayAsyncCallsSum: median(group.map((item) => item.serverResources?.mailboxOneWayAsyncCallsSum ?? 0)),
+      serverMailboxMaxQueuedDepthSum: median(group.map((item) => item.serverResources?.mailboxMaxQueuedDepthSum ?? 0)),
       serverRssGrowthBytesPerHour: median(group.map((item) => item.serverResources?.rssGrowthBytesPerHourSum ?? 0)),
       serverV8HeapGrowthBytesPerHour: median(group.map((item) => item.serverResources?.v8HeapGrowthBytesPerHourSum ?? 0)),
       loadCpuMs: median(group.map((item) => item.loadGenerator.cpuUserMs + item.loadGenerator.cpuSystemMs)),
       loadPeakRssBytes: median(group.map((item) => item.loadGenerator.maxRssBytes)),
-      loadGcCount: median(group.map((item) => item.loadGenerator.gcCount)),
-      loadGcMs: median(group.map((item) => item.loadGenerator.gcDurationMs)),
+      loadGcCount: median(group.map((item) => item.loadGenerator.gcCountDelta ?? item.loadGenerator.gcCount)),
+      loadGcMs: median(group.map((item) => item.loadGenerator.gcDurationDeltaMs ?? item.loadGenerator.gcDurationMs)),
+      loadGcMsPerSecond: median(group.map((item) => item.loadGenerator.gcDurationMsPerSecond ?? 0)),
     },
   }));
 }
@@ -404,6 +472,28 @@ function renderMarkdown(report) {
   for (const item of report.cases) {
     const value = item.median;
     lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${round(value.movesPerSecond)} | ${round(value.pushesPerSecond)} | ${value.moveAcknowledged} | ${round(value.moveP95Ms, 2)} | ${round(value.businessPerSecond)} | ${value.businessAccepted} | ${value.businessRejected} | ${value.businessTransportErrors} | ${round(value.businessP95Ms, 2)} | ${value.stalled} | ${options.remote ? "N/A" : round(value.serverPeakCpuPercentSum, 1)} | ${options.remote ? "N/A" : formatBytes(value.serverPeakRssBytesSum)} | ${options.remote ? "N/A" : value.serverQueueMaxDepthSum} | ${options.remote ? "N/A" : value.serverBackpressureWaitsSum} | ${options.remote ? "N/A" : value.serverInnerOverloadsSum} | ${options.remote ? "N/A" : value.serverInnerTimeoutsSum} | ${round(value.loadCpuMs)} | ${formatBytes(value.loadPeakRssBytes)} |`);
+  }
+  lines.push(
+    "",
+    "## Mailbox 低分配观测",
+    "",
+    "| 部署 | 负载 | 玩家 | 有序调用排队 | 单向消息排队 | 单向异步 | Mailbox峰值深度 |",
+    "|---|---|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${options.remote ? "N/A" : value.serverMailboxQueuedCallsSum} | ${options.remote ? "N/A" : value.serverMailboxOneWayQueuedCallsSum} | ${options.remote ? "N/A" : value.serverMailboxOneWayAsyncCallsSum} | ${options.remote ? "N/A" : value.serverMailboxMaxQueuedDepthSum} |`);
+  }
+  lines.push(
+    "",
+    "## GC 正式窗口增量",
+    "",
+    "| 部署 | 负载 | 玩家 | Server GC次数增量 | Server GC耗时增量(ms) | Server GC耗时(ms/s) | Load GC次数增量 | Load GC耗时增量(ms) | Load GC耗时(ms/s) |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${options.remote ? "N/A" : round(value.serverGcCountDelta)} | ${options.remote ? "N/A" : round(value.serverGcMsDelta, 3)} | ${options.remote ? "N/A" : round(value.serverGcMsPerSecond, 3)} | ${round(value.loadGcCount)} | ${round(value.loadGcMs, 3)} | ${round(value.loadGcMsPerSecond, 3)} |`);
   }
   if (options.outputPrefix === "soak") {
     lines.push(
@@ -439,8 +529,10 @@ function renderMarkdown(report) {
     "- 业务负载默认交替使用1001道具和3005友方技能；压测客户端从EnterMap快照读取1001的ItemId，服务端仍是唯一权威。",
     "- `确认数` 统计所有匹配 `acknowledgedSequence` 的权威 Push；延迟分位数使用每玩家最多约 1024 个均匀样本，避免长稳工具自身内存线性增长。",
     "- `push/s` 是所有客户端实际收到的 EntityMove 数；当前仍为同地图全量可见，尚未启用 AOI。",
-    "- Server CPU/RSS/GC/队列来自各 Runtime 的 `/metrics` 采样；若旧 Runtime 没有健康端点才回退到 `[process-metrics]` 日志，split 模式按进程汇总。",
+    "- Server CPU/RSS/队列来自各 Runtime 的 `/metrics` 采样；GC 使用正式窗口的累计计数器首尾差值，生命周期累计值只保留在 raw JSON 作诊断；若旧 Runtime 没有健康端点才回退到 `[process-metrics]` 日志，split 模式按进程汇总。",
+    "- `GC 正式窗口增量` 的 `GC ms/s` 是正式窗口内的 GC 暂停时间除以窗口秒数；它不能直接等同于业务分配字节数。",
     "- `Queue峰值(启动至今)` 是进程启动以来的 Rust 队列 max_depth；当前队列深度另保存在 raw JSON，Backpressure/Inner超载/Inner超时为正式采样窗口内的累计事件。",
+    "- `Mailbox低分配观测` 来自每个 Scene 的 Prometheus 序列汇总；单向消息排队应尽量接近零，Mailbox 峰值必须结合 stalled、P99 和业务语义判断。",
     "- Load CPU/RSS/GC 只代表压测客户端，独立压测机模式用于排除它与服务端争抢资源。",
     "- MapHost 发布 latest 移动状态；BroadcastHub 通过通用 `S2G_ClientBroadcast` 按 UnitId 聚合下行。",
     "",
@@ -589,6 +681,32 @@ function resourceTrend(samples, key) {
     lastQuarterPerHour: regressionPerHour(samples, key, 0.75),
   };
 }
+
+function cumulativeWindow(samples, key, startedAt, endedAt) {
+  if (!startedAt || !endedAt || samples.length === 0) {
+    return { start: 0, end: 0, delta: 0, durationMs: 0, perSecond: 0 };
+  }
+  const sorted = [...samples].sort((left, right) => left.timestampMs - right.timestampMs);
+  const before = sorted.filter((sample) => sample.timestampMs < startedAt).at(-1);
+  const afterStart = sorted.find((sample) => sample.timestampMs >= startedAt);
+  const end = sorted.filter((sample) => sample.timestampMs <= endedAt + 1_000).at(-1);
+  const first = before ?? afterStart;
+  if (!first || !end) {
+    return { start: 0, end: 0, delta: 0, durationMs: 0, perSecond: 0 };
+  }
+  const startValue = Number(first[key] ?? 0);
+  const endValue = Number(end[key] ?? startValue);
+  const durationMs = Math.max(0, end.timestampMs - first.timestampMs);
+  const delta = Math.max(0, endValue - startValue);
+  return {
+    start: startValue,
+    end: endValue,
+    delta,
+    durationMs,
+    perSecond: durationMs > 0 ? delta / (durationMs / 1_000) : 0,
+  };
+}
+
 function regressionPerHour(samples, key, startFraction) {
   if (samples.length < 2) return 0;
   const startIndex = Math.min(samples.length - 2, Math.floor(samples.length * startFraction));

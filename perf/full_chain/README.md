@@ -78,6 +78,28 @@ node perf/full_chain/run_full_chain_perf.mjs \
 
 远程模式报告压测机 CPU/RSS/GC；服务端 CPU/RSS/V8 Heap/GC 从服务端日志的 `[process-metrics]` 采集。两类指标不会混算。
 
+## 框架热路径低分配准备
+
+在真正的 A/B 压测前，先运行一次就绪检查：
+
+```powershell
+npm run perf:hotpath:prepare
+```
+
+这个命令会构建 Bench Bundle、全链路客户端和 Release Runtime，检查 Model/Hotfix/客户端/Runtime 制品、读取本地 all-in-one 与 split 测试端口，并确认测试端口当前没有被其他进程占用。它不会启动 Runtime，也不会创建玩家，不属于压力测试。
+
+准备成功后，再在空闲机器上分别保存优化前、优化后的报告：
+
+```powershell
+npm run perf:full-chain -- --mode all --players 200,1000,3000 --move-rates 2 --warmup 10 --duration 60 --rounds 3 --output-prefix hotpath_before
+npm run perf:full-chain -- --mode all --players 200,1000,3000 --move-rates 2 --warmup 10 --duration 60 --rounds 3 --output-prefix hotpath_after
+npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.json --after perf/results/hotpath_after_<时间>.json
+```
+
+报告除了原有吞吐、P99、CPU、RSS、V8 GC 和 Rust 队列，还会列出 Scene Mailbox 的有序调用排队、单向消息排队、单向异步数量和峰值深度。`single-way queued` 应接近零；它必须与 `stalled`、transport overload、P99 一起判断，不能单独作为性能结论。
+
+这轮观测仍然不是“精确每消息分配多少字节”的分配器实验：服务端使用 `/metrics` 的 V8 GC/RSS/Heap，GC 使用正式窗口的首尾累计值差分；压测端使用 Node `PerformanceObserver` 和进程资源统计，并在正式窗口边界差分。精确堆分配需要另开 V8 heap/profile 实验，不能把 GC 次数直接当成分配字节数。
+
 ## 指标口径
 
 - `登录 users/s`：本轮有限玩家并发完成完整登录进图的启动速率。10/50/100 个样本只用于链路对比，不等于登录服容量上限。
@@ -86,7 +108,7 @@ node perf/full_chain/run_full_chain_perf.mjs \
 - `p50/p95/p99`：已完成移动闭环的端到端延迟。
 - `stalled`：在总测试截止时间后仍未收到自身权威移动的玩家数。延迟分位数不包含这些未完成请求，因此必须和 `stalled` 一起判断。
 - `overloads`：内部 TCP transport 有界队列拒绝的消息数，可在对应 Runtime 日志的 `[metrics:inner_transport]` 中查看。
-- `Server CPU/RSS/GC`：Runtime 周期输出的进程 CPU、RSS、V8 Heap、V8 GC 次数与累计暂停时间；split 模式按进程汇总。
+- `Server CPU/RSS/GC`：Runtime 周期输出的进程 CPU、RSS、V8 Heap；GC 报告正式窗口的次数增量、暂停时间增量和 `GC ms/s`，另保留生命周期累计值用于诊断；split 模式按进程汇总。
 - `Load CPU/RSS/GC`：Node 压测客户端自身资源，仅用于判断压测机是否先成为瓶颈。
 - 业务链路报告额外输出`business/s`、成功数、拒绝数、传输错误数和业务响应p50/p95/p99；必须同时检查错误和服务端队列，不能只看延迟分位数。
 
