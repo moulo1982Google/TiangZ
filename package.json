@@ -181,6 +181,8 @@
     "perf:map-capacity:grid-matrix": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --locked --bin TiangZ --bin map_probe_load && node perf/map_capacity/run_grid_matrix.mjs",
     "perf:map-entry-stages": "npm run build:bench && cargo build --release --locked --bin TiangZ --bin map_probe_load && node perf/map_capacity/run_map_entry_stages.mjs",
     "perf:hotfix": "node perf/hotfix/run_hotfix_perf.mjs",
+    "perf:hotpath:prepare": "node perf/hotpath/prepare_hotpath_perf.mjs",
+    "perf:hotpath:compare": "node perf/hotpath/compare_hotpath_results.mjs",
     "perf:state-sync-full": "npm run build:bench && npm run build:perf:full-chain && node perf/map_capacity/run_map_capacity_perf.mjs --client rust --move-rate 0 --probe-rate 1 --state-sync-mode mixed --state-sync-rate 5",
     "profile:ts": "node tools/capture_v8_profile.mjs",
     "perf:full-chain:legacy": "npm run build:bench && npm run build:perf:full-chain && cargo build --release --bin TiangZ --bin runtime_load && powershell -NoProfile -ExecutionPolicy Bypass -File perf/full_chain/run_full_chain_perf.ps1",

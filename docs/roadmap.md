@@ -112,6 +112,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 单向 Message 不再创建 Promise completion；RPC call 和 timer 才回 completion，避免进图广播产生海量无意义唤醒。
 - Actor 同步 Handler 走真正同步的 mailbox 快路径；Raw TCP、WebSocket 和内部 TCP writer 都已批量写出。
 - Process completion 与网络 frame 统一进入同一有界事件队列，并增加 frame/completion/update/batch 累计指标。
+- 框架热路径完成第一轮低分配收口：ordered Actor/Scene mailbox的单向Message忙时只复用队列节点、不创建完成Promise；协议流增加`pushEach`回调消费，完整单分片帧不复制；encoded latest单批次广播不创建包装数组；Rust日志与Prometheus新增mailbox快路径、排队、异步、单向消息和队列深度指标。目标是稳态低分配，不承诺关闭V8 GC。
+- 低分配压测准备已固定：先用`npm run perf:hotpath:prepare`完成构建、生成物和门禁检查，再用统一`full-chain`参数做before/after三轮对照，并通过`perf:hotpath:compare`比较吞吐、尾延迟、资源、GC、Transport和Mailbox队列。精确分配字节与heap profile仍作为独立实验，不把GC次数当作分配量。
 - Rust 到 TS 的入站事件改为一个连续二进制批包，每个 update 只跨一次 Host Op；不再逐事件调用 `__hostTakeBinaryArg`。
 - V8 启动后缓存三个 Runtime 入口 Function，移除每 tick 动态 `execute_script`；Scene metrics 改为每 5 秒采样一次，普通 update 不再 stringify/parse JSON。
 - 单连接 response 复用 connectionId 二进制表示，`packFrame` 只分配最终帧；Unit Handler 首次按 `instanceof` 匹配后按构造器缓存。

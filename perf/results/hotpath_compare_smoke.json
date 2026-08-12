@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-12T08:15:37.600Z",
+  "before": "perf/results/full_chain_latest.json",
+  "after": "perf/results/full_chain_latest.json",
+  "matchedCases": [
+    "all:150:steady-10hz"
+  ],
+  "alignmentOk": true,
+  "rows": [
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "movesPerSecond",
+      "before": 1500,
+      "after": 1500,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "moveP50Ms",
+      "before": 4.6436999999987165,
+      "after": 4.6436999999987165,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "moveP95Ms",
+      "before": 8.1567,
+      "after": 8.1567,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "moveP99Ms",
+      "before": 11.056099999999788,
+      "after": 11.056099999999788,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "serverPeakCpuPercentSum",
+      "before": 50.19,
+      "after": 50.19,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "serverPeakRssBytesSum",
+      "before": 71467008,
+      "after": 71467008,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "serverGcCount",
+      "before": 202,
+      "after": 202,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "serverGcMs",
+      "before": 26.135,
+      "after": 26.135,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "serverMailboxQueuedCallsSum",
+      "before": 0,
+      "after": 0,
+      "changePercent": null
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "serverMailboxOneWayQueuedCallsSum",
+      "before": 0,
+      "after": 0,
+      "changePercent": null
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "serverMailboxMaxQueuedDepthSum",
+      "before": 0,
+      "after": 0,
+      "changePercent": null
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "loadGcCount",
+      "before": 242,
+      "after": 242,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "loadGcMs",
+      "before": 49.0182000156492,
+      "after": 49.0182000156492,
+      "changePercent": 0
+    },
+    {
+      "case": "all:150:steady-10hz",
+      "metric": "loadPeakRssBytes",
+      "before": 97382400,
+      "after": 97382400,
+      "changePercent": 0
+    }
+  ],
+  "note": "吞吐越高越好；延迟、CPU、RSS、GC、Mailbox排队和峰值深度通常越低越好。先看 stalled、transport errors 和 overload 是否为零。alignmentOk=false时不能直接比较。"
+}

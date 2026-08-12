@@ -38,7 +38,11 @@ import {
   extractFrameRpcId,
   rewriteFrameRpcId,
 } from "../app/core/process/ActorLocation";
-import { HotfixSystem, systemFor } from "../app/core/hotReload/HotfixSystem";
+import {
+  HotfixBindingStore,
+  HotfixSystem,
+  systemFor,
+} from "../app/core/hotReload/HotfixSystem";
 import type { HotfixManifest } from "../app/core/hotReload/contracts";
 import { GameConfigRegistry } from "../app/generated/model/config";
 
@@ -53,6 +57,9 @@ async function main(): Promise<void> {
   InitializeGameSingletons({ fixedUpdateMs: 50, maxCatchUpSteps: 2 });
   try {
     HotfixSystem.Begin(testHotfixManifest("actor-normal"));
+    // 首代先建立完整 Handler key 基线，后续热更才可以验证“只替换、不增删”。
+    // Establish the complete Handler key baseline before testing replacement-only reloads.
+    await import("../app/generated/hotfix/handlers");
     await import("../app/hotfix/demo/map/PlayerUnitSystem");
     await import("../app/hotfix/demo/monster/MonsterUnitSystem");
     await import("../app/hotfix/demo/numeric/NumericComponentSystem");
@@ -67,6 +74,7 @@ async function main(): Promise<void> {
     await testChildEntityContainer();
     await testItemChildEntity();
     await testOrderedActorMailbox();
+    await testOneWayActorMailbox();
     await testActorDespawnRejectsInFlightAndQueuedCalls();
     await testUnorderedActorIsolation();
     testReconnectStormKeepsLatestLocation();
@@ -550,6 +558,7 @@ async function testPlayerUnitComponents(): Promise<void> {
 
   const stableHandle = native.Handle;
   HotfixSystem.Begin(testHotfixManifest("actor-inverted"));
+  stageActiveBindingsForSameIsolateTest();
   await import("../perf/hotfix/fixtures/inverted");
   const { NumericComponentSystem } = await import(
     "../app/hotfix/demo/numeric/NumericComponentSystem"
@@ -602,6 +611,17 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.notEqual(recreated.InstanceId, firstInstanceId);
   assert.equal(host.despawnActor("map:1", 1000), true);
   assert.equal(units.Get(1000), undefined);
+}
+
+function stageActiveBindingsForSameIsolateTest(): void {
+  const stores = (HotfixSystem as unknown as {
+    bindingStores: Set<HotfixBindingStore<object>>;
+  }).bindingStores;
+  for (const store of stores) {
+    for (const [key, value] of store.__activeEntries()) {
+      HotfixSystem.StageBinding(store, key, value);
+    }
+  }
 }
 
 /** 验证unordered Actor不会让一个等待中的RPC阻塞后续无关调用。 / Verifies that an awaiting unordered Actor does not block a later unrelated call. */
@@ -675,6 +695,28 @@ async function testOrderedActorMailbox(): Promise<void> {
 
   assert.equal(probe.maxRunning, 1);
   assert.deepEqual(probe.completed, [1, 2]);
+}
+
+/** 验证有序 Actor 的单向消息忙时不创建完成 Promise，并在前序调用后保持顺序。 / Verifies that a busy ordered Actor queues a one-way message without a completion Promise and preserves order. */
+async function testOneWayActorMailbox(): Promise<void> {
+  const host = new ProcessHost("one-way-mailbox-self-test");
+  host.spawnScene("map:1", MapScene);
+  const probe = host.spawnActor("map:1", "probe", OrderedProbeActor);
+  let release!: () => void;
+  const blocker = new Promise<void>((resolve) => release = resolve);
+  const first = Promise.resolve(host.runActorMailbox(probe.InstanceId, () => blocker));
+  const events: number[] = [];
+  const queued = host.runActorMailboxVoid(probe.InstanceId, () => {
+    events.push(2);
+  });
+
+  assert.equal(queued, undefined);
+  assert.deepEqual(events, []);
+  release();
+  await first;
+  assert.deepEqual(events, [2]);
+  assert.equal(host.MailboxMetrics().oneWayQueuedCalls, 1);
+  assert.equal(host.MailboxMetrics().queuedDepth, 0);
 }
 
 @actor({ mailbox: "ordered" })

@@ -38,9 +38,9 @@ export function sendRemoteScene(
   target: SceneConfig,
   frame: Uint8Array,
   timeoutMs: number,
-): Promise<void> {
+): void {
   if (queued.length >= MAX_PENDING_OPERATIONS) {
-    return Promise.reject(new Error("host scene operation queue limit reached"));
+    throw new Error("host scene operation queue limit reached");
   }
   queued.push({
     id: 0,
@@ -49,7 +49,6 @@ export function sendRemoteScene(
     timeoutMs: Math.max(1, Math.min(timeoutMs, 0xffff_ffff)),
     frame,
   });
-  return Promise.resolve();
 }
 
 /** 传输超时使用 Rust 宿主定时器；游戏逻辑定时必须使用 TimerSystem。 / Uses the Rust host timer for transport deadlines; gameplay timers belong to TimerSystem. */

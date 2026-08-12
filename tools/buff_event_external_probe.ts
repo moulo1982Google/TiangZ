@@ -100,7 +100,7 @@ class ProbeConnection {
       this.socket.once("error", reject);
     });
     this.socket.on("data", (chunk: Buffer) => {
-      for (const frame of this.decoder.push(chunk)) this.dispatch(frame);
+      this.decoder.pushEach(chunk, (frame) => this.dispatch(frame));
     });
     this.socket.on("close", () => this.rejectAll(new Error("probe gate connection closed")));
   }

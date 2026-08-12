@@ -1,4 +1,5 @@
 import { readU16BE } from "../protocol/binary";
+import { isPromiseLike, type MaybePromise } from "../async";
 import type { IMessage, IRequest, IResponse, MessageDescriptor } from "../protocol/message";
 import { packFrame } from "../protocol/registry";
 import { RpcError } from "../protocol/RpcError";
@@ -211,54 +212,40 @@ export class SceneCallContext {
   }
 
   /** 编码并发送单向 Scene 消息，不创建响应等待者。 / Encodes and sends a one-way Scene message without a response waiter. */
-  async send<TMessage extends IMessage>(
+  send<TMessage extends IMessage>(
     target: SceneConfig,
     descriptor: MessageDescriptor<TMessage>,
     message: TMessage,
     options: SceneSendOptions = {},
-  ): Promise<void> {
+  ): MaybePromise<void> {
     const frame = packFrame(descriptor.msgcode, descriptor.codec.encode(message));
-    await this.sendFrame(target, frame, options);
+    return this.sendFrame(target, frame, options);
   }
 
   /** 包装并向具体 Actor InstanceId 发送单向消息。 / Wraps and sends a one-way message to a concrete Actor InstanceId. */
-  async sendActor<TMessage extends IMessage>(
+  sendActor<TMessage extends IMessage>(
     target: ActorLocationTarget,
     descriptor: MessageDescriptor<TMessage>,
     message: TMessage,
     options: SceneSendOptions = {},
-  ): Promise<void> {
+  ): MaybePromise<void> {
     const innerFrame = packFrame(descriptor.msgcode, descriptor.codec.encode(message));
     const frame = encodeActorLocationEnvelope({
       instanceId: target.instanceId,
       frame: innerFrame,
     });
-    await this.sendFrame(target.scene, frame, options);
+    return this.sendFrame(target.scene, frame, options);
   }
 
   /** 使用与 RPC 相同的本地/远程错误映射发送不透明帧。 / Sends an opaque frame through the same local/remote error mapping as RPC calls. */
-  async sendFrame(
+  sendFrame(
     target: SceneConfig,
     frame: Uint8Array,
     options: SceneSendOptions = {},
-  ): Promise<void> {
+  ): MaybePromise<void> {
     const startedAt = this.latencies ? nowMs() : 0;
     const isLocal = this.localRouter.hasLocalScene(target.name);
-    try {
-      if (isLocal) {
-        await this.localRouter.sendLocalScene(this.self.name, target.name, frame);
-      } else {
-        await sendRemoteScene(this.self, target, frame, options.timeoutMs ?? 5000);
-      }
-    } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
-      throw new RpcError(
-        text.includes("[scene-overloaded]")
-          ? SystemErrCode.SceneOverloaded
-          : SystemErrCode.SceneCallFailed,
-        text,
-      );
-    } finally {
+    const finish = (): void => {
       if (this.latencies) {
         this.latencies.record(
           isLocal ? "scene.send.local" : "scene.send.remote",
@@ -266,6 +253,36 @@ export class SceneCallContext {
           frame.length >= 2 ? readU16BE(frame, 0) : undefined,
         );
       }
+    };
+    const mapError = (error: unknown): RpcError => {
+      const text = error instanceof Error ? error.message : String(error);
+      return new RpcError(
+        text.includes("[scene-overloaded]")
+          ? SystemErrCode.SceneOverloaded
+          : SystemErrCode.SceneCallFailed,
+        text,
+      );
+    };
+    try {
+      const result = isLocal
+        ? this.localRouter.sendLocalScene(this.self.name, target.name, frame)
+        : sendRemoteScene(this.self, target, frame, options.timeoutMs ?? 5000);
+      if (isPromiseLike(result)) {
+        return result.then(
+          () => {
+            finish();
+          },
+          (error) => {
+            finish();
+            throw mapError(error);
+          },
+        );
+      }
+      finish();
+      return;
+    } catch (error) {
+      finish();
+      throw mapError(error);
     }
   }
 

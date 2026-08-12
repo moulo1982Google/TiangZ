@@ -37,6 +37,7 @@ interface LatestJob<TItem> {
 
 interface EncodedSnapshotJob {
   batches?: readonly EncodedAudienceBatch[];
+  singleBatch?: EncodedAudienceBatch;
   routeFrames?: readonly EncodedRouteFrame[];
   itemCount: number;
   queuedAt: number;
@@ -152,10 +153,11 @@ export class BroadcastHub {
     frame: Uint8Array,
     itemCount: number,
   ): Promise<void> {
-    return this.PublishEncodedLatestBatches(
+    return this.enqueueEncodedLatest(
       audience.key,
       descriptorName,
-      [{ audience, frame, itemCount }],
+      undefined,
+      { audience, frame, itemCount },
     );
   }
 
@@ -171,25 +173,57 @@ export class BroadcastHub {
     descriptorName: string,
     batches: readonly EncodedAudienceBatch[],
   ): Promise<void> {
+    return this.enqueueEncodedLatest(audienceKey, descriptorName, batches);
+  }
+
+  private enqueueEncodedLatest(
+    audienceKey: string,
+    descriptorName: string,
+    batches?: readonly EncodedAudienceBatch[],
+    singleBatch?: EncodedAudienceBatch,
+  ): Promise<void> {
     if (this.disposed) {
       return Promise.reject(new Error("broadcast hub is disposed"));
     }
     if (!audienceKey) throw new Error("encoded broadcast audience key is required");
-    const activeBatches = batches.filter(
-      (batch) => batch.itemCount > 0 && batch.audience.routes.length > 0,
-    );
-    if (activeBatches.length === 0) {
-      return Promise.resolve();
-    }
     if (!descriptorName) throw new Error("encoded broadcast name is required");
-    for (const batch of activeBatches) {
-      if (batch.frame.length < 2) throw new Error("encoded broadcast frame is too short");
-      if (!Number.isSafeInteger(batch.itemCount) || batch.itemCount < 0) {
-        throw new Error(`invalid encoded broadcast item count: ${batch.itemCount}`);
+
+    let activeBatches: readonly EncodedAudienceBatch[] | undefined = batches;
+    const activeSingleBatch = singleBatch;
+    let itemCount = 0;
+    if (singleBatch) {
+      if (singleBatch.itemCount <= 0 || singleBatch.audience.routes.length === 0) {
+        return Promise.resolve();
       }
-      this.validateAudience(batch.audience);
+      this.validateEncodedBatch(singleBatch);
+      itemCount = singleBatch.itemCount;
+    } else {
+      const source = batches ?? [];
+      let hasInactive = false;
+      for (const batch of source) {
+        if (batch.itemCount <= 0 || batch.audience.routes.length === 0) {
+          hasInactive = true;
+          continue;
+        }
+        this.validateEncodedBatch(batch);
+        itemCount += batch.itemCount;
+      }
+      if (itemCount === 0) return Promise.resolve();
+      if (hasInactive) {
+        const filtered: EncodedAudienceBatch[] = [];
+        for (const batch of source) {
+          if (batch.itemCount > 0 && batch.audience.routes.length > 0) {
+            filtered.push(batch);
+          }
+        }
+        activeBatches = filtered;
+      }
     }
-    const itemCount = activeBatches.reduce((total, batch) => total + batch.itemCount, 0);
+
+    if (activeSingleBatch) {
+      //单批次路径不创建包装数组；singleBatch is kept separate to avoid a wrapper array on the hot path.
+      activeBatches = undefined;
+    }
     const channelKey = `${descriptorName}\0${audienceKey}`;
     const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
     if (channel.latest || channel.eventQueue.length > 0) {
@@ -204,17 +238,24 @@ export class BroadcastHub {
     });
     const existing = channel.encodedLatest;
     if (existing) {
-      if (existing.routeFrames) {
+      if (
+        existing.routeFrames ||
+        (activeSingleBatch !== undefined
+          ? existing.batches !== undefined
+          : existing.singleBatch !== undefined)
+      ) {
         throw new Error(`encoded audience and route frames share channel ${channelKey}`);
       }
       this.metrics.coalescedItems += existing.itemCount;
       this.pendingItemCount += itemCount - existing.itemCount;
       existing.batches = activeBatches;
+      existing.singleBatch = activeSingleBatch;
       existing.itemCount = itemCount;
       existing.deferred.push({ resolve, reject });
     } else {
       channel.encodedLatest = {
         batches: activeBatches,
+        singleBatch: activeSingleBatch,
         itemCount,
         queuedAt: monotonicNow(),
         deferred: [{ resolve, reject }],
@@ -225,6 +266,14 @@ export class BroadcastHub {
     this.recordPending();
     this.pumpEncodedSnapshot(channel, descriptorName);
     return promise;
+  }
+
+  private validateEncodedBatch(batch: EncodedAudienceBatch): void {
+    if (batch.frame.length < 2) throw new Error("encoded broadcast frame is too short");
+    if (!Number.isSafeInteger(batch.itemCount) || batch.itemCount < 0) {
+      throw new Error(`invalid encoded broadcast item count: ${batch.itemCount}`);
+    }
+    this.validateAudience(batch.audience);
   }
 
   /**
@@ -266,7 +315,7 @@ export class BroadcastHub {
     });
     const existing = channel.encodedLatest;
     if (existing) {
-      if (existing.batches) {
+      if (existing.batches || existing.singleBatch !== undefined) {
         throw new Error(`encoded audience and route frames share channel ${channelKey}`);
       }
       this.metrics.coalescedItems += existing.itemCount;
@@ -526,6 +575,8 @@ export class BroadcastHub {
       ? this.transport.SendRouteFrames
         ? this.transport.SendRouteFrames(job.routeFrames)
         : Promise.reject(new Error("broadcast transport does not support encoded route frames"))
+      : job.singleBatch
+      ? this.transport.Send(job.singleBatch.audience, job.singleBatch.frame)
       : job.batches!.length === 1
       ? this.transport.Send(job.batches![0].audience, job.batches![0].frame)
       : this.transport.SendMany

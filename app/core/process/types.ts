@@ -174,7 +174,7 @@ export interface ProcessRuntimeConfig {
 export interface LocalSceneRouter {
   hasLocalScene(name: string): boolean;
   callLocalScene(sourceName: string, targetName: string, frame: Uint8Array): Promise<Uint8Array>;
-  sendLocalScene(sourceName: string, targetName: string, frame: Uint8Array): Promise<void>;
+  sendLocalScene(sourceName: string, targetName: string, frame: Uint8Array): MaybePromise<void>;
 }
 
 export interface OutboundBatch {
@@ -207,8 +207,20 @@ export interface SceneMetricsSnapshot {
   totalHandlerCostMs: number;
   asyncInFlight: number;
   maxAsyncInFlight: number;
+  mailbox: MailboxMetricsSnapshot;
   latencies: LatencyMetricSnapshot[];
   customMetrics: CustomMetricSnapshot[];
+}
+
+export interface MailboxMetricsSnapshot {
+  readonly fastPathCalls: number;
+  readonly queuedCalls: number;
+  readonly asyncCalls: number;
+  readonly oneWayFastPathCalls: number;
+  readonly oneWayQueuedCalls: number;
+  readonly oneWayAsyncCalls: number;
+  readonly queuedDepth: number;
+  readonly maxQueuedDepth: number;
 }
 
 export interface CustomMetricSnapshot {
@@ -236,9 +248,10 @@ type QueuedEvent =
     };
 
 interface MailboxTask<T = unknown> {
-  run: () => MaybePromise<T>;
-  resolve: (value: T | PromiseLike<T>) => void;
-  reject: (reason?: unknown) => void;
+  run?: () => MaybePromise<T>;
+  resolve?: (value: T | PromiseLike<T>) => void;
+  reject?: (reason?: unknown) => void;
+  oneWay?: boolean;
 }
 
 interface QueuedActorFrame {
@@ -271,6 +284,18 @@ export abstract class EntryScene extends Scene {
   private readonly ingress: QueuedEvent[] = [];
   private ingressHead = 0;
   private readonly outbound: OutboundBatch[] = [];
+  private mailboxTaskHead = 0;
+  private readonly recycledMailboxTasks: MailboxTask[] = [];
+  private readonly mailboxMetrics = {
+    fastPathCalls: 0,
+    queuedCalls: 0,
+    asyncCalls: 0,
+    oneWayFastPathCalls: 0,
+    oneWayQueuedCalls: 0,
+    oneWayAsyncCalls: 0,
+    queuedDepth: 0,
+    maxQueuedDepth: 0,
+  };
   private readonly connectionIdBytes = new Map<number, Uint8Array>();
   private readonly actorTransferBuffers = new Map<number, ActorTransferBuffer>();
   private readonly actorTransferMetrics = {
@@ -669,7 +694,7 @@ export abstract class EntryScene extends Scene {
       this.orderedTask === undefined &&
       this.Tasks.InFlightCount === 0 &&
       !this.mailboxBusy &&
-      this.mailboxTasks.length === 0;
+      this.mailboxTaskLength() === 0;
   }
 
   /** 注册显式 Handler；生成的装饰器绑定会单独安装。 / Registers explicit handlers; generated decorator bindings are installed separately. */
@@ -774,8 +799,13 @@ export abstract class EntryScene extends Scene {
   }
 
   /** 路由本地单向帧，不创建响应完成项。 / Routes a local one-way frame without creating a response completion. */
-  dispatchLocalSend(frame: Uint8Array): Promise<void> {
-    return Promise.resolve(this.dispatchMailbox(() => this.handleFrame(frame))).then(() => undefined);
+  dispatchLocalSend(frame: Uint8Array): MaybePromise<void> {
+    return this.dispatchMailboxVoid(() => this.handleFrame(frame));
+  }
+
+  /** 返回当前Scene mailbox热路径计数；监控读取不会改变队列。 / Returns Scene mailbox hot-path counters without changing the queue. */
+  mailboxMetricsSnapshot(): MailboxMetricsSnapshot {
+    return { ...this.mailboxMetrics, queuedDepth: this.mailboxTaskLength() };
   }
 
   /** 返回当前时点快照，不重置累计计数器。 / Returns a point-in-time snapshot without resetting cumulative counters. */
@@ -807,6 +837,7 @@ export abstract class EntryScene extends Scene {
       totalHandlerCostMs: this.metrics.totalHandlerCostMs,
       asyncInFlight,
       maxAsyncInFlight: this.metrics.maxAsyncInFlight,
+      mailbox: this.mailboxMetricsSnapshot(),
       latencies: this.latencies.snapshot(),
       customMetrics: [],
     };
@@ -903,24 +934,85 @@ export abstract class EntryScene extends Scene {
   }
 
   private dispatchMailbox<T>(run: () => MaybePromise<T>): MaybePromise<T> {
-    if (this.mailbox === "unordered") return run();
+    if (this.mailbox === "unordered") {
+      this.mailboxMetrics.fastPathCalls += 1;
+      const result = run();
+      if (isPromiseLike(result)) this.mailboxMetrics.asyncCalls += 1;
+      return result;
+    }
     if (this.mailboxBusy) {
+      this.mailboxMetrics.queuedCalls += 1;
       return new Promise<T>((resolve, reject) => {
-        this.mailboxTasks.push({
-          run: run as () => MaybePromise<unknown>,
-          resolve: resolve as (value: unknown) => void,
+        this.enqueueMailboxTask(
+          run as () => MaybePromise<unknown>,
+          resolve as (value: unknown) => void,
           reject,
-        });
+        );
       });
     }
+    this.mailboxMetrics.fastPathCalls += 1;
     this.mailboxBusy = true;
     return this.runMailboxTask(run);
   }
 
-  private runMailboxTask<T>(run: () => MaybePromise<T>): MaybePromise<T> {
+  /**
+   * 场景单向消息的Mailbox路径；忙时只排队，不创建完成Promise。
+   * 如果当前Handler本身异步，仍返回它的异步结果供上层记录错误。
+   *
+   * One-way Scene mailbox path; a busy mailbox queues without a completion
+   * Promise. If the current handler is async, its result is still returned so
+   * the caller can observe and log the failure.
+   */
+  private dispatchMailboxVoid(run: () => MaybePromise<unknown>): MaybePromise<void> {
+    if (this.mailbox === "unordered") {
+      this.mailboxMetrics.oneWayFastPathCalls += 1;
+      const result = run();
+      if (isPromiseLike(result)) {
+        this.mailboxMetrics.oneWayAsyncCalls += 1;
+        // unordered 不需要等待或改写返回值；直接透传 Handler 自己的 Promise，避免再包一层。
+        // Unordered does not need ordering or a rewritten value; pass through the Handler Promise without another wrapper.
+        return result as Promise<void>;
+      }
+      return undefined;
+    }
+    if (this.mailboxBusy) {
+      this.mailboxMetrics.oneWayQueuedCalls += 1;
+      this.enqueueMailboxTask(run, undefined, undefined, true);
+      return undefined;
+    }
+    this.mailboxMetrics.oneWayFastPathCalls += 1;
+    this.mailboxBusy = true;
     try {
       const result = run();
       if (isPromiseLike(result)) {
+        this.mailboxMetrics.oneWayAsyncCalls += 1;
+        return Promise.resolve(result).then(
+          () => {
+            this.finishMailboxTask();
+          },
+          (error) => {
+            this.finishMailboxTask();
+            throw error;
+          },
+        );
+      }
+      this.finishMailboxTask();
+      return undefined;
+    } catch (error) {
+      this.finishMailboxTask();
+      throw error;
+    }
+  }
+
+  private runMailboxTask<T>(
+    run: () => MaybePromise<T>,
+    oneWay = false,
+  ): MaybePromise<T> {
+    try {
+      const result = run();
+      if (isPromiseLike(result)) {
+        if (oneWay) this.mailboxMetrics.oneWayAsyncCalls += 1;
+        else this.mailboxMetrics.asyncCalls += 1;
         return Promise.resolve(result).then(
           (value) => {
             this.finishMailboxTask();
@@ -941,18 +1033,85 @@ export abstract class EntryScene extends Scene {
   }
 
   private finishMailboxTask(): void {
-    const next = this.mailboxTasks.shift();
+    const next = this.dequeueMailboxTask();
     if (!next) {
       this.mailboxBusy = false;
       return;
     }
     try {
-      const result = this.runMailboxTask(next.run);
-      if (isPromiseLike(result)) Promise.resolve(result).then(next.resolve, next.reject);
-      else next.resolve(result);
+      const result = this.runMailboxTask(next.run!, next.oneWay === true);
+      if (isPromiseLike(result)) {
+        void Promise.resolve(result).then(
+          (value) => {
+            next.resolve?.(value);
+            this.recycleMailboxTask(next);
+          },
+          (error) => {
+            if (next.reject) next.reject(error);
+            else this.ctx.logger.error("one-way scene mailbox failed", { error });
+            this.recycleMailboxTask(next);
+          },
+        );
+      } else {
+        next.resolve?.(result);
+        this.recycleMailboxTask(next);
+      }
     } catch (error) {
-      next.reject(error);
+      if (next.reject) next.reject(error);
+      else this.ctx.logger.error("one-way scene mailbox failed", { error });
+      this.recycleMailboxTask(next);
     }
+  }
+
+  private enqueueMailboxTask(
+    run: () => MaybePromise<unknown>,
+    resolve?: (value: unknown) => void,
+    reject?: (reason?: unknown) => void,
+    oneWay = false,
+  ): void {
+    const task = this.recycledMailboxTasks.pop() ?? { run };
+    task.run = run;
+    task.resolve = resolve;
+    task.reject = reject;
+    task.oneWay = oneWay;
+    this.mailboxTasks.push(task);
+    this.mailboxMetrics.queuedDepth += 1;
+    this.mailboxMetrics.maxQueuedDepth = Math.max(
+      this.mailboxMetrics.maxQueuedDepth,
+      this.mailboxMetrics.queuedDepth,
+    );
+  }
+
+  private dequeueMailboxTask(): MailboxTask | undefined {
+    if (this.mailboxTaskHead >= this.mailboxTasks.length) return undefined;
+    const task = this.mailboxTasks[this.mailboxTaskHead++];
+    if (this.mailboxTaskHead === this.mailboxTasks.length) {
+      this.mailboxTasks.length = 0;
+      this.mailboxTaskHead = 0;
+    } else if (
+      this.mailboxTaskHead >= 1024 &&
+      this.mailboxTaskHead * 2 >= this.mailboxTasks.length
+    ) {
+      this.mailboxTasks.splice(0, this.mailboxTaskHead);
+      this.mailboxTaskHead = 0;
+    }
+    this.mailboxMetrics.queuedDepth = Math.max(
+      0,
+      this.mailboxMetrics.queuedDepth - 1,
+    );
+    return task;
+  }
+
+  private recycleMailboxTask(task: MailboxTask): void {
+    task.run = undefined;
+    task.resolve = undefined;
+    task.reject = undefined;
+    task.oneWay = undefined;
+    this.recycledMailboxTasks.push(task);
+  }
+
+  private mailboxTaskLength(): number {
+    return this.mailboxTasks.length - this.mailboxTaskHead;
   }
 
   private processIngress(item: QueuedEvent): MaybePromise<void> {
@@ -1227,7 +1386,9 @@ export abstract class EntryScene extends Scene {
       instanceId: target.instanceId,
       frame,
     });
-    return this.ctx.sendFrame(target.scene, routedFrame).then(
+    const result = this.ctx.sendFrame(target.scene, routedFrame);
+    if (!isPromiseLike(result)) return;
+    return result.then(
       () => undefined,
       (error) => {
         this.registry.reportSystemError(
@@ -1451,7 +1612,7 @@ export abstract class EntryScene extends Scene {
             );
           }
           const session = this.getOrCreateSession(connectionId);
-          return this.processHost.runActorMailbox(session.InstanceId, (target) =>
+          return this.processHost.runActorMailboxVoid(session.InstanceId, (target) =>
             currentHandler().handle(this, target as Session<any[]>, message, context)
           );
         },
@@ -1543,7 +1704,7 @@ export abstract class EntryScene extends Scene {
               `actor instance not found: ${instanceId}`,
             );
           }
-          return this.processHost.runActorMailbox(instanceId, (actor) => {
+          return this.processHost.runActorMailboxVoid(instanceId, (actor) => {
             const unitCtor = actor.constructor;
             let binding = handlerByUnitCtor.get(unitCtor);
             if (!binding) {

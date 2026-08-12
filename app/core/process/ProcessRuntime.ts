@@ -184,12 +184,19 @@ export class ProcessRuntime implements LocalSceneRouter {
   }
 
   /** 将进程内单向帧入队；后续 Handler 失败只记录日志，不阻塞发送方。 / Enqueues an in-process one-way frame and logs later handler failure without blocking the sender. */
-  sendLocalScene(_sourceName: string, targetName: string, frame: Uint8Array): Promise<void> {
+  sendLocalScene(_sourceName: string, targetName: string, frame: Uint8Array): MaybePromise<void> {
     const target = this.sceneByName(targetName);
-    void target.dispatchLocalSend(frame).catch((error) => {
+    try {
+      const result = target.dispatchLocalSend(frame);
+      if (result && typeof (result as PromiseLike<void>).then === "function") {
+        void result.then(undefined, (error) => {
+          CoreLogger.error("local one-way message failed", { targetScene: targetName, error });
+        });
+      }
+    } catch (error) {
       CoreLogger.error("local one-way message failed", { targetScene: targetName, error });
-    });
-    return Promise.resolve();
+    }
+    return undefined;
   }
 
   private sceneAt(index: number): EntryScene {

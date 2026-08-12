@@ -131,12 +131,25 @@ pub(crate) struct SceneObservabilitySnapshot {
     pub(crate) max_ingress_queue_length: u64,
     pub(crate) async_in_flight: u64,
     pub(crate) max_async_in_flight: u64,
+    pub(crate) mailbox: MailboxObservabilitySnapshot,
     pub(crate) last_update_cost_ms: f64,
     pub(crate) last_handler_cost_ms: f64,
     pub(crate) max_handler_cost_ms: f64,
     pub(crate) total_handler_cost_ms: f64,
     pub(crate) latencies: Vec<LatencyObservabilitySnapshot>,
     pub(crate) custom_metrics: Vec<SceneCustomMetricSnapshot>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct MailboxObservabilitySnapshot {
+    pub(crate) fast_path_calls: u64,
+    pub(crate) queued_calls: u64,
+    pub(crate) async_calls: u64,
+    pub(crate) one_way_fast_path_calls: u64,
+    pub(crate) one_way_queued_calls: u64,
+    pub(crate) one_way_async_calls: u64,
+    pub(crate) queued_depth: u64,
+    pub(crate) max_queued_depth: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1534,6 +1547,80 @@ fn append_scene_metrics_prometheus(
         .expect("formatting metric type");
     writeln!(
         output,
+        "# HELP tiangz_scene_mailbox_fast_path_calls_total Mailbox calls completed on the immediate path"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_scene_mailbox_fast_path_calls_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_scene_mailbox_queued_calls_total Mailbox RPC calls queued behind an ordered call"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_scene_mailbox_queued_calls_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_scene_mailbox_async_calls_total Mailbox calls that returned an asynchronous result"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_scene_mailbox_async_calls_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_scene_mailbox_one_way_fast_path_calls_total One-way mailbox calls completed on the immediate path"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_scene_mailbox_one_way_fast_path_calls_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_scene_mailbox_one_way_queued_calls_total One-way mailbox calls queued without a response Promise"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_scene_mailbox_one_way_queued_calls_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_scene_mailbox_one_way_async_calls_total One-way mailbox calls that returned an asynchronous result"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_scene_mailbox_one_way_async_calls_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_scene_mailbox_queued_depth Current queued mailbox calls"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_scene_mailbox_queued_depth gauge")
+        .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_scene_mailbox_max_queued_depth Mailbox queue peak"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_scene_mailbox_max_queued_depth gauge")
+        .expect("formatting metric type");
+    writeln!(
+        output,
         "# HELP tiangz_scene_last_update_cost_ms Latest scene update cost ms"
     )
     .expect("formatting metric help");
@@ -1653,6 +1740,54 @@ fn append_scene_metrics_prometheus(
             output,
             "tiangz_scene_async_in_flight_max{{{}}} {}",
             labels, snapshot.max_async_in_flight
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_mailbox_fast_path_calls_total{{{}}} {}",
+            labels, snapshot.mailbox.fast_path_calls
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_mailbox_queued_calls_total{{{}}} {}",
+            labels, snapshot.mailbox.queued_calls
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_mailbox_async_calls_total{{{}}} {}",
+            labels, snapshot.mailbox.async_calls
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_mailbox_one_way_fast_path_calls_total{{{}}} {}",
+            labels, snapshot.mailbox.one_way_fast_path_calls
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_mailbox_one_way_queued_calls_total{{{}}} {}",
+            labels, snapshot.mailbox.one_way_queued_calls
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_mailbox_one_way_async_calls_total{{{}}} {}",
+            labels, snapshot.mailbox.one_way_async_calls
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_mailbox_queued_depth{{{}}} {}",
+            labels, snapshot.mailbox.queued_depth
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_mailbox_max_queued_depth{{{}}} {}",
+            labels, snapshot.mailbox.max_queued_depth
         )
         .expect("formatting metric");
         writeln!(

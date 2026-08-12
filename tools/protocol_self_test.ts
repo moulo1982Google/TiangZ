@@ -5,6 +5,7 @@ import { ProtocolRegistry } from "../app/core/protocol/registry";
 import type { ProtocolContext, ProtocolOutcome } from "../app/core/protocol/registry";
 import { RpcError } from "../app/core/protocol/RpcError";
 import { Logger } from "../app/core/logging/Logger";
+import { encodeFrameWithLength, LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import {
   decodeActorLocationEnvelope,
   encodeActorLocationEnvelope,
@@ -41,7 +42,26 @@ async function main(): Promise<void> {
   await testMissingHandlerErrorSemantics();
   await testOneWayMessageHasNoResponse();
   testMalformedLengthDelimitedField();
+  testLengthPrefixedFrameDecoder();
   console.log("protocol self-test passed");
+}
+
+function testLengthPrefixedFrameDecoder(): void {
+  const first = encodeFrameWithLength(new Uint8Array([1, 2, 3]));
+  const second = encodeFrameWithLength(new Uint8Array([4, 5]));
+  const decoder = new LengthPrefixedFrameDecoder();
+  const frames: Uint8Array[] = [];
+  decoder.pushEach(first.subarray(0, 2), (frame) => frames.push(frame));
+  decoder.pushEach(
+    new Uint8Array([
+      ...first.subarray(2),
+      ...second.subarray(0, 3),
+    ]),
+    (frame) => frames.push(frame),
+  );
+  const finalFrames = decoder.push(second.subarray(3));
+  frames.push(...finalFrames);
+  assert.deepEqual(frames.map((frame) => [...frame]), [[1, 2, 3], [4, 5]]);
 }
 
 function testGeneratedInteger64Codec(): void {

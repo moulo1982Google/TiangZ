@@ -21,9 +21,10 @@ use crate::config::{ProcessConfig, ProcessSchedulingMode, RuntimeConfig, SceneCo
 use crate::game_config::GameConfigBundle;
 use crate::health::{
     GameObservabilitySnapshot, HealthServer, LatencyObservabilitySnapshot,
-    NativeDataObservabilitySnapshot, ProcessHealthState, ProcessObservabilitySnapshot,
-    ProcessQueueStageObservabilitySnapshot, SceneCustomMetricKind, SceneCustomMetricSnapshot,
-    SceneObservabilitySnapshot, TransportOverloadStageObservabilitySnapshot,
+    MailboxObservabilitySnapshot, NativeDataObservabilitySnapshot, ProcessHealthState,
+    ProcessObservabilitySnapshot, ProcessQueueStageObservabilitySnapshot, SceneCustomMetricKind,
+    SceneCustomMetricSnapshot, SceneObservabilitySnapshot,
+    TransportOverloadStageObservabilitySnapshot,
 };
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_install_game_config,
@@ -298,9 +299,32 @@ struct SceneMetricsSnapshot {
     #[serde(default)]
     max_async_in_flight: usize,
     #[serde(default)]
+    mailbox: MailboxMetricsSnapshot,
+    #[serde(default)]
     latencies: Vec<LatencyMetricSnapshot>,
     #[serde(default)]
     custom_metrics: Vec<CustomMetricSnapshot>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MailboxMetricsSnapshot {
+    #[serde(default)]
+    fast_path_calls: u64,
+    #[serde(default)]
+    queued_calls: u64,
+    #[serde(default)]
+    async_calls: u64,
+    #[serde(default)]
+    one_way_fast_path_calls: u64,
+    #[serde(default)]
+    one_way_queued_calls: u64,
+    #[serde(default)]
+    one_way_async_calls: u64,
+    #[serde(default)]
+    queued_depth: u64,
+    #[serde(default)]
+    max_queued_depth: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1476,7 +1500,7 @@ fn maybe_log_metrics(
     }
     for metric in metrics {
         tracing::info!(target: "tiangz::metrics",
-            "[metrics:{process_name}] scene={} type={} processed={} failed={} protocol_successes={} business_errors={} system_errors={} decode_errors={} handler_not_found={} message_handler_failures={} ts_queue={} ts_max_queue={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
+            "[metrics:{process_name}] scene={} type={} processed={} failed={} protocol_successes={} business_errors={} system_errors={} decode_errors={} handler_not_found={} message_handler_failures={} ts_queue={} ts_max_queue={} mailbox_fast={} mailbox_queued={} mailbox_async={} mailbox_one_way_fast={} mailbox_one_way_queued={} mailbox_one_way_async={} mailbox_depth={} mailbox_max_depth={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
             metric.scene,
             metric.scene_type,
             metric.processed_frames,
@@ -1489,6 +1513,14 @@ fn maybe_log_metrics(
             metric.message_handler_failures,
             metric.ingress_queue_length,
             metric.max_ingress_queue_length,
+            metric.mailbox.fast_path_calls,
+            metric.mailbox.queued_calls,
+            metric.mailbox.async_calls,
+            metric.mailbox.one_way_fast_path_calls,
+            metric.mailbox.one_way_queued_calls,
+            metric.mailbox.one_way_async_calls,
+            metric.mailbox.queued_depth,
+            metric.mailbox.max_queued_depth,
             metric.async_in_flight,
             metric.max_async_in_flight,
             queue_stats
@@ -1563,6 +1595,16 @@ fn maybe_log_metrics(
             max_ingress_queue_length: metric.max_ingress_queue_length as u64,
             async_in_flight: metric.async_in_flight as u64,
             max_async_in_flight: metric.max_async_in_flight as u64,
+            mailbox: MailboxObservabilitySnapshot {
+                fast_path_calls: metric.mailbox.fast_path_calls,
+                queued_calls: metric.mailbox.queued_calls,
+                async_calls: metric.mailbox.async_calls,
+                one_way_fast_path_calls: metric.mailbox.one_way_fast_path_calls,
+                one_way_queued_calls: metric.mailbox.one_way_queued_calls,
+                one_way_async_calls: metric.mailbox.one_way_async_calls,
+                queued_depth: metric.mailbox.queued_depth,
+                max_queued_depth: metric.mailbox.max_queued_depth,
+            },
             last_update_cost_ms: metric.last_update_cost_ms,
             last_handler_cost_ms: metric.last_handler_cost_ms,
             max_handler_cost_ms: metric.max_handler_cost_ms,

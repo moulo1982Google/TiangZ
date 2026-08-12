@@ -1,4 +1,5 @@
 import type { IMessage, IRequest, IResponse, MessageDescriptor } from "../protocol/message";
+import type { MaybePromise } from "../async";
 import { RpcError } from "../protocol/RpcError";
 import type { RpcDescriptor } from "../protocol/rpc";
 import { SystemErrCode } from "../protocol/SystemErrCode";
@@ -93,7 +94,7 @@ export class SceneMessageHelper {
     descriptor: MessageDescriptor<TMessage>,
     message: TMessage,
     options: SceneSendOptions = {},
-  ): Promise<void> {
+  ): MaybePromise<void> {
     return this.ctx.send(target, descriptor, message, options);
   }
 
@@ -108,7 +109,7 @@ export class SceneMessageHelper {
     target: SceneConfig,
     frame: Uint8Array,
     options: SceneSendOptions = {},
-  ): Promise<void> {
+  ): MaybePromise<void> {
     return this.ctx.sendFrame(target, frame, options);
   }
 
@@ -118,7 +119,7 @@ export class SceneMessageHelper {
     descriptor: MessageDescriptor<TMessage>,
     message: TMessage,
     options: SceneSendOptions = {},
-  ): Promise<void> {
+  ): MaybePromise<void> {
     return this.send(this.one(sceneType), descriptor, message, options);
   }
 
@@ -128,7 +129,7 @@ export class SceneMessageHelper {
     descriptor: MessageDescriptor<TMessage>,
     message: TMessage,
     options: SceneSendOptions = {},
-  ): Promise<void> {
+  ): MaybePromise<void> {
     return this.ctx.sendActor(target, descriptor, message, options);
   }
 }

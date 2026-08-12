@@ -23,8 +23,10 @@ for (const generatedFile of generatedFiles) {
   const output = resolveOutputPath(generatedFile.relativePath);
   outputs.push(output);
   await mkdir(path.dirname(output), { recursive: true });
-  await writeFile(output, generatedFile.content, "utf8");
-  if (generatedFile.format === "rust") formatRust(output);
+  const content = generatedFile.format === "rust"
+    ? formatRust(generatedFile.content)
+    : generatedFile.content;
+  await writeFile(output, content, "utf8");
 }
 
 await recordGenerator(root, {
@@ -59,10 +61,13 @@ function resolveOutputPath(relativePath) {
   return output;
 }
 
-function formatRust(file) {
-  const result = spawnSync("rustfmt", ["--edition", "2024", file], {
+function formatRust(source) {
+  // 通过 stdout 回写，避免 rustfmt 在 Windows 上原地替换被编辑器映射的文件。
+  // Format through stdout to avoid rustfmt replacing a file mapped by an editor on Windows.
+  const result = spawnSync("rustfmt", ["--edition", "2024", "--emit", "stdout"], {
     cwd: root,
     encoding: "utf8",
+    input: source,
   });
   if (result.error) {
     throw new Error(`failed to start rustfmt: ${result.error.message}`);
@@ -70,6 +75,7 @@ function formatRust(file) {
   if (result.status !== 0) {
     throw new Error(`rustfmt failed:\n${result.stderr || result.stdout}`);
   }
+  return result.stdout;
 }
 
 async function collectSchemaFiles(directory) {

@@ -57,20 +57,43 @@ interface ActorRuntime {
   instance: ActorRuntimeEntity<any[]>;
   mailBox: MailBoxComponent;
   queue: PendingActorCall[];
+  queueHead: number;
+  recycledQueueItems: PendingActorCall[];
   running: boolean;
   timers: Set<TimerId>;
 }
 
 interface PendingActorCall {
-  run: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<unknown>;
-  resolve: (value: unknown) => void;
-  reject: (reason: unknown) => void;
+  run?: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<unknown>;
+  resolve?: (value: unknown) => void;
+  reject?: (reason: unknown) => void;
+}
+
+export interface ActorMailboxMetricsSnapshot {
+  readonly fastPathCalls: number;
+  readonly queuedCalls: number;
+  readonly asyncCalls: number;
+  readonly oneWayFastPathCalls: number;
+  readonly oneWayQueuedCalls: number;
+  readonly oneWayAsyncCalls: number;
+  readonly queuedDepth: number;
+  readonly maxQueuedDepth: number;
 }
 
 export class ProcessHost {
   readonly Root = new EntityRoot();
   private readonly scenes = new Map<SceneId, SceneRuntime>();
   private readonly actorsByInstanceId = new Map<InstanceId, ActorRuntime>();
+  private readonly actorMailboxMetrics = {
+    fastPathCalls: 0,
+    queuedCalls: 0,
+    asyncCalls: 0,
+    oneWayFastPathCalls: 0,
+    oneWayQueuedCalls: 0,
+    oneWayAsyncCalls: 0,
+    queuedDepth: 0,
+    maxQueuedDepth: 0,
+  };
 
   constructor(public readonly processId = "process-1") {}
 
@@ -190,6 +213,8 @@ export class ProcessHost {
         instance,
         mailBox,
         queue: [],
+        queueHead: 0,
+        recycledQueueItems: [],
         running: false,
         timers: new Set(),
       };
@@ -348,8 +373,10 @@ export class ProcessHost {
       actor.instance.Parent.__detach(actor.instance.ConnectionId);
     }
     const error = new Error(`actor despawned: ${sceneId}/${actorId}`);
-    for (const pending of actor.queue.splice(0, actor.queue.length)) {
-      pending.reject(error);
+    let pending: PendingActorCall | undefined;
+    while ((pending = this.dequeueActorCall(actor))) {
+      pending.reject?.(error);
+      this.recycleActorCall(actor, pending);
     }
     try {
       actor.instance.__dispose();
@@ -454,14 +481,19 @@ export class ProcessHost {
     }
 
     if (actor.mailBox.MailboxType === "unordered") {
-      return this.executeActorCall(actor, run);
+      this.actorMailboxMetrics.fastPathCalls += 1;
+      const result = this.executeActorCall(actor, run);
+      if (isPromiseLike(result)) this.actorMailboxMetrics.asyncCalls += 1;
+      return result;
     }
 
     if (!actor.running) {
+      this.actorMailboxMetrics.fastPathCalls += 1;
       actor.running = true;
       try {
         const result = this.executeActorCall(actor, run);
         if (isPromiseLike(result)) {
+          this.actorMailboxMetrics.asyncCalls += 1;
           return Promise.resolve(result).then(
             (value) => {
               this.finishActorCall(actor);
@@ -481,13 +513,69 @@ export class ProcessHost {
       }
     }
 
+    this.actorMailboxMetrics.queuedCalls += 1;
     return new Promise<T>((resolve, reject) => {
-      actor.queue.push({
-        run: run as (actor: ActorRuntimeEntity<any[]>) => MaybePromise<unknown>,
-        resolve: resolve as (value: unknown) => void,
-        reject,
-      });
+      this.enqueueActorCall(actor, run, resolve as (value: unknown) => void, reject);
     });
+  }
+
+  /**
+   * 将无返回值消息投递到 Actor mailbox；忙时只保留队列节点，不创建 Promise。
+   * 这是单向 Message 的专用路径，调用方不能等待“处理完成”；Handler 异常由框架记录。
+   *
+   * Queues a one-way message without creating a Promise when the Actor is busy.
+   * This path is only for one-way Messages: callers cannot await completion and
+   * framework logging owns failures from a later queued execution.
+   */
+  runActorMailboxVoid(
+    instanceId: InstanceId,
+    run: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<void>,
+  ): MaybePromise<void> {
+    const actor = this.actorsByInstanceId.get(instanceId);
+    if (!actor || this.Root.Get(instanceId) !== actor.instance) {
+      return Promise.reject(new Error(`actor instance not found: ${instanceId}`));
+    }
+
+    if (actor.mailBox.MailboxType === "unordered") {
+      this.actorMailboxMetrics.oneWayFastPathCalls += 1;
+      const result = this.executeActorCall(actor, run);
+      if (isPromiseLike(result)) this.actorMailboxMetrics.oneWayAsyncCalls += 1;
+      return result;
+    }
+
+    if (!actor.running) {
+      this.actorMailboxMetrics.oneWayFastPathCalls += 1;
+      actor.running = true;
+      try {
+        const result = this.executeActorCall(actor, run);
+        if (isPromiseLike(result)) {
+          this.actorMailboxMetrics.oneWayAsyncCalls += 1;
+          return Promise.resolve(result).then(
+            () => {
+              this.finishActorCall(actor);
+            },
+            (error) => {
+              this.finishActorCall(actor);
+              throw error;
+            },
+          );
+        }
+        this.finishActorCall(actor);
+        return result;
+      } catch (error) {
+        this.finishActorCall(actor);
+        throw error;
+      }
+    }
+
+    this.actorMailboxMetrics.oneWayQueuedCalls += 1;
+    this.enqueueActorCall(actor, run);
+    return undefined;
+  }
+
+  /** 返回 Actor mailbox 热路径计数；只读快照不会改变队列。 / Returns Actor mailbox hot-path counters without changing queues. */
+  MailboxMetrics(): ActorMailboxMetricsSnapshot {
+    return { ...this.actorMailboxMetrics };
   }
 
   private requireActorRuntime(instanceId: InstanceId): ActorRuntime {
@@ -525,7 +613,7 @@ export class ProcessHost {
   }
 
   private finishActorCall(actor: ActorRuntime): void {
-    if (actor.queue.length > 0) {
+    if (this.actorQueueLength(actor) > 0) {
       this.drainOrdered(actor);
     } else {
       actor.running = false;
@@ -533,29 +621,95 @@ export class ProcessHost {
   }
 
   private drainOrdered(actor: ActorRuntime): void {
-    while (actor.queue.length > 0) {
-      const pending = actor.queue.shift()!;
+    while (this.actorQueueLength(actor) > 0) {
+      const pending = this.dequeueActorCall(actor)!;
       try {
-        const result = this.executeActorCall(actor, pending.run);
+        const result = this.executeActorCall(actor, pending.run!);
         if (isPromiseLike(result)) {
+          if (pending.resolve === undefined) this.actorMailboxMetrics.oneWayAsyncCalls += 1;
+          else this.actorMailboxMetrics.asyncCalls += 1;
           void Promise.resolve(result).then(
             (value) => {
-              pending.resolve(value);
+              pending.resolve?.(value);
+              this.recycleActorCall(actor, pending);
               this.drainOrdered(actor);
             },
             (error) => {
-              pending.reject(error);
+              if (pending.reject) pending.reject(error);
+              else {
+                CoreLogger.error("one-way actor mailbox failed", {
+                  scene: actor.ref.sceneId,
+                  actor: actor.ref.actorId,
+                  error,
+                });
+              }
+              this.recycleActorCall(actor, pending);
               this.drainOrdered(actor);
             },
           );
           return;
         }
-        pending.resolve(result);
+        pending.resolve?.(result);
+        this.recycleActorCall(actor, pending);
       } catch (error) {
-        pending.reject(error);
+        if (pending.reject) pending.reject(error);
+        else {
+          CoreLogger.error("one-way actor mailbox failed", {
+            scene: actor.ref.sceneId,
+            actor: actor.ref.actorId,
+            error,
+          });
+        }
+        this.recycleActorCall(actor, pending);
       }
     }
     actor.running = false;
+  }
+
+  private enqueueActorCall(
+    actor: ActorRuntime,
+    run: (actor: ActorRuntimeEntity<any[]>) => MaybePromise<unknown>,
+    resolve?: (value: unknown) => void,
+    reject?: (reason: unknown) => void,
+  ): void {
+    const pending = actor.recycledQueueItems.pop() ?? { run };
+    pending.run = run;
+    pending.resolve = resolve;
+    pending.reject = reject;
+    actor.queue.push(pending);
+    this.actorMailboxMetrics.queuedDepth += 1;
+    this.actorMailboxMetrics.maxQueuedDepth = Math.max(
+      this.actorMailboxMetrics.maxQueuedDepth,
+      this.actorMailboxMetrics.queuedDepth,
+    );
+  }
+
+  private dequeueActorCall(actor: ActorRuntime): PendingActorCall | undefined {
+    if (actor.queueHead >= actor.queue.length) return undefined;
+    const pending = actor.queue[actor.queueHead++];
+    if (actor.queueHead === actor.queue.length) {
+      actor.queue.length = 0;
+      actor.queueHead = 0;
+    } else if (actor.queueHead >= 1024 && actor.queueHead * 2 >= actor.queue.length) {
+      actor.queue.splice(0, actor.queueHead);
+      actor.queueHead = 0;
+    }
+    this.actorMailboxMetrics.queuedDepth = Math.max(
+      0,
+      this.actorMailboxMetrics.queuedDepth - 1,
+    );
+    return pending;
+  }
+
+  private recycleActorCall(actor: ActorRuntime, pending: PendingActorCall): void {
+    pending.run = undefined;
+    pending.resolve = undefined;
+    pending.reject = undefined;
+    actor.recycledQueueItems.push(pending);
+  }
+
+  private actorQueueLength(actor: ActorRuntime): number {
+    return actor.queue.length - actor.queueHead;
   }
 
   private disposeFailedEntity(entity: Entity, label: string): void {

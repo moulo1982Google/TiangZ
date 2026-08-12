@@ -27,6 +27,7 @@ import {
 import { Component } from "../app/core/runtime/entities";
 import { ProcessHost } from "../app/core/runtime/host";
 import { Session } from "../app/core/runtime/Session";
+import type { MaybePromise } from "../app/core/async";
 
 interface AddMessage extends IMessage {
   value: number;
@@ -68,6 +69,8 @@ const SessionWork = defineMessage({
 });
 
 const lifecycleEvents: string[] = [];
+let activeHandlerScene: HandlerProbeScene | undefined;
+let activeSenderScene: SenderProbeScene | undefined;
 
 class CounterComponent extends Component<[number]> {
   value = 0;
@@ -88,6 +91,7 @@ class HandlerProbeScene extends EntryScene {
   readonly counter = this.AddComponent(CounterComponent, 10);
 
   protected override onStart(): void {
+    activeHandlerScene = this;
     lifecycleEvents.push("start");
   }
 
@@ -97,6 +101,21 @@ class HandlerProbeScene extends EntryScene {
 
   protected override onStop(): void {
     lifecycleEvents.push("stop");
+  }
+}
+
+@entryScene("SenderProbe")
+class SenderProbeScene extends EntryScene {
+  protected override onStart(): void {
+    activeSenderScene = this;
+  }
+
+  SendAdd(value: number): MaybePromise<void> {
+    return this.scenes.send(
+      this.scenes.byName("handler-probe-1"),
+      Add,
+      { value },
+    );
   }
 }
 
@@ -171,9 +190,32 @@ void main();
 async function main(): Promise<void> {
   testComponentContainer();
   testDuplicateHandlerGuard();
+  await testLocalSceneSendFastPath();
   await testExternalHandlerDispatch();
   await testSessionMailboxAndDisconnect();
   console.log("entry scene handler self-test passed");
+}
+
+async function testLocalSceneSendFastPath(): Promise<void> {
+  activeHandlerScene = undefined;
+  activeSenderScene = undefined;
+  const target = sceneConfig();
+  const sender = {
+    ...target,
+    name: "sender-probe-1",
+    sceneType: "SenderProbe",
+  };
+  const runtime = new ProcessRuntime({
+    process: { name: "scene-send-self-test" },
+    scenes: [target, sender],
+    knownScenes: [target, sender],
+    tickMs: 50,
+  });
+  await runtime.start();
+  const delivery = activeSenderScene!.SendAdd(7);
+  assert.equal(delivery, undefined);
+  assert.equal(activeHandlerScene!.counter.value, 17);
+  await runtime.stop();
 }
 
 async function testSessionMailboxAndDisconnect(): Promise<void> {

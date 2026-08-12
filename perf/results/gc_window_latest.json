@@ -1,0 +1,2414 @@
+{
+  "generatedAt": "2026-08-12T11:15:39.297Z",
+  "runId": "20260812_110357",
+  "parameters": {
+    "mode": "all",
+    "players": [
+      50,
+      100,
+      200
+    ],
+    "moveRates": [
+      2
+    ],
+    "businessRate": 0.1,
+    "duration": 60,
+    "warmup": 10,
+    "rounds": 3,
+    "setupConcurrency": 16,
+    "host": "127.0.0.1",
+    "managerPort": 7000,
+    "remote": false,
+    "debugRuntime": false,
+    "outputPrefix": "gc_window"
+  },
+  "loadGeneratorMachine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
+    "logicalCpus": 24,
+    "memoryBytes": 68464029696,
+    "os": "win32 10.0.26200"
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "independentlyDeployed": false,
+    "note": "服务端与压测端在同一台机器，资源竞争会影响结果"
+  },
+  "cases": [
+    {
+      "label": "all",
+      "players": 50,
+      "workload": "steady-2hz+business-0.1hz",
+      "roundCount": 3,
+      "median": {
+        "setupPerSecond": 19.27025323849131,
+        "setupP95Ms": 868.7432000000001,
+        "movesPerSecond": 100,
+        "pushesPerSecond": 1000.7142857142857,
+        "moveAcknowledged": 6000,
+        "moveLatencySamples": 6000,
+        "moveP50Ms": 31.166500000006636,
+        "moveP95Ms": 62.13139999999839,
+        "moveP99Ms": 63.59339999999793,
+        "stalled": 0,
+        "businessPerSecond": 5,
+        "businessAccepted": 150,
+        "businessRejected": 150,
+        "businessTransportErrors": 0,
+        "businessP50Ms": 12.465000000000146,
+        "businessP95Ms": 32.600900000001275,
+        "businessP99Ms": 32.7502999999997,
+        "serverPeakCpuPercentSum": 12.804,
+        "serverPeakRssBytesSum": 111427584,
+        "serverGcCount": 32,
+        "serverGcMs": 9.439,
+        "serverGcCountDelta": 19,
+        "serverGcMsDelta": 4.368,
+        "serverGcMsPerSecond": 0.07258828417116743,
+        "serverQueueMaxDepthSum": 49,
+        "serverBackpressureWaitsSum": 0,
+        "serverInnerOverloadsSum": 0,
+        "serverInnerTimeoutsSum": 0,
+        "serverMailboxQueuedCallsSum": 0,
+        "serverMailboxOneWayQueuedCallsSum": 0,
+        "serverMailboxOneWayAsyncCallsSum": 0,
+        "serverMailboxMaxQueuedDepthSum": 0,
+        "serverRssGrowthBytesPerHour": 760095944.0001771,
+        "serverV8HeapGrowthBytesPerHour": 17982373.662405565,
+        "loadCpuMs": 1813,
+        "loadPeakRssBytes": 83218432,
+        "loadGcCount": 69,
+        "loadGcMs": 19.68740001320839,
+        "loadGcMsPerSecond": 0.3281233335534732
+      }
+    },
+    {
+      "label": "all",
+      "players": 100,
+      "workload": "steady-2hz+business-0.1hz",
+      "roundCount": 3,
+      "median": {
+        "setupPerSecond": 19.8422769155625,
+        "setupP95Ms": 868.2892000000002,
+        "movesPerSecond": 200,
+        "pushesPerSecond": 2001.4285714285713,
+        "moveAcknowledged": 12000,
+        "moveLatencySamples": 12000,
+        "moveP50Ms": 31.669300000001385,
+        "moveP95Ms": 61.90400000000227,
+        "moveP99Ms": 63.60940000000119,
+        "stalled": 0,
+        "businessPerSecond": 10,
+        "businessAccepted": 300,
+        "businessRejected": 300,
+        "businessTransportErrors": 0,
+        "businessP50Ms": 12.69720000000234,
+        "businessP95Ms": 31.05249999999978,
+        "businessP99Ms": 31.645399999999427,
+        "serverPeakCpuPercentSum": 16.841,
+        "serverPeakRssBytesSum": 173109248,
+        "serverGcCount": 29,
+        "serverGcMs": 15.832,
+        "serverGcCountDelta": 9,
+        "serverGcMsDelta": 4.718,
+        "serverGcMsPerSecond": 0.07846463436943904,
+        "serverQueueMaxDepthSum": 80,
+        "serverBackpressureWaitsSum": 0,
+        "serverInnerOverloadsSum": 0,
+        "serverInnerTimeoutsSum": 0,
+        "serverMailboxQueuedCallsSum": 0,
+        "serverMailboxOneWayQueuedCallsSum": 0,
+        "serverMailboxOneWayAsyncCallsSum": 0,
+        "serverMailboxMaxQueuedDepthSum": 0,
+        "serverRssGrowthBytesPerHour": 2413895599.065924,
+        "serverV8HeapGrowthBytesPerHour": 71018501.88611461,
+        "loadCpuMs": 3157,
+        "loadPeakRssBytes": 117227520,
+        "loadGcCount": 120,
+        "loadGcMs": 41.06899996101856,
+        "loadGcMsPerSecond": 0.6844833326836427
+      }
+    },
+    {
+      "label": "all",
+      "players": 200,
+      "workload": "steady-2hz+business-0.1hz",
+      "roundCount": 3,
+      "median": {
+        "setupPerSecond": 19.90996078613763,
+        "setupP95Ms": 842.8763,
+        "movesPerSecond": 400,
+        "pushesPerSecond": 4002.8571428571427,
+        "moveAcknowledged": 24000,
+        "moveLatencySamples": 24000,
+        "moveP50Ms": 32.77399999999761,
+        "moveP95Ms": 62.76749999999447,
+        "moveP99Ms": 65.46269999998913,
+        "stalled": 0,
+        "businessPerSecond": 20,
+        "businessAccepted": 501,
+        "businessRejected": 699,
+        "businessTransportErrors": 0,
+        "businessP50Ms": 24.74460000000545,
+        "businessP95Ms": 81.54079999998794,
+        "businessP99Ms": 84.76370000001043,
+        "serverPeakCpuPercentSum": 46.762,
+        "serverPeakRssBytesSum": 238264320,
+        "serverGcCount": 49,
+        "serverGcMs": 41.372,
+        "serverGcCountDelta": 20,
+        "serverGcMsDelta": 16.483,
+        "serverGcMsPerSecond": 0.2743052088533866,
+        "serverQueueMaxDepthSum": 167,
+        "serverBackpressureWaitsSum": 0,
+        "serverInnerOverloadsSum": 0,
+        "serverInnerTimeoutsSum": 0,
+        "serverMailboxQueuedCallsSum": 0,
+        "serverMailboxOneWayQueuedCallsSum": 0,
+        "serverMailboxOneWayAsyncCallsSum": 0,
+        "serverMailboxMaxQueuedDepthSum": 0,
+        "serverRssGrowthBytesPerHour": 1286206804.0249162,
+        "serverV8HeapGrowthBytesPerHour": -313763488.26066124,
+        "loadCpuMs": 6750,
+        "loadPeakRssBytes": 195305472,
+        "loadGcCount": 88,
+        "loadGcMs": 42.36190000921488,
+        "loadGcMsPerSecond": 0.706031666820248
+      }
+    }
+  ],
+  "rounds": [
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 50,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786532650431,
+      "measurementEndedAtUnixMs": 1786532710431,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 50,
+        "perSecond": 18.97403880934719,
+        "p50Ms": 804.4954,
+        "p90Ms": 868.5576999999998,
+        "p95Ms": 868.7432000000001,
+        "p99Ms": 870.2553000000003,
+        "maxMs": 870.2553000000003,
+        "elapsedSeconds": 2.6351796
+      },
+      "movement": {
+        "count": 6000,
+        "perSecond": 100,
+        "p50Ms": 31.166500000006636,
+        "p90Ms": 47.893700000000536,
+        "p95Ms": 62.13139999999839,
+        "p99Ms": 63.589799999994284,
+        "maxMs": 88.76299999999901,
+        "acknowledged": 6000,
+        "latencySamples": 6000,
+        "skippedTicks": 0,
+        "entityMovePushes": 70050,
+        "pushesPerSecond": 1000.7142857142857,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 300,
+        "perSecond": 5,
+        "p50Ms": 12.465000000000146,
+        "p90Ms": 32.341700000000856,
+        "p95Ms": 32.600900000001275,
+        "p99Ms": 32.7502999999997,
+        "maxMs": 32.80110000000059,
+        "accepted": 150,
+        "rejected": 150,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 797,
+        "cpuSystemMs": 860,
+        "maxRssBytes": 81637376,
+        "rssBytes": 74268672,
+        "heapUsedBytes": 7899376,
+        "heapTotalBytes": 26300416,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 69,
+        "gcCountStart": 58,
+        "gcCountEnd": 128,
+        "gcDurationMs": 19.57219999283552,
+        "gcDurationStartMs": 11.901699990034103,
+        "gcDurationEndMs": 31.645699977874756,
+        "gcDurationDeltaMs": 19.57219999283552,
+        "gcDurationMsPerSecond": 0.32620333321392536,
+        "memorySamples": 16,
+        "rssStartBytes": 68390912,
+        "rssEndBytes": 74072064,
+        "rssGrowthBytes": 5681152,
+        "rssGrowthBytesPerHour": 314276122.13224334,
+        "rssLastHalfBytesPerHour": 734359522.3912566,
+        "rssLastQuarterBytesPerHour": 18205333.87409046,
+        "heapStartBytes": 8980352,
+        "heapEndBytes": 12346368,
+        "heapGrowthBytes": 3366016,
+        "heapGrowthBytesPerHour": 186204920.3251533,
+        "heapLastHalfBytesPerHour": 193308983.90080705,
+        "heapLastQuarterBytesPerHour": 1418948176.9133747,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786532640431,
+            "rssBytes": 57155584,
+            "heapUsedBytes": 6555464
+          },
+          {
+            "timestampMs": 1786532645431,
+            "rssBytes": 68390912,
+            "heapUsedBytes": 8980352
+          },
+          {
+            "timestampMs": 1786532650432,
+            "rssBytes": 75005952,
+            "heapUsedBytes": 10320528
+          },
+          {
+            "timestampMs": 1786532655432,
+            "rssBytes": 80257024,
+            "heapUsedBytes": 12799776
+          },
+          {
+            "timestampMs": 1786532660434,
+            "rssBytes": 81039360,
+            "heapUsedBytes": 9471672
+          },
+          {
+            "timestampMs": 1786532665440,
+            "rssBytes": 60948480,
+            "heapUsedBytes": 8081528
+          },
+          {
+            "timestampMs": 1786532670446,
+            "rssBytes": 65343488,
+            "heapUsedBytes": 8305456
+          },
+          {
+            "timestampMs": 1786532675454,
+            "rssBytes": 67780608,
+            "heapUsedBytes": 8893016
+          },
+          {
+            "timestampMs": 1786532680457,
+            "rssBytes": 68403200,
+            "heapUsedBytes": 10417976
+          },
+          {
+            "timestampMs": 1786532685462,
+            "rssBytes": 68673536,
+            "heapUsedBytes": 10728576
+          },
+          {
+            "timestampMs": 1786532690465,
+            "rssBytes": 70631424,
+            "heapUsedBytes": 9131720
+          },
+          {
+            "timestampMs": 1786532695479,
+            "rssBytes": 73924608,
+            "heapUsedBytes": 11653800
+          },
+          {
+            "timestampMs": 1786532700494,
+            "rssBytes": 74022912,
+            "heapUsedBytes": 8357512
+          },
+          {
+            "timestampMs": 1786532705496,
+            "rssBytes": 74039296,
+            "heapUsedBytes": 10572704
+          },
+          {
+            "timestampMs": 1786532710508,
+            "rssBytes": 74072064,
+            "heapUsedBytes": 12344168
+          },
+          {
+            "timestampMs": 1786532710508,
+            "rssBytes": 74072064,
+            "heapUsedBytes": 12346368
+          }
+        ]
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 11,
+            "peakCpuPercent": 8.736,
+            "peakRssBytes": 111427584,
+            "peakV8HeapUsedBytes": 20971064,
+            "cpuTimeMs": 3593,
+            "v8GcCount": 32,
+            "v8GcMs": 9.439,
+            "v8GcCountStart": 13,
+            "v8GcCountEnd": 32,
+            "v8GcCountDelta": 19,
+            "v8GcMsStart": 5.071,
+            "v8GcMsEnd": 9.439,
+            "v8GcMsDelta": 4.368,
+            "v8GcWindowDurationMs": 60175,
+            "v8GcMsPerSecond": 0.07258828417116743,
+            "queueDepth": 1,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 49,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 832,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 200,
+            "mailboxOneWayFastPathCalls": 10679,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 101666816,
+            "rssEndBytes": 111198208,
+            "rssGrowthBytes": 9531392,
+            "rssGrowthBytesPerHour": 760095944.0001771,
+            "rssLastHalfBytesPerHour": 495353518.1523138,
+            "rssLastQuarterBytesPerHour": -48515776.819292836,
+            "v8HeapStartBytes": 20971064,
+            "v8HeapEndBytes": 18740488,
+            "v8HeapGrowthBytes": -2230576,
+            "v8HeapGrowthBytesPerHour": -177880814.30122057,
+            "v8HeapLastHalfBytesPerHour": -121130823.881193,
+            "v8HeapLastQuarterBytesPerHour": -429553401.5748601
+          }
+        ],
+        "peakCpuPercentSum": 8.736,
+        "peakRssBytesSum": 111427584,
+        "peakV8HeapUsedBytesSum": 20971064,
+        "cpuTimeMsSum": 3593,
+        "v8GcCountSum": 32,
+        "v8GcMsSum": 9.439,
+        "v8GcCountDeltaSum": 19,
+        "v8GcMsDeltaSum": 4.368,
+        "v8GcMsPerSecondSum": 0.07258828417116743,
+        "rssGrowthBytesSum": 9531392,
+        "rssGrowthBytesPerHourSum": 760095944.0001771,
+        "v8HeapGrowthBytesSum": -2230576,
+        "v8HeapGrowthBytesPerHourSum": -177880814.30122057,
+        "queueDepthSum": 1,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 49,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 832,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 200,
+        "mailboxOneWayFastPathCallsSum": 10679,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 50,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786532724571,
+      "measurementEndedAtUnixMs": 1786532784571,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 50,
+        "perSecond": 19.27025323849131,
+        "p50Ms": 807.8989000000001,
+        "p90Ms": 871.8684000000003,
+        "p95Ms": 872.2702999999999,
+        "p99Ms": 872.5165999999999,
+        "maxMs": 872.5165999999999,
+        "elapsedSeconds": 2.5946727000000003
+      },
+      "movement": {
+        "count": 6000,
+        "perSecond": 100,
+        "p50Ms": 31.19919999999911,
+        "p90Ms": 47.88249999999971,
+        "p95Ms": 62.321600000002945,
+        "p99Ms": 63.728000000002794,
+        "maxMs": 88.92779999999766,
+        "acknowledged": 6000,
+        "latencySamples": 6000,
+        "skippedTicks": 0,
+        "entityMovePushes": 70050,
+        "pushesPerSecond": 1000.7142857142857,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 300,
+        "perSecond": 5,
+        "p50Ms": 15.678200000002107,
+        "p90Ms": 22.454599999999118,
+        "p95Ms": 30.22989999999845,
+        "p99Ms": 30.35870000000432,
+        "maxMs": 30.371100000003935,
+        "accepted": 150,
+        "rejected": 150,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 781,
+        "cpuSystemMs": 1062,
+        "maxRssBytes": 83218432,
+        "rssBytes": 75247616,
+        "heapUsedBytes": 13379672,
+        "heapTotalBytes": 26562560,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 69,
+        "gcCountStart": 56,
+        "gcCountEnd": 125,
+        "gcDurationMs": 19.68740001320839,
+        "gcDurationStartMs": 12.737900003790855,
+        "gcDurationEndMs": 32.425300016999245,
+        "gcDurationDeltaMs": 19.68740001320839,
+        "gcDurationMsPerSecond": 0.3281233335534732,
+        "memorySamples": 15,
+        "rssStartBytes": 69058560,
+        "rssEndBytes": 75137024,
+        "rssGrowthBytes": 6078464,
+        "rssGrowthBytesPerHour": 336275727.260154,
+        "rssLastHalfBytesPerHour": 787506497.446849,
+        "rssLastQuarterBytesPerHour": 73735006.8532839,
+        "heapStartBytes": 8538352,
+        "heapEndBytes": 11470216,
+        "heapGrowthBytes": 2931864,
+        "heapGrowthBytesPerHour": 162197999.17016274,
+        "heapLastHalfBytesPerHour": 69438124.91470613,
+        "heapLastQuarterBytesPerHour": 285052306.56359714,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786532714571,
+            "rssBytes": 57999360,
+            "heapUsedBytes": 6612752
+          },
+          {
+            "timestampMs": 1786532719578,
+            "rssBytes": 69058560,
+            "heapUsedBytes": 8538352
+          },
+          {
+            "timestampMs": 1786532724579,
+            "rssBytes": 76861440,
+            "heapUsedBytes": 10021776
+          },
+          {
+            "timestampMs": 1786532729583,
+            "rssBytes": 81711104,
+            "heapUsedBytes": 11736808
+          },
+          {
+            "timestampMs": 1786532734584,
+            "rssBytes": 82563072,
+            "heapUsedBytes": 8698344
+          },
+          {
+            "timestampMs": 1786532739594,
+            "rssBytes": 61743104,
+            "heapUsedBytes": 7771960
+          },
+          {
+            "timestampMs": 1786532744608,
+            "rssBytes": 66347008,
+            "heapUsedBytes": 8544856
+          },
+          {
+            "timestampMs": 1786532749617,
+            "rssBytes": 68755456,
+            "heapUsedBytes": 8861592
+          },
+          {
+            "timestampMs": 1786532754624,
+            "rssBytes": 69300224,
+            "heapUsedBytes": 10485448
+          },
+          {
+            "timestampMs": 1786532759630,
+            "rssBytes": 70041600,
+            "heapUsedBytes": 10596760
+          },
+          {
+            "timestampMs": 1786532764637,
+            "rssBytes": 71544832,
+            "heapUsedBytes": 8433704
+          },
+          {
+            "timestampMs": 1786532769646,
+            "rssBytes": 74809344,
+            "heapUsedBytes": 10864928
+          },
+          {
+            "timestampMs": 1786532774660,
+            "rssBytes": 75059200,
+            "heapUsedBytes": 7607736
+          },
+          {
+            "timestampMs": 1786532779669,
+            "rssBytes": 75100160,
+            "heapUsedBytes": 9766128
+          },
+          {
+            "timestampMs": 1786532784651,
+            "rssBytes": 75137024,
+            "heapUsedBytes": 11470216
+          }
+        ]
+      },
+      "round": 2,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 11,
+            "peakCpuPercent": 12.804,
+            "peakRssBytes": 110092288,
+            "peakV8HeapUsedBytes": 21203240,
+            "cpuTimeMs": 4968,
+            "v8GcCount": 32,
+            "v8GcMs": 9.18,
+            "v8GcCountStart": 13,
+            "v8GcCountEnd": 32,
+            "v8GcCountDelta": 19,
+            "v8GcMsStart": 4.942,
+            "v8GcMsEnd": 9.18,
+            "v8GcMsDelta": 4.2379999999999995,
+            "v8GcWindowDurationMs": 60170,
+            "v8GcMsPerSecond": 0.07043377098221704,
+            "queueDepth": 2,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 50,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 832,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 200,
+            "mailboxOneWayFastPathCalls": 10674,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 101609472,
+            "rssEndBytes": 108556288,
+            "rssGrowthBytes": 6946816,
+            "rssGrowthBytesPerHour": 554168977.1317142,
+            "rssLastHalfBytesPerHour": -9697608.914118854,
+            "rssLastQuarterBytesPerHour": -551907565.2166861,
+            "v8HeapStartBytes": 15865440,
+            "v8HeapEndBytes": 19712088,
+            "v8HeapGrowthBytes": 3846648,
+            "v8HeapGrowthBytesPerHour": 306858996.63180286,
+            "v8HeapLastHalfBytesPerHour": -80705029.55858032,
+            "v8HeapLastQuarterBytesPerHour": -244329869.5104199
+          }
+        ],
+        "peakCpuPercentSum": 12.804,
+        "peakRssBytesSum": 110092288,
+        "peakV8HeapUsedBytesSum": 21203240,
+        "cpuTimeMsSum": 4968,
+        "v8GcCountSum": 32,
+        "v8GcMsSum": 9.18,
+        "v8GcCountDeltaSum": 19,
+        "v8GcMsDeltaSum": 4.2379999999999995,
+        "v8GcMsPerSecondSum": 0.07043377098221704,
+        "rssGrowthBytesSum": 6946816,
+        "rssGrowthBytesPerHourSum": 554168977.1317142,
+        "v8HeapGrowthBytesSum": 3846648,
+        "v8HeapGrowthBytesPerHourSum": 306858996.63180286,
+        "queueDepthSum": 2,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 50,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 832,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 200,
+        "mailboxOneWayFastPathCallsSum": 10674,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 50,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786532798730,
+      "measurementEndedAtUnixMs": 1786532858730,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 50,
+        "perSecond": 19.29940533900293,
+        "p50Ms": 803.7587000000001,
+        "p90Ms": 867.3098,
+        "p95Ms": 867.8597,
+        "p99Ms": 869.6911999999998,
+        "maxMs": 869.6911999999998,
+        "elapsedSeconds": 2.5907534
+      },
+      "movement": {
+        "count": 6000,
+        "perSecond": 100,
+        "p50Ms": 31.153299999998126,
+        "p90Ms": 47.67120000000068,
+        "p95Ms": 61.8859999999986,
+        "p99Ms": 63.59339999999793,
+        "maxMs": 79.96889999999985,
+        "acknowledged": 6000,
+        "latencySamples": 6000,
+        "skippedTicks": 0,
+        "entityMovePushes": 70050,
+        "pushesPerSecond": 1000.7142857142857,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 300,
+        "perSecond": 5,
+        "p50Ms": 12.341699999999037,
+        "p90Ms": 33.17979999999807,
+        "p95Ms": 33.28740000000107,
+        "p99Ms": 33.750199999998586,
+        "maxMs": 34.04579999999987,
+        "accepted": 150,
+        "rejected": 150,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 813,
+        "cpuSystemMs": 1000,
+        "maxRssBytes": 84099072,
+        "rssBytes": 75939840,
+        "heapUsedBytes": 10167176,
+        "heapTotalBytes": 26824704,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 67,
+        "gcCountStart": 56,
+        "gcCountEnd": 123,
+        "gcDurationMs": 19.873699970543385,
+        "gcDurationStartMs": 13.174599975347519,
+        "gcDurationEndMs": 33.0482999458909,
+        "gcDurationDeltaMs": 19.873699970543385,
+        "gcDurationMsPerSecond": 0.3312283328423897,
+        "memorySamples": 15,
+        "rssStartBytes": 69230592,
+        "rssEndBytes": 75665408,
+        "rssGrowthBytes": 6434816,
+        "rssGrowthBytesPerHour": 356050192.1244351,
+        "rssLastHalfBytesPerHour": 858117162.2972232,
+        "rssLastQuarterBytesPerHour": 3490463.558657142,
+        "heapStartBytes": 8527760,
+        "heapEndBytes": 8227936,
+        "heapGrowthBytes": -299824,
+        "heapGrowthBytesPerHour": -16589812.793950386,
+        "heapLastHalfBytesPerHour": -137559641.57319048,
+        "heapLastQuarterBytesPerHour": 403550266.2855354,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786532788730,
+            "rssBytes": 57917440,
+            "heapUsedBytes": 6578800
+          },
+          {
+            "timestampMs": 1786532793740,
+            "rssBytes": 69230592,
+            "heapUsedBytes": 8527760
+          },
+          {
+            "timestampMs": 1786532798741,
+            "rssBytes": 77053952,
+            "heapUsedBytes": 8461384
+          },
+          {
+            "timestampMs": 1786532803750,
+            "rssBytes": 82399232,
+            "heapUsedBytes": 11672552
+          },
+          {
+            "timestampMs": 1786532808754,
+            "rssBytes": 83881984,
+            "heapUsedBytes": 8964504
+          },
+          {
+            "timestampMs": 1786532813765,
+            "rssBytes": 62279680,
+            "heapUsedBytes": 8421272
+          },
+          {
+            "timestampMs": 1786532818766,
+            "rssBytes": 66158592,
+            "heapUsedBytes": 8888680
+          },
+          {
+            "timestampMs": 1786532823769,
+            "rssBytes": 68706304,
+            "heapUsedBytes": 10015648
+          },
+          {
+            "timestampMs": 1786532828769,
+            "rssBytes": 69120000,
+            "heapUsedBytes": 11723504
+          },
+          {
+            "timestampMs": 1786532833783,
+            "rssBytes": 70160384,
+            "heapUsedBytes": 12220680
+          },
+          {
+            "timestampMs": 1786532838791,
+            "rssBytes": 72957952,
+            "heapUsedBytes": 10940720
+          },
+          {
+            "timestampMs": 1786532843804,
+            "rssBytes": 75685888,
+            "heapUsedBytes": 7137944
+          },
+          {
+            "timestampMs": 1786532848826,
+            "rssBytes": 75542528,
+            "heapUsedBytes": 10504408
+          },
+          {
+            "timestampMs": 1786532853831,
+            "rssBytes": 75653120,
+            "heapUsedBytes": 12796776
+          },
+          {
+            "timestampMs": 1786532858802,
+            "rssBytes": 75665408,
+            "heapUsedBytes": 8227936
+          }
+        ]
+      },
+      "round": 3,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 11,
+            "peakCpuPercent": 16.872,
+            "peakRssBytes": 120299520,
+            "peakV8HeapUsedBytes": 26400000,
+            "cpuTimeMs": 4343,
+            "v8GcCount": 32,
+            "v8GcMs": 10.861,
+            "v8GcCountStart": 13,
+            "v8GcCountEnd": 32,
+            "v8GcCountDelta": 19,
+            "v8GcMsStart": 5.522,
+            "v8GcMsEnd": 10.861,
+            "v8GcMsDelta": 5.339,
+            "v8GcWindowDurationMs": 60177,
+            "v8GcMsPerSecond": 0.08872160459976404,
+            "queueDepth": 0,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 46,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 832,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 200,
+            "mailboxOneWayFastPathCalls": 10680,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 93544448,
+            "rssEndBytes": 120299520,
+            "rssGrowthBytes": 26755072,
+            "rssGrowthBytesPerHour": 2133909192.0154197,
+            "rssLastHalfBytesPerHour": 2142595380.6196568,
+            "rssLastQuarterBytesPerHour": 2721121756.5689893,
+            "v8HeapStartBytes": 18799112,
+            "v8HeapEndBytes": 19024576,
+            "v8HeapGrowthBytes": 225464,
+            "v8HeapGrowthBytesPerHour": 17982373.662405565,
+            "v8HeapLastHalfBytesPerHour": 841959115.1382781,
+            "v8HeapLastQuarterBytesPerHour": -2651830748.7353806
+          }
+        ],
+        "peakCpuPercentSum": 16.872,
+        "peakRssBytesSum": 120299520,
+        "peakV8HeapUsedBytesSum": 26400000,
+        "cpuTimeMsSum": 4343,
+        "v8GcCountSum": 32,
+        "v8GcMsSum": 10.861,
+        "v8GcCountDeltaSum": 19,
+        "v8GcMsDeltaSum": 5.339,
+        "v8GcMsPerSecondSum": 0.08872160459976404,
+        "rssGrowthBytesSum": 26755072,
+        "rssGrowthBytesPerHourSum": 2133909192.0154197,
+        "v8HeapGrowthBytesSum": 225464,
+        "v8HeapGrowthBytesPerHourSum": 17982373.662405565,
+        "queueDepthSum": 0,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 46,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 832,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 200,
+        "mailboxOneWayFastPathCallsSum": 10680,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 100,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786532875385,
+      "measurementEndedAtUnixMs": 1786532935385,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 100,
+        "perSecond": 19.846271968111328,
+        "p50Ms": 808.7758000000001,
+        "p90Ms": 868.0533000000005,
+        "p95Ms": 870.2737999999999,
+        "p99Ms": 885.9087,
+        "maxMs": 885.9087,
+        "elapsedSeconds": 5.0387297
+      },
+      "movement": {
+        "count": 12000,
+        "perSecond": 200,
+        "p50Ms": 31.669300000001385,
+        "p90Ms": 48.10160000000906,
+        "p95Ms": 62.02189999999973,
+        "p99Ms": 63.69970000000467,
+        "maxMs": 103.70939999999246,
+        "acknowledged": 12000,
+        "latencySamples": 12000,
+        "skippedTicks": 0,
+        "entityMovePushes": 140100,
+        "pushesPerSecond": 2001.4285714285713,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 600,
+        "perSecond": 10,
+        "p50Ms": 12.104900000005728,
+        "p90Ms": 20.012799999996787,
+        "p95Ms": 20.29490000000078,
+        "p99Ms": 21.218800000000556,
+        "maxMs": 21.636999999998807,
+        "accepted": 300,
+        "rejected": 300,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 1422,
+        "cpuSystemMs": 1219,
+        "maxRssBytes": 120410112,
+        "rssBytes": 94511104,
+        "heapUsedBytes": 17570328,
+        "heapTotalBytes": 42815488,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 120,
+        "gcCountStart": 108,
+        "gcCountEnd": 228,
+        "gcDurationMs": 41.06899996101856,
+        "gcDurationStartMs": 23.67349998652935,
+        "gcDurationEndMs": 64.74249994754791,
+        "gcDurationDeltaMs": 41.06899996101856,
+        "gcDurationMsPerSecond": 0.6844833326836427,
+        "memorySamples": 15,
+        "rssStartBytes": 85422080,
+        "rssEndBytes": 94265344,
+        "rssGrowthBytes": 8843264,
+        "rssGrowthBytesPerHour": 489276444.2805109,
+        "rssLastHalfBytesPerHour": 2322197458.774712,
+        "rssLastQuarterBytesPerHour": 172483136.0590804,
+        "heapStartBytes": 7598896,
+        "heapEndBytes": 13494776,
+        "heapGrowthBytes": 5895880,
+        "heapGrowthBytesPerHour": 326204804.2786666,
+        "heapLastHalfBytesPerHour": 50920927.03465284,
+        "heapLastQuarterBytesPerHour": 885506464.5015529,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786532865385,
+            "rssBytes": 62693376,
+            "heapUsedBytes": 10257624
+          },
+          {
+            "timestampMs": 1786532870392,
+            "rssBytes": 85422080,
+            "heapUsedBytes": 7598896
+          },
+          {
+            "timestampMs": 1786532875394,
+            "rssBytes": 103899136,
+            "heapUsedBytes": 13871304
+          },
+          {
+            "timestampMs": 1786532880408,
+            "rssBytes": 117903360,
+            "heapUsedBytes": 12363696
+          },
+          {
+            "timestampMs": 1786532885409,
+            "rssBytes": 67239936,
+            "heapUsedBytes": 7232216
+          },
+          {
+            "timestampMs": 1786532890421,
+            "rssBytes": 71602176,
+            "heapUsedBytes": 8607464
+          },
+          {
+            "timestampMs": 1786532895426,
+            "rssBytes": 79716352,
+            "heapUsedBytes": 9234896
+          },
+          {
+            "timestampMs": 1786532900439,
+            "rssBytes": 72052736,
+            "heapUsedBytes": 8448240
+          },
+          {
+            "timestampMs": 1786532905442,
+            "rssBytes": 80375808,
+            "heapUsedBytes": 13248256
+          },
+          {
+            "timestampMs": 1786532910445,
+            "rssBytes": 81420288,
+            "heapUsedBytes": 12529784
+          },
+          {
+            "timestampMs": 1786532915455,
+            "rssBytes": 80162816,
+            "heapUsedBytes": 12306424
+          },
+          {
+            "timestampMs": 1786532920482,
+            "rssBytes": 93761536,
+            "heapUsedBytes": 10823328
+          },
+          {
+            "timestampMs": 1786532925490,
+            "rssBytes": 92979200,
+            "heapUsedBytes": 6819632
+          },
+          {
+            "timestampMs": 1786532930496,
+            "rssBytes": 93863936,
+            "heapUsedBytes": 11108968
+          },
+          {
+            "timestampMs": 1786532935459,
+            "rssBytes": 94265344,
+            "heapUsedBytes": 13494776
+          }
+        ]
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 12,
+            "peakCpuPercent": 16.841,
+            "peakRssBytes": 175915008,
+            "peakV8HeapUsedBytes": 52100872,
+            "cpuTimeMs": 6500,
+            "v8GcCount": 27,
+            "v8GcMs": 14.216,
+            "v8GcCountStart": 20,
+            "v8GcCountEnd": 27,
+            "v8GcCountDelta": 7,
+            "v8GcMsStart": 10.68,
+            "v8GcMsEnd": 14.216,
+            "v8GcMsDelta": 3.5359999999999996,
+            "v8GcWindowDurationMs": 60205,
+            "v8GcMsPerSecond": 0.058732663400049824,
+            "queueDepth": 0,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 81,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 1541,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 400,
+            "mailboxOneWayFastPathCalls": 19251,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 158441472,
+            "rssEndBytes": 175915008,
+            "rssGrowthBytes": 17473536,
+            "rssGrowthBytesPerHour": 1253456801.8332171,
+            "rssLastHalfBytesPerHour": 1489060382.075373,
+            "rssLastQuarterBytesPerHour": 741814023.7917681,
+            "v8HeapStartBytes": 27550264,
+            "v8HeapEndBytes": 51234232,
+            "v8HeapGrowthBytes": 23683968,
+            "v8HeapGrowthBytesPerHour": 1698959545.6809804,
+            "v8HeapLastHalfBytesPerHour": 677326088.5977817,
+            "v8HeapLastQuarterBytesPerHour": 29662907.800121766
+          }
+        ],
+        "peakCpuPercentSum": 16.841,
+        "peakRssBytesSum": 175915008,
+        "peakV8HeapUsedBytesSum": 52100872,
+        "cpuTimeMsSum": 6500,
+        "v8GcCountSum": 27,
+        "v8GcMsSum": 14.216,
+        "v8GcCountDeltaSum": 7,
+        "v8GcMsDeltaSum": 3.5359999999999996,
+        "v8GcMsPerSecondSum": 0.058732663400049824,
+        "rssGrowthBytesSum": 17473536,
+        "rssGrowthBytesPerHourSum": 1253456801.8332171,
+        "v8HeapGrowthBytesSum": 23683968,
+        "v8HeapGrowthBytesPerHourSum": 1698959545.6809804,
+        "queueDepthSum": 0,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 81,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 1541,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 400,
+        "mailboxOneWayFastPathCallsSum": 19251,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 100,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786532952577,
+      "measurementEndedAtUnixMs": 1786533012577,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 100,
+        "perSecond": 19.841877301918192,
+        "p50Ms": 804.5474000000002,
+        "p90Ms": 867.2048000000004,
+        "p95Ms": 868.2892000000002,
+        "p99Ms": 885.0950000000003,
+        "maxMs": 885.0950000000003,
+        "elapsedSeconds": 5.0398457
+      },
+      "movement": {
+        "count": 12000,
+        "perSecond": 200,
+        "p50Ms": 31.67670000000362,
+        "p90Ms": 48.102900000012596,
+        "p95Ms": 61.90400000000227,
+        "p99Ms": 63.60940000000119,
+        "maxMs": 79.2100999999966,
+        "acknowledged": 12000,
+        "latencySamples": 12000,
+        "skippedTicks": 0,
+        "entityMovePushes": 140100,
+        "pushesPerSecond": 2001.4285714285713,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 600,
+        "perSecond": 10,
+        "p50Ms": 12.69720000000234,
+        "p90Ms": 19.723599999997532,
+        "p95Ms": 31.05249999999978,
+        "p99Ms": 31.645399999999427,
+        "maxMs": 31.802299999999377,
+        "accepted": 300,
+        "rejected": 300,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 1766,
+        "cpuSystemMs": 1391,
+        "maxRssBytes": 116797440,
+        "rssBytes": 94105600,
+        "heapUsedBytes": 17143512,
+        "heapTotalBytes": 42815488,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 120,
+        "gcCountStart": 109,
+        "gcCountEnd": 229,
+        "gcDurationMs": 42.55000001937151,
+        "gcDurationStartMs": 23.72609995305538,
+        "gcDurationEndMs": 66.27609997242689,
+        "gcDurationDeltaMs": 42.55000001937151,
+        "gcDurationMsPerSecond": 0.7091666669895251,
+        "memorySamples": 15,
+        "rssStartBytes": 85716992,
+        "rssEndBytes": 93908992,
+        "rssGrowthBytes": 8192000,
+        "rssGrowthBytesPerHour": 453222683.264177,
+        "rssLastHalfBytesPerHour": 2343017848.1252937,
+        "rssLastQuarterBytesPerHour": 8258222.384915502,
+        "heapStartBytes": 11764512,
+        "heapEndBytes": 13122608,
+        "heapGrowthBytes": 1358096,
+        "heapGrowthBytesPerHour": 75136708.16044259,
+        "heapLastHalfBytesPerHour": 192524317.00205457,
+        "heapLastQuarterBytesPerHour": -1359333345.8895838,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786532942577,
+            "rssBytes": 62943232,
+            "heapUsedBytes": 7617016
+          },
+          {
+            "timestampMs": 1786532947583,
+            "rssBytes": 85716992,
+            "heapUsedBytes": 11764512
+          },
+          {
+            "timestampMs": 1786532952587,
+            "rssBytes": 100048896,
+            "heapUsedBytes": 16796712
+          },
+          {
+            "timestampMs": 1786532957597,
+            "rssBytes": 115068928,
+            "heapUsedBytes": 16732440
+          },
+          {
+            "timestampMs": 1786532962610,
+            "rssBytes": 66093056,
+            "heapUsedBytes": 7466768
+          },
+          {
+            "timestampMs": 1786532967615,
+            "rssBytes": 70873088,
+            "heapUsedBytes": 8978696
+          },
+          {
+            "timestampMs": 1786532972625,
+            "rssBytes": 78827520,
+            "heapUsedBytes": 9735024
+          },
+          {
+            "timestampMs": 1786532977638,
+            "rssBytes": 72130560,
+            "heapUsedBytes": 10394072
+          },
+          {
+            "timestampMs": 1786532982648,
+            "rssBytes": 79396864,
+            "heapUsedBytes": 10912888
+          },
+          {
+            "timestampMs": 1786532987653,
+            "rssBytes": 80773120,
+            "heapUsedBytes": 9993472
+          },
+          {
+            "timestampMs": 1786532992656,
+            "rssBytes": 80191488,
+            "heapUsedBytes": 9695760
+          },
+          {
+            "timestampMs": 1786532997681,
+            "rssBytes": 94040064,
+            "heapUsedBytes": 20881144
+          },
+          {
+            "timestampMs": 1786533002685,
+            "rssBytes": 92995584,
+            "heapUsedBytes": 6794392
+          },
+          {
+            "timestampMs": 1786533007685,
+            "rssBytes": 93507584,
+            "heapUsedBytes": 11267640
+          },
+          {
+            "timestampMs": 1786533012653,
+            "rssBytes": 93908992,
+            "heapUsedBytes": 13122608
+          }
+        ]
+      },
+      "round": 2,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 12,
+            "peakCpuPercent": 17.162,
+            "peakRssBytes": 173109248,
+            "peakV8HeapUsedBytes": 53562248,
+            "cpuTimeMs": 6796,
+            "v8GcCount": 29,
+            "v8GcMs": 16.442,
+            "v8GcCountStart": 20,
+            "v8GcCountEnd": 29,
+            "v8GcCountDelta": 9,
+            "v8GcMsStart": 11.724,
+            "v8GcMsEnd": 16.442,
+            "v8GcMsDelta": 4.718,
+            "v8GcWindowDurationMs": 60129,
+            "v8GcMsPerSecond": 0.07846463436943904,
+            "queueDepth": 0,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 80,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 1541,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 400,
+            "mailboxOneWayFastPathCalls": 19240,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 139513856,
+            "rssEndBytes": 173109248,
+            "rssGrowthBytes": 33595392,
+            "rssGrowthBytesPerHour": 2413895599.065924,
+            "rssLastHalfBytesPerHour": 1352291543.652025,
+            "rssLastQuarterBytesPerHour": 1156750547.4672632,
+            "v8HeapStartBytes": 52573848,
+            "v8HeapEndBytes": 53562248,
+            "v8HeapGrowthBytes": 988400,
+            "v8HeapGrowthBytesPerHour": 71018501.88611461,
+            "v8HeapLastHalfBytesPerHour": 1380083329.3768775,
+            "v8HeapLastQuarterBytesPerHour": 870441381.7511585
+          }
+        ],
+        "peakCpuPercentSum": 17.162,
+        "peakRssBytesSum": 173109248,
+        "peakV8HeapUsedBytesSum": 53562248,
+        "cpuTimeMsSum": 6796,
+        "v8GcCountSum": 29,
+        "v8GcMsSum": 16.442,
+        "v8GcCountDeltaSum": 9,
+        "v8GcMsDeltaSum": 4.718,
+        "v8GcMsPerSecondSum": 0.07846463436943904,
+        "rssGrowthBytesSum": 33595392,
+        "rssGrowthBytesPerHourSum": 2413895599.065924,
+        "v8HeapGrowthBytesSum": 988400,
+        "v8HeapGrowthBytesPerHourSum": 71018501.88611461,
+        "queueDepthSum": 0,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 80,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 1541,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 400,
+        "mailboxOneWayFastPathCallsSum": 19240,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 100,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786533029772,
+      "measurementEndedAtUnixMs": 1786533089772,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 100,
+        "perSecond": 19.8422769155625,
+        "p50Ms": 807.5240999999999,
+        "p90Ms": 863.9593000000004,
+        "p95Ms": 866.1459000000004,
+        "p99Ms": 880.6076000000003,
+        "maxMs": 880.6076000000003,
+        "elapsedSeconds": 5.0397442
+      },
+      "movement": {
+        "count": 11998,
+        "perSecond": 199.96666666666667,
+        "p50Ms": 31.647399999994377,
+        "p90Ms": 48.052300000003015,
+        "p95Ms": 61.87329999999929,
+        "p99Ms": 63.5367000000042,
+        "maxMs": 79.64570000000822,
+        "acknowledged": 11998,
+        "latencySamples": 11998,
+        "skippedTicks": 0,
+        "entityMovePushes": 140100,
+        "pushesPerSecond": 2001.4285714285713,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 600,
+        "perSecond": 10,
+        "p50Ms": 15.196899999995367,
+        "p90Ms": 21.207900000001246,
+        "p95Ms": 32.3117000000002,
+        "p99Ms": 33.288800000000265,
+        "maxMs": 33.651700000000346,
+        "accepted": 300,
+        "rejected": 300,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 1765,
+        "cpuSystemMs": 1812,
+        "maxRssBytes": 117227520,
+        "rssBytes": 95006720,
+        "heapUsedBytes": 17291792,
+        "heapTotalBytes": 43339776,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 103,
+        "gcCountStart": 107,
+        "gcCountEnd": 210,
+        "gcDurationMs": 34.727499939501286,
+        "gcDurationStartMs": 24.101599968969822,
+        "gcDurationEndMs": 58.82909990847111,
+        "gcDurationDeltaMs": 34.727499939501286,
+        "gcDurationMsPerSecond": 0.5787916656583547,
+        "memorySamples": 15,
+        "rssStartBytes": 85069824,
+        "rssEndBytes": 94961664,
+        "rssGrowthBytes": 9891840,
+        "rssGrowthBytesPerHour": 547081423.2163707,
+        "rssLastHalfBytesPerHour": 1515180542.611712,
+        "rssLastQuarterBytesPerHour": 353078508.003142,
+        "heapStartBytes": 12372128,
+        "heapEndBytes": 13174760,
+        "heapGrowthBytes": 802632,
+        "heapGrowthBytesPerHour": 44390634.793830276,
+        "heapLastHalfBytesPerHour": 90837916.84828326,
+        "heapLastQuarterBytesPerHour": -378656322.727591,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786533019772,
+            "rssBytes": 62955520,
+            "heapUsedBytes": 10394336
+          },
+          {
+            "timestampMs": 1786533024779,
+            "rssBytes": 85069824,
+            "heapUsedBytes": 12372128
+          },
+          {
+            "timestampMs": 1786533029784,
+            "rssBytes": 104443904,
+            "heapUsedBytes": 11572976
+          },
+          {
+            "timestampMs": 1786533034787,
+            "rssBytes": 103878656,
+            "heapUsedBytes": 14503760
+          },
+          {
+            "timestampMs": 1786533039789,
+            "rssBytes": 105209856,
+            "heapUsedBytes": 8609416
+          },
+          {
+            "timestampMs": 1786533044794,
+            "rssBytes": 67776512,
+            "heapUsedBytes": 9194000
+          },
+          {
+            "timestampMs": 1786533049795,
+            "rssBytes": 78798848,
+            "heapUsedBytes": 14613528
+          },
+          {
+            "timestampMs": 1786533054806,
+            "rssBytes": 80445440,
+            "heapUsedBytes": 14508064
+          },
+          {
+            "timestampMs": 1786533059819,
+            "rssBytes": 80187392,
+            "heapUsedBytes": 7843256
+          },
+          {
+            "timestampMs": 1786533064820,
+            "rssBytes": 91680768,
+            "heapUsedBytes": 18901720
+          },
+          {
+            "timestampMs": 1786533069822,
+            "rssBytes": 93515776,
+            "heapUsedBytes": 7101608
+          },
+          {
+            "timestampMs": 1786533074849,
+            "rssBytes": 93425664,
+            "heapUsedBytes": 12020616
+          },
+          {
+            "timestampMs": 1786533079859,
+            "rssBytes": 93761536,
+            "heapUsedBytes": 19325088
+          },
+          {
+            "timestampMs": 1786533084865,
+            "rssBytes": 94064640,
+            "heapUsedBytes": 10591896
+          },
+          {
+            "timestampMs": 1786533089871,
+            "rssBytes": 94961664,
+            "heapUsedBytes": 13174760
+          }
+        ]
+      },
+      "round": 3,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 12,
+            "peakCpuPercent": 16.535,
+            "peakRssBytes": 168812544,
+            "peakV8HeapUsedBytes": 52381528,
+            "cpuTimeMs": 7093,
+            "v8GcCount": 32,
+            "v8GcMs": 15.832,
+            "v8GcCountStart": 21,
+            "v8GcCountEnd": 32,
+            "v8GcCountDelta": 11,
+            "v8GcMsStart": 10.603,
+            "v8GcMsEnd": 15.832,
+            "v8GcMsDelta": 5.229000000000001,
+            "v8GcWindowDurationMs": 60158,
+            "v8GcMsPerSecond": 0.08692110774959276,
+            "queueDepth": 0,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 80,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 1541,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 400,
+            "mailboxOneWayFastPathCalls": 19250,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 127139840,
+            "rssEndBytes": 168812544,
+            "rssGrowthBytes": 41672704,
+            "rssGrowthBytesPerHour": 2991818251.435865,
+            "rssLastHalfBytesPerHour": 321659606.6038275,
+            "rssLastQuarterBytesPerHour": 873146023.8000182,
+            "v8HeapStartBytes": 37615800,
+            "v8HeapEndBytes": 36138816,
+            "v8HeapGrowthBytes": -1476984,
+            "v8HeapGrowthBytesPerHour": -106037460.11486918,
+            "v8HeapLastHalfBytesPerHour": 183628620.07822996,
+            "v8HeapLastQuarterBytesPerHour": 1067322542.3754859
+          }
+        ],
+        "peakCpuPercentSum": 16.535,
+        "peakRssBytesSum": 168812544,
+        "peakV8HeapUsedBytesSum": 52381528,
+        "cpuTimeMsSum": 7093,
+        "v8GcCountSum": 32,
+        "v8GcMsSum": 15.832,
+        "v8GcCountDeltaSum": 11,
+        "v8GcMsDeltaSum": 5.229000000000001,
+        "v8GcMsPerSecondSum": 0.08692110774959276,
+        "rssGrowthBytesSum": 41672704,
+        "rssGrowthBytesPerHourSum": 2991818251.435865,
+        "v8HeapGrowthBytesSum": -1476984,
+        "v8HeapGrowthBytesPerHourSum": -106037460.11486918,
+        "queueDepthSum": 0,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 80,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 1541,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 400,
+        "mailboxOneWayFastPathCallsSum": 19250,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 200,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786533112044,
+      "measurementEndedAtUnixMs": 1786533172044,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 200,
+        "perSecond": 19.942522061764027,
+        "p50Ms": 806.1899000000012,
+        "p90Ms": 822.4591,
+        "p95Ms": 852.6726000000008,
+        "p99Ms": 869.4508000000001,
+        "maxMs": 871.2345000000005,
+        "elapsedSeconds": 10.0288218
+      },
+      "movement": {
+        "count": 24001,
+        "perSecond": 400.01666666666665,
+        "p50Ms": 32.978399999999965,
+        "p90Ms": 50.59910000000673,
+        "p95Ms": 62.76749999999447,
+        "p99Ms": 65.46269999998913,
+        "maxMs": 99.26579999999376,
+        "acknowledged": 24001,
+        "latencySamples": 24001,
+        "skippedTicks": 0,
+        "entityMovePushes": 280200,
+        "pushesPerSecond": 4002.8571428571427,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 1214,
+        "perSecond": 20.233333333333334,
+        "p50Ms": 30.917300000000978,
+        "p90Ms": 80.20990000000165,
+        "p95Ms": 81.54079999998794,
+        "p99Ms": 84.76370000001043,
+        "maxMs": 85.18899999999849,
+        "accepted": 555,
+        "rejected": 659,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 4828,
+        "cpuSystemMs": 3094,
+        "maxRssBytes": 195629056,
+        "rssBytes": 191954944,
+        "heapUsedBytes": 35159712,
+        "heapTotalBytes": 145965056,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 84,
+        "gcCountStart": 177,
+        "gcCountEnd": 261,
+        "gcDurationMs": 42.417499989271164,
+        "gcDurationStartMs": 49.68370001018047,
+        "gcDurationEndMs": 92.10119999945164,
+        "gcDurationDeltaMs": 42.417499989271164,
+        "gcDurationMsPerSecond": 0.7069583331545194,
+        "memorySamples": 15,
+        "rssStartBytes": 140136448,
+        "rssEndBytes": 194273280,
+        "rssGrowthBytes": 54136832,
+        "rssGrowthBytesPerHour": 2996042970.0230594,
+        "rssLastHalfBytesPerHour": 388313756.2173446,
+        "rssLastQuarterBytesPerHour": 22044387.480265785,
+        "heapStartBytes": 10072280,
+        "heapEndBytes": 26570272,
+        "heapGrowthBytes": 16497992,
+        "heapGrowthBytesPerHour": 913032608.7624904,
+        "heapLastHalfBytesPerHour": -172705340.16667283,
+        "heapLastQuarterBytesPerHour": -7763595118.333097,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786533102045,
+            "rssBytes": 73613312,
+            "heapUsedBytes": 11686024
+          },
+          {
+            "timestampMs": 1786533107052,
+            "rssBytes": 140136448,
+            "heapUsedBytes": 10072280
+          },
+          {
+            "timestampMs": 1786533112057,
+            "rssBytes": 175771648,
+            "heapUsedBytes": 21051984
+          },
+          {
+            "timestampMs": 1786533117060,
+            "rssBytes": 175149056,
+            "heapUsedBytes": 24246016
+          },
+          {
+            "timestampMs": 1786533122068,
+            "rssBytes": 144023552,
+            "heapUsedBytes": 16402864
+          },
+          {
+            "timestampMs": 1786533127074,
+            "rssBytes": 145551360,
+            "heapUsedBytes": 14664392
+          },
+          {
+            "timestampMs": 1786533132077,
+            "rssBytes": 163237888,
+            "heapUsedBytes": 58149184
+          },
+          {
+            "timestampMs": 1786533137085,
+            "rssBytes": 191983616,
+            "heapUsedBytes": 47154984
+          },
+          {
+            "timestampMs": 1786533142099,
+            "rssBytes": 188694528,
+            "heapUsedBytes": 42629144
+          },
+          {
+            "timestampMs": 1786533147108,
+            "rssBytes": 192954368,
+            "heapUsedBytes": 28289472
+          },
+          {
+            "timestampMs": 1786533152126,
+            "rssBytes": 190955520,
+            "heapUsedBytes": 21517592
+          },
+          {
+            "timestampMs": 1786533157129,
+            "rssBytes": 193761280,
+            "heapUsedBytes": 60569288
+          },
+          {
+            "timestampMs": 1786533162130,
+            "rssBytes": 194371584,
+            "heapUsedBytes": 51414568
+          },
+          {
+            "timestampMs": 1786533167136,
+            "rssBytes": 193146880,
+            "heapUsedBytes": 45695168
+          },
+          {
+            "timestampMs": 1786533172102,
+            "rssBytes": 194273280,
+            "heapUsedBytes": 26570272
+          }
+        ]
+      },
+      "round": 1,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 12,
+            "peakCpuPercent": 46.762,
+            "peakRssBytes": 238264320,
+            "peakV8HeapUsedBytes": 94931048,
+            "cpuTimeMs": 17250,
+            "v8GcCount": 46,
+            "v8GcMs": 41.372,
+            "v8GcCountStart": 29,
+            "v8GcCountEnd": 46,
+            "v8GcCountDelta": 17,
+            "v8GcMsStart": 24.889,
+            "v8GcMsEnd": 41.372,
+            "v8GcMsDelta": 16.483,
+            "v8GcWindowDurationMs": 60090,
+            "v8GcMsPerSecond": 0.2743052088533866,
+            "queueDepth": 5,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 160,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 2950,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 800,
+            "mailboxOneWayFastPathCalls": 43912,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 221671424,
+            "rssEndBytes": 238264320,
+            "rssGrowthBytes": 16592896,
+            "rssGrowthBytesPerHour": 1193113602.0453002,
+            "rssLastHalfBytesPerHour": 355486038.11383224,
+            "rssLastQuarterBytesPerHour": 408262895.83885694,
+            "v8HeapStartBytes": 84660304,
+            "v8HeapEndBytes": 81353304,
+            "v8HeapGrowthBytes": -3307000,
+            "v8HeapGrowthBytesPerHour": -237790117.04549995,
+            "v8HeapLastHalfBytesPerHour": 1104158055.9047074,
+            "v8HeapLastQuarterBytesPerHour": -3490809375.9513516
+          }
+        ],
+        "peakCpuPercentSum": 46.762,
+        "peakRssBytesSum": 238264320,
+        "peakV8HeapUsedBytesSum": 94931048,
+        "cpuTimeMsSum": 17250,
+        "v8GcCountSum": 46,
+        "v8GcMsSum": 41.372,
+        "v8GcCountDeltaSum": 17,
+        "v8GcMsDeltaSum": 16.483,
+        "v8GcMsPerSecondSum": 0.2743052088533866,
+        "rssGrowthBytesSum": 16592896,
+        "rssGrowthBytesPerHourSum": 1193113602.0453002,
+        "v8HeapGrowthBytesSum": -3307000,
+        "v8HeapGrowthBytesPerHourSum": -237790117.04549995,
+        "queueDepthSum": 5,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 160,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 2950,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 800,
+        "mailboxOneWayFastPathCallsSum": 43912,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 200,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786533194752,
+      "measurementEndedAtUnixMs": 1786533254752,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 200,
+        "perSecond": 19.891139572436572,
+        "p50Ms": 807.8013999999998,
+        "p90Ms": 813.3658000000005,
+        "p95Ms": 831.5989,
+        "p99Ms": 881.6730000000007,
+        "maxMs": 882.7067999999999,
+        "elapsedSeconds": 10.0547281
+      },
+      "movement": {
+        "count": 23993,
+        "perSecond": 399.8833333333333,
+        "p50Ms": 32.561799999995856,
+        "p90Ms": 49.31049999999959,
+        "p95Ms": 62.52009999999427,
+        "p99Ms": 64.68139999999767,
+        "maxMs": 81.49400000000605,
+        "acknowledged": 23993,
+        "latencySamples": 23993,
+        "skippedTicks": 0,
+        "entityMovePushes": 280200,
+        "pushesPerSecond": 4002.8571428571427,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 1200,
+        "perSecond": 20,
+        "p50Ms": 23.709400000007008,
+        "p90Ms": 50.01880000000165,
+        "p95Ms": 54.635700000002544,
+        "p99Ms": 56.587399999996705,
+        "maxMs": 58.693999999999505,
+        "accepted": 501,
+        "rejected": 699,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 4328,
+        "cpuSystemMs": 2422,
+        "maxRssBytes": 195174400,
+        "rssBytes": 193343488,
+        "heapUsedBytes": 56284056,
+        "heapTotalBytes": 145965056,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 88,
+        "gcCountStart": 198,
+        "gcCountEnd": 286,
+        "gcDurationMs": 35.278400018811226,
+        "gcDurationStartMs": 52.55979999899864,
+        "gcDurationEndMs": 87.83820001780987,
+        "gcDurationDeltaMs": 35.278400018811226,
+        "gcDurationMsPerSecond": 0.5879733336468538,
+        "memorySamples": 16,
+        "rssStartBytes": 136818688,
+        "rssEndBytes": 193843200,
+        "rssGrowthBytes": 57024512,
+        "rssGrowthBytesPerHour": 3154931583.3960876,
+        "rssLastHalfBytesPerHour": 557128869.3654623,
+        "rssLastQuarterBytesPerHour": 2030296004.3549268,
+        "heapStartBytes": 7340368,
+        "heapEndBytes": 47686840,
+        "heapGrowthBytes": 40346472,
+        "heapGrowthBytesPerHour": 2232204263.1667924,
+        "heapLastHalfBytesPerHour": 962870946.6984286,
+        "heapLastQuarterBytesPerHour": 8927550571.584106,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786533184753,
+            "rssBytes": 73441280,
+            "heapUsedBytes": 10431072
+          },
+          {
+            "timestampMs": 1786533189762,
+            "rssBytes": 136818688,
+            "heapUsedBytes": 7340368
+          },
+          {
+            "timestampMs": 1786533194769,
+            "rssBytes": 172478464,
+            "heapUsedBytes": 23880104
+          },
+          {
+            "timestampMs": 1786533199771,
+            "rssBytes": 156741632,
+            "heapUsedBytes": 22784088
+          },
+          {
+            "timestampMs": 1786533204772,
+            "rssBytes": 163155968,
+            "heapUsedBytes": 14449328
+          },
+          {
+            "timestampMs": 1786533209785,
+            "rssBytes": 145510400,
+            "heapUsedBytes": 14682224
+          },
+          {
+            "timestampMs": 1786533214785,
+            "rssBytes": 147599360,
+            "heapUsedBytes": 37986688
+          },
+          {
+            "timestampMs": 1786533219788,
+            "rssBytes": 143020032,
+            "heapUsedBytes": 19193184
+          },
+          {
+            "timestampMs": 1786533224790,
+            "rssBytes": 188907520,
+            "heapUsedBytes": 9539672
+          },
+          {
+            "timestampMs": 1786533229791,
+            "rssBytes": 190570496,
+            "heapUsedBytes": 55657512
+          },
+          {
+            "timestampMs": 1786533234803,
+            "rssBytes": 187658240,
+            "heapUsedBytes": 46946512
+          },
+          {
+            "timestampMs": 1786533239809,
+            "rssBytes": 190664704,
+            "heapUsedBytes": 34080056
+          },
+          {
+            "timestampMs": 1786533244811,
+            "rssBytes": 187953152,
+            "heapUsedBytes": 27123936
+          },
+          {
+            "timestampMs": 1786533249821,
+            "rssBytes": 192212992,
+            "heapUsedBytes": 13823320
+          },
+          {
+            "timestampMs": 1786533254831,
+            "rssBytes": 193843200,
+            "heapUsedBytes": 47682800
+          },
+          {
+            "timestampMs": 1786533254831,
+            "rssBytes": 193843200,
+            "heapUsedBytes": 47686840
+          }
+        ]
+      },
+      "round": 2,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 12,
+            "peakCpuPercent": 38.36,
+            "peakRssBytes": 245768192,
+            "peakV8HeapUsedBytes": 94616168,
+            "cpuTimeMs": 17093,
+            "v8GcCount": 49,
+            "v8GcMs": 37.154,
+            "v8GcCountStart": 29,
+            "v8GcCountEnd": 49,
+            "v8GcCountDelta": 20,
+            "v8GcMsStart": 21.698,
+            "v8GcMsEnd": 37.154,
+            "v8GcMsDelta": 15.456000000000003,
+            "v8GcWindowDurationMs": 60115,
+            "v8GcMsPerSecond": 0.25710721117857444,
+            "queueDepth": 5,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 167,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 2950,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 800,
+            "mailboxOneWayFastPathCalls": 53221,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 221466624,
+            "rssEndBytes": 245768192,
+            "rssGrowthBytes": 24301568,
+            "rssGrowthBytesPerHour": 1746429608.3363276,
+            "rssLastHalfBytesPerHour": 1146573982.7876987,
+            "rssLastQuarterBytesPerHour": 2190283596.5711617,
+            "v8HeapStartBytes": 87294656,
+            "v8HeapEndBytes": 81638512,
+            "v8HeapGrowthBytes": -5656144,
+            "v8HeapGrowthBytesPerHour": -406478189.0046712,
+            "v8HeapLastHalfBytesPerHour": 513487412.0736485,
+            "v8HeapLastQuarterBytesPerHour": -11047972.31725026
+          }
+        ],
+        "peakCpuPercentSum": 38.36,
+        "peakRssBytesSum": 245768192,
+        "peakV8HeapUsedBytesSum": 94616168,
+        "cpuTimeMsSum": 17093,
+        "v8GcCountSum": 49,
+        "v8GcMsSum": 37.154,
+        "v8GcCountDeltaSum": 20,
+        "v8GcMsDeltaSum": 15.456000000000003,
+        "v8GcMsPerSecondSum": 0.25710721117857444,
+        "rssGrowthBytesSum": 24301568,
+        "rssGrowthBytesPerHourSum": 1746429608.3363276,
+        "v8HeapGrowthBytesSum": -5656144,
+        "v8HeapGrowthBytesPerHourSum": -406478189.0046712,
+        "queueDepthSum": 5,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 167,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 2950,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 800,
+        "mailboxOneWayFastPathCallsSum": 53221,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    },
+    {
+      "scenario": "gameplay-full-chain",
+      "label": "all",
+      "players": 200,
+      "setupConcurrency": 16,
+      "warmupSeconds": 10,
+      "durationSeconds": 60,
+      "targetMoveRatePerPlayer": 2,
+      "targetProbeRatePerPlayer": 0,
+      "targetBusinessRatePerPlayer": 0.1,
+      "measurementStartedAtUnixMs": 1786533277023,
+      "measurementEndedAtUnixMs": 1786533337023,
+      "workload": "steady-2hz+business-0.1hz",
+      "setup": {
+        "count": 200,
+        "perSecond": 19.90996078613763,
+        "p50Ms": 805.5230999999999,
+        "p90Ms": 812.3122000000003,
+        "p95Ms": 842.8763,
+        "p99Ms": 866.2152,
+        "maxMs": 873.0526,
+        "elapsedSeconds": 10.0452232
+      },
+      "movement": {
+        "count": 24000,
+        "perSecond": 400,
+        "p50Ms": 32.77399999999761,
+        "p90Ms": 50.401099999995495,
+        "p95Ms": 63.01559999999881,
+        "p99Ms": 68.53349999999773,
+        "maxMs": 354.44630000000325,
+        "acknowledged": 24000,
+        "latencySamples": 24000,
+        "skippedTicks": 0,
+        "entityMovePushes": 279600,
+        "pushesPerSecond": 3994.285714285714,
+        "errors": 0
+      },
+      "probe": {
+        "count": 0,
+        "perSecond": 0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0,
+        "errors": 0
+      },
+      "business": {
+        "count": 1200,
+        "perSecond": 20,
+        "p50Ms": 24.74460000000545,
+        "p90Ms": 223.31070000000182,
+        "p95Ms": 287.01370000000315,
+        "p99Ms": 288.6082999999999,
+        "maxMs": 295.18380000000616,
+        "accepted": 482,
+        "rejected": 718,
+        "transportErrors": 0
+      },
+      "loadGenerator": {
+        "cpuUserMs": 4344,
+        "cpuSystemMs": 2203,
+        "maxRssBytes": 195305472,
+        "rssBytes": 186769408,
+        "heapUsedBytes": 50509240,
+        "heapTotalBytes": 145702912,
+        "v8HeapLimitBytes": 4496293888,
+        "gcCount": 89,
+        "gcCountStart": 201,
+        "gcCountEnd": 290,
+        "gcDurationMs": 42.36190000921488,
+        "gcDurationStartMs": 48.87299993634224,
+        "gcDurationEndMs": 91.23489994555712,
+        "gcDurationDeltaMs": 42.36190000921488,
+        "gcDurationMsPerSecond": 0.706031666820248,
+        "memorySamples": 15,
+        "rssStartBytes": 135680000,
+        "rssEndBytes": 187854848,
+        "rssGrowthBytes": 52174848,
+        "rssGrowthBytesPerHour": 2886841460.715603,
+        "rssLastHalfBytesPerHour": 2534234944.939772,
+        "rssLastQuarterBytesPerHour": -790102474.3795459,
+        "heapStartBytes": 9561016,
+        "heapEndBytes": 41857416,
+        "heapGrowthBytes": 32296400,
+        "heapGrowthBytesPerHour": 1786964219.8450756,
+        "heapLastHalfBytesPerHour": 561289666.860394,
+        "heapLastQuarterBytesPerHour": 840243525.7360752,
+        "memoryTrendSamples": [
+          {
+            "timestampMs": 1786533267023,
+            "rssBytes": 73719808,
+            "heapUsedBytes": 10998824
+          },
+          {
+            "timestampMs": 1786533272025,
+            "rssBytes": 135680000,
+            "heapUsedBytes": 9561016
+          },
+          {
+            "timestampMs": 1786533277025,
+            "rssBytes": 171184128,
+            "heapUsedBytes": 33906312
+          },
+          {
+            "timestampMs": 1786533282029,
+            "rssBytes": 171540480,
+            "heapUsedBytes": 29951968
+          },
+          {
+            "timestampMs": 1786533287038,
+            "rssBytes": 177209344,
+            "heapUsedBytes": 20980952
+          },
+          {
+            "timestampMs": 1786533292046,
+            "rssBytes": 144236544,
+            "heapUsedBytes": 20981464
+          },
+          {
+            "timestampMs": 1786533297051,
+            "rssBytes": 142184448,
+            "heapUsedBytes": 30148672
+          },
+          {
+            "timestampMs": 1786533302062,
+            "rssBytes": 144125952,
+            "heapUsedBytes": 18207272
+          },
+          {
+            "timestampMs": 1786533307069,
+            "rssBytes": 193769472,
+            "heapUsedBytes": 12434152
+          },
+          {
+            "timestampMs": 1786533312070,
+            "rssBytes": 194908160,
+            "heapUsedBytes": 52149144
+          },
+          {
+            "timestampMs": 1786533317084,
+            "rssBytes": 192286720,
+            "heapUsedBytes": 45603496
+          },
+          {
+            "timestampMs": 1786533322098,
+            "rssBytes": 192573440,
+            "heapUsedBytes": 33147976
+          },
+          {
+            "timestampMs": 1786533327109,
+            "rssBytes": 190918656,
+            "heapUsedBytes": 25349352
+          },
+          {
+            "timestampMs": 1786533332115,
+            "rssBytes": 194080768,
+            "heapUsedBytes": 11056960
+          },
+          {
+            "timestampMs": 1786533337089,
+            "rssBytes": 187854848,
+            "heapUsedBytes": 41857416
+          }
+        ]
+      },
+      "round": 3,
+      "serverResources": {
+        "processes": [
+          {
+            "process": "all",
+            "samples": 12,
+            "peakCpuPercent": 48.134,
+            "peakRssBytes": 234274816,
+            "peakV8HeapUsedBytes": 97290088,
+            "cpuTimeMs": 16562,
+            "v8GcCount": 50,
+            "v8GcMs": 43.153,
+            "v8GcCountStart": 26,
+            "v8GcCountEnd": 50,
+            "v8GcCountDelta": 24,
+            "v8GcMsStart": 24.669,
+            "v8GcMsEnd": 43.153,
+            "v8GcMsDelta": 18.483999999999998,
+            "v8GcWindowDurationMs": 60113,
+            "v8GcMsPerSecond": 0.30748756508575514,
+            "queueDepth": 0,
+            "queueCapacity": 4096,
+            "queueMaxDepth": 294,
+            "backpressureWaits": 0,
+            "slowDisconnects": 0,
+            "innerOverloads": 0,
+            "innerTimeouts": 0,
+            "mailboxFastPathCalls": 2950,
+            "mailboxQueuedCalls": 0,
+            "mailboxAsyncCalls": 800,
+            "mailboxOneWayFastPathCalls": 57036,
+            "mailboxOneWayQueuedCalls": 0,
+            "mailboxOneWayAsyncCalls": 0,
+            "mailboxQueuedDepth": 0,
+            "mailboxMaxQueuedDepth": 0,
+            "rssStartBytes": 214777856,
+            "rssEndBytes": 232673280,
+            "rssGrowthBytes": 17895424,
+            "rssGrowthBytesPerHour": 1286206804.0249162,
+            "rssLastHalfBytesPerHour": 661378203.8533783,
+            "rssLastQuarterBytesPerHour": 2944408.945686921,
+            "v8HeapStartBytes": 84956584,
+            "v8HeapEndBytes": 80591088,
+            "v8HeapGrowthBytes": -4365496,
+            "v8HeapGrowthBytesPerHour": -313763488.26066124,
+            "v8HeapLastHalfBytesPerHour": -29184815.98602873,
+            "v8HeapLastQuarterBytesPerHour": -3998136421.7252393
+          }
+        ],
+        "peakCpuPercentSum": 48.134,
+        "peakRssBytesSum": 234274816,
+        "peakV8HeapUsedBytesSum": 97290088,
+        "cpuTimeMsSum": 16562,
+        "v8GcCountSum": 50,
+        "v8GcMsSum": 43.153,
+        "v8GcCountDeltaSum": 24,
+        "v8GcMsDeltaSum": 18.483999999999998,
+        "v8GcMsPerSecondSum": 0.30748756508575514,
+        "rssGrowthBytesSum": 17895424,
+        "rssGrowthBytesPerHourSum": 1286206804.0249162,
+        "v8HeapGrowthBytesSum": -4365496,
+        "v8HeapGrowthBytesPerHourSum": -313763488.26066124,
+        "queueDepthSum": 0,
+        "queueCapacitySum": 4096,
+        "queueMaxDepthSum": 294,
+        "backpressureWaitsSum": 0,
+        "slowDisconnectsSum": 0,
+        "innerOverloadsSum": 0,
+        "innerTimeoutsSum": 0,
+        "mailboxFastPathCallsSum": 2950,
+        "mailboxQueuedCallsSum": 0,
+        "mailboxAsyncCallsSum": 800,
+        "mailboxOneWayFastPathCallsSum": 57036,
+        "mailboxOneWayQueuedCallsSum": 0,
+        "mailboxOneWayAsyncCallsSum": 0,
+        "mailboxQueuedDepthSum": 0,
+        "mailboxMaxQueuedDepthSum": 0
+      },
+      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_window_20260812_110357"
+    }
+  ]
+}
