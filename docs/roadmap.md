@@ -444,6 +444,20 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - Starter固定使用一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss、一个玩家职业和少量技能。额外职业、社交、商城和活动不得在本阶段进入核心样例。
 - 每个完成项必须同时通过all-in-one、split-process、客户端操作和对应的失败/恢复验收；业务压测等Starter链路稳定后再执行。
 
+### Phase 4.7：能力归属与可复用领域契约
+
+状态：第一轮已完成，后续按第二个真实游戏领域验证。
+
+- [x] 写入[能力归属与领域拆分](design/capability-ownership.md)，固定“框架运行时 / 可复用领域契约 / MMORPG领域”三层边界。
+- [x] 将服务端业务目录从`demo`统一为`mmorpg`；生成协议仍保留`server/demo`，作为线协议兼容命名空间。
+- [x] 从通用Numeric中拆出`MoveSpeed`，移动单位换算和位置同步留在MMORPG适配器。
+- [x] 以`ActionDefinition + RewardPlan`作为第一组跨游戏契约试点；`RewardDefinition`仅保留兼容别名，执行器仍属于MMORPG。
+- [x] 拆出Item、Quest、Buff、Combat、Skill的稳定Model容器与数据契约；当前配置、协议、地图和目标选择相关的执行逻辑仍留在MMORPG。
+- [x] 增加`verify:domain-boundaries`对`app/model/domains`的反向依赖做门禁，并重新生成Native/Scene代码。
+- [ ] 第二个真实游戏领域出现后，比较重复的执行语义，再决定哪些Hotfix行为可以进入可复用领域库；不提前制作万能业务框架。
+
+本阶段不包含压力测试，也不改变协议opcode。`.native`输入属于Model契约，修改后必须重新生成并重启Process；Native业务目录当前为`native_data/mmorpg`。
+
 ## Phase 5：生产工程化
 
 计划：

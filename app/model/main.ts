@@ -4,7 +4,7 @@ import { HotfixSystem } from "../core/hotReload/HotfixSystem";
 import type { HotfixManifest } from "../core/hotReload/contracts";
 import { ProcessRuntime, type ProcessUpdateResult } from "../core/process/ProcessRuntime";
 import type { ProcessRuntimeConfig } from "../core/process/types";
-import { NativeData } from "./demo/native/NativeData";
+import { NativeData } from "./mmorpg/native/NativeData";
 import {
   cancelHostSceneOperations,
   completeHostSceneOperation,

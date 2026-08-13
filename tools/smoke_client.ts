@@ -52,7 +52,7 @@ import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
 import type { CellMovementState } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
 import { GameConfigs, QuestStatus, SpatialMode } from "../client_sdk/typescript/Generated/Config";
-import { NumericType } from "../app/model/demo/numeric/NumericType";
+import { NumericType } from "../app/model/mmorpg/numeric/NumericType";
 import { encodePacket } from "../app/core/public";
 import {
   M2S_CreateDynamicMapCodec,

@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。Demo 已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；Phase 4将继续建设Rust AOI、3D导航、持久化和MMORPG业务样例。
+当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。MMORPG领域样例已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；可复用领域契约与MMORPG适配边界见[能力归属表](docs/design/capability-ownership.md)。
 
 持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。当前`v0.4.0`已经通过Rust Host连接池接入Player Snapshot Repository、事务提交和回执查询，并完成TiangZ重启恢复、任务GrantItem奖励与UseItem消费幂等验收；主工程只依赖协议、客户端SDK和业务Repository，不直接连接Redis/PostgreSQL。Wallet、Trade、周期快照、批量恢复和生产高可用仍属于Phase 4.5后续工作，运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
 
@@ -49,10 +49,11 @@ app/core/public.ts           业务唯一 Stable Core API 入口
 app/core/process/            ProcessRuntime、EntryScene、Scene 路由
 app/core/runtime/            EntityRoot、动态 Scene、Session、Unit、Component、mailbox
 app/model/                   不可热更的状态、稳定类型与启动结构
-app/model/demo/              MMORPG Demo 的 Scene、Entity、Component 状态
+app/model/domains/             跨游戏可复用的稳定领域契约与Component容器
+app/model/mmorpg/              MMORPG 领域的 Scene、Entity、Component 状态与适配器
 app/model/bench/             仅由 build:bench 装配的稳定基准结构
 app/hotfix/                  可热更的 Handler 与领域方法实现
-app/hotfix/demo/             Demo 可热更行为
+app/hotfix/mmorpg/             MMORPG 领域的可热更行为
 app/hotfix/bench/            仅由 build:bench 装配的压测 Handler
 app/generated/               服务端与 Native 自动生成代码
 app/generated/bootstrap/     自动生成的 Model Scene 启动入口
@@ -60,7 +61,7 @@ app/generated/hotfix/        自动生成的 Hotfix Handler/补丁入口
 proto/                       protobuf 源文件
 game_config/                 Luban Excel游戏配置唯一源文件
 native_data/core/            框架内置 Rust Entity op 原型
-native_data/demo/            Demo Entity 与粗粒度 Native op 原型
+native_data/mmorpg/           MMORPG Entity 与粗粒度 Native op 原型
 navigation/maps/             3D导航源网格、冷烘焙清单与生成资源
 configs/<environment>/       环境启动配置
 client_sdk/typescript/       TypeScript Client SDK 唯一源码

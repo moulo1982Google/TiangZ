@@ -64,8 +64,8 @@ component.updateHz = 7;
 `CombatComponent`是玩家Unit上的稳定状态容器，Hotfix实现位于：
 
 ```text
-app/model/demo/combat/CombatComponent.ts
-app/hotfix/demo/combat/CombatComponentSystem.ts
+app/model/mmorpg/combat/CombatComponent.ts
+app/hotfix/mmorpg/combat/CombatComponentSystem.ts
 ```
 
 状态：

@@ -30,10 +30,10 @@ for (const [file, expected] of cases) {
 }
 
 const modelFiles = [
-  "app/model/demo/map/PlayerUnit.ts",
-  "app/model/demo/login/LoginComponent.ts",
-  "app/model/demo/item/ItemComponent.ts",
-  "app/model/demo/numeric/NumericComponent.ts",
+  "app/model/mmorpg/map/PlayerUnit.ts",
+  "app/model/mmorpg/login/LoginComponent.ts",
+  "app/model/mmorpg/item/ItemComponent.ts",
+  "app/model/mmorpg/numeric/NumericComponent.ts",
 ];
 for (const file of modelFiles) {
   const content = await readFile(path.join(root, file), "utf8");

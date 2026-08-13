@@ -406,7 +406,7 @@ flowchart LR
 业务代码只需要从Unit所属MapScene取得`MapComponent`：
 
 ```ts
-import { MapComponent } from "../../../model/demo/map/MapComponent";
+import { MapComponent } from "../../../model/mmorpg/map/MapComponent";
 
 const map = unit.DomainScene().GetComponent(MapComponent);
 
@@ -416,11 +416,11 @@ const map = unit.DomainScene().GetComponent(MapComponent);
 
 Demo中的参考位置：
 
-- [`MapComponent.Broadcast/Audience`](../../app/model/demo/map/MapComponent.ts)：业务广播和AOI受众的公开入口。
-- [`MapAoiComponent.ObserversOf/VisibleSubjectsOf`](../../app/model/demo/map/MapAoiComponent.ts)：两个明确方向的Audience工厂。
-- [`C2M_UseItemHandler`](../../app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts)：Handler只把协议值交给ItemComponent。
-- [`ItemComponent.UseItemTransactional`](../../app/hotfix/demo/item/ItemComponentSystem.ts)：事务确认后发布只通知自己的立即道具事件。
-- [`MapComponent.PublishItemChanged`](../../app/model/demo/map/MapComponent.ts)：现有“只通知自己、不可覆盖”的完整Demo。
+- [`MapComponent.Broadcast/Audience`](../../app/model/mmorpg/map/MapComponent.ts)：业务广播和AOI受众的公开入口。
+- [`MapAoiComponent.ObserversOf/VisibleSubjectsOf`](../../app/model/mmorpg/map/MapAoiComponent.ts)：两个明确方向的Audience工厂。
+- [`C2M_UseItemHandler`](../../app/hotfix/mmorpg/mapHost/handlers/C2M_UseItemHandler.ts)：Handler只把协议值交给ItemComponent。
+- [`ItemComponent.UseItemTransactional`](../../app/hotfix/mmorpg/item/ItemComponentSystem.ts)：事务确认后发布只通知自己的立即道具事件。
+- [`MapComponent.PublishItemChanged`](../../app/model/mmorpg/map/MapComponent.ts)：现有“只通知自己、不可覆盖”的完整Demo。
 
 业务不要从Handler直接导入`NativeData`或`NativeOps`。这些入口属于Map框架层，不是“更快的业务API”。
 
@@ -431,8 +431,8 @@ Demo中的参考位置：
 ```ts
 import { ClientBroadcasts } from "../../../generated/model/server/demo/protocol/broadcastDescriptors";
 import type { BuffPublicView } from "../../../generated/model/server/demo/protocol/messages";
-import { MapComponent } from "../../../model/demo/map/MapComponent";
-import type { PlayerUnit } from "../../../model/demo/map/PlayerUnit";
+import { MapComponent } from "../../../model/mmorpg/map/MapComponent";
+import type { PlayerUnit } from "../../../model/mmorpg/map/PlayerUnit";
 
 export async function PublishBuffAdded(
   player: PlayerUnit,
@@ -450,7 +450,7 @@ export async function PublishBuffAdded(
 }
 ```
 
-`ObserversOf(subject)`表示“当前谁能看见这个Subject”。这是Buff外观、施法动作、头顶称号等最常用方向。未来Buff数据实体建议放在`app/model/demo/buff/`，生命周期System放在`app/hotfix/demo/buff/`；Handler只调用`unit.GetComponent(BuffComponent).Add(...)`，不要在Handler里拼AOI受众。
+`ObserversOf(subject)`表示“当前谁能看见这个Subject”。这是Buff外观、施法动作、头顶称号等最常用方向。未来Buff数据实体建议放在`app/model/mmorpg/buff/`，生命周期System放在`app/hotfix/mmorpg/buff/`；Handler只调用`unit.GetComponent(BuffComponent).Add(...)`，不要在Handler里拼AOI受众。
 
 ### Buff移除
 
@@ -525,7 +525,7 @@ await map.Broadcast.Publish(
 
 ```ts
 import type { Unit } from "../../../core/public";
-import type { IAoiVisibilityFilter } from "../../../model/demo/map/MapAoiComponent";
+import type { IAoiVisibilityFilter } from "../../../model/mmorpg/map/MapAoiComponent";
 
 export class PhaseVisibilityFilter implements IAoiVisibilityFilter {
   CanObserve(observer: Unit<any[]>, subject: Unit<any[]>): boolean {
@@ -554,7 +554,7 @@ await map.PublishVisibilityChanges(changes);
 
 ### 道具变化：不使用AOI的现有Demo
 
-[`C2M_UseItemHandler`](../../app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts)当前链路是：
+[`C2M_UseItemHandler`](../../app/hotfix/mmorpg/mapHost/handlers/C2M_UseItemHandler.ts)当前链路是：
 
 ```text
 C2M_UseItemHandler.Handle
@@ -578,11 +578,11 @@ return unit.GetComponent(ItemComponent).UseItemTransactional(
 
 ### 移动：业务不要手工广播
 
-[`C2M_MoveHandler`](../../app/hotfix/demo/mapHost/handlers/C2M_MoveHandler.ts)只提交移动意图。后续权威推进、跨Grid判断、受众分组和Movement广播都由`MapComponent.Update()`与Rust完成。Handler中禁止调用`ObserversOf()`后再手工发送`EntityMove`，否则会产生两套位置广播。
+[`C2M_MoveHandler`](../../app/hotfix/mmorpg/mapHost/handlers/C2M_MoveHandler.ts)只提交移动意图。后续权威推进、跨Grid判断、受众分组和Movement广播都由`MapComponent.Update()`与Rust完成。Handler中禁止调用`ObserversOf()`后再手工发送`EntityMove`，否则会产生两套位置广播。
 
 ### 创建和销毁Unit：业务不要直接Attach/Detach
 
-玩家进入由[`MapComponent.PlayerEntered/PumpPlayerEntries`](../../app/model/demo/map/MapComponent.ts)统一排队Attach；玩家离开由`RemovePlayer()`先Detach再Dispose。普通业务创建怪物时也应该通过地图Unit工厂和统一生命周期入口，而不是直接调用：
+玩家进入由[`MapComponent.PlayerEntered/PumpPlayerEntries`](../../app/model/mmorpg/map/MapComponent.ts)统一排队Attach；玩家离开由`RemovePlayer()`先Detach再Dispose。普通业务创建怪物时也应该通过地图Unit工厂和统一生命周期入口，而不是直接调用：
 
 ```ts
 // 错误示例：业务层不得调用Native AOI op。
@@ -679,12 +679,12 @@ sequenceDiagram
 | `src/aoi.rs` | `AoiWorld`、Flat Grid、热点位图、关系矩阵、迟滞和Audience分组。 |
 | `src/native_data.rs` | AOI Native Op、权威移动推进、脏位置刷新、protobuf与Gate路由编码。 |
 | `src/generated/native_ops.rs` | 生成的Rust Op注册表，业务不手改。 |
-| `app/model/demo/native/NativeData.ts` | TS到Rust的稳定门面和二进制结果解析。 |
+| `app/model/mmorpg/native/NativeData.ts` | TS到Rust的稳定门面和二进制结果解析。 |
 | `app/generated/model/native/NativeOps.ts` | 生成的TS Native Op绑定，业务不手改。 |
-| `app/model/demo/map/MapAoiComponent.ts` | Attach/Detach、过滤器、Invalidate和业务Audience入口。 |
-| `app/model/demo/map/MapComponent.ts` | 入图队列、固定Tick、Movement与AoiDelta发布顺序。 |
+| `app/model/mmorpg/map/MapAoiComponent.ts` | Attach/Detach、过滤器、Invalidate和业务Audience入口。 |
+| `app/model/mmorpg/map/MapComponent.ts` | 入图队列、固定Tick、Movement与AoiDelta发布顺序。 |
 | `app/core/broadcast/BroadcastHub.ts` | latest、event、single-flight和背压控制。 |
-| `app/model/demo/broadcast/SceneBroadcastTransport.ts` | Map到Gate的内部批量传输。 |
+| `app/model/mmorpg/broadcast/SceneBroadcastTransport.ts` | Map到Gate的内部批量传输。 |
 | `proto/OuterMessage_C_10001.proto` | `G2C_AoiDelta`、Movement、Numeric等客户端协议。 |
 | `game_config/Datas/` | Map、AOI范围和同步档位Cold配置。 |
 

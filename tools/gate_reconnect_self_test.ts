@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { SceneConfig } from "../app/core/process/types";
-import { GatePlayerRoute } from "../app/model/demo/gate/GatePlayerRoute";
-import { SelectStickyGate } from "../app/model/demo/login/GateSelector";
+import { GatePlayerRoute } from "../app/model/mmorpg/gate/GatePlayerRoute";
+import { SelectStickyGate } from "../app/model/mmorpg/login/GateSelector";
 
 void main();
 

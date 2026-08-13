@@ -9,7 +9,7 @@
 
 ## 2026-08-13：通用内核与首个领域边界门禁
 
-- 确认当前代码不需要为“通用游戏框架”进行大规模重构：`app/core`已经承载运行时语义，MMORPG能力主要位于`app/model/demo`、`app/hotfix/demo`和`src/game`。
+- 确认当前代码不需要为“通用游戏框架”进行大规模重构：`app/core`已经承载运行时语义，MMORPG能力主要位于`app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`。
 - 新增`npm run verify:domain-boundaries`，检查Core不得依赖Demo/Hotfix、Model不得反向依赖Hotfix或Core内部文件、Rust游戏模块不得绕过`native_data`访问Runtime宿主模块。
 - 暂时保留`SceneConfig.staticMapIds/acceptDynamicMaps`作为MapHost可选部署能力描述，避免把一次配置迁移误做成通用性重构；等第二个真实领域出现后再用实际重复需求调整。
 - 本轮不运行高CPU或长时间压测；该门禁属于静态依赖检查。
@@ -868,7 +868,7 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - `dotnet build client_sdk/csharp/TiangZ.Client.csproj`已通过，0警告、0错误；Unity批处理复核受当前编辑器已占用同一工程影响，未强行关闭用户进程，需关闭编辑器后再做独占批处理验收。
 ## 2026-08-04：怪物基础行为树与两米普通攻击
 
-- 怪物AI在`app/hotfix/demo/monster/MonsterBehaviorTree.ts`增加局部行为树，仅包含待机、追击、攻击和攻击冷却停留；它不提供通用AI编辑器，不创建MonsterActor、长期Timer或独立V8。
+- 怪物AI在`app/hotfix/mmorpg/monster/MonsterBehaviorTree.ts`增加局部行为树，仅包含待机、追击、攻击和攻击冷却停留；它不提供通用AI编辑器，不创建MonsterActor、长期Timer或独立V8。
 - `MonsterComponentSystem`继续负责目标查询、导航意图、攻击间隔、Numeric扣血和死亡；行为树只选择动作。该历史版本的玩家与怪物普通攻击距离统一限制为最大2米，后续已改为分别读取`PlayerConfig.attack_range`和`MonsterConfig.attack_range`。
 - 没有新增技能、Buff、仇恨表、巡逻路点、战斗事件协议或Rust业务模块；新增纯逻辑自测`npm run test:monster-behavior`。
 
@@ -998,3 +998,11 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 尸体清理增加在途防重入；1Hz清理与“全部普通掉落领取完成”同时触发时只允许一个任务移除旧Unit，并先完成AOI Leave再创建新Unit。
 - 客户端拾取重试复用同一`operationId`；即使旧尸体已经离开，也只能读取已提交回执，不能重新生成掉落。
 - 修正普通运行时烟测：平A验证提前到活怪阶段，击杀后只验证`alive=false`尸体在短窗口内继续留在AOI，不再错误等待15秒内复活有掉落的尸体。
+
+# 2026-08-13：能力归属与可复用领域契约第一轮
+
+- 新增[能力归属与领域拆分](design/capability-ownership.md)，把框架运行时、跨游戏稳定契约和MMORPG具体适配明确分成三层。
+- 服务端业务目录从`app/model/demo`、`app/hotfix/demo`统一迁移到`app/model/mmorpg`、`app/hotfix/mmorpg`；`native_data/demo`迁移到`native_data/mmorpg`并重新生成Native绑定。持久化`namespace demo`和Native ABI `namespace native`保持稳定，避免目录迁移改变存储键。
+- 通用Model新增`domains`层，拆出Numeric、ActionDefinition、RewardPlan、Item、Quest、Buff、Combat和Skill的稳定数据/生命周期容器；MMORPG配置、协议、地图、目标选择和执行器继续留在MMORPG适配层。
+- Numeric的`MoveSpeed`、米/秒到毫米/秒换算和位置同步从通用数值表移到`mmorpg/numeric/MovementNumeric`；`RewardDefinition`改为`RewardPlan`兼容别名。
+- `verify:domain-boundaries`增加可复用domains不得依赖MMORPG适配器和生成协议的门禁；通过Native/Scene codegen、TypeScript和边界检查。未执行CPU压力测试。

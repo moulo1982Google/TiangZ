@@ -34,7 +34,7 @@ MapComponent.Update() / 20Hz
 
 字段继承顺序、字段编号、生成名称与 Component 生命周期来自共享 Entity API 投影。VS Code Hover 和 codegen-core 共用这份投影，禁止在主工程生成器或插件中重新实现规则。
 
-生成器认识 Entity、继承、字段、`@typeId`、`@component` 和 Native op 签名。`NativeUnitRef` 与 `NativeItemRef` 都通过生成的 `NativeOps` 创建、销毁和访问数值字段。框架通用 Entity ABI 位于 `native_data/core/EntityOps.native`；移动输入、地图批处理与 protobuf 投影属于 Demo，ABI 位于 `native_data/demo/MapOps.native`，TS facade 和 Rust Extension 仍由 codegen 聚合生成。业务不得把自定义 op 塞回 Core 原型。
+生成器认识 Entity、继承、字段、`@typeId`、`@component` 和 Native op 签名。`NativeUnitRef` 与 `NativeItemRef` 都通过生成的 `NativeOps` 创建、销毁和访问数值字段。框架通用 Entity ABI 位于 `native_data/core/EntityOps.native`；移动输入、地图批处理与 protobuf 投影属于 MMORPG，ABI 位于 `native_data/mmorpg/MapOps.native`，TS facade 和 Rust Extension 仍由 codegen 聚合生成。业务不得把自定义 op 塞回 Core 原型。
 
 字段可以使用`@hot`或`@cold`声明访问温度。codegen生成`NativeEntityPools`、每种具体Entity的独立Pool，以及存在冷热标记时的`XxxHotData`、`XxxColdData`与访问器。未标记字段按冷数据处理。冷热标记属于Native schema和Model，不能热更；修改后必须完整生成、构建并重启Process。
 

@@ -39,7 +39,7 @@ const hp = numeric[NumericType.CurrentHp];
 numeric[NumericType.CurrentHp] += 1n;
 ```
 
-开发者在`app/model/demo/numeric/NumericType.ts`维护稳定的整数类型。`NumericComponent`只保存Unit的Native handle；真正的`NumericType -> i64`值表和dirty表都在Rust。TS与生成SDK使用`bigint`，因此字面量必须写成`1n`，不会在JavaScript的安全整数边界丢失精度。新增NumericType会改变Model，必须完整构建并重启Process。
+开发者在`app/model/mmorpg/numeric/NumericType.ts`维护稳定的整数类型。`NumericComponent`只保存Unit的Native handle；真正的`NumericType -> i64`值表和dirty表都在Rust。TS与生成SDK使用`bigint`，因此字面量必须写成`1n`，不会在JavaScript的安全整数边界丢失精度。新增NumericType会改变Model，必须完整构建并重启Process。
 
 ## 派生属性与依赖传播
 

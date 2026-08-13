@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { Entity } from "../app/core/runtime/entities";
 import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
 import type { HotfixManifest } from "../app/core/hotReload/contracts";
-import { NumericType } from "../app/model/demo/numeric/NumericType";
-import type { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
-import { DamageSchool } from "../app/model/demo/combat/CombatComponent";
+import { NumericType } from "../app/model/mmorpg/numeric/NumericType";
+import type { NumericComponent } from "../app/model/mmorpg/numeric/NumericComponent";
+import { DamageSchool } from "../app/model/mmorpg/combat/CombatComponent";
 
 /**
  * 这个测试只验证CombatComponent的领域契约，不启动网络和地图Runtime。
@@ -25,7 +25,7 @@ void main();
 async function main(): Promise<void> {
   HotfixSystem.Begin(testHotfixManifest());
   const { CombatComponentSystem } = await import(
-    "../app/hotfix/demo/combat/CombatComponentSystem"
+    "../app/hotfix/mmorpg/combat/CombatComponentSystem"
   );
   HotfixSystem.Commit();
 

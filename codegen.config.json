@@ -1,8 +1,8 @@
 {
   "serverBundles": {
-    "sceneSearchRoots": ["app/model/demo"],
-    "handlerSearchRoots": ["app/hotfix/demo"],
-    "patchSearchRoots": ["app/hotfix/demo"],
+    "sceneSearchRoots": ["app/model/mmorpg"],
+    "handlerSearchRoots": ["app/hotfix/mmorpg"],
+    "patchSearchRoots": ["app/hotfix/mmorpg"],
     "benchHandlerSearchRoots": ["app/hotfix/bench"],
     "serverProtocolSearchRoots": ["app/generated/model/server/demo"]
   },

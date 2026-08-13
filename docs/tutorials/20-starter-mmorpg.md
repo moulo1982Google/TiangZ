@@ -36,10 +36,10 @@ npm run starter:character-smoke
 
 ## 业务入口在哪里
 
-Starter 的稳定状态位于 `app/model/demo`，可热更行为位于 `app/hotfix/demo`：
+Starter 的稳定状态位于 `app/model/mmorpg`，可热更行为位于 `app/hotfix/mmorpg`：
 
 ```text
-app/model/demo/
+app/model/mmorpg/
   scenes/       Gate、MapHost、MapManager
   map/          地图和玩家进入、传送、生命周期
   monster/      Monster Unit 和地图刷怪状态
@@ -50,7 +50,7 @@ app/model/demo/
   quest/        Quest 状态、目标索引和任务快照
   persistence/  Player Snapshot 与 DBProxy边界
 
-app/hotfix/demo/
+app/hotfix/mmorpg/
   mapHost/handlers/  网络协议薄适配
   monster/           怪物行为和受击规则
   skill/             技能执行、Action和命中效果
@@ -163,13 +163,13 @@ await flow.enterGame(
 
 如果已有角色目录，先从 `S2C_Login.characters` 选择一个 `characterId`，再把它放进 `C2S_Login`。不传时，Demo 为兼容旧客户端选择目录中的第一个角色；新业务界面应明确让玩家选择，不要依赖默认顺序。
 
-角色目录由 `app/model/demo/login/CharacterRepository.ts` 管理。配置了 DBProxy 时，它使用版本号和幂等重试保存；没有 DBProxy 时使用进程内目录，只能证明登录、创建、选角和路由链路，重启后恢复必须使用 DBProxy 验收。跨 MapHost 传送时，业务仍只携带 `characterId` 和传送快照，目标地图会接管运行时 `unitId`，不需要为静态地图和动态副本写两套角色代码。
+角色目录由 `app/model/mmorpg/login/CharacterRepository.ts` 管理。配置了 DBProxy 时，它使用版本号和幂等重试保存；没有 DBProxy 时使用进程内目录，只能证明登录、创建、选角和路由链路，重启后恢复必须使用 DBProxy 验收。跨 MapHost 传送时，业务仍只携带 `characterId` 和传送快照，目标地图会接管运行时 `unitId`，不需要为静态地图和动态副本写两套角色代码。
 
 ## 推荐的开发顺序
 
 1. 在 `game_config/` 修改技能、怪物、道具或任务数据；表结构变化需要完整生成和重启。
-2. 在 `app/model/demo/` 增加稳定状态、组件和协议需要的类型。
-3. 在 `app/hotfix/demo/` 增加可以热更的规则、Handler和事件处理。
+2. 在 `app/model/mmorpg/` 增加稳定状态、组件和协议需要的类型。
+3. 在 `app/hotfix/mmorpg/` 增加可以热更的规则、Handler和事件处理。
 4. 修改 `proto/` 后执行协议生成；不要手改 `app/generated` 或客户端 Generated 文件。
 5. 执行对应的确定性自测，再跑 `npm run test:runtime`。
 6. 使用 Cocos3D 操作 Starter 主链，最后做重启恢复和重复请求验收。

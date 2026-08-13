@@ -6,7 +6,7 @@
 
 1. 执行 `git status --short`，保留用户已有修改、未跟踪文件和本地配置，不得擅自还原、删除或覆盖。
 2. 先判断请求属于业务、协议、客户端、框架、Rust Runtime、生成器还是性能工具。
-3. 业务需求先查 `docs/patterns` 并明确所有者、Entity形态、生命周期、Audience和同步语义，再查找 `app/model/demo` 中最接近的状态定义和 `app/hotfix/demo` 中最接近的行为实现。
+3. 业务需求先查 `docs/patterns` 和 [能力归属表](docs/design/capability-ownership.md)，明确所有者、Entity形态、生命周期、Audience和同步语义，再查找 `app/model/domains` 中可复用的稳定契约，以及 `app/model/mmorpg`、`app/hotfix/mmorpg` 中最接近的领域适配实现。
 4. 当前事实的可信顺序是：运行中的代码与测试 > `README.md`、`docs/tutorials`、`docs/reference`、`docs/design/maintainer-guide.md` > `docs/roadmap.md` > 历史 `phase*_plan/acceptance` 和旧性能报告。
 5. 用户说“讨论”“先看”或“先别改”时，只检查和说明，不修改文件。
 
@@ -31,7 +31,8 @@ Machine
 
 | 路径 | 职责 | 业务需求默认是否修改 |
 |---|---|---|
-| `app/model` | 不可热更的Scene、Entity、Component状态、稳定类型和启动结构 | 需要新增状态或类型时；修改后必须重启Process |
+| `app/model/domains` | 跨游戏可复用的稳定领域契约、ChildEntity和Component容器 | 只有多个领域的稳定语义已经验证后才扩展 |
+| `app/model/mmorpg` | MMORPG不可热更的Scene、Entity、Component状态和适配器 | 需要新增MMORPG状态或类型时；修改后必须重启Process |
 | `app/hotfix` | 可热更的Handler和领域方法实现 | 普通服务端行为需求默认修改 |
 | `proto` | 协议源文件 | 需要新消息时 |
 | `client_demo/cocos_client2D_3.8.6/assets/scripts/Demo` | Cocos业务和表现 | 需要客户端行为时 |
@@ -46,7 +47,7 @@ Machine
 
 如果业务可以通过现有Scene、Actor、Component、协议和广播能力完成，不得为了该业务新增Core抽象或Rust特殊分支。确实缺少通用能力时，先说明现有机制为什么无法表达、影响范围和最小扩展方案，再修改框架。
 
-当前MMORPG示例不是Core的定义：`app/model/demo`、`app/hotfix/demo`和`src/game`是领域层；AOI、MapHost、NavMesh、怪物、任务、技能和战斗规则必须留在领域层。`app/core`只承载运行时语义。修改分层入口后运行`npm run verify:domain-boundaries`，不要用新的转发层绕过边界。
+当前MMORPG示例不是Core的定义：`app/model/domains`是跨游戏的稳定契约层，`app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`是具体领域层；AOI、MapHost、NavMesh、怪物、NPC、目标选择和地图技能调度必须留在MMORPG领域。`app/core`只承载运行时语义。修改分层入口后运行`npm run verify:domain-boundaries`，不要用新的转发层绕过边界。详细规则见[能力归属表](docs/design/capability-ownership.md)。
 
 Developer Tools的设计向导、`@tiangz`、`tiangz-design`和MCP只能提供设计建议。AI解释不能覆盖确定性规则，也不能替代代码、项目检查、生成锁与测试。
 

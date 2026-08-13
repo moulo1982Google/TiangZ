@@ -20,10 +20,10 @@ import {
 } from "../app/generated/model/server/demo/protocol/messages";
 import { MsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
 import { StateReplicationSystem } from "../app/core/replication";
-import { SceneBroadcastTransport } from "../app/model/demo/broadcast/SceneBroadcastTransport";
+import { SceneBroadcastTransport } from "../app/model/mmorpg/broadcast/SceneBroadcastTransport";
 import type { SceneMessageHelper } from "../app/core/process/SceneMessageHelper";
-import { MapClientRouteResolver } from "../app/model/demo/broadcast/MapClientRouteResolver";
-import type { LocationProxy } from "../app/model/demo/location/LocationProxy";
+import { MapClientRouteResolver } from "../app/model/mmorpg/broadcast/MapClientRouteResolver";
+import type { LocationProxy } from "../app/model/mmorpg/location/LocationProxy";
 
 interface ControlledSend {
   readonly audience: BroadcastAudience;

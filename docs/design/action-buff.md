@@ -42,13 +42,13 @@ BuffComponent
 ## 二、目录对应关系
 
 ```text
-app/model/demo/action/ActionType.ts       # 稳定Action类型和参数形状
-app/model/demo/buff/Buff.ts               # Buff数据形状、传送值快照、ChildEntity
-app/model/demo/buff/BuffComponent.ts      # Buff集合能力边界
-app/hotfix/demo/action/ActionExecutor.ts  # Action解释与组件路由
-app/hotfix/demo/item/ItemUseTransaction.ts# UseItem纯数据计划、回执和恢复
-app/hotfix/demo/buff/BuffSystem.ts         # 单个Buff的Awake、Tick、Destroy
-app/hotfix/demo/buff/BuffComponentSystem.ts# 添加、移除、传送、AOI事件
+app/model/mmorpg/action/ActionType.ts       # 稳定Action类型和参数形状
+app/model/mmorpg/buff/Buff.ts               # Buff数据形状、传送值快照、ChildEntity
+app/model/mmorpg/buff/BuffComponent.ts      # Buff集合能力边界
+app/hotfix/mmorpg/action/ActionExecutor.ts  # Action解释与组件路由
+app/hotfix/mmorpg/item/ItemUseTransaction.ts# UseItem纯数据计划、回执和恢复
+app/hotfix/mmorpg/buff/BuffSystem.ts         # 单个Buff的Awake、Tick、Destroy
+app/hotfix/mmorpg/buff/BuffComponentSystem.ts# 添加、移除、传送、AOI事件
 game_config/Datas/ItemConfig.xlsx          # 道具使用效果
 game_config/Datas/BuffConfig.xlsx          # Buff生命周期和Action配置
 game_config/Datas/SkillConfig.xlsx         # 技能时间线和目标关系
@@ -68,7 +68,7 @@ return unit.GetComponent(ItemComponent).UseItemTransactional(
 );
 ```
 
-正式入口位于`app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts`，事务计划与回执位于`app/hotfix/demo/item/ItemUseTransaction.ts`。道具消耗是不可覆盖事实，使用后的HP/Numeric是可覆盖状态，Buff添加/删除是不可覆盖生命周期事件。
+正式入口位于`app/hotfix/mmorpg/mapHost/handlers/C2M_UseItemHandler.ts`，事务计划与回执位于`app/hotfix/mmorpg/item/ItemUseTransaction.ts`。道具消耗是不可覆盖事实，使用后的HP/Numeric是可覆盖状态，Buff添加/删除是不可覆盖生命周期事件。
 
 当前药品和技能共享玩家GCD；药品自身CD按`ItemConfigId`存储。`ItemComponent`先规划Inventory、CD和效果，DBProxy确认后再无await统一提交，不能拆成“先扣除、稍后保存”或“先执行Action、失败再补偿”。GCD和药品CD都会进入跨地图快照，客户端快捷栏只根据服务端返回的deadline绘制倒计时，不能作为权威判定。
 

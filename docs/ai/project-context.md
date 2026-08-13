@@ -4,7 +4,7 @@
 
 维护契约：任何架构、目录边界、数据所有权、协议语义或业务开发流程的设计变更，都必须同时更新本文和[AI业务开发手册](business-development-manual.md)。设计改动未同步这两份文档，视为尚未完成。
 
-更新时间：2026-08-10。
+更新时间：2026-08-13。
 
 ## 普通Entity持久化生成
 
@@ -47,11 +47,23 @@ TypeScript仍是默认业务语言；开发者明确选择Rust实现的稳定、
 
 ### 通用内核与首个领域
 
-TiangZ的内核不是“MMORPG内核”，而是先用MMORPG验证的通用运行时。`app/core`负责Process、Scene、Actor、Component、mailbox、生命周期、协议路由、热更屏障和宿主边界；它不拥有AOI、地图、NavMesh、怪物、任务、技能或战斗规则。当前这些能力位于`app/model/demo`、`app/hotfix/demo`和`src/game`，是第一个领域的可读实现。
+TiangZ的内核不是“MMORPG内核”，而是先用MMORPG验证的通用运行时。`app/core`负责Process、Scene、Actor、Component、mailbox、生命周期、协议路由、热更屏障和宿主边界；它不拥有AOI、地图、NavMesh、怪物、任务、技能或战斗规则。当前这些能力位于`app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`，是第一个领域的可读实现。
 
 这不是现在就抽象第二套游戏的理由。只有第二个领域真正接入后，才根据重复的稳定需求调整边界。当前代码只做三项约束：Core不能依赖Demo/Hotfix，Model不能反向依赖Hotfix或Core内部文件，Rust `src/game`不能绕过`native_data`访问宿主Transport/Process。`npm run verify:domain-boundaries`把这些规则变成门禁。
 
 `SceneConfig`中的`staticMapIds`和`acceptDynamicMaps`是当前MapHost的可选部署能力描述，不是Core执行地图规则；0.4.x保留它们以避免把配置迁移误当成通用性工作。第二个领域需要复用同一Runtime时，再根据实际冲突把它们迁移到领域配置扩展，不提前引入无类型的万能`extensions`。
+
+### 三层能力归属与领域契约
+
+当前代码把能力分成三层，完整表格见[能力归属与领域拆分](../design/capability-ownership.md)：
+
+1. `app/core`和`src`是框架运行时，只负责Process、Scene、Actor、Component、mailbox、Transport、Hotfix屏障和Native Store。
+2. `app/model/domains`是可复用领域契约层，当前承载Numeric、ActionDefinition、RewardPlan、Item、Quest、Buff、Combat和Skill的稳定状态形状。它不能依赖MMORPG配置、协议、地图或生成Native句柄。
+3. `app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`是第一个具体领域，承载AOI、MapHost、NavMesh、移动、怪物、NPC、目标选择、技能地图调度和协议/配置适配。
+
+本轮已完成`demo -> mmorpg`的服务端业务目录重命名；`native_data/demo`也已改为`native_data/mmorpg`并重新生成Native代码。`.native`中的`namespace demo/native`保留为持久化schema和Native ABI标识，不能随目录整理静默修改。生成协议仍保留`server/demo`和客户端SDK的`Model/demo`路径，因为它们是已发布线协议命名空间，重命名会构成协议兼容性变更。`ActionDefinition + RewardPlan`是第一组跨游戏试点：MMORPG继续在`app/hotfix/mmorpg`执行Action和奖励，`RewardDefinition`只作为旧代码兼容别名，不把当前执行器误宣称为通用框架能力。
+
+Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/MovementNumeric.ts`；米/秒到Rust毫米/秒以及写入后同步位置，属于MMORPG移动适配。Item、Quest、Buff、Combat、Skill已先拆出稳定Model容器和数据契约，依赖当前配置、协议、PlayerUnit或Map的执行逻辑仍留在MMORPG适配层。第二个真实游戏领域出现后，才根据重复实现继续抽取执行代码。
 
 开发期可见机器人位于`tools/walk_robots.ts`，只使用正式TypeScript SDK完成登录、进图、Ping和Move。机器人是外部测试客户端，不得为它在Core、Demo Handler或Map业务中增加专用分支。
 
@@ -296,11 +308,11 @@ Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`Broa
 app/core/                    TypeScript框架
 app/core/public.ts           业务唯一Stable Core API入口
 app/model/                   不可热更的状态、稳定类型与启动结构
-app/model/demo/              当前MMORPG演示的稳定类型和状态
+app/model/mmorpg/              当前MMORPG演示的稳定类型和状态
 app/model/bench/             仅由build:bench装配的稳定基准结构
 app/model/public.ts          Hotfix唯一允许导入的Model入口
 app/hotfix/                  可热更的Handler和领域方法实现
-app/hotfix/demo/             当前MMORPG演示的可热更行为
+app/hotfix/mmorpg/             当前MMORPG演示的可热更行为
 app/hotfix/bench/            仅由build:bench装配的压测Handler
 app/generated/               服务端与Native自动生成代码
 app/generated/bootstrap/     自动生成的Model Scene启动入口
@@ -441,7 +453,7 @@ Phase 5计划：
 
 ## 对后续AI的工作要求
 
-1. 接业务需求先阅读[AI业务开发手册](business-development-manual.md)、最接近的`app/model/demo`状态定义和`app/hotfix/demo`行为实现。
+1. 接业务需求先阅读[AI业务开发手册](business-development-manual.md)、最接近的`app/model/mmorpg`状态定义和`app/hotfix/mmorpg`行为实现。
 2. 不把阶段历史文档中的旧Service/V8模型恢复到当前设计。
 3. 不因为性能猜测下沉Rust，先建立业务路径和指标；用户明确要求实验时再做最小A/B。
 4. 不在收到Unit消息后通过账号、地图遍历或全局Manager再次定位Unit。

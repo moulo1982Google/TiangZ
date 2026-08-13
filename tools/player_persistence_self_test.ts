@@ -14,8 +14,8 @@ import {
 } from "@tiangz/dbproxy-sdk";
 import type { Entity } from "../app/core/runtime/entities";
 import { DbProxyEntityRepository } from "../app/core/persistence/VersionedEntityRepository";
-import { PlayerPersistenceComponent } from "../app/model/demo/persistence/PlayerPersistenceComponent";
-import { InMemoryPlayerRepository } from "../app/model/demo/persistence/PlayerRepository";
+import { PlayerPersistenceComponent } from "../app/model/mmorpg/persistence/PlayerPersistenceComponent";
+import { InMemoryPlayerRepository } from "../app/model/mmorpg/persistence/PlayerRepository";
 import type {
   PlayerLoadResult,
   PlayerRepository,
@@ -24,15 +24,15 @@ import type {
   PlayerTransactionReceipt,
   PlayerTransactionResult,
   PlayerTransactionWrite,
-} from "../app/model/demo/persistence/PlayerRepository";
+} from "../app/model/mmorpg/persistence/PlayerRepository";
 import {
   DecodePlayerSaveData,
   EncodePlayerSaveData,
-} from "../app/model/demo/persistence/PlayerPersistenceCodec";
-import { BuffComponent } from "../app/model/demo/buff/BuffComponent";
-import { ItemComponent } from "../app/model/demo/item/ItemComponent";
-import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
-import { SkillComponent } from "../app/model/demo/skill/SkillComponent";
+} from "../app/model/mmorpg/persistence/PlayerPersistenceCodec";
+import { BuffComponent } from "../app/model/mmorpg/buff/BuffComponent";
+import { ItemComponent } from "../app/model/mmorpg/item/ItemComponent";
+import { QuestComponent } from "../app/model/mmorpg/quest/QuestComponent";
+import { SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
 import { NativeItemPersistenceCodec } from "../app/generated/model/native/NativeItemPersistence";
 
 void main();

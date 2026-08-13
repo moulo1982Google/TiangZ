@@ -39,63 +39,64 @@ export type {
   M2C_StateSyncBench,
 } from "../generated/model/server/bench/protocol/messages";
 
-export { GateSession } from "./demo/gate/GateSession";
-export { LocationComponent } from "./demo/location/LocationComponent";
-export { MapInstanceDirectoryComponent } from "./demo/location/MapInstanceDirectoryComponent";
-export { LocationProxy } from "./demo/location/LocationProxy";
-export { MessageHelper } from "./demo/location/MessageHelper";
+export { GateSession } from "./mmorpg/gate/GateSession";
+export { LocationComponent } from "./mmorpg/location/LocationComponent";
+export { MapInstanceDirectoryComponent } from "./mmorpg/location/MapInstanceDirectoryComponent";
+export { LocationProxy } from "./mmorpg/location/LocationProxy";
+export { MessageHelper } from "./mmorpg/location/MessageHelper";
 export {
   GatePlayerRoute,
   type GateActorRouteState,
   type GatePlayerMapLocation,
   type GatePlayerRouteState,
-} from "./demo/gate/GatePlayerRoute";
+} from "./mmorpg/gate/GatePlayerRoute";
 export {
   ItemComponent,
   type InventoryConsumePlan,
   type InventoryGrant,
   type InventoryGrantPlan,
   type InventoryGrantResult,
-} from "./demo/item/ItemComponent";
-export { Item, type AwakeItem, type ItemView } from "./demo/item/Item";
-export { ItemEvents, type BeforeUseItemEvent } from "./demo/item/ItemEvents";
+} from "./mmorpg/item/ItemComponent";
+export { Item, type AwakeItem, type ItemView, type ItemNativeData } from "./mmorpg/item/Item";
+export { ItemEvents, type BeforeUseItemEvent } from "./mmorpg/item/ItemEvents";
 export {
   CopyLootItems,
   ToInventoryGrants,
   ToLootDropSnapshots,
   type LootContainer,
   type LootDrop,
-} from "./demo/loot/LootContainer";
-export { Quest, type AwakeQuest, type QuestObjectiveState, type QuestState } from "./demo/quest/Quest";
+} from "./mmorpg/loot/LootContainer";
+export { Quest, type AwakeQuest, type QuestObjectiveState, type QuestState } from "./mmorpg/quest/Quest";
 export {
   QuestComponent,
   type QuestObjectiveIndexEntry,
   type QuestRewardResult,
   type QuestTransferState,
-} from "./demo/quest/QuestComponent";
-export { QuestEvents, type BeforeAcceptQuestEvent, type QuestProgressEvent } from "./demo/quest/QuestEvents";
-export type { RewardDefinition, RewardResult } from "./demo/reward/Reward";
+} from "./mmorpg/quest/QuestComponent";
+export { QuestEvents, type BeforeAcceptQuestEvent, type QuestProgressEvent } from "./mmorpg/quest/QuestEvents";
+export type { RewardDefinition, RewardResult } from "./mmorpg/reward/Reward";
+export type { RewardPlan } from "./domains/reward/RewardPlan";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
 export {
   ActionType,
   type ActionDefinition,
   type ActionExecutionContext,
   type ActionTypeValue,
-} from "./demo/action/ActionType";
+} from "./mmorpg/action/ActionType";
 export {
   Buff,
   type AwakeBuff,
   type BuffPublicState,
   type BuffRefreshRequest,
   type BuffTransferState,
-} from "./demo/buff/Buff";
+} from "./mmorpg/buff/Buff";
 export {
   BuffApplyStatus,
   BuffComponent,
   type BuffAddOptions,
   type BuffApplyResult,
   type BuffApplyStatusValue,
-} from "./demo/buff/BuffComponent";
+} from "./mmorpg/buff/BuffComponent";
 export {
   SkillCastPhase,
   SkillComponent,
@@ -108,11 +109,11 @@ export {
   type SkillCastState,
   type SkillCooldownTransferState,
   type SkillTransferState,
-} from "./demo/skill/SkillComponent";
+} from "./mmorpg/skill/SkillComponent";
 export {
   SkillMapComponent,
   type SkillProjectile,
-} from "./demo/skill/SkillMapComponent";
+} from "./mmorpg/skill/SkillMapComponent";
 export {
   SkillAutoAttackPolicy,
   SkillDelivery,
@@ -126,11 +127,11 @@ export {
   type SkillEffectTargetValue,
   type SkillMovementPolicyValue,
   type SkillTargetRelationValue,
-} from "./demo/skill/SkillDefinition";
-export { SkillEvents, type BeforeCastSkillEvent } from "./demo/skill/SkillEvents";
-export { MapComponent } from "./demo/map/MapComponent";
-export { MapAoiComponent } from "./demo/map/MapAoiComponent";
-export { MapScene } from "./demo/map/MapScene";
+} from "./mmorpg/skill/SkillDefinition";
+export { SkillEvents, type BeforeCastSkillEvent } from "./mmorpg/skill/SkillEvents";
+export { MapComponent } from "./mmorpg/map/MapComponent";
+export { MapAoiComponent } from "./mmorpg/map/MapAoiComponent";
+export { MapScene } from "./mmorpg/map/MapScene";
 export {
   PlayerUnit,
   type AwakePlayerUnit,
@@ -140,20 +141,21 @@ export {
   type MatchPlayerGate,
   type MovePlayer,
   type PlayerSnapshot,
-} from "./demo/map/PlayerUnit";
-export { PositionComponent } from "./demo/map/PositionComponent";
-export { UnitGateComponent } from "./demo/map/UnitGateComponent";
-export { MapHostComponent } from "./demo/mapHost/MapHostComponent";
+} from "./mmorpg/map/PlayerUnit";
+export { PositionComponent } from "./mmorpg/map/PositionComponent";
+export { UnitGateComponent } from "./mmorpg/map/UnitGateComponent";
+export { MapHostComponent } from "./mmorpg/mapHost/MapHostComponent";
 export {
   MapHostEndpointFromScene,
   SceneConfigFromMapHostEndpoint,
   SceneConfigFromMapInstance,
-} from "./demo/mapHost/MapHostEndpoint";
-export { DynamicMapLifecycleComponent } from "./demo/mapHost/DynamicMapLifecycleComponent";
-export { MapHostRegistrationComponent } from "./demo/mapHost/MapHostRegistrationComponent";
-export { MapManagerComponent } from "./demo/mapManager/MapManagerComponent";
-export { DynamicMapProxy } from "./demo/mapHost/DynamicMapProxy";
-export { NumericComponent, type NumericInitialValues } from "./demo/numeric/NumericComponent";
+} from "./mmorpg/mapHost/MapHostEndpoint";
+export { DynamicMapLifecycleComponent } from "./mmorpg/mapHost/DynamicMapLifecycleComponent";
+export { MapHostRegistrationComponent } from "./mmorpg/mapHost/MapHostRegistrationComponent";
+export { MapManagerComponent } from "./mmorpg/mapManager/MapManagerComponent";
+export { DynamicMapProxy } from "./mmorpg/mapHost/DynamicMapProxy";
+export { NumericComponent, type NumericInitialValues } from "./domains/numeric/NumericComponent";
+export { BaseNumericType } from "./domains/numeric/NumericType";
 export {
   AllNumericTypes,
   IsDerivedNumericType,
@@ -161,9 +163,9 @@ export {
   NUMERIC_MOVE_SPEED_SCALE,
   NumericType,
   type NumericType as NumericTypeValue,
-} from "./demo/numeric/NumericType";
+} from "./mmorpg/numeric/NumericType";
 export { NativeOps } from "../generated/model/native/NativeOps";
-export { LoginComponent } from "./demo/login/LoginComponent";
+export { LoginComponent } from "./mmorpg/login/LoginComponent";
 export {
   CreateCharacterRepository,
   CharacterAccountAlreadyExistsError,
@@ -171,21 +173,21 @@ export {
   type CharacterCatalog,
   type CharacterRecord,
   type CharacterRepository,
-} from "./demo/login/CharacterRepository";
+} from "./mmorpg/login/CharacterRepository";
 export {
   CreatePasswordCredential,
   VerifyPassword,
   type PasswordCredential,
-} from "./demo/login/PasswordHash";
-export { DecodeLoginToken, EncodeLoginToken, type LoginTokenClaims } from "./demo/login/LoginToken";
-export { SelectStickyGate, SelectStickyScene } from "./demo/login/GateSelector";
-export { PlayerPersistenceComponent } from "./demo/persistence/PlayerPersistenceComponent";
-export type { PlayerSaveData } from "./demo/persistence/PlayerRepository";
+} from "./mmorpg/login/PasswordHash";
+export { DecodeLoginToken, EncodeLoginToken, type LoginTokenClaims } from "./mmorpg/login/LoginToken";
+export { SelectStickyGate, SelectStickyScene } from "./mmorpg/login/GateSelector";
+export { PlayerPersistenceComponent } from "./mmorpg/persistence/PlayerPersistenceComponent";
+export type { PlayerSaveData } from "./mmorpg/persistence/PlayerRepository";
 export {
   NativeData,
   type NativeRaycastHit,
   type NativeVec3,
-} from "./demo/native/NativeData";
+} from "./mmorpg/native/NativeData";
 export { NativeUnitRef } from "../generated/model/native/NativeUnitRef";
 export { GameErrCode } from "./game/protocol/GameErrCode";
 export {
@@ -215,7 +217,7 @@ export {
   MonsterComponent,
   type MonsterRuntimeState,
   type MonsterSpawnSlot,
-} from "./demo/monster/MonsterComponent";
+} from "./mmorpg/monster/MonsterComponent";
 export {
   AutoAttackPhase,
   CombatComponent,
@@ -229,17 +231,17 @@ export {
   type DamageSchoolValue,
   type HealingResult,
   type HealingPlan,
-} from "./demo/combat/CombatComponent";
+} from "./mmorpg/combat/CombatComponent";
 export {
   MonsterUnit,
   type AwakeMonsterUnit,
   type MonsterSnapshot,
-} from "./demo/monster/MonsterUnit";
+} from "./mmorpg/monster/MonsterUnit";
 export {
   NpcUnit,
   type AwakeNpcUnit,
   type NpcSnapshot,
-} from "./demo/npc/NpcUnit";
+} from "./mmorpg/npc/NpcUnit";
 export {
   NpcComponent,
   STARTER_NPC_CONFIG_ID,
@@ -247,9 +249,9 @@ export {
   STARTER_NPC_NAME,
   STARTER_NPC_QUEST_CONFIG_IDS,
   STARTER_NPC_UNIT_ID,
-} from "./demo/npc/NpcComponent";
-export { GateScene } from "./demo/scenes/GateScene";
-export { LoginScene } from "./demo/scenes/LoginScene";
-export { LocationScene } from "./demo/scenes/LocationScene";
-export { MapHostScene } from "./demo/scenes/MapHostScene";
-export { MapManagerScene } from "./demo/scenes/MapManagerScene";
+} from "./mmorpg/npc/NpcComponent";
+export { GateScene } from "./mmorpg/scenes/GateScene";
+export { LoginScene } from "./mmorpg/scenes/LoginScene";
+export { LocationScene } from "./mmorpg/scenes/LocationScene";
+export { MapHostScene } from "./mmorpg/scenes/MapHostScene";
+export { MapManagerScene } from "./mmorpg/scenes/MapManagerScene";

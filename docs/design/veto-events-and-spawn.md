@@ -50,7 +50,7 @@ export class GlobalCooldownVeto
 
 ## BeforeUseItem调用范例
 
-定义位于`app/model/demo/item/ItemEvents.ts`，监听示例位于`app/hotfix/demo/item/handlers/BeforeUseItemVetoHandlers.ts`，调用位于`app/hotfix/demo/item/ItemComponentSystem.ts`：
+定义位于`app/model/mmorpg/item/ItemEvents.ts`，监听示例位于`app/hotfix/mmorpg/item/handlers/BeforeUseItemVetoHandlers.ts`，调用位于`app/hotfix/mmorpg/item/ItemComponentSystem.ts`：
 
 ```ts
 const reason = unit.DomainScene().Events.Check(ItemEvents.BeforeUse, {

@@ -236,10 +236,10 @@ combatShadowAbsorb -= damage;
 本规则当前落在：
 
 ```text
-app/model/demo/combat/CombatComponent.ts
-app/hotfix/demo/combat/CombatComponentSystem.ts
-app/hotfix/demo/monster/MonsterComponentSystem.ts
-app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts
+app/model/mmorpg/combat/CombatComponent.ts
+app/hotfix/mmorpg/combat/CombatComponentSystem.ts
+app/hotfix/mmorpg/monster/MonsterComponentSystem.ts
+app/hotfix/mmorpg/mapHost/handlers/C2M_UseItemHandler.ts
 tools/combat_self_test.ts
 ```
 

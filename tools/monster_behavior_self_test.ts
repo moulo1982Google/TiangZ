@@ -1,7 +1,7 @@
 import {
   EvaluateMonsterBehavior,
   type MonsterBehaviorAction,
-} from "../app/hotfix/demo/monster/MonsterBehaviorTree";
+} from "../app/hotfix/mmorpg/monster/MonsterBehaviorTree";
 import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
 import type { HotfixManifest } from "../app/core/hotReload/contracts";
 import {
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
 async function verifyThreatRatioAndLongRangeSelection(): Promise<void> {
   HotfixSystem.Begin(testHotfixManifest());
   const { MonsterComponentSystem } = await import(
-    "../app/hotfix/demo/monster/MonsterComponentSystem"
+    "../app/hotfix/mmorpg/monster/MonsterComponentSystem"
   );
   const monster = fakePositionUnit(2_147_483_648, 0, 0);
   const player = fakePositionUnit(1_001, 30, 0);

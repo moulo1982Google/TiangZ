@@ -14,32 +14,32 @@ import { actor, scene } from "../app/core/runtime/metadata";
 import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { GameConfigRegistry, GameConfigs } from "../app/generated/model/config";
-import { ActionType } from "../app/model/demo/action/ActionType";
-import { ExecuteAction, ExecuteActionBatch } from "../app/hotfix/demo/action/ActionExecutor";
-import { GetSkillDefinition } from "../app/hotfix/demo/skill/SkillCatalog";
-import { BuffApplyStatus, BuffComponent } from "../app/model/demo/buff/BuffComponent";
-import { CombatComponent } from "../app/model/demo/combat/CombatComponent";
-import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
-import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/NumericType";
-import { SkillCastPhase, SkillComponent } from "../app/model/demo/skill/SkillComponent";
-import { ItemComponent } from "../app/model/demo/item/ItemComponent";
+import { ActionType } from "../app/model/mmorpg/action/ActionType";
+import { ExecuteAction, ExecuteActionBatch } from "../app/hotfix/mmorpg/action/ActionExecutor";
+import { GetSkillDefinition } from "../app/hotfix/mmorpg/skill/SkillCatalog";
+import { BuffApplyStatus, BuffComponent } from "../app/model/mmorpg/buff/BuffComponent";
+import { CombatComponent } from "../app/model/mmorpg/combat/CombatComponent";
+import { NumericComponent } from "../app/model/mmorpg/numeric/NumericComponent";
+import { IsDerivedNumericType, NumericType } from "../app/model/mmorpg/numeric/NumericType";
+import { SkillCastPhase, SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
+import { ItemComponent } from "../app/model/mmorpg/item/ItemComponent";
 import {
   ApplyItemUseTransaction,
   DecodeItemUseReceipt,
   EncodeItemUseReceipt,
   PlanItemUseTransaction,
-} from "../app/hotfix/demo/item/ItemUseTransaction";
-import { QuestComponent } from "../app/model/demo/quest/QuestComponent";
+} from "../app/hotfix/mmorpg/item/ItemUseTransaction";
+import { QuestComponent } from "../app/model/mmorpg/quest/QuestComponent";
 import { QuestObjectiveType, QuestStatus } from "../app/generated/model/config";
-import { PlayerUnit } from "../app/model/demo/map/PlayerUnit";
-import { PositionComponent } from "../app/model/demo/map/PositionComponent";
-import { UnitGateComponent } from "../app/model/demo/map/UnitGateComponent";
-import { PlayerPersistenceComponent } from "../app/model/demo/persistence/PlayerPersistenceComponent";
+import { PlayerUnit } from "../app/model/mmorpg/map/PlayerUnit";
+import { PositionComponent } from "../app/model/mmorpg/map/PositionComponent";
+import { UnitGateComponent } from "../app/model/mmorpg/map/UnitGateComponent";
+import { PlayerPersistenceComponent } from "../app/model/mmorpg/persistence/PlayerPersistenceComponent";
 import {
   InMemoryPlayerRepository,
   type PlayerTransactionResult,
   type PlayerTransactionWrite,
-} from "../app/model/demo/persistence/PlayerRepository";
+} from "../app/model/mmorpg/persistence/PlayerRepository";
 
 @scene({ sceneType: "BuffTest" })
 class BuffTestScene extends Scene {}
@@ -98,16 +98,16 @@ async function main(): Promise<void> {
   );
 
   HotfixSystem.Begin(testHotfixManifest());
-  await import("../app/hotfix/demo/numeric/NumericComponentSystem");
-  await import("../app/hotfix/demo/combat/CombatComponentSystem");
-  await import("../app/hotfix/demo/buff/BuffSystem");
-  await import("../app/hotfix/demo/buff/BuffComponentSystem");
-  await import("../app/hotfix/demo/skill/SkillComponentSystem");
-  await import("../app/hotfix/demo/item/ItemSystem");
-  await import("../app/hotfix/demo/item/ItemComponentSystem");
-  await import("../app/hotfix/demo/quest/QuestSystem");
-  await import("../app/hotfix/demo/quest/QuestComponentSystem");
-  await import("../app/hotfix/demo/map/PlayerUnitSystem");
+  await import("../app/hotfix/mmorpg/numeric/NumericComponentSystem");
+  await import("../app/hotfix/mmorpg/combat/CombatComponentSystem");
+  await import("../app/hotfix/mmorpg/buff/BuffSystem");
+  await import("../app/hotfix/mmorpg/buff/BuffComponentSystem");
+  await import("../app/hotfix/mmorpg/skill/SkillComponentSystem");
+  await import("../app/hotfix/mmorpg/item/ItemSystem");
+  await import("../app/hotfix/mmorpg/item/ItemComponentSystem");
+  await import("../app/hotfix/mmorpg/quest/QuestSystem");
+  await import("../app/hotfix/mmorpg/quest/QuestComponentSystem");
+  await import("../app/hotfix/mmorpg/map/PlayerUnitSystem");
   HotfixSystem.Commit();
 
   const host = new ProcessHost("buff-action-self-test");

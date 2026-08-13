@@ -56,12 +56,12 @@ Hotfix manifest必须逐项匹配这些冻结值。`npm run build:hotfix`只重�
 Model中的类型拥有真实实例和状态，不再手写只会抛错的方法空壳。Hotfix System提供生命周期和领域方法：
 
 ```ts
-// app/model/demo/login/LoginComponent.ts
+// app/model/mmorpg/login/LoginComponent.ts
 export class LoginComponent extends Component {
   protected loginCount = 0;
 }
 
-// app/hotfix/demo/login/LoginComponentSystem.ts
+// app/hotfix/mmorpg/login/LoginComponentSystem.ts
 @systemFor(LoginComponent)
 export class LoginComponentSystem extends LoginComponent {
   protected override Awake(): void {

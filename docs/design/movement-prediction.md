@@ -6,7 +6,7 @@
 
 当前基础参数集中在两处同名常量文件：
 
-- 服务端：`app/model/demo/movement/CellMovement.ts`
+- 服务端：`app/model/mmorpg/movement/CellMovement.ts`
 - 客户端：`client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Movement/CellMovement.ts`
 
 默认值：
@@ -86,7 +86,7 @@ Cocos 使用 960x640 固定设计分辨率和 `SHOW_ALL` 策略。窗口变化�
 - `Demo/Map/Movement`：演示业务的 Cell 常量、本地预测和远端插值。
 - `Generated/Model`：由 proto 生成的方向消息和权威路径结构。
 - `Demo/Map`：键盘输入、消息接线、地图视口和 Cocos Node 显示。
-- `app/model/demo/movement`与`app/model/demo/map`：服务端演示业务的Cell规则、PlayerUnit、句柄组件和地图广播。
+- `app/model/mmorpg/movement`与`app/model/mmorpg/map`：服务端演示业务的Cell规则、PlayerUnit、句柄组件和地图广播。
 - `src/native_data.rs`：Rust 权威 Unit 数据、Cell 状态机和移动 protobuf 投影。
 
 `tests/fixtures/native_data/movement_regression.json` 覆盖途中转向、停止和斜向移动；执行 `npm run test:native-data` 验证 Rust 状态机与预期帧。

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { LocationDirectory } from "../app/core/public";
-import { LocationComponent } from "../app/model/demo/location/LocationComponent";
-import { MapInstanceDirectoryComponent } from "../app/model/demo/location/MapInstanceDirectoryComponent";
+import { LocationComponent } from "../app/model/mmorpg/location/LocationComponent";
+import { MapInstanceDirectoryComponent } from "../app/model/mmorpg/location/MapInstanceDirectoryComponent";
 import { MapMessages } from "../app/generated/model/server/demo/protocol/messageDescriptors";
 import { MapProtocol } from "../app/generated/model/server/demo/protocol/rpcs";
 

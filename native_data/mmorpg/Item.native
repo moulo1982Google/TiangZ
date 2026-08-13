@@ -1,0 +1,18 @@
+// namespace demo is a persisted schema identifier; keep it stable while the source folder follows the MMORPG domain.
+// namespace demo 是持久化 schema 标识；物理目录迁移到 MMORPG 后仍保持不变，避免旧快照失效。
+namespace demo;
+
+@typeId(2)
+@persistent(1)
+entity Item extends Entity {
+  @cold
+  readonly configId: u32;
+  @cold
+  count: u32 = 1;
+  @cold
+  quality: u32 = 0;
+  @cold
+  level: u32 = 1;
+  @cold
+  version: u32 = 1;
+}

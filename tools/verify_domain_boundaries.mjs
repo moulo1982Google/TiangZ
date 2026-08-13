@@ -67,6 +67,12 @@ async function verifyTypeScriptBoundaries() {
           if (normalized === "#tiangz/model" || target?.startsWith("app/hotfix/")) {
             report(fileName, `Model must not import itself or Hotfix: ${specifier}`);
           }
+          if (fileName.startsWith("app/model/domains/") && (
+            target?.startsWith("app/model/mmorpg/") ||
+            target?.startsWith("app/generated/")
+          )) {
+            report(fileName, `Reusable domain Model must not import MMORPG adapters or generated contracts: ${specifier}`);
+          }
           if (
             target?.startsWith("app/core/") &&
             target !== "app/core/public" &&

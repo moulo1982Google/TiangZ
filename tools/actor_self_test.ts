@@ -14,20 +14,20 @@ import { Session } from "../app/core/runtime/Session";
 import { actor, component } from "../app/core/runtime/metadata";
 import { SingletonRegistry } from "../app/core/runtime/Singleton";
 import { ActorUnit, Unit, UnitComponent } from "../app/core/runtime/Unit";
-import { MapScene } from "../app/model/demo/map/MapScene";
-import { PlayerUnit } from "../app/model/demo/map/PlayerUnit";
-import { MonsterUnit } from "../app/model/demo/monster/MonsterUnit";
-import { GateSession } from "../app/model/demo/gate/GateSession";
-import { PositionComponent } from "../app/model/demo/map/PositionComponent";
-import { UnitGateComponent } from "../app/model/demo/map/UnitGateComponent";
+import { MapScene } from "../app/model/mmorpg/map/MapScene";
+import { PlayerUnit } from "../app/model/mmorpg/map/PlayerUnit";
+import { MonsterUnit } from "../app/model/mmorpg/monster/MonsterUnit";
+import { GateSession } from "../app/model/mmorpg/gate/GateSession";
+import { PositionComponent } from "../app/model/mmorpg/map/PositionComponent";
+import { UnitGateComponent } from "../app/model/mmorpg/map/UnitGateComponent";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { NativeItemRef } from "../app/generated/model/native/NativeItemRef";
 import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
-import { NumericComponent } from "../app/model/demo/numeric/NumericComponent";
-import { IsDerivedNumericType, NumericType } from "../app/model/demo/numeric/NumericType";
-import { Item } from "../app/model/demo/item/Item";
-import { ItemComponent } from "../app/model/demo/item/ItemComponent";
-import { SkillComponent } from "../app/model/demo/skill/SkillComponent";
+import { NumericComponent } from "../app/model/mmorpg/numeric/NumericComponent";
+import { IsDerivedNumericType, NumericType } from "../app/model/mmorpg/numeric/NumericType";
+import { Item } from "../app/model/mmorpg/item/Item";
+import { ItemComponent } from "../app/model/mmorpg/item/ItemComponent";
+import { SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
 import { TimeSystem } from "../app/core/runtime/TimeSystem";
 import { BinaryWriter } from "../app/core/protocol/binary";
 import { packFrame } from "../app/core/protocol/registry";
@@ -60,12 +60,12 @@ async function main(): Promise<void> {
     // 首代先建立完整 Handler key 基线，后续热更才可以验证“只替换、不增删”。
     // Establish the complete Handler key baseline before testing replacement-only reloads.
     await import("../app/generated/hotfix/handlers");
-    await import("../app/hotfix/demo/map/PlayerUnitSystem");
-    await import("../app/hotfix/demo/monster/MonsterUnitSystem");
-    await import("../app/hotfix/demo/numeric/NumericComponentSystem");
-    await import("../app/hotfix/demo/item/ItemSystem");
-    await import("../app/hotfix/demo/item/ItemComponentSystem");
-    await import("../app/hotfix/demo/skill/SkillComponentSystem");
+    await import("../app/hotfix/mmorpg/map/PlayerUnitSystem");
+    await import("../app/hotfix/mmorpg/monster/MonsterUnitSystem");
+    await import("../app/hotfix/mmorpg/numeric/NumericComponentSystem");
+    await import("../app/hotfix/mmorpg/item/ItemSystem");
+    await import("../app/hotfix/mmorpg/item/ItemComponentSystem");
+    await import("../app/hotfix/mmorpg/skill/SkillComponentSystem");
     HotfixSystem.Commit();
     await Promise.resolve();
     testGeneratedNativeHandleScalarAccess();
@@ -561,17 +561,17 @@ async function testPlayerUnitComponents(): Promise<void> {
   stageActiveBindingsForSameIsolateTest();
   await import("../perf/hotfix/fixtures/inverted");
   const { NumericComponentSystem } = await import(
-    "../app/hotfix/demo/numeric/NumericComponentSystem"
+    "../app/hotfix/mmorpg/numeric/NumericComponentSystem"
   );
-  const { ItemSystem } = await import("../app/hotfix/demo/item/ItemSystem");
+  const { ItemSystem } = await import("../app/hotfix/mmorpg/item/ItemSystem");
   const { ItemComponentSystem } = await import(
-    "../app/hotfix/demo/item/ItemComponentSystem"
+    "../app/hotfix/mmorpg/item/ItemComponentSystem"
   );
   const { MonsterUnitSystem } = await import(
-    "../app/hotfix/demo/monster/MonsterUnitSystem"
+    "../app/hotfix/mmorpg/monster/MonsterUnitSystem"
   );
   const { SkillComponentSystem } = await import(
-    "../app/hotfix/demo/skill/SkillComponentSystem"
+    "../app/hotfix/mmorpg/skill/SkillComponentSystem"
   );
   systemFor(NumericComponent)(NumericComponentSystem);
   systemFor(Item)(ItemSystem);

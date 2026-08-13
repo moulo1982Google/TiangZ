@@ -66,13 +66,13 @@ const numeric = monster?.GetComponent(NumericComponent);
 `MonsterUnit`只保存稳定身份：地图、刷怪槽位和怪物模板ID。行为位于：
 
 ```text
-app/model/demo/monster/MonsterUnit.ts
-app/hotfix/demo/monster/MonsterUnitSystem.ts
-app/model/demo/monster/MonsterComponent.ts
-app/hotfix/demo/monster/MonsterComponentSystem.ts
-app/hotfix/demo/monster/MonsterBehaviorTree.ts
-app/model/demo/combat/CombatComponent.ts
-app/hotfix/demo/combat/CombatComponentSystem.ts
+app/model/mmorpg/monster/MonsterUnit.ts
+app/hotfix/mmorpg/monster/MonsterUnitSystem.ts
+app/model/mmorpg/monster/MonsterComponent.ts
+app/hotfix/mmorpg/monster/MonsterComponentSystem.ts
+app/hotfix/mmorpg/monster/MonsterBehaviorTree.ts
+app/model/mmorpg/combat/CombatComponent.ts
+app/hotfix/mmorpg/combat/CombatComponentSystem.ts
 ```
 
 地图固定桶统一驱动怪物和战斗，不为每个怪物或玩家创建长期Timer。当前使用怪物模块内部的轻量行为树，不是通用AI框架：
@@ -145,7 +145,7 @@ export class C2M_AttackMonsterHandler {
 }
 ```
 
-实际工程中的Handler位于`app/hotfix/demo/mapHost/handlers/C2M_AttackMonsterHandler.ts`，协议和类型由`npm run codegen:proto`生成。
+实际工程中的Handler位于`app/hotfix/mmorpg/mapHost/handlers/C2M_AttackMonsterHandler.ts`，协议和类型由`npm run codegen:proto`生成。
 
 ### 4.1 伤害和治疗为什么经过CombatComponent
 

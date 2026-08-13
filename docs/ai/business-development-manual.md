@@ -6,11 +6,12 @@
 
 ## 默认立场
 
-收到“新增技能、背包、公会、地图、怪物、任务”等业务需求时，默认修改范围是：
+收到“新增技能、背包、公会、地图、怪物、任务”等业务需求时，先按[能力归属表](../design/capability-ownership.md)判断是稳定契约还是MMORPG适配，默认修改范围是：
 
 ```text
-app/model/demo/       新增或改变状态、字段、构造、继承和稳定类型时
-app/hotfix/demo/      普通Handler与可热更领域行为
+app/model/domains/      跨游戏稳定状态形状、ChildEntity和Component容器
+app/model/mmorpg/       MMORPG新增或改变状态、字段、构造、继承和稳定适配器时
+app/hotfix/mmorpg/      MMORPG普通Handler与可热更领域行为
 proto/
 game_config/                 策划静态配置Excel；结构完整部署，纯数据可生成候选热更
 client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/
@@ -23,11 +24,45 @@ tests或tools中的对应业务自测
 
 ### 先保护通用内核，再扩展领域
 
-当前Starter是MMORPG领域样例，不要把它反向当作框架定义。AOI、MapHost、地图传送、NavMesh、怪物、任务、技能、战斗和掉落属于`app/model/demo`、`app/hotfix/demo`或`src/game/<domain>`；Process、Scene、Actor、Component、mailbox、协议路由、热更和宿主队列才属于Core。
+当前Starter是MMORPG领域样例，不要把它反向当作框架定义。AOI、MapHost、地图传送、NavMesh、怪物、NPC、目标选择、技能地图调度和掉落协议属于`app/model/mmorpg`、`app/hotfix/mmorpg`或`src/game/<domain>`；Process、Scene、Actor、Component、mailbox、协议路由、热更和宿主队列属于Core；Numeric、Action、Reward、Item、Quest、Buff、Combat、Skill的稳定状态契约位于`app/model/domains`。不要把当前MMORPG执行器为了目录好看强行搬进domains。
 
 新业务优先沿用现有领域组件和Stable API。只有当现有API无法表达需求，并且需求不是单纯的MMORPG规则时，才申请Core扩展。不要为了“以后支持卡牌、SLG或MOBA”提前新增通用Manager、万能配置扩展或第二套Actor入口。第二个真实领域出现后，使用重复需求和验收结果反推边界。
 
 修改分层入口后运行`npm run verify:domain-boundaries`。它检查Core、Model、Hotfix和Rust游戏模块的依赖方向；通过门禁不代表业务语义正确，仍需运行对应领域测试。
+
+### 领域契约与 MMORPG 适配
+
+共享领域层只放不依赖生成配置、协议、地图或游戏Native句柄的稳定契约：
+
+```text
+app/model/domains/numeric/  Numeric字典和派生规则
+app/model/domains/action/   ActionDefinition
+app/model/domains/reward/   RewardPlan
+app/model/domains/item/     Item ChildEntity和背包容器
+app/model/domains/quest/    Quest ChildEntity和任务容器
+app/model/domains/buff/     Buff生命周期容器
+app/model/domains/combat/   伤害、治疗、护盾状态形状
+app/model/domains/skill/    读条、引导和冷却状态形状
+```
+
+MMORPG适配层继续放：`ActionExecutor`、`RewardExecutor`、`SkillMapComponentSystem`、NPC/地图目标选择、Luban ActionType和协议投影。它们读取`PlayerUnit`、`MapComponent`、`GameConfigs`或`ItemSnapshot`，所以不能伪装为跨游戏Core。
+
+`ActionDefinition`和`RewardPlan`的最小用法：
+
+```ts
+import { ActionType, type RewardPlan } from "#tiangz/model";
+
+const reward: RewardPlan = {
+  operationId: "quest:5001:character:1001",
+  actions: [{ type: ActionType.GrantItem, parameters: [1101n, 5n] }],
+};
+```
+
+`ActionDefinition`只描述效果和`bigint`参数，不选择目标、不调用RPC、不修改Entity；`RewardPlan`只描述有序奖励Action和可选幂等键。MMORPG执行链仍是`RewardPlan -> PlanTransactionalReward -> ItemComponent.PlanGrantItems -> DBProxy -> CommitGrantPlan`。规划阶段不能修改Entity，确认前不能回复成功。当前`RewardDefinition`是`RewardPlan`的兼容别名，新代码优先使用`RewardPlan`。
+
+Numeric的`MoveSpeed`不属于通用Numeric字段。通用层只保留HP、攻击、等级等可复用数值；米/秒到Rust毫米/秒、移动位置同步和MoveSpeed默认值放`app/model/mmorpg/numeric/MovementNumeric.ts`及对应System。这样卡牌或模拟经营可以复用Numeric，而不会继承地图移动语义。
+
+Item、Quest、Buff、Combat、Skill本轮只拆稳定Model契约；涉及当前游戏配置、协议、AOI、Map或玩家规则的执行逻辑仍留在`mmorpg`。第二个游戏真实使用后，再从两套实现中抽取已经重复的行为，不按目录名猜通用性。
 
 默认不要修改：
 
@@ -186,7 +221,7 @@ MapHost -> MapScene
 
 1. 在`game_config/Datas`增加或修改模板、刷点，执行`npm run build:game-config`。
 2. 需要新协议时先改`proto`，执行`npm run codegen:proto`，不要手写msgcode或Codec。
-3. 稳定身份放`app/model/demo/monster`，生命周期和行为放`app/hotfix/demo/monster`。
+3. 稳定身份放`app/model/mmorpg/monster`，生命周期和行为放`app/hotfix/mmorpg/monster`。
 4. Handler保持一层胶水，例如`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。
 5. 通过`MonsterComponent.Get/GetAll`取得怪物；死亡状态、AOI和重生只能由MonsterComponent完成。
 
@@ -202,17 +237,17 @@ MapHost -> MapScene
 
 ## 第二步：找到最接近的样例
 
-- 玩家创建和组件装配：`app/model/demo/map/MapComponent.ts::CreatePlayer`。
-- 玩家Unit：`app/model/demo/map/PlayerUnit.ts`。
-- Unit RPC：`app/hotfix/demo/mapHost/handlers/C2M_UseItemHandler.ts`。
-- Unit Message：`app/hotfix/demo/mapHost/handlers/C2M_MoveHandler.ts`。
-- Session RPC：`app/hotfix/demo/gate/handlers/C2G_LoginGateHandler.ts`。
-- EntryScene RPC：`app/hotfix/demo/mapHost/handlers/G2M_EnterMapHandler.ts`。
-- Numeric字典Delta：`app/model/demo/numeric/NumericComponent.ts`。
-- Item即时Event：`app/model/demo/item/ItemComponent.ts`、`app/hotfix/demo/item/ItemComponentSystem.ts`和`C2M_UseItemHandler.ts`。
-- 帧尾同步：`app/model/demo/map/MapComponent.ts::FrameFlush`。
-- 玩家下线保存：`app/model/demo/persistence/PlayerPersistenceComponent.ts`。
-- Model/System领域方法范例：`app/model/demo/login/LoginComponent.ts`与`app/hotfix/demo/login/LoginComponentSystem.ts`。
+- 玩家创建和组件装配：`app/model/mmorpg/map/MapComponent.ts::CreatePlayer`。
+- 玩家Unit：`app/model/mmorpg/map/PlayerUnit.ts`。
+- Unit RPC：`app/hotfix/mmorpg/mapHost/handlers/C2M_UseItemHandler.ts`。
+- Unit Message：`app/hotfix/mmorpg/mapHost/handlers/C2M_MoveHandler.ts`。
+- Session RPC：`app/hotfix/mmorpg/gate/handlers/C2G_LoginGateHandler.ts`。
+- EntryScene RPC：`app/hotfix/mmorpg/mapHost/handlers/G2M_EnterMapHandler.ts`。
+- Numeric字典Delta：`app/model/mmorpg/numeric/NumericComponent.ts`。
+- Item即时Event：`app/model/mmorpg/item/ItemComponent.ts`、`app/hotfix/mmorpg/item/ItemComponentSystem.ts`和`C2M_UseItemHandler.ts`。
+- 帧尾同步：`app/model/mmorpg/map/MapComponent.ts::FrameFlush`。
+- 玩家下线保存：`app/model/mmorpg/persistence/PlayerPersistenceComponent.ts`。
+- Model/System领域方法范例：`app/model/mmorpg/login/LoginComponent.ts`与`app/hotfix/mmorpg/login/LoginComponentSystem.ts`。
 - 客户端Push：`client_demo/cocos_client2D_3.8.6/assets/scripts/Demo/Map/Handlers`。
 - Scene发现和调用：`app/core/process/SceneMessageHelper.ts`及`docs/guides/business-cookbook.md`。
 
