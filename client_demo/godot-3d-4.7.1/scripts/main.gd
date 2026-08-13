@@ -42,9 +42,25 @@ var selected_monster_label: Label
 var player_hp_label: Label
 var player_mp_label: Label
 var auto_attack_label: Label
+var game_ui_root: Control
+var auth_ui_root: Control
+var auth_panel: Panel
+var auth_title: Label
+var auth_subtitle: Label
+var auth_account_input: LineEdit
+var auth_password_input: LineEdit
+var auth_confirm_input: LineEdit
+var auth_confirm_label: Label
+var auth_submit_button: Button
+var auth_mode_button: Button
+var auth_error_label: Label
+var auth_register_mode := false
 var local_numerics: Dictionary = {}
 var selected_monster_unit_id := 0
+var selected_npc_unit_id := 0
+var nearby_npc_unit_id := 0
 var selected_monster_marker: MeshInstance3D
+var entity_name_labels: Dictionary = {}
 var auto_attack_enabled := false
 var auto_attack_target_unit_id := 0
 var auto_attack_swing_start_at_ms := 0
@@ -61,6 +77,27 @@ var skill_projectiles: Dictionary = {}
 var skill_label: Label
 var buff_label: Label
 var quest_label: Label
+var skill_progress_bar: ProgressBar
+var skill_buttons: Dictionary = {}
+var item_buttons: Dictionary = {}
+var inventory_toggle_button: Button
+var inventory_panel: Panel
+var inventory_list: VBoxContainer
+var npc_interaction_button: Button
+var npc_dialog: Panel
+var npc_dialog_text: Label
+var npc_dialog_action_button: Button
+var npc_dialog_close_button: Button
+var loot_interaction_button: Button
+var loot_panel: Panel
+var loot_title: Label
+var loot_list: VBoxContainer
+var loot_result: Label
+var loot_all_button: Button
+var inspected_loot: Array = []
+var inspected_loot_monster_id := 0
+var loot_operation_id := ""
+var skill_channel_beam: MeshInstance3D
 
 func _ready() -> void:
 	_build_world()
@@ -87,7 +124,11 @@ func _ready() -> void:
 	client.skill_cast_state.connect(_on_skill_cast_state)
 	client.skill_projectile.connect(_on_skill_projectile)
 	client.skill_impact.connect(_on_skill_impact)
-	client.start("godot_%d" % Time.get_ticks_msec())
+	client.loot_inspected.connect(_on_loot_inspected)
+	client.loot_result.connect(_on_loot_result)
+	client.session_replaced.connect(_on_session_replaced)
+	_build_auth_ui()
+	_set_game_ui_visible(false)
 
 func _process(delta: float) -> void:
 	_update_direction_input(delta)
@@ -98,6 +139,9 @@ func _process(delta: float) -> void:
 	_update_buff_hud()
 	_update_quest_hud()
 	_update_skill_projectiles(delta)
+	_update_skill_channel_beam()
+	_update_npc_interaction_hud()
+	_update_loot_interaction_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -105,7 +149,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			right_mouse_held = event.pressed
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE)
 		elif event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			_navigate_from_screen(event.position)
+			if not _is_pointer_over_game_ui(event.position):
+				_navigate_from_screen(event.position)
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			camera_distance = maxf(7.0, camera_distance - 1.0)
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
@@ -117,13 +162,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		look_changed = true
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
 		client.toggle_demo_door(not door_closed)
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F:
+		_interact_nearby()
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_1:
 		_toggle_auto_attack()
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_2 or event.keycode == KEY_3:
 			_use_item_slot(event.keycode - KEY_0)
+		elif event.keycode == KEY_B:
+			_toggle_inventory()
 		elif event.keycode >= KEY_4 and event.keycode <= KEY_8:
 			_cast_skill_slot(event.keycode - KEY_0)
+		elif event.keycode == KEY_9:
+			_cast_skill_slot(9)
 		elif event.keycode == KEY_Q:
 			_accept_first_quest()
 		elif event.keycode == KEY_R:
@@ -170,58 +221,374 @@ func _build_world() -> void:
 func _build_ui() -> void:
 	var canvas := CanvasLayer.new()
 	add_child(canvas)
+	game_ui_root = Control.new()
+	game_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	game_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	canvas.add_child(game_ui_root)
 	status_label = Label.new()
 	status_label.position = Vector2(24.0, 20.0)
 	status_label.add_theme_font_size_override("font_size", 20)
 	status_label.text = "正在连接 TiangZ..."
-	canvas.add_child(status_label)
+	game_ui_root.add_child(status_label)
 	latency_label = Label.new()
 	latency_label.position = Vector2(24.0, 54.0)
 	latency_label.add_theme_font_size_override("font_size", 16)
 	latency_label.text = "Ping: --"
-	canvas.add_child(latency_label)
+	game_ui_root.add_child(latency_label)
 	selected_monster_label = Label.new()
 	selected_monster_label.position = Vector2(24.0, 88.0)
 	selected_monster_label.add_theme_font_size_override("font_size", 16)
 	selected_monster_label.text = "目标：未选择怪物"
-	canvas.add_child(selected_monster_label)
+	game_ui_root.add_child(selected_monster_label)
 	player_hp_label = Label.new()
 	player_hp_label.position = Vector2(24.0, 156.0)
 	player_hp_label.add_theme_font_size_override("font_size", 16)
 	player_hp_label.modulate = Color("#ff5964")
 	player_hp_label.text = "玩家 HP：-- / --"
-	canvas.add_child(player_hp_label)
+	game_ui_root.add_child(player_hp_label)
 	player_mp_label = Label.new()
 	player_mp_label.position = Vector2(24.0, 180.0)
 	player_mp_label.add_theme_font_size_override("font_size", 16)
 	player_mp_label.modulate = Color("#5b9cff")
 	player_mp_label.text = "玩家 MP：-- / --"
-	canvas.add_child(player_mp_label)
+	game_ui_root.add_child(player_mp_label)
 	auto_attack_label = Label.new()
 	auto_attack_label.position = Vector2(24.0, 204.0)
 	auto_attack_label.add_theme_font_size_override("font_size", 16)
 	auto_attack_label.text = "平A：未激活（按 1 开始）"
-	canvas.add_child(auto_attack_label)
+	game_ui_root.add_child(auto_attack_label)
 	skill_label = Label.new()
 	skill_label.position = Vector2(24.0, 238.0)
 	skill_label.add_theme_font_size_override("font_size", 15)
-	skill_label.text = "技能：空闲（4-8施法）"
-	canvas.add_child(skill_label)
+	skill_label.text = "技能：空闲（4-9施法）"
+	game_ui_root.add_child(skill_label)
 	buff_label = Label.new()
 	buff_label.position = Vector2(24.0, 282.0)
 	buff_label.add_theme_font_size_override("font_size", 15)
 	buff_label.text = "Buff：无"
-	canvas.add_child(buff_label)
+	game_ui_root.add_child(buff_label)
 	quest_label = Label.new()
 	quest_label.position = Vector2(24.0, 350.0)
 	quest_label.add_theme_font_size_override("font_size", 15)
 	quest_label.text = "任务：无（Q接取，R交付）"
-	canvas.add_child(quest_label)
+	game_ui_root.add_child(quest_label)
 	var help := Label.new()
 	help.position = Vector2(24.0, 650.0)
 	help.add_theme_font_size_override("font_size", 16)
-	help.text = "左键：选怪物或服务端寻路    W/S：前后移动    A/D：转身    按住右键时 A/D：平移    1平A  2/3道具  4-8技能  Q/R任务    E：动态门    滚轮：镜头距离"
-	canvas.add_child(help)
+	help.text = "左键：选择实体    W/S：前后移动    A/D：转身    按住右键时 A/D：平移    1平A  2/3道具  4-9技能  B：背包  F：NPC交互/拾取全部    E：动态门    滚轮：镜头距离"
+	help.position = Vector2(24.0, 620.0)
+	game_ui_root.add_child(help)
+
+	# 技能和道具使用按钮只负责调用同一套键盘入口，避免桌面按钮与快捷键产生两套语义。
+	# Skill and item buttons call the same keyboard paths so mouse and hotkeys share one behavior.
+	var skill_bar := HBoxContainer.new()
+	skill_bar.position = Vector2(280.0, 620.0)
+	game_ui_root.add_child(skill_bar)
+	for slot in [4, 5, 6, 7, 8, 9]:
+		var button := Button.new()
+		button.text = "%d %s" % [slot, _skill_name(_skill_id_for_slot(slot))]
+		button.custom_minimum_size = Vector2(118.0, 42.0)
+		button.pressed.connect(_cast_skill_slot.bind(slot))
+		skill_bar.add_child(button)
+		skill_buttons[slot] = button
+
+	var item_bar := HBoxContainer.new()
+	item_bar.position = Vector2(500.0, 670.0)
+	game_ui_root.add_child(item_bar)
+	for slot in [2, 3]:
+		var item_button := Button.new()
+		item_button.text = "%d %s" % [slot, _item_name(1001 if slot == 2 else 1002)]
+		item_button.custom_minimum_size = Vector2(150.0, 42.0)
+		item_button.pressed.connect(_use_item_slot.bind(slot))
+		item_bar.add_child(item_button)
+		item_buttons[slot] = item_button
+
+	skill_progress_bar = ProgressBar.new()
+	skill_progress_bar.position = Vector2(330.0, 570.0)
+	skill_progress_bar.size = Vector2(420.0, 28.0)
+	skill_progress_bar.min_value = 0.0
+	skill_progress_bar.max_value = 1.0
+	skill_progress_bar.value = 0.0
+	game_ui_root.add_child(skill_progress_bar)
+
+	npc_interaction_button = Button.new()
+	npc_interaction_button.position = Vector2(380.0, 420.0)
+	npc_interaction_button.size = Vector2(260.0, 48.0)
+	npc_interaction_button.text = "交互：任务使者（F）"
+	npc_interaction_button.visible = false
+	npc_interaction_button.pressed.connect(_interact_nearby)
+	game_ui_root.add_child(npc_interaction_button)
+
+	loot_interaction_button = Button.new()
+	loot_interaction_button.position = Vector2(380.0, 470.0)
+	loot_interaction_button.size = Vector2(260.0, 42.0)
+	loot_interaction_button.text = "查看尸体掉落"
+	loot_interaction_button.visible = false
+	loot_interaction_button.pressed.connect(_inspect_selected_loot)
+	game_ui_root.add_child(loot_interaction_button)
+
+	_build_npc_dialog()
+	_build_loot_panel()
+	_build_inventory_panel()
+
+## 构建桌面版登录/注册面板；默认是登录，注册只是显式切换，不会打开页面就自动注册。
+## Builds the desktop login/register panel; login is the default and registration is explicit.
+func _build_auth_ui() -> void:
+	auth_ui_root = Control.new()
+	auth_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	auth_ui_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(auth_ui_root)
+	auth_panel = Panel.new()
+	auth_panel.position = Vector2(300.0, 170.0)
+	auth_panel.size = Vector2(400.0, 360.0)
+	auth_ui_root.add_child(auth_panel)
+	var box := VBoxContainer.new()
+	box.position = Vector2(28.0, 24.0)
+	box.size = Vector2(344.0, 312.0)
+	auth_panel.add_child(box)
+	auth_title = Label.new()
+	auth_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	auth_title.add_theme_font_size_override("font_size", 26)
+	box.add_child(auth_title)
+	auth_subtitle = Label.new()
+	auth_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(auth_subtitle)
+	auth_account_input = LineEdit.new()
+	auth_account_input.placeholder_text = "用户名"
+	auth_account_input.text = "godot_%d" % Time.get_ticks_msec()
+	box.add_child(auth_account_input)
+	auth_password_input = LineEdit.new()
+	auth_password_input.placeholder_text = "密码（6-64个字符）"
+	auth_password_input.secret = true
+	box.add_child(auth_password_input)
+	auth_confirm_label = Label.new()
+	auth_confirm_label.text = "确认密码"
+	box.add_child(auth_confirm_label)
+	auth_confirm_input = LineEdit.new()
+	auth_confirm_input.placeholder_text = "确认密码"
+	auth_confirm_input.secret = true
+	box.add_child(auth_confirm_input)
+	auth_error_label = Label.new()
+	auth_error_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	auth_error_label.modulate = Color("#ff8c78")
+	box.add_child(auth_error_label)
+	var actions := HBoxContainer.new()
+	box.add_child(actions)
+	auth_submit_button = Button.new()
+	auth_submit_button.custom_minimum_size = Vector2(165.0, 44.0)
+	auth_submit_button.pressed.connect(_submit_auth)
+	actions.add_child(auth_submit_button)
+	auth_mode_button = Button.new()
+	auth_mode_button.custom_minimum_size = Vector2(165.0, 44.0)
+	auth_mode_button.pressed.connect(_toggle_auth_mode)
+	actions.add_child(auth_mode_button)
+	_set_auth_mode(false)
+
+func _set_auth_mode(registering: bool) -> void:
+	auth_register_mode = registering
+	auth_title.text = "注册 TiangZ Godot Demo" if registering else "TiangZ Godot Demo"
+	auth_subtitle.text = "用户名同时作为角色名" if registering else "请输入账号和密码登录"
+	auth_confirm_label.visible = registering
+	auth_confirm_input.visible = registering
+	auth_submit_button.text = "注册并进入游戏" if registering else "登录"
+	auth_mode_button.text = "返回登录" if registering else "注册"
+	auth_error_label.text = ""
+
+func _toggle_auth_mode() -> void:
+	_set_auth_mode(not auth_register_mode)
+
+func _submit_auth() -> void:
+	var account := auth_account_input.text.strip_edges()
+	var password := auth_password_input.text
+	if account.is_empty():
+		_set_auth_error("请输入用户名")
+		return
+	if password.length() < 6 or password.length() > 64:
+		_set_auth_error("密码长度必须是6到64个字符")
+		return
+	if auth_register_mode and password != auth_confirm_input.text:
+		_set_auth_error("两次密码不一致")
+		return
+	auth_submit_button.disabled = true
+	_set_auth_error("正在连接服务器...", false)
+	if auth_register_mode:
+		client.register(account, password)
+	else:
+		client.start(account, password)
+
+func _set_auth_error(message: String, is_error: bool = true) -> void:
+	if auth_error_label:
+		auth_error_label.text = message
+		auth_error_label.modulate = Color("#ff8c78") if is_error else Color("#b4d7ff")
+
+func _set_game_ui_visible(visible: bool) -> void:
+	if game_ui_root:
+		game_ui_root.visible = visible
+	if auth_ui_root:
+		auth_ui_root.visible = not visible
+	if auth_submit_button:
+		auth_submit_button.disabled = false
+
+func _is_pointer_over_game_ui(_position: Vector2) -> bool:
+	# Godot的Button会消费已处理输入；保留这个边界，便于以后接入可点击的3D HUD。
+	# Godot Buttons consume handled input; keep this boundary for future interactive 3D HUDs.
+	return false
+
+func _build_npc_dialog() -> void:
+	npc_dialog = Panel.new()
+	npc_dialog.position = Vector2(330.0, 260.0)
+	npc_dialog.size = Vector2(420.0, 210.0)
+	npc_dialog.visible = false
+	game_ui_root.add_child(npc_dialog)
+	var box := VBoxContainer.new()
+	box.position = Vector2(24.0, 18.0)
+	box.size = Vector2(372.0, 174.0)
+	npc_dialog.add_child(box)
+	npc_dialog_text = Label.new()
+	npc_dialog_text.custom_minimum_size = Vector2(372.0, 90.0)
+	npc_dialog_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(npc_dialog_text)
+	var actions := HBoxContainer.new()
+	box.add_child(actions)
+	npc_dialog_action_button = Button.new()
+	npc_dialog_action_button.custom_minimum_size = Vector2(280.0, 44.0)
+	npc_dialog_action_button.pressed.connect(_npc_quest_action)
+	actions.add_child(npc_dialog_action_button)
+	npc_dialog_close_button = Button.new()
+	npc_dialog_close_button.text = "关闭"
+	npc_dialog_close_button.custom_minimum_size = Vector2(80.0, 44.0)
+	npc_dialog_close_button.pressed.connect(_close_npc_dialog)
+	actions.add_child(npc_dialog_close_button)
+
+func _build_loot_panel() -> void:
+	loot_panel = Panel.new()
+	loot_panel.position = Vector2(760.0, 210.0)
+	loot_panel.size = Vector2(360.0, 320.0)
+	loot_panel.visible = false
+	game_ui_root.add_child(loot_panel)
+	var box := VBoxContainer.new()
+	box.position = Vector2(18.0, 14.0)
+	box.size = Vector2(324.0, 292.0)
+	loot_panel.add_child(box)
+	loot_title = Label.new()
+	loot_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	loot_title.text = "尸体掉落"
+	box.add_child(loot_title)
+	loot_list = VBoxContainer.new()
+	loot_list.custom_minimum_size = Vector2(324.0, 170.0)
+	box.add_child(loot_list)
+	loot_result = Label.new()
+	loot_result.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(loot_result)
+	var actions := HBoxContainer.new()
+	box.add_child(actions)
+	loot_all_button = Button.new()
+	loot_all_button.text = "全部拾取"
+	loot_all_button.pressed.connect(_loot_all)
+	actions.add_child(loot_all_button)
+	var close := Button.new()
+	close.text = "关闭"
+	close.pressed.connect(_close_loot_panel)
+	actions.add_child(close)
+
+## 构建桌面版背包；背包只展示服务端快照，使用按钮仍调用同一个UseItem RPC。
+## Builds the desktop inventory; it only displays server snapshots and uses the same UseItem RPC as the hotbar.
+func _build_inventory_panel() -> void:
+	inventory_toggle_button = Button.new()
+	inventory_toggle_button.position = Vector2(24.0, 392.0)
+	inventory_toggle_button.size = Vector2(160.0, 40.0)
+	inventory_toggle_button.text = "背包（B）"
+	inventory_toggle_button.pressed.connect(_toggle_inventory)
+	game_ui_root.add_child(inventory_toggle_button)
+
+	inventory_panel = Panel.new()
+	inventory_panel.position = Vector2(280.0, 150.0)
+	inventory_panel.size = Vector2(680.0, 410.0)
+	inventory_panel.visible = false
+	game_ui_root.add_child(inventory_panel)
+	var box := VBoxContainer.new()
+	box.position = Vector2(20.0, 16.0)
+	box.size = Vector2(640.0, 378.0)
+	inventory_panel.add_child(box)
+	var header := HBoxContainer.new()
+	box.add_child(header)
+	var title := Label.new()
+	title.text = "背包 / Inventory"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", 22)
+	header.add_child(title)
+	var close := Button.new()
+	close.text = "关闭"
+	close.pressed.connect(_close_inventory)
+	header.add_child(close)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(640.0, 330.0)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(scroll)
+	inventory_list = VBoxContainer.new()
+	inventory_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inventory_list.add_theme_constant_override("separation", 8)
+	scroll.add_child(inventory_list)
+	_render_inventory_panel()
+
+func _toggle_inventory() -> void:
+	if client == null or client.phase != "map":
+		return
+	if inventory_panel:
+		inventory_panel.visible = not inventory_panel.visible
+		if inventory_panel.visible:
+			_render_inventory_panel()
+
+func _close_inventory() -> void:
+	if inventory_panel:
+		inventory_panel.visible = false
+
+## 以ItemConfig分组展示背包；数量和可用性来自服务端，客户端不预扣、不猜测事务结果。
+## Renders inventory entries by ItemConfig; count and usability are server-authoritative.
+func _render_inventory_panel() -> void:
+	if inventory_list == null:
+		return
+	for child in inventory_list.get_children():
+		child.queue_free()
+	var config_ids: Array[int] = []
+	for key in inventory_items.keys():
+		var config_id: int = int(key)
+		var item: Dictionary = inventory_items[key]
+		if int(item.get("count", 0)) > 0:
+			config_ids.append(config_id)
+	config_ids.sort()
+	if config_ids.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "背包是空的"
+		empty_label.add_theme_font_size_override("font_size", 18)
+		inventory_list.add_child(empty_label)
+		return
+	for config_id in config_ids:
+		var item: Dictionary = inventory_items[config_id]
+		var row := HBoxContainer.new()
+		row.custom_minimum_size = Vector2(600.0, 52.0)
+		var label := Label.new()
+		label.text = "%s    数量：%d" % [_item_name(config_id), int(item.get("count", 0))]
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(label)
+		var use_button := Button.new()
+		use_button.text = "使用"
+		use_button.custom_minimum_size = Vector2(90.0, 42.0)
+		use_button.pressed.connect(_use_inventory_config.bind(config_id))
+		row.add_child(use_button)
+		inventory_list.add_child(row)
+
+func _use_inventory_config(config_id: int) -> void:
+	if not inventory_items.has(config_id):
+		_on_status("没有可用的%s" % _item_name(config_id), true)
+		return
+	var item: Dictionary = inventory_items[config_id]
+	if int(item.get("count", 0)) <= 0:
+		_on_status("%s数量不足" % _item_name(config_id), true)
+		return
+	if client.use_item(int(item.get("item_id", 0))):
+		_on_status("正在使用%s" % _item_name(config_id), false)
 
 func _update_direction_input(delta: float) -> void:
 	if client == null or client.phase != "map":
@@ -257,23 +624,31 @@ func _navigate_from_screen(screen_position: Vector2) -> void:
 		return
 	var origin := camera.project_ray_origin(screen_position)
 	var direction := camera.project_ray_normal(screen_position)
-	var monster_unit_id := _pick_monster_from_screen(origin, direction)
-	if monster_unit_id != 0:
-		_select_monster(monster_unit_id)
+	var selected_unit_id: int = _pick_selectable_from_screen(origin, direction)
+	if selected_unit_id != 0:
+		_select_unit(selected_unit_id)
 		return
-	var hit = Plane(Vector3.UP, 0.0).intersects_ray(origin, direction)
-	if hit is Vector3 and absf(hit.x) <= MAP_SIZE * 0.5 and absf(hit.z) <= MAP_SIZE * 0.5:
-		client.navigate_to(hit.x, 0.0, hit.z, sequence)
-		sequence += 1
+	# 与Cocos3D桌面演示保持一致：当前版本暂时关闭点击地面寻路，保留原计算代码供以后恢复。
+	# Match the Cocos3D desktop demo: ground-click navigation is temporarily disabled; keep the old calculation for a future restore.
+	# var hit = Plane(Vector3.UP, 0.0).intersects_ray(origin, direction)
+	# if hit is Vector3 and absf(hit.x) <= MAP_SIZE * 0.5 and absf(hit.z) <= MAP_SIZE * 0.5:
+	# 	client.navigate_to(hit.x, 0.0, hit.z, sequence)
+	# 	sequence += 1
 
 ## 用射线和怪物表现方块做AABB相交；命中怪物后不再进入地面寻路。
 ## Uses ray/AABB intersection against monster grayboxes so a monster click never falls through to ground navigation.
 func _pick_monster_from_screen(origin: Vector3, direction: Vector3) -> int:
+	return _pick_selectable_from_screen(origin, direction)
+
+## 选择可见的怪物或NPC；点击实体后绝不能穿透到地面行为。
+## Picks a visible monster or NPC; an entity hit must never fall through to ground behavior.
+func _pick_selectable_from_screen(origin: Vector3, direction: Vector3) -> int:
 	var nearest_unit_id := 0
 	var nearest_distance := INF
 	for unit_id in units:
 		var state: Dictionary = units[unit_id]
-		if int(state.get("entity_type", 0)) != 2 or not unit_nodes.has(unit_id):
+		var entity_type: int = int(state.get("entity_type", 0))
+		if (entity_type != 2 and entity_type != 3) or not unit_nodes.has(unit_id):
 			continue
 		var node: Node3D = unit_nodes[unit_id]
 		var distance := _intersect_ray_box(origin, direction, node.position, PLAYER_HALF_WIDTH, PLAYER_HEIGHT * 0.5, PLAYER_HALF_WIDTH)
@@ -304,29 +679,47 @@ func _ray_axis_interval(origin: float, direction: float, min_value: float, max_v
 	return Vector2(first, second)
 
 func _select_monster(unit_id: int) -> void:
-	if selected_monster_unit_id == unit_id:
+	_select_unit(unit_id)
+
+## 统一选择怪物/NPC；两种实体共用脚底标记和目标HUD，技能只读取怪物目标。
+## Selects monster/NPC through one path; both share the marker/target HUD while skills only consume monster targets.
+func _select_unit(unit_id: int) -> void:
+	if selected_monster_unit_id == unit_id or selected_npc_unit_id == unit_id:
 		return
 	_clear_monster_selection()
 	if not units.has(unit_id) or not unit_nodes.has(unit_id):
 		return
 	var state: Dictionary = units[unit_id]
-	if int(state.get("entity_type", 0)) != 2:
+	var entity_type: int = int(state.get("entity_type", 0))
+	if entity_type != 2 and entity_type != 3:
 		return
-	selected_monster_unit_id = unit_id
+	if entity_type == 2:
+		selected_monster_unit_id = unit_id
+	else:
+		selected_npc_unit_id = unit_id
 	var node: Node3D = unit_nodes[unit_id]
 	_create_selection_marker(node)
 	_set_unit_color(unit_id)
-	selected_monster_label.text = "目标：%s\n实例ID：%d" % [_monster_name(int(state.get("config_id", 0))), unit_id]
+	selected_monster_label.text = "%s：%s\n实例ID：%d" % ["NPC" if entity_type == 3 else "目标", _entity_name(state), unit_id]
 
 func _clear_monster_selection() -> void:
 	if selected_monster_unit_id != 0 and unit_nodes.has(selected_monster_unit_id):
 		_set_unit_color(selected_monster_unit_id)
+	if selected_npc_unit_id != 0 and unit_nodes.has(selected_npc_unit_id):
+		_set_unit_color(selected_npc_unit_id)
 	if selected_monster_marker:
 		selected_monster_marker.queue_free()
 		selected_monster_marker = null
 	selected_monster_unit_id = 0
+	selected_npc_unit_id = 0
 	if selected_monster_label:
-		selected_monster_label.text = "目标：未选择怪物"
+		selected_monster_label.text = "目标：未选择实体"
+	if npc_dialog:
+		npc_dialog.visible = false
+	if loot_panel:
+		loot_panel.visible = false
+	inspected_loot.clear()
+	inspected_loot_monster_id = 0
 
 func _monster_name(config_id: int) -> String:
 	match config_id:
@@ -337,6 +730,28 @@ func _monster_name(config_id: int) -> String:
 		_:
 			return "MonsterConfig#%d" % config_id
 
+func _npc_name(config_id: int) -> String:
+	match config_id:
+		9001:
+			return "任务使者"
+		_:
+			return "NpcConfig#%d" % config_id
+
+func _entity_name(state: Dictionary) -> String:
+	var display_name: String = String(state.get("display_name", "")).strip_edges()
+	if not display_name.is_empty():
+		return display_name
+	var entity_type: int = int(state.get("entity_type", 0))
+	var config_id: int = int(state.get("config_id", 0))
+	if entity_type == 1:
+		var account: String = String(state.get("account", "玩家"))
+		return account if not account.is_empty() else "玩家"
+	if entity_type == 2:
+		return _monster_name(config_id)
+	if entity_type == 3:
+		return _npc_name(config_id)
+	return "Entity#%d" % int(state.get("unit_id", 0))
+
 func _set_unit_color(unit_id: int) -> void:
 	if not unit_nodes.has(unit_id) or not units.has(unit_id):
 		return
@@ -345,10 +760,13 @@ func _set_unit_color(unit_id: int) -> void:
 	var config_id := int(state.get("config_id", 0))
 	var color := (
 		Color("#36b7e8") if unit_id == local_unit_id else
+		Color("#af50e6") if entity_type == 3 else
 		Color("#ef4d47") if entity_type == 2 and config_id == 2 else
 		Color("#ffd746") if entity_type == 2 else
 		Color("#50d77d")
 	)
+	if not bool(state.get("alive", true)) and entity_type == 2:
+		color = Color("#777777")
 	var material := unit_nodes[unit_id].material_override as StandardMaterial3D
 	if material:
 		material.albedo_color = color
@@ -397,7 +815,31 @@ func _update_camera(delta: float) -> void:
 	camera.look_at(target, Vector3.UP)
 
 func _on_map_entered(snapshot: Dictionary) -> void:
+	_clear_monster_selection()
+	for old_unit_id in unit_nodes.keys():
+		var old_node: Node3D = unit_nodes[old_unit_id]
+		if is_instance_valid(old_node):
+			old_node.queue_free()
+	units.clear()
+	unit_nodes.clear()
+	stable_ground_y.clear()
+	pending_ground_y.clear()
+	entity_name_labels.clear()
+	for cast_id in skill_projectiles.keys():
+		var flight: Dictionary = skill_projectiles[cast_id]
+		var projectile: Node3D = flight.get("node")
+		if is_instance_valid(projectile):
+			projectile.queue_free()
+	skill_projectiles.clear()
+	if skill_channel_beam and is_instance_valid(skill_channel_beam):
+		skill_channel_beam.queue_free()
+	skill_channel_beam = null
+	skill_cast_state.clear()
+	active_buffs.clear()
+	auto_attack_enabled = false
+	auto_attack_target_unit_id = 0
 	local_unit_id = snapshot.unit_id
+	_set_game_ui_visible(true)
 	local_numerics.clear()
 	inventory_items.clear()
 	for item in snapshot.get("items", []):
@@ -408,7 +850,7 @@ func _on_map_entered(snapshot: Dictionary) -> void:
 	completed_quest_config_ids.clear()
 	for quest_id in snapshot.get("completed_quest_config_ids", []):
 		completed_quest_config_ids[int(quest_id)] = true
-	_upsert_unit({"unit_id": snapshot.unit_id, "x": snapshot.x, "y": snapshot.y, "z": snapshot.z, "yaw": 0.0, "alive": true, "entity_type": 1, "config_id": 0}, true)
+	_upsert_unit({"unit_id": snapshot.unit_id, "x": snapshot.x, "y": snapshot.y, "z": snapshot.z, "yaw": 0.0, "alive": true, "entity_type": 1, "config_id": 0, "account": snapshot.get("account", "玩家"), "display_name": snapshot.get("account", "玩家")}, true)
 	for entity in snapshot.entities:
 		_upsert_unit(entity, true)
 		for numeric in entity.get("numerics", []):
@@ -416,6 +858,8 @@ func _on_map_entered(snapshot: Dictionary) -> void:
 		for buff in entity.get("buffs", []):
 			_on_buff_added(buff)
 	_update_player_stats_hud()
+	_update_item_buttons()
+	_render_inventory_panel()
 	_update_quest_hud()
 
 func _on_map_ready(snapshot: Dictionary) -> void:
@@ -475,9 +919,11 @@ func _on_entity_state(message: Dictionary) -> void:
 		var dirty := int(state_delta.get("dirty_mask_low", 0))
 		if dirty & (1 << 6):
 			state["alive"] = bool(state_delta.get("alive", false))
-			unit_nodes[unit_id].visible = bool(state.get("alive", true))
-			if not bool(state.get("alive", true)) and unit_id == selected_monster_unit_id:
-				_clear_monster_selection()
+			# 尸体仍是可拾取实体；只改变颜色，不隐藏也不清除选中状态。
+			# A corpse remains a lootable entity; change its color but keep it visible and selectable.
+			unit_nodes[unit_id].visible = true
+			_set_unit_color(unit_id)
+	_update_loot_interaction_hud()
 
 func _update_player_stats_hud() -> void:
 	if player_hp_label == null or player_mp_label == null:
@@ -504,12 +950,38 @@ func _upsert_unit(state: Dictionary, snap: bool) -> void:
 	else:
 		for key in state:
 			units[unit_id][key] = state[key]
-	unit_nodes[unit_id].visible = bool(units[unit_id].get("alive", true))
+	unit_nodes[unit_id].visible = true
 	_set_unit_color(unit_id)
+	_ensure_entity_name_label(unit_id)
 	_accept_ground_y(unit_id, float(state.y))
 	if created or snap:
 		var current: Dictionary = units[unit_id]
 		unit_nodes[unit_id].position = Vector3(current.x, _render_ground_y(unit_id, current) + PLAYER_HEIGHT * 0.5, current.z)
+
+## 为玩家、NPC和怪物创建头顶名称；名称来自服务端快照，配置名只作为兼容回退。
+## Creates overhead names for players, NPCs, and monsters; server display_name is authoritative, config names are fallback only.
+func _ensure_entity_name_label(unit_id: int) -> void:
+	if not units.has(unit_id) or not unit_nodes.has(unit_id):
+		return
+	var state: Dictionary = units[unit_id]
+	var entity_type: int = int(state.get("entity_type", 0))
+	if entity_type < 1 or entity_type > 3:
+		return
+	var label: Label3D
+	if entity_name_labels.has(unit_id) and is_instance_valid(entity_name_labels[unit_id]):
+		label = entity_name_labels[unit_id]
+	else:
+		label = Label3D.new()
+		label.name = "EntityName_%d" % unit_id
+		label.position = Vector3(0.0, PLAYER_HEIGHT * 0.7 + 0.25, 0.0)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.no_depth_test = true
+		label.font_size = 32
+		label.outline_size = 8
+		unit_nodes[unit_id].add_child(label)
+		entity_name_labels[unit_id] = label
+	label.text = _entity_name(state)
+	label.modulate = Color("#d9f4ff") if entity_type == 1 else Color("#f5e6b5") if entity_type == 2 else Color("#f0c7ff")
 
 func _render_ground_y(unit_id: int, state: Dictionary) -> float:
 	return float(stable_ground_y.get(unit_id, state.y))
@@ -536,8 +1008,13 @@ func _accept_ground_y(unit_id: int, incoming_y: float) -> void:
 func _remove_unit(unit_id: int) -> void:
 	if unit_id == local_unit_id:
 		return
-	if unit_id == selected_monster_unit_id:
+	if unit_id == selected_monster_unit_id or unit_id == selected_npc_unit_id:
 		_clear_monster_selection()
+	if entity_name_labels.has(unit_id):
+		var label: Label3D = entity_name_labels[unit_id]
+		if is_instance_valid(label):
+			label.queue_free()
+		entity_name_labels.erase(unit_id)
 	if unit_nodes.has(unit_id):
 		unit_nodes[unit_id].queue_free()
 		unit_nodes.erase(unit_id)
@@ -567,7 +1044,22 @@ func _on_item_changed(item: Dictionary) -> void:
 	if item == null:
 		return
 	inventory_items[int(item.get("config_id", 0))] = item
+	_update_item_buttons()
+	_render_inventory_panel()
 	_on_status("道具数量已更新：%s x%d" % [_item_name(int(item.get("config_id", 0))), int(item.get("count", 0))], false)
+
+func _update_item_buttons() -> void:
+	for slot in [2, 3]:
+		if not item_buttons.has(slot):
+			continue
+		var config_id: int = 1001 if slot == 2 else 1002
+		var count := 0
+		if inventory_items.has(config_id):
+			var item: Dictionary = inventory_items[config_id]
+			count = int(item.get("count", 0))
+		var button: Button = item_buttons[slot]
+		button.text = "%d %s x%d" % [slot, _item_name(config_id), count]
+		button.disabled = count <= 0
 
 func _on_buff_added(buff: Dictionary) -> void:
 	if buff == null or int(buff.get("unit_id", 0)) != local_unit_id:
@@ -595,6 +1087,7 @@ func _on_quest_progress(message: Dictionary) -> void:
 		quests.erase(int(quest_id))
 		completed_quest_config_ids[int(quest_id)] = true
 	_update_quest_hud()
+	_refresh_npc_dialog()
 
 func _on_skill_cast_state(state: Dictionary) -> void:
 	skill_cast_state = state.duplicate()
@@ -629,8 +1122,13 @@ func _on_skill_impact(message: Dictionary) -> void:
 		skill_projectiles.erase(cast_id)
 	var target_id := int(message.get("target_unit_id", 0))
 	_on_status("技能命中：%s，伤害 %d" % [_skill_name(int(message.get("skill_id", 0))), int(message.get("damage", 0))], false)
-	if bool(message.get("killed", false)) and unit_nodes.has(target_id):
-		unit_nodes[target_id].visible = false
+	# 死亡表现由G2C_EntityState/alive驱动；技能命中不能提前删除尸体，否则掉落窗口无实体可绑定。
+	# Death presentation is driven by G2C_EntityState/alive; an impact must not hide the corpse before loot is resolved.
+	if bool(message.get("killed", false)) and units.has(target_id):
+		var state: Dictionary = units[target_id]
+		state["alive"] = false
+		_set_unit_color(target_id)
+		_update_loot_interaction_hud()
 
 func _use_item_slot(slot: int) -> void:
 	var config_id := 1001 if slot == 2 else 1002
@@ -647,7 +1145,7 @@ func _use_item_slot(slot: int) -> void:
 func _cast_skill_slot(slot: int) -> void:
 	# Dictionary.get() returns Variant in Godot; convert explicitly so strict warnings do not stop the demo.
 	# Godot 的 Dictionary.get() 返回 Variant，这里显式转成 int，避免严格警告被当成错误。
-	var skill_id: int = int({4: 3001, 5: 3002, 6: 3003, 7: 3004, 8: 3005}.get(slot, 0))
+	var skill_id: int = _skill_id_for_slot(slot)
 	if skill_id == 0:
 		return
 	var target_id := selected_monster_unit_id
@@ -656,6 +1154,9 @@ func _cast_skill_slot(slot: int) -> void:
 		return
 	if client.cast_skill(skill_id, target_id):
 		_on_status("请求施放%s" % _skill_name(skill_id), false)
+
+func _skill_id_for_slot(slot: int) -> int:
+	return int({4: 3001, 5: 3002, 6: 3003, 7: 3004, 8: 3005, 9: 3007}.get(slot, 0))
 
 func _accept_first_quest() -> void:
 	for quest_id in [5001, 5002, 5003, 5004]:
@@ -680,18 +1181,28 @@ func _update_skill_hud() -> void:
 	var now_ms := _server_now_ms()
 	var finish_at := int(skill_cast_state.get("finish_at_ms", 0))
 	var skill_id := int(skill_cast_state.get("skill_id", 0))
-	var text := "技能：空闲（4-8施法）"
+	var text := "技能：空闲（4-9施法）"
+	var progress := 0.0
 	if not String(skill_cast_state.get("interrupt_reason", "")).is_empty():
 		text = "技能：已打断"
 	elif skill_id != 0 and finish_at > now_ms:
 		var started_at := int(skill_cast_state.get("started_at_ms", now_ms))
-		var progress := clampf(float(now_ms - started_at) / float(max(1, finish_at - started_at)), 0.0, 1.0)
-		text = "技能：%s 读条 %d%%" % [_skill_name(skill_id), roundi(progress * 100.0)]
+		progress = clampf(float(now_ms - started_at) / float(max(1, finish_at - started_at)), 0.0, 1.0)
+		var channel_count := int(skill_cast_state.get("channel_tick_count", 0))
+		if channel_count > 0:
+			text = "技能：%s 引导 %d%%（受击/移动会减少剩余时间）" % [_skill_name(skill_id), roundi((1.0 - progress) * 100.0)]
+		else:
+			text = "技能：%s 读条 %d%%" % [_skill_name(skill_id), roundi(progress * 100.0)]
 	else:
 		var gcd_end := int(skill_cast_state.get("global_cooldown_end_at_ms", 0))
 		if gcd_end > now_ms:
 			text = "技能：公共CD %.1fs" % (float(gcd_end - now_ms) / 1000.0)
 	skill_label.text = text
+	if skill_progress_bar:
+		var channel := int(skill_cast_state.get("channel_tick_count", 0)) > 0 and skill_id != 0 and finish_at > now_ms
+		skill_progress_bar.value = (1.0 - progress) if channel else progress
+		if not skill_cast_state.has("started_at_ms") or finish_at <= now_ms:
+			skill_progress_bar.value = 0.0
 
 func _update_buff_hud() -> void:
 	if buff_label == null:
@@ -726,6 +1237,190 @@ func _update_quest_hud() -> void:
 		entries.append("%s %s%s" % [_quest_name(int(quest_id)), ",".join(progress), "（可交付）" if bool(quest.get("ready_to_complete", false)) else ""])
 	quest_label.text = "任务：" + " | ".join(entries)
 
+func _find_nearby_npc() -> int:
+	if not units.has(local_unit_id):
+		return 0
+	var player: Dictionary = units[local_unit_id]
+	var nearest_id := 0
+	var nearest_distance := INF
+	for unit_id in units:
+		var state: Dictionary = units[unit_id]
+		if int(state.get("entity_type", 0)) != 3 or not bool(state.get("alive", true)):
+			continue
+		var dx := float(state.get("x", 0.0)) - float(player.get("x", 0.0))
+		var dz := float(state.get("z", 0.0)) - float(player.get("z", 0.0))
+		var distance := sqrt(dx * dx + dz * dz)
+		if distance <= 5.0 and distance < nearest_distance:
+			nearest_id = int(unit_id)
+			nearest_distance = distance
+	return nearest_id
+
+func _update_npc_interaction_hud() -> void:
+	nearby_npc_unit_id = _find_nearby_npc()
+	if npc_interaction_button == null:
+		return
+	npc_interaction_button.visible = nearby_npc_unit_id != 0
+	if nearby_npc_unit_id != 0 and units.has(nearby_npc_unit_id):
+		npc_interaction_button.text = "交互：%s（F键）" % _entity_name(units[nearby_npc_unit_id])
+	if npc_dialog and npc_dialog.visible:
+		if nearby_npc_unit_id == 0 or selected_npc_unit_id != nearby_npc_unit_id:
+			_close_npc_dialog()
+		else:
+			_refresh_npc_dialog()
+
+func _interact_nearby() -> void:
+	if nearby_npc_unit_id != 0:
+		_select_unit(nearby_npc_unit_id)
+		npc_dialog.visible = true
+		_refresh_npc_dialog()
+		return
+	if selected_monster_unit_id != 0 and units.has(selected_monster_unit_id):
+		var monster: Dictionary = units[selected_monster_unit_id]
+		if not bool(monster.get("alive", true)):
+			var player: Dictionary = units.get(local_unit_id, {})
+			var dx := float(monster.get("x", 0.0)) - float(player.get("x", 0.0))
+			var dz := float(monster.get("z", 0.0)) - float(player.get("z", 0.0))
+			if dx * dx + dz * dz > 16.0:
+				_on_status("请靠近尸体后拾取", true)
+				return
+			# F是快捷的全部拾取，不需要先打开预览窗口；先绑定当前尸体，避免空ID请求。
+			# F is the quick loot-all path; bind the selected corpse before sending the request.
+			inspected_loot_monster_id = selected_monster_unit_id
+			# 与Cocos3D一致：F/交互键对尸体执行全部拾取，普通按钮仍然先查看列表。
+			# Match Cocos3D: F/interact loots the whole corpse; the normal button opens the list first.
+			_loot_all()
+			return
+	_on_status("附近没有可交互的NPC或尸体", true)
+
+func _refresh_npc_dialog() -> void:
+	if npc_dialog_text == null or selected_npc_unit_id == 0 or not units.has(selected_npc_unit_id):
+		return
+	var action_id := 0
+	var action_mode := "none"
+	for quest_id in [5001, 5005, 5006]:
+		if quests.has(quest_id):
+			var active: Dictionary = quests[quest_id]
+			if bool(active.get("ready_to_complete", false)) or int(active.get("status", 0)) == 2:
+				action_id = quest_id
+				action_mode = "complete"
+			break
+		if not completed_quest_config_ids.has(quest_id):
+			action_id = quest_id
+			action_mode = "accept"
+			break
+	var npc_name := _entity_name(units[selected_npc_unit_id])
+	if action_mode == "accept":
+		npc_dialog_text.text = "%s：我这里有一项任务。\n任务：%s" % [npc_name, _quest_name(action_id)]
+		npc_dialog_action_button.text = "领取任务：%s" % _quest_name(action_id)
+		npc_dialog_action_button.disabled = false
+	elif action_mode == "complete":
+		npc_dialog_text.text = "%s：做得很好，请把任务交给我。\n任务：%s" % [npc_name, _quest_name(action_id)]
+		npc_dialog_action_button.text = "交付任务：%s" % _quest_name(action_id)
+		npc_dialog_action_button.disabled = false
+	else:
+		npc_dialog_text.text = "%s：任务进行中，请继续完成目标。" % npc_name
+		npc_dialog_action_button.text = "任务进行中"
+		npc_dialog_action_button.disabled = true
+
+func _npc_quest_action() -> void:
+	if selected_npc_unit_id == 0:
+		return
+	for quest_id in [5001, 5005, 5006]:
+		if quests.has(quest_id):
+			var active: Dictionary = quests[quest_id]
+			if bool(active.get("ready_to_complete", false)) or int(active.get("status", 0)) == 2:
+				if client.complete_quest_from_npc(quest_id, selected_npc_unit_id):
+					_on_status("正在交付任务：%s" % _quest_name(quest_id), false)
+				return
+			if not completed_quest_config_ids.has(quest_id):
+				if client.accept_quest_from_npc(quest_id, selected_npc_unit_id):
+					_on_status("正在接取任务：%s" % _quest_name(quest_id), false)
+				return
+		_on_status("没有可接取或交付的任务", false)
+
+func _close_npc_dialog() -> void:
+	if npc_dialog:
+		npc_dialog.visible = false
+
+func _update_loot_interaction_hud() -> void:
+	if loot_interaction_button == null:
+		return
+	if selected_monster_unit_id == 0 or not units.has(selected_monster_unit_id):
+		loot_interaction_button.visible = false
+		return
+	var monster: Dictionary = units[selected_monster_unit_id]
+	if bool(monster.get("alive", true)):
+		loot_interaction_button.visible = false
+		return
+	var player: Dictionary = units.get(local_unit_id, {})
+	var dx := float(monster.get("x", 0.0)) - float(player.get("x", 0.0))
+	var dz := float(monster.get("z", 0.0)) - float(player.get("z", 0.0))
+	var in_range := dx * dx + dz * dz <= 16.0
+	loot_interaction_button.visible = true
+	loot_interaction_button.disabled = not in_range
+	loot_interaction_button.text = "查看尸体掉落" if in_range else "靠近尸体后拾取"
+
+func _inspect_selected_loot() -> void:
+	if selected_monster_unit_id == 0:
+		return
+	if client.inspect_loot_monster(selected_monster_unit_id):
+		_on_status("正在查看尸体掉落...", false)
+
+func _on_loot_inspected(message: Dictionary) -> void:
+	inspected_loot_monster_id = int(message.get("monster_id", 0))
+	inspected_loot = message.get("drops", [])
+	loot_panel.visible = true
+	_render_loot_panel()
+
+func _render_loot_panel() -> void:
+	if loot_list == null:
+		return
+	for child in loot_list.get_children():
+		child.queue_free()
+	if inspected_loot.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "尸体上已经没有可拾取的掉落"
+		loot_list.add_child(empty_label)
+		loot_all_button.disabled = true
+		return
+	loot_all_button.disabled = false
+	for raw_drop in inspected_loot:
+		var drop: Dictionary = raw_drop
+		var drop_id := int(drop.get("drop_id", 0))
+		var item_id := int(drop.get("item_config_id", 0))
+		var row := Button.new()
+		row.text = "%s × %d" % [_item_name(item_id), int(drop.get("count", 0))]
+		row.pressed.connect(_loot_one.bind(drop_id))
+		loot_list.add_child(row)
+
+func _loot_one(drop_id: int) -> void:
+	if inspected_loot_monster_id == 0:
+		return
+	loot_operation_id = "godot-loot-%d" % Time.get_ticks_usec()
+	client.loot_monster(inspected_loot_monster_id, loot_operation_id, drop_id, false)
+
+func _loot_all() -> void:
+	var monster_id: int = inspected_loot_monster_id if inspected_loot_monster_id != 0 else selected_monster_unit_id
+	if monster_id == 0:
+		return
+	loot_operation_id = "godot-loot-all-%d" % Time.get_ticks_usec()
+	client.loot_monster(monster_id, loot_operation_id, 0, true)
+
+func _on_loot_result(message: Dictionary) -> void:
+	inspected_loot = message.get("remaining_drops", [])
+	_render_loot_panel()
+	var items: Array = message.get("items", [])
+	_on_status("拾取成功：%d件道具" % items.size(), false)
+
+func _close_loot_panel() -> void:
+	if loot_panel:
+		loot_panel.visible = false
+
+func _on_session_replaced(message: Dictionary) -> void:
+	_set_game_ui_visible(false)
+	var reason: String = String(message.get("reason", "账号已在其他位置登录"))
+	_on_status("连接已被顶下线：%s" % reason, true)
+
 func _update_skill_projectiles(_delta: float) -> void:
 	var remove_ids: Array[int] = []
 	for cast_id in skill_projectiles:
@@ -750,7 +1445,7 @@ func _server_now_ms() -> int:
 	return int(Time.get_unix_time_from_system() * 1000.0) + server_clock_offset_ms
 
 func _skill_name(skill_id: int) -> String:
-	return {3001: "寒冰箭", 3002: "火焰冲击", 3003: "惩击", 3004: "真言术·盾", 3005: "真言术·韧", 3006: "引导治疗"}.get(skill_id, "Skill#%d" % skill_id)
+	return {3001: "寒冰箭", 3002: "火焰冲击", 3003: "惩击", 3004: "真言术·盾", 3005: "真言术·韧", 3006: "引导治疗", 3007: "精神鞭笞"}.get(skill_id, "Skill#%d" % skill_id)
 
 func _item_name(config_id: int) -> String:
 	return {1001: "小型生命药水", 1002: "大型生命药水"}.get(config_id, "Item#%d" % config_id)
@@ -759,7 +1454,7 @@ func _buff_name(buff_id: int) -> String:
 	return {2001: "持续恢复", 4001: "冰冷", 4002: "灼烧", 4003: "真言术·盾", 4004: "虚弱灵魂", 4005: "真言术·韧"}.get(buff_id, "Buff#%d" % buff_id)
 
 func _quest_name(quest_id: int) -> String:
-	return {5001: "清理怪物", 5002: "试用药水", 5003: "前往地图2", 5004: "进阶试炼"}.get(quest_id, "Quest#%d" % quest_id)
+	return {5001: "清理怪物", 5002: "试用药水", 5003: "前往地图2", 5004: "进阶试炼", 5005: "清理怪B", 5006: "返回任务使者"}.get(quest_id, "Quest#%d" % quest_id)
 
 func _toggle_auto_attack() -> void:
 	if client == null or client.phase != "map" or auto_attack_request_pending:
@@ -793,8 +1488,42 @@ func _update_auto_attack_hud() -> void:
 	auto_attack_label.text = "平A：%s %d%%  目标：%d" % [bar, roundi(progress * 100.0), auto_attack_target_unit_id]
 
 func _on_status(text: String, is_error: bool) -> void:
-	status_label.text = text
-	status_label.modulate = Color("#ff8c78") if is_error else Color.WHITE
+	if status_label:
+		status_label.text = text
+		status_label.modulate = Color("#ff8c78") if is_error else Color.WHITE
+	if auth_ui_root and auth_ui_root.visible:
+		_set_auth_error(text, is_error)
+		if is_error and auth_submit_button:
+			auth_submit_button.disabled = false
+
+func _update_skill_channel_beam() -> void:
+	var skill_id := int(skill_cast_state.get("skill_id", 0))
+	var finish_at := int(skill_cast_state.get("finish_at_ms", 0))
+	var target_id := int(skill_cast_state.get("target_unit_id", 0))
+	var active := skill_id == 3007 and finish_at > _server_now_ms() and unit_nodes.has(local_unit_id) and unit_nodes.has(target_id)
+	if not active:
+		if skill_channel_beam and is_instance_valid(skill_channel_beam):
+			skill_channel_beam.queue_free()
+		skill_channel_beam = null
+		return
+	if skill_channel_beam == null or not is_instance_valid(skill_channel_beam):
+		skill_channel_beam = MeshInstance3D.new()
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color("#b98cff")
+		material.emission_enabled = true
+		material.emission = Color("#813bd1")
+		material.emission_energy_multiplier = 2.0
+		skill_channel_beam.material_override = material
+		add_child(skill_channel_beam)
+	var source := unit_nodes[local_unit_id].position + Vector3.UP * 0.9
+	var target := unit_nodes[target_id].position + Vector3.UP * 0.9
+	var distance := source.distance_to(target)
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.12, 0.12, distance)
+	skill_channel_beam.mesh = mesh
+	skill_channel_beam.position = (source + target) * 0.5
+	skill_channel_beam.look_at(target, Vector3.UP)
+	skill_channel_beam.rotate_y(PI)
 
 func _create_box(size: Vector3, color: Color) -> MeshInstance3D:
 	var node := MeshInstance3D.new()

@@ -1,31 +1,56 @@
 # TiangZ Godot 4.7.1 3D Demo
 
-这是TiangZ的Godot 4.7.1 WebSocket演示工程。它与Cocos3D、UE 5.4.4共用同一套服务端协议和Map 100导航主链，当前覆盖：
+这是 TiangZ 的 Godot 4.7.1 桌面演示。它与 Cocos3D 桌面版共用同一套 WebSocket 协议、Map 100 和服务端业务规则；Godot 只负责节点、镜头和界面表现，不复制 Rust 的 NavMesh、碰撞或战斗结算。
 
-- LoginMgr、Login、Gate登录与进入Map 100；
-- `G2C_EntityNavigate`权威位置和基础AOI进入/离开；
-- 左键请求服务端NavMesh寻路；
-- W/S方向移动与A/D转身；
-- `E`键请求服务端动态门；
-- 5秒Gate Ping和服务端时间显示；
-- Godot米制Y-Up表现，不把Godot节点类型写入协议。
+## 已覆盖的演示链路
+
+- 登录和显式注册：默认先显示登录，注册成功后自动继续登录；用户名同时作为角色名。
+- Map 100：玩家、其他玩家、NPC、主动怪和被动怪都使用服务端快照创建。
+- 实体表现：玩家、NPC、怪物头顶显示名字；怪物保持主动红色、被动黄色，NPC 使用紫色。
+- 选择与交互：左键只选择怪物或 NPC，显示目标名、实例 ID 和脚底选择圈；当前版本暂时关闭点击地面寻路，与 Cocos3D 桌面版一致。
+- 移动与镜头：W/S 前后移动，A/D 转身；按住鼠标右键时 A/D 平移，拖动右键环绕镜头，滚轮调整距离。
+- 战斗：`1` 开关平 A；`4` 到 `9` 施放寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、精神鞭笞。读条、公共 CD、弹道和精神鞭笞连线由 Godot 表现层显示，伤害仍由服务端裁决。
+- Buff：显示服务端推送的 Buff 名称、剩余时间和护盾状态。
+- NPC 任务：靠近任务使者后按 `F` 或点击交互按钮，按任务链接取、击杀、交付任务。
+- 背包和道具：`2`、`3` 使用快捷栏药品，`B` 或“背包”按钮打开完整背包；数量和使用结果来自服务端。
+- 尸体掉落：靠近死亡怪物后可以查看掉落列表，逐项拾取或全部拾取；尸体不会因为客户端点击而提前消失。
+- 动态门和连接状态：`E` 切换服务端动态门；显示 Gate Ping、服务器时间，并处理同账号顶号提示。
 
 ## 启动
 
-先在TiangZ根目录启动服务端：
+先在 TiangZ 根目录启动服务端：
 
 ```powershell
 cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
-然后用Godot 4.7.1打开本目录的`project.godot`并运行主场景。当前Godot适配只实现WebSocket；TCP/KCP未实现时应直接报不支持，不能假装降级。
+然后使用 Godot 4.7.1 打开本目录的 `project.godot` 并运行主场景。
+
+当前 Godot 适配只实现 WebSocket。TCP/KCP 在该客户端未实现时必须直接报不支持，不能静默降级。
 
 ## 操作
 
-左键点击绿色地面会提交`C2M_NavigateTo`，移动由Rust权威推进；W/S提交`C2M_NavigateInput`，普通模式A/D改变TiangZ协议Yaw，按住鼠标右键时A/D提交横向移动，拖动鼠标左右旋转摄像机并更新朝向；`E`切换服务端动态门，滚轮调整镜头距离。
+| 操作 | 功能 |
+| --- | --- |
+| 左键 | 选择怪物或 NPC；不会触发地面寻路 |
+| W / S | 前后移动 |
+| A / D | 转身；按住右键时改为左右平移 |
+| 鼠标右键拖动 | 环绕玩家旋转镜头 |
+| 鼠标滚轮 | 拉近或拉远镜头 |
+| `1` | 开关平 A |
+| `2` / `3` | 使用两种药品 |
+| `4` - `9` | 施放技能 |
+| `B` | 打开或关闭背包 |
+| `F` | NPC 对话；选中尸体时全部拾取 |
+| `E` | 打开或关闭动态门 |
 
-## SDK边界
+## SDK 边界
 
-`scripts/generated/tiangz_proto.gd`是由主工程从Proto生成的Godot协议编解码层，`scripts/tiangz_client.gd`是WebSocket、登录流程、RPC和Push分发层，`scripts/main.gd`只处理Godot节点和表现。修改Proto后，在TiangZ根目录执行`npm run codegen:godot-client-sdk`，不能手工修改生成的msgcode、字段编号或Codec。
+`scripts/generated/tiangz_proto.gd` 是由主工程 Proto 自动生成的 Godot 协议编解码层，不能手工修改消息编号、字段编号或 Codec。协议变化后，在 TiangZ 根目录执行：
 
-Godot客户端不复制Rust NavMesh、TileCache或权威碰撞。门的真实尺寸由服务端业务提交，角色半径由Rust按烘焙Agent规格处理；Godot只在服务端响应后更新门的显示。
+```powershell
+npm run codegen:godot-client-sdk
+npm run check:godot-demo
+```
+
+`scripts/tiangz_client.gd` 负责 WebSocket、登录、RPC 和服务端推送分发；`scripts/main.gd` 只负责 Godot 节点、UI、镜头和表现状态。客户端可以预测显示和插值，但不能在本地决定伤害、掉落、任务完成、背包数量或尸体生命周期。

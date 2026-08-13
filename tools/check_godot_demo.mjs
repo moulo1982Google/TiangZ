@@ -44,8 +44,14 @@ const codes = {
   G2C_ENTITY_ENTER: 10022,
   G2C_ENTITY_LEAVE: 10023,
   G2C_AOI_DELTA: 10025,
-  C2G_PING: 10024,
-  G2C_PING: 10031,
+	C2G_PING: 10024,
+	G2C_PING: 10031,
+	C2S_REGISTER: 10059,
+	G2C_SESSION_REPLACED: 10061,
+	C2M_LOOT_MONSTER: 10062,
+	M2C_LOOT_MONSTER: 10063,
+	C2M_INSPECT_LOOT_MONSTER: 10064,
+	M2C_INSPECT_LOOT_MONSTER: 10065,
 };
 for (const [name, code] of Object.entries(codes)) {
   assertIncludes(proto, `const ${name} := ${code}`, `Godot协议常量${name}未同步`);
@@ -64,8 +70,16 @@ for (const value of [
   "C2M_TOGGLE_DEMO_DOOR",
   "C2M_TOGGLE_AUTO_ATTACK",
   "G2C_AUTO_ATTACK_STATE",
-  "decode_g2c_demo_door_state",
-  "decode_g2c_auto_attack_state",
+	"decode_g2c_demo_door_state",
+	"decode_g2c_auto_attack_state",
+	"C2S_REGISTER",
+	"accept_quest_from_npc",
+	"complete_quest_from_npc",
+	"inspect_loot_monster",
+	"loot_monster",
+	"decode_m2c_inspect_loot_monster",
+	"decode_m2c_loot_monster",
+	"session_replaced",
 ]) {
   assertIncludes(client, value, `Godot客户端缺少${value}`);
 }
@@ -76,13 +90,29 @@ for (const value of [
   "project_ray_origin",
   "camera_distance",
   "InputEventMouseMotion",
-  "MOUSE_MODE_CAPTURED",
-  "MOUSE_LOOK_SENSITIVITY",
+	"MOUSE_MODE_CAPTURED",
+	"MOUSE_LOOK_SENSITIVITY",
+	"_build_auth_ui",
+	"_pick_selectable_from_screen",
+	"_ensure_entity_name_label",
+	"_update_item_buttons",
+	"_build_inventory_panel",
+	"_toggle_inventory",
+	"_interact_nearby",
+	"_npc_quest_action",
+	"_render_loot_panel",
+	"_loot_all",
+	"_skill_id_for_slot",
+	"_update_skill_channel_beam",
+	"_on_session_replaced",
+	"display_name",
+	"3007",
+	"ground-click navigation is temporarily disabled",
 ]) {
   assertIncludes(main, value, `Godot表现层缺少${value}`);
 }
 
-console.log("godot demo static check passed (generated WebSocket Map 100 demo)");
+console.log("godot demo static check passed (Cocos3D parity WebSocket Map 100 demo)");
 
 function assertIncludes(text, expected, message) {
   if (!text.includes(expected)) throw new Error(message);

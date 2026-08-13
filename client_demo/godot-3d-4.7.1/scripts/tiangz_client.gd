@@ -24,9 +24,14 @@ signal quest_progress(message: Dictionary)
 signal skill_cast_state(message: Dictionary)
 signal skill_projectile(message: Dictionary)
 signal skill_impact(message: Dictionary)
+signal loot_inspected(message: Dictionary)
+signal loot_result(message: Dictionary)
+signal session_replaced(message: Dictionary)
 
 var peer: WebSocketPeer
 var account: String
+var password: String
+var auth_mode := "login"
 var phase := "idle"
 var next_rpc_id := 1
 var pending: Dictionary = {}
@@ -40,9 +45,24 @@ var auto_attack_request_pending := false
 var item_request_pending := false
 var skill_request_pending := false
 var quest_request_pending := false
+var loot_inspect_request_pending := false
+var loot_request_pending := false
 
-func start(in_account: String, login_mgr_host := "127.0.0.1", login_mgr_port := 7000) -> void:
+## 开始登录流程；这里只保存本次连接所需的凭据，不落盘也不打印密码。
+## Starts login flow; credentials stay in memory for this connection and are never persisted or logged.
+func start(in_account: String, in_password: String, login_mgr_host := "127.0.0.1", login_mgr_port := 7000) -> void:
 	account = in_account
+	password = in_password
+	auth_mode = "login"
+	_emit_status("正在连接 LoginMgr %s:%d" % [login_mgr_host, login_mgr_port], false)
+	_connect(login_mgr_host, login_mgr_port, Callable(self, "_request_login_service_addr"))
+
+## 注册成功后继续复用同一条Login连接登录，保持Godot与Cocos3D相同的用户体验。
+## After registration, reuse the Login connection and continue into login for the same UX as Cocos3D.
+func register(in_account: String, in_password: String, login_mgr_host := "127.0.0.1", login_mgr_port := 7000) -> void:
+	account = in_account
+	password = in_password
+	auth_mode = "register"
 	_emit_status("正在连接 LoginMgr %s:%d" % [login_mgr_host, login_mgr_port], false)
 	_connect(login_mgr_host, login_mgr_port, Callable(self, "_request_login_service_addr"))
 
@@ -139,7 +159,16 @@ func accept_quest(quest_config_id: int) -> bool:
 	if phase != "map" or quest_request_pending:
 		return false
 	quest_request_pending = true
-	_send_rpc(TiangZProto.C2M_ACCEPT_QUEST, TiangZProto.encode_c2m_accept_quest({"quest_config_id": quest_config_id}), TiangZProto.M2C_ACCEPT_QUEST, Callable(self, "_on_accept_quest_response"))
+	_send_rpc(TiangZProto.C2M_ACCEPT_QUEST, TiangZProto.encode_c2m_accept_quest({"quest_config_id": quest_config_id, "npc_unit_id": 0}), TiangZProto.M2C_ACCEPT_QUEST, Callable(self, "_on_accept_quest_response"))
+	return true
+
+## 从指定NPC处接取任务；服务端会再次校验NPC、距离和任务链。
+## Accepts a quest from an NPC; the server rechecks NPC identity, distance, and quest chain.
+func accept_quest_from_npc(quest_config_id: int, npc_unit_id: int) -> bool:
+	if phase != "map" or quest_request_pending:
+		return false
+	quest_request_pending = true
+	_send_rpc(TiangZProto.C2M_ACCEPT_QUEST, TiangZProto.encode_c2m_accept_quest({"quest_config_id": quest_config_id, "npc_unit_id": npc_unit_id}), TiangZProto.M2C_ACCEPT_QUEST, Callable(self, "_on_accept_quest_response"))
 	return true
 
 ## 交付任务；奖励和任务完成状态由服务端返回。
@@ -148,7 +177,39 @@ func complete_quest(quest_config_id: int) -> bool:
 	if phase != "map" or quest_request_pending:
 		return false
 	quest_request_pending = true
-	_send_rpc(TiangZProto.C2M_COMPLETE_QUEST, TiangZProto.encode_c2m_complete_quest({"quest_config_id": quest_config_id}), TiangZProto.M2C_COMPLETE_QUEST, Callable(self, "_on_complete_quest_response"))
+	_send_rpc(TiangZProto.C2M_COMPLETE_QUEST, TiangZProto.encode_c2m_complete_quest({"quest_config_id": quest_config_id, "npc_unit_id": 0}), TiangZProto.M2C_COMPLETE_QUEST, Callable(self, "_on_complete_quest_response"))
+	return true
+
+## 从指定NPC处交付任务；领取奖励不是客户端本地按钮行为。
+## Turns in a quest at an NPC; claiming the reward is never a local-only button action.
+func complete_quest_from_npc(quest_config_id: int, npc_unit_id: int) -> bool:
+	if phase != "map" or quest_request_pending:
+		return false
+	quest_request_pending = true
+	_send_rpc(TiangZProto.C2M_COMPLETE_QUEST, TiangZProto.encode_c2m_complete_quest({"quest_config_id": quest_config_id, "npc_unit_id": npc_unit_id}), TiangZProto.M2C_COMPLETE_QUEST, Callable(self, "_on_complete_quest_response"))
+	return true
+
+## 查看尸体掉落；窗口只展示服务端返回的当前列表，不提前删除尸体。
+## Inspects corpse loot; the UI displays the server list and never deletes the corpse locally.
+func inspect_loot_monster(monster_id: int) -> bool:
+	if phase != "map" or loot_inspect_request_pending or monster_id == 0:
+		return false
+	loot_inspect_request_pending = true
+	_send_rpc(TiangZProto.C2M_INSPECT_LOOT_MONSTER, TiangZProto.encode_c2m_inspect_loot_monster({"monster_id": monster_id}), TiangZProto.M2C_INSPECT_LOOT_MONSTER, Callable(self, "_on_inspect_loot_response"))
+	return true
+
+## 拾取一行或全部掉落；operation_id由调用方在一次逻辑操作内复用以保证幂等。
+## Loots one row or all rows; the caller reuses operation_id across retries for idempotency.
+func loot_monster(monster_id: int, operation_id: String, drop_id: int, loot_all: bool) -> bool:
+	if phase != "map" or loot_request_pending or monster_id == 0:
+		return false
+	loot_request_pending = true
+	_send_rpc(TiangZProto.C2M_LOOT_MONSTER, TiangZProto.encode_c2m_loot_monster({
+		"monster_id": monster_id,
+		"operation_id": operation_id,
+		"drop_id": drop_id,
+		"loot_all": loot_all,
+	}), TiangZProto.M2C_LOOT_MONSTER, Callable(self, "_on_loot_response"))
 	return true
 
 func _connect(host: String, port: int, callback: Callable) -> void:
@@ -177,7 +238,19 @@ func _on_login_service_addr(response: Dictionary) -> void:
 
 func _request_login() -> void:
 	phase = "login"
-	_send_rpc(TiangZProto.C2S_LOGIN, TiangZProto.encode_c2s_login({"account": account}), TiangZProto.S2C_LOGIN, Callable(self, "_on_login"))
+	if auth_mode == "register":
+		_send_rpc(TiangZProto.C2S_REGISTER, TiangZProto.encode_c2s_register({"account": account, "password": password}), TiangZProto.S2C_REGISTER, Callable(self, "_on_register"))
+	else:
+		_send_rpc(TiangZProto.C2S_LOGIN, TiangZProto.encode_c2s_login({"account": account, "password": password}), TiangZProto.S2C_LOGIN, Callable(self, "_on_login"))
+
+func _on_register(response: Dictionary) -> void:
+	if not _check_response(response):
+		auth_mode = "login"
+		return
+	var body := TiangZProto.decode_s2c_register(response.payload)
+	_emit_status("注册成功：%s，正在登录" % String(body.get("account", account)), false)
+	auth_mode = "login"
+	_request_login()
 
 func _request_login_gate() -> void:
 	phase = "gate_login"
@@ -272,6 +345,23 @@ func _on_complete_quest_response(response: Dictionary) -> void:
 	quest_progress.emit({"quests": [], "completed": [result.get("quest_config_id", 0)]})
 	_emit_status("任务完成，获得奖励 %d 件" % result.get("reward_items", []).size(), false)
 
+func _on_inspect_loot_response(response: Dictionary) -> void:
+	loot_inspect_request_pending = false
+	if not _check_response(response):
+		return
+	loot_inspected.emit(TiangZProto.decode_m2c_inspect_loot_monster(response.payload))
+
+func _on_loot_response(response: Dictionary) -> void:
+	loot_request_pending = false
+	if not _check_response(response):
+		return
+	var result := TiangZProto.decode_m2c_loot_monster(response.payload)
+	for item in result.get("items", []):
+		item_changed.emit(item)
+	for quest in result.get("quests", []):
+		quest_progress.emit({"quests": [quest]})
+	loot_result.emit(result)
+
 func _send_rpc(msg_code: int, payload: PackedByteArray, response_code: int, callback: Callable) -> void:
 	if peer == null or peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return
@@ -323,6 +413,11 @@ func _handle_packet(packet: PackedByteArray) -> void:
 		skill_projectile.emit(TiangZProto.decode_g2c_skill_projectile(payload))
 	elif msg_code == TiangZProto.G2C_SKILL_IMPACT:
 		skill_impact.emit(TiangZProto.decode_g2c_skill_impact(payload))
+	elif msg_code == TiangZProto.G2C_SESSION_REPLACED:
+		var replaced := TiangZProto.decode_g2c_session_replaced(payload)
+		session_replaced.emit(replaced)
+		_emit_status("账号已在其他位置登录", true)
+		phase = "closed"
 	else:
 		var response_id := TiangZProto.decode_rpc_id(payload)
 		if pending.has(response_id):
