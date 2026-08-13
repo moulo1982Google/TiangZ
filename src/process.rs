@@ -203,6 +203,8 @@ struct UpdateResult {
     #[serde(default)]
     native_data: Option<NativeDataMetricsSnapshot>,
     #[serde(default)]
+    actor_mailbox: MailboxMetricsSnapshot,
+    #[serde(default)]
     pending_async: bool,
 }
 
@@ -1326,25 +1328,34 @@ fn flush_runtime_batch(
     let sample_metrics = last_metrics_log.elapsed() >= Duration::from_secs(5);
     let (update_result, outbound) =
         call_js_update_binary(js_event_loop, runtime, entrypoints, sample_metrics)?;
-    let (pending_async, metrics, game_metrics, native_data_metrics) = if sample_metrics {
-        let result: UpdateResult = serde_json::from_str(&update_result).with_context(|| {
-            format!("TS update returned invalid metrics snapshot: {update_result}")
-        })?;
-        (
-            result.pending_async,
-            result.metrics,
-            result.game,
-            result.native_data,
-        )
-    } else {
-        (update_result == "1", Vec::new(), None, None)
-    };
+    let (pending_async, metrics, game_metrics, native_data_metrics, actor_mailbox_metrics) =
+        if sample_metrics {
+            let result: UpdateResult = serde_json::from_str(&update_result).with_context(|| {
+                format!("TS update returned invalid metrics snapshot: {update_result}")
+            })?;
+            (
+                result.pending_async,
+                result.metrics,
+                result.game,
+                result.native_data,
+                result.actor_mailbox,
+            )
+        } else {
+            (
+                update_result == "1",
+                Vec::new(),
+                None,
+                None,
+                MailboxMetricsSnapshot::default(),
+            )
+        };
     if sample_metrics {
         maybe_log_metrics(
             process_name,
             &metrics,
             game_metrics.as_ref(),
             native_data_metrics.as_ref(),
+            &actor_mailbox_metrics,
             last_metrics_log,
             queue_stats,
             runtime,
@@ -1392,6 +1403,7 @@ fn maybe_log_metrics(
     metrics: &[SceneMetricsSnapshot],
     game_metrics: Option<&GameMetricsSnapshot>,
     native_data_metrics: Option<&NativeDataMetricsSnapshot>,
+    actor_mailbox_metrics: &MailboxMetricsSnapshot,
     last_metrics_log: &mut Instant,
     queue_stats: &ProcessQueueStats,
     runtime: &mut deno_core::JsRuntime,
@@ -1470,6 +1482,17 @@ fn maybe_log_metrics(
             game.coroutine_lock_timeouts,
         );
     }
+    tracing::info!(target: "tiangz::metrics",
+        "[actor-mailbox-metrics] process={process_name} fast_path={} queued={} async={} one_way_fast_path={} one_way_queued={} one_way_async={} depth={} max_depth={}",
+        actor_mailbox_metrics.fast_path_calls,
+        actor_mailbox_metrics.queued_calls,
+        actor_mailbox_metrics.async_calls,
+        actor_mailbox_metrics.one_way_fast_path_calls,
+        actor_mailbox_metrics.one_way_queued_calls,
+        actor_mailbox_metrics.one_way_async_calls,
+        actor_mailbox_metrics.queued_depth,
+        actor_mailbox_metrics.max_queued_depth,
+    );
     if let Some(native) = native_data_metrics {
         tracing::info!(target: "tiangz::metrics",
             "[native-data-metrics] process={process_name} scalar_gets={} scalar_sets={} batch_calls={} live_entities={} live_units={} live_items={} pool_capacity_bytes={} scratch_capacity_bytes={} scratch_growths={} native_refs={} encoded_frames={} encoded_items={} encoded_bytes={} aoi_worlds={} aoi_entries={} aoi_grids={} aoi_candidate_relations={} aoi_visible_relations={} aoi_lingering_relations={} aoi_rejected_relations={} aoi_relocations={} aoi_visibility_changes={} aoi_filter_overrides={}",
@@ -1770,6 +1793,16 @@ fn maybe_log_metrics(
             })
             .collect(),
         scenes: scene_snapshots,
+        actor_mailbox: MailboxObservabilitySnapshot {
+            fast_path_calls: actor_mailbox_metrics.fast_path_calls,
+            queued_calls: actor_mailbox_metrics.queued_calls,
+            async_calls: actor_mailbox_metrics.async_calls,
+            one_way_fast_path_calls: actor_mailbox_metrics.one_way_fast_path_calls,
+            one_way_queued_calls: actor_mailbox_metrics.one_way_queued_calls,
+            one_way_async_calls: actor_mailbox_metrics.one_way_async_calls,
+            queued_depth: actor_mailbox_metrics.queued_depth,
+            max_queued_depth: actor_mailbox_metrics.max_queued_depth,
+        },
         game: game_snapshot,
         native_data: native_snapshot,
     });
@@ -2085,6 +2118,12 @@ mod tests {
                     "coroutineLockWaiters": 2,
                     "coroutineLockTimeouts": 7
                 },
+                "actorMailbox": {
+                    "queuedCalls": 8,
+                    "oneWayQueuedCalls": 9,
+                    "queuedDepth": 2,
+                    "maxQueuedDepth": 12
+                },
                 "pendingAsync": false
             }"#,
         )
@@ -2100,6 +2139,10 @@ mod tests {
         assert_eq!(game.timers, 3);
         assert_eq!(game.coroutine_lock_waiters, 2);
         assert_eq!(game.coroutine_lock_timeouts, 7);
+        assert_eq!(result.actor_mailbox.queued_calls, 8);
+        assert_eq!(result.actor_mailbox.one_way_queued_calls, 9);
+        assert_eq!(result.actor_mailbox.queued_depth, 2);
+        assert_eq!(result.actor_mailbox.max_queued_depth, 12);
     }
 
     #[test]

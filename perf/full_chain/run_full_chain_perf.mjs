@@ -232,12 +232,14 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     return {
       process: last?.process ?? runtime.name,
       samples: samples.length,
-      peakCpuPercent: max(samples.map((item) => item.cpuPercent)),
-      peakRssBytes: max(samples.map((item) => item.rssBytes)),
-      peakV8HeapUsedBytes: max(samples.map((item) => item.v8HeapUsedBytes)),
-      cpuTimeMs: last?.cpuTimeMs ?? 0,
-      v8GcCount: last?.v8GcCount ?? 0,
-      v8GcMs: last?.v8GcMs ?? 0,
+      // 空采样必须保持 undefined；0 代表真实采样到的零值，不能代替“没有数据”。
+      // Empty samples must stay undefined; zero is a real observation, not a substitute for missing data.
+      peakCpuPercent: optionalMax(samples.map((item) => item.cpuPercent)),
+      peakRssBytes: optionalMax(samples.map((item) => item.rssBytes)),
+      peakV8HeapUsedBytes: optionalMax(samples.map((item) => item.v8HeapUsedBytes)),
+      cpuTimeMs: last?.cpuTimeMs,
+      v8GcCount: last?.v8GcCount,
+      v8GcMs: last?.v8GcMs,
       v8GcCountStart: gcCountWindow.start,
       v8GcCountEnd: gcCountWindow.end,
       v8GcCountDelta: gcCountWindow.delta,
@@ -246,21 +248,29 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
       v8GcMsDelta: gcMsWindow.delta,
       v8GcWindowDurationMs: gcMsWindow.durationMs,
       v8GcMsPerSecond: gcMsWindow.perSecond,
-      queueDepth: last?.queueDepth ?? 0,
-      queueCapacity: last?.queueCapacity ?? 0,
-      queueMaxDepth: max(samples.map((item) => item.queueMaxDepth ?? 0)),
-      backpressureWaits: last?.backpressureWaits ?? 0,
-      slowDisconnects: last?.slowDisconnects ?? 0,
-      innerOverloads: last?.innerOverloads ?? 0,
-      innerTimeouts: last?.innerTimeouts ?? 0,
-      mailboxFastPathCalls: last?.mailboxFastPathCalls ?? 0,
-      mailboxQueuedCalls: last?.mailboxQueuedCalls ?? 0,
-      mailboxAsyncCalls: last?.mailboxAsyncCalls ?? 0,
-      mailboxOneWayFastPathCalls: last?.mailboxOneWayFastPathCalls ?? 0,
-      mailboxOneWayQueuedCalls: last?.mailboxOneWayQueuedCalls ?? 0,
-      mailboxOneWayAsyncCalls: last?.mailboxOneWayAsyncCalls ?? 0,
-      mailboxQueuedDepth: last?.mailboxQueuedDepth ?? 0,
-      mailboxMaxQueuedDepth: max(samples.map((item) => item.mailboxMaxQueuedDepth ?? 0)),
+      queueDepth: last?.queueDepth,
+      queueCapacity: last?.queueCapacity,
+      queueMaxDepth: optionalMax(samples.map((item) => item.queueMaxDepth)),
+      backpressureWaits: last?.backpressureWaits,
+      slowDisconnects: last?.slowDisconnects,
+      innerOverloads: last?.innerOverloads,
+      innerTimeouts: last?.innerTimeouts,
+      mailboxFastPathCalls: last?.mailboxFastPathCalls,
+      mailboxQueuedCalls: last?.mailboxQueuedCalls,
+      mailboxAsyncCalls: last?.mailboxAsyncCalls,
+      mailboxOneWayFastPathCalls: last?.mailboxOneWayFastPathCalls,
+      mailboxOneWayQueuedCalls: last?.mailboxOneWayQueuedCalls,
+      mailboxOneWayAsyncCalls: last?.mailboxOneWayAsyncCalls,
+      mailboxQueuedDepth: last?.mailboxQueuedDepth,
+      mailboxMaxQueuedDepth: optionalMax(samples.map((item) => item.mailboxMaxQueuedDepth)),
+      actorMailboxFastPathCalls: last?.actorMailboxFastPathCalls,
+      actorMailboxQueuedCalls: last?.actorMailboxQueuedCalls,
+      actorMailboxAsyncCalls: last?.actorMailboxAsyncCalls,
+      actorMailboxOneWayFastPathCalls: last?.actorMailboxOneWayFastPathCalls,
+      actorMailboxOneWayQueuedCalls: last?.actorMailboxOneWayQueuedCalls,
+      actorMailboxOneWayAsyncCalls: last?.actorMailboxOneWayAsyncCalls,
+      actorMailboxQueuedDepth: last?.actorMailboxQueuedDepth,
+      actorMailboxMaxQueuedDepth: optionalMax(samples.map((item) => item.actorMailboxMaxQueuedDepth)),
       rssStartBytes: rssTrend.start,
       rssEndBytes: rssTrend.end,
       rssGrowthBytes: rssTrend.growth,
@@ -305,6 +315,14 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     mailboxOneWayAsyncCallsSum: sum(processes.map((item) => item.mailboxOneWayAsyncCalls)),
     mailboxQueuedDepthSum: sum(processes.map((item) => item.mailboxQueuedDepth)),
     mailboxMaxQueuedDepthSum: sum(processes.map((item) => item.mailboxMaxQueuedDepth)),
+    actorMailboxFastPathCallsSum: sum(processes.map((item) => item.actorMailboxFastPathCalls)),
+    actorMailboxQueuedCallsSum: sum(processes.map((item) => item.actorMailboxQueuedCalls)),
+    actorMailboxAsyncCallsSum: sum(processes.map((item) => item.actorMailboxAsyncCalls)),
+    actorMailboxOneWayFastPathCallsSum: sum(processes.map((item) => item.actorMailboxOneWayFastPathCalls)),
+    actorMailboxOneWayQueuedCallsSum: sum(processes.map((item) => item.actorMailboxOneWayQueuedCalls)),
+    actorMailboxOneWayAsyncCallsSum: sum(processes.map((item) => item.actorMailboxOneWayAsyncCalls)),
+    actorMailboxQueuedDepthSum: sum(processes.map((item) => item.actorMailboxQueuedDepth)),
+    actorMailboxMaxQueuedDepthSum: sum(processes.map((item) => item.actorMailboxMaxQueuedDepth)),
   };
 }
 
@@ -368,6 +386,14 @@ async function readProcessHealthMetrics(runtime) {
       mailboxOneWayAsyncCalls: prometheusMetricSum(body, "tiangz_scene_mailbox_one_way_async_calls_total"),
       mailboxQueuedDepth: prometheusMetricMax(body, "tiangz_scene_mailbox_queued_depth"),
       mailboxMaxQueuedDepth: prometheusMetricMax(body, "tiangz_scene_mailbox_max_queued_depth"),
+      actorMailboxFastPathCalls: metric("tiangz_process_actor_mailbox_fast_path_calls_total"),
+      actorMailboxQueuedCalls: metric("tiangz_process_actor_mailbox_queued_calls_total"),
+      actorMailboxAsyncCalls: metric("tiangz_process_actor_mailbox_async_calls_total"),
+      actorMailboxOneWayFastPathCalls: metric("tiangz_process_actor_mailbox_one_way_fast_path_calls_total"),
+      actorMailboxOneWayQueuedCalls: metric("tiangz_process_actor_mailbox_one_way_queued_calls_total"),
+      actorMailboxOneWayAsyncCalls: metric("tiangz_process_actor_mailbox_one_way_async_calls_total"),
+      actorMailboxQueuedDepth: metric("tiangz_process_actor_mailbox_queued_depth"),
+      actorMailboxMaxQueuedDepth: metric("tiangz_process_actor_mailbox_max_queued_depth"),
     };
   } catch {
     return { process: runtime.name };
@@ -376,7 +402,9 @@ async function readProcessHealthMetrics(runtime) {
 
 function prometheusMetric(body, name) {
   const line = body.split(/\r?\n/).find((value) => value.startsWith(`${name}{`));
-  return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
+  if (!line) return undefined;
+  const value = Number(line.slice(line.lastIndexOf(" ") + 1));
+  return Number.isFinite(value) ? value : undefined;
 }
 
 // Scene metrics carry a scene label, so process-level reports must aggregate
@@ -391,11 +419,13 @@ function prometheusMetricValues(body, name) {
 }
 
 function prometheusMetricSum(body, name) {
-  return sum(prometheusMetricValues(body, name));
+  const values = prometheusMetricValues(body, name);
+  return values.length > 0 ? sum(values) : undefined;
 }
 
 function prometheusMetricMax(body, name) {
-  return max(prometheusMetricValues(body, name));
+  const values = prometheusMetricValues(body, name);
+  return values.length > 0 ? max(values) : undefined;
 }
 
 function aggregateCases(rounds) {
@@ -422,35 +452,41 @@ function aggregateCases(rounds) {
       moveP95Ms: median(group.map((item) => item.movement.p95Ms)),
       moveP99Ms: median(group.map((item) => item.movement.p99Ms)),
       stalled: median(group.map((item) => item.movement.errors)),
+      probeErrors: requiredMedian(group, (item) => item.probe?.errors),
       businessPerSecond: median(group.map((item) => item.business?.perSecond ?? 0)),
       businessAccepted: median(group.map((item) => item.business?.accepted ?? 0)),
       businessRejected: median(group.map((item) => item.business?.rejected ?? 0)),
-      businessTransportErrors: median(group.map((item) => item.business?.transportErrors ?? 0)),
+      businessTransportErrors: options.businessRate > 0
+        ? requiredMedian(group, (item) => item.business?.transportErrors)
+        : median(group.map((item) => item.business?.transportErrors ?? 0)),
       businessP50Ms: median(group.map((item) => item.business?.p50Ms ?? 0)),
       businessP95Ms: median(group.map((item) => item.business?.p95Ms ?? 0)),
       businessP99Ms: median(group.map((item) => item.business?.p99Ms ?? 0)),
-      serverPeakCpuPercentSum: median(group.map((item) => item.serverResources?.peakCpuPercentSum ?? 0)),
-      serverPeakRssBytesSum: median(group.map((item) => item.serverResources?.peakRssBytesSum ?? 0)),
-      serverGcCount: median(group.map((item) => item.serverResources?.v8GcCountSum ?? 0)),
-      serverGcMs: median(group.map((item) => item.serverResources?.v8GcMsSum ?? 0)),
-      serverGcCountDelta: median(group.map((item) => item.serverResources?.v8GcCountDeltaSum ?? 0)),
-      serverGcMsDelta: median(group.map((item) => item.serverResources?.v8GcMsDeltaSum ?? 0)),
-      serverGcMsPerSecond: median(group.map((item) => item.serverResources?.v8GcMsPerSecondSum ?? 0)),
-      serverQueueMaxDepthSum: median(group.map((item) => item.serverResources?.queueMaxDepthSum ?? 0)),
-      serverBackpressureWaitsSum: median(group.map((item) => item.serverResources?.backpressureWaitsSum ?? 0)),
-      serverInnerOverloadsSum: median(group.map((item) => item.serverResources?.innerOverloadsSum ?? 0)),
-      serverInnerTimeoutsSum: median(group.map((item) => item.serverResources?.innerTimeoutsSum ?? 0)),
-      serverMailboxQueuedCallsSum: median(group.map((item) => item.serverResources?.mailboxQueuedCallsSum ?? 0)),
-      serverMailboxOneWayQueuedCallsSum: median(group.map((item) => item.serverResources?.mailboxOneWayQueuedCallsSum ?? 0)),
-      serverMailboxOneWayAsyncCallsSum: median(group.map((item) => item.serverResources?.mailboxOneWayAsyncCallsSum ?? 0)),
-      serverMailboxMaxQueuedDepthSum: median(group.map((item) => item.serverResources?.mailboxMaxQueuedDepthSum ?? 0)),
-      serverRssGrowthBytesPerHour: median(group.map((item) => item.serverResources?.rssGrowthBytesPerHourSum ?? 0)),
-      serverV8HeapGrowthBytesPerHour: median(group.map((item) => item.serverResources?.v8HeapGrowthBytesPerHourSum ?? 0)),
+      serverPeakCpuPercentSum: requiredMedian(group, (item) => item.serverResources?.peakCpuPercentSum),
+      serverPeakRssBytesSum: requiredMedian(group, (item) => item.serverResources?.peakRssBytesSum),
+      serverGcCount: requiredMedian(group, (item) => item.serverResources?.v8GcCountSum),
+      serverGcMs: requiredMedian(group, (item) => item.serverResources?.v8GcMsSum),
+      serverGcCountDelta: requiredMedian(group, (item) => item.serverResources?.v8GcCountDeltaSum),
+      serverGcMsDelta: requiredMedian(group, (item) => item.serverResources?.v8GcMsDeltaSum),
+      serverGcMsPerSecond: requiredMedian(group, (item) => item.serverResources?.v8GcMsPerSecondSum),
+      serverQueueMaxDepthSum: requiredMedian(group, (item) => item.serverResources?.queueMaxDepthSum),
+      serverBackpressureWaitsSum: requiredMedian(group, (item) => item.serverResources?.backpressureWaitsSum),
+      serverInnerOverloadsSum: requiredMedian(group, (item) => item.serverResources?.innerOverloadsSum),
+      serverInnerTimeoutsSum: requiredMedian(group, (item) => item.serverResources?.innerTimeoutsSum),
+      serverMailboxQueuedCallsSum: requiredMedian(group, (item) => item.serverResources?.mailboxQueuedCallsSum),
+      serverMailboxOneWayQueuedCallsSum: requiredMedian(group, (item) => item.serverResources?.mailboxOneWayQueuedCallsSum),
+      serverMailboxOneWayAsyncCallsSum: requiredMedian(group, (item) => item.serverResources?.mailboxOneWayAsyncCallsSum),
+      serverMailboxMaxQueuedDepthSum: requiredMedian(group, (item) => item.serverResources?.mailboxMaxQueuedDepthSum),
+      serverActorMailboxQueuedCallsSum: requiredMedian(group, (item) => item.serverResources?.actorMailboxQueuedCallsSum),
+      serverActorMailboxOneWayQueuedCallsSum: requiredMedian(group, (item) => item.serverResources?.actorMailboxOneWayQueuedCallsSum),
+      serverActorMailboxMaxQueuedDepthSum: requiredMedian(group, (item) => item.serverResources?.actorMailboxMaxQueuedDepthSum),
+      serverRssGrowthBytesPerHour: requiredMedian(group, (item) => item.serverResources?.rssGrowthBytesPerHourSum),
+      serverV8HeapGrowthBytesPerHour: requiredMedian(group, (item) => item.serverResources?.v8HeapGrowthBytesPerHourSum),
       loadCpuMs: median(group.map((item) => item.loadGenerator.cpuUserMs + item.loadGenerator.cpuSystemMs)),
       loadPeakRssBytes: median(group.map((item) => item.loadGenerator.maxRssBytes)),
-      loadGcCount: median(group.map((item) => item.loadGenerator.gcCountDelta ?? item.loadGenerator.gcCount)),
-      loadGcMs: median(group.map((item) => item.loadGenerator.gcDurationDeltaMs ?? item.loadGenerator.gcDurationMs)),
-      loadGcMsPerSecond: median(group.map((item) => item.loadGenerator.gcDurationMsPerSecond ?? 0)),
+      loadGcCount: requiredMedian(group, (item) => item.loadGenerator?.gcCountDelta ?? item.loadGenerator?.gcCount),
+      loadGcMs: requiredMedian(group, (item) => item.loadGenerator?.gcDurationDeltaMs ?? item.loadGenerator?.gcDurationMs),
+      loadGcMsPerSecond: requiredMedian(group, (item) => item.loadGenerator?.gcDurationMsPerSecond),
     },
   }));
 }
@@ -477,12 +513,12 @@ function renderMarkdown(report) {
     "",
     "## Mailbox 低分配观测",
     "",
-    "| 部署 | 负载 | 玩家 | 有序调用排队 | 单向消息排队 | 单向异步 | Mailbox峰值深度 |",
-    "|---|---|---:|---:|---:|---:|---:|",
+    "| 部署 | 负载 | 玩家 | Scene有序调用排队 | Scene单向消息排队 | Scene单向异步 | Scene峰值深度 | Actor有序调用排队 | Actor单向消息排队 | Actor峰值深度 |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.cases) {
     const value = item.median;
-    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${options.remote ? "N/A" : value.serverMailboxQueuedCallsSum} | ${options.remote ? "N/A" : value.serverMailboxOneWayQueuedCallsSum} | ${options.remote ? "N/A" : value.serverMailboxOneWayAsyncCallsSum} | ${options.remote ? "N/A" : value.serverMailboxMaxQueuedDepthSum} |`);
+    lines.push(`| ${item.label} | ${item.workload} | ${item.players} | ${options.remote ? "N/A" : value.serverMailboxQueuedCallsSum} | ${options.remote ? "N/A" : value.serverMailboxOneWayQueuedCallsSum} | ${options.remote ? "N/A" : value.serverMailboxOneWayAsyncCallsSum} | ${options.remote ? "N/A" : value.serverMailboxMaxQueuedDepthSum} | ${options.remote ? "N/A" : value.serverActorMailboxQueuedCallsSum} | ${options.remote ? "N/A" : value.serverActorMailboxOneWayQueuedCallsSum} | ${options.remote ? "N/A" : value.serverActorMailboxMaxQueuedDepthSum} |`);
   }
   lines.push(
     "",
@@ -642,10 +678,22 @@ function onceExit(child) {
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function sum(values) { return values.reduce((total, value) => total + value, 0); }
 function max(values) { return values.length === 0 ? 0 : Math.max(...values); }
+function optionalMax(values) {
+  const numeric = values.filter((value) => typeof value === "number" && Number.isFinite(value));
+  return numeric.length === 0 ? undefined : Math.max(...numeric);
+}
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+// Required metrics must remain missing when any round lacks a numeric sample; do not turn missing data into zero.
+// 必填指标只要有一轮缺少数值采样就保持缺失，不能把采集失败伪装成零。
+function requiredMedian(items, selector) {
+  const values = items.map(selector);
+  return values.every((value) => typeof value === "number" && Number.isFinite(value))
+    ? median(values)
+    : undefined;
 }
 function csvNumbers(value) { return value.split(",").map((item) => Number(item.trim())); }
 function positive(value, name) { const number = Number(value); if (!(number > 0)) throw new Error(`${name} must be > 0`); return number; }
@@ -654,19 +702,11 @@ function round(value, digits = 0) { const scale = 10 ** digits; return Math.roun
 function formatBytes(value) { return `${(value / 1024 / 1024).toFixed(1)}MB`; }
 function formatSignedBytes(value) { return `${value >= 0 ? "+" : ""}${formatBytes(value)}/h`; }
 function resourceTrend(samples, key) {
-  if (samples.length === 0) {
-    return {
-      start: 0,
-      end: 0,
-      growth: 0,
-      perHour: 0,
-      lastHalfPerHour: 0,
-      lastQuarterPerHour: 0,
-    };
-  }
+  const values = samples.map((sample) => sample?.[key]);
+  if (values.length === 0 || !values.every(isFiniteNumber)) return emptyResourceTrend();
   const startIndex = Math.min(samples.length - 1, Math.floor(samples.length * 0.1));
-  const start = samples[startIndex][key];
-  const end = samples.at(-1)[key];
+  const start = values[startIndex];
+  const end = values.at(-1);
   const elapsedHours = Math.max(
     0,
     (samples.at(-1).timestampMs - samples[startIndex].timestampMs) / 3_600_000,
@@ -683,19 +723,17 @@ function resourceTrend(samples, key) {
 }
 
 function cumulativeWindow(samples, key, startedAt, endedAt) {
-  if (!startedAt || !endedAt || samples.length === 0) {
-    return { start: 0, end: 0, delta: 0, durationMs: 0, perSecond: 0 };
-  }
+  if (!startedAt || !endedAt || samples.length === 0) return emptyCumulativeWindow();
   const sorted = [...samples].sort((left, right) => left.timestampMs - right.timestampMs);
   const before = sorted.filter((sample) => sample.timestampMs < startedAt).at(-1);
   const afterStart = sorted.find((sample) => sample.timestampMs >= startedAt);
   const end = sorted.filter((sample) => sample.timestampMs <= endedAt + 1_000).at(-1);
   const first = before ?? afterStart;
-  if (!first || !end) {
-    return { start: 0, end: 0, delta: 0, durationMs: 0, perSecond: 0 };
+  if (!first || !end || !isFiniteNumber(first[key]) || !isFiniteNumber(end[key])) {
+    return emptyCumulativeWindow();
   }
-  const startValue = Number(first[key] ?? 0);
-  const endValue = Number(end[key] ?? startValue);
+  const startValue = first[key];
+  const endValue = end[key];
   const durationMs = Math.max(0, end.timestampMs - first.timestampMs);
   const delta = Math.max(0, endValue - startValue);
   return {
@@ -708,7 +746,7 @@ function cumulativeWindow(samples, key, startedAt, endedAt) {
 }
 
 function regressionPerHour(samples, key, startFraction) {
-  if (samples.length < 2) return 0;
+  if (samples.length < 2 || !samples.every((sample) => isFiniteNumber(sample?.[key]))) return undefined;
   const startIndex = Math.min(samples.length - 2, Math.floor(samples.length * startFraction));
   const selected = samples.slice(startIndex);
   const firstTimestamp = selected[0].timestampMs;
@@ -723,6 +761,20 @@ function regressionPerHour(samples, key, startFraction) {
     denominator += dx * dx;
   }
   return denominator > 0 ? numerator / denominator : 0;
+}
+function isFiniteNumber(value) { return typeof value === "number" && Number.isFinite(value); }
+function emptyResourceTrend() {
+  return {
+    start: undefined,
+    end: undefined,
+    growth: undefined,
+    perHour: undefined,
+    lastHalfPerHour: undefined,
+    lastQuarterPerHour: undefined,
+  };
+}
+function emptyCumulativeWindow() {
+  return { start: undefined, end: undefined, delta: undefined, durationMs: undefined, perSecond: undefined };
 }
 function timestamp() { return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_"); }
 function machineInfo() {

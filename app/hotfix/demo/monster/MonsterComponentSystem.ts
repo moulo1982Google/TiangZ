@@ -46,7 +46,7 @@ import {
   systemFor,
   QuestEvents,
 } from "#tiangz/model";
-import { MonsterBehaviorTree } from "./MonsterBehaviorTree";
+import { EvaluateMonsterBehavior } from "./MonsterBehaviorTree";
 
 const MONSTER_ACTIVE_ACQUIRE_RANGE_METERS = 12;
 const DEMO_PLAYER_CONFIG_ID = 1;
@@ -56,7 +56,6 @@ const MONSTER_LOOT_RANGE_METERS = 4;
 const CORPSE_WITH_LOOT_LIFETIME_MS = 5 * 60 * 1_000;
 const EMPTY_CORPSE_LIFETIME_MS = 10 * 1_000;
 const LOOT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
-const monsterBehaviorTree = new MonsterBehaviorTree();
 
 /**
  * 第一版怪物业务：固定刷点、主动索敌、仇恨追击、普通攻击、尸体生命周期和重生。
@@ -521,7 +520,7 @@ export class MonsterComponentSystem extends MonsterComponent {
       ))
       : Number.POSITIVE_INFINITY;
     const attackRange = config.attackRange;
-    const action = monsterBehaviorTree.Evaluate({
+    const action = EvaluateMonsterBehavior({
       // A target may come from active acquisition or from the threat table.
       // 目标可能来自主动索敌，也可能来自仇恨表。
       mayAggro: target !== undefined,

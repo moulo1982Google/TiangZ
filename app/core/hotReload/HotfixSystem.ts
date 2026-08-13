@@ -291,11 +291,6 @@ export class HotfixBindingStore<T extends object> {
     return [...this.active.keys()];
   }
 
-  /** 仅供同一V8热更自测重新暂存当前绑定；生产候选应由生成的Handler模块注册。 / Re-stages active bindings for same-isolate hotfix tests; production candidates must register generated Handler modules. */
-  __activeEntries(): readonly (readonly [string, T])[] {
-    return [...this.active.entries()];
-  }
-
   __commit(key: string, value: T): BindingUndo<T> {
     const previous = this.active.get(key);
     if (!previous) {

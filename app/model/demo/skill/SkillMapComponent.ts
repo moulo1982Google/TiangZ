@@ -28,5 +28,8 @@ export class SkillMapComponent extends Component<[map: MapComponent]> {
   protected map!: MapComponent;
   protected readonly activeCasterUnitIds = new Set<number>();
   protected readonly projectiles = new Map<bigint, SkillProjectile>();
+  /** 地图私有的技能配置索引；避免Hotfix模块级可变缓存，也避免每次Cast重建。 / Map-owned skill config index; avoids mutable Hotfix module state without rebuilding on every Cast. */
+  protected skillCatalogFingerprint = "";
+  protected skillCatalogDefinitions: ReadonlyMap<number, SkillDefinition> | undefined;
 
 }

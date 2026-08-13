@@ -11,6 +11,7 @@ import type {
   LocalSceneRouter,
   OutboundBatch,
   ProcessRuntimeConfig,
+  MailboxMetricsSnapshot,
   SceneMetricsSnapshot,
   SceneUpdateResult,
 } from "./types";
@@ -21,6 +22,8 @@ export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
   metrics: SceneMetricsSnapshot[];
   game: GameMetricsSnapshot;
+  /** 进程内所有 Actor mailbox 的总计；不能按 Scene 重复累加。 / Process-wide totals for all Actor mailboxes; never duplicate them per Scene. */
+  actorMailbox: MailboxMetricsSnapshot;
   pendingAsync: boolean;
 }
 
@@ -163,11 +166,15 @@ export class ProcessRuntime implements LocalSceneRouter {
     Game.Instance.Update(monotonicNow(), Date.now(), () => {
       for (const scene of this.entryScenes) startedAt.push(scene.__pumpMailbox(512));
     });
-    const result = mergeResults(
+    const merged = mergeResults(
       this.entryScenes.map((scene, index) =>
         scene.__completeUpdate(startedAt[index] ?? monotonicNow(), includeMetrics)
       ),
     );
+    const result: ProcessUpdateResult = {
+      ...merged,
+      actorMailbox: this.processHost.MailboxMetrics(),
+    };
     return this.processHost.SceneTaskInFlightCount === 0
       ? result
       : { ...result, pendingAsync: true };
@@ -245,7 +252,7 @@ export class ProcessRuntime implements LocalSceneRouter {
 
 function mergeResults(
   results: SceneUpdateResult[],
-): ProcessUpdateResult {
+): Omit<ProcessUpdateResult, "actorMailbox"> {
   const game = gameMetricsSnapshot();
   if (results.length === 1) {
     return {

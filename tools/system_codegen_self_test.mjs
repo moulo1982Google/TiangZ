@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 const root = path.resolve(import.meta.dirname, "..");
 const cases = [
   ["PlayerUnitSystem.d.ts", ["Move(request: MovePlayer): boolean;", "Snapshot(): PlayerSnapshot;"]],
-  ["LoginComponentSystem.d.ts", ["Login(request: C2S_Login): S2C_Login;"]],
+  ["LoginComponentSystem.d.ts", ["Login(request: C2S_Login): Promise<S2C_Login>;"]],
   ["ItemComponentSystem.d.ts", [
     "GetItem(itemId: bigint): ItemView | undefined;",
     "UseItem(itemId: bigint): ItemSnapshot;",

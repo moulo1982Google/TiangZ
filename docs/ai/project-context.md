@@ -45,6 +45,14 @@ TiangZ是一套正在验证中的MMORPG服务端框架：Rust/Tokio提供网络�
 
 TypeScript仍是默认业务语言；开发者明确选择Rust实现的稳定、高负载领域统一放在`src/game/<domain>`，例如Buff执行引擎、战斗计算或移动算法。`src/native_data.rs`属于框架权威Store，不继续混入新的游戏业务。Rust业务随Process编译、不能Hotfix；Actor Handler即使调用Rust算法，也必须先经过TS的Location、Unit/Session定位、传送屏障和mailbox，不能在网络入口旁路Actor语义。
 
+### 通用内核与首个领域
+
+TiangZ的内核不是“MMORPG内核”，而是先用MMORPG验证的通用运行时。`app/core`负责Process、Scene、Actor、Component、mailbox、生命周期、协议路由、热更屏障和宿主边界；它不拥有AOI、地图、NavMesh、怪物、任务、技能或战斗规则。当前这些能力位于`app/model/demo`、`app/hotfix/demo`和`src/game`，是第一个领域的可读实现。
+
+这不是现在就抽象第二套游戏的理由。只有第二个领域真正接入后，才根据重复的稳定需求调整边界。当前代码只做三项约束：Core不能依赖Demo/Hotfix，Model不能反向依赖Hotfix或Core内部文件，Rust `src/game`不能绕过`native_data`访问宿主Transport/Process。`npm run verify:domain-boundaries`把这些规则变成门禁。
+
+`SceneConfig`中的`staticMapIds`和`acceptDynamicMaps`是当前MapHost的可选部署能力描述，不是Core执行地图规则；0.4.x保留它们以避免把配置迁移误当成通用性工作。第二个领域需要复用同一Runtime时，再根据实际冲突把它们迁移到领域配置扩展，不提前引入无类型的万能`extensions`。
+
 开发期可见机器人位于`tools/walk_robots.ts`，只使用正式TypeScript SDK完成登录、进图、Ping和Move。机器人是外部测试客户端，不得为它在Core、Demo Handler或Map业务中增加专用分支。
 
 公共`LoginFlow.latestGatePing`保存最近一次Gate Ping的RTT、服务端Unix毫秒时间、估算时钟偏差和本地接收时间。客户端显示网络延迟必须使用RTT，不能直接用`Date.now() - serverTime`，否则客户端与服务器的时钟差会被误算成网络延迟。
@@ -336,7 +344,9 @@ Actor Runtime只负责Scene、Session、ActorUnit的InstanceId路由与mailbox�
 
 测试和压测专用的裸帧构造、响应解码、Fake与Fixture必须放在`tools/support`、`perf`或对应测试文件中，禁止放入`app/core`或`app/<game>`。正式客户端能力只能进入`client_sdk`及其Generated分发目录。
 
-Model代码只能从`app/core/public.ts`导入Core能力；Hotfix只能从`#tiangz/model`取得Model与Stable Core API，不得深层导入。`public-api.lock.json`以schema 3锁定Stable导出、顶层签名和完整可达`.d.ts`声明图，继承成员与传递类型变化也必须显式评审；其余Core实现默认Internal。Hotfix第一代冻结Handler key集合，后续只能替换既有实现，新增、删除或重命名Handler必须重启。Native Store诊断是Rust Core正式配置`process.observability.nativeData`，由Rust负责默认值和校验；Native数据原型本身、io_uring和部分KCP能力仍按专项文档视为Experimental或平台限定。公共API变化必须提供迁移记录，并同步更新本文和AI业务开发手册。
+Model业务代码只能从`app/core/public.ts`导入Core能力；`app/model/main.ts`是宿主启动桥接例外，只负责Runtime启动、更新、停止和Host事件转发，不是业务代码模板；Bench代码仍必须使用Stable入口。Hotfix只能从`#tiangz/model`取得Model与Stable Core API，不得深层导入。`public-api.lock.json`以schema 3锁定Stable导出、顶层签名和完整可达`.d.ts`声明图，继承成员与传递类型变化也必须显式评审；其余Core实现默认Internal。Hotfix第一代冻结Handler key集合，后续只能替换既有实现，新增、删除或重命名Handler必须重启。Native Store诊断是Rust Core正式配置`process.observability.nativeData`，由Rust负责默认值和校验；Native数据原型本身、io_uring和部分KCP能力仍按专项文档视为Experimental或平台限定。公共API变化必须提供迁移记录，并同步更新本文和AI业务开发手册。
+
+ordered Scene mailbox的同步排空使用循环而不是递归，长串同步消息不会耗尽V8调用栈；这不改变单Mailbox串行语义。缓存和索引必须归属于Scene/Component等明确所有者，不能放在Hotfix模块级可变变量或全局单例中；配置Reload时按指纹在所有者内懒重建。
 
 ## 已完成阶段
 
@@ -503,10 +513,10 @@ TiangZ不承诺“关闭V8 GC”或绝对0 GC；可执行的目标是稳态下�
 - `SceneMessageHelper.send/sendActor/sendFrame`返回`MaybePromise<void>`：本地同步mailbox和远程入队的常见路径返回`void`，只有底层实现确实异步时才返回Promise。`await send()`仍然合法，但只代表消息已被接受或入队，不代表目标Handler执行完成；需要结果必须使用RPC。
 - 长度前缀协议流提供`LengthPrefixedFrameDecoder.pushEach`。完整帧在一个输入分片内时直接返回视图，跨分片时才复制；回调必须同步消费帧，不能把视图当成可长期持有的快照。
 - `BroadcastHub.PublishEncodedLatestSnapshot`保留单批次专用路径，不为单批次创建包装数组；多批次只有在确实存在空受众时才创建过滤数组。latest仍然覆盖同频道旧状态，event仍然保留逐条语义。
-- Scene和Actor都会暴露mailbox快路径、排队、异步、单向消息、当前深度和峰值指标；Rust Host把它们导出到日志与Prometheus。观察到队列增长后再定位业务Handler、网络或广播，不凭GC猜原因。
+- Scene和Actor都会暴露mailbox快路径、排队、异步、单向消息、当前深度和峰值指标；Scene指标保留`scene`标签，Actor指标是整个Process内所有Actor的唯一汇总，不能按Scene重复相加。Rust Host把两类指标分别导出到日志与Prometheus。观察到队列增长后再定位业务Handler、网络或广播，不凭GC猜原因。
 - 这不是对业务代码一刀切禁止`map/filter/spread`。只有经过基准或火焰图确认的热路径，才按现有容器、批处理、复用节点和配置索引做局部优化；普通业务优先保持可读性。
 - 低分配改动在压测前先执行`npm run perf:hotpath:prepare`。该命令构建Bench、完整链路客户端和Release Runtime，执行codegen、注释与Hotfix边界门禁，检查产物哈希和测试端口，但不会启动服务器或创建玩家。
-- A/B结果使用`perf/full_chain/run_full_chain_perf.mjs`的同一负载参数，并用`npm run perf:hotpath:compare -- --before <before.json> --after <after.json>`按玩家数和业务场景对齐比较。结论必须同时看吞吐、p50/p95/p99、CPU、RSS、V8 GC、Rust/Transport队列和Mailbox排队；单看GC或单个进程CPU不能判定收益。
+- A/B结果使用`perf/full_chain/run_full_chain_perf.mjs`的同一负载参数，并用`npm run perf:hotpath:compare -- --before <before.json> --after <after.json>`按玩家数和业务场景对齐比较。比较器要求参数、案例集合和轮数完全一致，资源与Mailbox字段缺失时直接判无效；`stalled`、Probe错误、业务传输错误、背压、Inner超载和Inner超时必须为零。结论必须同时看吞吐、p50/p95/p99、CPU、RSS、V8 GC、Rust/Transport队列和Mailbox排队；单看GC或单个进程CPU不能判定收益。
 
 ## 尸体掉落交互
 

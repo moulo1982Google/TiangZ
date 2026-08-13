@@ -91,7 +91,7 @@ function testOwnerRecovery(): void {
       { ...route, unitId: 1002, account: "recovery-b", actorInstanceId: 12 },
       { ...route, actorInstanceId: 99 },
     ],
-  }), /conflicts/);
+  }), /character 9001 already belongs to unit 1001/);
   assert.equal(location.Resolve({ unitId: 1002, account: "", characterId: 0n }).found, false);
 }
 

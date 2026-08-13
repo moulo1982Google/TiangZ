@@ -982,26 +982,7 @@ export abstract class EntryScene extends Scene {
     }
     this.mailboxMetrics.oneWayFastPathCalls += 1;
     this.mailboxBusy = true;
-    try {
-      const result = run();
-      if (isPromiseLike(result)) {
-        this.mailboxMetrics.oneWayAsyncCalls += 1;
-        return Promise.resolve(result).then(
-          () => {
-            this.finishMailboxTask();
-          },
-          (error) => {
-            this.finishMailboxTask();
-            throw error;
-          },
-        );
-      }
-      this.finishMailboxTask();
-      return undefined;
-    } catch (error) {
-      this.finishMailboxTask();
-      throw error;
-    }
+    return this.runMailboxTask(run, true) as MaybePromise<void>;
   }
 
   private runMailboxTask<T>(
@@ -1013,6 +994,8 @@ export abstract class EntryScene extends Scene {
       if (isPromiseLike(result)) {
         if (oneWay) this.mailboxMetrics.oneWayAsyncCalls += 1;
         else this.mailboxMetrics.asyncCalls += 1;
+      }
+      if (isPromiseLike(result)) {
         return Promise.resolve(result).then(
           (value) => {
             this.finishMailboxTask();
@@ -1033,33 +1016,43 @@ export abstract class EntryScene extends Scene {
   }
 
   private finishMailboxTask(): void {
-    const next = this.dequeueMailboxTask();
-    if (!next) {
-      this.mailboxBusy = false;
-      return;
-    }
-    try {
-      const result = this.runMailboxTask(next.run!, next.oneWay === true);
-      if (isPromiseLike(result)) {
-        void Promise.resolve(result).then(
-          (value) => {
-            next.resolve?.(value);
-            this.recycleMailboxTask(next);
-          },
-          (error) => {
-            if (next.reject) next.reject(error);
-            else this.ctx.logger.error("one-way scene mailbox failed", { error });
-            this.recycleMailboxTask(next);
-          },
-        );
-      } else {
+    // 同步任务必须在循环中排空；递归调用会让长串同步消息耗尽V8调用栈。
+    // Synchronous tasks drain in a loop; recursive completion would exhaust the V8 stack for a long queue.
+    while (true) {
+      const next = this.dequeueMailboxTask();
+      if (!next) {
+        this.mailboxBusy = false;
+        return;
+      }
+      try {
+        const result = next.run!();
+        if (isPromiseLike(result)) {
+          if (next.oneWay === true) this.mailboxMetrics.oneWayAsyncCalls += 1;
+          else this.mailboxMetrics.asyncCalls += 1;
+        }
+        if (isPromiseLike(result)) {
+          void Promise.resolve(result).then(
+            (value) => {
+              next.resolve?.(value);
+              this.recycleMailboxTask(next);
+              this.finishMailboxTask();
+            },
+            (error) => {
+              if (next.reject) next.reject(error);
+              else this.ctx.logger.error("one-way scene mailbox failed", { error });
+              this.recycleMailboxTask(next);
+              this.finishMailboxTask();
+            },
+          );
+          return;
+        }
         next.resolve?.(result);
         this.recycleMailboxTask(next);
+      } catch (error) {
+        if (next.reject) next.reject(error);
+        else this.ctx.logger.error("one-way scene mailbox failed", { error });
+        this.recycleMailboxTask(next);
       }
-    } catch (error) {
-      if (next.reject) next.reject(error);
-      else this.ctx.logger.error("one-way scene mailbox failed", { error });
-      this.recycleMailboxTask(next);
     }
   }
 

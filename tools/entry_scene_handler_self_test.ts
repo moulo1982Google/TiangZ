@@ -62,15 +62,26 @@ interface SessionWorkMessage extends IMessage {
   value: number;
 }
 
+interface MailboxDrainMessage extends IMessage {
+  remaining: number;
+}
+
 const SessionWork = defineMessage({
   name: "SessionProbe.Work",
   msgcode: 61004,
   codec: jsonCodec<SessionWorkMessage>(),
 });
 
+const MailboxDrain = defineMessage({
+  name: "MailboxProbe.Drain",
+  msgcode: 61005,
+  codec: jsonCodec<MailboxDrainMessage>(),
+});
+
 const lifecycleEvents: string[] = [];
 let activeHandlerScene: HandlerProbeScene | undefined;
 let activeSenderScene: SenderProbeScene | undefined;
+let activeMailboxDrainScene: MailboxDrainProbeScene | undefined;
 
 class CounterComponent extends Component<[number]> {
   value = 0;
@@ -116,6 +127,15 @@ class SenderProbeScene extends EntryScene {
       Add,
       { value },
     );
+  }
+}
+
+@entryScene("MailboxDrainProbe")
+class MailboxDrainProbeScene extends EntryScene {
+  processed = 0;
+
+  protected override onStart(): void {
+    activeMailboxDrainScene = this;
   }
 }
 
@@ -174,6 +194,19 @@ class AddHandler implements SceneMessageHandler<HandlerProbeScene, AddMessage> {
   }
 }
 
+@messageHandler(MailboxDrainProbeScene, MailboxDrain)
+class MailboxDrainHandler implements SceneMessageHandler<MailboxDrainProbeScene, MailboxDrainMessage> {
+  handle(scene: MailboxDrainProbeScene, message: MailboxDrainMessage): void {
+    scene.processed += 1;
+    if (message.remaining <= 0) return;
+    scene.dispatchLocalSend(
+      packFrame(MailboxDrain.msgcode, MailboxDrain.codec.encode({
+        remaining: message.remaining - 1,
+      })),
+    );
+  }
+}
+
 @rpcHandler(HandlerProbeScene, Read)
 class ReadHandler implements SceneRpcHandler<
   HandlerProbeScene,
@@ -191,9 +224,30 @@ async function main(): Promise<void> {
   testComponentContainer();
   testDuplicateHandlerGuard();
   await testLocalSceneSendFastPath();
+  await testSynchronousMailboxDrain();
   await testExternalHandlerDispatch();
   await testSessionMailboxAndDisconnect();
   console.log("entry scene handler self-test passed");
+}
+
+async function testSynchronousMailboxDrain(): Promise<void> {
+  activeMailboxDrainScene = undefined;
+  const config = mailboxDrainSceneConfig();
+  const runtime = new ProcessRuntime({
+    process: { name: "scene-mailbox-drain-self-test" },
+    scenes: [config],
+    knownScenes: [config],
+    tickMs: 50,
+  });
+  await runtime.start();
+
+  const chainLength = 50_000;
+  const result = activeMailboxDrainScene!.dispatchLocalSend(
+    packFrame(MailboxDrain.msgcode, MailboxDrain.codec.encode({ remaining: chainLength })),
+  );
+  assert.equal(result, undefined);
+  assert.equal(activeMailboxDrainScene!.processed, chainLength + 1);
+  await runtime.stop();
 }
 
 async function testLocalSceneSendFastPath(): Promise<void> {
@@ -365,6 +419,15 @@ function sessionSceneConfig() {
   return {
     name: "session-handler-probe-1",
     sceneType: "SessionHandlerProbe",
+    innerIp: "127.0.0.1",
+    port: 0,
+  };
+}
+
+function mailboxDrainSceneConfig() {
+  return {
+    name: "scene-mailbox-drain-probe-1",
+    sceneType: "MailboxDrainProbe",
     innerIp: "127.0.0.1",
     port: 0,
   };

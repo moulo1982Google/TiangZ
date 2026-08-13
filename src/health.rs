@@ -94,6 +94,8 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) queue_capacity: u64,
     pub(crate) queue_max_depth: u64,
     pub(crate) queue_stages: Vec<ProcessQueueStageObservabilitySnapshot>,
+    /// 进程级 Actor mailbox 总计；不能复制到每个 Scene 的标签序列。 / Process-wide Actor mailbox totals; never duplicate them into Scene-labelled series.
+    pub(crate) actor_mailbox: MailboxObservabilitySnapshot,
     pub(crate) scenes: Vec<SceneObservabilitySnapshot>,
     pub(crate) game: Option<GameObservabilitySnapshot>,
     pub(crate) native_data: Option<NativeDataObservabilitySnapshot>,
@@ -608,6 +610,11 @@ fn format_prometheus_metrics(process_name: &str, state: &ProcessHealthState) -> 
 
     if snapshot.sample_timestamp_ms > 0 {
         append_process_metrics_prometheus(&mut output, &safe_process_name, &snapshot);
+        append_actor_mailbox_metrics_prometheus(
+            &mut output,
+            &safe_process_name,
+            &snapshot.actor_mailbox,
+        );
     }
 
     if !snapshot.scenes.is_empty() {
@@ -623,6 +630,69 @@ fn format_prometheus_metrics(process_name: &str, state: &ProcessHealthState) -> 
     append_game_config_metrics_prometheus(&mut output, &safe_process_name, &game_config);
 
     output
+}
+
+fn append_actor_mailbox_metrics_prometheus(
+    output: &mut String,
+    process_name: &str,
+    mailbox: &MailboxObservabilitySnapshot,
+) {
+    for (name, help, metric_type, value) in [
+        (
+            "tiangz_process_actor_mailbox_fast_path_calls_total",
+            "Process-wide Actor mailbox fast-path calls",
+            "counter",
+            mailbox.fast_path_calls as f64,
+        ),
+        (
+            "tiangz_process_actor_mailbox_queued_calls_total",
+            "Process-wide Actor mailbox queued calls",
+            "counter",
+            mailbox.queued_calls as f64,
+        ),
+        (
+            "tiangz_process_actor_mailbox_async_calls_total",
+            "Process-wide Actor mailbox asynchronous calls",
+            "counter",
+            mailbox.async_calls as f64,
+        ),
+        (
+            "tiangz_process_actor_mailbox_one_way_fast_path_calls_total",
+            "Process-wide Actor mailbox one-way fast-path calls",
+            "counter",
+            mailbox.one_way_fast_path_calls as f64,
+        ),
+        (
+            "tiangz_process_actor_mailbox_one_way_queued_calls_total",
+            "Process-wide Actor mailbox one-way queued calls",
+            "counter",
+            mailbox.one_way_queued_calls as f64,
+        ),
+        (
+            "tiangz_process_actor_mailbox_one_way_async_calls_total",
+            "Process-wide Actor mailbox one-way asynchronous calls",
+            "counter",
+            mailbox.one_way_async_calls as f64,
+        ),
+        (
+            "tiangz_process_actor_mailbox_queued_depth",
+            "Current process-wide Actor mailbox queued depth",
+            "gauge",
+            mailbox.queued_depth as f64,
+        ),
+        (
+            "tiangz_process_actor_mailbox_max_queued_depth",
+            "Peak process-wide Actor mailbox queued depth",
+            "gauge",
+            mailbox.max_queued_depth as f64,
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}").expect("formatting Actor mailbox metric help");
+        writeln!(output, "# TYPE {name} {metric_type}")
+            .expect("formatting Actor mailbox metric type");
+        writeln!(output, "{name}{{process=\"{process_name}\"}} {value}")
+            .expect("formatting Actor mailbox metric");
+    }
 }
 
 fn append_game_config_metrics_prometheus(
@@ -2358,6 +2428,50 @@ mod tests {
         ));
         assert!(body.contains(
             "tiangz_process_queue_stage_backpressure_wait_ms_total{process=\"map1\",stage=\"frame\"} 4.500"
+        ));
+    }
+
+    #[test]
+    fn process_actor_mailbox_metrics_are_exported_without_scene_duplication() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            actor_mailbox: MailboxObservabilitySnapshot {
+                queued_calls: 7,
+                one_way_queued_calls: 3,
+                queued_depth: 2,
+                max_queued_depth: 11,
+                ..MailboxObservabilitySnapshot::default()
+            },
+            scenes: vec![SceneObservabilitySnapshot {
+                scene: "map_1".to_string(),
+                scene_type: "MapHost".to_string(),
+                mailbox: MailboxObservabilitySnapshot {
+                    queued_calls: 5,
+                    max_queued_depth: 9,
+                    ..MailboxObservabilitySnapshot::default()
+                },
+                ..SceneObservabilitySnapshot::default()
+            }],
+            ..ProcessObservabilitySnapshot::default()
+        });
+
+        let body = format_prometheus_metrics("process-1", &state);
+        assert!(
+            body.contains(
+                "tiangz_process_actor_mailbox_queued_calls_total{process=\"process-1\"} 7"
+            )
+        );
+        assert!(body.contains(
+            "tiangz_process_actor_mailbox_one_way_queued_calls_total{process=\"process-1\"} 3"
+        ));
+        assert!(
+            body.contains(
+                "tiangz_process_actor_mailbox_max_queued_depth{process=\"process-1\"} 11"
+            )
+        );
+        assert!(body.contains(
+            "tiangz_scene_mailbox_queued_calls_total{process=\"process-1\",scene=\"map_1\",scene_type=\"MapHost\"} 5"
         ));
     }
 

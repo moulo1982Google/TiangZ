@@ -1,12 +1,3 @@
-/**
- * 怪物基础行为树的执行结果；当前所有动作都在一个逻辑Tick内完成。
- * The result of the basic monster behavior tree; every current action completes within one logic tick.
- */
-enum BehaviorStatus {
-  Success,
-  Failure,
-}
-
 export type MonsterBehaviorAction = "idle" | "hold" | "chase" | "attack";
 
 export interface MonsterBehaviorContext {
@@ -16,90 +7,17 @@ export interface MonsterBehaviorContext {
   readonly canAttack: boolean;
 }
 
-interface BehaviorNode {
-  tick(context: BehaviorTickContext): BehaviorStatus;
-}
-
-interface BehaviorTickContext extends MonsterBehaviorContext {
-  action: MonsterBehaviorAction;
-}
-
-class ConditionNode implements BehaviorNode {
-  constructor(private readonly predicate: (context: BehaviorTickContext) => boolean) {}
-
-  tick(context: BehaviorTickContext): BehaviorStatus {
-    return this.predicate(context) ? BehaviorStatus.Success : BehaviorStatus.Failure;
-  }
-}
-
-class ActionNode implements BehaviorNode {
-  constructor(private readonly action: MonsterBehaviorAction) {}
-
-  tick(context: BehaviorTickContext): BehaviorStatus {
-    context.action = this.action;
-    return BehaviorStatus.Success;
-  }
-}
-
-/** 顺序节点：所有子节点成功才成功；Sequence succeeds only when every child succeeds. */
-class SequenceNode implements BehaviorNode {
-  constructor(private readonly children: readonly BehaviorNode[]) {}
-
-  tick(context: BehaviorTickContext): BehaviorStatus {
-    for (const child of this.children) {
-      if (child.tick(context) === BehaviorStatus.Failure) return BehaviorStatus.Failure;
-    }
-    return BehaviorStatus.Success;
-  }
-}
-
-/** 选择节点：第一个成功分支生效；Selector chooses the first successful branch. */
-class SelectorNode implements BehaviorNode {
-  constructor(private readonly children: readonly BehaviorNode[]) {}
-
-  tick(context: BehaviorTickContext): BehaviorStatus {
-    for (const child of this.children) {
-      if (child.tick(context) === BehaviorStatus.Success) return BehaviorStatus.Success;
-    }
-    return BehaviorStatus.Failure;
-  }
-}
-
 /**
- * 怪物模块专用的小行为树：只要上游按规则选出了目标，就攻击或追击，否则待机。
- * 目标可能来自主动索敌，也可能来自仇恨表；行为树不关心“为何选中”，避免被动怪被受击事件直接绑死。
+ * 怪物模块专用的无状态决策：只要上游按规则选出了目标，就攻击或追击，否则待机。
+ * 目标可能来自主动索敌，也可能来自仇恨表；决策函数不关心“为何选中”，避免被动怪被受击事件直接绑死。
  *
- * This small tree is private to the monster module: once the caller has selected
- * a target, it attacks or chases; otherwise it stays idle. The target may come
- * from active acquisition or threat, so the tree does not hard-code a "was hit"
- * reaction and is intentionally not a general AI framework.
+ * This small decision function is private to the monster module: once the
+ * caller has selected a target, it attacks or chases; otherwise it stays idle.
+ * The target may come from active acquisition or threat, so it does not
+ * hard-code a "was hit" reaction and is intentionally not a general AI framework.
  */
-export class MonsterBehaviorTree {
-  private readonly root: BehaviorNode = new SelectorNode([
-    new SequenceNode([
-      new ConditionNode((context) => context.mayAggro),
-      new ConditionNode((context) => context.hasTarget),
-      new SelectorNode([
-        new SequenceNode([
-          new ConditionNode((context) => context.inAttackRange),
-          new SelectorNode([
-            new SequenceNode([
-              new ConditionNode((context) => context.canAttack),
-              new ActionNode("attack"),
-            ]),
-            new ActionNode("hold"),
-          ]),
-        ]),
-        new ActionNode("chase"),
-      ]),
-    ]),
-    new ActionNode("idle"),
-  ]);
-
-  /** 根据当前快照选择本Tick动作；不保存目标、冷却或Unit引用。 / Chooses this tick's action without retaining targets, cooldowns, or Units. */
-  Evaluate(context: MonsterBehaviorContext): MonsterBehaviorAction {
-    const tickContext: BehaviorTickContext = { ...context, action: "idle" };
-    this.root.tick(tickContext);
-    return tickContext.action;
-  }
+export function EvaluateMonsterBehavior(context: MonsterBehaviorContext): MonsterBehaviorAction {
+  if (!context.mayAggro || !context.hasTarget) return "idle";
+  if (!context.inAttackRange) return "chase";
+  return context.canAttack ? "attack" : "hold";
 }

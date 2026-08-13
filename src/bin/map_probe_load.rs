@@ -382,12 +382,7 @@ async fn main() -> Result<()> {
             let semaphore = Arc::clone(&semaphore);
             prepare_tasks.spawn(async move {
                 let permit = semaphore.acquire_owned().await?;
-                let account = format!(
-                    "rp{}_{}_{}",
-                    std::process::id(),
-                    account_seed,
-                    index
-                );
+                let account = format!("rp{}_{}_{}", std::process::id(), account_seed, index);
                 let player = prepare_player(&options, &login_address, &account, index).await;
                 drop(permit);
                 player
@@ -428,12 +423,7 @@ async fn main() -> Result<()> {
             let semaphore = Arc::clone(&semaphore);
             setup_tasks.spawn(async move {
                 let permit = semaphore.acquire_owned().await?;
-                let account = format!(
-                    "rp{}_{}_{}",
-                    std::process::id(),
-                    account_seed,
-                    index
-                );
+                let account = format!("rp{}_{}_{}", std::process::id(), account_seed, index);
                 let player = setup_player(&options, &login_address, &account, index).await;
                 drop(permit);
                 player
@@ -1323,13 +1313,13 @@ async fn run_player(
             }
             continue;
         }
-        if let Some(response_sequence) = response_sequence {
-            if request.sequence != response_sequence {
-                bail!(
-                    "response sequence mismatch: {response_sequence} != {}",
-                    request.sequence
-                );
-            }
+        if let Some(response_sequence) = response_sequence
+            && request.sequence != response_sequence
+        {
+            bail!(
+                "response sequence mismatch: {response_sequence} != {}",
+                request.sequence
+            );
         }
         match request.kind {
             PendingKind::Probe => {
@@ -1400,6 +1390,7 @@ fn phase_offset(interval: Option<Duration>, unit_id: u32, salt: u32) -> Duration
     interval.mul_f64(f64::from(value) / (f64::from(u32::MAX) + 1.0))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn send_move(
     writer_tx: &mpsc::Sender<Vec<u8>>,
     unit_id: u32,
@@ -1444,7 +1435,7 @@ fn movement_input(
         let leg = sequence.saturating_sub(1) / reports_per_leg;
         let grid_x = player_index % world_grids;
         let initially_positive = grid_x + 1 < world_grids;
-        let positive = if leg % 2 == 0 {
+        let positive = if leg.is_multiple_of(2) {
             initially_positive
         } else {
             !initially_positive
@@ -1465,7 +1456,7 @@ fn is_grid_crossing_player(player_index: u32, world_grids: u32) -> bool {
     let grid_count = world_grids.saturating_mul(world_grids).max(1);
     let grid_index = player_index % grid_count;
     let player_slot_in_grid = player_index / grid_count;
-    (grid_index + player_slot_in_grid) % GRID_CROSSING_PLAYER_MODULUS == 0
+    (grid_index + player_slot_in_grid).is_multiple_of(GRID_CROSSING_PLAYER_MODULUS)
 }
 
 async fn send_probe(
@@ -1529,6 +1520,7 @@ async fn send_state_sync(
 
 /// 交替发送真实道具与技能请求，保留PlayerUnit有序mailbox的单飞语义。
 /// Alternates real item and skill requests while preserving one in-flight request per PlayerUnit mailbox.
+#[allow(clippy::too_many_arguments)]
 async fn send_business(
     writer_tx: &mpsc::Sender<Vec<u8>>,
     next_rpc_id: &mut u32,
@@ -1543,7 +1535,7 @@ async fn send_business(
     let rpc_id = *next_rpc_id;
     *next_rpc_id = next_rpc_id.wrapping_add(1).max(1);
     *sequence = sequence.wrapping_add(1).max(1);
-    let use_item = *operation % 2 == 0;
+    let use_item = (*operation).is_multiple_of(2);
     *operation = operation.wrapping_add(1);
     let (request_code, response_code, fields) = if use_item {
         let mut fields = Vec::with_capacity(16);

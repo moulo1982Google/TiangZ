@@ -1,5 +1,5 @@
 import {
-  MonsterBehaviorTree,
+  EvaluateMonsterBehavior,
   type MonsterBehaviorAction,
 } from "../app/hotfix/demo/monster/MonsterBehaviorTree";
 import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
@@ -9,33 +9,31 @@ import {
   type MonsterRuntimeState,
 } from "../app/model/public";
 
-const tree = new MonsterBehaviorTree();
-
-assertAction("idle without target", "idle", tree.Evaluate({
+assertAction("idle without target", "idle", EvaluateMonsterBehavior({
   mayAggro: true,
   hasTarget: false,
   inAttackRange: false,
   canAttack: true,
 }));
-assertAction("passive monster stays idle", "idle", tree.Evaluate({
+assertAction("passive monster stays idle", "idle", EvaluateMonsterBehavior({
   mayAggro: false,
   hasTarget: false,
   inAttackRange: false,
   canAttack: true,
 }));
-assertAction("target outside range chases", "chase", tree.Evaluate({
+assertAction("target outside range chases", "chase", EvaluateMonsterBehavior({
   mayAggro: true,
   hasTarget: true,
   inAttackRange: false,
   canAttack: true,
 }));
-assertAction("target in range attacks", "attack", tree.Evaluate({
+assertAction("target in range attacks", "attack", EvaluateMonsterBehavior({
   mayAggro: true,
   hasTarget: true,
   inAttackRange: true,
   canAttack: true,
 }));
-assertAction("attack cooldown holds position", "hold", tree.Evaluate({
+assertAction("attack cooldown holds position", "hold", EvaluateMonsterBehavior({
   mayAggro: true,
   hasTarget: true,
   inAttackRange: true,

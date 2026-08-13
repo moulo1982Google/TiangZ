@@ -46,9 +46,11 @@ Machine
 
 如果业务可以通过现有Scene、Actor、Component、协议和广播能力完成，不得为了该业务新增Core抽象或Rust特殊分支。确实缺少通用能力时，先说明现有机制为什么无法表达、影响范围和最小扩展方案，再修改框架。
 
+当前MMORPG示例不是Core的定义：`app/model/demo`、`app/hotfix/demo`和`src/game`是领域层；AOI、MapHost、NavMesh、怪物、任务、技能和战斗规则必须留在领域层。`app/core`只承载运行时语义。修改分层入口后运行`npm run verify:domain-boundaries`，不要用新的转发层绕过边界。
+
 Developer Tools的设计向导、`@tiangz`、`tiangz-design`和MCP只能提供设计建议。AI解释不能覆盖确定性规则，也不能替代代码、项目检查、生成锁与测试。
 
-Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深层导入`app/model`或`app/core`。Model内部只能从`app/core/public.ts`导入Core能力。`app/core/public.ts`及`public-api.lock.json`定义Stable API；其他Core路径默认是Internal。公共API分级和变更流程见[公共API与版本稳定性](docs/reference/api-stability.md)。
+Hotfix只能通过`#tiangz/model`取得Model与Core的稳定类型，禁止深层导入`app/model`或`app/core`。Model业务代码只能从`app/core/public.ts`导入Core能力；`app/model/main.ts`是宿主启动桥接例外，不是业务代码模板，Bench代码仍必须走Stable入口。`app/core/public.ts`及`public-api.lock.json`定义Stable API；其他Core路径默认是Internal。公共API分级和变更流程见[公共API与版本稳定性](docs/reference/api-stability.md)。
 
 ## Model与Hotfix硬边界
 

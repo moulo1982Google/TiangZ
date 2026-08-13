@@ -6,30 +6,46 @@ import {
 } from "#tiangz/model";
 import { ActionFromConfig } from "../action/ActionExecutor";
 
-let cachedFingerprint = "";
-let cachedDefinitions: ReadonlyMap<number, SkillDefinition> = new Map();
 type SkillEffectConfigRow = ReturnType<typeof GameConfigs.SkillEffectConfig.GetAll>[number];
 
 /**
- * 返回当前配置代的技能定义。缓存按游戏配置指纹整体重建，保证一次Cast只看到同一份规则，
- * Reload之后的新Cast自动使用新数据；不得把返回对象长期存入Unit或Component。
+ * 返回当前配置代的技能定义。独立调用每次构建临时索引；正式施法由地图组件按配置指纹缓存，
+ * 保证一次Cast只看到同一份规则，Reload之后的新Cast自动使用新数据。
  *
- * Returns the skill definition for the active config generation. The index is
- * rebuilt atomically when the game-config fingerprint changes, so one Cast
- * observes one rule set while later Casts use reloaded data. Unit and Component
- * state must never retain the returned object long-term.
+ * Returns the skill definition for the active config generation. Standalone
+ * calls build a temporary index; live casts use the map component's
+ * fingerprinted cache so one Cast observes one rule set while later Casts use
+ * reloaded data.
  */
 export function GetSkillDefinition(skillId: number): SkillDefinition {
   const fingerprint = GameConfigRegistry.CurrentFingerprint;
   if (!fingerprint) throw new Error("game config data is not installed");
-  if (fingerprint !== cachedFingerprint) rebuildCatalog(fingerprint);
-  const definition = cachedDefinitions.get(skillId);
+  return GetSkillDefinitionFromCatalog(BuildSkillCatalog(), skillId);
+}
+
+/**
+ * 构建当前配置代的只读技能索引；调用者负责把索引放在自己的地图组件中缓存。
+ * Builds a read-only skill index for the active config generation; callers cache it in their own map component.
+ */
+export function BuildSkillCatalog(): ReadonlyMap<number, SkillDefinition> {
+  if (!GameConfigRegistry.CurrentFingerprint) {
+    throw new Error("game config data is not installed");
+  }
+  return buildCatalog();
+}
+
+/** 从地图级索引读取技能定义；找不到时保持统一错误语义。 / Reads a skill definition from a map-owned index with one consistent missing-data error. */
+export function GetSkillDefinitionFromCatalog(
+  definitions: ReadonlyMap<number, SkillDefinition>,
+  skillId: number,
+): SkillDefinition {
+  const definition = definitions.get(skillId);
   if (!definition) throw new Error(`skill config not found: ${skillId}`);
   return definition;
 }
 
 /** 将Luban两张表合并为运行时只读索引；这是数据适配，不承担施法或效果结算。 / Merges the two Luban tables into a read-only runtime index without owning cast or effect resolution. */
-function rebuildCatalog(fingerprint: string): void {
+function buildCatalog(): ReadonlyMap<number, SkillDefinition> {
   const effectsBySkill = new Map<number, SkillEffectConfigRow[]>();
   for (const effect of GameConfigs.SkillEffectConfig.GetAll()) {
     const rows = effectsBySkill.get(effect.skillId) ?? [];
@@ -73,6 +89,5 @@ function rebuildCatalog(fingerprint: string): void {
       effects: Object.freeze(effects),
     }));
   }
-  cachedDefinitions = definitions;
-  cachedFingerprint = fingerprint;
+  return definitions;
 }

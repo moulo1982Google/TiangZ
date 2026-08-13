@@ -8,8 +8,6 @@ export interface PasswordCredential {
   readonly hash: string;
 }
 
-let saltSequence = 0;
-
 /** 创建带独立盐值的密码凭据；这是Demo账号存储边界，不是生产密码服务。 / Creates a salted credential at the Demo account-storage boundary. */
 export function CreatePasswordCredential(account: string, password: string): PasswordCredential {
   const salt = CreateSalt(account);
@@ -39,8 +37,9 @@ function CreateSalt(account: string): string {
   if (cryptoSource?.getRandomValues) {
     cryptoSource.getRandomValues(bytes);
   } else {
-    saltSequence = (saltSequence + 1) >>> 0;
-    const fallback = utf8Encode(`${account}:${Date.now()}:${saltSequence}`);
+    // 这里只是没有宿主随机源时的Demo回退；生产账号必须使用密码服务和系统安全随机数。
+    // This is only a Demo fallback without a host random source; production accounts need a password service and CSPRNG.
+    const fallback = utf8Encode(`${account}:${Date.now()}:${Math.random()}`);
     const digest = Sha256Hex(fallback);
     for (let index = 0; index < bytes.length; index += 1) {
       bytes[index] = Number.parseInt(digest.slice(index * 2, index * 2 + 2), 16);

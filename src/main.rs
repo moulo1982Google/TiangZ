@@ -67,10 +67,10 @@ async fn main() -> Result<()> {
 /// then executable ancestors are searched for local Cargo layouts. The compile
 /// time directory is only a final development fallback.
 fn resolve_runtime_root() -> PathBuf {
-    if let Ok(current_dir) = env::current_dir() {
-        if looks_like_runtime_root(&current_dir) {
-            return current_dir;
-        }
+    if let Ok(current_dir) = env::current_dir()
+        && looks_like_runtime_root(&current_dir)
+    {
+        return current_dir;
     }
 
     if let Ok(executable) = env::current_exe() {

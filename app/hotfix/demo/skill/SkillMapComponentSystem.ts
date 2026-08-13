@@ -3,6 +3,7 @@ import {
   BuffApplyStatus,
   BuffComponent,
   CombatComponent,
+  GameConfigRegistry,
   DamageSchool,
   GameErrCode,
   GlobalIdSystem,
@@ -37,7 +38,7 @@ import {
   systemFor,
 } from "#tiangz/model";
 import { ExecuteAction } from "../action/ActionExecutor";
-import { GetSkillDefinition } from "./SkillCatalog";
+import { BuildSkillCatalog, GetSkillDefinitionFromCatalog } from "./SkillCatalog";
 
 // 受击调整Demo施法时间线的统一规则；业务入口不应散落硬编码的毫秒数。
 // Shared Demo rule for hit-induced cast timing; business entry points must not scatter magic durations.
@@ -63,6 +64,8 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   protected override OnDestroy(): void {
     this.activeCasterUnitIds.clear();
     this.projectiles.clear();
+    this.skillCatalogDefinitions = undefined;
+    this.skillCatalogFingerprint = "";
   }
 
   Cast(caster: PlayerUnit, command: SkillCastCommand): SkillCastState {
@@ -484,7 +487,16 @@ export class SkillMapComponentSystem extends SkillMapComponent {
 
   private getDefinition(skillId: number): SkillDefinition {
     try {
-      return GetSkillDefinition(skillId);
+      const fingerprint = GameConfigRegistry.CurrentFingerprint;
+      if (!fingerprint) throw new Error("game config data is not installed");
+      if (
+        !this.skillCatalogDefinitions ||
+        this.skillCatalogFingerprint !== fingerprint
+      ) {
+        this.skillCatalogDefinitions = BuildSkillCatalog();
+        this.skillCatalogFingerprint = fingerprint;
+      }
+      return GetSkillDefinitionFromCatalog(this.skillCatalogDefinitions, skillId);
     } catch (error) {
       throw new RpcError(GameErrCode.SkillNotFound, error instanceof Error ? error.message : String(error));
     }

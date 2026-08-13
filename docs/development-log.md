@@ -7,6 +7,28 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-13：通用内核与首个领域边界门禁
+
+- 确认当前代码不需要为“通用游戏框架”进行大规模重构：`app/core`已经承载运行时语义，MMORPG能力主要位于`app/model/demo`、`app/hotfix/demo`和`src/game`。
+- 新增`npm run verify:domain-boundaries`，检查Core不得依赖Demo/Hotfix、Model不得反向依赖Hotfix或Core内部文件、Rust游戏模块不得绕过`native_data`访问Runtime宿主模块。
+- 暂时保留`SceneConfig.staticMapIds/acceptDynamicMaps`作为MapHost可选部署能力描述，避免把一次配置迁移误做成通用性重构；等第二个真实领域出现后再用实际重复需求调整。
+- 本轮不运行高CPU或长时间压测；该门禁属于静态依赖检查。
+
+## 2026-08-13：Rust CI 门禁与 Scene mailbox 排空收口
+
+- GitHub Actions显式执行`cargo fmt --all -- --check`和`cargo clippy --all-targets --locked -- -D warnings`；`verify:quick`同步使用相同的Rust warning门槛，避免CI依赖聚合脚本的隐式实现。
+- Scene ordered mailbox的同步任务改为循环排空，异步任务仍按Promise完成后继续下一个任务；新增5万段同步投递自测，覆盖原先可能耗尽V8调用栈的递归路径。
+- 技能目录缓存改为每个`SkillMapComponent`按配置指纹持有，移除Hotfix模块级可变缓存；密码盐值回退不再使用模块级计数器；怪物行为树改为无状态决策函数。
+- Bench Scene统一使用Core Stable入口；`app/model/main.ts`明确为宿主启动桥接例外，不作为业务代码导入范例。
+- 本轮只执行格式、lint、类型、项目检查和针对性自测，不启动高CPU或长时间压力测试。
+
+## 2026-08-13：框架审查收口与低分配验收门禁
+
+- 将Actor mailbox统计从TS `ProcessRuntime.update()`传入Rust健康快照，并以独立的Process级Prometheus序列导出；Scene mailbox继续保留Scene标签，避免同一Actor总计被重复累加。
+- 完善全链路性能报告的Actor mailbox字段，并把`Probe`错误纳入正式验收口径。
+- 收紧`perf:hotpath:compare`：before/after必须使用一致参数、完整案例集合和完整轮数；缺失资源、Mailbox或GC字段不再按0处理，stalled、Probe错误、传输错误、背压和内部超载会使比较失效。
+- 新增比较器自测和Rust `/metrics` Actor mailbox回归测试。本轮只做编译与低成本自测，不启动高CPU或长时间压力测试。
+
 ## 2026-08-12：低分配压测前准备入口
 
 - 新增`npm run perf:hotpath:prepare`，统一执行Bench、完整链路客户端和Release Runtime构建，并检查生成物、Manifest哈希、测试端口以及`verify:codegen`、`verify:comments`、`verify:hotfix-boundary`门禁。

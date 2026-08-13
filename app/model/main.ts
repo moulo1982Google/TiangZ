@@ -109,6 +109,7 @@ function flushUpdateResult(result: ProcessUpdateResult, sampleMetrics: boolean):
   return JSON.stringify({
     metrics: result.metrics,
     game: result.game,
+    actorMailbox: result.actorMailbox,
     nativeData: NativeData.TakeMetrics(),
     pendingAsync: result.pendingAsync,
   });

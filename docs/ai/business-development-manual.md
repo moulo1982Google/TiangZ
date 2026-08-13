@@ -21,6 +21,14 @@ configs/
 tests或tools中的对应业务自测
 ```
 
+### 先保护通用内核，再扩展领域
+
+当前Starter是MMORPG领域样例，不要把它反向当作框架定义。AOI、MapHost、地图传送、NavMesh、怪物、任务、技能、战斗和掉落属于`app/model/demo`、`app/hotfix/demo`或`src/game/<domain>`；Process、Scene、Actor、Component、mailbox、协议路由、热更和宿主队列才属于Core。
+
+新业务优先沿用现有领域组件和Stable API。只有当现有API无法表达需求，并且需求不是单纯的MMORPG规则时，才申请Core扩展。不要为了“以后支持卡牌、SLG或MOBA”提前新增通用Manager、万能配置扩展或第二套Actor入口。第二个真实领域出现后，使用重复需求和验收结果反推边界。
+
+修改分层入口后运行`npm run verify:domain-boundaries`。它检查Core、Model、Hotfix和Rust游戏模块的依赖方向；通过门禁不代表业务语义正确，仍需运行对应领域测试。
+
 默认不要修改：
 
 ```text
@@ -77,7 +85,9 @@ Bench Hotfix可以通过`#tiangz/model`调用真实业务API，但Demo不得引�
 - 同一个入口在`scenes`和共享`knownScenes`中重复时，`outerIp/outerPort`可以只写一边；如果两边都写，必须一致，否则 Runtime 会拒绝启动。
 - 旧配置的`ip`仍能读取，但新配置使用`innerIp`，避免开发者误把监听地址当成路由地址。
 
-Model代码只从`app/core/public.ts`导入Core能力。Hotfix代码只能从`#tiangz/model`取得Model类型、协议和Stable Core API；禁止深层导入`app/model`或`app/core`。其他Core路径属于Internal，即使当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
+Model业务代码只从`app/core/public.ts`导入Core能力。`app/model/main.ts`是Rust宿主启动桥接，允许使用Runtime Internal完成启动、更新、停止和二进制事件转发，但不是业务模块的参考写法；`app/model/bench`也必须使用Stable入口。Hotfix代码只能从`#tiangz/model`取得Model类型、协议和Stable Core API；禁止深层导入`app/model`或`app/core`。其他Core路径属于Internal，即使当前可以被TypeScript解析，也不能直接依赖。Stable API需要调整时，按[公共API与版本稳定性](../reference/api-stability.md)完成影响说明、迁移、显式API锁更新和验证。
+
+ordered Scene mailbox的同步任务由Runtime循环排空，不依赖递归调用栈；业务Handler仍应保持短小，长耗时工作使用明确的RPC、Timer或有界`Scene.Tasks.Spawn`，不能用连续同步投递制造无限队列。配置索引、缓存等可变状态必须归属于Scene或Component；Hotfix模块不得使用模块级可变变量或全局单例。
 
 ## Starter MMORPG 开发目标
 
@@ -1134,7 +1144,7 @@ npm run perf:full-chain -- --mode all --players 200,1000,3000 --move-rates 2 --w
 npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.json --after perf/results/hotpath_after_<时间>.json
 ```
 
-`full-chain`报告中的Mailbox指标是所有Scene序列的聚合值：单向消息排队应与尾延迟、Transport队列和错误一起判断；如果排队为零但p99上升，应继续看Handler耗时、编码、连接写出和客户端消费速度。该流程还不能给出“每条消息分配多少字节”，精确分配量需要独立的V8 heap/profile实验，不能用GC次数替代。
+`full-chain`报告中的Mailbox指标分为两类：Scene mailbox是所有Scene序列的聚合值，Actor mailbox是整个Process的单一汇总，不能把Actor总计复制到每个Scene后再次相加。单向消息排队应与尾延迟、Probe错误、Transport队列和业务错误一起判断；如果排队为零但p99上升，应继续看Handler耗时、编码、连接写出和客户端消费速度。`perf:hotpath:compare`要求参数、案例集合、轮数和资源字段完整一致；缺字段或存在stalled、Probe/传输错误、背压、内部超载时，比较结果无效。该流程还不能给出“每条消息分配多少字节”，精确分配量需要独立的V8 heap/profile实验，不能用GC次数替代。
 
 ## 怪物掉落与任务物品
 

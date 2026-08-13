@@ -96,7 +96,9 @@ npm run perf:full-chain -- --mode all --players 200,1000,3000 --move-rates 2 --w
 npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.json --after perf/results/hotpath_after_<时间>.json
 ```
 
-报告除了原有吞吐、P99、CPU、RSS、V8 GC 和 Rust 队列，还会列出 Scene Mailbox 的有序调用排队、单向消息排队、单向异步数量和峰值深度。`single-way queued` 应接近零；它必须与 `stalled`、transport overload、P99 一起判断，不能单独作为性能结论。
+报告除了原有吞吐、P99、CPU、RSS、V8 GC 和 Rust 队列，还会列出两类 Mailbox：Scene Mailbox 是按 Scene 汇总的业务入口队列；Actor Mailbox 是整个 Process 内所有 Actor 的总计，不能把它复制到每个 Scene 后再累加。`single-way queued` 应接近零；它必须与 `stalled`、Probe 错误、transport overload、P99 一起判断，不能单独作为性能结论。
+
+`npm run perf:hotpath:compare` 只接受可比报告：before/after 的参数、案例集合和轮数必须一致；每个案例必须有完整资源与 Mailbox 指标，且 `stalled`、Probe 错误、业务传输错误、背压、Inner 超载和 Inner 超时都必须为零。缺字段不会再按 `0` 处理，而是让 `comparisonValid=false`。
 
 这轮观测仍然不是“精确每消息分配多少字节”的分配器实验：服务端使用 `/metrics` 的 V8 GC/RSS/Heap，GC 使用正式窗口的首尾累计值差分；压测端使用 Node `PerformanceObserver` 和进程资源统计，并在正式窗口边界差分。精确堆分配需要另开 V8 heap/profile 实验，不能把 GC 次数直接当成分配字节数。
 

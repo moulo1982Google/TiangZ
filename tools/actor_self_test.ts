@@ -618,7 +618,12 @@ function stageActiveBindingsForSameIsolateTest(): void {
     bindingStores: Set<HotfixBindingStore<object>>;
   }).bindingStores;
   for (const store of stores) {
-    for (const [key, value] of store.__activeEntries()) {
+    // 测试通过内部 Map 读取当前基线；生产 Hotfix 候选仍必须从生成的 Handler 模块注册。
+    // The test reads the internal Map to restage the baseline; production candidates must register generated Handler modules.
+    const active = (store as unknown as {
+      active: Map<string, object>;
+    }).active;
+    for (const [key, value] of active) {
       HotfixSystem.StageBinding(store, key, value);
     }
   }

@@ -1,7 +1,4 @@
-import { rpc } from "../../../core/protocol/rpc";
-import { hostSleep } from "../../../core/runtime/contexts";
-import { entryScene } from "../../../core/process/registry";
-import { EntryScene } from "../../../core/process/types";
+import { EntryScene, entryScene, rpc } from "../../../core/public";
 import {
   C2S_RuntimePing,
   B2B_RuntimePingRequest,
@@ -34,7 +31,7 @@ export class BenchScene extends EntryScene {
     this.activeDelayed += 1;
     this.maxDelayed = Math.max(this.maxDelayed, this.activeDelayed);
     try {
-      await hostSleep(request.delayMs);
+      await benchSleep(request.delayMs);
       return {
         seq: request.seq,
         serverConcurrency: this.maxDelayed,
@@ -50,7 +47,7 @@ export class BenchScene extends EntryScene {
     this.activeDelayed += 1;
     this.maxDelayed = Math.max(this.maxDelayed, this.activeDelayed);
     try {
-      await hostSleep(request.delayMs);
+      await benchSleep(request.delayMs);
       return this.createResponse(request);
     } finally {
       this.activeDelayed -= 1;
@@ -63,4 +60,9 @@ export class BenchScene extends EntryScene {
       payload: request.payload,
     };
   }
+}
+
+/** Bench只需要制造可控异步间隔，不把宿主计时桥暴露成业务Stable API。 / Bench only needs a controllable async gap and must not promote the host timer bridge to the business Stable API. */
+function benchSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
