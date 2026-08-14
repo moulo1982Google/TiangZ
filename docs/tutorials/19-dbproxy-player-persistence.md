@@ -200,17 +200,17 @@ await mapClient.useItem({ itemId, operationId });
 
 ## 重启恢复验收
 
-先构建客户端工具，然后使用一个已经拥有1001道具的测试账号写入。新账号不会自动获得药水，请先在NPC处完成可奖励1001的任务，或使用已有持久化账号：
+先构建客户端工具。持久化烟测不会给新账号注入测试道具，而是通过任务5003完成“接取 -> 进入地图2 -> 返回NPC -> 领奖”，领取3个1001小红后再消费1个：
 
 ```powershell
 npm run build:client
-node dist/smoke_client.cjs --dbproxy-persistence-write dbproxy_smoke_001
+node dist/smoke_client.cjs --dbproxy-persistence-write dbproxy_smoke_<timestamp>
 ```
 
-该命令进入地图、把1001道具消耗1个，立即断开，并等待Gate的30秒重连宽限结束后保存。命令会按当前快照校验扣除结果；看到写入完成后，只停止并重新启动TiangZ，保持DBProxy、PostgreSQL和Redis运行，再执行：
+该命令通过正式任务奖励链路获得3个1001、消费1个、立即断开，并等待Gate的30秒重连宽限结束后保存。命令会按当前快照校验扣除结果；看到写入完成后，只停止并重新启动TiangZ，保持DBProxy、PostgreSQL和Redis运行，再执行：
 
 ```powershell
-node dist/smoke_client.cjs --dbproxy-persistence-read dbproxy_smoke_001
+node dist/smoke_client.cjs --dbproxy-persistence-read dbproxy_smoke_<timestamp>
 ```
 
 通过标准是重新进入后同一Item的数量减少1、版本增加1，且没有重新发放物品。快速纯逻辑回归使用：

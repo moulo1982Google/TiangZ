@@ -32,7 +32,36 @@ npm run starter:character-smoke
 
 这个命令会创建一个角色，使用返回的 `characterId` 登录并进入地图，然后分别在 all-in-one 和 split-process 中重复验证。它不做长时间压测。
 
-需要验证真实 DBProxy 恢复时，按[DBProxy玩家快照持久化](19-dbproxy-player-persistence.md)启动本地 PostgreSQL、Redis 和 DBProxy，再使用对应配置。
+## 一条命令验收
+
+完成代码生成后，可以运行不接触数据库的完整Starter验收：
+
+```powershell
+npm run starter:acceptance
+```
+
+它会依次覆盖运行时登录/进图/战斗链路、技能与Buff、创建角色和选角，并把结果写入`temp/test-logs/starter-acceptance-*.json`。默认会验证all-in-one和split-process；只跑其中一种运行时时可以使用：
+
+```powershell
+node tools/starter_acceptance.mjs --mode all
+node tools/starter_acceptance.mjs --mode split
+```
+
+需要验证真实 DBProxy 恢复时，先按[DBProxy玩家快照持久化](19-dbproxy-player-persistence.md)启动本地 PostgreSQL、Redis 和 DBProxy，再运行：
+
+```powershell
+npm run starter:acceptance:persistent
+```
+
+该命令会生成带时间后缀的测试账号，执行“进入地图 -> 使用道具 -> Gate最终下线保存 -> 停止并重启TiangZ -> 重新读取快照”，不会删除数据库，也不会启动Docker。它要求DBProxy仓库已经存在本地`.env`和可运行的Debug二进制；若7800端口已有DBProxy，则直接复用。
+
+故障矩阵是单独的破坏性测试入口：
+
+```powershell
+npm run starter:acceptance:faults
+```
+
+它会调用独立仓库的`tools/fault_matrix.ps1`，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。当前命令已经把故障验证接入Starter验收，但还没有把“击杀5只A -> 交付 -> 击杀5只B -> 任务掉落5个 -> 动态副本Boss奖励”做成无人工客户端夹具；Map 100当前只有3只A和2只B，且带掉落尸体按设计保留较长时间，所以这部分仍属于客户端验收项，不在自动脚本中冒充已完成。
 
 ## 业务入口在哪里
 

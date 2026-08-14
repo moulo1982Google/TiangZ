@@ -39,6 +39,9 @@ export class NumericComponentSystem extends NumericComponent implements ITransfe
 
   /** 在Rust中写入数值，并将NumericType标脏供帧尾同步。 / Writes one value in Rust and marks that NumericType dirty for frame-end replication. */
   Set(type: NumericTypeValue, value: bigint): void {
+    if (IsDerivedNumericType(type)) {
+      throw new Error(`Derived NumericType is read-only: ${type}`);
+    }
     NativeOps.NumericSet(this.unitHandle, type, value);
     if (isMoveSpeedType(type)) this.syncMoveSpeedToPosition();
   }

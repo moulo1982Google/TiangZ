@@ -2670,7 +2670,7 @@ export interface M2C_AttackMonster extends IActorLocationResponse {
   error?: number;
   rpcId?: number;
   monsterId: number;
-  damage: number;
+  damage: bigint;
   remainingHp: bigint;
   killed: boolean;
 }
@@ -2680,7 +2680,7 @@ export const M2C_AttackMonsterCodec = {
     const reader = new BinaryReader(payload);
     const value: M2C_AttackMonster = {
       monsterId: 0,
-      damage: 0,
+      damage: 0n,
       remainingHp: 0n,
       killed: false,
     };
@@ -2699,7 +2699,7 @@ export const M2C_AttackMonsterCodec = {
         value.monsterId = reader.uint32();
       }
       else if (tag.fieldNo === 2 && tag.wireType === 0) {
-        value.damage = reader.uint32();
+        value.damage = reader.uint64();
       }
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.remainingHp = reader.uint64();
@@ -2720,7 +2720,7 @@ export const M2C_AttackMonsterCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
-    if (value.damage !== undefined) writer.uint32(2, value.damage);
+    if (value.damage !== undefined) writer.uint64(2, value.damage);
     if (value.remainingHp !== undefined) writer.uint64(3, value.remainingHp);
     if (value.killed !== undefined) writer.bool(4, value.killed);
     return writer.finish();

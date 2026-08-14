@@ -7,6 +7,16 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-13：框架审查问题收口与生命周期门禁
+
+- Hotfix提交的原型安装和绑定提交改为可回滚事务：首次安装的半成品方法会被清理，回滚附加错误不会把Runtime永久留在`rolling-back`阶段；候选Handler集合增加、删除或重命名仍要求重启。
+- `ProcessHost.despawnScene`在Scene级实体级联销毁完成前保留宿主注册，避免`DomainScene()`回查失败导致静态地图的Component/ChildEntity泄漏。Actor连接重绑改为显式先`unbindConnection`，错误绑定不再静默覆盖。
+- Entity增加协作式`AssertAlive()`。JavaScript不能抢占已经进入`await`的Promise continuation，因此外部异步返回后修改Unit/Component前必须再次检查；这不是自动取消机制，长异步工作应重新投递Actor mailbox或Entity Timer。
+- Numeric通用Setter拒绝直接写入1000至9999的派生数值；Replace/HigherWins会清理同一stackGroup下全部冲突实例；`M2C_AttackMonster.damage/remainingHp`升级为协议`uint64`并在TS侧保持`bigint`，避免伤害超过安全整数后精度丢失。
+- 删除未使用的`app/model/domains/combat`与`app/model/domains/skill`影子定义，Combat/Skill继续作为当前MMORPG领域实现，避免“准框架”与实际语义不一致。
+- 已通过协议与场景生成、TypeScript类型检查、Core API锁、Hotfix边界、领域边界、项目检查、Runtime Foundation、Actor、Buff/Action、Monster行为、Hotfix事务和代码生成系统自测；未启动高CPU或长时间压力测试。
+- 当前质量债明确保留：TypeScript测试仍以进程级自测为主，暂未引入统一单元测试运行器和覆盖率门禁；`perf:gate`继续绑定固定基线机，不纳入普通CI，避免把硬件相关的容量结论误当成通用CI结论。GitHub Actions已显式执行Rust `fmt`和`clippy -D warnings`。
+
 ## 2026-08-13：通用内核与首个领域边界门禁
 
 - 确认当前代码不需要为“通用游戏框架”进行大规模重构：`app/core`已经承载运行时语义，MMORPG能力主要位于`app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`。
@@ -1006,3 +1016,12 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 通用Model新增`domains`层，拆出Numeric、ActionDefinition、RewardPlan、Item、Quest、Buff、Combat和Skill的稳定数据/生命周期容器；MMORPG配置、协议、地图、目标选择和执行器继续留在MMORPG适配层。
 - Numeric的`MoveSpeed`、米/秒到毫米/秒换算和位置同步从通用数值表移到`mmorpg/numeric/MovementNumeric`；`RewardDefinition`改为`RewardPlan`兼容别名。
 - `verify:domain-boundaries`增加可复用domains不得依赖MMORPG适配器和生成协议的门禁；通过Native/Scene codegen、TypeScript和边界检查。未执行CPU压力测试。
+
+# 2026-08-13：Starter纵向验收入口
+
+- 新增`tools/starter_acceptance.mjs`和`starter:acceptance`、`starter:acceptance:persistent`、`starter:acceptance:faults`三个命令，把普通运行时、DBProxy重启恢复和独立故障矩阵区分开。
+- 测试Harness支持向TiangZ Runtime和前台子进程注入DBProxy令牌；持久化入口只复用本地DBProxy或本地Debug二进制，不自动启动Docker、不打印密钥、不删除数据库。
+- 修复`client_sdk_smoke`在创建第二个角色后仍用旧`characterId`断言的问题，避免角色选角烟测误报。
+- 本轮完成静态检查和类型检查，未执行CPU压力测试；完整的5A/5B任务掉落与动态副本Boss自动夹具仍未宣称完成。
+- 实测`npm run starter:acceptance:persistent`通过：任务5003真实发放3个小红，消费后断线保存，重启TiangZ后恢复同一ItemId、数量2、版本2。
+- 实测独立DBProxy`tools/fault_matrix.ps1`通过5/5：Redis backlog跨重启、PostgreSQL中断重试、Redis缓存修复、新快照覆盖积压和数据库恢复后的排空均通过。该测试只操作本机Docker测试容器，未执行外网或容量压测。

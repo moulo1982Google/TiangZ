@@ -333,13 +333,19 @@ export class ProcessHost {
     for (const actorId of [...scene.actors.keys()]) {
       this.despawnActor(sceneId, actorId);
     }
-    this.scenes.delete(sceneId);
-    SingletonRegistry.TryGet(CoroutineLockSystem)?.CancelScene(scene.instance.InstanceId);
-    this.Root.Remove(scene.instance.InstanceId);
+    const sceneInstanceId = scene.instance.InstanceId;
+    SingletonRegistry.TryGet(CoroutineLockSystem)?.CancelScene(sceneInstanceId);
     try {
+      // 保留Scene注册直到级联销毁完成；Component/ChildEntity的析构可能需要通过
+      // DomainScene回查宿主。先删注册会让正常的子实体清理误报scene not found。
+      // Keep the Scene registered until cascading disposal completes because
+      // component/child cleanup may resolve the host through DomainScene.
       scene.instance.__dispose();
     } catch (disposeError) {
       CoreLogger.error("scene destroy failed", { scene: sceneId, error: disposeError });
+    } finally {
+      this.Root.Remove(sceneInstanceId);
+      this.scenes.delete(sceneId);
     }
     return true;
   }

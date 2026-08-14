@@ -8,6 +8,7 @@ import {
   NativeUnitRef,
   type MonsterRuntimeState,
 } from "../app/model/public";
+import { M2C_AttackMonsterCodec } from "../app/generated/model/server/demo/protocol/messages";
 
 assertAction("idle without target", "idle", EvaluateMonsterBehavior({
   mayAggro: true,
@@ -53,7 +54,23 @@ interface FakePositionUnit {
 
 async function main(): Promise<void> {
   await verifyThreatRatioAndLongRangeSelection();
+  verifyAttackDamageCodecPreservesUint64();
   console.log("[monster-behavior] self-test passed");
+}
+
+/** 验证攻击响应不会把64位伤害降级成JS number。 / Verifies attack responses keep uint64 damage as bigint. */
+function verifyAttackDamageCodecPreservesUint64(): void {
+  const damage = 9_007_199_254_740_993n;
+  const remainingHp = 9_007_199_254_740_992n;
+  const decoded = M2C_AttackMonsterCodec.decode(M2C_AttackMonsterCodec.encode({
+    monsterId: 1001,
+    damage,
+    remainingHp,
+    killed: false,
+  }));
+  if (decoded.damage !== damage || decoded.remainingHp !== remainingHp) {
+    throw new Error("uint64 attack damage lost bigint precision during codec roundtrip");
+  }
 }
 
 /** 验证伤害仇恨1:1，并防止主动索敌距离再次错误过滤远程攻击产生的仇恨。 / Verifies 1:1 damage threat and keeps active-acquisition range from filtering ranged-hit threat. */

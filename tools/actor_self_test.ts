@@ -505,6 +505,10 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(numeric[NumericType.AttackSpeed], 2_000n);
   assert.equal(numeric[NumericType.MoveSpeed], 10_000n);
   assert.equal(numeric[NumericType.MaxHp], 1000n);
+  assert.throws(
+    () => { numeric[NumericType.Attack] = 999n; },
+    /Derived NumericType is read-only/,
+  );
   numeric[NumericType.AttackAdd] += 3n;
   numeric[NumericType.AttackPct] += 20n;
   assert.equal(numeric[NumericType.Attack], 9n);
@@ -737,6 +741,9 @@ class DespawnProbeActor extends Actor {
 
   async WaitForDespawn(): Promise<string> {
     await this.gate;
+    // await之后必须由业务显式确认实体仍存活；框架不能抢占JS continuation。
+    // Business must explicitly re-check after await; the runtime cannot preempt a JS continuation.
+    this.AssertAlive();
     return "stale-success";
   }
 }
@@ -755,7 +762,7 @@ async function testActorDespawnRejectsInFlightAndQueuedCalls(): Promise<void> {
   assert.equal(host.despawnActor("map:1", "probe"), true);
   await assert.rejects(Promise.resolve(queued), /actor despawned/);
   probe.release();
-  await assert.rejects(Promise.resolve(running), /actor despawned during mailbox execution/);
+  await assert.rejects(Promise.resolve(running), /entity is disposed|actor despawned during mailbox execution/);
 }
 
 @actor({ mailbox: "unordered" })
@@ -824,4 +831,17 @@ function testReconnectStormKeepsLatestLocation(): void {
   });
   directory.unbindConnection(previousConnectionId);
   assert.equal(directory.resolveConnection(latestConnectionId)?.instanceId, 5000);
+
+  const strictConnectionId = 100_000;
+  directory.bindConnection(strictConnectionId, {
+    instanceId: 5001,
+    scene: mapScene,
+  });
+  assert.throws(
+    () => directory.bindConnection(strictConnectionId, {
+      instanceId: 5002,
+      scene: mapScene,
+    }),
+    /unbind before rebind/,
+  );
 }

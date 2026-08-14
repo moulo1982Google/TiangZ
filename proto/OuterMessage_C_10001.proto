@@ -304,7 +304,10 @@ message C2M_AttackMonster // IActorLocationRequest
 message M2C_AttackMonster // IActorLocationResponse
 {
   uint32 monster_id = 1;
-  uint32 damage = 2;
+  // 伤害使用uint64，保持Rust/TS的i64/bigint精度，不在服务端先窄化为number。
+  // Damage uses uint64 so Rust/TS i64/bigint precision is preserved without
+  // narrowing on the server before encoding.
+  uint64 damage = 2;
   uint64 remaining_hp = 3;
   bool killed = 4;
 }

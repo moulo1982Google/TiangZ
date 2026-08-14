@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "6b457c7cecf8d58f92b266531e799e4bd71e89aa1fef3a5bdd0df1f348a6d586";
+    public const string Value = "0b043ebf4350d23b0d40619f3c7d2c55ad0e3f38d190f9a262bd3e4636bc3c8c";
 }
 
 public static class MsgCode
@@ -522,7 +522,7 @@ public sealed class M2C_AcceptQuest : IRpcResponse
 public sealed class M2C_AttackMonster : IRpcResponse
 {
     public uint MonsterId { get; set; }
-    public uint Damage { get; set; }
+    public ulong Damage { get; set; }
     public ulong RemainingHp { get; set; }
     public bool Killed { get; set; }
     public uint RpcId { get; set; }
@@ -3130,7 +3130,7 @@ public static class M2C_AttackMonsterCodec
                     value.MonsterId = reader.ReadUInt32();
                     break;
                 case 2 when tag.WireType == 0:
-                    value.Damage = reader.ReadUInt32();
+                    value.Damage = reader.ReadUInt64();
                     break;
                 case 3 when tag.WireType == 0:
                     value.RemainingHp = reader.ReadUInt64();
@@ -3159,7 +3159,7 @@ public static class M2C_AttackMonsterCodec
     {
         var writer = new BinaryWriter();
         if (value.MonsterId != 0) writer.WriteUInt32(1, value.MonsterId);
-        if (value.Damage != 0) writer.WriteUInt32(2, value.Damage);
+        if (value.Damage != 0) writer.WriteUInt64(2, value.Damage);
         if (value.RemainingHp != 0) writer.WriteUInt64(3, value.RemainingHp);
         if (value.Killed) writer.WriteBool(4, value.Killed);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);

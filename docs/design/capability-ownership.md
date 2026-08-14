@@ -13,7 +13,7 @@
 
 ② 可复用领域契约
    app/model/domains
-   Numeric / Action / Reward / Item / Quest / Buff / Combat / Skill 的稳定状态形状
+   Numeric / Action / Reward / Item / Quest / Buff 的稳定状态形状
 
 ③ 具体游戏领域
    app/model/mmorpg + app/hotfix/mmorpg + src/game
@@ -53,10 +53,10 @@
 | Item | `app/model/domains/item/` | Item ChildEntity、背包集合的稳定状态形状 |
 | Quest | `app/model/domains/quest/` | Quest ChildEntity、活动任务和完成记录的容器 |
 | Buff | `app/model/domains/buff/` | Buff ChildEntity、生命周期数据和集合容器 |
-| Combat | `app/model/domains/combat/` | 伤害、治疗、护盾和普通攻击状态的稳定形状 |
-| Skill | `app/model/domains/skill/` | 读条、引导、CD和效果定义的稳定形状 |
+| Combat | `app/model/mmorpg/combat/` | 当前MMORPG的伤害、治疗、护盾和普通攻击状态；尚未冻结为跨游戏契约 |
+| Skill | `app/model/mmorpg/skill/` | 当前MMORPG的读条、引导、CD和技能效果；尚未冻结为跨游戏契约 |
 
-这些目录只能依赖 `app/core/public.ts` 和同一 `domains` 层。它们不能依赖 `app/model/mmorpg`、生成协议、Luban配置或某个游戏的Native句柄。`npm run verify:domain-boundaries` 会检查这条规则。
+这些目录只能依赖 `app/core/public.ts` 和同一 `domains` 层。它们不能依赖 `app/model/mmorpg`、生成协议、Luban配置或某个游戏的Native句柄。当前 Combat/Skill 的执行状态仍与MMORPG的伤害学校、平A、施法和引导语义绑定，因此保留在 `mmorpg`，不为了目录对称制造一份“类型影子”。`npm run verify:domain-boundaries` 会检查这条规则。
 
 ### ③ MMORPG 适配层
 
@@ -133,8 +133,8 @@ RewardPlan
 - Item：`domains/item` 负责 Item ChildEntity 和集合容器；`mmorpg/item` 负责 `ItemSnapshot`、Luban ItemConfig、NativeItemRef、使用道具和持久化。
 - Quest：`domains/quest` 负责活动 Quest 和完成记录容器；`mmorpg/quest` 负责 NPC、QuestConfig、目标索引、任务奖励和网络协议。
 - Buff：`domains/buff` 负责 Buff 生命周期数据；`mmorpg/buff` 负责 BuffConfig、冲突策略、Timer、Action和AOI投影。
-- Combat：`domains/combat` 负责伤害/治疗/护盾数据形状；`mmorpg/combat` 负责 Numeric、死亡表现、施法惩罚和当前游戏规则。
-- Skill：`domains/skill` 负责 Cast/CD/Channel 状态；`mmorpg/skill` 负责 SkillConfig、目标距离、地图调度、弹道、命中和技能快捷栏协议。
+- Combat：当前完整实现位于 `mmorpg/combat`，负责伤害/治疗/护盾、普通攻击、Numeric和死亡表现。只有第二个真实领域证明同一状态形状后，才抽取无MMORPG语义的契约。
+- Skill：当前完整实现位于 `mmorpg/skill`，负责Cast/CD/Channel、SkillConfig、目标距离、地图调度、弹道、命中和技能快捷栏协议；删除了未被运行时使用的 `domains/skill` 影子。
 
 Handler 仍然保持：
 

@@ -122,7 +122,7 @@ npm run test:runtime
 
 TiangZ的完整业务参考是[Starter MMORPG纵向切片](docs/tutorials/20-starter-mmorpg.md)，它把登录、主城、野外战斗、掉落、背包、任务、动态副本、重连和重启恢复串成一条可复制链路。详细验收项见[Starter验收矩阵](docs/starter/acceptance-matrix.md)。框架能力案例与Starter业务分开维护，Starter不得绕过Stable API。
 
-Starter常用命令：`npm run starter:verify`做静态检查，`npm run starter:dev`编译并启动本地all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`专门验证创建角色、选角和稳定`characterId`。它们不包含长时间容量压测。
+Starter常用命令：`npm run starter:verify`做静态检查，`npm run starter:dev`编译并启动本地all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`专门验证创建角色、选角和稳定`characterId`。完整验收使用`npm run starter:acceptance`；`starter:acceptance:persistent`会验证DBProxy重启后的玩家快照恢复，`starter:acceptance:faults`会额外运行独立DBProxy故障矩阵。持久化和故障命令会写入/重启本地测试资源，执行前先确认PostgreSQL、Redis和DBProxy环境。以上命令不包含长时间容量压测。
 
 登录界面不再自动创建游客账号：第一次使用请点击“注册”，输入用户名、密码和确认密码；用户名会直接作为初始角色名。`all-in-one.json`的注册目录只在当前进程内存中，调试界面可用但重启会丢失账号。需要落盘和重启恢复时，先启动独立DBProxy，再使用`npm run starter:dev:persistent`，详细令牌和Docker步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
 

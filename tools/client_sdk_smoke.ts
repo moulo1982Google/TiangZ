@@ -28,7 +28,7 @@ async function main(): Promise<void> {
       undefined,
       registered.character.characterId,
     );
-    if (result.login.selectedCharacterId !== created.character.characterId) {
+    if (result.login.selectedCharacterId !== registered.character.characterId) {
       throw new Error("Login did not keep the explicitly selected character");
     }
     const snapshotPromise = result.gateSocket.waitForMessage(ClientMessages.AoiDelta);

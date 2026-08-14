@@ -82,6 +82,21 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
   -> 验证背包、任务、技能冷却和位置恢复
 ```
 
+## 自动验收入口
+
+| 命令 | 范围 | 数据影响 |
+| --- | --- | --- |
+| `npm run starter:verify` | 检查Starter目录、生成物和命令入口 | 无 |
+| `npm run starter:acceptance` | all-in-one与split-process运行时、技能/Buff、创建角色/选角 | 无数据库写入 |
+| `npm run starter:acceptance -- --mode all` | 只跑all-in-one运行时部分 | 无数据库写入 |
+| `npm run starter:acceptance -- --mode split` | 只跑split-process运行时部分 | 无数据库写入 |
+| `npm run starter:acceptance:persistent` | DBProxy快照写入、停止/重启TiangZ、恢复读取 | 写入带时间后缀的测试账号，不删除数据库 |
+| `npm run starter:acceptance:faults` | 持久化恢复后运行独立DBProxy故障矩阵 | 可能重启本地Redis/PostgreSQL容器，只能用于测试环境 |
+
+自动脚本的结果写入被Git忽略的`temp/test-logs/starter-acceptance-*.json`。持久化命令不会自动启动Docker；它会复用7800端口已有的DBProxy，或使用`tools-projects/TiangZ-DBProxy/target/debug`中的Debug服务，并从独立仓库的`deploy/local/.env`读取连接参数。常规Starter验收不应连接外网数据库。
+
+当前自动脚本明确不宣称完整任务/副本业务已通过：Map 100演示配置当前有3只A怪和2只B怪，带掉落尸体还按规则保留较长时间；“击杀5只A、回NPC交付、解锁B、拾取5个任务物品、进入动态副本击杀Boss并领取奖励”仍需Cocos3D客户端操作验收，后续再增加专用测试夹具。
+
 ## 验收分级
 
 - `代码已有`：可以找到正式实现，但还没有证明完整链路。

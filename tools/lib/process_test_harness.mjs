@@ -4,12 +4,12 @@ import net from "node:net";
 import path from "node:path";
 
 /** 启动受stdin控制的Runtime并收集输出；调用者必须在finally中停止它。 / Starts a stdin-controlled Runtime and captures output; callers must stop it in finally. */
-export function startRuntime(root, config, name, profile = "debug") {
+export function startRuntime(root, config, name, profile = "debug", extraEnv = {}) {
   const suffix = process.platform === "win32" ? ".exe" : "";
   const executable = path.join(root, "target", profile, `TiangZ${suffix}`);
   const child = spawn(executable, [config], {
     cwd: root,
-    env: { ...process.env, TIANGZ_WATCHER_CONTROL: "stdin" },
+    env: { ...process.env, ...extraEnv, TIANGZ_WATCHER_CONTROL: "stdin" },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -82,9 +82,14 @@ export async function waitForReady(port, timeoutMs = 15_000) {
 }
 
 /** 运行一个前台测试命令，继承输出并检查退出码。 / Runs a foreground test command with inherited output and validates its exit code. */
-export function runInherited(command, args, root) {
+export function runInherited(command, args, root, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: root, stdio: "inherit", windowsHide: true });
+    const child = spawn(command, args, {
+      cwd: root,
+      stdio: "inherit",
+      windowsHide: true,
+      env: { ...process.env, ...(options.env ?? {}) },
+    });
     child.once("error", reject);
     child.once("exit", (code, signal) => {
       if (code === 0) resolve();

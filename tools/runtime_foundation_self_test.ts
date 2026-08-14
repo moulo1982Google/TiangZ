@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { ProcessHost } from "../app/core/runtime/host";
 import {
   Component,
+  ChildEntity,
   Scene,
 } from "../app/core/runtime/entities";
 import { InitializeGameSingletons } from "../app/core/runtime/Game";
@@ -84,6 +85,22 @@ class TimerProbeComponent extends Component {
   }
 }
 
+class FoundationChild extends ChildEntity<[string]> {
+  label = "";
+
+  protected override Awake(label: string): void {
+    this.label = label;
+  }
+}
+
+class CascadingChildrenComponent extends Component {
+  child!: FoundationChild;
+
+  protected override Awake(): void {
+    this.child = this.AddChild(FoundationChild, 9001n, "owned");
+  }
+}
+
 void main();
 
 async function main(): Promise<void> {
@@ -98,6 +115,7 @@ async function main(): Promise<void> {
     testTimerArgumentsAndCancellation();
     await testCoroutineLockIsolation();
     await testSceneEventsAndTasks();
+    testSceneDisposeCascadesOwnedEntities();
     console.log("runtime foundation self-test passed");
   } finally {
     SingletonRegistry.DestroyAll();
@@ -285,4 +303,18 @@ async function testSceneEventsAndTasks(): Promise<void> {
     () => staleEvents.Publish(FoundationEvents.Sync, { value: 1 }),
     /disposed Scene/,
   );
+}
+
+function testSceneDisposeCascadesOwnedEntities(): void {
+  const host = new ProcessHost("foundation-dispose");
+  const scene = host.spawnScene("dispose", FoundationScene);
+  const component = scene.AddComponent(CascadingChildrenComponent);
+  const child = component.child;
+  const childInstanceId = child.InstanceId;
+
+  host.despawnScene("dispose");
+  assert.equal(scene.IsDisposed, true);
+  assert.equal(child.IsDisposed, true);
+  assert.equal(host.Root.Get(childInstanceId), undefined);
+  assert.throws(() => child.AssertAlive(), /entity is disposed/);
 }

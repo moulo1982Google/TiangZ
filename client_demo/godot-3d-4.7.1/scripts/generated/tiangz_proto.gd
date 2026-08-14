@@ -2436,7 +2436,7 @@ static func decode_m2c_attack_monster(payload: PackedByteArray) -> Dictionary:
 					reader.skip(tag.wire)
 			2:
 				if tag.wire == 0:
-					result["damage"] = reader.uint32()
+					result["damage"] = reader.uint64()
 				else:
 					reader.skip(tag.wire)
 			3:

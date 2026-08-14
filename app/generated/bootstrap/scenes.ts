@@ -12,7 +12,7 @@ import "../../model/mmorpg/scenes/MapHostScene";
 import "../../model/mmorpg/scenes/MapManagerScene";
 import { Buff as SystemTarget0 } from "../../model/domains/buff/Buff";
 import { BuffComponent as SystemTarget1 } from "../../model/domains/buff/BuffComponent";
-import { CombatComponent as SystemTarget2 } from "../../model/domains/combat/CombatComponent";
+import { CombatComponent as SystemTarget2 } from "../../model/mmorpg/combat/CombatComponent";
 import { Item as SystemTarget3 } from "../../model/domains/item/Item";
 import { ItemComponent as SystemTarget4 } from "../../model/domains/item/ItemComponent";
 import { LoginComponent as SystemTarget5 } from "../../model/mmorpg/login/LoginComponent";
@@ -24,7 +24,7 @@ import { NumericComponent as SystemTarget10 } from "../../model/domains/numeric/
 import { PlayerUnit as SystemTarget11 } from "../../model/mmorpg/map/PlayerUnit";
 import { Quest as SystemTarget12 } from "../../model/domains/quest/Quest";
 import { QuestComponent as SystemTarget13 } from "../../model/domains/quest/QuestComponent";
-import { SkillComponent as SystemTarget14 } from "../../model/domains/skill/SkillComponent";
+import { SkillComponent as SystemTarget14 } from "../../model/mmorpg/skill/SkillComponent";
 import { SkillMapComponent as SystemTarget15 } from "../../model/mmorpg/skill/SkillMapComponent";
 
 registerKnownRpcs(RpcDescriptors0);

@@ -25,6 +25,7 @@ const requiredPaths = [
   "app/generated/model/native/NativeItemPersistence.ts",
   "docs/starter/acceptance-matrix.md",
   "tools/character_selection_smoke.mjs",
+  "tools/starter_acceptance.mjs",
 ];
 
 const missing = requiredPaths.filter((relativePath) => !existsSync(path.join(root, relativePath)));
@@ -35,7 +36,15 @@ if (missing.length > 0) {
 }
 
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-const expectedScripts = ["starter:dev", "starter:verify", "starter:smoke", "starter:character-smoke"];
+const expectedScripts = [
+  "starter:dev",
+  "starter:verify",
+  "starter:smoke",
+  "starter:character-smoke",
+  "starter:acceptance",
+  "starter:acceptance:persistent",
+  "starter:acceptance:faults",
+];
 const missingScripts = expectedScripts.filter((name) => !packageJson.scripts?.[name]);
 if (missingScripts.length > 0) {
   console.error(`[starter] missing package scripts: ${missingScripts.join(", ")}`);

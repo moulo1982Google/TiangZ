@@ -388,6 +388,20 @@ export abstract class Entity {
     return this.disposed;
   }
 
+  /**
+   * 在外部 await 返回后确认 Entity 仍归当前运行时所有。
+   * JavaScript 不能抢占已经开始执行的 Promise continuation；异步业务在
+   * await 后修改状态前必须调用本方法，销毁中的 Entity 会立即抛错。
+   *
+   * Confirms that this Entity is still owned by the current runtime after an
+   * external await. JavaScript cannot preempt an already scheduled Promise
+   * continuation, so async business code must call this before mutating state
+   * after await; disposed Entities throw immediately.
+   */
+  AssertAlive(): void {
+    this.requireAlive();
+  }
+
   get Id(): EntityId {
     if (this.entityId === undefined) {
       throw new Error(`entity is not attached: ${this.constructor.name}`);

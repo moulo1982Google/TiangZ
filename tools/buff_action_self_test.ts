@@ -18,6 +18,7 @@ import { ActionType } from "../app/model/mmorpg/action/ActionType";
 import { ExecuteAction, ExecuteActionBatch } from "../app/hotfix/mmorpg/action/ActionExecutor";
 import { GetSkillDefinition } from "../app/hotfix/mmorpg/skill/SkillCatalog";
 import { BuffApplyStatus, BuffComponent } from "../app/model/mmorpg/buff/BuffComponent";
+import { Buff } from "../app/model/mmorpg/buff/Buff";
 import { CombatComponent } from "../app/model/mmorpg/combat/CombatComponent";
 import { NumericComponent } from "../app/model/mmorpg/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/mmorpg/numeric/NumericType";
@@ -407,6 +408,43 @@ async function main(): Promise<void> {
   assert.equal(unit.GetComponent(NumericComponent)[NumericType.MaxHp], 700n);
   const activeFortitude = buffs.GetBuffs().find((value) => value.ConfigId === 4005)!;
   buffs.RemoveBuff(activeFortitude.Id as bigint, "test-fortitude");
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.MaxHp], 200n);
+
+  // HigherWins同级刷新必须清掉历史重复实例；否则低优先级残留会继续执行RemoveAction。
+  // Equal-rank HigherWins refresh must remove legacy duplicates, otherwise a
+  // stale instance can later run another RemoveAction.
+  const legacyBuffA = buffs.AddChild(Buff, 910001n, {
+    configId: 4005,
+    appliedAtMs: TimeSystem.Instance.ServerNow,
+    expireAtMs: TimeSystem.Instance.ServerNow + 1_800_000,
+    tickIntervalMs: 0,
+    nextTickAtMs: 0,
+    revision: 1,
+    sourceUnitId: 20,
+    sourceAbilityId: 3005,
+    conflictPriority: 1,
+  });
+  const legacyBuffB = buffs.AddChild(Buff, 910002n, {
+    configId: 4005,
+    appliedAtMs: TimeSystem.Instance.ServerNow,
+    expireAtMs: TimeSystem.Instance.ServerNow + 1_800_000,
+    tickIntervalMs: 0,
+    nextTickAtMs: 0,
+    revision: 1,
+    sourceUnitId: 21,
+    sourceAbilityId: 3005,
+    conflictPriority: 1,
+  });
+  assert.equal(buffs.GetBuffs().filter((value) => value.ConfigId === 4005).length, 2);
+  const duplicateRefresh = buffs.ApplyBuff(4005, {
+    sourceUnitId: 22,
+    sourceAbilityId: 3005,
+    conflictPriority: 1,
+  });
+  assert.equal(duplicateRefresh.status, BuffApplyStatus.Refreshed);
+  assert.equal(buffs.GetBuffs().filter((value) => value.ConfigId === 4005).length, 1);
+  assert.equal(legacyBuffA.IsDisposed || legacyBuffB.IsDisposed, true);
+  buffs.RemoveBuff(duplicateRefresh.buff!.Id as bigint, "test-duplicate-fortitude");
   assert.equal(unit.GetComponent(NumericComponent)[NumericType.MaxHp], 200n);
 
   // 盾向Combat注册吸收器，传送只恢复剩余150而不是重新填满200。

@@ -24,7 +24,7 @@ tests或tools中的对应业务自测
 
 ### 先保护通用内核，再扩展领域
 
-当前Starter是MMORPG领域样例，不要把它反向当作框架定义。AOI、MapHost、地图传送、NavMesh、怪物、NPC、目标选择、技能地图调度和掉落协议属于`app/model/mmorpg`、`app/hotfix/mmorpg`或`src/game/<domain>`；Process、Scene、Actor、Component、mailbox、协议路由、热更和宿主队列属于Core；Numeric、Action、Reward、Item、Quest、Buff、Combat、Skill的稳定状态契约位于`app/model/domains`。不要把当前MMORPG执行器为了目录好看强行搬进domains。
+当前Starter是MMORPG领域样例，不要把它反向当作框架定义。AOI、MapHost、地图传送、NavMesh、怪物、NPC、目标选择、Combat、Skill、技能地图调度和掉落协议属于`app/model/mmorpg`、`app/hotfix/mmorpg`或`src/game/<domain>`；Process、Scene、Actor、Component、mailbox、协议路由、热更和宿主队列属于Core；Numeric、Action、Reward、Item、Quest、Buff的稳定状态契约位于`app/model/domains`。不要把当前MMORPG执行器为了目录好看强行搬进domains。
 
 新业务优先沿用现有领域组件和Stable API。只有当现有API无法表达需求，并且需求不是单纯的MMORPG规则时，才申请Core扩展。不要为了“以后支持卡牌、SLG或MOBA”提前新增通用Manager、万能配置扩展或第二套Actor入口。第二个真实领域出现后，使用重复需求和验收结果反推边界。
 
@@ -41,11 +41,11 @@ app/model/domains/reward/   RewardPlan
 app/model/domains/item/     Item ChildEntity和背包容器
 app/model/domains/quest/    Quest ChildEntity和任务容器
 app/model/domains/buff/     Buff生命周期容器
-app/model/domains/combat/   伤害、治疗、护盾状态形状
-app/model/domains/skill/    读条、引导和冷却状态形状
+app/model/mmorpg/combat/    当前MMORPG的伤害、治疗、护盾和平A状态
+app/model/mmorpg/skill/     当前MMORPG的读条、引导、冷却和技能定义
 ```
 
-MMORPG适配层继续放：`ActionExecutor`、`RewardExecutor`、`SkillMapComponentSystem`、NPC/地图目标选择、Luban ActionType和协议投影。它们读取`PlayerUnit`、`MapComponent`、`GameConfigs`或`ItemSnapshot`，所以不能伪装为跨游戏Core。
+MMORPG适配层继续放：`ActionExecutor`、`RewardExecutor`、`CombatComponentSystem`、`SkillComponentSystem`、`SkillMapComponentSystem`、NPC/地图目标选择、Luban ActionType和协议投影。它们读取`PlayerUnit`、`MapComponent`、`GameConfigs`或`ItemSnapshot`，所以不能伪装为跨游戏Core。
 
 `ActionDefinition`和`RewardPlan`的最小用法：
 
@@ -62,7 +62,19 @@ const reward: RewardPlan = {
 
 Numeric的`MoveSpeed`不属于通用Numeric字段。通用层只保留HP、攻击、等级等可复用数值；米/秒到Rust毫米/秒、移动位置同步和MoveSpeed默认值放`app/model/mmorpg/numeric/MovementNumeric.ts`及对应System。这样卡牌或模拟经营可以复用Numeric，而不会继承地图移动语义。
 
-Item、Quest、Buff、Combat、Skill本轮只拆稳定Model契约；涉及当前游戏配置、协议、AOI、Map或玩家规则的执行逻辑仍留在`mmorpg`。第二个游戏真实使用后，再从两套实现中抽取已经重复的行为，不按目录名猜通用性。
+Item、Quest、Buff本轮只拆稳定Model契约；Combat、Skill仍完整留在`mmorpg`，因为当前实现含有平A、伤害学校、读条、引导和技能配置语义。第二个游戏真实使用后，再从两套实现中抽取已经重复的行为，不按目录名猜通用性。
+
+### await 后的 Entity 存活检查
+
+JavaScript 的 `await` continuation 不能被运行时抢占。ordered Actor 在等待外部 IO、Timer 或 RPC 时可能被销毁；框架会在 mailbox 结果结算时拒绝旧调用，但不能撤销业务已经执行的后续代码。业务在 `await` 后准备读取或修改 Entity/Component 前，应调用：
+
+```ts
+await externalCall();
+player.AssertAlive();
+player.GetComponent(InventoryComponent).Commit(...);
+```
+
+`AssertAlive()` 是协作式生命周期门禁，不是自动取消机制。需要强制串行边界时，应把后续工作拆成新的 Actor mailbox 消息或由 Entity Timer 重新投递，不要把长时间 Promise 当作锁。
 
 默认不要修改：
 
@@ -137,7 +149,7 @@ TiangZ的完整业务参考是一个小而完整的Starter MMORPG，不是把Dem
 
 Starter阶段只保留一个职业、一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss和少量技能。组队、社交、商城、活动和大量客户端美术不是当前框架验收前提。
 
-本地入口固定为：`npm run starter:verify`检查目录和生成物，`npm run starter:dev`编译并启动all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`验证创建角色、选角和稳定身份。不要把长时间压测塞进Starter命令；压测必须使用`perf/`的独立入口，并在开始前确认机器资源。
+本地入口固定为：`npm run starter:verify`检查目录和生成物，`npm run starter:dev`编译并启动all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`验证创建角色、选角和稳定身份，`npm run starter:acceptance`运行不改数据库的完整Starter验收。`npm run starter:acceptance:persistent`会使用`tools-projects/TiangZ-DBProxy/deploy/local/.env`启动或连接本地DBProxy，写入测试账号、重启TiangZ并读取快照；`npm run starter:acceptance:faults`还会执行独立DBProxy故障矩阵，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。不要把长时间压测塞进Starter命令；压测必须使用`perf/`的独立入口，并在开始前确认机器资源。
 
 ### 账号、角色和运行时Unit
 

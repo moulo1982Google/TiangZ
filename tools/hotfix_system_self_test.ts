@@ -64,6 +64,17 @@ class LifecycleComponent extends Component<[value: string]> {
 
 class TestEntity extends Entity {}
 
+class PartialPrototypeTarget extends Component {}
+
+class PartialPrototypeGoodSystem extends PartialPrototypeTarget {
+  First(): string { return "good"; }
+}
+
+class PartialPrototypeBrokenSystem extends PartialPrototypeTarget {
+  First(): string { return "broken"; }
+  locked(): string { return "broken"; }
+}
+
 InitializeGameSingletons();
 const timerBase = TimeSystem.Instance.FrameTime;
 HotfixSystem.RequireType(LifecycleComponent);
@@ -253,6 +264,43 @@ try {
 }
 assert(brokenBindingRejected, "broken Handler candidate was accepted");
 assert(stableSlot.handler() === 2, "Handler rollback changed the active slot");
+
+// 首次安装一个新System时，第二个prototype方法失败也不能泄漏第一个已写入的方法。
+// A failed second prototype method during first installation must not leak the first method.
+Object.defineProperty(PartialPrototypeTarget.prototype, "locked", {
+  value: function lockedBaseline(): string { return "baseline"; },
+  configurable: false,
+  writable: false,
+});
+HotfixSystem.Begin(manifest("partial-prototype"));
+systemFor(LifecycleComponent)(LifecycleSystemV2);
+slots.Register("rpc:1", { handler: () => 2 });
+systemFor(PartialPrototypeTarget)(PartialPrototypeBrokenSystem);
+let partialPrototypeRejected = false;
+try {
+  HotfixSystem.Commit();
+} catch (error) {
+  partialPrototypeRejected = String(error).includes("Cannot redefine property") ||
+    String(error).includes("cannot redefine property") ||
+    String(error).includes("define property");
+}
+assert(partialPrototypeRejected, "partial prototype candidate was accepted");
+assert(!Object.hasOwn(PartialPrototypeTarget.prototype, "First"), "partial prototype leaked First");
+assert(
+  (PartialPrototypeTarget.prototype as unknown as { locked: () => string }).locked() === "baseline",
+  "partial prototype changed locked baseline",
+);
+assert(HotfixSystem.Status().phase === "idle", "failed prototype commit left Hotfix phase locked");
+
+HotfixSystem.Begin(manifest("partial-prototype-recovery"));
+systemFor(LifecycleComponent)(LifecycleSystemV2);
+slots.Register("rpc:1", { handler: () => 2 });
+systemFor(PartialPrototypeTarget)(PartialPrototypeGoodSystem);
+HotfixSystem.Commit();
+const partialEntity = new TestEntity();
+const partialComponent = partialEntity.AddComponent(PartialPrototypeTarget);
+assert((partialComponent as unknown as { First(): string }).First() === "good", "recovered prototype was not installed");
+partialEntity.__dispose();
 SingletonRegistry.DestroyAll();
 
 process.stdout.write("hotfix system self-test passed\n");

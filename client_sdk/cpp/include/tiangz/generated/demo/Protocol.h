@@ -3562,7 +3562,7 @@ struct M2C_AttackMonster {
   std::optional<std::uint32_t> error;
   std::optional<std::uint32_t> rpcId;
   std::uint32_t monsterId = 0;
-  std::uint32_t damage = 0;
+  std::uint64_t damage = 0;
   std::uint64_t remainingHp = 0;
   bool killed = false;
 };
@@ -3604,7 +3604,7 @@ struct M2C_AttackMonsterCodec {
           break;
         case 2:
           if (tag.wireType == 0) {
-            value.damage = reader.UInt32();
+            value.damage = reader.UInt64();
           } else {
             reader.Skip(tag.wireType);
           }
@@ -3637,7 +3637,7 @@ struct M2C_AttackMonsterCodec {
     if (value.error.has_value()) writer.UInt32(91, *value.error);
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.UInt32(1, value.monsterId);
-    writer.UInt32(2, value.damage);
+    writer.UInt64(2, value.damage);
     writer.UInt64(3, value.remainingHp);
     writer.Bool(4, value.killed);
     return writer.Finish();

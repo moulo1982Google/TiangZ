@@ -23,6 +23,12 @@ export class ActorLocationDirectory {
     if (!Number.isSafeInteger(target.instanceId) || target.instanceId <= 0) {
       throw new Error(`invalid actor instance id: ${target.instanceId}`);
     }
+    const previous = this.targetsByConnection.get(connectionId);
+    if (previous && !sameTarget(previous, target)) {
+      throw new Error(
+        `connection ${connectionId} is already bound to actor ${previous.instanceId}; unbind before rebind`,
+      );
+    }
     this.targetsByConnection.set(connectionId, target);
   }
 
@@ -35,6 +41,14 @@ export class ActorLocationDirectory {
   resolveConnection(connectionId: number): ActorLocationTarget | undefined {
     return this.targetsByConnection.get(connectionId);
   }
+}
+
+function sameTarget(left: ActorLocationTarget, right: ActorLocationTarget): boolean {
+  return left.instanceId === right.instanceId &&
+    left.scene.name === right.scene.name &&
+    left.scene.sceneType === right.scene.sceneType &&
+    left.scene.innerIp === right.scene.innerIp &&
+    left.scene.port === right.scene.port;
 }
 
 /** 使用固定 Actor InstanceId 路由元数据包装内部帧。 / Wraps an inner frame with fixed Actor InstanceId routing metadata. */

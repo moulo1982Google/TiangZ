@@ -5960,7 +5960,7 @@
         {
           "number": 2,
           "name": "damage",
-          "type": "uint32",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },

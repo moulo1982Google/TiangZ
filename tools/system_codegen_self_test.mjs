@@ -42,8 +42,8 @@ for (const file of modelFiles) {
   }
 }
 
-const fixtureModelDir = path.join(root, "app", "model", "demo", "__lifecycle_codegen_fixture__");
-const fixtureHotfixDir = path.join(root, "app", "hotfix", "demo", "__lifecycle_codegen_fixture__");
+const fixtureModelDir = path.join(root, "app", "model", "mmorpg", "__lifecycle_codegen_fixture__");
+const fixtureHotfixDir = path.join(root, "app", "hotfix", "mmorpg", "__lifecycle_codegen_fixture__");
 const fixtureModel = path.join(fixtureModelDir, "LifecycleContractFixture.ts");
 const fixtureSystem = path.join(fixtureHotfixDir, "LifecycleContractFixtureSystem.ts");
 try {
@@ -57,10 +57,12 @@ import { Component, component, lifecycle, transferable } from "../../../core/pub
 export class LifecycleContractFixture extends Component {}
 `, { encoding: "utf8", flag: "wx" });
   await writeFile(fixtureSystem, `
-import { LifecycleContractFixture, systemFor } from "#tiangz/model";
+import { LifecycleContractFixture, systemFor, type ITransfer } from "#tiangz/model";
 @systemFor(LifecycleContractFixture)
-export class LifecycleContractFixtureSystem extends LifecycleContractFixture {
+export class LifecycleContractFixtureSystem extends LifecycleContractFixture implements ITransfer<number> {
   protected override Awake(): void {}
+  CaptureTransfer(): number { return 1; }
+  RestoreTransfer(_state: number): void {}
 }
 `, { encoding: "utf8", flag: "wx" });
 

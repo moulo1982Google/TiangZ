@@ -82,12 +82,31 @@ export class BuffComponentSystem extends BuffComponent implements ITransfer<read
       return { status: BuffApplyStatus.Rejected, buff: current, reason: "lower-priority" };
     }
 
+    if (
+      config.conflictPolicy === BuffConflictPolicy.HigherWins &&
+      priority === current.ConflictPriority
+    ) {
+      // HigherWins同级刷新当前最高实例，但仍要清理旧版本遗留的重复实例。
+      // HigherWins refreshes the highest-priority instance at equal priority,
+      // but must still remove duplicates left by legacy or older runtimes.
+      for (const conflict of conflicts) {
+        if (conflict !== current) this.RemoveBuff(conflict.Id as bigint, "conflict-duplicate-cleanup");
+      }
+    }
+
     const shouldReplace = config.conflictPolicy === BuffConflictPolicy.Replace || (
       config.conflictPolicy === BuffConflictPolicy.HigherWins && priority > current.ConflictPriority
     );
     if (shouldReplace) {
       const replacedBuffInstanceId = current.Id as bigint;
-      this.RemoveBuff(replacedBuffInstanceId, "conflict-replaced");
+      // Replace/HigherWins是同一stackGroup的单实例语义。历史数据或旧版本
+      // 可能已经留下多个冲突实例，因此必须清掉全部冲突，而不是只移除最高优先级。
+      // Replace/HigherWins means one instance per stackGroup. Legacy state or
+      // an older build may contain duplicates, so remove every conflict rather
+      // than only the highest-priority entry.
+      for (const conflict of conflicts) {
+        this.RemoveBuff(conflict.Id as bigint, "conflict-replaced");
+      }
       return {
         status: BuffApplyStatus.Replaced,
         buff: this.createBuff(configId, options),

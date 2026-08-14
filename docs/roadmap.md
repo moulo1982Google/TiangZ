@@ -443,6 +443,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 独立的创建/选择角色流程已经完成运行时闭环：`C2S_CreateCharacter -> CharacterRepository -> C2S_Login.characterId -> Gate/Location/Map`，并通过 `npm run starter:character-smoke` 覆盖 all-in-one 与 split-process。无 DBProxy 时角色目录只在进程生命周期内有效；重启后恢复仍归 ST-09，随后继续收口怪物掉落、Boss副本奖励、完整重启恢复和正式Hotfix操作入口。
 - Starter固定使用一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss、一个玩家职业和少量技能。额外职业、社交、商城和活动不得在本阶段进入核心样例。
 - 每个完成项必须同时通过all-in-one、split-process、客户端操作和对应的失败/恢复验收；业务压测等Starter链路稳定后再执行。
+- 已增加统一自动验收入口：`npm run starter:acceptance`覆盖无数据库的运行时、技能/Buff和角色选角；`starter:acceptance:persistent`覆盖DBProxy快照写入、TiangZ重启和恢复读取；`starter:acceptance:faults`调用独立DBProxy故障矩阵。报告写入`temp/test-logs`，持久化/故障命令只允许连接本地测试资源。
+- 当前自动入口不虚报完整任务/副本链路：Map 100的3只A、2只B和尸体保留规则使5A/5B/任务掉落全链路仍以Cocos3D人工验收为准，后续补专用业务夹具后再提升ST-04、ST-06、ST-07的自动等级。
 
 ### Phase 4.7：能力归属与可复用领域契约
 
@@ -477,6 +479,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 npm run verify:quick
 npm run verify
 npm run perf:full-chain
+npm run starter:acceptance
 ```
 
 `verify:quick` 用于日常开发；修改进程、协议、mailbox、背压或生命周期边界后，合并前执行完整 `verify`。

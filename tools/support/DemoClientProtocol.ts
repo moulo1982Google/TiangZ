@@ -32,6 +32,10 @@ import {
   C2M_AcceptQuestCodec,
   C2M_CompleteQuest,
   C2M_CompleteQuestCodec,
+  C2M_InspectLootMonster,
+  C2M_InspectLootMonsterCodec,
+  C2M_LootMonster,
+  C2M_LootMonsterCodec,
   C2S_Login,
   C2S_LoginCodec,
   C2S_Register,
@@ -92,6 +96,10 @@ import {
   M2C_AcceptQuestCodec,
   M2C_CompleteQuest,
   M2C_CompleteQuestCodec,
+  M2C_InspectLootMonster,
+  M2C_InspectLootMonsterCodec,
+  M2C_LootMonster,
+  M2C_LootMonsterCodec,
   S2C_GetLoginServiceAddr,
   S2C_GetLoginServiceAddrCodec,
   S2C_Login,
@@ -491,6 +499,50 @@ export function decodeUseItemFrame(frame: Uint8Array): DecodedFrame<M2C_UseItem>
     throw new Error(`expected M2C_UseItem, got ${msgcode}`);
   }
   const body = M2C_UseItemCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+/** 查看尸体掉落但不创建ItemId；真正拾取必须另发LootMonster事务。 / Inspects corpse drops without creating ItemIds; claiming requires a separate LootMonster transaction. */
+export function buildInspectLootMonsterPacket(
+  rpcId: number,
+  request: Omit<C2M_InspectLootMonster, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_InspectLootMonster,
+    C2M_InspectLootMonsterCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeInspectLootMonsterFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_InspectLootMonster> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_InspectLootMonster) {
+    throw new Error(`expected M2C_InspectLootMonster, got ${msgcode}`);
+  }
+  const body = M2C_InspectLootMonsterCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+/** 构造单行或全部尸体拾取请求；operationId必须在重试中保持不变。 / Builds a single-row or loot-all request; operationId must stay stable across retries. */
+export function buildLootMonsterPacket(
+  rpcId: number,
+  request: Omit<C2M_LootMonster, "rpcId">,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2M_LootMonster,
+    C2M_LootMonsterCodec.encode({ ...request, rpcId }),
+  );
+}
+
+export function decodeLootMonsterFrame(
+  frame: Uint8Array,
+): DecodedFrame<M2C_LootMonster> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.M2C_LootMonster) {
+    throw new Error(`expected M2C_LootMonster, got ${msgcode}`);
+  }
+  const body = M2C_LootMonsterCodec.decode(frame.subarray(2));
   return { msgcode, rpcId: body.rpcId, body };
 }
 

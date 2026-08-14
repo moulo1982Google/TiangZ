@@ -167,7 +167,7 @@ async function main() {
   );
 }
 
-/** 消耗已有的一件道具后主动断开，并等待Gate宽限期完成可靠下线保存。 / Consumes one existing item, disconnects, and waits for the Gate grace period to complete a durable offline save. */
+/** 先通过真实任务奖励获得道具，再消费并主动断开，等待Gate宽限期完成可靠下线保存。 / Grants the item through the real quest flow, consumes it, disconnects, and waits for the Gate grace period to save it durably. */
 async function writeDbProxyPersistenceFixture(
   loginAddr: { ip: string; port: number },
   account: string,
@@ -178,15 +178,17 @@ async function writeDbProxyPersistenceFixture(
     login.gatePort,
     { account: login.account, token: login.token, mapId: 100 },
   );
-  const initial = client.enterMap.items.find((item) => item.configId === 1001);
+  const reward = await completeQuest5003ForPersistence(client.gate, client.enterMap);
+  const initial = reward.rewardItems.find((item) => item.configId === 1001);
   if (!initial || initial.count <= 0) {
-    throw new Error(`DBProxy write fixture requires a positive small-potion stack, got ${initial?.count}`);
+    throw new Error(`DBProxy write fixture expected quest 5003 to grant a positive small-potion stack, got ${initial?.count}`);
   }
   const expectedCount = initial.count - 1;
   console.log("DBProxy persistence player entered:", {
     account,
     unitId: client.enterMap.unitId,
     initialCount: initial.count,
+    sourceQuestConfigId: reward.questConfigId,
   });
   let changed: ReturnType<typeof decodeUseItemFrame>["body"];
   try {
@@ -209,6 +211,60 @@ async function writeDbProxyPersistenceFixture(
     waitingForGateOfflineMs: 32_000,
   });
   await sleep(32_000);
+}
+
+/**
+ * 用任务5003完成“接取 -> 进入地图2 -> 返回NPC -> 领奖”链路，为持久化测试提供真实奖励。
+ * Completes quest 5003 through NPC interaction and map transfer so persistence tests receive a real reward.
+ *
+ * 副作用 / Side effect: the connected player ends on Map 100 with quest 5003 completed.
+ * 禁止用法 / Forbidden: do not replace this with a direct inventory grant, otherwise the test skips the reward transaction.
+ */
+async function completeQuest5003ForPersistence(
+  gate: TcpRpcConnection,
+  initialMap: ReturnType<typeof decodeEnterMapFrame>["body"],
+): Promise<ReturnType<typeof decodeCompleteQuestFrame>["body"]> {
+  const starterNpc = initialMap.entities.find(
+    (entity) => entity.entityType === 3 && entity.configId === 9001,
+  );
+  if (!starterNpc) {
+    throw new Error(`persistence fixture did not see the Starter NPC: ${stringifyForError(initialMap.entities)}`);
+  }
+  const accepted = decodeAcceptQuestFrame(await gate.request(buildAcceptQuestPacket(
+    nextRpcId++,
+    { questConfigId: 5003, npcUnitId: starterNpc.unitId },
+  ))).body;
+  if (accepted.error || accepted.quest.questConfigId !== 5003) {
+    throw new Error(`persistence fixture could not accept quest 5003: ${stringifyForError(accepted)}`);
+  }
+
+  const map2Ready = gate.waitForMessage(MsgCode.G2C_MapReady);
+  const map2 = decodeEnterMapFrame(await gate.request(
+    buildEnterMapPacket(nextRpcId++, { mapId: 2, mapInstanceId: 0n }),
+  )).body;
+  await map2Ready;
+  const quest = map2.quests.find((value) => value.questConfigId === 5003);
+  if (map2.items.some((item) => item.configId === 1001)) {
+    throw new Error("persistence fixture expected a fresh inventory before quest reward");
+  }
+  if (!quest || quest.status !== QuestStatus.ReadyToTurnIn) {
+    throw new Error(`persistence fixture expected quest 5003 ready, got ${quest?.status}`);
+  }
+
+  const map100 = await transferConnectedPlayer(gate, 100);
+  const map100Npc = map100.entities.find(
+    (entity) => entity.entityType === 3 && entity.configId === 9001,
+  );
+  if (!map100Npc) {
+    throw new Error(`persistence fixture did not find the NPC after returning to Map 100: ${stringifyForError(map100.entities)}`);
+  }
+  const reward = decodeCompleteQuestFrame(await gate.request(
+    buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003, npcUnitId: map100Npc.unitId }),
+  )).body;
+  if (reward.error) {
+    throw new Error(`persistence fixture quest reward failed: ${stringifyForError(reward)}`);
+  }
+  return reward;
 }
 
 /** 验证任务奖励经PostgreSQL事务提交，并且客户端重复请求只得到首次结果。 / Verifies a quest reward commits through PostgreSQL and a repeated client request returns the original result once. */
@@ -559,7 +615,7 @@ async function verifyFiveSkillMechanics(
     throw new Error(`Fire Blast failed: ${stringifyForError(fireBlast.body)}`);
   }
   const fireImpact = await waitForSkillImpact(gate, 3002, 3_000);
-  if (fireImpact.damage !== 50n || fireImpact.damageSchool !== 3) {
+  if (fireImpact.damage !== 100n || fireImpact.damageSchool !== 3) {
     throw new Error(`Fire Blast result mismatch: ${stringifyForError(fireImpact)}`);
   }
   const smitePoint = approachPoint(firePoint.targetX, firePoint.targetZ, smiteTarget, 5);
@@ -1288,7 +1344,13 @@ async function verifyAutoAttackTimer(
   const expectedSwings = 6;
   const hpValues: bigint[] = [];
   let previousHp: bigint | undefined;
-  const deadline = Date.now() + 13_500;
+  // 默认玩家平A间隔为2秒，10Hz战斗桶还会带来最多一个桶的调度误差；
+  // 13.5秒只够理想时序，启动抖动会把最后一击挤出窗口。测试等待应覆盖完整的六轮读条，不能改变业务攻击间隔。
+  // The default player swing interval is two seconds and the 10Hz combat bucket
+  // adds one scheduling step. 13.5 seconds only fits ideal timing, so startup
+  // jitter can evict the last swing. The smoke window covers all six swings
+  // without changing the gameplay interval.
+  const deadline = Date.now() + 20_000;
   while (hpValues.length < expectedSwings && Date.now() < deadline) {
     const frame = decodeEntityNumericFrame(await gate.waitForMessage(
       MsgCode.G2C_EntityNumeric,

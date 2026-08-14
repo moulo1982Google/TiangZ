@@ -23,7 +23,7 @@ TiangZ的业务参考目标是一个小而完整的Starter MMORPG，而不是内
 - 账号注册、登录和角色目录已经完成运行时闭环：`C2S_Register`通过`CharacterRepository`写入账号密码盐值/摘要并创建同名初始角色，`C2S_Login`必须携带密码且不会再自动创建游客账号；`C2S_Login.characterId`明确选择角色，`characterId`贯穿Gate、Location、Map和Player持久化。配置DBProxy时账号目录与角色记录写入版本化快照，未配置时仅用于当前进程调试。`LoginMgr`对带账号请求使用稳定哈希保持同一账号落到同一Login。`npm run starter:character-smoke`已覆盖all-in-one和split-process。
 - Starter第一版已接入固定任务NPC：Map 100由`NpcComponent`创建`NpcUnit`（`npcConfigId=9001`、`unitId=0x40000001`），NPC作为普通Unit的Subject进入AOI，Cocos3D以紫色方块展示。玩家出生点为`(-3, 1, -18)`，NPC位于出生点东侧约3米；Demo专用`AoiConfig=2`把Enter/Detach扩大为7×7/9×9 Grid，确保出生点能观察到远端刷怪区。10004、10005、10008是三只被动黄色怪，10006、10007是两只主动红色怪，仍分布在远端刷怪区；`MapEntitySnapshot.displayName`由服务端统一提供玩家、NPC和怪物的公开名称，Cocos3D在实体头顶显示名称，怪物额外显示HP。当前所有Starter `QuestConfig`都关闭自动接取；客户端靠近NPC 5米内显示统一“交互”按钮，点击后打开NPC对话框，再点击对话框中的接取/交付按钮才调用`Map.AcceptQuest({ questConfigId, npcUnitId })`或`Map.CompleteQuest({ questConfigId, npcUnitId })`。任务5001由NPC提供，目标是击败5只怪A；在NPC交付5001后，配置前置解锁任务5005，目标是击败5只怪B。服务端在PlayerUnit有序mailbox内校验NPC存在、任务提供关系和5米交互距离，再由`QuestComponent`创建或完成Quest ChildEntity。`npm run starter:smoke`已覆盖NPC快照和接取。
 - 当前业务缺口按掉落串联、Boss副本奖励、完整重启恢复和正式Hotfix入口排序；无DBProxy时角色目录只保证进程生命周期内一致，重启恢复必须使用DBProxy；DBProxy多Endpoint和双实例故障切换仍按独立阶段处理。
-- Starter入口固定为`npm run starter:verify`、`npm run starter:dev`、`npm run starter:smoke`和`npm run starter:character-smoke`；这些命令只负责完整性、开发启动和短时运行时验收，不代替容量压测。
+- Starter入口固定为`npm run starter:verify`、`npm run starter:dev`、`npm run starter:smoke`和`npm run starter:character-smoke`；完整纵向验收使用`npm run starter:acceptance`。`starter:acceptance:persistent`负责DBProxy快照写入、TiangZ重启和恢复读取，`starter:acceptance:faults`在此基础上调用独立DBProxy故障矩阵；这两个命令需要本地数据库环境，不能对生产数据执行。所有Starter命令只负责静态检查、开发启动和短时运行时验收，不代替容量压测。
 
 ### Starter身份约束
 
@@ -58,12 +58,14 @@ TiangZ的内核不是“MMORPG内核”，而是先用MMORPG验证的通用运�
 当前代码把能力分成三层，完整表格见[能力归属与领域拆分](../design/capability-ownership.md)：
 
 1. `app/core`和`src`是框架运行时，只负责Process、Scene、Actor、Component、mailbox、Transport、Hotfix屏障和Native Store。
-2. `app/model/domains`是可复用领域契约层，当前承载Numeric、ActionDefinition、RewardPlan、Item、Quest、Buff、Combat和Skill的稳定状态形状。它不能依赖MMORPG配置、协议、地图或生成Native句柄。
-3. `app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`是第一个具体领域，承载AOI、MapHost、NavMesh、移动、怪物、NPC、目标选择、技能地图调度和协议/配置适配。
+2. `app/model/domains`是可复用领域契约层，当前承载Numeric、ActionDefinition、RewardPlan、Item、Quest和Buff的稳定状态形状。Combat和Skill目前仍包含MMORPG的平A、伤害学校、施法和引导语义，完整实现保留在`app/model/mmorpg`，不维护未使用的类型影子。
+3. `app/model/mmorpg`、`app/hotfix/mmorpg`和`src/game`是第一个具体领域，承载AOI、MapHost、NavMesh、移动、怪物、NPC、目标选择、Combat/Skill执行、技能地图调度和协议/配置适配。
 
 本轮已完成`demo -> mmorpg`的服务端业务目录重命名；`native_data/demo`也已改为`native_data/mmorpg`并重新生成Native代码。`.native`中的`namespace demo/native`保留为持久化schema和Native ABI标识，不能随目录整理静默修改。生成协议仍保留`server/demo`和客户端SDK的`Model/demo`路径，因为它们是已发布线协议命名空间，重命名会构成协议兼容性变更。`ActionDefinition + RewardPlan`是第一组跨游戏试点：MMORPG继续在`app/hotfix/mmorpg`执行Action和奖励，`RewardDefinition`只作为旧代码兼容别名，不把当前执行器误宣称为通用框架能力。
 
-Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/MovementNumeric.ts`；米/秒到Rust毫米/秒以及写入后同步位置，属于MMORPG移动适配。Item、Quest、Buff、Combat、Skill已先拆出稳定Model容器和数据契约，依赖当前配置、协议、PlayerUnit或Map的执行逻辑仍留在MMORPG适配层。第二个真实游戏领域出现后，才根据重复实现继续抽取执行代码。
+Numeric的`MoveSpeed`已从通用Numeric表拆到`app/model/mmorpg/numeric/MovementNumeric.ts`；米/秒到Rust毫米/秒以及写入后同步位置，属于MMORPG移动适配。Item、Quest、Buff已先拆出稳定Model容器和数据契约；Combat、Skill仍完整位于MMORPG适配层，因为当前实现包含平A、伤害学校、读条、引导和技能配置。第二个真实游戏领域出现后，才根据重复实现继续抽取执行代码。
+
+异步业务在外部`await`返回后必须调用Entity的`AssertAlive()`，再读取或修改Entity/Component。JavaScript不能抢占已经开始执行的Promise continuation；框架会在Actor mailbox结算时拒绝已销毁Actor的调用，但不能撤销await之后已经执行的业务代码。需要新的串行边界时，应重新投递Actor mailbox消息或Entity Timer，不要把长Promise当作锁。
 
 开发期可见机器人位于`tools/walk_robots.ts`，只使用正式TypeScript SDK完成登录、进图、Ping和Move。机器人是外部测试客户端，不得为它在Core、Demo Handler或Map业务中增加专用分支。
 

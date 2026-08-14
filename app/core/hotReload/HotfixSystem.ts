@@ -38,6 +38,14 @@ interface BindingUndo<T extends object> {
   readonly previousSnapshot?: PropertyDescriptorMap;
 }
 
+interface PrototypeUndo {
+  readonly target: AnyCtor;
+  readonly descriptors: Map<PropertyKey, PropertyDescriptor | undefined>;
+  readonly previousMethods: Set<PropertyKey>;
+  readonly previousRequired: boolean;
+  readonly wasInstalled: boolean;
+}
+
 /**
  * 管理当前 Process 唯一的 Hotfix generation，并以事务方式安装方法和 Handler。
  * 本系统从不接收 Model 代码，也没有修改构造函数、实例字段或继承关系的接口。
@@ -133,12 +141,7 @@ export class HotfixSystem {
   static Commit(): HotfixStatus {
     const staging = this.requireStaging();
     this.phase = "committing";
-    const prototypeUndo: Array<{
-      target: AnyCtor;
-      descriptors: Map<PropertyKey, PropertyDescriptor | undefined>;
-      previousMethods: Set<PropertyKey>;
-      previousRequired: boolean;
-    }> = [];
+    const prototypeUndo: PrototypeUndo[] = [];
     const bindingUndo: BindingUndo<object>[] = [];
 
     try {
@@ -156,12 +159,13 @@ export class HotfixSystem {
       const nextTargets = new Set(staging.methods.map((candidate) => candidate.target));
       for (const [target, installed] of this.installedTypes) {
         if (nextTargets.has(target)) continue;
-        prototypeUndo.push(snapshotInstalled(target, installed));
+        prototypeUndo.push(snapshotInstalled(target, installed, true));
         restoreBaseline(target, installed);
         installed.methods.clear();
       }
 
       for (const candidate of staging.methods) {
+        const wasInstalled = this.installedTypes.has(candidate.target);
         const installed = this.installedTypes.get(candidate.target) ?? {
           baseline: new Map<PropertyKey, PropertyDescriptor | undefined>(),
           methods: new Set<PropertyKey>(),
@@ -170,7 +174,12 @@ export class HotfixSystem {
         if (!this.installedTypes.has(candidate.target)) {
           this.installedTypes.set(candidate.target, installed);
         }
-        prototypeUndo.push(snapshotInstalled(candidate.target, installed));
+        prototypeUndo.push(snapshotInstalled(
+          candidate.target,
+          installed,
+          wasInstalled,
+          Reflect.ownKeys(candidate.implementation.prototype).filter((key) => key !== "constructor"),
+        ));
         installCandidate(candidate, installed);
       }
 
@@ -186,12 +195,35 @@ export class HotfixSystem {
       return this.Status();
     } catch (error) {
       this.phase = "rolling-back";
-      for (const undo of bindingUndo.reverse()) undo.store.__rollback(undo);
-      for (const undo of prototypeUndo.reverse()) restorePrototypeUndo(undo, this.installedTypes);
-      this.lastError = errorText(error);
+      const rollbackErrors: unknown[] = [];
+      for (const undo of bindingUndo.reverse()) {
+        try {
+          undo.store.__rollback(undo);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      for (const undo of prototypeUndo.reverse()) {
+        try {
+          restorePrototypeUndo(undo, this.installedTypes);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      const failure = rollbackErrors.length === 0
+        ? error
+        : new AggregateError(
+          [error, ...rollbackErrors],
+          "hotfix commit failed and rollback reported additional errors",
+        );
+      this.lastError = errorText(failure);
       this.staging = undefined;
+      // 回滚是尽力恢复，不得把Runtime永久留在rolling-back阶段；即使某个恢复动作失败，
+      // 后续候选仍必须可以重新Begin，让宿主决定是否重启或人工介入。
+      // Rollback is best-effort and must never leave the Runtime permanently
+      // in rolling-back; later candidates must still be able to Begin.
       this.phase = "idle";
-      throw error;
+      throw failure;
     }
   }
 
@@ -382,6 +414,11 @@ function installCandidate(candidate: MethodCandidate, installed: InstalledType):
       method,
     );
     if (!descriptor) throw new Error(`hotfix method descriptor is missing: ${String(method)}`);
+    // 先记录正在写入的方法，再执行defineProperty；若后续方法失败，事务快照才能清掉
+    // 本次已经成功写入的前置方法，避免首次安装留下半套prototype。
+    // Record the method before defineProperty so a later failure can remove
+    // earlier writes and cannot leak a partial first installation.
+    installed.methods.add(method);
     Object.defineProperty(candidate.target.prototype, method, descriptor);
   }
   installed.methods = nextMethods;
@@ -425,9 +462,16 @@ function validateLifecycleMethod(
   }
 }
 
-function snapshotInstalled(target: AnyCtor, installed: InstalledType) {
+function snapshotInstalled(
+  target: AnyCtor,
+  installed: InstalledType,
+  wasInstalled: boolean,
+  candidateMethods: Iterable<PropertyKey> = [],
+): PrototypeUndo {
   const descriptors = new Map<PropertyKey, PropertyDescriptor | undefined>();
-  for (const method of installed.methods) {
+  const methods = new Set<PropertyKey>(installed.methods);
+  for (const method of candidateMethods) methods.add(method);
+  for (const method of methods) {
     descriptors.set(method, Object.getOwnPropertyDescriptor(target.prototype, method));
   }
   return {
@@ -435,6 +479,7 @@ function snapshotInstalled(target: AnyCtor, installed: InstalledType) {
     descriptors,
     previousMethods: new Set(installed.methods),
     previousRequired: installed.required,
+    wasInstalled,
   };
 }
 
@@ -447,13 +492,23 @@ function restoreBaseline(target: AnyCtor, installed: InstalledType): void {
 }
 
 function restorePrototypeUndo(
-  undo: ReturnType<typeof snapshotInstalled>,
+  undo: PrototypeUndo,
   installedTypes: Map<AnyCtor, InstalledType>,
 ): void {
   const installed = installedTypes.get(undo.target);
   if (!installed) return;
   for (const method of installed.methods) {
-    if (!undo.previousMethods.has(method)) Reflect.deleteProperty(undo.target.prototype, method);
+    // 如果候选方法覆盖的是原本存在的不可配置属性，defineProperty会直接失败；
+    // 回滚时不能再删除这个仍属于基线的属性，只需由下面的descriptor恢复它。
+    // When a candidate attempted to overwrite a pre-existing non-configurable
+    // property, defineProperty already failed. Do not delete that baseline
+    // property during rollback; the descriptor restoration below is enough.
+    if (
+      !undo.previousMethods.has(method) &&
+      undo.descriptors.get(method) === undefined
+    ) {
+      Reflect.deleteProperty(undo.target.prototype, method);
+    }
   }
   for (const [method, descriptor] of undo.descriptors) {
     if (descriptor) Object.defineProperty(undo.target.prototype, method, descriptor);
@@ -461,6 +516,7 @@ function restorePrototypeUndo(
   }
   installed.methods = undo.previousMethods;
   installed.required = undo.previousRequired;
+  if (!undo.wasInstalled) installedTypes.delete(undo.target);
 }
 
 function replaceObjectProperties(target: object, source: object | PropertyDescriptorMap): void {

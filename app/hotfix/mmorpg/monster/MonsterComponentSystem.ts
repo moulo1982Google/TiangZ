@@ -170,7 +170,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     });
     return {
       monsterId,
-      damage: Number(result.finalDamage),
+      damage: result.finalDamage,
       remainingHp: result.remainingHp,
       killed: result.killed,
     };

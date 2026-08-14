@@ -868,10 +868,26 @@ export class GateScene extends EntryScene {
     if (!location) return;
     this.routesByUnitId.set(location.unitId, route);
     this.connectionIdsByUnitId.set(location.unitId, connectionId);
-    this.actorLocations.bindConnection(connectionId, {
+    const target = {
       instanceId: location.actorInstanceId,
       scene: location.mapHost,
-    });
+    };
+    const previous = this.actorLocations.resolveConnection(connectionId);
+    if (
+      previous &&
+      (previous.instanceId !== target.instanceId ||
+        previous.scene.name !== target.scene.name ||
+        previous.scene.sceneType !== target.scene.sceneType ||
+        previous.scene.innerIp !== target.scene.innerIp ||
+        previous.scene.port !== target.scene.port)
+    ) {
+      // 地图迁移是显式的同连接换Actor；先解除旧路由，再执行严格bind，
+      // 避免底层目录默默覆盖旧目标。
+      // Map transfer is an explicit same-connection actor change; unbind first
+      // so the strict directory cannot silently overwrite the old target.
+      this.actorLocations.unbindConnection(connectionId);
+    }
+    this.actorLocations.bindConnection(connectionId, target);
   }
 
   private RemoveRoute(route: GatePlayerRoute): void {
