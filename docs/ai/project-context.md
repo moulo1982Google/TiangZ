@@ -377,6 +377,7 @@ ordered Scene mailbox的同步排空使用循环而不是递归，长串同步�
 - Phase 3.10.2：RPC在途id避让、本地/远程timeout、迟到/重复响应与断线/停机清理，以及Actor销毁、旧InstanceId、ordered/unordered正确性矩阵。
 - Phase 3.10.3：Process退出、Inner断线、慢客户端、过载、Handler异常、非法帧、重连风暴和保存失败的一键故障注入矩阵。
 - Phase 3.10.4：每个 Process 通过健康端口开放 `/metrics`；Prometheus 按 `StartMachine.json` 发现实际 Process，Grafana 提供 Process/Scene/延迟/队列/背压/Runtime 分层面板。`/ready` 依赖 V8 Runtime 心跳，Scene 自定义指标显式区分 Counter/Gauge，并有基础告警规则与 `verify:observability` 验收。禁止新增业务 Observer Scene 汇总指标。
+- Developer Tools 的运行时查看目前只读取 Process 健康端口的 `/metrics`，用于观察队列、mailbox、pending RPC、Timer 和 Native 摘要；它不执行 RPC、不读取任意 V8 对象，也不改变业务状态。按 UnitId/Actor 查询的只读 Inspector 仍处于协议草案阶段，必须完成 Runtime 端点和权限边界后才能宣称可用。
 
 ## 已验证的稳定性事实
 

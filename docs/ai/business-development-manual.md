@@ -1159,6 +1159,8 @@ Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建�
 
 业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。
 
+Developer Tools 的“查看运行时指标”命令是只读的 `/metrics` 查看器，只能回答“这个 Process 当前有多忙”，不能回答某个 Unit、Actor 或组件的业务详情。不要为了调试临时增加业务 RPC、遍历全地图或暴露 V8 任意执行入口。按 UnitId、Scene、Gate 和 ActorLocation 查询的 Inspector 采用独立的、版本化的只读协议；当前只冻结了协议草案，正式接入前仍需完成 Runtime 控制通道、调试令牌、超时、限流、响应上限和快照一致性验收。
+
 ## 框架热路径与低分配约定
 
 “0 GC”不是业务可以依赖的运行时承诺。开发目标是稳态下框架热路径少制造临时对象，并通过mailbox、队列和延迟指标验证收益；不要为了追求一个宣传数字把所有业务代码改成难以维护的手写循环。
