@@ -3,6 +3,15 @@
 
 当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。MMORPG领域样例已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；可复用领域契约与MMORPG适配边界见[能力归属表](docs/design/capability-ownership.md)。
 
+## 5分钟启动
+
+```powershell
+npm install
+npm run hello
+```
+
+看到 `Starter 已就绪` 后，用 Cocos3D/Pixi Demo 连接 `ws://127.0.0.1:7000`。完整的第一个 Handler 与 RPC 修改路径见 [5分钟跑通 TiangZ](docs/tutorials/00-quickstart.md)。
+
 持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。当前`v0.4.0`已经通过Rust Host连接池接入Player Snapshot Repository、事务提交和回执查询，并完成TiangZ重启恢复、任务GrantItem奖励与UseItem消费幂等验收；主工程只依赖协议、客户端SDK和业务Repository，不直接连接Redis/PostgreSQL。Wallet、Trade、周期快照、批量恢复和生产高可用仍属于Phase 4.5后续工作，运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。

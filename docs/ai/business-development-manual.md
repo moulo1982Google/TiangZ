@@ -192,6 +192,7 @@ await flow.enterGame(account, 1, () => {}, created.character.characterId);
 - 新增字段、默认值、构造参数、继承关系、Scene/Entity/Component类型：写`app/model`，完整构建并重启Process。
 - 新增或修改Handler、校验、流程编排和领域方法实现：写`app/hotfix`，可使用Hotfix-only构建。
 - Hotfix通过`@systemFor(ModelType)`提供生命周期和领域方法；System没有字段、构造函数或静态成员，也不会被实例化。
+- Developer Tools 会把 `@systemFor`、`@hotfixFor`、网络 Handler 和 Scene Event Handler 中的字段、构造函数、静态块与静态方法直接标为错误（`tiangz.hotfix.instance-state`）。行为类只承载可热更方法；缓存、TimerId、索引和其他长期状态必须放到 Model 的 Entity/Component，日常修改先运行 `npm run verify:fast`。
 - Model不手写“System未安装”的抛错空壳。codegen从System公开方法生成`app/generated/bootstrap/systems/*.d.ts`，调用方仍直接写`unit.Move()`或`component.UseItem()`。
 - System公开方法必须显式写参数和返回类型。只改方法体可热更；修改公开签名会改变Model声明，必须完整构建并重启。
 - `Awake/OnDestroy/Deserialize`都是可选能力。需要Hotfix承担某个生命周期时，Model使用`@lifecycle({ awake: true, destroy: true, deserialize: true })`只声明实际需要的项，System提供实现；未声明的钩子不要求空实现。Reload不重跑现有对象的`Awake`；新对象使用新版本Awake，现有对象后续方法和销毁使用当前generation。

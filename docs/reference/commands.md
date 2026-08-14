@@ -7,6 +7,7 @@
 | 命令 | 什么时候使用 |
 | --- | --- |
 | `npm install` | 首次拉取工程或依赖变化后安装TS构建依赖 |
+| `npm run hello` | 5分钟 Starter 入口：构建 Debug 产物、启动 all-in-one、等待 LoginMgr 监听后打印登录地址 |
 | `npm run dev -- configs/local/cluster/StartMachine.json` | 推荐的日常开发入口；首次完整构建并启动Watcher，之后保存Hotfix自动构建和Reload |
 | `npm run build:hotfix` | 只修改`app/hotfix`行为时，手工构建不可变Hotfix候选 |
 | `npm run build` | 修改Model、Core、Proto、`.native`或首次构建时，生成完整Model/Hotfix配对 |
@@ -80,6 +81,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | 命令 | 用途 |
 | --- | --- |
 | `npm run check` | TS、协议、Actor、客户端SDK和Cocos静态检查 |
+| `npm run verify:fast` | 日常快速检查：Scene/System生成入口、TypeScript类型、Hotfix边界和领域依赖；不启动Runtime、不执行Rust构建 |
 | `npm run verify:quick` | 生成物、注释、架构规则、协议锁、TS与Rust快速质量门 |
 | `npm run test:gate-reconnect` | Gate连接替换、重连宽限、心跳时间和稳定选Gate自测 |
 | `npm run test:location` | Location revision/operation状态机、重启恢复批次与Proto迁移策略自测 |
