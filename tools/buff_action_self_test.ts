@@ -334,7 +334,7 @@ async function main(): Promise<void> {
   });
   target.AddComponent(CombatComponent);
   const targetBuffs = target.AddComponent(BuffComponent);
-  target.AddComponent(ItemComponent);
+  const targetItems = target.AddComponent(ItemComponent);
   const targetSkill = target.AddComponent(SkillComponent);
   const targetQuests = target.AddComponent(QuestComponent);
   target.AddComponent(PlayerPersistenceComponent, repository, 0n);
@@ -347,6 +347,39 @@ async function main(): Promise<void> {
     [5002, 5003, 5004, 5005],
   );
   assert.equal(targetQuests.Snapshot().find((quest) => quest.questConfigId === 5004)?.status, QuestStatus.ReadyToTurnIn);
+
+  // 背包耗尽最后一件道具后移除Item实体；快捷栏不绑定这个实例ID，后续同配置新实例仍可重新汇总。
+  // Consuming the last item removes its child entity; the hotbar is not bound
+  // to that instance ID, so a later item with the same config can be found again.
+  for (const item of targetItems.Snapshot()) {
+    targetItems.RemoveItem(item.itemId, item.count);
+  }
+  const exhaustedItem = targetItems.CreateItem(1002, 1);
+  const exhaustedPlan = targetItems.PlanConsumeItem(exhaustedItem.Id);
+  assert.equal(exhaustedPlan.consumedItem.count, 0);
+  assert.equal(exhaustedPlan.nextItems.some((item) => item.itemId === exhaustedItem.Id), false);
+  const exhaustedSnapshot = targetItems.CommitConsumePlan(exhaustedPlan);
+  assert.equal(exhaustedSnapshot.count, 0);
+  assert.equal(targetItems.GetItem(exhaustedItem.Id), undefined);
+  assert.doesNotThrow(() => targetItems.ApplyCommittedConsumeItem(exhaustedSnapshot));
+
+  // 旧版本可能留下count=0的持久化数据；恢复时把它视为已删除，而不是阻塞登录。
+  // Older persistence data may contain count=0; restore treats it as deleted
+  // instead of rejecting the whole login.
+  targetItems.RestoreTransfer([{ ...exhaustedSnapshot }]);
+  assert.deepEqual(targetItems.Snapshot(), []);
+  const replacementItem = targetItems.GrantItem(1002, 1)[0];
+  assert.equal(replacementItem?.configId, exhaustedSnapshot.configId);
+  assert.notEqual(replacementItem?.itemId, exhaustedSnapshot.itemId);
+
+  // 最后一件道具的事务回执重放只返回原结果，不重复推进UseItem任务或广播库存变更。
+  // Replaying the last-item receipt returns the original result without
+  // advancing UseItem quests or publishing a second inventory change.
+  const finalItemPlan = PlanItemUseTransaction(target, replacementItem!.itemId, 1002);
+  const firstFinalApply = ApplyItemUseTransaction(target, finalItemPlan.receipt, finalItemPlan.inventory);
+  assert.equal(firstFinalApply.inventoryChanged, true);
+  const duplicateFinalApply = ApplyItemUseTransaction(target, finalItemPlan.receipt);
+  assert.equal(duplicateFinalApply.inventoryChanged, false);
 
   assert.equal(buffs.RemoveBuff(buff.Id as bigint, "test"), true);
   assert.equal(buffs.GetBuff(buff.Id as bigint), undefined);

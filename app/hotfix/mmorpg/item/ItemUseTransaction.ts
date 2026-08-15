@@ -156,10 +156,15 @@ export function ApplyItemUseTransaction(
   inventoryPlan?: InventoryConsumePlan,
 ): ItemUseCommitResult {
   const inventory = unit.GetComponent(ItemComponent);
-  const before = inventory.GetItem(receipt.consumedItem.itemId)?.version ?? 0;
+  const beforeItem = inventory.GetItem(receipt.consumedItem.itemId);
+  const before = beforeItem?.version ?? 0;
+  const alreadyRemoved = !beforeItem && receipt.consumedItem.count === 0;
   if (inventoryPlan) inventory.CommitConsumePlan(inventoryPlan);
   else inventory.ApplyCommittedConsumeItem(receipt.consumedItem);
-  const inventoryChanged = before < receipt.consumedItem.version;
+  // 最后一件道具首次提交会从“存在”变成“已移除”；重复回执看到缺失Item时不能再次推进任务或广播。
+  // The first commit removes the final item; a replay that sees it missing
+  // must not advance quests or publish another inventory change.
+  const inventoryChanged = !alreadyRemoved && before < receipt.consumedItem.version;
 
   const skill = unit.GetComponent(SkillComponent);
   if (inventoryPlan) skill.CommitItemCooldownPlan(receipt.cooldown);

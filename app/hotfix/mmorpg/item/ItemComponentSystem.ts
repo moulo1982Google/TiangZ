@@ -67,7 +67,11 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     for (const item of this.GetChildren(Item)) {
       this.RemoveChild(Item, item.Id);
     }
-    for (const item of items) this.CreateItemById(item.itemId, item);
+    // 兼容旧版本曾保存的空堆叠；数量归零的Item在语义上已经不存在，恢复时直接丢弃。
+    // Ignore legacy zero-count stacks; semantically they are already gone and must not block login.
+    for (const item of items) {
+      if (item.count > 0) this.CreateItemById(item.itemId, item);
+    }
   }
 
   /** 消耗一件道具并返回不可覆盖事件所需快照。 / Consumes one item and returns the snapshot required by a non-coalescing event. */
@@ -190,9 +194,11 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     };
     return {
       baseItems,
-      nextItems: sortSnapshots(baseItems.map((value) => (
-        value.itemId === itemId ? consumedItem : value
-      ))),
+      // 数量归零代表整堆Item被消耗，持久化快照不再保留空堆叠。
+      // A zero-count stack is fully consumed and must disappear from the persisted snapshot.
+      nextItems: sortSnapshots(baseItems
+        .filter((value) => value.itemId !== itemId || consumedItem.count > 0)
+        .map((value) => value.itemId === itemId ? consumedItem : value)),
       consumedItem,
     };
   }
@@ -221,6 +227,7 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     if (!snapshotEqual(committed, plan.consumedItem)) {
       throw new Error(`inventory consume plan commit mismatch: ${before.itemId}`);
     }
+    if (committed.count === 0) this.RemoveChild(Item, current.Id);
     if (!snapshotArraysEqual(this.Snapshot(), plan.nextItems)) {
       throw new Error("inventory consume plan final snapshot mismatch");
     }
@@ -233,7 +240,13 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
    * or one exact decrement with a single version advance.
    */
   ApplyCommittedConsumeItem(expected: ItemSnapshot): ItemSnapshot {
-    const current = this.requireItem(expected.itemId);
+    const current = this.TryGetChild(Item, expected.itemId);
+    // 事务回执可能在首次应用时已经移除了最后一堆Item；重试必须把这个状态视为已完成。
+    // A retry may observe the item already removed by the first commit; that is an idempotent success.
+    if (!current) {
+      if (expected.count === 0) return { ...expected };
+      throw new RpcError(GameErrCode.ItemNotFound, `item not found: ${expected.itemId}`);
+    }
     const snapshot = current.Snapshot();
     if (snapshotEqual(snapshot, expected)) return { ...snapshot };
     if (
@@ -260,6 +273,7 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     if (!snapshotEqual(committed, expected)) {
       throw new Error(`committed inventory consumption mismatch: ${expected.itemId}`);
     }
+    if (committed.count === 0) this.RemoveChild(Item, current.Id);
     return { ...committed };
   }
 
@@ -281,7 +295,9 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     if (item.count < count) {
       throw new RpcError(GameErrCode.ItemNotEnough, `item ${itemId} is not enough`);
     }
-    return item.RemoveCount(count);
+    const committed = item.RemoveCount(count);
+    if (committed.count === 0) this.RemoveChild(Item, item.Id);
+    return committed;
   }
 
   /** 生成全新的永久ItemId并创建道具；发放、掉落和拆分堆叠必须走此入口。 / Creates an item with a fresh persistent ID; grants, drops, and stack splits must use this entry. */

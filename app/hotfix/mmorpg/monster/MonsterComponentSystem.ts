@@ -231,7 +231,10 @@ export class MonsterComponentSystem extends MonsterComponent {
     // drop_id=0 preserves legacy “loot all” behavior; current clients send one row for a normal click.
     const selected = this.SelectLootDrops(container, player, dropId, lootAll || dropId === 0);
     if (selected.length === 0) {
-      throw new RpcError(GameErrCode.LootNotAvailable, `no eligible loot remains: ${monsterId}`);
+      throw new RpcError(
+        GameErrCode.LootNotAvailable,
+        `当前账号没有可拾取掉落：普通掉落可能已被领取，任务掉落需要先接取对应任务（${monsterId}）`,
+      );
     }
     const quest = player.GetComponent(QuestComponent);
     const questProgress = this.PlanLootQuestProgress(player, selected);

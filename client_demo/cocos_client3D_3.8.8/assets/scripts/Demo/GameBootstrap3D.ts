@@ -146,6 +146,16 @@ const DEMO_SKILL_KEYS = [
   { id: 3005, key: 56 as unknown as KeyCode, keyLabel: "8" },
   { id: 3007, key: 57 as unknown as KeyCode, keyLabel: "9" },
 ] as const;
+// 技能图标是客户端表现资源，按稳定 SkillConfigId 取资源，不把中文名称写进快捷栏布局。
+// Skill icons are client presentation assets keyed by stable SkillConfigId; the hotbar does not duplicate skill names.
+const DEMO_SKILL_ICON_PATHS: Readonly<Record<number, string>> = Object.freeze({
+  3001: "UI/Icons/Skills/3001",
+  3002: "UI/Icons/Skills/3002",
+  3003: "UI/Icons/Skills/3003",
+  3004: "UI/Icons/Skills/3004",
+  3005: "UI/Icons/Skills/3005",
+  3007: "UI/Icons/Skills/3007",
+});
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
 // Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
 const RUNTIME_CONFIG_RESOURCE = PREVIEW
@@ -223,9 +233,9 @@ interface BuffHudEntry {
 
 interface SkillHudSlot {
   readonly root: HTMLButtonElement;
+  readonly icon: HTMLElement;
   readonly cooldown: HTMLElement;
   readonly skillId: number;
-  readonly name: string;
 }
 
 interface InventoryHudEntry {
@@ -480,7 +490,8 @@ export class GameBootstrap3D extends Component {
     this.loginPasswordInput = undefined;
     this.loginConfirmPasswordInput = undefined;
     this.loginBusy = false;
-    this.hotbarElement?.remove();
+    const hotbarElement = this.hotbarElement;
+    hotbarElement?.remove();
     this.hotbarElement = undefined;
     this.inventoryToggleButton?.remove();
     this.inventoryToggleButton = undefined;
@@ -491,7 +502,7 @@ export class GameBootstrap3D extends Component {
     this.inventoryOpen = false;
     this.inventoryHudSignature = "";
     this.inventoryHudEntries.clear();
-    this.skillBarElement?.remove();
+    if (this.skillBarElement && this.skillBarElement !== hotbarElement) this.skillBarElement.remove();
     this.skillCastPanel?.remove();
     this.skillBarElement = undefined;
     this.skillCastPanel = undefined;
@@ -1154,35 +1165,22 @@ export class GameBootstrap3D extends Component {
     this.skillCastErrorElement = error;
   }
 
-  /** 创建六技能快捷栏；移动端可直接点击，桌面端同时支持4到9。 / Creates six clickable skill slots with desktop keys 4 through 9. */
+  /** 把技能按钮追加到统一快捷栏；移动端与桌面端都使用同一排平A、药品和技能按钮。 / Appends skill buttons to the shared hotbar so auto attack, items, and skills stay on one row. */
   private buildSkillBarHud(document: Document): void {
-    const bar = document.createElement("div");
-    bar.className = "cocos3d-skillbar";
-    bar.style.position = "fixed";
-    bar.style.left = "50%";
-    bar.style.bottom = this.isMobileLayout()
-      ? "calc(env(safe-area-inset-bottom, 0px) + 96px)"
-      : "calc(env(safe-area-inset-bottom, 0px) + 112px)";
-    bar.style.transform = "translateX(-50%)";
-    bar.style.zIndex = "10004";
-    bar.style.display = "flex";
-    bar.style.flexWrap = "wrap";
+    const bar = this.hotbarElement;
+    if (!bar) return;
+    bar.style.flexWrap = "nowrap";
+    bar.style.overflowX = "auto";
     bar.style.justifyContent = "center";
-    bar.style.gap = "5px";
-    bar.style.padding = "6px";
-    bar.style.maxWidth = "calc(100vw - 16px)";
-    bar.style.width = this.isMobileLayout() ? "min(380px, calc(100vw - 16px))" : "auto";
-    bar.style.background = "rgba(13, 22, 25, 0.82)";
-    bar.style.border = "1px solid rgba(115, 176, 255, 0.48)";
-    bar.style.borderRadius = "8px";
     for (const skill of DEMO_SKILL_KEYS) {
-      const config = GameConfigs.SkillConfig.Get(skill.id);
       const button = document.createElement("button");
       button.type = "button";
+      button.className = "cocos3d-hotbar-skill-slot";
       button.style.position = "relative";
+      button.style.flex = "0 0 auto";
       button.style.width = this.isMobileLayout() ? "58px" : "82px";
-      button.style.height = "54px";
-      button.style.padding = "5px";
+      button.style.height = this.isMobileLayout() ? "58px" : "72px";
+      button.style.padding = "3px";
       button.style.color = "#edf7ff";
       button.style.background = "rgba(25, 42, 58, 0.92)";
       button.style.border = "1px solid rgba(180, 218, 255, 0.55)";
@@ -1191,7 +1189,32 @@ export class GameBootstrap3D extends Component {
       button.style.cursor = "pointer";
       button.style.touchAction = "none";
       button.style.userSelect = "none";
-      button.textContent = `${skill.keyLabel} ${config.name}`;
+      button.setAttribute("aria-label", `${skill.keyLabel}键技能`);
+      button.title = `${skill.keyLabel}键`;
+
+      const key = document.createElement("span");
+      key.textContent = skill.keyLabel;
+      key.style.position = "absolute";
+      key.style.left = "5px";
+      key.style.top = "3px";
+      key.style.zIndex = "2";
+      key.style.color = "#f4d477";
+      key.style.fontWeight = "700";
+      key.style.textShadow = "0 1px 2px rgba(0, 0, 0, 0.9)";
+      button.appendChild(key);
+
+      const icon = document.createElement("span");
+      icon.style.display = "flex";
+      icon.style.alignItems = "center";
+      icon.style.justifyContent = "center";
+      icon.style.width = "100%";
+      icon.style.height = "100%";
+      icon.style.borderRadius = "4px";
+      icon.style.overflow = "hidden";
+      icon.style.color = "transparent";
+      icon.style.background = "rgba(255, 255, 255, 0.08)";
+      button.appendChild(icon);
+
       const cooldown = document.createElement("span");
       cooldown.style.position = "absolute";
       cooldown.style.inset = "0";
@@ -1202,11 +1225,11 @@ export class GameBootstrap3D extends Component {
       cooldown.style.background = "rgba(5, 10, 15, 0.64)";
       cooldown.style.visibility = "hidden";
       button.appendChild(cooldown);
+      this.loadSkillIcon(icon, DEMO_SKILL_ICON_PATHS[skill.id], `${skill.keyLabel}键技能`);
       this.bindTouchSafeHudButton(button, () => this.castSkill(skill.id));
       bar.appendChild(button);
-      this.skillHudSlots.set(skill.id, { root: button, cooldown, skillId: skill.id, name: config.name });
+      this.skillHudSlots.set(skill.id, { root: button, icon, cooldown, skillId: skill.id });
     }
-    document.body.appendChild(bar);
     this.skillBarElement = bar;
   }
 
@@ -1220,6 +1243,13 @@ export class GameBootstrap3D extends Component {
    */
   private bindTouchSafeHudButton(button: HTMLButtonElement, action: (event?: Event) => void | Promise<void>): void {
     let activationHandled = false;
+    const dispatchAction = (event: Event): void => {
+      // 自定义指针/触摸事件不会自动遵守原生 disabled 语义，必须在统一入口再次判断。
+      // Custom pointer/touch events do not automatically honor native disabled semantics;
+      // check it again at the shared dispatch point.
+      if (button.disabled) return;
+      void action(event);
+    };
     const consume = (event: Event): void => {
       event.preventDefault();
       event.stopPropagation();
@@ -1243,7 +1273,7 @@ export class GameBootstrap3D extends Component {
       this.mobileControlPointerIds.delete(event.pointerId);
       if (event.button === 2) return;
       activationHandled = true;
-      void action(event);
+      dispatchAction(event);
     });
     button.addEventListener("pointercancel", (event) => {
       if (event.pointerType === "touch") return;
@@ -1262,7 +1292,7 @@ export class GameBootstrap3D extends Component {
       const ids = Array.from(event.changedTouches, (touch) => touch.identifier);
       releaseTouchIdsAfterDispatch(ids);
       activationHandled = true;
-      void action(event);
+      dispatchAction(event);
     }, { passive: false });
     button.addEventListener("touchcancel", (event) => {
       consume(event);
@@ -1271,7 +1301,7 @@ export class GameBootstrap3D extends Component {
     }, { passive: false });
     button.addEventListener("click", (event) => {
       consume(event);
-      if (!activationHandled) void action(event);
+      if (!activationHandled) dispatchAction(event);
       activationHandled = false;
     });
   }
@@ -1316,6 +1346,7 @@ export class GameBootstrap3D extends Component {
     });
     lootButton.addEventListener("contextmenu", (event) => {
       event.preventDefault();
+      if (lootButton.disabled) return;
       void this.lootSelectedMonster(0, true);
     });
     panel.appendChild(lootButton);
@@ -1413,6 +1444,7 @@ export class GameBootstrap3D extends Component {
   private buildNpcInteractionHud(document: Document): void {
     const interaction = document.createElement("button");
     interaction.type = "button";
+    interaction.className = "cocos3d-npc-interaction-hud";
     interaction.style.position = "fixed";
     interaction.style.left = "50%";
     interaction.style.top = "22%";
@@ -1494,13 +1526,13 @@ export class GameBootstrap3D extends Component {
   }
 
   /**
-   * 创建快捷栏：桌面端显示1/2/3，移动端只显示2/3，平A由独立攻击按钮负责。
+   * 创建统一快捷栏：桌面端包含1/2/3和技能，移动端保留右侧平A按钮并把2/3与技能合并为一排。
    * 道具图标通过客户端ItemConfig.icon读取Cocos resources资源键；资源尚未放入时回退到文字，不影响快捷栏和数量显示。
    *
-   * Creates the hotbar: desktop shows 1/2/3, while mobile shows only 2/3
-   * because the mobile attack button owns auto attack. Item icons are loaded
-   * by the client-side ItemConfig.icon resource key; missing assets fall back
-   * to text so the hotbar and counts remain usable.
+   * Creates the shared hotbar: desktop includes 1/2/3 and skills; mobile keeps
+   * the right-side auto-attack button and puts 2/3 plus skills on one row.
+   * Item icons are loaded by the client-side ItemConfig.icon resource key;
+   * missing assets fall back to text so the hotbar and counts remain usable.
    */
   private buildHotbarHud(document: Document): void {
     const bar = document.createElement("div");
@@ -1511,6 +1543,7 @@ export class GameBootstrap3D extends Component {
     bar.style.transform = "translateX(-50%)";
     bar.style.zIndex = "10004";
     bar.style.display = "flex";
+    bar.style.flexWrap = "nowrap";
     bar.style.gap = "8px";
     bar.style.padding = "8px";
     bar.style.border = "1px solid rgba(225, 245, 238, 0.38)";
@@ -1519,6 +1552,7 @@ export class GameBootstrap3D extends Component {
     bar.style.boxSizing = "border-box";
     bar.style.pointerEvents = "auto";
     bar.style.userSelect = "none";
+    bar.style.overflowX = "auto";
     bar.style.maxWidth = "calc(100vw - 16px)";
     bar.style.whiteSpace = "nowrap";
 
@@ -2065,6 +2099,7 @@ export class GameBootstrap3D extends Component {
   ): HotbarSlot {
     const root = document.createElement("button");
     root.type = "button";
+    root.style.flex = "0 0 auto";
     root.style.position = "relative";
     root.style.width = "72px";
     root.style.height = "72px";
@@ -2220,6 +2255,26 @@ export class GameBootstrap3D extends Component {
         slot.icon.textContent = fallbackIcon;
       }, { once: true });
       slot.icon.replaceChildren(image);
+    });
+  }
+
+  /** 从 Cocos resources 加载技能图标；资源缺失时保留空图标，不把技能名称塞回快捷栏。 / Loads a skill icon from Cocos resources; a missing asset leaves an empty icon instead of restoring the skill name. */
+  private loadSkillIcon(icon: HTMLElement, iconPath: string | undefined, skillName: string): void {
+    if (!iconPath) return;
+    resources.load(iconPath, (error: unknown, asset: unknown) => {
+      if (error || !asset) return;
+      const texture = asset as { nativeUrl?: string; image?: { nativeUrl?: string } };
+      const nativeUrl = texture.nativeUrl ?? texture.image?.nativeUrl;
+      if (!nativeUrl) return;
+      const image = document.createElement("img");
+      image.src = nativeUrl;
+      image.alt = skillName;
+      image.draggable = false;
+      image.style.width = "100%";
+      image.style.height = "100%";
+      image.style.objectFit = "cover";
+      image.addEventListener("error", () => image.remove(), { once: true });
+      icon.replaceChildren(image);
     });
   }
 
@@ -2700,14 +2755,17 @@ export class GameBootstrap3D extends Component {
       });
     };
 
-    const mobileActionBottom = "calc(env(safe-area-inset-bottom, 0px) + max(18px, 4vh))";
-    const attackButton = createActionButton("攻", "切换自动攻击", `calc(${mobileActionBottom} + 112px)`);
+    // 移动端四个操作按钮使用紧凑步距，避免在竖屏中压住技能栏和背包栏。
+    // Keep the mobile action column compact so portrait layouts do not cover the skill and item bars.
+    const mobileActionBottom = "calc(env(safe-area-inset-bottom, 0px) + max(12px, 2.5vh))";
+    const mobileActionStep = 48;
+    const attackButton = createActionButton("攻", "切换自动攻击", `calc(${mobileActionBottom} + ${mobileActionStep * 2}px)`);
     bindActionButton(attackButton, () => this.toggleAutoAttack());
     controls.appendChild(attackButton);
     this.mobileAttackButton = attackButton;
     this.updateMobileAttackButton();
 
-    const actionButton = createActionButton("门", "开关动态门", `calc(${mobileActionBottom} + 56px)`);
+    const actionButton = createActionButton("门", "开关动态门", `calc(${mobileActionBottom} + ${mobileActionStep}px)`);
     bindActionButton(actionButton, () => this.toggleDemoDoor());
     controls.appendChild(actionButton);
     this.mobileActionButton = actionButton;
@@ -2718,7 +2776,7 @@ export class GameBootstrap3D extends Component {
     controls.appendChild(npcButton);
     this.mobileNpcInteractButton = npcButton;
 
-    const inventoryButton = createActionButton("包", "打开背包", `calc(${mobileActionBottom} + 168px)`);
+    const inventoryButton = createActionButton("包", "打开背包", `calc(${mobileActionBottom} + ${mobileActionStep * 3}px)`);
     bindActionButton(inventoryButton, () => this.toggleInventoryPanel());
     controls.appendChild(inventoryButton);
     this.mobileInventoryButton = inventoryButton;
@@ -2736,9 +2794,9 @@ export class GameBootstrap3D extends Component {
           display: flex !important;
           position: fixed;
           z-index: 10002;
-          left: calc(env(safe-area-inset-left, 0px) + 12px);
+          left: calc(env(safe-area-inset-left, 0px) + 2px);
           top: calc(env(safe-area-inset-top, 0px) + 10px);
-          width: min(280px, calc(100vw - 28px));
+          width: min(250px, calc(100vw - 36px));
           max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 180px);
           box-sizing: border-box;
           flex-direction: column;
@@ -2751,9 +2809,9 @@ export class GameBootstrap3D extends Component {
           display: flex !important;
           position: fixed;
           z-index: 10002;
-          right: calc(env(safe-area-inset-right, 0px) + 12px);
+          right: calc(env(safe-area-inset-right, 0px) + 2px);
           top: calc(env(safe-area-inset-top, 0px) + 10px);
-          width: min(240px, calc(100vw - 28px));
+          width: min(220px, calc(100vw - 36px));
           max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 150px);
           box-sizing: border-box;
           flex-direction: column;
@@ -2801,15 +2859,15 @@ export class GameBootstrap3D extends Component {
         }
         .cocos3d-mobile-ping {
           display: block;
-          right: calc(env(safe-area-inset-right, 0px) + 12px) !important;
+          right: calc(env(safe-area-inset-right, 0px) + 2px) !important;
           top: calc(env(safe-area-inset-top, 0px) + 10px) !important;
           padding: 7px 9px !important;
           font: 600 12px/1.32 system-ui, sans-serif !important;
         }
         .cocos3d-selected-monster-hud {
-          right: calc(env(safe-area-inset-right, 0px) + 12px) !important;
+          right: calc(env(safe-area-inset-right, 0px) + 2px) !important;
           top: calc(env(safe-area-inset-top, 0px) + 66px) !important;
-          width: min(260px, calc(100vw - 32px)) !important;
+          width: min(220px, calc(100vw - 36px)) !important;
           padding: 7px 9px !important;
           font: 13px/1.3 system-ui, sans-serif !important;
         }
@@ -2851,22 +2909,10 @@ export class GameBootstrap3D extends Component {
           height: clamp(32px, 11vw, 42px) !important;
           font-size: clamp(13px, 4vw, 16px) !important;
         }
-        .cocos3d-skillbar {
-          bottom: var(--tiangz-mobile-skillbar-bottom, calc(env(safe-area-inset-bottom, 0px) + 96px)) !important;
-          gap: 4px !important;
-          padding: 5px !important;
-          transform: translateX(-50%) scale(var(--tiangz-mobile-bar-scale, 1)) !important;
-          transform-origin: bottom center !important;
-        }
-        .cocos3d-skillbar > button {
-          width: clamp(56px, 16vw, 62px) !important;
-          height: 54px !important;
-          padding: 4px !important;
-        }
         .cocos3d-skill-cast-hud {
           left: 50% !important;
           top: auto !important;
-          bottom: var(--tiangz-mobile-castbar-bottom, calc(env(safe-area-inset-bottom, 0px) + 162px)) !important;
+          bottom: var(--tiangz-mobile-castbar-bottom, calc(env(safe-area-inset-bottom, 0px) + 78px)) !important;
           width: min(320px, calc(100vw - 32px)) !important;
           padding: 7px 9px !important;
           transform: translateX(-50%) scale(var(--tiangz-mobile-castbar-scale, 1)) !important;
@@ -2890,13 +2936,19 @@ export class GameBootstrap3D extends Component {
           font: 12px/1.22 system-ui, sans-serif !important;
         }
         .cocos3d-quest-hud {
-          right: calc(env(safe-area-inset-right, 0px) + 12px) !important;
+          right: calc(env(safe-area-inset-right, 0px) + 2px) !important;
           top: var(--tiangz-mobile-quest-top, calc(env(safe-area-inset-top, 0px) + 300px)) !important;
-          width: min(260px, calc(100vw - 32px)) !important;
+          width: min(220px, calc(100vw - 36px)) !important;
           max-height: min(180px, calc(100dvh - 220px)) !important;
           overflow-y: auto !important;
           padding: 7px 9px !important;
           font: 12px/1.3 system-ui, sans-serif !important;
+        }
+        .cocos3d-npc-interaction-hud {
+          top: calc(env(safe-area-inset-top, 0px) + 17%) !important;
+          width: min(210px, calc(100vw - 40px)) !important;
+          padding: 8px 12px !important;
+          font: 700 14px/1.25 system-ui, sans-serif !important;
         }
         .cocos3d-npc-dialog {
           width: min(320px, calc(100vw - 24px)) !important;
@@ -2913,8 +2965,14 @@ export class GameBootstrap3D extends Component {
       :root.tiangz-phone-browser .cocos3d-mobile-left-hud,
       :root.tiangz-phone-browser .cocos3d-mobile-right-hud {
         top: calc(env(safe-area-inset-top, 0px) + 24px);
-        width: min(190px, 44vw);
+        width: min(178px, 42vw);
         gap: 4px;
+      }
+      :root.tiangz-phone-browser .cocos3d-mobile-left-hud {
+        left: calc(env(safe-area-inset-left, 0px) + 2px);
+      }
+      :root.tiangz-phone-browser .cocos3d-mobile-right-hud {
+        right: calc(env(safe-area-inset-right, 0px) + 2px);
       }
       :root.tiangz-phone-browser .cocos3d-mobile-instructions {
         max-height: 30px;
@@ -2939,31 +2997,30 @@ export class GameBootstrap3D extends Component {
         padding: 5px 6px !important;
         font: 9px/1.18 system-ui, sans-serif !important;
       }
+      :root.tiangz-phone-browser .cocos3d-npc-interaction-hud {
+        top: calc(env(safe-area-inset-top, 0px) + 14%) !important;
+        width: min(176px, calc(100vw - 32px)) !important;
+        padding: 6px 9px !important;
+        font: 700 11px/1.2 system-ui, sans-serif !important;
+      }
       :root.tiangz-phone-browser .cocos3d-buff-hud,
       :root.tiangz-phone-browser .cocos3d-quest-hud {
         max-height: 112px !important;
       }
       :root.tiangz-phone-browser .cocos3d-hotbar > button {
-        width: 54px !important;
-        height: 54px !important;
-        padding: 3px !important;
+        width: clamp(42px, 12vw, 52px) !important;
+        height: 48px !important;
+        padding: 2px !important;
         font-size: 9px !important;
       }
       :root.tiangz-phone-browser .cocos3d-hotbar > button > span:nth-child(2) {
-        width: 30px !important;
-        height: 30px !important;
+        width: clamp(24px, 7.5vw, 30px) !important;
+        height: clamp(24px, 7.5vw, 30px) !important;
         font-size: 11px !important;
       }
       :root.tiangz-phone-browser .cocos3d-hotbar,
-      :root.tiangz-phone-browser .cocos3d-skillbar,
       :root.tiangz-phone-browser .cocos3d-skill-cast-hud {
         transform: translateX(-50%) scale(1) !important;
-      }
-      :root.tiangz-phone-browser .cocos3d-skillbar > button {
-        width: 46px !important;
-        height: 42px !important;
-        padding: 3px !important;
-        font-size: 9px !important;
       }
       :root.tiangz-phone-browser .cocos3d-skill-cast-hud {
         width: min(224px, calc(100vw - 24px)) !important;
@@ -2977,14 +3034,14 @@ export class GameBootstrap3D extends Component {
         bottom: calc(env(safe-area-inset-bottom, 0px) + 10px) !important;
       }
       :root.tiangz-phone-browser .cocos3d-mobile-action-button {
-        width: 46px !important;
-        height: 46px !important;
+        width: 40px !important;
+        height: 40px !important;
         right: max(10px, env(safe-area-inset-right, 0px)) !important;
-        font-size: 14px !important;
+        font-size: 13px !important;
       }
       @media (orientation: portrait) and (max-width: 900px) {
         .cocos3d-mobile-left-hud {
-          width: min(220px, 48vw);
+          width: min(200px, 46vw);
           max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 170px);
           gap: 5px;
         }
@@ -3006,7 +3063,7 @@ export class GameBootstrap3D extends Component {
         }
         .cocos3d-selected-monster-hud {
           top: calc(env(safe-area-inset-top, 0px) + 58px) !important;
-          width: min(204px, calc(100vw - 24px)) !important;
+          width: min(194px, calc(100vw - 24px)) !important;
           padding: 6px 7px !important;
           font: 11px/1.22 system-ui, sans-serif !important;
         }
@@ -3016,30 +3073,30 @@ export class GameBootstrap3D extends Component {
           padding: 5px !important;
         }
         .cocos3d-quest-hud {
-          width: min(204px, calc(100vw - 24px)) !important;
+          width: min(194px, calc(100vw - 24px)) !important;
           max-height: 132px !important;
           font-size: 10px !important;
         }
         .cocos3d-hotbar > button {
-          width: 64px !important;
-          height: 64px !important;
+          width: clamp(44px, 13vw, 58px) !important;
+          height: clamp(48px, 15vw, 60px) !important;
           padding: 3px !important;
         }
         .cocos3d-hotbar > button > span:nth-child(2) {
-          width: 36px !important;
-          height: 36px !important;
+          width: clamp(26px, 8.5vw, 36px) !important;
+          height: clamp(26px, 8.5vw, 36px) !important;
           font-size: 13px !important;
-        }
-        .cocos3d-skillbar > button {
-          width: 54px !important;
-          height: 48px !important;
-          padding: 3px !important;
-          font-size: 10px !important;
         }
         .cocos3d-skill-cast-hud {
           width: min(280px, calc(100vw - 28px)) !important;
           padding: 6px 7px !important;
           font-size: 11px !important;
+        }
+        .cocos3d-npc-interaction-hud {
+          top: calc(env(safe-area-inset-top, 0px) + 12%) !important;
+          width: min(190px, calc(100vw - 28px)) !important;
+          padding: 6px 9px !important;
+          font-size: 12px !important;
         }
         .cocos3d-mobile-joystick {
           width: min(108px, 27vw) !important;
@@ -3048,11 +3105,14 @@ export class GameBootstrap3D extends Component {
           bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
           transform: none !important;
         }
+        .cocos3d-mobile-action-button {
+          width: 44px !important;
+          height: 44px !important;
+          right: max(10px, env(safe-area-inset-right, 0px)) !important;
+          font-size: 13px !important;
+        }
         .cocos3d-hotbar {
           transform: translateX(-50%) scale(0.84) !important;
-        }
-        .cocos3d-skillbar {
-          transform: translateX(-50%) scale(0.78) !important;
         }
         .cocos3d-skill-cast-hud {
           transform: translateX(-50%) scale(0.86) !important;
@@ -3064,7 +3124,10 @@ export class GameBootstrap3D extends Component {
       @media (orientation: landscape) and (max-height: 560px) and (max-width: 900px) {
         .cocos3d-mobile-left-hud {
           max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 72px);
-          width: min(250px, 38vw);
+          width: min(230px, 35vw);
+        }
+        .cocos3d-mobile-right-hud {
+          width: min(210px, 32vw);
         }
         .cocos3d-mobile-instructions {
           max-height: 42px;
@@ -3112,23 +3175,13 @@ export class GameBootstrap3D extends Component {
       const width = Math.max(1, viewport?.width ?? globalThis.innerWidth);
       const height = Math.max(1, viewport?.height ?? globalThis.innerHeight);
       const portrait = height >= width;
-      const shortSide = Math.min(width, height);
-      // 手机窄屏使用轻微缩放，优先保证五个技能按钮在一行内；大屏手机和桌面模拟不再缩小。
-      // Narrow phones use a small compact scale so all five skills remain on one row.
-      const barScale = clamp(shortSide / 440, 0.76, 1);
       const hotbarBottom = portrait ? clamp(height * 0.13, 94, 118) : 10;
-      const skillbarBottom = portrait ? hotbarBottom + 64 : 72;
-      const castbarBottom = portrait ? skillbarBottom + 58 : 126;
+      const castbarBottom = portrait ? hotbarBottom + 68 : 78;
 
       root.classList.toggle("tiangz-phone-browser", phoneBrowser);
-      root.style.setProperty("--tiangz-mobile-bar-scale", barScale.toFixed(3));
       root.style.setProperty(
         "--tiangz-mobile-hotbar-bottom",
         `calc(env(safe-area-inset-bottom, 0px) + ${Math.round(hotbarBottom)}px)`,
-      );
-      root.style.setProperty(
-        "--tiangz-mobile-skillbar-bottom",
-        `calc(env(safe-area-inset-bottom, 0px) + ${Math.round(skillbarBottom)}px)`,
       );
       root.style.setProperty(
         "--tiangz-mobile-castbar-bottom",
@@ -3146,9 +3199,7 @@ export class GameBootstrap3D extends Component {
       resizeTarget.removeEventListener("orientationchange", sync);
       viewport?.removeEventListener("resize", sync);
       root.classList.remove("tiangz-phone-browser");
-      root.style.removeProperty("--tiangz-mobile-bar-scale");
       root.style.removeProperty("--tiangz-mobile-hotbar-bottom");
-      root.style.removeProperty("--tiangz-mobile-skillbar-bottom");
       root.style.removeProperty("--tiangz-mobile-castbar-bottom");
     };
   }
@@ -4160,6 +4211,11 @@ export class GameBootstrap3D extends Component {
     const mapClient = this.mapClient;
     const monster = this.remotePlayers.get(this.selectedMonsterUnitId);
     if (!mapClient || !monster || monster.entityType !== ENTITY_TYPE_MONSTER || monster.alive || this.lootRequestInFlight || this.lootInspectInFlight) return;
+    // 查看窗口已经明确显示空列表时，不再为重复点击发送必然失败的RPC。
+    // Once the inspect window explicitly shows an empty list, do not send an RPC
+    // for repeated clicks that are guaranteed to fail.
+    if (this.lootPanelMonsterId === monster.unitId && this.lootPreviewDrops.length === 0) return;
+    if (dropId !== 0 && this.lootPanelMonsterId === monster.unitId && !this.lootPreviewDrops.some((drop) => drop.dropId === dropId)) return;
     const dx = this.player.position.x - monster.node.position.x;
     const dz = this.player.position.z - monster.node.position.z;
     if (dx * dx + dz * dz > 4 * 4) return;
@@ -4242,7 +4298,8 @@ export class GameBootstrap3D extends Component {
     list.replaceChildren();
     if (this.lootPreviewDrops.length === 0) {
       const empty = document.createElement("div");
-      empty.textContent = "尸体上已经没有你可以拾取的掉落";
+      empty.textContent = "当前账号暂无可拾取掉落\n普通掉落可能已被其他玩家领取；任务掉落请先接取对应任务";
+      empty.style.whiteSpace = "pre-line";
       empty.style.padding = "12px 0";
       empty.style.color = "rgba(232, 241, 250, 0.72)";
       list.appendChild(empty);
@@ -4268,6 +4325,7 @@ export class GameBootstrap3D extends Component {
         });
         row.addEventListener("contextmenu", (event) => {
           event.preventDefault();
+          if (row.disabled) return;
           void this.lootSelectedMonster(0, true);
         });
         list.appendChild(row);

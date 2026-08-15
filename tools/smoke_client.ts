@@ -1170,8 +1170,8 @@ async function verifyMonsterLifecycle(
       ? monsterHpAfterAutoAttack - BigInt(hit * 5)
       : 0n;
     const expectedDamage = monsterHpAfterAutoAttack - BigInt((hit - 1) * 5) > 5n
-      ? 5
-      : Number(monsterHpAfterAutoAttack - BigInt((hit - 1) * 5));
+      ? 5n
+      : monsterHpAfterAutoAttack - BigInt((hit - 1) * 5);
     if (
       response.body.error ||
       response.body.monsterId !== monster.unitId ||
@@ -1365,6 +1365,12 @@ async function verifyAutoAttackTimer(
     if (hp !== undefined) previousHp = hp;
   }
 
+  // 关闭请求可能与最后一个10Hz战斗桶交错；先监听一条关闭期间的权威Numeric，
+  // 避免手动攻击阶段拿到少一轮平A的旧基准。
+  // The disable request can race with the final 10 Hz combat bucket. Listen
+  // for one authoritative Numeric during the disable transition so the manual
+  // attack phase never uses a stale HP baseline.
+  const postDisableNumeric = gate.waitForMessage(MsgCode.G2C_EntityNumeric, 500).catch(() => undefined);
   const disabledState = gate.waitForMessage(MsgCode.G2C_AutoAttackState, 5_000);
   const disabledRpcId = nextRpcId++;
   const disabled = decodeToggleAutoAttackFrame(await gate.request(
@@ -1374,6 +1380,15 @@ async function verifyAutoAttackTimer(
     }),
   ));
   await disabledState;
+  const trailingNumeric = await postDisableNumeric;
+  if (trailingNumeric) {
+    const trailingHp = decodeEntityNumericFrame(trailingNumeric).body.numerics.find(
+      (numeric) => numeric.unitId === monsterUnitId && numeric.numericType === NumericType.CurrentHp,
+    )?.value;
+    if (trailingHp !== undefined && trailingHp < hpValues[hpValues.length - 1]) {
+      hpValues[hpValues.length - 1] = trailingHp;
+    }
+  }
   if (hpValues.length < expectedSwings || disabled.rpcId !== disabledRpcId || disabled.body.error || disabled.body.enabled) {
     throw new Error(`auto attack timer stopped before ${expectedSwings} swings: ${stringifyForError({ hpValues, disabled: disabled.body })}`);
   }
