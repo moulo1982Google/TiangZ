@@ -222,3 +222,10 @@ npm run build:cocos3d:mobile
 - `C2M_LootMonster`由PlayerUnit有序mailbox转交MonsterComponent，先规划Inventory/Quest，再用稳定`operationId`提交DBProxy；确认后才创建静态Item、推进任务并私有推送，重复请求返回原回执。
 - Starter任务5006在完成并交付5005后解锁，收集5个1101“任务怪物徽记”；Cocos3D选中死亡怪物后显示尸体状态和拾取入口。
 - 当前1101是静态道具；随机词条、耐久、绑定等动态ItemInstance必须保留实例数据，不能使用静态配置ID延迟创建的快捷路径。
+
+## 开发阶段与 Release 锁定
+
+- TiangZ 主工程、两个 VS Code 插件和独立 DBProxy 在开发阶段默认不强制版本、依赖、协议锁或 Core API 快照锁，允许正常迭代。
+- 运行时 Protocol Fingerprint 兼容性检查始终保留，避免客户端与服务端静默使用不兼容协议。
+- 准备正式 Release 后，必须通过显式命令行参数或环境变量开启严格锁定，例如 `npm run verify:release` / `TIANGZ_LOCK_VERSIONS=1`；不能要求开发者修改源码来实现锁定。
+- 发布门禁统一检查项目版本、依赖锁文件、协议 opcode/schema、Stable Core API 快照和完整测试。开发阶段不要为了让发布门禁变绿而提前更新锁文件。
