@@ -93,7 +93,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | `npm run starter:acceptance:persistent` | DBProxy快照写入、停止/重启TiangZ、恢复读取 | 写入带时间后缀的测试账号，不删除数据库 |
 | `npm run starter:acceptance:faults` | 持久化恢复后运行独立DBProxy故障矩阵 | 可能重启本地Redis/PostgreSQL容器，只能用于测试环境 |
 
-自动脚本的结果写入被Git忽略的`temp/test-logs/starter-acceptance-*.json`。持久化命令不会自动启动Docker；它会复用7800端口已有的DBProxy，或使用`tools-projects/TiangZ-DBProxy/target/debug`中的Debug服务，并从独立仓库的`deploy/local/.env`读取连接参数。常规Starter验收不应连接外网数据库。
+自动脚本的结果写入被Git忽略的`temp/test-logs/starter-acceptance-*.json`。三个Starter验收命令都会先执行`cargo build --bin TiangZ`，确保Rust配置解析器与当前源码一致。持久化命令不会自动启动Docker；它会复用7800端口已有的DBProxy，或使用`tools-projects/TiangZ-DBProxy/target/debug`中的Debug服务，并从独立仓库的`deploy/local/.env`读取连接参数。常规Starter验收不应连接外网数据库。
 
 当前自动脚本明确不宣称完整任务/副本业务已通过：Map 100演示配置当前有3只A怪和2只B怪，带掉落尸体还按规则保留较长时间；“击杀5只A、回NPC交付、解锁B、拾取5个任务物品、进入动态副本击杀Boss并领取奖励”仍需Cocos3D客户端操作验收，后续再增加专用测试夹具。
 

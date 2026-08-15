@@ -236,6 +236,8 @@ async function stopDbProxy(runtime) {
 async function runFaultMatrix() {
   const script = path.join(dbProxyRoot, "tools", "fault_matrix.ps1");
   if (!existsSync(script)) throw new Error(`DBProxy fault matrix is missing: ${script}`);
+  await stopDbProxy(dbProxyProcess);
+  dbProxyProcess = undefined;
   const startedAt = Date.now();
   await runInherited("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], dbProxyRoot);
   results.push({ name: "dbproxy-fault-matrix", status: "passed", durationMs: Date.now() - startedAt });

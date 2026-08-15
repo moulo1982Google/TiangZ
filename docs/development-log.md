@@ -1033,3 +1033,10 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - 本轮完成静态检查和类型检查，未执行CPU压力测试；完整的5A/5B任务掉落与动态副本Boss自动夹具仍未宣称完成。
 - 实测`npm run starter:acceptance:persistent`通过：任务5003真实发放3个小红，消费后断线保存，重启TiangZ后恢复同一ItemId、数量2、版本2。
 - 实测独立DBProxy`tools/fault_matrix.ps1`通过5/5：Redis backlog跨重启、PostgreSQL中断重试、Redis缓存修复、新快照覆盖积压和数据库恢复后的排空均通过。该测试只操作本机Docker测试容器，未执行外网或容量压测。
+
+# 2026-08-15：Starter与DBProxy发布验收门禁
+
+- 三个Starter验收命令在运行前统一执行`cargo build --bin TiangZ`，避免Rust配置契约变更后误用旧的`target/debug/TiangZ`；持久化和故障命令继续只使用本地测试数据库。
+- `starter:acceptance:faults`在运行独立DBProxy故障矩阵前，会先停止Starter流程启动的临时DBProxy；故障矩阵脚本检查原生Cargo测试退出码，避免PowerShell吞掉失败导致假通过。
+- DBProxy CI增加发布事件和`v*` Tag验收：发布门禁使用`npm ci`、Cargo`--locked`、真实PostgreSQL/Redis集成测试、网络闭环和故障矩阵；普通开发脚本继续不强制锁定依赖。
+- 验证通过：Starter all-in-one/split-process、技能与Buff、角色选角、DBProxy快照重启恢复、DBProxy故障矩阵5/5，以及DBProxy TypeScript测试、Rust fmt、workspace test和Clippy；本轮未执行容量压力测试。

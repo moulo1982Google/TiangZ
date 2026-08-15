@@ -392,7 +392,7 @@
         "native_data/mmorpg/Item.native": "b8115687e4b6919be0dc310fe9833f05f4506e644dd214999acbca68a9233e40",
         "native_data/mmorpg/MapOps.native": "754b6538e1807e08dd5b7944df4c34da88832c3b076c89b3177c9e5f0abe77f4",
         "native_data/mmorpg/Unit.native": "37de6d00dcc3b2e81b987cfb32ef81600e974e7c27f18ac8490945b9a861ef36",
-        "package.json": "142a26ca0cea0859efe6240b196b1dfb62e73db31d3e48c315fca560bab9f9b3",
+        "package.json": "143f5ecaf3f69c2931aec15b96bc024915ca4bd3908517a127004e098df0d931",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "2d2a900111ec146a98db232cf9dd5f61efcb0f8ade3dcdba21ffd0fa06b11a0b"
       },
@@ -438,7 +438,7 @@
         "proto/OuterMessage_C_10001.proto": "848fe1eae3ea9ddc5862c706cfce0908326ff41ba71efac7fe13d672bf96236f",
         "proto/schema.lock.json": "06be960faae3d9a4cb8ca718bdd5be441db4959e5a1ee452a2e3c4f2da94b82f",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
-        "tools/codegen_proto.mjs": "335b7afc6e85e3ed48bff7954cb67a1d10ec76f60f2f7d9033e86ba2e29fa189"
+        "tools/codegen_proto.mjs": "514837ee65573c59a64958b5feb09c80bbbd081eaa9932d5f2c353d1b87d07fc"
       },
       "selections": [],
       "outputs": {

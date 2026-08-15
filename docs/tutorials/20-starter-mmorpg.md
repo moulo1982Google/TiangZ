@@ -40,7 +40,7 @@ npm run starter:character-smoke
 npm run starter:acceptance
 ```
 
-它会依次覆盖运行时登录/进图/战斗链路、技能与Buff、创建角色和选角，并把结果写入`temp/test-logs/starter-acceptance-*.json`。默认会验证all-in-one和split-process；只跑其中一种运行时时可以使用：
+它会先重建Debug Rust runtime，再依次覆盖运行时登录/进图/战斗链路、技能与Buff、创建角色和选角，并把结果写入`temp/test-logs/starter-acceptance-*.json`。默认会验证all-in-one和split-process；只跑其中一种运行时时可以使用：
 
 ```powershell
 node tools/starter_acceptance.mjs --mode all
