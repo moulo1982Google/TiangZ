@@ -39,7 +39,7 @@ powershell -ExecutionPolicy Bypass -File tools/run_local.ps1
 cd E:\gitee\TiangZ
 $env:TIANGZ_DBPROXY_AUTH_TOKEN = "tiangz-dbproxy-local-token-2026"
 npm run build
-cargo run --locked --bin TiangZ -- configs/local/all-in-one-dbproxy.json
+cargo run --bin TiangZ -- configs/local/all-in-one-dbproxy.json
 ```
 
 启动后打开Cocos3D，在登录遮罩中点击“注册”。用户名会同时成为角色名；停止并重新启动TiangZ后，用同一用户名和密码点击“登录”，即可验证账号目录和角色ID仍由DBProxy恢复。若账号不存在，登录会明确返回“用户未注册”，不会再隐式创建游客账号。

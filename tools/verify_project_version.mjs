@@ -3,6 +3,7 @@ import path from "node:path";
 import process from "node:process";
 
 const root = path.resolve(import.meta.dirname, "..");
+const strict = process.env.TIANGZ_LOCK_VERSIONS === "1" || process.argv.includes("--strict");
 const cargo = await readFile(path.join(root, "Cargo.toml"), "utf8");
 const cargoVersion = cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 if (!cargoVersion) throw new Error("Cargo.toml package version is missing");
@@ -31,10 +32,18 @@ if (
 if (readmeVersion !== cargoVersion) {
   mismatches.push(`README.md=${readmeVersion ?? "missing"}`);
 }
-if (mismatches.length > 0) {
+if (mismatches.length > 0 && strict) {
   throw new Error(
     `project version must follow Cargo.toml ${cargoVersion}: ${mismatches.join(", ")}`,
   );
 }
 
-process.stdout.write(`project version verified: ${cargoVersion}\n`);
+if (mismatches.length > 0) {
+  process.stdout.write(
+    `project version inspected (development; lock skipped): Cargo.toml=${cargoVersion}; ${mismatches.join(", ")}\n`,
+  );
+} else {
+  process.stdout.write(
+    `project version ${strict ? "verified" : "inspected"}: ${cargoVersion}${strict ? " (release lock enabled)" : " (development lock skipped)"}\n`,
+  );
+}

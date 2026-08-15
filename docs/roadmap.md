@@ -198,7 +198,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 状态：完成（2026-07）。
 
-- `Cargo.toml`成为项目版本源，`package.json`、lockfile和README由`verify:version`检查一致性。
+- 开发阶段以`Cargo.toml`作为版本参考，`package.json`、`package-lock.json`和README允许暂时不同步，依赖使用普通开发解析。准备Release时运行`npm run verify:release`，再启用版本副本、API/protocol锁和`npm ci`/Cargo `--locked`冻结门禁。
 - Runtime支持`--version/-V`，启动结构化日志携带版本。
 - `app/core/public.ts`成为服务端业务唯一Stable入口，其他Core实现路径默认Internal。
 - `public-api.lock.json`锁定TypeScript真实导出集合；变更必须显式评审并执行`core-api:update-lock`。
@@ -273,7 +273,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ### Phase 3.10.7：发布与跨平台收口
 
-状态：完成（2026-07-26）。核心Runtime、mailbox和背压入口已迁移为跨平台Node runner；固定Rust 1.97.1、Node 24和npm 11，增加Windows/Linux CI、依赖审计策略以及携带版本和SHA-256的Release制品。Windows和Ubuntu Linux均通过完整`verify`、0 advisory依赖审计，以及最终制品目录内的登录、进图、状态同步和移动smoke。
+状态：完成（2026-07-26）。核心Runtime、mailbox和背压入口已迁移为跨平台Node runner；固定Rust 1.97.1、Node 24和npm 11，增加Windows/Linux CI、依赖审计策略以及携带版本和SHA-256的Release制品。当前开发CI允许依赖和版本副本迭代，正式Release才启用lockfile、`--locked`和`npm ci`冻结；Windows和Ubuntu Linux均通过完整`verify`、0 advisory依赖审计，以及最终制品目录内的登录、进图、状态同步和移动smoke。
 
 ### 0.3.10-alpha.9：子Entity与领域设计规则
 

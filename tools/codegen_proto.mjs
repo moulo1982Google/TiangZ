@@ -71,6 +71,7 @@ async function main() {
   }
   const updateProtocolLocks = args.includes("--update-opcode-lock");
   const replaceSchemaLock = args.includes("--replace-schema-lock");
+  const strictLocks = updateProtocolLocks || process.env.TIANGZ_LOCK_VERSIONS === "1" || args.includes("--strict-locks");
   if (replaceSchemaLock && !updateProtocolLocks) {
     throw new Error("--replace-schema-lock requires --update-opcode-lock");
   }
@@ -104,8 +105,14 @@ async function main() {
     }
   }
 
-  await enforceOpcodeLock(sourceProtocols, updateProtocolLocks, opcodeLock);
-  await enforceSchemaLock(sourceProtocols, updateProtocolLocks, replaceSchemaLock);
+  if (strictLocks) {
+    await enforceOpcodeLock(sourceProtocols, updateProtocolLocks, opcodeLock);
+    await enforceSchemaLock(sourceProtocols, updateProtocolLocks, replaceSchemaLock);
+  } else {
+    console.log(
+      "protocol opcode/schema locks skipped in development; use npm run verify:release before publishing",
+    );
+  }
 
   await rm(generatedServerProtocolDir, { recursive: true, force: true });
   await rm(obsoleteAppClientProtocolDir, { recursive: true, force: true });

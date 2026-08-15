@@ -447,11 +447,11 @@ npm run clean:copy
 
 ```bash
 cd TiangZ
-npm ci
+npm install
 npm run perf:rpc-baseline
 ```
 
-使用 nvm 安装 Node 时不要加 `sudo`。`sudo` 默认看不到用户目录中的 npm，并会产生 root 所有权的构建文件。压测入口会自动识别缺失或来自其他操作系统的 `node_modules`，并通过 `npm ci` 重建。
+使用 nvm 安装 Node 时不要加 `sudo`。`sudo` 默认看不到用户目录中的 npm，并会产生 root 所有权的构建文件。开发阶段压测入口会自动识别缺失或来自其他操作系统的 `node_modules`，并通过 `npm install` 重建；正式发布时再使用锁文件安装。
 
 命令会自动构建 Release、启动 `BenchScene`、完成 64B 到 16KB 的 RPC 测试、关闭 Runtime，并在 `perf/results` 生成 Markdown、JSON 和服务日志。Windows 使用同一条 `npm run perf:rpc-baseline` 命令。
 

@@ -125,7 +125,7 @@ npm run test:hotfix
 
 ```powershell
 npm run build
-cargo build --locked --bin TiangZ
+cargo build --bin TiangZ
 # 部署完整配对并重启Process
 ```
 

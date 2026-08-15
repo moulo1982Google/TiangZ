@@ -886,7 +886,7 @@ const stop = loginFlow.onSessionReplaced((message) => {
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy独立仓库的`v0.4.0`已提供PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励与UseItem消费已成为关键单玩家事务；Wallet、Trade、周期快照和崩溃接管尚未完成。
+DBProxy独立仓库工作区已完成`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程当前仍消费已发布的远程`v0.4.0`，待DBProxy仓库提交并发布`v0.5.0`后再切换依赖；业务层不得复制协议或自行实现第二套故障切换。普通`.native @persistent(version)`实体的Codec和通用Repository已由codegen生成，复杂查询、跨玩家交易和领域结果仍由业务Repository规划。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励与UseItem消费已成为关键单玩家事务；Wallet/Trade领域模型、周期快照和自动节点接管仍未完成。
 
 ## AOI业务规则
 
@@ -927,7 +927,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
-持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。当前DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。TiangZ Rust Host已经通过连接池接入DBProxy，Demo的`PlayerRepository`覆盖玩家聚合快照恢复，UseItem和任务奖励演示覆盖单玩家关键事务与ACK丢失后的幂等回执恢复。普通单Entity现在可以通过`.native`的`@persistent(version)`和`@transient`生成版本化Codec及通用Repository工厂，不需要为每种Entity手工设计数据库表。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型，业务代码也不得直接连接Redis/数据库。仍未完成的是Wallet/Trade/跨玩家事务、周期快照、旧schema迁移注册、DBProxy多Endpoint与双实例故障切换、自动节点接管和生产部署收口；Redis/PostgreSQL高可用直接采用云厂商能力。不能把当前单玩家演示解释为完整持久化方案。
+持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`工作区还提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，Demo的`PlayerRepository`覆盖玩家聚合快照恢复，UseItem和任务奖励演示覆盖单玩家关键事务与ACK丢失后的幂等回执恢复。普通单Entity现在可以通过`.native`的`@persistent(version)`和`@transient`生成版本化Codec及通用Repository工厂，不需要为每种Entity手工设计数据库表；复杂查询和跨玩家交易必须由领域Repository编排，不能把通用Payload表当作查询型ORM。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型，业务代码也不得直接连接Redis/数据库。当前主工程仍锁定已发布`v0.4.0`，待`v0.5.0`正式发布后再接入多Endpoint和多记录API；周期快照、旧schema迁移注册、自动节点接管和生产部署仍未收口。不能把当前单玩家演示解释为完整持久化方案。
 
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
@@ -1055,7 +1055,7 @@ C2M_AttackMonsterHandler
 
 ## DBProxy持久化接入边界
 
-独立DBProxy当前为`v0.4.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK、事务回执查询和真实PostgreSQL/Redis闭环。TiangZ主工程已经实现Player Snapshot、任务奖励事务和UseItem消费事务，但业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
+独立DBProxy工作区当前为`v0.5.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK、事务回执查询、双Endpoint故障切换、多记录原子事务和真实PostgreSQL/Redis适配。TiangZ主工程已发布接入仍锁在`v0.4.0`，所以当前业务只能使用已经接通的单记录能力；待DBProxy发布`v0.5.0`后，主工程再切换依赖并接入多Endpoint/多记录API。业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
 
 正式接入后的固定调用层次应是：
 
@@ -1129,6 +1129,12 @@ entity Item extends Entity {
 
 日常Linux发布执行`npm run release:linux`。固定Builder镜像只保存Node、Rust、.NET Runtime、Luban和依赖，不保存业务源码；工具指纹未变化时不得重新下载工具链。每次发布仍必须重新执行Excel/Luban生成、全部codegen、TS构建和Rust Release编译，不能因为复用镜像而复用旧生成代码。只有修改`package-lock.json`、Cargo依赖/锁、Rust工具链、Luban版本或Builder Dockerfile时，才允许自动重建一次镜像。
 
+## 开发阶段与Release锁定
+
+当前主工程、两个VS Code插件和独立DBProxy都处于持续开发阶段。开发者可以迭代`package.json`/`package-lock.json`、`Cargo.toml`/`Cargo.lock`、插件版本和协议原型；日常使用`npm install`与普通Cargo命令，不要求版本副本、Stable API快照、opcode/schema锁或依赖解析完全冻结。生成物过期检查、类型检查、边界检查和运行时Protocol Fingerprint仍然有效，因为它们分别保护代码生成一致性、架构边界和在线连接兼容性。
+
+准备正式发布时再开启冻结门禁：主工程运行`npm run verify:release`，它会设置`TIANGZ_LOCK_VERSIONS=1`并强制比较项目版本、`public-api.lock.json`和协议锁；插件与DBProxy由各自仓库执行发布前的版本、依赖锁、协议指纹和完整测试审查。除非明确进入Release，不要手工更新锁文件来“让检查变绿”，也不要把Release命令加入普通开发流程。
+
 ## Action、Buff与Skill的当前规则
 
 外部道具使用统一遵循`C2M_UseItemHandler -> ItemComponent.UseItemTransactional -> Planner -> DBProxy -> Commit`。`ItemConfig.use_effect=0`表示不可用，`1`表示添加Buff，`2`表示把`use_params`解释为`[ActionType, ...parameters]`。开发者优先改配置，不要为了不同药水复制Handler。`cooldown_ms`表示按ItemConfigId隔离的自身CD，`global_cooldown_ms`进入与技能共享的玩家GCD；Inventory、CD和效果必须先生成纯数据计划，DBProxy确认后才无await提交。当前事务Planner支持1001的`Heal(150)`和1002添加无AddAction的Stack Buff 2001；两者自身CD均为30秒、共享GCD均为1秒，2001后续Tick仍通过普通`ActionExecutor -> Heal(50)`执行。新增事务Action必须先定义操作后Payload和回执恢复，不能在执行副作用后再补保存。
@@ -1143,7 +1149,7 @@ Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat mod
 
 Demo新玩家不再由`ItemComponentSystem.Awake`创建测试道具，初始背包为空。Starter任务5001完成后奖励`1001×10`，后续任务5005完成后奖励`1002×10`；`RestoreTransfer`、重连和数据库恢复必须使用快照，不能在创建Unit时再次发放。快捷栏可以固定绑定1001/1002，但空背包必须显示为空槽并拒绝使用，不能把快捷键映射误当作赠送道具。
 
-`ItemConfig.icon`放在客户端分组，填写相对`assets/resources`的Cocos资源键，例如`UI/Icons/Items/1001`，前端通过配置解析图标。Cocos3D Web的快捷栏固定约定为`1`切换平A、`2`发送1001使用请求、`3`发送1002使用请求；显示数量先读进图`G2C_EnterMap.items`，后续只接受`G2C_ItemChanged`更新。按键或按钮不能直接修改本地数量，也不能把`itemId`写死；应先按`configId`找到服务端快照中的具体Item实例，再调用生成的`MapClient.useItem`。
+`ItemConfig.icon`放在客户端分组，填写相对`assets/resources`的Cocos资源键，例如`UI/Icons/Items/1001`，前端通过配置解析图标。Cocos3D Web的快捷栏固定约定为`1`切换平A、`2`发送1001使用请求、`3`发送1002使用请求；显示数量先读进图`G2C_EnterMap.items`，后续只接受`G2C_ItemChanged`更新。快捷栏是`ItemConfigId`的配置引用，不是某个永久`ItemId`的绑定：最后一件消耗后，服务端移除背包Item，客户端保留对应槽位并显示`×0`；同配置道具再次进入背包时，即使它拥有新的`ItemId`，槽位也会重新选择可用实例。按键或按钮不能直接修改本地数量，也不能把`itemId`写死；使用时应先按`configId`汇总服务端快照、选择一个数量大于0的具体Item实例，再调用生成的`MapClient.useItem`。
 
 玩家3D模型必须挂在Unit表现根节点下，禁止直接用骨骼Prefab充当权威Unit节点。当前Cocos3D示例由`PlayerCharacterVisual3D`加载`BlueChibi`骨骼Prefab，模型原点在脚底，Unit根节点继续沿用身体中心和既有碰撞尺寸。业务只向表现控制器提交`moving/idle`等状态；`Idle/Walk/Attack`动画不能写坐标、参与寻路、决定命中或启用Root Motion。换模型时优先替换Visual资源，不复制或改写Map移动链路。
 

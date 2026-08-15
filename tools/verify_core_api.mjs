@@ -9,6 +9,7 @@ const appRoot = path.join(root, "app");
 const publicFile = path.join(root, "app", "core", "public.ts");
 const lockFile = path.join(root, "app", "core", "public-api.lock.json");
 const updateLock = process.argv.includes("--update-lock");
+const strictLock = updateLock || process.env.TIANGZ_LOCK_VERSIONS === "1" || process.argv.includes("--strict-lock");
 
 const publicApi = collectPublicApi();
 if (updateLock) {
@@ -27,7 +28,7 @@ if (updateLock) {
   process.stdout.write(
     `core API lock updated: ${publicApi.stableExports.length} exports, signature=${publicApi.apiSurfaceHash.slice(0, 12)}\n`,
   );
-} else {
+} else if (strictLock) {
   const lock = JSON.parse(await readFile(lockFile, "utf8"));
   if (
     lock.schemaVersion !== 3 ||
@@ -55,6 +56,10 @@ if (updateLock) {
       `stable Core API signature changed${details.length > 0 ? ` (${details.join(", ")})` : ""}; review compatibility, then run npm run core-api:update-lock`,
     );
   }
+} else {
+  process.stdout.write(
+    "core API snapshot lock skipped in development; use npm run verify:release before publishing\n",
+  );
 }
 
 const boundaryErrors = [];
@@ -65,7 +70,7 @@ if (boundaryErrors.length > 0) {
 }
 
 process.stdout.write(
-  `core API verified: ${publicApi.stableExports.length} stable exports, signature=${publicApi.apiSurfaceHash.slice(0, 12)}, no boundary violations\n`,
+  `core API ${strictLock ? "verified" : "inspected"}: ${publicApi.stableExports.length} stable exports, signature=${publicApi.apiSurfaceHash.slice(0, 12)}, no boundary violations${strictLock ? " (release lock enabled)" : " (development lock skipped)"}\n`,
 );
 
 /**

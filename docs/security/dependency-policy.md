@@ -6,7 +6,7 @@ TiangZ 的发布质量门同时检查 npm 与 Cargo 依赖。新增依赖必须�
 
 - `npm run verify:dependency-policy`：校验所有漏洞例外都包含负责人、原因和到期日期，过期立即失败。
 - `npm run audit:dependencies`：执行 npm 高危漏洞审计与 Cargo advisory 审计，并应用仍在有效期内的显式例外；CI 和正式 Release 必须执行。
-- `Cargo.lock` 与 `package-lock.json` 必须提交；CI 使用 `cargo --locked` 和 `npm ci`。
+- 开发阶段允许依赖解析随代码一起迭代，使用`npm install`和普通Cargo命令即可；准备发布时，才使用提交后的锁文件运行`npm ci`、`cargo ... --locked`并保存构建产物，确认发布依赖解析不可变。
 
 ## 例外规则
 

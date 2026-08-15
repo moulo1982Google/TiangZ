@@ -74,6 +74,6 @@ TS BuffComponent代理
 npm run codegen:native-data
 npm run typecheck
 cargo fmt --check
-cargo test --locked native_data::tests
+cargo test native_data::tests
 npm run verify:comments
 ```

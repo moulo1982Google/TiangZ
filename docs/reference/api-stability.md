@@ -4,12 +4,20 @@ TiangZ从`0.3.10-alpha.0`开始建立可执行的公共API边界。目标不是�
 
 ## 版本身份
 
-根目录`Cargo.toml`的`package.version`是唯一版本源。`package.json`、`package-lock.json`和README只保存同步副本，由以下命令检查：
+根目录`Cargo.toml`的`package.version`是版本参考源。开发阶段允许`package.json`、`package-lock.json`和README暂时不同步，`npm run verify:version`只提示差异；准备发布时才把这些副本作为冻结门禁：
 
 ```powershell
 npm run verify:version
 cargo run -- --version
 ```
+
+发布前使用显式入口：
+
+```powershell
+npm run verify:release
+```
+
+该命令通过`TIANGZ_LOCK_VERSIONS=1`开启项目版本、Core API快照和协议 opcode/schema锁。平时不要把更新锁文件当作日常开发步骤；网络运行时仍必须校验Protocol Fingerprint，因为那是连接兼容性而不是产品版本冻结。
 
 Phase 3.10对应目标版本`0.3.10`。开发阶段使用SemVer预发布版本：
 
@@ -47,7 +55,7 @@ import {
 - 破坏性变化必须显式更新API锁和迁移记录；
 - Demo和新游戏目录只能依赖该入口，不能深层import Core实现文件。
 
-`app/core/public-api.lock.json`同时锁定稳定导出符号集合、顶层声明签名，以及从`public.ts`可达的完整编译器`.d.ts`声明图。参数、返回值、接口字段、继承成员、传递引用类型和泛型约束变化都会触发；函数体不会触发。完整声明图是有意采用的保守门禁，少量只影响内部声明形状的变化也可能需要人工复核并更新锁。
+`app/core/public-api.lock.json`在发布门禁开启时锁定稳定导出符号集合、顶层声明签名，以及从`public.ts`可达的完整编译器`.d.ts`声明图。开发阶段`npm run verify:core-api`仍检查依赖边界和Stable入口自测，但不因快照漂移失败；发布前由`npm run verify:release`开启完整比较。参数、返回值、接口字段、继承成员、传递引用类型和泛型约束变化都会触发；函数体不会触发。
 
 ### Experimental
 

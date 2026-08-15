@@ -21,13 +21,13 @@ jobs:
         with:
           toolchain: 1.97.1
           components: rustfmt, clippy
-      - run: npm ci
-      - run: cargo install cargo-audit --locked
+      - run: npm install
+      - run: cargo install cargo-audit
       - run: npm run audit:dependencies
       - name: Rust format check
         run: cargo fmt --all -- --check
       - name: Rust Clippy warnings
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - run: npm run verify
       - run: npm run release:package
       - uses: actions/upload-artifact@v4

@@ -104,7 +104,7 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 
 ### 当前事实
 
-状态：完成（2026-07-26）。Runtime smoke、mailbox 和背压已改为跨平台 Node runner；Rust 固定为 1.97.1，Node/npm 固定主版本并使用 lockfile。Windows 与 Ubuntu Linux 均通过同名 `npm run verify`。Release 脚本在两平台生成 Runtime、TS bundle、配置、版本信息和 SHA-256，并在最终制品目录完成真实客户端 smoke。依赖审计在两平台均为 0 advisory，漏洞例外必须声明负责人、原因和到期日期。
+状态：完成（2026-07-26）。Runtime smoke、mailbox 和背压已改为跨平台 Node runner；Rust固定为1.97.1，Node/npm固定主版本。开发阶段允许依赖和版本副本迭代，默认不使用lockfile、`--locked`或`npm ci`冻结门禁；准备Release时由`npm run verify:release`和发布脚本显式启用。Windows与Ubuntu Linux均通过同名`npm run verify`。Release脚本在两平台生成Runtime、TS bundle、配置、版本信息和SHA-256，并在最终制品目录完成真实客户端smoke。依赖审计在两平台均为0 advisory，漏洞例外必须声明负责人、原因和到期日期。
 
 干净 Linux 环境还验证了 Cocos 检查边界：Client SDK 始终执行完整 TypeScript 检查；Cocos Demo 在有编辑器类型时执行完整 tsc，在 CI 无编辑器缓存时执行显式 tsconfig 的入口 bundle 检查，不提交或伪造 `cc` 类型。
 
@@ -112,7 +112,7 @@ Rust `NativeEntityStore`与TS Model对象都是跨Hotfix保留的状态。Model�
 
 - Windows 与 Linux 都能执行同名的 `verify:quick` 和 `verify`；平台差异只存在于 Backend 专项测试。
 - 用跨平台 Node/Rust runner 替换核心验收路径中的 PowerShell，PowerShell 仅保留为可选人工包装。
-- 固定 Rust channel、Node 主版本和 npm 版本；构建使用 lockfile 与 `--locked`/`npm ci`。
+- 固定Rust channel、Node主版本和npm版本；开发构建使用普通依赖解析，Release构建才使用lockfile与`--locked`/`npm ci`。
 - CI 至少覆盖 Windows、Linux：codegen 漂移、Stable API、TS typecheck、Clippy、Rust test、Runtime smoke、mailbox、背压和故障注入。
 - Release 一键生成 Windows/Linux 制品、默认配置、必要文档、版本信息和 SHA-256 校验和，并在解压目录执行 smoke。
 - 建立依赖与许可证审计策略；漏洞例外必须带到期时间和原因。

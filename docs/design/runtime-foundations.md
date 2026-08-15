@@ -157,7 +157,7 @@ scene.Tasks.Spawn("publish-auto-attack-state", async ({ signal }) => {
 
 ```powershell
 npm run test:runtime-foundation
-cargo test --locked watcher::tests::
+cargo test watcher::tests::
 ```
 
 该自测覆盖合服ID、Timer参数与取消、所有权清理、按键串行锁、Scene事件隔离、Veto首错终止和Spawn生命周期。

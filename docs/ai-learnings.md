@@ -75,7 +75,7 @@ Cindy 最初仅凭硬件和架构描述估算性能，结果与实测数据偏�
 ### 3.2 跨平台发布收口
 
 - Windows/Linux 同名 `verify:quick` 和 `verify`，平台差异只在 Backend 专项。
-- Rust 固定 1.97.1，Node/npm 固定主版本，lockfile + `--locked`/`npm ci`。
+- Rust固定1.97.1，Node/npm固定主版本；这里记录的是当时Release收口阶段的lockfile + `--locked`/`npm ci`做法。当前仍处于开发阶段，默认允许依赖与版本副本迭代，准备正式Release时再恢复这套冻结门禁。
 - Release 一键生成双平台制品、默认配置、SHA-256，并在解压目录执行 smoke。
 - 依赖审计零 advisory，漏洞例外必须带负责人、原因和到期日期。
 

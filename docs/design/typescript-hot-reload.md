@@ -175,7 +175,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 
 ```powershell
 npm run build
-cargo build --locked --bin TiangZ
+cargo build --bin TiangZ
 # 部署完整Model/Hotfix配对并重启Process
 ```
 
