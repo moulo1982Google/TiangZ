@@ -17,6 +17,7 @@
     "persistence": {
       "dbProxy": {
         "endpoint": "127.0.0.1:7800",
+        "failoverEndpoints": ["127.0.0.1:7801"],
         "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
         "clientPoolSize": 2,
         "connectTimeoutMs": 5000,

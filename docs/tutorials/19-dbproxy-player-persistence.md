@@ -48,7 +48,7 @@ cargo run --bin TiangZ -- configs/local/all-in-one-dbproxy.json
 
 ## 外网2C2G部署
 
-外网两Process配置已经包含`process.persistence.dbProxy`，默认访问同机的`127.0.0.1:7800`。部署机先安装Docker：
+外网两Process配置已经包含`process.persistence.dbProxy`，默认访问同机的`127.0.0.1:7800`。如部署第二个共享存储的DBProxy实例，可在同一配置中增加有序的`failoverEndpoints`，例如`127.0.0.1:7801`；它不是业务层的主从切换。部署机先安装Docker：
 
 ```bash
 apt-get update
@@ -74,6 +74,7 @@ docker compose --env-file /opt/tiangz-dbproxy/.env \
     "persistence": {
       "dbProxy": {
         "endpoint": "127.0.0.1:7800",
+        "failoverEndpoints": ["127.0.0.1:7801"],
         "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
         "clientPoolSize": 4,
         "connectTimeoutMs": 5000,
@@ -85,7 +86,22 @@ docker compose --env-file /opt/tiangz-dbproxy/.env \
 }
 ```
 
-TiangZ Developer Tools `v0.15.1`会为这些字段提供补全和范围检查。配置属于Process启动模型，修改后必须重启；它不是Hotfix或热配置。
+TiangZ Developer Tools `v0.15.1`会为这些字段提供补全和范围检查。配置属于Process启动模型，修改后必须重启；它不是Hotfix或热配置。客户端按RecordKey稳定选择连接，只有连接不可用才按顺序尝试备用地址；Revision冲突、业务拒绝、鉴权错误和协议错误直接返回，不会误切节点。
+
+## 多记录事务的使用边界
+
+`v0.5.0`的多记录接口只应由领域Repository使用，不能让Handler直接拼接数据库写入。Repository先为所有记录准备稳定顺序的`RecordKey`、`expectedRevision`和完整Payload，再使用同一个`operationId`调用`applyMultiTransaction`；响应丢失时用同一个`operationId`调用`loadMultiTransaction`恢复首次回执。
+
+```text
+领域操作
+  -> Repository规划多个RecordKey与expectedRevision
+  -> DbProxyClient.ApplyMultiTransaction(operationId, writes, result)
+  -> HostDbProxyTransport.applyMultiTransaction
+  -> Rust Host按RecordKey选择DBProxy Endpoint
+  -> DBProxy一次性提交全部记录或全部拒绝
+```
+
+多记录事务用于跨玩家奖励、交易等确实需要原子提交的领域操作；单玩家快照和单记录关键操作继续使用对应的单记录接口。网络不可用可以按备用Endpoint重试，业务拒绝、Revision冲突、鉴权失败和协议不匹配必须直接返回，不能通过换节点掩盖业务错误。
 
 ## 加载顺序
 

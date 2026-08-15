@@ -37,6 +37,7 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
   "persistence": {
     "dbProxy": {
       "endpoint": "127.0.0.1:7800",
+      "failoverEndpoints": ["127.0.0.1:7801"],
       "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
       "clientPoolSize": 4,
       "connectTimeoutMs": 5000,
@@ -48,6 +49,7 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 ```
 
 - `endpoint`：DBProxy内网TCP地址，不应填写客户端公网地址。
+- `failoverEndpoints`：可选的有序备用内网地址；首地址仍由`endpoint`指定。网络不可用时Rust客户端按顺序切换，并保留原`requestId/operationId`重试；业务拒绝、Revision冲突、鉴权失败和协议不匹配不会换节点。旧配置也兼容别名`endpoints`，新配置统一使用`failoverEndpoints`。
 - `authTokenEnv`：保存令牌的环境变量名；JSON中禁止填写令牌值，默认`TIANGZ_DBPROXY_AUTH_TOKEN`。
 - `clientPoolSize`：当前Process的Rust连接池大小，范围1到64。
 - `connectTimeoutMs/requestTimeoutMs`：连接和单RPC超时，范围100到120000毫秒。

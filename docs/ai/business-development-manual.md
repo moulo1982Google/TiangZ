@@ -886,7 +886,7 @@ const stop = loginFlow.onSessionReplaced((message) => {
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy独立仓库工作区已完成`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程当前仍消费已发布的远程`v0.4.0`，待DBProxy仓库提交并发布`v0.5.0`后再切换依赖；业务层不得复制协议或自行实现第二套故障切换。普通`.native @persistent(version)`实体的Codec和通用Repository已由codegen生成，复杂查询、跨玩家交易和领域结果仍由业务Repository规划。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励与UseItem消费已成为关键单玩家事务；Wallet/Trade领域模型、周期快照和自动节点接管仍未完成。
+DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程已经消费远程`v0.5.0`，配置通过`endpoint + failoverEndpoints`声明地址，Rust Host Bridge同时提供单记录和多记录接口；业务层不得复制协议或自行实现第二套故障切换。普通`.native @persistent(version)`实体的Codec和通用Repository已由codegen生成，复杂查询、跨玩家交易和领域结果仍由业务Repository规划。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励与UseItem消费已成为关键单玩家事务；Wallet/Trade领域模型、周期快照、TiangZ端到端故障矩阵和自动节点接管仍未完成。
 
 ## AOI业务规则
 
@@ -927,7 +927,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
-持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`工作区还提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，Demo的`PlayerRepository`覆盖玩家聚合快照恢复，UseItem和任务奖励演示覆盖单玩家关键事务与ACK丢失后的幂等回执恢复。普通单Entity现在可以通过`.native`的`@persistent(version)`和`@transient`生成版本化Codec及通用Repository工厂，不需要为每种Entity手工设计数据库表；复杂查询和跨玩家交易必须由领域Repository编排，不能把通用Payload表当作查询型ORM。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型，业务代码也不得直接连接Redis/数据库。当前主工程仍锁定已发布`v0.4.0`，待`v0.5.0`正式发布后再接入多Endpoint和多记录API；周期快照、旧schema迁移注册、自动节点接管和生产部署仍未收口。不能把当前单玩家演示解释为完整持久化方案。
+持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，业务配置用`endpoint`指定首选地址，用`failoverEndpoints`指定备用地址；普通记录按RecordKey稳定选择连接，多记录事务按稳定`operationId`选择连接。只有网络不可用才允许切换，业务拒绝、Revision冲突、协议指纹或鉴权错误必须原样返回。Demo的`PlayerRepository`覆盖玩家聚合快照恢复，UseItem和任务奖励演示覆盖单玩家关键事务与ACK丢失后的幂等回执恢复。普通单Entity现在可以通过`.native`的`@persistent(version)`和`@transient`生成版本化Codec及通用Repository工厂，不需要为每种Entity手工设计数据库表；复杂查询和跨玩家交易必须由领域Repository编排，不能把通用Payload表当作查询型ORM。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型，业务代码也不得直接连接Redis/数据库。TiangZ端到端故障矩阵、周期快照、旧schema迁移注册、自动节点接管和生产部署仍未收口。不能把当前单玩家演示解释为完整持久化方案。
 
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
@@ -1055,7 +1055,7 @@ C2M_AttackMonsterHandler
 
 ## DBProxy持久化接入边界
 
-独立DBProxy工作区当前为`v0.5.0`，已经提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK、事务回执查询、双Endpoint故障切换、多记录原子事务和真实PostgreSQL/Redis适配。TiangZ主工程已发布接入仍锁在`v0.4.0`，所以当前业务只能使用已经接通的单记录能力；待DBProxy发布`v0.5.0`后，主工程再切换依赖并接入多Endpoint/多记录API。业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
+独立DBProxy工作区已发布`v0.5.0`，提供Rust TCP服务、Protobuf版本/指纹握手、内部令牌、Rust客户端池、运行时无关TypeScript SDK、事务回执查询、双Endpoint故障切换、多记录原子事务和真实PostgreSQL/Redis适配。TiangZ主工程已经切换到`v0.5.0`，Rust Host Bridge和TypeScript Transport已接入多Endpoint配置及多记录API；业务开发者仍不能在Handler、Component或System中直接连接Redis/PostgreSQL，也不能引用`dbproxy-storage`。
 
 正式接入后的固定调用层次应是：
 
@@ -1077,7 +1077,7 @@ Handler
 
 同一个`DbProxyClient`连接只允许一个在途RPC；高并发服务使用Rust`DbProxyClientPool`按RecordKey稳定分片。DBProxy网络工作运行在多线程Rust Host Runtime，业务V8只等待Promise；不得在TS中自行打开Socket或实现第二套连接池。业务不能为了躲开PlayerUnit ordered mailbox而改用`Spawn`异步确认关键经济操作：关键事务必须在可靠提交成功后才向客户端确认。普通快照可以合并并进入backlog，但不得把关键事务降级成“稍后保存”。
 
-DBProxy服务层的后续集群边界已经冻结：Rust客户端接受多个内网Endpoint，按RecordKey选择首选实例，基础设施错误时熔断并携带原`request_id/operation_id`切换；部署两个共享同一套云Redis/PostgreSQL的对等DBProxy实例；通过故障注入验证请求中断、提交后丢响应和Backlog lease接管。业务拒绝、Revision冲突、协议指纹或鉴权错误不能触发换节点重试。DBProxy实例之间不选主、不复制业务状态，也不实现Redis/PostgreSQL高可用；存储高可用直接使用云厂商能力。
+DBProxy服务层的集群边界已经冻结：Rust客户端接受多个有序内网Endpoint，按RecordKey选择首选实例，基础设施错误时携带原`request_id/operation_id`切换；部署两个共享同一套云Redis/PostgreSQL的对等DBProxy实例；通过故障注入验证请求中断、提交后丢响应和Backlog lease接管。业务拒绝、Revision冲突、协议指纹或鉴权错误不能触发换节点重试。DBProxy实例之间不选主、不复制业务状态，也不实现Redis/PostgreSQL高可用；存储高可用直接使用云厂商能力。TiangZ侧的端到端故障矩阵仍需单独验收，不能把DBProxy仓库测试直接当作整套游戏运行时已验收。
 
 当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成；断线、踢下线和停机只调用`player.Offline(reason)`，由`PlayerPersistenceComponent.SaveOnOffline`采集Numeric、Item、Buff、Skill冷却、Quest和地图状态，并以当前Revision提交。Handler不得直接调用Repository。
 

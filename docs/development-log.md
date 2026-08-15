@@ -7,6 +7,14 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-15：DBProxy v0.5.0与TiangZ多Endpoint接入
+
+- 独立仓库`TiangZ-DBProxy`发布`v0.5.0`，提交为`8c48b9a`；新增有序多Endpoint故障切换、两个共享存储的无状态对等实例基础，以及跨记录全量CAS原子事务和事务回执查询。
+- TiangZ的Cargo和TypeScript依赖切换到远程`v0.5.0`。Process持久化配置保留`endpoint`作为首选地址，新增`failoverEndpoints`；旧`endpoints`写法由Rust兼容读取，新配置统一使用前者。
+- Rust Host新增多记录事务与回执查询桥接，TypeScript `HostDbProxyTransport`提供`applyMultiTransaction`和`loadMultiTransaction`；业务仍通过领域Repository调用，不能直接连接Redis/PostgreSQL。
+- 本轮保持开发模式：未启用`--locked`、`npm ci`或Release版本锁定；协议指纹仍由运行时校验。DBProxy仓库的格式、workspace测试、Clippy、TypeScript SDK和真实TCP故障切换/多记录事务测试已通过；TiangZ完成TypeScript、Cargo check和配置解析验证，未运行压力测试。
+- 开发工具 schema同步增加`failoverEndpoints`补全与测试；TiangZ工作区原有Demo改动未并入本次提交。
+
 ## 2026-08-13：框架审查问题收口与生命周期门禁
 
 - Hotfix提交的原型安装和绑定提交改为可回滚事务：首次安装的半成品方法会被清理，回滚附加错误不会把Runtime永久留在`rolling-back`阶段；候选Handler集合增加、删除或重命名仍要求重启。

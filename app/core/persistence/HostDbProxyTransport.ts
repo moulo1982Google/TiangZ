@@ -5,6 +5,9 @@ import {
   type DbProxySnapshotEnvelope,
   type DbProxySnapshotWrite,
   type DbProxySnapshotWriteResult,
+  type DbProxyMultiTransactionReceipt,
+  type DbProxyMultiTransactionalWrite,
+  type DbProxyMultiTransactionalWriteResult,
   type DbProxyTransactionalWrite,
   type DbProxyTransactionalWriteResult,
   type DbProxyTransactionReceipt,
@@ -64,6 +67,30 @@ interface HostLoadTransactionResponse {
   readonly error?: HostDbProxyError;
 }
 
+interface HostMultiTransactionRecordReceipt {
+  readonly namespace: string;
+  readonly key: string;
+  readonly newRevision: string;
+}
+
+interface HostMultiTransactionResponse {
+  readonly disposition?: DbProxyWriteDisposition;
+  readonly records: readonly HostMultiTransactionRecordReceipt[];
+  readonly result: readonly number[] | Uint8Array;
+  readonly error?: HostDbProxyError;
+}
+
+interface HostMultiTransactionReceipt {
+  readonly operationId: string;
+  readonly records: readonly HostMultiTransactionRecordReceipt[];
+  readonly result: readonly number[] | Uint8Array;
+}
+
+interface HostLoadMultiTransactionResponse {
+  readonly receipt?: HostMultiTransactionReceipt;
+  readonly error?: HostDbProxyError;
+}
+
 interface HostDbProxyApi {
   load(namespace: string, key: string): Promise<HostLoadResponse>;
   save(request: {
@@ -101,6 +128,22 @@ interface HostDbProxyApi {
     namespace: string,
     key: string,
   ): Promise<HostLoadTransactionResponse>;
+  applyMultiTransaction(request: {
+    readonly operationId: string;
+    readonly writes: readonly {
+      readonly record: DbProxyMultiTransactionalWrite["writes"][number]["record"];
+      readonly schema: string;
+      readonly schemaVersion: number;
+      readonly expectedRevision: string;
+      readonly payload: readonly number[] | Uint8Array;
+      readonly updatedAtUnixMs: string;
+    }[];
+    readonly result: Uint8Array;
+  }): Promise<HostMultiTransactionResponse>;
+  loadMultiTransaction(
+    operationId: string,
+    records: readonly DbProxyMultiTransactionalWrite["writes"][number]["record"][],
+  ): Promise<HostLoadMultiTransactionResponse>;
 }
 
 /**
@@ -206,6 +249,50 @@ export class HostDbProxyTransport implements DbProxyTransport {
       operationId: receipt.operationId,
       record: { namespace: receipt.namespace, key: receipt.key },
       newRevision: parseUint64(receipt.newRevision, "transactionReceipt.newRevision"),
+      result: Uint8Array.from(receipt.result),
+    };
+  }
+
+  async applyMultiTransaction(
+    write: DbProxyMultiTransactionalWrite,
+  ): Promise<DbProxyMultiTransactionalWriteResult> {
+    const response = await this.host.applyMultiTransaction({
+      operationId: write.operationId,
+      writes: write.writes.map((item) => ({
+        record: item.record,
+        schema: item.schema,
+        schemaVersion: item.schemaVersion,
+        expectedRevision: item.expectedRevision.toString(),
+        payload: item.payload,
+        updatedAtUnixMs: item.updatedAtUnixMs.toString(),
+      })),
+      result: write.result,
+    });
+    throwRemoteError(response.error);
+    return {
+      disposition: requireDisposition(response.disposition),
+      records: response.records.map((record) => ({
+        record: { namespace: record.namespace, key: record.key },
+        newRevision: parseUint64(record.newRevision, "multiTransactionRecord.newRevision"),
+      })),
+      result: Uint8Array.from(response.result),
+    };
+  }
+
+  async loadMultiTransaction(
+    operationId: string,
+    records: readonly DbProxyMultiTransactionalWrite["writes"][number]["record"][],
+  ): Promise<DbProxyMultiTransactionReceipt | undefined> {
+    const response = await this.host.loadMultiTransaction(operationId, records);
+    throwRemoteError(response.error);
+    const receipt = response.receipt;
+    if (!receipt) return undefined;
+    return {
+      operationId: receipt.operationId,
+      records: receipt.records.map((record) => ({
+        record: { namespace: record.namespace, key: record.key },
+        newRevision: parseUint64(record.newRevision, "multiTransactionRecord.newRevision"),
+      })),
       result: Uint8Array.from(receipt.result),
     };
   }

@@ -7,7 +7,7 @@
 - `login-gate.json`：LoginMgr、两个 Login、两个 Gate。
 - `world.json`：MapManager、两个静态 MapHost、Location 和动态副本 MapHost。
 
-两份 Process 配置都显式连接本机 `127.0.0.1:7800` 的 DBProxy，因此外网演示的注册账号、角色和玩家快照可以跨进程、跨重启恢复。DBProxy下面的 Redis/PostgreSQL 只绑定 `127.0.0.1`，不应直接开放公网端口。
+两份 Process 配置都显式连接本机 `127.0.0.1:7800` 的 DBProxy，因此外网演示的注册账号、角色和玩家快照可以跨进程、跨重启恢复。需要双实例时，在 `persistence.dbProxy` 中增加 `failoverEndpoints`（例如 `127.0.0.1:7801`）；两个 DBProxy 共享云 Redis/PostgreSQL，不做业务状态同步。DBProxy下面的 Redis/PostgreSQL 只绑定 `127.0.0.1`，不应直接开放公网端口。
 
 两个 Process 共享 `known-scenes.json`，但各自只有一个 V8。所有服务仍在同一台机器上使用 `127.0.0.1` 通讯；LoginMgr、Login 和 Gate 使用`auto + mixed`端点，同时接受浏览器 WebSocket和世界Process的内部TCP，并对客户端返回`outerIp/outerPort`。
 

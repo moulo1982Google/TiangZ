@@ -13,10 +13,12 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use deno_core::{JsBuffer, op2};
 use deno_error::JsErrorBox;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tiangz_dbproxy_client::{ClientConfig, ClientError, DbProxyClientPool};
 use tiangz_dbproxy_core::{
-    RecordKey, Revision, SnapshotWrite, SnapshotWriteOutcome, TransactionalWrite,
+    MultiRecordTransactionReceipt, MultiRecordTransactionalWrite,
+    MultiRecordTransactionalWriteOutcome, RecordKey, Revision, SnapshotWrite, SnapshotWriteOutcome,
+    TransactionRecordReceipt, TransactionalRecordWrite, TransactionalWrite,
     TransactionalWriteOutcome,
 };
 use tiangz_dbproxy_protocol::{ProtocolError, wire};
@@ -116,9 +118,11 @@ pub fn configure(process: &ProcessConfig, host_runtime: Handle) -> Result<()> {
         auth_token,
         format!("tiangz:{}", process.name),
     );
+    config = config.with_endpoints(settings.failover_endpoints.clone());
     config.connect_timeout = Duration::from_millis(settings.connect_timeout_ms);
     config.request_timeout = Duration::from_millis(settings.request_timeout_ms);
     config.max_frame_bytes = settings.max_frame_bytes;
+    let endpoint_count = settings.endpoint_candidates().len();
     DBPROXY_BRIDGE.with(|slot| {
         *slot.borrow_mut() = Some(DbProxyBridge {
             config,
@@ -131,6 +135,7 @@ pub fn configure(process: &ProcessConfig, host_runtime: Handle) -> Result<()> {
         target: "tiangz::dbproxy",
         process = %process.name,
         endpoint = %settings.endpoint,
+        endpoint_count,
         client_pool_size = settings.client_pool_size,
         "DBProxy host bridge configured"
     );
@@ -238,6 +243,60 @@ struct HostLoadTransactionResponse {
     error: Option<HostDbProxyError>,
 }
 
+// 多记录事务的桥接结构只负责边界转换，不承担业务编排。
+// These bridge structs only translate the Host boundary; they do not orchestrate business logic.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostRecordKeyInput {
+    namespace: String,
+    key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostMultiRecordWriteInput {
+    record: HostRecordKeyInput,
+    schema: String,
+    schema_version: u32,
+    expected_revision: String,
+    payload: Vec<u8>,
+    updated_at_unix_ms: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostMultiTransactionRecordReceipt {
+    namespace: String,
+    key: String,
+    new_revision: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostMultiTransactionResponse {
+    disposition: Option<&'static str>,
+    records: Vec<HostMultiTransactionRecordReceipt>,
+    result: Vec<u8>,
+    error: Option<HostDbProxyError>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostMultiTransactionReceipt {
+    operation_id: String,
+    records: Vec<HostMultiTransactionRecordReceipt>,
+    result: Vec<u8>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostLoadMultiTransactionResponse {
+    receipt: Option<HostMultiTransactionReceipt>,
+    error: Option<HostDbProxyError>,
+}
+
+// Rust 负责解析、连接池路由和DBProxy调用，TS只等待结果并恢复原始回执。
+// Rust owns parsing, pool routing, and DBProxy calls; TS only awaits and restores the original receipt.
 #[op2]
 #[serde]
 async fn op_host_dbproxy_load(
@@ -435,6 +494,145 @@ async fn op_host_dbproxy_load_transaction(
     })
 }
 
+#[op2]
+#[serde]
+async fn op_host_dbproxy_apply_multi_transaction(
+    #[string] operation_id: String,
+    #[string] writes_json: String,
+    #[buffer] operation_result: JsBuffer,
+) -> std::result::Result<HostMultiTransactionResponse, JsErrorBox> {
+    let writes = parse_multi_record_writes(&writes_json)?;
+    let request = MultiRecordTransactionalWrite {
+        operation_id,
+        writes,
+        result: operation_result.to_vec(),
+    };
+    let result = bridge()?
+        .execute(move |pool| {
+            let request = request.clone();
+            async move { pool.apply_multi_transaction(request).await }
+        })
+        .await;
+    Ok(match result {
+        Ok(MultiRecordTransactionalWriteOutcome::Applied { records, result }) => {
+            multi_transaction_response("applied", records, result)
+        }
+        Ok(MultiRecordTransactionalWriteOutcome::Duplicate { records, result }) => {
+            multi_transaction_response("duplicate", records, result)
+        }
+        Err(error) => HostMultiTransactionResponse {
+            disposition: None,
+            records: Vec::new(),
+            result: Vec::new(),
+            error: Some(error.into()),
+        },
+    })
+}
+
+#[op2]
+#[serde]
+async fn op_host_dbproxy_load_multi_transaction(
+    #[string] operation_id: String,
+    #[string] records_json: String,
+) -> std::result::Result<HostLoadMultiTransactionResponse, JsErrorBox> {
+    let records = parse_record_keys(&records_json)?;
+    let result = bridge()?
+        .execute(move |pool| {
+            let operation_id = operation_id.clone();
+            let records = records.clone();
+            async move { pool.load_multi_transaction(&operation_id, &records).await }
+        })
+        .await;
+    Ok(match result {
+        Ok(receipt) => HostLoadMultiTransactionResponse {
+            receipt: receipt.map(host_multi_transaction_receipt),
+            error: None,
+        },
+        Err(error) => HostLoadMultiTransactionResponse {
+            receipt: None,
+            error: Some(error.into()),
+        },
+    })
+}
+
+fn parse_multi_record_writes(
+    value: &str,
+) -> std::result::Result<Vec<TransactionalRecordWrite>, JsErrorBox> {
+    let input = serde_json::from_str::<Vec<HostMultiRecordWriteInput>>(value).map_err(|error| {
+        JsErrorBox::generic(format!("invalid multi-transaction writes: {error}"))
+    })?;
+    input
+        .into_iter()
+        .map(|write| {
+            Ok(TransactionalRecordWrite {
+                record: RecordKey::new(write.record.namespace, write.record.key)
+                    .map_err(|error| JsErrorBox::generic(error.to_string()))?,
+                schema: write.schema,
+                schema_version: write.schema_version,
+                expected_revision: Revision(parse_u64(
+                    &write.expected_revision,
+                    "expectedRevision",
+                )?),
+                payload: write.payload,
+                updated_at_unix_ms: parse_u64(&write.updated_at_unix_ms, "updatedAtUnixMs")?,
+            })
+        })
+        .collect()
+}
+
+fn parse_record_keys(value: &str) -> std::result::Result<Vec<RecordKey>, JsErrorBox> {
+    let input = serde_json::from_str::<Vec<HostRecordKeyInput>>(value).map_err(|error| {
+        JsErrorBox::generic(format!("invalid multi-transaction records: {error}"))
+    })?;
+    input
+        .into_iter()
+        .map(|record| {
+            RecordKey::new(record.namespace, record.key)
+                .map_err(|error| JsErrorBox::generic(error.to_string()))
+        })
+        .collect()
+}
+
+fn multi_transaction_response(
+    disposition: &'static str,
+    records: Vec<TransactionRecordReceipt>,
+    result: Vec<u8>,
+) -> HostMultiTransactionResponse {
+    HostMultiTransactionResponse {
+        disposition: Some(disposition),
+        records: records
+            .into_iter()
+            .map(host_multi_transaction_record_receipt)
+            .collect(),
+        result,
+        error: None,
+    }
+}
+
+fn host_multi_transaction_record_receipt(
+    receipt: TransactionRecordReceipt,
+) -> HostMultiTransactionRecordReceipt {
+    HostMultiTransactionRecordReceipt {
+        namespace: receipt.record.namespace,
+        key: receipt.record.key,
+        new_revision: receipt.new_revision.0.to_string(),
+    }
+}
+
+fn host_multi_transaction_receipt(
+    receipt: MultiRecordTransactionReceipt,
+) -> HostMultiTransactionReceipt {
+    HostMultiTransactionReceipt {
+        operation_id: receipt.operation_id,
+        records: receipt
+            .records
+            .into_iter()
+            .map(host_multi_transaction_record_receipt)
+            .collect(),
+        result: receipt.result,
+    }
+}
+
 fn write_response(disposition: &'static str, revision: Revision) -> HostWriteResponse {
     HostWriteResponse {
         disposition: Some(disposition),
@@ -477,6 +675,8 @@ deno_core::extension!(
         op_host_dbproxy_enqueue_snapshot,
         op_host_dbproxy_apply_transaction,
         op_host_dbproxy_load_transaction,
+        op_host_dbproxy_apply_multi_transaction,
+        op_host_dbproxy_load_multi_transaction,
     ],
 );
 
@@ -519,6 +719,22 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
     ),
     loadTransaction: (operationId, namespace, key) => core.ops.op_host_dbproxy_load_transaction(
       text(operationId, "operationId"), text(namespace, "namespace"), text(key, "key"),
+    ),
+    applyMultiTransaction: (request) => core.ops.op_host_dbproxy_apply_multi_transaction(
+      text(request.operationId, "operationId"),
+      text(JSON.stringify(request.writes.map((write) => ({
+        record: write.record,
+        schema: write.schema,
+        schemaVersion: u32(write.schemaVersion, "schemaVersion"),
+        expectedRevision: String(write.expectedRevision),
+        payload: Array.from(bytes(write.payload, "payload")),
+        updatedAtUnixMs: text(String(write.updatedAtUnixMs), "updatedAtUnixMs"),
+      })), "writes"),
+      bytes(request.result, "result"),
+    ),
+    loadMultiTransaction: (operationId, records) => core.ops.op_host_dbproxy_load_multi_transaction(
+      text(operationId, "operationId"),
+      text(JSON.stringify(records), "records"),
     ),
   });
 })();

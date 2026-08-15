@@ -56,7 +56,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | OP-01 | 一键启动 | all-in-one、cluster 配置和 `npm run test:runtime` 已有 | 新机器按教程可启动完整 Starter，不手工改十几个文件 |
 | OP-02 | 配置与代码生成 | Luban、Proto、Native codegen 已有 | 修改技能/道具/任务只改 Model、Hotfix 或配置源，再执行明确命令 |
 | OP-03 | 日志、指标、健康检查 | Runtime 日志和 Prometheus/Grafana 已有 | Starter 能看到登录、进图、战斗、DBProxy和队列错误 |
-| OP-04 | 故障恢复 | DBProxy 单节点恢复已有；节点接管未完成 | 明确区分可恢复快照、关键事务和临时运行态；故障后有安全结果 |
+| OP-04 | 故障恢复 | DBProxy `v0.5.0` 多Endpoint、双实例基础和多记录事务已接入；TiangZ端到端故障矩阵待补 | 明确区分可恢复快照、关键事务和临时运行态；连接中断、提交后丢响应和备用节点接管后有安全结果 |
 | OP-05 | 真实业务压测 | 压测工具和历史基线已有 | 等 Starter 链路固定后，使用同一场景做无业务/完整业务 A/B |
 
 ## 标准演示脚本

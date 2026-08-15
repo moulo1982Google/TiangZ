@@ -55,6 +55,10 @@ pub struct ProcessPersistenceConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessDbProxyConfig {
     pub endpoint: String,
+    /// 首地址不可用时按顺序尝试这些地址；空数组保持单Endpoint兼容行为。
+    /// Ordered failover addresses; an empty list preserves single-endpoint compatibility.
+    #[serde(default, alias = "endpoints")]
+    pub failover_endpoints: Vec<String>,
     /// 配置只保存环境变量名，令牌本身不得进入JSON、V8或日志。
     /// Only the environment-variable name is configured; the token never enters JSON, V8, or logs.
     #[serde(default = "default_dbproxy_auth_token_env")]
@@ -67,6 +71,20 @@ pub struct ProcessDbProxyConfig {
     pub request_timeout_ms: u64,
     #[serde(default = "default_dbproxy_max_frame_bytes")]
     pub max_frame_bytes: usize,
+}
+
+impl ProcessDbProxyConfig {
+    /// 返回去重后的候选地址，首地址始终保持优先。
+    /// Returns deduplicated candidates while keeping the primary endpoint first.
+    pub fn endpoint_candidates(&self) -> Vec<String> {
+        let mut candidates = Vec::with_capacity(1 + self.failover_endpoints.len());
+        for endpoint in std::iter::once(&self.endpoint).chain(self.failover_endpoints.iter()) {
+            if !candidates.iter().any(|item| item == endpoint) {
+                candidates.push(endpoint.clone());
+            }
+        }
+        candidates
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -778,8 +796,20 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         bail!("process scheduling.eventQueueCapacity must be between 64 and 65536");
     }
     if let Some(db_proxy) = &config.process.persistence.db_proxy {
-        if db_proxy.endpoint.trim().is_empty() || db_proxy.endpoint.len() > 512 {
-            bail!("process persistence.dbProxy.endpoint must contain 1..=512 bytes");
+        let candidates = std::iter::once(&db_proxy.endpoint)
+            .chain(db_proxy.failover_endpoints.iter())
+            .collect::<Vec<_>>();
+        if candidates.is_empty() || candidates.len() > 8 {
+            bail!("process persistence.dbProxy must contain 1..=8 endpoints");
+        }
+        let mut endpoint_names = HashSet::new();
+        for endpoint in candidates {
+            if endpoint.trim().is_empty() || endpoint.len() > 512 {
+                bail!("process persistence.dbProxy endpoints must contain 1..=512 bytes");
+            }
+            if !endpoint_names.insert(endpoint) {
+                bail!("process persistence.dbProxy contains duplicate endpoint {endpoint}");
+            }
         }
         if db_proxy.auth_token_env.trim().is_empty() || db_proxy.auth_token_env.len() > 128 {
             bail!("process persistence.dbProxy.authTokenEnv must contain 1..=128 bytes");
@@ -1094,11 +1124,50 @@ mod tests {
         .unwrap();
         let db_proxy = process.persistence.db_proxy.unwrap();
         assert_eq!(db_proxy.endpoint, "127.0.0.1:7800");
+        assert!(db_proxy.failover_endpoints.is_empty());
         assert_eq!(db_proxy.auth_token_env, "TIANGZ_DBPROXY_AUTH_TOKEN");
         assert_eq!(db_proxy.client_pool_size, 8);
         assert_eq!(db_proxy.connect_timeout_ms, 5_000);
         assert_eq!(db_proxy.request_timeout_ms, 9_000);
         assert_eq!(db_proxy.max_frame_bytes, 8 * 1024 * 1024);
+    }
+
+    #[test]
+    fn parses_dbproxy_failover_endpoints_and_legacy_endpoints_alias() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "persistence": {
+                    "dbProxy": {
+                        "endpoint": "127.0.0.1:7800",
+                        "failoverEndpoints": ["127.0.0.1:7801"]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let db_proxy = process.persistence.db_proxy.unwrap();
+        assert_eq!(
+            db_proxy.endpoint_candidates(),
+            vec!["127.0.0.1:7800", "127.0.0.1:7801"]
+        );
+
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "persistence": {
+                    "dbProxy": {
+                        "endpoint": "127.0.0.1:7800",
+                        "endpoints": ["127.0.0.1:7801"]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            process.persistence.db_proxy.unwrap().failover_endpoints,
+            vec!["127.0.0.1:7801"]
+        );
     }
 
     #[test]
