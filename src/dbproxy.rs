@@ -729,7 +729,7 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
         expectedRevision: String(write.expectedRevision),
         payload: Array.from(bytes(write.payload, "payload")),
         updatedAtUnixMs: text(String(write.updatedAtUnixMs), "updatedAtUnixMs"),
-      })), "writes"),
+      }))), "writes"),
       bytes(request.result, "result"),
     ),
     loadMultiTransaction: (operationId, records) => core.ops.op_host_dbproxy_load_multi_transaction(
