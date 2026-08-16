@@ -1138,8 +1138,14 @@ async function verifyMonsterLifecycle(
   const playerHpBeforeThreat = playerCurrentHp ?? enterMap.entities
     .find((entity) => entity.unitId === enterMap.unitId)
     ?.numerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
+  const playerAttack = enterMap.entities
+    .find((entity) => entity.unitId === enterMap.unitId)
+    ?.numerics.find((numeric) => numeric.numericType === NumericType.Attack)?.value;
   if (playerHpBeforeThreat === undefined) {
     throw new Error("map2 snapshot did not include the player's CurrentHp");
+  }
+  if (playerAttack === undefined || playerAttack <= 0n) {
+    throw new Error(`map2 snapshot did not include a positive player's Attack: ${playerAttack}`);
   }
   // 被动怪在没有仇恨时必须保持待机；不能因为收到一次攻击事件就直接扣玩家血。
   // A passive monster must stay idle without threat; receiving an attack event alone
@@ -1154,7 +1160,7 @@ async function verifyMonsterLifecycle(
   if (monsterHpAfterAutoAttack <= 0n) {
     throw new Error(`training dummy HP after auto attack must be positive: ${monsterHpAfterAutoAttack}`);
   }
-  const expectedHits = Number((monsterHpAfterAutoAttack + 4n) / 5n);
+  const expectedHits = Number((monsterHpAfterAutoAttack + playerAttack - 1n) / playerAttack);
   let deathStateFrame: Promise<Uint8Array> | undefined;
   for (let hit = 1; hit <= expectedHits; hit += 1) {
     // 最后一击前监听死亡状态；收到alive=false后再观察尸体的短窗口保留。
@@ -1166,12 +1172,11 @@ async function verifyMonsterLifecycle(
     const response = decodeAttackMonsterFrame(await gate.request(
       buildAttackMonsterPacket(nextRpcId++, { monsterId: monster.unitId }),
     ));
-    const expectedRemainingHp = monsterHpAfterAutoAttack - BigInt(hit * 5) > 0n
-      ? monsterHpAfterAutoAttack - BigInt(hit * 5)
+    const previousRemainingHp = monsterHpAfterAutoAttack - BigInt(hit - 1) * playerAttack;
+    const expectedDamage = previousRemainingHp > playerAttack ? playerAttack : previousRemainingHp;
+    const expectedRemainingHp = previousRemainingHp - expectedDamage > 0n
+      ? previousRemainingHp - expectedDamage
       : 0n;
-    const expectedDamage = monsterHpAfterAutoAttack - BigInt((hit - 1) * 5) > 5n
-      ? 5n
-      : monsterHpAfterAutoAttack - BigInt((hit - 1) * 5);
     if (
       response.body.error ||
       response.body.monsterId !== monster.unitId ||
