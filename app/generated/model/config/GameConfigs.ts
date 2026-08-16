@@ -74,7 +74,7 @@ interface GameConfigSnapshot {
   readonly QuestObjectiveConfig: ConfigTable<game.QuestObjectiveConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "a98e136a4e0e2ea2ac913953557c7235c9b6ceaac78188d4fbe9c77ad5c5a744";
+export const GameConfigSchemaFingerprint = "9498fdcc690c674ba650787c30f528dc2912a9342289f41e3fc9934328e7aed6";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;

@@ -155,17 +155,17 @@ const result = await mapClient.lootMonster({
   monsterId: corpseUnitId,
   operationId: CreateOperationId("loot"),
 });
-applyItemSnapshots(result.items);
+for (const item of result.items) applyItemChanged(item);
 applyQuestSnapshots(result.quests);
 ```
 
-任务掉落行只对已经接取且仍有剩余数量的`CollectItem`任务可见。没有接任务、已经达到要求数量、或同一账号已经拾取过该行时，服务端返回“没有可拾取掉落”，但不删除尸体上的任务掉落；其他有资格的玩家仍可拾取。普通掉落在本Demo中是全局一次性领取，任务掉落按账号记录领取状态。Cocos3D中选中死亡怪物后会显示尸体状态和拾取按钮，按钮距离、资格、幂等和持久化仍以服务端为准。
+任务掉落行只对已经接取且仍有剩余数量的`CollectItem`任务可见。没有接任务、已经达到要求数量、或同一账号已经拾取过该行时，服务端返回“没有可拾取掉落”，但不删除尸体上的任务掉落；其他有资格的玩家仍可拾取。普通掉落在本Demo中归第一次有效攻击者账号，任务掉落按账号记录领取状态。Cocos3D中选中死亡怪物后会显示尸体状态和拾取按钮，按钮距离、资格、幂等和持久化仍以服务端为准。
 
 本例的1101是静态任务道具，因此尸体只保存配置ID和数量，永久ItemId在拾取事务确认后生成。带随机词条、耐久或绑定状态的动态道具必须改用ItemInstance数据，不能把它们错误地压缩成一个静态配置ID。
 
 ## Cocos3D背包入口
 
-Cocos3D的背包是服务端库存快照的展示层，不是第二份客户端背包。进入地图时读取`G2C_EnterMap.items`，之后只接受`G2C_ItemChanged`更新；每个格子按`ItemSnapshot.itemId`展示实例数量，并从客户端`ItemConfig`读取名称、说明和图标。数量为0的实例从界面移除，但客户端不会自行创建、删除或预扣道具。
+Cocos3D的背包是服务端库存快照的展示层，不是第二份客户端背包。进入地图、重连或再次进图时读取`G2C_EnterMap.items`全量快照，运行期间接受`G2C_ItemChanged`增量；拾取RPC只返回本次受影响的`items`，客户端按`ItemSnapshot.version`合并RPC和Push的重复结果。每个格子按`ItemSnapshot.itemId`展示实例数量，并从客户端`ItemConfig`读取名称、说明和图标。数量为0的实例从界面移除，但客户端不会自行创建、删除或预扣道具。
 
 - 桌面端点击右侧“背包”或按`B`打开，移动端点击右侧“包”按钮打开。
 - `useEffect != 0`的道具显示“使用”按钮；任务道具等不可使用道具仍显示数量和说明，但不会伪造使用入口。

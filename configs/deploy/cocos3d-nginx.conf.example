@@ -38,3 +38,112 @@ server {
         add_header Pragma "no-cache" always;
     }
 }
+
+# 外网游戏入口只暴露 Nginx 端口，TiangZ 进程监听独立的回环端口。
+# The public game ports terminate at Nginx; TiangZ listens on separate loopback ports.
+#
+# 这样不会出现 Nginx 和 TiangZ 同时抢占同一个端口的问题。当前外网客户端使用
+# WebSocket，HTTP 反向代理可以透传升级握手和后续二进制帧；内部 Process 之间
+# 仍然直接使用 127.0.0.1 的 inner TCP，不会绕过 Nginx。
+#
+# Public -> loopback:
+#   17000 -> 27000  login_mgr
+#   17001 -> 27001  login_1
+#   17002 -> 27002  login_2
+#   17201 -> 27201  gate_1
+#   17202 -> 27202  gate_2
+
+server {
+    listen 17000;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:27000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_connect_timeout 5s;
+        proxy_buffering off;
+    }
+}
+
+server {
+    listen 17001;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:27001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_connect_timeout 5s;
+        proxy_buffering off;
+    }
+}
+
+server {
+    listen 17002;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:27002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_connect_timeout 5s;
+        proxy_buffering off;
+    }
+}
+
+server {
+    listen 17201;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:27201;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_connect_timeout 5s;
+        proxy_buffering off;
+    }
+}
+
+server {
+    listen 17202;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:27202;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_connect_timeout 5s;
+        proxy_buffering off;
+    }
+}

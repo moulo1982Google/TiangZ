@@ -18,6 +18,7 @@ import type {
 
 export interface PlayerSaveOverrides {
   readonly numerics?: PlayerSaveData["player"]["numerics"];
+  readonly gold?: bigint;
   readonly items?: PlayerSaveData["items"];
   readonly buffs?: PlayerSaveData["buffs"];
   readonly skill?: PlayerSaveData["skill"];
@@ -90,6 +91,7 @@ export class PlayerPersistenceComponent extends Component<[
     return {
       player: {
         ...persistent,
+        gold: overrides.gold ?? snapshot.gold,
         numerics: overrides.numerics ?? numerics.map(({ numericType, value }) => ({ numericType, value })),
       },
       items: overrides.items ?? player.GetComponent(ItemComponent).Snapshot(),

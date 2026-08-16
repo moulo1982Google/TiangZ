@@ -487,7 +487,7 @@ Phase 5计划：
 
 ## 最新效果系统校准
 
-Phase 4.4现在已经包含Action/Buff、Luban SkillConfig/SkillEffectConfig、七技能Cast和3006/3007引导闭环；后文“Buff、Cast或技能表尚未开始”的历史描述均以本节、[Action与Buff设计](../design/action-buff.md)和[技能系统设计](../design/skill-system.md)为准。开发人员应先组合现有Action、Buff策略和SkillEffect，不要为每个技能新写Handler，也不要把Buff效果反向塞进Combat入口。3007精神鞭笞由服务端10Hz推进，移动取消；只有Combat确认没有护盾吸收的受击才将结束时间提前800毫秒，真言术·盾吸收的攻击不缩短引导；Cocos3D连线只是本地表现。
+Phase 4.4现在已经包含Action/Buff、Luban SkillConfig/SkillEffectConfig、七技能Cast和3006/3007持续效果闭环；后文“Buff、Cast或技能表尚未开始”的历史描述均以本节、[Action与Buff设计](../design/action-buff.md)和[技能系统设计](../design/skill-system.md)为准。开发人员应先组合现有Action、Buff策略和SkillEffect，不要为每个技能新写Handler，也不要把Buff效果反向塞进Combat入口。3006恢复是瞬发AddBuff，8次治疗由Buff Tick负责；3007精神鞭笞由服务端10Hz推进，移动取消；只有Combat确认没有护盾吸收的受击才将结束时间提前800毫秒，真言术·盾吸收的攻击不缩短引导；Cocos3D连线只是本地表现。
 
 ## C# Client SDK与Unity边界
 
@@ -501,9 +501,11 @@ Unity表现层使用`Vector3`、Transform和Camera，协议及服务端仍使用
 
 当前Demo新建玩家的背包为空，`ItemComponentSystem`不再通过`Awake`发放测试药水；新玩家从NPC领取并完成Starter任务5001后获得`1001×10`，完成后续任务5005后获得`1002×10`。传送、断线重连和反序列化都只以`ItemSnapshot`恢复，不会重复发放。1001和1002各有30秒配置CD，并与技能共享1秒玩家GCD；服务端原子提交deadline，跨地图快照保留，客户端只绘制返回时间。道具使用RPC成功时，`M2C_UseItem.buff`会回显本次新增的公开Buff给使用者；AOI仍通过`G2C_BuffAdded`给其他观察者广播，客户端两条路径按实例ID幂等合并。
 
-`ItemConfig.icon`是客户端字段，值是相对Cocos `assets/resources`且不含扩展名的资源键，例如`UI/Icons/Items/1001`。Cocos3D Web快捷栏固定为`1=平A`、`2=1001`、`3=1002`，初始数量来自`G2C_EnterMap.items`，使用后的数量来自不可覆盖的`G2C_ItemChanged`；客户端不得在按键时先行扣数量。快捷栏槽位只绑定`ItemConfigId`，数量归零时服务端删除背包中的`Item`子实体，客户端移除该`ItemId`快照但保留快捷栏槽并显示`×0`；之后拾取或奖励同配置道具时，即使生成了新的`ItemId`，槽位也会按配置ID重新汇总并恢复可用。以后增加快捷栏时继续按`configId -> ItemConfig -> icon`解析，不能把道具图片路径硬编码到表现脚本。
+`ItemConfig.icon`是客户端字段，值是相对Cocos `assets/resources`且不含扩展名的资源键，例如`UI/Icons/Items/1001`。Cocos3D Web快捷栏固定为`1=平A`、`2=1001`、`3=1002`，初始数量来自`G2C_EnterMap.items`，使用和拾取后的数量来自不可覆盖的`G2C_ItemChanged`；拾取RPC只返回受影响的`items`，客户端按`ItemSnapshot.version`合并RPC与Push，不能把整包背包放进每次拾取回包。客户端不得在按键时先行扣数量。快捷栏槽位只绑定`ItemConfigId`，数量归零时服务端删除背包中的`Item`子实体，客户端移除该`ItemId`快照但保留快捷栏槽并显示`×0`；之后拾取或奖励同配置道具时，即使生成了新的`ItemId`，槽位也会按配置ID重新汇总并恢复可用。以后增加快捷栏时继续按`configId -> ItemConfig -> icon`解析，不能把道具图片路径硬编码到表现脚本。
 
 Cocos3D还提供完整背包面板：桌面端点击“背包”或按`B`，移动端点击“包”按钮；面板按`ItemSnapshot.itemId`展示所有有库存的道具，名称、说明和图标来自客户端冷配置，使用按钮统一调用现有`MapClient.useItem`。面板只刷新服务端快照，不维护第二份库存；数量为0时等待`ItemSnapshot`后移除，触摸事件由HUD消费，不能穿透成地面寻路。其他客户端可以采用自己的背包UI，但必须保留同样的服务端权威和`operationId`边界。
+
+运行期间如果客户端带着过期ItemId或数量请求使用、购买或出售道具，服务端可以在业务错误响应里附带可选`inventory_recovery`。客户端先用其中的`InventorySnapshot.items`整体替换本地背包，再显示原错误；包装存在但items为空也必须清空本地旧数据。正常成功响应仍只返回受影响Item增量，不能把错误修复机制变成每次操作的全量广播。
 
 Cocos3D玩家Unit保持“中心点实体根节点 + 可替换Visual子树”的边界。当前`BlueChibi.glb`由Blender脚本生成，导入后是包含`Idle/Walk`的骨骼Prefab；`PlayerCharacterVisual3D`只消费是否移动的表现状态，并将脚底原点相对实体中心下移0.9米。动画、模型和方块加载占位都不得修改Unit坐标、碰撞、AOI或权威Yaw。生成命令是`npm run asset:cocos3d:blue-chibi`，攻击动画仍属后续表现工作。
 

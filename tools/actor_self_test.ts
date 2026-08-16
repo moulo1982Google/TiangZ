@@ -28,6 +28,7 @@ import { IsDerivedNumericType, NumericType } from "../app/model/mmorpg/numeric/N
 import { Item } from "../app/model/mmorpg/item/Item";
 import { ItemComponent } from "../app/model/mmorpg/item/ItemComponent";
 import { SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
+import { CurrencyComponent } from "#tiangz/model";
 import { TimeSystem } from "../app/core/runtime/TimeSystem";
 import { BinaryWriter } from "../app/core/protocol/binary";
 import { packFrame } from "../app/core/protocol/registry";
@@ -66,6 +67,7 @@ async function main(): Promise<void> {
     await import("../app/hotfix/mmorpg/item/ItemSystem");
     await import("../app/hotfix/mmorpg/item/ItemComponentSystem");
     await import("../app/hotfix/mmorpg/skill/SkillComponentSystem");
+    await import("../app/hotfix/mmorpg/currency/CurrencyComponentSystem");
     HotfixSystem.Commit();
     await Promise.resolve();
     testGeneratedNativeHandleScalarAccess();
@@ -487,6 +489,7 @@ async function testPlayerUnitComponents(): Promise<void> {
     [NumericType.MoveSpeedBase]: 10_000n,
   });
   player.AddComponent(UnitGateComponent, "gate-1");
+  player.AddComponent(CurrencyComponent, 0n);
   player.AddComponent(SkillComponent);
   const firstInstanceId = player.InstanceId;
 
@@ -577,11 +580,15 @@ async function testPlayerUnitComponents(): Promise<void> {
   const { SkillComponentSystem } = await import(
     "../app/hotfix/mmorpg/skill/SkillComponentSystem"
   );
+  const { CurrencyComponentSystem } = await import(
+    "../app/hotfix/mmorpg/currency/CurrencyComponentSystem"
+  );
   systemFor(NumericComponent)(NumericComponentSystem);
   systemFor(Item)(ItemSystem);
   systemFor(ItemComponent)(ItemComponentSystem);
   systemFor(MonsterUnit)(MonsterUnitSystem);
   systemFor(SkillComponent)(SkillComponentSystem);
+  systemFor(CurrencyComponent)(CurrencyComponentSystem);
   HotfixSystem.Commit();
   assert.equal(
     player.Move({ inputX: 0, inputZ: 1, sequence: 6 }),
@@ -612,6 +619,7 @@ async function testPlayerUnitComponents(): Promise<void> {
     [NumericType.MoveSpeedBase]: 10_000n,
   });
   recreated.AddComponent(UnitGateComponent, "gate-2");
+  recreated.AddComponent(CurrencyComponent, 0n);
   assert.notEqual(recreated.InstanceId, firstInstanceId);
   assert.equal(host.despawnActor("map:1", 1000), true);
   assert.equal(units.Get(1000), undefined);

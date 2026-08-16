@@ -12,6 +12,7 @@ import {
   type ItemSnapshot,
   type M2C_UseItem,
   NumericType,
+  NumericComponent,
   PlayerPersistenceComponent,
   RpcError,
   type PlayerSaveData,
@@ -29,6 +30,12 @@ const RECEIPT_VERSION = 1;
 
 type ItemUseEffectPlan =
   | { readonly kind: "heal"; readonly healing: HealingPlan }
+  | {
+    readonly kind: "numeric";
+    readonly numericType: number;
+    readonly baseValue: bigint;
+    readonly nextValue: bigint;
+  }
   | { readonly kind: "buff"; readonly buff: BuffTransferState };
 
 export interface ItemUseTransactionReceipt {
@@ -93,6 +100,21 @@ export function PlanItemUseTransaction(
       ? { numericType: entry.numericType, value: healing.nextCurrentHp }
       : entry);
     effect = { kind: "heal", healing };
+  } else if (action.type === ActionType.ChangeNumeric) {
+    if (action.parameters.length !== 2) throw new Error("transactional ChangeNumeric expects type and delta");
+    const numericType = toSafeNumber(action.parameters[0], "numeric type");
+    if (numericType !== NumericType.CurrentMp) {
+      throw new Error(`transactional item ChangeNumeric only supports CurrentMp: ${numericType}`);
+    }
+    const delta = action.parameters[1];
+    if (delta <= 0n) throw new Error(`transactional item mana delta must be positive: ${delta}`);
+    const baseValue = requirePersistentNumeric(base.player.numerics, NumericType.CurrentMp);
+    const maxValue = requirePersistentNumeric(base.player.numerics, NumericType.MaxMp);
+    const nextValue = baseValue + delta > maxValue ? maxValue : baseValue + delta;
+    numerics = base.player.numerics.map((entry) => entry.numericType === NumericType.CurrentMp
+      ? { numericType: entry.numericType, value: nextValue }
+      : entry);
+    effect = { kind: "numeric", numericType, baseValue, nextValue };
   } else if (action.type === ActionType.AddBuff) {
     if (action.parameters.length !== 1) throw new Error("transactional AddBuff expects one parameter");
     const buffConfigId = toConfigId(action.parameters[0]);
@@ -174,6 +196,8 @@ export function ApplyItemUseTransaction(
     const combat = unit.GetComponent(CombatComponent);
     if (inventoryPlan) combat.CommitHealingPlan(receipt.effect.healing);
     else combat.ApplyCommittedHealing(receipt.effect.healing);
+  } else if (receipt.effect.kind === "numeric") {
+    applyCommittedNumeric(unit, receipt.effect);
   } else {
     unit.GetComponent(BuffComponent).ApplyCommittedBuff(receipt.effect.buff);
   }
@@ -231,11 +255,56 @@ export function DecodeItemUseReceipt(payload: Uint8Array): ItemUseTransactionRec
     typeof receipt.consumedItem?.itemId !== "bigint" ||
     receipt.consumedItem.itemId <= 0n ||
     !receipt.cooldown?.result?.accepted ||
-    (receipt.effect?.kind !== "heal" && receipt.effect?.kind !== "buff")
+    (receipt.effect?.kind !== "heal" && receipt.effect?.kind !== "numeric" && receipt.effect?.kind !== "buff")
   ) {
     throw new Error("invalid item-use transaction receipt");
   }
+  if (receipt.effect.kind === "numeric" && (
+    !Number.isSafeInteger(receipt.effect.numericType) ||
+    typeof receipt.effect.baseValue !== "bigint" ||
+    typeof receipt.effect.nextValue !== "bigint"
+  )) {
+    throw new Error("invalid numeric item-use transaction receipt");
+  }
   return receipt;
+}
+
+/**
+ * 回放已提交的数值道具；只接受base到next，后续战斗或回蓝已经改过的值不能被旧回执覆盖。
+ * Replays a committed numeric item effect only from base to next; later combat
+ * or regeneration changes must never be overwritten by an old receipt.
+ */
+function applyCommittedNumeric(
+  unit: PlayerUnit,
+  effect: Extract<ItemUseEffectPlan, { readonly kind: "numeric" }>,
+): void {
+  const numeric = unit.GetComponent(NumericComponent);
+  const current = numeric[effect.numericType];
+  if (current === effect.baseValue) {
+    if (effect.nextValue !== current) numeric[effect.numericType] = effect.nextValue;
+    return;
+  }
+  if (current === effect.nextValue) return;
+  // 事务已在DBProxy提交；本地若已进入后续状态，只保留后续状态，等待下一次完整快照校正。
+  // The transaction is durable; if local state already advanced, preserve it
+  // and let the next complete snapshot reconcile any remaining drift.
+}
+
+function requirePersistentNumeric(
+  values: readonly { readonly numericType: number; readonly value: bigint }[],
+  numericType: number,
+): bigint {
+  const value = values.find((entry) => entry.numericType === numericType)?.value;
+  if (value === undefined) throw new Error(`missing persistent numeric: ${numericType}`);
+  return value;
+}
+
+/** 把Action里的bigint参数安全转换为枚举/类型ID；不能用Number直接截断大整数。 / Safely converts a bigint Action parameter to an enum or type ID without Number precision loss. */
+function toSafeNumber(value: bigint, name: string): number {
+  if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`${name} must be a positive safe integer: ${value}`);
+  }
+  return Number(value);
 }
 
 function toConfigId(value: bigint): number {

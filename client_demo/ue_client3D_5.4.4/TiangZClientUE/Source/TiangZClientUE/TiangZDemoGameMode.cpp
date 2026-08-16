@@ -562,7 +562,7 @@ FString ATiangZDemoGameMode::SkillName(std::uint32_t SkillId)
     case 3003: return TEXT("惩击");
     case 3004: return TEXT("真言术·盾");
     case 3005: return TEXT("真言术·韧");
-    case 3006: return TEXT("引导治疗");
+    case 3006: return TEXT("恢复");
     default: return FString::Printf(TEXT("Skill#%u"), SkillId);
     }
 }

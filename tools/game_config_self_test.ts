@@ -114,8 +114,17 @@ function main(): void {
       drop.dropTableId,
       drop.itemConfigId,
       drop.questObjectiveId,
+      drop.chancePermille,
     ]),
-    [[1001, 1, 1001, 0], [1002, 1, 1101, 5106], [2001, 2, 1002, 0]],
+    [
+      [1001, 1, 1201, 0, 800],
+      [1002, 1, 1001, 0, 150],
+      [1003, 1, 1002, 0, 50],
+      [1004, 1, 1101, 5106, 1000],
+      [2001, 2, 1201, 0, 800],
+      [2002, 2, 1001, 0, 150],
+      [2003, 2, 1002, 0, 50],
+    ],
   );
   assert.deepEqual(
     [...serverConfigs.QuestConfig.GetAll()]
@@ -148,6 +157,14 @@ function main(): void {
   assert.deepEqual(serverConfigs.ItemConfig.Get(1001).useParams, [6, 150]);
   assert.equal(serverConfigs.ItemConfig.Get(1001).cooldownMs, 30_000);
   assert.equal(serverConfigs.ItemConfig.Get(1001).globalCooldownMs, 1_000);
+  assert.equal(serverConfigs.ItemConfig.Get(1001).sellPrice, 20);
+  assert.equal(serverConfigs.ItemConfig.Get(1002).sellPrice, 50);
+  assert.equal(serverConfigs.ItemConfig.Get(1003).name, "小型法力药水");
+  assert.equal(serverConfigs.ItemConfig.Get(1003).useEffect, 2);
+  assert.deepEqual(serverConfigs.ItemConfig.Get(1003).useParams, [1, 2, 150]);
+  assert.equal(serverConfigs.ItemConfig.Get(1003).buyPrice, 50);
+  assert.equal(serverConfigs.ItemConfig.Get(1003).sellPrice, 20);
+  assert.equal(serverConfigs.ItemConfig.Get(1201).sellPrice, 10);
   assert.equal(clientConfigs.ItemConfig.Get(1001).icon, "UI/Icons/Items/1001");
   assert.equal(serverConfigs.ItemConfig.Get(1002).useEffect, 1);
   assert.deepEqual(serverConfigs.ItemConfig.Get(1002).useParams, [2001]);
@@ -177,6 +194,11 @@ function main(): void {
   assert.equal(fortitude.conflictPolicy, BuffConflictPolicy.HigherWins);
   assert.equal(fortitude.conflictPriority, 1);
   assert.deepEqual(fortitude.addActionParams, [10_002, 500]);
+  const recovery = serverConfigs.BuffConfig.Get(2002);
+  assert.equal(recovery.durationSeconds, 24);
+  assert.equal(recovery.tickIntervalMs, 3_000);
+  assert.equal(recovery.tickActionType, 6);
+  assert.deepEqual(recovery.tickActionParams, [10]);
   const frostbolt = serverConfigs.SkillConfig.Get(3001);
   assert.equal(frostbolt.targetRelation, SkillTargetRelation.Enemy);
   assert.equal(frostbolt.delivery, SkillDelivery.Projectile);
@@ -186,6 +208,16 @@ function main(): void {
   assert.equal(frostbolt.rangeMeters, 30);
   assert.equal(serverConfigs.SkillConfig.Get(3002).rangeMeters, 10);
   assert.equal(serverConfigs.SkillConfig.Get(3003).rangeMeters, 30);
+  const recoverySkill = serverConfigs.SkillConfig.Get(3006);
+  assert.equal(recoverySkill.name, "恢复");
+  assert.equal(recoverySkill.castTimeMs, 0);
+  assert.equal(recoverySkill.channelTickMs, 0);
+  assert.equal(recoverySkill.channelTicks, 0);
+  const recoveryEffects = serverConfigs.SkillEffectConfig.GetAll().filter((effect) => effect.skillId === 3006);
+  assert.equal(recoveryEffects.length, 1);
+  assert.equal(recoveryEffects[0].target, SkillEffectTarget.Caster);
+  assert.equal(recoveryEffects[0].actionType, 2);
+  assert.deepEqual(recoveryEffects[0].actionParams, [2002]);
   const frostboltEffects = serverConfigs.SkillEffectConfig.GetAll()
     .filter((effect) => effect.skillId === frostbolt.id)
     .sort((left, right) => left.order - right.order);

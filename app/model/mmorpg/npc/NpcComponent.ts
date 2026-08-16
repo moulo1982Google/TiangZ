@@ -8,11 +8,16 @@ export const STARTER_NPC_UNIT_ID = 0x4000_0001;
 export const STARTER_NPC_CONFIG_ID = 9001;
 export const STARTER_NPC_NAME = "任务使者";
 export const STARTER_NPC_QUEST_CONFIG_IDS = [5001, 5002, 5003, 5004, 5005, 5006] as const;
+export const STARTER_SHOP_NPC_UNIT_ID = 0x4000_0002;
+export const STARTER_SHOP_NPC_CONFIG_ID = 9002;
+export const STARTER_SHOP_NPC_NAME = "杂货商";
 export const STARTER_NPC_INTERACT_RANGE_METERS = 5;
 
 export interface NpcComponent {
   Get(npcUnitId: number): NpcUnit | undefined;
   GetAll(): readonly NpcUnit[];
+  /** 在PlayerUnit有序mailbox内校验商店归属、距离和可交互状态。 / Validates shop ownership, distance, and availability in the ordered PlayerUnit mailbox. */
+  ValidateShopInteraction(player: PlayerUnit, npcUnitId: number): void;
   /** 在PlayerUnit有序mailbox内调用，校验NPC归属、任务提供关系和距离。 / Call inside the PlayerUnit ordered mailbox to validate ownership, quest offering, and distance. */
   ValidateQuestInteraction(player: PlayerUnit, npcUnitId: number, questConfigId: number): void;
 }

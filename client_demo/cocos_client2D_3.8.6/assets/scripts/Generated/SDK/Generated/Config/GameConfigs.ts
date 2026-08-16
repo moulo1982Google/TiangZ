@@ -135,6 +135,20 @@ const RAW_DATA: Record<string, unknown> = {
         10002,
         -500
       ]
+    },
+    {
+      "id": 2002,
+      "name": "恢复",
+      "duration_seconds": 24,
+      "tick_interval_ms": 3000,
+      "add_action_type": 0,
+      "add_action_params": [],
+      "tick_action_type": 6,
+      "tick_action_params": [
+        10
+      ],
+      "remove_action_type": 0,
+      "remove_action_params": []
     }
   ],
   "game_tbitemconfig": [
@@ -150,7 +164,9 @@ const RAW_DATA: Record<string, unknown> = {
       ],
       "icon": "UI/Icons/Items/1001",
       "cooldown_ms": 30000,
-      "global_cooldown_ms": 1000
+      "global_cooldown_ms": 1000,
+      "buy_price": 50,
+      "sell_price": 20
     },
     {
       "id": 1002,
@@ -163,7 +179,9 @@ const RAW_DATA: Record<string, unknown> = {
       ],
       "icon": "UI/Icons/Items/1002",
       "cooldown_ms": 30000,
-      "global_cooldown_ms": 1000
+      "global_cooldown_ms": 1000,
+      "buy_price": 100,
+      "sell_price": 50
     },
     {
       "id": 1101,
@@ -174,7 +192,39 @@ const RAW_DATA: Record<string, unknown> = {
       "use_params": [],
       "icon": "",
       "cooldown_ms": 0,
-      "global_cooldown_ms": 0
+      "global_cooldown_ms": 0,
+      "buy_price": 0,
+      "sell_price": 0
+    },
+    {
+      "id": 1201,
+      "name": "破旧布料",
+      "description": "怪物掉落的杂物，可卖给杂货商",
+      "max_stack": 99,
+      "use_effect": 0,
+      "use_params": [],
+      "icon": "",
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 0,
+      "buy_price": 0,
+      "sell_price": 10
+    },
+    {
+      "id": 1003,
+      "name": "小型法力药水",
+      "description": "恢复少量法力值",
+      "max_stack": 99,
+      "use_effect": 2,
+      "use_params": [
+        1,
+        2,
+        150
+      ],
+      "icon": "",
+      "cooldown_ms": 30000,
+      "global_cooldown_ms": 1000,
+      "buy_price": 50,
+      "sell_price": 20
     }
   ],
   "game_tbmapconfig": [
@@ -436,10 +486,10 @@ const RAW_DATA: Record<string, unknown> = {
     },
     {
       "id": 3006,
-      "name": "引导治疗",
-      "description": "引导3秒，每秒恢复30点生命；移动会打断引导。",
+      "name": "恢复",
+      "description": "瞬发，为自己添加持续24秒的恢复Buff，每3秒恢复10点生命，共8次。",
       "target_relation": 2,
-      "cast_time_ms": 3000,
+      "cast_time_ms": 0,
       "cooldown_ms": 6000,
       "global_cooldown_ms": 1000,
       "range_meters": 15,
@@ -503,7 +553,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "55f67df0eee7985695cd92263cbdc529543444cbf88e59fad3931be6698ca7ce";
+export const GameConfigFingerprint = "962e52503d6fe5b4de6ec126509886fe0873a15da0473af0ca82f21f599c2b37";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

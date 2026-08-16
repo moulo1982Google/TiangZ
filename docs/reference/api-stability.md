@@ -17,6 +17,14 @@ cargo run -- --version
 npm run verify:release
 ```
 
+开发阶段不要求锁文件立即同步。可以运行下面的报告命令提前发现漂移；命令会输出 `WARN`，但不会让开发构建失败：
+
+```bash
+npm run verify:locks:warn
+```
+
+它适合放在开发 CI 中作为可见告警。真正发布前仍必须运行 `npm run verify:release`，由发布门禁强制确认版本、协议、Stable API 和依赖锁一致。
+
 该命令通过`TIANGZ_LOCK_VERSIONS=1`开启项目版本、Core API快照和协议 opcode/schema锁。平时不要把更新锁文件当作日常开发步骤；网络运行时仍必须校验Protocol Fingerprint，因为那是连接兼容性而不是产品版本冻结。
 
 Phase 3.10对应目标版本`0.3.10`。开发阶段使用SemVer预发布版本：

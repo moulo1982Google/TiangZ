@@ -5,7 +5,7 @@
       "sceneType": "LoginMgr",
       "innerIp": "127.0.0.1",
       "outerIp": "14.103.24.32",
-      "port": 17000,
+      "port": 27000,
       "outerPort": 17000,
       "protocol": "auto",
       "audience": "mixed"
@@ -15,7 +15,7 @@
       "sceneType": "Login",
       "innerIp": "127.0.0.1",
       "outerIp": "14.103.24.32",
-      "port": 17001,
+      "port": 27001,
       "outerPort": 17001,
       "protocol": "auto",
       "audience": "mixed"
@@ -25,7 +25,7 @@
       "sceneType": "Login",
       "innerIp": "127.0.0.1",
       "outerIp": "14.103.24.32",
-      "port": 17002,
+      "port": 27002,
       "outerPort": 17002,
       "protocol": "auto",
       "audience": "mixed"
@@ -35,7 +35,7 @@
       "sceneType": "Gate",
       "innerIp": "127.0.0.1",
       "outerIp": "14.103.24.32",
-      "port": 17201,
+      "port": 27201,
       "outerPort": 17201,
       "protocol": "auto",
       "audience": "mixed"
@@ -45,7 +45,7 @@
       "sceneType": "Gate",
       "innerIp": "127.0.0.1",
       "outerIp": "14.103.24.32",
-      "port": 17202,
+      "port": 27202,
       "outerPort": 17202,
       "protocol": "auto",
       "audience": "mixed"

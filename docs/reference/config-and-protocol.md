@@ -170,10 +170,10 @@ Rust Core使用强类型`NativeDataObservabilityConfig`负责字段默认值、�
 | `name` | string | Scene 实例唯一名 |
 | `sceneType` | string | `@entryScene()` 注册类型 |
 | `innerIp` | string | 服务间通信地址；旧配置的 `ip` 仍可读取，但新配置应使用 `innerIp` |
-| `bindIp` | string? | 本机监听地址；省略时使用 `innerIp`，云服务器通常填写 `0.0.0.0` |
+| `bindIp` | string? | 本机监听地址；省略时使用 `innerIp`。外网由 Nginx 代理时填写 `127.0.0.1`；只有服务直接暴露公网端口时才考虑 `0.0.0.0` |
 | `outerIp` | string? | 客户端连接地址；LoginMgr/Login/Gate 返回该地址，省略时使用 `innerIp` |
-| `outerPort` | u16? | 客户端连接端口；省略时使用 `port` |
-| `port` | u16 | 服务监听及内网通信端口 |
+| `outerPort` | u16? | 客户端连接端口；省略时使用 `port`。Nginx 或云 NAT 场景下通常与 `port` 不同 |
+| `port` | u16 | TiangZ 实际监听及内网通信端口；可以和 `outerPort` 不同 |
 | `protocol` | `auto`、`tcp`、`websocket`、`kcp`? | Endpoint 传输协议；默认 `auto`，KCP 需使用 `--features kcp` 构建 |
 | `audience` | `mixed`、`inner`、`outer`? | Endpoint 面向的连接类型；默认 `mixed`，KCP 必须显式选择 `inner` 或 `outer` |
 | `staticMapIds` | `u32[]`? | 仅MapHost使用；启动时通过统一CreateMap创建的静态地图配置ID |

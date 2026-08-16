@@ -121,6 +121,8 @@ export class MapView {
             facing: 0,
             entityType: 1,
             configId: 1,
+            displayName: enterMap.account,
+            shopEnabled: false,
           },
         ];
     const entities = new MapEntityManager(

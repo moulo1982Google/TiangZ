@@ -51,6 +51,7 @@ message M2G_SecondEnterMap // IActorResponse
   repeated QuestSnapshot quests = 11;
   repeated uint32 completed_quest_config_ids = 12;
   uint64 character_id = 13;
+  uint64 gold = 14;
 }
 
 message M2G_EnterMap // IResponse
@@ -70,6 +71,7 @@ message M2G_EnterMap // IResponse
   repeated QuestSnapshot quests = 13;
   repeated uint32 completed_quest_config_ids = 14;
   uint64 character_id = 15;
+  uint64 gold = 16;
 }
 
 //ResponseType M2G_TransferPlayer
@@ -104,6 +106,7 @@ message M2G_TransferPlayer // IActorResponse
   repeated QuestSnapshot quests = 15;
   repeated uint32 completed_quest_config_ids = 16;
   uint64 character_id = 17;
+  uint64 gold = 18;
 }
 
 // @ets.msg protocol=Gate method=MapReady
@@ -200,6 +203,7 @@ message PlayerTransferSnapshot
   // DBProxy乐观并发版本；随玩家迁移，防止目标MapHost用旧快照覆盖新数据。
   uint64 persistence_revision = 20;
   uint64 character_id = 21;
+  uint64 gold = 22;
 }
 
 message MapInstanceSnapshot
@@ -396,6 +400,7 @@ message M2M_CommitPlayerTransferResponse // IResponse
   repeated QuestSnapshot quests = 14;
   repeated uint32 completed_quest_config_ids = 15;
   uint64 character_id = 16;
+  uint64 gold = 17;
 }
 
 //ResponseType M2M_AbortPlayerTransferResponse

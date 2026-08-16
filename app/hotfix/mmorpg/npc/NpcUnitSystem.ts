@@ -17,6 +17,7 @@ export class NpcUnitSystem extends NpcUnit {
     this.npcConfigId = request.npcConfigId;
     this.name = request.name;
     this.questConfigIds = [...request.questConfigIds];
+    this.shopEnabled = request.shopEnabled;
   }
 
   /** 生成AOI进入所需的NPC快照；不暴露Native句柄和服务端交互规则。 / Builds the NPC AOI snapshot without exposing Native handles or server interaction rules. */
@@ -28,6 +29,7 @@ export class NpcUnitSystem extends NpcUnit {
       npcConfigId: this.npcConfigId,
       name: this.name,
       questConfigIds: [...this.questConfigIds],
+      shopEnabled: this.shopEnabled,
       ...position,
       speedCellsPerSecond: native.speedCellsPerSecond,
       facing: native.facing,

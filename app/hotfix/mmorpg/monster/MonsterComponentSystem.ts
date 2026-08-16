@@ -2,6 +2,7 @@ import {
   GameConfigs,
   GameErrCode,
   CombatComponent,
+  CombatStateComponent,
   BuffComponent,
   AutoAttackPhase,
   MapAoiComponent,
@@ -41,12 +42,14 @@ import {
   QuestObjectiveType,
   type LootContainer,
   type LootDrop,
+  CanClaimRegularLoot,
   ToInventoryGrants,
   ToLootDropSnapshots,
   systemFor,
   QuestEvents,
 } from "#tiangz/model";
 import { EvaluateMonsterBehavior } from "./MonsterBehaviorTree";
+import { SelectIndependentLootRows } from "./LootRoll";
 
 const MONSTER_ACTIVE_ACQUIRE_RANGE_METERS = 12;
 const DEMO_PLAYER_CONFIG_ID = 1;
@@ -55,6 +58,8 @@ const MONSTER_ID_MAX = 0xffff_ffff;
 const MONSTER_LOOT_RANGE_METERS = 4;
 const CORPSE_WITH_LOOT_LIFETIME_MS = 5 * 60 * 1_000;
 const EMPTY_CORPSE_LIFETIME_MS = 10 * 1_000;
+const MONSTER_LEASH_RANGE_METERS = 30;
+const MONSTER_SPAWN_ARRIVAL_RANGE_METERS = 0.5;
 const LOOT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 
 /**
@@ -116,7 +121,7 @@ export class MonsterComponentSystem extends MonsterComponent {
       if (native.alive === 0) continue;
       const config = slot.config.monsterConfigId_ref
         ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
-      this.TickMonster(monster, config, now);
+      this.TickMonster(monster, slot, config, now);
     }
   }
 
@@ -187,9 +192,26 @@ export class MonsterComponentSystem extends MonsterComponent {
    */
   InspectLootMonster(player: PlayerUnit, monsterId: number): M2C_InspectLootMonster {
     const { container } = this.RequireLootContainer(player, monsterId);
+    const eligibleDrops = this.SelectLootDrops(container, player, 0, true);
+    this.DomainScene().logger.info("loot inspect resolved", {
+      monsterId,
+      playerAccount: player.Account,
+      playerCharacterId: player.CharacterId.toString(),
+      lootOwnerAccount: container.lootOwnerAccount,
+      corpseDropIds: container.drops.map((drop) => ({
+        dropId: drop.dropId,
+        itemConfigId: drop.configId,
+        count: drop.count,
+        questObjectiveId: drop.questObjectiveId,
+      })),
+      eligibleDropIds: eligibleDrops.map((drop) => drop.dropId),
+      eligibleQuestObjectiveIds: eligibleDrops.map((drop) => drop.questObjectiveId),
+      claimedRegularDropIds: [...container.claimedRegularDropIds],
+      reservedRegularDropIds: [...container.reservedRegularDropIds],
+    });
     return {
       monsterId,
-      drops: ToLootDropSnapshots(this.SelectLootDrops(container, player, 0, true)),
+      drops: ToLootDropSnapshots(eligibleDrops),
     };
   }
 
@@ -210,9 +232,9 @@ export class MonsterComponentSystem extends MonsterComponent {
     try {
       ({ container } = this.RequireLootContainer(player, monsterId));
     } catch (error) {
-      // 尸体可能已经因“全部普通掉落领取完成”而离开AOI；此时只允许用同一
+      // 尸体可能已经因“归属账号的全部普通掉落领取完成”而离开AOI；此时只允许用同一
       // operationId读取已提交回执，不能重新计算掉落，也不能把未知请求伪装成成功。
-      // The corpse may already have left AOI after all global drops were claimed.
+      // The corpse may already have left AOI after the tagged account claimed all regular drops.
       // Only the same operationId may recover a durable receipt; never recalculate loot.
       const receipt = await persistence.LoadTransaction(scopedOperationId);
       if (!receipt) throw error;
@@ -231,6 +253,19 @@ export class MonsterComponentSystem extends MonsterComponent {
     // drop_id=0 preserves legacy “loot all” behavior; current clients send one row for a normal click.
     const selected = this.SelectLootDrops(container, player, dropId, lootAll || dropId === 0);
     if (selected.length === 0) {
+      this.DomainScene().logger.warn("loot pickup resolved no eligible drops", {
+        monsterId,
+        playerAccount: player.Account,
+        playerCharacterId: player.CharacterId.toString(),
+        lootOwnerAccount: container.lootOwnerAccount,
+        requestedDropId: dropId,
+        lootAll: lootAll || dropId === 0,
+        corpseDropIds: container.drops.map((drop) => drop.dropId),
+        claimedRegularDropIds: [...container.claimedRegularDropIds],
+        reservedRegularDropIds: [...container.reservedRegularDropIds],
+        claimedTaskDropIds: [...(container.claimedTaskDropIdsByAccount.get(player.Account) ?? [])],
+        reservedTaskDropIds: [...(container.reservedTaskDropIdsByAccount.get(player.Account) ?? [])],
+      });
       throw new RpcError(
         GameErrCode.LootNotAvailable,
         `当前账号没有可拾取掉落：普通掉落可能已被领取，任务掉落需要先接取对应任务（${monsterId}）`,
@@ -324,7 +359,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     const result = monster.GetComponent(CombatComponent).ApplyDamage(request);
     this.AddThreat(monster, attacker, result.finalDamage);
     if (result.killed) {
-      this.Kill(monster);
+      this.Kill(monster, attacker.Account);
       this.DomainScene().Events.Publish(QuestEvents.Progress, {
         player: attacker,
         objectiveType: QuestObjectiveType.KillMonster,
@@ -351,8 +386,8 @@ export class MonsterComponentSystem extends MonsterComponent {
     if (!Number.isSafeInteger(monster.UnitId) || amount <= 0n) return;
     const state = this.runtime.get(monster.UnitId);
     if (!state) return;
-    const previous = state.threatByUnitId.get(source.UnitId) ?? 0n;
-    state.threatByUnitId.set(source.UnitId, previous + amount);
+    this.MarkCombatThreat(monster, source, state, amount, TimeSystem.Instance.ServerNow);
+    if (state.lootOwnerAccount === null) state.lootOwnerAccount = source.Account;
   }
 
   /** 地图销毁时释放怪物Unit，不向玩家发送额外业务事件。 / Releases monster Units during map disposal without inventing another business event. */
@@ -419,9 +454,11 @@ export class MonsterComponentSystem extends MonsterComponent {
       this.runtime.set(unitId, {
         targetUnitId: 0,
         threatByUnitId: new Map(),
+        lootOwnerAccount: null,
         nextThinkAtMs: 0,
         nextAttackAtMs: 0,
         navigationSequence: 0,
+        returningToSpawn: false,
       });
       const changes = this.aoi.Attach(monster, 0, false, true);
       if (changes.length > 0) {
@@ -507,12 +544,45 @@ export class MonsterComponentSystem extends MonsterComponent {
     });
   }
 
-  private TickMonster(monster: MonsterUnit, config: MonsterConfigData, now: number): void {
+  private TickMonster(
+    monster: MonsterUnit,
+    slot: MonsterSpawnSlot,
+    config: MonsterConfigData,
+    now: number,
+  ): void {
     const state = this.runtime.get(monster.UnitId);
     if (!state || now < state.nextThinkAtMs) return;
     state.nextThinkAtMs = now + 250;
-    const target = this.FindMonsterTarget(monster, config, state);
+
     const monsterPosition = monster.GetComponent(PositionComponent);
+    const spawnDistance = Math.sqrt(distanceSquared(
+      monsterPosition.x,
+      monsterPosition.z,
+      slot.config.spawnX,
+      slot.config.spawnZ,
+    ));
+    if (state.threatByUnitId.size > 0 && spawnDistance > MONSTER_LEASH_RANGE_METERS) {
+      // 回归不是瞬移：先清仇恨、结束玩家战斗状态，再由同一移动接口回到刷点。
+      // A leash return is not a teleport: clear threat and player combat state,
+      // then use the same movement interface to walk back to the spawn point.
+      this.ClearThreat(monster, state, now);
+      state.returningToSpawn = true;
+    }
+    if (state.returningToSpawn) {
+      if (spawnDistance <= MONSTER_SPAWN_ARRIVAL_RANGE_METERS) {
+        state.returningToSpawn = false;
+        NativeData.ResetMovement(monster.GetComponent(NativeUnitRef).Handle);
+        return;
+      }
+      this.MoveMonsterToward(monster, {
+        x: slot.config.spawnX,
+        y: slot.config.spawnY,
+        z: slot.config.spawnZ,
+      }, state);
+      return;
+    }
+
+    const target = this.FindMonsterTarget(monster, config, state);
     const targetPosition = target?.GetComponent(PositionComponent);
     const distance = targetPosition
       ? Math.sqrt(distanceSquared(
@@ -544,28 +614,46 @@ export class MonsterComponentSystem extends MonsterComponent {
         NativeData.ResetMovement(native.Handle);
         return;
       case "chase":
-        state.navigationSequence += 1;
-        if (this.mapConfig.spatialMode === SpatialMode.Grid2D) {
-          NativeData.SetMovementInput(
-            native.Handle,
-            Math.sign(targetPosition!.x - monsterPosition.x),
-            Math.sign(targetPosition!.z - monsterPosition.z),
-            state.navigationSequence,
-          );
-        } else {
-          NativeData.SetNavigationTarget(
-            this.map.NativeMapKey,
-            native.Handle,
-            { x: targetPosition!.x, y: targetPosition!.y, z: targetPosition!.z },
-            state.navigationSequence,
-          );
-        }
+        this.MoveMonsterToward(monster, targetPosition!, state);
         return;
     }
   }
 
+  /** 统一处理追击和回归刷点，避免两套移动语义导致回归时速度或导航模式不一致。 / Uses one path for chasing and returning so speed and spatial mode stay consistent. */
+  private MoveMonsterToward(
+    monster: MonsterUnit,
+    target: { readonly x: number; readonly y: number; readonly z: number },
+    state: MonsterRuntimeState,
+  ): void {
+    const native = monster.GetComponent(NativeUnitRef);
+    const position = monster.GetComponent(PositionComponent);
+    state.navigationSequence += 1;
+    if (this.mapConfig.spatialMode === SpatialMode.Grid2D) {
+      NativeData.SetMovementInput(
+        native.Handle,
+        Math.sign(target.x - position.x),
+        Math.sign(target.z - position.z),
+        state.navigationSequence,
+      );
+      return;
+    }
+    NativeData.SetNavigationTarget(
+      this.map.NativeMapKey,
+      native.Handle,
+      { x: target.x, y: target.y, z: target.z },
+      state.navigationSequence,
+    );
+  }
+
   /** 怪物伤害也从自身Numeric.Attack读取；配置只负责初始化，战斗不再绕过数值系统。 / Reads monster Numeric.Attack for damage so config initializes combat without bypassing Numeric during combat. */
   private AttackPlayer(monster: MonsterUnit, target: PlayerUnit): void {
+    const state = this.runtime.get(monster.UnitId);
+    if (state) {
+      // 主动怪仅靠索敌获得目标时也算进入战斗，但不能把怪物攻击误记为掉落归属。
+      // An actively acquired target is in combat too, but a monster hit must
+      // never become the account that owns the monster's loot.
+      this.MarkCombatThreat(monster, target, state, 1n, TimeSystem.Instance.ServerNow);
+    }
     const monsterNumeric = monster.GetComponent(NumericComponent);
     const damage = monsterNumeric[NumericType.Attack] > 0n
       ? monsterNumeric[NumericType.Attack]
@@ -580,6 +668,7 @@ export class MonsterComponentSystem extends MonsterComponent {
       // produced the result, so this path never queries BuffComponent.
       this.DomainScene().GetComponent(SkillMapComponent).HandleDamageDuringCast(target);
     }
+    if (result.killed) target.GetComponent(CombatStateComponent).Clear(TimeSystem.Instance.ServerNow);
   }
 
   /**
@@ -594,6 +683,7 @@ export class MonsterComponentSystem extends MonsterComponent {
    */
   private TickPlayerAutoAttacks(now: number): void {
     for (const player of this.units.GetAll(PlayerUnit)) {
+      player.GetComponent(CombatStateComponent).TickResources(now);
       const combat = player.GetComponent(CombatComponent);
       if (player.GetComponent(NativeUnitRef).alive === 0) {
         // 玩家死亡后不能继续保留攻击意图；显式推送关闭状态，避免客户端读条停在最后一帧。
@@ -603,6 +693,7 @@ export class MonsterComponentSystem extends MonsterComponent {
         if (state.enabled || state.phase !== AutoAttackPhase.Inactive) {
           this.PublishAutoAttackState(player, combat.ToggleAutoAttack(0, false));
         }
+        player.GetComponent(CombatStateComponent).Clear(now);
         continue;
       }
       const previousState = combat.AutoAttackState();
@@ -682,12 +773,15 @@ export class MonsterComponentSystem extends MonsterComponent {
     });
   }
 
-  private Kill(monster: MonsterUnit): void {
+  private Kill(monster: MonsterUnit, fallbackLootOwnerAccount: string): void {
     const slot = this.slots.get(monster.AreaId);
     if (!slot || slot.monster !== monster) return;
     const now = TimeSystem.Instance.ServerNow;
     const config = slot.config.monsterConfigId_ref
       ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
+    const state = this.runtime.get(monster.UnitId);
+    const lootOwnerAccount = state?.lootOwnerAccount ?? fallbackLootOwnerAccount;
+    if (state) this.ClearThreat(monster, state, now);
     const drops = this.RollLootDrops(monster, config);
     const corpseLifetimeMs = drops.length > 0
       ? CORPSE_WITH_LOOT_LIFETIME_MS
@@ -699,7 +793,18 @@ export class MonsterComponentSystem extends MonsterComponent {
     // respawn_seconds表示最短重生等待；有掉落的尸体必须先保留完整拾取窗口，不能被更短的重生配置提前删除。
     slot.respawnAtMs = now + config.respawnSeconds * 1_000;
     slot.corpseExpiresAtMs = corpseExpiresAtMs;
-    this.CreateLootContainer(monster, drops, corpseExpiresAtMs);
+    this.CreateLootContainer(monster, drops, corpseExpiresAtMs, lootOwnerAccount);
+    this.DomainScene().logger.info("monster loot container created", {
+      monsterId: monster.UnitId,
+      monsterConfigId: monster.MonsterConfigId,
+      lootOwnerAccount,
+      dropIds: drops.map((drop) => ({
+        dropId: drop.dropId,
+        itemConfigId: drop.configId,
+        count: drop.count,
+        questObjectiveId: drop.questObjectiveId,
+      })),
+    });
     const native = monster.GetComponent(NativeUnitRef);
     native.alive = 0;
     NativeData.ResetMovement(native.Handle);
@@ -714,29 +819,57 @@ export class MonsterComponentSystem extends MonsterComponent {
   /** 根据冷掉落表创建尸体容器；任务行先落在尸体上，是否能拿由拾取者的任务状态决定。 / Creates a corpse container from cold drop rows; quest rows stay on the corpse and eligibility is checked at pickup time. */
   private RollLootDrops(monster: MonsterUnit, config: MonsterConfigData): LootDrop[] {
     if (config.dropTableId <= 0) return [];
-    const drops = GameConfigs.DropTableConfig.GetAll()
+    const rows = GameConfigs.DropTableConfig.GetAll()
       .filter((drop) => drop.dropTableId === config.dropTableId)
-      .filter((drop) => drop.chancePermille > deterministicDropRoll(monster.UnitId, monster.InstanceId, drop.id))
-      .map((drop): LootDrop => ({
-        dropId: drop.id,
-        configId: drop.itemConfigId,
-        count: deterministicDropCount(drop.minCount, drop.maxCount, monster.UnitId, drop.id),
-        questObjectiveId: drop.questObjectiveId,
-      }));
+      .sort((left, right) => left.id - right.id);
+    const ordinaryRows = rows.filter((drop) => drop.questObjectiveId === 0);
+    const taskRows = rows.filter((drop) => drop.questObjectiveId !== 0);
+    const drops: LootDrop[] = [];
+    const selectedOrdinaryRows = SelectIndependentLootRows(
+      ordinaryRows,
+      (drop) => deterministicDropRoll(monster.UnitId, monster.InstanceId, drop.id),
+    );
+    for (const drop of selectedOrdinaryRows) drops.push(this.ToLootDrop(drop, monster));
+    for (const drop of taskRows) {
+      if (drop.chancePermille <= deterministicDropRoll(monster.UnitId, monster.InstanceId, drop.id)) continue;
+      drops.push(this.ToLootDrop(drop, monster));
+    }
     return drops;
   }
 
+  /** 将配置行转换为尸体行；普通行和任务行都已先按各自概率独立判定。 / Converts a config row to a corpse row after independent probability checks for regular and quest rows. */
+  private ToLootDrop(drop: {
+    readonly id: number;
+    readonly itemConfigId: number;
+    readonly minCount: number;
+    readonly maxCount: number;
+    readonly questObjectiveId: number;
+  }, monster: MonsterUnit): LootDrop {
+    return {
+      dropId: drop.id,
+      configId: drop.itemConfigId,
+      count: deterministicDropCount(drop.minCount, drop.maxCount, monster.UnitId, drop.id),
+      questObjectiveId: drop.questObjectiveId,
+    };
+  }
+
   /** 创建尸体容器；空掉落尸体不需要容器，但仍会按10秒尸体窗口等待清理。 / Creates a corpse container; an empty corpse needs no container but still follows the ten-second corpse window. */
-  private CreateLootContainer(monster: MonsterUnit, drops: readonly LootDrop[], expiresAtMs: number): void {
+  private CreateLootContainer(
+    monster: MonsterUnit,
+    drops: readonly LootDrop[],
+    expiresAtMs: number,
+    lootOwnerAccount: string,
+  ): void {
     if (drops.length === 0) return;
     this.lootContainers.set(monster.UnitId, {
       monsterUnitId: monster.UnitId,
       corpseGeneration: monster.InstanceId,
+      lootOwnerAccount,
       drops,
       expiresAtMs,
-      reservedGlobalDropIds: new Set(),
+      reservedRegularDropIds: new Set(),
       reservedTaskDropIdsByAccount: new Map(),
-      claimedGlobalDropIds: new Set(),
+      claimedRegularDropIds: new Set(),
       claimedTaskDropIdsByAccount: new Map(),
       inFlightOperations: new Set(),
       committedResponses: new Map(),
@@ -744,24 +877,24 @@ export class MonsterComponentSystem extends MonsterComponent {
   }
 
   /**
-   * 只有所有掉落都是全局掉落且已经全部领取，才能立即清理尸体。
+   * 只有归属账号的所有普通掉落都已领取完成，且尸体上没有任务掉落，才能立即清理尸体。
    * 任务掉落按账号保留，服务端不能因为一个玩家领取完成就删除其他玩家未来仍有资格领取的任务行。
    *
-   * A corpse can disappear immediately only when every drop is global and all
-   * global rows are claimed. Quest rows remain personal and therefore keep the
-   * corpse alive until the five-minute loot window expires.
+   * A corpse can disappear immediately only when the tagged account has claimed
+   * every regular row and no quest row remains. Quest rows remain personal and
+   * therefore keep the corpse alive until the five-minute loot window expires.
    */
   private CanRemoveLootedCorpse(container: LootContainer): boolean {
     for (const drop of container.drops) {
       if (drop.questObjectiveId !== 0) return false;
-      if (container.reservedGlobalDropIds.has(drop.dropId) || !container.claimedGlobalDropIds.has(drop.dropId)) {
+      if (container.reservedRegularDropIds.has(drop.dropId) || !container.claimedRegularDropIds.has(drop.dropId)) {
         return false;
       }
     }
     return true;
   }
 
-  /** 全部可共享掉落领取完成后立即移除尸体；任务掉落仍按五分钟窗口保留。 / Removes a corpse immediately after all globally shareable rows are claimed; quest rows keep the five-minute window. */
+  /** 归属账号的普通掉落领取完成后立即移除尸体；任务掉落仍按五分钟窗口保留。 / Removes a corpse after the tagged account claims all regular rows; quest rows keep the five-minute window. */
   private TryRemoveLootedCorpse(monsterId: number, container: LootContainer): void {
     if (!this.CanRemoveLootedCorpse(container)) return;
     const slot = this.slots.get(monsterId);
@@ -783,7 +916,8 @@ export class MonsterComponentSystem extends MonsterComponent {
     for (const drop of container.drops) {
       if (!lootAll && requestedDropId !== drop.dropId) continue;
       if (drop.questObjectiveId === 0) {
-        if (container.claimedGlobalDropIds.has(drop.dropId) || container.reservedGlobalDropIds.has(drop.dropId)) continue;
+        if (!CanClaimRegularLoot(container, player.Account)) continue;
+        if (container.claimedRegularDropIds.has(drop.dropId) || container.reservedRegularDropIds.has(drop.dropId)) continue;
         selected.push(drop);
         continue;
       }
@@ -819,12 +953,12 @@ export class MonsterComponentSystem extends MonsterComponent {
     return [...planned.values()].sort((left, right) => left.questConfigId - right.questConfigId);
   }
 
-  /** 在跨DBProxy await前同步预留行，阻止不同玩家并发重复领取同一普通掉落。 / Reserves rows before the DBProxy await to prevent cross-player duplicate claims. */
+  /** 在跨DBProxy await前同步预留行，阻止归属账号并发重复领取同一普通掉落。 / Reserves rows before the DBProxy await to prevent the tagged account from claiming one regular row twice. */
   private ReserveLoot(container: LootContainer, account: string, operationId: string, drops: readonly LootDrop[]): void {
     container.inFlightOperations.add(operationId);
     const taskRows = new Set<number>();
     for (const drop of drops) {
-      if (drop.questObjectiveId === 0) container.reservedGlobalDropIds.add(drop.dropId);
+      if (drop.questObjectiveId === 0) container.reservedRegularDropIds.add(drop.dropId);
       else taskRows.add(drop.dropId);
     }
     if (taskRows.size > 0) {
@@ -838,8 +972,8 @@ export class MonsterComponentSystem extends MonsterComponent {
   private CommitLoot(container: LootContainer, account: string, operationId: string, drops: readonly LootDrop[]): void {
     for (const drop of drops) {
       if (drop.questObjectiveId === 0) {
-        container.reservedGlobalDropIds.delete(drop.dropId);
-        container.claimedGlobalDropIds.add(drop.dropId);
+        container.reservedRegularDropIds.delete(drop.dropId);
+        container.claimedRegularDropIds.add(drop.dropId);
       }
     }
     const reserved = container.reservedTaskDropIdsByAccount.get(account);
@@ -857,7 +991,7 @@ export class MonsterComponentSystem extends MonsterComponent {
   /** 事务失败且没有持久化回执时释放预留；已确认事务永远不走这里。 / Releases reservations only when no durable transaction receipt exists. */
   private ReleaseLoot(container: LootContainer, account: string, operationId: string, drops: readonly LootDrop[]): void {
     for (const drop of drops) {
-      if (drop.questObjectiveId === 0) container.reservedGlobalDropIds.delete(drop.dropId);
+      if (drop.questObjectiveId === 0) container.reservedRegularDropIds.delete(drop.dropId);
     }
     const reserved = container.reservedTaskDropIdsByAccount.get(account);
     for (const drop of drops) {
@@ -905,6 +1039,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     for (const [unitId, threat] of state.threatByUnitId) {
       const player = this.units.Get<PlayerUnit>(unitId);
       if (!player || player.GetComponent(NativeUnitRef).alive === 0) {
+        player?.GetComponent(CombatStateComponent).RemoveMonster(monster.UnitId, TimeSystem.Instance.ServerNow);
         state.threatByUnitId.delete(unitId);
         continue;
       }
@@ -929,6 +1064,30 @@ export class MonsterComponentSystem extends MonsterComponent {
       }
     }
     return selected;
+  }
+
+  /** 清理怪物的所有仇恨来源；死亡和回归必须经过这里，保证玩家能离开战斗状态。 / Clears all threat sources so death and leash return also end player combat. */
+  private ClearThreat(monster: MonsterUnit, state: MonsterRuntimeState, now: number): void {
+    for (const unitId of state.threatByUnitId.keys()) {
+      this.units.Get<PlayerUnit>(unitId)?.GetComponent(CombatStateComponent).RemoveMonster(monster.UnitId, now);
+    }
+    state.threatByUnitId.clear();
+    state.targetUnitId = 0;
+    state.lootOwnerAccount = null;
+  }
+
+  /** 只登记战斗来源，不决定普通掉落归属；玩家伤害入口另行设置lootOwnerAccount。 / Records combat without choosing loot ownership; player damage sets lootOwnerAccount separately. */
+  private MarkCombatThreat(
+    monster: MonsterUnit,
+    source: PlayerUnit,
+    state: MonsterRuntimeState,
+    amount: bigint,
+    now: number,
+  ): void {
+    if (amount <= 0n) return;
+    const previous = state.threatByUnitId.get(source.UnitId) ?? 0n;
+    state.threatByUnitId.set(source.UnitId, previous + amount);
+    source.GetComponent(CombatStateComponent).AddMonster(monster.UnitId, now);
   }
 
   private FindNearestPlayer(monster: MonsterUnit, maxDistance: number): PlayerUnit | undefined {

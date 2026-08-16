@@ -392,7 +392,9 @@ item.count -= 1;
 
 `ItemView`只用于当前同步调用中的读取，不能跨`await`、Timer或玩家下线长期保存。协议和持久化边界分别复制为`ItemSnapshot`和`ItemRecord`；不要把运行时对象命名为`ItemDB`，也不要把可变Native句柄直接序列化。
 
-前端背包只做快照投影：使用`ItemSnapshot.itemId`作为格子稳定键，使用`ItemConfig`补齐名称、说明和图标，数量变化等待`G2C_ItemChanged`。快捷栏和完整背包必须复用同一个`C2M_UseItem(itemId, operationId)`入口；UI可以禁用按钮、显示冷却和排序，但不能本地扣数量、创建Item或伪造成功消息。移动端背包按钮和面板必须阻止触摸继续传给全屏镜头/寻路层。
+前端背包只做快照投影：使用`ItemSnapshot.itemId`作为格子稳定键，使用`ItemConfig`补齐名称、说明和图标。上线、重连和进图使用`G2C_EnterMap.items`全量初始化，运行期间的使用、拾取、购买、出售和任务奖励都通过`G2C_ItemChanged`发送受影响的单行增量；拾取RPC的`M2C_LootMonster.items`也是本次增量，客户端按`ItemSnapshot.version`合并RPC与Push的重复到达。不要把完整背包快照塞进普通业务回包。快捷栏和完整背包必须复用同一个`C2M_UseItem(itemId, operationId)`入口；UI可以禁用按钮、显示冷却和排序，但不能本地扣数量、创建Item或伪造成功消息。移动端背包按钮和面板必须阻止触摸继续传给全屏镜头/寻路层。
+
+当服务端判断请求使用、购买或出售的ItemId/数量已经过期时，业务错误响应可以携带可选`inventory_recovery`。该字段存在时，无论`items`是否为空，都代表一次权威整包替换；客户端应先应用快照再显示错误。只有状态冲突错误使用这个修复载荷，冷却、距离、金币不足等普通业务拒绝不应无条件发送整包。
 
 ## 编写Handler
 
@@ -1143,7 +1145,7 @@ entity Item extends Entity {
 
 `BuffComponent`拥有`Buff` ChildEntity；Component负责集合、实例ID、传送和AOI生命周期事件，BuffSystem负责Add/Tick/Remove和Timer。Buff传送只保存纯值及墙钟时间，目标重建Timer但不重复AddAction；不保存TimerId、闭包、Promise或Entity。Buff Tick只执行Action，Numeric和Combat沿用自身同步边界。
 
-Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat modifier，伤害统一进入`CombatComponent.ApplyDamage`；禁止再设计`BuffComponent.TryAbsorbDamage`作为受伤入口。运行时Action和护盾剩余量会以纯值跨地图恢复。七技能Cast与3006/3007引导已接入：无护盾吸收的受击会让普通读条后移800毫秒、让引导提前800毫秒，真言术·盾吸收的受击不产生这两种惩罚；移动仍会取消可移动中断的Cast，客户端只显示服务端状态。Cocos3D的引导连线仅是表现，不参与战斗判定；复杂地面目标、技能持久化和AOE仍不属于当前闭环。
+Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat modifier，伤害统一进入`CombatComponent.ApplyDamage`；禁止再设计`BuffComponent.TryAbsorbDamage`作为受伤入口。运行时Action和护盾剩余量会以纯值跨地图恢复。七技能Cast与3006/3007持续效果已接入：3006瞬发添加恢复Buff，8次治疗由Buff Tick负责；无护盾吸收的受击会让普通读条后移800毫秒、让引导提前800毫秒，真言术·盾吸收的受击不产生这两种惩罚；移动仍会取消可移动中断的Cast，客户端只显示服务端状态。Cocos3D的引导连线仅是表现，不参与战斗判定；复杂地面目标、技能持久化和AOE仍不属于当前闭环。
 
 技能只在`SkillConfig.xlsx`填写目标与时间线，在服务端专有的`SkillEffectConfig.xlsx`按顺序组合Action；客户端只生成SkillConfig用于名称、距离、读条和CD表现。若一个新技能可由现有Action与Buff组合完成，只改Excel并重新生成，禁止新增专用Handler或把伤害数值写回Hotfix目录。普通业务不得长期缓存`GetSkillDefinition()`结果；配置索引由`SkillCatalog.ts`按指纹统一维护。
 

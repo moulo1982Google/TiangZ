@@ -42,4 +42,11 @@ export const GameErrCode = {
   LootNotAvailable: 10041,
   LootTooFar: 10042,
   LootAlreadyClaimed: 10043,
+  NpcShopUnavailable: 10044,
+  ShopItemUnavailable: 10045,
+  GoldNotEnough: 10046,
+  InvalidShopCount: 10047,
+  ItemNotSellable: 10048,
+  InvalidOperationId: 10049,
+  ManaNotEnough: 10050,
 } as const;

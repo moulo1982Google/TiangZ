@@ -60,6 +60,7 @@ export {
 export { Item, type AwakeItem, type ItemView, type ItemNativeData } from "./mmorpg/item/Item";
 export { ItemEvents, type BeforeUseItemEvent } from "./mmorpg/item/ItemEvents";
 export {
+  CanClaimRegularLoot,
   CopyLootItems,
   ToInventoryGrants,
   ToLootDropSnapshots,
@@ -155,6 +156,7 @@ export { MapHostRegistrationComponent } from "./mmorpg/mapHost/MapHostRegistrati
 export { MapManagerComponent } from "./mmorpg/mapManager/MapManagerComponent";
 export { DynamicMapProxy } from "./mmorpg/mapHost/DynamicMapProxy";
 export { NumericComponent, type NumericInitialValues } from "./domains/numeric/NumericComponent";
+export { CurrencyComponent } from "./domains/currency/CurrencyComponent";
 export { BaseNumericType } from "./domains/numeric/NumericType";
 export {
   AllNumericTypes,
@@ -232,6 +234,7 @@ export {
   type HealingResult,
   type HealingPlan,
 } from "./mmorpg/combat/CombatComponent";
+export { CombatStateComponent } from "./mmorpg/combat/CombatStateComponent";
 export {
   MonsterUnit,
   type AwakeMonsterUnit,
@@ -249,7 +252,11 @@ export {
   STARTER_NPC_NAME,
   STARTER_NPC_QUEST_CONFIG_IDS,
   STARTER_NPC_UNIT_ID,
+  STARTER_SHOP_NPC_CONFIG_ID,
+  STARTER_SHOP_NPC_NAME,
+  STARTER_SHOP_NPC_UNIT_ID,
 } from "./mmorpg/npc/NpcComponent";
+export { NpcShopComponent } from "./mmorpg/shop/NpcShopComponent";
 export { GateScene } from "./mmorpg/scenes/GateScene";
 export { LoginScene } from "./mmorpg/scenes/LoginScene";
 export { LocationScene } from "./mmorpg/scenes/LocationScene";

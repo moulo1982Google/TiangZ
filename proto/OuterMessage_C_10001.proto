@@ -119,6 +119,7 @@ message G2C_EnterMap // IResponse
   string navigation_hash = 14;
   repeated QuestSnapshot quests = 15;
   repeated uint32 completed_quest_config_ids = 16;
+  uint64 gold = 17;
 }
 
 // @ets.msg protocol=Client method=MapReady
@@ -291,6 +292,9 @@ message M2C_UseItem // IActorLocationResponse
   optional BuffPublicView buff = 2;
   uint64 global_cooldown_end_at_ms = 3;
   uint64 item_cooldown_end_at_ms = 4;
+  // 仅在ItemNotFound/ItemNotEnough/ItemStackFull等状态冲突错误中返回；成功响应不携带整包背包。
+  // Returned only for state-conflict errors such as ItemNotFound/ItemNotEnough/ItemStackFull; success responses never carry the full inventory.
+  optional InventorySnapshot inventory_recovery = 5;
 }
 
 //ResponseType M2C_AttackMonster
@@ -353,6 +357,71 @@ message M2C_InspectLootMonster // IActorLocationResponse
 {
   uint32 monster_id = 1;
   repeated LootDropSnapshot drops = 2;
+}
+
+//ResponseType M2C_OpenNpcShop
+// 打开商店只读取地图内NPC和当前玩家金币，不修改背包；购买与出售分别使用独立事务。
+// Opening a shop only reads the map NPC and current gold; it does not mutate inventory.
+// Buying and selling use separate idempotent transactions.
+// @ets.msg protocol=Map method=OpenNpcShop duringTransfer=queue
+message C2M_OpenNpcShop // IActorLocationRequest
+{
+  uint32 npc_unit_id = 1;
+}
+
+message M2C_OpenNpcShop // IActorLocationResponse
+{
+  uint32 npc_unit_id = 1;
+  repeated ShopItemSnapshot items = 2;
+  uint64 gold = 3;
+}
+
+//ResponseType M2C_BuyNpcShopItem
+// 商店购买先提交金币扣除和道具增加，再向客户端返回成功；重试必须复用operation_id。
+// Shop purchase commits the gold debit and item grant before success is returned.
+// Retries must reuse operation_id.
+// @ets.msg protocol=Map method=BuyNpcShopItem duringTransfer=queue
+message C2M_BuyNpcShopItem // IActorLocationRequest
+{
+  uint32 npc_unit_id = 1;
+  uint32 item_config_id = 2;
+  uint32 count = 3;
+  string operation_id = 4;
+}
+
+message M2C_BuyNpcShopItem // IActorLocationResponse
+{
+  uint32 item_config_id = 1;
+  uint32 count = 2;
+  repeated ItemSnapshot items = 3;
+  uint64 gold = 4;
+  // 购买因服务端库存状态冲突失败时，携带权威背包用于纠正客户端投影。
+  // Carries the authoritative inventory when a purchase fails because the server inventory state conflicts with the client projection.
+  optional InventorySnapshot inventory_recovery = 5;
+}
+
+//ResponseType M2C_SellItem
+// 出售只允许商店明确支持的物品；提交成功后从背包移除并增加金币。
+// Selling accepts only explicitly supported shop items; successful commit removes
+// the inventory amount and adds gold.
+// @ets.msg protocol=Map method=SellItem duringTransfer=queue
+message C2M_SellItem // IActorLocationRequest
+{
+  uint32 npc_unit_id = 1;
+  uint64 item_id = 2;
+  uint32 count = 3;
+  string operation_id = 4;
+}
+
+message M2C_SellItem // IActorLocationResponse
+{
+  uint32 item_config_id = 1;
+  uint32 count = 2;
+  uint64 gold = 3;
+  ItemSnapshot item = 4;
+  // 出售因道具不存在或数量不足失败时，携带权威背包用于纠正客户端投影。
+  // Carries the authoritative inventory when selling fails because the item is missing or insufficient.
+  optional InventorySnapshot inventory_recovery = 5;
 }
 
 //ResponseType M2C_ToggleAutoAttack

@@ -46,7 +46,7 @@
       "name": "map_manager",
       "sceneType": "MapManager",
       "innerIp": "127.0.0.1",
-      "bindIp": "0.0.0.0",
+      "bindIp": "127.0.0.1",
       "port": 17100,
       "protocol": "tcp",
       "audience": "inner"
@@ -57,7 +57,7 @@
       "acceptDynamicMaps": true,
       "staticMapIds": [1],
       "innerIp": "127.0.0.1",
-      "bindIp": "0.0.0.0",
+      "bindIp": "127.0.0.1",
       "port": 17301,
       "protocol": "tcp",
       "audience": "inner"
@@ -68,7 +68,7 @@
       "acceptDynamicMaps": true,
       "staticMapIds": [2, 100],
       "innerIp": "127.0.0.1",
-      "bindIp": "0.0.0.0",
+      "bindIp": "127.0.0.1",
       "port": 17302,
       "protocol": "tcp",
       "audience": "inner"
@@ -79,7 +79,7 @@
       "acceptDynamicMaps": true,
       "staticMapIds": [],
       "innerIp": "127.0.0.1",
-      "bindIp": "0.0.0.0",
+      "bindIp": "127.0.0.1",
       "port": 17310,
       "protocol": "tcp",
       "audience": "inner"
@@ -88,7 +88,7 @@
       "name": "location_1",
       "sceneType": "Location",
       "innerIp": "127.0.0.1",
-      "bindIp": "0.0.0.0",
+      "bindIp": "127.0.0.1",
       "port": 17401,
       "protocol": "tcp",
       "audience": "inner"

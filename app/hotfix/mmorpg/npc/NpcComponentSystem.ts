@@ -15,6 +15,9 @@ import {
   STARTER_NPC_NAME,
   STARTER_NPC_QUEST_CONFIG_IDS,
   STARTER_NPC_UNIT_ID,
+  STARTER_SHOP_NPC_CONFIG_ID,
+  STARTER_SHOP_NPC_NAME,
+  STARTER_SHOP_NPC_UNIT_ID,
   type AwakeNpcUnit,
   type PlayerUnit,
   systemFor,
@@ -22,6 +25,7 @@ import {
 
 const STARTER_MAP_ID = 100;
 const STARTER_NPC_X_OFFSET = 3;
+const STARTER_SHOP_NPC_X_OFFSET = 8;
 
 /**
  * Starter第一版只在3D地图100创建一个固定任务使者。
@@ -37,10 +41,8 @@ export class NpcComponentSystem extends NpcComponent {
     this.map = map;
     this.aoi = aoi;
     if (map.MapId !== STARTER_MAP_ID) return;
-    if (this.npcs.has(STARTER_NPC_UNIT_ID)) {
-      throw new Error(`starter NPC already exists: ${STARTER_NPC_UNIT_ID}`);
-    }
     this.SpawnStarterNpc();
+    this.SpawnShopNpc();
     this.DomainScene().logger.info("starter NPC ready", {
       mapId: map.MapId,
       npcUnitId: STARTER_NPC_UNIT_ID,
@@ -92,11 +94,66 @@ export class NpcComponentSystem extends NpcComponent {
     }
   }
 
+  /**
+   * 校验玩家只能在同一Map、AOI已挂载且距离足够近时打开商店。
+   * Validates that a player may open a shop only when the NPC is in the same
+   * Map, attached to AOI, and within interaction range.
+   */
+  ValidateShopInteraction(player: PlayerUnit, npcUnitId: number): void {
+    const npc = this.npcs.get(npcUnitId);
+    if (!npc || !npc.ShopEnabled || !this.aoi.IsAttached(npc)) {
+      throw new RpcError(GameErrCode.NpcShopUnavailable, `shop NPC is unavailable: ${npcUnitId}`);
+    }
+    if (npc.DomainScene() !== player.DomainScene()) {
+      throw new RpcError(GameErrCode.NpcShopUnavailable, `shop NPC is not in player's map: ${npcUnitId}`);
+    }
+    const playerPosition = player.GetComponent(PositionComponent);
+    const npcPosition = npc.GetComponent(PositionComponent);
+    const dx = playerPosition.x - npcPosition.x;
+    const dz = playerPosition.z - npcPosition.z;
+    if (dx * dx + dz * dz > STARTER_NPC_INTERACT_RANGE_METERS ** 2) {
+      throw new RpcError(
+        GameErrCode.NpcTooFar,
+        `shop NPC ${npcUnitId} is too far from player: ${Math.sqrt(dx * dx + dz * dz).toFixed(2)}m`,
+      );
+    }
+  }
+
   /** 创建固定任务使者；它是Subject，不是Observer，也不拥有Player或Quest状态。 / Creates the fixed quest giver as a Subject, never an Observer or owner of player/quest state. */
   private SpawnStarterNpc(): void {
+    this.SpawnNpc({
+      unitId: STARTER_NPC_UNIT_ID,
+      configId: STARTER_NPC_CONFIG_ID,
+      name: STARTER_NPC_NAME,
+      questConfigIds: STARTER_NPC_QUEST_CONFIG_IDS,
+      shopEnabled: false,
+      xOffset: STARTER_NPC_X_OFFSET,
+    });
+  }
+
+  /** 创建杂货商，商品和价格由ItemConfig驱动。 / Creates the grocer; its catalog and prices come from ItemConfig. */
+  private SpawnShopNpc(): void {
+    this.SpawnNpc({
+      unitId: STARTER_SHOP_NPC_UNIT_ID,
+      configId: STARTER_SHOP_NPC_CONFIG_ID,
+      name: STARTER_SHOP_NPC_NAME,
+      questConfigIds: [],
+      shopEnabled: true,
+      xOffset: STARTER_SHOP_NPC_X_OFFSET,
+    });
+  }
+
+  private SpawnNpc(requestData: {
+    unitId: number;
+    configId: number;
+    name: string;
+    questConfigIds: readonly number[];
+    shopEnabled: boolean;
+    xOffset: number;
+  }): void {
     const config = GameConfigs.MapConfig.Get(this.map.MapId);
     const spawn = {
-      x: config.spawnX + STARTER_NPC_X_OFFSET,
+      x: config.spawnX + requestData.xOffset,
       y: config.spawnY,
       z: config.spawnZ,
     };
@@ -108,11 +165,12 @@ export class NpcComponentSystem extends NpcComponent {
     const request: AwakeNpcUnit = {
       mapId: this.map.MapId,
       mapInstanceId: this.map.MapInstanceId,
-      npcConfigId: STARTER_NPC_CONFIG_ID,
-      name: STARTER_NPC_NAME,
-      questConfigIds: STARTER_NPC_QUEST_CONFIG_IDS,
+      npcConfigId: requestData.configId,
+      name: requestData.name,
+      questConfigIds: requestData.questConfigIds,
+      shopEnabled: requestData.shopEnabled,
     };
-    const npc = this.units.Create(STARTER_NPC_UNIT_ID, NpcUnit, request);
+    const npc = this.units.Create(requestData.unitId, NpcUnit, request);
     try {
       const native = npc.AddComponent(NativeUnitRef, {
         id: npc.UnitId,

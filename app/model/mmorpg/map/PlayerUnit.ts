@@ -33,6 +33,7 @@ export interface PlayerSnapshot {
   speedCellsPerSecond: number;
   facing: number;
   alive: boolean;
+  gold: bigint;
   numerics: readonly UnitNumericDelta[];
 }
 

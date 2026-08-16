@@ -5,9 +5,11 @@ import {
 import { HotfixSystem } from "../app/core/hotReload/HotfixSystem";
 import type { HotfixManifest } from "../app/core/hotReload/contracts";
 import {
+  CombatStateComponent,
   NativeUnitRef,
   type MonsterRuntimeState,
 } from "../app/model/public";
+import { InitializeGameSingletons } from "../app/core/runtime/Game";
 import { M2C_AttackMonsterCodec } from "../app/generated/model/server/demo/protocol/messages";
 
 assertAction("idle without target", "idle", EvaluateMonsterBehavior({
@@ -49,7 +51,14 @@ function assertAction(name: string, expected: MonsterBehaviorAction, actual: Mon
 
 interface FakePositionUnit {
   readonly UnitId: number;
-  GetComponent(componentType: unknown): { alive: number } | { x: number; z: number };
+  GetComponent(componentType: unknown):
+    | { alive: number }
+    | { x: number; z: number }
+    | FakeCombatState;
+}
+
+interface FakeCombatState {
+  AddMonster(monsterUnitId: number, nowMs: number): void;
 }
 
 async function main(): Promise<void> {
@@ -75,6 +84,7 @@ function verifyAttackDamageCodecPreservesUint64(): void {
 
 /** 验证伤害仇恨1:1，并防止主动索敌距离再次错误过滤远程攻击产生的仇恨。 / Verifies 1:1 damage threat and keeps active-acquisition range from filtering ranged-hit threat. */
 async function verifyThreatRatioAndLongRangeSelection(): Promise<void> {
+  InitializeGameSingletons();
   HotfixSystem.Begin(testHotfixManifest());
   const { MonsterComponentSystem } = await import(
     "../app/hotfix/mmorpg/monster/MonsterComponentSystem"
@@ -88,6 +98,17 @@ async function verifyThreatRatioAndLongRangeSelection(): Promise<void> {
     nextAttackAtMs: 0,
     navigationSequence: 0,
   };
+  const methods = MonsterComponentSystem.prototype as unknown as {
+    AddThreat(monsterUnit: FakePositionUnit, source: FakePositionUnit, amount: bigint): void;
+    FindHighestThreatPlayer(monsterUnit: FakePositionUnit, runtime: MonsterRuntimeState): FakePositionUnit | undefined;
+    MarkCombatThreat(
+      monsterUnit: FakePositionUnit,
+      source: FakePositionUnit,
+      runtime: MonsterRuntimeState,
+      amount: bigint,
+      nowMs: number,
+    ): void;
+  };
   const fakeSystem = {
     runtime: new Map([[monster.UnitId, state]]),
     units: {
@@ -96,10 +117,7 @@ async function verifyThreatRatioAndLongRangeSelection(): Promise<void> {
       },
     },
     RequireMapUnit(): void {},
-  };
-  const methods = MonsterComponentSystem.prototype as unknown as {
-    AddThreat(monsterUnit: FakePositionUnit, source: FakePositionUnit, amount: bigint): void;
-    FindHighestThreatPlayer(monsterUnit: FakePositionUnit, runtime: MonsterRuntimeState): FakePositionUnit | undefined;
+    MarkCombatThreat: methods.MarkCombatThreat,
   };
 
   methods.AddThreat.call(fakeSystem, monster, player, 50n);
@@ -115,10 +133,15 @@ async function verifyThreatRatioAndLongRangeSelection(): Promise<void> {
 }
 
 function fakePositionUnit(unitId: number, x: number, z: number): FakePositionUnit {
+  const combatState: FakeCombatState = {
+    AddMonster(): void {},
+  };
   return {
     UnitId: unitId,
-    GetComponent(componentType: unknown): { alive: number } | { x: number; z: number } {
-      return componentType === NativeUnitRef ? { alive: 1 } : { x, z };
+    GetComponent(componentType: unknown): { alive: number } | { x: number; z: number } | FakeCombatState {
+      if (componentType === NativeUnitRef) return { alive: 1 };
+      if (componentType === CombatStateComponent) return combatState;
+      return { x, z };
     },
   };
 }

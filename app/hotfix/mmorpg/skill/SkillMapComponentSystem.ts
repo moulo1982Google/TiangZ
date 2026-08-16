@@ -12,6 +12,8 @@ import {
   MonsterUnit,
   NativeData,
   NativeUnitRef,
+  NumericComponent,
+  NumericType,
   PlayerUnit,
   PositionComponent,
   RpcError,
@@ -39,6 +41,7 @@ import {
 } from "#tiangz/model";
 import { ExecuteAction } from "../action/ActionExecutor";
 import { BuildSkillCatalog, GetSkillDefinitionFromCatalog } from "./SkillCatalog";
+import { GetSkillManaCost } from "./SkillManaCost";
 
 // 受击调整Demo施法时间线的统一规则；业务入口不应散落硬编码的毫秒数。
 // Shared Demo rule for hit-induced cast timing; business entry points must not scatter magic durations.
@@ -91,6 +94,15 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       throw new RpcError(vetoReason, `skill ${definition.id} rejected by BeforeCast`);
     }
     this.validateRequiredAbsentBuff(target, definition);
+    const manaCost = GetSkillManaCost(definition.id);
+    const numeric = caster.GetComponent(NumericComponent);
+    const currentMp = numeric[NumericType.CurrentMp];
+    if (currentMp < manaCost) {
+      throw new RpcError(
+        GameErrCode.ManaNotEnough,
+        `skill ${definition.id} requires ${manaCost} mana, current ${currentMp}`,
+      );
+    }
 
     const cast = {
       castId: GlobalIdSystem.Instance.Next(),
@@ -103,6 +115,10 @@ export class SkillMapComponentSystem extends SkillMapComponent {
       definition,
     };
     let state = skill.Accept(cast, definition.cooldownMs, definition.globalCooldownMs);
+    // 技能一旦通过目标、Veto、CD和施法状态校验就消耗蓝；后续命中失败不回滚，避免重复施法套利。
+    // Mana is spent after all admission checks pass; later impact failure does
+    // not refund it, preventing retries from turning a cast into a free action.
+    if (manaCost > 0n) numeric[NumericType.CurrentMp] = currentMp - manaCost;
 
     if (
       definition.castTimeMs > 0 &&

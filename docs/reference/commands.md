@@ -93,7 +93,7 @@ reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
 | `npm run verify:hotfix-boundary` | 检查Model/Hotfix依赖方向及Hotfix类没有字段、构造和静态初始化 |
 | `npm run verify:dependency-policy` | 校验依赖漏洞例外的负责人、原因和到期日期 |
 
-版本、Stable API和协议锁在开发阶段不作为失败门禁。`npm run verify:version`只提示版本副本差异，`npm run verify:core-api`和`npm run test:protocol-locks`仍执行边界与自测，但允许契约迭代。准备发布时运行`npm run verify:release`，它会设置`TIANGZ_LOCK_VERSIONS=1`并强制比较项目版本、`public-api.lock.json`以及opcode/schema锁；运行时Protocol Fingerprint始终必须匹配。
+版本、Stable API和协议锁在开发阶段不作为失败门禁。`npm run verify:version`只提示版本副本差异，`npm run verify:core-api`和`npm run test:protocol-locks`仍执行边界与自测，但允许契约迭代。开发CI和本地可以运行`npm run verify:locks:warn`，它会执行同一组锁检查并只报告漂移，不阻塞开发；准备发布时运行`npm run verify:release`，它会设置`TIANGZ_LOCK_VERSIONS=1`并强制比较项目版本、`public-api.lock.json`以及opcode/schema锁；运行时Protocol Fingerprint始终必须匹配。
 
 ## 功能与稳定性测试
 

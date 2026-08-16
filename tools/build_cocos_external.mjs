@@ -33,6 +33,7 @@ mkdirSync(outputRoot, { recursive: true });
 cpSync(desktopSource, desktopOutput, { recursive: true, force: true });
 cpSync(mobileSource, mobileOutput, { recursive: true, force: true });
 
+applyDesktopViewportLayout(desktopOutput);
 const build = createBuildIdentity();
 injectBuildBadge(desktopOutput, build, "desktop");
 injectBuildBadge(mobileOutput, build, "mobile");
@@ -79,6 +80,38 @@ function createBuildIdentity() {
     revision,
     generatedAt,
   };
+}
+
+/**
+ * 让外网桌面包占满浏览器视口；只改发布包，不改变 Cocos 源工程和移动端布局。
+ * Make the external desktop package fill the browser viewport without changing
+ * the Cocos source project or the mobile layout.
+ */
+function applyDesktopViewportLayout(directory) {
+  const indexPath = path.join(directory, "index.html");
+  const html = readFileSync(indexPath, "utf8");
+  if (!html.includes('id="GameDiv"')) {
+    fail(`桌面包缺少GameDiv，无法应用视口布局: ${indexPath}`);
+  }
+
+  const gameDivHtml = html.replace(
+    /(<div\s+id="GameDiv"[^>]*?)\s+style="[^"]*"([^>]*>)/,
+    '$1 style="width:100vw;height:100vh;"$2',
+  );
+  const viewportStyle = `<style id="tiangz-desktop-viewport">
+html,body{width:100%;height:100%;margin:0;padding:0;overflow:hidden}
+.header,.footer{display:none!important}
+#GameDiv{width:100vw!important;height:100vh!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important}
+#Cocos3dGameContainer,#GameCanvas{width:100%!important;height:100%!important}
+</style>`;
+  const withoutPreviousStyle = gameDivHtml.replace(
+    /<style id="tiangz-desktop-viewport">[\s\S]*?<\/style>/g,
+    "",
+  );
+  const nextHtml = withoutPreviousStyle.includes("</head>")
+    ? withoutPreviousStyle.replace("</head>", `${viewportStyle}\n</head>`)
+    : `${withoutPreviousStyle}\n${viewportStyle}\n`;
+  writeFileSync(indexPath, nextHtml, "utf8");
 }
 
 /**

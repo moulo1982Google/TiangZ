@@ -2,6 +2,8 @@
 import "../../hotfix/mmorpg/buff/BuffComponentSystem";
 import "../../hotfix/mmorpg/buff/BuffSystem";
 import "../../hotfix/mmorpg/combat/CombatComponentSystem";
+import "../../hotfix/mmorpg/combat/CombatStateComponentSystem";
+import "../../hotfix/mmorpg/currency/CurrencyComponentSystem";
 import "../../hotfix/mmorpg/item/ItemComponentSystem";
 import "../../hotfix/mmorpg/item/ItemSystem";
 import "../../hotfix/mmorpg/login/LoginComponentSystem";
@@ -13,5 +15,6 @@ import "../../hotfix/mmorpg/npc/NpcUnitSystem";
 import "../../hotfix/mmorpg/numeric/NumericComponentSystem";
 import "../../hotfix/mmorpg/quest/QuestComponentSystem";
 import "../../hotfix/mmorpg/quest/QuestSystem";
+import "../../hotfix/mmorpg/shop/NpcShopComponentSystem";
 import "../../hotfix/mmorpg/skill/SkillComponentSystem";
 import "../../hotfix/mmorpg/skill/SkillMapComponentSystem";

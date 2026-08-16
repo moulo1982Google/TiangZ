@@ -13,7 +13,7 @@ import { TimerSystem } from "../app/core/runtime/TimerSystem";
 import { actor, scene } from "../app/core/runtime/metadata";
 import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
-import { GameConfigRegistry, GameConfigs } from "../app/generated/model/config";
+import { GameConfigRegistry, GameConfigs, SkillEffectTarget } from "../app/generated/model/config";
 import { ActionType } from "../app/model/mmorpg/action/ActionType";
 import { ExecuteAction, ExecuteActionBatch } from "../app/hotfix/mmorpg/action/ActionExecutor";
 import { GetSkillDefinition } from "../app/hotfix/mmorpg/skill/SkillCatalog";
@@ -24,6 +24,7 @@ import { NumericComponent } from "../app/model/mmorpg/numeric/NumericComponent";
 import { IsDerivedNumericType, NumericType } from "../app/model/mmorpg/numeric/NumericType";
 import { SkillCastPhase, SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
 import { ItemComponent } from "../app/model/mmorpg/item/ItemComponent";
+import { CurrencyComponent } from "../app/model/domains/currency/CurrencyComponent";
 import {
   ApplyItemUseTransaction,
   DecodeItemUseReceipt,
@@ -68,12 +69,19 @@ async function main(): Promise<void> {
   assert.equal(frostboltDefinition.effects.length, 2);
   assert.deepEqual(frostboltDefinition.effects[0].action.parameters, [50n, 2n]);
   assert.deepEqual(frostboltDefinition.effects[1].action.parameters, [4001n]);
-  const channelHealDefinition = GetSkillDefinition(3006);
-  assert.equal(channelHealDefinition.channelTickMs, 1_000);
-  assert.equal(channelHealDefinition.channelTicks, 3);
-  assert.equal(channelHealDefinition.queueWindowMs, 0);
-  assert.equal(channelHealDefinition.effects[0]?.action.type, ActionType.Heal);
-  assert.deepEqual(channelHealDefinition.effects[0]?.action.parameters, [30n]);
+  const recoveryDefinition = GetSkillDefinition(3006);
+  assert.equal(recoveryDefinition.name, "恢复");
+  assert.equal(recoveryDefinition.castTimeMs, 0);
+  assert.equal(recoveryDefinition.channelTickMs, 0);
+  assert.equal(recoveryDefinition.channelTicks, 0);
+  assert.equal(recoveryDefinition.effects[0]?.target, SkillEffectTarget.Caster);
+  assert.equal(recoveryDefinition.effects[0]?.action.type, ActionType.AddBuff);
+  assert.deepEqual(recoveryDefinition.effects[0]?.action.parameters, [2002n]);
+  const recoveryBuff = GameConfigs.BuffConfig.Get(2002);
+  assert.equal(recoveryBuff.durationSeconds, 24);
+  assert.equal(recoveryBuff.tickIntervalMs, 3_000);
+  assert.equal(recoveryBuff.tickActionType, ActionType.Heal);
+  assert.deepEqual(recoveryBuff.tickActionParams, [10]);
   const channelWhipDefinition = GetSkillDefinition(3007);
   assert.equal(channelWhipDefinition.name, "精神鞭笞");
   assert.equal(channelWhipDefinition.channelTickMs, 1_000);
@@ -106,6 +114,7 @@ async function main(): Promise<void> {
   await import("../app/hotfix/mmorpg/skill/SkillComponentSystem");
   await import("../app/hotfix/mmorpg/item/ItemSystem");
   await import("../app/hotfix/mmorpg/item/ItemComponentSystem");
+  await import("../app/hotfix/mmorpg/currency/CurrencyComponentSystem");
   await import("../app/hotfix/mmorpg/quest/QuestSystem");
   await import("../app/hotfix/mmorpg/quest/QuestComponentSystem");
   await import("../app/hotfix/mmorpg/map/PlayerUnitSystem");
@@ -134,6 +143,7 @@ async function main(): Promise<void> {
   unit.AddComponent(CombatComponent);
   const buffs = unit.AddComponent(BuffComponent);
   const items = unit.AddComponent(ItemComponent);
+  unit.AddComponent(CurrencyComponent, 0n);
   assert.deepEqual(items.Snapshot(), []);
   items.GrantItem(1001, 50);
   items.GrantItem(1002, 20);
@@ -222,6 +232,30 @@ async function main(): Promise<void> {
   assert.equal(buffs.GetBuffs().filter((value) => value.ConfigId === 2001).length, 1);
   const transactionBuff = buffs.GetBuffs().find((value) => value.ConfigId === 2001)!;
   buffs.RemoveBuff(transactionBuff.Id as bigint, "transaction-test-cleanup");
+
+  // 蓝药走和红药相同的持久化事务：按CurrentMp上限截断，重复回放不能再次增加法力或扣第二件道具。
+  // Mana potions use the same durable transaction path as health potions: clamp
+  // to CurrentMp's cap, and replay must not restore mana or consume a second item.
+  items.GrantItem(1003, 1);
+  unit.GetComponent(NumericComponent)[NumericType.CurrentMp] = 0n;
+  sourceSkill.RestoreTransfer({ globalCooldownEndAtMs: 0, cooldowns: [], itemCooldowns: [] });
+  const manaPotion = items.Snapshot().find((item) => item.configId === 1003)!;
+  const manaPlan = PlanItemUseTransaction(unit, manaPotion.itemId, manaPotion.configId);
+  const manaTransaction = await persistence.ApplyTransaction(
+    "item-use:buff-test-1:mana",
+    manaPlan.data,
+    EncodeItemUseReceipt(manaPlan.receipt),
+  );
+  const durableMana = DecodeItemUseReceipt(manaTransaction.result);
+  const manaApply = ApplyItemUseTransaction(unit, durableMana, manaPlan.inventory);
+  assert.equal(manaApply.inventoryChanged, true);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentMp], 100n);
+  const manaItemCount = items.Snapshot().find((item) => item.configId === 1003)?.count ?? 0;
+  assert.equal(manaItemCount, 0);
+  const duplicateManaApply = ApplyItemUseTransaction(unit, durableMana);
+  assert.equal(duplicateManaApply.inventoryChanged, false);
+  assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentMp], 100n);
+
   items.GrantItem(1002, 1);
   unit.GetComponent(NumericComponent)[NumericType.CurrentHp] = 1n;
   sourceSkill.RestoreTransfer({ globalCooldownEndAtMs: 0, cooldowns: [], itemCooldowns: [] });
@@ -335,6 +369,7 @@ async function main(): Promise<void> {
   target.AddComponent(CombatComponent);
   const targetBuffs = target.AddComponent(BuffComponent);
   const targetItems = target.AddComponent(ItemComponent);
+  target.AddComponent(CurrencyComponent);
   const targetSkill = target.AddComponent(SkillComponent);
   const targetQuests = target.AddComponent(QuestComponent);
   target.AddComponent(PlayerPersistenceComponent, repository, 0n);
@@ -522,23 +557,9 @@ async function main(): Promise<void> {
   assert.equal(targetSkill.ItemReadyAt(1001), itemCooldown.itemCooldownEndAtMs);
   sourceSkill.Interrupt("test-transfer");
 
-  // 引导状态和单技能排队只保存纯值；推进/取出不保存目标Entity或闭包。
-  // Channel progress and one-skill queue are pure values; no target Entity or closure is retained.
-  const channelCastId = 90002n;
-  sourceSkill.Accept({
-    castId: channelCastId,
-    skillId: 3006,
-    targetUnitId: unit.UnitId,
-    startedAtMs: skillNow,
-    finishAtMs: skillNow + 3_000,
-    nextTickAtMs: skillNow + 1_000,
-    channelTicksCompleted: 0,
-    definition: channelHealDefinition,
-  }, 6_000, 1_000);
-  assert.equal(sourceSkill.State(3006).channelTickCount, 3);
-  sourceSkill.UpdateChannel(channelCastId, skillNow + 2_000, 2);
-  assert.equal(sourceSkill.State(3006).channelTickIndex, 2);
-  sourceSkill.Interrupt("test-channel");
+  // 引导状态和单技能排队只保存纯值；恢复技能本身是瞬发，持续效果由Buff负责。
+  // Channel progress and the one-skill queue store pure values; Recovery is
+  // instant and its periodic work belongs to Buff rather than SkillComponent.
   const whipCastId = 90004n;
   sourceSkill.Accept({
     castId: whipCastId,

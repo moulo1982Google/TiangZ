@@ -31,6 +31,7 @@ import {
   type ItemUseCommitResult,
   type ItemUseTransactionReceipt,
 } from "./ItemUseTransaction";
+import { attachInventoryRecovery } from "./InventoryRecovery";
 
 const CLIENT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 
@@ -121,7 +122,7 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
       // commit, so recover the original receipt before returning the error.
       const recovered = await this.tryRecoverUseItem(unit, itemId, operationId);
       if (recovered) return recovered;
-      throw error;
+      throw attachInventoryRecovery(unit, error);
     }
 
     const encodedReceipt = EncodeItemUseReceipt(plan.receipt);

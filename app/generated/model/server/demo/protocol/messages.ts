@@ -20,6 +20,7 @@ export interface MapEntitySnapshot {
   entityType: number;
   configId: number;
   displayName: string;
+  shopEnabled: boolean;
 }
 
 export const MapEntitySnapshotCodec = {
@@ -43,6 +44,7 @@ export const MapEntitySnapshotCodec = {
       entityType: 0,
       configId: 0,
       displayName: "",
+      shopEnabled: false,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -97,6 +99,9 @@ export const MapEntitySnapshotCodec = {
       else if (tag.fieldNo === 17 && tag.wireType === 2) {
         value.displayName = reader.string();
       }
+      else if (tag.fieldNo === 18 && tag.wireType === 0) {
+        value.shopEnabled = reader.bool();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -123,6 +128,7 @@ export const MapEntitySnapshotCodec = {
     if (value.entityType !== undefined) writer.uint32(15, value.entityType);
     if (value.configId !== undefined) writer.uint32(16, value.configId);
     if (value.displayName !== undefined) writer.string(17, value.displayName);
+    if (value.shopEnabled !== undefined) writer.bool(18, value.shopEnabled);
     return writer.finish();
   },
 };
@@ -489,6 +495,76 @@ export const ItemSnapshotCodec = {
     if (value.quality !== undefined) writer.uint32(4, value.quality);
     if (value.level !== undefined) writer.uint32(5, value.level);
     if (value.version !== undefined) writer.uint32(6, value.version);
+    return writer.finish();
+  },
+};
+
+export interface InventorySnapshot {
+  items: readonly ItemSnapshot[];
+}
+
+export const InventorySnapshotCodec = {
+  decode(payload: Uint8Array): InventorySnapshot {
+    const reader = new BinaryReader(payload);
+    const value: InventorySnapshot = {
+      items: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        (value.items as ItemSnapshot[]).push(ItemSnapshotCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: InventorySnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    for (const item of (value.items ?? [])) writer.bytes(1, ItemSnapshotCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface ShopItemSnapshot {
+  itemConfigId: number;
+  buyPrice: bigint;
+  sellPrice: bigint;
+}
+
+export const ShopItemSnapshotCodec = {
+  decode(payload: Uint8Array): ShopItemSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: ShopItemSnapshot = {
+      itemConfigId: 0,
+      buyPrice: 0n,
+      sellPrice: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.itemConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.buyPrice = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.sellPrice = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: ShopItemSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.itemConfigId !== undefined) writer.uint32(1, value.itemConfigId);
+    if (value.buyPrice !== undefined) writer.uint64(2, value.buyPrice);
+    if (value.sellPrice !== undefined) writer.uint64(3, value.sellPrice);
     return writer.finish();
   },
 };
@@ -1145,6 +1221,7 @@ export interface M2G_SecondEnterMap extends IActorResponse {
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
   characterId: bigint;
+  gold: bigint;
 }
 
 export const M2G_SecondEnterMapCodec = {
@@ -1164,6 +1241,7 @@ export const M2G_SecondEnterMapCodec = {
       quests: [],
       completedQuestConfigIds: [],
       characterId: 0n,
+      gold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1215,6 +1293,9 @@ export const M2G_SecondEnterMapCodec = {
       else if (tag.fieldNo === 13 && tag.wireType === 0) {
         value.characterId = reader.uint64();
       }
+      else if (tag.fieldNo === 14 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1240,6 +1321,7 @@ export const M2G_SecondEnterMapCodec = {
     for (const item of (value.quests ?? [])) writer.bytes(11, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(12, item, true);
     if (value.characterId !== undefined) writer.uint64(13, value.characterId);
+    if (value.gold !== undefined) writer.uint64(14, value.gold);
     return writer.finish();
   },
 };
@@ -1263,6 +1345,7 @@ export interface M2G_EnterMap extends IResponse {
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
   characterId: bigint;
+  gold: bigint;
 }
 
 export const M2G_EnterMapCodec = {
@@ -1284,6 +1367,7 @@ export const M2G_EnterMapCodec = {
       quests: [],
       completedQuestConfigIds: [],
       characterId: 0n,
+      gold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1341,6 +1425,9 @@ export const M2G_EnterMapCodec = {
       else if (tag.fieldNo === 15 && tag.wireType === 0) {
         value.characterId = reader.uint64();
       }
+      else if (tag.fieldNo === 16 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1368,6 +1455,7 @@ export const M2G_EnterMapCodec = {
     for (const item of (value.quests ?? [])) writer.bytes(13, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(14, item, true);
     if (value.characterId !== undefined) writer.uint64(15, value.characterId);
+    if (value.gold !== undefined) writer.uint64(16, value.gold);
     return writer.finish();
   },
 };
@@ -1451,6 +1539,7 @@ export interface M2G_TransferPlayer extends IActorResponse {
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
   characterId: bigint;
+  gold: bigint;
 }
 
 export const M2G_TransferPlayerCodec = {
@@ -1474,6 +1563,7 @@ export const M2G_TransferPlayerCodec = {
       quests: [],
       completedQuestConfigIds: [],
       characterId: 0n,
+      gold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1537,6 +1627,9 @@ export const M2G_TransferPlayerCodec = {
       else if (tag.fieldNo === 17 && tag.wireType === 0) {
         value.characterId = reader.uint64();
       }
+      else if (tag.fieldNo === 18 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1566,6 +1659,7 @@ export const M2G_TransferPlayerCodec = {
     for (const item of (value.quests ?? [])) writer.bytes(15, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(16, item, true);
     if (value.characterId !== undefined) writer.uint64(17, value.characterId);
+    if (value.gold !== undefined) writer.uint64(18, value.gold);
     return writer.finish();
   },
 };
@@ -1959,6 +2053,7 @@ export interface PlayerTransferSnapshot {
   completedQuestConfigIds: readonly number[];
   persistenceRevision: bigint;
   characterId: bigint;
+  gold: bigint;
 }
 
 export const PlayerTransferSnapshotCodec = {
@@ -1985,6 +2080,7 @@ export const PlayerTransferSnapshotCodec = {
       completedQuestConfigIds: [],
       persistenceRevision: 0n,
       characterId: 0n,
+      gold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -2048,6 +2144,9 @@ export const PlayerTransferSnapshotCodec = {
       else if (tag.fieldNo === 21 && tag.wireType === 0) {
         value.characterId = reader.uint64();
       }
+      else if (tag.fieldNo === 22 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -2077,6 +2176,7 @@ export const PlayerTransferSnapshotCodec = {
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(19, item, true);
     if (value.persistenceRevision !== undefined) writer.uint64(20, value.persistenceRevision);
     if (value.characterId !== undefined) writer.uint64(21, value.characterId);
+    if (value.gold !== undefined) writer.uint64(22, value.gold);
     return writer.finish();
   },
 };
@@ -3194,6 +3294,7 @@ export interface M2M_CommitPlayerTransferResponse extends IResponse {
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
   characterId: bigint;
+  gold: bigint;
 }
 
 export const M2M_CommitPlayerTransferResponseCodec = {
@@ -3216,6 +3317,7 @@ export const M2M_CommitPlayerTransferResponseCodec = {
       quests: [],
       completedQuestConfigIds: [],
       characterId: 0n,
+      gold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3276,6 +3378,9 @@ export const M2M_CommitPlayerTransferResponseCodec = {
       else if (tag.fieldNo === 16 && tag.wireType === 0) {
         value.characterId = reader.uint64();
       }
+      else if (tag.fieldNo === 17 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3304,6 +3409,7 @@ export const M2M_CommitPlayerTransferResponseCodec = {
     for (const item of (value.quests ?? [])) writer.bytes(14, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(15, item, true);
     if (value.characterId !== undefined) writer.uint64(16, value.characterId);
+    if (value.gold !== undefined) writer.uint64(17, value.gold);
     return writer.finish();
   },
 };
@@ -5099,6 +5205,7 @@ export interface G2C_EnterMap extends IResponse {
   navigationHash: string;
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
+  gold: bigint;
 }
 
 export const G2C_EnterMapCodec = {
@@ -5121,6 +5228,7 @@ export const G2C_EnterMapCodec = {
       navigationHash: "",
       quests: [],
       completedQuestConfigIds: [],
+      gold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -5181,6 +5289,9 @@ export const G2C_EnterMapCodec = {
       else if (tag.fieldNo === 16 && tag.wireType === 0) {
         (value.completedQuestConfigIds as number[]).push(reader.uint32());
       }
+      else if (tag.fieldNo === 17 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -5209,6 +5320,7 @@ export const G2C_EnterMapCodec = {
     if (value.navigationHash !== undefined) writer.string(14, value.navigationHash);
     for (const item of (value.quests ?? [])) writer.bytes(15, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(16, item, true);
+    if (value.gold !== undefined) writer.uint64(17, value.gold);
     return writer.finish();
   },
 };
@@ -6088,6 +6200,7 @@ export interface M2C_UseItem extends IActorLocationResponse {
   buff?: BuffPublicView;
   globalCooldownEndAtMs: bigint;
   itemCooldownEndAtMs: bigint;
+  inventoryRecovery?: InventorySnapshot;
 }
 
 export const M2C_UseItemCodec = {
@@ -6121,6 +6234,9 @@ export const M2C_UseItemCodec = {
       else if (tag.fieldNo === 4 && tag.wireType === 0) {
         value.itemCooldownEndAtMs = reader.uint64();
       }
+      else if (tag.fieldNo === 5 && tag.wireType === 2) {
+        value.inventoryRecovery = InventorySnapshotCodec.decode(reader.bytesField());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -6137,6 +6253,7 @@ export const M2C_UseItemCodec = {
     if (value.buff !== undefined) writer.bytes(2, BuffPublicViewCodec.encode(value.buff));
     if (value.globalCooldownEndAtMs !== undefined) writer.uint64(3, value.globalCooldownEndAtMs);
     if (value.itemCooldownEndAtMs !== undefined) writer.uint64(4, value.itemCooldownEndAtMs);
+    if (value.inventoryRecovery !== undefined) writer.bytes(5, InventorySnapshotCodec.encode(value.inventoryRecovery));
     return writer.finish();
   },
 };
@@ -6431,6 +6548,334 @@ export const M2C_InspectLootMonsterCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.monsterId !== undefined) writer.uint32(1, value.monsterId);
     for (const item of (value.drops ?? [])) writer.bytes(2, LootDropSnapshotCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface C2M_OpenNpcShop extends IActorLocationRequest {
+  rpcId?: number;
+  npcUnitId: number;
+}
+
+export const C2M_OpenNpcShopCodec = {
+  decode(payload: Uint8Array): C2M_OpenNpcShop {
+    const reader = new BinaryReader(payload);
+    const value: C2M_OpenNpcShop = {
+      npcUnitId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.npcUnitId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_OpenNpcShop): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.npcUnitId !== undefined) writer.uint32(1, value.npcUnitId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_OpenNpcShop extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  npcUnitId: number;
+  items: readonly ShopItemSnapshot[];
+  gold: bigint;
+}
+
+export const M2C_OpenNpcShopCodec = {
+  decode(payload: Uint8Array): M2C_OpenNpcShop {
+    const reader = new BinaryReader(payload);
+    const value: M2C_OpenNpcShop = {
+      npcUnitId: 0,
+      items: [],
+      gold: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.npcUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        (value.items as ShopItemSnapshot[]).push(ShopItemSnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_OpenNpcShop): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.npcUnitId !== undefined) writer.uint32(1, value.npcUnitId);
+    for (const item of (value.items ?? [])) writer.bytes(2, ShopItemSnapshotCodec.encode(item), true);
+    if (value.gold !== undefined) writer.uint64(3, value.gold);
+    return writer.finish();
+  },
+};
+
+export interface C2M_BuyNpcShopItem extends IActorLocationRequest {
+  rpcId?: number;
+  npcUnitId: number;
+  itemConfigId: number;
+  count: number;
+  operationId: string;
+}
+
+export const C2M_BuyNpcShopItemCodec = {
+  decode(payload: Uint8Array): C2M_BuyNpcShopItem {
+    const reader = new BinaryReader(payload);
+    const value: C2M_BuyNpcShopItem = {
+      npcUnitId: 0,
+      itemConfigId: 0,
+      count: 0,
+      operationId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.npcUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.itemConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.count = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_BuyNpcShopItem): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.npcUnitId !== undefined) writer.uint32(1, value.npcUnitId);
+    if (value.itemConfigId !== undefined) writer.uint32(2, value.itemConfigId);
+    if (value.count !== undefined) writer.uint32(3, value.count);
+    if (value.operationId !== undefined) writer.string(4, value.operationId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_BuyNpcShopItem extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  itemConfigId: number;
+  count: number;
+  items: readonly ItemSnapshot[];
+  gold: bigint;
+  inventoryRecovery?: InventorySnapshot;
+}
+
+export const M2C_BuyNpcShopItemCodec = {
+  decode(payload: Uint8Array): M2C_BuyNpcShopItem {
+    const reader = new BinaryReader(payload);
+    const value: M2C_BuyNpcShopItem = {
+      itemConfigId: 0,
+      count: 0,
+      items: [],
+      gold: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.itemConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.count = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 2) {
+        (value.items as ItemSnapshot[]).push(ItemSnapshotCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 2) {
+        value.inventoryRecovery = InventorySnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_BuyNpcShopItem): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.itemConfigId !== undefined) writer.uint32(1, value.itemConfigId);
+    if (value.count !== undefined) writer.uint32(2, value.count);
+    for (const item of (value.items ?? [])) writer.bytes(3, ItemSnapshotCodec.encode(item), true);
+    if (value.gold !== undefined) writer.uint64(4, value.gold);
+    if (value.inventoryRecovery !== undefined) writer.bytes(5, InventorySnapshotCodec.encode(value.inventoryRecovery));
+    return writer.finish();
+  },
+};
+
+export interface C2M_SellItem extends IActorLocationRequest {
+  rpcId?: number;
+  npcUnitId: number;
+  itemId: bigint;
+  count: number;
+  operationId: string;
+}
+
+export const C2M_SellItemCodec = {
+  decode(payload: Uint8Array): C2M_SellItem {
+    const reader = new BinaryReader(payload);
+    const value: C2M_SellItem = {
+      npcUnitId: 0,
+      itemId: 0n,
+      count: 0,
+      operationId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.npcUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.itemId = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.count = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_SellItem): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.npcUnitId !== undefined) writer.uint32(1, value.npcUnitId);
+    if (value.itemId !== undefined) writer.uint64(2, value.itemId);
+    if (value.count !== undefined) writer.uint32(3, value.count);
+    if (value.operationId !== undefined) writer.string(4, value.operationId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_SellItem extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  itemConfigId: number;
+  count: number;
+  gold: bigint;
+  item: ItemSnapshot;
+  inventoryRecovery?: InventorySnapshot;
+}
+
+export const M2C_SellItemCodec = {
+  decode(payload: Uint8Array): M2C_SellItem {
+    const reader = new BinaryReader(payload);
+    const value: M2C_SellItem = {
+      itemConfigId: 0,
+      count: 0,
+      gold: 0n,
+      item: ItemSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.itemConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.count = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 2) {
+        value.item = ItemSnapshotCodec.decode(reader.bytesField());
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 2) {
+        value.inventoryRecovery = InventorySnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_SellItem): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.itemConfigId !== undefined) writer.uint32(1, value.itemConfigId);
+    if (value.count !== undefined) writer.uint32(2, value.count);
+    if (value.gold !== undefined) writer.uint64(3, value.gold);
+    if (value.item !== undefined) writer.bytes(4, ItemSnapshotCodec.encode(value.item));
+    if (value.inventoryRecovery !== undefined) writer.bytes(5, InventorySnapshotCodec.encode(value.inventoryRecovery));
     return writer.finish();
   },
 };

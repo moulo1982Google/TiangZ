@@ -359,7 +359,8 @@ export class ProtocolRegistry {
     const code =
       error instanceof RpcError ? error.code : SystemErrCode.HandlerFailed;
     const message = error instanceof Error ? error.message : String(error);
-    return this.rpcErrorResponse(route, rpcId, code, message, msgcode, context);
+    const response = error instanceof RpcError ? error.response : undefined;
+    return this.rpcErrorResponse(route, rpcId, code, message, msgcode, context, undefined, response);
   }
 
   private rpcErrorResponse(
@@ -370,11 +371,15 @@ export class ProtocolRegistry {
     msgcode?: number,
     context: ProtocolContext = {},
     outcomeKind?: ProtocolOutcomeKind,
+    errorResponse?: Readonly<Record<string, unknown>>,
   ): Uint8Array {
     if (code < 10000) {
       this.logSystemError(code, message, context);
     }
     const response = route.createResponse?.() ?? {};
+    if (isRecord(response) && errorResponse) {
+      Object.assign(response, errorResponse);
+    }
     setResponseMeta(response, rpcId, code);
     if (isRecord(response)) response.message = message;
     const encodeStartedAt = this.metrics ? nowMs() : 0;

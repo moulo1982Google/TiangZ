@@ -1791,7 +1791,7 @@ function verifyNumericDefaults(
     maxHp !== BigInt(playerConfig.maxHp) ||
     currentMp !== BigInt(playerConfig.initialMp) ||
     maxMp !== BigInt(playerConfig.maxMp) ||
-    attack !== 5n
+    attack !== 10n
   ) {
     throw new Error(
       `enter-map snapshot is missing Numeric defaults: unit ${unitId}, numerics=${initialNumerics.map((numeric) => `${numeric.numericType}=${numeric.value}`).join(",")}`,

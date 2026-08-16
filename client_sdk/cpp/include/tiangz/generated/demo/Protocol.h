@@ -158,6 +158,7 @@ struct MapEntitySnapshot {
   std::uint32_t entityType = 0;
   std::uint32_t configId = 0;
   std::string displayName;
+  bool shopEnabled = false;
 };
 
 struct MapEntitySnapshotCodec {
@@ -286,6 +287,13 @@ struct MapEntitySnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 18:
+          if (tag.wireType == 0) {
+            value.shopEnabled = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -313,6 +321,7 @@ struct MapEntitySnapshotCodec {
     writer.UInt32(15, value.entityType);
     writer.UInt32(16, value.configId);
     writer.String(17, value.displayName);
+    writer.Bool(18, value.shopEnabled);
     return writer.Finish();
   }
 };
@@ -748,6 +757,90 @@ struct ItemSnapshotCodec {
     writer.UInt32(4, value.quality);
     writer.UInt32(5, value.level);
     writer.UInt32(6, value.version);
+    return writer.Finish();
+  }
+};
+
+struct InventorySnapshot {
+  std::vector<ItemSnapshot> items;
+};
+
+struct InventorySnapshotCodec {
+  static InventorySnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    InventorySnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 2) {
+            value.items.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const InventorySnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    for (const auto& item : value.items) writer.BytesField(1, ItemSnapshotCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
+struct ShopItemSnapshot {
+  std::uint32_t itemConfigId = 0;
+  std::uint64_t buyPrice = 0;
+  std::uint64_t sellPrice = 0;
+};
+
+struct ShopItemSnapshotCodec {
+  static ShopItemSnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    ShopItemSnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.itemConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.buyPrice = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.sellPrice = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const ShopItemSnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.itemConfigId);
+    writer.UInt64(2, value.buyPrice);
+    writer.UInt64(3, value.sellPrice);
     return writer.Finish();
   }
 };
@@ -2125,6 +2218,7 @@ struct G2C_EnterMap {
   std::string navigationHash;
   std::vector<QuestSnapshot> quests;
   std::vector<std::uint32_t> completedQuestConfigIds;
+  std::uint64_t gold = 0;
 };
 
 struct G2C_EnterMapCodec {
@@ -2267,6 +2361,13 @@ struct G2C_EnterMapCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 17:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2296,6 +2397,7 @@ struct G2C_EnterMapCodec {
     writer.String(14, value.navigationHash);
     for (const auto& item : value.quests) writer.BytesField(15, QuestSnapshotCodec::Encode(item), true);
     for (const auto& item : value.completedQuestConfigIds) writer.UInt32(16, item, true);
+    writer.UInt64(17, value.gold);
     return writer.Finish();
   }
 };
@@ -3436,6 +3538,7 @@ struct M2C_UseItem {
   std::optional<BuffPublicView> buff;
   std::uint64_t globalCooldownEndAtMs = 0;
   std::uint64_t itemCooldownEndAtMs = 0;
+  std::optional<InventorySnapshot> inventoryRecovery;
 };
 
 struct M2C_UseItemCodec {
@@ -3494,6 +3597,13 @@ struct M2C_UseItemCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.inventoryRecovery = InventorySnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -3511,6 +3621,7 @@ struct M2C_UseItemCodec {
     if (value.buff.has_value()) writer.BytesField(2, BuffPublicViewCodec::Encode(*value.buff));
     writer.UInt64(3, value.globalCooldownEndAtMs);
     writer.UInt64(4, value.itemCooldownEndAtMs);
+    if (value.inventoryRecovery.has_value()) writer.BytesField(5, InventorySnapshotCodec::Encode(*value.inventoryRecovery));
     return writer.Finish();
   }
 };
@@ -3907,6 +4018,456 @@ struct M2C_InspectLootMonsterCodec {
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.UInt32(1, value.monsterId);
     for (const auto& item : value.drops) writer.BytesField(2, LootDropSnapshotCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
+struct C2M_OpenNpcShop {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t npcUnitId = 0;
+};
+
+struct C2M_OpenNpcShopCodec {
+  static C2M_OpenNpcShop Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_OpenNpcShop value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_OpenNpcShop& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.npcUnitId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_OpenNpcShop {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t npcUnitId = 0;
+  std::vector<ShopItemSnapshot> items;
+  std::uint64_t gold = 0;
+};
+
+struct M2C_OpenNpcShopCodec {
+  static M2C_OpenNpcShop Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_OpenNpcShop value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.items.push_back(ShopItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_OpenNpcShop& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.npcUnitId);
+    for (const auto& item : value.items) writer.BytesField(2, ShopItemSnapshotCodec::Encode(item), true);
+    writer.UInt64(3, value.gold);
+    return writer.Finish();
+  }
+};
+
+struct C2M_BuyNpcShopItem {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t npcUnitId = 0;
+  std::uint32_t itemConfigId = 0;
+  std::uint32_t count = 0;
+  std::string operationId;
+};
+
+struct C2M_BuyNpcShopItemCodec {
+  static C2M_BuyNpcShopItem Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_BuyNpcShopItem value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.itemConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.count = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_BuyNpcShopItem& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.npcUnitId);
+    writer.UInt32(2, value.itemConfigId);
+    writer.UInt32(3, value.count);
+    writer.String(4, value.operationId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_BuyNpcShopItem {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t itemConfigId = 0;
+  std::uint32_t count = 0;
+  std::vector<ItemSnapshot> items;
+  std::uint64_t gold = 0;
+  std::optional<InventorySnapshot> inventoryRecovery;
+};
+
+struct M2C_BuyNpcShopItemCodec {
+  static M2C_BuyNpcShopItem Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_BuyNpcShopItem value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.itemConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.count = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.items.push_back(ItemSnapshotCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.inventoryRecovery = InventorySnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_BuyNpcShopItem& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.itemConfigId);
+    writer.UInt32(2, value.count);
+    for (const auto& item : value.items) writer.BytesField(3, ItemSnapshotCodec::Encode(item), true);
+    writer.UInt64(4, value.gold);
+    if (value.inventoryRecovery.has_value()) writer.BytesField(5, InventorySnapshotCodec::Encode(*value.inventoryRecovery));
+    return writer.Finish();
+  }
+};
+
+struct C2M_SellItem {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t npcUnitId = 0;
+  std::uint64_t itemId = 0;
+  std::uint32_t count = 0;
+  std::string operationId;
+};
+
+struct C2M_SellItemCodec {
+  static C2M_SellItem Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_SellItem value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.npcUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.itemId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.count = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_SellItem& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.npcUnitId);
+    writer.UInt64(2, value.itemId);
+    writer.UInt32(3, value.count);
+    writer.String(4, value.operationId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_SellItem {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t itemConfigId = 0;
+  std::uint32_t count = 0;
+  std::uint64_t gold = 0;
+  ItemSnapshot item;
+  std::optional<InventorySnapshot> inventoryRecovery;
+};
+
+struct M2C_SellItemCodec {
+  static M2C_SellItem Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_SellItem value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.itemConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.count = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.item = ItemSnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.inventoryRecovery = InventorySnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_SellItem& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.itemConfigId);
+    writer.UInt32(2, value.count);
+    writer.UInt64(3, value.gold);
+    writer.BytesField(4, ItemSnapshotCodec::Encode(value.item));
+    if (value.inventoryRecovery.has_value()) writer.BytesField(5, InventorySnapshotCodec::Encode(*value.inventoryRecovery));
     return writer.Finish();
   }
 };
@@ -5376,6 +5937,12 @@ inline constexpr std::uint16_t C2M_LootMonster = 10062;
 inline constexpr std::uint16_t M2C_LootMonster = 10063;
 inline constexpr std::uint16_t C2M_InspectLootMonster = 10064;
 inline constexpr std::uint16_t M2C_InspectLootMonster = 10065;
+inline constexpr std::uint16_t C2M_OpenNpcShop = 10066;
+inline constexpr std::uint16_t M2C_OpenNpcShop = 10067;
+inline constexpr std::uint16_t C2M_BuyNpcShopItem = 10068;
+inline constexpr std::uint16_t M2C_BuyNpcShopItem = 10069;
+inline constexpr std::uint16_t C2M_SellItem = 10070;
+inline constexpr std::uint16_t M2C_SellItem = 10071;
 inline constexpr std::uint16_t C2M_ToggleAutoAttack = 10044;
 inline constexpr std::uint16_t M2C_ToggleAutoAttack = 10045;
 inline constexpr std::uint16_t G2C_AutoAttackState = 10046;
@@ -5463,6 +6030,18 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_LootMonster, M2C_LootMonster,
 
 inline constexpr tiangz::client::RpcDescriptor<C2M_InspectLootMonster, M2C_InspectLootMonster, C2M_InspectLootMonsterCodec, M2C_InspectLootMonsterCodec> Map_InspectLootMonster{
   "Map.InspectLootMonster", MsgCode::C2M_InspectLootMonster, MsgCode::M2C_InspectLootMonster
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_OpenNpcShop, M2C_OpenNpcShop, C2M_OpenNpcShopCodec, M2C_OpenNpcShopCodec> Map_OpenNpcShop{
+  "Map.OpenNpcShop", MsgCode::C2M_OpenNpcShop, MsgCode::M2C_OpenNpcShop
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_BuyNpcShopItem, M2C_BuyNpcShopItem, C2M_BuyNpcShopItemCodec, M2C_BuyNpcShopItemCodec> Map_BuyNpcShopItem{
+  "Map.BuyNpcShopItem", MsgCode::C2M_BuyNpcShopItem, MsgCode::M2C_BuyNpcShopItem
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_SellItem, M2C_SellItem, C2M_SellItemCodec, M2C_SellItemCodec> Map_SellItem{
+  "Map.SellItem", MsgCode::C2M_SellItem, MsgCode::M2C_SellItem
 };
 
 inline constexpr tiangz::client::RpcDescriptor<C2M_ToggleAutoAttack, M2C_ToggleAutoAttack, C2M_ToggleAutoAttackCodec, M2C_ToggleAutoAttackCodec> Map_ToggleAutoAttack{

@@ -139,7 +139,11 @@ export class RpcSocket {
       );
     }
     if ((response.error ?? 0) !== 0) {
-      throw new RpcError(response.error!, response.message || descriptor.name);
+      throw new RpcError(
+        response.error!,
+        response.message || descriptor.name,
+        response as unknown as Readonly<Record<string, unknown>>,
+      );
     }
     return response;
   }

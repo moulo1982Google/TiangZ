@@ -363,6 +363,10 @@ export class ItemConfig {
         this.cooldownMs = _json_.cooldown_ms
         if (_json_.global_cooldown_ms === undefined) { throw new Error() }
         this.globalCooldownMs = _json_.global_cooldown_ms
+        if (_json_.buy_price === undefined) { throw new Error() }
+        this.buyPrice = _json_.buy_price
+        if (_json_.sell_price === undefined) { throw new Error() }
+        this.sellPrice = _json_.sell_price
     }
 
     /**
@@ -401,8 +405,18 @@ export class ItemConfig {
      * 与技能共享的公共冷却（毫秒）
      */
     readonly globalCooldownMs: number
+    /**
+     * NPC购买价格（金币）
+     */
+    readonly buyPrice: number
+    /**
+     * NPC出售价格（金币）
+     */
+    readonly sellPrice: number
 
     resolve(tables:Tables) {
+
+
 
 
 

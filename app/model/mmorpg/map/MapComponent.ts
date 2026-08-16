@@ -66,12 +66,14 @@ import { ItemComponent } from "../item/ItemComponent";
 import { BuffComponent } from "../buff/BuffComponent";
 import type { BuffTransferState } from "../buff/Buff";
 import { CombatComponent, type AutoAttackState } from "../combat/CombatComponent";
+import { CombatStateComponent } from "../combat/CombatStateComponent";
 import type { SkillCastState, SkillTransferState } from "../skill/SkillComponent";
 import { SkillComponent } from "../skill/SkillComponent";
 import { QuestComponent, type QuestTransferState } from "../quest/QuestComponent";
 import { QuestEvents } from "../quest/QuestEvents";
 import type { SkillProjectile } from "../skill/SkillMapComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
+import { CurrencyComponent } from "../../domains/currency/CurrencyComponent";
 import { LocationProxy } from "../location/LocationProxy";
 import type {
   PlayerLoadResult,
@@ -659,6 +661,7 @@ export class MapComponent extends Component<[
           active: snapshot.quests.map(fromProtocolQuest),
           completedQuestConfigIds: snapshot.completedQuestConfigIds,
         } satisfies QuestTransferState],
+        [CurrencyComponent, snapshot.gold],
         [PlayerPersistenceComponent, snapshot.persistenceRevision],
       ]),
     };
@@ -763,13 +766,19 @@ export class MapComponent extends Component<[
         [NumericType.CurrentMp]: BigInt(playerConfig.initialMp),
         [NumericType.MaxMpBase]: BigInt(playerConfig.maxMp),
         [NumericType.Level]: 1n,
-        [NumericType.AttackBase]: 5n,
+        // 演示玩家的基础攻击力翻倍；平A和技能伤害读取最终 NumericType.Attack。
+        // Double the starter player's base attack; both auto-attacks and skills read the final NumericType.Attack.
+        [NumericType.AttackBase]: 10n,
         [NumericType.AttackSpeedAdd]: 2_000n,
         [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(playerConfig.moveSpeed),
       });
       player.AddComponent(ItemComponent);
+      player.AddComponent(CurrencyComponent, loaded?.data.player.gold ?? transfer?.components.get(CurrencyComponent) as bigint | undefined ?? 0n);
       // 平A状态不随地图传送恢复，目标地图创建新的默认CombatComponent。 / Auto-attack is not transferred; the target map gets a fresh default component.
       player.AddComponent(CombatComponent);
+      // 仇恨和战斗状态是地图运行态，不跨地图迁移；新地图从脱战状态开始回蓝。
+      // Threat and combat state are map runtime state; transfer creates a fresh out-of-combat state.
+      player.AddComponent(CombatStateComponent);
       player.AddComponent(BuffComponent);
       // Unit只持有技能状态；地图上的SkillMapComponent统一以10Hz推进。 / The Unit owns skill state while one map SkillMapComponent advances it at 10 Hz.
       player.AddComponent(SkillComponent);
@@ -778,6 +787,7 @@ export class MapComponent extends Component<[
       player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
       if (loaded) this.RestorePersistedPlayer(player, position, loaded);
+      if (loaded) this.MigrateStarterAttack(player);
       if (transfer) player.GetComponent(PlayerPersistenceComponent).AdoptTransfer();
       return player;
     } catch (error) {
@@ -820,6 +830,7 @@ export class MapComponent extends Component<[
         }))],
         [SkillComponent, data.skill],
         [QuestComponent, data.quests],
+        [CurrencyComponent, data.player.gold],
       ]),
     };
     player.RestoreTransfer(transfer);
@@ -885,6 +896,22 @@ export class MapComponent extends Component<[
       }
       position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, data.player.yaw);
     }
+  }
+
+  /**
+   * 一次性把旧演示账号的默认攻击力从5迁移到10；只匹配旧默认值，避免重启时重复翻倍。
+   * Migrates the legacy starter attack from 5 to 10 exactly once; matching only
+   * the old default prevents the value from doubling again on every restart.
+   */
+  private MigrateStarterAttack(player: PlayerUnit): void {
+    const numeric = player.GetComponent(NumericComponent);
+    if (numeric[NumericType.AttackBase] !== 5n) return;
+    numeric[NumericType.AttackBase] = 10n;
+    this.logger.info("legacy starter attack migrated", {
+      account: player.Account,
+      characterId: player.CharacterId.toString(),
+      attackBase: 10,
+    });
   }
 
   private RequireNavMesh3D(): void {
@@ -1252,6 +1279,7 @@ export class MapComponent extends Component<[
       items: unit.GetComponent(ItemComponent).Snapshot(),
       quests: unit.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: unit.GetComponent(QuestComponent).CompletedQuestConfigIds(),
+      gold: unit.Snapshot().gold,
       mapInstanceId: snapshot.mapInstanceId,
     };
   }
@@ -1954,6 +1982,7 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../..
       alive: snapshot.alive,
       entityType: 2,
       configId: snapshot.monsterConfigId,
+      shopEnabled: false,
     };
   }
   if (unit instanceof NpcUnit) {
@@ -1976,6 +2005,7 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../..
       alive: snapshot.alive,
       entityType: 3,
       configId: snapshot.npcConfigId,
+      shopEnabled: snapshot.shopEnabled,
     };
   }
   if (!(unit instanceof PlayerUnit)) {
@@ -2000,6 +2030,7 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../..
     alive: snapshot.alive,
     entityType: 1,
     configId: 1,
+    shopEnabled: false,
   };
 }
 

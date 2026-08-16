@@ -180,6 +180,28 @@
         10002,
         -500
       ]
+    },
+    {
+      "id": 2002,
+      "name": "恢复",
+      "description": "恢复技能添加的持续恢复效果：持续24秒，每3秒恢复10点生命，共8次。",
+      "duration_seconds": 24,
+      "tick_interval_ms": 3000,
+      "stack_group": 2002,
+      "stack_scope": 1,
+      "conflict_policy": 2,
+      "conflict_priority": 0,
+      "refresh_source": false,
+      "refresh_tick_policy": 1,
+      "refresh_runtime_state": 1,
+      "add_action_type": 0,
+      "add_action_params": [],
+      "tick_action_type": 6,
+      "tick_action_params": [
+        10
+      ],
+      "remove_action_type": 0,
+      "remove_action_params": []
     }
   ],
   "game_tbconfigtablepolicy": [
@@ -240,14 +262,32 @@
     {
       "id": 1001,
       "drop_table_id": 1,
-      "item_config_id": 1001,
+      "item_config_id": 1201,
       "min_count": 1,
       "max_count": 1,
-      "chance_permille": 1000,
+      "chance_permille": 800,
       "quest_objective_id": 0
     },
     {
       "id": 1002,
+      "drop_table_id": 1,
+      "item_config_id": 1001,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 150,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 1003,
+      "drop_table_id": 1,
+      "item_config_id": 1002,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 50,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 1004,
       "drop_table_id": 1,
       "item_config_id": 1101,
       "min_count": 1,
@@ -258,10 +298,28 @@
     {
       "id": 2001,
       "drop_table_id": 2,
+      "item_config_id": 1201,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 800,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 2002,
+      "drop_table_id": 2,
+      "item_config_id": 1001,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 150,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 2003,
+      "drop_table_id": 2,
       "item_config_id": 1002,
       "min_count": 1,
       "max_count": 1,
-      "chance_permille": 1000,
+      "chance_permille": 50,
       "quest_objective_id": 0
     }
   ],
@@ -276,7 +334,9 @@
         150
       ],
       "cooldown_ms": 30000,
-      "global_cooldown_ms": 1000
+      "global_cooldown_ms": 1000,
+      "buy_price": 50,
+      "sell_price": 20
     },
     {
       "id": 1002,
@@ -287,7 +347,9 @@
         2001
       ],
       "cooldown_ms": 30000,
-      "global_cooldown_ms": 1000
+      "global_cooldown_ms": 1000,
+      "buy_price": 100,
+      "sell_price": 50
     },
     {
       "id": 1101,
@@ -296,7 +358,35 @@
       "use_effect": 0,
       "use_params": [],
       "cooldown_ms": 0,
-      "global_cooldown_ms": 0
+      "global_cooldown_ms": 0,
+      "buy_price": 0,
+      "sell_price": 0
+    },
+    {
+      "id": 1201,
+      "name": "破旧布料",
+      "max_stack": 99,
+      "use_effect": 0,
+      "use_params": [],
+      "cooldown_ms": 0,
+      "global_cooldown_ms": 0,
+      "buy_price": 0,
+      "sell_price": 10
+    },
+    {
+      "id": 1003,
+      "name": "小型法力药水",
+      "max_stack": 99,
+      "use_effect": 2,
+      "use_params": [
+        1,
+        2,
+        150
+      ],
+      "cooldown_ms": 30000,
+      "global_cooldown_ms": 1000,
+      "buy_price": 50,
+      "sell_price": 20
     }
   ],
   "game_tbmapconfig": [
@@ -759,22 +849,22 @@
     },
     {
       "id": 3006,
-      "name": "引导治疗",
-      "description": "引导3秒，每秒恢复30点生命；移动会打断引导。",
+      "name": "恢复",
+      "description": "瞬发，为自己添加持续24秒的恢复Buff，每3秒恢复10点生命，共8次。",
       "target_relation": 2,
-      "cast_time_ms": 3000,
+      "cast_time_ms": 0,
       "cooldown_ms": 6000,
       "global_cooldown_ms": 1000,
       "range_meters": 15,
       "delivery": 1,
       "projectile_speed_meters_per_second": 0,
-      "movement_policy": 2,
+      "movement_policy": 1,
       "auto_attack_policy": 2,
       "revalidate_on_complete": true,
       "required_absent_buff_config_id": 0,
       "queue_window_ms": 0,
-      "channel_tick_ms": 1000,
-      "channel_ticks": 3
+      "channel_tick_ms": 0,
+      "channel_ticks": 0
     },
     {
       "id": 3007,
@@ -892,12 +982,12 @@
       "id": 300601,
       "skill_id": 3006,
       "order": 1,
-      "target": 2,
-      "action_type": 6,
+      "target": 1,
+      "action_type": 2,
       "action_params": [
-        30
+        2002
       ],
-      "description": "每跳为主目标恢复30点生命"
+      "description": "给自己添加24秒恢复Buff"
     },
     {
       "id": 300701,

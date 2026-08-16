@@ -42,7 +42,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | ST-02 | 进入主城 | MapHost 和玩家快照已有 | 新角色加载快照后进入主城，并收到完整初始状态 |
 | ST-03 | 主城进入野外 | 跨地图和 MapInstance 路由已有 | 使用统一 `TransferToMap`，业务不区分静态地图和动态地图 |
 | ST-04 | 野外战斗 | 怪物、普通攻击、技能和 Buff 已有 | 击杀普通怪、死亡、尸体和仇恨状态可重复验证 |
-| ST-05 | 掉落、拾取、背包 | 已完成：`MonsterConfig -> DropTableConfig -> LootContainer -> C2M_LootMonster -> Inventory`；任务掉落按账号和剩余需求判定，普通掉落全局一次性领取，DBProxy事务和operationId幂等已接通 | 击杀后尸体保留掉落；未接任务或需求已满时任务行留在尸体；有资格拾取后背包增加，重复请求不重复增加 |
+| ST-05 | 掉落、拾取、背包 | 已完成：`MonsterConfig -> DropTableConfig -> LootContainer -> C2M_LootMonster -> Inventory`；任务掉落按账号和剩余需求判定，普通掉落归第一次有效攻击者账号，DBProxy事务和operationId幂等已接通 | 击杀后尸体保留掉落；未接任务或需求已满时任务行留在尸体；有资格拾取后背包增加，重复请求不重复增加；无归属账号不能抢走普通掉落 |
 | ST-06 | 任务接取、进度和奖励 | Starter第一版已在Map 100放置紫色任务NPC；玩家出生点靠近NPC，远端四角放置2个被动黄色怪和2个主动红色怪；靠近NPC 5米内显示交互按钮，按钮打开对话框后通过`C2M_AcceptQuest(questConfigId, npcUnitId)`接取，服务端校验5米范围；Quest状态、目标索引、条件和奖励已有；完成5005后可接取收集5个1101的5006 | PC与移动端都按“交互按钮 -> NPC对话 -> 接取任务”操作，击杀/拾取/使用道具推进、提交任务、领取奖励形成闭环；选中NPC或点击模型不能自动接取 |
 | ST-07 | 动态副本与 Boss | 动态 MapHost/MapManager 已有；Starter Boss 流程尚未固定 | 请求幂等创建副本、进入、击杀 Boss、领取副本奖励、返回入口 |
 | ST-08 | 断线重连和跨地图 | Gate 重连、Location、MapInstance 路由已有 | 断线宽限内恢复原 Unit；传送中请求有明确状态和幂等结果 |

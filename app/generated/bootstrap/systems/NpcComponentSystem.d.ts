@@ -7,6 +7,7 @@ declare module "../../../model/mmorpg/npc/NpcComponent" {
     Get(npcUnitId: number): NpcUnit | undefined;
     GetAll(): readonly NpcUnit[];
     ValidateQuestInteraction(player: PlayerUnit, npcUnitId: number, questConfigId: number): void;
+    ValidateShopInteraction(player: PlayerUnit, npcUnitId: number): void;
   }
 }
 

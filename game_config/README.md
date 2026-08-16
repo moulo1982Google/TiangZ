@@ -44,7 +44,7 @@ npm run test:game-config
 | `1` | 给使用者添加Buff | 一个`BuffConfig.id` |
 | `2` | 执行一个Action | `[ActionType参数...]`；例如`Heal(50)`写作`6,50` |
 
-当前演示道具：小型生命药水使用`Heal(150)`，大型生命药水使用`AddBuff(2001)`。两者的`cooldown_ms`均为30000，`global_cooldown_ms`均为1000；药品自身CD按`ItemConfigId`独立，公共CD与技能共享并由服务端原子提交。冷却截止时间随玩家跨地图传送，不能通过换图刷新。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、创建Timer或直接广播Buff。
+当前演示道具：小型生命药水使用`Heal(150)`，大型生命药水使用`AddBuff(2001)`，小型法力药水使用`ChangeNumeric(CurrentMp, +150)`。三者的`cooldown_ms`均为30000，`global_cooldown_ms`均为1000；药品自身CD按`ItemConfigId`独立，公共CD与技能共享并由服务端原子提交。冷却截止时间随玩家跨地图传送，不能通过换图刷新。`ItemConfig.buy_price/sell_price`使用铜币整数：破旧布料售价10、小红售价20、大红售价50；买入价格仍由Npc商店目录读取，Map 100的9002杂货商当前出售小红和小型法力药水。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、MP、创建Timer或直接广播Buff。
 
 Cocos3D演示玩家出生时背包为空，快捷栏仍固定使用`1`切换平A、`2`使用1001、`3`使用1002；新玩家先从NPC领取任务，完成Starter任务5001奖励`1001×10`，完成后续任务5005奖励`1002×10`。快捷栏没有对应道具时只显示空槽，不应由`ItemComponentSystem.Awake`偷偷发放测试物品；传送、重连和持久化恢复仍只使用`ItemSnapshot`。
 
@@ -52,9 +52,9 @@ Cocos3D演示玩家出生时背包为空，快捷栏仍固定使用`1`切换平A
 
 ### 怪物掉落与任务道具
 
-`MonsterConfig.drop_table_id`指向`DropTableConfig.drop_table_id`。每一行是一个掉落行：`item_config_id`是道具配置ID，`min_count/max_count`是数量范围，`chance_permille`是千分比概率，`quest_objective_id=0`表示普通掉落，非零表示只服务于指定`CollectItem`目标的任务掉落。当前Starter的任务5006在完成并交付5005后解锁，要求收集5个道具1101“任务怪物徽记”；怪物A的掉落表包含这条任务掉落。
+`MonsterConfig.drop_table_id`指向`DropTableConfig.drop_table_id`。每一行是一个掉落行：`item_config_id`是道具配置ID，`min_count/max_count`是数量范围，`chance_permille`是该行自己的千分比概率，`quest_objective_id=0`表示普通掉落，非零表示只服务于指定`CollectItem`目标的任务掉落。普通掉落行逐行独立投掷，因此同一具尸体可以同时掉出布料、小红和大红，也可能一件都没有；当前Starter的表1、表2仍为破旧布料1201 800/1000、小型生命药水1001 150/1000、大型生命药水1002 50/1000，即80%/15%/5%。任务掉落行仍按玩家任务资格独立判断。当前Starter的任务5006在完成并交付5005后解锁，要求收集5个道具1101“任务怪物徽记”；怪物A的掉落表包含这条任务掉落。
 
-死亡时，地图只在尸体容器中保存配置ID和数量，尸体有掉落时保留5分钟、没有掉落时保留10秒；全部普通掉落领取后可以立即清理尸体。`respawn_seconds`从死亡时刻开始计时，只表示新怪物的最短重生时刻；实际生成取尸体窗口结束与该时刻两者较晚值，不再单独决定尸体显示时间。当前静态任务徽记不会提前创建永久`ItemId`。玩家必须先从NPC接取5006，靠近尸体后发送`C2M_LootMonster`，服务端在拾取时检查任务是否存在且还需要数量。未接任务、任务已经达到要求数量，或该账号已经领取过同一行时，都不会生成背包Item；这条任务掉落仍留在尸体上，不会因为其他玩家或本玩家无资格而全局消失。不同账号各自按任务资格领取，普通掉落则是全局一次性领取。
+死亡时，地图只在尸体容器中保存配置ID和数量，尸体有掉落时保留5分钟、没有掉落时保留10秒；全部普通掉落领取后可以立即清理尸体。`respawn_seconds`从死亡时刻开始计时，只表示新怪物的最短重生时刻；实际生成取尸体窗口结束与该时刻两者较晚值，不再单独决定尸体显示时间。当前静态任务徽记不会提前创建永久`ItemId`。玩家必须先从NPC接取5006，靠近尸体后发送`C2M_LootMonster`，服务端在拾取时检查任务是否存在且还需要数量。未接任务、任务已经达到要求数量，或该账号已经领取过同一行时，都不会生成背包Item；这条任务掉落仍留在尸体上，不会因为其他玩家或本玩家无资格而全局消失。任务掉落按账号资格领取；普通掉落在Starter中归第一次有效攻击者账号所有，其他账号不能抢走。
 
 拾取不是“先改内存再保存”：`MonsterComponent.LootMonster`先规划Inventory和Quest快照，使用稳定`operationId`提交DBProxy事务，确认后才提交Item/Quest Entity并推送结果。重复请求返回第一次回执，不会重复加道具或推进任务。动态词条、耐久等真正的ItemInstance掉落不能直接套用“尸体只存配置ID”的静态快捷方式，应在后续ItemInstance方案中保存实例数据。
 
@@ -87,9 +87,13 @@ Action当前支持：
 
 ### Skill配置
 
-`SkillConfig`只回答“能否施放以及如何推进时间线”，`SkillEffectConfig`只回答“成功命中后依次执行哪些Action”。一项技能可以有多行效果，按`order`、再按效果行`id`稳定排序；同技能不能填写重复`order`。`queue_window_ms`控制读条结束前是否允许缓存一个下一技能，`channel_tick_ms/channel_ticks`控制引导跳数，二者都属于冷结构字段。当前3006“引导治疗”每1000ms执行一次`Heal(30)`，共3跳；3007“精神鞭笞”每1000ms执行一次`DealDamage(20, Shadow)`，共5跳。服务端10Hz桶推进，移动会打断；3007受击时结束时间提前1000ms；客户端只显示服务端状态。
+`SkillConfig`只回答“能否施放以及如何推进时间线”，`SkillEffectConfig`只回答“成功命中后依次执行哪些Action”。一项技能可以有多行效果，按`order`、再按效果行`id`稳定排序；同技能不能填写重复`order`。`queue_window_ms`控制读条结束前是否允许缓存一个下一技能，`channel_tick_ms/channel_ticks`控制引导跳数，二者都属于冷结构字段。当前3006“恢复”为瞬发技能，只执行`AddBuff(2002)`；Buff 2002持续24秒，每3000ms执行一次`Heal(10)`，共8次。3007“精神鞭笞”每1000ms执行一次`DealDamage(20, Shadow)`，共5跳。服务端10Hz桶推进读条、引导和弹道，移动会打断可移动中断的技能；客户端只显示服务端状态。
 
 服务端的`SkillCatalog.ts`按当前游戏配置指纹把两张表组合成只读定义。配置Reload后，新Cast使用新定义；已开始读条和已经发射的弹道继续持有接受请求时冻结的旧定义，避免半次技能混用两代数值。客户端SDK只生成`SkillConfig`，用于名称、距离、读条和CD表现；`SkillEffectConfig`保持服务端专有。完整开发流程见[新增一个配置化技能](../docs/tutorials/18-configured-skill.md)。
+
+当前技能的法力消耗暂时由服务端Hotfix的`SkillManaCost.ts`维护，待技能表结构稳定后再下沉到配置。技能被服务端接受后立即扣除法力，法力不足在创建施法前拒绝，不会在读条中途回滚；当前演示费用已统一减半，整数费用向下取整：寒冰箭10、火焰冲击12、惩击7、真言术·盾15、真言术·韧10、恢复7、精神鞭笞15。
+
+玩家的战斗状态由`CombatStateComponent`维护，而不是由客户端或单独的“是否正在平A”推断：只要仍有怪物对玩家保留有效仇恨，玩家就处于战斗状态；怪物死亡、清除仇恨或回到出生点时移除对应来源，所有来源都消失后退出战斗。战斗状态下HP和MP都不自动恢复；脱战后分别按“最大HP/MP在180秒内从当前值恢复到满值”计算，服务端以固定更新桶统一推进，并使用整数余数累积避免浮点漂移。传送时CombatState作为临时运行态清空，目标地图重新开始判定。
 
 怪物死亡后，当前MonsterUnit会以`alive=false`的尸体状态继续保留在AOI中；有掉落尸体保留5分钟、无掉落尸体保留10秒，全部普通掉落领取后可提前清理。`respawn_seconds`从死亡时刻计时，尸体窗口结束且达到最短重生时刻后，再发布旧尸体Leave并销毁，复用同一个`AreaId`刷怪槽创建新的MonsterUnit和UnitId。`MonsterComponent`把`MonsterConfig.max_hp`写入Numeric的`MaxHpBase`，由Rust推导出只读`MaxHp`，把攻击力写入`AttackBase`并由Rust推导只读`Attack`，把`attack_interval_ms`写入`AttackSpeedAdd`并读取只读`AttackSpeed`；`move_speed`按米/秒转换为Numeric的毫米/秒`MoveSpeedBase`。
 

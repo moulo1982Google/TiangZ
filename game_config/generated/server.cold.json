@@ -99,14 +99,32 @@
     {
       "id": 1001,
       "drop_table_id": 1,
-      "item_config_id": 1001,
+      "item_config_id": 1201,
       "min_count": 1,
       "max_count": 1,
-      "chance_permille": 1000,
+      "chance_permille": 800,
       "quest_objective_id": 0
     },
     {
       "id": 1002,
+      "drop_table_id": 1,
+      "item_config_id": 1001,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 150,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 1003,
+      "drop_table_id": 1,
+      "item_config_id": 1002,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 50,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 1004,
       "drop_table_id": 1,
       "item_config_id": 1101,
       "min_count": 1,
@@ -117,10 +135,28 @@
     {
       "id": 2001,
       "drop_table_id": 2,
+      "item_config_id": 1201,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 800,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 2002,
+      "drop_table_id": 2,
+      "item_config_id": 1001,
+      "min_count": 1,
+      "max_count": 1,
+      "chance_permille": 150,
+      "quest_objective_id": 0
+    },
+    {
+      "id": 2003,
+      "drop_table_id": 2,
       "item_config_id": 1002,
       "min_count": 1,
       "max_count": 1,
-      "chance_permille": 1000,
+      "chance_permille": 50,
       "quest_objective_id": 0
     }
   ],

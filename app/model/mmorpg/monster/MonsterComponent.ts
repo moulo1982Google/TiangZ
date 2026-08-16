@@ -28,9 +28,13 @@ export interface MonsterRuntimeState {
   targetUnitId: number;
   /** 只保存战斗运行态；数值是服务端权威伤害产生的仇恨，不进入客户端快照。 / Runtime-only threat values produced by authoritative server damage; never part of client snapshots. */
   threatByUnitId: Map<number, bigint>;
+  /** 第一个造成有效伤害的账号；Starter普通掉落按首个有效攻击者归属，未来组队后替换为LootAudience。 / The first account to deal effective damage; Starter regular loot follows this tag until party loot is added. */
+  lootOwnerAccount: string | null;
   nextThinkAtMs: number;
   nextAttackAtMs: number;
   navigationSequence: number;
+  /** 超出仇恨回归距离后回到刷点；回到刷点时会清空全部仇恨来源。 / Returning to spawn after the leash is exceeded; threat is cleared on return. */
+  returningToSpawn: boolean;
 }
 
 export interface MonsterComponent {
@@ -65,7 +69,7 @@ export class MonsterComponent extends Component<[
   protected readonly slots = new Map<number, MonsterSpawnSlot>();
   protected readonly monsters = new Map<number, MonsterUnit>();
   protected readonly runtime = new Map<number, MonsterRuntimeState>();
-  /** 尸体掉落归Map所有；它不能挂到MonsterUnit上，也不能随玩家迁移。 / Corpse loot belongs to the Map; it must not attach to MonsterUnit or migrate with a player. */
+  /** 尸体掉落归Map所有；普通掉落带首个有效攻击者归属，任务掉落按账号资格判断。 / Corpse loot belongs to the Map; regular rows are tagged to the first effective attacker and quest rows use account eligibility. */
   protected readonly lootContainers = new Map<number, LootContainer>();
   protected nextMonsterUnitId = 0x8000_0000;
 

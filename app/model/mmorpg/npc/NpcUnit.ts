@@ -7,6 +7,7 @@ export interface AwakeNpcUnit {
   readonly npcConfigId: number;
   readonly name: string;
   readonly questConfigIds: readonly number[];
+  readonly shopEnabled: boolean;
 }
 
 export interface NpcSnapshot {
@@ -14,6 +15,7 @@ export interface NpcSnapshot {
   readonly npcConfigId: number;
   readonly name: string;
   readonly questConfigIds: readonly number[];
+  readonly shopEnabled: boolean;
   readonly x: number;
   readonly y: number;
   readonly z: number;
@@ -41,6 +43,7 @@ export class NpcUnit extends Unit<[request: AwakeNpcUnit]> {
   protected npcConfigId = 0;
   protected name = "";
   protected questConfigIds: readonly number[] = [];
+  protected shopEnabled = false;
 
   get MapId(): number {
     return this.mapId;
@@ -60,5 +63,9 @@ export class NpcUnit extends Unit<[request: AwakeNpcUnit]> {
 
   get QuestConfigIds(): readonly number[] {
     return this.questConfigIds;
+  }
+
+  get ShopEnabled(): boolean {
+    return this.shopEnabled;
   }
 }

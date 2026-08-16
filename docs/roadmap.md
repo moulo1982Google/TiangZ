@@ -302,7 +302,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 3000人AOI密度矩阵已经覆盖10×10、15×15和20×20 Grid。扁平Grid与连续位图改造后，Map CPU平均由旧`74.1%/56.7%/57.3%`降至`55.0%/50.7%/42.9%`，正式窗口均无错误、过载、超时和背压。`perf:map-capacity:grid-matrix`支持一键回归，`--report-runs`可在单档复测后从三份有效原始报告重建矩阵；Bench后置Place RPC仍会在稀疏地图形成初始化突发，后续应并入Bench进图事务。
 - Map 级同步策略：允许不同地图分别选择状态同步、帧同步或高频状态同步；逻辑 Tick、状态广播和客户端渲染频率保持解耦。先完成普通状态同步与 Rust AOI，再为竞技场等独立地图接入帧同步，不把同步模式做成全局 Runtime 配置。
 - 怪物与战斗：Phase 4.4已完成固定刷点、主动/被动怪、统一仇恨、普通攻击、玩家自动平A、Action/Buff和七技能闭环。自动平A与施法使用固定`Update10Hz`，怪物AI使用`Update5Hz`，重生/清理使用`Update1Hz`，不为每个玩家、怪物或Cast创建独立Update/Timer。
-- 技能系统已完成七个单位目标技能的第一版闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、3006引导治疗和3007精神鞭笞。`SkillComponent`统一保存纯Cast状态、GCD/CD、移动打断和单技能队列，`SkillMapComponent.Update10Hz`按服务器deadline推进引导Tick；寒冰箭、惩击和精神鞭笞受到攻击时统一采用800毫秒施法惩罚，其中引导只缩短结束时间而不打断。技能完成只执行Action，目标伤害和治疗继续进入Combat。复杂AOE、地面目标、技能持久化和正式技能压测后续再做，具体边界见[技能与施法系统设计](design/skill-system.md)。
+- 技能系统已完成七个单位目标技能的第一版闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、3006恢复和3007精神鞭笞。`SkillComponent`统一保存纯Cast状态、GCD/CD、移动打断和单技能队列，`SkillMapComponent.Update10Hz`按服务器deadline推进读条、引导Tick和弹道；3006为瞬发AddBuff，24秒内的8次恢复由Buff Tick推进。寒冰箭、惩击和精神鞭笞受到攻击时统一采用800毫秒施法惩罚，其中引导只缩短结束时间而不打断。技能完成只执行Action，目标伤害和治疗继续进入Combat。复杂AOE、地面目标、技能持久化和正式技能压测后续再做，具体边界见[技能与施法系统设计](design/skill-system.md)。
 - Location Scene基础已完成，支持按UnitId/account定位Gate/MapHost/Actor、批量解析和迁移锁；Online/Presence业务索引后续按需求增加。
 - Guild/Friend/Chat 等 EntryScene + Component 业务域。
 - 任务系统基础已完成：`QuestComponent -> Quest ChildEntity`保存活动任务，显式区分进行中/待交付状态；击杀/用道具/进图以同步领域事件解耦进度来源，并按目标类型与配置ID索引定位相关任务；接取支持同步Veto、前置任务和最低等级最终校验。Starter第一版已增加Map 100固定NPC接取5001，NPC沿普通Unit/AOI路径创建，`C2M_AcceptQuest`携带`npcUnitId`并由服务端校验距离和任务提供关系。Cocos3D的PC与移动端统一走“5米交互按钮 -> NPC对话 -> 接取任务”，选中NPC不自动接取；Map 100玩家出生点靠近NPC，四角分布两个被动黄色怪和两个主动红色怪。owner-only latest同步进度，Action发奖，跨地图重建目标索引并保留活动/完成状态；后续再增加NPC配置化、多NPC对话、可重复任务、组队共享投影、持久化与多Action事务奖励。
@@ -395,7 +395,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 - 已完成最小`ActionExecutor`：道具通过`use_effect/use_params`统一表达立即数值变化或添加Buff，`ChangeNumeric`的HP变化经过Combat，`AddBuff/RemoveBuff`经过BuffComponent；不引入每个道具一个Handler的分支。
 - 已完成`BuffComponent -> Buff ChildEntity`：支持Target/Source冲突域和Stack/Refresh/Replace/Reject/HigherWins策略；运行时Action、来源、优先级和护盾剩余量可跨地图恢复。完整规则见[Action与Buff设计](design/action-buff.md)。
-- 已完成`SkillComponent + SkillMapComponent.Update10Hz`七技能闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、3006引导治疗和3007精神鞭笞共用GCD/CD、配置化移动/平A策略、直接/弹道命中和Action结算；引导技能验证分段Tick、移动打断、无护盾受击缩短800毫秒和单技能排队，真言术·盾吸收期间不后移读条也不缩短引导。冷却跨地图保留，活动读条不恢复。`SkillConfig/SkillEffectConfig`已接入Luban，客户端只获得基础技能表，服务端效果表按配置指纹组合并为在途Cast冻结；Cocos3D对本地精神鞭笞绘制纯表现连线；活跃Cast性能A/B待机器确认后进行。
+- 已完成`SkillComponent + SkillMapComponent.Update10Hz`七技能闭环：寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、3006恢复和3007精神鞭笞共用GCD/CD、配置化移动/平A策略、直接/弹道命中和Action结算；引导技能验证分段Tick、移动打断、无护盾受击缩短800毫秒和单技能排队，3006的24秒恢复由Buff 2002独立推进，真言术·盾吸收期间不后移读条也不缩短引导。冷却跨地图保留，活动读条不恢复。`SkillConfig/SkillEffectConfig`已接入Luban，客户端只获得基础技能表，服务端效果表按配置指纹组合并为在途Cast冻结；Cocos3D对本地精神鞭笞绘制纯表现连线；活跃Cast性能A/B待机器确认后进行。
 
 - 已完成`MonsterConfig`和`MonsterAreaConfig`冷配置，以及`MonsterComponent + MonsterUnit`的统一Unit模型。
 - 已完成固定刷点、主动/被动模式、地图Tick追击、攻击距离、玩家攻击、Numeric扣血、死亡Detach/Remove、AOI Leave、原刷怪槽新Unit重生和运行时冒烟验收。
@@ -409,8 +409,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 - `ItemComponent`已经提供`GrantItem/GrantItems`以及纯数据`PlanGrantItems/CommitGrantPlan`。普通奖励继续同步执行；任务GrantItem奖励先规划奖励后快照，DBProxy确认关键事务后再无await提交Entity，失败不改变背包，ACK丢失按回执恢复且不重复发奖。
 - 任务领奖已经在PlayerUnit有序mailbox内同步完成奖励、完成记录和Quest ChildEntity移除；组队共享任务等待Party系统，不在Quest里提前模拟。
-- 已完成最小怪物掉落与任务物品链：`MonsterConfig.drop_table_id`引用`DropTableConfig`，尸体保留`LootContainer`，`C2M_LootMonster`按账号的活动`CollectItem`任务和剩余数量筛选任务行；未接任务或需求已满时任务行留在尸体，普通掉落仍是全局一次性领取。Inventory/Quest规划、DBProxy提交、operationId幂等和Cocos3D尸体拾取入口已接通。动态ItemInstance掉落、队伍分配和Boss专属奖励留在后续业务切片。
-- 技能系统增加3006引导治疗和3007精神鞭笞，验证10Hz分段Tick、移动打断、停止平A、公共CD、受击800毫秒施法惩罚和单技能排队；复杂目标、AOE和技能性能A/B仍待后续机器验收。
+- 已完成最小怪物掉落与任务物品链：`MonsterConfig.drop_table_id`引用`DropTableConfig`，尸体保留`LootContainer`，`C2M_LootMonster`按账号的活动`CollectItem`任务和剩余数量筛选任务行；未接任务或需求已满时任务行留在尸体，普通掉落归第一次有效攻击者账号。Inventory/Quest规划、DBProxy提交、operationId幂等和Cocos3D尸体拾取入口已接通。动态ItemInstance掉落、队伍分配和Boss专属奖励留在后续业务切片。
+- 技能系统现以3006恢复和3007精神鞭笞验证两类持续效果：3006使用Buff Tick完成8次恢复，3007验证10Hz分段引导、移动打断、停止平A、公共CD、受击800毫秒施法惩罚和单技能排队；复杂目标、AOE和技能性能A/B仍待后续机器验收。
 - `npm run perf:business-chain`已准备真实业务链路压测，交替发送UseItem与友方CastSkill并区分业务拒绝和传输错误。正式CPU压力测试需用户提供空闲机器，当前只做编译验证。
 
 ### Phase 4.5：持久化基础

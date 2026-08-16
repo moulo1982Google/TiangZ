@@ -1445,7 +1445,7 @@ func _server_now_ms() -> int:
 	return int(Time.get_unix_time_from_system() * 1000.0) + server_clock_offset_ms
 
 func _skill_name(skill_id: int) -> String:
-	return {3001: "寒冰箭", 3002: "火焰冲击", 3003: "惩击", 3004: "真言术·盾", 3005: "真言术·韧", 3006: "引导治疗", 3007: "精神鞭笞"}.get(skill_id, "Skill#%d" % skill_id)
+	return {3001: "寒冰箭", 3002: "火焰冲击", 3003: "惩击", 3004: "真言术·盾", 3005: "真言术·韧", 3006: "恢复", 3007: "精神鞭笞"}.get(skill_id, "Skill#%d" % skill_id)
 
 func _item_name(config_id: int) -> String:
 	return {1001: "小型生命药水", 1002: "大型生命药水"}.get(config_id, "Item#%d" % config_id)

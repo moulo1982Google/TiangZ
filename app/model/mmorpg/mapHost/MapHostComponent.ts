@@ -41,6 +41,7 @@ import { MapScene } from "../map/MapScene";
 import { MapAoiComponent } from "../map/MapAoiComponent";
 import { MonsterComponent } from "../monster/MonsterComponent";
 import { NpcComponent } from "../npc/NpcComponent";
+import { NpcShopComponent } from "../shop/NpcShopComponent";
 import { SkillMapComponent } from "../skill/SkillMapComponent";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
@@ -415,6 +416,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       items: player.GetComponent(ItemComponent).Snapshot(),
       quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
+      gold: snapshot.gold,
       mapInstanceId: located.location.mapInstanceId,
       locationRevision: located.location.revision,
     };
@@ -627,6 +629,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         items: target.items,
         quests: target.quests,
         completedQuestConfigIds: target.completedQuestConfigIds,
+        gold: target.gold,
         mapHost: targetInstance.mapHost,
       };
     } catch (error) {
@@ -681,6 +684,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       items: player.GetComponent(ItemComponent).Snapshot(),
       quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
+      gold: snapshot.gold,
       mapHost: this.EndpointSnapshot(),
     };
   }
@@ -794,6 +798,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       items: committed.target.player.GetComponent(ItemComponent).Snapshot(),
       quests: committed.target.player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: committed.target.player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
+      gold: committed.target.player.Snapshot().gold,
       mapHostName: this.owner.self.name,
       mapInstanceId: committed.result.mapInstanceId,
     };
@@ -838,6 +843,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       skill: toProtocolSkillTransfer(player.GetComponent(SkillComponent).CaptureTransfer()),
       quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
+      gold: snapshot.gold,
       targetMapInstanceId: targetInstance.mapInstanceId,
       persistenceRevision: player.GetComponent(PlayerPersistenceComponent).Revision,
     };
@@ -1055,7 +1061,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         this,
         aoi,
       );
-      scene.AddComponent(NpcComponent, map, aoi);
+      const npc = scene.AddComponent(NpcComponent, map, aoi);
+      scene.AddComponent(NpcShopComponent, npc);
       scene.AddComponent(MonsterComponent, map, aoi);
       scene.AddComponent(SkillMapComponent, map);
       this.maps.set(definition.mapInstanceId, map);

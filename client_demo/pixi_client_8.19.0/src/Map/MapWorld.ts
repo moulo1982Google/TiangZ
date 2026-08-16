@@ -87,6 +87,7 @@ export class MapWorld {
         facing: 0,
         entityType: 1,
         configId: playerConfig.id,
+        shopEnabled: false,
       });
     }
     window.addEventListener("keydown", this.onKeyDown);

@@ -18,6 +18,7 @@ import {
   type M2C_CastSkill,
   type AutoAttackState,
   CombatComponent,
+  CurrencyComponent,
   MonsterComponent,
   GameErrCode,
   GameConfigs,
@@ -76,6 +77,7 @@ export class PlayerUnitSystem extends PlayerUnit {
       speedCellsPerSecond: native.speedCellsPerSecond,
       facing: native.facing,
       alive: native.alive !== 0,
+      gold: this.GetComponent(CurrencyComponent).Gold,
       numerics: this.GetComponent(NumericComponent).Snapshot(),
       ...position,
     };

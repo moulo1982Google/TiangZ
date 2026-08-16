@@ -18,7 +18,7 @@ import {
 interface HostDbProxyError {
   readonly code: number;
   readonly message: string;
-  readonly actualRevision?: string;
+  readonly actualRevision?: string | number | bigint | null;
 }
 
 interface HostSnapshot {
@@ -310,17 +310,32 @@ function throwRemoteError(error: HostDbProxyError | undefined): void {
   throw new DbProxyRemoteError(
     error.code as DbProxyErrorCode,
     error.message,
-    error.actualRevision === undefined
+    error.actualRevision == null
       ? undefined
       : parseUint64(error.actualRevision, "error.actualRevision"),
   );
 }
 
-function parseUint64(value: string | undefined, name: string): bigint {
-  if (value === undefined || !/^(0|[1-9][0-9]*)$/.test(value)) {
+function parseUint64(value: unknown, name: string): bigint {
+  // Rust bridge versions before the string contract could expose small u64 values as JS numbers.
+  // 兼容旧 Rust bridge 可能把小型 u64 暴露为 JS number 的情况；边界处仍严格拒绝负数、浮点数和超范围值。
+  let parsed: bigint;
+  if (typeof value === "string") {
+    if (!/^(0|[1-9][0-9]*)$/.test(value)) {
+      throw new TypeError(`${name} must be a uint64 decimal string`);
+    }
+    parsed = BigInt(value);
+  } else if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new TypeError(`${name} must be a uint64 decimal string or safe integer`);
+    }
+    parsed = BigInt(value);
+  } else if (typeof value === "bigint") {
+    parsed = value;
+  } else {
     throw new TypeError(`${name} must be a uint64 decimal string`);
   }
-  const parsed = BigInt(value);
+  if (parsed < 0n) throw new RangeError(`${name} must not be negative`);
   if (parsed > 0xffff_ffff_ffff_ffffn) throw new RangeError(`${name} exceeds uint64`);
   return parsed;
 }

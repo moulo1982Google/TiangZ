@@ -51,6 +51,10 @@ import type {
   ItemSnapshot,
   M2C_InspectLootMonster,
   M2C_LootMonster,
+  M2C_OpenNpcShop,
+  M2C_BuyNpcShopItem,
+  M2C_SellItem,
+  ShopItemSnapshot,
   MapEntitySnapshot,
   QuestSnapshot,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
@@ -81,6 +85,7 @@ const STARTER_NPC_QUEST_CHAIN = [
   STARTER_NPC_THIRD_QUEST_ID,
 ] as const;
 const STARTER_NPC_INTERACT_RANGE_METERS = 5;
+const STARTER_SHOP_NPC_CONFIG_ID = 9002;
 // NumericType来自服务端稳定协议约定；客户端只读取公开的HP/MP结果，不修改Numeric。
 // These ids follow the stable server Numeric contract; the client only reads public HP/MP results.
 const NUMERIC_CURRENT_HP = 1;
@@ -145,6 +150,7 @@ const DEMO_SKILL_KEYS = [
   { id: 3004, key: 55 as unknown as KeyCode, keyLabel: "7" },
   { id: 3005, key: 56 as unknown as KeyCode, keyLabel: "8" },
   { id: 3007, key: 57 as unknown as KeyCode, keyLabel: "9" },
+  { id: 3006, key: 48 as unknown as KeyCode, keyLabel: "0" },
 ] as const;
 // 技能图标是客户端表现资源，按稳定 SkillConfigId 取资源，不把中文名称写进快捷栏布局。
 // Skill icons are client presentation assets keyed by stable SkillConfigId; the hotbar does not duplicate skill names.
@@ -154,6 +160,7 @@ const DEMO_SKILL_ICON_PATHS: Readonly<Record<number, string>> = Object.freeze({
   3003: "UI/Icons/Skills/3003",
   3004: "UI/Icons/Skills/3004",
   3005: "UI/Icons/Skills/3005",
+  3006: "UI/Icons/Skills/3006",
   3007: "UI/Icons/Skills/3007",
 });
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
@@ -184,6 +191,7 @@ interface RemotePlayer3D {
   readonly targetFoot: Vec3;
   readonly entityType: number;
   readonly configId: number;
+  shopEnabled: boolean;
   alive: boolean;
   readonly numerics: Map<number, bigint>;
   /** 使用TiangZ协议Yaw；Cocos Y-Up边界当前可直接转成角度显示。 / Uses protocol-space TiangZ yaw, which the current Cocos Y-up boundary can render directly in degrees. */
@@ -301,6 +309,8 @@ export class GameBootstrap3D extends Component {
   private lootPanelResult?: HTMLElement;
   private lootPanelAllButton?: HTMLButtonElement;
   private lootPanelMonsterId = 0;
+  /** 记录拾取结果所属的尸体；换尸体时不能把上一具尸体的结果带过来。 / Tracks the corpse that owns the visible loot results so a new corpse never inherits old lines. */
+  private lootResultMonsterId = 0;
   private lootPreviewDrops: readonly LootDropSnapshot[] = [];
   private lootInspectInFlight = false;
   private readonly lootResultLines: string[] = [];
@@ -310,7 +320,20 @@ export class GameBootstrap3D extends Component {
   private npcDialogPanel?: HTMLElement;
   private npcDialogText?: HTMLElement;
   private npcDialogQuestButton?: HTMLButtonElement;
+  private npcDialogShopButton?: HTMLButtonElement;
   private npcDialogCloseButton?: HTMLButtonElement;
+  private shopPanel?: HTMLElement;
+  private shopTitleElement?: HTMLElement;
+  private shopGoldElement?: HTMLElement;
+  private shopListElement?: HTMLElement;
+  private shopResultElement?: HTMLElement;
+  private shopCloseButton?: HTMLButtonElement;
+  private shopOpen = false;
+  private shopNpcUnitId = 0;
+  private shopHudSignature = "";
+  private shopRequestInFlight = false;
+  private shopItems: readonly ShopItemSnapshot[] = [];
+  private playerGold = 0n;
   private playerStatsPanel?: HTMLElement;
   private playerHpLabel?: HTMLElement;
   private playerHpProgress?: HTMLElement;
@@ -452,6 +475,7 @@ export class GameBootstrap3D extends Component {
     this.interpolateRemotePlayers(deltaTime);
     this.updateNpcInteractionHud();
     this.updateLootInteractionHud();
+    if (this.shopOpen) this.updateNpcShopHud();
     this.updateFollowCamera(deltaTime);
     this.updateAttackSlashEffects(deltaTime);
     this.updateSkillProjectileEffects();
@@ -553,6 +577,7 @@ export class GameBootstrap3D extends Component {
     this.selectedMonsterElement?.remove();
     this.npcInteractionButton?.remove();
     this.npcDialogPanel?.remove();
+    this.shopPanel?.remove();
     this.mobileInstructionsElement = undefined;
     this.mobilePingElement = undefined;
     this.playerStatsPanel = undefined;
@@ -564,7 +589,20 @@ export class GameBootstrap3D extends Component {
     this.npcDialogPanel = undefined;
     this.npcDialogText = undefined;
     this.npcDialogQuestButton = undefined;
+    this.npcDialogShopButton = undefined;
     this.npcDialogCloseButton = undefined;
+    this.shopPanel = undefined;
+    this.shopTitleElement = undefined;
+    this.shopGoldElement = undefined;
+    this.shopListElement = undefined;
+    this.shopResultElement = undefined;
+    this.shopCloseButton = undefined;
+    this.shopOpen = false;
+    this.shopNpcUnitId = 0;
+    this.shopHudSignature = "";
+    this.shopRequestInFlight = false;
+    this.shopItems = [];
+    this.playerGold = 0n;
     this.nearbyNpcUnitId = 0;
     this.npcDialogUnitId = 0;
     this.loginFlow = undefined;
@@ -650,6 +688,7 @@ export class GameBootstrap3D extends Component {
     this.buildSelectedMonsterHud(document);
     this.buildLootPanel(document);
     this.buildNpcInteractionHud(document);
+    this.buildNpcShopHud(document);
     this.buildBuffHud(document);
     this.buildHotbarHud(document);
     this.buildInventoryHud(document);
@@ -1505,6 +1544,18 @@ export class GameBootstrap3D extends Component {
     questButton.style.font = "700 14px/1.2 system-ui, sans-serif";
     questButton.style.touchAction = "manipulation";
     this.bindTouchSafeHudButton(questButton, () => this.acceptQuestFromNpc());
+    const shopButton = document.createElement("button");
+    shopButton.type = "button";
+    shopButton.textContent = "打开商店";
+    shopButton.style.flex = "1";
+    shopButton.style.padding = "9px 10px";
+    shopButton.style.border = "1px solid rgba(244, 212, 119, 0.85)";
+    shopButton.style.borderRadius = "6px";
+    shopButton.style.color = "#fff8d6";
+    shopButton.style.background = "rgba(121, 91, 32, 0.94)";
+    shopButton.style.font = "700 14px/1.2 system-ui, sans-serif";
+    shopButton.style.touchAction = "manipulation";
+    this.bindTouchSafeHudButton(shopButton, () => void this.openNpcShopFromDialog());
     const closeButton = document.createElement("button");
     closeButton.type = "button";
     closeButton.textContent = "关闭";
@@ -1516,13 +1567,340 @@ export class GameBootstrap3D extends Component {
     closeButton.style.font = "14px/1.2 system-ui, sans-serif";
     closeButton.style.touchAction = "manipulation";
     this.bindTouchSafeHudButton(closeButton, () => this.closeNpcDialog());
-    actions.append(questButton, closeButton);
+    actions.append(questButton, shopButton, closeButton);
     dialog.append(title, body, actions);
     document.body.appendChild(dialog);
     this.npcDialogPanel = dialog;
     this.npcDialogText = body;
     this.npcDialogQuestButton = questButton;
+    this.npcDialogShopButton = shopButton;
     this.npcDialogCloseButton = closeButton;
+  }
+
+  /**
+   * 创建NPC商店面板；面板只负责展示和发起请求，金币与背包仍由服务端事务决定。
+   * Creates the NPC shop panel; it only presents data and sends requests while
+   * the server transaction remains authoritative for gold and inventory.
+   */
+  private buildNpcShopHud(document: Document): void {
+    const panel = document.createElement("section");
+    panel.className = "cocos3d-npc-shop-panel";
+    Object.assign(panel.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "10008",
+      display: "none",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "12px",
+      boxSizing: "border-box",
+      background: "rgba(0, 0, 0, 0.52)",
+      pointerEvents: "auto",
+      touchAction: "none",
+    });
+    panel.addEventListener("pointerdown", (event) => event.stopPropagation());
+    panel.addEventListener("touchstart", (event) => event.stopPropagation(), { passive: true });
+    panel.addEventListener("click", (event) => {
+      if (event.target === panel) this.closeNpcShop();
+    });
+
+    const card = document.createElement("section");
+    Object.assign(card.style, {
+      width: "min(560px, calc(100vw - 24px))",
+      maxHeight: "min(760px, calc(100vh - 24px))",
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+      padding: "16px",
+      boxSizing: "border-box",
+      border: "1px solid rgba(244, 212, 119, 0.72)",
+      borderRadius: "10px",
+      background: "rgba(20, 28, 34, 0.98)",
+      boxShadow: "0 18px 60px rgba(0, 0, 0, 0.55)",
+      color: "#edf7f3",
+      font: "14px/1.35 system-ui, sans-serif",
+      pointerEvents: "auto",
+      touchAction: "manipulation",
+    });
+
+    const header = document.createElement("header");
+    Object.assign(header.style, {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "10px",
+    });
+    const title = document.createElement("div");
+    title.textContent = "杂货商 / Shop";
+    title.style.font = "700 20px/1.2 system-ui, sans-serif";
+    title.style.color = "#ffe8a6";
+    const gold = document.createElement("div");
+    gold.style.color = "#f4d477";
+    gold.style.fontWeight = "700";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "关闭";
+    Object.assign(close.style, {
+      padding: "7px 12px",
+      border: "1px solid rgba(255, 255, 255, 0.35)",
+      borderRadius: "6px",
+      color: "#f4eafa",
+      background: "rgba(255, 255, 255, 0.1)",
+      font: "14px/1.2 system-ui, sans-serif",
+      cursor: "pointer",
+      touchAction: "manipulation",
+    });
+    this.bindTouchSafeHudButton(close, () => this.closeNpcShop());
+    header.append(title, gold, close);
+
+    const list = document.createElement("div");
+    list.className = "cocos3d-npc-shop-list";
+    Object.assign(list.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "8px",
+      minHeight: "0",
+      overflowY: "auto",
+      padding: "2px",
+    });
+    const result = document.createElement("div");
+    result.style.minHeight = "1.3em";
+    result.style.color = "#9fe3bf";
+    result.style.textAlign = "center";
+    const footer = document.createElement("div");
+    footer.textContent = "出售怪物掉落的杂物换取铜币，再购买红药和蓝药。";
+    footer.style.color = "#a9c0cc";
+    footer.style.fontSize = "12px";
+    footer.style.textAlign = "center";
+
+    card.append(header, list, result, footer);
+    panel.appendChild(card);
+    document.body.appendChild(panel);
+    this.shopPanel = panel;
+    this.shopTitleElement = title;
+    this.shopGoldElement = gold;
+    this.shopListElement = list;
+    this.shopResultElement = result;
+    this.shopCloseButton = close;
+  }
+
+  /**
+   * 刷新商店商品和出售列表；只有金币、库存或请求状态变化时才重建DOM。
+   * Rebuilds shop rows only when gold, inventory, or request state changes.
+   */
+  private updateNpcShopHud(): void {
+    const panel = this.shopPanel;
+    const list = this.shopListElement;
+    const gold = this.shopGoldElement;
+    if (!panel || !list || !gold || !this.shopOpen) return;
+
+    gold.textContent = `铜币：${this.playerGold.toString()}`;
+    const sellableItems = [...this.inventoryItems.values()]
+      .filter((item) => item.count > 0 && (GameConfigs.ItemConfig.TryGet(item.configId)?.sellPrice ?? 0) > 0)
+      .sort((left, right) => left.configId - right.configId || compareBigInt(left.itemId, right.itemId));
+    const signature = [
+      this.playerGold.toString(),
+      this.shopRequestInFlight ? "busy" : "idle",
+      this.shopItems.map((item) => `${item.itemConfigId}:${item.buyPrice}:${item.sellPrice}`).join(","),
+      sellableItems.map((item) => `${item.itemId}:${item.configId}:${item.count}:${item.version}`).join(","),
+    ].join("|");
+    if (signature === this.shopHudSignature) return;
+
+    list.replaceChildren();
+    const buyTitle = document.createElement("div");
+    buyTitle.textContent = "购买";
+    buyTitle.style.color = "#ffe8a6";
+    buyTitle.style.font = "700 16px/1.2 system-ui, sans-serif";
+    list.appendChild(buyTitle);
+    for (const shopItem of this.shopItems) {
+      const config = GameConfigs.ItemConfig.TryGet(shopItem.itemConfigId);
+      const row = document.createElement("article");
+      Object.assign(row.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "8px",
+        border: "1px solid rgba(125, 188, 255, 0.32)",
+        borderRadius: "7px",
+        background: "rgba(25, 42, 58, 0.82)",
+      });
+      const name = document.createElement("div");
+      name.textContent = config?.name ?? `道具#${shopItem.itemConfigId}`;
+      name.style.flex = "1";
+      const price = document.createElement("div");
+      price.textContent = `${shopItem.buyPrice.toString()} 铜币`;
+      price.style.color = "#f4d477";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "购买1";
+      Object.assign(button.style, {
+        padding: "6px 10px",
+        border: "1px solid rgba(125, 188, 255, 0.62)",
+        borderRadius: "5px",
+        color: "#edf7ff",
+        background: "rgba(36, 102, 151, 0.9)",
+        font: "600 12px/1.2 system-ui, sans-serif",
+        cursor: "pointer",
+        touchAction: "manipulation",
+      });
+      button.disabled = this.shopRequestInFlight || this.playerGold < shopItem.buyPrice;
+      button.style.opacity = button.disabled ? "0.5" : "1";
+      this.bindTouchSafeHudButton(button, () => void this.buyNpcShopItem(shopItem.itemConfigId));
+      row.append(name, price, button);
+      list.appendChild(row);
+    }
+
+    const sellTitle = document.createElement("div");
+    sellTitle.textContent = "出售";
+    sellTitle.style.marginTop = "6px";
+    sellTitle.style.color = "#ffe8a6";
+    sellTitle.style.font = "700 16px/1.2 system-ui, sans-serif";
+    list.appendChild(sellTitle);
+    if (sellableItems.length === 0) {
+      const empty = document.createElement("div");
+      empty.textContent = "没有可出售的道具";
+      empty.style.padding = "12px 8px";
+      empty.style.color = "#9fb5bf";
+      empty.style.textAlign = "center";
+      list.appendChild(empty);
+    } else {
+      for (const item of sellableItems) {
+        const config = GameConfigs.ItemConfig.TryGet(item.configId);
+        const sellPrice = BigInt(config?.sellPrice ?? 0);
+        const row = document.createElement("article");
+        Object.assign(row.style, {
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "8px",
+          border: "1px solid rgba(244, 212, 119, 0.3)",
+          borderRadius: "7px",
+          background: "rgba(58, 46, 25, 0.76)",
+        });
+        const name = document.createElement("div");
+        name.textContent = `${config?.name ?? `道具#${item.configId}`} ×${item.count}`;
+        name.style.flex = "1";
+        const price = document.createElement("div");
+        price.textContent = `${sellPrice.toString()} 铜币`;
+        price.style.color = "#f4d477";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "出售1";
+        Object.assign(button.style, {
+          padding: "6px 10px",
+          border: "1px solid rgba(244, 212, 119, 0.7)",
+          borderRadius: "5px",
+          color: "#fff8d6",
+          background: "rgba(121, 91, 32, 0.94)",
+          font: "600 12px/1.2 system-ui, sans-serif",
+          cursor: "pointer",
+          touchAction: "manipulation",
+        });
+        button.disabled = this.shopRequestInFlight;
+        button.style.opacity = button.disabled ? "0.5" : "1";
+        this.bindTouchSafeHudButton(button, () => void this.sellItem(item.itemId));
+        row.append(name, price, button);
+        list.appendChild(row);
+      }
+    }
+    this.shopHudSignature = signature;
+  }
+
+  /** 从当前NPC对话框进入商店；只有服务端标记为商店NPC的实体可以打开。 / Opens the shop from the current NPC dialog. */
+  private openNpcShopFromDialog(): void {
+    const npc = this.remotePlayers.get(this.npcDialogUnitId);
+    if (!npc || !isShopNpcEntity(npc)) return;
+    void this.openNpcShop(npc.unitId);
+  }
+
+  /** 打开商店并读取服务端商品与金币快照。 / Loads the server-owned shop catalog and gold snapshot. */
+  private async openNpcShop(npcUnitId: number): Promise<void> {
+    const mapClient = this.mapClient;
+    if (!mapClient || npcUnitId === 0 || this.shopRequestInFlight) return;
+    this.shopRequestInFlight = true;
+    this.refreshNpcDialog();
+    try {
+      const response = await mapClient.openNpcShop({ npcUnitId });
+      this.shopNpcUnitId = response.npcUnitId;
+      this.shopItems = response.items;
+      this.playerGold = response.gold;
+      this.shopHudSignature = "";
+      this.shopOpen = true;
+      if (this.shopPanel) this.shopPanel.style.display = "flex";
+      const npc = this.remotePlayers.get(npcUnitId);
+      if (this.shopTitleElement) this.shopTitleElement.textContent = `${npcName(npc?.configId ?? 0)} / 商店`;
+      if (this.shopResultElement) this.shopResultElement.textContent = "商店已打开";
+      this.closeNpcDialog();
+      this.updateNpcShopHud();
+    } catch (error) {
+      this.setStatus(`打开商店失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.shopRequestInFlight = false;
+      this.refreshNpcDialog();
+      this.updateNpcShopHud();
+    }
+  }
+
+  /** 购买一个配置道具；客户端不预扣金币，结果由服务端事务回包确认。 / Buys one configured item without client-side gold mutation. */
+  private async buyNpcShopItem(itemConfigId: number): Promise<void> {
+    const mapClient = this.mapClient;
+    if (!mapClient || this.shopNpcUnitId === 0 || this.shopRequestInFlight) return;
+    this.shopRequestInFlight = true;
+    this.updateNpcShopHud();
+    try {
+      const response = await mapClient.buyNpcShopItem({
+        npcUnitId: this.shopNpcUnitId,
+        itemConfigId,
+        count: 1,
+        operationId: CreateOperationId("npc-buy"),
+      });
+      this.playerGold = response.gold;
+      for (const item of response.items) this.ApplyItemSnapshot(item);
+      const name = GameConfigs.ItemConfig.TryGet(itemConfigId)?.name ?? `道具#${itemConfigId}`;
+      if (this.shopResultElement) this.shopResultElement.textContent = `购买成功：${name} ×${response.count}`;
+    } catch (error) {
+      this.ApplyInventoryRecovery(rpcErrorResponse(error));
+      if (this.shopResultElement) this.shopResultElement.textContent = `购买失败：${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      this.shopRequestInFlight = false;
+      this.updateNpcShopHud();
+    }
+  }
+
+  /** 出售一个具体Item实体；ItemId只用于服务端定位，快捷栏仍按ConfigId引用。 / Sells one concrete Item entity; hotbar references remain ConfigId-based. */
+  private async sellItem(itemId: bigint): Promise<void> {
+    const mapClient = this.mapClient;
+    if (!mapClient || this.shopNpcUnitId === 0 || this.shopRequestInFlight) return;
+    this.shopRequestInFlight = true;
+    this.updateNpcShopHud();
+    try {
+      const response = await mapClient.sellItem({
+        npcUnitId: this.shopNpcUnitId,
+        itemId,
+        count: 1,
+        operationId: CreateOperationId("npc-sell"),
+      });
+      this.playerGold = response.gold;
+      this.ApplyItemSnapshot(response.item);
+      const name = GameConfigs.ItemConfig.TryGet(response.itemConfigId)?.name ?? `道具#${response.itemConfigId}`;
+      if (this.shopResultElement) this.shopResultElement.textContent = `出售成功：${name} ×${response.count}`;
+    } catch (error) {
+      this.ApplyInventoryRecovery(rpcErrorResponse(error));
+      if (this.shopResultElement) this.shopResultElement.textContent = `出售失败：${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      this.shopRequestInFlight = false;
+      this.updateNpcShopHud();
+    }
+  }
+
+  /** 关闭商店面板；关闭只影响客户端界面，不会撤销已提交的交易。 / Closes the panel without cancelling committed transactions. */
+  private closeNpcShop(): void {
+    if (this.shopPanel) this.shopPanel.style.display = "none";
+    this.shopCloseButton?.blur();
+    this.shopOpen = false;
+    this.shopNpcUnitId = 0;
+    this.shopItems = [];
+    this.shopHudSignature = "";
   }
 
   /**
@@ -2353,6 +2731,7 @@ export class GameBootstrap3D extends Component {
       );
       this.itemCooldownEnds.set(configId, Number(response.itemCooldownEndAtMs));
     } catch (error) {
+      this.ApplyInventoryRecovery(rpcErrorResponse(error));
       const config = GameConfigs.ItemConfig.TryGet(configId);
       this.setStatus(`使用${config?.name ?? `道具#${configId}`}失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -3520,11 +3899,13 @@ export class GameBootstrap3D extends Component {
     this.lootOperationId = "";
     this.closeLootPanel();
     this.lootResultLines.length = 0;
+    this.lootResultMonsterId = 0;
     this.selectedMonsterUnitId = 0;
     this.selectedNpcUnitId = 0;
     this.nearbyNpcUnitId = 0;
     this.npcDialogUnitId = 0;
     if (this.npcDialogPanel) this.npcDialogPanel.style.display = "none";
+    this.closeNpcShop();
     for (const remote of this.remotePlayers.values()) {
       remote.visual?.Dispose();
       remote.node.destroy();
@@ -3539,6 +3920,7 @@ export class GameBootstrap3D extends Component {
     this.localNumerics.clear();
     this.buffStateStore.Clear();
     this.inventoryItems.clear();
+    this.playerGold = 0n;
     this.quests.clear();
     this.completedQuestConfigIds.clear();
     this.refreshSelectedTargetHud();
@@ -3580,6 +3962,7 @@ export class GameBootstrap3D extends Component {
       this.gateSocket = result.gateSocket;
       this.mapClient = new MapClient(result.gateSocket);
       this.localUnitId = result.enterMap.unitId;
+      this.playerGold = result.enterMap.gold;
       this.itemCooldownEnds.clear();
       this.skillGlobalCooldownEndAtMs = 0;
       this.buffStateStore.Clear();
@@ -3862,6 +4245,10 @@ export class GameBootstrap3D extends Component {
   /** 应用服务端背包快照；进图和ItemChanged共用同一个入口，避免数量在两个状态机中漂移。 / Applies an authoritative inventory snapshot from EnterMap or ItemChanged so both paths share one state machine. */
   ApplyItemSnapshot(item: ItemSnapshot): void {
     const key = item.itemId.toString();
+    const current = this.inventoryItems.get(key);
+    // 广播可能晚于RPC到达；旧版本只能丢弃，不能把新数量覆盖回去。
+    // A broadcast may arrive after the RPC; an older version must be ignored rather than rolling the count back.
+    if (current && item.version <= current.version) return;
     if (item.count <= 0) {
       this.inventoryItems.delete(key);
     } else {
@@ -3869,6 +4256,30 @@ export class GameBootstrap3D extends Component {
     }
     this.updateHotbarHud();
     this.updateInventoryHud();
+    if (this.shopOpen) this.updateNpcShopHud();
+  }
+
+  /**
+   * 用错误响应里的权威整包替换本地背包；包装层存在且items为空时也必须清空本地旧数据。
+   * Replaces the local inventory with the authoritative snapshot carried by an
+   * error response; an existing empty wrapper must also clear stale local data.
+   */
+  private ApplyInventoryRecovery(response: unknown): boolean {
+    if (!isRecord(response)) return false;
+    const recovery = response.inventoryRecovery;
+    if (!isRecord(recovery)) return false;
+    const items = recovery.items;
+    if (!Array.isArray(items)) return false;
+    this.inventoryItems.clear();
+    for (const value of items) {
+      if (!isRecord(value) || typeof value.itemId !== "bigint" || typeof value.count !== "number") continue;
+      const item = value as unknown as ItemSnapshot;
+      if (item.count > 0) this.inventoryItems.set(item.itemId.toString(), item);
+    }
+    this.updateHotbarHud();
+    this.updateInventoryHud();
+    if (this.shopOpen) this.updateNpcShopHud();
+    return true;
   }
 
   /** 接收背包即时变更；道具使用不等待读条或帧尾，客户端收到后立即刷新数量。 / Applies an immediate inventory change; item use is not delayed to a tick or frame-end batch. */
@@ -4241,12 +4652,13 @@ export class GameBootstrap3D extends Component {
         .map((item) => `${GameConfigs.ItemConfig.TryGet(item.configId)?.name ?? `道具#${item.configId}`}×${item.count}`)
         .join("、");
       this.appendLootResult(names.length > 0 ? `拾取成功：${names}` : "本次没有拾取到可用掉落");
+      this.lootResultMonsterId = monster.unitId;
       this.ApplyLootPreview({ monsterId: monster.unitId, drops: response.remainingDrops });
       if (this.remotePlayers.has(monster.unitId)) {
         this.openLootPanel(monster.unitId, response.remainingDrops);
       } else {
-        // 全部普通掉落领取后服务端可以立即发送AOI Leave；客户端不保留旧UnitId窗口。
-        // After all global drops are claimed the server may send AOI Leave immediately;
+        // 归属账号的普通掉落领取后服务端可以立即发送AOI Leave；客户端不保留旧UnitId窗口。
+        // After the tagged account claims the regular drops the server may send AOI Leave immediately;
         // do not keep a window bound to the old UnitId.
         this.closeLootPanel();
       }
@@ -4254,6 +4666,7 @@ export class GameBootstrap3D extends Component {
       this.lootOperationId = "";
     } catch (error) {
       this.appendLootResult(`拾取失败：${error instanceof Error ? error.message : String(error)}`);
+      this.lootResultMonsterId = monster.unitId;
       if (this.remotePlayers.has(monster.unitId)) {
         this.openLootPanel(monster.unitId, this.lootPreviewDrops);
       } else {
@@ -4283,6 +4696,10 @@ export class GameBootstrap3D extends Component {
   /** 打开尸体窗口并渲染当前列表；单项按钮支持Shift与右键全部领取。 / Opens the corpse window and renders current rows; row buttons support Shift and right-click to claim all. */
   private openLootPanel(monsterId: number, drops: readonly LootDropSnapshot[]): void {
     const monster = this.remotePlayers.get(monsterId);
+    if (this.lootResultMonsterId !== monsterId) {
+      this.lootResultMonsterId = monsterId;
+      this.lootResultLines.length = 0;
+    }
     this.lootPanelMonsterId = monsterId;
     this.lootPreviewDrops = drops.map((drop) => ({ ...drop }));
     this.lootPanelResult ??= undefined;
@@ -4298,7 +4715,11 @@ export class GameBootstrap3D extends Component {
     list.replaceChildren();
     if (this.lootPreviewDrops.length === 0) {
       const empty = document.createElement("div");
-      empty.textContent = "当前账号暂无可拾取掉落\n普通掉落可能已被其他玩家领取；任务掉落请先接取对应任务";
+      const hasCompletedLoot =
+        this.lootResultMonsterId === this.lootPanelMonsterId && this.lootResultLines.length > 0;
+      empty.textContent = hasCompletedLoot
+        ? "本具尸体的掉落已全部领取\n拾取结果已记录在下方"
+        : "当前账号暂无可拾取掉落\n普通掉落只归属首个有效攻击账号，领取后不会重复出现\n任务掉落需要先接取对应任务";
       empty.style.whiteSpace = "pre-line";
       empty.style.padding = "12px 0";
       empty.style.color = "rgba(232, 241, 250, 0.72)";
@@ -4352,6 +4773,8 @@ export class GameBootstrap3D extends Component {
 
   /** 应用拾取RPC返回的道具和任务增量；不从本地击杀表现推导任务进度。 / Applies item and quest deltas from the loot RPC without deriving progress from local visuals. */
   private ApplyLootResult(message: M2C_LootMonster): void {
+    // 正常拾取只返回受影响的ItemSnapshot；完整背包只来自EnterMap/重连快照。
+    // Normal loot returns only affected ItemSnapshots; full inventory comes from EnterMap/reconnect snapshots.
     for (const item of message.items) this.ApplyItemSnapshot(item);
     for (const quest of message.quests) {
       const normalized = normalizeQuestSnapshot(quest);
@@ -4430,6 +4853,21 @@ export class GameBootstrap3D extends Component {
       this.closeNpcDialog();
       return;
     }
+    if (isShopNpcEntity(npc)) {
+      if (this.npcDialogText) {
+        this.npcDialogText.textContent = `${npcName(npc.configId)}：欢迎光临。可以出售杂物，也可以买回红蓝药。`;
+      }
+      if (this.npcDialogQuestButton) {
+        this.npcDialogQuestButton.style.display = "none";
+      }
+      if (this.npcDialogShopButton) {
+        this.npcDialogShopButton.style.display = "block";
+        this.npcDialogShopButton.disabled = this.shopRequestInFlight;
+      }
+      return;
+    }
+    if (this.npcDialogQuestButton) this.npcDialogQuestButton.style.display = "block";
+    if (this.npcDialogShopButton) this.npcDialogShopButton.style.display = "none";
     const action = this.getNpcQuestAction();
     const activeQuest = STARTER_NPC_QUEST_CHAIN
       .map((questConfigId) => this.activeQuestSnapshot(questConfigId))
@@ -5013,6 +5451,7 @@ export class GameBootstrap3D extends Component {
         targetFoot: new Vec3(entity.x, entity.y, entity.z),
         entityType: entity.entityType,
         configId: entity.configId,
+        shopEnabled: isShopNpcEntity(entity),
         alive: entity.alive,
         numerics: new Map(entity.numerics.map((numeric) => [numeric.numericType, numeric.value])),
         yaw: entity.yaw,
@@ -5025,6 +5464,7 @@ export class GameBootstrap3D extends Component {
       remote.targetFoot.set(entity.x, entity.y, entity.z);
       remote.yaw = entity.yaw;
       remote.alive = entity.alive;
+      remote.shopEnabled = isShopNpcEntity(entity);
       if (remote.overheadHud?.nameLabel) remote.overheadHud.nameLabel.string = entityDisplayName(entity);
       for (const numeric of entity.numerics) remote.numerics.set(numeric.numericType, numeric.value);
       if (!entity.alive) remote.visual?.SetMoving(false);
@@ -5422,6 +5862,17 @@ function rpcErrorCode(error: unknown): number | undefined {
   return typeof code === "number" ? code : undefined;
 }
 
+/** 读取错误响应中的业务正文；跨Bundle时不依赖RpcError instanceof。 / Reads business payload from an error response without relying on RpcError instanceof across bundles. */
+function rpcErrorResponse(error: unknown): unknown {
+  if (!isRecord(error)) return undefined;
+  return error.response;
+}
+
+/** 只把协议对象当作记录读取，避免错误处理路径再次抛出类型异常。 / Reads protocol objects as records so the error path cannot throw a second type error. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 /** 创建保持旧版中心点/脚底换算的玩家实体根节点；模型与占位都只能挂在其下。 / Creates a player entity root that preserves the legacy center/foot conversion for visual children. */
 function createPlayerEntityRoot(name: string, x: number, y: number, z: number): Node {
   const node = new Node(name);
@@ -5445,7 +5896,23 @@ function createSelectionMarker(): Node {
 }
 
 function npcName(configId: number): string {
-  return configId === 9001 ? "任务使者" : `NPCConfig#${configId}`;
+  if (configId === 9001) return "任务使者";
+  if (configId === STARTER_SHOP_NPC_CONFIG_ID) return "杂货商";
+  return `NPCConfig#${configId}`;
+}
+
+/**
+ * 兼容旧服务端快照识别杂货商；协议标记优先，9002只作为演示配置的兜底。
+ * Recognizes the grocer across old server snapshots; the protocol flag wins,
+ * while 9002 is only a fallback for the starter demo configuration.
+ */
+function isShopNpcEntity(entity: {
+  readonly entityType: number;
+  readonly configId: number;
+  readonly shopEnabled: boolean;
+}): boolean {
+  return entity.entityType === ENTITY_TYPE_NPC
+    && (entity.shopEnabled === true || entity.configId === STARTER_SHOP_NPC_CONFIG_ID);
 }
 
 function monsterName(configId: number): string {

@@ -1,6 +1,6 @@
 # 技能与施法系统设计
 
-> 当前实现状态：七个技能演示闭环（包含3006引导治疗和3007精神鞭笞）和Luban配置链路均已落地。`SkillConfig.xlsx`描述施法规则，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只负责把当前配置代组合成运行时只读定义。玩家协议入口为`C2M_CastSkillHandler`，地图统一由一个`SkillMapComponent.Update10Hz()`推进读条、引导和弹道。
+> 当前实现状态：七个技能演示闭环（包含3006恢复和3007精神鞭笞）和Luban配置链路均已落地。`SkillConfig.xlsx`描述施法规则，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只负责把当前配置代组合成运行时只读定义。玩家协议入口为`C2M_CastSkillHandler`，地图统一由一个`SkillMapComponent.Update10Hz()`推进读条、引导和弹道，持续恢复由Buff Tick负责。
 
 ## 1. 目标与边界
 
@@ -150,7 +150,7 @@ Veto Handler只能同步、只读、返回错误码，不动态为每个Buff注�
 
 目标关系通过稳定的Unit关系查询接口判断，不能用“目标当前在AOI可见集合中”推导敌我。AOI决定谁能收到表现，技能规则决定谁可以成为目标，两者必须分开。
 
-当前技能CD和GCD都在请求被接受时提交；读条随后被中断不返还。资源消耗和可选CD起点尚未实现，未来加入时必须增加显式策略，不能在中断Handler里私自补数值或冷却。
+当前技能CD、GCD和法力消耗都在请求被接受时提交；读条随后被中断不返还法力或冷却。当前技能法力消耗暂由`SkillManaCost.ts`维护，待配置结构稳定后再纳入`SkillConfig`；法力不足在创建ActiveCast前拒绝。玩家由`CombatStateComponent`维护战斗来源：仍有怪物仇恨时不恢复MP，所有仇恨来源清除后按180秒从当前值恢复到满值。恢复由固定更新桶推进，不为每个玩家创建Timer。
 
 死亡、下线、传送和Scene销毁属于确定的生命周期中断，不走Veto。中断已发生后发布普通同步Event，不能用Veto回滚。
 
@@ -270,7 +270,7 @@ SkillConfig/SkillEffectConfig的表结构、枚举和字段类型属于Model冷�
 3. `3003 惩击`：敌方Unit目标、1.5秒读条、30米、直接命中；演示伤害暂定60点神圣伤害。
 4. `3004 真言术·盾`：自己或友方Unit目标、瞬发、15米、8秒冷却；添加30秒200点护盾和15秒虚弱灵魂。
 5. `3005 真言术·韧`：自己或友方Unit目标、瞬发、15米；添加30分钟MaxHpAdd+500的真言术·韧。
-6. `3006 引导治疗`：自己或友方Unit目标、3秒引导、每1秒恢复30点、共3跳；用于验收引导进度、读条期间停止平A和移动打断。
+6. `3006 恢复`：自己目标、瞬发，添加24秒恢复Buff；Buff每3秒恢复10点生命，共8次。技能本身不创建ActiveCast，持续效果由BuffComponent的生命周期和Tick负责。
 7. `3007 精神鞭笞`：敌方Unit目标、30米、5秒引导、每1秒造成20点暗影伤害、共5跳；移动会取消引导，受到一次没有被护盾吸收的有效攻击时将结束时间提前800毫秒，提前到当前服务器时间时立即结束。真言术·盾吸收的攻击不缩短引导。
 
 ### 11.1 精神鞭笞的引导语义
@@ -297,7 +297,7 @@ SkillConfig/SkillEffectConfig的表结构、枚举和字段类型属于Model冷�
 3. 寒冰箭只在抛射物命中时结算，惩击在读条完成时直接结算。
 4. 距离、移动、死亡和目标重生均不会命中旧Unit。
 5. 重复请求、迟到客户端状态和配置Reload不造成重复结算。
-6. 3006每次只执行到期Tick，目标死亡或移动打断后不再继续结算。
+6. 3006完成时只添加一次Buff 2002；恢复Buff每3秒执行一次Heal(10)，持续24秒共8次，技能本身不进入引导状态。
 7. 3007每秒至多执行一跳；没有护盾吸收的受击会将服务器结束时间提前800ms，真言术·盾吸收的受击不会缩短引导，移动会取消，且不会重复已完成的Tick。Cocos3D对本地引导目标绘制纯表现连线，连线不参与命中判定。
 8. 配置排队窗口内最多缓存一个技能；缓存技能开始时重新校验，失败只丢弃缓存，不回滚前一个完成的技能。
 9. 3000个无ActiveCast Unit不会显著增加Map CPU；活跃Cast压力测试无队列积压和丢工作。
@@ -328,7 +328,7 @@ C2M_CastSkillHandler
 - `G2C_SkillCastState`是latest状态，包含读条、GCD、技能CD、channel进度和排队技能；`G2C_SkillProjectile/G2C_SkillImpact`是不可覆盖事件。
 - 冷却随玩家跨地图传输；活动读条不恢复，并记录`map-transfer`中断原因。
 - Buff运行时Action覆盖、来源、冲突优先级和护盾剩余量均为纯值传输；普通Refresh不重放AddAction。
-- 当前七技能数值来自`SkillConfig.xlsx`和`SkillEffectConfig.xlsx`；`SkillCatalog.ts`不再保存业务数值，只做配置代索引和Action转换。
+- 当前七技能数值来自`SkillConfig.xlsx`和`SkillEffectConfig.xlsx`；`SkillCatalog.ts`不再保存业务数值，只做配置代索引和Action转换。3006的周期恢复数值属于BuffConfig 2002，不属于SkillComponent的引导参数。
 - ActiveCast与在途Projectile保存接受请求时的`SkillDefinition`，配置Reload只影响后续新Cast，不会让半次技能混用两代规则。
 
 ## 13. 后续实施顺序
@@ -338,4 +338,4 @@ C2M_CastSkillHandler
 3. 增加SkillComponent语义自测和3000人空载/活跃Cast性能A/B。
 4. 业务确实需要时再扩展已学技能、资源消耗、朝向/视线和地面目标。
 
-当前明确不做：地面AOE、多段选目标、连招、复杂公式、技能持久化和客户端预测命中。寒冰箭的最小弹道、3006治疗引导与3007伤害引导已经实现；后续能力应沿已冻结边界逐项增加，而不是提前塞进一个万能Cast对象。
+当前明确不做：地面AOE、多段选目标、连招、复杂公式、技能持久化和客户端预测命中。寒冰箭的最小弹道、3006恢复Buff与3007伤害引导已经实现；后续能力应沿已冻结边界逐项增加，而不是提前塞进一个万能Cast对象。

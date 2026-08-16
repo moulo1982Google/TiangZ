@@ -24,6 +24,8 @@ message MapEntitySnapshot
   uint32 config_id = 16;
   // 世界空间头顶HUD使用的公开名称；不把账号、配置ID或本地化逻辑交给客户端猜测。 / Public world-space display name for overhead HUDs; clients must not infer it from account or config IDs.
   string display_name = 17;
+  // NPC是否提供商店交互；客户端只据此显示入口，价格和权限仍由服务端校验。 / Whether an NPC exposes a shop entry; the server still validates prices and permission.
+  bool shop_enabled = 18;
 }
 
 message CellMovementState
@@ -88,6 +90,22 @@ message ItemSnapshot
   uint32 quality = 4;
   uint32 level = 5;
   uint32 version = 6;
+}
+
+// 背包权威全量快照；包装层存在但items为空时，明确表示玩家当前背包为空。
+// Authoritative full inventory snapshot; an existing empty wrapper explicitly means the inventory is empty.
+message InventorySnapshot
+{
+  repeated ItemSnapshot items = 1;
+}
+
+// NPC商店的一行静态商品；购买数量、金币和库存仍由服务端事务决定。
+// One static NPC-shop row; count, gold, and inventory are still decided by a server transaction.
+message ShopItemSnapshot
+{
+  uint32 item_config_id = 1;
+  uint64 buy_price = 2;
+  uint64 sell_price = 3;
 }
 
 // 一行尸体掉落预览；只公开当前玩家有资格领取的配置和数量，不提前创建ItemId。

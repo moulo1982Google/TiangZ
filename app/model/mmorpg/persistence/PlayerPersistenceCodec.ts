@@ -6,7 +6,7 @@ import type {
 } from "./PlayerRepository";
 
 export const PLAYER_PERSISTENCE_SCHEMA = "tiangz.demo.player";
-export const PLAYER_PERSISTENCE_SCHEMA_VERSION = 1;
+export const PLAYER_PERSISTENCE_SCHEMA_VERSION = 2;
 
 const BIGINT_MARKER = "$tiangzI64";
 
@@ -38,11 +38,14 @@ export function DecodePlayerSaveData(payload: Uint8Array): PlayerSaveData {
     throw new Error(`invalid player persistence payload: ${String(error)}`);
   }
   const envelope = requireRecord(decoded, "payload");
-  if (envelope.version !== PLAYER_PERSISTENCE_SCHEMA_VERSION) {
+  if (envelope.version !== 1 && envelope.version !== PLAYER_PERSISTENCE_SCHEMA_VERSION) {
     throw new Error(`unsupported player persistence version: ${String(envelope.version)}`);
   }
-  ValidatePlayerSaveData(envelope.data);
-  return envelope.data as unknown as PlayerSaveData;
+  const data = envelope.version === 1
+    ? MigrateV1PlayerSaveData(envelope.data)
+    : envelope.data;
+  ValidatePlayerSaveData(data);
+  return data as unknown as PlayerSaveData;
 }
 
 /** 经序列化边界生成深拷贝，确保Repository不会保留Entity导出的可变数组。 / Deep-copies through the serialization boundary so a Repository never retains mutable Entity arrays. */
@@ -55,6 +58,7 @@ export function ValidatePlayerSaveData(value: unknown): asserts value is PlayerS
   const player = requireRecord(data.player, "playerSaveData.player");
   requireText(player.account, "player.account");
   requirePositiveBigInt(player.characterId, "player.characterId");
+  requireNonNegativeBigInt(player.gold, "player.gold");
   requirePositiveInteger(player.mapId, "player.mapId");
   requirePositiveBigInt(player.mapInstanceId, "player.mapInstanceId");
   requireFinite(player.x, "player.x");
@@ -88,6 +92,22 @@ export function ValidatePlayerSaveData(value: unknown): asserts value is PlayerS
   validateSkill(data.skill);
   validateQuests(data.quests);
   requireText(data.reason, "reason");
+}
+
+/**
+ * v1没有金币字段，按“新经济系统上线前余额为0”迁移旧快照。
+ * v1 had no gold field, so old snapshots start at zero when the economy is introduced.
+ */
+function MigrateV1PlayerSaveData(value: unknown): PlayerSaveData {
+  const data = requireRecord(value, "playerSaveData");
+  const player = requireRecord(data.player, "playerSaveData.player");
+  return {
+    ...data,
+    player: {
+      ...player,
+      gold: player.gold ?? 0n,
+    },
+  } as PlayerSaveData;
 }
 
 function validateBuff(value: unknown, name: string): asserts value is PersistedBuffState {
@@ -233,4 +253,9 @@ function requireBigInt(value: unknown, name: string): asserts value is bigint {
 function requirePositiveBigInt(value: unknown, name: string): asserts value is bigint {
   requireBigInt(value, name);
   if (value <= 0n) throw new RangeError(`${name} must be positive`);
+}
+
+function requireNonNegativeBigInt(value: unknown, name: string): asserts value is bigint {
+  requireBigInt(value, name);
+  if (value < 0n) throw new RangeError(`${name} must be non-negative`);
 }

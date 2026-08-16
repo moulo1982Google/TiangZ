@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。MMORPG领域样例已可完成登录、选服、进入地图、多人移动、状态广播，以及 WebSocket/Cocos Web 和 KCP/Cocos Native 链路；可复用领域契约与MMORPG适配边界见[能力归属表](docs/design/capability-ownership.md)。
+当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。当前 Starter MMORPG 已经串起注册/登录、角色目录、NPC接取任务、怪物与技能战斗、Buff、掉落与尸体拾取、背包、货币、NPC商店和可选 DBProxy 重启恢复；最完整的可操作客户端是 Cocos3D。可复用领域契约与 MMORPG 适配边界见[能力归属表](docs/design/capability-ownership.md)。
 
 ## 5分钟启动
 
@@ -12,13 +12,15 @@ npm run hello
 
 看到 `Starter 已就绪` 后，用 Cocos3D/Pixi Demo 连接 `ws://127.0.0.1:7000`。完整的第一个 Handler 与 RPC 修改路径见 [5分钟跑通 TiangZ](docs/tutorials/00-quickstart.md)。
 
-持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。当前`v0.4.0`已经通过Rust Host连接池接入Player Snapshot Repository、事务提交和回执查询，并完成TiangZ重启恢复、任务GrantItem奖励与UseItem消费幂等验收；主工程只依赖协议、客户端SDK和业务Repository，不直接连接Redis/PostgreSQL。Wallet、Trade、周期快照、批量恢复和生产高可用仍属于Phase 4.5后续工作，运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
+持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。DBProxy 当前工作版本为 `v0.5.0`，提供 Player Snapshot Repository、Revision/CAS、幂等事务回执、多 Endpoint 故障切换和跨记录原子事务；TiangZ 主工程通过 Host Transport 接入，不直接连接 Redis/PostgreSQL。当前 Starter 已验证玩家快照、任务奖励、道具使用和商店交易的基本持久化边界；更完整的玩家交易、邮件、周期快照和生产级高可用仍属于后续业务阶段，运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
 ## 当前开发分支：`main`
 
 TiangZ 使用 Rust + deno_core + TypeScript。Rust/Tokio 负责网络、分帧、背压、跨进程连接和 Native Entity 权威数据；一个操作系统进程只创建一个 V8，TypeScript 业务线程在其中承载多个 Scene、Actor 和 Component。
+
+开发期允许版本号、依赖锁、协议锁和 Stable Core API 锁随契约演进；`npm run verify:locks:warn` 只报告漂移，不阻塞日常迭代。准备发布 Release 时必须执行 `npm run verify:release`，届时才强制版本、锁文件、协议指纹和 Core API 一致性。运行时协议指纹始终严格校验，避免客户端与服务端使用不兼容协议。
 
 ## 当前架构
 
@@ -133,6 +135,8 @@ TiangZ的完整业务参考是[Starter MMORPG纵向切片](docs/tutorials/20-sta
 
 Starter常用命令：`npm run starter:verify`做静态检查，`npm run starter:dev`编译并启动本地all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`专门验证创建角色、选角和稳定`characterId`。完整验收使用`npm run starter:acceptance`；`starter:acceptance:persistent`会验证DBProxy重启后的玩家快照恢复，`starter:acceptance:faults`会额外运行独立DBProxy故障矩阵。这三个验收命令都会先重建`target/debug/TiangZ`，不会误用旧的Rust运行时。持久化和故障命令会写入/重启本地测试资源，执行前先确认PostgreSQL、Redis和DBProxy环境。以上命令不包含长时间容量压测。
 
+Starter当前的战斗快捷栏包含寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、精神鞭笞和恢复。读条、引导、公共CD、施法距离、法力消耗、Buff刷新与伤害类型由配置和领域规则共同决定；恢复技能通过 `恢复` Buff 每3秒治疗一次，共8次。怪物掉落按每行独立概率判定，玩家可以把杂物出售给杂货商换取铜币，再购买红药和法力药水。Cocos3D 的背包、任务追踪、Buff栏、技能图标和 NPC 商店是这条链路的主要可视化验收入口。
+
 登录界面不再自动创建游客账号：第一次使用请点击“注册”，输入用户名、密码和确认密码；用户名会直接作为初始角色名。`all-in-one.json`的注册目录只在当前进程内存中，调试界面可用但重启会丢失账号。需要落盘和重启恢复时，先启动独立DBProxy，再使用`npm run starter:dev:persistent`，详细令牌和Docker步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
 
 Demo 协议仍保留 `GetLoginServiceAddr` 这个产品层名字，含义是“获取登录服务器地址”，不是框架中的 Service 类型。
@@ -176,6 +180,39 @@ npm run check:cocos-build
 本地配置，发布包再使用外网配置。需要 Debug 包时，在对应命令后增加 `:debug`，例如
 `npm run build:cocos3d:web:debug`。Cocos Native 需要先生成原生工程，然后单独使用
 CMake/Visual Studio 编译；不要把 Native 编译和 Web 包构建混成一步。
+
+### 外网演示部署
+
+外网演示不在服务器上编译源码。先在本机或 Linux Builder 生成后端发布包，再把发布目录和 Cocos3D 静态包传到服务器。当前 2C2G 演示使用 [`external-multiprocess`](configs/deploy/external-multiprocess/StartMachine.json)：
+
+```text
+1 x LoginMgr
+2 x Login
+2 x Gate
+2 x MapHost（Map 1、Map 2，各自独立进程）
+1 x Location
+2 x DBProxy（7800 首选、7801 故障切换）
+```
+
+动态副本节点和 MapManager 暂停在外网演示配置中。所有 TiangZ 进程只监听服务器回环地址；公网入口由 Nginx 统一转发，桌面 Cocos3D 使用 `/`，移动横屏包使用 `/m/`。登录链路的公网端口是 `17000`、`17001`、`17002`、`17201`、`17202`，具体映射和 systemd 约束见[外网部署配置](configs/deploy/README.md)与[Nginx示例](configs/deploy/cocos3d-nginx.conf.example)。
+
+本机生成发布制品：
+
+```powershell
+# 后端 Linux x64 制品；推荐使用复用的 tiangz-linux-builder
+npm run release:linux
+
+# Cocos3D 桌面版与手机横屏版一起生成
+npm run build:cocos3d:external
+```
+
+上传时使用：
+
+- `dist/release/TiangZ-<version>-linux-x64/`：后端可执行文件、`dist/`、`configs/`、`navigation/` 和校验文件。
+- `client_demo/cocos_client3D_3.8.8/build/external/desktop/`：Nginx 根路径 `/`。
+- `client_demo/cocos_client3D_3.8.8/build/external/m/`：Nginx `/m/` 路径。
+
+服务器端只需停止旧 Watcher/DBProxy、替换制品、启动两个 DBProxy 和新的 `StartMachine.json`，再执行 `nginx -t && systemctl reload nginx`。Redis/PostgreSQL 只绑定 `127.0.0.1`，不直接暴露公网端口；测试环境数据结构发生不兼容时，开发阶段可以清空测试库后重新注册，不为演示库保留兼容迁移。
 
 RPC 使用生成的 `LoginMgrClient`、`LoginClient`、`GateClient` 和 `MapClient`；业务不手写 msgcode、rpcId 或 codec。服务端 Push 使用独立的 `@clientMessageHandler`，由 codegen 自动生成 Handler 导入入口。详细规则见 `client_sdk/typescript/README.md` 与 `docs/client_sdk_plan.md`。
 
@@ -408,9 +445,11 @@ npm run build:debug
 cargo run -- configs/local/debug/login-1.json
 ```
 
-一个 Process 对应一个 Inspector。详见 [TypeScript 调试](docs/typescript_debugging.md)。日常开发使用快速质量门：
+一个 Process 对应一个 Inspector。详见 [TypeScript 调试](docs/typescript_debugging.md)。日常开发先使用快速质量门，并单独查看锁漂移报告：
 
 ```powershell
+npm run verify:fast
+npm run verify:locks:warn
 npm run verify:quick
 ```
 
@@ -421,6 +460,14 @@ npm run verify
 ```
 
 `verify:codegen` 根据 `codegen.manifest.json` 只读校验输入、输出哈希和生成文件集合。新增 protobuf 消息评审编号后执行 `npm run codegen:proto:update-lock`；普通 codegen 不会静默接受新 opcode。手写函数的注释要求见 [代码注释约定](docs/reference/coding-conventions.md)。
+
+开发期的 `verify` 不强制版本、依赖、协议和 Stable Core API 锁定，方便持续调整契约；准备发布 Release 时必须执行：
+
+```powershell
+npm run verify:release
+```
+
+该命令会把开发期的报告项提升为失败项，并在发布前统一检查版本、依赖锁、协议锁、Stable Core API、生成物和完整测试。
 
 ## Linux Release构建
 

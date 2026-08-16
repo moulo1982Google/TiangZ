@@ -159,6 +159,7 @@ function createPlayer(): object {
       speedCellsPerSecond: 10,
       facing: 0,
       alive: true,
+      gold: 0n,
       numerics: [],
     }),
     GetComponent: (ctor: Function) => {
@@ -263,6 +264,7 @@ function createSaveData(account: string): PlayerSaveData {
       speedCellsPerSecond: 6,
       facing: 2,
       alive: true,
+      gold: 0n,
       numerics: [{ numericType: 1, value: 9_007_199_254_740_993n }],
     },
     items: [{
