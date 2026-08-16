@@ -117,6 +117,8 @@ Scene配置把三个地址语义分开：`bindIp`是本机监听地址，`innerI
 
 云服务器的公网EIP/NAT可能不会出现在虚机`ip addr`中，因此公网地址由部署配置显式填写。`0.0.0.0`只能作为`bindIp`，不能写入`knownScenes`，不能放进Location/MapHost Endpoint，也不能返回给客户端。服务间RPC和Actor路由使用`innerIp`；外网演示由前端写死LoginMgr公网地址，LoginMgr返回Login的`outerIp/outerPort`，Login返回Gate的`outerIp/outerPort`。同一入口在`scenes`与共享`knownScenes`重复出现时，外网字段可以只填写一处；两处都填写时必须一致。
 
+外网测试机的安全边界是“公网端口属于Nginx，TiangZ只属于回环地址”。`external-multiprocess`中的LoginMgr、两个Login、两个Gate、两个静态MapHost和Location各自运行在独立Process/V8中；LoginMgr、Login和Gate使用`bindIp=127.0.0.1`，并把实际监听端口与客户端端口分开：`27000/27001/27002/27201/27202`是内网端口，`17000/17001/17002/17201/17202`是`outerPort`。Nginx按公网端口转发到对应回环端口；MapHost和Location也只绑定`127.0.0.1`，不经过Nginx。动态副本节点和MapManager暂缓启动，MapHost使用`acceptDynamicMaps=false`。不能让Nginx与TiangZ抢占同一个端口，也不能把“页面能打开”误认为游戏WebSocket链路已经可用。
+
 ### Scene
 
 普通Scene是Process内动态创建的业务容器。一个MapHost可以创建多个MapScene，让低负载地图共享同一线程；扩容时再增加MapHost Process或EntryScene实例。静态地图与动态副本共享同一个MapHost实现和`CreateMap`入口，不拆两套服务；`staticMapIds + acceptDynamicMaps`组合出静态专用、动态专用和混合Host。动态地图由单例`MapManagerScene`调度：启用动态承载的MapHost主动注册并每5秒报告实例数与玩家数，Manager按最少动态实例、最少玩家、名称稳定排序分配宿主，并用业务`requestId`固定唯一MapInstanceId。Location保存MapInstance路由并在地图实例、玩家位置结果中携带MapHost Endpoint；Gate与MapHost缓存或直接使用该地址，动态Host不进入其他进程的静态knownScenes。
@@ -468,11 +470,11 @@ Phase 5计划：
 10. 新业务状态写Model，生命周期和行为写`@systemFor`；不要恢复Model方法空壳，也不要在每次方法调用前查System Registry。
 11. Component拥有的子对象只能由所属Component维护集合和业务修改；不要从Handler直接操作Native Ref，也不要把每条Quest或Achievement机械地做成Entity。
 12. TiangZ主工程及配套VS Code插件仓库的提交标题默认使用中文；代码标识、命令、版本号和专有名词可保留原文。
-13. 外网演示使用`configs/deploy/external-2process/StartMachine.json`和Cocos3D资源配置；登录与Gate独立于地图世界Process，两个Process共享`known-scenes.json`。Cocos3D编辑器预览通过`PREVIEW`自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`；非预览发布包读取`tiangz-external.json`连接公网LoginMgr，不能把两种环境地址手工混用。外网Cocos3D发布使用`npm run build:cocos3d:external`：`build/external/desktop`只部署到根路径`/`，`build/external/m`只部署到`/m/`，后者是唯一横屏移动入口；构建脚本会在页面顶部注入`版本、UTC构建时间和Git短提交号`，Nginx对Demo资源发送`no-cache, must-revalidate`，排查时先核对页面Build标识。旧的`external-all-in-one.json`只用于单Process回归。当用户说“部署到外网测试机”时，必须重新构建前端和后端并确认上传的是本次最新产物；远端直接停止旧服务、覆盖固定发布目录、重新启动并做冒烟。该主机只是Demo测试机，不使用`.next`、蓝绿目录、目录交换或自动回滚。凭据只存在运行环境，不能写入仓库。
+13. 外网演示使用`configs/deploy/external-multiprocess/StartMachine.json`和Cocos3D资源配置；8个TiangZ Process共享`known-scenes.json`。Cocos3D编辑器预览通过`PREVIEW`自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`；非预览发布包读取`tiangz-external.json`连接公网LoginMgr，不能把两种环境地址手工混用。外网Cocos3D发布使用`npm run build:cocos3d:external`：`build/external/desktop`只部署到根路径`/`，`build/external/m`只部署到`/m/`，后者是唯一横屏移动入口；构建脚本会在页面顶部注入`版本、UTC构建时间和Git短提交号`，Nginx对Demo资源发送`no-cache, must-revalidate`，排查时先核对页面Build标识。两个DBProxy对等实例分别监听`7800/7801`并共享Redis/PostgreSQL，TiangZ所有Process按首选/故障切换顺序连接。当用户说“部署到外网测试机”时，必须重新构建前端和后端并确认上传的是本次最新产物；远端直接停止旧服务、覆盖固定发布目录、重新启动并做冒烟。该主机只是Demo测试机，不使用`.next`、蓝绿目录、目录交换或自动回滚。凭据只存在运行环境，不能写入仓库。
 14. 外网发布只上传Linux Release发布包，不上传`src`、Cargo工程、`node_modules`或`target`。Runtime优先从当前发布目录或可执行文件邻级目录寻找`dist`与`configs`，不能依赖编译机的`CARGO_MANIFEST_DIR`。
 15. Linux正式发布统一使用`npm run release:linux`和固定镜像`tiangz-linux-builder:ubuntu-24.04`。镜像是工具/依赖底座，不含业务源码；普通TS、Rust、Excel变化只复制源码并完整运行Luban、codegen与Release编译。只有依赖锁、Rust工具链、Luban或Builder定义变化才重建镜像，Linux Cargo中间产物由`tiangz-linux-builder-target`命名卷复用。
 
-16. 当前主工程、`tiangz-developer-tools`、`tiangz-native-language`和独立`TiangZ-DBProxy`都处于开发阶段：日常允许版本副本、Cargo/npm依赖和协议原型迭代，不要求强制使用`npm ci`、Cargo `--locked`或同步更新发布锁文件。准备正式Release时，主工程统一执行`npm run verify:release`；插件和DBProxy由各自仓库执行发布前的锁文件、版本、协议指纹和完整测试审查。不要把开发门禁误写成发布承诺。
+16. 当前主工程、`tiangz-developer-tools`、`tiangz-native-language`和独立`TiangZ-DBProxy`都处于开发阶段：日常允许版本副本、Cargo/npm依赖和协议原型迭代，不要求强制使用`npm ci`、Cargo `--locked`或同步更新发布锁文件。开发CI可运行`npm run verify:locks:warn`报告漂移但不阻塞；准备正式Release时，主工程统一执行`npm run verify:release`；插件和DBProxy由各自仓库执行发布前的锁文件、版本、协议指纹和完整测试审查。不要把开发门禁误写成发布承诺。
 
 ## 新AI建议阅读顺序
 
@@ -511,7 +513,7 @@ Cocos3D的本地Buff栏从`MapEntitySnapshot.buffs`、`M2C_UseItem.buff`和`G2C_
 
 ## 外网持久化部署校准
 
-当前`external-2process`两份Process配置都显式使用同机DBProxy `127.0.0.1:7800`；需要双实例时，在相同的`persistence.dbProxy`下增加有序`failoverEndpoints`，例如`127.0.0.1:7801`。客户端按RecordKey稳定选择地址，只有连接不可用才切换，并保留原`requestId/operationId`；Revision冲突、业务拒绝、鉴权失败和协议错误直接返回。两个DBProxy实例共享同一套云Redis/PostgreSQL，不做实例间Leader、复制或内部RPC。DBProxy下的Redis和PostgreSQL只绑定回环地址，外网安全组不开放`5432`和`6379`。Ubuntu部署机用Docker Compose启动两个存储容器，DBProxy作为独立systemd服务运行，认证令牌只由systemd环境文件注入。只启动Redis/PostgreSQL而不启动DBProxy，或者只启动DBProxy而不在两个Process配置中声明`persistence.dbProxy`，都不算完成持久化接入。
+当前`external-multiprocess`的8份Process配置都显式使用同机DBProxy首选地址`127.0.0.1:7800`和故障切换地址`127.0.0.1:7801`。客户端按RecordKey稳定选择地址，只有连接不可用才切换，并保留原`requestId/operationId`；Revision冲突、业务拒绝、鉴权失败和协议错误直接返回。两个DBProxy实例共享同一套云Redis/PostgreSQL，不做实例间Leader、复制或内部RPC。DBProxy下的Redis和PostgreSQL只绑定回环地址，外网安全组不开放`5432`和`6379`。Ubuntu部署机用Docker Compose启动两个存储容器，DBProxy作为独立systemd服务运行，认证令牌只由systemd环境文件注入。只启动Redis/PostgreSQL而不启动两个DBProxy，或者只启动DBProxy而不在所有Process配置中声明`persistence.dbProxy`，都不算完成持久化接入。
 
 ## Unity、UE、Godot客户端收口
 
@@ -519,7 +521,7 @@ Cocos3D是业务表现参考，但不是唯一客户端实现。Unity C#、UE C+
 
 ## 任务掉落与尸体拾取
 
-Starter的掉落链是`MonsterConfig.drop_table_id -> DropTableConfig -> LootContainer -> C2M_LootMonster`。`quest_objective_id=0`表示普通全局一次性掉落，非零表示按账号筛选的任务掉落；玩家必须先接取匹配的`CollectItem`任务，剩余数量为0时任务行继续留在尸体上，不会再生成Item。拾取在PlayerUnit有序mailbox中完成距离、资格、数量和operationId检查，Inventory/Quest先生成纯数据计划，DBProxy确认后才提交Entity和私有结果。当前1101是静态任务道具，动态ItemInstance必须保存实例数据，不能套用“尸体只保存配置ID、拾取时生成ItemId”的快捷路径。完整规则见`docs/design/loot-and-task-items.md`。
+Starter的掉落链是`MonsterConfig.drop_table_id -> DropTableConfig -> LootContainer -> C2M_LootMonster`。`quest_objective_id=0`表示归属于首个造成有效伤害账号的普通一次性掉落，非零表示按账号筛选的任务掉落；玩家必须先接取匹配的`CollectItem`任务，剩余数量为0时任务行继续留在尸体上，不会再生成Item。拾取在PlayerUnit有序mailbox中完成距离、归属、资格、数量和operationId检查，Inventory/Quest先生成纯数据计划，DBProxy确认后才提交Entity和私有结果。当前1101是静态任务道具，动态ItemInstance必须保存实例数据，不能套用“尸体只保存配置ID、拾取时生成ItemId”的快捷路径。完整规则见`docs/design/loot-and-task-items.md`。
 
 ## 框架热路径分配边界
 
@@ -537,8 +539,18 @@ TiangZ不承诺“关闭V8 GC”或绝对0 GC；可执行的目标是稳态下�
 
 ## 尸体掉落交互
 
-尸体掉落采用“查看”和“领取”两步语义。客户端先调用`C2M_InspectLootMonster`，服务端按当前账号的任务资格返回可领取的`LootDropSnapshot`，查看不会预留掉落、创建ItemId或写数据库。真正领取调用`C2M_LootMonster`：普通点击携带`drop_id`且`loot_all=false`，Shift、右键、F键或移动端“全部拾取”按钮携带`loot_all=true`。
+尸体掉落采用“查看”和“领取”两步语义。客户端先调用`C2M_InspectLootMonster`，服务端按当前账号的普通掉落归属和任务资格返回可领取的`LootDropSnapshot`，查看不会预留掉落、创建ItemId或写数据库。真正领取调用`C2M_LootMonster`：普通点击携带`drop_id`且`loot_all=false`，Shift、右键、F键或移动端“全部拾取”按钮携带`loot_all=true`。
 
 Cocos3D的尸体窗口必须持续显示掉落行和领取结果，领取后使用回执的`remaining_drops`刷新列表，直到玩家主动关闭；不能只用一条短暂状态消息表示拾取结果。服务端仍以`operationId`、距离、任务资格和DBProxy事务为准，客户端不得本地扣除尸体或背包。
 
-尸体生命周期与重生生命周期分开：有掉落的尸体保留5分钟，无掉落的尸体保留10秒；普通掉落全部领取后可以立即发送AOI Leave。`MonsterConfig.respawn_seconds`从死亡时刻计时，实际新怪物生成取尸体窗口结束与最短重生时刻两者较晚值。任务掉落按账号保留，不能因为一个玩家领取完成就提前删除尸体。AOI Leave到达客户端后必须关闭掉落窗口并放弃旧UnitId。
+尸体生命周期与重生生命周期分开：有掉落的尸体保留5分钟，无掉落的尸体保留10秒；归属账号领取完普通掉落后可以立即发送AOI Leave。`MonsterConfig.respawn_seconds`从死亡时刻计时，实际新怪物生成取尸体窗口结束与最短重生时刻两者较晚值。任务掉落按账号保留，不能因为一个玩家领取完成就提前删除尸体。AOI Leave到达客户端后必须关闭掉落窗口并放弃旧UnitId。
+
+## Starter金币、掉落与NPC商店
+
+当前Starter的普通掉落表1按每行独立概率判定：破旧布料1201为80%、小型生命药水1001为15%、大型生命药水1002为5%；三行可以同时掉落，也可以全部未命中。任务掉落行仍按每个账号的任务资格独立判断。ItemConfig的出售价格为布料10、小红20、大红50铜币。Map 100的9002杂货商只出售小红和小型法力药水，商品和价格由服务端返回，客户端不能上传价格或自行改金币。
+
+`CurrencyComponent`只拥有非负`bigint`铜币余额，`NpcShopComponent`负责NPC、距离、商品和交易编排，`ItemComponent`负责背包Item；购买和出售都在PlayerUnit ordered mailbox中生成Inventory/Currency计划，再通过DBProxy事务提交，成功后才应用内存状态。网络重试必须复用`operationId`，不能把购买或出售拆成两个客户端请求。快捷栏仍引用ItemConfigId，背包Item数量归零不删除快捷栏槽位，只显示0。
+
+## 战斗状态与法力恢复
+
+技能费用当前由Hotfix的`SkillManaCost.ts`维护，技能请求通过法力校验后立即扣除；法力不足不会创建ActiveCast。`CombatStateComponent`按“有效怪物仇恨来源集合”维护战斗状态：怪物死亡、回归出生点或清除仇恨时移除来源，来源为空才脱战。战斗状态不恢复MP；脱战后按180秒从当前MP恢复到MaxMp，固定更新桶用整数余数累计避免漂移。该组件是临时地图运行态，传送时清空，不进入持久化快照。设计细节见[`docs/design/currency-and-npc-shop.md`](../design/currency-and-npc-shop.md)。

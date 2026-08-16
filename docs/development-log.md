@@ -7,6 +7,44 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-16：外网切换为多进程与双 DBProxy 拓扑
+
+- 新增`configs/deploy/external-multiprocess/StartMachine.json`：一个LoginMgr、两个Login、两个Gate、两个静态MapHost和一个Location各自运行在独立Process/V8中。
+- 动态地图节点和MapManager暂缓启动；Map1只承载地图1，Map2承载地图2和100，并设置`acceptDynamicMaps=false`，避免静态演示依赖动态副本调度。
+- 新增TiangZ-DBProxy的`configs/external-1.json`、`external-2.json`及systemd模板，两个DBProxy分别监听7800/7801，共享同一Redis/PostgreSQL，不做Leader或实例间同步。
+- 所有TiangZ Process均使用7800首选、7801故障切换，并复用原`requestId/operationId`；Nginx的公网Login/Gate端口映射不变。
+- 本轮只完成配置和文档；外网切换后的启动冒烟需要在发布新Linux制品时执行，不进行容量压力测试。
+
+## 2026-08-15：普通掉落改为逐行独立判定
+
+- 普通掉落不再在同一掉落表内做一次累计权重、最多命中一行；每个普通掉落行都根据自己的`chance_permille`独立投掷。
+- Starter的80%破旧布料、15%小红、5%大红保持原概率，但现在可以同时掉出三种，也允许全部未命中。
+- 任务掉落仍按玩家任务资格独立处理，不与普通掉落行共用判定。
+- 增加`npm run test:loot-roll`，验证全命中、全未命中和部分命中三种结果。
+
+## 2026-08-15：开发期锁漂移报告与Starter经济链路
+
+- 主工程开发CI新增`npm run verify:locks:warn`：协议锁、Core API锁、项目版本和依赖锁只报告漂移，不阻塞开发；正式发布仍由`npm run verify:release`启用严格门禁。该取舍已同步到命令文档和两份AI上下文文档。
+- 怪物普通掉落表1调整为一次累计权重：破旧布料80%、小型生命药水15%、大型生命药水5%；ItemConfig补齐出售价格，分别为10、20、50铜币。
+- 增加Starter金币与NPC商店说明和Cocos3D商店面板。9002杂货商可打开购买/出售界面；购买小红/蓝药，出售背包中可出售的怪物杂物，所有操作沿用PlayerUnit有序mailbox、Inventory计划、CurrencyComponent和DBProxy operationId事务。
+- 增加`CombatStateComponent`和技能法力消耗：有怪物仇恨时进入战斗、不恢复MP；仇恨清空后180秒回满。技能在创建施法前扣蓝，法力不足直接拒绝，传送时战斗状态作为临时运行态清空。
+- 验证：`npm run typecheck`、`npm run typecheck:cocos3d-demo`已通过；本轮未执行CPU压力测试。
+
+## 2026-08-15：修正怪物普通掉落归属
+
+- 原实现把`quest_objective_id=0`的普通掉落作为整具尸体的全局一次性掉落，`ApplyPlayerDamage`没有把攻击者归属传给`LootContainer`，因此其他玩家可能先拾取自己击杀者的普通掉落。
+- 现在由第一次造成有效伤害的账号给怪物打上掉落归属；普通掉落只对该账号开放且仍然只能领取一次，任务掉落继续按每个账号的任务资格独立判断。
+- 该归属是Starter的单人规则；未来组队需要把账号归属替换成明确的`LootAudience`或队伍归属，不在普通掉落逻辑里偷偷扩展。
+- 验证：`npm run typecheck`、`npm run test:loot-ownership`、`npm run verify:comments`、`npm run build:ts`均通过。
+
+## 2026-08-15：外网入口收口到Nginx
+
+- `configs/deploy/external-2process`的LoginMgr、Login、Gate和世界Process全部改为只绑定`127.0.0.1`；公网客户端端口继续保持`17000/17001/17002/17201/17202`。
+- 为避免Nginx与TiangZ抢占同一端口，Login/Gate实际内网监听端口调整为`27000/27001/27002/27201/27202`，共享`known-scenes.json`同步使用内网端口，`outerPort`仍是客户端端口。
+- `configs/deploy/cocos3d-nginx.conf.example`增加五个WebSocket反向代理入口；MapManager、MapHost、Location和Dungeon不提供公网入口。
+- 本次外网发布同时重新构建Linux Release和Cocos3D桌面/移动Web包；桌面包填充浏览器视口，移动`/m/`入口保持独立横屏布局。
+- 遗留边界：当前模板使用Nginx HTTP WebSocket代理，适用于Cocos Web外网演示；Native TCP/KCP不应复用这组HTTP入口，后续如需公网Native协议应单独启用Nginx stream或独立端口。
+
 ## 2026-08-15：DBProxy v0.5.0与TiangZ多Endpoint接入
 
 - 独立仓库`TiangZ-DBProxy`发布`v0.5.0`，提交为`8c48b9a`；新增有序多Endpoint故障切换、两个共享存储的无状态对等实例基础，以及跨记录全量CAS原子事务和事务回执查询。
@@ -984,7 +1022,7 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 
 - 新增`DropTableConfig`，由`MonsterConfig.drop_table_id`引用；普通掉落使用`quest_objective_id=0`，任务掉落引用`CollectItem`目标。
 - 怪物死亡后创建地图级`LootContainer`，尸体保留到复活；任务掉落不会在击杀时向所有玩家发放，而是在`C2M_LootMonster`拾取时按账号检查已接任务和剩余数量。
-- 未接任务或任务数量已满时，任务掉落行留在尸体上；任务掉落按账号领取，普通掉落全局一次性领取。
+- 未接任务或任务数量已满时，任务掉落行留在尸体上；任务掉落按账号领取；当时普通掉落为全局一次性领取，后续已改为首个有效攻击者归属。
 - 拾取使用`Inventory/Quest Plan -> DBProxy ApplyTransaction -> Commit`，以`operationId`保证重试不重复增加Item或任务进度；Cocos3D增加选中尸体、距离提示和拾取按钮。
 - Starter新增任务5006“收集怪物徽记”，完成并交付5005后接取，收集5个1101；本轮通过`npm run codegen:game-config`、`npm run codegen:proto:update-lock`、`npm run codegen:client-sdk`、`npm run typecheck`和`npm run typecheck:cocos3d-demo`，未执行压力测试。
 

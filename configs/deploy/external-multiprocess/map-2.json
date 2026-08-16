@@ -1,0 +1,36 @@
+{
+  "process": {
+    "name": "external_map_2",
+    "identity": { "originServerId": 1, "workerId": 6 },
+    "logging": { "level": "info", "format": "pretty", "console": true },
+    "game": { "fixedUpdateMs": 50, "maxCatchUpSteps": 2 },
+    "persistence": {
+      "dbProxy": {
+        "endpoint": "127.0.0.1:7800",
+        "failoverEndpoints": ["127.0.0.1:7801"],
+        "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
+        "clientPoolSize": 2,
+        "connectTimeoutMs": 5000,
+        "requestTimeoutMs": 5000,
+        "maxFrameBytes": 8388608
+      }
+    },
+    "debug": { "inspectorIp": "127.0.0.1", "inspectorPort": 19237, "breakOnStart": false },
+    "observability": {
+      "health": { "ip": "127.0.0.1", "port": 17607 },
+      "latency": { "enabled": true, "sampleRate": 10 }
+    }
+  },
+  "scenes": [{
+    "name": "map_2",
+    "sceneType": "MapHost",
+    "acceptDynamicMaps": false,
+    "staticMapIds": [2, 100],
+    "innerIp": "127.0.0.1",
+    "bindIp": "127.0.0.1",
+    "port": 17302,
+    "protocol": "tcp",
+    "audience": "inner"
+  }],
+  "knownSceneFiles": ["known-scenes.json"]
+}

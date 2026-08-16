@@ -35,9 +35,11 @@ Rust 定期输出每个 EntryScene 的处理数、失败数、队列和 Handler 
 
 ## 外网测试机部署约定
 
-外网演示使用独立的部署配置，不修改`configs/local`中的开发地址。2C2G机器使用
-`configs/deploy/external-2process/StartMachine.json`，由一个Watcher启动两个Process：登录与Gate进程承载LoginMgr、两个Login和两个Gate；世界进程承载Map、MapManager、Location和动态副本MapHost。旧的`external-all-in-one.json`只保留为单Process回归配置。
-入口监听使用`0.0.0.0`，返回客户端的地址使用`outerIp/outerPort`。由于登录与Gate还要接收世界Process的内部调用，拆分部署中这些入口使用`protocol: auto`和`audience: mixed`，同一端口按握手类型区分浏览器WebSocket与内部TCP；地图世界仍使用纯内部TCP。
+外网演示使用独立的部署配置，不修改`configs/local`中的开发地址。当前2C2G机器使用
+`configs/deploy/external-multiprocess/StartMachine.json`，由一个Watcher启动8个Process：一个LoginMgr、两个Login、两个Gate、两个静态MapHost和一个Location。动态副本节点与MapManager暂缓启动；两个MapHost只承载静态地图。旧的`external-2process/StartMachine.json`保留为回退对照，`external-all-in-one.json`只保留为单Process回归配置。
+外网部署时所有 Scene 都只绑定 `127.0.0.1`。LoginMgr、Login 和 Gate 的 `outerIp/outerPort` 仍然填写公网入口，但公网端口由 Nginx 负责 WebSocket 反向代理到独立的回环端口：`17000→27000`、`17001→27001`、`17002→27002`、`17201→27201`、`17202→27202`。因此 `port` 是 TiangZ 实际监听的内网端口，`outerPort` 是客户端连接的公网端口；二者不能写成同一个监听端口，否则 Nginx 和 TiangZ 会冲突。地图世界仍只使用回环 TCP，不应在安全组开放。
+
+Nginx 站点模板见 `configs/deploy/cocos3d-nginx.conf.example`。它透传 WebSocket 升级和二进制帧，外网 Cocos Web 客户端不需要改地址；Process 之间的 Inner TCP 仍直接连接 `127.0.0.1`，不经过 Nginx。
 
 Cocos3D的外网地址放在资源文件`client_demo/cocos_client3D_3.8.8/assets/resources/Config/tiangz-external.json`，只保存LoginMgr的公网主机和端口；
 不要把云服务器内网地址写进前端，也不要把密码写入仓库。构建Web包后由Nginx托管，入口通常是：
@@ -56,7 +58,7 @@ http://<公网IP>/
 17202  Gate 2
 ```
 
-Map、MapManager、Location和副本MapHost只使用内网地址，不应对公网开放。确认安全组放行后，先验证页面，再验证LoginMgr WebSocket握手，最后验证Login返回的Gate地址；只验证80端口不能证明游戏链路可用。
+Map和Location只使用内网地址，不应对公网开放。DBProxy由两个本机对等实例组成，分别监听`127.0.0.1:7800`和`127.0.0.1:7801`，共享Redis/PostgreSQL；TiangZ客户端配置把前者作为首选、后者作为故障切换。确认安全组放行后，先验证页面，再验证LoginMgr WebSocket握手，最后验证Login返回的Gate地址；只验证80端口不能证明游戏链路可用。
 
 后续当用户说“部署到外网测试机”时，固定执行：重新生成协议与场景代码、重新构建后端Release、重新构建Cocos3D Web，确认准备上传的是本次构建产物；然后在远端停止旧服务，直接覆盖`/opt/tiangz-external`、`/var/www/tiangz-cocos3d/desktop`和`/var/www/tiangz-cocos3d/m`，重新启动服务并复验上述入口。该机器只是可从公网访问的Demo测试机，不使用`.next`目录、蓝绿切换、目录交换或自动回滚等生产发布流程。部署凭据只通过运行环境提供，不进入配置文件、日志或Git。
 

@@ -238,7 +238,7 @@ MapHost -> MapScene
 4. Handler保持一层胶水，例如`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。
 5. 通过`MonsterComponent.Get/GetAll`取得怪物；死亡状态、AOI和重生只能由MonsterComponent完成。
 
-当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡尸体、尸体清理、原槽位新Unit重生”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；有掉落的尸体保留5分钟，无掉落的尸体保留10秒，全部普通掉落领取完成后可以提前清理。`MonsterConfig.respawn_seconds`从死亡时刻开始计时，实际新怪物生成取尸体窗口结束与最短重生时刻两者较晚值。尸体清理时才执行`Detach`、发布AOI Leave并`Remove`旧尸体，然后只复用`AreaId`刷怪槽创建新的MonsterUnit和UnitId；同一个掉落操作重试时由DBProxy回执恢复，不重新计算掉落。被动怪没有仇恨时不主动寻找玩家；平A和技能造成最终实际伤害后都必须通过`MonsterComponent.AddThreat`按1:1增加仇恨，5Hz桶按本地图最高仇恨者追击。12米只负责主动怪在无仇恨时索敌，不能过滤已有仇恨；脱战回出生点应另设冷配置，不能复用主动索敌距离。不能把“被攻击”直接等同于“追击”，也不能绕过`ApplyPlayerDamage`只调用Combat，否则会漏掉仇恨和死亡边界。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
+当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡尸体、尸体清理、原槽位新Unit重生”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；有掉落的尸体保留5分钟，无掉落的尸体保留10秒，首个造成有效伤害的账号拥有普通掉落，归属账号领取完后可以提前清理。`MonsterConfig.respawn_seconds`从死亡时刻开始计时，实际新怪物生成取尸体窗口结束与最短重生时刻两者较晚值。尸体清理时才执行`Detach`、发布AOI Leave并`Remove`旧尸体，然后只复用`AreaId`刷怪槽创建新的MonsterUnit和UnitId；同一个掉落操作重试时由DBProxy回执恢复，不重新计算掉落。被动怪没有仇恨时不主动寻找玩家；平A和技能造成最终实际伤害后都必须通过`MonsterComponent.AddThreat`按1:1增加仇恨，5Hz桶按本地图最高仇恨者追击。12米只负责主动怪在无仇恨时索敌，不能过滤已有仇恨；脱战回出生点应另设冷配置，不能复用主动索敌距离。不能把“被攻击”直接等同于“追击”，也不能绕过`ApplyPlayerDamage`只调用Combat，否则会漏掉仇恨和死亡边界。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
 
 怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡先通过`EntityState.alive=false`表现为尸体，尸体清理才通过AOI Leave移除旧Unit，复活通过AOI Enter发送新Unit的完整快照。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。演示客户端可以读取冷配置中的`attack_mode`做非权威颜色提示：自己蓝色，其他玩家绿色，被动怪黄色，主动怪红色；业务逻辑仍必须以服务端配置和System为准。角色和怪物之间的动态阻挡、动态避障当前明确不做。
 
@@ -1116,8 +1116,10 @@ entity Item extends Entity {
 
 ## 外网演示部署
 
-业务开发不应把公网IP、云主机密码或部署机器的内网地址写进业务代码。外网2C2G演示使用`configs/deploy/external-2process/StartMachine.json`，由Watcher启动登录/Gate Process和世界Process；外网入口由部署配置的`outerIp/outerPort`提供。Cocos3D编辑器预览自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`，只有非预览发布包读取`tiangz-external.json`；不要为了本机调试修改公网配置文件。
-客户端只配置LoginMgr公网地址；LoginMgr再返回Login公网地址，Login再返回Gate公网地址。MapHost、Location和MapManager保持内网路由。
+业务开发不应把公网IP、云主机密码或部署机器的内网地址写进业务代码。外网2C2G演示使用`configs/deploy/external-multiprocess/StartMachine.json`，由Watcher启动8个独立Process：LoginMgr、两个Login、两个Gate、两个静态MapHost和Location；动态副本节点与MapManager暂缓启动。外网入口由部署配置的`outerIp/outerPort`提供。Cocos3D编辑器预览自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`，只有非预览发布包读取`tiangz-external.json`；不要为了本机调试修改公网配置文件。
+客户端只配置LoginMgr公网地址；LoginMgr再返回Login公网地址，Login再返回Gate公网地址。外网测试机由Nginx持有这些公网WebSocket端口，TiangZ入口只绑定`127.0.0.1`的独立内网端口：`17000→27000`、`17001→27001`、`17002→27002`、`17201→27201`、`17202→27202`。MapHost、Location和MapManager也只保持回环内网路由；它们没有公网入口。
+
+这个端口分离不是业务路由逻辑，开发者不需要在Handler中处理。修改外网配置时必须同时检查`scenes`、共享`known-scenes.json`和`configs/deploy/cocos3d-nginx.conf.example`，保证`port`表示TiangZ实际监听端口，`outerPort`表示客户端连接端口；若把二者写成同一个端口，Nginx与Runtime会启动冲突。
 
 当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web，确认是本次最新产物；然后停止远端旧服务，直接覆盖后端与两个Web目录，重新启动，再按页面、LoginMgr、Login、Gate的顺序验收。该主机是Demo测试机，不做`.next`目录、蓝绿切换、目录交换和自动回滚。Cocos3D前端使用`npm run build:cocos3d:external`一次生成两个入口：`build/external/desktop`部署到根路径`/`，`build/external/m`部署到`/m/`；根路径只能使用桌面`web-desktop`包，横屏`web-mobile`包只能放在`/m/`。
 外网构建会在页面顶部显示`Build <版本>-<UTC构建时间>-<Git短提交号>`，Nginx对两个Demo入口发送`Cache-Control: no-cache, must-revalidate`。验收时应先确认Build标识已经变化，再检查Buff、快捷栏等业务表现；这样可以明确区分客户端缺陷和旧包缓存。
@@ -1133,7 +1135,7 @@ entity Item extends Entity {
 
 当前主工程、两个VS Code插件和独立DBProxy都处于持续开发阶段。开发者可以迭代`package.json`/`package-lock.json`、`Cargo.toml`/`Cargo.lock`、插件版本和协议原型；日常使用`npm install`与普通Cargo命令，不要求版本副本、Stable API快照、opcode/schema锁或依赖解析完全冻结。生成物过期检查、类型检查、边界检查和运行时Protocol Fingerprint仍然有效，因为它们分别保护代码生成一致性、架构边界和在线连接兼容性。
 
-准备正式发布时再开启冻结门禁：主工程运行`npm run verify:release`，它会设置`TIANGZ_LOCK_VERSIONS=1`并强制比较项目版本、`public-api.lock.json`和协议锁；插件与DBProxy由各自仓库执行发布前的版本、依赖锁、协议指纹和完整测试审查。除非明确进入Release，不要手工更新锁文件来“让检查变绿”，也不要把Release命令加入普通开发流程。
+准备正式发布时再开启冻结门禁：主工程运行`npm run verify:release`，它会设置`TIANGZ_LOCK_VERSIONS=1`并强制比较项目版本、`public-api.lock.json`和协议锁；开发阶段可运行`npm run verify:locks:warn`，它只报告漂移、不阻塞提交。插件与DBProxy由各自仓库执行发布前的版本、依赖锁、协议指纹和完整测试审查。除非明确进入Release，不要手工更新锁文件来“让检查变绿”，也不要把Release命令加入普通开发流程。
 
 ## Action、Buff与Skill的当前规则
 
@@ -1220,3 +1222,11 @@ npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.js
 列表显示的是服务端资格筛选后的预览，不代表客户端已经拥有道具。不要在点击前修改背包数量，也不要用短暂Toast替代回执中的掉落结果。
 
 尸体的显示时长和下一只怪物的重生间隔必须分开理解：有掉落的尸体默认保留5分钟，无掉落的尸体保留10秒；全部普通掉落领取完成后可以立即清理尸体。`MonsterConfig.respawn_seconds`从死亡时刻计时，刷怪时间取尸体窗口结束与最短重生时刻两者较晚值。任务掉落属于按账号判定的资格，不能因为一个玩家领取完成就删除尸体。客户端收到AOI Leave后关闭拾取窗口，不能继续用旧UnitId重试。
+
+## Starter金币、NPC商店与法力恢复
+
+Starter的普通掉落表1按每行独立概率判定：破旧布料1201为80%、小型生命药水1001为15%、大型生命药水1002为5%；三行可以同时掉落，也可以全部未命中。`ItemConfig.sell_price`分别为10、20、50铜币，Map 100的9002杂货商读取服务端商品目录出售红药和蓝药。NPC商店不是客户端配置价格表：客户端先调用`OpenNpcShop`拿目录和金币，再调用购买/出售RPC；服务端在PlayerUnit ordered mailbox中校验NPC、距离、商品、Item归属和金币，创建Inventory/Currency纯数据计划，最后使用DBProxy的稳定`operationId`事务提交。提交成功后才应用内存和发布ItemChanged；失败或重试不能由客户端预扣或重复发放。快捷栏只能引用ItemConfigId，不能绑定出售后失效的ItemId。
+
+`CurrencyComponent`只负责非负`bigint`余额，不加入商店名词；`NpcShopComponent`负责编排，`ItemComponent`负责Item实体。未来玩家交易必须在这条边界上使用DBProxy多记录事务，不能把两个玩家的单人购买/出售请求在客户端拼起来。完整调用示例见[`docs/design/currency-and-npc-shop.md`](../design/currency-and-npc-shop.md)。
+
+技能费用当前暂由Hotfix的`SkillManaCost.ts`维护，服务端在创建ActiveCast前检查并扣除MP；法力不足直接拒绝，读条中断不返还。`CombatStateComponent`记录仍持有玩家仇恨的怪物集合：怪物死亡、回归出生点或清除仇恨时移除来源；集合为空才脱战。战斗状态不恢复MP，脱战后按180秒从当前值恢复到MaxMp，固定更新桶用整数余数累积。该状态是地图临时运行态，传送时清空，不写入持久化快照。

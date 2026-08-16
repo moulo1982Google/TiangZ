@@ -1,0 +1,18 @@
+{
+  "machines": [
+    {
+      "name": "external-2c2g",
+      "innerIp": "127.0.0.1",
+      "processes": [
+        "login-mgr.json",
+        "login-1.json",
+        "login-2.json",
+        "gate-1.json",
+        "gate-2.json",
+        "map-1.json",
+        "map-2.json",
+        "location.json"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "knownScenes": [
+    {
+      "name": "login_mgr",
+      "sceneType": "LoginMgr",
+      "innerIp": "127.0.0.1",
+      "outerIp": "14.103.24.32",
+      "port": 27000,
+      "outerPort": 17000,
+      "protocol": "auto",
+      "audience": "mixed"
+    },
+    {
+      "name": "login_1",
+      "sceneType": "Login",
+      "innerIp": "127.0.0.1",
+      "outerIp": "14.103.24.32",
+      "port": 27001,
+      "outerPort": 17001,
+      "protocol": "auto",
+      "audience": "mixed"
+    },
+    {
+      "name": "login_2",
+      "sceneType": "Login",
+      "innerIp": "127.0.0.1",
+      "outerIp": "14.103.24.32",
+      "port": 27002,
+      "outerPort": 17002,
+      "protocol": "auto",
+      "audience": "mixed"
+    },
+    {
+      "name": "gate_1",
+      "sceneType": "Gate",
+      "innerIp": "127.0.0.1",
+      "outerIp": "14.103.24.32",
+      "port": 27201,
+      "outerPort": 17201,
+      "protocol": "auto",
+      "audience": "mixed"
+    },
+    {
+      "name": "gate_2",
+      "sceneType": "Gate",
+      "innerIp": "127.0.0.1",
+      "outerIp": "14.103.24.32",
+      "port": 27202,
+      "outerPort": 17202,
+      "protocol": "auto",
+      "audience": "mixed"
+    },
+    {
+      "name": "map_1",
+      "sceneType": "MapHost",
+      "innerIp": "127.0.0.1",
+      "port": 17301,
+      "protocol": "tcp",
+      "audience": "inner"
+    },
+    {
+      "name": "map_2",
+      "sceneType": "MapHost",
+      "innerIp": "127.0.0.1",
+      "port": 17302,
+      "protocol": "tcp",
+      "audience": "inner"
+    },
+    {
+      "name": "location_1",
+      "sceneType": "Location",
+      "innerIp": "127.0.0.1",
+      "port": 17401,
+      "protocol": "tcp",
+      "audience": "inner"
+    }
+  ]
+}
