@@ -1432,7 +1432,15 @@ async function verifyNavMeshTransfer(
     throw new Error(`Map 100 monster snapshot mismatch: ${stringifyForError(navMeshMonsters)}`);
   }
   const starterNpc = starterNpcs.find((npc) => npc.configId === 9001);
-  if (!starterNpc || starterNpcs.length !== 1) {
+  const starterNpcConfigIds = starterNpcs
+    .map((npc) => npc.configId)
+    .sort((left, right) => left - right);
+  if (
+    !starterNpc ||
+    starterNpcConfigIds.length !== 2 ||
+    starterNpcConfigIds[0] !== 9001 ||
+    starterNpcConfigIds[1] !== 9002
+  ) {
     throw new Error(`Map 100 Starter NPC snapshot mismatch: ${stringifyForError(starterNpcs)}`);
   }
   if (transferred.quests.length !== 0) {
