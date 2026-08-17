@@ -7,14 +7,14 @@
 先在TiangZ根目录启动服务端：
 
 ```powershell
-cd E:\gitee\TiangZ
+# 在TiangZ仓库根目录执行
 cargo run --bin TiangZ -- configs/local/all-in-one.json
 ```
 
 用Godot 4.7.1打开：
 
 ```text
-E:\gitee\TiangZ\client_demo/godot-3d-4.7.1\project.godot
+client_demo/godot-3d-4.7.1/project.godot
 ```
 
 运行主场景即可。Godot客户端使用`ws://127.0.0.1:7000`开始登录，再根据服务端返回的地址连接Login和Gate；不把Gate端口写死在客户端业务里。

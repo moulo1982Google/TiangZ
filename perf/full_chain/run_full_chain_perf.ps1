@@ -25,6 +25,7 @@ $GameClient = Join-Path $Root "dist\full_chain_load_test.cjs"
 $ResultDir = Join-Path $Root "perf\results"
 $RunId = Get-Date -Format "yyyyMMdd_HHmmss"
 $LogDir = Join-Path $ResultDir "logs\$RunId"
+$PortableLogDir = "perf/results/logs/$RunId"
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 foreach ($file in $RuntimeExe, $RuntimeLoadExe, $GameClient) {
@@ -146,7 +147,7 @@ function Invoke-GameplayCase {
         $jsonLine = $output | Where-Object { $_ -like "RESULT_JSON *" } | Select-Object -Last 1
         if (-not $jsonLine) { throw "gameplay client did not return RESULT_JSON" }
         $result = $jsonLine.Substring("RESULT_JSON ".Length) | ConvertFrom-Json
-        $result | Add-Member -NotePropertyName logDirectory -NotePropertyValue $LogDir
+        $result | Add-Member -NotePropertyName logDirectory -NotePropertyValue $PortableLogDir
         [void]$gameplayResults.Add($result)
         Add-Content -LiteralPath $RawResultPath -Value (([pscustomobject]@{ type = "gameplay"; value = $result }) | ConvertTo-Json -Depth 8 -Compress)
     }

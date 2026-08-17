@@ -7,7 +7,7 @@
 修改Proto后先执行：
 
 ```powershell
-cd E:\gitee\TiangZ
+# 在TiangZ仓库根目录执行
 npm run codegen:proto
 npm run codegen:cpp-client-sdk
 ```
@@ -22,9 +22,11 @@ client_demo/ue_client3D_5.4.4/TiangZClientUE/Plugins/TiangZClientSDK/Source/Thir
 前者由Proto生成，后者是分发副本。UE 5.4.4在本开发机使用VS2022 MSVC 14.38；若机器只安装了14.44，应通过Visual Studio Installer补装`MSVC v143 14.38`。命令行编译：
 
 ```powershell
-& "E:\Program Files\Epic Games\UE_5.4\Engine\Build\BatchFiles\Build.bat" `
+$env:UE_ROOT = "<UE 5.4安装目录>"
+$project = (Resolve-Path "client_demo/ue_client3D_5.4.4/TiangZClientUE/TiangZClientUE.uproject")
+& "$env:UE_ROOT\Engine\Build\BatchFiles\Build.bat" `
   TiangZClientUEEditor Win64 Development `
-  "-Project=E:\gitee\TiangZ\client_demo/ue_client3D_5.4.4\TiangZClientUE\TiangZClientUE.uproject" `
+  "-Project=$project" `
   -WaitMutex -NoHotReloadFromIDE
 ```
 
@@ -72,8 +74,10 @@ UE代码中的`TiangZYaw`始终属于协议坐标，键盘、鼠标和权威Push
 UE Automation测试名为`TiangZ.ClientSDK`，覆盖嵌套数组、正负64位整数、动态门RPC、RPC ID、未知字段跳过和截断包拒绝：
 
 ```powershell
-& "E:\Program Files\Epic Games\UE_5.4\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
-  "E:\gitee\TiangZ\client_demo/ue_client3D_5.4.4\TiangZClientUE\TiangZClientUE.uproject" `
+$env:UE_ROOT = "<UE 5.4安装目录>"
+$project = (Resolve-Path "client_demo/ue_client3D_5.4.4/TiangZClientUE/TiangZClientUE.uproject")
+& "$env:UE_ROOT\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
+  "$project" `
   -unattended -nop4 -nosplash -NullRHI `
   "-ExecCmds=Automation RunTests TiangZ.ClientSDK; Quit" `
   "-TestExit=Automation Test Queue Empty" -log

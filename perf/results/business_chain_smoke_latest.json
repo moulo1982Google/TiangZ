@@ -230,7 +230,7 @@
         "innerOverloadsSum": 0,
         "innerTimeoutsSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\business_chain_smoke_20260812_020636"
+      "logDirectory": "perf/results/logs/business_chain_smoke_20260812_020636"
     }
   ]
 }

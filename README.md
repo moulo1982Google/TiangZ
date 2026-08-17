@@ -104,7 +104,7 @@ Phase 4.2.5已经把官方Recast/Detour `v1.6.0`资产、Rust权威移动、动�
 ## 快速启动
 
 ```powershell
-cd E:\gitee\TiangZ
+# 先进入TiangZ仓库根目录
 npm install
 npm run build
 cargo run -- configs/local/all-in-one.json

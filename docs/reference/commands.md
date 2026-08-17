@@ -14,6 +14,7 @@
 | `npm run codegen` | 修改Proto、`.native`、Scene、System或Handler声明后，运行全部生成器 |
 | `npm run typecheck` | 只检查服务端TS类型，不构建Rust和客户端 |
 | `npm run check:project` | 检查目录依赖、配置、Handler与Generated完整性 |
+| `npm run verify:no-local-traces` | 拒绝提交本机绝对目录、个人Home目录和私网IP；Unity既有模板与路径解析测试使用精确白名单 |
 | `cargo run --bin TiangZ -- configs/local/all-in-one.json` | 使用单Process、单V8启动本地全部Demo Scene |
 | `npm run smoke:client` | 使用Node客户端验证登录、进图链路 |
 | `npm run robot:walk -- 20` | 启动20个真实SDK机器人进入地图遛弯，按`Ctrl+C`全部停止 |
@@ -28,7 +29,7 @@ dist/hotfix-candidates/<hash>/
 Watcher运行期间，在其终端输入以下命令提交候选：
 
 ```text
-reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
+reload dist/hotfix-candidates/<hash>
 ```
 
 如果`build:hotfix`提示Model、Core、协议或Native schema指纹变化，不要绕过检查；改用完整构建并重启Process。

@@ -393,7 +393,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -623,7 +623,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -853,7 +853,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -1083,7 +1083,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -1313,7 +1313,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -1543,7 +1543,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -1773,7 +1773,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -2003,7 +2003,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -2233,7 +2233,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\gc_after_20260812_103137"
+      "logDirectory": "perf/results/logs/gc_after_20260812_103137"
     }
   ]
 }

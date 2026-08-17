@@ -4,6 +4,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SanitizePerformanceReport } from "../lib/sanitize_report.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const options = parseOptions(process.argv.slice(2));
@@ -780,4 +781,7 @@ function timestamp() { return new Date().toISOString().replace(/[-:]/g, "").repl
 function machineInfo() {
   return { cpu: os.cpus()[0]?.model ?? "unknown", logicalCpus: os.cpus().length, memoryBytes: os.totalmem(), os: `${os.platform()} ${os.release()}` };
 }
-function writeJson(file, value) { writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); }
+function writeJson(file, value) {
+  const portable = SanitizePerformanceReport(value, root);
+  writeFileSync(file, `${JSON.stringify(portable, null, 2)}\n`, "utf8");
+}

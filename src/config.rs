@@ -1194,7 +1194,7 @@ mod tests {
                 "scenes": [{
                     "name": "gate_1",
                     "sceneType": "Gate",
-                    "innerIp": "10.0.0.5",
+                    "innerIp": "192.0.2.5",
                     "bindIp": "0.0.0.0",
                     "outerIp": "203.0.113.10",
                     "outerPort": 17201,
@@ -1205,14 +1205,14 @@ mod tests {
         .unwrap();
 
         let scene = &config.scenes[0];
-        assert_eq!(scene.inner_ip, "10.0.0.5");
+        assert_eq!(scene.inner_ip, "192.0.2.5");
         assert_eq!(scene.bind_ip(), "0.0.0.0");
         assert_eq!(scene.outer_ip.as_deref(), Some("203.0.113.10"));
         assert_eq!(scene.outer_port, Some(17_201));
         assert!(validate_runtime_config(&config).is_ok());
 
         let serialized = serde_json::to_value(scene).unwrap();
-        assert_eq!(serialized["innerIp"], "10.0.0.5");
+        assert_eq!(serialized["innerIp"], "192.0.2.5");
         assert_eq!(serialized["bindIp"], "0.0.0.0");
         assert_eq!(serialized["outerIp"], "203.0.113.10");
         assert_eq!(serialized["outerPort"], 17_201);

@@ -9,7 +9,7 @@ if (process.platform !== "win32") {
 
 const pageUrl = process.argv[2] ?? "http://127.0.0.1:7460/";
 const debugPort = Number(process.argv[3] ?? 9333);
-const edge = process.env.TIANGZ_BROWSER ?? "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
+const edge = process.env.TIANGZ_BROWSER ?? "msedge";
 const profile = await mkdtemp(path.join(os.tmpdir(), "tiangz-pixi-smoke-"));
 const browser = spawn(edge, [
   "--headless=new",

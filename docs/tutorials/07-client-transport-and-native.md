@@ -62,10 +62,13 @@ Native Adapter 位于：
 使用 Cocos Creator 3.8.6 构建 Windows Debug 包后，编译 Native 工程：
 
 ```powershell
-E:\cocos_editer\Creator\3.8.6\resources\tools\cmake\bin\cmake.exe `
+$creatorRoot = Split-Path -Parent $env:COCOS_CREATOR_386
+& "$creatorRoot\resources\tools\cmake\bin\cmake.exe" `
   --build client_demo/cocos_client2D_3.8.6\build\tiangz-kcp-native\proj `
   --config Debug --parallel 8
 ```
+
+`COCOS_CREATOR_386`指向Cocos Creator 3.8.6可执行文件；不要把个人安装盘符写入工程脚本。
 
 Cocos 3.8.6 自带的 Windows Debug CRT 可能是 MSVC 14.29，而本机编译器是 14.44。混用后会在 `BaseGame::init()` 内以 `0xC0000005` 崩溃。项目的 Windows CMake 已在链接后从当前 MSVC Toolset 自动复制匹配的 Debug CRT，不需要手工替换 DLL。
 

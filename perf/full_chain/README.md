@@ -71,7 +71,7 @@ npm run perf:business-chain -- \
 npm run build
 npm run build:perf:full-chain
 node perf/full_chain/run_full_chain_perf.mjs \
-  --remote --host 192.168.1.100 --manager-port 7000 \
+  --remote --host <server-ip> --manager-port 7000 \
   --players 10,50,100 --move-rates 10,0 \
   --warmup 10 --duration 60 --rounds 3
 ```

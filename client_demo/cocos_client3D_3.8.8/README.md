@@ -10,7 +10,7 @@
 
 ## Web 构建
 
-必须在主工程 `E:\gitee\TiangZ` 根目录执行：
+必须在TiangZ主工程的仓库根目录执行：
 
 ```powershell
 # 桌面 Web Release

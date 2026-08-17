@@ -5,7 +5,7 @@ Phase 4.2采用“制作期烘焙、运行期只读”的NavMesh流程。你现�
 ## 一键烘焙
 
 ```powershell
-cd E:\gitee\TiangZ
+# 在TiangZ仓库根目录执行
 npm run navigation:bake
 ```
 

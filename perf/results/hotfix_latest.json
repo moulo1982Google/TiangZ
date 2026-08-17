@@ -60,8 +60,8 @@
         "uringReadBufferBytes": 65536,
         "hotfixMode": "baseline",
         "hotfixCandidates": [
-          "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
-          "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted"
+          "dist/hotfix-candidates/perf-normal",
+          "dist/hotfix-candidates/perf-inverted"
         ],
         "hotfixIntervalMs": 1000,
         "healthBasePort": 13800,
@@ -2485,8 +2485,8 @@
             "formalWindowMissed": 0,
             "samples": []
           },
-          "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\map_capacity_20260727_052238",
-          "configDirectory": "E:\\gitee\\TiangZ\\perf\\results\\runtime_configs\\map_capacity_20260727_052238"
+          "logDirectory": "perf/results/logs/map_capacity_20260727_052238",
+          "configDirectory": "perf/results/runtime_configs/map_capacity_20260727_052238"
         },
         {
           "scenario": "gameplay-full-chain-rust",
@@ -4654,8 +4654,8 @@
             "formalWindowMissed": 0,
             "samples": []
           },
-          "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\map_capacity_20260727_052238",
-          "configDirectory": "E:\\gitee\\TiangZ\\perf\\results\\runtime_configs\\map_capacity_20260727_052238"
+          "logDirectory": "perf/results/logs/map_capacity_20260727_052238",
+          "configDirectory": "perf/results/runtime_configs/map_capacity_20260727_052238"
         },
         {
           "scenario": "gameplay-full-chain-rust",
@@ -6823,8 +6823,8 @@
             "formalWindowMissed": 0,
             "samples": []
           },
-          "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\map_capacity_20260727_052238",
-          "configDirectory": "E:\\gitee\\TiangZ\\perf\\results\\runtime_configs\\map_capacity_20260727_052238"
+          "logDirectory": "perf/results/logs/map_capacity_20260727_052238",
+          "configDirectory": "perf/results/runtime_configs/map_capacity_20260727_052238"
         }
       ]
     },
@@ -6944,8 +6944,8 @@
         "uringReadBufferBytes": 65536,
         "hotfixMode": "reload",
         "hotfixCandidates": [
-          "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
-          "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted"
+          "dist/hotfix-candidates/perf-normal",
+          "dist/hotfix-candidates/perf-inverted"
         ],
         "hotfixIntervalMs": 1000,
         "healthBasePort": 16800,
@@ -9371,7 +9371,7 @@
             "samples": [
               {
                 "attempt": 1,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130440059,
                 "completedAtUnixMs": 1785130440410,
                 "completed": true,
@@ -9392,7 +9392,7 @@
               },
               {
                 "attempt": 2,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130441012,
                 "completedAtUnixMs": 1785130441516,
                 "completed": true,
@@ -9413,7 +9413,7 @@
               },
               {
                 "attempt": 3,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130442005,
                 "completedAtUnixMs": 1785130442486,
                 "completed": true,
@@ -9434,7 +9434,7 @@
               },
               {
                 "attempt": 4,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130443005,
                 "completedAtUnixMs": 1785130443433,
                 "completed": true,
@@ -9455,7 +9455,7 @@
               },
               {
                 "attempt": 5,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130444007,
                 "completedAtUnixMs": 1785130444569,
                 "completed": true,
@@ -9476,7 +9476,7 @@
               },
               {
                 "attempt": 6,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130445000,
                 "completedAtUnixMs": 1785130445424,
                 "completed": true,
@@ -9497,7 +9497,7 @@
               },
               {
                 "attempt": 7,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130446010,
                 "completedAtUnixMs": 1785130446482,
                 "completed": true,
@@ -9518,7 +9518,7 @@
               },
               {
                 "attempt": 8,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130446995,
                 "completedAtUnixMs": 1785130447452,
                 "completed": true,
@@ -9539,7 +9539,7 @@
               },
               {
                 "attempt": 9,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130448067,
                 "completedAtUnixMs": 1785130448606,
                 "completed": true,
@@ -9560,7 +9560,7 @@
               },
               {
                 "attempt": 10,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130448996,
                 "completedAtUnixMs": 1785130449507,
                 "completed": true,
@@ -9581,7 +9581,7 @@
               },
               {
                 "attempt": 11,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130450007,
                 "completedAtUnixMs": 1785130450567,
                 "completed": true,
@@ -9602,7 +9602,7 @@
               },
               {
                 "attempt": 12,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130450995,
                 "completedAtUnixMs": 1785130451386,
                 "completed": true,
@@ -9623,7 +9623,7 @@
               },
               {
                 "attempt": 13,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130452000,
                 "completedAtUnixMs": 1785130452456,
                 "completed": true,
@@ -9644,7 +9644,7 @@
               },
               {
                 "attempt": 14,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130452995,
                 "completedAtUnixMs": 1785130453430,
                 "completed": true,
@@ -9665,7 +9665,7 @@
               },
               {
                 "attempt": 15,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130454006,
                 "completedAtUnixMs": 1785130454542,
                 "completed": true,
@@ -9686,7 +9686,7 @@
               },
               {
                 "attempt": 16,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130455002,
                 "completedAtUnixMs": 1785130455450,
                 "completed": true,
@@ -9707,7 +9707,7 @@
               },
               {
                 "attempt": 17,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130456002,
                 "completedAtUnixMs": 1785130456662,
                 "completed": true,
@@ -9728,7 +9728,7 @@
               },
               {
                 "attempt": 18,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130457007,
                 "completedAtUnixMs": 1785130457591,
                 "completed": true,
@@ -9749,7 +9749,7 @@
               },
               {
                 "attempt": 19,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130458001,
                 "completedAtUnixMs": 1785130458521,
                 "completed": true,
@@ -9770,7 +9770,7 @@
               },
               {
                 "attempt": 20,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130458995,
                 "completedAtUnixMs": 1785130459412,
                 "completed": true,
@@ -9791,7 +9791,7 @@
               },
               {
                 "attempt": 21,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130460000,
                 "completedAtUnixMs": 1785130460516,
                 "completed": true,
@@ -9812,7 +9812,7 @@
               },
               {
                 "attempt": 22,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130461003,
                 "completedAtUnixMs": 1785130461387,
                 "completed": true,
@@ -9833,7 +9833,7 @@
               },
               {
                 "attempt": 23,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130462032,
                 "completedAtUnixMs": 1785130462535,
                 "completed": true,
@@ -9854,7 +9854,7 @@
               },
               {
                 "attempt": 24,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130462998,
                 "completedAtUnixMs": 1785130463641,
                 "completed": true,
@@ -9875,7 +9875,7 @@
               },
               {
                 "attempt": 25,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130463999,
                 "completedAtUnixMs": 1785130464475,
                 "completed": true,
@@ -9896,7 +9896,7 @@
               },
               {
                 "attempt": 26,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130465006,
                 "completedAtUnixMs": 1785130465483,
                 "completed": true,
@@ -9917,7 +9917,7 @@
               },
               {
                 "attempt": 27,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130466008,
                 "completedAtUnixMs": 1785130466489,
                 "completed": true,
@@ -9938,7 +9938,7 @@
               },
               {
                 "attempt": 28,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130467009,
                 "completedAtUnixMs": 1785130467513,
                 "completed": true,
@@ -9959,7 +9959,7 @@
               },
               {
                 "attempt": 29,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130467999,
                 "completedAtUnixMs": 1785130468534,
                 "completed": true,
@@ -9980,7 +9980,7 @@
               },
               {
                 "attempt": 30,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130469033,
                 "completedAtUnixMs": 1785130469569,
                 "completed": true,
@@ -10001,8 +10001,8 @@
               }
             ]
           },
-          "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\map_capacity_20260727_053305",
-          "configDirectory": "E:\\gitee\\TiangZ\\perf\\results\\runtime_configs\\map_capacity_20260727_053305"
+          "logDirectory": "perf/results/logs/map_capacity_20260727_053305",
+          "configDirectory": "perf/results/runtime_configs/map_capacity_20260727_053305"
         },
         {
           "scenario": "gameplay-full-chain-rust",
@@ -12172,7 +12172,7 @@
             "samples": [
               {
                 "attempt": 1,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130525906,
                 "completedAtUnixMs": 1785130526482,
                 "completed": true,
@@ -12193,7 +12193,7 @@
               },
               {
                 "attempt": 2,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130526896,
                 "completedAtUnixMs": 1785130527351,
                 "completed": true,
@@ -12214,7 +12214,7 @@
               },
               {
                 "attempt": 3,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130527900,
                 "completedAtUnixMs": 1785130528407,
                 "completed": true,
@@ -12235,7 +12235,7 @@
               },
               {
                 "attempt": 4,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130528909,
                 "completedAtUnixMs": 1785130529440,
                 "completed": true,
@@ -12256,7 +12256,7 @@
               },
               {
                 "attempt": 5,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130529991,
                 "completedAtUnixMs": 1785130530503,
                 "completed": true,
@@ -12277,7 +12277,7 @@
               },
               {
                 "attempt": 6,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130530906,
                 "completedAtUnixMs": 1785130531251,
                 "completed": true,
@@ -12298,7 +12298,7 @@
               },
               {
                 "attempt": 7,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130531897,
                 "completedAtUnixMs": 1785130532572,
                 "completed": true,
@@ -12319,7 +12319,7 @@
               },
               {
                 "attempt": 8,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130532906,
                 "completedAtUnixMs": 1785130533292,
                 "completed": true,
@@ -12340,7 +12340,7 @@
               },
               {
                 "attempt": 9,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130533908,
                 "completedAtUnixMs": 1785130534399,
                 "completed": true,
@@ -12361,7 +12361,7 @@
               },
               {
                 "attempt": 10,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130534896,
                 "completedAtUnixMs": 1785130535285,
                 "completed": true,
@@ -12382,7 +12382,7 @@
               },
               {
                 "attempt": 11,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130535918,
                 "completedAtUnixMs": 1785130536410,
                 "completed": true,
@@ -12403,7 +12403,7 @@
               },
               {
                 "attempt": 12,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130536901,
                 "completedAtUnixMs": 1785130537460,
                 "completed": true,
@@ -12424,7 +12424,7 @@
               },
               {
                 "attempt": 13,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130537920,
                 "completedAtUnixMs": 1785130538273,
                 "completed": true,
@@ -12445,7 +12445,7 @@
               },
               {
                 "attempt": 14,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130538898,
                 "completedAtUnixMs": 1785130539418,
                 "completed": true,
@@ -12466,7 +12466,7 @@
               },
               {
                 "attempt": 15,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130539904,
                 "completedAtUnixMs": 1785130540422,
                 "completed": true,
@@ -12487,7 +12487,7 @@
               },
               {
                 "attempt": 16,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130540895,
                 "completedAtUnixMs": 1785130541421,
                 "completed": true,
@@ -12508,7 +12508,7 @@
               },
               {
                 "attempt": 17,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130541906,
                 "completedAtUnixMs": 1785130542456,
                 "completed": true,
@@ -12529,7 +12529,7 @@
               },
               {
                 "attempt": 18,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130542901,
                 "completedAtUnixMs": 1785130543252,
                 "completed": true,
@@ -12550,7 +12550,7 @@
               },
               {
                 "attempt": 19,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130543924,
                 "completedAtUnixMs": 1785130544461,
                 "completed": true,
@@ -12571,7 +12571,7 @@
               },
               {
                 "attempt": 20,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130544908,
                 "completedAtUnixMs": 1785130545434,
                 "completed": true,
@@ -12592,7 +12592,7 @@
               },
               {
                 "attempt": 21,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130545926,
                 "completedAtUnixMs": 1785130546498,
                 "completed": true,
@@ -12613,7 +12613,7 @@
               },
               {
                 "attempt": 22,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130546895,
                 "completedAtUnixMs": 1785130547404,
                 "completed": true,
@@ -12634,7 +12634,7 @@
               },
               {
                 "attempt": 23,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130547900,
                 "completedAtUnixMs": 1785130548292,
                 "completed": true,
@@ -12655,7 +12655,7 @@
               },
               {
                 "attempt": 24,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130548913,
                 "completedAtUnixMs": 1785130549402,
                 "completed": true,
@@ -12676,7 +12676,7 @@
               },
               {
                 "attempt": 25,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130549900,
                 "completedAtUnixMs": 1785130550383,
                 "completed": true,
@@ -12697,7 +12697,7 @@
               },
               {
                 "attempt": 26,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130550906,
                 "completedAtUnixMs": 1785130551457,
                 "completed": true,
@@ -12718,7 +12718,7 @@
               },
               {
                 "attempt": 27,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130551909,
                 "completedAtUnixMs": 1785130552300,
                 "completed": true,
@@ -12739,7 +12739,7 @@
               },
               {
                 "attempt": 28,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130552909,
                 "completedAtUnixMs": 1785130553467,
                 "completed": true,
@@ -12760,7 +12760,7 @@
               },
               {
                 "attempt": 29,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130553909,
                 "completedAtUnixMs": 1785130554303,
                 "completed": true,
@@ -12781,7 +12781,7 @@
               },
               {
                 "attempt": 30,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130554898,
                 "completedAtUnixMs": 1785130555327,
                 "completed": true,
@@ -12802,8 +12802,8 @@
               }
             ]
           },
-          "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\map_capacity_20260727_053305",
-          "configDirectory": "E:\\gitee\\TiangZ\\perf\\results\\runtime_configs\\map_capacity_20260727_053305"
+          "logDirectory": "perf/results/logs/map_capacity_20260727_053305",
+          "configDirectory": "perf/results/runtime_configs/map_capacity_20260727_053305"
         },
         {
           "scenario": "gameplay-full-chain-rust",
@@ -14973,7 +14973,7 @@
             "samples": [
               {
                 "attempt": 1,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130610970,
                 "completedAtUnixMs": 1785130611481,
                 "completed": true,
@@ -14994,7 +14994,7 @@
               },
               {
                 "attempt": 2,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130611978,
                 "completedAtUnixMs": 1785130612328,
                 "completed": true,
@@ -15015,7 +15015,7 @@
               },
               {
                 "attempt": 3,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130613026,
                 "completedAtUnixMs": 1785130613525,
                 "completed": true,
@@ -15036,7 +15036,7 @@
               },
               {
                 "attempt": 4,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130613997,
                 "completedAtUnixMs": 1785130614470,
                 "completed": true,
@@ -15057,7 +15057,7 @@
               },
               {
                 "attempt": 5,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130614991,
                 "completedAtUnixMs": 1785130615560,
                 "completed": true,
@@ -15078,7 +15078,7 @@
               },
               {
                 "attempt": 6,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130615990,
                 "completedAtUnixMs": 1785130616475,
                 "completed": true,
@@ -15099,7 +15099,7 @@
               },
               {
                 "attempt": 7,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130616968,
                 "completedAtUnixMs": 1785130617526,
                 "completed": true,
@@ -15120,7 +15120,7 @@
               },
               {
                 "attempt": 8,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130617993,
                 "completedAtUnixMs": 1785130618510,
                 "completed": true,
@@ -15141,7 +15141,7 @@
               },
               {
                 "attempt": 9,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130618987,
                 "completedAtUnixMs": 1785130619486,
                 "completed": true,
@@ -15162,7 +15162,7 @@
               },
               {
                 "attempt": 10,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130619975,
                 "completedAtUnixMs": 1785130620492,
                 "completed": true,
@@ -15183,7 +15183,7 @@
               },
               {
                 "attempt": 11,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130620974,
                 "completedAtUnixMs": 1785130621558,
                 "completed": true,
@@ -15204,7 +15204,7 @@
               },
               {
                 "attempt": 12,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130621975,
                 "completedAtUnixMs": 1785130622401,
                 "completed": true,
@@ -15225,7 +15225,7 @@
               },
               {
                 "attempt": 13,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130622973,
                 "completedAtUnixMs": 1785130623449,
                 "completed": true,
@@ -15246,7 +15246,7 @@
               },
               {
                 "attempt": 14,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130623976,
                 "completedAtUnixMs": 1785130624361,
                 "completed": true,
@@ -15267,7 +15267,7 @@
               },
               {
                 "attempt": 15,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130624973,
                 "completedAtUnixMs": 1785130625537,
                 "completed": true,
@@ -15288,7 +15288,7 @@
               },
               {
                 "attempt": 16,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130625992,
                 "completedAtUnixMs": 1785130626481,
                 "completed": true,
@@ -15309,7 +15309,7 @@
               },
               {
                 "attempt": 17,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130626974,
                 "completedAtUnixMs": 1785130627519,
                 "completed": true,
@@ -15330,7 +15330,7 @@
               },
               {
                 "attempt": 18,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130627983,
                 "completedAtUnixMs": 1785130628678,
                 "completed": true,
@@ -15351,7 +15351,7 @@
               },
               {
                 "attempt": 19,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130628987,
                 "completedAtUnixMs": 1785130629347,
                 "completed": true,
@@ -15372,7 +15372,7 @@
               },
               {
                 "attempt": 20,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130629988,
                 "completedAtUnixMs": 1785130630554,
                 "completed": true,
@@ -15393,7 +15393,7 @@
               },
               {
                 "attempt": 21,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130630971,
                 "completedAtUnixMs": 1785130631345,
                 "completed": true,
@@ -15414,7 +15414,7 @@
               },
               {
                 "attempt": 22,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130631980,
                 "completedAtUnixMs": 1785130632500,
                 "completed": true,
@@ -15435,7 +15435,7 @@
               },
               {
                 "attempt": 23,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130632969,
                 "completedAtUnixMs": 1785130633423,
                 "completed": true,
@@ -15456,7 +15456,7 @@
               },
               {
                 "attempt": 24,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130633971,
                 "completedAtUnixMs": 1785130634478,
                 "completed": true,
@@ -15477,7 +15477,7 @@
               },
               {
                 "attempt": 25,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130634970,
                 "completedAtUnixMs": 1785130635455,
                 "completed": true,
@@ -15498,7 +15498,7 @@
               },
               {
                 "attempt": 26,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130635990,
                 "completedAtUnixMs": 1785130636500,
                 "completed": true,
@@ -15519,7 +15519,7 @@
               },
               {
                 "attempt": 27,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130636969,
                 "completedAtUnixMs": 1785130637332,
                 "completed": true,
@@ -15540,7 +15540,7 @@
               },
               {
                 "attempt": 28,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130637980,
                 "completedAtUnixMs": 1785130638483,
                 "completed": true,
@@ -15561,7 +15561,7 @@
               },
               {
                 "attempt": 29,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-normal",
+                "candidate": "dist/hotfix-candidates/perf-normal",
                 "requestedAtUnixMs": 1785130638971,
                 "completedAtUnixMs": 1785130639367,
                 "completed": true,
@@ -15582,7 +15582,7 @@
               },
               {
                 "attempt": 30,
-                "candidate": "E:\\gitee\\TiangZ\\dist\\hotfix-candidates\\perf-inverted",
+                "candidate": "dist/hotfix-candidates/perf-inverted",
                 "requestedAtUnixMs": 1785130639974,
                 "completedAtUnixMs": 1785130640361,
                 "completed": true,
@@ -15603,8 +15603,8 @@
               }
             ]
           },
-          "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\map_capacity_20260727_053305",
-          "configDirectory": "E:\\gitee\\TiangZ\\perf\\results\\runtime_configs\\map_capacity_20260727_053305"
+          "logDirectory": "perf/results/logs/map_capacity_20260727_053305",
+          "configDirectory": "perf/results/runtime_configs/map_capacity_20260727_053305"
         }
       ]
     },

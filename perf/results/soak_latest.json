@@ -36306,7 +36306,7 @@
         "v8HeapGrowthBytesSum": 21274632,
         "v8HeapGrowthBytesPerHourSum": 2360160.1599737415
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\soak_20260724_143058"
+      "logDirectory": "perf/results/logs/soak_20260724_143058"
     }
   ]
 }

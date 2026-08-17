@@ -5,7 +5,7 @@ Starter 是 TiangZ 的唯一完整业务样例。它用少量地图、怪物和�
 ## 先启动
 
 ```powershell
-cd E:\gitee\TiangZ
+# 在TiangZ仓库根目录执行
 npm install
 npm run starter:dev
 ```

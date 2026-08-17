@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SanitizePerformanceReport } from "../lib/sanitize_report.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const args = parseArgs(process.argv.slice(2));
@@ -211,4 +212,7 @@ function fixed(value) { return Number(value ?? 0).toFixed(2); }
 function signed(value) { return `${value >= 0 ? "+" : ""}${fixed(value)}`; }
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function timestamp() { return new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "_"); }
-function writeJson(file, value) { writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); }
+function writeJson(file, value) {
+  const portable = SanitizePerformanceReport(value, root);
+  writeFileSync(file, `${JSON.stringify(portable, null, 2)}\n`, "utf8");
+}

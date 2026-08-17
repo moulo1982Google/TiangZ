@@ -6989,8 +6989,8 @@
         "formalWindowMissed": 0,
         "samples": []
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\map_capacity_20260812_170722",
-      "configDirectory": "E:\\gitee\\TiangZ\\perf\\results\\runtime_configs\\map_capacity_20260812_170722"
+      "logDirectory": "perf/results/logs/map_capacity_20260812_170722",
+      "configDirectory": "perf/results/runtime_configs/map_capacity_20260812_170722"
     }
   ]
 }

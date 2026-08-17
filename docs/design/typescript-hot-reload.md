@@ -168,7 +168,7 @@ npm run build:hotfix
 # 命令会打印 output=dist/hotfix-candidates/<hash>
 
 # Watcher运行期间，在它的终端输入：
-reload E:\gitee\TiangZ\dist\hotfix-candidates\<hash>
+reload dist/hotfix-candidates/<hash>
 ```
 
 修改字段、类型、协议、Core或`.native`：

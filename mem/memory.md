@@ -7,7 +7,7 @@
 ## 工程与协作约定
 
 - 每次开始 TiangZ 相关任务前，先读取本文件；它是项目协作规则和历史决策的第一入口，不先扫描外部上下文。
-- 主工程目录固定为 `E:\gitee\TiangZ`，不要误操作 `E:\VsCode\skynet`。
+- 每次操作前使用`git rev-parse --show-toplevel`确认当前目录是TiangZ仓库根目录；不要根据旧会话中的绝对路径推测工作区，也不要操作其他同类工程。
 - 框架低分配目标不是关闭V8 GC：RPC需要结果时保留Promise；单向Message走`runActorMailboxVoid`/Scene单向mailbox，ordered忙时复用队列节点而不创建完成Promise；协议`LengthPrefixedFrameDecoder.pushEach`回调只同步消费帧；encoded latest单批次不创建包装数组。以mailbox队列深度、Handler耗时、Rust队列和压测结果判断收益，不把`map/filter/spread`列为业务绝对禁用语法。
 - 默认使用中文交流、中文文档和中文 Git 提交信息。
 - 架构或业务语义变更必须同步更新 `docs/ai/project-context.md` 和 `docs/ai/business-development-manual.md`。

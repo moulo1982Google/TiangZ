@@ -43,7 +43,7 @@ configs/experiments/    io_uring、KCP 等显式实验配置
 {
   "name": "gate_1",
   "sceneType": "Gate",
-  "innerIp": "10.0.0.5",
+  "innerIp": "192.0.2.5",
   "bindIp": "0.0.0.0",
   "outerIp": "203.0.113.10",
   "port": 7201,

@@ -7,6 +7,12 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-17：仓库本机痕迹清理与门禁
+
+- 性能报告写入统一经过仓库路径清洗，`full_chain`、`map_capacity`与Hotfix A/B不再把执行机的TiangZ绝对目录写进`perf/results`；现有11份结果中的150处绝对路径已转换为仓库相对路径。
+- README、Hotfix、配置、导航、UE、Godot、DBProxy与Starter教程移除固定仓库盘符；Cocos、Blender、Edge和UE工具改由环境变量、命令行参数或`PATH`定位。
+- 新增`verify:no-local-traces`并接入`verify:fast`和`verify:quick`，拒绝Windows绝对路径、个人Home目录和私网IP。Unity既有模板与Rust Windows路径解析测试保留精确白名单，不允许目录级豁免。
+
 ## 2026-08-17：修复Cocos Web背包迭代器降级
 
 - 修复背包与NPC商店界面使用`[...inventoryItems.values()]`后，在Cocos Creator 3.8.8 Web构建中被错误降级为`[].concat(iterator)`，导致服务端背包有数据但UI显示为空的问题。

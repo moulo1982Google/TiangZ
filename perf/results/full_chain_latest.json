@@ -132,7 +132,7 @@
         "v8GcCountSum": 202,
         "v8GcMsSum": 26.135
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\20260715_051128"
+      "logDirectory": "perf/results/logs/20260715_051128"
     }
   ]
 }

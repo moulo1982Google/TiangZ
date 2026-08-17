@@ -325,7 +325,7 @@
         "innerOverloadsSum": 0,
         "innerTimeoutsSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\business_chain_metrics_20260808_081635"
+      "logDirectory": "perf/results/logs/business_chain_metrics_20260808_081635"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -544,7 +544,7 @@
         "innerOverloadsSum": 0,
         "innerTimeoutsSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\business_chain_metrics_20260808_081635"
+      "logDirectory": "perf/results/logs/business_chain_metrics_20260808_081635"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -758,7 +758,7 @@
         "innerOverloadsSum": 0,
         "innerTimeoutsSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\business_chain_metrics_20260808_081635"
+      "logDirectory": "perf/results/logs/business_chain_metrics_20260808_081635"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -977,7 +977,7 @@
         "innerOverloadsSum": 0,
         "innerTimeoutsSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\business_chain_metrics_20260808_081635"
+      "logDirectory": "perf/results/logs/business_chain_metrics_20260808_081635"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -1191,7 +1191,7 @@
         "innerOverloadsSum": 0,
         "innerTimeoutsSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\business_chain_metrics_20260808_081635"
+      "logDirectory": "perf/results/logs/business_chain_metrics_20260808_081635"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -1405,7 +1405,7 @@
         "innerOverloadsSum": 0,
         "innerTimeoutsSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\business_chain_metrics_20260808_081635"
+      "logDirectory": "perf/results/logs/business_chain_metrics_20260808_081635"
     }
   ]
 }

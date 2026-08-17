@@ -28,7 +28,7 @@ MapHostScene
 先启动独立仓库中的PostgreSQL、Redis和DBProxy：
 
 ```powershell
-cd E:\gitee\TiangZ\tools-projects\TiangZ-DBProxy
+# 在独立TiangZ-DBProxy仓库根目录执行
 docker compose --env-file deploy/local/.env -f deploy/local/docker-compose.yml up -d
 powershell -ExecutionPolicy Bypass -File tools/run_local.ps1
 ```
@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File tools/run_local.ps1
 `run_local.ps1`会读取`deploy/local/.env`。另开终端启动TiangZ，令牌值必须与其中的`DBPROXY_AUTH_TOKEN`一致：
 
 ```powershell
-cd E:\gitee\TiangZ
+# 回到TiangZ仓库根目录
 $env:TIANGZ_DBPROXY_AUTH_TOKEN = "tiangz-dbproxy-local-token-2026"
 npm run build
 cargo run --bin TiangZ -- configs/local/all-in-one-dbproxy.json

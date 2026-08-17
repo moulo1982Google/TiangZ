@@ -363,7 +363,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\hotpath_capacity_probe_20260812_101742"
+      "logDirectory": "perf/results/logs/hotpath_capacity_probe_20260812_101742"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -558,7 +558,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\hotpath_capacity_probe_20260812_101742"
+      "logDirectory": "perf/results/logs/hotpath_capacity_probe_20260812_101742"
     },
     {
       "scenario": "gameplay-full-chain",
@@ -753,7 +753,7 @@
         "mailboxQueuedDepthSum": 0,
         "mailboxMaxQueuedDepthSum": 0
       },
-      "logDirectory": "E:\\gitee\\TiangZ\\perf\\results\\logs\\hotpath_capacity_probe_20260812_101742"
+      "logDirectory": "perf/results/logs/hotpath_capacity_probe_20260812_101742"
     }
   ]
 }

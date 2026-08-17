@@ -10,13 +10,11 @@ const projects = {
     relativePath: "client_demo/cocos_client2D_3.8.6",
     creatorVersion: "3.8.6",
     creatorEnv: "COCOS_CREATOR_386",
-    defaultCreatorPath: "E:\\cocos_editer\\Creator\\3.8.6\\CocosCreator.exe",
   },
   "3d": {
     relativePath: "client_demo/cocos_client3D_3.8.8",
     creatorVersion: "3.8.8",
     creatorEnv: "COCOS_CREATOR_388",
-    defaultCreatorPath: "E:\\cocos_editer\\Creator\\3.8.8\\CocosCreator.exe",
   },
 };
 
@@ -42,16 +40,21 @@ const buildRoot = path.join(projectPath, "build");
 const outputPath = options.output
   ? path.resolve(root, options.output)
   : path.join(buildRoot, `standard-${options.target}`);
-const creatorPath = options.creator
-  ? path.resolve(options.creator)
-  : process.env[project.creatorEnv] || project.defaultCreatorPath;
+const configuredCreator = options.creator ?? process.env[project.creatorEnv];
+if (!configuredCreator) {
+  fail(
+    `未配置 Cocos Creator ${project.creatorVersion}。` +
+      `请设置 ${project.creatorEnv}，或使用 --creator 指定可执行文件。`,
+  );
+}
+const creatorPath = path.resolve(configuredCreator);
 
 assertDirectory(projectPath, `Cocos 工程不存在: ${projectPath}`);
 assertInsideBuild(buildRoot, outputPath);
 if (!existsSync(creatorPath)) {
   fail(
     `找不到 Cocos Creator ${project.creatorVersion}: ${creatorPath}\n` +
-      `请安装对应版本，或设置 ${project.creatorEnv} / 使用 --creator 指定可执行文件。`,
+      `请检查 ${project.creatorEnv}，或使用 --creator 指定可执行文件。`,
   );
 }
 
@@ -160,6 +163,7 @@ function printHelp() {
   --help                  显示帮助
 
 示例：
+  $env:COCOS_CREATOR_388 = "<Cocos Creator 3.8.8可执行文件>"
   npm run build:cocos3d:web
   npm run build:cocos3d:web:debug
   node tools/build_cocos.mjs --project 2d --target mobile --mode release --dry-run`);
