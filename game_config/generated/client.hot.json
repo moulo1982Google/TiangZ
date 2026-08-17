@@ -189,8 +189,8 @@
       "initial_hp": 1000,
       "max_hp": 1000,
       "move_speed": 10,
-      "max_mp": 100,
-      "initial_mp": 100,
+      "max_mp": 200,
+      "initial_mp": 200,
       "attack_range": 2.5
     }
   ],

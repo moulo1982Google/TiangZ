@@ -483,7 +483,7 @@ async function verifyDbProxyItemUseRecovery(
   }
 }
 
-/** 服务重启后读取同账号，确认没有重新发放默认背包。 / Reads the same account after a server restart and verifies starter inventory was not seeded again. */
+/** 服务重启后读取同账号，确认出生药品不会被重复发放。 / Reads the same account after a server restart and verifies starter items are not seeded again. */
 async function verifyDbProxyPersistenceFixture(
   loginAddr: { ip: string; port: number },
   account: string,
@@ -1006,12 +1006,11 @@ async function verifyMapTransfer(
   expectedMinimumHp: bigint,
   dynamicMap: MapInstanceSnapshot,
 ): Promise<ReturnType<typeof decodeEnterMapFrame>["body"]> {
-  const queuedItem = previous.items.find((item) => item.configId === 1002);
-  // 旧Demo出生自带药品时继续覆盖跨图并发UseItem；Starter现在由任务奖励发药，
-  // 新账号没有背包种子时只验证地图状态迁移，不伪造业务道具。
-  // Keep the transfer-time UseItem coverage for legacy seeded fixtures. The
-  // Starter grants potions through quests, so a fresh unseeded account verifies
-  // map-state transfer without inventing inventory state.
+  const queuedItem = previous.items.find((item) => item.configId === 1003);
+  // 新角色出生自带小蓝，继续覆盖跨图并发UseItem；已有旧账号没有该物品时，
+  // 只验证地图状态迁移，不伪造业务道具。
+  // Fresh characters receive the starter mana potion, while old accounts without
+  // that item still verify map-state transfer without inventing inventory state.
   if (queuedItem && expectedItem) await sleep(1_100);
   const rpcId = nextRpcId++;
   const readyFrame = gate.waitForMessage(MsgCode.G2C_MapReady);
@@ -1717,7 +1716,7 @@ async function verifyItemChange(
 ) {
   const initial = enterMap.items.find((item) => item.configId === 1001);
   if (!initial) {
-    console.log("Immediate item event: skipped (Starter grants items from quests)");
+    console.log("Immediate item event: skipped (account has no positive small-potion stack)");
     return { item: undefined, currentHp: previousHp };
   }
   const itemConfig = GameConfigs.ItemConfig.Get(initial.configId);
@@ -1736,7 +1735,8 @@ async function verifyItemChange(
   const useItemResponse = decodeUseItemFrame(responseFrame).body;
   const response = useItemResponse.item;
   const event = decodeItemChangedFrame(await pushed).body.item;
-  if (response.count !== 49 || event.count !== 49 || response.version !== event.version) {
+  const expectedCount = initial.count - 1;
+  if (response.count !== expectedCount || event.count !== expectedCount || response.version !== event.version) {
     throw new Error("immediate item response and event are inconsistent");
   }
   if (

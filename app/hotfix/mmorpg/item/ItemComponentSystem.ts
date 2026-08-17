@@ -39,12 +39,12 @@ const CLIENT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 @systemFor(ItemComponent)
 export class ItemComponentSystem extends ItemComponent implements ITransfer<readonly ItemSnapshot[]> {
   /**
-   * 新玩家故意从空背包开始；药品只能来自任务奖励或其他明确的业务发放。
-   * 生命周期仍保留Awake，是为了满足Component的Model契约，不能在这里偷偷创建Item。
+   * 背包生命周期本身不发放道具；新角色的出生物品由MapComponent在确认“没有持久化快照、不是迁移”
+   * 后显式发放，避免重连、传送或恢复流程重复创建Item。
    *
-   * New players intentionally start with an empty inventory; potions must come
-   * from quest rewards or another explicit business grant. Awake remains to
-   * satisfy the Component Model contract and must not create starter Items here.
+   * The inventory lifecycle itself does not grant items. MapComponent explicitly
+   * seeds a new character only when there is no persistence snapshot and no
+   * transfer, so reconnect, transfer, and restore paths never duplicate Items.
    */
   protected override Awake(): void {}
 

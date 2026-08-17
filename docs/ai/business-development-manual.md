@@ -635,6 +635,8 @@ numeric[NumericType.CurrentHp] += 1n;
 
 Rust自动维护`NumericType -> i64`值与dirty表，TS使用`bigint`，业务字面量应写`1n`。`NumericComponentSystem.Awake`只遍历创建者传入的初始化字典，未传入的普通属性保持Rust默认值`0`；因此玩家、怪物、NPC的默认值应写在各自的创建流程，而不是塞回通用Numeric系统。初始化字典的类型别名不会随着Numeric字段增长而修改；普通属性和Base/Add/Pct来源可以写，`MaxHp`、`Attack`等1000..9999派生结果不能写，错误的key或非`bigint`值会在创建时失败。`1..999`是普通属性；`1000..9999`是只读派生结果；结果编号乘10后加`1/2/3`分别表示Base/Add/Pct。Rust只识别编号关系，不重复维护业务枚举。当前`CurrentHp=1`、`CurrentMp=2`、`MaxHp=1000`、`Attack=2000`、`AttackSpeed=2001`、`MoveSpeed=3000`，对应来源按结果编号乘10加`1/2/3`生成，公式为`(Base+Add)*(100+Pct)/100`。`AttackSpeed`表示每次攻击间隔毫秒，`MoveSpeed`的Numeric单位是毫米/秒，配置表仍填写米/秒。写来源时Rust先计算后原子提交，来源和变化后的结果分别标脏；直接写派生结果会被拒绝。新增同类属性只改TS编号，复杂跨属性公式应写独立Rust领域op。Numeric协议使用`int64`，FrameFlush按`(unitId, numericType)`合并。
 
+玩家初始魔法值由冷配置`PlayerConfig.initial_mp/max_mp`共同决定当前值和上限；当前演示模板两者均为`200`，因此新玩家进入地图时显示`200/200`，不要在创建逻辑中另写一套默认值。
+
 用`npm run perf:numeric`评估派生计算本身。默认业务仍使用清晰的单字段写入；只有基准和真实业务Profile都证明同一逻辑点会集中修改多个来源时，才考虑新增一次提交多个来源的粗粒度op，不能为了微基准数字强迫所有业务使用批量API。
 
 ### 固定字段Dirty Mask
@@ -1151,9 +1153,11 @@ Combat不查询Buff。护盾类Buff在添加/移除边界注册/注销Combat mod
 
 ## 道具出生与快捷栏
 
-Demo新玩家不再由`ItemComponentSystem.Awake`创建测试道具，初始背包为空。Starter任务5001完成后奖励`1001×10`，后续任务5005完成后奖励`1002×10`；`RestoreTransfer`、重连和数据库恢复必须使用快照，不能在创建Unit时再次发放。快捷栏可以固定绑定1001/1002，但空背包必须显示为空槽并拒绝使用，不能把快捷键映射误当作赠送道具。
+当前出生规则：新角色首次创建时获得`1001×3`小红和`1003×3`小蓝；读档、重连和跨地图不重复发放。快捷栏药品槽按配置ID引用`1001/1003`，数量以服务端进入快照和增量事件为准。
 
-`ItemConfig.icon`放在客户端分组，填写相对`assets/resources`的Cocos资源键，例如`UI/Icons/Items/1001`，前端通过配置解析图标。Cocos3D Web的快捷栏固定约定为`1`切换平A、`2`发送1001使用请求、`3`发送1002使用请求；显示数量先读进图`G2C_EnterMap.items`，后续只接受`G2C_ItemChanged`更新。快捷栏是`ItemConfigId`的配置引用，不是某个永久`ItemId`的绑定：最后一件消耗后，服务端移除背包Item，客户端保留对应槽位并显示`×0`；同配置道具再次进入背包时，即使它拥有新的`ItemId`，槽位也会重新选择可用实例。按键或按钮不能直接修改本地数量，也不能把`itemId`写死；使用时应先按`configId`汇总服务端快照、选择一个数量大于0的具体Item实例，再调用生成的`MapClient.useItem`。
+新角色出生时由`MapComponent`显式发放`1001×3`小红和`1003×3`小蓝；`ItemComponentSystem.Awake`不负责赠送道具。Starter任务奖励仍由任务事务单独追加；`RestoreTransfer`、重连和数据库恢复必须使用快照，不能在创建Unit时再次发放。快捷栏固定引用`1001/1003`的配置ID，数量从服务端快照读取；不能把快捷键映射误当作创建道具。
+
+`ItemConfig.icon`放在客户端分组，填写相对`assets/resources`的Cocos资源键，例如`UI/Icons/Items/1001`，前端通过配置解析图标。Cocos3D Web的快捷栏固定约定为`1`切换平A、`2`发送1001使用请求、`3`发送1003使用请求；显示数量先读进图`G2C_EnterMap.items`，后续只接受`G2C_ItemChanged`更新。快捷栏是`ItemConfigId`的配置引用，不是某个永久`ItemId`的绑定：最后一件消耗后，服务端移除背包Item，客户端保留对应槽位并显示`×0`；同配置道具再次进入背包时，即使它拥有新的`ItemId`，槽位也会重新选择可用实例。按键或按钮不能直接修改本地数量，也不能把`itemId`写死；使用时应先按`configId`汇总服务端快照、选择一个数量大于0的具体Item实例，再调用生成的`MapClient.useItem`。
 
 玩家3D模型必须挂在Unit表现根节点下，禁止直接用骨骼Prefab充当权威Unit节点。当前Cocos3D示例由`PlayerCharacterVisual3D`加载`BlueChibi`骨骼Prefab，模型原点在脚底，Unit根节点继续沿用身体中心和既有碰撞尺寸。业务只向表现控制器提交`moving/idle`等状态；`Idle/Walk/Attack`动画不能写坐标、参与寻路、决定命中或启用Root Motion。换模型时优先替换Visual资源，不复制或改写Map移动链路。
 

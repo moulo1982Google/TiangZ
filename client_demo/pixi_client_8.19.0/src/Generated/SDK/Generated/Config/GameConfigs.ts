@@ -330,8 +330,8 @@ const RAW_DATA: Record<string, unknown> = {
       "initial_hp": 1000,
       "max_hp": 1000,
       "move_speed": 10,
-      "max_mp": 100,
-      "initial_mp": 100,
+      "max_mp": 200,
+      "initial_mp": 200,
       "attack_range": 2.5
     }
   ],
@@ -553,7 +553,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "962e52503d6fe5b4de6ec126509886fe0873a15da0473af0ca82f21f599c2b37";
+export const GameConfigFingerprint = "78440b4e5459549b02fee35c1b0a428ff64affaba431c08ba966615c4ea4cc86";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

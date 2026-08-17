@@ -422,7 +422,7 @@ Phase 4计划：
 - Gate物理连接关闭后，Cocos3D必须立即清除旧地图状态和`UnitId`并回到登录界面，不能继续使用已经被Map移除的Actor发送技能或移动。Starter尚未实现墓地、灵魂或主动复活流程；DBProxy恢复到`alive=false`的玩家时，当前Demo只在重新创建PlayerUnit的进图边界于出生点满血恢复，正式业务应以独立Revive领域操作替换该策略。
 - 怪物基础AI进一步收敛为Hotfix内部的`MonsterBehaviorTree`：只包含待机、追击、攻击和攻击冷却停留，不建立通用AI框架，不创建MonsterActor或每怪物Timer。普通攻击距离由各自配置控制，行为树只选择动作，伤害、仇恨、死亡和Numeric修改仍由`MonsterComponentSystem`执行。
 - 战斗时间轴语义已冻结：玩家或怪物按下普通攻击后只激活`AutoAttack`状态；靠近目标且满足距离、存活、同MapInstance和朝向条件时才推进平A读条。距离过远或朝向失效会清零当前读条，但不取消AutoAttack状态，重新满足条件后从0秒重新开始。移动不停止AutoAttack，右键加A/D的侧移用于保持朝向绕目标移动。施法期间由`SkillComponent.IsCasting()`冻结平A累计，施法完成或中断后才允许重新开始平A读条；受击惩罚只由地图技能调度器在Combat确认本次没有护盾吸收且实际命中后调用，真言术·盾吸收的攻击不会后移读条或缩短引导，不能由客户端或通用Combat反向查询Buff。`G2C_AutoAttackState`是每个玩家本人频道上的`latest`可覆盖状态，只表达当前读条，不承载命中事实；命中、道具消耗等不可逆事实必须使用事件广播。技能配置把伤害类型、瞬发/施法方式和是否重置平A分成独立维度；例如压制是Physical + Instant + Keep，不应按“物理技能”或“瞬发技能”分支猜测平A行为。
-- 主动怪没有仇恨时只在12米主动索敌范围内寻找最近玩家；被动怪没有仇恨时保持待机。平A和技能都必须经`MonsterComponent.ApplyPlayerDamage`按“1点最终实际伤害=1点仇恨”累计，产生仇恨后两类怪都选择本地图存活玩家中的最高仇恨目标，已有仇恨不能再被12米主动索敌距离过滤，因此30米远程命中也会触发追击。当前Demo未定义脱战回出生点范围，未来必须使用独立冷配置，不能复用主动索敌距离。玩家创建时由`PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`初始化四个Numeric，Cocos3D、UE、Unity、Godot的玩家HUD只消费进入快照和`G2C_EntityNumeric`增量，显示当前/最大HP与MP。客户端不能根据怪物攻击自行扣血，也不能把HUD数值当作战斗权威。
+- 主动怪没有仇恨时只在12米主动索敌范围内寻找最近玩家；被动怪没有仇恨时保持待机。平A和技能都必须经`MonsterComponent.ApplyPlayerDamage`按“1点最终实际伤害=1点仇恨”累计，产生仇恨后两类怪都选择本地图存活玩家中的最高仇恨目标，已有仇恨不能再被12米主动索敌距离过滤，因此30米远程命中也会触发追击。当前Demo未定义脱战回出生点范围，未来必须使用独立冷配置，不能复用主动索敌距离。玩家创建时由`PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`初始化四个Numeric；当前演示模板的初始MP与最大MP均为200。Cocos3D、UE、Unity、Godot的玩家HUD只消费进入快照和`G2C_EntityNumeric`增量，显示当前/最大HP与MP。客户端不能根据怪物攻击自行扣血，也不能把HUD数值当作战斗权威。
 
 - 标准Demo的战斗结算已收口到`CombatComponent.ApplyDamage/ApplyHealing`。玩家和怪物都挂载Combat；MonsterComponent只选择目标并提交请求，Item Handler通过ActionExecutor提交治疗或Buff，Combat内部按优先级消耗注册的伤害吸收器后再修改CurrentHp。Buff通过`RegisterDamageAbsorber/RemoveDamageAbsorber`在生命周期边界挂载能力，伤害流程不能反向查询BuffComponent；护盾处理器的数据是唯一运行时剩余量。HP使用Numeric latest，Buff添加/删除、命中/死亡/消耗等事实使用event。详见[战斗伤害与效果管线](../design/combat-damage-pipeline.md)和[Action与Buff设计](../design/action-buff.md)。
 - 2026-08-03连续EntityIndex元数据与热点Grid位图完成后，3000人10×10同口径全链路回归的Map CPU平均为51.0%，较前一版55.0%再降约7.3%；Probe p95/p99为47.94/71.78ms，Move 6000/s、跨Grid 309.6/s且全部丢工作指标为0，正式证据在`perf/results/map_capacity_latest.md`。1000人单Grid热点验收得到精确999000条candidate/visible关系，说明混合成员结构不改变可见语义；该热点样本只作专项诊断，不替代正式均匀基线。
@@ -499,9 +499,11 @@ Unity表现层使用`Vector3`、Transform和Camera，协议及服务端仍使用
 
 ## 道具出生数据与Cocos3D快捷栏
 
-当前Demo新建玩家的背包为空，`ItemComponentSystem`不再通过`Awake`发放测试药水；新玩家从NPC领取并完成Starter任务5001后获得`1001×10`，完成后续任务5005后获得`1002×10`。传送、断线重连和反序列化都只以`ItemSnapshot`恢复，不会重复发放。1001和1002各有30秒配置CD，并与技能共享1秒玩家GCD；服务端原子提交deadline，跨地图快照保留，客户端只绘制返回时间。道具使用RPC成功时，`M2C_UseItem.buff`会回显本次新增的公开Buff给使用者；AOI仍通过`G2C_BuffAdded`给其他观察者广播，客户端两条路径按实例ID幂等合并。
+当前出生物品：新角色首次创建时获得`1001×3`小红和`1003×3`小蓝；读档、重连和跨地图不重复发放。快捷栏药品槽按配置ID引用`1001/1003`。
 
-`ItemConfig.icon`是客户端字段，值是相对Cocos `assets/resources`且不含扩展名的资源键，例如`UI/Icons/Items/1001`。Cocos3D Web快捷栏固定为`1=平A`、`2=1001`、`3=1002`，初始数量来自`G2C_EnterMap.items`，使用和拾取后的数量来自不可覆盖的`G2C_ItemChanged`；拾取RPC只返回受影响的`items`，客户端按`ItemSnapshot.version`合并RPC与Push，不能把整包背包放进每次拾取回包。客户端不得在按键时先行扣数量。快捷栏槽位只绑定`ItemConfigId`，数量归零时服务端删除背包中的`Item`子实体，客户端移除该`ItemId`快照但保留快捷栏槽并显示`×0`；之后拾取或奖励同配置道具时，即使生成了新的`ItemId`，槽位也会按配置ID重新汇总并恢复可用。以后增加快捷栏时继续按`configId -> ItemConfig -> icon`解析，不能把道具图片路径硬编码到表现脚本。
+新角色出生时由`MapComponent`显式发放`1001×3`小红和`1003×3`小蓝；只有没有持久化快照且不是迁移目标的真正新角色可以走这条发放路径。读档、断线重连和跨地图传送都只以`ItemSnapshot`恢复，不会重复发放；`ItemComponentSystem.Awake`只负责生命周期。Starter任务奖励仍由任务事务单独追加。1001和1003各有30秒配置CD，并与技能共享1秒玩家GCD；服务端原子提交deadline，跨地图快照保留，客户端只绘制返回时间。道具使用RPC成功时，`M2C_UseItem.buff`会回显本次新增的公开Buff给使用者；AOI仍通过`G2C_BuffAdded`给其他观察者广播，客户端两条路径按实例ID幂等合并。
+
+`ItemConfig.icon`是客户端字段，值是相对Cocos `assets/resources`且不含扩展名的资源键，例如`UI/Icons/Items/1001`。Cocos3D Web快捷栏固定为`1=平A`、`2=1001`、`3=1003`，初始数量来自`G2C_EnterMap.items`，使用和拾取后的数量来自不可覆盖的`G2C_ItemChanged`；拾取RPC只返回受影响的`items`，客户端按`ItemSnapshot.version`合并RPC与Push，不能把整包背包放进每次拾取回包。客户端不得在按键时先行扣数量。快捷栏槽位只绑定`ItemConfigId`，数量归零时服务端删除背包中的`Item`子实体，客户端移除该`ItemId`快照但保留快捷栏槽并显示`×0`；之后拾取或奖励同配置道具时，即使生成了新的`ItemId`，槽位也会按配置ID重新汇总并恢复可用。以后增加快捷栏时继续按`configId -> ItemConfig -> icon`解析，不能把道具图片路径硬编码到表现脚本。
 
 Cocos3D还提供完整背包面板：桌面端点击“背包”或按`B`，移动端点击“包”按钮；面板按`ItemSnapshot.itemId`展示所有有库存的道具，名称、说明和图标来自客户端冷配置，使用按钮统一调用现有`MapClient.useItem`。面板只刷新服务端快照，不维护第二份库存；数量为0时等待`ItemSnapshot`后移除，触摸事件由HUD消费，不能穿透成地面寻路。其他客户端可以采用自己的背包UI，但必须保留同样的服务端权威和`operationId`边界。
 

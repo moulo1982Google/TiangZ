@@ -7,6 +7,11 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-17：玩家初始魔法值调整为200
+
+- `PlayerConfig.xlsx`演示模板的`max_mp`和`initial_mp`统一调整为200，玩家创建时继续通过同一份冷配置写入`MaxMpBase`与`CurrentMp`，避免当前值和上限不一致。
+- 重新生成服务端/客户端配置代码并完成类型检查、配置测试、Linux发布冒烟；外网测试库清空后恢复双DBProxy和游戏服务。
+
 ## 2026-08-16：外网切换为多进程与双 DBProxy 拓扑
 
 - 新增`configs/deploy/external-multiprocess/StartMachine.json`：一个LoginMgr、两个Login、两个Gate、两个静态MapHost和一个Location各自运行在独立Process/V8中。

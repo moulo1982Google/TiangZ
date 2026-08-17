@@ -97,7 +97,7 @@ Action当前支持：
 
 怪物死亡后，当前MonsterUnit会以`alive=false`的尸体状态继续保留在AOI中；有掉落尸体保留5分钟、无掉落尸体保留10秒，全部普通掉落领取后可提前清理。`respawn_seconds`从死亡时刻计时，尸体窗口结束且达到最短重生时刻后，再发布旧尸体Leave并销毁，复用同一个`AreaId`刷怪槽创建新的MonsterUnit和UnitId。`MonsterComponent`把`MonsterConfig.max_hp`写入Numeric的`MaxHpBase`，由Rust推导出只读`MaxHp`，把攻击力写入`AttackBase`并由Rust推导只读`Attack`，把`attack_interval_ms`写入`AttackSpeedAdd`并读取只读`AttackSpeed`；`move_speed`按米/秒转换为Numeric的毫米/秒`MoveSpeedBase`。
 
-`PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`分别初始化玩家的当前/最大HP与MP；`attack_range`是独立的普通攻击距离，不属于Numeric链式属性。它们会在创建Unit时写入Numeric，客户端HUD只显示服务端快照和增量。`PlayerConfig.move_speed`同样填写米/秒。Grid2D的移动实现会把一个Cell的米制边长纳入单步耗时，因此不能再把它理解成“每秒几个Cell”；底层协议里的历史字段名`speedCellsPerSecond`暂时保留兼容，但它承载的是米/秒值。
+`PlayerConfig.initial_hp/max_hp`和`initial_mp/max_mp`分别初始化玩家的当前/最大HP与MP；当前演示模板的`initial_mp`与`max_mp`均为`200`，新玩家进入地图时显示`200/200`。`attack_range`是独立的普通攻击距离，不属于Numeric链式属性。它们会在创建Unit时写入Numeric，客户端HUD只显示服务端快照和增量。`PlayerConfig.move_speed`同样填写米/秒。Grid2D的移动实现会把一个Cell的米制边长纳入单步耗时，因此不能再把它理解成“每秒几个Cell”；底层协议里的历史字段名`speedCellsPerSecond`暂时保留兼容，但它承载的是米/秒值。
 
 ## AOI冷配置
 

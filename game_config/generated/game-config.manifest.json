@@ -2,8 +2,8 @@
   "formatVersion": 2,
   "schemaFingerprint": "9498fdcc690c674ba650787c30f528dc2912a9342289f41e3fc9934328e7aed6",
   "clientSchemaFingerprint": "c93878d84db26ded6b4bb8a160001c8e2ea3fbf98ef81381611bc1297a02b792",
-  "dataFingerprint": "962e52503d6fe5b4de6ec126509886fe0873a15da0473af0ca82f21f599c2b37",
-  "hotDataFingerprint": "3e69e5d4814ec5969f813fad9b3418cb72be41516f99b3e7d3732bcb2b7e28dc",
+  "dataFingerprint": "78440b4e5459549b02fee35c1b0a428ff64affaba431c08ba966615c4ea4cc86",
+  "hotDataFingerprint": "2c9bbb6d5ab49ad174d3855f12e6961e19c3233bf5545fe204e4950c5a6077cb",
   "coldDataFingerprint": "7746f395c60a8a95c173d8d416a873b82e4d241c4dff21d458104cebc44596a6",
   "reloadPolicies": {
     "hot": [
@@ -26,15 +26,15 @@
     ]
   },
   "serverFile": "server.json",
-  "serverHash": "5a16d8b6ea96b6e1b8bf18aef230a4ea1ce115215bdc275bdff0f6313028e758",
+  "serverHash": "0c0141e53122736f66f2209d1c8f6b68b916e53e448506195bc4d78b32fc843b",
   "serverHotFile": "server.hot.json",
-  "serverHotHash": "afe2be36bb87fcf1fb9adde5e061066af935006cb3acfb0c673365b49dcf347b",
+  "serverHotHash": "0eae4a806ff99b377f47340bd3009893f1a535a25c0ecd7158f040a8851fd998",
   "serverColdFile": "server.cold.json",
   "serverColdHash": "358726d5af1f38f758f4a6228063c29205ca135aeedf7a9c6506c5411895c82f",
   "clientFile": "client.json",
-  "clientHash": "11cc8339afd862b5ba0f02642546743e812932578efb5022559e23e85a8483d2",
+  "clientHash": "e9f36f85da0eedac74b6c9ddc957d3710f5573c9c94a6c8ed65d82ca60dbde39",
   "clientHotFile": "client.hot.json",
-  "clientHotHash": "0701555538b122c316fa99248fe0ee8182744030ee9a9ffbdb6dde33af9a509c",
+  "clientHotHash": "dac1ab2f0d1bfc59c7dd059f7830df2238651c1b33aeaa8233aadce8eb0d45d3",
   "clientColdFile": "client.cold.json",
   "clientColdHash": "49ddf721a0a405e605bfc55c1125dabc337c676e154b8137ddec676e4a8a6044"
 }

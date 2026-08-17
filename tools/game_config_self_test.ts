@@ -37,8 +37,8 @@ function main(): void {
   assert.equal(manifest.dataFingerprint, clientFingerprint);
 
   const player = serverConfigs.PlayerConfig.Get(1);
-  assert.equal(player.initialMp, 100);
-  assert.equal(player.maxMp, 100);
+  assert.equal(player.initialMp, 200);
+  assert.equal(player.maxMp, 200);
   assert.equal(player.attackRange, 2.5);
   assert.equal(player.initialMapId_ref, serverConfigs.MapConfig.Get(1));
   assert.equal(
@@ -233,8 +233,8 @@ function main(): void {
   );
 
   const clientPlayer = clientConfigs.PlayerConfig.Get(1);
-  assert.equal(clientPlayer.initialMp, 100);
-  assert.equal(clientPlayer.maxMp, 100);
+  assert.equal(clientPlayer.initialMp, 200);
+  assert.equal(clientPlayer.maxMp, 200);
   assert.equal(clientPlayer.attackRange, 2.5);
   assert.equal(clientPlayer.initialMapId_ref, clientConfigs.MapConfig.Get(1));
   assert.equal("initialItemConfigId" in clientPlayer, false);

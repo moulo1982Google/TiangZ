@@ -96,6 +96,10 @@ import {
 } from "./EntrySyncMode";
 
 const DEMO_PLAYER_CONFIG_ID = 1;
+const STARTER_PLAYER_ITEM_GRANTS = [
+  { configId: 1001, count: 3 },
+  { configId: 1003, count: 3 },
+] as const;
 const NAVIGATION_OBSTACLE_COMMANDS_PER_TICK = 16;
 const NAVIGATION_OBSTACLE_TILES_PER_TICK = 4;
 const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
@@ -773,6 +777,12 @@ export class MapComponent extends Component<[
         [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(playerConfig.moveSpeed),
       });
       player.AddComponent(ItemComponent);
+      if (!loaded && !transfer) {
+        // 只给真正新建的角色发一次出生道具；读档和跨地图迁移以权威快照为准。
+        // Seed only a newly created character; persistence restore and transfer
+        // must always keep the authoritative inventory snapshot unchanged.
+        player.GetComponent(ItemComponent).GrantItems(STARTER_PLAYER_ITEM_GRANTS);
+      }
       player.AddComponent(CurrencyComponent, loaded?.data.player.gold ?? transfer?.components.get(CurrencyComponent) as bigint | undefined ?? 0n);
       // 平A状态不随地图传送恢复，目标地图创建新的默认CombatComponent。 / Auto-attack is not transferred; the target map gets a fresh default component.
       player.AddComponent(CombatComponent);
