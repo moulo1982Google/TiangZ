@@ -892,7 +892,7 @@ const stop = loginFlow.onSessionReplaced((message) => {
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程已经消费远程`v0.5.0`，配置通过`endpoint + failoverEndpoints`声明地址，Rust Host Bridge同时提供单记录和多记录接口；业务层不得复制协议或自行实现第二套故障切换。普通`.native @persistent(version)`实体的Codec和通用Repository已由codegen生成，复杂查询、跨玩家交易和领域结果仍由业务Repository规划。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励与UseItem消费已成为关键单玩家事务；同地图玩家交易使用`ApplyMultiTransaction`一次提交两个玩家记录，不能顺序保存两边或在提交前修改Entity。周期快照、按领域拆分Revision、TiangZ端到端故障矩阵和自动节点接管仍未完成。
+DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程已经消费远程`v0.5.0`，配置通过`endpoint + failoverEndpoints`声明地址，Rust Host Bridge同时提供单记录和多记录接口；业务层不得复制协议或自行实现第二套故障切换。普通`.native @persistent(version)`实体的Codec和通用Repository已由codegen生成，复杂查询、跨玩家交易和领域结果仍由业务Repository规划。玩家Repository按`<characterId>:inventory|progression|quest|runtime|wallet`保存五条记录与独立Revision；商店提交inventory+wallet，任务奖励/拾取提交inventory+quest，UseItem提交inventory+progression+runtime。任务GrantItem奖励与UseItem消费是关键单玩家事务；同地图玩家交易使用`ApplyMultiTransaction`一次提交双方inventory+wallet记录，不能顺序保存两边或在提交前修改Entity。30秒周期快照、有限并发最终Flush和TiangZ/MapHost强杀后的安全重启恢复已验收；透明节点接管仍未完成。
 
 跨玩家关键操作的固定写法是：领域Component先同步冻结会话，最终提交者保留自身PlayerUnit ordered mailbox，并通过地图宿主进入另一参与者的真实ordered mailbox；持有双方邮箱后，Planner再从权威快照生成全部`expectedRevision + nextPayload + result`，领域Repository按稳定顺序调用一次多记录事务，提交成功后各Participant无await应用结果。只锁会话对象不能阻止另一玩家在`await`期间使用道具或改金币。响应不确定时用同一`operationId`查询回执；业务冲突直接结束会话，不能换operationId重试。玩家交易参考`app/hotfix/mmorpg/trade`和[玩家交易设计](../design/player-trade.md)。Handler只转发到PlayerUnit ordered mailbox，不得直接调用DBProxy。
 
@@ -1085,9 +1085,9 @@ Handler
 
 同一个`DbProxyClient`连接只允许一个在途RPC；高并发服务使用Rust`DbProxyClientPool`按RecordKey稳定分片。DBProxy网络工作运行在多线程Rust Host Runtime，业务V8只等待Promise；不得在TS中自行打开Socket或实现第二套连接池。业务不能为了躲开PlayerUnit ordered mailbox而改用`Spawn`异步确认关键经济操作：关键事务必须在可靠提交成功后才向客户端确认。普通快照可以合并并进入backlog，但不得把关键事务降级成“稍后保存”。
 
-DBProxy服务层的集群边界已经冻结：Rust客户端接受多个有序内网Endpoint，按RecordKey选择首选实例，基础设施错误时携带原`request_id/operation_id`切换；部署两个共享同一套云Redis/PostgreSQL的对等DBProxy实例；通过故障注入验证请求中断、提交后丢响应和Backlog lease接管。业务拒绝、Revision冲突、协议指纹或鉴权错误不能触发换节点重试。DBProxy实例之间不选主、不复制业务状态，也不实现Redis/PostgreSQL高可用；存储高可用直接使用云厂商能力。TiangZ侧的端到端故障矩阵仍需单独验收，不能把DBProxy仓库测试直接当作整套游戏运行时已验收。
+DBProxy服务层的集群边界已经冻结：Rust客户端接受多个有序内网Endpoint，按RecordKey选择首选实例，基础设施错误时携带原`request_id/operation_id`切换；部署两个共享同一套云Redis/PostgreSQL的对等DBProxy实例；通过故障注入验证请求中断、提交后丢响应和Backlog lease接管。业务拒绝、Revision冲突、协议指纹或鉴权错误不能触发换节点重试。DBProxy实例之间不选主、不复制业务状态，也不实现Redis/PostgreSQL高可用；存储高可用直接使用云厂商能力。TiangZ侧已经用真实商店、双玩家交易和首Endpoint中断完成端到端验收；这仍不等于存储HA或MapHost透明接管。
 
-当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成；断线、踢下线和停机只调用`player.Offline(reason)`，由`PlayerPersistenceComponent.SaveOnOffline`采集Numeric、Item、Buff、Skill冷却、Quest和地图状态，并以当前Revision提交。Handler不得直接调用Repository。
+当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成。`PlayerPersistenceComponent`持有inventory、progression、quest、runtime、wallet五个Revision；Map每秒错峰扫描到期玩家，把捕获与保存送进PlayerUnit ordered mailbox，默认每30秒保存五域。断线、踢下线和停机只调用`player.Offline(reason)`并复用同一个最终Flush Promise。Handler不得直接调用Repository。
 
 普通、独立、按稳定Key整体读写的Entity不需要重复手写Codec和Repository。例如：
 
@@ -1102,7 +1102,7 @@ entity Item extends Entity {
 
 运行`npm run codegen:native-data`后，业务使用生成的`NativeItemPersistenceCodec`或`CreateNativeItemRepository(processName)`。`Entity.instanceId`已经标记`@transient`，恢复时必须由当前运行时重新分配，不能从数据库带回。当前Codec是严格当前版本读取，任何持久字段的增加、删除、改名或改类型都必须递增`@persistent(version)`；旧schema迁移注册尚未完成，因此做结构升级前必须先补迁移器。需要“按ownerId查询全部道具”、拍卖行索引、跨玩家交易等能力时，应建立Item/Trade领域Repository，不能把通用Payload表当作查询型ORM。
 
-当前普通玩家快照已验证重启恢复，任务GrantItem奖励和UseItem都已接入`ApplyTransaction`：稳定operationId、expectedRevision、操作后的完整Payload和原始响应在PostgreSQL同一事务提交，确认后才修改内存；ACK丢失时查询回执并按首次结果恢复。`C2M_UseItemHandler`只把`itemId + operationId`交给`ItemComponent.UseItemTransactional`，事务编排不能堆回Handler。客户端每次新使用调用`CreateOperationId("item")`一次，只有同一逻辑请求重试才复用；不能按ItemId或配置ID生成固定键。当前UseItem Planner只允许Heal及无AddAction的Stack Buff，并同时规划Inventory、道具/GCD和HP/Buff；任意新Action必须先提供纯数据Planner与回执恢复语义。Quest UseItem进度是提交成功后的领域投影，尚未和经济事务伪装成跨域原子提交。同地图玩家交易已经用多记录事务一次提交两个玩家记录；系统仍没有周期快照、按领域拆分revision、跨地图交易或邮件/拍卖行事务。崩溃发生在普通最终保存之前仍可能丢失最近运行状态。下一阶段先拆领域revision，再做批量Load/Save、周期Flush和节点接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取通过多记录事务提交inventory+quest；UseItem同时规划Inventory、HP/MP、Buff和CD，因此提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision，禁止为了省事回写完整玩家聚合。`C2M_UseItemHandler`仍只转发`itemId + operationId`，确认后才修改内存，ACK丢失按首次回执恢复。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀和MapHost强杀后的整组安全重启；普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务、批量Load/Save或透明MapHost接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 

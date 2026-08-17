@@ -128,7 +128,7 @@ export class NpcShopComponentSystem extends NpcShopComponent {
 
     let committed;
     try {
-      committed = await persistence.ApplyTransaction(operationId, data, encoded);
+      committed = await persistence.ApplyTransaction(operationId, ["inventory", "wallet"], data, encoded);
     } catch (error) {
       const recovered = await this.tryRecoverBuy(player, request, operationId);
       if (recovered) return recovered;
@@ -207,7 +207,7 @@ export class NpcShopComponentSystem extends NpcShopComponent {
 
     let committed;
     try {
-      committed = await persistence.ApplyTransaction(operationId, data, encoded);
+      committed = await persistence.ApplyTransaction(operationId, ["inventory", "wallet"], data, encoded);
     } catch (error) {
       const recovered = await this.tryRecoverSell(player, request, operationId);
       if (recovered) return recovered;
@@ -234,7 +234,7 @@ export class NpcShopComponentSystem extends NpcShopComponent {
     request: C2M_BuyNpcShopItem,
     operationId: string,
   ): Promise<M2C_BuyNpcShopItem | undefined> {
-    const receipt = await player.GetComponent(PlayerPersistenceComponent).LoadTransaction(operationId);
+    const receipt = await player.GetComponent(PlayerPersistenceComponent).LoadTransaction(operationId, ["inventory", "wallet"]);
     if (!receipt) return undefined;
     const durable = DecodeNpcShopReceipt(receipt.result);
     ValidateNpcShopReceipt(durable, request);
@@ -256,7 +256,7 @@ export class NpcShopComponentSystem extends NpcShopComponent {
     request: C2M_SellItem,
     operationId: string,
   ): Promise<M2C_SellItem | undefined> {
-    const receipt = await player.GetComponent(PlayerPersistenceComponent).LoadTransaction(operationId);
+    const receipt = await player.GetComponent(PlayerPersistenceComponent).LoadTransaction(operationId, ["inventory", "wallet"]);
     if (!receipt) return undefined;
     const durable = DecodeNpcShopReceipt(receipt.result);
     ValidateNpcShopReceipt(durable, request);

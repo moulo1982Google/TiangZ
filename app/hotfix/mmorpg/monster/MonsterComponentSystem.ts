@@ -236,7 +236,7 @@ export class MonsterComponentSystem extends MonsterComponent {
       // operationId读取已提交回执，不能重新计算掉落，也不能把未知请求伪装成成功。
       // The corpse may already have left AOI after the tagged account claimed all regular drops.
       // Only the same operationId may recover a durable receipt; never recalculate loot.
-      const receipt = await persistence.LoadTransaction(scopedOperationId);
+      const receipt = await persistence.LoadTransaction(scopedOperationId, ["inventory", "quest"]);
       if (!receipt) throw error;
       return cloneLootResponse(decodeLootResponse(receipt.result, monsterId));
     }
@@ -292,9 +292,14 @@ export class MonsterComponentSystem extends MonsterComponent {
       const encodedResponse = M2C_LootMonsterCodec.encode(response);
       let committedResult: { result: Uint8Array };
       try {
-        committedResult = await persistence.ApplyTransaction(scopedOperationId, data, encodedResponse);
+        committedResult = await persistence.ApplyTransaction(
+          scopedOperationId,
+          ["inventory", "quest"],
+          data,
+          encodedResponse,
+        );
       } catch (error) {
-        const receipt = await persistence.LoadTransaction(scopedOperationId);
+        const receipt = await persistence.LoadTransaction(scopedOperationId, ["inventory", "quest"]);
         if (!receipt) throw error;
         committedResult = receipt;
       }

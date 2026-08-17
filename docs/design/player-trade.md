@@ -34,7 +34,7 @@ C2M_UpdatePlayerTradeOffer(gold, items)
 C2M_ConfirmPlayerTrade
   -> 双方都确认后冻结会话
   -> 当前确认者继续占用自身Mailbox，并进入另一玩家的真实Mailbox
-  -> 纯数据Planner生成两份完整玩家记录和交易回执
+  -> 纯数据Planner生成双方inventory + wallet记录和交易回执
   -> PlayerRepository.ApplyMultiTransaction
   -> 成功后无await替换双方金币与Item Entity
   -> 分别发送带私有金币和完整背包的G2C_PlayerTradeClosed

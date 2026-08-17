@@ -250,16 +250,31 @@ class FakePersistence {
 
   ApplyTransaction(
     operationId: string,
+    _domains: readonly string[],
     _data: PlayerSaveData,
     result: Uint8Array,
   ): PlayerTransactionResult {
     const existing = this.transactions.get(operationId);
     if (existing) {
-      return { disposition: "duplicate", revision: existing.revision, result: existing.result.slice() };
+      return {
+        disposition: "duplicate",
+        revisions: [
+          { characterId: 1n, domain: "inventory", revision: existing.revision },
+          { characterId: 1n, domain: "wallet", revision: existing.revision },
+        ],
+        result: existing.result.slice(),
+      };
     }
     this.revision += 1n;
     this.transactions.set(operationId, { revision: this.revision, result: result.slice() });
-    return { disposition: "applied", revision: this.revision, result: result.slice() };
+    return {
+      disposition: "applied",
+      revisions: [
+        { characterId: 1n, domain: "inventory", revision: this.revision },
+        { characterId: 1n, domain: "wallet", revision: this.revision },
+      ],
+      result: result.slice(),
+    };
   }
 }
 

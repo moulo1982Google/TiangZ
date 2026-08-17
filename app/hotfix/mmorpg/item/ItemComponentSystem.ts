@@ -129,7 +129,12 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     const encodedReceipt = EncodeItemUseReceipt(plan.receipt);
     let committed;
     try {
-      committed = await persistence.ApplyTransaction(operationId, plan.data, encodedReceipt);
+      committed = await persistence.ApplyTransaction(
+        operationId,
+        ["inventory", "progression", "runtime"],
+        plan.data,
+        encodedReceipt,
+      );
     } catch (error) {
       const recovered = await this.tryRecoverUseItem(unit, itemId, operationId);
       if (recovered) return recovered;
@@ -150,7 +155,10 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
     itemId: bigint,
     operationId: string,
   ): Promise<M2C_UseItem | undefined> {
-    const receipt = await unit.GetComponent(PlayerPersistenceComponent).LoadTransaction(operationId);
+    const receipt = await unit.GetComponent(PlayerPersistenceComponent).LoadTransaction(
+      operationId,
+      ["inventory", "progression", "runtime"],
+    );
     if (!receipt) return undefined;
     const durable = DecodeItemUseReceipt(receipt.result);
     validateReceipt(durable, itemId);

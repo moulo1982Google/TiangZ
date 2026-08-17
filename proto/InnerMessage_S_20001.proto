@@ -201,9 +201,17 @@ message PlayerTransferSnapshot
   repeated QuestSnapshot quests = 18;
   repeated uint32 completed_quest_config_ids = 19;
   // DBProxy乐观并发版本；随玩家迁移，防止目标MapHost用旧快照覆盖新数据。
+  // 旧聚合revision保留协议位但不再参与写入，新客户端应读取三个领域revision。
   uint64 persistence_revision = 20;
   uint64 character_id = 21;
   uint64 gold = 22;
+  // 旧economy revision不再使用；新领域使用独立字段，避免复用已经发布的编号。
+  reserved 23;
+  uint64 progression_revision = 24;
+  uint64 runtime_revision = 25;
+  uint64 wallet_revision = 26;
+  uint64 inventory_revision = 27;
+  uint64 quest_revision = 28;
 }
 
 message MapInstanceSnapshot

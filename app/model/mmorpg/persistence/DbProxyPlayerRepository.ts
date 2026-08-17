@@ -2,38 +2,43 @@ import {
   DbProxyClient,
   DbProxyErrorCode,
   DbProxyRemoteError,
-  type DbProxySnapshotWrite,
   type DbProxyMultiTransactionalWrite,
+  type DbProxySnapshotWrite,
+  type DbProxyTransactionalRecordWrite,
   type DbProxyTransactionalWrite,
 } from "@tiangz/dbproxy-sdk";
+import { HostDbProxyTransport, type ProcessConfig } from "../../../core/public";
 import {
-  HostDbProxyTransport,
-  type ProcessConfig,
-} from "../../../core/public";
-import {
-  DecodePlayerSaveData,
-  EncodePlayerSaveData,
-  PLAYER_PERSISTENCE_SCHEMA,
-  PLAYER_PERSISTENCE_SCHEMA_VERSION,
+  DecodePlayerDomainData,
+  EncodePlayerDomainData,
+  PLAYER_DOMAIN_SCHEMAS,
+  PLAYER_DOMAIN_SCHEMA_VERSION,
 } from "./PlayerPersistenceCodec";
 import {
+  CharacterIdOfDomainData,
+  EmptyPlayerPersistenceRevisions,
   InMemoryPlayerRepository,
+  PLAYER_PERSISTENCE_DOMAINS,
+  type PlayerDomainSaveData,
   type PlayerLoadResult,
   type PlayerMultiTransactionReceipt,
   type PlayerMultiTransactionResult,
   type PlayerMultiTransactionWrite,
+  type PlayerPersistenceDomain,
   type PlayerRepository,
-  type PlayerSaveData,
   type PlayerSaveResult,
   type PlayerTransactionReceipt,
+  type PlayerTransactionRecordKey,
+  type PlayerTransactionRecordWrite,
   type PlayerTransactionResult,
+  type PlayerTransactionRevision,
   type PlayerTransactionWrite,
 } from "./PlayerRepository";
 
 const PLAYER_NAMESPACE = "player";
 const SAVE_ATTEMPTS = 3;
 
-/** Demo玩家Repository：业务拥有Payload，DBProxy只负责版本、幂等和可靠存储。 / Demo player Repository: business owns the payload while DBProxy owns revision, idempotency, and durable storage. */
+/** 领域化玩家Repository：业务拥有Payload，DBProxy拥有每个领域的revision、幂等和可靠存储。 / Domain-aware player Repository: business owns payloads while DBProxy owns per-domain revisions, idempotency, and durable storage. */
 export class DbProxyPlayerRepository implements PlayerRepository {
   private readonly client: DbProxyClient;
   private readonly requestPrefix: string;
@@ -41,207 +46,149 @@ export class DbProxyPlayerRepository implements PlayerRepository {
 
   constructor(processName: string, client = new DbProxyClient(new HostDbProxyTransport())) {
     this.client = client;
-    this.requestPrefix = `${processName}:player:${Date.now().toString(36)}`;
+    this.requestPrefix = `${processName}:player-domain:${Date.now().toString(36)}`;
   }
 
   async Load(characterId: bigint): Promise<PlayerLoadResult | undefined> {
-    const key = keyOf(characterId);
-    const snapshot = await this.client.Load({ namespace: PLAYER_NAMESPACE, key });
-    if (!snapshot) return undefined;
-    if (
-      snapshot.schema !== PLAYER_PERSISTENCE_SCHEMA ||
-      snapshot.schemaVersion !== PLAYER_PERSISTENCE_SCHEMA_VERSION
-    ) {
-      throw new Error(
-        `unsupported player snapshot schema: ${snapshot.schema}@${snapshot.schemaVersion}`,
-      );
-    }
-    const data = DecodePlayerSaveData(snapshot.payload);
-    if (data.player.characterId !== characterId) {
-      throw new Error(`player snapshot key mismatch: key=${key}, payload=${data.player.characterId}`);
-    }
-    return {
-      data,
-      revision: snapshot.revision,
-      updatedAtUnixMs: snapshot.updatedAtUnixMs,
+    requireCharacterId(characterId);
+    const snapshots = await Promise.all(PLAYER_PERSISTENCE_DOMAINS.map((domain) =>
+      this.client.Load(recordOf(characterId, domain))
+    ));
+    if (snapshots.every((snapshot) => !snapshot)) return undefined;
+    const data = {} as {
+      inventory?: PlayerLoadResult["data"]["inventory"];
+      progression?: PlayerLoadResult["data"]["progression"];
+      quest?: PlayerLoadResult["data"]["quest"];
+      runtime?: PlayerLoadResult["data"]["runtime"];
+      wallet?: PlayerLoadResult["data"]["wallet"];
     };
-  }
-
-  /**
-   * 每次逻辑保存只生成一次requestId；Rust连接层若重连会原样重放该ID。
-   * 调用方不得捕获失败后自行构造另一个Repository实例重复提交。
-   *
-   * Generates one requestId per logical save. The Rust connection layer replays
-   * the same ID after reconnect. Callers must not retry through a newly-created
-   * Repository instance after swallowing an ambiguous failure.
-   */
-  async Save(data: PlayerSaveData, expectedRevision: bigint): Promise<PlayerSaveResult> {
-    this.requestSequence += 1;
-    if (!Number.isSafeInteger(this.requestSequence)) {
-      throw new Error("DBProxy player save request sequence exhausted");
-    }
-    const write: DbProxySnapshotWrite = {
-      requestId: `${this.requestPrefix}:${this.requestSequence.toString(36)}`,
-      record: { namespace: PLAYER_NAMESPACE, key: keyOf(data.player.characterId) },
-      schema: PLAYER_PERSISTENCE_SCHEMA,
-      schemaVersion: PLAYER_PERSISTENCE_SCHEMA_VERSION,
-      payload: EncodePlayerSaveData(data),
-      expectedRevision,
-      updatedAtUnixMs: BigInt(Date.now()),
-    };
-    for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
-      try {
-        return await this.client.Save(write);
-      } catch (error) {
-        if (
-          attempt === SAVE_ATTEMPTS ||
-          !(error instanceof DbProxyRemoteError) ||
-          error.code !== DbProxyErrorCode.StorageUnavailable
-        ) {
-          throw error;
-        }
-        // PostgreSQL可能已经提交而Redis同步失败；必须复用同一requestId确认结果。
-        // PostgreSQL may have committed before Redis sync failed; reuse the same requestId.
+    const revisions = EmptyPlayerPersistenceRevisions();
+    const updatedAtUnixMs = EmptyPlayerPersistenceRevisions();
+    for (let index = 0; index < PLAYER_PERSISTENCE_DOMAINS.length; index += 1) {
+      const domain = PLAYER_PERSISTENCE_DOMAINS[index];
+      const snapshot = snapshots[index];
+      if (!snapshot) continue;
+      if (snapshot.schema !== PLAYER_DOMAIN_SCHEMAS[domain] || snapshot.schemaVersion !== PLAYER_DOMAIN_SCHEMA_VERSION) {
+        throw new Error(`unsupported player ${domain} schema: ${snapshot.schema}@${snapshot.schemaVersion}`);
       }
+      const decoded = DecodePlayerDomainData(domain, snapshot.payload);
+      if (CharacterIdOfDomainData(domain, decoded) !== characterId) {
+        throw new Error(`player ${domain} key mismatch: key=${characterId}`);
+      }
+      if (domain === "inventory") data.inventory = decoded as PlayerLoadResult["data"]["inventory"];
+      else if (domain === "progression") data.progression = decoded as PlayerLoadResult["data"]["progression"];
+      else if (domain === "quest") data.quest = decoded as PlayerLoadResult["data"]["quest"];
+      else if (domain === "runtime") data.runtime = decoded as PlayerLoadResult["data"]["runtime"];
+      else data.wallet = decoded as PlayerLoadResult["data"]["wallet"];
+      revisions[domain] = snapshot.revision;
+      updatedAtUnixMs[domain] = snapshot.updatedAtUnixMs;
     }
-    throw new Error("unreachable DBProxy save retry state");
+    return { data, revisions, updatedAtUnixMs };
   }
 
-  /**
-   * 关键业务只提交一次完整的操作后快照；网络重试始终复用业务提供的operationId。
-   * DBProxy在PostgreSQL事务中同时保存快照和结果回执，Redis只负责提交后的缓存同步。
-   *
-   * Critical business operations commit one complete post-operation snapshot.
-   * Network retries always reuse the business operationId. DBProxy stores the
-   * snapshot and receipt in one PostgreSQL transaction; Redis is updated later.
-   */
-  async ApplyTransaction(
-    write: PlayerTransactionWrite,
+  /** 每个逻辑领域保存只生成一次requestId；连接重试必须原样复用。 / Generates one requestId per logical domain save and reuses it across connection retries. */
+  async SaveDomain(
+    domain: PlayerPersistenceDomain,
+    data: PlayerDomainSaveData,
     expectedRevision: bigint,
-  ): Promise<PlayerTransactionResult> {
-    const request: DbProxyTransactionalWrite = {
-      operationId: write.operationId,
-      record: { namespace: PLAYER_NAMESPACE, key: keyOf(write.data.player.characterId) },
-      schema: PLAYER_PERSISTENCE_SCHEMA,
-      schemaVersion: PLAYER_PERSISTENCE_SCHEMA_VERSION,
+  ): Promise<PlayerSaveResult> {
+    const characterId = CharacterIdOfDomainData(domain, data);
+    const write: DbProxySnapshotWrite = {
+      requestId: this.NextRequestId(domain),
+      record: recordOf(characterId, domain),
+      schema: PLAYER_DOMAIN_SCHEMAS[domain],
+      schemaVersion: PLAYER_DOMAIN_SCHEMA_VERSION,
+      payload: EncodePlayerDomainData(domain, data),
       expectedRevision,
-      payload: EncodePlayerSaveData(write.data),
-      result: write.result.slice(),
       updatedAtUnixMs: BigInt(Date.now()),
     };
-    for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
-      try {
-        const result = await this.client.ApplyTransaction(request);
-        return {
-          disposition: result.disposition,
-          revision: result.newRevision,
-          result: result.result.slice(),
-        };
-      } catch (error) {
-        if (
-          attempt === SAVE_ATTEMPTS ||
-          !(error instanceof DbProxyRemoteError) ||
-          error.code !== DbProxyErrorCode.StorageUnavailable
-        ) {
-          throw error;
-        }
-        // 事务可能已经提交但ACK丢失；只能复用相同operationId重试。
-        // The transaction may have committed before its ACK was lost; retry only with the same operationId.
-      }
+    const saved = await retryStorageUnavailable(() => this.client.Save(write));
+    return { disposition: saved.disposition, domain, revision: saved.revision };
+  }
+
+  /** 一条记录走单记录事务，多条记录走DBProxy多记录事务；两条路径共享相同领域回执。 / Uses a single-record transaction for one record and a DBProxy multi-record transaction otherwise, with one domain receipt shape. */
+  async ApplyTransaction(write: PlayerTransactionWrite): Promise<PlayerTransactionResult> {
+    const records = normalizeWrites(write.records);
+    if (records.length === 1) {
+      const entry = records[0];
+      const characterId = CharacterIdOfDomainData(entry.domain, entry.data);
+      const request: DbProxyTransactionalWrite = {
+        operationId: write.operationId,
+        ...toDbWrite(entry),
+        result: write.result.slice(),
+      };
+      const committed = await retryStorageUnavailable(() => this.client.ApplyTransaction(request));
+      return {
+        disposition: committed.disposition,
+        revisions: [{ characterId, domain: entry.domain, revision: committed.newRevision }],
+        result: committed.result.slice(),
+      };
     }
-    throw new Error("unreachable DBProxy transaction retry state");
+    const request: DbProxyMultiTransactionalWrite = {
+      operationId: write.operationId,
+      writes: records.map(toDbWrite),
+      result: write.result.slice(),
+    };
+    const committed = await retryStorageUnavailable(() => this.client.ApplyMultiTransaction(request));
+    return {
+      disposition: committed.disposition,
+      revisions: committed.records.map((record) => fromDbRevision(record.record.key, record.newRevision)),
+      result: committed.result.slice(),
+    };
   }
 
   async LoadTransaction(
-    characterId: bigint,
+    records: readonly PlayerTransactionRecordKey[],
     operationId: string,
   ): Promise<PlayerTransactionReceipt | undefined> {
-    const receipt = await this.client.LoadTransaction(operationId, {
-      namespace: PLAYER_NAMESPACE,
-      key: keyOf(characterId),
-    });
+    const normalized = normalizeKeys(records);
+    if (normalized.length === 1) {
+      const key = normalized[0];
+      const receipt = await this.client.LoadTransaction(operationId, recordOf(key.characterId, key.domain));
+      return receipt
+        ? {
+          revisions: [{ characterId: key.characterId, domain: key.domain, revision: receipt.newRevision }],
+          result: receipt.result.slice(),
+        }
+        : undefined;
+    }
+    const receipt = await this.client.LoadMultiTransaction(
+      operationId,
+      normalized.map((key) => recordOf(key.characterId, key.domain)),
+    );
     return receipt
-      ? { revision: receipt.newRevision, result: receipt.result.slice() }
+      ? {
+        revisions: receipt.records.map((record) => fromDbRevision(record.record.key, record.newRevision)),
+        result: receipt.result.slice(),
+      }
       : undefined;
   }
 
-  /** 使用DBProxy多记录事务一次提交全部玩家快照；重试始终复用同一operationId。 / Commits every player snapshot through one DBProxy multi-record transaction and always reuses the same operationId on retry. */
-  async ApplyMultiTransaction(
-    write: PlayerMultiTransactionWrite,
-  ): Promise<PlayerMultiTransactionResult> {
-    const entries = [...write.entries].sort((left, right) => compareBigInt(
-      left.data.player.characterId,
-      right.data.player.characterId,
-    ));
-    const request: DbProxyMultiTransactionalWrite = {
-      operationId: write.operationId,
-      writes: entries.map((entry) => ({
-        record: {
-          namespace: PLAYER_NAMESPACE,
-          key: keyOf(entry.data.player.characterId),
-        },
-        schema: PLAYER_PERSISTENCE_SCHEMA,
-        schemaVersion: PLAYER_PERSISTENCE_SCHEMA_VERSION,
-        expectedRevision: entry.expectedRevision,
-        payload: EncodePlayerSaveData(entry.data),
-        updatedAtUnixMs: BigInt(Date.now()),
-      })),
-      result: write.result.slice(),
-    };
-    for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
-      try {
-        const committed = await this.client.ApplyMultiTransaction(request);
-        return {
-          disposition: committed.disposition,
-          revisions: committed.records.map((record) => ({
-            characterId: BigInt(record.record.key),
-            revision: record.newRevision,
-          })).sort((left, right) => compareBigInt(left.characterId, right.characterId)),
-          result: committed.result.slice(),
-        };
-      } catch (error) {
-        if (
-          attempt === SAVE_ATTEMPTS ||
-          !(error instanceof DbProxyRemoteError) ||
-          error.code !== DbProxyErrorCode.StorageUnavailable
-        ) {
-          throw error;
-        }
-        // 多记录事务也可能已经提交而ACK丢失；禁止换operationId或拆成两个单记录重试。
-        // A multi-record transaction may also commit before its ACK is lost;
-        // never change operationId or split the retry into single-record writes.
-      }
-    }
-    throw new Error("unreachable DBProxy multi transaction retry state");
+  async ApplyMultiTransaction(write: PlayerMultiTransactionWrite): Promise<PlayerMultiTransactionResult> {
+    if (write.records.length < 2) throw new Error("player multi transaction requires at least two records");
+    return this.ApplyTransaction(write);
   }
 
   async LoadMultiTransaction(
-    characterIds: readonly bigint[],
+    records: readonly PlayerTransactionRecordKey[],
     operationId: string,
   ): Promise<PlayerMultiTransactionReceipt | undefined> {
-    const records = [...characterIds]
-      .sort(compareBigInt)
-      .map((characterId) => ({ namespace: PLAYER_NAMESPACE, key: keyOf(characterId) }));
-    const receipt = await this.client.LoadMultiTransaction(operationId, records);
-    if (!receipt) return undefined;
-    return {
-      revisions: receipt.records.map((record) => ({
-        characterId: BigInt(record.record.key),
-        revision: record.newRevision,
-      })).sort((left, right) => compareBigInt(left.characterId, right.characterId)),
-      result: receipt.result.slice(),
-    };
+    if (records.length < 2) throw new Error("player multi transaction requires at least two records");
+    return this.LoadTransaction(records, operationId);
+  }
+
+  private NextRequestId(domain: PlayerPersistenceDomain): string {
+    this.requestSequence += 1;
+    if (!Number.isSafeInteger(this.requestSequence)) throw new Error("DBProxy player save request sequence exhausted");
+    return `${this.requestPrefix}:${domain}:${this.requestSequence.toString(36)}`;
   }
 }
 
-/** MapHost工厂的唯一Repository选择点；业务代码不得到处判断DBProxy配置。 / Sole Repository selection point for MapHost factories; gameplay code must not branch on DBProxy configuration. */
+/** MapHost工厂的唯一Repository选择点；业务不得分散判断DBProxy配置。 / Sole Repository selection point; gameplay must not branch on DBProxy configuration. */
 const inMemoryRepositories = new Map<string, InMemoryPlayerRepository>();
 
 export function CreatePlayerRepository(process: ProcessConfig): PlayerRepository {
   if (process.persistence?.dbProxy) return new DbProxyPlayerRepository(process.name);
-  // 同一V8内的多个MapHost共享内存Repository；跨V8迁移由PlayerPersistenceComponent交接快照。
-  // MapHosts in one V8 share the in-memory Repository; cross-V8 transfer uses
-  // the snapshot handoff owned by PlayerPersistenceComponent.
   let repository = inMemoryRepositories.get(process.name);
   if (!repository) {
     repository = new InMemoryPlayerRepository();
@@ -250,11 +197,86 @@ export function CreatePlayerRepository(process: ProcessConfig): PlayerRepository
   return repository;
 }
 
-function keyOf(characterId: bigint): string {
-  if (characterId <= 0n) throw new Error(`player characterId must be positive: ${characterId}`);
-  return characterId.toString(10);
+function toDbWrite(entry: PlayerTransactionRecordWrite): DbProxyTransactionalRecordWrite {
+  const characterId = CharacterIdOfDomainData(entry.domain, entry.data);
+  return {
+    record: recordOf(characterId, entry.domain),
+    schema: PLAYER_DOMAIN_SCHEMAS[entry.domain],
+    schemaVersion: PLAYER_DOMAIN_SCHEMA_VERSION,
+    expectedRevision: entry.expectedRevision,
+    payload: EncodePlayerDomainData(entry.domain, entry.data),
+    updatedAtUnixMs: BigInt(Date.now()),
+  };
 }
 
-function compareBigInt(left: bigint, right: bigint): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+function recordOf(characterId: bigint, domain: PlayerPersistenceDomain): { namespace: string; key: string } {
+  requireCharacterId(characterId);
+  return { namespace: PLAYER_NAMESPACE, key: `${characterId.toString(10)}:${domain}` };
+}
+
+function fromDbRevision(key: string, revision: bigint): PlayerTransactionRevision {
+  const match = /^(\d+):(inventory|progression|quest|runtime|wallet)$/.exec(key);
+  if (!match) throw new Error(`invalid player domain record key from DBProxy: ${key}`);
+  return { characterId: BigInt(match[1]), domain: match[2] as PlayerPersistenceDomain, revision };
+}
+
+function normalizeWrites(records: readonly PlayerTransactionRecordWrite[]): readonly PlayerTransactionRecordWrite[] {
+  if (records.length === 0) throw new Error("player transaction requires at least one record");
+  const sorted = [...records].sort((left, right) => compareKeys(
+    CharacterIdOfDomainData(left.domain, left.data), left.domain,
+    CharacterIdOfDomainData(right.domain, right.data), right.domain,
+  ));
+  for (let index = 0; index < sorted.length; index += 1) {
+    const record = sorted[index];
+    if (record.expectedRevision < 0n) {
+      throw new Error(`player transaction revision must be non-negative: ${record.expectedRevision}`);
+    }
+    if (index === 0) continue;
+    const previous = sorted[index - 1];
+    if (
+      CharacterIdOfDomainData(previous.domain, previous.data) === CharacterIdOfDomainData(record.domain, record.data) &&
+      previous.domain === record.domain
+    ) {
+      throw new Error(`duplicate player transaction record: ${record.domain}`);
+    }
+  }
+  return sorted;
+}
+
+function normalizeKeys(records: readonly PlayerTransactionRecordKey[]): readonly PlayerTransactionRecordKey[] {
+  if (records.length === 0) throw new Error("player transaction requires at least one record key");
+  const sorted = [...records].sort((left, right) => compareKeys(left.characterId, left.domain, right.characterId, right.domain));
+  for (let index = 0; index < sorted.length; index += 1) {
+    requireCharacterId(sorted[index].characterId);
+    if (
+      index > 0 &&
+      sorted[index - 1].characterId === sorted[index].characterId &&
+      sorted[index - 1].domain === sorted[index].domain
+    ) {
+      throw new Error(`duplicate player transaction record key: ${sorted[index].characterId}/${sorted[index].domain}`);
+    }
+  }
+  return sorted;
+}
+
+function compareKeys(leftId: bigint, leftDomain: PlayerPersistenceDomain, rightId: bigint, rightDomain: PlayerPersistenceDomain): number {
+  if (leftId !== rightId) return leftId < rightId ? -1 : 1;
+  return leftDomain.localeCompare(rightDomain);
+}
+
+function requireCharacterId(characterId: bigint): void {
+  if (characterId <= 0n) throw new Error(`player characterId must be positive: ${characterId}`);
+}
+
+async function retryStorageUnavailable<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+  for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt === SAVE_ATTEMPTS || !(error instanceof DbProxyRemoteError) || error.code !== DbProxyErrorCode.StorageUnavailable) throw error;
+      // PostgreSQL可能已提交但ACK或Redis同步失败；调用闭包必须复用同一请求标识。
+      // PostgreSQL may have committed before an ACK or Redis sync failure; the closure must reuse the same request identity.
+    }
+  }
+  throw new Error("unreachable DBProxy retry state");
 }

@@ -124,7 +124,7 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
     const operationId = questRewardOperationId(player.Account, questConfigId);
     const quest = this.TryGetChild(Quest, BigInt(questConfigId));
     if (!quest || persistence.IsTransactionUncertain(operationId)) {
-      const receipt = await persistence.LoadTransaction(operationId);
+      const receipt = await persistence.LoadTransaction(operationId, ["inventory", "quest"]);
       if (receipt) {
         const recovered = decodeQuestReward(receipt.result, questConfigId);
         if (quest) {
@@ -152,6 +152,7 @@ export class QuestComponentSystem extends QuestComponent implements ITransfer<Qu
     const encodedResult = M2C_CompleteQuestCodec.encode(proposed);
     const committed = await persistence.ApplyTransaction(
       operationId,
+      ["inventory", "quest"],
       persistence.Capture("quest-reward", {
         items: inventoryPlan.nextItems,
         quests: nextQuests,

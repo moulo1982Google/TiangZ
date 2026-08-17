@@ -1,0 +1,18 @@
+{
+  "machines": [
+    {
+      "name": "local-dbproxy",
+      "innerIp": "127.0.0.1",
+      "processes": [
+        "../cluster/manager.json",
+        "login-1.json",
+        "login-2.json",
+        "../cluster/gate-1.json",
+        "map-1.json",
+        "map-2.json",
+        "dungeon-1.json",
+        "../cluster/location-1.json"
+      ]
+    }
+  ]
+}

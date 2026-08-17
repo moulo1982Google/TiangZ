@@ -16,6 +16,7 @@ import {
   InMemoryPlayerRepository,
   type PlayerSaveData,
 } from "../app/model/mmorpg/persistence/PlayerRepository";
+import { ProjectPlayerDomainData } from "../app/model/mmorpg/persistence/PlayerPersistenceCodec";
 
 void main();
 
@@ -58,25 +59,61 @@ async function main(): Promise<void> {
   assert.deepEqual(DecodePlayerTradeReceipt(EncodePlayerTradeReceipt(receipt)), receipt);
 
   const repository = new InMemoryPlayerRepository();
-  repository.Save(saveData(101n, 100n, requesterItems, "before-trade"), 0n);
-  repository.Save(saveData(202n, 50n, targetItems, "before-trade"), 0n);
+  repository.Save(saveData(101n, 100n, requesterItems, "before-trade"));
+  repository.Save(saveData(202n, 50n, targetItems, "before-trade"));
   const resultBytes = EncodePlayerTradeReceipt(receipt);
   const write = {
     operationId: "player-trade:9001",
-    entries: [
-      { data: saveData(101n, receipt.requester.gold, receipt.requester.nextItems, "player-trade"), expectedRevision: 1n },
-      { data: saveData(202n, receipt.target.gold, receipt.target.nextItems, "player-trade"), expectedRevision: 1n },
+    records: [
+      {
+        domain: "wallet",
+        data: ProjectPlayerDomainData(
+          saveData(101n, receipt.requester.gold, receipt.requester.nextItems, "player-trade"),
+          "wallet",
+        ),
+        expectedRevision: 1n,
+      },
+      {
+        domain: "inventory",
+        data: ProjectPlayerDomainData(
+          saveData(101n, receipt.requester.gold, receipt.requester.nextItems, "player-trade"),
+          "inventory",
+        ),
+        expectedRevision: 1n,
+      },
+      {
+        domain: "wallet",
+        data: ProjectPlayerDomainData(
+          saveData(202n, receipt.target.gold, receipt.target.nextItems, "player-trade"),
+          "wallet",
+        ),
+        expectedRevision: 1n,
+      },
+      {
+        domain: "inventory",
+        data: ProjectPlayerDomainData(
+          saveData(202n, receipt.target.gold, receipt.target.nextItems, "player-trade"),
+          "inventory",
+        ),
+        expectedRevision: 1n,
+      },
     ],
     result: resultBytes,
   } as const;
   const applied = repository.ApplyMultiTransaction(write);
   assert.equal(applied.disposition, "applied");
   assert.deepEqual(applied.revisions, [
-    { characterId: 101n, revision: 2n },
-    { characterId: 202n, revision: 2n },
+    { characterId: 101n, domain: "inventory", revision: 2n },
+    { characterId: 101n, domain: "wallet", revision: 2n },
+    { characterId: 202n, domain: "inventory", revision: 2n },
+    { characterId: 202n, domain: "wallet", revision: 2n },
   ]);
-  assert.equal(repository.Load(101n)?.data.player.gold, 95n);
-  assert.equal(repository.Load(202n)?.data.player.gold, 55n);
+  assert.equal(repository.GetDomain(101n, "wallet")?.gold, 95n);
+  assert.equal(repository.GetDomain(202n, "wallet")?.gold, 55n);
+  assert.equal(findCount(repository.GetDomain(101n, "inventory")?.items ?? [], 1003), 1);
+  assert.equal(findCount(repository.GetDomain(202n, "inventory")?.items ?? [], 1001), 2);
+  assert.equal(repository.Load(101n)?.revisions.progression, 1n);
+  assert.equal(repository.Load(101n)?.revisions.runtime, 1n);
 
   // ACK丢失后的同operationId重试必须返回首次结果，不能重复转移金币或Item。
   // Retrying the same operation after a lost ACK must return the first result without moving currency or Items again.
@@ -84,7 +121,12 @@ async function main(): Promise<void> {
   assert.equal(duplicate.disposition, "duplicate");
   assert.deepEqual(duplicate.result, resultBytes);
   assert.deepEqual(
-    repository.LoadMultiTransaction([202n, 101n], write.operationId)?.result,
+    repository.LoadMultiTransaction([
+      { characterId: 202n, domain: "inventory" },
+      { characterId: 202n, domain: "wallet" },
+      { characterId: 101n, domain: "inventory" },
+      { characterId: 101n, domain: "wallet" },
+    ], write.operationId)?.result,
     resultBytes,
   );
 
@@ -93,16 +135,34 @@ async function main(): Promise<void> {
   assert.throws(
     () => repository.ApplyMultiTransaction({
       operationId: "player-trade:9002",
-      entries: [
-        { data: saveData(101n, 1n, [], "invalid-half-trade"), expectedRevision: 2n },
-        { data: saveData(202n, 1n, [], "invalid-half-trade"), expectedRevision: 1n },
+      records: [
+        {
+          domain: "inventory",
+          data: ProjectPlayerDomainData(saveData(101n, 1n, [], "invalid-half-trade"), "inventory"),
+          expectedRevision: 2n,
+        },
+        {
+          domain: "wallet",
+          data: ProjectPlayerDomainData(saveData(101n, 1n, [], "invalid-half-trade"), "wallet"),
+          expectedRevision: 2n,
+        },
+        {
+          domain: "inventory",
+          data: ProjectPlayerDomainData(saveData(202n, 1n, [], "invalid-half-trade"), "inventory"),
+          expectedRevision: 1n,
+        },
+        {
+          domain: "wallet",
+          data: ProjectPlayerDomainData(saveData(202n, 1n, [], "invalid-half-trade"), "wallet"),
+          expectedRevision: 1n,
+        },
       ],
       result: new Uint8Array([9]),
     }),
     /revision conflict/,
   );
-  assert.equal(repository.Load(101n)?.data.player.gold, 95n);
-  assert.equal(repository.Load(202n)?.data.player.gold, 55n);
+  assert.equal(repository.GetDomain(101n, "wallet")?.gold, 95n);
+  assert.equal(repository.GetDomain(202n, "wallet")?.gold, 55n);
 
   await SingletonRegistry.DestroyAll();
   console.log("player trade self-test passed");

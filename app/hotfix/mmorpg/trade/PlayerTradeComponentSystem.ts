@@ -34,7 +34,7 @@ const TRADE_RANGE_METERS = 5;
 const TRADE_TIMEOUT_MS = 60_000;
 
 /**
- * 地图内交易会话协调器。所有报价变化先在同步栈中冻结，再由DBProxy一次提交两个玩家记录；
+ * 地图内交易会话协调器。所有报价变化先在同步栈中冻结，再由DBProxy一次提交双方inventory和wallet记录；
  * 不允许把交易拆成两个单玩家事务，也不在提交成功前修改金币或Item Entity。
  *
  * Coordinates map-local trade sessions. Offers freeze synchronously before one
@@ -272,8 +272,8 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
         const committed = await requesterPersistence.ApplyMultiTransaction(
           session.operationId,
           [
-            { persistence: requesterPersistence, data: requesterData },
-            { persistence: targetPersistence, data: targetData },
+            { persistence: requesterPersistence, data: requesterData, domains: ["inventory", "wallet"] },
+            { persistence: targetPersistence, data: targetData, domains: ["inventory", "wallet"] },
           ],
           encoded,
         );
@@ -318,7 +318,10 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
     persistences: readonly PlayerPersistenceComponent[],
   ): Promise<PlayerTradeReceipt | undefined> {
     if (!persistences[0].IsMultiTransactionUncertain(session.operationId, persistences)) return undefined;
-    const receipt = await persistences[0].LoadMultiTransaction(session.operationId, persistences);
+    const receipt = await persistences[0].LoadMultiTransaction(
+      session.operationId,
+      persistences.map((persistence) => ({ persistence, domains: ["inventory", "wallet"] })),
+    );
     return receipt ? DecodePlayerTradeReceipt(receipt.result) : undefined;
   }
 

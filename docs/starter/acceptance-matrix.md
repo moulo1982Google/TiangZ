@@ -120,3 +120,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 ## 玩家交易持久化与故障切换
 
 `npm run test:player-trade:persistent`使用两个临时账号先经NPC商店出售药品获得铜币，再交换铜币、小红和小蓝。验收器重启TiangZ后核对双方权威快照，并在第二轮最终确认前停止首选DBProxy `7800`，确认通过备用`7801`只提交一次。该命令需要本地PostgreSQL、Redis、两个DBProxy Debug二进制和TiangZ Debug二进制，不会清空数据库或执行容量压力测试。
+
+## 玩家领域快照与MapHost故障恢复
+
+`npm run test:player-domain-recovery`创建三个唯一账号，分别验证立即优雅停机的最终Flush、等待30秒周期窗口后强杀all-in-one，以及在`configs/local/cluster-dbproxy`中精确强杀承载地图100的`map-2`。每轮重启后都从新连接核对wallet的金币、inventory的背包、quest的任务和runtime的位置。MapHost故障时Watcher必须非零退出并关闭兄弟进程，随后由验收器重启整组部署；当前通过标准是“安全重启恢复”，不是自动节点接管。怪物、仇恨、AI和移动意图不在恢复范围。

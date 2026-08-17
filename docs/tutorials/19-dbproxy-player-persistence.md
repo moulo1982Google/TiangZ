@@ -1,6 +1,6 @@
 # DBProxy玩家快照持久化
 
-本教程演示TiangZ如何通过独立DBProxy保存玩家快照、在TiangZ重启后恢复，并以任务道具奖励和UseItem验证关键单玩家事务、以玩家交易验证双记录原子事务。当前实现仍是Phase 4.5基础：它不等于邮件、拍卖行、跨地图交易和故障接管都已生产化。
+本教程演示TiangZ如何通过独立DBProxy保存玩家的inventory、progression、quest、runtime和wallet五类记录，在TiangZ或MapHost崩溃后安全重启恢复，并以任务奖励、UseItem、NPC商店和玩家交易验证单记录、多领域及跨玩家事务。当前实现不等于邮件、拍卖行、跨地图交易或透明节点接管已经生产化。
 
 ## 固定边界
 
@@ -22,6 +22,20 @@ MapHostScene
 - 只有显式配置`process.persistence.dbProxy`的Process才连接DBProxy。
 - 登录注册使用同一个`character_catalog`快照：快照保存账号、密码盐值/摘要和同名初始角色；明文密码不进入快照、日志或Token。
 - 未配置DBProxy时注册仍可用于界面和协议调试，但只存在当前Process内存；不能把这种模式当作“已落盘”。
+
+## 玩家记录与Revision
+
+聚合捕获值`PlayerSaveData`不是数据库中的单条记录。`DbProxyPlayerRepository`按角色拆成五个稳定RecordKey：
+
+| RecordKey后缀 | 字段 | 一致性语义 |
+|---|---|---|
+| `inventory` | Item | 关键道具操作先提交后确认 |
+| `wallet` | 金币 | 关键货币操作先提交后确认 |
+| `progression` | Numeric | 周期快照；涉及HP/MP时可进入事务 |
+| `quest` | Quest | 周期快照；涉及奖励时可进入事务 |
+| `runtime` | 地图/位置/存活、Buff、GCD/CD | 周期快照，允许最多一个周期回退 |
+
+实际Key为`player/<characterId>:<domain>`，五个领域各自维护Revision。业务操作必须只声明真实变化的领域：NPC商店=`inventory + wallet`；玩家交易=双方`inventory + wallet`；任务奖励和拾取=`inventory + quest`；UseItem因Inventory、CurrentHp/CurrentMp、Buff与CD可能同时变化，固定提交`inventory + progression + runtime`。禁止用某次操作顺便覆盖未参与的领域记录。
 
 ## 本地启动
 
@@ -103,7 +117,7 @@ TiangZ Developer Tools `v0.15.1`会为这些字段提供补全和范围检查。
 
 多记录事务用于跨玩家奖励、交易等确实需要原子提交的领域操作；单玩家快照和单记录关键操作继续使用对应的单记录接口。网络不可用可以按备用Endpoint重试，业务拒绝、Revision冲突、鉴权失败和协议不匹配必须直接返回，不能通过换节点掩盖业务错误。
 
-当前第一个真实消费者是同地图玩家交易：`PlayerTradeComponent`冻结双方报价，`PlayerTradeTransaction`只在纯快照上规划金币与Item交换，`PlayerPersistenceComponent.ApplyMultiTransaction`一次提交两个`tiangz.demo.player@1`记录。确认前不改Entity；提交后才无`await`替换双方金币和背包。数据库已提交但响应丢失时，通过同一`operationId`查询多记录回执恢复，不能顺序调用两次单记录事务。完整流程见[玩家交易设计](../design/player-trade.md)。
+当前第一个跨玩家消费者是同地图玩家交易：`PlayerTradeComponent`冻结双方报价，`PlayerTradeTransaction`只在纯快照上规划金币与Item交换，`PlayerPersistenceComponent.ApplyMultiTransaction`一次提交双方`inventory + wallet`四条记录。确认前不改Entity；提交后才无`await`替换双方金币和背包。数据库已提交但响应丢失时，通过同一`operationId`查询多记录回执恢复，不能顺序调用两次单记录事务。完整流程见[玩家交易设计](../design/player-trade.md)。
 
 ## 加载顺序
 
@@ -111,7 +125,7 @@ TiangZ Developer Tools `v0.15.1`会为这些字段提供补全和范围检查。
 
 ```text
 MapHostComponent.EnterMap
-  -> repository.Load(account)
+  -> repository.Load(characterId)
   -> MapComponent.CreatePlayer(..., loaded)
   -> 添加全部业务Component
   -> 恢复Numeric、Item、Buff、Skill和Quest
@@ -131,7 +145,9 @@ MapHostComponent.EnterMap
 await player.Offline(reason);
 ```
 
-`PlayerPersistenceComponent.SaveOnOffline`只创建一个保存Promise：重复清理者等待同一个结果，不会绕过玩家生命周期重复提交。它采集业务快照并以当前Revision调用`PlayerRepository.Save`；成功后才更新本地Revision，然后才能继续Location清理、AOI Leave和Actor销毁。
+`PlayerPersistenceComponent.SaveOnOffline`只创建一个保存Promise：重复清理者等待同一个结果，不会绕过玩家生命周期重复提交。它依次保存inventory、progression、quest、runtime和wallet，每条成功后立即推进对应Revision，因此后续领域失败时可以从已提交位置继续。成功后才能继续Location清理、AOI Leave和Actor销毁。
+
+在线玩家默认每30秒到期一次。Map每秒扫描一次，每轮最多启动两个玩家、每图最多四个周期保存并发；实际Capture/Save进入对应PlayerUnit ordered mailbox，不为每个玩家创建Timer。停机最终Flush每图最多八个worker，并收集全部失败后统一上抛，不会因为一个玩家失败跳过其余玩家。
 
 DBProxy保存使用一个固定`requestId`。如果PostgreSQL已经提交、但Redis同步失败导致结果不确定，Repository会使用完全相同的请求重试；不得换ID，否则可能把一次逻辑保存变成两次提交。
 
@@ -188,29 +204,30 @@ await mapClient.useItem({ itemId, operationId });
 
 任务奖励事务的Planner当前仍只支持`GrantItem`。把Heal、Buff或跨玩家奖励写进Quest配置会被明确拒绝；新增事务Action前必须实现纯数据Planner、持久Payload和回执恢复规则，不能先改Entity再补一次Save。
 
-## 当前快照内容
+## 当前领域内容
 
 | 数据 | 当前行为 |
 |---|---|
-| 玩家地图、位置、朝向和存活状态 | 保存；同一地图实例才恢复坐标 |
-| Numeric动态值 | 保存为`numericType -> i64`，TS使用`bigint` |
-| Item | 保存稳定ItemId、配置、数量和版本 |
-| Buff | 保存剩余时间、Tick、Action和护盾状态；自身来源映射到新UnitId |
-| Skill | 保存GCD、技能CD和道具CD；活动Cast不保存 |
-| Quest | 保存活动任务、目标进度与已完成配置ID；运行时目标索引重建 |
+| 玩家地图、位置、朝向和存活状态 | runtime；同一地图实例才恢复坐标 |
+| Numeric动态值 | progression；保存为`numericType -> i64`，TS使用`bigint` |
+| Item | inventory；保存稳定ItemId、配置、数量和版本 |
+| 金币 | wallet；保存非负余额 |
+| Buff | runtime；保存剩余时间、Tick、Action和护盾状态；自身来源映射到新UnitId |
+| Skill | runtime；保存GCD、技能CD和道具CD；活动Cast不保存 |
+| Quest | quest；保存活动任务、目标进度与已完成配置ID；运行时目标索引重建 |
 | Gate、Session、UnitId、Actor InstanceId | 不保存，重新进入时创建 |
 | TimerId、Promise、闭包、AOI关系、移动意图 | 不保存，恢复时重建或重置 |
 
-快照Schema为`tiangz.demo.player@1`。`PlayerPersistenceCodec.ts`使用带显式标签的UTF-8 JSON保存`bigint`，解码后完整校验再交给Entity恢复；DBProxy只看到`Uint8Array`。
+五个Schema分别为`tiangz.demo.player.inventory@1`、`tiangz.demo.player.progression@1`、`tiangz.demo.player.quest@1`、`tiangz.demo.player.runtime@1`和`tiangz.demo.player.wallet@1`。`PlayerPersistenceCodec.ts`使用带显式标签的UTF-8 JSON保存`bigint`，解码后按领域完整校验再交给Entity恢复；DBProxy只看到`Uint8Array`。
 
 ## 增加持久字段
 
 开发新Component时按这个顺序接入：
 
 1. 先判断字段属于`runtime`、普通`snapshot`还是关键`transactional`域。
-2. 在TiangZ的`PlayerSaveData`中增加纯数据DTO，不把Entity、Component、Timer或Native句柄放进去。
+2. 在TiangZ的`PlayerSaveData`和对应领域DTO中增加纯数据，不把Entity、Component、Timer或Native句柄放进去；一个字段只能属于一个领域。
 3. 在`PlayerPersistenceCodec`增加编码后的完整校验；破坏兼容时升级Schema并提供迁移策略。
-4. 在`SaveOnOffline`采集数据，在`MapComponent.RestorePersistedPlayer`恢复数据。
+4. 在`Capture`采集数据，由周期快照/最终Flush或领域事务选择实际写入范围，在`MapComponent.RestorePersistedPlayer`恢复数据。
 5. 需要Timer或索引的Component通过`Deserialize`做二次重建，不在Codec中启动业务。
 6. 增加Repository自测和真实重启恢复冒烟。
 
@@ -251,11 +268,22 @@ node dist/smoke_client.cjs --dbproxy-item-use-read dbproxy_item_use_001
 
 通过标准是仍恢复同一ItemId、扣除后的数量和首次事务回执，而不是再次扣除或重新治疗。
 
+自动化的交易与故障恢复验收使用：
+
+```powershell
+npm run test:player-trade:persistent
+npm run test:player-domain-recovery
+```
+
+第一条命令通过正式NPC商店制造铜币，提交双玩家inventory+wallet事务，重启TiangZ核对结果，并在最终确认前停止首选DBProxy `7800`，验证备用`7801`只提交一次。第二条命令依次验证：立即优雅停机的最终Flush；等待周期窗口后强杀all-in-one；在`configs/local/cluster-dbproxy`中精确强杀承载地图100的`map-2`，确认Watcher以非零状态关闭兄弟进程，再重启整组部署恢复金币/背包、任务和位置。
+
+这些命令要求本地PostgreSQL/Redis容器健康、两个DBProxy Debug二进制和TiangZ Debug二进制已经构建。它们创建唯一测试账号但不清库，也不是CPU或容量压测。
+
 ## 当前限制
 
-- 当前只在最终下线和停机保存，没有周期快照；TiangZ在保存前崩溃仍可能丢失最近运行状态。
-- 任务`GrantItem`奖励和UseItem已接入`ApplyTransaction`，同地图玩家交易已接入`ApplyMultiTransaction`；但邮件、拍卖行、跨地图交易和按领域拆分Revision尚未完成，不能把这些Demo链路描述为全部经济数据生产级不丢。
-- 尚无批量Load/Save、Prometheus DBProxy指标、TLS、令牌轮换、Redis高可用和自动节点接管。
-- 玩家账号暂时就是快照RecordKey；正式账号/角色拆分后需要稳定CharacterId和明确的数据域Revision。
+- 周期快照默认30秒，普通成长与运行态最多允许回退一个周期；要求零回退的字段必须进入关键事务，不能缩短周期冒充事务保证。
+- 任务奖励、拾取、UseItem、NPC商店和同地图玩家交易已经按实际领域提交；邮件、拍卖行、跨地图交易仍未实现，不能把现有链路描述为全部经济数据生产级不丢。
+- MapHost崩溃当前由Watcher关闭整组部署，运维或测试重启后从最近快照恢复；没有自动拉起替代MapHost、Gate透明改路由或战斗现场热接管。怪物、仇恨、AI目标和移动意图按设计重建或重置。
+- 尚无批量Load/Save、Prometheus DBProxy指标、TLS、令牌轮换和生产部署；Redis/PostgreSQL高可用使用云厂商能力，不在TiangZ内实现。
 
-下一步应拆分领域revision并扩展Wallet等关键经济边界，再做周期快照、批量登录恢复和故障接管，不能继续扩大一个巨型Player Snapshot来替代领域一致性设计。
+下一步是批量登录恢复、透明MapHost接管边界和生产运维能力；新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。

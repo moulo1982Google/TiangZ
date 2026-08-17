@@ -1,0 +1,22 @@
+{
+  "process": {
+    "name": "login2",
+    "identity": { "originServerId": 1, "workerId": 3 },
+    "persistence": {
+      "dbProxy": {
+        "endpoint": "127.0.0.1:7800",
+        "failoverEndpoints": ["127.0.0.1:7801"],
+        "authTokenEnv": "TIANGZ_DBPROXY_AUTH_TOKEN",
+        "clientPoolSize": 4,
+        "connectTimeoutMs": 5000,
+        "requestTimeoutMs": 5000,
+        "maxFrameBytes": 8388608
+      }
+    },
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7604 } }
+  },
+  "scenes": [
+    { "name": "login_2", "sceneType": "Login", "ip": "127.0.0.1", "port": 7002 }
+  ],
+  "knownSceneFiles": ["../cluster/known-scenes.json"]
+}

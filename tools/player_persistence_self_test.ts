@@ -15,9 +15,14 @@ import {
 import type { Entity } from "../app/core/runtime/entities";
 import { DbProxyEntityRepository } from "../app/core/persistence/VersionedEntityRepository";
 import { PlayerPersistenceComponent } from "../app/model/mmorpg/persistence/PlayerPersistenceComponent";
-import { InMemoryPlayerRepository } from "../app/model/mmorpg/persistence/PlayerRepository";
+import {
+  EmptyPlayerPersistenceRevisions,
+  InMemoryPlayerRepository,
+} from "../app/model/mmorpg/persistence/PlayerRepository";
 import type {
+  PlayerDomainSaveData,
   PlayerLoadResult,
+  PlayerPersistenceDomain,
   PlayerRepository,
   PlayerSaveData,
   PlayerSaveResult,
@@ -28,6 +33,7 @@ import type {
 import {
   DecodePlayerSaveData,
   EncodePlayerSaveData,
+  ProjectPlayerDomainData,
 } from "../app/model/mmorpg/persistence/PlayerPersistenceCodec";
 import { BuffComponent } from "../app/model/mmorpg/buff/BuffComponent";
 import { ItemComponent } from "../app/model/mmorpg/item/ItemComponent";
@@ -112,22 +118,28 @@ async function testSuccessfulSaveIsIdempotent(): Promise<void> {
   const repository = new InMemoryPlayerRepository();
   const component = new PlayerPersistenceComponent();
   component.__attach(createPlayer() as unknown as Entity);
-  component.__awake(repository, 0n);
+  component.__awake(repository, EmptyPlayerPersistenceRevisions());
 
   const first = component.SaveOnOffline("disconnect");
   const second = component.SaveOnOffline("duplicate-disconnect");
   assert.equal(first, second);
   await Promise.all([first, second]);
-  assert.equal(repository.SaveCount(7001n), 1);
-  assert.equal(repository.Get(7001n)?.reason, "disconnect");
-  assert.equal(component.Revision, 1n);
+  assert.equal(repository.SaveCount(7001n), 5);
+  assert.equal(repository.GetDomain(7001n, "runtime")?.reason, "disconnect");
+  assert.deepEqual(component.Revisions, {
+    inventory: 1n,
+    progression: 1n,
+    quest: 1n,
+    runtime: 1n,
+    wallet: 1n,
+  });
 }
 
 async function testSaveFailureIsVisibleAndIdempotent(): Promise<void> {
   const repository = new FailingPlayerRepository();
   const component = new PlayerPersistenceComponent();
   component.__attach(createPlayer() as unknown as Entity);
-  component.__awake(repository, 0n);
+  component.__awake(repository, EmptyPlayerPersistenceRevisions());
 
   const first = component.SaveOnOffline("shutdown");
   const second = component.SaveOnOffline("duplicate-shutdown");
@@ -191,20 +203,34 @@ class FailingPlayerRepository implements PlayerRepository {
     return undefined;
   }
 
-  Save(_data: PlayerSaveData, _expectedRevision: bigint): Promise<PlayerSaveResult> {
+  SaveDomain(
+    _domain: PlayerPersistenceDomain,
+    _data: PlayerDomainSaveData,
+    _expectedRevision: bigint,
+  ): Promise<PlayerSaveResult> {
     this.saveCount += 1;
     return Promise.reject(new Error("injected repository failure"));
   }
 
   ApplyTransaction(
     _write: PlayerTransactionWrite,
-    _expectedRevision: bigint,
   ): Promise<PlayerTransactionResult> {
     return Promise.reject(new Error("injected repository failure"));
   }
 
   LoadTransaction(
-    _characterId: bigint,
+    _records: readonly { characterId: bigint; domain: PlayerPersistenceDomain }[],
+    _operationId: string,
+  ): PlayerTransactionReceipt | undefined {
+    return undefined;
+  }
+
+  ApplyMultiTransaction(_write: PlayerTransactionWrite): Promise<PlayerTransactionResult> {
+    return Promise.reject(new Error("injected repository failure"));
+  }
+
+  LoadMultiTransaction(
+    _records: readonly { characterId: bigint; domain: PlayerPersistenceDomain }[],
     _operationId: string,
   ): PlayerTransactionReceipt | undefined {
     return undefined;
@@ -217,10 +243,16 @@ function testCodecPreservesBigIntAndRepositoryRejectsStaleRevision(): void {
   assert.equal(decoded.player.numerics[0]?.value, 9_007_199_254_740_993n);
 
   const repository = new InMemoryPlayerRepository();
-  assert.equal(repository.Save(data, 0n).revision, 1n);
+  assert.deepEqual(repository.Save(data), {
+    inventory: 1n,
+    progression: 1n,
+    quest: 1n,
+    runtime: 1n,
+    wallet: 1n,
+  });
   assert.throws(
-    () => repository.Save(data, 0n),
-    /player snapshot revision conflict/,
+    () => repository.SaveDomain("wallet", ProjectPlayerDomainData(data, "wallet"), 0n),
+    /wallet revision conflict/,
   );
 }
 
@@ -229,21 +261,26 @@ function testTransactionReceiptIsIdempotent(): void {
   const data = createSaveData("transaction-test");
   const write: PlayerTransactionWrite = {
     operationId: "quest-reward:transaction-test:5001",
-    data,
+    records: [{
+      domain: "wallet",
+      data: ProjectPlayerDomainData(data, "wallet"),
+      expectedRevision: 0n,
+    }],
     result: new Uint8Array([1, 2, 3]),
   };
-  const applied = repository.ApplyTransaction(write, 0n);
-  const duplicate = repository.ApplyTransaction(write, 0n);
+  const applied = repository.ApplyTransaction(write);
+  const duplicate = repository.ApplyTransaction(write);
   assert.equal(applied.disposition, "applied");
   assert.equal(duplicate.disposition, "duplicate");
-  assert.equal(duplicate.revision, applied.revision);
+  assert.deepEqual(duplicate.revisions, applied.revisions);
+  assert.deepEqual(applied.revisions, [{ characterId: 7001n, domain: "wallet", revision: 1n }]);
   assert.deepEqual(duplicate.result, write.result);
   assert.deepEqual(
-    repository.LoadTransaction(7001n, write.operationId)?.result,
+    repository.LoadTransaction([{ characterId: 7001n, domain: "wallet" }], write.operationId)?.result,
     write.result,
   );
   assert.throws(
-    () => repository.ApplyTransaction({ ...write, result: new Uint8Array([9]) }, 0n),
+    () => repository.ApplyTransaction({ ...write, result: new Uint8Array([9]) }),
     /operation conflict/,
   );
 }

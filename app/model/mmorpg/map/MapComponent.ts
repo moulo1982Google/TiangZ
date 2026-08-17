@@ -104,6 +104,10 @@ const STARTER_PLAYER_ITEM_GRANTS = [
 ] as const;
 const NAVIGATION_OBSTACLE_COMMANDS_PER_TICK = 16;
 const NAVIGATION_OBSTACLE_TILES_PER_TICK = 4;
+const PLAYER_PERIODIC_SNAPSHOT_SWEEP_MS = 1_000;
+const PLAYER_PERIODIC_SNAPSHOT_STARTS_PER_SWEEP = 2;
+const PLAYER_PERIODIC_SNAPSHOT_MAX_IN_FLIGHT = 4;
+const PLAYER_FINAL_FLUSH_CONCURRENCY = 8;
 const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 
 interface PendingPlayerEntry {
@@ -184,6 +188,9 @@ export class MapComponent extends Component<[
     readonly actorInstanceId: number;
     readonly entities: readonly MapEntitySnapshot[];
   }>();
+  private nextPeriodicSnapshotSweepAtMs = 0;
+  private periodicSnapshotCursor = 0;
+  private readonly periodicSnapshotInFlight = new Set<number>();
   private readonly gateRouteIds = new Map<string, number>();
   private readonly gateNamesByRouteId = new Map<number, string>();
   // AOI脏状态批次已经带着UnitId；缓存稳定的本地Gate归属，避免每个批次再次查Unit和组件。
@@ -553,6 +560,7 @@ export class MapComponent extends Component<[
     if (this.stopping) return;
     this.PumpPlayerEntries();
     this.UpdateNavigationObstacles();
+    this.SchedulePeriodicSnapshots();
     if (this.units.Count === 0) return;
     const fixedDeltaMs = TimeSystem.Instance.FixedDeltaTime;
     this.serverTick += 1;
@@ -600,6 +608,56 @@ export class MapComponent extends Component<[
         routeBroadcast.itemCount,
       ).catch((error) => {
         this.logger.error("map AOI movement publish failed", { error });
+      });
+    }
+  }
+
+  /**
+   * 每秒最多启动两个玩家周期快照，并把实际捕获/保存送入PlayerUnit ordered mailbox。
+   * 地图只维护一个游标和有限在途集合，不为每个玩家创建Timer或Promise链。
+   *
+   * Starts at most two periodic player snapshots per second and routes actual
+   * capture/save work through each PlayerUnit ordered mailbox. The map owns one
+   * cursor and a bounded in-flight set instead of per-player timers.
+   */
+  private SchedulePeriodicSnapshots(): void {
+    const nowMs = TimeSystem.Instance.ServerNow;
+    if (nowMs < this.nextPeriodicSnapshotSweepAtMs) return;
+    this.nextPeriodicSnapshotSweepAtMs = nowMs + PLAYER_PERIODIC_SNAPSHOT_SWEEP_MS;
+    if (this.periodicSnapshotInFlight.size >= PLAYER_PERIODIC_SNAPSHOT_MAX_IN_FLIGHT) return;
+    const players = this.units.GetAll(PlayerUnit);
+    if (players.length === 0) return;
+    let inspected = 0;
+    let started = 0;
+    while (
+      inspected < players.length &&
+      started < PLAYER_PERIODIC_SNAPSHOT_STARTS_PER_SWEEP &&
+      this.periodicSnapshotInFlight.size < PLAYER_PERIODIC_SNAPSHOT_MAX_IN_FLIGHT
+    ) {
+      const index = this.periodicSnapshotCursor % players.length;
+      this.periodicSnapshotCursor = (index + 1) % players.length;
+      inspected += 1;
+      const player = players[index];
+      if (this.periodicSnapshotInFlight.has(player.UnitId)) continue;
+      const persistence = player.GetComponent(PlayerPersistenceComponent);
+      if (!persistence.IsPeriodicSaveDue(nowMs)) continue;
+      this.periodicSnapshotInFlight.add(player.UnitId);
+      started += 1;
+      this.DomainScene().Tasks.Spawn(`periodic-player-snapshot:${player.UnitId}`, async () => {
+        try {
+          await this.RunPlayerMailbox(player, (current) =>
+            current.GetComponent(PlayerPersistenceComponent).SavePeriodic(nowMs)
+          );
+        } catch (error) {
+          this.logger.error("periodic player snapshot failed", {
+            account: player.Account,
+            characterId: player.CharacterId.toString(),
+            unitId: player.UnitId,
+            error,
+          });
+        } finally {
+          this.periodicSnapshotInFlight.delete(player.UnitId);
+        }
       });
     }
   }
@@ -687,7 +745,13 @@ export class MapComponent extends Component<[
           completedQuestConfigIds: snapshot.completedQuestConfigIds,
         } satisfies QuestTransferState],
         [CurrencyComponent, snapshot.gold],
-        [PlayerPersistenceComponent, snapshot.persistenceRevision],
+        [PlayerPersistenceComponent, {
+          inventory: snapshot.inventoryRevision,
+          progression: snapshot.progressionRevision,
+          quest: snapshot.questRevision,
+          runtime: snapshot.runtimeRevision,
+          wallet: snapshot.walletRevision,
+        }],
       ]),
     };
     return this.PrepareTransferredPlayer(
@@ -741,10 +805,17 @@ export class MapComponent extends Component<[
     loaded?: PlayerLoadResult,
   ): PlayerUnit {
     if (transfer && loaded) throw new Error("player creation cannot combine transfer and persistence restore");
-    if (loaded && (loaded.data.player.account !== request.account || loaded.data.player.characterId !== request.characterId)) {
-      throw new Error(
-        `loaded player identity mismatch: ${loaded.data.player.account}/${loaded.data.player.characterId} != ${request.account}/${request.characterId}`,
-      );
+    const loadedIdentities = loaded
+      ? [loaded.data.inventory, loaded.data.wallet, loaded.data.progression, loaded.data.quest, loaded.data.runtime?.player].filter(
+        (identity): identity is NonNullable<typeof identity> => identity !== undefined,
+      )
+      : [];
+    for (const loadedIdentity of loadedIdentities) {
+      if (loadedIdentity.account !== request.account || loadedIdentity.characterId !== request.characterId) {
+        throw new Error(
+          `loaded player identity mismatch: ${loadedIdentity.account}/${loadedIdentity.characterId} != ${request.account}/${request.characterId}`,
+        );
+      }
     }
     const playerConfig = GameConfigs.PlayerConfig.Get(DEMO_PLAYER_CONFIG_ID);
     const player = this.units.Create(unitId, PlayerUnit, {
@@ -804,7 +875,7 @@ export class MapComponent extends Component<[
         // must always keep the authoritative inventory snapshot unchanged.
         player.GetComponent(ItemComponent).GrantItems(STARTER_PLAYER_ITEM_GRANTS);
       }
-      player.AddComponent(CurrencyComponent, loaded?.data.player.gold ?? transfer?.components.get(CurrencyComponent) as bigint | undefined ?? 0n);
+      player.AddComponent(CurrencyComponent, loaded?.data.wallet?.gold ?? transfer?.components.get(CurrencyComponent) as bigint | undefined ?? 0n);
       // 平A状态不随地图传送恢复，目标地图创建新的默认CombatComponent。 / Auto-attack is not transferred; the target map gets a fresh default component.
       player.AddComponent(CombatComponent);
       // 仇恨和战斗状态是地图运行态，不跨地图迁移；新地图从脱战状态开始回蓝。
@@ -814,7 +885,13 @@ export class MapComponent extends Component<[
       // Unit只持有技能状态；地图上的SkillMapComponent统一以10Hz推进。 / The Unit owns skill state while one map SkillMapComponent advances it at 10 Hz.
       player.AddComponent(SkillComponent);
       player.AddComponent(QuestComponent);
-      player.AddComponent(PlayerPersistenceComponent, this.repository, loaded?.revision ?? 0n);
+      player.AddComponent(PlayerPersistenceComponent, this.repository, loaded?.revisions ?? {
+        inventory: 0n,
+        progression: 0n,
+        quest: 0n,
+        runtime: 0n,
+        wallet: 0n,
+      });
       player.AddComponent(UnitGateComponent, request.gateName);
       if (transfer) player.RestoreTransfer(transfer);
       if (loaded) this.RestorePersistedPlayer(player, position, loaded);
@@ -841,30 +918,44 @@ export class MapComponent extends Component<[
     position: PositionComponent,
     loaded: PlayerLoadResult,
   ): void {
-    const data = loaded.data;
-    const transfer: EntityTransferSnapshot = {
-      components: new Map<ComponentCtor, unknown>([
-        [PositionComponent, {
-          speedCellsPerSecond: data.player.speedCellsPerSecond,
-          facing: data.player.facing,
-          alive: data.player.alive,
-        }],
-        [NumericComponent, data.player.numerics.map((numeric) => ({
-          unitId: player.UnitId,
-          numericType: numeric.numericType,
-          value: numeric.value,
-        }))],
-        [ItemComponent, data.items],
-        [BuffComponent, data.buffs.map(({ source, ...buff }) => ({
-          ...buff,
-          sourceUnitId: source === "self" ? player.UnitId : 0,
-        }))],
-        [SkillComponent, data.skill],
-        [QuestComponent, data.quests],
-        [CurrencyComponent, data.player.gold],
-      ]),
-    };
-    player.RestoreTransfer(transfer);
+    const components = new Map<ComponentCtor, unknown>();
+    const inventory = loaded.data.inventory;
+    if (inventory) {
+      components.set(ItemComponent, inventory.items);
+    }
+    const wallet = loaded.data.wallet;
+    if (wallet) {
+      components.set(CurrencyComponent, wallet.gold);
+    }
+    const progression = loaded.data.progression;
+    if (progression) {
+      components.set(NumericComponent, progression.numerics.map((numeric) => ({
+        unitId: player.UnitId,
+        numericType: numeric.numericType,
+        value: numeric.value,
+      })));
+    }
+    const quest = loaded.data.quest;
+    if (quest) {
+      components.set(QuestComponent, quest.quests);
+    }
+    const runtime = loaded.data.runtime;
+    if (runtime) {
+      components.set(PositionComponent, {
+        speedCellsPerSecond: runtime.player.speedCellsPerSecond,
+        facing: runtime.player.facing,
+        alive: runtime.player.alive,
+      });
+      components.set(BuffComponent, runtime.buffs.map(({ source, ...buff }) => ({
+        ...buff,
+        sourceUnitId: source === "self" ? player.UnitId : 0,
+      })));
+      components.set(SkillComponent, runtime.skill);
+    }
+    player.RestoreTransfer({ components });
+
+    if (!runtime) return;
+    const persisted = runtime.player;
 
     // Starter尚未提供墓地、灵魂或玩家复活流程。持久化死亡状态如果原样恢复，会让该角色
     // 永久无法移动、施法或重新吸引怪物；因此只在“重新创建PlayerUnit”的进图边界满血复活，
@@ -874,7 +965,7 @@ export class MapComponent extends Component<[
     // new-PlayerUnit admission boundary revives it at full HP and keeps the map
     // spawn authoritative. Production games should replace this Demo policy
     // with an explicit Revive domain operation.
-    if (!data.player.alive) {
+    if (!persisted.alive) {
       const native = player.GetComponent(NativeUnitRef);
       const numeric = player.GetComponent(NumericComponent);
       native.alive = 1;
@@ -890,13 +981,13 @@ export class MapComponent extends Component<[
     }
 
     if (
-      data.player.mapId !== this.mapId ||
-      data.player.mapInstanceId !== this.mapInstanceId
+      persisted.mapId !== this.mapId ||
+      persisted.mapInstanceId !== this.mapInstanceId
     ) {
       this.logger.info("player state restored at requested map spawn", {
         account: player.Account,
-        savedMapId: data.player.mapId,
-        savedMapInstanceId: data.player.mapInstanceId.toString(),
+        savedMapId: persisted.mapId,
+        savedMapInstanceId: persisted.mapInstanceId.toString(),
         targetMapId: this.mapId,
         targetMapInstanceId: this.mapInstanceId.toString(),
       });
@@ -905,27 +996,27 @@ export class MapComponent extends Component<[
 
     if (this.config.spatialMode === SpatialMode.Grid2D) {
       position.SetGridWorldPosition(
-        data.player.x,
-        data.player.y,
-        data.player.z,
-        data.player.yaw,
+        persisted.x,
+        persisted.y,
+        persisted.z,
+        persisted.yaw,
       );
     } else {
       const projected = this.ProjectPosition({
-        x: data.player.x,
-        y: data.player.y,
-        z: data.player.z,
+        x: persisted.x,
+        y: persisted.y,
+        z: persisted.z,
       });
       if (!projected) {
         this.logger.warn("persisted player position is outside NavMesh; using spawn", {
           account: player.Account,
-          x: data.player.x,
-          y: data.player.y,
-          z: data.player.z,
+          x: persisted.x,
+          y: persisted.y,
+          z: persisted.z,
         });
         return;
       }
-      position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, data.player.yaw);
+      position.SetNavMeshWorldPosition(projected.x, projected.y, projected.z, persisted.yaw);
     }
   }
 
@@ -1412,11 +1503,10 @@ export class MapComponent extends Component<[
       }
     }
 
-    const results = await Promise.allSettled(
-      players.map((player) => this.OfflinePlayerAndBroadcast(player, reason)),
-    );
-    const failures = results.filter(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
+    const failures = await settleBounded(
+      players,
+      PLAYER_FINAL_FLUSH_CONCURRENCY,
+      (player) => this.OfflinePlayerAndBroadcast(player, reason),
     );
     logger.info("map players stopped", {
       playerCount: players.length,
@@ -1425,7 +1515,7 @@ export class MapComponent extends Component<[
     });
     if (failures.length > 0) {
       throw new AggregateError(
-        failures.map((failure) => failure.reason),
+        failures,
         `map ${this.mapId} failed to save ${failures.length} player(s)`,
       );
     }
@@ -2113,4 +2203,28 @@ function toSkillCastProtocol(state: SkillCastState): G2C_SkillCastState {
     queuedTargetUnitId: state.queuedTargetUnitId,
     queueDeadlineAtMs: BigInt(Math.max(0, Math.floor(state.queueDeadlineAtMs))),
   };
+}
+
+/** 以固定worker数量执行最终Flush并收集全部错误；不会因单个失败跳过其他玩家。 / Runs final flushes with a fixed worker count and collects every error without skipping players after one failure. */
+async function settleBounded<TValue>(
+  values: readonly TValue[],
+  concurrency: number,
+  operation: (value: TValue) => Promise<void>,
+): Promise<unknown[]> {
+  const failures: unknown[] = [];
+  let nextIndex = 0;
+  const worker = async (): Promise<void> => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      try {
+        await operation(values[index]);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  };
+  const workerCount = Math.min(values.length, Math.max(1, Math.floor(concurrency)));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return failures;
 }

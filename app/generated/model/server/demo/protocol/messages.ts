@@ -2201,6 +2201,11 @@ export interface PlayerTransferSnapshot {
   persistenceRevision: bigint;
   characterId: bigint;
   gold: bigint;
+  progressionRevision: bigint;
+  runtimeRevision: bigint;
+  walletRevision: bigint;
+  inventoryRevision: bigint;
+  questRevision: bigint;
 }
 
 export const PlayerTransferSnapshotCodec = {
@@ -2228,6 +2233,11 @@ export const PlayerTransferSnapshotCodec = {
       persistenceRevision: 0n,
       characterId: 0n,
       gold: 0n,
+      progressionRevision: 0n,
+      runtimeRevision: 0n,
+      walletRevision: 0n,
+      inventoryRevision: 0n,
+      questRevision: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -2294,6 +2304,21 @@ export const PlayerTransferSnapshotCodec = {
       else if (tag.fieldNo === 22 && tag.wireType === 0) {
         value.gold = reader.uint64();
       }
+      else if (tag.fieldNo === 24 && tag.wireType === 0) {
+        value.progressionRevision = reader.uint64();
+      }
+      else if (tag.fieldNo === 25 && tag.wireType === 0) {
+        value.runtimeRevision = reader.uint64();
+      }
+      else if (tag.fieldNo === 26 && tag.wireType === 0) {
+        value.walletRevision = reader.uint64();
+      }
+      else if (tag.fieldNo === 27 && tag.wireType === 0) {
+        value.inventoryRevision = reader.uint64();
+      }
+      else if (tag.fieldNo === 28 && tag.wireType === 0) {
+        value.questRevision = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -2324,6 +2349,11 @@ export const PlayerTransferSnapshotCodec = {
     if (value.persistenceRevision !== undefined) writer.uint64(20, value.persistenceRevision);
     if (value.characterId !== undefined) writer.uint64(21, value.characterId);
     if (value.gold !== undefined) writer.uint64(22, value.gold);
+    if (value.progressionRevision !== undefined) writer.uint64(24, value.progressionRevision);
+    if (value.runtimeRevision !== undefined) writer.uint64(25, value.runtimeRevision);
+    if (value.walletRevision !== undefined) writer.uint64(26, value.walletRevision);
+    if (value.inventoryRevision !== undefined) writer.uint64(27, value.inventoryRevision);
+    if (value.questRevision !== undefined) writer.uint64(28, value.questRevision);
     return writer.finish();
   },
 };

@@ -1,22 +1,28 @@
-import {
-  Component,
-  component,
-  transferable,
-  type ITransfer,
-} from "../../../core/public";
+import { Component, component, transferable, type ITransfer } from "../../../core/public";
 import { BuffComponent } from "../buff/BuffComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
 import { QuestComponent } from "../quest/QuestComponent";
 import { SkillComponent } from "../skill/SkillComponent";
-import type { PlayerRepository } from "./PlayerRepository";
-import type {
-  PlayerSaveData,
-  PlayerMultiTransactionReceipt,
-  PlayerMultiTransactionResult,
-  PlayerTransactionReceipt,
-  PlayerTransactionResult,
+import { ProjectPlayerDomainData } from "./PlayerPersistenceCodec";
+import {
+  CharacterIdOfDomainData,
+  ClonePlayerPersistenceRevisions,
+  EmptyPlayerPersistenceRevisions,
+  PLAYER_PERSISTENCE_DOMAINS,
+  type PlayerMultiTransactionReceipt,
+  type PlayerMultiTransactionResult,
+  type PlayerPersistenceDomain,
+  type PlayerPersistenceRevisions,
+  type PlayerRepository,
+  type PlayerSaveData,
+  type PlayerTransactionReceipt,
+  type PlayerTransactionRecordKey,
+  type PlayerTransactionResult,
 } from "./PlayerRepository";
+
+export const PLAYER_PERIODIC_SNAPSHOT_INTERVAL_MS = 30_000;
+const PLAYER_PERIODIC_RETRY_MS = 5_000;
 
 export interface PlayerSaveOverrides {
   readonly numerics?: PlayerSaveData["player"]["numerics"];
@@ -30,71 +36,65 @@ export interface PlayerSaveOverrides {
 export interface PlayerMultiTransactionParticipant {
   readonly persistence: PlayerPersistenceComponent;
   readonly data: PlayerSaveData;
+  readonly domains: readonly PlayerPersistenceDomain[];
+}
+
+export interface PlayerMultiTransactionReceiptParticipant {
+  readonly persistence: PlayerPersistenceComponent;
+  readonly domains: readonly PlayerPersistenceDomain[];
 }
 
 @component()
 @transferable()
 export class PlayerPersistenceComponent extends Component<[
   repository: PlayerRepository,
-  revision: bigint,
-]> implements ITransfer<bigint> {
+  revisions: PlayerPersistenceRevisions,
+]> implements ITransfer<PlayerPersistenceRevisions> {
   private repository!: PlayerRepository;
-  private revision = 0n;
-  private savePromise: Promise<void> | undefined;
+  private revisions: PlayerPersistenceRevisions = EmptyPlayerPersistenceRevisions();
+  private finalSavePromise: Promise<void> | undefined;
+  private nextPeriodicSaveAtMs = 0;
   private readonly uncertainOperations = new Set<string>();
 
-  /** 保存地图工厂选定的Repository及已加载revision；revision随Unit迁移而Repository引用不迁移。 / Captures the factory-selected Repository and loaded revision; the revision transfers with the Unit while the Repository reference does not. */
-  protected override Awake(repository: PlayerRepository, revision: bigint): void {
-    if (revision < 0n) throw new Error(`player persistence revision must be non-negative: ${revision}`);
+  /** 保存Repository和领域revision向量；跨图只迁移revision，不迁移Repository引用。 / Captures the Repository and domain revision vector; map transfer moves revisions but never the Repository reference. */
+  protected override Awake(repository: PlayerRepository, revisions: PlayerPersistenceRevisions): void {
+    validateRevisions(revisions);
     this.repository = repository;
-    this.revision = revision;
+    this.revisions = ClonePlayerPersistenceRevisions(revisions);
+    const characterId = this.GetParent<PlayerUnit>().CharacterId;
+    this.nextPeriodicSaveAtMs = Date.now() + periodicJitter(characterId);
   }
 
-  get Revision(): bigint {
-    return this.revision;
+  Revision(domain: PlayerPersistenceDomain): bigint {
+    return this.revisions[domain];
   }
 
-  CaptureTransfer(): bigint {
-    return this.revision;
+  get Revisions(): PlayerPersistenceRevisions {
+    return ClonePlayerPersistenceRevisions(this.revisions);
   }
 
-  RestoreTransfer(revision: bigint): void {
-    if (revision < 0n) throw new Error(`transferred persistence revision must be non-negative: ${revision}`);
-    this.revision = revision;
+  CaptureTransfer(): PlayerPersistenceRevisions {
+    return this.Revisions;
   }
 
-  /**
-   * 把已恢复的Unit纯数据交给无DBProxy目标进程的内存Repository，保证跨进程迁移后仍能继续CAS。
-   * 配置了DBProxy时该方法不产生写入，数据库中的权威快照不会被迁移过程覆盖。
-   *
-   * Hands restored Unit values to an in-memory Repository in a no-DBProxy target
-   * so CAS can continue after cross-process transfer. With DBProxy configured it
-   * performs no write and never overwrites durable authority during transfer.
-   */
+  RestoreTransfer(revisions: PlayerPersistenceRevisions): void {
+    validateRevisions(revisions);
+    this.revisions = ClonePlayerPersistenceRevisions(revisions);
+  }
+
+  /** 无DBProxy迁移把五个领域及revision向量交给目标内存Repository。 / A no-DBProxy transfer hands all five domains and their revisions to the target in-memory Repository. */
   AdoptTransfer(): void {
     const adopt = this.repository.AdoptTransfer;
     if (!adopt) return;
-    adopt.call(this.repository, this.Capture("map-transfer"), this.revision);
+    adopt.call(this.repository, this.Capture("map-transfer"), this.revisions);
   }
 
-  /**
-   * 捕获完整玩家纯数据，可用经过预检但尚未应用的items/quests覆盖当前值。
-   * 本函数不修改Entity，也不跨await；事务业务必须先在同一同步栈中完成全部规划。
-   *
-   * Captures complete player value data and may substitute preflighted items or
-   * quests that are not applied yet. It never mutates Entities or crosses an
-   * await; transactional gameplay must finish planning in one synchronous stack.
-   */
+  /** 同步捕获完整玩家值；事务通过domains参数决定实际持久化哪些字段。 / Synchronously captures aggregate player values; transaction domains decide which fields are actually persisted. */
   Capture(reason: string, overrides: PlayerSaveOverrides = {}): PlayerSaveData {
     if (reason.trim().length === 0) throw new Error("player persistence reason is required");
     const player = this.GetParent<PlayerUnit>();
     const snapshot = player.Snapshot();
-    const {
-      gateName: _gateName,
-      unitId: _unitId,
-      numerics,
-      ...persistent
-    } = snapshot;
+    const { gateName: _gateName, unitId: _unitId, numerics, ...persistent } = snapshot;
     return {
       player: {
         ...persistent,
@@ -102,10 +102,7 @@ export class PlayerPersistenceComponent extends Component<[
         numerics: overrides.numerics ?? numerics.map(({ numericType, value }) => ({ numericType, value })),
       },
       items: overrides.items ?? player.GetComponent(ItemComponent).Snapshot(),
-      buffs: overrides.buffs ?? player.GetComponent(BuffComponent).CaptureTransfer().map(({
-        sourceUnitId,
-        ...buff
-      }) => ({
+      buffs: overrides.buffs ?? player.GetComponent(BuffComponent).CaptureTransfer().map(({ sourceUnitId, ...buff }) => ({
         ...buff,
         source: sourceUnitId === player.UnitId ? "self" as const : "detached" as const,
       })),
@@ -115,37 +112,29 @@ export class PlayerPersistenceComponent extends Component<[
     };
   }
 
-  /**
-   * 把关键业务的操作后快照交给Repository可靠提交；成功前不改变本地revision。
-   * Handler和业务Component不得直接访问DBProxy Transport，否则会绕过这一所有权边界。
-   *
-   * Reliably commits a critical post-operation snapshot through the Repository
-   * without changing local revision before success. Handlers and gameplay
-   * Components must never bypass this owner by calling DBProxy Transport.
-   */
+  /** 只提交调用方声明的领域记录；成功前不修改任何本地revision。 / Commits only declared domain records and changes no local revision before success. */
   async ApplyTransaction(
     operationId: string,
+    domains: readonly PlayerPersistenceDomain[],
     data: PlayerSaveData,
     result: Uint8Array,
   ): Promise<PlayerTransactionResult> {
-    const player = this.GetParent<PlayerUnit>();
-    if (data.player.account !== player.Account || data.player.characterId !== player.CharacterId) {
-      throw new Error(
-        `player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`,
-      );
-    }
+    this.requireTransactionIdentity(data);
+    const normalizedDomains = normalizeDomains(domains);
     try {
       const committed = await Promise.resolve(this.repository.ApplyTransaction({
         operationId,
-        data,
+        records: normalizedDomains.map((domain) => ({
+          domain,
+          data: ProjectPlayerDomainData(data, domain),
+          expectedRevision: this.revisions[domain],
+        })),
         result: result.slice(),
-      }, this.revision));
+      }));
+      this.applyCommittedRevisions(committed.revisions);
       this.uncertainOperations.delete(operationId);
-      this.revision = committed.revision;
-      return { ...committed, result: committed.result.slice() };
+      return cloneTransactionResult(committed);
     } catch (error) {
-      // 连接失败无法证明PostgreSQL没有提交；保留不确定标记，让同一Actor的重试先查回执。
-      // A transport failure cannot prove PostgreSQL did not commit; retain an uncertainty marker so this Actor checks the receipt before retrying.
       this.uncertainOperations.add(operationId);
       throw error;
     }
@@ -155,73 +144,51 @@ export class PlayerPersistenceComponent extends Component<[
     return this.uncertainOperations.has(operationId);
   }
 
-  /** 读取已提交事务的原始业务结果；仅用于确定性operationId的重试恢复。 / Loads an original committed result for retry recovery with a deterministic operationId. */
-  async LoadTransaction(operationId: string): Promise<PlayerTransactionReceipt | undefined> {
+  /** 查询指定领域集合的原始业务回执；调用方必须与首次提交使用相同集合。 / Loads the original receipt for the exact domain set used by the first commit. */
+  async LoadTransaction(
+    operationId: string,
+    domains: readonly PlayerPersistenceDomain[],
+  ): Promise<PlayerTransactionReceipt | undefined> {
     const player = this.GetParent<PlayerUnit>();
-    const receipt = await Promise.resolve(
-      this.repository.LoadTransaction(player.CharacterId, operationId),
-    );
+    const keys = normalizeDomains(domains).map((domain) => ({ characterId: player.CharacterId, domain }));
+    const receipt = await Promise.resolve(this.repository.LoadTransaction(keys, operationId));
     if (!receipt) return undefined;
+    this.applyCommittedRevisions(receipt.revisions);
     this.uncertainOperations.delete(operationId);
-    if (receipt.revision > this.revision) this.revision = receipt.revision;
-    return { revision: receipt.revision, result: receipt.result.slice() };
+    return cloneTransactionReceipt(receipt);
   }
 
-  /**
-   * 通过一个共享Repository原子提交多个在线玩家；调用者必须在await前完成全部纯值规划。
-   * 任一身份、Repository或revision不一致都会在写入前失败，成功后才同步推进每个本地组件的revision。
-   *
-   * Atomically commits multiple online players through one shared Repository.
-   * Callers must finish all value planning before await. Identity, Repository,
-   * or revision mismatches fail before writing; local revisions advance only
-   * after the shared commit succeeds.
-   */
+  /** 持有全部参与者ordered mailbox时原子提交跨玩家领域记录。 / Atomically commits cross-player domain records while every participant ordered mailbox is held. */
   async ApplyMultiTransaction(
     operationId: string,
     participants: readonly PlayerMultiTransactionParticipant[],
     result: Uint8Array,
   ): Promise<PlayerMultiTransactionResult> {
     const normalized = normalizeParticipants(participants);
-    for (const participant of normalized) {
+    const records = normalized.flatMap((participant) => {
       participant.persistence.requireTransactionIdentity(participant.data);
       if (participant.persistence.repository !== this.repository) {
         throw new Error("player multi transaction participants must share one Repository");
       }
-    }
+      return normalizeDomains(participant.domains).map((domain) => ({
+        domain,
+        data: ProjectPlayerDomainData(participant.data, domain),
+        expectedRevision: participant.persistence.revisions[domain],
+      }));
+    });
     try {
       const committed = await Promise.resolve(this.repository.ApplyMultiTransaction({
         operationId,
-        entries: normalized.map((participant) => ({
-          data: participant.data,
-          expectedRevision: participant.persistence.revision,
-        })),
+        records,
         result: result.slice(),
       }));
-      const revisions = new Map(
-        committed.revisions.map((entry) => [entry.characterId, entry.revision]),
-      );
       for (const participant of normalized) {
-        const revision = revisions.get(participant.data.player.characterId);
-        if (revision === undefined) {
-          throw new Error(
-            `player multi transaction omitted revision: ${participant.data.player.characterId}`,
-          );
-        }
-        participant.persistence.revision = revision;
+        participant.persistence.applyCommittedRevisions(committed.revisions);
         participant.persistence.uncertainOperations.delete(operationId);
       }
-      return {
-        disposition: committed.disposition,
-        revisions: committed.revisions.map((entry) => ({ ...entry })),
-        result: committed.result.slice(),
-      };
+      return cloneTransactionResult(committed);
     } catch (error) {
-      // 任一参与者都无法独立判断事务是否提交；全部标记不确定，恢复必须查询同一多记录回执。
-      // No participant can independently prove whether the transaction committed;
-      // mark all uncertain and recover only through the shared multi-record receipt.
-      for (const participant of normalized) {
-        participant.persistence.uncertainOperations.add(operationId);
-      }
+      for (const participant of normalized) participant.persistence.uncertainOperations.add(operationId);
       throw error;
     }
   }
@@ -233,112 +200,139 @@ export class PlayerPersistenceComponent extends Component<[
     return participants.some((participant) => participant.uncertainOperations.has(operationId));
   }
 
-  /** 查询共享多记录回执并同步全部参与者revision；缺少任一角色都视为契约错误。 / Loads a shared multi-record receipt and synchronizes every participant revision, rejecting incomplete receipts. */
+  /** 查询共享跨记录回执并同步每个在线参与者的领域revision。 / Loads a shared cross-record receipt and synchronizes each online participant's domain revisions. */
   async LoadMultiTransaction(
     operationId: string,
-    participants: readonly PlayerPersistenceComponent[],
+    participants: readonly PlayerMultiTransactionReceiptParticipant[],
   ): Promise<PlayerMultiTransactionReceipt | undefined> {
-    const normalized = normalizePersistenceComponents(participants);
+    const normalized = normalizeReceiptParticipants(participants);
+    const keys: PlayerTransactionRecordKey[] = [];
     for (const participant of normalized) {
-      if (participant.repository !== this.repository) {
+      if (participant.persistence.repository !== this.repository) {
         throw new Error("player multi transaction participants must share one Repository");
       }
+      const characterId = participant.persistence.GetParent<PlayerUnit>().CharacterId;
+      for (const domain of normalizeDomains(participant.domains)) keys.push({ characterId, domain });
     }
-    const characterIds = normalized.map((participant) => participant.GetParent<PlayerUnit>().CharacterId);
-    const receipt = await Promise.resolve(
-      this.repository.LoadMultiTransaction(characterIds, operationId),
-    );
+    const receipt = await Promise.resolve(this.repository.LoadMultiTransaction(keys, operationId));
     if (!receipt) return undefined;
-    const revisions = new Map(receipt.revisions.map((entry) => [entry.characterId, entry.revision]));
     for (const participant of normalized) {
-      const characterId = participant.GetParent<PlayerUnit>().CharacterId;
-      const revision = revisions.get(characterId);
-      if (revision === undefined) {
-        throw new Error(`player multi transaction receipt omitted revision: ${characterId}`);
-      }
-      if (revision > participant.revision) participant.revision = revision;
-      participant.uncertainOperations.delete(operationId);
+      participant.persistence.applyCommittedRevisions(receipt.revisions);
+      participant.persistence.uncertainOperations.delete(operationId);
     }
-    return {
-      revisions: receipt.revisions.map((entry) => ({ ...entry })),
-      result: receipt.result.slice(),
-    };
+    return cloneTransactionReceipt(receipt);
   }
 
-  /**
-   * 在断线、踢下线和进程停机路径中只保存玩家一次。
-   * 第一个 reason 生效，后续调用者等待同一个 Promise。
-   * 踢人 Handler 不可直接调用 Repository，否则会绕过这个幂等边界。
-   *
-   * Saves the player exactly once across disconnect, kick, and process stop.
-   * The first reason wins and all later callers await the same Promise. Do not
-   * call the Repository directly from kick handlers because that bypasses this
-   * idempotency boundary and can persist the same Unit multiple times.
-   */
+  IsPeriodicSaveDue(nowMs: number): boolean {
+    return !this.finalSavePromise && nowMs >= this.nextPeriodicSaveAtMs;
+  }
+
+  /** ordered mailbox内可靠保存五个领域；单个领域成功后立即推进其revision，后续失败可安全重试。 / Reliably saves five domains inside the ordered mailbox, advancing each successful revision so a later failure can retry safely. */
+  async SavePeriodic(nowMs: number): Promise<void> {
+    this.nextPeriodicSaveAtMs = nowMs + PLAYER_PERIODIC_SNAPSHOT_INTERVAL_MS;
+    try {
+      await this.SaveSnapshot("periodic");
+    } catch (error) {
+      this.nextPeriodicSaveAtMs = nowMs + PLAYER_PERIODIC_RETRY_MS;
+      throw error;
+    }
+  }
+
+  /** 断线、踢下线和停机只执行一次最终Flush，重复调用共享Promise。 / Disconnect, kick, and shutdown execute one final flush and share its Promise. */
   SaveOnOffline(reason: string): Promise<void> {
-    if (this.savePromise) return this.savePromise;
+    if (this.finalSavePromise) return this.finalSavePromise;
     const player = this.GetParent<PlayerUnit>();
-    this.savePromise = Promise.resolve()
-      .then(() => {
-        const data = this.Capture(reason);
-        return Promise.resolve(this.repository.Save(data, this.revision));
-      })
-      .then((result) => {
-        this.revision = result.revision;
-      })
-      .then(() => {
-        player.logger.info("player data saved", {
-          account: player.Account,
-          unitId: player.UnitId,
-          reason,
-          revision: this.revision.toString(),
-        });
+    this.finalSavePromise = this.SaveSnapshot(reason).then(() => {
+      player.logger.info("player domains saved", {
+        account: player.Account,
+        unitId: player.UnitId,
+        reason,
+        revisions: revisionLog(this.revisions),
       });
-    return this.savePromise;
+    });
+    return this.finalSavePromise;
+  }
+
+  private async SaveSnapshot(reason: string): Promise<void> {
+    const data = this.Capture(reason);
+    for (const domain of PLAYER_PERSISTENCE_DOMAINS) {
+      const saved = await Promise.resolve(this.repository.SaveDomain(
+        domain,
+        ProjectPlayerDomainData(data, domain),
+        this.revisions[domain],
+      ));
+      this.revisions[domain] = saved.revision;
+    }
+  }
+
+  private applyCommittedRevisions(revisions: readonly { characterId: bigint; domain: PlayerPersistenceDomain; revision: bigint }[]): void {
+    const characterId = this.GetParent<PlayerUnit>().CharacterId;
+    for (const revision of revisions) {
+      if (revision.characterId !== characterId) continue;
+      if (revision.revision > this.revisions[revision.domain]) this.revisions[revision.domain] = revision.revision;
+    }
   }
 
   private requireTransactionIdentity(data: PlayerSaveData): void {
     const player = this.GetParent<PlayerUnit>();
     if (data.player.account !== player.Account || data.player.characterId !== player.CharacterId) {
-      throw new Error(
-        `player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`,
-      );
+      throw new Error(`player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`);
     }
   }
 }
 
-function normalizeParticipants(
-  participants: readonly PlayerMultiTransactionParticipant[],
-): readonly PlayerMultiTransactionParticipant[] {
+function normalizeDomains(domains: readonly PlayerPersistenceDomain[]): readonly PlayerPersistenceDomain[] {
+  const normalized = [...new Set(domains)].sort();
+  if (normalized.length === 0) throw new Error("player transaction requires at least one persistence domain");
+  return normalized;
+}
+
+function normalizeParticipants(participants: readonly PlayerMultiTransactionParticipant[]): readonly PlayerMultiTransactionParticipant[] {
   if (participants.length < 2) throw new Error("player multi transaction requires at least two participants");
-  const normalized = [...participants].sort((left, right) => compareBigInt(
+  return [...participants].sort((left, right) => compareBigInt(
     left.data.player.characterId,
     right.data.player.characterId,
   ));
-  for (let index = 1; index < normalized.length; index += 1) {
-    if (normalized[index - 1].data.player.characterId === normalized[index].data.player.characterId) {
-      throw new Error(`duplicate player multi transaction participant: ${normalized[index].data.player.characterId}`);
-    }
-  }
-  return normalized;
 }
 
-function normalizePersistenceComponents(
-  participants: readonly PlayerPersistenceComponent[],
-): readonly PlayerPersistenceComponent[] {
+function normalizeReceiptParticipants(
+  participants: readonly PlayerMultiTransactionReceiptParticipant[],
+): readonly PlayerMultiTransactionReceiptParticipant[] {
   if (participants.length < 2) throw new Error("player multi transaction requires at least two participants");
-  const normalized = [...participants].sort((left, right) => compareBigInt(
-    left.GetParent<PlayerUnit>().CharacterId,
-    right.GetParent<PlayerUnit>().CharacterId,
+  return [...participants].sort((left, right) => compareBigInt(
+    left.persistence.GetParent<PlayerUnit>().CharacterId,
+    right.persistence.GetParent<PlayerUnit>().CharacterId,
   ));
-  for (let index = 1; index < normalized.length; index += 1) {
-    const previous = normalized[index - 1].GetParent<PlayerUnit>().CharacterId;
-    const current = normalized[index].GetParent<PlayerUnit>().CharacterId;
-    if (previous === current) throw new Error(`duplicate player multi transaction participant: ${current}`);
-  }
-  return normalized;
 }
 
 function compareBigInt(left: bigint, right: bigint): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function validateRevisions(revisions: PlayerPersistenceRevisions): void {
+  for (const domain of PLAYER_PERSISTENCE_DOMAINS) {
+    if (revisions[domain] < 0n) throw new Error(`player ${domain} revision must be non-negative: ${revisions[domain]}`);
+  }
+}
+
+function periodicJitter(characterId: bigint): number {
+  return Number(characterId % BigInt(PLAYER_PERIODIC_SNAPSHOT_INTERVAL_MS));
+}
+
+function cloneTransactionResult(result: PlayerTransactionResult): PlayerTransactionResult {
+  return { ...result, revisions: result.revisions.map((revision) => ({ ...revision })), result: result.result.slice() };
+}
+
+function cloneTransactionReceipt(receipt: PlayerTransactionReceipt): PlayerTransactionReceipt {
+  return { revisions: receipt.revisions.map((revision) => ({ ...revision })), result: receipt.result.slice() };
+}
+
+function revisionLog(revisions: PlayerPersistenceRevisions): Record<PlayerPersistenceDomain, string> {
+  return {
+    inventory: revisions.inventory.toString(),
+    progression: revisions.progression.toString(),
+    quest: revisions.quest.toString(),
+    runtime: revisions.runtime.toString(),
+    wallet: revisions.wallet.toString(),
+  };
 }

@@ -7,10 +7,19 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-17：玩家五领域持久化与崩溃恢复验收
+
+- 将单条Player聚合记录拆为`inventory/progression/quest/runtime/wallet`五条RecordKey和独立Revision；聚合快照只负责捕获，Repository按调用方声明的领域投影和提交。
+- NPC商店提交inventory+wallet，任务奖励与拾取提交inventory+quest，UseItem提交inventory+progression+runtime，玩家交易使用一个operationId原子提交双方inventory+wallet；无关领域Revision不再被操作推进。
+- Map每秒错峰扫描周期快照，每轮最多启动两个玩家且每图最多四个在途任务；默认周期30秒。断线和停机复用幂等最终Flush，停机以最多八个worker处理玩家并收集全部失败。
+- 跨MapHost传送协议升级为inventory/progression/quest/runtime/wallet Revision向量；任意领域缺失时按该领域业务默认值恢复，不读取旧聚合RecordKey。
+- 新增`configs/local/cluster-dbproxy`和`npm run test:player-domain-recovery`。真实验收通过：优雅停机恢复、all-in-one强杀后的周期快照恢复、精确强杀`map-2`后Watcher失败收束及整组重启恢复；均核对金币/背包、任务和位置。
+- 当前边界是安全重启恢复，不是透明MapHost热接管；怪物、仇恨、AI目标和移动意图不恢复。未执行CPU或容量压力测试。
+
 ## 2026-08-17：同地图玩家原子交易
 
 - 新增MapScene级`PlayerTradeComponent`、五个PlayerUnit Handler和Cocos3D交易面板；当前约束为双方在线、存活、同图且5米内，一个角色只能参加一场60秒会话，修改报价会清除双方确认。
-- 交易Planner只在纯快照上规划金币和Item交换，部分堆叠预分配新永久ItemId；双方确认后通过`PlayerPersistenceComponent.ApplyMultiTransaction`一次提交两个玩家记录，DBProxy确认前不修改Entity。
+- 交易Planner只在纯快照上规划金币和Item交换，部分堆叠预分配新永久ItemId；双方确认后通过`PlayerPersistenceComponent.ApplyMultiTransaction`一次提交双方inventory+wallet记录，DBProxy确认前不修改Entity。
 - 最终提交同时占用确认者和另一参与者的真实PlayerUnit ordered mailbox，DBProxy等待期间不能插入道具、商店或金币写入；会话`Committing`标记只负责协议状态，不冒充跨Actor串行边界。
 - 多记录回执支持同operationId幂等恢复；Revision冲突时两边都不改变。确定性自测覆盖成功、重复请求、反向参与者查询与单边Revision冲突，未执行高CPU压力测试。
 - 客户端只保存报价草稿，成功关闭Push携带私有金币和完整背包；跨地图、离线、邮件和拍卖行交易暂缓。

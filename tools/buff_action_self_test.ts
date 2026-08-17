@@ -38,6 +38,7 @@ import { PositionComponent } from "../app/model/mmorpg/map/PositionComponent";
 import { UnitGateComponent } from "../app/model/mmorpg/map/UnitGateComponent";
 import { PlayerPersistenceComponent } from "../app/model/mmorpg/persistence/PlayerPersistenceComponent";
 import {
+  EmptyPlayerPersistenceRevisions,
   InMemoryPlayerRepository,
   type PlayerTransactionResult,
   type PlayerTransactionWrite,
@@ -150,7 +151,11 @@ async function main(): Promise<void> {
   const sourceSkill = unit.AddComponent(SkillComponent);
   const quests = unit.AddComponent(QuestComponent);
   const repository = new ControllablePlayerRepository();
-  const persistence = unit.AddComponent(PlayerPersistenceComponent, repository, 0n);
+  const persistence = unit.AddComponent(
+    PlayerPersistenceComponent,
+    repository,
+    EmptyPlayerPersistenceRevisions(),
+  );
 
   // 道具关键事务在DBProxy确认前不修改背包、CD或效果；失败可以原样重试。
   // Critical item transactions do not mutate inventory, cooldowns, or effects before DBProxy confirms; failures remain retryable.
@@ -160,6 +165,7 @@ async function main(): Promise<void> {
   await assert.rejects(
     persistence.ApplyTransaction(
       "item-use:buff-test-1:failure",
+      ["inventory", "progression", "runtime"],
       failedPlan.data,
       EncodeItemUseReceipt(failedPlan.receipt),
     ),
@@ -178,13 +184,17 @@ async function main(): Promise<void> {
   await assert.rejects(
     persistence.ApplyTransaction(
       "item-use:buff-test-1:lost-ack",
+      ["inventory", "progression", "runtime"],
       lostAckPlan.data,
       lostAckResult,
     ),
     /injected lost transaction ack/,
   );
   assert.equal(items.GetItem(smallPotion.itemId)?.count, 50);
-  const lostAckReceipt = await persistence.LoadTransaction("item-use:buff-test-1:lost-ack");
+  const lostAckReceipt = await persistence.LoadTransaction(
+    "item-use:buff-test-1:lost-ack",
+    ["inventory", "progression", "runtime"],
+  );
   assert.ok(lostAckReceipt);
   const durablePotion = DecodeItemUseReceipt(lostAckReceipt.result);
   const firstApply = ApplyItemUseTransaction(unit, durablePotion);
@@ -215,6 +225,7 @@ async function main(): Promise<void> {
   const buffReceiptBytes = EncodeItemUseReceipt(buffPlan.receipt);
   const buffTransaction = await persistence.ApplyTransaction(
     "item-use:buff-test-1:buff",
+    ["inventory", "progression", "runtime"],
     buffPlan.data,
     buffReceiptBytes,
   );
@@ -243,6 +254,7 @@ async function main(): Promise<void> {
   const manaPlan = PlanItemUseTransaction(unit, manaPotion.itemId, manaPotion.configId);
   const manaTransaction = await persistence.ApplyTransaction(
     "item-use:buff-test-1:mana",
+    ["inventory", "progression", "runtime"],
     manaPlan.data,
     EncodeItemUseReceipt(manaPlan.receipt),
   );
@@ -372,7 +384,7 @@ async function main(): Promise<void> {
   target.AddComponent(CurrencyComponent);
   const targetSkill = target.AddComponent(SkillComponent);
   const targetQuests = target.AddComponent(QuestComponent);
-  target.AddComponent(PlayerPersistenceComponent, repository, 0n);
+  target.AddComponent(PlayerPersistenceComponent, repository, EmptyPlayerPersistenceRevisions());
   target.RestoreTransfer(transfer);
   assert.equal(target.GetComponent(NumericComponent)[NumericType.CurrentHp], 51n);
   assert.equal(targetBuffs.GetBuff(buff.Id as bigint)?.Id, buff.Id);
@@ -616,10 +628,9 @@ class ControllablePlayerRepository extends InMemoryPlayerRepository {
 
   override ApplyTransaction(
     write: PlayerTransactionWrite,
-    expectedRevision: bigint,
   ): PlayerTransactionResult {
     if (this.failTransactions) throw new Error("injected transaction failure");
-    const result = super.ApplyTransaction(write, expectedRevision);
+    const result = super.ApplyTransaction(write);
     if (this.loseNextTransactionAck) {
       this.loseNextTransactionAck = false;
       throw new Error("injected lost transaction ack");

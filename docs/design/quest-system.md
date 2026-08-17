@@ -15,7 +15,7 @@ C2M_CompleteQuest
   -> PlayerUnit有序mailbox
   -> QuestComponent.CompleteQuest()
       -> Inventory规划奖励后的纯快照，不修改Entity
-      -> DBProxy提交Player记录与原始业务结果
+      -> DBProxy提交inventory+quest记录与原始业务结果
       -> 确认后提交Item计划
       -> 记录completedQuestConfigIds并RemoveChild(Quest)
   -> RPC响应与奖励道具推送

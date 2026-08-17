@@ -5,31 +5,35 @@ import type { BuffTransferState } from "../buff/Buff";
 import type { PlayerSnapshot } from "../map/PlayerUnit";
 import type { QuestTransferState } from "../quest/QuestComponent";
 import type { SkillTransferState } from "../skill/SkillComponent";
-import {
-  ClonePlayerSaveData,
-  EncodePlayerSaveData,
-} from "./PlayerPersistenceCodec";
+import { ClonePlayerDomainData, EncodePlayerDomainData, ProjectPlayerDomainData } from "./PlayerPersistenceCodec";
+
+export const PLAYER_PERSISTENCE_DOMAINS = [
+  "inventory",
+  "progression",
+  "quest",
+  "runtime",
+  "wallet",
+] as const;
+export type PlayerPersistenceDomain = typeof PLAYER_PERSISTENCE_DOMAINS[number];
+
+export interface PlayerPersistenceRevisions {
+  inventory: bigint;
+  progression: bigint;
+  quest: bigint;
+  runtime: bigint;
+  wallet: bigint;
+}
 
 export interface PersistedNumericValue {
   readonly numericType: number;
   readonly value: bigint;
 }
 
-export type PersistedPlayerState = Omit<
-  PlayerSnapshot,
-  "gateName" | "unitId" | "numerics"
-> & {
+export type PersistedPlayerState = Omit<PlayerSnapshot, "gateName" | "unitId" | "numerics"> & {
   readonly numerics: readonly PersistedNumericValue[];
 };
 
-/**
- * Buff来源不能保存地图内临时UnitId。自身来源在恢复时映射到新的UnitId；其他来源
- * 暂时脱离，未来拥有持久角色ID后再扩展为稳定来源。
- *
- * Buff sources cannot persist map-local UnitIds. A self source maps to the new
- * UnitId during restore; other sources are detached until stable character IDs
- * are introduced.
- */
+/** Buff来源只保存稳定语义，不保存地图内临时UnitId。 / Buff sources persist stable semantics instead of map-local UnitIds. */
 export interface PersistedBuffState extends Omit<BuffTransferState, "sourceUnitId"> {
   readonly source: "self" | "detached";
   readonly addAction?: ActionDefinition;
@@ -37,6 +41,7 @@ export interface PersistedBuffState extends Omit<BuffTransferState, "sourceUnitI
   readonly removeAction?: ActionDefinition;
 }
 
+/** 聚合值只用于Entity捕获和业务规划，不对应单条数据库记录。 / Aggregate values are used only for Entity capture and planning, not as one database record. */
 export interface PlayerSaveData {
   readonly player: PersistedPlayerState;
   readonly items: readonly ItemSnapshot[];
@@ -46,374 +51,351 @@ export interface PlayerSaveData {
   readonly reason: string;
 }
 
+export interface PlayerWalletSaveData {
+  readonly account: string;
+  readonly characterId: bigint;
+  readonly gold: bigint;
+  readonly reason: string;
+}
+
+export interface PlayerProgressionSaveData {
+  readonly account: string;
+  readonly characterId: bigint;
+  readonly numerics: readonly PersistedNumericValue[];
+  readonly reason: string;
+}
+
+export interface PlayerInventorySaveData {
+  readonly account: string;
+  readonly characterId: bigint;
+  readonly items: readonly ItemSnapshot[];
+  readonly reason: string;
+}
+
+export interface PlayerQuestSaveData {
+  readonly account: string;
+  readonly characterId: bigint;
+  readonly quests: QuestTransferState;
+  readonly reason: string;
+}
+
+export interface PlayerRuntimeSaveData {
+  readonly player: Omit<PersistedPlayerState, "gold" | "numerics">;
+  readonly buffs: readonly PersistedBuffState[];
+  readonly skill: SkillTransferState;
+  readonly reason: string;
+}
+
+export interface PlayerDomainDataMap {
+  readonly inventory: PlayerInventorySaveData;
+  readonly progression: PlayerProgressionSaveData;
+  readonly quest: PlayerQuestSaveData;
+  readonly runtime: PlayerRuntimeSaveData;
+  readonly wallet: PlayerWalletSaveData;
+}
+export type PlayerDomainSaveData = PlayerDomainDataMap[PlayerPersistenceDomain];
+
+export interface PlayerLoadedDomains {
+  readonly inventory?: PlayerInventorySaveData;
+  readonly progression?: PlayerProgressionSaveData;
+  readonly quest?: PlayerQuestSaveData;
+  readonly runtime?: PlayerRuntimeSaveData;
+  readonly wallet?: PlayerWalletSaveData;
+}
+
 export interface PlayerLoadResult {
-  readonly data: PlayerSaveData;
-  readonly revision: bigint;
-  readonly updatedAtUnixMs: bigint;
+  readonly data: PlayerLoadedDomains;
+  readonly revisions: PlayerPersistenceRevisions;
+  readonly updatedAtUnixMs: Readonly<Record<PlayerPersistenceDomain, bigint>>;
 }
 
 export interface PlayerSaveResult {
   readonly disposition: "applied" | "duplicate";
+  readonly domain: PlayerPersistenceDomain;
   readonly revision: bigint;
 }
 
-/** 一次关键玩家事务；result由业务定义并由DBProxy原样保存，用于重试时返回首次结果。 / One critical player transaction whose business-defined result is stored verbatim for retry recovery. */
+export interface PlayerTransactionRecordWrite {
+  readonly domain: PlayerPersistenceDomain;
+  readonly data: PlayerDomainSaveData;
+  readonly expectedRevision: bigint;
+}
+
+/** 一次事务可以覆盖同一玩家或多个玩家的若干领域记录。 / One transaction may cover domain records from one or several players. */
 export interface PlayerTransactionWrite {
   readonly operationId: string;
-  readonly data: PlayerSaveData;
+  readonly records: readonly PlayerTransactionRecordWrite[];
   readonly result: Uint8Array;
+}
+
+export interface PlayerTransactionRevision {
+  readonly characterId: bigint;
+  readonly domain: PlayerPersistenceDomain;
+  readonly revision: bigint;
 }
 
 export interface PlayerTransactionResult {
   readonly disposition: "applied" | "duplicate";
-  readonly revision: bigint;
+  readonly revisions: readonly PlayerTransactionRevision[];
   readonly result: Uint8Array;
 }
 
 export interface PlayerTransactionReceipt {
-  readonly revision: bigint;
+  readonly revisions: readonly PlayerTransactionRevision[];
   readonly result: Uint8Array;
 }
 
-/** 多角色关键事务中的一条玩家写入；所有条目必须由Repository一次提交或全部拒绝。 / One player write in a multi-character critical transaction; the Repository must commit every entry or reject them all. */
-export interface PlayerMultiTransactionEntry {
-  readonly data: PlayerSaveData;
-  readonly expectedRevision: bigint;
-}
-
-/** 跨玩家事务写入；operationId在所有参与角色之间共享，result保存确定性的业务回执。 / Cross-player transaction write sharing one operationId and one deterministic business receipt across every participant. */
-export interface PlayerMultiTransactionWrite {
-  readonly operationId: string;
-  readonly entries: readonly PlayerMultiTransactionEntry[];
-  readonly result: Uint8Array;
-}
-
-export interface PlayerMultiTransactionRevision {
+export interface PlayerTransactionRecordKey {
   readonly characterId: bigint;
-  readonly revision: bigint;
+  readonly domain: PlayerPersistenceDomain;
 }
 
-export interface PlayerMultiTransactionResult {
-  readonly disposition: "applied" | "duplicate";
-  readonly revisions: readonly PlayerMultiTransactionRevision[];
-  readonly result: Uint8Array;
-}
-
-export interface PlayerMultiTransactionReceipt {
-  readonly revisions: readonly PlayerMultiTransactionRevision[];
-  readonly result: Uint8Array;
-}
+export type PlayerMultiTransactionWrite = PlayerTransactionWrite;
+export type PlayerMultiTransactionResult = PlayerTransactionResult;
+export type PlayerMultiTransactionReceipt = PlayerTransactionReceipt;
+export type PlayerMultiTransactionRevision = PlayerTransactionRevision;
 
 export interface PlayerRepository {
-  /** 读取一份自包含快照；不存在时返回undefined，调用方才创建业务默认值。 / Loads one self-contained snapshot; undefined means business defaults should be created. */
+  /** 分别读取五个领域记录；缺失领域由玩家工厂使用业务默认值。 / Loads five domain records independently; the player factory supplies defaults for missing domains. */
   Load(characterId: bigint): MaybePromise<PlayerLoadResult | undefined>;
-  /** 以期望revision提交完整快照；实现必须在返回前取得可靠提交结果。 / Commits a full snapshot with expected revision and returns only after a reliable commit result. */
-  Save(data: PlayerSaveData, expectedRevision: bigint): MaybePromise<PlayerSaveResult>;
-  /** 原子提交关键业务后的完整玩家记录，并保存可恢复结果。 / Atomically commits the post-operation player record and its recoverable result. */
-  ApplyTransaction(
-    write: PlayerTransactionWrite,
-    expectedRevision: bigint,
-  ): MaybePromise<PlayerTransactionResult>;
-  /** 按稳定operationId查询既有事务；不得根据当前快照猜测是否提交。 / Loads a committed transaction by stable operationId instead of inferring from the current snapshot. */
-  LoadTransaction(
-    characterId: bigint,
-    operationId: string,
-  ): MaybePromise<PlayerTransactionReceipt | undefined>;
-  /** 原子提交多个玩家记录；任一revision冲突时不得写入任何参与者。 / Atomically commits multiple player records and writes none when any expected revision conflicts. */
-  ApplyMultiTransaction(
-    write: PlayerMultiTransactionWrite,
-  ): MaybePromise<PlayerMultiTransactionResult>;
-  /** 按稳定operationId和完整参与者集合读取多记录事务回执。 / Loads a multi-record receipt by stable operationId and its complete participant set. */
-  LoadMultiTransaction(
-    characterIds: readonly bigint[],
-    operationId: string,
-  ): MaybePromise<PlayerMultiTransactionReceipt | undefined>;
-  /** 仅用于无DBProxy的跨进程迁移，把迁移快照交给目标进程的内存Repository；持久化Repository不得用它覆盖权威数据。 / Used only for no-DBProxy process transfer to hand a snapshot to the target in-memory Repository; durable repositories must not use it to overwrite authority. */
-  AdoptTransfer?(data: PlayerSaveData, revision: bigint): void;
+  /** 可靠保存一个领域快照并返回其新revision。 / Reliably saves one domain snapshot and returns its new revision. */
+  SaveDomain(domain: PlayerPersistenceDomain, data: PlayerDomainSaveData, expectedRevision: bigint): MaybePromise<PlayerSaveResult>;
+  /** 原子提交任意领域记录集合，并保存可恢复业务回执。 / Atomically commits an arbitrary domain-record set and stores a recoverable receipt. */
+  ApplyTransaction(write: PlayerTransactionWrite): MaybePromise<PlayerTransactionResult>;
+  LoadTransaction(records: readonly PlayerTransactionRecordKey[], operationId: string): MaybePromise<PlayerTransactionReceipt | undefined>;
+  ApplyMultiTransaction(write: PlayerMultiTransactionWrite): MaybePromise<PlayerMultiTransactionResult>;
+  LoadMultiTransaction(records: readonly PlayerTransactionRecordKey[], operationId: string): MaybePromise<PlayerMultiTransactionReceipt | undefined>;
+  /** 仅供无DBProxy跨进程迁移交接。 / Used only for no-DBProxy transfer handoff. */
+  AdoptTransfer?(data: PlayerSaveData, revisions: PlayerPersistenceRevisions): void;
 }
 
 interface InMemoryRecord {
-  readonly data: PlayerSaveData;
+  readonly data: PlayerDomainSaveData;
   readonly revision: bigint;
   readonly updatedAtUnixMs: bigint;
 }
 
 interface InMemoryTransactionRecord {
-  readonly characterId: bigint;
-  readonly expectedRevision: bigint;
-  readonly payload: Uint8Array;
-  readonly result: Uint8Array;
-  readonly revision: bigint;
-}
-
-interface InMemoryMultiTransactionRecord {
-  readonly characterIds: readonly bigint[];
+  readonly keys: readonly string[];
   readonly expectedRevisions: readonly bigint[];
   readonly payloads: readonly Uint8Array[];
   readonly result: Uint8Array;
-  readonly revisions: readonly PlayerMultiTransactionRevision[];
+  readonly revisions: readonly PlayerTransactionRevision[];
 }
 
-/** 非DBProxy演示与单元测试使用的版本化Repository。 / Versioned Repository used by non-DBProxy demos and unit tests. */
+/** 非DBProxy演示与单元测试使用的领域化版本Repository。 / Domain-versioned Repository used by non-DBProxy demos and unit tests. */
 export class InMemoryPlayerRepository implements PlayerRepository {
-  private readonly players = new Map<string, InMemoryRecord>();
+  private readonly records = new Map<string, InMemoryRecord>();
   private readonly saveCounts = new Map<string, number>();
   private readonly transactions = new Map<string, InMemoryTransactionRecord>();
-  private readonly multiTransactions = new Map<string, InMemoryMultiTransactionRecord>();
 
   Load(characterId: bigint): PlayerLoadResult | undefined {
-    const record = this.players.get(keyOf(characterId));
-    return record
-      ? {
-        data: ClonePlayerSaveData(record.data),
-        revision: record.revision,
-        updatedAtUnixMs: record.updatedAtUnixMs,
-      }
-      : undefined;
+    requireCharacterId(characterId);
+    const inventory = this.records.get(recordKey(characterId, "inventory"));
+    const progression = this.records.get(recordKey(characterId, "progression"));
+    const quest = this.records.get(recordKey(characterId, "quest"));
+    const runtime = this.records.get(recordKey(characterId, "runtime"));
+    const wallet = this.records.get(recordKey(characterId, "wallet"));
+    if (!inventory && !progression && !quest && !runtime && !wallet) return undefined;
+    return {
+      data: {
+        inventory: inventory ? ClonePlayerDomainData("inventory", inventory.data) : undefined,
+        progression: progression ? ClonePlayerDomainData("progression", progression.data) : undefined,
+        quest: quest ? ClonePlayerDomainData("quest", quest.data) : undefined,
+        runtime: runtime ? ClonePlayerDomainData("runtime", runtime.data) : undefined,
+        wallet: wallet ? ClonePlayerDomainData("wallet", wallet.data) : undefined,
+      },
+      revisions: {
+        inventory: inventory?.revision ?? 0n,
+        progression: progression?.revision ?? 0n,
+        quest: quest?.revision ?? 0n,
+        runtime: runtime?.revision ?? 0n,
+        wallet: wallet?.revision ?? 0n,
+      },
+      updatedAtUnixMs: {
+        inventory: inventory?.updatedAtUnixMs ?? 0n,
+        progression: progression?.updatedAtUnixMs ?? 0n,
+        quest: quest?.updatedAtUnixMs ?? 0n,
+        runtime: runtime?.updatedAtUnixMs ?? 0n,
+        wallet: wallet?.updatedAtUnixMs ?? 0n,
+      },
+    };
   }
 
-  /** 采用与DBProxy相同的CAS语义，避免本地模式掩盖陈旧快照覆盖问题。 / Uses DBProxy-equivalent CAS semantics so local mode cannot hide stale-snapshot overwrites. */
-  Save(data: PlayerSaveData, expectedRevision: bigint): PlayerSaveResult {
-    const current = this.players.get(keyOf(data.player.characterId));
-    const actualRevision = current?.revision ?? 0n;
+  SaveDomain(domain: PlayerPersistenceDomain, data: PlayerDomainSaveData, expectedRevision: bigint): PlayerSaveResult {
+    const characterId = CharacterIdOfDomainData(domain, data);
+    const key = recordKey(characterId, domain);
+    const actualRevision = this.records.get(key)?.revision ?? 0n;
     if (actualRevision !== expectedRevision) {
-      throw new Error(
-        `player snapshot revision conflict: expected=${expectedRevision}, actual=${actualRevision}`,
-      );
+      throw new Error(`player ${domain} revision conflict: expected=${expectedRevision}, actual=${actualRevision}`);
     }
     const revision = actualRevision + 1n;
-    this.players.set(keyOf(data.player.characterId), {
-      data: ClonePlayerSaveData(data),
-      revision,
-      updatedAtUnixMs: BigInt(Date.now()),
-    });
-    this.saveCounts.set(
-      keyOf(data.player.characterId),
-      (this.saveCounts.get(keyOf(data.player.characterId)) ?? 0) + 1,
-    );
-    return { disposition: "applied", revision };
+    this.records.set(key, { data: ClonePlayerDomainData(domain, data), revision, updatedAtUnixMs: BigInt(Date.now()) });
+    this.saveCounts.set(key, (this.saveCounts.get(key) ?? 0) + 1);
+    return { disposition: "applied", domain, revision };
   }
 
-  /** 模拟DBProxy先查幂等回执、再做revision CAS的顺序，避免本地测试掩盖重试问题。 / Mirrors DBProxy's receipt-first then revision-CAS order so local tests expose retry mistakes. */
-  ApplyTransaction(
-    write: PlayerTransactionWrite,
-    expectedRevision: bigint,
-  ): PlayerTransactionResult {
+  ApplyTransaction(write: PlayerTransactionWrite): PlayerTransactionResult {
     requireOperationId(write.operationId);
-    const characterId = write.data.player.characterId;
-    const payload = EncodePlayerSaveData(write.data);
+    const records = normalizeTransactionRecords(write.records);
+    const keys = records.map((record) => recordKey(CharacterIdOfDomainData(record.domain, record.data), record.domain));
+    const payloads = records.map((record) => EncodePlayerDomainData(record.domain, record.data));
+    const expectedRevisions = records.map((record) => record.expectedRevision);
     const existing = this.transactions.get(write.operationId);
     if (existing) {
-      if (
-        existing.characterId !== characterId ||
-        existing.expectedRevision !== expectedRevision ||
-        !bytesEqual(existing.payload, payload) ||
-        !bytesEqual(existing.result, write.result)
-      ) {
+      if (!stringArraysEqual(existing.keys, keys) || !bigintArraysEqual(existing.expectedRevisions, expectedRevisions) || !byteArraysEqual(existing.payloads, payloads) || !bytesEqual(existing.result, write.result)) {
         throw new Error(`player transaction operation conflict: ${write.operationId}`);
       }
-      return {
-        disposition: "duplicate",
-        revision: existing.revision,
-        result: write.result.slice(),
-      };
+      return { disposition: "duplicate", revisions: cloneRevisions(existing.revisions), result: existing.result.slice() };
     }
-
-    const current = this.players.get(keyOf(characterId));
-    const actualRevision = current?.revision ?? 0n;
-    if (actualRevision !== expectedRevision) {
-      throw new Error(
-        `player transaction revision conflict: expected=${expectedRevision}, actual=${actualRevision}`,
-      );
-    }
-    const revision = actualRevision + 1n;
-    this.players.set(keyOf(characterId), {
-      data: ClonePlayerSaveData(write.data),
-      revision,
-      updatedAtUnixMs: BigInt(Date.now()),
-    });
-    this.transactions.set(write.operationId, {
-      characterId,
-      expectedRevision,
-      payload: payload.slice(),
-      result: write.result.slice(),
-      revision,
-    });
-    return { disposition: "applied", revision, result: write.result.slice() };
-  }
-
-  LoadTransaction(characterId: bigint, operationId: string): PlayerTransactionReceipt | undefined {
-    requireOperationId(operationId);
-    const transaction = this.transactions.get(operationId);
-    if (!transaction || transaction.characterId !== characterId) return undefined;
-    return { revision: transaction.revision, result: transaction.result.slice() };
-  }
-
-  /** 先校验全部幂等参数和revision，再一次性替换所有记录；校验阶段不修改任何玩家。 / Validates every idempotency argument and revision before replacing all records, with no mutation during preflight. */
-  ApplyMultiTransaction(write: PlayerMultiTransactionWrite): PlayerMultiTransactionResult {
-    requireOperationId(write.operationId);
-    const entries = normalizeMultiEntries(write.entries);
-    const characterIds = entries.map((entry) => entry.data.player.characterId);
-    const expectedRevisions = entries.map((entry) => entry.expectedRevision);
-    const payloads = entries.map((entry) => EncodePlayerSaveData(entry.data));
-    const existing = this.multiTransactions.get(write.operationId);
-    if (existing) {
-      if (
-        !bigintArraysEqual(existing.characterIds, characterIds) ||
-        !bigintArraysEqual(existing.expectedRevisions, expectedRevisions) ||
-        !byteArraysEqual(existing.payloads, payloads) ||
-        !bytesEqual(existing.result, write.result)
-      ) {
-        throw new Error(`player multi transaction operation conflict: ${write.operationId}`);
+    records.forEach((record, index) => {
+      const actualRevision = this.records.get(keys[index])?.revision ?? 0n;
+      if (actualRevision !== record.expectedRevision) {
+        throw new Error(`player transaction revision conflict: record=${keys[index]}, expected=${record.expectedRevision}, actual=${actualRevision}`);
       }
-      return {
-        disposition: "duplicate",
-        revisions: cloneRevisions(existing.revisions),
-        result: existing.result.slice(),
-      };
-    }
-
-    for (const entry of entries) {
-      const characterId = entry.data.player.characterId;
-      const actualRevision = this.players.get(keyOf(characterId))?.revision ?? 0n;
-      if (actualRevision !== entry.expectedRevision) {
-        throw new Error(
-          `player multi transaction revision conflict: characterId=${characterId}, expected=${entry.expectedRevision}, actual=${actualRevision}`,
-        );
-      }
-    }
-
-    const revisions = entries.map((entry) => ({
-      characterId: entry.data.player.characterId,
-      revision: entry.expectedRevision + 1n,
+    });
+    const revisions = records.map((record) => ({
+      characterId: CharacterIdOfDomainData(record.domain, record.data),
+      domain: record.domain,
+      revision: record.expectedRevision + 1n,
     }));
     const now = BigInt(Date.now());
-    for (let index = 0; index < entries.length; index += 1) {
-      const entry = entries[index];
-      this.players.set(keyOf(entry.data.player.characterId), {
-        data: ClonePlayerSaveData(entry.data),
-        revision: revisions[index].revision,
-        updatedAtUnixMs: now,
-      });
-    }
-    this.multiTransactions.set(write.operationId, {
-      characterIds,
+    records.forEach((record, index) => this.records.set(keys[index], {
+      data: ClonePlayerDomainData(record.domain, record.data),
+      revision: revisions[index].revision,
+      updatedAtUnixMs: now,
+    }));
+    this.transactions.set(write.operationId, {
+      keys,
       expectedRevisions,
       payloads: payloads.map((payload) => payload.slice()),
       result: write.result.slice(),
       revisions: cloneRevisions(revisions),
     });
-    return {
-      disposition: "applied",
-      revisions: cloneRevisions(revisions),
-      result: write.result.slice(),
-    };
+    return { disposition: "applied", revisions, result: write.result.slice() };
   }
 
-  LoadMultiTransaction(
-    characterIds: readonly bigint[],
-    operationId: string,
-  ): PlayerMultiTransactionReceipt | undefined {
+  LoadTransaction(records: readonly PlayerTransactionRecordKey[], operationId: string): PlayerTransactionReceipt | undefined {
     requireOperationId(operationId);
-    const normalizedIds = normalizeCharacterIds(characterIds);
-    const transaction = this.multiTransactions.get(operationId);
-    if (!transaction || !bigintArraysEqual(transaction.characterIds, normalizedIds)) return undefined;
-    return {
-      revisions: cloneRevisions(transaction.revisions),
-      result: transaction.result.slice(),
-    };
+    const keys = normalizeTransactionKeys(records).map((record) => recordKey(record.characterId, record.domain));
+    const transaction = this.transactions.get(operationId);
+    if (!transaction || !stringArraysEqual(transaction.keys, keys)) return undefined;
+    return { revisions: cloneRevisions(transaction.revisions), result: transaction.result.slice() };
   }
 
-  /** 返回防御性副本，防止测试修改Repository权威数据。 / Returns a defensive copy so tests cannot mutate repository authority. */
-  Get(characterId: bigint): PlayerSaveData | undefined {
-    const data = this.players.get(keyOf(characterId))?.data;
-    return data ? ClonePlayerSaveData(data) : undefined;
+  ApplyMultiTransaction(write: PlayerMultiTransactionWrite): PlayerMultiTransactionResult {
+    if (write.records.length < 2) throw new Error("player multi transaction requires at least two records");
+    return this.ApplyTransaction(write);
   }
 
-  /** 返回保存次数，主要用于生命周期幂等测试。 / Reports save count, primarily for lifecycle idempotency tests. */
-  SaveCount(characterId: bigint): number {
-    return this.saveCounts.get(keyOf(characterId)) ?? 0;
+  LoadMultiTransaction(records: readonly PlayerTransactionRecordKey[], operationId: string): PlayerMultiTransactionReceipt | undefined {
+    if (records.length < 2) throw new Error("player multi transaction requires at least two records");
+    return this.LoadTransaction(records, operationId);
   }
 
-  /** 接收跨进程迁移的运行时交接；只在目标没有更高revision时写入。 / Accepts a runtime transfer handoff and writes only when the target has no newer revision. */
-  AdoptTransfer(data: PlayerSaveData, revision: bigint): void {
-    const characterId = data.player.characterId;
-    const key = keyOf(characterId);
-    const current = this.players.get(key);
-    if (current && current.revision > revision) return;
-    if (current && current.revision === revision) return;
-    this.players.set(key, {
-      data: ClonePlayerSaveData(data),
-      revision,
-      updatedAtUnixMs: BigInt(Date.now()),
-    });
+  /** 测试辅助：依次保存聚合快照的全部领域。 / Test helper that saves every domain of one aggregate snapshot in order. */
+  Save(data: PlayerSaveData, expectedRevisions: PlayerPersistenceRevisions = EmptyPlayerPersistenceRevisions()): PlayerPersistenceRevisions {
+    const revisions = { ...expectedRevisions };
+    for (const domain of PLAYER_PERSISTENCE_DOMAINS) {
+      revisions[domain] = this.SaveDomain(domain, ProjectPlayerDomainData(data, domain), revisions[domain]).revision;
+    }
+    return revisions;
+  }
+
+  GetDomain<TDomain extends PlayerPersistenceDomain>(characterId: bigint, domain: TDomain): PlayerDomainDataMap[TDomain] | undefined {
+    const data = this.records.get(recordKey(characterId, domain))?.data;
+    return data ? ClonePlayerDomainData(domain, data) as PlayerDomainDataMap[TDomain] : undefined;
+  }
+
+  SaveCount(characterId: bigint, domain?: PlayerPersistenceDomain): number {
+    if (domain) return this.saveCounts.get(recordKey(characterId, domain)) ?? 0;
+    return PLAYER_PERSISTENCE_DOMAINS.reduce((total, value) => total + (this.saveCounts.get(recordKey(characterId, value)) ?? 0), 0);
+  }
+
+  /** 接收跨进程迁移快照，只在目标没有更高revision时写入。 / Accepts a transfer snapshot only when the target has no newer revision. */
+  AdoptTransfer(data: PlayerSaveData, revisions: PlayerPersistenceRevisions): void {
+    for (const domain of PLAYER_PERSISTENCE_DOMAINS) {
+      const projected = ProjectPlayerDomainData(data, domain);
+      const key = recordKey(CharacterIdOfDomainData(domain, projected), domain);
+      const current = this.records.get(key);
+      if (current && current.revision >= revisions[domain]) continue;
+      this.records.set(key, { data: ClonePlayerDomainData(domain, projected), revision: revisions[domain], updatedAtUnixMs: BigInt(Date.now()) });
+    }
   }
 }
 
-function keyOf(characterId: bigint): string {
+export function EmptyPlayerPersistenceRevisions(): PlayerPersistenceRevisions {
+  return { inventory: 0n, progression: 0n, quest: 0n, runtime: 0n, wallet: 0n };
+}
+
+export function ClonePlayerPersistenceRevisions(revisions: PlayerPersistenceRevisions): PlayerPersistenceRevisions {
+  return { ...revisions };
+}
+
+export function CharacterIdOfDomainData(domain: PlayerPersistenceDomain, data: PlayerDomainSaveData): bigint {
+  const characterId = domain === "runtime"
+    ? (data as PlayerRuntimeSaveData).player.characterId
+    : (data as { characterId: bigint }).characterId;
+  requireCharacterId(characterId);
+  return characterId;
+}
+
+function normalizeTransactionRecords(records: readonly PlayerTransactionRecordWrite[]): readonly PlayerTransactionRecordWrite[] {
+  if (records.length === 0) throw new Error("player transaction requires at least one record");
+  const sorted = [...records].sort((left, right) => compareRecordKeys(CharacterIdOfDomainData(left.domain, left.data), left.domain, CharacterIdOfDomainData(right.domain, right.data), right.domain));
+  for (let index = 0; index < sorted.length; index += 1) {
+    const record = sorted[index];
+    if (record.expectedRevision < 0n) throw new Error(`player transaction revision must be non-negative: ${record.expectedRevision}`);
+    if (index > 0) {
+      const previous = sorted[index - 1];
+      if (CharacterIdOfDomainData(previous.domain, previous.data) === CharacterIdOfDomainData(record.domain, record.data) && previous.domain === record.domain) {
+        throw new Error(`duplicate player transaction record: ${record.domain}`);
+      }
+    }
+  }
+  return sorted;
+}
+
+function normalizeTransactionKeys(records: readonly PlayerTransactionRecordKey[]): readonly PlayerTransactionRecordKey[] {
+  if (records.length === 0) throw new Error("player transaction requires at least one record key");
+  const sorted = [...records].sort((left, right) => compareRecordKeys(left.characterId, left.domain, right.characterId, right.domain));
+  for (let index = 0; index < sorted.length; index += 1) {
+    requireCharacterId(sorted[index].characterId);
+    if (index > 0 && sorted[index - 1].characterId === sorted[index].characterId && sorted[index - 1].domain === sorted[index].domain) {
+      throw new Error(`duplicate player transaction record key: ${sorted[index].characterId}/${sorted[index].domain}`);
+    }
+  }
+  return sorted;
+}
+
+function recordKey(characterId: bigint, domain: PlayerPersistenceDomain): string {
+  requireCharacterId(characterId);
+  return `${characterId.toString(10)}:${domain}`;
+}
+function requireCharacterId(characterId: bigint): void {
   if (characterId <= 0n) throw new Error(`player characterId must be positive: ${characterId}`);
-  return characterId.toString(10);
 }
-
 function requireOperationId(operationId: string): void {
   if (operationId.trim().length === 0) throw new Error("player transaction operationId is required");
 }
-
+function compareRecordKeys(leftId: bigint, leftDomain: PlayerPersistenceDomain, rightId: bigint, rightDomain: PlayerPersistenceDomain): number {
+  if (leftId !== rightId) return leftId < rightId ? -1 : 1;
+  return leftDomain.localeCompare(rightDomain);
+}
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
+  for (let index = 0; index < left.byteLength; index += 1) if (left[index] !== right[index]) return false;
   return true;
 }
-
-function normalizeMultiEntries(
-  entries: readonly PlayerMultiTransactionEntry[],
-): readonly PlayerMultiTransactionEntry[] {
-  if (entries.length < 2) throw new Error("player multi transaction requires at least two entries");
-  const sorted = [...entries].sort((left, right) => compareBigInt(
-    left.data.player.characterId,
-    right.data.player.characterId,
-  ));
-  for (let index = 0; index < sorted.length; index += 1) {
-    const entry = sorted[index];
-    keyOf(entry.data.player.characterId);
-    if (entry.expectedRevision < 0n) {
-      throw new Error(`player multi transaction revision must be non-negative: ${entry.expectedRevision}`);
-    }
-    if (index > 0 && sorted[index - 1].data.player.characterId === entry.data.player.characterId) {
-      throw new Error(`duplicate player in multi transaction: ${entry.data.player.characterId}`);
-    }
-  }
-  return sorted;
+function stringArraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
-
-function normalizeCharacterIds(characterIds: readonly bigint[]): readonly bigint[] {
-  if (characterIds.length < 2) throw new Error("player multi transaction requires at least two character IDs");
-  const sorted = [...characterIds].sort(compareBigInt);
-  for (let index = 0; index < sorted.length; index += 1) {
-    keyOf(sorted[index]);
-    if (index > 0 && sorted[index - 1] === sorted[index]) {
-      throw new Error(`duplicate player in multi transaction receipt: ${sorted[index]}`);
-    }
-  }
-  return sorted;
-}
-
-function compareBigInt(left: bigint, right: bigint): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
 function bigintArraysEqual(left: readonly bigint[], right: readonly bigint[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
-
 function byteArraysEqual(left: readonly Uint8Array[], right: readonly Uint8Array[]): boolean {
   return left.length === right.length && left.every((value, index) => bytesEqual(value, right[index]));
 }
-
-function cloneRevisions(
-  revisions: readonly PlayerMultiTransactionRevision[],
-): readonly PlayerMultiTransactionRevision[] {
+function cloneRevisions(revisions: readonly PlayerTransactionRevision[]): readonly PlayerTransactionRevision[] {
   return revisions.map((value) => ({ ...value }));
 }

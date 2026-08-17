@@ -75,7 +75,7 @@ const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 // 玩家跨MapHost快照的生成端与校验端必须引用同一版本，新增可传送Component时只修改这里。
 // The producer and validator of player transfer snapshots must share one version;
 // bump only this constant when a transferable Component changes the wire shape.
-const PLAYER_TRANSFER_SCHEMA_VERSION = 7;
+const PLAYER_TRANSFER_SCHEMA_VERSION = 9;
 
 export class MapHostComponent extends Component<[repository: PlayerRepository]> {
   private readonly maps = new Map<bigint, MapComponent>();
@@ -834,6 +834,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     transferId: string,
   ): PlayerTransferSnapshot {
     const snapshot = player.Snapshot();
+    const revisions = player.GetComponent(PlayerPersistenceComponent).Revisions;
     return {
       schemaVersion: PLAYER_TRANSFER_SCHEMA_VERSION,
       transferId,
@@ -855,7 +856,12 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       gold: snapshot.gold,
       targetMapInstanceId: targetInstance.mapInstanceId,
-      persistenceRevision: player.GetComponent(PlayerPersistenceComponent).Revision,
+      persistenceRevision: 0n,
+       inventoryRevision: revisions.inventory,
+       progressionRevision: revisions.progression,
+       questRevision: revisions.quest,
+       runtimeRevision: revisions.runtime,
+       walletRevision: revisions.wallet,
     };
   }
 
