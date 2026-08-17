@@ -75,6 +75,35 @@ export interface PlayerTransactionReceipt {
   readonly result: Uint8Array;
 }
 
+/** 多角色关键事务中的一条玩家写入；所有条目必须由Repository一次提交或全部拒绝。 / One player write in a multi-character critical transaction; the Repository must commit every entry or reject them all. */
+export interface PlayerMultiTransactionEntry {
+  readonly data: PlayerSaveData;
+  readonly expectedRevision: bigint;
+}
+
+/** 跨玩家事务写入；operationId在所有参与角色之间共享，result保存确定性的业务回执。 / Cross-player transaction write sharing one operationId and one deterministic business receipt across every participant. */
+export interface PlayerMultiTransactionWrite {
+  readonly operationId: string;
+  readonly entries: readonly PlayerMultiTransactionEntry[];
+  readonly result: Uint8Array;
+}
+
+export interface PlayerMultiTransactionRevision {
+  readonly characterId: bigint;
+  readonly revision: bigint;
+}
+
+export interface PlayerMultiTransactionResult {
+  readonly disposition: "applied" | "duplicate";
+  readonly revisions: readonly PlayerMultiTransactionRevision[];
+  readonly result: Uint8Array;
+}
+
+export interface PlayerMultiTransactionReceipt {
+  readonly revisions: readonly PlayerMultiTransactionRevision[];
+  readonly result: Uint8Array;
+}
+
 export interface PlayerRepository {
   /** 读取一份自包含快照；不存在时返回undefined，调用方才创建业务默认值。 / Loads one self-contained snapshot; undefined means business defaults should be created. */
   Load(characterId: bigint): MaybePromise<PlayerLoadResult | undefined>;
@@ -90,6 +119,15 @@ export interface PlayerRepository {
     characterId: bigint,
     operationId: string,
   ): MaybePromise<PlayerTransactionReceipt | undefined>;
+  /** 原子提交多个玩家记录；任一revision冲突时不得写入任何参与者。 / Atomically commits multiple player records and writes none when any expected revision conflicts. */
+  ApplyMultiTransaction(
+    write: PlayerMultiTransactionWrite,
+  ): MaybePromise<PlayerMultiTransactionResult>;
+  /** 按稳定operationId和完整参与者集合读取多记录事务回执。 / Loads a multi-record receipt by stable operationId and its complete participant set. */
+  LoadMultiTransaction(
+    characterIds: readonly bigint[],
+    operationId: string,
+  ): MaybePromise<PlayerMultiTransactionReceipt | undefined>;
   /** 仅用于无DBProxy的跨进程迁移，把迁移快照交给目标进程的内存Repository；持久化Repository不得用它覆盖权威数据。 / Used only for no-DBProxy process transfer to hand a snapshot to the target in-memory Repository; durable repositories must not use it to overwrite authority. */
   AdoptTransfer?(data: PlayerSaveData, revision: bigint): void;
 }
@@ -108,11 +146,20 @@ interface InMemoryTransactionRecord {
   readonly revision: bigint;
 }
 
+interface InMemoryMultiTransactionRecord {
+  readonly characterIds: readonly bigint[];
+  readonly expectedRevisions: readonly bigint[];
+  readonly payloads: readonly Uint8Array[];
+  readonly result: Uint8Array;
+  readonly revisions: readonly PlayerMultiTransactionRevision[];
+}
+
 /** 非DBProxy演示与单元测试使用的版本化Repository。 / Versioned Repository used by non-DBProxy demos and unit tests. */
 export class InMemoryPlayerRepository implements PlayerRepository {
   private readonly players = new Map<string, InMemoryRecord>();
   private readonly saveCounts = new Map<string, number>();
   private readonly transactions = new Map<string, InMemoryTransactionRecord>();
+  private readonly multiTransactions = new Map<string, InMemoryMultiTransactionRecord>();
 
   Load(characterId: bigint): PlayerLoadResult | undefined {
     const record = this.players.get(keyOf(characterId));
@@ -202,6 +249,81 @@ export class InMemoryPlayerRepository implements PlayerRepository {
     return { revision: transaction.revision, result: transaction.result.slice() };
   }
 
+  /** 先校验全部幂等参数和revision，再一次性替换所有记录；校验阶段不修改任何玩家。 / Validates every idempotency argument and revision before replacing all records, with no mutation during preflight. */
+  ApplyMultiTransaction(write: PlayerMultiTransactionWrite): PlayerMultiTransactionResult {
+    requireOperationId(write.operationId);
+    const entries = normalizeMultiEntries(write.entries);
+    const characterIds = entries.map((entry) => entry.data.player.characterId);
+    const expectedRevisions = entries.map((entry) => entry.expectedRevision);
+    const payloads = entries.map((entry) => EncodePlayerSaveData(entry.data));
+    const existing = this.multiTransactions.get(write.operationId);
+    if (existing) {
+      if (
+        !bigintArraysEqual(existing.characterIds, characterIds) ||
+        !bigintArraysEqual(existing.expectedRevisions, expectedRevisions) ||
+        !byteArraysEqual(existing.payloads, payloads) ||
+        !bytesEqual(existing.result, write.result)
+      ) {
+        throw new Error(`player multi transaction operation conflict: ${write.operationId}`);
+      }
+      return {
+        disposition: "duplicate",
+        revisions: cloneRevisions(existing.revisions),
+        result: existing.result.slice(),
+      };
+    }
+
+    for (const entry of entries) {
+      const characterId = entry.data.player.characterId;
+      const actualRevision = this.players.get(keyOf(characterId))?.revision ?? 0n;
+      if (actualRevision !== entry.expectedRevision) {
+        throw new Error(
+          `player multi transaction revision conflict: characterId=${characterId}, expected=${entry.expectedRevision}, actual=${actualRevision}`,
+        );
+      }
+    }
+
+    const revisions = entries.map((entry) => ({
+      characterId: entry.data.player.characterId,
+      revision: entry.expectedRevision + 1n,
+    }));
+    const now = BigInt(Date.now());
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      this.players.set(keyOf(entry.data.player.characterId), {
+        data: ClonePlayerSaveData(entry.data),
+        revision: revisions[index].revision,
+        updatedAtUnixMs: now,
+      });
+    }
+    this.multiTransactions.set(write.operationId, {
+      characterIds,
+      expectedRevisions,
+      payloads: payloads.map((payload) => payload.slice()),
+      result: write.result.slice(),
+      revisions: cloneRevisions(revisions),
+    });
+    return {
+      disposition: "applied",
+      revisions: cloneRevisions(revisions),
+      result: write.result.slice(),
+    };
+  }
+
+  LoadMultiTransaction(
+    characterIds: readonly bigint[],
+    operationId: string,
+  ): PlayerMultiTransactionReceipt | undefined {
+    requireOperationId(operationId);
+    const normalizedIds = normalizeCharacterIds(characterIds);
+    const transaction = this.multiTransactions.get(operationId);
+    if (!transaction || !bigintArraysEqual(transaction.characterIds, normalizedIds)) return undefined;
+    return {
+      revisions: cloneRevisions(transaction.revisions),
+      result: transaction.result.slice(),
+    };
+  }
+
   /** 返回防御性副本，防止测试修改Repository权威数据。 / Returns a defensive copy so tests cannot mutate repository authority. */
   Get(characterId: bigint): PlayerSaveData | undefined {
     const data = this.players.get(keyOf(characterId))?.data;
@@ -243,4 +365,55 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
     if (left[index] !== right[index]) return false;
   }
   return true;
+}
+
+function normalizeMultiEntries(
+  entries: readonly PlayerMultiTransactionEntry[],
+): readonly PlayerMultiTransactionEntry[] {
+  if (entries.length < 2) throw new Error("player multi transaction requires at least two entries");
+  const sorted = [...entries].sort((left, right) => compareBigInt(
+    left.data.player.characterId,
+    right.data.player.characterId,
+  ));
+  for (let index = 0; index < sorted.length; index += 1) {
+    const entry = sorted[index];
+    keyOf(entry.data.player.characterId);
+    if (entry.expectedRevision < 0n) {
+      throw new Error(`player multi transaction revision must be non-negative: ${entry.expectedRevision}`);
+    }
+    if (index > 0 && sorted[index - 1].data.player.characterId === entry.data.player.characterId) {
+      throw new Error(`duplicate player in multi transaction: ${entry.data.player.characterId}`);
+    }
+  }
+  return sorted;
+}
+
+function normalizeCharacterIds(characterIds: readonly bigint[]): readonly bigint[] {
+  if (characterIds.length < 2) throw new Error("player multi transaction requires at least two character IDs");
+  const sorted = [...characterIds].sort(compareBigInt);
+  for (let index = 0; index < sorted.length; index += 1) {
+    keyOf(sorted[index]);
+    if (index > 0 && sorted[index - 1] === sorted[index]) {
+      throw new Error(`duplicate player in multi transaction receipt: ${sorted[index]}`);
+    }
+  }
+  return sorted;
+}
+
+function compareBigInt(left: bigint, right: bigint): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function bigintArraysEqual(left: readonly bigint[], right: readonly bigint[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function byteArraysEqual(left: readonly Uint8Array[], right: readonly Uint8Array[]): boolean {
+  return left.length === right.length && left.every((value, index) => bytesEqual(value, right[index]));
+}
+
+function cloneRevisions(
+  revisions: readonly PlayerMultiTransactionRevision[],
+): readonly PlayerMultiTransactionRevision[] {
+  return revisions.map((value) => ({ ...value }));
 }

@@ -42,6 +42,9 @@ import type {
   G2C_EntityNavigate,
   G2C_EntityState,
   G2C_ItemChanged,
+  G2C_PlayerTradeChanged,
+  G2C_PlayerTradeClosed,
+  G2C_PlayerTradeInvite,
   G2C_SkillCastState,
   G2C_SkillImpact,
   G2C_SkillProjectile,
@@ -56,6 +59,8 @@ import type {
   M2C_SellItem,
   ShopItemSnapshot,
   MapEntitySnapshot,
+  PlayerTradeItemOffer,
+  PlayerTradeSnapshot,
   QuestSnapshot,
 } from "../Generated/SDK/Generated/Model/demo/protocol/messages";
 import "../Generated/Hotfix/handlers";
@@ -70,6 +75,7 @@ import type { RpcSocket } from "../Generated/SDK/Core/Net/RpcSocket";
 import "../Generated/SDK/Core/Net/BrowserWebSocketTransport";
 import "../Generated/SDK/Core/Net/NativeTransport";
 import { PlayerCharacterVisual3D } from "./PlayerCharacterVisual3D";
+import { PlayerTradePanel } from "./PlayerTradePanel";
 
 const { ccclass, property } = _decorator;
 const MAP_ID = 100;
@@ -197,6 +203,7 @@ interface RemotePlayer3D {
   readonly targetFoot: Vec3;
   readonly entityType: number;
   readonly configId: number;
+  displayName: string;
   shopEnabled: boolean;
   alive: boolean;
   readonly numerics: Map<number, bigint>;
@@ -308,6 +315,8 @@ export class GameBootstrap3D extends Component {
   private mobilePingElement?: HTMLElement;
   private selectedMonsterElement?: HTMLElement;
   private selectedMonsterLabel?: HTMLElement;
+  private playerTradeButton?: HTMLButtonElement;
+  private playerTradePanel?: PlayerTradePanel;
   private lootInteractionButton?: HTMLButtonElement;
   private lootPanel?: HTMLElement;
   private lootPanelTitle?: HTMLElement;
@@ -423,6 +432,7 @@ export class GameBootstrap3D extends Component {
   private questHudSignature = "";
   private selectedMonsterUnitId = 0;
   private selectedNpcUnitId = 0;
+  private selectedPlayerUnitId = 0;
   private nearbyNpcUnitId = 0;
   private npcDialogUnitId = 0;
   private npcQuestInFlight = false;
@@ -581,6 +591,8 @@ export class GameBootstrap3D extends Component {
     this.mindFlayBeam?.destroy();
     this.mindFlayBeam = undefined;
     this.selectedMonsterElement?.remove();
+    this.playerTradePanel?.Dispose();
+    this.playerTradePanel = undefined;
     this.npcInteractionButton?.remove();
     this.npcDialogPanel?.remove();
     this.shopPanel?.remove();
@@ -591,6 +603,7 @@ export class GameBootstrap3D extends Component {
     this.autoAttackLabel = undefined;
     this.autoAttackProgress = undefined;
     this.selectedMonsterElement = undefined;
+    this.playerTradeButton = undefined;
     this.npcInteractionButton = undefined;
     this.npcDialogPanel = undefined;
     this.npcDialogText = undefined;
@@ -692,6 +705,22 @@ export class GameBootstrap3D extends Component {
     this.buildAutoAttackHud(document);
     this.buildSkillCastHud(document);
     this.buildSelectedMonsterHud(document);
+    this.playerTradePanel = new PlayerTradePanel(
+      document,
+      {
+        respond: (tradeId, accept) => this.respondPlayerTrade(tradeId, accept),
+        updateOffer: (tradeId, gold, items) => this.updatePlayerTradeOffer(tradeId, gold, items),
+        confirm: (tradeId) => this.confirmPlayerTrade(tradeId),
+        cancel: (tradeId) => this.cancelPlayerTrade(tradeId),
+      },
+      (configId) => {
+        const config = GameConfigs.ItemConfig.TryGet(configId);
+        return {
+          name: config?.name ?? `道具#${configId}`,
+          tradeable: (config?.sellPrice ?? 0) > 0,
+        };
+      },
+    );
     this.buildLootPanel(document);
     this.buildNpcInteractionHud(document);
     this.buildNpcShopHud(document);
@@ -1395,10 +1424,27 @@ export class GameBootstrap3D extends Component {
       void this.lootSelectedMonster(0, true);
     });
     panel.appendChild(lootButton);
+    const tradeButton = document.createElement("button");
+    tradeButton.type = "button";
+    tradeButton.textContent = "发起交易";
+    Object.assign(tradeButton.style, {
+      display: "none",
+      padding: "7px 10px",
+      border: "1px solid rgba(151, 205, 238, 0.8)",
+      borderRadius: "6px",
+      color: "#eef8ff",
+      background: "rgba(33, 110, 156, 0.92)",
+      font: "700 13px/1.2 system-ui, sans-serif",
+      pointerEvents: "auto",
+      touchAction: "manipulation",
+    });
+    this.bindTouchSafeHudButton(tradeButton, () => void this.requestSelectedPlayerTrade());
+    panel.appendChild(tradeButton);
     document.body.appendChild(panel);
     this.selectedMonsterElement = panel;
     this.selectedMonsterLabel = label;
     this.lootInteractionButton = lootButton;
+    this.playerTradeButton = tradeButton;
   }
 
   /** 创建持久尸体掉落窗口；普通点击领取一行，Shift/右键/F领取全部，窗口由关闭按钮明确结束。 / Creates a persistent corpse-loot window: normal click claims one row, Shift/right-click/F claims all, and only the close button ends it. */
@@ -3817,6 +3863,7 @@ export class GameBootstrap3D extends Component {
     const entity = this.pickSelectableAtScreen(location.x, location.y);
     if (entity) {
       if (entity.entityType === ENTITY_TYPE_NPC) this.selectNpc(entity);
+      else if (entity.entityType === ENTITY_TYPE_PLAYER) this.selectPlayer(entity);
       else this.selectMonster(entity);
       return;
     }
@@ -3913,6 +3960,8 @@ export class GameBootstrap3D extends Component {
     this.lootResultMonsterId = 0;
     this.selectedMonsterUnitId = 0;
     this.selectedNpcUnitId = 0;
+    this.selectedPlayerUnitId = 0;
+    this.playerTradePanel?.Close();
     this.nearbyNpcUnitId = 0;
     this.npcDialogUnitId = 0;
     if (this.npcDialogPanel) this.npcDialogPanel.style.display = "none";
@@ -4112,6 +4161,7 @@ export class GameBootstrap3D extends Component {
       const remote = this.remotePlayers.get(unitId);
       if (unitId === this.selectedMonsterUnitId) this.clearSelectedMonster();
       if (unitId === this.selectedNpcUnitId) this.clearSelectedNpc();
+      if (unitId === this.selectedPlayerUnitId) this.clearSelectedPlayer();
       if (unitId === this.nearbyNpcUnitId || unitId === this.npcDialogUnitId) this.closeNpcDialog();
       if (unitId === this.lootPanelMonsterId) this.closeLootPanel();
       if (!remote) continue;
@@ -4267,6 +4317,7 @@ export class GameBootstrap3D extends Component {
     }
     this.updateHotbarHud();
     this.updateInventoryHud();
+    this.playerTradePanel?.UpdateInventory(this.tradeInventory());
     if (this.shopOpen) this.updateNpcShopHud();
   }
 
@@ -4282,6 +4333,7 @@ export class GameBootstrap3D extends Component {
     }
     this.updateHotbarHud();
     this.updateInventoryHud();
+    this.playerTradePanel?.UpdateInventory(this.tradeInventory());
     if (this.shopOpen) this.updateNpcShopHud();
   }
 
@@ -4494,6 +4546,7 @@ export class GameBootstrap3D extends Component {
     const entity = this.pickSelectableAtScreen(location.x, location.y);
     if (entity) {
       if (entity.entityType === ENTITY_TYPE_NPC) this.selectNpc(entity);
+      else if (entity.entityType === ENTITY_TYPE_PLAYER) this.selectPlayer(entity);
       else this.selectMonster(entity);
       return;
     }
@@ -4502,14 +4555,17 @@ export class GameBootstrap3D extends Component {
     // void this.queryPathAtScreen(location.x, location.y);
   }
 
-  /** 从屏幕射线中选择最近的怪物或NPC方块；命中实体后不会穿透到地面寻路。 / Picks the nearest monster or NPC box; an entity hit never falls through to ground navigation. */
+  /** 从屏幕射线中选择最近的玩家、怪物或NPC；命中实体后不会穿透到地面。 / Picks the nearest player, monster, or NPC; an entity hit never falls through to the ground. */
   private pickSelectableAtScreen(screenX: number, screenY: number): RemotePlayer3D | undefined {
     const ray = new geometry.Ray();
     this.camera.screenPointToRay(screenX, screenY, ray);
     let nearest: RemotePlayer3D | undefined;
     let nearestDistance = Number.POSITIVE_INFINITY;
     for (const remote of this.remotePlayers.values()) {
-      if ((remote.entityType !== ENTITY_TYPE_MONSTER && remote.entityType !== ENTITY_TYPE_NPC) || !remote.node.active) continue;
+      if (
+        (remote.entityType !== ENTITY_TYPE_PLAYER && remote.entityType !== ENTITY_TYPE_MONSTER && remote.entityType !== ENTITY_TYPE_NPC) ||
+        !remote.node.active
+      ) continue;
       const distance = intersectRayBox(
         ray,
         remote.node.worldPosition,
@@ -4529,6 +4585,9 @@ export class GameBootstrap3D extends Component {
     const previousNpc = this.remotePlayers.get(this.selectedNpcUnitId);
     if (previousNpc) previousNpc.selectionMarker.active = false;
     this.selectedNpcUnitId = 0;
+    const previousPlayer = this.remotePlayers.get(this.selectedPlayerUnitId);
+    if (previousPlayer) previousPlayer.selectionMarker.active = false;
+    this.selectedPlayerUnitId = 0;
     if (this.selectedMonsterUnitId !== monster.unitId) {
       const previous = this.remotePlayers.get(this.selectedMonsterUnitId);
       if (previous) previous.selectionMarker.active = false;
@@ -4544,12 +4603,31 @@ export class GameBootstrap3D extends Component {
     const previousMonster = this.remotePlayers.get(this.selectedMonsterUnitId);
     if (previousMonster) previousMonster.selectionMarker.active = false;
     this.selectedMonsterUnitId = 0;
+    const previousPlayer = this.remotePlayers.get(this.selectedPlayerUnitId);
+    if (previousPlayer) previousPlayer.selectionMarker.active = false;
+    this.selectedPlayerUnitId = 0;
     if (this.selectedNpcUnitId !== npc.unitId) {
       const previousNpc = this.remotePlayers.get(this.selectedNpcUnitId);
       if (previousNpc) previousNpc.selectionMarker.active = false;
     }
     this.selectedNpcUnitId = npc.unitId;
     npc.selectionMarker.active = true;
+    this.refreshSelectedTargetHud();
+  }
+
+  /** 选择同场景玩家作为社交目标；只改变客户端高亮，不会自动发起交易。 / Selects a same-scene player as a social target without automatically starting a trade. */
+  private selectPlayer(player: RemotePlayer3D): void {
+    const previousMonster = this.remotePlayers.get(this.selectedMonsterUnitId);
+    if (previousMonster) previousMonster.selectionMarker.active = false;
+    const previousNpc = this.remotePlayers.get(this.selectedNpcUnitId);
+    if (previousNpc) previousNpc.selectionMarker.active = false;
+    const previousPlayer = this.remotePlayers.get(this.selectedPlayerUnitId);
+    if (previousPlayer && previousPlayer.unitId !== player.unitId) previousPlayer.selectionMarker.active = false;
+    this.selectedMonsterUnitId = 0;
+    this.selectedNpcUnitId = 0;
+    this.selectedPlayerUnitId = player.unitId;
+    this.closeLootPanel();
+    player.selectionMarker.active = true;
     this.refreshSelectedTargetHud();
   }
 
@@ -4572,13 +4650,30 @@ export class GameBootstrap3D extends Component {
     this.refreshSelectedTargetHud();
   }
 
-  /** 刷新怪物/NPC目标信息；靠近交互和任务接取由独立对话框负责。 / Refreshes target text; proximity interaction and quest acceptance live in the separate dialog. */
+  /** 清除离开AOI的玩家社交目标；已经打开的交易会话仍等待服务端关闭通知。 / Clears a player target that left AOI while an open trade still waits for the server close notification. */
+  private clearSelectedPlayer(): void {
+    if (this.selectedPlayerUnitId === 0) return;
+    const previous = this.remotePlayers.get(this.selectedPlayerUnitId);
+    if (previous) previous.selectionMarker.active = false;
+    this.selectedPlayerUnitId = 0;
+    this.refreshSelectedTargetHud();
+  }
+
+  /** 刷新玩家、怪物和NPC目标信息；只暴露当前AOI内的公开字段。 / Refreshes player, monster, and NPC target data using only current AOI-visible fields. */
   private refreshSelectedTargetHud(): void {
     const label = this.selectedMonsterLabel;
     if (!label) return;
-    const selected = this.remotePlayers.get(this.selectedMonsterUnitId || this.selectedNpcUnitId);
+    const selected = this.remotePlayers.get(
+      this.selectedMonsterUnitId || this.selectedNpcUnitId || this.selectedPlayerUnitId,
+    );
+    if (this.playerTradeButton) this.playerTradeButton.style.display = "none";
     if (!selected) {
-      label.textContent = "目标：未选择怪物";
+      label.textContent = "目标：未选择";
+      return;
+    }
+    if (selected.entityType === ENTITY_TYPE_PLAYER) {
+      label.textContent = `玩家：${selected.displayName}\n实例ID：${selected.unitId}`;
+      if (this.playerTradeButton) this.playerTradeButton.style.display = "block";
       return;
     }
     if (selected.entityType === ENTITY_TYPE_NPC) {
@@ -4588,6 +4683,88 @@ export class GameBootstrap3D extends Component {
     const config = GameConfigs.MonsterConfig.TryGet(selected.configId);
     const name = config?.name ?? `MonsterConfig#${selected.configId}`;
     label.textContent = `目标：${name}${selected.alive ? "" : "（尸体）"}\n实例ID：${selected.unitId}`;
+  }
+
+  /** 向当前选中玩家发起同地图交易；客户端不创建本地会话，必须等待服务端返回TradeId。 / Requests a same-map trade with the selected player and waits for the server-owned TradeId. */
+  private async requestSelectedPlayerTrade(): Promise<void> {
+    const mapClient = this.mapClient;
+    const target = this.remotePlayers.get(this.selectedPlayerUnitId);
+    if (!mapClient) {
+      this.setStatus("发起交易失败：Map连接尚未建立，请重新登录");
+      return;
+    }
+    if (!target || target.entityType !== ENTITY_TYPE_PLAYER) {
+      this.setStatus("发起交易失败：目标玩家已经离开视野，请重新选择");
+      this.clearSelectedPlayer();
+      return;
+    }
+    try {
+      const response = await mapClient.requestPlayerTrade({ targetUnitId: target.unitId });
+      this.playerTradePanel?.ShowTrade(response.trade, this.localUnitId, this.tradeInventory());
+    } catch (error) {
+      this.setStatus(`发起交易失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** 回应服务端交易邀请；拒绝后立即关闭本地窗口，接受后进入双方报价界面。 / Responds to a server trade invite, closing on reject or entering the offer view on accept. */
+  private async respondPlayerTrade(tradeId: string, accept: boolean): Promise<void> {
+    const response = await this.mapClient?.respondPlayerTrade({ tradeId, accept });
+    if (!response) throw new Error("Map连接尚未建立");
+    if (accept) this.playerTradePanel?.ShowTrade(response.trade, this.localUnitId, this.tradeInventory());
+    else this.playerTradePanel?.Close(tradeId);
+  }
+
+  /** 提交本方完整报价；任意报价变化都会由服务端清除双方确认状态。 / Submits the complete local offer; the server clears both confirmations after every offer change. */
+  private async updatePlayerTradeOffer(
+    tradeId: string,
+    gold: bigint,
+    items: readonly PlayerTradeItemOffer[],
+  ): Promise<void> {
+    const response = await this.mapClient?.updatePlayerTradeOffer({ tradeId, gold, items });
+    if (!response) throw new Error("Map连接尚未建立");
+    this.playerTradePanel?.ShowTrade(response.trade, this.localUnitId, this.tradeInventory());
+  }
+
+  /** 确认当前报价；第二个确认者会等待DBProxy双角色事务，成功后仍以关闭Push更新私有背包。 / Confirms the current offer; the second confirmer waits for the DBProxy transaction while the close push remains authoritative for private inventory. */
+  private async confirmPlayerTrade(tradeId: string): Promise<void> {
+    const response = await this.mapClient?.confirmPlayerTrade({ tradeId });
+    if (!response) throw new Error("Map连接尚未建立");
+    if (!response.committed) {
+      this.playerTradePanel?.ShowTrade(response.trade, this.localUnitId, this.tradeInventory());
+    }
+  }
+
+  /** 取消尚未提交的交易；提交阶段由服务端拒绝取消，避免半提交。 / Cancels a pre-commit trade; the server rejects cancellation during commit to prevent half-commit semantics. */
+  private async cancelPlayerTrade(tradeId: string): Promise<void> {
+    const response = await this.mapClient?.cancelPlayerTrade({ tradeId });
+    if (!response) throw new Error("Map连接尚未建立");
+    this.playerTradePanel?.Close(response.tradeId);
+  }
+
+  /** 处理被邀请Push；邀请窗口只展示服务端快照，不自行推导距离或忙碌状态。 / Handles an invite push using only the authoritative snapshot. */
+  ApplyPlayerTradeInvite(message: G2C_PlayerTradeInvite): void {
+    this.playerTradePanel?.ShowInvite(message.trade, this.localUnitId);
+  }
+
+  /** 处理双方报价、确认或提交阶段变化。 / Applies offer, confirmation, and committing phase changes for both participants. */
+  ApplyPlayerTradeChanged(message: G2C_PlayerTradeChanged): void {
+    this.playerTradePanel?.ShowTrade(message.trade, this.localUnitId, this.tradeInventory());
+  }
+
+  /** 交易关闭时用私有金币和完整背包覆盖客户端投影；失败关闭不修改本地数据。 / Replaces local currency and inventory from the private close push after commit; failed closes leave projections unchanged. */
+  ApplyPlayerTradeClosed(message: G2C_PlayerTradeClosed): void {
+    if (message.committed) {
+      this.playerGold = message.gold;
+      this.ApplyInventorySnapshot(message.inventory);
+      this.setStatus("交易完成，金币和背包已按服务端快照更新");
+    } else {
+      this.setStatus(`交易已关闭：${playerTradeCloseReason(message.reason)}`);
+    }
+    this.playerTradePanel?.Close(message.tradeId);
+  }
+
+  private tradeInventory(): readonly ItemSnapshot[] {
+    return Array.from(this.inventoryItems.values());
   }
 
   /** 更新尸体拾取入口；客户端只负责显示，是否有资格和是否仍有掉落由服务端决定。 / Updates the corpse-loot entry; the server decides eligibility and remaining drops. */
@@ -5475,6 +5652,7 @@ export class GameBootstrap3D extends Component {
         targetFoot: new Vec3(entity.x, entity.y, entity.z),
         entityType: entity.entityType,
         configId: entity.configId,
+        displayName: entityDisplayName(entity),
         shopEnabled: isShopNpcEntity(entity),
         alive: entity.alive,
         numerics: new Map(entity.numerics.map((numeric) => [numeric.numericType, numeric.value])),
@@ -5488,8 +5666,9 @@ export class GameBootstrap3D extends Component {
       remote.targetFoot.set(entity.x, entity.y, entity.z);
       remote.yaw = entity.yaw;
       remote.alive = entity.alive;
+      remote.displayName = entityDisplayName(entity);
       remote.shopEnabled = isShopNpcEntity(entity);
-      if (remote.overheadHud?.nameLabel) remote.overheadHud.nameLabel.string = entityDisplayName(entity);
+      if (remote.overheadHud?.nameLabel) remote.overheadHud.nameLabel.string = remote.displayName;
       for (const numeric of entity.numerics) remote.numerics.set(numeric.numericType, numeric.value);
       if (!entity.alive) remote.visual?.SetMoving(false);
     }
@@ -5504,7 +5683,9 @@ export class GameBootstrap3D extends Component {
       remote.node.active = remote.alive;
       if (remote.overheadHud) remote.overheadHud.root.active = remote.alive;
       remote.selectionMarker.active = remote.alive && (
-        remote.unitId === this.selectedMonsterUnitId || remote.unitId === this.selectedNpcUnitId
+        remote.unitId === this.selectedMonsterUnitId ||
+        remote.unitId === this.selectedNpcUnitId ||
+        remote.unitId === this.selectedPlayerUnitId
       );
       if (remote.entityType === ENTITY_TYPE_NPC) {
         remote.node.setPosition(
@@ -6155,6 +6336,19 @@ function buffHudKey(buffInstanceId: bigint): string {
 /** 稳定比较两个Item实例ID，避免把BigInt转换为可能失真的Number。 / Compares Item instance IDs without lossy BigInt-to-Number conversion. */
 function compareBigInt(left: bigint, right: bigint): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** 将稳定关闭原因转换为Demo提示；未知值保留数字便于协议排查。 / Converts stable close reasons to demo text while preserving unknown values for protocol diagnosis. */
+function playerTradeCloseReason(reason: number): string {
+  switch (reason) {
+    case 1: return "一方取消";
+    case 2: return "对方拒绝";
+    case 3: return "操作超时";
+    case 4: return "玩家离开地图";
+    case 5: return "交易完成";
+    case 6: return "背包或金币已变化";
+    default: return `原因#${reason}`;
+  }
 }
 
 /** 背包冷却只显示短而稳定的文本，避免小数位导致格子宽度抖动。 / Formats inventory cooldowns without width-changing precision noise. */

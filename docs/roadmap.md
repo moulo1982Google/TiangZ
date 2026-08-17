@@ -415,7 +415,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ### Phase 4.5：持久化基础
 
-状态：进行中。独立仓库`TiangZ-DBProxy v0.5.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport、Player Snapshot Repository、任务奖励与UseItem关键事务已经接通；真实测试已验证下线保存、TiangZ重启、PostgreSQL恢复和UseItem同ID幂等，纯逻辑故障注入已覆盖事务前失败与提交后ACK丢失。`v0.5.0`的多Endpoint、双实例基础和多记录原子事务已经发布并接入主工程；TiangZ端到端故障矩阵和更多经济域仍待继续验收，不能因此宣称完整生产高可用。
+状态：进行中。独立仓库`TiangZ-DBProxy v0.5.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport、Player Snapshot Repository、任务奖励与UseItem关键事务已经接通；真实测试已验证下线保存、TiangZ重启、PostgreSQL恢复和UseItem同ID幂等，纯逻辑故障注入已覆盖事务前失败与提交后ACK丢失。`v0.5.0`的多Endpoint、双实例基础和多记录原子事务已经发布并接入主工程；同地图玩家交易已成为首个双玩家原子事务消费者。TiangZ端到端故障矩阵和更多经济域仍待继续验收，不能因此宣称完整生产高可用。
 
 - 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，当前发布版本为`v0.5.0`，包含独立Rust workspace、`dbproxy-core/storage/protocol/client/server`、PostgreSQL快照/单记录事务与回执查询、Redis已提交快照缓存、Redis AOF持久普通快照积压、Rust客户端池、运行时无关TypeScript SDK、本地Compose、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
 - 首版服务协议使用版本化Protobuf、SHA-256协议指纹、内部共享令牌和默认8 MiB有界TCP帧，暴露`LoadSnapshot/SaveSnapshot/EnqueueSnapshot/ApplyTransaction`。客户端和服务端都按RecordKey使用多连接分片；超时连接不再复用，调用方通过原幂等ID重新连接重试。真实网络冒烟已经覆盖同步快照、Duplicate、Revision冲突、关键事务原结果和Redis backlog落PostgreSQL。
@@ -432,6 +432,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
 - 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
 - 当前验收覆盖Redis短暂不可用、Redis重启后的AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、进程内积压背压、有限轮Flush、PostgreSQL恢复重试、真实TCP网络闭环、TiangZ重启恢复，以及任务奖励/UseItem事务前失败与提交后ACK丢失；UseItem另有真实PostgreSQL同ID重试和TiangZ重启回执恢复。DBProxy仓库已覆盖多Endpoint、双实例基础和多记录事务；TiangZ端到端故障矩阵、进程崩溃接管、Prometheus积压指标、批量RPC和更多关键经济事务仍留在后续阶段；Redis/PostgreSQL高可用直接使用云厂商能力。
+- [x] 同地图玩家交易：MapScene维护60秒临时会话，双方报价变化清除确认；双确认后以稳定operationId原子提交两个Player记录，支持重复回执恢复和Revision冲突全拒绝。当前不支持跨地图、离线交易、邮件或拍卖行。
 
 ### Phase 4.6：Starter MMORPG 纵向切片
 

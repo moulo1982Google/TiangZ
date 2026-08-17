@@ -3,6 +3,7 @@ import {
   DbProxyErrorCode,
   DbProxyRemoteError,
   type DbProxySnapshotWrite,
+  type DbProxyMultiTransactionalWrite,
   type DbProxyTransactionalWrite,
 } from "@tiangz/dbproxy-sdk";
 import {
@@ -18,6 +19,9 @@ import {
 import {
   InMemoryPlayerRepository,
   type PlayerLoadResult,
+  type PlayerMultiTransactionReceipt,
+  type PlayerMultiTransactionResult,
+  type PlayerMultiTransactionWrite,
   type PlayerRepository,
   type PlayerSaveData,
   type PlayerSaveResult,
@@ -160,6 +164,74 @@ export class DbProxyPlayerRepository implements PlayerRepository {
       ? { revision: receipt.newRevision, result: receipt.result.slice() }
       : undefined;
   }
+
+  /** 使用DBProxy多记录事务一次提交全部玩家快照；重试始终复用同一operationId。 / Commits every player snapshot through one DBProxy multi-record transaction and always reuses the same operationId on retry. */
+  async ApplyMultiTransaction(
+    write: PlayerMultiTransactionWrite,
+  ): Promise<PlayerMultiTransactionResult> {
+    const entries = [...write.entries].sort((left, right) => compareBigInt(
+      left.data.player.characterId,
+      right.data.player.characterId,
+    ));
+    const request: DbProxyMultiTransactionalWrite = {
+      operationId: write.operationId,
+      writes: entries.map((entry) => ({
+        record: {
+          namespace: PLAYER_NAMESPACE,
+          key: keyOf(entry.data.player.characterId),
+        },
+        schema: PLAYER_PERSISTENCE_SCHEMA,
+        schemaVersion: PLAYER_PERSISTENCE_SCHEMA_VERSION,
+        expectedRevision: entry.expectedRevision,
+        payload: EncodePlayerSaveData(entry.data),
+        updatedAtUnixMs: BigInt(Date.now()),
+      })),
+      result: write.result.slice(),
+    };
+    for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
+      try {
+        const committed = await this.client.ApplyMultiTransaction(request);
+        return {
+          disposition: committed.disposition,
+          revisions: committed.records.map((record) => ({
+            characterId: BigInt(record.record.key),
+            revision: record.newRevision,
+          })).sort((left, right) => compareBigInt(left.characterId, right.characterId)),
+          result: committed.result.slice(),
+        };
+      } catch (error) {
+        if (
+          attempt === SAVE_ATTEMPTS ||
+          !(error instanceof DbProxyRemoteError) ||
+          error.code !== DbProxyErrorCode.StorageUnavailable
+        ) {
+          throw error;
+        }
+        // 多记录事务也可能已经提交而ACK丢失；禁止换operationId或拆成两个单记录重试。
+        // A multi-record transaction may also commit before its ACK is lost;
+        // never change operationId or split the retry into single-record writes.
+      }
+    }
+    throw new Error("unreachable DBProxy multi transaction retry state");
+  }
+
+  async LoadMultiTransaction(
+    characterIds: readonly bigint[],
+    operationId: string,
+  ): Promise<PlayerMultiTransactionReceipt | undefined> {
+    const records = [...characterIds]
+      .sort(compareBigInt)
+      .map((characterId) => ({ namespace: PLAYER_NAMESPACE, key: keyOf(characterId) }));
+    const receipt = await this.client.LoadMultiTransaction(operationId, records);
+    if (!receipt) return undefined;
+    return {
+      revisions: receipt.records.map((record) => ({
+        characterId: BigInt(record.record.key),
+        revision: record.newRevision,
+      })).sort((left, right) => compareBigInt(left.characterId, right.characterId)),
+      result: receipt.result.slice(),
+    };
+  }
 }
 
 /** MapHost工厂的唯一Repository选择点；业务代码不得到处判断DBProxy配置。 / Sole Repository selection point for MapHost factories; gameplay code must not branch on DBProxy configuration. */
@@ -181,4 +253,8 @@ export function CreatePlayerRepository(process: ProcessConfig): PlayerRepository
 function keyOf(characterId: bigint): string {
   if (characterId <= 0n) throw new Error(`player characterId must be positive: ${characterId}`);
   return characterId.toString(10);
+}
+
+function compareBigInt(left: bigint, right: bigint): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -7,6 +7,19 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-17：同地图玩家原子交易
+
+- 新增MapScene级`PlayerTradeComponent`、五个PlayerUnit Handler和Cocos3D交易面板；当前约束为双方在线、存活、同图且5米内，一个角色只能参加一场60秒会话，修改报价会清除双方确认。
+- 交易Planner只在纯快照上规划金币和Item交换，部分堆叠预分配新永久ItemId；双方确认后通过`PlayerPersistenceComponent.ApplyMultiTransaction`一次提交两个玩家记录，DBProxy确认前不修改Entity。
+- 最终提交同时占用确认者和另一参与者的真实PlayerUnit ordered mailbox，DBProxy等待期间不能插入道具、商店或金币写入；会话`Committing`标记只负责协议状态，不冒充跨Actor串行边界。
+- 多记录回执支持同operationId幂等恢复；Revision冲突时两边都不改变。确定性自测覆盖成功、重复请求、反向参与者查询与单边Revision冲突，未执行高CPU压力测试。
+- 客户端只保存报价草稿，成功关闭Push携带私有金币和完整背包；跨地图、离线、邮件和拍卖行交易暂缓。
+- 增加`test:player-trade-websocket`，使用两个不同账号验证请求RPC、目标邀请Push、双方接受Push与取消关闭Push，防止规则自测通过但Handler未随完整进程重启的假阳性。
+- Cocos3D发起交易时不再对“Map尚未连接”和“目标已离开AOI”静默返回，而是在状态区给出可操作错误。
+- 修复邀请阶段只按`phase`渲染导致发起者把RPC回包误显示成“接受/拒绝”邀请的问题；现在发起者显示等待与取消，被邀请者才显示接受和拒绝。网络探针同时断言发起者不会收到目标专属邀请Push。
+- 新增玩家交易持久化验收：临时玩家先通过NPC商店出售初始药品获得铜币，再交换铜币、小红和小蓝；验收器重启TiangZ核对双方快照，并在第二轮最终确认前停止首选DBProxy，验证备用Endpoint提交和再次重启恢复。测试不清库、不直写存储、不运行压力负载。
+- 故障验收发现仅备用DBProxy存活时，Runtime先ready、首个玩家RPC再惰性建池会撞上客户端5秒超时；改为持久化Process在ready前预连接完整连接池。备用可用即可启动，全部不可用则启动失败，避免“服务端后台完成首连但客户端先超时”的假失败窗口。
+
 ## 2026-08-17：仓库本机痕迹清理与门禁
 
 - 性能报告写入统一经过仓库路径清洗，`full_chain`、`map_capacity`与Hotfix A/B不再把执行机的TiangZ绝对目录写进`perf/results`；现有11份结果中的150处绝对路径已转换为仓库相对路径。

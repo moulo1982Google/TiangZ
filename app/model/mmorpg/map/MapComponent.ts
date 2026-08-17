@@ -18,6 +18,7 @@ import {
   component,
   type EntityTransferSnapshot,
   type ComponentCtor,
+  type MaybePromise,
 } from "../../../core/public";
 import { ClientBroadcasts } from "../../../generated/model/server/demo/protocol/broadcastDescriptors";
 import { GateMessages } from "../../../generated/model/server/demo/protocol/messageDescriptors";
@@ -63,6 +64,7 @@ import {
 import { NumericComponent } from "../numeric/NumericComponent";
 import { MoveSpeedMetersPerSecondToNumeric, NumericType } from "../numeric/NumericType";
 import { ItemComponent } from "../item/ItemComponent";
+import { PlayerTradeComponent } from "../trade/PlayerTradeComponent";
 import { BuffComponent } from "../buff/BuffComponent";
 import type { BuffTransferState } from "../buff/Buff";
 import { CombatComponent, type AutoAttackState } from "../combat/CombatComponent";
@@ -125,6 +127,11 @@ interface EncodedRouteBroadcast {
 
 export interface PlayerTransferCoordinator {
   TransferPlayer(source: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer>;
+  /** 将跨玩家关键操作送入目标玩家真实邮箱；调用方必须已经持有另一参与者的邮箱。 / Enters the target player's real mailbox for a cross-player critical operation; the caller must already own the other participant mailbox. */
+  RunPlayerMailbox<TResult>(
+    player: PlayerUnit,
+    body: (current: PlayerUnit) => MaybePromise<TResult>,
+  ): MaybePromise<TResult>;
 }
 
 export interface MapLifecycleCoordinator {
@@ -498,6 +505,19 @@ export class MapComponent extends Component<[
   }
 
   /**
+   * 让交易等跨玩家事务短暂占用第二位玩家的有序邮箱，禁止在DBProxy await期间插入背包或金币写入。
+   * Lets cross-player transactions such as trade hold the second player's
+   * ordered mailbox so inventory or currency writes cannot interleave while
+   * awaiting DBProxy. Never use this as a replacement for Location routing.
+   */
+  RunPlayerMailbox<TResult>(
+    player: PlayerUnit,
+    body: (current: PlayerUnit) => MaybePromise<TResult>,
+  ): MaybePromise<TResult> {
+    return this.transferCoordinator.RunPlayerMailbox(player, body);
+  }
+
+  /**
    * 业务统一地图传送入口，只接收目标MapInstanceId；同V8、跨V8和跨Process由框架路由决定。
    * 调用者不应查询MapHost或拼装位置revision。
    *
@@ -507,6 +527,7 @@ export class MapComponent extends Component<[
    */
   async TransferToMap(unit: PlayerUnit, targetMapInstanceId: bigint): Promise<M2G_TransferPlayer> {
     this.requirePlayer(unit);
+    this.DomainScene().GetComponent(PlayerTradeComponent).RequireCanLeave(unit);
     const located = await this.location.Resolve({ unitId: unit.UnitId, account: "", characterId: unit.CharacterId });
     if (!located.found || located.location.actorInstanceId !== unit.InstanceId) {
       throw new Error(`cannot transfer non-authoritative unit ${unit.UnitId}@${unit.InstanceId}`);
@@ -1517,6 +1538,7 @@ export class MapComponent extends Component<[
     reason: string,
   ): Promise<void> {
     this.requirePlayer(unit);
+    this.DomainScene().GetComponent(PlayerTradeComponent).PlayerLeaving(unit);
     const located = await this.location.Resolve({ unitId: unit.UnitId, account: "", characterId: unit.CharacterId });
     if (!located.found || located.location.actorInstanceId !== unit.InstanceId) {
       throw new Error(`cannot offline non-authoritative unit ${unit.UnitId}@${unit.InstanceId}`);

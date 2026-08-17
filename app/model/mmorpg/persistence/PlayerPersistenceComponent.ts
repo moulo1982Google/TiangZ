@@ -12,6 +12,8 @@ import { SkillComponent } from "../skill/SkillComponent";
 import type { PlayerRepository } from "./PlayerRepository";
 import type {
   PlayerSaveData,
+  PlayerMultiTransactionReceipt,
+  PlayerMultiTransactionResult,
   PlayerTransactionReceipt,
   PlayerTransactionResult,
 } from "./PlayerRepository";
@@ -23,6 +25,11 @@ export interface PlayerSaveOverrides {
   readonly buffs?: PlayerSaveData["buffs"];
   readonly skill?: PlayerSaveData["skill"];
   readonly quests?: PlayerSaveData["quests"];
+}
+
+export interface PlayerMultiTransactionParticipant {
+  readonly persistence: PlayerPersistenceComponent;
+  readonly data: PlayerSaveData;
 }
 
 @component()
@@ -161,6 +168,104 @@ export class PlayerPersistenceComponent extends Component<[
   }
 
   /**
+   * 通过一个共享Repository原子提交多个在线玩家；调用者必须在await前完成全部纯值规划。
+   * 任一身份、Repository或revision不一致都会在写入前失败，成功后才同步推进每个本地组件的revision。
+   *
+   * Atomically commits multiple online players through one shared Repository.
+   * Callers must finish all value planning before await. Identity, Repository,
+   * or revision mismatches fail before writing; local revisions advance only
+   * after the shared commit succeeds.
+   */
+  async ApplyMultiTransaction(
+    operationId: string,
+    participants: readonly PlayerMultiTransactionParticipant[],
+    result: Uint8Array,
+  ): Promise<PlayerMultiTransactionResult> {
+    const normalized = normalizeParticipants(participants);
+    for (const participant of normalized) {
+      participant.persistence.requireTransactionIdentity(participant.data);
+      if (participant.persistence.repository !== this.repository) {
+        throw new Error("player multi transaction participants must share one Repository");
+      }
+    }
+    try {
+      const committed = await Promise.resolve(this.repository.ApplyMultiTransaction({
+        operationId,
+        entries: normalized.map((participant) => ({
+          data: participant.data,
+          expectedRevision: participant.persistence.revision,
+        })),
+        result: result.slice(),
+      }));
+      const revisions = new Map(
+        committed.revisions.map((entry) => [entry.characterId, entry.revision]),
+      );
+      for (const participant of normalized) {
+        const revision = revisions.get(participant.data.player.characterId);
+        if (revision === undefined) {
+          throw new Error(
+            `player multi transaction omitted revision: ${participant.data.player.characterId}`,
+          );
+        }
+        participant.persistence.revision = revision;
+        participant.persistence.uncertainOperations.delete(operationId);
+      }
+      return {
+        disposition: committed.disposition,
+        revisions: committed.revisions.map((entry) => ({ ...entry })),
+        result: committed.result.slice(),
+      };
+    } catch (error) {
+      // 任一参与者都无法独立判断事务是否提交；全部标记不确定，恢复必须查询同一多记录回执。
+      // No participant can independently prove whether the transaction committed;
+      // mark all uncertain and recover only through the shared multi-record receipt.
+      for (const participant of normalized) {
+        participant.persistence.uncertainOperations.add(operationId);
+      }
+      throw error;
+    }
+  }
+
+  IsMultiTransactionUncertain(
+    operationId: string,
+    participants: readonly PlayerPersistenceComponent[],
+  ): boolean {
+    return participants.some((participant) => participant.uncertainOperations.has(operationId));
+  }
+
+  /** 查询共享多记录回执并同步全部参与者revision；缺少任一角色都视为契约错误。 / Loads a shared multi-record receipt and synchronizes every participant revision, rejecting incomplete receipts. */
+  async LoadMultiTransaction(
+    operationId: string,
+    participants: readonly PlayerPersistenceComponent[],
+  ): Promise<PlayerMultiTransactionReceipt | undefined> {
+    const normalized = normalizePersistenceComponents(participants);
+    for (const participant of normalized) {
+      if (participant.repository !== this.repository) {
+        throw new Error("player multi transaction participants must share one Repository");
+      }
+    }
+    const characterIds = normalized.map((participant) => participant.GetParent<PlayerUnit>().CharacterId);
+    const receipt = await Promise.resolve(
+      this.repository.LoadMultiTransaction(characterIds, operationId),
+    );
+    if (!receipt) return undefined;
+    const revisions = new Map(receipt.revisions.map((entry) => [entry.characterId, entry.revision]));
+    for (const participant of normalized) {
+      const characterId = participant.GetParent<PlayerUnit>().CharacterId;
+      const revision = revisions.get(characterId);
+      if (revision === undefined) {
+        throw new Error(`player multi transaction receipt omitted revision: ${characterId}`);
+      }
+      if (revision > participant.revision) participant.revision = revision;
+      participant.uncertainOperations.delete(operationId);
+    }
+    return {
+      revisions: receipt.revisions.map((entry) => ({ ...entry })),
+      result: receipt.result.slice(),
+    };
+  }
+
+  /**
    * 在断线、踢下线和进程停机路径中只保存玩家一次。
    * 第一个 reason 生效，后续调用者等待同一个 Promise。
    * 踢人 Handler 不可直接调用 Repository，否则会绕过这个幂等边界。
@@ -191,4 +296,49 @@ export class PlayerPersistenceComponent extends Component<[
       });
     return this.savePromise;
   }
+
+  private requireTransactionIdentity(data: PlayerSaveData): void {
+    const player = this.GetParent<PlayerUnit>();
+    if (data.player.account !== player.Account || data.player.characterId !== player.CharacterId) {
+      throw new Error(
+        `player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`,
+      );
+    }
+  }
+}
+
+function normalizeParticipants(
+  participants: readonly PlayerMultiTransactionParticipant[],
+): readonly PlayerMultiTransactionParticipant[] {
+  if (participants.length < 2) throw new Error("player multi transaction requires at least two participants");
+  const normalized = [...participants].sort((left, right) => compareBigInt(
+    left.data.player.characterId,
+    right.data.player.characterId,
+  ));
+  for (let index = 1; index < normalized.length; index += 1) {
+    if (normalized[index - 1].data.player.characterId === normalized[index].data.player.characterId) {
+      throw new Error(`duplicate player multi transaction participant: ${normalized[index].data.player.characterId}`);
+    }
+  }
+  return normalized;
+}
+
+function normalizePersistenceComponents(
+  participants: readonly PlayerPersistenceComponent[],
+): readonly PlayerPersistenceComponent[] {
+  if (participants.length < 2) throw new Error("player multi transaction requires at least two participants");
+  const normalized = [...participants].sort((left, right) => compareBigInt(
+    left.GetParent<PlayerUnit>().CharacterId,
+    right.GetParent<PlayerUnit>().CharacterId,
+  ));
+  for (let index = 1; index < normalized.length; index += 1) {
+    const previous = normalized[index - 1].GetParent<PlayerUnit>().CharacterId;
+    const current = normalized[index].GetParent<PlayerUnit>().CharacterId;
+    if (previous === current) throw new Error(`duplicate player multi transaction participant: ${current}`);
+  }
+  return normalized;
+}
+
+function compareBigInt(left: bigint, right: bigint): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

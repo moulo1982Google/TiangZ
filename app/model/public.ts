@@ -55,6 +55,7 @@ export {
   type InventoryConsumePlan,
   type InventoryGrant,
   type InventoryGrantPlan,
+  type InventoryReplacePlan,
   type InventoryGrantResult,
 } from "./mmorpg/item/ItemComponent";
 export { Item, type AwakeItem, type ItemView, type ItemNativeData } from "./mmorpg/item/Item";
@@ -257,6 +258,13 @@ export {
   STARTER_SHOP_NPC_UNIT_ID,
 } from "./mmorpg/npc/NpcComponent";
 export { NpcShopComponent } from "./mmorpg/shop/NpcShopComponent";
+export {
+  PlayerTradeCloseReason,
+  PlayerTradeComponent,
+  PlayerTradePhase,
+  type PlayerTradeOfferState,
+  type PlayerTradeSession,
+} from "./mmorpg/trade/PlayerTradeComponent";
 export { GateScene } from "./mmorpg/scenes/GateScene";
 export { LoginScene } from "./mmorpg/scenes/LoginScene";
 export { LocationScene } from "./mmorpg/scenes/LocationScene";

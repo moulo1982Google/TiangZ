@@ -108,6 +108,37 @@ message ShopItemSnapshot
   uint64 sell_price = 3;
 }
 
+// 玩家交易中的一条具体道具报价；item_id决定扣除哪一个永久Item实体。
+// One concrete item offer in a player trade; item_id identifies the persistent Item entity to debit.
+message PlayerTradeItemOffer
+{
+  uint64 item_id = 1;
+  uint32 item_config_id = 2;
+  uint32 count = 3;
+}
+
+// 一方的公开报价；只包含本次愿意交换的金币与道具，不泄露完整背包。
+// One participant's public offer containing only the gold and items offered in this trade.
+message PlayerTradeParticipant
+{
+  uint32 unit_id = 1;
+  string display_name = 2;
+  uint64 gold = 3;
+  repeated PlayerTradeItemOffer items = 4;
+  bool confirmed = 5;
+}
+
+// 地图内临时交易状态；phase: 1邀请中，2交换中，3提交中，4已关闭。
+// Map-local ephemeral trade state; phase: 1=invited, 2=open, 3=committing, 4=closed.
+message PlayerTradeSnapshot
+{
+  string trade_id = 1;
+  PlayerTradeParticipant requester = 2;
+  PlayerTradeParticipant target = 3;
+  uint32 phase = 4;
+  uint64 expire_at_ms = 5;
+}
+
 // 一行尸体掉落预览；只公开当前玩家有资格领取的配置和数量，不提前创建ItemId。
 // One corpse-loot preview row. It exposes only eligible config/count data and never allocates an ItemId early.
 message LootDropSnapshot

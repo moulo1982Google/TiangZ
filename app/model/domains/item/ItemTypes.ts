@@ -27,3 +27,9 @@ export interface InventoryConsumePlan<TItem extends ItemState = ItemState> {
   readonly nextItems: readonly TItem[];
   readonly consumedItem: TItem;
 }
+
+/** 完整背包替换计划用于跨玩家事务等批量所有权变更；它不是客户端可提交的任意快照。 / Full inventory replacement plan for batched ownership changes such as player trade; it is never an arbitrary client-supplied snapshot. */
+export interface InventoryReplacePlan<TItem extends ItemState = ItemState> {
+  readonly baseItems: readonly TItem[];
+  readonly nextItems: readonly TItem[];
+}

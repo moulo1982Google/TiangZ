@@ -427,6 +427,111 @@ message M2C_SellItem // IActorLocationResponse
   optional InventorySnapshot inventory_recovery = 5;
 }
 
+//ResponseType M2C_RequestPlayerTrade
+// 交易邀请只允许同地图近距离在线玩家；交易会话是临时状态，不进入玩家持久化快照。
+// Trade invitations accept only nearby online players in the same map; sessions are ephemeral and not persisted.
+// @ets.msg protocol=Map method=RequestPlayerTrade duringTransfer=reject
+message C2M_RequestPlayerTrade // IActorLocationRequest
+{
+  uint32 target_unit_id = 1;
+}
+
+message M2C_RequestPlayerTrade // IActorLocationResponse
+{
+  PlayerTradeSnapshot trade = 1;
+}
+
+//ResponseType M2C_RespondPlayerTrade
+// 被邀请者接受后双方进入报价阶段；拒绝会立即关闭会话。
+// The invited player enters the offer phase on acceptance; rejection closes the session immediately.
+// @ets.msg protocol=Map method=RespondPlayerTrade duringTransfer=reject
+message C2M_RespondPlayerTrade // IActorLocationRequest
+{
+  string trade_id = 1;
+  bool accept = 2;
+}
+
+message M2C_RespondPlayerTrade // IActorLocationResponse
+{
+  PlayerTradeSnapshot trade = 1;
+}
+
+//ResponseType M2C_UpdatePlayerTradeOffer
+// 修改报价会清除双方确认；服务端按具体ItemId校验数量，客户端不能只提交ConfigId。
+// Updating an offer clears both confirmations. The server validates concrete ItemIds, never ConfigIds alone.
+// @ets.msg protocol=Map method=UpdatePlayerTradeOffer duringTransfer=reject
+message C2M_UpdatePlayerTradeOffer // IActorLocationRequest
+{
+  string trade_id = 1;
+  uint64 gold = 2;
+  repeated PlayerTradeItemOffer items = 3;
+}
+
+message M2C_UpdatePlayerTradeOffer // IActorLocationResponse
+{
+  PlayerTradeSnapshot trade = 1;
+}
+
+//ResponseType M2C_ConfirmPlayerTrade
+// 双方确认后，金币与两个完整背包通过一笔DBProxy多记录事务原子提交。
+// After both confirmations, gold and both complete inventories commit in one DBProxy multi-record transaction.
+// @ets.msg protocol=Map method=ConfirmPlayerTrade duringTransfer=reject
+message C2M_ConfirmPlayerTrade // IActorLocationRequest
+{
+  string trade_id = 1;
+}
+
+message M2C_ConfirmPlayerTrade // IActorLocationResponse
+{
+  PlayerTradeSnapshot trade = 1;
+  bool committed = 2;
+}
+
+//ResponseType M2C_CancelPlayerTrade
+// 任一参与者可在持久化提交前取消；提交中禁止取消，避免把已提交结果伪装成失败。
+// Either participant may cancel before durable commit; committing sessions reject cancellation.
+// @ets.msg protocol=Map method=CancelPlayerTrade duringTransfer=reject
+message C2M_CancelPlayerTrade // IActorLocationRequest
+{
+  string trade_id = 1;
+}
+
+message M2C_CancelPlayerTrade // IActorLocationResponse
+{
+  string trade_id = 1;
+}
+
+// 收到交易邀请时只推送临时会话视图，不包含另一方背包。
+// Delivers an ephemeral invitation view without exposing the other inventory.
+// @ets.msg protocol=Client method=PlayerTradeInvite
+// @ets.broadcast mode=event
+message G2C_PlayerTradeInvite // IMessage
+{
+  PlayerTradeSnapshot trade = 1;
+}
+
+// 报价、接受和确认后的最新交易状态；不可代替最终持久化结果。
+// Latest state after offer, acceptance, or confirmation changes; never a substitute for durable completion.
+// @ets.msg protocol=Client method=PlayerTradeChanged
+// @ets.broadcast mode=event
+message G2C_PlayerTradeChanged // IMessage
+{
+  PlayerTradeSnapshot trade = 1;
+}
+
+// 交易关闭后向每个玩家发送其私有权威金币和背包；失败关闭不修改这两个值。
+// Sends each player's private authoritative gold and inventory after closure; failed closure leaves both unchanged.
+// @ets.msg protocol=Client method=PlayerTradeClosed
+// @ets.broadcast mode=event
+message G2C_PlayerTradeClosed // IMessage
+{
+  string trade_id = 1;
+  bool committed = 2;
+  uint32 reason = 3;
+  uint64 gold = 4;
+  InventorySnapshot inventory = 5;
+}
+
 //ResponseType M2C_ToggleAutoAttack
 // 平A开关只改变玩家意图；实际读条由地图的10Hz战斗桶推进，状态事件由Map广播给玩家本人。
 // @ets.msg protocol=Map method=ToggleAutoAttack duringTransfer=reject

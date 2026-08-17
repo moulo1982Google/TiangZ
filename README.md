@@ -1,7 +1,7 @@
 # TiangZ
 天工，一个正在开发中的 MMORPG 服务端框架。
 
-当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。当前 Starter MMORPG 已经串起注册/登录、角色目录、NPC接取任务、怪物与技能战斗、Buff、掉落与尸体拾取、背包、货币、NPC商店和可选 DBProxy 重启恢复；最完整的可操作客户端是 Cocos3D。可复用领域契约与 MMORPG 适配边界见[能力归属表](docs/design/capability-ownership.md)。
+当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。当前 Starter MMORPG 已经串起注册/登录、角色目录、NPC接取任务、怪物与技能战斗、Buff、掉落与尸体拾取、背包、货币、NPC商店、同地图玩家交易和可选 DBProxy 重启恢复；最完整的可操作客户端是 Cocos3D。可复用领域契约与 MMORPG 适配边界见[能力归属表](docs/design/capability-ownership.md)。
 
 ## 5分钟启动
 
@@ -12,7 +12,7 @@ npm run hello
 
 看到 `Starter 已就绪` 后，用 Cocos3D/Pixi Demo 连接 `ws://127.0.0.1:7000`。完整的第一个 Handler 与 RPC 修改路径见 [5分钟跑通 TiangZ](docs/tutorials/00-quickstart.md)。
 
-持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。DBProxy 当前工作版本为 `v0.5.0`，提供 Player Snapshot Repository、Revision/CAS、幂等事务回执、多 Endpoint 故障切换和跨记录原子事务；TiangZ 主工程通过 Host Transport 接入，不直接连接 Redis/PostgreSQL。当前 Starter 已验证玩家快照、任务奖励、道具使用和商店交易的基本持久化边界；更完整的玩家交易、邮件、周期快照和生产级高可用仍属于后续业务阶段，运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
+持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。DBProxy 当前工作版本为 `v0.5.0`，提供 Player Snapshot Repository、Revision/CAS、幂等事务回执、多 Endpoint 故障切换和跨记录原子事务；TiangZ 主工程通过 Host Transport 接入，不直接连接 Redis/PostgreSQL。当前 Starter 已验证玩家快照、任务奖励、道具使用、商店交易和同地图双玩家原子交易的基本持久化边界；邮件、跨地图交易、周期快照和生产级高可用仍属于后续业务阶段。运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)，交易边界见[玩家交易设计](docs/design/player-trade.md)。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 

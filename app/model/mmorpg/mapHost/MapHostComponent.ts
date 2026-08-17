@@ -6,6 +6,7 @@ import {
   SystemErrCode,
   UnitComponent,
   type CustomMetricSnapshot,
+  type MaybePromise,
   TransferStagingRegistry,
 } from "../../../core/public";
 import { GameErrCode } from "../../game/protocol/GameErrCode";
@@ -42,6 +43,7 @@ import { MapAoiComponent } from "../map/MapAoiComponent";
 import { MonsterComponent } from "../monster/MonsterComponent";
 import { NpcComponent } from "../npc/NpcComponent";
 import { NpcShopComponent } from "../shop/NpcShopComponent";
+import { PlayerTradeComponent } from "../trade/PlayerTradeComponent";
 import { SkillMapComponent } from "../skill/SkillMapComponent";
 import { PlayerUnit, type PlayerSnapshot } from "../map/PlayerUnit";
 import { PlayerDirectoryComponent } from "./PlayerDirectoryComponent";
@@ -493,6 +495,14 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       return await this.TransferLocal(source, request, resolved.instance, operationId);
     }
     return await this.TransferRemote(source, request, resolved.instance, operationId);
+  }
+
+  /** 仅供同一MapHost内已经解析出的PlayerUnit进入真实Actor邮箱；跨进程定位仍必须经过Location。 / Enters the real Actor mailbox for an already-resolved PlayerUnit on this MapHost; cross-process lookup must still use Location. */
+  RunPlayerMailbox<TResult>(
+    player: PlayerUnit,
+    body: (current: PlayerUnit) => MaybePromise<TResult>,
+  ): MaybePromise<TResult> {
+    return this.owner.RunLocalActorMailbox(player, body);
   }
 
   private async TransferLocal(
@@ -1063,6 +1073,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       );
       const npc = scene.AddComponent(NpcComponent, map, aoi);
       scene.AddComponent(NpcShopComponent, npc);
+      scene.AddComponent(PlayerTradeComponent);
       scene.AddComponent(MonsterComponent, map, aoi);
       scene.AddComponent(SkillMapComponent, map);
       this.maps.set(definition.mapInstanceId, map);

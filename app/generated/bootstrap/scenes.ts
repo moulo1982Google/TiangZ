@@ -24,11 +24,12 @@ import { NpcComponent as SystemTarget10 } from "../../model/mmorpg/npc/NpcCompon
 import { NpcShopComponent as SystemTarget11 } from "../../model/mmorpg/shop/NpcShopComponent";
 import { NpcUnit as SystemTarget12 } from "../../model/mmorpg/npc/NpcUnit";
 import { NumericComponent as SystemTarget13 } from "../../model/domains/numeric/NumericComponent";
-import { PlayerUnit as SystemTarget14 } from "../../model/mmorpg/map/PlayerUnit";
-import { Quest as SystemTarget15 } from "../../model/domains/quest/Quest";
-import { QuestComponent as SystemTarget16 } from "../../model/domains/quest/QuestComponent";
-import { SkillComponent as SystemTarget17 } from "../../model/mmorpg/skill/SkillComponent";
-import { SkillMapComponent as SystemTarget18 } from "../../model/mmorpg/skill/SkillMapComponent";
+import { PlayerTradeComponent as SystemTarget14 } from "../../model/mmorpg/trade/PlayerTradeComponent";
+import { PlayerUnit as SystemTarget15 } from "../../model/mmorpg/map/PlayerUnit";
+import { Quest as SystemTarget16 } from "../../model/domains/quest/Quest";
+import { QuestComponent as SystemTarget17 } from "../../model/domains/quest/QuestComponent";
+import { SkillComponent as SystemTarget18 } from "../../model/mmorpg/skill/SkillComponent";
+import { SkillMapComponent as SystemTarget19 } from "../../model/mmorpg/skill/SkillMapComponent";
 
 registerKnownRpcs(RpcDescriptors0);
 registerKnownMessages(MessageDescriptors0);
@@ -51,3 +52,4 @@ HotfixSystem.RequireType(SystemTarget15);
 HotfixSystem.RequireType(SystemTarget16);
 HotfixSystem.RequireType(SystemTarget17);
 HotfixSystem.RequireType(SystemTarget18);
+HotfixSystem.RequireType(SystemTarget19);

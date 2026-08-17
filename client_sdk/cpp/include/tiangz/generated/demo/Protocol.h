@@ -845,6 +845,195 @@ struct ShopItemSnapshotCodec {
   }
 };
 
+struct PlayerTradeItemOffer {
+  std::uint64_t itemId = 0;
+  std::uint32_t itemConfigId = 0;
+  std::uint32_t count = 0;
+};
+
+struct PlayerTradeItemOfferCodec {
+  static PlayerTradeItemOffer Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    PlayerTradeItemOffer value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.itemId = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.itemConfigId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.count = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const PlayerTradeItemOffer& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt64(1, value.itemId);
+    writer.UInt32(2, value.itemConfigId);
+    writer.UInt32(3, value.count);
+    return writer.Finish();
+  }
+};
+
+struct PlayerTradeParticipant {
+  std::uint32_t unitId = 0;
+  std::string displayName;
+  std::uint64_t gold = 0;
+  std::vector<PlayerTradeItemOffer> items;
+  bool confirmed = false;
+};
+
+struct PlayerTradeParticipantCodec {
+  static PlayerTradeParticipant Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    PlayerTradeParticipant value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.unitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.displayName = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.items.push_back(PlayerTradeItemOfferCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.confirmed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const PlayerTradeParticipant& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.unitId);
+    writer.String(2, value.displayName);
+    writer.UInt64(3, value.gold);
+    for (const auto& item : value.items) writer.BytesField(4, PlayerTradeItemOfferCodec::Encode(item), true);
+    writer.Bool(5, value.confirmed);
+    return writer.Finish();
+  }
+};
+
+struct PlayerTradeSnapshot {
+  std::string tradeId;
+  PlayerTradeParticipant requester;
+  PlayerTradeParticipant target;
+  std::uint32_t phase = 0;
+  std::uint64_t expireAtMs = 0;
+};
+
+struct PlayerTradeSnapshotCodec {
+  static PlayerTradeSnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    PlayerTradeSnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 2) {
+            value.tradeId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.requester = PlayerTradeParticipantCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.target = PlayerTradeParticipantCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.phase = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.expireAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const PlayerTradeSnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.String(1, value.tradeId);
+    writer.BytesField(2, PlayerTradeParticipantCodec::Encode(value.requester));
+    writer.BytesField(3, PlayerTradeParticipantCodec::Encode(value.target));
+    writer.UInt32(4, value.phase);
+    writer.UInt64(5, value.expireAtMs);
+    return writer.Finish();
+  }
+};
+
 struct LootDropSnapshot {
   std::uint32_t dropId = 0;
   std::uint32_t itemConfigId = 0;
@@ -4481,6 +4670,687 @@ struct M2C_SellItemCodec {
   }
 };
 
+struct C2M_RequestPlayerTrade {
+  std::optional<std::uint32_t> rpcId;
+  std::uint32_t targetUnitId = 0;
+};
+
+struct C2M_RequestPlayerTradeCodec {
+  static C2M_RequestPlayerTrade Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_RequestPlayerTrade value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 0) {
+            value.targetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_RequestPlayerTrade& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.UInt32(1, value.targetUnitId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_RequestPlayerTrade {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  PlayerTradeSnapshot trade;
+};
+
+struct M2C_RequestPlayerTradeCodec {
+  static M2C_RequestPlayerTrade Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_RequestPlayerTrade value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.trade = PlayerTradeSnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_RequestPlayerTrade& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, PlayerTradeSnapshotCodec::Encode(value.trade));
+    return writer.Finish();
+  }
+};
+
+struct C2M_RespondPlayerTrade {
+  std::optional<std::uint32_t> rpcId;
+  std::string tradeId;
+  bool accept = false;
+};
+
+struct C2M_RespondPlayerTradeCodec {
+  static C2M_RespondPlayerTrade Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_RespondPlayerTrade value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.tradeId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.accept = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_RespondPlayerTrade& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.tradeId);
+    writer.Bool(2, value.accept);
+    return writer.Finish();
+  }
+};
+
+struct M2C_RespondPlayerTrade {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  PlayerTradeSnapshot trade;
+};
+
+struct M2C_RespondPlayerTradeCodec {
+  static M2C_RespondPlayerTrade Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_RespondPlayerTrade value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.trade = PlayerTradeSnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_RespondPlayerTrade& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, PlayerTradeSnapshotCodec::Encode(value.trade));
+    return writer.Finish();
+  }
+};
+
+struct C2M_UpdatePlayerTradeOffer {
+  std::optional<std::uint32_t> rpcId;
+  std::string tradeId;
+  std::uint64_t gold = 0;
+  std::vector<PlayerTradeItemOffer> items;
+};
+
+struct C2M_UpdatePlayerTradeOfferCodec {
+  static C2M_UpdatePlayerTradeOffer Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_UpdatePlayerTradeOffer value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.tradeId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 2) {
+            value.items.push_back(PlayerTradeItemOfferCodec::Decode(reader.BytesField()));
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_UpdatePlayerTradeOffer& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.tradeId);
+    writer.UInt64(2, value.gold);
+    for (const auto& item : value.items) writer.BytesField(3, PlayerTradeItemOfferCodec::Encode(item), true);
+    return writer.Finish();
+  }
+};
+
+struct M2C_UpdatePlayerTradeOffer {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  PlayerTradeSnapshot trade;
+};
+
+struct M2C_UpdatePlayerTradeOfferCodec {
+  static M2C_UpdatePlayerTradeOffer Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_UpdatePlayerTradeOffer value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.trade = PlayerTradeSnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_UpdatePlayerTradeOffer& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, PlayerTradeSnapshotCodec::Encode(value.trade));
+    return writer.Finish();
+  }
+};
+
+struct C2M_ConfirmPlayerTrade {
+  std::optional<std::uint32_t> rpcId;
+  std::string tradeId;
+};
+
+struct C2M_ConfirmPlayerTradeCodec {
+  static C2M_ConfirmPlayerTrade Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_ConfirmPlayerTrade value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.tradeId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_ConfirmPlayerTrade& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.tradeId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_ConfirmPlayerTrade {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  PlayerTradeSnapshot trade;
+  bool committed = false;
+};
+
+struct M2C_ConfirmPlayerTradeCodec {
+  static M2C_ConfirmPlayerTrade Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_ConfirmPlayerTrade value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.trade = PlayerTradeSnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.committed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_ConfirmPlayerTrade& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, PlayerTradeSnapshotCodec::Encode(value.trade));
+    writer.Bool(2, value.committed);
+    return writer.Finish();
+  }
+};
+
+struct C2M_CancelPlayerTrade {
+  std::optional<std::uint32_t> rpcId;
+  std::string tradeId;
+};
+
+struct C2M_CancelPlayerTradeCodec {
+  static C2M_CancelPlayerTrade Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2M_CancelPlayerTrade value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.tradeId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2M_CancelPlayerTrade& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.tradeId);
+    return writer.Finish();
+  }
+};
+
+struct M2C_CancelPlayerTrade {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  std::string tradeId;
+};
+
+struct M2C_CancelPlayerTradeCodec {
+  static M2C_CancelPlayerTrade Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    M2C_CancelPlayerTrade value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.tradeId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const M2C_CancelPlayerTrade& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.tradeId);
+    return writer.Finish();
+  }
+};
+
+struct G2C_PlayerTradeInvite {
+  PlayerTradeSnapshot trade;
+};
+
+struct G2C_PlayerTradeInviteCodec {
+  static G2C_PlayerTradeInvite Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_PlayerTradeInvite value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 2) {
+            value.trade = PlayerTradeSnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_PlayerTradeInvite& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.BytesField(1, PlayerTradeSnapshotCodec::Encode(value.trade));
+    return writer.Finish();
+  }
+};
+
+struct G2C_PlayerTradeChanged {
+  PlayerTradeSnapshot trade;
+};
+
+struct G2C_PlayerTradeChangedCodec {
+  static G2C_PlayerTradeChanged Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_PlayerTradeChanged value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 2) {
+            value.trade = PlayerTradeSnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_PlayerTradeChanged& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.BytesField(1, PlayerTradeSnapshotCodec::Encode(value.trade));
+    return writer.Finish();
+  }
+};
+
+struct G2C_PlayerTradeClosed {
+  std::string tradeId;
+  bool committed = false;
+  std::uint32_t reason = 0;
+  std::uint64_t gold = 0;
+  InventorySnapshot inventory;
+};
+
+struct G2C_PlayerTradeClosedCodec {
+  static G2C_PlayerTradeClosed Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_PlayerTradeClosed value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 2) {
+            value.tradeId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.committed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.reason = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 2) {
+            value.inventory = InventorySnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_PlayerTradeClosed& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.String(1, value.tradeId);
+    writer.Bool(2, value.committed);
+    writer.UInt32(3, value.reason);
+    writer.UInt64(4, value.gold);
+    writer.BytesField(5, InventorySnapshotCodec::Encode(value.inventory));
+    return writer.Finish();
+  }
+};
+
 struct C2M_ToggleAutoAttack {
   std::optional<std::uint32_t> rpcId;
   bool enabled = false;
@@ -5952,6 +6822,19 @@ inline constexpr std::uint16_t C2M_BuyNpcShopItem = 10068;
 inline constexpr std::uint16_t M2C_BuyNpcShopItem = 10069;
 inline constexpr std::uint16_t C2M_SellItem = 10070;
 inline constexpr std::uint16_t M2C_SellItem = 10071;
+inline constexpr std::uint16_t C2M_RequestPlayerTrade = 10072;
+inline constexpr std::uint16_t M2C_RequestPlayerTrade = 10073;
+inline constexpr std::uint16_t C2M_RespondPlayerTrade = 10074;
+inline constexpr std::uint16_t M2C_RespondPlayerTrade = 10075;
+inline constexpr std::uint16_t C2M_UpdatePlayerTradeOffer = 10076;
+inline constexpr std::uint16_t M2C_UpdatePlayerTradeOffer = 10077;
+inline constexpr std::uint16_t C2M_ConfirmPlayerTrade = 10078;
+inline constexpr std::uint16_t M2C_ConfirmPlayerTrade = 10079;
+inline constexpr std::uint16_t C2M_CancelPlayerTrade = 10080;
+inline constexpr std::uint16_t M2C_CancelPlayerTrade = 10081;
+inline constexpr std::uint16_t G2C_PlayerTradeInvite = 10082;
+inline constexpr std::uint16_t G2C_PlayerTradeChanged = 10083;
+inline constexpr std::uint16_t G2C_PlayerTradeClosed = 10084;
 inline constexpr std::uint16_t C2M_ToggleAutoAttack = 10044;
 inline constexpr std::uint16_t M2C_ToggleAutoAttack = 10045;
 inline constexpr std::uint16_t G2C_AutoAttackState = 10046;
@@ -6053,6 +6936,26 @@ inline constexpr tiangz::client::RpcDescriptor<C2M_SellItem, M2C_SellItem, C2M_S
   "Map.SellItem", MsgCode::C2M_SellItem, MsgCode::M2C_SellItem
 };
 
+inline constexpr tiangz::client::RpcDescriptor<C2M_RequestPlayerTrade, M2C_RequestPlayerTrade, C2M_RequestPlayerTradeCodec, M2C_RequestPlayerTradeCodec> Map_RequestPlayerTrade{
+  "Map.RequestPlayerTrade", MsgCode::C2M_RequestPlayerTrade, MsgCode::M2C_RequestPlayerTrade
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_RespondPlayerTrade, M2C_RespondPlayerTrade, C2M_RespondPlayerTradeCodec, M2C_RespondPlayerTradeCodec> Map_RespondPlayerTrade{
+  "Map.RespondPlayerTrade", MsgCode::C2M_RespondPlayerTrade, MsgCode::M2C_RespondPlayerTrade
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_UpdatePlayerTradeOffer, M2C_UpdatePlayerTradeOffer, C2M_UpdatePlayerTradeOfferCodec, M2C_UpdatePlayerTradeOfferCodec> Map_UpdatePlayerTradeOffer{
+  "Map.UpdatePlayerTradeOffer", MsgCode::C2M_UpdatePlayerTradeOffer, MsgCode::M2C_UpdatePlayerTradeOffer
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_ConfirmPlayerTrade, M2C_ConfirmPlayerTrade, C2M_ConfirmPlayerTradeCodec, M2C_ConfirmPlayerTradeCodec> Map_ConfirmPlayerTrade{
+  "Map.ConfirmPlayerTrade", MsgCode::C2M_ConfirmPlayerTrade, MsgCode::M2C_ConfirmPlayerTrade
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2M_CancelPlayerTrade, M2C_CancelPlayerTrade, C2M_CancelPlayerTradeCodec, M2C_CancelPlayerTradeCodec> Map_CancelPlayerTrade{
+  "Map.CancelPlayerTrade", MsgCode::C2M_CancelPlayerTrade, MsgCode::M2C_CancelPlayerTrade
+};
+
 inline constexpr tiangz::client::RpcDescriptor<C2M_ToggleAutoAttack, M2C_ToggleAutoAttack, C2M_ToggleAutoAttackCodec, M2C_ToggleAutoAttackCodec> Map_ToggleAutoAttack{
   "Map.ToggleAutoAttack", MsgCode::C2M_ToggleAutoAttack, MsgCode::M2C_ToggleAutoAttack
 };
@@ -6099,6 +7002,18 @@ inline constexpr tiangz::client::MessageDescriptor<G2C_EntityNumeric, G2C_Entity
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_EntityState, G2C_EntityStateCodec> Client_EntityState{
   "Client.EntityState", MsgCode::G2C_EntityState
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_PlayerTradeInvite, G2C_PlayerTradeInviteCodec> Client_PlayerTradeInvite{
+  "Client.PlayerTradeInvite", MsgCode::G2C_PlayerTradeInvite
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_PlayerTradeChanged, G2C_PlayerTradeChangedCodec> Client_PlayerTradeChanged{
+  "Client.PlayerTradeChanged", MsgCode::G2C_PlayerTradeChanged
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_PlayerTradeClosed, G2C_PlayerTradeClosedCodec> Client_PlayerTradeClosed{
+  "Client.PlayerTradeClosed", MsgCode::G2C_PlayerTradeClosed
 };
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_AutoAttackState, G2C_AutoAttackStateCodec> Client_AutoAttackState{

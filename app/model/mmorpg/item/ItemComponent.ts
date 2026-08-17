@@ -3,6 +3,7 @@ import type {
   InventoryConsumePlan as GenericInventoryConsumePlan,
   InventoryGrant as GenericInventoryGrant,
   InventoryGrantPlan as GenericInventoryGrantPlan,
+  InventoryReplacePlan as GenericInventoryReplacePlan,
   ItemState,
 } from "../../domains/item/ItemTypes";
 
@@ -11,6 +12,7 @@ export { ItemComponent } from "../../domains/item/ItemComponent";
 export type InventoryGrant = GenericInventoryGrant;
 export type InventoryGrantPlan = GenericInventoryGrantPlan<ItemSnapshot>;
 export type InventoryConsumePlan = GenericInventoryConsumePlan<ItemSnapshot>;
+export type InventoryReplacePlan = GenericInventoryReplacePlan<ItemSnapshot>;
 
 export interface InventoryGrantResult {
   readonly items: readonly ItemSnapshot[];

@@ -1,6 +1,6 @@
 # DBProxy玩家快照持久化
 
-本教程演示TiangZ如何通过独立DBProxy保存玩家快照、在TiangZ重启后恢复，并以任务道具奖励和UseItem验证关键单玩家事务。当前实现仍是Phase 4.5基础：它不等于Wallet、Trade、跨玩家事务和故障接管都已生产化。
+本教程演示TiangZ如何通过独立DBProxy保存玩家快照、在TiangZ重启后恢复，并以任务道具奖励和UseItem验证关键单玩家事务、以玩家交易验证双记录原子事务。当前实现仍是Phase 4.5基础：它不等于邮件、拍卖行、跨地图交易和故障接管都已生产化。
 
 ## 固定边界
 
@@ -102,6 +102,8 @@ TiangZ Developer Tools `v0.15.1`会为这些字段提供补全和范围检查。
 ```
 
 多记录事务用于跨玩家奖励、交易等确实需要原子提交的领域操作；单玩家快照和单记录关键操作继续使用对应的单记录接口。网络不可用可以按备用Endpoint重试，业务拒绝、Revision冲突、鉴权失败和协议不匹配必须直接返回，不能通过换节点掩盖业务错误。
+
+当前第一个真实消费者是同地图玩家交易：`PlayerTradeComponent`冻结双方报价，`PlayerTradeTransaction`只在纯快照上规划金币与Item交换，`PlayerPersistenceComponent.ApplyMultiTransaction`一次提交两个`tiangz.demo.player@1`记录。确认前不改Entity；提交后才无`await`替换双方金币和背包。数据库已提交但响应丢失时，通过同一`operationId`查询多记录回执恢复，不能顺序调用两次单记录事务。完整流程见[玩家交易设计](../design/player-trade.md)。
 
 ## 加载顺序
 
@@ -252,7 +254,7 @@ node dist/smoke_client.cjs --dbproxy-item-use-read dbproxy_item_use_001
 ## 当前限制
 
 - 当前只在最终下线和停机保存，没有周期快照；TiangZ在保存前崩溃仍可能丢失最近运行状态。
-- 任务`GrantItem`奖励和UseItem已接入`ApplyTransaction`，但Wallet、Trade和跨玩家事务尚未接入；UseItem Planner也只覆盖Heal及受限Buff，不能把两条Demo链路描述为全部经济数据生产级不丢。
+- 任务`GrantItem`奖励和UseItem已接入`ApplyTransaction`，同地图玩家交易已接入`ApplyMultiTransaction`；但邮件、拍卖行、跨地图交易和按领域拆分Revision尚未完成，不能把这些Demo链路描述为全部经济数据生产级不丢。
 - 尚无批量Load/Save、Prometheus DBProxy指标、TLS、令牌轮换、Redis高可用和自动节点接管。
 - 玩家账号暂时就是快照RecordKey；正式账号/角色拆分后需要稳定CharacterId和明确的数据域Revision。
 

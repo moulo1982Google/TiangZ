@@ -108,6 +108,12 @@
 
 ## 当前状态与待办
 
+- 2026-08-17玩家交易第一版：`MapScene.PlayerTradeComponent`只保存60秒临时会话，双方必须在线、存活、同图且5米内；交易中禁止传送。金币和Item仍归各PlayerUnit，双方确认后由纯数据Planner生成两个完整Player记录，并通过`PlayerPersistenceComponent.ApplyMultiTransaction`使用一个稳定operationId原子提交；最终提交必须同时占用双方PlayerUnit ordered mailbox，不能让另一参与者在DBProxy `await`期间插入背包或金币写入。DBProxy确认前不得修改Entity，ACK丢失用`LoadMultiTransaction`恢复。禁止把交易拆成两个单玩家事务。Cocos3D选中其他玩家后发起交易，窗口只保存草稿；成功Push携带各自金币和完整背包。跨地图、离线、邮件和拍卖行暂不支持。设计变更同步见`docs/design/player-trade.md`。
+- 玩家交易新增或重命名Handler后必须完整重启服务，Hotfix不能向现有Scene Registry增加新路由；Creator预览固定连接`127.0.0.1:7000`。双客户端交易必须使用两个不同账号，同账号会触发Gate顶号。`npm run test:player-trade-websocket`验证A发起、B收邀请、双方接受状态及取消关闭Push的真实WebSocket链路。
+- 邀请阶段的RPC回包会同时给发起者返回`Invited`快照，但它不是邀请Push；客户端必须结合本地UnitId判断角色：requester显示“等待/取消”，target才显示“接受/拒绝”。
+- `npm run test:player-trade:persistent`是玩家交易的真实持久化门禁：使用正式商店制造铜币，验证双记录提交、TiangZ重启恢复及`7800 -> 7801`故障切换。命令只使用唯一账号，不清数据库；运行前要求7000、7800、7801空闲，并且只停止自己启动的进程。
+- DBProxy连接池不再等首个业务请求惰性创建。配置持久化的Process在`/ready`前预热完整池：首选故障时连接备用，全部故障时启动失败。客户端RPC超时不能被用来覆盖不真实的ready状态。
+
 - 最近提交：`dd68e08 完善怪物演示与Cocos3D发布配置`。
 - 当前外网桌面版和 `/m/` 已使用最新 Cocos3D 包，页面 HTTP 200；前端发布不会自动重启后端。
 - 标准 Cocos3D Web 包约 7.4 MB 原始大小，主要是 Cocos 核心、Bullet/Ammo、Spine 和内置渲染资源。小游戏 5 MB 主包需要独立轻量构建，不能直接拿标准 Web 包提交。

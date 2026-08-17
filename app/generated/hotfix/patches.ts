@@ -18,3 +18,4 @@ import "../../hotfix/mmorpg/quest/QuestSystem";
 import "../../hotfix/mmorpg/shop/NpcShopComponentSystem";
 import "../../hotfix/mmorpg/skill/SkillComponentSystem";
 import "../../hotfix/mmorpg/skill/SkillMapComponentSystem";
+import "../../hotfix/mmorpg/trade/PlayerTradeComponentSystem";

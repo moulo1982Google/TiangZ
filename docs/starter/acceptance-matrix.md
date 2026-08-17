@@ -48,6 +48,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | ST-08 | 断线重连和跨地图 | Gate 重连、Location、MapInstance 路由已有 | 断线宽限内恢复原 Unit；传送中请求有明确状态和幂等结果 |
 | ST-09 | 重启恢复 | Player Snapshot、任务奖励和 UseItem 事务已有 | 重启后恢复背包、任务、Buff、技能冷却和安全位置；关键奖励不重复 |
 | ST-10 | 在线热更和回滚 | Hotfix 事务底层已有 | 修改一个技能行为能切换；候选失败后旧行为继续服务，连接不丢失 |
+| ST-11 | 同地图玩家交易 | 已完成MapScene临时会话、双方报价/确认、DBProxy双记录原子提交和Cocos3D交易面板；`npm run test:player-trade`覆盖幂等与Revision冲突 | 两个真实客户端同图5米内交换铜币和物品；重复确认不重复转移，任一Revision冲突时双方都不改变 |
 
 ## 运维与开发体验层
 
@@ -115,3 +116,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 - `mapInstanceId` 是地图实例身份；它描述角色当前进入哪个地图实例，不替代 `characterId`。
 
 无 DBProxy 的本地 Demo 使用进程内角色目录，适合协议、路由和客户端链路验收；进程重启后的角色恢复属于 ST-09，必须使用 DBProxy 配置验证，不能把内存目录冒充持久化。
+
+## 玩家交易持久化与故障切换
+
+`npm run test:player-trade:persistent`使用两个临时账号先经NPC商店出售药品获得铜币，再交换铜币、小红和小蓝。验收器重启TiangZ后核对双方权威快照，并在第二轮最终确认前停止首选DBProxy `7800`，确认通过备用`7801`只提交一次。该命令需要本地PostgreSQL、Redis、两个DBProxy Debug二进制和TiangZ Debug二进制，不会清空数据库或执行容量压力测试。

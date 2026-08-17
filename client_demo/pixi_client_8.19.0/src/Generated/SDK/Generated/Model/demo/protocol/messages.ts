@@ -569,6 +569,153 @@ export const ShopItemSnapshotCodec = {
   },
 };
 
+export interface PlayerTradeItemOffer {
+  itemId: bigint;
+  itemConfigId: number;
+  count: number;
+}
+
+export const PlayerTradeItemOfferCodec = {
+  decode(payload: Uint8Array): PlayerTradeItemOffer {
+    const reader = new BinaryReader(payload);
+    const value: PlayerTradeItemOffer = {
+      itemId: 0n,
+      itemConfigId: 0,
+      count: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.itemId = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.itemConfigId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.count = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: PlayerTradeItemOffer): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.itemId !== undefined) writer.uint64(1, value.itemId);
+    if (value.itemConfigId !== undefined) writer.uint32(2, value.itemConfigId);
+    if (value.count !== undefined) writer.uint32(3, value.count);
+    return writer.finish();
+  },
+};
+
+export interface PlayerTradeParticipant {
+  unitId: number;
+  displayName: string;
+  gold: bigint;
+  items: readonly PlayerTradeItemOffer[];
+  confirmed: boolean;
+}
+
+export const PlayerTradeParticipantCodec = {
+  decode(payload: Uint8Array): PlayerTradeParticipant {
+    const reader = new BinaryReader(payload);
+    const value: PlayerTradeParticipant = {
+      unitId: 0,
+      displayName: "",
+      gold: 0n,
+      items: [],
+      confirmed: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.unitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.displayName = reader.string();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 2) {
+        (value.items as PlayerTradeItemOffer[]).push(PlayerTradeItemOfferCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.confirmed = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: PlayerTradeParticipant): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.unitId !== undefined) writer.uint32(1, value.unitId);
+    if (value.displayName !== undefined) writer.string(2, value.displayName);
+    if (value.gold !== undefined) writer.uint64(3, value.gold);
+    for (const item of (value.items ?? [])) writer.bytes(4, PlayerTradeItemOfferCodec.encode(item), true);
+    if (value.confirmed !== undefined) writer.bool(5, value.confirmed);
+    return writer.finish();
+  },
+};
+
+export interface PlayerTradeSnapshot {
+  tradeId: string;
+  requester: PlayerTradeParticipant;
+  target: PlayerTradeParticipant;
+  phase: number;
+  expireAtMs: bigint;
+}
+
+export const PlayerTradeSnapshotCodec = {
+  decode(payload: Uint8Array): PlayerTradeSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: PlayerTradeSnapshot = {
+      tradeId: "",
+      requester: PlayerTradeParticipantCodec.decode(new Uint8Array(0)),
+      target: PlayerTradeParticipantCodec.decode(new Uint8Array(0)),
+      phase: 0,
+      expireAtMs: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.tradeId = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.requester = PlayerTradeParticipantCodec.decode(reader.bytesField());
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 2) {
+        value.target = PlayerTradeParticipantCodec.decode(reader.bytesField());
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.phase = reader.uint32();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.expireAtMs = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: PlayerTradeSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.tradeId !== undefined) writer.string(1, value.tradeId);
+    if (value.requester !== undefined) writer.bytes(2, PlayerTradeParticipantCodec.encode(value.requester));
+    if (value.target !== undefined) writer.bytes(3, PlayerTradeParticipantCodec.encode(value.target));
+    if (value.phase !== undefined) writer.uint32(4, value.phase);
+    if (value.expireAtMs !== undefined) writer.uint64(5, value.expireAtMs);
+    return writer.finish();
+  },
+};
+
 export interface LootDropSnapshot {
   dropId: number;
   itemConfigId: number;
@@ -3341,6 +3488,531 @@ export const M2C_SellItemCodec = {
     if (value.gold !== undefined) writer.uint64(3, value.gold);
     if (value.item !== undefined) writer.bytes(4, ItemSnapshotCodec.encode(value.item));
     if (value.inventoryRecovery !== undefined) writer.bytes(5, InventorySnapshotCodec.encode(value.inventoryRecovery));
+    return writer.finish();
+  },
+};
+
+export interface C2M_RequestPlayerTrade extends IActorLocationRequest {
+  rpcId?: number;
+  targetUnitId: number;
+}
+
+export const C2M_RequestPlayerTradeCodec = {
+  decode(payload: Uint8Array): C2M_RequestPlayerTrade {
+    const reader = new BinaryReader(payload);
+    const value: C2M_RequestPlayerTrade = {
+      targetUnitId: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_RequestPlayerTrade): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.targetUnitId !== undefined) writer.uint32(1, value.targetUnitId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_RequestPlayerTrade extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  trade: PlayerTradeSnapshot;
+}
+
+export const M2C_RequestPlayerTradeCodec = {
+  decode(payload: Uint8Array): M2C_RequestPlayerTrade {
+    const reader = new BinaryReader(payload);
+    const value: M2C_RequestPlayerTrade = {
+      trade: PlayerTradeSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.trade = PlayerTradeSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_RequestPlayerTrade): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.trade !== undefined) writer.bytes(1, PlayerTradeSnapshotCodec.encode(value.trade));
+    return writer.finish();
+  },
+};
+
+export interface C2M_RespondPlayerTrade extends IActorLocationRequest {
+  rpcId?: number;
+  tradeId: string;
+  accept: boolean;
+}
+
+export const C2M_RespondPlayerTradeCodec = {
+  decode(payload: Uint8Array): C2M_RespondPlayerTrade {
+    const reader = new BinaryReader(payload);
+    const value: C2M_RespondPlayerTrade = {
+      tradeId: "",
+      accept: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.tradeId = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.accept = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_RespondPlayerTrade): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.tradeId !== undefined) writer.string(1, value.tradeId);
+    if (value.accept !== undefined) writer.bool(2, value.accept);
+    return writer.finish();
+  },
+};
+
+export interface M2C_RespondPlayerTrade extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  trade: PlayerTradeSnapshot;
+}
+
+export const M2C_RespondPlayerTradeCodec = {
+  decode(payload: Uint8Array): M2C_RespondPlayerTrade {
+    const reader = new BinaryReader(payload);
+    const value: M2C_RespondPlayerTrade = {
+      trade: PlayerTradeSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.trade = PlayerTradeSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_RespondPlayerTrade): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.trade !== undefined) writer.bytes(1, PlayerTradeSnapshotCodec.encode(value.trade));
+    return writer.finish();
+  },
+};
+
+export interface C2M_UpdatePlayerTradeOffer extends IActorLocationRequest {
+  rpcId?: number;
+  tradeId: string;
+  gold: bigint;
+  items: readonly PlayerTradeItemOffer[];
+}
+
+export const C2M_UpdatePlayerTradeOfferCodec = {
+  decode(payload: Uint8Array): C2M_UpdatePlayerTradeOffer {
+    const reader = new BinaryReader(payload);
+    const value: C2M_UpdatePlayerTradeOffer = {
+      tradeId: "",
+      gold: 0n,
+      items: [],
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.tradeId = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 2) {
+        (value.items as PlayerTradeItemOffer[]).push(PlayerTradeItemOfferCodec.decode(reader.bytesField()));
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_UpdatePlayerTradeOffer): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.tradeId !== undefined) writer.string(1, value.tradeId);
+    if (value.gold !== undefined) writer.uint64(2, value.gold);
+    for (const item of (value.items ?? [])) writer.bytes(3, PlayerTradeItemOfferCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface M2C_UpdatePlayerTradeOffer extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  trade: PlayerTradeSnapshot;
+}
+
+export const M2C_UpdatePlayerTradeOfferCodec = {
+  decode(payload: Uint8Array): M2C_UpdatePlayerTradeOffer {
+    const reader = new BinaryReader(payload);
+    const value: M2C_UpdatePlayerTradeOffer = {
+      trade: PlayerTradeSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.trade = PlayerTradeSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_UpdatePlayerTradeOffer): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.trade !== undefined) writer.bytes(1, PlayerTradeSnapshotCodec.encode(value.trade));
+    return writer.finish();
+  },
+};
+
+export interface C2M_ConfirmPlayerTrade extends IActorLocationRequest {
+  rpcId?: number;
+  tradeId: string;
+}
+
+export const C2M_ConfirmPlayerTradeCodec = {
+  decode(payload: Uint8Array): C2M_ConfirmPlayerTrade {
+    const reader = new BinaryReader(payload);
+    const value: C2M_ConfirmPlayerTrade = {
+      tradeId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.tradeId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_ConfirmPlayerTrade): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.tradeId !== undefined) writer.string(1, value.tradeId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_ConfirmPlayerTrade extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  trade: PlayerTradeSnapshot;
+  committed: boolean;
+}
+
+export const M2C_ConfirmPlayerTradeCodec = {
+  decode(payload: Uint8Array): M2C_ConfirmPlayerTrade {
+    const reader = new BinaryReader(payload);
+    const value: M2C_ConfirmPlayerTrade = {
+      trade: PlayerTradeSnapshotCodec.decode(new Uint8Array(0)),
+      committed: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.trade = PlayerTradeSnapshotCodec.decode(reader.bytesField());
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.committed = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_ConfirmPlayerTrade): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.trade !== undefined) writer.bytes(1, PlayerTradeSnapshotCodec.encode(value.trade));
+    if (value.committed !== undefined) writer.bool(2, value.committed);
+    return writer.finish();
+  },
+};
+
+export interface C2M_CancelPlayerTrade extends IActorLocationRequest {
+  rpcId?: number;
+  tradeId: string;
+}
+
+export const C2M_CancelPlayerTradeCodec = {
+  decode(payload: Uint8Array): C2M_CancelPlayerTrade {
+    const reader = new BinaryReader(payload);
+    const value: C2M_CancelPlayerTrade = {
+      tradeId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.tradeId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2M_CancelPlayerTrade): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.tradeId !== undefined) writer.string(1, value.tradeId);
+    return writer.finish();
+  },
+};
+
+export interface M2C_CancelPlayerTrade extends IActorLocationResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  tradeId: string;
+}
+
+export const M2C_CancelPlayerTradeCodec = {
+  decode(payload: Uint8Array): M2C_CancelPlayerTrade {
+    const reader = new BinaryReader(payload);
+    const value: M2C_CancelPlayerTrade = {
+      tradeId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.tradeId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2C_CancelPlayerTrade): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.tradeId !== undefined) writer.string(1, value.tradeId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_PlayerTradeInvite extends IMessage {
+  trade: PlayerTradeSnapshot;
+}
+
+export const G2C_PlayerTradeInviteCodec = {
+  decode(payload: Uint8Array): G2C_PlayerTradeInvite {
+    const reader = new BinaryReader(payload);
+    const value: G2C_PlayerTradeInvite = {
+      trade: PlayerTradeSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.trade = PlayerTradeSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_PlayerTradeInvite): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.trade !== undefined) writer.bytes(1, PlayerTradeSnapshotCodec.encode(value.trade));
+    return writer.finish();
+  },
+};
+
+export interface G2C_PlayerTradeChanged extends IMessage {
+  trade: PlayerTradeSnapshot;
+}
+
+export const G2C_PlayerTradeChangedCodec = {
+  decode(payload: Uint8Array): G2C_PlayerTradeChanged {
+    const reader = new BinaryReader(payload);
+    const value: G2C_PlayerTradeChanged = {
+      trade: PlayerTradeSnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.trade = PlayerTradeSnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_PlayerTradeChanged): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.trade !== undefined) writer.bytes(1, PlayerTradeSnapshotCodec.encode(value.trade));
+    return writer.finish();
+  },
+};
+
+export interface G2C_PlayerTradeClosed extends IMessage {
+  tradeId: string;
+  committed: boolean;
+  reason: number;
+  gold: bigint;
+  inventory: InventorySnapshot;
+}
+
+export const G2C_PlayerTradeClosedCodec = {
+  decode(payload: Uint8Array): G2C_PlayerTradeClosed {
+    const reader = new BinaryReader(payload);
+    const value: G2C_PlayerTradeClosed = {
+      tradeId: "",
+      committed: false,
+      reason: 0,
+      gold: 0n,
+      inventory: InventorySnapshotCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.tradeId = reader.string();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.committed = reader.bool();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.reason = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 2) {
+        value.inventory = InventorySnapshotCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_PlayerTradeClosed): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.tradeId !== undefined) writer.string(1, value.tradeId);
+    if (value.committed !== undefined) writer.bool(2, value.committed);
+    if (value.reason !== undefined) writer.uint32(3, value.reason);
+    if (value.gold !== undefined) writer.uint64(4, value.gold);
+    if (value.inventory !== undefined) writer.bytes(5, InventorySnapshotCodec.encode(value.inventory));
     return writer.finish();
   },
 };

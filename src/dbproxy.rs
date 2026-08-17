@@ -142,6 +142,17 @@ pub fn configure(process: &ProcessConfig, host_runtime: Handle) -> Result<()> {
     Ok(())
 }
 
+/// 在Process进入ready前建立完整连接池；未配置持久化时保持空操作。
+/// Establishes the complete client pool before the Process becomes ready and
+/// remains a no-op when persistence is not configured.
+pub async fn warm() -> std::result::Result<(), ClientError> {
+    let bridge = DBPROXY_BRIDGE.with(|slot| slot.borrow().clone());
+    let Some(bridge) = bridge else {
+        return Ok(());
+    };
+    bridge.execute(|_| async { Ok(()) }).await
+}
+
 fn bridge() -> std::result::Result<DbProxyBridge, JsErrorBox> {
     DBPROXY_BRIDGE
         .with(|slot| slot.borrow().clone())

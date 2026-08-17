@@ -49,4 +49,11 @@ export const GameErrCode = {
   ItemNotSellable: 10048,
   InvalidOperationId: 10049,
   ManaNotEnough: 10050,
+  TradeTargetInvalid: 10051,
+  TradeBusy: 10052,
+  TradeNotFound: 10053,
+  TradeStateInvalid: 10054,
+  TradeOfferInvalid: 10055,
+  TradeTooFar: 10056,
+  TradeInventoryChanged: 10057,
 } as const;

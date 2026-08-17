@@ -7,6 +7,7 @@ import {
   ItemEvents,
   type InventoryGrant,
   type InventoryGrantPlan,
+  type InventoryReplacePlan,
   type InventoryConsumePlan,
   type ItemSnapshot,
   type ItemView,
@@ -514,6 +515,67 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
       }
     }
     return expectedItems;
+  }
+
+  /**
+   * 提交跨玩家交易等已经持久化的完整背包计划。它要求当前值精确等于base，
+   * 防止把等待DBProxy期间发生的其他背包写入覆盖掉。
+   *
+   * Commits a persisted full-inventory plan for operations such as player trade.
+   * The current value must exactly match base so writes that occurred while
+   * waiting for DBProxy can never be overwritten.
+   */
+  CommitInventoryReplace(plan: InventoryReplacePlan): readonly ItemSnapshot[] {
+    const baseItems = sortSnapshots(plan.baseItems);
+    const nextItems = this.validateInventorySnapshot(plan.nextItems);
+    if (!snapshotArraysEqual(this.Snapshot(), baseItems)) {
+      throw new Error("inventory replacement plan is stale");
+    }
+    this.replaceInventory(nextItems);
+    return nextItems.map((item) => ({ ...item }));
+  }
+
+  /**
+   * 根据多记录事务回执补做完整背包替换；只接受尚未应用的base或已经应用的next。
+   * 任何第三种状态都表示本地状态与持久化结果发生冲突，必须重新加载玩家，而不能强行覆盖。
+   *
+   * Reconciles a full inventory from a multi-record receipt. Only the original
+   * base or the already-applied next state is accepted. Any third state requires
+   * a player reload and must never be overwritten silently.
+   */
+  ApplyCommittedInventoryReplace(
+    plan: InventoryReplacePlan,
+  ): readonly ItemSnapshot[] {
+    const baseItems = sortSnapshots(plan.baseItems);
+    const nextItems = this.validateInventorySnapshot(plan.nextItems);
+    const current = this.Snapshot();
+    if (snapshotArraysEqual(current, nextItems)) return nextItems.map((item) => ({ ...item }));
+    if (!snapshotArraysEqual(current, baseItems)) {
+      throw new Error("committed inventory replacement conflicts with local inventory");
+    }
+    this.replaceInventory(nextItems);
+    return nextItems.map((item) => ({ ...item }));
+  }
+
+  private validateInventorySnapshot(items: readonly ItemSnapshot[]): ItemSnapshot[] {
+    const sorted = sortSnapshots(items);
+    let previousId = 0n;
+    for (const item of sorted) {
+      requireGlobalId(item.itemId, "itemId");
+      if (item.itemId === previousId) throw new Error(`duplicate item id in inventory snapshot: ${item.itemId}`);
+      previousId = item.itemId;
+      const config = this.getItemConfig(item.configId);
+      requireStackCount(item.count, config.maxStack, item.configId);
+      if (!Number.isSafeInteger(item.version) || item.version <= 0) {
+        throw new Error(`item version must be a positive safe integer: ${item.itemId}`);
+      }
+    }
+    return sorted;
+  }
+
+  private replaceInventory(items: readonly ItemSnapshot[]): void {
+    for (const item of this.GetChildren(Item)) this.RemoveChild(Item, item.Id);
+    for (const item of items) this.CreateItemById(item.itemId, item);
   }
 
   private requireItem(itemId: bigint): Item {

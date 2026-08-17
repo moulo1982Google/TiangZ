@@ -892,7 +892,9 @@ const stop = loginFlow.onSessionReplaced((message) => {
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程已经消费远程`v0.5.0`，配置通过`endpoint + failoverEndpoints`声明地址，Rust Host Bridge同时提供单记录和多记录接口；业务层不得复制协议或自行实现第二套故障切换。普通`.native @persistent(version)`实体的Codec和通用Repository已由codegen生成，复杂查询、跨玩家交易和领域结果仍由业务Repository规划。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励与UseItem消费已成为关键单玩家事务；Wallet/Trade领域模型、周期快照、TiangZ端到端故障矩阵和自动节点接管仍未完成。
+DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程已经消费远程`v0.5.0`，配置通过`endpoint + failoverEndpoints`声明地址，Rust Host Bridge同时提供单记录和多记录接口；业务层不得复制协议或自行实现第二套故障切换。普通`.native @persistent(version)`实体的Codec和通用Repository已由codegen生成，复杂查询、跨玩家交易和领域结果仍由业务Repository规划。TiangZ的`DbProxyPlayerRepository`已经通过Rust Host Transport接通真实服务；业务仍只依赖`PlayerRepository`与`PlayerPersistenceComponent`，禁止在Handler、Entity或Component中直接创建Redis、MongoDB、MySQL或PostgreSQL客户端，主工程也不得引入`dbproxy-storage`。任务GrantItem奖励与UseItem消费已成为关键单玩家事务；同地图玩家交易使用`ApplyMultiTransaction`一次提交两个玩家记录，不能顺序保存两边或在提交前修改Entity。周期快照、按领域拆分Revision、TiangZ端到端故障矩阵和自动节点接管仍未完成。
+
+跨玩家关键操作的固定写法是：领域Component先同步冻结会话，最终提交者保留自身PlayerUnit ordered mailbox，并通过地图宿主进入另一参与者的真实ordered mailbox；持有双方邮箱后，Planner再从权威快照生成全部`expectedRevision + nextPayload + result`，领域Repository按稳定顺序调用一次多记录事务，提交成功后各Participant无await应用结果。只锁会话对象不能阻止另一玩家在`await`期间使用道具或改金币。响应不确定时用同一`operationId`查询回执；业务冲突直接结束会话，不能换operationId重试。玩家交易参考`app/hotfix/mmorpg/trade`和[玩家交易设计](../design/player-trade.md)。Handler只转发到PlayerUnit ordered mailbox，不得直接调用DBProxy。
 
 ## AOI业务规则
 
@@ -933,7 +935,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
-持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，业务配置用`endpoint`指定首选地址，用`failoverEndpoints`指定备用地址；普通记录按RecordKey稳定选择连接，多记录事务按稳定`operationId`选择连接。只有网络不可用才允许切换，业务拒绝、Revision冲突、协议指纹或鉴权错误必须原样返回。Demo的`PlayerRepository`覆盖玩家聚合快照恢复，UseItem和任务奖励演示覆盖单玩家关键事务与ACK丢失后的幂等回执恢复。普通单Entity现在可以通过`.native`的`@persistent(version)`和`@transient`生成版本化Codec及通用Repository工厂，不需要为每种Entity手工设计数据库表；复杂查询和跨玩家交易必须由领域Repository编排，不能把通用Payload表当作查询型ORM。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型，业务代码也不得直接连接Redis/数据库。TiangZ端到端故障矩阵、周期快照、旧schema迁移注册、自动节点接管和生产部署仍未收口。不能把当前单玩家演示解释为完整持久化方案。
+持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，业务配置用`endpoint`指定首选地址，用`failoverEndpoints`指定备用地址；普通记录按RecordKey稳定选择连接，多记录事务按稳定`operationId`选择连接。只有网络不可用才允许切换，业务拒绝、Revision冲突、协议指纹或鉴权错误必须原样返回。Demo的`PlayerRepository`覆盖玩家聚合快照恢复，UseItem和任务奖励演示覆盖单玩家关键事务与ACK丢失后的幂等回执恢复，同地图玩家交易演示覆盖双记录原子提交和回执恢复。普通单Entity现在可以通过`.native`的`@persistent(version)`和`@transient`生成版本化Codec及通用Repository工厂，不需要为每种Entity手工设计数据库表；复杂查询和跨玩家交易必须由领域Repository编排，不能把通用Payload表当作查询型ORM。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型，业务代码也不得直接连接Redis/数据库。TiangZ端到端故障矩阵、周期快照、旧schema迁移注册、自动节点接管和生产部署仍未收口。不能把当前三个演示解释为完整持久化方案。
 
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
@@ -1100,7 +1102,7 @@ entity Item extends Entity {
 
 运行`npm run codegen:native-data`后，业务使用生成的`NativeItemPersistenceCodec`或`CreateNativeItemRepository(processName)`。`Entity.instanceId`已经标记`@transient`，恢复时必须由当前运行时重新分配，不能从数据库带回。当前Codec是严格当前版本读取，任何持久字段的增加、删除、改名或改类型都必须递增`@persistent(version)`；旧schema迁移注册尚未完成，因此做结构升级前必须先补迁移器。需要“按ownerId查询全部道具”、拍卖行索引、跨玩家交易等能力时，应建立Item/Trade领域Repository，不能把通用Payload表当作查询型ORM。
 
-当前普通玩家快照已验证重启恢复，任务GrantItem奖励和UseItem都已接入`ApplyTransaction`：稳定operationId、expectedRevision、操作后的完整Payload和原始响应在PostgreSQL同一事务提交，确认后才修改内存；ACK丢失时查询回执并按首次结果恢复。`C2M_UseItemHandler`只把`itemId + operationId`交给`ItemComponent.UseItemTransactional`，事务编排不能堆回Handler。客户端每次新使用调用`CreateOperationId("item")`一次，只有同一逻辑请求重试才复用；不能按ItemId或配置ID生成固定键。当前UseItem Planner只允许Heal及无AddAction的Stack Buff，并同时规划Inventory、道具/GCD和HP/Buff；任意新Action必须先提供纯数据Planner与回执恢复语义。Quest UseItem进度是提交成功后的领域投影，尚未和经济事务伪装成跨域原子提交。系统仍没有周期快照、Wallet/Trade事务或按领域拆分revision；崩溃发生在普通最终保存之前仍可能丢失最近运行状态。下一阶段先拆领域revision并扩展Wallet等经济域，再做批量Load/Save、周期Flush和节点接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+当前普通玩家快照已验证重启恢复，任务GrantItem奖励和UseItem都已接入`ApplyTransaction`：稳定operationId、expectedRevision、操作后的完整Payload和原始响应在PostgreSQL同一事务提交，确认后才修改内存；ACK丢失时查询回执并按首次结果恢复。`C2M_UseItemHandler`只把`itemId + operationId`交给`ItemComponent.UseItemTransactional`，事务编排不能堆回Handler。客户端每次新使用调用`CreateOperationId("item")`一次，只有同一逻辑请求重试才复用；不能按ItemId或配置ID生成固定键。当前UseItem Planner只允许Heal及无AddAction的Stack Buff，并同时规划Inventory、道具/GCD和HP/Buff；任意新Action必须先提供纯数据Planner与回执恢复语义。Quest UseItem进度是提交成功后的领域投影，尚未和经济事务伪装成跨域原子提交。同地图玩家交易已经用多记录事务一次提交两个玩家记录；系统仍没有周期快照、按领域拆分revision、跨地图交易或邮件/拍卖行事务。崩溃发生在普通最终保存之前仍可能丢失最近运行状态。下一阶段先拆领域revision，再做批量Load/Save、周期Flush和节点接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 
@@ -1235,6 +1237,10 @@ npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.js
 
 Starter的普通掉落表1按每行独立概率判定：破旧布料1201为80%、小型生命药水1001为15%、大型生命药水1002为5%；三行可以同时掉落，也可以全部未命中。`ItemConfig.sell_price`分别为10、20、50铜币，Map 100的9002杂货商读取服务端商品目录出售红药和蓝药。NPC商店不是客户端配置价格表：客户端先调用`OpenNpcShop`拿目录和金币，再调用购买/出售RPC；服务端在PlayerUnit ordered mailbox中校验NPC、距离、商品、Item归属和金币，创建Inventory/Currency纯数据计划，最后使用DBProxy的稳定`operationId`事务提交。提交成功后才应用内存和发布ItemChanged；失败或重试不能由客户端预扣或重复发放。快捷栏只能引用ItemConfigId，不能绑定出售后失效的ItemId。
 
-`CurrencyComponent`只负责非负`bigint`余额，不加入商店名词；`NpcShopComponent`负责编排，`ItemComponent`负责Item实体。未来玩家交易必须在这条边界上使用DBProxy多记录事务，不能把两个玩家的单人购买/出售请求在客户端拼起来。完整调用示例见[`docs/design/currency-and-npc-shop.md`](../design/currency-and-npc-shop.md)。
+`CurrencyComponent`只负责非负`bigint`余额，不加入商店名词；`NpcShopComponent`负责编排，`ItemComponent`负责Item实体。玩家交易已经在同一边界上使用DBProxy多记录事务，不能把两个玩家的单人购买/出售请求在客户端拼起来。商店示例见[`docs/design/currency-and-npc-shop.md`](../design/currency-and-npc-shop.md)，玩家交易见[`docs/design/player-trade.md`](../design/player-trade.md)。
 
 技能费用当前暂由Hotfix的`SkillManaCost.ts`维护，服务端在创建ActiveCast前检查并扣除MP；法力不足直接拒绝，读条中断不返还。`CombatStateComponent`记录仍持有玩家仇恨的怪物集合：怪物死亡、回归出生点或清除仇恨时移除来源；集合为空才脱战。战斗状态不恢复MP，脱战后按180秒从当前值恢复到MaxMp，固定更新桶用整数余数累积。该状态是地图临时运行态，传送时清空，不写入持久化快照。
+
+### DBProxy就绪边界
+
+启用DBProxy持久化后，Runtime会在`/ready`成功前建立连接池。业务Handler不需要也不允许自行预热连接；若全部Endpoint不可用，Process不会对外宣称ready。部署编排应以健康检查决定接流量，并由监督器负责重启失败进程。

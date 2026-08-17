@@ -35,6 +35,13 @@ TiangZ的业务参考目标是一个小而完整的Starter MMORPG，而不是内
 - `mapInstanceId`只表示当前地图实例；静态地图和动态副本统一使用同一`TransferToMap`语义。
 - 无DBProxy时，跨MapHost传送会用快照接管目标进程的内存目录；这不是重启持久化，重启恢复验收必须启动DBProxy。
 
+### Starter玩家交易
+
+- 玩家交易是`MapScene -> PlayerTradeComponent`拥有的临时会话，不是新的Actor、Scene或持久Entity。当前只允许同MapScene、在线、存活、5米内的两个玩家，并拒绝交易中传送。
+- 金币和Item仍归两个PlayerUnit。双方确认后，纯数据Planner生成两份完整玩家记录；`PlayerPersistenceComponent.ApplyMultiTransaction`使用同一稳定operationId调用DBProxy跨记录CAS事务，全部Revision匹配才提交。
+- DBProxy提交前不得修改Currency/Item Entity；提交后无await应用双方状态。最终确认者保留自身PlayerUnit ordered mailbox，并通过`MapComponent.RunPlayerMailbox`占用另一参与者的真实Mailbox直到持久化和内存应用完成，禁止第二个玩家在事务`await`期间插入背包或金币写入。ACK丢失用`LoadMultiTransaction`恢复首次回执，禁止拆成两个单玩家事务或用补偿冒充原子性。
+- Cocos3D选中其他玩家后显示交易入口；窗口只保存输入草稿，成功关闭Push携带每个玩家自己的金币和完整背包。跨地图、离线、邮件、拍卖行和多方交易暂不支持。设计见[玩家交易](../design/player-trade.md)。
+
 ### Starter NPC与任务接取
 
 - NPC不是特殊的网络入口，也不是`QuestComponent`的替代品。它是`MapScene.UnitComponent`拥有的普通`Unit`，由`NpcComponent`维护地图内索引并以Subject身份挂入AOI；NPC不创建mailbox、不持有玩家状态。
@@ -414,7 +421,7 @@ Phase 4计划：
 
 - Phase 4.0已完成：Native Unit、protobuf、MapConfig、Cocos 2D和Pixi统一采用米制`X/Y/Z + Yaw`契约；Grid2D使用X/Z Cell，MapScene按实例创建和释放Rust空间状态。此次为显式破坏性协议升级，旧`0.3.10`客户端不能混连。
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
-- Phase 4.5正在建设持久化基础。独立仓库[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)已发布`v0.5.0`：DBProxy继续独立拥有快照、Revision/CAS、幂等、单记录与多记录原子事务、可查询事务回执、PostgreSQL权威存储、Redis已提交缓存与AOF backlog，并提供版本化Protobuf、协议指纹、内部令牌、Rust客户端池和运行时无关TypeScript SDK。`v0.5.0`新增有序多Endpoint客户端、首Endpoint不可用和连接中断后的故障切换、两个共享PostgreSQL/Redis的无状态对等实例配置，以及跨玩家/跨记录的全量CAS原子提交；业务拒绝、鉴权、协议不匹配和Revision冲突不会误触发换节点。普通`.native @persistent(version)`实体的Codec与通用Repository已经由codegen生成，复杂查询和跨玩家交易仍由领域Repository编排。TiangZ主工程已将`Cargo.toml/package.json`切换到`v0.5.0`，Rust Host Bridge提供`applyMultiTransaction/loadMultiTransaction`，配置通过`failoverEndpoints`声明备用地址；不能在主工程中复制第二套DBProxy协议或客户端。TiangZ已经接入`HostDbProxyTransport -> DbProxyClient -> DbProxyPlayerRepository`真实链路；Rust Host Runtime负责多线程网络I/O，V8只等待Promise，主工程仍不得连接Redis/PostgreSQL或导入`dbproxy-storage`。`tiangz.demo.player@1`快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态。普通快照已通过重启恢复；任务领奖和UseItem已经成为关键单玩家事务：领域Component先规划操作后纯数据，DBProxy原子保存玩家记录与原始业务回执，成功后才无await修改Entity，ACK丢失后按operationId恢复。UseItem同时提交Inventory扣除、道具/GCD截止时间以及Heal或受限Buff效果；客户端为每次逻辑使用生成稳定operationId，重试复用。Redis/PostgreSQL高可用由云厂商托管，不在框架内实现；TiangZ端到端故障矩阵、周期快照、Wallet/Trade领域模型、按领域拆分revision、自动节点接管、Prometheus和生产部署仍未收口。单玩家巨型记录只是Phase 4.5验证载体，不能替代最终领域一致性设计。完整步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+- Phase 4.5正在建设持久化基础。独立仓库[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)已发布`v0.5.0`：DBProxy继续独立拥有快照、Revision/CAS、幂等、单记录与多记录原子事务、可查询事务回执、PostgreSQL权威存储、Redis已提交缓存与AOF backlog，并提供版本化Protobuf、协议指纹、内部令牌、Rust客户端池和运行时无关TypeScript SDK。`v0.5.0`新增有序多Endpoint客户端、首Endpoint不可用和连接中断后的故障切换、两个共享PostgreSQL/Redis的无状态对等实例配置，以及跨玩家/跨记录的全量CAS原子提交；业务拒绝、鉴权、协议不匹配和Revision冲突不会误触发换节点。普通`.native @persistent(version)`实体的Codec与通用Repository已经由codegen生成，复杂查询和跨玩家交易仍由领域Repository编排。TiangZ主工程已将`Cargo.toml/package.json`切换到`v0.5.0`，Rust Host Bridge提供`applyMultiTransaction/loadMultiTransaction`，配置通过`failoverEndpoints`声明备用地址；不能在主工程中复制第二套DBProxy协议或客户端。TiangZ已经接入`HostDbProxyTransport -> DbProxyClient -> DbProxyPlayerRepository`真实链路；Rust Host Runtime负责多线程网络I/O，V8只等待Promise，主工程仍不得连接Redis/PostgreSQL或导入`dbproxy-storage`。`tiangz.demo.player@1`快照保存Numeric、Item、Buff、Skill冷却、Quest和地图状态。普通快照已通过重启恢复；任务领奖和UseItem是关键单玩家事务，同地图玩家交易是首个双记录事务消费者：领域Component先规划纯数据，DBProxy原子保存全部记录与原始业务回执，成功后才无await修改Entity，ACK丢失后按operationId恢复。Redis/PostgreSQL高可用由云厂商托管，不在框架内实现；TiangZ端到端故障矩阵、周期快照、按领域拆分revision、自动节点接管、Prometheus和生产部署仍未收口。单玩家巨型记录只是Phase 4.5验证载体，不能替代最终领域一致性设计。完整步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 - 技能系统第一阶段已经实现：Unit上的`SkillComponent`只保存技能/GCD deadline和唯一ActiveCast，地图唯一`SkillMapComponent.Update10Hz`推进活跃读条与弹道；不创建每Unit Update、每Cast Timer、Actor或Entity。瞬发在ordered PlayerUnit调用内完成，移动策略和平A策略均由配置显式决定。施法期间平A意图仍保留，但平A读条被冻结，不能继续累计；玩家受到一次**没有被护盾吸收**的有效攻击且读条仍有效时，Demo战斗规则对普通读条只把`finishAtMs`向后延长800ms，对引导只把结束时间提前800ms，不重置起点、不清除引导、不改变CD，并立即广播新的`G2C_SkillCastState`，客户端依据新的权威结束时间更新进度条。真言术·盾吸收本次攻击时，不后移普通读条，也不缩短引导；后续未被吸收的攻击仍按同一规则处理。冷却随玩家跨地图传输，活动读条在传送时终止。`SkillConfig.xlsx`描述目标关系与施法时间线并生成给前后端，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只按配置指纹组合只读定义，不再保存技能数值。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast。技能只选择目标并执行Action，伤害/治疗进入Combat，Buff生命周期进入BuffComponent。Buff冲突使用`stack_group + stack_scope`和Stack/Refresh/Replace/Reject/HigherWins；运行时Action覆盖和护盾剩余量可跨地图恢复。完整方案见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
 - 账号与角色选择、正式持久化业务接入。
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
@@ -560,3 +567,7 @@ Cocos3D的尸体窗口必须持续显示掉落行和领取结果，领取后使�
 ## 战斗状态与法力恢复
 
 技能费用当前由Hotfix的`SkillManaCost.ts`维护，技能请求通过法力校验后立即扣除；法力不足不会创建ActiveCast。`CombatStateComponent`按“有效怪物仇恨来源集合”维护战斗状态：怪物死亡、回归出生点或清除仇恨时移除来源，来源为空才脱战。战斗状态不恢复MP；脱战后按180秒从当前MP恢复到MaxMp，固定更新桶用整数余数累计避免漂移。该组件是临时地图运行态，传送时清空，不进入持久化快照。设计细节见[`docs/design/currency-and-npc-shop.md`](../design/currency-and-npc-shop.md)。
+
+## DBProxy就绪边界
+
+配置了`process.persistence.dbProxy`的Process必须在进入ready前预连接完整DBProxy池；首选Endpoint不可用但备用可用时允许启动，全部Endpoint不可用时启动失败并交给监督器重试。禁止把惰性首连延迟暴露给第一个玩家RPC，也不能仅靠扩大客户端超时掩盖错误ready。
