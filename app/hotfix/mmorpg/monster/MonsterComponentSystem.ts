@@ -311,6 +311,22 @@ export class MonsterComponentSystem extends MonsterComponent {
         inventory.ApplyCommittedGrantItems(durable.items);
         quest.ApplyCommittedProgress(fromProtocolQuest(durable.quests));
       }
+      const committedInventory = inventory.Snapshot();
+      this.DomainScene().logger.info("monster loot committed to authoritative inventory", {
+        monsterId,
+        playerAccount: player.Account,
+        playerCharacterId: player.CharacterId.toString(),
+        playerUnitId: player.UnitId,
+        grantedItems: durable.items.map((item) => ({
+          itemId: item.itemId.toString(),
+          configId: item.configId,
+          count: item.count,
+          version: item.version,
+        })),
+        inventoryStacks: committedInventory.length,
+        inventoryCount: committedInventory.reduce((total, item) => total + item.count, 0),
+        inventoryConfigIds: committedInventory.map((item) => item.configId),
+      });
       await this.PublishLootResult(player, durable);
       this.TryRemoveLootedCorpse(monsterId, container);
       return cloneLootResponse(durable);

@@ -503,9 +503,9 @@ Unity表现层使用`Vector3`、Transform和Camera，协议及服务端仍使用
 
 新角色出生时由`MapComponent`显式发放`1001×3`小红和`1003×3`小蓝；只有没有持久化快照且不是迁移目标的真正新角色可以走这条发放路径。读档、断线重连和跨地图传送都只以`ItemSnapshot`恢复，不会重复发放；`ItemComponentSystem.Awake`只负责生命周期。Starter任务奖励仍由任务事务单独追加。1001和1003各有30秒配置CD，并与技能共享1秒玩家GCD；服务端原子提交deadline，跨地图快照保留，客户端只绘制返回时间。道具使用RPC成功时，`M2C_UseItem.buff`会回显本次新增的公开Buff给使用者；AOI仍通过`G2C_BuffAdded`给其他观察者广播，客户端两条路径按实例ID幂等合并。
 
-`ItemConfig.icon`是客户端字段，值是相对Cocos `assets/resources`且不含扩展名的资源键，例如`UI/Icons/Items/1001`。Cocos3D Web快捷栏固定为`1=平A`、`2=1001`、`3=1003`，初始数量来自`G2C_EnterMap.items`，使用和拾取后的数量来自不可覆盖的`G2C_ItemChanged`；拾取RPC只返回受影响的`items`，客户端按`ItemSnapshot.version`合并RPC与Push，不能把整包背包放进每次拾取回包。客户端不得在按键时先行扣数量。快捷栏槽位只绑定`ItemConfigId`，数量归零时服务端删除背包中的`Item`子实体，客户端移除该`ItemId`快照但保留快捷栏槽并显示`×0`；之后拾取或奖励同配置道具时，即使生成了新的`ItemId`，槽位也会按配置ID重新汇总并恢复可用。以后增加快捷栏时继续按`configId -> ItemConfig -> icon`解析，不能把道具图片路径硬编码到表现脚本。
+`ItemConfig.icon`是客户端字段，值是相对Cocos `assets/resources`且不含扩展名的资源键，例如`UI/Icons/Items/1001`。Cocos3D Web快捷栏固定为`1=平A`、`2=1001`、`3=1003`，初始数量来自`G2C_EnterMap.items`，使用和拾取后的数量来自不可覆盖的`G2C_ItemChanged`；拾取RPC只返回受影响的`items`，客户端按`ItemSnapshot.version`合并RPC与Push，不能把整包背包放进每次拾取回包。打开NPC商店时，`M2C_OpenNpcShop.inventory`会返回一次只对当前玩家可见的权威背包快照，用来校正拾取推送延迟或丢失造成的本地投影；商店本身仍由服务端重新校验出售资格。客户端不得在按键时先行扣数量。快捷栏槽位只绑定`ItemConfigId`，数量归零时服务端删除背包中的`Item`子实体，客户端移除该`ItemId`快照但保留快捷栏槽并显示`×0`；之后拾取或奖励同配置道具时，即使生成了新的`ItemId`，槽位也会按配置ID重新汇总并恢复可用。以后增加快捷栏时继续按`configId -> ItemConfig -> icon`解析，不能把道具图片路径硬编码到表现脚本。
 
-Cocos3D还提供完整背包面板：桌面端点击“背包”或按`B`，移动端点击“包”按钮；面板按`ItemSnapshot.itemId`展示所有有库存的道具，名称、说明和图标来自客户端冷配置，使用按钮统一调用现有`MapClient.useItem`。面板只刷新服务端快照，不维护第二份库存；数量为0时等待`ItemSnapshot`后移除，触摸事件由HUD消费，不能穿透成地面寻路。其他客户端可以采用自己的背包UI，但必须保留同样的服务端权威和`operationId`边界。
+Cocos3D还提供完整背包面板：桌面端点击“背包”或按`B`，移动端点击“包”按钮；面板按`ItemSnapshot.itemId`展示所有有库存的道具，名称、说明和图标来自客户端冷配置，使用按钮统一调用现有`MapClient.useItem`。面板只刷新服务端快照，不维护第二份库存；数量为0时等待`ItemSnapshot`后移除，触摸事件由HUD消费，不能穿透成地面寻路。Cocos Creator 3.8.8 Web不得对`Map/Set`的`values/keys/entries`结果使用展开语法，必须用`Array.from(...)`物化，并由`typecheck:cocos3d-demo`门禁；验收时还要检查编译后的JS。其他客户端可以采用自己的背包UI，但必须保留同样的服务端权威和`operationId`边界。
 
 运行期间如果客户端带着过期ItemId或数量请求使用、购买或出售道具，服务端可以在业务错误响应里附带可选`inventory_recovery`。客户端先用其中的`InventorySnapshot.items`整体替换本地背包，再显示原错误；包装存在但items为空也必须清空本地旧数据。正常成功响应仍只返回受影响Item增量，不能把错误修复机制变成每次操作的全量广播。
 

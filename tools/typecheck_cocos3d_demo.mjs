@@ -1,11 +1,14 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cocosTypeConfig = path.join(root, "client_demo/cocos_client3D_3.8.8", "temp", "tsconfig.cocos.json");
+const cocosDemoSource = path.join(root, "client_demo/cocos_client3D_3.8.8", "assets", "scripts", "Demo");
+
+verifyNoIteratorSpread(cocosDemoSource);
 
 if (existsSync(cocosTypeConfig)) {
   console.log("[cocos3d-check] detected Cocos editor types; running full TypeScript check");
@@ -33,6 +36,38 @@ function runEsbuild(args) {
   return process.platform === "win32"
     ? run(process.execPath, [executable, ...args])
     : run(executable, args);
+}
+
+/**
+ * Cocos 3.8.8 Web可能把`[...map.values()]`错误降级为`[].concat(map.values())`，导致UI拿到迭代器而不是元素。
+ * Cocos 3.8.8 Web may lower `[...map.values()]` into `[].concat(map.values())`, feeding an iterator to UI code.
+ */
+function verifyNoIteratorSpread(directory) {
+  const violations = [];
+  for (const file of listTypeScriptFiles(directory)) {
+    const source = readFileSync(file, "utf8");
+    const lines = source.split(/\r?\n/u);
+    for (let index = 0; index < lines.length; index += 1) {
+      if (/\[\s*\.\.\.[^\]]*\.(?:values|keys|entries)\(\s*\)/u.test(lines[index])) {
+        violations.push(`${path.relative(root, file)}:${index + 1}`);
+      }
+    }
+  }
+  if (violations.length > 0) {
+    throw new Error(
+      `[cocos3d-check] 禁止展开Map/Set迭代器，请使用Array.from(...)：\n${violations.join("\n")}`,
+    );
+  }
+}
+
+function listTypeScriptFiles(directory) {
+  const files = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...listTypeScriptFiles(absolute));
+    else if (entry.isFile() && entry.name.endsWith(".ts")) files.push(absolute);
+  }
+  return files;
 }
 
 function run(command, args) {

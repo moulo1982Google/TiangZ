@@ -4071,6 +4071,7 @@ struct M2C_OpenNpcShop {
   std::uint32_t npcUnitId = 0;
   std::vector<ShopItemSnapshot> items;
   std::uint64_t gold = 0;
+  std::optional<InventorySnapshot> inventory;
 };
 
 struct M2C_OpenNpcShopCodec {
@@ -4122,6 +4123,13 @@ struct M2C_OpenNpcShopCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 4:
+          if (tag.wireType == 2) {
+            value.inventory = InventorySnapshotCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -4138,6 +4146,7 @@ struct M2C_OpenNpcShopCodec {
     writer.UInt32(1, value.npcUnitId);
     for (const auto& item : value.items) writer.BytesField(2, ShopItemSnapshotCodec::Encode(item), true);
     writer.UInt64(3, value.gold);
+    if (value.inventory.has_value()) writer.BytesField(4, InventorySnapshotCodec::Encode(*value.inventory));
     return writer.Finish();
   }
 };

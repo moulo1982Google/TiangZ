@@ -163,6 +163,12 @@ const DEMO_SKILL_ICON_PATHS: Readonly<Record<number, string>> = Object.freeze({
   3006: "UI/Icons/Skills/3006",
   3007: "UI/Icons/Skills/3007",
 });
+// 真言术·盾复用对应技能图标；虚弱灵魂必须继续使用自己的Buff图标，不能被盾图标覆盖。
+// Power Word: Shield reuses its skill icon, while Weakened Soul keeps its dedicated Buff icon.
+const DEMO_BUFF_ICON_PATHS: Readonly<Record<number, string>> = Object.freeze({
+  4003: "UI/Icons/Skills/3004",
+  4004: "UI/Icons/Buff/4004",
+});
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
 // Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
 const RUNTIME_CONFIG_RESOURCE = PREVIEW
@@ -1695,7 +1701,7 @@ export class GameBootstrap3D extends Component {
     if (!panel || !list || !gold || !this.shopOpen) return;
 
     gold.textContent = `铜币：${this.playerGold.toString()}`;
-    const sellableItems = [...this.inventoryItems.values()]
+    const sellableItems = Array.from(this.inventoryItems.values())
       .filter((item) => item.count > 0 && (GameConfigs.ItemConfig.TryGet(item.configId)?.sellPrice ?? 0) > 0)
       .sort((left, right) => left.configId - right.configId || compareBigInt(left.itemId, right.itemId));
     const signature = [
@@ -1758,7 +1764,11 @@ export class GameBootstrap3D extends Component {
     list.appendChild(sellTitle);
     if (sellableItems.length === 0) {
       const empty = document.createElement("div");
-      empty.textContent = "没有可出售的道具";
+      const inventoryCount = Array.from(this.inventoryItems.values()).filter((item) => item.count > 0).length;
+      empty.textContent = inventoryCount === 0
+        ? "背包中没有道具"
+        : `背包中有 ${inventoryCount} 种道具，但没有可出售的道具\n任务物品不可出售`;
+      empty.style.whiteSpace = "pre-line";
       empty.style.padding = "12px 8px";
       empty.style.color = "#9fb5bf";
       empty.style.textAlign = "center";
@@ -1824,6 +1834,7 @@ export class GameBootstrap3D extends Component {
       this.shopNpcUnitId = response.npcUnitId;
       this.shopItems = response.items;
       this.playerGold = response.gold;
+      if (response.inventory) this.ApplyInventorySnapshot(response.inventory);
       this.shopHudSignature = "";
       this.shopOpen = true;
       if (this.shopPanel) this.shopPanel.style.display = "flex";
@@ -2094,7 +2105,7 @@ export class GameBootstrap3D extends Component {
     const list = this.inventoryListElement;
     const empty = this.inventoryEmptyElement;
     if (!list || !empty) return;
-    const items = [...this.inventoryItems.values()]
+    const items = Array.from(this.inventoryItems.values())
       .filter((item) => item.count > 0)
       .sort((left, right) => left.configId - right.configId || compareBigInt(left.itemId, right.itemId));
     const signature = items.map((item) => [
@@ -2444,7 +2455,7 @@ export class GameBootstrap3D extends Component {
       buffInstanceId: buff.buffInstanceId,
       lastTimerText: "",
     };
-    const iconPath = `UI/Icons/Buff/${buff.buffConfigId}`;
+    const iconPath = DEMO_BUFF_ICON_PATHS[buff.buffConfigId] ?? `UI/Icons/Buff/${buff.buffConfigId}`;
     resources.load(iconPath, (error: unknown, asset: unknown) => {
       if (error || !asset || this.buffHudEntries.get(buffHudKey(buff.buffInstanceId)) !== entry) return;
       const texture = asset as { nativeUrl?: string; image?: { nativeUrl?: string } };
@@ -4260,6 +4271,21 @@ export class GameBootstrap3D extends Component {
   }
 
   /**
+   * 用服务端私有整包快照校正本地背包投影；商店打开和错误恢复共用这条路径。
+   * Reconciles the local inventory projection with a private server snapshot;
+   * shop opening and error recovery share this path.
+   */
+  private ApplyInventorySnapshot(snapshot: { readonly items: readonly ItemSnapshot[] }): void {
+    this.inventoryItems.clear();
+    for (const item of snapshot.items) {
+      if (item.count > 0) this.inventoryItems.set(item.itemId.toString(), item);
+    }
+    this.updateHotbarHud();
+    this.updateInventoryHud();
+    if (this.shopOpen) this.updateNpcShopHud();
+  }
+
+  /**
    * 用错误响应里的权威整包替换本地背包；包装层存在且items为空时也必须清空本地旧数据。
    * Replaces the local inventory with the authoritative snapshot carried by an
    * error response; an existing empty wrapper must also clear stale local data.
@@ -4270,15 +4296,13 @@ export class GameBootstrap3D extends Component {
     if (!isRecord(recovery)) return false;
     const items = recovery.items;
     if (!Array.isArray(items)) return false;
-    this.inventoryItems.clear();
+    const snapshotItems: ItemSnapshot[] = [];
     for (const value of items) {
       if (!isRecord(value) || typeof value.itemId !== "bigint" || typeof value.count !== "number") continue;
       const item = value as unknown as ItemSnapshot;
-      if (item.count > 0) this.inventoryItems.set(item.itemId.toString(), item);
+      if (item.count > 0) snapshotItems.push(item);
     }
-    this.updateHotbarHud();
-    this.updateInventoryHud();
-    if (this.shopOpen) this.updateNpcShopHud();
+    this.ApplyInventorySnapshot({ items: snapshotItems });
     return true;
   }
 

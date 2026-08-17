@@ -77,6 +77,8 @@ Cocos3D 中，靠近杂货商后显示统一 NPC 交互按钮，进入对话框�
 
 - 购买组只展示服务端返回的红药、蓝药目录。
 - 出售组展示当前背包中 `sell_price > 0` 的 Item，并按 ItemId出售一个。
+- `M2C_OpenNpcShop` 同时返回当前玩家私有的 `InventorySnapshot`；客户端打开商店时用它校正本地背包投影，避免拾取后的 `ItemChanged` 延迟或丢失造成“背包为空”的假象。
+- “背包中没有道具”和“有道具但没有可出售物品”必须分开提示；任务物品可以存在于背包，但 `sell_price = 0` 时不能出售。
 - 每次按钮请求期间禁用同一面板按钮，避免演示端重复提交；服务端仍必须依靠 ordered mailbox、`operationId`和事务回执兜底。
 - 商店关闭只关闭界面，不撤销已经提交的交易。
 
@@ -103,3 +105,11 @@ npm run test:npc-shop
 ```powershell
 npm run check
 ```
+
+外网或拆分进程环境还应执行真实 WebSocket 回归。该命令会创建临时账号，依次完成进图、击杀、拾取、返回杂货商，并断言商店回包中的权威背包包含拾取结果：
+
+```powershell
+npm run test:npc-shop-websocket
+```
+
+可通过 `TIANGZ_LOGIN_HOST`、`TIANGZ_LOGIN_PORT` 和 `TIANGZ_MAP_ID` 指向其他测试环境。它依赖真实服务器，不加入普通本地 `verify`。

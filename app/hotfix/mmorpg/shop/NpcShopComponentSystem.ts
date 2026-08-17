@@ -49,6 +49,7 @@ export class NpcShopComponentSystem extends NpcShopComponent {
 
   Open(player: import("#tiangz/model").PlayerUnit, npcUnitId: number): M2C_OpenNpcShop {
     this.npc.ValidateShopInteraction(player, npcUnitId);
+    const inventory = player.GetComponent(ItemComponent).Snapshot();
     const items = SHOP_ITEM_CONFIG_IDS.map((itemConfigId) => {
       const config = GameConfigs.ItemConfig.Get(itemConfigId);
       return {
@@ -57,10 +58,22 @@ export class NpcShopComponentSystem extends NpcShopComponent {
         sellPrice: BigInt(config.sellPrice),
       };
     });
+    this.DomainScene().logger.info("NPC shop opened with authoritative inventory", {
+      playerAccount: player.Account,
+      playerCharacterId: player.CharacterId.toString(),
+      playerUnitId: player.UnitId,
+      npcUnitId,
+      inventoryStacks: inventory.length,
+      inventoryCount: inventory.reduce((total, item) => total + item.count, 0),
+      inventoryConfigIds: inventory.map((item) => item.configId),
+    });
     return {
       npcUnitId,
       items,
       gold: player.GetComponent(CurrencyComponent).Gold,
+      inventory: {
+        items: inventory,
+      },
     };
   }
 

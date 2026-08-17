@@ -360,8 +360,8 @@ message M2C_InspectLootMonster // IActorLocationResponse
 }
 
 //ResponseType M2C_OpenNpcShop
-// 打开商店只读取地图内NPC和当前玩家金币，不修改背包；购买与出售分别使用独立事务。
-// Opening a shop only reads the map NPC and current gold; it does not mutate inventory.
+// 打开商店只读取地图内NPC、当前玩家金币和私有背包快照，不修改背包；购买与出售分别使用独立事务。
+// Opening a shop reads the map NPC, current gold, and a private authoritative inventory snapshot; it does not mutate inventory.
 // Buying and selling use separate idempotent transactions.
 // @ets.msg protocol=Map method=OpenNpcShop duringTransfer=queue
 message C2M_OpenNpcShop // IActorLocationRequest
@@ -374,6 +374,9 @@ message M2C_OpenNpcShop // IActorLocationResponse
   uint32 npc_unit_id = 1;
   repeated ShopItemSnapshot items = 2;
   uint64 gold = 3;
+  // 打开商店时重新校正客户端背包投影，避免拾取推送延迟或丢失导致出售列表误判为空。
+  // Reconciles the client inventory projection when the shop opens, so a delayed or missed loot push cannot hide sellable items.
+  optional InventorySnapshot inventory = 4;
 }
 
 //ResponseType M2C_BuyNpcShopItem

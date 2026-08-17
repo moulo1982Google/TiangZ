@@ -392,7 +392,7 @@ item.count -= 1;
 
 `ItemView`只用于当前同步调用中的读取，不能跨`await`、Timer或玩家下线长期保存。协议和持久化边界分别复制为`ItemSnapshot`和`ItemRecord`；不要把运行时对象命名为`ItemDB`，也不要把可变Native句柄直接序列化。
 
-前端背包只做快照投影：使用`ItemSnapshot.itemId`作为格子稳定键，使用`ItemConfig`补齐名称、说明和图标。上线、重连和进图使用`G2C_EnterMap.items`全量初始化，运行期间的使用、拾取、购买、出售和任务奖励都通过`G2C_ItemChanged`发送受影响的单行增量；拾取RPC的`M2C_LootMonster.items`也是本次增量，客户端按`ItemSnapshot.version`合并RPC与Push的重复到达。不要把完整背包快照塞进普通业务回包。快捷栏和完整背包必须复用同一个`C2M_UseItem(itemId, operationId)`入口；UI可以禁用按钮、显示冷却和排序，但不能本地扣数量、创建Item或伪造成功消息。移动端背包按钮和面板必须阻止触摸继续传给全屏镜头/寻路层。
+前端背包只做快照投影：使用`ItemSnapshot.itemId`作为格子稳定键，使用`ItemConfig`补齐名称、说明和图标。上线、重连和进图使用`G2C_EnterMap.items`全量初始化，运行期间的使用、拾取、购买、出售和任务奖励都通过`G2C_ItemChanged`发送受影响的单行增量；拾取RPC的`M2C_LootMonster.items`也是本次增量，客户端按`ItemSnapshot.version`合并RPC与Push的重复到达。打开NPC商店时额外使用`M2C_OpenNpcShop.inventory`校正一次当前玩家的私有权威背包投影；这个快照只用于恢复客户端显示，不替代购买、出售时的服务端校验，也不把完整背包塞进普通拾取回包。快捷栏和完整背包必须复用同一个`C2M_UseItem(itemId, operationId)`入口；UI可以禁用按钮、显示冷却和排序，但不能本地扣数量、创建Item或伪造成功消息。移动端背包按钮和面板必须阻止触摸继续传给全屏镜头/寻路层。Cocos Creator 3.8.8 Web会错误降级`[...map.values()]`一类迭代器展开，集合展示必须使用`Array.from(...)`并通过`typecheck:cocos3d-demo`；出现“服务端有数据、UI为空”时必须检查构建后的`assets/main/index.js`，不能只看源码或网络回包。
 
 当服务端判断请求使用、购买或出售的ItemId/数量已经过期时，业务错误响应可以携带可选`inventory_recovery`。该字段存在时，无论`items`是否为空，都代表一次权威整包替换；客户端应先应用快照再显示错误。只有状态冲突错误使用这个修复载荷，冷却、距离、金币不足等普通业务拒绝不应无条件发送整包。
 

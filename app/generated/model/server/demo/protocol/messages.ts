@@ -6593,6 +6593,7 @@ export interface M2C_OpenNpcShop extends IActorLocationResponse {
   npcUnitId: number;
   items: readonly ShopItemSnapshot[];
   gold: bigint;
+  inventory?: InventorySnapshot;
 }
 
 export const M2C_OpenNpcShopCodec = {
@@ -6623,6 +6624,9 @@ export const M2C_OpenNpcShopCodec = {
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.gold = reader.uint64();
       }
+      else if (tag.fieldNo === 4 && tag.wireType === 2) {
+        value.inventory = InventorySnapshotCodec.decode(reader.bytesField());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -6638,6 +6642,7 @@ export const M2C_OpenNpcShopCodec = {
     if (value.npcUnitId !== undefined) writer.uint32(1, value.npcUnitId);
     for (const item of (value.items ?? [])) writer.bytes(2, ShopItemSnapshotCodec.encode(item), true);
     if (value.gold !== undefined) writer.uint64(3, value.gold);
+    if (value.inventory !== undefined) writer.bytes(4, InventorySnapshotCodec.encode(value.inventory));
     return writer.finish();
   },
 };

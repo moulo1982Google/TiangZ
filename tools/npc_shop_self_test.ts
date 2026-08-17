@@ -61,6 +61,8 @@ async function main(): Promise<void> {
   };
   const player = {
     Account: "npc-shop-self-test",
+    CharacterId: 1n,
+    UnitId: 1,
     GetComponent<T>(ctor: unknown): T {
       if (ctor === CurrencyComponent) return currency as T;
       if (ctor === PlayerPersistenceComponent) return persistence as T;
@@ -80,11 +82,16 @@ async function main(): Promise<void> {
     },
   };
   const shop = Object.create(ShopSystem.prototype) as NpcShopComponentSystem;
+  Object.defineProperty(shop, "DomainScene", {
+    value: () => ({ logger: { info(): void {} } }),
+  });
   (shop as unknown as { Awake(value: unknown): void }).Awake(npc);
 
   const opened = shop.Open(player, 0x4000_0002);
   assert.deepEqual(opened.items.map((value) => value.itemConfigId), [1001, 1003]);
   assert.equal(opened.gold, 100n);
+  assert.ok(opened.inventory);
+  assert.deepEqual(opened.inventory.items, inventory.Snapshot());
 
   const buyRequest = {
     npcUnitId: 0x4000_0002,

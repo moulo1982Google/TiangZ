@@ -7,6 +7,25 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-17：修复Cocos Web背包迭代器降级
+
+- 修复背包与NPC商店界面使用`[...inventoryItems.values()]`后，在Cocos Creator 3.8.8 Web构建中被错误降级为`[].concat(iterator)`，导致服务端背包有数据但UI显示为空的问题。
+- Cocos3D Demo统一使用`Array.from(map.values())`物化集合；`typecheck:cocos3d-demo`新增源码门禁，禁止再次展开`Map/Set`的`values/keys/entries`迭代器。
+- 验收不能只看TypeScript或协议探针；必须检查Cocos编译后的`assets/main/index.js`并验证实际背包DOM。
+
+## 2026-08-17：商店背包真实链路回归
+
+- 新增`npm run test:npc-shop-websocket`，通过真实WebSocket完成注册、进图、击杀、拾取和打开商店，断言商店权威背包包含本次拾取结果。
+- 拾取提交与商店打开日志记录角色、Unit、背包堆叠数和ConfigId，可以直接确认两次请求是否命中同一个权威PlayerUnit。
+- 外网双DBProxy、多进程Map 100实测通过：初始小红/小蓝与新拾取破旧布料同时出现在`M2C_OpenNpcShop.inventory`。
+
+## 2026-08-17：商店打开时校正背包投影
+
+- 修复拾取后的`ItemChanged`推送延迟或丢失时，Cocos3D打开NPC商店误显示“没有可出售道具”的问题。
+- `M2C_OpenNpcShop`现在携带当前玩家私有的`InventorySnapshot`；服务端仍以PlayerUnit的ItemComponent为权威，购买/出售时继续重新校验库存和事务，不信任客户端快照。
+- 商店界面区分“背包中没有道具”和“背包有物品但任务物品不可出售”，避免把不可出售任务物品误报成背包为空。
+- 验证：`npm run typecheck`、`npm run test:npc-shop`、`npm run typecheck:cocos3d-demo`、`npm run test:protocol`、`npm run verify:codegen`通过。
+
 ## 2026-08-17：玩家初始魔法值调整为200
 
 - `PlayerConfig.xlsx`演示模板的`max_mp`和`initial_mp`统一调整为200，玩家创建时继续通过同一份冷配置写入`MaxMpBase`与`CurrentMp`，避免当前值和上限不一致。
