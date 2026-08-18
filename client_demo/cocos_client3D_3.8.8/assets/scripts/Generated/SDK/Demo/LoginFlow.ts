@@ -30,6 +30,11 @@ export interface EnterGameResult {
   gateSocket: RpcSocket;
 }
 
+export interface MapTransitionResult {
+  readonly enterMap: G2C_EnterMap;
+  readonly mapReady: G2C_MapReady;
+}
+
 export type LoginProgress = (message: string) => void;
 export type SessionReplacedHandler = (message: G2C_SessionReplaced) => void;
 
@@ -139,6 +144,26 @@ export class LoginFlow {
     }
   }
 
+  /** 由Gate创建Starter动态副本并返回正式进图快照；客户端不能选择副本Host。 / Creates a Starter dynamic instance through Gate and returns the normal map-entry snapshot without exposing host selection. */
+  async enterStarterDungeon(operationId: string): Promise<MapTransitionResult> {
+    const { socket, gate } = this.requireGate();
+    const [response, mapReady] = await Promise.all([
+      gate.enterStarterDungeon({ operationId }),
+      socket.waitForMessage(ClientMessages.MapReady),
+    ]);
+    return { enterMap: response.enterMap, mapReady };
+  }
+
+  /** 使用正式Gate入口切换到已知地图实例；Starter离开副本复用此路径。 / Uses the normal Gate entry path for a known instance; the Starter exit reuses this method. */
+  async enterMap(mapId: number, mapInstanceId: bigint): Promise<MapTransitionResult> {
+    const { socket, gate } = this.requireGate();
+    const [enterMap, mapReady] = await Promise.all([
+      gate.enterMap({ mapId, mapInstanceId }),
+      socket.waitForMessage(ClientMessages.MapReady),
+    ]);
+    return { enterMap, mapReady };
+  }
+
   /** 注册账号并创建同名初始角色；注册不会建立Gate连接，成功后仍需调用enterGame。 / Registers an account and same-name starter character without opening Gate. */
   async register(account: string, password: string): Promise<S2C_Register> {
     const manager = this.createSocket(this.loginMgrEndpoint);
@@ -214,6 +239,11 @@ export class LoginFlow {
         console.error("顶号通知处理失败", error);
       }
     }
+  }
+
+  private requireGate(): { socket: RpcSocket; gate: GateClient } {
+    if (!this.gateSocket || !this.gateClient) throw new Error("Gate session is not connected");
+    return { socket: this.gateSocket, gate: this.gateClient };
   }
 
   update(maxMessagesPerSocket = 256): number {

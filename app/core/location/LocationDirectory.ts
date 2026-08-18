@@ -103,6 +103,18 @@ export class LocationDirectory<TKey, TValue> {
     return snapshot(record);
   }
 
+  /**
+   * 故障接管时删除已确认死亡所有者留下的记录；普通下线必须继续使用Lock + Remove。
+   * / Deletes a record left by a confirmed-dead owner during failover; ordinary
+   * offline flow must continue to use Lock + Remove.
+   */
+  DeleteForOwnerTakeover(key: TKey): LocationRecord<TKey, TValue> | undefined {
+    const record = this.records.get(key);
+    if (!record) return undefined;
+    this.records.delete(key);
+    return snapshot(record);
+  }
+
   /** 返回稳定快照，供恢复与指标使用；不要在业务热路径全量遍历。 / Returns stable snapshots for recovery and metrics, never for business hot-path scans. */
   Snapshot(): readonly LocationRecord<TKey, TValue>[] {
     return [...this.records.values()].map(snapshot);

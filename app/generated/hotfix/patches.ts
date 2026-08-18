@@ -13,6 +13,7 @@ import "../../hotfix/mmorpg/monster/MonsterUnitSystem";
 import "../../hotfix/mmorpg/npc/NpcComponentSystem";
 import "../../hotfix/mmorpg/npc/NpcUnitSystem";
 import "../../hotfix/mmorpg/numeric/NumericComponentSystem";
+import "../../hotfix/mmorpg/progression/ProgressionComponentSystem";
 import "../../hotfix/mmorpg/quest/QuestComponentSystem";
 import "../../hotfix/mmorpg/quest/QuestSystem";
 import "../../hotfix/mmorpg/shop/NpcShopComponentSystem";

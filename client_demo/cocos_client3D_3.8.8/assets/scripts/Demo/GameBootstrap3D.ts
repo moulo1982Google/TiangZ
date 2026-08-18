@@ -38,6 +38,7 @@ import type {
   G2C_BuffAdded,
   G2C_BuffRemoved,
   G2C_DemoDoorState,
+  G2C_EnterMap,
   G2C_EntityNumeric,
   G2C_EntityNavigate,
   G2C_EntityState,
@@ -45,6 +46,7 @@ import type {
   G2C_PlayerTradeChanged,
   G2C_PlayerTradeClosed,
   G2C_PlayerTradeInvite,
+  G2C_ProgressionChanged,
   G2C_SkillCastState,
   G2C_SkillImpact,
   G2C_SkillProjectile,
@@ -96,8 +98,12 @@ const STARTER_SHOP_NPC_CONFIG_ID = 9002;
 // These ids follow the stable server Numeric contract; the client only reads public HP/MP results.
 const NUMERIC_CURRENT_HP = 1;
 const NUMERIC_CURRENT_MP = 2;
+const NUMERIC_LEVEL = 3;
+const NUMERIC_EXPERIENCE = 4;
 const NUMERIC_MAX_HP = 1000;
 const NUMERIC_MAX_MP = 1001;
+const STARTER_DUNGEON_MAP_ID = 200;
+const STARTER_DUNGEON_EXIT_MAP_ID = 100;
 const PLAYER_HALF_HEIGHT = 0.9;
 const PLAYER_VISUAL_HALF_WIDTH = 0.4;
 const MONSTER_HUD_WIDTH = 1.35;
@@ -307,6 +313,7 @@ export class GameBootstrap3D extends Component {
   private mobileAttackButton?: HTMLButtonElement;
   private mobileNpcInteractButton?: HTMLButtonElement;
   private mobileInventoryButton?: HTMLButtonElement;
+  private mobileDungeonButton?: HTMLButtonElement;
   private mobileStyleElement?: HTMLStyleElement;
   private mobileViewportCleanup?: () => void;
   private mobileLeftHudElement?: HTMLElement;
@@ -354,12 +361,14 @@ export class GameBootstrap3D extends Component {
   private playerHpProgress?: HTMLElement;
   private playerMpLabel?: HTMLElement;
   private playerMpProgress?: HTMLElement;
+  private playerProgressionLabel?: HTMLElement;
   private playerOverheadHud?: EntityOverheadHud;
   private autoAttackPanel?: HTMLElement;
   private autoAttackLabel?: HTMLElement;
   private autoAttackProgress?: HTMLElement;
   private hotbarElement?: HTMLElement;
   private inventoryToggleButton?: HTMLButtonElement;
+  private dungeonToggleButton?: HTMLButtonElement;
   private inventoryPanel?: HTMLElement;
   private inventoryListElement?: HTMLElement;
   private inventoryEmptyElement?: HTMLElement;
@@ -410,6 +419,10 @@ export class GameBootstrap3D extends Component {
   private mobilePinchDistance = 0;
   private mobileCameraMoved = false;
   private localUnitId = 0;
+  private currentMapId = 0;
+  private currentMapInstanceId = 0n;
+  private currentAccount = "";
+  private dungeonTransitionInFlight = false;
   private navigationSequence = 0;
   private acknowledgedSequence = 0;
   private playerSpeedMetersPerSecond = 4;
@@ -535,6 +548,8 @@ export class GameBootstrap3D extends Component {
     this.hotbarElement = undefined;
     this.inventoryToggleButton?.remove();
     this.inventoryToggleButton = undefined;
+    this.dungeonToggleButton?.remove();
+    this.dungeonToggleButton = undefined;
     this.inventoryPanel?.remove();
     this.inventoryPanel = undefined;
     this.inventoryListElement = undefined;
@@ -572,6 +587,7 @@ export class GameBootstrap3D extends Component {
     this.mobileAttackButton = undefined;
     this.mobileNpcInteractButton = undefined;
     this.mobileInventoryButton = undefined;
+    this.mobileDungeonButton = undefined;
     this.mobileViewportCleanup?.();
     this.mobileViewportCleanup = undefined;
     this.mobileStyleElement?.remove();
@@ -599,6 +615,7 @@ export class GameBootstrap3D extends Component {
     this.mobileInstructionsElement = undefined;
     this.mobilePingElement = undefined;
     this.playerStatsPanel = undefined;
+    this.playerProgressionLabel = undefined;
     this.autoAttackPanel = undefined;
     this.autoAttackLabel = undefined;
     this.autoAttackProgress = undefined;
@@ -727,6 +744,7 @@ export class GameBootstrap3D extends Component {
     this.buildBuffHud(document);
     this.buildHotbarHud(document);
     this.buildInventoryHud(document);
+    this.buildDungeonHud(document);
     this.buildSkillBarHud(document);
     this.buildQuestHud(document);
     this.buildMobileHud(document);
@@ -1103,6 +1121,13 @@ export class GameBootstrap3D extends Component {
     title.style.marginBottom = "5px";
     title.style.fontWeight = "600";
     panel.appendChild(title);
+
+    const progression = document.createElement("div");
+    progression.textContent = "等级 --  经验 --";
+    progression.style.marginBottom = "5px";
+    progression.style.color = "#f4d477";
+    panel.appendChild(progression);
+    this.playerProgressionLabel = progression;
 
     const hp = this.buildPlayerResourceRow(document, panel, "HP", "#e04a56");
     const mp = this.buildPlayerResourceRow(document, panel, "MP", "#438df5");
@@ -2144,6 +2169,46 @@ export class GameBootstrap3D extends Component {
     this.inventoryListElement = list;
     this.inventoryEmptyElement = empty;
     this.updateInventoryHud();
+  }
+
+  /** 创建动态副本进入/离开按钮；按钮只发Gate请求，不在客户端生成实例ID。 / Creates the dungeon enter/exit button and never fabricates an instance id client-side. */
+  private buildDungeonHud(document: Document): void {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "cocos3d-dungeon-toggle";
+    Object.assign(button.style, {
+      position: "fixed",
+      right: "24px",
+      top: "210px",
+      zIndex: "10005",
+      padding: "8px 13px",
+      border: "1px solid rgba(230, 190, 255, 0.68)",
+      borderRadius: "7px",
+      color: "#f5eaff",
+      background: "rgba(72, 40, 91, 0.9)",
+      font: "600 13px/1.2 system-ui, sans-serif",
+      cursor: "pointer",
+      touchAction: "manipulation",
+      userSelect: "none",
+    });
+    this.bindTouchSafeHudButton(button, () => void this.toggleStarterDungeon());
+    document.body.appendChild(button);
+    this.dungeonToggleButton = button;
+    this.updateDungeonButtons();
+  }
+
+  private updateDungeonButtons(): void {
+    const inDungeon = this.currentMapId === STARTER_DUNGEON_MAP_ID;
+    const text = this.dungeonTransitionInFlight ? "切换中..." : inDungeon ? "离开副本" : "进入Boss副本";
+    if (this.dungeonToggleButton) {
+      this.dungeonToggleButton.textContent = text;
+      this.dungeonToggleButton.disabled = this.dungeonTransitionInFlight || this.localUnitId === 0;
+    }
+    if (this.mobileDungeonButton) {
+      this.mobileDungeonButton.textContent = inDungeon ? "离" : "副";
+      this.mobileDungeonButton.title = text;
+      this.mobileDungeonButton.disabled = this.dungeonTransitionInFlight || this.localUnitId === 0;
+    }
   }
 
   /** 根据权威ItemSnapshot重绘背包格子；只有库存结构变化时才重建DOM。 / Rebuilds inventory slots only when the authoritative inventory shape changes. */
@@ -3218,6 +3283,12 @@ export class GameBootstrap3D extends Component {
     this.mobileInventoryButton = inventoryButton;
     this.setInventoryOpen(this.inventoryOpen);
 
+    const dungeonButton = createActionButton("副", "进入Boss副本", `calc(${mobileActionBottom} + ${mobileActionStep * 4}px)`);
+    bindActionButton(dungeonButton, () => this.toggleStarterDungeon());
+    controls.appendChild(dungeonButton);
+    this.mobileDungeonButton = dungeonButton;
+    this.updateDungeonButtons();
+
     const style = document.createElement("style");
     style.textContent = `
       .cocos3d-mobile-controls { display: none; }
@@ -3317,7 +3388,8 @@ export class GameBootstrap3D extends Component {
           max-width: calc(100vw - 16px) !important;
           transform: translateX(-50%) !important;
         }
-        .cocos3d-inventory-toggle {
+        .cocos3d-inventory-toggle,
+        .cocos3d-dungeon-toggle {
           display: none !important;
         }
         .cocos3d-inventory-card {
@@ -3938,6 +4010,10 @@ export class GameBootstrap3D extends Component {
     this.gateSocket = undefined;
     this.mapClient = undefined;
     this.localUnitId = 0;
+    this.currentMapId = 0;
+    this.currentMapInstanceId = 0n;
+    this.currentAccount = "";
+    this.updateDungeonButtons();
     if (this.playerOverheadHud?.nameLabel) this.playerOverheadHud.nameLabel.string = "玩家";
     this.path.length = 0;
     this.pathIndex = 0;
@@ -4022,6 +4098,10 @@ export class GameBootstrap3D extends Component {
       this.gateSocket = result.gateSocket;
       this.mapClient = new MapClient(result.gateSocket);
       this.localUnitId = result.enterMap.unitId;
+      this.currentMapId = result.enterMap.mapId;
+      this.currentMapInstanceId = result.enterMap.mapInstanceId;
+      this.currentAccount = account;
+      this.updateDungeonButtons();
       this.playerGold = result.enterMap.gold;
       this.itemCooldownEnds.clear();
       this.skillGlobalCooldownEndAtMs = 0;
@@ -4095,6 +4175,130 @@ export class GameBootstrap3D extends Component {
       this.setLoginStatus(message, true);
       return false;
     }
+  }
+
+  /**
+   * 在野外创建并进入一次动态Boss副本；副本内同一按钮返回Map 100。
+   * 两条路径都消费Gate返回的完整权威快照，不在客户端搬运旧地图实体。
+   *
+   * Creates and enters a dynamic Boss instance from the outdoor map; the same
+   * button returns to Map 100. Both paths consume a full authoritative Gate
+   * snapshot instead of carrying old-map entities client-side.
+   */
+  private async toggleStarterDungeon(): Promise<void> {
+    const flow = this.loginFlow;
+    if (!flow || !this.gateSocket || this.localUnitId === 0 || this.dungeonTransitionInFlight) return;
+    this.dungeonTransitionInFlight = true;
+    this.updateDungeonButtons();
+    try {
+      const result = this.currentMapId === STARTER_DUNGEON_MAP_ID
+        ? await flow.enterMap(STARTER_DUNGEON_EXIT_MAP_ID, BigInt(STARTER_DUNGEON_EXIT_MAP_ID))
+        : await flow.enterStarterDungeon(CreateOperationId("starter-dungeon"));
+      await this.applyMapTransition(result.enterMap, result.mapReady);
+    } catch (error) {
+      this.setStatus(`副本切换失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.dungeonTransitionInFlight = false;
+      this.updateDungeonButtons();
+    }
+  }
+
+  /** 用一次Gate进图结果替换全部地图投影；登录凭据、Socket和冷却状态保持不变。 / Replaces all map projections from one Gate entry result while preserving credentials, socket, and cooldown state. */
+  private async applyMapTransition(enterMap: G2C_EnterMap, mapReady: { mapId: number; unitId: number }): Promise<void> {
+    if (!this.gateSocket) throw new Error("Gate连接已经断开");
+    if (mapReady.mapId !== enterMap.mapId || mapReady.unitId !== enterMap.unitId) {
+      throw new Error("MapReady与进图快照不一致");
+    }
+    const config = GameConfigs.MapConfig.Get(enterMap.mapId);
+    if (config.spatialMode !== enterMap.spatialMode ||
+      config.navigationVersion !== enterMap.navigationVersion ||
+      config.navigationHash !== enterMap.navigationHash) {
+      throw new Error(`Map ${enterMap.mapId}导航资源指纹与客户端冷配置不一致`);
+    }
+
+    this.closeNpcDialog();
+    this.closeNpcShop();
+    this.closeLootPanel();
+    this.playerTradePanel?.Close();
+    this.selectedMonsterUnitId = 0;
+    this.selectedNpcUnitId = 0;
+    this.selectedPlayerUnitId = 0;
+    for (const remote of this.remotePlayers.values()) {
+      remote.visual?.Dispose();
+      remote.node.destroy();
+    }
+    this.remotePlayers.clear();
+    this.path.length = 0;
+    this.pathIndex = 0;
+    this.targetMarker.active = false;
+    this.autoAttackEnabled = false;
+    this.autoAttackTargetUnitId = 0;
+
+    this.localUnitId = enterMap.unitId;
+    this.currentMapId = enterMap.mapId;
+    this.currentMapInstanceId = enterMap.mapInstanceId;
+    this.playerGold = enterMap.gold;
+    this.buffStateStore.Clear();
+    for (const entity of enterMap.entities) this.buffStateStore.ApplySnapshot(entity);
+    this.inventoryItems.clear();
+    for (const item of enterMap.items) this.ApplyItemSnapshot(item);
+    this.quests.clear();
+    for (const quest of enterMap.quests) {
+      const normalized = normalizeQuestSnapshot(quest);
+      if (normalized) this.quests.set(normalized.questConfigId, normalized);
+    }
+    this.completedQuestConfigIds.clear();
+    for (const id of enterMap.completedQuestConfigIds) this.completedQuestConfigIds.add(id);
+
+    const localEntity = enterMap.entities.find((entity) => entity.unitId === enterMap.unitId);
+    this.localNumerics.clear();
+    if (localEntity) this.ApplyLocalSnapshotNumerics(localEntity);
+    if (this.playerOverheadHud?.nameLabel) this.playerOverheadHud.nameLabel.string = localEntity?.displayName || this.currentAccount;
+    this.authoritativeFoot.set(enterMap.x, enterMap.y, enterMap.z);
+    this.playerYaw = localEntity?.yaw ?? 0;
+    this.authoritativeYaw = this.playerYaw;
+    this.cameraYaw = this.playerYaw;
+    this.setPlayerFootPosition(this.authoritativeFoot);
+    this.player.setRotationFromEuler(0, this.playerYaw * 180 / Math.PI, 0);
+    this.snapFollowCamera();
+    for (const entity of enterMap.entities) this.UpsertRemotePlayer(entity);
+
+    let visibleEntities = enterMap.entities;
+    const initialSnapshotPromise = visibleEntities.length === 0
+      ? this.gateSocket.waitForMessage(ClientMessages.AoiDelta, { timeoutMs: 5_000 })
+      : undefined;
+    const snapshotReady = await new GateClient(this.gateSocket).mapSnapshotReady({ unitId: enterMap.unitId });
+    if (initialSnapshotPromise) {
+      const initialSnapshot = await initialSnapshotPromise;
+      visibleEntities = initialSnapshot.enters;
+      this.ApplyAoiDelta(initialSnapshot);
+    }
+    this.ApplyDemoDoorState(enterMap.mapId === MAP_ID && snapshotReady.demoDoorClosed);
+    this.updatePlayerStatsHud();
+    this.updateBuffHud();
+    this.updateInventoryHud();
+    this.updateQuestHud();
+    this.refreshSelectedTargetHud();
+    this.updateDungeonButtons();
+    const bossCount = visibleEntities.filter((entity) =>
+      entity.entityType === ENTITY_TYPE_MONSTER && entity.configId === 3 && entity.alive
+    ).length;
+    this.setStatus(
+      `${this.currentAccount} / ${config.name} / 实例 ${enterMap.mapInstanceId}\n` +
+      (enterMap.mapId === STARTER_DUNGEON_MAP_ID
+        ? `Boss ${bossCount > 0 ? "已出现" : "等待视野同步"}，击杀奖励120经验`
+        : "已返回Starter野外地图"),
+    );
+  }
+
+  /** 应用已提交的成长回执并立即刷新本人HUD；随后到达的Numeric增量保持同值。 / Applies a committed progression receipt immediately; later Numeric replication converges to the same values. */
+  ApplyProgressionChanged(message: G2C_ProgressionChanged): void {
+    this.localNumerics.set(NUMERIC_LEVEL, message.level);
+    this.localNumerics.set(NUMERIC_EXPERIENCE, message.experience);
+    this.updatePlayerStatsHud();
+    this.setStatus(message.leveledUp
+      ? `升级！当前等级 ${message.level}，获得经验 ${message.gainedExperience}`
+      : `获得经验 ${message.gainedExperience}，累计 ${message.experience}`);
   }
 
   /**
@@ -5813,6 +6017,11 @@ export class GameBootstrap3D extends Component {
     const maxHp = this.localNumerics.get(NUMERIC_MAX_HP);
     const currentMp = this.localNumerics.get(NUMERIC_CURRENT_MP);
     const maxMp = this.localNumerics.get(NUMERIC_MAX_MP);
+    const level = this.localNumerics.get(NUMERIC_LEVEL);
+    const experience = this.localNumerics.get(NUMERIC_EXPERIENCE);
+    if (this.playerProgressionLabel) {
+      this.playerProgressionLabel.textContent = `等级 ${level?.toString() ?? "--"}  经验 ${experience?.toString() ?? "--"}`;
+    }
     if (this.playerHpLabel && this.playerMpLabel && this.playerHpProgress && this.playerMpProgress) {
       this.playerHpLabel.textContent = `HP: ${currentHp?.toString() ?? "--"} / ${maxHp?.toString() ?? "--"}`;
       this.playerMpLabel.textContent = `MP: ${currentMp?.toString() ?? "--"} / ${maxMp?.toString() ?? "--"}`;

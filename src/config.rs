@@ -127,6 +127,19 @@ pub struct ProcessLifecycleConfig {
     pub stop_timeout_ms: u64,
     #[serde(default = "default_hotfix_reload_timeout_ms")]
     pub hotfix_reload_timeout_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart: Option<ProcessRestartConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProcessRestartConfig {
+    #[serde(default = "default_restart_max_attempts")]
+    pub max_attempts: u32,
+    #[serde(default = "default_restart_window_ms")]
+    pub window_ms: u64,
+    #[serde(default = "default_restart_backoff_ms")]
+    pub backoff_ms: u64,
 }
 
 impl Default for ProcessLifecycleConfig {
@@ -134,6 +147,7 @@ impl Default for ProcessLifecycleConfig {
         Self {
             stop_timeout_ms: default_stop_timeout_ms(),
             hotfix_reload_timeout_ms: default_hotfix_reload_timeout_ms(),
+            restart: None,
         }
     }
 }
@@ -457,6 +471,18 @@ fn default_hotfix_reload_timeout_ms() -> u64 {
     30_000
 }
 
+fn default_restart_max_attempts() -> u32 {
+    3
+}
+
+fn default_restart_window_ms() -> u64 {
+    60_000
+}
+
+fn default_restart_backoff_ms() -> u64 {
+    1_000
+}
+
 fn default_dbproxy_auth_token_env() -> String {
     "TIANGZ_DBPROXY_AUTH_TOKEN".to_string()
 }
@@ -752,6 +778,17 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     }
     if !(100..=120_000).contains(&config.process.lifecycle.hotfix_reload_timeout_ms) {
         bail!("process lifecycle.hotfixReloadTimeoutMs must be between 100 and 120000");
+    }
+    if let Some(restart) = &config.process.lifecycle.restart {
+        if !(1..=100).contains(&restart.max_attempts) {
+            bail!("process lifecycle.restart.maxAttempts must be between 1 and 100");
+        }
+        if !(1_000..=3_600_000).contains(&restart.window_ms) {
+            bail!("process lifecycle.restart.windowMs must be between 1000 and 3600000");
+        }
+        if !(1_000..=120_000).contains(&restart.backoff_ms) {
+            bail!("process lifecycle.restart.backoffMs must be between 1000 and 120000");
+        }
     }
     if !config.process.network.uring_entries.is_power_of_two()
         || !(64..=32_768).contains(&config.process.network.uring_entries)
@@ -1418,7 +1455,12 @@ mod tests {
                 },
                 "lifecycle": {
                     "stopTimeoutMs": 30000,
-                    "hotfixReloadTimeoutMs": 45000
+                    "hotfixReloadTimeoutMs": 45000,
+                    "restart": {
+                        "maxAttempts": 4,
+                        "windowMs": 90000,
+                        "backoffMs": 1500
+                    }
                 }
             }"#,
         )
@@ -1427,12 +1469,17 @@ mod tests {
         assert_eq!(overridden.game.max_catch_up_steps, 3);
         assert_eq!(overridden.lifecycle.stop_timeout_ms, 30_000);
         assert_eq!(overridden.lifecycle.hotfix_reload_timeout_ms, 45_000);
+        let restart = overridden.lifecycle.restart.unwrap();
+        assert_eq!(restart.max_attempts, 4);
+        assert_eq!(restart.window_ms, 90_000);
+        assert_eq!(restart.backoff_ms, 1_500);
 
         let defaults: ProcessConfig = serde_json::from_str(r#"{ "name": "map2" }"#).unwrap();
         assert_eq!(defaults.game.fixed_update_ms, 50);
         assert_eq!(defaults.game.max_catch_up_steps, 2);
         assert_eq!(defaults.lifecycle.stop_timeout_ms, 10_000);
         assert_eq!(defaults.lifecycle.hotfix_reload_timeout_ms, 30_000);
+        assert!(defaults.lifecycle.restart.is_none());
     }
 
     #[test]

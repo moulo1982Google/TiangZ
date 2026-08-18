@@ -54,7 +54,9 @@ Gate自定义指标`actor_transfer_barrier`暴露active、queued_frames、queued
 
 Location 本身只保存内存目录。Location 单进程重启后，存活 MapHost 的周期重报可以恢复 active 记录；Gate 在下一次传送前刷新 revision。恢复批次先整体校验再写入，不覆盖其他 MapHost 的冲突记录，也不强行解除现有 moving/removing 操作。
 
-当前尚未实现：MapHost 租约、死亡节点判定、机器故障自动接管、在途跨进程事务日志、etcd 服务发现和 Gate 故障转移。因此“Location 恢复”只表示目录进程重启，不等于生产级分布式高可用。
+Location同时记录每个MapHost的所有权代次。Watcher确认本地子进程退出并拉起同名静态MapHost后，新代次会先整体校验恢复批次，再删除该Host旧代次遗留的Actor路由；旧代次后续重报会被拒绝。Gate只有在旧Actor调用失败且Location已删除或换代时才清理本地缓存，下一次进图从DBProxy恢复PlayerUnit。该流程不是普通消息热路径，也不逐消息查询Location。
+
+当前尚未实现：跨机器租约仲裁、动态副本现场恢复、在途跨进程事务日志、etcd服务发现和Gate故障转移。因此现有接管只适用于Watcher确认旧进程已退出的显式静态MapHost策略，不等于生产级分布式高可用。
 
 ## 验证
 

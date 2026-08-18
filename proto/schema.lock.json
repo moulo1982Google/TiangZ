@@ -810,6 +810,21 @@
       ]
     },
     {
+      "key": "proto/DataDefine_CS_50001.proto#InventorySnapshot",
+      "name": "InventorySnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/DataDefine_CS_50001.proto#ItemCooldownSnapshot",
       "name": "ItemCooldownSnapshot",
       "base": null,
@@ -1034,6 +1049,13 @@
           "type": "string",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 18,
+          "name": "shop_enabled",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -1124,6 +1146,121 @@
       ]
     },
     {
+      "key": "proto/DataDefine_CS_50001.proto#PlayerTradeItemOffer",
+      "name": "PlayerTradeItemOffer",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "item_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "item_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#PlayerTradeParticipant",
+      "name": "PlayerTradeParticipant",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "display_name",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "items",
+          "type": "PlayerTradeItemOffer",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "confirmed",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#PlayerTradeSnapshot",
+      "name": "PlayerTradeSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "requester",
+          "type": "PlayerTradeParticipant",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "target",
+          "type": "PlayerTradeParticipant",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "phase",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "expire_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/DataDefine_CS_50001.proto#QuestObjectiveSnapshot",
       "name": "QuestObjectiveSnapshot",
       "base": null,
@@ -1190,6 +1327,35 @@
           "number": 5,
           "name": "status",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/DataDefine_CS_50001.proto#ShopItemSnapshot",
+      "name": "ShopItemSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "item_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "buy_price",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "sell_price",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         }
@@ -1833,6 +1999,20 @@
           "synthetic": false
         },
         {
+          "number": 3,
+          "name": "removed_stale",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "owner_replaced",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -2283,6 +2463,13 @@
           "synthetic": false
         },
         {
+          "number": 16,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -2561,6 +2748,13 @@
           "synthetic": false
         },
         {
+          "number": 14,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -2704,6 +2898,13 @@
         {
           "number": 17,
           "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 18,
+          "name": "gold",
           "type": "uint64",
           "repeated": false,
           "synthetic": false
@@ -2932,6 +3133,20 @@
         {
           "number": 16,
           "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 17,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 18,
+          "name": "owner_generation",
           "type": "uint64",
           "repeated": false,
           "synthetic": false
@@ -3670,6 +3885,48 @@
           "type": "uint64",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 22,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 24,
+          "name": "progression_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 25,
+          "name": "runtime_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 26,
+          "name": "wallet_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 27,
+          "name": "inventory_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 28,
+          "name": "quest_revision",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -3802,6 +4059,13 @@
           "synthetic": false
         },
         {
+          "number": 9,
+          "name": "owner_generation",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -3878,6 +4142,13 @@
           "name": "locations",
           "type": "PlayerLocationRecovery",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "owner_generation",
+          "type": "uint64",
+          "repeated": false,
           "synthetic": false
         },
         {
@@ -3969,6 +4240,13 @@
         {
           "number": 8,
           "name": "character_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 9,
+          "name": "owner_generation",
           "type": "uint64",
           "repeated": false,
           "synthetic": false
@@ -4387,6 +4665,28 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_EnterStarterDungeon",
+      "name": "C2G_EnterStarterDungeon",
+      "base": "IRequest",
+      "response": "G2C_EnterStarterDungeon",
+      "fields": [
+        {
+          "number": 1,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2G_LoginGate",
       "name": "C2G_LoginGate",
       "base": "IRequest",
@@ -4511,6 +4811,71 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_BuyNpcShopItem",
+      "name": "C2M_BuyNpcShopItem",
+      "base": "IActorLocationRequest",
+      "response": "M2C_BuyNpcShopItem",
+      "fields": [
+        {
+          "number": 1,
+          "name": "npc_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "item_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_CancelPlayerTrade",
+      "name": "C2M_CancelPlayerTrade",
+      "base": "IActorLocationRequest",
+      "response": "M2C_CancelPlayerTrade",
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_CastSkill",
       "name": "C2M_CastSkill",
       "base": "IActorLocationRequest",
@@ -4556,6 +4921,28 @@
           "number": 2,
           "name": "npc_unit_id",
           "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_ConfirmPlayerTrade",
+      "name": "C2M_ConfirmPlayerTrade",
+      "base": "IActorLocationRequest",
+      "response": "M2C_ConfirmPlayerTrade",
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade_id",
+          "type": "string",
           "repeated": false,
           "synthetic": false
         },
@@ -4828,6 +5215,122 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_OpenNpcShop",
+      "name": "C2M_OpenNpcShop",
+      "base": "IActorLocationRequest",
+      "response": "M2C_OpenNpcShop",
+      "fields": [
+        {
+          "number": 1,
+          "name": "npc_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_RequestPlayerTrade",
+      "name": "C2M_RequestPlayerTrade",
+      "base": "IActorLocationRequest",
+      "response": "M2C_RequestPlayerTrade",
+      "fields": [
+        {
+          "number": 1,
+          "name": "target_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_RespondPlayerTrade",
+      "name": "C2M_RespondPlayerTrade",
+      "base": "IActorLocationRequest",
+      "response": "M2C_RespondPlayerTrade",
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "accept",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_SellItem",
+      "name": "C2M_SellItem",
+      "base": "IActorLocationRequest",
+      "response": "M2C_SellItem",
+      "fields": [
+        {
+          "number": 1,
+          "name": "npc_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "item_id",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_ToggleAutoAttack",
       "name": "C2M_ToggleAutoAttack",
       "base": "IActorLocationRequest",
@@ -4867,6 +5370,42 @@
           "name": "closed",
           "type": "bool",
           "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_UpdatePlayerTradeOffer",
+      "name": "C2M_UpdatePlayerTradeOffer",
+      "base": "IActorLocationRequest",
+      "response": "M2C_UpdatePlayerTradeOffer",
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "items",
+          "type": "PlayerTradeItemOffer",
+          "repeated": true,
           "synthetic": false
         },
         {
@@ -5338,6 +5877,49 @@
           "synthetic": false
         },
         {
+          "number": 17,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EnterStarterDungeon",
+      "name": "G2C_EnterStarterDungeon",
+      "base": "IResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "enter_map",
+          "type": "G2C_EnterMap",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -5655,6 +6237,115 @@
           "type": "string",
           "repeated": false,
           "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_PlayerTradeChanged",
+      "name": "G2C_PlayerTradeChanged",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade",
+          "type": "PlayerTradeSnapshot",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_PlayerTradeClosed",
+      "name": "G2C_PlayerTradeClosed",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "committed",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "reason",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "inventory",
+          "type": "InventorySnapshot",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_PlayerTradeInvite",
+      "name": "G2C_PlayerTradeInvite",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade",
+          "type": "PlayerTradeSnapshot",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_ProgressionChanged",
+      "name": "G2C_ProgressionChanged",
+      "base": "IMessage",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "level",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "experience",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "gained_experience",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "leveled_up",
+          "type": "bool",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -6002,6 +6693,106 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_BuyNpcShopItem",
+      "name": "M2C_BuyNpcShopItem",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "item_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "items",
+          "type": "ItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "inventory_recovery",
+          "type": "InventorySnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_CancelPlayerTrade",
+      "name": "M2C_CancelPlayerTrade",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_CastSkill",
       "name": "M2C_CastSkill",
       "base": "IActorLocationResponse",
@@ -6146,6 +6937,49 @@
           "name": "reward_items",
           "type": "ItemSnapshot",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_ConfirmPlayerTrade",
+      "name": "M2C_ConfirmPlayerTrade",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade",
+          "type": "PlayerTradeSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "committed",
+          "type": "bool",
+          "repeated": false,
           "synthetic": false
         },
         {
@@ -6430,6 +7264,199 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_OpenNpcShop",
+      "name": "M2C_OpenNpcShop",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "npc_unit_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "items",
+          "type": "ShopItemSnapshot",
+          "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "inventory",
+          "type": "InventorySnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_RequestPlayerTrade",
+      "name": "M2C_RequestPlayerTrade",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade",
+          "type": "PlayerTradeSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_RespondPlayerTrade",
+      "name": "M2C_RespondPlayerTrade",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade",
+          "type": "PlayerTradeSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_SellItem",
+      "name": "M2C_SellItem",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "item_config_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "count",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 3,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "item",
+          "type": "ItemSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "inventory_recovery",
+          "type": "InventorySnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_ToggleAutoAttack",
       "name": "M2C_ToggleAutoAttack",
       "base": "IActorLocationResponse",
@@ -6537,6 +7564,42 @@
       ]
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_UpdatePlayerTradeOffer",
+      "name": "M2C_UpdatePlayerTradeOffer",
+      "base": "IActorLocationResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "trade",
+          "type": "PlayerTradeSnapshot",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_UseItem",
       "name": "M2C_UseItem",
       "base": "IActorLocationResponse",
@@ -6567,6 +7630,13 @@
           "number": 4,
           "name": "item_cooldown_end_at_ms",
           "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "inventory_recovery",
+          "type": "InventorySnapshot",
           "repeated": false,
           "synthetic": false
         },

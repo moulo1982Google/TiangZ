@@ -3,6 +3,8 @@ import {
   C2S_GetLoginServiceAddrCodec,
   C2G_EnterMap,
   C2G_EnterMapCodec,
+  C2G_EnterStarterDungeon,
+  C2G_EnterStarterDungeonCodec,
   C2G_MapSnapshotReady,
   C2G_MapSnapshotReadyCodec,
   C2G_LoginGate,
@@ -42,6 +44,8 @@ import {
   C2S_RegisterCodec,
   G2C_EnterMap,
   G2C_EnterMapCodec,
+  G2C_EnterStarterDungeon,
+  G2C_EnterStarterDungeonCodec,
   G2C_LoginGate,
   G2C_LoginGateCodec,
   G2C_MapReady,
@@ -50,6 +54,8 @@ import {
   G2C_MapSnapshotReadyCodec,
   G2C_Ping,
   G2C_PingCodec,
+  G2C_ProgressionChanged,
+  G2C_ProgressionChangedCodec,
   G2C_AoiDelta,
   G2C_AoiDeltaCodec,
   G2C_AutoAttackState,
@@ -187,6 +193,16 @@ export function buildEnterMapPacket(
   );
 }
 
+export function buildEnterStarterDungeonPacket(
+  rpcId: number,
+  request: C2G_EnterStarterDungeon,
+): Uint8Array {
+  return encodePacket(
+    MsgCode.C2G_EnterStarterDungeon,
+    C2G_EnterStarterDungeonCodec.encode({ ...request, rpcId }),
+  );
+}
+
 export function buildLoginGatePacket(
   rpcId: number,
   request: C2G_LoginGate,
@@ -259,6 +275,27 @@ export function decodeEnterMapFrame(
     rpcId: body.rpcId,
     body,
   };
+}
+
+export function decodeEnterStarterDungeonFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_EnterStarterDungeon> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_EnterStarterDungeon) {
+    throw new Error(`expected G2C_EnterStarterDungeon, got ${msgcode}`);
+  }
+  const body = G2C_EnterStarterDungeonCodec.decode(frame.subarray(2));
+  return { msgcode, rpcId: body.rpcId, body };
+}
+
+export function decodeProgressionChangedFrame(
+  frame: Uint8Array,
+): DecodedFrame<G2C_ProgressionChanged> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_ProgressionChanged) {
+    throw new Error(`expected G2C_ProgressionChanged, got ${msgcode}`);
+  }
+  return { msgcode, rpcId: undefined, body: G2C_ProgressionChangedCodec.decode(frame.subarray(2)) };
 }
 
 export function decodeMapReadyFrame(

@@ -307,6 +307,22 @@ const RAW_DATA: Record<string, unknown> = {
       "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
       "navigation_version": "demo-3d-v2",
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421"
+    },
+    {
+      "id": 200,
+      "name": "Starter Boss试炼",
+      "spatial_mode": 2,
+      "width_cells": 60,
+      "depth_cells": 60,
+      "cell_size_meters": 1,
+      "spawn_x": -3,
+      "spawn_y": 1,
+      "spawn_z": -18,
+      "spawn_yaw": 0,
+      "aoi_config_id": 2,
+      "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
+      "navigation_version": "demo-3d-v2",
+      "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421"
     }
   ],
   "game_tbmonsterconfig": [
@@ -320,6 +336,12 @@ const RAW_DATA: Record<string, unknown> = {
       "id": 2,
       "name": "怪B",
       "model_id": "monster/wolf",
+      "attack_mode": 1
+    },
+    {
+      "id": 3,
+      "name": "试炼守卫",
+      "model_id": "monster/boss",
       "attack_mode": 1
     }
   ],
@@ -553,7 +575,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "78440b4e5459549b02fee35c1b0a428ff64affaba431c08ba966615c4ea4cc86";
+export const GameConfigFingerprint = "e30dc27babe93950f693bf62573d795db9a8bce074afb5101a3156fc72efb22f";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

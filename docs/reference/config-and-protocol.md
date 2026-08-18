@@ -125,6 +125,8 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 
 `lifecycle.hotfixReloadTimeoutMs`控制Reload等待Scene入口和异步Handler排空的最长时间，默认`30000`，范围同样为`100`到`120000`。超时只拒绝候选并保留旧generation，不会关闭Process或断开客户端。
 
+`lifecycle.restart`是仅由Watcher消费的可选监管策略。省略时子进程退出会触发整组失败收束；配置`maxAttempts/windowMs/backoffMs`后，Watcher只在预算内重启该进程，预算耗尽仍关闭整组。自动重启不是数据恢复开关：只有具备持久化、所有权代次和路由恢复契约的进程才应启用。
+
 `observability.nativeData` 只控制 Rust 权威实体数据的诊断输出：
 
 ```json

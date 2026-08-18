@@ -76,6 +76,7 @@ export {
   type QuestTransferState,
 } from "./mmorpg/quest/QuestComponent";
 export { QuestEvents, type BeforeAcceptQuestEvent, type QuestProgressEvent } from "./mmorpg/quest/QuestEvents";
+export { MonsterEvents, type MonsterKilledEvent } from "./mmorpg/monster/MonsterEvents";
 export type { RewardDefinition, RewardResult } from "./mmorpg/reward/Reward";
 export type { RewardPlan } from "./domains/reward/RewardPlan";
 export { NativeItemRef } from "../generated/model/native/NativeItemRef";
@@ -185,6 +186,13 @@ export {
 export { DecodeLoginToken, EncodeLoginToken, type LoginTokenClaims } from "./mmorpg/login/LoginToken";
 export { SelectStickyGate, SelectStickyScene } from "./mmorpg/login/GateSelector";
 export { PlayerPersistenceComponent } from "./mmorpg/persistence/PlayerPersistenceComponent";
+export { ProgressionComponent, type ProgressionRewardResult } from "./mmorpg/progression/ProgressionComponent";
+export {
+  STARTER_DUNGEON_BOSS_CONFIG_ID,
+  STARTER_DUNGEON_BOSS_EXPERIENCE,
+  STARTER_DUNGEON_EXIT_MAP_INSTANCE_ID,
+  STARTER_DUNGEON_MAP_CONFIG_ID,
+} from "./mmorpg/dungeon/StarterDungeon";
 export type { PlayerSaveData } from "./mmorpg/persistence/PlayerRepository";
 export {
   NativeData,

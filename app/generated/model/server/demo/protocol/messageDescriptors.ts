@@ -37,6 +37,8 @@ import {
   G2C_PlayerTradeClosedCodec,
   G2C_PlayerTradeInvite,
   G2C_PlayerTradeInviteCodec,
+  G2C_ProgressionChanged,
+  G2C_ProgressionChangedCodec,
   G2C_QuestProgress,
   G2C_QuestProgressCodec,
   G2C_SessionReplaced,
@@ -142,6 +144,11 @@ export const ClientMessages = {
     msgcode: MsgCode.G2C_QuestProgress,
     codec: G2C_QuestProgressCodec,
   }),
+  ProgressionChanged: defineMessage<G2C_ProgressionChanged>({
+    name: "Client.ProgressionChanged",
+    msgcode: MsgCode.G2C_ProgressionChanged,
+    codec: G2C_ProgressionChangedCodec,
+  }),
   BuffAdded: defineMessage<G2C_BuffAdded>({
     name: "Client.BuffAdded",
     msgcode: MsgCode.G2C_BuffAdded,
@@ -222,6 +229,7 @@ export const AllMessageDescriptors = [
   ClientMessages.AutoAttackState,
   ClientMessages.ItemChanged,
   ClientMessages.QuestProgress,
+  ClientMessages.ProgressionChanged,
   ClientMessages.BuffAdded,
   ClientMessages.BuffRemoved,
   ClientMessages.BuffDetail,

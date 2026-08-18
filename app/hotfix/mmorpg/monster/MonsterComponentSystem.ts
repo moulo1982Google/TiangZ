@@ -47,6 +47,7 @@ import {
   ToLootDropSnapshots,
   systemFor,
   QuestEvents,
+  MonsterEvents,
 } from "#tiangz/model";
 import { EvaluateMonsterBehavior } from "./MonsterBehaviorTree";
 import { SelectIndependentLootRows } from "./LootRoll";
@@ -387,6 +388,7 @@ export class MonsterComponentSystem extends MonsterComponent {
         targetConfigId: monster.MonsterConfigId,
         count: 1,
       });
+      this.DomainScene().Events.Publish(MonsterEvents.Killed, { player: attacker, monster });
     }
     return result;
   }

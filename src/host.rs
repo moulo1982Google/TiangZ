@@ -793,6 +793,11 @@ mod tests {
 
     #[test]
     fn native_item_round_trips_through_v8_ops() {
+        let event_loop = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _guard = event_loop.enter();
         let mut runtime = create_runtime(false, 0).unwrap();
         runtime
             .execute_script(
@@ -821,6 +826,11 @@ mod tests {
 
     #[test]
     fn generated_native_bridge_rejects_uint32_wraparound() {
+        let event_loop = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _guard = event_loop.enter();
         let mut runtime = create_runtime(false, 0).unwrap();
         let error = runtime
             .execute_script(
@@ -834,6 +844,11 @@ mod tests {
 
     #[test]
     fn console_filters_before_formatting_arguments() {
+        let event_loop = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _guard = event_loop.enter();
         let mut runtime = create_runtime(false, 3).unwrap();
         runtime
             .execute_script(

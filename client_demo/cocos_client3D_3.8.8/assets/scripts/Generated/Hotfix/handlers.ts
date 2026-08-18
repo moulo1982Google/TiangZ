@@ -11,6 +11,7 @@ import "../../Demo/Handlers/G2C_ItemChangedHandler";
 import "../../Demo/Handlers/G2C_PlayerTradeChangedHandler";
 import "../../Demo/Handlers/G2C_PlayerTradeClosedHandler";
 import "../../Demo/Handlers/G2C_PlayerTradeInviteHandler";
+import "../../Demo/Handlers/G2C_ProgressionChangedHandler";
 import "../../Demo/Handlers/G2C_QuestProgressHandler";
 import "../../Demo/Handlers/G2C_SkillCastStateHandler";
 import "../../Demo/Handlers/G2C_SkillImpactHandler";

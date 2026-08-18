@@ -62,15 +62,20 @@ try {
   await sleep(35_000);
   const mapHostPid = await findDirectChildByConfig(runtime.child.pid, "map-2.json");
   process.kill(mapHostPid, "SIGKILL");
-  const watcherExit = await waitForChild(runtime.child, 90_000, runtime.output);
-  if (watcherExit.code === 0) throw new Error(`Watcher succeeded after map-2 ${mapHostPid} was killed`);
-  if (!runtime.output().includes("exited unexpectedly")) {
-    throw new Error(`Watcher did not report the MapHost failure:\n${runtime.output()}`);
+  const restartedMapHostPid = await waitForDirectChildReplacement(
+    runtime.child.pid,
+    "map-2.json",
+    mapHostPid,
+    30_000,
+  );
+  await waitForPort(7_302, runtime, 30_000);
+  await sleep(2_000);
+  if (runtime.child.exitCode !== null || runtime.child.signalCode !== null) {
+    throw new Error(`Watcher exited while replacing map-2 ${mapHostPid}:\n${runtime.output()}`);
   }
   await releaseHeldProbe(heldProbe);
-  runtime = await startSplit("domain-recovery-split-restart");
   await runProbe("verify", mapHost);
-  console.log("[player-recovery] MapHost hard-kill and deployment restart recovery passed");
+  console.log(`[player-recovery] MapHost hard-kill takeover passed pid=${mapHostPid}->${restartedMapHostPid}`);
 
   writeReport("passed", { graceful, crashed, mapHost });
   console.log("[player-recovery] all domain recovery acceptance stages passed");
@@ -206,6 +211,23 @@ async function findDirectChildByConfig(parentPid, configName) {
     throw new Error(`expected one Watcher child for ${configName}, found ${matched.length}: ${JSON.stringify(rows)}`);
   }
   return matched[0].pid;
+}
+
+async function waitForDirectChildReplacement(parentPid, configName, previousPid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = process.platform === "win32"
+      ? await windowsDirectChildren(parentPid)
+      : await unixDirectChildren(parentPid);
+    const replacement = rows.find((row) =>
+      row.pid !== previousPid && row.commandLine.toLowerCase().includes(configName.toLowerCase())
+    );
+    if (replacement) return replacement.pid;
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out waiting for replacement of ${configName} pid=${previousPid}: ${JSON.stringify(rows)}`);
+    }
+    await sleep(100);
+  }
 }
 
 async function windowsDirectChildren(parentPid) {

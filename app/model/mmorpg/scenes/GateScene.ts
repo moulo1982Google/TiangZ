@@ -13,9 +13,11 @@ import {
 import { GameErrCode } from "../../game/protocol/GameErrCode";
 import {
   type C2G_EnterMap,
+  type C2G_EnterStarterDungeon,
   type C2G_MapSnapshotReady,
   type C2G_LoginGate,
   type G2C_EnterMap,
+  type G2C_EnterStarterDungeon,
   type G2C_MapSnapshotReady,
   type G2C_LoginGate,
   type G2C_Ping,
@@ -55,6 +57,8 @@ import {
   SceneConfigFromMapHostEndpoint,
   SceneConfigFromMapInstance,
 } from "../mapHost/MapHostEndpoint";
+import { DynamicMapProxy } from "../mapHost/DynamicMapProxy";
+import { STARTER_DUNGEON_MAP_CONFIG_ID } from "../dungeon/StarterDungeon";
 
 export const GATE_CLIENT_TIMEOUT_MS = 30_000;
 export const GATE_RECONNECT_GRACE_MS = 30_000;
@@ -82,11 +86,13 @@ export class GateScene extends EntryScene {
   private readonly disconnecting = new Set<number>();
   private readonly finalOfflinePending = new Set<string>();
   private readonly location: LocationProxy;
+  private readonly dynamicMaps: DynamicMapProxy;
   private timeoutSweepTimer = 0 as TimerId;
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
     this.location = new LocationProxy(this.scenes);
+    this.dynamicMaps = new DynamicMapProxy(this.scenes);
     if (this.scenes.many("MapHost").length === 0) {
       throw new Error("GateScene needs at least one known MapHostScene");
     }
@@ -413,6 +419,43 @@ export class GateScene extends EntryScene {
     );
   }
 
+  /**
+   * 创建或复用一次Starter动态副本并沿用正式进图事务传送当前角色。
+   * operationId只决定创建幂等性，不授权客户端指定MapHost或MapInstanceId。
+   *
+   * Creates or reuses one Starter instance and transfers the current character
+   * through the normal entry transaction. The client controls neither host nor
+   * instance id.
+   */
+  async EnterStarterDungeon(
+    session: GateSession,
+    request: C2G_EnterStarterDungeon,
+  ): Promise<G2C_EnterStarterDungeon> {
+    const operationId = request.operationId.trim();
+    if (operationId.length === 0 || operationId.length > 128) {
+      throw new RpcError(GameErrCode.DynamicMapRequestRequired, "invalid Starter dungeon operationId");
+    }
+    return await this.RunPlayerTransaction(session, async () => {
+      const route = this.RequireCurrentRoute(session);
+      const created = await this.dynamicMaps.Create(
+        `starter-dungeon:${route.characterId}:${operationId}`,
+        STARTER_DUNGEON_MAP_CONFIG_ID,
+      );
+      this.AssertCurrentRoute(session, route);
+      const enterMap = await this.EnterMapCore(
+        session,
+        {
+          rpcId: request.rpcId,
+          mapId: STARTER_DUNGEON_MAP_CONFIG_ID,
+          mapInstanceId: created.instance.mapInstanceId,
+        },
+        undefined,
+        EntrySyncMode.Full,
+      );
+      return { rpcId: request.rpcId, error: 0, message: "", enterMap };
+    });
+  }
+
   /** Bench专用入口，可拆分初始视图阶段；正式Handler禁止调用。 / Bench-only entrypoint for isolating initial-view stages; production handlers must not call it. */
   async EnterMapForBenchmark(
     session: GateSession,
@@ -476,7 +519,8 @@ export class GateScene extends EntryScene {
       throw new RpcError(SystemErrCode.ActorTransferring, "player transfer is recovering");
     }
     if (session.needsSecondEnter && route.map) {
-      return await this.SecondEnterMap(session, route);
+      const resumed = await this.ResumeOrRecoverMapHost(session, route);
+      if (resumed) return resumed;
     }
 
     const defaultMapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
@@ -506,12 +550,18 @@ export class GateScene extends EntryScene {
         this.routesByUnitId.set(resolved.location.unitId, route);
         this.BindConnectionRoute(route, session.ConnectionId);
         if (resolved.location.mapInstanceId === targetMapInstanceId) {
-          return await this.SecondEnterMap(session, route);
+          const resumed = await this.ResumeOrRecoverMapHost(session, route);
+          if (resumed) return resumed;
         }
       }
     }
     if (route.map) {
-      if (route.map.mapInstanceId === targetMapInstanceId) return await this.SecondEnterMap(session, route);
+      if (route.map.mapInstanceId === targetMapInstanceId) {
+        const resumed = await this.ResumeOrRecoverMapHost(session, route);
+        if (resumed) return resumed;
+      }
+    }
+    if (route.map) {
       return await this.TransferToMap(session, route, targetMapInstanceId);
     }
     const target = await this.location.ResolveMapInstance({ mapInstanceId: targetMapInstanceId });
@@ -749,6 +799,77 @@ export class GateScene extends EntryScene {
       mapInstanceId: location.mapInstanceId,
       ...this.ClientSpatialMetadata(response.mapId),
     };
+  }
+
+  /**
+   * 旧Map Actor不可达时先核对Location；只有权威路由已删除或已换代才清理Gate缓存。
+   * / Rechecks Location after an old Map Actor becomes unreachable and clears
+   * the Gate cache only after the authority disappeared or changed generation.
+   */
+  private async ResumeOrRecoverMapHost(
+    session: GateSession,
+    route: GatePlayerRoute,
+  ): Promise<G2C_EnterMap | undefined> {
+    try {
+      return await this.SecondEnterMap(session, route);
+    } catch (error) {
+      const previous = route.map;
+      if (!previous) throw error;
+      let resolved;
+      try {
+        resolved = await this.location.Resolve({
+          unitId: previous.unitId,
+          account: "",
+          characterId: route.characterId,
+        });
+        this.AssertCurrentRoute(session, route);
+      } catch {
+        throw error;
+      }
+      if (
+        resolved.found &&
+        resolved.location.actorInstanceId === previous.actorInstanceId &&
+        resolved.location.mapHostName === previous.mapService
+      ) {
+        throw error;
+      }
+
+      this.ClearStaleMapRoute(route, session.ConnectionId);
+      if (!resolved.found) {
+        this.logger.warn("cleared stale MapHost route for player recovery", {
+          account: route.account,
+          mapHost: previous.mapService,
+          unitId: previous.unitId,
+        });
+        return undefined;
+      }
+      if (resolved.location.gateName !== this.self.name || resolved.location.state !== "active") {
+        throw error;
+      }
+      route.BindMap({
+        mapService: resolved.location.mapHostName,
+        mapHost: SceneConfigFromMapHostEndpoint(resolved.location.mapHost),
+        mapId: resolved.location.mapId,
+        mapInstanceId: resolved.location.mapInstanceId,
+        unitId: resolved.location.unitId,
+        actorInstanceId: resolved.location.actorInstanceId,
+        revision: resolved.location.revision,
+      });
+      this.BindConnectionRoute(route, session.ConnectionId);
+      return await this.SecondEnterMap(session, route);
+    }
+  }
+
+  private ClearStaleMapRoute(route: GatePlayerRoute, connectionId: number): void {
+    const previous = route.ClearMap();
+    if (!previous) return;
+    if (this.routesByUnitId.get(previous.unitId) === route) {
+      this.routesByUnitId.delete(previous.unitId);
+    }
+    if (this.connectionIdsByUnitId.get(previous.unitId) === connectionId) {
+      this.connectionIdsByUnitId.delete(previous.unitId);
+    }
+    this.actorLocations.unbindConnection(connectionId);
   }
 
   /** 每个账号最多排队一次最终下线事务；真正取得锁后重新检查超时，避免误踢刚重连的玩家。 / Queues at most one final-offline transaction per account and rechecks expiry after locking. */

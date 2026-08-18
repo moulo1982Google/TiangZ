@@ -2,6 +2,7 @@ import {
   Component,
   EntryScene,
   Game,
+  GlobalIdSystem,
   RpcError,
   SystemErrCode,
   UnitComponent,
@@ -78,6 +79,7 @@ const monotonicNow = (): number => globalThis.performance?.now() ?? Date.now();
 const PLAYER_TRANSFER_SCHEMA_VERSION = 9;
 
 export class MapHostComponent extends Component<[repository: PlayerRepository]> {
+  private readonly ownerGeneration = GlobalIdSystem.Instance.Next();
   private readonly maps = new Map<bigint, MapComponent>();
   private readonly dynamicAssignments = new Map<bigint, DynamicMapAssignmentSnapshot>();
   private readonly dynamicRequestIds = new Map<string, bigint>();
@@ -93,6 +95,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
   }> = [];
   private sourceCleanupScheduled = false;
   private recoveringLocations = false;
+  private locationOwnerClaimed = false;
+  private locationOwnerClaim: Promise<void> | undefined;
   private readonly disposingMaps = new Set<bigint>();
   private readonly entryMetrics = {
     requests: 0,
@@ -132,6 +136,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     }
     this.NewRepeatedTimer(10_000, "SweepIncomingTransfers");
     this.NewRepeatedTimer(5_000, "RecoverOwnedLocations");
+    this.NewOnceTimer(0, "RecoverOwnedLocations");
     this.NewRepeatedTimer(5_000, "RecoverHostedMapInstances");
     this.NewOnceTimer(0, "RecoverHostedMapInstances");
   }
@@ -242,6 +247,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
 
   /** 执行进图事务主体；外层方法统一维护成功、失败和在途指标。 / Executes the entry transaction while the wrapper owns outcome and in-flight metrics. */
   private async EnterMapCore(request: G2M_EnterMap): Promise<M2G_EnterMap> {
+    await this.EnsureLocationOwner();
     this.validateEnterMap(request);
     const entrySyncMode = ParseEntrySyncMode(request.entrySyncMode);
 
@@ -315,6 +321,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
               mapId,
               mapInstanceId: map.MapInstanceId,
               actorInstanceId: player.InstanceId,
+              ownerGeneration: this.ownerGeneration,
             });
           } finally {
             stageElapsedMs = monotonicNow() - stageStartedAt;
@@ -458,6 +465,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     source: PlayerUnit,
     request: G2M_TransferPlayer,
   ): Promise<M2G_TransferPlayer> {
+    await this.EnsureLocationOwner();
     if (
       source.Account !== request.account ||
       source.CharacterId !== request.characterId ||
@@ -547,6 +555,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         mapInstanceId: targetInstance.mapInstanceId,
         actorInstanceId: target.InstanceId,
         characterId: target.CharacterId,
+        ownerGeneration: this.ownerGeneration,
       });
       locationCommitted = true;
       const snapshot = target.Snapshot();
@@ -617,6 +626,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         mapInstanceId: target.mapInstanceId,
         actorInstanceId: target.actorInstanceId,
         characterId: source.CharacterId,
+        ownerGeneration: target.ownerGeneration,
       });
       this.ScheduleSourceCleanup(sourceMap, source);
       return {
@@ -739,6 +749,9 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
   PrepareIncomingTransfer(
     request: M2M_PreparePlayerTransfer,
   ): M2M_PreparePlayerTransferResponse {
+    if (!this.locationOwnerClaimed) {
+      throw new RpcError(SystemErrCode.LocationUnavailable, "MapHost location ownership is recovering");
+    }
     const snapshot = request.snapshot;
     this.ValidateTransferSnapshot(snapshot);
     const result = this.incomingTransfers.Prepare(
@@ -769,6 +782,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
   async CommitIncomingTransfer(
     request: M2M_CommitPlayerTransfer,
   ): Promise<M2M_CommitPlayerTransferResponse> {
+    await this.EnsureLocationOwner();
     const committed = this.incomingTransfers.Commit(
       request.transferId,
       ({ player }) => {
@@ -811,6 +825,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       gold: committed.target.player.Snapshot().gold,
       mapHostName: this.owner.self.name,
       mapInstanceId: committed.result.mapInstanceId,
+      ownerGeneration: this.ownerGeneration,
     };
   }
 
@@ -885,20 +900,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (this.recoveringLocations) return;
     this.recoveringLocations = true;
     try {
-      const locations = this.players.GetAll().map((player) => ({
-        unitId: player.UnitId,
-        account: player.Account,
-        characterId: player.CharacterId,
-        gateName: player.GetComponent(UnitGateComponent).gateName,
-        mapHostName: this.owner.self.name,
-        mapId: player.MapId,
-        mapInstanceId: player.MapInstanceId,
-        actorInstanceId: player.InstanceId,
-      }));
-      const recovered = await this.location.RecoverOwner({
-        ownerName: this.owner.self.name,
-        locations,
-      });
+      const recovered = await this.PublishOwnedLocations();
       if (recovered.recovered > 0) {
         this.owner.logger.info("player locations recovered", {
           recovered: recovered.recovered,
@@ -910,6 +912,44 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     } finally {
       this.recoveringLocations = false;
     }
+  }
+
+  /** 进图和迁移在发布当前MapHost代次前不得创建权威Player。 / Entry and transfer cannot create authoritative players before publishing this MapHost generation. */
+  private async EnsureLocationOwner(): Promise<void> {
+    if (this.locationOwnerClaimed) return;
+    if (!this.locationOwnerClaim) {
+      this.locationOwnerClaim = this.PublishOwnedLocations()
+        .then(() => undefined)
+        .finally(() => {
+          this.locationOwnerClaim = undefined;
+        });
+    }
+    await this.locationOwnerClaim;
+  }
+
+  private async PublishOwnedLocations() {
+    const recovered = await this.location.RecoverOwner({
+      ownerName: this.owner.self.name,
+      ownerGeneration: this.ownerGeneration,
+      locations: this.players.GetAll().map((player) => ({
+        unitId: player.UnitId,
+        account: player.Account,
+        characterId: player.CharacterId,
+        gateName: player.GetComponent(UnitGateComponent).gateName,
+        mapHostName: this.owner.self.name,
+        mapId: player.MapId,
+        mapInstanceId: player.MapInstanceId,
+        actorInstanceId: player.InstanceId,
+      })),
+    });
+    this.locationOwnerClaimed = true;
+    if (recovered.ownerReplaced) {
+      this.owner.logger.warn("MapHost location ownership replaced stale generation", {
+        ownerGeneration: this.ownerGeneration.toString(),
+        removedStale: recovered.removedStale,
+      });
+    }
+    return recovered;
   }
 
   /**

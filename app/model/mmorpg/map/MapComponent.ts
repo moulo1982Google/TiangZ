@@ -34,6 +34,7 @@ import type {
   BuffPublicView,
   BuffTransferSnapshot,
   G2C_DemoDoorState,
+  G2C_ProgressionChanged,
   ItemSnapshot,
   KickPlayerTarget,
   MapEntitySnapshot,
@@ -75,6 +76,7 @@ import { QuestComponent, type QuestTransferState } from "../quest/QuestComponent
 import { QuestEvents } from "../quest/QuestEvents";
 import type { SkillProjectile } from "../skill/SkillMapComponent";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
+import { ProgressionComponent } from "../progression/ProgressionComponent";
 import { CurrencyComponent } from "../../domains/currency/CurrencyComponent";
 import { LocationProxy } from "../location/LocationProxy";
 import type {
@@ -862,12 +864,14 @@ export class MapComponent extends Component<[
         [NumericType.CurrentMp]: BigInt(playerConfig.initialMp),
         [NumericType.MaxMpBase]: BigInt(playerConfig.maxMp),
         [NumericType.Level]: 1n,
+        [NumericType.Experience]: 0n,
         // 演示玩家的基础攻击力翻倍；平A和技能伤害读取最终 NumericType.Attack。
         // Double the starter player's base attack; both auto-attacks and skills read the final NumericType.Attack.
         [NumericType.AttackBase]: 10n,
         [NumericType.AttackSpeedAdd]: 2_000n,
         [NumericType.MoveSpeedBase]: MoveSpeedMetersPerSecondToNumeric(playerConfig.moveSpeed),
       });
+      player.AddComponent(ProgressionComponent);
       player.AddComponent(ItemComponent);
       if (!loaded && !transfer) {
         // 只给真正新建的角色发一次出生道具；读档和跨地图迁移以权威快照为准。
@@ -1138,6 +1142,17 @@ export class MapComponent extends Component<[
       ClientAudience.Self(unit.UnitId),
       ClientBroadcasts.ItemChanged,
       { item },
+      this.serverTick,
+    );
+  }
+
+  /** 向玩家本人发布已持久化的成长结果；公开Numeric仍走常规状态复制。 / Publishes a durable progression result to self while public Numeric values use normal replication. */
+  async PublishProgressionChanged(unit: PlayerUnit, result: G2C_ProgressionChanged): Promise<void> {
+    this.requirePlayer(unit);
+    await this.clientBroadcast.Publish(
+      ClientAudience.Self(unit.UnitId),
+      ClientBroadcasts.ProgressionChanged,
+      result,
       this.serverTick,
     );
   }

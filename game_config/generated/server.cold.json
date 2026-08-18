@@ -250,6 +250,24 @@
       "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
       "entry_players_per_tick": 1,
       "entry_queue_capacity": 10000
+    },
+    {
+      "id": 200,
+      "name": "Starter Boss试炼",
+      "spatial_mode": 2,
+      "width_cells": 60,
+      "depth_cells": 60,
+      "cell_size_meters": 1,
+      "spawn_x": -3,
+      "spawn_y": 1,
+      "spawn_z": -18,
+      "spawn_yaw": 0,
+      "aoi_config_id": 2,
+      "navigation_asset": "navigation/maps/demo_3d/generated/navigation.bin",
+      "navigation_version": "demo-3d-v2",
+      "navigation_hash": "1844ce35706c008f494bc74b6a6c55105e5da3d3fc104634e9c8726daab67421",
+      "entry_players_per_tick": 1,
+      "entry_queue_capacity": 100
     }
   ],
   "game_tbmonsterareaconfig": [
@@ -332,6 +350,16 @@
       "spawn_z": 18,
       "spawn_yaw": 0,
       "initial_spawn": true
+    },
+    {
+      "id": 20001,
+      "map_config_id": 200,
+      "monster_config_id": 3,
+      "spawn_x": 0,
+      "spawn_y": 0,
+      "spawn_z": 8,
+      "spawn_yaw": 3.1415925,
+      "initial_spawn": true
     }
   ],
   "game_tbmonsterconfig": [
@@ -364,6 +392,21 @@
       "skill_id": 0,
       "respawn_seconds": 10,
       "drop_table_id": 2
+    },
+    {
+      "id": 3,
+      "name": "试炼守卫",
+      "model_id": "monster/boss",
+      "max_hp": 900,
+      "max_mp": 0,
+      "attack_damage": 18,
+      "move_speed": 4,
+      "attack_range": 2.8,
+      "attack_interval_ms": 1600,
+      "attack_mode": 1,
+      "skill_id": 0,
+      "respawn_seconds": 3600,
+      "drop_table_id": 0
     }
   ]
 }

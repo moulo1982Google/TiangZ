@@ -409,6 +409,7 @@ message M2M_CommitPlayerTransferResponse // IResponse
   repeated uint32 completed_quest_config_ids = 15;
   uint64 character_id = 16;
   uint64 gold = 17;
+  uint64 owner_generation = 18;
 }
 
 //ResponseType M2M_AbortPlayerTransferResponse
@@ -467,6 +468,7 @@ message S2L_RegisterPlayerLocation // IRequest
   uint64 map_instance_id = 6;
   uint32 actor_instance_id = 7;
   uint64 character_id = 8;
+  uint64 owner_generation = 9;
 }
 
 message L2S_RegisterPlayerLocation // IResponse
@@ -530,6 +532,7 @@ message S2L_CommitPlayerLocation // IRequest
   uint64 map_instance_id = 6;
   uint32 actor_instance_id = 7;
   uint64 character_id = 8;
+  uint64 owner_generation = 9;
 }
 
 message L2S_CommitPlayerLocation // IResponse
@@ -582,12 +585,15 @@ message S2L_RecoverPlayerLocations // IRequest
 {
   string owner_name = 1;
   repeated PlayerLocationRecovery locations = 2;
+  uint64 owner_generation = 3;
 }
 
 message L2S_RecoverPlayerLocations // IResponse
 {
   uint32 recovered = 1;
   uint32 unchanged = 2;
+  uint32 removed_stale = 3;
+  bool owner_replaced = 4;
 }
 
 // Map在一个逻辑广播作业中交给同一Gate的多组客户端帧。

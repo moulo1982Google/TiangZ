@@ -7,6 +7,21 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-18：Starter动态Boss副本与经验升级闭环
+
+- 新增Map 200“Starter Boss试炼”和Monster 3“试炼守卫”。客户端只向Gate提交稳定operationId；Gate经`DynamicMapProxy -> MapManager`幂等创建动态实例，并复用正式`EnterMapCore`进入和返回Map 100。
+- Monster死亡后发布通用`MonsterEvents.Killed`，Dungeon领域只在Map 200的Boss死亡时发放120累计经验。经验公式为`50 * (level - 1) * level`，上限60；奖励只提交`progression`领域，DBProxy确认后才更新在线Numeric和客户端等级/经验HUD。
+- Cocos3D桌面和移动HUD增加副本进入/离开按钮、等级和经验显示；新增协议、Luban地图/怪物/刷点配置及多客户端SDK生成物。
+- 自动夹具真实创建动态实例、寻路接近Boss并以90次攻击击杀，断言新角色达到Level 2、Experience 120。持久化验收另用测试账号重启TiangZ后读取同一等级和经验；动态副本现场、Boss、仇恨仍按临时运行态处理，不做故障恢复。
+
+## 2026-08-18：静态MapHost有界重启与玩家重新路由
+
+- `process.lifecycle.restart`新增最大次数、时间窗和退避配置；Watcher默认仍按整组失败收束，仅为显式配置的子进程有界重启，预算耗尽后关闭整组。Watcher会向新进程重放本次生命周期内最近广播的Hotfix和配置数据候选。
+- Location为MapHost玩家路由增加所有权代次。更高代次接管时先完整校验请求，再原子删除该Host遗留的Actor路由；旧代次之后不能重新注册。普通下线仍使用Location Lock/Remove，不得调用故障删除入口。
+- Gate在SecondEnter命中旧Actor失败后重新查询Location；只有权威路由已删除或已换代才清理本地缓存，并在下一次进图中从DBProxy创建新PlayerUnit。该流程不逐消息查询Location。
+- `configs/local/cluster-dbproxy/map-2.json`首个启用有界重启。`npm run test:player-domain-recovery`真实强杀旧PID `54440`，Watcher保持存活并拉起新PID `56020`，新连接核对wallet、inventory、quest和runtime均恢复。
+- 当前只恢复静态地图服务和玩家持久状态，不恢复原Socket战斗现场、怪物、仇恨、AI、移动意图或动态副本实例；未执行CPU或容量压力测试。
+
 ## 2026-08-17：玩家五领域持久化与崩溃恢复验收
 
 - 将单条Player聚合记录拆为`inventory/progression/quest/runtime/wallet`五条RecordKey和独立Revision；聚合快照只负责捕获，Repository按调用方声明的领域投影和提交。

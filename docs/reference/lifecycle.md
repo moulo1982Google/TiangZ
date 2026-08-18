@@ -29,9 +29,9 @@ export class MapHostScene extends EntryScene {
 
 `process.lifecycle.stopTimeoutMs` 是整个 TS stop 的等待上限，默认 10000ms。`Stop-Process -Force`、任务管理器“结束任务”、`kill -9` 和进程崩溃无法执行任何应用层保存逻辑。
 
-通过 `StartMachine.json` 启动时，Watcher 会同时等待运维信号与全部子进程状态。任一子进程提前退出时，无论退出码是否为零，Watcher 都会把它视为拓扑故障，立即通知其余子进程进入同一套优雅停机，再以非零状态退出。正常停机时 Watcher 先同时通知所有子进程，再按每个进程自己的 `stopTimeoutMs` 等待；只有超时兜底才会强制终止。Watcher 意外退出导致控制管道 EOF 时，子进程也会主动收尾，避免成为孤儿进程。
+通过 `StartMachine.json` 启动时，Watcher 会同时等待运维信号与全部子进程状态。默认情况下，任一子进程提前退出都会被视为拓扑故障，Watcher立即通知其余子进程优雅停机并以非零状态退出。只有显式配置`process.lifecycle.restart`的进程会在原Watcher内按时间窗、最大次数和退避时间有界重启；重启预算耗尽后仍回到整组失败收束。正常停机时Watcher不会触发重启，而是同时通知所有子进程，再按各自`stopTimeoutMs`等待。Watcher意外退出导致控制管道EOF时，子进程也会主动收尾，避免成为孤儿进程。
 
-当前 Watcher 负责故障发现和有界收尾，不负责自动重启。重启退避、失败次数限制、滚动更新和崩溃恢复属于 Phase 5 的生产监管能力。
+`restart.maxAttempts/windowMs/backoffMs`默认分别为`3/60000/1000`，允许范围分别为`1..100`、`1000..3600000`和`1000..120000`。至少1秒的退避也保证同一`workerId`重启后不会在GlobalId秒级代次上复用旧值。Watcher会向新进程重放本次生命周期内最近广播的Hotfix和配置数据候选。该能力只恢复Process，不自动赋予业务数据恢复语义；MapHost必须配合DBProxy、Location所有权代次和Gate重新路由。当前本地验收只为`cluster-dbproxy/map-2.json`启用，其他进程继续失败收束。
 
 配置了 `process.observability.health` 时，`/ready` 会在停机开始时立即返回 503，供负载均衡先摘除流量；`/live` 会保持 200，直到 V8 业务线程真正退出。
 

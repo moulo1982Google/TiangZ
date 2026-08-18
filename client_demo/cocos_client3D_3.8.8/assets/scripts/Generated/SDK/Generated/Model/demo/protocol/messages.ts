@@ -1932,6 +1932,84 @@ export const G2C_EnterMapCodec = {
   },
 };
 
+export interface C2G_EnterStarterDungeon extends IRequest {
+  rpcId?: number;
+  operationId: string;
+}
+
+export const C2G_EnterStarterDungeonCodec = {
+  decode(payload: Uint8Array): C2G_EnterStarterDungeon {
+    const reader = new BinaryReader(payload);
+    const value: C2G_EnterStarterDungeon = {
+      operationId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2G_EnterStarterDungeon): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.operationId !== undefined) writer.string(1, value.operationId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_EnterStarterDungeon extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  enterMap: G2C_EnterMap;
+}
+
+export const G2C_EnterStarterDungeonCodec = {
+  decode(payload: Uint8Array): G2C_EnterStarterDungeon {
+    const reader = new BinaryReader(payload);
+    const value: G2C_EnterStarterDungeon = {
+      enterMap: G2C_EnterMapCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.enterMap = G2C_EnterMapCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_EnterStarterDungeon): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.enterMap !== undefined) writer.bytes(1, G2C_EnterMapCodec.encode(value.enterMap));
+    return writer.finish();
+  },
+};
+
 export interface G2C_MapReady extends IMessage {
   account: string;
   mapId: number;
@@ -4406,6 +4484,53 @@ export const G2C_QuestProgressCodec = {
   encode(value: G2C_QuestProgress): Uint8Array {
     const writer = new BinaryWriter();
     for (const item of (value.quests ?? [])) writer.bytes(1, QuestSnapshotCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface G2C_ProgressionChanged extends IMessage {
+  level: bigint;
+  experience: bigint;
+  gainedExperience: bigint;
+  leveledUp: boolean;
+}
+
+export const G2C_ProgressionChangedCodec = {
+  decode(payload: Uint8Array): G2C_ProgressionChanged {
+    const reader = new BinaryReader(payload);
+    const value: G2C_ProgressionChanged = {
+      level: 0n,
+      experience: 0n,
+      gainedExperience: 0n,
+      leveledUp: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.level = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.experience = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.gainedExperience = reader.uint64();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.leveledUp = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_ProgressionChanged): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.level !== undefined) writer.uint64(1, value.level);
+    if (value.experience !== undefined) writer.uint64(2, value.experience);
+    if (value.gainedExperience !== undefined) writer.uint64(3, value.gainedExperience);
+    if (value.leveledUp !== undefined) writer.bool(4, value.leveledUp);
     return writer.finish();
   },
 };

@@ -151,6 +151,10 @@ TiangZ的完整业务参考是一个小而完整的Starter MMORPG，不是把Dem
 
 Starter阶段只保留一个职业、一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss和少量技能。组队、社交、商城、活动和大量客户端美术不是当前框架验收前提。
 
+Starter的第一个动态副本使用MapConfig 200和MonsterConfig 3。客户端调用Gate的`C2G_EnterStarterDungeon`并提供稳定`operationId`；客户端不得指定MapHost或MapInstanceId。Gate以角色和operationId生成幂等请求，交给`DynamicMapProxy -> MapManager`选择动态Host，再复用正式进图流程。Boss死亡只发布通用`MonsterEvents.Killed`，经验规则由`app/hotfix/mmorpg/dungeon`监听，不把副本奖励写进Monster或Combat。
+
+经验是`NumericType.Experience`累计值，等级由`50 * (level - 1) * level`计算，当前上限60。奖励先规划新的Numeric快照并以稳定operationId只提交`progression`记录，DBProxy确认后才更新在线Numeric和发送`G2C_ProgressionChanged`；网络重试必须恢复原事务回执，不能重复加经验。Map 200的试炼守卫奖励120经验，因此新角色从1级升到2级。动态实例无人5分钟后由现有回收逻辑销毁；副本Boss、仇恨和现场状态属于临时运行态，MapHost崩溃后不恢复。
+
 本地入口固定为：`npm run starter:verify`检查目录和生成物，`npm run starter:dev`编译并启动all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`验证创建角色、选角和稳定身份，`npm run starter:acceptance`运行不改数据库的完整Starter验收。三个Starter验收命令都会先重建Debug Rust runtime；`npm run starter:acceptance:persistent`会使用`tools-projects/TiangZ-DBProxy/deploy/local/.env`启动或连接本地DBProxy，写入测试账号、重启TiangZ并读取快照；`npm run starter:acceptance:faults`会先停止Starter临时DBProxy，再执行独立DBProxy故障矩阵，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。不要把长时间压测塞进Starter命令；压测必须使用`perf/`的独立入口，并在开始前确认机器资源。
 
 ### 账号、角色和运行时Unit
@@ -892,7 +896,7 @@ const stop = loginFlow.onSessionReplaced((message) => {
 
 Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
 
-DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程已经消费远程`v0.5.0`，配置通过`endpoint + failoverEndpoints`声明地址，Rust Host Bridge同时提供单记录和多记录接口；业务层不得复制协议或自行实现第二套故障切换。普通`.native @persistent(version)`实体的Codec和通用Repository已由codegen生成，复杂查询、跨玩家交易和领域结果仍由业务Repository规划。玩家Repository按`<characterId>:inventory|progression|quest|runtime|wallet`保存五条记录与独立Revision；商店提交inventory+wallet，任务奖励/拾取提交inventory+quest，UseItem提交inventory+progression+runtime。任务GrantItem奖励与UseItem消费是关键单玩家事务；同地图玩家交易使用`ApplyMultiTransaction`一次提交双方inventory+wallet记录，不能顺序保存两边或在提交前修改Entity。30秒周期快照、有限并发最终Flush和TiangZ/MapHost强杀后的安全重启恢复已验收；透明节点接管仍未完成。
+DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程已经消费远程`v0.5.0`，配置通过`endpoint + failoverEndpoints`声明地址，Rust Host Bridge同时提供单记录和多记录接口；业务层不得复制协议或自行实现第二套故障切换。玩家Repository按`<characterId>:inventory|progression|quest|runtime|wallet`保存五条记录与独立Revision；商店、任务/拾取、UseItem和同地图交易按参与领域提交。30秒周期快照、有限并发最终Flush，以及静态MapHost强杀后的Watcher有界重启、Location代次接管、Gate新连接重新路由和DBProxy状态恢复已验收。该能力不恢复原Socket上的战斗现场、怪物/仇恨或动态副本，也不等于Gate故障转移。
 
 跨玩家关键操作的固定写法是：领域Component先同步冻结会话，最终提交者保留自身PlayerUnit ordered mailbox，并通过地图宿主进入另一参与者的真实ordered mailbox；持有双方邮箱后，Planner再从权威快照生成全部`expectedRevision + nextPayload + result`，领域Repository按稳定顺序调用一次多记录事务，提交成功后各Participant无await应用结果。只锁会话对象不能阻止另一玩家在`await`期间使用道具或改金币。响应不确定时用同一`operationId`查询回执；业务冲突直接结束会话，不能换operationId重试。玩家交易参考`app/hotfix/mmorpg/trade`和[玩家交易设计](../design/player-trade.md)。Handler只转发到PlayerUnit ordered mailbox，不得直接调用DBProxy。
 
@@ -935,7 +939,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
-持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，业务配置用`endpoint`指定首选地址，用`failoverEndpoints`指定备用地址；普通记录按RecordKey稳定选择连接，多记录事务按稳定`operationId`选择连接。只有网络不可用才允许切换，业务拒绝、Revision冲突、协议指纹或鉴权错误必须原样返回。Demo的`PlayerRepository`覆盖玩家聚合快照恢复，UseItem和任务奖励演示覆盖单玩家关键事务与ACK丢失后的幂等回执恢复，同地图玩家交易演示覆盖双记录原子提交和回执恢复。普通单Entity现在可以通过`.native`的`@persistent(version)`和`@transient`生成版本化Codec及通用Repository工厂，不需要为每种Entity手工设计数据库表；复杂查询和跨玩家交易必须由领域Repository编排，不能把通用Payload表当作查询型ORM。DBProxy不得导入或解释TiangZ的Scene、Entity、Component、Buff、Hotfix及`.native`类型，业务代码也不得直接连接Redis/数据库。TiangZ端到端故障矩阵、周期快照、旧schema迁移注册、自动节点接管和生产部署仍未收口。不能把当前三个演示解释为完整持久化方案。
+持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，业务配置用`endpoint`指定首选地址，用`failoverEndpoints`指定备用地址。Demo的`PlayerRepository`覆盖五领域快照恢复，UseItem和任务奖励验证单玩家关键事务，同地图交易验证跨玩家原子提交。普通单Entity可通过`.native`生成版本化Codec及通用Repository工厂；复杂查询和跨玩家交易仍由领域Repository编排。DBProxy不得解释TiangZ业务类型，业务代码也不得直接连接Redis/数据库。30秒周期快照和同机静态MapHost有界接管已验收；旧schema迁移、批量Load/Save、跨机器/动态地图接管和生产部署仍未收口。
 
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
@@ -1102,7 +1106,7 @@ entity Item extends Entity {
 
 运行`npm run codegen:native-data`后，业务使用生成的`NativeItemPersistenceCodec`或`CreateNativeItemRepository(processName)`。`Entity.instanceId`已经标记`@transient`，恢复时必须由当前运行时重新分配，不能从数据库带回。当前Codec是严格当前版本读取，任何持久字段的增加、删除、改名或改类型都必须递增`@persistent(version)`；旧schema迁移注册尚未完成，因此做结构升级前必须先补迁移器。需要“按ownerId查询全部道具”、拍卖行索引、跨玩家交易等能力时，应建立Item/Trade领域Repository，不能把通用Payload表当作查询型ORM。
 
-当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取通过多记录事务提交inventory+quest；UseItem同时规划Inventory、HP/MP、Buff和CD，因此提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision，禁止为了省事回写完整玩家聚合。`C2M_UseItemHandler`仍只转发`itemId + operationId`，确认后才修改内存，ACK丢失按首次回执恢复。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀和MapHost强杀后的整组安全重启；普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务、批量Load/Save或透明MapHost接管。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复；普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务、批量Load/Save、动态地图现场恢复或Gate故障转移。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 

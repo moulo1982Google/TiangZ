@@ -3472,6 +3472,7 @@ export interface M2M_CommitPlayerTransferResponse extends IResponse {
   completedQuestConfigIds: readonly number[];
   characterId: bigint;
   gold: bigint;
+  ownerGeneration: bigint;
 }
 
 export const M2M_CommitPlayerTransferResponseCodec = {
@@ -3495,6 +3496,7 @@ export const M2M_CommitPlayerTransferResponseCodec = {
       completedQuestConfigIds: [],
       characterId: 0n,
       gold: 0n,
+      ownerGeneration: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3558,6 +3560,9 @@ export const M2M_CommitPlayerTransferResponseCodec = {
       else if (tag.fieldNo === 17 && tag.wireType === 0) {
         value.gold = reader.uint64();
       }
+      else if (tag.fieldNo === 18 && tag.wireType === 0) {
+        value.ownerGeneration = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3587,6 +3592,7 @@ export const M2M_CommitPlayerTransferResponseCodec = {
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(15, item, true);
     if (value.characterId !== undefined) writer.uint64(16, value.characterId);
     if (value.gold !== undefined) writer.uint64(17, value.gold);
+    if (value.ownerGeneration !== undefined) writer.uint64(18, value.ownerGeneration);
     return writer.finish();
   },
 };
@@ -3864,6 +3870,7 @@ export interface S2L_RegisterPlayerLocation extends IRequest {
   mapInstanceId: bigint;
   actorInstanceId: number;
   characterId: bigint;
+  ownerGeneration: bigint;
 }
 
 export const S2L_RegisterPlayerLocationCodec = {
@@ -3878,6 +3885,7 @@ export const S2L_RegisterPlayerLocationCodec = {
       mapInstanceId: 0n,
       actorInstanceId: 0,
       characterId: 0n,
+      ownerGeneration: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3908,6 +3916,9 @@ export const S2L_RegisterPlayerLocationCodec = {
       else if (tag.fieldNo === 8 && tag.wireType === 0) {
         value.characterId = reader.uint64();
       }
+      else if (tag.fieldNo === 9 && tag.wireType === 0) {
+        value.ownerGeneration = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3926,6 +3937,7 @@ export const S2L_RegisterPlayerLocationCodec = {
     if (value.mapInstanceId !== undefined) writer.uint64(6, value.mapInstanceId);
     if (value.actorInstanceId !== undefined) writer.uint32(7, value.actorInstanceId);
     if (value.characterId !== undefined) writer.uint64(8, value.characterId);
+    if (value.ownerGeneration !== undefined) writer.uint64(9, value.ownerGeneration);
     return writer.finish();
   },
 };
@@ -4266,6 +4278,7 @@ export interface S2L_CommitPlayerLocation extends IRequest {
   mapInstanceId: bigint;
   actorInstanceId: number;
   characterId: bigint;
+  ownerGeneration: bigint;
 }
 
 export const S2L_CommitPlayerLocationCodec = {
@@ -4280,6 +4293,7 @@ export const S2L_CommitPlayerLocationCodec = {
       mapInstanceId: 0n,
       actorInstanceId: 0,
       characterId: 0n,
+      ownerGeneration: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -4310,6 +4324,9 @@ export const S2L_CommitPlayerLocationCodec = {
       else if (tag.fieldNo === 8 && tag.wireType === 0) {
         value.characterId = reader.uint64();
       }
+      else if (tag.fieldNo === 9 && tag.wireType === 0) {
+        value.ownerGeneration = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -4328,6 +4345,7 @@ export const S2L_CommitPlayerLocationCodec = {
     if (value.mapInstanceId !== undefined) writer.uint64(6, value.mapInstanceId);
     if (value.actorInstanceId !== undefined) writer.uint32(7, value.actorInstanceId);
     if (value.characterId !== undefined) writer.uint64(8, value.characterId);
+    if (value.ownerGeneration !== undefined) writer.uint64(9, value.ownerGeneration);
     return writer.finish();
   },
 };
@@ -4619,6 +4637,7 @@ export interface S2L_RecoverPlayerLocations extends IRequest {
   rpcId?: number;
   ownerName: string;
   locations: readonly PlayerLocationRecovery[];
+  ownerGeneration: bigint;
 }
 
 export const S2L_RecoverPlayerLocationsCodec = {
@@ -4627,6 +4646,7 @@ export const S2L_RecoverPlayerLocationsCodec = {
     const value: S2L_RecoverPlayerLocations = {
       ownerName: "",
       locations: [],
+      ownerGeneration: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -4638,6 +4658,9 @@ export const S2L_RecoverPlayerLocationsCodec = {
       }
       else if (tag.fieldNo === 2 && tag.wireType === 2) {
         (value.locations as PlayerLocationRecovery[]).push(PlayerLocationRecoveryCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.ownerGeneration = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -4651,6 +4674,7 @@ export const S2L_RecoverPlayerLocationsCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.ownerName !== undefined) writer.string(1, value.ownerName);
     for (const item of (value.locations ?? [])) writer.bytes(2, PlayerLocationRecoveryCodec.encode(item), true);
+    if (value.ownerGeneration !== undefined) writer.uint64(3, value.ownerGeneration);
     return writer.finish();
   },
 };
@@ -4661,6 +4685,8 @@ export interface L2S_RecoverPlayerLocations extends IResponse {
   rpcId?: number;
   recovered: number;
   unchanged: number;
+  removedStale: number;
+  ownerReplaced: boolean;
 }
 
 export const L2S_RecoverPlayerLocationsCodec = {
@@ -4669,6 +4695,8 @@ export const L2S_RecoverPlayerLocationsCodec = {
     const value: L2S_RecoverPlayerLocations = {
       recovered: 0,
       unchanged: 0,
+      removedStale: 0,
+      ownerReplaced: false,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -4687,6 +4715,12 @@ export const L2S_RecoverPlayerLocationsCodec = {
       else if (tag.fieldNo === 2 && tag.wireType === 0) {
         value.unchanged = reader.uint32();
       }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.removedStale = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.ownerReplaced = reader.bool();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -4701,6 +4735,8 @@ export const L2S_RecoverPlayerLocationsCodec = {
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.recovered !== undefined) writer.uint32(1, value.recovered);
     if (value.unchanged !== undefined) writer.uint32(2, value.unchanged);
+    if (value.removedStale !== undefined) writer.uint32(3, value.removedStale);
+    if (value.ownerReplaced !== undefined) writer.bool(4, value.ownerReplaced);
     return writer.finish();
   },
 };
@@ -5498,6 +5534,84 @@ export const G2C_EnterMapCodec = {
     for (const item of (value.quests ?? [])) writer.bytes(15, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(16, item, true);
     if (value.gold !== undefined) writer.uint64(17, value.gold);
+    return writer.finish();
+  },
+};
+
+export interface C2G_EnterStarterDungeon extends IRequest {
+  rpcId?: number;
+  operationId: string;
+}
+
+export const C2G_EnterStarterDungeonCodec = {
+  decode(payload: Uint8Array): C2G_EnterStarterDungeon {
+    const reader = new BinaryReader(payload);
+    const value: C2G_EnterStarterDungeon = {
+      operationId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: C2G_EnterStarterDungeon): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.operationId !== undefined) writer.string(1, value.operationId);
+    return writer.finish();
+  },
+};
+
+export interface G2C_EnterStarterDungeon extends IResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  enterMap: G2C_EnterMap;
+}
+
+export const G2C_EnterStarterDungeonCodec = {
+  decode(payload: Uint8Array): G2C_EnterStarterDungeon {
+    const reader = new BinaryReader(payload);
+    const value: G2C_EnterStarterDungeon = {
+      enterMap: G2C_EnterMapCodec.decode(new Uint8Array(0)),
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.enterMap = G2C_EnterMapCodec.decode(reader.bytesField());
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_EnterStarterDungeon): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.enterMap !== undefined) writer.bytes(1, G2C_EnterMapCodec.encode(value.enterMap));
     return writer.finish();
   },
 };
@@ -7976,6 +8090,53 @@ export const G2C_QuestProgressCodec = {
   encode(value: G2C_QuestProgress): Uint8Array {
     const writer = new BinaryWriter();
     for (const item of (value.quests ?? [])) writer.bytes(1, QuestSnapshotCodec.encode(item), true);
+    return writer.finish();
+  },
+};
+
+export interface G2C_ProgressionChanged extends IMessage {
+  level: bigint;
+  experience: bigint;
+  gainedExperience: bigint;
+  leveledUp: boolean;
+}
+
+export const G2C_ProgressionChangedCodec = {
+  decode(payload: Uint8Array): G2C_ProgressionChanged {
+    const reader = new BinaryReader(payload);
+    const value: G2C_ProgressionChanged = {
+      level: 0n,
+      experience: 0n,
+      gainedExperience: 0n,
+      leveledUp: false,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.level = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.experience = reader.uint64();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.gainedExperience = reader.uint64();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.leveledUp = reader.bool();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_ProgressionChanged): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.level !== undefined) writer.uint64(1, value.level);
+    if (value.experience !== undefined) writer.uint64(2, value.experience);
+    if (value.gainedExperience !== undefined) writer.uint64(3, value.gainedExperience);
+    if (value.leveledUp !== undefined) writer.bool(4, value.leveledUp);
     return writer.finish();
   },
 };

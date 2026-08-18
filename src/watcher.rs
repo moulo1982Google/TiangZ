@@ -1,6 +1,6 @@
 //! 启动分配给本机的进程，并监管其有界优雅停机。 / Starts machine-assigned processes and supervises their bounded graceful shutdown.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::env;
 use std::io::Write;
 use std::net::UdpSocket;
@@ -10,15 +10,19 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-use crate::config::{RuntimeConfig, StartMachineConfig, load_runtime_config};
+use crate::config::{ProcessRestartConfig, RuntimeConfig, StartMachineConfig, load_runtime_config};
 use crate::shutdown::{ParentControlCommand, receive_parent_control, spawn_stdin_control_receiver};
 
 struct ManagedChild {
     name: String,
+    arg: PathBuf,
     child: Child,
     control: Option<ChildStdin>,
     stop_timeout: Duration,
     observed_exit: Option<ExitStatus>,
+    restart: Option<ProcessRestartConfig>,
+    restart_attempts: VecDeque<Instant>,
+    restart_at: Option<Instant>,
 }
 
 struct ConfiguredProcess {
@@ -106,23 +110,21 @@ pub async fn run_start_machine(root: &Path, start_machine_path: PathBuf) -> Resu
         let arg = to_process_arg(root, &configured.path);
         let process_config = configured.config;
         tracing::info!(target: "tiangz::watcher", config = %arg.display(), "starting process config");
-        let mut child = Command::new(&exe)
-            .arg(&arg)
-            .current_dir(root)
-            .env("TIANGZ_WATCHER_CONTROL", "stdin")
-            .stdin(Stdio::piped())
-            .spawn()
-            .with_context(|| format!("failed to start {}", arg.display()))?;
+        let (child, control) = spawn_child(&exe, root, &arg)?;
         children.push(ManagedChild {
             name: process_config.process.name,
-            control: child.stdin.take(),
+            arg,
+            control,
             child,
             stop_timeout: Duration::from_millis(process_config.process.lifecycle.stop_timeout_ms),
             observed_exit: None,
+            restart: process_config.process.lifecycle.restart,
+            restart_attempts: VecDeque::new(),
+            restart_at: None,
         });
     }
 
-    let trigger = wait_for_watcher_trigger(root, &mut children).await?;
+    let trigger = wait_for_watcher_trigger(root, &exe, &mut children).await?;
     tracing::info!(target: "tiangz::watcher", child_count = children.len(), "stopping child processes");
     for child in &mut children {
         request_graceful_shutdown(child);
@@ -171,18 +173,21 @@ fn validate_unique_process_identities(processes: &[ConfiguredProcess]) -> Result
     Ok(())
 }
 
-/// 同时等待运维停机信号与任一子进程退出；这里只检测故障，不负责自动重启。
+/// 同时等待运维停机信号与子进程状态；仅为显式配置的进程执行有界重启。
 ///
-/// Waits for either an operator shutdown signal or any child exit. This detects failures but
-/// deliberately does not implement automatic restart.
+/// Waits for operator shutdown or child state changes and performs bounded
+/// restarts only for processes that explicitly opt in.
 async fn wait_for_watcher_trigger(
     root: &Path,
+    exe: &Path,
     children: &mut [ManagedChild],
 ) -> Result<WatcherTrigger> {
     let shutdown_signal = wait_for_shutdown_signal();
     tokio::pin!(shutdown_signal);
     let mut parent_control = Some(spawn_stdin_control_receiver());
     let mut poll = tokio::time::interval(Duration::from_millis(50));
+    let mut active_hotfix_candidate: Option<PathBuf> = None;
+    let mut active_config_candidate: Option<PathBuf> = None;
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -197,22 +202,55 @@ async fn wait_for_watcher_trigger(
                     ParentControlCommand::Reload(candidate) => {
                         let candidate = if candidate.is_absolute() { candidate } else { root.join(candidate) };
                         broadcast_reload(children, &candidate)?;
+                        active_hotfix_candidate = Some(candidate.canonicalize().with_context(|| format!("failed to resolve Hotfix candidate {}", candidate.display()))?);
                     }
                     ParentControlCommand::ReloadConfig(candidate) => {
                         let candidate = if candidate.is_absolute() { candidate } else { root.join(candidate) };
                         broadcast_config_reload(children, &candidate)?;
+                        active_config_candidate = Some(candidate.canonicalize().with_context(|| format!("failed to resolve game config candidate {}", candidate.display()))?);
                     }
                 }
             }
             _ = poll.tick() => {
                 for child in children.iter_mut() {
+                    if child.restart_at.is_some_and(|restart_at| Instant::now() >= restart_at) {
+                        match restart_child(
+                            child,
+                            exe,
+                            root,
+                            active_hotfix_candidate.as_deref(),
+                            active_config_candidate.as_deref(),
+                        ) {
+                            Ok(()) => continue,
+                            Err(error) if schedule_restart(child) => {
+                                tracing::error!(target: "tiangz::watcher", process = %child.name, %error, "child restart failed; retry scheduled");
+                                continue;
+                            }
+                            Err(error) => {
+                                tracing::error!(target: "tiangz::watcher", process = %child.name, %error, "child restart failed; restart budget exhausted");
+                                let status = child.observed_exit.context("failed restart has no child exit status")?;
+                                return Ok(WatcherTrigger::ChildExited {
+                                    name: child.name.clone(),
+                                    status,
+                                });
+                            }
+                        }
+                    }
+                    if child.restart_at.is_some() {
+                        continue;
+                    }
                     let Some(status) = child.child.try_wait()
                         .with_context(|| format!("failed to query child process {}", child.name))?
                     else {
                         continue;
                     };
                     child.observed_exit = Some(status);
-                    tracing::error!(target: "tiangz::watcher", process = %child.name, %status, "child process exited unexpectedly");
+                    child.control = None;
+                    if schedule_restart(child) {
+                        tracing::error!(target: "tiangz::watcher", process = %child.name, %status, "child process exited unexpectedly; bounded restart scheduled");
+                        continue;
+                    }
+                    tracing::error!(target: "tiangz::watcher", process = %child.name, %status, "child process exited unexpectedly; restart disabled or exhausted");
                     return Ok(WatcherTrigger::ChildExited {
                         name: child.name.clone(),
                         status,
@@ -221,6 +259,73 @@ async fn wait_for_watcher_trigger(
             }
         }
     }
+}
+
+fn spawn_child(exe: &Path, root: &Path, arg: &Path) -> Result<(Child, Option<ChildStdin>)> {
+    let mut child = Command::new(exe)
+        .arg(arg)
+        .current_dir(root)
+        .env("TIANGZ_WATCHER_CONTROL", "stdin")
+        .stdin(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to start {}", arg.display()))?;
+    let control = child.stdin.take();
+    Ok((child, control))
+}
+
+fn schedule_restart(child: &mut ManagedChild) -> bool {
+    let Some(restart) = &child.restart else {
+        return false;
+    };
+    let now = Instant::now();
+    let window = Duration::from_millis(restart.window_ms);
+    while child
+        .restart_attempts
+        .front()
+        .is_some_and(|started_at| now.duration_since(*started_at) >= window)
+    {
+        child.restart_attempts.pop_front();
+    }
+    if child.restart_attempts.len() >= restart.max_attempts as usize {
+        return false;
+    }
+    child.restart_attempts.push_back(now);
+    child.restart_at = Some(now + Duration::from_millis(restart.backoff_ms));
+    true
+}
+
+fn restart_child(
+    child: &mut ManagedChild,
+    exe: &Path,
+    root: &Path,
+    hotfix_candidate: Option<&Path>,
+    config_candidate: Option<&Path>,
+) -> Result<()> {
+    let (process, control) = spawn_child(exe, root, &child.arg)?;
+    child.child = process;
+    child.control = control;
+    child.observed_exit = None;
+    child.restart_at = None;
+    let replay_result = (|| {
+        if let Some(candidate) = hotfix_candidate {
+            write_reload_command(child, "reload", candidate)?;
+        }
+        if let Some(candidate) = config_candidate {
+            write_reload_command(child, "reload-config", candidate)?;
+        }
+        Ok::<(), anyhow::Error>(())
+    })();
+    if let Err(error) = replay_result {
+        child.control = None;
+        let _ = child.child.kill();
+        let status = child.child.wait().with_context(|| {
+            format!("failed to reap {} after reload replay failure", child.name)
+        })?;
+        child.observed_exit = Some(status);
+        return Err(error);
+    }
+    tracing::info!(target: "tiangz::watcher", process = %child.name, config = %child.arg.display(), "child process restarted");
+    Ok(())
 }
 
 /// 将同一个候选目录发送给本机全部 Process；每个 Process 独立校验并在自己的 V8 屏障提交。
@@ -233,6 +338,9 @@ fn broadcast_reload(children: &mut [ManagedChild], candidate: &Path) -> Result<(
         .with_context(|| format!("failed to resolve Hotfix candidate {}", candidate.display()))?;
     let command = format!("reload {}\n", candidate.display());
     for child in children.iter_mut() {
+        if child.restart_at.is_some() {
+            continue;
+        }
         let control = child.control.as_mut().with_context(|| {
             format!(
                 "process {} no longer has a Watcher control pipe",
@@ -260,6 +368,9 @@ fn broadcast_config_reload(children: &mut [ManagedChild], candidate: &Path) -> R
     })?;
     let command = format!("reload-config {}\n", candidate.display());
     for child in children.iter_mut() {
+        if child.restart_at.is_some() {
+            continue;
+        }
         let control = child.control.as_mut().with_context(|| {
             format!(
                 "process {} no longer has a Watcher control pipe",
@@ -280,6 +391,21 @@ fn broadcast_config_reload(children: &mut [ManagedChild], candidate: &Path) -> R
         "game config reload broadcast to child processes"
     );
     Ok(())
+}
+
+fn write_reload_command(child: &mut ManagedChild, command: &str, candidate: &Path) -> Result<()> {
+    let control = child.control.as_mut().with_context(|| {
+        format!(
+            "process {} no longer has a Watcher control pipe",
+            child.name
+        )
+    })?;
+    control
+        .write_all(format!("{command} {}\n", candidate.display()).as_bytes())
+        .with_context(|| format!("failed to replay {command} for {}", child.name))?;
+    control
+        .flush()
+        .with_context(|| format!("failed to flush replayed {command} for {}", child.name))
 }
 
 /// 发送 Watcher 控制消息后立即关闭管道。

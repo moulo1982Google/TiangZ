@@ -54,6 +54,8 @@ Cocos3D演示玩家出生时背包为空，快捷栏仍固定使用`1`切换平A
 
 `MonsterConfig.drop_table_id`指向`DropTableConfig.drop_table_id`。每一行是一个掉落行：`item_config_id`是道具配置ID，`min_count/max_count`是数量范围，`chance_permille`是该行自己的千分比概率，`quest_objective_id=0`表示普通掉落，非零表示只服务于指定`CollectItem`目标的任务掉落。普通掉落行逐行独立投掷，因此同一具尸体可以同时掉出布料、小红和大红，也可能一件都没有；当前Starter的表1、表2仍为破旧布料1201 800/1000、小型生命药水1001 150/1000、大型生命药水1002 50/1000，即80%/15%/5%。任务掉落行仍按玩家任务资格独立判断。当前Starter的任务5006在完成并交付5005后解锁，要求收集5个道具1101“任务怪物徽记”；怪物A的掉落表包含这条任务掉落。
 
+MapConfig 200是Starter动态Boss副本模板，使用与Map 100相同的NavMesh资源，但运行时必须由Gate经MapManager创建新的MapInstance，不能把200当作静态实例号直接传送。MonsterConfig 3“试炼守卫”由MonsterArea 20001在Map 200创建，拥有900生命、18攻击和4米/秒移动速度，不配置普通掉落；击杀后的120经验属于Dungeon领域奖励，不写入MonsterConfig或DropTable。经验是玩家`progression`运行态与持久化数据，累计阈值由代码规则计算，不放进`PlayerConfig`初始模板。
+
 死亡时，地图只在尸体容器中保存配置ID和数量，尸体有掉落时保留5分钟、没有掉落时保留10秒；全部普通掉落领取后可以立即清理尸体。`respawn_seconds`从死亡时刻开始计时，只表示新怪物的最短重生时刻；实际生成取尸体窗口结束与该时刻两者较晚值，不再单独决定尸体显示时间。当前静态任务徽记不会提前创建永久`ItemId`。玩家必须先从NPC接取5006，靠近尸体后发送`C2M_LootMonster`，服务端在拾取时检查任务是否存在且还需要数量。未接任务、任务已经达到要求数量，或该账号已经领取过同一行时，都不会生成背包Item；这条任务掉落仍留在尸体上，不会因为其他玩家或本玩家无资格而全局消失。任务掉落按账号资格领取；普通掉落在Starter中归第一次有效攻击者账号所有，其他账号不能抢走。
 
 拾取不是“先改内存再保存”：`MonsterComponent.LootMonster`先规划Inventory和Quest快照，使用稳定`operationId`提交DBProxy事务，确认后才提交Item/Quest Entity并推送结果。重复请求返回第一次回执，不会重复加道具或推进任务。动态词条、耐久等真正的ItemInstance掉落不能直接套用“尸体只存配置ID”的静态快捷方式，应在后续ItemInstance方案中保存实例数据。

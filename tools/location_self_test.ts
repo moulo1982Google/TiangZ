@@ -74,6 +74,7 @@ function testOwnerRecovery(): void {
   };
   assert.deepEqual(location.RecoverOwner({
     ownerName: "map_1",
+    ownerGeneration: 101n,
     locations: [route],
   }), {
     rpcId: undefined,
@@ -81,18 +82,42 @@ function testOwnerRecovery(): void {
     message: "",
     recovered: 1,
     unchanged: 0,
+    removedStale: 0,
+    ownerReplaced: false,
   });
   assert.equal(location.Resolve({ unitId: 1001, account: "", characterId: 9001n }).location.account, "recovery-a");
-  assert.equal(location.RecoverOwner({ ownerName: "map_1", locations: [route] }).unchanged, 1);
+  assert.equal(location.RecoverOwner({ ownerName: "map_1", ownerGeneration: 101n, locations: [route] }).unchanged, 1);
 
   assert.throws(() => location.RecoverOwner({
     ownerName: "map_1",
+    ownerGeneration: 101n,
     locations: [
       { ...route, unitId: 1002, account: "recovery-b", actorInstanceId: 12 },
       { ...route, actorInstanceId: 99 },
     ],
   }), /character 9001 already belongs to unit 1001/);
   assert.equal(location.Resolve({ unitId: 1002, account: "", characterId: 0n }).found, false);
+
+  const replacement = { ...route, actorInstanceId: 21 };
+  assert.deepEqual(location.RecoverOwner({
+    ownerName: "map_1",
+    ownerGeneration: 102n,
+    locations: [replacement],
+  }), {
+    rpcId: undefined,
+    error: 0,
+    message: "",
+    recovered: 1,
+    unchanged: 0,
+    removedStale: 1,
+    ownerReplaced: true,
+  });
+  assert.equal(location.Resolve({ unitId: 1001, account: "", characterId: 9001n }).location.actorInstanceId, 21);
+  assert.throws(() => location.RecoverOwner({
+    ownerName: "map_1",
+    ownerGeneration: 101n,
+    locations: [route],
+  }), /stale location recovery generation/);
 }
 
 /** 验证旧revision、错误operation和重复Commit都不能破坏最新位置。 / Verifies stale revisions, foreign operations, and duplicate commits cannot corrupt the latest location. */

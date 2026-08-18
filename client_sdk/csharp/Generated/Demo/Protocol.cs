@@ -12,19 +12,23 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "0b043ebf4350d23b0d40619f3c7d2c55ad0e3f38d190f9a262bd3e4636bc3c8c";
+    public const string Value = "e56ceb9789a4724de2ce15862cfb1fbb4098a6af5d8e14d461e45d2fd97ca9ef";
 }
 
 public static class MsgCode
 {
     public const ushort C2G_EnterMap = 10010;
+    public const ushort C2G_EnterStarterDungeon = 10066;
     public const ushort C2G_LoginGate = 10008;
     public const ushort C2G_MapSnapshotReady = 10029;
     public const ushort C2G_Ping = 10024;
     public const ushort C2M_AcceptQuest = 10052;
     public const ushort C2M_AttackMonster = 10042;
+    public const ushort C2M_BuyNpcShopItem = 10070;
+    public const ushort C2M_CancelPlayerTrade = 10082;
     public const ushort C2M_CastSkill = 10047;
     public const ushort C2M_CompleteQuest = 10054;
+    public const ushort C2M_ConfirmPlayerTrade = 10080;
     public const ushort C2M_FindPath = 10032;
     public const ushort C2M_InspectLootMonster = 10064;
     public const ushort C2M_LootMonster = 10062;
@@ -32,8 +36,13 @@ public static class MsgCode
     public const ushort C2M_Move = 10013;
     public const ushort C2M_NavigateInput = 10037;
     public const ushort C2M_NavigateTo = 10034;
+    public const ushort C2M_OpenNpcShop = 10068;
+    public const ushort C2M_RequestPlayerTrade = 10074;
+    public const ushort C2M_RespondPlayerTrade = 10076;
+    public const ushort C2M_SellItem = 10072;
     public const ushort C2M_ToggleAutoAttack = 10044;
     public const ushort C2M_ToggleDemoDoor = 10039;
+    public const ushort C2M_UpdatePlayerTradeOffer = 10078;
     public const ushort C2M_UseItem = 10019;
     public const ushort C2S_CreateCharacter = 10057;
     public const ushort C2S_GetLoginServiceAddr = 10002;
@@ -46,6 +55,7 @@ public static class MsgCode
     public const ushort G2C_BuffRemoved = 10027;
     public const ushort G2C_DemoDoorState = 10041;
     public const ushort G2C_EnterMap = 10011;
+    public const ushort G2C_EnterStarterDungeon = 10067;
     public const ushort G2C_EntityEnter = 10022;
     public const ushort G2C_EntityLeave = 10023;
     public const ushort G2C_EntityMove = 10016;
@@ -57,6 +67,10 @@ public static class MsgCode
     public const ushort G2C_MapReady = 10012;
     public const ushort G2C_MapSnapshotReady = 10030;
     public const ushort G2C_Ping = 10031;
+    public const ushort G2C_PlayerTradeChanged = 10085;
+    public const ushort G2C_PlayerTradeClosed = 10086;
+    public const ushort G2C_PlayerTradeInvite = 10084;
+    public const ushort G2C_ProgressionChanged = 10087;
     public const ushort G2C_QuestProgress = 10056;
     public const ushort G2C_SessionReplaced = 10061;
     public const ushort G2C_SkillCastState = 10049;
@@ -64,16 +78,24 @@ public static class MsgCode
     public const ushort G2C_SkillProjectile = 10050;
     public const ushort M2C_AcceptQuest = 10053;
     public const ushort M2C_AttackMonster = 10043;
+    public const ushort M2C_BuyNpcShopItem = 10071;
+    public const ushort M2C_CancelPlayerTrade = 10083;
     public const ushort M2C_CastSkill = 10048;
     public const ushort M2C_CompleteQuest = 10055;
+    public const ushort M2C_ConfirmPlayerTrade = 10081;
     public const ushort M2C_FindPath = 10033;
     public const ushort M2C_InspectLootMonster = 10065;
     public const ushort M2C_LootMonster = 10063;
     public const ushort M2C_MapProbe = 10015;
     public const ushort M2C_NavigateInput = 10038;
     public const ushort M2C_NavigateTo = 10035;
+    public const ushort M2C_OpenNpcShop = 10069;
+    public const ushort M2C_RequestPlayerTrade = 10075;
+    public const ushort M2C_RespondPlayerTrade = 10077;
+    public const ushort M2C_SellItem = 10073;
     public const ushort M2C_ToggleAutoAttack = 10045;
     public const ushort M2C_ToggleDemoDoor = 10040;
+    public const ushort M2C_UpdatePlayerTradeOffer = 10079;
     public const ushort M2C_UseItem = 10020;
     public const ushort S2C_CreateCharacter = 10058;
     public const ushort S2C_GetLoginServiceAddr = 10003;
@@ -128,6 +150,12 @@ public sealed class C2G_EnterMap : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2G_EnterStarterDungeon : IRpcRequest
+{
+    public string? OperationId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2G_LoginGate : IRpcRequest
 {
     public string? Account { get; set; }
@@ -160,6 +188,21 @@ public sealed class C2M_AttackMonster : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2M_BuyNpcShopItem : IRpcRequest
+{
+    public uint NpcUnitId { get; set; }
+    public uint ItemConfigId { get; set; }
+    public uint Count { get; set; }
+    public string? OperationId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_CancelPlayerTrade : IRpcRequest
+{
+    public string? TradeId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2M_CastSkill : IRpcRequest
 {
     public uint SkillId { get; set; }
@@ -171,6 +214,12 @@ public sealed class C2M_CompleteQuest : IRpcRequest
 {
     public uint QuestConfigId { get; set; }
     public uint NpcUnitId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_ConfirmPlayerTrade : IRpcRequest
+{
+    public string? TradeId { get; set; }
     public uint RpcId { get; set; }
 }
 
@@ -231,6 +280,34 @@ public sealed class C2M_NavigateTo : IRpcRequest
     public uint RpcId { get; set; }
 }
 
+public sealed class C2M_OpenNpcShop : IRpcRequest
+{
+    public uint NpcUnitId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_RequestPlayerTrade : IRpcRequest
+{
+    public uint TargetUnitId { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_RespondPlayerTrade : IRpcRequest
+{
+    public string? TradeId { get; set; }
+    public bool Accept { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_SellItem : IRpcRequest
+{
+    public uint NpcUnitId { get; set; }
+    public ulong ItemId { get; set; }
+    public uint Count { get; set; }
+    public string? OperationId { get; set; }
+    public uint RpcId { get; set; }
+}
+
 public sealed class C2M_ToggleAutoAttack : IRpcRequest
 {
     public bool Enabled { get; set; }
@@ -241,6 +318,14 @@ public sealed class C2M_ToggleAutoAttack : IRpcRequest
 public sealed class C2M_ToggleDemoDoor : IRpcRequest
 {
     public bool Closed { get; set; }
+    public uint RpcId { get; set; }
+}
+
+public sealed class C2M_UpdatePlayerTradeOffer : IRpcRequest
+{
+    public string? TradeId { get; set; }
+    public ulong Gold { get; set; }
+    public List<PlayerTradeItemOffer> Items { get; set; } = new List<PlayerTradeItemOffer>();
     public uint RpcId { get; set; }
 }
 
@@ -359,6 +444,15 @@ public sealed class G2C_EnterMap : IRpcResponse
     public string? NavigationHash { get; set; }
     public List<QuestSnapshot> Quests { get; set; } = new List<QuestSnapshot>();
     public List<uint> CompletedQuestConfigIds { get; set; } = new List<uint>();
+    public ulong Gold { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class G2C_EnterStarterDungeon : IRpcResponse
+{
+    public G2C_EnterMap? EnterMap { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -438,6 +532,33 @@ public sealed class G2C_Ping : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class G2C_PlayerTradeChanged
+{
+    public PlayerTradeSnapshot? Trade { get; set; }
+}
+
+public sealed class G2C_PlayerTradeClosed
+{
+    public string? TradeId { get; set; }
+    public bool Committed { get; set; }
+    public uint Reason { get; set; }
+    public ulong Gold { get; set; }
+    public InventorySnapshot? Inventory { get; set; }
+}
+
+public sealed class G2C_PlayerTradeInvite
+{
+    public PlayerTradeSnapshot? Trade { get; set; }
+}
+
+public sealed class G2C_ProgressionChanged
+{
+    public ulong Level { get; set; }
+    public ulong Experience { get; set; }
+    public ulong GainedExperience { get; set; }
+    public bool LeveledUp { get; set; }
+}
+
 public sealed class G2C_QuestProgress
 {
     public List<QuestSnapshot> Quests { get; set; } = new List<QuestSnapshot>();
@@ -488,6 +609,11 @@ public sealed class G2C_SkillProjectile
     public ulong ImpactAtMs { get; set; }
 }
 
+public sealed class InventorySnapshot
+{
+    public List<ItemSnapshot> Items { get; set; } = new List<ItemSnapshot>();
+}
+
 public sealed class ItemCooldownSnapshot
 {
     public uint ItemConfigId { get; set; }
@@ -530,6 +656,26 @@ public sealed class M2C_AttackMonster : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class M2C_BuyNpcShopItem : IRpcResponse
+{
+    public uint ItemConfigId { get; set; }
+    public uint Count { get; set; }
+    public List<ItemSnapshot> Items { get; set; } = new List<ItemSnapshot>();
+    public ulong Gold { get; set; }
+    public InventorySnapshot? InventoryRecovery { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_CancelPlayerTrade : IRpcResponse
+{
+    public string? TradeId { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class M2C_CastSkill : IRpcResponse
 {
     public uint Phase { get; set; }
@@ -555,6 +701,15 @@ public sealed class M2C_CompleteQuest : IRpcResponse
 {
     public uint QuestConfigId { get; set; }
     public List<ItemSnapshot> RewardItems { get; set; } = new List<ItemSnapshot>();
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_ConfirmPlayerTrade : IRpcResponse
+{
+    public PlayerTradeSnapshot? Trade { get; set; }
+    public bool Committed { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -614,6 +769,45 @@ public sealed class M2C_NavigateTo : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class M2C_OpenNpcShop : IRpcResponse
+{
+    public uint NpcUnitId { get; set; }
+    public List<ShopItemSnapshot> Items { get; set; } = new List<ShopItemSnapshot>();
+    public ulong Gold { get; set; }
+    public InventorySnapshot? Inventory { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_RequestPlayerTrade : IRpcResponse
+{
+    public PlayerTradeSnapshot? Trade { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_RespondPlayerTrade : IRpcResponse
+{
+    public PlayerTradeSnapshot? Trade { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
+public sealed class M2C_SellItem : IRpcResponse
+{
+    public uint ItemConfigId { get; set; }
+    public uint Count { get; set; }
+    public ulong Gold { get; set; }
+    public ItemSnapshot? Item { get; set; }
+    public InventorySnapshot? InventoryRecovery { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class M2C_ToggleAutoAttack : IRpcResponse
 {
     public bool Enabled { get; set; }
@@ -635,12 +829,21 @@ public sealed class M2C_ToggleDemoDoor : IRpcResponse
     public string? Message { get; set; }
 }
 
+public sealed class M2C_UpdatePlayerTradeOffer : IRpcResponse
+{
+    public PlayerTradeSnapshot? Trade { get; set; }
+    public uint RpcId { get; set; }
+    public uint Error { get; set; }
+    public string? Message { get; set; }
+}
+
 public sealed class M2C_UseItem : IRpcResponse
 {
     public ItemSnapshot? Item { get; set; }
     public BuffPublicView? Buff { get; set; }
     public ulong GlobalCooldownEndAtMs { get; set; }
     public ulong ItemCooldownEndAtMs { get; set; }
+    public InventorySnapshot? InventoryRecovery { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -665,6 +868,7 @@ public sealed class MapEntitySnapshot
     public uint EntityType { get; set; }
     public uint ConfigId { get; set; }
     public string? DisplayName { get; set; }
+    public bool ShopEnabled { get; set; }
 }
 
 public sealed class NavigationMovementState
@@ -683,6 +887,31 @@ public sealed class NavigationPathPoint
     public float X { get; set; }
     public float Y { get; set; }
     public float Z { get; set; }
+}
+
+public sealed class PlayerTradeItemOffer
+{
+    public ulong ItemId { get; set; }
+    public uint ItemConfigId { get; set; }
+    public uint Count { get; set; }
+}
+
+public sealed class PlayerTradeParticipant
+{
+    public uint UnitId { get; set; }
+    public string? DisplayName { get; set; }
+    public ulong Gold { get; set; }
+    public List<PlayerTradeItemOffer> Items { get; set; } = new List<PlayerTradeItemOffer>();
+    public bool Confirmed { get; set; }
+}
+
+public sealed class PlayerTradeSnapshot
+{
+    public string? TradeId { get; set; }
+    public PlayerTradeParticipant? Requester { get; set; }
+    public PlayerTradeParticipant? Target { get; set; }
+    public uint Phase { get; set; }
+    public ulong ExpireAtMs { get; set; }
 }
 
 public sealed class QuestObjectiveSnapshot
@@ -743,6 +972,13 @@ public sealed class S2C_Register : IRpcResponse
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
+}
+
+public sealed class ShopItemSnapshot
+{
+    public uint ItemConfigId { get; set; }
+    public ulong BuyPrice { get; set; }
+    public ulong SellPrice { get; set; }
 }
 
 public sealed class SkillCooldownSnapshot
@@ -1015,6 +1251,40 @@ public static class C2G_EnterMapCodec
     }
 }
 
+public static class C2G_EnterStarterDungeonCodec
+{
+    public static C2G_EnterStarterDungeon Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2G_EnterStarterDungeon();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2G_EnterStarterDungeon value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(1, value.OperationId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2G_LoginGateCodec
 {
     public static C2G_LoginGate Decode(byte[] payload)
@@ -1193,6 +1463,86 @@ public static class C2M_AttackMonsterCodec
     }
 }
 
+public static class C2M_BuyNpcShopItemCodec
+{
+    public static C2M_BuyNpcShopItem Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_BuyNpcShopItem();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.ItemConfigId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Count = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_BuyNpcShopItem value)
+    {
+        var writer = new BinaryWriter();
+        if (value.NpcUnitId != 0) writer.WriteUInt32(1, value.NpcUnitId);
+        if (value.ItemConfigId != 0) writer.WriteUInt32(2, value.ItemConfigId);
+        if (value.Count != 0) writer.WriteUInt32(3, value.Count);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(4, value.OperationId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_CancelPlayerTradeCodec
+{
+    public static C2M_CancelPlayerTrade Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_CancelPlayerTrade();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.TradeId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_CancelPlayerTrade value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.TradeId)) writer.WriteString(1, value.TradeId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2M_CastSkillCodec
 {
     public static C2M_CastSkill Decode(byte[] payload)
@@ -1264,6 +1614,40 @@ public static class C2M_CompleteQuestCodec
         var writer = new BinaryWriter();
         if (value.QuestConfigId != 0) writer.WriteUInt32(1, value.QuestConfigId);
         if (value.NpcUnitId != 0) writer.WriteUInt32(2, value.NpcUnitId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_ConfirmPlayerTradeCodec
+{
+    public static C2M_ConfirmPlayerTrade Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_ConfirmPlayerTrade();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.TradeId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_ConfirmPlayerTrade value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.TradeId)) writer.WriteString(1, value.TradeId);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -1567,6 +1951,158 @@ public static class C2M_NavigateToCodec
     }
 }
 
+public static class C2M_OpenNpcShopCodec
+{
+    public static C2M_OpenNpcShop Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_OpenNpcShop();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_OpenNpcShop value)
+    {
+        var writer = new BinaryWriter();
+        if (value.NpcUnitId != 0) writer.WriteUInt32(1, value.NpcUnitId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_RequestPlayerTradeCodec
+{
+    public static C2M_RequestPlayerTrade Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_RequestPlayerTrade();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.TargetUnitId = reader.ReadUInt32();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_RequestPlayerTrade value)
+    {
+        var writer = new BinaryWriter();
+        if (value.TargetUnitId != 0) writer.WriteUInt32(1, value.TargetUnitId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_RespondPlayerTradeCodec
+{
+    public static C2M_RespondPlayerTrade Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_RespondPlayerTrade();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.TradeId = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Accept = reader.ReadBool();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_RespondPlayerTrade value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.TradeId)) writer.WriteString(1, value.TradeId);
+        if (value.Accept) writer.WriteBool(2, value.Accept);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_SellItemCodec
+{
+    public static C2M_SellItem Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_SellItem();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.ItemId = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Count = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_SellItem value)
+    {
+        var writer = new BinaryWriter();
+        if (value.NpcUnitId != 0) writer.WriteUInt32(1, value.NpcUnitId);
+        if (value.ItemId != 0) writer.WriteUInt64(2, value.ItemId);
+        if (value.Count != 0) writer.WriteUInt32(3, value.Count);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(4, value.OperationId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
 public static class C2M_ToggleAutoAttackCodec
 {
     public static C2M_ToggleAutoAttack Decode(byte[] payload)
@@ -1634,6 +2170,51 @@ public static class C2M_ToggleDemoDoorCodec
     {
         var writer = new BinaryWriter();
         if (value.Closed) writer.WriteBool(1, value.Closed);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        return writer.ToArray();
+    }
+}
+
+public static class C2M_UpdatePlayerTradeOfferCodec
+{
+    public static C2M_UpdatePlayerTradeOffer Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new C2M_UpdatePlayerTradeOffer();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.TradeId = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.Items.Add(PlayerTradeItemOfferCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(C2M_UpdatePlayerTradeOffer value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.TradeId)) writer.WriteString(1, value.TradeId);
+        if (value.Gold != 0) writer.WriteUInt64(2, value.Gold);
+        foreach (var item in value.Items)
+        {
+            writer.WriteMessage(3, item == null ? null : PlayerTradeItemOfferCodec.Encode(item));
+        }
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         return writer.ToArray();
     }
@@ -2225,6 +2806,9 @@ public static class G2C_EnterMapCodec
                 case 16 when tag.WireType == 0:
                     value.CompletedQuestConfigIds.Add(reader.ReadUInt32());
                     break;
+                case 17 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2273,6 +2857,49 @@ public static class G2C_EnterMapCodec
         {
             writer.WriteUInt32(16, item, true);
         }
+        if (value.Gold != 0) writer.WriteUInt64(17, value.Gold);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_EnterStarterDungeonCodec
+{
+    public static G2C_EnterStarterDungeon Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_EnterStarterDungeon();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.EnterMap = G2C_EnterMapCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_EnterStarterDungeon value)
+    {
+        var writer = new BinaryWriter();
+        if (value.EnterMap != null) writer.WriteMessage(1, G2C_EnterMapCodec.Encode(value.EnterMap));
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -2698,6 +3325,154 @@ public static class G2C_PingCodec
     }
 }
 
+public static class G2C_PlayerTradeChangedCodec
+{
+    public static G2C_PlayerTradeChanged Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_PlayerTradeChanged();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Trade = PlayerTradeSnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_PlayerTradeChanged value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Trade != null) writer.WriteMessage(1, PlayerTradeSnapshotCodec.Encode(value.Trade));
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_PlayerTradeClosedCodec
+{
+    public static G2C_PlayerTradeClosed Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_PlayerTradeClosed();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.TradeId = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Committed = reader.ReadBool();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Reason = reader.ReadUInt32();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.Inventory = InventorySnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_PlayerTradeClosed value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.TradeId)) writer.WriteString(1, value.TradeId);
+        if (value.Committed) writer.WriteBool(2, value.Committed);
+        if (value.Reason != 0) writer.WriteUInt32(3, value.Reason);
+        if (value.Gold != 0) writer.WriteUInt64(4, value.Gold);
+        if (value.Inventory != null) writer.WriteMessage(5, InventorySnapshotCodec.Encode(value.Inventory));
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_PlayerTradeInviteCodec
+{
+    public static G2C_PlayerTradeInvite Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_PlayerTradeInvite();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Trade = PlayerTradeSnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_PlayerTradeInvite value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Trade != null) writer.WriteMessage(1, PlayerTradeSnapshotCodec.Encode(value.Trade));
+        return writer.ToArray();
+    }
+}
+
+public static class G2C_ProgressionChangedCodec
+{
+    public static G2C_ProgressionChanged Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new G2C_ProgressionChanged();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.Level = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Experience = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.GainedExperience = reader.ReadUInt64();
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.LeveledUp = reader.ReadBool();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(G2C_ProgressionChanged value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Level != 0) writer.WriteUInt64(1, value.Level);
+        if (value.Experience != 0) writer.WriteUInt64(2, value.Experience);
+        if (value.GainedExperience != 0) writer.WriteUInt64(3, value.GainedExperience);
+        if (value.LeveledUp) writer.WriteBool(4, value.LeveledUp);
+        return writer.ToArray();
+    }
+}
+
 public static class G2C_QuestProgressCodec
 {
     public static G2C_QuestProgress Decode(byte[] payload)
@@ -2951,6 +3726,39 @@ public static class G2C_SkillProjectileCodec
     }
 }
 
+public static class InventorySnapshotCodec
+{
+    public static InventorySnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new InventorySnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Items.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(InventorySnapshot value)
+    {
+        var writer = new BinaryWriter();
+        foreach (var item in value.Items)
+        {
+            writer.WriteMessage(1, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        return writer.ToArray();
+    }
+}
+
 public static class ItemCooldownSnapshotCodec
 {
     public static ItemCooldownSnapshot Decode(byte[] payload)
@@ -3169,6 +3977,109 @@ public static class M2C_AttackMonsterCodec
     }
 }
 
+public static class M2C_BuyNpcShopItemCodec
+{
+    public static M2C_BuyNpcShopItem Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_BuyNpcShopItem();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.ItemConfigId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Count = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.Items.Add(ItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.InventoryRecovery = InventorySnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_BuyNpcShopItem value)
+    {
+        var writer = new BinaryWriter();
+        if (value.ItemConfigId != 0) writer.WriteUInt32(1, value.ItemConfigId);
+        if (value.Count != 0) writer.WriteUInt32(2, value.Count);
+        foreach (var item in value.Items)
+        {
+            writer.WriteMessage(3, item == null ? null : ItemSnapshotCodec.Encode(item));
+        }
+        if (value.Gold != 0) writer.WriteUInt64(4, value.Gold);
+        if (value.InventoryRecovery != null) writer.WriteMessage(5, InventorySnapshotCodec.Encode(value.InventoryRecovery));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_CancelPlayerTradeCodec
+{
+    public static M2C_CancelPlayerTrade Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_CancelPlayerTrade();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.TradeId = reader.ReadString();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_CancelPlayerTrade value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.TradeId)) writer.WriteString(1, value.TradeId);
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_CastSkillCodec
 {
     public static M2C_CastSkill Decode(byte[] payload)
@@ -3305,6 +4216,52 @@ public static class M2C_CompleteQuestCodec
         {
             writer.WriteMessage(2, item == null ? null : ItemSnapshotCodec.Encode(item));
         }
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_ConfirmPlayerTradeCodec
+{
+    public static M2C_ConfirmPlayerTrade Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_ConfirmPlayerTrade();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Trade = PlayerTradeSnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Committed = reader.ReadBool();
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_ConfirmPlayerTrade value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Trade != null) writer.WriteMessage(1, PlayerTradeSnapshotCodec.Encode(value.Trade));
+        if (value.Committed) writer.WriteBool(2, value.Committed);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -3609,6 +4566,205 @@ public static class M2C_NavigateToCodec
     }
 }
 
+public static class M2C_OpenNpcShopCodec
+{
+    public static M2C_OpenNpcShop Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_OpenNpcShop();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.NpcUnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Items.Add(ShopItemSnapshotCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.Inventory = InventorySnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_OpenNpcShop value)
+    {
+        var writer = new BinaryWriter();
+        if (value.NpcUnitId != 0) writer.WriteUInt32(1, value.NpcUnitId);
+        foreach (var item in value.Items)
+        {
+            writer.WriteMessage(2, item == null ? null : ShopItemSnapshotCodec.Encode(item));
+        }
+        if (value.Gold != 0) writer.WriteUInt64(3, value.Gold);
+        if (value.Inventory != null) writer.WriteMessage(4, InventorySnapshotCodec.Encode(value.Inventory));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_RequestPlayerTradeCodec
+{
+    public static M2C_RequestPlayerTrade Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_RequestPlayerTrade();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Trade = PlayerTradeSnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_RequestPlayerTrade value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Trade != null) writer.WriteMessage(1, PlayerTradeSnapshotCodec.Encode(value.Trade));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_RespondPlayerTradeCodec
+{
+    public static M2C_RespondPlayerTrade Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_RespondPlayerTrade();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Trade = PlayerTradeSnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_RespondPlayerTrade value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Trade != null) writer.WriteMessage(1, PlayerTradeSnapshotCodec.Encode(value.Trade));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
+public static class M2C_SellItemCodec
+{
+    public static M2C_SellItem Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_SellItem();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.ItemConfigId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.Count = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.Item = ItemSnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.InventoryRecovery = InventorySnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_SellItem value)
+    {
+        var writer = new BinaryWriter();
+        if (value.ItemConfigId != 0) writer.WriteUInt32(1, value.ItemConfigId);
+        if (value.Count != 0) writer.WriteUInt32(2, value.Count);
+        if (value.Gold != 0) writer.WriteUInt64(3, value.Gold);
+        if (value.Item != null) writer.WriteMessage(4, ItemSnapshotCodec.Encode(value.Item));
+        if (value.InventoryRecovery != null) writer.WriteMessage(5, InventorySnapshotCodec.Encode(value.InventoryRecovery));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_ToggleAutoAttackCodec
 {
     public static M2C_ToggleAutoAttack Decode(byte[] payload)
@@ -3713,6 +4869,48 @@ public static class M2C_ToggleDemoDoorCodec
     }
 }
 
+public static class M2C_UpdatePlayerTradeOfferCodec
+{
+    public static M2C_UpdatePlayerTradeOffer Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new M2C_UpdatePlayerTradeOffer();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.Trade = PlayerTradeSnapshotCodec.Decode(reader.ReadBytes());
+                    break;
+                case 90 when tag.WireType == 0:
+                    value.RpcId = reader.ReadUInt32();
+                    break;
+                case 91 when tag.WireType == 0:
+                    value.Error = reader.ReadUInt32();
+                    break;
+                case 92 when tag.WireType == 2:
+                    value.Message = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(M2C_UpdatePlayerTradeOffer value)
+    {
+        var writer = new BinaryWriter();
+        if (value.Trade != null) writer.WriteMessage(1, PlayerTradeSnapshotCodec.Encode(value.Trade));
+        if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
+        if (value.Error != 0) writer.WriteUInt32(91, value.Error);
+        if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
+        return writer.ToArray();
+    }
+}
+
 public static class M2C_UseItemCodec
 {
     public static M2C_UseItem Decode(byte[] payload)
@@ -3735,6 +4933,9 @@ public static class M2C_UseItemCodec
                     break;
                 case 4 when tag.WireType == 0:
                     value.ItemCooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                case 5 when tag.WireType == 2:
+                    value.InventoryRecovery = InventorySnapshotCodec.Decode(reader.ReadBytes());
                     break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
@@ -3760,6 +4961,7 @@ public static class M2C_UseItemCodec
         if (value.Buff != null) writer.WriteMessage(2, BuffPublicViewCodec.Encode(value.Buff));
         if (value.GlobalCooldownEndAtMs != 0) writer.WriteUInt64(3, value.GlobalCooldownEndAtMs);
         if (value.ItemCooldownEndAtMs != 0) writer.WriteUInt64(4, value.ItemCooldownEndAtMs);
+        if (value.InventoryRecovery != null) writer.WriteMessage(5, InventorySnapshotCodec.Encode(value.InventoryRecovery));
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -3829,6 +5031,9 @@ public static class MapEntitySnapshotCodec
                 case 17 when tag.WireType == 2:
                     value.DisplayName = reader.ReadString();
                     break;
+                case 18 when tag.WireType == 0:
+                    value.ShopEnabled = reader.ReadBool();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -3863,6 +5068,7 @@ public static class MapEntitySnapshotCodec
         if (value.EntityType != 0) writer.WriteUInt32(15, value.EntityType);
         if (value.ConfigId != 0) writer.WriteUInt32(16, value.ConfigId);
         if (!string.IsNullOrEmpty(value.DisplayName)) writer.WriteString(17, value.DisplayName);
+        if (value.ShopEnabled) writer.WriteBool(18, value.ShopEnabled);
         return writer.ToArray();
     }
 }
@@ -3955,6 +5161,139 @@ public static class NavigationPathPointCodec
         if (value.X != 0) writer.WriteFloat(1, value.X);
         if (value.Y != 0) writer.WriteFloat(2, value.Y);
         if (value.Z != 0) writer.WriteFloat(3, value.Z);
+        return writer.ToArray();
+    }
+}
+
+public static class PlayerTradeItemOfferCodec
+{
+    public static PlayerTradeItemOffer Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new PlayerTradeItemOffer();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.ItemId = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.ItemConfigId = reader.ReadUInt32();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Count = reader.ReadUInt32();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(PlayerTradeItemOffer value)
+    {
+        var writer = new BinaryWriter();
+        if (value.ItemId != 0) writer.WriteUInt64(1, value.ItemId);
+        if (value.ItemConfigId != 0) writer.WriteUInt32(2, value.ItemConfigId);
+        if (value.Count != 0) writer.WriteUInt32(3, value.Count);
+        return writer.ToArray();
+    }
+}
+
+public static class PlayerTradeParticipantCodec
+{
+    public static PlayerTradeParticipant Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new PlayerTradeParticipant();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.UnitId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.DisplayName = reader.ReadString();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 4 when tag.WireType == 2:
+                    value.Items.Add(PlayerTradeItemOfferCodec.Decode(reader.ReadBytes()));
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.Confirmed = reader.ReadBool();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(PlayerTradeParticipant value)
+    {
+        var writer = new BinaryWriter();
+        if (value.UnitId != 0) writer.WriteUInt32(1, value.UnitId);
+        if (!string.IsNullOrEmpty(value.DisplayName)) writer.WriteString(2, value.DisplayName);
+        if (value.Gold != 0) writer.WriteUInt64(3, value.Gold);
+        foreach (var item in value.Items)
+        {
+            writer.WriteMessage(4, item == null ? null : PlayerTradeItemOfferCodec.Encode(item));
+        }
+        if (value.Confirmed) writer.WriteBool(5, value.Confirmed);
+        return writer.ToArray();
+    }
+}
+
+public static class PlayerTradeSnapshotCodec
+{
+    public static PlayerTradeSnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new PlayerTradeSnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 2:
+                    value.TradeId = reader.ReadString();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.Requester = PlayerTradeParticipantCodec.Decode(reader.ReadBytes());
+                    break;
+                case 3 when tag.WireType == 2:
+                    value.Target = PlayerTradeParticipantCodec.Decode(reader.ReadBytes());
+                    break;
+                case 4 when tag.WireType == 0:
+                    value.Phase = reader.ReadUInt32();
+                    break;
+                case 5 when tag.WireType == 0:
+                    value.ExpireAtMs = reader.ReadUInt64();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(PlayerTradeSnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (!string.IsNullOrEmpty(value.TradeId)) writer.WriteString(1, value.TradeId);
+        if (value.Requester != null) writer.WriteMessage(2, PlayerTradeParticipantCodec.Encode(value.Requester));
+        if (value.Target != null) writer.WriteMessage(3, PlayerTradeParticipantCodec.Encode(value.Target));
+        if (value.Phase != 0) writer.WriteUInt32(4, value.Phase);
+        if (value.ExpireAtMs != 0) writer.WriteUInt64(5, value.ExpireAtMs);
         return writer.ToArray();
     }
 }
@@ -4268,6 +5607,44 @@ public static class S2C_RegisterCodec
     }
 }
 
+public static class ShopItemSnapshotCodec
+{
+    public static ShopItemSnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new ShopItemSnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.ItemConfigId = reader.ReadUInt32();
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.BuyPrice = reader.ReadUInt64();
+                    break;
+                case 3 when tag.WireType == 0:
+                    value.SellPrice = reader.ReadUInt64();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(ShopItemSnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.ItemConfigId != 0) writer.WriteUInt32(1, value.ItemConfigId);
+        if (value.BuyPrice != 0) writer.WriteUInt64(2, value.BuyPrice);
+        if (value.SellPrice != 0) writer.WriteUInt64(3, value.SellPrice);
+        return writer.ToArray();
+    }
+}
+
 public static class SkillCooldownSnapshotCodec
 {
     public static SkillCooldownSnapshot Decode(byte[] payload)
@@ -4453,6 +5830,11 @@ public static class GateProtocol
         C2G_EnterMapCodec.Encode, G2C_EnterMapCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2G_EnterStarterDungeon, G2C_EnterStarterDungeon> EnterStarterDungeon = new(
+        "Gate.EnterStarterDungeon", MsgCode.C2G_EnterStarterDungeon, MsgCode.G2C_EnterStarterDungeon,
+        C2G_EnterStarterDungeonCodec.Encode, G2C_EnterStarterDungeonCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2G_LoginGate, G2C_LoginGate> LoginGate = new(
         "Gate.LoginGate", MsgCode.C2G_LoginGate, MsgCode.G2C_LoginGate,
         C2G_LoginGateCodec.Encode, G2C_LoginGateCodec.Decode,
@@ -4482,6 +5864,16 @@ public static class MapProtocol
         C2M_AttackMonsterCodec.Encode, M2C_AttackMonsterCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_BuyNpcShopItem, M2C_BuyNpcShopItem> BuyNpcShopItem = new(
+        "Map.BuyNpcShopItem", MsgCode.C2M_BuyNpcShopItem, MsgCode.M2C_BuyNpcShopItem,
+        C2M_BuyNpcShopItemCodec.Encode, M2C_BuyNpcShopItemCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_CancelPlayerTrade, M2C_CancelPlayerTrade> CancelPlayerTrade = new(
+        "Map.CancelPlayerTrade", MsgCode.C2M_CancelPlayerTrade, MsgCode.M2C_CancelPlayerTrade,
+        C2M_CancelPlayerTradeCodec.Encode, M2C_CancelPlayerTradeCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_CastSkill, M2C_CastSkill> CastSkill = new(
         "Map.CastSkill", MsgCode.C2M_CastSkill, MsgCode.M2C_CastSkill,
         C2M_CastSkillCodec.Encode, M2C_CastSkillCodec.Decode,
@@ -4490,6 +5882,11 @@ public static class MapProtocol
     public static readonly RpcDescriptor<C2M_CompleteQuest, M2C_CompleteQuest> CompleteQuest = new(
         "Map.CompleteQuest", MsgCode.C2M_CompleteQuest, MsgCode.M2C_CompleteQuest,
         C2M_CompleteQuestCodec.Encode, M2C_CompleteQuestCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_ConfirmPlayerTrade, M2C_ConfirmPlayerTrade> ConfirmPlayerTrade = new(
+        "Map.ConfirmPlayerTrade", MsgCode.C2M_ConfirmPlayerTrade, MsgCode.M2C_ConfirmPlayerTrade,
+        C2M_ConfirmPlayerTradeCodec.Encode, M2C_ConfirmPlayerTradeCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_FindPath, M2C_FindPath> FindPath = new(
@@ -4522,6 +5919,26 @@ public static class MapProtocol
         C2M_NavigateToCodec.Encode, M2C_NavigateToCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_OpenNpcShop, M2C_OpenNpcShop> OpenNpcShop = new(
+        "Map.OpenNpcShop", MsgCode.C2M_OpenNpcShop, MsgCode.M2C_OpenNpcShop,
+        C2M_OpenNpcShopCodec.Encode, M2C_OpenNpcShopCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_RequestPlayerTrade, M2C_RequestPlayerTrade> RequestPlayerTrade = new(
+        "Map.RequestPlayerTrade", MsgCode.C2M_RequestPlayerTrade, MsgCode.M2C_RequestPlayerTrade,
+        C2M_RequestPlayerTradeCodec.Encode, M2C_RequestPlayerTradeCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_RespondPlayerTrade, M2C_RespondPlayerTrade> RespondPlayerTrade = new(
+        "Map.RespondPlayerTrade", MsgCode.C2M_RespondPlayerTrade, MsgCode.M2C_RespondPlayerTrade,
+        C2M_RespondPlayerTradeCodec.Encode, M2C_RespondPlayerTradeCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_SellItem, M2C_SellItem> SellItem = new(
+        "Map.SellItem", MsgCode.C2M_SellItem, MsgCode.M2C_SellItem,
+        C2M_SellItemCodec.Encode, M2C_SellItemCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_ToggleAutoAttack, M2C_ToggleAutoAttack> ToggleAutoAttack = new(
         "Map.ToggleAutoAttack", MsgCode.C2M_ToggleAutoAttack, MsgCode.M2C_ToggleAutoAttack,
         C2M_ToggleAutoAttackCodec.Encode, M2C_ToggleAutoAttackCodec.Decode,
@@ -4530,6 +5947,11 @@ public static class MapProtocol
     public static readonly RpcDescriptor<C2M_ToggleDemoDoor, M2C_ToggleDemoDoor> ToggleDemoDoor = new(
         "Map.ToggleDemoDoor", MsgCode.C2M_ToggleDemoDoor, MsgCode.M2C_ToggleDemoDoor,
         C2M_ToggleDemoDoorCodec.Encode, M2C_ToggleDemoDoorCodec.Decode,
+        static (request, rpcId) => request.RpcId = rpcId,
+        static response => response.RpcId, static response => response.Error, static response => response.Message);
+    public static readonly RpcDescriptor<C2M_UpdatePlayerTradeOffer, M2C_UpdatePlayerTradeOffer> UpdatePlayerTradeOffer = new(
+        "Map.UpdatePlayerTradeOffer", MsgCode.C2M_UpdatePlayerTradeOffer, MsgCode.M2C_UpdatePlayerTradeOffer,
+        C2M_UpdatePlayerTradeOfferCodec.Encode, M2C_UpdatePlayerTradeOfferCodec.Decode,
         static (request, rpcId) => request.RpcId = rpcId,
         static response => response.RpcId, static response => response.Error, static response => response.Message);
     public static readonly RpcDescriptor<C2M_UseItem, M2C_UseItem> UseItem = new(
@@ -4597,6 +6019,14 @@ public static class ClientMessages
         "Client.ItemChanged", MsgCode.G2C_ItemChanged, G2C_ItemChangedCodec.Encode, G2C_ItemChangedCodec.Decode);
     public static readonly MessageDescriptor<G2C_MapReady> MapReady = new(
         "Client.MapReady", MsgCode.G2C_MapReady, G2C_MapReadyCodec.Encode, G2C_MapReadyCodec.Decode);
+    public static readonly MessageDescriptor<G2C_PlayerTradeChanged> PlayerTradeChanged = new(
+        "Client.PlayerTradeChanged", MsgCode.G2C_PlayerTradeChanged, G2C_PlayerTradeChangedCodec.Encode, G2C_PlayerTradeChangedCodec.Decode);
+    public static readonly MessageDescriptor<G2C_PlayerTradeClosed> PlayerTradeClosed = new(
+        "Client.PlayerTradeClosed", MsgCode.G2C_PlayerTradeClosed, G2C_PlayerTradeClosedCodec.Encode, G2C_PlayerTradeClosedCodec.Decode);
+    public static readonly MessageDescriptor<G2C_PlayerTradeInvite> PlayerTradeInvite = new(
+        "Client.PlayerTradeInvite", MsgCode.G2C_PlayerTradeInvite, G2C_PlayerTradeInviteCodec.Encode, G2C_PlayerTradeInviteCodec.Decode);
+    public static readonly MessageDescriptor<G2C_ProgressionChanged> ProgressionChanged = new(
+        "Client.ProgressionChanged", MsgCode.G2C_ProgressionChanged, G2C_ProgressionChangedCodec.Encode, G2C_ProgressionChangedCodec.Decode);
     public static readonly MessageDescriptor<G2C_QuestProgress> QuestProgress = new(
         "Client.QuestProgress", MsgCode.G2C_QuestProgress, G2C_QuestProgressCodec.Encode, G2C_QuestProgressCodec.Decode);
     public static readonly MessageDescriptor<G2C_SessionReplaced> SessionReplaced = new(
@@ -4622,6 +6052,8 @@ public sealed class GateClient
 
     public Task<G2C_EnterMap> EnterMapAsync(C2G_EnterMap request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(GateProtocol.EnterMap, request, cancellationToken);
+    public Task<G2C_EnterStarterDungeon> EnterStarterDungeonAsync(C2G_EnterStarterDungeon request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(GateProtocol.EnterStarterDungeon, request, cancellationToken);
     public Task<G2C_LoginGate> LoginGateAsync(C2G_LoginGate request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(GateProtocol.LoginGate, request, cancellationToken);
     public Task<G2C_MapSnapshotReady> MapSnapshotReadyAsync(C2G_MapSnapshotReady request, CancellationToken cancellationToken = default) =>
@@ -4639,10 +6071,16 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.AcceptQuest, request, cancellationToken);
     public Task<M2C_AttackMonster> AttackMonsterAsync(C2M_AttackMonster request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.AttackMonster, request, cancellationToken);
+    public Task<M2C_BuyNpcShopItem> BuyNpcShopItemAsync(C2M_BuyNpcShopItem request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.BuyNpcShopItem, request, cancellationToken);
+    public Task<M2C_CancelPlayerTrade> CancelPlayerTradeAsync(C2M_CancelPlayerTrade request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.CancelPlayerTrade, request, cancellationToken);
     public Task<M2C_CastSkill> CastSkillAsync(C2M_CastSkill request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.CastSkill, request, cancellationToken);
     public Task<M2C_CompleteQuest> CompleteQuestAsync(C2M_CompleteQuest request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.CompleteQuest, request, cancellationToken);
+    public Task<M2C_ConfirmPlayerTrade> ConfirmPlayerTradeAsync(C2M_ConfirmPlayerTrade request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.ConfirmPlayerTrade, request, cancellationToken);
     public Task<M2C_FindPath> FindPathAsync(C2M_FindPath request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.FindPath, request, cancellationToken);
     public Task<M2C_InspectLootMonster> InspectLootMonsterAsync(C2M_InspectLootMonster request, CancellationToken cancellationToken = default) =>
@@ -4655,10 +6093,20 @@ public sealed class MapClient
         socket.CallAsync(MapProtocol.NavigateInput, request, cancellationToken);
     public Task<M2C_NavigateTo> NavigateToAsync(C2M_NavigateTo request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.NavigateTo, request, cancellationToken);
+    public Task<M2C_OpenNpcShop> OpenNpcShopAsync(C2M_OpenNpcShop request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.OpenNpcShop, request, cancellationToken);
+    public Task<M2C_RequestPlayerTrade> RequestPlayerTradeAsync(C2M_RequestPlayerTrade request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.RequestPlayerTrade, request, cancellationToken);
+    public Task<M2C_RespondPlayerTrade> RespondPlayerTradeAsync(C2M_RespondPlayerTrade request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.RespondPlayerTrade, request, cancellationToken);
+    public Task<M2C_SellItem> SellItemAsync(C2M_SellItem request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.SellItem, request, cancellationToken);
     public Task<M2C_ToggleAutoAttack> ToggleAutoAttackAsync(C2M_ToggleAutoAttack request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.ToggleAutoAttack, request, cancellationToken);
     public Task<M2C_ToggleDemoDoor> ToggleDemoDoorAsync(C2M_ToggleDemoDoor request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.ToggleDemoDoor, request, cancellationToken);
+    public Task<M2C_UpdatePlayerTradeOffer> UpdatePlayerTradeOfferAsync(C2M_UpdatePlayerTradeOffer request, CancellationToken cancellationToken = default) =>
+        socket.CallAsync(MapProtocol.UpdatePlayerTradeOffer, request, cancellationToken);
     public Task<M2C_UseItem> UseItemAsync(C2M_UseItem request, CancellationToken cancellationToken = default) =>
         socket.CallAsync(MapProtocol.UseItem, request, cancellationToken);
     public Task MoveAsync(C2M_Move message, CancellationToken cancellationToken = default) =>

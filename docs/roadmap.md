@@ -296,7 +296,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 - 已固定Luban 4.10.2工具链，建立`game_config` Excel源目录、服务端/客户端分组生成、只读强类型查询、外键校验、配置指纹与自测；首批接入`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`。表结构属于不可热更Model，纯数据可生成内容寻址候选并由Watcher令各Process原子切换；部署配置仍独立留在`configs`。
 - 账号/角色选择与持久化。
-- 地图生命周期与传送已统一：静态与动态地图共享MapHost实现，`staticMapIds + acceptDynamicMaps`区分静态专用、动态专用和混合承载。动态副本由单例MapManager按稳定requestId幂等分配；MapHost每5秒注册/心跳。Location把MapHost Endpoint随MapInstance和玩家位置返回，新增空载副本Host无需进入其他进程knownScenes即可完成首次进入、Actor路由、跨图传送和销毁。稳定启动目录通过`knownSceneFiles`集中复用。Manager与MapHost同时丢失后的持久幂等、死亡节点接管和事务自动恢复仍留给Phase 5高可用。
+- 地图生命周期与传送已统一：静态与动态地图共享MapHost实现，`staticMapIds + acceptDynamicMaps`区分角色。动态副本由MapManager按稳定requestId幂等分配；MapHost每5秒注册/心跳。Watcher确认同机静态MapHost退出后可有界拉起同名进程，Location代次接管旧Actor路由；Manager与MapHost同时丢失后的动态实例持久幂等、跨机器接管和事务自动恢复仍留给Phase 5高可用。
 - Rust AOI功能链和Windows容量工具已经落地：`.native`生成Unit/Item类型池、Unit冷热结构与访问器，稀疏Grid推导默认可见关系，Rust只保存迟滞关系、过滤拒绝和本帧净变化；TS NativeRef、Rust Pool、AOI规模和分阶段背压均已可观测。历史单Grid与5Hz结果只保留为边界证据。正式3000玩家、16 Gate、10×10 Grid均匀分布基线已经完成：每Grid 30人，其中80%在Grid内移动、20%每2秒跨Grid一次；实测跨Grid `310.3/s`、Move `6004.2/s`、Map CPU平均`82.1%`，错误、过载和背压均为0。该结果略高于80% CPU目标，定位为接近容量边界的回归基线，而不是保守容量点。
 - 从2026-08-01起，新容量基线默认采用每玩家`2Hz`（500ms）持续移动心跳与`0.2Hz`（5秒）MapProbe；按下、转向和停止仍立即发送，Gate Ping保持5秒一次。AOI Cold配置固定为3×3 Enter/20Hz与5×5 Detach/5Hz，不再使用7×7/1Hz。历史负载结果只保留原口径，不与新行为基线直接横向比较。
 - 3000人AOI密度矩阵已经覆盖10×10、15×15和20×20 Grid。扁平Grid与连续位图改造后，Map CPU平均由旧`74.1%/56.7%/57.3%`降至`55.0%/50.7%/42.9%`，正式窗口均无错误、过载、超时和背压。`perf:map-capacity:grid-matrix`支持一键回归，`--report-runs`可在单档复测后从三份有效原始报告重建矩阵；Bench后置Place RPC仍会在稀疏地图形成初始化突发，后续应并入Bench进图事务。
@@ -409,13 +409,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 - `ItemComponent`已经提供`GrantItem/GrantItems`以及纯数据`PlanGrantItems/CommitGrantPlan`。普通奖励继续同步执行；任务GrantItem奖励先规划奖励后快照，DBProxy确认关键事务后再无await提交Entity，失败不改变背包，ACK丢失按回执恢复且不重复发奖。
 - 任务领奖已经在PlayerUnit有序mailbox内同步完成奖励、完成记录和Quest ChildEntity移除；组队共享任务等待Party系统，不在Quest里提前模拟。
-- 已完成最小怪物掉落与任务物品链：`MonsterConfig.drop_table_id`引用`DropTableConfig`，尸体保留`LootContainer`，`C2M_LootMonster`按账号的活动`CollectItem`任务和剩余数量筛选任务行；未接任务或需求已满时任务行留在尸体，普通掉落归第一次有效攻击者账号。Inventory/Quest规划、DBProxy提交、operationId幂等和Cocos3D尸体拾取入口已接通。动态ItemInstance掉落、队伍分配和Boss专属奖励留在后续业务切片。
+- 已完成最小怪物掉落与任务物品链：`MonsterConfig.drop_table_id`引用`DropTableConfig`，尸体保留`LootContainer`，`C2M_LootMonster`按账号的活动`CollectItem`任务和剩余数量筛选任务行；未接任务或需求已满时任务行留在尸体，普通掉落归第一次有效攻击者账号。Inventory/Quest规划、DBProxy提交、operationId幂等和Cocos3D尸体拾取入口已接通。Starter Boss用独立progression事务发放经验，不伪装成普通尸体掉落；动态ItemInstance掉落、队伍分配和Boss专属物品留在后续业务切片。
 - 技能系统现以3006恢复和3007精神鞭笞验证两类持续效果：3006使用Buff Tick完成8次恢复，3007验证10Hz分段引导、移动打断、停止平A、公共CD、受击800毫秒施法惩罚和单技能排队；复杂目标、AOE和技能性能A/B仍待后续机器验收。
 - `npm run perf:business-chain`已准备真实业务链路压测，交替发送UseItem与友方CastSkill并区分业务拒绝和传输错误。正式CPU压力测试需用户提供空闲机器，当前只做编译验证。
 
 ### Phase 4.5：持久化基础
 
-状态：进行中。独立仓库`TiangZ-DBProxy v0.5.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport和三领域Player Repository已经接通。任务奖励、拾取、UseItem、NPC商店与玩家交易按实际领域提交；多Endpoint故障切换、周期快照、有限最终Flush、all-in-one强杀和MapHost强杀后的整组安全重启已通过真实验收。透明MapHost接管、批量Load/Save和生产运维仍未完成，不能因此宣称完整生产高可用。
+状态：进行中。独立仓库`TiangZ-DBProxy v0.5.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport和五领域Player Repository已经接通。任务奖励、拾取、UseItem、NPC商店与玩家交易按实际领域提交；多Endpoint故障切换、周期快照、有限最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复已通过真实验收。批量Load/Save、动态地图现场接管、Gate故障转移和生产运维仍未完成，不能因此宣称完整生产高可用。
 
 - 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，当前发布版本为`v0.5.0`，包含独立Rust workspace、`dbproxy-core/storage/protocol/client/server`、PostgreSQL快照/单记录事务与回执查询、Redis已提交快照缓存、Redis AOF持久普通快照积压、Rust客户端池、运行时无关TypeScript SDK、本地Compose、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
 - 首版服务协议使用版本化Protobuf、SHA-256协议指纹、内部共享令牌和默认8 MiB有界TCP帧，暴露`LoadSnapshot/SaveSnapshot/EnqueueSnapshot/ApplyTransaction`。客户端和服务端都按RecordKey使用多连接分片；超时连接不再复用，调用方通过原幂等ID重新连接重试。真实网络冒烟已经覆盖同步快照、Duplicate、Revision冲突、关键事务原结果和Redis backlog落PostgreSQL。
@@ -425,13 +425,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 玩家聚合捕获投影为`tiangz.demo.player.inventory@1`、`progression@1`、`quest@1`、`runtime@1`和`wallet@1`五条记录与独立Revision，排除UnitId、Session、Timer、AOI与活动Cast。加载在Unit发布到目录/AOI前完成；跨MapHost携带Revision向量防止旧记录覆盖。
 - 真实重启冒烟使用同一账号把1001道具从50个消耗到49个，等待Gate最终下线保存，停止并重启TiangZ后恢复为`count=49/version=2`；PostgreSQL权威记录为revision 1。该结果只证明快照链路，不证明崩溃前未保存的状态或关键经济操作不会丢失。
 - [x] `.native`首版普通Entity持久化：`@persistent(version)`声明版本化Snapshot，`@transient`排除运行时字段，codegen生成严格Codec和通用DBProxy Repository工厂。存储结构属于Model，不能热更。
-- [ ] 持久化后续：旧schema迁移注册、批量Load/Save、透明MapHost接管与生产观测；复杂查询和跨玩家事务不进入通用Entity生成器。
+- [ ] 持久化后续：旧schema迁移注册、批量Load/Save、动态地图/Gate故障接管与生产观测；复杂查询和跨玩家事务不进入通用Entity生成器。
 - `snapshot`字段保持普通属性写法；Rust setter只标脏，框架按短窗口合并并批量写Redis，再异步批量落永久数据库，禁止一次属性赋值对应一次网络请求。
 - `transactional`存储域用于Wallet、Inventory、Trade等经济数据；字段不开放普通setter，只能通过领域事务方法生成`operation_id`、期望版本、完整Payload和业务结果。DBProxy在同一PostgreSQL事务内提交快照与操作收据，Redis只接收带revision的已提交快照，不能成为第二个独立写入口。
-- 任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；玩家交易一次提交双方inventory+wallet。确认后才无await修改Entity，重复请求和跨TiangZ重启返回首次回执。下一步顺序为：批量Load/Save -> 透明MapHost接管边界 -> Prometheus、TLS与生产部署。主工程始终不引入数据库客户端或`dbproxy-storage`。
+- 任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；玩家交易一次提交双方inventory+wallet。确认后才无await修改Entity，重复请求和跨TiangZ重启返回首次回执。下一步顺序为：批量Load/Save -> 动态地图/Gate接管边界 -> TLS与生产部署。主工程始终不引入数据库客户端或`dbproxy-storage`。
 - 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
 - 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
-- 当前验收覆盖Redis短暂不可用、AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、真实TCP、任务/道具事务故障、双Endpoint玩家交易、最终Flush、周期快照、all-in-one强杀和MapHost强杀后的安全重启。透明节点接管、Prometheus积压指标和批量RPC仍留在后续阶段；Redis/PostgreSQL高可用直接使用云厂商能力。
+- 当前验收覆盖Redis短暂不可用、AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、真实TCP、任务/道具事务故障、双Endpoint玩家交易、最终Flush、周期快照、all-in-one强杀和静态MapHost有界接管。动态地图/Gate接管、Prometheus积压指标和批量RPC仍留在后续阶段；Redis/PostgreSQL高可用直接使用云厂商能力。
 - [x] 同地图玩家交易：MapScene维护60秒临时会话，双方报价变化清除确认；双确认后以稳定operationId原子提交双方inventory+wallet记录，支持重复回执恢复和Revision冲突全拒绝。当前不支持跨地图、离线交易、邮件或拍卖行。
 
 ### Phase 4.6：Starter MMORPG 纵向切片
@@ -441,11 +441,12 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 当前Starter只作为第一个领域样例：Core不吸收AOI、NavMesh、MapHost、怪物、任务、技能和战斗规则；`npm run verify:domain-boundaries`已把Core/Model/Hotfix/Rust游戏模块的依赖方向纳入日常门禁。第二个真实游戏领域出现后，再根据实际重复需求调整通用边界。
 - 验收矩阵固定在[Starter MMORPG验收矩阵](starter/acceptance-matrix.md)，教程固定在[Starter MMORPG教程](tutorials/20-starter-mmorpg.md)。
 - 框架能力案例与Starter业务分层；Starter只能使用Stable API、生成协议、Component/Entity、Mailbox和DBProxy边界，不能为演示旁路Runtime。
-- 独立的创建/选择角色流程已经完成运行时闭环：`C2S_CreateCharacter -> CharacterRepository -> C2S_Login.characterId -> Gate/Location/Map`，并通过 `npm run starter:character-smoke` 覆盖 all-in-one 与 split-process。无 DBProxy 时角色目录只在进程生命周期内有效；重启后恢复仍归 ST-09，随后继续收口怪物掉落、Boss副本奖励、完整重启恢复和正式Hotfix操作入口。
+- 独立的创建/选择角色流程已经完成运行时闭环：`C2S_CreateCharacter -> CharacterRepository -> C2S_Login.characterId -> Gate/Location/Map`，并通过 `npm run starter:character-smoke` 覆盖 all-in-one 与 split-process。无 DBProxy 时角色目录只在进程生命周期内有效；重启恢复仍归 ST-09。
+- Map 200动态副本和Boss 3已接入：Gate按稳定operationId经MapManager幂等创建实例，Boss死亡事件触发120累计经验奖励，新角色升到2级。经验只提交progression领域，`starter:acceptance`覆盖真实动态实例与击杀，`starter:acceptance:persistent`覆盖TiangZ重启后Level/Experience恢复。后续重点转为完整任务链自动化、正式Hotfix操作入口和动态地图/Gate故障边界。
 - Starter固定使用一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss、一个玩家职业和少量技能。额外职业、社交、商城和活动不得在本阶段进入核心样例。
 - 每个完成项必须同时通过all-in-one、split-process、客户端操作和对应的失败/恢复验收；业务压测等Starter链路稳定后再执行。
 - 已增加统一自动验收入口：`npm run starter:acceptance`覆盖无数据库的运行时、技能/Buff和角色选角；`starter:acceptance:persistent`覆盖DBProxy快照写入、TiangZ重启和恢复读取；`starter:acceptance:faults`调用独立DBProxy故障矩阵。报告写入`temp/test-logs`，持久化/故障命令只允许连接本地测试资源。
-- 当前自动入口不虚报完整任务/副本链路：Map 100的3只A、2只B和尸体保留规则使5A/5B/任务掉落全链路仍以Cocos3D人工验收为准，后续补专用业务夹具后再提升ST-04、ST-06、ST-07的自动等级。
+- 当前自动入口已覆盖动态副本/Boss/经验升级；Map 100的3只A、2只B和尸体保留规则使5A/5B/任务掉落全链路仍以Cocos3D人工验收为准，后续补专用业务夹具后再提升ST-04和ST-06的自动等级。
 
 ### Phase 4.7：能力归属与可复用领域契约
 

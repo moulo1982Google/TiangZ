@@ -92,6 +92,14 @@ export class GatePlayerRoute {
     this.actorState = "active";
   }
 
+  /** 清除已确认失效的Map Actor缓存；仅故障恢复入口允许调用。 / Clears a confirmed-stale Map Actor cache; only failure recovery may call this. */
+  ClearMap(): GatePlayerMapLocation | undefined {
+    const previous = this.map;
+    this.map = undefined;
+    this.actorState = "active";
+    return previous;
+  }
+
   /** 在迁移前暂停向旧Actor投递；重复进入同一屏障是幂等的。 / Pauses delivery to the old Actor before migration; re-entering the same barrier is idempotent. */
   BeginActorMove(): boolean {
     if (this.actorState === "moving" || this.state === "removing") return false;

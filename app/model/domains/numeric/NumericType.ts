@@ -7,6 +7,7 @@ export const NumericType = {
   CurrentHp: 1,
   CurrentMp: 2,
   Level: 3,
+  Experience: 4,
 
   MaxHp: 1000,
   MaxHpBase: 1000 * 10 + 1,

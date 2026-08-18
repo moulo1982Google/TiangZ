@@ -367,6 +367,11 @@
       "code": 10010
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2G_EnterStarterDungeon",
+      "name": "C2G_EnterStarterDungeon",
+      "code": 10066
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2G_LoginGate",
       "name": "C2G_LoginGate",
       "code": 10008
@@ -392,6 +397,16 @@
       "code": 10042
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_BuyNpcShopItem",
+      "name": "C2M_BuyNpcShopItem",
+      "code": 10070
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_CancelPlayerTrade",
+      "name": "C2M_CancelPlayerTrade",
+      "code": 10082
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_CastSkill",
       "name": "C2M_CastSkill",
       "code": 10047
@@ -400,6 +415,11 @@
       "key": "proto/OuterMessage_C_10001.proto#C2M_CompleteQuest",
       "name": "C2M_CompleteQuest",
       "code": 10054
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_ConfirmPlayerTrade",
+      "name": "C2M_ConfirmPlayerTrade",
+      "code": 10080
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2M_FindPath",
@@ -437,6 +457,26 @@
       "code": 10034
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_OpenNpcShop",
+      "name": "C2M_OpenNpcShop",
+      "code": 10068
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_RequestPlayerTrade",
+      "name": "C2M_RequestPlayerTrade",
+      "code": 10074
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_RespondPlayerTrade",
+      "name": "C2M_RespondPlayerTrade",
+      "code": 10076
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_SellItem",
+      "name": "C2M_SellItem",
+      "code": 10072
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#C2M_ToggleAutoAttack",
       "name": "C2M_ToggleAutoAttack",
       "code": 10044
@@ -445,6 +485,11 @@
       "key": "proto/OuterMessage_C_10001.proto#C2M_ToggleDemoDoor",
       "name": "C2M_ToggleDemoDoor",
       "code": 10039
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#C2M_UpdatePlayerTradeOffer",
+      "name": "C2M_UpdatePlayerTradeOffer",
+      "code": 10078
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#C2M_UseItem",
@@ -512,6 +557,11 @@
       "code": 10011
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_EnterStarterDungeon",
+      "name": "G2C_EnterStarterDungeon",
+      "code": 10067
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_EntityEnter",
       "name": "G2C_EntityEnter",
       "code": 10022
@@ -567,6 +617,26 @@
       "code": 10031
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_PlayerTradeChanged",
+      "name": "G2C_PlayerTradeChanged",
+      "code": 10085
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_PlayerTradeClosed",
+      "name": "G2C_PlayerTradeClosed",
+      "code": 10086
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_PlayerTradeInvite",
+      "name": "G2C_PlayerTradeInvite",
+      "code": 10084
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#G2C_ProgressionChanged",
+      "name": "G2C_ProgressionChanged",
+      "code": 10087
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#G2C_QuestProgress",
       "name": "G2C_QuestProgress",
       "code": 10056
@@ -602,6 +672,16 @@
       "code": 10043
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_BuyNpcShopItem",
+      "name": "M2C_BuyNpcShopItem",
+      "code": 10071
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_CancelPlayerTrade",
+      "name": "M2C_CancelPlayerTrade",
+      "code": 10083
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_CastSkill",
       "name": "M2C_CastSkill",
       "code": 10048
@@ -610,6 +690,11 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_CompleteQuest",
       "name": "M2C_CompleteQuest",
       "code": 10055
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_ConfirmPlayerTrade",
+      "name": "M2C_ConfirmPlayerTrade",
+      "code": 10081
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_FindPath",
@@ -642,6 +727,26 @@
       "code": 10035
     },
     {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_OpenNpcShop",
+      "name": "M2C_OpenNpcShop",
+      "code": 10069
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_RequestPlayerTrade",
+      "name": "M2C_RequestPlayerTrade",
+      "code": 10075
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_RespondPlayerTrade",
+      "name": "M2C_RespondPlayerTrade",
+      "code": 10077
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_SellItem",
+      "name": "M2C_SellItem",
+      "code": 10073
+    },
+    {
       "key": "proto/OuterMessage_C_10001.proto#M2C_ToggleAutoAttack",
       "name": "M2C_ToggleAutoAttack",
       "code": 10045
@@ -650,6 +755,11 @@
       "key": "proto/OuterMessage_C_10001.proto#M2C_ToggleDemoDoor",
       "name": "M2C_ToggleDemoDoor",
       "code": 10040
+    },
+    {
+      "key": "proto/OuterMessage_C_10001.proto#M2C_UpdatePlayerTradeOffer",
+      "name": "M2C_UpdatePlayerTradeOffer",
+      "code": 10079
     },
     {
       "key": "proto/OuterMessage_C_10001.proto#M2C_UseItem",

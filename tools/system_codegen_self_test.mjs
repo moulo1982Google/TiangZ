@@ -46,6 +46,14 @@ const fixtureModelDir = path.join(root, "app", "model", "mmorpg", "__lifecycle_c
 const fixtureHotfixDir = path.join(root, "app", "hotfix", "mmorpg", "__lifecycle_codegen_fixture__");
 const fixtureModel = path.join(fixtureModelDir, "LifecycleContractFixture.ts");
 const fixtureSystem = path.join(fixtureHotfixDir, "LifecycleContractFixtureSystem.ts");
+const declarationSentinel = path.join(
+  root,
+  "app",
+  "generated",
+  "bootstrap",
+  "systems",
+  "EditorTrackingSentinel.d.ts",
+);
 try {
   await mkdir(fixtureModelDir, { recursive: true });
   await mkdir(fixtureHotfixDir, { recursive: true });
@@ -65,10 +73,18 @@ export class LifecycleContractFixtureSystem extends LifecycleContractFixture imp
   RestoreTransfer(_state: number): void {}
 }
 `, { encoding: "utf8", flag: "wx" });
+  await writeFile(declarationSentinel, "// Preserve declarations until a generation succeeds.\n", {
+    encoding: "utf8",
+    flag: "wx",
+  });
 
   const failed = runCodegen();
   if (failed.status === 0 || !failed.stderr.includes("requires lifecycle method OnDestroy")) {
     throw new Error(`codegen accepted an incomplete lifecycle System:\n${failed.stderr}`);
+  }
+  const preservedSentinel = await readFile(declarationSentinel, "utf8").catch(() => undefined);
+  if (preservedSentinel === undefined) {
+    throw new Error("failed codegen deleted the active declaration directory used by the editor");
   }
 
   await writeFile(fixtureSystem, `
@@ -86,9 +102,17 @@ export class LifecycleContractFixtureSystem extends LifecycleContractFixture imp
   if (passed.status !== 0) {
     throw new Error(`codegen rejected a complete lifecycle System:\n${passed.stderr}`);
   }
+  const staleSentinel = await readFile(declarationSentinel, "utf8").catch((error) => {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (staleSentinel !== undefined) {
+    throw new Error("successful codegen did not prune an obsolete System declaration");
+  }
 } finally {
   await rm(fixtureModelDir, { recursive: true, force: true });
   await rm(fixtureHotfixDir, { recursive: true, force: true });
+  await rm(declarationSentinel, { force: true });
   const restored = runCodegen();
   if (restored.status !== 0) {
     throw new Error(`failed to restore generated files after lifecycle fixture:\n${restored.stderr}`);

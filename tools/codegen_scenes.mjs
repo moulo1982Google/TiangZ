@@ -248,7 +248,6 @@ function isLegacyPatchFile(file) {
 
 async function generateSystemDeclarations(files) {
   await rm(obsoleteSystemDeclarationRoot, { recursive: true, force: true });
-  await rm(systemDeclarationRoot, { recursive: true, force: true });
   await mkdir(systemDeclarationRoot, { recursive: true });
   const modelGeneration = await collectModelTypes();
   const modelTypes = modelGeneration.types;
@@ -314,6 +313,12 @@ async function generateSystemDeclarations(files) {
         `${relative(model.file)}: @lifecycle requires an @systemFor(${model.name}) class`,
       );
     }
+  }
+  const expectedOutputs = new Set(outputs.map((file) => path.resolve(file)));
+  for (const entry of await readdir(systemDeclarationRoot, { withFileTypes: true })) {
+    const existing = path.join(systemDeclarationRoot, entry.name);
+    if (expectedOutputs.has(path.resolve(existing))) continue;
+    await rm(existing, { recursive: entry.isDirectory(), force: true });
   }
   return {
     outputs: outputs.sort((left, right) => left.localeCompare(right)),

@@ -65,12 +65,12 @@ function parseOptions(args) {
       index += 1;
       continue;
     }
-    if (args[index] === "--gate-timeout-only" || args[index] === "--skill-only") {
+    if (args[index] === "--gate-timeout-only" || args[index] === "--skill-only" || args[index] === "--starter-dungeon-only") {
       clientArgs.push(args[index]);
       continue;
     }
     throw new Error(
-      "usage: node tools/smoke_runtime.mjs [--mode all|split|both] [--gate-timeout-only|--skill-only]",
+      "usage: node tools/smoke_runtime.mjs [--mode all|split|both] [--gate-timeout-only|--skill-only|--starter-dungeon-only]",
     );
   }
   return { mode, clientArgs };

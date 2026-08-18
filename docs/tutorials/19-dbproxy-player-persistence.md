@@ -275,7 +275,7 @@ npm run test:player-trade:persistent
 npm run test:player-domain-recovery
 ```
 
-第一条命令通过正式NPC商店制造铜币，提交双玩家inventory+wallet事务，重启TiangZ核对结果，并在最终确认前停止首选DBProxy `7800`，验证备用`7801`只提交一次。第二条命令依次验证：立即优雅停机的最终Flush；等待周期窗口后强杀all-in-one；在`configs/local/cluster-dbproxy`中精确强杀承载地图100的`map-2`，确认Watcher以非零状态关闭兄弟进程，再重启整组部署恢复金币/背包、任务和位置。
+第一条命令通过正式NPC商店制造铜币，提交双玩家inventory+wallet事务，重启TiangZ核对结果，并在最终确认前停止首选DBProxy `7800`，验证备用`7801`只提交一次。第二条命令依次验证：立即优雅停机的最终Flush；等待周期窗口后强杀all-in-one；在`configs/local/cluster-dbproxy`中精确强杀承载地图100的`map-2`，确认Watcher保持存活并用新PID有界重启MapHost，再由Location代次接管、Gate重新路由和DBProxy快照恢复金币/背包、任务与位置。
 
 这些命令要求本地PostgreSQL/Redis容器健康、两个DBProxy Debug二进制和TiangZ Debug二进制已经构建。它们创建唯一测试账号但不清库，也不是CPU或容量压测。
 
@@ -283,7 +283,7 @@ npm run test:player-domain-recovery
 
 - 周期快照默认30秒，普通成长与运行态最多允许回退一个周期；要求零回退的字段必须进入关键事务，不能缩短周期冒充事务保证。
 - 任务奖励、拾取、UseItem、NPC商店和同地图玩家交易已经按实际领域提交；邮件、拍卖行、跨地图交易仍未实现，不能把现有链路描述为全部经济数据生产级不丢。
-- MapHost崩溃当前由Watcher关闭整组部署，运维或测试重启后从最近快照恢复；没有自动拉起替代MapHost、Gate透明改路由或战斗现场热接管。怪物、仇恨、AI目标和移动意图按设计重建或重置。
+- 显式配置`lifecycle.restart`的静态MapHost可由Watcher有界重启；Location只删除死亡代次的Actor路由，Gate在下一次进图/重连时改走新Actor。当前不是无感保持原Socket上的战斗现场，也不恢复怪物、仇恨、AI目标、移动意图和动态副本实例。
 - 尚无批量Load/Save、Prometheus DBProxy指标、TLS、令牌轮换和生产部署；Redis/PostgreSQL高可用使用云厂商能力，不在TiangZ内实现。
 
-下一步是批量登录恢复、透明MapHost接管边界和生产运维能力；新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。
+下一步是批量Load/Save、动态地图接管策略、Gate故障转移和生产运维能力；新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。

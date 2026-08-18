@@ -32,6 +32,7 @@ try {
   if (!options.persistentOnly) {
     await runCommandCase("runtime", "tools/smoke_runtime.mjs", ["--mode", options.mode]);
     await runCommandCase("skills-and-buffs", "tools/smoke_runtime.mjs", ["--mode", "all", "--skill-only"]);
+    await runCommandCase("dynamic-dungeon-boss-progression", "tools/smoke_runtime.mjs", ["--mode", "all", "--starter-dungeon-only"]);
     await runCommandCase("character-selection", "tools/character_selection_smoke.mjs", []);
   }
 
@@ -116,6 +117,7 @@ async function runCommandCase(name, script, args) {
 async function runPersistentRestartCase(environment) {
   const startedAt = Date.now();
   const account = `starter_persist_${Date.now().toString(36)}`;
+  const bossAccount = `${account}_boss`;
   const runtimeConfigs = ["configs/local/all-in-one-dbproxy.json"];
   const runtimeEnv = {
     TIANGZ_DBPROXY_AUTH_TOKEN: environment.DBPROXY_AUTH_TOKEN,
@@ -133,6 +135,7 @@ async function runPersistentRestartCase(environment) {
     ));
     await waitForRuntimePorts(runtimes, true);
     await runClient("--dbproxy-persistence-write", account);
+    await runClient("--dbproxy-starter-boss-write", bossAccount);
     await stopRuntimes(runtimes);
     runtimes = runtimeConfigs.map((config) => startRuntime(
       root,
@@ -143,6 +146,7 @@ async function runPersistentRestartCase(environment) {
     ));
     await waitForRuntimePorts(runtimes, true);
     await runClient("--dbproxy-persistence-read", account);
+    await runClient("--dbproxy-starter-boss-read", bossAccount);
     succeeded = true;
     results.push({
       name: "persistent-restart",

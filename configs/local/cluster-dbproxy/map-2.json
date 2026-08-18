@@ -2,6 +2,13 @@
   "process": {
     "name": "map2",
     "identity": { "originServerId": 1, "workerId": 6 },
+    "lifecycle": {
+      "restart": {
+        "maxAttempts": 3,
+        "windowMs": 60000,
+        "backoffMs": 1000
+      }
+    },
     "persistence": {
       "dbProxy": {
         "endpoint": "127.0.0.1:7800",

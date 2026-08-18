@@ -2591,6 +2591,108 @@ struct G2C_EnterMapCodec {
   }
 };
 
+struct C2G_EnterStarterDungeon {
+  std::optional<std::uint32_t> rpcId;
+  std::string operationId;
+};
+
+struct C2G_EnterStarterDungeonCodec {
+  static C2G_EnterStarterDungeon Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    C2G_EnterStarterDungeon value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const C2G_EnterStarterDungeon& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.String(1, value.operationId);
+    return writer.Finish();
+  }
+};
+
+struct G2C_EnterStarterDungeon {
+  std::optional<std::string> message;
+  std::optional<std::uint32_t> error;
+  std::optional<std::uint32_t> rpcId;
+  G2C_EnterMap enterMap;
+};
+
+struct G2C_EnterStarterDungeonCodec {
+  static G2C_EnterStarterDungeon Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_EnterStarterDungeon value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 92:
+          if (tag.wireType == 2) {
+            value.message = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 91:
+          if (tag.wireType == 0) {
+            value.error = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 90:
+          if (tag.wireType == 0) {
+            value.rpcId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 1:
+          if (tag.wireType == 2) {
+            value.enterMap = G2C_EnterMapCodec::Decode(reader.BytesField());
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_EnterStarterDungeon& value) {
+    tiangz::client::BinaryWriter writer;
+    if (value.message.has_value()) writer.String(92, *value.message);
+    if (value.error.has_value()) writer.UInt32(91, *value.error);
+    if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
+    writer.BytesField(1, G2C_EnterMapCodec::Encode(value.enterMap));
+    return writer.Finish();
+  }
+};
+
 struct G2C_MapReady {
   std::string account;
   std::uint32_t mapId = 0;
@@ -5864,6 +5966,66 @@ struct G2C_QuestProgressCodec {
   }
 };
 
+struct G2C_ProgressionChanged {
+  std::uint64_t level = 0;
+  std::uint64_t experience = 0;
+  std::uint64_t gainedExperience = 0;
+  bool leveledUp = false;
+};
+
+struct G2C_ProgressionChangedCodec {
+  static G2C_ProgressionChanged Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_ProgressionChanged value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.level = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.experience = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.gainedExperience = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.leveledUp = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_ProgressionChanged& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt64(1, value.level);
+    writer.UInt64(2, value.experience);
+    writer.UInt64(3, value.gainedExperience);
+    writer.Bool(4, value.leveledUp);
+    return writer.Finish();
+  }
+};
+
 struct G2C_BuffAdded {
   BuffPublicView buff;
 };
@@ -6789,6 +6951,8 @@ inline constexpr std::uint16_t C2G_LoginGate = 10008;
 inline constexpr std::uint16_t G2C_LoginGate = 10009;
 inline constexpr std::uint16_t C2G_EnterMap = 10010;
 inline constexpr std::uint16_t G2C_EnterMap = 10011;
+inline constexpr std::uint16_t C2G_EnterStarterDungeon = 10066;
+inline constexpr std::uint16_t G2C_EnterStarterDungeon = 10067;
 inline constexpr std::uint16_t G2C_MapReady = 10012;
 inline constexpr std::uint16_t G2C_SessionReplaced = 10061;
 inline constexpr std::uint16_t C2G_MapSnapshotReady = 10029;
@@ -6816,25 +6980,25 @@ inline constexpr std::uint16_t C2M_LootMonster = 10062;
 inline constexpr std::uint16_t M2C_LootMonster = 10063;
 inline constexpr std::uint16_t C2M_InspectLootMonster = 10064;
 inline constexpr std::uint16_t M2C_InspectLootMonster = 10065;
-inline constexpr std::uint16_t C2M_OpenNpcShop = 10066;
-inline constexpr std::uint16_t M2C_OpenNpcShop = 10067;
-inline constexpr std::uint16_t C2M_BuyNpcShopItem = 10068;
-inline constexpr std::uint16_t M2C_BuyNpcShopItem = 10069;
-inline constexpr std::uint16_t C2M_SellItem = 10070;
-inline constexpr std::uint16_t M2C_SellItem = 10071;
-inline constexpr std::uint16_t C2M_RequestPlayerTrade = 10072;
-inline constexpr std::uint16_t M2C_RequestPlayerTrade = 10073;
-inline constexpr std::uint16_t C2M_RespondPlayerTrade = 10074;
-inline constexpr std::uint16_t M2C_RespondPlayerTrade = 10075;
-inline constexpr std::uint16_t C2M_UpdatePlayerTradeOffer = 10076;
-inline constexpr std::uint16_t M2C_UpdatePlayerTradeOffer = 10077;
-inline constexpr std::uint16_t C2M_ConfirmPlayerTrade = 10078;
-inline constexpr std::uint16_t M2C_ConfirmPlayerTrade = 10079;
-inline constexpr std::uint16_t C2M_CancelPlayerTrade = 10080;
-inline constexpr std::uint16_t M2C_CancelPlayerTrade = 10081;
-inline constexpr std::uint16_t G2C_PlayerTradeInvite = 10082;
-inline constexpr std::uint16_t G2C_PlayerTradeChanged = 10083;
-inline constexpr std::uint16_t G2C_PlayerTradeClosed = 10084;
+inline constexpr std::uint16_t C2M_OpenNpcShop = 10068;
+inline constexpr std::uint16_t M2C_OpenNpcShop = 10069;
+inline constexpr std::uint16_t C2M_BuyNpcShopItem = 10070;
+inline constexpr std::uint16_t M2C_BuyNpcShopItem = 10071;
+inline constexpr std::uint16_t C2M_SellItem = 10072;
+inline constexpr std::uint16_t M2C_SellItem = 10073;
+inline constexpr std::uint16_t C2M_RequestPlayerTrade = 10074;
+inline constexpr std::uint16_t M2C_RequestPlayerTrade = 10075;
+inline constexpr std::uint16_t C2M_RespondPlayerTrade = 10076;
+inline constexpr std::uint16_t M2C_RespondPlayerTrade = 10077;
+inline constexpr std::uint16_t C2M_UpdatePlayerTradeOffer = 10078;
+inline constexpr std::uint16_t M2C_UpdatePlayerTradeOffer = 10079;
+inline constexpr std::uint16_t C2M_ConfirmPlayerTrade = 10080;
+inline constexpr std::uint16_t M2C_ConfirmPlayerTrade = 10081;
+inline constexpr std::uint16_t C2M_CancelPlayerTrade = 10082;
+inline constexpr std::uint16_t M2C_CancelPlayerTrade = 10083;
+inline constexpr std::uint16_t G2C_PlayerTradeInvite = 10084;
+inline constexpr std::uint16_t G2C_PlayerTradeChanged = 10085;
+inline constexpr std::uint16_t G2C_PlayerTradeClosed = 10086;
 inline constexpr std::uint16_t C2M_ToggleAutoAttack = 10044;
 inline constexpr std::uint16_t M2C_ToggleAutoAttack = 10045;
 inline constexpr std::uint16_t G2C_AutoAttackState = 10046;
@@ -6844,6 +7008,7 @@ inline constexpr std::uint16_t M2C_AcceptQuest = 10053;
 inline constexpr std::uint16_t C2M_CompleteQuest = 10054;
 inline constexpr std::uint16_t M2C_CompleteQuest = 10055;
 inline constexpr std::uint16_t G2C_QuestProgress = 10056;
+inline constexpr std::uint16_t G2C_ProgressionChanged = 10087;
 inline constexpr std::uint16_t G2C_BuffAdded = 10026;
 inline constexpr std::uint16_t G2C_BuffRemoved = 10027;
 inline constexpr std::uint16_t G2C_BuffDetail = 10028;
@@ -6882,6 +7047,10 @@ inline constexpr tiangz::client::RpcDescriptor<C2G_LoginGate, G2C_LoginGate, C2G
 
 inline constexpr tiangz::client::RpcDescriptor<C2G_EnterMap, G2C_EnterMap, C2G_EnterMapCodec, G2C_EnterMapCodec> Gate_EnterMap{
   "Gate.EnterMap", MsgCode::C2G_EnterMap, MsgCode::G2C_EnterMap
+};
+
+inline constexpr tiangz::client::RpcDescriptor<C2G_EnterStarterDungeon, G2C_EnterStarterDungeon, C2G_EnterStarterDungeonCodec, G2C_EnterStarterDungeonCodec> Gate_EnterStarterDungeon{
+  "Gate.EnterStarterDungeon", MsgCode::C2G_EnterStarterDungeon, MsgCode::G2C_EnterStarterDungeon
 };
 
 inline constexpr tiangz::client::RpcDescriptor<C2G_MapSnapshotReady, G2C_MapSnapshotReady, C2G_MapSnapshotReadyCodec, G2C_MapSnapshotReadyCodec> Gate_MapSnapshotReady{
@@ -7026,6 +7195,10 @@ inline constexpr tiangz::client::MessageDescriptor<G2C_ItemChanged, G2C_ItemChan
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_QuestProgress, G2C_QuestProgressCodec> Client_QuestProgress{
   "Client.QuestProgress", MsgCode::G2C_QuestProgress
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_ProgressionChanged, G2C_ProgressionChangedCodec> Client_ProgressionChanged{
+  "Client.ProgressionChanged", MsgCode::G2C_ProgressionChanged
 };
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_BuffAdded, G2C_BuffAddedCodec> Client_BuffAdded{

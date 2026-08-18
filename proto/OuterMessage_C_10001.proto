@@ -122,6 +122,19 @@ message G2C_EnterMap // IResponse
   uint64 gold = 17;
 }
 
+//ResponseType G2C_EnterStarterDungeon
+// Starter单人副本由Gate创建动态实例后立即传送；operation_id保证客户端重试复用同一次创建请求。
+// @ets.msg protocol=Gate method=EnterStarterDungeon
+message C2G_EnterStarterDungeon // IRequest
+{
+  string operation_id = 1;
+}
+
+message G2C_EnterStarterDungeon // IResponse
+{
+  G2C_EnterMap enter_map = 1;
+}
+
 // @ets.msg protocol=Client method=MapReady
 message G2C_MapReady // IMessage
 {
@@ -604,6 +617,17 @@ message M2C_CompleteQuest // IActorLocationResponse
 message G2C_QuestProgress // IMessage
 {
   repeated QuestSnapshot quests = 1;
+}
+
+// 成长结果只发给本人；等级和累计经验同时进入Numeric同步，消息用于明确展示本次奖励。
+// @ets.msg protocol=Client method=ProgressionChanged
+// @ets.broadcast mode=event
+message G2C_ProgressionChanged // IMessage
+{
+  uint64 level = 1;
+  uint64 experience = 2;
+  uint64 gained_experience = 3;
+  bool leveled_up = 4;
 }
 
 // Buff创建是不可覆盖事件；普通AOI玩家、自己和队伍成员都只从这里获得公开外观。

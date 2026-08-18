@@ -45,7 +45,10 @@ function main(): void {
     player.initialItemConfigId_ref,
     serverConfigs.ItemConfig.Get(player.initialItemConfigId),
   );
-  assert.equal(serverConfigs.MapConfig.GetAll().length, 5);
+  assert.deepEqual(
+    serverConfigs.MapConfig.GetAll().map((map) => map.id).sort((left, right) => left - right),
+    [1, 2, 100, 200, 1015, 1020],
+  );
   assert.equal(serverConfigs.MapConfig.Get(1).spatialMode, 1);
   assert.equal(serverConfigs.MapConfig.Get(1).depthCells, 150);
   assert.equal(serverConfigs.MapConfig.Get(1).cellSizeMeters, 1);
@@ -72,6 +75,21 @@ function main(): void {
   assert.deepEqual(
     [navigationMap.spawnX, navigationMap.spawnY, navigationMap.spawnZ],
     [-3, 1, -18],
+  );
+  const dungeonMap = serverConfigs.MapConfig.Get(200);
+  assert.equal(dungeonMap.name, "Starter Boss试炼");
+  assert.equal(dungeonMap.navigationHash, navigationMap.navigationHash);
+  assert.equal(dungeonMap.entryQueueCapacity, 100);
+  const boss = serverConfigs.MonsterConfig.Get(3);
+  assert.equal(boss.name, "试炼守卫");
+  assert.equal(boss.maxHp, 900);
+  assert.equal(boss.attackMode, 1);
+  assert.equal(boss.dropTableId, 0);
+  assert.deepEqual(
+    serverConfigs.MonsterAreaConfig.GetAll()
+      .filter((area) => area.mapConfigId === 200)
+      .map((area) => [area.id, area.monsterConfigId, area.spawnX, area.spawnZ]),
+    [[20001, 3, 0, 8]],
   );
   assert.equal(navigationMap.aoiConfigId, 2);
   assert.deepEqual(

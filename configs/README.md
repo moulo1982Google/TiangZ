@@ -69,4 +69,6 @@ KCP 暂不支持 `audience=inner`。Cocos Web 不能连接此配置；Web 客户
 
 `StartMachine.json` 按本机 IP 选择并启动 `processes` 中列出的配置文件，作用类似 ET Watcher。压测配置没有加入默认 StartMachine，需要显式启动。
 
+子进程默认不自动重启。只有在对应Process配置中显式填写`process.lifecycle.restart`时，Watcher才会按`maxAttempts/windowMs/backoffMs`有界拉起该进程；预算耗尽仍关闭整组。该配置不能替代业务持久化和路由接管，当前只在`local/cluster-dbproxy/map-2.json`中作为静态MapHost恢复验收启用。
+
 Inspector 默认只能监听回环地址。只有明确设置 `allowRemote: true` 才允许远程监听，并应由防火墙限制访问。

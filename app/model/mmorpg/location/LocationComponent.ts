@@ -55,6 +55,7 @@ export class LocationComponent extends Component {
   private readonly unitIdByCharacterId = new Map<bigint, number>();
   private readonly reservedUnitIdByCharacterId = new Map<bigint, number>();
   private readonly unitIdsByAccount = new Map<string, Set<number>>();
+  private readonly ownerGenerations = new Map<string, bigint>();
   private nextUnitId = 1000;
   private conflicts = 0;
   private resolves = 0;
@@ -84,6 +85,7 @@ export class LocationComponent extends Component {
   /** 发布完整创建后的Unit；相同Unit和地址的网络重试是幂等的。 / Publishes a fully created Unit; network retries with the same Unit and route are idempotent. */
   Register(request: S2L_RegisterPlayerLocation): L2S_RegisterPlayerLocation {
     validateRoute(request);
+    this.requireOwnerGeneration(request.mapHostName, request.ownerGeneration);
     const byCharacter = this.unitIdByCharacterId.get(request.characterId);
     if (byCharacter !== undefined && byCharacter !== request.unitId) {
       this.fail(`character ${request.characterId} already belongs to unit ${byCharacter}`);
@@ -177,6 +179,7 @@ export class LocationComponent extends Component {
 
   /** 将moving记录切换到新Actor；提交成功后旧Actor不得再恢复权威。 / Switches a moving record to the new Actor; the old Actor can never regain authority after commit. */
   Commit(request: S2L_CommitPlayerLocation): L2S_CommitPlayerLocation {
+    this.requireOwnerGeneration(request.mapHostName, request.ownerGeneration);
     validateRoute(request);
     const current = this.require(request.unitId);
     const value: PlayerLocationValue = {
@@ -231,6 +234,13 @@ export class LocationComponent extends Component {
    */
   RecoverOwner(request: S2L_RecoverPlayerLocations): L2S_RecoverPlayerLocations {
     if (!request.ownerName) this.fail("location recovery owner is required");
+    if (request.ownerGeneration <= 0n) this.fail("location recovery generation is required");
+
+    const activeGeneration = this.ownerGenerations.get(request.ownerName);
+    if (activeGeneration !== undefined && request.ownerGeneration < activeGeneration) {
+      this.fail(`stale location recovery generation for ${request.ownerName}`);
+    }
+    const ownerReplaced = activeGeneration !== undefined && request.ownerGeneration > activeGeneration;
 
     const pending: PlayerLocationRecovery[] = [];
     const unitIds = new Set<number>();
@@ -253,12 +263,17 @@ export class LocationComponent extends Component {
       }
 
       const characterUnitId = this.unitIdByCharacterId.get(location.characterId);
-      if (characterUnitId !== undefined && characterUnitId !== location.unitId) {
+      const characterRecord = characterUnitId === undefined
+        ? undefined
+        : this.directory.Resolve(characterUnitId);
+      const characterBelongsToReplacedOwner = ownerReplaced &&
+        characterRecord?.value.mapHostName === request.ownerName;
+      if (characterUnitId !== undefined && characterUnitId !== location.unitId && !characterBelongsToReplacedOwner) {
         this.fail(`character ${location.characterId} already belongs to unit ${characterUnitId}`);
       }
       const existing = this.directory.Resolve(location.unitId);
       const value = valueOf(location);
-      if (!existing) {
+      if (!existing || (ownerReplaced && existing.value.mapHostName === request.ownerName)) {
         pending.push(location);
       } else if (sameValue(existing.value, value)) {
         unchanged += 1;
@@ -267,6 +282,8 @@ export class LocationComponent extends Component {
       }
     }
 
+    const removedStale = ownerReplaced ? this.removeOwnerLocations(request.ownerName) : 0;
+    this.ownerGenerations.set(request.ownerName, request.ownerGeneration);
     for (const location of pending) {
       this.directory.Register(location.unitId, valueOf(location));
       this.unitIdByCharacterId.set(location.characterId, location.unitId);
@@ -277,6 +294,8 @@ export class LocationComponent extends Component {
     return response(request.rpcId, {
       recovered: pending.length,
       unchanged,
+      removedStale,
+      ownerReplaced,
     });
   }
 
@@ -310,6 +329,28 @@ export class LocationComponent extends Component {
     this.unitIdByCharacterId.clear();
     this.reservedUnitIdByCharacterId.clear();
     this.unitIdsByAccount.clear();
+    this.ownerGenerations.clear();
+  }
+
+  /** 代次切换只清除旧Actor路由，不接管任何玩家业务状态。 / A generation takeover removes stale Actor routes only and never owns player business state. */
+  private removeOwnerLocations(ownerName: string): number {
+    let removed = 0;
+    for (const record of this.directory.Snapshot()) {
+      if (record.value.mapHostName !== ownerName) continue;
+      this.directory.DeleteForOwnerTakeover(record.key);
+      this.unitIdByCharacterId.delete(record.value.characterId);
+      this.removeAccountIndex(record.value.account, record.key);
+      removed += 1;
+    }
+    this.mutations += removed;
+    return removed;
+  }
+
+  private requireOwnerGeneration(ownerName: string, generation: bigint): void {
+    const active = this.ownerGenerations.get(ownerName);
+    if (active === undefined || generation !== active) {
+      this.fail(`MapHost generation is not active: ${ownerName}`);
+    }
   }
 
   private require(unitId: number): LocationRecord<number, PlayerLocationValue> {

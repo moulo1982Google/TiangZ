@@ -14,7 +14,7 @@ function main(): void {
 
 /** 验证旧连接事件、出站流量和重复超时都不能破坏新连接所有权。 / Verifies stale closes, outbound traffic, and repeated timeouts cannot corrupt replacement ownership. */
 function testConnectionReplacementAndGrace(): void {
-  const route = new GatePlayerRoute("player-1", "gate-1", 10, 1_000);
+  const route = new GatePlayerRoute("player-1", 1n, "gate-1", 10, 1_000);
   route.BindMap({
     mapService: "map-1",
     mapHost: {
@@ -33,6 +33,9 @@ function testConnectionReplacementAndGrace(): void {
   assert.equal(route.BeginActorMove(), false);
   route.AbortActorMove();
   assert.equal(route.actorState, "active");
+  assert.equal(route.ClearMap()?.actorInstanceId, 2001);
+  assert.equal(route.map, undefined);
+  assert.equal(route.ClearMap(), undefined);
 
   assert.equal(route.Detach(10, 2_000), true);
   assert.equal(route.state, "disconnected");

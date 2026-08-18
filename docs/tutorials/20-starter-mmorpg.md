@@ -40,7 +40,7 @@ npm run starter:character-smoke
 npm run starter:acceptance
 ```
 
-它会先重建Debug Rust runtime，再依次覆盖运行时登录/进图/战斗链路、技能与Buff、创建角色和选角，并把结果写入`temp/test-logs/starter-acceptance-*.json`。默认会验证all-in-one和split-process；只跑其中一种运行时时可以使用：
+它会先重建Debug Rust runtime，再依次覆盖运行时登录/进图/战斗链路、技能与Buff、动态副本Boss经验、创建角色和选角，并把结果写入`temp/test-logs/starter-acceptance-*.json`。默认基础运行时会验证all-in-one和split-process，Boss夹具使用all-in-one验证真实MapManager和动态MapHost；只跑其中一种基础运行时时可以使用：
 
 ```powershell
 node tools/starter_acceptance.mjs --mode all
@@ -53,7 +53,7 @@ node tools/starter_acceptance.mjs --mode split
 npm run starter:acceptance:persistent
 ```
 
-该命令会生成带时间后缀的测试账号，执行“进入地图 -> 使用道具 -> Gate最终下线保存 -> 停止并重启TiangZ -> 重新读取快照”，不会删除数据库，也不会启动Docker。它要求DBProxy仓库已经存在本地`.env`和可运行的Debug二进制；若7800端口已有DBProxy，则直接复用。
+该命令会生成带时间后缀的测试账号，分别执行道具事务恢复和“进入动态副本 -> 击杀Boss -> progression事务提交 -> 停止并重启TiangZ -> 恢复等级与经验”，不会删除数据库，也不会启动Docker。它要求DBProxy仓库已经存在本地`.env`和可运行的Debug二进制；若7800端口已有DBProxy，则直接复用。
 
 故障矩阵是单独的破坏性测试入口：
 
@@ -61,7 +61,7 @@ npm run starter:acceptance:persistent
 npm run starter:acceptance:faults
 ```
 
-它会调用独立仓库的`tools/fault_matrix.ps1`，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。当前命令已经把故障验证接入Starter验收，但还没有把“击杀5只A -> 交付 -> 击杀5只B -> 任务掉落5个 -> 动态副本Boss奖励”做成无人工客户端夹具；Map 100当前只有3只A和2只B，且带掉落尸体按设计保留较长时间，所以这部分仍属于客户端验收项，不在自动脚本中冒充已完成。
+它会调用独立仓库的`tools/fault_matrix.ps1`，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。动态副本创建、Boss击杀、120经验升级和DBProxy重启恢复已经有独立自动夹具；“击杀5只A -> 交付 -> 击杀5只B -> 拾取5个任务物品”的长任务链仍属于Cocos3D客户端验收项，不在自动脚本中冒充已完成。
 
 ## 业务入口在哪里
 
@@ -72,7 +72,9 @@ app/model/mmorpg/
   scenes/       Gate、MapHost、MapManager
   map/          地图和玩家进入、传送、生命周期
   monster/      Monster Unit 和地图刷怪状态
+  dungeon/      Starter副本身份和Boss奖励常量
   npc/          NPC Unit、Starter任务使者和交互校验
+  progression/  经验升级状态入口
   skill/        Skill 状态与稳定定义
   buff/         Buff 状态和生命周期
   item/         Item、Inventory 和道具状态
@@ -82,12 +84,32 @@ app/model/mmorpg/
 app/hotfix/mmorpg/
   mapHost/handlers/  网络协议薄适配
   monster/           怪物行为和受击规则
+  dungeon/           Boss死亡事件到经验奖励编排
+  progression/       经验公式和持久化提交
   skill/             技能执行、Action和命中效果
   quest/             任务条件、进度和奖励编排
   reward/            奖励计划与提交后的领域通知
 ```
 
 Handler只负责把协议转换成领域调用。状态、验证、持久化和广播分别由拥有它们的 Component 或 Scene 负责。
+
+## 进入Starter Boss副本
+
+Cocos3D桌面端和移动端都提供副本按钮。进入时客户端只生成稳定`operationId`并调用Gate，不选择MapHost和实例号：
+
+```text
+C2G_EnterStarterDungeon(operationId)
+  -> Gate DynamicMapProxy
+  -> MapManager幂等分配动态MapInstance
+  -> 普通EnterMapCore传送
+  -> Map 200创建试炼守卫
+```
+
+试炼守卫使用MonsterConfig 3，拥有900生命。它没有阶段、技能和专属掉落，目的只是验证动态地图、正式战斗、死亡事件和持久化奖励能组成一条最小闭环。Boss死亡后，Monster领域发布通用`MonsterEvents.Killed`，Dungeon领域确认发生在Map 200且怪物配置为3，再给击杀玩家增加120经验；Monster和Combat都不知道具体经验数值。
+
+经验使用累计值。达到等级`L`需要`50 * (L - 1) * L`点经验，当前上限60，因此新角色获得120经验后从1级升到2级。奖励先以稳定operationId向DBProxy提交`progression`领域，提交成功后才修改在线Numeric和推送`G2C_ProgressionChanged`。重复回执不能再次加经验，重启后必须恢复Level 2和Experience 120。
+
+离开按钮把玩家传回Map 100。玩家离开后副本不立即强制销毁，继续沿用动态地图连续无人5分钟的兜底回收；Boss、仇恨和战斗现场是临时运行态，动态MapHost故障后不做现场恢复。
 
 ## 从NPC接取第一个任务
 

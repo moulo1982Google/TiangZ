@@ -1,6 +1,7 @@
 import net from "node:net";
 import {
   buildEnterMapPacket,
+  buildEnterStarterDungeonPacket,
   buildAttackMonsterPacket,
   buildToggleAutoAttackPacket,
   buildCastSkillPacket,
@@ -24,6 +25,7 @@ import {
   decodeEntityNavigateFrame,
   decodeEntityStateFrame,
   decodeEnterMapFrame,
+  decodeEnterStarterDungeonFrame,
   decodeFindPathFrame,
   decodeNavigateToFrame,
   decodeNavigateInputFrame,
@@ -45,6 +47,7 @@ import {
   decodeSkillImpactFrame,
   decodeSkillProjectileFrame,
   decodePingFrame,
+  decodeProgressionChangedFrame,
   buildPingPacket,
 } from "./support/DemoClientProtocol";
 import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
@@ -102,6 +105,16 @@ async function main() {
     await verifyDbProxyItemUseRecovery(loginAddr, itemUseReadAccount);
     return;
   }
+  const starterBossWriteAccount = namedArgument("--dbproxy-starter-boss-write");
+  if (starterBossWriteAccount) {
+    await verifyStarterDungeonBossProgression(loginAddr, starterBossWriteAccount);
+    return;
+  }
+  const starterBossReadAccount = namedArgument("--dbproxy-starter-boss-read");
+  if (starterBossReadAccount) {
+    await verifyStarterBossProgressionRecovery(loginAddr, starterBossReadAccount);
+    return;
+  }
   if (process.argv.includes("--map100-initial-only") || process.argv.includes("--skill-only")) {
     const login = await requestLogin(loginAddr.ip, loginAddr.port, `smoke_map100_${Date.now()}`);
     const client = await openGateAndEnterMap(
@@ -125,6 +138,10 @@ async function main() {
     } finally {
       await client.gate.close();
     }
+    return;
+  }
+  if (process.argv.includes("--starter-dungeon-only")) {
+    await verifyStarterDungeonBossProgression(loginAddr);
     return;
   }
   const dynamicMap = await verifyDynamicMapLifecycle();
@@ -165,6 +182,130 @@ async function main() {
     { account: mover.account, token: mover.token, mapId: 1 },
     { account: peer.account, token: peer.token, mapId: 1 },
   );
+}
+
+/**
+ * 走真实Gate创建、动态Map传送、NavMesh接近、Boss击杀和progression事务回执。
+ * Uses the real Gate creation, dynamic-map transfer, NavMesh approach, Boss
+ * kill, and durable progression receipt instead of directly calling systems.
+ */
+async function verifyStarterDungeonBossProgression(
+  loginAddr: { ip: string; port: number },
+  account = `starter_boss_${Date.now()}`,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 100 },
+  );
+  try {
+    const mapReadyFrame = client.gate.waitForMessage(MsgCode.G2C_MapReady, 10_000);
+    const entered = decodeEnterStarterDungeonFrame(await client.gate.request(
+      buildEnterStarterDungeonPacket(nextRpcId++, {
+        operationId: nextOperationId("starter-dungeon"),
+      }),
+    )).body;
+    const mapReady = decodeMapReadyFrame(await mapReadyFrame).body;
+    if (entered.error || entered.enterMap.mapId !== 200 || mapReady.mapId !== 200 ||
+      mapReady.unitId !== entered.enterMap.unitId || entered.enterMap.mapInstanceId <= 0n) {
+      throw new Error(`Starter dungeon entry failed: ${stringifyForError({ entered, mapReady })}`);
+    }
+
+    let entities = entered.enterMap.entities;
+    const snapshotFrame = entities.length === 0
+      ? client.gate.waitForMessage(MsgCode.G2C_AoiDelta, 10_000)
+      : undefined;
+    const snapshotReady = decodeMapSnapshotReadyFrame(await client.gate.request(
+      buildMapSnapshotReadyPacket(nextRpcId++, { unitId: entered.enterMap.unitId }),
+    )).body;
+    if (snapshotReady.error) throw new Error(`Starter dungeon snapshot failed: ${stringifyForError(snapshotReady)}`);
+    if (snapshotFrame) entities = decodeAoiDeltaFrame(await snapshotFrame).body.enters;
+    const boss = entities.find((entity) => entity.entityType === 2 && entity.configId === 3 && entity.alive);
+    if (!boss) throw new Error(`Starter dungeon Boss is missing: ${stringifyForError(entities)}`);
+
+    const approach = pointNearTarget(entered.enterMap.x, entered.enterMap.z, boss.x, boss.z, 2);
+    const navigate = decodeNavigateToFrame(await client.gate.request(buildNavigateToPacket(
+      nextRpcId++,
+      { targetX: approach.x, targetY: boss.y, targetZ: approach.z, sequence: 1 },
+    ))).body;
+    if (navigate.error || navigate.points.length === 0) {
+      throw new Error(`Starter dungeon navigation failed: ${stringifyForError(navigate)}`);
+    }
+    await sleep(3_500);
+
+    const progressionFrame = client.gate.waitForMessage(MsgCode.G2C_ProgressionChanged, 10_000);
+    let killed = false;
+    let attacks = 0;
+    while (!killed && attacks < 100) {
+      const attacked = decodeAttackMonsterFrame(await client.gate.request(
+        buildAttackMonsterPacket(nextRpcId++, { monsterId: boss.unitId }),
+      )).body;
+      if (attacked.error) throw new Error(`Starter Boss attack failed: ${stringifyForError(attacked)}`);
+      killed = attacked.killed;
+      attacks += 1;
+    }
+    if (!killed) throw new Error(`Starter Boss survived ${attacks} attacks`);
+    const progression = decodeProgressionChangedFrame(await progressionFrame).body;
+    if (progression.level !== 2n || progression.experience !== 120n ||
+      progression.gainedExperience !== 120n || !progression.leveledUp) {
+      throw new Error(`Starter Boss progression mismatch: ${stringifyForError(progression)}`);
+    }
+    console.log("Starter dungeon Boss progression:", {
+      mapInstanceId: entered.enterMap.mapInstanceId.toString(),
+      bossUnitId: boss.unitId,
+      attacks,
+      level: progression.level.toString(),
+      experience: progression.experience.toString(),
+    });
+  } finally {
+    await client.gate.close();
+  }
+}
+
+/** 重启后从progression记录恢复Boss奖励，不能依赖旧MapScene或离线Flush。 / Restores the Boss reward from the progression record after restart without relying on the old MapScene or offline flush. */
+async function verifyStarterBossProgressionRecovery(
+  loginAddr: { ip: string; port: number },
+  account: string,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 100 },
+  );
+  try {
+    const player = client.enterMap.entities.find((entity) => entity.unitId === client.enterMap.unitId);
+    const level = player?.numerics.find((numeric) => numeric.numericType === NumericType.Level)?.value;
+    const experience = player?.numerics.find((numeric) => numeric.numericType === NumericType.Experience)?.value;
+    if (level !== 2n || experience !== 120n) {
+      throw new Error(`Starter Boss progression recovery mismatch: ${stringifyForError({ level, experience })}`);
+    }
+    console.log("Starter Boss progression recovered:", {
+      account,
+      level: level.toString(),
+      experience: experience.toString(),
+    });
+  } finally {
+    await client.gate.close();
+  }
+}
+
+function pointNearTarget(
+  sourceX: number,
+  sourceZ: number,
+  targetX: number,
+  targetZ: number,
+  distance: number,
+): { x: number; z: number } {
+  const dx = sourceX - targetX;
+  const dz = sourceZ - targetZ;
+  const length = Math.hypot(dx, dz);
+  if (length <= distance || length === 0) return { x: sourceX, z: sourceZ };
+  return {
+    x: targetX + dx / length * distance,
+    z: targetZ + dz / length * distance,
+  };
 }
 
 /** 先通过真实任务奖励获得道具，再消费并主动断开，等待Gate宽限期完成可靠下线保存。 / Grants the item through the real quest flow, consumes it, disconnects, and waits for the Gate grace period to save it durably. */
@@ -224,6 +365,10 @@ async function completeQuest5003ForPersistence(
   gate: TcpRpcConnection,
   initialMap: ReturnType<typeof decodeEnterMapFrame>["body"],
 ): Promise<ReturnType<typeof decodeCompleteQuestFrame>["body"]> {
+  const initialPotion = initialMap.items.find((item) => item.configId === 1001);
+  if (!initialPotion || initialPotion.count !== 3) {
+    throw new Error(`persistence fixture expected the three starter potions, got ${stringifyForError(initialPotion)}`);
+  }
   const starterNpc = initialMap.entities.find(
     (entity) => entity.entityType === 3 && entity.configId === 9001,
   );
@@ -244,8 +389,14 @@ async function completeQuest5003ForPersistence(
   )).body;
   await map2Ready;
   const quest = map2.quests.find((value) => value.questConfigId === 5003);
-  if (map2.items.some((item) => item.configId === 1001)) {
-    throw new Error("persistence fixture expected a fresh inventory before quest reward");
+  const potionBeforeReward = map2.items.find((item) => item.configId === 1001);
+  if (
+    potionBeforeReward?.itemId !== initialPotion.itemId ||
+    potionBeforeReward.count !== initialPotion.count
+  ) {
+    throw new Error(
+      `persistence fixture changed the starter inventory before quest reward: ${stringifyForError(potionBeforeReward)}`,
+    );
   }
   if (!quest || quest.status !== QuestStatus.ReadyToTurnIn) {
     throw new Error(`persistence fixture expected quest 5003 ready, got ${quest?.status}`);
@@ -279,6 +430,10 @@ async function verifyDbProxyQuestReward(
     { account: login.account, token: login.token, mapId: 100 },
   );
   try {
+    const initialPotion = client.enterMap.items.find((item) => item.configId === 1001);
+    if (!initialPotion || initialPotion.count !== 3) {
+      throw new Error(`quest transaction fixture expected the three starter potions, got ${stringifyForError(initialPotion)}`);
+    }
     const starterNpc = client.enterMap.entities.find(
       (entity) => entity.entityType === 3 && entity.configId === 9001,
     );
@@ -298,8 +453,14 @@ async function verifyDbProxyQuestReward(
     )).body;
     await mapReady;
     const quest = map2.quests.find((value) => value.questConfigId === 5003);
-    if (map2.items.some((item) => item.configId === 1001)) {
-      throw new Error("quest transaction fixture expected a fresh inventory before reward");
+    const potionBeforeReward = map2.items.find((item) => item.configId === 1001);
+    if (
+      potionBeforeReward?.itemId !== initialPotion.itemId ||
+      potionBeforeReward.count !== initialPotion.count
+    ) {
+      throw new Error(
+        `quest transaction fixture changed starter inventory before reward: ${stringifyForError(potionBeforeReward)}`,
+      );
     }
     if (!quest || quest.status !== QuestStatus.ReadyToTurnIn) {
       throw new Error(`quest transaction fixture expected quest 5003 ready, got ${quest?.status}`);
@@ -328,7 +489,8 @@ async function verifyDbProxyQuestReward(
     const duplicateReward = duplicate.rewardItems.find((item) => item.configId === 1001);
     if (
       !rewarded ||
-      rewarded.count !== 3 ||
+      rewarded.itemId !== initialPotion.itemId ||
+      rewarded.count !== initialPotion.count + 3 ||
       first.questConfigId !== duplicate.questConfigId ||
       stringifyForError(first.rewardItems) !== stringifyForError(duplicate.rewardItems)
     ) {
@@ -365,7 +527,7 @@ async function verifyDbProxyQuestRewardRecovery(
     const item = client.enterMap.items.find((value) => value.configId === 1001);
     if (
       !item ||
-      item.count !== 3 ||
+      item.count !== 6 ||
       !client.enterMap.completedQuestConfigIds.includes(5003) ||
       client.enterMap.quests.some((quest) => quest.questConfigId === 5003)
     ) {
@@ -384,7 +546,7 @@ async function verifyDbProxyQuestRewardRecovery(
       buildCompleteQuestPacket(nextRpcId++, { questConfigId: 5003, npcUnitId: map100Npc.unitId }),
     )).body;
     const rewarded = receipt.rewardItems.find((value) => value.configId === 1001);
-    if (receipt.error || rewarded?.itemId !== item.itemId || rewarded.count !== 53) {
+    if (receipt.error || rewarded?.itemId !== item.itemId || rewarded.count !== 6) {
       throw new Error(`quest transaction recovery receipt mismatch: ${stringifyForError(receipt)}`);
     }
     console.log("DBProxy quest reward restart recovery passed:", {
