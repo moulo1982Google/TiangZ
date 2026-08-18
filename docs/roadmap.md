@@ -442,11 +442,11 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 验收矩阵固定在[Starter MMORPG验收矩阵](starter/acceptance-matrix.md)，教程固定在[Starter MMORPG教程](tutorials/20-starter-mmorpg.md)。
 - 框架能力案例与Starter业务分层；Starter只能使用Stable API、生成协议、Component/Entity、Mailbox和DBProxy边界，不能为演示旁路Runtime。
 - 独立的创建/选择角色流程已经完成运行时闭环：`C2S_CreateCharacter -> CharacterRepository -> C2S_Login.characterId -> Gate/Location/Map`，并通过 `npm run starter:character-smoke` 覆盖 all-in-one 与 split-process。无 DBProxy 时角色目录只在进程生命周期内有效；重启恢复仍归 ST-09。
-- Map 200动态副本和Boss 3已接入：Gate先在PlayerUnit邮箱持久化个人10分钟CD，再按稳定operationId经MapManager幂等创建实例；Boss死亡事件触发120累计经验，新角色升到2级，尸体固定掉落三种药水各5个和150铜币。`starter:acceptance`覆盖真实动态实例、击杀、拾取与CD拒绝，`starter:acceptance:persistent`覆盖重启后Level/Experience、背包、余额和CD恢复。后续重点转为完整任务链自动化、正式Hotfix操作入口和动态地图/Gate故障边界。
+- Map 200动态副本和Boss 3已接入：Gate先在PlayerUnit邮箱持久化个人10分钟CD，再按稳定operationId经MapManager幂等创建实例；Boss死亡事件触发120累计经验，新角色升到2级，尸体固定掉落三种药水各5个和150铜币。`starter:acceptance`覆盖真实动态实例、击杀、拾取与CD拒绝，`starter:acceptance:persistent`覆盖重启后Level/Experience、背包、余额和CD恢复。后续重点转为正式Hotfix操作入口和动态地图/Gate故障边界。
 - Starter固定使用一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss、一个玩家职业和少量技能。额外职业、社交、商城和活动不得在本阶段进入核心样例。
 - 每个完成项必须同时通过all-in-one、split-process、客户端操作和对应的失败/恢复验收；业务压测等Starter链路稳定后再执行。
 - 已增加统一自动验收入口：`npm run starter:acceptance`覆盖无数据库的运行时、技能/Buff和角色选角；`starter:acceptance:persistent`覆盖DBProxy快照写入、TiangZ重启和恢复读取；`starter:acceptance:faults`调用独立DBProxy故障矩阵。报告写入`temp/test-logs`，持久化/故障命令只允许连接本地测试资源。
-- 当前自动入口已覆盖动态副本/Boss/经验升级；Map 100的3只A、2只B和尸体保留规则使5A/5B/任务掉落全链路仍以Cocos3D人工验收为准，后续补专用业务夹具后再提升ST-04和ST-06的自动等级。
+- 当前自动入口已覆盖Map 100完整任务链和动态副本/Boss/经验升级。刷怪槽只拥有当前活怪，死亡Unit进入独立尸体集合；新怪按`respawn_seconds`刷新时，旧尸体仍可保留5分钟拾取窗口。专用业务夹具已在all-in-one与split-process中通过正式NPC、导航、攻击、拾取和跨图协议完成5001、5005、5006，因此ST-04和ST-06不再依赖Cocos3D人工业务验收。
 
 ### Phase 4.7：能力归属与可复用领域契约
 

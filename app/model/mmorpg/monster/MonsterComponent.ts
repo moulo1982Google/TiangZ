@@ -20,6 +20,10 @@ export interface MonsterSpawnSlot {
   readonly config: MonsterAreaConfig;
   monster: MonsterUnit | null;
   respawnAtMs: number;
+}
+
+export interface MonsterCorpseState {
+  readonly monster: MonsterUnit;
   corpseExpiresAtMs: number;
   corpseCleanupInFlight: boolean;
 }
@@ -50,13 +54,13 @@ export interface MonsterComponent {
 /**
  * 地图级刷怪总管：读取冷刷点、创建统一Unit、维护尸体和重生。
  * 第一版一条配置记录就是一个固定刷怪点，不引入随机区域和刷怪池。
- * 刷怪槽位长期存在，怪物Unit只代表一次实体生命周期；死亡后Unit作为不可交互尸体保留在AOI中，
- * 尸体窗口结束或普通掉落领取完成后清理，再按重生等待在同一槽位创建新的Unit。
+ * 刷怪槽位长期存在且只持有当前活怪；死亡Unit转入独立尸体集合，仍可在AOI中被查看和拾取。
+ * 重生时间与尸体窗口相互独立，避免五分钟掉落尸体阻塞十秒刷新规则。
  *
  * Map-level monster owner. It reads cold spawn points, creates regular Units,
- * and owns corpse/respawn state. The spawn slot remains stable, while each
- * monster Unit represents one lifetime and remains visible until its corpse
- * window closes; the next Unit waits for the configured respawn delay.
+ * and owns corpse/respawn state. A stable spawn slot owns only its current live
+ * monster. Dead Units move to an independent corpse set and remain visible and
+ * lootable in AOI. Respawn deadlines never wait for corpse expiration.
  */
 @component()
 @lifecycle({ awake: true, destroy: true })
@@ -69,6 +73,8 @@ export class MonsterComponent extends Component<[
   protected readonly slots = new Map<number, MonsterSpawnSlot>();
   protected readonly monsters = new Map<number, MonsterUnit>();
   protected readonly runtime = new Map<number, MonsterRuntimeState>();
+  /** 尸体与刷怪槽位分离；同一刷点可同时有新活怪和仍在拾取窗口内的旧尸体。 / Corpses are independent from spawn slots, allowing a replacement and its older lootable corpse to coexist. */
+  protected readonly corpses = new Map<number, MonsterCorpseState>();
   /** 尸体掉落归Map所有；普通掉落带首个有效攻击者归属，任务掉落按账号资格判断。 / Corpse loot belongs to the Map; regular rows are tagged to the first effective attacker and quest rows use account eligibility. */
   protected readonly lootContainers = new Map<number, LootContainer>();
   protected nextMonsterUnitId = 0x8000_0000;

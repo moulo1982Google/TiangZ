@@ -1151,3 +1151,10 @@ Native 数据布局微基准：50,000 Unit、每 Unit 10 Item、Release 构建�
 - `starter:acceptance:faults`在运行独立DBProxy故障矩阵前，会先停止Starter流程启动的临时DBProxy；故障矩阵脚本检查原生Cargo测试退出码，避免PowerShell吞掉失败导致假通过。
 - DBProxy CI增加发布事件和`v*` Tag验收：发布门禁使用`npm ci`、Cargo`--locked`、真实PostgreSQL/Redis集成测试、网络闭环和故障矩阵；普通开发脚本继续不强制锁定依赖。
 - 验证通过：Starter all-in-one/split-process、技能与Buff、角色选角、DBProxy快照重启恢复、DBProxy故障矩阵5/5，以及DBProxy TypeScript测试、Rust fmt、workspace test和Clippy；本轮未执行容量压力测试。
+
+# 2026-08-18：Starter完整任务链自动验收
+
+- 修正怪物生命周期所有权：稳定刷怪槽只引用当前活怪，死亡Unit转入独立尸体集合；新怪按`respawn_seconds`生成，不再被5分钟掉落窗口阻塞。旧尸体继续使用旧UnitId承载AOI和拾取，同一刷点可以同时存在新活怪与旧尸体。
+- 修复普通掉落领取完成后的尸体清理查找：尸体按Monster UnitId从独立集合定位，不再错误地用UnitId查询按AreaId索引的刷怪槽。
+- `starter:acceptance`新增5001/5005/5006完整任务链：正式NPC接取与交付、导航、普通攻击5A/5B、未接任务时徽记不可见、逐尸体领取5个徽记、事务奖励和跨图快照恢复；夹具不直接修改业务Entity。
+- all-in-one与split-process实测均通过，最终断言完成任务`[5001, 5005, 5006]`，背包数量为小红18、大红10、蓝药3、徽记5。怪物行为、独立掉落概率和掉落归属自测继续通过；本轮不是容量压力测试。

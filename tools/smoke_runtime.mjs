@@ -65,12 +65,17 @@ function parseOptions(args) {
       index += 1;
       continue;
     }
-    if (args[index] === "--gate-timeout-only" || args[index] === "--skill-only" || args[index] === "--starter-dungeon-only") {
+    if (
+      args[index] === "--gate-timeout-only" ||
+      args[index] === "--skill-only" ||
+      args[index] === "--starter-dungeon-only" ||
+      args[index] === "--starter-quest-chain-only"
+    ) {
       clientArgs.push(args[index]);
       continue;
     }
     throw new Error(
-      "usage: node tools/smoke_runtime.mjs [--mode all|split|both] [--gate-timeout-only|--skill-only|--starter-dungeon-only]",
+      "usage: node tools/smoke_runtime.mjs [--mode all|split|both] [--gate-timeout-only|--skill-only|--starter-dungeon-only|--starter-quest-chain-only]",
     );
   }
   return { mode, clientArgs };

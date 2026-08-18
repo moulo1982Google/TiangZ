@@ -40,7 +40,7 @@ npm run starter:character-smoke
 npm run starter:acceptance
 ```
 
-它会先重建Debug Rust runtime，再依次覆盖运行时登录/进图/战斗链路、技能与Buff、动态副本Boss经验、创建角色和选角，并把结果写入`temp/test-logs/starter-acceptance-*.json`。默认基础运行时会验证all-in-one和split-process，Boss夹具使用all-in-one验证真实MapManager和动态MapHost；只跑其中一种基础运行时时可以使用：
+它会先重建Debug Rust runtime，再依次覆盖运行时登录/进图/战斗链路、5001/5005/5006完整任务链、技能与Buff、动态副本Boss经验、创建角色和选角，并把结果写入`temp/test-logs/starter-acceptance-*.json`。默认基础运行时和任务链会验证all-in-one与split-process，Boss夹具使用all-in-one验证真实MapManager和动态MapHost；只跑其中一种部署时可以使用：
 
 ```powershell
 node tools/starter_acceptance.mjs --mode all
@@ -61,7 +61,7 @@ npm run starter:acceptance:persistent
 npm run starter:acceptance:faults
 ```
 
-它会调用独立仓库的`tools/fault_matrix.ps1`，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。动态副本创建、Boss击杀、120经验升级和DBProxy重启恢复已经有独立自动夹具；“击杀5只A -> 交付 -> 击杀5只B -> 拾取5个任务物品”的长任务链仍属于Cocos3D客户端验收项，不在自动脚本中冒充已完成。
+它会调用独立仓库的`tools/fault_matrix.ps1`，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。动态副本创建、Boss击杀、120经验升级和DBProxy重启恢复已经有独立自动夹具；“击杀5只A -> 交付 -> 击杀5只B -> 交付 -> 拾取5个任务物品 -> 最终交付”的任务链也会通过正式NPC、导航、攻击和拾取协议在all-in-one与split-process中自动运行。Cocos3D仍负责UI与表现验收。
 
 ## 业务入口在哪里
 

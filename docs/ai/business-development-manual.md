@@ -244,7 +244,7 @@ MapHost -> MapScene
 4. Handler保持一层胶水，例如`C2M_AttackMonster -> PlayerUnit.AttackMonster -> MonsterComponent.Attack`。
 5. 通过`MonsterComponent.Get/GetAll`取得怪物；死亡状态、AOI和重生只能由MonsterComponent完成。
 
-当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡尸体、尸体清理、原槽位新Unit重生”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；有掉落的尸体保留5分钟，无掉落的尸体保留10秒，首个造成有效伤害的账号拥有普通掉落，归属账号领取完后可以提前清理。`MonsterConfig.respawn_seconds`从死亡时刻开始计时，实际新怪物生成取尸体窗口结束与最短重生时刻两者较晚值。尸体清理时才执行`Detach`、发布AOI Leave并`Remove`旧尸体，然后只复用`AreaId`刷怪槽创建新的MonsterUnit和UnitId；同一个掉落操作重试时由DBProxy回执恢复，不重新计算掉落。被动怪没有仇恨时不主动寻找玩家；平A和技能造成最终实际伤害后都必须通过`MonsterComponent.AddThreat`按1:1增加仇恨，5Hz桶按本地图最高仇恨者追击。12米只负责主动怪在无仇恨时索敌，不能过滤已有仇恨；脱战回出生点应另设冷配置，不能复用主动索敌距离。不能把“被攻击”直接等同于“追击”，也不能绕过`ApplyPlayerDamage`只调用Combat，否则会漏掉仇恨和死亡边界。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
+当前最小模块的生命周期是“生成、主动索敌/仇恨追击、攻击、玩家攻击、死亡、刷怪槽重生、独立尸体清理”。死亡怪物先以`alive=false`保留原Unit和AOI身份，停止AI、移动和受击；有掉落的尸体保留5分钟，无掉落的尸体保留10秒，首个造成有效伤害的账号拥有普通掉落，归属账号领取完后可以提前清理。死亡时刷怪槽立即释放，`MonsterConfig.respawn_seconds`到期后在同一`AreaId`创建新的MonsterUnit和UnitId，不等待旧尸体窗口；旧尸体继续留在独立集合，清理时才执行`Detach`、AOI Leave和`Remove`。同一个掉落操作重试时由DBProxy回执恢复，不重新计算掉落。被动怪没有仇恨时不主动寻找玩家；平A和技能造成最终实际伤害后都必须通过`MonsterComponent.AddThreat`按1:1增加仇恨，5Hz桶按本地图最高仇恨者追击。12米只负责主动怪在无仇恨时索敌，不能过滤已有仇恨；脱战回出生点应另设冷配置，不能复用主动索敌距离。不能把“被攻击”直接等同于“追击”，也不能绕过`ApplyPlayerDamage`只调用Combat，否则会漏掉仇恨和死亡边界。掉落、技能、任务奖励和持久化是上层业务，应在这个闭环上追加Component或System，不要先改Core。
 
 怪物只作为AOI Subject；进入视野用`MapEntitySnapshot(entityType=2, configId=MonsterConfig.id)`，死亡先通过`EntityState.alive=false`表现为尸体，尸体清理才通过AOI Leave移除旧Unit，复活通过AOI Enter发送新Unit的完整快照。需要不同观众看到不同字段时，新增Projection，不把权限判断写进通用AOI关系表。演示客户端可以读取冷配置中的`attack_mode`做非权威颜色提示：自己蓝色，其他玩家绿色，被动怪黄色，主动怪红色；业务逻辑仍必须以服务端配置和System为准。角色和怪物之间的动态阻挡、动态避障当前明确不做。
 
@@ -778,6 +778,7 @@ if (npc) {
 - NPC UnitId只是当前地图实例的运行时实体地址，不能保存为任务归属或玩家数据；任务保存的是`questConfigId`和Quest状态。
 - Handler只转换协议，不能直接判断距离、修改Quest状态或绕过mailbox。服务端必须同时检查NPC仍在当前Map、确实提供该任务、玩家在交互范围内以及Quest自身的Veto/前置条件。
 - Starter的Map 100固定创建`npcConfigId=9001`的紫色方块任务使者，交互范围为5米；Map 100使用Demo专用宽视野`AoiConfig=2`，7×7 Grid建立可见关系、9×9 Grid作为Detach边界，远端刷怪区放置三只被动黄色怪和两只主动红色怪，任务5001要求击败5只怪A，任务5005要求交付5001后击败5只怪B，避免新玩家出生即进入战斗。`MapEntitySnapshot.displayName`是服务端提供的公开名称：玩家使用角色名，NPC和怪物使用各自冷配置名称；客户端只负责显示，不能通过`configId`猜测或硬编码业务名称。Starter当前所有QuestConfig都关闭自动接取，任务只能由NPC/剧情等明确业务入口发起。Cocos3D的桌面端和移动端都遵循“靠近5米显示交互按钮 -> 打开NPC对话 -> 点击接取/交付任务”流程；选中NPC、看到NPC或打开对话框都不能直接改变任务状态。后续对话、多个NPC和可重复任务只扩展配置与领域行为，不复制第二套NPC网络系统。
+- 完整任务链验收必须调用正式协议，禁止夹具直接写Quest或Inventory。`starter:acceptance`会在all-in-one与split-process中接取5001、击杀5A并交付、接取5005、击杀5B并交付、接取5006、逐尸体领取5个徽记并最终交付，再跨图核对完成集合与奖励快照。
 
 ## 广播给谁与如何广播
 
@@ -1047,7 +1048,7 @@ C2M_AttackMonsterHandler
   -> MonsterComponent.Attack
 ```
 
-固定刷点和实体身份必须分开：`MonsterAreaConfig.id`对应稳定的`AreaId`刷怪槽位，`MonsterUnit.UnitId`只对应当前这一只实体。死亡时`MonsterComponent`保留`alive=false`的旧Unit作为尸体；尸体窗口结束或全部普通掉落领取完成后先Detach并发布AOI Leave，`respawn_seconds`从死亡时刻计时，达到尸体窗口结束与最短重生时刻后再Remove旧尸体，随后在同一`AreaId`创建新的MonsterUnit、分配新的UnitId并通过AOI Enter发送新快照。业务不得复用旧UnitId表示“新怪物”；客户端可以保留旧节点表现尸体，但必须以AOI Leave作为最终删除信号。拾取响应丢失时，客户端必须用原`operationId`重试，由持久化回执返回第一次结果。
+固定刷点和实体身份必须分开：`MonsterAreaConfig.id`对应稳定的`AreaId`刷怪槽位，`MonsterUnit.UnitId`只对应一次实体生命周期。死亡时槽位清空当前活怪并启动`respawn_seconds`，旧Unit以`alive=false`进入独立尸体集合；重生截止时间到达后，同一`AreaId`创建新MonsterUnit并通过AOI Enter发送新快照，不等待旧尸体。尸体窗口结束或全部普通掉落领取完成后，旧Unit才Detach、发布AOI Leave并Remove。业务不得复用旧UnitId表示“新怪物”，也不能假设一个`AreaId`同一时刻只有一个Unit；客户端必须按UnitId区分新活怪和旧尸体。拾取响应丢失时，客户端必须用原`operationId`重试，由持久化回执返回第一次结果。
 
 怪物主动行为由`MonsterComponent.Update`统一驱动，并在Hotfix内部调用局部`MonsterBehaviorTree`。行为树只负责从待机、追击、攻击和冷却停留中选择一个动作；它不能直接操作Native句柄、广播消息或修改其他地图的Unit。距离、伤害、死亡和Numeric变更仍由MonsterComponent负责。
 
@@ -1237,7 +1238,7 @@ npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.js
 
 列表显示的是服务端资格筛选后的预览，不代表客户端已经拥有道具。不要在点击前修改背包数量，也不要用短暂Toast替代回执中的掉落结果。
 
-尸体的显示时长和下一只怪物的重生间隔必须分开理解：有掉落的尸体默认保留5分钟，无掉落的尸体保留10秒；全部普通掉落领取完成后可以立即清理尸体。`MonsterConfig.respawn_seconds`从死亡时刻计时，刷怪时间取尸体窗口结束与最短重生时刻两者较晚值。任务掉落属于按账号判定的资格，不能因为一个玩家领取完成就删除尸体。客户端收到AOI Leave后关闭拾取窗口，不能继续用旧UnitId重试。
+尸体的显示时长和下一只怪物的重生间隔是两个独立时间轴：有掉落的尸体默认保留5分钟，无掉落的尸体保留10秒；全部普通掉落领取完成后可以立即清理尸体。`MonsterConfig.respawn_seconds`从死亡时刻计时，到期后刷怪槽直接创建新Unit，不等待旧尸体消失。任务掉落属于按账号判定的资格，不能因为一个玩家领取完成就删除尸体。客户端收到AOI Leave后关闭对应旧UnitId的拾取窗口，不能继续用旧UnitId发起新的拾取请求；丢响应重试仍复用原`operationId`读取持久化回执。
 
 ## Starter金币、NPC商店与法力恢复
 

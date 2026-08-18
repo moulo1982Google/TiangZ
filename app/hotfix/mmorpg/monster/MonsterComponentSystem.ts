@@ -32,6 +32,7 @@ import {
   M2C_LootMonsterCodec,
   type MonsterAreaConfigData,
   type MonsterConfigData,
+  type MonsterCorpseState,
   type MonsterSpawnSlot,
   type MonsterRuntimeState,
   ItemComponent,
@@ -66,14 +67,14 @@ const LOOT_OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
 
 /**
  * 第一版怪物业务：固定刷点、主动索敌、仇恨追击、普通攻击、尸体生命周期和重生。
- * 怪物只作为AOI Subject，不会成为Observer，也不参与动态避障；死亡时停止逻辑但保留Unit和AOI身份，
- * 等待模板配置的复活时间后先清理尸体，再在原刷点创建新的Unit。
+ * 怪物只作为AOI Subject，不会成为Observer，也不参与动态避障；死亡时停止逻辑并转入独立尸体集合，
+ * 刷怪槽位按模板时间生成新Unit，不等待旧尸体掉落窗口结束。
  *
  * Version-one monster rules: fixed slots, active acquisition, threat-based
  * chase, basic attacks, death, and respawn. Monsters are AOI Subjects only
- * and never participate in dynamic avoidance. Death retains a non-interactive
- * corpse Unit in AOI for its loot window; after cleanup and the configured
- * respawn delay, a new Unit is created at the spawn point.
+ * and never participate in dynamic avoidance. Death moves the Unit into an
+ * independent corpse set for its loot window, while the spawn slot creates a
+ * replacement after the configured respawn delay.
  */
 @systemFor(MonsterComponent)
 export class MonsterComponentSystem extends MonsterComponent {
@@ -92,8 +93,6 @@ export class MonsterComponentSystem extends MonsterComponent {
         config,
         monster: null,
         respawnAtMs: 0,
-        corpseExpiresAtMs: 0,
-        corpseCleanupInFlight: false,
       };
       this.slots.set(config.id, slot);
       if (config.initialSpawn) this.SpawnMonster(slot);
@@ -127,24 +126,17 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
   }
 
-  /** 1Hz清理尸体或到期刷怪；死亡到清理期间原Unit仍可承接表现事件。 / Cleans corpses or creates due replacements at 1 Hz while retaining the dead Unit for visual events until cleanup. */
+  /** 1Hz独立清理到期尸体和刷新到期槽位；两条时间线不相互阻塞。 / Independently cleans expired corpses and respawns due slots at 1 Hz. */
   Update1Hz(): void {
     if (this.map.IsStopping) return;
     const now = TimeSystem.Instance.ServerNow;
+    for (const corpse of this.corpses.values()) {
+      if (!corpse.corpseCleanupInFlight && now >= corpse.corpseExpiresAtMs) {
+        this.BeginCorpseCleanup(corpse, "window-expired");
+      }
+    }
     for (const slot of this.slots.values()) {
-      if (
-        slot.monster &&
-        !slot.corpseCleanupInFlight &&
-        slot.corpseExpiresAtMs > 0 &&
-        now >= slot.corpseExpiresAtMs
-      ) {
-        this.BeginCorpseCleanup(slot, "window-expired");
-      } else if (
-        !slot.monster &&
-        !slot.corpseCleanupInFlight &&
-        slot.respawnAtMs > 0 &&
-        now >= slot.respawnAtMs
-      ) {
+      if (!slot.monster && slot.respawnAtMs > 0 && now >= slot.respawnAtMs) {
         this.SpawnMonster(slot);
       }
     }
@@ -443,6 +435,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     }
     this.monsters.clear();
     this.runtime.clear();
+    this.corpses.clear();
     this.lootContainers.clear();
     this.slots.clear();
   }
@@ -489,8 +482,6 @@ export class MonsterComponentSystem extends MonsterComponent {
       monster.AddComponent(SkillComponent);
       slot.monster = monster;
       slot.respawnAtMs = 0;
-      slot.corpseExpiresAtMs = 0;
-      slot.corpseCleanupInFlight = false;
       this.monsters.set(unitId, monster);
       this.runtime.set(unitId, {
         targetUnitId: 0,
@@ -538,16 +529,15 @@ export class MonsterComponentSystem extends MonsterComponent {
     position.SpeedMetersPerSecond = config.moveSpeed;
   }
 
-  /** 清理前先发布旧尸体Leave，再按重生时间创建新Unit；不能让Enter抢在Leave之前。 / Publishes the corpse Leave before creating a replacement Unit; Enter must not overtake Leave. */
-  private async Respawn(slot: MonsterSpawnSlot): Promise<void> {
-    const corpse = slot.monster;
-    if (!corpse || corpse.GetComponent(NativeUnitRef).alive !== 0) {
-      slot.corpseCleanupInFlight = false;
+  /** 清理一具独立尸体并发布AOI Leave；此函数不操作已独立刷新的槽位。 / Removes one independent corpse and publishes its AOI Leave without touching the respawn slot. */
+  private async RemoveCorpse(state: MonsterCorpseState): Promise<void> {
+    const corpse = state.monster;
+    if (this.corpses.get(corpse.UnitId) !== state || corpse.GetComponent(NativeUnitRef).alive !== 0) {
+      state.corpseCleanupInFlight = false;
       return;
     }
     try {
-      slot.corpseExpiresAtMs = 0;
-      slot.monster = null;
+      this.corpses.delete(corpse.UnitId);
       this.monsters.delete(corpse.UnitId);
       this.runtime.delete(corpse.UnitId);
       this.lootContainers.delete(corpse.UnitId);
@@ -564,21 +554,21 @@ export class MonsterComponentSystem extends MonsterComponent {
           });
         }
       }
-      if (!this.map.IsStopping && TimeSystem.Instance.ServerNow >= slot.respawnAtMs) this.SpawnMonster(slot);
     } finally {
-      slot.corpseCleanupInFlight = false;
+      state.corpseCleanupInFlight = false;
     }
   }
 
   /** 启动唯一的尸体清理任务，防止1Hz扫描与拾取完成同时重复Remove同一Unit。 / Starts the single corpse cleanup task so the 1 Hz scan and loot completion cannot remove one Unit twice. */
-  private BeginCorpseCleanup(slot: MonsterSpawnSlot, reason: string): void {
-    if (slot.corpseCleanupInFlight || !slot.monster) return;
-    slot.corpseCleanupInFlight = true;
-    slot.corpseExpiresAtMs = TimeSystem.Instance.ServerNow;
-    void this.Respawn(slot).catch((error) => {
-      slot.corpseCleanupInFlight = false;
+  private BeginCorpseCleanup(state: MonsterCorpseState, reason: string): void {
+    if (state.corpseCleanupInFlight || this.corpses.get(state.monster.UnitId) !== state) return;
+    state.corpseCleanupInFlight = true;
+    state.corpseExpiresAtMs = TimeSystem.Instance.ServerNow;
+    void this.RemoveCorpse(state).catch((error) => {
+      state.corpseCleanupInFlight = false;
       this.DomainScene().logger.error("monster corpse cleanup failed", {
-        areaId: slot.config.id,
+        unitId: state.monster.UnitId,
+        areaId: state.monster.AreaId,
         reason,
         error,
       });
@@ -828,12 +818,16 @@ export class MonsterComponentSystem extends MonsterComponent {
       ? CORPSE_WITH_LOOT_LIFETIME_MS
       : EMPTY_CORPSE_LIFETIME_MS;
     const corpseExpiresAtMs = now + corpseLifetimeMs;
-    // respawn_seconds is the earliest re-spawn delay; a corpse with loot must
-    // remain visible until its loot window closes, even when the template uses
-    // a shorter respawn delay.
-    // respawn_seconds表示最短重生等待；有掉落的尸体必须先保留完整拾取窗口，不能被更短的重生配置提前删除。
+    // Respawn and corpse expiration are independent: the slot becomes free now,
+    // while the dead Unit stays addressable for loot and visual state.
+    // 重生与尸体过期互相独立：槽位立即释放，死亡Unit继续承载拾取和表现。
+    slot.monster = null;
     slot.respawnAtMs = now + config.respawnSeconds * 1_000;
-    slot.corpseExpiresAtMs = corpseExpiresAtMs;
+    this.corpses.set(monster.UnitId, {
+      monster,
+      corpseExpiresAtMs,
+      corpseCleanupInFlight: false,
+    });
     this.CreateLootContainer(monster, drops, corpseExpiresAtMs, lootOwnerAccount);
     this.DomainScene().logger.info("monster loot container created", {
       monsterId: monster.UnitId,
@@ -940,9 +934,9 @@ export class MonsterComponentSystem extends MonsterComponent {
   /** 归属账号的普通掉落领取完成后立即移除尸体；任务掉落仍按五分钟窗口保留。 / Removes a corpse after the tagged account claims all regular rows; quest rows keep the five-minute window. */
   private TryRemoveLootedCorpse(monsterId: number, container: LootContainer): void {
     if (!this.CanRemoveLootedCorpse(container)) return;
-    const slot = this.slots.get(monsterId);
-    if (!slot || slot.monster?.UnitId !== monsterId) return;
-    this.BeginCorpseCleanup(slot, "loot-complete");
+    const corpse = this.corpses.get(monsterId);
+    if (!corpse) return;
+    this.BeginCorpseCleanup(corpse, "loot-complete");
   }
 
   /** 选择当前玩家有资格且尚未被预留的掉落；任务目标已完成时跳过该行而不是删掉尸体内容。 / Selects eligible, unreserved rows and leaves completed quest rows on the corpse. */

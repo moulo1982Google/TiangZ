@@ -31,6 +31,11 @@ let dbProxyEnv;
 try {
   if (!options.persistentOnly) {
     await runCommandCase("runtime", "tools/smoke_runtime.mjs", ["--mode", options.mode]);
+    await runCommandCase("starter-quest-chain", "tools/smoke_runtime.mjs", [
+      "--mode",
+      options.mode,
+      "--starter-quest-chain-only",
+    ]);
     await runCommandCase("skills-and-buffs", "tools/smoke_runtime.mjs", ["--mode", "all", "--skill-only"]);
     await runCommandCase("dynamic-dungeon-boss-progression", "tools/smoke_runtime.mjs", ["--mode", "all", "--starter-dungeon-only"]);
     await runCommandCase("character-selection", "tools/character_selection_smoke.mjs", []);

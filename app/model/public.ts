@@ -232,6 +232,7 @@ export {
 } from "../generated/model/config";
 export {
   MonsterComponent,
+  type MonsterCorpseState,
   type MonsterRuntimeState,
   type MonsterSpawnSlot,
 } from "./mmorpg/monster/MonsterComponent";

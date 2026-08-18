@@ -57,8 +57,13 @@ import {
 import { BinaryReader, readU16BE } from "../app/core/protocol/binary";
 import { LengthPrefixedFrameDecoder } from "../app/core/protocol/frame";
 import { MsgCode } from "../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
-import type { CellMovementState } from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
+import type {
+  CellMovementState,
+  MapEntitySnapshot,
+  QuestSnapshot,
+} from "../client_sdk/typescript/Generated/Model/demo/protocol/messages";
 import { GameConfigs, QuestStatus, SpatialMode } from "../client_sdk/typescript/Generated/Config";
+import { GameErrCode } from "../app/model/game/protocol/GameErrCode";
 import { NumericType } from "../app/model/mmorpg/numeric/NumericType";
 import { encodePacket } from "../app/core/public";
 import {
@@ -146,6 +151,10 @@ async function main() {
   }
   if (process.argv.includes("--starter-dungeon-only")) {
     await verifyStarterDungeonBossProgression(loginAddr);
+    return;
+  }
+  if (process.argv.includes("--starter-quest-chain-only")) {
+    await verifyStarterQuestChain(loginAddr);
     return;
   }
   const dynamicMap = await verifyDynamicMapLifecycle();
@@ -324,6 +333,326 @@ async function verifyStarterDungeonBossProgression(
   } finally {
     await client.gate.close();
   }
+}
+
+interface StarterQuestNavigationState {
+  x: number;
+  y: number;
+  z: number;
+  sequence: number;
+}
+
+/**
+ * 通过正式NPC、战斗、尸体拾取和奖励事务跑完Starter三段任务链。
+ * Runs the three-part Starter quest chain through the public NPC, combat,
+ * corpse-loot, and reward transaction protocols.
+ *
+ * 禁止用法 / Forbidden: never shorten objective counts or mutate QuestComponent from this fixture.
+ */
+async function verifyStarterQuestChain(
+  loginAddr: { ip: string; port: number },
+  account = `starter_quest_${Date.now()}`,
+): Promise<void> {
+  const login = await requestLogin(loginAddr.ip, loginAddr.port, account);
+  const client = await openGateAndEnterMap(
+    login.gateIp,
+    login.gatePort,
+    { account: login.account, token: login.token, mapId: 100 },
+  );
+  try {
+    const npc = client.enterMap.entities.find(
+      (entity) => entity.entityType === 3 && entity.configId === 9001,
+    );
+    if (!npc) {
+      throw new Error(`Starter quest chain did not see NPC 9001: ${stringifyForError(client.enterMap.entities)}`);
+    }
+    if (client.enterMap.quests.length !== 0 || client.enterMap.completedQuestConfigIds.length !== 0) {
+      throw new Error(`Starter quest chain account was not fresh: ${stringifyForError(client.enterMap)}`);
+    }
+    const navigation: StarterQuestNavigationState = {
+      x: client.enterMap.x,
+      y: client.enterMap.y,
+      z: client.enterMap.z,
+      sequence: 0,
+    };
+    const entities = new Map(client.enterMap.entities.map((entity) => [entity.unitId, entity]));
+
+    await navigateStarterQuestPlayer(client.gate, navigation, npc);
+    await assertQuestAcceptanceBlocked(client.gate, 5005, npc.unitId);
+    const quest5001 = await acceptStarterQuest(client.gate, 5001, npc.unitId, 5101);
+    let firstQuest5001Corpse = 0;
+    const killedA = await killStarterQuestMonsters(
+      client.gate,
+      navigation,
+      entities,
+      1,
+      quest5001.objectives[0]?.required ?? 5,
+      async (monster, killIndex) => {
+        if (killIndex !== 1) return;
+        firstQuest5001Corpse = monster.unitId;
+        const preview = decodeInspectLootMonsterFrame(await client.gate.request(
+          buildInspectLootMonsterPacket(nextRpcId++, { monsterId: monster.unitId }),
+        )).body;
+        if (preview.error || preview.drops.some((drop) => drop.itemConfigId === 1101)) {
+          throw new Error(`inactive quest item was visible on corpse: ${stringifyForError(preview)}`);
+        }
+      },
+    );
+    await navigateStarterQuestPlayer(client.gate, navigation, npc);
+    const reward5001 = await completeStarterQuest(client.gate, 5001, npc.unitId, 1001, 13);
+
+    await assertQuestAcceptanceBlocked(client.gate, 5006, npc.unitId);
+    const quest5005 = await acceptStarterQuest(client.gate, 5005, npc.unitId, 5105);
+    const killedB = await killStarterQuestMonsters(
+      client.gate,
+      navigation,
+      entities,
+      2,
+      quest5005.objectives[0]?.required ?? 5,
+    );
+    await navigateStarterQuestPlayer(client.gate, navigation, npc);
+    const reward5005 = await completeStarterQuest(client.gate, 5005, npc.unitId, 1002, 10);
+
+    const quest5006 = await acceptStarterQuest(client.gate, 5006, npc.unitId, 5106);
+    const badgeGoal = quest5006.objectives[0]?.required ?? 5;
+    let badgeCount = 0;
+    const killedForBadges = await killStarterQuestMonsters(
+      client.gate,
+      navigation,
+      entities,
+      1,
+      badgeGoal,
+      async (monster, killIndex) => {
+        const preview = decodeInspectLootMonsterFrame(await client.gate.request(
+          buildInspectLootMonsterPacket(nextRpcId++, { monsterId: monster.unitId }),
+        )).body;
+        const badge = preview.drops.find((drop) => drop.itemConfigId === 1101);
+        if (preview.error || !badge || badge.count !== 1) {
+          throw new Error(`active quest badge was not available: ${stringifyForError(preview)}`);
+        }
+        const looted = decodeLootMonsterFrame(await client.gate.request(buildLootMonsterPacket(
+          nextRpcId++,
+          {
+            monsterId: monster.unitId,
+            operationId: nextOperationId(`starter-quest-badge-${killIndex}`),
+            dropId: badge.dropId,
+            lootAll: false,
+          },
+        ))).body;
+        const item = looted.items.find((value) => value.configId === 1101);
+        const progress = looted.quests.find((value) => value.questConfigId === 5006);
+        badgeCount = item?.count ?? badgeCount;
+        if (
+          looted.error ||
+          badgeCount !== killIndex ||
+          !progress ||
+          progress.objectives[0]?.current !== killIndex ||
+          progress.objectives[0]?.required !== badgeGoal ||
+          progress.status !== (killIndex === badgeGoal ? QuestStatus.ReadyToTurnIn : QuestStatus.InProgress)
+        ) {
+          throw new Error(`Starter quest badge progress mismatch: ${stringifyForError({ looted, killIndex })}`);
+        }
+      },
+    );
+    await navigateStarterQuestPlayer(client.gate, navigation, npc);
+    const reward5006 = await completeStarterQuest(client.gate, 5006, npc.unitId, 1001, 18);
+
+    // 跨图一次迫使Quest索引和Inventory由传送快照重建，不只验证原MapScene内存。
+    // Cross maps once so Quest indices and Inventory rebuild from transfer state instead of passing only in the original MapScene.
+    await transferConnectedPlayer(client.gate, 2);
+    const restored = await transferConnectedPlayer(client.gate, 100);
+    const inventory = new Map(restored.items.map((item) => [item.configId, item.count]));
+    const completed = [5001, 5005, 5006].every((questId) => restored.completedQuestConfigIds.includes(questId));
+    if (
+      !completed ||
+      restored.quests.some((quest) => [5001, 5005, 5006].includes(quest.questConfigId)) ||
+      inventory.get(1001) !== 18 ||
+      inventory.get(1002) !== 10 ||
+      inventory.get(1003) !== 3 ||
+      inventory.get(1101) !== 5
+    ) {
+      throw new Error(`Starter quest transfer snapshot mismatch: ${stringifyForError(restored)}`);
+    }
+    console.log("Starter quest chain:", {
+      account,
+      firstQuest5001Corpse,
+      killedA,
+      killedB,
+      killedForBadges,
+      badgeCount,
+      rewards: [reward5001.questConfigId, reward5005.questConfigId, reward5006.questConfigId],
+      completedQuestConfigIds: restored.completedQuestConfigIds,
+      inventory: Object.fromEntries(inventory),
+    });
+  } finally {
+    await client.gate.close();
+  }
+}
+
+async function assertQuestAcceptanceBlocked(
+  gate: TcpRpcConnection,
+  questConfigId: number,
+  npcUnitId: number,
+): Promise<void> {
+  const blocked = decodeAcceptQuestFrame(await gate.request(buildAcceptQuestPacket(
+    nextRpcId++,
+    { questConfigId, npcUnitId },
+  ))).body;
+  if (!blocked.error) {
+    throw new Error(`quest ${questConfigId} ignored its prerequisite: ${stringifyForError(blocked)}`);
+  }
+}
+
+async function acceptStarterQuest(
+  gate: TcpRpcConnection,
+  questConfigId: number,
+  npcUnitId: number,
+  objectiveId: number,
+): Promise<QuestSnapshot> {
+  const accepted = decodeAcceptQuestFrame(await gate.request(buildAcceptQuestPacket(
+    nextRpcId++,
+    { questConfigId, npcUnitId },
+  ))).body;
+  const objective = accepted.quest.objectives.find((value) => value.objectiveId === objectiveId);
+  if (
+    accepted.error ||
+    accepted.quest.questConfigId !== questConfigId ||
+    accepted.quest.status !== QuestStatus.InProgress ||
+    !objective ||
+    objective.current !== 0 ||
+    objective.required !== 5
+  ) {
+    throw new Error(`quest ${questConfigId} acceptance mismatch: ${stringifyForError(accepted)}`);
+  }
+  return accepted.quest;
+}
+
+async function completeStarterQuest(
+  gate: TcpRpcConnection,
+  questConfigId: number,
+  npcUnitId: number,
+  rewardConfigId: number,
+  expectedStackCount: number,
+): Promise<ReturnType<typeof decodeCompleteQuestFrame>["body"]> {
+  const completed = decodeCompleteQuestFrame(await gate.request(buildCompleteQuestPacket(
+    nextRpcId++,
+    { questConfigId, npcUnitId },
+  ))).body;
+  const reward = completed.rewardItems.find((item) => item.configId === rewardConfigId);
+  if (
+    completed.error ||
+    completed.questConfigId !== questConfigId ||
+    !reward ||
+    reward.count !== expectedStackCount
+  ) {
+    throw new Error(`quest ${questConfigId} completion mismatch: ${stringifyForError(completed)}`);
+  }
+  return completed;
+}
+
+async function killStarterQuestMonsters(
+  gate: TcpRpcConnection,
+  navigation: StarterQuestNavigationState,
+  entities: Map<number, MapEntitySnapshot>,
+  monsterConfigId: number,
+  count: number,
+  afterKill?: (monster: MapEntitySnapshot, killIndex: number) => Promise<void>,
+): Promise<number> {
+  const consumed = new Set<number>();
+  for (let killIndex = 1; killIndex <= count; killIndex += 1) {
+    const monster = await nextStarterQuestMonster(gate, entities, consumed, monsterConfigId, 25_000);
+    await navigateStarterQuestPlayer(gate, navigation, monster);
+    let killed = false;
+    for (let attack = 0; attack < 48; attack += 1) {
+      const result = decodeAttackMonsterFrame(await gate.request(
+        buildAttackMonsterPacket(nextRpcId++, { monsterId: monster.unitId }),
+      )).body;
+      if (result.error) {
+        // 云Runner调度可能让移动完成Push略晚于估算时间；只对距离类错误做有界重试。
+        // Cloud scheduling can delay movement completion slightly; retry only this bounded approach window.
+        if (result.error === GameErrCode.MonsterTooFar && attack < 8) {
+          await sleep(300);
+          continue;
+        }
+        throw new Error(`monster ${monster.unitId} attack failed: ${stringifyForError(result)}`);
+      }
+      if (result.killed) {
+        killed = true;
+        break;
+      }
+    }
+    if (!killed) throw new Error(`monster ${monster.unitId} survived the bounded Starter attack loop`);
+    consumed.add(monster.unitId);
+    entities.set(monster.unitId, { ...monster, alive: false });
+    if (afterKill) await afterKill(monster, killIndex);
+  }
+  return count;
+}
+
+async function nextStarterQuestMonster(
+  gate: TcpRpcConnection,
+  entities: Map<number, MapEntitySnapshot>,
+  consumed: ReadonlySet<number>,
+  monsterConfigId: number,
+  timeoutMs: number,
+): Promise<MapEntitySnapshot> {
+  const select = () => [...entities.values()]
+    .filter((entity) =>
+      entity.entityType === 2 &&
+      entity.configId === monsterConfigId &&
+      entity.alive &&
+      !consumed.has(entity.unitId)
+    )
+    .sort((left, right) => left.unitId - right.unitId)[0];
+  const immediate = select();
+  if (immediate) return immediate;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const delta = decodeAoiDeltaFrame(await gate.waitForMessage(
+      MsgCode.G2C_AoiDelta,
+      Math.max(1, deadline - Date.now()),
+    )).body;
+    for (const unitId of delta.leaves) entities.delete(unitId);
+    for (const entity of delta.enters) entities.set(entity.unitId, entity);
+    const respawned = select();
+    if (respawned) return respawned;
+  }
+  throw new Error(`monster config ${monsterConfigId} did not respawn within ${timeoutMs}ms`);
+}
+
+async function navigateStarterQuestPlayer(
+  gate: TcpRpcConnection,
+  navigation: StarterQuestNavigationState,
+  target: Pick<MapEntitySnapshot, "x" | "y" | "z" | "unitId">,
+): Promise<void> {
+  const approach = pointNearTarget(navigation.x, navigation.z, target.x, target.z, 2);
+  const deltaX = approach.x - navigation.x;
+  const deltaZ = approach.z - navigation.z;
+  if (deltaX * deltaX + deltaZ * deltaZ <= 0.25) return;
+  navigation.sequence += 1;
+  const response = decodeNavigateToFrame(await gate.request(buildNavigateToPacket(
+    nextRpcId++,
+    {
+      targetX: approach.x,
+      targetY: target.y,
+      targetZ: approach.z,
+      sequence: navigation.sequence,
+    },
+  ))).body;
+  if (response.error || response.points.length === 0) {
+    throw new Error(`navigation to ${target.unitId} failed: ${stringifyForError(response)}`);
+  }
+  let pathLength = 0;
+  let previous = { x: navigation.x, z: navigation.z };
+  for (const point of response.points) {
+    pathLength += Math.hypot(point.x - previous.x, point.z - previous.z);
+    previous = point;
+  }
+  const speed = GameConfigs.PlayerConfig.Get(1).moveSpeed;
+  await sleep(Math.ceil(pathLength / speed * 1_000) + 800);
+  navigation.x = approach.x;
+  navigation.y = target.y;
+  navigation.z = approach.z;
 }
 
 /** 重启后从progression记录恢复Boss奖励，不能依赖旧MapScene或离线Flush。 / Restores the Boss reward from the progression record after restart without relying on the old MapScene or offline flush. */

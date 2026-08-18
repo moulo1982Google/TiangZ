@@ -41,9 +41,9 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | ST-01 | 登录、创建角色、选择角色 | 已完成运行时链路：账号粘性登录、角色目录、创建角色、显式选角和 `characterId` 贯穿 Gate/Location/Map；`npm run starter:character-smoke` 已覆盖 all-in-one 与 split-process | 接入 DBProxy 后重启仍能列出同一角色；无 DBProxy 模式只保证进程生命周期内的目录一致性 |
 | ST-02 | 进入主城 | MapHost 和玩家快照已有 | 新角色加载快照后进入主城，并收到完整初始状态 |
 | ST-03 | 主城进入野外 | 跨地图和 MapInstance 路由已有 | 使用统一 `TransferToMap`，业务不区分静态地图和动态地图 |
-| ST-04 | 野外战斗 | 怪物、普通攻击、技能和 Buff 已有 | 击杀普通怪、死亡、尸体和仇恨状态可重复验证 |
+| ST-04 | 野外战斗 | 已完成：怪物、普通攻击、技能和Buff已有；刷怪槽与尸体生命周期分离，旧尸体保留拾取窗口时同槽可以按`respawn_seconds`生成新怪 | `starter:acceptance`在all-in-one与split-process中各自通过正常导航和攻击连续击杀15只任务怪，验证死亡、尸体、重生和仇恨链路 |
 | ST-05 | 掉落、拾取、背包 | 已完成：`MonsterConfig -> DropTableConfig -> LootContainer -> C2M_LootMonster -> Inventory`；任务掉落按账号和剩余需求判定，普通掉落归第一次有效攻击者账号，DBProxy事务和operationId幂等已接通 | 击杀后尸体保留掉落；未接任务或需求已满时任务行留在尸体；有资格拾取后背包增加，重复请求不重复增加；无归属账号不能抢走普通掉落 |
-| ST-06 | 任务接取、进度和奖励 | Starter第一版已在Map 100放置紫色任务NPC；玩家出生点靠近NPC，远端四角放置2个被动黄色怪和2个主动红色怪；靠近NPC 5米内显示交互按钮，按钮打开对话框后通过`C2M_AcceptQuest(questConfigId, npcUnitId)`接取，服务端校验5米范围；Quest状态、目标索引、条件和奖励已有；完成5005后可接取收集5个1101的5006 | PC与移动端都按“交互按钮 -> NPC对话 -> 接取任务”操作，击杀/拾取/使用道具推进、提交任务、领取奖励形成闭环；选中NPC或点击模型不能自动接取 |
+| ST-06 | 任务接取、进度和奖励 | 已完成：Map 100放置任务NPC，远端放置3只被动怪A和2只主动怪B；5001击杀5只A，交付后解锁5005击杀5只B，再交付解锁5006收集5个徽记；接取、进度、前置、事务奖励和跨图快照已有 | `starter:acceptance`在两种部署中通过正常NPC RPC、攻击、查看/单项拾取和跨图恢复完成整条任务链；PC与移动端继续验收对话和HUD交互不穿透 |
 | ST-07 | 动态副本与 Boss | 已完成：Map 200由Gate通过MapManager幂等创建；Boss 3复用正式Monster/Combat，死亡后提交120经验，尸体固定掉落三种药水各5个和150铜币；每个角色有持久化10分钟进入CD；Cocos3D按钮显示倒计时 | `starter:acceptance`自动击杀、查看并拾取四行奖励，断言Level 2/Experience 120、背包/金币与CD拒绝；客户端验证倒计时和地图切换 |
 | ST-08 | 断线重连和跨地图 | Gate 重连、Location、MapInstance 路由已有 | 断线宽限内恢复原 Unit；传送中请求有明确状态和幂等结果 |
 | ST-09 | 重启恢复 | 五领域快照、关键事务和静态MapHost有界重启已有；Boss经验与个人CD走progression，尸体领取走inventory/quest/wallet事务 | `starter:acceptance:persistent`重启后断言等级经验、三种药水、150铜币与CD仍在且不重复；动态副本战斗现场不恢复 |
@@ -88,7 +88,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | 命令 | 范围 | 数据影响 |
 | --- | --- | --- |
 | `npm run starter:verify` | 检查Starter目录、生成物和命令入口 | 无 |
-| `npm run starter:acceptance` | all-in-one与split-process运行时、技能/Buff、创建角色/选角 | 无数据库写入 |
+| `npm run starter:acceptance` | all-in-one与split-process运行时、完整5001/5005/5006任务链、技能/Buff、动态副本/Boss、创建角色/选角 | 无数据库写入 |
 | `npm run starter:acceptance -- --mode all` | 只跑all-in-one运行时部分 | 无数据库写入 |
 | `npm run starter:acceptance -- --mode split` | 只跑split-process运行时部分 | 无数据库写入 |
 | `npm run starter:acceptance:persistent` | DBProxy快照写入、停止/重启TiangZ、恢复读取 | 写入带时间后缀的测试账号，不删除数据库 |
@@ -96,7 +96,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 
 自动脚本的结果写入被Git忽略的`temp/test-logs/starter-acceptance-*.json`。三个Starter验收命令都会先执行`cargo build --bin TiangZ`，确保Rust配置解析器与当前源码一致。持久化命令不会自动启动Docker；它会复用7800端口已有的DBProxy，或使用`tools-projects/TiangZ-DBProxy/target/debug`中的Debug服务，并从独立仓库的`deploy/local/.env`读取连接参数。常规Starter验收不应连接外网数据库。
 
-当前自动脚本已经覆盖动态副本创建、Boss击杀、三药与铜币拾取、个人CD拒绝和持久化重启恢复，但不宣称完整任务链已经自动化：Map 100演示配置有3只A怪和2只B怪，带掉落尸体按规则保留较长时间；“击杀5只A、回NPC交付、解锁B、拾取5个任务物品”仍需Cocos3D客户端操作验收。
+当前自动脚本已经覆盖完整任务链和动态副本：测试客户端通过正式RPC接取5001，击杀5只A并回NPC交付，接取5005后击杀5只B，再接取5006并逐具查看尸体、只领取徽记，最后跨图验证三项完成记录、5个徽记和任务奖励。该链路在all-in-one与split-process中都运行；Cocos3D人工验收只负责画面、对话框、移动端按钮和事件穿透等客户端表现。
 
 ## 验收分级
 
