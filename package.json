@@ -242,7 +242,7 @@
     "observability:reset": "cd tools/observability && docker compose down -v --remove-orphans && docker compose rm -f"
   },
   "devDependencies": {
-    "@tiangz/developer-tools-core": "git+https://github.com/moulo1982Google/tiangz-developer-tools.git#v0.15.0",
+    "@tiangz/developer-tools-core": "github:moulo1982Google/tiangz-developer-tools#main",
     "@tiangz/native-language-core": "git+https://github.com/moulo1982Google/tiangz-native-language.git#v0.16.0",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.0",

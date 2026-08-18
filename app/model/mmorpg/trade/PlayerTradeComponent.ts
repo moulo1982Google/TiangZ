@@ -48,6 +48,14 @@ export interface PlayerTradeSession {
   commitPayload?: Uint8Array;
 }
 
+interface PendingPlayerTradeClosure {
+  readonly session: PlayerTradeSession;
+  readonly reason: number;
+  readonly committed: boolean;
+  readonly left: PlayerUnit | undefined;
+  readonly right: PlayerUnit | undefined;
+}
+
 export interface PlayerTradeComponent {
   Request(requester: PlayerUnit, targetUnitId: number): Promise<PlayerTradeSnapshot>;
   Respond(target: PlayerUnit, tradeId: string, accept: boolean): Promise<PlayerTradeSnapshot>;
@@ -74,4 +82,8 @@ export class PlayerTradeComponent extends Component {
   protected readonly tradeIdByCharacterId = new Map<bigint, string>();
   /** 只防止两个PlayerUnit mailbox同时启动同一提交；不得把Promise或Handler闭包存入会话。 / Prevents two PlayerUnit mailboxes from starting the same commit; never stores Promises or Handler closures in a session. */
   protected readonly activeCommits = new Set<string>();
+  /** Update只同步收集通知；Timer阶段以单个受控Task批量发布。 / Update only collects notifications; the Timer phase publishes them through one controlled Task. */
+  protected readonly pendingClosureNotifications: PendingPlayerTradeClosure[] = [];
+  protected closureFlushScheduled = false;
+  protected closurePublishInFlight = false;
 }

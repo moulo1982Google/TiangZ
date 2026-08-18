@@ -177,15 +177,58 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
   /** 1Hz清理无人响应或长时间不操作的交易，不为每个会话创建Timer。 / Expires inactive sessions at 1 Hz without allocating one Timer per trade. */
   Update1Hz(): void {
     const now = TimeSystem.Instance.ServerNow;
-    for (const session of [...this.sessions.values()]) {
+    for (const session of this.sessions.values()) {
       if (session.phase === PlayerTradePhase.Committing || session.expireAtMs > now) continue;
       const requester = this.trySessionPlayer(session.requesterUnitId, session.requesterCharacterId);
       const target = this.trySessionPlayer(session.targetUnitId, session.targetCharacterId);
       session.phase = PlayerTradePhase.Closed;
       this.removeSession(session);
-      this.DomainScene().Tasks.Spawn("publish-player-trade-timeout", () => (
-        this.publishClosed(session, PlayerTradeCloseReason.TimedOut, false, requester, target)
-      ));
+      this.queueClosureNotification(
+        session,
+        PlayerTradeCloseReason.TimedOut,
+        false,
+        requester,
+        target,
+      );
+    }
+  }
+
+  /** Timer阶段一次只启动一个批量发布任务，慢客户端不会让1Hz扫描不断堆积Task。 / Starts at most one batched publish Task from the Timer phase so slow clients cannot accumulate one Task per sweep. */
+  protected FlushPendingTradeClosures(): void {
+    this.closureFlushScheduled = false;
+    if (this.IsDisposed || this.closurePublishInFlight || this.pendingClosureNotifications.length === 0) return;
+    const batch = this.pendingClosureNotifications.splice(0);
+    this.closurePublishInFlight = true;
+    try {
+      this.DomainScene().Tasks.Spawn("publish-player-trade-closures", async () => {
+        try {
+          for (const notification of batch) {
+            try {
+              await this.publishClosed(
+                notification.session,
+                notification.reason,
+                notification.committed,
+                notification.left,
+                notification.right,
+              );
+            } catch (error) {
+              this.DomainScene().logger.error("player trade close publish failed", {
+                tradeId: notification.session.tradeId,
+                reason: notification.reason,
+                error,
+              });
+            }
+          }
+        } finally {
+          this.closurePublishInFlight = false;
+          this.scheduleClosureFlush();
+        }
+      });
+    } catch (error) {
+      this.closurePublishInFlight = false;
+      this.pendingClosureNotifications.push(...batch);
+      this.DomainScene().logger.error("player trade close task rejected", { error });
+      this.scheduleClosureFlush(1_000);
     }
   }
 
@@ -193,6 +236,9 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
     this.sessions.clear();
     this.tradeIdByCharacterId.clear();
     this.activeCommits.clear();
+    this.pendingClosureNotifications.length = 0;
+    this.closureFlushScheduled = false;
+    this.closurePublishInFlight = false;
   }
 
   private async commitSession(
@@ -515,6 +561,33 @@ export class PlayerTradeComponentSystem extends PlayerTradeComponent {
       descriptor,
       item,
     );
+  }
+
+  private queueClosureNotification(
+    session: PlayerTradeSession,
+    reason: number,
+    committed: boolean,
+    left: PlayerUnit | undefined,
+    right: PlayerUnit | undefined,
+  ): void {
+    this.pendingClosureNotifications.push({ session, reason, committed, left, right });
+    this.scheduleClosureFlush();
+  }
+
+  private scheduleClosureFlush(delayMs = 0): void {
+    if (
+      this.IsDisposed ||
+      this.closureFlushScheduled ||
+      this.closurePublishInFlight ||
+      this.pendingClosureNotifications.length === 0
+    ) return;
+    this.closureFlushScheduled = true;
+    try {
+      this.NewOnceTimer(delayMs, "FlushPendingTradeClosures");
+    } catch (error) {
+      this.closureFlushScheduled = false;
+      throw error;
+    }
   }
 
   private removeSession(session: PlayerTradeSession): void {

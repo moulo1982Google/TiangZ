@@ -94,7 +94,7 @@ export class MonsterComponentSystem extends MonsterComponent {
         corpseCleanupInFlight: false,
       };
       this.slots.set(config.id, slot);
-      if (config.initialSpawn) this.Spawn(slot);
+      if (config.initialSpawn) this.SpawnMonster(slot);
     }
     this.DomainScene().logger.info("monster component ready", {
       mapId: map.MapId,
@@ -143,7 +143,7 @@ export class MonsterComponentSystem extends MonsterComponent {
         slot.respawnAtMs > 0 &&
         now >= slot.respawnAtMs
       ) {
-        this.Spawn(slot);
+        this.SpawnMonster(slot);
       }
     }
   }
@@ -427,7 +427,7 @@ export class MonsterComponentSystem extends MonsterComponent {
     this.slots.clear();
   }
 
-  private Spawn(slot: MonsterSpawnSlot): void {
+  private SpawnMonster(slot: MonsterSpawnSlot): void {
     if (slot.monster) return;
     const config = slot.config.monsterConfigId_ref ?? GameConfigs.MonsterConfig.Get(slot.config.monsterConfigId);
     const unitId = this.AllocateUnitId();
@@ -544,7 +544,7 @@ export class MonsterComponentSystem extends MonsterComponent {
           });
         }
       }
-      if (!this.map.IsStopping && TimeSystem.Instance.ServerNow >= slot.respawnAtMs) this.Spawn(slot);
+      if (!this.map.IsStopping && TimeSystem.Instance.ServerNow >= slot.respawnAtMs) this.SpawnMonster(slot);
     } finally {
       slot.corpseCleanupInFlight = false;
     }
