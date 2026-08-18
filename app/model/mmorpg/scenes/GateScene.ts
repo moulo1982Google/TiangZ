@@ -24,11 +24,13 @@ import {
   type G2C_MapReady,
   type G2C_SessionReplaced,
   type G2M_EnterMap,
+  type G2M_ClaimStarterDungeonEntry,
   type G2M_InitialSnapshot,
   type G2M_PlayerOffline,
   type G2M_SecondEnterMap,
   type G2M_TransferPlayer,
   type M2G_EnterMap,
+  type M2G_ClaimStarterDungeonEntry,
   type M2G_InitialSnapshot,
   type M2G_KickPlayers,
   type M2G_MapReady,
@@ -437,6 +439,20 @@ export class GateScene extends EntryScene {
     }
     return await this.RunPlayerTransaction(session, async () => {
       const route = this.RequireCurrentRoute(session);
+      const source = route.map;
+      if (!source || route.actorState === "moving") {
+        throw new RpcError(GameErrCode.MapNotFound, "Starter dungeon requires an active player route");
+      }
+      const cooldown = await this.scenes.callActor<
+        G2M_ClaimStarterDungeonEntry,
+        M2G_ClaimStarterDungeonEntry
+      >(
+        { scene: source.mapHost, instanceId: source.actorInstanceId },
+        MapProtocol.ClaimStarterDungeonEntry,
+        { operationId },
+        { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
+      );
+      this.AssertCurrentRoute(session, route);
       const created = await this.dynamicMaps.Create(
         `starter-dungeon:${route.characterId}:${operationId}`,
         STARTER_DUNGEON_MAP_CONFIG_ID,
@@ -452,7 +468,13 @@ export class GateScene extends EntryScene {
         undefined,
         EntrySyncMode.Full,
       );
-      return { rpcId: request.rpcId, error: 0, message: "", enterMap };
+      return {
+        rpcId: request.rpcId,
+        error: 0,
+        message: "",
+        enterMap,
+        cooldownEndAtMs: cooldown.cooldownEndAtMs,
+      };
     });
   }
 
@@ -709,6 +731,7 @@ export class GateScene extends EntryScene {
         quests: response.quests,
         completedQuestConfigIds: response.completedQuestConfigIds,
         gold: response.gold,
+        starterDungeonCooldownEndAtMs: response.starterDungeonCooldownEndAtMs,
         mapInstanceId: response.mapInstanceId,
         ...this.ClientSpatialMetadata(response.mapId),
       };
@@ -796,6 +819,7 @@ export class GateScene extends EntryScene {
       quests: response.quests,
       completedQuestConfigIds: response.completedQuestConfigIds,
       gold: response.gold,
+      starterDungeonCooldownEndAtMs: response.starterDungeonCooldownEndAtMs,
       mapInstanceId: location.mapInstanceId,
       ...this.ClientSpatialMetadata(response.mapId),
     };
@@ -1050,6 +1074,7 @@ export class GateScene extends EntryScene {
       quests: response.quests,
       completedQuestConfigIds: response.completedQuestConfigIds,
       gold: response.gold,
+      starterDungeonCooldownEndAtMs: response.starterDungeonCooldownEndAtMs,
       mapInstanceId: response.mapInstanceId,
       ...this.ClientSpatialMetadata(response.mapId),
     };

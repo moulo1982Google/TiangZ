@@ -1222,7 +1222,7 @@ npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.js
 
 任务掉落不能写成“怪物死亡时给附近所有玩家发一件物品”。开发者在`DropTableConfig`中用`quest_objective_id`声明它对应的`CollectItem`目标；`MonsterComponent`在尸体上保存掉落行，玩家调用`LootMonster`时再根据自己的Quest状态筛选。未接任务或已经达到要求数量时，拾取结果为无可用掉落，尸体行保留，不能删除或消耗别人的任务资格。普通掉落和任务掉落的领取范围不同，必须在配置/代码中明确，不能用一个全局`claimed`集合代替。
 
-拾取属于一次关键玩家事务：先规划Inventory/Quest纯数据，再使用稳定`operationId`提交DBProxy，成功后才创建静态Item、推进任务和广播。Handler只转发`monsterId + operationId`，不查询Quest、不扣库存、不手工发消息。动态词条、耐久、绑定等ItemInstance必须保存实例数据，不能把“拾取时生成静态ItemId”的Starter快捷路径误当成通用规则。完整流程见[`docs/design/loot-and-task-items.md`](../design/loot-and-task-items.md)。
+拾取属于一次关键玩家事务：先规划Inventory/Quest/Currency纯数据，再使用稳定`operationId`提交DBProxy，成功后才创建静态Item、推进任务、应用金币和广播。只有道具行时提交`inventory + quest`；包含金币行时原子提交`inventory + quest + wallet`，不能先加钱再保存。Handler只转发`monsterId + operationId`，不查询Quest、不扣库存、不手工发消息。动态词条、耐久、绑定等ItemInstance必须保存实例数据，不能把“拾取时生成静态ItemId”的Starter快捷路径误当成通用规则。完整流程见[`docs/design/loot-and-task-items.md`](../design/loot-and-task-items.md)。
 
 ### 尸体窗口调用约定
 
@@ -1233,6 +1233,8 @@ npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.js
 3. Shift+点击、鼠标右键、F键或移动端的“全部拾取”按钮调用`lootAll: true`。
 4. 使用回执的`remainingDrops`重绘列表，并把本次获得的道具追加到窗口结果区；窗口由玩家主动关闭。
 
+`LootDropSnapshot.gold > 0`表示铜币行，此时`itemConfigId/count`保持0；客户端显示铜币而不是尝试读取`ItemConfig(0)`。`M2C_LootMonster.gold`是提交后的权威余额，`gainedGold`是本次增量。
+
 列表显示的是服务端资格筛选后的预览，不代表客户端已经拥有道具。不要在点击前修改背包数量，也不要用短暂Toast替代回执中的掉落结果。
 
 尸体的显示时长和下一只怪物的重生间隔必须分开理解：有掉落的尸体默认保留5分钟，无掉落的尸体保留10秒；全部普通掉落领取完成后可以立即清理尸体。`MonsterConfig.respawn_seconds`从死亡时刻计时，刷怪时间取尸体窗口结束与最短重生时刻两者较晚值。任务掉落属于按账号判定的资格，不能因为一个玩家领取完成就删除尸体。客户端收到AOI Leave后关闭拾取窗口，不能继续用旧UnitId重试。
@@ -1242,6 +1244,8 @@ npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.js
 Starter的普通掉落表1按每行独立概率判定：破旧布料1201为80%、小型生命药水1001为15%、大型生命药水1002为5%；三行可以同时掉落，也可以全部未命中。`ItemConfig.sell_price`分别为10、20、50铜币，Map 100的9002杂货商读取服务端商品目录出售红药和蓝药。NPC商店不是客户端配置价格表：客户端先调用`OpenNpcShop`拿目录和金币，再调用购买/出售RPC；服务端在PlayerUnit ordered mailbox中校验NPC、距离、商品、Item归属和金币，创建Inventory/Currency纯数据计划，最后使用DBProxy的稳定`operationId`事务提交。提交成功后才应用内存和发布ItemChanged；失败或重试不能由客户端预扣或重复发放。快捷栏只能引用ItemConfigId，不能绑定出售后失效的ItemId。
 
 `CurrencyComponent`只负责非负`bigint`余额，不加入商店名词；`NpcShopComponent`负责编排，`ItemComponent`负责Item实体。玩家交易已经在同一边界上使用DBProxy多记录事务，不能把两个玩家的单人购买/出售请求在客户端拼起来。商店示例见[`docs/design/currency-and-npc-shop.md`](../design/currency-and-npc-shop.md)，玩家交易见[`docs/design/player-trade.md`](../design/player-trade.md)。
+
+Starter Boss的表3固定掉落小红、大红、蓝药各5个和150铜币，用于验证同一尸体拾取事务同时修改Inventory与Wallet。进入Map 200则是另一条`progression`事务：个人10分钟CD归`ProgressionComponent`，先在当前PlayerUnit ordered mailbox持久化，再允许Gate创建/复用动态实例。Gate、MapManager和副本实例都不保存个人CD；跨MapHost传送通过`PlayerTransferSnapshot.starterDungeon`携带，登录/重连响应返回截止时间供客户端按钮倒计时。
 
 技能费用当前暂由Hotfix的`SkillManaCost.ts`维护，服务端在创建ActiveCast前检查并扣除MP；法力不足直接拒绝，读条中断不返还。`CombatStateComponent`记录仍持有玩家仇恨的怪物集合：怪物死亡、回归出生点或清除仇恨时移除来源；集合为空才脱战。战斗状态不恢复MP，脱战后按180秒从当前值恢复到MaxMp，固定更新桶用整数余数累积。该状态是地图临时运行态，传送时清空，不写入持久化快照。
 

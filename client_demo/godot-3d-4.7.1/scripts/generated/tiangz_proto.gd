@@ -1841,11 +1841,13 @@ static func encode_g2c_enter_map(value: Dictionary) -> PackedByteArray:
 		varint_field(result, 16, int(item), true)
 	if value.has("gold"):
 		varint_field(result, 17, int(value["gold"]))
+	if value.has("starter_dungeon_cooldown_end_at_ms"):
+		varint_field(result, 18, int(value["starter_dungeon_cooldown_end_at_ms"]))
 	return result
 
 static func decode_g2c_enter_map(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"account": "", "map_service": "", "map_id": 0, "unit_id": 0, "x": 0.0, "z": 0.0, "entities": [], "fixed_update_ms": 0, "items": [], "y": 0.0, "map_instance_id": 0, "spatial_mode": 0, "navigation_version": "", "navigation_hash": "", "quests": [], "completed_quest_config_ids": [], "gold": 0}
+	var result := {"account": "", "map_service": "", "map_id": 0, "unit_id": 0, "x": 0.0, "z": 0.0, "entities": [], "fixed_update_ms": 0, "items": [], "y": 0.0, "map_instance_id": 0, "spatial_mode": 0, "navigation_version": "", "navigation_hash": "", "quests": [], "completed_quest_config_ids": [], "gold": 0, "starter_dungeon_cooldown_end_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -1934,6 +1936,11 @@ static func decode_g2c_enter_map(payload: PackedByteArray) -> Dictionary:
 					result["gold"] = reader.uint64()
 				else:
 					reader.skip(tag.wire)
+			18:
+				if tag.wire == 0:
+					result["starter_dungeon_cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
 			90:
 				if tag.wire == 0:
 					result["rpc_id"] = reader.uint32()
@@ -1958,17 +1965,24 @@ static func encode_g2c_enter_starter_dungeon(value: Dictionary) -> PackedByteArr
 	if value.has("enter_map"):
 		if value["enter_map"] != null:
 			bytes_field(result, 1, encode_g2c_enter_map(value["enter_map"]))
+	if value.has("cooldown_end_at_ms"):
+		varint_field(result, 2, int(value["cooldown_end_at_ms"]))
 	return result
 
 static func decode_g2c_enter_starter_dungeon(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"enter_map": null}
+	var result := {"enter_map": null, "cooldown_end_at_ms": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
 			1:
 				if tag.wire == 2:
 					result["enter_map"] = decode_g2c_enter_map(reader.bytes_value())
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 0:
+					result["cooldown_end_at_ms"] = reader.uint64()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -2867,11 +2881,13 @@ static func encode_loot_drop_snapshot(value: Dictionary) -> PackedByteArray:
 		varint_field(result, 2, int(value["item_config_id"]))
 	if value.has("count"):
 		varint_field(result, 3, int(value["count"]))
+	if value.has("gold"):
+		varint_field(result, 4, int(value["gold"]))
 	return result
 
 static func decode_loot_drop_snapshot(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"drop_id": 0, "item_config_id": 0, "count": 0}
+	var result := {"drop_id": 0, "item_config_id": 0, "count": 0, "gold": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -2888,6 +2904,11 @@ static func decode_loot_drop_snapshot(payload: PackedByteArray) -> Dictionary:
 			3:
 				if tag.wire == 0:
 					result["count"] = reader.uint32()
+				else:
+					reader.skip(tag.wire)
+			4:
+				if tag.wire == 0:
+					result["gold"] = reader.uint64()
 				else:
 					reader.skip(tag.wire)
 			_:
@@ -3392,11 +3413,15 @@ static func encode_m2c_loot_monster(value: Dictionary) -> PackedByteArray:
 		bytes_field(result, 3, encode_quest_snapshot(item))
 	for item in value.get("remaining_drops", []):
 		bytes_field(result, 4, encode_loot_drop_snapshot(item))
+	if value.has("gold"):
+		varint_field(result, 5, int(value["gold"]))
+	if value.has("gained_gold"):
+		varint_field(result, 6, int(value["gained_gold"]))
 	return result
 
 static func decode_m2c_loot_monster(payload: PackedByteArray) -> Dictionary:
 	var reader := TzProtoReader.new(payload)
-	var result := {"monster_id": 0, "items": [], "quests": [], "remaining_drops": []}
+	var result := {"monster_id": 0, "items": [], "quests": [], "remaining_drops": [], "gold": 0, "gained_gold": 0}
 	while not reader.eof():
 		var tag := reader.tag()
 		match tag.field:
@@ -3418,6 +3443,16 @@ static func decode_m2c_loot_monster(payload: PackedByteArray) -> Dictionary:
 			4:
 				if tag.wire == 2:
 					result["remaining_drops"].append(decode_loot_drop_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			5:
+				if tag.wire == 0:
+					result["gold"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			6:
+				if tag.wire == 0:
+					result["gained_gold"] = reader.uint64()
 				else:
 					reader.skip(tag.wire)
 			90:
@@ -4749,6 +4784,34 @@ static func decode_skill_transfer_snapshot(payload: PackedByteArray) -> Dictiona
 			3:
 				if tag.wire == 2:
 					result["item_cooldowns"].append(decode_item_cooldown_snapshot(reader.bytes_value()))
+				else:
+					reader.skip(tag.wire)
+			_:
+				reader.skip(tag.wire)
+	return result
+
+static func encode_starter_dungeon_cooldown_snapshot(value: Dictionary) -> PackedByteArray:
+	var result := PackedByteArray()
+	if value.has("cooldown_end_at_ms"):
+		varint_field(result, 1, int(value["cooldown_end_at_ms"]))
+	if value.has("operation_id"):
+		string_field(result, 2, String(value["operation_id"]))
+	return result
+
+static func decode_starter_dungeon_cooldown_snapshot(payload: PackedByteArray) -> Dictionary:
+	var reader := TzProtoReader.new(payload)
+	var result := {"cooldown_end_at_ms": 0, "operation_id": ""}
+	while not reader.eof():
+		var tag := reader.tag()
+		match tag.field:
+			1:
+				if tag.wire == 0:
+					result["cooldown_end_at_ms"] = reader.uint64()
+				else:
+					reader.skip(tag.wire)
+			2:
+				if tag.wire == 2:
+					result["operation_id"] = reader.string_value()
 				else:
 					reader.skip(tag.wire)
 			_:

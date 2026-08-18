@@ -84,7 +84,7 @@ function main(): void {
   assert.equal(boss.name, "试炼守卫");
   assert.equal(boss.maxHp, 900);
   assert.equal(boss.attackMode, 1);
-  assert.equal(boss.dropTableId, 0);
+  assert.equal(boss.dropTableId, 3);
   assert.deepEqual(
     serverConfigs.MonsterAreaConfig.GetAll()
       .filter((area) => area.mapConfigId === 200)
@@ -133,15 +133,20 @@ function main(): void {
       drop.itemConfigId,
       drop.questObjectiveId,
       drop.chancePermille,
+      drop.gold,
     ]),
     [
-      [1001, 1, 1201, 0, 800],
-      [1002, 1, 1001, 0, 150],
-      [1003, 1, 1002, 0, 50],
-      [1004, 1, 1101, 5106, 1000],
-      [2001, 2, 1201, 0, 800],
-      [2002, 2, 1001, 0, 150],
-      [2003, 2, 1002, 0, 50],
+      [1001, 1, 1201, 0, 800, 0],
+      [1002, 1, 1001, 0, 150, 0],
+      [1003, 1, 1002, 0, 50, 0],
+      [1004, 1, 1101, 5106, 1000, 0],
+      [2001, 2, 1201, 0, 800, 0],
+      [2002, 2, 1001, 0, 150, 0],
+      [2003, 2, 1002, 0, 50, 0],
+      [3001, 3, 1001, 0, 1000, 0],
+      [3002, 3, 1002, 0, 1000, 0],
+      [3003, 3, 1003, 0, 1000, 0],
+      [3004, 3, 0, 0, 1000, 150],
     ],
   );
   assert.deepEqual(

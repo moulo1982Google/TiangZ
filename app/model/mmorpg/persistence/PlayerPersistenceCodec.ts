@@ -47,6 +47,7 @@ export function ProjectPlayerDomainData<TDomain extends PlayerPersistenceDomain>
         account: data.player.account,
         characterId: data.player.characterId,
         numerics: data.player.numerics.map((numeric) => ({ ...numeric })),
+        starterDungeon: data.progression ? { ...data.progression } : undefined,
         reason: data.reason,
       } satisfies PlayerProgressionSaveData;
       break;
@@ -206,6 +207,7 @@ export function ValidatePlayerSaveData(value: unknown): asserts value is PlayerS
   );
   validateSkill(data.skill);
   validateQuests(data.quests);
+  validateStarterDungeon(data.progression, "progression");
   requireText(data.reason, "reason");
 }
 
@@ -266,6 +268,7 @@ export function ValidatePlayerDomainData(
       requirePositiveInteger(numeric.numericType, `player.progression.numerics[${index}].numericType`);
       requireBigInt(numeric.value, `player.progression.numerics[${index}].value`);
     });
+    validateStarterDungeon(progression.starterDungeon, "player.progression.starterDungeon");
     return;
   }
 
@@ -350,6 +353,24 @@ function validateQuests(value: unknown): void {
   ).forEach((id, index) =>
     requirePositiveInteger(id, `quests.completedQuestConfigIds[${index}]`)
   );
+}
+
+function validateStarterDungeon(value: unknown, name: string): void {
+  if (value === undefined) return;
+  const state = requireRecord(value, name);
+  requireNonNegativeBigInt(state.starterDungeonCooldownEndAtMs, `${name}.starterDungeonCooldownEndAtMs`);
+  if (typeof state.starterDungeonOperationId !== "string") {
+    throw new TypeError(`${name}.starterDungeonOperationId must be a string`);
+  }
+  if (state.starterDungeonCooldownEndAtMs === 0n && state.starterDungeonOperationId.length !== 0) {
+    throw new TypeError(`${name}.starterDungeonOperationId must be empty without a cooldown`);
+  }
+  if (state.starterDungeonCooldownEndAtMs > 0n && state.starterDungeonOperationId.length === 0) {
+    throw new TypeError(`${name}.starterDungeonOperationId is required with a cooldown`);
+  }
+  if (state.starterDungeonOperationId.length > 128) {
+    throw new TypeError(`${name}.starterDungeonOperationId exceeds 128 characters`);
+  }
 }
 
 function validateOptionalAction(value: unknown, name: string): void {

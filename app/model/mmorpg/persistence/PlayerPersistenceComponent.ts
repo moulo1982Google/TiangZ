@@ -2,6 +2,7 @@ import { Component, component, transferable, type ITransfer } from "../../../cor
 import { BuffComponent } from "../buff/BuffComponent";
 import { ItemComponent } from "../item/ItemComponent";
 import type { PlayerUnit } from "../map/PlayerUnit";
+import { ProgressionComponent } from "../progression/ProgressionComponent";
 import { QuestComponent } from "../quest/QuestComponent";
 import { SkillComponent } from "../skill/SkillComponent";
 import { ProjectPlayerDomainData } from "./PlayerPersistenceCodec";
@@ -31,6 +32,7 @@ export interface PlayerSaveOverrides {
   readonly buffs?: PlayerSaveData["buffs"];
   readonly skill?: PlayerSaveData["skill"];
   readonly quests?: PlayerSaveData["quests"];
+  readonly progression?: PlayerSaveData["progression"];
 }
 
 export interface PlayerMultiTransactionParticipant {
@@ -108,6 +110,7 @@ export class PlayerPersistenceComponent extends Component<[
       })),
       skill: overrides.skill ?? player.GetComponent(SkillComponent).CaptureTransfer(),
       quests: overrides.quests ?? player.GetComponent(QuestComponent).CaptureTransfer(),
+      progression: overrides.progression ?? player.GetComponent(ProgressionComponent).CaptureTransfer(),
       reason,
     };
   }

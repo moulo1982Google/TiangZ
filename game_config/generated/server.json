@@ -266,7 +266,8 @@
       "min_count": 1,
       "max_count": 1,
       "chance_permille": 800,
-      "quest_objective_id": 0
+      "quest_objective_id": 0,
+      "gold": 0
     },
     {
       "id": 1002,
@@ -275,7 +276,8 @@
       "min_count": 1,
       "max_count": 1,
       "chance_permille": 150,
-      "quest_objective_id": 0
+      "quest_objective_id": 0,
+      "gold": 0
     },
     {
       "id": 1003,
@@ -284,7 +286,8 @@
       "min_count": 1,
       "max_count": 1,
       "chance_permille": 50,
-      "quest_objective_id": 0
+      "quest_objective_id": 0,
+      "gold": 0
     },
     {
       "id": 1004,
@@ -293,7 +296,8 @@
       "min_count": 1,
       "max_count": 1,
       "chance_permille": 1000,
-      "quest_objective_id": 5106
+      "quest_objective_id": 5106,
+      "gold": 0
     },
     {
       "id": 2001,
@@ -302,7 +306,8 @@
       "min_count": 1,
       "max_count": 1,
       "chance_permille": 800,
-      "quest_objective_id": 0
+      "quest_objective_id": 0,
+      "gold": 0
     },
     {
       "id": 2002,
@@ -311,7 +316,8 @@
       "min_count": 1,
       "max_count": 1,
       "chance_permille": 150,
-      "quest_objective_id": 0
+      "quest_objective_id": 0,
+      "gold": 0
     },
     {
       "id": 2003,
@@ -320,7 +326,48 @@
       "min_count": 1,
       "max_count": 1,
       "chance_permille": 50,
-      "quest_objective_id": 0
+      "quest_objective_id": 0,
+      "gold": 0
+    },
+    {
+      "id": 3001,
+      "drop_table_id": 3,
+      "item_config_id": 1001,
+      "min_count": 5,
+      "max_count": 5,
+      "chance_permille": 1000,
+      "quest_objective_id": 0,
+      "gold": 0
+    },
+    {
+      "id": 3002,
+      "drop_table_id": 3,
+      "item_config_id": 1002,
+      "min_count": 5,
+      "max_count": 5,
+      "chance_permille": 1000,
+      "quest_objective_id": 0,
+      "gold": 0
+    },
+    {
+      "id": 3003,
+      "drop_table_id": 3,
+      "item_config_id": 1003,
+      "min_count": 5,
+      "max_count": 5,
+      "chance_permille": 1000,
+      "quest_objective_id": 0,
+      "gold": 0
+    },
+    {
+      "id": 3004,
+      "drop_table_id": 3,
+      "item_config_id": 0,
+      "min_count": 0,
+      "max_count": 0,
+      "chance_permille": 1000,
+      "quest_objective_id": 0,
+      "gold": 150
     }
   ],
   "game_tbitemconfig": [
@@ -635,7 +682,7 @@
       "attack_mode": 1,
       "skill_id": 0,
       "respawn_seconds": 3600,
-      "drop_table_id": 0
+      "drop_table_id": 3
     }
   ],
   "game_tbplayerconfig": [

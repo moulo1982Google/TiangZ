@@ -120,6 +120,7 @@ message G2C_EnterMap // IResponse
   repeated QuestSnapshot quests = 15;
   repeated uint32 completed_quest_config_ids = 16;
   uint64 gold = 17;
+  uint64 starter_dungeon_cooldown_end_at_ms = 18;
 }
 
 //ResponseType G2C_EnterStarterDungeon
@@ -133,6 +134,7 @@ message C2G_EnterStarterDungeon // IRequest
 message G2C_EnterStarterDungeon // IResponse
 {
   G2C_EnterMap enter_map = 1;
+  uint64 cooldown_end_at_ms = 2;
 }
 
 // @ets.msg protocol=Client method=MapReady
@@ -355,6 +357,9 @@ message M2C_LootMonster // IActorLocationResponse
   // 领取后该玩家还能看到的掉落；客户端据此保持尸体窗口，不靠本地猜测。
   // Rows still visible to this player after pickup; clients keep the corpse window from this authoritative list.
   repeated LootDropSnapshot remaining_drops = 4;
+  // 提交后的权威余额与本次获得金额；无铜币行时gained_gold为0。 / Authoritative balance and currency gained by this claim.
+  uint64 gold = 5;
+  uint64 gained_gold = 6;
 }
 
 //ResponseType M2C_InspectLootMonster

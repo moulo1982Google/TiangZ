@@ -33,6 +33,7 @@ import "../../hotfix/mmorpg/mapHost/handlers/C2M_ToggleDemoDoorHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/C2M_UpdatePlayerTradeOfferHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/C2M_UseItemHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/DynamicMapHandlers";
+import "../../hotfix/mmorpg/mapHost/handlers/G2M_ClaimStarterDungeonEntryHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_EnterMapHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_InitialSnapshotHandler";
 import "../../hotfix/mmorpg/mapHost/handlers/G2M_PlayerOfflineHandler";

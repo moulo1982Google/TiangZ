@@ -1,4 +1,6 @@
 # TiangZ
+[![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)
+
 天工，一个正在开发中的 MMORPG 服务端框架。
 
 当前开发版本为 `0.4.0`，Phase 4.0空间契约已经完成；`0.3.10`是框架能力的首个稳定基线。当前 Starter MMORPG 已经串起注册/登录、角色目录、NPC接取任务、怪物与技能战斗、Buff、掉落与尸体拾取、背包、货币、NPC商店、同地图玩家交易、动态Boss副本、经验升级和可选 DBProxy 重启恢复；最完整的可操作客户端是 Cocos3D。可复用领域契约与 MMORPG 适配边界见[能力归属表](docs/design/capability-ownership.md)。
@@ -135,7 +137,7 @@ TiangZ的完整业务参考是[Starter MMORPG纵向切片](docs/tutorials/20-sta
 
 Starter常用命令：`npm run starter:verify`做静态检查，`npm run starter:dev`编译并启动本地all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`专门验证创建角色、选角和稳定`characterId`。完整验收使用`npm run starter:acceptance`；`starter:acceptance:persistent`会验证DBProxy重启后的玩家快照恢复，`starter:acceptance:faults`会额外运行独立DBProxy故障矩阵。这三个验收命令都会先重建`target/debug/TiangZ`，不会误用旧的Rust运行时。持久化和故障命令会写入/重启本地测试资源，执行前先确认PostgreSQL、Redis和DBProxy环境。以上命令不包含长时间容量压测。
 
-Starter当前的战斗快捷栏包含寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、精神鞭笞和恢复。读条、引导、公共CD、施法距离、法力消耗、Buff刷新与伤害类型由配置和领域规则共同决定；恢复技能通过 `恢复` Buff 每3秒治疗一次，共8次。怪物掉落按每行独立概率判定，玩家可以把杂物出售给杂货商换取铜币，再购买红药和法力药水。Cocos3D还提供“进入Boss副本”入口：Gate幂等创建Map 200动态实例，击杀试炼守卫后获得120累计经验并升到2级；等级和经验通过`progression`领域事务持久化。背包、任务追踪、Buff栏、技能图标、NPC商店和副本按钮是这条链路的主要可视化验收入口。
+Starter当前的战斗快捷栏包含寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、精神鞭笞和恢复。读条、引导、公共CD、施法距离、法力消耗、Buff刷新与伤害类型由配置和领域规则共同决定；恢复技能通过 `恢复` Buff 每3秒治疗一次，共8次。怪物掉落按每行独立概率判定，玩家可以把杂物出售给杂货商换取铜币，再购买红药和法力药水；Cocos3D的`2/3/Q`分别使用小红、大红和蓝药，移动端直接点击同一快捷栏。Cocos3D还提供“进入Boss副本”入口：Gate幂等创建Map 200动态实例，击杀试炼守卫后获得120累计经验，并可从尸体领取小红、大红、蓝药各5个和150铜币。每个角色进入后产生10分钟个人CD，截止时间由`progression`领域持久化并显示在副本按钮上；等级、经验和CD与Boss拾取事务都先经DBProxy确认。背包、任务追踪、Buff栏、技能图标、NPC商店和副本按钮是这条链路的主要可视化验收入口。
 
 登录界面不再自动创建游客账号：第一次使用请点击“注册”，输入用户名、密码和确认密码；用户名会直接作为初始角色名。`all-in-one.json`的注册目录只在当前进程内存中，调试界面可用但重启会丢失账号。需要落盘和重启恢复时，先启动独立DBProxy，再使用`npm run starter:dev:persistent`，详细令牌和Docker步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)。
 

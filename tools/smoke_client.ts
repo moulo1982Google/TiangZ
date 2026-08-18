@@ -16,6 +16,8 @@ import {
   buildMapSnapshotReadyPacket,
   buildMovePacket,
   buildUseItemPacket,
+  buildInspectLootMonsterPacket,
+  buildLootMonsterPacket,
   buildAcceptQuestPacket,
   buildCompleteQuestPacket,
   decodeAoiDeltaFrame,
@@ -33,6 +35,8 @@ import {
   decodeEntityNumericFrame,
   decodeItemChangedFrame,
   decodeUseItemFrame,
+  decodeInspectLootMonsterFrame,
+  decodeLootMonsterFrame,
   decodeAcceptQuestFrame,
   decodeCompleteQuestFrame,
   decodeGetLoginServiceAddrFrame,
@@ -251,12 +255,71 @@ async function verifyStarterDungeonBossProgression(
       progression.gainedExperience !== 120n || !progression.leveledUp) {
       throw new Error(`Starter Boss progression mismatch: ${stringifyForError(progression)}`);
     }
+
+    const inspected = decodeInspectLootMonsterFrame(await client.gate.request(
+      buildInspectLootMonsterPacket(nextRpcId++, { monsterId: boss.unitId }),
+    )).body;
+    const itemDrops = inspected.drops
+      .filter((drop) => drop.itemConfigId > 0)
+      .map((drop) => [drop.itemConfigId, drop.count] as const)
+      .sort(([left], [right]) => left - right);
+    const currencyDrops = inspected.drops.filter((drop) => drop.gold > 0n);
+    if (
+      inspected.error ||
+      JSON.stringify(itemDrops) !== JSON.stringify([[1001, 5], [1002, 5], [1003, 5]]) ||
+      currencyDrops.length !== 1 || currencyDrops[0].gold !== 150n
+    ) {
+      throw new Error(`Starter Boss loot preview mismatch: ${stringifyForError(inspected)}`);
+    }
+    const looted = decodeLootMonsterFrame(await client.gate.request(buildLootMonsterPacket(
+      nextRpcId++,
+      {
+        monsterId: boss.unitId,
+        operationId: nextOperationId("starter-boss-loot"),
+        dropId: 0,
+        lootAll: true,
+      },
+    ))).body;
+    const lootedItems = new Map(looted.items.map((item) => [item.configId, item.count]));
+    if (
+      looted.error || looted.gainedGold !== 150n || looted.gold !== 150n ||
+      looted.remainingDrops.length !== 0 ||
+      lootedItems.get(1001) !== 8 || lootedItems.get(1002) !== 5 || lootedItems.get(1003) !== 8
+    ) {
+      throw new Error(`Starter Boss loot commit mismatch: ${stringifyForError(looted)}`);
+    }
+
+    const returnReadyFrame = client.gate.waitForMessage(MsgCode.G2C_MapReady, 10_000);
+    const returned = decodeEnterMapFrame(await client.gate.request(buildEnterMapPacket(
+      nextRpcId++,
+      { mapId: 100, mapInstanceId: 100n },
+    ))).body;
+    const returnReady = decodeMapReadyFrame(await returnReadyFrame).body;
+    if (returned.error || returned.mapId !== 100 || returnReady.mapId !== 100) {
+      throw new Error(`Starter dungeon return failed: ${stringifyForError({ returned, returnReady })}`);
+    }
+    const blocked = decodeEnterStarterDungeonFrame(await client.gate.request(
+      buildEnterStarterDungeonPacket(nextRpcId++, {
+        operationId: nextOperationId("starter-dungeon-cooldown"),
+      }),
+    )).body;
+    if (blocked.error !== 10058) {
+      throw new Error(`Starter dungeon cooldown was not enforced: ${stringifyForError(blocked)}`);
+    }
+    if (
+      entered.cooldownEndAtMs !== entered.enterMap.starterDungeonCooldownEndAtMs ||
+      entered.cooldownEndAtMs <= BigInt(Date.now() + 9 * 60 * 1_000)
+    ) {
+      throw new Error(`Starter dungeon cooldown snapshot mismatch: ${stringifyForError(entered)}`);
+    }
     console.log("Starter dungeon Boss progression:", {
       mapInstanceId: entered.enterMap.mapInstanceId.toString(),
       bossUnitId: boss.unitId,
       attacks,
       level: progression.level.toString(),
       experience: progression.experience.toString(),
+      gold: looted.gold.toString(),
+      cooldownEndAtMs: entered.cooldownEndAtMs.toString(),
     });
   } finally {
     await client.gate.close();
@@ -281,10 +344,22 @@ async function verifyStarterBossProgressionRecovery(
     if (level !== 2n || experience !== 120n) {
       throw new Error(`Starter Boss progression recovery mismatch: ${stringifyForError({ level, experience })}`);
     }
+    const inventoryByConfig = new Map(client.enterMap.items.map((item) => [item.configId, item.count]));
+    if (
+      client.enterMap.gold !== 150n ||
+      inventoryByConfig.get(1001) !== 8 ||
+      inventoryByConfig.get(1002) !== 5 ||
+      inventoryByConfig.get(1003) !== 8 ||
+      client.enterMap.starterDungeonCooldownEndAtMs <= BigInt(Date.now())
+    ) {
+      throw new Error(`Starter Boss reward recovery mismatch: ${stringifyForError(client.enterMap)}`);
+    }
     console.log("Starter Boss progression recovered:", {
       account,
       level: level.toString(),
       experience: experience.toString(),
+      gold: client.enterMap.gold.toString(),
+      cooldownEndAtMs: client.enterMap.starterDungeonCooldownEndAtMs.toString(),
     });
   } finally {
     await client.gate.close();

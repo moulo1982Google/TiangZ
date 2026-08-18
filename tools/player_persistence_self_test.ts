@@ -39,6 +39,7 @@ import { BuffComponent } from "../app/model/mmorpg/buff/BuffComponent";
 import { ItemComponent } from "../app/model/mmorpg/item/ItemComponent";
 import { QuestComponent } from "../app/model/mmorpg/quest/QuestComponent";
 import { SkillComponent } from "../app/model/mmorpg/skill/SkillComponent";
+import { ProgressionComponent } from "../app/model/mmorpg/progression/ProgressionComponent";
 import { NativeItemPersistenceCodec } from "../app/generated/model/native/NativeItemPersistence";
 
 void main();
@@ -189,6 +190,14 @@ function createPlayer(): object {
       if (ctor === QuestComponent) {
         return {
           CaptureTransfer: () => ({ active: [], completedQuestConfigIds: [] }),
+        };
+      }
+      if (ctor === ProgressionComponent) {
+        return {
+          CaptureTransfer: () => ({
+            starterDungeonCooldownEndAtMs: 0n,
+            starterDungeonOperationId: "",
+          }),
         };
       }
       throw new Error(`unexpected component: ${ctor.name}`);

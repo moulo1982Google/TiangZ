@@ -747,6 +747,10 @@ export class MapComponent extends Component<[
           completedQuestConfigIds: snapshot.completedQuestConfigIds,
         } satisfies QuestTransferState],
         [CurrencyComponent, snapshot.gold],
+        [ProgressionComponent, {
+          starterDungeonCooldownEndAtMs: snapshot.starterDungeon.cooldownEndAtMs,
+          starterDungeonOperationId: snapshot.starterDungeon.operationId,
+        }],
         [PlayerPersistenceComponent, {
           inventory: snapshot.inventoryRevision,
           progression: snapshot.progressionRevision,
@@ -938,6 +942,10 @@ export class MapComponent extends Component<[
         numericType: numeric.numericType,
         value: numeric.value,
       })));
+      components.set(ProgressionComponent, progression.starterDungeon ?? {
+        starterDungeonCooldownEndAtMs: 0n,
+        starterDungeonOperationId: "",
+      });
     }
     const quest = loaded.data.quest;
     if (quest) {
@@ -1417,6 +1425,7 @@ export class MapComponent extends Component<[
       quests: unit.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: unit.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       gold: unit.Snapshot().gold,
+      starterDungeonCooldownEndAtMs: unit.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
       mapInstanceId: snapshot.mapInstanceId,
     };
   }

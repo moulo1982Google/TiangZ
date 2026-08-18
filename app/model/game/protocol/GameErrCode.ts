@@ -56,4 +56,5 @@ export const GameErrCode = {
   TradeOfferInvalid: 10055,
   TradeTooFar: 10056,
   TradeInventoryChanged: 10057,
+  DungeonCooldown: 10058,
 } as const;

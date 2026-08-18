@@ -46,19 +46,19 @@ npm run test:game-config
 
 当前演示道具：小型生命药水使用`Heal(150)`，大型生命药水使用`AddBuff(2001)`，小型法力药水使用`ChangeNumeric(CurrentMp, +150)`。三者的`cooldown_ms`均为30000，`global_cooldown_ms`均为1000；药品自身CD按`ItemConfigId`独立，公共CD与技能共享并由服务端原子提交。冷却截止时间随玩家跨地图传送，不能通过换图刷新。`ItemConfig.buy_price/sell_price`使用铜币整数：破旧布料售价10、小红售价20、大红售价50；买入价格仍由Npc商店目录读取，Map 100的9002杂货商当前出售小红和小型法力药水。`ItemConfig.icon`是客户端字段，填写相对`assets/resources`的Cocos资源键，不含扩展名；Cocos3D快捷栏通过这个字段加载图标，资源缺失时回退到名称文字。道具Handler只消费道具并调用统一`ActionExecutor`，不能自行分支写HP、MP、创建Timer或直接广播Buff。
 
-Cocos3D演示玩家出生时背包为空，快捷栏仍固定使用`1`切换平A、`2`使用1001、`3`使用1002；新玩家先从NPC领取任务，完成Starter任务5001奖励`1001×10`，完成后续任务5005奖励`1002×10`。快捷栏没有对应道具时只显示空槽，不应由`ItemComponentSystem.Awake`偷偷发放测试物品；传送、重连和持久化恢复仍只使用`ItemSnapshot`。
+Cocos3D演示新角色出生时获得小红1001和蓝药1003各3个，不预置大红；桌面快捷栏固定使用`1`切换平A、`2/3/Q`使用小红、大红、蓝药，移动端点击相同ConfigId快捷槽。任务5001仍奖励`1001×10`，5005奖励`1002×10`。快捷栏引用ItemConfigId而不是ItemId，道具卖空后保留0数量槽，再次拾取或购买时自动恢复数量；传送、重连和持久化恢复只使用权威`ItemSnapshot`。
 
 `QuestConfig`引用`QuestObjectiveConfig`组成活动任务，奖励复用Action。`required_quest_ids`声明必须已经领取奖励的前置任务，`minimum_level`读取`NumericType.Level`；生成阶段会拒绝缺失、重复、自引用和循环前置关系。当前演示包含击杀怪物、使用道具和进入地图三种目标；Starter任务链是5001击败5只怪A，回NPC交付后解锁5005击败5只怪B；5004继续验证“完成5001且达到2级”后手工接取。两张Quest表标记为Hot，但已经接取的Quest会冻结目标与要求数量；Reload只影响之后新接取的任务，不能隐式改写玩家正在进行的任务。任务达到`ReadyToTurnIn`后必须携带NPC实例ID在交互范围内完成，不能从任务追踪面板直接领奖。完整语义和调用示例见[任务系统设计](../docs/design/quest-system.md)。
 
 ### 怪物掉落与任务道具
 
-`MonsterConfig.drop_table_id`指向`DropTableConfig.drop_table_id`。每一行是一个掉落行：`item_config_id`是道具配置ID，`min_count/max_count`是数量范围，`chance_permille`是该行自己的千分比概率，`quest_objective_id=0`表示普通掉落，非零表示只服务于指定`CollectItem`目标的任务掉落。普通掉落行逐行独立投掷，因此同一具尸体可以同时掉出布料、小红和大红，也可能一件都没有；当前Starter的表1、表2仍为破旧布料1201 800/1000、小型生命药水1001 150/1000、大型生命药水1002 50/1000，即80%/15%/5%。任务掉落行仍按玩家任务资格独立判断。当前Starter的任务5006在完成并交付5005后解锁，要求收集5个道具1101“任务怪物徽记”；怪物A的掉落表包含这条任务掉落。
+`MonsterConfig.drop_table_id`指向`DropTableConfig.drop_table_id`。每一行是一个掉落行：道具行填写`item_config_id + min_count/max_count`且`gold=0`；铜币行填写`gold>0`且道具和数量字段为0。`chance_permille`是该行自己的千分比概率，`quest_objective_id=0`表示普通掉落，非零表示只服务于指定`CollectItem`目标的任务掉落。普通掉落行逐行独立投掷，因此同一具尸体可以同时掉出布料、小红和大红，也可能一件都没有；当前Starter的表1、表2仍为破旧布料1201 800/1000、小红1001 150/1000、大红1002 50/1000。表3是Boss固定掉落：1001/1002/1003各5个和150铜币，四行概率均为1000/1000。任务掉落行仍按玩家任务资格独立判断。
 
-MapConfig 200是Starter动态Boss副本模板，使用与Map 100相同的NavMesh资源，但运行时必须由Gate经MapManager创建新的MapInstance，不能把200当作静态实例号直接传送。MonsterConfig 3“试炼守卫”由MonsterArea 20001在Map 200创建，拥有900生命、18攻击和4米/秒移动速度，不配置普通掉落；击杀后的120经验属于Dungeon领域奖励，不写入MonsterConfig或DropTable。经验是玩家`progression`运行态与持久化数据，累计阈值由代码规则计算，不放进`PlayerConfig`初始模板。
+MapConfig 200是Starter动态Boss副本模板，使用与Map 100相同的NavMesh资源，但运行时必须由Gate经MapManager创建新的MapInstance，不能把200当作静态实例号直接传送。MonsterConfig 3“试炼守卫”由MonsterArea 20001在Map 200创建，拥有900生命、18攻击和4米/秒移动速度，引用掉落表3。击杀后的120经验属于Dungeon领域奖励，不写入DropTable；掉落物与150铜币走正式尸体拾取事务。个人10分钟进入CD保存在`progression`记录并随玩家跨图迁移，客户端只显示服务端返回的截止时间。
 
 死亡时，地图只在尸体容器中保存配置ID和数量，尸体有掉落时保留5分钟、没有掉落时保留10秒；全部普通掉落领取后可以立即清理尸体。`respawn_seconds`从死亡时刻开始计时，只表示新怪物的最短重生时刻；实际生成取尸体窗口结束与该时刻两者较晚值，不再单独决定尸体显示时间。当前静态任务徽记不会提前创建永久`ItemId`。玩家必须先从NPC接取5006，靠近尸体后发送`C2M_LootMonster`，服务端在拾取时检查任务是否存在且还需要数量。未接任务、任务已经达到要求数量，或该账号已经领取过同一行时，都不会生成背包Item；这条任务掉落仍留在尸体上，不会因为其他玩家或本玩家无资格而全局消失。任务掉落按账号资格领取；普通掉落在Starter中归第一次有效攻击者账号所有，其他账号不能抢走。
 
-拾取不是“先改内存再保存”：`MonsterComponent.LootMonster`先规划Inventory和Quest快照，使用稳定`operationId`提交DBProxy事务，确认后才提交Item/Quest Entity并推送结果。重复请求返回第一次回执，不会重复加道具或推进任务。动态词条、耐久等真正的ItemInstance掉落不能直接套用“尸体只存配置ID”的静态快捷方式，应在后续ItemInstance方案中保存实例数据。
+拾取不是“先改内存再保存”：`MonsterComponent.LootMonster`先规划Inventory、Quest和Currency快照，使用稳定`operationId`提交DBProxy事务；包含铜币时一次原子提交`inventory + quest + wallet`，确认后才提交Item/Quest Entity与金币并推送结果。重复请求返回第一次回执，不会重复加道具、金币或任务进度。动态词条、耐久等真正的ItemInstance掉落不能直接套用“尸体只存配置ID”的静态快捷方式，应在后续ItemInstance方案中保存实例数据。
 
 任务奖励由`ExecuteReward -> ExecuteActionBatch`在PlayerUnit有序mailbox内同步执行；`GrantItem(ItemConfigId, Count)`和批量Grant必须交给Inventory，由Inventory合并已有堆叠并按`max_stack`拆分。当前批次不提供失败回滚或数据库事务，跨域持久化留给独立DBProxy；组队共享任务等待Party系统，不在Quest里提前模拟。
 

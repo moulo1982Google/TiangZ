@@ -74,7 +74,7 @@ interface GameConfigSnapshot {
   readonly QuestObjectiveConfig: ConfigTable<game.QuestObjectiveConfig>;
 }
 
-export const GameConfigSchemaFingerprint = "9498fdcc690c674ba650787c30f528dc2912a9342289f41e3fc9934328e7aed6";
+export const GameConfigSchemaFingerprint = "d5d42827bfd9a3351ace750050fafb336d1dece4ea6c8d337021d34f7435ea79";
 
 export class GameConfigRegistry {
   private static current: GameConfigSnapshot | undefined;
@@ -502,16 +502,19 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
   }
   const dropTableIds = new Set(snapshot.DropTableConfig.GetAll().map((drop) => drop.dropTableId));
   for (const drop of snapshot.DropTableConfig.GetAll()) {
+    const itemDrop = Number.isSafeInteger(drop.itemConfigId) && drop.itemConfigId > 0 &&
+      Boolean(snapshot.ItemConfig.TryGet(drop.itemConfigId)) &&
+      Number.isSafeInteger(drop.minCount) && drop.minCount > 0 &&
+      Number.isSafeInteger(drop.maxCount) && drop.maxCount >= drop.minCount && drop.gold === 0;
+    const currencyDrop = drop.itemConfigId === 0 && drop.minCount === 0 && drop.maxCount === 0 &&
+      Number.isSafeInteger(drop.gold) && drop.gold > 0 && drop.questObjectiveId === 0;
     if (
       !Number.isSafeInteger(drop.dropTableId) || drop.dropTableId <= 0 ||
-      !Number.isSafeInteger(drop.itemConfigId) || drop.itemConfigId <= 0 ||
-      !snapshot.ItemConfig.TryGet(drop.itemConfigId) ||
-      !Number.isSafeInteger(drop.minCount) || drop.minCount <= 0 ||
-      !Number.isSafeInteger(drop.maxCount) || drop.maxCount < drop.minCount ||
+      (!itemDrop && !currencyDrop) ||
       !Number.isSafeInteger(drop.chancePermille) || drop.chancePermille < 0 || drop.chancePermille > 1000 ||
       !Number.isSafeInteger(drop.questObjectiveId) || drop.questObjectiveId < 0
     ) {
-      throw new Error(`drop table row ${drop.id} has invalid item, count, chance, or objective values`);
+      throw new Error(`drop table row ${drop.id} has invalid item/currency, count, chance, or objective values`);
     }
     if (drop.questObjectiveId > 0) {
       const objective = snapshot.QuestObjectiveConfig.TryGet(drop.questObjectiveId);

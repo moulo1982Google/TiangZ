@@ -152,8 +152,10 @@ const AUTO_ATTACK_KEY = 49 as unknown as KeyCode;
 const INVENTORY_KEY = 66 as unknown as KeyCode;
 const ITEM_SMALL_HEALTH_POTION = 1001;
 const ITEM_LARGE_HEALTH_POTION = 1002;
+const ITEM_MANA_POTION = 1003;
 const ITEM_SMALL_HEALTH_POTION_KEY = 50 as unknown as KeyCode;
 const ITEM_LARGE_HEALTH_POTION_KEY = 51 as unknown as KeyCode;
+const ITEM_MANA_POTION_KEY = 81 as unknown as KeyCode;
 const SKILL_CAST_PHASE_CASTING = 1;
 const DEMO_SKILL_KEYS = [
   { id: 3001, key: 52 as unknown as KeyCode, keyLabel: "4" },
@@ -175,11 +177,12 @@ const DEMO_SKILL_ICON_PATHS: Readonly<Record<number, string>> = Object.freeze({
   3006: "UI/Icons/Skills/3006",
   3007: "UI/Icons/Skills/3007",
 });
-// 真言术·盾复用对应技能图标；虚弱灵魂必须继续使用自己的Buff图标，不能被盾图标覆盖。
-// Power Word: Shield reuses its skill icon, while Weakened Soul keeps its dedicated Buff icon.
+// 真言术·盾和真言术·韧复用对应技能图标；虚弱灵魂必须继续使用自己的Buff图标，不能被盾图标覆盖。
+// Power Word: Shield and Fortitude reuse their skill icons, while Weakened Soul keeps its dedicated Buff icon.
 const DEMO_BUFF_ICON_PATHS: Readonly<Record<number, string>> = Object.freeze({
   4003: "UI/Icons/Skills/3004",
   4004: "UI/Icons/Buff/4004",
+  4005: "UI/Icons/Skills/3005",
 });
 // 编辑器预览固定连接本机开发服；只有非预览构建才读取公网发布配置。
 // Cocos editor preview always uses the local development server; only packaged builds use the public endpoint.
@@ -369,6 +372,8 @@ export class GameBootstrap3D extends Component {
   private hotbarElement?: HTMLElement;
   private inventoryToggleButton?: HTMLButtonElement;
   private dungeonToggleButton?: HTMLButtonElement;
+  private starterDungeonCooldownEndAtMs = 0n;
+  private dungeonHudSignature = "";
   private inventoryPanel?: HTMLElement;
   private inventoryListElement?: HTMLElement;
   private inventoryEmptyElement?: HTMLElement;
@@ -493,6 +498,7 @@ export class GameBootstrap3D extends Component {
     this.updateSkillHud();
     this.updateBuffHud();
     this.updateHotbarHud();
+    this.updateDungeonButtons();
     if (this.inventoryOpen) this.updateInventoryItemStates();
     this.updateQuestHud();
     this.updateDirectionalInput(deltaTime);
@@ -1986,11 +1992,11 @@ export class GameBootstrap3D extends Component {
   }
 
   /**
-   * 创建统一快捷栏：桌面端包含1/2/3和技能，移动端保留右侧平A按钮并把2/3与技能合并为一排。
+   * 创建统一快捷栏：桌面端包含平A、三种药水和技能，移动端保留右侧平A按钮并把药水与技能合并为一排。
    * 道具图标通过客户端ItemConfig.icon读取Cocos resources资源键；资源尚未放入时回退到文字，不影响快捷栏和数量显示。
    *
-   * Creates the shared hotbar: desktop includes 1/2/3 and skills; mobile keeps
-   * the right-side auto-attack button and puts 2/3 plus skills on one row.
+   * Creates the shared hotbar: desktop includes auto-attack, three potions, and
+   * skills; mobile keeps its attack button and puts potions plus skills on one row.
    * Item icons are loaded by the client-side ItemConfig.icon resource key;
    * missing assets fall back to text so the hotbar and counts remain usable.
    */
@@ -2023,7 +2029,11 @@ export class GameBootstrap3D extends Component {
       autoSlot.root.title = "1：切换自动攻击";
     }
 
-    for (const [keyLabel, configId] of [["2", ITEM_SMALL_HEALTH_POTION], ["3", ITEM_LARGE_HEALTH_POTION]] as const) {
+    for (const [keyLabel, configId] of [
+      ["2", ITEM_SMALL_HEALTH_POTION],
+      ["3", ITEM_LARGE_HEALTH_POTION],
+      ["Q", ITEM_MANA_POTION],
+    ] as const) {
       const config = GameConfigs.ItemConfig.Get(configId);
       const slot = this.createHotbarSlot(
         document,
@@ -2199,15 +2209,31 @@ export class GameBootstrap3D extends Component {
 
   private updateDungeonButtons(): void {
     const inDungeon = this.currentMapId === STARTER_DUNGEON_MAP_ID;
-    const text = this.dungeonTransitionInFlight ? "切换中..." : inDungeon ? "离开副本" : "进入Boss副本";
+    const serverNow = Date.now() + (this.loginFlow?.latestGatePing?.clockOffsetMs ?? 0);
+    const cooldownEnd = Number(this.starterDungeonCooldownEndAtMs);
+    const remainingMs = Number.isFinite(cooldownEnd) ? Math.max(0, cooldownEnd - serverNow) : 0;
+    const cooldownSeconds = remainingMs > 0 ? Math.ceil(remainingMs / 1_000) : 0;
+    const cooldownText = formatMinuteSecond(cooldownSeconds);
+    const blocked = !inDungeon && cooldownSeconds > 0;
+    const text = this.dungeonTransitionInFlight
+      ? "切换中..."
+      : inDungeon
+        ? "离开副本"
+        : blocked
+          ? `Boss副本 ${cooldownText}`
+          : "进入Boss副本";
+    const signature = `${inDungeon}:${this.dungeonTransitionInFlight}:${this.localUnitId}:${cooldownSeconds}`;
+    if (signature === this.dungeonHudSignature) return;
+    this.dungeonHudSignature = signature;
     if (this.dungeonToggleButton) {
       this.dungeonToggleButton.textContent = text;
-      this.dungeonToggleButton.disabled = this.dungeonTransitionInFlight || this.localUnitId === 0;
+      this.dungeonToggleButton.disabled = this.dungeonTransitionInFlight || this.localUnitId === 0 || blocked;
     }
     if (this.mobileDungeonButton) {
-      this.mobileDungeonButton.textContent = inDungeon ? "离" : "副";
+      this.mobileDungeonButton.textContent = inDungeon ? "离" : blocked ? cooldownText : "副";
       this.mobileDungeonButton.title = text;
-      this.mobileDungeonButton.disabled = this.dungeonTransitionInFlight || this.localUnitId === 0;
+      this.mobileDungeonButton.style.fontSize = blocked ? "10px" : "16px";
+      this.mobileDungeonButton.disabled = this.dungeonTransitionInFlight || this.localUnitId === 0 || blocked;
     }
   }
 
@@ -3287,6 +3313,7 @@ export class GameBootstrap3D extends Component {
     bindActionButton(dungeonButton, () => this.toggleStarterDungeon());
     controls.appendChild(dungeonButton);
     this.mobileDungeonButton = dungeonButton;
+    this.dungeonHudSignature = "";
     this.updateDungeonButtons();
 
     const style = document.createElement("style");
@@ -4057,6 +4084,8 @@ export class GameBootstrap3D extends Component {
     this.buffStateStore.Clear();
     this.inventoryItems.clear();
     this.playerGold = 0n;
+    this.starterDungeonCooldownEndAtMs = 0n;
+    this.dungeonHudSignature = "";
     this.quests.clear();
     this.completedQuestConfigIds.clear();
     this.refreshSelectedTargetHud();
@@ -4100,6 +4129,8 @@ export class GameBootstrap3D extends Component {
       this.localUnitId = result.enterMap.unitId;
       this.currentMapId = result.enterMap.mapId;
       this.currentMapInstanceId = result.enterMap.mapInstanceId;
+      this.starterDungeonCooldownEndAtMs = result.enterMap.starterDungeonCooldownEndAtMs;
+      this.dungeonHudSignature = "";
       this.currentAccount = account;
       this.updateDungeonButtons();
       this.playerGold = result.enterMap.gold;
@@ -4163,7 +4194,7 @@ export class GameBootstrap3D extends Component {
         `实体 ${visibleEntities.length} / 怪物 ${monsterCount}\n` +
         (this.isMobileLayout()
           ? "手机：左下摇杆移动/转向，右侧拖动环视，双指缩放；地面寻路暂时关闭；靠近紫色NPC点交互"
-          : "W/S前后，A/D转向；左右鼠标同按前进；左键拖动环视；地面寻路暂时关闭；按住右键时A/D横移；1平A，2/3药水，4-8技能；靠近紫色NPC点交互；E开关动态门"),
+          : "W/S前后，A/D转向；左右鼠标同按前进；左键拖动环视；地面寻路暂时关闭；按住右键时A/D横移；1平A，2/3/Q药水，4-0技能；靠近紫色NPC点交互；E开关动态门"),
       );
       this.setLoginStatus("登录成功");
       await this.offerCredentialSave(account, password);
@@ -4188,6 +4219,8 @@ export class GameBootstrap3D extends Component {
   private async toggleStarterDungeon(): Promise<void> {
     const flow = this.loginFlow;
     if (!flow || !this.gateSocket || this.localUnitId === 0 || this.dungeonTransitionInFlight) return;
+    const serverNow = BigInt(Math.max(0, Math.floor(Date.now() + (flow.latestGatePing?.clockOffsetMs ?? 0))));
+    if (this.currentMapId !== STARTER_DUNGEON_MAP_ID && serverNow < this.starterDungeonCooldownEndAtMs) return;
     this.dungeonTransitionInFlight = true;
     this.updateDungeonButtons();
     try {
@@ -4238,6 +4271,8 @@ export class GameBootstrap3D extends Component {
     this.currentMapId = enterMap.mapId;
     this.currentMapInstanceId = enterMap.mapInstanceId;
     this.playerGold = enterMap.gold;
+    this.starterDungeonCooldownEndAtMs = enterMap.starterDungeonCooldownEndAtMs;
+    this.dungeonHudSignature = "";
     this.buffStateStore.Clear();
     for (const entity of enterMap.entities) this.buffStateStore.ApplySnapshot(entity);
     this.inventoryItems.clear();
@@ -5056,7 +5091,10 @@ export class GameBootstrap3D extends Component {
       const names = response.items
         .map((item) => `${GameConfigs.ItemConfig.TryGet(item.configId)?.name ?? `道具#${item.configId}`}×${item.count}`)
         .join("、");
-      this.appendLootResult(names.length > 0 ? `拾取成功：${names}` : "本次没有拾取到可用掉落");
+      const rewards = [names, response.gainedGold > 0n ? `铜币×${response.gainedGold}` : ""]
+        .filter((value) => value.length > 0)
+        .join("、");
+      this.appendLootResult(rewards.length > 0 ? `拾取成功：${rewards}` : "本次没有拾取到可用掉落");
       this.lootResultMonsterId = monster.unitId;
       this.ApplyLootPreview({ monsterId: monster.unitId, drops: response.remainingDrops });
       if (this.remotePlayers.has(monster.unitId)) {
@@ -5133,8 +5171,10 @@ export class GameBootstrap3D extends Component {
       for (const drop of this.lootPreviewDrops) {
         const row = document.createElement("button");
         row.type = "button";
-        const item = GameConfigs.ItemConfig.TryGet(drop.itemConfigId);
-        row.textContent = `${item?.name ?? `道具#${drop.itemConfigId}`} × ${drop.count}`;
+        const item = drop.gold > 0n ? undefined : GameConfigs.ItemConfig.TryGet(drop.itemConfigId);
+        row.textContent = drop.gold > 0n
+          ? `铜币 × ${drop.gold}`
+          : `${item?.name ?? `道具#${drop.itemConfigId}`} × ${drop.count}`;
         Object.assign(row.style, {
           width: "100%",
           padding: "10px 12px",
@@ -5181,6 +5221,7 @@ export class GameBootstrap3D extends Component {
     // 正常拾取只返回受影响的ItemSnapshot；完整背包只来自EnterMap/重连快照。
     // Normal loot returns only affected ItemSnapshots; full inventory comes from EnterMap/reconnect snapshots.
     for (const item of message.items) this.ApplyItemSnapshot(item);
+    this.playerGold = message.gold;
     for (const quest of message.quests) {
       const normalized = normalizeQuestSnapshot(quest);
       if (!normalized) continue;
@@ -5436,6 +5477,11 @@ export class GameBootstrap3D extends Component {
     if (event.keyCode === ITEM_LARGE_HEALTH_POTION_KEY && !this.pressedKeys.has(event.keyCode)) {
       this.pressedKeys.add(event.keyCode);
       void this.useHotbarItem(ITEM_LARGE_HEALTH_POTION);
+      return;
+    }
+    if (event.keyCode === ITEM_MANA_POTION_KEY && !this.pressedKeys.has(event.keyCode)) {
+      this.pressedKeys.add(event.keyCode);
+      void this.useHotbarItem(ITEM_MANA_POTION);
       return;
     }
     if (event.keyCode === KeyCode.KEY_E && !this.pressedKeys.has(event.keyCode)) {
@@ -6567,6 +6613,12 @@ function formatCooldown(remainingMs: number): string {
     : `${(remainingMs / 1_000).toFixed(1)}s`;
 }
 
+/** 个人副本CD只显示总分钟和秒，十分钟显示为10:00。 / Formats the personal dungeon cooldown as total minutes and seconds. */
+function formatMinuteSecond(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.ceil(totalSeconds));
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 /** 只显示分钟和秒；例如两小时显示为120:00。 / Formats minutes and seconds only; two hours becomes 120:00. */
 function formatBuffRemaining(expireTimeMs: bigint, serverNowMs: number): string {
   if (expireTimeMs <= 0n) return "永久";
@@ -6582,7 +6634,8 @@ function formatBuffRemaining(expireTimeMs: bigint, serverNowMs: number): string 
 /** 快捷栏按键只处理一次按下事件，不应进入移动输入刷新。 / Hotbar keys are edge-triggered and must never enter movement input refresh. */
 function isHotbarKey(key: KeyCode): boolean {
   return key === AUTO_ATTACK_KEY || key === ITEM_SMALL_HEALTH_POTION_KEY ||
-    key === ITEM_LARGE_HEALTH_POTION_KEY || DEMO_SKILL_KEYS.some((skill) => skill.key === key);
+    key === ITEM_LARGE_HEALTH_POTION_KEY || key === ITEM_MANA_POTION_KEY ||
+    DEMO_SKILL_KEYS.some((skill) => skill.key === key);
 }
 
 /** 技能显示名只读取客户端Luban表；快捷键不再复制技能名称或规则。 / Reads skill display names only from client Luban data so key bindings never duplicate skill rules. */

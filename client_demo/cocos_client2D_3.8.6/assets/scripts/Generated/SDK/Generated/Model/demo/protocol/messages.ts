@@ -720,6 +720,7 @@ export interface LootDropSnapshot {
   dropId: number;
   itemConfigId: number;
   count: number;
+  gold: bigint;
 }
 
 export const LootDropSnapshotCodec = {
@@ -729,6 +730,7 @@ export const LootDropSnapshotCodec = {
       dropId: 0,
       itemConfigId: 0,
       count: 0,
+      gold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -740,6 +742,9 @@ export const LootDropSnapshotCodec = {
       }
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.count = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.gold = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -753,6 +758,42 @@ export const LootDropSnapshotCodec = {
     if (value.dropId !== undefined) writer.uint32(1, value.dropId);
     if (value.itemConfigId !== undefined) writer.uint32(2, value.itemConfigId);
     if (value.count !== undefined) writer.uint32(3, value.count);
+    if (value.gold !== undefined) writer.uint64(4, value.gold);
+    return writer.finish();
+  },
+};
+
+export interface StarterDungeonCooldownSnapshot {
+  cooldownEndAtMs: bigint;
+  operationId: string;
+}
+
+export const StarterDungeonCooldownSnapshotCodec = {
+  decode(payload: Uint8Array): StarterDungeonCooldownSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: StarterDungeonCooldownSnapshot = {
+      cooldownEndAtMs: 0n,
+      operationId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.cooldownEndAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: StarterDungeonCooldownSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.cooldownEndAtMs !== undefined) writer.uint64(1, value.cooldownEndAtMs);
+    if (value.operationId !== undefined) writer.string(2, value.operationId);
     return writer.finish();
   },
 };
@@ -1813,6 +1854,7 @@ export interface G2C_EnterMap extends IResponse {
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
   gold: bigint;
+  starterDungeonCooldownEndAtMs: bigint;
 }
 
 export const G2C_EnterMapCodec = {
@@ -1836,6 +1878,7 @@ export const G2C_EnterMapCodec = {
       quests: [],
       completedQuestConfigIds: [],
       gold: 0n,
+      starterDungeonCooldownEndAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1899,6 +1942,9 @@ export const G2C_EnterMapCodec = {
       else if (tag.fieldNo === 17 && tag.wireType === 0) {
         value.gold = reader.uint64();
       }
+      else if (tag.fieldNo === 18 && tag.wireType === 0) {
+        value.starterDungeonCooldownEndAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1928,6 +1974,7 @@ export const G2C_EnterMapCodec = {
     for (const item of (value.quests ?? [])) writer.bytes(15, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(16, item, true);
     if (value.gold !== undefined) writer.uint64(17, value.gold);
+    if (value.starterDungeonCooldownEndAtMs !== undefined) writer.uint64(18, value.starterDungeonCooldownEndAtMs);
     return writer.finish();
   },
 };
@@ -1971,6 +2018,7 @@ export interface G2C_EnterStarterDungeon extends IResponse {
   error?: number;
   rpcId?: number;
   enterMap: G2C_EnterMap;
+  cooldownEndAtMs: bigint;
 }
 
 export const G2C_EnterStarterDungeonCodec = {
@@ -1978,6 +2026,7 @@ export const G2C_EnterStarterDungeonCodec = {
     const reader = new BinaryReader(payload);
     const value: G2C_EnterStarterDungeon = {
       enterMap: G2C_EnterMapCodec.decode(new Uint8Array(0)),
+      cooldownEndAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1993,6 +2042,9 @@ export const G2C_EnterStarterDungeonCodec = {
       else if (tag.fieldNo === 1 && tag.wireType === 2) {
         value.enterMap = G2C_EnterMapCodec.decode(reader.bytesField());
       }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.cooldownEndAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -2006,6 +2058,7 @@ export const G2C_EnterStarterDungeonCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.enterMap !== undefined) writer.bytes(1, G2C_EnterMapCodec.encode(value.enterMap));
+    if (value.cooldownEndAtMs !== undefined) writer.uint64(2, value.cooldownEndAtMs);
     return writer.finish();
   },
 };
@@ -3099,6 +3152,8 @@ export interface M2C_LootMonster extends IActorLocationResponse {
   items: readonly ItemSnapshot[];
   quests: readonly QuestSnapshot[];
   remainingDrops: readonly LootDropSnapshot[];
+  gold: bigint;
+  gainedGold: bigint;
 }
 
 export const M2C_LootMonsterCodec = {
@@ -3109,6 +3164,8 @@ export const M2C_LootMonsterCodec = {
       items: [],
       quests: [],
       remainingDrops: [],
+      gold: 0n,
+      gainedGold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -3133,6 +3190,12 @@ export const M2C_LootMonsterCodec = {
       else if (tag.fieldNo === 4 && tag.wireType === 2) {
         (value.remainingDrops as LootDropSnapshot[]).push(LootDropSnapshotCodec.decode(reader.bytesField()));
       }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.gainedGold = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -3149,6 +3212,8 @@ export const M2C_LootMonsterCodec = {
     for (const item of (value.items ?? [])) writer.bytes(2, ItemSnapshotCodec.encode(item), true);
     for (const item of (value.quests ?? [])) writer.bytes(3, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.remainingDrops ?? [])) writer.bytes(4, LootDropSnapshotCodec.encode(item), true);
+    if (value.gold !== undefined) writer.uint64(5, value.gold);
+    if (value.gainedGold !== undefined) writer.uint64(6, value.gainedGold);
     return writer.finish();
   },
 };

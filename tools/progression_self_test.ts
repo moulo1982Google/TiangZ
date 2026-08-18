@@ -5,7 +5,11 @@ import {
   LevelFromExperience,
   STARTER_MAX_LEVEL,
 } from "../app/hotfix/mmorpg/progression/ProgressionRules";
-import { G2C_ProgressionChangedCodec } from "../app/generated/model/server/demo/protocol/messages";
+import {
+  G2C_ProgressionChangedCodec,
+  StarterDungeonCooldownSnapshotCodec,
+} from "../app/generated/model/server/demo/protocol/messages";
+import { STARTER_DUNGEON_COOLDOWN_MS } from "../app/model/mmorpg/dungeon/StarterDungeon";
 
 assert.equal(NumericType.Level, 3);
 assert.equal(NumericType.Experience, 4);
@@ -29,6 +33,15 @@ const receipt = {
 assert.deepEqual(
   G2C_ProgressionChangedCodec.decode(G2C_ProgressionChangedCodec.encode(receipt)),
   receipt,
+);
+assert.equal(STARTER_DUNGEON_COOLDOWN_MS, 600_000);
+const dungeonCooldown = {
+  cooldownEndAtMs: 1_800_000_000_000n,
+  operationId: "starter-dungeon:test",
+};
+assert.deepEqual(
+  StarterDungeonCooldownSnapshotCodec.decode(StarterDungeonCooldownSnapshotCodec.encode(dungeonCooldown)),
+  dungeonCooldown,
 );
 
 console.log("[progression] self-test passed");

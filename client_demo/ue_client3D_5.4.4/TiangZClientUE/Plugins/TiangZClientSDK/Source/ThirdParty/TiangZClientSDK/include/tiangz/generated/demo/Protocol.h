@@ -1038,6 +1038,7 @@ struct LootDropSnapshot {
   std::uint32_t dropId = 0;
   std::uint32_t itemConfigId = 0;
   std::uint32_t count = 0;
+  std::uint64_t gold = 0;
 };
 
 struct LootDropSnapshotCodec {
@@ -1068,6 +1069,13 @@ struct LootDropSnapshotCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -1081,6 +1089,49 @@ struct LootDropSnapshotCodec {
     writer.UInt32(1, value.dropId);
     writer.UInt32(2, value.itemConfigId);
     writer.UInt32(3, value.count);
+    writer.UInt64(4, value.gold);
+    return writer.Finish();
+  }
+};
+
+struct StarterDungeonCooldownSnapshot {
+  std::uint64_t cooldownEndAtMs = 0;
+  std::string operationId;
+};
+
+struct StarterDungeonCooldownSnapshotCodec {
+  static StarterDungeonCooldownSnapshot Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    StarterDungeonCooldownSnapshot value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.cooldownEndAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 2) {
+            value.operationId = reader.String();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const StarterDungeonCooldownSnapshot& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt64(1, value.cooldownEndAtMs);
+    writer.String(2, value.operationId);
     return writer.Finish();
   }
 };
@@ -2408,6 +2459,7 @@ struct G2C_EnterMap {
   std::vector<QuestSnapshot> quests;
   std::vector<std::uint32_t> completedQuestConfigIds;
   std::uint64_t gold = 0;
+  std::uint64_t starterDungeonCooldownEndAtMs = 0;
 };
 
 struct G2C_EnterMapCodec {
@@ -2557,6 +2609,13 @@ struct G2C_EnterMapCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 18:
+          if (tag.wireType == 0) {
+            value.starterDungeonCooldownEndAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2587,6 +2646,7 @@ struct G2C_EnterMapCodec {
     for (const auto& item : value.quests) writer.BytesField(15, QuestSnapshotCodec::Encode(item), true);
     for (const auto& item : value.completedQuestConfigIds) writer.UInt32(16, item, true);
     writer.UInt64(17, value.gold);
+    writer.UInt64(18, value.starterDungeonCooldownEndAtMs);
     return writer.Finish();
   }
 };
@@ -2638,6 +2698,7 @@ struct G2C_EnterStarterDungeon {
   std::optional<std::uint32_t> error;
   std::optional<std::uint32_t> rpcId;
   G2C_EnterMap enterMap;
+  std::uint64_t cooldownEndAtMs = 0;
 };
 
 struct G2C_EnterStarterDungeonCodec {
@@ -2675,6 +2736,13 @@ struct G2C_EnterStarterDungeonCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.cooldownEndAtMs = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -2689,6 +2757,7 @@ struct G2C_EnterStarterDungeonCodec {
     if (value.error.has_value()) writer.UInt32(91, *value.error);
     if (value.rpcId.has_value()) writer.UInt32(90, *value.rpcId);
     writer.BytesField(1, G2C_EnterMapCodec::Encode(value.enterMap));
+    writer.UInt64(2, value.cooldownEndAtMs);
     return writer.Finish();
   }
 };
@@ -4123,6 +4192,8 @@ struct M2C_LootMonster {
   std::vector<ItemSnapshot> items;
   std::vector<QuestSnapshot> quests;
   std::vector<LootDropSnapshot> remainingDrops;
+  std::uint64_t gold = 0;
+  std::uint64_t gainedGold = 0;
 };
 
 struct M2C_LootMonsterCodec {
@@ -4181,6 +4252,20 @@ struct M2C_LootMonsterCodec {
             reader.Skip(tag.wireType);
           }
           break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.gold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 6:
+          if (tag.wireType == 0) {
+            value.gainedGold = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
         default:
           reader.Skip(tag.wireType);
           break;
@@ -4198,6 +4283,8 @@ struct M2C_LootMonsterCodec {
     for (const auto& item : value.items) writer.BytesField(2, ItemSnapshotCodec::Encode(item), true);
     for (const auto& item : value.quests) writer.BytesField(3, QuestSnapshotCodec::Encode(item), true);
     for (const auto& item : value.remainingDrops) writer.BytesField(4, LootDropSnapshotCodec::Encode(item), true);
+    writer.UInt64(5, value.gold);
+    writer.UInt64(6, value.gainedGold);
     return writer.Finish();
   }
 };

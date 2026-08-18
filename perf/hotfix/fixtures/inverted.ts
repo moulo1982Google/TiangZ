@@ -1,13 +1,26 @@
 import "../../../app/generated/hotfix/handlers";
+// 该候选必须与 generated/hotfix/patches 保持完整集合，仅用下方自定义实现替换 PlayerUnitSystem。
+// Keep the complete generated patch set, replacing only PlayerUnitSystem with the custom implementation below.
 import "../../../app/hotfix/mmorpg/buff/BuffComponentSystem";
 import "../../../app/hotfix/mmorpg/buff/BuffSystem";
 import "../../../app/hotfix/mmorpg/combat/CombatComponentSystem";
+import "../../../app/hotfix/mmorpg/combat/CombatStateComponentSystem";
+import "../../../app/hotfix/mmorpg/currency/CurrencyComponentSystem";
 import "../../../app/hotfix/mmorpg/item/ItemComponentSystem";
 import "../../../app/hotfix/mmorpg/item/ItemSystem";
 import "../../../app/hotfix/mmorpg/login/LoginComponentSystem";
 import "../../../app/hotfix/mmorpg/monster/MonsterComponentSystem";
 import "../../../app/hotfix/mmorpg/monster/MonsterUnitSystem";
+import "../../../app/hotfix/mmorpg/npc/NpcComponentSystem";
+import "../../../app/hotfix/mmorpg/npc/NpcUnitSystem";
 import "../../../app/hotfix/mmorpg/numeric/NumericComponentSystem";
+import "../../../app/hotfix/mmorpg/progression/ProgressionComponentSystem";
+import "../../../app/hotfix/mmorpg/quest/QuestComponentSystem";
+import "../../../app/hotfix/mmorpg/quest/QuestSystem";
+import "../../../app/hotfix/mmorpg/shop/NpcShopComponentSystem";
+import "../../../app/hotfix/mmorpg/skill/SkillComponentSystem";
+import "../../../app/hotfix/mmorpg/skill/SkillMapComponentSystem";
+import "../../../app/hotfix/mmorpg/trade/PlayerTradeComponentSystem";
 
 import {
   type AwakePlayerUnit,

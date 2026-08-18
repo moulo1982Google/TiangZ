@@ -7,6 +7,12 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-18：Starter Boss掉落与个人副本CD
+
+- Boss 3改为固定掉落小红、大红、蓝药各5个和150铜币；`DropTableConfig.gold`支持铜币行，拾取含金币时以同一operationId原子提交`inventory + quest + wallet`，客户端尸体窗口显示铜币并应用权威余额。
+- Map 200进入增加10分钟个人CD。CD由`ProgressionComponent`拥有，先在当前PlayerUnit ordered mailbox提交progression记录，再由Gate创建动态实例；跨MapHost传送、登录、重连与DBProxy恢复都携带截止时间，Cocos3D副本按钮显示分钟秒倒计时。
+- Cocos3D快捷栏增加蓝药1003，桌面按`Q`、移动端点击图标；Starter动态副本自动夹具扩展为Boss击杀、四行拾取、立即重进拒绝及持久化恢复验证。
+
 ## 2026-08-18：Starter动态Boss副本与经验升级闭环
 
 - 新增Map 200“Starter Boss试炼”和Monster 3“试炼守卫”。客户端只向Gate提交稳定operationId；Gate经`DynamicMapProxy -> MapManager`幂等创建动态实例，并复用正式`EnterMapCore`进入和返回Map 100。

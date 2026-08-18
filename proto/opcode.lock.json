@@ -62,6 +62,11 @@
       "code": 15003
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_ClaimStarterDungeonEntry",
+      "name": "G2M_ClaimStarterDungeonEntry",
+      "code": 20062
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#G2M_EnterMap",
       "name": "G2M_EnterMap",
       "code": 20003
@@ -165,6 +170,11 @@
       "key": "proto/InnerMessage_S_20001.proto#L2S_UnlockPlayerLocation",
       "name": "L2S_UnlockPlayerLocation",
       "code": 20032
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_ClaimStarterDungeonEntry",
+      "name": "M2G_ClaimStarterDungeonEntry",
+      "code": 20063
     },
     {
       "key": "proto/InnerMessage_S_20001.proto#M2G_EnterMap",

@@ -52,6 +52,7 @@ message M2G_SecondEnterMap // IActorResponse
   repeated uint32 completed_quest_config_ids = 12;
   uint64 character_id = 13;
   uint64 gold = 14;
+  uint64 starter_dungeon_cooldown_end_at_ms = 15;
 }
 
 message M2G_EnterMap // IResponse
@@ -72,6 +73,21 @@ message M2G_EnterMap // IResponse
   repeated uint32 completed_quest_config_ids = 14;
   uint64 character_id = 15;
   uint64 gold = 16;
+  uint64 starter_dungeon_cooldown_end_at_ms = 17;
+}
+
+//ResponseType M2G_ClaimStarterDungeonEntry
+// 在当前PlayerUnit有序邮箱中幂等提交个人副本CD，Gate不得在本地保存该状态。
+// Commits the personal dungeon cooldown idempotently in the current PlayerUnit ordered mailbox.
+// @ets.msg protocol=Map method=ClaimStarterDungeonEntry
+message G2M_ClaimStarterDungeonEntry // IActorRequest
+{
+  string operation_id = 1;
+}
+
+message M2G_ClaimStarterDungeonEntry // IActorResponse
+{
+  uint64 cooldown_end_at_ms = 1;
 }
 
 //ResponseType M2G_TransferPlayer
@@ -107,6 +123,7 @@ message M2G_TransferPlayer // IActorResponse
   repeated uint32 completed_quest_config_ids = 16;
   uint64 character_id = 17;
   uint64 gold = 18;
+  uint64 starter_dungeon_cooldown_end_at_ms = 19;
 }
 
 // @ets.msg protocol=Gate method=MapReady
@@ -212,6 +229,7 @@ message PlayerTransferSnapshot
   uint64 wallet_revision = 26;
   uint64 inventory_revision = 27;
   uint64 quest_revision = 28;
+  StarterDungeonCooldownSnapshot starter_dungeon = 29;
 }
 
 message MapInstanceSnapshot

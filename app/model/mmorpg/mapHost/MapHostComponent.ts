@@ -54,6 +54,7 @@ import { SkillComponent, type SkillTransferState } from "../skill/SkillComponent
 import { QuestComponent } from "../quest/QuestComponent";
 import type { PlayerRepository } from "../persistence/PlayerRepository";
 import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComponent";
+import { ProgressionComponent } from "../progression/ProgressionComponent";
 import { GameConfigs, QuestStatus } from "../../../generated/model/config";
 import { LocationProxy } from "../location/LocationProxy";
 import { UnitGateComponent } from "../map/UnitGateComponent";
@@ -426,6 +427,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       gold: snapshot.gold,
+      starterDungeonCooldownEndAtMs: player.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
       mapInstanceId: located.location.mapInstanceId,
       locationRevision: located.location.revision,
     };
@@ -650,6 +652,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         quests: target.quests,
         completedQuestConfigIds: target.completedQuestConfigIds,
         gold: target.gold,
+        starterDungeonCooldownEndAtMs: source.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
         mapHost: targetInstance.mapHost,
       };
     } catch (error) {
@@ -705,6 +708,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       quests: player.GetComponent(QuestComponent).Snapshot().map(toProtocolQuest),
       completedQuestConfigIds: player.GetComponent(QuestComponent).CompletedQuestConfigIds(),
       gold: snapshot.gold,
+      starterDungeonCooldownEndAtMs: player.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
       mapHost: this.EndpointSnapshot(),
     };
   }
@@ -876,7 +880,11 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
        progressionRevision: revisions.progression,
        questRevision: revisions.quest,
        runtimeRevision: revisions.runtime,
-       walletRevision: revisions.wallet,
+      walletRevision: revisions.wallet,
+      starterDungeon: {
+        cooldownEndAtMs: player.GetComponent(ProgressionComponent).StarterDungeonCooldownEndAtMs,
+        operationId: player.GetComponent(ProgressionComponent).CaptureTransfer().starterDungeonOperationId,
+      },
     };
   }
 
@@ -1237,6 +1245,9 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     }
     if (!snapshot.transferId || !snapshot.account || !snapshot.gateName || snapshot.characterId <= 0n) {
       throw new Error("incomplete player transfer identity");
+    }
+    if (snapshot.starterDungeon.cooldownEndAtMs < 0n) {
+      throw new Error("invalid Starter dungeon cooldown in transfer snapshot");
     }
     if (!GameConfigs.MapConfig.TryGet(snapshot.targetMapId)) {
       throw new RpcError(

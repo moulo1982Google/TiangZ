@@ -146,6 +146,16 @@ message LootDropSnapshot
   uint32 drop_id = 1;
   uint32 item_config_id = 2;
   uint32 count = 3;
+  // 非零时该行表示铜币掉落，item_config_id和count保持0。 / A non-zero value represents currency loot; item_config_id and count remain zero.
+  uint64 gold = 4;
+}
+
+// 玩家个人副本CD属于成长持久状态；operation_id用于重试同一次已接受的进入请求。
+// Personal dungeon cooldown is persisted progression state; operation_id makes one accepted entry retryable.
+message StarterDungeonCooldownSnapshot
+{
+  uint64 cooldown_end_at_ms = 1;
+  string operation_id = 2;
 }
 
 // 周围玩家可见的Buff外观数据；不得包含吸收量等私有战斗细节。

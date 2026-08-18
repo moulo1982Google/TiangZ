@@ -3,6 +3,7 @@ import {
   GameErrCode,
   CombatComponent,
   CombatStateComponent,
+  CurrencyComponent,
   BuffComponent,
   AutoAttackPhase,
   MapAoiComponent,
@@ -203,6 +204,7 @@ export class MonsterComponentSystem extends MonsterComponent {
         dropId: drop.dropId,
         itemConfigId: drop.configId,
         count: drop.count,
+        gold: drop.gold.toString(),
         questObjectiveId: drop.questObjectiveId,
       })),
       eligibleDropIds: eligibleDrops.map((drop) => drop.dropId),
@@ -237,7 +239,8 @@ export class MonsterComponentSystem extends MonsterComponent {
       // operationId读取已提交回执，不能重新计算掉落，也不能把未知请求伪装成成功。
       // The corpse may already have left AOI after the tagged account claimed all regular drops.
       // Only the same operationId may recover a durable receipt; never recalculate loot.
-      const receipt = await persistence.LoadTransaction(scopedOperationId, ["inventory", "quest"]);
+      const receipt = await persistence.LoadTransaction(scopedOperationId, ["inventory", "quest", "wallet"])
+        ?? await persistence.LoadTransaction(scopedOperationId, ["inventory", "quest"]);
       if (!receipt) throw error;
       return cloneLootResponse(decodeLootResponse(receipt.result, monsterId));
     }
@@ -276,7 +279,14 @@ export class MonsterComponentSystem extends MonsterComponent {
     const questProgress = this.PlanLootQuestProgress(player, selected);
     const inventory = player.GetComponent(ItemComponent);
     const inventoryPlan = inventory.PlanGrantItems(ToInventoryGrants(selected));
-    const baseData = persistence.Capture("monster-loot", { items: inventoryPlan.nextItems });
+    const currency = player.GetComponent(CurrencyComponent);
+    const baseGold = currency.Gold;
+    const gainedGold = selected.reduce((total, drop) => total + drop.gold, 0n);
+    const nextGold = baseGold + gainedGold;
+    const baseData = persistence.Capture("monster-loot", {
+      items: inventoryPlan.nextItems,
+      gold: nextGold,
+    });
     const data = {
       ...baseData,
       quests: mergeQuestProgress(baseData.quests, questProgress),
@@ -289,18 +299,23 @@ export class MonsterComponentSystem extends MonsterComponent {
         items: inventoryPlan.affectedItems.map((item) => ({ ...item })),
         quests: questProgress.map(toProtocolQuest),
         remainingDrops: ToLootDropSnapshots(this.SelectLootDrops(container, player, 0, true)),
+        gold: nextGold,
+        gainedGold,
       };
       const encodedResponse = M2C_LootMonsterCodec.encode(response);
       let committedResult: { result: Uint8Array };
       try {
         committedResult = await persistence.ApplyTransaction(
           scopedOperationId,
-          ["inventory", "quest"],
+          gainedGold > 0n ? ["inventory", "quest", "wallet"] : ["inventory", "quest"],
           data,
           encodedResponse,
         );
       } catch (error) {
-        const receipt = await persistence.LoadTransaction(scopedOperationId, ["inventory", "quest"]);
+        const receipt = await persistence.LoadTransaction(
+          scopedOperationId,
+          gainedGold > 0n ? ["inventory", "quest", "wallet"] : ["inventory", "quest"],
+        );
         if (!receipt) throw error;
         committedResult = receipt;
       }
@@ -317,6 +332,7 @@ export class MonsterComponentSystem extends MonsterComponent {
         inventory.ApplyCommittedGrantItems(durable.items);
         quest.ApplyCommittedProgress(fromProtocolQuest(durable.quests));
       }
+      currency.ApplyCommittedGold(durable.gold, baseGold);
       const committedInventory = inventory.Snapshot();
       this.DomainScene().logger.info("monster loot committed to authoritative inventory", {
         monsterId,
@@ -332,6 +348,8 @@ export class MonsterComponentSystem extends MonsterComponent {
         inventoryStacks: committedInventory.length,
         inventoryCount: committedInventory.reduce((total, item) => total + item.count, 0),
         inventoryConfigIds: committedInventory.map((item) => item.configId),
+        gainedGold: durable.gainedGold.toString(),
+        gold: durable.gold.toString(),
       });
       await this.PublishLootResult(player, durable);
       this.TryRemoveLootedCorpse(monsterId, container);
@@ -867,11 +885,13 @@ export class MonsterComponentSystem extends MonsterComponent {
     readonly minCount: number;
     readonly maxCount: number;
     readonly questObjectiveId: number;
+    readonly gold: number;
   }, monster: MonsterUnit): LootDrop {
     return {
       dropId: drop.id,
       configId: drop.itemConfigId,
       count: deterministicDropCount(drop.minCount, drop.maxCount, monster.UnitId, drop.id),
+      gold: BigInt(drop.gold),
       questObjectiveId: drop.questObjectiveId,
     };
   }
@@ -1231,6 +1251,8 @@ function cloneLootResponse(value: M2C_LootMonster): M2C_LootMonster {
       revision: quest.revision,
     })),
     remainingDrops: value.remainingDrops.map((drop) => ({ ...drop })),
+    gold: value.gold,
+    gainedGold: value.gainedGold,
   };
 }
 

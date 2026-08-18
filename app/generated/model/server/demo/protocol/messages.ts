@@ -720,6 +720,7 @@ export interface LootDropSnapshot {
   dropId: number;
   itemConfigId: number;
   count: number;
+  gold: bigint;
 }
 
 export const LootDropSnapshotCodec = {
@@ -729,6 +730,7 @@ export const LootDropSnapshotCodec = {
       dropId: 0,
       itemConfigId: 0,
       count: 0,
+      gold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -740,6 +742,9 @@ export const LootDropSnapshotCodec = {
       }
       else if (tag.fieldNo === 3 && tag.wireType === 0) {
         value.count = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.gold = reader.uint64();
       }
       else {
         reader.skip(tag.wireType);
@@ -753,6 +758,42 @@ export const LootDropSnapshotCodec = {
     if (value.dropId !== undefined) writer.uint32(1, value.dropId);
     if (value.itemConfigId !== undefined) writer.uint32(2, value.itemConfigId);
     if (value.count !== undefined) writer.uint32(3, value.count);
+    if (value.gold !== undefined) writer.uint64(4, value.gold);
+    return writer.finish();
+  },
+};
+
+export interface StarterDungeonCooldownSnapshot {
+  cooldownEndAtMs: bigint;
+  operationId: string;
+}
+
+export const StarterDungeonCooldownSnapshotCodec = {
+  decode(payload: Uint8Array): StarterDungeonCooldownSnapshot {
+    const reader = new BinaryReader(payload);
+    const value: StarterDungeonCooldownSnapshot = {
+      cooldownEndAtMs: 0n,
+      operationId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.cooldownEndAtMs = reader.uint64();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: StarterDungeonCooldownSnapshot): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.cooldownEndAtMs !== undefined) writer.uint64(1, value.cooldownEndAtMs);
+    if (value.operationId !== undefined) writer.string(2, value.operationId);
     return writer.finish();
   },
 };
@@ -1369,6 +1410,7 @@ export interface M2G_SecondEnterMap extends IActorResponse {
   completedQuestConfigIds: readonly number[];
   characterId: bigint;
   gold: bigint;
+  starterDungeonCooldownEndAtMs: bigint;
 }
 
 export const M2G_SecondEnterMapCodec = {
@@ -1389,6 +1431,7 @@ export const M2G_SecondEnterMapCodec = {
       completedQuestConfigIds: [],
       characterId: 0n,
       gold: 0n,
+      starterDungeonCooldownEndAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1443,6 +1486,9 @@ export const M2G_SecondEnterMapCodec = {
       else if (tag.fieldNo === 14 && tag.wireType === 0) {
         value.gold = reader.uint64();
       }
+      else if (tag.fieldNo === 15 && tag.wireType === 0) {
+        value.starterDungeonCooldownEndAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1469,6 +1515,7 @@ export const M2G_SecondEnterMapCodec = {
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(12, item, true);
     if (value.characterId !== undefined) writer.uint64(13, value.characterId);
     if (value.gold !== undefined) writer.uint64(14, value.gold);
+    if (value.starterDungeonCooldownEndAtMs !== undefined) writer.uint64(15, value.starterDungeonCooldownEndAtMs);
     return writer.finish();
   },
 };
@@ -1493,6 +1540,7 @@ export interface M2G_EnterMap extends IResponse {
   completedQuestConfigIds: readonly number[];
   characterId: bigint;
   gold: bigint;
+  starterDungeonCooldownEndAtMs: bigint;
 }
 
 export const M2G_EnterMapCodec = {
@@ -1515,6 +1563,7 @@ export const M2G_EnterMapCodec = {
       completedQuestConfigIds: [],
       characterId: 0n,
       gold: 0n,
+      starterDungeonCooldownEndAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1575,6 +1624,9 @@ export const M2G_EnterMapCodec = {
       else if (tag.fieldNo === 16 && tag.wireType === 0) {
         value.gold = reader.uint64();
       }
+      else if (tag.fieldNo === 17 && tag.wireType === 0) {
+        value.starterDungeonCooldownEndAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1603,6 +1655,85 @@ export const M2G_EnterMapCodec = {
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(14, item, true);
     if (value.characterId !== undefined) writer.uint64(15, value.characterId);
     if (value.gold !== undefined) writer.uint64(16, value.gold);
+    if (value.starterDungeonCooldownEndAtMs !== undefined) writer.uint64(17, value.starterDungeonCooldownEndAtMs);
+    return writer.finish();
+  },
+};
+
+export interface G2M_ClaimStarterDungeonEntry extends IActorRequest {
+  rpcId?: number;
+  operationId: string;
+}
+
+export const G2M_ClaimStarterDungeonEntryCodec = {
+  decode(payload: Uint8Array): G2M_ClaimStarterDungeonEntry {
+    const reader = new BinaryReader(payload);
+    const value: G2M_ClaimStarterDungeonEntry = {
+      operationId: "",
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 2) {
+        value.operationId = reader.string();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2M_ClaimStarterDungeonEntry): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.operationId !== undefined) writer.string(1, value.operationId);
+    return writer.finish();
+  },
+};
+
+export interface M2G_ClaimStarterDungeonEntry extends IActorResponse {
+  message?: string;
+  error?: number;
+  rpcId?: number;
+  cooldownEndAtMs: bigint;
+}
+
+export const M2G_ClaimStarterDungeonEntryCodec = {
+  decode(payload: Uint8Array): M2G_ClaimStarterDungeonEntry {
+    const reader = new BinaryReader(payload);
+    const value: M2G_ClaimStarterDungeonEntry = {
+      cooldownEndAtMs: 0n,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 92 && tag.wireType === 2) {
+        value.message = reader.string();
+      }
+      else if (tag.fieldNo === 91 && tag.wireType === 0) {
+        value.error = reader.uint32();
+      }
+      else if (tag.fieldNo === 90 && tag.wireType === 0) {
+        value.rpcId = reader.uint32();
+      }
+      else if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.cooldownEndAtMs = reader.uint64();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: M2G_ClaimStarterDungeonEntry): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.message !== undefined) writer.string(92, value.message);
+    if (value.error !== undefined) writer.uint32(91, value.error);
+    if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
+    if (value.cooldownEndAtMs !== undefined) writer.uint64(1, value.cooldownEndAtMs);
     return writer.finish();
   },
 };
@@ -1687,6 +1818,7 @@ export interface M2G_TransferPlayer extends IActorResponse {
   completedQuestConfigIds: readonly number[];
   characterId: bigint;
   gold: bigint;
+  starterDungeonCooldownEndAtMs: bigint;
 }
 
 export const M2G_TransferPlayerCodec = {
@@ -1711,6 +1843,7 @@ export const M2G_TransferPlayerCodec = {
       completedQuestConfigIds: [],
       characterId: 0n,
       gold: 0n,
+      starterDungeonCooldownEndAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -1777,6 +1910,9 @@ export const M2G_TransferPlayerCodec = {
       else if (tag.fieldNo === 18 && tag.wireType === 0) {
         value.gold = reader.uint64();
       }
+      else if (tag.fieldNo === 19 && tag.wireType === 0) {
+        value.starterDungeonCooldownEndAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -1807,6 +1943,7 @@ export const M2G_TransferPlayerCodec = {
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(16, item, true);
     if (value.characterId !== undefined) writer.uint64(17, value.characterId);
     if (value.gold !== undefined) writer.uint64(18, value.gold);
+    if (value.starterDungeonCooldownEndAtMs !== undefined) writer.uint64(19, value.starterDungeonCooldownEndAtMs);
     return writer.finish();
   },
 };
@@ -2206,6 +2343,7 @@ export interface PlayerTransferSnapshot {
   walletRevision: bigint;
   inventoryRevision: bigint;
   questRevision: bigint;
+  starterDungeon: StarterDungeonCooldownSnapshot;
 }
 
 export const PlayerTransferSnapshotCodec = {
@@ -2238,6 +2376,7 @@ export const PlayerTransferSnapshotCodec = {
       walletRevision: 0n,
       inventoryRevision: 0n,
       questRevision: 0n,
+      starterDungeon: StarterDungeonCooldownSnapshotCodec.decode(new Uint8Array(0)),
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -2319,6 +2458,9 @@ export const PlayerTransferSnapshotCodec = {
       else if (tag.fieldNo === 28 && tag.wireType === 0) {
         value.questRevision = reader.uint64();
       }
+      else if (tag.fieldNo === 29 && tag.wireType === 2) {
+        value.starterDungeon = StarterDungeonCooldownSnapshotCodec.decode(reader.bytesField());
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -2354,6 +2496,7 @@ export const PlayerTransferSnapshotCodec = {
     if (value.walletRevision !== undefined) writer.uint64(26, value.walletRevision);
     if (value.inventoryRevision !== undefined) writer.uint64(27, value.inventoryRevision);
     if (value.questRevision !== undefined) writer.uint64(28, value.questRevision);
+    if (value.starterDungeon !== undefined) writer.bytes(29, StarterDungeonCooldownSnapshotCodec.encode(value.starterDungeon));
     return writer.finish();
   },
 };
@@ -5419,6 +5562,7 @@ export interface G2C_EnterMap extends IResponse {
   quests: readonly QuestSnapshot[];
   completedQuestConfigIds: readonly number[];
   gold: bigint;
+  starterDungeonCooldownEndAtMs: bigint;
 }
 
 export const G2C_EnterMapCodec = {
@@ -5442,6 +5586,7 @@ export const G2C_EnterMapCodec = {
       quests: [],
       completedQuestConfigIds: [],
       gold: 0n,
+      starterDungeonCooldownEndAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -5505,6 +5650,9 @@ export const G2C_EnterMapCodec = {
       else if (tag.fieldNo === 17 && tag.wireType === 0) {
         value.gold = reader.uint64();
       }
+      else if (tag.fieldNo === 18 && tag.wireType === 0) {
+        value.starterDungeonCooldownEndAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -5534,6 +5682,7 @@ export const G2C_EnterMapCodec = {
     for (const item of (value.quests ?? [])) writer.bytes(15, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.completedQuestConfigIds ?? [])) writer.uint32(16, item, true);
     if (value.gold !== undefined) writer.uint64(17, value.gold);
+    if (value.starterDungeonCooldownEndAtMs !== undefined) writer.uint64(18, value.starterDungeonCooldownEndAtMs);
     return writer.finish();
   },
 };
@@ -5577,6 +5726,7 @@ export interface G2C_EnterStarterDungeon extends IResponse {
   error?: number;
   rpcId?: number;
   enterMap: G2C_EnterMap;
+  cooldownEndAtMs: bigint;
 }
 
 export const G2C_EnterStarterDungeonCodec = {
@@ -5584,6 +5734,7 @@ export const G2C_EnterStarterDungeonCodec = {
     const reader = new BinaryReader(payload);
     const value: G2C_EnterStarterDungeon = {
       enterMap: G2C_EnterMapCodec.decode(new Uint8Array(0)),
+      cooldownEndAtMs: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -5599,6 +5750,9 @@ export const G2C_EnterStarterDungeonCodec = {
       else if (tag.fieldNo === 1 && tag.wireType === 2) {
         value.enterMap = G2C_EnterMapCodec.decode(reader.bytesField());
       }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.cooldownEndAtMs = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -5612,6 +5766,7 @@ export const G2C_EnterStarterDungeonCodec = {
     if (value.error !== undefined) writer.uint32(91, value.error);
     if (value.rpcId !== undefined) writer.uint32(90, value.rpcId);
     if (value.enterMap !== undefined) writer.bytes(1, G2C_EnterMapCodec.encode(value.enterMap));
+    if (value.cooldownEndAtMs !== undefined) writer.uint64(2, value.cooldownEndAtMs);
     return writer.finish();
   },
 };
@@ -6705,6 +6860,8 @@ export interface M2C_LootMonster extends IActorLocationResponse {
   items: readonly ItemSnapshot[];
   quests: readonly QuestSnapshot[];
   remainingDrops: readonly LootDropSnapshot[];
+  gold: bigint;
+  gainedGold: bigint;
 }
 
 export const M2C_LootMonsterCodec = {
@@ -6715,6 +6872,8 @@ export const M2C_LootMonsterCodec = {
       items: [],
       quests: [],
       remainingDrops: [],
+      gold: 0n,
+      gainedGold: 0n,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -6739,6 +6898,12 @@ export const M2C_LootMonsterCodec = {
       else if (tag.fieldNo === 4 && tag.wireType === 2) {
         (value.remainingDrops as LootDropSnapshot[]).push(LootDropSnapshotCodec.decode(reader.bytesField()));
       }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.gold = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.gainedGold = reader.uint64();
+      }
       else {
         reader.skip(tag.wireType);
       }
@@ -6755,6 +6920,8 @@ export const M2C_LootMonsterCodec = {
     for (const item of (value.items ?? [])) writer.bytes(2, ItemSnapshotCodec.encode(item), true);
     for (const item of (value.quests ?? [])) writer.bytes(3, QuestSnapshotCodec.encode(item), true);
     for (const item of (value.remainingDrops ?? [])) writer.bytes(4, LootDropSnapshotCodec.encode(item), true);
+    if (value.gold !== undefined) writer.uint64(5, value.gold);
+    if (value.gainedGold !== undefined) writer.uint64(6, value.gainedGold);
     return writer.finish();
   },
 };

@@ -53,7 +53,7 @@ node tools/starter_acceptance.mjs --mode split
 npm run starter:acceptance:persistent
 ```
 
-该命令会生成带时间后缀的测试账号，分别执行道具事务恢复和“进入动态副本 -> 击杀Boss -> progression事务提交 -> 停止并重启TiangZ -> 恢复等级与经验”，不会删除数据库，也不会启动Docker。它要求DBProxy仓库已经存在本地`.env`和可运行的Debug二进制；若7800端口已有DBProxy，则直接复用。
+该命令会生成带时间后缀的测试账号，分别执行道具事务恢复和“进入动态副本 -> 击杀Boss -> 拾取三种药水与150铜币 -> 验证10分钟个人CD -> 停止并重启TiangZ -> 恢复等级、经验、背包、余额与CD”，不会删除数据库，也不会启动Docker。它要求DBProxy仓库已经存在本地`.env`和可运行的Debug二进制；若7800端口已有DBProxy，则直接复用。
 
 故障矩阵是单独的破坏性测试入口：
 
@@ -105,11 +105,11 @@ C2G_EnterStarterDungeon(operationId)
   -> Map 200创建试炼守卫
 ```
 
-试炼守卫使用MonsterConfig 3，拥有900生命。它没有阶段、技能和专属掉落，目的只是验证动态地图、正式战斗、死亡事件和持久化奖励能组成一条最小闭环。Boss死亡后，Monster领域发布通用`MonsterEvents.Killed`，Dungeon领域确认发生在Map 200且怪物配置为3，再给击杀玩家增加120经验；Monster和Combat都不知道具体经验数值。
+试炼守卫使用MonsterConfig 3，拥有900生命。它没有阶段和技能，目的只是验证动态地图、正式战斗、死亡事件和持久化奖励能组成一条最小闭环。Boss死亡后，Monster领域发布通用`MonsterEvents.Killed`，Dungeon领域确认发生在Map 200且怪物配置为3，再给击杀玩家增加120经验；Monster和Combat都不知道具体经验数值。尸体的DropTable 3固定提供小红、大红、蓝药各5个和150铜币，玩家仍需通过查看/拾取窗口领取，服务端以一笔`inventory + quest + wallet`事务提交。
 
 经验使用累计值。达到等级`L`需要`50 * (L - 1) * L`点经验，当前上限60，因此新角色获得120经验后从1级升到2级。奖励先以稳定operationId向DBProxy提交`progression`领域，提交成功后才修改在线Numeric和推送`G2C_ProgressionChanged`。重复回执不能再次加经验，重启后必须恢复Level 2和Experience 120。
 
-离开按钮把玩家传回Map 100。玩家离开后副本不立即强制销毁，继续沿用动态地图连续无人5分钟的兜底回收；Boss、仇恨和战斗现场是临时运行态，动态MapHost故障后不做现场恢复。
+进入副本时，Gate先在当前PlayerUnit ordered mailbox提交10分钟个人CD，再创建动态实例。CD属于`ProgressionComponent`，不属于队伍、Gate或MapInstance；它随跨MapHost迁移，并通过进图/重连快照返回给客户端。离开按钮把玩家传回Map 100，按钮显示`MM:SS`倒计时，结束前新的operationId会收到`DungeonCooldown`。玩家离开后副本不立即强制销毁，继续沿用动态地图连续无人5分钟的兜底回收；Boss、仇恨和战斗现场是临时运行态，动态MapHost故障后不做现场恢复。
 
 ## 从NPC接取第一个任务
 

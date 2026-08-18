@@ -443,6 +443,8 @@ export class DropTableConfig {
         this.chancePermille = _json_.chance_permille
         if (_json_.quest_objective_id === undefined) { throw new Error() }
         this.questObjectiveId = _json_.quest_objective_id
+        if (_json_.gold === undefined) { throw new Error() }
+        this.gold = _json_.gold
     }
 
     /**
@@ -473,8 +475,13 @@ export class DropTableConfig {
      * 任务目标ID；0表示普通掉落
      */
     readonly questObjectiveId: number
+    /**
+     * 铜币数量；0表示道具掉落
+     */
+    readonly gold: number
 
     resolve(tables:Tables) {
+
 
 
 

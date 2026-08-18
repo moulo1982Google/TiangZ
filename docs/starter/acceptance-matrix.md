@@ -30,7 +30,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | FW-03 | Scene、Actor、Mailbox、Component、ChildEntity | `tools/actor_self_test.ts`、`docs/design/unit-actor-boundary.md` | 已有 | Starter 不得绕过 mailbox |
 | FW-04 | AOI 与状态同步 | `tools/map_broadcast_self_test.ts`、Rust AOI | 已有 | 用 Starter 的怪物尸体和掉落拾取验收 |
 | FW-05 | 3D 移动、寻路、动态障碍 | `docs/tutorials/13-navmesh3d.md`、Cocos3D/UE/Godot Demo | 已有 | 只补入 Starter 的地图流程 |
-| FW-06 | 怪物、战斗、技能、Buff | `tools/combat_self_test.ts`、`tools/buff_action_self_test.ts`、动态Boss运行时夹具 | 已有演示 | Boss已复用正式Combat和死亡事件；更复杂Boss阶段与专属掉落留后续 |
+| FW-06 | 怪物、战斗、技能、Buff | `tools/combat_self_test.ts`、`tools/buff_action_self_test.ts`、动态Boss运行时夹具 | 已有演示 | Boss已复用正式Combat、死亡事件和尸体掉落；复杂阶段留后续 |
 | FW-07 | 协议生成与多客户端 SDK | `client_sdk/`、各客户端 Demo | 已有 | Starter 只指定 Cocos3D 为完整 UI 客户端 |
 | FW-08 | Hotfix、失败回滚 | `tools/hotfix_system_self_test.ts`、`tools/hotfix_reload_self_test.mjs` | 底层已有 | 补正式操作入口和 Starter 验收 |
 
@@ -44,9 +44,9 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | ST-04 | 野外战斗 | 怪物、普通攻击、技能和 Buff 已有 | 击杀普通怪、死亡、尸体和仇恨状态可重复验证 |
 | ST-05 | 掉落、拾取、背包 | 已完成：`MonsterConfig -> DropTableConfig -> LootContainer -> C2M_LootMonster -> Inventory`；任务掉落按账号和剩余需求判定，普通掉落归第一次有效攻击者账号，DBProxy事务和operationId幂等已接通 | 击杀后尸体保留掉落；未接任务或需求已满时任务行留在尸体；有资格拾取后背包增加，重复请求不重复增加；无归属账号不能抢走普通掉落 |
 | ST-06 | 任务接取、进度和奖励 | Starter第一版已在Map 100放置紫色任务NPC；玩家出生点靠近NPC，远端四角放置2个被动黄色怪和2个主动红色怪；靠近NPC 5米内显示交互按钮，按钮打开对话框后通过`C2M_AcceptQuest(questConfigId, npcUnitId)`接取，服务端校验5米范围；Quest状态、目标索引、条件和奖励已有；完成5005后可接取收集5个1101的5006 | PC与移动端都按“交互按钮 -> NPC对话 -> 接取任务”操作，击杀/拾取/使用道具推进、提交任务、领取奖励形成闭环；选中NPC或点击模型不能自动接取 |
-| ST-07 | 动态副本与 Boss | 已完成：Map 200由Gate通过MapManager幂等创建；Boss 3复用正式Monster/Combat，死亡后提交120经验并推送升级结果；Cocos3D可进入和离开 | `starter:acceptance`自动进入动态实例并击杀Boss，断言Level 2/Experience 120；客户端验证按钮与地图切换 |
+| ST-07 | 动态副本与 Boss | 已完成：Map 200由Gate通过MapManager幂等创建；Boss 3复用正式Monster/Combat，死亡后提交120经验，尸体固定掉落三种药水各5个和150铜币；每个角色有持久化10分钟进入CD；Cocos3D按钮显示倒计时 | `starter:acceptance`自动击杀、查看并拾取四行奖励，断言Level 2/Experience 120、背包/金币与CD拒绝；客户端验证倒计时和地图切换 |
 | ST-08 | 断线重连和跨地图 | Gate 重连、Location、MapInstance 路由已有 | 断线宽限内恢复原 Unit；传送中请求有明确状态和幂等结果 |
-| ST-09 | 重启恢复 | 五领域快照、关键事务和静态MapHost有界重启已有；Boss经验走progression事务 | `starter:acceptance:persistent`重启后断言Boss奖励仍为Level 2/Experience 120且不重复；动态副本战斗现场不恢复 |
+| ST-09 | 重启恢复 | 五领域快照、关键事务和静态MapHost有界重启已有；Boss经验与个人CD走progression，尸体领取走inventory/quest/wallet事务 | `starter:acceptance:persistent`重启后断言等级经验、三种药水、150铜币与CD仍在且不重复；动态副本战斗现场不恢复 |
 | ST-10 | 在线热更和回滚 | Hotfix 事务底层已有 | 修改一个技能行为能切换；候选失败后旧行为继续服务，连接不丢失 |
 | ST-11 | 同地图玩家交易 | 已完成MapScene临时会话、双方报价/确认、DBProxy双记录原子提交和Cocos3D交易面板；`npm run test:player-trade`覆盖幂等与Revision冲突 | 两个真实客户端同图5米内交换铜币和物品；重复确认不重复转移，任一Revision冲突时双方都不改变 |
 
@@ -96,7 +96,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 
 自动脚本的结果写入被Git忽略的`temp/test-logs/starter-acceptance-*.json`。三个Starter验收命令都会先执行`cargo build --bin TiangZ`，确保Rust配置解析器与当前源码一致。持久化命令不会自动启动Docker；它会复用7800端口已有的DBProxy，或使用`tools-projects/TiangZ-DBProxy/target/debug`中的Debug服务，并从独立仓库的`deploy/local/.env`读取连接参数。常规Starter验收不应连接外网数据库。
 
-当前自动脚本已经覆盖动态副本创建、Boss击杀、经验升级和持久化重启恢复，但不宣称完整任务链已经自动化：Map 100演示配置有3只A怪和2只B怪，带掉落尸体按规则保留较长时间；“击杀5只A、回NPC交付、解锁B、拾取5个任务物品”仍需Cocos3D客户端操作验收。
+当前自动脚本已经覆盖动态副本创建、Boss击杀、三药与铜币拾取、个人CD拒绝和持久化重启恢复，但不宣称完整任务链已经自动化：Map 100演示配置有3只A怪和2只B怪，带掉落尸体按规则保留较长时间；“击杀5只A、回NPC交付、解锁B、拾取5个任务物品”仍需Cocos3D客户端操作验收。
 
 ## 验收分级
 

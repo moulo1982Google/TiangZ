@@ -674,16 +674,19 @@ function validateSnapshot(snapshot: GameConfigSnapshot): void {
   }
   const dropTableIds = new Set(snapshot.DropTableConfig.GetAll().map((drop) => drop.dropTableId));
   for (const drop of snapshot.DropTableConfig.GetAll()) {
+    const itemDrop = Number.isSafeInteger(drop.itemConfigId) && drop.itemConfigId > 0 &&
+      Boolean(snapshot.ItemConfig.TryGet(drop.itemConfigId)) &&
+      Number.isSafeInteger(drop.minCount) && drop.minCount > 0 &&
+      Number.isSafeInteger(drop.maxCount) && drop.maxCount >= drop.minCount && drop.gold === 0;
+    const currencyDrop = drop.itemConfigId === 0 && drop.minCount === 0 && drop.maxCount === 0 &&
+      Number.isSafeInteger(drop.gold) && drop.gold > 0 && drop.questObjectiveId === 0;
     if (
       !Number.isSafeInteger(drop.dropTableId) || drop.dropTableId <= 0 ||
-      !Number.isSafeInteger(drop.itemConfigId) || drop.itemConfigId <= 0 ||
-      !snapshot.ItemConfig.TryGet(drop.itemConfigId) ||
-      !Number.isSafeInteger(drop.minCount) || drop.minCount <= 0 ||
-      !Number.isSafeInteger(drop.maxCount) || drop.maxCount < drop.minCount ||
+      (!itemDrop && !currencyDrop) ||
       !Number.isSafeInteger(drop.chancePermille) || drop.chancePermille < 0 || drop.chancePermille > 1000 ||
       !Number.isSafeInteger(drop.questObjectiveId) || drop.questObjectiveId < 0
     ) {
-      throw new Error(\`drop table row \${drop.id} has invalid item, count, chance, or objective values\`);
+      throw new Error(\`drop table row \${drop.id} has invalid item/currency, count, chance, or objective values\`);
     }
     if (drop.questObjectiveId > 0) {
       const objective = snapshot.QuestObjectiveConfig.TryGet(drop.questObjectiveId);
@@ -824,15 +827,19 @@ function validateGeneratedActionAndSkillData(data) {
   const objectiveById = new Map(objectives.map((row) => [row.id, row]));
   const dropTableIds = new Set(drops.map((row) => row.drop_table_id));
   for (const drop of drops) {
+    const itemDrop = Number.isSafeInteger(drop.item_config_id) && drop.item_config_id > 0 && itemIds.has(drop.item_config_id) &&
+      Number.isSafeInteger(drop.min_count) && drop.min_count > 0 &&
+      Number.isSafeInteger(drop.max_count) && drop.max_count >= drop.min_count &&
+      drop.gold === 0;
+    const currencyDrop = drop.item_config_id === 0 && drop.min_count === 0 && drop.max_count === 0 &&
+      Number.isSafeInteger(drop.gold) && drop.gold > 0 && drop.quest_objective_id === 0;
     if (
       !Number.isSafeInteger(drop.drop_table_id) || drop.drop_table_id <= 0 ||
-      !Number.isSafeInteger(drop.item_config_id) || drop.item_config_id <= 0 || !itemIds.has(drop.item_config_id) ||
-      !Number.isSafeInteger(drop.min_count) || drop.min_count <= 0 ||
-      !Number.isSafeInteger(drop.max_count) || drop.max_count < drop.min_count ||
+      (!itemDrop && !currencyDrop) ||
       !Number.isSafeInteger(drop.chance_permille) || drop.chance_permille < 0 || drop.chance_permille > 1000 ||
       !Number.isSafeInteger(drop.quest_objective_id) || drop.quest_objective_id < 0
     ) {
-      throw new Error(`DropTableConfig ${drop.id} has invalid item, count, chance, or objective values`);
+      throw new Error(`DropTableConfig ${drop.id} has invalid item/currency, count, chance, or objective values`);
     }
     if (drop.quest_objective_id > 0) {
       const objective = objectiveById.get(drop.quest_objective_id);

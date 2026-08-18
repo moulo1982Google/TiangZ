@@ -186,10 +186,16 @@ export {
 export { DecodeLoginToken, EncodeLoginToken, type LoginTokenClaims } from "./mmorpg/login/LoginToken";
 export { SelectStickyGate, SelectStickyScene } from "./mmorpg/login/GateSelector";
 export { PlayerPersistenceComponent } from "./mmorpg/persistence/PlayerPersistenceComponent";
-export { ProgressionComponent, type ProgressionRewardResult } from "./mmorpg/progression/ProgressionComponent";
+export {
+  ProgressionComponent,
+  type ProgressionRewardResult,
+  type ProgressionTransferState,
+  type StarterDungeonEntryResult,
+} from "./mmorpg/progression/ProgressionComponent";
 export {
   STARTER_DUNGEON_BOSS_CONFIG_ID,
   STARTER_DUNGEON_BOSS_EXPERIENCE,
+  STARTER_DUNGEON_COOLDOWN_MS,
   STARTER_DUNGEON_EXIT_MAP_INSTANCE_ID,
   STARTER_DUNGEON_MAP_CONFIG_ID,
 } from "./mmorpg/dungeon/StarterDungeon";

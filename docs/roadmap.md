@@ -409,7 +409,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 - `ItemComponent`已经提供`GrantItem/GrantItems`以及纯数据`PlanGrantItems/CommitGrantPlan`。普通奖励继续同步执行；任务GrantItem奖励先规划奖励后快照，DBProxy确认关键事务后再无await提交Entity，失败不改变背包，ACK丢失按回执恢复且不重复发奖。
 - 任务领奖已经在PlayerUnit有序mailbox内同步完成奖励、完成记录和Quest ChildEntity移除；组队共享任务等待Party系统，不在Quest里提前模拟。
-- 已完成最小怪物掉落与任务物品链：`MonsterConfig.drop_table_id`引用`DropTableConfig`，尸体保留`LootContainer`，`C2M_LootMonster`按账号的活动`CollectItem`任务和剩余数量筛选任务行；未接任务或需求已满时任务行留在尸体，普通掉落归第一次有效攻击者账号。Inventory/Quest规划、DBProxy提交、operationId幂等和Cocos3D尸体拾取入口已接通。Starter Boss用独立progression事务发放经验，不伪装成普通尸体掉落；动态ItemInstance掉落、队伍分配和Boss专属物品留在后续业务切片。
+- 已完成最小怪物掉落与任务物品链：`MonsterConfig.drop_table_id`引用`DropTableConfig`，尸体保留`LootContainer`，`C2M_LootMonster`按账号的活动`CollectItem`任务和剩余数量筛选任务行；未接任务或需求已满时任务行留在尸体，普通掉落归第一次有效攻击者账号。Inventory/Quest/Currency规划、DBProxy提交、operationId幂等和Cocos3D尸体拾取入口已接通；含铜币行时原子提交inventory/quest/wallet。Starter Boss用独立progression事务发放经验，并通过普通尸体表固定掉落三种药水与150铜币；动态ItemInstance掉落和队伍分配留在后续业务切片。
 - 技能系统现以3006恢复和3007精神鞭笞验证两类持续效果：3006使用Buff Tick完成8次恢复，3007验证10Hz分段引导、移动打断、停止平A、公共CD、受击800毫秒施法惩罚和单技能排队；复杂目标、AOE和技能性能A/B仍待后续机器验收。
 - `npm run perf:business-chain`已准备真实业务链路压测，交替发送UseItem与友方CastSkill并区分业务拒绝和传输错误。正式CPU压力测试需用户提供空闲机器，当前只做编译验证。
 
@@ -442,7 +442,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 验收矩阵固定在[Starter MMORPG验收矩阵](starter/acceptance-matrix.md)，教程固定在[Starter MMORPG教程](tutorials/20-starter-mmorpg.md)。
 - 框架能力案例与Starter业务分层；Starter只能使用Stable API、生成协议、Component/Entity、Mailbox和DBProxy边界，不能为演示旁路Runtime。
 - 独立的创建/选择角色流程已经完成运行时闭环：`C2S_CreateCharacter -> CharacterRepository -> C2S_Login.characterId -> Gate/Location/Map`，并通过 `npm run starter:character-smoke` 覆盖 all-in-one 与 split-process。无 DBProxy 时角色目录只在进程生命周期内有效；重启恢复仍归 ST-09。
-- Map 200动态副本和Boss 3已接入：Gate按稳定operationId经MapManager幂等创建实例，Boss死亡事件触发120累计经验奖励，新角色升到2级。经验只提交progression领域，`starter:acceptance`覆盖真实动态实例与击杀，`starter:acceptance:persistent`覆盖TiangZ重启后Level/Experience恢复。后续重点转为完整任务链自动化、正式Hotfix操作入口和动态地图/Gate故障边界。
+- Map 200动态副本和Boss 3已接入：Gate先在PlayerUnit邮箱持久化个人10分钟CD，再按稳定operationId经MapManager幂等创建实例；Boss死亡事件触发120累计经验，新角色升到2级，尸体固定掉落三种药水各5个和150铜币。`starter:acceptance`覆盖真实动态实例、击杀、拾取与CD拒绝，`starter:acceptance:persistent`覆盖重启后Level/Experience、背包、余额和CD恢复。后续重点转为完整任务链自动化、正式Hotfix操作入口和动态地图/Gate故障边界。
 - Starter固定使用一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss、一个玩家职业和少量技能。额外职业、社交、商城和活动不得在本阶段进入核心样例。
 - 每个完成项必须同时通过all-in-one、split-process、客户端操作和对应的失败/恢复验收；业务压测等Starter链路稳定后再执行。
 - 已增加统一自动验收入口：`npm run starter:acceptance`覆盖无数据库的运行时、技能/Buff和角色选角；`starter:acceptance:persistent`覆盖DBProxy快照写入、TiangZ重启和恢复读取；`starter:acceptance:faults`调用独立DBProxy故障矩阵。报告写入`temp/test-logs`，持久化/故障命令只允许连接本地测试资源。

@@ -4,6 +4,8 @@ export const InnerMessage = {
   G2M_SecondEnterMap: 20017,
   M2G_SecondEnterMap: 20018,
   M2G_EnterMap: 20004,
+  G2M_ClaimStarterDungeonEntry: 20062,
+  M2G_ClaimStarterDungeonEntry: 20063,
   G2M_TransferPlayer: 20035,
   M2G_TransferPlayer: 20036,
   M2G_MapReady: 20007,

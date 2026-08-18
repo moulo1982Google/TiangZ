@@ -3,6 +3,7 @@ import type { ItemSnapshot } from "../../../generated/model/server/demo/protocol
 import type { ActionDefinition } from "../action/ActionType";
 import type { BuffTransferState } from "../buff/Buff";
 import type { PlayerSnapshot } from "../map/PlayerUnit";
+import type { ProgressionTransferState } from "../progression/ProgressionComponent";
 import type { QuestTransferState } from "../quest/QuestComponent";
 import type { SkillTransferState } from "../skill/SkillComponent";
 import { ClonePlayerDomainData, EncodePlayerDomainData, ProjectPlayerDomainData } from "./PlayerPersistenceCodec";
@@ -48,6 +49,7 @@ export interface PlayerSaveData {
   readonly buffs: readonly PersistedBuffState[];
   readonly skill: SkillTransferState;
   readonly quests: QuestTransferState;
+  readonly progression?: ProgressionTransferState;
   readonly reason: string;
 }
 
@@ -62,6 +64,7 @@ export interface PlayerProgressionSaveData {
   readonly account: string;
   readonly characterId: bigint;
   readonly numerics: readonly PersistedNumericValue[];
+  readonly starterDungeon?: ProgressionTransferState;
   readonly reason: string;
 }
 

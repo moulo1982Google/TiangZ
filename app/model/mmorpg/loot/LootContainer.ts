@@ -10,6 +10,7 @@ export interface LootDrop {
   readonly dropId: number;
   readonly configId: number;
   readonly count: number;
+  readonly gold: bigint;
   readonly questObjectiveId: number;
 }
 
@@ -49,7 +50,9 @@ export function CanClaimRegularLoot(
 
 /** 把配置掉落转换成背包规划所需的纯数据，不提前生成ItemId。 / Converts config drops into inventory plans without allocating permanent ItemIds early. */
 export function ToInventoryGrants(drops: readonly LootDrop[]): InventoryGrant[] {
-  return drops.map((drop) => ({ configId: drop.configId, count: drop.count }));
+  return drops
+    .filter((drop) => drop.configId > 0 && drop.count > 0)
+    .map((drop) => ({ configId: drop.configId, count: drop.count }));
 }
 
 /** 返回拾取后可安全发给客户端的道具快照副本。 / Copies item snapshots safe for client delivery after pickup. */
@@ -63,5 +66,6 @@ export function ToLootDropSnapshots(drops: readonly LootDrop[]): LootDropSnapsho
     dropId: drop.dropId,
     itemConfigId: drop.configId,
     count: drop.count,
+    gold: drop.gold,
   }));
 }

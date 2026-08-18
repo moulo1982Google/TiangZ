@@ -37,6 +37,7 @@ import { PlayerUnit } from "../app/model/mmorpg/map/PlayerUnit";
 import { PositionComponent } from "../app/model/mmorpg/map/PositionComponent";
 import { UnitGateComponent } from "../app/model/mmorpg/map/UnitGateComponent";
 import { PlayerPersistenceComponent } from "../app/model/mmorpg/persistence/PlayerPersistenceComponent";
+import { ProgressionComponent } from "../app/model/mmorpg/progression/ProgressionComponent";
 import {
   EmptyPlayerPersistenceRevisions,
   InMemoryPlayerRepository,
@@ -118,6 +119,7 @@ async function main(): Promise<void> {
   await import("../app/hotfix/mmorpg/currency/CurrencyComponentSystem");
   await import("../app/hotfix/mmorpg/quest/QuestSystem");
   await import("../app/hotfix/mmorpg/quest/QuestComponentSystem");
+  await import("../app/hotfix/mmorpg/progression/ProgressionComponentSystem");
   await import("../app/hotfix/mmorpg/map/PlayerUnitSystem");
   HotfixSystem.Commit();
 
@@ -150,6 +152,7 @@ async function main(): Promise<void> {
   items.GrantItem(1002, 20);
   const sourceSkill = unit.AddComponent(SkillComponent);
   const quests = unit.AddComponent(QuestComponent);
+  unit.AddComponent(ProgressionComponent);
   const repository = new ControllablePlayerRepository();
   const persistence = unit.AddComponent(
     PlayerPersistenceComponent,
@@ -384,6 +387,7 @@ async function main(): Promise<void> {
   target.AddComponent(CurrencyComponent);
   const targetSkill = target.AddComponent(SkillComponent);
   const targetQuests = target.AddComponent(QuestComponent);
+  target.AddComponent(ProgressionComponent);
   target.AddComponent(PlayerPersistenceComponent, repository, EmptyPlayerPersistenceRevisions());
   target.RestoreTransfer(transfer);
   assert.equal(target.GetComponent(NumericComponent)[NumericType.CurrentHp], 51n);

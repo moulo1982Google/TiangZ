@@ -575,7 +575,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "e30dc27babe93950f693bf62573d795db9a8bce074afb5101a3156fc72efb22f";
+export const GameConfigFingerprint = "eb3bfb7775eecdf2d77962ef27e2e5108744ee5fb4e168321205ee521ebb8178";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

@@ -12,7 +12,7 @@ namespace TiangZ.Client.Generated.Demo
 
 public static class ProtocolFingerprint
 {
-    public const string Value = "e56ceb9789a4724de2ce15862cfb1fbb4098a6af5d8e14d461e45d2fd97ca9ef";
+    public const string Value = "d351b67abe24d8d681e0a13394d3a41519be28503fd5f5b4e8fa1aea98be4dd4";
 }
 
 public static class MsgCode
@@ -445,6 +445,7 @@ public sealed class G2C_EnterMap : IRpcResponse
     public List<QuestSnapshot> Quests { get; set; } = new List<QuestSnapshot>();
     public List<uint> CompletedQuestConfigIds { get; set; } = new List<uint>();
     public ulong Gold { get; set; }
+    public ulong StarterDungeonCooldownEndAtMs { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -453,6 +454,7 @@ public sealed class G2C_EnterMap : IRpcResponse
 public sealed class G2C_EnterStarterDungeon : IRpcResponse
 {
     public G2C_EnterMap? EnterMap { get; set; }
+    public ulong CooldownEndAtMs { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -635,6 +637,7 @@ public sealed class LootDropSnapshot
     public uint DropId { get; set; }
     public uint ItemConfigId { get; set; }
     public uint Count { get; set; }
+    public ulong Gold { get; set; }
 }
 
 public sealed class M2C_AcceptQuest : IRpcResponse
@@ -738,6 +741,8 @@ public sealed class M2C_LootMonster : IRpcResponse
     public List<ItemSnapshot> Items { get; set; } = new List<ItemSnapshot>();
     public List<QuestSnapshot> Quests { get; set; } = new List<QuestSnapshot>();
     public List<LootDropSnapshot> RemainingDrops { get; set; } = new List<LootDropSnapshot>();
+    public ulong Gold { get; set; }
+    public ulong GainedGold { get; set; }
     public uint RpcId { get; set; }
     public uint Error { get; set; }
     public string? Message { get; set; }
@@ -992,6 +997,12 @@ public sealed class SkillTransferSnapshot
     public ulong GlobalCooldownEndAtMs { get; set; }
     public List<SkillCooldownSnapshot> Cooldowns { get; set; } = new List<SkillCooldownSnapshot>();
     public List<ItemCooldownSnapshot> ItemCooldowns { get; set; } = new List<ItemCooldownSnapshot>();
+}
+
+public sealed class StarterDungeonCooldownSnapshot
+{
+    public ulong CooldownEndAtMs { get; set; }
+    public string? OperationId { get; set; }
 }
 
 public sealed class UnitNumericDelta
@@ -2809,6 +2820,9 @@ public static class G2C_EnterMapCodec
                 case 17 when tag.WireType == 0:
                     value.Gold = reader.ReadUInt64();
                     break;
+                case 18 when tag.WireType == 0:
+                    value.StarterDungeonCooldownEndAtMs = reader.ReadUInt64();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -2858,6 +2872,7 @@ public static class G2C_EnterMapCodec
             writer.WriteUInt32(16, item, true);
         }
         if (value.Gold != 0) writer.WriteUInt64(17, value.Gold);
+        if (value.StarterDungeonCooldownEndAtMs != 0) writer.WriteUInt64(18, value.StarterDungeonCooldownEndAtMs);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -2878,6 +2893,9 @@ public static class G2C_EnterStarterDungeonCodec
             {
                 case 1 when tag.WireType == 2:
                     value.EnterMap = G2C_EnterMapCodec.Decode(reader.ReadBytes());
+                    break;
+                case 2 when tag.WireType == 0:
+                    value.CooldownEndAtMs = reader.ReadUInt64();
                     break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
@@ -2900,6 +2918,7 @@ public static class G2C_EnterStarterDungeonCodec
     {
         var writer = new BinaryWriter();
         if (value.EnterMap != null) writer.WriteMessage(1, G2C_EnterMapCodec.Encode(value.EnterMap));
+        if (value.CooldownEndAtMs != 0) writer.WriteUInt64(2, value.CooldownEndAtMs);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -3863,6 +3882,9 @@ public static class LootDropSnapshotCodec
                 case 3 when tag.WireType == 0:
                     value.Count = reader.ReadUInt32();
                     break;
+                case 4 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
                 default:
                     reader.Skip(tag.WireType);
                     break;
@@ -3877,6 +3899,7 @@ public static class LootDropSnapshotCodec
         if (value.DropId != 0) writer.WriteUInt32(1, value.DropId);
         if (value.ItemConfigId != 0) writer.WriteUInt32(2, value.ItemConfigId);
         if (value.Count != 0) writer.WriteUInt32(3, value.Count);
+        if (value.Gold != 0) writer.WriteUInt64(4, value.Gold);
         return writer.ToArray();
     }
 }
@@ -4386,6 +4409,12 @@ public static class M2C_LootMonsterCodec
                 case 4 when tag.WireType == 2:
                     value.RemainingDrops.Add(LootDropSnapshotCodec.Decode(reader.ReadBytes()));
                     break;
+                case 5 when tag.WireType == 0:
+                    value.Gold = reader.ReadUInt64();
+                    break;
+                case 6 when tag.WireType == 0:
+                    value.GainedGold = reader.ReadUInt64();
+                    break;
                 case 90 when tag.WireType == 0:
                     value.RpcId = reader.ReadUInt32();
                     break;
@@ -4419,6 +4448,8 @@ public static class M2C_LootMonsterCodec
         {
             writer.WriteMessage(4, item == null ? null : LootDropSnapshotCodec.Encode(item));
         }
+        if (value.Gold != 0) writer.WriteUInt64(5, value.Gold);
+        if (value.GainedGold != 0) writer.WriteUInt64(6, value.GainedGold);
         if (value.RpcId != 0) writer.WriteUInt32(90, value.RpcId);
         if (value.Error != 0) writer.WriteUInt32(91, value.Error);
         if (!string.IsNullOrEmpty(value.Message)) writer.WriteString(92, value.Message);
@@ -5719,6 +5750,40 @@ public static class SkillTransferSnapshotCodec
         {
             writer.WriteMessage(3, item == null ? null : ItemCooldownSnapshotCodec.Encode(item));
         }
+        return writer.ToArray();
+    }
+}
+
+public static class StarterDungeonCooldownSnapshotCodec
+{
+    public static StarterDungeonCooldownSnapshot Decode(byte[] payload)
+    {
+        var reader = new BinaryReader(payload);
+        var value = new StarterDungeonCooldownSnapshot();
+        while (!reader.EndOfMessage)
+        {
+            var tag = reader.ReadTag();
+            switch (tag.FieldNumber)
+            {
+                case 1 when tag.WireType == 0:
+                    value.CooldownEndAtMs = reader.ReadUInt64();
+                    break;
+                case 2 when tag.WireType == 2:
+                    value.OperationId = reader.ReadString();
+                    break;
+                default:
+                    reader.Skip(tag.WireType);
+                    break;
+            }
+        }
+        return value;
+    }
+
+    public static byte[] Encode(StarterDungeonCooldownSnapshot value)
+    {
+        var writer = new BinaryWriter();
+        if (value.CooldownEndAtMs != 0) writer.WriteUInt64(1, value.CooldownEndAtMs);
+        if (!string.IsNullOrEmpty(value.OperationId)) writer.WriteString(2, value.OperationId);
         return writer.ToArray();
     }
 }

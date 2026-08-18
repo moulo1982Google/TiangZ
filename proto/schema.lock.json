@@ -922,6 +922,13 @@
           "type": "uint32",
           "repeated": false,
           "synthetic": false
+        },
+        {
+          "number": 4,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
         }
       ]
     },
@@ -1413,6 +1420,28 @@
       ]
     },
     {
+      "key": "proto/DataDefine_CS_50001.proto#StarterDungeonCooldownSnapshot",
+      "name": "StarterDungeonCooldownSnapshot",
+      "base": null,
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        }
+      ]
+    },
+    {
       "key": "proto/DataDefine_CS_50001.proto#UnitNumericDelta",
       "name": "UnitNumericDelta",
       "base": null,
@@ -1560,6 +1589,28 @@
           "type": "uint64",
           "repeated": false,
           "synthetic": false
+        }
+      ]
+    },
+    {
+      "key": "proto/InnerMessage_S_20001.proto#G2M_ClaimStarterDungeonEntry",
+      "name": "G2M_ClaimStarterDungeonEntry",
+      "base": "IActorRequest",
+      "response": "M2G_ClaimStarterDungeonEntry",
+      "fields": [
+        {
+          "number": 1,
+          "name": "operation_id",
+          "type": "string",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
         }
       ]
     },
@@ -2352,6 +2403,42 @@
       ]
     },
     {
+      "key": "proto/InnerMessage_S_20001.proto#M2G_ClaimStarterDungeonEntry",
+      "name": "M2G_ClaimStarterDungeonEntry",
+      "base": "IActorResponse",
+      "response": null,
+      "fields": [
+        {
+          "number": 1,
+          "name": "cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 90,
+          "name": "rpc_id",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 91,
+          "name": "error",
+          "type": "uint32",
+          "repeated": false,
+          "synthetic": true
+        },
+        {
+          "number": 92,
+          "name": "message",
+          "type": "string",
+          "repeated": false,
+          "synthetic": true
+        }
+      ]
+    },
+    {
       "key": "proto/InnerMessage_S_20001.proto#M2G_EnterMap",
       "name": "M2G_EnterMap",
       "base": "IResponse",
@@ -2465,6 +2552,13 @@
         {
           "number": 16,
           "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 17,
+          "name": "starter_dungeon_cooldown_end_at_ms",
           "type": "uint64",
           "repeated": false,
           "synthetic": false
@@ -2755,6 +2849,13 @@
           "synthetic": false
         },
         {
+          "number": 15,
+          "name": "starter_dungeon_cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -2905,6 +3006,13 @@
         {
           "number": 18,
           "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 19,
+          "name": "starter_dungeon_cooldown_end_at_ms",
           "type": "uint64",
           "repeated": false,
           "synthetic": false
@@ -3925,6 +4033,13 @@
           "number": 28,
           "name": "quest_revision",
           "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 29,
+          "name": "starter_dungeon",
+          "type": "StarterDungeonCooldownSnapshot",
           "repeated": false,
           "synthetic": false
         }
@@ -5884,6 +5999,13 @@
           "synthetic": false
         },
         {
+          "number": 18,
+          "name": "starter_dungeon_cooldown_end_at_ms",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
           "number": 90,
           "name": "rpc_id",
           "type": "uint32",
@@ -5916,6 +6038,13 @@
           "number": 1,
           "name": "enter_map",
           "type": "G2C_EnterMap",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 2,
+          "name": "cooldown_end_at_ms",
+          "type": "uint64",
           "repeated": false,
           "synthetic": false
         },
@@ -7116,6 +7245,20 @@
           "name": "remaining_drops",
           "type": "LootDropSnapshot",
           "repeated": true,
+          "synthetic": false
+        },
+        {
+          "number": 5,
+          "name": "gold",
+          "type": "uint64",
+          "repeated": false,
+          "synthetic": false
+        },
+        {
+          "number": 6,
+          "name": "gained_gold",
+          "type": "uint64",
+          "repeated": false,
           "synthetic": false
         },
         {
