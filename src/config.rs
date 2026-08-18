@@ -129,6 +129,17 @@ pub struct ProcessLifecycleConfig {
     pub hotfix_reload_timeout_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restart: Option<ProcessRestartConfig>,
+    /// 省略时不开放正式Hotfix操作入口；令牌只从指定环境变量读取。
+    /// Omitting this keeps the formal Hotfix operations endpoint disabled; the token is read only from the named environment variable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hotfix_operations: Option<HotfixOperationsConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HotfixOperationsConfig {
+    #[serde(default = "default_hotfix_operations_token_env")]
+    pub auth_token_env: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -148,6 +159,7 @@ impl Default for ProcessLifecycleConfig {
             stop_timeout_ms: default_stop_timeout_ms(),
             hotfix_reload_timeout_ms: default_hotfix_reload_timeout_ms(),
             restart: None,
+            hotfix_operations: None,
         }
     }
 }
@@ -471,6 +483,10 @@ fn default_hotfix_reload_timeout_ms() -> u64 {
     30_000
 }
 
+fn default_hotfix_operations_token_env() -> String {
+    "TIANGZ_HOTFIX_ADMIN_TOKEN".to_string()
+}
+
 fn default_restart_max_attempts() -> u32 {
     3
 }
@@ -779,6 +795,17 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
     if !(100..=120_000).contains(&config.process.lifecycle.hotfix_reload_timeout_ms) {
         bail!("process lifecycle.hotfixReloadTimeoutMs must be between 100 and 120000");
     }
+    if config
+        .process
+        .lifecycle
+        .hotfix_operations
+        .as_ref()
+        .is_some_and(|operations| {
+            operations.auth_token_env.trim().is_empty() || operations.auth_token_env.len() > 128
+        })
+    {
+        bail!("process lifecycle.hotfixOperations.authTokenEnv must contain 1..=128 bytes");
+    }
     if let Some(restart) = &config.process.lifecycle.restart {
         if !(1..=100).contains(&restart.max_attempts) {
             bail!("process lifecycle.restart.maxAttempts must be between 1 and 100");
@@ -970,6 +997,9 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         .observability
         .as_ref()
         .and_then(|observability| observability.health.as_ref());
+    if config.process.lifecycle.hotfix_operations.is_some() && health.is_none() {
+        bail!("process lifecycle.hotfixOperations requires process observability.health");
+    }
     if let Some(health) = health {
         health.ip.parse::<IpAddr>().with_context(|| {
             format!(
@@ -1442,6 +1472,46 @@ mod tests {
             known_scenes: vec![],
         };
         assert!(validate_runtime_config(&conflict).is_err());
+    }
+
+    #[test]
+    fn hotfix_operations_require_health_and_a_named_token_environment() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "lifecycle": {
+                    "hotfixOperations": { "authTokenEnv": "TEST_HOTFIX_TOKEN" }
+                },
+                "observability": {
+                    "health": { "ip": "127.0.0.1", "port": 7601 }
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            process
+                .lifecycle
+                .hotfix_operations
+                .as_ref()
+                .unwrap()
+                .auth_token_env,
+            "TEST_HOTFIX_TOKEN"
+        );
+        let valid = RuntimeConfig {
+            process: process.clone(),
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&valid).is_ok());
+
+        let mut missing_health = valid;
+        missing_health.process.observability = None;
+        assert!(
+            validate_runtime_config(&missing_health)
+                .unwrap_err()
+                .to_string()
+                .contains("requires process observability.health")
+        );
     }
 
     #[test]

@@ -45,6 +45,11 @@ export function ActionFromConfig(type: number, parameters: readonly number[]): A
   if (!parameters.every(Number.isSafeInteger)) {
     throw new Error(`action parameters must be safe integers: ${parameters.join(",")}`);
   }
+  // HP包含战斗领域语义，通用Numeric动作不能把治疗或伤害编码成正负数。
+  // HP carries combat semantics; generic Numeric actions cannot encode healing or damage as signed deltas.
+  if (type === ActionType.ChangeNumeric && parameters[0] === NumericType.CurrentHp) {
+    throw new Error("ChangeNumeric cannot target CurrentHp; use Heal or DealDamage");
+  }
   return {
     type: type as ActionDefinition["type"],
     parameters: parameters.map((value) => BigInt(value)),
@@ -70,7 +75,7 @@ export function ExecuteAction(
       requireParameterCount(action, 0);
       return { changed: false };
     case ActionType.ChangeNumeric:
-      return executeChangeNumeric(target, action, context);
+      return executeChangeNumeric(target, action);
     case ActionType.AddBuff:
       requireParameterCount(action, 1);
       {
@@ -184,26 +189,12 @@ export function ExecuteActionBatch(
 function executeChangeNumeric(
   target: Unit<any[]>,
   action: ActionDefinition,
-  context: ActionExecutionContext,
 ): ActionExecutionResult {
   requireParameterCount(action, 2);
   const numericType = toNumericType(action.parameters[0]);
   const delta = action.parameters[1];
   if (numericType === NumericType.CurrentHp) {
-    const combat = target.GetComponent(CombatComponent);
-    if (delta > 0n) {
-      const result = combat.ApplyHealing(delta);
-      return { changed: result.restoredHealing > 0n, value: result.currentHp };
-    }
-    if (delta < 0n) {
-      const result = combat.ApplyDamage({
-        amount: -delta,
-        sourceUnitId: context.sourceUnitId ?? target.UnitId,
-        abilityId: context.sourceAbilityId,
-      });
-      return { changed: result.finalDamage > 0n, value: result.remainingHp };
-    }
-    return { changed: false, value: combat.GetParent().GetComponent(NumericComponent)[numericType] };
+    throw new Error("ChangeNumeric cannot write CurrentHp; use Heal or DealDamage");
   }
 
   if (IsDerivedNumericType(numericType)) {

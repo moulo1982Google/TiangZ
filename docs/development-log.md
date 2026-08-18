@@ -7,6 +7,14 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-18：Debug Hotfix重载与正式操作入口
+
+- 收紧Action的HP语义：`ChangeNumeric(CurrentHp, delta)`不再兼容映射为治疗或伤害，配置codegen、`ActionFromConfig`与运行时执行都会拒绝；HP增加只允许`Heal`，HP减少只允许`DealDamage`，两者统一进入Combat后再提交Numeric。校验保持在Hotfix/codegen边界，不改变Model指纹，因此不会打断`dev:debug`重载循环。
+- `npm run dev:debug`统一初始Bundle和后续候选的内联sourcemap；all-in-one Process保持同一V8和Inspector连接，新generation通过`scriptParsed`重新绑定TS源码断点。暂停断点期间不做Edit-and-Continue，需Resume后提交。
+- Process可通过`lifecycle.hotfixOperations`显式开放本机管理路由。令牌只从环境变量读取；路由仅接受回环来源和Bearer鉴权，不进入Nginx或公网。
+- 新增`npm run hotfix -- plan/apply/status/rollback`：校验候选哈希和冻结Model契约、选择目标、返回active/previous候选、生成operationId审计，并在单机多目标部分失败时补偿回滚已成功目标。跨机器Prepare/Commit仍未实现。
+- `npm run test:hotfix-operations`以真实Process和Inspector验证generation 2提交、generation 3回滚、同连接sourcemap脚本重绑、篡改候选拒绝和错误令牌401。
+
 ## 2026-08-18：Starter Boss掉落与个人副本CD
 
 - Boss 3改为固定掉落小红、大红、蓝药各5个和150铜币；`DropTableConfig.gold`支持铜币行，拾取含金币时以同一operationId原子提交`inventory + quest + wallet`，客户端尸体窗口显示铜币并应用权威余额。

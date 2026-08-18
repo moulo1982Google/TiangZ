@@ -2,17 +2,24 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use serde_json::json;
+use serde::Deserialize;
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 
-use crate::config::HealthObservabilityConfig;
+use crate::config::{HealthObservabilityConfig, HotfixOperationsConfig};
+use crate::process::RuntimeControl;
+
+const MAX_HTTP_REQUEST_BYTES: usize = 16 * 1024;
 
 pub(crate) struct ProcessHealthState {
     live: AtomicBool,
@@ -33,6 +40,13 @@ struct HotfixObservabilitySnapshot {
     successes: u64,
     failures: u64,
     bundle_version: String,
+    model_contract: Value,
+    active_candidate_directory: String,
+    previous_candidate_directory: Option<String>,
+    operation_phase: String,
+    last_operation_id: Option<String>,
+    last_operation_kind: Option<String>,
+    last_operation_error: Option<String>,
     validation_ms: f64,
     preflight_ms: f64,
     barrier_wait_ms: f64,
@@ -238,6 +252,7 @@ impl ProcessHealthState {
             observability_snapshot: Mutex::new(ProcessObservabilitySnapshot::default()),
             hotfix_snapshot: Mutex::new(HotfixObservabilitySnapshot {
                 active_generation: 1,
+                operation_phase: "idle".to_string(),
                 ..HotfixObservabilitySnapshot::default()
             }),
             game_config_snapshot: Mutex::new(GameConfigObservabilitySnapshot::default()),
@@ -285,6 +300,7 @@ impl ProcessHealthState {
         &self,
         generation: u64,
         bundle_version: String,
+        candidate_directory: String,
         validation_ms: f64,
         preflight_ms: f64,
         barrier_wait_ms: f64,
@@ -299,6 +315,10 @@ impl ProcessHealthState {
         snapshot.active_generation = generation;
         snapshot.successes += 1;
         snapshot.bundle_version = bundle_version;
+        snapshot.previous_candidate_directory = Some(std::mem::replace(
+            &mut snapshot.active_candidate_directory,
+            candidate_directory,
+        ));
         snapshot.validation_ms = validation_ms;
         snapshot.preflight_ms = preflight_ms;
         snapshot.barrier_wait_ms = barrier_wait_ms;
@@ -308,13 +328,20 @@ impl ProcessHealthState {
     }
 
     /// 发布启动时安装的 generation 1，不把它计入在线 Reload 成功数。 / Publishes startup generation 1 without counting it as an online Reload success.
-    pub(crate) fn record_initial_hotfix(&self, bundle_version: String) {
+    pub(crate) fn record_initial_hotfix(
+        &self,
+        bundle_version: String,
+        candidate_directory: String,
+        model_contract: Value,
+    ) {
         let mut snapshot = self
             .hotfix_snapshot
             .lock()
             .expect("Hotfix observability lock poisoned");
         snapshot.active_generation = 1;
         snapshot.bundle_version = bundle_version;
+        snapshot.active_candidate_directory = candidate_directory;
+        snapshot.model_contract = model_contract;
     }
 
     /// 记录被拒绝的候选，不改变 active generation。 / Records a rejected candidate without changing the active generation.
@@ -323,6 +350,72 @@ impl ProcessHealthState {
             .lock()
             .expect("Hotfix observability lock poisoned")
             .failures += 1;
+    }
+
+    fn begin_hotfix_operation(
+        &self,
+        operation_id: &str,
+        kind: &str,
+    ) -> std::result::Result<(), String> {
+        let mut snapshot = self
+            .hotfix_snapshot
+            .lock()
+            .expect("Hotfix observability lock poisoned");
+        if snapshot.operation_phase != "idle" {
+            return Err(format!(
+                "Hotfix operation {} is still {}",
+                snapshot.last_operation_id.as_deref().unwrap_or("<unknown>"),
+                snapshot.operation_phase,
+            ));
+        }
+        snapshot.operation_phase = kind.to_string();
+        snapshot.last_operation_id = Some(operation_id.to_string());
+        snapshot.last_operation_kind = Some(kind.to_string());
+        snapshot.last_operation_error = None;
+        Ok(())
+    }
+
+    fn finish_hotfix_operation(&self, error: Option<String>) {
+        let mut snapshot = self
+            .hotfix_snapshot
+            .lock()
+            .expect("Hotfix observability lock poisoned");
+        snapshot.operation_phase = "idle".to_string();
+        snapshot.last_operation_error = error;
+    }
+
+    fn hotfix_status_json(&self, process_name: &str) -> Value {
+        let snapshot = self
+            .hotfix_snapshot
+            .lock()
+            .expect("Hotfix observability lock poisoned")
+            .clone();
+        json!({
+            "status": "ok",
+            "process": process_name,
+            "hotfix": {
+                "generation": snapshot.active_generation,
+                "bundleVersion": snapshot.bundle_version,
+                "modelContract": snapshot.model_contract,
+                "activeCandidateDirectory": snapshot.active_candidate_directory,
+                "previousCandidateDirectory": snapshot.previous_candidate_directory,
+                "successes": snapshot.successes,
+                "failures": snapshot.failures,
+                "operationPhase": snapshot.operation_phase,
+                "lastOperationId": snapshot.last_operation_id,
+                "lastOperationKind": snapshot.last_operation_kind,
+                "lastOperationError": snapshot.last_operation_error,
+            }
+        })
+    }
+
+    fn previous_hotfix_candidate(&self) -> Option<PathBuf> {
+        self.hotfix_snapshot
+            .lock()
+            .expect("Hotfix observability lock poisoned")
+            .previous_candidate_directory
+            .as_deref()
+            .map(PathBuf::from)
     }
 
     /// 发布启动时配置版本，不计入在线Reload成功数。 / Publishes the startup config version without counting it as an online reload.
@@ -405,6 +498,34 @@ pub(crate) struct HealthServer {
     task: tokio::task::JoinHandle<()>,
 }
 
+#[derive(Clone)]
+struct HotfixOperationsRuntime {
+    token: Arc<str>,
+    timeout: Duration,
+    runtime_control: mpsc::Sender<RuntimeControl>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct HotfixOperationRequest {
+    operation_id: String,
+    #[serde(default)]
+    candidate_directory: Option<String>,
+}
+
+struct HttpRequest {
+    method: String,
+    path: String,
+    authorization: Option<String>,
+    body: Vec<u8>,
+}
+
+struct HttpResponse {
+    status: &'static str,
+    content_type: &'static str,
+    body: String,
+}
+
 impl HealthServer {
     /// 绑定健康检查端口并启动轻量 HTTP 循环；绑定失败会中止进程启动。
     ///
@@ -412,9 +533,33 @@ impl HealthServer {
     /// startup instead of silently disabling observability.
     pub(crate) async fn start(
         config: &HealthObservabilityConfig,
+        hotfix_operations: Option<&HotfixOperationsConfig>,
+        hotfix_reload_timeout_ms: u64,
         process_name: String,
         state: Arc<ProcessHealthState>,
+        runtime_control: mpsc::Sender<RuntimeControl>,
     ) -> Result<Self> {
+        let hotfix_operations = hotfix_operations
+            .map(|operations| {
+                let token = std::env::var(&operations.auth_token_env).with_context(|| {
+                    format!(
+                        "Hotfix operations require non-empty environment variable {}",
+                        operations.auth_token_env
+                    )
+                })?;
+                if token.is_empty() {
+                    anyhow::bail!(
+                        "Hotfix operations require non-empty environment variable {}",
+                        operations.auth_token_env
+                    );
+                }
+                Ok(HotfixOperationsRuntime {
+                    token: Arc::from(token),
+                    timeout: Duration::from_millis(hotfix_reload_timeout_ms.saturating_add(5_000)),
+                    runtime_control,
+                })
+            })
+            .transpose()?;
         let address = format!("{}:{}", config.ip, config.port);
         let listener = TcpListener::bind(&address)
             .await
@@ -428,11 +573,18 @@ impl HealthServer {
                     }
                     accepted = listener.accept() => {
                         match accepted {
-                            Ok((stream, _)) => {
+                            Ok((stream, peer)) => {
                                 let state = Arc::clone(&state);
                                 let process_name = process_name.clone();
+                                let hotfix_operations = hotfix_operations.clone();
                                 tokio::spawn(async move {
-                                    if let Err(error) = serve_connection(stream, &process_name, &state).await {
+                                    if let Err(error) = serve_connection(
+                                        stream,
+                                        peer,
+                                        &process_name,
+                                        &state,
+                                        hotfix_operations.as_ref(),
+                                    ).await {
                                         tracing::debug!(target: "tiangz::health", %error, "health connection failed");
                                     }
                                 });
@@ -462,26 +614,289 @@ impl HealthServer {
 
 async fn serve_connection(
     mut stream: TcpStream,
+    peer: SocketAddr,
     process_name: &str,
     state: &ProcessHealthState,
+    hotfix_operations: Option<&HotfixOperationsRuntime>,
 ) -> Result<()> {
-    let mut request = [0_u8; 1024];
-    let length = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut request))
-        .await
-        .context("health request timed out")??;
-    let path = std::str::from_utf8(&request[..length])
-        .ok()
-        .and_then(|text| text.lines().next())
-        .and_then(|line| line.split_whitespace().nth(1))
-        .unwrap_or("");
-    let (status, content_type, body) = probe_response(path, process_name, state);
+    let request = read_http_request(&mut stream).await?;
+    let response = route_response(&request, peer, process_name, state, hotfix_operations).await;
     let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len(),
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        response.status,
+        response.content_type,
+        response.body.len(),
+        response.body,
     );
     stream.write_all(response.as_bytes()).await?;
     stream.shutdown().await?;
     Ok(())
+}
+
+async fn read_http_request(stream: &mut TcpStream) -> Result<HttpRequest> {
+    let mut bytes = Vec::with_capacity(1024);
+    let mut content_length = None;
+    let mut header_length = None;
+    loop {
+        if bytes.len() >= MAX_HTTP_REQUEST_BYTES {
+            anyhow::bail!("health request exceeded {MAX_HTTP_REQUEST_BYTES} bytes");
+        }
+        let mut chunk = [0_u8; 1024];
+        let length = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut chunk))
+            .await
+            .context("health request timed out")??;
+        if length == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..length]);
+        if header_length.is_none()
+            && let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
+        {
+            let end = index + 4;
+            header_length = Some(end);
+            let header = std::str::from_utf8(&bytes[..index]).context("invalid HTTP header")?;
+            content_length = Some(parse_content_length(header)?);
+        }
+        if let (Some(header_length), Some(content_length)) = (header_length, content_length)
+            && bytes.len() >= header_length + content_length
+        {
+            break;
+        }
+    }
+    let header_length = header_length.context("incomplete HTTP header")?;
+    let header = std::str::from_utf8(&bytes[..header_length - 4]).context("invalid HTTP header")?;
+    let mut lines = header.split("\r\n");
+    let mut request_line = lines.next().unwrap_or("").split_whitespace();
+    let method = request_line.next().unwrap_or("").to_string();
+    let path = request_line.next().unwrap_or("").to_string();
+    let authorization = lines.find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("authorization")
+            .then(|| value.trim().to_string())
+    });
+    let content_length = content_length.unwrap_or_default();
+    Ok(HttpRequest {
+        method,
+        path,
+        authorization,
+        body: bytes[header_length..header_length + content_length].to_vec(),
+    })
+}
+
+fn parse_content_length(header: &str) -> Result<usize> {
+    let value = header.split("\r\n").skip(1).find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.eq_ignore_ascii_case("content-length")
+            .then(|| value.trim())
+    });
+    let length = value.map(str::parse).transpose()?.unwrap_or_default();
+    if length > MAX_HTTP_REQUEST_BYTES {
+        anyhow::bail!("HTTP body exceeded {MAX_HTTP_REQUEST_BYTES} bytes");
+    }
+    Ok(length)
+}
+
+async fn route_response(
+    request: &HttpRequest,
+    peer: SocketAddr,
+    process_name: &str,
+    state: &ProcessHealthState,
+    hotfix_operations: Option<&HotfixOperationsRuntime>,
+) -> HttpResponse {
+    if request.path.starts_with("/admin/hotfix/") {
+        return hotfix_operation_response(request, peer, process_name, state, hotfix_operations)
+            .await;
+    }
+    let (status, content_type, body) = probe_response(&request.path, process_name, state);
+    HttpResponse {
+        status,
+        content_type,
+        body,
+    }
+}
+
+async fn hotfix_operation_response(
+    request: &HttpRequest,
+    peer: SocketAddr,
+    process_name: &str,
+    state: &ProcessHealthState,
+    hotfix_operations: Option<&HotfixOperationsRuntime>,
+) -> HttpResponse {
+    let Some(operations) = hotfix_operations else {
+        return json_response(
+            "404 Not Found",
+            json!({ "status": "disabled", "process": process_name }),
+        );
+    };
+    if !peer.ip().is_loopback() {
+        return json_response(
+            "403 Forbidden",
+            json!({ "status": "forbidden", "process": process_name }),
+        );
+    }
+    let expected = format!("Bearer {}", operations.token);
+    if !request
+        .authorization
+        .as_deref()
+        .is_some_and(|actual| constant_time_equal(actual.as_bytes(), expected.as_bytes()))
+    {
+        return json_response(
+            "401 Unauthorized",
+            json!({ "status": "unauthorized", "process": process_name }),
+        );
+    }
+    if request.method == "GET" && request.path == "/admin/hotfix/status" {
+        return json_response("200 OK", state.hotfix_status_json(process_name));
+    }
+    let kind = match (request.method.as_str(), request.path.as_str()) {
+        ("POST", "/admin/hotfix/apply") => "applying",
+        ("POST", "/admin/hotfix/rollback") => "rolling-back",
+        _ => {
+            return json_response(
+                "404 Not Found",
+                json!({ "status": "not-found", "process": process_name }),
+            );
+        }
+    };
+    if !state.is_ready() {
+        return json_response(
+            "503 Service Unavailable",
+            json!({ "status": "not-ready", "process": process_name }),
+        );
+    }
+    let parsed: HotfixOperationRequest = match serde_json::from_slice(&request.body) {
+        Ok(value) => value,
+        Err(error) => {
+            return json_response(
+                "400 Bad Request",
+                json!({ "status": "invalid-request", "process": process_name, "error": error.to_string() }),
+            );
+        }
+    };
+    if !valid_operation_id(&parsed.operation_id) {
+        return json_response(
+            "400 Bad Request",
+            json!({ "status": "invalid-request", "process": process_name, "error": "operationId must contain 1..=128 ASCII letters, digits, '.', '_', or '-'" }),
+        );
+    }
+    let candidate_directory = if kind == "applying" {
+        match parsed.candidate_directory.as_deref() {
+            Some(value) if !value.trim().is_empty() => PathBuf::from(value),
+            _ => {
+                return json_response(
+                    "400 Bad Request",
+                    json!({ "status": "invalid-request", "process": process_name, "error": "candidateDirectory is required" }),
+                );
+            }
+        }
+    } else {
+        match state.previous_hotfix_candidate() {
+            Some(value) => value,
+            None => {
+                return json_response(
+                    "409 Conflict",
+                    json!({ "status": "rollback-unavailable", "process": process_name, "operationId": parsed.operation_id }),
+                );
+            }
+        }
+    };
+    if let Err(error) = state.begin_hotfix_operation(&parsed.operation_id, kind) {
+        return json_response(
+            "409 Conflict",
+            json!({ "status": "busy", "process": process_name, "operationId": parsed.operation_id, "error": error }),
+        );
+    }
+
+    tracing::info!(
+        target: "tiangz::hotfix::operations",
+        process = process_name,
+        operation_id = %parsed.operation_id,
+        operation = kind,
+        candidate = %candidate_directory.display(),
+        "Hotfix operation accepted"
+    );
+    let (response, completed) = tokio::sync::oneshot::channel();
+    let send_result = operations
+        .runtime_control
+        .send(RuntimeControl::ReloadHotfix {
+            candidate_directory,
+            requested_at: Instant::now(),
+            response,
+        });
+    let result = if send_result.is_err() {
+        Err("V8 runtime control channel is stopped".to_string())
+    } else {
+        match tokio::time::timeout(operations.timeout, completed).await {
+            Ok(Ok(value)) => value,
+            Ok(Err(_)) => Err("Hotfix operation response was dropped during shutdown".to_string()),
+            Err(_) => Err("Hotfix operation timed out; query status before retrying".to_string()),
+        }
+    };
+    match result {
+        Ok(report) => {
+            state.finish_hotfix_operation(None);
+            tracing::info!(
+                target: "tiangz::hotfix::operations",
+                process = process_name,
+                operation_id = %parsed.operation_id,
+                operation = kind,
+                generation = report.generation,
+                bundle_version = %report.bundle_version,
+                "Hotfix operation completed"
+            );
+            json_response(
+                "200 OK",
+                json!({
+                    "status": if kind == "applying" { "applied" } else { "rolled-back" },
+                    "process": process_name,
+                    "operationId": parsed.operation_id,
+                    "report": report,
+                }),
+            )
+        }
+        Err(error) => {
+            state.finish_hotfix_operation(Some(error.clone()));
+            tracing::error!(
+                target: "tiangz::hotfix::operations",
+                process = process_name,
+                operation_id = %parsed.operation_id,
+                operation = kind,
+                %error,
+                "Hotfix operation failed; active generation preserved"
+            );
+            json_response(
+                "422 Unprocessable Entity",
+                json!({ "status": "rejected", "process": process_name, "operationId": parsed.operation_id, "error": error }),
+            )
+        }
+    }
+}
+
+fn valid_operation_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
+    let mut different = left.len() ^ right.len();
+    for index in 0..left.len().max(right.len()) {
+        different |= usize::from(
+            left.get(index).copied().unwrap_or_default()
+                ^ right.get(index).copied().unwrap_or_default(),
+        );
+    }
+    different == 0
+}
+
+fn json_response(status: &'static str, body: Value) -> HttpResponse {
+    HttpResponse {
+        status,
+        content_type: "application/json",
+        body: body.to_string(),
+    }
 }
 
 fn probe_response(
@@ -2478,8 +2893,18 @@ mod tests {
     #[test]
     fn hotfix_metrics_preserve_active_generation_after_failure() {
         let state = ProcessHealthState::starting(Duration::from_secs(15));
-        state.record_initial_hotfix("v1".to_string());
-        state.record_hotfix_success(2, "v2".to_string(), 1.0, 2.0, 3.0, 4.0, 5.0, 15.0);
+        state.record_initial_hotfix("v1".to_string(), "dist".to_string(), json!({}));
+        state.record_hotfix_success(
+            2,
+            "v2".to_string(),
+            "candidate-v2".to_string(),
+            1.0,
+            2.0,
+            3.0,
+            4.0,
+            5.0,
+            15.0,
+        );
         state.record_hotfix_failure();
 
         let body = format_prometheus_metrics("map1", &state);

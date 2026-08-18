@@ -9,7 +9,9 @@
 | `npm install` | 首次拉取工程或依赖变化后安装TS构建依赖 |
 | `npm run hello` | 5分钟 Starter 入口：构建 Debug 产物、启动 all-in-one、等待 LoginMgr 监听后打印登录地址 |
 | `npm run dev -- configs/local/cluster/StartMachine.json` | 推荐的日常开发入口；首次完整构建并启动Watcher，之后保存Hotfix自动构建和Reload |
+| `npm run dev:debug` | 启动all-in-one Debug源码模式；保存Hotfix后保持同一Inspector连接并重新绑定TS断点 |
 | `npm run build:hotfix` | 只修改`app/hotfix`行为时，手工构建不可变Hotfix候选 |
+| `npm run hotfix -- plan/apply/status/rollback ...` | 正式Hotfix操作入口；执行候选预检、目标选择、审计和补偿回滚 |
 | `npm run build` | 修改Model、Core、Proto、`.native`或首次构建时，生成完整Model/Hotfix配对 |
 | `npm run codegen` | 修改Proto、`.native`、Scene、System或Handler声明后，运行全部生成器 |
 | `npm run typecheck` | 只检查服务端TS类型，不构建Rust和客户端 |
@@ -33,6 +35,16 @@ reload dist/hotfix-candidates/<hash>
 ```
 
 如果`build:hotfix`提示Model、Core、协议或Native schema指纹变化，不要绕过检查；改用完整构建并重启Process。
+
+正式操作示例：
+
+```powershell
+$env:TIANGZ_HOTFIX_ADMIN_TOKEN = "<runtime-secret>"
+npm run hotfix -- plan --startup configs/<env>/StartMachine.json --candidate dist/hotfix-candidates/<hash>
+npm run hotfix -- apply --startup configs/<env>/StartMachine.json --candidate dist/hotfix-candidates/<hash> --target map1
+npm run hotfix -- status --startup configs/<env>/StartMachine.json
+npm run hotfix -- rollback --startup configs/<env>/StartMachine.json --target map1
+```
 
 ## 按修改内容选择命令
 

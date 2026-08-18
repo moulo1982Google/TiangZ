@@ -7,6 +7,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use deno_core::{JsRuntime, ModuleSpecifier};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::host::{
@@ -123,6 +124,19 @@ impl RuntimeBundles {
 
     pub fn game_config_schema_fingerprint(&self) -> &str {
         &self.model_manifest.game_config_schema_fingerprint
+    }
+
+    /// 向本机运维入口公开冻结契约摘要，不包含源码或密钥。 / Exposes the frozen contract summary to the local operations endpoint without source or secrets.
+    pub fn model_contract_status(&self) -> Value {
+        json!({
+            "modelFingerprint": self.model_manifest.model_fingerprint,
+            "modelSourceHash": self.model_manifest.model_source_hash,
+            "protocolFingerprint": self.model_manifest.protocol_fingerprint,
+            "stableCoreApiHash": self.model_manifest.stable_core_api_hash,
+            "nativeSchemaHash": self.model_manifest.native_schema_hash,
+            "gameConfigSchemaFingerprint": self.model_manifest.game_config_schema_fingerprint,
+            "buildMode": self.model_manifest.build_mode,
+        })
     }
 
     /// 从不可变候选目录读取 `hotfix.js` 与 manifest，并逐项匹配当前 Process 的 Model。 / Reads `hotfix.js` and its manifest from an immutable candidate directory and matches every frozen Model contract.

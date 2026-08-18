@@ -11,6 +11,14 @@ cargo run --bin TiangZ -- configs/local/debug/login-1.json
 
 VS Code 连接 `127.0.0.1:9231` 后，可直接在 `app/**/*.ts` 设置断点。详细配置见 `docs/typescript_debugging.md`。
 
+持续调试Hotfix行为时不必每次重启：
+
+```powershell
+npm run dev:debug
+```
+
+该命令使用`configs/local/debug/StartMachine.json`启动all-in-one，并为每一代Hotfix生成内联sourcemap。保存`app/hotfix/**/*.ts`后，Watcher提交新候选，VS Code仍连接原V8并将源码断点绑定到新脚本。若当前正停在断点，先继续运行再等待Reload完成；当前调用栈不会被改写，只有后续调用使用新实现。
+
 ## 测试矩阵
 
 ```powershell
@@ -19,7 +27,10 @@ cargo test --all-targets
 npm run test:runtime
 npm run test:mailbox-parity
 npm run test:backpressure
+npm run test:hotfix-operations
 ```
+
+`test:hotfix-operations`会启动真实Inspector Process，验收正式`plan/apply/status/rollback`、错误令牌、篡改候选、generation恢复和sourcemap脚本重绑。
 
 ## 从单进程拆到多进程
 

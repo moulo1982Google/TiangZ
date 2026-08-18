@@ -77,7 +77,7 @@ Action当前支持：
 | ID | Action | 参数 | 边界 |
 |---:|---|---|---|
 | `0` | `None` | 空 | 仅表示没有Action |
-| `1` | `ChangeNumeric` | `NumericType, delta` | 修改非派生普通数值；不能表达伤害或治疗 |
+| `1` | `ChangeNumeric` | `NumericType, delta` | 修改非派生普通数值；`CurrentHp`会被拒绝，不能表达伤害或治疗 |
 | `2` | `AddBuff` | `BuffConfigId` | 交给目标的`BuffComponent`处理冲突和生命周期 |
 | `3` | `RemoveBuff` | `BuffInstanceId`；Buff移除阶段可留空表示自身 | 删除一个运行时Buff实例 |
 | `4` | `DealDamage` | `amount, DamageSchool` | 统一进入`CombatComponent.ApplyDamage`；当前学校为Physical/Frost/Fire/Holy/Shadow |

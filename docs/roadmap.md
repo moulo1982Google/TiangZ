@@ -263,7 +263,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ### Phase 3.10.5：TypeScript热更闭环
 
-状态：完成（2026-07-27）。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix；`alpha.6`加入`@systemFor`，让Model拥有状态、字段、构造、继承和稳定身份，Hotfix拥有生命周期、领域方法和Handler；`alpha.7`把Hotfix改为固定脚本名IIFE，补齐慢RPC、Timer和连续100 generation资源长稳。Runtime支持不可变候选目录、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、Watcher Reload、Rust有界投递屏障、超时拒绝、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。codegen从System公开方法生成Model类型声明，Model不再维护抛错空壳。`npm run dev`在本地初次完整构建后监听Hotfix，自动完成生成、类型检查、不可变候选构建和Reload；正式部署仍只接收不可变候选，不执行源码监听。
+状态：完成（2026-07-27，正式操作入口于2026-08-18补齐）。`0.3.10-alpha.5`明确把TS拆成绝对不可热更的Model与可热更Hotfix；`alpha.6`加入`@systemFor`，让Model拥有状态、字段、构造、继承和稳定身份，Hotfix拥有生命周期、领域方法和Handler；`alpha.7`把Hotfix改为固定脚本名IIFE，补齐慢RPC、Timer和连续100 generation资源长稳。Runtime支持不可变候选目录、实际文件与Model/Core/协议/Native schema指纹校验、隔离V8预检、staging registry、Watcher Reload、Rust有界投递屏障、超时拒绝、prototype/Handler事务提交和失败回滚，现有Entity/Component与Rust handle不重建。codegen从System公开方法生成Model类型声明，Model不再维护抛错空壳。`npm run dev`在本地初次完整构建后监听Hotfix，自动完成生成、类型检查、不可变候选构建和Reload；`npm run dev:debug`保持Inspector连接与TS断点重绑。正式部署通过本机鉴权的`plan/apply/status/rollback`入口操作不可变候选，支持目标选择、审计和部分失败补偿；跨机器Prepare/Commit仍留待高可用阶段。
 
 3000玩家基线与1Hz Reload各3轮已完成：Move吞吐中位数差异`+0.02%`，90/90次Reload成功且无错误；Reload组Probe p95/p99约增加`31.91%/31.14%`，说明切换屏障有可测尾延迟。8秒慢RPC使屏障等待约`7.7s`后提交；一次性与重复Timer跨generation调用当前prototype；100次Reload到generation 101后，损坏候选被拒绝，Timer、Native实体和pending无漂移，预热后的V8 Heap/RSS增长通过`4MB/16MB`硬门槛。第一版必须排空到零再切换，不做字段migration，也不允许Model在线替换。详见[Process级TypeScript热更设计](design/typescript-hot-reload.md)、`perf/results/hotfix_latest.md`与`perf/results/hotfix_soak_latest.md`。
 

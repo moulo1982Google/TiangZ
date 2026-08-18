@@ -81,6 +81,21 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 
 健康检查继续表达生命周期状态；`/metrics` 提供基础生命周期指标，不承载业务级依赖状态，也不能代替业务级健康策略。
 
+正式Hotfix操作入口通过生命周期配置显式启用：
+
+```json
+{
+  "lifecycle": {
+    "hotfixReloadTimeoutMs": 30000,
+    "hotfixOperations": {
+      "authTokenEnv": "TIANGZ_HOTFIX_ADMIN_TOKEN"
+    }
+  }
+}
+```
+
+启用后必须同时配置`observability.health`，并在Process环境中提供非空令牌；缺少令牌会阻止启动。管理路由为`GET /admin/hotfix/status`、`POST /admin/hotfix/apply`和`POST /admin/hotfix/rollback`，只接受回环来源与Bearer令牌。健康端口仍可按监控需要绑定管理地址或通配地址，但Hotfix管理请求不能从远端进入；运维应登录目标机器运行`npm run hotfix`，不得把这些路由交给Nginx或公网负载均衡。
+
 `logging` 支持：
 
 ```json

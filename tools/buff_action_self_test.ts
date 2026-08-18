@@ -15,7 +15,7 @@ import type { NativeHostOpsApi } from "../app/generated/model/native/NativeOps";
 import { NativeUnitRef } from "../app/generated/model/native/NativeUnitRef";
 import { GameConfigRegistry, GameConfigs, SkillEffectTarget } from "../app/generated/model/config";
 import { ActionType } from "../app/model/mmorpg/action/ActionType";
-import { ExecuteAction, ExecuteActionBatch } from "../app/hotfix/mmorpg/action/ActionExecutor";
+import { ActionFromConfig, ExecuteAction, ExecuteActionBatch } from "../app/hotfix/mmorpg/action/ActionExecutor";
 import { GetSkillDefinition } from "../app/hotfix/mmorpg/skill/SkillCatalog";
 import { BuffApplyStatus, BuffComponent } from "../app/model/mmorpg/buff/BuffComponent";
 import { Buff } from "../app/model/mmorpg/buff/Buff";
@@ -475,6 +475,18 @@ async function main(): Promise<void> {
   });
   assert.equal(healed.changed, true);
   assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentHp], 50n);
+  assert.throws(
+    () => ExecuteAction(unit, { type: ActionType.ChangeNumeric, parameters: [BigInt(NumericType.CurrentHp), 1n] }),
+    /ChangeNumeric cannot write CurrentHp; use Heal or DealDamage/,
+  );
+  assert.throws(
+    () => ExecuteAction(unit, { type: ActionType.ChangeNumeric, parameters: [BigInt(NumericType.CurrentHp), -1n] }),
+    /ChangeNumeric cannot write CurrentHp; use Heal or DealDamage/,
+  );
+  assert.throws(
+    () => ActionFromConfig(ActionType.ChangeNumeric, [NumericType.CurrentHp, 1]),
+    /ChangeNumeric cannot target CurrentHp; use Heal or DealDamage/,
+  );
 
   const weakSoul = buffs.ApplyBuff(4004, { sourceUnitId: 10, sourceAbilityId: 3004 });
   const weakSoulRejected = buffs.ApplyBuff(4004, { sourceUnitId: 11, sourceAbilityId: 3004 });

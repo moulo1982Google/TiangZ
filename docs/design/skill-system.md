@@ -198,7 +198,7 @@ ExecuteAction(target, action, {
 - `Heal(amount)`：调用目标Combat的`ApplyHealing`。
 - `RegisterDamageAbsorber(amount[, priority])`：只供Buff添加阶段注册Combat护盾。
 
-`ChangeNumeric(CurrentHp, delta)`保留兼容，但新技能不得用它表达伤害或治疗。Action只执行明确目标上的效果，绝不在内部寻找Unit、遍历AOI或决定敌我。
+`ChangeNumeric(CurrentHp, delta)`不是兼容入口：配置codegen、`ActionFromConfig`和运行时执行都会拒绝它。HP增加必须使用`Heal`，HP减少必须使用`DealDamage`，从而保证最大生命值、死亡、护盾、来源和事务重放规则始终经过Combat。Action只执行明确目标上的效果，绝不在内部寻找Unit、遍历AOI或决定敌我。
 
 多Action按配置顺序依次执行。第一版采用“前置完整校验，开始执行后不回滚已完成Action”的事件语义；需要经济原子性的效果未来必须走独立事务，不把战斗Action伪装成数据库事务。
 

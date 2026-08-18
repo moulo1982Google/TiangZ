@@ -152,7 +152,7 @@ impl ProcessEvent {
     }
 }
 
-enum RuntimeControl {
+pub(crate) enum RuntimeControl {
     ReloadHotfix {
         candidate_directory: PathBuf,
         requested_at: Instant,
@@ -168,24 +168,24 @@ enum RuntimeControl {
 /// Hotfix 控制面返回的分段结果，同时作为结构化日志与性能测试的稳定字段。 / Segmented Hotfix control result used by structured logs and performance tests.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct HotfixReloadReport {
-    candidate_directory: String,
-    bundle_version: String,
-    generation: u64,
-    validation_ms: f64,
-    preflight_ms: f64,
-    barrier_wait_ms: f64,
-    begin_ms: f64,
-    candidate_eval_ms: f64,
-    commit_ms: f64,
-    reload_total_ms: f64,
-    status_json: String,
+pub(crate) struct HotfixReloadReport {
+    pub(crate) candidate_directory: String,
+    pub(crate) bundle_version: String,
+    pub(crate) generation: u64,
+    pub(crate) validation_ms: f64,
+    pub(crate) preflight_ms: f64,
+    pub(crate) barrier_wait_ms: f64,
+    pub(crate) begin_ms: f64,
+    pub(crate) candidate_eval_ms: f64,
+    pub(crate) commit_ms: f64,
+    pub(crate) reload_total_ms: f64,
+    pub(crate) status_json: String,
 }
 
 /// 配置数据控制面结果；schema不变时只替换Snapshot，不改变Model或Hotfix generation。 / Config-data control result; a schema-compatible swap changes only the snapshot, not Model or Hotfix generation.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GameConfigReloadReport {
+pub(crate) struct GameConfigReloadReport {
     candidate_directory: String,
     data_fingerprint: String,
     commit_ms: f64,
@@ -675,8 +675,11 @@ pub async fn run_runtime_config(
         Some(health) => Some(
             HealthServer::start(
                 health,
+                config.process.lifecycle.hotfix_operations.as_ref(),
+                config.process.lifecycle.hotfix_reload_timeout_ms,
                 config.process.name.clone(),
                 Arc::clone(&health_state),
+                runtime_control_tx.clone(),
             )
             .await?,
         ),
@@ -951,7 +954,11 @@ fn run_process_runtime(
     let entrypoints = runtime_bundles
         .install_initial(&js_event_loop, &mut runtime)
         .context("failed to install initial Model/Hotfix generation")?;
-    health_state.record_initial_hotfix(runtime_bundles.bundle_version().to_string());
+    health_state.record_initial_hotfix(
+        runtime_bundles.bundle_version().to_string(),
+        project_root.join("dist").display().to_string(),
+        runtime_bundles.model_contract_status(),
+    );
     let active_game_config_cold_fingerprint =
         initial_game_config.cold_data_fingerprint().to_string();
     let initial_config_status = call_js_install_game_config(
@@ -1105,6 +1112,7 @@ fn run_process_runtime(
                 Ok(report) => health_state.record_hotfix_success(
                     report.generation,
                     report.bundle_version.clone(),
+                    report.candidate_directory.clone(),
                     report.validation_ms,
                     report.preflight_ms,
                     report.barrier_wait_ms,

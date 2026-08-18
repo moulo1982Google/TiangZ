@@ -12,6 +12,11 @@ import { fileURLToPath } from "node:url";
 
 import { collectGeneratedFiles, recordGenerator } from "./codegen_manifest.mjs";
 
+if (process.argv.includes("--self-test-action-validation")) {
+  selfTestActionValidation();
+  process.exit(0);
+}
+
 const scriptFile = fileURLToPath(import.meta.url);
 const root = path.resolve(path.dirname(scriptFile), "..");
 const configRoot = path.join(root, "game_config");
@@ -984,8 +989,13 @@ function validateRawAction(owner, type, parameters, buffIds, allowEmptyRemove) {
   if (type === 5 && (parameters.length < 1 || parameters.length > 2)) {
     throw new Error(`${owner} RegisterDamageAbsorber expects one or two parameters`);
   }
-  if (type === 1 && (parameters[0] <= 0 || (parameters[0] >= 1_000 && parameters[0] <= 9_999))) {
-    throw new Error(`${owner} ChangeNumeric targets an invalid or derived NumericType`);
+  if (type === 1) {
+    if (parameters[0] === 1) {
+      throw new Error(`${owner} ChangeNumeric cannot target CurrentHp; use Heal or DealDamage`);
+    }
+    if (parameters[0] <= 0 || (parameters[0] >= 1_000 && parameters[0] <= 9_999)) {
+      throw new Error(`${owner} ChangeNumeric targets an invalid or derived NumericType`);
+    }
   }
   if (type === 2 && !buffIds.has(parameters[0])) {
     throw new Error(`${owner} AddBuff references missing BuffConfig ${parameters[0]}`);
@@ -999,6 +1009,18 @@ function validateRawAction(owner, type, parameters, buffIds, allowEmptyRemove) {
   if (type === 6 && parameters[0] < 0) {
     throw new Error(`${owner} Heal needs a non-negative amount`);
   }
+}
+
+function selfTestActionValidation() {
+  let rejected = false;
+  try {
+    validateRawAction("self-test", 1, [1, 50], new Set(), false);
+  } catch (error) {
+    rejected = String(error).includes("ChangeNumeric cannot target CurrentHp");
+  }
+  if (!rejected) throw new Error("ChangeNumeric(CurrentHp) codegen validation did not reject the action");
+  validateRawAction("self-test", 1, [2, 50], new Set(), false);
+  process.stdout.write("game config Action validation self-test passed\n");
 }
 
 function createClientFacade(data, dataFingerprint) {

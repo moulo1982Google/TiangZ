@@ -11,6 +11,7 @@ const gameConfigWatchTargets = [
   { source: path.join(root, "game_config", "luban.conf"), recursive: false },
 ];
 const defaultConfig = "configs/local/cluster/StartMachine.json";
+const defaultDebugConfig = "configs/local/debug/StartMachine.json";
 const debounceMs = 250;
 
 if (process.argv.includes("--self-test")) {
@@ -27,13 +28,15 @@ if (process.argv.includes("--self-test")) {
  * Side effects: starts child processes, watches sources, and requests graceful Watcher shutdown on exit; do not use for production deployment.
  */
 async function main() {
-  const config = process.argv.slice(2).find((value) => !value.startsWith("--")) ?? defaultConfig;
+  const debug = process.argv.includes("--debug");
+  const config = process.argv.slice(2).find((value) => !value.startsWith("--"))
+    ?? (debug ? defaultDebugConfig : defaultConfig);
   if (path.basename(config).toLowerCase() !== "startmachine.json") {
     throw new Error("dev source mode requires a StartMachine.json Watcher config");
   }
 
   process.stdout.write("[dev] 初次构建 Model/Hotfix 与客户端产物...\n");
-  await runNpm(["run", "build"]);
+  await runNpm(["run", debug ? "build:debug" : "build"]);
 
   process.stdout.write(`[dev] 启动 Watcher：${config}\n`);
   const runtime = spawn("cargo", ["run", "--bin", "TiangZ", "--", config], {
@@ -75,7 +78,9 @@ async function main() {
   });
   process.stdin.resume();
 
-  process.stdout.write("[dev] 正在监听 Hotfix 与 game_config 源文件；保存后将自动构建并切换。\n");
+  process.stdout.write(
+    `[dev] 正在监听 Hotfix 与 game_config 源文件；保存后将自动构建并切换${debug ? "，Inspector连接与TS源码断点保持有效" : ""}。\n`,
+  );
 
   process.once("SIGINT", requestShutdown);
   process.once("SIGTERM", requestShutdown);
@@ -114,7 +119,7 @@ async function main() {
           process.stdout.write("[dev] Hotfix 已变化，正在生成注册表并检查类型...\n");
           await runNpm(["run", "codegen:scenes"]);
           await runNpm(["run", "typecheck"]);
-          const output = await runCommand(process.execPath, ["tools/build_runtime_bundles.mjs", "--hotfix-only"], true);
+          const output = await runCommand(process.execPath, hotfixBuildArguments(debug), true);
           const candidate = candidateDirectoryFromOutput(output);
           if (!runtime.stdin.writable) throw new Error("Watcher stdin is closed");
           runtime.stdin.write(`reload ${path.resolve(root, candidate)}\n`);
@@ -215,6 +220,11 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** 让初始Bundle和后续候选使用同一种调试制品格式。 / Keeps the initial bundle and later candidates in the same debug artifact format. */
+export function hotfixBuildArguments(debug) {
+  return ["tools/build_runtime_bundles.mjs", "--hotfix-only", ...(debug ? ["--debug"] : [])];
+}
+
 /** 只验证纯解析逻辑，避免自测启动编译器或真实服务器。 / Verifies pure parsing logic without starting compilers or a real server. */
 function selfTest() {
   const parsed = candidateDirectoryFromOutput(
@@ -228,6 +238,12 @@ function selfTest() {
     rejected = true;
   }
   if (!rejected) throw new Error("mutable Hotfix output was accepted");
+  if (hotfixBuildArguments(false).includes("--debug")) {
+    throw new Error("normal source mode unexpectedly enables debug bundles");
+  }
+  if (!hotfixBuildArguments(true).includes("--debug")) {
+    throw new Error("debug source mode omitted inline sourcemaps");
+  }
   const gameConfig = gameConfigCandidateDirectoryFromOutput(
     "[build:game-config] schema=aaa data=bbb candidate=dist/game-config-candidates/0123456789abcdef\n",
   );

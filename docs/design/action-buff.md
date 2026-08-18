@@ -35,7 +35,7 @@ BuffComponent
 
 1. **Item只声明效果，不实现效果。** 道具表提供Action类型和整数参数；Handler只适配协议，ItemComponent负责事务编排，执行器负责普通非事务效果路由。
 2. **Buff只拥有自己的生命周期。** Buff是`BuffComponent`拥有的ChildEntity，不是Actor，不接收网络消息；Timer属于Buff，Timer触发时执行Action。
-3. **Action不负责目标选择和广播。** Action只操作调用方已经解析出的目标。HP通过`CombatComponent.ApplyDamage/ApplyHealing`，Buff通过`BuffComponent`，广播由Map/Audience完成。
+3. **Action不负责目标选择和广播。** Action只操作调用方已经解析出的目标。HP通过`CombatComponent.ApplyDamage/ApplyHealing`，Buff通过`BuffComponent`，广播由Map/Audience完成；`ChangeNumeric(CurrentHp, ...)`在配置codegen和运行时都会被拒绝。
 
 这样做以后，“小红药”和“每3秒回血，持续30秒”只是配置不同：前者是一条立即Action，后者是一个带TickAction的Buff。
 

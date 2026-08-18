@@ -161,6 +161,15 @@ npm run dev -- configs/local/cluster/StartMachine.json
 
 开发宿主先执行一次完整构建并启动Watcher，之后监听`app/hotfix/**/*.ts`以及`game_config`的Excel/定义源。Hotfix保存会串行执行入口生成、类型检查、不可变候选构建和Watcher `reload`；纯配置数据变化会构建独立数据候选并执行`reload-config`。连续保存会合并，构建失败时不发送切换命令，旧generation或旧配置快照继续运行。它不监听Model、Core、Proto或`.native`；配置表结构变化也会被schema门拒绝，这些边界变化仍要求开发人员停止、完整构建并重新启动。源码模式只是隐藏构建步骤，不会让V8直接执行TypeScript，也不得用于正式部署。
 
+需要边调试边Reload时使用：
+
+```powershell
+npm run dev:debug
+# 默认启动 configs/local/debug/StartMachine.json，并连接 all-in-one 的 9231 Inspector
+```
+
+Debug模式让初始Model/Hotfix和后续每个Hotfix候选都携带内联sourcemap与`sourcesContent`。Process和V8不重启，VS Code保持同一Inspector连接；候选求值时发布新的`scriptParsed`，原TS源码断点会重新绑定到新脚本。它不是Edit-and-Continue：已经在栈上的函数继续执行旧代码；V8停在断点时Reload屏障也无法推进，必须先Resume，之后的新调用才进入新generation。
+
 只改行为：
 
 ```powershell
@@ -181,7 +190,18 @@ cargo build --bin TiangZ
 
 普通业务开发者只需记住：状态写在Model，行为写在Hotfix System；System没有字段和构造；公开方法签名变化会改变生成的Model声明，因此必须完整构建并重启。`build:hotfix`拒绝时不要绕过，它是在告诉你这次变更已经越过纯行为边界。
 
-正式服发布只传输`dist/hotfix-candidates/<hash>`完整目录。候选必须先上传到临时目录，完成后原子重命名到目标hash目录；不得逐文件覆盖`dist/hotfix.js`。当前多机器仍需分别上传并向每台Watcher提交，同服跨机器Prepare/Commit协调器尚未实现。
+正式服发布只传输`dist/hotfix-candidates/<hash>`完整目录。候选必须先上传到临时目录，完成后原子重命名到目标hash目录；不得逐文件覆盖`dist/hotfix.js`。目标Process需要显式配置`process.lifecycle.hotfixOperations`并通过环境变量提供令牌，然后使用正式入口：
+
+```powershell
+npm run hotfix -- plan --startup configs/<env>/StartMachine.json --candidate dist/hotfix-candidates/<hash>
+npm run hotfix -- apply --startup configs/<env>/StartMachine.json --candidate dist/hotfix-candidates/<hash>
+npm run hotfix -- status --startup configs/<env>/StartMachine.json
+npm run hotfix -- rollback --startup configs/<env>/StartMachine.json
+```
+
+`plan`先核对候选文件哈希和冻结Model契约，再读取每个目标的当前generation；`apply`支持重复`--target <process>`灰度选择，并在多目标部分失败时回滚本次已经成功的目标；`status`返回active/previous候选和最后操作；`rollback`重新提交previous候选，因此也会生成新的generation。每次命令写入忽略Git的`temp/hotfix-operations/audit.jsonl`，Process日志同步记录operationId，但两处都不记录令牌。管理路由复用健康端口、默认关闭，只接受回环连接和Bearer令牌；它不能经Nginx或公网暴露。
+
+当前CLI协调一台机器本地可达的Process。跨机器部署应先把同一不可变候选分发到每台机器，再在各机执行`--machine`或目标选择；尚未实现跨机器Prepare/Commit，所以不能把多机补偿回滚描述为全局原子事务。
 
 ## 最小验收矩阵
 
@@ -192,3 +212,4 @@ cargo build --bin TiangZ
 - 切换期间队列有界、RPC不错配、Message不重复。
 - 有连接Process切换后连接不重建、状态不丢失。
 - 连续多次切换后Timer、pending operation和V8 Heap保持在门槛内。
+- 正式入口的鉴权、plan、apply、status、rollback、错误候选拒绝和Inspector脚本重绑。

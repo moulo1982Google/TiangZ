@@ -290,7 +290,7 @@ MapHost -> MapScene
 
 `PlayerConfig`表示创建玩家时的基础模板，不表示某个玩家升级后的等级、经验、当前生命或背包结果。运行时状态属于Entity/Component和持久化记录。配置对象与数组只读；`GetAll()`只用于低频初始化和管理流程，帧内热路径应按ID查询或预先建立明确索引。
 
-技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。施法期间`SkillComponent.IsCasting()`为真，平A只能保留攻击意图，不能继续推进读条；移动仍按技能配置决定是否中断。Demo中玩家受到一次没有被护盾吸收的有效攻击时，地图技能调度器把普通读条`finishAtMs`延后800ms；如果当前是引导，则把结束时间提前800ms，但不立即清除引导，二者都会广播新的`G2C_SkillCastState`。真言术·盾吸收本次攻击时，普通读条和引导时间都不调整。这不是通用Combat副作用，不能在Combat里查询Skill或Buff；攻击来源应使用`Combat.ApplyDamage`的结果决定是否调用施法惩罚边界。是否允许移动、何时重置平A均读取`SkillConfig`显式策略，不按技能名称或伤害类型猜测。目标选择、Cast时间线和Action效果必须分层：`SkillConfig.xlsx`描述施法规则，服务端`SkillEffectConfig.xlsx`描述有序Action，伤害/治疗进入Combat、Buff进入BuffComponent。新技能不能用`ChangeNumeric(CurrentHp, delta)`绕过Combat。配置Reload后，已接受的ActiveCast和Projectile继续使用冻结旧定义，新Cast读取新配置。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
+技能业务统一调用`unit.GetComponent(SkillComponent).Cast({ skillId, targetUnitId })`；外网Handler应调用`PlayerUnit.CastSkill`，玩家Handler和怪物AI不得各写一套施法逻辑。SkillComponent只保存冷却deadline和一个ActiveCast；Cast不是Actor、Entity或Timer。地图唯一`SkillMapComponent`用10Hz桶推进活跃读条和弹道。施法期间`SkillComponent.IsCasting()`为真，平A只能保留攻击意图，不能继续推进读条；移动仍按技能配置决定是否中断。Demo中玩家受到一次没有被护盾吸收的有效攻击时，地图技能调度器把普通读条`finishAtMs`延后800ms；如果当前是引导，则把结束时间提前800ms，但不立即清除引导，二者都会广播新的`G2C_SkillCastState`。真言术·盾吸收本次攻击时，普通读条和引导时间都不调整。这不是通用Combat副作用，不能在Combat里查询Skill或Buff；攻击来源应使用`Combat.ApplyDamage`的结果决定是否调用施法惩罚边界。是否允许移动、何时重置平A均读取`SkillConfig`显式策略，不按技能名称或伤害类型猜测。目标选择、Cast时间线和Action效果必须分层：`SkillConfig.xlsx`描述施法规则，服务端`SkillEffectConfig.xlsx`描述有序Action，伤害/治疗进入Combat、Buff进入BuffComponent。`ChangeNumeric(CurrentHp, delta)`会被配置codegen、`ActionFromConfig`和运行时执行共同拒绝；HP增加必须使用`Heal`，HP减少必须使用`DealDamage`。配置Reload后，已接受的ActiveCast和Projectile继续使用冻结旧定义，新Cast读取新配置。第一阶段开放友方/敌方Unit目标和Instant/Cast，完整调用示例见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
 
 游戏配置的表名、字段、类型、分组、索引和引用关系属于Model，不能热更；变化后必须完整构建、重启相关Process并同步客户端SDK。只修改数据行或字段值时，`build:game-config:startup`会重新生成并覆盖服务器重启使用的`dist/game-config`；`build:game-config`只生成独立候选，可通过Watcher的`reload-config`原子切换服务端快照。`test:game-config`只验证，不更新启动目录。Reload不重跑Awake、不修改既有Entity状态；业务不要长期缓存配置行，应在真正使用数值时通过`GameConfigs`查询。客户端数据仍随SDK发布，不能把服务端Reload当作客户端配置下发。详细格式和示例见[游戏配置教程](../tutorials/10-game-config.md)。
 
@@ -1006,12 +1006,14 @@ export class G2C_ItemChangedHandler implements ClientMessageHandler<
 
 `0.3.10`框架稳定化和`0.4.0` Phase 4.0空间契约已经完成，当前继续沿`0.4.x`开发线推进。Model/Hotfix双Bundle、`@systemFor`、兼容指纹、Watcher Reload、Rust有界投递屏障、超时拒绝、事务回滚、Prometheus指标、3000玩家1Hz Reload A/B、8秒慢RPC屏障、Timer跨generation和100代资源长稳均已完成。热更按整个Process原子提交Hotfix behavior，现有Entity/Component和Rust handle不重建。Model绝对不能热更；字段、构造、继承、公开System签名、协议、空间模式或Native schema变化必须完整部署并重启Process，不存在字段migration旁路。完整约束见[热更设计](../design/typescript-hot-reload.md)。
 
-本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
+本地只修改Hotfix行为时，可运行`npm run dev -- configs/local/cluster/StartMachine.json`后直接保存TS文件；开发宿主会自动生成注册入口、类型检查、构建不可变候选并Reload。需要在VS Code断点调试中持续Reload时使用`npm run dev:debug`：初始和后续候选都带内联sourcemap，Process/V8/Inspector连接不重启，新脚本会重新绑定TS断点。若V8正停在断点必须先Resume；当前栈继续旧代码，后续调用才使用新generation。构建失败时旧generation继续运行。这个便利入口不适用于Model字段、Core、Proto或`.native`变化，也不用于正式部署。Developer Tools把Model长期状态中的显式`any`、可选字段、基本类型与`undefined`联合、跨基本类型联合、`delete`字段和`as any`写属性视为错误；请使用稳定默认值或明确的数据结构。对象`T | null`、判别联合、显式Map/Record和普通DTO仍可正常使用。
+
+正式环境先把完整`dist/hotfix-candidates/<hash>`原子发布到目标机器，再执行`npm run hotfix -- plan`预览；确认后用`apply`提交，用`status`核对generation与active/previous候选，必要时用`rollback`重新提交previous候选。目标Process必须显式配置`process.lifecycle.hotfixOperations.authTokenEnv`，实际令牌只放环境变量。管理路由仅允许本机Bearer鉴权访问，不能加入公网反向代理。CLI可用重复`--target`选择Process，并在同机多目标部分失败时补偿回滚本次成功目标；跨机器尚无Prepare/Commit，不能宣称全局原子。每次操作必须保留operationId与`temp/hotfix-operations/audit.jsonl`审计，但禁止记录令牌。
 
 | 修改类型 | 最少验证 |
 |---|---|
 | 纯TS业务Component/Handler | `npm run typecheck`和对应自测 |
-| 只修改Hotfix行为 | `npm run build:hotfix`、`npm run test:hotfix` |
+| 只修改Hotfix行为 | `npm run build:hotfix`、`npm run test:hotfix`；涉及操作入口或调试重绑时追加`npm run test:hotfix-operations` |
 | Model字段、类型、构造或继承 | `npm run build`、相关测试并重启Process；不得使用Hotfix-only |
 | proto或客户端Push | `npm run codegen`、`npm run test:protocol`、对应Client测试 |
 | Luban游戏配置 | 纯数据用`npm run build:game-config`、`npm run test:game-config`和Reload验收；结构变化追加完整构建、重启与客户端类型检查 |

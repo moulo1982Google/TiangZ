@@ -1,4 +1,6 @@
 {
+  "files.autoSave": "off",
+
    // 资源管理器目录树缩进像素（核心）
   "workbench.tree.indent": 20,
 

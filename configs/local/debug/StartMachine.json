@@ -1,0 +1,11 @@
+{
+  "machines": [
+    {
+      "name": "local-debug",
+      "innerIp": "127.0.0.1",
+      "processes": [
+        "../all-in-one.json"
+      ]
+    }
+  ]
+}

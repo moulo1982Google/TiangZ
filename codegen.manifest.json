@@ -321,7 +321,7 @@
         "game_config/Datas/SkillEffectConfig.xlsx": "804f2f692d1600aa0399a5c07bac985aa54546df7ce123990558f12ada25927f",
         "game_config/Defines/builtin.xml": "89aed0a16cd483a7848b0f1c63094ed952787e4c4b7de8c4ec3896422ddb21ee",
         "game_config/luban.conf": "eb2527f701f2aaca4df688d3120bb1e992aa287997aeec5707c8a98e66badd7c",
-        "tools/codegen_game_config.mjs": "55b79a1e4ace386fd8de1e965d3345205b5495c6d58afa31207a644c3aee97af",
+        "tools/codegen_game_config.mjs": "b6512e115607b567791ab46e93c63c996ee909b1b6ce5a4c122134dd0db913d8",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/third_party/luban/4.10.2/Luban.dll": "9639581e0abe31f43f8175155a82319f942bbe495c4ee9bd8d3baeaee3bd1028"
       },
@@ -396,7 +396,7 @@
         "native_data/mmorpg/Item.native": "b8115687e4b6919be0dc310fe9833f05f4506e644dd214999acbca68a9233e40",
         "native_data/mmorpg/MapOps.native": "754b6538e1807e08dd5b7944df4c34da88832c3b076c89b3177c9e5f0abe77f4",
         "native_data/mmorpg/Unit.native": "37de6d00dcc3b2e81b987cfb32ef81600e974e7c27f18ac8490945b9a861ef36",
-        "package.json": "466da401d47073821f2a2b00339dc032828708828e0f60e3f0df230e1a30bcd9",
+        "package.json": "fad651dbacdec5b2271144286e1aaf27c6b2c722f4c810625fc0e07021f37fee",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "2d2a900111ec146a98db232cf9dd5f61efcb0f8ade3dcdba21ffd0fa06b11a0b"
       },
