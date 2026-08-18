@@ -33,7 +33,7 @@
     "starter:verify": "node tools/starter_verify.mjs",
     "starter:smoke": "npm run starter:verify && npm run test:runtime",
     "starter:character-smoke": "npm run build:client-sdk-smoke && node tools/character_selection_smoke.mjs",
-    "starter:acceptance": "npm run build:debug && npm run build:runtime:debug && npm run starter:verify && node tools/starter_acceptance.mjs",
+    "starter:acceptance": "npm run build:debug && npm run build:runtime:debug && npm run build:client-sdk-smoke && npm run starter:verify && node tools/starter_acceptance.mjs",
     "starter:acceptance:persistent": "npm run build:debug && npm run build:runtime:debug && npm run starter:verify && node tools/starter_acceptance.mjs --persistent",
     "starter:acceptance:faults": "npm run build:debug && npm run build:runtime:debug && npm run starter:verify && node tools/starter_acceptance.mjs --persistent --faults",
     "test:dev-runtime": "node tools/dev_runtime.mjs --self-test",
