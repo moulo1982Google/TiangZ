@@ -1,5 +1,8 @@
 # TiangZ
 [![verify](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/verify.yml)
+[![security](https://github.com/moulo1982Google/TiangZ/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/security.yml)
+[![starter](https://github.com/moulo1982Google/TiangZ/actions/workflows/starter.yml/badge.svg?branch=main)](https://github.com/moulo1982Google/TiangZ/actions/workflows/starter.yml)
+[![license](https://img.shields.io/github/license/moulo1982Google/TiangZ?label=license)](LICENSE)
 
 天工，一个正在开发中的 MMORPG 服务端框架。
 

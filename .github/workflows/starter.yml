@@ -1,0 +1,28 @@
+name: starter
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+      - run: npm install
+      - run: npm run starter:acceptance
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: starter-acceptance-failure-logs
+          path: temp/test-logs/
+          if-no-files-found: ignore

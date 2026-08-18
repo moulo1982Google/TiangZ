@@ -22,8 +22,6 @@ jobs:
           toolchain: 1.97.1
           components: rustfmt, clippy
       - run: npm install
-      - run: cargo install cargo-audit
-      - run: npm run audit:dependencies
       - name: Rust format check
         run: cargo fmt --all -- --check
       - name: Rust Clippy warnings
