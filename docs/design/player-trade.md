@@ -80,6 +80,6 @@ Handler只负责把请求送入`PlayerUnit`的有序Mailbox，再调用地图上
 - 已有确定性自测覆盖成功、重复operationId、反向参与者查询和Revision冲突全不修改；提交实现同时占用两名玩家的有序Mailbox，真实双客户端与DBProxy故障切换仍需单独验收。
 # 持久化验收
 
-`npm run test:player-trade:persistent`覆盖正式WebSocket、NPC商店单记录事务、玩家交易双记录事务、TiangZ重启恢复，以及最终确认前首选DBProxy故障后的备用Endpoint提交。测试只创建带时间戳的账号，不直接写PostgreSQL或Redis，也不通过测试后门修改金币。
+`npm run test:player-trade:persistent`覆盖正式WebSocket、NPC商店单记录事务、玩家交易双记录事务、TiangZ重启恢复，以及最终确认前首选DBProxy故障后的备用Endpoint提交。Debug验收还会在一次多记录提交成功后丢弃Host响应，确认服务端用同一`operationId`读取原始回执；随后让两个Endpoint同时不可用，确认UseItem失败不修改在线Entity，恢复后重试同一ID只成功一次。测试只创建带时间戳的账号，不直接写PostgreSQL或Redis，也不通过测试后门修改金币。
 
 持久化Process在ready前预连接DBProxy池，因此只保留备用Endpoint重启时，第一个登录RPC不承担连接池冷启动时间。若所有Endpoint都不可用，Process启动失败而不是先ready再让首个业务请求超时。

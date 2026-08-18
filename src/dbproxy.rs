@@ -8,6 +8,7 @@
 use std::cell::RefCell;
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -28,6 +29,31 @@ use crate::config::ProcessConfig;
 
 thread_local! {
     static DBPROXY_BRIDGE: RefCell<Option<DbProxyBridge>> = const { RefCell::new(None) };
+}
+
+// 仅供Debug故障验收：事务已经由DBProxy提交后，主动丢弃Host响应，让TS走回执恢复路径。
+// Debug-only fault injection: after DBProxy commits, drop the Host response so TS must recover the receipt.
+static TEST_DBPROXY_RESPONSE_DROPPED: AtomicBool = AtomicBool::new(false);
+
+fn maybe_drop_test_response(kind: &str) -> std::result::Result<(), JsErrorBox> {
+    if !cfg!(debug_assertions) {
+        return Ok(());
+    }
+    let configured = std::env::var("TIANGZ_TEST_DBPROXY_DROP_RESPONSE_ONCE").ok();
+    if configured.as_deref() != Some("any") && configured.as_deref() != Some(kind) {
+        return Ok(());
+    }
+    if !TEST_DBPROXY_RESPONSE_DROPPED.swap(true, Ordering::SeqCst) {
+        tracing::warn!(
+            target: "tiangz::test",
+            kind,
+            "DBProxy response dropped after durable commit by test fault injection"
+        );
+        return Err(JsErrorBox::generic(format!(
+            "test fault injection dropped DBProxy {kind} response after commit"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -453,7 +479,7 @@ async fn op_host_dbproxy_apply_transaction(
             async move { pool.apply_transaction(request).await }
         })
         .await;
-    Ok(match result {
+    let response = match result {
         Ok(TransactionalWriteOutcome::Applied {
             new_revision,
             result,
@@ -468,7 +494,11 @@ async fn op_host_dbproxy_apply_transaction(
             result: Vec::new(),
             error: Some(error.into()),
         },
-    })
+    };
+    if response.error.is_none() {
+        maybe_drop_test_response("transaction")?;
+    }
+    Ok(response)
 }
 
 #[op2]
@@ -524,7 +554,7 @@ async fn op_host_dbproxy_apply_multi_transaction(
             async move { pool.apply_multi_transaction(request).await }
         })
         .await;
-    Ok(match result {
+    let response = match result {
         Ok(MultiRecordTransactionalWriteOutcome::Applied { records, result }) => {
             multi_transaction_response("applied", records, result)
         }
@@ -537,7 +567,11 @@ async fn op_host_dbproxy_apply_multi_transaction(
             result: Vec::new(),
             error: Some(error.into()),
         },
-    })
+    };
+    if response.error.is_none() {
+        maybe_drop_test_response("multi-transaction")?;
+    }
+    Ok(response)
 }
 
 #[op2]

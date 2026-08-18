@@ -25,6 +25,8 @@ const requiredPaths = [
   "app/generated/model/native/NativeItemPersistence.ts",
   "docs/starter/acceptance-matrix.md",
   "tools/character_selection_smoke.mjs",
+  "tools/dbproxy_outage_probe.ts",
+  "tools/tiangz_fault_matrix_acceptance.mjs",
   "tools/starter_acceptance.mjs",
 ];
 
@@ -44,6 +46,7 @@ const expectedScripts = [
   "starter:acceptance",
   "starter:acceptance:persistent",
   "starter:acceptance:faults",
+  "test:tiangz-fault-matrix",
 ];
 const missingScripts = expectedScripts.filter((name) => !packageJson.scripts?.[name]);
 if (missingScripts.length > 0) {

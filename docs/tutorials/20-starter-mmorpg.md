@@ -61,7 +61,7 @@ npm run starter:acceptance:persistent
 npm run starter:acceptance:faults
 ```
 
-它会调用独立仓库的`tools/fault_matrix.ps1`，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。动态副本创建、Boss击杀、120经验升级和DBProxy重启恢复已经有独立自动夹具；“击杀5只A -> 交付 -> 击杀5只B -> 交付 -> 拾取5个任务物品 -> 最终交付”的任务链也会通过正式NPC、导航、攻击和拾取协议在all-in-one与split-process中自动运行。Cocos3D仍负责UI与表现验收。
+它会顺序运行玩家交易故障、双Endpoint全不可用、MapHost强杀接管和独立DBProxy存储故障矩阵，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。动态副本创建、Boss击杀、120经验升级和DBProxy重启恢复已经有独立自动夹具；“击杀5只A -> 交付 -> 击杀5只B -> 交付 -> 拾取5个任务物品 -> 最终交付”的任务链也会通过正式NPC、导航、攻击和拾取协议在all-in-one与split-process中自动运行。Cocos3D仍负责UI与表现验收。
 
 ## 业务入口在哪里
 

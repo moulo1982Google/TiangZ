@@ -21,6 +21,7 @@ const runtimeEnv = {};
 const managed = [];
 let runtime;
 let primary;
+let secondary;
 
 try {
   await requirePortFree(7_000, "TiangZ LoginMgr");
@@ -29,10 +30,7 @@ try {
   const environment = loadDbProxyEnvironment();
   runtimeEnv.TIANGZ_DBPROXY_AUTH_TOKEN = environment.DBPROXY_AUTH_TOKEN;
 
-  primary = startDbProxy("dbproxy-primary", "configs/local-1.json", environment);
-  const secondary = startDbProxy("dbproxy-secondary", "configs/local-2.json", environment);
-  managed.push(primary, secondary);
-  await Promise.all([waitForManagedPort(7_800, primary), waitForManagedPort(7_801, secondary)]);
+  await startDbProxyPair(environment, "initial");
 
   runtime = await startTiangZ("player-trade-persistent");
   const first = accounts("normal");
@@ -49,8 +47,38 @@ try {
   await restartTiangZ("player-trade-failover-restart");
   await runProbe("verify", failover);
 
-  writeReport("passed", { first, failover });
-  console.log("[player-trade] persistent and DBProxy failover acceptance passed");
+  const responseLost = accounts("response_lost");
+  await restartTiangZ("player-trade-response-lost", {
+    TIANGZ_TEST_DBPROXY_DROP_RESPONSE_ONCE: "multi-transaction",
+  });
+  await runProbe("commit", responseLost);
+  if (!runtime.output().includes("DBProxy response dropped after durable commit")) {
+    throw new Error("response-loss acceptance did not observe the Debug DBProxy response-drop injection");
+  }
+  await restartTiangZ("player-trade-response-lost-restart");
+  await runProbe("verify", responseLost);
+
+  // 恢复首选Endpoint后再验证双Endpoint同时不可用；业务请求必须失败且不改变本地背包。
+  // Restore the primary endpoint before checking that a business request fails closed when both endpoints are down.
+  if (!primary || primary.child.exitCode !== null) {
+    await startDbProxyPair(environment, "outage-restart");
+  }
+  const outageAccount = singleAccount("dbdown");
+  await runOutageProbe(
+    outageAccount,
+    async () => {
+      await Promise.all([stopManaged(primary), stopManaged(secondary)]);
+      await Promise.all([waitForPortClosed(7_800), waitForPortClosed(7_801)]);
+      console.log("[player-trade] both DBProxy endpoints stopped; the business request must fail");
+    },
+    async () => {
+      await startDbProxyPair(environment, "outage-recovery");
+      console.log("[player-trade] both DBProxy endpoints restored; retrying the same operationId");
+    },
+  );
+
+  writeReport("passed", { first, failover, responseLost, outageAccount });
+  console.log("[player-trade] persistent, response-loss, failover, and outage acceptance passed");
   console.log(`[player-trade] report: ${path.relative(root, reportPath)}`);
 } catch (error) {
   writeReport("failed", { error: error instanceof Error ? error.stack ?? error.message : String(error) });
@@ -73,13 +101,18 @@ function accounts(label) {
   };
 }
 
-async function startTiangZ(name) {
+function singleAccount(label) {
+  const suffix = `${Date.now().toString(36)}_${Math.floor(Math.random() * 0xffff).toString(36)}`;
+  return `tp_${label}_${suffix}`;
+}
+
+async function startTiangZ(name, extraEnv = {}) {
   const started = startRuntime(
     root,
     "configs/local/all-in-one-dbproxy.json",
     name,
     "debug",
-    runtimeEnv,
+    { ...runtimeEnv, ...extraEnv },
   );
   await Promise.all([
     waitForPort(7_000, started, 20_000),
@@ -90,9 +123,19 @@ async function startTiangZ(name) {
   return started;
 }
 
-async function restartTiangZ(name) {
+async function restartTiangZ(name, extraEnv = {}) {
   await stopRuntime(runtime);
-  runtime = await startTiangZ(name);
+  runtime = await startTiangZ(name, extraEnv);
+}
+
+async function startDbProxyPair(environment, label) {
+  primary = startDbProxy(`dbproxy-primary-${label}`, "configs/local-1.json", environment);
+  secondary = startDbProxy(`dbproxy-secondary-${label}`, "configs/local-2.json", environment);
+  managed.push(primary, secondary);
+  await Promise.all([
+    waitForManagedPort(7_800, primary),
+    waitForManagedPort(7_801, secondary),
+  ]);
 }
 
 function startDbProxy(name, config, environment) {
@@ -178,6 +221,61 @@ async function runProbe(mode, selectedAccounts, beforeCommit) {
   if (readyError) throw readyError;
   if (beforeCommit && !readyHandled) throw new Error(`trade probe never reached the commit barrier:\n${output}`);
   if (code !== 0) throw new Error(`trade probe failed code=${code} signal=${signal ?? "none"}:\n${output}`);
+}
+
+async function runOutageProbe(account, onReady, onFailure) {
+  console.log(`[player-trade] outage probe account=${account}`);
+  const child = spawn(
+    process.execPath,
+    [path.join(root, "dist", "dbproxy_outage_probe.cjs")],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        TIANGZ_OUTAGE_ACCOUNT: account,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    },
+  );
+  let output = "";
+  let readyHandled = false;
+  let failureHandled = false;
+  let actionError;
+  child.stdout.setEncoding("utf8").on("data", (chunk) => {
+    output += chunk;
+    process.stdout.write(chunk);
+    if (!readyHandled && output.includes("TIANGZ_DBPROXY_READY_FOR_OUTAGE")) {
+      readyHandled = true;
+      void onReady().then(
+        () => child.stdin.write("continue\n"),
+        (error) => {
+          actionError = error;
+          child.kill("SIGKILL");
+        },
+      );
+    }
+    if (!failureHandled && output.includes("TIANGZ_DBPROXY_OUTAGE_FAILED")) {
+      failureHandled = true;
+      void onFailure().then(
+        () => child.stdin.end("continue\n"),
+        (error) => {
+          actionError = error;
+          child.kill("SIGKILL");
+        },
+      );
+    }
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk) => {
+    output += chunk;
+    process.stderr.write(chunk);
+  });
+  const { code, signal } = await waitForChild(child, 90_000);
+  if (actionError) throw actionError;
+  if (!readyHandled || !failureHandled) {
+    throw new Error(`outage probe missed control markers:\n${output}`);
+  }
+  if (code !== 0) throw new Error(`outage probe failed code=${code} signal=${signal ?? "none"}:\n${output}`);
 }
 
 function waitForChild(child, timeoutMs) {

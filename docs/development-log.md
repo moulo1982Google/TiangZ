@@ -7,6 +7,13 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-19：TiangZ端到端故障矩阵
+
+- 新增`npm run test:tiangz-fault-matrix`统一入口，按顺序运行玩家交易故障、玩家五领域/MapHost接管和独立DBProxy存储故障；`starter:acceptance:faults`现在调用同一入口，不再只覆盖DBProxy仓库内部测试。
+- 玩家交易持久化验收新增首选Endpoint接管、Debug提交后响应丢失、双Endpoint同时不可用三组场景。响应丢失场景在DBProxy已经提交多记录事务后由Rust Debug Host丢弃一次响应，服务端必须用同一`operationId`读取原始回执；双Endpoint不可用时UseItem必须失败且不修改在线背包，恢复后复用同一ID只提交一次。
+- 新增`tools/dbproxy_outage_probe.ts`和`tools/tiangz_fault_matrix_acceptance.mjs`。故障注入由`TIANGZ_TEST_DBPROXY_DROP_RESPONSE_ONCE`控制，仅Debug构建生效，Release不启用该测试行为。
+- 当前矩阵仍不验证动态副本现场恢复、跨机器租约仲裁、Gate故障转移或容量压力；这些保持后续运维/HA工作，不把单机双Endpoint验收写成生产HA承诺。
+
 ## 2026-08-18：Debug Hotfix重载与正式操作入口
 
 - 收紧Action的HP语义：`ChangeNumeric(CurrentHp, delta)`不再兼容映射为治疗或伤害，配置codegen、`ActionFromConfig`与运行时执行都会拒绝；HP增加只允许`Heal`，HP减少只允许`DealDamage`，两者统一进入Combat后再提交Numeric。校验保持在Hotfix/codegen边界，不改变Model指纹，因此不会打断`dev:debug`重载循环。

@@ -138,7 +138,7 @@ npm run test:runtime
 
 TiangZ的完整业务参考是[Starter MMORPG纵向切片](docs/tutorials/20-starter-mmorpg.md)，它把登录、主城、野外战斗、掉落、背包、任务、动态副本、重连和重启恢复串成一条可复制链路。详细验收项见[Starter验收矩阵](docs/starter/acceptance-matrix.md)。框架能力案例与Starter业务分开维护，Starter不得绕过Stable API。
 
-Starter常用命令：`npm run starter:verify`做静态检查，`npm run starter:dev`编译并启动本地all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`专门验证创建角色、选角和稳定`characterId`。完整验收使用`npm run starter:acceptance`；`starter:acceptance:persistent`会验证DBProxy重启后的玩家快照恢复，`starter:acceptance:faults`会额外运行独立DBProxy故障矩阵。这三个验收命令都会先重建`target/debug/TiangZ`，不会误用旧的Rust运行时。持久化和故障命令会写入/重启本地测试资源，执行前先确认PostgreSQL、Redis和DBProxy环境。以上命令不包含长时间容量压测。
+Starter常用命令：`npm run starter:verify`做静态检查，`npm run starter:dev`编译并启动本地all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`专门验证创建角色、选角和稳定`characterId`。完整验收使用`npm run starter:acceptance`；`starter:acceptance:persistent`会验证DBProxy重启后的玩家快照恢复，`starter:acceptance:faults`会运行TiangZ端到端故障矩阵，覆盖交易故障切换、提交后响应丢失、双Endpoint不可用、MapHost接管和独立DBProxy存储故障。这些验收命令都会先重建`target/debug/TiangZ`，不会误用旧的Rust运行时。持久化和故障命令会写入/重启本地测试资源，执行前先确认PostgreSQL、Redis和DBProxy环境。以上命令不包含长时间容量压测。
 
 Starter当前的战斗快捷栏包含寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、精神鞭笞和恢复。读条、引导、公共CD、施法距离、法力消耗、Buff刷新与伤害类型由配置和领域规则共同决定；恢复技能通过 `恢复` Buff 每3秒治疗一次，共8次。怪物掉落按每行独立概率判定，玩家可以把杂物出售给杂货商换取铜币，再购买红药和法力药水；Cocos3D的`2/3/Q`分别使用小红、大红和蓝药，移动端直接点击同一快捷栏。Cocos3D还提供“进入Boss副本”入口：Gate幂等创建Map 200动态实例，击杀试炼守卫后获得120累计经验，并可从尸体领取小红、大红、蓝药各5个和150铜币。每个角色进入后产生10分钟个人CD，截止时间由`progression`领域持久化并显示在副本按钮上；等级、经验和CD与Boss拾取事务都先经DBProxy确认。背包、任务追踪、Buff栏、技能图标、NPC商店和副本按钮是这条链路的主要可视化验收入口。
 

@@ -445,7 +445,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - Map 200动态副本和Boss 3已接入：Gate先在PlayerUnit邮箱持久化个人10分钟CD，再按稳定operationId经MapManager幂等创建实例；Boss死亡事件触发120累计经验，新角色升到2级，尸体固定掉落三种药水各5个和150铜币。`starter:acceptance`覆盖真实动态实例、击杀、拾取与CD拒绝，`starter:acceptance:persistent`覆盖重启后Level/Experience、背包、余额和CD恢复。后续重点转为正式Hotfix操作入口和动态地图/Gate故障边界。
 - Starter固定使用一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss、一个玩家职业和少量技能。额外职业、社交、商城和活动不得在本阶段进入核心样例。
 - 每个完成项必须同时通过all-in-one、split-process、客户端操作和对应的失败/恢复验收；业务压测等Starter链路稳定后再执行。
-- 已增加统一自动验收入口：`npm run starter:acceptance`覆盖无数据库的运行时、技能/Buff和角色选角；`starter:acceptance:persistent`覆盖DBProxy快照写入、TiangZ重启和恢复读取；`starter:acceptance:faults`调用独立DBProxy故障矩阵。报告写入`temp/test-logs`，持久化/故障命令只允许连接本地测试资源。
+- 已增加统一自动验收入口：`npm run starter:acceptance`覆盖无数据库的运行时、技能/Buff和角色选角；`starter:acceptance:persistent`覆盖DBProxy快照写入、TiangZ重启和恢复读取；`starter:acceptance:faults`通过`test:tiangz-fault-matrix`覆盖玩家交易故障切换、提交后响应丢失、双Endpoint不可用、MapHost接管和独立DBProxy存储故障。报告写入`temp/test-logs`，持久化/故障命令只允许连接本地测试资源。
 - 当前自动入口已覆盖Map 100完整任务链和动态副本/Boss/经验升级。刷怪槽只拥有当前活怪，死亡Unit进入独立尸体集合；新怪按`respawn_seconds`刷新时，旧尸体仍可保留5分钟拾取窗口。专用业务夹具已在all-in-one与split-process中通过正式NPC、导航、攻击、拾取和跨图协议完成5001、5005、5006，因此ST-04和ST-06不再依赖Cocos3D人工业务验收。
 
 ### Phase 4.7：能力归属与可复用领域契约

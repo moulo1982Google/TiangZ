@@ -273,9 +273,12 @@ node dist/smoke_client.cjs --dbproxy-item-use-read dbproxy_item_use_001
 ```powershell
 npm run test:player-trade:persistent
 npm run test:player-domain-recovery
+npm run test:tiangz-fault-matrix
 ```
 
-第一条命令通过正式NPC商店制造铜币，提交双玩家inventory+wallet事务，重启TiangZ核对结果，并在最终确认前停止首选DBProxy `7800`，验证备用`7801`只提交一次。第二条命令依次验证：立即优雅停机的最终Flush；等待周期窗口后强杀all-in-one；在`configs/local/cluster-dbproxy`中精确强杀承载地图100的`map-2`，确认Watcher保持存活并用新PID有界重启MapHost，再由Location代次接管、Gate重新路由和DBProxy快照恢复金币/背包、任务与位置。
+第一条命令通过正式NPC商店制造铜币，提交双玩家inventory+wallet事务，重启TiangZ核对结果，并在最终确认前停止首选DBProxy `7800`，验证备用`7801`只提交一次。它还会注入一次提交后响应丢失并查询原始交易回执，再验证两个Endpoint同时不可用时UseItem失败不修改Entity、恢复后复用同一operationId只提交一次。第二条命令依次验证：立即优雅停机的最终Flush；等待周期窗口后强杀all-in-one；在`configs/local/cluster-dbproxy`中精确强杀承载地图100的`map-2`，确认Watcher保持存活并用新PID有界重启MapHost，再由Location代次接管、Gate重新路由和DBProxy快照恢复金币/背包、任务与位置。第三条命令是统一入口，会顺序运行这两组TiangZ验收和独立DBProxy存储故障矩阵；它会重启本地测试容器，只能在测试环境执行。
+
+提交后丢响应的注入由`TIANGZ_TEST_DBPROXY_DROP_RESPONSE_ONCE`控制，只在Debug Rust Runtime中生效，值可以是`transaction`、`multi-transaction`或`any`。它在DBProxy已经返回成功之后让Host Promise失败，模拟“数据库已提交但业务响应没有到达V8”；业务必须通过`LoadTransaction`或`LoadMultiTransaction`用原operationId恢复，不能重新规划第二笔交易。Release构建忽略该注入。
 
 这些命令要求本地PostgreSQL/Redis容器健康、两个DBProxy Debug二进制和TiangZ Debug二进制已经构建。它们创建唯一测试账号但不清库，也不是CPU或容量压测。
 

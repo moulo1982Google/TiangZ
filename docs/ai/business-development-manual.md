@@ -155,7 +155,7 @@ Starter的第一个动态副本使用MapConfig 200和MonsterConfig 3。客户端
 
 经验是`NumericType.Experience`累计值，等级由`50 * (level - 1) * level`计算，当前上限60。奖励先规划新的Numeric快照并以稳定operationId只提交`progression`记录，DBProxy确认后才更新在线Numeric和发送`G2C_ProgressionChanged`；网络重试必须恢复原事务回执，不能重复加经验。Map 200的试炼守卫奖励120经验，因此新角色从1级升到2级。动态实例无人5分钟后由现有回收逻辑销毁；副本Boss、仇恨和现场状态属于临时运行态，MapHost崩溃后不恢复。
 
-本地入口固定为：`npm run starter:verify`检查目录和生成物，`npm run starter:dev`编译并启动all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`验证创建角色、选角和稳定身份，`npm run starter:acceptance`运行不改数据库的完整Starter验收。三个Starter验收命令都会先重建Debug Rust runtime；`npm run starter:acceptance:persistent`会使用`tools-projects/TiangZ-DBProxy/deploy/local/.env`启动或连接本地DBProxy，写入测试账号、重启TiangZ并读取快照；`npm run starter:acceptance:faults`会先停止Starter临时DBProxy，再执行独立DBProxy故障矩阵，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。不要把长时间压测塞进Starter命令；压测必须使用`perf/`的独立入口，并在开始前确认机器资源。
+本地入口固定为：`npm run starter:verify`检查目录和生成物，`npm run starter:dev`编译并启动all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`验证创建角色、选角和稳定身份，`npm run starter:acceptance`运行不改数据库的完整Starter验收。三个Starter验收命令都会先重建Debug Rust runtime；`npm run starter:acceptance:persistent`会使用`tools-projects/TiangZ-DBProxy/deploy/local/.env`启动或连接本地DBProxy，写入测试账号、重启TiangZ并读取快照；`npm run starter:acceptance:faults`通过`test:tiangz-fault-matrix`运行交易故障切换、提交后响应丢失、双Endpoint不可用、MapHost接管和独立DBProxy故障矩阵，可能重启本地Redis/PostgreSQL容器，只能在测试环境运行。不要把长时间压测塞进Starter命令；压测必须使用`perf/`的独立入口，并在开始前确认机器资源。
 
 ### 账号、角色和运行时Unit
 
@@ -1109,7 +1109,7 @@ entity Item extends Entity {
 
 运行`npm run codegen:native-data`后，业务使用生成的`NativeItemPersistenceCodec`或`CreateNativeItemRepository(processName)`。`Entity.instanceId`已经标记`@transient`，恢复时必须由当前运行时重新分配，不能从数据库带回。当前Codec是严格当前版本读取，任何持久字段的增加、删除、改名或改类型都必须递增`@persistent(version)`；旧schema迁移注册尚未完成，因此做结构升级前必须先补迁移器。需要“按ownerId查询全部道具”、拍卖行索引、跨玩家交易等能力时，应建立Item/Trade领域Repository，不能把通用Payload表当作查询型ORM。
 
-当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复；普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务、批量Load/Save、动态地图现场恢复或Gate故障转移。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复；`npm run test:player-trade:persistent`验证首选Endpoint接管、Debug模拟“DBProxy已提交但响应丢失”后的原始回执恢复，以及双Endpoint同时不可用时失败不改Entity、恢复后同一operationId只提交一次；统一入口为`npm run test:tiangz-fault-matrix`。普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务、批量Load/Save、动态地图现场恢复或Gate故障转移。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 

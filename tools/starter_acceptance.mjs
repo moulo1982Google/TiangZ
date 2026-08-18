@@ -41,14 +41,14 @@ try {
     await runCommandCase("character-selection", "tools/character_selection_smoke.mjs", []);
   }
 
-  if (options.persistent || options.faults) {
+  if (options.persistent && !options.faults) {
     dbProxyEnv = loadDbProxyEnvironment();
     dbProxyProcess = await ensureDbProxy(dbProxyEnv);
     await runPersistentRestartCase(dbProxyEnv);
   }
 
   if (options.faults) {
-    await runFaultMatrix();
+    await runCommandCase("tiangz-fault-matrix", "tools/tiangz_fault_matrix_acceptance.mjs", []);
   }
 
   writeReport("passed");
@@ -240,16 +240,6 @@ async function stopDbProxy(runtime) {
   if (!runtime || runtime.child.exitCode !== null) return;
   runtime.child.kill("SIGTERM");
   await waitForChild(runtime.child, 5_000).catch(() => runtime.child.kill("SIGKILL"));
-}
-
-async function runFaultMatrix() {
-  const script = path.join(dbProxyRoot, "tools", "fault_matrix.ps1");
-  if (!existsSync(script)) throw new Error(`DBProxy fault matrix is missing: ${script}`);
-  await stopDbProxy(dbProxyProcess);
-  dbProxyProcess = undefined;
-  const startedAt = Date.now();
-  await runInherited("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], dbProxyRoot);
-  results.push({ name: "dbproxy-fault-matrix", status: "passed", durationMs: Date.now() - startedAt });
 }
 
 function canConnect(port, host = "127.0.0.1") {

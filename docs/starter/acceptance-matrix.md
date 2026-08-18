@@ -57,7 +57,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | OP-01 | 一键启动 | all-in-one、cluster 配置和 `npm run test:runtime` 已有 | 新机器按教程可启动完整 Starter，不手工改十几个文件 |
 | OP-02 | 配置与代码生成 | Luban、Proto、Native codegen 已有 | 修改技能/道具/任务只改 Model、Hotfix 或配置源，再执行明确命令 |
 | OP-03 | 日志、指标、健康检查 | Runtime 日志和 Prometheus/Grafana 已有 | Starter 能看到登录、进图、战斗、DBProxy和队列错误 |
-| OP-04 | 故障恢复 | DBProxy `v0.5.0` 多Endpoint、双实例基础和多记录事务已接入；TiangZ端到端故障矩阵待补 | 明确区分可恢复快照、关键事务和临时运行态；连接中断、提交后丢响应和备用节点接管后有安全结果 |
+| OP-04 | 故障恢复 | DBProxy `v0.5.0` 多Endpoint、双实例、多记录事务和 TiangZ 端到端故障矩阵已接入 | 明确区分可恢复快照、关键事务和临时运行态；连接中断、提交后丢响应、双Endpoint全不可用和备用节点接管后有安全结果 |
 | OP-05 | 真实业务压测 | 压测工具和历史基线已有 | 等 Starter 链路固定后，使用同一场景做无业务/完整业务 A/B |
 
 ## 标准演示脚本
@@ -92,7 +92,8 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | `npm run starter:acceptance -- --mode all` | 只跑all-in-one运行时部分 | 无数据库写入 |
 | `npm run starter:acceptance -- --mode split` | 只跑split-process运行时部分 | 无数据库写入 |
 | `npm run starter:acceptance:persistent` | DBProxy快照写入、停止/重启TiangZ、恢复读取 | 写入带时间后缀的测试账号，不删除数据库 |
-| `npm run starter:acceptance:faults` | 持久化恢复后运行独立DBProxy故障矩阵 | 可能重启本地Redis/PostgreSQL容器，只能用于测试环境 |
+| `npm run test:tiangz-fault-matrix` | 玩家交易故障、双Endpoint全不可用、MapHost接管和独立DBProxy存储故障 | 可能重启本地Redis/PostgreSQL容器，只能用于测试环境 |
+| `npm run starter:acceptance:faults` | 重建Debug Runtime后运行完整TiangZ端到端故障矩阵 | 可能重启本地Redis/PostgreSQL容器，只能用于测试环境 |
 
 自动脚本的结果写入被Git忽略的`temp/test-logs/starter-acceptance-*.json`。三个Starter验收命令都会先执行`cargo build --bin TiangZ`，确保Rust配置解析器与当前源码一致。持久化命令不会自动启动Docker；它会复用7800端口已有的DBProxy，或使用`tools-projects/TiangZ-DBProxy/target/debug`中的Debug服务，并从独立仓库的`deploy/local/.env`读取连接参数。常规Starter验收不应连接外网数据库。
 
@@ -119,8 +120,10 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 
 ## 玩家交易持久化与故障切换
 
-`npm run test:player-trade:persistent`使用两个临时账号先经NPC商店出售药品获得铜币，再交换铜币、小红和小蓝。验收器重启TiangZ后核对双方权威快照，并在第二轮最终确认前停止首选DBProxy `7800`，确认通过备用`7801`只提交一次。该命令需要本地PostgreSQL、Redis、两个DBProxy Debug二进制和TiangZ Debug二进制，不会清空数据库或执行容量压力测试。
+`npm run test:player-trade:persistent`使用两个临时账号先经NPC商店出售药品获得铜币，再交换铜币、小红和小蓝。验收器重启TiangZ后核对双方权威快照，并在第二轮最终确认前停止首选DBProxy `7800`，确认通过备用`7801`只提交一次。它还会在Debug Host中注入一次“DBProxy已提交、Host响应丢失”，验证交易通过同一`operationId`查询原始多记录回执，不重复转移；最后让两个Endpoint同时不可用，确认UseItem失败时内存背包不变，恢复Endpoint后复用同一`operationId`只提交一次。该命令需要本地PostgreSQL、Redis、两个DBProxy Debug二进制和TiangZ Debug二进制，不会清空数据库或执行容量压力测试。
 
 ## 玩家领域快照与MapHost故障恢复
 
 `npm run test:player-domain-recovery`创建三个唯一账号，分别验证立即优雅停机的最终Flush、等待30秒周期窗口后强杀all-in-one，以及在`configs/local/cluster-dbproxy`中精确强杀承载地图100的`map-2`。前两轮重启后、MapHost轮在同一Watcher内拉起新PID后，均由新连接核对wallet金币、inventory背包、quest任务和runtime位置。MapHost轮还要求Location用更高所有权代次清除旧Actor路由，Gate在`ActorLocationNotFound`后重新进入恢复后的静态地图。怪物、仇恨、AI、移动意图和动态副本现场不在恢复范围。
+
+`npm run test:tiangz-fault-matrix`按顺序运行上述玩家交易故障、玩家领域/MapHost接管，以及独立DBProxy存储故障矩阵，并把阶段结果写入`temp/test-logs/tiangz-fault-matrix-report.json`。其中Rust响应丢失注入只存在于Debug构建，Release构建不会主动丢弃DBProxy响应；它不是线上开关，也不能替代真实网络设备故障演练。
