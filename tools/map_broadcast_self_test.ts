@@ -9,7 +9,9 @@ import {
   type EncodedRouteFrame,
 } from "../app/core/broadcast";
 import { readU16BE } from "../app/core/protocol/binary";
+import { packFrame } from "../app/core/protocol/registry";
 import { ClientBroadcasts } from "../app/generated/model/server/demo/protocol/broadcastDescriptors";
+import { GateMessages } from "../app/generated/model/server/demo/protocol/messageDescriptors";
 import {
   G2C_BuffAddedCodec,
   G2C_BuffDetailCodec,
@@ -17,6 +19,7 @@ import {
   G2C_EntityMoveCodec,
   G2C_EntityNumericCodec,
   G2C_AutoAttackStateCodec,
+  S2G_ClientBroadcastBatchCodec,
   type CellMovementState,
 } from "../app/generated/model/server/demo/protocol/messages";
 import { MsgCode } from "../app/generated/model/server/demo/protocol/msgcodes";
@@ -96,6 +99,7 @@ async function main(): Promise<void> {
   await testEncodedAoiBatchesUseTransportBatch();
   await testEventUsesTransportBatch();
   await testSceneTransportCoalescesJobsByGate();
+  await testSceneTransportCoalescesRouteFramesByGate();
   await testReplicationAckOnlyAfterSuccessfulSend();
   await testBatchedReplicationAckAfterEveryAudience();
   await testRoutedReplicationAckAfterRouteDelivery();
@@ -253,6 +257,43 @@ async function testSceneTransportCoalescesJobsByGate(): Promise<void> {
     sends.map((send) => [send.target, send.message.batches.length]),
     [["Gate1", 2], ["Gate2", 1]],
   );
+}
+
+async function testSceneTransportCoalescesRouteFramesByGate(): Promise<void> {
+  const sends: Array<{ target: string; frame: Uint8Array }> = [];
+  const scenes = {
+    byName: (name: string) => ({ name }),
+    sendFrame: (target: { name: string }, frame: Uint8Array) => {
+      sends.push({ target: target.name, frame });
+      return Promise.resolve();
+    },
+  } as unknown as SceneMessageHelper;
+  const transport = new SceneBroadcastTransport(scenes);
+  const frame = (targetUnitId: number, payload: number): Uint8Array => packFrame(
+    GateMessages.ClientBroadcastBatch.msgcode,
+    S2G_ClientBroadcastBatchCodec.encode({
+      batches: [{
+        targetUnitIds: [targetUnitId],
+        frame: Uint8Array.from([0x27, 0x20, payload]),
+      }],
+    }),
+  );
+
+  const first = transport.SendRouteFrames([{ route: "Gate1", frame: frame(1001, 1) }]);
+  const second = transport.SendRouteFrames([
+    { route: "Gate1", frame: frame(1002, 2) },
+    { route: "Gate2", frame: frame(1003, 3) },
+  ]);
+  assert.equal(sends.length, 0, "route frames must wait for the same-tick flush boundary");
+  await Promise.all([first, second]);
+  assert.deepEqual(sends.map((send) => send.target), ["Gate1", "Gate2"]);
+
+  const gateOne = S2G_ClientBroadcastBatchCodec.decode(sends[0]!.frame.subarray(2));
+  assert.equal(gateOne.batches.length, 2, "same-Gate outer batch fields should be concatenated");
+  assert.deepEqual(gateOne.batches.map((batch) => batch.targetUnitIds[0]), [1001, 1002]);
+  const gateTwo = S2G_ClientBroadcastBatchCodec.decode(sends[1]!.frame.subarray(2));
+  assert.equal(gateTwo.batches.length, 1);
+  assert.equal(gateTwo.batches[0]!.targetUnitIds[0], 1003);
 }
 
 async function testEncodedAoiBatchesUseTransportBatch(): Promise<void> {

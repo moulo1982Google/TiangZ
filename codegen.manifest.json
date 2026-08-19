@@ -537,7 +537,7 @@
         "app/model/main.ts": "08fe57f34f842aafde1ba9cd4ac883895c30a39bea8f28810f79f7d47eded0ea",
         "app/model/mmorpg/action/ActionType.ts": "b8e18e1c5c2d3441add59f3dd6d31622db8b13a95d8c277d65d0b4110023ce6c",
         "app/model/mmorpg/broadcast/MapClientRouteResolver.ts": "f97d5d2e4fa35f9a9b4bbc2b7bfab3e2ab2c916a683aa75f14034e56e9654a81",
-        "app/model/mmorpg/broadcast/SceneBroadcastTransport.ts": "8e18e2a0cf72ca63af35e13696399520adb539aabfa307c171cab61f5c5d7b18",
+        "app/model/mmorpg/broadcast/SceneBroadcastTransport.ts": "83795d2774fb6d611757f50c426ea5f1131cb7575cb8a5ef9757a3c194270993",
         "app/model/mmorpg/buff/Buff.ts": "4fdf8640495eee84cfb5e73f81fe8ee5389fc14dd0829b159f76488f1ca1883f",
         "app/model/mmorpg/buff/BuffComponent.ts": "d60c60d6d0f6b504b912d29b1cc0c96c271440561c93ab72fbd54c15c65ad463",
         "app/model/mmorpg/combat/CombatComponent.ts": "1c8018271a3950a818675a1018b5c6667a4cf04a254b981accd99df3593f3458",

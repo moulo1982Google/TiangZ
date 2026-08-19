@@ -13,9 +13,23 @@ interface PendingBroadcastBatch {
   reject(error: unknown): void;
 }
 
+interface PendingRouteFrameJob {
+  readonly frames: readonly EncodedRouteFrame[];
+  resolve(): void;
+  reject(error: unknown): void;
+}
+
+interface RouteFrameGroup {
+  readonly route: string;
+  readonly messageCode: number;
+  readonly frames: Uint8Array[];
+}
+
 export class SceneBroadcastTransport implements BroadcastTransport {
   private readonly pendingBatches: PendingBroadcastBatch[] = [];
   private batchFlushScheduled = false;
+  private readonly pendingRouteFrameJobs: PendingRouteFrameJob[] = [];
+  private routeFrameFlushScheduled = false;
 
   constructor(private readonly scenes: SceneMessageHelper) {}
 
@@ -54,14 +68,81 @@ export class SceneBroadcastTransport implements BroadcastTransport {
     return delivery;
   }
 
-  /** Rust 已生成完整 Gate Scene 帧；这里只解析一次路由名并原样入队。 / Rust already emitted complete Gate Scene frames, so this only resolves routes and queues bytes verbatim. */
+  /**
+   * Rust已经生成完整Gate批帧；同一同步调度边界内按Gate合并外层protobuf批帧，不触碰客户端payload。
+   * Rust already emitted complete Gate batch frames; frames for one Gate in the same synchronous
+   * boundary are merged by concatenating repeated protobuf fields without touching client payloads.
+   */
   SendRouteFrames(frames: readonly EncodedRouteFrame[]): Promise<void> {
-    return Promise.all(
-      frames.map((item) => this.scenes.sendFrame(
-        this.scenes.byName(item.route),
-        item.frame,
-      )),
-    ).then(() => undefined);
+    const delivery = new Promise<void>((resolve, reject) => {
+      this.pendingRouteFrameJobs.push({ frames, resolve, reject });
+    });
+    if (!this.routeFrameFlushScheduled) {
+      this.routeFrameFlushScheduled = true;
+      queueMicrotask(() => this.FlushPendingRouteFrameJobs());
+    }
+    return delivery;
+  }
+
+  /** 合并同Gate的S2G_ClientBroadcastBatch外壳；客户端协议帧仍保持每个batch独立。 / Merges S2G_ClientBroadcastBatch envelopes per Gate while keeping each client frame as its own batch. */
+  private FlushPendingRouteFrameJobs(): void {
+    this.routeFrameFlushScheduled = false;
+    const pending = this.pendingRouteFrameJobs.splice(0, this.pendingRouteFrameJobs.length);
+    if (pending.length === 0) return;
+
+    const groups = new Map<string, RouteFrameGroup>();
+    const groupsByJob = pending.map(() => new Set<string>());
+    for (let jobIndex = 0; jobIndex < pending.length; jobIndex += 1) {
+      const job = pending[jobIndex];
+      try {
+        for (const item of job.frames) {
+          if (item.frame.length < 2) throw new Error("encoded route frame is too short");
+          const messageCode = (item.frame[0] << 8) | item.frame[1];
+          if (messageCode !== GateMessages.ClientBroadcastBatch.msgcode) {
+            throw new Error("encoded route frame must be a Gate.ClientBroadcastBatch frame");
+          }
+          const key = `${item.route}\0${messageCode}`;
+          const group = groups.get(key) ?? {
+            route: item.route,
+            messageCode,
+            frames: [],
+          };
+          group.frames.push(item.frame);
+          groups.set(key, group);
+          groupsByJob[jobIndex].add(key);
+        }
+      } catch (error) {
+        job.reject(error);
+      }
+    }
+
+    const sendsByGroup = new Map<string, Promise<void>>();
+    for (const [key, group] of groups) {
+      const merged = mergeClientBroadcastBatchFrames(group.messageCode, group.frames);
+      try {
+        sendsByGroup.set(
+          key,
+          Promise.resolve(this.scenes.sendFrame(this.scenes.byName(group.route), merged)),
+        );
+      } catch (error) {
+        sendsByGroup.set(key, Promise.reject(error));
+      }
+    }
+
+    for (let jobIndex = 0; jobIndex < pending.length; jobIndex += 1) {
+      const sends = [...groupsByJob[jobIndex]]
+        .map((key) => sendsByGroup.get(key))
+        .filter((send): send is Promise<void> => send !== undefined);
+      if (sends.length === 0 && groupsByJob[jobIndex].size > 0) continue;
+      if (groupsByJob[jobIndex].size === 0) {
+        pending[jobIndex].resolve();
+        continue;
+      }
+      void Promise.all(sends).then(
+        () => pending[jobIndex].resolve(),
+        (error) => pending[jobIndex].reject(error),
+      );
+    }
   }
 
   /**
@@ -126,4 +207,20 @@ function groupRecipientsByGate(audience: BroadcastAudience): Map<string, Set<num
     recipientsByGate.set(route.route, recipients);
   }
   return recipientsByGate;
+}
+
+function mergeClientBroadcastBatchFrames(
+  messageCode: number,
+  frames: readonly Uint8Array[],
+): Uint8Array {
+  const payloadLength = frames.reduce((total, frame) => total + frame.length - 2, 0);
+  const merged = new Uint8Array(payloadLength + 2);
+  merged[0] = (messageCode >>> 8) & 0xff;
+  merged[1] = messageCode & 0xff;
+  let offset = 2;
+  for (const frame of frames) {
+    merged.set(frame.subarray(2), offset);
+    offset += frame.length - 2;
+  }
+  return merged;
 }
