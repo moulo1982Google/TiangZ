@@ -819,11 +819,10 @@ export abstract class EntryScene extends Scene {
     descriptor: MessageDescriptor<TMessage>,
     message: TMessage,
   ): void {
-    this.onClientSendQueued([connectionId]);
-    this.outbound.push({
-      connectionIdBytes: this.packConnectionId(connectionId),
-      frame: packFrame(descriptor.msgcode, descriptor.codec.encode(message)),
-    });
+    this.sendClientFrame(
+      connectionId,
+      packFrame(descriptor.msgcode, descriptor.codec.encode(message)),
+    );
   }
 
   /** 只编码一次，再将不可变帧扇出到多个客户端连接。 / Encodes once and fans the immutable frame out to many client connections. */
@@ -835,9 +834,17 @@ export abstract class EntryScene extends Scene {
     if (connectionIds.length === 0) return;
 
     const frame = packFrame(descriptor.msgcode, descriptor.codec.encode(message));
-    this.onClientSendQueued(connectionIds);
+    this.sendClientFrameMany(connectionIds, frame);
+  }
+
+  /** 只向一个连接入队已编码帧，复用连接ID字节缓存。 / Queues one encoded frame for one connection while reusing the cached connection-id bytes. */
+  private sendClientFrame(
+    connectionId: number,
+    frame: Uint8Array,
+  ): void {
+    this.onClientSendQueued([connectionId]);
     this.outbound.push({
-      connectionIdBytes: packConnectionIds(connectionIds),
+      connectionIdBytes: this.packConnectionId(connectionId),
       frame,
     });
   }
@@ -848,6 +855,10 @@ export abstract class EntryScene extends Scene {
     frame: Uint8Array,
   ): void {
     if (connectionIds.length === 0) return;
+    if (connectionIds.length === 1) {
+      this.sendClientFrame(connectionIds[0]!, frame);
+      return;
+    }
     this.onClientSendQueued(connectionIds);
     this.outbound.push({
       connectionIdBytes: packConnectionIds(connectionIds),
