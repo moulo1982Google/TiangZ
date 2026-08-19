@@ -394,7 +394,7 @@
         "native_data/core/EntityOps.native": "71cbf421bc2fe8f48696536d0f977b4274612a942d50544ebd1323b5e59fb16d",
         "native_data/mmorpg/Entity.native": "a60177b986be81104e0f9800ea064df253a1836f3dc4f71c91214eadf507b009",
         "native_data/mmorpg/Item.native": "b8115687e4b6919be0dc310fe9833f05f4506e644dd214999acbca68a9233e40",
-        "native_data/mmorpg/MapOps.native": "b00e0b585ebf561feca9f394d3c19434e0dfda45bb2a2325693fb5f2b1f41165",
+        "native_data/mmorpg/MapOps.native": "1447361847ef88684cb297775c3dd6fa27a012cdada5573a1f5e4c620a818345",
         "native_data/mmorpg/Unit.native": "37de6d00dcc3b2e81b987cfb32ef81600e974e7c27f18ac8490945b9a861ef36",
         "package.json": "ee8158f4c26cfb3417be7007babeee1cd2f679e119a0768f9cf73c7942fb900e",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
@@ -404,11 +404,11 @@
       "outputs": {
         "app/generated/model/native/NativeItemPersistence.ts": "dfd1162936149b92e20734f9beb98a4f41e238ed5ebd550c2b28009d46a47caf",
         "app/generated/model/native/NativeItemRef.ts": "47abb3166b30399b6503b9bc095ef08421cdde887f2f13bf9e3012ab535f1697",
-        "app/generated/model/native/NativeOps.ts": "3ba5400fb1e1929db9ab86eb1bd6cb7870bfd8e9efd31506a1586b9e52d4132f",
+        "app/generated/model/native/NativeOps.ts": "8cc86ab82cbd9a024bb6b49a9a5a7d12b2909c4f2dd449be235a3fdfc6ab2c8b",
         "app/generated/model/native/NativeUnitRef.ts": "84eab60839d861fad9942de401d606289b510e94dd13f74ec795a2ad4cff3e14",
         "src/generated/native_data.rs": "b4c860c226a96126ff0fcba58ac508c3a53ba043e98d3c4fa1edd6385b78b146",
-        "src/generated/native_ops_bootstrap.js": "7141f61555f3364126b957be479f143ef7df5c90168c38a519ba221b0106f299",
-        "src/generated/native_ops.rs": "d5971a59bb691343ec65d3d65fed140d08d7f77c06fc9aa49b4553584f73900f"
+        "src/generated/native_ops_bootstrap.js": "029843f2eab8502d631feae3057d37b1bd2943e39156be46070d7564e63f8009",
+        "src/generated/native_ops.rs": "0081e13ea7e8305308553a61651463b5878ef1f90655d9db982f7a9136c9eb68"
       },
       "outputRoots": [
         {
@@ -561,7 +561,7 @@
         "app/model/mmorpg/map/AoiVisibility.ts": "1961b47a08dd15eef4c424da3bcbcc00088092d77b170c1abd511a0772e17115",
         "app/model/mmorpg/map/EntrySyncMode.ts": "979aca35c1fecd4b91a9b4d649af73fdcb7126acd9533d7243028f7d460a3abb",
         "app/model/mmorpg/map/MapAoiComponent.ts": "6008298d2f8067188eabe81a65e71495c53ca4a2c9e9797bfe74b4f5e40d972b",
-        "app/model/mmorpg/map/MapComponent.ts": "7d50d60a67c3f82dc1dc7779d155d1cc7c16707c8a1d4e4578623f95107e59f1",
+        "app/model/mmorpg/map/MapComponent.ts": "ae76bd4d8e2bb9d0ddfe0cc4e492ce5de84a62d003b977ceb6c9ecdd5ac46407",
         "app/model/mmorpg/map/MapEntryAdmission.ts": "b8952b228b0b9997ac5c4d23b52bef897a481ee46c5ebb12a5c970c135d11b40",
         "app/model/mmorpg/map/MapInstance.ts": "5e667a721cef4e5940db280bbd70e59ba7980d8a70eff66a93d9af9f10dbfc1e",
         "app/model/mmorpg/map/MapScene.ts": "e72af39adff73c52b3dfd91dc6051bf060f38781cf6abb87f9d38ebf931894b2",
@@ -580,7 +580,7 @@
         "app/model/mmorpg/monster/MonsterUnit.ts": "c669adc1f5d9b2b6ce119da89cf553694f42cfcf369137374b7caaaa28807e0e",
         "app/model/mmorpg/movement/CellMovement.ts": "8a9c1ff16136d78283d00fb98624ac9eb952b5a81505209a4b36ee45b72984e1",
         "app/model/mmorpg/movement/index.ts": "c7fb436e7b2a22f48ab67a5e4e10eb6132ffc1f5159282c2b8b57d039397449c",
-        "app/model/mmorpg/native/NativeData.ts": "dbe0f8026d3731d5a4248d2239f0743c81cc525e898abd4a086d3eec613452a2",
+        "app/model/mmorpg/native/NativeData.ts": "383a3b7938efa651750a8a5c5a7c669101fee7a4dee2b358023ee48a659682b2",
         "app/model/mmorpg/npc/NpcComponent.ts": "e268cc9f126911d280f50b1014d02a4cdfcddfb1be34432e39f61ca6f96b5520",
         "app/model/mmorpg/npc/NpcUnit.ts": "023552ebc85df715dced8672199091f67d2e18c1b6fd5f7f36ab2736f206fdad",
         "app/model/mmorpg/numeric/MovementNumeric.ts": "5adf207ac4d380c2574bdaa5b5783b3d39273a1f11b06a22876368af4aff55e6",

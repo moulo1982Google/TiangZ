@@ -59,8 +59,10 @@ import {
   NativeData,
   type NativeAoiBatch,
   type NativeBoxObstacle,
+  type NativeAoiRouteRevisionBroadcast,
   type NativeRaycastHit,
   type NativeVec3,
+  type NativeNumericReplicationPolicy,
 } from "../native/NativeData";
 import { NumericComponent } from "../numeric/NumericComponent";
 import { MoveSpeedMetersPerSecondToNumeric, NumericType } from "../numeric/NumericType";
@@ -152,6 +154,13 @@ interface EncodedRouteBroadcast {
   readonly broadcastName: string;
 }
 
+interface NumericReplicationSourceDefinition {
+  readonly sourceName: string;
+  readonly selectedTypes: readonly number[];
+  readonly selectionMode: NumericReplicationSelection;
+  readonly publishDue: () => boolean;
+}
+
 export interface PlayerTransferCoordinator {
   TransferPlayer(source: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer>;
   /** 将跨玩家关键操作送入目标玩家真实邮箱；调用方必须已经持有另一参与者的邮箱。 / Enters the target player's real mailbox for a cross-player critical operation; the caller must already own the other participant mailbox. */
@@ -214,6 +223,14 @@ export class MapComponent extends Component<[
   private nextPeriodicSnapshotSweepAtMs = 0;
   private periodicSnapshotCursor = 0;
   private readonly periodicSnapshotInFlight = new Set<number>();
+  private readonly numericReplicationDefinitions = new Map<
+    string,
+    NumericReplicationSourceDefinition
+  >();
+  private readonly pendingNumericReplication = new Map<
+    string,
+    NativeAoiRouteRevisionBroadcast
+  >();
   private readonly gateRouteIds = new Map<string, number>();
   private readonly gateNamesByRouteId = new Map<number, string>();
   // AOI脏状态批次已经带着UnitId；缓存稳定的本地Gate归属，避免每个批次再次查Unit和组件。
@@ -1806,30 +1823,70 @@ export class MapComponent extends Component<[
     publishDue: () => boolean,
   ): void {
     const numeric = ClientBroadcasts.EntityNumeric;
+    this.numericReplicationDefinitions.set(sourceName, {
+      sourceName,
+      selectedTypes,
+      selectionMode,
+      publishDue,
+    });
     this.replication.Add({
       name: sourceName,
       Peek: () => {
         const startedAt = monotonicNow();
-        const delta = NativeData.PeekMapNumericAoiRouteFrames(
-          this.nativeMapKey,
-          this.serverTick,
-          numeric.message.msgcode,
-          GateMessages.ClientBroadcastBatch.msgcode,
-          AoiVisibleNumericTypes,
-          selectedTypes,
-          selectionMode,
-          publishDue(),
-        );
+        const delta = this.PeekSharedNumericReplication(sourceName);
         this.pipelineMetrics.numericPeekMs += monotonicNow() - startedAt;
         this.pipelineMetrics.numericPeekCount += 1;
         return {
           itemCount: delta.itemCount,
           routeFrames: this.ToRouteBroadcast(delta, sourceName).frames,
           audienceKey: `map:${this.mapInstanceId}:aoi`,
-          Ack: () => NativeData.AckMapNumericDelta(this.nativeMapKey, delta.revision),
+          Ack: () => {
+            NativeData.AckMapNumericDelta(this.nativeMapKey, delta.revision);
+            if (this.pendingNumericReplication.get(sourceName) === delta) {
+              this.pendingNumericReplication.delete(sourceName);
+            }
+          },
         };
       },
     });
+  }
+
+  /**
+   * 一次Native遍历生成Owner、Combat和Static三类结果，再由各latest通道独立投递和ACK。
+   * One Native traversal prepares Owner, Combat, and Static results; each latest channel still
+   * publishes and acknowledges independently. Pending older results are never overwritten.
+   */
+  private PeekSharedNumericReplication(sourceName: string): NativeAoiRouteRevisionBroadcast {
+    let delta = this.pendingNumericReplication.get(sourceName);
+    if (!delta) {
+      const definitions = [...this.numericReplicationDefinitions.values()];
+      const results = NativeData.PeekMapNumericAoiRouteFramesBatch(
+        this.nativeMapKey,
+        this.serverTick,
+        ClientBroadcasts.EntityNumeric.message.msgcode,
+        GateMessages.ClientBroadcastBatch.msgcode,
+        AoiVisibleNumericTypes,
+        definitions.map((definition): NativeNumericReplicationPolicy => ({
+          selectedTypes: definition.selectedTypes,
+          selectionMode: definition.selectionMode,
+          publishDue: definition.publishDue(),
+        })),
+      );
+      for (let index = 0; index < definitions.length; index += 1) {
+        const definition = definitions[index];
+        if (!this.pendingNumericReplication.has(definition.sourceName)) {
+          this.pendingNumericReplication.set(definition.sourceName, results[index]);
+        }
+      }
+      delta = this.pendingNumericReplication.get(sourceName);
+    }
+    if (!delta) {
+      throw new Error(`Numeric replication source was not included in batch: ${sourceName}`);
+    }
+    if (delta.itemCount === 0) {
+      this.pendingNumericReplication.delete(sourceName);
+    }
+    return delta;
   }
 
   protected override OnDestroy(): void {
@@ -1837,6 +1894,8 @@ export class MapComponent extends Component<[
     for (const pending of this.pendingPlayerEntries.splice(0)) pending.reject(error);
     this.pendingOfflineCleanup.clear();
     this.pendingInitialSnapshots.clear();
+    this.numericReplicationDefinitions.clear();
+    this.pendingNumericReplication.clear();
     this.broadcast.Dispose();
   }
 

@@ -34,6 +34,7 @@ export interface NativeHostOpsApi {
   mapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapPeekNumericAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapPeekNumericAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number, aoiVisibleTypes: Uint8Array, selectedTypes: Uint8Array, selectionMode: number, publishDue: boolean): Uint8Array;
+  mapPeekNumericAoiRouteFramesBatch(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number, aoiVisibleTypes: Uint8Array, policies: Uint8Array): Uint8Array;
   mapAckNumericDelta(mapId: number, revision: Uint8Array): void;
   mapPeekUnitDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapPeekUnitAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
@@ -206,6 +207,10 @@ export class NativeOps {
 
   static MapPeekNumericAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number, aoiVisibleTypes: Uint8Array, selectedTypes: Uint8Array, selectionMode: number, publishDue: boolean): Uint8Array {
     return nativeHostOps().mapPeekNumericAoiRouteFrames(mapId, serverTick, clientMessageCode, routeMessageCode, aoiVisibleTypes, selectedTypes, selectionMode, publishDue);
+  }
+
+  static MapPeekNumericAoiRouteFramesBatch(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number, aoiVisibleTypes: Uint8Array, policies: Uint8Array): Uint8Array {
+    return nativeHostOps().mapPeekNumericAoiRouteFramesBatch(mapId, serverTick, clientMessageCode, routeMessageCode, aoiVisibleTypes, policies);
   }
 
   static MapAckNumericDelta(mapId: number, revision: Uint8Array): void {

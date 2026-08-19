@@ -136,6 +136,12 @@ export interface NativeAoiRouteRevisionBroadcast extends NativeAoiRouteBroadcast
   readonly revision: Uint8Array;
 }
 
+export interface NativeNumericReplicationPolicy {
+  readonly selectedTypes: readonly number[];
+  readonly selectionMode: number;
+  readonly publishDue: boolean;
+}
+
 export class NativeData {
   private static debugScalarAccess = false;
   private static scalarAccessWarnThreshold = 10_000;
@@ -647,18 +653,50 @@ export class NativeData {
       selectionMode,
       publishDue,
     );
-    if (bytes.length < 12) throw new Error("native numeric AOI route delta is truncated");
+    return parseNumericAoiRouteRevision(bytes, routeMessageCode);
+  }
+
+  /** 一次遍历Rust Numeric脏字典并生成多个独立策略结果；各结果仍使用自己的revision和ACK。 / Traverses Rust Numeric dirtiness once and emits independent policy results, each retaining its own revision and ACK. */
+  static PeekMapNumericAoiRouteFramesBatch(
+    mapId: number,
+    serverTick: number,
+    clientMessageCode: number,
+    routeMessageCode: number,
+    aoiVisibleTypes: readonly number[],
+    policies: readonly NativeNumericReplicationPolicy[],
+  ): readonly NativeAoiRouteRevisionBroadcast[] {
+    if (policies.length === 0) return [];
+    const encodedAoiTypes = encodeNumericTypes(aoiVisibleTypes, "AOI-visible");
+    const encodedPolicies = encodeNumericReplicationPolicies(policies);
+    const bytes = NativeOps.MapPeekNumericAoiRouteFramesBatch(
+      mapId,
+      serverTick,
+      clientMessageCode,
+      routeMessageCode,
+      encodedAoiTypes,
+      encodedPolicies,
+    );
+    if (bytes.length < 4) throw new Error("native numeric AOI route batch is truncated");
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const revisionLength = view.getUint32(0, true);
-    const routeOffset = 4 + revisionLength;
-    if (revisionLength < 16 || routeOffset + 8 > bytes.length) {
-      throw new Error("native numeric AOI route revision is truncated");
+    const count = view.getUint32(0, true);
+    if (count !== policies.length) {
+      throw new Error(`native numeric AOI route batch count mismatch: ${count}/${policies.length}`);
     }
-    const revision = bytes.slice(4, routeOffset);
-    return {
-      revision,
-      ...parseAoiRouteBroadcast(bytes.subarray(routeOffset), routeMessageCode),
-    };
+    const results: NativeAoiRouteRevisionBroadcast[] = [];
+    let offset = 4;
+    for (let index = 0; index < count; index += 1) {
+      if (offset + 4 > bytes.length) throw new Error("native numeric AOI route batch length is truncated");
+      const payloadLength = view.getUint32(offset, true);
+      offset += 4;
+      if (offset + payloadLength > bytes.length) {
+        throw new Error("native numeric AOI route batch payload is truncated");
+      }
+      const payload = bytes.subarray(offset, offset + payloadLength);
+      offset += payloadLength;
+      results.push(parseNumericAoiRouteRevision(payload, routeMessageCode));
+    }
+    if (offset !== bytes.length) throw new Error("native numeric AOI route batch has trailing bytes");
+    return results;
   }
 
   /** 只确认已投递给客户端的 Numeric 版本，保留其后的新写入。 / Acknowledges exactly the Numeric revision delivered to clients, preserving newer writes. */
@@ -820,6 +858,49 @@ function encodeNumericTypes(types: readonly number[], label: string): Uint8Array
     view.setUint32(index * 4, numericType, true);
   }
   return encoded;
+}
+
+function encodeNumericReplicationPolicies(
+  policies: readonly NativeNumericReplicationPolicy[],
+): Uint8Array {
+  const encodedTypes = policies.map((policy) => {
+    if (policy.selectionMode !== 0 && policy.selectionMode !== 1) {
+      throw new Error(`invalid Numeric replication selection mode: ${policy.selectionMode}`);
+    }
+    return encodeNumericTypes(policy.selectedTypes, "selected");
+  });
+  const byteLength = encodedTypes.reduce((total, types) => total + 12 + types.length, 0);
+  const encoded = new Uint8Array(byteLength);
+  const view = new DataView(encoded.buffer);
+  let offset = 0;
+  for (let index = 0; index < policies.length; index += 1) {
+    const policy = policies[index];
+    const types = encodedTypes[index];
+    view.setUint32(offset, policy.selectionMode, true);
+    view.setUint32(offset + 4, policy.publishDue ? 1 : 0, true);
+    view.setUint32(offset + 8, types.length / 4, true);
+    encoded.set(types, offset + 12);
+    offset += 12 + types.length;
+  }
+  return encoded;
+}
+
+function parseNumericAoiRouteRevision(
+  bytes: Uint8Array,
+  routeMessageCode: number,
+): NativeAoiRouteRevisionBroadcast {
+  if (bytes.length < 12) throw new Error("native numeric AOI route delta is truncated");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const revisionLength = view.getUint32(0, true);
+  const routeOffset = 4 + revisionLength;
+  if (revisionLength < 16 || routeOffset + 8 > bytes.length) {
+    throw new Error("native numeric AOI route revision is truncated");
+  }
+  const revision = bytes.slice(4, routeOffset);
+  return {
+    revision,
+    ...parseAoiRouteBroadcast(bytes.subarray(routeOffset), routeMessageCode),
+  };
 }
 
 function decodeNavigationIntent(bytes: Uint8Array): NativeNavigationIntent {

@@ -195,6 +195,8 @@ npm run perf:map-capacity -- \
 
 报告的“NumericType复制指标”按类型列出`changes/s`、`encoded records/s`、`recipient deliveries/s`和逻辑字节。Starter保持10Hz服务端资源恢复，但`CurrentHp`公开状态最多5Hz并在死亡/复活时立即发送；因此判断优化是否命中，应看`CurrentHp changes/s`保持原精度，同时`recipient deliveries/s`相对旧基线下降，而不是要求服务端变化次数下降。技能、Buff、道具等可靠事件不属于该表，也不允许通过latest覆盖。
 
+Owner、Combat、Static三个Numeric策略由一次Native脏字典遍历共同准备，随后仍作为三个独立latest源发送和ACK。性能分析时不要把`batch_calls`与客户端投递次数直接相乘；应结合按类型的`encoded records`和`recipient deliveries`判断真实下行扇出。
+
 `scratch grows/s (total)` 左侧是正式窗口内帧尾临时缓冲的扩容速率，右侧括号是进程启动后的累计扩容次数。稳态速率为 0 说明缓冲容量已复用并稳定，单纯累计值不代表持续分配。
 
 报告中的“Map 广播 single-flight”会额外给出待发 Unit 峰值、状态合并率、实际发送帧率、批次数、每批帧数、广播耗时、排队时间和失败数。前一批广播未完成时，同一 Unit 的后续状态只保留最新值，因此 `coalesced` 增长表示框架在主动淘汰过时状态；若 `pending`、广播耗时和排队时间同时持续升高，才说明 MapHost 到 Gate 的下行链路已经落后于 Game.Update。

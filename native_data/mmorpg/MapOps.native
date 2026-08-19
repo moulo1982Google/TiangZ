@@ -31,6 +31,7 @@ op AoiVisibleObservers(mapId: u32, subjectId: u32): bytes;
 op MapPeekNumericDelta(mapId: u32, serverTick: u32, messageCode: u32): bytes;
 op MapPeekNumericAoiDelta(mapId: u32, serverTick: u32, messageCode: u32): bytes;
 op MapPeekNumericAoiRouteFrames(mapId: u32, serverTick: u32, clientMessageCode: u32, routeMessageCode: u32, aoiVisibleTypes: bytes, selectedTypes: bytes, selectionMode: u32, publishDue: bool): bytes;
+op MapPeekNumericAoiRouteFramesBatch(mapId: u32, serverTick: u32, clientMessageCode: u32, routeMessageCode: u32, aoiVisibleTypes: bytes, policies: bytes): bytes;
 op MapAckNumericDelta(mapId: u32, revision: bytes): void;
 op MapPeekUnitDelta(mapId: u32, serverTick: u32, messageCode: u32): bytes;
 op MapPeekUnitAoiDelta(mapId: u32, serverTick: u32, messageCode: u32): bytes;
