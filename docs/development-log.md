@@ -7,6 +7,15 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-19：OP-05真实业务压测
+
+- 修复`perf/full_chain/run_full_chain_perf.mjs`的split拓扑：补启动`location-1.json`和等待`7401`端口。此前压测脚本漏起Location，Gate进图请求会超时；10玩家split拓扑烟测已通过。
+- Node全链路A/B以50/100/200玩家、20秒窗口覆盖all-in-one与split；UseItem/CastSkill业务传输错误均为0，规则拒绝单独计数。200玩家时移动目标仍达成，但split Gate成为主要热点。
+- Rust容量客户端以16 Gate、10x10 Grid、2Hz Move、0.2Hz Probe和0.1Hz真实业务完成1000/2000/3000玩家对照。无业务2000仍无Probe错误但p95/p99已达1677/2172ms；无业务3000出现19323次Probe错误和背压。叠加业务后1000通过，2000出现7317次Probe错误与背压，3000出现19223次Probe错误。
+- 1000玩家业务三轮中位数通过：Map CPU 47.4%，Move 2000/s，Probe p95/p99 22.08/29.91ms，业务100/s，成功/拒绝1502/1498，业务传输错误、背压、内部超载、内部超时和慢连接断开均为0。因此本机当前Starter真实业务保守容量点定为1000玩家。
+- Node在600玩家开始受到同机压测端调度和全量下行影响，1000玩家all-in-one内嵌V8 OOM；该结果作为压测器/单进程边界证据，不与Rust容量结果混算。DBProxy事务持久化压力不在本轮范围，后续单独做交易/商店/拾取业务压测。
+- 完整数据和判定口径见[OP-05真实业务压测报告](starter/op05-real-business-load.md)。
+
 ## 2026-08-19：TiangZ端到端故障矩阵
 
 - 新增`npm run test:tiangz-fault-matrix`统一入口，按顺序运行玩家交易故障、玩家五领域/MapHost接管和独立DBProxy存储故障；`starter:acceptance:faults`现在调用同一入口，不再只覆盖DBProxy仓库内部测试。

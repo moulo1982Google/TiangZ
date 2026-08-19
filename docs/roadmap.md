@@ -411,7 +411,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 任务领奖已经在PlayerUnit有序mailbox内同步完成奖励、完成记录和Quest ChildEntity移除；组队共享任务等待Party系统，不在Quest里提前模拟。
 - 已完成最小怪物掉落与任务物品链：`MonsterConfig.drop_table_id`引用`DropTableConfig`，尸体保留`LootContainer`，`C2M_LootMonster`按账号的活动`CollectItem`任务和剩余数量筛选任务行；未接任务或需求已满时任务行留在尸体，普通掉落归第一次有效攻击者账号。Inventory/Quest/Currency规划、DBProxy提交、operationId幂等和Cocos3D尸体拾取入口已接通；含铜币行时原子提交inventory/quest/wallet。Starter Boss用独立progression事务发放经验，并通过普通尸体表固定掉落三种药水与150铜币；动态ItemInstance掉落和队伍分配留在后续业务切片。
 - 技能系统现以3006恢复和3007精神鞭笞验证两类持续效果：3006使用Buff Tick完成8次恢复，3007验证10Hz分段引导、移动打断、停止平A、公共CD、受击800毫秒施法惩罚和单技能排队；复杂目标、AOE和技能性能A/B仍待后续机器验收。
-- `npm run perf:business-chain`已准备真实业务链路压测，交替发送UseItem与友方CastSkill并区分业务拒绝和传输错误。正式CPU压力测试需用户提供空闲机器，当前只做编译验证。
+- OP-05真实业务压测已完成首轮：Node全链路A/B覆盖50/100/200玩家的all-in-one与split；Rust容量组覆盖16 Gate、10x10 Grid下的1000/2000/3000玩家，并对1000玩家业务负载做三轮复核。按业务目标、Probe、背压和传输错误共同判定，当前保守有效点为1000个均匀分布玩家；无业务2000玩家仍可完成但尾延迟已经很高，2000/3000叠加业务后出现Probe错误和Map队列背压。Node同机压测端在600玩家开始调度落后，1000玩家all-in-one内嵌V8 OOM，不能把它当服务端容量。完整数据见[OP-05真实业务压测报告](starter/op05-real-business-load.md)；DBProxy商店、拾取、交易和跨玩家事务压力另行验收。
 
 ### Phase 4.5：持久化基础
 

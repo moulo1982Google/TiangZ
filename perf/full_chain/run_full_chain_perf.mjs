@@ -95,6 +95,7 @@ async function runCase(deployment, players, moveRate, round) {
             "configs/local/cluster/login-2.json",
             "configs/local/cluster/gate-1.json",
             "configs/local/cluster/map-1.json",
+            "configs/local/cluster/location-1.json",
           ];
       for (const config of configs) {
         const configName = path.basename(config, ".json");
@@ -106,6 +107,7 @@ async function runCase(deployment, players, moveRate, round) {
         7002,
         7201,
         7301,
+        7401,
         ...runtimes.map((runtime) => runtime.healthPort).filter((port) => port > 0),
       ]);
       for (const port of ports) {

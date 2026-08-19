@@ -33,6 +33,7 @@ if (cliArgs.includes("--help") || cliArgs.includes("-h")) {
   --rounds 1                  每个负载重复轮数
   --setup-concurrency 16      Login、Gate建连和LoginGate并发度
   --map-entry-concurrency N   连接全部就绪后单独释放Map Enter；仅Rust客户端
+  --map-entry-rate N          两阶段Map Enter开环释放速率（人/秒）；仅Rust客户端
   --io-backend epoll          epoll（Windows 实际使用 IOCP）或 io-uring
   --uring-entries 2048        io_uring 队列深度
   --uring-read-buffer-bytes 65536
@@ -58,6 +59,12 @@ if (options.client === "rust" && options.clientShards !== 1) {
 }
 if (options.mapEntryConcurrency !== null && options.client !== "rust") {
   throw new Error("--map-entry-concurrency requires --client rust");
+}
+if (options.mapEntryRate !== null && options.client !== "rust") {
+  throw new Error("--map-entry-rate requires --client rust");
+}
+if (options.mapEntryRate !== null && options.mapEntryConcurrency === null) {
+  throw new Error("--map-entry-rate requires --map-entry-concurrency");
 }
 if (options.spawnLayout === "grid-uniform" && options.client !== "rust") {
   throw new Error("--spawn-layout grid-uniform currently requires --client rust");
@@ -304,6 +311,9 @@ async function runLoadClients(players, managerPort, round, measurementSignal) {
         "--setup-concurrency", String(options.setupConcurrency),
         ...(useRustClient && options.mapEntryConcurrency !== null
           ? ["--map-entry-concurrency", String(options.mapEntryConcurrency)]
+          : []),
+        ...(useRustClient && options.mapEntryRate !== null
+          ? ["--map-entry-rate", String(options.mapEntryRate)]
           : []),
         "--post-setup-settle", String(options.postSetupSettle),
         "--duration", String(options.duration),
@@ -1913,7 +1923,8 @@ function renderMarkdown(report) {
       : []),
     `- 压测客户端：${options.client === "rust" ? "Rust" : "Node.js"}`,
     ...(options.mapEntryConcurrency !== null
-      ? [`- 两阶段进图：连接/Login并发${options.setupConcurrency}；全部就绪后Map Enter并发${options.mapEntryConcurrency}`]
+      ? [`- 两阶段进图：连接/Login并发${options.setupConcurrency}；全部就绪后Map Enter并发${options.mapEntryConcurrency}` +
+        (options.mapEntryRate !== null ? `；开环释放${options.mapEntryRate}人/秒` : "")]
       : []),
     `- 正式测试：${options.duration}s；预热：${options.warmup}s；轮数：${options.rounds}`,
     ...(options.postSetupSettle > 0
@@ -2244,6 +2255,9 @@ function parseOptions(args) {
     setupConcurrency: positive(values.get("--setup-concurrency") ?? "512", "--setup-concurrency"),
     mapEntryConcurrency: values.has("--map-entry-concurrency")
       ? positive(values.get("--map-entry-concurrency"), "--map-entry-concurrency")
+      : null,
+    mapEntryRate: values.has("--map-entry-rate")
+      ? positive(values.get("--map-entry-rate"), "--map-entry-rate")
       : null,
     postSetupSettle: nonNegative(
       values.get("--post-setup-settle") ?? "0",

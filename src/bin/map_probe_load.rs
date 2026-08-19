@@ -177,6 +177,7 @@ struct Options {
     players: usize,
     setup_concurrency: usize,
     map_entry_concurrency: Option<usize>,
+    map_entry_rate: Option<f64>,
     post_setup_settle: Duration,
     warmup: Duration,
     duration: Duration,
@@ -398,10 +399,19 @@ async fn main() -> Result<()> {
         let entry_started = Instant::now();
         let entry_semaphore = Arc::new(Semaphore::new(map_entry_concurrency));
         let mut entry_tasks = tokio::task::JoinSet::new();
-        for prepared in prepared_players {
+        for (entry_index, prepared) in prepared_players.into_iter().enumerate() {
             let options = Arc::clone(&options);
             let semaphore = Arc::clone(&entry_semaphore);
+            let scheduled_at = options
+                .map_entry_rate
+                .map(|rate| entry_started + Duration::from_secs_f64(entry_index as f64 / rate));
             entry_tasks.spawn(async move {
+                // Optional open-loop release keeps the request start rate separate from
+                // in-flight concurrency, so admission A/B tests do not conflate the two.
+                // 可选的开环释放把请求启动速率与在途并发分开，避免Admission A/B把两者混为一谈。
+                if let Some(scheduled_at) = scheduled_at {
+                    sleep_until(scheduled_at).await;
+                }
                 let permit = semaphore.acquire_owned().await?;
                 let player = enter_player(&options, prepared).await;
                 drop(permit);
@@ -635,6 +645,7 @@ async fn main() -> Result<()> {
         "players": options.players,
         "setupConcurrency": options.setup_concurrency,
         "mapEntryConcurrency": options.map_entry_concurrency,
+        "mapEntryRatePerSecond": options.map_entry_rate,
         "postSetupSettleSeconds": options.post_setup_settle.as_secs_f64(),
         "warmupSeconds": options.warmup.as_secs_f64(),
         "durationSeconds": options.duration.as_secs_f64(),
@@ -1301,7 +1312,7 @@ async fn run_player(
                     result.state_sync_errors += 1;
                 }
                 PendingKind::Business { response_code } => {
-                    if msgcode != response_code {
+                    if msgcode != response_code || !is_business_error_code(response_error) {
                         result.business_transport_errors += 1;
                     } else if request.measured {
                         result
@@ -1535,11 +1546,16 @@ async fn send_business(
     let rpc_id = *next_rpc_id;
     *next_rpc_id = next_rpc_id.wrapping_add(1).max(1);
     *sequence = sequence.wrapping_add(1).max(1);
-    let use_item = (*operation).is_multiple_of(2);
+    let operation_index = *operation;
+    let use_item = operation_index.is_multiple_of(2);
     *operation = operation.wrapping_add(1);
     let (request_code, response_code, fields) = if use_item {
         let mut fields = Vec::with_capacity(16);
         push_uint64(&mut fields, 1, item_id);
+        // UseItem 的客户端幂等键必须满足业务协议约束；压测工具也要走真实请求契约。
+        // The load generator must provide a valid client idempotency key just like a real client.
+        let operation_id = format!("bench-item-{unit_id}-{operation_index}");
+        push_string(&mut fields, 2, &operation_id);
         (USE_ITEM_REQ, USE_ITEM_RESP, fields)
     } else {
         let mut fields = Vec::with_capacity(16);
@@ -1812,6 +1828,13 @@ fn decode_message(
     Ok(message)
 }
 
+/// 业务压测只把 GameErrCode 范围内的错误算作正常业务拒绝；Runtime/RPC 错误必须单独计为传输失败。
+/// Business load tests count only GameErrCode-range failures as normal rejections;
+/// Runtime/RPC failures must remain visible as transport failures.
+fn is_business_error_code(code: u32) -> bool {
+    code >= 10_000
+}
+
 /// 解码RPC但保留业务错误字段，供业务压测区分“业务拒绝”和“传输失败”。
 /// Decodes an RPC while retaining its business error fields so the load test can distinguish application rejection from transport failure.
 fn decode_message_allow_error(
@@ -1964,6 +1987,11 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         .map(|value| value.parse::<usize>())
         .transpose()
         .context("invalid --map-entry-concurrency")?;
+    let map_entry_rate = values
+        .get("map-entry-rate")
+        .map(|value| value.parse::<f64>())
+        .transpose()
+        .context("invalid --map-entry-rate")?;
     let probe_concurrency = number("probe-concurrency", 4)? as usize;
     let state_sync_concurrency = number("state-sync-concurrency", 4)? as usize;
     let movement_hold_messages = u32::try_from(number("movement-hold-messages", 1)?)
@@ -1974,6 +2002,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
     if players == 0
         || setup_concurrency == 0
         || map_entry_concurrency == Some(0)
+        || map_entry_rate.is_some_and(|value| !value.is_finite() || value <= 0.0)
         || probe_concurrency == 0
         || state_sync_concurrency == 0
         || movement_hold_messages == 0
@@ -1981,8 +2010,11 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         || duration == 0
     {
         bail!(
-            "players, setup-concurrency, map-entry-concurrency, probe-concurrency, state-sync-concurrency, movement-hold-messages, world-grids and duration must be greater than zero"
+            "players, setup-concurrency, map-entry-concurrency, map-entry-rate, probe-concurrency, state-sync-concurrency, movement-hold-messages, world-grids and duration must be greater than zero"
         );
+    }
+    if map_entry_rate.is_some() && map_entry_concurrency.is_none() {
+        bail!("--map-entry-rate requires --map-entry-concurrency");
     }
     Ok(Options {
         host: values
@@ -2000,6 +2032,7 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         players,
         setup_concurrency,
         map_entry_concurrency,
+        map_entry_rate,
         post_setup_settle: Duration::from_secs(number("post-setup-settle", 0)?),
         warmup: Duration::from_secs(number("warmup", 2)?),
         duration: Duration::from_secs(duration),
@@ -2097,6 +2130,32 @@ mod tests {
             Some(3000)
         );
         assert!(parse_options(vec!["--map-entry-concurrency".into(), "0".into()]).is_err());
+    }
+
+    #[test]
+    fn map_entry_rate_is_optional_and_requires_positive_two_stage_mode() {
+        assert_eq!(parse_options(Vec::new()).unwrap().map_entry_rate, None);
+        assert_eq!(
+            parse_options(vec![
+                "--map-entry-concurrency".into(),
+                "512".into(),
+                "--map-entry-rate".into(),
+                "50".into(),
+            ])
+            .unwrap()
+            .map_entry_rate,
+            Some(50.0)
+        );
+        assert!(parse_options(vec!["--map-entry-rate".into(), "50".into()]).is_err());
+        assert!(
+            parse_options(vec![
+                "--map-entry-concurrency".into(),
+                "512".into(),
+                "--map-entry-rate".into(),
+                "0".into(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]

@@ -53,7 +53,7 @@ function main(): void {
   assert.equal(serverConfigs.MapConfig.Get(1).depthCells, 150);
   assert.equal(serverConfigs.MapConfig.Get(1).cellSizeMeters, 1);
   assert.equal(serverConfigs.MapConfig.Get(1).aoiConfigId_ref?.gridSizeCells, 15);
-  assert.equal(serverConfigs.MapConfig.Get(1).entryPlayersPerTick, 1);
+  assert.equal(serverConfigs.MapConfig.Get(1).entryPlayersPerTick, 2);
   assert.equal(serverConfigs.MapConfig.Get(1).entryQueueCapacity, 10_000);
   assert.equal(serverConfigs.MapConfig.Get(1015).widthCells, 225);
   assert.equal(serverConfigs.MapConfig.Get(1020).widthCells, 300);

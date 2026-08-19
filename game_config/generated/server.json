@@ -452,7 +452,7 @@
       "navigation_asset": "",
       "navigation_version": "",
       "navigation_hash": "",
-      "entry_players_per_tick": 1,
+      "entry_players_per_tick": 2,
       "entry_queue_capacity": 10000
     },
     {

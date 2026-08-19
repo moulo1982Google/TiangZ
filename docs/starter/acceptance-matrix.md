@@ -58,7 +58,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | OP-02 | 配置与代码生成 | Luban、Proto、Native codegen 已有 | 修改技能/道具/任务只改 Model、Hotfix 或配置源，再执行明确命令 |
 | OP-03 | 日志、指标、健康检查 | Runtime 日志和 Prometheus/Grafana 已有 | Starter 能看到登录、进图、战斗、DBProxy和队列错误 |
 | OP-04 | 故障恢复 | DBProxy `v0.5.0` 多Endpoint、双实例、多记录事务和 TiangZ 端到端故障矩阵已接入 | 明确区分可恢复快照、关键事务和临时运行态；连接中断、提交后丢响应、双Endpoint全不可用和备用节点接管后有安全结果 |
-| OP-05 | 真实业务压测 | 压测工具和历史基线已有 | 等 Starter 链路固定后，使用同一场景做无业务/完整业务 A/B |
+| OP-05 | 真实业务压测 | 已完成首轮真实业务 A/B：Node 全链路覆盖 50/100/200 玩家 all/split；Rust 容量组覆盖 1000/2000/3000 玩家，并对 1000 玩家业务做三轮复核；报告见[OP-05压测报告](op05-real-business-load.md) | 当前保守有效点为 1000 个均匀分布玩家；2000 需先处理 Probe 尾延迟和 Map frame/completion 背压；DBProxy 事务压力另行验收 |
 
 ## 标准演示脚本
 
