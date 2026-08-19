@@ -30,7 +30,6 @@ import {
   SystemErrCode,
   UnitComponent,
   type ActionDefinition,
-  type DamageResult,
   type SkillCastCommand,
   type SkillCastState,
   type SkillDefinition,
@@ -39,7 +38,7 @@ import {
   type Unit,
   systemFor,
 } from "#tiangz/model";
-import { ExecuteAction } from "../action/ActionExecutor";
+import { ExecuteAction, type ActionExecutionResult } from "../action/ActionExecutor";
 import { BuildSkillCatalog, GetSkillDefinitionFromCatalog } from "./SkillCatalog";
 import { GetSkillManaCost } from "./SkillManaCost";
 
@@ -392,9 +391,30 @@ export class SkillMapComponentSystem extends SkillMapComponent {
 
       const result = this.executeEffect(caster, target, definition, effect);
       if (result) {
-        damage += result.finalDamage;
-        damageSchool = result.damageSchool;
-        killed ||= result.killed;
+        if (result.damage) {
+          damage += result.damage.finalDamage;
+          damageSchool = result.damage.damageSchool;
+          killed ||= result.damage.killed;
+          // MonsterComponentSystem already publishes player-to-monster damage
+          // at the authoritative monster boundary. Other targets use the same
+          // private participant channel here.
+          if (!(target instanceof MonsterUnit)) {
+            this.spawnPublish("publish-combat-damage", () => this.map.PublishCombatDamage(
+              target,
+              caster.UnitId,
+              result.damage!,
+              definition.id,
+            ));
+          }
+        }
+        if (result.healing) {
+          this.spawnPublish("publish-combat-healing", () => this.map.PublishCombatHealing(
+            target,
+            caster.UnitId,
+            result.healing!,
+            definition.id,
+          ));
+        }
       }
       if (killed) break;
     }
@@ -414,22 +434,27 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     target: Unit<any[]>,
     definition: SkillDefinition,
     effect: SkillEffectDefinition,
-  ): DamageResult | undefined {
+  ): ActionExecutionResult | undefined {
     if (effect.action.type === ActionType.DealDamage && target instanceof MonsterUnit) {
       const amount = effect.action.parameters[0];
       const school = Number(effect.action.parameters[1]) as import("#tiangz/model").DamageSchoolValue;
-      return this.DomainScene().GetComponent(MonsterComponent).ApplyPlayerDamage(caster, target, {
+      const damage = this.DomainScene().GetComponent(MonsterComponent).ApplyPlayerDamage(caster, target, {
         amount,
         sourceUnitId: caster.UnitId,
         abilityId: definition.id,
         damageSchool: school,
       });
+      return {
+        changed: damage.finalDamage > 0n || damage.absorbedDamage > 0n,
+        value: damage.remainingHp,
+        damage,
+      };
     }
     return ExecuteAction(target, effect.action, {
       sourceUnitId: caster.UnitId,
       sourceAbilityId: definition.id,
       reason: `skill:${definition.id}`,
-    }).damage;
+    });
   }
 
   private resolveTarget(

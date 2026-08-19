@@ -14,12 +14,16 @@ export const AoiVisibleNumericTypes: readonly number[] = [
 ];
 
 /**
- * 高频公开战斗值保留服务端精度，但客户端只需要最新状态；20Hz地图下每4 Tick发布一次即5Hz。
- * Public combat values retain full server precision but only their latest client state matters;
- * one publication every four ticks is 5 Hz on the 20 Hz map loop.
+ * 高频公开战斗值保留服务端精度，但旁观者客户端只需要最新状态；20Hz地图下每20 Tick
+ * 发布一次即1Hz。自己和攻击者的即时战斗反馈仍应走独立CombatResult/私有通道，不能把
+ * 这条AOI覆盖式广播当作即时HP确认。
+ * Public combat values retain full server precision, but bystanders only need the latest state;
+ * one publication every twenty ticks is 1 Hz on the 20 Hz map loop. Immediate combat feedback
+ * for the owner and attacker must use a separate CombatResult/private channel rather than this
+ * replaceable AOI broadcast.
  */
 export const AoiCombatNumericTypes: readonly number[] = [NumericType.CurrentHp];
-export const AoiCombatNumericPublishIntervalTicks = 4;
+export const AoiCombatNumericPublishIntervalTicks = 20;
 
 /** 等级和上限只在真实变化时立即发布，不参与恢复频率限制。 / Level and maxima publish immediately on real changes and are not recovery-throttled. */
 export const AoiStaticNumericTypes: readonly number[] = [

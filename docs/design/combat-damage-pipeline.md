@@ -180,11 +180,14 @@ CombatComponent.ApplyDamage
   -> 修改Numeric.CurrentHp并标脏
   -> 返回DamageResult
 Map/Combat业务
-  -> Numeric帧尾latest同步HP
+  -> 旁观者通过1Hz Numeric latest同步HP
+  -> 受击者和有效攻击者通过私有G2C_CombatResult立即收到精确结果
   -> 技能命中、死亡、掉落等事实另发event
 ```
 
-- HP最终值是可覆盖状态，使用Numeric dirty/latest；
+- HP最终值是可覆盖状态，使用Numeric dirty/latest；旁观者只接收1Hz公开投影；
+- 受击者和有效攻击者必须收到私有`G2C_CombatResult`，其中携带结算后的`currentHp`、实际伤害/治疗和`serverTick`；
+- 客户端按`serverTick`丢弃晚到的旧AOI Numeric，不能用旁观者快照回退参与者自己的血量；
 - 技能命中、道具消耗、死亡和掉落是不可逆事实，使用event；
 - 护盾公开外观使用`BuffAdded/BuffRemoved`；
 - 护盾剩余量只给自己或队友时，使用受限的`BuffDetail` latest；

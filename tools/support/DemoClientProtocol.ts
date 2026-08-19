@@ -60,6 +60,8 @@ import {
   G2C_AoiDeltaCodec,
   G2C_AutoAttackState,
   G2C_AutoAttackStateCodec,
+  G2C_CombatResult,
+  G2C_CombatResultCodec,
   G2C_SkillCastState,
   G2C_SkillCastStateCodec,
   G2C_SkillImpact,
@@ -409,6 +411,12 @@ export function decodeSkillImpactFrame(frame: Uint8Array): DecodedFrame<G2C_Skil
   const msgcode = readU16BE(frame, 0);
   if (msgcode !== MsgCode.G2C_SkillImpact) throw new Error(`expected G2C_SkillImpact, got ${msgcode}`);
   return { msgcode, rpcId: undefined, body: G2C_SkillImpactCodec.decode(frame.subarray(2)) };
+}
+
+export function decodeCombatResultFrame(frame: Uint8Array): DecodedFrame<G2C_CombatResult> {
+  const msgcode = readU16BE(frame, 0);
+  if (msgcode !== MsgCode.G2C_CombatResult) throw new Error(`expected G2C_CombatResult, got ${msgcode}`);
+  return { msgcode, rpcId: undefined, body: G2C_CombatResultCodec.decode(frame.subarray(2)) };
 }
 
 export function buildMapProbePacket(

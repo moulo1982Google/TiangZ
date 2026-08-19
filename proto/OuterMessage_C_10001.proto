@@ -767,6 +767,24 @@ message G2C_SkillImpact // IMessage
   bool killed = 7;
 }
 
+// 只发送给受击者和有效攻击者本人；精确CurrentHp不能进入AOI公开广播。
+// @ets.msg protocol=Client method=CombatResult
+// @ets.broadcast mode=event
+message G2C_CombatResult // IMessage
+{
+  uint32 result_type = 1;
+  uint32 source_unit_id = 2;
+  uint32 target_unit_id = 3;
+  uint64 requested_amount = 4;
+  uint64 effective_amount = 5;
+  uint64 absorbed_amount = 6;
+  uint64 current_hp = 7;
+  uint32 damage_school = 8;
+  uint32 ability_id = 9;
+  bool killed = 10;
+  uint32 server_tick = 11;
+}
+
 //ResponseType G2C_Ping
 // @ets.msg protocol=Gate method=Ping
 message C2G_Ping // IRequest

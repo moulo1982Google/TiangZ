@@ -47,6 +47,7 @@ import {
   decodeMapSnapshotReadyFrame,
   decodeToggleAutoAttackFrame,
   decodeCastSkillFrame,
+  decodeCombatResultFrame,
   decodeSkillCastStateFrame,
   decodeSkillImpactFrame,
   decodeSkillProjectileFrame,
@@ -1146,6 +1147,7 @@ async function verifyFiveSkillMechanics(
   await sleep(1_100);
 
   const projectilePush = gate.waitForMessage(MsgCode.G2C_SkillProjectile, 4_000);
+  const combatResultPush = waitForCombatResult(gate, target.unitId, 3001, 4_000);
   const frostbolt = decodeCastSkillFrame(await gate.request(buildCastSkillPacket(nextRpcId++, {
     skillId: 3001,
     targetUnitId: target.unitId,
@@ -1155,8 +1157,18 @@ async function verifyFiveSkillMechanics(
   }
   const projectile = decodeSkillProjectileFrame(await projectilePush).body;
   const impact = await waitForSkillImpact(gate, 3001, 4_000);
-  if (projectile.skillId !== 3001 || impact.skillId !== 3001 || impact.damage !== 50n || impact.damageSchool !== 2) {
-    throw new Error(`Frostbolt result mismatch: ${stringifyForError({ projectile, impact })}`);
+  const combatResult = await combatResultPush;
+  if (
+    projectile.skillId !== 3001 ||
+    impact.skillId !== 3001 ||
+    impact.damage !== 50n ||
+    impact.damageSchool !== 2 ||
+    combatResult.abilityId !== 3001 ||
+    combatResult.targetUnitId !== target.unitId ||
+    combatResult.effectiveAmount !== 50n ||
+    combatResult.currentHp < 0n
+  ) {
+    throw new Error(`Frostbolt result mismatch: ${stringifyForError({ projectile, impact, combatResult })}`);
   }
 
   // 火焰冲击是10米技能；先把测试角色移动到目标5米内，避免用15米出生距离误测业务拒绝。
@@ -1180,9 +1192,21 @@ async function verifyFiveSkillMechanics(
   if (fireBlast.body.error) {
     throw new Error(`Fire Blast failed: ${stringifyForError(fireBlast.body)}`);
   }
+  const fireCombatResultPush = waitForCombatResult(gate, target.unitId, 3002, 3_000);
   const fireImpact = await waitForSkillImpact(gate, 3002, 3_000);
-  if (fireImpact.damage !== 100n || fireImpact.damageSchool !== 3) {
-    throw new Error(`Fire Blast result mismatch: ${stringifyForError(fireImpact)}`);
+  const fireCombatResult = await fireCombatResultPush;
+  if (
+    fireImpact.damage <= 0n ||
+    fireImpact.damage > 100n ||
+    fireImpact.damageSchool !== 3 ||
+    fireCombatResult.abilityId !== 3002 ||
+    fireCombatResult.targetUnitId !== target.unitId ||
+    fireCombatResult.requestedAmount !== 100n ||
+    fireCombatResult.effectiveAmount !== fireImpact.damage ||
+    fireCombatResult.effectiveAmount <= 0n ||
+    fireCombatResult.effectiveAmount > fireCombatResult.requestedAmount
+  ) {
+    throw new Error(`Fire Blast result mismatch: ${stringifyForError({ fireImpact, fireCombatResult })}`);
   }
   const smitePoint = approachPoint(firePoint.targetX, firePoint.targetZ, smiteTarget, 5);
   const smiteApproach = decodeNavigateToFrame(await gate.request(buildNavigateToPacket(nextRpcId++, {
@@ -1239,9 +1263,17 @@ async function verifyFiveSkillMechanics(
   if (channel.body.error || channel.body.phase !== 1) {
     throw new Error(`Mind Flay did not begin channeling: ${stringifyForError(channel.body)}`);
   }
+  const channelCombatResultPush = waitForCombatResult(gate, smiteTarget.unitId, 3007, 2_500);
   const channelImpact = await waitForSkillImpact(gate, 3007, 2_500);
-  if (channelImpact.damage !== 20n || channelImpact.damageSchool !== 5) {
-    throw new Error(`Mind Flay tick mismatch: ${stringifyForError(channelImpact)}`);
+  const channelCombatResult = await channelCombatResultPush;
+  if (
+    channelImpact.damage !== 20n ||
+    channelImpact.damageSchool !== 5 ||
+    channelCombatResult.abilityId !== 3007 ||
+    channelCombatResult.targetUnitId !== smiteTarget.unitId ||
+    channelCombatResult.effectiveAmount !== 20n
+  ) {
+    throw new Error(`Mind Flay tick mismatch: ${stringifyForError({ channelImpact, channelCombatResult })}`);
   }
   const channelStatePush = gate.waitForMessage(MsgCode.G2C_SkillCastState, 3_000);
   await gate.request(buildNavigateInputPacket(nextRpcId++, {
@@ -1274,11 +1306,14 @@ async function verifyFiveSkillMechanics(
     fortitude: "accepted",
     frostboltDamage: impact.damage,
     frostboltSchool: impact.damageSchool,
+    frostboltPrivateCurrentHp: combatResult.currentHp,
     fireBlastFinalDamage: fireImpact.damage,
     fireBlastSchool: fireImpact.damageSchool,
+    fireBlastPrivateCurrentHp: fireCombatResult.currentHp,
     smiteInterrupt: interrupted.interruptReason,
     mindFlayTickDamage: channelImpact.damage,
     mindFlaySchool: channelImpact.damageSchool,
+    mindFlayPrivateCurrentHp: channelCombatResult.currentHp,
     mindFlayInterrupt: channelInterrupted.interruptReason,
   });
 }
@@ -1297,6 +1332,24 @@ async function waitForSkillImpact(
     if (impact.skillId === skillId) return impact;
   }
   throw new Error(`skill ${skillId} impact timed out`);
+}
+
+/** 过滤同一时间窗内的怪物反击等其他CombatResult，只返回指定技能对指定目标的私有结果。 / Filters unrelated private combat results such as monster retaliation and returns one skill-target match. */
+async function waitForCombatResult(
+  gate: TcpRpcConnection,
+  targetUnitId: number,
+  abilityId: number,
+  timeoutMs: number,
+): Promise<ReturnType<typeof decodeCombatResultFrame>["body"]> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = decodeCombatResultFrame(await gate.waitForMessage(
+      MsgCode.G2C_CombatResult,
+      Math.max(1, deadline - Date.now()),
+    )).body;
+    if (result.targetUnitId === targetUnitId && result.abilityId === abilityId) return result;
+  }
+  throw new Error(`combat result for ability ${abilityId} target ${targetUnitId} timed out`);
 }
 
 /** 通过正式Inner握手验证动态副本创建和空地图销毁。 / Verifies dynamic-map creation and empty-map disposal through the real Inner handshake. */

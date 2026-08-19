@@ -8934,6 +8934,95 @@ export const G2C_SkillImpactCodec = {
   },
 };
 
+export interface G2C_CombatResult extends IMessage {
+  resultType: number;
+  sourceUnitId: number;
+  targetUnitId: number;
+  requestedAmount: bigint;
+  effectiveAmount: bigint;
+  absorbedAmount: bigint;
+  currentHp: bigint;
+  damageSchool: number;
+  abilityId: number;
+  killed: boolean;
+  serverTick: number;
+}
+
+export const G2C_CombatResultCodec = {
+  decode(payload: Uint8Array): G2C_CombatResult {
+    const reader = new BinaryReader(payload);
+    const value: G2C_CombatResult = {
+      resultType: 0,
+      sourceUnitId: 0,
+      targetUnitId: 0,
+      requestedAmount: 0n,
+      effectiveAmount: 0n,
+      absorbedAmount: 0n,
+      currentHp: 0n,
+      damageSchool: 0,
+      abilityId: 0,
+      killed: false,
+      serverTick: 0,
+    };
+    while (!reader.eof()) {
+      const tag = reader.tag();
+      if (tag.fieldNo === 1 && tag.wireType === 0) {
+        value.resultType = reader.uint32();
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.sourceUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.targetUnitId = reader.uint32();
+      }
+      else if (tag.fieldNo === 4 && tag.wireType === 0) {
+        value.requestedAmount = reader.uint64();
+      }
+      else if (tag.fieldNo === 5 && tag.wireType === 0) {
+        value.effectiveAmount = reader.uint64();
+      }
+      else if (tag.fieldNo === 6 && tag.wireType === 0) {
+        value.absorbedAmount = reader.uint64();
+      }
+      else if (tag.fieldNo === 7 && tag.wireType === 0) {
+        value.currentHp = reader.uint64();
+      }
+      else if (tag.fieldNo === 8 && tag.wireType === 0) {
+        value.damageSchool = reader.uint32();
+      }
+      else if (tag.fieldNo === 9 && tag.wireType === 0) {
+        value.abilityId = reader.uint32();
+      }
+      else if (tag.fieldNo === 10 && tag.wireType === 0) {
+        value.killed = reader.bool();
+      }
+      else if (tag.fieldNo === 11 && tag.wireType === 0) {
+        value.serverTick = reader.uint32();
+      }
+      else {
+        reader.skip(tag.wireType);
+      }
+    }
+    return value;
+  },
+
+  encode(value: G2C_CombatResult): Uint8Array {
+    const writer = new BinaryWriter();
+    if (value.resultType !== undefined) writer.uint32(1, value.resultType);
+    if (value.sourceUnitId !== undefined) writer.uint32(2, value.sourceUnitId);
+    if (value.targetUnitId !== undefined) writer.uint32(3, value.targetUnitId);
+    if (value.requestedAmount !== undefined) writer.uint64(4, value.requestedAmount);
+    if (value.effectiveAmount !== undefined) writer.uint64(5, value.effectiveAmount);
+    if (value.absorbedAmount !== undefined) writer.uint64(6, value.absorbedAmount);
+    if (value.currentHp !== undefined) writer.uint64(7, value.currentHp);
+    if (value.damageSchool !== undefined) writer.uint32(8, value.damageSchool);
+    if (value.abilityId !== undefined) writer.uint32(9, value.abilityId);
+    if (value.killed !== undefined) writer.bool(10, value.killed);
+    if (value.serverTick !== undefined) writer.uint32(11, value.serverTick);
+    return writer.finish();
+  },
+};
+
 export interface C2G_Ping extends IRequest {
   rpcId?: number;
 }

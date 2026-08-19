@@ -82,6 +82,7 @@ export const OuterMessage = {
   G2C_SkillCastState: 10049,
   G2C_SkillProjectile: 10050,
   G2C_SkillImpact: 10051,
+  G2C_CombatResult: 10088,
   C2G_Ping: 10024,
   G2C_Ping: 10031,
 } as const;

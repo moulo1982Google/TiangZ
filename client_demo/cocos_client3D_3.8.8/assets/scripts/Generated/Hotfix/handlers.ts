@@ -3,6 +3,7 @@ import "../../Demo/Handlers/G2C_AoiDeltaHandler";
 import "../../Demo/Handlers/G2C_AutoAttackStateHandler";
 import "../../Demo/Handlers/G2C_BuffAddedHandler";
 import "../../Demo/Handlers/G2C_BuffRemovedHandler";
+import "../../Demo/Handlers/G2C_CombatResultHandler";
 import "../../Demo/Handlers/G2C_DemoDoorStateHandler";
 import "../../Demo/Handlers/G2C_EntityNavigateHandler";
 import "../../Demo/Handlers/G2C_EntityNumericHandler";

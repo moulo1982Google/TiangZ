@@ -7,6 +7,7 @@ import {
   DamageSchool,
   type DamageSchoolValue,
   type DamageResult,
+  type HealingResult,
   ItemComponent,
   type ItemSnapshot,
   IsDerivedNumericType,
@@ -22,6 +23,7 @@ export interface ActionExecutionResult {
   readonly addedBuff?: BuffPublicState;
   readonly damageAbsorberModifierId?: number;
   readonly damage?: DamageResult;
+  readonly healing?: HealingResult;
   readonly grantedItem?: ItemSnapshot;
   readonly grantedItems?: readonly ItemSnapshot[];
 }
@@ -127,6 +129,7 @@ export function ExecuteAction(
         return {
           changed: result.restoredHealing > 0n,
           value: result.currentHp,
+          healing: result,
         };
       }
     case ActionType.GrantItem:

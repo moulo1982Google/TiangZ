@@ -3,6 +3,10 @@ import { Component, component } from "../../../core/public";
 export const AutoAttackPhase = { Inactive: 0, Waiting: 1, Swinging: 2 } as const;
 export type AutoAttackPhaseValue = (typeof AutoAttackPhase)[keyof typeof AutoAttackPhase];
 
+/** 私有即时战斗结果的类型；旁观者不接收这条消息。 / Immediate private combat-result kinds; bystanders never receive this message. */
+export const CombatResultType = { Damage: 1, Healing: 2 } as const;
+export type CombatResultTypeValue = (typeof CombatResultType)[keyof typeof CombatResultType];
+
 export const DamageSchool = { Physical: 1, Frost: 2, Fire: 3, Holy: 4, Shadow: 5 } as const;
 export type DamageSchoolValue = (typeof DamageSchool)[keyof typeof DamageSchool];
 

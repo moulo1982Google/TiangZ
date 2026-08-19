@@ -238,10 +238,12 @@ export {
 } from "./mmorpg/monster/MonsterComponent";
 export {
   AutoAttackPhase,
+  CombatResultType,
   CombatComponent,
   DamageSchool,
   type AutoAttackPhaseValue,
   type AutoAttackState,
+  type CombatResultTypeValue,
   type DamageAbsorberState,
   type DamageAbsorption,
   type DamageRequest,

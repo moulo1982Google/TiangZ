@@ -389,6 +389,12 @@ export class MonsterComponentSystem extends MonsterComponent {
       throw new RpcError(GameErrCode.MonsterNotFound, `monster not found: ${monster.UnitId}`);
     }
     const result = monster.GetComponent(CombatComponent).ApplyDamage(request);
+    this.PublishCombatDamage(
+      monster,
+      request.sourceUnitId ?? attacker.UnitId,
+      result,
+      request.abilityId ?? 0,
+    );
     this.AddThreat(monster, attacker, result.finalDamage);
     if (result.killed) {
       this.Kill(monster, attacker.Account);
@@ -693,6 +699,7 @@ export class MonsterComponentSystem extends MonsterComponent {
       amount: damage,
       sourceUnitId: monster.UnitId,
     });
+    this.PublishCombatDamage(target, monster.UnitId, result);
     if (result.requestedDamage > 0n && !result.killed && result.absorbedDamage === 0n) {
       // 本次没有护盾吸收时才产生施法惩罚；Combat已经给出结果，这里不查询BuffComponent。
       // Only an unabsorbed hit causes cast pushback/reduction; Combat already
@@ -795,6 +802,23 @@ export class MonsterComponentSystem extends MonsterComponent {
     );
     const angleDelta = normalizeRadians(targetAngle - attackerPosition.yaw);
     return Math.abs(angleDelta) <= AUTO_ATTACK_FACING_HALF_ANGLE;
+  }
+
+  /** 异步发布状态但不阻塞10Hz战斗桶；广播失败只记录，不回滚已经结算的伤害。 / Publishes without blocking the 10Hz bucket; failures are logged and never roll back resolved damage. */
+  private PublishCombatDamage(
+    target: MonsterUnit | PlayerUnit,
+    sourceUnitId: number,
+    result: DamageResult,
+    abilityId = 0,
+  ): void {
+    void this.map.PublishCombatDamage(target, sourceUnitId, result, abilityId).catch((error) => {
+      this.DomainScene().logger.error("private combat damage publish failed", {
+        sourceUnitId,
+        targetUnitId: target.UnitId,
+        abilityId,
+        error,
+      });
+    });
   }
 
   /** 异步发布状态但不阻塞10Hz战斗桶；广播失败只记录，不回滚已经结算的伤害。 / Publishes without blocking the 10Hz bucket; failures are logged and never roll back resolved damage. */

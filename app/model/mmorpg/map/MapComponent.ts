@@ -28,6 +28,7 @@ import type {
   G2M_SecondEnterMap,
   G2M_TransferPlayer,
   G2C_AutoAttackState,
+  G2C_CombatResult,
   G2C_SkillCastState,
   G2C_SkillImpact,
   G2C_SkillProjectile,
@@ -78,7 +79,13 @@ import { ItemComponent } from "../item/ItemComponent";
 import { PlayerTradeComponent } from "../trade/PlayerTradeComponent";
 import { BuffComponent } from "../buff/BuffComponent";
 import type { BuffTransferState } from "../buff/Buff";
-import { CombatComponent, type AutoAttackState } from "../combat/CombatComponent";
+import {
+  CombatComponent,
+  CombatResultType,
+  type AutoAttackState,
+  type DamageResult,
+  type HealingResult,
+} from "../combat/CombatComponent";
 import { CombatStateComponent } from "../combat/CombatStateComponent";
 import type { SkillCastState, SkillTransferState } from "../skill/SkillComponent";
 import { SkillComponent } from "../skill/SkillComponent";
@@ -479,6 +486,70 @@ export class MapComponent extends Component<[
       this.aoi.ObserversOf(source),
       ClientBroadcasts.SkillImpact,
       impact,
+      this.serverTick,
+    );
+  }
+
+  /**
+   * 向受击者和有效攻击者本人发送精确战斗结果；AOI旁观者继续通过1Hz CurrentHp状态观察。
+   * 受众只包含明确的UnitId，不经过ObserversOf，因此不会把私有CurrentHp扩散给旁观者。
+   *
+   * Publishes the exact combat result only to the target and a valid attacker.
+   * AOI bystanders continue to observe CurrentHp through the 1 Hz state stream.
+   * The audience contains only explicit UnitIds and never uses ObserversOf, so
+   * private CurrentHp cannot fan out to unrelated observers.
+   */
+  async PublishCombatDamage(
+    target: import("../../../core/public").Unit<any[]>,
+    sourceUnitId: number,
+    result: DamageResult,
+    abilityId = 0,
+  ): Promise<void> {
+    this.requireMapUnit(target);
+    await this.clientBroadcast.Publish(
+      this.privateCombatAudience(target.UnitId, sourceUnitId),
+      ClientBroadcasts.CombatResult,
+      {
+        resultType: CombatResultType.Damage,
+        sourceUnitId,
+        targetUnitId: target.UnitId,
+        requestedAmount: result.requestedDamage,
+        effectiveAmount: result.finalDamage,
+        absorbedAmount: result.absorbedDamage,
+        currentHp: result.remainingHp,
+        damageSchool: result.damageSchool,
+        abilityId,
+        killed: result.killed,
+        serverTick: this.serverTick,
+      } satisfies G2C_CombatResult,
+      this.serverTick,
+    );
+  }
+
+  /** 治疗同样只向治疗目标和来源玩家发送即时CurrentHp；治疗结果不走AOI公开数值。 / Healing uses the same private path so its immediate CurrentHp never becomes an AOI broadcast. */
+  async PublishCombatHealing(
+    target: import("../../../core/public").Unit<any[]>,
+    sourceUnitId: number,
+    result: HealingResult,
+    abilityId = 0,
+  ): Promise<void> {
+    this.requireMapUnit(target);
+    await this.clientBroadcast.Publish(
+      this.privateCombatAudience(target.UnitId, sourceUnitId),
+      ClientBroadcasts.CombatResult,
+      {
+        resultType: CombatResultType.Healing,
+        sourceUnitId,
+        targetUnitId: target.UnitId,
+        requestedAmount: result.requestedHealing,
+        effectiveAmount: result.restoredHealing,
+        absorbedAmount: 0n,
+        currentHp: result.currentHp,
+        damageSchool: 0,
+        abilityId,
+        killed: false,
+        serverTick: this.serverTick,
+      } satisfies G2C_CombatResult,
       this.serverTick,
     );
   }
@@ -1809,6 +1880,33 @@ export class MapComponent extends Component<[
         };
       },
     });
+  }
+
+  /**
+   * 生成只含PlayerUnit的私有受众；怪物UnitId不能交给Location解析，避免未知实体拖垮整条广播。
+   *
+   * Builds a private audience containing PlayerUnits only. Monster UnitIds must
+   * never reach Location resolution, because an unknown entity could otherwise
+   * fail the whole asynchronous broadcast.
+   */
+  private privateCombatAudience(
+    targetUnitId: number,
+    sourceUnitId: number,
+  ): ClientAudience {
+    const unitIds: number[] = [];
+    const target = this.units.Get(targetUnitId);
+    if (target instanceof PlayerUnit) unitIds.push(target.UnitId);
+    if (
+      sourceUnitId > 0 &&
+      sourceUnitId !== targetUnitId &&
+      this.units.Get(sourceUnitId) instanceof PlayerUnit
+    ) {
+      unitIds.push(sourceUnitId);
+    }
+    return ClientAudience.ForUnits(
+      `map:${this.mapInstanceId}:combat:${targetUnitId}:${sourceUnitId}`,
+      unitIds,
+    );
   }
 
   /**

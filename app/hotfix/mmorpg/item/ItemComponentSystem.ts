@@ -179,7 +179,13 @@ export class ItemComponentSystem extends ItemComponent implements ITransfer<read
       targetConfigId: receipt.itemConfigId,
       count: 1,
     });
-    await unit.DomainScene().GetComponent(MapComponent).PublishItemChanged(
+    const map = unit.DomainScene().GetComponent(MapComponent);
+    // 道具治疗已完成持久化提交，先向玩家发送精确CurrentHp，再发送背包事实变化。
+    // The item heal is durable now; publish exact CurrentHp before the inventory fact.
+    if (result.healing) {
+      await map.PublishCombatHealing(unit, unit.UnitId, result.healing);
+    }
+    await map.PublishItemChanged(
       unit,
       receipt.consumedItem,
     );

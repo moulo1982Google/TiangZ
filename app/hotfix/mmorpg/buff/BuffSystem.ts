@@ -3,6 +3,7 @@ import {
   Buff,
   CombatComponent,
   GameConfigs,
+  MapComponent,
   TimeSystem,
   type ActionDefinition,
   type AwakeBuff,
@@ -51,15 +52,19 @@ export class BuffSystem extends Buff {
     this.requireConfig();
     const addAction = this.resolveAction("add");
     if (!restoring) {
-      this.captureLifecycleHandle(this.executePhase(addAction, "add"));
+      const result = this.executePhase(addAction, "add");
+      this.captureLifecycleHandle(result);
+      this.publishCombatResult(result, "add");
     } else if (
       addAction.type === ActionType.RegisterDamageAbsorber &&
       request.restoringDamageAbsorberRemaining !== undefined &&
       request.restoringDamageAbsorberRemaining > 0n
     ) {
-      this.captureLifecycleHandle(this.executePhase(addAction, "restore", {
+      const result = this.executePhase(addAction, "restore", {
         damageAbsorberAmountOverride: request.restoringDamageAbsorberRemaining,
-      }));
+      });
+      this.captureLifecycleHandle(result);
+      this.publishCombatResult(result, "restore");
     }
     this.scheduleTimers();
   }
@@ -136,7 +141,9 @@ export class BuffSystem extends Buff {
   protected OnTick(): void {
     const now = TimeSystem.Instance.ServerNow;
     const action = this.resolveAction("tick");
-    if (action.type !== ActionType.None) this.executePhase(action, "tick");
+    if (action.type !== ActionType.None) {
+      this.publishCombatResult(this.executePhase(action, "tick"), "tick");
+    }
     if (this.expireAtMs > 0 && now >= this.expireAtMs) {
       this.ownerBuffComponent.RemoveBuff(this.Id as bigint, "expired");
       return;
@@ -160,7 +167,9 @@ export class BuffSystem extends Buff {
       this.damageAbsorberModifierId = 0;
     }
     const action = this.resolveAction("remove");
-    if (action.type !== ActionType.None) this.executePhase(action, "remove");
+    if (action.type !== ActionType.None) {
+      this.publishCombatResult(this.executePhase(action, "remove"), "remove");
+    }
   }
 
   private scheduleTimers(): void {
@@ -231,6 +240,43 @@ export class BuffSystem extends Buff {
   private captureLifecycleHandle(result: ReturnType<typeof ExecuteAction>): void {
     if (result.damageAbsorberModifierId !== undefined) {
       this.damageAbsorberModifierId = result.damageAbsorberModifierId;
+    }
+  }
+
+  /**
+   * Buff Tick产生的伤害/治疗必须与技能和怪物攻击走同一条私有结果通道。
+   * 没有地图组件的独立Buff单测只跳过网络表现，不影响权威数值结算。
+   *
+   * Damage and healing produced by a Buff Tick use the same private result
+   * channel as skills and monster attacks. Standalone Buff tests without a map
+   * component skip presentation only; authoritative numeric resolution stays intact.
+   */
+  private publishCombatResult(result: ReturnType<typeof ExecuteAction>, phase: string): void {
+    const map = this.tryMap();
+    if (!map) return;
+    const sourceUnitId = this.sourceUnitId > 0 ? this.sourceUnitId : this.owner.UnitId;
+    const publish = result.damage
+      ? map.PublishCombatDamage(this.owner, sourceUnitId, result.damage, this.sourceAbilityId)
+      : result.healing
+        ? map.PublishCombatHealing(this.owner, sourceUnitId, result.healing, this.sourceAbilityId)
+        : undefined;
+    if (!publish) return;
+    void publish.catch((error) => {
+      this.DomainScene().logger.error("buff combat result publish failed", {
+        phase,
+        unitId: this.owner.UnitId,
+        buffInstanceId: this.Id,
+        sourceUnitId,
+        error,
+      });
+    });
+  }
+
+  private tryMap(): MapComponent | undefined {
+    try {
+      return this.owner.DomainScene().GetComponent(MapComponent);
+    } catch {
+      return undefined;
     }
   }
 

@@ -6932,6 +6932,129 @@ struct G2C_SkillImpactCodec {
   }
 };
 
+struct G2C_CombatResult {
+  std::uint32_t resultType = 0;
+  std::uint32_t sourceUnitId = 0;
+  std::uint32_t targetUnitId = 0;
+  std::uint64_t requestedAmount = 0;
+  std::uint64_t effectiveAmount = 0;
+  std::uint64_t absorbedAmount = 0;
+  std::uint64_t currentHp = 0;
+  std::uint32_t damageSchool = 0;
+  std::uint32_t abilityId = 0;
+  bool killed = false;
+  std::uint32_t serverTick = 0;
+};
+
+struct G2C_CombatResultCodec {
+  static G2C_CombatResult Decode(const tiangz::client::Bytes& payload) {
+    tiangz::client::BinaryReader reader(payload);
+    G2C_CombatResult value;
+    while (!reader.Eof()) {
+      const auto tag = reader.Tag();
+      switch (tag.fieldNo) {
+        case 1:
+          if (tag.wireType == 0) {
+            value.resultType = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 2:
+          if (tag.wireType == 0) {
+            value.sourceUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 3:
+          if (tag.wireType == 0) {
+            value.targetUnitId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 4:
+          if (tag.wireType == 0) {
+            value.requestedAmount = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 5:
+          if (tag.wireType == 0) {
+            value.effectiveAmount = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 6:
+          if (tag.wireType == 0) {
+            value.absorbedAmount = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 7:
+          if (tag.wireType == 0) {
+            value.currentHp = reader.UInt64();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 8:
+          if (tag.wireType == 0) {
+            value.damageSchool = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 9:
+          if (tag.wireType == 0) {
+            value.abilityId = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 10:
+          if (tag.wireType == 0) {
+            value.killed = reader.Bool();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        case 11:
+          if (tag.wireType == 0) {
+            value.serverTick = reader.UInt32();
+          } else {
+            reader.Skip(tag.wireType);
+          }
+          break;
+        default:
+          reader.Skip(tag.wireType);
+          break;
+      }
+    }
+    return value;
+  }
+
+  static tiangz::client::Bytes Encode(const G2C_CombatResult& value) {
+    tiangz::client::BinaryWriter writer;
+    writer.UInt32(1, value.resultType);
+    writer.UInt32(2, value.sourceUnitId);
+    writer.UInt32(3, value.targetUnitId);
+    writer.UInt64(4, value.requestedAmount);
+    writer.UInt64(5, value.effectiveAmount);
+    writer.UInt64(6, value.absorbedAmount);
+    writer.UInt64(7, value.currentHp);
+    writer.UInt32(8, value.damageSchool);
+    writer.UInt32(9, value.abilityId);
+    writer.Bool(10, value.killed);
+    writer.UInt32(11, value.serverTick);
+    return writer.Finish();
+  }
+};
+
 struct C2G_Ping {
   std::optional<std::uint32_t> rpcId;
 };
@@ -7108,6 +7231,7 @@ inline constexpr std::uint16_t M2C_CastSkill = 10048;
 inline constexpr std::uint16_t G2C_SkillCastState = 10049;
 inline constexpr std::uint16_t G2C_SkillProjectile = 10050;
 inline constexpr std::uint16_t G2C_SkillImpact = 10051;
+inline constexpr std::uint16_t G2C_CombatResult = 10088;
 inline constexpr std::uint16_t C2G_Ping = 10024;
 inline constexpr std::uint16_t G2C_Ping = 10031;
 } // namespace MsgCode
@@ -7326,6 +7450,10 @@ inline constexpr tiangz::client::MessageDescriptor<G2C_SkillProjectile, G2C_Skil
 
 inline constexpr tiangz::client::MessageDescriptor<G2C_SkillImpact, G2C_SkillImpactCodec> Client_SkillImpact{
   "Client.SkillImpact", MsgCode::G2C_SkillImpact
+};
+
+inline constexpr tiangz::client::MessageDescriptor<G2C_CombatResult, G2C_CombatResultCodec> Client_CombatResult{
+  "Client.CombatResult", MsgCode::G2C_CombatResult
 };
 
 } // namespace tiangz::protocol::demo

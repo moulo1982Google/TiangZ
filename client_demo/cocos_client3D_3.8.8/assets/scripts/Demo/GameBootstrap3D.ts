@@ -37,6 +37,7 @@ import type {
   G2C_AutoAttackState,
   G2C_BuffAdded,
   G2C_BuffRemoved,
+  G2C_CombatResult,
   G2C_DemoDoorState,
   G2C_EnterMap,
   G2C_EntityNumeric,
@@ -102,6 +103,7 @@ const NUMERIC_LEVEL = 3;
 const NUMERIC_EXPERIENCE = 4;
 const NUMERIC_MAX_HP = 1000;
 const NUMERIC_MAX_MP = 1001;
+const COMBAT_RESULT_DAMAGE = 1;
 const STARTER_DUNGEON_MAP_ID = 200;
 const STARTER_DUNGEON_EXIT_MAP_ID = 100;
 const PLAYER_HALF_HEIGHT = 0.9;
@@ -216,6 +218,7 @@ interface RemotePlayer3D {
   shopEnabled: boolean;
   alive: boolean;
   readonly numerics: Map<number, bigint>;
+  readonly numericServerTicks: Map<number, number>;
   /** 使用TiangZ协议Yaw；Cocos Y-Up边界当前可直接转成角度显示。 / Uses protocol-space TiangZ yaw, which the current Cocos Y-up boundary can render directly in degrees. */
   yaw: number;
 }
@@ -436,6 +439,7 @@ export class GameBootstrap3D extends Component {
   private messageDispatcher?: ClientMessageDispatcher<GameBootstrap3D>;
   private readonly remotePlayers = new Map<number, RemotePlayer3D>();
   private readonly localNumerics = new Map<number, bigint>();
+  private readonly localNumericServerTicks = new Map<number, number>();
   private readonly inventoryItems = new Map<string, ItemSnapshot>();
   private readonly hotbarSlots = new Map<number, HotbarSlot>();
   private readonly itemUseInFlight = new Set<number>();
@@ -4081,6 +4085,7 @@ export class GameBootstrap3D extends Component {
     this.mindFlayBeam?.destroy();
     this.mindFlayBeam = undefined;
     this.localNumerics.clear();
+    this.localNumericServerTicks.clear();
     this.buffStateStore.Clear();
     this.inventoryItems.clear();
     this.playerGold = 0n;
@@ -4158,6 +4163,7 @@ export class GameBootstrap3D extends Component {
         this.playerOverheadHud.nameLabel.string = localEntity?.displayName || account;
       }
       this.localNumerics.clear();
+      this.localNumericServerTicks.clear();
       if (localEntity) this.ApplyLocalSnapshotNumerics(localEntity);
       this.updatePlayerStatsHud();
       this.playerSpeedMetersPerSecond = localEntity?.speedCellsPerSecond ?? this.playerSpeedMetersPerSecond;
@@ -4287,6 +4293,7 @@ export class GameBootstrap3D extends Component {
 
     const localEntity = enterMap.entities.find((entity) => entity.unitId === enterMap.unitId);
     this.localNumerics.clear();
+    this.localNumericServerTicks.clear();
     if (localEntity) this.ApplyLocalSnapshotNumerics(localEntity);
     if (this.playerOverheadHud?.nameLabel) this.playerOverheadHud.nameLabel.string = localEntity?.displayName || this.currentAccount;
     this.authoritativeFoot.set(enterMap.x, enterMap.y, enterMap.z);
@@ -4427,6 +4434,11 @@ export class GameBootstrap3D extends Component {
   ApplyEntityNumeric(message: G2C_EntityNumeric): void {
     for (const numeric of message.numerics) {
       if (numeric.unitId === this.localUnitId) {
+        if (numeric.numericType === NUMERIC_CURRENT_HP) {
+          const previousTick = this.localNumericServerTicks.get(numeric.numericType) ?? -1;
+          if (message.serverTick < previousTick) continue;
+          this.localNumericServerTicks.set(numeric.numericType, message.serverTick);
+        }
         const previousValue = this.localNumerics.get(numeric.numericType);
         this.localNumerics.set(numeric.numericType, numeric.value);
         // 本地玩家受伤仍用刀光作灰盒兜底；技能命中和弹道另由显式事件表现，正式客户端应按伤害事件区分资源。
@@ -4441,9 +4453,48 @@ export class GameBootstrap3D extends Component {
       }
       const remote = this.remotePlayers.get(numeric.unitId);
       if (!remote) continue;
+      if (numeric.numericType === NUMERIC_CURRENT_HP) {
+        const previousTick = remote.numericServerTicks.get(numeric.numericType) ?? -1;
+        if (message.serverTick < previousTick) continue;
+        remote.numericServerTicks.set(numeric.numericType, message.serverTick);
+      }
       remote.numerics.set(numeric.numericType, numeric.value);
       this.updateEntityOverheadHud(remote);
     }
+  }
+
+  /**
+   * 应用只发给战斗参与者的精确CurrentHp；serverTick防止迟到的1Hz AOI快照覆盖即时结果。
+   *
+   * Applies exact CurrentHp sent only to combat participants. serverTick keeps
+   * a late 1 Hz AOI snapshot from overwriting a newer immediate result.
+   */
+  ApplyCombatResult(message: G2C_CombatResult): void {
+    const targetUnitId = message.targetUnitId;
+    if (targetUnitId === this.localUnitId) {
+      const previousTick = this.localNumericServerTicks.get(NUMERIC_CURRENT_HP) ?? -1;
+      if (message.serverTick < previousTick) return;
+      const previousValue = this.localNumerics.get(NUMERIC_CURRENT_HP);
+      this.localNumericServerTicks.set(NUMERIC_CURRENT_HP, message.serverTick);
+      this.localNumerics.set(NUMERIC_CURRENT_HP, message.currentHp);
+      if (
+        message.resultType === COMBAT_RESULT_DAMAGE &&
+        previousValue !== undefined &&
+        message.currentHp < previousValue
+      ) {
+        this.playAttackSlashAtPlayer();
+      }
+      this.updatePlayerStatsHud();
+      return;
+    }
+
+    const remote = this.remotePlayers.get(targetUnitId);
+    if (!remote) return;
+    const previousTick = remote.numericServerTicks.get(NUMERIC_CURRENT_HP) ?? -1;
+    if (message.serverTick < previousTick) return;
+    remote.numericServerTicks.set(NUMERIC_CURRENT_HP, message.serverTick);
+    remote.numerics.set(NUMERIC_CURRENT_HP, message.currentHp);
+    this.updateEntityOverheadHud(remote);
   }
 
   /** 应用Unit alive状态；怪物死亡后保留尸体，直到服务端AOI Leave才删除。 / Applies Unit alive state and retains monster corpses until the server sends AOI Leave. */
@@ -5906,6 +5957,7 @@ export class GameBootstrap3D extends Component {
         shopEnabled: isShopNpcEntity(entity),
         alive: entity.alive,
         numerics: new Map(entity.numerics.map((numeric) => [numeric.numericType, numeric.value])),
+        numericServerTicks: new Map(entity.numerics.map((numeric) => [numeric.numericType, 0])),
         yaw: entity.yaw,
       };
       node.addChild(remote.selectionMarker);
@@ -5919,7 +5971,11 @@ export class GameBootstrap3D extends Component {
       remote.displayName = entityDisplayName(entity);
       remote.shopEnabled = isShopNpcEntity(entity);
       if (remote.overheadHud?.nameLabel) remote.overheadHud.nameLabel.string = remote.displayName;
-      for (const numeric of entity.numerics) remote.numerics.set(numeric.numericType, numeric.value);
+      for (const numeric of entity.numerics) {
+        if (remote.numericServerTicks.has(numeric.numericType)) continue;
+        remote.numerics.set(numeric.numericType, numeric.value);
+        remote.numericServerTicks.set(numeric.numericType, 0);
+      }
       if (!entity.alive) remote.visual?.SetMoving(false);
     }
     this.applyRemoteAlivePresentation(remote);
@@ -6089,6 +6145,7 @@ export class GameBootstrap3D extends Component {
     if (entity.unitId !== this.localUnitId) return;
     for (const numeric of entity.numerics) {
       this.localNumerics.set(numeric.numericType, numeric.value);
+      this.localNumericServerTicks.set(numeric.numericType, 0);
     }
     this.updatePlayerStatsHud();
   }

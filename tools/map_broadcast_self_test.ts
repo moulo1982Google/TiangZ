@@ -15,6 +15,7 @@ import { GateMessages } from "../app/generated/model/server/demo/protocol/messag
 import {
   G2C_BuffAddedCodec,
   G2C_BuffDetailCodec,
+  G2C_CombatResultCodec,
   G2C_EntityLeaveCodec,
   G2C_EntityMoveCodec,
   G2C_EntityNumericCodec,
@@ -90,6 +91,7 @@ async function main(): Promise<void> {
   await testLogicalAudienceSetOperations();
   await testClientBroadcastHidesPhysicalRoutes();
   await testBuffAudienceProjectionDoesNotLeakDetails();
+  await testCombatResultAudienceIsParticipantOnly();
   await testMapRouteResolverUsesLocalAndCachedRemoteRoutes();
   await testLatestSingleFlight();
   await testAutoAttackStateIsLatest();
@@ -146,6 +148,42 @@ async function testBuffAudienceProjectionDoesNotLeakDetails(): Promise<void> {
   assert.equal(G2C_BuffDetailCodec.decode(detailSend.frame.subarray(2)).buffs[0]?.absorbRemaining, 500);
   for (const send of transport.sends) send.resolve();
   await Promise.all([added, detail]);
+}
+
+async function testCombatResultAudienceIsParticipantOnly(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  const broadcast = new ClientBroadcast(hub, {
+    Resolve: (unitIds) => unitIds.map((recipientId) => ({ route: "Gate", recipientId })),
+  });
+  const delivery = broadcast.Publish(
+    ClientAudience.ForUnits("combat:target:attacker", [1001, 1002]),
+    ClientBroadcasts.CombatResult,
+    {
+      resultType: 1,
+      sourceUnitId: 1002,
+      targetUnitId: 9001,
+      requestedAmount: 50n,
+      effectiveAmount: 50n,
+      absorbedAmount: 0n,
+      currentHp: 150n,
+      damageSchool: 2,
+      abilityId: 3001,
+      killed: false,
+      serverTick: 7,
+    },
+    7,
+  );
+  assert.deepEqual(
+    transport.sends[0].audience.routes.map((route) => route.recipientId),
+    [1001, 1002],
+    "CombatResult must not add AOI bystanders to the participant audience",
+  );
+  const result = G2C_CombatResultCodec.decode(transport.sends[0].frame.subarray(2));
+  assert.equal(result.targetUnitId, 9001);
+  assert.equal(result.serverTick, 7);
+  transport.sends[0].resolve();
+  await delivery;
 }
 
 async function testLogicalAudienceSetOperations(): Promise<void> {

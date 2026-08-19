@@ -21,6 +21,7 @@ import {
   TimeSystem,
   type BuffTransferState,
   type HealingPlan,
+  type HealingResult,
   utf8Decode,
   utf8Encode,
 } from "#tiangz/model";
@@ -55,6 +56,7 @@ export interface ItemUseTransactionPlan {
 export interface ItemUseCommitResult {
   readonly response: M2C_UseItem;
   readonly inventoryChanged: boolean;
+  readonly healing?: HealingResult;
 }
 
 /**
@@ -192,16 +194,18 @@ export function ApplyItemUseTransaction(
   if (inventoryPlan) skill.CommitItemCooldownPlan(receipt.cooldown);
   else skill.ApplyCommittedItemCooldown(receipt.cooldown);
 
+  let healing: HealingResult | undefined;
   if (receipt.effect.kind === "heal") {
     const combat = unit.GetComponent(CombatComponent);
-    if (inventoryPlan) combat.CommitHealingPlan(receipt.effect.healing);
-    else combat.ApplyCommittedHealing(receipt.effect.healing);
+    healing = inventoryPlan
+      ? combat.CommitHealingPlan(receipt.effect.healing)
+      : combat.ApplyCommittedHealing(receipt.effect.healing);
   } else if (receipt.effect.kind === "numeric") {
     applyCommittedNumeric(unit, receipt.effect);
   } else {
     unit.GetComponent(BuffComponent).ApplyCommittedBuff(receipt.effect.buff);
   }
-  return { response: ResponseFromItemUseReceipt(unit, receipt), inventoryChanged };
+  return { response: ResponseFromItemUseReceipt(unit, receipt), inventoryChanged, healing };
 }
 
 /** 把事务回执转换为客户端原始响应；重复请求返回同一Item/Buff实例和冷却截止时间。 / Converts a receipt to the original client response with stable Item, Buff, and cooldown deadlines. */

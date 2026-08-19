@@ -13,6 +13,8 @@ import {
   G2C_BuffDetailCodec,
   G2C_BuffRemoved,
   G2C_BuffRemovedCodec,
+  G2C_CombatResult,
+  G2C_CombatResultCodec,
   G2C_DemoDoorState,
   G2C_DemoDoorStateCodec,
   G2C_EntityEnter,
@@ -199,6 +201,11 @@ export const ClientMessages = {
     msgcode: MsgCode.G2C_SkillImpact,
     codec: G2C_SkillImpactCodec,
   }),
+  CombatResult: defineMessage<G2C_CombatResult>({
+    name: "Client.CombatResult",
+    msgcode: MsgCode.G2C_CombatResult,
+    codec: G2C_CombatResultCodec,
+  }),
 };
 
 export const MapMessages = {
@@ -241,4 +248,5 @@ export const AllMessageDescriptors = [
   ClientMessages.SkillCastState,
   ClientMessages.SkillProjectile,
   ClientMessages.SkillImpact,
+  ClientMessages.CombatResult,
 ] as const;
