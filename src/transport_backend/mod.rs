@@ -37,6 +37,35 @@ pub(crate) struct ConnectionWriter {
 
 pub(crate) type ConnectionWriters = Arc<Mutex<HashMap<u64, ConnectionWriter>>>;
 
+/// 把宿主控制响应放入既有连接写队列，同时遵守每连接字节上限。
+/// Queues a host control response on an existing connection while preserving the per-connection
+/// byte bound.
+pub(crate) fn try_queue_connection_frame(
+    writer: &ConnectionWriter,
+    frame: Bytes,
+) -> std::result::Result<(), String> {
+    let frame_len = frame.len();
+    let queued = writer
+        .queued_bytes
+        .fetch_add(frame_len, std::sync::atomic::Ordering::Relaxed)
+        + frame_len;
+    if queued > CONNECTION_OUTBOUND_BYTE_CAPACITY {
+        writer
+            .queued_bytes
+            .fetch_sub(frame_len, std::sync::atomic::Ordering::Relaxed);
+        return Err("connection outbound byte queue is full".to_string());
+    }
+    match writer.sender.try_send(frame) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            writer
+                .queued_bytes
+                .fetch_sub(frame_len, std::sync::atomic::Ordering::Relaxed);
+            Err("connection outbound frame queue is full or stopped".to_string())
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConnectionKind {
     External,

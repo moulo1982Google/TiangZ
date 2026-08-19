@@ -104,6 +104,7 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) remote_transport_late_responses: u64,
     pub(crate) remote_transport_idle_closes: u64,
     pub(crate) remote_transport_overload_stages: Vec<TransportOverloadStageObservabilitySnapshot>,
+    pub(crate) remote_transport_diagnostics: Vec<TransportDiagnosticObservabilitySnapshot>,
     pub(crate) queue_depth: u64,
     pub(crate) queue_capacity: u64,
     pub(crate) queue_max_depth: u64,
@@ -119,6 +120,17 @@ pub(crate) struct ProcessObservabilitySnapshot {
 pub(crate) struct TransportOverloadStageObservabilitySnapshot {
     pub(crate) stage: String,
     pub(crate) rejections: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TransportDiagnosticObservabilitySnapshot {
+    pub(crate) msgcode: u16,
+    pub(crate) source: String,
+    pub(crate) target: String,
+    pub(crate) traffic: String,
+    pub(crate) stage: String,
+    pub(crate) overloads: u64,
+    pub(crate) timeouts: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -232,6 +244,16 @@ pub(crate) struct NativeDataObservabilitySnapshot {
     pub(crate) aoi_filter_overrides: u64,
     pub(crate) navigation_assets: u64,
     pub(crate) navigation_worlds: u64,
+    pub(crate) numeric_replication: Vec<NativeNumericReplicationObservabilitySnapshot>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct NativeNumericReplicationObservabilitySnapshot {
+    pub(crate) numeric_type: u32,
+    pub(crate) changes: u64,
+    pub(crate) encoded_records: u64,
+    pub(crate) recipient_deliveries: u64,
+    pub(crate) logical_bytes: u64,
 }
 
 impl ProcessHealthState {
@@ -1872,6 +1894,49 @@ fn append_process_metrics_prometheus(
     }
     writeln!(
         output,
+        "# HELP tiangz_transport_inner_overload_rejections_by_route_total Inner transport overload rejections by msgcode, source, target, traffic class, and queue stage"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_transport_inner_overload_rejections_by_route_total counter"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_transport_inner_timeouts_by_route_total Inner transport timeouts by msgcode, source, target, traffic class, and queue stage"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_transport_inner_timeouts_by_route_total counter"
+    )
+    .expect("formatting metric type");
+    for diagnostic in &snapshot.remote_transport_diagnostics {
+        let labels = format!(
+            "process=\"{}\",msgcode=\"{}\",source=\"{}\",target=\"{}\",traffic=\"{}\",stage=\"{}\"",
+            process_name,
+            diagnostic.msgcode,
+            escape_prometheus_label(&diagnostic.source),
+            escape_prometheus_label(&diagnostic.target),
+            escape_prometheus_label(&diagnostic.traffic),
+            escape_prometheus_label(&diagnostic.stage),
+        );
+        writeln!(
+            output,
+            "tiangz_transport_inner_overload_rejections_by_route_total{{{labels}}} {}",
+            diagnostic.overloads
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_transport_inner_timeouts_by_route_total{{{labels}}} {}",
+            diagnostic.timeouts
+        )
+        .expect("formatting metric");
+    }
+    writeln!(
+        output,
         "# HELP tiangz_transport_inner_timed_out_calls Total timed out inner scene RPC calls"
     )
     .expect("formatting metric help");
@@ -2658,6 +2723,51 @@ fn append_native_data_metrics_prometheus(
         process_name, snapshot.encoded_bytes
     )
     .expect("formatting metric");
+    for (name, help) in [
+        (
+            "tiangz_native_numeric_changes_total",
+            "Numeric value changes by Numeric type",
+        ),
+        (
+            "tiangz_native_numeric_encoded_records_total",
+            "Numeric records encoded into final audience groups by Numeric type",
+        ),
+        (
+            "tiangz_native_numeric_recipient_deliveries_total",
+            "Logical Numeric recipient deliveries by Numeric type",
+        ),
+        (
+            "tiangz_native_numeric_logical_bytes_total",
+            "Logical delivered Numeric item bytes by Numeric type excluding Gate envelopes",
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
+        writeln!(output, "# TYPE {name} counter").expect("formatting metric type");
+    }
+    for item in &snapshot.numeric_replication {
+        for (name, value) in [
+            ("tiangz_native_numeric_changes_total", item.changes),
+            (
+                "tiangz_native_numeric_encoded_records_total",
+                item.encoded_records,
+            ),
+            (
+                "tiangz_native_numeric_recipient_deliveries_total",
+                item.recipient_deliveries,
+            ),
+            (
+                "tiangz_native_numeric_logical_bytes_total",
+                item.logical_bytes,
+            ),
+        ] {
+            writeln!(
+                output,
+                "{name}{{process=\"{}\",numeric_type=\"{}\"}} {value}",
+                process_name, item.numeric_type
+            )
+            .expect("formatting metric");
+        }
+    }
     for (name, help, metric_type, value) in [
         (
             "tiangz_aoi_worlds",
@@ -2843,6 +2953,32 @@ mod tests {
         ));
         assert!(body.contains(
             "tiangz_process_queue_stage_backpressure_wait_ms_total{process=\"map1\",stage=\"frame\"} 4.500"
+        ));
+    }
+
+    #[test]
+    fn inner_transport_diagnostic_metrics_export_route_labels() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            remote_transport_diagnostics: vec![TransportDiagnosticObservabilitySnapshot {
+                msgcode: 1001,
+                source: "gate-1\"edge".to_string(),
+                target: "map-1".to_string(),
+                traffic: "call".to_string(),
+                stage: "manager_queue".to_string(),
+                overloads: 3,
+                timeouts: 2,
+            }],
+            ..ProcessObservabilitySnapshot::default()
+        });
+
+        let body = format_prometheus_metrics("process-1", &state);
+        assert!(body.contains(
+            "tiangz_transport_inner_overload_rejections_by_route_total{process=\"process-1\",msgcode=\"1001\",source=\"gate-1\\\"edge\",target=\"map-1\",traffic=\"call\",stage=\"manager_queue\"} 3"
+        ));
+        assert!(body.contains(
+            "tiangz_transport_inner_timeouts_by_route_total{process=\"process-1\",msgcode=\"1001\",source=\"gate-1\\\"edge\",target=\"map-1\",traffic=\"call\",stage=\"manager_queue\"} 2"
         ));
     }
 

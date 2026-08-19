@@ -639,7 +639,7 @@ const numeric = unit.GetComponent(NumericComponent);
 numeric[NumericType.CurrentHp] += 1n;
 ```
 
-Rust自动维护`NumericType -> i64`值与dirty表，TS使用`bigint`，业务字面量应写`1n`。`NumericComponentSystem.Awake`只遍历创建者传入的初始化字典，未传入的普通属性保持Rust默认值`0`；因此玩家、怪物、NPC的默认值应写在各自的创建流程，而不是塞回通用Numeric系统。初始化字典的类型别名不会随着Numeric字段增长而修改；普通属性和Base/Add/Pct来源可以写，`MaxHp`、`Attack`等1000..9999派生结果不能写，错误的key或非`bigint`值会在创建时失败。`1..999`是普通属性；`1000..9999`是只读派生结果；结果编号乘10后加`1/2/3`分别表示Base/Add/Pct。Rust只识别编号关系，不重复维护业务枚举。当前`CurrentHp=1`、`CurrentMp=2`、`MaxHp=1000`、`Attack=2000`、`AttackSpeed=2001`、`MoveSpeed=3000`，对应来源按结果编号乘10加`1/2/3`生成，公式为`(Base+Add)*(100+Pct)/100`。`AttackSpeed`表示每次攻击间隔毫秒，`MoveSpeed`的Numeric单位是毫米/秒，配置表仍填写米/秒。写来源时Rust先计算后原子提交，来源和变化后的结果分别标脏；直接写派生结果会被拒绝。新增同类属性只改TS编号，复杂跨属性公式应写独立Rust领域op。Numeric协议使用`int64`，FrameFlush按`(unitId, numericType)`合并。
+Rust自动维护`NumericType -> i64`值与dirty表，TS使用`bigint`，业务字面量应写`1n`。`NumericComponentSystem.Awake`只遍历创建者传入的初始化字典，未传入的普通属性保持Rust默认值`0`；因此玩家、怪物、NPC的默认值应写在各自的创建流程，而不是塞回通用Numeric系统。初始化字典的类型别名不会随着Numeric字段增长而修改；普通属性和Base/Add/Pct来源可以写，`MaxHp`、`Attack`等1000..9999派生结果不能写，错误的key或非`bigint`值会在创建时失败。`1..999`是普通属性；`1000..9999`是只读派生结果；结果编号乘10后加`1/2/3`分别表示Base/Add/Pct。Rust只识别编号关系，不重复维护业务枚举。当前`CurrentHp=1`、`CurrentMp=2`、`MaxHp=1000`、`Attack=2000`、`AttackSpeed=2001`、`MoveSpeed=3000`，对应来源按结果编号乘10加`1/2/3`生成，公式为`(Base+Add)*(100+Pct)/100`。`AttackSpeed`表示每次攻击间隔毫秒，`MoveSpeed`的Numeric单位是毫米/秒，配置表仍填写米/秒。写来源时Rust先计算后原子提交，来源和变化后的结果分别标脏；直接写派生结果会被拒绝。新增同类属性只改TS编号，复杂跨属性公式应写独立Rust领域op。Numeric协议使用`int64`，FrameFlush按`(unitId, numericType)`合并。复制可见性默认Owner-only；只有`NumericReplication.ts`白名单中的公开类型进入AOI受众，当前公开`CurrentHp/MaxHp/Level`。新增Numeric时必须先判断其他玩家是否确实需要它，不能为了省事把MP、经验、攻击或Base/Add/Pct来源加入公开列表。AOI进入快照与增量使用同一公开投影，Owner登录/重连快照保留全量值。
 
 玩家初始魔法值由冷配置`PlayerConfig.initial_mp/max_mp`共同决定当前值和上限；当前演示模板两者均为`200`，因此新玩家进入地图时显示`200/200`，不要在创建逻辑中另写一套默认值。
 
@@ -816,7 +816,11 @@ await Promise.all([
 - event队列满必须显式失败，不能静默丢弃。
 - AOI已经接管Movement、Numeric和Unit固定字段的接收者选择；新增业务广播必须选择明确Audience，不能重新构造全地图玩家列表。
 
-通用广播不会把多个Encoded Audience逐组跨进程发送。`BroadcastHub`通过Transport的`SendMany`提交逻辑作业，`SceneBroadcastTransport`在同一同步Game Tick内按Gate合并；批量元素仍保持独立客户端frame边界，Gate只完成Unit到connection的路由与下行扇出。Movement热路径更进一步：Rust AOI在Attach时记录框架分配的紧凑delivery route，帧尾直接生成每个Gate的完整内网批帧，TS只做至多Gate数量的routeId到Scene映射并原样发送。业务不得分配routeId、调用`MapTakeMovementAoiRouteFrames`、`SceneMessageHelper.sendFrame`，或直接构造`S2G_ClientBroadcastBatch`。Numeric、UnitState和即时不可覆盖Event仍走通用路径；不能为了追求“一Tick一包”而延迟战斗事件或把多个客户端msgcode拼成私有payload。
+通用广播不会把多个Encoded Audience逐组跨进程发送。`BroadcastHub`通过Transport的`SendMany`提交latest状态和不可覆盖Event，`SceneBroadcastTransport`在同一同步Game Tick内按Gate合并；批量元素仍保持独立客户端frame边界，Gate只完成Unit到connection的路由与下行扇出。Movement和Numeric热路径更进一步：Rust AOI在Attach时记录框架分配的紧凑delivery route，帧尾直接生成每个Gate的完整内网批帧，TS只做至多Gate数量的routeId到Scene映射并原样发送。Numeric按Owner私有、AOI高频战斗值和AOI低频静态值拆成独立latest源；当前`CurrentHp`的服务端恢复仍按10Hz精确计算，客户端公开状态合并为5Hz，死亡/复活跨0变化立即发送，`Level/MaxHp`仅在真实变化时发送。每个源在全部路由帧成功后只按自己的筛选策略Ack，不能清掉其他类型的dirty。业务不得分配routeId、调用任何`*AoiRouteFrames` Native op、调用`SceneMessageHelper.sendFrame`，或直接构造`S2G_ClientBroadcastBatch`。UnitState和即时不可覆盖Event仍走通用路径；不能为了追求“一Tick一包”而延迟技能、Buff、道具、伤害等可靠事件，或把多个客户端msgcode拼成私有payload。
+
+跨进程Transport的call与send流拥有独立保留容量和公平调度；目标Process入口也把`eventQueueCapacity`按1:3划分为控制流与数据流，内部RPC、断线和Host completion走控制流，内部单向帧走数据流，每连续32个控制事件至少调度一个数据事件。业务不应自行扩大队列或依赖重试风暴；收到`SystemErrCode.SceneOverloaded`时立即结束当前业务请求并向客户端返回明确业务错误，不能把它包装成普通超时。目标控制入口队满时Rust宿主会按原`rpcId`立即返回过载，来源进程不会继续占用pending waiter；单向广播本来就不占用RPC pending waiter。Disconnect可能先于旧数据帧到达TS，Core会用30秒有界墓碑丢弃该连接残留帧并增加`connection_ingress.dropped_frames_after_disconnect_total`；业务Handler不需要也不允许把这种宿主顺序修复成ActorLocation重试。排查过载或超时时查看按msgcode、source、target、traffic和queue stage细分的`/metrics`指标，并同时检查`queueStages.control_ingress/data_ingress`，不要只看聚合`frame`深度。
+
+对“同一玩家较新的输入可以完全替代旧输入”的ActorLocation单向协议，可以声明`// @ets.msg ... forwarding=latest`。Core会在Gate按`connectionId + msgcode`合并20ms窗口，并按目标Scene批量跨进程转发；Map解包后仍逐条进入目标Unit mailbox。它适合移动意图，不适合RPC、技能释放、道具使用、背包变化、交易和伤害事件。代码生成会拒绝把该策略放到RPC或非ActorLocation协议上；业务不得手写Core批量msgcode。压测和线上诊断查看`actor_latest_forward`的输入、覆盖、转发、批次、失败和丢弃计数。
 
 ## 定时器和Update
 
@@ -909,6 +913,8 @@ DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS�
 
 普通Unit进入/离开视野也不由业务逐个发送。框架把同一帧、相同受众的不可覆盖变化合成`G2C_AoiDelta`，客户端SDK的Handler负责遍历`enters/leaves`。新增Buff、任务摘要等领域可见事件时，应先判断它属于Unit整体Snapshot、独立不可覆盖Event还是可覆盖状态；不得把业务字段塞进通用AOI Delta，也不得恢复逐关系`Publish`。
 
+同一批次内重复的`ObserverId + SubjectId`关系只发布最后状态，并保持首次出现顺序；Enter→Leave或Leave→Enter的中间状态会被丢弃。这个规则只适用于尚未发布的AOI空间关系，不能用于掉落、伤害、奖励、背包变化等不可覆盖事实；显式Invalidate的返回值仍必须交给`MapComponent.PublishVisibilityChanges`。
+
 阵营、隐身、位面等规则实现同步过滤器：
 
 ```ts
@@ -932,7 +938,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 同一Tick放行的玩家会先统一完成AOI Attach，再准备初始实体快照。生产进入流程中，`EnterMap`只返回小型进入信息；客户端创建地图对象并注册`G2C_AoiDelta`监听后调用生成SDK中的`GateClient.mapSnapshotReady({ unitId })`，框架随后通过已有广播接口发送初始`AoiDelta`。业务不应手写Gate路由，也不应把初始实体数组重新塞回EnterMap。快照暂存由`MapComponent`管理，玩家移除和地图销毁自动清理。`player_entry_snapshot_items_total`是逻辑发送条数，不能拿它直接当成对象分配数；性能分析还要看`player_entry_snapshot_materialized_items_total`和复用命中指标。不要为了追求更高进图吞吐直接把`entryPlayersPerTick`调大，必须通过分批A/B同时观察Map CPU、初始AoiDelta下行队列和Loading时延。
 
-当前Demo正式值是每Tick `1`人。3000人A/B表明`4`可以作为后续复测候选，但`8/16`会显著增加广播pending和Location确认延迟。业务开发者不得在Hotfix中动态修改该值，也不得只根据平均Loading时间调整；修改Cold表后必须完整重启，并至少验证完整`full`语义、队列峰值、Location延迟、Gate下行、错误和长窗口稳态CPU。
+当前Starter地图正式值是每Tick `2`人，其他地图以各自`MapConfig`为准。业务开发者不得在Hotfix中动态修改该值，也不得只根据平均Loading时间调整；修改Cold表后必须完整重启，并至少验证完整`full`语义、队列峰值、Location延迟、Gate下行、错误和长窗口稳态CPU。
 
 这套机制只处理同一地图瞬时进入洪峰。它不检查区服总人数，不显示排队名次，不保证某张地图适合继续接收玩家，也不代替副本分配和MapHost容量规划。业务仍只调用统一传送入口，不为静态地图、动态副本、同进程或跨进程分别写节流代码。
 

@@ -15,11 +15,13 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use super::{
     CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriter, EndpointContext,
     IoBackend, MAX_FRAME_LEN, MAX_INNER_TOKEN_LEN, WRITE_BATCH_BYTE_CAPACITY,
-    WRITE_BATCH_FRAME_CAPACITY, validate_frame_access,
+    WRITE_BATCH_FRAME_CAPACITY, try_queue_connection_frame, validate_frame_access,
 };
 use crate::config::EndpointProtocol;
-use crate::process::ProcessEvent;
-use crate::transport::{INNER_HANDSHAKE_MAGIC, inner_token};
+use crate::process::{ProcessEvent, ProcessIngressTrySendError};
+use crate::transport::{
+    INNER_HANDSHAKE_MAGIC, build_target_ingress_overload, inner_frame_rpc_id, inner_token,
+};
 
 pub(crate) struct EpollIoBackend;
 
@@ -136,17 +138,15 @@ async fn handle_raw_tcp_connection(
     let queued_bytes = Arc::new(AtomicUsize::new(0));
     let writer_queued_bytes = Arc::clone(&queued_bytes);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let connection_writer = ConnectionWriter {
+        sender: write_tx,
+        queued_bytes,
+        shutdown_tx: shutdown_tx.clone(),
+    };
     writers
         .lock()
         .expect("connection writer map poisoned")
-        .insert(
-            connection_id,
-            ConnectionWriter {
-                sender: write_tx,
-                queued_bytes,
-                shutdown_tx: shutdown_tx.clone(),
-            },
-        );
+        .insert(connection_id, connection_writer.clone());
 
     let mut writer_shutdown = shutdown_rx.clone();
     let writer_shutdown_tx = shutdown_tx.clone();
@@ -217,15 +217,38 @@ async fn handle_raw_tcp_connection(
         };
         validate_frame_access(connection_kind, &frame)?;
         stats.transport_read_completed(1, frame.len() + 4);
+        let rpc_id = (connection_kind == ConnectionKind::Internal)
+            .then(|| inner_frame_rpc_id(&frame))
+            .flatten();
+        let event = ProcessEvent::Frame {
+            scene_index,
+            connection_id,
+            frame: frame.into(),
+        };
+        if let Some(rpc_id) = rpc_id {
+            match event_tx.try_send_control(event) {
+                Ok(()) => continue,
+                Err(ProcessIngressTrySendError::Overloaded) => {
+                    try_queue_connection_frame(
+                        &connection_writer,
+                        build_target_ingress_overload(rpc_id),
+                    )
+                    .map_err(anyhow::Error::msg)?;
+                    tracing::warn!(
+                        target: "tiangz::transport",
+                        connection_id,
+                        rpc_id,
+                        "rejected inner RPC because target control ingress queue is full"
+                    );
+                    continue;
+                }
+                Err(ProcessIngressTrySendError::Stopped) => {
+                    return Err(anyhow::anyhow!("process event queue is stopped"));
+                }
+            }
+        }
         event_tx
-            .send(
-                ProcessEvent::Frame {
-                    scene_index,
-                    connection_id,
-                    frame: frame.into(),
-                },
-                None,
-            )
+            .send(event, None)
             .await
             .map_err(anyhow::Error::msg)?;
     }

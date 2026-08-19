@@ -618,7 +618,19 @@ impl AoiWorld {
     /// 按最终可见受众聚合普通脏状态。该入口不节流，适合 Numeric 等由上层决定频率的数据源。
     /// Groups ordinary dirty state by final visible audiences without applying sync-tier throttling.
     pub(crate) fn delivery_groups(&self, subject_ids: &[u32]) -> Vec<(Vec<u32>, Vec<usize>)> {
-        self.delivery_groups_impl(subject_ids, None, 0)
+        self.delivery_groups_impl(subject_ids, None, None, 0)
+    }
+
+    /// 按条目选择仅Owner或最终AOI受众；用于Numeric等同时包含公开与私有字段的状态源。
+    /// Selects owner-only or final AOI delivery per item for state sources that mix public and
+    /// private fields, such as Numeric replication.
+    pub(crate) fn visibility_delivery_groups(
+        &self,
+        subject_ids: &[u32],
+        owner_only: &[bool],
+    ) -> Vec<(Vec<u32>, Vec<usize>)> {
+        debug_assert_eq!(subject_ids.len(), owner_only.len());
+        self.delivery_groups_impl(subject_ids, Some(owner_only), None, 0)
     }
 
     /// 对可覆盖移动状态应用独立同步档位；`force` 用于开始、停止、转向等不可延后的状态切换。
@@ -630,7 +642,7 @@ impl AoiWorld {
         server_tick: u32,
     ) -> Vec<(Vec<u32>, Vec<usize>)> {
         debug_assert_eq!(subject_ids.len(), force.len());
-        self.delivery_groups_impl(subject_ids, Some(force), server_tick)
+        self.delivery_groups_impl(subject_ids, None, Some(force), server_tick)
     }
 
     pub(crate) fn peek_changes(&self) -> Vec<VisibilityChange> {
@@ -646,6 +658,7 @@ impl AoiWorld {
     fn delivery_groups_impl(
         &self,
         subject_ids: &[u32],
+        owner_only: Option<&[bool]>,
         force: Option<&[bool]>,
         server_tick: u32,
     ) -> Vec<(Vec<u32>, Vec<usize>)> {
@@ -662,6 +675,13 @@ impl AoiWorld {
             };
             let entry = self.entries[entity_index].as_ref().unwrap();
             if !entry.subject {
+                continue;
+            }
+            if owner_only.is_some_and(|values| values[index]) {
+                if !entry.observer {
+                    continue;
+                }
+                by_audience.entry(vec![subject_id]).or_default().push(index);
                 continue;
             }
             let forced = force.is_none_or(|values| values[index]);
@@ -1226,6 +1246,27 @@ mod tests {
         assert_eq!(
             world.delivery_groups(&subjects),
             vec![((1..=100).collect(), (0..100).collect())]
+        );
+    }
+
+    #[test]
+    fn private_delivery_reaches_only_each_subject_owner() {
+        let mut world = world();
+        for unit_id in 1..=3 {
+            world
+                .attach_routed(unit_id, 0.0, 0.0, true, true, unit_id)
+                .unwrap();
+        }
+        world.attach_routed(4, 0.0, 0.0, false, true, 0).unwrap();
+        world.take_changes();
+
+        assert_eq!(
+            world.visibility_delivery_groups(&[1, 2, 3, 4], &[false, true, true, true]),
+            vec![
+                (vec![1, 2, 3], vec![0]),
+                (vec![2], vec![1]),
+                (vec![3], vec![2]),
+            ]
         );
     }
 

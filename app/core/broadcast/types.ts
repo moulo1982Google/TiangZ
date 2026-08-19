@@ -57,12 +57,13 @@ export interface BroadcastTransport {
   Send(audience: BroadcastAudience, frame: Uint8Array): Promise<void>;
 
   /**
-   * 将同一逻辑作业中的多组已编码帧一次性交给Transport；实现可继续按物理路由重组。
-   * 未实现时BroadcastHub会兼容回退到逐组Send，不改变自定义Transport的既有行为。
+   * 将一个或多个已编码帧一次性交给Transport；实现可按物理路由重组同一同步调度边界内的作业。
+   * 未实现时BroadcastHub会回退到逐组Send，不改变自定义Transport的既有行为。
    *
-   * Hands all encoded groups from one logical job to the transport at once so
-   * it can regroup them by physical route. BroadcastHub falls back to Send
-   * when a custom transport does not implement this optional capability.
+   * Hands one or more encoded frames to the transport so it can regroup jobs
+   * from the same synchronous scheduling boundary by physical route. The
+   * BroadcastHub falls back to Send when a custom transport does not implement
+   * this optional capability.
    */
   SendMany?(batches: readonly EncodedAudienceBatch[]): Promise<void>;
 

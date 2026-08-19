@@ -46,6 +46,7 @@ export type {
   IRequest,
   IResponse,
   MessageDescriptor,
+  MessageForwardingPolicy,
   MessageRouting,
   TransferRoutingPolicy,
 } from "./protocol/message";

@@ -171,7 +171,7 @@ message G2C_MapSnapshotReady // IResponse
   bool demo_door_closed = 1;
 }
 
-// @ets.msg protocol=Map method=Move duringTransfer=drop
+// @ets.msg protocol=Map method=Move duringTransfer=drop forwarding=latest
 message C2M_Move // IActorLocationMessage
 {
   sint32 input_x = 1;

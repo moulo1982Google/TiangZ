@@ -3,6 +3,11 @@ import type { SceneConfig } from "./types";
 
 export const ActorLocationEnvelopeMsgCode = 29_999;
 export const ActorLocationEnvelopeHeaderBytes = 14;
+export const ActorLocationBatchEnvelopeMsgCode = 29_997;
+const ActorLocationBatchEnvelopeHeaderBytes = 6;
+const ActorLocationBatchEntryHeaderBytes = 12;
+const MaxActorLocationBatchEntries = 4096;
+const MaxActorLocationBatchBytes = 1024 * 1024;
 
 export interface ActorLocationTarget {
   instanceId: number;
@@ -13,6 +18,11 @@ export interface ActorLocationEnvelope {
   instanceId: number;
   frame: Uint8Array;
   rpcId?: number;
+}
+
+export interface ActorLocationBatchEntry {
+  readonly instanceId: number;
+  readonly frame: Uint8Array;
 }
 
 export class ActorLocationDirectory {
@@ -99,6 +109,86 @@ export function readActorLocationInstanceId(frame: Uint8Array): number {
     throw new Error(`invalid actor instanceId: ${rawInstanceId}`);
   }
   return Number(rawInstanceId);
+}
+
+/** 把同一目标Scene的一组可覆盖Actor消息编码成单个内部帧；每个内帧在目标端仍进入原Actor mailbox。 / Encodes replaceable Actor messages for one target Scene into one inner frame; every nested frame still enters its original Actor mailbox on the target. */
+export function encodeActorLocationBatchEnvelope(
+  entries: readonly ActorLocationBatchEntry[],
+): Uint8Array {
+  if (entries.length === 0 || entries.length > MaxActorLocationBatchEntries) {
+    throw new Error(`invalid actor location batch entry count: ${entries.length}`);
+  }
+  let byteLength = ActorLocationBatchEnvelopeHeaderBytes;
+  for (const entry of entries) {
+    requireActorLocationBatchEntry(entry);
+    byteLength += ActorLocationBatchEntryHeaderBytes + entry.frame.byteLength;
+    if (byteLength > MaxActorLocationBatchBytes) {
+      throw new Error(`actor location batch exceeds ${MaxActorLocationBatchBytes} bytes`);
+    }
+  }
+
+  const result = new Uint8Array(byteLength);
+  const view = new DataView(result.buffer);
+  view.setUint16(0, ActorLocationBatchEnvelopeMsgCode, false);
+  view.setUint32(2, entries.length, true);
+  let offset = ActorLocationBatchEnvelopeHeaderBytes;
+  for (const entry of entries) {
+    view.setBigUint64(offset, BigInt(entry.instanceId), true);
+    view.setUint32(offset + 8, entry.frame.byteLength, true);
+    offset += ActorLocationBatchEntryHeaderBytes;
+    result.set(entry.frame, offset);
+    offset += entry.frame.byteLength;
+  }
+  return result;
+}
+
+/** 零复制遍历批量Actor信封；回调得到的frame只在当前宿主帧生命周期内有效。 / Iterates an Actor batch without copying; callback frame views are valid only for the current host frame lifetime. */
+export function forEachActorLocationBatchEntry(
+  batch: Uint8Array,
+  visit: (entry: ActorLocationBatchEntry) => void,
+): void {
+  if (
+    batch.byteLength < ActorLocationBatchEnvelopeHeaderBytes ||
+    readU16BE(batch, 0) !== ActorLocationBatchEnvelopeMsgCode
+  ) {
+    throw new Error("invalid actor location batch envelope header");
+  }
+  if (batch.byteLength > MaxActorLocationBatchBytes) {
+    throw new Error(`actor location batch exceeds ${MaxActorLocationBatchBytes} bytes`);
+  }
+  const view = new DataView(batch.buffer, batch.byteOffset, batch.byteLength);
+  const count = view.getUint32(2, true);
+  if (count === 0 || count > MaxActorLocationBatchEntries) {
+    throw new Error(`invalid actor location batch entry count: ${count}`);
+  }
+  let offset = ActorLocationBatchEnvelopeHeaderBytes;
+  for (let index = 0; index < count; index += 1) {
+    if (offset + ActorLocationBatchEntryHeaderBytes > batch.byteLength) {
+      throw new Error(`actor location batch entry ${index} header is truncated`);
+    }
+    const rawInstanceId = view.getBigUint64(offset, true);
+    const frameLength = view.getUint32(offset + 8, true);
+    offset += ActorLocationBatchEntryHeaderBytes;
+    if (rawInstanceId === 0n || rawInstanceId > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`invalid actor location batch instanceId: ${rawInstanceId}`);
+    }
+    if (frameLength < 2 || offset + frameLength > batch.byteLength) {
+      throw new Error(`actor location batch entry ${index} frame is truncated`);
+    }
+    visit({
+      instanceId: Number(rawInstanceId),
+      frame: batch.subarray(offset, offset + frameLength),
+    });
+    offset += frameLength;
+  }
+  if (offset !== batch.byteLength) throw new Error("actor location batch has trailing bytes");
+}
+
+function requireActorLocationBatchEntry(entry: ActorLocationBatchEntry): void {
+  if (!Number.isSafeInteger(entry.instanceId) || entry.instanceId <= 0) {
+    throw new Error(`invalid actor location batch instanceId: ${entry.instanceId}`);
+  }
+  if (entry.frame.byteLength < 2) throw new Error("actor location batch frame is too short");
 }
 
 /** 不解码业务请求，仅扫描 protobuf payload 的 90 号字段。 / Scans protobuf payload field 90 without decoding the business request. */

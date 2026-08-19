@@ -67,6 +67,8 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   protected override OnDestroy(): void {
     this.activeCasterUnitIds.clear();
     this.projectiles.clear();
+    this.pendingPublishes.clear();
+    this.publishDrainActive = false;
     this.skillCatalogDefinitions = undefined;
     this.skillCatalogFingerprint = "";
   }
@@ -523,7 +525,35 @@ export class SkillMapComponentSystem extends SkillMapComponent {
   }
 
   private spawnPublish(name: string, publish: () => Promise<void>): void {
-    this.DomainScene().Tasks.Spawn(name, publish);
+    let delivery: Promise<void>;
+    try {
+      delivery = publish();
+    } catch (error) {
+      this.DomainScene().logger.error("skill state publish failed", { name, error });
+      return;
+    }
+    const tracked = Promise.resolve(delivery).catch((error) => {
+      this.DomainScene().logger.error("skill state publish failed", { name, error });
+    });
+    this.pendingPublishes.add(tracked);
+    void tracked.finally(() => this.pendingPublishes.delete(tracked));
+    if (this.publishDrainActive) return;
+
+    this.publishDrainActive = true;
+    try {
+      this.DomainScene().Tasks.Spawn("publish-skill-state-drain", async ({ signal }) => {
+        try {
+          while (!signal.aborted && this.pendingPublishes.size > 0) {
+            await Promise.all([...this.pendingPublishes]);
+          }
+        } finally {
+          this.publishDrainActive = false;
+        }
+      });
+    } catch (error) {
+      this.publishDrainActive = false;
+      this.DomainScene().logger.error("skill state publish drain failed to start", { error });
+    }
   }
 
   private requireCaster(caster: PlayerUnit): void {

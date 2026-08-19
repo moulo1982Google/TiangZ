@@ -6,6 +6,7 @@ import {
   type BroadcastAudience,
   type BroadcastTransport,
   type EncodedAudienceBatch,
+  type EncodedRouteFrame,
 } from "../app/core/broadcast";
 import { readU16BE } from "../app/core/protocol/binary";
 import { ClientBroadcasts } from "../app/generated/model/server/demo/protocol/broadcastDescriptors";
@@ -58,6 +59,22 @@ class ControlledBatchTransport extends ControlledTransport {
   }
 }
 
+interface ControlledRouteSend {
+  readonly frames: readonly EncodedRouteFrame[];
+  resolve(): void;
+  reject(error: Error): void;
+}
+
+class ControlledRouteTransport extends ControlledTransport {
+  readonly routeSends: ControlledRouteSend[] = [];
+
+  SendRouteFrames(frames: readonly EncodedRouteFrame[]): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.routeSends.push({ frames, resolve, reject });
+    });
+  }
+}
+
 const audience: BroadcastAudience = {
   key: "map:1",
   routes: [
@@ -77,9 +94,11 @@ async function main(): Promise<void> {
   await testEncodedLatestSnapshot();
   await testEncodedAoiBatchesSingleFlight();
   await testEncodedAoiBatchesUseTransportBatch();
+  await testEventUsesTransportBatch();
   await testSceneTransportCoalescesJobsByGate();
   await testReplicationAckOnlyAfterSuccessfulSend();
   await testBatchedReplicationAckAfterEveryAudience();
+  await testRoutedReplicationAckAfterRouteDelivery();
   await testEventOrderingAndCapacity();
   console.log("broadcast framework self-test passed");
 }
@@ -259,6 +278,29 @@ async function testEncodedAoiBatchesUseTransportBatch(): Promise<void> {
   assert.equal(hub.Snapshot().sentItems, 3);
 }
 
+async function testEventUsesTransportBatch(): Promise<void> {
+  const transport = new ControlledBatchTransport();
+  const hub = new BroadcastHub(transport);
+  const delivery = hub.Publish(
+    audience,
+    ClientBroadcasts.EntityLeave,
+    { unitId: 77 },
+  );
+
+  assert.equal(transport.sends.length, 0, "event broadcasts should use the batch-capable transport");
+  assert.equal(transport.batchSends.length, 1);
+  assert.equal(transport.batchSends[0].batches.length, 1);
+  assert.equal(transport.batchSends[0].batches[0].itemCount, 1);
+  assert.equal(
+    readU16BE(transport.batchSends[0].batches[0].frame, 0),
+    MsgCode.G2C_EntityLeave,
+  );
+
+  transport.batchSends[0].resolve();
+  await delivery;
+  assert.equal(hub.Snapshot().sentItems, 1);
+}
+
 async function testEncodedAoiBatchesSingleFlight(): Promise<void> {
   const transport = new ControlledTransport();
   const hub = new BroadcastHub(transport);
@@ -318,6 +360,35 @@ async function testBatchedReplicationAckAfterEveryAudience(): Promise<void> {
   transport.sends[1].resolve();
   await settlePromises();
   assert.equal(acknowledged, 1);
+}
+
+async function testRoutedReplicationAckAfterRouteDelivery(): Promise<void> {
+  const transport = new ControlledRouteTransport();
+  const hub = new BroadcastHub(transport);
+  let acknowledged = 0;
+  const replication = new StateReplicationSystem(hub, () => audience);
+  replication.Add({
+    name: "Client.RoutedState",
+    Peek: () => ({
+      itemCount: 2,
+      audienceKey: "map:1:aoi",
+      routeFrames: [
+        { route: "Gate1", frame: Uint8Array.from([0x4e, 0x2a, 1]) },
+        { route: "Gate2", frame: Uint8Array.from([0x4e, 0x2a, 2]) },
+      ],
+      Ack: () => { acknowledged += 1; },
+    }),
+  });
+
+  replication.FrameFlush();
+  await settlePromises();
+  assert.equal(transport.sends.length, 0);
+  assert.equal(transport.routeSends.length, 1);
+  assert.equal(transport.routeSends[0].frames.length, 2);
+  assert.equal(acknowledged, 0);
+  transport.routeSends[0].resolve();
+  await settlePromises();
+  assert.equal(acknowledged, 1, "routed state must acknowledge only after route delivery");
 }
 
 async function testReplicationAckOnlyAfterSuccessfulSend(): Promise<void> {

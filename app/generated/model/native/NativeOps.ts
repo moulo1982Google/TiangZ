@@ -33,6 +33,7 @@ export interface NativeHostOpsApi {
   aoiVisibleObservers(mapId: number, subjectId: number): Uint8Array;
   mapPeekNumericDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapPeekNumericAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
+  mapPeekNumericAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number, aoiVisibleTypes: Uint8Array, selectedTypes: Uint8Array, selectionMode: number, publishDue: boolean): Uint8Array;
   mapAckNumericDelta(mapId: number, revision: Uint8Array): void;
   mapPeekUnitDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
   mapPeekUnitAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array;
@@ -201,6 +202,10 @@ export class NativeOps {
 
   static MapPeekNumericAoiDelta(mapId: number, serverTick: number, messageCode: number): Uint8Array {
     return nativeHostOps().mapPeekNumericAoiDelta(mapId, serverTick, messageCode);
+  }
+
+  static MapPeekNumericAoiRouteFrames(mapId: number, serverTick: number, clientMessageCode: number, routeMessageCode: number, aoiVisibleTypes: Uint8Array, selectedTypes: Uint8Array, selectionMode: number, publishDue: boolean): Uint8Array {
+    return nativeHostOps().mapPeekNumericAoiRouteFrames(mapId, serverTick, clientMessageCode, routeMessageCode, aoiVisibleTypes, selectedTypes, selectionMode, publishDue);
   }
 
   static MapAckNumericDelta(mapId: number, revision: Uint8Array): void {

@@ -24,7 +24,7 @@ use crate::health::{
     MailboxObservabilitySnapshot, NativeDataObservabilitySnapshot, ProcessHealthState,
     ProcessObservabilitySnapshot, ProcessQueueStageObservabilitySnapshot, SceneCustomMetricKind,
     SceneCustomMetricSnapshot, SceneObservabilitySnapshot,
-    TransportOverloadStageObservabilitySnapshot,
+    TransportDiagnosticObservabilitySnapshot, TransportOverloadStageObservabilitySnapshot,
 };
 use crate::host::{
     BinaryOutboundBatch, HostSceneCompletion, call_js_install_game_config,
@@ -45,6 +45,8 @@ use crate::transport_backend::{
 use crate::transport_backend::{ConnectionKind, ConnectionWriter, validate_frame_access};
 
 const DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
+const PROCESS_CONTROL_QUEUE_DIVISOR: usize = 4;
+const MAX_CONSECUTIVE_CONTROL_EVENTS: usize = 32;
 const EVENT_HEADER_BYTES: usize = 13;
 const BACKPRESSURE_RETRY_MS: u64 = 1;
 
@@ -115,6 +117,26 @@ pub(crate) enum ProcessEvent {
     Shutdown,
 }
 
+/// 进程入口的物理调度类别；它只决定保留容量和取队公平性，不改变Scene/Actor业务语义。
+/// Physical process-ingress scheduling class. It controls reserved capacity and dequeue fairness,
+/// but does not change Scene or Actor business semantics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProcessIngressClass {
+    Control,
+    Data,
+}
+
+impl ProcessIngressClass {
+    const ALL: [Self; 2] = [Self::Control, Self::Data];
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Control => "control_ingress",
+            Self::Data => "data_ingress",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 enum ProcessEventKind {
     Frame,
@@ -148,6 +170,18 @@ impl ProcessEvent {
             Self::HostSceneCompletion(_) => ProcessEventKind::Completion,
             Self::Disconnect { .. } => ProcessEventKind::Disconnect,
             Self::Shutdown => ProcessEventKind::Shutdown,
+        }
+    }
+
+    fn ingress_class(&self) -> ProcessIngressClass {
+        match self {
+            Self::Frame { frame, .. } if crate::transport::inner_frame_rpc_id(frame).is_none() => {
+                ProcessIngressClass::Data
+            }
+            Self::Frame { .. }
+            | Self::Disconnect { .. }
+            | Self::HostSceneCompletion(_)
+            | Self::Shutdown => ProcessIngressClass::Control,
         }
     }
 }
@@ -253,6 +287,18 @@ struct NativeDataMetricsSnapshot {
     navigation_assets: u32,
     #[serde(default)]
     navigation_worlds: u32,
+    #[serde(default)]
+    numeric_replication: Vec<NativeNumericReplicationMetricsSnapshot>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeNumericReplicationMetricsSnapshot {
+    numeric_type: u32,
+    changes: u64,
+    encoded_records: u64,
+    recipient_deliveries: u64,
+    logical_bytes: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -418,6 +464,8 @@ pub(crate) struct ProcessQueueStats {
     completion: ProcessQueueStageStats,
     disconnect: ProcessQueueStageStats,
     shutdown: ProcessQueueStageStats,
+    control_ingress: ProcessQueueStageStats,
+    data_ingress: ProcessQueueStageStats,
 }
 
 #[derive(Default)]
@@ -457,6 +505,8 @@ impl ProcessQueueStats {
             completion: ProcessQueueStageStats::default(),
             disconnect: ProcessQueueStageStats::default(),
             shutdown: ProcessQueueStageStats::default(),
+            control_ingress: ProcessQueueStageStats::default(),
+            data_ingress: ProcessQueueStageStats::default(),
         }
     }
 
@@ -485,7 +535,14 @@ impl ProcessQueueStats {
         }
     }
 
-    fn queued(&self, kind: ProcessEventKind) {
+    fn ingress_stage(&self, class: ProcessIngressClass) -> &ProcessQueueStageStats {
+        match class {
+            ProcessIngressClass::Control => &self.control_ingress,
+            ProcessIngressClass::Data => &self.data_ingress,
+        }
+    }
+
+    fn queued(&self, kind: ProcessEventKind, class: ProcessIngressClass) {
         let depth = self.depth.fetch_add(1, Ordering::Relaxed) + 1;
         self.max_depth
             .fetch_max(depth.min(self.capacity), Ordering::Relaxed);
@@ -494,9 +551,14 @@ impl ProcessQueueStats {
         stage
             .max_depth
             .fetch_max(stage_depth.min(self.capacity), Ordering::Relaxed);
+        let ingress_stage = self.ingress_stage(class);
+        let ingress_depth = ingress_stage.depth.fetch_add(1, Ordering::Relaxed) + 1;
+        ingress_stage
+            .max_depth
+            .fetch_max(ingress_depth.min(self.capacity), Ordering::Relaxed);
     }
 
-    fn dequeue(&self, kind: ProcessEventKind) {
+    fn dequeue(&self, kind: ProcessEventKind, class: ProcessIngressClass) {
         let _ = self
             .depth
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
@@ -508,22 +570,42 @@ impl ProcessQueueStats {
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                     Some(value.saturating_sub(1))
                 });
+        let _ = self.ingress_stage(class).depth.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |value| Some(value.saturating_sub(1)),
+        );
     }
 
-    fn record_backpressure(&self, kind: ProcessEventKind) {
+    fn record_backpressure(&self, kind: ProcessEventKind, class: ProcessIngressClass) {
         self.backpressure_waits.fetch_add(1, Ordering::Relaxed);
         self.stage(kind)
             .backpressure_waits
             .fetch_add(1, Ordering::Relaxed);
+        self.ingress_stage(class)
+            .backpressure_waits
+            .fetch_add(1, Ordering::Relaxed);
     }
 
-    fn record_backpressure_wait(&self, kind: ProcessEventKind, duration: Duration) {
+    fn record_backpressure_wait(
+        &self,
+        kind: ProcessEventKind,
+        class: ProcessIngressClass,
+        duration: Duration,
+    ) {
         let nanos = duration.as_nanos().min(u128::from(u64::MAX)) as u64;
         let stage = self.stage(kind);
         stage
             .backpressure_wait_ns
             .fetch_add(nanos, Ordering::Relaxed);
         stage
+            .max_backpressure_wait_ns
+            .fetch_max(nanos, Ordering::Relaxed);
+        let ingress_stage = self.ingress_stage(class);
+        ingress_stage
+            .backpressure_wait_ns
+            .fetch_add(nanos, Ordering::Relaxed);
+        ingress_stage
             .max_backpressure_wait_ns
             .fetch_max(nanos, Ordering::Relaxed);
     }
@@ -537,48 +619,165 @@ impl Default for ProcessQueueStats {
 
 #[derive(Clone)]
 pub(crate) struct ProcessEventSender {
-    sender: mpsc::SyncSender<ProcessEvent>,
+    control_sender: mpsc::SyncSender<ProcessEvent>,
+    data_sender: mpsc::SyncSender<ProcessEvent>,
+    wake_sender: mpsc::SyncSender<()>,
     stats: Arc<ProcessQueueStats>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProcessIngressTrySendError {
+    Overloaded,
+    Stopped,
+}
+
+struct ProcessEventReceiver {
+    control_receiver: mpsc::Receiver<ProcessEvent>,
+    data_receiver: mpsc::Receiver<ProcessEvent>,
+    wake_receiver: mpsc::Receiver<()>,
+    consecutive_control: usize,
+}
+
+impl ProcessEventReceiver {
+    fn try_recv(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
+        let force_data = self.consecutive_control >= MAX_CONSECUTIVE_CONTROL_EVENTS;
+        if force_data {
+            match self.data_receiver.try_recv() {
+                Ok(event) => {
+                    self.consecutive_control = 0;
+                    return Ok(event);
+                }
+                Err(mpsc::TryRecvError::Disconnected) | Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        match self.control_receiver.try_recv() {
+            Ok(event) => {
+                self.consecutive_control = self.consecutive_control.saturating_add(1);
+                return Ok(event);
+            }
+            Err(mpsc::TryRecvError::Disconnected) | Err(mpsc::TryRecvError::Empty) => {}
+        }
+        match self.data_receiver.try_recv() {
+            Ok(event) => {
+                self.consecutive_control = 0;
+                Ok(event)
+            }
+            Err(mpsc::TryRecvError::Empty) => Err(mpsc::TryRecvError::Empty),
+            Err(mpsc::TryRecvError::Disconnected) => match self.control_receiver.try_recv() {
+                Ok(event) => {
+                    self.consecutive_control = self.consecutive_control.saturating_add(1);
+                    Ok(event)
+                }
+                Err(mpsc::TryRecvError::Empty) => Err(mpsc::TryRecvError::Empty),
+                Err(mpsc::TryRecvError::Disconnected) => Err(mpsc::TryRecvError::Disconnected),
+            },
+        }
+    }
+
+    fn recv_timeout(
+        &mut self,
+        timeout: Duration,
+    ) -> std::result::Result<ProcessEvent, mpsc::RecvTimeoutError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.try_recv() {
+                Ok(event) => return Ok(event),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return Err(mpsc::RecvTimeoutError::Disconnected);
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return Err(mpsc::RecvTimeoutError::Timeout);
+            };
+            match self.wake_receiver.recv_timeout(remaining) {
+                Ok(()) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    return Err(mpsc::RecvTimeoutError::Timeout);
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(mpsc::RecvTimeoutError::Disconnected);
+                }
+            }
+        }
+    }
+}
+
 impl ProcessEventSender {
+    /// 内部RPC使用控制流保留队列并在队满时立即失败，调用方必须把明确错误回复给来源进程。
+    /// Inner RPC uses the reserved control queue and fails immediately when full. The caller must
+    /// return an explicit error to the source process instead of occupying a pending RPC waiter.
+    pub(crate) fn try_send_control(
+        &self,
+        event: ProcessEvent,
+    ) -> std::result::Result<(), ProcessIngressTrySendError> {
+        debug_assert_eq!(event.ingress_class(), ProcessIngressClass::Control);
+        let kind = event.kind();
+        let class = ProcessIngressClass::Control;
+        self.stats.queued(kind, class);
+        match self.control_sender.try_send(event) {
+            Ok(()) => {
+                let _ = self.wake_sender.try_send(());
+                Ok(())
+            }
+            Err(mpsc::TrySendError::Full(_)) => {
+                self.stats.dequeue(kind, class);
+                self.stats.record_backpressure(kind, class);
+                Err(ProcessIngressTrySendError::Overloaded)
+            }
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                self.stats.dequeue(kind, class);
+                Err(ProcessIngressTrySendError::Stopped)
+            }
+        }
+    }
+
     pub(crate) async fn send(
         &self,
         mut event: ProcessEvent,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<(), String> {
         let kind = event.kind();
+        let class = event.ingress_class();
         let mut counted_backpressure = false;
         let mut backpressure_started: Option<Instant> = None;
         loop {
-            self.stats.queued(kind);
-            match self.sender.try_send(event) {
+            self.stats.queued(kind, class);
+            let sender = match class {
+                ProcessIngressClass::Control => &self.control_sender,
+                ProcessIngressClass::Data => &self.data_sender,
+            };
+            match sender.try_send(event) {
                 Ok(()) => {
                     if let Some(started) = backpressure_started {
-                        self.stats.record_backpressure_wait(kind, started.elapsed());
+                        self.stats
+                            .record_backpressure_wait(kind, class, started.elapsed());
                     }
+                    let _ = self.wake_sender.try_send(());
                     return Ok(());
                 }
                 Err(mpsc::TrySendError::Full(returned)) => {
-                    self.stats.dequeue(kind);
+                    self.stats.dequeue(kind, class);
                     event = returned;
                     if !counted_backpressure {
-                        self.stats.record_backpressure(kind);
+                        self.stats.record_backpressure(kind, class);
                         backpressure_started = Some(Instant::now());
                         counted_backpressure = true;
                     }
                     if deadline.is_some_and(|deadline| deadline <= tokio::time::Instant::now()) {
                         if let Some(started) = backpressure_started {
-                            self.stats.record_backpressure_wait(kind, started.elapsed());
+                            self.stats
+                                .record_backpressure_wait(kind, class, started.elapsed());
                         }
                         return Err("process ingress queue is overloaded".to_string());
                     }
                     tokio::time::sleep(Duration::from_millis(BACKPRESSURE_RETRY_MS)).await;
                 }
                 Err(mpsc::TrySendError::Disconnected(_)) => {
-                    self.stats.dequeue(kind);
+                    self.stats.dequeue(kind, class);
                     if let Some(started) = backpressure_started {
-                        self.stats.record_backpressure_wait(kind, started.elapsed());
+                        self.stats
+                            .record_backpressure_wait(kind, class, started.elapsed());
                     }
                     return Err("process event queue is stopped".to_string());
                 }
@@ -590,19 +789,25 @@ impl ProcessEventSender {
         &self,
         completion: HostSceneCompletion,
     ) -> std::result::Result<(), HostSceneCompletion> {
-        self.stats.queued(ProcessEventKind::Completion);
+        let class = ProcessIngressClass::Control;
+        self.stats
+            .queued(ProcessEventKind::Completion, ProcessIngressClass::Control);
         match self
-            .sender
+            .control_sender
             .try_send(ProcessEvent::HostSceneCompletion(completion))
         {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                let _ = self.wake_sender.try_send(());
+                Ok(())
+            }
             Err(mpsc::TrySendError::Full(ProcessEvent::HostSceneCompletion(completion))) => {
-                self.stats.dequeue(ProcessEventKind::Completion);
-                self.stats.record_backpressure(ProcessEventKind::Completion);
+                self.stats.dequeue(ProcessEventKind::Completion, class);
+                self.stats
+                    .record_backpressure(ProcessEventKind::Completion, class);
                 Err(completion)
             }
             Err(mpsc::TrySendError::Disconnected(_)) => {
-                self.stats.dequeue(ProcessEventKind::Completion);
+                self.stats.dequeue(ProcessEventKind::Completion, class);
                 Ok(())
             }
             Err(_) => unreachable!("completion event changed while entering the process queue"),
@@ -650,13 +855,28 @@ pub async fn run_runtime_config(
         .scheduling
         .event_queue_capacity
         .unwrap_or(DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY);
-    let (event_tx, event_rx) = mpsc::sync_channel::<ProcessEvent>(event_queue_capacity);
+    if event_queue_capacity < 2 {
+        bail!("process scheduling.eventQueueCapacity must be at least 2");
+    }
+    let control_queue_capacity = (event_queue_capacity / PROCESS_CONTROL_QUEUE_DIVISOR).max(1);
+    let data_queue_capacity = event_queue_capacity - control_queue_capacity;
+    let (control_tx, control_rx) = mpsc::sync_channel::<ProcessEvent>(control_queue_capacity);
+    let (data_tx, data_rx) = mpsc::sync_channel::<ProcessEvent>(data_queue_capacity);
+    let (wake_tx, wake_rx) = mpsc::sync_channel::<()>(1);
     let (runtime_control_tx, runtime_control_rx) = mpsc::channel::<RuntimeControl>();
     let queue_stats = Arc::new(ProcessQueueStats::new(event_queue_capacity));
     let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
     let event_tx = ProcessEventSender {
-        sender: event_tx,
+        control_sender: control_tx,
+        data_sender: data_tx,
+        wake_sender: wake_tx,
         stats: Arc::clone(&queue_stats),
+    };
+    let event_rx = ProcessEventReceiver {
+        control_receiver: control_rx,
+        data_receiver: data_rx,
+        wake_receiver: wake_rx,
+        consecutive_control: 0,
     };
     let runtime_stale_after = config
         .process
@@ -889,7 +1109,7 @@ fn run_process_runtime(
     known_scenes: Vec<SceneConfig>,
     runtime_bundles: RuntimeBundles,
     initial_game_config: GameConfigBundle,
-    event_rx: mpsc::Receiver<ProcessEvent>,
+    mut event_rx: ProcessEventReceiver,
     runtime_control_rx: mpsc::Receiver<RuntimeControl>,
     writers: ConnectionWriters,
     queue_stats: Arc<ProcessQueueStats>,
@@ -1132,7 +1352,7 @@ fn run_process_runtime(
         let wait_ms = scheduling.idle_tick_ms;
         match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
             Ok(event) => {
-                queue_stats.dequeue(event.kind());
+                queue_stats.dequeue(event.kind(), event.ingress_class());
                 if matches!(&event, ProcessEvent::Shutdown) {
                     shutdown_requested = true;
                 } else {
@@ -1150,7 +1370,7 @@ fn run_process_runtime(
         while !shutdown_requested && event_count < batch_capacity as u32 {
             match event_rx.try_recv() {
                 Ok(event) => {
-                    queue_stats.dequeue(event.kind());
+                    queue_stats.dequeue(event.kind(), event.ingress_class());
                     if matches!(&event, ProcessEvent::Shutdown) {
                         shutdown_requested = true;
                         break;
@@ -1705,6 +1925,19 @@ fn maybe_log_metrics(
         aoi_filter_overrides: native.aoi_filter_overrides,
         navigation_assets: native.navigation_assets as u64,
         navigation_worlds: native.navigation_worlds as u64,
+        numeric_replication: native
+            .numeric_replication
+            .iter()
+            .map(
+                |item| crate::health::NativeNumericReplicationObservabilitySnapshot {
+                    numeric_type: item.numeric_type,
+                    changes: item.changes,
+                    encoded_records: item.encoded_records,
+                    recipient_deliveries: item.recipient_deliveries,
+                    logical_bytes: item.logical_bytes,
+                },
+            )
+            .collect(),
     });
 
     health_state.set_observability_snapshot(ProcessObservabilitySnapshot {
@@ -1785,6 +2018,24 @@ fn maybe_log_metrics(
                     .collect()
             })
             .unwrap_or_default(),
+        remote_transport_diagnostics: remote_transport
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .diagnostics
+                    .iter()
+                    .map(|diagnostic| TransportDiagnosticObservabilitySnapshot {
+                        msgcode: diagnostic.msgcode,
+                        source: diagnostic.source.clone(),
+                        target: diagnostic.target.clone(),
+                        traffic: diagnostic.traffic.to_string(),
+                        stage: diagnostic.stage.to_string(),
+                        overloads: diagnostic.overloads,
+                        timeouts: diagnostic.timeouts,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         queue_depth: queue_stats.depth.load(Ordering::Relaxed) as u64,
         queue_capacity: queue_stats.capacity as u64,
         queue_max_depth: queue_stats.max_depth.load(Ordering::Relaxed) as u64,
@@ -1804,6 +2055,20 @@ fn maybe_log_metrics(
                         / 1_000_000.0,
                 }
             })
+            .chain(ProcessIngressClass::ALL.into_iter().map(|class| {
+                let stage = queue_stats.ingress_stage(class);
+                ProcessQueueStageObservabilitySnapshot {
+                    stage: class.name().to_string(),
+                    depth: stage.depth.load(Ordering::Relaxed) as u64,
+                    max_depth: stage.max_depth.load(Ordering::Relaxed) as u64,
+                    backpressure_waits: stage.backpressure_waits.load(Ordering::Relaxed),
+                    backpressure_wait_ms: stage.backpressure_wait_ns.load(Ordering::Relaxed) as f64
+                        / 1_000_000.0,
+                    max_backpressure_wait_ms: stage.max_backpressure_wait_ns.load(Ordering::Relaxed)
+                        as f64
+                        / 1_000_000.0,
+                }
+            }))
             .collect(),
         scenes: scene_snapshots,
         actor_mailbox: MailboxObservabilitySnapshot {
@@ -1947,11 +2212,21 @@ mod tests {
 
     #[tokio::test]
     async fn bounded_process_queue_applies_backpressure() {
-        let (sender, receiver) = mpsc::sync_channel(1);
+        let (control_sender, control_receiver) = mpsc::sync_channel(1);
+        let (data_sender, data_receiver) = mpsc::sync_channel(1);
+        let (wake_sender, wake_receiver) = mpsc::sync_channel(1);
         let stats = Arc::new(ProcessQueueStats::default());
         let sender = ProcessEventSender {
-            sender,
+            control_sender,
+            data_sender,
+            wake_sender,
             stats: Arc::clone(&stats),
+        };
+        let mut receiver = ProcessEventReceiver {
+            control_receiver,
+            data_receiver,
+            wake_receiver,
+            consecutive_control: 0,
         };
 
         sender
@@ -1981,11 +2256,11 @@ mod tests {
         assert!(!second.is_finished());
         assert!(stats.backpressure_waits.load(Ordering::Relaxed) >= 1);
 
-        let event = receiver.recv().unwrap();
-        stats.dequeue(event.kind());
+        let event = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        stats.dequeue(event.kind(), event.ingress_class());
         second.await.unwrap().unwrap();
-        let event = receiver.recv().unwrap();
-        stats.dequeue(event.kind());
+        let event = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        stats.dequeue(event.kind(), event.ingress_class());
         assert_eq!(stats.depth.load(Ordering::Relaxed), 0);
         assert_eq!(stats.disconnect.depth.load(Ordering::Relaxed), 0);
         assert!(stats.disconnect.backpressure_waits.load(Ordering::Relaxed) >= 1);
@@ -1996,6 +2271,89 @@ mod tests {
                 .load(Ordering::Relaxed)
                 > 0
         );
+    }
+
+    #[tokio::test]
+    async fn process_queue_reserves_data_progress_after_control_burst() {
+        let (control_sender, control_receiver) = mpsc::sync_channel(64);
+        let (data_sender, data_receiver) = mpsc::sync_channel(8);
+        let (wake_sender, wake_receiver) = mpsc::sync_channel(1);
+        let stats = Arc::new(ProcessQueueStats::default());
+        let sender = ProcessEventSender {
+            control_sender,
+            data_sender,
+            wake_sender,
+            stats: Arc::clone(&stats),
+        };
+        let mut receiver = ProcessEventReceiver {
+            control_receiver,
+            data_receiver,
+            wake_receiver,
+            consecutive_control: 0,
+        };
+
+        for connection_id in 1..=(MAX_CONSECUTIVE_CONTROL_EVENTS as u64 + 1) {
+            sender
+                .send(
+                    ProcessEvent::Disconnect {
+                        scene_index: 0,
+                        connection_id,
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+        sender
+            .send(
+                ProcessEvent::Frame {
+                    scene_index: 0,
+                    connection_id: 999,
+                    frame: Bytes::from_static(&[0x4e, 0x20]),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        for _ in 0..MAX_CONSECUTIVE_CONTROL_EVENTS {
+            let event = receiver.try_recv().unwrap();
+            assert_eq!(event.ingress_class(), ProcessIngressClass::Control);
+            stats.dequeue(event.kind(), event.ingress_class());
+        }
+        let event = receiver.try_recv().unwrap();
+        assert_eq!(event.ingress_class(), ProcessIngressClass::Data);
+        stats.dequeue(event.kind(), event.ingress_class());
+    }
+
+    #[test]
+    fn control_ingress_overload_is_rejected_immediately() {
+        let (control_sender, _control_receiver) = mpsc::sync_channel(1);
+        let (data_sender, _data_receiver) = mpsc::sync_channel(1);
+        let (wake_sender, _wake_receiver) = mpsc::sync_channel(1);
+        let stats = Arc::new(ProcessQueueStats::default());
+        let sender = ProcessEventSender {
+            control_sender,
+            data_sender,
+            wake_sender,
+            stats: Arc::clone(&stats),
+        };
+        sender
+            .try_send_control(ProcessEvent::Disconnect {
+                scene_index: 0,
+                connection_id: 1,
+            })
+            .unwrap();
+
+        let result = sender.try_send_control(ProcessEvent::Disconnect {
+            scene_index: 0,
+            connection_id: 2,
+        });
+
+        assert_eq!(result, Err(ProcessIngressTrySendError::Overloaded));
+        assert_eq!(stats.depth.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.control_ingress.depth.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.backpressure_waits.load(Ordering::Relaxed), 1);
     }
 
     #[test]

@@ -1,5 +1,9 @@
 import type { BroadcastHub } from "../broadcast/BroadcastHub";
-import type { BroadcastAudience, EncodedAudienceBatch } from "../broadcast/types";
+import type {
+  BroadcastAudience,
+  EncodedAudienceBatch,
+  EncodedRouteFrame,
+} from "../broadcast/types";
 import { CoreLogger } from "../logging/Logger";
 
 interface EncodedStateDeltaBase {
@@ -10,16 +14,28 @@ interface EncodedStateDeltaBase {
 export interface EncodedSingleStateDelta extends EncodedStateDeltaBase {
   readonly frame: Uint8Array;
   readonly batches?: never;
+  readonly routeFrames?: never;
   readonly audienceKey?: never;
 }
 
 export interface EncodedBatchedStateDelta extends EncodedStateDeltaBase {
   readonly frame?: never;
   readonly batches: readonly EncodedAudienceBatch[];
+  readonly routeFrames?: never;
   readonly audienceKey: string;
 }
 
-export type EncodedStateDelta = EncodedSingleStateDelta | EncodedBatchedStateDelta;
+export interface EncodedRoutedStateDelta extends EncodedStateDeltaBase {
+  readonly frame?: never;
+  readonly batches?: never;
+  readonly routeFrames: readonly EncodedRouteFrame[];
+  readonly audienceKey: string;
+}
+
+export type EncodedStateDelta =
+  | EncodedSingleStateDelta
+  | EncodedBatchedStateDelta
+  | EncodedRoutedStateDelta;
 
 export interface StateReplicationSource {
   readonly name: string;
@@ -78,18 +94,29 @@ export class StateReplicationSystem {
 
       this.inFlight.add(source.name);
       try {
-        const publish = () => delta.batches
-            ? this.broadcast.PublishEncodedLatestBatches(
+        const publish = () => {
+          if (delta.routeFrames !== undefined) {
+            return this.broadcast.PublishEncodedLatestRouteFrames(
+              delta.audienceKey,
+              source.name,
+              delta.routeFrames,
+              delta.itemCount,
+            );
+          }
+          if (delta.batches !== undefined) {
+            return this.broadcast.PublishEncodedLatestBatches(
               delta.audienceKey,
               source.name,
               delta.batches,
-            )
-            : this.broadcast.PublishEncodedLatestSnapshot(
-              this.audience(),
-              source.name,
-              delta.frame,
-              delta.itemCount,
             );
+          }
+          return this.broadcast.PublishEncodedLatestSnapshot(
+            this.audience(),
+            source.name,
+            delta.frame,
+            delta.itemCount,
+          );
+        };
         const barrier = this.beforePublish?.();
         const delivery = barrier ? barrier.then(publish) : publish();
         void delivery

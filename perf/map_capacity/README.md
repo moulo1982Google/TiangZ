@@ -166,7 +166,7 @@ npm run perf:map-capacity -- \
 
 Admission事务使用独立10分钟故障上限，覆盖当前冷配置最坏约500秒的队列排空预算；普通Scene RPC仍保持短超时。GateSession使用unordered mailbox，`C2G_Ping -> G2C_Ping`是不加锁的普通TS Handler，因此长时间Loading不会阻塞心跳；EnterMap、重连、传送与下线按账号锁保持Route一致。洪峰验收必须同时满足：Map请求全部完成、Admission队列最终归零、放行数等于玩家数，并且客户端错误、内部超时、过载、背压和慢连接断开全部为0。最大等待时间仍是独立产品SLO，不能因为技术上没有丢请求就判定线上体验合格。
 
-测试即使在预热或setup后失败，也会生成`map_capacity_<run>_<case>_failure.json`。其中保留失败前最后几次Process health样本、CPU、背压、NativeData和广播指标，禁止只依据客户端的`1006`错误猜测瓶颈。
+测试即使在预热或setup后失败，也会生成`map_capacity_<run>_<case>_failure.json`。其中保留失败前最后几次Process health样本、CPU、背压、NativeData、广播指标和服务端日志错误摘要，禁止只依据客户端的`1006`错误猜测瓶颈。任一Runtime日志出现结构化`ERROR`或panic时，即使客户端统计全部成功，该轮也会失败。
 
 AOI报告同时记录World/Entity/Grid、候选/可见关系、跨Grid/s和可见变化/s。进入/离开属于不可覆盖事件，但服务端会把同一帧、相同受众的变化合并为`G2C_AoiDelta`；因此判断AOI调度开销时应同时观察“可见变化/s”和“Map广播batch/s”，不能把两者当成同一个数量。
 
@@ -192,6 +192,8 @@ npm run perf:map-capacity -- \
 `backpressure` 表示入口有界队列已经满并发生等待重试。它不等于丢包或 overload，但说明该测试点没有充足余量，因此正式容量候选要求窗口内为0；非零结果仍可作为故障诊断保存。
 
 容量测试会为每个 Process 临时启用独立的 health 端口，并直接抓取 CPU、RSS、V8、Transport、NativeData 与 Map 广播指标。正式窗口中的累计计数按相邻采样差值换算为每秒速率，不依赖标准输出日志。
+
+报告的“NumericType复制指标”按类型列出`changes/s`、`encoded records/s`、`recipient deliveries/s`和逻辑字节。Starter保持10Hz服务端资源恢复，但`CurrentHp`公开状态最多5Hz并在死亡/复活时立即发送；因此判断优化是否命中，应看`CurrentHp changes/s`保持原精度，同时`recipient deliveries/s`相对旧基线下降，而不是要求服务端变化次数下降。技能、Buff、道具等可靠事件不属于该表，也不允许通过latest覆盖。
 
 `scratch grows/s (total)` 左侧是正式窗口内帧尾临时缓冲的扩容速率，右侧括号是进程启动后的累计扩容次数。稳态速率为 0 说明缓冲容量已复用并稳定，单纯累计值不代表持续分配。
 

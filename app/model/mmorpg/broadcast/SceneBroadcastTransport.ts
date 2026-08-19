@@ -35,12 +35,13 @@ export class SceneBroadcastTransport implements BroadcastTransport {
   }
 
   /**
-   * 把同一逻辑作业的AOI帧按Gate重组，每个Gate只接收一条内网批量消息。
+   * 把同一同步调度边界内的已编码帧按Gate重组，每个Gate只接收一条内网批量消息。
    * frame保持不可变且不重新编码；这里只消除Map到Gate之间的细碎消息，不合并客户端协议帧。
    *
-   * Regroups AOI frames from one logical job by Gate so each Gate receives one
-   * inner batch message. Frames stay immutable and are not re-encoded; this
-   * removes fragmented Map-to-Gate messages without merging client frames.
+   * Regroups encoded frames from one synchronous scheduling boundary by Gate so
+   * each Gate receives one inner batch message. Frames stay immutable and are
+   * not re-encoded; this removes fragmented Map-to-Gate messages without
+   * merging client protocol frames.
    */
   SendMany(batches: readonly EncodedAudienceBatch[]): Promise<void> {
     const delivery = new Promise<void>((resolve, reject) => {

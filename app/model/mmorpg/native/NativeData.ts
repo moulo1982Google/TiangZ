@@ -67,6 +67,16 @@ export interface NativeDataMetrics {
   aoiRelocations: number;
   aoiVisibilityChanges: number;
   aoiFilterOverrides: number;
+  numericReplication: readonly NativeNumericReplicationMetrics[];
+}
+
+export interface NativeNumericReplicationMetrics {
+  readonly numericType: number;
+  readonly changes: number;
+  readonly encodedRecords: number;
+  readonly recipientDeliveries: number;
+  /** 不含Gate外壳的Numeric条目逻辑投递字节。 / Logical delivered Numeric item bytes excluding Gate envelopes. */
+  readonly logicalBytes: number;
 }
 
 export interface NativeMovementBroadcast {
@@ -119,6 +129,10 @@ export interface NativeAoiSyncTier {
 }
 
 export interface NativeAoiRevisionBroadcast extends NativeAoiBroadcast {
+  readonly revision: Uint8Array;
+}
+
+export interface NativeAoiRouteRevisionBroadcast extends NativeAoiRouteBroadcast {
   readonly revision: Uint8Array;
 }
 
@@ -607,6 +621,46 @@ export class NativeData {
     return { revision, ...parseAoiBroadcast(bytes.subarray(8), messageCode) };
   }
 
+  /** 在Rust内按Gate生成Numeric最终路由帧，并保留统一Ack版本。 / Builds final per-Gate Numeric route frames in Rust while preserving one Ack revision. */
+  static PeekMapNumericAoiRouteFrames(
+    mapId: number,
+    serverTick: number,
+    clientMessageCode: number,
+    routeMessageCode: number,
+    aoiVisibleTypes: readonly number[],
+    selectedTypes: readonly number[],
+    selectionMode: number,
+    publishDue = true,
+  ): NativeAoiRouteRevisionBroadcast {
+    const encodedAoiTypes = encodeNumericTypes(aoiVisibleTypes, "AOI-visible");
+    const encodedSelectedTypes = encodeNumericTypes(selectedTypes, "selected");
+    if (selectionMode !== 0 && selectionMode !== 1) {
+      throw new Error(`invalid Numeric replication selection mode: ${selectionMode}`);
+    }
+    const bytes = NativeOps.MapPeekNumericAoiRouteFrames(
+      mapId,
+      serverTick,
+      clientMessageCode,
+      routeMessageCode,
+      encodedAoiTypes,
+      encodedSelectedTypes,
+      selectionMode,
+      publishDue,
+    );
+    if (bytes.length < 12) throw new Error("native numeric AOI route delta is truncated");
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const revisionLength = view.getUint32(0, true);
+    const routeOffset = 4 + revisionLength;
+    if (revisionLength < 16 || routeOffset + 8 > bytes.length) {
+      throw new Error("native numeric AOI route revision is truncated");
+    }
+    const revision = bytes.slice(4, routeOffset);
+    return {
+      revision,
+      ...parseAoiRouteBroadcast(bytes.subarray(routeOffset), routeMessageCode),
+    };
+  }
+
   /** 只确认已投递给客户端的 Numeric 版本，保留其后的新写入。 / Acknowledges exactly the Numeric revision delivered to clients, preserving newer writes. */
   static AckMapNumericDelta(mapId: number, revision: Uint8Array): void {
     NativeOps.MapAckNumericDelta(mapId, revision);
@@ -667,11 +721,26 @@ export class NativeData {
   /** 读取生命周期累计 NativeData 指标；相邻快照差值只用于本地高频访问告警。 / Reads monotonic NativeData metrics; snapshot deltas are used only for local access warnings. */
   static TakeMetrics(): NativeDataMetrics {
     const bytes = NativeOps.DataTakeMetrics();
-    if (bytes.length !== 160) {
+    if (bytes.length < 164) {
       throw new Error(`invalid native metrics length: ${bytes.length}`);
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const metrics = {
+    const numericTypeCount = view.getUint32(160, true);
+    if (bytes.length !== 164 + numericTypeCount * 36) {
+      throw new Error(`invalid native metrics length: ${bytes.length}/${numericTypeCount}`);
+    }
+    const numericReplication: NativeNumericReplicationMetrics[] = [];
+    for (let index = 0; index < numericTypeCount; index += 1) {
+      const offset = 164 + index * 36;
+      numericReplication.push({
+        numericType: view.getUint32(offset, true),
+        changes: Number(view.getBigUint64(offset + 4, true)),
+        encodedRecords: Number(view.getBigUint64(offset + 12, true)),
+        recipientDeliveries: Number(view.getBigUint64(offset + 20, true)),
+        logicalBytes: Number(view.getBigUint64(offset + 28, true)),
+      });
+    }
+    const metrics: NativeDataMetrics = {
       scalarGets: Number(view.getBigUint64(0, true)),
       scalarSets: Number(view.getBigUint64(8, true)),
       batchCalls: Number(view.getBigUint64(16, true)),
@@ -696,6 +765,7 @@ export class NativeData {
       aoiRejectedRelations: Number(view.getBigUint64(144, true)),
       navigationAssets: view.getUint32(152, true),
       navigationWorlds: view.getUint32(156, true),
+      numericReplication,
       nativeRefs: NativeOps.NativeRefMetrics(),
     };
     const previous = this.previousMetrics;
@@ -737,6 +807,19 @@ function decodeNavPoints(bytes: Uint8Array): readonly NativeVec3[] {
     });
   }
   return points;
+}
+
+function encodeNumericTypes(types: readonly number[], label: string): Uint8Array {
+  const encoded = new Uint8Array(types.length * 4);
+  const view = new DataView(encoded.buffer);
+  for (let index = 0; index < types.length; index += 1) {
+    const numericType = types[index];
+    if (!Number.isSafeInteger(numericType) || numericType <= 0 || numericType > 0xffff_ffff) {
+      throw new Error(`invalid ${label} Numeric type: ${numericType}`);
+    }
+    view.setUint32(index * 4, numericType, true);
+  }
+  return encoded;
 }
 
 function decodeNavigationIntent(bytes: Uint8Array): NativeNavigationIntent {

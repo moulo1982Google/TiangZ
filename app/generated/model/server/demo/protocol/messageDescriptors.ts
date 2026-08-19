@@ -208,6 +208,7 @@ export const MapMessages = {
     codec: C2M_MoveCodec,
     routing: "actor-location",
     duringTransfer: "drop",
+    forwarding: "latest",
   }),
 };
 

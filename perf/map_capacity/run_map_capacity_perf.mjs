@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SanitizePerformanceReport } from "../lib/sanitize_report.mjs";
+import { InspectRuntimeLog } from "../lib/runtime_log_health.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const cliArgs = process.argv.slice(2);
@@ -248,6 +249,14 @@ async function runCase(players, round) {
     await stopRuntimes(runtimes);
   }
 
+  const runtimeLogFailures = collectRuntimeLogFailures(runtimes);
+  if (!caseError && (runtimeLogFailures.errors > 0 || runtimeLogFailures.panics > 0)) {
+    caseError = new Error(
+      `server logs contain ${runtimeLogFailures.errors} ERROR line(s) and ` +
+      `${runtimeLogFailures.panics} panic line(s); see ${logDir}`,
+    );
+  }
+
   if (caseError) {
     const failure = {
       generatedAt: new Date().toISOString(),
@@ -258,6 +267,7 @@ async function runCase(players, round) {
         ? { name: caseError.name, message: caseError.message, stack: caseError.stack }
         : { name: "UnknownError", message: String(caseError) },
       serverResources: collectRuntimeResources(runtimes, undefined, undefined, healthSamples),
+      runtimeLogFailures,
       logDirectory: logDir,
       configDirectory: configDir,
     };
@@ -733,7 +743,8 @@ async function readProcessHealthMetrics(runtime) {
     const metric = (name) => prometheusMetric(body, name);
     const stageMetric = (name, stage) => prometheusMetricWithLabel(body, name, "stage", stage);
     const queueStages = Object.fromEntries(
-      ["frame", "completion", "disconnect", "shutdown"].map((stage) => [stage, {
+      ["frame", "completion", "disconnect", "shutdown", "control_ingress", "data_ingress"]
+        .map((stage) => [stage, {
         depth: stageMetric("tiangz_process_queue_stage_depth", stage),
         maxDepth: stageMetric("tiangz_process_queue_stage_max_depth", stage),
         backpressureWaits: stageMetric(
@@ -748,10 +759,10 @@ async function readProcessHealthMetrics(runtime) {
           "tiangz_process_queue_stage_backpressure_wait_ms_max",
           stage,
         ),
-      }]),
+        }]),
     );
     const innerOverloadStages = Object.fromEntries(
-      ["manager_queue", "connection_queue", "call_writer_queue", "send_writer_queue"]
+      ["manager_queue", "connection_queue", "call_writer_queue", "send_writer_queue", "target_ingress_queue"]
         .map((stage) => [stage, stageMetric(
           "tiangz_transport_inner_overload_stage_rejections_total",
           stage,
@@ -796,6 +807,7 @@ async function readProcessHealthMetrics(runtime) {
       nativeEncodedFrames: metric("tiangz_native_encoded_frames_total"),
       nativeEncodedItems: metric("tiangz_native_encoded_items_total"),
       nativeEncodedBytes: metric("tiangz_native_encoded_bytes_total"),
+      numericReplication: readNumericReplicationMetrics(body),
       aoiWorlds: metric("tiangz_aoi_worlds"),
       aoiEntries: metric("tiangz_aoi_entries"),
       aoiGrids: metric("tiangz_aoi_grids"),
@@ -808,6 +820,7 @@ async function readProcessHealthMetrics(runtime) {
       aoiFilterOverrides: metric("tiangz_aoi_filter_overrides_total"),
       mapBroadcast: readMapBroadcastMetrics(body),
       mapEntry: readMapEntryMetrics(body),
+      actorLatestForward: readActorLatestForwardMetrics(body),
     };
   } catch {
     return { process: runtime.name };
@@ -854,6 +867,30 @@ function prometheusMetricSum(body, name) {
     .reduce((total, line) => total + Number(line.slice(line.lastIndexOf(" ") + 1)), 0);
 }
 
+function readNumericReplicationMetrics(body) {
+  const result = {};
+  for (const [metricName, field] of [
+    ["tiangz_native_numeric_changes_total", "changes"],
+    ["tiangz_native_numeric_encoded_records_total", "encodedRecords"],
+    ["tiangz_native_numeric_recipient_deliveries_total", "recipientDeliveries"],
+    ["tiangz_native_numeric_logical_bytes_total", "logicalBytes"],
+  ]) {
+    for (const line of body.split(/\r?\n/).filter((value) => value.startsWith(`${metricName}{`))) {
+      const match = line.match(/numeric_type="(\d+)"/);
+      if (!match) continue;
+      const numericType = match[1];
+      const item = result[numericType] ??= {
+        changes: 0,
+        encodedRecords: 0,
+        recipientDeliveries: 0,
+        logicalBytes: 0,
+      };
+      item[field] = Number(line.slice(line.lastIndexOf(" ") + 1));
+    }
+  }
+  return result;
+}
+
 function prometheusCustomMetric(body, key, customName = "map_broadcast") {
   const line = body.split(/\r?\n/).find((value) =>
     (value.startsWith("tiangz_scene_custom_metric_total{") ||
@@ -861,6 +898,16 @@ function prometheusCustomMetric(body, key, customName = "map_broadcast") {
     value.includes(`name="${customName}"`) && value.includes(`key="${key}"`)
   );
   return line ? Number(line.slice(line.lastIndexOf(" ") + 1)) : 0;
+}
+
+function prometheusCustomMetricSum(body, key, customName) {
+  return body.split(/\r?\n/)
+    .filter((line) =>
+      (line.startsWith("tiangz_scene_custom_metric_total{") ||
+        line.startsWith("tiangz_scene_custom_metric_gauge{")) &&
+      line.includes(`name="${customName}"`) && line.includes(`key="${key}"`)
+    )
+    .reduce((total, line) => total + Number(line.slice(line.lastIndexOf(" ") + 1)), 0);
 }
 
 function readMapBroadcastMetrics(body) {
@@ -931,6 +978,20 @@ function readMapBroadcastMetrics(body) {
   };
 }
 
+function readActorLatestForwardMetrics(body) {
+  const metric = (key) => prometheusCustomMetricSum(body, key, "actor_latest_forward");
+  return {
+    pendingFrames: metric("pending_frames"),
+    queued: metric("queued_total"),
+    coalesced: metric("coalesced_total"),
+    forwarded: metric("forwarded_total"),
+    batches: metric("batches_total"),
+    failedBatches: metric("failed_batches_total"),
+    failedFrames: metric("failed_frames_total"),
+    dropped: metric("dropped_total"),
+  };
+}
+
 function readMapEntryMetrics(body) {
   const metric = (key) => prometheusCustomMetric(body, key, "map_entry");
   return {
@@ -968,6 +1029,18 @@ async function stopRuntimes(runtimes) {
     await Promise.race([onceExit(runtime.child), sleep(2_000)]);
     if (runtime.child.exitCode === null) runtime.child.kill("SIGKILL");
   }));
+}
+
+function collectRuntimeLogFailures(runtimes) {
+  const processes = runtimes.map((runtime) => ({
+    process: runtime.name,
+    ...InspectRuntimeLog(readRuntimeLogs(runtime)),
+  }));
+  return {
+    errors: sum(processes.map((item) => item.errors)),
+    panics: sum(processes.map((item) => item.panics)),
+    processes,
+  };
 }
 
 function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = new Map()) {
@@ -1025,6 +1098,7 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         encodedFrames: sample.nativeEncodedFrames,
         encodedItems: sample.nativeEncodedItems,
         encodedBytes: sample.nativeEncodedBytes,
+        numericReplication: sample.numericReplication,
         aoiWorlds: sample.aoiWorlds,
         aoiEntries: sample.aoiEntries,
         aoiGrids: sample.aoiGrids,
@@ -1146,6 +1220,10 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     const selectedMapBroadcast = completeMapBroadcastSamples.length > 0
       ? completeMapBroadcastSamples
       : mapBroadcastSamples.slice(-Math.max(1, Math.floor(options.duration / 5)));
+    const actorLatestForwardSamples = selected.map((sample) => ({
+      timestampMs: sample.timestampMs,
+      ...sample.actorLatestForward,
+    }));
     const mapEntrySamples = healthSamples.get(runtime.name)?.length > 0
       ? samples.map((sample) => ({ timestampMs: sample.timestampMs, ...sample.mapEntry }))
       : lines
@@ -1193,6 +1271,7 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         selectedNativeData,
         completeNativeDataSamples.length,
       ),
+      actorLatestForward: summarizeActorLatestForward(actorLatestForwardSamples),
     };
   });
   const map = processes.find((item) => item.process === "map1");
@@ -1211,6 +1290,30 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     gateTransportReadFramesPerSecond: sum(gates.map((item) => item.transportReadFramesPerSecond)),
     gateTransportWriteOpsPerSecond: sum(gates.map((item) => item.transportWriteOpsPerSecond)),
     gateTransportWriteFramesPerSecond: sum(gates.map((item) => item.transportWriteFramesPerSecond)),
+    gateActorLatestQueuedPerSecond: sum(
+      gates.map((item) => item.actorLatestForward?.queuedPerSecond ?? 0),
+    ),
+    gateActorLatestCoalescedPerSecond: sum(
+      gates.map((item) => item.actorLatestForward?.coalescedPerSecond ?? 0),
+    ),
+    gateActorLatestForwardedPerSecond: sum(
+      gates.map((item) => item.actorLatestForward?.forwardedPerSecond ?? 0),
+    ),
+    gateActorLatestBatchesPerSecond: sum(
+      gates.map((item) => item.actorLatestForward?.batchesPerSecond ?? 0),
+    ),
+    gateActorLatestPendingFramesPeak: sum(
+      gates.map((item) => item.actorLatestForward?.pendingFramesPeak ?? 0),
+    ),
+    gateActorLatestFailedBatches: sum(
+      gates.map((item) => item.actorLatestForward?.failedBatches ?? 0),
+    ),
+    gateActorLatestFailedFrames: sum(
+      gates.map((item) => item.actorLatestForward?.failedFrames ?? 0),
+    ),
+    gateActorLatestDropped: sum(
+      gates.map((item) => item.actorLatestForward?.dropped ?? 0),
+    ),
     gateLifecycleOutboundBridgeBytes: sum(gates.map((item) => item.lifecycleOutboundBridgeBytes)),
     gateLifecycleOutboundLogicalBytes: sum(gates.map((item) => item.lifecycleOutboundLogicalBytes)),
     gateLifecycleTransportWriteBytes: sum(gates.map((item) => item.lifecycleTransportWriteBytes)),
@@ -1228,7 +1331,14 @@ function parseMetricLine(line) {
 function summarizeProcess(fallbackName, samples, last) {
   const cpu = samples.map((item) => item.cpuPercent).sort(numberOrder);
   const selectedLast = samples.at(-1) ?? last;
-  const stageNames = ["frame", "completion", "disconnect", "shutdown"];
+  const stageNames = [
+    "frame",
+    "completion",
+    "disconnect",
+    "shutdown",
+    "control_ingress",
+    "data_ingress",
+  ];
   const queueStages = Object.fromEntries(stageNames.map((stage) => [stage, {
     depth: selectedLast?.queueStages?.[stage]?.depth ?? 0,
     maxDepth: last?.queueStages?.[stage]?.maxDepth ?? 0,
@@ -1244,6 +1354,7 @@ function summarizeProcess(fallbackName, samples, last) {
     "connection_queue",
     "call_writer_queue",
     "send_writer_queue",
+    "target_ingress_queue",
   ];
   const innerOverloadStages = Object.fromEntries(overloadStageNames.map((stage) => [
     stage,
@@ -1291,6 +1402,9 @@ function gateTransportOverloadStage(round, stage) {
 }
 
 function summarizeNativeData(samples, formalWindowSamples) {
+  const numericTypes = [...new Set(samples.flatMap(
+    (sample) => Object.keys(sample.numericReplication ?? {}),
+  ))].sort((left, right) => Number(left) - Number(right));
   return {
     samples: samples.length,
     formalWindowSamples,
@@ -1310,6 +1424,24 @@ function summarizeNativeData(samples, formalWindowSamples) {
     encodedFramesPerSecond: counterRate(samples, "encodedFrames"),
     encodedItemsPerSecond: counterRate(samples, "encodedItems"),
     encodedBytesPerSecond: counterRate(samples, "encodedBytes"),
+    numericReplication: Object.fromEntries(numericTypes.map((numericType) => [numericType, {
+      changesPerSecond: nestedCounterRate(
+        samples,
+        (sample) => sample.numericReplication?.[numericType]?.changes,
+      ),
+      encodedRecordsPerSecond: nestedCounterRate(
+        samples,
+        (sample) => sample.numericReplication?.[numericType]?.encodedRecords,
+      ),
+      recipientDeliveriesPerSecond: nestedCounterRate(
+        samples,
+        (sample) => sample.numericReplication?.[numericType]?.recipientDeliveries,
+      ),
+      logicalBytesPerSecond: nestedCounterRate(
+        samples,
+        (sample) => sample.numericReplication?.[numericType]?.logicalBytes,
+      ),
+    }])),
     aoiWorlds: samples.at(-1)?.aoiWorlds ?? 0,
     aoiEntries: samples.at(-1)?.aoiEntries ?? 0,
     aoiGrids: samples.at(-1)?.aoiGrids ?? 0,
@@ -1418,6 +1550,19 @@ function summarizeMapBroadcast(samples, formalWindowSamples, lifecycleLast = sam
     aoiDeltaPrepareMs: lifecycleLast?.aoiDeltaPrepareMs ?? 0,
     aoiDeltaPublishMs: lifecycleLast?.aoiDeltaPublishMs ?? 0,
     failures: last?.broadcastFailures ?? 0,
+  };
+}
+
+function summarizeActorLatestForward(samples) {
+  return {
+    pendingFramesPeak: max(samples.map((item) => item.pendingFrames ?? 0)),
+    queuedPerSecond: counterRate(samples, "queued"),
+    coalescedPerSecond: counterRate(samples, "coalesced"),
+    forwardedPerSecond: counterRate(samples, "forwarded"),
+    batchesPerSecond: counterRate(samples, "batches"),
+    failedBatches: counterDelta(samples, "failedBatches"),
+    failedFrames: counterDelta(samples, "failedFrames"),
+    dropped: counterDelta(samples, "dropped"),
   };
 }
 
@@ -1691,6 +1836,7 @@ function aggregateCases(rounds) {
       nativeEncodedBytesPerSecond: median(group.map(
         (item) => item.serverResources.map?.nativeData?.encodedBytesPerSecond ?? 0,
       )),
+      numericReplication: aggregateNumericReplication(group),
       aoiWorlds: median(group.map(
         (item) => item.serverResources.map?.nativeData?.aoiWorlds ?? 0,
       )),
@@ -1780,6 +1926,30 @@ function aggregateCases(rounds) {
       )),
       gateTransportWriteFramesPerSecond: median(group.map(
         (item) => item.serverResources.gateTransportWriteFramesPerSecond,
+      )),
+      gateActorLatestQueuedPerSecond: median(group.map(
+        (item) => item.serverResources.gateActorLatestQueuedPerSecond,
+      )),
+      gateActorLatestCoalescedPerSecond: median(group.map(
+        (item) => item.serverResources.gateActorLatestCoalescedPerSecond,
+      )),
+      gateActorLatestForwardedPerSecond: median(group.map(
+        (item) => item.serverResources.gateActorLatestForwardedPerSecond,
+      )),
+      gateActorLatestBatchesPerSecond: median(group.map(
+        (item) => item.serverResources.gateActorLatestBatchesPerSecond,
+      )),
+      gateActorLatestPendingFramesPeak: median(group.map(
+        (item) => item.serverResources.gateActorLatestPendingFramesPeak,
+      )),
+      gateActorLatestFailedBatches: median(group.map(
+        (item) => item.serverResources.gateActorLatestFailedBatches,
+      )),
+      gateActorLatestFailedFrames: median(group.map(
+        (item) => item.serverResources.gateActorLatestFailedFrames,
+      )),
+      gateActorLatestDropped: median(group.map(
+        (item) => item.serverResources.gateActorLatestDropped,
       )),
       movesPerSecond: median(group.map((item) => item.movement.perSecond)),
       moveTargetPercent: options.probeOnly || options.moveRate === 0
@@ -1871,6 +2041,18 @@ function aggregateCases(rounds) {
       mapCompletionBackpressure: median(group.map(
         (item) => processQueueStage(item, "map1", "completion", "backpressureWaits"),
       )),
+      mapControlIngressBackpressure: median(group.map(
+        (item) => processQueueStage(item, "map1", "control_ingress", "backpressureWaits"),
+      )),
+      mapControlIngressMaxDepth: median(group.map(
+        (item) => processQueueStage(item, "map1", "control_ingress", "maxDepth"),
+      )),
+      mapDataIngressBackpressure: median(group.map(
+        (item) => processQueueStage(item, "map1", "data_ingress", "backpressureWaits"),
+      )),
+      mapDataIngressMaxDepth: median(group.map(
+        (item) => processQueueStage(item, "map1", "data_ingress", "maxDepth"),
+      )),
       gateManagerQueueOverloads: median(group.map(
         (item) => gateTransportOverloadStage(item, "manager_queue"),
       )),
@@ -1883,9 +2065,32 @@ function aggregateCases(rounds) {
       gateSendWriterQueueOverloads: median(group.map(
         (item) => gateTransportOverloadStage(item, "send_writer_queue"),
       )),
+      gateTargetIngressQueueOverloads: median(group.map(
+        (item) => gateTransportOverloadStage(item, "target_ingress_queue"),
+      )),
       serverRssBytes: median(group.map((item) => item.serverResources.totalPeakRssBytes)),
     },
   }));
+}
+
+function aggregateNumericReplication(rounds) {
+  const numericTypes = [...new Set(rounds.flatMap((round) =>
+    Object.keys(round.serverResources.map?.nativeData?.numericReplication ?? {})
+  ))].sort((left, right) => Number(left) - Number(right));
+  return Object.fromEntries(numericTypes.map((numericType) => [numericType, {
+    changesPerSecond: median(rounds.map(
+      (round) => round.serverResources.map?.nativeData?.numericReplication?.[numericType]?.changesPerSecond ?? 0,
+    )),
+    encodedRecordsPerSecond: median(rounds.map(
+      (round) => round.serverResources.map?.nativeData?.numericReplication?.[numericType]?.encodedRecordsPerSecond ?? 0,
+    )),
+    recipientDeliveriesPerSecond: median(rounds.map(
+      (round) => round.serverResources.map?.nativeData?.numericReplication?.[numericType]?.recipientDeliveriesPerSecond ?? 0,
+    )),
+    logicalBytesPerSecond: median(rounds.map(
+      (round) => round.serverResources.map?.nativeData?.numericReplication?.[numericType]?.logicalBytesPerSecond ?? 0,
+    )),
+  }]));
 }
 
 function renderMarkdown(report) {
@@ -2008,15 +2213,17 @@ function renderMarkdown(report) {
     "",
     "## 背压责任分解",
     "",
-    "| 玩家 | Map Frame 正式窗口 waits/total ms | 生命周期 max wait/depth | Map Completion 正式窗口 waits | Gate 正式窗口 manager/connection/call-writer/send-writer overload |",
-    "|---:|---:|---:|---:|---:|",
+    "| 玩家 | Map Frame 正式窗口 waits/total ms | 生命周期 max wait/depth | control waits/depth | data waits/depth | Map Completion waits | Gate manager/connection/call-writer/send-writer/target-ingress overload |",
+    "|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.cases) {
     const value = item.median;
     lines.push(
       `| ${item.players} | ${value.mapFrameBackpressure}/${round(value.mapFrameBackpressureWaitMs, 2)} | ` +
       `${round(value.mapFrameBackpressureMaxWaitMs, 2)}/${value.mapFrameQueueMaxDepth} | ` +
-      `${value.mapCompletionBackpressure} | ${value.gateManagerQueueOverloads}/${value.gateConnectionQueueOverloads}/${value.gateCallWriterQueueOverloads}/${value.gateSendWriterQueueOverloads} |`,
+      `${value.mapControlIngressBackpressure}/${value.mapControlIngressMaxDepth} | ` +
+      `${value.mapDataIngressBackpressure}/${value.mapDataIngressMaxDepth} | ` +
+      `${value.mapCompletionBackpressure} | ${value.gateManagerQueueOverloads}/${value.gateConnectionQueueOverloads}/${value.gateCallWriterQueueOverloads}/${value.gateSendWriterQueueOverloads}/${value.gateTargetIngressQueueOverloads} |`,
     );
   }
   lines.push(
@@ -2112,6 +2319,22 @@ function renderMarkdown(report) {
   }
   lines.push(
     "",
+    "## NumericType复制指标",
+    "",
+    "| 玩家 | NumericType | changes/s | encoded records/s | recipient deliveries/s | logical bytes/s |",
+    "|---:|---|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    for (const [numericType, metrics] of Object.entries(item.median.numericReplication ?? {})) {
+      lines.push(
+        `| ${item.players} | ${numericTypeName(numericType)} (${numericType}) | ` +
+        `${round(metrics.changesPerSecond, 1)} | ${round(metrics.encodedRecordsPerSecond, 1)} | ` +
+        `${round(metrics.recipientDeliveriesPerSecond, 1)} | ${formatRate(metrics.logicalBytesPerSecond)} |`,
+      );
+    }
+  }
+  lines.push(
+    "",
     "## Map 广播 single-flight",
     "",
     "| 玩家 | 指标样本 | pending 采样峰值/生命周期峰值 | queued/s | coalesced/s (%) | sent/s | batch/s | frames/batch | 广播 avg/max | 排队 avg/max | failures |",
@@ -2150,6 +2373,31 @@ function renderMarkdown(report) {
       `${formatRate(value.gateOutboundLogicalBytesPerSecond)} |`,
     );
   }
+  lines.push(
+    "",
+    "## Gate 到 Map latest Actor 输入",
+    "",
+    "| 玩家 | input/s | coalesced/s (%) | forwarded/s | batch/s | items/batch | pending peak | failed batch/frame | dropped |",
+    "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    const coalescedPercent = value.gateActorLatestQueuedPerSecond > 0
+      ? value.gateActorLatestCoalescedPerSecond / value.gateActorLatestQueuedPerSecond * 100
+      : 0;
+    const itemsPerBatch = value.gateActorLatestBatchesPerSecond > 0
+      ? value.gateActorLatestForwardedPerSecond / value.gateActorLatestBatchesPerSecond
+      : 0;
+    lines.push(
+      `| ${item.players} | ${round(value.gateActorLatestQueuedPerSecond, 1)} | ` +
+      `${round(value.gateActorLatestCoalescedPerSecond, 1)} (${round(coalescedPercent, 1)}%) | ` +
+      `${round(value.gateActorLatestForwardedPerSecond, 1)} | ` +
+      `${round(value.gateActorLatestBatchesPerSecond, 1)} | ${round(itemsPerBatch, 1)} | ` +
+      `${round(value.gateActorLatestPendingFramesPeak)} | ` +
+      `${round(value.gateActorLatestFailedBatches)}/${round(value.gateActorLatestFailedFrames)} | ` +
+      `${round(value.gateActorLatestDropped)} |`,
+    );
+  }
   const candidate = report.capacityCandidate;
   const nearest = report.nearestTarget;
   lines.push("", "## 容量判断", "");
@@ -2176,7 +2424,8 @@ function renderMarkdown(report) {
       ? "- Probe Only 模式关闭 Move 和 AOI 广播，用于测 MapHost pingpong RPC 基线吞吐。"
       : "- Move 按固定频率开环发送，吞吐只统计正式窗口内实际写入的请求；容量点要求实际吞吐至少达到目标的 95%。",
     "- `backpressure`、overload、timeout 和 slow disconnect 都按正式测试窗口的 Counter 增量计算；Setup/入场期历史值不会污染稳态容量判断。",
-    "- 背压责任分解使用固定 stage 标签：Map 的 `frame` 是网络入站业务帧，`completion` 是异步 Scene 操作完成；Gate 内部传输依次为 manager、目标连接、RPC writer 与单向 send writer 队列。waits/total 是正式窗口增量，max wait/max depth 是进程生命周期峰值。",
+    "- `forwarding=latest` 的 ActorLocation 单向输入在 Gate 以 connectionId + msgcode 覆盖等待窗口内的旧值，并按目标 Scene 形成内部批量帧；`input/s` 是客户端输入，`forwarded/s` 是进入目标 Actor mailbox 的最终条目，`batch/s` 是实际跨进程帧。",
+    "- 背压责任分解使用固定 stage 标签：Map 的 `frame` 是网络入站业务帧，`control_ingress/data_ingress` 是物理保留队列，`completion` 是异步 Scene 操作完成；Gate 内部传输依次为 manager、目标连接、RPC writer、单向 send writer 与目标控制入口。waits/total 是正式窗口增量，max wait/max depth 是进程生命周期峰值。",
     options.probeOnly
       ? "- Probe Only 模式不包含 AOI 下行。"
       : "- 虚拟客户端不完整构造业务对象；状态测试会扫描 protobuf 顶层 repeated 字段，分别统计协议帧、状态项和消息体字节。端到端延迟由 MapProbe 独立测量。",
@@ -2420,6 +2669,24 @@ function counterDelta(samples, field) {
 function nestedCounterDelta(samples, valueOf) {
   if (samples.length < 2) return 0;
   return Math.max(0, Number(valueOf(samples.at(-1)) ?? 0) - Number(valueOf(samples[0]) ?? 0));
+}
+function nestedCounterRate(samples, valueOf) {
+  if (samples.length < 2) return 0;
+  const elapsedSeconds = (samples.at(-1).timestampMs - samples[0].timestampMs) / 1000;
+  return elapsedSeconds > 0 ? nestedCounterDelta(samples, valueOf) / elapsedSeconds : 0;
+}
+function numericTypeName(value) {
+  return ({
+    1: "CurrentHp",
+    2: "CurrentMp",
+    3: "Level",
+    4: "Experience",
+    1000: "MaxHp",
+    1001: "MaxMp",
+    2000: "Attack",
+    2001: "AttackSpeed",
+    3000: "MoveSpeed",
+  })[value] ?? "Numeric";
 }
 function median(values) { return percentile([...values].sort(numberOrder), 0.50); }
 function percentile(sorted, ratio) { return sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))]; }

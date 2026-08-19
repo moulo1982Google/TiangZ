@@ -82,7 +82,9 @@ docker compose down -v --remove-orphans
 - `tiangz_process_runtime_fresh`、`tiangz_process_runtime_heartbeat_age_seconds`：识别健康 HTTP 可响应但 V8 业务线程已经卡住的假存活。
 - `tiangz_transport_inner_pending_calls`：内网 RPC 待返回调用
 - `tiangz_transport_inner_overload_rejections`：transport 队列过载拒绝数
+- `tiangz_transport_inner_overload_rejections_by_route_total`：按 msgcode、source、target、traffic（call/send）和 queue stage 细分的过载拒绝
 - `tiangz_transport_inner_timed_out_calls`：跨进程 RPC 超时
+- `tiangz_transport_inner_timeouts_by_route_total`：按 msgcode、source、target、traffic 和 queue stage 细分的超时
 - `tiangz_transport_inner_disconnected_calls`：连接断开丢弃数
 - `tiangz_scene_*`：按进程/Scene 聚合的处理与错误计数
 - `tiangz_native_live_units`：Rust Arena 中在线 Unit 数
@@ -132,6 +134,12 @@ this.ctx.logger.error("使用道具失败", { unitId, itemId, error });
 ```
 
 固定字段包括 `process/scene/sceneType/actorId/connectionId/rpcId/msgcode/requestId/unitId`，其他业务字段会进入 `attributes`。协议分发时会自动绑定 `connectionId/actorId/msgcode/rpcId/requestId`，Handler 可直接使用 `context.logger`，不需要重复填写这些字段。`requestId` 当前只保证单个 Process/V8 生命周期内可区分请求，不等同于跨进程 Trace；真正的 `traceId` 传播留给后续内部协议设计。`Error` 会保留名称、消息和堆栈。旧的 `console.log/error` 仍可用并会进入统一出口，但缺少 Scene/Actor 绑定字段，只用于兼容旧代码。
+
+Inner Transport 的 route 维度来自协议帧的 msgcode、发送方、目标方、调用/单向流量类别以及队列阶段（`manager_queue`、`connection_queue`、`call_writer_queue`、`send_writer_queue`、`target_ingress_queue`，超时还包括 `before_send`、`connection`、`pending_call`）。`target_ingress_queue`表示目标Process的控制流保留队列已满，宿主已按原rpcId立即拒绝，不应同时增长同一次调用的timeout。为避免异常路由造成指标基数无限增长，每个进程最多保留 4096 个维度组合；超过上限的新组合只计入总量，不创建新的标签序列。
+
+Process `queueStages`保留按事件语义划分的`frame/completion/disconnect/shutdown`，并额外提供按物理入口队列划分的`control_ingress/data_ingress`。默认总容量按1:3保留给控制与数据，二者深度相加等于聚合`queueDepth`；定位广播洪峰时应同时比较两类入口深度和各自backpressure等待，不能仅凭聚合队列判断RPC是否被广播阻塞。
+
+声明`forwarding=latest`的ActorLocation单向输入另有Scene自定义指标`actor_latest_forward`：`queued_total`是Gate收到的输入，`coalesced_total`是等待窗口内被新值覆盖的旧输入，`forwarded_total`是最终送往目标Actor mailbox的条目，`batches_total`是实际跨进程批量帧；`pending_frames`观察当前等待量，`failed_batches_total/failed_frames_total/dropped_total`必须保持为0。该指标按Scene输出，跨Gate容量报告会先按Process求和，再汇总全部Gate。
 
 TS Logger 会在合并字段和 JSON 序列化之前检查最低日志级别，关闭的低级别日志不会跨 deno_core op。简单的 `level`、`RUST_LOG=info` 等配置可精确预过滤；复杂的 target filter 会保守地允许 TS 日志进入 Rust，再由 `tracing` 做最终过滤，避免错误丢弃本应开启的 target。
 
@@ -281,6 +289,11 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 - `live_entities`：Rust generation Arena 中全部存活实体数，用于发现 Item 等非 Unit 实体泄漏。
 - `live_units`：Rust Arena 中存活 Unit 数；玩家全部离开后应回到 0。
 - `encoded_frames/encoded_items/encoded_bytes`：Rust 直接 protobuf 投影的帧数、Unit 数和唯一帧字节数；逻辑下行还要乘以收件人数。
+- `tiangz_native_numeric_changes_total{numeric_type}`：该NumericType在Rust权威存储中的真实变化次数，不等于客户端发送次数。
+- `tiangz_native_numeric_encoded_records_total{numeric_type}`：进入最终受众分组并编码的Numeric记录数；latest合并和发布频率都会降低它。
+- `tiangz_native_numeric_recipient_deliveries_total{numeric_type}`：记录乘以最终收件人数后的逻辑投递次数，用于直接定位某个NumericType的AOI扇出。
+- `tiangz_native_numeric_logical_bytes_total{numeric_type}`：不含Gate外壳的Numeric条目逻辑投递字节；与唯一编码字节不是同一口径。
+- `connection_ingress.dropped_frames_after_disconnect_total`：控制队列中的Disconnect越过旧数据帧后，被EntryScene短期墓碑丢弃的残留客户端帧。少量值可出现在批量断线或压测清理阶段；持续增长则要检查客户端断线风暴和数据入口积压。
 - `tiangz_aoi_candidate_relations/tiangz_aoi_visible_relations`：空间候选关系与业务过滤后的最终可见关系，均为当前值 Gauge。
 - `tiangz_aoi_lingering_relations`：仅因为已经 Enter、尚未越过 Detach 而继续保留的迟滞关系。它持续接近 `visible_relations` 时，表示地图正在承受密集人群跨 Grid 的迟滞维护压力。
 - `tiangz_aoi_rejected_relations`：被阵营、隐身、位面等业务过滤器拒绝的空间关系。它是当前拒绝数量，不是累计过滤次数。
@@ -316,6 +329,7 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 - `tiangz_transport_inner_timed_out_calls`：跨进程调用超时，常见于目标进程阻塞或对端连接异常。
 - `tiangz_transport_inner_disconnected_calls`：在链路断开时丢弃的调用数量，和 `disconnects` 联动可定位网络抖动。
 - `tiangz_native_encoded_bytes_total`：Native snapshot 下发编码字节，通常比 TS 下发在高并发场景更直观体现下行压力。
+- `tiangz_native_numeric_recipient_deliveries_total`：按`numeric_type`查看Numeric逻辑扇出；排查恢复类数值时应比较`rate(changes)`与`rate(recipient_deliveries)`，不要只看聚合`encoded_items`。
 - `tiangz_scene_latency_ms_bucket`：标准 Histogram bucket；Grafana 使用 `histogram_quantile()` 计算可聚合的 P50/P95/P99。
 - `tiangz_game_config_info{data_fingerprint="..."}`：该Process当前生效的游戏配置数据版本；多Process版本不一致时可直接比较标签。
 - `tiangz_game_config_reload_successes_total` / `tiangz_game_config_reload_failures_total`：配置数据在线切换成功和拒绝次数。

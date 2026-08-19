@@ -59,6 +59,7 @@ const messageOptionKeys = new Set([
   "service",
   "method",
   "duringTransfer",
+  "forwarding",
 ]);
 
 await main();
@@ -362,6 +363,7 @@ function parseMessageMeta(comments, trailingBase) {
     method: undefined,
     broadcast: undefined,
     duringTransfer: undefined,
+    forwarding: undefined,
   };
 
   const responseTypeMatch = comments.match(/\/\/\s*ResponseType\s+(\w+)/);
@@ -404,6 +406,7 @@ function parseMessageMeta(comments, trailingBase) {
     if (key === "protocol" || key === "service") meta.protocol = value;
     if (key === "method") meta.method = value;
     if (key === "duringTransfer") meta.duringTransfer = value;
+    if (key === "forwarding") meta.forwarding = value;
   }
 
   return meta;
@@ -806,6 +809,7 @@ function parseRpcs(messages) {
       throw new Error(`${response.name} is used as response but is not a Response type`);
     }
     validateTransferPolicy(message, true);
+    validateForwardingPolicy(message);
 
     rpcs.push({
       serviceName: message.protocol,
@@ -836,6 +840,7 @@ function parseMessageDescriptors(messages) {
     )
     .map((message) => {
       validateTransferPolicy(message, false);
+      validateForwardingPolicy(message);
       return {
         serviceName: message.protocol,
         codeName: message.codeName,
@@ -846,9 +851,21 @@ function parseMessageDescriptors(messages) {
           ? "actor-location"
           : undefined,
         duringTransfer: message.duringTransfer,
+        forwarding: message.forwarding,
       };
     });
   return descriptors;
+}
+
+function validateForwardingPolicy(message) {
+  const policy = message.forwarding;
+  if (policy === undefined) return;
+  if (!(message.base ?? "").startsWith("IActorLocation") || !/(?:Message)$/.test(message.base ?? "")) {
+    throw new Error(`${message.name} forwarding requires an IActorLocationMessage base`);
+  }
+  if (policy !== "immediate" && policy !== "latest") {
+    throw new Error(`${message.name} has invalid forwarding=${policy}`);
+  }
 }
 
 function validateTransferPolicy(message, rpc) {
@@ -1475,7 +1492,7 @@ function emitMessageDescriptors(protocol, outputDir, runtimeFiles) {
     name: "${serviceName}.${descriptor.methodName}",
     msgcode: MsgCode.${descriptor.codeName},
     codec: ${descriptor.messageType}Codec,
-${descriptor.routing ? `    routing: "${descriptor.routing}",\n` : ""}${protocol.target === "server" && descriptor.duringTransfer ? `    duringTransfer: "${descriptor.duringTransfer}",\n` : ""}  }),`,
+${descriptor.routing ? `    routing: "${descriptor.routing}",\n` : ""}${protocol.target === "server" && descriptor.duringTransfer ? `    duringTransfer: "${descriptor.duringTransfer}",\n` : ""}${protocol.target === "server" && descriptor.forwarding ? `    forwarding: "${descriptor.forwarding}",\n` : ""}  }),`,
     );
     return `export const ${serviceName}Messages = {\n${entries.join("\n")}\n};`;
   });

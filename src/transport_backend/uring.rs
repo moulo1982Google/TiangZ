@@ -15,10 +15,12 @@ use tokio_uring::net::{TcpListener, TcpStream};
 use super::{
     CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriter, EndpointContext,
     IoBackend, MAX_INNER_TOKEN_LEN, RawFrameDecoder, WRITE_BATCH_BYTE_CAPACITY,
-    WRITE_BATCH_FRAME_CAPACITY, validate_frame_access,
+    WRITE_BATCH_FRAME_CAPACITY, try_queue_connection_frame, validate_frame_access,
 };
-use crate::process::ProcessEvent;
-use crate::transport::{INNER_HANDSHAKE_MAGIC, inner_token};
+use crate::process::{ProcessEvent, ProcessIngressTrySendError};
+use crate::transport::{
+    INNER_HANDSHAKE_MAGIC, build_target_ingress_overload, inner_frame_rpc_id, inner_token,
+};
 
 pub(crate) struct UringIoBackend {
     entries: u32,
@@ -128,17 +130,15 @@ async fn handle_raw_connection(
     let (write_tx, write_rx) = mpsc::channel::<Bytes>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
     let queued_bytes = Arc::new(AtomicUsize::new(0));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let connection_writer = ConnectionWriter {
+        sender: write_tx,
+        queued_bytes: Arc::clone(&queued_bytes),
+        shutdown_tx: shutdown_tx.clone(),
+    };
     writers
         .lock()
         .expect("connection writer map poisoned")
-        .insert(
-            connection_id,
-            ConnectionWriter {
-                sender: write_tx,
-                queued_bytes: Arc::clone(&queued_bytes),
-                shutdown_tx: shutdown_tx.clone(),
-            },
-        );
+        .insert(connection_id, connection_writer.clone());
 
     let writer_stream = Rc::clone(&stream);
     let writer_stats = Arc::clone(&stats);
@@ -160,6 +160,7 @@ async fn handle_raw_connection(
         first_frame_len,
         Rc::clone(&stream),
         event_tx.clone(),
+        connection_writer,
         Arc::clone(&stats),
         read_buffer_bytes,
     )
@@ -193,6 +194,7 @@ async fn run_reader(
     first_frame_len: Option<usize>,
     stream: Rc<TcpStream>,
     event_tx: crate::process::ProcessEventSender,
+    connection_writer: ConnectionWriter,
     stats: Arc<crate::process::ProcessQueueStats>,
     read_buffer_bytes: usize,
 ) -> Result<()> {
@@ -210,15 +212,38 @@ async fn run_reader(
         while let Some(frame) = decoder.next_frame()? {
             validate_frame_access(connection_kind, &frame)?;
             frame_count += 1;
+            let rpc_id = (connection_kind == ConnectionKind::Internal)
+                .then(|| inner_frame_rpc_id(&frame))
+                .flatten();
+            let event = ProcessEvent::Frame {
+                scene_index,
+                connection_id,
+                frame,
+            };
+            if let Some(rpc_id) = rpc_id {
+                match event_tx.try_send_control(event) {
+                    Ok(()) => continue,
+                    Err(ProcessIngressTrySendError::Overloaded) => {
+                        try_queue_connection_frame(
+                            &connection_writer,
+                            build_target_ingress_overload(rpc_id),
+                        )
+                        .map_err(anyhow::Error::msg)?;
+                        tracing::warn!(
+                            target: "tiangz::transport",
+                            connection_id,
+                            rpc_id,
+                            "rejected inner RPC because target control ingress queue is full"
+                        );
+                        continue;
+                    }
+                    Err(ProcessIngressTrySendError::Stopped) => {
+                        return Err(anyhow::anyhow!("process event queue is stopped"));
+                    }
+                }
+            }
             event_tx
-                .send(
-                    ProcessEvent::Frame {
-                        scene_index,
-                        connection_id,
-                        frame,
-                    },
-                    None,
-                )
+                .send(event, None)
                 .await
                 .map_err(anyhow::Error::msg)?;
         }

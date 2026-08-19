@@ -4,7 +4,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::io::IoSlice;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -18,8 +18,19 @@ use tokio::time::{Instant, sleep_until, timeout_at};
 const MAX_FRAME_LEN: usize = 1024 * 1024;
 const ACTOR_LOCATION_ENVELOPE_MSGCODE: u16 = 29_999;
 const ACTOR_LOCATION_ENVELOPE_HEADER_LEN: usize = 14;
+const ACTOR_LOCATION_BATCH_ENVELOPE_MSGCODE: u16 = 29_997;
+const TARGET_INGRESS_OVERLOAD_MSGCODE: u16 = 29_998;
+const TARGET_INGRESS_OVERLOAD_FRAME_LEN: usize = 6;
 const TRANSPORT_QUEUE_CAPACITY: usize = 4096;
+const TRANSPORT_CALL_QUEUE_CAPACITY: usize = 1024;
+const TRANSPORT_SEND_QUEUE_CAPACITY: usize =
+    TRANSPORT_QUEUE_CAPACITY - TRANSPORT_CALL_QUEUE_CAPACITY;
 const CONNECTION_QUEUE_CAPACITY: usize = 4096;
+const CONNECTION_CALL_QUEUE_CAPACITY: usize = 1024;
+const CONNECTION_SEND_QUEUE_CAPACITY: usize =
+    CONNECTION_QUEUE_CAPACITY - CONNECTION_CALL_QUEUE_CAPACITY;
+const MAX_CONSECUTIVE_CALLS: usize = 32;
+const MAX_DIAGNOSTIC_KEYS: usize = 4096;
 pub(crate) const INNER_HANDSHAKE_MAGIC: u32 = u32::from_be_bytes(*b"ETSI");
 const DEFAULT_INNER_TOKEN: &str = "ets-local-inner-token";
 const MAX_INNER_TOKEN_LEN: usize = 1024;
@@ -34,7 +45,8 @@ static REMOTE_TRANSPORT: OnceLock<RemoteTransportHandle> = OnceLock::new();
 
 #[derive(Clone)]
 struct RemoteTransportHandle {
-    sender: mpsc::Sender<TransportCommand>,
+    call_sender: mpsc::Sender<TransportCommand>,
+    send_sender: mpsc::Sender<TransportCommand>,
     metrics: Arc<RemoteTransportMetrics>,
 }
 
@@ -53,6 +65,8 @@ struct RemoteTransportMetrics {
     connection_queue_overloads: AtomicU64,
     call_writer_queue_overloads: AtomicU64,
     send_writer_queue_overloads: AtomicU64,
+    target_ingress_queue_overloads: AtomicU64,
+    diagnostics: Mutex<HashMap<TransportDiagnosticKey, TransportDiagnosticCounters>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -67,6 +81,7 @@ pub(crate) struct RemoteTransportMetricsSnapshot {
     pub(crate) late_responses: u64,
     pub(crate) idle_closes: u64,
     pub(crate) overload_stages: Vec<RemoteTransportOverloadSnapshot>,
+    pub(crate) diagnostics: Vec<RemoteTransportDiagnosticSnapshot>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,16 +90,100 @@ pub(crate) struct RemoteTransportOverloadSnapshot {
     pub(crate) rejections: u64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RemoteTransportDiagnosticSnapshot {
+    pub(crate) msgcode: u16,
+    pub(crate) source: String,
+    pub(crate) target: String,
+    pub(crate) traffic: &'static str,
+    pub(crate) stage: &'static str,
+    pub(crate) overloads: u64,
+    pub(crate) timeouts: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum TransportTrafficClass {
+    Call,
+    Send,
+}
+
+impl TransportTrafficClass {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Call => "call",
+            Self::Send => "send",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct TransportDiagnosticKey {
+    msgcode: u16,
+    source: String,
+    target: String,
+    traffic: TransportTrafficClass,
+    stage: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct TransportDiagnosticCounters {
+    overloads: u64,
+    timeouts: u64,
+}
+
+#[derive(Clone, Debug)]
+struct TransportContext {
+    msgcode: u16,
+    source: String,
+    target: String,
+    traffic: TransportTrafficClass,
+}
+
+impl TransportContext {
+    fn new(source: String, target: String, frame: &[u8], traffic: TransportTrafficClass) -> Self {
+        Self {
+            msgcode: metric_msgcode(frame),
+            source,
+            target,
+            traffic,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum RemoteTransportOverloadStage {
     Manager,
     Connection,
     CallWriter,
     SendWriter,
+    TargetIngress,
 }
 
 impl RemoteTransportMetrics {
     fn snapshot(&self) -> RemoteTransportMetricsSnapshot {
+        let mut diagnostics = self
+            .diagnostics
+            .lock()
+            .expect("remote transport diagnostic lock poisoned")
+            .iter()
+            .map(|(key, counters)| RemoteTransportDiagnosticSnapshot {
+                msgcode: key.msgcode,
+                source: key.source.clone(),
+                target: key.target.clone(),
+                traffic: key.traffic.label(),
+                stage: key.stage,
+                overloads: counters.overloads,
+                timeouts: counters.timeouts,
+            })
+            .collect::<Vec<_>>();
+        diagnostics.sort_by(|left, right| {
+            left.source
+                .cmp(&right.source)
+                .then_with(|| left.target.cmp(&right.target))
+                .then_with(|| left.msgcode.cmp(&right.msgcode))
+                .then_with(|| left.stage.cmp(right.stage))
+                .then_with(|| left.traffic.cmp(right.traffic))
+        });
         RemoteTransportMetricsSnapshot {
             active_connections: self.active_connections.load(Ordering::Relaxed) as u64,
             opened_connections: self.opened_connections.load(Ordering::Relaxed),
@@ -112,19 +211,61 @@ impl RemoteTransportMetrics {
                     stage: "send_writer_queue",
                     rejections: self.send_writer_queue_overloads.load(Ordering::Relaxed),
                 },
+                RemoteTransportOverloadSnapshot {
+                    stage: "target_ingress_queue",
+                    rejections: self.target_ingress_queue_overloads.load(Ordering::Relaxed),
+                },
             ],
+            diagnostics,
         }
     }
 
-    fn rejected(&self, stage: RemoteTransportOverloadStage) {
+    fn rejected(&self, stage: RemoteTransportOverloadStage, context: &TransportContext) {
         self.overload_rejections.fetch_add(1, Ordering::Relaxed);
         let counter = match stage {
             RemoteTransportOverloadStage::Manager => &self.manager_queue_overloads,
             RemoteTransportOverloadStage::Connection => &self.connection_queue_overloads,
             RemoteTransportOverloadStage::CallWriter => &self.call_writer_queue_overloads,
             RemoteTransportOverloadStage::SendWriter => &self.send_writer_queue_overloads,
+            RemoteTransportOverloadStage::TargetIngress => &self.target_ingress_queue_overloads,
         };
         counter.fetch_add(1, Ordering::Relaxed);
+        self.record_diagnostic(context, stage.label(), true, false);
+    }
+
+    fn timed_out(&self, context: &TransportContext, stage: &'static str) {
+        self.timed_out_calls.fetch_add(1, Ordering::Relaxed);
+        self.record_diagnostic(context, stage, false, true);
+    }
+
+    fn record_diagnostic(
+        &self,
+        context: &TransportContext,
+        stage: &'static str,
+        overload: bool,
+        timeout: bool,
+    ) {
+        let key = TransportDiagnosticKey {
+            msgcode: context.msgcode,
+            source: context.source.clone(),
+            target: context.target.clone(),
+            traffic: context.traffic,
+            stage,
+        };
+        let mut diagnostics = self
+            .diagnostics
+            .lock()
+            .expect("remote transport diagnostic lock poisoned");
+        if diagnostics.len() >= MAX_DIAGNOSTIC_KEYS && !diagnostics.contains_key(&key) {
+            return;
+        }
+        let counters = diagnostics.entry(key).or_default();
+        if overload {
+            counters.overloads = counters.overloads.saturating_add(1);
+        }
+        if timeout {
+            counters.timeouts = counters.timeouts.saturating_add(1);
+        }
     }
 
     fn pending_added(&self) {
@@ -148,8 +289,7 @@ impl RemoteTransportHandle {
 }
 
 struct TransportCommand {
-    source_name: String,
-    target_name: String,
+    context: TransportContext,
     address: String,
     frame: Bytes,
     deadline: Instant,
@@ -157,6 +297,7 @@ struct TransportCommand {
 }
 
 struct ConnectionCommand {
+    context: TransportContext,
     frame: Bytes,
     deadline: Instant,
     completion: CommandCompletion,
@@ -167,14 +308,42 @@ enum CommandCompletion {
     Send(oneshot::Sender<SendResult>),
 }
 
+impl CommandCompletion {
+    fn traffic_class(&self) -> TransportTrafficClass {
+        match self {
+            Self::Call(_) => TransportTrafficClass::Call,
+            Self::Send(_) => TransportTrafficClass::Send,
+        }
+    }
+}
+
 struct PendingCall {
+    context: TransportContext,
     deadline: Instant,
     response_tx: oneshot::Sender<CallResult>,
 }
 
 struct SocketSession {
     generation: u64,
-    outbound_tx: mpsc::Sender<Bytes>,
+    call_outbound_tx: mpsc::Sender<Bytes>,
+    send_outbound_tx: mpsc::Sender<Bytes>,
+}
+
+#[derive(Clone)]
+struct ConnectionHandle {
+    sender: mpsc::Sender<ConnectionCommand>,
+}
+
+impl RemoteTransportOverloadStage {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Manager => "manager_queue",
+            Self::Connection => "connection_queue",
+            Self::CallWriter => "call_writer_queue",
+            Self::SendWriter => "send_writer_queue",
+            Self::TargetIngress => "target_ingress_queue",
+        }
+    }
 }
 
 enum SocketEvent {
@@ -188,14 +357,20 @@ pub fn init_remote_transport() {
         return;
     }
 
-    let (tx, rx) = mpsc::channel(TRANSPORT_QUEUE_CAPACITY);
+    let (call_tx, call_rx) = mpsc::channel(TRANSPORT_CALL_QUEUE_CAPACITY);
+    let (send_tx, send_rx) = mpsc::channel(TRANSPORT_SEND_QUEUE_CAPACITY);
     let metrics = Arc::new(RemoteTransportMetrics::default());
     let handle = RemoteTransportHandle {
-        sender: tx,
+        call_sender: call_tx,
+        send_sender: send_tx,
         metrics: Arc::clone(&metrics),
     };
     if REMOTE_TRANSPORT.set(handle).is_ok() {
-        tokio::spawn(run_transport_manager(rx, Arc::clone(&metrics)));
+        tokio::spawn(run_transport_manager(
+            call_rx,
+            send_rx,
+            Arc::clone(&metrics),
+        ));
         tokio::spawn(log_transport_metrics(metrics));
     }
 }
@@ -230,20 +405,27 @@ pub async fn call_remote_scene(
     let (response_tx, response_rx) = oneshot::channel();
 
     let command = TransportCommand {
-        source_name,
-        target_name,
+        context: TransportContext::new(
+            source_name,
+            target_name,
+            &frame,
+            TransportTrafficClass::Call,
+        ),
         address,
         frame,
         deadline,
         completion: CommandCompletion::Call(response_tx),
     };
-    match transport.sender.try_send(command) {
+    match transport.call_sender.try_send(command) {
         Ok(()) => {}
-        Err(mpsc::error::TrySendError::Full(_)) => {
+        Err(mpsc::error::TrySendError::Full(command)) => {
             transport
                 .metrics
-                .rejected(RemoteTransportOverloadStage::Manager);
-            return Err("[scene-overloaded] remote transport queue is full".to_string());
+                .rejected(RemoteTransportOverloadStage::Manager, &command.context);
+            return Err(format!(
+                "[scene-overloaded] remote call queue is full for {} -> {}",
+                command.context.source, command.context.target
+            ));
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {
             return Err("remote scene transport is stopped".to_string());
@@ -271,21 +453,28 @@ pub async fn send_remote_scene(
     let deadline = Instant::now() + send_timeout;
     let (result_tx, result_rx) = oneshot::channel();
     let command = TransportCommand {
-        source_name,
-        target_name,
+        context: TransportContext::new(
+            source_name,
+            target_name,
+            &frame,
+            TransportTrafficClass::Send,
+        ),
         address,
         frame,
         deadline,
         completion: CommandCompletion::Send(result_tx),
     };
 
-    match transport.sender.try_send(command) {
+    match transport.send_sender.try_send(command) {
         Ok(()) => {}
-        Err(mpsc::error::TrySendError::Full(_)) => {
+        Err(mpsc::error::TrySendError::Full(command)) => {
             transport
                 .metrics
-                .rejected(RemoteTransportOverloadStage::Manager);
-            return Err("[scene-overloaded] remote transport queue is full".to_string());
+                .rejected(RemoteTransportOverloadStage::Manager, &command.context);
+            return Err(format!(
+                "[scene-overloaded] remote send queue is full for {} -> {}",
+                command.context.source, command.context.target
+            ));
         }
         Err(mpsc::error::TrySendError::Closed(_)) => {
             return Err("remote scene transport is stopped".to_string());
@@ -298,51 +487,135 @@ pub async fn send_remote_scene(
 }
 
 async fn run_transport_manager(
-    mut rx: mpsc::Receiver<TransportCommand>,
+    mut call_rx: mpsc::Receiver<TransportCommand>,
+    mut send_rx: mpsc::Receiver<TransportCommand>,
     metrics: Arc<RemoteTransportMetrics>,
 ) {
-    let mut connections = HashMap::<String, mpsc::Sender<ConnectionCommand>>::new();
+    let mut connections = HashMap::<String, ConnectionHandle>::new();
+    let mut call_open = true;
+    let mut send_open = true;
+    let mut consecutive_calls = 0_usize;
 
-    while let Some(command) = rx.recv().await {
-        let target_name = command.target_name.clone();
-        let key = format!("{}->{}", command.source_name, command.address);
-        let connection_tx = connections
-            .entry(key)
-            .or_insert_with(|| {
-                let (connection_tx, connection_rx) = mpsc::channel(CONNECTION_QUEUE_CAPACITY);
-                tokio::spawn(run_connection(
-                    command.target_name.clone(),
-                    command.address.clone(),
-                    connection_rx,
-                    Arc::clone(&metrics),
-                ));
-                connection_tx
-            })
-            .clone();
-
-        let connection_command = ConnectionCommand {
-            frame: command.frame,
-            deadline: command.deadline,
-            completion: command.completion,
+    while call_open || send_open {
+        let force_send = consecutive_calls >= MAX_CONSECUTIVE_CALLS && send_open;
+        if force_send {
+            match send_rx.try_recv() {
+                Ok(command) => {
+                    consecutive_calls = 0;
+                    dispatch_transport_command(&mut connections, command, &metrics);
+                    continue;
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => send_open = false,
+                Err(mpsc::error::TryRecvError::Empty) => {}
+            }
+        }
+        // 强制公平分支可能刚好观察到最后一个发送者关闭；再次检查可避免进入无可用分支的 select。
+        // The forced-fairness probe may observe the final sender closing; recheck before entering
+        // a select whose every branch would otherwise be disabled.
+        if !call_open && !send_open {
+            break;
+        }
+        let command = tokio::select! {
+            biased;
+            command = call_rx.recv(), if call_open => {
+                match command {
+                    Some(command) => {
+                        consecutive_calls = consecutive_calls.saturating_add(1);
+                        Some(command)
+                    }
+                    None => {
+                        call_open = false;
+                        None
+                    }
+                }
+            }
+            command = send_rx.recv(), if send_open => {
+                match command {
+                    Some(command) => {
+                        consecutive_calls = 0;
+                        Some(command)
+                    }
+                    None => {
+                        send_open = false;
+                        None
+                    }
+                }
+            }
         };
-        match connection_tx.try_send(connection_command) {
-            Ok(()) => {}
-            Err(mpsc::error::TrySendError::Full(command)) => {
-                metrics.rejected(RemoteTransportOverloadStage::Connection);
-                fail_completion(
-                    command.completion,
-                    format!(
-                        "[scene-overloaded] connection queue for {} is full",
-                        target_name
-                    ),
-                );
-            }
-            Err(mpsc::error::TrySendError::Closed(command)) => {
-                fail_completion(
-                    command.completion,
-                    "remote scene connection worker is stopped".to_string(),
-                );
-            }
+        let Some(command) = command else {
+            continue;
+        };
+        dispatch_transport_command(&mut connections, command, &metrics);
+    }
+}
+
+fn dispatch_transport_command(
+    connections: &mut HashMap<String, ConnectionHandle>,
+    command: TransportCommand,
+    metrics: &Arc<RemoteTransportMetrics>,
+) {
+    let traffic = command.completion.traffic_class();
+    // Call与Send必须拥有独立Socket；只拆队列仍会让目标reader在数据背压时阻塞后续RPC。
+    // Call and Send require separate sockets. Queue-only separation still lets target-side data
+    // backpressure block later RPC frames in the same reader.
+    let key = format!(
+        "{}->{}:{}",
+        command.context.source,
+        command.address,
+        traffic.label()
+    );
+    let target_name = command.context.target.clone();
+    let context = command.context.clone();
+    let connection = connections
+        .entry(key)
+        .or_insert_with(|| {
+            let (call_tx, call_rx) = mpsc::channel(CONNECTION_CALL_QUEUE_CAPACITY);
+            let (send_tx, send_rx) = mpsc::channel(CONNECTION_SEND_QUEUE_CAPACITY);
+            tokio::spawn(run_connection(
+                target_name.clone(),
+                command.address.clone(),
+                call_rx,
+                send_rx,
+                Arc::clone(metrics),
+            ));
+            let sender = match traffic {
+                TransportTrafficClass::Call => {
+                    drop(send_tx);
+                    call_tx
+                }
+                TransportTrafficClass::Send => {
+                    drop(call_tx);
+                    send_tx
+                }
+            };
+            ConnectionHandle { sender }
+        })
+        .clone();
+
+    let connection_command = ConnectionCommand {
+        context,
+        frame: command.frame,
+        deadline: command.deadline,
+        completion: command.completion,
+    };
+    match connection.sender.try_send(connection_command) {
+        Ok(()) => {}
+        Err(mpsc::error::TrySendError::Full(command)) => {
+            metrics.rejected(RemoteTransportOverloadStage::Connection, &command.context);
+            fail_completion(
+                command.completion,
+                format!(
+                    "[scene-overloaded] {} connection queue for {} is full",
+                    traffic.label(),
+                    target_name
+                ),
+            );
+        }
+        Err(mpsc::error::TrySendError::Closed(command)) => {
+            fail_completion(
+                command.completion,
+                "remote scene connection worker is stopped".to_string(),
+            );
         }
     }
 }
@@ -350,7 +623,8 @@ async fn run_transport_manager(
 async fn run_connection(
     target_name: String,
     address: String,
-    mut command_rx: mpsc::Receiver<ConnectionCommand>,
+    mut call_rx: mpsc::Receiver<ConnectionCommand>,
+    mut send_rx: mpsc::Receiver<ConnectionCommand>,
     metrics: Arc<RemoteTransportMetrics>,
 ) {
     let (event_tx, mut event_rx) = mpsc::channel(CONNECTION_QUEUE_CAPACITY);
@@ -359,6 +633,9 @@ async fn run_connection(
     let mut pending = HashMap::<u32, PendingCall>::new();
     let mut deadlines = BinaryHeap::<Reverse<(Instant, u32)>>::new();
     let mut last_activity = Instant::now();
+    let mut call_open = true;
+    let mut send_open = true;
+    let mut consecutive_calls = 0_usize;
 
     loop {
         prune_deadlines(&pending, &mut deadlines);
@@ -368,30 +645,71 @@ async fn run_connection(
             .unwrap_or_else(|| Instant::now() + Duration::from_secs(24 * 60 * 60));
         let idle_deadline = last_activity + INNER_CONNECTION_IDLE_TIMEOUT;
 
-        tokio::select! {
-            command = command_rx.recv() => {
-                let Some(command) = command else {
-                    close_session(&mut session, &metrics);
-                    fail_all(
-                        &mut pending,
-                        "remote scene connection worker stopped",
-                        &metrics,
-                    );
-                    return;
-                };
-                handle_command(
+        // Socket响应必须先于持续就绪的命令队列被消费，否则远端已经返回的RPC仍会在本地假超时。
+        // Consume one already-queued socket event before ready command queues, otherwise an RPC
+        // that already returned remotely can still time out locally under sustained ingress.
+        match event_rx.try_recv() {
+            Ok(event) => {
+                handle_socket_event(
+                    event,
                     &target_name,
-                    &address,
-                    command,
-                    &event_tx,
                     &mut session,
-                    &mut generation,
                     &mut pending,
-                    &mut deadlines,
                     &mut last_activity,
                     &metrics,
-                ).await;
+                );
+                continue;
             }
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                close_session(&mut session, &metrics);
+                fail_all(
+                    &mut pending,
+                    &format!("scene {target_name} socket event worker stopped"),
+                    &metrics,
+                );
+            }
+            Err(mpsc::error::TryRecvError::Empty) => {}
+        }
+        if !pending.is_empty() && next_deadline <= Instant::now() {
+            expire_pending(&mut pending, &mut deadlines, &metrics);
+            continue;
+        }
+
+        let force_send = consecutive_calls >= MAX_CONSECUTIVE_CALLS && send_open;
+        if force_send {
+            match send_rx.try_recv() {
+                Ok(command) => {
+                    consecutive_calls = 0;
+                    handle_command(
+                        &target_name,
+                        &address,
+                        command,
+                        &event_tx,
+                        &mut session,
+                        &mut generation,
+                        &mut pending,
+                        &mut deadlines,
+                        &mut last_activity,
+                        &metrics,
+                    )
+                    .await;
+                    continue;
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => send_open = false,
+                Err(mpsc::error::TryRecvError::Empty) => {}
+            }
+        }
+        if !call_open && !send_open {
+            close_session(&mut session, &metrics);
+            fail_all(
+                &mut pending,
+                "remote scene connection worker stopped",
+                &metrics,
+            );
+            return;
+        }
+        tokio::select! {
+            biased;
             event = event_rx.recv() => {
                 if let Some(event) = event {
                     handle_socket_event(
@@ -407,10 +725,59 @@ async fn run_connection(
             _ = sleep_until(next_deadline), if !pending.is_empty() => {
                 expire_pending(&mut pending, &mut deadlines, &metrics);
             }
+            command = call_rx.recv(), if call_open => {
+                match command {
+                    Some(command) => {
+                        consecutive_calls = consecutive_calls.saturating_add(1);
+                        handle_command(
+                            &target_name,
+                            &address,
+                            command,
+                            &event_tx,
+                            &mut session,
+                            &mut generation,
+                            &mut pending,
+                            &mut deadlines,
+                            &mut last_activity,
+                            &metrics,
+                        ).await;
+                    }
+                    None => call_open = false,
+                }
+            }
+            command = send_rx.recv(), if send_open => {
+                match command {
+                    Some(command) => {
+                        consecutive_calls = 0;
+                        handle_command(
+                            &target_name,
+                            &address,
+                            command,
+                            &event_tx,
+                            &mut session,
+                            &mut generation,
+                            &mut pending,
+                            &mut deadlines,
+                            &mut last_activity,
+                            &metrics,
+                        ).await;
+                    }
+                    None => send_open = false,
+                }
+            }
             _ = sleep_until(idle_deadline), if session.is_some() && pending.is_empty() => {
                 close_session(&mut session, &metrics);
                 metrics.idle_closes.fetch_add(1, Ordering::Relaxed);
             }
+        }
+        if !call_open && !send_open {
+            close_session(&mut session, &metrics);
+            fail_all(
+                &mut pending,
+                "remote scene connection worker stopped",
+                &metrics,
+            );
+            return;
         }
     }
 }
@@ -431,13 +798,14 @@ async fn handle_command(
     metrics: &RemoteTransportMetrics,
 ) {
     let ConnectionCommand {
+        context,
         frame,
         deadline,
         completion,
     } = command;
 
     if deadline <= Instant::now() {
-        metrics.timed_out_calls.fetch_add(1, Ordering::Relaxed);
+        metrics.timed_out(&context, "before_send");
         fail_completion(
             completion,
             format!("scene operation to {target_name} expired before send"),
@@ -503,6 +871,7 @@ async fn handle_command(
                 return;
             }
             Err(_) => {
+                metrics.timed_out(&context, "connection");
                 fail_completion(
                     completion,
                     format!("connect scene {target_name} at {address} timed out"),
@@ -512,27 +881,28 @@ async fn handle_command(
         }
     }
 
-    let outbound_tx = session
-        .as_ref()
-        .expect("session just connected")
-        .outbound_tx
-        .clone();
     match completion {
         CommandCompletion::Call(response_tx) => {
             let rpc_id = rpc_id.expect("call command must carry rpcId");
             pending.insert(
                 rpc_id,
                 PendingCall {
+                    context: context.clone(),
                     deadline,
                     response_tx,
                 },
             );
             deadlines.push(Reverse((deadline, rpc_id)));
             metrics.pending_added();
+            let outbound_tx = session
+                .as_ref()
+                .expect("session just connected")
+                .call_outbound_tx
+                .clone();
             match outbound_tx.try_send(frame) {
                 Ok(()) => *last_activity = Instant::now(),
                 Err(mpsc::error::TrySendError::Full(_)) => {
-                    metrics.rejected(RemoteTransportOverloadStage::CallWriter);
+                    metrics.rejected(RemoteTransportOverloadStage::CallWriter, &context);
                     if let Some(call) = pending.remove(&rpc_id) {
                         metrics.pending_removed(1);
                         let _ = call.response_tx.send(Err(format!(
@@ -550,24 +920,31 @@ async fn handle_command(
                 }
             }
         }
-        CommandCompletion::Send(result_tx) => match outbound_tx.try_send(frame) {
-            Ok(()) => {
-                *last_activity = Instant::now();
-                let _ = result_tx.send(Ok(()));
+        CommandCompletion::Send(result_tx) => {
+            let outbound_tx = session
+                .as_ref()
+                .expect("session just connected")
+                .send_outbound_tx
+                .clone();
+            match outbound_tx.try_send(frame) {
+                Ok(()) => {
+                    *last_activity = Instant::now();
+                    let _ = result_tx.send(Ok(()));
+                }
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    metrics.rejected(RemoteTransportOverloadStage::SendWriter, &context);
+                    let _ = result_tx.send(Err(format!(
+                        "[scene-overloaded] scene {target_name} broadcast queue is full"
+                    )));
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    close_session(session, metrics);
+                    let message = format!("scene {target_name} connection writer is stopped");
+                    let _ = result_tx.send(Err(message.clone()));
+                    fail_all(pending, &message, metrics);
+                }
             }
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                metrics.rejected(RemoteTransportOverloadStage::SendWriter);
-                let _ = result_tx.send(Err(format!(
-                    "[scene-overloaded] scene {target_name} outbound queue is full"
-                )));
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                close_session(session, metrics);
-                let message = format!("scene {target_name} connection writer is stopped");
-                let _ = result_tx.send(Err(message.clone()));
-                fail_all(pending, &message, metrics);
-            }
-        },
+        }
     }
 }
 
@@ -596,6 +973,19 @@ fn handle_socket_event(
                 .as_ref()
                 .is_some_and(|session| session.generation == generation) =>
         {
+            if let Some(rpc_id) = parse_target_ingress_overload(&frame) {
+                if let Some(call) = pending.remove(&rpc_id) {
+                    metrics.pending_removed(1);
+                    metrics.rejected(RemoteTransportOverloadStage::TargetIngress, &call.context);
+                    *last_activity = Instant::now();
+                    let _ = call.response_tx.send(Err(format!(
+                        "[scene-overloaded] scene {target_name} control ingress queue is full"
+                    )));
+                } else {
+                    metrics.late_responses.fetch_add(1, Ordering::Relaxed);
+                }
+                return;
+            }
             match extract_rpc_id(&frame) {
                 Ok(rpc_id) => {
                     if let Some(call) = pending.remove(&rpc_id) {
@@ -644,12 +1034,20 @@ fn start_socket_session(
     event_tx: mpsc::Sender<SocketEvent>,
 ) -> SocketSession {
     let (reader, writer) = stream.into_split();
-    let (outbound_tx, outbound_rx) = mpsc::channel(CONNECTION_QUEUE_CAPACITY);
+    let (call_outbound_tx, call_outbound_rx) = mpsc::channel(CONNECTION_CALL_QUEUE_CAPACITY);
+    let (send_outbound_tx, send_outbound_rx) = mpsc::channel(CONNECTION_SEND_QUEUE_CAPACITY);
     tokio::spawn(read_responses(reader, generation, event_tx.clone()));
-    tokio::spawn(write_requests(writer, generation, outbound_rx, event_tx));
+    tokio::spawn(write_requests(
+        writer,
+        generation,
+        call_outbound_rx,
+        send_outbound_rx,
+        event_tx,
+    ));
     SocketSession {
         generation,
-        outbound_tx,
+        call_outbound_tx,
+        send_outbound_tx,
     }
 }
 
@@ -681,18 +1079,36 @@ async fn read_responses(
 async fn write_requests(
     mut writer: OwnedWriteHalf,
     generation: u64,
-    mut outbound_rx: mpsc::Receiver<Bytes>,
+    mut call_rx: mpsc::Receiver<Bytes>,
+    mut send_rx: mpsc::Receiver<Bytes>,
     event_tx: mpsc::Sender<SocketEvent>,
 ) {
     let mut frames = Vec::<Bytes>::with_capacity(INNER_WRITE_BATCH_FRAME_CAPACITY);
-    while let Some(frame) = outbound_rx.recv().await {
+    let mut call_open = true;
+    let mut send_open = true;
+    let mut consecutive_calls = 0_usize;
+    while let Some((frame, _)) = next_writer_frame(
+        &mut call_rx,
+        &mut send_rx,
+        &mut call_open,
+        &mut send_open,
+        &mut consecutive_calls,
+    )
+    .await
+    {
         frames.clear();
         let mut packet_bytes = 4 + frame.len();
         frames.push(frame);
         while frames.len() < INNER_WRITE_BATCH_FRAME_CAPACITY
             && packet_bytes < INNER_WRITE_BATCH_BYTE_CAPACITY
         {
-            let Ok(frame) = outbound_rx.try_recv() else {
+            let Some((frame, _)) = try_next_writer_frame(
+                &mut call_rx,
+                &mut send_rx,
+                &mut call_open,
+                &mut send_open,
+                &mut consecutive_calls,
+            ) else {
                 break;
             };
             packet_bytes += 4 + frame.len();
@@ -705,6 +1121,110 @@ async fn write_requests(
             return;
         }
     }
+}
+
+async fn next_writer_frame(
+    call_rx: &mut mpsc::Receiver<Bytes>,
+    send_rx: &mut mpsc::Receiver<Bytes>,
+    call_open: &mut bool,
+    send_open: &mut bool,
+    consecutive_calls: &mut usize,
+) -> Option<(Bytes, TransportTrafficClass)> {
+    loop {
+        if !*call_open && !*send_open {
+            return None;
+        }
+        let force_send = *consecutive_calls >= MAX_CONSECUTIVE_CALLS && *send_open;
+        if force_send {
+            match send_rx.try_recv() {
+                Ok(frame) => {
+                    *consecutive_calls = 0;
+                    return Some((frame, TransportTrafficClass::Send));
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => *send_open = false,
+                Err(mpsc::error::TryRecvError::Empty) => {}
+            }
+        }
+        if !*call_open && !*send_open {
+            return None;
+        }
+        let selected = tokio::select! {
+            biased;
+            frame = call_rx.recv(), if *call_open => {
+                match frame {
+                    Some(frame) => {
+                        *consecutive_calls = consecutive_calls.saturating_add(1);
+                        Some((frame, TransportTrafficClass::Call))
+                    }
+                    None => {
+                        *call_open = false;
+                        None
+                    }
+                }
+            }
+            frame = send_rx.recv(), if *send_open => {
+                match frame {
+                    Some(frame) => {
+                        *consecutive_calls = 0;
+                        Some((frame, TransportTrafficClass::Send))
+                    }
+                    None => {
+                        *send_open = false;
+                        None
+                    }
+                }
+            }
+        };
+        if selected.is_some() {
+            return selected;
+        }
+    }
+}
+
+fn try_next_writer_frame(
+    call_rx: &mut mpsc::Receiver<Bytes>,
+    send_rx: &mut mpsc::Receiver<Bytes>,
+    call_open: &mut bool,
+    send_open: &mut bool,
+    consecutive_calls: &mut usize,
+) -> Option<(Bytes, TransportTrafficClass)> {
+    if !*call_open && !*send_open {
+        return None;
+    }
+    let force_send = *consecutive_calls >= MAX_CONSECUTIVE_CALLS && *send_open;
+    let primary = if force_send {
+        TransportTrafficClass::Send
+    } else {
+        TransportTrafficClass::Call
+    };
+    let secondary = match primary {
+        TransportTrafficClass::Call => TransportTrafficClass::Send,
+        TransportTrafficClass::Send => TransportTrafficClass::Call,
+    };
+    for traffic in [primary, secondary] {
+        let result = match traffic {
+            TransportTrafficClass::Call if *call_open => call_rx.try_recv(),
+            TransportTrafficClass::Send if *send_open => send_rx.try_recv(),
+            _ => continue,
+        };
+        match result {
+            Ok(frame) => {
+                match traffic {
+                    TransportTrafficClass::Call => {
+                        *consecutive_calls = consecutive_calls.saturating_add(1)
+                    }
+                    TransportTrafficClass::Send => *consecutive_calls = 0,
+                }
+                return Some((frame, traffic));
+            }
+            Err(mpsc::error::TryRecvError::Empty) => {}
+            Err(mpsc::error::TryRecvError::Disconnected) => match traffic {
+                TransportTrafficClass::Call => *call_open = false,
+                TransportTrafficClass::Send => *send_open = false,
+            },
+        }
+    }
+    None
 }
 
 async fn read_frame(reader: &mut OwnedReadHalf) -> CallResult {
@@ -751,12 +1271,39 @@ async fn write_frames_vectored(
     Ok(())
 }
 
+/// 返回内部帧携带的RPC标识；无标识的单向帧可进入数据流保留队列。
+/// Returns the RPC identifier carried by an inner frame. One-way frames without one may use the
+/// data ingress reservation.
+pub(crate) fn inner_frame_rpc_id(frame: &[u8]) -> Option<u32> {
+    extract_rpc_id(frame).ok().filter(|rpc_id| *rpc_id != 0)
+}
+
+/// 构造不进入TypeScript业务层的目标入口过载响应。 / Builds a target-ingress overload response that bypasses TypeScript business dispatch.
+pub(crate) fn build_target_ingress_overload(rpc_id: u32) -> Bytes {
+    let mut frame = [0_u8; TARGET_INGRESS_OVERLOAD_FRAME_LEN];
+    frame[..2].copy_from_slice(&TARGET_INGRESS_OVERLOAD_MSGCODE.to_be_bytes());
+    frame[2..].copy_from_slice(&rpc_id.to_le_bytes());
+    Bytes::copy_from_slice(&frame)
+}
+
+fn parse_target_ingress_overload(frame: &[u8]) -> Option<u32> {
+    if frame.len() != TARGET_INGRESS_OVERLOAD_FRAME_LEN
+        || u16::from_be_bytes(frame[..2].try_into().ok()?) != TARGET_INGRESS_OVERLOAD_MSGCODE
+    {
+        return None;
+    }
+    Some(u32::from_le_bytes(frame[2..].try_into().ok()?))
+}
+
 fn extract_rpc_id(frame: &[u8]) -> Result<u32, String> {
     if frame.len() < 2 {
         return Err("scene frame is shorter than msgcode".to_string());
     }
 
     let msgcode = u16::from_be_bytes([frame[0], frame[1]]);
+    if msgcode == ACTOR_LOCATION_BATCH_ENVELOPE_MSGCODE {
+        return Err("actor location batch is a one-way data frame".to_string());
+    }
     if msgcode == ACTOR_LOCATION_ENVELOPE_MSGCODE {
         if frame.len() < ACTOR_LOCATION_ENVELOPE_HEADER_LEN + 2 {
             return Err("actor location envelope is truncated".to_string());
@@ -789,6 +1336,21 @@ fn extract_rpc_id(frame: &[u8]) -> Result<u32, String> {
     }
 
     Err("scene RPC frame has no rpcId".to_string())
+}
+
+fn metric_msgcode(frame: &[u8]) -> u16 {
+    if frame.len() >= ACTOR_LOCATION_ENVELOPE_HEADER_LEN + 2
+        && u16::from_be_bytes([frame[0], frame[1]]) == ACTOR_LOCATION_ENVELOPE_MSGCODE
+    {
+        return u16::from_be_bytes([
+            frame[ACTOR_LOCATION_ENVELOPE_HEADER_LEN],
+            frame[ACTOR_LOCATION_ENVELOPE_HEADER_LEN + 1],
+        ]);
+    }
+    frame
+        .get(..2)
+        .map(|bytes| u16::from_be_bytes([bytes[0], bytes[1]]))
+        .unwrap_or_default()
 }
 
 fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64, String> {
@@ -858,7 +1420,7 @@ fn expire_pending(
                 continue;
             }
             metrics.pending_removed(1);
-            metrics.timed_out_calls.fetch_add(1, Ordering::Relaxed);
+            metrics.timed_out(&call.context, "pending_call");
             let _ = call
                 .response_tx
                 .send(Err(format!("scene RPC {rpc_id} timed out")));
@@ -958,6 +1520,169 @@ mod tests {
         assert_eq!(extract_rpc_id(&frame).unwrap(), 77);
     }
 
+    #[test]
+    fn zero_rpc_id_marks_actor_location_frame_as_one_way_data() {
+        let mut frame = vec![0_u8; ACTOR_LOCATION_ENVELOPE_HEADER_LEN + 2];
+        frame[..2].copy_from_slice(&ACTOR_LOCATION_ENVELOPE_MSGCODE.to_be_bytes());
+        frame[2..10].copy_from_slice(&42_u64.to_le_bytes());
+        frame[10..14].copy_from_slice(&0_u32.to_le_bytes());
+
+        assert!(extract_rpc_id(&frame).unwrap_err().contains("zero rpcId"));
+        assert_eq!(inner_frame_rpc_id(&frame), None);
+    }
+
+    #[test]
+    fn actor_location_batch_is_always_one_way_data() {
+        let mut frame = vec![0_u8; 6];
+        frame[..2].copy_from_slice(&ACTOR_LOCATION_BATCH_ENVELOPE_MSGCODE.to_be_bytes());
+        frame[2..].copy_from_slice(&1_u32.to_le_bytes());
+
+        assert_eq!(inner_frame_rpc_id(&frame), None);
+    }
+
+    #[test]
+    fn overload_diagnostics_are_dimensioned_without_creating_pending_calls() {
+        let metrics = RemoteTransportMetrics::default();
+        let context = TransportContext::new(
+            "gate-1".to_string(),
+            "map-1".to_string(),
+            &test_frame(41),
+            TransportTrafficClass::Call,
+        );
+        metrics.rejected(RemoteTransportOverloadStage::Manager, &context);
+        metrics.timed_out(&context, "pending_call");
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(metrics.pending_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(snapshot.overload_rejections, 1);
+        assert_eq!(snapshot.timed_out_calls, 1);
+        assert_eq!(snapshot.diagnostics.len(), 2);
+        assert!(snapshot.diagnostics.iter().any(|diagnostic| {
+            diagnostic.msgcode == 1
+                && diagnostic.source == "gate-1"
+                && diagnostic.target == "map-1"
+                && diagnostic.traffic == "call"
+                && diagnostic.stage == "manager_queue"
+                && diagnostic.overloads == 1
+        }));
+    }
+
+    #[test]
+    fn target_ingress_overload_completes_pending_call_without_timeout() {
+        let rpc_id = 43_u32;
+        let (call_outbound_tx, _call_outbound_rx) = mpsc::channel(1);
+        let (send_outbound_tx, _send_outbound_rx) = mpsc::channel(1);
+        let mut session = Some(SocketSession {
+            generation: 7,
+            call_outbound_tx,
+            send_outbound_tx,
+        });
+        let (response_tx, response_rx) = oneshot::channel();
+        let context = TransportContext::new(
+            "gate-1".to_string(),
+            "map-1".to_string(),
+            &test_frame(rpc_id as u8),
+            TransportTrafficClass::Call,
+        );
+        let mut pending = HashMap::from([(
+            rpc_id,
+            PendingCall {
+                context,
+                deadline: Instant::now() + Duration::from_secs(1),
+                response_tx,
+            },
+        )]);
+        let metrics = RemoteTransportMetrics::default();
+        metrics.pending_added();
+        let mut last_activity = Instant::now();
+
+        handle_socket_event(
+            SocketEvent::Response {
+                generation: 7,
+                frame: build_target_ingress_overload(rpc_id).to_vec(),
+            },
+            "map-1",
+            &mut session,
+            &mut pending,
+            &mut last_activity,
+            &metrics,
+        );
+
+        let result = response_rx.blocking_recv().unwrap();
+        assert!(
+            result
+                .unwrap_err()
+                .contains("control ingress queue is full")
+        );
+        assert!(pending.is_empty());
+        assert_eq!(metrics.pending_calls.load(Ordering::Relaxed), 0);
+        assert_eq!(metrics.overload_rejections.load(Ordering::Relaxed), 1);
+        assert_eq!(metrics.timed_out_calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn writer_fairness_serves_send_after_consecutive_calls() {
+        let (call_tx, mut call_rx) = mpsc::channel(64);
+        let (send_tx, mut send_rx) = mpsc::channel(8);
+        for index in 0..(MAX_CONSECUTIVE_CALLS + 1) {
+            call_tx.try_send(Bytes::from(vec![index as u8])).unwrap();
+        }
+        send_tx.try_send(Bytes::from_static(b"send")).unwrap();
+        drop(call_tx);
+        drop(send_tx);
+
+        let mut call_open = true;
+        let mut send_open = true;
+        let mut consecutive_calls = 0;
+        for _ in 0..MAX_CONSECUTIVE_CALLS {
+            let (_, traffic) = try_next_writer_frame(
+                &mut call_rx,
+                &mut send_rx,
+                &mut call_open,
+                &mut send_open,
+                &mut consecutive_calls,
+            )
+            .expect("call frame should be available");
+            assert_eq!(traffic, TransportTrafficClass::Call);
+        }
+        let (frame, traffic) = try_next_writer_frame(
+            &mut call_rx,
+            &mut send_rx,
+            &mut call_open,
+            &mut send_open,
+            &mut consecutive_calls,
+        )
+        .expect("send frame should be available after fairness threshold");
+        assert_eq!(traffic, TransportTrafficClass::Send);
+        assert_eq!(frame, Bytes::from_static(b"send"));
+    }
+
+    /// 验证公平探测观察到最后一个队列关闭时正常退出，而不是进入全分支禁用的select。
+    /// Verifies that observing the final closed queue during the fairness probe exits cleanly
+    /// instead of entering a select with every branch disabled.
+    #[tokio::test]
+    async fn writer_exits_when_force_send_observes_last_closed_queue() {
+        let (call_tx, mut call_rx) = mpsc::channel(1);
+        let (send_tx, mut send_rx) = mpsc::channel(1);
+        drop(call_tx);
+        drop(send_tx);
+
+        let mut call_open = false;
+        let mut send_open = true;
+        let mut consecutive_calls = MAX_CONSECUTIVE_CALLS;
+        let selected = next_writer_frame(
+            &mut call_rx,
+            &mut send_rx,
+            &mut call_open,
+            &mut send_open,
+            &mut consecutive_calls,
+        )
+        .await;
+
+        assert!(selected.is_none());
+        assert!(!send_open);
+    }
+
     #[tokio::test]
     async fn one_way_send_does_not_block_following_rpc() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -976,20 +1701,20 @@ mod tests {
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let metrics = Arc::new(RemoteTransportMetrics::default());
-        let worker = tokio::spawn(run_connection(
+        let worker = run_test_connection(
             "test_scene".to_string(),
             address,
             command_rx,
             Arc::clone(&metrics),
-        ));
+        );
 
         let (send_tx, send_rx) = oneshot::channel();
         command_tx
-            .send(ConnectionCommand {
-                frame: vec![0x4e, 0x26, 0x0a, 0x00].into(),
-                deadline: Instant::now() + Duration::from_secs(1),
-                completion: CommandCompletion::Send(send_tx),
-            })
+            .send(test_connection_command(
+                vec![0x4e, 0x26, 0x0a, 0x00],
+                Instant::now() + Duration::from_secs(1),
+                CommandCompletion::Send(send_tx),
+            ))
             .await
             .unwrap();
         send_rx.await.unwrap().unwrap();
@@ -997,11 +1722,11 @@ mod tests {
 
         let (response_tx, response_rx) = oneshot::channel();
         command_tx
-            .send(ConnectionCommand {
-                frame: test_frame(31).into(),
-                deadline: Instant::now() + Duration::from_secs(1),
-                completion: CommandCompletion::Call(response_tx),
-            })
+            .send(test_connection_command(
+                test_frame(31),
+                Instant::now() + Duration::from_secs(1),
+                CommandCompletion::Call(response_tx),
+            ))
             .await
             .unwrap();
         let response = response_rx.await.unwrap().unwrap();
@@ -1031,29 +1756,29 @@ mod tests {
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let metrics = Arc::new(RemoteTransportMetrics::default());
-        let worker = tokio::spawn(run_connection(
+        let worker = run_test_connection(
             "test_scene".to_string(),
             address,
             command_rx,
             Arc::clone(&metrics),
-        ));
+        );
         let (response1_tx, mut response1_rx) = oneshot::channel();
         let (response2_tx, response2_rx) = oneshot::channel();
         let deadline = Instant::now() + Duration::from_secs(2);
         command_tx
-            .send(ConnectionCommand {
-                frame: test_frame(1).into(),
+            .send(test_connection_command(
+                test_frame(1),
                 deadline,
-                completion: CommandCompletion::Call(response1_tx),
-            })
+                CommandCompletion::Call(response1_tx),
+            ))
             .await
             .unwrap();
         command_tx
-            .send(ConnectionCommand {
-                frame: test_frame(2).into(),
+            .send(test_connection_command(
+                test_frame(2),
                 deadline,
-                completion: CommandCompletion::Call(response2_tx),
-            })
+                CommandCompletion::Call(response2_tx),
+            ))
             .await
             .unwrap();
 
@@ -1096,28 +1821,28 @@ mod tests {
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let metrics = Arc::new(RemoteTransportMetrics::default());
-        let worker = tokio::spawn(run_connection(
+        let worker = run_test_connection(
             "test_scene".to_string(),
             address,
             command_rx,
             Arc::clone(&metrics),
-        ));
+        );
         let (response1_tx, response1_rx) = oneshot::channel();
         let (response2_tx, response2_rx) = oneshot::channel();
         command_tx
-            .send(ConnectionCommand {
-                frame: test_frame(11).into(),
-                deadline: Instant::now() + Duration::from_millis(80),
-                completion: CommandCompletion::Call(response1_tx),
-            })
+            .send(test_connection_command(
+                test_frame(11),
+                Instant::now() + Duration::from_millis(80),
+                CommandCompletion::Call(response1_tx),
+            ))
             .await
             .unwrap();
         command_tx
-            .send(ConnectionCommand {
-                frame: test_frame(12).into(),
-                deadline: Instant::now() + Duration::from_secs(1),
-                completion: CommandCompletion::Call(response2_tx),
-            })
+            .send(test_connection_command(
+                test_frame(12),
+                Instant::now() + Duration::from_secs(1),
+                CommandCompletion::Call(response2_tx),
+            ))
             .await
             .unwrap();
 
@@ -1157,19 +1882,19 @@ mod tests {
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let metrics = Arc::new(RemoteTransportMetrics::default());
-        let worker = tokio::spawn(run_connection(
+        let worker = run_test_connection(
             "test_scene".to_string(),
             address,
             command_rx,
             Arc::clone(&metrics),
-        ));
+        );
         let (response_tx, response_rx) = oneshot::channel();
         command_tx
-            .send(ConnectionCommand {
-                frame: test_frame(21).into(),
-                deadline: Instant::now() + Duration::from_secs(1),
-                completion: CommandCompletion::Call(response_tx),
-            })
+            .send(test_connection_command(
+                test_frame(21),
+                Instant::now() + Duration::from_secs(1),
+                CommandCompletion::Call(response_tx),
+            ))
             .await
             .unwrap();
 
@@ -1198,29 +1923,29 @@ mod tests {
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let metrics = Arc::new(RemoteTransportMetrics::default());
-        let worker = tokio::spawn(run_connection(
+        let worker = run_test_connection(
             "test_scene".to_string(),
             address,
             command_rx,
             Arc::clone(&metrics),
-        ));
+        );
         let deadline = Instant::now() + Duration::from_secs(1);
         let (first_tx, first_rx) = oneshot::channel();
         let (duplicate_tx, duplicate_rx) = oneshot::channel();
         command_tx
-            .send(ConnectionCommand {
-                frame: test_frame(22).into(),
+            .send(test_connection_command(
+                test_frame(22),
                 deadline,
-                completion: CommandCompletion::Call(first_tx),
-            })
+                CommandCompletion::Call(first_tx),
+            ))
             .await
             .unwrap();
         command_tx
-            .send(ConnectionCommand {
-                frame: test_frame(22).into(),
+            .send(test_connection_command(
+                test_frame(22),
                 deadline,
-                completion: CommandCompletion::Call(duplicate_tx),
-            })
+                CommandCompletion::Call(duplicate_tx),
+            ))
             .await
             .unwrap();
 
@@ -1253,22 +1978,22 @@ mod tests {
 
         let (command_tx, command_rx) = mpsc::channel(8);
         let metrics = Arc::new(RemoteTransportMetrics::default());
-        let worker = tokio::spawn(run_connection(
+        let worker = run_test_connection(
             "test_scene".to_string(),
             address,
             command_rx,
             Arc::clone(&metrics),
-        ));
+        );
         let deadline = Instant::now() + Duration::from_secs(1);
         let (first_tx, first_rx) = oneshot::channel();
         let (second_tx, second_rx) = oneshot::channel();
         for (rpc_id, response_tx) in [(23, first_tx), (24, second_tx)] {
             command_tx
-                .send(ConnectionCommand {
-                    frame: test_frame(rpc_id).into(),
+                .send(test_connection_command(
+                    test_frame(rpc_id),
                     deadline,
-                    completion: CommandCompletion::Call(response_tx),
-                })
+                    CommandCompletion::Call(response_tx),
+                ))
                 .await
                 .unwrap();
         }
@@ -1297,6 +2022,57 @@ mod tests {
 
     fn test_frame(rpc_id: u8) -> Vec<u8> {
         vec![0, 1, 0xd0, 0x05, rpc_id]
+    }
+
+    fn test_connection_command(
+        frame: impl Into<Bytes>,
+        deadline: Instant,
+        completion: CommandCompletion,
+    ) -> ConnectionCommand {
+        let frame = frame.into();
+        let context = TransportContext::new(
+            "test_source".to_string(),
+            "test_scene".to_string(),
+            &frame,
+            completion.traffic_class(),
+        );
+        ConnectionCommand {
+            context,
+            frame,
+            deadline,
+            completion,
+        }
+    }
+
+    fn run_test_connection(
+        target_name: String,
+        address: String,
+        mut command_rx: mpsc::Receiver<ConnectionCommand>,
+        metrics: Arc<RemoteTransportMetrics>,
+    ) -> tokio::task::JoinHandle<()> {
+        let (call_tx, call_rx) = mpsc::channel(8);
+        let (send_tx, send_rx) = mpsc::channel(8);
+        tokio::spawn(async move {
+            let worker = tokio::spawn(run_connection(
+                target_name,
+                address,
+                call_rx,
+                send_rx,
+                Arc::clone(&metrics),
+            ));
+            while let Some(command) = command_rx.recv().await {
+                let result = match command.completion.traffic_class() {
+                    TransportTrafficClass::Call => call_tx.send(command).await,
+                    TransportTrafficClass::Send => send_tx.send(command).await,
+                };
+                if result.is_err() {
+                    break;
+                }
+            }
+            drop(call_tx);
+            drop(send_tx);
+            worker.await.expect("test connection worker panicked");
+        })
     }
 
     async fn read_test_frame(stream: &mut TcpStream) -> Vec<u8> {

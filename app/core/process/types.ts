@@ -43,10 +43,14 @@ import {
 import { SceneCallContext } from "./context";
 import { SceneMessageHelper } from "./SceneMessageHelper";
 import {
+  type ActorLocationTarget,
   ActorLocationDirectory,
+  ActorLocationBatchEnvelopeMsgCode,
   ActorLocationEnvelopeMsgCode,
   ActorLocationEnvelopeHeaderBytes,
+  encodeActorLocationBatchEnvelope,
   encodeActorLocationEnvelope,
+  forEachActorLocationBatchEntry,
   readActorLocationInstanceId,
 } from "./ActorLocation";
 import {
@@ -259,6 +263,7 @@ interface QueuedActorFrame {
   readonly context: ProtocolContext;
   readonly msgcode: number;
   readonly rpcDescriptor?: AnyRpcDescriptor;
+  readonly messageDescriptor?: AnyMessageDescriptor;
   resolve?: (value: Uint8Array | undefined) => void;
 }
 
@@ -269,11 +274,20 @@ interface ActorTransferBuffer {
   expired: boolean;
 }
 
+interface PendingLatestActorLocationFrame {
+  target: SceneConfig;
+  instanceId: number;
+  frame: Uint8Array;
+}
+
 export abstract class EntryScene extends Scene {
   private static readonly MAX_UNORDERED_IN_FLIGHT = 4096;
   private static readonly MAX_TRANSFER_FRAMES_PER_CONNECTION = 64;
   private static readonly MAX_TRANSFER_BYTES_PER_CONNECTION = 256 * 1024;
   private static readonly MAX_TRANSFER_WAIT_MS = 3_000;
+  private static readonly LATEST_ACTOR_FORWARD_WINDOW_MS = 20;
+  private static readonly DISCONNECTED_FRAME_TOMBSTONE_MS = 30_000;
+  private static readonly MAX_DISCONNECTED_FRAME_TOMBSTONES = 65_536;
   protected readonly registry: ProtocolRegistry;
   private readonly actorRegistry: ProtocolRegistry;
   protected readonly ctx: SceneCallContext;
@@ -297,6 +311,8 @@ export abstract class EntryScene extends Scene {
     maxQueuedDepth: 0,
   };
   private readonly connectionIdBytes = new Map<number, Uint8Array>();
+  private readonly disconnectedFrameTombstones = new Map<number, number>();
+  private droppedFramesAfterDisconnect = 0;
   private readonly actorTransferBuffers = new Map<number, ActorTransferBuffer>();
   private readonly actorTransferMetrics = {
     started: 0,
@@ -307,6 +323,21 @@ export abstract class EntryScene extends Scene {
     rejected: 0,
     dropped: 0,
     overloaded: 0,
+  };
+  private readonly latestActorLocationFrames = new Map<
+    number,
+    Map<number, PendingLatestActorLocationFrame>
+  >();
+  private latestActorLocationFrameCount = 0;
+  private latestActorLocationFlushAtMs: number | undefined;
+  private readonly latestActorLocationMetrics = {
+    queued: 0,
+    coalesced: 0,
+    forwarded: 0,
+    batches: 0,
+    failedBatches: 0,
+    failedFrames: 0,
+    dropped: 0,
   };
   private readonly unorderedTasks = new Set<Promise<void>>();
   private orderedTask: Promise<void> | undefined;
@@ -523,6 +554,32 @@ export abstract class EntryScene extends Scene {
     };
   }
 
+  /** 导出可覆盖Actor转发的聚合效果和失败数；不包含连接或Actor高基数标签。 / Exports replaceable Actor-forwarding aggregation and failures without connection or Actor labels. */
+  protected actorLatestForwardMetricSnapshot(): CustomMetricSnapshot {
+    return {
+      name: "actor_latest_forward",
+      values: {
+        pending_frames: this.latestActorLocationFrameCount,
+        queued_total: this.latestActorLocationMetrics.queued,
+        coalesced_total: this.latestActorLocationMetrics.coalesced,
+        forwarded_total: this.latestActorLocationMetrics.forwarded,
+        batches_total: this.latestActorLocationMetrics.batches,
+        failed_batches_total: this.latestActorLocationMetrics.failedBatches,
+        failed_frames_total: this.latestActorLocationMetrics.failedFrames,
+        dropped_total: this.latestActorLocationMetrics.dropped,
+      },
+      kinds: {
+        queued_total: "counter",
+        coalesced_total: "counter",
+        forwarded_total: "counter",
+        batches_total: "counter",
+        failed_batches_total: "counter",
+        failed_frames_total: "counter",
+        dropped_total: "counter",
+      },
+    };
+  }
+
   /**
    * 在Actor迁移前建立Gate侧投递屏障；重复调用不会清空已排队消息。
    * 只有连接入口Scene应调用它，Location和Map不得持有客户端原始帧。
@@ -561,6 +618,7 @@ export abstract class EntryScene extends Scene {
         item.frame,
         item.context,
         item.rpcDescriptor,
+        item.messageDescriptor,
       );
       if (item.resolve) {
         Promise.resolve(result).then(item.resolve, (error) => {
@@ -585,6 +643,7 @@ export abstract class EntryScene extends Scene {
 
   /** 连接关闭时拒绝未执行RPC并丢弃单向消息，避免悬挂Promise。 / Rejects unexecuted RPCs and drops one-way messages when the connection closes. */
   protected cancelActorTransfer(connectionId: number): void {
+    this.dropLatestActorLocationFrames(connectionId);
     const buffer = this.actorTransferBuffers.get(connectionId);
     if (!buffer) return;
     this.actorTransferBuffers.delete(connectionId);
@@ -641,10 +700,15 @@ export abstract class EntryScene extends Scene {
   }
 
   __disposeRuntime(): void {
+    this.dropLatestActorLocationFrames();
     this.__dispose();
   }
 
   pushHostFrame(connectionId: number, frame: Uint8Array): void {
+    if (this.isDisconnectedFrame(connectionId)) {
+      this.droppedFramesAfterDisconnect += 1;
+      return;
+    }
     this.enqueueIngress({
       kind: "frame",
       connectionId,
@@ -654,6 +718,7 @@ export abstract class EntryScene extends Scene {
   }
 
   pushHostDisconnect(connectionId: number): void {
+    this.markDisconnectedFrame(connectionId);
     this.enqueueIngress({
       kind: "disconnect",
       connectionId,
@@ -690,6 +755,7 @@ export abstract class EntryScene extends Scene {
   /** 返回本 Scene 是否已排空到可原子切换 Hotfix 的状态。 / Reports whether this Scene is fully drained for an atomic Hotfix switch. */
   __canCommitHotfix(): boolean {
     return this.ingressLength === 0 &&
+      this.latestActorLocationFrameCount === 0 &&
       this.unorderedTasks.size === 0 &&
       this.orderedTask === undefined &&
       this.Tasks.InFlightCount === 0 &&
@@ -839,8 +905,54 @@ export abstract class EntryScene extends Scene {
       maxAsyncInFlight: this.metrics.maxAsyncInFlight,
       mailbox: this.mailboxMetricsSnapshot(),
       latencies: this.latencies.snapshot(),
-      customMetrics: [],
+      customMetrics: [
+        this.actorLatestForwardMetricSnapshot(),
+        {
+          name: "connection_ingress",
+          values: {
+            dropped_frames_after_disconnect_total: this.droppedFramesAfterDisconnect,
+            disconnect_tombstones: this.disconnectedFrameTombstones.size,
+          },
+          kinds: {
+            dropped_frames_after_disconnect_total: "counter",
+            disconnect_tombstones: "gauge",
+          },
+        },
+      ],
     };
+  }
+
+  /** 控制队列可能先于旧数据帧交付Disconnect；短期墓碑用于拒绝这些不再可响应的残留帧。 / A control-lane disconnect may overtake old data frames; a short-lived tombstone drops frames that can no longer receive responses. */
+  private markDisconnectedFrame(connectionId: number): void {
+    const now = nowMs();
+    this.pruneDisconnectedFrames(now);
+    this.disconnectedFrameTombstones.delete(connectionId);
+    this.disconnectedFrameTombstones.set(
+      connectionId,
+      now + EntryScene.DISCONNECTED_FRAME_TOMBSTONE_MS,
+    );
+    while (
+      this.disconnectedFrameTombstones.size > EntryScene.MAX_DISCONNECTED_FRAME_TOMBSTONES
+    ) {
+      const oldest = this.disconnectedFrameTombstones.keys().next().value;
+      if (oldest === undefined) break;
+      this.disconnectedFrameTombstones.delete(oldest);
+    }
+  }
+
+  private isDisconnectedFrame(connectionId: number): boolean {
+    const expiresAt = this.disconnectedFrameTombstones.get(connectionId);
+    if (expiresAt === undefined) return false;
+    if (expiresAt > nowMs()) return true;
+    this.disconnectedFrameTombstones.delete(connectionId);
+    return false;
+  }
+
+  private pruneDisconnectedFrames(now: number): void {
+    for (const [connectionId, expiresAt] of this.disconnectedFrameTombstones) {
+      if (expiresAt > now) break;
+      this.disconnectedFrameTombstones.delete(connectionId);
+    }
   }
 
   private drainOutbound(): OutboundBatch[] {
@@ -869,6 +981,7 @@ export abstract class EntryScene extends Scene {
   }
 
   private completeUpdate(startedAt: number, includeMetrics: boolean): SceneUpdateResult {
+    this.flushLatestActorLocationFrames();
     this.metrics.lastUpdateCostMs = nowMs() - startedAt;
     return {
       outbound: this.drainOutbound(),
@@ -1138,6 +1251,11 @@ export abstract class EntryScene extends Scene {
       return;
     }
 
+    if (this.isDisconnectedFrame(item.connectionId)) {
+      this.droppedFramesAfterDisconnect += 1;
+      return;
+    }
+
     this.onClientReceive(item.connectionId);
     if (this.consumeClientControlFrame(item.connectionId, item.frame)) return;
     const response = this.handleFrame(item.frame, {
@@ -1241,6 +1359,19 @@ export abstract class EntryScene extends Scene {
       }
     }
 
+    if (msgcode === ActorLocationBatchEnvelopeMsgCode) {
+      try {
+        return this.dispatchActorLocationBatch(frame, context);
+      } catch (error) {
+        this.registry.reportSystemError(
+          SystemErrCode.MalformedFrame,
+          `invalid actor location batch envelope: ${errorText(error)}`,
+          context,
+        );
+        return undefined;
+      }
+    }
+
     if (context.connectionId === undefined || context.actorInstanceId !== undefined) {
       return this.registry.handle(frame, context);
     }
@@ -1288,7 +1419,7 @@ export abstract class EntryScene extends Scene {
         const index = transfer.frames.findIndex(
           (item) => item.msgcode === msgcode && item.resolve === undefined,
         );
-        const queued: QueuedActorFrame = { frame, context, msgcode };
+        const queued: QueuedActorFrame = { frame, context, msgcode, messageDescriptor };
         if (index >= 0) {
           const nextBytes = transfer.bytes + frame.byteLength - transfer.frames[index].frame.byteLength;
           if (nextBytes > EntryScene.MAX_TRANSFER_BYTES_PER_CONNECTION) {
@@ -1326,7 +1457,7 @@ export abstract class EntryScene extends Scene {
         );
       }
       if (!rpcDescriptor) {
-        transfer.frames.push({ frame, context, msgcode });
+        transfer.frames.push({ frame, context, msgcode, messageDescriptor });
         this.actorTransferMetrics.enqueued += 1;
         return undefined;
       }
@@ -1341,6 +1472,7 @@ export abstract class EntryScene extends Scene {
       frame,
       context,
       rpcDescriptor,
+      messageDescriptor,
     );
   }
 
@@ -1349,6 +1481,7 @@ export abstract class EntryScene extends Scene {
     frame: Uint8Array,
     context: ProtocolContext,
     rpcDescriptor?: AnyRpcDescriptor,
+    messageDescriptor?: AnyMessageDescriptor,
   ): MaybePromise<Uint8Array | undefined> {
     const target = this.actorLocations.resolveConnection(connectionId);
     if (!target) {
@@ -1375,6 +1508,15 @@ export abstract class EntryScene extends Scene {
         ),
       );
     }
+    if (messageDescriptor?.forwarding === "latest") {
+      this.queueLatestActorLocationFrame(
+        connectionId,
+        target,
+        messageDescriptor.msgcode,
+        frame,
+      );
+      return;
+    }
     const routedFrame = encodeActorLocationEnvelope({
       instanceId: target.instanceId,
       frame,
@@ -1392,6 +1534,127 @@ export abstract class EntryScene extends Scene {
         return undefined;
       },
     );
+  }
+
+  private dispatchActorLocationBatch(
+    frame: Uint8Array,
+    context: ProtocolContext,
+  ): MaybePromise<Uint8Array | undefined> {
+    const pending: Promise<unknown>[] = [];
+    forEachActorLocationBatchEntry(frame, (entry) => {
+      const msgcode = readU16BE(entry.frame, 0);
+      const descriptor = this.knownMessagesByCode.get(msgcode);
+      if (descriptor?.routing !== "actor-location" || descriptor.forwarding !== "latest") {
+        throw new Error(`nested msgcode ${msgcode} is not a latest ActorLocation message`);
+      }
+      const result = this.actorRegistry.handle(entry.frame, {
+        actorInstanceId: entry.instanceId,
+        logger: context.logger,
+      });
+      if (isPromiseLike(result)) pending.push(Promise.resolve(result));
+    });
+    if (pending.length === 0) return;
+    return Promise.all(pending).then(() => undefined);
+  }
+
+  private queueLatestActorLocationFrame(
+    connectionId: number,
+    target: ActorLocationTarget,
+    msgcode: number,
+    frame: Uint8Array,
+  ): void {
+    const byMsgcode = this.latestActorLocationFrames.get(connectionId) ?? new Map();
+    const pending = byMsgcode.get(msgcode);
+    if (pending) {
+      pending.target = target.scene;
+      pending.instanceId = target.instanceId;
+      pending.frame = frame;
+      this.latestActorLocationMetrics.coalesced += 1;
+    } else {
+      byMsgcode.set(msgcode, {
+        target: target.scene,
+        instanceId: target.instanceId,
+        frame,
+      });
+      this.latestActorLocationFrameCount += 1;
+    }
+    this.latestActorLocationFrames.set(connectionId, byMsgcode);
+    this.latestActorLocationFlushAtMs ??=
+      nowMs() + EntryScene.LATEST_ACTOR_FORWARD_WINDOW_MS;
+    this.latestActorLocationMetrics.queued += 1;
+  }
+
+  /** 每轮按目标Scene形成一个内部批量帧；发送完成不参与Scene mailbox等待。 / Emits one inner batch per target Scene per update without making the Scene mailbox await transport completion. */
+  private flushLatestActorLocationFrames(): void {
+    if (this.latestActorLocationFrameCount === 0) return;
+    if (
+      this.latestActorLocationFlushAtMs !== undefined &&
+      nowMs() < this.latestActorLocationFlushAtMs
+    ) return;
+    const byScene = new Map<string, {
+      target: SceneConfig;
+      entries: PendingLatestActorLocationFrame[];
+    }>();
+    for (const byMsgcode of this.latestActorLocationFrames.values()) {
+      for (const pending of byMsgcode.values()) {
+        const group = byScene.get(pending.target.name) ?? {
+          target: pending.target,
+          entries: [],
+        };
+        group.entries.push(pending);
+        byScene.set(pending.target.name, group);
+      }
+    }
+    this.latestActorLocationFrames.clear();
+    this.latestActorLocationFrameCount = 0;
+    this.latestActorLocationFlushAtMs = undefined;
+
+    for (const group of byScene.values()) {
+      const frameCount = group.entries.length;
+      try {
+        const batch = encodeActorLocationBatchEnvelope(group.entries);
+        this.latestActorLocationMetrics.forwarded += frameCount;
+        this.latestActorLocationMetrics.batches += 1;
+        const delivery = this.ctx.sendFrame(group.target, batch);
+        if (isPromiseLike(delivery)) {
+          void Promise.resolve(delivery).catch((error) => {
+            this.latestActorLocationMetrics.failedBatches += 1;
+            this.latestActorLocationMetrics.failedFrames += frameCount;
+            this.ctx.logger.error("latest actor batch forwarding failed", {
+              target: group.target.name,
+              frameCount,
+              error,
+            });
+          });
+        }
+      } catch (error) {
+        this.latestActorLocationMetrics.failedBatches += 1;
+        this.latestActorLocationMetrics.failedFrames += frameCount;
+        this.ctx.logger.error("latest actor batch encoding failed", {
+          target: group.target.name,
+          frameCount,
+          error,
+        });
+      }
+    }
+  }
+
+  private dropLatestActorLocationFrames(connectionId?: number): void {
+    if (connectionId !== undefined) {
+      const pending = this.latestActorLocationFrames.get(connectionId);
+      if (!pending) return;
+      this.latestActorLocationFrames.delete(connectionId);
+      this.latestActorLocationFrameCount -= pending.size;
+      this.latestActorLocationMetrics.dropped += pending.size;
+      if (this.latestActorLocationFrameCount === 0) {
+        this.latestActorLocationFlushAtMs = undefined;
+      }
+      return;
+    }
+    this.latestActorLocationMetrics.dropped += this.latestActorLocationFrameCount;
+    this.latestActorLocationFrames.clear();
+    this.latestActorLocationFrameCount = 0;
+    this.latestActorLocationFlushAtMs = undefined;
   }
 
   private tryReserveTransferFrame(buffer: ActorTransferBuffer, bytes: number): boolean {

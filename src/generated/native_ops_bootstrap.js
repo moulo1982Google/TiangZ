@@ -73,6 +73,7 @@
     aoiVisibleObservers: (mapId, subjectId) => core.ops.op_native_aoi_visible_observers(u32(mapId, "mapId"), u32(subjectId, "subjectId")),
     mapPeekNumericDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_peek_numeric_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),
     mapPeekNumericAoiDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_peek_numeric_aoi_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),
+    mapPeekNumericAoiRouteFrames: (mapId, serverTick, clientMessageCode, routeMessageCode, aoiVisibleTypes, selectedTypes, selectionMode, publishDue) => core.ops.op_native_map_peek_numeric_aoi_route_frames(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(clientMessageCode, "clientMessageCode"), u32(routeMessageCode, "routeMessageCode"), bytes(aoiVisibleTypes, "aoiVisibleTypes"), bytes(selectedTypes, "selectedTypes"), u32(selectionMode, "selectionMode"), bool(publishDue, "publishDue")),
     mapAckNumericDelta: (mapId, revision) => core.ops.op_native_map_ack_numeric_delta(u32(mapId, "mapId"), bytes(revision, "revision")),
     mapPeekUnitDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_peek_unit_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),
     mapPeekUnitAoiDelta: (mapId, serverTick, messageCode) => core.ops.op_native_map_peek_unit_aoi_delta(u32(mapId, "mapId"), u32(serverTick, "serverTick"), u32(messageCode, "messageCode")),

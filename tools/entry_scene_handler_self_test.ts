@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   defineMessage,
+  registerKnownMessages,
   type Codec,
   type IMessage,
   type IRequest,
@@ -27,6 +28,12 @@ import {
 import { Component } from "../app/core/runtime/entities";
 import { ProcessHost } from "../app/core/runtime/host";
 import { Session } from "../app/core/runtime/Session";
+import { ActorUnit, UnitComponent } from "../app/core/runtime/Unit";
+import { actor } from "../app/core/runtime/metadata";
+import {
+  unitMessageHandler,
+  type UnitMessageHandler,
+} from "../app/core/process/unitHandlers";
 import type { MaybePromise } from "../app/core/async";
 
 interface AddMessage extends IMessage {
@@ -78,10 +85,25 @@ const MailboxDrain = defineMessage({
   codec: jsonCodec<MailboxDrainMessage>(),
 });
 
+interface LatestActorInput extends IMessage {
+  sequence: number;
+}
+
+const LatestActorInputMessage = defineMessage({
+  name: "ActorForwardProbe.LatestInput",
+  msgcode: 61006,
+  codec: jsonCodec<LatestActorInput>(),
+  routing: "actor-location" as const,
+  forwarding: "latest" as const,
+});
+registerKnownMessages([LatestActorInputMessage]);
+
 const lifecycleEvents: string[] = [];
 let activeHandlerScene: HandlerProbeScene | undefined;
 let activeSenderScene: SenderProbeScene | undefined;
 let activeMailboxDrainScene: MailboxDrainProbeScene | undefined;
+let activeActorForwardGate: ActorForwardGateScene | undefined;
+let activeActorForwardTarget: ActorForwardTargetScene | undefined;
 
 class CounterComponent extends Component<[number]> {
   value = 0;
@@ -94,6 +116,45 @@ class CounterComponent extends Component<[number]> {
   protected override OnDestroy(): void {
     this.destroyed = true;
     lifecycleEvents.push("component-destroy");
+  }
+}
+
+@actor({ mailbox: "ordered" })
+class ActorForwardProbeUnit extends ActorUnit {
+  readonly sequences: number[] = [];
+}
+
+@entryScene("ActorForwardTarget")
+class ActorForwardTargetScene extends EntryScene {
+  readonly units = this.AddComponent(UnitComponent);
+  probe!: ActorForwardProbeUnit;
+
+  protected override onStart(): void {
+    this.probe = this.units.Create(1, ActorForwardProbeUnit);
+    activeActorForwardTarget = this;
+  }
+}
+
+@entryScene("ActorForwardGate")
+class ActorForwardGateScene extends EntryScene {
+  protected override readonly mailbox = "unordered" as const;
+
+  protected override onStart(): void {
+    activeActorForwardGate = this;
+  }
+
+  Bind(connectionId: number, target: ActorForwardTargetScene): void {
+    this.actorLocations.bindConnection(connectionId, {
+      instanceId: target.probe.InstanceId,
+      scene: this.scenes.byName("actor-forward-target-1"),
+    });
+  }
+}
+
+@unitMessageHandler(ActorForwardProbeUnit, LatestActorInputMessage)
+class LatestActorInputHandler implements UnitMessageHandler<ActorForwardProbeUnit, LatestActorInput> {
+  handle(unit: ActorForwardProbeUnit, message: LatestActorInput): void {
+    unit.sequences.push(message.sequence);
   }
 }
 
@@ -224,10 +285,49 @@ async function main(): Promise<void> {
   testComponentContainer();
   testDuplicateHandlerGuard();
   await testLocalSceneSendFastPath();
+  await testLatestActorForwardBatch();
   await testSynchronousMailboxDrain();
   await testExternalHandlerDispatch();
   await testSessionMailboxAndDisconnect();
   console.log("entry scene handler self-test passed");
+}
+
+async function testLatestActorForwardBatch(): Promise<void> {
+  activeActorForwardGate = undefined;
+  activeActorForwardTarget = undefined;
+  const gate = actorForwardGateConfig();
+  const target = actorForwardTargetConfig();
+  const runtime = new ProcessRuntime({
+    process: { name: "actor-forward-self-test" },
+    scenes: [gate, target],
+    knownScenes: [gate, target],
+    tickMs: 50,
+  });
+  await runtime.start();
+  activeActorForwardGate!.Bind(71, activeActorForwardTarget!);
+
+  const frame = (sequence: number) =>
+    packFrame(
+      LatestActorInputMessage.msgcode,
+      LatestActorInputMessage.codec.encode({ sequence }),
+    );
+  runtime.pushHostFrame(0, 71, frame(1));
+  runtime.pushHostFrame(0, 71, frame(2));
+  runtime.pushHostFrame(0, 71, frame(3));
+  await runtime.update();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const result = await runtime.update();
+
+  assert.deepEqual(activeActorForwardTarget!.probe.sequences, [3]);
+  const metric = result.metrics
+    .find((item) => item.scene === gate.name)
+    ?.customMetrics.find((item) => item.name === "actor_latest_forward");
+  assert.equal(metric?.values.queued_total, 3);
+  assert.equal(metric?.values.coalesced_total, 2);
+  assert.equal(metric?.values.forwarded_total, 1);
+  assert.equal(metric?.values.batches_total, 1);
+  assert.equal(metric?.values.failed_batches_total, 0);
+  await runtime.stop();
 }
 
 async function testSynchronousMailboxDrain(): Promise<void> {
@@ -309,6 +409,16 @@ async function testSessionMailboxAndDisconnect(): Promise<void> {
   runtime.update();
   await waitUntil(() => sessionEvents.includes("destroy:11"));
   assert.equal(scene.SessionCount(), 1);
+  runtime.pushHostFrame(0, 22, frame(4));
+  runtime.pushHostDisconnect(0, 22);
+  runtime.update();
+  await waitUntil(() => sessionEvents.includes("destroy:22"));
+  assert.equal(sessionEvents.includes("start:22:4"), false);
+  assert.equal(scene.SessionCount(), 0);
+  const ingressMetrics = scene.metricsSnapshot().customMetrics.find(
+    (metric) => metric.name === "connection_ingress",
+  );
+  assert.equal(ingressMetrics?.values.dropped_frames_after_disconnect_total, 1);
   await runtime.stop();
   assert.equal(sessionEvents.includes("destroy:22"), true);
 }
@@ -428,6 +538,24 @@ function mailboxDrainSceneConfig() {
   return {
     name: "scene-mailbox-drain-probe-1",
     sceneType: "MailboxDrainProbe",
+    innerIp: "127.0.0.1",
+    port: 0,
+  };
+}
+
+function actorForwardGateConfig() {
+  return {
+    name: "actor-forward-gate-1",
+    sceneType: "ActorForwardGate",
+    innerIp: "127.0.0.1",
+    port: 0,
+  };
+}
+
+function actorForwardTargetConfig() {
+  return {
+    name: "actor-forward-target-1",
+    sceneType: "ActorForwardTarget",
     innerIp: "127.0.0.1",
     port: 0,
   };

@@ -11,10 +11,13 @@ export interface MessageDescriptor<TMessage extends IMessage> {
   codec: Codec<TMessage>;
   routing?: MessageRouting;
   duringTransfer?: TransferRoutingPolicy;
+  forwarding?: MessageForwardingPolicy;
 }
 
 export type MessageRouting = "direct" | "actor-location";
 export type TransferRoutingPolicy = "queue" | "reject" | "drop" | "latest";
+/** 控制连接入口如何转发单向ActorLocation消息；latest允许在同一调度边界覆盖旧输入。 / Controls connection-entry forwarding for one-way ActorLocation messages; latest may supersede older input in the same scheduling boundary. */
+export type MessageForwardingPolicy = "immediate" | "latest";
 
 export type AnyMessageDescriptor = MessageDescriptor<any>;
 

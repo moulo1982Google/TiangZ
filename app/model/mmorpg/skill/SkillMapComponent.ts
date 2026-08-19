@@ -28,6 +28,9 @@ export class SkillMapComponent extends Component<[map: MapComponent]> {
   protected map!: MapComponent;
   protected readonly activeCasterUnitIds = new Set<number>();
   protected readonly projectiles = new Map<bigint, SkillProjectile>();
+  /** 高频技能表现共享一个SceneTask排空器，避免每次发布各占一个Hotfix屏障槽位。 / High-frequency skill visuals share one SceneTask drain instead of consuming one Hotfix barrier slot per publish. */
+  protected readonly pendingPublishes = new Set<Promise<void>>();
+  protected publishDrainActive = false;
   /** 地图私有的技能配置索引；避免Hotfix模块级可变缓存，也避免每次Cast重建。 / Map-owned skill config index; avoids mutable Hotfix module state without rebuilding on every Cast. */
   protected skillCatalogFingerprint = "";
   protected skillCatalogDefinitions: ReadonlyMap<number, SkillDefinition> | undefined;

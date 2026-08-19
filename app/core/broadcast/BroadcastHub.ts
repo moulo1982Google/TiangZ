@@ -510,7 +510,12 @@ export class BroadcastHub {
     }
 
     const dispatchStartedAt = monotonicNow();
-    const delivery = this.transport.Send(audience, frame);
+    // Event frames are still individually encoded and ordered, but a batch-capable
+    // transport can combine same-tick jobs into one physical Gate message.
+    // 事件帧仍保持独立编码和顺序语义，但支持批量的Transport可以把同一Tick的作业合并为一条Gate物理消息。
+    const delivery = this.transport.SendMany
+      ? this.transport.SendMany([{ audience, frame, itemCount: items.length }])
+      : this.transport.Send(audience, frame);
     this.recordDispatch(monotonicNow() - dispatchStartedAt);
     void delivery
       .then(() => this.complete(channel, descriptor, startedAt, deferred))

@@ -64,6 +64,14 @@ import {
 } from "../native/NativeData";
 import { NumericComponent } from "../numeric/NumericComponent";
 import { MoveSpeedMetersPerSecondToNumeric, NumericType } from "../numeric/NumericType";
+import {
+  AoiCombatNumericPublishIntervalTicks,
+  AoiCombatNumericTypes,
+  AoiStaticNumericTypes,
+  AoiVisibleNumericTypes,
+  AoiVisibleNumericValues,
+  NumericReplicationSelection,
+} from "../numeric/NumericReplication";
 import { ItemComponent } from "../item/ItemComponent";
 import { PlayerTradeComponent } from "../trade/PlayerTradeComponent";
 import { BuffComponent } from "../buff/BuffComponent";
@@ -92,6 +100,7 @@ import {
 } from "../../../generated/model/config";
 import type { MapInstanceDefinition } from "./MapInstance";
 import { MapAoiComponent, type AoiVisibilityDelta } from "./MapAoiComponent";
+import { coalesceAoiVisibilityChanges } from "./AoiVisibility";
 import {
   EntrySyncMode,
   IncludesExistingObserverEnter,
@@ -123,6 +132,18 @@ interface PendingPlayerEntry {
 interface EntrySnapshotBatchCache {
   readonly byAudience: Map<string, readonly MapEntitySnapshot[]>;
   readonly byUnit: Map<number, MapEntitySnapshot>;
+}
+
+interface AoiDeltaGroup {
+  readonly visible: boolean;
+  readonly subjectId: number;
+  readonly observerIds: number[];
+}
+
+interface AoiDeltaBatch {
+  readonly observerIds: number[];
+  readonly enters: MapEntitySnapshot[];
+  readonly leaves: number[];
 }
 
 interface EncodedRouteBroadcast {
@@ -1101,6 +1122,12 @@ export class MapComponent extends Component<[
       cache.byAudience.set(audienceKey, snapshots);
       this.entryMetrics.snapshotBuilds += 1;
     }
+    const ownerIndex = snapshots.findIndex((snapshot) => snapshot.unitId === observer.UnitId);
+    if (ownerIndex >= 0) {
+      const ownerSnapshots = snapshots.slice();
+      ownerSnapshots[ownerIndex] = toMapEntity(observer, true);
+      snapshots = ownerSnapshots;
+    }
     const elapsedMs = monotonicNow() - startedAt;
     this.entryMetrics.snapshotCalls += 1;
     this.entryMetrics.snapshotItems += snapshots.length;
@@ -1726,25 +1753,24 @@ export class MapComponent extends Component<[
 
   private RegisterReplicationSources(): void {
     const numeric = ClientBroadcasts.EntityNumeric;
-    this.replication.Add({
-      name: numeric.name,
-      Peek: () => {
-        const startedAt = monotonicNow();
-        const delta = NativeData.PeekMapNumericAoiDelta(
-          this.nativeMapKey,
-          this.serverTick,
-          numeric.message.msgcode,
-        );
-        this.pipelineMetrics.numericPeekMs += monotonicNow() - startedAt;
-        this.pipelineMetrics.numericPeekCount += 1;
-        return {
-          itemCount: delta.itemCount,
-          batches: this.ToAudienceBatches(delta.batches),
-          audienceKey: `map:${this.mapInstanceId}:aoi`,
-          Ack: () => NativeData.AckMapNumericDelta(this.nativeMapKey, delta.revision),
-        };
-      },
-    });
+    this.RegisterNumericReplicationSource(
+      `${numeric.name}.Owner`,
+      AoiVisibleNumericTypes,
+      NumericReplicationSelection.ExcludeListedTypes,
+      () => true,
+    );
+    this.RegisterNumericReplicationSource(
+      `${numeric.name}.Combat`,
+      AoiCombatNumericTypes,
+      NumericReplicationSelection.IncludeListedTypes,
+      () => this.serverTick % AoiCombatNumericPublishIntervalTicks === 0,
+    );
+    this.RegisterNumericReplicationSource(
+      `${numeric.name}.Static`,
+      AoiStaticNumericTypes,
+      NumericReplicationSelection.IncludeListedTypes,
+      () => true,
+    );
 
     const state = ClientBroadcasts.EntityState;
     this.replication.Add({
@@ -1763,6 +1789,44 @@ export class MapComponent extends Component<[
           batches: this.ToAudienceBatches(delta.batches),
           audienceKey: `map:${this.mapInstanceId}:aoi`,
           Ack: () => NativeData.AckMapUnitDelta(this.nativeMapKey, delta.revision),
+        };
+      },
+    });
+  }
+
+  /**
+   * 为一类Numeric状态注册独立latest通道；筛选和ACK必须使用同一策略令牌。
+   * Registers one independent latest channel for a Numeric class; filtering and ACK share one
+   * policy token so one class can never clear another class's dirty state.
+   */
+  private RegisterNumericReplicationSource(
+    sourceName: string,
+    selectedTypes: readonly number[],
+    selectionMode: NumericReplicationSelection,
+    publishDue: () => boolean,
+  ): void {
+    const numeric = ClientBroadcasts.EntityNumeric;
+    this.replication.Add({
+      name: sourceName,
+      Peek: () => {
+        const startedAt = monotonicNow();
+        const delta = NativeData.PeekMapNumericAoiRouteFrames(
+          this.nativeMapKey,
+          this.serverTick,
+          numeric.message.msgcode,
+          GateMessages.ClientBroadcastBatch.msgcode,
+          AoiVisibleNumericTypes,
+          selectedTypes,
+          selectionMode,
+          publishDue(),
+        );
+        this.pipelineMetrics.numericPeekMs += monotonicNow() - startedAt;
+        this.pipelineMetrics.numericPeekCount += 1;
+        return {
+          itemCount: delta.itemCount,
+          routeFrames: this.ToRouteBroadcast(delta, sourceName).frames,
+          audienceKey: `map:${this.mapInstanceId}:aoi`,
+          Ack: () => NativeData.AckMapNumericDelta(this.nativeMapKey, delta.revision),
         };
       },
     });
@@ -1927,7 +1991,7 @@ export class MapComponent extends Component<[
       if (this.pendingSpatialChanges.size > 0) {
         const changes = [...this.pendingSpatialChanges.values()].map((item) => item.change);
         this.pendingSpatialChanges.clear();
-        await this.PublishAoiChanges(changes);
+        await this.PublishAoiChanges(changes, true);
         // 新的可见变化可能在 await 期间到达；先处理它们，旧移动可以直接被较新帧覆盖。
         // Visibility may arrive while awaiting delivery. Publish it first; newer
         // movement already supersedes the local stale frame.
@@ -1947,58 +2011,71 @@ export class MapComponent extends Component<[
     }
   }
 
-  /** 按相同受众批量发布不可覆盖的进入/离开事件。 / Batches non-coalescible enter/leave events by identical audience. */
+  /** 按最终状态和相同受众批量发布进入/离开事件。 / Batches finalized enter/leave states by identical audience. */
   private async PublishAoiChanges(
     changes: readonly AoiVisibilityDelta[],
+    alreadyCoalesced = false,
   ): Promise<void> {
     const prepareStartedAt = monotonicNow();
-    const groups = new Map<string, {
-      visible: boolean;
-      subjectId: number;
-      observerIds: number[];
-    }>();
-    for (const change of changes) {
-      const key = `${Number(change.visible)}:${change.subjectId}`;
-      const group = groups.get(key) ?? {
-        visible: change.visible,
-        subjectId: change.subjectId,
-        observerIds: [],
-      };
+    const finalChanges = alreadyCoalesced
+      ? changes
+      : coalesceAoiVisibilityChanges(changes);
+    // Keep enter and leave groups separate so the hot path does not allocate a
+    // `${visible}:${subjectId}` string for every visibility change.
+    // 分开维护进入和离开分组，热路径不再为每条可见变化创建`${visible}:${subjectId}`字符串。
+    const entersBySubject = new Map<number, AoiDeltaGroup>();
+    const leavesBySubject = new Map<number, AoiDeltaGroup>();
+    const groupsInOrder: AoiDeltaGroup[] = [];
+    for (const change of finalChanges) {
+      const groups = change.visible ? entersBySubject : leavesBySubject;
+      let group = groups.get(change.subjectId);
+      if (!group) {
+        group = {
+          visible: change.visible,
+          subjectId: change.subjectId,
+          observerIds: [],
+        };
+        groups.set(change.subjectId, group);
+        groupsInOrder.push(group);
+      }
       group.observerIds.push(change.observerId);
-      groups.set(key, group);
     }
 
-    const batches = new Map<string, {
-      observerIds: number[];
-      enters: MapEntitySnapshot[];
-      leaves: number[];
-    }>();
-    for (const group of groups.values()) {
+    const batches: AoiDeltaBatch[] = [];
+    const batchesByHash = new Map<number, AoiDeltaBatch[]>();
+    for (const group of groupsInOrder) {
+      const subject = group.visible ? this.units.Get(group.subjectId) : undefined;
+      if (group.visible && !subject) {
+        this.logger.warn("AOI enter subject disappeared before publish", {
+          subjectId: group.subjectId,
+        });
+        continue;
+      }
       group.observerIds.sort((left, right) => left - right);
-      const audienceKey = group.observerIds.join(",");
-      const batch = batches.get(audienceKey) ?? {
-        observerIds: group.observerIds,
-        enters: [],
-        leaves: [],
-      };
+      const hash = hashAoiAudience(group.observerIds);
+      const bucket = batchesByHash.get(hash) ?? [];
+      let batch = bucket.find((candidate) =>
+        sameAoiAudience(candidate.observerIds, group.observerIds));
+      if (!batch) {
+        batch = {
+          observerIds: group.observerIds,
+          enters: [],
+          leaves: [],
+        };
+        bucket.push(batch);
+        batches.push(batch);
+        batchesByHash.set(hash, bucket);
+      }
       if (group.visible) {
-        const subject = this.units.Get(group.subjectId);
-        if (!subject) {
-          this.logger.warn("AOI enter subject disappeared before publish", {
-            subjectId: group.subjectId,
-          });
-          continue;
-        }
-        batch.enters.push(toMapEntity(subject));
+        batch.enters.push(toMapEntity(subject!));
       } else {
         batch.leaves.push(group.subjectId);
       }
-      batches.set(audienceKey, batch);
     }
 
     const deliveries: Promise<void>[] = [];
     let batchIndex = 0;
-    for (const batch of batches.values()) {
+    for (const batch of batches) {
       const audience = this.AudienceForRecipients(
         batch.observerIds,
         `map:${this.mapInstanceId}:aoi:delta:${batchIndex}`,
@@ -2074,6 +2151,22 @@ export class MapComponent extends Component<[
   }
 }
 
+function hashAoiAudience(observerIds: readonly number[]): number {
+  let hash = 2_166_136_261;
+  for (const observerId of observerIds) {
+    hash = Math.imul(hash ^ observerId, 16_777_619);
+  }
+  return (hash ^ observerIds.length) >>> 0;
+}
+
+function sameAoiAudience(left: readonly number[], right: readonly number[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
 function fromProtocolSkillTransfer(value: SkillTransferSnapshot): SkillTransferState {
   return {
     globalCooldownEndAtMs: Number(value.globalCooldownEndAtMs),
@@ -2107,7 +2200,10 @@ function fromProtocolQuest(value: QuestSnapshot): import("../quest/Quest").Quest
   };
 }
 
-function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../../core/public").Unit<any[]>): MapEntitySnapshot {
+function toMapEntity(
+  unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../../core/public").Unit<any[]>,
+  includePrivateNumerics = false,
+): MapEntitySnapshot {
   if (unit instanceof MonsterUnit) {
     const snapshot = unit.Snapshot();
     return {
@@ -2121,7 +2217,7 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../..
       state: new Uint8Array(0),
       cellX: snapshot.cellX,
       cellZ: snapshot.cellZ,
-      numerics: snapshot.numerics,
+      numerics: AoiVisibleNumericValues(snapshot.numerics),
       buffs: unit.GetComponent(BuffComponent).SnapshotPublic(),
       speedCellsPerSecond: snapshot.speedCellsPerSecond,
       facing: snapshot.facing,
@@ -2169,7 +2265,9 @@ function toMapEntity(unit: PlayerUnit | MonsterUnit | NpcUnit | import("../../..
     state: new Uint8Array(0),
     cellX: snapshot.cellX,
     cellZ: snapshot.cellZ,
-    numerics: snapshot.numerics,
+    numerics: includePrivateNumerics
+      ? snapshot.numerics
+      : AoiVisibleNumericValues(snapshot.numerics),
     buffs: unit.GetComponent(BuffComponent).SnapshotPublic(),
     speedCellsPerSecond: snapshot.speedCellsPerSecond,
     facing: snapshot.facing,

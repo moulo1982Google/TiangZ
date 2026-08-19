@@ -163,6 +163,15 @@ struct NativeDataMetrics {
     aoi_relocations: u64,
     aoi_visibility_changes: u64,
     aoi_filter_overrides: u64,
+    numeric_replication: HashMap<u32, NumericTypeReplicationMetrics>,
+}
+
+#[derive(Clone, Default)]
+struct NumericTypeReplicationMetrics {
+    changes: u64,
+    encoded_records: u64,
+    recipient_deliveries: u64,
+    logical_bytes: u64,
 }
 
 struct EntitySlot {
@@ -174,6 +183,39 @@ struct EntitySlot {
 struct NumericData {
     values: HashMap<u32, i64>,
     dirty: HashMap<u32, u64>,
+    urgent: HashMap<u32, u64>,
+}
+
+const NUMERIC_CURRENT_HP: u32 = 1;
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NumericReplicationSelection {
+    ExcludeListedTypes = 0,
+    IncludeListedTypes = 1,
+}
+
+impl TryFrom<u32> for NumericReplicationSelection {
+    type Error = JsErrorBox;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::ExcludeListedTypes),
+            1 => Ok(Self::IncludeListedTypes),
+            _ => Err(JsErrorBox::generic(format!(
+                "invalid Numeric replication selection mode: {value}"
+            ))),
+        }
+    }
+}
+
+impl NumericReplicationSelection {
+    fn matches(self, numeric_type: u32, selected_types: &HashSet<u32>) -> bool {
+        match self {
+            Self::ExcludeListedTypes => !selected_types.contains(&numeric_type),
+            Self::IncludeListedTypes => selected_types.contains(&numeric_type),
+        }
+    }
 }
 
 /// AOI 路由帧编码的线程内暂存区；只服务当前 V8 业务线程，不跨调用共享。
@@ -615,18 +657,30 @@ pub(crate) fn set_numeric_values(
         let changed: Vec<_> = values
             .iter()
             .copied()
-            .filter(|(numeric_type, value)| {
-                numeric.values.get(numeric_type).copied().unwrap_or(0) != *value
+            .filter_map(|(numeric_type, value)| {
+                let previous = numeric.values.get(&numeric_type).copied().unwrap_or(0);
+                (previous != value).then_some((numeric_type, value, previous))
             })
             .collect();
         if changed.is_empty() {
             return Ok(false);
         }
-        for (numeric_type, value) in changed {
+        for (numeric_type, value, previous) in changed {
             let revision = store.next_numeric_revision();
             let numeric = store.numerics_by_unit.get_mut(&unit_handle).unwrap();
             numeric.values.insert(numeric_type, value);
             numeric.dirty.insert(numeric_type, revision);
+            if numeric_type == NUMERIC_CURRENT_HP
+                && ((previous > 0 && value <= 0) || (previous <= 0 && value > 0))
+            {
+                numeric.urgent.insert(numeric_type, revision);
+            }
+            store
+                .metrics
+                .numeric_replication
+                .entry(numeric_type)
+                .or_default()
+                .changes += 1;
         }
         Ok(true)
     })
@@ -738,6 +792,142 @@ pub(crate) fn op_native_map_peek_numeric_aoi_delta(
     })
 }
 
+#[op2]
+/// 将Numeric脏字典直接编码为每个Gate的最终批量帧，并在前缀中保留统一Ack版本。
+/// Encodes Numeric dirty entries into final per-Gate batch frames while preserving one Ack revision prefix.
+pub(crate) fn op_native_map_peek_numeric_aoi_route_frames(
+    map_id: u32,
+    server_tick: u32,
+    client_message_code: u32,
+    route_message_code: u32,
+    #[buffer] aoi_visible_types: &[u8],
+    #[buffer] selected_types: &[u8],
+    selection_mode: u32,
+    publish_due: bool,
+) -> Result<Uint8Array, JsErrorBox> {
+    native_map_peek_numeric_aoi_route_frames(
+        map_id,
+        server_tick,
+        client_message_code,
+        route_message_code,
+        aoi_visible_types,
+        selected_types,
+        selection_mode,
+        publish_due,
+    )
+    .map(Into::into)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn native_map_peek_numeric_aoi_route_frames(
+    map_id: u32,
+    server_tick: u32,
+    client_message_code: u32,
+    route_message_code: u32,
+    aoi_visible_types: &[u8],
+    selected_types: &[u8],
+    selection_mode: u32,
+    publish_due: bool,
+) -> Result<Vec<u8>, JsErrorBox> {
+    let client_message_code = u16::try_from(client_message_code)
+        .map_err(|_| JsErrorBox::generic("numeric message code exceeds uint16"))?;
+    let route_message_code = u16::try_from(route_message_code)
+        .map_err(|_| JsErrorBox::generic("Gate route message code exceeds uint16"))?;
+    let aoi_visible_types = decode_numeric_type_set(aoi_visible_types, "AOI-visible")?;
+    let selected_types = decode_numeric_type_set(selected_types, "selected")?;
+    let selection = NumericReplicationSelection::try_from(selection_mode)?;
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let through_revision = store.numeric_revision;
+        let handles = store.take_map_handles(map_id);
+        let mut records = take_scratch(&mut store.scratch_numeric_records);
+        let previous_capacity = records.capacity();
+        let outcome = (|| {
+            let has_urgent = !publish_due
+                && handles.iter().any(|handle| {
+                    store.numerics_by_unit.get(handle).is_some_and(|numeric| {
+                        numeric.urgent.iter().any(|(&numeric_type, &revision)| {
+                            revision <= through_revision
+                                && selection.matches(numeric_type, &selected_types)
+                                && numeric.dirty.contains_key(&numeric_type)
+                        })
+                    })
+                });
+            if !publish_due && !has_urgent {
+                let token = encode_numeric_replication_revision(
+                    through_revision,
+                    selection,
+                    &selected_types,
+                );
+                let mut result = Vec::with_capacity(4 + token.len() + 8);
+                result.extend_from_slice(&(token.len() as u32).to_le_bytes());
+                result.extend_from_slice(&token);
+                result.extend_from_slice(&0_u32.to_le_bytes());
+                result.extend_from_slice(&0_u32.to_le_bytes());
+                return Ok(result);
+            }
+            for &handle in &handles {
+                let unit_id = store.get_unit_hot(handle)?.id;
+                if let Some(numeric) = store.numerics_by_unit.get(&handle) {
+                    for (&numeric_type, &revision) in &numeric.dirty {
+                        if revision <= through_revision
+                            && selection.matches(numeric_type, &selected_types)
+                        {
+                            records.push((unit_id, numeric_type, numeric.values[&numeric_type]));
+                        }
+                    }
+                }
+            }
+            records.sort_unstable_by_key(|record| (record.0, record.1));
+            let subject_ids: Vec<_> = records.iter().map(|record| record.0).collect();
+            let owner_only: Vec<_> = records
+                .iter()
+                .map(|record| !aoi_visible_types.contains(&record.1))
+                .collect();
+            let route_frames = {
+                let NativeEntityStore {
+                    aoi_worlds,
+                    route_frame_scratch,
+                    metrics,
+                    ..
+                } = &mut *store;
+                let world = aoi_worlds.get(&map_id).ok_or_else(|| {
+                    JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
+                })?;
+                let delivery_groups = world.visibility_delivery_groups(&subject_ids, &owner_only);
+                record_numeric_replication_metrics(metrics, &records, &delivery_groups);
+                encode_aoi_route_frames_from_groups(
+                    world,
+                    delivery_groups,
+                    route_message_code,
+                    route_frame_scratch,
+                    |indices, frame| {
+                        let subset: Vec<_> = indices.iter().map(|index| records[*index]).collect();
+                        encode_entity_numeric_frame_into(
+                            frame,
+                            client_message_code,
+                            server_tick,
+                            &subset,
+                        );
+                    },
+                )?
+            };
+            record_aoi_encoding_metrics(&mut store.metrics, &route_frames);
+            let token =
+                encode_numeric_replication_revision(through_revision, selection, &selected_types);
+            let mut result = Vec::with_capacity(4 + token.len() + route_frames.len());
+            result.extend_from_slice(&(token.len() as u32).to_le_bytes());
+            result.extend_from_slice(&token);
+            result.extend_from_slice(&route_frames);
+            Ok(result)
+        })();
+        store.metrics.scratch_growths += u64::from(records.capacity() > previous_capacity);
+        store.scratch_handles = handles;
+        store.scratch_numeric_records = records;
+        outcome
+    })
+}
+
 #[op2(fast)]
 /// 只清除当前版本仍与已投递 Peek 匹配的 Numeric 条目。 / Clears only Numeric entries whose current revisions match a delivered peek.
 pub(crate) fn op_native_map_ack_numeric_delta(
@@ -748,22 +938,98 @@ pub(crate) fn op_native_map_ack_numeric_delta(
 }
 
 fn native_map_ack_numeric_delta(map_id: u32, revision: &[u8]) -> Result<(), JsErrorBox> {
-    let revision = u64::from_le_bytes(
-        revision
-            .try_into()
-            .map_err(|_| JsErrorBox::generic("numeric revision must contain 8 bytes"))?,
-    );
+    let policy = decode_numeric_replication_revision(revision)?;
     STORE.with(|slot| {
         let mut store = slot.borrow_mut();
         let handles = store.units_by_map.get(&map_id).cloned().unwrap_or_default();
         for handle in handles {
             if let Some(numeric) = store.numerics_by_unit.get_mut(&handle) {
-                numeric
-                    .dirty
-                    .retain(|_, dirty_revision| *dirty_revision > revision);
+                numeric.dirty.retain(|numeric_type, dirty_revision| {
+                    *dirty_revision > policy.through_revision || !policy.matches(*numeric_type)
+                });
+                numeric.urgent.retain(|numeric_type, urgent_revision| {
+                    *urgent_revision > policy.through_revision || !policy.matches(*numeric_type)
+                });
             }
         }
         Ok(())
+    })
+}
+
+struct NumericReplicationRevision {
+    through_revision: u64,
+    selection: Option<NumericReplicationSelection>,
+    selected_types: HashSet<u32>,
+}
+
+impl NumericReplicationRevision {
+    fn matches(&self, numeric_type: u32) -> bool {
+        self.selection
+            .is_none_or(|selection| selection.matches(numeric_type, &self.selected_types))
+    }
+}
+
+fn decode_numeric_type_set(bytes: &[u8], label: &str) -> Result<HashSet<u32>, JsErrorBox> {
+    if !bytes.len().is_multiple_of(4) {
+        return Err(JsErrorBox::generic(format!(
+            "{label} Numeric type payload must contain uint32 values"
+        )));
+    }
+    Ok(bytes
+        .chunks_exact(4)
+        .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+        .collect())
+}
+
+fn encode_numeric_replication_revision(
+    through_revision: u64,
+    selection: NumericReplicationSelection,
+    selected_types: &HashSet<u32>,
+) -> Vec<u8> {
+    let mut sorted_types: Vec<_> = selected_types.iter().copied().collect();
+    sorted_types.sort_unstable();
+    let mut bytes = Vec::with_capacity(16 + sorted_types.len() * 4);
+    bytes.extend_from_slice(&through_revision.to_le_bytes());
+    bytes.extend_from_slice(&(selection as u32).to_le_bytes());
+    bytes.extend_from_slice(&(sorted_types.len() as u32).to_le_bytes());
+    for numeric_type in sorted_types {
+        bytes.extend_from_slice(&numeric_type.to_le_bytes());
+    }
+    bytes
+}
+
+fn decode_numeric_replication_revision(
+    bytes: &[u8],
+) -> Result<NumericReplicationRevision, JsErrorBox> {
+    if bytes.len() == 8 {
+        return Ok(NumericReplicationRevision {
+            through_revision: u64::from_le_bytes(bytes.try_into().unwrap()),
+            selection: None,
+            selected_types: HashSet::new(),
+        });
+    }
+    if bytes.len() < 16 {
+        return Err(JsErrorBox::generic(
+            "numeric replication revision is truncated",
+        ));
+    }
+    let through_revision = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+    let selection = NumericReplicationSelection::try_from(u32::from_le_bytes(
+        bytes[8..12].try_into().unwrap(),
+    ))?;
+    let type_count = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let expected_length = 16_usize
+        .checked_add(type_count.saturating_mul(4))
+        .ok_or_else(|| JsErrorBox::generic("numeric replication revision is too large"))?;
+    if bytes.len() != expected_length {
+        return Err(JsErrorBox::generic(
+            "numeric replication revision has an invalid length",
+        ));
+    }
+    Ok(NumericReplicationRevision {
+        through_revision,
+        selection: Some(selection),
+        selected_types: decode_numeric_type_set(&bytes[16..], "selected")?,
     })
 }
 
@@ -2413,81 +2679,21 @@ fn encode_tiered_aoi_route_frames(
         .extend(records.iter().map(|record| record[16] != 0));
     let delivery_groups =
         world.tiered_delivery_groups(&scratch.subject_ids, &scratch.force, server_tick);
-    let total_items = delivery_groups
-        .iter()
-        .map(|(_, indices)| indices.len() as u32)
-        .sum::<u32>();
-    let route_capacity = usize::try_from(world.max_delivery_route_id())
-        .map_err(|_| JsErrorBox::generic("AOI delivery route id exceeds usize"))?
-        .checked_add(1)
-        .ok_or_else(|| JsErrorBox::generic("AOI delivery route capacity overflow"))?;
-    prepare_route_frame_scratch(scratch, route_capacity);
-
-    for (recipients, indices) in delivery_groups {
-        scratch.client_frame.clear();
-        encode_entity_move_frame_indices_into(
-            &mut scratch.client_frame,
-            client_message_code,
-            server_tick,
-            records,
-            &indices,
-        );
-        for route_id in scratch.touched_routes.iter().copied() {
-            scratch.recipients_by_route[route_id].clear();
-        }
-        scratch.touched_routes.clear();
-        for recipient_id in recipients {
-            let route_id = world.delivery_route_id(recipient_id).ok_or_else(|| {
-                JsErrorBox::generic(format!(
-                    "AOI observer {recipient_id} has no native delivery route"
-                ))
-            })?;
-            let route_index = route_id as usize;
-            if scratch.recipients_by_route[route_index].is_empty() {
-                scratch.touched_routes.push(route_index);
-            }
-            scratch.recipients_by_route[route_index].push(recipient_id);
-        }
-        for route_id in scratch.touched_routes.iter().copied() {
-            let route_recipients = &scratch.recipients_by_route[route_id];
-            encode_client_broadcast_batch_item(
-                &mut scratch.payloads_by_route[route_id],
-                route_recipients,
-                &scratch.client_frame,
+    encode_aoi_route_frames_from_groups(
+        world,
+        delivery_groups,
+        route_message_code,
+        scratch,
+        |indices, frame| {
+            encode_entity_move_frame_indices_into(
+                frame,
+                client_message_code,
+                server_tick,
+                records,
+                indices,
             );
-        }
-    }
-
-    for route_id in scratch.touched_routes.iter().copied() {
-        scratch.recipients_by_route[route_id].clear();
-    }
-    scratch.touched_routes.clear();
-
-    let route_count = scratch
-        .payloads_by_route
-        .iter()
-        .skip(1)
-        .filter(|payload| !payload.is_empty())
-        .count();
-    let mut bytes = Vec::with_capacity(
-        8 + scratch
-            .payloads_by_route
-            .iter()
-            .map(|payload| 10 + payload.len())
-            .sum::<usize>(),
-    );
-    bytes.extend_from_slice(&total_items.to_le_bytes());
-    bytes.extend_from_slice(&(route_count as u32).to_le_bytes());
-    for (route_id, payload) in scratch.payloads_by_route.iter().enumerate().skip(1) {
-        if payload.is_empty() {
-            continue;
-        }
-        bytes.extend_from_slice(&(route_id as u32).to_le_bytes());
-        bytes.extend_from_slice(&((payload.len() + 2) as u32).to_le_bytes());
-        bytes.extend_from_slice(&route_message_code.to_be_bytes());
-        bytes.extend_from_slice(payload);
-    }
-    Ok(bytes)
+        },
+    )
 }
 
 fn encode_tiered_navigation_aoi_route_frames(
@@ -2508,6 +2714,35 @@ fn encode_tiered_navigation_aoi_route_frames(
         .extend(records.iter().map(|record| record.state_changed));
     let delivery_groups =
         world.tiered_delivery_groups(&scratch.subject_ids, &scratch.force, server_tick);
+    encode_aoi_route_frames_from_groups(
+        world,
+        delivery_groups,
+        route_message_code,
+        scratch,
+        |indices, frame| {
+            encode_entity_navigate_frame_indices_into(
+                frame,
+                client_message_code,
+                server_tick,
+                records,
+                indices,
+            );
+        },
+    )
+}
+
+/// 把按最终受众聚合的客户端帧进一步按Gate路由编码；调用方只提供客户端payload编码器。
+/// Encodes final-audience client frames into per-Gate route frames; callers only provide client payload encoding.
+fn encode_aoi_route_frames_from_groups<F>(
+    world: &AoiWorld,
+    delivery_groups: Vec<(Vec<u32>, Vec<usize>)>,
+    route_message_code: u16,
+    scratch: &mut AoiRouteFrameScratch,
+    mut encode_frame: F,
+) -> Result<Vec<u8>, JsErrorBox>
+where
+    F: FnMut(&[usize], &mut Vec<u8>),
+{
     let total_items = delivery_groups
         .iter()
         .map(|(_, indices)| indices.len() as u32)
@@ -2520,13 +2755,7 @@ fn encode_tiered_navigation_aoi_route_frames(
 
     for (recipients, indices) in delivery_groups {
         scratch.client_frame.clear();
-        encode_entity_navigate_frame_indices_into(
-            &mut scratch.client_frame,
-            client_message_code,
-            server_tick,
-            records,
-            &indices,
-        );
+        encode_frame(&indices, &mut scratch.client_frame);
         for route_id in scratch.touched_routes.iter().copied() {
             scratch.recipients_by_route[route_id].clear();
         }
@@ -2681,6 +2910,31 @@ fn record_aoi_encoding_metrics(metrics: &mut NativeDataMetrics, bytes: &[u8]) {
     metrics.encoded_bytes += bytes.len() as u64;
 }
 
+/// Numeric按类型统计逻辑投递量；只累计真正进入某个最终受众组的记录。
+/// Tracks logical Numeric delivery per type and counts only records that entered a final audience group.
+fn record_numeric_replication_metrics(
+    metrics: &mut NativeDataMetrics,
+    records: &[(u32, u32, i64)],
+    delivery_groups: &[(Vec<u32>, Vec<usize>)],
+) {
+    for (recipients, indices) in delivery_groups {
+        let recipient_count = recipients.len() as u64;
+        for &index in indices {
+            let (unit_id, numeric_type, value) = records[index];
+            let item_payload_bytes = uint32_field_len(1, unit_id)
+                + uint32_field_len(2, numeric_type)
+                + int64_field_len(3, value);
+            let item_wire_bytes = varint_len((2 << 3) | 2)
+                + varint_len(item_payload_bytes as u32)
+                + item_payload_bytes;
+            let type_metrics = metrics.numeric_replication.entry(numeric_type).or_default();
+            type_metrics.encoded_records += 1;
+            type_metrics.recipient_deliveries += recipient_count;
+            type_metrics.logical_bytes += (item_wire_bytes as u64).saturating_mul(recipient_count);
+        }
+    }
+}
+
 #[op2]
 /// 序列化 NativeData 生命周期累计计数器，供 TS 与 Prometheus 读取。
 ///
@@ -2733,7 +2987,9 @@ fn native_data_metrics_bytes() -> Vec<u8> {
         let navigation_assets = store.navigation_assets.live_assets() as u32;
         let navigation_worlds = store.navigation_worlds.len() as u32;
         let metrics = store.metrics.clone();
-        let mut bytes = Vec::with_capacity(160);
+        let mut numeric_replication: Vec<_> = metrics.numeric_replication.iter().collect();
+        numeric_replication.sort_unstable_by_key(|(numeric_type, _)| **numeric_type);
+        let mut bytes = Vec::with_capacity(164 + numeric_replication.len() * 36);
         bytes.extend_from_slice(&metrics.scalar_gets.to_le_bytes());
         bytes.extend_from_slice(&metrics.scalar_sets.to_le_bytes());
         bytes.extend_from_slice(&metrics.batch_calls.to_le_bytes());
@@ -2758,6 +3014,14 @@ fn native_data_metrics_bytes() -> Vec<u8> {
         bytes.extend_from_slice(&aoi_rejected_relations.to_le_bytes());
         bytes.extend_from_slice(&navigation_assets.to_le_bytes());
         bytes.extend_from_slice(&navigation_worlds.to_le_bytes());
+        bytes.extend_from_slice(&(numeric_replication.len() as u32).to_le_bytes());
+        for (&numeric_type, type_metrics) in numeric_replication {
+            bytes.extend_from_slice(&numeric_type.to_le_bytes());
+            bytes.extend_from_slice(&type_metrics.changes.to_le_bytes());
+            bytes.extend_from_slice(&type_metrics.encoded_records.to_le_bytes());
+            bytes.extend_from_slice(&type_metrics.recipient_deliveries.to_le_bytes());
+            bytes.extend_from_slice(&type_metrics.logical_bytes.to_le_bytes());
+        }
         bytes
     })
 }
@@ -3276,8 +3540,8 @@ mod tests {
 
         let first = native_data_metrics_bytes();
         let second = native_data_metrics_bytes();
-        assert_eq!(first.len(), 160);
-        assert_eq!(second.len(), 160);
+        assert_eq!(first.len(), 164);
+        assert_eq!(second.len(), 164);
 
         STORE.with(|slot| {
             let store = slot.borrow();
@@ -3709,6 +3973,168 @@ mod tests {
         native_map_ack_numeric_delta(1, &revision).unwrap();
         let empty = native_map_peek_numeric_delta(1, 9, 10017).unwrap();
         assert_eq!(u32::from_le_bytes(empty[0..4].try_into().unwrap()), 0);
+    }
+
+    #[test]
+    fn numeric_replication_policy_isolated_ack_throttle_and_urgent_hp() {
+        let handle = STORE.with(|slot| {
+            let mut store = slot.borrow_mut();
+            *store = NativeEntityStore::default();
+            let handle = store.create(NativeEntityData::Unit(unit(10))).unwrap();
+            let mut world = AoiWorld::new(
+                10_000,
+                0,
+                0,
+                100,
+                100,
+                1,
+                1,
+                vec![SyncTier {
+                    radius_grids: 1,
+                    interval_ticks: 1,
+                }],
+            )
+            .unwrap();
+            world.attach_routed(10, 0.0, 0.0, true, true, 7).unwrap();
+            world.take_changes();
+            store.aoi_worlds.insert(1, world);
+            handle
+        });
+        attach_numeric(handle).unwrap();
+        assert!(set_numeric_values(handle, &[(NUMERIC_CURRENT_HP, 100), (2, 200)]).unwrap());
+
+        let aoi_types = NUMERIC_CURRENT_HP.to_le_bytes();
+        let owner = native_map_peek_numeric_aoi_route_frames(
+            1,
+            1,
+            10_017,
+            20_010,
+            &aoi_types,
+            &aoi_types,
+            NumericReplicationSelection::ExcludeListedTypes as u32,
+            true,
+        )
+        .unwrap();
+        let owner_revision_len = u32::from_le_bytes(owner[0..4].try_into().unwrap()) as usize;
+        let owner_route_offset = 4 + owner_revision_len;
+        assert_eq!(
+            u32::from_le_bytes(
+                owner[owner_route_offset..owner_route_offset + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            1
+        );
+        native_map_ack_numeric_delta(1, &owner[4..owner_route_offset]).unwrap();
+        STORE.with(|slot| {
+            let store = slot.borrow();
+            let numeric = &store.numerics_by_unit[&handle];
+            assert!(numeric.dirty.contains_key(&NUMERIC_CURRENT_HP));
+            assert!(!numeric.dirty.contains_key(&2));
+        });
+
+        let initial_hp = native_map_peek_numeric_aoi_route_frames(
+            1,
+            2,
+            10_017,
+            20_010,
+            &aoi_types,
+            &aoi_types,
+            NumericReplicationSelection::IncludeListedTypes as u32,
+            false,
+        )
+        .unwrap();
+        let initial_revision_len =
+            u32::from_le_bytes(initial_hp[0..4].try_into().unwrap()) as usize;
+        let initial_route_offset = 4 + initial_revision_len;
+        assert_eq!(
+            u32::from_le_bytes(
+                initial_hp[initial_route_offset..initial_route_offset + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            1,
+            "initial alive transition must publish immediately"
+        );
+        native_map_ack_numeric_delta(1, &initial_hp[4..initial_route_offset]).unwrap();
+
+        assert!(set_numeric_values(handle, &[(NUMERIC_CURRENT_HP, 90)]).unwrap());
+        let throttled = native_map_peek_numeric_aoi_route_frames(
+            1,
+            3,
+            10_017,
+            20_010,
+            &aoi_types,
+            &aoi_types,
+            NumericReplicationSelection::IncludeListedTypes as u32,
+            false,
+        )
+        .unwrap();
+        let throttled_revision_len =
+            u32::from_le_bytes(throttled[0..4].try_into().unwrap()) as usize;
+        let throttled_route_offset = 4 + throttled_revision_len;
+        assert_eq!(
+            u32::from_le_bytes(
+                throttled[throttled_route_offset..throttled_route_offset + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            0
+        );
+        STORE.with(|slot| {
+            assert!(
+                slot.borrow().numerics_by_unit[&handle]
+                    .dirty
+                    .contains_key(&NUMERIC_CURRENT_HP)
+            );
+        });
+
+        let due = native_map_peek_numeric_aoi_route_frames(
+            1,
+            4,
+            10_017,
+            20_010,
+            &aoi_types,
+            &aoi_types,
+            NumericReplicationSelection::IncludeListedTypes as u32,
+            true,
+        )
+        .unwrap();
+        let due_revision_len = u32::from_le_bytes(due[0..4].try_into().unwrap()) as usize;
+        let due_route_offset = 4 + due_revision_len;
+        assert_eq!(
+            u32::from_le_bytes(
+                due[due_route_offset..due_route_offset + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            1
+        );
+        native_map_ack_numeric_delta(1, &due[4..due_route_offset]).unwrap();
+
+        assert!(set_numeric_values(handle, &[(NUMERIC_CURRENT_HP, 0)]).unwrap());
+        let death = native_map_peek_numeric_aoi_route_frames(
+            1,
+            5,
+            10_017,
+            20_010,
+            &aoi_types,
+            &aoi_types,
+            NumericReplicationSelection::IncludeListedTypes as u32,
+            false,
+        )
+        .unwrap();
+        let death_revision_len = u32::from_le_bytes(death[0..4].try_into().unwrap()) as usize;
+        let death_route_offset = 4 + death_revision_len;
+        assert_eq!(
+            u32::from_le_bytes(
+                death[death_route_offset..death_route_offset + 4]
+                    .try_into()
+                    .unwrap()
+            ),
+            1,
+            "death must bypass the publish interval"
+        );
     }
 
     #[test]

@@ -284,13 +284,21 @@ TiangZ明确区分三种语义：
 | Delta | 位置、Numeric、速度等可覆盖状态 | 字典或字段级置脏，帧尾Peek/Send/Ack |
 | Event | 技能、道具、掉落、伤害事实 | 立即可靠排队，不允许latest覆盖 |
 
-Numeric使用`NumericType -> i64`动态字典与dirty表，TS边界是`bigint`；创建Numeric时第二个参数也是按`NumericType`索引的初始化字典，`NumericInitialValues`只是它的类型别名，不维护逐字段接口。`NumericComponentSystem.Awake`只遍历创建者传入的字典并挂载Rust存储，不猜测玩家、怪物或NPC默认值；未传入的普通Numeric保持Rust默认值`0`。`MaxHp`、`Attack`、`AttackSpeed`、`MoveSpeed`等1000..9999派生结果由`result*10+1/+2/+3`的Base/Add/Pct来源自动重算，不能直接赋值；初始化只能写普通属性或Base/Add/Pct来源。`AttackSpeed`表示毫秒/次，`MoveSpeed`在Numeric中表示毫米/秒，配置表仍使用米/秒。Unit固定字段使用`.native @replicated + @memberId`生成`u64` dirty mask；Item变更演示不可覆盖的即时Event。
+Numeric使用`NumericType -> i64`动态字典与dirty表，TS边界是`bigint`；创建Numeric时第二个参数也是按`NumericType`索引的初始化字典，`NumericInitialValues`只是它的类型别名，不维护逐字段接口。`NumericComponentSystem.Awake`只遍历创建者传入的字典并挂载Rust存储，不猜测玩家、怪物或NPC默认值；未传入的普通Numeric保持Rust默认值`0`。`MaxHp`、`Attack`、`AttackSpeed`、`MoveSpeed`等1000..9999派生结果由`result*10+1/+2/+3`的Base/Add/Pct来源自动重算，不能直接赋值；初始化只能写普通属性或Base/Add/Pct来源。`AttackSpeed`表示毫秒/次，`MoveSpeed`在Numeric中表示毫米/秒，配置表仍使用米/秒。Numeric复制按类型拆成三个独立latest源：未列入AOI白名单的MP、经验、攻击和派生来源只发Owner；`CurrentHp`保留服务端10Hz资源计算精度，但AOI公开状态每4个20Hz地图Tick最多发布一次，即5Hz；`Level/MaxHp`只在真实变化时立即发布。HP跨越0的死亡和复活是紧急变化，必须绕过5Hz窗口立即发送。三个源使用带筛选策略的独立ACK令牌，任一源成功都不能清除其他类型的dirty。初始AOI快照使用相同公开投影，Owner自己的登录与重连快照仍保留全量Numeric。Unit固定字段使用`.native @replicated + @memberId`生成`u64` dirty mask；技能、Buff、道具和伤害事实仍是不可覆盖Event，不参与Numeric节流。
 
 帧尾复制采用`Peek -> Send -> Ack`：只有发送成功才确认revision，发送失败保留Dirty，发送期间的新修改不会被旧Ack清除。Audience只决定收件人，数据Projection决定字段权限，Broadcast descriptor只决定event/latest语义。业务使用只含UnitId的`ClientAudience`；物理`BroadcastAudience`和Gate route是Core内部类型。
 
 AOI已由Rust扁平X/Z Grid接管。Cell是移动和空间数据的基础单位，AOI关系只在跨Grid边界时重算；默认一个Grid为15×15 Cell。`UnitId -> EntityIndex`哈希只在API入口使用，实体元数据与Audience签名按EntityIndex连续存放。Grid成员默认使用紧凑EntityIndex数组；128人以上的热点Grid额外建立成员位图，降到96人以下释放。空间候选和最终可见关系使用双向连续位图；Rust同时保存本帧净变化和用于共享编码的增量Audience签名，TS不得建立镜像关系表。密集迟滞Audience按`Grid + 最终受众签名 + 强制发送状态`共享一次受众计算，再按实际受众合并编码；业务不得依赖签名或管理该缓存。业务只从`MapComponent.Audience`取得`ObserversOf/VisibleSubjectsOf`；显式Invalidate返回的变化必须交给`MapComponent.PublishVisibilityChanges`统一发布。Prometheus提供当前迟滞与拒绝关系Gauge。`single-grid`是稳定全可见广播基线，`same-point`是高频跨Grid迟滞压力测试，两者不能混为容量曲线。完整分层、代码范例和Demo位置见[AOI完整设计](../design/aoi-architecture.md)。
 
-Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`BroadcastHub`把Encoded batch交给Transport，并由`SceneBroadcastTransport`在同步Game Tick内按Gate重组；Movement高频路径进一步由Rust利用Attach时登记的紧凑delivery route直接生成每个Gate的完整`S2G_ClientBroadcastBatch`帧，TS每Tick只映射至多Gate数量的routeId并原样投递，不展开recipient数组，也不重复编码内网protobuf。Gate不解码业务payload，只完成Unit到connection的路由与下行扇出。Numeric、UnitState和即时Event继续使用通用路径。业务层不得管理routeId、调用底层route-frame Native op、调用`sendFrame`，也不得直接构造内网广播协议。
+AOI Enter/Leave发布在同一批次内按`ObserverId + SubjectId`保留最终可见状态，并保持首次关系出现顺序；同一关系在拥塞期间发生的中间抖动不会生成无效的Enter/Leave帧。这个合并只作用于尚未可靠发布的空间关系，不得套用到背包、伤害、掉落等不可覆盖业务Event。
+
+Rust按最终Audience编码Movement、Numeric和UnitState。通用路径由`BroadcastHub`把Encoded batch交给Transport，并由`SceneBroadcastTransport`在同一同步Game Tick内按Gate重组；latest状态和不可覆盖Event都保持客户端帧边界，但同一调度边界内会通过`SendMany`合并为Gate批量消息。Movement和Numeric热路径由Rust利用Attach时登记的紧凑delivery route直接生成每个Gate的完整`S2G_ClientBroadcastBatch`帧，TS每Tick只映射至多Gate数量的routeId并原样投递，不展开recipient数组，也不重复编码内网protobuf。Numeric的领域层传入AOI白名单、类型筛选策略和当前发布窗口；Rust只执行筛选、紧急HP判断和Owner/AOI受众分组，不拥有回血或战斗规则。Numeric仍保持`Peek -> 成功投递 -> 按相同筛选策略Ack revision`，失败不能清除dirty。Gate不解码业务payload，只完成Unit到connection的路由与下行扇出；UnitState和即时Event继续使用通用路径。业务层不得管理routeId、调用底层route-frame Native op、调用`sendFrame`，也不得直接构造内网广播协议。
+
+Inner Transport把跨进程调用流与单向广播流分成独立的管理器、连接和socket writer队列；调用流保留固定容量，连续处理调用达到公平阈值后必须让广播流获得调度。任一有界阶段满载时立即返回`SceneOverloaded`语义的明确错误，不创建或残留RPC pending waiter；单向广播不进入RPC pending表。overload与timeout同时按msgcode、source、target、traffic和queue stage投影到健康指标，诊断维度有固定上限，不能用无限增长的标签记录故障。
+
+目标Process入口同样不是单队列：`eventQueueCapacity`总量按1:3划分为控制流保留队列和数据流队列，内部RPC、断线、Host completion与shutdown进入控制流，内部单向帧进入数据流；连续处理32个控制事件后必须给数据流一次机会。控制流队满时，网络宿主直接按原`rpcId`返回`[scene-overloaded]`，不把请求留在来源进程等待deadline；`queueStages`同时保留原`frame/completion/disconnect/shutdown`统计，并增加`control_ingress/data_ingress`物理队列统计。Disconnect允许越过旧数据帧，因此EntryScene在收到断连时建立30秒有界墓碑，丢弃同连接随后浮出的残留帧并记录`connection_ingress.dropped_frames_after_disconnect_total`，不能把这些已无法响应的帧重新解释为ActorLocation业务错误。这个调度类别只管理Rust宿主入口容量，不改变仍存活连接的Scene、Actor或mailbox业务顺序。
+
+可覆盖的高频ActorLocation单向输入可以在协议注解中声明`forwarding=latest`。Gate按`connectionId + msgcode`保留20ms窗口内的最终帧，再按目标Scene编码为Core内部ActorLocation批量帧；目标Scene解包后，每个条目仍通过原Actor Registry进入对应Unit mailbox，因此不绕过Actor顺序边界。该策略只允许用于Move这类“旧意图已无意义”的单向消息，RPC、道具、交易、技能释放和其他不可丢业务事实禁止声明；`actor_latest_forward`指标记录queued、coalesced、forwarded、batches、failed和dropped。
 
 ## 地图空间契约
 
