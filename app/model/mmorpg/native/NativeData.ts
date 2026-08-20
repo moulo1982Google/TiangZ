@@ -112,6 +112,7 @@ export interface NativeAoiBroadcast {
 
 export interface NativeAoiRouteFrame {
   readonly routeId: number;
+  readonly itemCount: number;
   /** 已包含内网 msgcode 的完整 Scene 帧。 / Complete Scene frame including its inner msgcode. */
   readonly frame: Uint8Array;
 }
@@ -1036,11 +1037,17 @@ function parseAoiRouteBroadcast(
   const routeFrames: NativeAoiRouteFrame[] = [];
   let offset = 8;
   for (let routeIndex = 0; routeIndex < routeCount; routeIndex += 1) {
-    if (offset + 8 > bytes.length) throw new Error("native AOI route header is truncated");
+    if (offset + 12 > bytes.length) throw new Error("native AOI route header is truncated");
     const routeId = view.getUint32(offset, true);
-    const frameLength = view.getUint32(offset + 4, true);
-    offset += 8;
-    if (routeId === 0 || frameLength < 2 || offset + frameLength > bytes.length) {
+    const routeItemCount = view.getUint32(offset + 4, true);
+    const frameLength = view.getUint32(offset + 8, true);
+    offset += 12;
+    if (
+      routeId === 0 ||
+      routeItemCount === 0 ||
+      frameLength < 2 ||
+      offset + frameLength > bytes.length
+    ) {
       throw new Error("native AOI route frame is invalid");
     }
     const frame = bytes.subarray(offset, offset + frameLength);
@@ -1048,7 +1055,7 @@ function parseAoiRouteBroadcast(
     if (frame[0] * 0x100 + frame[1] !== routeMessageCode) {
       throw new Error("native AOI route frame has an unexpected message code");
     }
-    routeFrames.push({ routeId, frame });
+    routeFrames.push({ routeId, itemCount: routeItemCount, frame });
   }
   if (offset !== bytes.length) throw new Error("native AOI route broadcast has trailing bytes");
   return { itemCount, routeFrames };

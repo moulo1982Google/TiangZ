@@ -332,12 +332,17 @@ export class GateScene extends EntryScene {
 
   @message(GateMessages.ClientBroadcast)
   private ClientBroadcast(message: S2G_ClientBroadcast): void {
+    const delivery = requireClientFrameDelivery(message.deliveryClass);
     const connectionIds: number[] = [];
     for (const unitId of message.targetUnitIds) {
       const connectionId = this.connectionIdsByUnitId.get(unitId);
       if (connectionId !== undefined) connectionIds.push(connectionId);
     }
-    this.sendClientFrameMany(connectionIds, message.frame);
+    this.sendClientFrameMany(
+      connectionIds,
+      message.frame,
+      delivery,
+    );
   }
 
   /**
@@ -350,13 +355,18 @@ export class GateScene extends EntryScene {
    */
   @message(GateMessages.ClientBroadcastBatch)
   private ClientBroadcastBatch(message: S2G_ClientBroadcastBatch): void {
+    const delivery = requireClientFrameDelivery(message.deliveryClass);
     for (const batch of message.batches) {
       const connectionIds: number[] = [];
       for (const unitId of batch.targetUnitIds) {
         const connectionId = this.connectionIdsByUnitId.get(unitId);
         if (connectionId !== undefined) connectionIds.push(connectionId);
       }
-      this.sendClientFrameMany(connectionIds, batch.frame);
+      this.sendClientFrameMany(
+        connectionIds,
+        batch.frame,
+        delivery,
+      );
     }
   }
 
@@ -1093,4 +1103,10 @@ export class GateScene extends EntryScene {
     };
   }
 
+}
+
+function requireClientFrameDelivery(value: number): "reliable" | "latest" {
+  if (value === 1) return "reliable";
+  if (value === 2) return "latest";
+  throw new Error(`invalid client broadcast delivery class: ${value}`);
 }

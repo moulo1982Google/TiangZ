@@ -1,6 +1,7 @@
 import type { IMessage, MessageDescriptor } from "../protocol/message";
 
 export type BroadcastKey = string | number;
+export type BroadcastDelivery = "reliable" | "latest";
 
 export interface BroadcastRoute {
   readonly route: string;
@@ -22,6 +23,8 @@ export interface EncodedAudienceBatch {
 export interface EncodedRouteFrame {
   readonly route: string;
   readonly frame: Uint8Array;
+  /** 当前物理路由帧内的逻辑状态项数量。 / Logical state item count carried by this physical route frame. */
+  readonly itemCount: number;
 }
 
 interface BroadcastDescriptorBase<TItem, TMessage extends IMessage> {
@@ -54,7 +57,11 @@ export type BroadcastDescriptor<TItem, TMessage extends IMessage> =
   | LatestBroadcastDescriptor<TItem, TMessage>;
 
 export interface BroadcastTransport {
-  Send(audience: BroadcastAudience, frame: Uint8Array): Promise<void>;
+  Send(
+    audience: BroadcastAudience,
+    frame: Uint8Array,
+    delivery?: BroadcastDelivery,
+  ): Promise<void>;
 
   /**
    * 将一个或多个已编码帧一次性交给Transport；实现可按物理路由重组同一同步调度边界内的作业。
@@ -65,10 +72,16 @@ export interface BroadcastTransport {
    * BroadcastHub falls back to Send when a custom transport does not implement
    * this optional capability.
    */
-  SendMany?(batches: readonly EncodedAudienceBatch[]): Promise<void>;
+  SendMany?(
+    batches: readonly EncodedAudienceBatch[],
+    delivery?: BroadcastDelivery,
+  ): Promise<void>;
 
   /** 原样发送上游已完成路由和协议编码的帧。 / Sends route-bound protocol frames without re-grouping or re-encoding. */
-  SendRouteFrames?(frames: readonly EncodedRouteFrame[]): Promise<void>;
+  SendRouteFrames?(
+    frames: readonly EncodedRouteFrame[],
+    delivery?: BroadcastDelivery,
+  ): Promise<void>;
 }
 
 export interface BroadcastMetricsSnapshot {
@@ -79,6 +92,8 @@ export interface BroadcastMetricsSnapshot {
   readonly maxInFlightItems: number;
   readonly queuedItems: number;
   readonly coalescedItems: number;
+  readonly supersededPublishes: number;
+  readonly latestCapacityRejections: number;
   readonly sentItems: number;
   readonly broadcastsStarted: number;
   readonly broadcastsCompleted: number;
@@ -96,6 +111,9 @@ export interface BroadcastMetricsSnapshot {
 
 export interface BroadcastHubOptions {
   readonly maxEventQueuePerChannel?: number;
+  readonly maxLatestPendingItemsPerChannel?: number;
+  readonly maxLatestPendingBytesPerChannel?: number;
+  readonly maxLatestPendingAgeMs?: number;
   readonly onError?: (descriptorName: string, error: unknown) => void;
 }
 

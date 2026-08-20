@@ -157,7 +157,6 @@ interface AoiDeltaBatch {
 
 interface EncodedRouteBroadcast {
   readonly frames: readonly EncodedRouteFrame[];
-  readonly itemCount: number;
   readonly broadcastName: string;
 }
 
@@ -716,7 +715,6 @@ export class MapComponent extends Component<[
         `map:${this.mapInstanceId}:aoi`,
         moveDescriptor.name,
         routeBroadcast.frames,
-        routeBroadcast.itemCount,
       ).catch((error) => {
         this.logger.error("map AOI movement publish failed", { error });
       });
@@ -1392,6 +1390,8 @@ export class MapComponent extends Component<[
         max_in_flight_units: metrics.maxInFlightItems,
         queued_frames_total: metrics.queuedItems,
         coalesced_frames_total: metrics.coalescedItems,
+        superseded_publishes_total: metrics.supersededPublishes,
+        latest_capacity_rejections_total: metrics.latestCapacityRejections,
         sent_frames_total: metrics.sentItems,
         broadcasts_started_total: metrics.broadcastsStarted,
         broadcasts_completed_total: metrics.broadcastsCompleted,
@@ -1454,6 +1454,8 @@ export class MapComponent extends Component<[
       kinds: {
         queued_frames_total: "counter",
         coalesced_frames_total: "counter",
+        superseded_publishes_total: "counter",
+        latest_capacity_rejections_total: "counter",
         sent_frames_total: "counter",
         broadcasts_started_total: "counter",
         broadcasts_completed_total: "counter",
@@ -2091,9 +2093,9 @@ export class MapComponent extends Component<[
     const frames = movement.routeFrames.map((item) => {
       const route = this.gateNamesByRouteId.get(item.routeId);
       if (!route) throw new Error(`unknown AOI delivery route id: ${item.routeId}`);
-      return { route, frame: item.frame };
+      return { route, frame: item.frame, itemCount: item.itemCount };
     });
-    return { frames, itemCount: movement.itemCount, broadcastName };
+    return { frames, broadcastName };
   }
 
   /** 为地图实例内稳定不变的 Gate 名称分配紧凑 routeId。玩家换 Gate 必须先离开并重新 Attach。 / Assigns a compact route id to a stable Gate name; changing Gate requires detach and reattach. */
@@ -2162,7 +2164,6 @@ export class MapComponent extends Component<[
           `map:${this.mapInstanceId}:aoi`,
           movement.broadcastName,
           movement.frames,
-          movement.itemCount,
         );
       }
     }

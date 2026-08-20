@@ -919,6 +919,8 @@ function readMapBroadcastMetrics(body) {
     maxInFlightUnits: prometheusCustomMetric(body, "max_in_flight_units"),
     queuedFrames: prometheusCustomMetric(body, "queued_frames_total"),
     coalescedFrames: prometheusCustomMetric(body, "coalesced_frames_total"),
+    supersededPublishes: prometheusCustomMetric(body, "superseded_publishes_total"),
+    latestCapacityRejections: prometheusCustomMetric(body, "latest_capacity_rejections_total"),
     sentFrames: prometheusCustomMetric(body, "sent_frames_total"),
     broadcastsStarted: prometheusCustomMetric(body, "broadcasts_started_total"),
     broadcastsCompleted: prometheusCustomMetric(body, "broadcasts_completed_total"),
@@ -1161,6 +1163,8 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         maxInFlightUnits: Number(values.max_in_flight_units ?? 0),
         queuedFrames: Number(values.queued_frames_total ?? 0),
         coalescedFrames: Number(values.coalesced_frames_total ?? 0),
+        supersededPublishes: Number(values.superseded_publishes_total ?? 0),
+        latestCapacityRejections: Number(values.latest_capacity_rejections_total ?? 0),
         sentFrames: Number(values.sent_frames_total ?? 0),
         broadcastsStarted: Number(values.broadcasts_started_total ?? 0),
         broadcastsCompleted: Number(values.broadcasts_completed_total ?? 0),
@@ -1476,6 +1480,8 @@ function summarizeMapBroadcast(samples, formalWindowSamples, lifecycleLast = sam
     maxInFlightUnits: max(samples.map((item) => item.maxInFlightUnits)),
     queuedFramesPerSecond: counterRate(samples, "queuedFrames"),
     coalescedFramesPerSecond: counterRate(samples, "coalescedFrames"),
+    supersededPublishesPerSecond: counterRate(samples, "supersededPublishes"),
+    latestCapacityRejections: last?.latestCapacityRejections ?? 0,
     sentFramesPerSecond: counterRate(samples, "sentFrames"),
     broadcastsPerSecond: counterRate(samples, "broadcastsStarted"),
     coalescedPercent: queuedFrames > 0 ? coalescedFrames / queuedFrames * 100 : 0,
@@ -1643,6 +1649,12 @@ function aggregateCases(rounds) {
       )),
       mapBroadcastCoalescedFramesPerSecond: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.coalescedFramesPerSecond ?? 0,
+      )),
+      mapBroadcastSupersededPublishesPerSecond: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.supersededPublishesPerSecond ?? 0,
+      )),
+      mapBroadcastLatestCapacityRejections: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.latestCapacityRejections ?? 0,
       )),
       mapBroadcastSentFramesPerSecond: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.sentFramesPerSecond ?? 0,
@@ -2337,8 +2349,8 @@ function renderMarkdown(report) {
     "",
     "## Map 广播 single-flight",
     "",
-    "| 玩家 | 指标样本 | pending 采样峰值/生命周期峰值 | queued/s | coalesced/s (%) | sent/s | batch/s | frames/batch | 广播 avg/max | 排队 avg/max | failures |",
-    "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    "| 玩家 | 指标样本 | pending 采样峰值/生命周期峰值 | queued/s | coalesced/s (%) | superseded/s | sent/s | batch/s | frames/batch | 广播 avg/max | 排队 avg/max | failures/capacity rejects |",
+    "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.cases) {
     const value = item.median;
@@ -2347,11 +2359,12 @@ function renderMarkdown(report) {
       `${round(value.mapBroadcastPendingUnitsPeak)}/${round(value.mapBroadcastMaxPendingUnits)} | ` +
       `${round(value.mapBroadcastQueuedFramesPerSecond)} | ` +
       `${round(value.mapBroadcastCoalescedFramesPerSecond)} (${round(value.mapBroadcastCoalescedPercent, 1)}%) | ` +
+      `${round(value.mapBroadcastSupersededPublishesPerSecond)} | ` +
       `${round(value.mapBroadcastSentFramesPerSecond)} | ${round(value.mapBroadcastsPerSecond, 1)} | ` +
       `${round(value.mapBroadcastFramesPerBroadcast, 1)} | ` +
       `${round(value.mapBroadcastAverageDurationMs, 2)}/${round(value.mapBroadcastMaxDurationMs, 2)}ms | ` +
       `${round(value.mapBroadcastAverageQueueWaitMs, 2)}/${round(value.mapBroadcastMaxQueueWaitMs, 2)}ms | ` +
-      `${value.mapBroadcastFailures} |`,
+      `${value.mapBroadcastFailures}/${value.mapBroadcastLatestCapacityRejections} |`,
     );
   }
   lines.push(

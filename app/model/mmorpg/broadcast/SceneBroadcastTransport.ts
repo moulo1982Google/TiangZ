@@ -1,5 +1,6 @@
 import type {
   BroadcastAudience,
+  BroadcastDelivery,
   BroadcastTransport,
   EncodedAudienceBatch,
   EncodedRouteFrame,
@@ -9,6 +10,7 @@ import { GateMessages } from "../../../generated/model/server/demo/protocol/mess
 
 interface PendingBroadcastBatch {
   readonly batches: readonly EncodedAudienceBatch[];
+  readonly delivery: BroadcastDelivery;
   resolve(): void;
   reject(error: unknown): void;
 }
@@ -25,6 +27,9 @@ interface RouteFrameGroup {
   readonly frames: Uint8Array[];
 }
 
+const RELIABLE_DELIVERY = 1;
+const LATEST_DELIVERY = 2;
+
 export class SceneBroadcastTransport implements BroadcastTransport {
   private readonly pendingBatches: PendingBroadcastBatch[] = [];
   private batchFlushScheduled = false;
@@ -34,7 +39,11 @@ export class SceneBroadcastTransport implements BroadcastTransport {
   constructor(private readonly scenes: SceneMessageHelper) {}
 
   /** 发送单组客户端帧；低频即时事件继续使用紧凑的单帧内网协议。 / Sends one client frame group through the compact single-frame inner protocol. */
-  async Send(audience: BroadcastAudience, frame: Uint8Array): Promise<void> {
+  async Send(
+    audience: BroadcastAudience,
+    frame: Uint8Array,
+    delivery: BroadcastDelivery = "reliable",
+  ): Promise<void> {
     const recipientsByGate = groupRecipientsByGate(audience);
 
     await Promise.all(
@@ -42,7 +51,11 @@ export class SceneBroadcastTransport implements BroadcastTransport {
         this.scenes.send(
           this.scenes.byName(gateName),
           GateMessages.ClientBroadcast,
-          { targetUnitIds: [...targetUnitIds], frame },
+          {
+            targetUnitIds: [...targetUnitIds],
+            frame,
+            deliveryClass: encodeDelivery(delivery),
+          },
         ),
       ),
     );
@@ -57,15 +70,18 @@ export class SceneBroadcastTransport implements BroadcastTransport {
    * not re-encoded; this removes fragmented Map-to-Gate messages without
    * merging client protocol frames.
    */
-  SendMany(batches: readonly EncodedAudienceBatch[]): Promise<void> {
-    const delivery = new Promise<void>((resolve, reject) => {
-      this.pendingBatches.push({ batches, resolve, reject });
+  SendMany(
+    batches: readonly EncodedAudienceBatch[],
+    delivery: BroadcastDelivery = "reliable",
+  ): Promise<void> {
+    const completion = new Promise<void>((resolve, reject) => {
+      this.pendingBatches.push({ batches, delivery, resolve, reject });
     });
     if (!this.batchFlushScheduled) {
       this.batchFlushScheduled = true;
       queueMicrotask(() => this.FlushPendingBatches());
     }
-    return delivery;
+    return completion;
   }
 
   /**
@@ -73,15 +89,21 @@ export class SceneBroadcastTransport implements BroadcastTransport {
    * Rust already emitted complete Gate batch frames; frames for one Gate in the same synchronous
    * boundary are merged by concatenating repeated protobuf fields without touching client payloads.
    */
-  SendRouteFrames(frames: readonly EncodedRouteFrame[]): Promise<void> {
-    const delivery = new Promise<void>((resolve, reject) => {
+  SendRouteFrames(
+    frames: readonly EncodedRouteFrame[],
+    delivery: BroadcastDelivery = "latest",
+  ): Promise<void> {
+    if (delivery !== "latest") {
+      throw new Error("encoded route frames are reserved for latest-state delivery");
+    }
+    const completion = new Promise<void>((resolve, reject) => {
       this.pendingRouteFrameJobs.push({ frames, resolve, reject });
     });
     if (!this.routeFrameFlushScheduled) {
       this.routeFrameFlushScheduled = true;
       queueMicrotask(() => this.FlushPendingRouteFrameJobs());
     }
-    return delivery;
+    return completion;
   }
 
   /** 合并同Gate的S2G_ClientBroadcastBatch外壳；客户端协议帧仍保持每个batch独立。 / Merges S2G_ClientBroadcastBatch envelopes per Gate while keeping each client frame as its own batch. */
@@ -158,33 +180,45 @@ export class SceneBroadcastTransport implements BroadcastTransport {
     const pending = this.pendingBatches.splice(0, this.pendingBatches.length);
     if (pending.length === 0) return;
 
-    const deliveriesByGate = new Map<string, Array<{
+    const deliveriesByGate = new Map<string, {
+      gateName: string;
+      delivery: BroadcastDelivery;
+      batches: Array<{
       targetUnitIds: number[];
       frame: Uint8Array;
-    }>>();
+      }>;
+    }>();
     const gatesByJob = pending.map(() => new Set<string>());
     for (let jobIndex = 0; jobIndex < pending.length; jobIndex += 1) {
       for (const batch of pending[jobIndex].batches) {
         for (const [gateName, recipients] of groupRecipientsByGate(batch.audience)) {
           if (recipients.size === 0) continue;
-          const deliveries = deliveriesByGate.get(gateName) ?? [];
-          deliveries.push({ targetUnitIds: [...recipients], frame: batch.frame });
-          deliveriesByGate.set(gateName, deliveries);
-          gatesByJob[jobIndex].add(gateName);
+          const key = `${pending[jobIndex].delivery}\0${gateName}`;
+          const deliveries = deliveriesByGate.get(key) ?? {
+            gateName,
+            delivery: pending[jobIndex].delivery,
+            batches: [],
+          };
+          deliveries.batches.push({ targetUnitIds: [...recipients], frame: batch.frame });
+          deliveriesByGate.set(key, deliveries);
+          gatesByJob[jobIndex].add(key);
         }
       }
     }
 
     const sendsByGate = new Map<string, Promise<void> | void>();
-    for (const [gateName, batches] of deliveriesByGate) {
+    for (const [key, group] of deliveriesByGate) {
       try {
-        sendsByGate.set(gateName, this.scenes.send(
-          this.scenes.byName(gateName),
+        sendsByGate.set(key, this.scenes.send(
+          this.scenes.byName(group.gateName),
           GateMessages.ClientBroadcastBatch,
-          { batches },
+          {
+            batches: group.batches,
+            deliveryClass: encodeDelivery(group.delivery),
+          },
         ));
       } catch (error) {
-        sendsByGate.set(gateName, Promise.reject(error));
+        sendsByGate.set(key, Promise.reject(error));
       }
     }
 
@@ -196,6 +230,10 @@ export class SceneBroadcastTransport implements BroadcastTransport {
       );
     }
   }
+}
+
+function encodeDelivery(delivery: BroadcastDelivery): number {
+  return delivery === "latest" ? LATEST_DELIVERY : RELIABLE_DELIVERY;
 }
 
 /** 按Gate去重一组逻辑受众，不修改原Audience。 / Deduplicates one logical audience by Gate without mutating it. */

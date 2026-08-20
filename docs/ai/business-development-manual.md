@@ -814,9 +814,12 @@ await Promise.all([
 - 不为每种广播新增`M2G_Xxx`；业务只调用`map.Broadcast`。框架按数量自动选择内部单发或批发，业务不得直接构造内网广播协议。
 - latest descriptor必须有稳定key。
 - event队列满必须显式失败，不能静默丢弃。
+- 业务不得把AOI Enter/Leave当作可随意丢弃的普通latest；关系变化先按`observer + subject`合并最终状态，再进入可靠发布。若未来增加关系快照重同步，必须由框架显式标记，不能只靠“丢旧Leave/Enter”猜最终视图。
 - AOI已经接管Movement、Numeric和Unit固定字段的接收者选择；新增业务广播必须选择明确Audience，不能重新构造全地图玩家列表。
 
-通用广播不会把多个Encoded Audience逐组跨进程发送。`BroadcastHub`通过Transport的`SendMany`提交latest状态和不可覆盖Event，`SceneBroadcastTransport`在同一同步Game Tick内按Gate合并；批量元素仍保持独立客户端frame边界，Gate只完成Unit到connection的路由与下行扇出。Movement和Numeric热路径更进一步：Rust AOI在Attach时记录框架分配的紧凑delivery route，帧尾直接生成每个Gate的完整内网批帧，TS只做至多Gate数量的routeId到Scene映射并原样发送。路由帧在同一微任务边界内还会按Gate合并`ClientBroadcastBatch`外壳，只有外层repeated batch字段被拼接，客户端payload不重新编码、不互相覆盖。Numeric按Owner私有、AOI高频战斗值和AOI低频静态值拆成独立latest源；当前`CurrentHp`的服务端恢复仍按10Hz精确计算，旁观者公开状态合并为1Hz，受击者和有效攻击者通过只含参与者的`G2C_CombatResult`事件立即收到精确结果，客户端按`serverTick`防止旧AOI快照回退血量，死亡/复活跨0变化仍立即发送，`Level/MaxHp`仅在真实变化时发送。Native一次遍历Numeric脏字典并生成三份策略结果，TS按源分别投递；每个源在全部路由帧成功后只按自己的筛选策略Ack，不能清掉其他类型的dirty，未ACK结果也不能被后续批次覆盖。业务不得分配routeId、调用任何`*AoiRouteFrames` Native op、调用`SceneMessageHelper.sendFrame`，或直接构造`S2G_ClientBroadcastBatch`。UnitState和即时不可覆盖Event仍走通用路径；不能为了追求“一Tick一包”而延迟技能、Buff、道具、伤害等可靠事件，或把多个客户端msgcode拼成私有payload。
+通用广播按`descriptor + audience + Gate`建立独立频道，不再让一个慢Gate成为跨Gate完成屏障。`event`是每Gate有界可靠FIFO，满载必须失败；`latest`是每Gate single-flight，未发送旧状态可被同key新状态覆盖。被覆盖的发布Promise表示“已由更新状态接管”并立即完成，只有当前最终版本继续等待Transport结果；业务不能把latest Promise理解为每个中间版本都实际到达客户端。框架对latest待发item、编码字节和等待年龄设有上限，`latest_capacity_rejections_total`非零意味着容量或链路故障，不能靠扩大上限掩盖。
+
+`SceneBroadcastTransport`只合并相同Gate、相同投递类别的作业；内网`delivery_class=1`表示可靠事件，`2`表示可覆盖状态。Gate将客户端出站分成control response、reliable event和latest state三个队列，按该优先级在同一Update中交给Host批量写出，最终仍共享一个客户端TCP连接并保留每条客户端frame边界。Movement和Numeric的Rust route frame自带每Gate itemCount及latest类别；共享Numeric revision必须等待全部相关Gate成功后Ack，任一路失败都保留Dirty。业务不得分配routeId、调用任何`*AoiRouteFrames` Native op、调用`SceneMessageHelper.sendFrame`，或直接构造`S2G_ClientBroadcastBatch`。不能为了追求“一Tick一包”而延迟技能、Buff、道具、伤害等可靠事件，也不能把多个客户端msgcode拼成私有payload。
 
 跨进程Transport的call与send流拥有独立保留容量和公平调度；目标Process入口也把`eventQueueCapacity`按1:3划分为控制流与数据流，内部RPC、断线和Host completion走控制流，内部单向帧走数据流，每连续32个控制事件至少调度一个数据事件。业务不应自行扩大队列或依赖重试风暴；收到`SystemErrCode.SceneOverloaded`时立即结束当前业务请求并向客户端返回明确业务错误，不能把它包装成普通超时。目标控制入口队满时Rust宿主会按原`rpcId`立即返回过载，来源进程不会继续占用pending waiter；单向广播本来就不占用RPC pending waiter。Disconnect可能先于旧数据帧到达TS，Core会用30秒有界墓碑丢弃该连接残留帧并增加`connection_ingress.dropped_frames_after_disconnect_total`；业务Handler不需要也不允许把这种宿主顺序修复成ActorLocation重试。排查过载或超时时查看按msgcode、source、target、traffic和queue stage细分的`/metrics`指标，并同时检查`queueStages.control_ingress/data_ingress`，不要只看聚合`frame`深度。
 

@@ -100,7 +100,6 @@ export class StateReplicationSystem {
               delta.audienceKey,
               source.name,
               delta.routeFrames,
-              delta.itemCount,
             );
           }
           if (delta.batches !== undefined) {

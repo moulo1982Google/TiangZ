@@ -104,6 +104,7 @@ let activeSenderScene: SenderProbeScene | undefined;
 let activeMailboxDrainScene: MailboxDrainProbeScene | undefined;
 let activeActorForwardGate: ActorForwardGateScene | undefined;
 let activeActorForwardTarget: ActorForwardTargetScene | undefined;
+let activeOutboundPriorityScene: OutboundPriorityProbeScene | undefined;
 
 class CounterComponent extends Component<[number]> {
   value = 0;
@@ -173,6 +174,18 @@ class HandlerProbeScene extends EntryScene {
 
   protected override onStop(): void {
     lifecycleEvents.push("stop");
+  }
+}
+
+@entryScene("OutboundPriorityProbe")
+class OutboundPriorityProbeScene extends EntryScene {
+  protected override onStart(): void {
+    activeOutboundPriorityScene = this;
+  }
+
+  QueueLatestThenReliable(): void {
+    this.sendClientFrameMany([7], Uint8Array.from([0, 2]), "latest");
+    this.sendClientFrameMany([7], Uint8Array.from([0, 1]), "reliable");
   }
 }
 
@@ -287,9 +300,30 @@ async function main(): Promise<void> {
   await testLocalSceneSendFastPath();
   await testLatestActorForwardBatch();
   await testSynchronousMailboxDrain();
+  await testClientOutboundPriority();
   await testExternalHandlerDispatch();
   await testSessionMailboxAndDisconnect();
   console.log("entry scene handler self-test passed");
+}
+
+async function testClientOutboundPriority(): Promise<void> {
+  activeOutboundPriorityScene = undefined;
+  const config = outboundPrioritySceneConfig();
+  const runtime = new ProcessRuntime({
+    process: { name: "outbound-priority-self-test" },
+    scenes: [config],
+    knownScenes: [config],
+    tickMs: 50,
+  });
+  await runtime.start();
+  activeOutboundPriorityScene!.QueueLatestThenReliable();
+  const result = await runtime.update();
+  assert.deepEqual(
+    result.outbound.map((batch) => batch.frame[1]),
+    [1, 2],
+    "reliable client frames must drain before replaceable latest state",
+  );
+  await runtime.stop();
 }
 
 async function testLatestActorForwardBatch(): Promise<void> {
@@ -556,6 +590,15 @@ function actorForwardTargetConfig() {
   return {
     name: "actor-forward-target-1",
     sceneType: "ActorForwardTarget",
+    innerIp: "127.0.0.1",
+    port: 0,
+  };
+}
+
+function outboundPrioritySceneConfig() {
+  return {
+    name: "outbound-priority-probe-1",
+    sceneType: "OutboundPriorityProbe",
     innerIp: "127.0.0.1",
     port: 0,
   };

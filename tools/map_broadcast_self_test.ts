@@ -80,7 +80,12 @@ class ControlledRouteTransport extends ControlledTransport {
 }
 
 const audience: BroadcastAudience = {
-  key: "map:1",
+  key: "map:1:single",
+  routes: [{ route: "Gate1", recipientId: 1001 }],
+};
+
+const multiGateAudience: BroadcastAudience = {
+  key: "map:1:multi",
   routes: [
     { route: "Gate1", recipientId: 1001 },
     { route: "Gate2", recipientId: 1002 },
@@ -94,6 +99,7 @@ async function main(): Promise<void> {
   await testCombatResultAudienceIsParticipantOnly();
   await testMapRouteResolverUsesLocalAndCachedRemoteRoutes();
   await testLatestSingleFlight();
+  await testLatestCapacityIsExplicit();
   await testAutoAttackStateIsLatest();
   await testNumericLatestCoverage();
   await testEncodedLatestSnapshot();
@@ -101,11 +107,14 @@ async function main(): Promise<void> {
   await testEncodedAoiBatchesUseTransportBatch();
   await testEventUsesTransportBatch();
   await testSceneTransportCoalescesJobsByGate();
+  await testSceneTransportSeparatesReliableAndLatest();
   await testSceneTransportCoalescesRouteFramesByGate();
+  await testSlowGateDoesNotBlockFastGateLatest();
   await testReplicationAckOnlyAfterSuccessfulSend();
   await testBatchedReplicationAckAfterEveryAudience();
   await testRoutedReplicationAckAfterRouteDelivery();
   await testEventOrderingAndCapacity();
+  await testReliableEventCapacityPreflightIsAtomic();
   console.log("broadcast framework self-test passed");
 }
 
@@ -139,11 +148,13 @@ async function testBuffAudienceProjectionDoesNotLeakDetails(): Promise<void> {
     revision: 1,
   }, 20);
 
-  assert.equal(transport.sends.length, 2);
-  const publicSend = transport.sends.find((send) => readU16BE(send.frame, 0) === MsgCode.G2C_BuffAdded)!;
-  const detailSend = transport.sends.find((send) => readU16BE(send.frame, 0) === MsgCode.G2C_BuffDetail)!;
-  assert.deepEqual(publicSend.audience.routes.map((route) => route.recipientId), [1, 2, 3, 4]);
-  assert.deepEqual(detailSend.audience.routes.map((route) => route.recipientId), [1, 4]);
+  assert.equal(transport.sends.length, 4);
+  const publicSends = transport.sends.filter((send) => readU16BE(send.frame, 0) === MsgCode.G2C_BuffAdded);
+  const detailSends = transport.sends.filter((send) => readU16BE(send.frame, 0) === MsgCode.G2C_BuffDetail);
+  assert.deepEqual(publicSends.flatMap((send) => send.audience.routes.map((route) => route.recipientId)), [1, 2, 3, 4]);
+  assert.deepEqual(detailSends.flatMap((send) => send.audience.routes.map((route) => route.recipientId)), [1, 4]);
+  const publicSend = publicSends[0]!;
+  const detailSend = detailSends[0]!;
   assert.equal(G2C_BuffAddedCodec.decode(publicSend.frame.subarray(2)).buff.buffConfigId, 100);
   assert.equal(G2C_BuffDetailCodec.decode(detailSend.frame.subarray(2)).buffs[0]?.absorbRemaining, 500);
   for (const send of transport.sends) send.resolve();
@@ -216,14 +227,11 @@ async function testClientBroadcastHidesPhysicalRoutes(): Promise<void> {
     { unitId: 77 },
   );
   assert.deepEqual(resolvedIds, [[1001, 1002]]);
-  assert.deepEqual(transport.sends[0].audience, {
-    key: "buff-public:77",
-    routes: [
-      { route: "Gate1", recipientId: 1001 },
-      { route: "Gate2", recipientId: 1002 },
-    ],
-  });
-  transport.sends[0].resolve();
+  assert.deepEqual(transport.sends.map((send) => send.audience), [
+    { key: "buff-public:77", routes: [{ route: "Gate1", recipientId: 1001 }] },
+    { key: "buff-public:77", routes: [{ route: "Gate2", recipientId: 1002 }] },
+  ]);
+  for (const send of transport.sends) send.resolve();
   await delivery;
 }
 
@@ -258,10 +266,17 @@ async function testMapRouteResolverUsesLocalAndCachedRemoteRoutes(): Promise<voi
 }
 
 async function testSceneTransportCoalescesJobsByGate(): Promise<void> {
-  const sends: Array<{ target: string; message: { batches: readonly unknown[] } }> = [];
+  const sends: Array<{
+    target: string;
+    message: { batches: readonly unknown[]; deliveryClass: number };
+  }> = [];
   const scenes = {
     byName: (name: string) => ({ name }),
-    send: (target: { name: string }, _descriptor: unknown, message: { batches: readonly unknown[] }) => {
+    send: (
+      target: { name: string },
+      _descriptor: unknown,
+      message: { batches: readonly unknown[]; deliveryClass: number },
+    ) => {
       sends.push({ target: target.name, message });
       return Promise.resolve();
     },
@@ -295,6 +310,36 @@ async function testSceneTransportCoalescesJobsByGate(): Promise<void> {
     sends.map((send) => [send.target, send.message.batches.length]),
     [["Gate1", 2], ["Gate2", 1]],
   );
+  assert.deepEqual(sends.map((send) => send.message.deliveryClass), [1, 1]);
+}
+
+async function testSceneTransportSeparatesReliableAndLatest(): Promise<void> {
+  const sends: Array<{ target: string; deliveryClass: number }> = [];
+  const scenes = {
+    byName: (name: string) => ({ name }),
+    send: (
+      target: { name: string },
+      _descriptor: unknown,
+      message: { deliveryClass: number },
+    ) => {
+      sends.push({ target: target.name, deliveryClass: message.deliveryClass });
+      return Promise.resolve();
+    },
+  } as unknown as SceneMessageHelper;
+  const transport = new SceneBroadcastTransport(scenes);
+  const batch: EncodedAudienceBatch = {
+    audience: { key: "same-gate", routes: [{ route: "Gate1", recipientId: 1001 }] },
+    frame: Uint8Array.from([0x27, 0x20, 1]),
+    itemCount: 1,
+  };
+  await Promise.all([
+    transport.SendMany([batch], "reliable"),
+    transport.SendMany([batch], "latest"),
+  ]);
+  assert.deepEqual(sends, [
+    { target: "Gate1", deliveryClass: 1 },
+    { target: "Gate1", deliveryClass: 2 },
+  ]);
 }
 
 async function testSceneTransportCoalescesRouteFramesByGate(): Promise<void> {
@@ -314,13 +359,14 @@ async function testSceneTransportCoalescesRouteFramesByGate(): Promise<void> {
         targetUnitIds: [targetUnitId],
         frame: Uint8Array.from([0x27, 0x20, payload]),
       }],
+      deliveryClass: 2,
     }),
   );
 
-  const first = transport.SendRouteFrames([{ route: "Gate1", frame: frame(1001, 1) }]);
+  const first = transport.SendRouteFrames([{ route: "Gate1", frame: frame(1001, 1), itemCount: 1 }]);
   const second = transport.SendRouteFrames([
-    { route: "Gate1", frame: frame(1002, 2) },
-    { route: "Gate2", frame: frame(1003, 3) },
+    { route: "Gate1", frame: frame(1002, 2), itemCount: 1 },
+    { route: "Gate2", frame: frame(1003, 3), itemCount: 1 },
   ]);
   assert.equal(sends.length, 0, "route frames must wait for the same-tick flush boundary");
   await Promise.all([first, second]);
@@ -332,6 +378,43 @@ async function testSceneTransportCoalescesRouteFramesByGate(): Promise<void> {
   const gateTwo = S2G_ClientBroadcastBatchCodec.decode(sends[1]!.frame.subarray(2));
   assert.equal(gateTwo.batches.length, 1);
   assert.equal(gateTwo.batches[0]!.targetUnitIds[0], 1003);
+}
+
+/** 慢Gate只能阻塞自己的latest频道，不能阻止快Gate发送下一帧。 / A slow Gate may stall only its own latest lane, never the next frame for a fast peer. */
+async function testSlowGateDoesNotBlockFastGateLatest(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport);
+  const first = hub.Publish(
+    multiGateAudience,
+    ClientBroadcasts.EntityMove,
+    movement(1, 1),
+    1,
+  );
+  const second = hub.Publish(
+    multiGateAudience,
+    ClientBroadcasts.EntityMove,
+    movement(1, 2),
+    2,
+  );
+
+  assert.deepEqual(
+    transport.sends.map((send) => send.audience.routes[0]!.route),
+    ["Gate1", "Gate2"],
+  );
+  transport.sends[0]!.resolve();
+  await settlePromises();
+  assert.equal(transport.sends.length, 3, "fast Gate must advance without waiting for slow Gate");
+  assert.equal(transport.sends[2]!.audience.routes[0]!.route, "Gate1");
+  assert.equal(decodeMovement(transport.sends[2]!.frame).serverTick, 2);
+
+  transport.sends[2]!.resolve();
+  transport.sends[1]!.resolve();
+  await settlePromises();
+  assert.equal(transport.sends.length, 4);
+  assert.equal(transport.sends[3]!.audience.routes[0]!.route, "Gate2");
+  assert.equal(decodeMovement(transport.sends[3]!.frame).serverTick, 2);
+  transport.sends[3]!.resolve();
+  await Promise.all([first, second]);
 }
 
 async function testEncodedAoiBatchesUseTransportBatch(): Promise<void> {
@@ -350,9 +433,9 @@ async function testEncodedAoiBatchesUseTransportBatch(): Promise<void> {
     },
   ]);
   assert.equal(transport.sends.length, 0, "batch-capable transports must not receive per-audience sends");
-  assert.equal(transport.batchSends.length, 1, "one AOI job must become one transport batch");
-  assert.equal(transport.batchSends[0].batches.length, 2);
-  transport.batchSends[0].resolve();
+  assert.equal(transport.batchSends.length, 2, "one AOI job must create one independent batch per Gate");
+  assert.deepEqual(transport.batchSends.map((send) => send.batches.length), [1, 1]);
+  for (const send of transport.batchSends) send.resolve();
   await delivery;
   assert.equal(hub.Snapshot().sentItems, 3);
 }
@@ -452,8 +535,8 @@ async function testRoutedReplicationAckAfterRouteDelivery(): Promise<void> {
       itemCount: 2,
       audienceKey: "map:1:aoi",
       routeFrames: [
-        { route: "Gate1", frame: Uint8Array.from([0x4e, 0x2a, 1]) },
-        { route: "Gate2", frame: Uint8Array.from([0x4e, 0x2a, 2]) },
+        { route: "Gate1", frame: Uint8Array.from([0x4e, 0x2a, 1]), itemCount: 1 },
+        { route: "Gate2", frame: Uint8Array.from([0x4e, 0x2a, 2]), itemCount: 1 },
       ],
       Ack: () => { acknowledged += 1; },
     }),
@@ -462,10 +545,13 @@ async function testRoutedReplicationAckAfterRouteDelivery(): Promise<void> {
   replication.FrameFlush();
   await settlePromises();
   assert.equal(transport.sends.length, 0);
-  assert.equal(transport.routeSends.length, 1);
-  assert.equal(transport.routeSends[0].frames.length, 2);
+  assert.equal(transport.routeSends.length, 2);
+  assert.deepEqual(transport.routeSends.map((send) => send.frames.length), [1, 1]);
   assert.equal(acknowledged, 0);
   transport.routeSends[0].resolve();
+  await settlePromises();
+  assert.equal(acknowledged, 0, "one Gate completion must not acknowledge the shared revision");
+  transport.routeSends[1].resolve();
   await settlePromises();
   assert.equal(acknowledged, 1, "routed state must acknowledge only after route delivery");
 }
@@ -682,9 +768,10 @@ async function testLatestSingleFlight(): Promise<void> {
   );
 
   const fourth = hub.Publish(audience, ClientBroadcasts.EntityMove, movement(3, 1), 4);
+  const latestFailure = assert.rejects(third);
   transport.sends[1].reject(new Error("expected broadcast failure"));
-  await assert.rejects(second);
-  await assert.rejects(third);
+  await second;
+  await latestFailure;
   await settlePromises();
   assert.equal(transport.sends.length, 3, "a failed send must not stop the channel");
   assert.equal(errors.length, 1);
@@ -696,12 +783,42 @@ async function testLatestSingleFlight(): Promise<void> {
   assert.equal(metrics.pendingItems, 0);
   assert.equal(metrics.queuedItems, 5);
   assert.equal(metrics.coalescedItems, 1);
+  assert.equal(metrics.supersededPublishes, 1);
   assert.equal(metrics.sentItems, 4);
   assert.equal(metrics.broadcastsStarted, 3);
   assert.equal(metrics.broadcastsCompleted, 2);
   assert.equal(metrics.broadcastFailures, 1);
   assert.equal(metrics.maxPendingItems, 2);
   assert.equal(metrics.maxInFlightItems, 2);
+}
+
+async function testLatestCapacityIsExplicit(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport, {
+    maxLatestPendingItemsPerChannel: 1,
+    maxLatestPendingBytesPerChannel: 3,
+  });
+  const first = hub.Publish(audience, ClientBroadcasts.EntityMove, movement(1, 1), 1);
+  const pending = hub.Publish(audience, ClientBroadcasts.EntityMove, movement(2, 1), 2);
+  assert.throws(
+    () => hub.Publish(audience, ClientBroadcasts.EntityMove, movement(3, 1), 3),
+    /latest pending capacity exceeded/,
+  );
+  assert.throws(
+    () => hub.PublishEncodedLatestRouteFrames(
+      "map:1:bytes",
+      "Client.EncodedCapacity",
+      [{ route: "Gate1", frame: Uint8Array.from([1, 2, 3, 4]), itemCount: 1 }],
+    ),
+    /latest pending capacity exceeded/,
+  );
+  assert.equal(hub.Snapshot().latestCapacityRejections, 2);
+
+  transport.sends[0]!.resolve();
+  await first;
+  await settlePromises();
+  transport.sends[1]!.resolve();
+  await pending;
 }
 
 async function testEventOrderingAndCapacity(): Promise<void> {
@@ -732,6 +849,38 @@ async function testEventOrderingAndCapacity(): Promise<void> {
   assert.equal(decodeLeave(transport.sends[1].frame).unitId, 11);
   transport.sends[1].resolve();
   await second;
+}
+
+async function testReliableEventCapacityPreflightIsAtomic(): Promise<void> {
+  const transport = new ControlledTransport();
+  const hub = new BroadcastHub(transport, { maxEventQueuePerChannel: 1 });
+  const gateTwo: BroadcastAudience = {
+    key: "event-capacity",
+    routes: [{ route: "Gate2", recipientId: 1002 }],
+  };
+  const both: BroadcastAudience = {
+    key: "event-capacity",
+    routes: [
+      { route: "Gate1", recipientId: 1001 },
+      { route: "Gate2", recipientId: 1002 },
+    ],
+  };
+  const inFlight = hub.Publish(gateTwo, ClientBroadcasts.EntityLeave, { unitId: 1 });
+  const pending = hub.Publish(gateTwo, ClientBroadcasts.EntityLeave, { unitId: 2 });
+  assert.throws(
+    () => hub.Publish(both, ClientBroadcasts.EntityLeave, { unitId: 3 }),
+    /event queue is full/,
+  );
+  assert.deepEqual(
+    transport.sends.map((send) => send.audience.routes[0]!.route),
+    ["Gate2"],
+    "capacity failure must not partially enqueue the event to Gate1",
+  );
+  transport.sends[0]!.resolve();
+  await inFlight;
+  await settlePromises();
+  transport.sends[1]!.resolve();
+  await pending;
 }
 
 function decodeMovement(frame: Uint8Array) {

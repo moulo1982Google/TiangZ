@@ -219,10 +219,12 @@ function testGeneratedScalarCodec(): void {
     S2G_ClientBroadcastCodec.encode({
       targetUnitIds: [1001, 1002],
       frame: new Uint8Array([0x27, 0x19, 1, 2, 3]),
+      deliveryClass: 1,
     }),
   );
   assert.deepEqual(broadcast.targetUnitIds, [1001, 1002]);
   assert.deepEqual([...broadcast.frame], [0x27, 0x19, 1, 2, 3]);
+  assert.equal(broadcast.deliveryClass, 1);
 
   const broadcastBatch = S2G_ClientBroadcastBatchCodec.decode(
     S2G_ClientBroadcastBatchCodec.encode({
@@ -230,8 +232,10 @@ function testGeneratedScalarCodec(): void {
         { targetUnitIds: [1001, 1002], frame: new Uint8Array([0x27, 0x20, 1]) },
         { targetUnitIds: [1003], frame: new Uint8Array([0x27, 0x20, 2]) },
       ],
+      deliveryClass: 2,
     }),
   );
+  assert.equal(broadcastBatch.deliveryClass, 2);
   assert.deepEqual(
     broadcastBatch.batches.map((batch) => ({
       targetUnitIds: batch.targetUnitIds,

@@ -2220,6 +2220,7 @@ export const M2G_PlayerOfflineCodec = {
 export interface S2G_ClientBroadcast extends IActorMessage {
   targetUnitIds: readonly number[];
   frame: Uint8Array;
+  deliveryClass: number;
 }
 
 export const S2G_ClientBroadcastCodec = {
@@ -2228,6 +2229,7 @@ export const S2G_ClientBroadcastCodec = {
     const value: S2G_ClientBroadcast = {
       targetUnitIds: [],
       frame: new Uint8Array(0),
+      deliveryClass: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
@@ -2236,6 +2238,9 @@ export const S2G_ClientBroadcastCodec = {
       }
       else if (tag.fieldNo === 2 && tag.wireType === 2) {
         value.frame = reader.bytesField();
+      }
+      else if (tag.fieldNo === 3 && tag.wireType === 0) {
+        value.deliveryClass = reader.uint32();
       }
       else {
         reader.skip(tag.wireType);
@@ -2248,6 +2253,7 @@ export const S2G_ClientBroadcastCodec = {
     const writer = new BinaryWriter();
     for (const item of (value.targetUnitIds ?? [])) writer.uint32(1, item, true);
     if (value.frame !== undefined) writer.bytes(2, value.frame);
+    if (value.deliveryClass !== undefined) writer.uint32(3, value.deliveryClass);
     return writer.finish();
   },
 };
@@ -4921,6 +4927,7 @@ export const ClientBroadcastBatchItemCodec = {
 
 export interface S2G_ClientBroadcastBatch extends IActorMessage {
   batches: readonly ClientBroadcastBatchItem[];
+  deliveryClass: number;
 }
 
 export const S2G_ClientBroadcastBatchCodec = {
@@ -4928,11 +4935,15 @@ export const S2G_ClientBroadcastBatchCodec = {
     const reader = new BinaryReader(payload);
     const value: S2G_ClientBroadcastBatch = {
       batches: [],
+      deliveryClass: 0,
     };
     while (!reader.eof()) {
       const tag = reader.tag();
       if (tag.fieldNo === 1 && tag.wireType === 2) {
         (value.batches as ClientBroadcastBatchItem[]).push(ClientBroadcastBatchItemCodec.decode(reader.bytesField()));
+      }
+      else if (tag.fieldNo === 2 && tag.wireType === 0) {
+        value.deliveryClass = reader.uint32();
       }
       else {
         reader.skip(tag.wireType);
@@ -4944,6 +4955,7 @@ export const S2G_ClientBroadcastBatchCodec = {
   encode(value: S2G_ClientBroadcastBatch): Uint8Array {
     const writer = new BinaryWriter();
     for (const item of (value.batches ?? [])) writer.bytes(1, ClientBroadcastBatchItemCodec.encode(item), true);
+    if (value.deliveryClass !== undefined) writer.uint32(2, value.deliveryClass);
     return writer.finish();
   },
 };

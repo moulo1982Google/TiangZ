@@ -179,6 +179,8 @@ message S2G_ClientBroadcast // IActorMessage
 {
   repeated uint32 target_unit_ids = 1;
   bytes frame = 2;
+  // 1=reliable event, 2=replaceable latest state.
+  uint32 delivery_class = 3;
 }
 
 message KickPlayerTarget
@@ -626,4 +628,6 @@ message ClientBroadcastBatchItem
 message S2G_ClientBroadcastBatch // IActorMessage
 {
   repeated ClientBroadcastBatchItem batches = 1;
+  // 1=reliable event, 2=replaceable latest state.
+  uint32 delivery_class = 2;
 }

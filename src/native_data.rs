@@ -237,6 +237,7 @@ struct AoiRouteFrameScratch {
     subject_ids: Vec<u32>,
     force: Vec<bool>,
     payloads_by_route: Vec<Vec<u8>>,
+    item_counts_by_route: Vec<u32>,
     recipients_by_route: Vec<Vec<u32>>,
     touched_routes: Vec<usize>,
     client_frame: Vec<u8>,
@@ -951,7 +952,8 @@ fn native_map_peek_numeric_aoi_route_frames_for_policies(
             for &handle in &handles {
                 if let Some(numeric) = store.numerics_by_unit.get(&handle) {
                     for (&numeric_type, &revision) in &numeric.urgent {
-                        if revision > through_revision || !numeric.dirty.contains_key(&numeric_type) {
+                        if revision > through_revision || !numeric.dirty.contains_key(&numeric_type)
+                        {
                             continue;
                         }
                         for (index, policy) in policies.iter().enumerate() {
@@ -970,7 +972,9 @@ fn native_map_peek_numeric_aoi_route_frames_for_policies(
                             continue;
                         }
                         for (index, policy) in policies.iter().enumerate() {
-                            if (!policy.publish_due && !has_urgent[index]) || !policy.matches(numeric_type) {
+                            if (!policy.publish_due && !has_urgent[index])
+                                || !policy.matches(numeric_type)
+                            {
                                 continue;
                             }
                             record_groups[index].push((
@@ -1009,7 +1013,8 @@ fn native_map_peek_numeric_aoi_route_frames_for_policies(
                     let world = aoi_worlds.get(&map_id).ok_or_else(|| {
                         JsErrorBox::generic(format!("AOI world is not configured: {map_id}"))
                     })?;
-                    let delivery_groups = world.visibility_delivery_groups(&subject_ids, &owner_only);
+                    let delivery_groups =
+                        world.visibility_delivery_groups(&subject_ids, &owner_only);
                     record_numeric_replication_metrics(metrics, records, &delivery_groups);
                     let route_frames = encode_aoi_route_frames_from_groups(
                         world,
@@ -1017,7 +1022,8 @@ fn native_map_peek_numeric_aoi_route_frames_for_policies(
                         route_message_code,
                         route_frame_scratch,
                         |indices, frame| {
-                            let subset: Vec<_> = indices.iter().map(|index| records[*index]).collect();
+                            let subset: Vec<_> =
+                                indices.iter().map(|index| records[*index]).collect();
                             encode_entity_numeric_frame_into(
                                 frame,
                                 client_message_code,
@@ -1119,17 +1125,16 @@ fn decode_numeric_replication_policies(
         let selection = NumericReplicationSelection::try_from(u32::from_le_bytes(
             bytes[offset..offset + 4].try_into().unwrap(),
         ))?;
-        let publish_due = match u32::from_le_bytes(
-            bytes[offset + 4..offset + 8].try_into().unwrap(),
-        ) {
-            0 => false,
-            1 => true,
-            _ => {
-                return Err(JsErrorBox::generic(
-                    "Numeric replication publishDue must be 0 or 1",
-                ));
-            }
-        };
+        let publish_due =
+            match u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) {
+                0 => false,
+                1 => true,
+                _ => {
+                    return Err(JsErrorBox::generic(
+                        "Numeric replication publishDue must be 0 or 1",
+                    ));
+                }
+            };
         let type_count = usize::try_from(u32::from_le_bytes(
             bytes[offset + 8..offset + 12].try_into().unwrap(),
         ))
@@ -1140,7 +1145,9 @@ fn decode_numeric_replication_policies(
         let next = offset
             .checked_add(12)
             .and_then(|value| value.checked_add(type_bytes))
-            .ok_or_else(|| JsErrorBox::generic("Numeric replication policy payload is too large"))?;
+            .ok_or_else(|| {
+                JsErrorBox::generic("Numeric replication policy payload is too large")
+            })?;
         if next > bytes.len() {
             return Err(JsErrorBox::generic(
                 "Numeric replication policy types are truncated",
@@ -2950,6 +2957,9 @@ where
         }
         for route_id in scratch.touched_routes.iter().copied() {
             let route_recipients = &scratch.recipients_by_route[route_id];
+            scratch.item_counts_by_route[route_id] = scratch.item_counts_by_route[route_id]
+                .checked_add(indices.len() as u32)
+                .ok_or_else(|| JsErrorBox::generic("AOI route item count overflow"))?;
             encode_client_broadcast_batch_item(
                 &mut scratch.payloads_by_route[route_id],
                 route_recipients,
@@ -2973,7 +2983,7 @@ where
         8 + scratch
             .payloads_by_route
             .iter()
-            .map(|payload| 10 + payload.len())
+            .map(|payload| 16 + payload.len())
             .sum::<usize>(),
     );
     bytes.extend_from_slice(&total_items.to_le_bytes());
@@ -2983,9 +2993,12 @@ where
             continue;
         }
         bytes.extend_from_slice(&(route_id as u32).to_le_bytes());
-        bytes.extend_from_slice(&((payload.len() + 2) as u32).to_le_bytes());
+        bytes.extend_from_slice(&scratch.item_counts_by_route[route_id].to_le_bytes());
+        bytes.extend_from_slice(&((payload.len() + 4) as u32).to_le_bytes());
         bytes.extend_from_slice(&route_message_code.to_be_bytes());
         bytes.extend_from_slice(payload);
+        // S2G_ClientBroadcastBatch.delivery_class = 2 (replaceable latest state).
+        bytes.extend_from_slice(&[0x10, 0x02]);
     }
     Ok(bytes)
 }
@@ -3003,9 +3016,13 @@ fn prepare_route_frame_scratch(scratch: &mut AoiRouteFrameScratch, route_capacit
             .recipients_by_route
             .resize_with(route_capacity, Vec::new);
     }
+    if scratch.item_counts_by_route.len() < route_capacity {
+        scratch.item_counts_by_route.resize(route_capacity, 0);
+    }
     for payload in &mut scratch.payloads_by_route {
         payload.clear();
     }
+    scratch.item_counts_by_route.fill(0);
     for recipients in &mut scratch.recipients_by_route {
         recipients.clear();
     }
@@ -4018,9 +4035,13 @@ mod tests {
                 u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()),
                 expected_route
             );
+            assert_eq!(
+                u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()),
+                2
+            );
             let frame_len =
-                u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
-            offset += 8;
+                u32::from_le_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()) as usize;
+            offset += 12;
             let frame = &bytes[offset..offset + frame_len];
             offset += frame_len;
             assert_eq!(&frame[..2], &20_010_u16.to_be_bytes());
@@ -4042,7 +4063,9 @@ mod tests {
             );
             payload_offset += client_len;
             assert_eq!(payload_offset, item_end);
-            assert_eq!(item_end, frame.len());
+            assert_eq!(take_test_varint(frame, &mut payload_offset), 16);
+            assert_eq!(take_test_varint(frame, &mut payload_offset), 2);
+            assert_eq!(payload_offset, frame.len());
         }
         assert_eq!(offset, bytes.len());
     }
@@ -4344,8 +4367,14 @@ mod tests {
         let aoi_types = NUMERIC_CURRENT_HP.to_le_bytes();
         let mut policies = Vec::new();
         for (selection, numeric_types) in [
-            (NumericReplicationSelection::ExcludeListedTypes as u32, &aoi_types[..]),
-            (NumericReplicationSelection::IncludeListedTypes as u32, &aoi_types[..]),
+            (
+                NumericReplicationSelection::ExcludeListedTypes as u32,
+                &aoi_types[..],
+            ),
+            (
+                NumericReplicationSelection::IncludeListedTypes as u32,
+                &aoi_types[..],
+            ),
         ] {
             policies.extend_from_slice(&selection.to_le_bytes());
             policies.extend_from_slice(&1_u32.to_le_bytes());
@@ -4354,18 +4383,14 @@ mod tests {
         }
 
         let batch = native_map_peek_numeric_aoi_route_frames_batch(
-            1,
-            1,
-            10_017,
-            20_010,
-            &aoi_types,
-            &policies,
+            1, 1, 10_017, 20_010, &aoi_types, &policies,
         )
         .unwrap();
         assert_eq!(u32::from_le_bytes(batch[0..4].try_into().unwrap()), 2);
         let mut offset = 4;
         for expected_items in [1_u32, 1_u32] {
-            let payload_len = u32::from_le_bytes(batch[offset..offset + 4].try_into().unwrap()) as usize;
+            let payload_len =
+                u32::from_le_bytes(batch[offset..offset + 4].try_into().unwrap()) as usize;
             offset += 4;
             let payload = &batch[offset..offset + payload_len];
             offset += payload_len;

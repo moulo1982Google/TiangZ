@@ -258,7 +258,7 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 [custom-metrics:map1] scene=map_1 type=MapHost name=map_broadcast timestamp_ms=... map_id=1 in_flight=1 pending_units=... coalesced_frames_total=...
 ```
 
-移动广播采用 single-flight：同一张地图同时最多执行一个广播 Promise。广播在途期间产生的新状态进入待发区；同一个 Unit 多次更新时只保留最新帧，当前广播结束后立即发送合并后的下一批。
+移动广播采用每Gate single-flight：同一`descriptor + audience + Gate`同时最多执行一个发送，慢Gate不会阻塞其他Gate。广播在途期间产生的新状态进入该Gate待发区；同一个Unit多次更新只保留最终帧。被覆盖发布的Promise会以“由新状态接管”完成，不继续堆积到最终网络发送结束。
 
 关键字段：
 
@@ -268,13 +268,15 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 - `max_in_flight_units`：实际广播批次包含的 Unit 数历史峰值。
 - `queued_frames_total`：进入广播调度器的原始移动帧数。
 - `coalesced_frames_total`：被同一 Unit 更新覆盖的旧帧数；这是主动丢弃过时状态，不是网络丢包。
+- `superseded_publishes_total`：待发latest版本被更新版本接管后提前完成的发布次数，用于识别慢Gate造成的Promise积压是否已经被覆盖吸收。
+- `latest_capacity_rejections_total`：每Gate latest频道触发item、bytes或age上限的累计次数；必须保持为0，非0表示状态链路已经无法在有界时间内收敛。
 - `sent_frames_total`：实际进入广播批次的最新状态数。
 - `broadcasts_started_total/broadcasts_completed_total`：开始和完成的广播批次数。
 - `broadcast_failures_total`：广播 Promise 失败数；失败不会停止后续批次。
 - `last/max/total_duration_ms`：广播 Promise 从调用到完成的耗时。
 - `last/max/total_queue_wait_ms`：一批状态从进入空待发区到真正开始广播的等待时间。
 
-容量测试会把这些字段自动汇总到报告的“Map 广播 single-flight”表格。重点观察 `pending` 是否长期存在、合并率是否突然升高、`广播 max` 和 `排队 max` 是否随玩家数出现拐点。
+容量测试会把这些字段自动汇总到报告的“Map 广播 single-flight”表格。重点观察`pending`是否长期存在、`superseded/s`是否随Gate数出现拐点、capacity rejects是否为0，以及广播/排队尾延迟是否持续上升。
 
 ## NativeData 指标
 

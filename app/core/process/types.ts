@@ -186,6 +186,8 @@ export interface OutboundBatch {
   frame: Uint8Array;
 }
 
+type ClientFrameDelivery = "reliable" | "latest";
+
 export interface SceneUpdateResult {
   outbound: OutboundBatch[];
   metrics?: SceneMetricsSnapshot;
@@ -297,7 +299,9 @@ export abstract class EntryScene extends Scene {
   protected readonly mailbox: SceneMailboxType = "ordered";
   private readonly ingress: QueuedEvent[] = [];
   private ingressHead = 0;
-  private readonly outbound: OutboundBatch[] = [];
+  private readonly outboundControl: OutboundBatch[] = [];
+  private readonly outboundReliable: OutboundBatch[] = [];
+  private readonly outboundLatest: OutboundBatch[] = [];
   private mailboxTaskHead = 0;
   private readonly recycledMailboxTasks: MailboxTask[] = [];
   private readonly mailboxMetrics = {
@@ -841,9 +845,10 @@ export abstract class EntryScene extends Scene {
   private sendClientFrame(
     connectionId: number,
     frame: Uint8Array,
+    delivery: ClientFrameDelivery = "reliable",
   ): void {
     this.onClientSendQueued([connectionId]);
-    this.outbound.push({
+    this.outboundQueue(delivery).push({
       connectionIdBytes: this.packConnectionId(connectionId),
       frame,
     });
@@ -853,14 +858,15 @@ export abstract class EntryScene extends Scene {
   protected sendClientFrameMany(
     connectionIds: readonly number[],
     frame: Uint8Array,
+    delivery: ClientFrameDelivery = "reliable",
   ): void {
     if (connectionIds.length === 0) return;
     if (connectionIds.length === 1) {
-      this.sendClientFrame(connectionIds[0]!, frame);
+      this.sendClientFrame(connectionIds[0]!, frame, delivery);
       return;
     }
     this.onClientSendQueued(connectionIds);
-    this.outbound.push({
+    this.outboundQueue(delivery).push({
       connectionIdBytes: packConnectionIds(connectionIds),
       frame,
     });
@@ -967,8 +973,16 @@ export abstract class EntryScene extends Scene {
   }
 
   private drainOutbound(): OutboundBatch[] {
-    const frames = this.outbound.splice(0, this.outbound.length);
-    return frames;
+    const control = this.outboundControl.splice(0, this.outboundControl.length);
+    const reliable = this.outboundReliable.splice(0, this.outboundReliable.length);
+    const latest = this.outboundLatest.splice(0, this.outboundLatest.length);
+    if (reliable.length === 0 && latest.length === 0) return control;
+    control.push(...reliable, ...latest);
+    return control;
+  }
+
+  private outboundQueue(delivery: ClientFrameDelivery): OutboundBatch[] {
+    return delivery === "latest" ? this.outboundLatest : this.outboundReliable;
   }
 
   private get ingressLength(): number {
@@ -1286,7 +1300,7 @@ export abstract class EntryScene extends Scene {
   ): void {
     if (!response) return;
     this.onClientSendQueued([connectionId]);
-    this.outbound.push({
+    this.outboundControl.push({
       connectionIdBytes: this.packConnectionId(connectionId),
       frame: response,
     });

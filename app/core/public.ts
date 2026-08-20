@@ -17,6 +17,7 @@ export { defineEventBroadcast, defineLatestBroadcast } from "./broadcast/types";
 export type {
   BroadcastAudience,
   BroadcastDescriptor,
+  BroadcastDelivery,
   BroadcastHubOptions,
   BroadcastKey,
   BroadcastMetricsSnapshot,

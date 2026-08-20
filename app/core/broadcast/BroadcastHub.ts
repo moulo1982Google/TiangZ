@@ -3,6 +3,7 @@ import { monotonicNow } from "../runtime/Game";
 import type { IMessage } from "../protocol/message";
 import type {
   BroadcastAudience,
+  BroadcastRoute,
   BroadcastDescriptor,
   EncodedAudienceBatch,
   BroadcastHubOptions,
@@ -40,6 +41,7 @@ interface EncodedSnapshotJob {
   singleBatch?: EncodedAudienceBatch;
   routeFrames?: readonly EncodedRouteFrame[];
   itemCount: number;
+  byteLength: number;
   queuedAt: number;
   readonly deferred: Deferred[];
 }
@@ -54,10 +56,16 @@ interface Channel {
 }
 
 const DEFAULT_MAX_EVENT_QUEUE = 1024;
+const DEFAULT_MAX_LATEST_PENDING_ITEMS = 262_144;
+const DEFAULT_MAX_LATEST_PENDING_BYTES = 64 * 1024 * 1024;
+const DEFAULT_MAX_LATEST_PENDING_AGE_MS = 5_000;
 
 export class BroadcastHub {
   private readonly channels = new Map<string, Channel>();
   private readonly maxEventQueuePerChannel: number;
+  private readonly maxLatestPendingItemsPerChannel: number;
+  private readonly maxLatestPendingBytesPerChannel: number;
+  private readonly maxLatestPendingAgeMs: number;
   private readonly onError: (descriptorName: string, error: unknown) => void;
   private disposed = false;
   // 维护待发送项计数，避免每次入队都扫描全部频道。 / Keep a running pending-item count instead of scanning every channel on each enqueue.
@@ -65,6 +73,8 @@ export class BroadcastHub {
   private readonly metrics = {
     queuedItems: 0,
     coalescedItems: 0,
+    supersededPublishes: 0,
+    latestCapacityRejections: 0,
     sentItems: 0,
     broadcastsStarted: 0,
     broadcastsCompleted: 0,
@@ -88,6 +98,13 @@ export class BroadcastHub {
   ) {
     this.maxEventQueuePerChannel =
       options.maxEventQueuePerChannel ?? DEFAULT_MAX_EVENT_QUEUE;
+    this.maxLatestPendingItemsPerChannel =
+      options.maxLatestPendingItemsPerChannel ?? DEFAULT_MAX_LATEST_PENDING_ITEMS;
+    this.maxLatestPendingBytesPerChannel =
+      options.maxLatestPendingBytesPerChannel ?? DEFAULT_MAX_LATEST_PENDING_BYTES;
+    this.maxLatestPendingAgeMs =
+      options.maxLatestPendingAgeMs ?? DEFAULT_MAX_LATEST_PENDING_AGE_MS;
+    this.validateOptions();
     this.onError = options.onError ?? ((name, error) => {
       CoreLogger.error("broadcast channel failed", { channel: name, error });
     });
@@ -131,12 +148,16 @@ export class BroadcastHub {
         `${descriptor.name} is a single-event broadcast; call Publish once per event`,
       );
     }
-    const channelKey = `${descriptor.name}\0${audience.key}`;
-    const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
-    if (descriptor.mode === "latest") {
-      return this.enqueueLatest(channel, audience, descriptor, items, tick);
+    const routedAudiences = splitAudienceByRoute(audience);
+    for (const routed of routedAudiences) {
+      this.requireRoutedPublishCapacity(routed, descriptor, items);
     }
-    return this.enqueueEvent(channel, audience, descriptor, items, tick);
+    if (routedAudiences.length === 1) {
+      return this.publishRouted(routedAudiences[0], descriptor, items, tick);
+    }
+    return Promise.all(
+      routedAudiences.map((routed) => this.publishRouted(routed, descriptor, items, tick)),
+    ).then(() => undefined);
   }
 
   /**
@@ -153,12 +174,22 @@ export class BroadcastHub {
     frame: Uint8Array,
     itemCount: number,
   ): Promise<void> {
-    return this.enqueueEncodedLatest(
-      audience.key,
+    if (this.disposed) return Promise.reject(new Error("broadcast hub is disposed"));
+    if (!Number.isSafeInteger(itemCount) || itemCount < 0) {
+      throw new Error(`invalid encoded broadcast item count: ${itemCount}`);
+    }
+    if (itemCount === 0 || audience.routes.length === 0) return Promise.resolve();
+    this.validateAudience(audience);
+    const routedAudiences = splitAudienceByRoute(audience);
+    const deliveries = routedAudiences.map((routed) => this.enqueueEncodedLatest(
+      routedChannelKey(audience.key, routed.routes[0]!.route),
       descriptorName,
       undefined,
-      { audience, frame, itemCount },
-    );
+      { audience: routed, frame, itemCount },
+    ));
+    return deliveries.length === 1
+      ? deliveries[0]
+      : Promise.all(deliveries).then(() => undefined);
   }
 
   /**
@@ -173,7 +204,29 @@ export class BroadcastHub {
     descriptorName: string,
     batches: readonly EncodedAudienceBatch[],
   ): Promise<void> {
-    return this.enqueueEncodedLatest(audienceKey, descriptorName, batches);
+    if (this.disposed) return Promise.reject(new Error("broadcast hub is disposed"));
+    const batchesByRoute = new Map<string, EncodedAudienceBatch[]>();
+    for (const batch of batches) {
+      if (batch.itemCount <= 0 || batch.audience.routes.length === 0) continue;
+      this.validateEncodedBatch(batch);
+      for (const routed of splitAudienceByRoute(batch.audience)) {
+        const route = routed.routes[0]!.route;
+        const routeBatches = batchesByRoute.get(route) ?? [];
+        routeBatches.push({ audience: routed, frame: batch.frame, itemCount: batch.itemCount });
+        batchesByRoute.set(route, routeBatches);
+      }
+    }
+    const deliveries = [...batchesByRoute].map(([route, routeBatches]) =>
+      this.enqueueEncodedLatest(
+        routedChannelKey(audienceKey, route),
+        descriptorName,
+        routeBatches,
+      )
+    );
+    if (deliveries.length === 0) return Promise.resolve();
+    return deliveries.length === 1
+      ? deliveries[0]
+      : Promise.all(deliveries).then(() => undefined);
   }
 
   private enqueueEncodedLatest(
@@ -191,12 +244,14 @@ export class BroadcastHub {
     let activeBatches: readonly EncodedAudienceBatch[] | undefined = batches;
     const activeSingleBatch = singleBatch;
     let itemCount = 0;
+    let byteLength = 0;
     if (singleBatch) {
       if (singleBatch.itemCount <= 0 || singleBatch.audience.routes.length === 0) {
         return Promise.resolve();
       }
       this.validateEncodedBatch(singleBatch);
       itemCount = singleBatch.itemCount;
+      byteLength = singleBatch.frame.byteLength;
     } else {
       const source = batches ?? [];
       let hasInactive = false;
@@ -207,6 +262,7 @@ export class BroadcastHub {
         }
         this.validateEncodedBatch(batch);
         itemCount += batch.itemCount;
+        byteLength += batch.frame.byteLength;
       }
       if (itemCount === 0) return Promise.resolve();
       if (hasInactive) {
@@ -230,12 +286,6 @@ export class BroadcastHub {
       throw new Error(`encoded and object broadcasts share channel ${channelKey}`);
     }
 
-    let resolve!: () => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<void>((promiseResolve, promiseReject) => {
-      resolve = promiseResolve;
-      reject = promiseReject;
-    });
     const existing = channel.encodedLatest;
     if (existing) {
       if (
@@ -246,17 +296,33 @@ export class BroadcastHub {
       ) {
         throw new Error(`encoded audience and route frames share channel ${channelKey}`);
       }
+      this.requireLatestCapacity(channelKey, itemCount, byteLength, existing.queuedAt);
+    } else {
+      this.requireLatestCapacity(channelKey, itemCount, byteLength);
+    }
+
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((promiseResolve, promiseReject) => {
+      resolve = promiseResolve;
+      reject = promiseReject;
+    });
+    if (existing) {
       this.metrics.coalescedItems += existing.itemCount;
       this.pendingItemCount += itemCount - existing.itemCount;
+      this.resolveSuperseded(existing.deferred);
       existing.batches = activeBatches;
       existing.singleBatch = activeSingleBatch;
       existing.itemCount = itemCount;
+      existing.byteLength = byteLength;
+      existing.queuedAt = monotonicNow();
       existing.deferred.push({ resolve, reject });
     } else {
       channel.encodedLatest = {
         batches: activeBatches,
         singleBatch: activeSingleBatch,
         itemCount,
+        byteLength,
         queuedAt: monotonicNow(),
         deferred: [{ resolve, reject }],
       };
@@ -287,55 +353,32 @@ export class BroadcastHub {
     audienceKey: string,
     descriptorName: string,
     routeFrames: readonly EncodedRouteFrame[],
-    itemCount: number,
   ): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("broadcast hub is disposed"));
     if (!audienceKey) throw new Error("encoded broadcast audience key is required");
     if (!descriptorName) throw new Error("encoded broadcast name is required");
-    if (!Number.isSafeInteger(itemCount) || itemCount < 0) {
-      throw new Error(`invalid encoded broadcast item count: ${itemCount}`);
-    }
-    if (itemCount === 0 || routeFrames.length === 0) return Promise.resolve();
+    if (routeFrames.length === 0) return Promise.resolve();
+    const framesByRoute = new Map<string, EncodedRouteFrame[]>();
     for (const item of routeFrames) {
       if (!item.route) throw new Error("encoded route frame has no route");
       if (item.frame.length < 2) throw new Error("encoded route frame is too short");
-    }
-    const activeFrames = routeFrames;
-    const channelKey = `${descriptorName}\0${audienceKey}`;
-    const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
-    if (channel.latest || channel.eventQueue.length > 0) {
-      throw new Error(`encoded and object broadcasts share channel ${channelKey}`);
-    }
-
-    let resolve!: () => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<void>((promiseResolve, promiseReject) => {
-      resolve = promiseResolve;
-      reject = promiseReject;
-    });
-    const existing = channel.encodedLatest;
-    if (existing) {
-      if (existing.batches || existing.singleBatch !== undefined) {
-        throw new Error(`encoded audience and route frames share channel ${channelKey}`);
+      if (!Number.isSafeInteger(item.itemCount) || item.itemCount < 0) {
+        throw new Error(`invalid encoded route frame item count: ${item.itemCount}`);
       }
-      this.metrics.coalescedItems += existing.itemCount;
-      this.pendingItemCount += itemCount - existing.itemCount;
-      existing.routeFrames = activeFrames;
-      existing.itemCount = itemCount;
-      existing.deferred.push({ resolve, reject });
-    } else {
-      channel.encodedLatest = {
-        routeFrames: activeFrames,
-        itemCount,
-        queuedAt: monotonicNow(),
-        deferred: [{ resolve, reject }],
-      };
-      this.pendingItemCount += itemCount;
+      if (item.itemCount === 0) continue;
+      const routeFramesForGate = framesByRoute.get(item.route) ?? [];
+      routeFramesForGate.push(item);
+      framesByRoute.set(item.route, routeFramesForGate);
     }
-    this.metrics.queuedItems += itemCount;
-    this.recordPending();
-    this.pumpEncodedSnapshot(channel, descriptorName);
-    return promise;
+    const deliveries = [...framesByRoute].map(([route, frames]) => this.enqueueRouteFrames(
+      routedChannelKey(audienceKey, route),
+      descriptorName,
+      frames,
+    ));
+    if (deliveries.length === 0) return Promise.resolve();
+    return deliveries.length === 1
+      ? deliveries[0]
+      : Promise.all(deliveries).then(() => undefined);
   }
 
   /** 返回当前队列和在途指标，不修改频道状态。 / Returns current queue/in-flight metrics without mutating channel state. */
@@ -354,6 +397,8 @@ export class BroadcastHub {
       maxInFlightItems: this.metrics.maxInFlightItems,
       queuedItems: this.metrics.queuedItems,
       coalescedItems: this.metrics.coalescedItems,
+      supersededPublishes: this.metrics.supersededPublishes,
+      latestCapacityRejections: this.metrics.latestCapacityRejections,
       sentItems: this.metrics.sentItems,
       broadcastsStarted: this.metrics.broadcastsStarted,
       broadcastsCompleted: this.metrics.broadcastsCompleted,
@@ -414,6 +459,53 @@ export class BroadcastHub {
     return promise;
   }
 
+  /** 每个物理路由拥有独立频道；慢 Gate 不再阻塞同一逻辑受众中的其他 Gate。 / Gives each physical route an independent channel so one slow Gate cannot stall its peers. */
+  private publishRouted<TItem, TMessage extends IMessage>(
+    audience: BroadcastAudience,
+    descriptor: BroadcastDescriptor<TItem, TMessage>,
+    items: readonly TItem[],
+    tick: number,
+  ): Promise<void> {
+    const route = audience.routes[0]!.route;
+    const channelKey = `${descriptor.name}\0${routedChannelKey(audience.key, route)}`;
+    const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
+    return descriptor.mode === "latest"
+      ? this.enqueueLatest(channel, audience, descriptor, items, tick)
+      : this.enqueueEvent(channel, audience, descriptor, items, tick);
+  }
+
+  /** 跨Gate发布先完成全部容量预检，避免某个可靠事件只进入部分Gate队列。 / Preflights every Gate before enqueue so a reliable event cannot be accepted by only part of its audience due to local capacity. */
+  private requireRoutedPublishCapacity<TItem, TMessage extends IMessage>(
+    audience: BroadcastAudience,
+    descriptor: BroadcastDescriptor<TItem, TMessage>,
+    items: readonly TItem[],
+  ): void {
+    const route = audience.routes[0]!.route;
+    const channelKey = `${descriptor.name}\0${routedChannelKey(audience.key, route)}`;
+    const channel = this.channels.get(channelKey);
+    if (descriptor.mode === "event") {
+      if ((channel?.eventQueue.length ?? 0) >= this.maxEventQueuePerChannel) {
+        throw new Error(
+          `broadcast event queue is full: ${descriptor.name}/${audience.key}/${route}`,
+        );
+      }
+      return;
+    }
+
+    const job = channel?.latest as LatestJob<TItem> | undefined;
+    const keys = new Set<string | number>();
+    for (const item of items) {
+      const key = descriptor.keyOf(item);
+      if (!job?.items.has(key)) keys.add(key);
+    }
+    this.requireLatestCapacity(
+      channelKey,
+      (job?.items.size ?? 0) + keys.size,
+      0,
+      job?.queuedAt,
+    );
+  }
+
   private enqueueLatest<TItem, TMessage extends IMessage>(
     channel: Channel,
     audience: BroadcastAudience,
@@ -421,14 +513,11 @@ export class BroadcastHub {
     items: readonly TItem[],
     tick: number,
   ): Promise<void> {
-    let resolve!: () => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<void>((promiseResolve, promiseReject) => {
-      resolve = promiseResolve;
-      reject = promiseReject;
-    });
     let job = channel.latest as LatestJob<TItem> | undefined;
     if (!job) {
+      const keys = new Set<string | number>();
+      for (const item of items) keys.add(descriptor.keyOf(item));
+      this.requireLatestCapacity(channel.key, keys.size, 0);
       job = {
         audience,
         items: new Map(),
@@ -438,9 +527,29 @@ export class BroadcastHub {
       };
       channel.latest = job as LatestJob<unknown>;
     } else {
+      const addedKeys = new Set<string | number>();
+      for (const item of items) {
+        const key = descriptor.keyOf(item);
+        if (!job.items.has(key)) addedKeys.add(key);
+      }
+      this.requireLatestCapacity(
+        channel.key,
+        job.items.size + addedKeys.size,
+        0,
+        job.queuedAt,
+      );
       job.audience = audience;
       job.tick = Math.max(job.tick, tick);
+      this.resolveSuperseded(job.deferred);
+      job.queuedAt = monotonicNow();
     }
+
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((promiseResolve, promiseReject) => {
+      resolve = promiseResolve;
+      reject = promiseReject;
+    });
     job.deferred.push({ resolve, reject });
     this.metrics.queuedItems += items.length;
     for (const item of items) {
@@ -452,6 +561,104 @@ export class BroadcastHub {
     this.recordPending();
     this.pump(channel, descriptor);
     return promise;
+  }
+
+  private enqueueRouteFrames(
+    channelSuffix: string,
+    descriptorName: string,
+    routeFrames: readonly EncodedRouteFrame[],
+  ): Promise<void> {
+    const itemCount = routeFrames.reduce((total, item) => total + item.itemCount, 0);
+    const byteLength = routeFrames.reduce((total, item) => total + item.frame.byteLength, 0);
+    const channelKey = `${descriptorName}\0${channelSuffix}`;
+    const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
+    if (channel.latest || channel.eventQueue.length > 0) {
+      throw new Error(`encoded and object broadcasts share channel ${channelKey}`);
+    }
+
+    const existing = channel.encodedLatest;
+    if (existing) {
+      if (existing.batches || existing.singleBatch !== undefined) {
+        throw new Error(`encoded audience and route frames share channel ${channelKey}`);
+      }
+      this.requireLatestCapacity(channelKey, itemCount, byteLength, existing.queuedAt);
+    } else {
+      this.requireLatestCapacity(channelKey, itemCount, byteLength);
+    }
+
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((promiseResolve, promiseReject) => {
+      resolve = promiseResolve;
+      reject = promiseReject;
+    });
+    if (existing) {
+      this.metrics.coalescedItems += existing.itemCount;
+      this.pendingItemCount += itemCount - existing.itemCount;
+      this.resolveSuperseded(existing.deferred);
+      existing.routeFrames = routeFrames;
+      existing.itemCount = itemCount;
+      existing.byteLength = byteLength;
+      existing.queuedAt = monotonicNow();
+      existing.deferred.push({ resolve, reject });
+    } else {
+      channel.encodedLatest = {
+        routeFrames,
+        itemCount,
+        byteLength,
+        queuedAt: monotonicNow(),
+        deferred: [{ resolve, reject }],
+      };
+      this.pendingItemCount += itemCount;
+    }
+    this.metrics.queuedItems += itemCount;
+    this.recordPending();
+    this.pumpEncodedSnapshot(channel, descriptorName);
+    return promise;
+  }
+
+  private requireLatestCapacity(
+    channelKey: string,
+    itemCount: number,
+    byteLength: number,
+    queuedAt?: number,
+  ): void {
+    const ageMs = queuedAt === undefined ? 0 : Math.max(0, monotonicNow() - queuedAt);
+    if (
+      itemCount <= this.maxLatestPendingItemsPerChannel &&
+      byteLength <= this.maxLatestPendingBytesPerChannel &&
+      ageMs <= this.maxLatestPendingAgeMs
+    ) {
+      return;
+    }
+    this.metrics.latestCapacityRejections += 1;
+    throw new Error(
+      `broadcast latest pending capacity exceeded: ${channelKey} ` +
+      `(items=${itemCount}/${this.maxLatestPendingItemsPerChannel}, ` +
+      `bytes=${byteLength}/${this.maxLatestPendingBytesPerChannel}, ` +
+      `ageMs=${ageMs}/${this.maxLatestPendingAgeMs})`,
+    );
+  }
+
+  private resolveSuperseded(deferred: Deferred[]): void {
+    if (deferred.length === 0) return;
+    this.metrics.supersededPublishes += deferred.length;
+    for (const item of deferred) item.resolve();
+    deferred.length = 0;
+  }
+
+  private validateOptions(): void {
+    const values = [
+      ["maxEventQueuePerChannel", this.maxEventQueuePerChannel],
+      ["maxLatestPendingItemsPerChannel", this.maxLatestPendingItemsPerChannel],
+      ["maxLatestPendingBytesPerChannel", this.maxLatestPendingBytesPerChannel],
+      ["maxLatestPendingAgeMs", this.maxLatestPendingAgeMs],
+    ] as const;
+    for (const [name, value] of values) {
+      if (!Number.isSafeInteger(value) || value <= 0) {
+        throw new Error(`${name} must be a positive safe integer`);
+      }
+    }
   }
 
   private pump<TItem, TMessage extends IMessage>(
@@ -514,8 +721,15 @@ export class BroadcastHub {
     // transport can combine same-tick jobs into one physical Gate message.
     // 事件帧仍保持独立编码和顺序语义，但支持批量的Transport可以把同一Tick的作业合并为一条Gate物理消息。
     const delivery = this.transport.SendMany
-      ? this.transport.SendMany([{ audience, frame, itemCount: items.length }])
-      : this.transport.Send(audience, frame);
+      ? this.transport.SendMany(
+        [{ audience, frame, itemCount: items.length }],
+        descriptor.mode === "latest" ? "latest" : "reliable",
+      )
+      : this.transport.Send(
+        audience,
+        frame,
+        descriptor.mode === "latest" ? "latest" : "reliable",
+      );
     this.recordDispatch(monotonicNow() - dispatchStartedAt);
     void delivery
       .then(() => this.complete(channel, descriptor, startedAt, deferred))
@@ -578,16 +792,18 @@ export class BroadcastHub {
     const dispatchStartedAt = monotonicNow();
     const delivery = job.routeFrames
       ? this.transport.SendRouteFrames
-        ? this.transport.SendRouteFrames(job.routeFrames)
+        ? this.transport.SendRouteFrames(job.routeFrames, "latest")
         : Promise.reject(new Error("broadcast transport does not support encoded route frames"))
       : job.singleBatch
-      ? this.transport.Send(job.singleBatch.audience, job.singleBatch.frame)
-      : job.batches!.length === 1
-      ? this.transport.Send(job.batches![0].audience, job.batches![0].frame)
+      ? this.transport.Send(job.singleBatch.audience, job.singleBatch.frame, "latest")
       : this.transport.SendMany
-      ? this.transport.SendMany(job.batches!)
+      ? this.transport.SendMany(job.batches!, "latest")
+      : job.batches!.length === 1
+      ? this.transport.Send(job.batches![0].audience, job.batches![0].frame, "latest")
       : Promise.all(
-        job.batches!.map((batch) => this.transport.Send(batch.audience, batch.frame)),
+        job.batches!.map((batch) =>
+          this.transport.Send(batch.audience, batch.frame, "latest")
+        ),
       ).then(() => undefined);
     this.recordDispatch(monotonicNow() - dispatchStartedAt);
     void delivery
@@ -676,4 +892,19 @@ export class BroadcastHub {
       }
     }
   }
+}
+
+/** 按物理路由稳定分组，并保留每个 Gate 内的接收者顺序。 / Groups a logical audience by physical route while preserving per-Gate recipient order. */
+function splitAudienceByRoute(audience: BroadcastAudience): BroadcastAudience[] {
+  const routesByName = new Map<string, BroadcastRoute[]>();
+  for (const route of audience.routes) {
+    const routes = routesByName.get(route.route) ?? [];
+    routes.push(route);
+    routesByName.set(route.route, routes);
+  }
+  return [...routesByName.values()].map((routes) => ({ key: audience.key, routes }));
+}
+
+function routedChannelKey(audienceKey: string, route: string): string {
+  return `${audienceKey}\0route:${route}`;
 }
