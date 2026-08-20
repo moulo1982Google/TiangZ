@@ -817,7 +817,7 @@ await Promise.all([
 - 业务不得把AOI Enter/Leave当作可随意丢弃的普通latest；关系变化先按`observer + subject`合并最终状态，再进入可靠发布。若未来增加关系快照重同步，必须由框架显式标记，不能只靠“丢旧Leave/Enter”猜最终视图。
 - AOI已经接管Movement、Numeric和Unit固定字段的接收者选择；新增业务广播必须选择明确Audience，不能重新构造全地图玩家列表。
 
-通用广播按`descriptor + audience + Gate`建立独立频道，不再让一个慢Gate成为跨Gate完成屏障。`event`是每Gate有界可靠FIFO，满载必须失败；`latest`是每Gate single-flight，未发送旧状态可被同key新状态覆盖。被覆盖的发布Promise表示“已由更新状态接管”并立即完成，只有当前最终版本继续等待Transport结果；业务不能把latest Promise理解为每个中间版本都实际到达客户端。框架对latest待发item、编码字节和等待年龄设有上限，`latest_capacity_rejections_total`非零意味着容量或链路故障，不能靠扩大上限掩盖。
+通用广播按`descriptor + audience + Gate`建立独立频道，不再让一个慢Gate成为跨Gate完成屏障。同一次逻辑发布跨Gate时复用一份不可变编码帧；只有某个Gate的pending latest与后续发布合并后才单独重编码最终项，业务和Transport都不得为了路由隔离重复编码相同payload。`event`是每Gate有界可靠FIFO，满载必须失败；`latest`是每Gate single-flight，未发送旧状态可被同key新状态覆盖。被覆盖的发布Promise表示“已由更新状态接管”并立即完成，只有当前最终版本继续等待Transport结果；业务不能把latest Promise理解为每个中间版本都实际到达客户端。框架对latest待发item、编码字节和等待年龄设有上限，`latest_capacity_rejections_total`非零意味着容量或链路故障，不能靠扩大上限掩盖。
 
 `SceneBroadcastTransport`只合并相同Gate、相同投递类别的作业；内网`delivery_class=1`表示可靠事件，`2`表示可覆盖状态。Gate将客户端出站分成control response、reliable event和latest state三个队列，按该优先级在同一Update中交给Host批量写出，最终仍共享一个客户端TCP连接并保留每条客户端frame边界。Movement和Numeric的Rust route frame自带每Gate itemCount及latest类别；共享Numeric revision必须等待全部相关Gate成功后Ack，任一路失败都保留Dirty。业务不得分配routeId、调用任何`*AoiRouteFrames` Native op、调用`SceneMessageHelper.sendFrame`，或直接构造`S2G_ClientBroadcastBatch`。不能为了追求“一Tick一包”而延迟技能、Buff、道具、伤害等可靠事件，也不能把多个客户端msgcode拼成私有payload。
 

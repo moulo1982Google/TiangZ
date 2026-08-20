@@ -23,6 +23,7 @@ interface Deferred {
 interface EventJob<TItem> {
   readonly audience: BroadcastAudience;
   readonly items: readonly TItem[];
+  readonly prebuiltFrame?: Uint8Array;
   readonly tick: number;
   readonly queuedAt: number;
   readonly deferred: Deferred;
@@ -31,6 +32,7 @@ interface EventJob<TItem> {
 interface LatestJob<TItem> {
   audience: BroadcastAudience;
   readonly items: Map<string | number, TItem>;
+  prebuiltFrame?: Uint8Array;
   tick: number;
   queuedAt: number;
   readonly deferred: Deferred[];
@@ -155,8 +157,17 @@ export class BroadcastHub {
     if (routedAudiences.length === 1) {
       return this.publishRouted(routedAudiences[0], descriptor, items, tick);
     }
+    let sharedFrame: Uint8Array;
+    try {
+      const message = descriptor.makeMessage(items, tick);
+      sharedFrame = packFrame(descriptor.message.msgcode, descriptor.message.codec.encode(message));
+    } catch (error) {
+      return Promise.reject(error);
+    }
     return Promise.all(
-      routedAudiences.map((routed) => this.publishRouted(routed, descriptor, items, tick)),
+      routedAudiences.map((routed) =>
+        this.publishRouted(routed, descriptor, items, tick, sharedFrame)
+      ),
     ).then(() => undefined);
   }
 
@@ -437,6 +448,7 @@ export class BroadcastHub {
     descriptor: EventBroadcastDescriptor<TItem, TMessage>,
     items: readonly TItem[],
     tick: number,
+    prebuiltFrame?: Uint8Array,
   ): Promise<void> {
     if (channel.eventQueue.length >= this.maxEventQueuePerChannel) {
       throw new Error(
@@ -447,6 +459,7 @@ export class BroadcastHub {
       channel.eventQueue.push({
         audience,
         items,
+        prebuiltFrame,
         tick,
         queuedAt: monotonicNow(),
         deferred: { resolve, reject },
@@ -465,13 +478,14 @@ export class BroadcastHub {
     descriptor: BroadcastDescriptor<TItem, TMessage>,
     items: readonly TItem[],
     tick: number,
+    prebuiltFrame?: Uint8Array,
   ): Promise<void> {
     const route = audience.routes[0]!.route;
     const channelKey = `${descriptor.name}\0${routedChannelKey(audience.key, route)}`;
     const channel = this.channels.get(channelKey) ?? this.createChannel(channelKey);
     return descriptor.mode === "latest"
-      ? this.enqueueLatest(channel, audience, descriptor, items, tick)
-      : this.enqueueEvent(channel, audience, descriptor, items, tick);
+      ? this.enqueueLatest(channel, audience, descriptor, items, tick, prebuiltFrame)
+      : this.enqueueEvent(channel, audience, descriptor, items, tick, prebuiltFrame);
   }
 
   /** 跨Gate发布先完成全部容量预检，避免某个可靠事件只进入部分Gate队列。 / Preflights every Gate before enqueue so a reliable event cannot be accepted by only part of its audience due to local capacity. */
@@ -512,6 +526,7 @@ export class BroadcastHub {
     descriptor: LatestBroadcastDescriptor<TItem, TMessage>,
     items: readonly TItem[],
     tick: number,
+    prebuiltFrame?: Uint8Array,
   ): Promise<void> {
     let job = channel.latest as LatestJob<TItem> | undefined;
     if (!job) {
@@ -521,6 +536,7 @@ export class BroadcastHub {
       job = {
         audience,
         items: new Map(),
+        prebuiltFrame,
         tick,
         queuedAt: monotonicNow(),
         deferred: [],
@@ -540,6 +556,9 @@ export class BroadcastHub {
       );
       job.audience = audience;
       job.tick = Math.max(job.tick, tick);
+      // 合并后的最终项集合不再等同于本次发布，必须在实际发送前重新编码。
+      // The merged final item set no longer matches this publish, so it must be encoded at dispatch.
+      job.prebuiltFrame = undefined;
       this.resolveSuperseded(job.deferred);
       job.queuedAt = monotonicNow();
     }
@@ -672,6 +691,7 @@ export class BroadcastHub {
     let tick: number;
     let queuedAt: number;
     let deferred: readonly Deferred[];
+    let prebuiltFrame: Uint8Array | undefined;
     if (descriptor.mode === "latest") {
       const job = channel.latest as LatestJob<TItem> | undefined;
       if (!job || job.items.size === 0) return;
@@ -681,6 +701,7 @@ export class BroadcastHub {
       tick = job.tick;
       queuedAt = job.queuedAt;
       deferred = job.deferred;
+      prebuiltFrame = job.prebuiltFrame;
       this.pendingItemCount -= items.length;
     } else {
       const job = channel.eventQueue.shift() as EventJob<TItem> | undefined;
@@ -690,6 +711,7 @@ export class BroadcastHub {
       tick = job.tick;
       queuedAt = job.queuedAt;
       deferred = [job.deferred];
+      prebuiltFrame = job.prebuiltFrame;
       this.pendingItemCount -= items.length;
     }
 
@@ -707,13 +729,15 @@ export class BroadcastHub {
     this.metrics.maxQueueWaitMs = Math.max(this.metrics.maxQueueWaitMs, queueWaitMs);
     this.metrics.totalQueueWaitMs += queueWaitMs;
 
-    let frame: Uint8Array;
-    try {
-      const message = descriptor.makeMessage(items, tick);
-      frame = packFrame(descriptor.message.msgcode, descriptor.message.codec.encode(message));
-    } catch (error) {
-      this.complete(channel, descriptor, startedAt, deferred, error);
-      return;
+    let frame = prebuiltFrame;
+    if (!frame) {
+      try {
+        const message = descriptor.makeMessage(items, tick);
+        frame = packFrame(descriptor.message.msgcode, descriptor.message.codec.encode(message));
+      } catch (error) {
+        this.complete(channel, descriptor, startedAt, deferred, error);
+        return;
+      }
     }
 
     const dispatchStartedAt = monotonicNow();

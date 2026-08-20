@@ -292,7 +292,7 @@ AOI已由Rust扁平X/Z Grid接管。Cell是移动和空间数据的基础单位�
 
 AOI Enter/Leave发布在同一批次内按`ObserverId + SubjectId`保留最终可见状态，并保持首次关系出现顺序；同一关系在拥塞期间发生的中间抖动不会生成无效的Enter/Leave帧。这个合并只作用于尚未可靠发布的空间关系，不得套用到背包、伤害、掉落等不可覆盖业务Event。
 
-Rust按最终Audience编码Movement、Numeric和UnitState。`BroadcastHub`以`descriptor + audience + Gate route`建立独立频道；一个慢Gate只能阻塞自己的single-flight，不能再让同一逻辑受众中的快Gate等待。`event`进入每Gate有界可靠FIFO，队满显式失败；`latest`每Gate只保留最终状态，待发送版本被更新版本接管时旧发布Promise立即完成，当前最终版本仍在真实发送成功后完成。latest频道同时限制待发item数、编码字节数和最大等待年龄，越界显式拒绝并保留可重试Dirty，不允许静默丢失关键事件。
+Rust按最终Audience编码Movement、Numeric和UnitState。`BroadcastHub`以`descriptor + audience + Gate route`建立独立频道；一个慢Gate只能阻塞自己的single-flight，不能再让同一逻辑受众中的快Gate等待。同一次逻辑发布投向多个Gate时共享一份不可变编码帧，不能把编码成本乘以Gate数量；只有某个Gate积压的latest与后续状态合并、最终项集合发生分歧时，才为该Gate重新编码。`event`进入每Gate有界可靠FIFO，队满显式失败；`latest`每Gate只保留最终状态，待发送版本被更新版本接管时旧发布Promise立即完成，当前最终版本仍在真实发送成功后完成。latest频道同时限制待发item数、编码字节数和最大等待年龄，越界显式拒绝并保留可重试Dirty，不允许静默丢失关键事件。
 
 `SceneBroadcastTransport`在同一同步Game Tick内按`Gate + delivery class`重组：`1=reliable event`、`2=replaceable latest state`，两类不能合进同一内网批次。Gate不解码业务payload，只完成Unit到connection的路由与下行扇出，并按`RPC/control response -> reliable event -> latest state`顺序排空三个出站队列；最终客户端TCP连接仍共享，Host继续在同一Update结果中批量写出并保持客户端frame边界。Movement和Numeric热路径由Rust利用Attach时登记的紧凑delivery route直接生成每个Gate的完整`S2G_ClientBroadcastBatch`帧，route header同时携带该Gate的itemCount，TS每Tick只映射至多Gate数量的routeId并原样投递。`SendRouteFrames`在同一微任务边界合并同Gate latest外壳；非成功投递不会触发共享revision ACK。Numeric领域层传入AOI白名单、类型筛选策略和发布窗口；Rust不拥有回血或战斗规则。业务层不得管理routeId、调用底层route-frame Native op、调用`sendFrame`，也不得直接构造内网广播协议。
 

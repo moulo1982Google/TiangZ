@@ -184,8 +184,8 @@ export class SceneBroadcastTransport implements BroadcastTransport {
       gateName: string;
       delivery: BroadcastDelivery;
       batches: Array<{
-      targetUnitIds: number[];
-      frame: Uint8Array;
+        targetUnitIds: number[];
+        frame: Uint8Array;
       }>;
     }>();
     const gatesByJob = pending.map(() => new Set<string>());

@@ -401,6 +401,11 @@ async function testSlowGateDoesNotBlockFastGateLatest(): Promise<void> {
     transport.sends.map((send) => send.audience.routes[0]!.route),
     ["Gate1", "Gate2"],
   );
+  assert.strictEqual(
+    transport.sends[0]!.frame,
+    transport.sends[1]!.frame,
+    "one logical multi-Gate publish must share one immutable encoded frame",
+  );
   transport.sends[0]!.resolve();
   await settlePromises();
   assert.equal(transport.sends.length, 3, "fast Gate must advance without waiting for slow Gate");
@@ -413,6 +418,11 @@ async function testSlowGateDoesNotBlockFastGateLatest(): Promise<void> {
   assert.equal(transport.sends.length, 4);
   assert.equal(transport.sends[3]!.audience.routes[0]!.route, "Gate2");
   assert.equal(decodeMovement(transport.sends[3]!.frame).serverTick, 2);
+  assert.strictEqual(
+    transport.sends[2]!.frame,
+    transport.sends[3]!.frame,
+    "independently drained Gate channels must retain the shared publish frame",
+  );
   transport.sends[3]!.resolve();
   await Promise.all([first, second]);
 }
