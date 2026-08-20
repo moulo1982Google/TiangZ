@@ -1742,17 +1742,19 @@ async function verifyMonsterLifecycle(
   }
   const initialHp = monster.numerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
   const authoritativeMaxHp = monster.numerics.find((numeric) => numeric.numericType === NumericType.MaxHp)?.value;
-  const initialAttack = monster.numerics.find((numeric) => numeric.numericType === NumericType.Attack)?.value;
+  // 怪物Attack属于服务端/Owner私有数值，AOI旁观快照不应要求它出现。
+  // Monster Attack is private to the server/owner; an AOI observer snapshot must not require it.
   const trainingDummyMaxHp = authoritativeMaxHp ?? initialHp;
   if (
     initialHp === undefined ||
     trainingDummyMaxHp === undefined ||
-    initialHp !== trainingDummyMaxHp ||
-    initialAttack !== 8n
+    initialHp !== trainingDummyMaxHp
   ) {
-    throw new Error(`training dummy has unexpected initial HP: ${initialHp}`);
+    throw new Error(`training dummy snapshot mismatch: ${stringifyForError({
+      initialHp,
+      maxHp: trainingDummyMaxHp,
+    })}`);
   }
-
   const playerHpBeforeThreat = playerCurrentHp ?? enterMap.entities
     .find((entity) => entity.unitId === enterMap.unitId)
     ?.numerics.find((numeric) => numeric.numericType === NumericType.CurrentHp)?.value;
@@ -1941,7 +1943,10 @@ async function verifyAutoAttackTimer(
   // Map 2的训练木桩在玩家出生点正东；先用Grid移动让权威Yaw转向+X，再停在1米距离。
   // The map-2 dummy is one cell east after one step; turn the authoritative yaw to +X first.
   await gate.send(buildMovePacket({ inputX: 1, inputZ: 0, sequence: 4 }));
-  await waitForMovementSequence(gate, playerUnitId, 4);
+  // 等一个固定Tick再停，避免等待确认包时已经自动跨过第二个Cell。
+  // Stop after one fixed tick instead of waiting for an acknowledgement that
+  // may arrive after the movement loop has already started the next cell.
+  await sleep(60);
   await gate.send(buildMovePacket({ inputX: 0, inputZ: 0, sequence: 5 }));
   await waitForMovementStopped(gate, playerUnitId, 5);
 
@@ -1963,37 +1968,28 @@ async function verifyAutoAttackTimer(
   ) {
     throw new Error(`auto attack did not activate: ${stringifyForError({ enabled: enabled.body, pushed: pushedState.body })}`);
   }
-
   const expectedSwings = 6;
   const hpValues: bigint[] = [];
   let previousHp: bigint | undefined;
   // 默认玩家平A间隔为2秒，10Hz战斗桶还会带来最多一个桶的调度误差；
-  // 13.5秒只够理想时序，启动抖动会把最后一击挤出窗口。测试等待应覆盖完整的六轮读条，不能改变业务攻击间隔。
+  // 伤害结果走目标/攻击者私有CombatResult，不再等待旁观者1Hz CurrentHp。
   // The default player swing interval is two seconds and the 10Hz combat bucket
-  // adds one scheduling step. 13.5 seconds only fits ideal timing, so startup
-  // jitter can evict the last swing. The smoke window covers all six swings
-  // without changing the gameplay interval.
+  // adds one scheduling step. Damage is observed through the private
+  // target/attacker CombatResult rather than the bystander 1 Hz CurrentHp stream.
   const deadline = Date.now() + 20_000;
   while (hpValues.length < expectedSwings && Date.now() < deadline) {
-    const frame = decodeEntityNumericFrame(await gate.waitForMessage(
-      MsgCode.G2C_EntityNumeric,
+    const result = decodeCombatResultFrame(await gate.waitForMessage(
+      MsgCode.G2C_CombatResult,
       Math.max(1, deadline - Date.now()),
-    ));
-    const hp = frame.body.numerics.find(
-      (numeric) => numeric.unitId === monsterUnitId && numeric.numericType === NumericType.CurrentHp,
-    )?.value;
+    )).body;
+    if (result.resultType !== 1 || result.targetUnitId !== monsterUnitId || result.abilityId !== 0) continue;
+    const hp = result.currentHp;
     if (hp !== undefined && previousHp !== undefined && hp < previousHp) {
       hpValues.push(hp);
     }
-    if (hp !== undefined) previousHp = hp;
+    previousHp = hp;
   }
 
-  // 关闭请求可能与最后一个10Hz战斗桶交错；先监听一条关闭期间的权威Numeric，
-  // 避免手动攻击阶段拿到少一轮平A的旧基准。
-  // The disable request can race with the final 10 Hz combat bucket. Listen
-  // for one authoritative Numeric during the disable transition so the manual
-  // attack phase never uses a stale HP baseline.
-  const postDisableNumeric = gate.waitForMessage(MsgCode.G2C_EntityNumeric, 500).catch(() => undefined);
   const disabledState = gate.waitForMessage(MsgCode.G2C_AutoAttackState, 5_000);
   const disabledRpcId = nextRpcId++;
   const disabled = decodeToggleAutoAttackFrame(await gate.request(
@@ -2003,15 +1999,6 @@ async function verifyAutoAttackTimer(
     }),
   ));
   await disabledState;
-  const trailingNumeric = await postDisableNumeric;
-  if (trailingNumeric) {
-    const trailingHp = decodeEntityNumericFrame(trailingNumeric).body.numerics.find(
-      (numeric) => numeric.unitId === monsterUnitId && numeric.numericType === NumericType.CurrentHp,
-    )?.value;
-    if (trailingHp !== undefined && trailingHp < hpValues[hpValues.length - 1]) {
-      hpValues[hpValues.length - 1] = trailingHp;
-    }
-  }
   if (hpValues.length < expectedSwings || disabled.rpcId !== disabledRpcId || disabled.body.error || disabled.body.enabled) {
     throw new Error(`auto attack timer stopped before ${expectedSwings} swings: ${stringifyForError({ hpValues, disabled: disabled.body })}`);
   }
