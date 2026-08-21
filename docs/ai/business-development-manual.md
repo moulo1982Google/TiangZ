@@ -1234,6 +1234,10 @@ npm run perf:hotpath:compare -- --before perf/results/hotpath_before_<时间>.js
 
 Starter的真实业务容量必须使用同一场景做无业务/业务A/B。当前标准业务负载是每玩家每秒交替`UseItem`和`CastSkill`；公共CD、道具CD、距离或法力不足等规则拒绝计入`businessRejected`，只有超时、断连、RPC错配和协议解析失败计入`businessTransportErrors`。容量结论还必须同时检查`stalled`、Probe、Map frame/completion背压、Inner overload/timeout、慢连接和尾延迟。
 
+容量工具还必须对比Runtime固定帧与Map业务Update频率。Map Update是同步回调；Runtime Pump先处理Scene mailbox和V8 microtask，再推进到期固定帧，高入站负载可能让Runtime固定帧与Map Update一起降频而CPU仍未达到目标。正式容量候选要求每轮Map Update都达到`1000 / fixedUpdateMs`的95%以上，并且所有正式窗口没有新增`skipped fixed updates`；否则即使Move输入、CPU和错误计数达标，也只能保存为失速诊断结果。
+
+高入站负载还要检查一次Runtime Pump处理的Scene帧数与耗时。当前Pump先处理每个EntryScene最多512个入站帧，再推进到期固定Update；如果一批Handler和其microtask耗时过长，固定帧会延后并受`maxCatchUpSteps`限制。优化应采用明确的帧时间预算或公平调度并重新验证业务吞吐，不能只降低固定批量上限，否则可能保住Tick却让入口吞吐更早积压。
+
 2026-08-19的首轮结果是：Node同机全链路只适合50/100/200玩家链路A/B，600玩家开始先受压测端调度和全量下行影响；Rust客户端在16 Gate、10x10 Grid下对1000/2000/3000玩家进行真实业务验证，1000玩家业务三轮中位数通过，2000和3000分别出现Probe错误与Map队列背压。因此当前Starter保守有效点记录为1000个均匀分布玩家，而不是把单次3000玩家Move吞吐当作容量承诺。`DBProxy`商店、拾取、交易和跨玩家事务属于另一类持久化业务压力，不能被这组内存Repository的技能/道具结果代替。详细报告见[`docs/starter/op05-real-business-load.md`](../starter/op05-real-business-load.md)。
 
 ## 怪物掉落与任务物品

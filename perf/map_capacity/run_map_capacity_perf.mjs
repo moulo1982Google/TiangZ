@@ -136,6 +136,8 @@ async function main() {
   const capacityCandidate = [...cases]
     .filter((item) =>
       item.median.mapCpuAverage <= options.targetMapCpu &&
+      item.median.mapUpdateTargetPercentMin >= 95 &&
+      item.median.mapSkippedFixedUpdates === 0 &&
       item.median.moveTargetPercent >= 95 &&
       item.median.aoiRelocationTargetPercent >= 80 &&
       item.median.aoiRelocationTargetPercent <= 120 &&
@@ -266,7 +268,13 @@ async function runCase(players, round) {
       error: caseError instanceof Error
         ? { name: caseError.name, message: caseError.message, stack: caseError.stack }
         : { name: "UnknownError", message: String(caseError) },
-      serverResources: collectRuntimeResources(runtimes, undefined, undefined, healthSamples),
+      serverResources: collectRuntimeResources(
+        runtimes,
+        clientResult?.measurementStartedAtUnixMs,
+        clientResult?.measurementEndedAtUnixMs,
+        healthSamples,
+      ),
+      clientResult,
       runtimeLogFailures,
       logDirectory: logDir,
       configDirectory: configDir,
@@ -777,6 +785,9 @@ async function readProcessHealthMetrics(runtime) {
       v8HeapTotalBytes: metric("tiangz_process_v8_heap_total_bytes"),
       v8GcCount: metric("tiangz_process_v8_gc_count_total"),
       v8GcMs: metric("tiangz_process_v8_gc_ms_total"),
+      gameFixedUpdateMs: metric("tiangz_game_fixed_update_ms"),
+      gameFrameCount: metric("tiangz_game_frame_count_total"),
+      gameSkippedFixedUpdates: metric("tiangz_game_skipped_fixed_updates_total"),
       timestampMs: metric("tiangz_process_metrics_timestamp_ms"),
       outboundBatches: metric("tiangz_process_outbound_batches_total"),
       outboundRecipients: metric("tiangz_process_outbound_recipients_total"),
@@ -1375,6 +1386,9 @@ function summarizeProcess(fallbackName, samples, last) {
     peakV8HeapTotalBytes: max(samples.map((item) => item.v8HeapTotalBytes)),
     v8GcCount: last?.v8GcCount ?? 0,
     v8GcMs: last?.v8GcMs ?? 0,
+    gameFixedUpdateMs: selectedLast?.gameFixedUpdateMs ?? 0,
+    gameFramesPerSecond: counterRate(samples, "gameFrameCount"),
+    gameSkippedFixedUpdates: counterDelta(samples, "gameSkippedFixedUpdates"),
     outboundBatchesPerSecond: counterRate(samples, "outboundBatches"),
     outboundRecipientsPerSecond: counterRate(samples, "outboundRecipients"),
     outboundBridgeBytesPerSecond: counterRate(samples, "outboundBridgeBytes"),
@@ -1484,6 +1498,7 @@ function summarizeMapBroadcast(samples, formalWindowSamples, lifecycleLast = sam
     latestCapacityRejections: last?.latestCapacityRejections ?? 0,
     sentFramesPerSecond: counterRate(samples, "sentFrames"),
     broadcastsPerSecond: counterRate(samples, "broadcastsStarted"),
+    updatesPerSecond: counterRate(samples, "updateCount"),
     coalescedPercent: queuedFrames > 0 ? coalescedFrames / queuedFrames * 100 : 0,
     framesPerBroadcast: broadcastsStarted > 0 ? sentFrames / broadcastsStarted : 0,
     averageDurationMs: broadcastsCompleted > 0
@@ -1632,6 +1647,30 @@ function aggregateCases(rounds) {
       mapCpuAverage: median(group.map((item) => item.serverResources.map?.averageCpuPercent ?? 0)),
       mapCpuP90: median(group.map((item) => item.serverResources.map?.p90CpuPercent ?? 0)),
       mapCpuPeak: median(group.map((item) => item.serverResources.map?.peakCpuPercent ?? 0)),
+      mapFixedUpdateMs: median(group.map(
+        (item) => item.serverResources.map?.gameFixedUpdateMs ?? 0,
+      )),
+      mapFramesPerSecond: median(group.map(
+        (item) => item.serverResources.map?.gameFramesPerSecond ?? 0,
+      )),
+      mapSkippedFixedUpdates: max(group.map(
+        (item) => item.serverResources.map?.gameSkippedFixedUpdates ?? 0,
+      )),
+      mapUpdatesPerSecond: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.updatesPerSecond ?? 0,
+      )),
+      mapUpdateTargetPercent: median(group.map((item) => {
+        const fixedUpdateMs = item.serverResources.map?.gameFixedUpdateMs ?? 0;
+        const targetUpdatesPerSecond = fixedUpdateMs > 0 ? 1000 / fixedUpdateMs : 0;
+        const updatesPerSecond = item.serverResources.map?.mapBroadcast?.updatesPerSecond ?? 0;
+        return targetUpdatesPerSecond > 0 ? updatesPerSecond / targetUpdatesPerSecond * 100 : 0;
+      })),
+      mapUpdateTargetPercentMin: Math.min(...group.map((item) => {
+        const fixedUpdateMs = item.serverResources.map?.gameFixedUpdateMs ?? 0;
+        const targetUpdatesPerSecond = fixedUpdateMs > 0 ? 1000 / fixedUpdateMs : 0;
+        const updatesPerSecond = item.serverResources.map?.mapBroadcast?.updatesPerSecond ?? 0;
+        return targetUpdatesPerSecond > 0 ? updatesPerSecond / targetUpdatesPerSecond * 100 : 0;
+      })),
       mapFormalWindowSamples: median(group.map(
         (item) => item.serverResources.map?.formalWindowSamples ?? 0,
       )),
@@ -1661,6 +1700,15 @@ function aggregateCases(rounds) {
       )),
       mapBroadcastsPerSecond: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.broadcastsPerSecond ?? 0,
+      )),
+      mapMovementAdvanceAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.averageMovementAdvanceMs ?? 0,
+      )),
+      mapAoiRefreshAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.averageAoiRefreshMs ?? 0,
+      )),
+      mapMovementEncodeAverageMs: median(group.map(
+        (item) => item.serverResources.map?.mapBroadcast?.averageMovementEncodeMs ?? 0,
       )),
       mapBroadcastCoalescedPercent: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.coalescedPercent ?? 0,
@@ -2166,6 +2214,24 @@ function renderMarkdown(report) {
       `${value.innerOverloads}/${value.innerTimeouts}/${value.backpressure}/${value.slowDisconnects} | ${formatBytes(value.serverRssBytes)} |`,
     );
   }
+  lines.push(
+    "",
+    "## Map Tick健康度",
+    "",
+    "| 玩家 | 配置Tick | Runtime frame/s | Map update/s（中位/最差达标率） | 跳过固定帧max | Movement/AOI/Encode 每次Update |",
+    "|---:|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    const configuredHz = value.mapFixedUpdateMs > 0 ? 1000 / value.mapFixedUpdateMs : 0;
+    lines.push(
+      `| ${item.players} | ${round(configuredHz, 1)}Hz (${round(value.mapFixedUpdateMs, 1)}ms) | ` +
+      `${round(value.mapFramesPerSecond, 1)} | ${round(value.mapUpdatesPerSecond, 1)}（${round(value.mapUpdateTargetPercent, 1)}%/` +
+      `${round(value.mapUpdateTargetPercentMin, 1)}%） | ` +
+      `${round(value.mapSkippedFixedUpdates)} | ${round(value.mapMovementAdvanceAverageMs, 2)}/` +
+      `${round(value.mapAoiRefreshAverageMs, 2)}/${round(value.mapMovementEncodeAverageMs, 2)}ms |`,
+    );
+  }
   if (options.stateSyncMode !== "off") {
     lines.push(
       "",
@@ -2433,6 +2499,7 @@ function renderMarkdown(report) {
     "- `MapProbe` 是 ActorLocation RPC，链路为客户端 -> Gate -> MapHost -> Gate -> 客户端，不产生 AOI 广播。",
     "- Map/Gate CPU 使用正式测试窗口内的 5 秒进程 CPU 样本；平均值用于容量判断。",
     "- Map 正式窗口至少需要 2 个 CPU 样本；不足时该测试点只作故障诊断，不参与容量候选。",
+    "- 容量候选要求Map业务Update达到配置固定Tick的95%以上，且正式窗口没有跳过固定帧。Map Update是同步回调；高入站负载会拉长固定帧之前的Scene mailbox与V8 microtask泵送，使Runtime frame/s和Map update/s一起下降。",
     options.probeOnly
       ? "- Probe Only 模式关闭 Move 和 AOI 广播，用于测 MapHost pingpong RPC 基线吞吐。"
       : "- Move 按固定频率开环发送，吞吐只统计正式窗口内实际写入的请求；容量点要求实际吞吐至少达到目标的 95%。",
@@ -2445,7 +2512,7 @@ function renderMarkdown(report) {
     options.spawnLayout === "single-grid"
       ? "- `push/s` 是虚拟客户端实际收到的移动帧数；单Grid布局使用Grid内闭合轨迹，正式窗口应没有持续跨Grid或可见关系变化。"
       : options.spawnLayout === "grid-uniform"
-        ? "- `push/s` 是虚拟客户端实际收到的移动帧数；均匀基线固定20%玩家每2秒跨Grid一次，必须结合AOI空间指标中的实际跨Grid速率判断负载是否成立。"
+        ? "- `push/s` 是虚拟客户端实际收到的移动帧数；均匀基线固定20%玩家每2秒跨Grid一次，必须结合AOI空间指标中的实际跨Grid速率和Map update达标率判断负载是否成立。"
         : "- `push/s` 是虚拟客户端实际收到的移动帧数；玩家可能跨AOI Grid，实际Grid、候选关系、跨Grid和可见变化见AOI空间指标。",
     "- AOI进入/离开是不可覆盖事件，但同一逻辑帧内受众完全相同的变化会合并为一个`G2C_AoiDelta`；Movement、Numeric等可覆盖状态仍走latest。",
     "- Map 可覆盖状态广播采用 single-flight；前一批未完成时保留最新 dirty revision，发送成功后按 revision Ack。`pending`、合并率、广播耗时和排队时间用于判断下行是否跟不上 Game.Update。",

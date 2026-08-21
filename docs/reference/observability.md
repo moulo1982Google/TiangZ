@@ -278,6 +278,8 @@ MapHost 每 5 秒随 Scene 快照输出每张地图的广播状态：
 
 容量测试会把这些字段自动汇总到报告的“Map 广播 single-flight”表格。重点观察`pending`是否长期存在、`superseded/s`是否随Gate数出现拐点、capacity rejects是否为0，以及广播/排队尾延迟是否持续上升。
 
+容量报告另以`map_broadcast.update_count_total`计算真正执行的Map业务Update/s，并与`tiangz_game_fixed_update_ms`、`tiangz_game_frame_count_total`和`tiangz_game_skipped_fixed_updates_total`并列展示。Map Update是同步回调；两种频率一起下降时应检查固定帧之前的Scene mailbox、V8 microtask和跳帧计数，不能用较低CPU解释为容量余量。
+
 ## NativeData 指标
 
 使用 Rust 权威实体数据时，每 5 秒输出：

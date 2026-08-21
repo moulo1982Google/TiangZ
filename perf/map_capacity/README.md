@@ -184,14 +184,17 @@ npm run perf:map-capacity -- \
 报告生成到 `perf/results/map_capacity_*.md`。容量点必须同时满足：
 
 - MapHost 平均 CPU 不超过目标值。
+- 每一轮Map业务Update都达到配置固定Tick的95%以上，且所有正式窗口`skipped fixed updates`均为0；Map Update是同步回调，高入站负载会拉长固定帧之前的Scene mailbox与V8 microtask泵送，使Runtime固定帧和Map Update一起降频。
 - 实际 Move 吞吐至少达到设定频率的 95%。
 - `grid-uniform`实际跨Grid速率达到理论值的80%至120%；默认3000人理论值为300次/s。
 - Move 和 MapProbe 没有超时。
 - 内部传输没有 overload 或 timeout，且没有因下行过慢主动断开客户端。
 
-`backpressure` 表示入口有界队列已经满并发生等待重试。它不等于丢包或 overload，但说明该测试点没有充足余量，因此正式容量候选要求窗口内为0；非零结果仍可作为故障诊断保存。
+`backpressure` 表示入口有界队列已经满并发生等待重试。它不等于丢包或 overload，但说明该测试点没有充足余量，因此正式容量候选要求窗口内为0；非零结果仍可作为故障诊断保存。CPU低于目标也不能单独证明还有业务余量：Runtime Pump可能把时间消耗在入站Handler、Promise microtask和下行完成回调上，Movement/AOI实际推进频率已经下降。
 
 容量测试会为每个 Process 临时启用独立的 health 端口，并直接抓取 CPU、RSS、V8、Transport、NativeData 与 Map 广播指标。正式窗口中的累计计数按相邻采样差值换算为每秒速率，不依赖标准输出日志。
+
+客户端已经完成正式窗口、但服务端出现ERROR或panic时，工具仍把客户端结果和正式窗口资源写入`*_failure.json`，随后立即失败并停止剩余轮次。失败报告只用于定位，不参与多轮中位数或容量候选；不得为了凑满轮数继续重复已经明确过载的高负载。
 
 报告的“NumericType复制指标”按类型列出`changes/s`、`encoded records/s`、`recipient deliveries/s`和逻辑字节。Starter保持10Hz服务端资源恢复，但`CurrentHp`公开状态最多5Hz并在死亡/复活时立即发送；因此判断优化是否命中，应看`CurrentHp changes/s`保持原精度，同时`recipient deliveries/s`相对旧基线下降，而不是要求服务端变化次数下降。技能、Buff、道具等可靠事件不属于该表，也不允许通过latest覆盖。
 
