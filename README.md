@@ -293,7 +293,7 @@ npm run test:game-config
 - `process.logging`：统一 Rust/TS 日志的级别、文本或 JSON 格式、控制台和滚动文件输出；默认 INFO 文本控制台。
 - `process.network`：I/O Backend；默认 `epoll`，Linux 可显式选择实验性的 `io-uring`。
 - `process.game`：固定游戏帧和最大补帧数；默认 `50ms/20Hz`、最多补跑 2 帧。
-- `process.scheduling`：Runtime Pump 调度模式及队列参数；默认 `adaptive`。
+- `process.scheduling`：Runtime Pump 调度模式、单轮事件上限及有界队列参数；默认`adaptive`。
 - `process.lifecycle.stopTimeoutMs`：优雅停机等待上限，默认 10000ms。
 - `process.lifecycle.hotfixReloadTimeoutMs`：Hotfix等待安全屏障的上限，默认30000ms；超时保留旧generation。
 - `process.debug`：V8 Inspector 配置。该对象可省略；存在时必须设置 `inspectorPort`。远程监听还必须显式设置 `allowRemote: true`。

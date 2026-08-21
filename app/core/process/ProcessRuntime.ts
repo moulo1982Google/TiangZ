@@ -25,6 +25,8 @@ export interface ProcessUpdateResult {
   /** 进程内所有 Actor mailbox 的总计；不能按 Scene 重复累加。 / Process-wide totals for all Actor mailboxes; never duplicate them per Scene. */
   actorMailbox: MailboxMetricsSnapshot;
   pendingAsync: boolean;
+  /** TS仍有未消费入站帧；Rust据此暂停注入新批次并优先排空有界积压。 / TS still has ingress work; Rust pauses new batch injection until it drains. */
+  pendingIngress: boolean;
 }
 
 export interface GameMetricsSnapshot {
@@ -45,9 +47,12 @@ export class ProcessRuntime implements LocalSceneRouter {
   private readonly processHost: ProcessHost;
   private lifecycleState: "created" | "starting" | "ready" | "stopping" | "stopped" = "created";
   private stopPromise: Promise<void> | undefined;
+  private scenePumpCursor = 0;
+  private readonly maxIngressFramesPerPump: number;
 
   constructor(private readonly config: ProcessRuntimeConfig) {
     this.entryScenes = [];
+    this.maxIngressFramesPerPump = resolveMaxEventsPerUpdate(config.process.scheduling);
     let processHost: ProcessHost | undefined;
     try {
       InitializeGameSingletons(config.process.game, config.process.identity);
@@ -155,6 +160,10 @@ export class ProcessRuntime implements LocalSceneRouter {
     this.sceneAt(sceneIndex).pushHostFrame(connectionId, frame);
   }
 
+  pushHostControlFrame(sceneIndex: number, connectionId: number, frame: Uint8Array): void {
+    this.sceneAt(sceneIndex).pushHostControlFrame(connectionId, frame);
+  }
+
   /** 让断线通知排在该 Scene 已接收帧之后，避免越过先前消息。 / Orders a disconnect notification after frames already accepted for that Scene. */
   pushHostDisconnect(sceneIndex: number, connectionId: number): void {
     this.sceneAt(sceneIndex).pushHostDisconnect(connectionId);
@@ -162,9 +171,9 @@ export class ProcessRuntime implements LocalSceneRouter {
 
   /** 在本进程唯一 V8 线程内推进 Game.Update 和所有本地 Scene mailbox。 / Advances Game.Update and every local Scene mailbox inside this process's single V8 thread. */
   update(includeMetrics = true): MaybePromise<ProcessUpdateResult> {
-    const startedAt: number[] = [];
+    const startedAt = this.entryScenes.map(() => monotonicNow());
     Game.Instance.Update(monotonicNow(), Date.now(), () => {
-      for (const scene of this.entryScenes) startedAt.push(scene.__pumpMailbox(512));
+      this.pumpSceneIngress();
     });
     const merged = mergeResults(
       this.entryScenes.map((scene, index) =>
@@ -178,6 +187,20 @@ export class ProcessRuntime implements LocalSceneRouter {
     return this.processHost.SceneTaskInFlightCount === 0
       ? result
       : { ...result, pendingAsync: true };
+  }
+
+  private pumpSceneIngress(): void {
+    const sceneCount = this.entryScenes.length;
+    if (sceneCount === 0) return;
+    let remainingFrames = this.maxIngressFramesPerPump;
+    for (let offset = 0; offset < sceneCount && remainingFrames > 0; offset += 1) {
+      const index = (this.scenePumpCursor + offset) % sceneCount;
+      const remainingScenes = sceneCount - offset;
+      const allowance = Math.ceil(remainingFrames / remainingScenes);
+      const processed = this.entryScenes[index].__pumpMailbox(allowance);
+      remainingFrames -= processed;
+    }
+    this.scenePumpCursor = (this.scenePumpCursor + 1) % sceneCount;
   }
 
   hasLocalScene(name: string): boolean { return this.scenesByName.has(name); }
@@ -260,13 +283,16 @@ function mergeResults(
       metrics: results[0].metrics ? [results[0].metrics] : [],
       game,
       pendingAsync: results[0].pendingAsync,
+      pendingIngress: results[0].pendingIngress,
     };
   }
   const outbound: OutboundBatch[] = [];
   const metrics: SceneMetricsSnapshot[] = [];
   let pendingAsync = false;
+  let pendingIngress = false;
   for (const result of results) {
     pendingAsync ||= result.pendingAsync;
+    pendingIngress ||= result.pendingIngress;
     if (result.metrics) metrics.push(result.metrics);
     for (const batch of result.outbound) {
       outbound.push(batch);
@@ -277,7 +303,20 @@ function mergeResults(
     metrics,
     game,
     pendingAsync,
+    pendingIngress,
   };
+}
+
+function resolveMaxEventsPerUpdate(config: ProcessRuntimeConfig["process"]["scheduling"]): number {
+  if (config?.maxEventsPerUpdate != null) {
+    if (!Number.isInteger(config.maxEventsPerUpdate) || config.maxEventsPerUpdate <= 0) {
+      throw new Error("process scheduling.maxEventsPerUpdate must be a positive integer");
+    }
+    return config.maxEventsPerUpdate;
+  }
+  if (config?.mode === "low-latency") return 64;
+  if (config?.mode === "throughput") return 1024;
+  return 512;
 }
 
 function gameMetricsSnapshot(): GameMetricsSnapshot {

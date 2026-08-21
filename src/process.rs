@@ -38,15 +38,20 @@ use crate::shutdown::{
     ParentControlCommand, receive_parent_control, spawn_parent_control_receiver,
 };
 use crate::transport::{init_remote_transport, snapshot_remote_transport};
-use crate::transport_backend::{
-    CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionWriters, EndpointContext, create_io_backend,
-};
 #[cfg(test)]
-use crate::transport_backend::{ConnectionKind, ConnectionWriter, validate_frame_access};
+use crate::transport_backend::{
+    CONNECTION_OUTBOUND_BYTE_CAPACITY, ConnectionKind, ConnectionWriter, validate_frame_access,
+};
+use crate::transport_backend::{
+    ConnectionWriteBatch, ConnectionWriters, EndpointContext, WRITE_BATCH_BYTE_CAPACITY,
+    WRITE_BATCH_FRAME_CAPACITY, create_io_backend, try_queue_connection_batch,
+    try_queue_connection_frame,
+};
 
 const DEFAULT_PROCESS_EVENT_QUEUE_CAPACITY: usize = 4096;
 const PROCESS_CONTROL_QUEUE_DIVISOR: usize = 4;
 const MAX_CONSECUTIVE_CONTROL_EVENTS: usize = 32;
+const MAX_PENDING_INGRESS_CONTROL_EVENTS: usize = 128;
 const EVENT_HEADER_BYTES: usize = 13;
 const BACKPRESSURE_RETRY_MS: u64 = 1;
 
@@ -240,6 +245,8 @@ struct UpdateResult {
     actor_mailbox: MailboxMetricsSnapshot,
     #[serde(default)]
     pending_async: bool,
+    #[serde(default)]
+    pending_ingress: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -338,6 +345,10 @@ struct SceneMetricsSnapshot {
     message_handler_failures: u64,
     ingress_queue_length: usize,
     max_ingress_queue_length: usize,
+    #[serde(default)]
+    last_ingress_pump_frames: u64,
+    #[serde(default)]
+    last_ingress_pump_cost_ms: f64,
     last_update_cost_ms: f64,
     last_handler_cost_ms: f64,
     max_handler_cost_ms: f64,
@@ -639,6 +650,16 @@ struct ProcessEventReceiver {
 }
 
 impl ProcessEventReceiver {
+    fn try_recv_control(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
+        match self.control_receiver.try_recv() {
+            Ok(event) => {
+                self.consecutive_control = self.consecutive_control.saturating_add(1);
+                Ok(event)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     fn try_recv(&mut self) -> std::result::Result<ProcessEvent, mpsc::TryRecvError> {
         let force_data = self.consecutive_control >= MAX_CONSECUTIVE_CONTROL_EVENTS;
         if force_data {
@@ -1230,6 +1251,7 @@ fn run_process_runtime(
     let mut last_resource_sample_at = Instant::now();
     let mut active_generation = 1_u64;
     let mut pending_async = false;
+    let mut pending_ingress = false;
     let mut pending_reload: Option<(PathBuf, Instant, tokio::sync::oneshot::Sender<_>)> = None;
     let mut pending_config_reload: Option<(
         Box<GameConfigBundle>,
@@ -1312,6 +1334,7 @@ fn run_process_runtime(
         }
 
         if !pending_async
+            && !pending_ingress
             && let Some((candidate_directory, requested_at, response)) = pending_reload.take()
         {
             let next_generation = active_generation + 1;
@@ -1350,24 +1373,43 @@ fn run_process_runtime(
         let mut event_count = 0_u32;
         let mut shutdown_requested = false;
         let wait_ms = scheduling.idle_tick_ms;
-        match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
-            Ok(event) => {
-                queue_stats.dequeue(event.kind(), event.ingress_class());
-                if matches!(&event, ProcessEvent::Shutdown) {
-                    shutdown_requested = true;
-                } else {
-                    push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+        let batch_capacity = scheduling.batch_capacity(queue_stats.depth.load(Ordering::Relaxed));
+        if pending_ingress {
+            // TS still has data ingress queued. Keep the control lane flowing so Probe,
+            // disconnect, and completion responses cannot be rejected behind a data backlog.
+            // Bound reinjection so the TS pump retains capacity to drain its existing queue.
+            let control_capacity = batch_capacity.min(MAX_PENDING_INGRESS_CONTROL_EVENTS);
+            while event_count < control_capacity as u32 {
+                match event_rx.try_recv_control() {
+                    Ok(event) => {
+                        queue_stats.dequeue(event.kind(), event.ingress_class());
+                        if matches!(&event, ProcessEvent::Shutdown) {
+                            shutdown_requested = true;
+                            break;
+                        }
+                        push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                    }
+                    Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
                 }
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        } else {
+            match event_rx.recv_timeout(Duration::from_millis(wait_ms)) {
+                Ok(event) => {
+                    queue_stats.dequeue(event.kind(), event.ingress_class());
+                    if matches!(&event, ProcessEvent::Shutdown) {
+                        shutdown_requested = true;
+                    } else {
+                        push_event(&mut packed_events, &mut event_count, event, &queue_stats)?;
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
         }
 
-        let batch_capacity = scheduling
-            .batch_capacity(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
         let coalesce_deadline = scheduling
             .coalesce_deadline(queue_stats.depth.load(Ordering::Relaxed) + event_count as usize);
-        while !shutdown_requested && event_count < batch_capacity as u32 {
+        while !pending_ingress && !shutdown_requested && event_count < batch_capacity as u32 {
             match event_rx.try_recv() {
                 Ok(event) => {
                     queue_stats.dequeue(event.kind(), event.ingress_class());
@@ -1386,7 +1428,7 @@ fn run_process_runtime(
                 Err(mpsc::TryRecvError::Disconnected) => break,
             }
         }
-        pending_async = flush_runtime_batch(
+        (pending_async, pending_ingress) = flush_runtime_batch(
             &js_event_loop,
             &mut runtime,
             &entrypoints,
@@ -1543,7 +1585,7 @@ fn flush_runtime_batch(
     last_process_cpu_time_ms: &mut u64,
     last_resource_sample_at: &mut Instant,
     health_state: &ProcessHealthState,
-) -> Result<bool> {
+) -> Result<(bool, bool)> {
     queue_stats.runtime_updates.fetch_add(1, Ordering::Relaxed);
     queue_stats
         .runtime_events
@@ -1561,27 +1603,40 @@ fn flush_runtime_batch(
     let sample_metrics = last_metrics_log.elapsed() >= Duration::from_secs(5);
     let (update_result, outbound) =
         call_js_update_binary(js_event_loop, runtime, entrypoints, sample_metrics)?;
-    let (pending_async, metrics, game_metrics, native_data_metrics, actor_mailbox_metrics) =
-        if sample_metrics {
-            let result: UpdateResult = serde_json::from_str(&update_result).with_context(|| {
-                format!("TS update returned invalid metrics snapshot: {update_result}")
+    let (
+        pending_async,
+        pending_ingress,
+        metrics,
+        game_metrics,
+        native_data_metrics,
+        actor_mailbox_metrics,
+    ) = if sample_metrics {
+        let result: UpdateResult = serde_json::from_str(&update_result).with_context(|| {
+            format!("TS update returned invalid metrics snapshot: {update_result}")
+        })?;
+        (
+            result.pending_async,
+            result.pending_ingress,
+            result.metrics,
+            result.game,
+            result.native_data,
+            result.actor_mailbox,
+        )
+    } else {
+        {
+            let state = update_result.parse::<u8>().with_context(|| {
+                format!("TS update returned invalid compact state: {update_result}")
             })?;
             (
-                result.pending_async,
-                result.metrics,
-                result.game,
-                result.native_data,
-                result.actor_mailbox,
-            )
-        } else {
-            (
-                update_result == "1",
+                state & 1 != 0,
+                state & 2 != 0,
                 Vec::new(),
                 None,
                 None,
                 MailboxMetricsSnapshot::default(),
             )
-        };
+        }
+    };
     if sample_metrics {
         maybe_log_metrics(
             process_name,
@@ -1603,7 +1658,7 @@ fn flush_runtime_batch(
     }
     flush_outbound(outbound, writers, queue_stats)?;
     close_requested_connections(take_close_connection_requests(), writers);
-    Ok(pending_async)
+    Ok((pending_async, pending_ingress))
 }
 
 fn close_requested_connections(mut connection_ids: Vec<u64>, writers: &ConnectionWriters) {
@@ -1756,7 +1811,7 @@ fn maybe_log_metrics(
     }
     for metric in metrics {
         tracing::info!(target: "tiangz::metrics",
-            "[metrics:{process_name}] scene={} type={} processed={} failed={} protocol_successes={} business_errors={} system_errors={} decode_errors={} handler_not_found={} message_handler_failures={} ts_queue={} ts_max_queue={} mailbox_fast={} mailbox_queued={} mailbox_async={} mailbox_one_way_fast={} mailbox_one_way_queued={} mailbox_one_way_async={} mailbox_depth={} mailbox_max_depth={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
+            "[metrics:{process_name}] scene={} type={} processed={} failed={} protocol_successes={} business_errors={} system_errors={} decode_errors={} handler_not_found={} message_handler_failures={} ts_queue={} ts_max_queue={} ingress_pump_frames={} ingress_pump_ms={:.2} mailbox_fast={} mailbox_queued={} mailbox_async={} mailbox_one_way_fast={} mailbox_one_way_queued={} mailbox_one_way_async={} mailbox_depth={} mailbox_max_depth={} async_in_flight={} max_async_in_flight={} rust_queue={} rust_max_queue={} backpressure={} slow_disconnects={} update_ms={:.2} handler_ms={:.2} max_handler_ms={:.2} total_handler_ms={:.2}",
             metric.scene,
             metric.scene_type,
             metric.processed_frames,
@@ -1769,6 +1824,8 @@ fn maybe_log_metrics(
             metric.message_handler_failures,
             metric.ingress_queue_length,
             metric.max_ingress_queue_length,
+            metric.last_ingress_pump_frames,
+            metric.last_ingress_pump_cost_ms,
             metric.mailbox.fast_path_calls,
             metric.mailbox.queued_calls,
             metric.mailbox.async_calls,
@@ -1849,6 +1906,8 @@ fn maybe_log_metrics(
             message_handler_failures: metric.message_handler_failures,
             ingress_queue_length: metric.ingress_queue_length as u64,
             max_ingress_queue_length: metric.max_ingress_queue_length as u64,
+            last_ingress_pump_frames: metric.last_ingress_pump_frames,
+            last_ingress_pump_cost_ms: metric.last_ingress_pump_cost_ms,
             async_in_flight: metric.async_in_flight as u64,
             max_async_in_flight: metric.max_async_in_flight as u64,
             mailbox: MailboxObservabilitySnapshot {
@@ -2099,7 +2158,18 @@ fn push_event(
             frame,
         } => {
             queue_stats.inbound_frames.fetch_add(1, Ordering::Relaxed);
-            push_packed_event(packed_events, 1, connection_id, scene_index, &frame)?;
+            let event_type = if crate::transport::inner_frame_rpc_id(&frame).is_some() {
+                5
+            } else {
+                1
+            };
+            push_packed_event(
+                packed_events,
+                event_type,
+                connection_id,
+                scene_index,
+                &frame,
+            )?;
         }
         ProcessEvent::Disconnect {
             scene_index,
@@ -2157,6 +2227,12 @@ fn flush_outbound(
 
     let mut writers = writers.lock().expect("connection writer map poisoned");
     let mut slow_connections = Vec::new();
+    let aggregate_by_connection = outbound
+        .iter()
+        .map(|batch| batch.connection_ids.len())
+        .sum::<usize>()
+        > WRITE_BATCH_FRAME_CAPACITY;
+    let mut frames_by_connection = HashMap::<u64, Vec<Bytes>>::new();
     for batch in outbound {
         let frame_len = batch.frame.len();
         let recipient_count = batch.connection_ids.len() as u64;
@@ -2172,19 +2248,47 @@ fn flush_outbound(
             Ordering::Relaxed,
         );
         for connection_id in batch.connection_ids {
-            if let Some(writer) = writers.get(&connection_id) {
-                let queued =
-                    writer.queued_bytes.fetch_add(frame_len, Ordering::Relaxed) + frame_len;
-                if queued > CONNECTION_OUTBOUND_BYTE_CAPACITY {
-                    writer.queued_bytes.fetch_sub(frame_len, Ordering::Relaxed);
-                    slow_connections.push(connection_id);
-                    continue;
-                }
-                if writer.sender.try_send(batch.frame.clone()).is_err() {
-                    writer.queued_bytes.fetch_sub(frame_len, Ordering::Relaxed);
-                    slow_connections.push(connection_id);
-                }
+            if aggregate_by_connection {
+                frames_by_connection
+                    .entry(connection_id)
+                    .or_default()
+                    .push(batch.frame.clone());
+            } else if let Some(writer) = writers.get(&connection_id)
+                && try_queue_connection_frame(writer, batch.frame.clone()).is_err()
+            {
+                slow_connections.push(connection_id);
             }
+        }
+    }
+
+    for (connection_id, frames) in frames_by_connection {
+        let Some(writer) = writers.get(&connection_id) else {
+            continue;
+        };
+        let mut pending = Vec::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
+        let mut pending_bytes = 0_usize;
+        for frame in frames {
+            if !pending.is_empty()
+                && (pending.len() >= WRITE_BATCH_FRAME_CAPACITY
+                    || pending_bytes + frame.len() > WRITE_BATCH_BYTE_CAPACITY)
+            {
+                let batch = ConnectionWriteBatch::from_frames(std::mem::take(&mut pending));
+                if try_queue_connection_batch(writer, batch).is_err() {
+                    slow_connections.push(connection_id);
+                    break;
+                }
+                pending = Vec::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
+                pending_bytes = 0;
+            }
+            pending_bytes += frame.len();
+            pending.push(frame);
+        }
+        if !pending.is_empty()
+            && !slow_connections.contains(&connection_id)
+            && try_queue_connection_batch(writer, ConnectionWriteBatch::from_frames(pending))
+                .is_err()
+        {
+            slow_connections.push(connection_id);
         }
     }
 
@@ -2365,7 +2469,8 @@ mod tests {
             7,
             ConnectionWriter {
                 sender,
-                queued_bytes: Arc::new(AtomicUsize::new(0)),
+                queued_bytes: Arc::new(AtomicUsize::new(CONNECTION_OUTBOUND_BYTE_CAPACITY)),
+                queued_frames: Arc::new(AtomicUsize::new(0)),
                 shutdown_tx,
             },
         );
@@ -2402,6 +2507,7 @@ mod tests {
             ConnectionWriter {
                 sender,
                 queued_bytes: Arc::new(AtomicUsize::new(0)),
+                queued_frames: Arc::new(AtomicUsize::new(0)),
                 shutdown_tx,
             },
         );
@@ -2424,6 +2530,7 @@ mod tests {
                 ConnectionWriter {
                     sender,
                     queued_bytes: Arc::new(AtomicUsize::new(0)),
+                    queued_frames: Arc::new(AtomicUsize::new(0)),
                     shutdown_tx,
                 },
             );
@@ -2443,12 +2550,90 @@ mod tests {
 
         let received1 = receiver1.try_recv().unwrap();
         let received2 = receiver2.try_recv().unwrap();
-        assert_eq!(received1, received2);
-        assert_eq!(received1.as_ptr(), received2.as_ptr());
+        assert_eq!(received1.frames, received2.frames);
+        assert_eq!(received1.frames[0].as_ptr(), received2.frames[0].as_ptr());
         assert_eq!(stats.outbound_batches.load(Ordering::Relaxed), 1);
         assert_eq!(stats.outbound_recipients.load(Ordering::Relaxed), 2);
         assert_eq!(stats.outbound_bridge_bytes.load(Ordering::Relaxed), 4);
         assert_eq!(stats.outbound_logical_bytes.load(Ordering::Relaxed), 8);
+    }
+
+    #[test]
+    fn small_outbound_sets_keep_direct_connection_order() {
+        let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
+        let (sender, mut receiver) = tokio_mpsc::channel(4);
+        let queued_bytes = Arc::new(AtomicUsize::new(0));
+        let queued_frames = Arc::new(AtomicUsize::new(0));
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+        writers.lock().unwrap().insert(
+            7,
+            ConnectionWriter {
+                sender,
+                queued_bytes: Arc::clone(&queued_bytes),
+                queued_frames: Arc::clone(&queued_frames),
+                shutdown_tx,
+            },
+        );
+        let stats = ProcessQueueStats::default();
+
+        flush_outbound(
+            vec![
+                BinaryOutboundBatch {
+                    connection_ids: vec![7],
+                    frame: Bytes::from_static(&[0, 1]),
+                },
+                BinaryOutboundBatch {
+                    connection_ids: vec![7],
+                    frame: Bytes::from_static(&[0, 2]),
+                },
+                BinaryOutboundBatch {
+                    connection_ids: vec![7],
+                    frame: Bytes::from_static(&[0, 3]),
+                },
+            ],
+            &writers,
+            &stats,
+        )
+        .unwrap();
+
+        assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 1]);
+        assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 2]);
+        assert_eq!(receiver.try_recv().unwrap().frames[0].as_ref(), [0, 3]);
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(queued_frames.load(Ordering::Relaxed), 3);
+        assert_eq!(queued_bytes.load(Ordering::Relaxed), 6);
+    }
+
+    #[test]
+    fn outbound_connection_batches_preserve_frame_capacity() {
+        let writers: ConnectionWriters = Arc::new(Mutex::new(HashMap::new()));
+        let (sender, mut receiver) = tokio_mpsc::channel(4);
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+        writers.lock().unwrap().insert(
+            7,
+            ConnectionWriter {
+                sender,
+                queued_bytes: Arc::new(AtomicUsize::new(0)),
+                queued_frames: Arc::new(AtomicUsize::new(0)),
+                shutdown_tx,
+            },
+        );
+        let stats = ProcessQueueStats::default();
+        let outbound = (0..WRITE_BATCH_FRAME_CAPACITY + 1)
+            .map(|index| BinaryOutboundBatch {
+                connection_ids: vec![7],
+                frame: Bytes::from(vec![0, index as u8]),
+            })
+            .collect();
+
+        flush_outbound(outbound, &writers, &stats).unwrap();
+
+        assert_eq!(
+            receiver.try_recv().unwrap().frames.len(),
+            WRITE_BATCH_FRAME_CAPACITY
+        );
+        assert_eq!(receiver.try_recv().unwrap().frames.len(), 1);
+        assert!(receiver.try_recv().is_err());
     }
 
     #[test]
@@ -2495,7 +2680,8 @@ mod tests {
                     "queuedDepth": 2,
                     "maxQueuedDepth": 12
                 },
-                "pendingAsync": false
+                "pendingAsync": false,
+                "pendingIngress": true
             }"#,
         )
         .unwrap();
@@ -2514,6 +2700,7 @@ mod tests {
         assert_eq!(result.actor_mailbox.one_way_queued_calls, 9);
         assert_eq!(result.actor_mailbox.queued_depth, 2);
         assert_eq!(result.actor_mailbox.max_queued_depth, 12);
+        assert!(result.pending_ingress);
     }
 
     #[test]
@@ -2527,6 +2714,8 @@ mod tests {
                     "failedFrames": 0,
                     "ingressQueueLength": 0,
                     "maxIngressQueueLength": 1,
+                    "lastIngressPumpFrames": 17,
+                    "lastIngressPumpCostMs": 4.5,
                     "lastUpdateCostMs": 0.1,
                     "lastHandlerCostMs": 0.1,
                     "maxHandlerCostMs": 0.1,
@@ -2549,6 +2738,8 @@ mod tests {
         )
         .expect("custom scene metrics must deserialize");
 
+        assert_eq!(result.metrics[0].last_ingress_pump_frames, 17);
+        assert_eq!(result.metrics[0].last_ingress_pump_cost_ms, 4.5);
         let custom = &result.metrics[0].custom_metrics[0];
         assert_eq!(custom.name, "map_broadcast");
         assert_eq!(custom.values.get("in_flight"), Some(&1.0));

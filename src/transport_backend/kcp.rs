@@ -15,8 +15,8 @@ use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, watch};
 
 use super::{
-    CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriter, EndpointContext,
-    MAX_FRAME_LEN, validate_frame_access,
+    CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriteBatch, ConnectionWriter,
+    EndpointContext, MAX_FRAME_LEN, validate_frame_access,
 };
 use crate::process::ProcessEvent;
 use tiangz_transport::kcp::{KcpConfig, KcpProfile, KcpSession};
@@ -39,6 +39,7 @@ struct KcpServerSession {
     kcp: KcpSession,
     last_activity: Instant,
     queued_bytes: Arc<AtomicUsize>,
+    queued_frames: Arc<AtomicUsize>,
     shutdown_tx: watch::Sender<bool>,
 }
 
@@ -114,6 +115,7 @@ async fn run_kcp_endpoint(socket: UdpSocket, context: EndpointContext) -> Result
                                 session.last_activity = Instant::now();
                             }
                             session.queued_bytes.fetch_sub(frame_len, Ordering::Relaxed);
+                            session.queued_frames.fetch_sub(1, Ordering::Relaxed);
                         }
                     }
                     OutboundEvent::Closed { local_conn } => {
@@ -207,8 +209,10 @@ async fn handle_datagram(
             let local_conn = allocate_local_conn(connection_id, sessions)?;
             let profile = KcpProfile::Outer;
             let kcp = KcpSession::new(local_conn, KcpConfig::for_profile(profile))?;
-            let (write_tx, write_rx) = mpsc::channel::<Bytes>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
+            let (write_tx, write_rx) =
+                mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
             let queued_bytes = Arc::new(AtomicUsize::new(0));
+            let queued_frames = Arc::new(AtomicUsize::new(0));
             let (shutdown_tx, shutdown_rx) = watch::channel(false);
             context
                 .writers
@@ -219,6 +223,7 @@ async fn handle_datagram(
                     ConnectionWriter {
                         sender: write_tx,
                         queued_bytes: Arc::clone(&queued_bytes),
+                        queued_frames: Arc::clone(&queued_frames),
                         shutdown_tx: shutdown_tx.clone(),
                     },
                 );
@@ -233,6 +238,7 @@ async fn handle_datagram(
                     kcp,
                     last_activity: Instant::now(),
                     queued_bytes,
+                    queued_frames,
                     shutdown_tx,
                 },
             );
@@ -331,42 +337,46 @@ async fn flush_kcp_output(
 
 fn spawn_outbound_forwarder(
     local_conn: u32,
-    mut write_rx: mpsc::Receiver<Bytes>,
+    mut write_rx: mpsc::Receiver<ConnectionWriteBatch>,
     mut shutdown_rx: watch::Receiver<bool>,
     outbound_tx: mpsc::Sender<OutboundEvent>,
 ) {
     tokio::spawn(async move {
         loop {
-            let frame = tokio::select! {
+            let batch = tokio::select! {
                 changed = shutdown_rx.changed() => {
                     if changed.is_err() || *shutdown_rx.borrow() {
                         // 关闭前转发已经入队的帧；Closed 事件必须排在这些帧之后。
                         // Forward queued frames before Closed so the close event
                         // cannot overtake a final business notice.
-                        while let Ok(frame) = write_rx.try_recv() {
-                            if outbound_tx
-                                .send(OutboundEvent::Frame { local_conn, frame })
-                                .await
-                                .is_err()
-                            {
-                                return;
+                        while let Ok(batch) = write_rx.try_recv() {
+                            for frame in batch.frames {
+                                if outbound_tx
+                                    .send(OutboundEvent::Frame { local_conn, frame })
+                                    .await
+                                    .is_err()
+                                {
+                                    return;
+                                }
                             }
                         }
                         break;
                     }
                     continue;
                 }
-                frame = write_rx.recv() => {
-                    let Some(frame) = frame else { break; };
-                    frame
+                batch = write_rx.recv() => {
+                    let Some(batch) = batch else { break; };
+                    batch
                 }
             };
-            if outbound_tx
-                .send(OutboundEvent::Frame { local_conn, frame })
-                .await
-                .is_err()
-            {
-                break;
+            for frame in batch.frames {
+                if outbound_tx
+                    .send(OutboundEvent::Frame { local_conn, frame })
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
             }
         }
         let _ = outbound_tx.send(OutboundEvent::Closed { local_conn }).await;

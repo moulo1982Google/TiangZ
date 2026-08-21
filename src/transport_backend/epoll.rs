@@ -13,9 +13,9 @@ use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 
 use super::{
-    CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriter, EndpointContext,
-    IoBackend, MAX_FRAME_LEN, MAX_INNER_TOKEN_LEN, WRITE_BATCH_BYTE_CAPACITY,
-    WRITE_BATCH_FRAME_CAPACITY, try_queue_connection_frame, validate_frame_access,
+    CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriteBatch, ConnectionWriter,
+    EndpointContext, IoBackend, MAX_FRAME_LEN, MAX_INNER_TOKEN_LEN, try_queue_connection_frame,
+    validate_frame_access,
 };
 use crate::config::EndpointProtocol;
 use crate::process::{ProcessEvent, ProcessIngressTrySendError};
@@ -134,13 +134,17 @@ async fn handle_raw_tcp_connection(
     let Some((connection_kind, mut first_frame_len)) = read_raw_preamble(&mut reader).await? else {
         return Ok(());
     };
-    let (write_tx, mut write_rx) = mpsc::channel::<Bytes>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
+    let (write_tx, mut write_rx) =
+        mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
     let queued_bytes = Arc::new(AtomicUsize::new(0));
     let writer_queued_bytes = Arc::clone(&queued_bytes);
+    let queued_frames = Arc::new(AtomicUsize::new(0));
+    let writer_queued_frames = Arc::clone(&queued_frames);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let connection_writer = ConnectionWriter {
         sender: write_tx,
         queued_bytes,
+        queued_frames,
         shutdown_tx: shutdown_tx.clone(),
     };
     writers
@@ -152,53 +156,43 @@ async fn handle_raw_tcp_connection(
     let writer_shutdown_tx = shutdown_tx.clone();
     let writer_stats = Arc::clone(&stats);
     let writer_task = tokio::spawn(async move {
-        let mut frames = Vec::<Bytes>::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
         loop {
-            let frame = tokio::select! {
+            let batch = tokio::select! {
                 changed = writer_shutdown.changed() => {
                     if changed.is_err() || *writer_shutdown.borrow() {
                         // 关闭请求不能抢在已入队的通知之前；这里排空快照后再释放Socket。
                         // A close request must not overtake queued notices; drain
                         // the queue before releasing the socket.
-                        while let Ok(frame) = write_rx.try_recv() {
-                            let frame_bytes = frame.len();
-                            write_raw_frames_vectored(&mut writer, std::slice::from_ref(&frame)).await?;
-                            writer_queued_bytes.fetch_sub(frame_bytes, Ordering::Relaxed);
-                            writer_stats.transport_write_completed(1, 4 + frame_bytes);
+                        while let Ok(batch) = write_rx.try_recv() {
+                            let frame_count = batch.frames.len();
+                            let packet_bytes = batch.frame_bytes + frame_count * 4;
+                            write_raw_frames_vectored(&mut writer, &batch.frames).await?;
+                            writer_queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
+                            writer_queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
+                            writer_stats.transport_write_completed(frame_count, packet_bytes);
                         }
                         break;
                     }
                     continue;
                 }
-                frame = write_rx.recv() => {
-                    let Some(frame) = frame else { break; };
-                    frame
+                batch = write_rx.recv() => {
+                    let Some(batch) = batch else { break; };
+                    batch
                 }
             };
-            frames.clear();
-            let mut queued_frame_bytes = frame.len();
-            let mut packet_bytes = 4 + frame.len();
-            frames.push(frame);
-            while frames.len() < WRITE_BATCH_FRAME_CAPACITY
-                && packet_bytes < WRITE_BATCH_BYTE_CAPACITY
-            {
-                let Ok(frame) = write_rx.try_recv() else {
-                    break;
-                };
-                queued_frame_bytes += frame.len();
-                packet_bytes += 4 + frame.len();
-                frames.push(frame);
-            }
+            let frame_count = batch.frames.len();
+            let packet_bytes = batch.frame_bytes + frame_count * 4;
             // 已经取出的批次必须完整写出；关闭信号只影响下一批，避免丢失最后一条业务通知。
             // Once a batch is taken, write it completely; shutdown only affects
             // the next batch so the final business notice cannot be dropped.
-            let result = write_raw_frames_vectored(&mut writer, &frames).await;
-            writer_queued_bytes.fetch_sub(queued_frame_bytes, Ordering::Relaxed);
+            let result = write_raw_frames_vectored(&mut writer, &batch.frames).await;
+            writer_queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
+            writer_queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
             if let Err(error) = result {
                 let _ = writer_shutdown_tx.send(true);
                 return Err(error);
             }
-            writer_stats.transport_write_completed(frames.len(), packet_bytes);
+            writer_stats.transport_write_completed(frame_count, packet_bytes);
         }
         Result::<()>::Ok(())
     });
@@ -275,9 +269,12 @@ async fn handle_websocket_connection(
 ) -> Result<()> {
     let websocket = accept_async(stream).await?;
     let (mut writer, mut reader) = websocket.split();
-    let (write_tx, mut write_rx) = mpsc::channel::<Bytes>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
+    let (write_tx, mut write_rx) =
+        mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
     let queued_bytes = Arc::new(AtomicUsize::new(0));
     let writer_queued_bytes = Arc::clone(&queued_bytes);
+    let queued_frames = Arc::new(AtomicUsize::new(0));
+    let writer_queued_frames = Arc::clone(&queued_frames);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     writers
         .lock()
@@ -287,6 +284,7 @@ async fn handle_websocket_connection(
             ConnectionWriter {
                 sender: write_tx,
                 queued_bytes,
+                queued_frames,
                 shutdown_tx: shutdown_tx.clone(),
             },
         );
@@ -295,58 +293,50 @@ async fn handle_websocket_connection(
     let writer_shutdown_tx = shutdown_tx.clone();
     let writer_stats = Arc::clone(&stats);
     let writer_task = tokio::spawn(async move {
-        let mut frames = Vec::<Bytes>::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
         loop {
-            let frame = tokio::select! {
+            let batch = tokio::select! {
                 changed = writer_shutdown.changed() => {
                     if changed.is_err() || *writer_shutdown.borrow() {
                         // 关闭前排空已经入队的WebSocket消息，保证顶号/踢人通知可见。
                         // Drain queued WebSocket messages before close so
                         // takeover/kick notices remain visible to the client.
-                        while let Ok(frame) = write_rx.try_recv() {
-                            let frame_bytes = frame.len();
-                            writer.feed(Message::Binary(frame.clone())).await?;
+                        while let Ok(batch) = write_rx.try_recv() {
+                            let frame_count = batch.frames.len();
+                            for frame in &batch.frames {
+                                writer.feed(Message::Binary(frame.clone())).await?;
+                            }
                             writer.flush().await?;
-                            writer_queued_bytes.fetch_sub(frame_bytes, Ordering::Relaxed);
-                            writer_stats.transport_write_completed(1, frame_bytes);
+                            writer_queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
+                            writer_queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
+                            writer_stats.transport_write_completed(frame_count, batch.frame_bytes);
                         }
                         break;
                     }
                     continue;
                 }
-                frame = write_rx.recv() => {
-                    let Some(frame) = frame else { break; };
-                    frame
+                batch = write_rx.recv() => {
+                    let Some(batch) = batch else { break; };
+                    batch
                 }
             };
-            frames.clear();
-            let mut frame_bytes = frame.len();
-            frames.push(frame);
-            while frames.len() < WRITE_BATCH_FRAME_CAPACITY
-                && frame_bytes < WRITE_BATCH_BYTE_CAPACITY
-            {
-                let Ok(frame) = write_rx.try_recv() else {
-                    break;
-                };
-                frame_bytes += frame.len();
-                frames.push(frame);
-            }
+            let frame_count = batch.frames.len();
             // 已经取出的批次必须完整写出；关闭信号只影响下一批。
             // Once taken, the batch is written completely; shutdown only
             // affects the next batch.
             let result = async {
-                for frame in &frames {
+                for frame in &batch.frames {
                     writer.feed(Message::Binary(frame.clone())).await?;
                 }
                 writer.flush().await
             }
             .await;
-            writer_queued_bytes.fetch_sub(frame_bytes, Ordering::Relaxed);
+            writer_queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
+            writer_queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
             if let Err(error) = result {
                 let _ = writer_shutdown_tx.send(true);
                 return Err(error.into());
             }
-            writer_stats.transport_write_completed(frames.len(), frame_bytes);
+            writer_stats.transport_write_completed(frame_count, batch.frame_bytes);
         }
         Result::<()>::Ok(())
     });

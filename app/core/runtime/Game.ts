@@ -123,7 +123,11 @@ export function InitializeGameSingletons(
   }
 }
 
+let lastMonotonicNow = 0;
+
 /** 返回单调时长时钟；不可作为墙钟时间戳持久化。 / Returns a monotonic duration clock; do not persist it as a wall-clock timestamp. */
 export function monotonicNow(): number {
-  return globalThis.performance?.now() ?? Date.now();
+  const current = globalThis.performance?.now() ?? Date.now();
+  lastMonotonicNow = Math.max(lastMonotonicNow, current);
+  return lastMonotonicNow;
 }

@@ -2150,10 +2150,25 @@ export class MapComponent extends Component<[
       if (this.pendingSpatialChanges.size > 0) {
         const changes = [...this.pendingSpatialChanges.values()].map((item) => item.change);
         this.pendingSpatialChanges.clear();
-        await this.PublishAoiChanges(changes, true);
-        // 新的可见变化可能在 await 期间到达；先处理它们，旧移动可以直接被较新帧覆盖。
-        // Visibility may arrive while awaiting delivery. Publish it first; newer
-        // movement already supersedes the local stale frame.
+        // AOI可靠事件必须先入队，保证Gate收到Enter/Leave后才处理后续移动；
+        // 但不再等待可靠链路完成后才提交latest移动，避免两条下行链路串行阻塞。
+        // Enqueue reliable AOI events first so Gate observes Enter/Leave before
+        // movement, then await both deliveries in parallel instead of serializing
+        // the replaceable movement lane behind reliable delivery.
+        const visibilityDelivery = this.PublishAoiChanges(changes, true);
+        const movement = this.pendingSpatialMovement;
+        this.pendingSpatialMovement = undefined;
+        const movementDelivery = movement
+          ? this.broadcast.PublishEncodedLatestRouteFrames(
+            `map:${this.mapInstanceId}:aoi`,
+            movement.broadcastName,
+            movement.frames,
+          )
+          : Promise.resolve();
+        await Promise.all([visibilityDelivery, movementDelivery]);
+        // 新的可见变化可能在 await 期间到达；下一轮继续按同样顺序处理。
+        // Visibility may arrive while awaiting delivery; process it in the next
+        // ordered iteration using the same rule.
         if (this.pendingSpatialChanges.size > 0) continue;
       }
 

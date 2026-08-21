@@ -1236,9 +1236,9 @@ Starter的真实业务容量必须使用同一场景做无业务/业务A/B。当
 
 容量工具还必须对比Runtime固定帧与Map业务Update频率。Map Update是同步回调；Runtime Pump先处理Scene mailbox和V8 microtask，再推进到期固定帧，高入站负载可能让Runtime固定帧与Map Update一起降频而CPU仍未达到目标。正式容量候选要求每轮Map Update都达到`1000 / fixedUpdateMs`的95%以上，并且所有正式窗口没有新增`skipped fixed updates`；否则即使Move输入、CPU和错误计数达标，也只能保存为失速诊断结果。
 
-高入站负载还要检查一次Runtime Pump处理的Scene帧数与耗时。当前Pump先处理每个EntryScene最多512个入站帧，再推进到期固定Update；如果一批Handler和其microtask耗时过长，固定帧会延后并受`maxCatchUpSteps`限制。优化应采用明确的帧时间预算或公平调度并重新验证业务吞吐，不能只降低固定批量上限，否则可能保住Tick却让入口吞吐更早积压。
+高入站负载还要检查Runtime Pump处理的Scene帧数与耗时。Runtime受`maxEventsPerUpdate`总量约束，并按轮转起点公平分配EntryScene。TS仍有入口积压时，Rust暂停新的data批次，但每轮最多注入128条control，为TS保留排空旧队列的能力；新事件继续留在有界宿主队列中接受明确背压。监控应同时查看`tiangz_scene_last_ingress_pump_frames`、`tiangz_scene_last_ingress_pump_cost_ms`、TS/Rust control/data队列和固定Tick。同步Handler仍不可抢占，业务Handler必须短小；修改批量或追帧参数后必须重新验证吞吐和p95/p99。
 
-2026-08-19的首轮结果是：Node同机全链路只适合50/100/200玩家链路A/B，600玩家开始先受压测端调度和全量下行影响；Rust客户端在16 Gate、10x10 Grid下对1000/2000/3000玩家进行真实业务验证，1000玩家业务三轮中位数通过，2000和3000分别出现Probe错误与Map队列背压。因此当前Starter保守有效点记录为1000个均匀分布玩家，而不是把单次3000玩家Move吞吐当作容量承诺。`DBProxy`商店、拾取、交易和跨玩家事务属于另一类持久化业务压力，不能被这组内存Repository的技能/道具结果代替。详细报告见[`docs/starter/op05-real-business-load.md`](../starter/op05-real-business-load.md)。
+2026-08-21完成入站调度A/B后，Rust客户端在8 Gate、10x10 Grid、3000玩家、40人/秒进图下通过完整业务容量门：2Hz Move、0.2Hz Probe和0.1Hz技能/道具请求均达标，Map 20Hz且正式窗口零跳帧，Probe/业务传输错误、overload、timeout和backpressure均为0。该结果使用Map `maxCatchUpSteps=3`覆盖150ms内偶发尖峰，Probe p95/p99为190/234ms；它是当前机器与该负载画像的保守有效点，不是通用生产人数承诺。`DBProxy`商店、拾取、交易和跨玩家事务属于另一类持久化业务压力，不能被这组内存Repository的技能/道具结果代替。
 
 ## 怪物掉落与任务物品
 

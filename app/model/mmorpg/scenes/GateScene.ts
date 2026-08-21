@@ -122,7 +122,7 @@ export class GateScene extends EntryScene {
       ?.TouchReceive(connectionId, TimeSystem.Instance.FrameTime);
   }
 
-  /** 记录出站排队时间以供观测；该时间绝不参与存活判定。 / Records outbound queue activity for observability and never for liveness. */
+  /** 记录可靠消息和RPC响应的出站排队时间；高频latest状态只保留聚合通道指标。 / Records reliable messages and RPC responses; high-frequency latest state uses aggregate lane metrics only. */
   protected override onClientSendQueued(connectionIds: readonly number[]): void {
     const now = TimeSystem.Instance.FrameTime;
     for (const connectionId of connectionIds) {

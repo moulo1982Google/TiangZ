@@ -3613,6 +3613,8 @@ fn wrong_entity_type(handle: u32, expected: &str) -> JsErrorBox {
 mod tests {
     use super::*;
     use serde::Deserialize;
+    use std::hint::black_box;
+    use std::time::Instant;
 
     #[test]
     fn map_bounds_reserve_the_outer_cell_for_a_three_by_three_unit() {
@@ -4068,6 +4070,70 @@ mod tests {
             assert_eq!(payload_offset, frame.len());
         }
         assert_eq!(offset, bytes.len());
+    }
+
+    /// 手工运行的AOI路由编码基准，不进入普通测试与CI。
+    /// Manual AOI route-encoding benchmark excluded from regular tests and CI.
+    #[test]
+    #[ignore = "run manually when evaluating Map movement route encoding"]
+    fn benchmark_dense_aoi_route_encoding() {
+        for player_count in [2_000_u32, 3_000] {
+            let mut world = AoiWorld::new(
+                10_000,
+                0,
+                0,
+                10,
+                10,
+                1,
+                1,
+                vec![SyncTier {
+                    radius_grids: 1,
+                    interval_ticks: 1,
+                }],
+            )
+            .unwrap();
+            let mut records = Vec::with_capacity(player_count as usize);
+            for offset in 0..player_count {
+                let unit_id = offset + 1;
+                let grid = offset % 100;
+                let x = ((grid % 10) * 10 + 5) as f32;
+                let z = ((grid / 10) * 10 + 5) as f32;
+                world
+                    .attach_routed(unit_id, x, z, true, true, offset % 12 + 1)
+                    .unwrap();
+                records.push(encode_snapshot(&unit_hot(unit_id), false));
+            }
+            world.take_changes();
+            for offset in (0..player_count).step_by(5) {
+                let unit_id = offset + 1;
+                let grid = offset % 100;
+                let next_x = (((grid % 10 + 1) % 10) * 10 + 5) as f32;
+                let z = ((grid / 10) * 10 + 5) as f32;
+                world.relocate(unit_id, next_x, z).unwrap();
+            }
+            world.take_changes();
+            let mut scratch = AoiRouteFrameScratch::default();
+            let mut encoded_bytes = 0_usize;
+            let started = Instant::now();
+            for tick in 1..=100 {
+                let result = encode_tiered_aoi_route_frames(
+                    &world,
+                    &records,
+                    tick,
+                    10_016,
+                    20_010,
+                    &mut scratch,
+                )
+                .unwrap();
+                encoded_bytes += result.len();
+                black_box(result);
+            }
+            eprintln!(
+                "players={player_count} avg_ms={:.3} avg_bytes={}",
+                started.elapsed().as_secs_f64() * 10.0,
+                encoded_bytes / 100,
+            );
+        }
     }
 
     #[test]

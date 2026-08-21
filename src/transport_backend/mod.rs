@@ -30,9 +30,33 @@ pub(crate) const MAX_INNER_TOKEN_LEN: usize = 1024;
 
 #[derive(Clone)]
 pub(crate) struct ConnectionWriter {
-    pub(crate) sender: mpsc::Sender<Bytes>,
+    pub(crate) sender: mpsc::Sender<ConnectionWriteBatch>,
     pub(crate) queued_bytes: Arc<AtomicUsize>,
+    pub(crate) queued_frames: Arc<AtomicUsize>,
     pub(crate) shutdown_tx: watch::Sender<bool>,
+}
+
+pub(crate) struct ConnectionWriteBatch {
+    pub(crate) frames: Vec<Bytes>,
+    pub(crate) frame_bytes: usize,
+}
+
+impl ConnectionWriteBatch {
+    fn single(frame: Bytes) -> Self {
+        let frame_bytes = frame.len();
+        Self {
+            frames: vec![frame],
+            frame_bytes,
+        }
+    }
+
+    pub(crate) fn from_frames(frames: Vec<Bytes>) -> Self {
+        let frame_bytes = frames.iter().map(Bytes::len).sum();
+        Self {
+            frames,
+            frame_bytes,
+        }
+    }
 }
 
 pub(crate) type ConnectionWriters = Arc<Mutex<HashMap<u64, ConnectionWriter>>>;
@@ -44,23 +68,50 @@ pub(crate) fn try_queue_connection_frame(
     writer: &ConnectionWriter,
     frame: Bytes,
 ) -> std::result::Result<(), String> {
-    let frame_len = frame.len();
+    try_queue_connection_batch(writer, ConnectionWriteBatch::single(frame))
+}
+
+pub(crate) fn try_queue_connection_batch(
+    writer: &ConnectionWriter,
+    batch: ConnectionWriteBatch,
+) -> std::result::Result<(), String> {
+    let frame_count = batch.frames.len();
+    if frame_count == 0 {
+        return Ok(());
+    }
+    let frame_bytes = batch.frame_bytes;
     let queued = writer
         .queued_bytes
-        .fetch_add(frame_len, std::sync::atomic::Ordering::Relaxed)
-        + frame_len;
+        .fetch_add(frame_bytes, std::sync::atomic::Ordering::Relaxed)
+        + frame_bytes;
     if queued > CONNECTION_OUTBOUND_BYTE_CAPACITY {
         writer
             .queued_bytes
-            .fetch_sub(frame_len, std::sync::atomic::Ordering::Relaxed);
+            .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
         return Err("connection outbound byte queue is full".to_string());
     }
-    match writer.sender.try_send(frame) {
+    let queued_frames = writer
+        .queued_frames
+        .fetch_add(frame_count, std::sync::atomic::Ordering::Relaxed)
+        + frame_count;
+    if queued_frames > CONNECTION_OUTBOUND_FRAME_CAPACITY {
+        writer
+            .queued_frames
+            .fetch_sub(frame_count, std::sync::atomic::Ordering::Relaxed);
+        writer
+            .queued_bytes
+            .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
+        return Err("connection outbound frame queue is full".to_string());
+    }
+    match writer.sender.try_send(batch) {
         Ok(()) => Ok(()),
         Err(_) => {
             writer
+                .queued_frames
+                .fetch_sub(frame_count, std::sync::atomic::Ordering::Relaxed);
+            writer
                 .queued_bytes
-                .fetch_sub(frame_len, std::sync::atomic::Ordering::Relaxed);
+                .fetch_sub(frame_bytes, std::sync::atomic::Ordering::Relaxed);
             Err("connection outbound frame queue is full or stopped".to_string())
         }
     }

@@ -144,9 +144,9 @@ export interface ProcessNetworkConfig {
 
 export interface ProcessSchedulingConfig {
   mode?: "low-latency" | "throughput" | "adaptive";
-  idleTickMs?: number;
-  maxEventsPerUpdate?: number;
-  coalesceMicros?: number;
+  idleTickMs?: number | null;
+  maxEventsPerUpdate?: number | null;
+  coalesceMicros?: number | null;
 }
 
 export interface ProcessObservabilityConfig {
@@ -192,6 +192,7 @@ export interface SceneUpdateResult {
   outbound: OutboundBatch[];
   metrics?: SceneMetricsSnapshot;
   pendingAsync: boolean;
+  pendingIngress: boolean;
 }
 
 export interface SceneMetricsSnapshot {
@@ -207,6 +208,8 @@ export interface SceneMetricsSnapshot {
   messageHandlerFailures: number;
   ingressQueueLength: number;
   maxIngressQueueLength: number;
+  lastIngressPumpFrames: number;
+  lastIngressPumpCostMs: number;
   lastUpdateCostMs: number;
   lastHandlerCostMs: number;
   maxHandlerCostMs: number;
@@ -284,6 +287,7 @@ interface PendingLatestActorLocationFrame {
 
 export abstract class EntryScene extends Scene {
   private static readonly MAX_UNORDERED_IN_FLIGHT = 4096;
+  private static readonly MAX_CONSECUTIVE_DATA_INGRESS = 8;
   private static readonly MAX_TRANSFER_FRAMES_PER_CONNECTION = 64;
   private static readonly MAX_TRANSFER_BYTES_PER_CONNECTION = 256 * 1024;
   private static readonly MAX_TRANSFER_WAIT_MS = 3_000;
@@ -297,11 +301,26 @@ export abstract class EntryScene extends Scene {
   private readonly processHost: ProcessHost;
   protected readonly actorLocations = new ActorLocationDirectory();
   protected readonly mailbox: SceneMailboxType = "ordered";
-  private readonly ingress: QueuedEvent[] = [];
-  private ingressHead = 0;
+  private readonly controlIngress: QueuedEvent[] = [];
+  private controlIngressHead = 0;
+  private readonly dataIngress: QueuedEvent[] = [];
+  private dataIngressHead = 0;
+  private consecutiveDataIngress = 0;
   private readonly outboundControl: OutboundBatch[] = [];
   private readonly outboundReliable: OutboundBatch[] = [];
   private readonly outboundLatest: OutboundBatch[] = [];
+  private outboundReliableEnqueued = 0;
+  private outboundLatestEnqueued = 0;
+  private readonly outboundLaneDepths = {
+    control: 0,
+    reliable: 0,
+    latest: 0,
+    total: 0,
+    maxControl: 0,
+    maxReliable: 0,
+    maxLatest: 0,
+    maxTotal: 0,
+  };
   private mailboxTaskHead = 0;
   private readonly recycledMailboxTasks: MailboxTask[] = [];
   private readonly mailboxMetrics = {
@@ -357,6 +376,8 @@ export abstract class EntryScene extends Scene {
     handlerNotFound: 0,
     messageHandlerFailures: 0,
     maxIngressQueueLength: 0,
+    lastIngressPumpFrames: 0,
+    lastIngressPumpCostMs: 0,
     lastUpdateCostMs: 0,
     lastHandlerCostMs: 0,
     maxHandlerCostMs: 0,
@@ -521,6 +542,16 @@ export abstract class EntryScene extends Scene {
    * not successfully written to the network, and must never extend liveness.
    */
   protected onClientSendQueued(_connectionIds: readonly number[]): void {}
+
+  /**
+   * 可覆盖状态进入宿主出站队列时触发；默认不做逐连接观测，避免高频状态扇出重复访问会话表。
+   * 需要观测 latest 流量时应维护聚合计数，不能在这里执行逐连接业务逻辑。
+   *
+   * Invoked for replaceable state queued to the host. The default avoids
+   * per-connection bookkeeping on high-frequency fan-out. Overrides should
+   * maintain aggregate counters rather than perform per-connection business work.
+   */
+  protected onClientLatestFrameQueued(_connectionIds: readonly number[]): void {}
 
   /** 导出Gate迁移屏障的有界队列和累计结果，不包含连接ID等高基数标签。 / Exports bounded Gate transfer queues and cumulative outcomes without high-cardinality connection labels. */
   protected actorTransferMetricSnapshot(): CustomMetricSnapshot {
@@ -718,7 +749,20 @@ export abstract class EntryScene extends Scene {
       connectionId,
       frame,
       queuedAtMs: this.latencies.enabled ? nowMs() : 0,
-    });
+    }, false);
+  }
+
+  pushHostControlFrame(connectionId: number, frame: Uint8Array): void {
+    if (this.isDisconnectedFrame(connectionId)) {
+      this.droppedFramesAfterDisconnect += 1;
+      return;
+    }
+    this.enqueueIngress({
+      kind: "frame",
+      connectionId,
+      frame,
+      queuedAtMs: this.latencies.enabled ? nowMs() : 0,
+    }, true);
   }
 
   pushHostDisconnect(connectionId: number): void {
@@ -727,11 +771,11 @@ export abstract class EntryScene extends Scene {
       kind: "disconnect",
       connectionId,
       queuedAtMs: this.latencies.enabled ? nowMs() : 0,
-    });
+    }, true);
   }
 
-  private enqueueIngress(event: QueuedEvent): void {
-    this.ingress.push(event);
+  private enqueueIngress(event: QueuedEvent, control: boolean): void {
+    (control ? this.controlIngress : this.dataIngress).push(event);
     this.metrics.maxIngressQueueLength = Math.max(
       this.metrics.maxIngressQueueLength,
       this.ingressLength,
@@ -740,16 +784,20 @@ export abstract class EntryScene extends Scene {
 
   /** 每次进程 Update 消费有界入站队列，并返回打包后的出站任务。 / Drains bounded ingress and returns packed outbound work once per process update. */
   update(maxFrames = 512, includeMetrics = true): SceneUpdateResult {
-    const startedAt = this.__pumpMailbox(maxFrames);
+    const startedAt = nowMs();
+    this.__pumpMailbox(maxFrames);
     return this.__completeUpdate(startedAt, includeMetrics);
   }
 
   __pumpMailbox(maxFrames = 512): number {
     this.expireActorTransfers(nowMs());
     const startedAt = nowMs();
-    if (this.mailbox === "unordered") this.drainUnordered(maxFrames);
-    else this.drainOrdered(maxFrames);
-    return startedAt;
+    const processed = this.mailbox === "unordered"
+      ? this.drainUnordered(maxFrames)
+      : this.drainOrdered(maxFrames);
+    this.metrics.lastIngressPumpFrames = processed;
+    this.metrics.lastIngressPumpCostMs = nowMs() - startedAt;
+    return processed;
   }
 
   __completeUpdate(startedAt: number, includeMetrics = true): SceneUpdateResult {
@@ -847,7 +895,8 @@ export abstract class EntryScene extends Scene {
     frame: Uint8Array,
     delivery: ClientFrameDelivery = "reliable",
   ): void {
-    this.onClientSendQueued([connectionId]);
+    if (delivery === "latest") this.onClientLatestFrameQueued([connectionId]);
+    else this.onClientSendQueued([connectionId]);
     this.outboundQueue(delivery).push({
       connectionIdBytes: this.packConnectionId(connectionId),
       frame,
@@ -865,7 +914,8 @@ export abstract class EntryScene extends Scene {
       this.sendClientFrame(connectionIds[0]!, frame, delivery);
       return;
     }
-    this.onClientSendQueued(connectionIds);
+    if (delivery === "latest") this.onClientLatestFrameQueued(connectionIds);
+    else this.onClientSendQueued(connectionIds);
     this.outboundQueue(delivery).push({
       connectionIdBytes: packConnectionIds(connectionIds),
       frame,
@@ -914,6 +964,8 @@ export abstract class EntryScene extends Scene {
       messageHandlerFailures: this.metrics.messageHandlerFailures,
       ingressQueueLength: this.ingressLength,
       maxIngressQueueLength: this.metrics.maxIngressQueueLength,
+      lastIngressPumpFrames: this.metrics.lastIngressPumpFrames,
+      lastIngressPumpCostMs: this.metrics.lastIngressPumpCostMs,
       lastUpdateCostMs: this.metrics.lastUpdateCostMs,
       lastHandlerCostMs: this.metrics.lastHandlerCostMs,
       maxHandlerCostMs: this.metrics.maxHandlerCostMs,
@@ -924,6 +976,33 @@ export abstract class EntryScene extends Scene {
       latencies: this.latencies.snapshot(),
       customMetrics: [
         this.actorLatestForwardMetricSnapshot(),
+        {
+          name: "outbound_lanes",
+          values: {
+            outbound_control_depth: this.outboundLaneDepths.control,
+            outbound_reliable_depth: this.outboundLaneDepths.reliable,
+            outbound_latest_depth: this.outboundLaneDepths.latest,
+            outbound_total_depth: this.outboundLaneDepths.total,
+            outbound_control_depth_max: this.outboundLaneDepths.maxControl,
+            outbound_reliable_depth_max: this.outboundLaneDepths.maxReliable,
+            outbound_latest_depth_max: this.outboundLaneDepths.maxLatest,
+            outbound_total_depth_max: this.outboundLaneDepths.maxTotal,
+            outbound_reliable_enqueued_total: this.outboundReliableEnqueued,
+            outbound_latest_enqueued_total: this.outboundLatestEnqueued,
+          },
+          kinds: {
+            outbound_control_depth: "gauge",
+            outbound_reliable_depth: "gauge",
+            outbound_latest_depth: "gauge",
+            outbound_total_depth: "gauge",
+            outbound_control_depth_max: "gauge",
+            outbound_reliable_depth_max: "gauge",
+            outbound_latest_depth_max: "gauge",
+            outbound_total_depth_max: "gauge",
+            outbound_reliable_enqueued_total: "counter",
+            outbound_latest_enqueued_total: "counter",
+          },
+        },
         {
           name: "connection_ingress",
           values: {
@@ -973,6 +1052,18 @@ export abstract class EntryScene extends Scene {
   }
 
   private drainOutbound(): OutboundBatch[] {
+    const controlDepth = this.outboundControl.length;
+    const reliableDepth = this.outboundReliable.length;
+    const latestDepth = this.outboundLatest.length;
+    const totalDepth = controlDepth + reliableDepth + latestDepth;
+    this.outboundLaneDepths.control = controlDepth;
+    this.outboundLaneDepths.reliable = reliableDepth;
+    this.outboundLaneDepths.latest = latestDepth;
+    this.outboundLaneDepths.total = totalDepth;
+    this.outboundLaneDepths.maxControl = Math.max(this.outboundLaneDepths.maxControl, controlDepth);
+    this.outboundLaneDepths.maxReliable = Math.max(this.outboundLaneDepths.maxReliable, reliableDepth);
+    this.outboundLaneDepths.maxLatest = Math.max(this.outboundLaneDepths.maxLatest, latestDepth);
+    this.outboundLaneDepths.maxTotal = Math.max(this.outboundLaneDepths.maxTotal, totalDepth);
     const control = this.outboundControl.splice(0, this.outboundControl.length);
     const reliable = this.outboundReliable.splice(0, this.outboundReliable.length);
     const latest = this.outboundLatest.splice(0, this.outboundLatest.length);
@@ -982,25 +1073,42 @@ export abstract class EntryScene extends Scene {
   }
 
   private outboundQueue(delivery: ClientFrameDelivery): OutboundBatch[] {
-    return delivery === "latest" ? this.outboundLatest : this.outboundReliable;
+    if (delivery === "latest") {
+      this.outboundLatestEnqueued += 1;
+      return this.outboundLatest;
+    }
+    this.outboundReliableEnqueued += 1;
+    return this.outboundReliable;
   }
 
   private get ingressLength(): number {
-    return this.ingress.length - this.ingressHead;
+    return this.controlIngress.length - this.controlIngressHead +
+      this.dataIngress.length - this.dataIngressHead;
   }
 
   private dequeueIngress(): QueuedEvent | undefined {
-    if (this.ingressHead >= this.ingress.length) return undefined;
-    const item = this.ingress[this.ingressHead++];
-    if (this.ingressHead === this.ingress.length) {
-      this.ingress.length = 0;
-      this.ingressHead = 0;
-    } else if (
-      this.ingressHead >= 1024 &&
-      this.ingressHead * 2 >= this.ingress.length
-    ) {
-      this.ingress.splice(0, this.ingressHead);
-      this.ingressHead = 0;
+    const controlAvailable = this.controlIngressHead < this.controlIngress.length;
+    const dataAvailable = this.dataIngressHead < this.dataIngress.length;
+    if (!controlAvailable && !dataAvailable) return undefined;
+    if (controlAvailable && (!dataAvailable || this.consecutiveDataIngress >= EntryScene.MAX_CONSECUTIVE_DATA_INGRESS)) {
+      this.consecutiveDataIngress = 0;
+      return this.dequeueIngressQueue(this.controlIngress, "controlIngressHead");
+    }
+    this.consecutiveDataIngress += 1;
+    return this.dequeueIngressQueue(this.dataIngress, "dataIngressHead");
+  }
+
+  private dequeueIngressQueue(
+    queue: QueuedEvent[],
+    headKey: "controlIngressHead" | "dataIngressHead",
+  ): QueuedEvent {
+    const item = queue[this[headKey]++];
+    if (this[headKey] === queue.length) {
+      queue.length = 0;
+      this[headKey] = 0;
+    } else if (this[headKey] >= 1024 && this[headKey] * 2 >= queue.length) {
+      queue.splice(0, this[headKey]);
+      this[headKey] = 0;
     }
     return item;
   }
@@ -1014,13 +1122,17 @@ export abstract class EntryScene extends Scene {
       pendingAsync: this.orderedTask !== undefined ||
         this.unorderedTasks.size > 0 ||
         this.Tasks.InFlightCount > 0,
+      pendingIngress: this.ingressLength > 0,
     };
   }
 
-  private drainOrdered(maxFrames: number): void {
-    if (this.orderedTask) return;
+  private drainOrdered(maxFrames: number): number {
+    if (this.orderedTask) return 0;
     let processed = 0;
-    while (this.ingressLength > 0 && processed < maxFrames) {
+    while (
+      this.ingressLength > 0 &&
+      processed < maxFrames
+    ) {
       const item = this.dequeueIngress()!;
       const result = this.dispatchMailbox(() => this.processIngress(item));
       processed += 1;
@@ -1037,9 +1149,10 @@ export abstract class EntryScene extends Scene {
         break;
       }
     }
+    return processed;
   }
 
-  private drainUnordered(maxFrames: number): void {
+  private drainUnordered(maxFrames: number): number {
     let processed = 0;
     while (
       this.ingressLength > 0 &&
@@ -1069,6 +1182,7 @@ export abstract class EntryScene extends Scene {
       }
       processed += 1;
     }
+    return processed;
   }
 
   private dispatchMailbox<T>(run: () => MaybePromise<T>): MaybePromise<T> {

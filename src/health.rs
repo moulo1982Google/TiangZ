@@ -157,6 +157,8 @@ pub(crate) struct SceneObservabilitySnapshot {
     pub(crate) message_handler_failures: u64,
     pub(crate) ingress_queue_length: u64,
     pub(crate) max_ingress_queue_length: u64,
+    pub(crate) last_ingress_pump_frames: u64,
+    pub(crate) last_ingress_pump_cost_ms: f64,
     pub(crate) async_in_flight: u64,
     pub(crate) max_async_in_flight: u64,
     pub(crate) mailbox: MailboxObservabilitySnapshot,
@@ -2171,6 +2173,23 @@ fn append_scene_metrics_prometheus(
         .expect("formatting metric type");
     writeln!(
         output,
+        "# HELP tiangz_scene_last_ingress_pump_frames Frames consumed by the latest Scene ingress pump"
+    )
+    .expect("formatting metric help");
+    writeln!(output, "# TYPE tiangz_scene_last_ingress_pump_frames gauge")
+        .expect("formatting metric type");
+    writeln!(
+        output,
+        "# HELP tiangz_scene_last_ingress_pump_cost_ms Latest Scene ingress pump cost ms"
+    )
+    .expect("formatting metric help");
+    writeln!(
+        output,
+        "# TYPE tiangz_scene_last_ingress_pump_cost_ms gauge"
+    )
+    .expect("formatting metric type");
+    writeln!(
+        output,
         "# HELP tiangz_scene_last_update_cost_ms Latest scene update cost ms"
     )
     .expect("formatting metric help");
@@ -2338,6 +2357,18 @@ fn append_scene_metrics_prometheus(
             output,
             "tiangz_scene_mailbox_max_queued_depth{{{}}} {}",
             labels, snapshot.mailbox.max_queued_depth
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_last_ingress_pump_frames{{{}}} {}",
+            labels, snapshot.last_ingress_pump_frames
+        )
+        .expect("formatting metric");
+        writeln!(
+            output,
+            "tiangz_scene_last_ingress_pump_cost_ms{{{}}} {:.3}",
+            labels, snapshot.last_ingress_pump_cost_ms
         )
         .expect("formatting metric");
         writeln!(
@@ -2997,6 +3028,8 @@ mod tests {
             scenes: vec![SceneObservabilitySnapshot {
                 scene: "map_1".to_string(),
                 scene_type: "MapHost".to_string(),
+                last_ingress_pump_frames: 17,
+                last_ingress_pump_cost_ms: 4.5,
                 mailbox: MailboxObservabilitySnapshot {
                     queued_calls: 5,
                     max_queued_depth: 9,
@@ -3023,6 +3056,9 @@ mod tests {
         );
         assert!(body.contains(
             "tiangz_scene_mailbox_queued_calls_total{process=\"process-1\",scene=\"map_1\",scene_type=\"MapHost\"} 5"
+        ));
+        assert!(body.contains(
+            "tiangz_scene_last_ingress_pump_frames{process=\"process-1\",scene=\"map_1\",scene_type=\"MapHost\"} 17"
         ));
     }
 

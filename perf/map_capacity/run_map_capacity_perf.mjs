@@ -599,6 +599,7 @@ function runtimeConfig(name, scenes, knownScenes, healthPort) {
   return {
     process: {
       name,
+      ...(name === "map1" ? { game: { maxCatchUpSteps: 3 } } : {}),
       ...(Object.keys(observability).length > 0 ? { observability } : {}),
       network: {
         ioBackend: options.ioBackend,
@@ -788,6 +789,8 @@ async function readProcessHealthMetrics(runtime) {
       gameFixedUpdateMs: metric("tiangz_game_fixed_update_ms"),
       gameFrameCount: metric("tiangz_game_frame_count_total"),
       gameSkippedFixedUpdates: metric("tiangz_game_skipped_fixed_updates_total"),
+      sceneIngressPumpFrames: metric("tiangz_scene_last_ingress_pump_frames"),
+      sceneIngressPumpCostMs: metric("tiangz_scene_last_ingress_pump_cost_ms"),
       timestampMs: metric("tiangz_process_metrics_timestamp_ms"),
       outboundBatches: metric("tiangz_process_outbound_batches_total"),
       outboundRecipients: metric("tiangz_process_outbound_recipients_total"),
@@ -832,6 +835,7 @@ async function readProcessHealthMetrics(runtime) {
       mapBroadcast: readMapBroadcastMetrics(body),
       mapEntry: readMapEntryMetrics(body),
       actorLatestForward: readActorLatestForwardMetrics(body),
+      outboundLanes: readOutboundLaneMetrics(body),
     };
   } catch {
     return { process: runtime.name };
@@ -1002,6 +1006,22 @@ function readActorLatestForwardMetrics(body) {
     failedBatches: metric("failed_batches_total"),
     failedFrames: metric("failed_frames_total"),
     dropped: metric("dropped_total"),
+  };
+}
+
+function readOutboundLaneMetrics(body) {
+  const metric = (key) => prometheusCustomMetricSum(body, key, "outbound_lanes");
+  return {
+    controlDepth: metric("outbound_control_depth"),
+    reliableDepth: metric("outbound_reliable_depth"),
+    latestDepth: metric("outbound_latest_depth"),
+    totalDepth: metric("outbound_total_depth"),
+    maxControlDepth: metric("outbound_control_depth_max"),
+    maxReliableDepth: metric("outbound_reliable_depth_max"),
+    maxLatestDepth: metric("outbound_latest_depth_max"),
+    maxTotalDepth: metric("outbound_total_depth_max"),
+    reliableEnqueued: metric("outbound_reliable_enqueued_total"),
+    latestEnqueued: metric("outbound_latest_enqueued_total"),
   };
 }
 
@@ -1287,6 +1307,10 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
         completeNativeDataSamples.length,
       ),
       actorLatestForward: summarizeActorLatestForward(actorLatestForwardSamples),
+      outboundLanes: summarizeOutboundLanes(selected.map((sample) => ({
+        timestampMs: sample.timestampMs,
+        ...sample.outboundLanes,
+      }))),
     };
   });
   const map = processes.find((item) => item.process === "map1");
@@ -1301,6 +1325,27 @@ function collectRuntimeResources(runtimes, startedAt, endedAt, healthSamples = n
     gateOutboundRecipientsPerSecond: sum(gates.map((item) => item.outboundRecipientsPerSecond)),
     gateOutboundBridgeBytesPerSecond: sum(gates.map((item) => item.outboundBridgeBytesPerSecond)),
     gateOutboundLogicalBytesPerSecond: sum(gates.map((item) => item.outboundLogicalBytesPerSecond)),
+    gateOutboundReliableEnqueuedPerSecond: sum(
+      gates.map((item) => item.outboundLanes?.reliableEnqueuedPerSecond ?? 0),
+    ),
+    gateOutboundLatestEnqueuedPerSecond: sum(
+      gates.map((item) => item.outboundLanes?.latestEnqueuedPerSecond ?? 0),
+    ),
+    gateOutboundControlDepth: sum(gates.map((item) => item.outboundLanes?.controlDepth ?? 0)),
+    gateOutboundReliableDepth: sum(gates.map((item) => item.outboundLanes?.reliableDepth ?? 0)),
+    gateOutboundLatestDepth: sum(gates.map((item) => item.outboundLanes?.latestDepth ?? 0)),
+    gateOutboundMaxControlDepth: max(
+      gates.map((item) => item.outboundLanes?.maxControlDepth ?? 0),
+    ),
+    gateOutboundMaxReliableDepth: max(
+      gates.map((item) => item.outboundLanes?.maxReliableDepth ?? 0),
+    ),
+    gateOutboundMaxLatestDepth: max(
+      gates.map((item) => item.outboundLanes?.maxLatestDepth ?? 0),
+    ),
+    gateOutboundMaxTotalDepth: max(
+      gates.map((item) => item.outboundLanes?.maxTotalDepth ?? 0),
+    ),
     gateTransportReadOpsPerSecond: sum(gates.map((item) => item.transportReadOpsPerSecond)),
     gateTransportReadFramesPerSecond: sum(gates.map((item) => item.transportReadFramesPerSecond)),
     gateTransportWriteOpsPerSecond: sum(gates.map((item) => item.transportWriteOpsPerSecond)),
@@ -1389,6 +1434,12 @@ function summarizeProcess(fallbackName, samples, last) {
     gameFixedUpdateMs: selectedLast?.gameFixedUpdateMs ?? 0,
     gameFramesPerSecond: counterRate(samples, "gameFrameCount"),
     gameSkippedFixedUpdates: counterDelta(samples, "gameSkippedFixedUpdates"),
+    sceneIngressPumpFramesAverage: average(samples.map(
+      (item) => item.sceneIngressPumpFrames ?? 0,
+    )),
+    sceneIngressPumpCostMsAverage: average(samples.map(
+      (item) => item.sceneIngressPumpCostMs ?? 0,
+    )),
     outboundBatchesPerSecond: counterRate(samples, "outboundBatches"),
     outboundRecipientsPerSecond: counterRate(samples, "outboundRecipients"),
     outboundBridgeBytesPerSecond: counterRate(samples, "outboundBridgeBytes"),
@@ -1587,6 +1638,22 @@ function summarizeActorLatestForward(samples) {
   };
 }
 
+function summarizeOutboundLanes(samples) {
+  const last = samples.at(-1) ?? {};
+  return {
+    controlDepth: last.controlDepth ?? 0,
+    reliableDepth: last.reliableDepth ?? 0,
+    latestDepth: last.latestDepth ?? 0,
+    totalDepth: last.totalDepth ?? 0,
+    maxControlDepth: max(samples.map((item) => item.maxControlDepth ?? 0)),
+    maxReliableDepth: max(samples.map((item) => item.maxReliableDepth ?? 0)),
+    maxLatestDepth: max(samples.map((item) => item.maxLatestDepth ?? 0)),
+    maxTotalDepth: max(samples.map((item) => item.maxTotalDepth ?? 0)),
+    reliableEnqueuedPerSecond: counterRate(samples, "reliableEnqueued"),
+    latestEnqueuedPerSecond: counterRate(samples, "latestEnqueued"),
+  };
+}
+
 function summarizeMapEntry(samples) {
   const last = samples.at(-1) ?? {};
   return {
@@ -1655,6 +1722,12 @@ function aggregateCases(rounds) {
       )),
       mapSkippedFixedUpdates: max(group.map(
         (item) => item.serverResources.map?.gameSkippedFixedUpdates ?? 0,
+      )),
+      mapIngressPumpFramesAverage: median(group.map(
+        (item) => item.serverResources.map?.sceneIngressPumpFramesAverage ?? 0,
+      )),
+      mapIngressPumpCostMsAverage: median(group.map(
+        (item) => item.serverResources.map?.sceneIngressPumpCostMsAverage ?? 0,
       )),
       mapUpdatesPerSecond: median(group.map(
         (item) => item.serverResources.map?.mapBroadcast?.updatesPerSecond ?? 0,
@@ -1954,6 +2027,33 @@ function aggregateCases(rounds) {
       gateOutboundLogicalBytesPerSecond: median(group.map(
         (item) => item.serverResources.gateOutboundLogicalBytesPerSecond,
       )),
+      gateOutboundReliableEnqueuedPerSecond: median(group.map(
+        (item) => item.serverResources.gateOutboundReliableEnqueuedPerSecond,
+      )),
+      gateOutboundLatestEnqueuedPerSecond: median(group.map(
+        (item) => item.serverResources.gateOutboundLatestEnqueuedPerSecond,
+      )),
+      gateOutboundControlDepth: median(group.map(
+        (item) => item.serverResources.gateOutboundControlDepth,
+      )),
+      gateOutboundReliableDepth: median(group.map(
+        (item) => item.serverResources.gateOutboundReliableDepth,
+      )),
+      gateOutboundLatestDepth: median(group.map(
+        (item) => item.serverResources.gateOutboundLatestDepth,
+      )),
+      gateOutboundMaxControlDepth: median(group.map(
+        (item) => item.serverResources.gateOutboundMaxControlDepth,
+      )),
+      gateOutboundMaxReliableDepth: median(group.map(
+        (item) => item.serverResources.gateOutboundMaxReliableDepth,
+      )),
+      gateOutboundMaxLatestDepth: median(group.map(
+        (item) => item.serverResources.gateOutboundMaxLatestDepth,
+      )),
+      gateOutboundMaxTotalDepth: median(group.map(
+        (item) => item.serverResources.gateOutboundMaxTotalDepth,
+      )),
       gateLifecycleOutboundBridgeBytes: median(group.map(
         (item) => item.serverResources.gateLifecycleOutboundBridgeBytes,
       )),
@@ -2218,8 +2318,8 @@ function renderMarkdown(report) {
     "",
     "## Map Tick健康度",
     "",
-    "| 玩家 | 配置Tick | Runtime frame/s | Map update/s（中位/最差达标率） | 跳过固定帧max | Movement/AOI/Encode 每次Update |",
-    "|---:|---:|---:|---:|---:|---:|",
+    "| 玩家 | 配置Tick | Runtime frame/s | Map update/s（中位/最差达标率） | 跳过固定帧max | 入口frames/ms | Movement/AOI/Encode 每次Update |",
+    "|---:|---:|---:|---:|---:|---:|---:|",
   );
   for (const item of report.cases) {
     const value = item.median;
@@ -2228,7 +2328,9 @@ function renderMarkdown(report) {
       `| ${item.players} | ${round(configuredHz, 1)}Hz (${round(value.mapFixedUpdateMs, 1)}ms) | ` +
       `${round(value.mapFramesPerSecond, 1)} | ${round(value.mapUpdatesPerSecond, 1)}（${round(value.mapUpdateTargetPercent, 1)}%/` +
       `${round(value.mapUpdateTargetPercentMin, 1)}%） | ` +
-      `${round(value.mapSkippedFixedUpdates)} | ${round(value.mapMovementAdvanceAverageMs, 2)}/` +
+      `${round(value.mapSkippedFixedUpdates)} | ${round(value.mapIngressPumpFramesAverage, 1)}/` +
+      `${round(value.mapIngressPumpCostMsAverage, 2)}ms | ` +
+      `${round(value.mapMovementAdvanceAverageMs, 2)}/` +
       `${round(value.mapAoiRefreshAverageMs, 2)}/${round(value.mapMovementEncodeAverageMs, 2)}ms |`,
     );
   }
@@ -2450,6 +2552,24 @@ function renderMarkdown(report) {
       `${round(value.gateOutboundRecipientsPerSecond)} | ${round(recipientsPerBatch, 2)} | ` +
       `${formatRate(value.gateOutboundBridgeBytesPerSecond)} | ` +
       `${formatRate(value.gateOutboundLogicalBytesPerSecond)} |`,
+    );
+  }
+  lines.push(
+    "",
+    "## Gate 出站通道",
+    "",
+    "| 玩家 | reliable enqueue/s | latest enqueue/s | last control/reliable/latest | 单Gate max control/reliable/latest/total |",
+    "|---:|---:|---:|---:|---:|",
+  );
+  for (const item of report.cases) {
+    const value = item.median;
+    lines.push(
+      `| ${item.players} | ${round(value.gateOutboundReliableEnqueuedPerSecond)} | ` +
+      `${round(value.gateOutboundLatestEnqueuedPerSecond)} | ` +
+      `${round(value.gateOutboundControlDepth)}/${round(value.gateOutboundReliableDepth)}/` +
+      `${round(value.gateOutboundLatestDepth)} | ${round(value.gateOutboundMaxControlDepth)}/` +
+      `${round(value.gateOutboundMaxReliableDepth)}/${round(value.gateOutboundMaxLatestDepth)}/` +
+      `${round(value.gateOutboundMaxTotalDepth)} |`,
     );
   }
   lines.push(

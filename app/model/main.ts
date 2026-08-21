@@ -79,6 +79,8 @@ function pushHostEventsBinary(batch: Uint8Array): string {
     offset = payloadEnd;
     if (eventType === 1) {
       processRuntime.pushHostFrame(sceneIndex, connectionId, payload);
+    } else if (eventType === 5) {
+      processRuntime.pushHostControlFrame(sceneIndex, connectionId, payload);
     } else if (eventType === 2) {
       processRuntime.pushHostDisconnect(sceneIndex, connectionId);
     } else if (eventType === 3 || eventType === 4) {
@@ -105,13 +107,16 @@ function flushUpdateResult(result: ProcessUpdateResult, sampleMetrics: boolean):
   if (outbound.length > 0) {
     hostPushOutboundPacked(packOutbound(outbound));
   }
-  if (!sampleMetrics) return result.pendingAsync ? "1" : "0";
+  if (!sampleMetrics) {
+    return String((result.pendingAsync ? 1 : 0) | (result.pendingIngress ? 2 : 0));
+  }
   return JSON.stringify({
     metrics: result.metrics,
     game: result.game,
     actorMailbox: result.actorMailbox,
     nativeData: NativeData.TakeMetrics(),
     pendingAsync: result.pendingAsync,
+    pendingIngress: result.pendingIngress,
   });
 }
 

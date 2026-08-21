@@ -40,6 +40,10 @@ interface AddMessage extends IMessage {
   value: number;
 }
 
+interface SlowMessage extends IMessage {
+  busyMs: number;
+}
+
 interface ReadRequest extends IRequest {}
 
 interface ReadResponse extends IResponse {
@@ -55,6 +59,12 @@ const Add = defineMessage({
   name: "HandlerProbe.Add",
   msgcode: 61001,
   codec: jsonCodec<AddMessage>(),
+});
+
+const Slow = defineMessage({
+  name: "HandlerProbe.Slow",
+  msgcode: 61007,
+  codec: jsonCodec<SlowMessage>(),
 });
 
 const Read = defineRpc({
@@ -162,6 +172,7 @@ class LatestActorInputHandler implements UnitMessageHandler<ActorForwardProbeUni
 @entryScene("HandlerProbe")
 class HandlerProbeScene extends EntryScene {
   readonly counter = this.AddComponent(CounterComponent, 10);
+  readonly handledValues: number[] = [];
 
   protected override onStart(): void {
     activeHandlerScene = this;
@@ -187,6 +198,7 @@ class OutboundPriorityProbeScene extends EntryScene {
     this.sendClientFrameMany([7], Uint8Array.from([0, 2]), "latest");
     this.sendClientFrameMany([7], Uint8Array.from([0, 1]), "reliable");
   }
+
 }
 
 @entryScene("SenderProbe")
@@ -264,7 +276,19 @@ class SessionWorkHandler implements SessionMessageHandler<
 @messageHandler(HandlerProbeScene, Add)
 class AddHandler implements SceneMessageHandler<HandlerProbeScene, AddMessage> {
   handle(scene: HandlerProbeScene, message: AddMessage): void {
+    scene.handledValues.push(message.value);
     scene.GetComponent(CounterComponent).value += message.value;
+  }
+}
+
+@messageHandler(HandlerProbeScene, Slow)
+class SlowHandler implements SceneMessageHandler<HandlerProbeScene, SlowMessage> {
+  handle(scene: HandlerProbeScene, message: SlowMessage): void {
+    const deadline = performance.now() + message.busyMs;
+    while (performance.now() < deadline) {
+      // Deliberately occupy the synchronous V8 handler for the fairness regression.
+    }
+    scene.GetComponent(CounterComponent).value += 1;
   }
 }
 
@@ -300,10 +324,110 @@ async function main(): Promise<void> {
   await testLocalSceneSendFastPath();
   await testLatestActorForwardBatch();
   await testSynchronousMailboxDrain();
+  await testHostNullSchedulingProjection();
+  await testControlIngressPriorityAndDataFairness();
+  await testRuntimePumpFairness();
   await testClientOutboundPriority();
   await testExternalHandlerDispatch();
   await testSessionMailboxAndDisconnect();
   console.log("entry scene handler self-test passed");
+}
+
+async function testControlIngressPriorityAndDataFairness(): Promise<void> {
+  const config = sceneConfig();
+  const runtime = new ProcessRuntime({
+    process: {
+      name: "control-ingress-priority-self-test",
+      scheduling: { maxEventsPerUpdate: 64 },
+    },
+    scenes: [config],
+    knownScenes: [config],
+    tickMs: 50,
+  });
+  await runtime.start();
+  const frame = (value: number) => packFrame(Add.msgcode, Add.codec.encode({ value }));
+  for (let value = 100; value < 180; value += 1) {
+    runtime.pushHostFrame(0, 7, frame(value));
+  }
+  for (let value = 1; value <= 10; value += 1) {
+    runtime.pushHostControlFrame(0, 7, frame(value));
+  }
+
+  await runtime.update();
+  assert.equal(activeHandlerScene!.handledValues.length, 64);
+  assert.deepEqual(
+    activeHandlerScene!.handledValues.slice(0, 18),
+    [100, 101, 102, 103, 104, 105, 106, 107, 1, 108, 109, 110, 111, 112, 113, 114, 115, 2],
+    "control ingress must make bounded progress without starving the dominant data stream",
+  );
+  await runtime.stop();
+}
+
+async function testHostNullSchedulingProjection(): Promise<void> {
+  const config = outboundPrioritySceneConfig();
+  const runtime = new ProcessRuntime({
+    process: {
+      name: "host-null-scheduling-self-test",
+      scheduling: {
+        mode: "adaptive",
+        idleTickMs: null,
+        maxEventsPerUpdate: null,
+        coalesceMicros: null,
+      },
+    },
+    scenes: [config],
+    knownScenes: [config],
+    tickMs: 50,
+  });
+  await runtime.start();
+  await runtime.update();
+  await runtime.stop();
+}
+
+async function testRuntimePumpFairness(): Promise<void> {
+  const first = sceneConfig();
+  const second = { ...first, name: "handler-probe-2" };
+  const runtime = new ProcessRuntime({
+    process: {
+      name: "runtime-pump-fairness-self-test",
+      game: { fixedUpdateMs: 10, maxCatchUpSteps: 2 },
+      scheduling: { maxEventsPerUpdate: 8 },
+    },
+    scenes: [first, second],
+    knownScenes: [first, second],
+    tickMs: 10,
+  });
+  await runtime.start();
+  const baseline = await runtime.update();
+  for (let index = 0; index < 20; index += 1) {
+    runtime.pushHostFrame(
+      0,
+      7,
+      packFrame(Slow.msgcode, Slow.codec.encode({ busyMs: 2 })),
+    );
+  }
+  runtime.pushHostFrame(
+    1,
+    8,
+    packFrame(Slow.msgcode, Slow.codec.encode({ busyMs: 2 })),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 12));
+
+  let result = await runtime.update();
+  assert.equal(result.pendingIngress, true);
+  assert.equal(runtime.CanCommitHotfix, false, "queued ingress must keep the Hotfix barrier closed");
+  assert.ok(
+    result.game.frameCount > baseline.game.frameCount,
+    "fixed Tick must progress even while Scene ingress remains continuously non-empty",
+  );
+  assert.equal(result.game.skippedFixedUpdates, baseline.game.skippedFixedUpdates);
+  assert.equal(result.metrics.find((item) => item.scene === second.name)?.processedFrames, 1);
+  for (let attempt = 0; result.pendingIngress && attempt < 30; attempt += 1) {
+    result = await runtime.update();
+  }
+  assert.equal(result.pendingIngress, false);
+  assert.equal(runtime.CanCommitHotfix, true, "Hotfix may commit only after ingress is fully drained");
+  await runtime.stop();
 }
 
 async function testClientOutboundPriority(): Promise<void> {
@@ -323,6 +447,16 @@ async function testClientOutboundPriority(): Promise<void> {
     [1, 2],
     "reliable client frames must drain before replaceable latest state",
   );
+  const outboundLanes = result.metrics
+    .flatMap((scene) => scene.customMetrics)
+    .find((metric) => metric.name === "outbound_lanes");
+  assert.equal(outboundLanes?.values.outbound_reliable_depth, 1);
+  assert.equal(outboundLanes?.values.outbound_latest_depth, 1);
+  assert.equal(outboundLanes?.values.outbound_total_depth, 2);
+  assert.equal(outboundLanes?.values.outbound_reliable_depth_max, 1);
+  assert.equal(outboundLanes?.values.outbound_latest_depth_max, 1);
+  assert.equal(outboundLanes?.values.outbound_reliable_enqueued_total, 1);
+  assert.equal(outboundLanes?.values.outbound_latest_enqueued_total, 1);
   await runtime.stop();
 }
 

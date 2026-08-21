@@ -13,9 +13,9 @@ use tokio_uring::buf::{BoundedBuf, Slice};
 use tokio_uring::net::{TcpListener, TcpStream};
 
 use super::{
-    CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriter, EndpointContext,
-    IoBackend, MAX_INNER_TOKEN_LEN, RawFrameDecoder, WRITE_BATCH_BYTE_CAPACITY,
-    WRITE_BATCH_FRAME_CAPACITY, try_queue_connection_frame, validate_frame_access,
+    CONNECTION_OUTBOUND_FRAME_CAPACITY, ConnectionKind, ConnectionWriteBatch, ConnectionWriter,
+    EndpointContext, IoBackend, MAX_INNER_TOKEN_LEN, RawFrameDecoder, WRITE_BATCH_BYTE_CAPACITY,
+    try_queue_connection_frame, validate_frame_access,
 };
 use crate::process::{ProcessEvent, ProcessIngressTrySendError};
 use crate::transport::{
@@ -127,12 +127,15 @@ async fn handle_raw_connection(
         return Ok(());
     };
 
-    let (write_tx, write_rx) = mpsc::channel::<Bytes>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
+    let (write_tx, write_rx) =
+        mpsc::channel::<ConnectionWriteBatch>(CONNECTION_OUTBOUND_FRAME_CAPACITY);
     let queued_bytes = Arc::new(AtomicUsize::new(0));
+    let queued_frames = Arc::new(AtomicUsize::new(0));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let connection_writer = ConnectionWriter {
         sender: write_tx,
         queued_bytes: Arc::clone(&queued_bytes),
+        queued_frames: Arc::clone(&queued_frames),
         shutdown_tx: shutdown_tx.clone(),
     };
     writers
@@ -148,6 +151,7 @@ async fn handle_raw_connection(
             write_rx,
             shutdown_rx,
             queued_bytes,
+            queued_frames,
             writer_stats,
         )
         .await
@@ -253,81 +257,60 @@ async fn run_reader(
 
 async fn run_writer(
     stream: Rc<TcpStream>,
-    mut write_rx: mpsc::Receiver<Bytes>,
+    mut write_rx: mpsc::Receiver<ConnectionWriteBatch>,
     mut shutdown_rx: watch::Receiver<bool>,
     queued_bytes: Arc<AtomicUsize>,
+    queued_frames: Arc<AtomicUsize>,
     stats: Arc<crate::process::ProcessQueueStats>,
 ) -> Result<()> {
-    let mut frames = Vec::<Bytes>::with_capacity(WRITE_BATCH_FRAME_CAPACITY);
     let mut packet = Vec::<u8>::with_capacity(WRITE_BATCH_BYTE_CAPACITY);
     loop {
-        let frame = tokio::select! {
+        let batch = tokio::select! {
             changed = shutdown_rx.changed() => {
                 if changed.is_err() || *shutdown_rx.borrow() {
                     // 关闭请求不能越过已入队的通知；先排空队列，再关闭 io_uring Socket。
                     // A close request must not overtake queued notices; drain the
                     // queue before shutting down the io_uring socket.
-                    while let Ok(frame) = write_rx.try_recv() {
-                        frames.clear();
-                        let mut queued_frame_bytes = frame.len();
-                        let mut packet_bytes = 4 + frame.len();
-                        frames.push(frame);
-                        while frames.len() < WRITE_BATCH_FRAME_CAPACITY
-                            && packet_bytes < WRITE_BATCH_BYTE_CAPACITY
-                        {
-                            let Ok(frame) = write_rx.try_recv() else {
-                                break;
-                            };
-                            queued_frame_bytes += frame.len();
-                            packet_bytes += 4 + frame.len();
-                            frames.push(frame);
-                        }
+                    while let Ok(batch) = write_rx.try_recv() {
+                        let frame_count = batch.frames.len();
+                        let packet_bytes = batch.frame_bytes + frame_count * 4;
                         packet.clear();
                         packet.reserve(packet_bytes);
-                        for frame in &frames {
+                        for frame in &batch.frames {
                             packet.extend_from_slice(&(frame.len() as u32).to_be_bytes());
                             packet.extend_from_slice(frame);
                         }
                         let (result, returned_packet) = stream.write_all(packet).await;
                         packet = returned_packet;
-                        queued_bytes.fetch_sub(queued_frame_bytes, Ordering::Relaxed);
+                        queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
+                        queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
                         result?;
-                        stats.transport_write_completed(frames.len(), packet_bytes);
+                        stats.transport_write_completed(frame_count, packet_bytes);
                     }
                     break;
                 }
                 continue;
             }
-            frame = write_rx.recv() => {
-                let Some(frame) = frame else { break; };
-                frame
+            batch = write_rx.recv() => {
+                let Some(batch) = batch else { break; };
+                batch
             }
         };
-        frames.clear();
-        let mut queued_frame_bytes = frame.len();
-        let mut packet_bytes = 4 + frame.len();
-        frames.push(frame);
-        while frames.len() < WRITE_BATCH_FRAME_CAPACITY && packet_bytes < WRITE_BATCH_BYTE_CAPACITY
-        {
-            let Ok(frame) = write_rx.try_recv() else {
-                break;
-            };
-            queued_frame_bytes += frame.len();
-            packet_bytes += 4 + frame.len();
-            frames.push(frame);
-        }
+        let frame_count = batch.frames.len();
+        let packet_bytes = batch.frame_bytes + frame_count * 4;
 
         packet.clear();
         packet.reserve(packet_bytes);
-        for frame in &frames {
+        for frame in &batch.frames {
             packet.extend_from_slice(&(frame.len() as u32).to_be_bytes());
             packet.extend_from_slice(frame);
         }
         let (result, returned_packet) = stream.write_all(packet).await;
         packet = returned_packet;
-        queued_bytes.fetch_sub(queued_frame_bytes, Ordering::Relaxed);
+        queued_bytes.fetch_sub(batch.frame_bytes, Ordering::Relaxed);
+        queued_frames.fetch_sub(frame_count, Ordering::Relaxed);
         result?;
-        stats.transport_write_completed(frames.len(), packet_bytes);
+        stats.transport_write_completed(frame_count, packet_bytes);
     }
     // 只有写队列完成后才关闭连接；否则最后一条业务通知可能还在内核队列之外。
     // Close only after the write queue is drained; otherwise the final business
