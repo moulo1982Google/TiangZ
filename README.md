@@ -14,7 +14,7 @@
 
 测试拓扑、业务负载、优化前后对比、结果边界和复现方式见[性能基线与容量报告](PERFORMANCE.md)。
 
-独立持久化服务使用固定4个worker和MemoryBackend隔离数据库后，100并发拾取与NPC商店事务分别达到约3.53万和3.84万次/秒；30个玩家领域使用批量快照读取时，恢复吞吐相对逐条读取提高约12.23倍。该结果只代表DBProxy自身的网络、协议、调度和事务开销，不代表PostgreSQL或整服容量，完整报告见[DBProxy性能基线](https://github.com/moulo1982Google/TiangZ-DBProxy/blob/main/PERFORMANCE.md)。
+独立持久化服务使用固定4个worker和MemoryBackend隔离数据库后，100并发拾取与NPC商店事务分别达到约3.53万和3.84万次/秒；30个玩家领域使用批量快照读取时，恢复吞吐相对逐条读取提高约12.23倍。当前开发分支还提供批量普通快照保存，减少周期Flush的网络往返；该结果只代表DBProxy自身的网络、协议、调度和事务开销，不代表PostgreSQL或整服容量，完整报告见[DBProxy性能基线](https://github.com/moulo1982Google/TiangZ-DBProxy/blob/main/PERFORMANCE.md)。
 
 ## 5分钟启动
 
@@ -25,7 +25,7 @@ npm run hello
 
 看到 `Starter 已就绪` 后，用 Cocos3D/Pixi Demo 连接 `ws://127.0.0.1:7000`。完整的第一个 Handler 与 RPC 修改路径见 [5分钟跑通 TiangZ](docs/tutorials/00-quickstart.md)。
 
-持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。最新发布版为 `v0.5.0`，当前开发分支在此基础上增加 MemoryBackend 性能隔离和最多64条记录的 `LoadMultiSnapshot`；TiangZ 开发分支已通过 Host Transport 使用一次RPC恢复玩家五领域，不直接连接 Redis/PostgreSQL。当前 Starter 已验证30秒周期快照、任务奖励、道具使用、商店交易、同地图双玩家原子交易，以及单个静态MapHost强杀后的有界重启和玩家重新路由；邮件、跨地图交易、动态副本现场恢复和完整生产高可用仍属于后续阶段。运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)，交易边界见[玩家交易设计](docs/design/player-trade.md)。
+持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。最新发布版为 `v0.5.0`，当前开发分支在此基础上增加 MemoryBackend 性能隔离，以及最多64条记录的 `LoadMultiSnapshot`、`SaveMultiSnapshot`和`EnqueueMultiSnapshot`；TiangZ 开发分支已通过 Host Transport 使用一次RPC恢复并保存玩家五领域，不直接连接 Redis/PostgreSQL。批量普通保存逐记录返回结果而非跨领域原子事务，经济变更继续使用`ApplyMultiTransaction`。当前 Starter 已验证30秒周期快照、任务奖励、道具使用、商店交易、同地图双玩家原子交易，以及单个静态MapHost强杀后的有界重启和玩家重新路由；邮件、跨地图交易、动态副本现场恢复和完整生产高可用仍属于后续阶段。运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)，交易边界见[玩家交易设计](docs/design/player-trade.md)。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 

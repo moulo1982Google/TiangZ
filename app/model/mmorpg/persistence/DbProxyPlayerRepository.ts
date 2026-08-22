@@ -3,6 +3,7 @@ import {
   DbProxyErrorCode,
   DbProxyRemoteError,
   type DbProxyMultiTransactionalWrite,
+  type DbProxyBatchSnapshotWriteResult,
   type DbProxySnapshotWrite,
   type DbProxyTransactionalRecordWrite,
   type DbProxyTransactionalWrite,
@@ -20,6 +21,8 @@ import {
   InMemoryPlayerRepository,
   PLAYER_PERSISTENCE_DOMAINS,
   type PlayerDomainSaveData,
+  type PlayerDomainSaveOutcome,
+  type PlayerDomainSaveWrite,
   type PlayerLoadResult,
   type PlayerMultiTransactionReceipt,
   type PlayerMultiTransactionResult,
@@ -104,6 +107,39 @@ export class DbProxyPlayerRepository implements PlayerRepository {
     };
     const saved = await retryStorageUnavailable(() => this.client.Save(write));
     return { disposition: saved.disposition, domain, revision: saved.revision };
+  }
+
+  /** 一批普通领域只产生一次网络RPC；逐条revision独立推进，不提供事务原子性。 / Uses one RPC for ordinary domains while preserving independent revisions and non-atomic semantics. */
+  async SaveDomains(
+    writes: readonly PlayerDomainSaveWrite[],
+  ): Promise<readonly PlayerDomainSaveOutcome[]> {
+    const requests = writes.map((write) => toDbSnapshotWrite(
+      write,
+      this.NextRequestId(write.domain),
+    ));
+    const outcomes = await retryBatchStorageUnavailable(() => this.client.SaveMulti(requests));
+    return outcomes.map((outcome, index) => {
+      const domain = writes[index].domain;
+      if (outcome.ok) {
+        return {
+          ok: true,
+          result: {
+            disposition: outcome.result.disposition,
+            domain,
+            revision: outcome.result.revision,
+          },
+        };
+      }
+      return {
+        ok: false,
+        domain,
+        error: new DbProxyRemoteError(
+          outcome.error.code,
+          outcome.error.message,
+          outcome.error.actualRevision,
+        ),
+      };
+    });
   }
 
   /** 一条记录走单记录事务，多条记录走DBProxy多记录事务；两条路径共享相同领域回执。 / Uses a single-record transaction for one record and a DBProxy multi-record transaction otherwise, with one domain receipt shape. */
@@ -209,6 +245,22 @@ function toDbWrite(entry: PlayerTransactionRecordWrite): DbProxyTransactionalRec
   };
 }
 
+function toDbSnapshotWrite(
+  entry: PlayerDomainSaveWrite,
+  requestId: string,
+): DbProxySnapshotWrite {
+  const characterId = CharacterIdOfDomainData(entry.domain, entry.data);
+  return {
+    requestId,
+    record: recordOf(characterId, entry.domain),
+    schema: PLAYER_DOMAIN_SCHEMAS[entry.domain],
+    schemaVersion: PLAYER_DOMAIN_SCHEMA_VERSION,
+    payload: EncodePlayerDomainData(entry.domain, entry.data),
+    expectedRevision: entry.expectedRevision,
+    updatedAtUnixMs: BigInt(Date.now()),
+  };
+}
+
 function recordOf(characterId: bigint, domain: PlayerPersistenceDomain): { namespace: string; key: string } {
   requireCharacterId(characterId);
   return { namespace: PLAYER_NAMESPACE, key: `${characterId.toString(10)}:${domain}` };
@@ -279,4 +331,24 @@ async function retryStorageUnavailable<TResult>(operation: () => Promise<TResult
     }
   }
   throw new Error("unreachable DBProxy retry state");
+}
+
+async function retryBatchStorageUnavailable(
+  operation: () => Promise<readonly DbProxyBatchSnapshotWriteResult[]>,
+): Promise<readonly DbProxyBatchSnapshotWriteResult[]> {
+  for (let attempt = 1; attempt <= SAVE_ATTEMPTS; attempt += 1) {
+    try {
+      const outcomes = await operation();
+      if (
+        attempt < SAVE_ATTEMPTS &&
+        outcomes.some((outcome) => !outcome.ok && outcome.error.code === DbProxyErrorCode.StorageUnavailable)
+      ) {
+        continue;
+      }
+      return outcomes;
+    } catch (error) {
+      if (attempt === SAVE_ATTEMPTS || !(error instanceof DbProxyRemoteError) || error.code !== DbProxyErrorCode.StorageUnavailable) throw error;
+    }
+  }
+  throw new Error("unreachable DBProxy batch retry state");
 }

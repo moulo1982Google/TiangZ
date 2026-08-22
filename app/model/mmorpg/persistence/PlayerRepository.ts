@@ -118,6 +118,16 @@ export interface PlayerSaveResult {
   readonly revision: bigint;
 }
 
+export interface PlayerDomainSaveWrite {
+  readonly domain: PlayerPersistenceDomain;
+  readonly data: PlayerDomainSaveData;
+  readonly expectedRevision: bigint;
+}
+
+export type PlayerDomainSaveOutcome =
+  | { readonly ok: true; readonly result: PlayerSaveResult }
+  | { readonly ok: false; readonly domain: PlayerPersistenceDomain; readonly error: unknown };
+
 export interface PlayerTransactionRecordWrite {
   readonly domain: PlayerPersistenceDomain;
   readonly data: PlayerDomainSaveData;
@@ -163,6 +173,8 @@ export interface PlayerRepository {
   Load(characterId: bigint): MaybePromise<PlayerLoadResult | undefined>;
   /** 可靠保存一个领域快照并返回其新revision。 / Reliably saves one domain snapshot and returns its new revision. */
   SaveDomain(domain: PlayerPersistenceDomain, data: PlayerDomainSaveData, expectedRevision: bigint): MaybePromise<PlayerSaveResult>;
+  /** 批量保存普通领域快照；逐领域返回结果，不提供跨领域原子性。 / Batch-saves ordinary domain snapshots with per-domain, non-atomic outcomes. */
+  SaveDomains(writes: readonly PlayerDomainSaveWrite[]): MaybePromise<readonly PlayerDomainSaveOutcome[]>;
   /** 原子提交任意领域记录集合，并保存可恢复业务回执。 / Atomically commits an arbitrary domain-record set and stores a recoverable receipt. */
   ApplyTransaction(write: PlayerTransactionWrite): MaybePromise<PlayerTransactionResult>;
   LoadTransaction(records: readonly PlayerTransactionRecordKey[], operationId: string): MaybePromise<PlayerTransactionReceipt | undefined>;
@@ -236,6 +248,19 @@ export class InMemoryPlayerRepository implements PlayerRepository {
     this.records.set(key, { data: ClonePlayerDomainData(domain, data), revision, updatedAtUnixMs: BigInt(Date.now()) });
     this.saveCounts.set(key, (this.saveCounts.get(key) ?? 0) + 1);
     return { disposition: "applied", domain, revision };
+  }
+
+  SaveDomains(writes: readonly PlayerDomainSaveWrite[]): readonly PlayerDomainSaveOutcome[] {
+    return writes.map((write) => {
+      try {
+        return {
+          ok: true,
+          result: this.SaveDomain(write.domain, write.data, write.expectedRevision),
+        };
+      } catch (error) {
+        return { ok: false, domain: write.domain, error };
+      }
+    });
   }
 
   ApplyTransaction(write: PlayerTransactionWrite): PlayerTransactionResult {

@@ -11,6 +11,8 @@
 
 - DBProxy开发分支增加MemoryBackend、固定Tokio worker配置和Starter持久化形状压测，并把稳定结果整理到独立仓库`PERFORMANCE.md`。
 - 新增最多64条记录的`LoadMultiSnapshot`；真实存储按shard并行，Redis使用`MGET`，PostgreSQL合并缓存未命中查询。TiangZ Host Transport和Player Repository已改为一次RPC恢复五领域。
+- 新增最多64条记录的`SaveMultiSnapshot/EnqueueMultiSnapshot`。普通批量保存按shard并行并逐记录返回revision或错误，Redis backlog批量接收使用一次Lua；TiangZ周期快照和最终Flush改为一次RPC保存五领域。
+- 玩家批量保存不提供跨领域原子性。自测覆盖四域成功、wallet失败后立即保留四域revision，下一轮以四域新revision和wallet旧revision继续提交；关键经济数据仍走多记录事务。
 - 4-worker、100并发、30领域的三轮中位数中，批量读取相对逐条Load的玩家恢复吞吐提高约12.23倍；结果只代表DBProxy自身，不代表数据库或整服容量。
 
 ## 2026-08-19：OP-05真实业务压测

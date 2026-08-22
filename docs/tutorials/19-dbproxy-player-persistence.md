@@ -222,6 +222,8 @@ await mapClient.useItem({ itemId, operationId });
 
 五个Schema分别为`tiangz.demo.player.inventory@1`、`tiangz.demo.player.progression@1`、`tiangz.demo.player.quest@1`、`tiangz.demo.player.runtime@1`和`tiangz.demo.player.wallet@1`。`PlayerPersistenceCodec.ts`使用带显式标签的UTF-8 JSON保存`bigint`，解码后按领域完整校验再交给Entity恢复；DBProxy只看到`Uint8Array`。
 
+登录恢复使用一次`LoadMultiSnapshot`保持五域顺序与缺失空位；周期快照和最终Flush使用一次`SaveMultiSnapshot`。后者不是事务：每个领域独立返回`Applied/Duplicate + revision`或错误。部分成功时组件先推进成功领域revision，再把失败显式抛给周期重试或停机Flush；整批重放复用原requestId，已经成功的领域返回Duplicate。货币、背包、奖励和交易仍使用`ApplyTransaction/ApplyMultiTransaction`，不能为了减少RPC把关键业务改成普通批量保存。
+
 ## 增加持久字段
 
 开发新Component时按这个顺序接入：
@@ -289,6 +291,6 @@ npm run test:tiangz-fault-matrix
 - 周期快照默认30秒，普通成长与运行态最多允许回退一个周期；要求零回退的字段必须进入关键事务，不能缩短周期冒充事务保证。
 - 任务奖励、拾取、UseItem、NPC商店和同地图玩家交易已经按实际领域提交；邮件、拍卖行、跨地图交易仍未实现，不能把现有链路描述为全部经济数据生产级不丢。
 - 显式配置`lifecycle.restart`的静态MapHost可由Watcher有界重启；Location只删除死亡代次的Actor路由，Gate在下一次进图/重连时改走新Actor。当前不是无感保持原Socket上的战斗现场，也不恢复怪物、仇恨、AI目标、移动意图和动态副本实例。
-- 尚无批量Load/Save、Prometheus DBProxy指标、TLS、令牌轮换和生产部署；Redis/PostgreSQL高可用使用云厂商能力，不在TiangZ内实现。
+- 尚无Prometheus DBProxy指标、TLS、令牌轮换和生产部署；Redis/PostgreSQL高可用使用云厂商能力，不在TiangZ内实现。
 
-下一步是批量Load/Save、动态地图接管策略、Gate故障转移和生产运维能力；新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。
+下一步是DBProxy可观测性、动态地图接管策略、Gate故障转移和生产运维能力；新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。

@@ -1,6 +1,8 @@
 import {
   DbProxyErrorCode,
   DbProxyRemoteError,
+  type DbProxyBatchSnapshotEnqueueResult,
+  type DbProxyBatchSnapshotWriteResult,
   type DbProxyRecordKey,
   type DbProxySnapshotEnvelope,
   type DbProxySnapshotWrite,
@@ -50,6 +52,38 @@ interface HostWriteResponse {
 interface HostEnqueueResponse {
   readonly accepted: boolean;
   readonly error?: HostDbProxyError;
+}
+
+interface HostBatchWriteEntry {
+  readonly ok: boolean;
+  readonly disposition?: DbProxyWriteDisposition;
+  readonly revision?: string;
+  readonly error?: HostDbProxyError;
+}
+
+interface HostBatchWriteResponse {
+  readonly entries: readonly HostBatchWriteEntry[];
+  readonly error?: HostDbProxyError;
+}
+
+interface HostBatchEnqueueEntry {
+  readonly ok: boolean;
+  readonly error?: HostDbProxyError;
+}
+
+interface HostBatchEnqueueResponse {
+  readonly entries: readonly HostBatchEnqueueEntry[];
+  readonly error?: HostDbProxyError;
+}
+
+interface HostSnapshotWriteInput {
+  readonly requestId: string;
+  readonly record: DbProxyRecordKey;
+  readonly schema: string;
+  readonly schemaVersion: number;
+  readonly payload: Uint8Array;
+  readonly expectedRevision?: string;
+  readonly updatedAtUnixMs: string;
 }
 
 interface HostTransactionResponse {
@@ -109,6 +143,7 @@ interface HostDbProxyApi {
     readonly expectedRevision?: string;
     readonly updatedAtUnixMs: string;
   }): Promise<HostWriteResponse>;
+  saveMulti(writes: readonly HostSnapshotWriteInput[]): Promise<HostBatchWriteResponse>;
   enqueueSnapshot(request: {
     readonly requestId: string;
     readonly namespace: string;
@@ -118,6 +153,9 @@ interface HostDbProxyApi {
     readonly payload: Uint8Array;
     readonly updatedAtUnixMs: string;
   }): Promise<HostEnqueueResponse>;
+  enqueueMultiSnapshot(
+    writes: readonly HostSnapshotWriteInput[],
+  ): Promise<HostBatchEnqueueResponse>;
   applyTransaction(request: {
     readonly operationId: string;
     readonly namespace: string;
@@ -204,6 +242,23 @@ export class HostDbProxyTransport implements DbProxyTransport {
     };
   }
 
+  async saveMulti(
+    writes: readonly DbProxySnapshotWrite[],
+  ): Promise<readonly DbProxyBatchSnapshotWriteResult[]> {
+    const response = await this.host.saveMulti(writes.map(toHostSnapshotWrite));
+    throwRemoteError(response.error);
+    return response.entries.map((entry) => {
+      if (!entry.ok) return { ok: false, error: fromHostBatchError(entry.error) };
+      return {
+        ok: true,
+        result: {
+          disposition: requireDisposition(entry.disposition),
+          revision: parseUint64(entry.revision, "batchSave.revision"),
+        },
+      };
+    });
+  }
+
   async enqueueSnapshot(write: DbProxySnapshotWrite): Promise<void> {
     const response = await this.host.enqueueSnapshot({
       requestId: write.requestId,
@@ -216,6 +271,16 @@ export class HostDbProxyTransport implements DbProxyTransport {
     });
     throwRemoteError(response.error);
     if (!response.accepted) throw new Error("DBProxy rejected snapshot enqueue without an error");
+  }
+
+  async enqueueMultiSnapshot(
+    writes: readonly DbProxySnapshotWrite[],
+  ): Promise<readonly DbProxyBatchSnapshotEnqueueResult[]> {
+    const response = await this.host.enqueueMultiSnapshot(writes.map(toHostSnapshotWrite));
+    throwRemoteError(response.error);
+    return response.entries.map((entry) => entry.ok
+      ? { ok: true }
+      : { ok: false, error: fromHostBatchError(entry.error) });
   }
 
   async applyTransaction(
@@ -320,6 +385,33 @@ function fromHostSnapshot(snapshot: HostSnapshot): DbProxySnapshotEnvelope {
     revision: parseUint64(snapshot.revision, "snapshot.revision"),
     payload: Uint8Array.from(snapshot.payload),
     updatedAtUnixMs: parseUint64(snapshot.updatedAtUnixMs, "snapshot.updatedAtUnixMs"),
+  };
+}
+
+function toHostSnapshotWrite(write: DbProxySnapshotWrite): HostSnapshotWriteInput {
+  return {
+    requestId: write.requestId,
+    record: write.record,
+    schema: write.schema,
+    schemaVersion: write.schemaVersion,
+    payload: write.payload,
+    expectedRevision: write.expectedRevision?.toString(),
+    updatedAtUnixMs: write.updatedAtUnixMs.toString(),
+  };
+}
+
+function fromHostBatchError(error: HostDbProxyError | undefined): {
+  code: DbProxyErrorCode;
+  message: string;
+  actualRevision?: bigint;
+} {
+  if (!error) throw new Error("DBProxy batch entry failed without an error");
+  return {
+    code: error.code as DbProxyErrorCode,
+    message: error.message,
+    actualRevision: error.actualRevision == null
+      ? undefined
+      : parseUint64(error.actualRevision, "batchError.actualRevision"),
   };
 }
 

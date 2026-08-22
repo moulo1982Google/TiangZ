@@ -4,6 +4,8 @@ import {
   DbProxyErrorCode,
   DbProxyRemoteError,
   type DbProxySnapshotEnvelope,
+  type DbProxyBatchSnapshotEnqueueResult,
+  type DbProxyBatchSnapshotWriteResult,
   type DbProxySnapshotWrite,
   type DbProxySnapshotWriteResult,
   type DbProxyTransport,
@@ -21,6 +23,8 @@ import {
 } from "../app/model/mmorpg/persistence/PlayerRepository";
 import type {
   PlayerDomainSaveData,
+  PlayerDomainSaveOutcome,
+  PlayerDomainSaveWrite,
   PlayerLoadResult,
   PlayerPersistenceDomain,
   PlayerRepository,
@@ -47,6 +51,7 @@ void main();
 async function main(): Promise<void> {
   await testSuccessfulSaveIsIdempotent();
   await testSaveFailureIsVisibleAndIdempotent();
+  await testPartialBatchSaveAdvancesSuccessfulRevisions();
   await testGeneratedRepositoryRetriesTheSameRequest();
   testCodecPreservesBigIntAndRepositoryRejectsStaleRevision();
   testTransactionReceiptIsIdempotent();
@@ -79,13 +84,25 @@ class RetryEntityTransport implements DbProxyTransport {
 
   load(_record: DbProxyRecordKey): Promise<DbProxySnapshotEnvelope | undefined> { return Promise.resolve(undefined); }
 
+  loadMulti(_records: readonly DbProxyRecordKey[]): Promise<readonly (DbProxySnapshotEnvelope | undefined)[]> {
+    return Promise.resolve([]);
+  }
+
   save(write: DbProxySnapshotWrite): Promise<DbProxySnapshotWriteResult> {
     this.requests.push(write);
     if (this.requests.length === 1) return Promise.reject(new DbProxyRemoteError(DbProxyErrorCode.StorageUnavailable, "injected"));
     return Promise.resolve({ disposition: "applied", revision: 1n });
   }
 
+  saveMulti(_writes: readonly DbProxySnapshotWrite[]): Promise<readonly DbProxyBatchSnapshotWriteResult[]> {
+    return Promise.reject(new Error("not used"));
+  }
+
   enqueueSnapshot(_write: DbProxySnapshotWrite): Promise<void> { return Promise.resolve(); }
+
+  enqueueMultiSnapshot(_writes: readonly DbProxySnapshotWrite[]): Promise<readonly DbProxyBatchSnapshotEnqueueResult[]> {
+    return Promise.reject(new Error("not used"));
+  }
 
   applyTransaction(_write: DbProxyTransactionalWrite): Promise<DbProxyTransactionalWriteResult> {
     return Promise.reject(new Error("not used"));
@@ -148,6 +165,37 @@ async function testSaveFailureIsVisibleAndIdempotent(): Promise<void> {
   await assert.rejects(first, /injected repository failure/);
   await assert.rejects(second, /injected repository failure/);
   assert.equal(repository.saveCount, 1);
+}
+
+async function testPartialBatchSaveAdvancesSuccessfulRevisions(): Promise<void> {
+  const repository = new PartialFailingPlayerRepository();
+  const component = new PlayerPersistenceComponent();
+  component.__attach(createPlayer() as unknown as Entity);
+  component.__awake(repository, EmptyPlayerPersistenceRevisions());
+
+  await assert.rejects(component.SavePeriodic(1), /wallet: injected wallet failure/);
+  assert.deepEqual(component.Revisions, {
+    inventory: 1n,
+    progression: 1n,
+    quest: 1n,
+    runtime: 1n,
+    wallet: 0n,
+  });
+  await component.SavePeriodic(2);
+  assert.deepEqual(repository.secondExpectedRevisions, {
+    inventory: 1n,
+    progression: 1n,
+    quest: 1n,
+    runtime: 1n,
+    wallet: 0n,
+  });
+  assert.deepEqual(component.Revisions, {
+    inventory: 2n,
+    progression: 2n,
+    quest: 2n,
+    runtime: 2n,
+    wallet: 1n,
+  });
 }
 
 function createPlayer(): object {
@@ -221,6 +269,15 @@ class FailingPlayerRepository implements PlayerRepository {
     return Promise.reject(new Error("injected repository failure"));
   }
 
+  SaveDomains(writes: readonly PlayerDomainSaveWrite[]): readonly PlayerDomainSaveOutcome[] {
+    this.saveCount += 1;
+    return writes.map((write) => ({
+      ok: false,
+      domain: write.domain,
+      error: new Error("injected repository failure"),
+    }));
+  }
+
   ApplyTransaction(
     _write: PlayerTransactionWrite,
   ): Promise<PlayerTransactionResult> {
@@ -243,6 +300,24 @@ class FailingPlayerRepository implements PlayerRepository {
     _operationId: string,
   ): PlayerTransactionReceipt | undefined {
     return undefined;
+  }
+}
+
+class PartialFailingPlayerRepository extends InMemoryPlayerRepository {
+  private batchCount = 0;
+  secondExpectedRevisions: Partial<Record<PlayerPersistenceDomain, bigint>> = {};
+
+  override SaveDomains(writes: readonly PlayerDomainSaveWrite[]): readonly PlayerDomainSaveOutcome[] {
+    this.batchCount += 1;
+    if (this.batchCount === 2) {
+      this.secondExpectedRevisions = Object.fromEntries(
+        writes.map((write) => [write.domain, write.expectedRevision]),
+      );
+    }
+    if (this.batchCount !== 1) return super.SaveDomains(writes);
+    return writes.map((write) => write.domain === "wallet"
+      ? { ok: false, domain: write.domain, error: new Error("injected wallet failure") }
+      : { ok: true, result: this.SaveDomain(write.domain, write.data, write.expectedRevision) });
   }
 }
 

@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use deno_core::{JsBuffer, op2};
 use deno_error::JsErrorBox;
 use serde::{Deserialize, Serialize};
-use tiangz_dbproxy_client::{ClientConfig, ClientError, DbProxyClientPool};
+use tiangz_dbproxy_client::{ClientConfig, ClientError, DbProxyClientPool, RemoteError};
 use tiangz_dbproxy_core::{
     MultiRecordTransactionReceipt, MultiRecordTransactionalWrite,
     MultiRecordTransactionalWriteOutcome, RecordKey, Revision, SnapshotWrite, SnapshotWriteOutcome,
@@ -220,6 +220,16 @@ impl From<ClientError> for HostDbProxyError {
     }
 }
 
+impl From<RemoteError> for HostDbProxyError {
+    fn from(error: RemoteError) -> Self {
+        Self {
+            code: error.code as i32 as u32,
+            message: error.message,
+            actual_revision: error.actual_revision.map(|value| value.0.to_string()),
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HostSnapshot {
@@ -263,6 +273,36 @@ struct HostEnqueueResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct HostBatchWriteEntry {
+    ok: bool,
+    disposition: Option<&'static str>,
+    revision: Option<String>,
+    error: Option<HostDbProxyError>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostBatchWriteResponse {
+    entries: Vec<HostBatchWriteEntry>,
+    error: Option<HostDbProxyError>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostBatchEnqueueEntry {
+    ok: bool,
+    error: Option<HostDbProxyError>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostBatchEnqueueResponse {
+    entries: Vec<HostBatchEnqueueEntry>,
+    error: Option<HostDbProxyError>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct HostTransactionResponse {
     disposition: Option<&'static str>,
     new_revision: Option<String>,
@@ -294,6 +334,18 @@ struct HostLoadTransactionResponse {
 struct HostRecordKeyInput {
     namespace: String,
     key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostSnapshotWriteInput {
+    request_id: String,
+    record: HostRecordKeyInput,
+    schema: String,
+    schema_version: u32,
+    payload: Vec<u8>,
+    expected_revision: Option<String>,
+    updated_at_unix_ms: String,
 }
 
 #[derive(Deserialize)]
@@ -434,6 +486,46 @@ async fn op_host_dbproxy_save(
     })
 }
 
+#[op2]
+#[serde]
+async fn op_host_dbproxy_save_multi(
+    #[string] writes_json: String,
+) -> std::result::Result<HostBatchWriteResponse, JsErrorBox> {
+    let requests = parse_snapshot_writes(&writes_json)?;
+    let result = bridge()?
+        .execute(move |pool| {
+            let requests = requests.clone();
+            async move { pool.save_multi(&requests).await }
+        })
+        .await;
+    Ok(match result {
+        Ok(outcomes) => HostBatchWriteResponse {
+            entries: outcomes
+                .into_iter()
+                .map(|outcome| match outcome {
+                    Ok(SnapshotWriteOutcome::Applied { revision }) => {
+                        batch_write_entry("applied", revision)
+                    }
+                    Ok(SnapshotWriteOutcome::Duplicate { revision }) => {
+                        batch_write_entry("duplicate", revision)
+                    }
+                    Err(error) => HostBatchWriteEntry {
+                        ok: false,
+                        disposition: None,
+                        revision: None,
+                        error: Some(error.into()),
+                    },
+                })
+                .collect(),
+            error: None,
+        },
+        Err(error) => HostBatchWriteResponse {
+            entries: Vec::new(),
+            error: Some(error.into()),
+        },
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 #[op2]
 #[serde]
@@ -469,6 +561,42 @@ async fn op_host_dbproxy_enqueue_snapshot(
         },
         Err(error) => HostEnqueueResponse {
             accepted: false,
+            error: Some(error.into()),
+        },
+    })
+}
+
+#[op2]
+#[serde]
+async fn op_host_dbproxy_enqueue_multi_snapshot(
+    #[string] writes_json: String,
+) -> std::result::Result<HostBatchEnqueueResponse, JsErrorBox> {
+    let requests = parse_snapshot_writes(&writes_json)?;
+    let result = bridge()?
+        .execute(move |pool| {
+            let requests = requests.clone();
+            async move { pool.enqueue_multi_snapshot(&requests).await }
+        })
+        .await;
+    Ok(match result {
+        Ok(outcomes) => HostBatchEnqueueResponse {
+            entries: outcomes
+                .into_iter()
+                .map(|outcome| match outcome {
+                    Ok(()) => HostBatchEnqueueEntry {
+                        ok: true,
+                        error: None,
+                    },
+                    Err(error) => HostBatchEnqueueEntry {
+                        ok: false,
+                        error: Some(error.into()),
+                    },
+                })
+                .collect(),
+            error: None,
+        },
+        Err(error) => HostBatchEnqueueResponse {
+            entries: Vec::new(),
             error: Some(error.into()),
         },
     })
@@ -664,6 +792,29 @@ fn parse_record_keys(value: &str) -> std::result::Result<Vec<RecordKey>, JsError
         .collect()
 }
 
+fn parse_snapshot_writes(value: &str) -> std::result::Result<Vec<SnapshotWrite>, JsErrorBox> {
+    let input = serde_json::from_str::<Vec<HostSnapshotWriteInput>>(value)
+        .map_err(|error| JsErrorBox::generic(format!("invalid snapshot writes: {error}")))?;
+    input
+        .into_iter()
+        .map(|write| {
+            Ok(SnapshotWrite {
+                request_id: write.request_id,
+                record: RecordKey::new(write.record.namespace, write.record.key)
+                    .map_err(|error| JsErrorBox::generic(error.to_string()))?,
+                schema: write.schema,
+                schema_version: write.schema_version,
+                payload: write.payload,
+                expected_revision: match write.expected_revision {
+                    Some(value) => parse_optional_revision(&value)?,
+                    None => None,
+                },
+                updated_at_unix_ms: parse_u64(&write.updated_at_unix_ms, "updatedAtUnixMs")?,
+            })
+        })
+        .collect()
+}
+
 fn multi_transaction_response(
     disposition: &'static str,
     records: Vec<TransactionRecordReceipt>,
@@ -724,6 +875,15 @@ fn write_response(disposition: &'static str, revision: Revision) -> HostWriteRes
     }
 }
 
+fn batch_write_entry(disposition: &'static str, revision: Revision) -> HostBatchWriteEntry {
+    HostBatchWriteEntry {
+        ok: true,
+        disposition: Some(disposition),
+        revision: Some(revision.0.to_string()),
+        error: None,
+    }
+}
+
 fn transaction_response(
     disposition: &'static str,
     revision: Revision,
@@ -756,7 +916,9 @@ deno_core::extension!(
         op_host_dbproxy_load,
         op_host_dbproxy_load_multi,
         op_host_dbproxy_save,
+        op_host_dbproxy_save_multi,
         op_host_dbproxy_enqueue_snapshot,
+        op_host_dbproxy_enqueue_multi_snapshot,
         op_host_dbproxy_apply_transaction,
         op_host_dbproxy_load_transaction,
         op_host_dbproxy_apply_multi_transaction,
@@ -793,10 +955,26 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
       text(request.schema, "schema"), u32(request.schemaVersion, "schemaVersion"), bytes(request.payload, "payload"),
       String(request.expectedRevision ?? ""), text(String(request.updatedAtUnixMs), "updatedAtUnixMs"),
     ),
+    saveMulti: (writes) => core.ops.op_host_dbproxy_save_multi(
+      text(JSON.stringify(writes.map((write) => ({
+        ...write,
+        payload: Array.from(bytes(write.payload, "payload")),
+        expectedRevision: write.expectedRevision === undefined ? undefined : String(write.expectedRevision),
+        updatedAtUnixMs: text(String(write.updatedAtUnixMs), "updatedAtUnixMs"),
+      }))), "writes"),
+    ),
     enqueueSnapshot: (request) => core.ops.op_host_dbproxy_enqueue_snapshot(
       text(request.requestId, "requestId"), text(request.namespace, "namespace"), text(request.key, "key"),
       text(request.schema, "schema"), u32(request.schemaVersion, "schemaVersion"), bytes(request.payload, "payload"),
       text(String(request.updatedAtUnixMs), "updatedAtUnixMs"),
+    ),
+    enqueueMultiSnapshot: (writes) => core.ops.op_host_dbproxy_enqueue_multi_snapshot(
+      text(JSON.stringify(writes.map((write) => ({
+        ...write,
+        payload: Array.from(bytes(write.payload, "payload")),
+        expectedRevision: undefined,
+        updatedAtUnixMs: text(String(write.updatedAtUnixMs), "updatedAtUnixMs"),
+      }))), "writes"),
     ),
     applyTransaction: (request) => core.ops.op_host_dbproxy_apply_transaction(
       text(request.operationId, "operationId"), text(request.namespace, "namespace"), text(request.key, "key"),

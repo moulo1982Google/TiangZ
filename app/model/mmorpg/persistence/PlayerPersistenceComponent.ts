@@ -258,13 +258,28 @@ export class PlayerPersistenceComponent extends Component<[
 
   private async SaveSnapshot(reason: string): Promise<void> {
     const data = this.Capture(reason);
-    for (const domain of PLAYER_PERSISTENCE_DOMAINS) {
-      const saved = await Promise.resolve(this.repository.SaveDomain(
+    const outcomes = await Promise.resolve(this.repository.SaveDomains(
+      PLAYER_PERSISTENCE_DOMAINS.map((domain) => ({
         domain,
-        ProjectPlayerDomainData(data, domain),
-        this.revisions[domain],
-      ));
-      this.revisions[domain] = saved.revision;
+        data: ProjectPlayerDomainData(data, domain),
+        expectedRevision: this.revisions[domain],
+      })),
+    ));
+    const seen = new Set<PlayerPersistenceDomain>();
+    const failures: { domain: PlayerPersistenceDomain; error: unknown }[] = [];
+    for (const outcome of outcomes) {
+      const domain = outcome.ok ? outcome.result.domain : outcome.domain;
+      if (seen.has(domain)) throw new Error(`player batch save returned duplicate domain: ${domain}`);
+      seen.add(domain);
+      if (outcome.ok) this.revisions[domain] = outcome.result.revision;
+      else failures.push({ domain, error: outcome.error });
+    }
+    if (seen.size !== PLAYER_PERSISTENCE_DOMAINS.length) {
+      throw new Error(`player batch save returned ${seen.size}/${PLAYER_PERSISTENCE_DOMAINS.length} domains`);
+    }
+    if (failures.length > 0) {
+      const detail = failures.map((failure) => `${failure.domain}: ${errorMessage(failure.error)}`).join("; ");
+      throw new Error(`player batch save failed after applying successful revisions: ${detail}`);
     }
   }
 
@@ -282,6 +297,10 @@ export class PlayerPersistenceComponent extends Component<[
       throw new Error(`player transaction identity mismatch: ${data.player.account}/${data.player.characterId} != ${player.Account}/${player.CharacterId}`);
     }
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function normalizeDomains(domains: readonly PlayerPersistenceDomain[]): readonly PlayerPersistenceDomain[] {

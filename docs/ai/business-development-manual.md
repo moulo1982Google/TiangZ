@@ -949,7 +949,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
-持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，业务配置用`endpoint`指定首选地址，用`failoverEndpoints`指定备用地址。Demo的`PlayerRepository`覆盖五领域快照恢复，UseItem和任务奖励验证单玩家关键事务，同地图交易验证跨玩家原子提交。普通单Entity可通过`.native`生成版本化Codec及通用Repository工厂；复杂查询和跨玩家交易仍由领域Repository编排。DBProxy不得解释TiangZ业务类型，业务代码也不得直接连接Redis/数据库。30秒周期快照和同机静态MapHost有界接管已验收；旧schema迁移、批量Load/Save、跨机器/动态地图接管和生产部署仍未收口。
+持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、普通批量Load/Save/Enqueue、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；当前开发分支增加最多64条普通快照批量操作。Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，业务配置用`endpoint`指定首选地址，用`failoverEndpoints`指定备用地址。Demo的`PlayerRepository`用一次RPC恢复或保存五领域，UseItem和任务奖励验证单玩家关键事务，同地图交易验证跨玩家原子提交。普通单Entity可通过`.native`生成版本化Codec及通用Repository工厂；复杂查询和跨玩家交易仍由领域Repository编排。DBProxy不得解释TiangZ业务类型，业务代码也不得直接连接Redis/数据库。普通批量保存逐记录独立提交，不能替代关键经济事务。30秒周期快照和同机静态MapHost有界接管已验收；旧schema迁移、跨机器/动态地图接管和生产部署仍未收口。
 
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
@@ -1103,7 +1103,7 @@ Handler
 
 DBProxy服务层的集群边界已经冻结：Rust客户端接受多个有序内网Endpoint，按RecordKey选择首选实例，基础设施错误时携带原`request_id/operation_id`切换；部署两个共享同一套云Redis/PostgreSQL的对等DBProxy实例；通过故障注入验证请求中断、提交后丢响应和Backlog lease接管。业务拒绝、Revision冲突、协议指纹或鉴权错误不能触发换节点重试。DBProxy实例之间不选主、不复制业务状态，也不实现Redis/PostgreSQL高可用；存储高可用直接使用云厂商能力。TiangZ侧已经用真实商店、双玩家交易和首Endpoint中断完成端到端验收；这仍不等于存储HA或MapHost透明接管。
 
-当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成。`PlayerPersistenceComponent`持有inventory、progression、quest、runtime、wallet五个Revision；Map每秒错峰扫描到期玩家，把捕获与保存送进PlayerUnit ordered mailbox，默认每30秒保存五域。断线、踢下线和停机只调用`player.Offline(reason)`并复用同一个最终Flush Promise。Handler不得直接调用Repository。
+当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成。`PlayerPersistenceComponent`持有inventory、progression、quest、runtime、wallet五个Revision；Map每秒错峰扫描到期玩家，把捕获与一次批量保存送进PlayerUnit ordered mailbox，默认每30秒保存五域。批量结果逐领域应用，单域失败不会抹掉其他成功领域的新Revision；重试必须复用第一次生成的各域requestId。断线、踢下线和停机只调用`player.Offline(reason)`并复用同一个最终Flush Promise。Handler不得直接调用Repository。
 
 普通、独立、按稳定Key整体读写的Entity不需要重复手写Codec和Repository。例如：
 

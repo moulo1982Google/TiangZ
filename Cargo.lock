@@ -2251,7 +2251,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-client"
 version = "0.5.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#8be497ed9e8219543fce7ed9aafce286266e5741"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#5a0bf57726afcc0567be29269a865b6817e9ee82"
 dependencies = [
  "async-trait",
  "thiserror 2.0.19",
@@ -2263,7 +2263,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-core"
 version = "0.5.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#8be497ed9e8219543fce7ed9aafce286266e5741"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#5a0bf57726afcc0567be29269a865b6817e9ee82"
 dependencies = [
  "async-trait",
  "serde",
@@ -2273,7 +2273,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-protocol"
 version = "0.5.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#8be497ed9e8219543fce7ed9aafce286266e5741"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#5a0bf57726afcc0567be29269a865b6817e9ee82"
 dependencies = [
  "prost",
  "prost-build",
