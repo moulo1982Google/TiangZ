@@ -84,12 +84,13 @@ Action当前支持：
 | `5` | `RegisterDamageAbsorber` | `amount[, priority]` | Buff添加阶段注册护盾数据 |
 | `6` | `Heal` | `amount` | 统一进入`CombatComponent.ApplyHealing` |
 | `7` | `GrantItem` | `ItemConfigId, count` | 交给Inventory合并堆叠或拆分新Item |
+| `8` | `HealFromResolvedDamagePercent` | `percent` | 按同一技能效果链最近一次实际伤害治疗当前目标；必须位于`DealDamage`之后且以施法者为目标 |
 
 表结构、Action ID和参数形状属于Model，改列或类型必须完整生成并重启；只改数值行时按Hot配置流程生成候选并Reload。生成器会校验参数数量、Buff外键、伤害类型、派生Numeric写入和重复技能效果顺序，不要依赖运行到战斗时才发现坏数据。更完整的调用边界见[Action与Buff设计](../docs/design/action-buff.md)。
 
 ### Skill配置
 
-`SkillConfig`只回答“能否施放以及如何推进时间线”，`SkillEffectConfig`只回答“成功命中后依次执行哪些Action”。一项技能可以有多行效果，按`order`、再按效果行`id`稳定排序；同技能不能填写重复`order`。`queue_window_ms`控制读条结束前是否允许缓存一个下一技能，`channel_tick_ms/channel_ticks`控制引导跳数，二者都属于冷结构字段。当前3006“恢复”为瞬发技能，只执行`AddBuff(2002)`；Buff 2002持续24秒，每3000ms执行一次`Heal(10)`，共8次。3007“精神鞭笞”每1000ms执行一次`DealDamage(20, Shadow)`，共5跳。服务端10Hz桶推进读条、引导和弹道，移动会打断可移动中断的技能；客户端只显示服务端状态。
+`SkillConfig`只回答“能否施放以及如何推进时间线”，`SkillEffectConfig`只回答“成功命中后依次执行哪些Action”。一项技能可以有多行效果，按`order`、再按效果行`id`稳定排序；同技能不能填写重复`order`。`queue_window_ms`控制读条结束前是否允许缓存一个下一技能，`channel_tick_ms/channel_ticks`控制引导跳数，二者都属于冷结构字段。当前3006“恢复”为瞬发技能，只执行`AddBuff(2002)`；Buff 2002持续24秒，每3000ms执行一次`Heal(10)`，共8次。3007“精神鞭笞”每1000ms先执行`DealDamage(30, Shadow)`，再按该跳实际伤害的50%治疗施法者，共5跳；目标残血、吸收和减伤后的`finalDamage`才是治疗基数。服务端10Hz桶推进读条、引导和弹道，移动会打断可移动中断的技能；客户端只显示服务端状态。
 
 服务端的`SkillCatalog.ts`按当前游戏配置指纹把两张表组合成只读定义。配置Reload后，新Cast使用新定义；已开始读条和已经发射的弹道继续持有接受请求时冻结的旧定义，避免半次技能混用两代数值。客户端SDK只生成`SkillConfig`，用于名称、距离、读条和CD表现；`SkillEffectConfig`保持服务端专有。完整开发流程见[新增一个配置化技能](../docs/tutorials/18-configured-skill.md)。
 

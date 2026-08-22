@@ -959,7 +959,7 @@
     {
       "id": 3007,
       "name": "精神鞭笞",
-      "description": "引导5秒，每秒对目标造成20点暗影伤害；移动会取消引导，受到一次攻击时引导时间减少1秒。",
+      "description": "引导5秒，每秒对目标造成30点暗影伤害，并按实际伤害的50%治疗自身。移动会取消引导，受到一次攻击时引导时间减少1秒。",
       "target_relation": 1,
       "cast_time_ms": 5000,
       "cooldown_ms": 0,
@@ -1086,10 +1086,21 @@
       "target": 2,
       "action_type": 4,
       "action_params": [
-        20,
+        30,
         5
       ],
-      "description": "每跳对主目标造成20点暗影伤害"
+      "description": "每跳对目标造成30点暗影伤害"
+    },
+    {
+      "id": 300702,
+      "skill_id": 3007,
+      "order": 2,
+      "target": 1,
+      "action_type": 8,
+      "action_params": [
+        50
+      ],
+      "description": "按本跳实际伤害的50%治疗施法者"
     }
   ]
 }

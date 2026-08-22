@@ -7,6 +7,7 @@ import {
   GameConfigs as clientConfigs,
 } from "../client_sdk/typescript/Generated/Config";
 import {
+  ActionType,
   BuffConflictPolicy,
   BuffRefreshStatePolicy,
   BuffRefreshTickPolicy,
@@ -248,6 +249,14 @@ function main(): void {
   assert.equal(frostboltEffects[0].target, SkillEffectTarget.PrimaryTarget);
   assert.deepEqual(frostboltEffects[0].actionParams, [50, 2]);
   assert.deepEqual(frostboltEffects[1].actionParams, [4001]);
+  const channelWhipEffects = serverConfigs.SkillEffectConfig.GetAll()
+    .filter((effect) => effect.skillId === 3007)
+    .sort((left, right) => left.order - right.order);
+  assert.equal(channelWhipEffects.length, 2);
+  assert.deepEqual(channelWhipEffects[0].actionParams, [30, 5]);
+  assert.equal(channelWhipEffects[1].target, SkillEffectTarget.Caster);
+  assert.equal(channelWhipEffects[1].actionType, ActionType.HealFromResolvedDamagePercent);
+  assert.deepEqual(channelWhipEffects[1].actionParams, [50]);
   assert.equal(serverConfigs.BuffConfig.Get(4002).tickActionType, 4);
   assert.deepEqual(serverConfigs.BuffConfig.Get(4002).tickActionParams, [5, 3]);
   assert.throws(

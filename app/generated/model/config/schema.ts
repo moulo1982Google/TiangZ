@@ -21,6 +21,8 @@ export enum ActionType {
     RegisterDamageAbsorber = 5,
     Heal = 6,
     GrantItem = 7,
+    HealFromResolvedDamagePercent = 8,
+    Max = 9,
 }
 
 

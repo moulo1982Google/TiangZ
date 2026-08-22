@@ -35,6 +35,8 @@
         <var name="RegisterDamageAbsorber" value="5"/>
         <var name="Heal" value="6"/>
         <var name="GrantItem" value="7"/>
+        <var name="HealFromResolvedDamagePercent" value="8"/>
+        <var name="Max" value="9"/>
     </enum>
     <enum name="QuestObjectiveType" comment="任务目标类型">
         <var name="KillMonster" value="1"/>

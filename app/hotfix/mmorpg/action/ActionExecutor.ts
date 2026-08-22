@@ -41,7 +41,7 @@ export interface ActionBatchExecutionResult {
  * bigint here and are never passed around as unknown afterward.
  */
 export function ActionFromConfig(type: number, parameters: readonly number[]): ActionDefinition {
-  if (!Number.isSafeInteger(type) || type < ActionType.None || type > ActionType.GrantItem) {
+  if (!Number.isSafeInteger(type) || type < ActionType.None || type >= ActionType.Max) {
     throw new Error(`unsupported action type: ${type}`);
   }
   if (!parameters.every(Number.isSafeInteger)) {
@@ -125,6 +125,24 @@ export function ExecuteAction(
       {
         const amount = action.parameters[0];
         if (amount < 0n) throw new Error(`Heal amount must be non-negative: ${amount}`);
+        const result = target.GetComponent(CombatComponent).ApplyHealing(amount);
+        return {
+          changed: result.restoredHealing > 0n,
+          value: result.currentHp,
+          healing: result,
+        };
+      }
+    case ActionType.HealFromResolvedDamagePercent:
+      requireParameterCount(action, 1);
+      {
+        const percent = action.parameters[0];
+        if (percent < 0n) {
+          throw new Error(`HealFromResolvedDamagePercent percent must be non-negative: ${percent}`);
+        }
+        if (context.resolvedDamage === undefined) {
+          throw new Error("HealFromResolvedDamagePercent requires resolved damage in the Action context");
+        }
+        const amount = context.resolvedDamage * percent / 100n;
         const result = target.GetComponent(CombatComponent).ApplyHealing(amount);
         return {
           changed: result.restoredHealing > 0n,
@@ -258,6 +276,7 @@ function validateActionShape(action: ActionDefinition): void {
     case ActionType.AddBuff:
     case ActionType.RemoveBuff:
     case ActionType.Heal:
+    case ActionType.HealFromResolvedDamagePercent:
       requireParameterCount(action, 1);
       return;
     case ActionType.GrantItem:

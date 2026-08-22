@@ -18,5 +18,7 @@ export interface ActionExecutionContext {
   readonly sourceUnitId?: number;
   readonly sourceAbilityId?: number;
   readonly damageAbsorberAmountOverride?: bigint;
+  /** 同一效果链中最近一次伤害的实际扣血量。 / Final HP loss from the latest damage in the same effect chain. */
+  readonly resolvedDamage?: bigint;
   readonly reason?: string;
 }

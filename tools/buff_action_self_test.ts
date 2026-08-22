@@ -88,8 +88,12 @@ async function main(): Promise<void> {
   assert.equal(channelWhipDefinition.name, "精神鞭笞");
   assert.equal(channelWhipDefinition.channelTickMs, 1_000);
   assert.equal(channelWhipDefinition.channelTicks, 5);
+  assert.equal(channelWhipDefinition.effects.length, 2);
   assert.equal(channelWhipDefinition.effects[0]?.action.type, ActionType.DealDamage);
-  assert.deepEqual(channelWhipDefinition.effects[0]?.action.parameters, [20n, 5n]);
+  assert.deepEqual(channelWhipDefinition.effects[0]?.action.parameters, [30n, 5n]);
+  assert.equal(channelWhipDefinition.effects[1]?.target, SkillEffectTarget.Caster);
+  assert.equal(channelWhipDefinition.effects[1]?.action.type, ActionType.HealFromResolvedDamagePercent);
+  assert.deepEqual(channelWhipDefinition.effects[1]?.action.parameters, [50n]);
 
   // Reload只替换之后查询到的定义；旧对象保持不可变，供已接受的Cast/Projectile安全完成。
   // Reload replaces definitions returned by later lookups only; the old immutable object remains safe for accepted casts/projectiles.
@@ -475,6 +479,36 @@ async function main(): Promise<void> {
   });
   assert.equal(healed.changed, true);
   assert.equal(unit.GetComponent(NumericComponent)[NumericType.CurrentHp], 50n);
+  const numeric = unit.GetComponent(NumericComponent);
+  numeric[NumericType.CurrentHp] = 100n;
+  const lifeSteal = ExecuteAction(
+    unit,
+    { type: ActionType.HealFromResolvedDamagePercent, parameters: [50n] },
+    { sourceAbilityId: 3007, resolvedDamage: 30n },
+  );
+  assert.equal(lifeSteal.healing?.requestedHealing, 15n);
+  assert.equal(lifeSteal.healing?.restoredHealing, 15n);
+  assert.equal(numeric[NumericType.CurrentHp], 115n);
+  numeric[NumericType.CurrentHp] = 195n;
+  const overkillLimitedLifeSteal = ExecuteAction(
+    unit,
+    { type: ActionType.HealFromResolvedDamagePercent, parameters: [50n] },
+    { sourceAbilityId: 3007, resolvedDamage: 10n },
+  );
+  assert.equal(overkillLimitedLifeSteal.healing?.requestedHealing, 5n);
+  assert.equal(overkillLimitedLifeSteal.healing?.restoredHealing, 5n);
+  assert.equal(numeric[NumericType.CurrentHp], 200n);
+  const fullHealthLifeSteal = ExecuteAction(
+    unit,
+    { type: ActionType.HealFromResolvedDamagePercent, parameters: [50n] },
+    { sourceAbilityId: 3007, resolvedDamage: 30n },
+  );
+  assert.equal(fullHealthLifeSteal.changed, false);
+  assert.equal(fullHealthLifeSteal.healing?.restoredHealing, 0n);
+  assert.throws(
+    () => ExecuteAction(unit, { type: ActionType.HealFromResolvedDamagePercent, parameters: [50n] }),
+    /requires resolved damage/,
+  );
   assert.throws(
     () => ExecuteAction(unit, { type: ActionType.ChangeNumeric, parameters: [BigInt(NumericType.CurrentHp), 1n] }),
     /ChangeNumeric cannot write CurrentHp; use Heal or DealDamage/,
@@ -486,6 +520,10 @@ async function main(): Promise<void> {
   assert.throws(
     () => ActionFromConfig(ActionType.ChangeNumeric, [NumericType.CurrentHp, 1]),
     /ChangeNumeric cannot target CurrentHp; use Heal or DealDamage/,
+  );
+  assert.throws(
+    () => ActionFromConfig(ActionType.Max, []),
+    /unsupported action type/,
   );
 
   const weakSoul = buffs.ApplyBuff(4004, { sourceUnitId: 10, sourceAbilityId: 3004 });

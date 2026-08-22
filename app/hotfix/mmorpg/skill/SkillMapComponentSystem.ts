@@ -369,9 +369,13 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     castId: bigint,
   ): void {
     let damage = 0n;
+    let resolvedDamage: bigint | undefined;
     let damageSchool: import("#tiangz/model").DamageSchoolValue = DamageSchool.Physical;
     let killed = false;
     for (const effect of definition.effects) {
+      // Damage-linked riders still resolve on a killing blow; unrelated
+      // effects preserve the existing stop-on-kill behavior.
+      if (killed && effect.action.type !== ActionType.HealFromResolvedDamagePercent) break;
       const target = effect.target === SkillEffectTarget.Caster ? caster : primaryTarget;
       if (effect.action.type === ActionType.AddBuff) {
         const configId = Number(effect.action.parameters[0]);
@@ -389,9 +393,10 @@ export class SkillMapComponentSystem extends SkillMapComponent {
         continue;
       }
 
-      const result = this.executeEffect(caster, target, definition, effect);
+      const result = this.executeEffect(caster, target, definition, effect, resolvedDamage);
       if (result) {
         if (result.damage) {
+          resolvedDamage = result.damage.finalDamage;
           damage += result.damage.finalDamage;
           damageSchool = result.damage.damageSchool;
           killed ||= result.damage.killed;
@@ -416,7 +421,6 @@ export class SkillMapComponentSystem extends SkillMapComponent {
           ));
         }
       }
-      if (killed) break;
     }
     this.spawnPublish("publish-skill-impact", () => this.map.PublishSkillImpact(caster, primaryTarget, {
       castId,
@@ -434,6 +438,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     target: Unit<any[]>,
     definition: SkillDefinition,
     effect: SkillEffectDefinition,
+    resolvedDamage: bigint | undefined,
   ): ActionExecutionResult | undefined {
     if (effect.action.type === ActionType.DealDamage && target instanceof MonsterUnit) {
       const amount = effect.action.parameters[0];
@@ -453,6 +458,7 @@ export class SkillMapComponentSystem extends SkillMapComponent {
     return ExecuteAction(target, effect.action, {
       sourceUnitId: caster.UnitId,
       sourceAbilityId: definition.id,
+      resolvedDamage,
       reason: `skill:${definition.id}`,
     });
   }
