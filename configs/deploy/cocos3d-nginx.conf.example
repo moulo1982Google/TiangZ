@@ -50,6 +50,9 @@ server {
         expires -1;
         add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;
         add_header Pragma "no-cache" always;
+        # location-level add_header directives stop inheriting server headers.
+        # location级add_header会停止继承server级响应头，因此这里必须重复声明HSTS。
+        add_header Strict-Transport-Security "max-age=86400" always;
     }
 }
 
