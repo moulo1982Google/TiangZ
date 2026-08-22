@@ -36,6 +36,11 @@ interface HostLoadResponse {
   readonly error?: HostDbProxyError;
 }
 
+interface HostLoadMultiResponse {
+  readonly snapshots: readonly (HostSnapshot | undefined)[];
+  readonly error?: HostDbProxyError;
+}
+
 interface HostWriteResponse {
   readonly disposition?: DbProxyWriteDisposition;
   readonly revision?: string;
@@ -93,6 +98,7 @@ interface HostLoadMultiTransactionResponse {
 
 interface HostDbProxyApi {
   load(namespace: string, key: string): Promise<HostLoadResponse>;
+  loadMulti(records: readonly DbProxyRecordKey[]): Promise<HostLoadMultiResponse>;
   save(request: {
     readonly requestId: string;
     readonly namespace: string;
@@ -169,14 +175,15 @@ export class HostDbProxyTransport implements DbProxyTransport {
     throwRemoteError(response.error);
     const snapshot = response.snapshot;
     if (!snapshot) return undefined;
-    return {
-      record: { namespace: snapshot.namespace, key: snapshot.key },
-      schema: snapshot.schema,
-      schemaVersion: snapshot.schemaVersion,
-      revision: parseUint64(snapshot.revision, "snapshot.revision"),
-      payload: Uint8Array.from(snapshot.payload),
-      updatedAtUnixMs: parseUint64(snapshot.updatedAtUnixMs, "snapshot.updatedAtUnixMs"),
-    };
+    return fromHostSnapshot(snapshot);
+  }
+
+  async loadMulti(
+    records: readonly DbProxyRecordKey[],
+  ): Promise<readonly (DbProxySnapshotEnvelope | undefined)[]> {
+    const response = await this.host.loadMulti(records);
+    throwRemoteError(response.error);
+    return response.snapshots.map((snapshot) => snapshot && fromHostSnapshot(snapshot));
   }
 
   async save(write: DbProxySnapshotWrite): Promise<DbProxySnapshotWriteResult> {
@@ -303,6 +310,17 @@ function requireHostDbProxyApi(): HostDbProxyApi {
     .__hostDbProxy;
   if (!host) throw new Error("Rust Host did not install __hostDbProxy");
   return host;
+}
+
+function fromHostSnapshot(snapshot: HostSnapshot): DbProxySnapshotEnvelope {
+  return {
+    record: { namespace: snapshot.namespace, key: snapshot.key },
+    schema: snapshot.schema,
+    schemaVersion: snapshot.schemaVersion,
+    revision: parseUint64(snapshot.revision, "snapshot.revision"),
+    payload: Uint8Array.from(snapshot.payload),
+    updatedAtUnixMs: parseUint64(snapshot.updatedAtUnixMs, "snapshot.updatedAtUnixMs"),
+  };
 }
 
 function throwRemoteError(error: HostDbProxyError | undefined): void {

@@ -7,6 +7,12 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-22：DBProxy批量快照恢复与独立性能基线
+
+- DBProxy开发分支增加MemoryBackend、固定Tokio worker配置和Starter持久化形状压测，并把稳定结果整理到独立仓库`PERFORMANCE.md`。
+- 新增最多64条记录的`LoadMultiSnapshot`；真实存储按shard并行，Redis使用`MGET`，PostgreSQL合并缓存未命中查询。TiangZ Host Transport和Player Repository已改为一次RPC恢复五领域。
+- 4-worker、100并发、30领域的三轮中位数中，批量读取相对逐条Load的玩家恢复吞吐提高约12.23倍；结果只代表DBProxy自身，不代表数据库或整服容量。
+
 ## 2026-08-19：OP-05真实业务压测
 
 - 修复`perf/full_chain/run_full_chain_perf.mjs`的split拓扑：补启动`location-1.json`和等待`7401`端口。此前压测脚本漏起Location，Gate进图请求会超时；10玩家split拓扑烟测已通过。

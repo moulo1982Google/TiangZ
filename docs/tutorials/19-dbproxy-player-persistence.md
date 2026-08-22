@@ -106,6 +106,8 @@ TiangZ Developer Tools `v0.15.1`会为这些字段提供补全和范围检查。
 
 `v0.5.0`的多记录接口只应由领域Repository使用，不能让Handler直接拼接数据库写入。Repository先为所有记录准备稳定顺序的`RecordKey`、`expectedRevision`和完整Payload，再使用同一个`operationId`调用`applyMultiTransaction`；响应丢失时用同一个`operationId`调用`loadMultiTransaction`恢复首次回执。
 
+当前开发分支加载玩家时使用`LoadMultiSnapshot`一次读取五个领域。响应必须与请求等长、保持顺序，并为不存在的领域保留空位；Repository仍逐条校验RecordKey、Schema和版本。这个接口只优化恢复读取，不改变每个领域独立Revision，也不把多个领域合并成一个Payload。
+
 ```text
 领域操作
   -> Repository规划多个RecordKey与expectedRevision

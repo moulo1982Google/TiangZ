@@ -521,7 +521,7 @@ const RAW_DATA: Record<string, unknown> = {
     {
       "id": 3007,
       "name": "精神鞭笞",
-      "description": "引导5秒，每秒对目标造成20点暗影伤害；移动会取消引导，受到一次攻击时引导时间减少1秒。",
+      "description": "引导5秒，每秒对目标造成30点暗影伤害，并按实际伤害的50%治疗自身。移动会取消引导，受到一次攻击时引导时间减少1秒。",
       "target_relation": 1,
       "cast_time_ms": 5000,
       "cooldown_ms": 0,
@@ -575,7 +575,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "a31fc68ef82af06db6f5f8f2b6c2c335fc6d9d5d5460696029ca26001975bd1e";
+export const GameConfigFingerprint = "b8535e5b44a56b4d9d8b3a4a15b9c5f8703215162ccf3a1cad642fc0c065cb14";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

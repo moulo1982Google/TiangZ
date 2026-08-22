@@ -29,9 +29,9 @@ serde_json = "1"
 sha2 = "0.10"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = "0.30"
-tiangz-dbproxy-client = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.5.0" }
-tiangz-dbproxy-core = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.5.0" }
-tiangz-dbproxy-protocol = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", tag = "v0.5.0" }
+tiangz-dbproxy-client = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", branch = "main" }
+tiangz-dbproxy-core = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", branch = "main" }
+tiangz-dbproxy-protocol = { git = "https://github.com/moulo1982Google/TiangZ-DBProxy.git", branch = "main" }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

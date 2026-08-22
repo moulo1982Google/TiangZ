@@ -1267,11 +1267,11 @@ async function verifyFiveSkillMechanics(
   const channelImpact = await waitForSkillImpact(gate, 3007, 2_500);
   const channelCombatResult = await channelCombatResultPush;
   if (
-    channelImpact.damage !== 20n ||
+    channelImpact.damage !== 30n ||
     channelImpact.damageSchool !== 5 ||
     channelCombatResult.abilityId !== 3007 ||
     channelCombatResult.targetUnitId !== smiteTarget.unitId ||
-    channelCombatResult.effectiveAmount !== 20n
+    channelCombatResult.effectiveAmount !== 30n
   ) {
     throw new Error(`Mind Flay tick mismatch: ${stringifyForError({ channelImpact, channelCombatResult })}`);
   }

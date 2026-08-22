@@ -241,6 +241,13 @@ struct HostLoadResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct HostLoadMultiResponse {
+    snapshots: Vec<Option<HostSnapshot>>,
+    error: Option<HostDbProxyError>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct HostWriteResponse {
     disposition: Option<&'static str>,
     revision: Option<String>,
@@ -350,19 +357,38 @@ async fn op_host_dbproxy_load(
         .await;
     Ok(match result {
         Ok(snapshot) => HostLoadResponse {
-            snapshot: snapshot.map(|snapshot| HostSnapshot {
-                namespace: snapshot.record.namespace,
-                key: snapshot.record.key,
-                schema: snapshot.schema,
-                schema_version: snapshot.schema_version,
-                revision: snapshot.revision.0.to_string(),
-                payload: snapshot.payload,
-                updated_at_unix_ms: snapshot.updated_at_unix_ms.to_string(),
-            }),
+            snapshot: snapshot.map(host_snapshot),
             error: None,
         },
         Err(error) => HostLoadResponse {
             snapshot: None,
+            error: Some(error.into()),
+        },
+    })
+}
+
+#[op2]
+#[serde]
+async fn op_host_dbproxy_load_multi(
+    #[string] records_json: String,
+) -> std::result::Result<HostLoadMultiResponse, JsErrorBox> {
+    let records = parse_record_keys(&records_json)?;
+    let result = bridge()?
+        .execute(move |pool| {
+            let records = records.clone();
+            async move { pool.load_multi(&records).await }
+        })
+        .await;
+    Ok(match result {
+        Ok(snapshots) => HostLoadMultiResponse {
+            snapshots: snapshots
+                .into_iter()
+                .map(|snapshot| snapshot.map(host_snapshot))
+                .collect(),
+            error: None,
+        },
+        Err(error) => HostLoadMultiResponse {
+            snapshots: Vec::new(),
             error: Some(error.into()),
         },
     })
@@ -678,6 +704,18 @@ fn host_multi_transaction_receipt(
     }
 }
 
+fn host_snapshot(snapshot: tiangz_dbproxy_core::SnapshotEnvelope) -> HostSnapshot {
+    HostSnapshot {
+        namespace: snapshot.record.namespace,
+        key: snapshot.record.key,
+        schema: snapshot.schema,
+        schema_version: snapshot.schema_version,
+        revision: snapshot.revision.0.to_string(),
+        payload: snapshot.payload,
+        updated_at_unix_ms: snapshot.updated_at_unix_ms.to_string(),
+    }
+}
+
 fn write_response(disposition: &'static str, revision: Revision) -> HostWriteResponse {
     HostWriteResponse {
         disposition: Some(disposition),
@@ -716,6 +754,7 @@ deno_core::extension!(
     dbproxy_host,
     ops = [
         op_host_dbproxy_load,
+        op_host_dbproxy_load_multi,
         op_host_dbproxy_save,
         op_host_dbproxy_enqueue_snapshot,
         op_host_dbproxy_apply_transaction,
@@ -746,6 +785,9 @@ pub const BOOTSTRAP_SOURCE: &str = r#"
   };
   globalThis.__hostDbProxy = Object.freeze({
     load: (namespace, key) => core.ops.op_host_dbproxy_load(text(namespace, "namespace"), text(key, "key")),
+    loadMulti: (records) => core.ops.op_host_dbproxy_load_multi(
+      text(JSON.stringify(records), "records"),
+    ),
     save: (request) => core.ops.op_host_dbproxy_save(
       text(request.requestId, "requestId"), text(request.namespace, "namespace"), text(request.key, "key"),
       text(request.schema, "schema"), u32(request.schemaVersion, "schemaVersion"), bytes(request.payload, "payload"),

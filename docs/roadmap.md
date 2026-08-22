@@ -415,7 +415,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ### Phase 4.5：持久化基础
 
-状态：进行中。独立仓库`TiangZ-DBProxy v0.5.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport和五领域Player Repository已经接通。任务奖励、拾取、UseItem、NPC商店与玩家交易按实际领域提交；多Endpoint故障切换、周期快照、有限最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复已通过真实验收。批量Load/Save、动态地图现场接管、Gate故障转移和生产运维仍未完成，不能因此宣称完整生产高可用。
+状态：进行中。独立仓库`TiangZ-DBProxy v0.5.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport和五领域Player Repository已经接通，当前开发分支进一步用`LoadMultiSnapshot`一次恢复全部玩家领域。任务奖励、拾取、UseItem、NPC商店与玩家交易按实际领域提交；多Endpoint故障切换、周期快照、有限最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复已通过真实验收。批量Save、动态地图现场接管、Gate故障转移和生产运维仍未完成，不能因此宣称完整生产高可用。
 
 - 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，当前发布版本为`v0.5.0`，包含独立Rust workspace、`dbproxy-core/storage/protocol/client/server`、PostgreSQL快照/单记录事务与回执查询、Redis已提交快照缓存、Redis AOF持久普通快照积压、Rust客户端池、运行时无关TypeScript SDK、本地Compose、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
 - 首版服务协议使用版本化Protobuf、SHA-256协议指纹、内部共享令牌和默认8 MiB有界TCP帧，暴露`LoadSnapshot/SaveSnapshot/EnqueueSnapshot/ApplyTransaction`。客户端和服务端都按RecordKey使用多连接分片；超时连接不再复用，调用方通过原幂等ID重新连接重试。真实网络冒烟已经覆盖同步快照、Duplicate、Revision冲突、关键事务原结果和Redis backlog落PostgreSQL。

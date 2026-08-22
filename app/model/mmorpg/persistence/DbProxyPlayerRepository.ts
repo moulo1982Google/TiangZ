@@ -51,9 +51,9 @@ export class DbProxyPlayerRepository implements PlayerRepository {
 
   async Load(characterId: bigint): Promise<PlayerLoadResult | undefined> {
     requireCharacterId(characterId);
-    const snapshots = await Promise.all(PLAYER_PERSISTENCE_DOMAINS.map((domain) =>
-      this.client.Load(recordOf(characterId, domain))
-    ));
+    const snapshots = await this.client.LoadMulti(
+      PLAYER_PERSISTENCE_DOMAINS.map((domain) => recordOf(characterId, domain)),
+    );
     if (snapshots.every((snapshot) => !snapshot)) return undefined;
     const data = {} as {
       inventory?: PlayerLoadResult["data"]["inventory"];
