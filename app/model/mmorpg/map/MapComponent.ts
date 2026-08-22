@@ -25,6 +25,7 @@ import { GateMessages } from "../../../generated/model/server/demo/protocol/mess
 import type {
   G2M_EnterMap,
   G2M_PlayerOffline,
+  G2M_RebindPlayerGate,
   G2M_SecondEnterMap,
   G2M_TransferPlayer,
   G2C_AutoAttackState,
@@ -40,6 +41,7 @@ import type {
   KickPlayerTarget,
   MapEntitySnapshot,
   M2G_PlayerOffline,
+  M2G_RebindPlayerGate,
   M2G_SecondEnterMap,
   M2G_TransferPlayer,
   PlayerTransferSnapshot,
@@ -169,6 +171,7 @@ interface NumericReplicationSourceDefinition {
 
 export interface PlayerTransferCoordinator {
   TransferPlayer(source: PlayerUnit, request: G2M_TransferPlayer): Promise<M2G_TransferPlayer>;
+  RebindPlayerGate(source: PlayerUnit, request: G2M_RebindPlayerGate): Promise<M2G_RebindPlayerGate>;
   /** 将跨玩家关键操作送入目标玩家真实邮箱；调用方必须已经持有另一参与者的邮箱。 / Enters the target player's real mailbox for a cross-player critical operation; the caller must already own the other participant mailbox. */
   RunPlayerMailbox<TResult>(
     player: PlayerUnit,
@@ -621,6 +624,27 @@ export class MapComponent extends Component<[
     return this.transferCoordinator.TransferPlayer(unit, request);
   }
 
+  /** 把Gate故障接管交给MapHost协调器；PlayerUnit mailbox在整个Location CAS期间保持有序。 / Delegates Gate failover to the MapHost coordinator while the PlayerUnit mailbox remains ordered across Location CAS. */
+  RebindPlayerGate(unit: PlayerUnit, request: G2M_RebindPlayerGate): Promise<M2G_RebindPlayerGate> {
+    this.requirePlayer(unit);
+    return this.transferCoordinator.RebindPlayerGate(unit, request);
+  }
+
+  /** Location提交后同步切换下行缓存、Native AOI路由和Actor fencing token。 / Switches downstream caches, the native AOI route, and the Actor fence after Location commits. */
+  ApplyGateRebind(unit: PlayerUnit, gateName: string, gateEpoch: bigint): void {
+    this.requirePlayer(unit);
+    const gate = unit.GetComponent(UnitGateComponent);
+    this.gateNamesByUnitId.set(unit.UnitId, gateName);
+    if (this.aoi.IsAttached(unit)) {
+      this.aoi.SetDeliveryRoute(unit, this.RouteIdForGate(gateName));
+    }
+    // AOI路由先切换，随后Actor fence在同一邮箱回合内生效；后者不会失败时，
+    // 已提交Location就不会留下“新epoch + 旧投递路由”的半状态。
+    // Switch AOI delivery first, then publish the Actor fence in the same mailbox
+    // turn so a committed Location cannot leave a new epoch with an old route.
+    gate.Rebind(gateName, gateEpoch);
+  }
+
   /**
    * 让交易等跨玩家事务短暂占用第二位玩家的有序邮箱，禁止在DBProxy await期间插入背包或金币写入。
    * Lets cross-player transactions such as trade hold the second player's
@@ -874,6 +898,7 @@ export class MapComponent extends Component<[
         characterId: snapshot.characterId,
         token: "cross-process-transfer",
         gateName: snapshot.gateName,
+        gateEpoch: snapshot.gateEpoch,
         mapInstanceId: snapshot.targetMapInstanceId,
         hasInitialSpawnOverride: false,
         initialSpawnX: 0,
@@ -1007,7 +1032,7 @@ export class MapComponent extends Component<[
         runtime: 0n,
         wallet: 0n,
       });
-      player.AddComponent(UnitGateComponent, request.gateName);
+      player.AddComponent(UnitGateComponent, request.gateName, request.gateEpoch);
       if (transfer) player.RestoreTransfer(transfer);
       if (loaded) this.RestorePersistedPlayer(player, position, loaded);
       if (loaded) this.MigrateStarterAttack(player);
@@ -1519,7 +1544,7 @@ export class MapComponent extends Component<[
       unit.Account !== message.account ||
       unit.CharacterId !== message.characterId ||
       unit.MapId !== message.mapId ||
-      !unit.MatchesGate({ gateName: message.gateName })
+      !unit.MatchesGate({ gateName: message.gateName, gateEpoch: message.gateEpoch })
     ) {
       throw new Error(`second-enter identity mismatch: ${message.account}#${message.unitId}`);
     }
@@ -1567,7 +1592,7 @@ export class MapComponent extends Component<[
       unit.Account !== message.account ||
       unit.CharacterId !== message.characterId ||
       unit.MapId !== message.mapId ||
-      !unit.MatchesGate({ gateName: message.gateName })
+      !unit.MatchesGate({ gateName: message.gateName, gateEpoch: message.gateEpoch })
     ) {
       this.logger.warn("ignored mismatched player offline", {
         account: message.account,

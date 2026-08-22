@@ -24,6 +24,7 @@ export interface NativeHostOpsApi {
   aoiCreate(mapId: number, gridSizeMillimeters: number, enterRadiusGrids: number, detachRadiusGrids: number, syncTiers: Uint8Array): void;
   aoiRelease(mapId: number): void;
   aoiAttach(mapId: number, handle: number, observer: boolean, subject: boolean, deliveryRouteId: number): Uint8Array;
+  aoiSetDeliveryRoute(mapId: number, handle: number, deliveryRouteId: number): void;
   aoiDetach(mapId: number, handle: number): Uint8Array;
   aoiRefresh(mapId: number): Uint8Array;
   aoiSetVisible(mapId: number, observerId: number, subjectId: number, visible: boolean): boolean;
@@ -167,6 +168,10 @@ export class NativeOps {
 
   static AoiAttach(mapId: number, handle: number, observer: boolean, subject: boolean, deliveryRouteId: number): Uint8Array {
     return nativeHostOps().aoiAttach(mapId, handle, observer, subject, deliveryRouteId);
+  }
+
+  static AoiSetDeliveryRoute(mapId: number, handle: number, deliveryRouteId: number): void {
+    nativeHostOps().aoiSetDeliveryRoute(mapId, handle, deliveryRouteId);
   }
 
   static AoiDetach(mapId: number, handle: number): Uint8Array {

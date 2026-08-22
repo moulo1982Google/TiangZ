@@ -2,6 +2,7 @@ import {
   EntryScene,
   entryScene,
   type RuntimeEntrySceneConfig,
+  type SceneMetricsSnapshot,
 } from "../../../core/public";
 import { MapManagerComponent } from "../mapManager/MapManagerComponent";
 
@@ -9,9 +10,16 @@ import { MapManagerComponent } from "../mapManager/MapManagerComponent";
 @entryScene()
 export class MapManagerScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
+  private readonly manager: MapManagerComponent;
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
-    this.AddComponent(MapManagerComponent);
+    this.manager = this.AddComponent(MapManagerComponent);
+  }
+
+  override metricsSnapshot(): SceneMetricsSnapshot {
+    const metrics = super.metricsSnapshot();
+    metrics.customMetrics.push(this.manager.Metrics());
+    return metrics;
   }
 }

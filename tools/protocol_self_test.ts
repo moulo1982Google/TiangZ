@@ -271,9 +271,16 @@ function testActorLocationEnvelope(): void {
   moveFrame.set(movePayload, 2);
 
   const envelope = decodeActorLocationEnvelope(
-    encodeActorLocationEnvelope({ instanceId: 1001, frame: moveFrame }),
+    encodeActorLocationEnvelope({
+      instanceId: 1001,
+      frame: moveFrame,
+      rpcId: 77,
+      fenceToken: 9n,
+    }),
   );
   assert.equal(envelope.instanceId, 1001);
+  assert.equal(envelope.rpcId, 77);
+  assert.equal(envelope.fenceToken, 9n);
   assert.deepEqual(envelope.frame, moveFrame);
   assert.throws(
     () => decodeActorLocationEnvelope(Uint8Array.of(0, 1)),

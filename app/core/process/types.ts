@@ -20,7 +20,7 @@ import {
   getRpcBindings,
   RpcDescriptor,
 } from "../protocol/rpc";
-import { Scene } from "../runtime/entities";
+import { Scene, type ActorRuntimeEntity } from "../runtime/entities";
 import { SceneContext } from "../runtime/contexts";
 import { ProcessHost } from "../runtime/host";
 import { Session, SessionComponent } from "../runtime/Session";
@@ -47,11 +47,10 @@ import {
   ActorLocationDirectory,
   ActorLocationBatchEnvelopeMsgCode,
   ActorLocationEnvelopeMsgCode,
-  ActorLocationEnvelopeHeaderBytes,
   encodeActorLocationBatchEnvelope,
   encodeActorLocationEnvelope,
+  decodeActorLocationEnvelope,
   forEachActorLocationBatchEntry,
-  readActorLocationInstanceId,
 } from "./ActorLocation";
 import {
   getSceneMessageHandlerBindings,
@@ -282,6 +281,7 @@ interface ActorTransferBuffer {
 interface PendingLatestActorLocationFrame {
   target: SceneConfig;
   instanceId: number;
+  fenceToken?: bigint;
   frame: Uint8Array;
 }
 
@@ -352,6 +352,7 @@ export abstract class EntryScene extends Scene {
     Map<number, PendingLatestActorLocationFrame>
   >();
   private latestActorLocationFrameCount = 0;
+  private actorLocationFenceRejections = 0;
   private latestActorLocationFlushAtMs: number | undefined;
   private readonly latestActorLocationMetrics = {
     queued: 0,
@@ -1014,6 +1015,15 @@ export abstract class EntryScene extends Scene {
             disconnect_tombstones: "gauge",
           },
         },
+        {
+          name: "actor_location_fence",
+          values: {
+            rejected_total: this.actorLocationFenceRejections,
+          },
+          kinds: {
+            rejected_total: "counter",
+          },
+        },
       ],
     };
   }
@@ -1483,9 +1493,10 @@ export abstract class EntryScene extends Scene {
     const msgcode = readU16BE(frame, 0);
     if (msgcode === ActorLocationEnvelopeMsgCode) {
       try {
-        const instanceId = readActorLocationInstanceId(frame);
-        return this.actorRegistry.handle(frame.subarray(ActorLocationEnvelopeHeaderBytes), {
-          actorInstanceId: instanceId,
+        const envelope = decodeActorLocationEnvelope(frame);
+        return this.actorRegistry.handle(envelope.frame, {
+          actorInstanceId: envelope.instanceId,
+          actorLocationFenceToken: envelope.fenceToken,
           logger: context.logger,
         });
       } catch (error) {
@@ -1658,6 +1669,7 @@ export abstract class EntryScene extends Scene {
     }
     const routedFrame = encodeActorLocationEnvelope({
       instanceId: target.instanceId,
+      fenceToken: target.fenceToken,
       frame,
     });
     const result = this.ctx.sendFrame(target.scene, routedFrame);
@@ -1688,6 +1700,7 @@ export abstract class EntryScene extends Scene {
       }
       const result = this.actorRegistry.handle(entry.frame, {
         actorInstanceId: entry.instanceId,
+        actorLocationFenceToken: entry.fenceToken,
         logger: context.logger,
       });
       if (isPromiseLike(result)) pending.push(Promise.resolve(result));
@@ -1707,12 +1720,14 @@ export abstract class EntryScene extends Scene {
     if (pending) {
       pending.target = target.scene;
       pending.instanceId = target.instanceId;
+      pending.fenceToken = target.fenceToken;
       pending.frame = frame;
       this.latestActorLocationMetrics.coalesced += 1;
     } else {
       byMsgcode.set(msgcode, {
         target: target.scene,
         instanceId: target.instanceId,
+        fenceToken: target.fenceToken,
         frame,
       });
       this.latestActorLocationFrameCount += 1;
@@ -2047,6 +2062,7 @@ export abstract class EntryScene extends Scene {
             );
           }
           return this.processHost.runActorMailbox(instanceId, (actor) => {
+            this.requireActorLocationFence(actor, context);
             const unitCtor = actor.constructor;
             let binding = handlerByUnitCtor.get(unitCtor);
             if (!binding) {
@@ -2100,6 +2116,7 @@ export abstract class EntryScene extends Scene {
             );
           }
           return this.processHost.runActorMailboxVoid(instanceId, (actor) => {
+            this.requireActorLocationFence(actor, context);
             const unitCtor = actor.constructor;
             let binding = handlerByUnitCtor.get(unitCtor);
             if (!binding) {
@@ -2121,6 +2138,21 @@ export abstract class EntryScene extends Scene {
         },
       });
     }
+  }
+
+  /** 在真实Actor mailbox内校验外部路由代次，避免接管后的旧Gate继续驱动业务。 / Validates an external route generation inside the real Actor mailbox so a stale Gate cannot drive gameplay after takeover. */
+  private requireActorLocationFence(
+    actor: ActorRuntimeEntity<any[]>,
+    context: ProtocolContext,
+  ): void {
+    const token = context.actorLocationFenceToken;
+    if (token === undefined) return;
+    if (actor.__matchesActorLocationFenceToken(token)) return;
+    this.actorLocationFenceRejections += 1;
+    throw new RpcError(
+      SystemErrCode.ActorLocationFenceRejected,
+      `actor location fence rejected for instance ${actor.InstanceId}`,
+    );
   }
 
   private claimRpcHandler(msgcode: number, owner: string): void {

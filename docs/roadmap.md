@@ -1,5 +1,12 @@
 # TiangZ 路线图
 
+## 2026-08-22 Gate/地图故障恢复与TLS
+
+- 双Gate故障转移使用Location gateEpoch、Actor邮箱fence和原地AOI delivery route切换，恢复节点不自动回切。
+- Manager与Location共享MapHost generation和15秒动态路由租约；Manager/动态MapHost双失后放弃副本临时现场，玩家重连进入安全静态地图。
+- 外网入口由Nginx统一终止HTTPS/WSS，TiangZ、MapHost、Location和DBProxy继续只监听回环地址。
+- 剩余HA工作是跨机器租约仲裁、配置中心/服务发现和跨地域容灾，不把单机Watcher策略宣传成跨地域HA。
+
 ## 最终目标
 
 构建一套重工程体验、可观测性和部署弹性的 MMORPG 示例栈：Rust/Tokio 负责网络与宿主，单线程 TypeScript 负责业务，Cocos/PixiJS 客户端通过可复用 TS SDK 接入。
@@ -415,7 +422,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 ### Phase 4.5：持久化基础
 
-状态：进行中。独立仓库`TiangZ-DBProxy v0.5.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport和五领域Player Repository已经接通，当前开发分支进一步用`LoadMultiSnapshot/SaveMultiSnapshot`各一次恢复或保存全部玩家领域。普通批量保存逐领域返回结果并保留部分成功revision，不冒充原子事务。任务奖励、拾取、UseItem、NPC商店与玩家交易按实际领域提交；多Endpoint故障切换、周期快照、有限最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复已通过真实验收。动态地图现场接管、Gate故障转移和生产运维仍未完成，不能因此宣称完整生产高可用。
+状态：进行中。独立仓库`TiangZ-DBProxy v0.5.0`、运行时无关TypeScript SDK、TiangZ Rust Host Transport和五领域Player Repository已经接通，当前开发分支进一步用`LoadMultiSnapshot/SaveMultiSnapshot`各一次恢复或保存全部玩家领域。普通批量保存逐领域返回结果并保留部分成功revision，不冒充原子事务。任务奖励、拾取、UseItem、NPC商店与玩家交易按实际领域提交；多Endpoint故障切换、周期快照、静态MapHost有界重启和双Gate强杀接管已通过真实验收。动态地图现场接管、跨机器租约和生产运维仍未完成，不能因此宣称完整生产高可用。
 
 - 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，当前发布版本为`v0.5.0`，包含独立Rust workspace、`dbproxy-core/storage/protocol/client/server`、PostgreSQL快照/单记录事务与回执查询、Redis已提交快照缓存、Redis AOF持久普通快照积压、Rust客户端池、运行时无关TypeScript SDK、本地Compose、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
 - 首版服务协议使用版本化Protobuf、SHA-256协议指纹、内部共享令牌和默认8 MiB有界TCP帧，暴露`LoadSnapshot/SaveSnapshot/EnqueueSnapshot/ApplyTransaction`。客户端和服务端都按RecordKey使用多连接分片；超时连接不再复用，调用方通过原幂等ID重新连接重试。真实网络冒烟已经覆盖同步快照、Duplicate、Revision冲突、关键事务原结果和Redis backlog落PostgreSQL。
@@ -425,13 +432,13 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 玩家聚合捕获投影为`tiangz.demo.player.inventory@1`、`progression@1`、`quest@1`、`runtime@1`和`wallet@1`五条记录与独立Revision，排除UnitId、Session、Timer、AOI与活动Cast。加载在Unit发布到目录/AOI前完成；跨MapHost携带Revision向量防止旧记录覆盖。
 - 真实重启冒烟使用同一账号把1001道具从50个消耗到49个，等待Gate最终下线保存，停止并重启TiangZ后恢复为`count=49/version=2`；PostgreSQL权威记录为revision 1。该结果只证明快照链路，不证明崩溃前未保存的状态或关键经济操作不会丢失。
 - [x] `.native`首版普通Entity持久化：`@persistent(version)`声明版本化Snapshot，`@transient`排除运行时字段，codegen生成严格Codec和通用DBProxy Repository工厂。存储结构属于Model，不能热更。
-- [ ] 持久化后续：旧schema迁移注册、动态地图/Gate故障接管与生产观测；复杂查询和跨玩家事务不进入通用Entity生成器。
+- [ ] 持久化后续：旧schema迁移注册、动态地图接管、跨机器租约与生产观测；复杂查询和跨玩家事务不进入通用Entity生成器。
 - `snapshot`字段保持普通属性写法；Rust setter只标脏，框架按短窗口合并并批量写Redis，再异步批量落永久数据库，禁止一次属性赋值对应一次网络请求。
 - `transactional`存储域用于Wallet、Inventory、Trade等经济数据；字段不开放普通setter，只能通过领域事务方法生成`operation_id`、期望版本、完整Payload和业务结果。DBProxy在同一PostgreSQL事务内提交快照与操作收据，Redis只接收带revision的已提交快照，不能成为第二个独立写入口。
-- 任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；玩家交易一次提交双方inventory+wallet。确认后才无await修改Entity，重复请求和跨TiangZ重启返回首次回执。下一步顺序为：动态地图/Gate接管边界 -> TLS、令牌轮换与生产部署。主工程始终不引入数据库客户端或`dbproxy-storage`。
+- 任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；玩家交易一次提交双方inventory+wallet。确认后才无await修改Entity，重复请求和跨TiangZ重启返回首次回执。Gate接管边界已完成，下一步顺序为：动态地图安全回退/接管 -> TLS、令牌轮换与生产部署。主工程始终不引入数据库客户端或`dbproxy-storage`。
 - 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
 - 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
-- 当前验收覆盖Redis短暂不可用、AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、真实TCP、普通快照批量读写、任务/道具事务故障、双Endpoint玩家交易、最终Flush、周期快照、all-in-one强杀、静态MapHost有界接管，以及Prometheus/Grafana双实例观测。动态地图/Gate接管、通知路由和长期指标存储仍留在后续阶段；Redis/PostgreSQL高可用直接使用云厂商能力。
+- 当前验收覆盖Redis短暂不可用、AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、真实TCP、普通快照批量读写、任务/道具事务故障、双Endpoint玩家交易、最终Flush、周期快照、all-in-one强杀、静态MapHost有界接管、双Gate强杀接管，以及Prometheus/Grafana观测。动态地图接管、跨机器租约、通知路由和长期指标存储仍留在后续阶段；Redis/PostgreSQL高可用直接使用云厂商能力。
 - [x] 同地图玩家交易：MapScene维护60秒临时会话，双方报价变化清除确认；双确认后以稳定operationId原子提交双方inventory+wallet记录，支持重复回执恢复和Revision冲突全拒绝。当前不支持跨地图、离线交易、邮件或拍卖行。
 
 ### Phase 4.6：Starter MMORPG 纵向切片
@@ -442,7 +449,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - 验收矩阵固定在[Starter MMORPG验收矩阵](starter/acceptance-matrix.md)，教程固定在[Starter MMORPG教程](tutorials/20-starter-mmorpg.md)。
 - 框架能力案例与Starter业务分层；Starter只能使用Stable API、生成协议、Component/Entity、Mailbox和DBProxy边界，不能为演示旁路Runtime。
 - 独立的创建/选择角色流程已经完成运行时闭环：`C2S_CreateCharacter -> CharacterRepository -> C2S_Login.characterId -> Gate/Location/Map`，并通过 `npm run starter:character-smoke` 覆盖 all-in-one 与 split-process。无 DBProxy 时角色目录只在进程生命周期内有效；重启恢复仍归 ST-09。
-- Map 200动态副本和Boss 3已接入：Gate先在PlayerUnit邮箱持久化个人10分钟CD，再按稳定operationId经MapManager幂等创建实例；Boss死亡事件触发120累计经验，新角色升到2级，尸体固定掉落三种药水各5个和150铜币。`starter:acceptance`覆盖真实动态实例、击杀、拾取与CD拒绝，`starter:acceptance:persistent`覆盖重启后Level/Experience、背包、余额和CD恢复。后续重点转为正式Hotfix操作入口和动态地图/Gate故障边界。
+- Map 200动态副本和Boss 3已接入：Gate先在PlayerUnit邮箱持久化个人10分钟CD，再按稳定operationId经MapManager幂等创建实例；Boss死亡事件触发120累计经验，新角色升到2级，尸体固定掉落三种药水各5个和150铜币。`starter:acceptance`覆盖真实动态实例、击杀、拾取、CD拒绝和双Gate强杀接管，`starter:acceptance:persistent`覆盖重启后Level/Experience、背包、余额和CD恢复。后续重点转为动态地图安全回退/接管和生产部署。
 - Starter固定使用一个主城、一个野外地图、一个动态副本、三种普通怪、一个Boss、一个玩家职业和少量技能。额外职业、社交、商城和活动不得在本阶段进入核心样例。
 - 每个完成项必须同时通过all-in-one、split-process、客户端操作和对应的失败/恢复验收；业务压测等Starter链路稳定后再执行。
 - 已增加统一自动验收入口：`npm run starter:acceptance`覆盖无数据库的运行时、技能/Buff和角色选角；`starter:acceptance:persistent`覆盖DBProxy快照写入、TiangZ重启和恢复读取；`starter:acceptance:faults`通过`test:tiangz-fault-matrix`覆盖玩家交易故障切换、提交后响应丢失、双Endpoint不可用、MapHost接管和独立DBProxy存储故障。报告写入`temp/test-logs`，持久化/故障命令只允许连接本地测试资源。

@@ -15,24 +15,27 @@ export function SelectStickyGate(
   return SelectStickyScene(account, gates, "Gate");
 }
 
+/** 按Rendezvous得分返回全部候选，供健康感知入口依次探测而不改变稳定顺序。 / Ranks every candidate by rendezvous score so health-aware entry can probe in stable order. */
+export function RankStickyScenes(
+  account: string,
+  scenes: readonly SceneConfig[],
+  sceneLabel = "Scene",
+): SceneConfig[] {
+  if (scenes.length === 0) throw new Error(`cannot rank ${sceneLabel} from an empty list`);
+  return [...scenes].sort((left, right) => {
+    const leftScore = Hash32(`${account}\0${left.name}`);
+    const rightScore = Hash32(`${account}\0${right.name}`);
+    return rightScore - leftScore || left.name.localeCompare(right.name);
+  });
+}
+
 /** 使用同一Rendezvous Hash策略选择稳定业务节点；用于Login等需要账号粘滞的入口。 / Selects a stable business node with the same rendezvous-hash policy for account-sticky entry points such as Login. */
 export function SelectStickyScene(
   account: string,
   scenes: readonly SceneConfig[],
   sceneLabel = "Scene",
 ): SceneConfig {
-  if (scenes.length === 0) throw new Error(`cannot select ${sceneLabel} from an empty list`);
-  let selected = scenes[0];
-  let selectedScore = Hash32(`${account}\0${selected.name}`);
-  for (let index = 1; index < scenes.length; index += 1) {
-    const candidate = scenes[index];
-    const score = Hash32(`${account}\0${candidate.name}`);
-    if (score > selectedScore || (score === selectedScore && candidate.name < selected.name)) {
-      selected = candidate;
-      selectedScore = score;
-    }
-  }
-  return selected;
+  return RankStickyScenes(account, scenes, sceneLabel)[0];
 }
 
 /** 生成跨V8、跨平台稳定的无符号32位哈希；不可用于安全令牌。 / Produces a stable unsigned 32-bit hash across V8 instances and platforms; never use it for security tokens. */

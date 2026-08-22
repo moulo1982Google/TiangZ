@@ -636,6 +636,8 @@ export interface ActorRuntimeEntity<
 > extends Entity {
   readonly [ACTOR_RUNTIME_ENTITY]: true;
   readonly logger: Logger;
+  __setActorLocationFenceToken(token: bigint): void;
+  __matchesActorLocationFenceToken(token: bigint): boolean;
   __awake(...args: TAwakeArgs): void;
   __newOnceTimer(
     delayMs: number,
@@ -922,6 +924,7 @@ export abstract class Actor<
 > extends Entity implements ActorRuntimeEntity<TAwakeArgs> {
   readonly [ACTOR_RUNTIME_ENTITY] = true as const;
   private awoken = false;
+  private actorLocationFenceToken = 0n;
   protected readonly ctx: ActorContext;
 
   constructor(ctx: ActorContext) {
@@ -931,6 +934,16 @@ export abstract class Actor<
 
   get logger(): Logger {
     return this.ctx.logger;
+  }
+
+  /** 更新该Actor接受的外部路由代次；零值关闭门禁。 / Updates the external route generation accepted by this Actor; zero disables fencing. */
+  __setActorLocationFenceToken(token: bigint): void {
+    this.actorLocationFenceToken = requireActorLocationFenceToken(token);
+  }
+
+  /** 校验外部路由代次；仅供Actor分发器在进入mailbox后调用。 / Validates an external route generation inside the Actor mailbox. */
+  __matchesActorLocationFenceToken(token: bigint): boolean {
+    return token > 0n && token === this.actorLocationFenceToken;
   }
 
   /** 在所属 Scene 内同步初始化 Actor 状态。 / Initializes Actor state synchronously inside its owning Scene. */
@@ -1049,4 +1062,11 @@ export abstract class Actor<
       throw new Error(`actor Awake must be synchronous: ${this.constructor.name}`);
     }
   }
+}
+
+function requireActorLocationFenceToken(token: bigint): bigint {
+  if (typeof token !== "bigint" || token < 0n || token > 0xffff_ffff_ffff_ffffn) {
+    throw new Error(`invalid actor location fence token: ${token}`);
+  }
+  return token;
 }

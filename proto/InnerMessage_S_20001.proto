@@ -22,10 +22,11 @@ message G2M_EnterMap // IRequest
   // Trusted diagnostic value from the Bench Gate handler. Production entry always uses 0=full.
   uint32 entry_sync_mode = 12;
   uint64 character_id = 13;
+  uint64 gate_epoch = 14;
 }
 
 //ResponseType M2G_SecondEnterMap
-// 断线宽限期内重连只恢复客户端视图，不创建Unit、不重新进入AOI、不改绑Gate。
+// 同一Gate内重连只恢复客户端视图，不创建Unit、不重新进入AOI。
 // @ets.msg protocol=Map method=SecondEnterMap
 message G2M_SecondEnterMap // IActorRequest
 {
@@ -34,6 +35,7 @@ message G2M_SecondEnterMap // IActorRequest
   uint32 unit_id = 3;
   string gate_name = 4;
   uint64 character_id = 5;
+  uint64 gate_epoch = 6;
 }
 
 message M2G_SecondEnterMap // IActorResponse
@@ -53,6 +55,41 @@ message M2G_SecondEnterMap // IActorResponse
   uint64 character_id = 13;
   uint64 gold = 14;
   uint64 starter_dungeon_cooldown_end_at_ms = 15;
+}
+
+//ResponseType M2G_RebindPlayerGate
+// Gate故障转移在PlayerUnit有序邮箱内提交Location CAS并切换下行路由。
+// @ets.msg protocol=Map method=RebindPlayerGate
+message G2M_RebindPlayerGate // IActorRequest
+{
+  string account = 1;
+  uint64 character_id = 2;
+  uint32 unit_id = 3;
+  string expected_gate_name = 4;
+  string next_gate_name = 5;
+  uint64 expected_gate_epoch = 6;
+  uint64 expected_location_revision = 7;
+  string operation_id = 8;
+}
+
+message M2G_RebindPlayerGate // IActorResponse
+{
+  string gate_name = 1;
+  uint64 gate_epoch = 2;
+  uint64 location_revision = 3;
+}
+
+//ResponseType G2S_ProbeGate
+// 只允许Inner Scene调用的轻量存活探针；客户端心跳继续使用C2G_Ping。
+// @ets.msg protocol=Gate method=Probe
+message S2G_ProbeGate // IRequest
+{
+  string requester = 1;
+}
+
+message G2S_ProbeGate // IResponse
+{
+  string gate_name = 1;
 }
 
 message M2G_EnterMap // IResponse
@@ -164,6 +201,7 @@ message G2M_PlayerOffline // IActorRequest
   string gate_name = 4;
   string reason = 5;
   uint64 character_id = 6;
+  uint64 gate_epoch = 7;
 }
 
 message M2G_PlayerOffline // IActorResponse
@@ -232,6 +270,7 @@ message PlayerTransferSnapshot
   uint64 inventory_revision = 27;
   uint64 quest_revision = 28;
   StarterDungeonCooldownSnapshot starter_dungeon = 29;
+  uint64 gate_epoch = 30;
 }
 
 message MapInstanceSnapshot
@@ -279,6 +318,8 @@ message L2S_ResolveMapInstance // IResponse
 message S2L_RegisterMapInstance // IRequest
 {
   MapInstanceSnapshot instance = 1;
+  uint64 owner_generation = 2;
+  uint32 lease_timeout_ms = 3;
 }
 
 message L2S_RegisterMapInstance // IResponse
@@ -293,6 +334,7 @@ message S2L_RemoveMapInstance // IRequest
 {
   uint64 map_instance_id = 1;
   string expected_map_host_name = 2;
+  uint64 expected_owner_generation = 3;
 }
 
 message L2S_RemoveMapInstance // IResponse
@@ -459,6 +501,7 @@ message PlayerLocationSnapshot
   string state = 9;
   MapHostEndpoint map_host = 10;
   uint64 character_id = 11;
+  uint64 gate_epoch = 12;
 }
 
 //ResponseType L2S_AllocatePlayerUnitId
@@ -489,6 +532,7 @@ message S2L_RegisterPlayerLocation // IRequest
   uint32 actor_instance_id = 7;
   uint64 character_id = 8;
   uint64 owner_generation = 9;
+  uint64 gate_epoch = 10;
 }
 
 message L2S_RegisterPlayerLocation // IResponse
@@ -553,9 +597,32 @@ message S2L_CommitPlayerLocation // IRequest
   uint32 actor_instance_id = 7;
   uint64 character_id = 8;
   uint64 owner_generation = 9;
+  uint64 gate_epoch = 10;
 }
 
 message L2S_CommitPlayerLocation // IResponse
+{
+  PlayerLocationSnapshot location = 1;
+}
+
+//ResponseType L2S_RebindPlayerGate
+// Map上的权威PlayerUnit提交Gate所有权切换；Location只做路由CAS，不接触连接。
+// @ets.msg protocol=Location method=RebindGate
+message S2L_RebindPlayerGate // IRequest
+{
+  uint32 unit_id = 1;
+  uint64 character_id = 2;
+  uint32 expected_actor_instance_id = 3;
+  uint64 expected_revision = 4;
+  string expected_gate_name = 5;
+  string next_gate_name = 6;
+  uint64 expected_gate_epoch = 7;
+  string operation_id = 8;
+  string map_host_name = 9;
+  uint64 owner_generation = 10;
+}
+
+message L2S_RebindPlayerGate // IResponse
 {
   PlayerLocationSnapshot location = 1;
 }
@@ -596,6 +663,7 @@ message PlayerLocationRecovery
   uint64 map_instance_id = 6;
   uint32 actor_instance_id = 7;
   uint64 character_id = 8;
+  uint64 gate_epoch = 9;
 }
 
 //ResponseType L2S_RecoverPlayerLocations

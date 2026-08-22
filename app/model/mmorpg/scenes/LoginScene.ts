@@ -1,5 +1,7 @@
 import {
   EntryScene,
+  RpcError,
+  SystemErrCode,
   entryScene,
   type RuntimeEntrySceneConfig,
   type SceneConfig,
@@ -13,22 +15,28 @@ import {
 } from "../../../generated/model/server/demo/protocol/messages";
 import { LoginComponent } from "../login/LoginComponent";
 import { CreateCharacterRepository } from "../login/CharacterRepository";
+import { RankStickyScenes } from "../login/GateSelector";
+import { IsGateReachable } from "../gate/GateHealth";
+import { LocationProxy } from "../location/LocationProxy";
 
 @entryScene()
 export class LoginScene extends EntryScene {
   protected override readonly mailbox: SceneMailboxType = "unordered";
   private readonly login: LoginComponent;
+  private readonly gateScenes: readonly SceneConfig[];
+  private readonly location: LocationProxy;
   private static readonly ACCOUNT_LOCK = "LoginAccount";
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
-    const gateScenes: SceneConfig[] = this.scenes.many("Gate");
-    if (gateScenes.length === 0) {
+    this.gateScenes = this.scenes.many("Gate");
+    if (this.gateScenes.length === 0) {
       throw new Error("LoginScene needs at least one known Gate Scene");
     }
+    this.location = new LocationProxy(this.scenes);
     this.login = this.AddComponent(
       LoginComponent,
-      gateScenes,
+      this.gateScenes,
       config.process.name,
       CreateCharacterRepository(config.process),
     );
@@ -41,13 +49,41 @@ export class LoginScene extends EntryScene {
       request.account.trim(),
       () => this.login.Login(request),
     );
+    const gate = await this.SelectHealthyGate(response.account, response.selectedCharacterId);
+    const routed = {
+      ...response,
+      gateName: gate.name,
+      gateIp: gate.outerIp ?? gate.innerIp,
+      gatePort: gate.outerPort ?? gate.port,
+    };
     this.logger.info("player login completed", {
       account: request.account,
       characterId: response.selectedCharacterId,
-      gate: response.gateName,
+      gate: routed.gateName,
       loginCount: response.loginCount,
     });
-    return response;
+    return routed;
+  }
+
+  /** 优先保留Location当前Gate；仅在其不可达时选择其他健康候选。 / Keeps the Location-owned Gate when healthy and selects another candidate only when it is unreachable. */
+  private async SelectHealthyGate(account: string, characterId: bigint): Promise<SceneConfig> {
+    let ownerName: string | undefined;
+    try {
+      const resolved = await this.location.Resolve({ unitId: 0, account: "", characterId });
+      if (resolved.found) ownerName = resolved.location.gateName;
+    } catch (error) {
+      this.logger.warn("Location unavailable during Gate selection", { account, error });
+    }
+
+    if (ownerName) {
+      const owner = this.gateScenes.find((gate) => gate.name === ownerName);
+      if (owner && await IsGateReachable(this.scenes, owner)) return owner;
+    }
+    for (const candidate of RankStickyScenes(account, this.gateScenes, "Gate")) {
+      if (candidate.name === ownerName) continue;
+      if (await IsGateReachable(this.scenes, candidate)) return candidate;
+    }
+    throw new RpcError(SystemErrCode.SceneCallFailed, "no healthy Gate is available");
   }
 
   /** 注册账号、角色目录和密码摘要；注册成功后客户端再走普通Login。 / Registers the account catalog and digest; the client then performs normal Login. */

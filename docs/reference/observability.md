@@ -205,7 +205,7 @@ return {
 
 Gauge 使用 `tiangz_scene_custom_metric_gauge`，Counter 使用 `tiangz_scene_custom_metric_total`。不要根据字段名后缀猜类型，也不要把会回退或每帧重置的值标为 Counter。
 
-玩家路由相关有两组内置自定义指标：`location_directory`观察entries、moving、removing、resolve、mutation和conflict；`actor_transfer_barrier`观察Gate迁移屏障active、queued_frames/bytes以及完成、超时、拒绝、丢弃和过载累计值。二者均不使用account、UnitId或connectionId标签。
+玩家路由和副本恢复使用七组低基数指标：`location_directory`观察玩家路由与丢失地图回退，`actor_transfer_barrier`观察Gate迁移屏障，`gate_takeover`记录跨Gate接管，`actor_location_fence`记录旧epoch拒绝，`map_manager_lease`记录宿主租约和丢失副本，`map_instance_directory`记录动态路由续租与过期，`dynamic_map_fallback`记录安全地图回退结果。它们均不使用account、UnitId或connectionId标签。
 
 进图链路新增两组低基数自定义指标。`map_entry`汇总MapHost请求、在途峰值、端到端耗时、ID分配、Player创建、Location注册/确认和MapReady发送；`map_broadcast`中的`player_entry_*`与`aoi_delta_*`记录Admission排队、Attach、初始Snapshot对象数、AOI Delta批次、接收者和逻辑实体投递量。指标只带Process、Scene、name和key，不得增加account、UnitId或connectionId标签。
 
@@ -213,7 +213,7 @@ Snapshot指标故意不在TS中二次protobuf编码，因此`player_entry_snapsh
 
 ## 告警规则
 
-`tools/observability/prometheus/rules/tiangz.yml` 已覆盖 Target down、Process 未就绪、Runtime 心跳过期、Rust 队列 70%/90%、背压、Inner RPC 失败、系统错误、缺 Handler、Update 跳帧、日志丢弃和 Handler P99 超预算。规则判定可在 Prometheus `/alerts` 查看。
+`tools/observability/prometheus/rules/tiangz.yml` 已覆盖 Target down、Process 未就绪、Runtime 心跳过期、Rust 队列 70%/90%、背压、Inner RPC 失败、Gate接管失败、系统错误、缺 Handler、Update 跳帧、日志丢弃和 Handler P99 超预算。规则判定可在 Prometheus `/alerts` 查看。
 
 当前没有接入 Alertmanager，规则只负责产生告警状态，不发送邮件或 Webhook。通知渠道、值班路由与抑制策略属于 Phase 5。
 

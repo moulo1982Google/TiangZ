@@ -76,6 +76,18 @@ add("Game.Update 健康度", "short", [
   query(`tiangz_scene_last_update_cost_ms{${selector}}`, "{{process}}/{{scene}} update"),
   query(`rate(tiangz_game_skipped_fixed_updates_total{${selector}}[1m])`, "{{process}} skipped/s"),
 ], "none");
+add("Gate 故障接管", "short", [
+  query(`rate(tiangz_scene_custom_metric_total{${selector},name="gate_takeover",key="attempts_total"}[1m])`, "{{process}} attempts"),
+  query(`rate(tiangz_scene_custom_metric_total{${selector},name="gate_takeover",key="succeeded_total"}[1m])`, "{{process}} succeeded"),
+  query(`rate(tiangz_scene_custom_metric_total{${selector},name="gate_takeover",key="failed_total"}[1m])`, "{{process}} failed"),
+  query(`rate(tiangz_scene_custom_metric_total{${selector},name="actor_location_fence",key="rejected_total"}[1m])`, "{{process}} stale fenced"),
+], "ops");
+add("动态副本故障恢复", "short", [
+  query(`tiangz_scene_custom_metric_gauge{${selector},name="map_manager_lease",key="active_hosts"}`, "{{process}} active hosts"),
+  query(`rate(tiangz_scene_custom_metric_total{${selector},name="map_manager_lease",key="expired_hosts_total"}[1m])`, "{{process}} expired hosts"),
+  query(`rate(tiangz_scene_custom_metric_total{${selector},name="map_instance_directory",key="expired_dynamic_total"}[1m])`, "{{process}} expired routes"),
+  query(`rate(tiangz_scene_custom_metric_total{${selector},name="dynamic_map_fallback",key="completed_total"}[1m])`, "{{process}} safe fallback"),
+], "none");
 
 add("网络吞吐", "short", [
   query(`rate(tiangz_process_transport_read_bytes_total{${selector}}[1m])`, "{{process}} read"),

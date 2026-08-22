@@ -64,6 +64,7 @@
     aoiCreate: (mapId, gridSizeMillimeters, enterRadiusGrids, detachRadiusGrids, syncTiers) => core.ops.op_native_aoi_create(u32(mapId, "mapId"), u32(gridSizeMillimeters, "gridSizeMillimeters"), u32(enterRadiusGrids, "enterRadiusGrids"), u32(detachRadiusGrids, "detachRadiusGrids"), bytes(syncTiers, "syncTiers")),
     aoiRelease: (mapId) => core.ops.op_native_aoi_release(u32(mapId, "mapId")),
     aoiAttach: (mapId, handle, observer, subject, deliveryRouteId) => core.ops.op_native_aoi_attach(u32(mapId, "mapId"), u32(handle, "handle"), bool(observer, "observer"), bool(subject, "subject"), u32(deliveryRouteId, "deliveryRouteId")),
+    aoiSetDeliveryRoute: (mapId, handle, deliveryRouteId) => core.ops.op_native_aoi_set_delivery_route(u32(mapId, "mapId"), u32(handle, "handle"), u32(deliveryRouteId, "deliveryRouteId")),
     aoiDetach: (mapId, handle) => core.ops.op_native_aoi_detach(u32(mapId, "mapId"), u32(handle, "handle")),
     aoiRefresh: (mapId) => core.ops.op_native_aoi_refresh(u32(mapId, "mapId")),
     aoiSetVisible: (mapId, observerId, subjectId, visible) => core.ops.op_native_aoi_set_visible(u32(mapId, "mapId"), u32(observerId, "observerId"), u32(subjectId, "subjectId"), bool(visible, "visible")),

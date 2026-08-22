@@ -1,0 +1,11 @@
+{
+  "knownScenes": [
+    { "name": "login_mgr", "sceneType": "LoginMgr", "ip": "127.0.0.1", "port": 7000 },
+    { "name": "map_manager", "sceneType": "MapManager", "ip": "127.0.0.1", "port": 7100 },
+    { "name": "login_1", "sceneType": "Login", "ip": "127.0.0.1", "port": 7001 },
+    { "name": "gate_1", "sceneType": "Gate", "ip": "127.0.0.1", "port": 7201 },
+    { "name": "map_2", "sceneType": "MapHost", "ip": "127.0.0.1", "port": 7302 },
+    { "name": "dungeon_1", "sceneType": "MapHost", "ip": "127.0.0.1", "port": 7310 },
+    { "name": "location_1", "sceneType": "Location", "ip": "127.0.0.1", "port": 7401 }
+  ]
+}

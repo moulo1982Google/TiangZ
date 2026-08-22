@@ -293,4 +293,4 @@ npm run test:tiangz-fault-matrix
 - 显式配置`lifecycle.restart`的静态MapHost可由Watcher有界重启；Location只删除死亡代次的Actor路由，Gate在下一次进图/重连时改走新Actor。当前不是无感保持原Socket上的战斗现场，也不恢复怪物、仇恨、AI目标、移动意图和动态副本实例。
 - DBProxy开发分支已提供独立Prometheus指标、双实例Grafana Dashboard和基础告警，TiangZ Process指标也会显示Endpoint连接失败与切换；观测端口必须保留在本机或运维内网。TLS、令牌轮换、通知路由和生产长期指标存储仍未完成；Redis/PostgreSQL高可用与数据库内部指标使用云厂商能力，不在TiangZ内实现。
 
-下一步是动态地图接管策略、Gate故障转移和生产运维能力；新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。
+Gate故障接管已由独立无数据库验收覆盖；下一步是动态地图安全回退/接管、跨机器租约和生产运维能力。新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。

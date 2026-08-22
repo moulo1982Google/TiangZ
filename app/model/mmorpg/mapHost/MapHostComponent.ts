@@ -15,9 +15,11 @@ import { GateMessages } from "../../../generated/model/server/demo/protocol/mess
 import type {
   G2M_EnterMap,
   G2M_InitialSnapshot,
+  G2M_RebindPlayerGate,
   G2M_TransferPlayer,
   M2G_EnterMap,
   M2G_InitialSnapshot,
+  M2G_RebindPlayerGate,
   M2G_TransferPlayer,
   M2G_MapReady,
   M2M_AbortPlayerTransfer,
@@ -57,6 +59,7 @@ import { PlayerPersistenceComponent } from "../persistence/PlayerPersistenceComp
 import { ProgressionComponent } from "../progression/ProgressionComponent";
 import { GameConfigs, QuestStatus } from "../../../generated/model/config";
 import { LocationProxy } from "../location/LocationProxy";
+import { MAP_HOST_LEASE_TIMEOUT_MS } from "./MapHostLease";
 import { UnitGateComponent } from "../map/UnitGateComponent";
 import {
   StaticMapInstanceId,
@@ -267,7 +270,10 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
           snapshot = await this.owner.RunLocalActorMailbox(
             reconnectingPlayer,
             () => {
-              if (!reconnectingPlayer.MatchesGate({ gateName: request.gateName })) {
+              if (!reconnectingPlayer.MatchesGate({
+                gateName: request.gateName,
+                gateEpoch: request.gateEpoch,
+              })) {
                 throw new Error(`player Gate mismatch: ${request.account}`);
               }
               return reconnectingPlayer.SecondEnterMap();
@@ -318,6 +324,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
               account: player.Account,
               characterId: player.CharacterId,
               gateName: request.gateName,
+              gateEpoch: request.gateEpoch,
               mapHostName: this.owner.self.name,
               mapId,
               mapInstanceId: map.MapInstanceId,
@@ -507,6 +514,62 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     return await this.TransferRemote(source, request, resolved.instance, operationId);
   }
 
+  /**
+   * 在PlayerUnit有序邮箱内原子切换Gate所有权；Location提交成功后才修改内存和AOI投递路由。
+   * 重试使用同一operationId时由Location返回已提交结果，不会重复递增epoch。
+   *
+   * Atomically transfers Gate ownership inside the ordered PlayerUnit mailbox.
+   * In-memory and AOI delivery routes change only after Location commits; the
+   * same operationId recovers an already committed result without another bump.
+   */
+  async RebindPlayerGate(
+    source: PlayerUnit,
+    request: G2M_RebindPlayerGate,
+  ): Promise<M2G_RebindPlayerGate> {
+    await this.EnsureLocationOwner();
+    const currentGate = source.GetComponent(UnitGateComponent);
+    const matchesExpected =
+      currentGate.gateName === request.expectedGateName &&
+      currentGate.gateEpoch === request.expectedGateEpoch;
+    const matchesCommitted =
+      currentGate.gateName === request.nextGateName &&
+      currentGate.gateEpoch === request.expectedGateEpoch + 1n;
+    if (
+      source.UnitId !== request.unitId ||
+      source.Account !== request.account ||
+      source.CharacterId !== request.characterId ||
+      (!matchesExpected && !matchesCommitted)
+    ) {
+      throw new RpcError(SystemErrCode.LocationConflict, "player Gate takeover identity mismatch");
+    }
+
+    const committed = await this.location.RebindGate({
+      unitId: source.UnitId,
+      characterId: source.CharacterId,
+      expectedActorInstanceId: source.InstanceId,
+      expectedRevision: request.expectedLocationRevision,
+      expectedGateName: request.expectedGateName,
+      expectedGateEpoch: request.expectedGateEpoch,
+      nextGateName: request.nextGateName,
+      operationId: request.operationId,
+      mapHostName: this.owner.self.name,
+      ownerGeneration: this.ownerGeneration,
+    });
+    this.mapOf(source).ApplyGateRebind(
+      source,
+      committed.location.gateName,
+      committed.location.gateEpoch,
+    );
+    return {
+      rpcId: request.rpcId,
+      error: 0,
+      message: "",
+      gateName: committed.location.gateName,
+      gateEpoch: committed.location.gateEpoch,
+      locationRevision: committed.location.revision,
+    };
+  }
+
   /** 仅供同一MapHost内已经解析出的PlayerUnit进入真实Actor邮箱；跨进程定位仍必须经过Location。 / Enters the real Actor mailbox for an already-resolved PlayerUnit on this MapHost; cross-process lookup must still use Location. */
   RunPlayerMailbox<TResult>(
     player: PlayerUnit,
@@ -534,6 +597,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
           characterId: source.CharacterId,
           token: "map-transfer",
           gateName: request.gateName,
+          gateEpoch: source.GetComponent(UnitGateComponent).gateEpoch,
           mapInstanceId: targetInstance.mapInstanceId,
           hasInitialSpawnOverride: false,
           initialSpawnX: 0,
@@ -552,6 +616,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         unitId: source.UnitId,
         operationId,
         gateName: request.gateName,
+        gateEpoch: target.GetComponent(UnitGateComponent).gateEpoch,
         mapHostName: this.owner.self.name,
         mapId: targetInstance.mapConfigId,
         mapInstanceId: targetInstance.mapInstanceId,
@@ -623,6 +688,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         unitId: source.UnitId,
         operationId,
         gateName: request.gateName,
+        gateEpoch: source.GetComponent(UnitGateComponent).gateEpoch,
         mapHostName: target.mapHostName,
         mapId: target.mapId,
         mapInstanceId: target.mapInstanceId,
@@ -863,6 +929,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
       sourceMapId: snapshot.mapId,
       targetMapId: targetInstance.mapConfigId,
       gateName: snapshot.gateName,
+      gateEpoch: snapshot.gateEpoch,
       sourceMapInstanceId: snapshot.mapInstanceId,
       speedCellsPerSecond: snapshot.speedCellsPerSecond,
       facing: snapshot.facing,
@@ -944,6 +1011,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         account: player.Account,
         characterId: player.CharacterId,
         gateName: player.GetComponent(UnitGateComponent).gateName,
+        gateEpoch: player.GetComponent(UnitGateComponent).gateEpoch,
         mapHostName: this.owner.self.name,
         mapId: player.MapId,
         mapInstanceId: player.MapInstanceId,
@@ -980,6 +1048,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
             dynamic: map.IsDynamic,
             mapHost: this.EndpointSnapshot(),
           },
+          ownerGeneration: this.ownerGeneration,
+          leaseTimeoutMs: map.IsDynamic ? MAP_HOST_LEASE_TIMEOUT_MS : 0,
         });
       } catch (error) {
         this.owner.logger.warn("map instance route recovery failed", {
@@ -1046,6 +1116,8 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
         dynamic: true,
         mapHost: this.EndpointSnapshot(),
       },
+      ownerGeneration: this.ownerGeneration,
+      leaseTimeoutMs: MAP_HOST_LEASE_TIMEOUT_MS,
     });
     return {
       rpcId: request.rpcId,
@@ -1091,6 +1163,11 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
   /** 返回可由Manager和Location传播的本MapHost内网地址。 / Returns this MapHost's inner endpoint for Manager and Location routing. */
   EndpointSnapshot(): MapHostEndpoint {
     return MapHostEndpointFromScene(this.owner.self);
+  }
+
+  /** Manager和Location必须使用同一MapHost代次，避免各自接受不同进程。 / Manager and Location share one generation so they cannot accept different MapHost processes. */
+  get OwnerGeneration(): bigint {
+    return this.ownerGeneration;
   }
 
   /** 静态和动态地图共享唯一创建入口；同一实例的幂等重试必须保持定义一致。 / Static and dynamic maps share one creation path; retries for an existing ID must use the same definition. */
@@ -1231,7 +1308,7 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (!request.token) {
       throw new RpcError(GameErrCode.TokenRequired, "token is required");
     }
-    if (!request.gateName || request.characterId <= 0n) {
+    if (!request.gateName || request.gateEpoch <= 0n || request.characterId <= 0n) {
       throw new RpcError(
         GameErrCode.GateSessionRequired,
         "gate binding and character identity are required",
@@ -1243,7 +1320,13 @@ export class MapHostComponent extends Component<[repository: PlayerRepository]> 
     if (snapshot.schemaVersion !== PLAYER_TRANSFER_SCHEMA_VERSION) {
       throw new Error(`unsupported player transfer schema: ${snapshot.schemaVersion}`);
     }
-    if (!snapshot.transferId || !snapshot.account || !snapshot.gateName || snapshot.characterId <= 0n) {
+    if (
+      !snapshot.transferId ||
+      !snapshot.account ||
+      !snapshot.gateName ||
+      snapshot.gateEpoch <= 0n ||
+      snapshot.characterId <= 0n
+    ) {
       throw new Error("incomplete player transfer identity");
     }
     if (snapshot.starterDungeon.cooldownEndAtMs < 0n) {

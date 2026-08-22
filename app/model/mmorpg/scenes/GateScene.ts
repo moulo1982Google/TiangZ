@@ -1,11 +1,14 @@
 import {
   EntryScene,
+  GlobalIdSystem,
   RpcError,
   SystemErrCode,
   TimeSystem,
   TimerSystem,
   entryScene,
   message,
+  rpc,
+  type CustomMetricSnapshot,
   type RuntimeEntrySceneConfig,
   type SceneMetricsSnapshot,
   type TimerId,
@@ -23,10 +26,12 @@ import {
   type G2C_Ping,
   type G2C_MapReady,
   type G2C_SessionReplaced,
+  type G2S_ProbeGate,
   type G2M_EnterMap,
   type G2M_ClaimStarterDungeonEntry,
   type G2M_InitialSnapshot,
   type G2M_PlayerOffline,
+  type G2M_RebindPlayerGate,
   type G2M_SecondEnterMap,
   type G2M_TransferPlayer,
   type M2G_EnterMap,
@@ -34,18 +39,22 @@ import {
   type M2G_InitialSnapshot,
   type M2G_KickPlayers,
   type M2G_MapReady,
+  type M2G_RebindPlayerGate,
   type M2G_SecondEnterMap,
   type M2G_TransferPlayer,
   type S2G_ClientBroadcast,
   type S2G_ClientBroadcastBatch,
+  type S2G_ProbeGate,
+  type PlayerLocationSnapshot,
 } from "../../../generated/model/server/demo/protocol/messages";
 import {
   ClientMessages,
   GateMessages,
 } from "../../../generated/model/server/demo/protocol/messageDescriptors";
-import { MapProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
+import { GateProtocol, MapProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { GameConfigs } from "../../../generated/model/config";
-import { GatePlayerRoute } from "../gate/GatePlayerRoute";
+import { GatePlayerRoute, type GatePlayerMapLocation } from "../gate/GatePlayerRoute";
+import { IsGateReachable } from "../gate/GateHealth";
 import { GateSession } from "../gate/GateSession";
 import { DecodeLoginToken } from "../login/LoginToken";
 import { LocationProxy } from "../location/LocationProxy";
@@ -75,6 +84,11 @@ export interface ServerSpawnOverride {
   readonly yaw: number;
 }
 
+interface MapResumeResult {
+  readonly response?: G2C_EnterMap;
+  readonly routeLost: boolean;
+}
+
 @entryScene()
 export class GateScene extends EntryScene {
   protected override readonly mailbox = "unordered" as const;
@@ -89,6 +103,17 @@ export class GateScene extends EntryScene {
   private readonly finalOfflinePending = new Set<string>();
   private readonly location: LocationProxy;
   private readonly dynamicMaps: DynamicMapProxy;
+  private readonly gateTakeoverMetrics = {
+    attempts: 0,
+    succeeded: 0,
+    rejectedOwnerAlive: 0,
+    failed: 0,
+  };
+  private readonly dynamicFallbackMetrics = {
+    attempts: 0,
+    completed: 0,
+    failed: 0,
+  };
   private timeoutSweepTimer = 0 as TimerId;
 
   constructor(config: RuntimeEntrySceneConfig) {
@@ -104,7 +129,15 @@ export class GateScene extends EntryScene {
   override metricsSnapshot(): SceneMetricsSnapshot {
     const metrics = super.metricsSnapshot();
     metrics.customMetrics.push(this.actorTransferMetricSnapshot());
+    metrics.customMetrics.push(this.GateTakeoverMetricSnapshot());
+    metrics.customMetrics.push(this.DynamicFallbackMetricSnapshot());
     return metrics;
+  }
+
+  /** 供Login和其他Gate做低成本存活探测；不暴露玩家状态。 / Lets Login and peer Gates probe liveness without exposing player state. */
+  @rpc(GateProtocol.Probe)
+  private Probe(_request: S2G_ProbeGate): G2S_ProbeGate {
+    return { gateName: this.self.name };
   }
 
   /** 启动一个Gate级合并扫描器；不会为每名玩家创建独立Timer。 / Starts one Gate-level sweep instead of allocating one Timer per player. */
@@ -457,7 +490,11 @@ export class GateScene extends EntryScene {
         G2M_ClaimStarterDungeonEntry,
         M2G_ClaimStarterDungeonEntry
       >(
-        { scene: source.mapHost, instanceId: source.actorInstanceId },
+        {
+          scene: source.mapHost,
+          instanceId: source.actorInstanceId,
+          fenceToken: source.gateEpoch,
+        },
         MapProtocol.ClaimStarterDungeonEntry,
         { operationId },
         { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
@@ -550,47 +587,58 @@ export class GateScene extends EntryScene {
     if (route.actorState === "moving") {
       throw new RpcError(SystemErrCode.ActorTransferring, "player transfer is recovering");
     }
+    const safeMapId = GameConfigs.PlayerConfig.Get(1).initialMapId;
+    const safeMapInstanceId = BigInt(safeMapId);
+    const defaultMapId = request.mapId || safeMapId;
+    let targetMapInstanceId = request.mapInstanceId || BigInt(defaultMapId);
+    let safeFallback = false;
     if (session.needsSecondEnter && route.map) {
       const resumed = await this.ResumeOrRecoverMapHost(session, route);
-      if (resumed) return resumed;
+      if (resumed.response) return resumed.response;
+      if (resumed.routeLost) {
+        targetMapInstanceId = safeMapInstanceId;
+        safeFallback = true;
+      }
     }
 
-    const defaultMapId = request.mapId || GameConfigs.PlayerConfig.Get(1).initialMapId;
-    const targetMapInstanceId = request.mapInstanceId || BigInt(defaultMapId);
     if (!route.map) {
       const resolved = await this.location.Resolve({ unitId: 0, account: "", characterId: route.characterId });
       this.AssertCurrentRoute(session, route);
       if (resolved.found) {
-        if (resolved.location.gateName !== this.self.name) {
-          throw new RpcError(
-            GameErrCode.GateSessionRequired,
-            `player belongs to Gate ${resolved.location.gateName}`,
-          );
-        }
         if (resolved.location.state !== "active") {
           throw new RpcError(SystemErrCode.ActorTransferring, "player location is changing");
         }
+        const owned = await this.EnsureGateOwnership(session, route, resolved.location);
         route.BindMap({
-          mapService: resolved.location.mapHostName,
-          mapHost: SceneConfigFromMapHostEndpoint(resolved.location.mapHost),
-          mapId: resolved.location.mapId,
-          mapInstanceId: resolved.location.mapInstanceId,
-          unitId: resolved.location.unitId,
-          actorInstanceId: resolved.location.actorInstanceId,
-          revision: resolved.location.revision,
+          mapService: owned.mapHostName,
+          mapHost: SceneConfigFromMapHostEndpoint(owned.mapHost),
+          mapId: owned.mapId,
+          mapInstanceId: owned.mapInstanceId,
+          unitId: owned.unitId,
+          actorInstanceId: owned.actorInstanceId,
+          revision: owned.revision,
+          gateEpoch: owned.gateEpoch,
         });
-        this.routesByUnitId.set(resolved.location.unitId, route);
+        this.routesByUnitId.set(owned.unitId, route);
         this.BindConnectionRoute(route, session.ConnectionId);
         if (resolved.location.mapInstanceId === targetMapInstanceId) {
           const resumed = await this.ResumeOrRecoverMapHost(session, route);
-          if (resumed) return resumed;
+          if (resumed.response) return resumed.response;
+          if (resumed.routeLost) {
+            targetMapInstanceId = safeMapInstanceId;
+            safeFallback = true;
+          }
         }
       }
     }
     if (route.map) {
       if (route.map.mapInstanceId === targetMapInstanceId) {
         const resumed = await this.ResumeOrRecoverMapHost(session, route);
-        if (resumed) return resumed;
+        if (resumed.response) return resumed.response;
+        if (resumed.routeLost) {
+          targetMapInstanceId = safeMapInstanceId;
+          safeFallback = true;
+        }
       }
     }
     if (route.map) {
@@ -598,27 +646,35 @@ export class GateScene extends EntryScene {
     }
     const target = await this.location.ResolveMapInstance({ mapInstanceId: targetMapInstanceId });
     if (!target.found) {
+      if (safeFallback) this.dynamicFallbackMetrics.failed += 1;
       throw new RpcError(GameErrCode.MapNotFound, `map instance not found: ${targetMapInstanceId}`);
     }
     const mapHostScene = SceneConfigFromMapInstance(target.instance);
-    const mapResponse = await this.scenes.call<G2M_EnterMap, M2G_EnterMap>(
-      mapHostScene,
-      MapProtocol.EnterMap,
-      {
-        account: session.account,
-        token: session.token,
-        gateName: this.self.name,
-        characterId: session.characterId,
-        mapInstanceId: target.instance.mapInstanceId,
-        hasInitialSpawnOverride: spawnOverride !== undefined,
-        initialSpawnX: spawnOverride?.x ?? 0,
-        initialSpawnY: spawnOverride?.y ?? 0,
-        initialSpawnZ: spawnOverride?.z ?? 0,
-        initialSpawnYaw: spawnOverride?.yaw ?? 0,
-        entrySyncMode,
-      },
-      { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
-    );
+    let mapResponse: M2G_EnterMap;
+    try {
+      mapResponse = await this.scenes.call<G2M_EnterMap, M2G_EnterMap>(
+        mapHostScene,
+        MapProtocol.EnterMap,
+        {
+          account: session.account,
+          token: session.token,
+          gateName: this.self.name,
+          gateEpoch: 1n,
+          characterId: session.characterId,
+          mapInstanceId: target.instance.mapInstanceId,
+          hasInitialSpawnOverride: spawnOverride !== undefined,
+          initialSpawnX: spawnOverride?.x ?? 0,
+          initialSpawnY: spawnOverride?.y ?? 0,
+          initialSpawnZ: spawnOverride?.z ?? 0,
+          initialSpawnYaw: spawnOverride?.yaw ?? 0,
+          entrySyncMode,
+        },
+        { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
+      );
+    } catch (error) {
+      if (safeFallback) this.dynamicFallbackMetrics.failed += 1;
+      throw error;
+    }
     this.AssertCurrentRoute(session, route);
 
     route.BindMap({
@@ -629,6 +685,7 @@ export class GateScene extends EntryScene {
       unitId: mapResponse.unitId,
       actorInstanceId: mapResponse.actorInstanceId,
       revision: mapResponse.locationRevision,
+      gateEpoch: 1n,
     });
     session.needsSecondEnter = false;
     this.routesByUnitId.set(mapResponse.unitId, route);
@@ -640,6 +697,14 @@ export class GateScene extends EntryScene {
       mapId: mapResponse.mapId,
       unitId: mapResponse.unitId,
     });
+    if (safeFallback) {
+      this.dynamicFallbackMetrics.completed += 1;
+      this.logger.warn("player recovered to safe static map", {
+        account: route.account,
+        mapId: mapResponse.mapId,
+        mapInstanceId: mapResponse.mapInstanceId.toString(),
+      });
+    }
     return this.ToClientEnterMap(mapHostScene.name, mapResponse);
   }
 
@@ -689,6 +754,7 @@ export class GateScene extends EntryScene {
         unitId: resolved.location.unitId,
         actorInstanceId: resolved.location.actorInstanceId,
         revision: resolved.location.revision,
+        gateEpoch: resolved.location.gateEpoch,
       });
       this.BindConnectionRoute(route, connectionId);
       source = route.map!;
@@ -696,6 +762,7 @@ export class GateScene extends EntryScene {
         {
           scene: source.mapHost,
           instanceId: source.actorInstanceId,
+          fenceToken: source.gateEpoch,
         },
         MapProtocol.TransferPlayer,
         {
@@ -716,6 +783,7 @@ export class GateScene extends EntryScene {
         unitId: response.unitId,
         actorInstanceId: response.actorInstanceId,
         revision: response.locationRevision,
+        gateEpoch: source.gateEpoch,
       });
       this.BindConnectionRoute(route, connectionId);
       this.sendClient(connectionId, ClientMessages.MapReady, {
@@ -786,7 +854,11 @@ export class GateScene extends EntryScene {
       G2M_SecondEnterMap,
       M2G_SecondEnterMap
     >(
-      { scene: targetScene, instanceId: location.actorInstanceId },
+      {
+        scene: targetScene,
+        instanceId: location.actorInstanceId,
+        fenceToken: location.gateEpoch,
+      },
       MapProtocol.SecondEnterMap,
       {
         account: route.account,
@@ -794,6 +866,7 @@ export class GateScene extends EntryScene {
         mapId: location.mapId,
         unitId: location.unitId,
         gateName: this.self.name,
+        gateEpoch: location.gateEpoch,
       },
     );
     this.AssertCurrentRoute(session, route);
@@ -843,9 +916,9 @@ export class GateScene extends EntryScene {
   private async ResumeOrRecoverMapHost(
     session: GateSession,
     route: GatePlayerRoute,
-  ): Promise<G2C_EnterMap | undefined> {
+  ): Promise<MapResumeResult> {
     try {
-      return await this.SecondEnterMap(session, route);
+      return { response: await this.SecondEnterMap(session, route), routeLost: false };
     } catch (error) {
       const previous = route.map;
       if (!previous) throw error;
@@ -870,12 +943,13 @@ export class GateScene extends EntryScene {
 
       this.ClearStaleMapRoute(route, session.ConnectionId);
       if (!resolved.found) {
+        this.dynamicFallbackMetrics.attempts += 1;
         this.logger.warn("cleared stale MapHost route for player recovery", {
           account: route.account,
           mapHost: previous.mapService,
           unitId: previous.unitId,
         });
-        return undefined;
+        return { routeLost: true };
       }
       if (resolved.location.gateName !== this.self.name || resolved.location.state !== "active") {
         throw error;
@@ -888,9 +962,10 @@ export class GateScene extends EntryScene {
         unitId: resolved.location.unitId,
         actorInstanceId: resolved.location.actorInstanceId,
         revision: resolved.location.revision,
+        gateEpoch: resolved.location.gateEpoch,
       });
       this.BindConnectionRoute(route, session.ConnectionId);
-      return await this.SecondEnterMap(session, route);
+      return { response: await this.SecondEnterMap(session, route), routeLost: false };
     }
   }
 
@@ -904,6 +979,86 @@ export class GateScene extends EntryScene {
       this.connectionIdsByUnitId.delete(previous.unitId);
     }
     this.actorLocations.unbindConnection(connectionId);
+  }
+
+  /**
+   * 当前Gate与Location所有者不同时，先确认旧Gate不可达，再由PlayerUnit邮箱执行CAS接管。
+   * 探测只能决定是否尝试；最终正确性由Location revision和Actor fencing token共同保证。
+   *
+   * When this Gate differs from Location ownership, it first confirms the old
+   * Gate is unreachable, then asks the PlayerUnit mailbox to perform a CAS
+   * takeover. Probing permits the attempt; revision CAS and Actor fencing keep it safe.
+   */
+  private async EnsureGateOwnership(
+    session: GateSession,
+    route: GatePlayerRoute,
+    location: PlayerLocationSnapshot,
+  ): Promise<PlayerLocationSnapshot> {
+    if (location.gateName === this.self.name) return location;
+    this.gateTakeoverMetrics.attempts += 1;
+
+    let previousGate;
+    try {
+      previousGate = this.scenes.byName(location.gateName);
+    } catch {
+      this.gateTakeoverMetrics.failed += 1;
+      throw new RpcError(
+        GameErrCode.GateSessionRequired,
+        `player Gate owner is outside this topology: ${location.gateName}`,
+      );
+    }
+    if (await IsGateReachable(this.scenes, previousGate)) {
+      this.gateTakeoverMetrics.rejectedOwnerAlive += 1;
+      throw new RpcError(
+        GameErrCode.GateSessionRequired,
+        `player is still owned by reachable Gate ${location.gateName}`,
+      );
+    }
+    this.AssertCurrentRoute(session, route);
+
+    try {
+      const operationId = `gate-rebind:${this.self.name}:${GlobalIdSystem.Instance.Next()}`;
+      const committed = await this.scenes.callActor<
+        G2M_RebindPlayerGate,
+        M2G_RebindPlayerGate
+      >(
+        {
+          scene: SceneConfigFromMapHostEndpoint(location.mapHost),
+          instanceId: location.actorInstanceId,
+          fenceToken: location.gateEpoch,
+        },
+        MapProtocol.RebindPlayerGate,
+        {
+          account: route.account,
+          characterId: route.characterId,
+          unitId: location.unitId,
+          expectedGateName: location.gateName,
+          nextGateName: this.self.name,
+          expectedGateEpoch: location.gateEpoch,
+          expectedLocationRevision: location.revision,
+          operationId,
+        },
+        { timeoutMs: MAP_ENTRY_ADMISSION_TIMEOUT_MS },
+      );
+      this.AssertCurrentRoute(session, route);
+      this.gateTakeoverMetrics.succeeded += 1;
+      this.logger.warn("player Gate ownership taken over", {
+        account: route.account,
+        previousGate: location.gateName,
+        nextGate: committed.gateName,
+        gateEpoch: committed.gateEpoch.toString(),
+        unitId: location.unitId,
+      });
+      return {
+        ...location,
+        gateName: committed.gateName,
+        gateEpoch: committed.gateEpoch,
+        revision: committed.locationRevision,
+      };
+    } catch (error) {
+      this.gateTakeoverMetrics.failed += 1;
+      throw error;
+    }
   }
 
   /** 每个账号最多排队一次最终下线事务；真正取得锁后重新检查超时，避免误踢刚重连的玩家。 / Queues at most one final-offline transaction per account and rechecks expiry after locking. */
@@ -949,12 +1104,14 @@ export class GateScene extends EntryScene {
           mapId: location.mapId,
           unitId: location.unitId,
           gateName: this.self.name,
+          gateEpoch: location.gateEpoch,
           reason,
         };
         await this.scenes.callActor(
           {
             scene: location.mapHost,
             instanceId: location.actorInstanceId,
+            fenceToken: location.gateEpoch,
           },
           MapProtocol.PlayerOffline,
           request,
@@ -1028,6 +1185,7 @@ export class GateScene extends EntryScene {
     const target = {
       instanceId: location.actorInstanceId,
       scene: location.mapHost,
+      fenceToken: location.gateEpoch,
     };
     const previous = this.actorLocations.resolveConnection(connectionId);
     if (
@@ -1036,7 +1194,8 @@ export class GateScene extends EntryScene {
         previous.scene.name !== target.scene.name ||
         previous.scene.sceneType !== target.scene.sceneType ||
         previous.scene.innerIp !== target.scene.innerIp ||
-        previous.scene.port !== target.scene.port)
+        previous.scene.port !== target.scene.port ||
+        previous.fenceToken !== target.fenceToken)
     ) {
       // 地图迁移是显式的同连接换Actor；先解除旧路由，再执行严格bind，
       // 避免底层目录默默覆盖旧目标。
@@ -1045,6 +1204,42 @@ export class GateScene extends EntryScene {
       this.actorLocations.unbindConnection(connectionId);
     }
     this.actorLocations.bindConnection(connectionId, target);
+  }
+
+  /** 导出Gate接管的低基数累计结果。 / Exports low-cardinality cumulative Gate takeover outcomes. */
+  private GateTakeoverMetricSnapshot(): CustomMetricSnapshot {
+    return {
+      name: "gate_takeover",
+      values: {
+        attempts_total: this.gateTakeoverMetrics.attempts,
+        succeeded_total: this.gateTakeoverMetrics.succeeded,
+        rejected_owner_alive_total: this.gateTakeoverMetrics.rejectedOwnerAlive,
+        failed_total: this.gateTakeoverMetrics.failed,
+      },
+      kinds: {
+        attempts_total: "counter",
+        succeeded_total: "counter",
+        rejected_owner_alive_total: "counter",
+        failed_total: "counter",
+      },
+    };
+  }
+
+  /** 导出动态地图丢失后的安全回退结果。 / Exports safe-fallback outcomes after dynamic map loss. */
+  private DynamicFallbackMetricSnapshot(): CustomMetricSnapshot {
+    return {
+      name: "dynamic_map_fallback",
+      values: {
+        attempts_total: this.dynamicFallbackMetrics.attempts,
+        completed_total: this.dynamicFallbackMetrics.completed,
+        failed_total: this.dynamicFallbackMetrics.failed,
+      },
+      kinds: {
+        attempts_total: "counter",
+        completed_total: "counter",
+        failed_total: "counter",
+      },
+    };
   }
 
   private RemoveRoute(route: GatePlayerRoute): void {

@@ -72,6 +72,7 @@ export class DynamicMapLifecycleComponent extends Component {
       await this.location.RemoveMapInstance({
         mapInstanceId,
         expectedMapHostName: this.owner.self.name,
+        expectedOwnerGeneration: this.mapHost.OwnerGeneration,
       });
       const disposed = await this.mapHost.DisposeMap(mapInstanceId);
       if (disposed) this.emptySince.delete(mapInstanceId);

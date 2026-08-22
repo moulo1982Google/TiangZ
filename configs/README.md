@@ -53,7 +53,7 @@ configs/experiments/    io_uring、KCP 等显式实验配置
 
 `innerIp`写给其他服，`bindIp`只负责监听，`outerIp/outerPort`写给客户端。前端只配置LoginMgr公网地址；LoginMgr返回Login外网地址，Login返回Gate外网地址。`knownScenes`和MapHost路由只使用`innerIp`，不要写`0.0.0.0`。
 
-`local/all-in-one.json` 把全部 Demo Scene 放在一个进程；`local/cluster/` 是一套可整体复制的多进程部署包，由其中的 `StartMachine.json` 统一启动。`npm run test:runtime` 会验证两种部署。
+`local/all-in-one.json`把全部Demo Scene放在一个进程；`local/cluster/`是一套可整体复制的多进程部署包。`local/gate-failover/`用于双Gate强杀接管，`local/dynamic-fallback/`用于Manager与动态MapHost双失后的租约过期和安全静态地图回退。`npm run test:runtime`验证常规两种部署，故障拓扑只由各自验收命令启动。
 
 `experiments/all.io-uring.json` 是 Linux TCP 实验配置。它使用 `network.ioBackend=io-uring` 和 `scene.protocol=tcp`，需要通过 `cargo build --features io-uring` 构建；Cocos WebSocket 客户端不能连接该配置。
 
@@ -69,6 +69,6 @@ KCP 暂不支持 `audience=inner`。Cocos Web 不能连接此配置；Web 客户
 
 `StartMachine.json` 按本机 IP 选择并启动 `processes` 中列出的配置文件，作用类似 ET Watcher。压测配置没有加入默认 StartMachine，需要显式启动。
 
-子进程默认不自动重启。只有在对应Process配置中显式填写`process.lifecycle.restart`时，Watcher才会按`maxAttempts/windowMs/backoffMs`有界拉起该进程；预算耗尽仍关闭整组。该配置不能替代业务持久化和路由接管，当前只在`local/cluster-dbproxy/map-2.json`中作为静态MapHost恢复验收启用。
+子进程默认不自动重启。只有在对应Process配置中显式填写`process.lifecycle.restart`时，Watcher才会按`maxAttempts/windowMs/backoffMs`有界拉起该进程；预算耗尽仍关闭整组。该配置不能替代业务持久化和路由接管；当前静态MapHost恢复拓扑与双Gate故障拓扑显式启用，外网双Gate也使用同一有界策略。
 
 Inspector 默认只能监听回环地址。只有明确设置 `allowRemote: true` 才允许远程监听，并应由防火墙限制访问。

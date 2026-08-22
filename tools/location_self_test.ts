@@ -33,26 +33,61 @@ function testMapInstanceDirectory(): void {
     mapHost: mapHostEndpoint("map_2", 7302),
   };
 
-  assert.equal(directory.Register({ instance: staticMap }).created, true);
-  assert.equal(directory.Register({ instance: staticMap }).created, false);
-  assert.equal(directory.Register({ instance: dynamicMap }).created, true);
+  assert.equal(directory.Register({
+    instance: staticMap,
+    ownerGeneration: 1n,
+    leaseTimeoutMs: 0,
+  }).created, true);
+  assert.equal(directory.Register({
+    instance: staticMap,
+    ownerGeneration: 1n,
+    leaseTimeoutMs: 0,
+  }).created, false);
+  assert.equal(directory.Register({
+    instance: dynamicMap,
+    ownerGeneration: 2n,
+    leaseTimeoutMs: 1_000,
+  }).created, true);
   assert.deepEqual(
     directory.Resolve({ mapInstanceId: dynamicMap.mapInstanceId }).instance,
     dynamicMap,
   );
   assert.throws(
-    () => directory.Register({ instance: { ...dynamicMap, mapHostName: "map_1" } }),
+    () => directory.Register({
+      instance: { ...dynamicMap, mapHostName: "map_1" },
+      ownerGeneration: 2n,
+      leaseTimeoutMs: 1_000,
+    }),
     /conflicts/,
   );
   assert.throws(
-    () => directory.Remove({ mapInstanceId: 1n, expectedMapHostName: "map_1" }),
+    () => directory.Remove({
+      mapInstanceId: 1n,
+      expectedMapHostName: "map_1",
+      expectedOwnerGeneration: 1n,
+    }),
     /static map instances cannot be removed/,
   );
+  assert.throws(() => directory.Remove({
+    mapInstanceId: dynamicMap.mapInstanceId,
+    expectedMapHostName: "map_2",
+    expectedOwnerGeneration: 1n,
+  }), /conflicts/);
   assert.equal(directory.Remove({
     mapInstanceId: dynamicMap.mapInstanceId,
     expectedMapHostName: "map_2",
+    expectedOwnerGeneration: 2n,
   }).removed, true);
   assert.equal(directory.Resolve({ mapInstanceId: dynamicMap.mapInstanceId }).found, false);
+
+  assert.equal(directory.Register({
+    instance: dynamicMap,
+    ownerGeneration: 3n,
+    leaseTimeoutMs: 1_000,
+  }).created, true);
+  assert.equal(directory.SweepExpired(Date.now() + 1_001), 1);
+  assert.equal(directory.Resolve({ mapInstanceId: dynamicMap.mapInstanceId }).found, false);
+  assert.equal(directory.Metrics().values.expired_dynamic_total, 1);
 }
 
 function mapHostEndpoint(name: string, port: number) {
@@ -67,6 +102,7 @@ function testOwnerRecovery(): void {
     account: "recovery-a",
     characterId: 9001n,
     gateName: "gate_1",
+    gateEpoch: 1n,
     mapHostName: "map_1",
     mapId: 1,
     mapInstanceId: 1n,
@@ -88,6 +124,29 @@ function testOwnerRecovery(): void {
   assert.equal(location.Resolve({ unitId: 1001, account: "", characterId: 9001n }).location.account, "recovery-a");
   assert.equal(location.RecoverOwner({ ownerName: "map_1", ownerGeneration: 101n, locations: [route] }).unchanged, 1);
 
+  const beforeRebind = location.Resolve({ unitId: 1001, account: "", characterId: 9001n }).location;
+  const takeover = {
+    unitId: route.unitId,
+    characterId: route.characterId,
+    expectedActorInstanceId: route.actorInstanceId,
+    expectedRevision: beforeRebind.revision,
+    expectedGateName: "gate_1",
+    nextGateName: "gate_2",
+    expectedGateEpoch: 1n,
+    operationId: "gate-takeover-1",
+    mapHostName: "map_1",
+    ownerGeneration: 101n,
+  };
+  const rebound = location.RebindGate(takeover).location;
+  assert.equal(rebound.gateName, "gate_2");
+  assert.equal(rebound.gateEpoch, 2n);
+  assert.equal(rebound.revision, beforeRebind.revision + 1n);
+  assert.deepEqual(location.RebindGate(takeover).location, rebound);
+  assert.throws(
+    () => location.RebindGate({ ...takeover, operationId: "stale-takeover" }),
+    /owner changed|revision mismatch/,
+  );
+
   assert.throws(() => location.RecoverOwner({
     ownerName: "map_1",
     ownerGeneration: 101n,
@@ -98,7 +157,7 @@ function testOwnerRecovery(): void {
   }), /character 9001 already belongs to unit 1001/);
   assert.equal(location.Resolve({ unitId: 1002, account: "", characterId: 0n }).found, false);
 
-  const replacement = { ...route, actorInstanceId: 21 };
+  const replacement = { ...route, gateName: "gate_2", gateEpoch: 2n, actorInstanceId: 21 };
   assert.deepEqual(location.RecoverOwner({
     ownerName: "map_1",
     ownerGeneration: 102n,

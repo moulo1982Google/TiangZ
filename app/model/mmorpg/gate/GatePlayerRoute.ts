@@ -10,6 +10,7 @@ export interface GatePlayerMapLocation {
   readonly unitId: number;
   readonly actorInstanceId: number;
   readonly revision: bigint;
+  readonly gateEpoch: bigint;
 }
 
 export type GateActorRouteState = "active" | "moving";

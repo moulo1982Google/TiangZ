@@ -139,6 +139,19 @@ export class MapAoiComponent extends Component<[definition: MapInstanceDefinitio
     return this.CommitChanges(unit.UnitId);
   }
 
+  /** 在Gate接管后切换现有Observer的原生投递路由，不改变其可见集合。 / Switches an attached observer's native delivery route after Gate takeover without changing visibility. */
+  SetDeliveryRoute(unit: Unit<any[]>, deliveryRouteId: number): void {
+    if (!this.IsAttached(unit)) throw new Error(`AOI Unit ${unit.UnitId} is not attached`);
+    if (!Number.isSafeInteger(deliveryRouteId) || deliveryRouteId <= 0) {
+      throw new Error(`invalid AOI delivery route id: ${deliveryRouteId}`);
+    }
+    NativeData.SetAoiDeliveryRoute(
+      this.nativeMapKey,
+      unit.GetComponent(NativeUnitRef).Handle,
+      deliveryRouteId,
+    );
+  }
+
   /** 在 Native Unit 销毁前移出 AOI；离开的 Observer 不会收到自己的 Leave。 / Detaches before Native Unit destruction and suppresses leave messages to the departing observer itself. */
   Detach(unit: Unit<any[]>): readonly AoiVisibilityDelta[] {
     const changes = NativeData.DetachAoi(

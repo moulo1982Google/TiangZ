@@ -2,6 +2,7 @@
   "process": {
     "name": "external_manager",
     "identity": { "originServerId": 1, "workerId": 8 },
+    "lifecycle": { "restart": { "maxAttempts": 5, "windowMs": 600000, "backoffMs": 5000 } },
     "logging": { "level": "info", "format": "pretty", "console": true },
     "game": { "fixedUpdateMs": 50, "maxCatchUpSteps": 2 },
     "persistence": {

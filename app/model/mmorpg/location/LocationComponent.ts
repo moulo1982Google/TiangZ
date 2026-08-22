@@ -13,6 +13,7 @@ import type {
   L2S_LockPlayerLocation,
   L2S_RegisterPlayerLocation,
   L2S_RecoverPlayerLocations,
+  L2S_RebindPlayerGate,
   L2S_RemovePlayerLocation,
   L2S_ResolvePlayerLocation,
   L2S_ResolvePlayerLocations,
@@ -25,6 +26,7 @@ import type {
   S2L_LockPlayerLocation,
   S2L_RegisterPlayerLocation,
   S2L_RecoverPlayerLocations,
+  S2L_RebindPlayerGate,
   S2L_RemovePlayerLocation,
   S2L_ResolvePlayerLocation,
   S2L_ResolvePlayerLocations,
@@ -36,6 +38,7 @@ interface PlayerLocationValue {
   readonly account: string;
   readonly characterId: bigint;
   readonly gateName: string;
+  readonly gateEpoch: bigint;
   readonly mapHostName: string;
   readonly mapId: number;
   readonly mapInstanceId: bigint;
@@ -60,6 +63,7 @@ export class LocationComponent extends Component {
   private conflicts = 0;
   private resolves = 0;
   private mutations = 0;
+  private lostMapFallbacks = 0;
   private mapInstances: MapInstanceDirectoryComponent | null = null;
 
   /** 绑定同LocationScene的地图实例目录，使玩家路由响应可携带动态MapHost地址。 / Binds the colocated map-instance directory so player routes carry dynamic MapHost endpoints. */
@@ -135,7 +139,7 @@ export class LocationComponent extends Component {
       this.fail("location unit/account identity mismatch");
     }
     unitId ??= characterUnitId ?? accountUnitId;
-    const record = unitId === undefined ? undefined : this.directory.Resolve(unitId);
+    const record = unitId === undefined ? undefined : this.resolveAvailable(unitId);
     return response(request.rpcId, {
       found: record !== undefined,
       location: record ? this.toSnapshot(record) : emptySnapshot(),
@@ -150,7 +154,7 @@ export class LocationComponent extends Component {
       if (visited.has(unitId)) continue;
       visited.add(unitId);
       this.resolves += 1;
-      const record = this.directory.Resolve(unitId);
+      const record = this.resolveAvailable(unitId);
       if (record) locations.push(this.toSnapshot(record));
     }
     return response(request.rpcId, { locations });
@@ -185,6 +189,7 @@ export class LocationComponent extends Component {
     const value: PlayerLocationValue = {
       account: current.value.account,
       gateName: request.gateName,
+      gateEpoch: request.gateEpoch,
       mapHostName: request.mapHostName,
       mapId: request.mapId,
       mapInstanceId: request.mapInstanceId,
@@ -193,6 +198,43 @@ export class LocationComponent extends Component {
     };
     try {
       const committed = this.directory.Commit(request.unitId, request.operationId, value);
+      this.mutations += 1;
+      return response(request.rpcId, { location: this.toSnapshot(committed) });
+    } catch (error) {
+      return this.rethrow(error);
+    }
+  }
+
+  /** 以revision、Actor、旧Gate和旧epoch为CAS条件切换连接所有权；同operationId重试返回首次结果。 / Rebinds connection ownership with revision, Actor, old-Gate, and epoch CAS while preserving idempotent retries. */
+  RebindGate(request: S2L_RebindPlayerGate): L2S_RebindPlayerGate {
+    if (!request.operationId) this.fail("Gate rebind operationId is required");
+    if (!request.expectedGateName || !request.nextGateName) this.fail("Gate rebind names are required");
+    if (request.expectedGateName === request.nextGateName) this.fail("Gate rebind needs another Gate");
+    if (request.expectedGateEpoch <= 0n) this.fail("Gate rebind epoch is required");
+    this.requireOwnerGeneration(request.mapHostName, request.ownerGeneration);
+
+    const current = this.require(request.unitId);
+    if (this.directory.WasCommitted(request.unitId, request.operationId)) {
+      return response(request.rpcId, { location: this.toSnapshot(current) });
+    }
+    if (current.value.characterId !== request.characterId) this.fail("Gate rebind character changed");
+    if (current.value.mapHostName !== request.mapHostName) this.fail("Gate rebind MapHost changed");
+    if (current.value.actorInstanceId !== request.expectedActorInstanceId) this.fail("Gate rebind Actor changed");
+    if (current.value.gateName !== request.expectedGateName) this.fail("Gate rebind owner changed");
+    if (current.value.gateEpoch !== request.expectedGateEpoch) this.fail("Gate rebind epoch changed");
+
+    try {
+      this.directory.Lock(
+        request.unitId,
+        request.expectedRevision,
+        request.operationId,
+        "moving",
+      );
+      const committed = this.directory.Commit(request.unitId, request.operationId, {
+        ...current.value,
+        gateName: request.nextGateName,
+        gateEpoch: request.expectedGateEpoch + 1n,
+      });
       this.mutations += 1;
       return response(request.rpcId, { location: this.toSnapshot(committed) });
     } catch (error) {
@@ -316,11 +358,13 @@ export class LocationComponent extends Component {
         resolves_total: this.resolves,
         mutations_total: this.mutations,
         conflicts_total: this.conflicts,
+        lost_map_fallbacks_total: this.lostMapFallbacks,
       },
       kinds: {
         resolves_total: "counter",
         mutations_total: "counter",
         conflicts_total: "counter",
+        lost_map_fallbacks_total: "counter",
       },
     };
   }
@@ -344,6 +388,28 @@ export class LocationComponent extends Component {
     }
     this.mutations += removed;
     return removed;
+  }
+
+  /**
+   * 地图路由租约丢失后删除对应玩家Actor路由，让Gate从持久化数据进入安全静态地图。
+   * Location启动宽限期内明确返回不可用，避免MapHost尚未完成重报时误删有效玩家。
+   *
+   * Removes a player Actor route after its map lease is lost so Gate can rebuild
+   * the player on a safe static map. During Location startup grace it returns an
+   * explicit unavailable error instead of deleting a route before MapHost recovery.
+   */
+  private resolveAvailable(unitId: number): LocationRecord<number, PlayerLocationValue> | undefined {
+    const record = this.directory.Resolve(unitId);
+    if (!record || !this.mapInstances || this.mapInstances.Get(record.value.mapInstanceId)) return record;
+    if (this.mapInstances.IsRecovering()) {
+      throw new RpcError(SystemErrCode.LocationUnavailable, "map route is recovering");
+    }
+    this.directory.DeleteForOwnerTakeover(unitId);
+    this.unitIdByCharacterId.delete(record.value.characterId);
+    this.removeAccountIndex(record.value.account, unitId);
+    this.mutations += 1;
+    this.lostMapFallbacks += 1;
+    return undefined;
   }
 
   private requireOwnerGeneration(ownerName: string, generation: bigint): void {
@@ -398,6 +464,7 @@ function valueOf(request: S2L_RegisterPlayerLocation | PlayerLocationRecovery): 
     account: request.account,
     characterId: request.characterId,
     gateName: request.gateName,
+    gateEpoch: request.gateEpoch,
     mapHostName: request.mapHostName,
     mapId: request.mapId,
     mapInstanceId: request.mapInstanceId,
@@ -414,6 +481,7 @@ function toSnapshot(
     account: record.value.account,
     characterId: record.value.characterId,
     gateName: record.value.gateName,
+    gateEpoch: record.value.gateEpoch,
     mapHostName: record.value.mapHostName,
     mapId: record.value.mapId,
     mapInstanceId: record.value.mapInstanceId,
@@ -428,6 +496,7 @@ function sameValue(left: PlayerLocationValue, right: PlayerLocationValue): boole
     return left.account === right.account &&
     left.characterId === right.characterId &&
     left.gateName === right.gateName &&
+    left.gateEpoch === right.gateEpoch &&
     left.mapHostName === right.mapHostName &&
     left.mapId === right.mapId &&
     left.mapInstanceId === right.mapInstanceId &&
@@ -440,6 +509,7 @@ function emptySnapshot(): PlayerLocationSnapshot {
     account: "",
     characterId: 0n,
     gateName: "",
+    gateEpoch: 0n,
     mapHostName: "",
     mapId: 0,
     mapInstanceId: 0n,
@@ -462,12 +532,16 @@ function validateRoute(request: {
   mapInstanceId: bigint;
   actorInstanceId: number;
   characterId: bigint;
+  gateEpoch: bigint;
 }): void {
   if (request.unitId <= 0 || request.characterId <= 0n || request.mapId <= 0 || request.mapInstanceId <= 0n || request.actorInstanceId <= 0) {
     throw new RpcError(SystemErrCode.LocationConflict, "location route contains invalid IDs");
   }
   if (!request.gateName || !request.mapHostName) {
     throw new RpcError(SystemErrCode.LocationConflict, "location route is incomplete");
+  }
+  if (request.gateEpoch <= 0n) {
+    throw new RpcError(SystemErrCode.LocationConflict, "location Gate epoch is required");
   }
 }
 

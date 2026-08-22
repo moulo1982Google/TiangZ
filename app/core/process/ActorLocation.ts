@@ -2,27 +2,31 @@ import { BinaryReader, readU16BE } from "../protocol/binary";
 import type { SceneConfig } from "./types";
 
 export const ActorLocationEnvelopeMsgCode = 29_999;
-export const ActorLocationEnvelopeHeaderBytes = 14;
+export const ActorLocationEnvelopeHeaderBytes = 22;
 export const ActorLocationBatchEnvelopeMsgCode = 29_997;
 const ActorLocationBatchEnvelopeHeaderBytes = 6;
-const ActorLocationBatchEntryHeaderBytes = 12;
+const ActorLocationBatchEntryHeaderBytes = 20;
 const MaxActorLocationBatchEntries = 4096;
 const MaxActorLocationBatchBytes = 1024 * 1024;
 
 export interface ActorLocationTarget {
   instanceId: number;
   scene: SceneConfig;
+  /** 非零值由目标Actor校验，用于拒绝旧路由所有者的迟到消息。 / A non-zero value is fenced by the target Actor to reject stale route owners. */
+  fenceToken?: bigint;
 }
 
 export interface ActorLocationEnvelope {
   instanceId: number;
   frame: Uint8Array;
   rpcId?: number;
+  fenceToken?: bigint;
 }
 
 export interface ActorLocationBatchEntry {
   readonly instanceId: number;
   readonly frame: Uint8Array;
+  readonly fenceToken?: bigint;
 }
 
 export class ActorLocationDirectory {
@@ -55,6 +59,7 @@ export class ActorLocationDirectory {
 
 function sameTarget(left: ActorLocationTarget, right: ActorLocationTarget): boolean {
   return left.instanceId === right.instanceId &&
+    (left.fenceToken ?? 0n) === (right.fenceToken ?? 0n) &&
     left.scene.name === right.scene.name &&
     left.scene.sceneType === right.scene.sceneType &&
     left.scene.innerIp === right.scene.innerIp &&
@@ -73,12 +78,14 @@ export function encodeActorLocationEnvelope(
   if (!Number.isSafeInteger(rpcId) || rpcId < 0 || rpcId > 0xffff_ffff) {
     throw new Error(`invalid actor rpcId: ${rpcId}`);
   }
+  const fenceToken = requireFenceToken(envelope.fenceToken);
 
   const result = new Uint8Array(ActorLocationEnvelopeHeaderBytes + envelope.frame.length);
   const view = new DataView(result.buffer);
   view.setUint16(0, ActorLocationEnvelopeMsgCode, false);
   view.setBigUint64(2, BigInt(envelope.instanceId), true);
   view.setUint32(10, rpcId, true);
+  view.setBigUint64(14, fenceToken, true);
   result.set(envelope.frame, ActorLocationEnvelopeHeaderBytes);
   return result;
 }
@@ -88,10 +95,12 @@ export function decodeActorLocationEnvelope(frame: Uint8Array): ActorLocationEnv
   const instanceId = readActorLocationInstanceId(frame);
   const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
   const rpcId = view.getUint32(10, true);
+  const fenceToken = view.getBigUint64(14, true);
   return {
     instanceId,
     frame: frame.subarray(ActorLocationEnvelopeHeaderBytes),
     rpcId: rpcId === 0 ? undefined : rpcId,
+    fenceToken: fenceToken === 0n ? undefined : fenceToken,
   };
 }
 
@@ -134,7 +143,8 @@ export function encodeActorLocationBatchEnvelope(
   let offset = ActorLocationBatchEnvelopeHeaderBytes;
   for (const entry of entries) {
     view.setBigUint64(offset, BigInt(entry.instanceId), true);
-    view.setUint32(offset + 8, entry.frame.byteLength, true);
+    view.setBigUint64(offset + 8, requireFenceToken(entry.fenceToken), true);
+    view.setUint32(offset + 16, entry.frame.byteLength, true);
     offset += ActorLocationBatchEntryHeaderBytes;
     result.set(entry.frame, offset);
     offset += entry.frame.byteLength;
@@ -167,7 +177,8 @@ export function forEachActorLocationBatchEntry(
       throw new Error(`actor location batch entry ${index} header is truncated`);
     }
     const rawInstanceId = view.getBigUint64(offset, true);
-    const frameLength = view.getUint32(offset + 8, true);
+    const fenceToken = view.getBigUint64(offset + 8, true);
+    const frameLength = view.getUint32(offset + 16, true);
     offset += ActorLocationBatchEntryHeaderBytes;
     if (rawInstanceId === 0n || rawInstanceId > BigInt(Number.MAX_SAFE_INTEGER)) {
       throw new Error(`invalid actor location batch instanceId: ${rawInstanceId}`);
@@ -177,6 +188,7 @@ export function forEachActorLocationBatchEntry(
     }
     visit({
       instanceId: Number(rawInstanceId),
+      fenceToken: fenceToken === 0n ? undefined : fenceToken,
       frame: batch.subarray(offset, offset + frameLength),
     });
     offset += frameLength;
@@ -189,6 +201,15 @@ function requireActorLocationBatchEntry(entry: ActorLocationBatchEntry): void {
     throw new Error(`invalid actor location batch instanceId: ${entry.instanceId}`);
   }
   if (entry.frame.byteLength < 2) throw new Error("actor location batch frame is too short");
+  requireFenceToken(entry.fenceToken);
+}
+
+function requireFenceToken(value: bigint | undefined): bigint {
+  const token = value ?? 0n;
+  if (token < 0n || token > 0xffff_ffff_ffff_ffffn) {
+    throw new Error(`invalid actor location fence token: ${token}`);
+  }
+  return token;
 }
 
 /** 不解码业务请求，仅扫描 protobuf payload 的 90 号字段。 / Scans protobuf payload field 90 without decoding the business request. */

@@ -2,6 +2,9 @@
   "process": {
     "name": "external_gate_1",
     "identity": { "originServerId": 1, "workerId": 3 },
+    "lifecycle": {
+      "restart": { "maxAttempts": 5, "windowMs": 600000, "backoffMs": 5000 }
+    },
     "logging": { "level": "info", "format": "pretty", "console": true },
     "game": { "fixedUpdateMs": 50, "maxCatchUpSteps": 2 },
     "persistence": {

@@ -74,6 +74,7 @@ export class PlayerUnitSystem extends PlayerUnit {
       mapInstanceId: this.mapInstanceId,
       unitId: this.UnitId,
       gateName: gate.gateName,
+      gateEpoch: gate.gateEpoch,
       speedCellsPerSecond: native.speedCellsPerSecond,
       facing: native.facing,
       alive: native.alive !== 0,
@@ -85,7 +86,7 @@ export class PlayerUnitSystem extends PlayerUnit {
 
   /** 校验最终下线命令来自玩家长期绑定的Gate实例。 / Verifies that final offline originates from the player's stable Gate instance. */
   MatchesGate(request: MatchPlayerGate): boolean {
-    return this.GetComponent(UnitGateComponent).matches(request.gateName);
+    return this.GetComponent(UnitGateComponent).matches(request.gateName, request.gateEpoch);
   }
 
   /** 校验方向并写入 Rust 权威移动意图；不会在 Handler 内直接推进坐标或广播。 / Validates direction and writes Rust-authoritative movement intent without advancing or broadcasting inside the Handler. */

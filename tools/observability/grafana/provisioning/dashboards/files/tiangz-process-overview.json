@@ -1625,7 +1625,7 @@
               }
             ]
           },
-          "unit": "Bps"
+          "unit": "ops"
         },
         "overrides": []
       },
@@ -1636,6 +1636,246 @@
         "y": 40
       },
       "id": 17,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(tiangz_scene_custom_metric_total{env=~\"$env\",machine=~\"$machine\",process=~\"$process\",name=\"gate_takeover\",key=\"attempts_total\"}[1m])",
+          "legendFormat": "{{process}} attempts",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(tiangz_scene_custom_metric_total{env=~\"$env\",machine=~\"$machine\",process=~\"$process\",name=\"gate_takeover\",key=\"succeeded_total\"}[1m])",
+          "legendFormat": "{{process}} succeeded",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(tiangz_scene_custom_metric_total{env=~\"$env\",machine=~\"$machine\",process=~\"$process\",name=\"gate_takeover\",key=\"failed_total\"}[1m])",
+          "legendFormat": "{{process}} failed",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(tiangz_scene_custom_metric_total{env=~\"$env\",machine=~\"$machine\",process=~\"$process\",name=\"actor_location_fence\",key=\"rejected_total\"}[1m])",
+          "legendFormat": "{{process}} stale fenced",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "Gate 故障接管",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 3,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 40
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "tiangz_scene_custom_metric_gauge{env=~\"$env\",machine=~\"$machine\",process=~\"$process\",name=\"map_manager_lease\",key=\"active_hosts\"}",
+          "legendFormat": "{{process}} active hosts",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(tiangz_scene_custom_metric_total{env=~\"$env\",machine=~\"$machine\",process=~\"$process\",name=\"map_manager_lease\",key=\"expired_hosts_total\"}[1m])",
+          "legendFormat": "{{process}} expired hosts",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(tiangz_scene_custom_metric_total{env=~\"$env\",machine=~\"$machine\",process=~\"$process\",name=\"map_instance_directory\",key=\"expired_dynamic_total\"}[1m])",
+          "legendFormat": "{{process}} expired routes",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(tiangz_scene_custom_metric_total{env=~\"$env\",machine=~\"$machine\",process=~\"$process\",name=\"dynamic_map_fallback\",key=\"completed_total\"}[1m])",
+          "legendFormat": "{{process}} safe fallback",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "动态副本故障恢复",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 3,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 48
+      },
+      "id": 19,
       "options": {
         "legend": {
           "calcs": [
@@ -1730,10 +1970,10 @@
       "gridPos": {
         "h": 8,
         "w": 8,
-        "x": 16,
-        "y": 40
+        "x": 8,
+        "y": 48
       },
-      "id": 18,
+      "id": 20,
       "options": {
         "legend": {
           "calcs": [
@@ -1828,10 +2068,10 @@
       "gridPos": {
         "h": 8,
         "w": 8,
-        "x": 0,
+        "x": 16,
         "y": 48
       },
-      "id": 19,
+      "id": 21,
       "options": {
         "legend": {
           "calcs": [
@@ -1926,10 +2166,10 @@
       "gridPos": {
         "h": 8,
         "w": 8,
-        "x": 8,
-        "y": 48
+        "x": 0,
+        "y": 56
       },
-      "id": 20,
+      "id": 22,
       "options": {
         "legend": {
           "calcs": [
@@ -2024,10 +2264,10 @@
       "gridPos": {
         "h": 8,
         "w": 8,
-        "x": 16,
-        "y": 48
+        "x": 8,
+        "y": 56
       },
-      "id": 21,
+      "id": 23,
       "options": {
         "legend": {
           "calcs": [
@@ -2122,10 +2362,10 @@
       "gridPos": {
         "h": 8,
         "w": 8,
-        "x": 0,
+        "x": 16,
         "y": 56
       },
-      "id": 22,
+      "id": 24,
       "options": {
         "legend": {
           "calcs": [
@@ -2209,10 +2449,10 @@
       "gridPos": {
         "h": 8,
         "w": 8,
-        "x": 8,
-        "y": 56
+        "x": 0,
+        "y": 64
       },
-      "id": 23,
+      "id": 25,
       "options": {
         "legend": {
           "calcs": [
@@ -2329,10 +2569,10 @@
       "gridPos": {
         "h": 8,
         "w": 8,
-        "x": 16,
-        "y": 56
+        "x": 8,
+        "y": 64
       },
-      "id": 24,
+      "id": 26,
       "options": {
         "legend": {
           "calcs": [

@@ -468,6 +468,11 @@ export class NativeData {
     );
   }
 
+  /** Gate接管后只更新Observer投递路由，不制造AOI离开和重进。 / Updates only an observer's delivery route after Gate takeover without synthetic AOI leave/re-enter. */
+  static SetAoiDeliveryRoute(mapId: number, handle: number, deliveryRouteId: number): void {
+    NativeOps.AoiSetDeliveryRoute(mapId, handle, deliveryRouteId);
+  }
+
   /** 在销毁 Native Unit 前移出 AOI。 / Detaches from AOI before destroying the Native Unit. */
   static DetachAoi(mapId: number, handle: number): readonly NativeAoiVisibilityChange[] {
     return parseAoiVisibilityChanges(NativeOps.AoiDetach(mapId, handle));

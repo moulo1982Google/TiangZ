@@ -55,6 +55,27 @@ groups:
         annotations:
           summary: "Inner RPC 出现失败"
           description: "{{ $labels.process }} 最近一分钟出现拒绝、超时、断线或迟到响应。"
+      - alert: TiangZGateTakeoverFailed
+        expr: increase(tiangz_scene_custom_metric_total{name="gate_takeover",key="failed_total"}[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gate 玩家接管失败"
+          description: "{{ $labels.process }}/{{ $labels.scene }} 最近五分钟出现Gate所有权接管失败。"
+      - alert: TiangZMapHostLeaseExpired
+        expr: increase(tiangz_scene_custom_metric_total{name="map_manager_lease",key="expired_hosts_total"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "MapHost 租约过期"
+          description: "{{ $labels.process }}/{{ $labels.scene }} 检测到MapHost失联，动态副本已进入安全回退。"
+      - alert: TiangZDynamicMapFallbackFailed
+        expr: increase(tiangz_scene_custom_metric_total{name="dynamic_map_fallback",key="failed_total"}[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "动态副本安全回退失败"
+          description: "{{ $labels.process }}/{{ $labels.scene }} 无法把玩家恢复到安全静态地图。"
       - alert: TiangZSceneSystemErrors
         expr: increase(tiangz_scene_system_errors_total[1m]) > 0
         labels:

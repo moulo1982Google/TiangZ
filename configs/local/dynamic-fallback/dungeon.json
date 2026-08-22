@@ -1,0 +1,17 @@
+{
+  "process": {
+    "name": "dynamic_fallback_dungeon",
+    "identity": { "originServerId": 1, "workerId": 5 },
+    "lifecycle": { "restart": { "maxAttempts": 5, "windowMs": 600000, "backoffMs": 25000 } },
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7606 } }
+  },
+  "scenes": [{
+    "name": "dungeon_1",
+    "sceneType": "MapHost",
+    "acceptDynamicMaps": true,
+    "staticMapIds": [],
+    "ip": "127.0.0.1",
+    "port": 7310
+  }],
+  "knownSceneFiles": ["known-scenes.json"]
+}

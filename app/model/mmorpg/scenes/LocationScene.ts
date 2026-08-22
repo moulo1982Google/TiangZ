@@ -10,10 +10,12 @@ import { MapInstanceDirectoryComponent } from "../location/MapInstanceDirectoryC
 @entryScene()
 export class LocationScene extends EntryScene {
   private readonly locations: LocationComponent;
+  private readonly mapInstances: MapInstanceDirectoryComponent;
 
   constructor(config: RuntimeEntrySceneConfig) {
     super(config);
     const mapInstances = this.AddComponent(MapInstanceDirectoryComponent);
+    this.mapInstances = mapInstances;
     this.locations = this.AddComponent(LocationComponent);
     this.locations.BindMapInstances(mapInstances);
   }
@@ -22,6 +24,7 @@ export class LocationScene extends EntryScene {
   override metricsSnapshot(): SceneMetricsSnapshot {
     const metrics = super.metricsSnapshot();
     metrics.customMetrics.push(this.locations.Metrics());
+    metrics.customMetrics.push(this.mapInstances.Metrics());
     return metrics;
   }
 }

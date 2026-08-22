@@ -25,7 +25,7 @@ npm run hello
 
 看到 `Starter 已就绪` 后，用 Cocos3D/Pixi Demo 连接 `ws://127.0.0.1:7000`。完整的第一个 Handler 与 RPC 修改路径见 [5分钟跑通 TiangZ](docs/tutorials/00-quickstart.md)。
 
-持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。最新发布版为 `v0.5.0`，当前开发分支在此基础上增加 MemoryBackend 性能隔离，以及最多64条记录的 `LoadMultiSnapshot`、`SaveMultiSnapshot`和`EnqueueMultiSnapshot`；TiangZ 开发分支已通过 Host Transport 使用一次RPC恢复并保存玩家五领域，不直接连接 Redis/PostgreSQL。批量普通保存逐记录返回结果而非跨领域原子事务，经济变更继续使用`ApplyMultiTransaction`。DBProxy现在提供独立`/live`、`/ready`和Prometheus`/metrics`，本地Compose自动启动Prometheus与Grafana并加载双实例Dashboard；TiangZ进程指标同时记录连接失败、请求失败和Endpoint切换。当前 Starter 已验证30秒周期快照、任务奖励、道具使用、商店交易、同地图双玩家原子交易，以及单个静态MapHost强杀后的有界重启和玩家重新路由；邮件、跨地图交易、动态副本现场恢复和完整生产高可用仍属于后续阶段。运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)，观测配置见[DBProxy可观测性](https://github.com/moulo1982Google/TiangZ-DBProxy/blob/main/OBSERVABILITY.md)，交易边界见[玩家交易设计](docs/design/player-trade.md)。
+持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。当前开发分支支持MemoryBackend性能隔离、最多64条记录的批量快照操作、多Endpoint故障切换和跨记录事务；TiangZ通过Host Transport恢复并保存玩家五领域，不直接连接Redis/PostgreSQL。当前Starter已验证30秒周期快照、关键经济事务、静态MapHost有界重启、双Gate接管，以及Manager/动态MapHost双失后的租约过期与安全地图回退。动态副本的Boss、怪物、仇恨和战斗计时器不会恢复；已确认的玩家关键数据从DBProxy恢复。邮件、跨地图交易、跨机器仲裁和跨地域HA仍属于后续阶段。运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)，Gate边界见[Gate断线重连与最终下线](docs/design/gate-reconnect.md)，观测配置见[DBProxy可观测性](https://github.com/moulo1982Google/TiangZ-DBProxy/blob/main/OBSERVABILITY.md)。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 
@@ -54,7 +54,7 @@ Machine
 - 配置 Scene 是顶层业务边界，例如 `LoginMgr`、`Login`、`Gate`、`MapHost`；代码中的 `EntryScene` 只是这类 Scene 的运行时基类。
 - 动态 Scene 是进程内业务容器，例如 `map:1`、副本实例。
 - `Session`表示一条网络连接，`Unit`表示玩家、怪物、NPC。普通`Unit`默认没有Mailbox；需要InstanceId路由和跨`await`串行的玩家等类型继承`ActorUnit`并显式声明`@actor`。Scene、Session和ActorUnit才是Actor消息目标，业务不创建泛化的`XxxActor`包装类。
-- Gate中的`GatePlayerRoute`不是Actor：它把跨重连的玩家位置与一次性`GateSession`分离。普通socket断开保留Map Unit，30秒宽限结束后才由Gate请求Map执行最终下线。
+- Gate中的`GatePlayerRoute`不是Actor：它把跨重连的玩家位置与一次性`GateSession`分离。普通socket断开保留Map Unit，30秒宽限结束后才由Gate请求Map执行最终下线；Gate进程故障时，新Gate通过Location CAS与Actor fencing接管现存PlayerUnit，不迁移原Socket且不自动回切。
 - `ProcessHost.Root` 按 InstanceId 定位当前生命周期 Entity，MapScene.UnitComponent 按 UnitId 管理地图实体。
 - `Component` 组织状态与能力，不要求 Handler 绑定到单一 Component。
 - `ChildEntity` 由 Component 唯一拥有，具备稳定身份和生命周期但没有 mailbox；它不会成为网络 Actor。
@@ -146,7 +146,7 @@ npm run test:runtime
 
 TiangZ的完整业务参考是[Starter MMORPG纵向切片](docs/tutorials/20-starter-mmorpg.md)，它把登录、主城、野外战斗、掉落、背包、任务、动态副本、重连和重启恢复串成一条可复制链路。详细验收项见[Starter验收矩阵](docs/starter/acceptance-matrix.md)。框架能力案例与Starter业务分开维护，Starter不得绕过Stable API。
 
-Starter常用命令：`npm run starter:verify`做静态检查，`npm run starter:dev`编译并启动本地all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`专门验证创建角色、选角和稳定`characterId`。完整验收使用`npm run starter:acceptance`；`starter:acceptance:persistent`会验证DBProxy重启后的玩家快照恢复，`starter:acceptance:faults`会运行TiangZ端到端故障矩阵，覆盖交易故障切换、提交后响应丢失、双Endpoint不可用、MapHost接管和独立DBProxy存储故障。这些验收命令都会先重建`target/debug/TiangZ`，不会误用旧的Rust运行时。持久化和故障命令会写入/重启本地测试资源，执行前先确认PostgreSQL、Redis和DBProxy环境。以上命令不包含长时间容量压测。
+Starter常用命令：`npm run starter:verify`做静态检查，`npm run starter:dev`编译并启动本地all-in-one，`npm run starter:smoke`验证all-in-one与split-process，`npm run starter:character-smoke`专门验证创建角色、选角和稳定`characterId`。完整验收使用`npm run starter:acceptance`，其中包含无数据库的双Gate真实强杀接管；`starter:acceptance:persistent`验证DBProxy重启后的玩家快照恢复，`starter:acceptance:faults`运行完整故障矩阵。这些验收命令都会先重建`target/debug/TiangZ`，不会误用旧的Rust运行时。持久化和故障命令会写入或重启本地测试资源，执行前先确认PostgreSQL、Redis和DBProxy环境。以上命令不包含长时间容量压测。
 
 Starter当前的战斗快捷栏包含寒冰箭、火焰冲击、惩击、真言术·盾、真言术·韧、精神鞭笞和恢复。读条、引导、公共CD、施法距离、法力消耗、Buff刷新与伤害类型由配置和领域规则共同决定；恢复技能通过 `恢复` Buff 每3秒治疗一次，共8次。怪物掉落按每行独立概率判定，玩家可以把杂物出售给杂货商换取铜币，再购买红药和法力药水；Cocos3D的`2/3/Q`分别使用小红、大红和蓝药，移动端直接点击同一快捷栏。Cocos3D还提供“进入Boss副本”入口：Gate幂等创建Map 200动态实例，击杀试炼守卫后获得120累计经验，并可从尸体领取小红、大红、蓝药各5个和150铜币。每个角色进入后产生10分钟个人CD，截止时间由`progression`领域持久化并显示在副本按钮上；等级、经验和CD与Boss拾取事务都先经DBProxy确认。背包、任务追踪、Buff栏、技能图标、NPC商店和副本按钮是这条链路的主要可视化验收入口。
 
@@ -207,7 +207,7 @@ CMake/Visual Studio 编译；不要把 Native 编译和 Web 包构建混成一�
 2 x DBProxy（7800 首选、7801 故障切换）
 ```
 
-动态副本节点和 MapManager 暂停在外网演示配置中。所有 TiangZ 进程只监听服务器回环地址；公网入口由 Nginx 统一转发，桌面 Cocos3D 使用 `/`，移动横屏包使用 `/m/`。登录链路的公网端口是 `17000`、`17001`、`17002`、`17201`、`17202`，具体映射和 systemd 约束见[外网部署配置](configs/deploy/README.md)与[Nginx示例](configs/deploy/cocos3d-nginx.conf.example)。
+外网演示包含独立MapManager和动态副本MapHost。所有TiangZ进程只监听服务器回环地址；公网HTTPS/WSS由Nginx统一终止TLS，桌面Cocos3D使用`/`，移动横屏包使用`/m/`。登录链路的公网WSS端口是`17000`、`17001`、`17002`、`17201`、`17202`，具体映射、证书续期和systemd约束见[外网部署配置](configs/deploy/README.md)与[Nginx示例](configs/deploy/cocos3d-nginx.conf.example)。
 
 本机生成发布制品：
 

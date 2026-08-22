@@ -60,6 +60,7 @@ export abstract class ActorUnit<
   TAwakeArgs extends unknown[] = [],
 > extends Unit<TAwakeArgs> implements ActorRuntimeEntity<TAwakeArgs> {
   readonly [ACTOR_RUNTIME_ENTITY] = true as const;
+  private actorLocationFenceToken = 0n;
   protected readonly ctx: ActorContext;
 
   constructor(ctx: ActorContext) {
@@ -69,6 +70,19 @@ export abstract class ActorUnit<
 
   get logger(): Logger {
     return this.ctx.logger;
+  }
+
+  /** 更新该Actor Unit接受的外部路由代次；零值关闭门禁。 / Updates the external route generation accepted by this Actor Unit; zero disables fencing. */
+  __setActorLocationFenceToken(token: bigint): void {
+    if (typeof token !== "bigint" || token < 0n || token > 0xffff_ffff_ffff_ffffn) {
+      throw new Error(`invalid actor location fence token: ${token}`);
+    }
+    this.actorLocationFenceToken = token;
+  }
+
+  /** 校验外部路由代次；普通服务端Actor调用不携带该值。 / Validates an external route generation; ordinary server Actor calls carry none. */
+  __matchesActorLocationFenceToken(token: bigint): boolean {
+    return token > 0n && token === this.actorLocationFenceToken;
   }
 
   /** 通过自身Mailbox调度一次性Timer。 / Schedules a one-shot Timer through this Unit's mailbox. */

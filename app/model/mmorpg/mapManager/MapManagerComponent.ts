@@ -2,6 +2,7 @@ import {
   Component,
   GlobalIdSystem,
   RpcError,
+  type CustomMetricSnapshot,
 } from "../../../core/public";
 import type {
   DynamicMapAssignmentSnapshot,
@@ -23,8 +24,7 @@ import {
   SceneConfigFromMapInstance,
 } from "../mapHost/MapHostEndpoint";
 import type { SceneConfig } from "../../../core/public";
-
-const MAP_HOST_LEASE_TIMEOUT_MS = 15_000;
+import { MAP_HOST_LEASE_TIMEOUT_MS, MAP_HOST_REPORT_INTERVAL_MS } from "../mapHost/MapHostLease";
 
 interface MapHostRecord {
   endpoint: SceneConfig;
@@ -41,8 +41,10 @@ interface CreationRecord {
   mapConfigId: number;
   mapInstanceId: bigint;
   mapHostName: string;
+  mapHostGeneration: bigint;
   active: boolean;
   disposed: boolean;
+  lost: boolean;
   inFlight?: Promise<void>;
 }
 
@@ -57,11 +59,22 @@ interface CreationRecord {
 export class MapManagerComponent extends Component {
   private readonly hosts = new Map<string, MapHostRecord>();
   private readonly creations = new Map<string, CreationRecord>();
+  private readonly leaseMetrics = {
+    registrations: 0,
+    restoredAssignments: 0,
+    expiredHosts: 0,
+    lostMaps: 0,
+  };
+
+  protected override Awake(): void {
+    this.NewRepeatedTimer(MAP_HOST_REPORT_INTERVAL_MS, "SweepExpiredMapHosts");
+  }
 
   /** 注册或刷新MapHost，并从仍存活的宿主恢复创建幂等关系。 / Registers a MapHost and recovers idempotency records from its live assignments. */
   Register(request: S2MM_RegisterMapHost): MM2S_RegisterMapHost {
     const endpoint = SceneConfigFromMapHostEndpoint(request.endpoint);
     const now = Date.now();
+    this.SweepExpiredMapHosts(now);
     const current = this.hosts.get(endpoint.name);
     if (
       current &&
@@ -74,7 +87,7 @@ export class MapManagerComponent extends Component {
       });
     }
 
-    this.restoreAssignments(endpoint.name, request.assignments);
+    this.restoreAssignments(endpoint.name, request.generation, request.assignments);
     this.hosts.set(endpoint.name, {
       endpoint,
       generation: request.generation,
@@ -84,6 +97,7 @@ export class MapManagerComponent extends Component {
       playerCount: request.playerCount,
       lastHeartbeatAt: now,
     });
+    this.leaseMetrics.registrations += 1;
     this.owner.logger.info("map host registered", {
       mapHostName: endpoint.name,
       generation: request.generation.toString(),
@@ -161,6 +175,12 @@ export class MapManagerComponent extends Component {
       throw new RpcError(GameErrCode.DynamicMapRequestRequired, "dynamic map requestId is required");
     }
     let creation = this.creations.get(requestId);
+    if (creation?.lost) {
+      throw new RpcError(
+        GameErrCode.DynamicMapLost,
+        `dynamic map was lost with its MapHost; use a new operationId: ${requestId}`,
+      );
+    }
     if (creation?.disposed) {
       throw new RpcError(
         GameErrCode.DynamicMapRequestConflict,
@@ -180,8 +200,10 @@ export class MapManagerComponent extends Component {
         mapConfigId: request.mapConfigId,
         mapInstanceId: GlobalIdSystem.Instance.Next(),
         mapHostName: host.endpoint.name,
+        mapHostGeneration: host.generation,
         active: false,
         disposed: false,
+        lost: false,
       };
       this.creations.set(requestId, creation);
     }
@@ -232,6 +254,16 @@ export class MapManagerComponent extends Component {
           `MapHost returned a conflicting endpoint: ${creation.requestId}`,
         );
       }
+      if (
+        this.hosts.get(creation.mapHostName) !== host ||
+        host.generation !== creation.mapHostGeneration ||
+        creation.lost
+      ) {
+        throw new RpcError(
+          GameErrCode.DynamicMapLost,
+          `assigned MapHost lease expired while creating: ${creation.mapHostName}`,
+        );
+      }
       creation.active = true;
       host.dynamicMapCount += 1;
     } finally {
@@ -241,6 +273,7 @@ export class MapManagerComponent extends Component {
 
   private selectHost(): MapHostRecord {
     const now = Date.now();
+    this.SweepExpiredMapHosts(now);
     const candidates = [...this.hosts.values()]
       .filter((host) => now - host.lastHeartbeatAt <= MAP_HOST_LEASE_TIMEOUT_MS)
       .sort(
@@ -265,6 +298,7 @@ export class MapManagerComponent extends Component {
 
   private restoreAssignments(
     mapHostName: string,
+    generation: bigint,
     assignments: readonly DynamicMapAssignmentSnapshot[],
   ): void {
     for (const assignment of assignments) {
@@ -291,6 +325,9 @@ export class MapManagerComponent extends Component {
       const existing = this.creations.get(assignment.requestId);
       if (existing) {
         existing.active = true;
+        existing.lost = false;
+        existing.mapHostGeneration = generation;
+        this.leaseMetrics.restoredAssignments += 1;
         continue;
       }
       this.creations.set(assignment.requestId, {
@@ -298,15 +335,18 @@ export class MapManagerComponent extends Component {
         mapConfigId: assignment.mapConfigId,
         mapInstanceId: assignment.mapInstanceId,
         mapHostName,
+        mapHostGeneration: generation,
         active: true,
         disposed: false,
+        lost: false,
       });
+      this.leaseMetrics.restoredAssignments += 1;
     }
   }
 
   private creationResponse(rpcId: number | undefined, creation: CreationRecord): M2S_CreateDynamicMap {
     const host = this.hosts.get(creation.mapHostName);
-    if (!host) {
+    if (!host || host.generation !== creation.mapHostGeneration || creation.lost) {
       throw new RpcError(
         GameErrCode.MapHostUnavailable,
         `assigned MapHost route is missing: ${creation.mapHostName}`,
@@ -321,6 +361,70 @@ export class MapManagerComponent extends Component {
         mapHost: MapHostEndpointFromScene(host.endpoint),
       },
     });
+  }
+
+  /**
+   * 回收失去心跳的MapHost并把其动态实例标为lost；同requestId不得静默创建第二份副本。
+   * Reclaims expired MapHosts and marks their dynamic instances lost. The same
+   * request ID must never silently create a second instance after host loss.
+   */
+  protected SweepExpiredMapHosts(now = Date.now()): number {
+    let removed = 0;
+    for (const [name, host] of this.hosts) {
+      if (now - host.lastHeartbeatAt <= MAP_HOST_LEASE_TIMEOUT_MS) continue;
+      this.hosts.delete(name);
+      removed += 1;
+      this.leaseMetrics.expiredHosts += 1;
+      for (const creation of this.creations.values()) {
+        if (
+          creation.mapHostName !== name ||
+          creation.mapHostGeneration !== host.generation ||
+          creation.disposed ||
+          creation.lost
+        ) continue;
+        creation.active = false;
+        creation.lost = true;
+        this.leaseMetrics.lostMaps += 1;
+      }
+      this.owner.logger.warn("MapHost lease expired", {
+        mapHostName: name,
+        generation: host.generation.toString(),
+      });
+    }
+    return removed;
+  }
+
+  /** 导出MapManager宿主租约和副本丢失指标。 / Exports MapManager host-lease and lost-instance metrics. */
+  Metrics(): CustomMetricSnapshot {
+    let activeMaps = 0;
+    let lostMaps = 0;
+    for (const creation of this.creations.values()) {
+      if (creation.active) activeMaps += 1;
+      if (creation.lost) lostMaps += 1;
+    }
+    return {
+      name: "map_manager_lease",
+      values: {
+        active_hosts: this.hosts.size,
+        active_maps: activeMaps,
+        lost_maps: lostMaps,
+        registrations_total: this.leaseMetrics.registrations,
+        restored_assignments_total: this.leaseMetrics.restoredAssignments,
+        expired_hosts_total: this.leaseMetrics.expiredHosts,
+        lost_maps_total: this.leaseMetrics.lostMaps,
+      },
+      kinds: {
+        registrations_total: "counter",
+        restored_assignments_total: "counter",
+        expired_hosts_total: "counter",
+        lost_maps_total: "counter",
+      },
+    };
+  }
+
+  protected override OnDestroy(): void {
+    this.hosts.clear();
+    this.creations.clear();
   }
 
   private get owner() {

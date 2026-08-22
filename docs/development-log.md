@@ -7,6 +7,21 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-22：动态副本安全回退与TLS
+
+- MapHost向Manager与Location使用同一个generation。动态MapInstance每5秒续租、15秒过期；Manager记录失联宿主和lost副本，同requestId不静默重建。
+- Manager与动态MapHost双失时，Location清理旧Actor路由，Gate从DBProxy关键数据恢复玩家到初始静态地图；Boss、怪物、仇恨和战斗计时器不恢复。
+- 新增`test:dynamic-map-fallback`真实强杀验收、Grafana面板、Prometheus告警和生产部署静态门禁。
+- Cocos3D外网包启用WSS，Nginx在HTTPS及五个游戏端口终止IP证书TLS，内部服务保持回环明文。
+
+## 2026-08-22：Gate强杀接管与epoch隔离
+
+- Location玩家记录增加单调递增`gateEpoch`；新Gate只在旧Gate探测失败后，通过PlayerUnit有序邮箱与完整Location CAS接管现存Unit。
+- ActorLocation普通RPC、单向消息和latest批次均携带固定u64 fence；目标PlayerUnit在真实邮箱入口拒绝旧epoch。MapHost提交后原地更新UnitGate与Native AOI delivery route，不产生AOI离开/进入。
+- Login优先返回Location当前健康Gate，故障时才按Rendezvous顺序选择其他健康节点；恢复节点不自动回切，绕过Login连接旧Gate也会被拒绝。
+- 新增`configs/local/gate-failover`和`npm run test:gate-failover`。真实验收强杀`gate_2`进程后由`gate_1`接管同一`unitId=1000`，Watcher拉起新PID后Login仍返回`gate_1`；该验收已纳入Starter CI和完整故障矩阵。
+- Grafana增加Gate接管和旧epoch拒绝曲线，Prometheus对接管失败报警。当前边界仍是同一已知拓扑，不迁移Socket、不恢复Gate本地队列、不做跨机器租约或动态副本现场接管。
+
 ## 2026-08-22：外网动态副本拓扑补齐
 
 - 修复外网点击副本时报`MapManager Scene not found`：`external-multiprocess`从8个Process扩展为10个，新增独立`map_manager`和只承载动态实例的`dungeon_1`。
@@ -42,7 +57,7 @@
 - 新增`npm run test:tiangz-fault-matrix`统一入口，按顺序运行玩家交易故障、玩家五领域/MapHost接管和独立DBProxy存储故障；`starter:acceptance:faults`现在调用同一入口，不再只覆盖DBProxy仓库内部测试。
 - 玩家交易持久化验收新增首选Endpoint接管、Debug提交后响应丢失、双Endpoint同时不可用三组场景。响应丢失场景在DBProxy已经提交多记录事务后由Rust Debug Host丢弃一次响应，服务端必须用同一`operationId`读取原始回执；双Endpoint不可用时UseItem必须失败且不修改在线背包，恢复后复用同一ID只提交一次。
 - 新增`tools/dbproxy_outage_probe.ts`和`tools/tiangz_fault_matrix_acceptance.mjs`。故障注入由`TIANGZ_TEST_DBPROXY_DROP_RESPONSE_ONCE`控制，仅Debug构建生效，Release不启用该测试行为。
-- 当前矩阵仍不验证动态副本现场恢复、跨机器租约仲裁、Gate故障转移或容量压力；这些保持后续运维/HA工作，不把单机双Endpoint验收写成生产HA承诺。
+- 当前矩阵已追加同拓扑双Gate强杀接管，但仍不验证动态副本现场恢复、跨机器租约仲裁或容量压力；不能把单机双Endpoint与同机Gate接管写成跨地域生产HA承诺。
 
 ## 2026-08-18：Debug Hotfix重载与正式操作入口
 

@@ -1,0 +1,13 @@
+{
+  "process": {
+    "name": "dynamic_fallback_manager",
+    "identity": { "originServerId": 1, "workerId": 1 },
+    "lifecycle": { "restart": { "maxAttempts": 5, "windowMs": 600000, "backoffMs": 3000 } },
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7602 } }
+  },
+  "scenes": [
+    { "name": "login_mgr", "sceneType": "LoginMgr", "ip": "127.0.0.1", "port": 7000 },
+    { "name": "map_manager", "sceneType": "MapManager", "ip": "127.0.0.1", "port": 7100 }
+  ],
+  "knownSceneFiles": ["known-scenes.json"]
+}

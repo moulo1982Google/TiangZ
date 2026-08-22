@@ -195,6 +195,7 @@ const RUNTIME_CONFIG_RESOURCE = PREVIEW
 interface Cocos3DExternalConfig {
   readonly loginMgrHost: string;
   readonly loginMgrPort: number;
+  readonly secure: boolean;
 }
 
 interface EntityOverheadHud {
@@ -3985,6 +3986,7 @@ export class GameBootstrap3D extends Component {
         transport: NATIVE ? "kcp" : "websocket",
         host: this.loginMgrHost,
         port: this.loginMgrPort,
+        secure: config.secure,
       });
       this.stopSessionReplacedListening = this.loginFlow.onSessionReplaced(
         (message) => this.handleSessionReplaced(message),
@@ -4015,7 +4017,15 @@ export class GameBootstrap3D extends Component {
           reject(new Error("loginMgrPort必须是1到65535之间的整数"));
           return;
         }
-        resolve({ loginMgrHost: value.loginMgrHost, loginMgrPort: value.loginMgrPort });
+        if (typeof value.secure !== "boolean") {
+          reject(new Error("secure必须是布尔值"));
+          return;
+        }
+        resolve({
+          loginMgrHost: value.loginMgrHost,
+          loginMgrPort: value.loginMgrPort,
+          secure: value.secure,
+        });
       });
     });
   }

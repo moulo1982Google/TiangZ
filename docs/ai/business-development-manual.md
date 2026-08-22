@@ -572,7 +572,7 @@ MapHost配置静态地图：
 }
 ```
 
-启动时MapHost逐个调用统一`CreateMap`并向Location注册实际实例。只有`acceptDynamicMaps=true`的Host向单例MapManager注册自身地址、generation、负载和动态创建关系；`staticMapIds`与该开关可组合为静态专用、动态专用或混合承载。Manager不在`knownScenes`中预列动态Host，租约15秒，超时Host不再获得新实例。MapHost每5秒心跳，Manager丢失注册时自动重发完整关系，因此单独重启Manager可恢复；Manager与Host同时丢失后的跨重启幂等留给持久化阶段。MapInstance与PlayerLocation响应携带MapHost Endpoint，业务不得再用`scenes.byName(dynamicHostName)`。连续无人五分钟自动销毁由MapHost本地`DynamicMapLifecycleComponent`提供，只是业务兜底策略。
+启动时MapHost逐个调用统一`CreateMap`并向Location注册实际实例。只有`acceptDynamicMaps=true`的Host向单例MapManager注册自身地址、generation、负载和动态创建关系；`staticMapIds`与该开关可组合为静态专用、动态专用或混合承载。Manager与Location共享同一个MapHost generation和15秒租约，MapHost每5秒续租；超时Host不再获得新实例。单独重启Manager时，存活MapHost重发完整创建关系。Manager与动态MapHost双失时，Location删除过期动态路由和旧玩家Actor路由，Gate重连后进入PlayerConfig初始静态地图；同一旧requestId不能静默创建第二份副本。MapInstance与PlayerLocation响应携带MapHost Endpoint，业务不得再用`scenes.byName(dynamicHostName)`。连续无人五分钟自动销毁由MapHost本地`DynamicMapLifecycleComponent`提供，只是业务兜底策略。
 
 地图停机和主动销毁有固定的清理顺序：`MapHostScene.onStop -> MapHostComponent.Shutdown/DisposeMap -> MapComponent.Shutdown/PrepareForDespawn`。静态、动态地图共用这套本地流程：先保存并移除玩家，再清理所有剩余Unit（包括怪物和等待进图的玩家）；每个仍在AOI中的Unit必须先`Detach`，然后通过`UnitComponent.Remove`销毁。该入口会为普通Unit清理本地所有权，为ActorUnit额外清理Actor路由和mailbox，最后才由Scene组件释放AOI。动态地图的Scene本地销毁成功后，MapHost再通过`MapHostControl.DynamicMapDisposed`通知MapManager减少动态实例负载；通知是幂等的，Manager暂时不可用时由MapHostRegistration重试。`ProcessHost`是通用运行时，不知道AOI，不要在业务中直接调用底层Scene销毁来绕过这个入口；`await map.Dispose()`也不会替业务把仍在地图中的玩家强制踢到别处。
 
@@ -888,7 +888,7 @@ await player.Offline(reason);
 
 业务Handler不要直接调用Repository，否则会绕过幂等保存和统一移除流程。普通socket断开只销毁`GateSession`，不能直接调用玩家`Offline()`；`GatePlayerRoute`在Gate继续保留30秒等待重连。宽限期结束后只能由Gate调用`MapProtocol.PlayerOffline`，Map先完成保存和Location移除并返回Unit RPC，再由下一轮Map Timer执行`RemovePlayer`、AOI离开和Actor销毁。`PlayerOffline`运行在PlayerUnit自己的ordered mailbox时，禁止在当前调用中同步销毁这个Unit；否则RPC返回前Actor已经消失，运行时会报告`actor despawned during mailbox execution`。停机批量清理可在不占用Unit mailbox的地图清理阶段直接完成，但仍须遵守先保存、再脱离AOI、最后销毁Actor的顺序。
 
-玩家Unit只保存长期`gateName`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入、不修改Gate归属。客户端空闲时每5秒调用`C2G_Ping -> G2C_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Session默认unordered，Ping作为普通TS Handler直接返回`TimerSystem.ServerTime()`产生的Unix毫秒且不加锁。登录按连接与账号加锁；进图、重连、传送、快照确认和最终下线按账号加锁。业务只锁会修改共享状态的事务，禁止为了省事把整个Session改回ordered。
+玩家Unit只保存`gateName + gateEpoch`，不得保存`connectionId`、`GateSessionId`或自行创建断线Timer。同Gate重连使用`SecondEnterMap`恢复客户端全量视图，不创建替代Unit、不触发AOI进入。跨Gate故障接管必须由PlayerUnit邮箱调用Location完整CAS，提交后原地更新UnitGate、Actor fence和AOI delivery route；业务不得直接改gateName或复用旧epoch。客户端空闲时每5秒调用`C2G_Ping -> G2C_Ping`；任何入站消息都会续期，服务端出站消息不会续期。Session默认unordered，Ping作为普通TS Handler直接返回`TimerSystem.ServerTime()`产生的Unix毫秒且不加锁。登录按连接与账号加锁；进图、重连、传送、快照确认和最终下线按账号加锁。业务只锁会修改共享状态的事务，禁止为了省事把整个Session改回ordered。
 
 同一账号在同一Gate再次登录时属于“顶号”，不是一次普通断线重连。Gate必须在账号锁内先把旧`GateSession`失效，再发送`G2C_SessionReplaced`，最后关闭旧连接；旧连接的迟到断线、在途请求和旧Promise都不能影响新`GatePlayerRoute`。客户端只需要订阅SDK事件，不要把顶号当成普通网络错误自动重试：
 
@@ -900,11 +900,11 @@ const stop = loginFlow.onSessionReplaced((message) => {
 });
 ```
 
-服务端关闭连接前会排空已经入队的通知；SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。该机制只解决同Gate连接代次替换，不能替代跨Gate会话服务或Gate故障转移。
+服务端关闭连接前会排空已经入队的通知；SDK的`RpcSocket`会保留关闭前已经收到、但尚未由游戏循环`update()`分发的单向消息。客户端仍必须持续驱动`update()`，不能只依赖网络回调。同Gate顶号使用连接代次；跨Gate故障接管使用Location gateEpoch与ActorLocation fencing。两者都不会迁移原Socket。
 
-Gate初始分配统一复用`SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。它通过Rendezvous Hash保证拓扑稳定时同账号固定归属，并对公共前缀账号做分布自测；Location不参与每次登录的Gate负载均衡。
+Gate候选排序统一复用`RankStickyScenes/SelectStickyGate`，业务不得另写取模、随机或自定义账号哈希。Login先保留Location记录的当前健康Gate；仅当它不可达时才依Rendezvous顺序探测其他Gate。恢复节点不自动回切现存玩家；绕过Login连接旧Gate也必须在旧所有者健康探测和Location CAS处被拒绝。
 
-DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程已经消费远程`v0.5.0`，配置通过`endpoint + failoverEndpoints`声明地址，Rust Host Bridge同时提供单记录和多记录接口；业务层不得复制协议或自行实现第二套故障切换。玩家Repository按`<characterId>:inventory|progression|quest|runtime|wallet`保存五条记录与独立Revision；商店、任务/拾取、UseItem和同地图交易按参与领域提交。30秒周期快照、有限并发最终Flush，以及静态MapHost强杀后的Watcher有界重启、Location代次接管、Gate新连接重新路由和DBProxy状态恢复已验收。该能力不恢复原Socket上的战斗现场、怪物/仇恨或动态副本，也不等于Gate故障转移。
+DBProxy独立仓库已发布`v0.5.0`：除PostgreSQL权威快照、Revision/CAS、幂等事务与回执查询、Redis缓存与持久Backlog、Rust客户端池和运行时无关TypeScript SDK外，还提供多Endpoint故障切换、两个共享存储的无状态对等实例，以及跨记录全量CAS原子事务。TiangZ主工程配置通过`endpoint + failoverEndpoints`声明地址，业务层不得复制协议或自行实现第二套故障切换。30秒周期快照、有限并发最终Flush、静态MapHost有界重启和双Gate强杀接管均已验收。Gate接管保留存活MapHost上的PlayerUnit，不依赖DBProxy重建；它不恢复原Socket、Gate本地队列、怪物/仇恨或动态副本现场。
 
 跨玩家关键操作的固定写法是：领域Component先同步冻结会话，最终提交者保留自身PlayerUnit ordered mailbox，并通过地图宿主进入另一参与者的真实ordered mailbox；持有双方邮箱后，Planner再从权威快照生成全部`expectedRevision + nextPayload + result`，领域Repository按稳定顺序调用一次多记录事务，提交成功后各Participant无await应用结果。只锁会话对象不能阻止另一玩家在`await`期间使用道具或改金币。响应不确定时用同一`operationId`查询回执；业务冲突直接结束会话，不能换operationId重试。玩家交易参考`app/hotfix/mmorpg/trade`和[玩家交易设计](../design/player-trade.md)。Handler只转发到PlayerUnit ordered mailbox，不得直接调用DBProxy。
 
@@ -949,7 +949,7 @@ class PhaseVisibilityFilter implements IAoiVisibilityFilter {
 
 计划中的开发者语义只保留三种存储域：
 
-持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、普通批量Load/Save/Enqueue、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。`v0.5.0`提供有序多Endpoint、两个共享存储的对等DBProxy实例和故障切换测试；当前开发分支增加最多64条普通快照批量操作。Redis/PostgreSQL高可用直接采用云厂商能力。TiangZ Rust Host已经通过连接池接入DBProxy，业务配置用`endpoint`指定首选地址，用`failoverEndpoints`指定备用地址。Demo的`PlayerRepository`用一次RPC恢复或保存五领域，UseItem和任务奖励验证单玩家关键事务，同地图交易验证跨玩家原子提交。普通单Entity可通过`.native`生成版本化Codec及通用Repository工厂；复杂查询和跨玩家交易仍由领域Repository编排。DBProxy不得解释TiangZ业务类型，业务代码也不得直接连接Redis/数据库。普通批量保存逐记录独立提交，不能替代关键经济事务。30秒周期快照和同机静态MapHost有界接管已验收；旧schema迁移、跨机器/动态地图接管和生产部署仍未收口。
+持久化基础设施放在独立的[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)仓库中，不能成为`src/game`下的TiangZ Rust业务模块。DBProxy核心提供与游戏无关的`RecordKey`、快照Payload、Revision/CAS、幂等写入、普通批量Load/Save/Enqueue、单记录`TransactionalWrite`、多记录原子事务、Redis AOF backlog和独立网络服务；PostgreSQL是权威端，Redis只承载已提交快照缓存与可恢复的普通快照积压。TiangZ Rust Host通过连接池和有序多Endpoint接入DBProxy，业务层不得直接连接Redis/数据库。30秒周期快照、静态MapHost有界接管、双Gate接管和动态副本安全回退已验收；旧schema迁移、跨机器仲裁和跨地域容灾仍未收口。
 
 - `transient`：连接、移动中间态等运行时数据，不保存。
 - `snapshot`：位置、普通数值、任务进度等最终状态；业务保持普通属性写法，生成setter自动标脏，框架短窗口合并后批量写Redis并异步落永久DB。
@@ -1120,7 +1120,7 @@ entity Item extends Entity {
 
 运行`npm run codegen:native-data`后，业务使用生成的`NativeItemPersistenceCodec`或`CreateNativeItemRepository(processName)`。`Entity.instanceId`已经标记`@transient`，恢复时必须由当前运行时重新分配，不能从数据库带回。当前Codec是严格当前版本读取，任何持久字段的增加、删除、改名或改类型都必须递增`@persistent(version)`；旧schema迁移注册尚未完成，因此做结构升级前必须先补迁移器。需要“按ownerId查询全部道具”、拍卖行索引、跨玩家交易等能力时，应建立Item/Trade领域Repository，不能把通用Payload表当作查询型ORM。
 
-当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复；`npm run test:player-trade:persistent`验证首选Endpoint接管、Debug模拟“DBProxy已提交但响应丢失”后的原始回执恢复，以及双Endpoint同时不可用时失败不改Entity、恢复后同一operationId只提交一次；统一入口为`npm run test:tiangz-fault-matrix`。普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务、批量Load/Save、动态地图现场恢复或Gate故障转移。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复；`npm run test:gate-failover`验证双Gate强杀后接管同一PlayerUnit、旧Gate重启不回切和绕过Login重入拒绝；`npm run test:player-trade:persistent`验证首选Endpoint接管、Debug模拟“DBProxy已提交但响应丢失”后的原始回执恢复，以及双Endpoint同时不可用时失败不改Entity、恢复后同一operationId只提交一次。普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务或动态地图现场恢复；Gate接管只覆盖同一已知拓扑，不代表跨地域租约HA。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 

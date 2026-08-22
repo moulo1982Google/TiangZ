@@ -4,6 +4,7 @@ import {
   type L2S_LockPlayerLocation,
   type L2S_RegisterPlayerLocation,
   type L2S_RecoverPlayerLocations,
+  type L2S_RebindPlayerGate,
   type L2S_RemovePlayerLocation,
   type L2S_ResolvePlayerLocation,
   type L2S_ResolvePlayerLocations,
@@ -19,6 +20,7 @@ import {
   type S2L_LockPlayerLocation,
   type S2L_RegisterPlayerLocation,
   type S2L_RecoverPlayerLocations,
+  type S2L_RebindPlayerGate,
   type S2L_RemovePlayerLocation,
   type S2L_ResolvePlayerLocation,
   type S2L_ResolvePlayerLocations,
@@ -71,6 +73,13 @@ export class LockPlayerLocationHandler implements SceneRpcHandler<LocationScene,
 export class CommitPlayerLocationHandler implements SceneRpcHandler<LocationScene, S2L_CommitPlayerLocation, L2S_CommitPlayerLocation> {
   handle(scene: LocationScene, request: S2L_CommitPlayerLocation): L2S_CommitPlayerLocation {
     return scene.GetComponent(LocationComponent).Commit(request);
+  }
+}
+
+@rpcHandler(LocationScene, LocationProtocol.RebindGate)
+export class RebindPlayerGateHandler implements SceneRpcHandler<LocationScene, S2L_RebindPlayerGate, L2S_RebindPlayerGate> {
+  handle(scene: LocationScene, request: S2L_RebindPlayerGate): L2S_RebindPlayerGate {
+    return scene.GetComponent(LocationComponent).RebindGate(request);
   }
 }
 

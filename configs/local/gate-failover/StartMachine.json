@@ -1,0 +1,14 @@
+{
+  "machines": [{
+    "name": "local-gate-failover",
+    "innerIp": "127.0.0.1",
+    "processes": [
+      "manager.json",
+      "login.json",
+      "gate-1.json",
+      "gate-2.json",
+      "map.json",
+      "location.json"
+    ]
+  }]
+}

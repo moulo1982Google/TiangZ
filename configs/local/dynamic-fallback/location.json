@@ -1,0 +1,9 @@
+{
+  "process": {
+    "name": "dynamic_fallback_location",
+    "identity": { "originServerId": 1, "workerId": 6 },
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7607 } }
+  },
+  "scenes": [{ "name": "location_1", "sceneType": "Location", "ip": "127.0.0.1", "port": 7401 }],
+  "knownSceneFiles": ["known-scenes.json"]
+}

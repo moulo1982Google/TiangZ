@@ -57,4 +57,5 @@ export const GameErrCode = {
   TradeTooFar: 10056,
   TradeInventoryChanged: 10057,
   DungeonCooldown: 10058,
+  DynamicMapLost: 10059,
 } as const;

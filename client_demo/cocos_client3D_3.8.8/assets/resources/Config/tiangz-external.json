@@ -1,4 +1,5 @@
 {
   "loginMgrHost": "14.103.24.32",
-  "loginMgrPort": 17000
+  "loginMgrPort": 17000,
+  "secure": true
 }

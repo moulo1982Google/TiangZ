@@ -57,7 +57,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | OP-01 | 一键启动 | all-in-one、cluster 配置和 `npm run test:runtime` 已有 | 新机器按教程可启动完整 Starter，不手工改十几个文件 |
 | OP-02 | 配置与代码生成 | Luban、Proto、Native codegen 已有 | 修改技能/道具/任务只改 Model、Hotfix 或配置源，再执行明确命令 |
 | OP-03 | 日志、指标、健康检查 | Runtime 日志和 Prometheus/Grafana 已有 | Starter 能看到登录、进图、战斗、DBProxy和队列错误 |
-| OP-04 | 故障恢复 | DBProxy `v0.5.0` 多Endpoint、双实例、多记录事务和 TiangZ 端到端故障矩阵已接入 | 明确区分可恢复快照、关键事务和临时运行态；连接中断、提交后丢响应、双Endpoint全不可用和备用节点接管后有安全结果 |
+| OP-04 | 故障恢复 | DBProxy多Endpoint/双实例、静态MapHost恢复、Gate接管和动态副本安全回退已接入端到端故障矩阵 | 关键事务不丢；临时副本现场可放弃；Manager/MapHost双失后玩家返回安全地图；跨地域仲裁另行实现 |
 | OP-05 | 真实业务压测 | 已完成首轮真实业务 A/B：Node 全链路覆盖 50/100/200 玩家 all/split；Rust 容量组覆盖 1000/2000/3000 玩家，并对 1000 玩家业务做三轮复核；报告见[OP-05压测报告](op05-real-business-load.md) | 当前保守有效点为 1000 个均匀分布玩家；2000 需先处理 Probe 尾延迟和 Map frame/completion 背压；DBProxy 事务压力另行验收 |
 
 ## 标准演示脚本
@@ -92,7 +92,7 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 | `npm run starter:acceptance -- --mode all` | 只跑all-in-one运行时部分 | 无数据库写入 |
 | `npm run starter:acceptance -- --mode split` | 只跑split-process运行时部分 | 无数据库写入 |
 | `npm run starter:acceptance:persistent` | DBProxy快照写入、停止/重启TiangZ、恢复读取 | 写入带时间后缀的测试账号，不删除数据库 |
-| `npm run test:tiangz-fault-matrix` | 玩家交易故障、双Endpoint全不可用、MapHost接管和独立DBProxy存储故障 | 可能重启本地Redis/PostgreSQL容器，只能用于测试环境 |
+| `npm run test:tiangz-fault-matrix` | 玩家交易、双Endpoint、静态MapHost、双Gate、Manager/动态MapHost双失和独立DBProxy存储故障 | 可能重启本地Redis/PostgreSQL容器，只能用于测试环境 |
 | `npm run starter:acceptance:faults` | 重建Debug Runtime后运行完整TiangZ端到端故障矩阵 | 可能重启本地Redis/PostgreSQL容器，只能用于测试环境 |
 
 自动脚本的结果写入被Git忽略的`temp/test-logs/starter-acceptance-*.json`。三个Starter验收命令都会先执行`cargo build --bin TiangZ`，确保Rust配置解析器与当前源码一致。持久化命令不会自动启动Docker；它会复用7800端口已有的DBProxy，或使用`tools-projects/TiangZ-DBProxy/target/debug`中的Debug服务，并从独立仓库的`deploy/local/.env`读取连接参数。常规Starter验收不应连接外网数据库。
@@ -126,4 +126,8 @@ Starter 的完成标准不是“功能文件存在”，而是每一项都满足
 
 `npm run test:player-domain-recovery`创建三个唯一账号，分别验证立即优雅停机的最终Flush、等待30秒周期窗口后强杀all-in-one，以及在`configs/local/cluster-dbproxy`中精确强杀承载地图100的`map-2`。前两轮重启后、MapHost轮在同一Watcher内拉起新PID后，均由新连接核对wallet金币、inventory背包、quest任务和runtime位置。MapHost轮还要求Location用更高所有权代次清除旧Actor路由，Gate在`ActorLocationNotFound`后重新进入恢复后的静态地图。怪物、仇恨、AI、移动意图和动态副本现场不在恢复范围。
 
-`npm run test:tiangz-fault-matrix`按顺序运行上述玩家交易故障、玩家领域/MapHost接管，以及独立DBProxy存储故障矩阵，并把阶段结果写入`temp/test-logs/tiangz-fault-matrix-report.json`。其中Rust响应丢失注入只存在于Debug构建，Release构建不会主动丢弃DBProxy响应；它不是线上开关，也不能替代真实网络设备故障演练。
+`npm run test:gate-failover`使用`configs/local/gate-failover`启动两个Gate，精确强杀当前玩家所属Gate，验证另一Gate接管同一PlayerUnit、Watcher有界重启旧Gate、Login不自动回切，以及绕过Login直连旧Gate仍被拒绝。它不需要数据库，也已加入`starter:acceptance`的GitHub CI。
+
+`npm run test:dynamic-map-fallback`进入Map 200后同时强杀Manager和动态MapHost，等待Location租约过期，在动态Host尚未恢复时重新登录并断言进入`PlayerConfig.initialMapId`对应的Map 1；随后确认Watcher拉起两个新PID。该验收不恢复副本现场，也不清数据库。
+
+`npm run test:tiangz-fault-matrix`按顺序运行上述玩家交易故障、玩家领域/MapHost接管、独立DBProxy存储故障、双Gate接管和动态副本安全回退，并把阶段结果写入`temp/test-logs`。其中Rust响应丢失注入只存在于Debug构建，Release构建不会主动丢弃DBProxy响应；它不是线上开关，也不能替代真实网络设备故障演练。

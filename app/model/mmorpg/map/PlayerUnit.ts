@@ -15,6 +15,7 @@ export interface AwakePlayerUnit {
 
 export interface MatchPlayerGate {
   gateName: string;
+  gateEpoch?: bigint;
 }
 
 export interface PlayerSnapshot {
@@ -24,6 +25,7 @@ export interface PlayerSnapshot {
   mapInstanceId: bigint;
   unitId: number;
   gateName: string;
+  gateEpoch: bigint;
   x: number;
   y: number;
   z: number;

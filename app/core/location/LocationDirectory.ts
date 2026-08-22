@@ -39,6 +39,12 @@ export class LocationDirectory<TKey, TValue> {
     return record ? snapshot(record) : undefined;
   }
 
+  /** 判断一次提交是否已经完成，供网络响应不确定后的同operationId重试。 / Reports whether an operation already committed so retries can recover after an ambiguous response. */
+  WasCommitted(key: TKey, operationId: string): boolean {
+    if (!operationId) return false;
+    return this.records.get(key)?.lastCommittedOperationId === operationId;
+  }
+
   /**
    * 以revision为CAS条件取得迁移或删除所有权。
    * 相同operationId重试是幂等的；不同操作不能抢占已有锁。

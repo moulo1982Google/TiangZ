@@ -16,4 +16,5 @@ export const SystemErrCode = {
   ActorTransferring: 1014,
   LocationConflict: 1015,
   LocationUnavailable: 1016,
+  ActorLocationFenceRejected: 1017,
 } as const;

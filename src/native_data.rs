@@ -2109,6 +2109,30 @@ pub(crate) fn op_native_aoi_attach(
     })
 }
 
+#[op2(fast)]
+/// Gate接管后更新Observer投递路由；不重建AOI关系或产生Enter/Leave。 / Updates an observer delivery route after Gate takeover without rebuilding AOI relations or emitting Enter/Leave.
+pub(crate) fn op_native_aoi_set_delivery_route(
+    map_id: u32,
+    handle: u32,
+    delivery_route_id: u32,
+) -> Result<(), JsErrorBox> {
+    STORE.with(|slot| {
+        let mut store = slot.borrow_mut();
+        let (unit_id, unit_map_id, _, _) = store.unit_spatial(handle)?;
+        if unit_map_id != map_id {
+            return Err(JsErrorBox::generic(format!(
+                "native Unit {unit_id} belongs to map {unit_map_id}, not {map_id}"
+            )));
+        }
+        store
+            .aoi_worlds
+            .get_mut(&map_id)
+            .ok_or_else(|| JsErrorBox::generic(format!("AOI world is not configured: {map_id}")))?
+            .set_delivery_route_id(unit_id, delivery_route_id)
+            .map_err(JsErrorBox::generic)
+    })
+}
+
 #[op2]
 /// 在销毁 Native Entity 前移出 AOI，并返回最终离开关系。 / Detaches before Native Entity destruction and returns final leave relations.
 pub(crate) fn op_native_aoi_detach(map_id: u32, handle: u32) -> Result<Uint8Array, JsErrorBox> {

@@ -1,0 +1,16 @@
+{
+  "process": {
+    "name": "gate_failover_map",
+    "identity": { "originServerId": 1, "workerId": 6 },
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7608 } }
+  },
+  "scenes": [{
+    "name": "map_2",
+    "sceneType": "MapHost",
+    "acceptDynamicMaps": true,
+    "staticMapIds": [2, 100],
+    "ip": "127.0.0.1",
+    "port": 7302
+  }],
+  "knownSceneFiles": ["known-scenes.json"]
+}

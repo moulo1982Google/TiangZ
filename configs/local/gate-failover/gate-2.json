@@ -1,0 +1,10 @@
+{
+  "process": {
+    "name": "gate_failover_2",
+    "identity": { "originServerId": 1, "workerId": 8 },
+    "lifecycle": { "restart": { "maxAttempts": 5, "windowMs": 600000, "backoffMs": 5000 } },
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7612 } }
+  },
+  "scenes": [{ "name": "gate_2", "sceneType": "Gate", "ip": "127.0.0.1", "port": 7202 }],
+  "knownSceneFiles": ["known-scenes.json"]
+}

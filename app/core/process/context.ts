@@ -85,6 +85,7 @@ export class SceneCallContext {
     );
     const frame = encodeActorLocationEnvelope({
       instanceId: target.instanceId,
+      fenceToken: target.fenceToken,
       frame: innerFrame,
       rpcId,
     });
@@ -111,6 +112,7 @@ export class SceneCallContext {
     const innerFrame = rewriteFrameRpcId(frame, internalRpcId);
     const envelope = encodeActorLocationEnvelope({
       instanceId: target.instanceId,
+      fenceToken: target.fenceToken,
       frame: innerFrame,
       rpcId: internalRpcId,
     });
@@ -232,6 +234,7 @@ export class SceneCallContext {
     const innerFrame = packFrame(descriptor.msgcode, descriptor.codec.encode(message));
     const frame = encodeActorLocationEnvelope({
       instanceId: target.instanceId,
+      fenceToken: target.fenceToken,
       frame: innerFrame,
     });
     return this.sendFrame(target.scene, frame, options);

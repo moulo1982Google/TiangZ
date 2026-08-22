@@ -488,10 +488,11 @@ async function testPlayerUnitComponents(): Promise<void> {
     [NumericType.AttackSpeedBase]: 2_000n,
     [NumericType.MoveSpeedBase]: 10_000n,
   });
-  player.AddComponent(UnitGateComponent, "gate-1");
+  const playerGate = player.AddComponent(UnitGateComponent, "gate-1", 1n);
   player.AddComponent(CurrencyComponent, 0n);
   player.AddComponent(SkillComponent);
   const firstInstanceId = player.InstanceId;
+  assert.equal(player.__matchesActorLocationFenceToken(1n), true);
 
   assert.equal(player.Id, 1000);
   assert.equal(player.UnitId, 1000);
@@ -502,6 +503,9 @@ async function testPlayerUnitComponents(): Promise<void> {
   assert.equal(player.GetComponent(MailBoxComponent).MailboxType, "ordered");
   await assertOrderedMailbox(host, player);
   assert.equal(player.GetComponent(NumericComponent), numeric);
+  assert.equal(playerGate.gateEpoch, 1n);
+  assert.equal(player.__matchesActorLocationFenceToken(1n), true);
+  assert.equal(player.__matchesActorLocationFenceToken(2n), false);
   assert.equal(numeric[NumericType.CurrentHp], 100n);
   assert.equal(numeric[NumericType.Attack], 5n);
   assert.equal(numeric[NumericType.AttackBase], 5n);
@@ -536,6 +540,11 @@ async function testPlayerUnitComponents(): Promise<void> {
   player.SecondEnterMap();
   assert.equal(player.MatchesGate({ gateName: "gate-1" }), true);
   assert.equal(player.MatchesGate({ gateName: "gate-2" }), false);
+  playerGate.Rebind("gate-2", 2n);
+  assert.equal(player.MatchesGate({ gateName: "gate-2", gateEpoch: 2n }), true);
+  assert.equal(player.__matchesActorLocationFenceToken(1n), false);
+  assert.equal(player.__matchesActorLocationFenceToken(2n), true);
+  assert.throws(() => playerGate.Rebind("gate-1", 1n), /cannot move backwards/);
 
   assert.equal(
     player.Move({
@@ -618,7 +627,7 @@ async function testPlayerUnitComponents(): Promise<void> {
   recreated.AddComponent(NumericComponent, {
     [NumericType.MoveSpeedBase]: 10_000n,
   });
-  recreated.AddComponent(UnitGateComponent, "gate-2");
+  recreated.AddComponent(UnitGateComponent, "gate-2", 1n);
   recreated.AddComponent(CurrencyComponent, 0n);
   assert.notEqual(recreated.InstanceId, firstInstanceId);
   assert.equal(host.despawnActor("map:1", 1000), true);

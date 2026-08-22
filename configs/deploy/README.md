@@ -26,7 +26,21 @@ DBProxy 2: 127.0.0.1:7801 ─┘
 
 10个Process共享`known-scenes.json`，但每个Process只有一个V8。所有服务都只绑定本机回环地址并使用`127.0.0.1`通讯；MapManager、地图和Location只使用内网TCP。LoginMgr、Login和Gate的公网`outerPort`由Nginx接管，Nginx再转发到独立的回环监听端口，客户端仍然使用原来的`outerIp/outerPort`，业务代码不需要感知代理。
 
-外网 2C2G 的入口映射固定为：`17000 -> 27000`（LoginMgr）、`17001 -> 27001`（Login 1）、`17002 -> 27002`（Login 2）、`17201 -> 27201`（Gate 1）、`17202 -> 27202`（Gate 2）。完整站点配置见 `configs/deploy/cocos3d-nginx.conf.example`。不能让 Nginx 和 TiangZ 同时监听同一个端口，否则会发生端口抢占；因此 `port` 是内网监听端口，`outerPort` 才是公网端口。
+外网2C2G的WSS入口映射固定为：`17000 -> 27000`（LoginMgr）、`17001 -> 27001`（Login 1）、`17002 -> 27002`（Login 2）、`17201 -> 27201`（Gate 1）、`17202 -> 27202`（Gate 2）。完整站点配置见`configs/deploy/cocos3d-nginx.conf.example`，公共WebSocket参数片段见`configs/deploy/tiangz-websocket.conf.example`。不能让Nginx和TiangZ同时监听同一个端口；`port`是回环监听端口，`outerPort`是公网TLS端口。
+
+## TLS与证书续期
+
+公网页面和五个游戏入口都由Nginx终止TLS，TiangZ内部仍使用回环TCP/WebSocket。当前IP证书使用支持IP地址证书的Certbot 5.4或更新版本申请：
+
+```bash
+mkdir -p /var/www/letsencrypt
+certbot certonly --preferred-profile shortlived --webroot \
+  --webroot-path /var/www/letsencrypt --ip-address 14.103.24.32
+install -m 0644 configs/deploy/tiangz-websocket.conf.example \
+  /etc/nginx/snippets/tiangz-websocket.conf
+```
+
+证书只保存在`/etc/letsencrypt/live/14.103.24.32`，不得提交到Git。IP证书有效期较短，必须启用`certbot.timer`，并安装续期部署钩子，在证书更新后执行`nginx -t && systemctl reload nginx`。先保留80端口的ACME challenge，再把其他HTTP请求重定向到HTTPS。配置完成后执行`npm run verify:production-deploy`和`nginx -t`。
 
 旧的 `external-all-in-one.json` 保留为单 Process 回归配置，不作为 2C2G 外网默认部署。
 

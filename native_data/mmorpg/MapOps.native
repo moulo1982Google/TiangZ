@@ -21,6 +21,7 @@ op SpatialRelease(mapId: u32): void;
 op AoiCreate(mapId: u32, gridSizeMillimeters: u32, enterRadiusGrids: u32, detachRadiusGrids: u32, syncTiers: bytes): void;
 op AoiRelease(mapId: u32): void;
 op AoiAttach(mapId: u32, handle: u32, observer: bool, subject: bool, deliveryRouteId: u32): bytes;
+op AoiSetDeliveryRoute(mapId: u32, handle: u32, deliveryRouteId: u32): void;
 op AoiDetach(mapId: u32, handle: u32): bytes;
 op AoiRefresh(mapId: u32): bytes;
 op AoiSetVisible(mapId: u32, observerId: u32, subjectId: u32, visible: bool): bool;

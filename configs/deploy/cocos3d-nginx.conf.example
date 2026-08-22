@@ -1,36 +1,50 @@
-# TiangZ Cocos3D 双入口示例。
-# Example Nginx layout for the TiangZ Cocos3D desktop and mobile entry points.
-#
-# 上传前先执行 npm run build:cocos3d:external，然后：
-#   build/external/desktop/* -> /var/www/tiangz-cocos3d/desktop/
-#   build/external/m/*       -> /var/www/tiangz-cocos3d/m/
+# TiangZ Cocos3D HTTPS/WSS production entry for the current external IP.
+# Certificates are provisioned on the host and must never be committed.
 
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name _;
+    server_name 14.103.24.32;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name 14.103.24.32;
+
+    ssl_certificate /etc/letsencrypt/live/14.103.24.32/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/14.103.24.32/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:TiangZTLS:10m;
+    ssl_session_timeout 10m;
 
     root /var/www/tiangz-cocos3d/desktop;
     index index.html;
+    add_header Strict-Transport-Security "max-age=86400" always;
 
-    # /m 没有尾斜杠时统一跳到 /m/，保证相对资源路径稳定。
-    # Normalize /m to /m/ so the mobile bundle keeps its relative asset paths.
     location = /m {
         return 301 /m/;
     }
 
-    # Mobile Web is the only landscape entry point.
     location ^~ /m/ {
         root /var/www/tiangz-cocos3d;
         try_files $uri $uri/ /m/index.html;
-        # 外网机仅用于Demo，所有资源每次使用前都向服务器确认版本，避免iOS桌面Web App长期保留旧包。
-        # The public host is a Demo server; always revalidate assets so an iOS Home Screen app cannot retain an old build.
         expires -1;
         add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;
         add_header Pragma "no-cache" always;
+        add_header Strict-Transport-Security "max-age=86400" always;
     }
 
-    # Desktop Web stays at the normal root entry point.
     location / {
         try_files $uri $uri/ /index.html;
         expires -1;
@@ -39,111 +53,52 @@ server {
     }
 }
 
-# 外网游戏入口只暴露 Nginx 端口，TiangZ 进程监听独立的回环端口。
-# The public game ports terminate at Nginx; TiangZ listens on separate loopback ports.
-#
-# 这样不会出现 Nginx 和 TiangZ 同时抢占同一个端口的问题。当前外网客户端使用
-# WebSocket，HTTP 反向代理可以透传升级握手和后续二进制帧；内部 Process 之间
-# 仍然直接使用 127.0.0.1 的 inner TCP，不会绕过 Nginx。
-#
-# Public -> loopback:
-#   17000 -> 27000  login_mgr
-#   17001 -> 27001  login_1
-#   17002 -> 27002  login_2
-#   17201 -> 27201  gate_1
-#   17202 -> 27202  gate_2
+# Public WSS endpoints terminate TLS here. TiangZ continues to listen on
+# loopback-only plain WebSocket ports; inner TCP never passes through Nginx.
+# 17000 -> 27000 LoginMgr, 17001 -> 27001 Login 1, 17002 -> 27002 Login 2,
+# 17201 -> 27201 Gate 1, 17202 -> 27202 Gate 2.
 
 server {
-    listen 17000;
-    server_name _;
-
-    location / {
-        proxy_pass http://127.0.0.1:27000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_connect_timeout 5s;
-        proxy_buffering off;
-    }
+    listen 17000 ssl;
+    server_name 14.103.24.32;
+    ssl_certificate /etc/letsencrypt/live/14.103.24.32/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/14.103.24.32/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    location / { proxy_pass http://127.0.0.1:27000; include /etc/nginx/snippets/tiangz-websocket.conf; }
 }
 
 server {
-    listen 17001;
-    server_name _;
-
-    location / {
-        proxy_pass http://127.0.0.1:27001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_connect_timeout 5s;
-        proxy_buffering off;
-    }
+    listen 17001 ssl;
+    server_name 14.103.24.32;
+    ssl_certificate /etc/letsencrypt/live/14.103.24.32/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/14.103.24.32/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    location / { proxy_pass http://127.0.0.1:27001; include /etc/nginx/snippets/tiangz-websocket.conf; }
 }
 
 server {
-    listen 17002;
-    server_name _;
-
-    location / {
-        proxy_pass http://127.0.0.1:27002;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_connect_timeout 5s;
-        proxy_buffering off;
-    }
+    listen 17002 ssl;
+    server_name 14.103.24.32;
+    ssl_certificate /etc/letsencrypt/live/14.103.24.32/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/14.103.24.32/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    location / { proxy_pass http://127.0.0.1:27002; include /etc/nginx/snippets/tiangz-websocket.conf; }
 }
 
 server {
-    listen 17201;
-    server_name _;
-
-    location / {
-        proxy_pass http://127.0.0.1:27201;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_connect_timeout 5s;
-        proxy_buffering off;
-    }
+    listen 17201 ssl;
+    server_name 14.103.24.32;
+    ssl_certificate /etc/letsencrypt/live/14.103.24.32/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/14.103.24.32/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    location / { proxy_pass http://127.0.0.1:27201; include /etc/nginx/snippets/tiangz-websocket.conf; }
 }
 
 server {
-    listen 17202;
-    server_name _;
-
-    location / {
-        proxy_pass http://127.0.0.1:27202;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        proxy_connect_timeout 5s;
-        proxy_buffering off;
-    }
+    listen 17202 ssl;
+    server_name 14.103.24.32;
+    ssl_certificate /etc/letsencrypt/live/14.103.24.32/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/14.103.24.32/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    location / { proxy_pass http://127.0.0.1:27202; include /etc/nginx/snippets/tiangz-websocket.conf; }
 }

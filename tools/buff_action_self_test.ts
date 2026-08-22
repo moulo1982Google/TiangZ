@@ -138,7 +138,7 @@ async function main(): Promise<void> {
   installNativeHostOps();
   const native = unit.AddComponent(NativeUnitRef, { id: 1, instanceId: unit.InstanceId, mapId: 1 });
   unit.AddComponent(PositionComponent, native, 100, 100, 1);
-  unit.AddComponent(UnitGateComponent, "gate_test");
+  unit.AddComponent(UnitGateComponent, "gate_test", 1n);
   unit.AddComponent(NumericComponent, {
     [NumericType.CurrentHp]: 1n,
     [NumericType.MaxHpBase]: 200n,
@@ -376,7 +376,7 @@ async function main(): Promise<void> {
   });
   const targetNative = target.AddComponent(NativeUnitRef, { id: 2, instanceId: target.InstanceId, mapId: 1 });
   target.AddComponent(PositionComponent, targetNative, 100, 100, 1);
-  target.AddComponent(UnitGateComponent, "gate_test");
+  target.AddComponent(UnitGateComponent, "gate_test", 1n);
   target.AddComponent(NumericComponent, {
     [NumericType.CurrentHp]: 1n,
     [NumericType.MaxHpBase]: 200n,

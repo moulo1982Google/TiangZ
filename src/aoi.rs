@@ -388,6 +388,28 @@ impl AoiWorld {
             .map(|entry| entry.delivery_route_id)
     }
 
+    /// 更新已挂载Observer的投递路由，不改变任何可见关系。 / Updates an attached observer's delivery route without changing visibility relations.
+    pub(crate) fn set_delivery_route_id(
+        &mut self,
+        observer_id: u32,
+        delivery_route_id: u32,
+    ) -> Result<(), &'static str> {
+        if delivery_route_id == 0 {
+            return Err("AOI observer delivery route must be greater than zero");
+        }
+        let Some(entity_index) = self.entity_index(observer_id) else {
+            return Err("AOI observer is not attached");
+        };
+        let Some(entry) = self.entries[entity_index].as_mut() else {
+            return Err("AOI observer entry is missing");
+        };
+        if !entry.observer {
+            return Err("AOI entity is not an observer");
+        }
+        entry.delivery_route_id = delivery_route_id;
+        Ok(())
+    }
+
     /// 返回当前地图使用的最大投递路由编号，供帧尾复用连续分桶。
     /// Returns the largest active route id so frame-end fan-out can reuse dense buckets.
     pub(crate) fn max_delivery_route_id(&self) -> u32 {
@@ -1268,6 +1290,21 @@ mod tests {
                 (vec![3], vec![2]),
             ]
         );
+    }
+
+    #[test]
+    fn delivery_route_rebind_preserves_visibility() {
+        let mut world = world();
+        world.attach_routed(1, 0.0, 0.0, true, true, 1).unwrap();
+        world.attach_routed(2, 0.0, 0.0, true, true, 2).unwrap();
+        world.take_changes();
+        let visible_before = world.visible_subjects(1);
+
+        world.set_delivery_route_id(1, 9).unwrap();
+
+        assert_eq!(world.delivery_route_id(1), Some(9));
+        assert_eq!(world.visible_subjects(1), visible_before);
+        assert!(world.take_changes().is_empty());
     }
 
     #[test]

@@ -1,0 +1,16 @@
+{
+  "process": {
+    "name": "dynamic_fallback_map",
+    "identity": { "originServerId": 1, "workerId": 4 },
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7605 } }
+  },
+  "scenes": [{
+    "name": "map_2",
+    "sceneType": "MapHost",
+    "acceptDynamicMaps": false,
+    "staticMapIds": [1, 2, 100],
+    "ip": "127.0.0.1",
+    "port": 7302
+  }],
+  "knownSceneFiles": ["known-scenes.json"]
+}

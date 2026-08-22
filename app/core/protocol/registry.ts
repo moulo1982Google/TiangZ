@@ -22,6 +22,7 @@ export interface Route<TReq, TResp> {
 export interface ProtocolContext {
   connectionId?: number;
   actorInstanceId?: number;
+  actorLocationFenceToken?: bigint;
   msgcode?: number;
   rpcId?: number;
   requestId?: string;

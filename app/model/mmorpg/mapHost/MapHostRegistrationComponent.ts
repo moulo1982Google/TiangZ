@@ -1,4 +1,4 @@
-import { Component, GlobalIdSystem } from "../../../core/public";
+import { Component } from "../../../core/public";
 import type {
   DynamicMapAssignmentSnapshot,
   MM2S_DynamicMapDisposed,
@@ -7,6 +7,7 @@ import type {
 } from "../../../generated/model/server/demo/protocol/messages";
 import { MapHostControlProtocol } from "../../../generated/model/server/demo/protocol/rpcs";
 import { MapHostComponent } from "./MapHostComponent";
+import { MAP_HOST_REPORT_INTERVAL_MS } from "./MapHostLease";
 
 /**
  * MapHost到MapManager的注册与租约客户端。只汇报地址、负载和幂等创建关系，
@@ -16,7 +17,6 @@ import { MapHostComponent } from "./MapHostComponent";
  * endpoint, load, and creation assignments, never player/AOI/gameplay state.
  */
 export class MapHostRegistrationComponent extends Component {
-  private readonly generation = GlobalIdSystem.Instance.Next();
   private mapHost!: MapHostComponent;
   private registered = false;
   private reporting = false;
@@ -30,7 +30,7 @@ export class MapHostRegistrationComponent extends Component {
     });
     if (!this.owner.self.acceptDynamicMaps) return;
     this.owner.scenes.one("MapManager");
-    this.NewRepeatedTimer(5_000, "ReportToMapManager");
+    this.NewRepeatedTimer(MAP_HOST_REPORT_INTERVAL_MS, "ReportToMapManager");
     this.NewOnceTimer(0, "ReportToMapManager");
   }
 
@@ -58,7 +58,7 @@ export class MapHostRegistrationComponent extends Component {
         if (!registered.accepted) {
           this.owner.logger.warn("map host registration rejected by an active generation", {
             mapHostName: this.owner.self.name,
-            generation: this.generation.toString(),
+            generation: this.mapHost.OwnerGeneration.toString(),
           });
           return;
         }
@@ -86,7 +86,7 @@ export class MapHostRegistrationComponent extends Component {
         MapHostControlProtocol.DynamicMapDisposed,
         {
           mapHostName: this.owner.self.name,
-          generation: this.generation,
+          generation: this.mapHost.OwnerGeneration,
           requestId: assignment.requestId,
           mapConfigId: assignment.mapConfigId,
           mapInstanceId: assignment.mapInstanceId,
@@ -104,7 +104,7 @@ export class MapHostRegistrationComponent extends Component {
     const load = this.mapHost.LoadSnapshot();
     return {
       endpoint: this.mapHost.EndpointSnapshot(),
-      generation: this.generation,
+      generation: this.mapHost.OwnerGeneration,
       staticMapCount: load.staticMapCount,
       dynamicMapCount: load.dynamicMapCount,
       playerCount: load.playerCount,
@@ -116,7 +116,7 @@ export class MapHostRegistrationComponent extends Component {
     const load = this.mapHost.LoadSnapshot();
     return {
       mapHostName: this.owner.self.name,
-      generation: this.generation,
+      generation: this.mapHost.OwnerGeneration,
       staticMapCount: load.staticMapCount,
       dynamicMapCount: load.dynamicMapCount,
       playerCount: load.playerCount,
