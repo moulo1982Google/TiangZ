@@ -641,7 +641,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1369,7 +1369,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1821,7 +1821,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2162,7 +2162,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2251,7 +2251,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-client"
 version = "0.5.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#5a0bf57726afcc0567be29269a865b6817e9ee82"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#4d6bff7dd7e2c80cf8ef2c1c4597656410604371"
 dependencies = [
  "async-trait",
  "thiserror 2.0.19",
@@ -2263,7 +2263,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-core"
 version = "0.5.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#5a0bf57726afcc0567be29269a865b6817e9ee82"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#4d6bff7dd7e2c80cf8ef2c1c4597656410604371"
 dependencies = [
  "async-trait",
  "serde",
@@ -2273,7 +2273,7 @@ dependencies = [
 [[package]]
 name = "tiangz-dbproxy-protocol"
 version = "0.5.0"
-source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#5a0bf57726afcc0567be29269a865b6817e9ee82"
+source = "git+https://github.com/moulo1982Google/TiangZ-DBProxy.git?branch=main#4d6bff7dd7e2c80cf8ef2c1c4597656410604371"
 dependencies = [
  "prost",
  "prost-build",

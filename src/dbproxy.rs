@@ -8,14 +8,17 @@
 use std::cell::RefCell;
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use deno_core::{JsBuffer, op2};
 use deno_error::JsErrorBox;
 use serde::{Deserialize, Serialize};
-use tiangz_dbproxy_client::{ClientConfig, ClientError, DbProxyClientPool, RemoteError};
+use tiangz_dbproxy_client::{
+    ClientConfig, ClientConnectionOutcome, ClientError, ClientObserver, ClientRequestOutcome,
+    DbProxyClientPool, RemoteError,
+};
 use tiangz_dbproxy_core::{
     MultiRecordTransactionReceipt, MultiRecordTransactionalWrite,
     MultiRecordTransactionalWriteOutcome, RecordKey, Revision, SnapshotWrite, SnapshotWriteOutcome,
@@ -26,6 +29,12 @@ use tiangz_dbproxy_protocol::{ProtocolError, wire};
 use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::config::ProcessConfig;
+use crate::health::{
+    DbProxyClientObservabilitySnapshot, DbProxyEndpointObservabilitySnapshot,
+    DbProxyFailoverObservabilitySnapshot,
+};
+
+const MAX_DBPROXY_ENDPOINTS: usize = 8;
 
 thread_local! {
     static DBPROXY_BRIDGE: RefCell<Option<DbProxyBridge>> = const { RefCell::new(None) };
@@ -62,6 +71,143 @@ struct DbProxyBridge {
     pool_size: usize,
     pool: Arc<Mutex<Option<DbProxyClientPool>>>,
     host_runtime: Handle,
+    metrics: Arc<DbProxyClientMetrics>,
+}
+
+struct DbProxyClientMetrics {
+    endpoints: Arc<[String]>,
+    last_successful_endpoint: AtomicUsize,
+    connection_attempts: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
+    connection_failures: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
+    connection_duration_micros: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
+    request_attempts: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
+    request_failures: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
+    request_duration_micros: [AtomicU64; MAX_DBPROXY_ENDPOINTS],
+    failovers: [AtomicU64; MAX_DBPROXY_ENDPOINTS * MAX_DBPROXY_ENDPOINTS],
+}
+
+impl DbProxyClientMetrics {
+    fn new(endpoints: Vec<String>) -> Self {
+        debug_assert!(!endpoints.is_empty() && endpoints.len() <= MAX_DBPROXY_ENDPOINTS);
+        Self {
+            endpoints: endpoints.into(),
+            last_successful_endpoint: AtomicUsize::new(MAX_DBPROXY_ENDPOINTS),
+            connection_attempts: std::array::from_fn(|_| AtomicU64::new(0)),
+            connection_failures: std::array::from_fn(|_| AtomicU64::new(0)),
+            connection_duration_micros: std::array::from_fn(|_| AtomicU64::new(0)),
+            request_attempts: std::array::from_fn(|_| AtomicU64::new(0)),
+            request_failures: std::array::from_fn(|_| AtomicU64::new(0)),
+            request_duration_micros: std::array::from_fn(|_| AtomicU64::new(0)),
+            failovers: std::array::from_fn(|_| AtomicU64::new(0)),
+        }
+    }
+
+    fn snapshot(&self) -> DbProxyClientObservabilitySnapshot {
+        let endpoints = self
+            .endpoints
+            .iter()
+            .enumerate()
+            .map(|(index, endpoint)| DbProxyEndpointObservabilitySnapshot {
+                endpoint: endpoint.clone(),
+                selected: self.last_successful_endpoint.load(Ordering::Relaxed) == index,
+                connection_attempts: self.connection_attempts[index].load(Ordering::Relaxed),
+                connection_failures: self.connection_failures[index].load(Ordering::Relaxed),
+                connection_duration_seconds: self.connection_duration_micros[index]
+                    .load(Ordering::Relaxed) as f64
+                    / 1_000_000.0,
+                request_attempts: self.request_attempts[index].load(Ordering::Relaxed),
+                request_failures: self.request_failures[index].load(Ordering::Relaxed),
+                request_duration_seconds: self.request_duration_micros[index]
+                    .load(Ordering::Relaxed) as f64
+                    / 1_000_000.0,
+            })
+            .collect();
+        let mut failovers = Vec::new();
+        for from in 0..self.endpoints.len() {
+            for to in 0..self.endpoints.len() {
+                if from == to {
+                    continue;
+                }
+                failovers.push(DbProxyFailoverObservabilitySnapshot {
+                    from_endpoint: self.endpoints[from].clone(),
+                    to_endpoint: self.endpoints[to].clone(),
+                    count: self.failovers[from * MAX_DBPROXY_ENDPOINTS + to]
+                        .load(Ordering::Relaxed),
+                });
+            }
+        }
+        DbProxyClientObservabilitySnapshot {
+            endpoints,
+            failovers,
+        }
+    }
+}
+
+impl ClientObserver for DbProxyClientMetrics {
+    fn connection_attempt(
+        &self,
+        endpoint_index: usize,
+        elapsed: Duration,
+        outcome: ClientConnectionOutcome,
+    ) {
+        if endpoint_index >= self.endpoints.len() {
+            return;
+        }
+        self.connection_attempts[endpoint_index].fetch_add(1, Ordering::Relaxed);
+        self.connection_duration_micros[endpoint_index].fetch_add(
+            elapsed.as_micros().min(u128::from(u64::MAX)) as u64,
+            Ordering::Relaxed,
+        );
+        if outcome == ClientConnectionOutcome::Connected {
+            self.last_successful_endpoint
+                .store(endpoint_index, Ordering::Relaxed);
+        } else {
+            self.connection_failures[endpoint_index].fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn endpoint_failover(&self, from_endpoint_index: usize, to_endpoint_index: usize) {
+        if from_endpoint_index >= self.endpoints.len() || to_endpoint_index >= self.endpoints.len()
+        {
+            return;
+        }
+        self.failovers[from_endpoint_index * MAX_DBPROXY_ENDPOINTS + to_endpoint_index]
+            .fetch_add(1, Ordering::Relaxed);
+        tracing::warn!(
+            target: "tiangz::dbproxy",
+            from_endpoint = %self.endpoints[from_endpoint_index],
+            to_endpoint = %self.endpoints[to_endpoint_index],
+            "DBProxy client switched endpoint"
+        );
+    }
+
+    fn request_attempt(
+        &self,
+        endpoint_index: usize,
+        operation: &'static str,
+        elapsed: Duration,
+        outcome: ClientRequestOutcome,
+    ) {
+        if endpoint_index >= self.endpoints.len() {
+            return;
+        }
+        self.request_attempts[endpoint_index].fetch_add(1, Ordering::Relaxed);
+        self.request_duration_micros[endpoint_index].fetch_add(
+            elapsed.as_micros().min(u128::from(u64::MAX)) as u64,
+            Ordering::Relaxed,
+        );
+        if outcome != ClientRequestOutcome::Success {
+            self.request_failures[endpoint_index].fetch_add(1, Ordering::Relaxed);
+            tracing::debug!(
+                target: "tiangz::dbproxy",
+                endpoint = %self.endpoints[endpoint_index],
+                operation,
+                ?outcome,
+                duration_ms = elapsed.as_secs_f64() * 1000.0,
+                "DBProxy client request attempt failed"
+            );
+        }
+    }
 }
 
 impl DbProxyBridge {
@@ -139,12 +285,16 @@ pub fn configure(process: &ProcessConfig, host_runtime: Handle) -> Result<()> {
             process.name, settings.auth_token_env
         )
     })?;
+    let endpoints = settings.endpoint_candidates();
+    let metrics = Arc::new(DbProxyClientMetrics::new(endpoints));
     let mut config = ClientConfig::new(
         settings.endpoint.clone(),
         auth_token,
         format!("tiangz:{}", process.name),
     );
-    config = config.with_endpoints(settings.failover_endpoints.clone());
+    config = config
+        .with_endpoints(settings.failover_endpoints.clone())
+        .with_observer(metrics.clone());
     config.connect_timeout = Duration::from_millis(settings.connect_timeout_ms);
     config.request_timeout = Duration::from_millis(settings.request_timeout_ms);
     config.max_frame_bytes = settings.max_frame_bytes;
@@ -155,6 +305,7 @@ pub fn configure(process: &ProcessConfig, host_runtime: Handle) -> Result<()> {
             pool_size: settings.client_pool_size,
             pool: Arc::new(Mutex::new(None)),
             host_runtime,
+            metrics,
         });
     });
     tracing::info!(
@@ -166,6 +317,16 @@ pub fn configure(process: &ProcessConfig, host_runtime: Handle) -> Result<()> {
         "DBProxy host bridge configured"
     );
     Ok(())
+}
+
+/// 返回当前Process的DBProxy客户端累计指标；未启用持久化时不生成时间序列。
+/// Return cumulative DBProxy client metrics for this Process; disabled persistence emits no series.
+pub(crate) fn metrics_snapshot() -> Option<DbProxyClientObservabilitySnapshot> {
+    DBPROXY_BRIDGE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|bridge| bridge.metrics.snapshot())
+    })
 }
 
 /// 在Process进入ready前建立完整连接池；未配置持久化时保持空操作。

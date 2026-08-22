@@ -114,6 +114,32 @@ pub(crate) struct ProcessObservabilitySnapshot {
     pub(crate) scenes: Vec<SceneObservabilitySnapshot>,
     pub(crate) game: Option<GameObservabilitySnapshot>,
     pub(crate) native_data: Option<NativeDataObservabilitySnapshot>,
+    pub(crate) dbproxy: Option<DbProxyClientObservabilitySnapshot>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DbProxyClientObservabilitySnapshot {
+    pub(crate) endpoints: Vec<DbProxyEndpointObservabilitySnapshot>,
+    pub(crate) failovers: Vec<DbProxyFailoverObservabilitySnapshot>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DbProxyEndpointObservabilitySnapshot {
+    pub(crate) endpoint: String,
+    pub(crate) selected: bool,
+    pub(crate) connection_attempts: u64,
+    pub(crate) connection_failures: u64,
+    pub(crate) connection_duration_seconds: f64,
+    pub(crate) request_attempts: u64,
+    pub(crate) request_failures: u64,
+    pub(crate) request_duration_seconds: f64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DbProxyFailoverObservabilitySnapshot {
+    pub(crate) from_endpoint: String,
+    pub(crate) to_endpoint: String,
+    pub(crate) count: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1065,10 +1091,123 @@ fn format_prometheus_metrics(process_name: &str, state: &ProcessHealthState) -> 
     if let Some(native) = &snapshot.native_data {
         append_native_data_metrics_prometheus(&mut output, &safe_process_name, native);
     }
+    if let Some(dbproxy) = &snapshot.dbproxy {
+        append_dbproxy_client_metrics_prometheus(&mut output, &safe_process_name, dbproxy);
+    }
     append_hotfix_metrics_prometheus(&mut output, &safe_process_name, &hotfix);
     append_game_config_metrics_prometheus(&mut output, &safe_process_name, &game_config);
 
     output
+}
+
+fn append_dbproxy_client_metrics_prometheus(
+    output: &mut String,
+    process_name: &str,
+    snapshot: &DbProxyClientObservabilitySnapshot,
+) {
+    for (name, help, kind) in [
+        (
+            "tiangz_dbproxy_endpoint_selected",
+            "Last successfully connected DBProxy endpoint for this Process",
+            "gauge",
+        ),
+        (
+            "tiangz_dbproxy_endpoint_connection_attempts_total",
+            "DBProxy connection attempts by endpoint",
+            "counter",
+        ),
+        (
+            "tiangz_dbproxy_endpoint_connection_failures_total",
+            "DBProxy failed connection attempts by endpoint",
+            "counter",
+        ),
+        (
+            "tiangz_dbproxy_endpoint_connection_duration_seconds_total",
+            "Cumulative DBProxy connection attempt duration by endpoint",
+            "counter",
+        ),
+        (
+            "tiangz_dbproxy_endpoint_request_attempts_total",
+            "DBProxy request attempts by endpoint",
+            "counter",
+        ),
+        (
+            "tiangz_dbproxy_endpoint_request_failures_total",
+            "DBProxy failed request attempts by endpoint",
+            "counter",
+        ),
+        (
+            "tiangz_dbproxy_endpoint_request_duration_seconds_total",
+            "Cumulative DBProxy request duration including connection serialization wait",
+            "counter",
+        ),
+        (
+            "tiangz_dbproxy_endpoint_failovers_total",
+            "DBProxy client endpoint switches after reconnectable failures",
+            "counter",
+        ),
+    ] {
+        writeln!(output, "# HELP {name} {help}").expect("formatting metric help");
+        writeln!(output, "# TYPE {name} {kind}").expect("formatting metric type");
+    }
+
+    for endpoint in &snapshot.endpoints {
+        let endpoint_name = escape_prometheus_label(&endpoint.endpoint);
+        let labels = format!("process=\"{process_name}\",endpoint=\"{endpoint_name}\"");
+        writeln!(
+            output,
+            "tiangz_dbproxy_endpoint_selected{{{labels}}} {}",
+            u8::from(endpoint.selected)
+        )
+        .expect("formatting DBProxy metric");
+        writeln!(
+            output,
+            "tiangz_dbproxy_endpoint_connection_attempts_total{{{labels}}} {}",
+            endpoint.connection_attempts
+        )
+        .expect("formatting DBProxy metric");
+        writeln!(
+            output,
+            "tiangz_dbproxy_endpoint_connection_failures_total{{{labels}}} {}",
+            endpoint.connection_failures
+        )
+        .expect("formatting DBProxy metric");
+        writeln!(
+            output,
+            "tiangz_dbproxy_endpoint_connection_duration_seconds_total{{{labels}}} {:.6}",
+            endpoint.connection_duration_seconds
+        )
+        .expect("formatting DBProxy metric");
+        writeln!(
+            output,
+            "tiangz_dbproxy_endpoint_request_attempts_total{{{labels}}} {}",
+            endpoint.request_attempts
+        )
+        .expect("formatting DBProxy metric");
+        writeln!(
+            output,
+            "tiangz_dbproxy_endpoint_request_failures_total{{{labels}}} {}",
+            endpoint.request_failures
+        )
+        .expect("formatting DBProxy metric");
+        writeln!(
+            output,
+            "tiangz_dbproxy_endpoint_request_duration_seconds_total{{{labels}}} {:.6}",
+            endpoint.request_duration_seconds
+        )
+        .expect("formatting DBProxy metric");
+    }
+    for failover in &snapshot.failovers {
+        writeln!(
+            output,
+            "tiangz_dbproxy_endpoint_failovers_total{{process=\"{}\",from_endpoint=\"{}\",to_endpoint=\"{}\"}} {}",
+            process_name,
+            escape_prometheus_label(&failover.from_endpoint),
+            escape_prometheus_label(&failover.to_endpoint),
+            failover.count
+        )
+        .expect("formatting DBProxy failover metric");
+    }
 }
 
 fn append_actor_mailbox_metrics_prometheus(
@@ -3178,5 +3317,42 @@ mod tests {
         assert!(body.contains("# TYPE tiangz_scene_custom_metric_total counter"));
         assert!(body.contains("tiangz_scene_custom_metric_gauge{"));
         assert!(body.contains("tiangz_scene_custom_metric_total{"));
+    }
+
+    #[test]
+    fn dbproxy_client_metrics_export_bounded_endpoint_and_failover_labels() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            dbproxy: Some(DbProxyClientObservabilitySnapshot {
+                endpoints: vec![DbProxyEndpointObservabilitySnapshot {
+                    endpoint: "127.0.0.1:7800".to_string(),
+                    selected: true,
+                    connection_attempts: 2,
+                    connection_failures: 1,
+                    connection_duration_seconds: 0.25,
+                    request_attempts: 9,
+                    request_failures: 1,
+                    request_duration_seconds: 0.5,
+                }],
+                failovers: vec![DbProxyFailoverObservabilitySnapshot {
+                    from_endpoint: "127.0.0.1:7800".to_string(),
+                    to_endpoint: "127.0.0.1:7801".to_string(),
+                    count: 1,
+                }],
+            }),
+            ..ProcessObservabilitySnapshot::default()
+        });
+
+        let body = format_prometheus_metrics("map-1", &state);
+        assert!(body.contains(
+            "tiangz_dbproxy_endpoint_selected{process=\"map-1\",endpoint=\"127.0.0.1:7800\"} 1"
+        ));
+        assert!(body.contains(
+            "tiangz_dbproxy_endpoint_connection_failures_total{process=\"map-1\",endpoint=\"127.0.0.1:7800\"} 1"
+        ));
+        assert!(body.contains(
+            "tiangz_dbproxy_endpoint_failovers_total{process=\"map-1\",from_endpoint=\"127.0.0.1:7800\",to_endpoint=\"127.0.0.1:7801\"} 1"
+        ));
     }
 }

@@ -291,6 +291,6 @@ npm run test:tiangz-fault-matrix
 - 周期快照默认30秒，普通成长与运行态最多允许回退一个周期；要求零回退的字段必须进入关键事务，不能缩短周期冒充事务保证。
 - 任务奖励、拾取、UseItem、NPC商店和同地图玩家交易已经按实际领域提交；邮件、拍卖行、跨地图交易仍未实现，不能把现有链路描述为全部经济数据生产级不丢。
 - 显式配置`lifecycle.restart`的静态MapHost可由Watcher有界重启；Location只删除死亡代次的Actor路由，Gate在下一次进图/重连时改走新Actor。当前不是无感保持原Socket上的战斗现场，也不恢复怪物、仇恨、AI目标、移动意图和动态副本实例。
-- 尚无Prometheus DBProxy指标、TLS、令牌轮换和生产部署；Redis/PostgreSQL高可用使用云厂商能力，不在TiangZ内实现。
+- DBProxy开发分支已提供独立Prometheus指标、双实例Grafana Dashboard和基础告警，TiangZ Process指标也会显示Endpoint连接失败与切换；观测端口必须保留在本机或运维内网。TLS、令牌轮换、通知路由和生产长期指标存储仍未完成；Redis/PostgreSQL高可用与数据库内部指标使用云厂商能力，不在TiangZ内实现。
 
-下一步是DBProxy可观测性、动态地图接管策略、Gate故障转移和生产运维能力；新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。
+下一步是动态地图接管策略、Gate故障转移和生产运维能力；新增经济玩法继续复用领域Revision与多记录事务，不能退回巨型Player Snapshot。

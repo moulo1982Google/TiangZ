@@ -25,7 +25,7 @@ npm run hello
 
 看到 `Starter 已就绪` 后，用 Cocos3D/Pixi Demo 连接 `ws://127.0.0.1:7000`。完整的第一个 Handler 与 RPC 修改路径见 [5分钟跑通 TiangZ](docs/tutorials/00-quickstart.md)。
 
-持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。最新发布版为 `v0.5.0`，当前开发分支在此基础上增加 MemoryBackend 性能隔离，以及最多64条记录的 `LoadMultiSnapshot`、`SaveMultiSnapshot`和`EnqueueMultiSnapshot`；TiangZ 开发分支已通过 Host Transport 使用一次RPC恢复并保存玩家五领域，不直接连接 Redis/PostgreSQL。批量普通保存逐记录返回结果而非跨领域原子事务，经济变更继续使用`ApplyMultiTransaction`。当前 Starter 已验证30秒周期快照、任务奖励、道具使用、商店交易、同地图双玩家原子交易，以及单个静态MapHost强杀后的有界重启和玩家重新路由；邮件、跨地图交易、动态副本现场恢复和完整生产高可用仍属于后续阶段。运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)，交易边界见[玩家交易设计](docs/design/player-trade.md)。
+持久化边界位于独立的 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy) Rust 仓库。最新发布版为 `v0.5.0`，当前开发分支在此基础上增加 MemoryBackend 性能隔离，以及最多64条记录的 `LoadMultiSnapshot`、`SaveMultiSnapshot`和`EnqueueMultiSnapshot`；TiangZ 开发分支已通过 Host Transport 使用一次RPC恢复并保存玩家五领域，不直接连接 Redis/PostgreSQL。批量普通保存逐记录返回结果而非跨领域原子事务，经济变更继续使用`ApplyMultiTransaction`。DBProxy现在提供独立`/live`、`/ready`和Prometheus`/metrics`，本地Compose自动启动Prometheus与Grafana并加载双实例Dashboard；TiangZ进程指标同时记录连接失败、请求失败和Endpoint切换。当前 Starter 已验证30秒周期快照、任务奖励、道具使用、商店交易、同地图双玩家原子交易，以及单个静态MapHost强杀后的有界重启和玩家重新路由；邮件、跨地图交易、动态副本现场恢复和完整生产高可用仍属于后续阶段。运行步骤见[DBProxy玩家快照持久化](docs/tutorials/19-dbproxy-player-persistence.md)，观测配置见[DBProxy可观测性](https://github.com/moulo1982Google/TiangZ-DBProxy/blob/main/OBSERVABILITY.md)，交易边界见[玩家交易设计](docs/design/player-trade.md)。
 
 架构借鉴 [ET](https://github.com/egametang/ET) 的 Scene、Actor、Entity 和 Component 模型，也吸收了 Skynet 的消息隔离思想。感谢猫大的开源作品与字母哥的教学。
 

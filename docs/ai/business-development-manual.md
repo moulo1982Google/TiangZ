@@ -1103,6 +1103,8 @@ Handler
 
 DBProxy服务层的集群边界已经冻结：Rust客户端接受多个有序内网Endpoint，按RecordKey选择首选实例，基础设施错误时携带原`request_id/operation_id`切换；部署两个共享同一套云Redis/PostgreSQL的对等DBProxy实例；通过故障注入验证请求中断、提交后丢响应和Backlog lease接管。业务拒绝、Revision冲突、协议指纹或鉴权错误不能触发换节点重试。DBProxy实例之间不选主、不复制业务状态，也不实现Redis/PostgreSQL高可用；存储高可用直接使用云厂商能力。TiangZ侧已经用真实商店、双玩家交易和首Endpoint中断完成端到端验收；这仍不等于存储HA或MapHost透明接管。
 
+DBProxy观测端口与业务TCP端口分离，只提供`/live`、`/ready`和Prometheus`/metrics`，不得经过公网Nginx。服务端按固定操作名、固定错误码记录QPS、逻辑记录数、失败和延迟Histogram，Backlog记录提交/空轮询/失败；TiangZ Rust客户端Observer使用最多8个配置Endpoint的固定原子数组，Process `/metrics`导出连接尝试、请求失败、累计耗时和from/to切换。禁止把RecordKey、玩家ID、requestId或operationId放入Prometheus标签；单次请求只允许进入Debug结构化日志。Grafana是展示层，不替代Prometheus，也不冒充PostgreSQL/Redis内部监控。
+
 当前`CreatePlayerRepository(process)`是MapHost选择实现的唯一入口：省略`process.persistence.dbProxy`时使用内存Repository，配置后使用`DbProxyPlayerRepository`。加载必须在玩家Unit发布到PlayerDirectory、Location和AOI之前完成。`PlayerPersistenceComponent`持有inventory、progression、quest、runtime、wallet五个Revision；Map每秒错峰扫描到期玩家，把捕获与一次批量保存送进PlayerUnit ordered mailbox，默认每30秒保存五域。批量结果逐领域应用，单域失败不会抹掉其他成功领域的新Revision；重试必须复用第一次生成的各域requestId。断线、踢下线和停机只调用`player.Offline(reason)`并复用同一个最终Flush Promise。Handler不得直接调用Repository。
 
 普通、独立、按稳定Key整体读写的Entity不需要重复手写Codec和Repository。例如：

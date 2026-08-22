@@ -2142,6 +2142,7 @@ fn maybe_log_metrics(
         },
         game: game_snapshot,
         native_data: native_snapshot,
+        dbproxy: crate::dbproxy::metrics_snapshot(),
     });
 }
 

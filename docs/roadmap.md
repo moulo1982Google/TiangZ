@@ -419,7 +419,7 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 - 已建立公开仓库 [TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)，当前发布版本为`v0.5.0`，包含独立Rust workspace、`dbproxy-core/storage/protocol/client/server`、PostgreSQL快照/单记录事务与回执查询、Redis已提交快照缓存、Redis AOF持久普通快照积压、Rust客户端池、运行时无关TypeScript SDK、本地Compose、Apache-2.0许可和CI。它不依赖TiangZ，不认识Scene、Entity、Component、Buff、Hotfix或`.native`。
 - 首版服务协议使用版本化Protobuf、SHA-256协议指纹、内部共享令牌和默认8 MiB有界TCP帧，暴露`LoadSnapshot/SaveSnapshot/EnqueueSnapshot/ApplyTransaction`。客户端和服务端都按RecordKey使用多连接分片；超时连接不再复用，调用方通过原幂等ID重新连接重试。真实网络冒烟已经覆盖同步快照、Duplicate、Revision冲突、关键事务原结果和Redis backlog落PostgreSQL。
-- 当前适配器固定为PostgreSQL -> Redis：PostgreSQL提交成功后才更新缓存；快照使用`request_id`，关键事务使用`operation_id + expected_revision`并保存原始业务结果；Redis读取失败自动回源PostgreSQL，缓存失败可以用原ID重试修复。普通快照可按记录合并，Redis backlog用lease/ACK和过期回收支持DBProxy重启后的重新领取；批量读取按shard并行，批量普通保存逐记录提交，批量Enqueue使用一次Redis Lua接收。Redis/PostgreSQL高可用由云厂商托管，不进入TiangZ或DBProxy自研范围；长时间故障指标、Prometheus、生产TLS与部署仍在后续，不制作临时存档服务。
+- 当前适配器固定为PostgreSQL -> Redis：PostgreSQL提交成功后才更新缓存；快照使用`request_id`，关键事务使用`operation_id + expected_revision`并保存原始业务结果；Redis读取失败自动回源PostgreSQL，缓存失败可以用原ID重试修复。普通快照可按记录合并，Redis backlog用lease/ACK和过期回收支持DBProxy重启后的重新领取；批量读取按shard并行，批量普通保存逐记录提交，批量Enqueue使用一次Redis Lua接收。DBProxy独立HTTP端口已提供存活、就绪和Prometheus指标，本地Compose自动配置双实例Prometheus、Grafana Dashboard与基础告警；TiangZ Process指标同步暴露Endpoint连接尝试、请求失败和切换。Redis/PostgreSQL高可用与数据库内部指标由云厂商托管，不进入TiangZ或DBProxy自研范围；生产TLS、通知路由与长期指标存储仍在后续。
 - DBProxy服务层的第一版集群边界已经落地：TiangZ Rust客户端支持多个有序内网Endpoint并按RecordKey稳定选择，基础设施错误时保留原幂等ID切换；部署两个共享同一套云Redis/PostgreSQL的对等DBProxy实例；DBProxy v0.5.0提供跨记录全量CAS原子事务和可查询回执。仍需在TiangZ端完成连接前失败、请求中断、数据库已提交但响应丢失、Backlog lease接管、实例恢复和全部Endpoint不可用的故障切换验收。DBProxy实例之间不做Leader选举、状态同步或内部RPC。
 - TiangZ新增`HostDbProxyTransport -> DbProxyClient -> PlayerRepository`调用层。网络I/O在多线程Rust Host Runtime中执行，V8只等待有界Promise；事件循环每次最多投入1ms推进异步Host op，未完成任务留到下一游戏Tick。普通all-in-one仍使用内存Repository，只有`process.persistence.dbProxy`显式启用网络持久化。
 - 玩家聚合捕获投影为`tiangz.demo.player.inventory@1`、`progression@1`、`quest@1`、`runtime@1`和`wallet@1`五条记录与独立Revision，排除UnitId、Session、Timer、AOI与活动Cast。加载在Unit发布到目录/AOI前完成；跨MapHost携带Revision向量防止旧记录覆盖。
@@ -428,10 +428,10 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 - [ ] 持久化后续：旧schema迁移注册、动态地图/Gate故障接管与生产观测；复杂查询和跨玩家事务不进入通用Entity生成器。
 - `snapshot`字段保持普通属性写法；Rust setter只标脏，框架按短窗口合并并批量写Redis，再异步批量落永久数据库，禁止一次属性赋值对应一次网络请求。
 - `transactional`存储域用于Wallet、Inventory、Trade等经济数据；字段不开放普通setter，只能通过领域事务方法生成`operation_id`、期望版本、完整Payload和业务结果。DBProxy在同一PostgreSQL事务内提交快照与操作收据，Redis只接收带revision的已提交快照，不能成为第二个独立写入口。
-- 任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；玩家交易一次提交双方inventory+wallet。确认后才无await修改Entity，重复请求和跨TiangZ重启返回首次回执。下一步顺序为：DBProxy可观测性 -> 动态地图/Gate接管边界 -> TLS与生产部署。主工程始终不引入数据库客户端或`dbproxy-storage`。
+- 任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；玩家交易一次提交双方inventory+wallet。确认后才无await修改Entity，重复请求和跨TiangZ重启返回首次回执。下一步顺序为：动态地图/Gate接管边界 -> TLS、令牌轮换与生产部署。主工程始终不引入数据库客户端或`dbproxy-storage`。
 - 同一字段只能属于一个一致性域；按Runtime、Wallet、Inventory、Quest等域分别维护revision，禁止巨型PlayerSnapshot跨域盲覆盖。跨域原子操作使用DB事务或可重放业务事件。
 - 第一版只选择并完成一个永久数据库Adapter以及故障矩阵，不同时实现MongoDB、MySQL、PostgreSQL三套最低公共抽象；领域Repository接口保留后续替换空间。
-- 当前验收覆盖Redis短暂不可用、AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、真实TCP、普通快照批量读写、任务/道具事务故障、双Endpoint玩家交易、最终Flush、周期快照、all-in-one强杀和静态MapHost有界接管。动态地图/Gate接管和Prometheus积压指标仍留在后续阶段；Redis/PostgreSQL高可用直接使用云厂商能力。
+- 当前验收覆盖Redis短暂不可用、AOF backlog恢复、永久DB不可用、重复/乱序请求、幂等重试、真实TCP、普通快照批量读写、任务/道具事务故障、双Endpoint玩家交易、最终Flush、周期快照、all-in-one强杀、静态MapHost有界接管，以及Prometheus/Grafana双实例观测。动态地图/Gate接管、通知路由和长期指标存储仍留在后续阶段；Redis/PostgreSQL高可用直接使用云厂商能力。
 - [x] 同地图玩家交易：MapScene维护60秒临时会话，双方报价变化清除确认；双确认后以稳定operationId原子提交双方inventory+wallet记录，支持重复回执恢复和Revision冲突全拒绝。当前不支持跨地图、离线交易、邮件或拍卖行。
 
 ### Phase 4.6：Starter MMORPG 纵向切片

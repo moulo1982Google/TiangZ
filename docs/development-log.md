@@ -7,6 +7,13 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-22：DBProxy Prometheus与Grafana观测闭环
+
+- DBProxy增加独立观测HTTP监听，提供`/live`、`/ready`和Prometheus`/metrics`；RPC按固定操作名输出请求、失败、错误码、逻辑记录数和延迟Histogram，Backlog输出提交、空轮询与失败。
+- Rust客户端新增无业务标识的Observer API。TiangZ使用最多8个Endpoint的固定原子数组记录连接尝试、请求失败、累计耗时和切换，随已有Process `/metrics`发布，不在热路径构造动态标签。
+- 本地Compose增加Prometheus 3.13.1和Grafana 13.1.0，自动加载双DBProxy Dashboard与Down、NotReady、存储失败、高P99和Backlog失败告警；观测端口不得暴露公网。
+- 数据库内部慢查询、连接池和资源指标继续以云厂商监控或官方Exporter为权威，DBProxy只报告自身看到的服务延迟与错误。
+
 ## 2026-08-22：DBProxy批量快照恢复与独立性能基线
 
 - DBProxy开发分支增加MemoryBackend、固定Tokio worker配置和Starter持久化形状压测，并把稳定结果整理到独立仓库`PERFORMANCE.md`。
