@@ -1142,7 +1142,7 @@ entity Item extends Entity {
 
 ## 外网演示部署
 
-业务开发不应把公网IP、云主机密码或部署机器的内网地址写进业务代码。外网2C2G演示使用`configs/deploy/external-multiprocess/StartMachine.json`，由Watcher启动8个独立Process：LoginMgr、两个Login、两个Gate、两个静态MapHost和Location；动态副本节点与MapManager暂缓启动。外网入口由部署配置的`outerIp/outerPort`提供。Cocos3D编辑器预览自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`，只有非预览发布包读取`tiangz-external.json`；不要为了本机调试修改公网配置文件。
+业务开发不应把公网IP、云主机密码或部署机器的内网地址写进业务代码。外网2C2G演示使用`configs/deploy/external-multiprocess/StartMachine.json`，由Watcher启动10个独立Process：LoginMgr、MapManager、两个Login、两个Gate、两个静态MapHost、一个动态副本MapHost和Location。MapManager与所有MapHost只走回环Inner TCP，外网入口仍只由LoginMgr、Login和Gate配置的`outerIp/outerPort`提供。Cocos3D编辑器预览自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`，只有非预览发布包读取`tiangz-external.json`；不要为了本机调试修改公网配置文件。
 客户端只配置LoginMgr公网地址；LoginMgr再返回Login公网地址，Login再返回Gate公网地址。外网测试机由Nginx持有这些公网WebSocket端口，TiangZ入口只绑定`127.0.0.1`的独立内网端口：`17000→27000`、`17001→27001`、`17002→27002`、`17201→27201`、`17202→27202`。MapHost、Location和MapManager也只保持回环内网路由；它们没有公网入口。
 
 这个端口分离不是业务路由逻辑，开发者不需要在Handler中处理。修改外网配置时必须同时检查`scenes`、共享`known-scenes.json`和`configs/deploy/cocos3d-nginx.conf.example`，保证`port`表示TiangZ实际监听端口，`outerPort`表示客户端连接端口；若把二者写成同一个端口，Nginx与Runtime会启动冲突。

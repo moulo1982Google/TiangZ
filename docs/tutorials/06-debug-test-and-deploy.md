@@ -47,7 +47,7 @@ Rust 定期输出每个 EntryScene 的处理数、失败数、队列和 Handler 
 ## 外网测试机部署约定
 
 外网演示使用独立的部署配置，不修改`configs/local`中的开发地址。当前2C2G机器使用
-`configs/deploy/external-multiprocess/StartMachine.json`，由一个Watcher启动8个Process：一个LoginMgr、两个Login、两个Gate、两个静态MapHost和一个Location。动态副本节点与MapManager暂缓启动；两个MapHost只承载静态地图。旧的`external-2process/StartMachine.json`保留为回退对照，`external-all-in-one.json`只保留为单Process回归配置。
+`configs/deploy/external-multiprocess/StartMachine.json`，由一个Watcher启动10个Process：一个LoginMgr、一个MapManager、两个Login、两个Gate、两个静态MapHost、一个动态副本MapHost和一个Location。MapManager与动态副本节点只监听回环Inner TCP，不经过Nginx；两个静态MapHost仍只承载静态地图。旧的`external-2process/StartMachine.json`保留为回退对照，`external-all-in-one.json`只保留为单Process回归配置。
 外网部署时所有 Scene 都只绑定 `127.0.0.1`。LoginMgr、Login 和 Gate 的 `outerIp/outerPort` 仍然填写公网入口，但公网端口由 Nginx 负责 WebSocket 反向代理到独立的回环端口：`17000→27000`、`17001→27001`、`17002→27002`、`17201→27201`、`17202→27202`。因此 `port` 是 TiangZ 实际监听的内网端口，`outerPort` 是客户端连接的公网端口；二者不能写成同一个监听端口，否则 Nginx 和 TiangZ 会冲突。地图世界仍只使用回环 TCP，不应在安全组开放。
 
 Nginx 站点模板见 `configs/deploy/cocos3d-nginx.conf.example`。它透传 WebSocket 升级和二进制帧，外网 Cocos Web 客户端不需要改地址；Process 之间的 Inner TCP 仍直接连接 `127.0.0.1`，不经过 Nginx。

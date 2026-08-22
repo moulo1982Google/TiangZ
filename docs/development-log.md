@@ -7,6 +7,12 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-22：外网动态副本拓扑补齐
+
+- 修复外网点击副本时报`MapManager Scene not found`：`external-multiprocess`从8个Process扩展为10个，新增独立`map_manager`和只承载动态实例的`dungeon_1`。
+- 两个新Scene只绑定`127.0.0.1`的Inner TCP端口`17100/17310`，不增加公网端口或Nginx转发；全部Process通过共享`known-scenes.json`解析它们。
+- 静态MapHost继续禁止动态实例，Map 200只由`dungeon_1`承载，保持静态地图与动态副本部署职责分离。
+
 ## 2026-08-22：DBProxy Prometheus与Grafana观测闭环
 
 - DBProxy增加独立观测HTTP监听，提供`/live`、`/ready`和Prometheus`/metrics`；RPC按固定操作名输出请求、失败、错误码、逻辑记录数和延迟Histogram，Backlog输出提交、空轮询与失败。

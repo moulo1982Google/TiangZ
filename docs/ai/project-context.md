@@ -128,7 +128,7 @@ Scene配置把三个地址语义分开：`bindIp`是本机监听地址，`innerI
 
 云服务器的公网EIP/NAT可能不会出现在虚机`ip addr`中，因此公网地址由部署配置显式填写。`0.0.0.0`只能作为`bindIp`，不能写入`knownScenes`，不能放进Location/MapHost Endpoint，也不能返回给客户端。服务间RPC和Actor路由使用`innerIp`；外网演示由前端写死LoginMgr公网地址，LoginMgr返回Login的`outerIp/outerPort`，Login返回Gate的`outerIp/outerPort`。同一入口在`scenes`与共享`knownScenes`重复出现时，外网字段可以只填写一处；两处都填写时必须一致。
 
-外网测试机的安全边界是“公网端口属于Nginx，TiangZ只属于回环地址”。`external-multiprocess`中的LoginMgr、两个Login、两个Gate、两个静态MapHost和Location各自运行在独立Process/V8中；LoginMgr、Login和Gate使用`bindIp=127.0.0.1`，并把实际监听端口与客户端端口分开：`27000/27001/27002/27201/27202`是内网端口，`17000/17001/17002/17201/17202`是`outerPort`。Nginx按公网端口转发到对应回环端口；MapHost和Location也只绑定`127.0.0.1`，不经过Nginx。动态副本节点和MapManager暂缓启动，MapHost使用`acceptDynamicMaps=false`。不能让Nginx与TiangZ抢占同一个端口，也不能把“页面能打开”误认为游戏WebSocket链路已经可用。
+外网测试机的安全边界是“公网端口属于Nginx，TiangZ只属于回环地址”。`external-multiprocess`中的LoginMgr、MapManager、两个Login、两个Gate、两个静态MapHost、一个动态副本MapHost和Location各自运行在独立Process/V8中；LoginMgr、Login和Gate使用`bindIp=127.0.0.1`，并把实际监听端口与客户端端口分开：`27000/27001/27002/27201/27202`是内网端口，`17000/17001/17002/17201/17202`是`outerPort`。Nginx按公网端口转发到对应回环端口；MapManager、MapHost和Location也只绑定`127.0.0.1`，不经过Nginx。静态MapHost使用`acceptDynamicMaps=false`，`dungeon_1`使用`acceptDynamicMaps=true`承载Map 200。不能让Nginx与TiangZ抢占同一个端口，也不能把“页面能打开”误认为游戏WebSocket链路已经可用。
 
 ### Scene
 
@@ -496,7 +496,7 @@ Phase 5计划：
 10. 新业务状态写Model，生命周期和行为写`@systemFor`；不要恢复Model方法空壳，也不要在每次方法调用前查System Registry。
 11. Component拥有的子对象只能由所属Component维护集合和业务修改；不要从Handler直接操作Native Ref，也不要把每条Quest或Achievement机械地做成Entity。
 12. TiangZ主工程及配套VS Code插件仓库的提交标题默认使用中文；代码标识、命令、版本号和专有名词可保留原文。
-13. 外网演示使用`configs/deploy/external-multiprocess/StartMachine.json`和Cocos3D资源配置；8个TiangZ Process共享`known-scenes.json`。Cocos3D编辑器预览通过`PREVIEW`自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`；非预览发布包读取`tiangz-external.json`连接公网LoginMgr，不能把两种环境地址手工混用。外网Cocos3D发布使用`npm run build:cocos3d:external`：`build/external/desktop`只部署到根路径`/`，`build/external/m`只部署到`/m/`，后者是唯一横屏移动入口；构建脚本会在页面顶部注入`版本、UTC构建时间和Git短提交号`，Nginx对Demo资源发送`no-cache, must-revalidate`，排查时先核对页面Build标识。两个DBProxy对等实例分别监听`7800/7801`并共享Redis/PostgreSQL，TiangZ所有Process按首选/故障切换顺序连接。当用户说“部署到外网测试机”时，必须重新构建前端和后端并确认上传的是本次最新产物；远端直接停止旧服务、覆盖固定发布目录、重新启动并做冒烟。该主机只是Demo测试机，不使用`.next`、蓝绿目录、目录交换或自动回滚。凭据只存在运行环境，不能写入仓库。
+13. 外网演示使用`configs/deploy/external-multiprocess/StartMachine.json`和Cocos3D资源配置；10个TiangZ Process共享`known-scenes.json`。Cocos3D编辑器预览通过`PREVIEW`自动读取`assets/resources/Config/tiangz-local.json`连接本机`127.0.0.1:7000`；非预览发布包读取`tiangz-external.json`连接公网LoginMgr，不能把两种环境地址手工混用。外网Cocos3D发布使用`npm run build:cocos3d:external`：`build/external/desktop`只部署到根路径`/`，`build/external/m`只部署到`/m/`，后者是唯一横屏移动入口；构建脚本会在页面顶部注入`版本、UTC构建时间和Git短提交号`，Nginx对Demo资源发送`no-cache, must-revalidate`，排查时先核对页面Build标识。两个DBProxy对等实例分别监听`7800/7801`并共享Redis/PostgreSQL，TiangZ所有Process按首选/故障切换顺序连接。当用户说“部署到外网测试机”时，必须重新构建前端和后端并确认上传的是本次最新产物；远端直接停止旧服务、覆盖固定发布目录、重新启动并做冒烟。该主机只是Demo测试机，不使用`.next`、蓝绿目录、目录交换或自动回滚。凭据只存在运行环境，不能写入仓库。
 14. 外网发布只上传Linux Release发布包，不上传`src`、Cargo工程、`node_modules`或`target`。Runtime优先从当前发布目录或可执行文件邻级目录寻找`dist`与`configs`，不能依赖编译机的`CARGO_MANIFEST_DIR`。
 15. Linux正式发布统一使用`npm run release:linux`和固定镜像`tiangz-linux-builder:ubuntu-24.04`。镜像是工具/依赖底座，不含业务源码；普通TS、Rust、Excel变化只复制源码并完整运行Luban、codegen与Release编译。只有依赖锁、Rust工具链、Luban或Builder定义变化才重建镜像，Linux Cargo中间产物由`tiangz-linux-builder-target`命名卷复用。
 
@@ -543,7 +543,7 @@ Cocos3D的本地Buff栏从`MapEntitySnapshot.buffs`、`M2C_UseItem.buff`和`G2C_
 
 ## 外网持久化部署校准
 
-当前`external-multiprocess`的8份Process配置都显式使用同机DBProxy首选地址`127.0.0.1:7800`和故障切换地址`127.0.0.1:7801`。客户端按RecordKey稳定选择地址，只有连接不可用才切换，并保留原`requestId/operationId`；Revision冲突、业务拒绝、鉴权失败和协议错误直接返回。两个DBProxy实例共享同一套云Redis/PostgreSQL，不做实例间Leader、复制或内部RPC。DBProxy下的Redis和PostgreSQL只绑定回环地址，外网安全组不开放`5432`和`6379`。Ubuntu部署机用Docker Compose启动两个存储容器，DBProxy作为独立systemd服务运行，认证令牌只由systemd环境文件注入。只启动Redis/PostgreSQL而不启动两个DBProxy，或者只启动DBProxy而不在所有Process配置中声明`persistence.dbProxy`，都不算完成持久化接入。
+当前`external-multiprocess`的10份Process配置都显式使用同机DBProxy首选地址`127.0.0.1:7800`和故障切换地址`127.0.0.1:7801`。客户端按RecordKey稳定选择地址，只有连接不可用才切换，并保留原`requestId/operationId`；Revision冲突、业务拒绝、鉴权失败和协议错误直接返回。两个DBProxy实例共享同一套云Redis/PostgreSQL，不做实例间Leader、复制或内部RPC。DBProxy下的Redis和PostgreSQL只绑定回环地址，外网安全组不开放`5432`和`6379`。Ubuntu部署机用Docker Compose启动两个存储容器，DBProxy作为独立systemd服务运行，认证令牌只由systemd环境文件注入。只启动Redis/PostgreSQL而不启动两个DBProxy，或者只启动DBProxy而不在所有Process配置中声明`persistence.dbProxy`，都不算完成持久化接入。
 
 ## Unity、UE、Godot客户端收口
 

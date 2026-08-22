@@ -80,6 +80,13 @@ import { MsgCode as ServerMsgCode } from "../app/generated/model/server/demo/pro
 type TimedMovementState = CellMovementState & { serverTick: number };
 
 async function main() {
+  if (process.argv.includes("--dynamic-map-single-host-only")) {
+    const managerPort = positiveIntegerArgument("--map-manager-port", 7100);
+    // Ready只覆盖进程启动；MapHost注册由异步续租完成。 / Ready only covers process startup; MapHost registration is renewed asynchronously.
+    await sleep(5_500);
+    await verifySingleHostDynamicMapLifecycle(managerPort);
+    return;
+  }
   const loginAddr = await requestLoginServiceAddr("127.0.0.1", 7000);
   console.log("LoginMgr selected:", loginAddr);
   // Process Ready不代表跨进程MapHost注册已经完成；等待一个5秒续租周期覆盖并发启动顺序。
@@ -1088,6 +1095,16 @@ function namedArgument(name: string): string | undefined {
   return value;
 }
 
+function positiveIntegerArgument(name: string, fallback: number): number {
+  const value = namedArgument(name);
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > 65_535) {
+    throw new Error(`${name} must be an integer between 1 and 65535`);
+  }
+  return parsed;
+}
+
 /** 验证七技能共用状态机的关键路径；复杂Buff冲突矩阵由buff-action自测覆盖。 / Verifies key paths of the shared seven-skill state machine; buff-action tests cover the detailed conflict matrix. */
 async function verifyFiveSkillMechanics(
   gate: TcpRpcConnection,
@@ -1407,7 +1424,7 @@ async function verifyDynamicMapLifecycle(): Promise<MapInstanceSnapshot> {
   }
 
   const disposed = await disposeDynamicMap(second.instance.mapHost.port, second.instance.mapInstanceId);
-  await waitForDisposedRequest(`${requestId}:second`);
+  await waitForDisposedRequest(`${requestId}:second`, 7100);
   console.log("Dynamic map lifecycle:", {
     mapConfigId: created.instance.mapConfigId,
     mapInstanceId: created.instance.mapInstanceId,
@@ -1417,13 +1434,57 @@ async function verifyDynamicMapLifecycle(): Promise<MapInstanceSnapshot> {
   return created.instance;
 }
 
+/** 验证只有一个动态地图宿主时的创建、幂等和销毁闭环。 / Verifies create, idempotency, and disposal with one dynamic MapHost. */
+async function verifySingleHostDynamicMapLifecycle(managerPort: number): Promise<void> {
+  const requestId = `single-host-smoke:${Date.now()}`;
+  const create = async () => {
+    const frame = await requestOneInternal(
+      "127.0.0.1",
+      managerPort,
+      encodePacket(
+        ServerMsgCode.S2M_CreateDynamicMap,
+        S2M_CreateDynamicMapCodec.encode({
+          rpcId: nextRpcId++,
+          mapConfigId: 1,
+          requestId,
+        }),
+      ),
+    );
+    if (readU16BE(frame, 0) !== ServerMsgCode.M2S_CreateDynamicMap) {
+      throw new Error("single-host dynamic map create returned an unexpected msgcode");
+    }
+    return M2S_CreateDynamicMapCodec.decode(frame.subarray(2));
+  };
+
+  const created = await create();
+  if (created.error || created.instance.mapInstanceId === 1n) {
+    throw new Error(`single-host dynamic map create failed: ${created.error} ${created.message}`);
+  }
+  const retried = await create();
+  if (retried.error || retried.instance.mapInstanceId !== created.instance.mapInstanceId) {
+    throw new Error("single-host dynamic map idempotent retry returned another instance");
+  }
+
+  const disposed = await disposeDynamicMap(created.instance.mapHost.port, created.instance.mapInstanceId);
+  if (!disposed.disposed) throw new Error("single-host dynamic map was not disposed");
+  await waitForDisposedRequest(requestId, managerPort);
+  console.log("Single-host dynamic map lifecycle:", {
+    managerPort,
+    mapConfigId: created.instance.mapConfigId,
+    mapInstanceId: created.instance.mapInstanceId,
+    mapHostName: created.instance.mapHostName,
+    mapHostPort: created.instance.mapHost.port,
+    disposed: disposed.disposed,
+  });
+}
+
 /** 销毁完成后重试旧requestId，确认MapManager已经收到最终通知并拒绝复用。 / Retries a disposed request ID to verify MapManager received the final notification and rejects reuse. */
-async function waitForDisposedRequest(requestId: string): Promise<void> {
+async function waitForDisposedRequest(requestId: string, managerPort: number): Promise<void> {
   const deadline = Date.now() + 2_000;
   while (Date.now() < deadline) {
     const frame = await requestOneInternal(
       "127.0.0.1",
-      7100,
+      managerPort,
       encodePacket(
         ServerMsgCode.S2M_CreateDynamicMap,
         S2M_CreateDynamicMapCodec.encode({

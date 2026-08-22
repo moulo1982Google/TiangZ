@@ -11,6 +11,14 @@
       "audience": "mixed"
     },
     {
+      "name": "map_manager",
+      "sceneType": "MapManager",
+      "innerIp": "127.0.0.1",
+      "port": 17100,
+      "protocol": "tcp",
+      "audience": "inner"
+    },
+    {
       "name": "login_1",
       "sceneType": "Login",
       "innerIp": "127.0.0.1",
@@ -63,6 +71,14 @@
       "sceneType": "MapHost",
       "innerIp": "127.0.0.1",
       "port": 17302,
+      "protocol": "tcp",
+      "audience": "inner"
+    },
+    {
+      "name": "dungeon_1",
+      "sceneType": "MapHost",
+      "innerIp": "127.0.0.1",
+      "port": 17310,
       "protocol": "tcp",
       "audience": "inner"
     },
