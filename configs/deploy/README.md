@@ -42,6 +42,12 @@ install -m 0644 configs/deploy/tiangz-websocket.conf.example \
 
 证书只保存在`/etc/letsencrypt/live/14.103.24.32`，不得提交到Git。IP证书有效期较短，必须启用`certbot.timer`，并安装续期部署钩子，在证书更新后执行`nginx -t && systemctl reload nginx`。先保留80端口的ACME challenge，再把其他HTTP请求重定向到HTTPS。配置完成后执行`npm run verify:production-deploy`和`nginx -t`。
 
+## 外网可观测性
+
+10个外网Process使用JSON滚动日志，并按`1/10`向本机Tempo导出跨进程Trace。Linux单机观测部署包位于`tools/observability/production`，同时抓取10个TiangZ健康端口、两个DBProxy、宿主机、PostgreSQL和Redis。生产测试机建议至少4核、8GB内存、80GB磁盘和2GB Swap；该包将Prometheus/Loki/Tempo保留期限制为7天并为每个容器设置内存上限。
+
+Grafana只通过本HTTPS站点的`/grafana/`访问并要求登录；`13001`、Prometheus、Alertmanager、Loki、Tempo、Alloy和Exporter全部只绑定`127.0.0.1`，不得加入公网安全组。部署、密钥和故障验收步骤见[生产测试观测栈](../../tools/observability/production/README.md)。
+
 旧的 `external-all-in-one.json` 保留为单 Process 回归配置，不作为 2C2G 外网默认部署。
 
 部署后可从服务器本机验证`MapManager -> dungeon_1`的创建、幂等重试和销毁闭环：

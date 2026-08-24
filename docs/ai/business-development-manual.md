@@ -1199,6 +1199,8 @@ Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建�
 
 修改Trace传播、采样、日志采集或Grafana数据源后，先执行`npm run verify:observability`，再用`npm run test:observability:faults`真实验证Gate故障和动态副本安全回退。后者会启动测试拓扑并停止测试进程，不能连接生产环境。
 
+生产测试部署只允许Grafana经Nginx HTTPS开放；Prometheus、Alertmanager、Loki、Tempo、Alloy以及Node/PostgreSQL/Redis Exporter必须绑定回环或运维内网。告警Webhook、Grafana管理员密码和数据库Exporter连接串只能放在服务器`0600`密钥文件中。业务仓库不能保存这些秘密，也不能为了“方便看指标”把内部端口转发到公网。
+
 Developer Tools 的“查看运行时指标”命令是只读的 `/metrics` 查看器，只能回答“这个 Process 当前有多忙”，不能回答某个 Unit、Actor 或组件的业务详情。不要为了调试临时增加业务 RPC、遍历全地图或暴露 V8 任意执行入口。按 UnitId、Scene、Gate 和 ActorLocation 查询的 Inspector 采用独立的、版本化的只读协议；当前只冻结了协议草案，正式接入前仍需完成 Runtime 控制通道、调试令牌、超时、限流、响应上限和快照一致性验收。
 
 ## 框架热路径与低分配约定

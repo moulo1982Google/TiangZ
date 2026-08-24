@@ -168,7 +168,7 @@ npm run hotfix -- rollback --startup configs/<env>/StartMachine.json --target ma
 | `npm run clean` | 删除Rust、TS、Cocos编译产物和引擎缓存 |
 | `npm run clean:copy` | 进一步删除依赖和旧报告，得到适合跨机器复制的源码目录 |
 | `npm run clean:copy:dry-run` | 预览`clean:copy`将删除的路径和体积 |
-| `npm run observability:up` | 按Watcher拆分配置生成Target并启动Prometheus与Grafana |
+| `npm run observability:up` | 按Watcher拆分配置生成Target并启动本地Prometheus、Loki、Tempo、Alloy与Grafana |
 | `npm run observability:up:single` | 按`all-in-one.json`单Process配置启动本地监控栈 |
 | `npm run observability:update-targets` | 重新生成Watcher拆分部署的Prometheus Target |
 | `npm run observability:dashboard` | 重新生成TiangZ Runtime Grafana Dashboard JSON |
@@ -176,6 +176,9 @@ npm run hotfix -- rollback --startup configs/<env>/StartMachine.json --target ma
 | `npm run observability:down` | 停止Prometheus与Grafana容器 |
 | `npm run observability:down:clean` | 停止监控容器并清理数据卷 |
 | `npm run observability:reset` | 清理监控环境并移除服务端点 |
+| `npm run observability:production:config` | 使用服务器私密`.env`校验Linux生产测试观测Compose |
+| `npm run observability:production:up` | 启动资源受控、全部管理端口回环的Linux生产测试观测栈 |
+| `npm run observability:production:down` | 停止生产测试观测栈并保留观测数据卷 |
 | `npm run audit:dependencies` | 在线审计npm高危漏洞和Cargo advisory；需安装`cargo-audit` |
 | `npm run release:package` | 构建Release制品、生成版本与SHA-256，并在制品目录运行smoke |
 | `npm run release:linux` | 复用固定Ubuntu Builder，完整生成并编译Linux x64 Release制品 |

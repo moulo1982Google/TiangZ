@@ -1,0 +1,49 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  external_labels:
+    environment: external-test
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:19093"]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: tiangz-process-metrics
+    metrics_path: /metrics
+    file_sd_configs:
+      - files: [/etc/prometheus/targets.yml]
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [kind]
+        regex: tiangz
+        action: keep
+
+  - job_name: tiangz-dbproxy
+    metrics_path: /metrics
+    file_sd_configs:
+      - files: [/etc/prometheus/targets.yml]
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [kind]
+        regex: dbproxy
+        action: keep
+
+  - job_name: node
+    static_configs:
+      - targets: ["127.0.0.1:19100"]
+        labels: { env: external-test, machine: external-1 }
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["127.0.0.1:19187"]
+        labels: { env: external-test, machine: external-1 }
+
+  - job_name: redis
+    static_configs:
+      - targets: ["127.0.0.1:19121"]
+        labels: { env: external-test, machine: external-1 }

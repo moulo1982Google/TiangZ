@@ -7,6 +7,13 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-24：生产测试观测部署
+
+- 增加Linux host-network生产测试观测包，所有管理端口显式绑定回环；Grafana只经现有Nginx HTTPS的`/grafana/`开放并关闭匿名访问。
+- Prometheus统一抓取10个TiangZ Process、两个DBProxy、Node/PostgreSQL/Redis Exporter；Alertmanager接收21条运行时与基础设施规则。
+- Loki、Tempo和Prometheus固定7天保留，所有容器设置内存上限和有界Docker日志；Alloy采集TiangZ JSON文件与两个DBProxy systemd journal。
+- Webhook URL、Grafana密码和Exporter连接串使用服务器私密文件，不进入仓库。单机部署不是观测HA，跨机器Agent与长期对象存储继续留在后续。
+
 ## 2026-08-24：Loki、Tempo与跨进程Trace
 
 - 本地Compose增加Loki、Tempo和Alloy，Grafana统一连接Prometheus、日志和Trace；日志到Trace、Trace到日志的关联已经配置。

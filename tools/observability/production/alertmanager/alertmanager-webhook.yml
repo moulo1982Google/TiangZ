@@ -1,0 +1,23 @@
+route:
+  receiver: operator-webhook
+  group_by: [alertname, severity, process]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    - receiver: operator-webhook
+      matchers: ['severity="critical"']
+      repeat_interval: 30m
+
+receivers:
+  - name: operator-webhook
+    webhook_configs:
+      - send_resolved: true
+        url_file: /etc/alertmanager/secrets/webhook-url
+        max_alerts: 20
+        timeout: 10s
+
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: [alertname, process]

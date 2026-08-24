@@ -429,13 +429,13 @@ Cocos Demo完整类型检查依赖编辑器生成的`client_demo/cocos_client2D_
 
 正式Hotfix操作使用`npm run hotfix -- plan/apply/status/rollback`，不再依赖人工向Watcher终端输入命令。Process只有显式配置`lifecycle.hotfixOperations`并从指定环境变量取得非空令牌时才开放管理路由；路由复用健康端口但只接受回环来源和Bearer令牌，禁止经Nginx或公网暴露。CLI校验候选哈希与冻结Model契约，支持`--target`灰度、active/previous状态、operationId审计和单机多Process部分失败补偿回滚。回滚是重新提交previous候选并生成新generation，不是倒退计数。当前不提供跨机器Prepare/Commit；多机需先分发同一内容寻址候选，再登录各机器执行本地目标协调。
 
-Prometheus、Loki、Tempo、Alloy和Grafana已完成本地多Process观测闭环；正式部署仍需补node/windows exporter、认证、通知路由、跨机器Agent和长期存储策略。这些属于Phase 5，不阻塞`0.3.10`框架准入，本地Compose也不能被称为生产HA。
+Prometheus、Loki、Tempo、Alloy和Grafana已完成本地多Process观测闭环；Linux外网测试部署进一步接入Alertmanager、Node/PostgreSQL/Redis Exporter、Grafana HTTPS认证入口、7天保留期和容器内存上限。最终第三方通知仍需部署者提供Webhook密钥，跨机器Agent与长期对象存储仍属后续；单机观测栈不能被称为生产HA。
 
 Phase 4计划：
 
 - Phase 4.0已完成：Native Unit、protobuf、MapConfig、Cocos 2D和Pixi统一采用米制`X/Y/Z + Yaw`契约；Grid2D使用X/Z Cell，MapScene按实例创建和释放Rust空间状态。此次为显式破坏性协议升级，旧`0.3.10`客户端不能混连。
 - Luban游戏配置基础已先行落地：首批`ItemConfig`、`MapConfig`和不含等级成长数据的`PlayerConfig`已接入服务端、Cocos与Pixi；结构固定在Model，服务端纯数据可原子Reload，字段分端裁剪、外键、只读查询、配置指纹和失败回滚已有自测。后续业务表沿用同一入口，不新增私有加载器。
-- Phase 4.5已完成玩家持久化第二轮收口。独立仓库[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)的`v0.5.0`继续独立拥有快照、Revision/CAS、幂等、单记录与多记录原子事务、可查询事务回执、PostgreSQL权威存储、Redis已提交缓存与AOF backlog，以及多Endpoint和两个共享存储的无状态对等实例；当前开发分支新增`LoadMultiSnapshot/SaveMultiSnapshot/EnqueueMultiSnapshot`，主工程用一次RPC恢复或保存`inventory/progression/quest/runtime/wallet`五条记录和五个独立Revision。普通批量保存不是事务，关键经济变更继续使用`ApplyMultiTransaction`。Map默认30秒周期快照，下线与停机使用幂等最终Flush。`npm run test:player-domain-recovery`验证静态MapHost有界重启和DBProxy恢复；`npm run test:gate-failover`验证双Gate强杀、同Unit接管、旧节点重启不回切和绕过Login重入拒绝；`npm run test:player-trade:persistent`验证DBProxy Endpoint切换与幂等回执，统一入口为`npm run test:tiangz-fault-matrix`。普通运行态最多允许回退一个快照周期，关键事务必须先可靠提交。动态地图现场、跨机器租约、TLS和生产部署仍未完成。完整步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+- Phase 4.5已完成玩家持久化第二轮收口。独立仓库[TiangZ-DBProxy](https://github.com/moulo1982Google/TiangZ-DBProxy)的`v0.5.0`继续独立拥有快照、Revision/CAS、幂等、单记录与多记录原子事务、可查询事务回执、PostgreSQL权威存储、Redis已提交缓存与AOF backlog，以及多Endpoint和两个共享存储的无状态对等实例；当前开发分支新增`LoadMultiSnapshot/SaveMultiSnapshot/EnqueueMultiSnapshot`，主工程用一次RPC恢复或保存`inventory/progression/quest/runtime/wallet`五条记录和五个独立Revision。普通批量保存不是事务，关键经济变更继续使用`ApplyMultiTransaction`。Map默认30秒周期快照，下线与停机使用幂等最终Flush。`npm run test:player-domain-recovery`验证静态MapHost有界重启和DBProxy恢复；`npm run test:gate-failover`验证双Gate强杀、同Unit接管、旧节点重启不回切和绕过Login重入拒绝；`npm run test:player-trade:persistent`验证DBProxy Endpoint切换与幂等回执，统一入口为`npm run test:tiangz-fault-matrix`。普通运行态最多允许回退一个快照周期，关键事务必须先可靠提交。TLS、单机生产测试部署和动态副本安全回退已经完成；动态副本现场恢复与跨机器租约仍未完成。完整步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 - 技能系统第一阶段已经实现：Unit上的`SkillComponent`只保存技能/GCD deadline和唯一ActiveCast，地图唯一`SkillMapComponent.Update10Hz`推进活跃读条与弹道；不创建每Unit Update、每Cast Timer、Actor或Entity。瞬发在ordered PlayerUnit调用内完成，移动策略和平A策略均由配置显式决定。施法期间平A意图仍保留，但平A读条被冻结，不能继续累计；玩家受到一次**没有被护盾吸收**的有效攻击且读条仍有效时，Demo战斗规则对普通读条只把`finishAtMs`向后延长800ms，对引导只把结束时间提前800ms，不重置起点、不清除引导、不改变CD，并立即广播新的`G2C_SkillCastState`，客户端依据新的权威结束时间更新进度条。真言术·盾吸收本次攻击时，不后移普通读条，也不缩短引导；后续未被吸收的攻击仍按同一规则处理。冷却随玩家跨地图传输，活动读条在传送时终止。`SkillConfig.xlsx`描述目标关系与施法时间线并生成给前后端，服务端专有的`SkillEffectConfig.xlsx`描述有序Action；`SkillCatalog.ts`只按配置指纹组合只读定义，不再保存技能数值。ActiveCast和Projectile冻结接受请求时的定义，Reload只影响新Cast。技能只选择目标并执行Action，伤害/治疗进入Combat，Buff生命周期进入BuffComponent。Buff冲突使用`stack_group + stack_scope`和Stack/Refresh/Replace/Reject/HigherWins；运行时Action覆盖和护盾剩余量可跨地图恢复。完整方案见[技能与施法系统设计](../design/skill-system.md)和[配置化技能教程](../tutorials/18-configured-skill.md)。
 - 账号与角色选择、正式持久化业务接入。
 - 地图传送已经统一为`player.TransferToMap(mapInstanceId)`：业务不提供MapHost、IP、端口或本地/远程分支。Gate在第一个`await`前打开有界屏障，源PlayerUnit mailbox通过MapInstance目录解析目标后协调Location锁、目标候选、位置提交和源Actor清理；Proto `duringTransfer`决定Actor消息排队、拒绝、丢弃或latest覆盖。Map1/Map2拆为两个MapHost的Runtime smoke已经覆盖跨进程传送，并验证并发UseItem只在目标Unit执行一次。Component仍默认不迁移，Numeric、Item显式参与，Position只迁移速度/朝向/存活。目标提交后Location结果不确定时进入可诊断`moving`态，不向旧Actor重放；生产级事务日志和自动恢复仍属后续高可用工作。详见[Entity地图迁移](../design/entity-transfer.md)与[Location路由](../design/location-routing.md)。
@@ -469,7 +469,8 @@ Phase 4计划：
 
 Phase 5计划：
 
-- 现有Prometheus/Loki/Tempo/Grafana的生产化（Alertmanager、机器Exporter、权限、跨机器Agent和长期存储）；跨进程追踪本身已经完成。
+- [x] Linux单机生产测试观测：Alertmanager、Node/PostgreSQL/Redis Exporter、Grafana HTTPS认证入口、资源上限与7天保留；第三方通知密钥由部署环境提供。
+- 跨机器观测Agent、长期对象存储与观测平面HA；跨进程追踪本身已经完成。
 - 生产级服务发现、Inner身份认证、崩溃恢复和滚动更新。
 - KCP弱网/长稳与io_uring进一步优化。
 - 在Rust AOI和首版真实怪物、战斗、Buff、任务及持久化负载完成后建设容量规划。容量工具按负载模型自动爬升和复测，以CPU、实际吞吐、p95/p99、队列趋势、错误与安全余量共同给出Map推荐容量、准入上限、Gate及Process部署建议；在此之前不得把`perf:gate`或`perf:map-capacity`结果转换为生产在线人数。

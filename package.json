@@ -258,6 +258,9 @@
     "observability:down": "cd tools/observability && docker compose down",
     "observability:down:clean": "cd tools/observability && docker compose down -v --remove-orphans",
     "observability:reset": "cd tools/observability && docker compose down -v --remove-orphans && docker compose rm -f",
+    "observability:production:config": "cd tools/observability/production && docker compose --env-file .env config --quiet",
+    "observability:production:up": "cd tools/observability/production && docker compose --env-file .env up -d",
+    "observability:production:down": "cd tools/observability/production && docker compose --env-file .env down",
     "test:observability:faults": "npm run observability:up && node tools/observability/trace_fault_acceptance.mjs"
   },
   "devDependencies": {

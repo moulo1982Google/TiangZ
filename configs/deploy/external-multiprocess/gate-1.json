@@ -5,7 +5,7 @@
     "lifecycle": {
       "restart": { "maxAttempts": 5, "windowMs": 600000, "backoffMs": 5000 }
     },
-    "logging": { "level": "info", "format": "pretty", "console": true },
+    "logging": { "level": "info", "format": "json", "console": true, "file": { "enabled": true, "directory": "logs", "rotation": "daily" } },
     "game": { "fixedUpdateMs": 50, "maxCatchUpSteps": 2 },
     "persistence": {
       "dbProxy": {
@@ -21,7 +21,8 @@
     "debug": { "inspectorIp": "127.0.0.1", "inspectorPort": 19234, "breakOnStart": false },
     "observability": {
       "health": { "ip": "127.0.0.1", "port": 17604 },
-      "latency": { "enabled": true, "sampleRate": 10 }
+      "latency": { "enabled": true, "sampleRate": 10 },
+      "tracing": { "enabled": true, "sampleRate": 10, "otlpEndpoint": "http://127.0.0.1:4318/v1/traces" }
     }
   },
   "scenes": [{

@@ -1,0 +1,19 @@
+apiVersion: 1
+
+providers:
+  - name: tiangz-runtime
+    orgId: 1
+    folder: TiangZ
+    type: file
+    disableDeletion: false
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards/runtime
+  - name: tiangz-production
+    orgId: 1
+    folder: TiangZ Production
+    type: file
+    disableDeletion: false
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards/production

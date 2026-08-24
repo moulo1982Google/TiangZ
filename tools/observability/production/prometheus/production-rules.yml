@@ -1,0 +1,45 @@
+groups:
+  - name: tiangz-production-infrastructure
+    rules:
+      - alert: TiangZDBProxyDown
+        expr: up{job="tiangz-dbproxy"} == 0
+        for: 30s
+        labels: { severity: critical }
+        annotations:
+          summary: "DBProxy实例无法抓取"
+          description: "{{ $labels.process }} 已连续30秒不可达，TiangZ应切换到另一个Endpoint。"
+      - alert: TiangZHostExporterDown
+        expr: up{job="node"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "宿主机Exporter不可达"
+          description: "{{ $labels.machine }} 无法提供主机资源指标。"
+      - alert: TiangZHostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "宿主机可用内存低于10%"
+          description: "{{ $labels.machine }} 可用内存持续偏低。"
+      - alert: TiangZHostDiskLow
+        expr: node_filesystem_avail_bytes{mountpoint="/",fstype!=""} / node_filesystem_size_bytes{mountpoint="/",fstype!=""} < 0.15
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "根分区可用空间低于15%"
+          description: "{{ $labels.machine }} 需要清理日志或扩容磁盘。"
+      - alert: TiangZPostgresExporterDown
+        expr: up{job="postgres"} == 0 or pg_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "PostgreSQL观测或连接失败"
+          description: "PostgreSQL Exporter不可达或无法连接数据库。"
+      - alert: TiangZRedisExporterDown
+        expr: up{job="redis"} == 0 or redis_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Redis观测或连接失败"
+          description: "Redis Exporter不可达或无法连接Redis。"

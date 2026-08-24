@@ -6,6 +6,8 @@ Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这�
 
 这是用于本机调试和拆分 Process 部署的最小监控栈。每个 TiangZ Process 独立暴露 `/metrics`，Prometheus 负责抓取全部实际运行的 Process；Alloy采集JSON文件日志写入Loki；Process通过OTLP HTTP把采样Span写入Tempo；Grafana统一查询三类信号。不要在业务层新增 Observer Scene 来转发指标；它会引入单点、额外队列和错误的指标归属。
 
+Linux外网测试使用独立的`tools/observability/production`部署包：在本机栈基础上增加Alertmanager、Node Exporter、PostgreSQL Exporter和Redis Exporter；抓取10个TiangZ Process与两个DBProxy；Prometheus、Loki和Tempo保留7天；所有管理端口只绑定宿主机回环，Grafana通过现有Nginx HTTPS的`/grafana/`开放认证入口。具体密钥与部署步骤见[生产测试观测栈](../../tools/observability/production/README.md)。
+
 ### 启动
 
 Watcher 拆分部署（默认读取 `configs/local/cluster/StartMachine.json`）：
@@ -246,7 +248,7 @@ Snapshot指标故意不在TS中二次protobuf编码，因此`player_entry_snapsh
 
 `tools/observability/prometheus/rules/tiangz.yml` 已覆盖 Target down、Process 未就绪、Runtime 心跳过期、Rust 队列 70%/90%、背压、Inner RPC 失败、Gate接管失败、系统错误、缺 Handler、Update 跳帧、日志丢弃和 Handler P99 超预算。规则判定可在 Prometheus `/alerts` 查看。
 
-当前没有接入 Alertmanager，规则只负责产生告警状态，不发送邮件或 Webhook。通知渠道、值班路由与抑制策略属于 Phase 5。
+本地开发Compose只计算规则，不启动Alertmanager。Linux生产测试包已经接入Alertmanager，具备分组、抑制、Resolved状态以及DBProxy、宿主机、PostgreSQL和Redis规则；默认接收器只在Alertmanager/Grafana内保留状态。向第三方发送通知时必须使用`alertmanager-webhook.yml + secrets/webhook-url`，URL不得写入Git、Compose或日志。最终通知渠道的账号、密钥和值班人归部署环境所有。
 
 修改 Dashboard、Target 生成器或告警规则后执行：
 

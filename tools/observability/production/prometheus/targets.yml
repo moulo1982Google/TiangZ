@@ -1,0 +1,24 @@
+- targets: ["127.0.0.1:17601"]
+  labels: { env: external-test, machine: external-1, process: external_login_mgr, kind: tiangz }
+- targets: ["127.0.0.1:17602"]
+  labels: { env: external-test, machine: external-1, process: external_login_1, kind: tiangz }
+- targets: ["127.0.0.1:17603"]
+  labels: { env: external-test, machine: external-1, process: external_login_2, kind: tiangz }
+- targets: ["127.0.0.1:17604"]
+  labels: { env: external-test, machine: external-1, process: external_gate_1, kind: tiangz }
+- targets: ["127.0.0.1:17605"]
+  labels: { env: external-test, machine: external-1, process: external_gate_2, kind: tiangz }
+- targets: ["127.0.0.1:17606"]
+  labels: { env: external-test, machine: external-1, process: external_map_1, kind: tiangz }
+- targets: ["127.0.0.1:17607"]
+  labels: { env: external-test, machine: external-1, process: external_map_2, kind: tiangz }
+- targets: ["127.0.0.1:17608"]
+  labels: { env: external-test, machine: external-1, process: external_location, kind: tiangz }
+- targets: ["127.0.0.1:17609"]
+  labels: { env: external-test, machine: external-1, process: external_manager, kind: tiangz }
+- targets: ["127.0.0.1:17610"]
+  labels: { env: external-test, machine: external-1, process: external_dungeon_1, kind: tiangz }
+- targets: ["127.0.0.1:9090"]
+  labels: { env: external-test, machine: external-1, process: dbproxy_1, kind: dbproxy }
+- targets: ["127.0.0.1:9091"]
+  labels: { env: external-test, machine: external-1, process: dbproxy_2, kind: dbproxy }

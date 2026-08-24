@@ -15,6 +15,8 @@ assert.equal(client.secure, true, "external Cocos3D must use WSS");
 assert.match(nginx, /listen 443 ssl/);
 assert.match(nginx, /\.well-known\/acme-challenge/);
 assert.match(nginx, /\/etc\/letsencrypt\/live\/14\.103\.24\.32\/fullchain\.pem/);
+assert.match(nginx, /location \^~ \/grafana\//);
+assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:13001/);
 assert.match(websocket, /proxy_set_header Upgrade \$http_upgrade/);
 
 const mappings = new Map([
@@ -32,6 +34,14 @@ for (const [publicPort, loopbackPort] of mappings) {
 for (const name of readdirSync(deployRoot).filter((entry) => entry.endsWith(".json"))) {
   if (name === "StartMachine.json" || name === "known-scenes.json") continue;
   const config = JSON.parse(readFile(path.join("configs/deploy/external-multiprocess", name)));
+  assert.equal(config.process?.logging?.format, "json", `${name} must emit JSON logs for Loki`);
+  assert.equal(config.process?.logging?.file?.enabled, true, `${name} must emit rolling files for Alloy`);
+  assert.equal(config.process?.observability?.tracing?.enabled, true, `${name} must export sampled traces`);
+  assert.match(
+    config.process?.observability?.tracing?.otlpEndpoint ?? "",
+    /^http:\/\/127\.0\.0\.1:4318\/v1\/traces$/,
+    `${name} must export traces only to the local Tempo receiver`,
+  );
   for (const scene of config.scenes ?? []) {
     assert.equal(scene.bindIp, "127.0.0.1", `${name}:${scene.name} must bind loopback`);
     if (scene.outerPort !== undefined) {

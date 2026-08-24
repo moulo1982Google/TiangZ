@@ -1,0 +1,20 @@
+route:
+  receiver: operator
+  group_by: [alertname, severity, process]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    - receiver: operator
+      matchers: ['severity="critical"']
+      repeat_interval: 30m
+
+receivers:
+  # 默认接收器只保留Alertmanager中的告警状态；外部通知必须使用单独的密钥文件配置。
+  # The default receiver retains alert state only; external notifications require a separate secret file.
+  - name: operator
+
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: [alertname, process]

@@ -18,7 +18,7 @@
 
 ## 可观测性
 
-`npm run observability:up`会启动Prometheus、Loki、Tempo、Grafana和Alloy。本地拆分进程配置默认输出JSON文件日志，并按`1/10`采样跨进程RPC Trace；Grafana入口为`http://127.0.0.1:3001`，可以从Loki日志中的`traceId`打开Tempo Trace，也可以从Span反查同一链路日志。`npm run test:observability:faults`会真实强杀Gate和动态副本MapHost，验证故障事件入Loki以及同一Trace跨Gate、MapHost、Location等进程。完整配置和边界见[可观测性与链路耗时](docs/reference/observability.md)。
+`npm run observability:up`会启动Prometheus、Loki、Tempo、Grafana和Alloy。本地拆分进程配置默认输出JSON文件日志，并按`1/10`采样跨进程RPC Trace；Grafana入口为`http://127.0.0.1:3001`，可以从Loki日志中的`traceId`打开Tempo Trace，也可以从Span反查同一链路日志。`npm run test:observability:faults`会真实强杀Gate和动态副本MapHost，验证故障事件入Loki以及同一Trace跨Gate、MapHost、Location等进程。Linux外网测试另有资源受控的生产部署包：只经Nginx `/grafana/`暴露认证界面，管理端口全部回环，并接入Alertmanager、Node/PostgreSQL/Redis Exporter。完整配置和边界见[可观测性与链路耗时](docs/reference/observability.md)。
 
 ## 5分钟启动
 

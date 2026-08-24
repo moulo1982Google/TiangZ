@@ -45,6 +45,25 @@ server {
         add_header Strict-Transport-Security "max-age=86400" always;
     }
 
+    location = /grafana {
+        return 301 /grafana/;
+    }
+
+    # Grafana is the only public observability surface. Prometheus, Loki,
+    # Tempo, Alertmanager and exporters remain bound to host loopback.
+    location ^~ /grafana/ {
+        proxy_pass http://127.0.0.1:13001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Prefix /grafana;
+        add_header Strict-Transport-Security "max-age=86400" always;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
         expires -1;

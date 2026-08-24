@@ -1,0 +1,79 @@
+logging {
+	level = "info"
+}
+
+local.file_match "tiangz" {
+	path_targets = [
+		{
+			__path__ = "/var/log/tiangz/*.log*",
+			job      = "tiangz",
+			env      = "external-test",
+			machine  = "external-1",
+		},
+	]
+	sync_period = "5s"
+}
+
+loki.source.file "tiangz" {
+	targets    = local.file_match.tiangz.targets
+	forward_to = [loki.process.tiangz.receiver]
+}
+
+loki.process "tiangz" {
+	stage.json {
+		expressions = {
+			timestamp    = "timestamp",
+			level        = "level",
+			process      = "process",
+			service_name = "service_name",
+			category     = "category",
+			trace_id     = "trace_id",
+			span_id      = "span_id",
+		}
+	}
+
+	stage.timestamp {
+		source = "timestamp"
+		format = "RFC3339Nano"
+	}
+
+	// 只索引固定枚举；玩家、请求与Trace标识保留为structured metadata。
+	// Only bounded dimensions are indexed; player, request, and trace IDs remain structured metadata.
+	stage.labels {
+		values = {
+			level        = "",
+			process      = "",
+			service_name = "",
+			category     = "",
+		}
+	}
+
+	stage.structured_metadata {
+		values = {
+			trace_id = "",
+			span_id  = "",
+		}
+	}
+
+	forward_to = [loki.write.local.receiver]
+}
+
+loki.source.journal "dbproxy_1" {
+	path       = "/var/log/journal"
+	matches    = "_SYSTEMD_UNIT=tiangz-dbproxy@1.service"
+	labels     = {job = "tiangz-dbproxy", env = "external-test", machine = "external-1", process = "dbproxy_1"}
+	forward_to = [loki.write.local.receiver]
+}
+
+loki.source.journal "dbproxy_2" {
+	path       = "/var/log/journal"
+	matches    = "_SYSTEMD_UNIT=tiangz-dbproxy@2.service"
+	labels     = {job = "tiangz-dbproxy", env = "external-test", machine = "external-1", process = "dbproxy_2"}
+	forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+	endpoint {
+		url = "http://127.0.0.1:13100/loki/api/v1/push"
+	}
+}

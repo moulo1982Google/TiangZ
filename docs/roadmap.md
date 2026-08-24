@@ -5,7 +5,7 @@
 - 本地观测栈扩展为Prometheus、Loki、Tempo、Grafana和Alloy；JSON日志与采样Trace共享W3C宽度`traceId/spanId`。
 - Core内部Trace Envelope跨Scene/ActorLocation传播上下文，不修改业务Protobuf；Rust transport仍按内层业务`rpcId/msgcode`多路复用和统计。
 - `test:observability:faults`真实验证Gate强杀接管、动态副本安全回退、Loki故障事件和同一Trace跨四个TiangZ进程。
-- 生产剩余项是Grafana认证、Alertmanager通知、机器Exporter、长期存储与跨机器观测部署，不把本机Compose称为生产HA。
+- Linux外网测试已增加Grafana HTTPS认证入口、Alertmanager、Node/PostgreSQL/Redis Exporter、资源上限和7天保留；最终通知密钥、长期对象存储与跨机器观测仍属部署阶段，不把单机Compose称为生产HA。
 
 ## 2026-08-22 Gate/地图故障恢复与TLS
 
@@ -481,7 +481,8 @@ Machine -> Process(one V8, EntityRoot) -> EntryScene -> MapScene -> Unit -> Comp
 
 计划：
 
-- 生产化现有 Prometheus/Grafana：Alertmanager 通知路由、node/windows exporter、认证与 HTTPS、保留期和长期存储、HA。
+- [x] Linux单机生产测试观测：Alertmanager路由、Node/PostgreSQL/Redis Exporter、Grafana认证与HTTPS、7天保留和资源上限。
+- 最终通知渠道、跨机器Agent、长期对象存储和观测平面HA。
 - [x] 接入Loki、Tempo、Alloy与跨进程`traceId`，统一日志、指标和Trace下钻；生产认证、远程Agent和长期存储仍未完成。
 - 已将 I/O Backend 与 Endpoint 协议拆为两个维度：`EpollIoBackend/UringIoBackend` 负责操作系统 I/O，`tcp/websocket/auto/kcp` 负责传输协议。KCP 已完成官方 C v1 静态集成、Outer Profile、Challenge 握手、UDP 会话、超时/CLOSE、Rust smoke 和 Cocos Native Windows 全链路；Inner KCP 要等内部身份认证后开放。io_uring TCP 已完成多帧接收、批量发送和与 epoll 同口径的完整链路报告；默认仍为 epoll。后续补多 Endpoint、注册 Buffer、KCP 弱网/长稳和攻击面测试。
 - Process 监管、优雅退出、滚动更新和崩溃恢复。
