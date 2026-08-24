@@ -254,7 +254,7 @@ const RAW_DATA: Record<string, unknown> = {
       "spawn_x": 22,
       "spawn_y": 0,
       "spawn_z": 22,
-      "spawn_yaw": 0,
+      "spawn_yaw": 1.5707963,
       "aoi_config_id": 1,
       "navigation_asset": "",
       "navigation_version": "",
@@ -575,7 +575,7 @@ export type SkillConfig = game.SkillConfig;
 export type QuestConfig = game.QuestConfig;
 export type QuestObjectiveConfig = game.QuestObjectiveConfig;
 
-export const GameConfigFingerprint = "b8535e5b44a56b4d9d8b3a4a15b9c5f8703215162ccf3a1cad642fc0c065cb14";
+export const GameConfigFingerprint = "d9b36f10850c91a91b8f9db1c31ab8a801a362c76ffe465f8598df18e01d63eb";
 export const GameConfigs = Object.freeze({
   ItemConfig: new ConfigTable<game.ItemConfig>(tables.TbItemConfig.getDataList()),
   BuffConfig: new ConfigTable<game.BuffConfig>(tables.TbBuffConfig.getDataList()),

@@ -68,7 +68,7 @@
       "spawn_x": 22,
       "spawn_y": 0,
       "spawn_z": 22,
-      "spawn_yaw": 0,
+      "spawn_yaw": 1.5707963,
       "aoi_config_id": 1,
       "navigation_asset": "",
       "navigation_version": "",

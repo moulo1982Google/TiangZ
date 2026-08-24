@@ -2001,15 +2001,10 @@ async function verifyAutoAttackTimer(
   playerUnitId: number,
   monsterUnitId: number,
 ): Promise<bigint> {
-  // Map 2的训练木桩在玩家出生点正东；先用Grid移动让权威Yaw转向+X，再停在1米距离。
-  // The map-2 dummy is one cell east after one step; turn the authoritative yaw to +X first.
-  await gate.send(buildMovePacket({ inputX: 1, inputZ: 0, sequence: 4 }));
-  // 等一个固定Tick再停，避免等待确认包时已经自动跨过第二个Cell。
-  // Stop after one fixed tick instead of waiting for an acknowledgement that
-  // may arrive after the movement loop has already started the next cell.
-  await sleep(60);
-  await gate.send(buildMovePacket({ inputX: 0, inputZ: 0, sequence: 5 }));
-  await waitForMovementStopped(gate, playerUnitId, 5);
+  // Map 2是确定性战斗夹具：出生点直接朝向正东2米处的训练木桩。
+  // 不在平A测试里复用latest移动下行作为定位屏障，移动权威性由独立用例覆盖。
+  // Map 2 is a deterministic combat fixture that spawns facing the dummy two meters east.
+  // Auto-attack does not reuse throttled latest movement as a positioning barrier.
 
   const statePush = gate.waitForMessage(MsgCode.G2C_AutoAttackState, 5_000);
   const enabledRpcId = nextRpcId++;
@@ -2511,10 +2506,10 @@ async function verifyAuthoritativeMovement(
   }
 
   await gate.send(buildMovePacket({ inputX: 0, inputZ: 0, sequence: 3 }));
-  const stopped = await waitForMovementSequence(gate, player.unitId, 3);
+  const stopped = await waitForMovementStopped(gate, player.unitId, 3);
   if (
     stopped.acknowledgedSequence !== 3 ||
-    (stopped.moving && stopped.toCellX !== stopped.fromCellX + 1)
+    stopped.moving
   ) {
     throw new Error(`unexpected authoritative stop: ${JSON.stringify(stopped)}`);
   }
