@@ -186,6 +186,7 @@ function verifyProductionStack() {
   const webhook = readFileSync(path.join(base, "alertmanager/alertmanager-webhook.yml"), "utf8");
   const alloy = readFileSync(path.join(base, "alloy/config.alloy"), "utf8");
   const loki = readFileSync(path.join(base, "loki/loki.yml"), "utf8");
+  const normalizedLoki = loki.replaceAll("\r\n", "\n");
   const tempo = readFileSync(path.join(base, "tempo/tempo.yml"), "utf8");
   const datasources = readFileSync(path.join(base, "grafana/provisioning/datasources/datasources.yml"), "utf8");
   const dashboard = JSON.parse(readFileSync(path.join(base, "grafana/dashboards/production-overview.json"), "utf8"));
@@ -220,9 +221,9 @@ function verifyProductionStack() {
     throw new Error("Production Alloy must collect DBProxy journal and TiangZ structured logs");
   }
   if (
-    !loki.includes("http_listen_address: 127.0.0.1") ||
-    !loki.includes("frontend:\n  address: 127.0.0.1\n  port: 19095") ||
-    !loki.includes("retention_period: 168h")
+    !normalizedLoki.includes("http_listen_address: 127.0.0.1") ||
+    !normalizedLoki.includes("frontend:\n  address: 127.0.0.1\n  port: 19095") ||
+    !normalizedLoki.includes("retention_period: 168h")
   ) {
     throw new Error("Production Loki must bind and advertise loopback and retain seven days");
   }
