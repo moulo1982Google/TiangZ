@@ -58,7 +58,7 @@ node dist/smoke_client.cjs --dynamic-map-single-host-only --map-manager-port 171
 
 该探针只访问内网`MapManager`，不会创建玩家账号，也不会修改玩家持久化数据。
 
-systemd 托管 Watcher 时，必须保持顶层标准输入打开；Watcher 将标准输入 EOF 解释为“父进程已消失”并主动停机。外网服务使用`tail -f /dev/null | exec ... StartMachine.json`作为启动包装，并设置`KillMode=control-group`，保证停止服务时Watcher及两个子Process一起退出。
+systemd 托管 Watcher 时，必须保持顶层标准输入打开；Watcher 将标准输入 EOF 解释为“父进程已消失”并主动停机。外网服务使用[tiangz-external.service.example](tiangz-external.service.example)：`tail -f /dev/null | exec ... StartMachine.json`保持标准输入，`KillMode=control-group`保证停止服务时Watcher及全部子Process一起退出。两个DBProxy是对等故障切换候选，因此这里只能使用`Wants=`和`After=`，不能使用`Requires=`；主动停止或崩溃一个DBProxy时不得连带停止TiangZ。
 
 ## Cocos3D双入口
 

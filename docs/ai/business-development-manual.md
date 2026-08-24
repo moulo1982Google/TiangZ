@@ -1147,13 +1147,13 @@ entity Item extends Entity {
 
 这个端口分离不是业务路由逻辑，开发者不需要在Handler中处理。修改外网配置时必须同时检查`scenes`、共享`known-scenes.json`和`configs/deploy/cocos3d-nginx.conf.example`，保证`port`表示TiangZ实际监听端口，`outerPort`表示客户端连接端口；若把二者写成同一个端口，Nginx与Runtime会启动冲突。
 
-当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web，确认是本次最新产物；然后停止远端旧服务，直接覆盖后端与两个Web目录，重新启动，再按页面、LoginMgr、Login、Gate的顺序验收。该主机是Demo测试机，不做`.next`目录、蓝绿切换、目录交换和自动回滚。Cocos3D前端使用`npm run build:cocos3d:external`一次生成两个入口：`build/external/desktop`部署到根路径`/`，`build/external/m`部署到`/m/`；根路径只能使用桌面`web-desktop`包，横屏`web-mobile`包只能放在`/m/`。
+当需要验证外网演示时，使用统一的“部署到外网测试机”流程：重新生成代码、构建后端和Cocos3D Web，确认是本次最新产物；后端先解压到`.next`目录，通过配置预检后在短维护窗口原子交换并保留上一目录，失败时立即回滚；两个Web目录仍按入口分别覆盖。Cocos3D前端使用`npm run build:cocos3d:external`一次生成两个入口：`build/external/desktop`部署到根路径`/`，`build/external/m`部署到`/m/`；根路径只能使用桌面`web-desktop`包，横屏`web-mobile`包只能放在`/m/`。
 外网构建会在页面顶部显示`Build <版本>-<UTC构建时间>-<Git短提交号>`，Nginx对两个Demo入口发送`Cache-Control: no-cache, must-revalidate`。验收时应先确认Build标识已经变化，再检查Buff、快捷栏等业务表现；这样可以明确区分客户端缺陷和旧包缓存。
 不要只看Nginx页面能打开就判断网络链路完成；云安全组必须放行实际的WebSocket入口端口。
 
 后端正式发布使用本机Docker的Linux构建环境生成`linux-amd64` Release制品。外网机器只接收可执行文件、`dist`、`configs`、导航资源、版本信息和校验文件，不接收源码、Cargo工程、Node依赖或构建缓存。Runtime会从当前发布目录解析资源，因此制品可以从构建机复制到任意部署路径。
 
-外网2C2G要验证账号和玩家数据重启恢复时，还要部署独立DBProxy。Ubuntu 24.04安装`docker.io`和`docker-compose-v2`后，使用DBProxy仓库的Compose文件启动Redis/PostgreSQL；两个容器只绑定`127.0.0.1`。DBProxy服务监听`127.0.0.1:7800`，两个TiangZ Process的`persistence.dbProxy`都必须启用，令牌放进systemd环境文件。不要把本机开发`.env`、数据库密码或公网凭据复制进仓库，也不要让业务Handler直接访问Redis/PostgreSQL。
+外网2C2G要验证账号和玩家数据重启恢复时，还要部署独立DBProxy。Ubuntu 24.04安装`docker.io`和`docker-compose-v2`后，使用DBProxy仓库的Compose文件启动Redis/PostgreSQL；两个容器只绑定`127.0.0.1`。DBProxy服务监听`127.0.0.1:7800/7801`，全部TiangZ Process的`persistence.dbProxy`都必须启用，令牌放进systemd环境文件。TiangZ的systemd单元必须用`Wants=`关联两个对等DBProxy，禁止用`Requires=`把任一候选故障传播成整组Runtime停机。不要把本机开发`.env`、数据库密码或公网凭据复制进仓库，也不要让业务Handler直接访问Redis/PostgreSQL。
 
 日常Linux发布执行`npm run release:linux`。固定Builder镜像只保存Node、Rust、.NET Runtime、Luban和依赖，不保存业务源码；工具指纹未变化时不得重新下载工具链。每次发布仍必须重新执行Excel/Luban生成、全部codegen、TS构建和Rust Release编译，不能因为复用镜像而复用旧生成代码。只有修改`package-lock.json`、Cargo依赖/锁、Rust工具链、Luban版本或Builder Dockerfile时，才允许自动重建一次镜像。
 

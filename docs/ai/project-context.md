@@ -544,7 +544,7 @@ Cocos3D的本地Buff栏从`MapEntitySnapshot.buffs`、`M2C_UseItem.buff`和`G2C_
 
 ## 外网持久化部署校准
 
-当前`external-multiprocess`的10份Process配置都显式使用同机DBProxy首选地址`127.0.0.1:7800`和故障切换地址`127.0.0.1:7801`。客户端按RecordKey稳定选择地址，只有连接不可用才切换，并保留原`requestId/operationId`；Revision冲突、业务拒绝、鉴权失败和协议错误直接返回。两个DBProxy实例共享同一套云Redis/PostgreSQL，不做实例间Leader、复制或内部RPC。DBProxy下的Redis和PostgreSQL只绑定回环地址，外网安全组不开放`5432`和`6379`。Ubuntu部署机用Docker Compose启动两个存储容器，DBProxy作为独立systemd服务运行，认证令牌只由systemd环境文件注入。只启动Redis/PostgreSQL而不启动两个DBProxy，或者只启动DBProxy而不在所有Process配置中声明`persistence.dbProxy`，都不算完成持久化接入。
+当前`external-multiprocess`的10份Process配置都显式使用同机DBProxy首选地址`127.0.0.1:7800`和故障切换地址`127.0.0.1:7801`。客户端按RecordKey稳定选择地址，只有连接不可用才切换，并保留原`requestId/operationId`；Revision冲突、业务拒绝、鉴权失败和协议错误直接返回。两个DBProxy实例共享同一套云Redis/PostgreSQL，不做实例间Leader、复制或内部RPC。DBProxy下的Redis和PostgreSQL只绑定回环地址，外网安全组不开放`5432`和`6379`。Ubuntu部署机用Docker Compose启动两个存储容器，DBProxy作为独立systemd服务运行，认证令牌只由systemd环境文件注入。TiangZ的systemd单元对两个DBProxy使用`Wants=`而非`Requires=`，确保任一候选停止时Runtime仍可通过另一Endpoint服务。只启动Redis/PostgreSQL而不启动两个DBProxy，或者只启动DBProxy而不在所有Process配置中声明`persistence.dbProxy`，都不算完成持久化接入。
 
 ## Unity、UE、Godot客户端收口
 

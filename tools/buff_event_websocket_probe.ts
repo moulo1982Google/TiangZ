@@ -17,11 +17,14 @@ import "../client_sdk/typescript/Core/Net/BrowserWebSocketTransport";
 
 const HOST = process.env.TIANGZ_LOGIN_HOST ?? "14.103.24.32";
 const PORT = Number(process.env.TIANGZ_LOGIN_PORT ?? 17_000);
+const SECURE = !["0", "false", "off"].includes(
+  (process.env.TIANGZ_LOGIN_SECURE ?? "true").toLowerCase(),
+);
 
 async function main(): Promise<void> {
   const account = `buff_ws_probe_${Date.now()}`;
   const password = "buff_probe_password";
-  const flow = new LoginFlow({ transport: "websocket", host: HOST, port: PORT });
+  const flow = new LoginFlow({ transport: "websocket", host: HOST, port: PORT, secure: SECURE });
   const updates = setInterval(() => flow.update(), 1);
   try {
     await flow.register(account, password);

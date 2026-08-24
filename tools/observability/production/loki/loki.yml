@@ -6,6 +6,10 @@ server:
   grpc_listen_address: 127.0.0.1
   grpc_listen_port: 19095
 
+frontend:
+  address: 127.0.0.1
+  port: 19095
+
 common:
   path_prefix: /loki
   replication_factor: 1

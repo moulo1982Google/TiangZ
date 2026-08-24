@@ -13,6 +13,9 @@
 - Prometheus统一抓取10个TiangZ Process、两个DBProxy、Node/PostgreSQL/Redis Exporter；Alertmanager接收21条运行时与基础设施规则。
 - Loki、Tempo和Prometheus固定7天保留，所有容器设置内存上限和有界Docker日志；Alloy采集TiangZ JSON文件与两个DBProxy systemd journal。
 - Webhook URL、Grafana密码和Exporter连接串使用服务器私密文件，不进入仓库。单机部署不是观测HA，跨机器Agent与长期对象存储继续留在后续。
+- 外网验收补齐TiangZ systemd模板：双DBProxy使用`Wants=`而非`Requires=`，单实例滚动更新或故障演练不会连带停止Runtime；非TLS本机PostgreSQL的Exporter DSN显式使用`sslmode=disable`。
+- Loki host-network单机模式显式通告回环Query Frontend地址，修复“日志已写入但查询结果回传到Docker私网地址失败”；外网已同时查询到TiangZ文件日志和两个DBProxy journal，并用同一Trace ID确认`Gate 2 -> Map 2`跨进程Span。
+- 外网真实停止当前承载流量的DBProxy 2后，NPC商店业务完整通过、客户端产生`7801 -> 7800`故障切换，10/10 Runtime保持Ready；Prometheus与Alertmanager告警进入Firing，实例恢复后15/15 Target重新Up且告警Resolved。
 
 ## 2026-08-24：Loki、Tempo与跨进程Trace
 

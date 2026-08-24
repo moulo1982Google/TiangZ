@@ -219,8 +219,12 @@ function verifyProductionStack() {
   if (!alloy.includes("loki.source.journal") || !alloy.includes("stage.structured_metadata")) {
     throw new Error("Production Alloy must collect DBProxy journal and TiangZ structured logs");
   }
-  if (!loki.includes("http_listen_address: 127.0.0.1") || !loki.includes("retention_period: 168h")) {
-    throw new Error("Production Loki must bind loopback and retain seven days");
+  if (
+    !loki.includes("http_listen_address: 127.0.0.1") ||
+    !loki.includes("frontend:\n  address: 127.0.0.1\n  port: 19095") ||
+    !loki.includes("retention_period: 168h")
+  ) {
+    throw new Error("Production Loki must bind and advertise loopback and retain seven days");
   }
   if (!tempo.includes("endpoint: 127.0.0.1:4318") || !tempo.includes("block_retention: 168h")) {
     throw new Error("Production Tempo must bind OTLP to loopback and retain seven days");

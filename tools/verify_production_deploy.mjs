@@ -7,6 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const deployRoot = path.join(root, "configs/deploy/external-multiprocess");
 const nginx = readFile("configs/deploy/cocos3d-nginx.conf.example");
 const websocket = readFile("configs/deploy/tiangz-websocket.conf.example");
+const systemd = readFile("configs/deploy/tiangz-external.service.example");
 const client = JSON.parse(readFile(
   "client_demo/cocos_client3D_3.8.8/assets/resources/Config/tiangz-external.json",
 ));
@@ -18,6 +19,9 @@ assert.match(nginx, /\/etc\/letsencrypt\/live\/14\.103\.24\.32\/fullchain\.pem/)
 assert.match(nginx, /location \^~ \/grafana\//);
 assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:13001/);
 assert.match(websocket, /proxy_set_header Upgrade \$http_upgrade/);
+assert.match(systemd, /^Wants=.*tiangz-dbproxy@1\.service.*tiangz-dbproxy@2\.service/m);
+assert.doesNotMatch(systemd, /^Requires=.*tiangz-dbproxy/m);
+assert.match(systemd, /tail -f \/dev\/null \| exec \/opt\/tiangz-external\/TiangZ/);
 
 const mappings = new Map([
   [17000, 27000],
