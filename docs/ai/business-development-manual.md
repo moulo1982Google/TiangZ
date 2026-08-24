@@ -1195,6 +1195,10 @@ Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建�
 
 业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。
 
+跨Process追踪由Core自动建立和传播。业务Handler只使用`context.logger`和普通Scene/Actor调用，不得导入、构造或解析Trace Envelope，也不得把`traceId/spanId`作为业务幂等键。`requestId/operationId`负责业务身份和重试，`traceId`只负责诊断。日志中的`traceId/spanId`由框架注入；不要手工覆盖，也不要把玩家ID、请求ID、Trace ID放入Prometheus标签或Loki索引label。业务日志不得记录密码、Token、完整协议Payload或其他敏感数据。
+
+修改Trace传播、采样、日志采集或Grafana数据源后，先执行`npm run verify:observability`，再用`npm run test:observability:faults`真实验证Gate故障和动态副本安全回退。后者会启动测试拓扑并停止测试进程，不能连接生产环境。
+
 Developer Tools 的“查看运行时指标”命令是只读的 `/metrics` 查看器，只能回答“这个 Process 当前有多忙”，不能回答某个 Unit、Actor 或组件的业务详情。不要为了调试临时增加业务 RPC、遍历全地图或暴露 V8 任意执行入口。按 UnitId、Scene、Gate 和 ActorLocation 查询的 Inspector 采用独立的、版本化的只读协议；当前只冻结了协议草案，正式接入前仍需完成 Runtime 控制通道、调试令牌、超时、限流、响应上限和快照一致性验收。
 
 ## 框架热路径与低分配约定

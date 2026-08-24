@@ -303,6 +303,19 @@ pub struct ProcessObservabilityConfig {
     pub health: Option<HealthObservabilityConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_data: Option<NativeDataObservabilityConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracing: Option<TracingObservabilityConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TracingObservabilityConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_trace_sample_rate")]
+    pub sample_rate: u32,
+    #[serde(default = "default_trace_otlp_endpoint")]
+    pub otlp_endpoint: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -460,6 +473,14 @@ fn default_log_directory() -> String {
 
 fn default_latency_sample_rate() -> u32 {
     1
+}
+
+fn default_trace_sample_rate() -> u32 {
+    100
+}
+
+fn default_trace_otlp_endpoint() -> String {
+    "http://127.0.0.1:4318/v1/traces".to_string()
 }
 
 fn default_uring_entries() -> u32 {
@@ -908,6 +929,22 @@ fn validate_runtime_config(config: &RuntimeConfig) -> Result<()> {
         .is_some_and(|native_data| native_data.scalar_access_warn_threshold == 0)
     {
         bail!("process observability.nativeData.scalarAccessWarnThreshold must be greater than 0");
+    }
+    if let Some(tracing) = config
+        .process
+        .observability
+        .as_ref()
+        .and_then(|observability| observability.tracing.as_ref())
+    {
+        if !(1..=1_000_000).contains(&tracing.sample_rate) {
+            bail!("process observability.tracing.sampleRate must be between 1 and 1000000");
+        }
+        if tracing.enabled
+            && !(tracing.otlp_endpoint.starts_with("http://")
+                || tracing.otlp_endpoint.starts_with("https://"))
+        {
+            bail!("process observability.tracing.otlpEndpoint must use http or https");
+        }
     }
 
     let mut scene_names = HashSet::new();
@@ -1575,6 +1612,58 @@ mod tests {
             serialized["observability"]["nativeData"]["scalarAccessWarnThreshold"],
             2048
         );
+    }
+
+    #[test]
+    fn parses_and_validates_trace_export_config() {
+        let process: ProcessConfig = serde_json::from_str(
+            r#"{
+                "name": "map1",
+                "observability": {
+                    "tracing": {
+                        "enabled": true,
+                        "sampleRate": 25,
+                        "otlpEndpoint": "http://127.0.0.1:4318/v1/traces"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let tracing = process
+            .observability
+            .as_ref()
+            .unwrap()
+            .tracing
+            .as_ref()
+            .unwrap();
+        assert!(tracing.enabled);
+        assert_eq!(tracing.sample_rate, 25);
+
+        let valid = RuntimeConfig {
+            process: process.clone(),
+            scenes: vec![scene("map", 7100)],
+            known_scenes: vec![],
+        };
+        assert!(validate_runtime_config(&valid).is_ok());
+
+        for (sample_rate, endpoint) in [(0, "http://127.0.0.1:4318"), (1, "udp://tempo:4318")] {
+            let mut invalid = process.clone();
+            let tracing = invalid
+                .observability
+                .as_mut()
+                .unwrap()
+                .tracing
+                .as_mut()
+                .unwrap();
+            tracing.sample_rate = sample_rate;
+            tracing.otlp_endpoint = endpoint.to_string();
+            let config = RuntimeConfig {
+                process: invalid,
+                scenes: vec![scene("map", 7100)],
+                known_scenes: vec![],
+            };
+            assert!(validate_runtime_config(&config).is_err());
+        }
     }
 
     #[test]

@@ -1,0 +1,63 @@
+logging {
+  level = "info"
+}
+
+local.file_match "tiangz" {
+  path_targets = [
+    {
+      __path__ = "/var/log/tiangz/*.log*",
+      job      = "tiangz",
+    },
+  ]
+  sync_period = "5s"
+}
+
+loki.source.file "tiangz" {
+  targets    = local.file_match.tiangz.targets
+  forward_to = [loki.process.tiangz.receiver]
+}
+
+loki.process "tiangz" {
+  stage.json {
+    expressions = {
+      timestamp    = "timestamp",
+      level        = "level",
+      process      = "process",
+      service_name = "service_name",
+      category     = "category",
+      trace_id     = "trace_id",
+      span_id      = "span_id",
+    }
+  }
+
+  stage.timestamp {
+    source = "timestamp"
+    format = "RFC3339Nano"
+  }
+
+  // 仅稳定枚举进入索引；请求、玩家和Trace标识不得成为Loki label。
+  // Only bounded dimensions enter the index; request, player, and trace IDs must not become Loki labels.
+  stage.labels {
+    values = {
+      level        = "",
+      process      = "",
+      service_name = "",
+      category     = "",
+    }
+  }
+
+  stage.structured_metadata {
+    values = {
+      trace_id = "",
+      span_id  = "",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

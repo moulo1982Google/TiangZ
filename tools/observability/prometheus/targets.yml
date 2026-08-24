@@ -1,3 +1,8 @@
+- targets: ["host.docker.internal:7609"]
+  labels:
+    env: "local"
+    machine: "local"
+    process: "dungeon1"
 - targets: ["host.docker.internal:7605"]
   labels:
     env: "local"

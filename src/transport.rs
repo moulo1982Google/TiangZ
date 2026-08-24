@@ -19,6 +19,8 @@ const MAX_FRAME_LEN: usize = 1024 * 1024;
 const ACTOR_LOCATION_ENVELOPE_MSGCODE: u16 = 29_999;
 const ACTOR_LOCATION_ENVELOPE_HEADER_LEN: usize = 14;
 const ACTOR_LOCATION_BATCH_ENVELOPE_MSGCODE: u16 = 29_997;
+const TRACE_ENVELOPE_MSGCODE: u16 = 29_996;
+const TRACE_ENVELOPE_HEADER_LEN: usize = 27;
 const TARGET_INGRESS_OVERLOAD_MSGCODE: u16 = 29_998;
 const TARGET_INGRESS_OVERLOAD_FRAME_LEN: usize = 6;
 const TRANSPORT_QUEUE_CAPACITY: usize = 4096;
@@ -1301,6 +1303,12 @@ fn extract_rpc_id(frame: &[u8]) -> Result<u32, String> {
     }
 
     let msgcode = u16::from_be_bytes([frame[0], frame[1]]);
+    if msgcode == TRACE_ENVELOPE_MSGCODE {
+        if frame.len() < TRACE_ENVELOPE_HEADER_LEN + 2 {
+            return Err("trace envelope is truncated".to_string());
+        }
+        return extract_rpc_id(&frame[TRACE_ENVELOPE_HEADER_LEN..]);
+    }
     if msgcode == ACTOR_LOCATION_BATCH_ENVELOPE_MSGCODE {
         return Err("actor location batch is a one-way data frame".to_string());
     }
@@ -1339,6 +1347,11 @@ fn extract_rpc_id(frame: &[u8]) -> Result<u32, String> {
 }
 
 fn metric_msgcode(frame: &[u8]) -> u16 {
+    if frame.len() >= TRACE_ENVELOPE_HEADER_LEN + 2
+        && u16::from_be_bytes([frame[0], frame[1]]) == TRACE_ENVELOPE_MSGCODE
+    {
+        return metric_msgcode(&frame[TRACE_ENVELOPE_HEADER_LEN..]);
+    }
     if frame.len() >= ACTOR_LOCATION_ENVELOPE_HEADER_LEN + 2
         && u16::from_be_bytes([frame[0], frame[1]]) == ACTOR_LOCATION_ENVELOPE_MSGCODE
     {
@@ -1518,6 +1531,43 @@ mod tests {
         frame[2..10].copy_from_slice(&42_u64.to_le_bytes());
         frame[10..14].copy_from_slice(&77_u32.to_le_bytes());
         assert_eq!(extract_rpc_id(&frame).unwrap(), 77);
+    }
+
+    #[test]
+    fn trace_envelope_preserves_rpc_multiplexing_and_business_msgcode() {
+        let business = vec![0, 41, 0xd0, 0x05, 0x4d];
+        let mut frame = vec![0_u8; TRACE_ENVELOPE_HEADER_LEN];
+        frame[..2].copy_from_slice(&TRACE_ENVELOPE_MSGCODE.to_be_bytes());
+        frame[2] = 1;
+        frame[18] = 1;
+        frame.extend_from_slice(&business);
+
+        assert_eq!(extract_rpc_id(&frame).unwrap(), 77);
+        assert_eq!(metric_msgcode(&frame), 41);
+    }
+
+    #[test]
+    fn trace_envelope_preserves_actor_location_rpc_id() {
+        let mut actor = vec![0_u8; ACTOR_LOCATION_ENVELOPE_HEADER_LEN + 2];
+        actor[..2].copy_from_slice(&ACTOR_LOCATION_ENVELOPE_MSGCODE.to_be_bytes());
+        actor[2..10].copy_from_slice(&42_u64.to_le_bytes());
+        actor[10..14].copy_from_slice(&77_u32.to_le_bytes());
+        actor[14..16].copy_from_slice(&41_u16.to_be_bytes());
+        let mut frame = vec![0_u8; TRACE_ENVELOPE_HEADER_LEN];
+        frame[..2].copy_from_slice(&TRACE_ENVELOPE_MSGCODE.to_be_bytes());
+        frame[2] = 1;
+        frame[18] = 1;
+        frame.extend_from_slice(&actor);
+
+        assert_eq!(extract_rpc_id(&frame).unwrap(), 77);
+        assert_eq!(metric_msgcode(&frame), 41);
+    }
+
+    #[test]
+    fn rejects_truncated_trace_envelope() {
+        let mut frame = vec![0_u8; TRACE_ENVELOPE_HEADER_LEN + 1];
+        frame[..2].copy_from_slice(&TRACE_ENVELOPE_MSGCODE.to_be_bytes());
+        assert!(extract_rpc_id(&frame).unwrap_err().contains("truncated"));
     }
 
     #[test]

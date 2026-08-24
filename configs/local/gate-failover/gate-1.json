@@ -2,8 +2,9 @@
   "process": {
     "name": "gate_failover_1",
     "identity": { "originServerId": 1, "workerId": 4 },
+    "logging": { "level": "info", "format": "json", "console": true, "file": { "enabled": true, "directory": "logs", "rotation": "daily" } },
     "lifecycle": { "restart": { "maxAttempts": 5, "windowMs": 600000, "backoffMs": 5000 } },
-    "observability": { "health": { "ip": "127.0.0.1", "port": 7605 } }
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7605 }, "tracing": { "enabled": true, "sampleRate": 1, "otlpEndpoint": "http://127.0.0.1:4318/v1/traces" } }
   },
   "scenes": [{ "name": "gate_1", "sceneType": "Gate", "ip": "127.0.0.1", "port": 7201 }],
   "knownSceneFiles": ["known-scenes.json"]

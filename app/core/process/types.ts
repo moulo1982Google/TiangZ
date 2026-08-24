@@ -41,6 +41,8 @@ import {
   type LatencyRecorderOptions,
 } from "../metrics/latency";
 import { SceneCallContext } from "./context";
+import { decodeTraceEnvelope, TraceEnvelopeMsgCode } from "./TraceEnvelope";
+import { RunWithTraceContext } from "../telemetry/TraceContext";
 import { SceneMessageHelper } from "./SceneMessageHelper";
 import {
   type ActorLocationTarget,
@@ -151,6 +153,13 @@ export interface ProcessSchedulingConfig {
 export interface ProcessObservabilityConfig {
   latency?: LatencyRecorderOptions;
   nativeData?: ProcessNativeDataObservabilityConfig;
+  tracing?: ProcessTracingObservabilityConfig;
+}
+
+export interface ProcessTracingObservabilityConfig {
+  enabled?: boolean;
+  sampleRate?: number;
+  otlpEndpoint?: string;
 }
 
 export interface ProcessNativeDataObservabilityConfig {
@@ -1491,12 +1500,39 @@ export abstract class EntryScene extends Scene {
     if (frame.length < 2) return this.registry.handle(frame, context);
 
     const msgcode = readU16BE(frame, 0);
+    if (msgcode === TraceEnvelopeMsgCode) {
+      try {
+        const envelope = decodeTraceEnvelope(frame);
+        const tracedContext: ProtocolContext = {
+          ...context,
+          traceId: envelope.context.traceId,
+          spanId: envelope.context.spanId,
+          traceSampled: envelope.context.sampled,
+          logger: context.logger?.child({
+            traceId: envelope.context.traceId,
+            spanId: envelope.context.spanId,
+          }),
+        };
+        return RunWithTraceContext(envelope.context, () =>
+          this.routeOrHandleFrame(envelope.frame, tracedContext));
+      } catch (error) {
+        this.registry.reportSystemError(
+          SystemErrCode.MalformedFrame,
+          `invalid trace envelope: ${errorText(error)}`,
+          context,
+        );
+        return undefined;
+      }
+    }
     if (msgcode === ActorLocationEnvelopeMsgCode) {
       try {
         const envelope = decodeActorLocationEnvelope(frame);
         return this.actorRegistry.handle(envelope.frame, {
           actorInstanceId: envelope.instanceId,
           actorLocationFenceToken: envelope.fenceToken,
+          traceId: context.traceId,
+          spanId: context.spanId,
+          traceSampled: context.traceSampled,
           logger: context.logger,
         });
       } catch (error) {
@@ -1701,6 +1737,9 @@ export abstract class EntryScene extends Scene {
       const result = this.actorRegistry.handle(entry.frame, {
         actorInstanceId: entry.instanceId,
         actorLocationFenceToken: entry.fenceToken,
+        traceId: context.traceId,
+        spanId: context.spanId,
+        traceSampled: context.traceSampled,
         logger: context.logger,
       });
       if (isPromiseLike(result)) pending.push(Promise.resolve(result));

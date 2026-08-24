@@ -7,6 +7,10 @@ import { SystemErrCode } from "./SystemErrCode";
 import { nowMs } from "../metrics/latency";
 import { CoreLogger } from "../logging/Logger";
 import type { Logger } from "../logging/Logger";
+import {
+  RunTraceSpan,
+  type TraceContextValue,
+} from "../telemetry/TraceContext";
 
 export interface Route<TReq, TResp> {
   responseCode: number;
@@ -26,6 +30,9 @@ export interface ProtocolContext {
   msgcode?: number;
   rpcId?: number;
   requestId?: string;
+  traceId?: string;
+  spanId?: string;
+  traceSampled?: boolean;
   logger?: Logger;
 }
 
@@ -172,12 +179,23 @@ export class ProtocolRegistry {
       );
     }
 
-    const requestContext = this.bindContext(context, msgcode, rpcId);
+    let requestContext = this.bindContext(context, msgcode, rpcId);
 
     let response: MaybePromise<unknown>;
     const handlerStartedAt = this.metrics ? nowMs() : 0;
     try {
-      response = route.handle(request, requestContext);
+      response = RunTraceSpan(
+        {
+          name: `rpc ${msgcode}`,
+          kind: "server",
+          parent: protocolTraceContext(requestContext),
+          attributes: traceAttributes(requestContext),
+        },
+        (trace) => {
+          requestContext = this.bindTraceContext(requestContext, trace);
+          return route.handle!(request, requestContext);
+        },
+      );
     } catch (error) {
       if (this.metrics) {
         this.metrics.record("protocol.handler", nowMs() - handlerStartedAt, msgcode);
@@ -253,7 +271,7 @@ export class ProtocolRegistry {
     route: MessageRoute<unknown>,
     context: ProtocolContext,
   ): MaybePromise<undefined> {
-    const requestContext = this.bindContext(context, msgcode);
+    let requestContext = this.bindContext(context, msgcode);
     let message: unknown;
     const decodeStartedAt = this.metrics ? nowMs() : 0;
     try {
@@ -286,7 +304,18 @@ export class ProtocolRegistry {
 
     const handlerStartedAt = this.metrics ? nowMs() : 0;
     try {
-      const result = route.handle(message, requestContext);
+      const result = RunTraceSpan(
+        {
+          name: `message ${msgcode}`,
+          kind: "server",
+          parent: protocolTraceContext(requestContext),
+          attributes: traceAttributes(requestContext),
+        },
+        (trace) => {
+          requestContext = this.bindTraceContext(requestContext, trace);
+          return route.handle!(message, requestContext);
+        },
+      );
       if (isPromiseLike(result)) {
         return Promise.resolve(result).then(
           () => {
@@ -424,11 +453,30 @@ export class ProtocolRegistry {
         : { actorId: context.actorInstanceId }),
       ...(msgcode === undefined ? {} : { msgcode }),
       ...(rpcId === undefined || rpcId === 0 ? {} : { rpcId }),
+      ...(context.traceId === undefined ? {} : { traceId: context.traceId }),
+      ...(context.spanId === undefined ? {} : { spanId: context.spanId }),
       requestId,
     };
     return {
       ...context,
       ...fields,
+      logger: context.logger?.child(fields),
+    };
+  }
+
+  private bindTraceContext(
+    context: ProtocolContext,
+    trace: TraceContextValue | undefined,
+  ): ProtocolContext {
+    if (!trace) return context;
+    const fields = {
+      traceId: trace.traceId,
+      spanId: trace.spanId,
+    };
+    return {
+      ...context,
+      ...fields,
+      traceSampled: trace.sampled,
       logger: context.logger?.child(fields),
     };
   }
@@ -440,6 +488,25 @@ export class ProtocolRegistry {
   ): void {
     this.outcome?.({ kind, code, context });
   }
+}
+
+function protocolTraceContext(context: ProtocolContext): TraceContextValue | undefined {
+  if (!context.traceId || !context.spanId) return undefined;
+  return {
+    traceId: context.traceId,
+    spanId: context.spanId,
+    sampled: context.traceSampled === true,
+  };
+}
+
+function traceAttributes(context: ProtocolContext): Readonly<Record<string, unknown>> {
+  return {
+    ...(context.connectionId === undefined ? {} : { "client.connection.id": context.connectionId }),
+    ...(context.actorInstanceId === undefined ? {} : { "actor.instance.id": context.actorInstanceId }),
+    ...(context.msgcode === undefined ? {} : { "rpc.msgcode": context.msgcode }),
+    ...(context.rpcId === undefined ? {} : { "rpc.id": context.rpcId }),
+    ...(context.requestId === undefined ? {} : { "request.id": context.requestId }),
+  };
 }
 
 function allocateRequestId(): string {

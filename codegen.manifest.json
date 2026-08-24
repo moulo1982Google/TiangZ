@@ -397,7 +397,7 @@
         "native_data/mmorpg/Item.native": "b8115687e4b6919be0dc310fe9833f05f4506e644dd214999acbca68a9233e40",
         "native_data/mmorpg/MapOps.native": "8746e7888da1d24b76b6222c515560e4942ecf554a021b048659d6c9abd0d81d",
         "native_data/mmorpg/Unit.native": "37de6d00dcc3b2e81b987cfb32ef81600e974e7c27f18ac8490945b9a861ef36",
-        "package.json": "621b609bf49b41935ea973bad944e7e4b7164398fb92d528d8ab4f7a6f9a586a",
+        "package.json": "9344c2a19de3636d92e42b0d05f3d7d46e68499a72ec4c7fdaddc77d771a3899",
         "tools/codegen_manifest.mjs": "a0e91677761ec1d276d45beeca5f2dd0bd8a0451f431cdddefbc23fc66d2f530",
         "tools/codegen_native_data.mjs": "2d2a900111ec146a98db232cf9dd5f61efcb0f8ade3dcdba21ffd0fa06b11a0b"
       },

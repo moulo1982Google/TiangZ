@@ -17,6 +17,7 @@ import type {
 } from "./types";
 import { CoreLogger } from "../logging/Logger";
 import { CoroutineLockSystem } from "../runtime/CoroutineLockSystem";
+import { ConfigureTraceContext } from "../telemetry/TraceContext";
 
 export interface ProcessUpdateResult {
   outbound: OutboundBatch[];
@@ -53,6 +54,7 @@ export class ProcessRuntime implements LocalSceneRouter {
   constructor(private readonly config: ProcessRuntimeConfig) {
     this.entryScenes = [];
     this.maxIngressFramesPerPump = resolveMaxEventsPerUpdate(config.process.scheduling);
+    ConfigureTraceContext(config.process.observability?.tracing);
     let processHost: ProcessHost | undefined;
     try {
       InitializeGameSingletons(config.process.game, config.process.identity);

@@ -1,3 +1,5 @@
+import { CurrentTraceContext } from "../telemetry/TraceContext";
+
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 export type LogCategory = "framework" | "business" | "application";
 
@@ -68,7 +70,12 @@ export class Logger {
       __hostLogMinLevel?: number;
     };
     if (levelCodes[level] < (globals.__hostLogMinLevel ?? 0)) return;
-    const attributes = { ...this.boundFields, ...fields };
+    const trace = CurrentTraceContext();
+    const attributes = {
+      ...(trace ? { traceId: trace.traceId, spanId: trace.spanId } : {}),
+      ...this.boundFields,
+      ...fields,
+    };
     const category = attributes.category ?? "application";
     delete (attributes as { category?: LogCategory }).category;
     const hostLog = globals.__hostLog;

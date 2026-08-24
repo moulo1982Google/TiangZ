@@ -5,6 +5,7 @@
       "originServerId": 1,
       "workerId": 4
     },
+    "logging": { "level": "info", "format": "json", "console": true, "file": { "enabled": true, "directory": "logs", "rotation": "daily" } },
     "observability": {
       "health": {
         "ip": "127.0.0.1",
@@ -13,7 +14,8 @@
       "latency": {
         "enabled": true,
         "sampleRate": 10
-      }
+      },
+      "tracing": { "enabled": true, "sampleRate": 10, "otlpEndpoint": "http://127.0.0.1:4318/v1/traces" }
     }
   },
   "scenes": [

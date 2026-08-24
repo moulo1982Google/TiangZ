@@ -7,6 +7,14 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-24：Loki、Tempo与跨进程Trace
+
+- 本地Compose增加Loki、Tempo和Alloy，Grafana统一连接Prometheus、日志和Trace；日志到Trace、Trace到日志的关联已经配置。
+- Core使用内部Trace Envelope在Scene与ActorLocation链路传播固定宽度`traceId/spanId`，不修改业务Protobuf或客户端SDK；Rust OpenTelemetry使用独立批处理线程向OTLP HTTP导出采样Span。
+- 结构化日志保留Trace字段，但Loki只索引有限枚举，链路ID使用structured metadata，避免高基数索引膨胀。
+- `test:observability:faults`真实强杀Gate和动态副本MapHost，已验证故障事件进入Loki，同一Tempo Trace跨Gate、Location、静态MapHost和动态副本MapHost四个服务。
+- 当前Compose是本地验收栈，不代表生产HA；认证、Alertmanager通知、机器Exporter、长期存储和跨机器Agent仍需部署层补齐。
+
 ## 2026-08-22：动态副本安全回退与TLS
 
 - MapHost向Manager与Location使用同一个generation。动态MapInstance每5秒续租、15秒过期；Manager记录失联宿主和lost副本，同requestId不静默重建。

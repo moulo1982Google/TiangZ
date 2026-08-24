@@ -25,7 +25,7 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 | `scheduling` | object? | Process 事件批处理与空闲 Tick 策略，默认 `adaptive` |
 | `lifecycle` | object? | 进程优雅停机配置；默认最多等待 10000ms |
 | `persistence` | object? | Process持久化连接；当前可选配置独立DBProxy |
-| `observability` | object? | 延迟采样、健康检查和Native Store诊断配置 |
+| `observability` | object? | 延迟采样、健康检查、分布式追踪和Native Store诊断配置 |
 | `debug` | object? | 该 V8 的 Inspector 配置 |
 
 `debug` 支持 `inspectorIp`、`inspectorPort`、`breakOnStart`、`allowRemote`。
@@ -80,6 +80,22 @@ Runtime配置使用严格字段校验。根对象、`process`和各嵌套配置�
 `staleAfterMs` 默认 `15000`，应至少覆盖两个 5 秒指标采样周期。单机 Docker Desktop 可以继续绑定 `127.0.0.1`；远程 Prometheus 抓取时必须绑定机器管理 IP 或 `0.0.0.0`，并通过防火墙只允许监控网段访问。`StartMachine.json` 写远程 `innerIp` 但 Process 仍绑定 loopback 时，Target 生成器会拒绝生成错误配置。
 
 健康检查继续表达生命周期状态；`/metrics` 提供基础生命周期指标，不承载业务级依赖状态，也不能代替业务级健康策略。
+
+`observability.tracing`可选配置跨Process Trace导出：
+
+```json
+{
+  "observability": {
+    "tracing": {
+      "enabled": true,
+      "sampleRate": 10,
+      "otlpEndpoint": "http://127.0.0.1:4318/v1/traces"
+    }
+  }
+}
+```
+
+`sampleRate`表示每N条根链路采样一条Span，范围为1到1000000；默认100。`otlpEndpoint`必须是完整的HTTP或HTTPS OTLP trace路径。该配置不可热更；Core通过内部Trace Envelope传播上下文，不改变业务Protobuf与客户端SDK。完整观测栈和验收方式见[可观测性与链路耗时](observability.md)。
 
 正式Hotfix操作入口通过生命周期配置显式启用：
 

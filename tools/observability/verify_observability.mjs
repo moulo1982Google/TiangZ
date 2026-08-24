@@ -41,6 +41,8 @@ try {
   }
   verifyDashboard(JSON.parse(generated));
   verifyPrometheusFiles();
+  verifySignalStack();
+  verifyTracingConfigs(splitStartup);
   console.log("[observability] assets verified");
 } finally {
   rmSync(temporary, { recursive: true, force: true });
@@ -124,5 +126,51 @@ function verifyPrometheusFiles() {
   }
   if ((rules.match(/^        expr: .+$/gm) ?? []).length !== alerts.length) {
     throw new Error("Every Prometheus alert must define a non-empty expr");
+  }
+}
+
+/** 验证日志、Trace和Grafana关联配置同时存在且不会把Trace ID做成索引标签。 / Verifies logs, traces, and Grafana correlation are wired without indexing trace IDs as labels. */
+function verifySignalStack() {
+  const compose = readFileSync(path.resolve(root, "tools/observability/docker-compose.yml"), "utf8");
+  const alloy = readFileSync(path.resolve(root, "tools/observability/alloy/config.alloy"), "utf8");
+  const loki = readFileSync(path.resolve(root, "tools/observability/loki/loki.yml"), "utf8");
+  const tempo = readFileSync(path.resolve(root, "tools/observability/tempo/tempo.yml"), "utf8");
+  const datasources = readFileSync(path.resolve(root, "tools/observability/grafana/provisioning/datasources/prometheus.yml"), "utf8");
+  for (const service of ["loki:", "tempo:", "alloy:", "grafana:"]) {
+    if (!compose.includes(`  ${service}`)) throw new Error(`Compose missing observability service ${service}`);
+  }
+  if (!compose.includes("../../logs:/var/log/tiangz:ro")) throw new Error("Alloy log volume is missing");
+  if (!alloy.includes("stage.structured_metadata") || !alloy.includes("trace_id = \"\"")) {
+    throw new Error("Alloy must retain trace_id as structured metadata");
+  }
+  const labelsBlock = alloy.match(/stage\.labels\s*\{[\s\S]*?\n\s*\}/)?.[0] ?? "";
+  if (labelsBlock.includes("trace_id") || labelsBlock.includes("span_id")) {
+    throw new Error("Trace and span IDs must not be Loki labels");
+  }
+  if (!loki.includes("allow_structured_metadata: true")) throw new Error("Loki structured metadata is disabled");
+  if (!tempo.includes("endpoint: 0.0.0.0:4318")) throw new Error("Tempo OTLP HTTP receiver is missing");
+  for (const uid of ["uid: prometheus", "uid: loki", "uid: tempo"]) {
+    if (!datasources.includes(uid)) throw new Error(`Grafana datasource missing ${uid}`);
+  }
+  if (!datasources.includes("tracesToLogsV2") || !datasources.includes("derivedFields")) {
+    throw new Error("Grafana log/trace bidirectional correlation is missing");
+  }
+}
+
+/** 拆分开发拓扑必须产出JSON文件日志并向本机Tempo采样，保证一键启动后可查询。 / Split development topology must emit JSON files and sampled traces for one-command inspection. */
+function verifyTracingConfigs(startupFile) {
+  const startup = JSON.parse(readFileSync(startupFile, "utf8"));
+  const directory = path.dirname(startupFile);
+  const files = new Set(startup.machines.flatMap((machine) => machine.processes));
+  for (const relative of files) {
+    const config = JSON.parse(readFileSync(path.resolve(directory, relative), "utf8"));
+    const logging = config.process?.logging;
+    const tracing = config.process?.observability?.tracing;
+    if (logging?.format !== "json" || logging?.file?.enabled !== true) {
+      throw new Error(`${relative} must enable JSON file logging for Loki`);
+    }
+    if (tracing?.enabled !== true || tracing?.sampleRate < 1 || !tracing?.otlpEndpoint) {
+      throw new Error(`${relative} must enable sampled OTLP tracing for Tempo`);
+    }
   }
 }

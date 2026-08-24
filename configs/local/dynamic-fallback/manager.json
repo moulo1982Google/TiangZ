@@ -2,8 +2,9 @@
   "process": {
     "name": "dynamic_fallback_manager",
     "identity": { "originServerId": 1, "workerId": 1 },
+    "logging": { "level": "info", "format": "json", "console": true, "file": { "enabled": true, "directory": "logs", "rotation": "daily" } },
     "lifecycle": { "restart": { "maxAttempts": 5, "windowMs": 600000, "backoffMs": 3000 } },
-    "observability": { "health": { "ip": "127.0.0.1", "port": 7602 } }
+    "observability": { "health": { "ip": "127.0.0.1", "port": 7602 }, "tracing": { "enabled": true, "sampleRate": 1, "otlpEndpoint": "http://127.0.0.1:4318/v1/traces" } }
   },
   "scenes": [
     { "name": "login_mgr", "sceneType": "LoginMgr", "ip": "127.0.0.1", "port": 7000 },

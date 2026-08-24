@@ -105,13 +105,29 @@ fn op_host_log(
     #[string] message: String,
     #[string] attributes: String,
 ) {
+    let parsed_attributes = serde_json::from_str::<serde_json::Value>(&attributes).ok();
+    let trace_id = parsed_attributes
+        .as_ref()
+        .and_then(|value| value.get("traceId"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let span_id = parsed_attributes
+        .as_ref()
+        .and_then(|value| value.get("spanId"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let process = crate::logging::process_name();
+    let service_name = format!("tiangz-{process}");
     macro_rules! emit {
         ($macro:ident) => {
             tracing::$macro!(
                 target: "tiangz::typescript",
-                process = crate::logging::process_name(),
+                process,
+                service_name = %service_name,
                 source_target = %source_target,
                 category = %category,
+                trace_id,
+                span_id,
                 attributes = %attributes,
                 "{message}"
             )
@@ -473,7 +489,9 @@ deno_core::extension!(
         op_host_push_outbound_packed,
         op_host_close_connection,
         op_host_register_scene_route,
-        op_host_submit_scene_operations
+        op_host_submit_scene_operations,
+        crate::telemetry::op_host_start_trace_span,
+        crate::telemetry::op_host_end_trace_span
     ],
 );
 
@@ -536,6 +554,14 @@ pub fn create_runtime(inspector: bool, host_log_min_level: u8) -> Result<JsRunti
           );
         globalThis.__hostSubmitSceneOperations = (packed) =>
           core.ops.op_host_submit_scene_operations(packed);
+        globalThis.__hostSetPromiseHooks = (init, before, after, resolve) =>
+          core.setPromiseHooks(init, before, after, resolve);
+        globalThis.__hostStartTraceSpan = (name, kind, parentTraceId, parentSpanId, attributes) =>
+          core.ops.op_host_start_trace_span(
+            String(name), String(kind), String(parentTraceId), String(parentSpanId), String(attributes),
+          );
+        globalThis.__hostEndTraceSpan = (handle, failed, detail) =>
+          core.ops.op_host_end_trace_span(u32(handle, "trace handle"), Boolean(failed), String(detail));
         globalThis.__etsDispatchHostEvents = () =>
           globalThis.__etsPushHostEventsBinary(globalThis.__hostTakeEventBatch());
         const consoleWrite = (level, args) => {

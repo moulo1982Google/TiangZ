@@ -24,6 +24,7 @@ mod logging;
 mod native_data;
 mod process;
 mod shutdown;
+mod telemetry;
 mod transport;
 mod transport_backend;
 mod version;
@@ -52,6 +53,14 @@ async fn main() -> Result<()> {
 
     let config = load_runtime_config(&resolved_config)?;
     let _logging = logging::init(&root, &config.process.name, &config.process.logging)?;
+    let _telemetry = telemetry::init(
+        &config.process.name,
+        config
+            .process
+            .observability
+            .as_ref()
+            .and_then(|observability| observability.tracing.as_ref()),
+    )?;
     run_runtime_config(&root, &resolved_config, config).await
 }
 

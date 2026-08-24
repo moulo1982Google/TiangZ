@@ -2,9 +2,9 @@
 
 Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这个采样点生成和 JSON 序列化，普通 Tick 不承担 metrics JSON 开销。链路耗时在 TypeScript Core 内聚合为直方图，只输出统计结果，不逐条打印消息。
 
-## Prometheus 与 Grafana（3.10.4）
+## Metrics、Logs 与 Traces（3.10.4）
 
-这是用于本机调试和拆分 Process 部署的最小监控栈。每个 TiangZ Process 独立暴露 `/metrics`，Prometheus 负责抓取全部实际运行的 Process，Grafana 再按环境、机器和 Process 聚合。不要在业务层新增 Observer Scene 来转发指标；它会引入单点、额外队列和错误的指标归属。
+这是用于本机调试和拆分 Process 部署的最小监控栈。每个 TiangZ Process 独立暴露 `/metrics`，Prometheus 负责抓取全部实际运行的 Process；Alloy采集JSON文件日志写入Loki；Process通过OTLP HTTP把采样Span写入Tempo；Grafana统一查询三类信号。不要在业务层新增 Observer Scene 来转发指标；它会引入单点、额外队列和错误的指标归属。
 
 ### 启动
 
@@ -41,7 +41,7 @@ iwr http://127.0.0.1:7606/live
 
 确认 `State: UP` 后，打开面板看曲线：
 
-`http://127.0.0.1:3000/d/tiangz-process-overview/tiangz-process-overview`
+`http://127.0.0.1:3001/d/tiangz-process-overview/tiangz-process-overview`
 
 ### 停止
 
@@ -61,7 +61,10 @@ docker compose down -v --remove-orphans
 
 - Prometheus：`http://127.0.0.1:9090`
 - Prometheus 告警：`http://127.0.0.1:9090/alerts`
-- Grafana：`http://127.0.0.1:3000`
+- Loki：`http://127.0.0.1:3100/ready`
+- Tempo：`http://127.0.0.1:3200/ready`
+- Alloy：`http://127.0.0.1:12345`
+- Grafana：`http://127.0.0.1:3001`
   - 默认账号：`admin`
   - 默认密码：`admin`
 
@@ -122,9 +125,9 @@ Runtime 每次发布 5 秒观测快照时刷新心跳，默认超过 `15000ms` �
 
 探针使用 HTTP 200/503 或文本快照，不执行数据库或其他远程依赖调用，因此不会把探针流量带入业务 mailbox。`/metrics` 已覆盖 Process、Scene、游戏循环、NativeData、Inner Transport 和延迟 Histogram；结构化日志用于保留带上下文的离散事件，二者职责不同。
 
-## 结构化日志
+## 结构化日志与分布式追踪
 
-Rust 使用 `tracing` 作为统一日志门面；TypeScript 的 `Logger` 通过 deno_core op 进入同一出口。开发环境默认输出易读文本，生产环境建议在 `process.logging` 中选择 JSON 和滚动文件，再由 Vector 或同类 Agent 采集到 Loki。
+Rust 使用 `tracing` 作为统一日志门面；TypeScript 的 `Logger` 通过 deno_core op 进入同一出口。开发环境默认输出易读文本；需要Loki关联时，在`process.logging`中选择JSON和滚动文件，由Alloy采集到Loki。拆分进程本地配置已经采用这一模式。
 
 业务代码优先使用 Scene/Actor 上下文中已经绑定好的 Logger：
 
@@ -133,7 +136,35 @@ this.ctx.logger.info("玩家进入地图", { account, unitId, mapId });
 this.ctx.logger.error("使用道具失败", { unitId, itemId, error });
 ```
 
-固定字段包括 `process/scene/sceneType/actorId/connectionId/rpcId/msgcode/requestId/unitId`，其他业务字段会进入 `attributes`。协议分发时会自动绑定 `connectionId/actorId/msgcode/rpcId/requestId`，Handler 可直接使用 `context.logger`，不需要重复填写这些字段。`requestId` 当前只保证单个 Process/V8 生命周期内可区分请求，不等同于跨进程 Trace；真正的 `traceId` 传播留给后续内部协议设计。`Error` 会保留名称、消息和堆栈。旧的 `console.log/error` 仍可用并会进入统一出口，但缺少 Scene/Actor 绑定字段，只用于兼容旧代码。
+固定字段包括 `process/scene/sceneType/actorId/connectionId/rpcId/msgcode/requestId/unitId/traceId/spanId`，其他业务字段会进入 `attributes`。协议分发时会自动绑定连接、Actor、协议和Trace上下文，Handler直接使用`context.logger`，不需要手工传递链路ID。`requestId`仍是业务请求或幂等标识；`traceId`用于跨Process诊断，二者不能互相替代。`Error`会保留名称、消息和堆栈。旧的`console.log/error`仍可用并会进入统一出口，但缺少Scene/Actor绑定字段，只用于兼容旧代码。
+
+可在`process.observability.tracing`配置Trace导出：
+
+```json
+{
+  "observability": {
+    "tracing": {
+      "enabled": true,
+      "sampleRate": 10,
+      "otlpEndpoint": "http://127.0.0.1:4318/v1/traces"
+    }
+  }
+}
+```
+
+- `sampleRate=10`表示每10条根链路采样1条Span，范围为1到1000000；`1`用于确定性故障验收，不应直接照搬到高流量生产环境。
+- 开启Tracing后，每条进入Core链路都会获得固定宽度`traceId/spanId`并写入结构化日志；只有命中采样的Span会导出到Tempo。
+- 跨Scene和ActorLocation调用由Core内部Trace Envelope传播上下文。该外壳不属于业务Protobuf，不生成客户端SDK，也不能由业务Handler直接构造或解析。
+- `trace_id/span_id`在Loki中属于structured metadata，不是索引label。玩家ID、请求ID和Trace ID都禁止成为Prometheus或Loki的高基数标签。
+- 导出器失败只影响诊断信号，不改变RPC、消息或业务事务结果；Span批量导出在V8业务线程之外执行。
+
+Grafana Explore中选择Loki后，可以点击日志的`TraceID`进入Tempo；在Tempo中也可以反查同一Span时间窗口内的日志。真实故障验收命令为：
+
+```powershell
+npm run test:observability:faults
+```
+
+它会真实停止Gate和动态副本MapHost，验证故障事件进入Loki，并要求至少一条Tempo Trace跨两个TiangZ服务。该命令只面向本地测试拓扑，不应连接生产数据库或生产进程。
 
 Inner Transport 的 route 维度来自协议帧的 msgcode、发送方、目标方、调用/单向流量类别以及队列阶段（`manager_queue`、`connection_queue`、`call_writer_queue`、`send_writer_queue`、`target_ingress_queue`，超时还包括 `before_send`、`connection`、`pending_call`）。`target_ingress_queue`表示目标Process的控制流保留队列已满，宿主已按原rpcId立即拒绝，不应同时增长同一次调用的timeout。为避免异常路由造成指标基数无限增长，每个进程最多保留 4096 个维度组合；超过上限的新组合只计入总量，不创建新的标签序列。
 

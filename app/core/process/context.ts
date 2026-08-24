@@ -15,6 +15,8 @@ import {
   type ActorLocationTarget,
 } from "./ActorLocation";
 import { Logger } from "../logging/Logger";
+import { CurrentTraceContext, RunTraceSpan } from "../telemetry/TraceContext";
+import { encodeTraceEnvelope } from "./TraceEnvelope";
 
 export interface SceneCallOptions { timeoutMs?: number; }
 export type SceneSendOptions = SceneCallOptions;
@@ -170,30 +172,46 @@ export class SceneCallContext {
   ): Promise<Uint8Array> {
     const startedAt = this.latencies ? nowMs() : 0;
     const isLocal = this.localRouter.hasLocalScene(target.name);
+    const msgcode = frame.length >= 2 ? readU16BE(frame, 0) : undefined;
     try {
-      if (!isLocal) {
-        return await callRemoteScene(
-          this.self,
-          target,
-          frame,
-          options.timeoutMs ?? 5000,
-        );
-      }
-      const localCall = this.localRouter.callLocalScene(
-        this.self.name,
-        target.name,
-        frame,
-      );
-      if (options.timeoutMs === undefined) return await localCall;
-      const timeoutMs = Math.max(1, Math.min(options.timeoutMs, 0xffff_ffff));
-      return await Promise.race([
-        localCall,
-        sleepHost(timeoutMs).then(() => {
-          throw new Error(
-            `local scene call to ${target.name} timed out after ${timeoutMs}ms`,
+      return await RunTraceSpan(
+        {
+          name: `scene.call ${this.self.name} -> ${target.name}`,
+          kind: "client",
+          parent: CurrentTraceContext(),
+          attributes: {
+            "scene.source": this.self.name,
+            "scene.target": target.name,
+            ...(msgcode === undefined ? {} : { "rpc.msgcode": msgcode }),
+          },
+        },
+        async (trace) => {
+          const routedFrame = trace ? encodeTraceEnvelope(frame, trace) : frame;
+          if (!isLocal) {
+            return await callRemoteScene(
+              this.self,
+              target,
+              routedFrame,
+              options.timeoutMs ?? 5000,
+            );
+          }
+          const localCall = this.localRouter.callLocalScene(
+            this.self.name,
+            target.name,
+            routedFrame,
           );
-        }),
-      ]);
+          if (options.timeoutMs === undefined) return await localCall;
+          const timeoutMs = Math.max(1, Math.min(options.timeoutMs, 0xffff_ffff));
+          return await Promise.race([
+            localCall,
+            sleepHost(timeoutMs).then(() => {
+              throw new Error(
+                `local scene call to ${target.name} timed out after ${timeoutMs}ms`,
+              );
+            }),
+          ]);
+        },
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new RpcError(
@@ -207,7 +225,7 @@ export class SceneCallContext {
         this.latencies.record(
           isLocal ? "scene.call.local" : "scene.call.remote",
           nowMs() - startedAt,
-          frame.length >= 2 ? readU16BE(frame, 0) : undefined,
+          msgcode,
         );
       }
     }
@@ -267,22 +285,36 @@ export class SceneCallContext {
       );
     };
     try {
-      const result = isLocal
-        ? this.localRouter.sendLocalScene(this.self.name, target.name, frame)
-        : sendRemoteScene(this.self, target, frame, options.timeoutMs ?? 5000);
-      if (isPromiseLike(result)) {
-        return result.then(
-          () => {
-            finish();
+      return RunTraceSpan(
+        {
+          name: `scene.send ${this.self.name} -> ${target.name}`,
+          kind: "client",
+          parent: CurrentTraceContext(),
+          attributes: {
+            "scene.source": this.self.name,
+            "scene.target": target.name,
+            ...(frame.length < 2 ? {} : { "rpc.msgcode": readU16BE(frame, 0) }),
           },
-          (error) => {
-            finish();
-            throw mapError(error);
-          },
-        );
-      }
-      finish();
-      return;
+        },
+        (trace) => {
+          const routedFrame = trace ? encodeTraceEnvelope(frame, trace) : frame;
+          const result = isLocal
+            ? this.localRouter.sendLocalScene(this.self.name, target.name, routedFrame)
+            : sendRemoteScene(this.self, target, routedFrame, options.timeoutMs ?? 5000);
+          if (isPromiseLike(result)) {
+            return result.then(
+              () => {
+                finish();
+              },
+              (error) => {
+                finish();
+                throw mapError(error);
+              },
+            );
+          }
+          finish();
+        },
+      );
     } catch (error) {
       finish();
       throw mapError(error);

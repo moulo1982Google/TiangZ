@@ -11,13 +11,56 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
 
+  loki:
+    image: grafana/loki:3.5.3
+    container_name: tiangz-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+
+  tempo:
+    image: grafana/tempo:2.8.2
+    container_name: tiangz-tempo
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+    command:
+      - -config.file=/etc/tempo/tempo.yml
+
+  alloy:
+    image: grafana/alloy:v1.10.2
+    container_name: tiangz-alloy
+    depends_on:
+      - loki
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ../../logs:/var/log/tiangz:ro
+      - alloy-data:/var/lib/alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy
+      - /etc/alloy/config.alloy
+
   grafana:
-    image: grafana/grafana:11.3.0
+    image: grafana/grafana:12.1.1
     container_name: tiangz-grafana
     depends_on:
       - prometheus
+      - loki
+      - tempo
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -27,4 +70,7 @@ services:
 
 volumes:
   prometheus-data:
+  loki-data:
+  tempo-data:
+  alloy-data:
   grafana-data:

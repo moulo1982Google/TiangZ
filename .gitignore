@@ -9,6 +9,7 @@
 /tmp_native_*.png
 /tmp_native_frames_*/
 /temp/
+/logs/
 /client_demo/cocos_client2D_3.8.6/temp/
 /client_demo/cocos_client2D_3.8.6/library/
 /client_demo/ue_client3D_5.4.4/**/.vs/
