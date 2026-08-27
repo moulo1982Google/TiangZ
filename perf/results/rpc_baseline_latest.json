@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-07-13T05:16:41.090Z",
-  "runId": "20260713_131536",
+  "generatedAt": "2026-08-25T13:03:18.343Z",
+  "runId": "20260825_210217",
   "profile": "release",
   "machine": {
     "platform": "win32",
     "release": "10.0.26200",
     "arch": "x64",
-    "cpu": "13th Gen Intel(R) Core(TM) i7-13700F",
-    "logicalCpus": 24,
-    "memoryGB": 63.8,
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11300H @ 3.10GHz",
+    "logicalCpus": 8,
+    "memoryGB": 15.8,
     "node": "v24.11.1"
   },
   "target": {
@@ -33,62 +33,62 @@
   "results": [
     {
       "payloadBytes": 64,
-      "requests": 2523499,
-      "requestsPerSecond": 252350,
+      "requests": 1348995,
+      "requestsPerSecond": 134900,
       "errors": 0,
       "peakInFlight": 512,
-      "p50Ms": 2.009,
-      "p95Ms": 2.947,
-      "p99Ms": 3.337,
-      "maxMs": 16.596
+      "p50Ms": 3.7,
+      "p95Ms": 5.478,
+      "p99Ms": 6.617,
+      "maxMs": 22.77
     },
     {
       "payloadBytes": 256,
-      "requests": 2371361,
-      "requestsPerSecond": 237136,
+      "requests": 1267692,
+      "requestsPerSecond": 126769,
       "errors": 0,
       "peakInFlight": 512,
-      "p50Ms": 2.126,
-      "p95Ms": 3.032,
-      "p99Ms": 3.415,
-      "maxMs": 28.023
+      "p50Ms": 3.782,
+      "p95Ms": 6.398,
+      "p99Ms": 10.184,
+      "maxMs": 14.755
     },
     {
       "payloadBytes": 1024,
-      "requests": 2122245,
-      "requestsPerSecond": 212224,
+      "requests": 1155268,
+      "requestsPerSecond": 115527,
       "errors": 0,
       "peakInFlight": 512,
-      "p50Ms": 2.259,
-      "p95Ms": 3.594,
-      "p99Ms": 5.24,
-      "maxMs": 19.678
+      "p50Ms": 4.17,
+      "p95Ms": 6.782,
+      "p99Ms": 11.606,
+      "maxMs": 16.95
     },
     {
       "payloadBytes": 4096,
-      "requests": 1761875,
-      "requestsPerSecond": 176188,
+      "requests": 762553,
+      "requestsPerSecond": 76255,
       "errors": 0,
       "peakInFlight": 512,
-      "p50Ms": 2.679,
-      "p95Ms": 4.978,
-      "p99Ms": 6.315,
-      "maxMs": 13.916
+      "p50Ms": 6.629,
+      "p95Ms": 9.86,
+      "p99Ms": 12.031,
+      "maxMs": 20.38
     },
     {
       "payloadBytes": 16384,
-      "requests": 764925,
-      "requestsPerSecond": 76492,
+      "requests": 340157,
+      "requestsPerSecond": 34016,
       "errors": 0,
       "peakInFlight": 512,
-      "p50Ms": 5.861,
-      "p95Ms": 12.824,
-      "p99Ms": 17.78,
-      "maxMs": 311.341
+      "p50Ms": 15.335,
+      "p95Ms": 22.291,
+      "p99Ms": 26.114,
+      "maxMs": 43.069
     }
   ],
   "logs": {
-    "runtimeStdout": "perf\\results\\rpc_baseline_20260713_131536_runtime_stdout.log",
-    "runtimeStderr": "perf\\results\\rpc_baseline_20260713_131536_runtime_stderr.log"
+    "runtimeStdout": "perf\\results\\rpc_baseline_20260825_210217_runtime_stdout.log",
+    "runtimeStderr": "perf\\results\\rpc_baseline_20260825_210217_runtime_stderr.log"
   }
 }

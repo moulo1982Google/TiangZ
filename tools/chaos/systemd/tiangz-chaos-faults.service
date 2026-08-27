@@ -1,0 +1,17 @@
+[Unit]
+Description=TiangZ guarded seven-day fault injection plan
+After=network-online.target tiangz-chaos-game.service tiangz-dbproxy-soak.service
+Requires=tiangz-chaos-game.service tiangz-dbproxy-soak.service
+ConditionPathExists=/etc/tiangz/chaos-enabled
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tiangz-chaos
+ExecStart=/usr/local/bin/node /opt/tiangz-chaos/tools/chaos/run_external_fault_plan.mjs --execute --duration-hours 168 --warmup-minutes 30 --min-gap-minutes 45 --max-gap-minutes 120 --run-dir /var/log/tiangz-chaos/control --marker /etc/tiangz/chaos-enabled
+Restart=on-failure
+RestartSec=30
+Nice=10
+CPUWeight=20
+
+[Install]
+WantedBy=multi-user.target

@@ -17,7 +17,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.time=14d
       - --storage.tsdb.retention.size=12GB
       - --web.listen-address=127.0.0.1:19090
     volumes:
@@ -37,7 +37,7 @@ services:
     command:
       - --config.file=/etc/alertmanager/${ALERTMANAGER_CONFIG:-alertmanager.yml}
       - --storage.path=/alertmanager
-      - --data.retention=168h
+      - --data.retention=336h
       - --web.listen-address=127.0.0.1:19093
     volumes:
       - ./alertmanager:/etc/alertmanager:ro
@@ -83,7 +83,7 @@ services:
       - /etc/alloy/config.alloy
     volumes:
       - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - /opt/tiangz-external/logs:/var/log/tiangz:ro
+      - /var/log/tiangz-chaos/runtime:/var/log/tiangz:ro
       - /var/log/journal:/var/log/journal:ro
       - /run/log/journal:/run/log/journal:ro
       - /etc/machine-id:/etc/machine-id:ro

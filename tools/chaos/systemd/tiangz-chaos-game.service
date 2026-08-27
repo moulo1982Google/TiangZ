@@ -1,0 +1,23 @@
+[Unit]
+Description=TiangZ 500-player long-haul game workload
+After=network-online.target tiangz-external.service
+Requires=tiangz-external.service
+
+[Service]
+Type=simple
+User=tiangz
+Group=tiangz
+WorkingDirectory=/opt/tiangz-chaos
+Environment=NODE_OPTIONS=--max-old-space-size=512
+ExecStart=/usr/local/bin/node /opt/tiangz-chaos/perf/chaos/run_longhaul_game.mjs --host 127.0.0.1 --manager-port 27000 --players 500 --total-hours 168 --session-seconds 300 --warmup-seconds 10 --move-rate 1 --probe-rate 0.05 --business-rate 0.02 --account-prefix chaos7d --run-dir /var/log/tiangz-chaos/game
+KillMode=control-group
+Restart=on-failure
+RestartSec=15
+Nice=5
+CPUWeight=50
+MemoryHigh=1G
+MemoryMax=1536M
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

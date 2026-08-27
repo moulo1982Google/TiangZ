@@ -72,6 +72,27 @@ loki.source.journal "dbproxy_2" {
 	forward_to = [loki.write.local.receiver]
 }
 
+loki.source.journal "chaos_game" {
+	path       = "/var/log/journal"
+	matches    = "_SYSTEMD_UNIT=tiangz-chaos-game.service"
+	labels     = {job = "tiangz-chaos", env = "external-test", machine = "external-1", process = "game_load"}
+	forward_to = [loki.write.local.receiver]
+}
+
+loki.source.journal "dbproxy_soak" {
+	path       = "/var/log/journal"
+	matches    = "_SYSTEMD_UNIT=tiangz-dbproxy-soak.service"
+	labels     = {job = "tiangz-chaos", env = "external-test", machine = "external-1", process = "dbproxy_soak"}
+	forward_to = [loki.write.local.receiver]
+}
+
+loki.source.journal "chaos_faults" {
+	path       = "/var/log/journal"
+	matches    = "_SYSTEMD_UNIT=tiangz-chaos-faults.service"
+	labels     = {job = "tiangz-chaos", env = "external-test", machine = "external-1", process = "fault_orchestrator"}
+	forward_to = [loki.write.local.receiver]
+}
+
 loki.write "local" {
 	endpoint {
 		url = "http://127.0.0.1:13100/loki/api/v1/push"

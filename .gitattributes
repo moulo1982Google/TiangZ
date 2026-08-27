@@ -1,0 +1,8 @@
+# 统一跨平台文本换行，避免代码生成后产生 CRLF/LF 假变更。
+# Normalize text files to LF across platforms to avoid codegen-only EOL drift.
+* text=auto eol=lf
+
+# Windows 批处理文件保留 CRLF，确保由 cmd.exe 直接执行时兼容。
+# Keep Windows batch files as CRLF for direct cmd.exe compatibility.
+*.bat text eol=crlf
+*.cmd text eol=crlf

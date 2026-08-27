@@ -11,6 +11,8 @@ npm install
 npm run hello
 ```
 
+Windows下如果codegen后突然出现大量CRLF/LF修改，或Rust构建在`libmimalloc-sys`、DBProxy `protoc`处失败且错误路径中的中文用户名乱码，先按[故障排查](../reference/troubleshooting.md)设置仓库换行规则、UTF-8编译参数和纯ASCII临时目录。
+
 `hello` 会依次完成 Debug 产物构建、启动 `configs/local/all-in-one.json`，并等待 `LoginMgr` 的 `127.0.0.1:7000` 监听成功。看到下面这类输出后再打开客户端：
 
 ```text

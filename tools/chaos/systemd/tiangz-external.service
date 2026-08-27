@@ -1,0 +1,21 @@
+[Unit]
+Description=TiangZ external multiprocess runtime for the chaos drill
+After=network-online.target tiangz-dbproxy@1.service tiangz-dbproxy@2.service
+Wants=network-online.target
+Wants=tiangz-dbproxy@1.service tiangz-dbproxy@2.service
+
+[Service]
+Type=simple
+User=tiangz
+Group=tiangz
+WorkingDirectory=/opt/tiangz-external
+EnvironmentFile=/etc/tiangz/external.env
+Environment=RUST_LOG=info,tiangz::metrics=warn
+ExecStart=/bin/sh -c 'tail -f /dev/null | exec /opt/tiangz-external/TiangZ configs/deploy/external-chaos/StartMachine.json'
+KillMode=control-group
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

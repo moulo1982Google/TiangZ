@@ -47,3 +47,5 @@ npm run test:fault-injection:runtime
 ## 与质量门的关系
 
 `npm run verify`已经通过既有命令覆盖同一矩阵：快速门运行协议、Actor、持久化和全部Rust测试，随后运行Runtime、mailbox、背压和Watcher验收。`test:fault-injection`提供按故障主题组织的独立入口，便于框架改动后单独复现。
+
+外网单机的500玩家、DBProxy持久化、AOF backlog、MapHost和动态副本长时间恢复演练，见[外网500玩家七日故障演练](../tutorials/21-external-chaos-drill.md)。该演练通过双重安全开关执行真实进程与容器故障，不属于日常`npm run verify`。

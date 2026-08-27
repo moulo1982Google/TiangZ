@@ -2,13 +2,13 @@
 
 本目录用于Linux单机外网测试环境，把10个TiangZ Process、两个DBProxy、宿主机、PostgreSQL和Redis统一接入Prometheus、Alertmanager、Loki、Tempo与Grafana。它使用`network_mode: host`读取现有回环健康端口，但所有管理HTTP和OTLP端口仍显式绑定`127.0.0.1`；只有Grafana通过Nginx `/grafana/`和现有HTTPS证书对外开放。
 
-这套部署是资源受控的单机观测闭环，不是观测系统HA：Prometheus、Loki和Tempo都使用7天本地卷；机器整体损坏时观测数据也会丢失。
+这套部署是资源受控的单机观测闭环，不是观测系统HA：Prometheus、Loki和Tempo都使用14天本地卷；机器整体损坏时观测数据也会丢失。
 
 ## 资源基线
 
 - 4 CPU、8GB内存、80GB系统盘、2GB Swap。
-- Compose为每个服务设置内存上限，Prometheus最多保留7天或12GB。
-- TiangZ日志写入`/opt/tiangz-external/logs`，Alloy同时读取两个DBProxy的systemd journal。
+- Compose为每个服务设置内存上限；Prometheus最多保留14天或12GB，Loki与Tempo同样保留14天，使七日演练结束后仍有完整复盘窗口。
+- TiangZ日志写入`/var/log/tiangz-chaos/runtime`，Alloy同时读取 TiangZ、两个DBProxy和三项演练负载的systemd journal。
 
 ## 部署
 

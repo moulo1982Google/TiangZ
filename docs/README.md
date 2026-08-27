@@ -27,6 +27,8 @@
 17. [Unity 2022.3客户端](tutorials/17-unity-client.md)
 18. [配置化技能](tutorials/18-configured-skill.md)
 19. [DBProxy玩家快照持久化](tutorials/19-dbproxy-player-persistence.md)
+20. [Starter MMORPG](tutorials/20-starter-mmorpg.md)
+21. [外网500玩家七日故障演练](tutorials/21-external-chaos-drill.md)
 
 ## 开发参考
 
@@ -36,6 +38,7 @@
 - [公共 API 与版本稳定性](reference/api-stability.md)
 - [RPC 与 Actor 正确性](reference/rpc-actor-correctness.md)
 - [故障注入测试](reference/fault-injection.md)
+- [外网500玩家七日故障演练](tutorials/21-external-chaos-drill.md)
 - [依赖与许可证策略](security/dependency-policy.md)
 - [常用命令](reference/commands.md)
 - [可观测性与链路耗时（含 Prometheus 与 Grafana）](reference/observability.md)

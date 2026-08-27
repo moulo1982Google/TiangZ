@@ -12,10 +12,12 @@ import {
   buildCastSkillPacket,
   buildMapProbePacket,
   buildMovePacket,
+  buildNavigateInputPacket,
   buildPingPacket,
   buildUseItemPacket,
   decodeEnterMapFrame,
   decodeEntityMoveFrame,
+  decodeEntityNavigateFrame,
   decodeGetLoginServiceAddrFrame,
   decodeRegisterFrame,
   decodeLoginFrame,
@@ -23,9 +25,12 @@ import {
   decodeMapProbeFrame,
   decodeMapReadyFrame,
   decodeCastSkillFrame,
+  decodeNavigateInputFrame,
   decodeUseItemFrame,
 } from "../../tools/support/DemoClientProtocol";
 import { MsgCode } from "../../client_sdk/typescript/Generated/Model/demo/protocol/msgcodes";
+import { SpatialMode } from "../../client_sdk/typescript/Generated/Config/schema";
+import { GameErrCode } from "../../app/model/game/protocol/GameErrCode";
 
 interface Options {
   host: string;
@@ -43,6 +48,10 @@ interface Options {
   disableMove: boolean;
   label: string;
   barrierPort: number;
+  accountPrefix: string;
+  reuseAccounts: boolean;
+  mapId: number;
+  operationPrefix: string;
 }
 
 interface TimingResult {
@@ -93,11 +102,22 @@ gcObserver.observe({ entryTypes: ["gc"] });
 
 async function main(): Promise<void> {
   const setupStartedAt = performance.now();
-  const players = await mapLimit(
-    Array.from({ length: options.players }, (_, index) => index),
-    options.setupConcurrency,
-    createPlayer,
-  );
+  const establishedPlayers: PlayerResult[] = [];
+  let players: PlayerResult[];
+  try {
+    players = await mapLimit(
+      Array.from({ length: options.players }, (_, index) => index),
+      options.setupConcurrency,
+      async (index) => {
+        const result = await createPlayer(index);
+        establishedPlayers.push(result);
+        return result;
+      },
+    );
+  } catch (error) {
+    await closePlayersInBatches(establishedPlayers);
+    throw error;
+  }
   const setupElapsedSeconds = (performance.now() - setupStartedAt) / 1000;
   const setupLatencies = players.map((item) => item.setupLatencyMs).sort(numberOrder);
 
@@ -183,6 +203,10 @@ async function main(): Promise<void> {
     0,
   );
   const pushes = players.reduce((sum, item) => sum + item.player.entityMovePushes, 0);
+  const playerSpatialModes = new Set(players.map((item) => item.player.spatialMode));
+  const movementSpatialMode = playerSpatialModes.size === 1
+    ? spatialModeName(playerSpatialModes.values().next().value as SpatialMode)
+    : "mixed";
   await closePlayersInBatches(players);
   gcObserver.disconnect();
   const finalResourceUsage = process.resourceUsage();
@@ -201,6 +225,8 @@ async function main(): Promise<void> {
     targetMoveRatePerPlayer: options.moveRate,
     targetProbeRatePerPlayer: options.probeRate,
     targetBusinessRatePerPlayer: options.businessRate,
+    targetMapId: options.mapId,
+    accountMode: options.reuseAccounts ? "stable-reuse" : "ephemeral",
     measurementStartedAtUnixMs,
     measurementEndedAtUnixMs:
       measurementStartedAtUnixMs + options.durationSeconds * 1000,
@@ -214,6 +240,10 @@ async function main(): Promise<void> {
     },
     movement: {
       ...timing(movementLatencies, options.durationSeconds),
+      spatialMode: movementSpatialMode,
+      protocol: movementSpatialMode === "navmesh3d"
+        ? "C2M_NavigateInput/M2C_NavigateInput+G2C_EntityNavigate"
+        : "C2M_Move/G2C_EntityMove",
       count: movementSent,
       perSecond: movementSent / options.durationSeconds,
       acknowledged: movementAcknowledged,
@@ -376,9 +406,11 @@ async function closePlayersInBatches(players: PlayerResult[]): Promise<void> {
 async function createPlayer(index: number): Promise<PlayerResult> {
   const startedAt = performance.now();
   const localAddress = localAddressForPlayer(index);
-  // 每轮创建短生命周期的唯一测试账号，避免旧账号数据和本轮结果互相污染。
-  // Register a short-lived unique account per case so old data cannot affect this run.
-  const account = `perf${Date.now().toString(36)}${process.pid.toString(36)}${index.toString(36)}`;
+  // 普通性能测试仍使用短生命周期账号；长稳测试显式传入前缀后复用固定账号。
+  // Regular benchmarks keep ephemeral accounts; long-haul runs explicitly opt into stable accounts.
+  const account = options.accountPrefix
+    ? `${options.accountPrefix}${index.toString(36).padStart(4, "0")}`
+    : `perf${Date.now().toString(36)}${process.pid.toString(36)}${index.toString(36)}`;
   const managerRpcId = allocateRpcId();
   const managerFrame = await requestOne(
     options.host,
@@ -390,26 +422,24 @@ async function createPlayer(index: number): Promise<PlayerResult> {
   const loginAddress = decodeGetLoginServiceAddrFrame(managerFrame).body;
   checkResponse(loginAddress, managerRpcId, "GetLoginServiceAddr");
 
-  const registerRpcId = allocateRpcId();
-  const registerFrame = await requestOne(
+  if (!options.reuseAccounts) {
+    await registerAccount(loginAddress.ip, loginAddress.port, account, localAddress);
+  }
+  let { rpcId: loginRpcId, body: login } = await loginAccount(
     loginAddress.ip,
     loginAddress.port,
-    buildRegisterPacket(registerRpcId, { account, password: PERF_PASSWORD }),
-    options.timeoutMs,
+    account,
     localAddress,
   );
-  const registered = decodeRegisterFrame(registerFrame).body;
-  checkResponse(registered, registerRpcId, "Register");
-
-  const loginRpcId = allocateRpcId();
-  const loginFrame = await requestOne(
-    loginAddress.ip,
-    loginAddress.port,
-    buildLoginPacket(loginRpcId, { account, password: PERF_PASSWORD }),
-    options.timeoutMs,
-    localAddress,
-  );
-  const login = decodeLoginFrame(loginFrame).body;
+  if (options.reuseAccounts && login.error === GameErrCode.AccountNotRegistered) {
+    await registerAccount(loginAddress.ip, loginAddress.port, account, localAddress);
+    ({ rpcId: loginRpcId, body: login } = await loginAccount(
+      loginAddress.ip,
+      loginAddress.port,
+      account,
+      localAddress,
+    ));
+  }
   checkResponse(login, loginRpcId, "Login");
 
   const gate = new GateConnection(
@@ -418,39 +448,79 @@ async function createPlayer(index: number): Promise<PlayerResult> {
     options.timeoutMs,
     localAddress,
   );
-  await gate.connect();
-  const loginGateRpcId = allocateRpcId();
-  const loginGate = decodeLoginGateFrame(
-    await gate.request(
-      loginGateRpcId,
-      buildLoginGatePacket(loginGateRpcId, { account, token: login.token }),
-    ),
-  ).body;
-  checkResponse(loginGate, loginGateRpcId, "LoginGate");
-  gate.startHeartbeat();
+  try {
+    await gate.connect();
+    const loginGateRpcId = allocateRpcId();
+    const loginGate = decodeLoginGateFrame(
+      await gate.request(
+        loginGateRpcId,
+        buildLoginGatePacket(loginGateRpcId, { account, token: login.token }),
+      ),
+    ).body;
+    checkResponse(loginGate, loginGateRpcId, "LoginGate");
+    gate.startHeartbeat();
 
-  const enterMapRpcId = allocateRpcId();
-  const [enterMapFrame, mapReadyFrame] = await Promise.all([
-    gate.request(
-      enterMapRpcId,
-      buildEnterMapPacket(enterMapRpcId, { mapId: 1, mapInstanceId: 0n }),
-    ),
-    gate.waitForMessage(MsgCode.G2C_MapReady),
-  ]);
-  const enterMap = decodeEnterMapFrame(enterMapFrame).body;
-  checkResponse(enterMap, enterMapRpcId, "EnterMap");
-  const mapReady = decodeMapReadyFrame(mapReadyFrame).body;
-  if (mapReady.unitId !== enterMap.unitId) {
-    throw new Error(`MapReady unit mismatch for ${account}`);
+    const enterMapRpcId = allocateRpcId();
+    const [enterMapFrame, mapReadyFrame] = await Promise.all([
+      gate.request(
+        enterMapRpcId,
+        buildEnterMapPacket(enterMapRpcId, { mapId: options.mapId, mapInstanceId: 0n }),
+      ),
+      gate.waitForMessage(MsgCode.G2C_MapReady),
+    ]);
+    const enterMap = decodeEnterMapFrame(enterMapFrame).body;
+    checkResponse(enterMap, enterMapRpcId, "EnterMap");
+    const mapReady = decodeMapReadyFrame(mapReadyFrame).body;
+    if (mapReady.unitId !== enterMap.unitId) {
+      throw new Error(`MapReady unit mismatch for ${account}`);
+    }
+    gate.setUnitId(enterMap.unitId);
+    gate.setSpatialMode(enterMap.spatialMode);
+    return {
+      player: new GamePlayer(
+        gate,
+        enterMap.items.find((item) => item.configId === 1001)?.itemId ?? 0n,
+      ),
+      setupLatencyMs: performance.now() - startedAt,
+    };
+  } catch (error) {
+    await gate.close().catch(() => undefined);
+    throw error;
   }
-  gate.setUnitId(enterMap.unitId);
-  return {
-    player: new GamePlayer(
-      gate,
-      enterMap.items.find((item) => item.configId === 1001)?.itemId ?? 0n,
-    ),
-    setupLatencyMs: performance.now() - startedAt,
-  };
+}
+
+async function registerAccount(
+  ip: string,
+  port: number,
+  account: string,
+  localAddress: string | undefined,
+): Promise<void> {
+  const rpcId = allocateRpcId();
+  const frame = await requestOne(
+    ip,
+    port,
+    buildRegisterPacket(rpcId, { account, password: PERF_PASSWORD }),
+    options.timeoutMs,
+    localAddress,
+  );
+  checkResponse(decodeRegisterFrame(frame).body, rpcId, "Register");
+}
+
+async function loginAccount(
+  ip: string,
+  port: number,
+  account: string,
+  localAddress: string | undefined,
+) {
+  const rpcId = allocateRpcId();
+  const frame = await requestOne(
+    ip,
+    port,
+    buildLoginPacket(rpcId, { account, password: PERF_PASSWORD }),
+    options.timeoutMs,
+    localAddress,
+  );
+  return { rpcId, body: decodeLoginFrame(frame).body };
 }
 
 class GamePlayer {
@@ -462,6 +532,7 @@ class GamePlayer {
   }
 
   get entityMovePushes(): number { return this.gate.entityMovePushes; }
+  get spatialMode(): SpatialMode { return this.gate.getSpatialMode(); }
 
   runMovement(
     measurementStart: number,
@@ -502,6 +573,7 @@ class GateConnection {
   private readonly pendingRpc = new Map<number, PendingFrame>();
   private readonly messageWaiters = new Map<number, PendingFrame[]>();
   private unitId = 0;
+  private spatialMode?: SpatialMode;
   private moveHandler?: (frame: Uint8Array) => void;
   private heartbeat?: ReturnType<typeof setInterval>;
   private businessItemId = 0n;
@@ -529,6 +601,16 @@ class GateConnection {
 
   connect(): Promise<void> { return this.connected; }
   setUnitId(unitId: number): void { this.unitId = unitId; }
+  setSpatialMode(spatialMode: number): void {
+    if (spatialMode !== SpatialMode.Grid2D && spatialMode !== SpatialMode.NavMesh3D) {
+      throw new Error(`unsupported spatial mode ${spatialMode}`);
+    }
+    this.spatialMode = spatialMode;
+  }
+  getSpatialMode(): SpatialMode {
+    if (this.spatialMode === undefined) throw new Error("spatial mode is not initialized");
+    return this.spatialMode;
+  }
   setBusinessItemId(itemId: bigint): void { this.businessItemId = itemId; }
 
   startHeartbeat(): void {
@@ -574,6 +656,11 @@ class GateConnection {
     directionSeed: number,
     moveRate: number,
   ): Promise<MovementResult> {
+    if (this.getSpatialMode() === SpatialMode.NavMesh3D) {
+      return moveRate > 0
+        ? this.runFixedRateNavigation(measurementStart, sendDeadline, directionSeed, moveRate)
+        : this.runSaturationNavigation(measurementStart, sendDeadline, directionSeed);
+    }
     if (moveRate > 0) {
       return this.runFixedRateMovement(
         measurementStart,
@@ -587,6 +674,112 @@ class GateConnection {
       sendDeadline,
       directionSeed,
     );
+  }
+
+  private async runFixedRateNavigation(
+    measurementStart: number,
+    sendDeadline: number,
+    directionSeed: number,
+    moveRate: number,
+  ): Promise<MovementResult> {
+    const latenciesMs: number[] = [];
+    const intervalMs = 1000 / moveRate;
+    const expectedMeasuredSends = Math.max(
+      1,
+      Math.ceil(((sendDeadline - measurementStart) / 1000) * moveRate),
+    );
+    const latencySampleStride = Math.max(1, Math.ceil(expectedMeasuredSends / 1024));
+    const phase = ((Math.imul(directionSeed + 1, 2654435761) >>> 0) % 10_000) /
+      10_000;
+    const turnStride = Math.max(1, Math.round(moveRate * 5));
+    let nextSendAt = performance.now() + phase * intervalMs;
+    let sequence = 0;
+    let sent = 0;
+    let acknowledged = 0;
+    let skippedTicks = 0;
+    let errors = 0;
+
+    while (nextSendAt < sendDeadline) {
+      const delay = nextSendAt - performance.now();
+      if (delay > 0) await sleep(delay);
+
+      const startedAt = performance.now();
+      if (startedAt >= sendDeadline) break;
+      if (startedAt - nextSendAt >= intervalMs) {
+        const skipped = Math.floor((startedAt - nextSendAt) / intervalMs);
+        skippedTicks += skipped;
+        nextSendAt += skipped * intervalMs;
+      }
+
+      sequence += 1;
+      const measured = startedAt >= measurementStart;
+      if (measured) sent += 1;
+      const rpcId = allocateRpcId();
+      try {
+        const response = decodeNavigateInputFrame(await this.request(
+          rpcId,
+          buildNavigateInputPacket(
+            rpcId,
+            navigationInput(directionSeed, sequence, turnStride),
+          ),
+        )).body;
+        checkResponse(response, rpcId, "NavigateInput");
+        if (response.acknowledgedSequence !== sequence) {
+          throw new Error(
+            `NavigateInput sequence mismatch: ${response.acknowledgedSequence} != ${sequence}`,
+          );
+        }
+        if (measured) {
+          acknowledged += 1;
+          if (sent % latencySampleStride === 0) {
+            latenciesMs.push(performance.now() - startedAt);
+          }
+        }
+      } catch {
+        errors += 1;
+      }
+      nextSendAt += intervalMs;
+    }
+
+    return { sent, acknowledged, skippedTicks, latenciesMs, errors };
+  }
+
+  private async runSaturationNavigation(
+    measurementStart: number,
+    sendDeadline: number,
+    directionSeed: number,
+  ): Promise<MovementResult> {
+    const latenciesMs: number[] = [];
+    let sequence = 0;
+    let sent = 0;
+    let acknowledged = 0;
+    let errors = 0;
+    while (performance.now() < sendDeadline) {
+      sequence += 1;
+      const startedAt = performance.now();
+      const measured = startedAt >= measurementStart;
+      if (measured) sent += 1;
+      const rpcId = allocateRpcId();
+      try {
+        const response = decodeNavigateInputFrame(await this.request(
+          rpcId,
+          buildNavigateInputPacket(rpcId, navigationInput(directionSeed, sequence, 16)),
+        )).body;
+        checkResponse(response, rpcId, "NavigateInput");
+        if (response.acknowledgedSequence !== sequence) {
+          throw new Error(
+            `NavigateInput sequence mismatch: ${response.acknowledgedSequence} != ${sequence}`,
+          );
+        }
+        if (measured) {
+          acknowledged += 1;
+          latenciesMs.push(performance.now() - startedAt);
+        }
+      } catch {
+        errors += 1;
+      }
+    }
+    return { sent, acknowledged, skippedTicks: 0, latenciesMs, errors };
   }
 
   private async runFixedRateMovement(
@@ -794,7 +987,10 @@ class GateConnection {
         }
 
         const elapsed = performance.now() - startedAt;
-        await sleep(Math.max(0, 1000 / probeRate - elapsed));
+        await sleep(Math.max(
+          0,
+          Math.min(1000 / probeRate - elapsed, sendDeadline - performance.now()),
+        ));
       }
       return { latenciesMs, errors };
     }
@@ -833,7 +1029,7 @@ class GateConnection {
       inFlight.add(task);
       task.finally(() => inFlight.delete(task));
       nextSendAt += 1000 / probeRate;
-      await sleep(Math.max(0, nextSendAt - performance.now()));
+      await sleep(Math.max(0, Math.min(nextSendAt, sendDeadline) - performance.now()));
     }
     await Promise.allSettled(inFlight);
     return { latenciesMs, errors };
@@ -863,7 +1059,7 @@ class GateConnection {
     let nextSendAt = measurementStart;
     let operation = Math.max(0, operationSeed);
     while (performance.now() < sendDeadline) {
-      await sleep(Math.max(0, nextSendAt - performance.now()));
+      await sleep(Math.max(0, Math.min(nextSendAt, sendDeadline) - performance.now()));
       if (performance.now() >= sendDeadline) break;
       const startedAt = performance.now();
       const rpcId = allocateRpcId();
@@ -876,7 +1072,7 @@ class GateConnection {
             rpcId,
             buildUseItemPacket(rpcId, {
               itemId: this.businessItemId,
-              operationId: `perf-business:${this.unitId}:${operation}`,
+              operationId: `${options.operationPrefix}:${this.unitId}:${operation}`,
             }),
           )
           : await this.request(
@@ -921,9 +1117,13 @@ class GateConnection {
     try {
       this.decoder.pushEach(chunk, (frame) => {
         const msgcode = readU16BE(frame);
-        if (msgcode === MsgCode.G2C_EntityMove) {
+        if (
+          msgcode === MsgCode.G2C_EntityMove ||
+          msgcode === MsgCode.G2C_EntityNavigate
+        ) {
           this.entityMovePushes += 1;
-          this.moveHandler?.(frame);
+          if (msgcode === MsgCode.G2C_EntityMove) this.moveHandler?.(frame);
+          else decodeEntityNavigateFrame(frame);
           return;
         }
         const rpcId = extractRpcId(frame);
@@ -1058,20 +1258,44 @@ async function mapLimit<T, TResult>(
 ): Promise<TResult[]> {
   const results = new Array<TResult>(values.length);
   let next = 0;
+  let failure: unknown;
   await Promise.all(
     Array.from({ length: Math.min(concurrency, values.length) }, async () => {
-      while (true) {
+      while (failure === undefined) {
         const index = next++;
         if (index >= values.length) return;
-        results[index] = await worker(values[index]);
+        try {
+          results[index] = await worker(values[index]);
+        } catch (error) {
+          failure = error;
+        }
       }
     }),
   );
+  if (failure !== undefined) throw failure;
   return results;
 }
 
 function numberOrder(left: number, right: number): number { return left - right; }
 function sleep(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+function spatialModeName(spatialMode: SpatialMode): "grid2d" | "navmesh3d" {
+  return spatialMode === SpatialMode.NavMesh3D ? "navmesh3d" : "grid2d";
+}
+
+function navigationInput(
+  directionSeed: number,
+  sequence: number,
+  turnStride: number,
+): { forward: number; strafe: number; yaw: number; sequence: number } {
+  const direction = (directionSeed + Math.floor((sequence - 1) / turnStride)) & 3;
+  return {
+    forward: 1,
+    strafe: 0,
+    yaw: direction * Math.PI / 2,
+    sequence,
+  };
+}
 
 function parseOptions(args: string[]): Options {
   const values = new Map<string, string>();
@@ -1092,6 +1316,13 @@ function parseOptions(args: string[]): Options {
     if (!Number.isFinite(value) || value <= 0) throw new Error(`invalid --${name}`);
     return value;
   };
+  const accountPrefix = values.get("account-prefix") ?? "";
+  if (accountPrefix && !/^[A-Za-z0-9_-]{1,28}$/.test(accountPrefix)) {
+    throw new Error("invalid --account-prefix; use 1-28 ASCII letters, digits, _ or -");
+  }
+  if (flags.has("reuse-accounts") && !accountPrefix) {
+    throw new Error("--reuse-accounts requires --account-prefix");
+  }
   return {
     host: values.get("host") ?? "127.0.0.1",
     managerPort: Math.floor(number("manager-port", 7000)),
@@ -1108,6 +1339,10 @@ function parseOptions(args: string[]): Options {
     disableMove: flags.has("disable-move"),
     label: values.get("label") ?? "manual",
     barrierPort: Math.floor(nonNegativeNumber(values, "barrier-port", 0)),
+    accountPrefix,
+    reuseAccounts: flags.has("reuse-accounts"),
+    mapId: Math.floor(number("map-id", 1)),
+    operationPrefix: values.get("operation-prefix") ?? "perf-business",
   };
 }
 

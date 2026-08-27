@@ -15,7 +15,8 @@ import {
   decodeRegisterFrame,
 } from "./support/DemoClientProtocol";
 
-const account = `dynamic_ha_${Date.now().toString(36)}`;
+const options = parseOptions(process.argv.slice(2));
+const account = `${options.accountPrefix}${Date.now().toString(36)}`;
 const password = `dynamic_ha_password_${account}`;
 let nextRpcId = 1;
 
@@ -69,8 +70,8 @@ async function main(): Promise<void> {
 async function register(): Promise<void> {
   const rpcId = nextRpcId++;
   const response = decodeRegisterFrame(await requestOne(
-    "127.0.0.1",
-    7001,
+    options.loginHost,
+    options.loginPort,
     buildRegisterPacket(rpcId, { account, password }),
   ));
   if (response.rpcId !== rpcId || response.body.error) {
@@ -81,8 +82,8 @@ async function register(): Promise<void> {
 async function login() {
   const rpcId = nextRpcId++;
   const response = decodeLoginFrame(await requestOne(
-    "127.0.0.1",
-    7001,
+    options.loginHost,
+    options.loginPort,
     buildLoginPacket(rpcId, { account, password }),
   ));
   if (response.rpcId !== rpcId || response.body.error) {
@@ -217,4 +218,34 @@ function extractRpcId(frame: Uint8Array): number | undefined {
     return undefined;
   }
   return undefined;
+}
+
+function parseOptions(args: string[]): {
+  loginHost: string;
+  loginPort: number;
+  accountPrefix: string;
+} {
+  const values = new Map<string, string>();
+  for (let index = 0; index < args.length; index += 1) {
+    const key = args[index];
+    const value = args[index + 1];
+    if (!key?.startsWith("--") || !value || value.startsWith("--")) {
+      throw new Error(`invalid argument near ${key ?? "<end>"}`);
+    }
+    values.set(key, value);
+    index += 1;
+  }
+  const loginPort = Number(values.get("--login-port") ?? 7001);
+  if (!Number.isInteger(loginPort) || loginPort < 1 || loginPort > 65_535) {
+    throw new Error("invalid --login-port");
+  }
+  const accountPrefix = values.get("--account-prefix") ?? "dynamic_ha_";
+  if (!/^[A-Za-z0-9_-]{1,16}$/.test(accountPrefix)) {
+    throw new Error("invalid --account-prefix");
+  }
+  return {
+    loginHost: values.get("--login-host") ?? "127.0.0.1",
+    loginPort,
+    accountPrefix,
+  };
 }
