@@ -14,9 +14,12 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const options = parseOptions(process.argv.slice(2));
-const client = path.join(root, "dist", "full_chain_load_test.cjs");
+const client = resolveClient();
 if (!existsSync(client)) {
-  throw new Error(`missing ${client}; run npm run build:perf:full-chain first`);
+  const buildHint = options.client === "rust"
+    ? "run npm run build:perf:full-chain-rust"
+    : "run npm run build:perf:full-chain";
+  throw new Error(`missing ${client}; ${buildHint} first`);
 }
 
 mkdirSync(options.runDir, { recursive: true });
@@ -71,7 +74,10 @@ try {
         suffix: "b",
         shard: 2,
       },
-    ].filter((item) => item.players > 0);
+    ].filter((item) => item.players > 0).map((item) => ({
+      ...item,
+      accountGeneration: state.accountGenerations[item.name] ?? 0,
+    }));
 
     writeEvent({
       type: "epoch_started",
@@ -89,6 +95,28 @@ try {
     state.successfulShards += succeeded;
     state.failedShards += failed;
     state.lastCompletedAt = Date.now();
+    for (const outcome of outcomes) {
+      state.lastShardHealth[outcome.shard] = {
+        epoch: state.epoch,
+        healthy: outcome.healthy,
+        healthIssues: outcome.healthIssues,
+      };
+      if (requiresFreshAccountGeneration(outcome)) {
+        const nextGeneration = outcome.accountGeneration + 1;
+        if (nextGeneration >= 36 ** 2) {
+          throw new Error(`account generation exhausted for ${outcome.shard}`);
+        }
+        state.accountGenerations[outcome.shard] = nextGeneration;
+        writeEvent({
+          type: "shard_account_generation_advanced",
+          epoch: state.epoch,
+          shard: outcome.shard,
+          previousGeneration: outcome.accountGeneration,
+          nextGeneration,
+          reason: "entered map identity or spatial mode did not match the target",
+        });
+      }
+    }
     saveState();
     writeEvent({
       type: "epoch_finished",
@@ -110,6 +138,8 @@ try {
     epoch: state.epoch,
     successfulShards: state.successfulShards,
     failedShards: state.failedShards,
+    allShardsHealthyAtEnd: Object.values(state.lastShardHealth).every((item) => item.healthy),
+    lastShardHealth: state.lastShardHealth,
   });
 } finally {
   closeSync(driverLogFd);
@@ -117,7 +147,6 @@ try {
 
 async function runShard(shard, durationSeconds, operationPrefix) {
   const args = [
-    client,
     "--host", options.host,
     "--manager-port", String(options.managerPort),
     "--players", String(shard.players),
@@ -127,19 +156,22 @@ async function runShard(shard, durationSeconds, operationPrefix) {
     "--timeout", String(options.timeoutMs),
     "--movement-timeout", String(options.movementTimeoutMs),
     "--move-rate", String(options.moveRate),
+    "--movement-sequence-base", String(state.epoch * 10_000),
     "--probe-rate", String(options.probeRate),
     "--business-rate", String(options.businessRate),
     "--map-id", String(shard.mapId),
-    "--account-prefix", `${options.accountPrefix}${shard.suffix}`,
+    "--account-prefix", accountPrefixForShard(shard),
     "--operation-prefix", operationPrefix,
     "--reuse-accounts",
     "--label", `${options.label}-s${shard.shard}`,
   ];
+  const command = options.client === "rust" ? client : process.execPath;
+  const commandArgs = options.client === "rust" ? args : [client, ...args];
   const startedAt = Date.now();
   const hardTimeoutMs = (
     options.setupTimeoutSeconds + options.warmupSeconds + durationSeconds + 30
   ) * 1000;
-  const child = spawn(process.execPath, args, {
+  const child = spawn(command, commandArgs, {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -185,7 +217,10 @@ async function runShard(shard, durationSeconds, operationPrefix) {
     type: "shard_finished",
     epoch: state.epoch,
     shard: shard.name,
+    client: options.client,
     mapId: shard.mapId,
+    expectedSpatialMode: shard.spatialMode,
+    accountGeneration: shard.accountGeneration,
     players: shard.players,
     ok: healthy,
     completed,
@@ -207,7 +242,13 @@ function evaluateHealth(shard, result) {
     issues.push(`players=${result.players}, expected=${shard.players}`);
   }
   if (result.targetMapId !== shard.mapId) {
-    issues.push(`mapId=${result.targetMapId}, expected=${shard.mapId}`);
+    issues.push(`targetMapId=${result.targetMapId}, expected=${shard.mapId}`);
+  }
+  if (result.enteredMapId !== shard.mapId) {
+    issues.push(`enteredMapId=${result.enteredMapId}, expected=${shard.mapId}`);
+  }
+  if (!Number.isFinite(Number(result.enteredMapInstanceId)) || Number(result.enteredMapInstanceId) <= 0) {
+    issues.push(`enteredMapInstanceId=${result.enteredMapInstanceId}, expected=positive integer`);
   }
   if (result.setup?.count !== shard.players) {
     issues.push(`setup.count=${result.setup?.count}, expected=${shard.players}`);
@@ -248,10 +289,24 @@ function evaluateHealth(shard, result) {
   return issues;
 }
 
+function requiresFreshAccountGeneration(outcome) {
+  return outcome.completed && (
+    outcome.result?.enteredMapId !== outcome.mapId ||
+    outcome.result?.movement?.spatialMode !== outcome.expectedSpatialMode
+  );
+}
+
+function accountPrefixForShard(shard) {
+  const generation = shard.accountGeneration === 0
+    ? ""
+    : `r${shard.accountGeneration.toString(36).padStart(2, "0")}`;
+  return `${options.accountPrefix}${shard.suffix}${generation}`;
+}
+
 function loadOrCreateState() {
   if (existsSync(statePath)) {
     const loaded = JSON.parse(readFileSync(statePath, "utf8"));
-    if (loaded.schemaVersion !== 2) {
+    if (loaded.schemaVersion !== 3) {
       throw new Error(`existing ${statePath} uses unsupported schema ${loaded.schemaVersion}`);
     }
     if (loaded.parametersFingerprint !== parametersFingerprint()) {
@@ -261,13 +316,15 @@ function loadOrCreateState() {
   }
   const startedAt = Date.now();
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     parametersFingerprint: parametersFingerprint(),
     startedAt,
     deadlineAt: startedAt + options.totalHours * 3_600_000,
     epoch: 0,
     successfulShards: 0,
     failedShards: 0,
+    accountGenerations: {},
+    lastShardHealth: {},
     lastCompletedAt: undefined,
   };
 }
@@ -283,6 +340,8 @@ function writeEvent(event) {
 
 function publicOptions() {
   return {
+    client: options.client,
+    clientPath: client,
     host: options.host,
     managerPort: options.managerPort,
     players: options.players,
@@ -328,11 +387,21 @@ function parseOptions(args) {
     return value;
   };
   const accountPrefix = values.get("--account-prefix") ?? "chaos7d";
-  if (!/^[A-Za-z0-9_-]{1,26}$/.test(accountPrefix)) {
-    throw new Error("--account-prefix must use 1-26 ASCII letters, digits, _ or -");
+  if (!/^[A-Za-z0-9_-]{1,24}$/.test(accountPrefix)) {
+    throw new Error("--account-prefix must use 1-24 ASCII letters, digits, _ or -");
+  }
+  const client = (values.get("--client") ?? "node").toLowerCase();
+  if (client !== "node" && client !== "rust") {
+    throw new Error("--client must be node or rust");
+  }
+  const moveRate = nonNegative("--move-rate", 1);
+  if (client === "rust" && !Number.isSafeInteger(moveRate)) {
+    throw new Error("the Rust client currently requires an integer --move-rate");
   }
   const defaultRunDir = path.join(root, "perf", "results", "chaos", timestamp());
   return {
+    client,
+    clientPath: values.get("--client-path"),
     host: values.get("--host") ?? "127.0.0.1",
     managerPort: Math.floor(positive("--manager-port", 27000)),
     players: Math.floor(positive("--players", 500)),
@@ -343,7 +412,7 @@ function parseOptions(args) {
     setupTimeoutSeconds: Math.floor(positive("--setup-timeout-seconds", 180)),
     timeoutMs: Math.floor(positive("--timeout-ms", 15_000)),
     movementTimeoutMs: Math.floor(positive("--movement-timeout-ms", 5_000)),
-    moveRate: nonNegative("--move-rate", 1),
+    moveRate,
     probeRate: nonNegative("--probe-rate", 0.05),
     businessRate: nonNegative("--business-rate", 0.02),
     failureRetrySeconds: positive("--failure-retry-seconds", 15),
@@ -352,6 +421,19 @@ function parseOptions(args) {
     label: values.get("--label") ?? "external-chaos",
     runDir: path.resolve(values.get("--run-dir") ?? defaultRunDir),
   };
+}
+
+function resolveClient() {
+  if (options.clientPath) return path.resolve(root, options.clientPath);
+  if (options.client === "node") {
+    return path.join(root, "dist", "full_chain_load_test.cjs");
+  }
+  const executable = process.platform === "win32" ? "map_probe_load.exe" : "map_probe_load";
+  const candidates = [
+    path.join(root, executable),
+    path.join(root, "target", "release", executable),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
 }
 
 function timestamp() {

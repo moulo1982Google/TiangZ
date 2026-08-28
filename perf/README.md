@@ -43,6 +43,8 @@ npm run perf:full-chain
 
 完整矩阵、指标口径和结果文件见 [full_chain/README.md](full_chain/README.md)。
 
+数百玩家的外网长稳/故障演练使用 `npm run build:perf:full-chain-rust` 构建低开销 Tokio 客户端，再给 `perf:chaos:longhaul` 传入 `--client rust --client-path <map_probe_load>`。该命令使用 `perf/map_probe_load/Cargo.toml` 的独立最小依赖图，产物仍在 `target/release/map_probe_load`，外网负载机不需要为了协议发生器下载或编译 V8。Node 客户端继续用于 TypeScript SDK 与协议兼容对照，不作为高并发负载机容量上限。
+
 单 MapHost 的 3000 玩家回归和运行中 Hotfix 测试口径见 [hotfix/README.md](hotfix/README.md)。Hotfix 用例会区分候选构建耗时与真正的业务切换耗时，并验证现有玩家、连接和 Native handle 不重建。
 
 ## Bridge 性能

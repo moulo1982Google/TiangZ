@@ -144,7 +144,7 @@ npm run perf:map-capacity -- \
   --target-map-cpu 80
 ```
 
-Rust 客户端会真实完成 `LoginMgr -> Login -> Gate -> EnterMap`，支持固定频率 `C2M_Move`、`G2C_EntityMove` Push 计数以及按 `rpcId` 多路复用的 `MapProbe`。它只按 msgcode 统计移动 Push，不反序列化全员快照，因此适合判断服务端 Move/AOI 容量；需要验证 TS SDK 行为时仍使用默认 Node.js 客户端。结果 JSON 的 `loadGenerator.cpuTotalMs` 和 `loadGenerator.rssBytes` 用于观察 Rust 压测进程自身开销。
+Rust 客户端会真实完成 `LoginMgr -> Login -> Gate -> EnterMap`，并按服务端返回的空间模式自动选择 Grid2D 的 `C2M_Move` 或 NavMesh3D 的 `C2M_NavigateInput`。Grid2D Push 只在 protobuf wire 数据上零分配扫描本玩家的 `unit_id/acknowledged_sequence`，不会反序列化全员快照；NavMesh3D 使用 RPC 回执确认输入并统计 `G2C_EntityNavigate`。因此它既保留移动正确性和延迟指标，也避免 Node 客户端在大同屏广播上先成为 CPU 瓶颈；需要验证 TS SDK 行为时仍使用默认 Node.js 客户端。结果 JSON 的 `loadGenerator.cpuTotalMs` 和 `loadGenerator.rssBytes` 用于观察 Rust 压测进程自身开销。
 
 Rust玩家在LoginGate成功后立即启动常驻socket reader和5秒心跳，等待进图队列期间会持续消费Push，不会被Gate按失活连接清理；Move、Probe和状态负载仍在全部玩家进图后统一启用。默认不传`--map-entry-concurrency`时，`--setup-concurrency`控制`Login -> Gate连接 -> LoginGate -> EnterMap`整条setup链路，适合测试真实批量上线能力。
 

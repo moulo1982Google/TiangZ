@@ -5,7 +5,7 @@ import type { PlayerUnit } from "../map/PlayerUnit";
 import { ProgressionComponent } from "../progression/ProgressionComponent";
 import { QuestComponent } from "../quest/QuestComponent";
 import { SkillComponent } from "../skill/SkillComponent";
-import { ProjectPlayerDomainData } from "./PlayerPersistenceCodec";
+import { EncodePlayerDomainData, ProjectPlayerDomainData } from "./PlayerPersistenceCodec";
 import {
   CharacterIdOfDomainData,
   ClonePlayerPersistenceRevisions,
@@ -13,6 +13,7 @@ import {
   PLAYER_PERSISTENCE_DOMAINS,
   type PlayerMultiTransactionReceipt,
   type PlayerMultiTransactionResult,
+  type PlayerDomainSaveData,
   type PlayerPersistenceDomain,
   type PlayerPersistenceRevisions,
   type PlayerRepository,
@@ -57,6 +58,7 @@ export class PlayerPersistenceComponent extends Component<[
   private finalSavePromise: Promise<void> | undefined;
   private nextPeriodicSaveAtMs = 0;
   private readonly uncertainOperations = new Set<string>();
+  private readonly committedPayloads = new Map<PlayerPersistenceDomain, Uint8Array>();
 
   /** 保存Repository和领域revision向量；跨图只迁移revision，不迁移Repository引用。 / Captures the Repository and domain revision vector; map transfer moves revisions but never the Repository reference. */
   protected override Awake(repository: PlayerRepository, revisions: PlayerPersistenceRevisions): void {
@@ -125,16 +127,18 @@ export class PlayerPersistenceComponent extends Component<[
     this.requireTransactionIdentity(data);
     const normalizedDomains = normalizeDomains(domains);
     try {
+      const records = normalizedDomains.map((domain) => ({
+        domain,
+        data: ProjectPlayerDomainData(data, domain),
+        expectedRevision: this.revisions[domain],
+      }));
       const committed = await Promise.resolve(this.repository.ApplyTransaction({
         operationId,
-        records: normalizedDomains.map((domain) => ({
-          domain,
-          data: ProjectPlayerDomainData(data, domain),
-          expectedRevision: this.revisions[domain],
-        })),
+        records,
         result: result.slice(),
       }));
       this.applyCommittedRevisions(committed.revisions);
+      for (const record of records) this.rememberCommittedPayload(record.domain, record.data);
       this.uncertainOperations.delete(operationId);
       return cloneTransactionResult(committed);
     } catch (error) {
@@ -187,6 +191,12 @@ export class PlayerPersistenceComponent extends Component<[
       }));
       for (const participant of normalized) {
         participant.persistence.applyCommittedRevisions(committed.revisions);
+        for (const domain of normalizeDomains(participant.domains)) {
+          participant.persistence.rememberCommittedPayload(
+            domain,
+            ProjectPlayerDomainData(participant.data, domain),
+          );
+        }
         participant.persistence.uncertainOperations.delete(operationId);
       }
       return cloneTransactionResult(committed);
@@ -258,29 +268,49 @@ export class PlayerPersistenceComponent extends Component<[
 
   private async SaveSnapshot(reason: string): Promise<void> {
     const data = this.Capture(reason);
+    const candidates = PLAYER_PERSISTENCE_DOMAINS.map((domain) => ({
+      domain,
+      data: ProjectPlayerDomainData(data, domain),
+    })).filter((candidate) => !this.isCommittedPayload(candidate.domain, candidate.data));
+    if (candidates.length === 0) return;
     const outcomes = await Promise.resolve(this.repository.SaveDomains(
-      PLAYER_PERSISTENCE_DOMAINS.map((domain) => ({
+      candidates.map(({ domain, data: domainData }) => ({
         domain,
-        data: ProjectPlayerDomainData(data, domain),
+        data: domainData,
         expectedRevision: this.revisions[domain],
       })),
     ));
+    const candidatesByDomain = new Map(candidates.map((candidate) => [candidate.domain, candidate.data]));
     const seen = new Set<PlayerPersistenceDomain>();
     const failures: { domain: PlayerPersistenceDomain; error: unknown }[] = [];
     for (const outcome of outcomes) {
       const domain = outcome.ok ? outcome.result.domain : outcome.domain;
       if (seen.has(domain)) throw new Error(`player batch save returned duplicate domain: ${domain}`);
       seen.add(domain);
-      if (outcome.ok) this.revisions[domain] = outcome.result.revision;
+      if (outcome.ok) {
+        this.revisions[domain] = outcome.result.revision;
+        const committed = candidatesByDomain.get(domain);
+        if (!committed) throw new Error(`player batch save returned unexpected domain: ${domain}`);
+        this.rememberCommittedPayload(domain, committed);
+      }
       else failures.push({ domain, error: outcome.error });
     }
-    if (seen.size !== PLAYER_PERSISTENCE_DOMAINS.length) {
-      throw new Error(`player batch save returned ${seen.size}/${PLAYER_PERSISTENCE_DOMAINS.length} domains`);
+    if (seen.size !== candidates.length) {
+      throw new Error(`player batch save returned ${seen.size}/${candidates.length} dirty domains`);
     }
     if (failures.length > 0) {
       const detail = failures.map((failure) => `${failure.domain}: ${errorMessage(failure.error)}`).join("; ");
       throw new Error(`player batch save failed after applying successful revisions: ${detail}`);
     }
+  }
+
+  private isCommittedPayload(domain: PlayerPersistenceDomain, data: PlayerDomainSaveData): boolean {
+    const previous = this.committedPayloads.get(domain);
+    return previous !== undefined && bytesEqual(previous, canonicalDomainPayload(domain, data));
+  }
+
+  private rememberCommittedPayload(domain: PlayerPersistenceDomain, data: PlayerDomainSaveData): void {
+    this.committedPayloads.set(domain, canonicalDomainPayload(domain, data));
   }
 
   private applyCommittedRevisions(revisions: readonly { characterId: bigint; domain: PlayerPersistenceDomain; revision: bigint }[]): void {
@@ -339,6 +369,23 @@ function validateRevisions(revisions: PlayerPersistenceRevisions): void {
 
 function periodicJitter(characterId: bigint): number {
   return Number(characterId % BigInt(PLAYER_PERIODIC_SNAPSHOT_INTERVAL_MS));
+}
+
+function canonicalDomainPayload(
+  domain: PlayerPersistenceDomain,
+  data: PlayerDomainSaveData,
+): Uint8Array {
+  // `reason` is diagnostic metadata, not player state. Changing from periodic to shutdown (or
+  // from a business operation ID to periodic) must not turn an otherwise identical domain dirty.
+  return EncodePlayerDomainData(domain, { ...data, reason: "state-fingerprint" } as PlayerDomainSaveData);
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 function cloneTransactionResult(result: PlayerTransactionResult): PlayerTransactionResult {

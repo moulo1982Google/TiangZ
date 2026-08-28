@@ -78,6 +78,23 @@ node perf/full_chain/run_full_chain_perf.mjs \
 
 远程模式报告压测机 CPU/RSS/GC；服务端 CPU/RSS/V8 Heap/GC 从服务端日志的 `[process-metrics]` 采集。两类指标不会混算。
 
+### 低开销 Rust 长稳客户端
+
+故障演练和数百玩家长稳测试优先使用 `map_probe_load`。它与 Node 客户端输出兼容的 `RESULT_JSON`，支持稳定账号复用、Grid2D/NavMesh3D 自动选择、移动确认与采样延迟、Probe、真实道具/技能业务，以及客户端 CPU/RSS 统计：
+
+```bash
+npm run build:perf:full-chain-rust
+target/release/map_probe_load \
+  --host 127.0.0.1 --manager-port 27000 --players 250 \
+  --map-id 100 --setup-concurrency 32 \
+  --warmup 10 --duration 300 --movement-timeout 5000 \
+  --move-rate 1 --probe-rate 0.05 --business-rate 0.02 \
+  --account-prefix chaos7db --reuse-accounts \
+  --operation-prefix chaos7d:preview --label rust-preview
+```
+
+该客户端不会加载 V8 或生成的 TypeScript SDK。Grid2D 只扫描 Push 中本玩家的累计确认字段，NavMesh3D 每名玩家只保留一个移动 RPC 在途；这两点是它降低负载机 CPU 的主要来源。协议正确性和 SDK 兼容性回归仍应保留 Node 用例，二者指标必须标明 `loadGenerator.kind` 后再比较。
+
 ## 框架热路径低分配准备
 
 在真正的 A/B 压测前，先运行一次就绪检查：

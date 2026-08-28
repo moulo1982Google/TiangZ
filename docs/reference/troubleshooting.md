@@ -24,19 +24,20 @@ git status --short
 
 ## Windows中文用户目录导致libmimalloc-sys或protoc构建失败
 
-在`C:\Users\<中文名>`下使用MSVC工具链时，部分第三方build script会把Cargo缓存或系统临时目录的绝对路径写入生成的C/C++源码或传给`protoc`。典型现象包括：
+在中文名`%USERPROFILE%`下使用MSVC工具链时，部分第三方build script会把Cargo缓存或系统临时目录的绝对路径写入生成的C/C++源码或传给`protoc`。典型现象包括：
 
 - `failed to run custom build command for libmimalloc-sys`；
-- MSVC先报告`C4819`，随后`C1083`中的`C:\Users\...\.cargo`路径已经乱码；
+- MSVC先报告`C4819`，随后`C1083`中的`%USERPROFILE%\.cargo`路径已经乱码；
 - `DBProxy proto generation failed`，`prost-descriptor-set: No such file or directory`中的用户临时目录已经乱码。
 
 这不是TiangZ源码缺失，也不是没有安装MSVC。保留现有账户时，在同一个PowerShell终端为C/C++编译器启用UTF-8，并把构建临时目录放到纯ASCII路径：
 
 ```powershell
-New-Item -ItemType Directory -Force D:\TiangZBuildTemp | Out-Null
+$buildTemp = Join-Path $env:SystemDrive "TiangZBuildTemp"
+New-Item -ItemType Directory -Force $buildTemp | Out-Null
 
-$env:TEMP = "D:\TiangZBuildTemp"
-$env:TMP = "D:\TiangZBuildTemp"
+$env:TEMP = $buildTemp
+$env:TMP = $buildTemp
 $env:CFLAGS = "/utf-8"
 $env:CXXFLAGS = "/utf-8"
 
@@ -45,7 +46,7 @@ npm run starter:dev
 
 环境变量必须在启动`npm`/`cargo`的同一终端设置，子进程会继承它们。需要长期使用时，可以把这四项写入用户环境变量，然后重新打开终端。`TEMP`和`TMP`指向的目录必须预先存在。
 
-只修改Windows账户显示名称不会改变`C:\Users\<名称>`。如需彻底改为英文配置目录，安全做法是新建英文名本地管理员账户、首次登录生成新的Profile，再迁移开发配置；不要直接重命名现有Profile目录或手工修改`ProfileImagePath`注册表项。
+只修改Windows账户显示名称不会改变`%USERPROFILE%`的实际目录名。如需彻底改为英文配置目录，安全做法是新建英文名本地管理员账户、首次登录生成新的Profile，再迁移开发配置；不要直接重命名现有Profile目录或手工修改`ProfileImagePath`注册表项。
 
 ## Windows Release首次构建V8提示符号链接权限不足
 
@@ -57,7 +58,7 @@ Release首次编译`v8`时，如果看到`Failed to create symlink`和Windows错
 New-Item -ItemType Directory -Force target\release | Out-Null
 New-Item -ItemType Junction `
   -Path target\release\gn_root `
-  -Target "C:\Users\<用户名>\.cargo\registry\src\<registry>\v8-<version>"
+  -Target (Join-Path $env:USERPROFILE ".cargo\registry\src\<registry>\v8-<version>")
 
 npm run perf:rpc-baseline
 ```

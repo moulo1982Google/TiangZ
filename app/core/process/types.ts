@@ -242,6 +242,12 @@ export interface MailboxMetricsSnapshot {
 
 export interface CustomMetricSnapshot {
   name: string;
+  /**
+   * 仅用于区分同一场景内有限数量的指标实例；禁止放入账号、Unit、连接或动态实例 ID。
+   * Distinguishes a bounded number of metric instances within one scene. Never use
+   * account, unit, connection, or unbounded dynamic-instance IDs here.
+   */
+  labels?: Readonly<Record<string, string>>;
   values: Readonly<Record<string, number>>;
   /** 未声明的字段按 gauge 导出；累计值必须显式声明为 counter。 / Undeclared fields are gauges; cumulative values must be marked as counters. */
   kinds?: Readonly<Record<string, CustomMetricKind>>;

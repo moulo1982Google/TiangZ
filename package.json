@@ -112,6 +112,7 @@
     "test:session-takeover-websocket": "npm run build:test:session-takeover-websocket && node tools/session_takeover_websocket_smoke.mjs",
     "build:load": "esbuild tools/runtime_load_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/runtime_load_test.cjs",
     "build:perf:full-chain": "tsc -p perf/full_chain/tsconfig.json && esbuild perf/full_chain/full_chain_load_test.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/full_chain_load_test.cjs",
+    "build:perf:full-chain-rust": "cargo build --release --locked --manifest-path perf/map_probe_load/Cargo.toml --target-dir target",
     "perf:chaos:longhaul": "node perf/chaos/run_longhaul_game.mjs",
     "config:chaos:external": "node tools/chaos/prepare_external_configs.mjs",
     "chaos:external:fault-plan": "node tools/chaos/run_external_fault_plan.mjs",

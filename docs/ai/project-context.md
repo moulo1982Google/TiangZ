@@ -26,7 +26,7 @@ TiangZ的业务参考目标是一个小而完整的Starter MMORPG，而不是内
 - Starter第一版已接入固定任务NPC：Map 100由`NpcComponent`创建`NpcUnit`（`npcConfigId=9001`、`unitId=0x40000001`），NPC作为普通Unit的Subject进入AOI，Cocos3D以紫色方块展示。玩家出生点为`(-3, 1, -18)`，NPC位于出生点东侧约3米；Demo专用`AoiConfig=2`把Enter/Detach扩大为7×7/9×9 Grid，确保出生点能观察到远端刷怪区。10004、10005、10008是三只被动黄色怪，10006、10007是两只主动红色怪，仍分布在远端刷怪区；`MapEntitySnapshot.displayName`由服务端统一提供玩家、NPC和怪物的公开名称，Cocos3D在实体头顶显示名称，怪物额外显示HP。当前所有Starter `QuestConfig`都关闭自动接取；客户端靠近NPC 5米内显示统一“交互”按钮，点击后打开NPC对话框，再点击对话框中的接取/交付按钮才调用`Map.AcceptQuest({ questConfigId, npcUnitId })`或`Map.CompleteQuest({ questConfigId, npcUnitId })`。任务5001由NPC提供，目标是击败5只怪A；在NPC交付5001后，配置前置解锁任务5005，目标是击败5只怪B。服务端在PlayerUnit有序mailbox内校验NPC存在、任务提供关系和5米交互距离，再由`QuestComponent`创建或完成Quest ChildEntity。`npm run starter:smoke`已覆盖NPC快照和接取。
 - `npm run starter:acceptance`另有完整任务链夹具：在all-in-one与split-process中均通过正式NPC、导航、普通攻击、查看/单项拾取和跨图协议完成5001、5005、5006，验证前置拒绝、5A/5B进度、未接任务时不显示徽记、累计5个徽记、三次事务奖励和跨图快照恢复。测试不会直接修改Quest、Inventory或Monster状态。
 - Starter动态副本固定使用MapConfig 200。客户端只向Gate提交稳定`operationId`；Gate先调用当前PlayerUnit有序邮箱中的`ClaimStarterDungeonEntry`，把10分钟个人CD提交到`progression`记录，再通过`DynamicMapProxy`以`starter-dungeon:<characterId>:<operationId>`幂等请求MapManager分配实例并复用普通`EnterMapCore`进入。同一operationId可恢复已接受请求，新的operationId在CD内返回`DungeonCooldown`；CD随跨图快照迁移并在重启读档时恢复，不属于Gate或副本集体状态。副本内MonsterConfig 3“试炼守卫”拥有900生命；死亡事件给击杀玩家增加120累计经验，尸体掉落表3固定包含小红、大红、蓝药各5个和150铜币。拾取通过同一operationId原子提交`inventory + quest + wallet`，经验和CD分别提交`progression`。空副本继续使用现有5分钟无人回收兜底，不恢复崩溃前的Boss现场。
-- 当前恢复缺口优先级已转为动态副本现场恢复与跨机器仲裁；无DBProxy时角色目录只保证进程生命周期内一致，重启恢复必须使用DBProxy。DBProxy多Endpoint、双实例和TiangZ端到端故障切换已验收。Gate故障接管也已完成同拓扑闭环：Login优先Location当前健康Gate，故障时选择另一Gate；PlayerUnit邮箱通过Location CAS递增gateEpoch，ActorLocation在邮箱入口拒绝旧Gate帧，Watcher有界重启后不自动回切。Manager与动态MapHost双失时玩家可以回到安全静态地图，但不会恢复原Socket、Gate排队帧、Boss现场或战斗计时器，也不是跨机器租约仲裁。
+- 当前恢复缺口优先级已转为动态副本现场恢复与跨机器仲裁；无DBProxy时角色目录只保证进程生命周期内一致，重启恢复必须使用DBProxy。DBProxy多Endpoint、双实例和TiangZ端到端故障切换已验收。Player周期保存会对五个领域生成规范化Payload，只提交相对最近成功普通保存或关键事务真正变化的领域；`reason`只是诊断信息，不参与dirty判定。首次加载/迁移后没有本地基线时仍保存全部领域，部分批量失败只重试失败或后来再次变化的领域，不能用dirty优化跳过未知权威状态。Gate故障接管也已完成同拓扑闭环：Login优先Location当前健康Gate，故障时选择另一Gate；PlayerUnit邮箱通过Location CAS递增gateEpoch，ActorLocation在邮箱入口拒绝旧Gate帧，Watcher有界重启后不自动回切。Manager与动态MapHost双失时玩家可以回到安全静态地图，但不会恢复原Socket、Gate排队帧、Boss现场或战斗计时器，也不是跨机器租约仲裁。
 - Starter入口固定为`npm run starter:verify`、`npm run starter:dev`、`npm run starter:smoke`和`npm run starter:character-smoke`；完整纵向验收使用`npm run starter:acceptance`。三个Starter验收命令都会先重建`target/debug/TiangZ`，避免使用旧Rust运行时；`starter:acceptance:persistent`负责DBProxy快照写入、TiangZ重启和恢复读取，`starter:acceptance:faults`通过`test:tiangz-fault-matrix`顺序验证交易故障切换、提交后响应丢失、双Endpoint不可用、MapHost接管和独立DBProxy存储故障。持久化/故障命令需要本地数据库环境，不能对生产数据执行。所有Starter命令只负责静态检查、开发启动和短时运行时验收，不代替容量压测。
 
 ### Starter身份约束
@@ -399,7 +399,7 @@ ordered Scene mailbox的同步排空使用循环而不是递归，长串同步�
 - Phase 3.10.1：项目版本身份、Stable Core入口、API锁、依赖方向检查和独立业务夹具。
 - Phase 3.10.2：RPC在途id避让、本地/远程timeout、迟到/重复响应与断线/停机清理，以及Actor销毁、旧InstanceId、ordered/unordered正确性矩阵。
 - Phase 3.10.3：Process退出、Inner断线、慢客户端、过载、Handler异常、非法帧、重连风暴和保存失败的一键故障注入矩阵。
-- Phase 3.10.4：每个 Process 通过健康端口开放 `/metrics`；Prometheus按`StartMachine.json`发现实际Process，Alloy把JSON文件日志送入Loki，OpenTelemetry把采样Span送入Tempo，Grafana统一查询Metrics、Logs与Traces。Core内部Trace Envelope跨Scene/ActorLocation传播上下文，不改变业务Protobuf。`/ready`依赖V8 Runtime心跳，Scene自定义指标显式区分Counter/Gauge；`verify:observability`验证静态接线，`test:observability:faults`真实验证Gate强杀、动态副本安全回退、故障日志和跨进程Trace。禁止新增业务Observer Scene汇总指标。
+- Phase 3.10.4：每个 Process 通过健康端口开放 `/metrics`；Prometheus按`StartMachine.json`发现实际Process，Alloy把JSON文件日志送入Loki，OpenTelemetry把采样Span送入Tempo，Grafana统一查询Metrics、Logs与Traces。Core内部Trace Envelope跨Scene/ActorLocation传播上下文，不改变业务Protobuf。`/ready`依赖V8 Runtime心跳，Scene自定义指标显式区分Counter/Gauge，并允许用受限 `labels` 区分同一 Scene 内有限实例；Host 保留标签不可覆盖，无界业务身份禁止进入标签。`verify:observability`验证静态接线，`test:observability:faults`真实验证Gate强杀、动态副本安全回退、故障日志和跨进程Trace。禁止新增业务Observer Scene汇总指标。
 - Developer Tools 的运行时查看目前只读取 Process 健康端口的 `/metrics`，用于观察队列、mailbox、pending RPC、Timer 和 Native 摘要；它不执行 RPC、不读取任意 V8 对象，也不改变业务状态。按 UnitId/Actor 查询的只读 Inspector 仍处于协议草案阶段，必须完成 Runtime 端点和权限边界后才能宣称可用。
 
 ## 已验证的稳定性事实
@@ -429,7 +429,7 @@ Cocos Demo完整类型检查依赖编辑器生成的`client_demo/cocos_client2D_
 
 正式Hotfix操作使用`npm run hotfix -- plan/apply/status/rollback`，不再依赖人工向Watcher终端输入命令。Process只有显式配置`lifecycle.hotfixOperations`并从指定环境变量取得非空令牌时才开放管理路由；路由复用健康端口但只接受回环来源和Bearer令牌，禁止经Nginx或公网暴露。CLI校验候选哈希与冻结Model契约，支持`--target`灰度、active/previous状态、operationId审计和单机多Process部分失败补偿回滚。回滚是重新提交previous候选并生成新generation，不是倒退计数。当前不提供跨机器Prepare/Commit；多机需先分发同一内容寻址候选，再登录各机器执行本地目标协调。
 
-Prometheus、Loki、Tempo、Alloy和Grafana已完成本地多Process观测闭环；Linux外网测试部署进一步接入Alertmanager、Node/PostgreSQL/Redis Exporter、Grafana HTTPS认证入口、7天保留期和容器内存上限。最终第三方通知仍需部署者提供Webhook密钥，跨机器Agent与长期对象存储仍属后续；单机观测栈不能被称为生产HA。
+Prometheus、Loki、Tempo、Alloy和Grafana已完成本地多Process观测闭环；Linux外网测试部署进一步接入Alertmanager、Node/PostgreSQL/Redis Exporter、Grafana HTTPS认证入口、14天保留期和容器内存上限。最终第三方通知仍需部署者提供Webhook密钥，跨机器Agent与长期对象存储仍属后续；单机观测栈不能被称为生产HA。
 
 Phase 4计划：
 
@@ -469,7 +469,7 @@ Phase 4计划：
 
 Phase 5计划：
 
-- [x] Linux单机生产测试观测：Alertmanager、Node/PostgreSQL/Redis Exporter、Grafana HTTPS认证入口、资源上限与7天保留；第三方通知密钥由部署环境提供。
+- [x] Linux单机生产测试观测：Alertmanager、Node/PostgreSQL/Redis Exporter、Grafana HTTPS认证入口、资源上限与14天保留；第三方通知密钥由部署环境提供。
 - 跨机器观测Agent、长期对象存储与观测平面HA；跨进程追踪本身已经完成。
 - 生产级服务发现、Inner身份认证、崩溃恢复和滚动更新。
 - KCP弱网/长稳与io_uring进一步优化。

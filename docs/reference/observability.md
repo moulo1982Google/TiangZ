@@ -6,7 +6,7 @@ Runtime 每 5 秒输出一次进程和 Scene 指标。Scene 快照也只在这�
 
 这是用于本机调试和拆分 Process 部署的最小监控栈。每个 TiangZ Process 独立暴露 `/metrics`，Prometheus 负责抓取全部实际运行的 Process；Alloy采集JSON文件日志写入Loki；Process通过OTLP HTTP把采样Span写入Tempo；Grafana统一查询三类信号。不要在业务层新增 Observer Scene 来转发指标；它会引入单点、额外队列和错误的指标归属。
 
-Linux外网测试使用独立的`tools/observability/production`部署包：在本机栈基础上增加Alertmanager、Node Exporter、PostgreSQL Exporter和Redis Exporter；抓取10个TiangZ Process与两个DBProxy；Prometheus、Loki和Tempo保留7天；所有管理端口只绑定宿主机回环，Grafana通过现有Nginx HTTPS的`/grafana/`开放认证入口。具体密钥与部署步骤见[生产测试观测栈](../../tools/observability/production/README.md)。
+Linux外网测试使用独立的`tools/observability/production`部署包：在本机栈基础上增加Alertmanager、Node Exporter、PostgreSQL Exporter和Redis Exporter；抓取10个TiangZ Process与两个DBProxy；Prometheus、Loki和Tempo保留14天，覆盖七日演练及其复盘窗口；所有管理端口只绑定宿主机回环，Grafana通过现有Nginx HTTPS的`/grafana/`开放认证入口。具体密钥与部署步骤见[生产测试观测栈](../../tools/observability/production/README.md)。
 
 ### 启动
 
@@ -433,3 +433,5 @@ Process bridge 的累计计数包括 `inbound_frames`、`host_completions`、`di
 `runtime_events / runtime_updates` 可近似观察实际批量度。该值过低且 CPU 偏高，通常表示 V8 update 调用太频繁；该值很高且 `ingress.queue`、客户端 p95/p99 上升，则说明批次或聚合窗口过大。调度模式和覆盖字段见“配置与协议参考”。
 
 `[process-metrics]` 中的 `dropped_logs` 是当前进程控制台与文件非阻塞队列累计丢弃的日志行数。正常运行应保持为 0；持续增长说明日志生产速度超过输出能力，应降低日志级别、限制重复错误或提高采集端吞吐，不能改为阻塞游戏线程来掩盖问题。
+
+外网长稳配置会用 target filter 阻止 `tiangz::metrics` 和 `tiangz::latency` 的周期累计摘要重复落入十份进程日志；这不会关闭 `/metrics` Histogram，也不会改变 latency/trace 的采样。容量与尾延迟以 Prometheus 14 天序列为准，文件日志保留业务事件、警告、错误和可关联的采样上下文。故障演练另把 systemd、容器、epoch、故障动作和最终对账复制到单轮证据目录，不能靠无限增长的运行时明细替代验收时间线。

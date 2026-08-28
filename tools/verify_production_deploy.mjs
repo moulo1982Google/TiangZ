@@ -8,6 +8,12 @@ const deployRoot = path.join(root, "configs/deploy/external-multiprocess");
 const nginx = readFile("configs/deploy/cocos3d-nginx.conf.example");
 const websocket = readFile("configs/deploy/tiangz-websocket.conf.example");
 const systemd = readFile("configs/deploy/tiangz-external.service.example");
+const chaosSystemd = readFile("tools/chaos/systemd/tiangz-external.service");
+const redisSysctl = readFile("tools/chaos/sysctl/99-tiangz-redis.conf");
+const rsyslogRotation = readFile("tools/chaos/logrotate/rsyslog");
+const audit = readFile("tools/chaos/audit_external_validation.mjs");
+const runner = readFile("perf/chaos/run_longhaul_game.mjs");
+const finalizer = readFile("tools/chaos/finalize_external_validation.mjs");
 const client = JSON.parse(readFile(
   "client_demo/cocos_client3D_3.8.8/assets/resources/Config/tiangz-external.json",
 ));
@@ -22,6 +28,20 @@ assert.match(websocket, /proxy_set_header Upgrade \$http_upgrade/);
 assert.match(systemd, /^Wants=.*tiangz-dbproxy@1\.service.*tiangz-dbproxy@2\.service/m);
 assert.doesNotMatch(systemd, /^Requires=.*tiangz-dbproxy/m);
 assert.match(systemd, /tail -f \/dev\/null \| exec \/opt\/tiangz-external\/TiangZ/);
+assert.match(chaosSystemd, /Environment=NO_COLOR=1/);
+assert.match(redisSysctl, /^vm\.overcommit_memory\s*=\s*1$/m);
+assert.match(rsyslogRotation, /daily/);
+assert.match(rsyslogRotation, /maxsize 256M/);
+assert.match(rsyslogRotation, /rotate 7/);
+assert.match(rsyslogRotation, /su root adm/);
+assert.match(audit, /noApplicationMetricDuplicates/);
+assert.match(audit, /prometheusIngestionClean/);
+assert.match(audit, /gameRecoveryPassed/);
+assert.match(audit, /theilSenBytesPerHour/);
+assert.match(runner, /--movement-sequence-base/);
+assert.match(runner, /enteredMapId/);
+assert.match(runner, /shard_account_generation_advanced/);
+assert.match(finalizer, /report\?\.checks\?\.gameRecoveryPassed === true/);
 
 const mappings = new Map([
   [17000, 27000],

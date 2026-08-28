@@ -10,7 +10,8 @@ User=tiangz
 Group=tiangz
 WorkingDirectory=/opt/tiangz-external
 EnvironmentFile=/etc/tiangz/external.env
-Environment=RUST_LOG=info,tiangz::metrics=warn
+Environment=RUST_LOG=info,tiangz::metrics=warn,tiangz::latency=warn
+Environment=NO_COLOR=1
 ExecStart=/bin/sh -c 'tail -f /dev/null | exec /opt/tiangz-external/TiangZ configs/deploy/external-chaos/StartMachine.json'
 KillMode=control-group
 Restart=on-failure

@@ -9,7 +9,7 @@ User=tiangz
 Group=tiangz
 WorkingDirectory=/opt/tiangz-chaos
 Environment=NODE_OPTIONS=--max-old-space-size=512
-ExecStart=/usr/local/bin/node /opt/tiangz-chaos/perf/chaos/run_longhaul_game.mjs --host 127.0.0.1 --manager-port 27000 --players 500 --total-hours 168 --session-seconds 300 --warmup-seconds 10 --move-rate 1 --probe-rate 0.05 --business-rate 0.02 --account-prefix chaos7d --run-dir /var/log/tiangz-chaos/game
+ExecStart=/usr/local/bin/node /opt/tiangz-chaos/perf/chaos/run_longhaul_game.mjs --client rust --client-path /opt/tiangz-chaos/map_probe_load --host 127.0.0.1 --manager-port 27000 --players 500 --total-hours 168 --session-seconds 300 --warmup-seconds 10 --move-rate 1 --probe-rate 0.05 --business-rate 0.02 --account-prefix chaos7d --run-dir /var/log/tiangz-chaos/game
 KillMode=control-group
 Restart=on-failure
 RestartSec=15

@@ -1,4 +1,5 @@
 /target/
+/perf/map_probe_load/target/
 /node_modules/
 /tools/node_modules/
 /dist/

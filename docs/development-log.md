@@ -7,6 +7,32 @@
 - 最新记录放在最前面，使用日期和版本作为标题。
 - 记录目标、实现、验证、设计决定和遗留问题，不复制完整提交清单。
 
+## 2026-08-28：外网 R4 审计与长稳验收加固
+
+- `overnight-20260828-0700-r4` 实际运行 6 小时 33 分：500 游戏玩家、100 DBProxy 正确性玩家以及 12/12 个故障动作都完成。DBProxy 最终逐玩家、revision、交易账本、Outbox、backlog 与 cache-repair 对账全部通过，故障后队列归零；健康窗口内游戏移动、Probe 和业务传输也无错误。
+- 审计发现原 finalizer 只把 `runner_completed` 当作游戏成功，漏掉 MapHost 2 强杀后 map100 复用账号长期安全回退到 map1 的事实；Rust 客户端也把移动序列在每个 epoch 重置，造成少量非故障窗口的精确 300/600 次移动拒绝。客户端现从真实进图响应输出 `enteredMapId/enteredMapInstanceId`，移动序列按 epoch 单调递增；runner 遇到地图身份或空间模式不符会轮换该 shard 的账号代次，并要求最终所有 shard 恢复健康。
+- 同一 MapHost 承载地图 1/100 时，两个 `map_broadcast` 快照此前只有相同 `process/scene/scene_type/name/key`，导致每次抓取产生 65 个重复序列和 Prometheus 拒收。`CustomMetricSnapshot` 新增受限低基数 `labels`，地图广播使用 `map_id` 标签；Host 校验标签名且禁止覆盖保留标签，并增加重复序列单测。
+- 日志审计现直接扫描 10 个 `/metrics` 的重复/冲突序列，累计本轮 Prometheus duplicate-timestamp 与 out-of-order 增量，并把游戏最终恢复、完整故障计划和 `SOAK_FINAL` 纳入强门禁。journal 的 byte-array/ANSI 消息会规范化，DBProxy 控制台关闭 ANSI。文件系统投影改为 Theil–Sen 稳健斜率加瞬时峰值余量，最终 `df` 连续五次取中位数，避免 Prometheus TSDB 压缩的短暂双份 block 造成假失败。
+- 宿主机策略增加持久 `vm.overcommit_memory=1`、journald 上限以及 rsyslog 每日/256 MiB 轮转模板；安装脚本首次替换前保存配置，历史日志仍须由运维显式清理。完成本地定向测试后先进行约两小时外网复验，未通过新的强门禁前不启动七日演练。
+
+## 2026-08-28：DBProxy 批量持久化与外网截止时间验证
+
+- 普通玩家快照改为只提交实际变化的领域；成功提交后保存规范化 payload 指纹，周期保存和停机 flush 不再重复写入未变化领域。批量部分失败只推进成功领域的 revision/基线，失败领域会在下一轮继续提交。
+- DBProxy 的 `SaveMultiSnapshot` 按存储 shard 合并为一个 PostgreSQL 事务，并批量更新 Redis 与 cache-repair ACK；backlog worker 同样批量 claim/ACK/release。事务、交易和幂等重放路径复用已提交结果，去掉逐记录的提交后回读。
+- 真实 PostgreSQL/Redis 集成回归发现并修复了“记录不存在且 expected revision 非零时仍可 INSERT”的 CAS 缺口；新建记录现在只接受无 expected revision 或 revision 0。批量部分成功、缓存同步、backlog 批处理和最终重试均已通过真实存储测试。
+- 外网重新创建 PostgreSQL/Redis 开发数据卷并以 32 个快照分区启动；两个 DBProxy、10 个 TiangZ 进程和全部依赖健康。100 游戏玩家双 Rust 分片短跑与 100 DBProxy 玩家短跑均通过，后者完成 13,308 次读取、1,700 次快照入队、1,109 次事务和 352 次交易，最终对账无缺失、旧读或不变量错误。
+- 未直接启动七日演练。分阶段启动门先后发现并保留了三轮失败证据：systemd 的 `RUST_LOG` 覆盖缺少 latency target、批量 CAS 无法推进非零 expected revision、复用账号耗尽初始道具后 Rust 客户端错误拒绝下一 epoch。修复分别通过实际日志、外网 PostgreSQL 集成回归和 500 个已消耗道具账号复测；`overnight-20260828-0700-r4` 于北京时间 2026-08-28 00:26 从新数据卷重新启动 500 游戏玩家、100 DBProxy 正确性玩家和完整故障序列，将在 07:00 由 systemd timer 自动恢复基线并收尾。最终是否通过必须以届时生成的 `validation-final.json` 和 `log-budget-final.json` 为准。
+- 日志审计每五分钟按 journal cursor 归档服务日志并检查 10 个进程的丢弃计数；journald 固定 4 GiB/保留 12 GiB 空闲，PostgreSQL/Redis 使用每容器 `32 MiB × 5` 的 Docker `local` 日志。七日投影同时计算已知日志目录与整块文件系统增长并取较大值，避免漏掉数据库、WAL/AOF 和观测存储。
+- `map_probe_load` 在复用账号没有道具 1001 时继续使用真实技能维持业务流量，不把合法的背包耗尽当作传输失败；独立的 `perf/map_probe_load/Cargo.toml` 只包含 Tokio/JSON/系统采样依赖，外网 release 构建不再下载 V8，实测约 17 秒、445 MiB 峰值内存。
+
+## 2026-08-27：外网长稳负载切换到Rust客户端
+
+- 扩展既有`map_probe_load`为完整长稳客户端：从进图响应选择Grid2D/NavMesh3D协议，支持稳定账号复用、真实UseItem/CastSkill、移动确认与采样延迟，并输出与长稳runner健康门兼容的`RESULT_JSON`。
+- Grid2D不反序列化同屏实体对象，只在protobuf wire数据上扫描本玩家`unit_id/acknowledged_sequence`；NavMesh3D每玩家只保留一个`NavigateInput`在途RPC。长稳runner新增`--client node|rust`和显式客户端路径，systemd模板默认使用两个Rust分片，Node保留为SDK协议对照。
+- 外网Release测试10/10通过；10玩家连续3个epoch全部健康并验证稳定账号复用。最终500玩家按地图各250、1Hz移动、0.05Hz Probe、0.02Hz真实业务运行300秒，两图各75,000次移动全部确认，skipped、移动/Probe错误和业务传输错误均为0。
+- 相对同机同参数Node基线，负载端合计CPU下降59.7%，结束RSS下降97.2%；NavMesh3D移动p99由1823.5ms降至9.1ms。Grid2D完整排空的权威Push数量远高于Node能处理的数量，因此其Rust进程CPU反而由40.0秒增至114.6秒；该差异保留在报告中，不能用合计优化掩盖。
+- 外网`tiangz-chaos-game.service`已安装新命令但保持disabled/inactive；本轮没有启动七日演练，也没有注入Redis、PostgreSQL或MapHost故障。
+
 ## 2026-08-24：生产测试观测部署
 
 - 增加Linux host-network生产测试观测包，所有管理端口显式绑定回环；Grafana只经现有Nginx HTTPS的`/grafana/`开放并关闭匿名访问。

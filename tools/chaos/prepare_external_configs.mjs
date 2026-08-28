@@ -42,7 +42,9 @@ function tuneProcess(processConfig, fileName) {
   processConfig.logging = {
     ...(processConfig.logging ?? {}),
     level: "info",
-    filter: "info,tiangz::metrics=warn",
+    // Prometheus already retains the cumulative process/latency series. Re-emitting every
+    // histogram summary into ten JSON files adds no incident evidence and dominates disk growth.
+    filter: "info,tiangz::metrics=warn,tiangz::latency=warn",
     format: "json",
     console: false,
     file: {

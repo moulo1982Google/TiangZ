@@ -190,6 +190,14 @@ function verifyProductionStack() {
   const tempo = readFileSync(path.join(base, "tempo/tempo.yml"), "utf8");
   const datasources = readFileSync(path.join(base, "grafana/provisioning/datasources/datasources.yml"), "utf8");
   const dashboard = JSON.parse(readFileSync(path.join(base, "grafana/dashboards/production-overview.json"), "utf8"));
+  const chaosRuntimeUnit = readFileSync(
+    path.resolve(root, "tools/chaos/systemd/tiangz-external.service"),
+    "utf8",
+  );
+  const chaosConfigGenerator = readFileSync(
+    path.resolve(root, "tools/chaos/prepare_external_configs.mjs"),
+    "utf8",
+  );
 
   for (const service of ["prometheus", "alertmanager", "loki", "tempo", "alloy", "grafana", "node-exporter", "postgres-exporter", "redis-exporter"]) {
     if (!compose.includes(`  ${service}:`)) throw new Error(`Production Compose missing ${service}`);
@@ -197,7 +205,7 @@ function verifyProductionStack() {
   if ((compose.match(/network_mode: host/g) ?? []).length !== 9 || compose.includes("\n    ports:")) {
     throw new Error("Production observability must use loopback-bound host networking without published ports");
   }
-  if ((compose.match(/mem_limit:/g) ?? []).length !== 9 || !compose.includes("retention.time=7d")) {
+  if ((compose.match(/mem_limit:/g) ?? []).length !== 9 || !compose.includes("retention.time=14d")) {
     throw new Error("Production observability must bound every service memory and Prometheus retention");
   }
   for (const endpoint of ["127.0.0.1:19090", "127.0.0.1:19093", "127.0.0.1:19100", "127.0.0.1:19187", "127.0.0.1:19121"]) {
@@ -223,15 +231,20 @@ function verifyProductionStack() {
   if (
     !normalizedLoki.includes("http_listen_address: 127.0.0.1") ||
     !normalizedLoki.includes("frontend:\n  address: 127.0.0.1\n  port: 19095") ||
-    !normalizedLoki.includes("retention_period: 168h")
+    !normalizedLoki.includes("retention_period: 336h")
   ) {
-    throw new Error("Production Loki must bind and advertise loopback and retain seven days");
+    throw new Error("Production Loki must bind and advertise loopback and retain fourteen days");
   }
-  if (!tempo.includes("endpoint: 127.0.0.1:4318") || !tempo.includes("block_retention: 168h")) {
-    throw new Error("Production Tempo must bind OTLP to loopback and retain seven days");
+  if (!tempo.includes("endpoint: 127.0.0.1:4318") || !tempo.includes("block_retention: 336h")) {
+    throw new Error("Production Tempo must bind OTLP to loopback and retain fourteen days");
   }
   if (!datasources.includes("uid: alertmanager") || !datasources.includes("tracesToLogsV2")) {
     throw new Error("Production Grafana datasources are incomplete");
+  }
+  const boundedRuntimeFilter = "info,tiangz::metrics=warn,tiangz::latency=warn";
+  if (!chaosRuntimeUnit.includes(`RUST_LOG=${boundedRuntimeFilter}`) ||
+      !chaosConfigGenerator.includes(`filter: "${boundedRuntimeFilter}"`)) {
+    throw new Error("External chaos runtime and generated configs must suppress duplicate metric/latency summaries");
   }
   const ids = dashboard.panels?.map((panel) => panel.id) ?? [];
   if (ids.length < 8 || new Set(ids).size !== ids.length) {

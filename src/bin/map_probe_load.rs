@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+#![recursion_limit = "256"]
+
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
@@ -10,7 +12,7 @@ use std::path::PathBuf;
 use sysinfo::{Pid, ProcessesToUpdate, System};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpSocket, TcpStream};
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Semaphore, mpsc, watch};
 use tokio::time::{Instant, sleep, sleep_until};
 
 const MAX_FRAME_LEN: usize = 1024 * 1024;
@@ -32,6 +34,9 @@ const MAP_MOVE: u16 = 10013;
 const MAP_PROBE_REQ: u16 = 10014;
 const MAP_PROBE_RESP: u16 = 10015;
 const ENTITY_MOVE: u16 = 10016;
+const ENTITY_NAVIGATE: u16 = 10036;
+const NAVIGATE_INPUT_REQ: u16 = 10037;
+const NAVIGATE_INPUT_RESP: u16 = 10038;
 const ENTITY_NUMERIC: u16 = 10017;
 const ENTITY_STATE: u16 = 10018;
 const CLIENT_PING: u16 = 10024;
@@ -49,6 +54,38 @@ const CAST_SKILL_RESP: u16 = 10048;
 const CLIENT_PING_INTERVAL: Duration = Duration::from_secs(5);
 const GRID_CROSSING_PLAYER_MODULUS: u32 = 5;
 const GRID_CROSSING_SECONDS: u64 = 2;
+const ACCOUNT_NOT_REGISTERED: u32 = 10_036;
+const MAX_MOVEMENT_LATENCY_SAMPLES_PER_PLAYER: u64 = 1_024;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SpatialMode {
+    Grid2d,
+    Navmesh3d,
+}
+
+impl SpatialMode {
+    fn parse(value: u32) -> Result<Self> {
+        match value {
+            1 => Ok(Self::Grid2d),
+            2 => Ok(Self::Navmesh3d),
+            _ => bail!("unsupported spatial mode {value}"),
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Grid2d => "grid2d",
+            Self::Navmesh3d => "navmesh3d",
+        }
+    }
+
+    const fn protocol(self) -> &'static str {
+        match self {
+            Self::Grid2d => "C2M_Move/G2C_EntityMove",
+            Self::Navmesh3d => "C2M_NavigateInput/M2C_NavigateInput+G2C_EntityNavigate",
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SpawnLayout {
@@ -182,7 +219,9 @@ struct Options {
     warmup: Duration,
     duration: Duration,
     timeout: Duration,
+    movement_timeout: Duration,
     move_rate: u64,
+    movement_sequence_base: u32,
     movement_hold_messages: u32,
     spawn_layout: SpawnLayout,
     world_grids: u32,
@@ -193,6 +232,9 @@ struct Options {
     state_sync_mode: StateSyncMode,
     state_sync_rate: u64,
     state_sync_concurrency: usize,
+    account_prefix: Option<String>,
+    reuse_accounts: bool,
+    operation_prefix: String,
     label: String,
     measurement_signal_file: Option<PathBuf>,
 }
@@ -213,6 +255,8 @@ struct PreparedPlayerConnection {
     writer_tx: mpsc::Sender<Vec<u8>>,
     writer_task: tokio::task::JoinHandle<()>,
     entity_move_pushes: Arc<AtomicU64>,
+    own_unit_id: Arc<AtomicU32>,
+    grid_move_ack_rx: watch::Receiver<u32>,
     state_pushes: StatePushCounters,
     player_index: u32,
     placement_layout: Option<u32>,
@@ -224,11 +268,15 @@ struct PlayerConnection {
     writer_tx: mpsc::Sender<Vec<u8>>,
     writer_task: tokio::task::JoinHandle<()>,
     entity_move_pushes: Arc<AtomicU64>,
+    grid_move_ack_rx: watch::Receiver<u32>,
     state_pushes: StatePushCounters,
     next_rpc_id: u32,
     unit_id: u32,
     player_index: u32,
     business_item_id: u64,
+    spatial_mode: SpatialMode,
+    entered_map_id: u32,
+    entered_map_instance_id: u64,
 }
 
 #[derive(Clone)]
@@ -317,6 +365,7 @@ struct Timing {
 
 #[derive(Clone, Copy)]
 enum PendingKind {
+    Navigation,
     Probe,
     StateSync { mode: u32 },
     Business { response_code: u16 },
@@ -326,7 +375,14 @@ struct PendingRequest {
     started_at: Instant,
     sequence: u32,
     measured: bool,
+    sampled: bool,
     kind: PendingKind,
+}
+
+struct PendingGridMove {
+    sequence: u32,
+    started_at: Instant,
+    sampled: bool,
 }
 
 #[derive(Default)]
@@ -335,7 +391,9 @@ struct PlayerResult {
     probe_errors: u64,
     move_errors: u64,
     move_sent: u64,
+    move_acknowledged: u64,
     move_skipped: u64,
+    movement_latencies_micros: Vec<u64>,
     entity_move_pushes: u64,
     state_sync_latencies_micros: Vec<u64>,
     state_sync_errors: u64,
@@ -354,6 +412,9 @@ struct PlayerResult {
     business_accepted: u64,
     business_rejected: u64,
     business_transport_errors: u64,
+    spatial_mode: Option<SpatialMode>,
+    entered_map_id: u32,
+    entered_map_instance_id: u64,
 }
 
 #[tokio::main]
@@ -378,12 +439,12 @@ async fn main() -> Result<()> {
     let players = if let Some(map_entry_concurrency) = options.map_entry_concurrency {
         let mut prepare_tasks = tokio::task::JoinSet::new();
         for index in 0..options.players {
+            let account = account_name(&options, account_seed, index)?;
             let options = Arc::clone(&options);
             let login_address = Arc::clone(&login_address);
             let semaphore = Arc::clone(&semaphore);
             prepare_tasks.spawn(async move {
                 let permit = semaphore.acquire_owned().await?;
-                let account = format!("rp{}_{}_{}", std::process::id(), account_seed, index);
                 let player = prepare_player(&options, &login_address, &account, index).await;
                 drop(permit);
                 player
@@ -428,12 +489,12 @@ async fn main() -> Result<()> {
     } else {
         let mut setup_tasks = tokio::task::JoinSet::new();
         for index in 0..options.players {
+            let account = account_name(&options, account_seed, index)?;
             let options = Arc::clone(&options);
             let login_address = Arc::clone(&login_address);
             let semaphore = Arc::clone(&semaphore);
             setup_tasks.spawn(async move {
                 let permit = semaphore.acquire_owned().await?;
-                let account = format!("rp{}_{}_{}", std::process::id(), account_seed, index);
                 let player = setup_player(&options, &login_address, &account, index).await;
                 drop(permit);
                 player
@@ -493,6 +554,10 @@ async fn main() -> Result<()> {
         .sum::<u64>();
     let move_errors = results.iter().map(|result| result.move_errors).sum::<u64>();
     let move_sent = results.iter().map(|result| result.move_sent).sum::<u64>();
+    let move_acknowledged = results
+        .iter()
+        .map(|result| result.move_acknowledged)
+        .sum::<u64>();
     let move_skipped = results
         .iter()
         .map(|result| result.move_skipped)
@@ -557,6 +622,11 @@ async fn main() -> Result<()> {
         .flat_map(|result| result.latencies_micros.iter().copied())
         .collect::<Vec<_>>();
     latencies.sort_unstable();
+    let mut movement_latencies = results
+        .iter()
+        .flat_map(|result| result.movement_latencies_micros.iter().copied())
+        .collect::<Vec<_>>();
+    movement_latencies.sort_unstable();
     let mut state_sync_latencies = results
         .iter()
         .flat_map(|result| result.state_sync_latencies_micros.iter().copied())
@@ -574,6 +644,36 @@ async fn main() -> Result<()> {
     let setup_per_second = options.players as f64 / setup_elapsed.as_secs_f64();
     let map_entry_per_second =
         map_entry_elapsed.map(|elapsed| options.players as f64 / elapsed.as_secs_f64());
+    let movement_spatial_mode = results
+        .first()
+        .and_then(|result| result.spatial_mode)
+        .filter(|mode| {
+            results
+                .iter()
+                .all(|result| result.spatial_mode == Some(*mode))
+        });
+    let movement_spatial_mode_name = movement_spatial_mode
+        .map(SpatialMode::name)
+        .unwrap_or("mixed");
+    let movement_protocol = movement_spatial_mode
+        .map(SpatialMode::protocol)
+        .unwrap_or("mixed");
+    let entered_map_id = results
+        .first()
+        .map(|result| result.entered_map_id)
+        .filter(|map_id| {
+            results
+                .iter()
+                .all(|result| result.entered_map_id == *map_id)
+        });
+    let entered_map_instance_id = results
+        .first()
+        .map(|result| result.entered_map_instance_id)
+        .filter(|instance_id| {
+            results
+                .iter()
+                .all(|result| result.entered_map_instance_id == *instance_id)
+        });
     system.refresh_processes(ProcessesToUpdate::Some(&[process_pid]), false);
     let (cpu_time_ms, rss_bytes) = system
         .process(process_pid)
@@ -650,6 +750,7 @@ async fn main() -> Result<()> {
         "warmupSeconds": options.warmup.as_secs_f64(),
         "durationSeconds": options.duration.as_secs_f64(),
         "targetMoveRatePerPlayer": options.move_rate,
+        "movementSequenceBase": options.movement_sequence_base,
         "movementHoldMessages": options.movement_hold_messages,
         "spawnLayout": options.spawn_layout.name(),
         "worldGrids": options.world_grids,
@@ -669,6 +770,10 @@ async fn main() -> Result<()> {
         "mapId": options.map_id,
         "targetProbeRatePerPlayer": options.probe_rate,
         "targetBusinessRatePerPlayer": options.business_rate,
+        "targetMapId": options.map_id,
+        "enteredMapId": entered_map_id,
+        "enteredMapInstanceId": entered_map_instance_id,
+        "accountMode": if options.reuse_accounts { "stable-reuse" } else { "ephemeral" },
         "measurementStartedAtUnixMs": started_at_unix_ms,
         "measurementEndedAtUnixMs": started_at_unix_ms + options.duration.as_millis() as u64,
         "workload": format!(
@@ -701,11 +806,15 @@ async fn main() -> Result<()> {
         "movement": {
             "count": move_sent,
             "perSecond": move_sent as f64 / options.duration.as_secs_f64(),
-            "p50Ms": 0,
-            "p90Ms": 0,
-            "p95Ms": 0,
-            "p99Ms": 0,
-            "maxMs": 0,
+            "spatialMode": movement_spatial_mode_name,
+            "protocol": movement_protocol,
+            "acknowledged": move_acknowledged,
+            "latencySamples": movement_latencies.len(),
+            "p50Ms": percentile(&movement_latencies, 0.50) as f64 / 1000.0,
+            "p90Ms": percentile(&movement_latencies, 0.90) as f64 / 1000.0,
+            "p95Ms": percentile(&movement_latencies, 0.95) as f64 / 1000.0,
+            "p99Ms": percentile(&movement_latencies, 0.99) as f64 / 1000.0,
+            "maxMs": movement_latencies.last().copied().unwrap_or_default() as f64 / 1000.0,
             "skippedTicks": move_skipped,
             "entityMovePushes": entity_move_pushes,
             "pushesPerSecond": entity_move_pushes as f64 / options.duration.as_secs_f64(),
@@ -792,21 +901,24 @@ async fn prepare_player(
     account: &str,
     index: usize,
 ) -> Result<PreparedPlayerConnection> {
-    register_player(options, login, account, index).await?;
-    let mut login_payload = Vec::with_capacity(account.len() + 16);
-    push_string(&mut login_payload, 1, account);
-    push_string(&mut login_payload, 3, PERF_PASSWORD);
-    let response = request_one(
-        &login.ip,
-        login.port,
-        encode_rpc(LOGIN_REQ, 1, &login_payload)?,
-        options.timeout,
-        options.source_ip,
-        source_port(options.source_ip, 22_000, index)?,
-    )
-    .await?;
-    let login_response =
-        decode_message(&response, LOGIN_RESP, Some(1)).context("Login RPC failed")?;
+    let login_response = if options.reuse_accounts {
+        let response = login_player(options, login, account, index, 22_000).await?;
+        let error = response.u32(91)?;
+        if error == ACCOUNT_NOT_REGISTERED {
+            register_player(options, login, account, index).await?;
+            login_player(options, login, account, index, 28_000).await?
+        } else {
+            response
+        }
+    } else {
+        register_player(options, login, account, index).await?;
+        login_player(options, login, account, index, 22_000).await?
+    };
+    let login_error = login_response.u32(91)?;
+    if login_error != 0 {
+        let detail = login_response.string(92).unwrap_or_default();
+        bail!("Login RPC returned error {login_error}: {detail}");
+    }
     let login = LoginResult {
         token: login_response.string(4)?,
         gate: Address {
@@ -846,6 +958,28 @@ async fn prepare_player(
     ))
 }
 
+async fn login_player(
+    options: &Options,
+    login: &Address,
+    account: &str,
+    index: usize,
+    source_port_base: usize,
+) -> Result<DecodedMessage> {
+    let mut login_payload = Vec::with_capacity(account.len() + 16);
+    push_string(&mut login_payload, 1, account);
+    push_string(&mut login_payload, 3, PERF_PASSWORD);
+    let response = request_one(
+        &login.ip,
+        login.port,
+        encode_rpc(LOGIN_REQ, 1, &login_payload)?,
+        options.timeout,
+        options.source_ip,
+        source_port(options.source_ip, source_port_base, index)?,
+    )
+    .await?;
+    decode_message_allow_error(&response, LOGIN_RESP, Some(1)).context("Login RPC failed")
+}
+
 async fn register_player(
     options: &Options,
     login: &Address,
@@ -878,6 +1012,8 @@ async fn enter_player(
         writer_tx,
         writer_task,
         entity_move_pushes,
+        own_unit_id,
+        grid_move_ack_rx,
         state_pushes,
         player_index,
         placement_layout,
@@ -900,6 +1036,11 @@ async fn enter_player(
     let mut inline_snapshot = false;
     let mut unit_id = 0;
     let mut business_item_id = 0_u64;
+    let mut spatial_mode = placement_layout.map(|_| SpatialMode::Grid2d);
+    let mut entered_map_id = placement_layout.map(|_| options.map_id).unwrap_or_default();
+    let mut entered_map_instance_id = placement_layout
+        .map(|_| u64::from(options.map_id))
+        .unwrap_or_default();
     while !received_response || !received_ready {
         let frame = receive_gate_frame(&mut frame_rx, options.timeout, "EnterMap").await?;
         let msgcode = frame_msgcode(&frame)?;
@@ -910,6 +1051,11 @@ async fn enter_player(
                 unit_id = response.u32(unit_id_field)?;
                 if placement_layout.is_some() {
                     business_item_id = response.u64(4);
+                } else {
+                    entered_map_id = response.u32(3)?;
+                    entered_map_instance_id = response.u64(11);
+                    spatial_mode = Some(SpatialMode::parse(response.u32(12)?)?);
+                    business_item_id = find_item_id_by_config(&frame, 9, 1001)?.unwrap_or(0);
                 }
                 inline_snapshot =
                     placement_layout.is_none() && count_length_delimited_field(&frame, 7)? > 0;
@@ -922,6 +1068,11 @@ async fn enter_player(
     if unit_id == 0 {
         bail!("EnterMap returned an invalid unitId");
     }
+    if entered_map_id == 0 || entered_map_instance_id == 0 {
+        bail!("EnterMap returned an invalid map identity");
+    }
+    let spatial_mode = spatial_mode.context("EnterMap did not return a spatial mode")?;
+    own_unit_id.store(unit_id, Ordering::Release);
     let mut next_rpc_id = 4;
     if options.entry_sync_mode.includes_new_observer_snapshot() && !inline_snapshot {
         let mut ready = Vec::with_capacity(8);
@@ -974,11 +1125,15 @@ async fn enter_player(
         writer_tx,
         writer_task,
         entity_move_pushes,
+        grid_move_ack_rx,
         state_pushes,
         next_rpc_id,
         unit_id,
         player_index,
         business_item_id,
+        spatial_mode,
+        entered_map_id,
+        entered_map_instance_id,
     })
 }
 
@@ -993,6 +1148,9 @@ fn start_gate_connection(
     let (frame_tx, frame_rx) = mpsc::unbounded_channel::<Result<Vec<u8>>>();
     let entity_move_pushes = Arc::new(AtomicU64::new(0));
     let reader_pushes = Arc::clone(&entity_move_pushes);
+    let own_unit_id = Arc::new(AtomicU32::new(0));
+    let reader_unit_id = Arc::clone(&own_unit_id);
+    let (grid_move_ack_tx, grid_move_ack_rx) = watch::channel(0_u32);
     let state_pushes = StatePushCounters::new();
     let reader_state_pushes = state_pushes.clone();
     let reader_task = tokio::spawn(async move {
@@ -1000,6 +1158,24 @@ fn start_gate_connection(
             match read_frame(&mut reader).await {
                 Ok(frame) => match frame_msgcode(&frame) {
                     Ok(ENTITY_MOVE) => {
+                        reader_pushes.fetch_add(1, Ordering::Relaxed);
+                        let unit_id = reader_unit_id.load(Ordering::Acquire);
+                        if unit_id != 0 {
+                            match find_grid_move_acknowledgement(&frame, unit_id) {
+                                Ok(Some(sequence)) => {
+                                    if sequence > *grid_move_ack_tx.borrow() {
+                                        grid_move_ack_tx.send_replace(sequence);
+                                    }
+                                }
+                                Ok(None) => {}
+                                Err(error) => {
+                                    let _ = frame_tx.send(Err(error));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Ok(ENTITY_NAVIGATE) => {
                         reader_pushes.fetch_add(1, Ordering::Relaxed);
                     }
                     Ok(ENTITY_NUMERIC) => {
@@ -1054,6 +1230,7 @@ fn start_gate_connection(
                     | Ok(MAP_READY)
                     | Ok(MAP_SNAPSHOT_READY_RESP)
                     | Ok(MAP_CAPACITY_PLACE_RESP)
+                    | Ok(NAVIGATE_INPUT_RESP)
                     | Ok(MAP_PROBE_RESP)
                     | Ok(USE_ITEM_RESP)
                     | Ok(CAST_SKILL_RESP)
@@ -1082,6 +1259,8 @@ fn start_gate_connection(
         writer_tx,
         writer_task,
         entity_move_pushes,
+        own_unit_id,
+        grid_move_ack_rx,
         state_pushes,
         player_index,
         placement_layout,
@@ -1111,26 +1290,41 @@ async fn run_player(
         writer_tx,
         writer_task,
         entity_move_pushes,
+        mut grid_move_ack_rx,
         state_pushes,
         mut next_rpc_id,
         unit_id,
         player_index,
         business_item_id,
+        spatial_mode,
+        entered_map_id,
+        entered_map_instance_id,
     } = player;
+    result.spatial_mode = Some(spatial_mode);
+    result.entered_map_id = entered_map_id;
+    result.entered_map_instance_id = entered_map_instance_id;
     let mut pushes_at_measurement_start = None;
     let mut state_pushes_at_measurement_start = None;
     let mut pending = HashMap::<u32, PendingRequest>::with_capacity(
-        (options.probe_concurrency + options.state_sync_concurrency) * 2,
+        (options.probe_concurrency + options.state_sync_concurrency + 2) * 2,
     );
+    let mut pending_grid_moves = VecDeque::<PendingGridMove>::new();
+    let mut last_grid_acknowledgement = 0_u32;
     let mut probe_sequence = 0_u32;
     let mut state_sync_sequence = 0_u32;
     let mut business_sequence = 0_u32;
     let mut business_operation = player_index;
-    let mut move_sequence = 0_u32;
+    let mut move_sequence = options.movement_sequence_base;
     let probe_interval =
         (options.probe_rate > 0.0).then(|| Duration::from_secs_f64(1.0 / options.probe_rate));
     let move_interval =
         (options.move_rate > 0).then(|| Duration::from_secs_f64(1.0 / options.move_rate as f64));
+    let expected_measured_moves = (options.duration.as_secs_f64() * options.move_rate as f64)
+        .ceil()
+        .max(1.0) as u64;
+    let movement_latency_sample_stride = expected_measured_moves
+        .div_ceil(MAX_MOVEMENT_LATENCY_SAMPLES_PER_PLAYER)
+        .max(1);
     let state_sync_interval = (options.state_sync_mode != StateSyncMode::Off
         && options.state_sync_rate > 0)
         .then(|| Duration::from_secs_f64(1.0 / options.state_sync_rate as f64));
@@ -1146,14 +1340,42 @@ async fn run_player(
     let mut next_state_sync =
         schedule_origin + phase_offset(state_sync_interval, unit_id, 0xc2b2_ae35);
     let mut next_business = schedule_origin + phase_offset(business_interval, unit_id, 0x27d4_eb2f);
+    let movement_drain_deadline = timing.send_deadline + options.movement_timeout;
 
     loop {
         let now = Instant::now();
+        if spatial_mode == SpatialMode::Grid2d {
+            let acknowledgement = *grid_move_ack_rx.borrow_and_update();
+            if acknowledgement > last_grid_acknowledgement {
+                apply_grid_move_acknowledgement(
+                    acknowledgement,
+                    &mut last_grid_acknowledgement,
+                    &mut pending_grid_moves,
+                    &mut result,
+                );
+            }
+        }
         if pushes_at_measurement_start.is_none() && now >= timing.measurement_start {
             pushes_at_measurement_start = Some(entity_move_pushes.load(Ordering::Relaxed));
             state_pushes_at_measurement_start = Some(state_pushes.snapshot());
         }
-        if now >= timing.send_deadline && pending.is_empty() {
+        if now >= movement_drain_deadline {
+            if spatial_mode == SpatialMode::Grid2d && !pending_grid_moves.is_empty() {
+                result.move_errors += pending_grid_moves.len() as u64;
+                pending_grid_moves.clear();
+            }
+            let expired_navigation = pending
+                .iter()
+                .filter_map(|(rpc_id, request)| {
+                    matches!(request.kind, PendingKind::Navigation).then_some(*rpc_id)
+                })
+                .collect::<Vec<_>>();
+            for rpc_id in expired_navigation {
+                pending.remove(&rpc_id);
+                result.move_errors += 1;
+            }
+        }
+        if now >= timing.send_deadline && pending.is_empty() && pending_grid_moves.is_empty() {
             break;
         }
 
@@ -1164,21 +1386,54 @@ async fn run_player(
                 next_move += interval;
                 due += 1;
             }
+            if spatial_mode == SpatialMode::Navmesh3d && pending_navigation_count(&pending) != 0 {
+                result.move_skipped += due;
+                continue;
+            }
             result.move_skipped += due.saturating_sub(1);
             move_sequence = move_sequence.wrapping_add(1).max(1);
-            send_move(
-                &writer_tx,
-                unit_id,
-                player_index,
-                move_sequence,
-                options.movement_hold_messages,
-                options.move_rate,
-                options.spawn_layout,
-                options.world_grids,
-            )
-            .await?;
-            if now >= timing.measurement_start {
+            let measured = now >= timing.measurement_start;
+            if measured {
                 result.move_sent += 1;
+            }
+            let sampled = measured
+                && result
+                    .move_sent
+                    .is_multiple_of(movement_latency_sample_stride);
+            match spatial_mode {
+                SpatialMode::Grid2d => {
+                    send_move(
+                        &writer_tx,
+                        unit_id,
+                        player_index,
+                        move_sequence,
+                        options.movement_hold_messages,
+                        options.move_rate,
+                        options.spawn_layout,
+                        options.world_grids,
+                    )
+                    .await?;
+                    if measured {
+                        pending_grid_moves.push_back(PendingGridMove {
+                            sequence: move_sequence,
+                            started_at: now,
+                            sampled,
+                        });
+                    }
+                }
+                SpatialMode::Navmesh3d => {
+                    send_navigation(
+                        &writer_tx,
+                        &mut next_rpc_id,
+                        &mut pending,
+                        player_index,
+                        move_sequence,
+                        options.move_rate,
+                        measured,
+                        sampled,
+                    )
+                    .await?;
+                }
             }
             continue;
         }
@@ -1228,6 +1483,7 @@ async fn run_player(
                 &mut business_operation,
                 unit_id,
                 business_item_id,
+                &options.operation_prefix,
                 timing,
                 &mut result,
             )
@@ -1236,7 +1492,7 @@ async fn run_player(
             continue;
         }
 
-        if pending.is_empty() {
+        if pending.is_empty() && pending_grid_moves.is_empty() {
             let wake_at = [
                 move_interval.map(|_| next_move),
                 probe_interval.map(|_| next_probe),
@@ -1275,15 +1531,37 @@ async fn run_player(
             .min()
             .expect("send deadline is always present");
             tokio::select! {
-                frame = frame_rx.recv() => Some(frame.context("gate reader stopped")??),
+                frame = frame_rx.recv(), if !pending.is_empty() => {
+                    Some(frame.context("gate reader stopped")??)
+                },
+                changed = grid_move_ack_rx.changed(),
+                    if spatial_mode == SpatialMode::Grid2d && !pending_grid_moves.is_empty() => {
+                    changed.context("gate movement acknowledgement stopped")?;
+                    None
+                },
                 _ = sleep_until(wake_at) => None,
+            }
+        } else if (spatial_mode == SpatialMode::Grid2d && !pending_grid_moves.is_empty())
+            || pending_navigation_count(&pending) > 0
+        {
+            tokio::select! {
+                frame = frame_rx.recv(), if !pending.is_empty() => {
+                    Some(frame.context("gate reader stopped")??)
+                },
+                changed = grid_move_ack_rx.changed(),
+                    if spatial_mode == SpatialMode::Grid2d && !pending_grid_moves.is_empty() => {
+                    changed.context("gate movement acknowledgement stopped")?;
+                    None
+                },
+                _ = sleep_until(movement_drain_deadline) => None,
             }
         } else {
             Some(frame_rx.recv().await.context("gate reader stopped")??)
         };
         let Some(frame) = frame else { continue };
         let msgcode = frame_msgcode(&frame)?;
-        if msgcode != MAP_PROBE_RESP
+        if msgcode != NAVIGATE_INPUT_RESP
+            && msgcode != MAP_PROBE_RESP
             && msgcode != STATE_SYNC_BENCH_RESP
             && msgcode != USE_ITEM_RESP
             && msgcode != CAST_SKILL_RESP
@@ -1293,6 +1571,7 @@ async fn run_player(
         let response = decode_message_allow_error(&frame, msgcode, None)?;
         let rpc_id = response.u32(90)?;
         let response_sequence = match msgcode {
+            NAVIGATE_INPUT_RESP => Some(response.u32(1)?),
             STATE_SYNC_BENCH_RESP => Some(response.u32(2)?),
             MAP_PROBE_RESP => Some(response.u32(1)?),
             _ => None,
@@ -1305,6 +1584,9 @@ async fn run_player(
             // 错误响应可能没有业务序号，必须先按错误码分类再做正常响应校验。
             // Error responses may omit the business sequence, so classify them before normal response validation.
             match request.kind {
+                PendingKind::Navigation => {
+                    result.move_errors += 1;
+                }
                 PendingKind::Probe => {
                     result.probe_errors += 1;
                 }
@@ -1333,6 +1615,18 @@ async fn run_player(
             );
         }
         match request.kind {
+            PendingKind::Navigation => {
+                if msgcode != NAVIGATE_INPUT_RESP {
+                    result.move_errors += 1;
+                } else if request.measured {
+                    result.move_acknowledged += 1;
+                    if request.sampled {
+                        result
+                            .movement_latencies_micros
+                            .push(request.started_at.elapsed().as_micros() as u64);
+                    }
+                }
+            }
             PendingKind::Probe => {
                 if msgcode != MAP_PROBE_RESP {
                     result.probe_errors += 1;
@@ -1399,6 +1693,74 @@ fn phase_offset(interval: Option<Duration>, unit_id: u32, salt: u32) -> Duration
     value = value.wrapping_mul(0x846c_a68b);
     value ^= value >> 16;
     interval.mul_f64(f64::from(value) / (f64::from(u32::MAX) + 1.0))
+}
+
+/// 按服务端累计确认序号结算Grid2D移动；只保留本玩家的少量在途记录，避免解码整份AOI对象图。
+/// Settles Grid2D moves from the server's cumulative acknowledgement while retaining only this player's small in-flight queue.
+fn apply_grid_move_acknowledgement(
+    acknowledgement: u32,
+    last_acknowledgement: &mut u32,
+    pending: &mut VecDeque<PendingGridMove>,
+    result: &mut PlayerResult,
+) {
+    if acknowledgement <= *last_acknowledgement {
+        return;
+    }
+    *last_acknowledgement = acknowledgement;
+    while pending
+        .front()
+        .is_some_and(|movement| movement.sequence <= acknowledgement)
+    {
+        let movement = pending.pop_front().expect("front was checked");
+        result.move_acknowledged += 1;
+        if movement.sampled {
+            result
+                .movement_latencies_micros
+                .push(movement.started_at.elapsed().as_micros() as u64);
+        }
+    }
+}
+
+/// NavMesh3D移动是带回执的ActorLocation RPC；每名玩家只保留一个在途请求来限制客户端与服务端压力。
+/// NavMesh3D movement is an acknowledged ActorLocation RPC with one in-flight request per player to bound load on both sides.
+#[allow(clippy::too_many_arguments)]
+async fn send_navigation(
+    writer_tx: &mpsc::Sender<Vec<u8>>,
+    next_rpc_id: &mut u32,
+    pending: &mut HashMap<u32, PendingRequest>,
+    direction_seed: u32,
+    sequence: u32,
+    move_rate: u64,
+    measured: bool,
+    sampled: bool,
+) -> Result<()> {
+    let rpc_id = *next_rpc_id;
+    *next_rpc_id = next_rpc_id.wrapping_add(1).max(1);
+    let turn_stride = u32::try_from(move_rate.saturating_mul(5))
+        .unwrap_or(u32::MAX)
+        .max(1);
+    let direction = direction_seed.wrapping_add(sequence.saturating_sub(1) / turn_stride) % 4;
+    let started_at = Instant::now();
+    let mut payload = Vec::with_capacity(20);
+    push_sint32(&mut payload, 1, 1);
+    push_float(
+        &mut payload,
+        3,
+        direction as f32 * std::f32::consts::FRAC_PI_2,
+    );
+    push_uint32(&mut payload, 4, sequence);
+    send_client_frame(writer_tx, encode_rpc(NAVIGATE_INPUT_REQ, rpc_id, &payload)?).await?;
+    pending.insert(
+        rpc_id,
+        PendingRequest {
+            started_at,
+            sequence,
+            measured,
+            sampled: measured && sampled,
+            kind: PendingKind::Navigation,
+        },
+    );
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1490,6 +1852,7 @@ async fn send_probe(
             started_at,
             sequence: *sequence,
             measured: started_at >= timing.measurement_start && started_at < timing.send_deadline,
+            sampled: false,
             kind: PendingKind::Probe,
         },
     );
@@ -1523,14 +1886,17 @@ async fn send_state_sync(
             started_at,
             sequence: *sequence,
             measured: started_at >= timing.measurement_start && started_at < timing.send_deadline,
+            sampled: false,
             kind: PendingKind::StateSync { mode },
         },
     );
     Ok(())
 }
 
-/// 交替发送真实道具与技能请求，保留PlayerUnit有序mailbox的单飞语义。
-/// Alternates real item and skill requests while preserving one in-flight request per PlayerUnit mailbox.
+/// 有道具时交替发送真实道具与技能请求；复用账号耗尽初始道具后继续发送技能，
+/// 同时保留PlayerUnit有序mailbox的单飞语义。
+/// Alternates real item and skill requests while an item exists, then keeps sending skills after
+/// a reused account exhausts its starter item, preserving one in-flight request per mailbox.
 #[allow(clippy::too_many_arguments)]
 async fn send_business(
     writer_tx: &mpsc::Sender<Vec<u8>>,
@@ -1540,6 +1906,7 @@ async fn send_business(
     operation: &mut u32,
     unit_id: u32,
     item_id: u64,
+    operation_prefix: &str,
     timing: Timing,
     result: &mut PlayerResult,
 ) -> Result<()> {
@@ -1547,14 +1914,14 @@ async fn send_business(
     *next_rpc_id = next_rpc_id.wrapping_add(1).max(1);
     *sequence = sequence.wrapping_add(1).max(1);
     let operation_index = *operation;
-    let use_item = operation_index.is_multiple_of(2);
+    let use_item = should_use_business_item(item_id, operation_index);
     *operation = operation.wrapping_add(1);
     let (request_code, response_code, fields) = if use_item {
         let mut fields = Vec::with_capacity(16);
         push_uint64(&mut fields, 1, item_id);
         // UseItem 的客户端幂等键必须满足业务协议约束；压测工具也要走真实请求契约。
         // The load generator must provide a valid client idempotency key just like a real client.
-        let operation_id = format!("bench-item-{unit_id}-{operation_index}");
+        let operation_id = format!("{operation_prefix}:{unit_id}:{operation_index}");
         push_string(&mut fields, 2, &operation_id);
         (USE_ITEM_REQ, USE_ITEM_RESP, fields)
     } else {
@@ -1577,16 +1944,28 @@ async fn send_business(
             started_at,
             sequence: *sequence,
             measured,
+            sampled: false,
             kind: PendingKind::Business { response_code },
         },
     );
     Ok(())
 }
 
+fn should_use_business_item(item_id: u64, operation_index: u32) -> bool {
+    item_id != 0 && operation_index.is_multiple_of(2)
+}
+
 fn pending_probe_count(pending: &HashMap<u32, PendingRequest>) -> usize {
     pending
         .values()
         .filter(|request| matches!(request.kind, PendingKind::Probe))
+        .count()
+}
+
+fn pending_navigation_count(pending: &HashMap<u32, PendingRequest>) -> usize {
+    pending
+        .values()
+        .filter(|request| matches!(request.kind, PendingKind::Navigation))
         .count()
 }
 
@@ -1776,6 +2155,14 @@ fn push_sint32(buffer: &mut Vec<u8>, field: u32, value: i32) {
     push_uint32(buffer, field, zigzag);
 }
 
+fn push_float(buffer: &mut Vec<u8>, field: u32, value: f32) {
+    if value == 0.0 {
+        return;
+    }
+    push_varint(buffer, u64::from((field << 3) | 5));
+    buffer.extend_from_slice(&value.to_le_bytes());
+}
+
 fn push_string(buffer: &mut Vec<u8>, field: u32, value: &str) {
     push_varint(buffer, u64::from((field << 3) | 2));
     push_varint(buffer, value.len() as u64);
@@ -1919,6 +2306,132 @@ fn count_length_delimited_field(frame: &[u8], expected_field: u32) -> Result<u64
     Ok(count)
 }
 
+/// 从G2C_EntityMove中零分配提取指定玩家的累计确认序号，不构造其他AOI实体对象。
+/// Extracts one player's cumulative acknowledgement from G2C_EntityMove without allocating objects for other AOI entities.
+fn find_grid_move_acknowledgement(frame: &[u8], unit_id: u32) -> Result<Option<u32>> {
+    let msgcode = frame_msgcode(frame)?;
+    if msgcode != ENTITY_MOVE {
+        bail!("unexpected msgcode {msgcode}, expected {ENTITY_MOVE}");
+    }
+    let mut offset = 2;
+    let mut acknowledgement = None;
+    while offset < frame.len() {
+        let tag = read_varint(frame, &mut offset)?;
+        let field = (tag >> 3) as u32;
+        let wire = tag & 7;
+        if field == 2 && wire == 2 {
+            let length = read_varint(frame, &mut offset)? as usize;
+            let end = offset
+                .checked_add(length)
+                .context("movement field length overflow")?;
+            if end > frame.len() {
+                bail!("unexpected eof in movement field");
+            }
+            if let Some(sequence) = decode_grid_movement_state(&frame[offset..end], unit_id)? {
+                acknowledgement =
+                    Some(acknowledgement.map_or(sequence, |current: u32| current.max(sequence)));
+            }
+            offset = end;
+        } else {
+            skip_protobuf_value(frame, &mut offset, wire)?;
+        }
+    }
+    Ok(acknowledgement)
+}
+
+/// 从进图响应的重复ItemSnapshot中查找配置对应的实例ID，避免为只取一个字段构造完整快照。
+/// Finds one item instance in repeated ItemSnapshot fields without constructing the full entry snapshot.
+fn find_item_id_by_config(
+    frame: &[u8],
+    items_field: u32,
+    expected_config_id: u32,
+) -> Result<Option<u64>> {
+    let mut offset = 2;
+    while offset < frame.len() {
+        let tag = read_varint(frame, &mut offset)?;
+        let field = (tag >> 3) as u32;
+        let wire = tag & 7;
+        if field == items_field && wire == 2 {
+            let length = read_varint(frame, &mut offset)? as usize;
+            let end = offset
+                .checked_add(length)
+                .context("item field length overflow")?;
+            if end > frame.len() {
+                bail!("unexpected eof in item field");
+            }
+            let (item_id, config_id) = decode_item_identity(&frame[offset..end])?;
+            if config_id == expected_config_id {
+                return Ok(Some(item_id));
+            }
+            offset = end;
+        } else {
+            skip_protobuf_value(frame, &mut offset, wire)?;
+        }
+    }
+    Ok(None)
+}
+
+fn decode_item_identity(payload: &[u8]) -> Result<(u64, u32)> {
+    let mut offset = 0;
+    let mut item_id = 0_u64;
+    let mut config_id = 0_u32;
+    while offset < payload.len() {
+        let tag = read_varint(payload, &mut offset)?;
+        let field = (tag >> 3) as u32;
+        let wire = tag & 7;
+        if wire == 0 && (field == 1 || field == 2) {
+            let value = read_varint(payload, &mut offset)?;
+            if field == 1 {
+                item_id = value;
+            } else {
+                config_id = u32::try_from(value).context("item config id exceeds uint32")?;
+            }
+        } else {
+            skip_protobuf_value(payload, &mut offset, wire)?;
+        }
+    }
+    Ok((item_id, config_id))
+}
+
+fn decode_grid_movement_state(payload: &[u8], expected_unit_id: u32) -> Result<Option<u32>> {
+    let mut offset = 0;
+    let mut unit_id = 0_u32;
+    let mut acknowledgement = 0_u32;
+    while offset < payload.len() {
+        let tag = read_varint(payload, &mut offset)?;
+        let field = (tag >> 3) as u32;
+        let wire = tag & 7;
+        if wire == 0 && (field == 1 || field == 2) {
+            let value = u32::try_from(read_varint(payload, &mut offset)?)
+                .context("movement state field exceeds uint32")?;
+            if field == 1 {
+                unit_id = value;
+            } else {
+                acknowledgement = value;
+            }
+        } else {
+            skip_protobuf_value(payload, &mut offset, wire)?;
+        }
+    }
+    Ok((unit_id == expected_unit_id).then_some(acknowledgement))
+}
+
+fn skip_protobuf_value(bytes: &[u8], offset: &mut usize, wire: u64) -> Result<()> {
+    match wire {
+        0 => {
+            read_varint(bytes, offset)?;
+        }
+        1 => advance(bytes, offset, 8)?,
+        2 => {
+            let length = read_varint(bytes, offset)? as usize;
+            advance(bytes, offset, length)?;
+        }
+        5 => advance(bytes, offset, 4)?,
+        _ => bail!("unsupported protobuf wire type {wire}"),
+    }
+    Ok(())
+}
+
 fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64> {
     let mut value = 0_u64;
     for shift in (0..70).step_by(7) {
@@ -1951,14 +2464,24 @@ fn percentile(sorted: &[u64], ratio: f64) -> u64 {
 
 fn parse_options(args: Vec<String>) -> Result<Options> {
     let mut values = HashMap::<String, String>::new();
-    for pair in args.chunks(2) {
-        if pair.len() != 2 {
-            bail!("arguments must use --name value pairs");
+    let mut flags = HashSet::<String>::new();
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        if !argument.starts_with("--") {
+            bail!("unexpected argument {argument}; options must start with --");
         }
-        values.insert(
-            pair[0].trim_start_matches('-').to_ascii_lowercase(),
-            pair[1].clone(),
-        );
+        let key = argument.trim_start_matches('-').to_ascii_lowercase();
+        if args
+            .get(index + 1)
+            .is_some_and(|value| !value.starts_with('-'))
+        {
+            values.insert(key, args[index + 1].clone());
+            index += 2;
+        } else {
+            flags.insert(key);
+            index += 1;
+        }
     }
     let number = |name: &str, fallback: u64| -> Result<u64> {
         values
@@ -1999,6 +2522,35 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
     let world_grids =
         u32::try_from(number("world-grids", 10)?).context("world grids exceeds uint32")?;
     let duration = number("duration", 10)?;
+    let movement_timeout = number("movement-timeout", 5_000)?;
+    let account_prefix = values.get("account-prefix").cloned();
+    if let Some(prefix) = &account_prefix
+        && (prefix.is_empty()
+            || prefix.len() > 28
+            || !prefix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'))
+    {
+        bail!("--account-prefix must use 1-28 ASCII letters, digits, _ or -");
+    }
+    let reuse_accounts = flags.contains("reuse-accounts");
+    if reuse_accounts && account_prefix.is_none() {
+        bail!("--reuse-accounts requires --account-prefix");
+    }
+    let operation_prefix = values
+        .get("operation-prefix")
+        .cloned()
+        .unwrap_or_else(|| "perf-business".to_string());
+    if operation_prefix.is_empty()
+        || operation_prefix.len() > 64
+        || !operation_prefix
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+    {
+        bail!(
+            "--operation-prefix must use 1-64 ASCII letters, digits, dot, underscore, colon or dash"
+        );
+    }
     if players == 0
         || setup_concurrency == 0
         || map_entry_concurrency == Some(0)
@@ -2008,9 +2560,10 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         || movement_hold_messages == 0
         || world_grids == 0
         || duration == 0
+        || movement_timeout == 0
     {
         bail!(
-            "players, setup-concurrency, map-entry-concurrency, map-entry-rate, probe-concurrency, state-sync-concurrency, movement-hold-messages, world-grids and duration must be greater than zero"
+            "players, setup-concurrency, map-entry-concurrency, map-entry-rate, probe-concurrency, state-sync-concurrency, movement-hold-messages, world-grids, duration and movement-timeout must be greater than zero"
         );
     }
     if map_entry_rate.is_some() && map_entry_concurrency.is_none() {
@@ -2037,7 +2590,10 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         warmup: Duration::from_secs(number("warmup", 2)?),
         duration: Duration::from_secs(duration),
         timeout: Duration::from_millis(number("timeout", 60_000)?),
+        movement_timeout: Duration::from_millis(movement_timeout),
         move_rate: number("move-rate", 0)?,
+        movement_sequence_base: u32::try_from(number("movement-sequence-base", 0)?)
+            .context("movement sequence base exceeds uint32")?,
         movement_hold_messages,
         spawn_layout: SpawnLayout::parse(
             values
@@ -2063,12 +2619,42 @@ fn parse_options(args: Vec<String>) -> Result<Options> {
         )?,
         state_sync_rate: number("state-sync-rate", 0)?,
         state_sync_concurrency,
+        account_prefix,
+        reuse_accounts,
+        operation_prefix,
         label: values
             .get("label")
             .cloned()
             .unwrap_or_else(|| "rust".to_string()),
         measurement_signal_file: values.get("measurement-signal-file").map(PathBuf::from),
     })
+}
+
+fn account_name(options: &Options, account_seed: u128, index: usize) -> Result<String> {
+    let account = if let Some(prefix) = &options.account_prefix {
+        let suffix = to_base36(index);
+        format!("{prefix}{suffix:0>4}")
+    } else {
+        format!("rp{}_{}_{}", std::process::id(), account_seed, index)
+    };
+    if account.len() > 32 {
+        bail!("generated account exceeds 32 bytes: {account}");
+    }
+    Ok(account)
+}
+
+fn to_base36(mut value: usize) -> String {
+    const DIGITS: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    if value == 0 {
+        return "0".to_string();
+    }
+    let mut encoded = Vec::with_capacity(8);
+    while value > 0 {
+        encoded.push(DIGITS[value % 36]);
+        value /= 36;
+    }
+    encoded.reverse();
+    String::from_utf8(encoded).expect("base36 digits are valid UTF-8")
 }
 
 #[cfg(test)]
@@ -2115,6 +2701,95 @@ mod tests {
 
         let explicit = parse_options(vec!["--probe-rate".into(), "0.5".into()]).unwrap();
         assert!((explicit.probe_rate - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn stable_accounts_match_the_typescript_suffix_and_accept_the_reuse_flag() {
+        let options = parse_options(vec![
+            "--account-prefix".into(),
+            "chaos7db".into(),
+            "--reuse-accounts".into(),
+            "--operation-prefix".into(),
+            "chaos7d:1".into(),
+        ])
+        .unwrap();
+        assert!(options.reuse_accounts);
+        assert_eq!(account_name(&options, 0, 0).unwrap(), "chaos7db0000");
+        assert_eq!(account_name(&options, 0, 35).unwrap(), "chaos7db000z");
+        assert!(parse_options(vec!["--reuse-accounts".into()]).is_err());
+    }
+
+    #[test]
+    fn movement_sequence_base_is_explicit_and_bounded() {
+        assert_eq!(parse_options(Vec::new()).unwrap().movement_sequence_base, 0);
+        assert_eq!(
+            parse_options(vec!["--movement-sequence-base".into(), "420000".into()])
+                .unwrap()
+                .movement_sequence_base,
+            420_000
+        );
+        assert!(
+            parse_options(vec![
+                "--movement-sequence-base".into(),
+                (u64::from(u32::MAX) + 1).to_string(),
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn grid_move_acknowledgement_scans_only_the_requested_unit() {
+        let mut frame = ENTITY_MOVE.to_be_bytes().to_vec();
+        push_uint32(&mut frame, 1, 42);
+        for (unit_id, sequence) in [(7, 10), (9, 12), (7, 11)] {
+            let mut movement = Vec::new();
+            push_uint32(&mut movement, 1, unit_id);
+            push_uint32(&mut movement, 2, sequence);
+            push_sint32(&mut movement, 3, -2);
+            push_varint(&mut frame, u64::from((2_u32 << 3) | 2));
+            push_varint(&mut frame, movement.len() as u64);
+            frame.extend_from_slice(&movement);
+        }
+
+        assert_eq!(find_grid_move_acknowledgement(&frame, 7).unwrap(), Some(11));
+        assert_eq!(find_grid_move_acknowledgement(&frame, 9).unwrap(), Some(12));
+        assert_eq!(find_grid_move_acknowledgement(&frame, 8).unwrap(), None);
+    }
+
+    #[test]
+    fn starter_item_lookup_ignores_other_item_snapshots() {
+        let mut frame = ENTER_MAP_RESP.to_be_bytes().to_vec();
+        for (item_id, config_id) in [(41_u64, 2001_u32), (99_u64, 1001_u32)] {
+            let mut item = Vec::new();
+            push_uint64(&mut item, 1, item_id);
+            push_uint32(&mut item, 2, config_id);
+            push_uint32(&mut item, 3, 5);
+            push_varint(&mut frame, u64::from((9_u32 << 3) | 2));
+            push_varint(&mut frame, item.len() as u64);
+            frame.extend_from_slice(&item);
+        }
+
+        assert_eq!(find_item_id_by_config(&frame, 9, 1001).unwrap(), Some(99));
+        assert_eq!(find_item_id_by_config(&frame, 9, 3001).unwrap(), None);
+    }
+
+    #[test]
+    fn reused_accounts_without_a_starter_item_continue_with_skills() {
+        assert!(!should_use_business_item(0, 0));
+        assert!(!should_use_business_item(0, 1));
+        assert!(should_use_business_item(99, 0));
+        assert!(!should_use_business_item(99, 1));
+    }
+
+    #[test]
+    fn navigation_float_uses_protobuf_fixed32_little_endian() {
+        let mut payload = Vec::new();
+        push_float(&mut payload, 3, std::f32::consts::FRAC_PI_2);
+        assert_eq!(payload[0], (3_u8 << 3) | 5);
+        assert_eq!(&payload[1..], &std::f32::consts::FRAC_PI_2.to_le_bytes());
+        assert_eq!(SpatialMode::parse(1).unwrap().name(), "grid2d");
+        assert_eq!(SpatialMode::parse(2).unwrap().name(), "navmesh3d");
+        assert!(SpatialMode::parse(0).is_err());
     }
 
     #[test]

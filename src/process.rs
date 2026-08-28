@@ -390,6 +390,8 @@ struct MailboxMetricsSnapshot {
 struct CustomMetricSnapshot {
     name: String,
     #[serde(default)]
+    labels: BTreeMap<String, String>,
+    #[serde(default)]
     values: BTreeMap<String, f64>,
     #[serde(default)]
     kinds: BTreeMap<String, CustomMetricKind>,
@@ -1867,15 +1869,21 @@ fn maybe_log_metrics(
             );
         }
         for custom in &metric.custom_metrics {
-            let values = custom
-                .values
+            let fields = custom
+                .labels
                 .iter()
                 .map(|(name, value)| format!("{name}={value}"))
+                .chain(
+                    custom
+                        .values
+                        .iter()
+                        .map(|(name, value)| format!("{name}={value}")),
+                )
                 .collect::<Vec<_>>()
                 .join(" ");
             tracing::info!(target: "tiangz::metrics",
                 "[custom-metrics:{process_name}] scene={} type={} name={} timestamp_ms={} {}",
-                metric.scene, metric.scene_type, custom.name, timestamp_ms, values,
+                metric.scene, metric.scene_type, custom.name, timestamp_ms, fields,
             );
         }
     }
@@ -1930,6 +1938,7 @@ fn maybe_log_metrics(
                 .iter()
                 .map(|item| SceneCustomMetricSnapshot {
                     name: item.name.clone(),
+                    labels: item.labels.clone(),
                     values: item.values.clone(),
                     kinds: item
                         .kinds

@@ -211,6 +211,7 @@ pub(crate) struct MailboxObservabilitySnapshot {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SceneCustomMetricSnapshot {
     pub(crate) name: String,
+    pub(crate) labels: BTreeMap<String, String>,
     pub(crate) values: BTreeMap<String, f64>,
     pub(crate) kinds: BTreeMap<String, SceneCustomMetricKind>,
 }
@@ -2587,6 +2588,12 @@ fn append_scene_metrics_prometheus(
                 custom_labels.insert("scene_type", snapshot.scene_type.as_str());
                 custom_labels.insert("name", metric.name.as_str());
                 custom_labels.insert("key", key.as_str());
+                for (name, value) in &metric.labels {
+                    if is_prometheus_label_name(name) && !custom_labels.contains_key(name.as_str())
+                    {
+                        custom_labels.insert(name.as_str(), value.as_str());
+                    }
+                }
                 let rendered = render_prometheus_labels(&custom_labels);
                 let family = match metric.kinds.get(key).copied().unwrap_or_default() {
                     SceneCustomMetricKind::Counter => "tiangz_scene_custom_metric_total",
@@ -3035,6 +3042,12 @@ fn render_prometheus_labels(labels: &BTreeMap<&str, &str>) -> String {
         .join(",")
 }
 
+fn is_prometheus_label_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    matches!(bytes.next(), Some(b'a'..=b'z' | b'A'..=b'Z' | b'_'))
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
 fn escape_prometheus_label(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -3298,6 +3311,7 @@ mod tests {
                 scene_type: "MapHost".to_string(),
                 custom_metrics: vec![SceneCustomMetricSnapshot {
                     name: "map_broadcast".to_string(),
+                    labels: BTreeMap::from([("map_id".to_string(), "1".to_string())]),
                     values: BTreeMap::from([
                         ("pending_units".to_string(), 3.0),
                         ("sent_frames_total".to_string(), 9.0),
@@ -3317,6 +3331,47 @@ mod tests {
         assert!(body.contains("# TYPE tiangz_scene_custom_metric_total counter"));
         assert!(body.contains("tiangz_scene_custom_metric_gauge{"));
         assert!(body.contains("tiangz_scene_custom_metric_total{"));
+        assert!(body.contains("map_id=\"1\""));
+    }
+
+    #[test]
+    fn custom_metric_labels_create_distinct_series_and_cannot_replace_reserved_labels() {
+        let state = ProcessHealthState::starting(Duration::from_secs(15));
+        let metric = |map_id: &str| SceneCustomMetricSnapshot {
+            name: "map_broadcast".to_string(),
+            labels: BTreeMap::from([
+                ("map_id".to_string(), map_id.to_string()),
+                ("process".to_string(), "spoofed".to_string()),
+                ("invalid-label".to_string(), "ignored".to_string()),
+            ]),
+            values: BTreeMap::from([("pending_units".to_string(), 0.0)]),
+            kinds: BTreeMap::new(),
+        };
+        state.set_observability_snapshot(ProcessObservabilitySnapshot {
+            sample_timestamp_ms: 1,
+            scenes: vec![SceneObservabilitySnapshot {
+                scene: "map_host".to_string(),
+                scene_type: "MapHost".to_string(),
+                custom_metrics: vec![metric("1"), metric("100")],
+                ..SceneObservabilitySnapshot::default()
+            }],
+            ..ProcessObservabilitySnapshot::default()
+        });
+
+        let body = format_prometheus_metrics("map2", &state);
+        let series = body
+            .lines()
+            .filter(|line| line.starts_with("tiangz_scene_custom_metric_gauge{"))
+            .collect::<Vec<_>>();
+        assert_eq!(series.len(), 2);
+        assert!(series.iter().any(|line| line.contains("map_id=\"1\"")));
+        assert!(series.iter().any(|line| line.contains("map_id=\"100\"")));
+        assert!(series.iter().all(|line| line.contains("process=\"map2\"")));
+        assert!(series.iter().all(|line| !line.contains("invalid-label")));
+        assert_ne!(
+            series[0].split_whitespace().next(),
+            series[1].split_whitespace().next()
+        );
     }
 
     #[test]

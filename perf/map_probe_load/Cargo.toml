@@ -1,0 +1,19 @@
+[package]
+name = "tiangz-map-probe-load"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "map_probe_load"
+path = "../../src/bin/map_probe_load.rs"
+
+[dependencies]
+anyhow = "1"
+serde_json = "1"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+
+# Keep this performance client independent from the Runtime package graph. In particular, an
+# external load host must not download/build V8 merely to compile a TCP protocol generator.
+[workspace]

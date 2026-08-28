@@ -1406,8 +1406,8 @@ export class MapComponent extends Component<[
     const metrics = this.broadcast.Snapshot();
     return {
       name: "map_broadcast",
+      labels: { map_id: String(this.mapId) },
       values: {
-        map_id: this.mapId,
         in_flight: metrics.inFlight,
         in_flight_units: metrics.inFlightItems,
         pending_units: metrics.pendingItems,

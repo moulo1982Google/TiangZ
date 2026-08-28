@@ -1095,7 +1095,7 @@ Handler
 接口必须按数据等级选择：
 
 - `LoadSnapshot`：登录、恢复或接管时读取权威记录；`None`表示记录不存在。
-- `SaveSnapshot`：调用方需要等待PostgreSQL提交的普通快照；网络失败时保留原`request_id`重试。
+- `SaveSnapshot`：调用方需要等待PostgreSQL提交的普通快照；网络失败时保留原`request_id`重试。`SaveMultiSnapshot`只批量独立记录，不提供跨记录业务原子性；DBProxy可以在同一连接分片内合并一次数据库commit和缓存往返，Revision/幂等冲突仍逐条返回。关键背包、货币和交易不能为了批量性能改走这个入口。
 - `EnqueueSnapshot`：只用于位置、普通任务进度等允许小范围回退的数据；成功只表示Redis AOF backlog接收，不代表PostgreSQL已落库。
 - `ApplyTransaction`：用于Wallet、Inventory、Reward、Trade等关键单记录事务；必须携带原`operation_id`、期望Revision、提交后的完整Payload和可重试业务结果。
 
@@ -1120,7 +1120,7 @@ entity Item extends Entity {
 
 运行`npm run codegen:native-data`后，业务使用生成的`NativeItemPersistenceCodec`或`CreateNativeItemRepository(processName)`。`Entity.instanceId`已经标记`@transient`，恢复时必须由当前运行时重新分配，不能从数据库带回。当前Codec是严格当前版本读取，任何持久字段的增加、删除、改名或改类型都必须递增`@persistent(version)`；旧schema迁移注册尚未完成，因此做结构升级前必须先补迁移器。需要“按ownerId查询全部道具”、拍卖行索引、跨玩家交易等能力时，应建立Item/Trade领域Repository，不能把通用Payload表当作查询型ORM。
 
-当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复；`npm run test:gate-failover`验证双Gate强杀后接管同一PlayerUnit、旧Gate重启不回切和绕过Login重入拒绝；`npm run test:player-trade:persistent`验证首选Endpoint接管、Debug模拟“DBProxy已提交但响应丢失”后的原始回执恢复，以及双Endpoint同时不可用时失败不改Entity、恢复后同一operationId只提交一次。普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务或动态地图现场恢复；Gate接管只覆盖同一已知拓扑，不代表跨地域租约HA。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
+当前玩家记录已拆成五个一致性域：wallet=`gold`，inventory=`items`，progression=`numerics`，quest=`quests`，runtime=`map/position/alive/buffs/skill cooldowns`。任务GrantItem奖励和拾取提交inventory+quest；UseItem提交inventory+progression+runtime；NPC商店提交inventory+wallet；同地图交易一次提交双方inventory+wallet。每次事务只推进参与领域Revision。周期/退出快照按规范化编码后的领域Payload判脏，诊断`reason`变化不写库；首次未知基线仍保存全部领域，关键事务成功后同步该领域基线，批量部分失败不重复推进已经成功且未再变化的领域。该优化只减少普通快照写放大，不改变交易事务边界。`npm run test:player-domain-recovery`验证30秒周期快照、最终Flush、all-in-one强杀，以及静态MapHost强杀后的Watcher有界重启、Location代次接管和Gate新连接恢复；`npm run test:gate-failover`验证双Gate强杀后接管同一PlayerUnit、旧Gate重启不回切和绕过Login重入拒绝；`npm run test:player-trade:persistent`验证首选Endpoint接管、Debug模拟“DBProxy已提交但响应丢失”后的原始回执恢复，以及双Endpoint同时不可用时失败不改Entity、恢复后同一operationId只提交一次。普通状态允许最多一个周期窗口回退，已经确认的关键事务不得依赖周期快照。系统仍没有跨地图交易、邮件/拍卖行事务或动态地图现场恢复；Gate接管只覆盖同一已知拓扑，不代表跨地域租约HA。完整运行步骤见[DBProxy玩家快照持久化](../tutorials/19-dbproxy-player-persistence.md)。
 
 ## AI提交前自检
 
@@ -1193,7 +1193,7 @@ Cocos3D的Buff栏从Unit快照的`buffs`或不可覆盖的`G2C_BuffAdded`创建�
 
 ## 可观测性边界
 
-业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。
+业务代码使用 Scene/Actor 上下文 Logger 和框架已有自定义指标入口，不得创建 Observer Scene、定时 RPC 或业务内广播来汇总 Process 指标。每个 Process 的 `/metrics` 由 Rust Host 暴露，Prometheus 按 `StartMachine.json` 直接抓取。业务新增指标必须使用有限枚举标签，不能把玩家 ID、道具 ID、RPC ID 等无界值放入 Prometheus label。`CustomMetricSnapshot.labels` 只用于同一 Scene 内有限数量实例（例如静态 `map_id`），标签名必须是合法 Prometheus 名称，且不能覆盖 Host 固定的 `process/scene/scene_type/name/key`；实例身份不能继续伪装成 `values` 数值，否则同名快照会生成重复序列。`CustomMetricSnapshot.values` 默认按 Gauge 导出；只增不减、进程生命周期累计的字段必须在 `kinds` 中显式声明为 `counter`，不得仅靠 `_total` 命名猜测语义。修改观测契约后必须执行 `npm run verify:observability`。
 
 跨Process追踪由Core自动建立和传播。业务Handler只使用`context.logger`和普通Scene/Actor调用，不得导入、构造或解析Trace Envelope，也不得把`traceId/spanId`作为业务幂等键。`requestId/operationId`负责业务身份和重试，`traceId`只负责诊断。日志中的`traceId/spanId`由框架注入；不要手工覆盖，也不要把玩家ID、请求ID、Trace ID放入Prometheus标签或Loki索引label。业务日志不得记录密码、Token、完整协议Payload或其他敏感数据。
 

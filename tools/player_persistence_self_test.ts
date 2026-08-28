@@ -50,6 +50,7 @@ void main();
 
 async function main(): Promise<void> {
   await testSuccessfulSaveIsIdempotent();
+  await testUnchangedPeriodicSnapshotSkipsWrites();
   await testSaveFailureIsVisibleAndIdempotent();
   await testPartialBatchSaveAdvancesSuccessfulRevisions();
   await testGeneratedRepositoryRetriesTheSameRequest();
@@ -57,6 +58,25 @@ async function main(): Promise<void> {
   testTransactionReceiptIsIdempotent();
   testGeneratedNativeItemCodec();
   console.log("player persistence self-test passed");
+}
+
+async function testUnchangedPeriodicSnapshotSkipsWrites(): Promise<void> {
+  const repository = new InMemoryPlayerRepository();
+  const component = new PlayerPersistenceComponent();
+  component.__attach(createPlayer() as unknown as Entity);
+  component.__awake(repository, EmptyPlayerPersistenceRevisions());
+
+  await component.SavePeriodic(1);
+  assert.equal(repository.SaveCount(7001n), 5);
+  await component.SavePeriodic(2);
+  assert.equal(repository.SaveCount(7001n), 5, "unchanged domains must not advance revisions");
+  assert.deepEqual(component.Revisions, {
+    inventory: 1n,
+    progression: 1n,
+    quest: 1n,
+    runtime: 1n,
+    wallet: 1n,
+  });
 }
 
 async function testGeneratedRepositoryRetriesTheSameRequest(): Promise<void> {
@@ -183,17 +203,13 @@ async function testPartialBatchSaveAdvancesSuccessfulRevisions(): Promise<void> 
   });
   await component.SavePeriodic(2);
   assert.deepEqual(repository.secondExpectedRevisions, {
+    wallet: 0n,
+  });
+  assert.deepEqual(component.Revisions, {
     inventory: 1n,
     progression: 1n,
     quest: 1n,
     runtime: 1n,
-    wallet: 0n,
-  });
-  assert.deepEqual(component.Revisions, {
-    inventory: 2n,
-    progression: 2n,
-    quest: 2n,
-    runtime: 2n,
     wallet: 1n,
   });
 }
