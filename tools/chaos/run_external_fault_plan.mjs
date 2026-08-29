@@ -16,6 +16,7 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const options = parseOptions(process.argv.slice(2));
 const actions = [
+  "cache-redis-outage",
   "redis-outage",
   "map-1-crash",
   "postgres-outage",
@@ -158,6 +159,9 @@ async function executeAction(action) {
     case "redis-outage":
       await containerOutage("tiangz-dbproxy-redis", options.redisOutageSeconds);
       return;
+    case "cache-redis-outage":
+      await containerOutage("tiangz-dbproxy-cache", options.redisOutageSeconds);
+      return;
     case "postgres-outage":
       await containerOutage("tiangz-dbproxy-postgres", options.postgresOutageSeconds);
       return;
@@ -198,15 +202,18 @@ async function containerOutage(container, outageSeconds) {
 async function jointStorageOutage() {
   await Promise.all([
     command("docker", ["stop", "--time", "0", "tiangz-dbproxy-redis"]),
+    command("docker", ["stop", "--time", "0", "tiangz-dbproxy-cache"]),
     command("docker", ["stop", "--time", "0", "tiangz-dbproxy-postgres"]),
   ]);
   await sleepResponsive(options.jointOutageSeconds * 1000);
   await Promise.all([
     command("docker", ["start", "tiangz-dbproxy-redis"]),
+    command("docker", ["start", "tiangz-dbproxy-cache"]),
     command("docker", ["start", "tiangz-dbproxy-postgres"]),
   ]);
   await Promise.all([
     waitContainerHealthy("tiangz-dbproxy-redis", 180_000),
+    waitContainerHealthy("tiangz-dbproxy-cache", 180_000),
     waitContainerHealthy("tiangz-dbproxy-postgres", 180_000),
   ]);
   await waitAllUrls(["http://127.0.0.1:9090/ready", "http://127.0.0.1:9091/ready"], 180_000);
@@ -333,6 +340,7 @@ async function validateDynamicMapFallback() {
 async function assertBaselineHealthy() {
   await Promise.all([
     waitContainerHealthy("tiangz-dbproxy-redis", 30_000),
+    waitContainerHealthy("tiangz-dbproxy-cache", 30_000),
     waitContainerHealthy("tiangz-dbproxy-postgres", 30_000),
   ]);
   for (const service of [
@@ -347,7 +355,11 @@ async function assertBaselineHealthy() {
 }
 
 async function recoverBaseline() {
-  for (const container of ["tiangz-dbproxy-redis", "tiangz-dbproxy-postgres"]) {
+  for (const container of [
+    "tiangz-dbproxy-redis",
+    "tiangz-dbproxy-cache",
+    "tiangz-dbproxy-postgres",
+  ]) {
     await command("docker", ["start", container], true);
   }
   for (const service of [

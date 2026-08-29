@@ -413,9 +413,10 @@ function writeFinalReport(state) {
       faults.actionsStarted === faults.actionsPassed && faults.actionsFailed === 0 &&
       faults.baselineRecoveryFailures === 0,
     finalSoakReconciliationPassed: soak.final?.validation?.passed === true,
+    noObservedConsistencyViolations: soak.observedConsistency?.passed === true,
   };
   const report = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     startedAt: new Date(state.startedAt).toISOString(),
     elapsedHours,
@@ -541,11 +542,24 @@ function inspectSoak(file) {
       final = { malformed: true };
     }
   }
+  const consistencyCounterNames = [
+    "missingSnapshots",
+    "readsBehindAcknowledgedRevision",
+    "invariantErrors",
+  ];
+  const counters = Object.fromEntries(consistencyCounterNames.map((name) => [
+    name,
+    typeof final?.totals?.[name] === "number" ? final.totals[name] : null,
+  ]));
   return {
     present: true,
     bytes: Buffer.byteLength(text),
     reports: text.split(/\r?\n/).filter((line) => line.startsWith("SOAK_INTERVAL ")).length,
     final,
+    observedConsistency: {
+      counters,
+      passed: Object.values(counters).every((value) => value === 0),
+    },
   };
 }
 
@@ -662,7 +676,7 @@ function parseOptions(args) {
       .split(",").map(Number),
     units: (values.get("--units") ?? "tiangz-external.service,tiangz-dbproxy@1.service,tiangz-dbproxy@2.service,tiangz-overnight-game.service,tiangz-overnight-soak.service,tiangz-overnight-faults.service")
       .split(",").filter(Boolean),
-    containers: (values.get("--containers") ?? "tiangz-dbproxy-postgres,tiangz-dbproxy-redis")
+    containers: (values.get("--containers") ?? "tiangz-dbproxy-postgres,tiangz-dbproxy-redis,tiangz-dbproxy-cache")
       .split(",").filter(Boolean),
   };
 }

@@ -1,8 +1,8 @@
 # 外网 500 玩家七日故障演练
 
-本文描述在一台 4 核、8 GiB 内存、带 2 GiB swap 的 Linux 开发机上，持续运行 500 个游戏玩家和 100 个 DBProxy 正确性玩家，并间歇重启 Redis、PostgreSQL、MapHost、动态副本和两个 DBProxy peer 的方法。
+本文描述在一台 4 核、8 GiB 内存、带 2 GiB swap 的 Linux 开发机上，持续运行 500 个游戏玩家和 100 个 DBProxy 正确性玩家，并间歇重启可靠队列 Redis、易失快照缓存 Redis、PostgreSQL、MapHost、动态副本和两个 DBProxy peer 的方法。
 
-这是一场恢复正确性演练，不是容量基准，也不是高可用验收。机器上只部署一个 PostgreSQL 和一个 Redis。不要在同一台 4C8G 主机上再增加 PostgreSQL standby 或 Redis replica：它们不能抵抗整机故障，却会挤占本次演练需要的内存、磁盘 I/O 和故障边界。真正的主从、自动切换和多可用区验收应在至少三台独立节点或云厂商托管高可用实例上另做。
+这是一场恢复正确性演练，不是容量基准，也不是高可用验收。机器上只部署一个 PostgreSQL，并用两个 Redis 进程隔离职责：一个用 AOF 保存 backlog/Outbox，一个关闭持久化承载可丢弃快照缓存；后者不是 replica。不要在同一台 4C8G 主机上再增加 PostgreSQL standby 或 Redis replica：它们不能抵抗整机故障，却会挤占本次演练需要的内存、磁盘 I/O 和故障边界。真正的主从、自动切换和多可用区验收应在至少三台独立节点或云厂商托管高可用实例上另做。
 
 ## 验收目标
 
@@ -10,7 +10,7 @@
 
 - 500 个游戏玩家持续完成登录、Gate、进入地图、移动、探测和轻量业务操作；玩家平均分布在静态地图 `1` 与 `100`。
 - 100 个 DBProxy 正确性玩家持续覆盖权威读取、带 revision 的事务、AOF backlog、双玩家交易、不可变账本和 Outbox。
-- Redis、PostgreSQL、两个 DBProxy peer、两个 MapHost 以及动态副本恢复后，业务负载能自行恢复，不依赖重启整个环境。
+- 两个 Redis、PostgreSQL、两个 DBProxy peer、两个 MapHost 以及动态副本恢复后，业务负载能自行恢复，不依赖重启整个环境。
 - Redis AOF 在 PostgreSQL 停机且 backlog 已积压时经历非优雅重启，重启前后 backlog 均非零；PostgreSQL 恢复后 backlog 最终排空。
 - 最终逐玩家对账通过；没有缺失快照、低于已确认 revision 的旧读、账本不平衡、未排空队列或死信。
 - 所有故障、恢复、负载结果和资源样本都有持久日志，控制终端断开不会丢失演练状态。
@@ -20,7 +20,8 @@
 | 组件 | 演练配置 |
 | --- | --- |
 | PostgreSQL | `18.4-bookworm`；1.5 CPU、2 GiB 容器上限、512 MiB shared buffers、100 connections、15 分钟 checkpoint、2 GiB max WAL |
-| Redis | `8.8.1-trixie`；0.5 CPU、768 MiB 容器上限、512 MiB `maxmemory`、`noeviction`、AOF `everysec`、64 MiB 起始 rewrite |
+| 可靠队列 Redis | `8.8.1-trixie`；0.5 CPU、768 MiB 容器上限、512 MiB `maxmemory`、`noeviction`、AOF `everysec`、64 MiB 起始 rewrite |
+| 快照缓存 Redis | `8.8.1-trixie`；0.25 CPU、384 MiB 容器上限、256 MiB `maxmemory`、`allkeys-lru`；关闭 AOF/RDB并使用易失 `tmpfs` |
 | DBProxy | 两个对等 peer，各 2 个 Tokio worker；backlog/cache-repair/outbox 各 1 worker |
 | TiangZ | 一个 Watcher 管理 10 个子进程；日志落盘，控制台日志关闭；延迟与 trace 采样率为 1% |
 | 游戏负载 | 500 玩家，两个 Rust/Tokio 子进程各 250；每 5 分钟重建一次全链路连接；1 Hz 移动、0.05 Hz 探测、0.02 Hz 业务 |
@@ -28,7 +29,7 @@
 
 这些数值是 4C8G 演练机的保护性起点，不是生产推荐值。`effective_cache_size` 只是 PostgreSQL 优化器提示，不会预分配内存。正式七日运行前必须用 500 玩家预演的峰值 RSS、swap、磁盘增长和 p99 来决定是否下调采样或业务频率。
 
-Redis 宿主机必须设置 `vm.overcommit_memory=1`，否则每次 AOF rewrite/BGSAVE 都会留下内核内存承诺告警，并可能在内存压力下直接失败。仓库中的宿主机策略同时设置 journald 上限和 rsyslog 日轮转：
+可靠队列 Redis 的宿主机必须设置 `vm.overcommit_memory=1`，否则每次 AOF rewrite 会留下内核内存承诺告警，并可能在内存压力下直接失败。仓库中的宿主机策略同时设置 journald 上限和 rsyslog 日轮转：
 
 ```bash
 cd /opt/tiangz-chaos
@@ -43,6 +44,8 @@ logrotate --debug /etc/logrotate.d/rsyslog
 ## 代码与协议版本边界
 
 当前 DBProxy 工作树是 `0.6.0`，Rust server/client/protocol 必须来自同一份源码，以保证握手 fingerprint 一致。TiangZ 的 Rust 构建在两个仓库尚未提交到远端前，应通过 Cargo `patch` 指向同级 `TiangZ-DBProxy` 工作树；不能拿远端 `main` 上的旧 `0.5.0` Rust client 与 `0.6.0` server 混用。
+
+2026-08-29 起协议指纹计算先把 proto 换行规范化为 LF。新 server 为已经部署的协议 v2 `d20f…e4f1f`旧指纹提供唯一滚动兼容别名并向旧连接原样回显，因此可先升级 DBProxy；其他指纹仍拒绝。新客户端不会向旧 server 降级，所以必须等两个 DBProxy peer 都升级健康后，才能发布携带新`a529…509456`指纹的客户端。
 
 TiangZ 的 TypeScript 运行时目前仍锁定 DBProxy SDK `0.5.0`。本次游戏链路只使用快照和既有事务 API，因此可以保持该版本；新增的 `loadTrade`、`applyTradeTransaction` 和 `loadTradeTransaction` 暂时只由 DBProxy 的 Rust 正确性驱动使用。以后要让 TiangZ TypeScript 业务直接调用交易 API，必须先给 Rust Host 增加类型完整的桥接 op，再升级 TypeScript SDK，不能用 `as any` 绕过接口差异。
 
@@ -59,6 +62,8 @@ TiangZ 的 TypeScript 运行时目前仍锁定 DBProxy SDK `0.5.0`。本次游�
 /var/log/tiangz-chaos/game/            游戏负载 state、JSONL 和输出
 /var/log/tiangz-chaos/control/         故障计划 state、JSONL 和探针输出
 ```
+
+两个 DBProxy peer 共用 root-only 的`/etc/tiangz/dbproxy.env`。其中`DBPROXY_REDIS_URL`必须指向 6379 的可靠队列 Redis，`DBPROXY_CACHE_REDIS_URL`必须指向 6380 的易失缓存 Redis；不能把两个变量误配到同一 endpoint。
 
 长期服务如下：
 
@@ -116,11 +121,11 @@ docker compose --env-file /opt/tiangz-dbproxy/.env \
 systemd-analyze verify /etc/systemd/system/tiangz-*.service
 ```
 
-`--preflight` 是只读检查：它验证两个容器、两个 DBProxy、10 个 TiangZ `/ready` endpoint、真实 Watcher PID、10 个可注入子进程和动态副本探针。它不要求 marker，也不会停止进程。systemd 为保持 Watcher 标准输入而使用 wrapper shell，因此编排器以 `comm=TiangZ` 和 `StartMachine.json` 在服务进程树内唯一定位 Watcher，不能把 systemd 的 MainPID 直接当作 Watcher。
+`--preflight` 是只读检查：它验证三个存储容器、两个 DBProxy、10 个 TiangZ `/ready` endpoint、真实 Watcher PID、10 个可注入子进程和动态副本探针。它不要求 marker，也不会停止进程。systemd 为保持 Watcher 标准输入而使用 wrapper shell，因此编排器以 `comm=TiangZ` 和 `StartMachine.json` 在服务进程树内唯一定位 Watcher，不能把 systemd 的 MainPID 直接当作 Watcher。
 
 ## 新建分区数据库
 
-以下步骤会永久删除外网开发环境的 PostgreSQL 和 Redis 数据。必须先确认目标 Compose project 与数据卷名称，不能使用模糊通配符。
+以下步骤会永久删除外网开发环境的 PostgreSQL 和可靠队列 Redis 数据。快照缓存没有命名卷，容器重启后本来就应为空。必须先确认目标 Compose project 与数据卷名称，不能使用模糊通配符。
 
 ```bash
 systemctl stop tiangz-chaos-faults.service tiangz-chaos-game.service \
@@ -148,14 +153,14 @@ tiangz-dbproxy-chaos-postgres-data
 tiangz-dbproxy-chaos-redis-data
 ```
 
-两个容器健康后启动 DBProxy。首个 peer 在 PostgreSQL advisory lock 内执行 migration，第二个 peer 等待后复用同一 schema。必须确认 `dbproxy_snapshots` 是 `HASH (namespace, record_key)` 父表且恰有 `p00` 到 `p31` 共 32 个叶子分区。
+三个容器健康后启动 DBProxy。首个 peer 在 PostgreSQL advisory lock 内执行 migration，第二个 peer 等待后复用同一 schema。必须确认 `dbproxy_snapshots` 是 `HASH (namespace, record_key)` 父表且恰有 `p00` 到 `p31` 共 32 个叶子分区。
 
 ## 分阶段放量
 
 不要从空数据库直接启动七日计划。按下面的门逐级推进；任一阶段出现 OOM、swap 持续增长、磁盘不可控、未恢复队列或正确性错误，都回到健康基线并停止升级。
 
 1. 10 玩家、10 分钟、无故障：验证注册、登录、Gate、地图 1/100、日志和重复账号恢复。
-2. 100 玩家、30 分钟：各做一次 Redis、PostgreSQL、MapHost 和 DBProxy peer 的单故障。
+2. 100 玩家、30 分钟：分别做一次可靠队列 Redis、快照缓存 Redis、PostgreSQL、MapHost 和 DBProxy peer 单故障。
 3. 500 玩家、2 到 4 小时：运行正式频率与完整故障序列，观察 RSS、CPU、swap、WAL/AOF 和日志增长。
 4. 清理预演 state，重新创建专用七日 run 目录，才启动 168 小时服务。
 
@@ -192,7 +197,7 @@ systemd-run --unit=tiangz-dbproxy-soak-preview --collect \
   --report-interval 15 --validation-timeout 120
 ```
 
-短跑必须输出 `SOAK_FINAL` 且最终验证通过。认证 token 由 systemd 在降权前读取的 root-only `EnvironmentFile` 注入，不出现在命令行和日志中。
+短跑必须输出 `SOAK_FINAL` 且最终验证通过；累计的`missingSnapshots`、`readsBehindAcknowledgedRevision`和`invariantErrors`必须全部为 0，最终收敛不能抵消运行期间发生过的旧读。认证 token 由 systemd 在降权前读取的 root-only `EnvironmentFile` 注入，不出现在命令行和日志中。
 
 ## 2026-08-27 外网准备基线
 
@@ -209,9 +214,15 @@ systemd-run --unit=tiangz-dbproxy-soak-preview --collect \
 
 这些结果只说明编译、协议选择、低开销负载端、基础持久化链路、单 peer 切换和安全开关已经就绪，不能替代 100 玩家完整故障序列、500 玩家 2–4 小时和最终 168 小时验收。500 玩家数据来自无故障短跑；不能据此宣称故障恢复已经通过。
 
+## 2026-08-28 R5 故障预演发现
+
+500 个游戏玩家和 100 个 DBProxy 正确性玩家连续运行约 2.12 小时，12/12 个故障动作与最终逐玩家对账都恢复成功，三个队列最终归零且没有死信；但正确性驱动累计发现 31 次`readsBehindAcknowledgedRevision`，分别紧跟两次 Redis AOF 重启窗口。旧验收器只检查`validation.passed`和最终收敛，因此错误地把本轮标为通过。
+
+根因是快照缓存与 backlog/Outbox 共用 AOF：Redis 停机期间 PostgreSQL 已提交新 Revision，重启后 AOF 恢复出的旧缓存值仍带 fresh 标记，在 cache-repair worker 赶上前被直接返回。当前方案把 6379 的 AOF Redis 保留给可靠队列，把 6380 配成关闭 AOF/RDB的易失缓存；故障计划分别强杀两者。正确性驱动和`log-budget-final.json`都新增累计旧读硬门，任何一次旧读都会令最终状态失败。
+
 ## 截止时间验证与日志预算
 
-七日演练前使用同一套负载和故障动作做有明确截止时间的验证。starter 创建四个 transient service：500 玩家 Rust 游戏负载、100 玩家 DBProxy 正确性负载、故障编排和五分钟日志审计；最后再创建一个定时 finalizer。负载在截止时间前预留 2–10 分钟自然收尾，DBProxy 输出 `SOAK_FINAL` 后做逐玩家及队列对账；截止时 finalizer 撤销安全 marker、停止残留故障、恢复两个存储容器和全部服务，并写出最终报告。
+七日演练前使用同一套负载和故障动作做有明确截止时间的验证。starter 创建四个 transient service：500 玩家 Rust 游戏负载、100 玩家 DBProxy 正确性负载、故障编排和五分钟日志审计；最后再创建一个定时 finalizer。负载在截止时间前预留 2–10 分钟自然收尾，DBProxy 输出 `SOAK_FINAL` 后做逐玩家及队列对账；截止时 finalizer 撤销安全 marker、停止残留故障、恢复三个存储容器和全部服务，并写出最终报告。
 
 长稳客户端不会只回显请求的目标地图：`RESULT_JSON.enteredMapId/enteredMapInstanceId` 来自真实 `G2C_EnterMap` 响应。复用账号的移动序列以 epoch 为基数保持单调；如果 MapHost 丢失后玩家被安全回退到地图 1，runner 会记录失败并为该 shard 切换一代新账号，下一 epoch 必须重新进入目标地图并恢复健康。最终 shard 仍不健康时，即使 runner 正常退出也不能通过。
 
@@ -288,7 +299,7 @@ dbproxy_outbox_pending
 dbproxy_outbox_dead_lettered
 ```
 
-故障期间 `/ready` 返回 503 是预期降级信号；恢复后持续 503、队列 oldest age 继续上涨、dead letter 非零、玩家旧读或账本不平衡才是失败。
+PostgreSQL或可靠队列 Redis 故障期间 `/ready` 返回 503 是预期降级信号；快照缓存单独故障时 `/ready` 应保持 200，读路径回源 PostgreSQL，缓存错误与 fallback 指标上升。恢复后持续 503、队列 oldest age 继续上涨、dead letter 非零、任何玩家旧读或账本不平衡都是失败。
 
 ## 停止与恢复基线
 
@@ -299,9 +310,9 @@ rm -f /etc/tiangz/chaos-enabled
 systemctl disable --now tiangz-chaos-faults.service
 systemctl disable --now tiangz-chaos-game.service tiangz-dbproxy-soak.service
 
-docker start tiangz-dbproxy-postgres tiangz-dbproxy-redis
+docker start tiangz-dbproxy-postgres tiangz-dbproxy-redis tiangz-dbproxy-cache
 systemctl restart 'tiangz-dbproxy@1.service' 'tiangz-dbproxy@2.service' \
   tiangz-external.service
 ```
 
-最后等待 PostgreSQL、Redis、12 个 `/ready` endpoint 与三类持久队列恢复健康，再做最终逐玩家对账。只有完成最终对账、队列排空和日志归档后，七日演练才能标记为通过。
+最后等待 PostgreSQL、两个 Redis、12 个 `/ready` endpoint 与三类持久队列恢复健康，再做最终逐玩家对账。只有整个运行期间零旧读、最终对账、队列排空和日志归档全部通过，七日演练才能标记为通过。

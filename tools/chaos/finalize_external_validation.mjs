@@ -54,7 +54,11 @@ try {
 }
 
 async function recoverBaseline() {
-  for (const container of ["tiangz-dbproxy-postgres", "tiangz-dbproxy-redis"]) {
+  for (const container of [
+    "tiangz-dbproxy-postgres",
+    "tiangz-dbproxy-redis",
+    "tiangz-dbproxy-cache",
+  ]) {
     await command("docker", ["start", container], 4 * 1024 * 1024, true);
   }
   for (const unit of [
@@ -66,6 +70,7 @@ async function recoverBaseline() {
   }
   await waitContainerHealthy("tiangz-dbproxy-postgres", 180_000);
   await waitContainerHealthy("tiangz-dbproxy-redis", 180_000);
+  await waitContainerHealthy("tiangz-dbproxy-cache", 180_000);
   await waitUrls([
     "http://127.0.0.1:9090/ready",
     "http://127.0.0.1:9091/ready",
